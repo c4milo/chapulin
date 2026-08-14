@@ -1,0 +1,5 @@
+bin/
+*.o
+*.su
+proof/*.goto
+proof/results/

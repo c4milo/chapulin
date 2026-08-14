@@ -1,0 +1,44 @@
+# Fix-or-drop policy: a check whose findings are all intentional gets
+# disabled here with a reason, never nolint'd in the code.
+#
+# Disabled and why:
+# - readability-magic-numbers: TLS wire constants, rotation counts, and
+#   field-arithmetic radices are the domain; naming each would hurt more.
+# - readability-identifier-length: a, b, r, h, t, i are idiomatic in
+#   crypto field arithmetic and byte loops.
+# - readability-implicit-bool-conversion: plain-C truthiness is house style.
+# - bugprone-easily-swappable-parameters: (key, nonce), (in, out) pairs are
+#   the natural crypto API; tests and vectors catch swaps immediately.
+# - clang-analyzer-security.insecureAPI.DeprecatedOrUnsafeBufferHandling:
+#   recommends Annex K _s functions that glibc, macOS, and newlib never
+#   shipped; bounds live in the rbuf/wbuf layers instead.
+# - bugprone-suspicious-include: test/unit.c and proof harnesses include
+#   the .c files under test on purpose, to reach static internals.
+# - misc-include-cleaner: reasons about textual includes, not POSIX
+#   contracts; false-positives on umbrella headers.
+# - readability-math-missing-parentheses: byte-packing indices like
+#   p[4 * i + 1] saturate this codebase; the precedence is grade-school and
+#   the parens would be pure noise.
+Checks: >
+  -*,
+  bugprone-*,
+  cert-*,
+  clang-analyzer-*,
+  misc-*,
+  performance-*,
+  portability-*,
+  readability-*,
+  -bugprone-easily-swappable-parameters,
+  -bugprone-suspicious-include,
+  -clang-analyzer-security.insecureAPI.DeprecatedOrUnsafeBufferHandling,
+  -misc-include-cleaner,
+  -readability-identifier-length,
+  -readability-implicit-bool-conversion,
+  -readability-magic-numbers,
+  -readability-math-missing-parentheses
+WarningsAsErrors: '*'
+CheckOptions:
+  readability-function-cognitive-complexity.Threshold: '20'
+  # Without this, the if inside every expanded CHECK() dominates the test
+  # functions' scores; production macros here contain no control flow.
+  readability-function-cognitive-complexity.IgnoreMacros: 'true'
