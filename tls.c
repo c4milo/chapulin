@@ -99,7 +99,7 @@ static int pump_post_hs(ch_tls *t, size_t ptn) {
     size_t fill = ptn;
     // Bounded like ch_read's quiet cap: a fragmented message must make
     // byte progress; an endless stream of empty fragments is an attack.
-    for (int quiet = 0; quiet < 32;) {
+    for (int quiet = 0; quiet < CH_QUIET_CAP;) {
         size_t used = 0;
         int rc = handle_post_hs(t, buf, fill, &used);
         if (rc != CH_OK) {
@@ -187,7 +187,7 @@ int ch_read(ch_tls *t, uint8_t *p, size_t n) {
     // A peer may legally send records that yield no application data
     // (tickets, key updates, empty records), but not an endless stream of
     // them; the cap turns that into a protocol error instead of a spin.
-    for (int quiet = 0; quiet < 32; quiet++) {
+    for (int quiet = 0; quiet < CH_QUIET_CAP; quiet++) {
         if (t->pt_len > t->pt_off) {
             size_t take = t->pt_len - t->pt_off;
             if (take > n) {

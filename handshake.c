@@ -105,7 +105,7 @@ static int fetch_record(hs *h) {
         }
         // An empty handshake fragment is legal once in a while, but an
         // endless stream of them must not pin the handshake forever.
-        if (t->pt_len == part && ++h->quiet > 32) {
+        if (t->pt_len == part && ++h->quiet > CH_QUIET_CAP) {
             h->alert = ALERT_UNEXPECTED_MESSAGE;
             return CH_EPROTO;
         }

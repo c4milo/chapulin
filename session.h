@@ -9,6 +9,13 @@
 #include "record.h"
 #include "sha256.h"
 
+// Receive loops tolerate this many consecutive records that add no bytes
+// before failing the session. A build-time constant so proof harnesses can
+// verify the same loop bodies at a smaller bound.
+#ifndef CH_QUIET_CAP
+#define CH_QUIET_CAP 32
+#endif
+
 #define CH_ST_START 0
 #define CH_ST_CONNECTED 1
 #define CH_ST_CLOSED 2
