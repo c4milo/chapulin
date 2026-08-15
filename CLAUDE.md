@@ -8,8 +8,8 @@ spare. Sapo = eavesdropper; this kills them. Home: github.com/c4milo.
   lwIP-class socket stack.
 - Zero heap. No malloc anywhere, ever — one static `ms_tls` session
   struct plus a caller-provided record buffer is the entire working set.
-  The README's memory numbers are measured (bench/sram.sh), never
-  estimated, and get re-measured when the code changes.
+  bench/sram.sh measures the README's memory numbers; never estimate
+  them, and re-measure when the code changes.
 - One profile, no negotiation surface: TLS 1.3, TLS_CHACHA20_POLY1305_SHA256,
   x25519, ECDHE-PSK (psk_dhe_ke) only. No X.509, no raw public keys, no
   0-RTT, no compression, no renegotiation-era anything. The client offers
@@ -51,6 +51,11 @@ spare. Sapo = eavesdropper; this kills them. Home: github.com/c4milo.
 - RFC MUSTs we keep even though this is minimal: HelloRetryRequest
   handling, KeyUpdate receipt, NewSessionTicket parse-and-expose
   (resumption is just another PSK here), RFC 9257 binder discipline.
+- Write all prose — README, docs, comments, commit messages — in active
+  voice with plain words, following Google's Technical Writing One and
+  Two: short sentences with one idea each, terms defined before use,
+  lists for list-like content, strong verbs, no rhetorical flourishes or
+  metaphors.
 - Linters follow fix-or-drop: fix the finding, or disable the check in
   `.clang-tidy` with its reason. Never `NOLINT` in code.
 - Commits are Conventional Commits (feat/fix/docs/test/refactor/perf/

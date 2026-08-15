@@ -1,42 +1,54 @@
 # matasapos
 
-A TLS 1.3 client for devices with a few kilobytes of SRAM to spare. Sapo
-is Colombian for the guy who listens in; matasapos kills them.
+A TLS 1.3 client for devices with a few kilobytes of static RAM (SRAM)
+to spare. Sapo is Colombian for the guy who listens in; matasapos kills
+them.
 
-It speaks exactly one profile: TLS 1.3, `TLS_CHACHA20_POLY1305_SHA256`,
-x25519 key exchange, and one of two authentication modes — ECDHE-PSK
-(`psk_dhe_ke`) with a provisioned key, or a **pinned server key**: the
-server's raw P-256 public key is provisioned like a PSK would be, the
-server proves possession by signing the handshake (CertificateVerify),
-and its certificate is hashed into the transcript but never parsed — no
-ASN.1, no chains, no names, no expiry. Pinned mode handshakes with stock
-cert-based endpoints (Go's `crypto/tls`, OpenSSL) with no shared secret
-and no PSK-terminating sidecar; tickets still arrive, so reconnects
-resume via PSK either way and the ECDSA verify is paid once per ticket
-lifetime. No 0-RTT, no negotiation surface — the client offers one of
-everything and the server takes it or the handshake fails closed. C11
-and libc only, zero heap: the session struct plus a caller-provided
-receive buffer is the entire working set, and the client tells the
-server that buffer's size via `record_size_limit` (RFC 8449) so a peer
-can never send a record it cannot hold. (One sizing note for pinned
-mode: the peer's Certificate message must fit the receive buffer — a
-self-signed leaf is ~600 bytes; CA chains need a bigger buffer.)
+matasapos speaks one profile: TLS 1.3 with
+`TLS_CHACHA20_POLY1305_SHA256` and x25519 key exchange. It offers no
+alternatives and negotiates nothing. The server accepts the profile or
+the handshake fails closed. There is no 0-RTT.
 
-The RFC MUSTs a minimal client still has to honor are all in: HelloRetryRequest
-with cookie echo and transcript restart, KeyUpdate in both directions,
-NewSessionTicket parsing with resumption-PSK derivation handed to the
-application, and RFC 9257 binder discipline over the truncated
-ClientHello.
+The client authenticates the server in one of two modes:
 
-`test/e2e.sh` proves the profile against real peers: PSK handshake,
-ticket resumption, and pinned-key handshakes against both OpenSSL 3 and
-Go's `crypto/tls` (the stack Prometheus terminates with), application
-data both ways throughout.
+- **Pre-shared key (PSK).** Both sides hold a provisioned secret and run
+  ECDHE-PSK (`psk_dhe_ke`), so the handshake keeps forward secrecy.
+- **Pinned key.** You provision the server's raw P-256 public key
+  instead of a secret. The pin is public data: it needs integrity, not
+  secrecy. The server proves possession of the private key by signing
+  the handshake (CertificateVerify), and the client checks that
+  signature against the pin. The client hashes the server's certificate
+  into the transcript but never parses it: no ASN.1, no chains, no
+  names, no expiry. Pinned mode works against stock certificate-based
+  endpoints such as Go's `crypto/tls` and OpenSSL.
+
+Both modes receive session tickets, so reconnects resume over PSK. In
+pinned mode the client therefore pays the ECDSA verification once per
+ticket lifetime, not per connection.
+
+The stack uses C11 and libc only, with zero heap. The working set is one
+session struct plus one receive buffer that the caller provides. The
+client advertises the buffer's size as its `record_size_limit`
+(RFC 8449), so a peer can never send a record the buffer cannot hold.
+Pinned mode adds one sizing rule: the server's Certificate message must
+fit the receive buffer. A self-signed leaf needs about 600 bytes; a CA
+chain needs a larger buffer.
+
+The client honors the RFC requirements that even a minimal client must
+keep: HelloRetryRequest with cookie echo and transcript restart,
+KeyUpdate in both directions, NewSessionTicket parsing with
+resumption-PSK derivation handed to the application, and RFC 9257
+binder rules over the truncated ClientHello.
+
+`test/e2e.sh` exercises the profile against real peers. It runs a PSK
+handshake, ticket resumption, and pinned-key handshakes against both
+OpenSSL 3 and Go's `crypto/tls`, and it moves application data both
+ways throughout.
 
 ## Memory
 
-Measured, not estimated (host arm64; 32-bit targets shrink the pointer
-fields):
+`bench/sram.sh` measures every number below on the host (arm64); 32-bit
+targets shrink the pointer fields.
 
 | what | bytes |
 |---|---|
@@ -45,98 +57,105 @@ fields):
 | **total static working set** | **3024** |
 | peak transient stack, `ms_connect` (pinned mode: P-256 verify) | 3312 |
 | peak transient stack, `ms_connect` (PSK mode: x25519 ladder) | 2608 |
-| peak transient stack, `ms_read` (worst: KeyUpdate rekey) | 1632 |
+| peak transient stack, `ms_read` (worst case: KeyUpdate rekey) | 1632 |
 | peak transient stack, `ms_write` / `ms_close` | 736 / 688 |
 
-Regenerate with `bench/sram.sh`. It computes each entry point's worst
-case from the object code's call graph weighted by `-fstack-usage`
-frames, not from a hand-picked call chain.
+The script computes each entry point's worst case from the object code's
+call graph, weighted by `-fstack-usage` frames. It does not rely on a
+hand-picked call chain.
 
-No malloc anywhere, no VLAs, no alloca. For comparison, the smallest
-published TLS 1.3 PSK working sets elsewhere: wolfSSL ~6.2 kB heap plus
-buffers, mbedTLS ~9–15 kB and unable to run without an allocator, and
-both need a 16 kB record buffer unless the peer supports
-record_size_limit. `docs/landscape.md` has the full survey with sources.
+The stack never calls malloc and never uses variable-length arrays or
+alloca. For comparison, the smallest published TLS 1.3 PSK working sets
+elsewhere: wolfSSL needs about 6.2 kB of heap plus buffers; mbedTLS
+needs 9 to 15 kB and cannot run without an allocator; both need a 16 kB
+record buffer unless the peer supports `record_size_limit`.
+`docs/landscape.md` holds the full survey with sources.
 
 ## Verification
 
-CBMC proves every module memory-safe (bounds, pointer validity) and free
-of undefined behavior (signed overflow, undefined shifts, division) for
-every input within each harness's documented bound, plus the functional
-claims below. Where a bound is the module's real maximum, the proof
-covers all inputs; where it is not, the bound is stated in the table.
-The proofs run in two tiers: `make check` runs the eleven that finish in
-seconds to a few minutes; `make prove-slow` runs the four long ones
-(handshake driver, aead, x25519, hkdf expand), and CI runs both.
+The C Bounded Model Checker (CBMC) proves every module memory-safe and
+free of undefined behavior, for every input within each harness's
+documented bound. Memory safety covers array bounds and pointer
+validity; undefined behavior covers signed overflow, invalid shifts, and
+division by zero. Where a bound equals the module's real maximum, the
+proof covers all inputs. Where it does not, the table states the bound.
 
-The suite is layered, mlkem-native style: leaf modules are proven
-concrete; hkdf and record are proven against contract-checking stubs of
-the already-proven layer below (each stub asserts pointer and size
-validity and havocs outputs, so upper proofs never depend on crypto
-values).
+The proofs run in two tiers. `make check` runs the eleven proofs that
+finish in seconds to a few minutes. `make prove-slow` runs the four long
+ones (handshake driver, aead, x25519, hkdf expand). CI runs both tiers.
+
+The suite layers its proofs the way mlkem-native does. CBMC proves the
+leaf modules directly. Upper layers (hkdf, record, the handshake driver)
+run against stubs that assert the proven contract of the layer below and
+return arbitrary values, so no upper proof depends on cryptographic
+values.
 
 | harness | proves | bound |
 |---|---|---|
-| ct | memeq ≡ plain comparison, wipe zeroizes, no UB | all inputs ≤ 64 B |
-| buf | any 12-op reader/writer sequence safe, len ≤ cap invariant | buffers ≤ 64 B |
-| sha256 | no UB for any two-chunk split | messages ≤ 96 B |
-| hkdf (two harnesses) | hmac/extract and expand/expand-label no UB over the proven sha256 contract | keys ≤ 96 B, out ≤ 96 B (all structural paths) |
-| handshake | the driver — record pump, cross-record reassembly, HRR restart, state machine, both auth modes — safe on ANY record stream, over the proven io/record/keysched/p256 contracts | 96 B receive buffer |
-| chacha20 | no UB, in-place, any counter | ≤ 160 B (3 blocks) |
-| poly1305 | no UB for any three-chunk split, 64-bit products bounded | messages ≤ 80 B |
-| aead | seal/open round-trip, forged tag ⇒ zero bytes written, backward-overlap decrypt (the record layer's in-place mode) | pt ≤ 64 B, aad ≤ 32 B |
-| x25519 | field-op memory safety concrete; int64-overflow impossibility as a separate lemma with full checks (SAT can't do both at once on 256 symbolic multiplies) | limbs ≤ 2^24 |
-| p256 | DER parser and limb marshalling safe on hostile signatures (concrete); CIOS carry lemma with full checks; the 256-step scalar mults compose the proven pieces | sigs ≤ 80 B |
-| record | seal across contract; rec_open safe on fully hostile bytes, padding strip over any AEAD output | records ≤ 160 B |
-| hsparse | ServerHello + EncryptedExtensions parsers safe on hostile bytes | messages ≤ 256 B |
+| ct | memeq matches a plain comparison, wipe zeroizes, no undefined behavior | all inputs ≤ 64 B |
+| buf | any 12-operation reader/writer sequence stays safe; length never exceeds capacity | buffers ≤ 64 B |
+| sha256 | safe for any two-chunk split | messages ≤ 96 B |
+| hkdf (two harnesses) | hmac/extract and expand/expand-label safe over the proven sha256 contract | keys ≤ 96 B, output ≤ 96 B |
+| handshake | the driver stays safe on any record stream: record pump, cross-record reassembly, HRR restart, state machine, both auth modes | 96 B receive buffer |
+| chacha20 | safe, including in-place use, at any counter | ≤ 160 B (3 blocks) |
+| poly1305 | safe for any three-chunk split; 64-bit products stay in range | messages ≤ 80 B |
+| aead | seal/open round-trips; a forged tag writes zero bytes; backward-overlap decrypt works (the record layer's in-place mode) | plaintext ≤ 64 B, aad ≤ 32 B |
+| x25519 | field operations are memory-safe (direct proof); a separate lemma proves the int64 arithmetic cannot overflow | limbs ≤ 2^24 |
+| p256 | the DER parser and limb marshalling stay safe on hostile signatures (direct proof); a carry lemma covers the Montgomery multiply | signatures ≤ 80 B |
+| record | seal works across its contract; rec_open stays safe on fully hostile bytes | records ≤ 160 B |
+| hsparse | the ServerHello and EncryptedExtensions parsers stay safe on hostile bytes | messages ≤ 256 B |
 
 CBMC found one real bug during development: `carry()` left-shifted a
 negative value (`c << 16`), which is undefined behavior in C even though
-compilers tolerate it. It is now a multiply with the same code
-generation.
+compilers tolerate it. The code now multiplies instead, with the same
+code generation.
 
-What is tested but not yet proved, stated plainly:
+The following claims rest on tests, not proofs:
 
-- x25519 functional correctness rests on the RFC 7748 vectors including
-  the 1,000-iteration chain, plus the fact that this exact limb scheme
-  (TweetNaCl's) carries a prior Coq/VST functional proof by Schwabe et
-  al. The tight limb-growth invariant connecting mul outputs to add/sub
-  inputs is an open proof task (`proof/` slow tier).
-- tls.c's post-handshake pump is covered by e2e, the mock-transport unit
-  tests, and the posths fuzzer; its CBMC harness is the last one missing.
-- P-256 functional correctness rests on RFC 6979 vectors plus the oracle
-  minting fresh signatures the C must accept; the scalar-mult loops
-  compose proven pieces but are not run whole under CBMC.
-- Constant time is by construction (no secret-dependent branches or
-  indices; no AES precisely because of its tables), enforced by the
-  `ct.[ch]` chokepoints, and checked statistically by `make timing`
-  (Welch's t over interleaved secret classes) — evidence, not proof.
-  P-256 verification is deliberately variable-time: every input is
+- x25519 functional correctness rests on the RFC 7748 vectors, including
+  the 1,000-iteration chain. The limb scheme (TweetNaCl's) also carries
+  a prior Coq/VST functional proof by Schwabe et al. The limb-growth
+  invariant that connects multiply outputs to add/sub inputs remains an
+  open proof task.
+- The post-handshake pump in tls.c rests on e2e, the mock-transport unit
+  tests, and the posths fuzzer. Its CBMC harness is the last one
+  missing.
+- P-256 functional correctness rests on RFC 6979 vectors plus fresh
+  signatures that the Lean spec mints and the C must accept. The
+  scalar-multiplication loops compose proven pieces, but CBMC does not
+  run them whole.
+- Constant-time behavior comes from construction: no branch and no
+  memory index depends on a secret, and the stack avoids AES because of
+  its lookup tables. `make timing` checks this statistically (Welch's
+  t-test over interleaved secret classes). That is evidence, not proof.
+  P-256 verification is variable-time on purpose: all of its inputs are
   public.
 
-Nothing else in this space carries whole-stack machine-checked memory
-safety; the closest prior art is AWS's CBMC proofs for the FreeRTOS core
-libraries and mlkem-native, which is the methodology copied here.
+No other stack in this space carries whole-stack machine-checked memory
+safety. The closest prior art is AWS's CBMC work on the FreeRTOS core
+libraries and on mlkem-native, and this suite copies that method.
 
 ## The differential oracle
 
 `spec/` is an executable Lean 4 specification of everything matasapos
-computes — SHA-256, HKDF and the RFC 8446 §7.1 key schedule, ChaCha20,
-Poly1305 (accumulator as plain `Nat` mod 2^130−5), the AEAD, record
-framing, and x25519 written as definitional `Nat` arithmetic mod
-2^255−19. It was written from the RFC text under a hard independence
-rule (no reading the C), each module carries its RFC vectors as a
-selftest, and the key schedule is additionally pinned to RFC 8448's
-published trace values — which a bug shared by C and spec could not
-co-satisfy.
+computes: SHA-256, HKDF and the RFC 8446 §7.1 key schedule, ChaCha20,
+Poly1305 (the accumulator is a plain `Nat` mod 2^130−5), the AEAD,
+record framing, x25519, and P-256, all as definitional `Nat` arithmetic.
+The spec follows the RFC text and never the C, because a differential
+oracle only works when a shared misreading cannot make both sides agree.
+Each module carries its RFC vectors as a selftest, and the key schedule
+also matches RFC 8448's published trace values.
 
-`make diff` builds the spec with `lake`, runs its selftests, then drives
-~2,750 random-input comparisons (including P-256 signatures the spec mints that the C must accept) between every C module and the spec over
-a pipe (deterministic seed; part of `make check`, skipped when elan is
-not installed). The three layers cover different failure classes: proofs
-cover memory safety, vectors cover known answers, and the oracle checks
-that the C computes the same function as a short spec that can be read
-next to the RFC.
+`make diff` builds the spec with `lake`, runs its selftests, and then
+drives about 2,750 random-input comparisons between every C module and
+the spec over a pipe, with a deterministic seed. The comparisons include
+P-256 signatures that the spec mints and the C must accept. The target
+runs inside `make check` and skips itself when elan is not installed.
+
+The three layers cover different failure classes. Proofs cover memory
+safety. Vectors cover known answers. The oracle checks that the C
+computes the same function as a short spec that a reviewer can read next
+to the RFC.
 
 ## Using it
 
@@ -160,32 +179,42 @@ int got = ms_read(&tls, out, sizeof out);
 ms_close(&tls);
 ```
 
-The platform provides two socket callbacks (blocking, bounded by its own
-timeouts) and `ms_rand_bytes` (rand.h) wired to its TRNG. Every error is
-fatal to the session by design — wipe, reconnect, done. That is how a
-device actually recovers, and it removes the entire resumable-error state
-space from the code and the proofs.
+The platform provides two blocking socket callbacks, bounded by its own
+timeouts, and wires `ms_rand_bytes` (rand.h) to its hardware random
+number generator. Every error kills the session: the stack wipes its
+keys and the caller reconnects. Devices recover by reconnecting anyway,
+and the rule removes the entire resumable-error state space from the
+code and the proofs.
 
 ## Building
 
-`make check` runs the whole gate: build, lint (clang-tidy, clang-format,
-cppcheck, commitlint, all warnings as errors), unit tests (RFC vectors),
-e2e against OpenSSL 3 and Go, the Lean differential oracle, and the fast
-proof tier. Separate targets: `make prove-slow` (the four long proofs),
-`make timing` (statistical constant-time check; load-sensitive), `make
-fuzz` (libFuzzer smoke runs), `make hooks` (once after clone, enables
-the commit-msg hook). See `CLAUDE.md` for the house rules.
+`make check` runs the whole gate:
+
+- build, with all warnings as errors
+- lint: clang-tidy, clang-format, cppcheck, commitlint
+- unit tests (RFC vectors)
+- e2e against OpenSSL 3 and Go
+- the Lean differential oracle
+- the fast proof tier
+
+Separate targets: `make prove-slow` runs the four long proofs. `make
+timing` runs the constant-time check (load-sensitive, so run it on an
+idle machine). `make fuzz` smoke-runs the libFuzzer harnesses. `make
+hooks`, once after clone, enables the commit-msg hook. See `CLAUDE.md`
+for the house rules.
 
 ## Non-goals
 
-0-RTT (the IETF IoT profile forbids it anyway), DTLS, X.509 chain
-validation (pinned mode accepts a certificate but never parses it — the
-signature against the provisioned key is the authentication), CA
-bundles, revocation, client certificates, cipher agility, server role,
-and any insecure-fallback option. Two caveats: the IETF
-TLS 1.3 IoT profile's mandatory suite is AES-128-CCM-8, and matasapos is
-ChaCha-only (no lookup tables, constant time on any core) — fine when
-you control both ends, incompatible with a server that insists on AES.
-An AES-CCM build flag is the most likely v2 addition. And pin the key of
-a server whose key is stable: automatic key rotation (for example
-Let's Encrypt defaults) breaks pins.
+matasapos does not implement: 0-RTT (the IETF IoT profile forbids it),
+DTLS, X.509 chain validation, CA bundles, revocation, client
+certificates, cipher agility, the server role, or any insecure-fallback
+option. Pinned mode accepts a certificate but never parses it; the
+signature check against the provisioned key is the authentication.
+
+Two caveats. First, the IETF TLS 1.3 IoT profile's mandatory suite is
+AES-128-CCM-8, and matasapos is ChaCha-only because ChaCha needs no
+lookup tables and runs in constant time on any core. That choice works
+when you control both ends and fails against a server that insists on
+AES; an AES-CCM build flag is the most likely v2 addition. Second, pin
+the key of a server whose key is stable. Automatic key rotation, such as
+Let's Encrypt defaults, breaks pins.
