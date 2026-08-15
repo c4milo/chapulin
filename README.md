@@ -218,3 +218,7 @@ when you control both ends and fails against a server that insists on
 AES; an AES-CCM build flag is the most likely v2 addition. Second, pin
 the key of a server whose key is stable. Automatic key rotation, such as
 Let's Encrypt defaults, breaks pins.
+
+## License
+
+Apache-2.0. See [LICENSE](LICENSE).
