@@ -42,9 +42,33 @@ static int io_recv(void *io, uint8_t *p, size_t n) {
     return r <= 0 ? -1 : (int)r;
 }
 
+static const char *g_ticket_path; // save the first ticket here, if set
+static int g_ticket_saved;
+
+static void put_hex(FILE *f, const uint8_t *p, size_t n) {
+    for (size_t i = 0; i < n; i++) {
+        (void)fprintf(f, "%02x", p[i]);
+    }
+}
+
+// Persists one ticket as "identity-hex psk-hex age_add" so a later run can
+// resume with it.
 static void on_ticket(void *io, const ms_ticket *tk) {
     (void)io;
     (void)fprintf(stderr, "ticket: id %zu bytes, lifetime %us\n", tk->identity_len, tk->lifetime_s);
+    if (g_ticket_path == NULL || g_ticket_saved) {
+        return;
+    }
+    FILE *f = fopen(g_ticket_path, "w");
+    if (f == NULL) {
+        return;
+    }
+    put_hex(f, tk->identity, tk->identity_len);
+    (void)fputc(' ', f);
+    put_hex(f, tk->psk, sizeof tk->psk);
+    (void)fprintf(f, " %u\n", tk->age_add);
+    (void)fclose(f);
+    g_ticket_saved = 1;
 }
 
 static int nibble(char c) {
@@ -73,11 +97,71 @@ static size_t unhex(const char *hex, uint8_t *out, size_t cap) {
     return n;
 }
 
+// Loads a ticket saved by on_ticket. The identity replaces the psk-id, the
+// derived PSK replaces the external one, and obfuscated_age = 0 + age_add
+// (we reconnect within moments, so the true age rounds to zero).
+static int load_ticket(const char *path, uint8_t *id, size_t *idlen, uint8_t *psk, size_t *psklen,
+                       uint32_t *age) {
+    FILE *f = fopen(path, "r");
+    if (f == NULL) {
+        return -1;
+    }
+    char idhex[2 * MS_TICKET_ID_MAX + 1];
+    char pskhex[2 * SHA256_LEN + 1];
+    char agestr[16];
+    int rc = fscanf(f, "%640s %64s %15s", idhex, pskhex, agestr);
+    (void)fclose(f);
+    if (rc != 3) {
+        return -1;
+    }
+    char *end = NULL;
+    unsigned long age_add = strtoul(agestr, &end, 10);
+    if (end == agestr || *end != 0 || age_add > 0xffffffffUL) {
+        return -1;
+    }
+    *idlen = unhex(idhex, id, MS_TICKET_ID_MAX);
+    *psklen = unhex(pskhex, psk, SHA256_LEN);
+    *age = (uint32_t)age_add;
+    return (*idlen > 0 && *psklen == SHA256_LEN) ? 0 : -1;
+}
+
+// Fills the PSK part of cfg from either a saved ticket ("@file") or an
+// external psk-hex + identity pair.
+static int setup_psk(char **argv, ms_cfg *cfg, uint8_t *psk, size_t pskcap, uint8_t *id) {
+    if (argv[3][0] == '@') {
+        size_t idlen = 0;
+        size_t psklen = 0;
+        uint32_t age = 0;
+        if (load_ticket(argv[3] + 1, id, &idlen, psk, &psklen, &age) != 0) {
+            (void)fprintf(stderr, "bad ticket file: %s\n", argv[3] + 1);
+            return -1;
+        }
+        cfg->psk_len = psklen;
+        cfg->psk_id = id;
+        cfg->psk_id_len = idlen;
+        cfg->resumption = 1;
+        cfg->obfuscated_age = age;
+        (void)fprintf(stderr, "resuming with a %zu-byte ticket\n", idlen);
+        return 0;
+    }
+    cfg->psk_len = unhex(argv[3], psk, pskcap);
+    if (cfg->psk_len == 0) {
+        return -1;
+    }
+    cfg->psk_id = (const uint8_t *)argv[4];
+    cfg->psk_id_len = strlen(argv[4]);
+    return 0;
+}
+
 int main(int argc, char **argv) {
-    if (argc != 5) {
-        (void)fprintf(stderr, "usage: %s host port psk-hex psk-id\n", argv[0]);
+    if (argc != 5 && argc != 6) {
+        (void)fprintf(stderr,
+                      "usage: %s host port psk-hex psk-id [save-ticket-file]\n"
+                      "       %s host port @ticket-file - [save-ticket-file]\n",
+                      argv[0], argv[0]);
         return 2;
     }
+    g_ticket_path = argc == 6 ? argv[5] : NULL;
     struct addrinfo hints = {0};
     hints.ai_socktype = SOCK_STREAM;
     struct addrinfo *ai = NULL;
@@ -94,16 +178,13 @@ int main(int argc, char **argv) {
     freeaddrinfo(ai);
 
     uint8_t psk[64];
-    size_t psklen = unhex(argv[3], psk, sizeof psk);
-    if (psklen == 0) {
-        return 2;
-    }
+    uint8_t id[MS_TICKET_ID_MAX];
     static uint8_t rxbuf[2048];
     ms_cfg cfg = {0};
+    if (setup_psk(argv, &cfg, psk, sizeof psk, id) != 0) {
+        return 2;
+    }
     cfg.psk = psk;
-    cfg.psk_len = psklen;
-    cfg.psk_id = (const uint8_t *)argv[4];
-    cfg.psk_id_len = strlen(argv[4]);
     cfg.buf = rxbuf;
     cfg.buf_len = sizeof rxbuf;
     cfg.send = io_send;

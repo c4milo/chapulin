@@ -28,7 +28,10 @@ SERVER=$!
 trap 'kill $SERVER 2>/dev/null || true' EXIT
 sleep 1
 
-OUT=$(printf 'hola sapo\n' | ./bin/tlsclient 127.0.0.1 "$PORT" "$PSK" "$ID" 2>/tmp/ms-e2e-err)
+TICKET=/tmp/ms-e2e-ticket
+rm -f "$TICKET"
+OUT=$(printf 'hola sapo\n' | ./bin/tlsclient 127.0.0.1 "$PORT" "$PSK" "$ID" "$TICKET" \
+    2>/tmp/ms-e2e-err)
 if [ "$OUT" != "opas aloh" ]; then
     echo "FAIL e2e: got '$OUT'"
     cat /tmp/ms-e2e-err
@@ -39,4 +42,22 @@ grep -q "^ticket:" /tmp/ms-e2e-err || {
     cat /tmp/ms-e2e-err
     exit 1
 }
-echo "e2e: handshake + echo + tickets OK"
+[ -s "$TICKET" ] || {
+    echo "FAIL e2e: ticket not saved"
+    exit 1
+}
+
+# Second connection resumes with the ticket-derived PSK: the server only
+# accepts it if our resumption secret, binder label, and age math all
+# match its own.
+OUT=$(printf 'otra vez\n' | ./bin/tlsclient 127.0.0.1 "$PORT" "@$TICKET" - 2>/tmp/ms-e2e-err2)
+if [ "$OUT" != "zev arto" ]; then
+    echo "FAIL e2e resumption: got '$OUT'"
+    cat /tmp/ms-e2e-err2
+    exit 1
+fi
+grep -q "^resuming" /tmp/ms-e2e-err2 || {
+    echo "FAIL e2e resumption: did not use the ticket"
+    exit 1
+}
+echo "e2e: handshake + echo + tickets + resumption OK"
