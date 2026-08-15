@@ -19,7 +19,7 @@ LINT_C := $(SRCS) test/unit.c test/tlsclient.c test/diff.c test/timing.c
 PROOF_C := $(wildcard proof/*.c) proof/harness.h
 FUZZ_C := $(wildcard fuzz/*.c)
 
-bin/unit: test/unit.c $(SRCS) $(HDRS)
+bin/unit: test/unit.c test/session_tests.h $(SRCS) $(HDRS)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) -I. -o $@ test/unit.c $(SRCS)
 
@@ -64,7 +64,7 @@ lint-format:
 ifeq ($(CLANG_FORMAT),)
 	@echo "SKIP clang-format: not on PATH (ships with llvm)"
 else
-	$(CLANG_FORMAT) --dry-run --Werror $(LINT_C) $(HDRS) $(PROOF_C) $(FUZZ_C) test/testrand.h test/diffdrv.h test/diffp256.h
+	$(CLANG_FORMAT) --dry-run --Werror $(LINT_C) $(HDRS) $(PROOF_C) $(FUZZ_C) test/testrand.h test/session_tests.h test/diffdrv.h test/diffp256.h
 endif
 
 lint-cppcheck:
@@ -122,7 +122,7 @@ endif
 
 fmt:
 ifneq ($(CLANG_FORMAT),)
-	$(CLANG_FORMAT) -i $(LINT_C) $(HDRS) $(PROOF_C) $(FUZZ_C) test/testrand.h test/diffdrv.h test/diffp256.h
+	$(CLANG_FORMAT) -i $(LINT_C) $(HDRS) $(PROOF_C) $(FUZZ_C) test/testrand.h test/session_tests.h test/diffdrv.h test/diffp256.h
 endif
 
 bin/timing: test/timing.c $(SRCS) $(HDRS)
