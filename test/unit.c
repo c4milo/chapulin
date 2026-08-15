@@ -6,11 +6,14 @@
 #include <string.h>
 
 #include "aead.h"
+#include "buf.h"
 #include "chacha20.h"
 #include "ct.h"
 #include "hkdf.h"
 #include "ms_assert.h"
 #include "poly1305.h"
+#include "rand.h"
+#include "record.h"
 #include "sha256.h"
 #include "x25519.h"
 
@@ -27,6 +30,10 @@ static int failures = 0;
 noreturn void ms_assert_fail(const char *cond, const char *file, int line) {
     (void)fprintf(stderr, "ASSERT %s:%d: %s\n", file, line, cond);
     abort();
+}
+
+void ms_rand_bytes(uint8_t *p, size_t n) {
+    arc4random_buf(p, n);
 }
 
 // Decodes hex into out; returns byte count. Test-only, trusts its input.
@@ -235,6 +242,65 @@ static void test_ct(void) {
     CHECK(memcmp(a, z, 7) == 0);
 }
 
+static void test_buf(void) {
+    uint8_t mem[8];
+    wbuf w;
+    wb_init(&w, mem, sizeof mem);
+    wb_u8(&w, 1);
+    size_t mark = wb_mark(&w, 2);
+    wb_u24(&w, 0x020304);
+    wb_patch16(&w, mark);
+    CHECK(!w.err && w.len == 6);
+    CHECK(mem[1] == 0 && mem[2] == 3); // patched length = 3 bytes after mark
+    wb_bytes(&w, mem, 3);              // overruns: 6 + 3 > 8
+    CHECK(w.err);
+
+    rbuf r;
+    rb_init(&r, mem, 6);
+    CHECK(rb_u8(&r) == 1 && rb_u16(&r) == 3 && rb_u24(&r) == 0x020304);
+    CHECK(rb_left(&r) == 0 && !r.err);
+    (void)rb_u8(&r);
+    CHECK(r.err && rb_left(&r) == 0);
+}
+
+static void test_record(void) {
+    uint8_t secret[SHA256_LEN];
+    ms_rand_bytes(secret, sizeof secret);
+    rec_dir tx;
+    rec_dir rx;
+    rec_dir_init(&tx, secret);
+    rec_dir_init(&rx, secret);
+
+    const char *msg = "matando sapos desde 2026";
+    uint8_t rec[128];
+    uint8_t pt[128];
+    for (int i = 0; i < 3; i++) { // sequence numbers must track
+        size_t recn = 0;
+        CHECK(rec_seal(&tx, REC_APPDATA, (const uint8_t *)msg, strlen(msg), rec, sizeof rec,
+                       &recn) == 0);
+        size_t ptn = 0;
+        uint8_t type = 0;
+        CHECK(rec_open(&rx, rec, recn, pt, sizeof pt, &ptn, &type) == 0);
+        CHECK(type == REC_APPDATA && ptn == strlen(msg) && memcmp(pt, msg, ptn) == 0);
+    }
+    // Tampered record must fail, and a KeyUpdate rekey must still track.
+    size_t recn = 0;
+    CHECK(rec_seal(&tx, REC_APPDATA, (const uint8_t *)msg, strlen(msg), rec, sizeof rec, &recn) ==
+          0);
+    rec[REC_HDR] ^= 1;
+    size_t ptn = 0;
+    uint8_t type = 0;
+    CHECK(rec_open(&rx, rec, recn, pt, sizeof pt, &ptn, &type) == -1);
+    uint8_t s2[SHA256_LEN];
+    memcpy(s2, secret, sizeof s2);
+    rec_dir_update(secret, &tx);
+    rec_dir_update(s2, &rx);
+    CHECK(memcmp(secret, s2, sizeof s2) == 0);
+    CHECK(rec_seal(&tx, REC_ALERT, (const uint8_t *)"\1\0", 2, rec, sizeof rec, &recn) == 0);
+    CHECK(rec_open(&rx, rec, recn, pt, sizeof pt, &ptn, &type) == 0);
+    CHECK(type == REC_ALERT && ptn == 2);
+}
+
 int main(void) {
     test_ct();
     test_sha256();
@@ -243,6 +309,8 @@ int main(void) {
     test_poly1305();
     test_aead();
     test_x25519();
+    test_buf();
+    test_record();
     if (failures > 0) {
         (void)fprintf(stderr, "%d failure(s)\n", failures);
         return 1;

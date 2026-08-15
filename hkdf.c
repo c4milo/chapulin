@@ -86,8 +86,10 @@ void hkdf_expand_label(const uint8_t secret[SHA256_LEN], const char *label, cons
     memcpy(info + p, label, lab);
     p += lab;
     info[p++] = (uint8_t)ctxlen;
-    memcpy(info + p, ctx, ctxlen);
-    p += ctxlen;
+    if (ctxlen > 0) {
+        memcpy(info + p, ctx, ctxlen);
+        p += ctxlen;
+    }
     hkdf_expand(secret, info, p, out, outlen);
 }
 

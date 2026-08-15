@@ -6,17 +6,24 @@ CLANG_FORMAT ?= $(shell command -v clang-format || command -v $(LLVM_BIN)/clang-
 CPPCHECK ?= $(shell command -v cppcheck)
 CBMC ?= $(shell command -v cbmc)
 
-SRCS := ct.c sha256.c hkdf.c chacha20.c poly1305.c aead.c x25519.c
-HDRS := ct.h sha256.h hkdf.h chacha20.h poly1305.h aead.h x25519.h ms_assert.h
-LINT_C := $(SRCS) test/unit.c
+SRCS := ct.c sha256.c hkdf.c chacha20.c poly1305.c aead.c x25519.c \
+        buf.c record.c keysched.c io.c hsmsg.c handshake.c tls.c
+HDRS := ct.h sha256.h hkdf.h chacha20.h poly1305.h aead.h x25519.h ms_assert.h \
+        buf.h record.h keysched.h io.h hsmsg.h handshake.h tls.h rand.h
+LINT_C := $(SRCS) test/unit.c test/tlsclient.c
 
 bin/unit: test/unit.c $(SRCS) $(HDRS)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) -I. -o $@ test/unit.c $(SRCS)
 
+bin/tlsclient: test/tlsclient.c $(SRCS) $(HDRS)
+	@mkdir -p bin
+	$(CC) $(CFLAGS) -I. -o $@ test/tlsclient.c $(SRCS)
+
 .PHONY: check lint lint-tidy lint-format lint-cppcheck prove fmt clean
-check: bin/unit lint
+check: bin/unit bin/tlsclient lint
 	./bin/unit
+	./test/e2e.sh
 	$(MAKE) prove
 
 # Checks and thresholds live in .clang-tidy; every disable carries a reason
