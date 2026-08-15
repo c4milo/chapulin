@@ -199,6 +199,22 @@ static void test_p256(void) {
     CHECK(p256_ecdsa_verify(pub, hash, sig, n) == 1);
 }
 
+// A spent sequence space refuses to protect or accept further records
+// instead of wrapping into (key, nonce) reuse.
+static void test_seq_exhaustion(void) {
+    uint8_t secret[SHA256_LEN];
+    ch_rand_bytes(secret, sizeof secret);
+    rec_dir d;
+    rec_dir_init(&d, secret);
+    d.seq = UINT64_MAX;
+    uint8_t rec[64];
+    uint8_t pt[8] = {0};
+    size_t n = 0;
+    CHECK(rec_seal(&d, REC_APPDATA, pt, sizeof pt, rec, sizeof rec, &n) == -1);
+    uint8_t type = 0;
+    CHECK(rec_open(&d, rec, sizeof rec, rec, sizeof rec, &n, &type) == -1);
+}
+
 // ch_connect's config validation: exactly one auth mode, sane buffer. A
 // case that passes validation reaches I/O and dies there (empty queue
 // gives CH_EIO), which distinguishes it from a rejected config (CH_ECAP).

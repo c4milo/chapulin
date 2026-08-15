@@ -319,6 +319,7 @@ int main(void) {
     test_p256();
     test_buf();
     test_record();
+    test_seq_exhaustion();
     test_post_handshake();
     test_connect_cfg();
     if (failures > 0) {
