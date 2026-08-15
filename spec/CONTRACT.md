@@ -36,6 +36,12 @@ Spec.Record.seal      : (trafficSecret : ByteArray) → (seq : Nat) →
                         -- header 17 03 03 len, out = header ++ seal(...)
 Spec.X25519.scalarMult : (scalar point : ByteArray) → ByteArray        -- RFC 7748 §5, Nat mod 2^255-19
 Spec.X25519.base       : (scalar : ByteArray) → ByteArray              -- point = 9
+Spec.P256.pubKey?     : (d : Nat) → Option ByteArray                   -- FIPS 186-4 §D.1.2.3, X‖Y 64 bytes
+Spec.P256.ecdsaSign   : (d k z : Nat) → Option (Nat × Nat)             -- FIPS 186-4 §6.4, (r, s);
+                        -- none for d/k outside [1, n-1] or r/s = 0. The spec
+                        -- signs so the oracle can mint valid signatures; the C
+                        -- side only ever verifies.
+Spec.P256.ecdsaVerify : (pub hash : ByteArray) → (r s : Nat) → Bool    -- SEC 1 v2 §4.1.4
 ```
 
 Shared helpers live in `Spec/Bytes.lean` (hex, BE/LE Nat coding, xor).

@@ -44,6 +44,16 @@ int tlsi_send_alert(ms_tls *t, uint8_t level, uint8_t desc) {
     __CPROVER_assert(0, "tlsi_send_alert unreachable from parsers");
     return -1;
 }
+#include "p256.h"
+int p256_ecdsa_verify(const uint8_t pub[64], const uint8_t msg_hash[32], const uint8_t *sig_der,
+                      size_t sig_len) {
+    (void)pub;
+    (void)msg_hash;
+    (void)sig_der;
+    (void)sig_len;
+    __CPROVER_assert(0, "p256 unreachable from parsers");
+    return 0;
+}
 
 #include "handshake.c"
 
@@ -57,7 +67,7 @@ int main(void) {
     for (size_t i = 0; i < sizeof si; i++) {
         ((uint8_t *)&si)[i] = 0;
     }
-    (void)parse_sh(msg, n, &si);
+    (void)parse_sh(msg, n, &si, nondet_u8() & 1);
 
     ms_tls t;
     hs h;

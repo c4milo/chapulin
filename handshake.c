@@ -7,6 +7,7 @@
 #include "hsmsg.h"
 #include "io.h"
 #include "keysched.h"
+#include "p256.h"
 #include "rand.h"
 #include "x25519.h"
 
@@ -152,11 +153,14 @@ static int send_ch(hs *h) {
         h->alert = ALERT_INTERNAL_ERROR;
         return MS_ECAP;
     }
-    sha256 th = t->transcript;
-    uint8_t hash[SHA256_LEN];
-    sha256_update(&th, msg, n - CH_BINDERS_TAIL);
-    sha256_final(&th, hash);
-    ks_verify_data(h->binder_key, hash, msg + n - SHA256_LEN);
+    if (t->cfg.psk != NULL) {
+        // PSK binder over the transcript-so-far plus the truncated hello.
+        sha256 th = t->transcript;
+        uint8_t hash[SHA256_LEN];
+        sha256_update(&th, msg, n - CH_BINDERS_TAIL);
+        sha256_final(&th, hash);
+        ks_verify_data(h->binder_key, hash, msg + n - SHA256_LEN);
+    }
     sha256_update(&t->transcript, msg, n);
 
     t->tx[0] = REC_HANDSHAKE;
@@ -179,12 +183,15 @@ typedef struct {
     size_t cookielen;
 } sh_info;
 
-static int parse_sh_ext(rbuf *r, sh_info *si, int hrr) {
+static int parse_sh_ext(rbuf *r, sh_info *si, int hrr, int psk_mode) {
     uint16_t ext = rb_u16(r);
     size_t elen = rb_u16(r);
     const uint8_t *ep = rb_bytes(r, elen);
     if (ep == NULL) {
         return MS_EPROTO;
+    }
+    if (ext == EXT_PRE_SHARED_KEY && !psk_mode) {
+        return MS_EPROTO; // selecting a PSK we never offered
     }
     rbuf e;
     rb_init(&e, ep, elen);
@@ -230,7 +237,7 @@ static int parse_sh_ext(rbuf *r, sh_info *si, int hrr) {
     return e.err ? MS_EPROTO : MS_OK;
 }
 
-static int parse_sh(const uint8_t *body, size_t n, sh_info *si) {
+static int parse_sh(const uint8_t *body, size_t n, sh_info *si, int psk_mode) {
     rbuf r;
     rb_init(&r, body, n);
     if (rb_u16(&r) != 0x0303) {
@@ -252,7 +259,7 @@ static int parse_sh(const uint8_t *body, size_t n, sh_info *si) {
         return MS_EPROTO;
     }
     while (rb_left(&r) > 0) {
-        int rc = parse_sh_ext(&r, si, si->hrr);
+        int rc = parse_sh_ext(&r, si, si->hrr, psk_mode);
         if (rc != MS_OK) {
             return rc;
         }
@@ -323,7 +330,7 @@ static int read_sh(hs *h, sh_info *si) {
         return MS_EPROTO;
     }
     memset(si, 0, sizeof *si);
-    rc = parse_sh(raw + 4, rawlen - 4, si);
+    rc = parse_sh(raw + 4, rawlen - 4, si, h->t->cfg.psk != NULL);
     if (rc != MS_OK) {
         h->alert = ALERT_ILLEGAL_PARAMETER;
         return rc;
@@ -343,7 +350,11 @@ static int read_sh(hs *h, sh_info *si) {
     return MS_OK;
 }
 
-static int expect_finished(hs *h, const uint8_t *hash) {
+static int hash_now(hs *h, uint8_t out[SHA256_LEN]);
+
+static int expect_finished(hs *h) {
+    uint8_t hash[SHA256_LEN];
+    (void)hash_now(h, hash);
     uint8_t type = 0;
     const uint8_t *raw = NULL;
     size_t rawlen = 0;
@@ -352,7 +363,8 @@ static int expect_finished(hs *h, const uint8_t *hash) {
         return rc;
     }
     if (type == HS_CERTIFICATE || type == HS_CERTIFICATE_REQUEST) {
-        // Server rejected the PSK and wants certificates we cannot do.
+        // Certificates where none belong: a PSK server that rejected the
+        // PSK, or a pinned-key server demanding client auth we cannot do.
         h->alert = ALERT_HANDSHAKE_FAILURE;
         return MS_EAUTH;
     }
@@ -363,6 +375,86 @@ static int expect_finished(hs *h, const uint8_t *hash) {
     uint8_t want[SHA256_LEN];
     ks_verify_data(h->s_hs, hash, want);
     if (!ct_memeq(want, raw + 4, SHA256_LEN)) {
+        h->alert = ALERT_DECRYPT_ERROR;
+        return MS_EAUTH;
+    }
+    sha256_update(&h->t->transcript, raw, rawlen);
+    return MS_OK;
+}
+
+// Pinned-key server authentication (RFC 8446 §4.4.2-4.4.3): accept the
+// Certificate message with minimal framing checks — its contents are
+// authenticated by the signature, not by parsing — then require a
+// CertificateVerify whose ECDSA-P256 signature over the running
+// transcript checks out against the provisioned public key.
+static int server_auth(hs *h) {
+    uint8_t type = 0;
+    const uint8_t *raw = NULL;
+    size_t rawlen = 0;
+    int rc = next_msg(h, &type, &raw, &rawlen);
+    if (rc != MS_OK) {
+        return rc;
+    }
+    if (type == HS_CERTIFICATE_REQUEST) {
+        h->alert = ALERT_HANDSHAKE_FAILURE; // no client certificates here
+        return MS_EAUTH;
+    }
+    if (type != HS_CERTIFICATE) {
+        h->alert = ALERT_UNEXPECTED_MESSAGE;
+        return MS_EPROTO;
+    }
+    rbuf r;
+    rb_init(&r, raw + 4, rawlen - 4);
+    if (rb_u8(&r) != 0) {
+        h->alert = ALERT_ILLEGAL_PARAMETER; // certificate_request_context
+        return MS_EPROTO;
+    }
+    size_t listlen = rb_u24(&r);
+    if (r.err || listlen != rb_left(&r) || listlen == 0) {
+        h->alert = ALERT_DECODE_ERROR;
+        return MS_EPROTO;
+    }
+    sha256_update(&h->t->transcript, raw, rawlen);
+
+    uint8_t hash[SHA256_LEN];
+    (void)hash_now(h, hash);
+    rc = next_msg(h, &type, &raw, &rawlen);
+    if (rc != MS_OK) {
+        return rc;
+    }
+    if (type != HS_CERTIFICATE_VERIFY) {
+        h->alert = ALERT_UNEXPECTED_MESSAGE;
+        return MS_EPROTO;
+    }
+    rb_init(&r, raw + 4, rawlen - 4);
+    if (rb_u16(&r) != SIGALG_ECDSA_P256_SHA256) {
+        h->alert = ALERT_HANDSHAKE_FAILURE; // we offered exactly one algorithm
+        return MS_EAUTH;
+    }
+    size_t siglen = rb_u16(&r);
+    const uint8_t *sig = rb_bytes(&r, siglen);
+    if (sig == NULL || rb_left(&r) != 0) {
+        h->alert = ALERT_DECODE_ERROR;
+        return MS_EPROTO;
+    }
+
+    // Signed content per §4.4.3: 64 spaces, context string, NUL, transcript.
+    static const char ctx[] = "TLS 1.3, server CertificateVerify";
+    uint8_t pad[64];
+    for (size_t i = 0; i < sizeof pad; i++) {
+        pad[i] = ' ';
+    }
+    sha256 s;
+    sha256_init(&s);
+    sha256_update(&s, pad, sizeof pad);
+    sha256_update(&s, (const uint8_t *)ctx, sizeof ctx - 1);
+    uint8_t nul = 0;
+    sha256_update(&s, &nul, 1);
+    sha256_update(&s, hash, SHA256_LEN);
+    uint8_t signed_hash[SHA256_LEN];
+    sha256_final(&s, signed_hash);
+
+    if (!p256_ecdsa_verify(h->t->cfg.server_pubkey, signed_hash, sig, siglen)) {
         h->alert = ALERT_DECRYPT_ERROR;
         return MS_EAUTH;
     }
@@ -388,41 +480,59 @@ static int hash_now(hs *h, uint8_t out[SHA256_LEN]) {
     return MS_OK;
 }
 
+// ClientHello out, ServerHello in, with at most one HelloRetryRequest
+// round; on MS_OK si holds an acceptable non-HRR ServerHello.
+static int hello_exchange(hs *h, sh_info *si) {
+    int rc = send_ch(h);
+    if (rc != MS_OK) {
+        return rc;
+    }
+    rc = read_sh(h, si);
+    if (rc != MS_OK) {
+        return rc;
+    }
+    if (si->hrr) {
+        rc = send_ch(h);
+        if (rc != MS_OK) {
+            return rc;
+        }
+        rc = read_sh(h, si);
+        if (rc != MS_OK) {
+            return rc;
+        }
+        if (si->hrr) {
+            h->alert = ALERT_UNEXPECTED_MESSAGE;
+            return MS_EPROTO;
+        }
+    }
+    if (!si->have_share || (h->t->cfg.psk != NULL && !si->psk_ok)) {
+        // No ECDHE share, or a PSK server that ignored our identity and
+        // would want certificates we did not pin.
+        h->alert = ALERT_HANDSHAKE_FAILURE;
+        return MS_EAUTH;
+    }
+    return MS_OK;
+}
+
 static int run(hs *h) {
     ms_tls *t = h->t;
     ms_rand_bytes(h->priv, sizeof h->priv);
     ms_rand_bytes(h->random, sizeof h->random);
     x25519_base(h->pub, h->priv);
-    ks_early(t->cfg.psk, t->cfg.psk_len, t->cfg.resumption, h->early, h->binder_key);
+    if (t->cfg.psk != NULL) {
+        ks_early(t->cfg.psk, t->cfg.psk_len, t->cfg.resumption, h->early, h->binder_key);
+    } else {
+        // No PSK: the early secret extracts from a hash-length zero string
+        // (RFC 8446 §7.1) and the binder key is never used.
+        static const uint8_t nopsk[SHA256_LEN] = {0};
+        ks_early(nopsk, sizeof nopsk, 0, h->early, h->binder_key);
+    }
     sha256_init(&t->transcript);
 
-    int rc = send_ch(h);
-    if (rc != MS_OK) {
-        return rc;
-    }
     sh_info si;
-    rc = read_sh(h, &si);
+    int rc = hello_exchange(h, &si);
     if (rc != MS_OK) {
         return rc;
-    }
-    if (si.hrr) {
-        rc = send_ch(h);
-        if (rc != MS_OK) {
-            return rc;
-        }
-        rc = read_sh(h, &si);
-        if (rc != MS_OK) {
-            return rc;
-        }
-        if (si.hrr) {
-            h->alert = ALERT_UNEXPECTED_MESSAGE;
-            return MS_EPROTO;
-        }
-    }
-    if (!si.have_share || !si.psk_ok) {
-        // No ECDHE share or our PSK not selected: certificate territory.
-        h->alert = ALERT_HANDSHAKE_FAILURE;
-        return MS_EAUTH;
     }
 
     uint8_t ecdhe[X25519_LEN];
@@ -457,8 +567,13 @@ static int run(hs *h) {
     }
     sha256_update(&t->transcript, raw, rawlen);
 
-    (void)hash_now(h, hash);
-    rc = expect_finished(h, hash);
+    if (t->cfg.psk == NULL) {
+        rc = server_auth(h);
+        if (rc != MS_OK) {
+            return rc;
+        }
+    }
+    rc = expect_finished(h);
     if (rc != MS_OK) {
         return rc;
     }

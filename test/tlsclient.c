@@ -122,9 +122,19 @@ static int load_ticket(const char *path, uint8_t *id, size_t *idlen, uint8_t *ps
     return (*idlen > 0 && *psklen == SHA256_LEN) ? 0 : -1;
 }
 
-// Fills the PSK part of cfg from either a saved ticket ("@file") or an
-// external psk-hex + identity pair.
+// Fills the auth part of cfg: "pin:<pubkey-hex>" for pinned-key mode, a
+// saved ticket ("@file"), or an external psk-hex + identity pair.
 static int setup_psk(char **argv, ms_cfg *cfg, uint8_t *psk, size_t pskcap, uint8_t *id) {
+    static uint8_t pin[64];
+    if (strncmp(argv[3], "pin:", 4) == 0) {
+        if (unhex(argv[3] + 4, pin, sizeof pin) != sizeof pin) {
+            (void)fprintf(stderr, "pin must be 128 hex chars (P-256 X||Y)\n");
+            return -1;
+        }
+        cfg->server_pubkey = pin;
+        (void)fprintf(stderr, "pinned-key mode\n");
+        return 0;
+    }
     if (argv[3][0] == '@') {
         size_t idlen = 0;
         size_t psklen = 0;
@@ -133,6 +143,7 @@ static int setup_psk(char **argv, ms_cfg *cfg, uint8_t *psk, size_t pskcap, uint
             (void)fprintf(stderr, "bad ticket file: %s\n", argv[3] + 1);
             return -1;
         }
+        cfg->psk = psk;
         cfg->psk_len = psklen;
         cfg->psk_id = id;
         cfg->psk_id_len = idlen;
@@ -141,6 +152,7 @@ static int setup_psk(char **argv, ms_cfg *cfg, uint8_t *psk, size_t pskcap, uint
         (void)fprintf(stderr, "resuming with a %zu-byte ticket\n", idlen);
         return 0;
     }
+    cfg->psk = psk;
     cfg->psk_len = unhex(argv[3], psk, pskcap);
     if (cfg->psk_len == 0) {
         return -1;
@@ -181,7 +193,6 @@ int main(int argc, char **argv) {
     if (setup_psk(argv, &cfg, psk, sizeof psk, id) != 0) {
         return 2;
     }
-    cfg.psk = psk;
     cfg.buf = rxbuf;
     cfg.buf_len = sizeof rxbuf;
     cfg.send = io_send;

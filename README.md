@@ -3,15 +3,24 @@
 A TLS 1.3 client for devices with a few kilobytes of SRAM to spare. Sapo
 is Colombian for the guy who listens in; matasapos kills them.
 
-It speaks exactly one profile and nothing else: TLS 1.3,
-`TLS_CHACHA20_POLY1305_SHA256`, x25519 key exchange, ECDHE-PSK
-(`psk_dhe_ke`) authentication. No X.509, no certificates, no 0-RTT, no
-negotiation surface — the client offers one of everything and the server
-takes it or the handshake fails closed. C11 and libc only, zero heap: the
-session struct plus a caller-provided receive buffer is the entire
-working set, and the client tells the server that buffer's size via
-`record_size_limit` (RFC 8449) so a peer can never send a record it
-cannot hold.
+It speaks exactly one profile: TLS 1.3, `TLS_CHACHA20_POLY1305_SHA256`,
+x25519 key exchange, and one of two authentication modes — ECDHE-PSK
+(`psk_dhe_ke`) with a provisioned key, or a **pinned server key**: the
+server's raw P-256 public key is provisioned like a PSK would be, the
+server proves possession by signing the handshake (CertificateVerify),
+and its certificate is hashed into the transcript but never parsed — no
+ASN.1, no chains, no names, no expiry. Pinned mode handshakes with stock
+cert-based endpoints (Go's `crypto/tls`, OpenSSL) with no shared secret
+and no PSK-terminating sidecar; tickets still arrive, so reconnects
+resume via PSK either way and the ECDSA verify is paid once per ticket
+lifetime. No 0-RTT, no negotiation surface — the client offers one of
+everything and the server takes it or the handshake fails closed. C11
+and libc only, zero heap: the session struct plus a caller-provided
+receive buffer is the entire working set, and the client tells the
+server that buffer's size via `record_size_limit` (RFC 8449) so a peer
+can never send a record it cannot hold. (One sizing note for pinned
+mode: the peer's Certificate message must fit the receive buffer — a
+self-signed leaf is ~600 bytes; CA chains need a bigger buffer.)
 
 The RFC MUSTs a minimal client cannot shed are all in: HelloRetryRequest
 with cookie echo and transcript restart, KeyUpdate in both directions,
@@ -19,8 +28,10 @@ NewSessionTicket parsing with resumption-PSK derivation handed to the
 application, and RFC 9257 binder discipline over the truncated
 ClientHello.
 
-`test/e2e.sh` proves the profile against a real peer: full handshake with
-OpenSSL 3, application data both ways, session tickets surfaced.
+`test/e2e.sh` proves the profile against real peers: PSK handshake,
+ticket resumption, and pinned-key handshakes against both OpenSSL 3 and
+Go's `crypto/tls` (the stack Prometheus terminates with), application
+data both ways throughout.
 
 ## Memory
 
@@ -29,10 +40,11 @@ fields):
 
 | what | bytes |
 |---|---|
-| `ms_tls` session struct (includes 534 B TX staging) | 968 |
+| `ms_tls` session struct (includes 534 B TX staging) | 976 |
 | caller receive buffer (you choose; 2048 shown) | 2048 |
-| **total static working set** | **3016** |
-| peak transient stack, `ms_connect` (x25519 ladder) | 2608 |
+| **total static working set** | **3024** |
+| peak transient stack, `ms_connect` (pinned mode: P-256 verify) | 3312 |
+| peak transient stack, `ms_connect` (PSK mode: x25519 ladder) | 2608 |
 | peak transient stack, `ms_read` (worst: KeyUpdate rekey) | 1632 |
 | peak transient stack, `ms_write` / `ms_close` | 736 / 688 |
 
@@ -69,11 +81,12 @@ values).
 | buf | any 12-op reader/writer sequence safe, len ≤ cap invariant | buffers ≤ 64 B |
 | sha256 | no UB for any two-chunk split | messages ≤ 96 B |
 | hkdf (two harnesses) | hmac/extract and expand/expand-label no UB over the proven sha256 contract | keys ≤ 96 B, out ≤ 96 B (all structural paths) |
-| handshake | the driver — record pump, cross-record reassembly, HRR restart, state machine — safe on ANY record stream, over the proven io/record/keysched contracts | 96 B receive buffer |
+| handshake | the driver — record pump, cross-record reassembly, HRR restart, state machine, both auth modes — safe on ANY record stream, over the proven io/record/keysched/p256 contracts | 96 B receive buffer |
 | chacha20 | no UB, in-place, any counter | ≤ 160 B (3 blocks) |
 | poly1305 | no UB for any three-chunk split, 64-bit products bounded | messages ≤ 80 B |
 | aead | seal/open round-trip, forged tag ⇒ zero bytes written, backward-overlap decrypt (the record layer's in-place mode) | pt ≤ 64 B, aad ≤ 32 B |
 | x25519 | field-op memory safety concrete; int64-overflow impossibility as a separate lemma with full checks (SAT can't do both at once on 256 symbolic multiplies) | limbs ≤ 2^24 |
+| p256 | DER parser and limb marshalling safe on hostile signatures (concrete); CIOS carry lemma with full checks; the 256-step scalar mults compose the proven pieces | sigs ≤ 80 B |
 | record | seal across contract; rec_open safe on fully hostile bytes, padding strip over any AEAD output | records ≤ 160 B |
 | hsparse | ServerHello + EncryptedExtensions parsers safe on hostile bytes | messages ≤ 256 B |
 
@@ -88,11 +101,17 @@ What is tested but not yet proved, stated plainly:
   (TweetNaCl's) carries a prior Coq/VST functional proof by Schwabe et
   al. The tight limb-growth invariant connecting mul outputs to add/sub
   inputs is an open proof task (`proof/` slow tier).
-- The handshake state machine driver and tls.c are covered by e2e and
-  unit tests; their CBMC harnesses are next on the list.
+- tls.c's post-handshake pump is covered by e2e, the mock-transport unit
+  tests, and the posths fuzzer; its CBMC harness is the last one missing.
+- P-256 functional correctness rests on RFC 6979 vectors plus the oracle
+  minting fresh signatures the C must accept; the scalar-mult loops
+  compose proven pieces but are not run whole under CBMC.
 - Constant time is by construction (no secret-dependent branches or
-  indices; no AES precisely because of its tables) and enforced by review
-  and the `ct.[ch]` chokepoints, but not yet verified by a timing tool.
+  indices; no AES precisely because of its tables), enforced by the
+  `ct.[ch]` chokepoints, and checked statistically by `make timing`
+  (Welch's t over interleaved secret classes) — evidence, not proof.
+  P-256 verification is deliberately variable-time: every input is
+  public.
 
 Nothing else in this space carries whole-stack machine-checked memory
 safety; the closest prior art is AWS's CBMC proofs for the FreeRTOS core
@@ -111,7 +130,7 @@ published trace values — which a bug shared by C and spec could not
 co-satisfy.
 
 `make diff` builds the spec with `lake`, runs its selftests, then drives
-~2,550 random-input comparisons between every C module and the spec over
+~2,750 random-input comparisons (including P-256 signatures the spec mints that the C must accept) between every C module and the spec over
 a pipe (deterministic seed; part of `make check`, skipped when elan is
 not installed). This is the Cedar model: proofs establish memory safety,
 vectors establish point correctness, and the oracle establishes that the
@@ -122,6 +141,7 @@ the RFC by eye.
 
 ```c
 static uint8_t rxbuf[2048];
+// PSK mode (provisioned shared key)…
 ms_cfg cfg = {
     .psk = psk, .psk_len = 32,
     .psk_id = (const uint8_t *)"device-42", .psk_id_len = 9,
@@ -129,6 +149,9 @@ ms_cfg cfg = {
     .send = my_send, .recv = my_recv, .io = &sock,
     .on_ticket = store_ticket, // optional resumption
 };
+// …or pinned-key mode: no shared secret, just the server's raw P-256
+// public key (X||Y), provisioned once.
+// ms_cfg cfg = { .server_pubkey = pin64, .buf = rxbuf, ... };
 static ms_tls tls;
 if (ms_connect(&tls, &cfg) != MS_OK) { /* reconnect later */ }
 ms_write(&tls, data, n);

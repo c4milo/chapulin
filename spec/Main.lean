@@ -6,7 +6,9 @@ drives it over pipes). One request per line, `op arg1 arg2 ...`; byte
 arguments are lowercase hex with `-` for the empty string, numeric
 arguments (lengths, counters, sequence numbers, content types) are
 decimal. One response line per request: hex bytes (`-` when empty),
-`FAIL` for an AEAD open mismatch, or `ERR <why>`.
+`FAIL` for an AEAD open mismatch or a degenerate P-256 sign/pub input,
+or `ERR <why>`. P-256 r/s travel as raw 32-byte hex; DER stays on the
+C side.
 -/
 
 open Spec.Bytes
@@ -25,7 +27,8 @@ def selftestAll : String :=
     ("poly", Spec.Poly.selftest),
     ("aead", Spec.Aead.selftest),
     ("record", Spec.Record.selftest),
-    ("x25519", Spec.X25519.selftest)]
+    ("x25519", Spec.X25519.selftest),
+    ("p256", Spec.P256.selftest)]
   match mods.find? (fun m => !m.2) with
   | some (name, _) => s!"FAIL {name}"
   | none => "ok"
@@ -83,6 +86,28 @@ def dispatch : List String → Option String
     let k ← hexArg? scalar
     guard (k.size == 32)
     return emit (Spec.X25519.base k)
+  | ["p256_pub", d] => do
+    let db ← hexArg? d
+    guard (db.size == 32)
+    match Spec.P256.pubKey? (bytesToNatBE db) with
+    | some pub => return emit pub
+    | none => return "FAIL"
+  | ["p256_sign", d, k, hash] => do
+    let db ← hexArg? d
+    let kb ← hexArg? k
+    let h ← hexArg? hash
+    guard (db.size == 32 && kb.size == 32 && h.size == 32)
+    match Spec.P256.ecdsaSign (bytesToNatBE db) (bytesToNatBE kb) (bytesToNatBE h) with
+    | some (r, s) =>
+      return s!"{bytesToHex (natToBytesBE r 32)} {bytesToHex (natToBytesBE s 32)}"
+    | none => return "FAIL"
+  | ["p256_verify", pub, hash, r, s] => do
+    let pb ← hexArg? pub
+    let h ← hexArg? hash
+    let rb ← hexArg? r
+    let sb ← hexArg? s
+    guard (pb.size == 64 && h.size == 32 && rb.size == 32 && sb.size == 32)
+    return if Spec.P256.ecdsaVerify pb h (bytesToNatBE rb) (bytesToNatBE sb) then "1" else "0"
   | _ => none
 
 partial def loop (stdin stdout : IO.FS.Stream) : IO Unit := do

@@ -12,8 +12,10 @@
 int ms_connect(ms_tls *t, const ms_cfg *cfg) {
     memset(t, 0, sizeof *t);
     t->cfg = *cfg;
-    if (cfg->psk == NULL || cfg->psk_len == 0 || cfg->psk_id == NULL || cfg->buf == NULL ||
-        cfg->send == NULL || cfg->recv == NULL || cfg->buf_len < 512) {
+    int psk_ok = cfg->psk != NULL && cfg->psk_len > 0 && cfg->psk_id != NULL;
+    int pin_ok = cfg->psk == NULL && cfg->server_pubkey != NULL;
+    if ((!psk_ok && !pin_ok) || cfg->buf == NULL || cfg->send == NULL || cfg->recv == NULL ||
+        cfg->buf_len < 512) {
         t->state = MS_ST_FAILED;
         return MS_ECAP;
     }

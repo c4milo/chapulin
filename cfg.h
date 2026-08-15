@@ -36,14 +36,23 @@ typedef struct {
 } ms_ticket;
 
 typedef struct {
-    // Provisioned PSK (external, resumption = 0) or a stored ticket PSK
-    // (resumption = 1, obfuscated_age = ticket age ms + age_add).
+    // Authentication is one of two modes:
+    //  - PSK: psk/psk_id set (external, resumption = 0) or a stored ticket
+    //    (resumption = 1, obfuscated_age = ticket age ms + age_add).
+    //  - Pinned key: psk NULL, server_pubkey = the server's raw P-256
+    //    public key (X||Y, 64 bytes), provisioned like a PSK would be. The
+    //    server proves possession by signing the handshake; its
+    //    certificate is never parsed, only hashed into the transcript, so
+    //    there are no chains, no names, no expiry — one key, fail closed.
+    //    Works against stock cert-based endpoints (Go, OpenSSL); tickets
+    //    still arrive, so reconnects resume via PSK either way.
     const uint8_t *psk;
     size_t psk_len;
     const uint8_t *psk_id;
     size_t psk_id_len;
     int resumption;
     uint32_t obfuscated_age;
+    const uint8_t *server_pubkey;
 
     // Receive buffer; its size (minus record overhead) is advertised as
     // our record_size_limit, so the peer can never overflow it.

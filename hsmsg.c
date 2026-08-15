@@ -37,10 +37,12 @@ size_t hs_build_ch(uint8_t *out, size_t cap, const ms_cfg *cfg, const uint8_t pu
     wb_u16(&w, 32);
     wb_bytes(&w, pub, 32);
 
-    wb_u16(&w, EXT_PSK_MODES);
-    wb_u16(&w, 2);
-    wb_u8(&w, 1);
-    wb_u8(&w, 1); // psk_dhe_ke only
+    if (cfg->psk != NULL) {
+        wb_u16(&w, EXT_PSK_MODES);
+        wb_u16(&w, 2);
+        wb_u8(&w, 1);
+        wb_u8(&w, 1); // psk_dhe_ke only
+    }
 
     wb_u16(&w, EXT_RECORD_SIZE_LIMIT);
     wb_u16(&w, 2);
@@ -53,21 +55,30 @@ size_t hs_build_ch(uint8_t *out, size_t cap, const ms_cfg *cfg, const uint8_t pu
         wb_bytes(&w, cookie, cookielen);
     }
 
-    // pre_shared_key comes last (RFC 8446 §4.2.11).
-    wb_u16(&w, EXT_PRE_SHARED_KEY);
-    size_t psk = wb_mark(&w, 2);
-    size_t ids = wb_mark(&w, 2);
-    wb_u16(&w, (uint16_t)cfg->psk_id_len);
-    wb_bytes(&w, cfg->psk_id, cfg->psk_id_len);
-    uint32_t age = cfg->resumption ? cfg->obfuscated_age : 0;
-    wb_u16(&w, (uint16_t)(age >> 16));
-    wb_u16(&w, (uint16_t)age);
-    wb_patch16(&w, ids);
-    wb_u16(&w, 33); // binders list: one 32-byte binder
-    wb_u8(&w, 32);
-    size_t binder = wb_mark(&w, 32);
-    (void)binder;
-    wb_patch16(&w, psk);
+    if (cfg->psk == NULL) {
+        // Pinned-key mode: the server authenticates by signature, so
+        // offer the one algorithm the pin can be.
+        wb_u16(&w, EXT_SIGNATURE_ALGORITHMS);
+        wb_u16(&w, 4);
+        wb_u16(&w, 2);
+        wb_u16(&w, SIGALG_ECDSA_P256_SHA256);
+    } else {
+        // pre_shared_key comes last (RFC 8446 §4.2.11).
+        wb_u16(&w, EXT_PRE_SHARED_KEY);
+        size_t psk = wb_mark(&w, 2);
+        size_t ids = wb_mark(&w, 2);
+        wb_u16(&w, (uint16_t)cfg->psk_id_len);
+        wb_bytes(&w, cfg->psk_id, cfg->psk_id_len);
+        uint32_t age = cfg->resumption ? cfg->obfuscated_age : 0;
+        wb_u16(&w, (uint16_t)(age >> 16));
+        wb_u16(&w, (uint16_t)age);
+        wb_patch16(&w, ids);
+        wb_u16(&w, 33); // binders list: one 32-byte binder
+        wb_u8(&w, 32);
+        size_t binder = wb_mark(&w, 32);
+        (void)binder;
+        wb_patch16(&w, psk);
+    }
 
     wb_patch16(&w, exts);
     wb_patch24(&w, msg);

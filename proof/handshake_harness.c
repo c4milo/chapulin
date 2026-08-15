@@ -15,6 +15,7 @@
 #include "hsmsg.h"
 #include "io.h"
 #include "keysched.h"
+#include "p256.h"
 #include "rand.h"
 #include "record.h"
 #include "session.h"
@@ -186,6 +187,14 @@ void x25519_base(uint8_t out[X25519_LEN], const uint8_t scalar[X25519_LEN]) {
     fill_nondet(out, X25519_LEN);
 }
 
+int p256_ecdsa_verify(const uint8_t pub[64], const uint8_t msg_hash[32], const uint8_t *sig_der,
+                      size_t sig_len) {
+    __CPROVER_assert(__CPROVER_r_ok(pub, 64), "p256: pub readable");
+    __CPROVER_assert(__CPROVER_r_ok(msg_hash, 32), "p256: hash readable");
+    __CPROVER_assert(sig_len == 0 || __CPROVER_r_ok(sig_der, sig_len), "p256: sig readable");
+    return nondet_u8() & 1;
+}
+
 void tlsi_fail(ms_tls *t, uint8_t desc) {
     (void)desc;
     __CPROVER_assert(__CPROVER_w_ok(t, sizeof *t), "fail: session writable");
@@ -207,19 +216,25 @@ int main(void) {
     uint8_t buf[96];
     uint8_t psk[32];
     uint8_t id[8];
+    uint8_t pin[64];
     fill_nondet(psk, sizeof psk);
     fill_nondet(id, sizeof id);
+    fill_nondet(pin, sizeof pin);
     t.cfg.buf = buf;
     t.cfg.buf_len = sizeof buf;
-    t.cfg.psk = psk;
-    t.cfg.psk_id = id;
-    size_t psklen = nondet_size_t();
-    size_t idlen = nondet_size_t();
-    __CPROVER_assume(psklen >= 1 && psklen <= sizeof psk);
-    __CPROVER_assume(idlen >= 1 && idlen <= sizeof id);
-    t.cfg.psk_len = psklen;
-    t.cfg.psk_id_len = idlen;
-    t.cfg.resumption = nondet_u8() & 1;
+    if (nondet_u8() & 1) {
+        t.cfg.psk = psk;
+        t.cfg.psk_id = id;
+        size_t psklen = nondet_size_t();
+        size_t idlen = nondet_size_t();
+        __CPROVER_assume(psklen >= 1 && psklen <= sizeof psk);
+        __CPROVER_assume(idlen >= 1 && idlen <= sizeof id);
+        t.cfg.psk_len = psklen;
+        t.cfg.psk_id_len = idlen;
+        t.cfg.resumption = nondet_u8() & 1;
+    } else {
+        t.cfg.server_pubkey = pin; // pinned-key mode: server_auth path
+    }
 
     (void)ms_handshake(&t);
     return 0;
