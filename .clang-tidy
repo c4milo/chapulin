@@ -16,6 +16,12 @@
 #   the .c files under test on purpose, to reach static internals.
 # - misc-include-cleaner: reasons about textual includes, not POSIX
 #   contracts; false-positives on umbrella headers.
+# - bugprone-not-null-terminated-result: assumes a memcpy from a string
+#   should produce a C string. hkdf assembles length-prefixed binary wire
+#   fields from label text; a terminator byte there would corrupt the
+#   encoding. Fires on Linux builds of clang-tidy 22 and not on macOS
+#   builds of the same version, so this is the check's judgment, not a
+#   version gap.
 # - readability-math-missing-parentheses: byte-packing indices like
 #   p[4 * i + 1] saturate this codebase; the precedence is grade-school and
 #   the parens would be pure noise.
@@ -29,6 +35,7 @@ Checks: >
   portability-*,
   readability-*,
   -bugprone-easily-swappable-parameters,
+  -bugprone-not-null-terminated-result,
   -bugprone-suspicious-include,
   -clang-analyzer-security.insecureAPI.DeprecatedOrUnsafeBufferHandling,
   -misc-include-cleaner,
