@@ -16,6 +16,7 @@
 #include "rand.h"
 #include "record.h"
 #include "sha256.h"
+#include "testrand.h"
 #include "tls.h"
 #include "x25519.h"
 
@@ -32,10 +33,6 @@ static int failures = 0;
 noreturn void ms_assert_fail(const char *cond, const char *file, int line) {
     (void)fprintf(stderr, "ASSERT %s:%d: %s\n", file, line, cond);
     abort();
-}
-
-void ms_rand_bytes(uint8_t *p, size_t n) {
-    arc4random_buf(p, n);
 }
 
 // Decodes hex into out; returns byte count. Test-only, trusts its input.

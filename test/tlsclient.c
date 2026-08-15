@@ -13,15 +13,12 @@
 
 #include "ms_assert.h"
 #include "rand.h"
+#include "testrand.h"
 #include "tls.h"
 
 noreturn void ms_assert_fail(const char *cond, const char *file, int line) {
     (void)fprintf(stderr, "ASSERT %s:%d: %s\n", file, line, cond);
     abort();
-}
-
-void ms_rand_bytes(uint8_t *p, size_t n) {
-    arc4random_buf(p, n);
 }
 
 static int io_send(void *io, const uint8_t *p, size_t n) {
