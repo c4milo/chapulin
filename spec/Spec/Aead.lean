@@ -43,7 +43,9 @@ def open? (key nonce aad ct tag : ByteArray) : Option ByteArray :=
 /-- Test vectors: RFC 8439 §2.8.2 (ciphertext and tag), a round-trip
 through `open?`, and a rejected forgery (one flipped tag byte). -/
 def selftest : Bool := Id.run do
-  let hx (s : String) : ByteArray := (hexToBytes? s).getD ByteArray.empty
+  -- A malformed literal falls back to a 1-byte sentinel and breaks the
+  -- length-sensitive checks instead of testing the empty string.
+  let hx (s : String) : ByteArray := (hexToBytes? s).getD (ByteArray.mk #[0])
   let key := hx "808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9f"
   let nonce := hx "070000004041424344454647"
   let aad := hx "50515253c0c1c2c3c4c5c6c7"

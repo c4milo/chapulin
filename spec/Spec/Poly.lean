@@ -37,7 +37,9 @@ def mac (key msg : ByteArray) : ByteArray := Id.run do
 
 /-- Test vector: RFC 8439 §2.5.2. -/
 def selftest : Bool :=
-  let hx (s : String) : ByteArray := (hexToBytes? s).getD ByteArray.empty
+  -- A malformed literal falls back to a 1-byte sentinel and breaks the
+  -- length-sensitive checks instead of testing the empty string.
+  let hx (s : String) : ByteArray := (hexToBytes? s).getD (ByteArray.mk #[0])
   let key := hx "85d6be7857556d337f4452fe42d506a80103808afb0db2fd4abff6af4149f51b"
   let tag := mac key (ascii "Cryptographic Forum Research Group")
   bytesToHex tag == "a8061dc1305136c6c22b8baf0c0127a9"

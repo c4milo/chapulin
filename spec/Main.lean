@@ -42,7 +42,10 @@ def dispatch : List String → Option String
   | ["hkdf_extract", salt, ikm] => do
     return emit (Spec.Hkdf.extract (← hexArg? salt) (← hexArg? ikm))
   | ["hkdf_expand", prk, info, len] => do
-    return emit (Spec.Hkdf.expand (← hexArg? prk) (← hexArg? info) (← len.toNat?))
+    let l ← len.toNat?
+    -- RFC 5869 §2.3 caps L at 255*HashLen; past it the one-octet counter wraps.
+    if l > 255 * Spec.Hkdf.hashLen then return "ERR hkdf_expand len over 255*HashLen"
+    return emit (Spec.Hkdf.expand (← hexArg? prk) (← hexArg? info) l)
   | ["expand_label", secret, label, ctx, len] => do
     let lab ← String.fromUTF8? (← hexArg? label)
     return emit (Spec.Hkdf.expandLabel (← hexArg? secret) lab (← hexArg? ctx) (← len.toNat?))

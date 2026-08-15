@@ -136,7 +136,9 @@ def ecdsaVerify (pub hash : ByteArray) (r s : Nat) : Bool :=
 signing, verification, tamper rejection, and a sign-then-verify round
 trip on unrelated inputs. -/
 def selftest : Bool :=
-  let hx := fun s => (hexToBytes? s).getD ByteArray.empty
+  -- A malformed literal falls back to a 1-byte sentinel and breaks the
+  -- length-sensitive checks instead of testing the empty string.
+  let hx := fun s => (hexToBytes? s).getD (ByteArray.mk #[0])
   let d := 0xc9afa9d845ba75166b5c215767b1d6934e50c3db36e89b127b8a622b120f6721
   let k := 0xa6e3c57dd01abe90086538398355dd4c3b17aa873382b0f24d6129493d8aad60
   -- SHA-256("sample")

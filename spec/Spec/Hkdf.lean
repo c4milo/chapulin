@@ -36,7 +36,9 @@ def extract (salt ikm : ByteArray) : ByteArray :=
 
 /-- RFC 5869 §2.3: `HKDF-Expand(PRK, info, L)` — `N = ceil(L/HashLen)`,
 `T(0) = empty`, `T(i) = HMAC-Hash(PRK, T(i-1) ‖ info ‖ i)` for a single
-octet counter `i`, output the first L bytes of `T(1) ‖ … ‖ T(N)`. -/
+octet counter `i`, output the first L bytes of `T(1) ‖ … ‖ T(N)`.
+§2.3 limits `L` to `255 * HashLen` (8160 bytes for SHA-256), the most
+the single-octet counter can emit; the dispatcher enforces the bound. -/
 def expand (prk info : ByteArray) (len : Nat) : ByteArray := Id.run do
   let n := (len + hashLen - 1) / hashLen
   let mut t := ByteArray.empty
@@ -103,10 +105,15 @@ def schedule (psk ecdhe helloHash finHash : ByteArray) :
 RFC 5869 test case 1 (PRK and 42-byte OKM); the RFC 8448 §3 Early Secret
 and "derived" secret (an all-zero PSK trace, exercising `expandLabel` with
 the empty-transcript hash); a structural check that `expandLabel` builds
-exactly the §7.1 HkdfLabel encoding; and a wiring check that `schedule`
-equals the step-by-step §7.1 derivation. -/
+exactly the §7.1 HkdfLabel encoding; a wiring check that `schedule`
+equals the step-by-step §7.1 derivation; and the four RFC 8448 §3
+traffic secrets, which pin every `schedule` label and step to the
+published trace. -/
 def selftest : Bool :=
   let hex := bytesToHex
+  -- A malformed literal falls back to a 1-byte sentinel and breaks the
+  -- length-sensitive checks instead of testing the empty string.
+  let hx (s : String) : ByteArray := (hexToBytes? s).getD (ByteArray.mk #[0])
   -- RFC 4231 §4.2 test case 1: key = 0x0b × 20, data = "Hi There".
   let t1 :=
     hex (hmac (ByteArray.mk (Array.replicate 20 0x0b)) (ascii "Hi There"))
@@ -117,8 +124,8 @@ def selftest : Bool :=
       == "5bdcc146bf60754e6a042426089575c75a003f089d2739839dec58b964ec3843"
   -- RFC 5869 appendix A.1 test case 1.
   let ikm := ByteArray.mk (Array.replicate 22 0x0b)
-  let salt := (hexToBytes? "000102030405060708090a0b0c").getD ByteArray.empty
-  let info := (hexToBytes? "f0f1f2f3f4f5f6f7f8f9").getD ByteArray.empty
+  let salt := hx "000102030405060708090a0b0c"
+  let info := hx "f0f1f2f3f4f5f6f7f8f9"
   let prk := extract salt ikm
   let t3 :=
     hex prk == "077709362c2e32df0ddc3f0dc47bba6390b6c73bb50f9c3122ec844ad7c2b3e5"
@@ -153,6 +160,18 @@ def selftest : Bool :=
         && hex sHs == hex (expandLabel hs' "s hs traffic" helloHash hashLen)
         && hex cAp == hex (expandLabel master' "c ap traffic" finHash hashLen)
         && hex sAp == hex (expandLabel master' "s ap traffic" finHash hashLen)
-  t1 && t2 && t3 && t4 && t5 && t6 && t7 && t8
+  -- RFC 8448 §3, simple 1-RTT trace: `schedule` over the trace's zero PSK,
+  -- x25519 shared secret (the "handshake" extract IKM), and the two
+  -- transcript hashes the trace feeds Derive-Secret must reproduce all
+  -- four published traffic secrets.
+  let ecdhe8448 := hx "8bd4054fb55b9d63fdfbacf9f04b9f0d35e6d63f537563efd46272900f89492d"
+  let hello8448 := hx "860c06edc07858ee8e78f0e7428c58edd6b43f2ca3e6e95f02ed063cf0e1cad8"
+  let fin8448 := hx "9608102a0f1ccc6db6250b7b7e417b1a000eaada3daae4777a7686c9ff83df13"
+  let (cHs8, sHs8, cAp8, sAp8) := schedule (zeros hashLen) ecdhe8448 hello8448 fin8448
+  let t9 := hex cHs8 == "b3eddb126e067f35a780b3abf45e2d8f3b1a950738f52e9600746a0e27a55a21"
+        && hex sHs8 == "b67b7d690cc16c4e75e54213cb2d37b4e9c912bcded9105d42befd59d391ad38"
+        && hex cAp8 == "9e40646ce79a7f9dc05af8889bce6552875afa0b06df0087f792ebb7c17504a5"
+        && hex sAp8 == "a11af9f05531f856ad47116b45a950328204b4f44bfb6b3a4b4f1f3fcb631643"
+  t1 && t2 && t3 && t4 && t5 && t6 && t7 && t8 && t9
 
 end Spec.Hkdf

@@ -79,7 +79,9 @@ def xor (key nonce : ByteArray) (counter : UInt32) (data : ByteArray) : ByteArra
 /-- Test vectors: RFC 8439 §2.3.2 (block keystream) and §2.4.2
 (encryption). -/
 def selftest : Bool := Id.run do
-  let hx (s : String) : ByteArray := (hexToBytes? s).getD ByteArray.empty
+  -- A malformed literal falls back to a 1-byte sentinel and breaks the
+  -- length-sensitive checks instead of testing the empty string.
+  let hx (s : String) : ByteArray := (hexToBytes? s).getD (ByteArray.mk #[0])
   -- §2.3.2: key 00..1f, nonce 000000090000004a00000000, counter 1.
   let key := hx "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"
   let ks := block key (hx "000000090000004a00000000") 1

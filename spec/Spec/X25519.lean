@@ -112,7 +112,9 @@ def base (scalar : ByteArray) : ByteArray :=
 the §5.2 iteration test, and the §6.1 Diffie-Hellman public keys and
 shared secret. -/
 def selftest : Bool :=
-  let hx := fun s => (hexToBytes? s).getD ByteArray.empty
+  -- A malformed literal falls back to a 1-byte sentinel and breaks the
+  -- length-sensitive checks instead of testing the empty string.
+  let hx := fun s => (hexToBytes? s).getD (ByteArray.mk #[0])
   let sm := fun (k u r : String) => bytesToHex (scalarMult (hx k) (hx u)) == r
   -- §5.2 vector 1
   sm "a546e36bf0527c9d3b16154b82465edd62144c0ac1fc5a18506a2244ba449ac4"

@@ -33,11 +33,12 @@ def «seal» (trafficSecret : ByteArray) (seq : Nat) (ctype : UInt8) (pt : ByteA
   header ++ Spec.Aead.seal key (nonce iv seq) header inner
 
 /--
-Structural checks (the cryptographic cross-check against real key
-derivation happens in the differential run): header is `17 03 03`,
-its length field is `|pt| + 17` (content type byte plus tag), the
-record body matches that length, and the §5.3 nonce construction
-XORs the sequence number into the low 8 IV bytes.
+Structural checks: header is `17 03 03`, its length field is
+`|pt| + 17` (content type byte plus tag), the record body matches
+that length, and the §5.3 nonce construction XORs the sequence number
+into the low 8 IV bytes. Record protection has no external
+known-answer test; its functional coverage comes from the
+differential run against the C implementation.
 -/
 def selftest : Bool := Id.run do
   let secret := ByteArray.mk (Array.replicate 32 0x0b)
