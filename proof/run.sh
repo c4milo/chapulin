@@ -50,8 +50,9 @@ BASE=(--bounds-check --pointer-check --pointer-overflow-check
 
 # Pool size defaults to available memory divided by a 6 GB per-solver
 # budget (the biggest harnesses peak at a few GB), capped at 4. Each
-# solver also runs under a hard address-space cap so an outlier dies as a
-# clean FAILED instead of dragging the machine into swap.
+# solver also runs under a hard address-space cap (Linux/CI, where OOM
+# bites hardest; a no-op on macOS, which lacks ulimit -v) so an outlier
+# dies as a clean FAILED instead of dragging the machine into swap.
 MEM_GB=8
 if [ "$(uname)" = "Darwin" ]; then
     MEM_GB=$(($(sysctl -n hw.memsize) / 1073741824))
