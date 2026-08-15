@@ -1,5 +1,7 @@
 CC ?= cc
-CFLAGS ?= -Wall -Wextra -Wpedantic -Werror -std=c11 -O2
+# -D_DEFAULT_SOURCE: glibc hides POSIX and getrandom under -std=c11 without
+# it; macOS ignores it.
+CFLAGS ?= -Wall -Wextra -Wpedantic -Werror -std=c11 -O2 -D_DEFAULT_SOURCE
 LLVM_BIN := /opt/homebrew/opt/llvm/bin
 CLANG_TIDY ?= $(shell command -v clang-tidy || command -v $(LLVM_BIN)/clang-tidy)
 CLANG_FORMAT ?= $(shell command -v clang-format || command -v $(LLVM_BIN)/clang-format)
@@ -55,7 +57,7 @@ lint-tidy:
 ifeq ($(CLANG_TIDY),)
 	@echo "SKIP clang-tidy: not on PATH (ships with llvm)"
 else
-	$(CLANG_TIDY) --quiet $(LINT_C) -- -std=c11 -I.
+	$(CLANG_TIDY) --quiet $(LINT_C) -- -std=c11 -D_DEFAULT_SOURCE -I.
 endif
 
 lint-format:
@@ -139,7 +141,7 @@ timing: bin/timing
 # skipped with a message otherwise. New corpus units and crash repros land
 # under bin/ (gitignored); fuzz/corpus/* stays read-only seed input.
 FUZZ_CC ?= $(shell command -v $(LLVM_BIN)/clang || command -v clang)
-FUZZ_CFLAGS := -std=c11 -O1 -g -fsanitize=fuzzer,address -I.
+FUZZ_CFLAGS := -std=c11 -O1 -g -fsanitize=fuzzer,address -D_DEFAULT_SOURCE -I.
 FUZZ_TIME ?= 30
 FUZZ_RECORD_LINK := record.c ct.c sha256.c hkdf.c chacha20.c poly1305.c aead.c
 FUZZ_HSPARSE_LINK := buf.c ct.c sha256.c hkdf.c chacha20.c poly1305.c aead.c \
