@@ -8,7 +8,7 @@
 #include "sha256.c"
 
 int main(void) {
-    uint8_t msg[160];
+    uint8_t msg[96];
     uint8_t out[SHA256_LEN];
     size_t n1 = nondet_size_t();
     size_t n2 = nondet_size_t();

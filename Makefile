@@ -11,6 +11,9 @@ SRCS := ct.c sha256.c hkdf.c chacha20.c poly1305.c aead.c x25519.c \
 HDRS := ct.h sha256.h hkdf.h chacha20.h poly1305.h aead.h x25519.h ms_assert.h \
         buf.h record.h keysched.h io.h hsmsg.h handshake.h tls.h rand.h
 LINT_C := $(SRCS) test/unit.c test/tlsclient.c
+# CBMC intrinsics don't compile under clang-tidy/cppcheck; harnesses get
+# clang-format only.
+PROOF_C := $(wildcard proof/*.c) proof/harness.h
 
 bin/unit: test/unit.c $(SRCS) $(HDRS)
 	@mkdir -p bin
@@ -41,7 +44,7 @@ lint-format:
 ifeq ($(CLANG_FORMAT),)
 	@echo "SKIP clang-format: not on PATH (ships with llvm)"
 else
-	$(CLANG_FORMAT) --dry-run --Werror $(LINT_C) $(HDRS)
+	$(CLANG_FORMAT) --dry-run --Werror $(LINT_C) $(HDRS) $(PROOF_C)
 endif
 
 lint-cppcheck:
@@ -64,7 +67,7 @@ endif
 
 fmt:
 ifneq ($(CLANG_FORMAT),)
-	$(CLANG_FORMAT) -i $(LINT_C) $(HDRS)
+	$(CLANG_FORMAT) -i $(LINT_C) $(HDRS) $(PROOF_C)
 endif
 
 clean:

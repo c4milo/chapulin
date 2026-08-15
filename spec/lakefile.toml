@@ -1,0 +1,9 @@
+name = "spec"
+defaultTargets = ["diffspec"]
+
+[[lean_lib]]
+name = "Spec"
+
+[[lean_exe]]
+name = "diffspec"
+root = "Main"
