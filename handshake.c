@@ -30,6 +30,7 @@ typedef struct {
     uint16_t rsl;
     int encrypted;
     uint8_t ccs_seen; // compat-mode CCS records tolerated so far
+    uint8_t quiet;    // records that added no handshake bytes
     uint8_t alert;    // what to tell the peer if we abort
 } hs;
 
@@ -97,7 +98,17 @@ static int fetch_record(hs *h) {
         if (outer == REC_ALERT) {
             return MS_EPROTO; // peer aborted; nothing to salvage
         }
-        return accept_record(h, part, outer, reclen);
+        rc = accept_record(h, part, outer, reclen);
+        if (rc != MS_OK) {
+            return rc;
+        }
+        // An empty handshake fragment is legal once in a while, but an
+        // endless stream of them must not pin the handshake forever.
+        if (t->pt_len == part && ++h->quiet > 32) {
+            h->alert = ALERT_UNEXPECTED_MESSAGE;
+            return MS_EPROTO;
+        }
+        return MS_OK;
     }
 }
 

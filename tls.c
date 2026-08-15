@@ -92,7 +92,9 @@ static int handle_post_hs(ms_tls *t, const uint8_t *pt, size_t n, size_t *used) 
 static int pump_post_hs(ms_tls *t, size_t ptn) {
     uint8_t *buf = t->cfg.buf;
     size_t fill = ptn;
-    for (;;) {
+    // Bounded like ms_read's quiet cap: a fragmented message must make
+    // byte progress; an endless stream of empty fragments is an attack.
+    for (int quiet = 0; quiet < 32;) {
         size_t used = 0;
         int rc = handle_post_hs(t, buf, fill, &used);
         if (rc != MS_OK) {
@@ -118,8 +120,12 @@ static int pump_post_hs(ms_tls *t, size_t ptn) {
         if (itype != REC_HANDSHAKE) {
             return MS_EPROTO;
         }
+        if (n == 0) {
+            quiet++;
+        }
         fill += n;
     }
+    return MS_EPROTO;
 }
 
 // Reads and dispatches one record: application data lands in the buffer,
