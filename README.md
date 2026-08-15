@@ -231,6 +231,12 @@ code and the proofs.
 - the Lean differential oracle
 - the fast proof tier
 
+C++ callers can use `chapulin.hpp`, an optional header-only wrapper that
+forwards to the same C calls with no runtime cost. It is freestanding
+and compiles under `-fno-exceptions -fno-rtti`; its value is a session
+that wipes its keys when it leaves scope, plus byte-view read/write and a
+typed result. `make cxx-check` builds it against the packaged library.
+
 Separate targets: `make lib` packages the library as one relocatable
 object (`bin/chapulin.o`) that exports exactly the four public calls —
 every internal symbol is localized, and `lib-check` (part of `check`)

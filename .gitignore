@@ -5,3 +5,4 @@ proof/*.goto
 proof/results/
 node_modules/
 spec/.lake/
+bin/hpp_test.o

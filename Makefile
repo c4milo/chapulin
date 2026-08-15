@@ -7,6 +7,7 @@ CLANG_TIDY ?= $(shell command -v clang-tidy || command -v $(LLVM_BIN)/clang-tidy
 CLANG_FORMAT ?= $(shell command -v clang-format || command -v $(LLVM_BIN)/clang-format)
 CPPCHECK ?= $(shell command -v cppcheck)
 CBMC ?= $(shell command -v cbmc)
+CXX ?= c++
 LAKE ?= $(shell command -v lake || command -v $(HOME)/.elan/bin/lake)
 
 SRCS := ct.c sha256.c hkdf.c chacha20.c poly1305.c aead.c x25519.c p256.c \
@@ -40,8 +41,18 @@ else
 	objcopy $(foreach s,$(PUBLIC),-G $(s)) $@
 endif
 
-.PHONY: lib lib-check
+.PHONY: lib lib-check cxx-check
 lib: bin/chapulin.o
+
+# The optional C++ wrapper (chapulin.hpp) compiles under -fno-exceptions
+# -fno-rtti and links against the packaged library object, the way a
+# firmware C++ consumer would use it.
+CXXFLAGS ?= -std=c++17 -fno-exceptions -fno-rtti -Wall -Wextra -Wpedantic -Werror
+cxx-check: bin/chapulin.o chapulin.hpp test/hpp_test.cpp
+	@command -v $(CXX) >/dev/null || { echo "SKIP cxx-check: no C++ compiler"; exit 0; }
+	$(CXX) $(CXXFLAGS) -D_DEFAULT_SOURCE -I. -c test/hpp_test.cpp -o bin/hpp_test.o
+	$(CXX) -o bin/hpp_test bin/hpp_test.o bin/chapulin.o
+	./bin/hpp_test
 
 lib-check: bin/chapulin.o
 	@nm -g bin/chapulin.o | awk '$$2 ~ /^[TDSB]$$/ {print $$3}' | sed 's/^_//' | sort > bin/exported.txt
@@ -63,7 +74,7 @@ bin/diff: test/diff.c $(SRCS) $(HDRS)
 	$(CC) $(CFLAGS) -I. -o $@ test/diff.c $(SRCS)
 
 .PHONY: check lint lint-tidy lint-format lint-cppcheck prove diff fmt clean
-check: bin/unit bin/tlsclient lint lib-check
+check: bin/unit bin/tlsclient lint lib-check cxx-check
 	./bin/unit
 	./test/e2e.sh
 	$(MAKE) diff
