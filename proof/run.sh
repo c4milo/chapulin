@@ -33,13 +33,36 @@ cd "$(dirname "$0")/.."
 TIER="${1:-all}"
 
 CBMC="${CBMC:-cbmc}"
+# PROVE_SOLVER=smt2 routes proofs through an incremental SMT solver (z3)
+# instead of the built-in SAT back end: formulas stream to the solver, so
+# peak memory drops, with a different (sometimes better) time profile on
+# arithmetic-heavy harnesses.
+SMT_ARGS=()
+if [ "${PROVE_SOLVER:-sat}" = "smt2" ]; then
+    command -v z3 >/dev/null || { echo "PROVE_SOLVER=smt2 needs z3"; exit 1; }
+    SMT_ARGS=(--incremental-smt2-solver "z3 -smt2 -in")
+fi
 LOGDIR=proof/results
 mkdir -p "$LOGDIR"
 BASE=(--bounds-check --pointer-check --pointer-overflow-check
       --undefined-shift-check --div-by-zero-check
       --unwinding-assertions --slice-formula)
 
-POOL="${PROVE_JOBS:-4}"
+# Pool size defaults to available memory divided by a 6 GB per-solver
+# budget (the biggest harnesses peak at a few GB), capped at 4. Each
+# solver also runs under a hard address-space cap so an outlier dies as a
+# clean FAILED instead of dragging the machine into swap.
+MEM_GB=8
+if [ "$(uname)" = "Darwin" ]; then
+    MEM_GB=$(($(sysctl -n hw.memsize) / 1073741824))
+elif [ -r /proc/meminfo ]; then
+    MEM_GB=$(awk '/MemAvailable/ {print int($2 / 1048576)}' /proc/meminfo)
+fi
+DEFAULT_POOL=$((MEM_GB / 6))
+if [ "$DEFAULT_POOL" -lt 1 ]; then DEFAULT_POOL=1; fi
+if [ "$DEFAULT_POOL" -gt 4 ]; then DEFAULT_POOL=4; fi
+POOL="${PROVE_JOBS:-$DEFAULT_POOL}"
+SOLVER_MEM_KB=$((6 * 1024 * 1024))
 
 launch() {
     local tier="$1"
@@ -57,10 +80,16 @@ launch() {
         flags=("${BASE[@]}")
     fi
     local args=("proof/${name}_harness.c" "$@" -I . --unwind "$unwind")
+    if [ ${#SMT_ARGS[@]} -gt 0 ]; then
+        args+=("${SMT_ARGS[@]}")
+    fi
     if [ -n "$unwindset" ]; then
         args+=(--unwindset "$unwindset")
     fi
-    "$CBMC" "${args[@]}" "${flags[@]}" > "$LOGDIR/$name.log" 2>&1 &
+    (
+        ulimit -v "$SOLVER_MEM_KB" 2>/dev/null || true
+        exec "$CBMC" "${args[@]}" "${flags[@]}"
+    ) > "$LOGDIR/$name.log" 2>&1 &
     NAMES+=("$name")
     PIDS+=($!)
 }
@@ -97,7 +126,11 @@ for i in "${!PIDS[@]}"; do
         grep "no body" "$log" | sort -u
         FAIL=1
     elif [ $rc -ne 0 ] || ! grep -q "VERIFICATION SUCCESSFUL" "$log"; then
+        if grep -qiE "bad_alloc|out of memory|Cannot allocate" "$log"; then
+            echo "FAILED (memory cap: raise PROVE_JOBS budget or split the harness)"
+        else
         echo "FAILED"
+        fi
         grep -E "FAILURE" "$log" | sort -u | head -10
         FAIL=1
     else

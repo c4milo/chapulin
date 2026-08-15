@@ -19,6 +19,37 @@ LINT_C := $(SRCS) test/unit.c test/tlsclient.c test/diff.c test/timing.c
 PROOF_C := $(wildcard proof/*.c) proof/harness.h
 FUZZ_C := $(wildcard fuzz/*.c)
 
+# Firmware links bin/chapulin.o: one relocatable object exposing exactly
+# the four public calls. Partial linking merges the modules; nmedit
+# (macOS) or objcopy (everything else) localizes every other symbol, so
+# the library cannot collide with application names. lib-check enforces
+# the export list as part of check.
+LIB_OBJS := $(SRCS:%.c=bin/obj/%.o)
+PUBLIC := ch_connect ch_read ch_write ch_close
+
+bin/obj/%.o: %.c $(HDRS)
+	@mkdir -p bin/obj
+	$(CC) $(CFLAGS) -I. -c $< -o $@
+
+bin/chapulin.o: $(LIB_OBJS)
+	ld -r -o $@ $(LIB_OBJS)
+ifeq ($(shell uname),Darwin)
+	printf '_%s\n' $(PUBLIC) > bin/exports.txt
+	nmedit -s bin/exports.txt $@
+else
+	objcopy $(foreach s,$(PUBLIC),-G $(s)) $@
+endif
+
+.PHONY: lib lib-check
+lib: bin/chapulin.o
+
+lib-check: bin/chapulin.o
+	@nm -g bin/chapulin.o | awk '$$2 ~ /^[TDSB]$$/ {print $$3}' | sed 's/^_//' | sort > bin/exported.txt
+	@printf '%s\n' $(PUBLIC) | sort > bin/expected.txt
+	@diff -u bin/expected.txt bin/exported.txt || { \
+	  echo "lib-check: exported symbols differ from the public API"; exit 1; }
+	@echo "lib-check: $$(wc -l < bin/exported.txt | tr -d ' ') exported symbols, all public API"
+
 bin/unit: test/unit.c test/session_tests.h $(SRCS) $(HDRS)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) -I. -o $@ test/unit.c $(SRCS)
@@ -32,7 +63,7 @@ bin/diff: test/diff.c $(SRCS) $(HDRS)
 	$(CC) $(CFLAGS) -I. -o $@ test/diff.c $(SRCS)
 
 .PHONY: check lint lint-tidy lint-format lint-cppcheck prove diff fmt clean
-check: bin/unit bin/tlsclient lint
+check: bin/unit bin/tlsclient lint lib-check
 	./bin/unit
 	./test/e2e.sh
 	$(MAKE) diff

@@ -197,11 +197,16 @@ code and the proofs.
 - the Lean differential oracle
 - the fast proof tier
 
-Separate targets: `make prove-slow` runs the four long proofs. `make
-timing` runs the constant-time check (load-sensitive, so run it on an
-idle machine). `make fuzz` smoke-runs the libFuzzer harnesses. `make
-hooks`, once after clone, enables the commit-msg hook. See `CLAUDE.md`
-for the house rules.
+Separate targets: `make lib` packages the library as one relocatable
+object (`bin/chapulin.o`) that exports exactly the four public calls —
+every internal symbol is localized, and `lib-check` (part of `check`)
+fails if the export list ever grows. `make prove-slow` runs the four
+long proofs; set `PROVE_SOLVER=smt2` to route proofs through z3's
+incremental SMT back end, which streams the formula and lowers peak
+memory. `make timing` runs the constant-time check (load-sensitive, so
+run it on an idle machine). `make fuzz` smoke-runs the libFuzzer
+harnesses. `make hooks`, once after clone, enables the commit-msg hook.
+See `CLAUDE.md` for the house rules.
 
 ## Non-goals
 
