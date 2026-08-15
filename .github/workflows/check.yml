@@ -19,7 +19,7 @@ jobs:
       CLANG_TIDY: clang-tidy-22
       CLANG_FORMAT: clang-format-22
       CPPCHECK_VERSION: 2.21.0
-      CPPCHECK: /home/runner/cppcheck-bin/cppcheck
+      CPPCHECK: /home/runner/cppcheck-inst/bin/cppcheck
     steps:
       - uses: actions/checkout@v4
         with:
@@ -31,21 +31,25 @@ jobs:
           sudo bash llvm.sh "$LLVM_MAJOR"
           sudo apt-get install -y "clang-tidy-$LLVM_MAJOR" "clang-format-$LLVM_MAJOR"
 
-      - name: Cache cppcheck build
+      - name: Cache cppcheck install
         id: cppcheck-cache
         uses: actions/cache@v4
         with:
-          path: ~/cppcheck-bin
-          key: cppcheck-${{ runner.os }}-${{ env.CPPCHECK_VERSION }}
+          path: ~/cppcheck-inst
+          key: cppcheck-${{ runner.os }}-${{ env.CPPCHECK_VERSION }}-inst
 
-      - name: Build cppcheck at the development version
+      - name: Build and install cppcheck at the development version
         if: steps.cppcheck-cache.outputs.cache-hit != 'true'
+        # Install into a cached prefix with FILESDIR baked to that prefix,
+        # so cppcheck finds std.cfg and the other cfg files at runtime.
         run: |
           curl -fsSL "https://github.com/danmar/cppcheck/archive/refs/tags/$CPPCHECK_VERSION.tar.gz" | tar xz
-          cmake -S "cppcheck-$CPPCHECK_VERSION" -B cppcheck-build -DCMAKE_BUILD_TYPE=Release >/dev/null
+          cmake -S "cppcheck-$CPPCHECK_VERSION" -B cppcheck-build \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_INSTALL_PREFIX="$HOME/cppcheck-inst" \
+            -DFILESDIR="$HOME/cppcheck-inst/share/Cppcheck" >/dev/null
           cmake --build cppcheck-build -j"$(nproc)" >/dev/null
-          mkdir -p ~/cppcheck-bin
-          cp cppcheck-build/bin/cppcheck ~/cppcheck-bin/
+          cmake --install cppcheck-build >/dev/null
 
       - name: Check tool versions match the pins
         run: |
