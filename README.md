@@ -139,6 +139,7 @@ values.
 | record | seal works across its contract; rec_open stays safe on fully hostile bytes | records ≤ 160 B |
 | hsparse | the ServerHello and EncryptedExtensions parsers stay safe on hostile bytes | messages ≤ 256 B |
 | tlspost | the post-handshake parser (NewSessionTicket, KeyUpdate) stays safe on hostile decrypted bytes and consumes no more than its input | messages ≤ 128 B |
+| drbg | the reference generator stays safe for any request, seeded and across rekeys | requests ≤ 96 B |
 
 CBMC found one real bug during development: `carry()` left-shifted a
 negative value (`c << 16`), which is undefined behavior in C even though
@@ -217,8 +218,11 @@ ch_close(&tls);
 ```
 
 The platform provides two blocking socket callbacks, bounded by its own
-timeouts, and wires `ch_rand_bytes` (rand.h) to its hardware random
-number generator. Every error kills the session: the stack wipes its
+timeouts, and implements `ch_rand_bytes` (rand.h): from a hardware
+random number generator when the part has one, or from the seeded
+fast-key-erasure generator in `drbg.[ch]` when it does not — the
+RTL8382-class reference target has no such peripheral. `docs/entropy.md`
+covers seed provisioning; the generator refuses to run unseeded. Every error kills the session: the stack wipes its
 keys and the caller reconnects. Devices recover by reconnecting anyway,
 and the rule removes the entire resumable-error state space from the
 code and the proofs.

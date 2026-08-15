@@ -34,9 +34,11 @@ TIER="${1:-all}"
 
 CBMC="${CBMC:-cbmc}"
 # PROVE_SOLVER=smt2 routes proofs through an incremental SMT solver (z3)
-# instead of the built-in SAT back end: formulas stream to the solver, so
-# peak memory drops, with a different (sometimes better) time profile on
-# arithmetic-heavy harnesses.
+# instead of the built-in SAT back end. Measured a memory loss, not a win,
+# on this codebase: z3 peaked near 22 GB on the aead proof because the
+# bit-vector-heavy crypto bit-blasts inside the SMT solver too. Kept as an
+# escape hatch for a future arithmetic-heavy harness, but SAT is the
+# default and the better choice for these formulas.
 SMT_ARGS=()
 if [ "${PROVE_SOLVER:-sat}" = "smt2" ]; then
     command -v z3 >/dev/null || { echo "PROVE_SOLVER=smt2 needs z3"; exit 1; }
@@ -114,6 +116,7 @@ launch fast full poly1305 85 "blocks.0:8" ct.c
 launch fast full buf 100 ""
 launch fast full ct 65 ""
 launch fast full x25519_mul 20 ""
+launch fast full drbg 100 "ch_rand_bytes.3:4" ct.c
 launch fast full p256_mul 20 ""
 
 FAIL=0

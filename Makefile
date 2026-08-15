@@ -13,8 +13,8 @@ LAKE ?= $(shell command -v lake || command -v $(HOME)/.elan/bin/lake)
 SRCS := ct.c sha256.c hkdf.c chacha20.c poly1305.c aead.c x25519.c p256.c \
         buf.c record.c keysched.c io.c hsmsg.c session.c handshake.c tls.c
 HDRS := ct.h sha256.h hkdf.h chacha20.h poly1305.h aead.h x25519.h p256.h ch_assert.h \
-        buf.h record.h keysched.h io.h hsmsg.h cfg.h session.h handshake.h tls.h rand.h
-LINT_C := $(SRCS) test/unit.c test/tlsclient.c test/diff.c test/timing.c
+        buf.h record.h keysched.h io.h hsmsg.h cfg.h session.h handshake.h tls.h rand.h drbg.h
+LINT_C := $(SRCS) drbg.c test/unit.c test/tlsclient.c test/diff.c test/timing.c test/drbg_test.c
 # CBMC intrinsics don't compile under clang-tidy/cppcheck; harnesses get
 # clang-format only. Fuzzers include .c files for statics, same deal.
 PROOF_C := $(wildcard proof/*.c) proof/harness.h
@@ -61,6 +61,13 @@ lib-check: bin/chapulin.o
 	  echo "lib-check: exported symbols differ from the public API"; exit 1; }
 	@echo "lib-check: $$(wc -l < bin/exported.txt | tr -d ' ') exported symbols, all public API"
 
+# The reference generator ships as source but stays out of the packaged
+# object: it implements the ch_rand_bytes import, which firmware with a
+# real RNG provides itself and the test binaries provide themselves.
+bin/drbg_test: test/drbg_test.c drbg.c chacha20.c ct.c $(HDRS)
+	@mkdir -p bin
+	$(CC) $(CFLAGS) -I. -o $@ test/drbg_test.c drbg.c chacha20.c ct.c
+
 bin/unit: test/unit.c test/session_tests.h $(SRCS) $(HDRS)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) -I. -o $@ test/unit.c $(SRCS)
@@ -74,8 +81,9 @@ bin/diff: test/diff.c $(SRCS) $(HDRS)
 	$(CC) $(CFLAGS) -I. -o $@ test/diff.c $(SRCS)
 
 .PHONY: check lint lint-tidy lint-format lint-cppcheck prove diff fmt clean
-check: bin/unit bin/tlsclient lint lib-check cxx-check
+check: bin/unit bin/tlsclient bin/drbg_test lint lib-check cxx-check
 	./bin/unit
+	./bin/drbg_test
 	./test/e2e.sh
 	$(MAKE) diff
 	$(MAKE) prove

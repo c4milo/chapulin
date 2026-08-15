@@ -28,7 +28,8 @@ def selftestAll : String :=
     ("aead", Spec.Aead.selftest),
     ("record", Spec.Record.selftest),
     ("x25519", Spec.X25519.selftest),
-    ("p256", Spec.P256.selftest)]
+    ("p256", Spec.P256.selftest),
+    ("drbg", Spec.Drbg.selftest)]
   match mods.find? (fun m => !m.2) with
   | some (name, _) => s!"FAIL {name}"
   | none => "ok"
@@ -89,6 +90,12 @@ def dispatch : List String → Option String
     let k ← hexArg? scalar
     guard (k.size == 32)
     return emit (Spec.X25519.base k)
+  | ["drbg", key, nstr] => do
+    let k ← hexArg? key
+    let n ← nstr.toNat?
+    guard (k.size == 32 && n <= 4096)
+    let (k2, out) := Spec.Drbg.next k n
+    return s!"{bytesToHex k2} {bytesToHex out}"
   | ["p256_pub", d] => do
     let db ← hexArg? d
     guard (db.size == 32)

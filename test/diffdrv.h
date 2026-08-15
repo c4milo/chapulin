@@ -134,7 +134,7 @@ static void query(const char *cmd, char *out, size_t outn) {
 
 // Sends one request line, reads one response line, compares against the
 // C-side answer. Exits with the full transcript on the first mismatch.
-static void expect(const char *cmd, const char *want) {
+static inline void expect(const char *cmd, const char *want) {
     (void)fputs(cmd, to_spec);
     (void)fputc('\n', to_spec);
     (void)fflush(to_spec);
