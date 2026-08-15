@@ -66,7 +66,9 @@ int rec_open(rec_dir *d, const uint8_t *rec, size_t n, uint8_t *pt, size_t cap, 
         return -1;
     }
     size_t innerlen = body - AEAD_TAG;
-    if (innerlen > cap) {
+    // RFC 8446 §5.4: TLSInnerPlaintext (content + type + padding) tops out
+    // at 2^14 + 1 even when our buffer could hold more.
+    if (innerlen > 0x4001 || innerlen > cap) {
         return -1;
     }
     uint8_t nonce[AEAD_NONCE];

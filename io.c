@@ -1,5 +1,7 @@
 #include "io.h"
 
+#include "record.h"
+
 int io_send_all(const ms_cfg *cfg, const uint8_t *p, size_t n) {
     return cfg->send(cfg->io, p, n) == 0 ? MS_OK : MS_EIO;
 }

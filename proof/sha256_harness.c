@@ -1,8 +1,9 @@
 // Proves: sha256 init/update/final are memory-safe and UB-free for any
-// message delivered in any two-chunk split totaling up to 160 bytes —
-// enough to cross two block boundaries and exercise every fill state the
-// padding path can see. Wrapping uint32 arithmetic is the algorithm, not
-// an accident, so only the UB classes are checked.
+// message delivered in any two-chunk split totaling up to 96 bytes —
+// enough to cross a block boundary and reach every fill state the
+// padding path can see (fill is message length mod 64, and 0..96 covers
+// all 64 residues). Wrapping uint32 arithmetic is the algorithm, not an
+// accident, so only the UB classes are checked.
 #include "harness.h"
 
 #include "sha256.c"

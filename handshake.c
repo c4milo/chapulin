@@ -29,7 +29,8 @@ typedef struct {
     size_t cookielen;
     uint16_t rsl;
     int encrypted;
-    uint8_t alert; // what to tell the peer if we abort
+    uint8_t ccs_seen; // compat-mode CCS records tolerated so far
+    uint8_t alert;    // what to tell the peer if we abort
 } hs;
 
 static const uint8_t hrr_magic[32] = {
@@ -84,7 +85,14 @@ static int fetch_record(hs *h) {
             return rc;
         }
         if (outer == REC_CCS) {
-            continue; // middlebox compatibility noise, never hashed
+            // Middlebox-compat noise, never hashed. RFC 8446 §5: the body
+            // must be exactly one 0x01 byte; the count cap keeps a hostile
+            // plaintext CCS stream from pinning the handshake forever.
+            if (reclen != REC_HDR + 1 || t->cfg.buf[part + REC_HDR] != 1 || ++h->ccs_seen > 4) {
+                h->alert = ALERT_UNEXPECTED_MESSAGE;
+                return MS_EPROTO;
+            }
+            continue;
         }
         if (outer == REC_ALERT) {
             return MS_EPROTO; // peer aborted; nothing to salvage
@@ -142,7 +150,9 @@ static int send_ch(hs *h) {
 
     t->tx[0] = REC_HANDSHAKE;
     t->tx[1] = 0x03;
-    t->tx[2] = 0x01; // first plaintext record carries the lowest version
+    // The very first record may carry 0x0301 for old middleboxes; every
+    // later one, including the post-HRR retry, must say 0x0303 (§5.1).
+    t->tx[2] = h->cookielen > 0 ? 0x03 : 0x01;
     t->tx[3] = (uint8_t)(n >> 8);
     t->tx[4] = (uint8_t)n;
     return io_send_all(&t->cfg, t->tx, REC_HDR + n);
@@ -220,7 +230,9 @@ static int parse_sh(const uint8_t *body, size_t n, sh_info *si) {
         return MS_EPROTO;
     }
     si->hrr = memcmp(random, hrr_magic, 32) == 0;
-    rb_skip(&r, rb_u8(&r)); // legacy_session_id_echo
+    if (rb_u8(&r) != 0) {
+        return MS_EPROTO; // we sent an empty legacy_session_id; the echo must match
+    }
     if (rb_u16(&r) != SUITE_CHACHA20_POLY1305_SHA256 || rb_u8(&r) != 0) {
         return MS_EPROTO;
     }
@@ -237,8 +249,10 @@ static int parse_sh(const uint8_t *body, size_t n, sh_info *si) {
     return si->ver_ok ? MS_OK : MS_EPROTO;
 }
 
-// Encrypted extensions: take the peer's record_size_limit, reject
-// early_data (never offered), skip everything else.
+// Encrypted extensions: take the peer's record_size_limit, tolerate
+// supported_groups (a server may volunteer it for later connections),
+// reject everything else — RFC 8446 §4.2 requires unsupported_extension
+// for anything the ClientHello did not offer.
 static int parse_ee(hs *h, const uint8_t *body, size_t n) {
     rbuf r;
     rb_init(&r, body, n);
@@ -265,8 +279,8 @@ static int parse_ee(hs *h, const uint8_t *body, size_t n) {
             if (pt < h->t->peer_limit) {
                 h->t->peer_limit = pt;
             }
-        }
-        if (ext == 42) { // early_data: we never offer it
+        } else if (ext != EXT_SUPPORTED_GROUPS) {
+            h->alert = ALERT_UNSUPPORTED_EXTENSION;
             return MS_EPROTO;
         }
     }
@@ -412,6 +426,7 @@ static int run(hs *h) {
     rec_dir_init(&t->rd, h->s_hs);
     rec_dir_init(&t->wr, h->c_hs);
     h->encrypted = 1;
+    t->keys = 1; // alerts encrypt from here on
 
     uint8_t type = 0;
     const uint8_t *raw = NULL;

@@ -24,7 +24,9 @@ spare. Sapo = eavesdropper; this kills them. Home: github.com/c4milo.
   `tls.[ch]` as-is and supplies I/O callbacks and `ms_rand_bytes`.
 - Everything that touches secret bytes is constant time: no secret-
   dependent branches, no secret-dependent memory indices. Comparisons go
-  through `ct_memeq`, wipes through `ct_wipe`, selects through `ct_select`.
+  through `ct_memeq` and wipes through `ct_wipe`; constant-time selects,
+  where needed, are branchless mask arithmetic inline (x25519's `cswap`,
+  poly1305's final reduction), never an `if`.
   ChaCha20/Poly1305/x25519 are constant time by construction — keep them
   that way; AES never enters this codebase precisely to avoid tables.
 - Proofs are part of `check`, not a side quest. Every module carries a
@@ -51,6 +53,10 @@ spare. Sapo = eavesdropper; this kills them. Home: github.com/c4milo.
   (resumption is just another PSK here), RFC 9257 binder discipline.
 - Linters follow fix-or-drop: fix the finding, or disable the check in
   `.clang-tidy` with its reason. Never `NOLINT` in code.
+- Commits are Conventional Commits (feat/fix/docs/test/refactor/perf/
+  build/ci/chore), enforced by commitlint via `.githooks/commit-msg`
+  (`make hooks` once after clone) and `make lint-commits` in check.
+  Bodies still explain WHY and wrap at 100 columns.
 - Every change passes `make check` (lint + unit + proofs; e2e against a
   real TLS 1.3 server once the handshake lands), not just compile.
 - Functions stay at cognitive complexity 20 or less; hand-written files

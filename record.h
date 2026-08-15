@@ -42,9 +42,11 @@ int rec_seal(rec_dir *d, uint8_t type, const uint8_t *pt, size_t n, uint8_t *out
 
 // Unprotects one full record (header included, n = REC_HDR + body). Writes
 // the inner plaintext into pt (cap bytes), strips padding, returns the
-// inner content type through type. Returns 0, or -1 on authentication
-// failure, malformed record, or short cap — the caller treats every -1 as
-// fatal to the connection.
+// inner content type through type. pt may equal rec — the plaintext then
+// lands REC_HDR bytes before the ciphertext it came from, a backward
+// overlap aead_open explicitly supports. Returns 0, or -1 on
+// authentication failure, malformed record, or short cap — the caller
+// treats every -1 as fatal to the connection.
 int rec_open(rec_dir *d, const uint8_t *rec, size_t n, uint8_t *pt, size_t cap, size_t *ptn,
              uint8_t *type);
 

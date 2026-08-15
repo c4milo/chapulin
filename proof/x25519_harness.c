@@ -1,22 +1,23 @@
-// Proves x25519's field arithmetic memory-safe and UB-free at generous
-// limb bounds:
+// Proves x25519's field arithmetic memory-safe at generous limb bounds
+// (2^24 — far above the ~2^17 the ladder produces), and UB-free for the
+// linear ops:
 //
 //   unpack -> limbs in [0, 2^16)         (asserted)
 //   carry  : |in| < 2^58  -> no UB       (covers any product fold)
 //   add/sub: |in| < 2^24  -> no UB
-//   mul/sqr: |in| < 2^24  -> no int64 overflow in the 256 products, the
-//            31-limb accumulation, or the 38x fold; both carry passes safe
+//   mul/sqr: memory-safe index walk over the 31-limb product (this
+//            harness, run without the overflow class); the impossibility
+//            of int64 overflow in the accumulation and fold is
+//            x25519_mul_harness.c, proven with full checks — asking SAT
+//            for both at once on 256 symbolic multiplies does not finish
 //   pack   : |in| < 2^24  -> canonical 32 bytes, no UB
 //   cswap  : bit 0/1      -> no UB
 //
-// 2^24 is far above what the ladder produces (limbs stay near 2^17), so
-// these bounds cover every call site with a wide margin. The tight
-// limb-growth invariant (mul output ranges feeding add/sub feeding mul)
-// is proof/x25519_range_harness.c, a slow target not yet in make check —
-// see the README's verification table. Functional correctness rests on
-// the RFC 7748 vectors including the 1,000-iteration chain, and this
-// exact limb scheme (TweetNaCl's) carries a prior Coq/VST functional
-// proof by Schwabe et al.
+// The tight limb-growth invariant (mul output ranges feeding add/sub
+// feeding mul) is an open slow-tier task — see the README's verification
+// table. Functional correctness rests on the RFC 7748 vectors including
+// the 1,000-iteration chain, and this exact limb scheme (TweetNaCl's)
+// carries a prior Coq/VST functional proof by Schwabe et al.
 #include "harness.h"
 
 #include "x25519.c"

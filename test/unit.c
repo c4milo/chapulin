@@ -9,12 +9,14 @@
 #include "buf.h"
 #include "chacha20.h"
 #include "ct.h"
+#include "handshake.h"
 #include "hkdf.h"
 #include "ms_assert.h"
 #include "poly1305.h"
 #include "rand.h"
 #include "record.h"
 #include "sha256.h"
+#include "tls.h"
 #include "x25519.h"
 
 static int failures = 0;
@@ -171,6 +173,11 @@ static void test_aead(void) {
     CHECK(eq_hex(tag, "1ae10b594f09e26a7e902ecbd0600691"));
     CHECK(aead_open(key, nonce, aad, sizeof aad, ct, strlen(pt), tag, back) == 1);
     CHECK(memcmp(back, pt, strlen(pt)) == 0);
+    // Backward-overlap decrypt (pt 5 bytes below ct), as rec_open does it.
+    uint8_t framed[5 + 128];
+    aead_seal(key, nonce, aad, sizeof aad, (const uint8_t *)pt, strlen(pt), framed + 5, tag);
+    CHECK(aead_open(key, nonce, aad, sizeof aad, framed + 5, strlen(pt), tag, framed) == 1);
+    CHECK(memcmp(framed, pt, strlen(pt)) == 0);
     // Any flipped bit anywhere must fail closed.
     tag[3] ^= 1;
     CHECK(aead_open(key, nonce, aad, sizeof aad, ct, strlen(pt), tag, back) == 0);
@@ -301,6 +308,132 @@ static void test_record(void) {
     CHECK(type == REC_ALERT && ptn == 2);
 }
 
+// Mock transport: the "server" is a byte queue we stuff records into.
+typedef struct {
+    uint8_t data[4096];
+    size_t len;
+    size_t off;
+    int tickets;
+    size_t sent; // bytes the client transmitted (KeyUpdate replies etc.)
+} mock_io;
+
+static int mock_send(void *io, const uint8_t *p, size_t n) {
+    (void)p;
+    ((mock_io *)io)->sent += n;
+    return 0;
+}
+
+static int mock_recv(void *io, uint8_t *p, size_t n) {
+    mock_io *m = io;
+    size_t left = m->len - m->off;
+    if (left == 0) {
+        return -1;
+    }
+    size_t take = n < left ? n : left;
+    memcpy(p, m->data + m->off, take);
+    m->off += take;
+    return (int)take;
+}
+
+static void mock_on_ticket(void *io, const ms_ticket *tk) {
+    (void)tk;
+    ((mock_io *)io)->tickets++;
+}
+
+// Builds a connected session whose read keys mirror srv, fed by m.
+static void mock_session(ms_tls *t, mock_io *m, uint8_t *rxbuf, size_t rxlen,
+                         const uint8_t secret[SHA256_LEN]) {
+    memset(t, 0, sizeof *t);
+    t->cfg.buf = rxbuf;
+    t->cfg.buf_len = rxlen;
+    t->cfg.send = mock_send;
+    t->cfg.recv = mock_recv;
+    t->cfg.io = m;
+    t->cfg.on_ticket = mock_on_ticket;
+    memcpy(t->rd_secret, secret, SHA256_LEN);
+    rec_dir_init(&t->rd, t->rd_secret);
+    uint8_t wsecret[SHA256_LEN];
+    ms_rand_bytes(wsecret, sizeof wsecret);
+    memcpy(t->wr_secret, wsecret, SHA256_LEN);
+    rec_dir_init(&t->wr, t->wr_secret);
+    t->state = MS_ST_CONNECTED;
+    t->keys = 1;
+    t->peer_limit = MS_TX_PT;
+}
+
+static void mock_push(mock_io *m, rec_dir *srv, uint8_t type, const uint8_t *pt, size_t n) {
+    size_t recn = 0;
+    CHECK(rec_seal(srv, type, pt, n, m->data + m->len, sizeof m->data - m->len, &recn) == 0);
+    m->len += recn;
+}
+
+// Post-handshake behavior the e2e cannot reach: a NewSessionTicket
+// fragmented across records (RFC 8446 §5.1), a KeyUpdate that rekeys both
+// directions, then application data under the updated key.
+static void test_post_handshake(void) {
+    uint8_t secret[SHA256_LEN];
+    ms_rand_bytes(secret, sizeof secret);
+    rec_dir srv;
+    rec_dir_init(&srv, secret);
+    mock_io m = {0};
+    static uint8_t rxbuf[1024];
+    ms_tls t;
+    mock_session(&t, &m, rxbuf, sizeof rxbuf, secret);
+
+    // NST: lifetime, age_add, nonce(2), identity(90), no extensions.
+    uint8_t nst[4 + 105];
+    wbuf w;
+    wb_init(&w, nst, sizeof nst);
+    wb_u8(&w, 4); // HS_NEW_SESSION_TICKET
+    size_t msg = wb_mark(&w, 3);
+    wb_u16(&w, 0);
+    wb_u16(&w, 3600); // lifetime
+    wb_u16(&w, 0);
+    wb_u16(&w, 7); // age_add
+    wb_u8(&w, 2);
+    wb_u16(&w, 0x0102); // nonce
+    wb_u16(&w, 90);
+    for (int i = 0; i < 90; i++) {
+        wb_u8(&w, (uint8_t)i);
+    }
+    wb_u16(&w, 0); // extensions
+    wb_patch24(&w, msg);
+    CHECK(!w.err);
+
+    // Fragment it: 10 bytes, then the rest (splits the ticket body).
+    mock_push(&m, &srv, REC_HANDSHAKE, nst, 10);
+    mock_push(&m, &srv, REC_HANDSHAKE, nst + 10, w.len - 10);
+    // KeyUpdate with update_requested, then data under the updated key.
+    const uint8_t ku[5] = {24, 0, 0, 1, 1};
+    mock_push(&m, &srv, REC_HANDSHAKE, ku, sizeof ku);
+    uint8_t s2[SHA256_LEN];
+    memcpy(s2, secret, sizeof s2);
+    rec_dir_update(s2, &srv);
+    mock_push(&m, &srv, REC_APPDATA, (const uint8_t *)"hola", 4);
+
+    uint8_t out[16];
+    int got = ms_read(&t, out, sizeof out);
+    CHECK(got == 4 && memcmp(out, "hola", 4) == 0);
+    CHECK(m.tickets == 1);
+    CHECK(m.sent > 0); // the KeyUpdate reply went out
+    CHECK(t.state == MS_ST_CONNECTED);
+
+    // Zero-length reads are a caller bug, never the close sentinel.
+    CHECK(ms_read(&t, out, 0) == MS_ECAP);
+
+    // Clean close: exactly one close_notify reply, then 0 forever and no
+    // record sealed under wiped keys on a second close.
+    const uint8_t close_notify[2] = {1, 0};
+    mock_push(&m, &srv, REC_ALERT, close_notify, 2);
+    size_t before_close = m.sent;
+    CHECK(ms_read(&t, out, sizeof out) == 0);
+    CHECK(m.sent > before_close); // our close_notify, under live keys
+    size_t after_close = m.sent;
+    ms_close(&t);
+    CHECK(m.sent == after_close); // keys wiped: nothing more on the wire
+    CHECK(ms_read(&t, out, sizeof out) == 0);
+}
+
 int main(void) {
     test_ct();
     test_sha256();
@@ -311,6 +444,7 @@ int main(void) {
     test_x25519();
     test_buf();
     test_record();
+    test_post_handshake();
     if (failures > 0) {
         (void)fprintf(stderr, "%d failure(s)\n", failures);
         return 1;

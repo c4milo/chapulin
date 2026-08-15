@@ -1,0 +1,9 @@
+{
+  "name": "matasapos-devtools",
+  "private": true,
+  "description": "Dev tooling only (commitlint); the stack itself is C11 + libc, no dependencies.",
+  "devDependencies": {
+    "@commitlint/cli": "^19.8.1",
+    "@commitlint/config-conventional": "^19.8.1"
+  }
+}

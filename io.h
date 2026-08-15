@@ -7,7 +7,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "tls.h"
+#include "cfg.h"
 
 int io_send_all(const ms_cfg *cfg, const uint8_t *p, size_t n);
 

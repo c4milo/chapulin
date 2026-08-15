@@ -33,6 +33,17 @@ int main(void) {
         __CPROVER_assert(back[i] == pt[i], "open round-trips");
     }
 
+    // The record layer decrypts in place with pt sitting REC_HDR bytes
+    // below ct; prove the backward overlap the aead.h contract grants.
+    uint8_t frame[5 + 64];
+    uint8_t tag2[AEAD_TAG];
+    aead_seal(key, nonce, aad, aadlen, pt, n, frame + 5, tag2);
+    __CPROVER_assert(aead_open(key, nonce, aad, aadlen, frame + 5, n, tag2, frame) == 1,
+                     "backward-overlap open succeeds");
+    for (size_t i = 0; i < n; i++) {
+        __CPROVER_assert(frame[i] == pt[i], "backward-overlap open round-trips");
+    }
+
     // A tag that differs anywhere must fail and write nothing.
     uint8_t forged[AEAD_TAG];
     fill_nondet(forged, sizeof forged);

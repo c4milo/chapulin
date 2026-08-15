@@ -11,9 +11,11 @@
 #define CHACHA20_NONCE 12
 #define CHACHA20_BLOCK 64
 
-// out = in XOR keystream(key, nonce, counter...). in == out is allowed
-// (in-place). counter is the initial 32-bit block counter; AEAD uses 1 for
-// data and 0 for the Poly1305 key block.
+// out = in XOR keystream(key, nonce, counter...). out == in is allowed,
+// as is out below in (out <= in): bytes are produced in ascending order,
+// so each address is written only after it was last read. counter is the
+// initial 32-bit block counter; AEAD uses 1 for data and 0 for the
+// Poly1305 key block.
 void chacha20_xor(const uint8_t key[CHACHA20_KEY], const uint8_t nonce[CHACHA20_NONCE],
                   uint32_t counter, const uint8_t *in, uint8_t *out, size_t n);
 

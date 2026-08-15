@@ -1,0 +1,6 @@
+#!/bin/sh
+# Conventional-commit gate. Wire up once with: make hooks
+if ! npx --no-install commitlint --edit "$1"; then
+    echo "commit-msg: conventional commit required (npm install if commitlint is missing)" >&2
+    exit 1
+fi

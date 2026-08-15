@@ -17,7 +17,9 @@ static void carry(fe o) {
         o[i] += (int64_t)1 << 16;
         int64_t c = o[i] >> 16;
         o[(size_t)((i + 1) * (i < 15))] += c - 1 + 37 * (c - 1) * (i == 15);
-        o[i] -= c << 16;
+        // c * 2^16 as a multiply: c goes negative for negative limbs, and
+        // left-shifting a negative value is UB that a compiler may exploit.
+        o[i] -= c * ((int64_t)1 << 16);
     }
 }
 

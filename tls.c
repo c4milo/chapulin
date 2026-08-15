@@ -9,31 +9,6 @@
 #include "io.h"
 #include "keysched.h"
 
-int tlsi_send_alert(ms_tls *t, uint8_t level, uint8_t desc) {
-    uint8_t body[2] = {level, desc};
-    if (t->state == MS_ST_CONNECTED || t->state == MS_ST_CLOSED) {
-        size_t n = 0;
-        if (rec_seal(&t->wr, REC_ALERT, body, 2, t->tx, sizeof t->tx, &n) != 0) {
-            return MS_ECAP;
-        }
-        return io_send_all(&t->cfg, t->tx, n);
-    }
-    uint8_t rec[REC_HDR + 2] = {REC_ALERT, 0x03, 0x03, 0, 2, level, desc};
-    return io_send_all(&t->cfg, rec, sizeof rec);
-}
-
-void tlsi_fail(ms_tls *t, uint8_t desc) {
-    (void)tlsi_send_alert(t, 2, desc);
-    ct_wipe(&t->rd, sizeof t->rd);
-    ct_wipe(&t->wr, sizeof t->wr);
-    ct_wipe(t->rd_secret, sizeof t->rd_secret);
-    ct_wipe(t->wr_secret, sizeof t->wr_secret);
-    ct_wipe(t->res_master, sizeof t->res_master);
-    t->pt_off = 0;
-    t->pt_len = 0;
-    t->state = MS_ST_FAILED;
-}
-
 int ms_connect(ms_tls *t, const ms_cfg *cfg) {
     memset(t, 0, sizeof *t);
     t->cfg = *cfg;
@@ -46,8 +21,9 @@ int ms_connect(ms_tls *t, const ms_cfg *cfg) {
 }
 
 // One NewSessionTicket: derive the resumption PSK and hand the ticket to
-// the application. A nonce too long to be a KDF context is skipped, not
-// fatal — the ticket is an optimization.
+// the application. Tickets we could never present again — nonce too long
+// for a KDF context, identity too big for our ClientHello — are skipped,
+// not fatal: a ticket is an optimization.
 static void handle_ticket(ms_tls *t, const uint8_t *body, size_t n) {
     rbuf r;
     rb_init(&r, body, n);
@@ -60,7 +36,8 @@ static void handle_ticket(ms_tls *t, const uint8_t *body, size_t n) {
     const uint8_t *nonce = rb_bytes(&r, noncelen);
     tk.identity_len = rb_u16(&r);
     tk.identity = rb_bytes(&r, tk.identity_len);
-    if (r.err || t->cfg.on_ticket == NULL || noncelen > SHA256_LEN) {
+    if (r.err || t->cfg.on_ticket == NULL || noncelen > SHA256_LEN ||
+        tk.identity_len > MS_TICKET_ID_MAX) {
         return;
     }
     ks_res_psk(t->res_master, nonce, noncelen, tk.psk);
@@ -68,17 +45,22 @@ static void handle_ticket(ms_tls *t, const uint8_t *body, size_t n) {
     ct_wipe(tk.psk, sizeof tk.psk);
 }
 
-// Post-handshake handshake messages: NewSessionTicket and KeyUpdate.
-static int handle_post_hs(ms_tls *t, const uint8_t *pt, size_t n) {
-    rbuf r;
-    rb_init(&r, pt, n);
-    while (rb_left(&r) > 0) {
-        uint8_t type = rb_u8(&r);
-        size_t mlen = rb_u24(&r);
-        const uint8_t *body = rb_bytes(&r, mlen);
-        if (body == NULL) {
-            return MS_EPROTO;
+// Handles the complete post-handshake messages in pt[0..n) — only
+// NewSessionTicket and KeyUpdate exist here — and reports through used
+// how many bytes were consumed. A trailing partial message is not an
+// error; the caller reassembles across records.
+static int handle_post_hs(ms_tls *t, const uint8_t *pt, size_t n, size_t *used) {
+    size_t off = 0;
+    while (n - off >= 4) {
+        uint8_t type = pt[off];
+        size_t mlen = ((size_t)pt[off + 1] << 16) | ((size_t)pt[off + 2] << 8) | pt[off + 3];
+        if (mlen > 0x4000 || 4 + mlen > t->cfg.buf_len) {
+            return MS_EPROTO; // could never fit; not a fragment worth waiting for
         }
+        if (off + 4 + mlen > n) {
+            break; // partial message, reassembled by the caller
+        }
+        const uint8_t *body = pt + off + 4;
         if (type == HS_NEW_SESSION_TICKET) {
             handle_ticket(t, body, mlen);
         } else if (type == HS_KEY_UPDATE && mlen == 1 && body[0] <= 1) {
@@ -96,8 +78,48 @@ static int handle_post_hs(ms_tls *t, const uint8_t *pt, size_t n) {
         } else {
             return MS_EPROTO;
         }
+        off += 4 + mlen;
     }
+    *used = off;
     return MS_OK;
+}
+
+// Drains a post-handshake handshake message run that starts with ptn
+// plaintext bytes in cfg.buf, pulling further records when a message is
+// fragmented across them (RFC 8446 §5.1 allows it, and our own
+// record_size_limit forces peers with large tickets into it). Fragments
+// of one message cannot be interleaved with other record types.
+static int pump_post_hs(ms_tls *t, size_t ptn) {
+    uint8_t *buf = t->cfg.buf;
+    size_t fill = ptn;
+    for (;;) {
+        size_t used = 0;
+        int rc = handle_post_hs(t, buf, fill, &used);
+        if (rc != MS_OK) {
+            return rc;
+        }
+        if (used == fill) {
+            return MS_OK;
+        }
+        memmove(buf, buf + used, fill - used);
+        fill -= used;
+        uint8_t outer = 0;
+        size_t reclen = 0;
+        rc = io_read_record(&t->cfg, buf + fill, t->cfg.buf_len - fill, &outer, &reclen);
+        if (rc != MS_OK) {
+            return rc;
+        }
+        size_t n = 0;
+        uint8_t itype = 0;
+        if (outer != REC_APPDATA || rec_open(&t->rd, buf + fill, reclen, buf + fill,
+                                             t->cfg.buf_len - fill, &n, &itype) != 0) {
+            return MS_EAUTH;
+        }
+        if (itype != REC_HANDSHAKE) {
+            return MS_EPROTO;
+        }
+        fill += n;
+    }
 }
 
 // Reads and dispatches one record: application data lands in the buffer,
@@ -126,9 +148,9 @@ static int pump_once(ms_tls *t) {
         return MS_OK;
     }
     if (itype == REC_HANDSHAKE) {
-        rc = handle_post_hs(t, t->cfg.buf, ptn);
+        rc = pump_post_hs(t, ptn);
         if (rc != MS_OK) {
-            tlsi_fail(t, ALERT_UNEXPECTED_MESSAGE);
+            tlsi_fail(t, rc == MS_EAUTH ? ALERT_BAD_RECORD_MAC : ALERT_UNEXPECTED_MESSAGE);
         }
         return rc;
     }
@@ -142,13 +164,19 @@ static int pump_once(ms_tls *t) {
 }
 
 int ms_read(ms_tls *t, uint8_t *p, size_t n) {
+    if (n == 0) {
+        return MS_ECAP; // 0 is the close sentinel; a zero-byte read is a caller bug
+    }
     if (t->state == MS_ST_CLOSED) {
         return 0;
     }
     if (t->state != MS_ST_CONNECTED) {
         return MS_EPROTO;
     }
-    for (;;) {
+    // A peer may legally send records that yield no application data
+    // (tickets, key updates, empty records), but not an endless stream of
+    // them; the cap turns that into a protocol error instead of a spin.
+    for (int quiet = 0; quiet < 32; quiet++) {
         if (t->pt_len > t->pt_off) {
             size_t take = t->pt_len - t->pt_off;
             if (take > n) {
@@ -166,6 +194,8 @@ int ms_read(ms_tls *t, uint8_t *p, size_t n) {
             return rc;
         }
     }
+    tlsi_fail(t, ALERT_UNEXPECTED_MESSAGE);
+    return MS_EPROTO;
 }
 
 int ms_write(ms_tls *t, const uint8_t *p, size_t n) {
@@ -192,15 +222,9 @@ int ms_write(ms_tls *t, const uint8_t *p, size_t n) {
 }
 
 void ms_close(ms_tls *t) {
-    if (t->state == MS_ST_CONNECTED || t->state == MS_ST_CLOSED) {
+    if (t->keys) {
         (void)tlsi_send_alert(t, 1, ALERT_CLOSE_NOTIFY);
     }
-    ct_wipe(&t->rd, sizeof t->rd);
-    ct_wipe(&t->wr, sizeof t->wr);
-    ct_wipe(t->rd_secret, sizeof t->rd_secret);
-    ct_wipe(t->wr_secret, sizeof t->wr_secret);
-    ct_wipe(t->res_master, sizeof t->res_master);
+    tlsi_wipe(t);
     t->state = MS_ST_CLOSED;
-    t->pt_off = 0;
-    t->pt_len = 0;
 }

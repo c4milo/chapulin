@@ -7,7 +7,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "tls.h"
+#include "cfg.h"
 
 // Handshake message types.
 #define HS_CLIENT_HELLO 1
@@ -32,6 +32,18 @@
 #define TLS13 0x0304
 #define SUITE_CHACHA20_POLY1305_SHA256 0x1303
 #define GROUP_X25519 0x001d
+
+// Alert descriptions (RFC 8446 §6).
+#define ALERT_CLOSE_NOTIFY 0
+#define ALERT_UNEXPECTED_MESSAGE 10
+#define ALERT_BAD_RECORD_MAC 20
+#define ALERT_RECORD_OVERFLOW 22
+#define ALERT_HANDSHAKE_FAILURE 40
+#define ALERT_ILLEGAL_PARAMETER 47
+#define ALERT_DECODE_ERROR 50
+#define ALERT_DECRYPT_ERROR 51
+#define ALERT_INTERNAL_ERROR 80
+#define ALERT_UNSUPPORTED_EXTENSION 110
 
 // The binders list is a fixed 35-byte tail here (one 32-byte binder):
 // u16 list length, u8 binder length, 32 binder bytes.
