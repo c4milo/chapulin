@@ -1,0 +1,8 @@
+op,insns,stack_high_water_bytes
+sha256_1kib,67605,592
+hkdf_expand_label_32b,22311,1072
+aead_seal_1kib,47439,528
+x25519_scalarmult,28675222,1632
+p256_ecdsa_verify,46029602,1572
+handshake_crypto,104071227,2632
+# at 500 MHz and 1.0 IPC: sha256_1kib 0.135 ms, hkdf_expand_label_32b 0.045 ms, aead_seal_1kib 0.095 ms, x25519_scalarmult 57.350 ms, p256_ecdsa_verify 92.059 ms, handshake_crypto 208.142 ms

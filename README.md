@@ -71,6 +71,40 @@ needs 9 to 15 kB and cannot run without an allocator; both need a 16 kB
 record buffer unless the peer supports `record_size_limit`.
 `docs/landscape.md` holds the full survey with sources.
 
+## On the device
+
+`bench/insn-mips.sh` and `bench/device-ram.sh` cross-compile for
+mips32r2 (the RTL8382-class core) and measure on the real ISA:
+deterministic qemu instruction counts and `-Os` section sizes. CPU cost
+is published as instruction counts, not guessed milliseconds; the
+millisecond column assumes 500 MHz and one instruction per cycle, which
+is optimistic for an in-order core, so read it as a lower bound.
+
+| work | instructions | ms (500 MHz, 1 IPC) |
+|---|---|---|
+| AEAD seal, per 1 KB record | 47 k | 0.1 |
+| SHA-256, per 1 KB | 68 k | 0.14 |
+| x25519 scalar multiply | 28.7 M | 57 |
+| P-256 signature verify | 46.0 M | 92 |
+| full pinned handshake crypto | 104 M | 208 |
+
+Flash is 30 kB (`.text` + `.rodata`, mips32r2 `-Os`): p256 6.1 kB,
+handshake 5.0 kB, x25519 3.3 kB, the rest smaller.
+
+Public-key work dominates the handshake. Every handshake runs two x25519
+(ECDHE, for forward secrecy) whether it is a fresh PSK connection, a
+resumption, or pinned mode, so ~115 ms of x25519 is the recurring floor.
+The P-256 verify (92 ms) is paid only on the first pinned connection;
+resumptions present a ticket and skip it. Record crypto is ~0.1 ms per
+kilobyte, negligible next to the handshake. For a device that opens one
+long-lived connection this is a once-per-connection cost, so chapulin
+keeps the 16-bit-limb x25519 for its machine-checked overflow proof
+rather than a faster wide-limb version; a workload of many short
+connections would change that trade. The compiler already emits ideal
+`maddu` accumulator chains for the 32-bit-limb code (poly1305, the P-256
+Montgomery multiply) and keeps ChaCha20's state in registers, so no
+hand-tuning is left on the table there.
+
 ## Verification
 
 The C Bounded Model Checker (CBMC) proves every module memory-safe and
