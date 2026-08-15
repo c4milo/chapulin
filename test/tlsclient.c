@@ -79,7 +79,11 @@ static int nibble(char c) {
 }
 
 static size_t unhex(const char *hex, uint8_t *out, size_t cap) {
-    size_t n = strlen(hex) / 2;
+    size_t len = strlen(hex);
+    if (len % 2 != 0) {
+        return 0; // an odd trailing character is a typo, not padding
+    }
+    size_t n = len / 2;
     if (n > cap) {
         return 0;
     }

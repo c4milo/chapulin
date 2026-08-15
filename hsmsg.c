@@ -37,12 +37,13 @@ size_t hs_build_ch(uint8_t *out, size_t cap, const ms_cfg *cfg, const uint8_t pu
     wb_u16(&w, 32);
     wb_bytes(&w, pub, 32);
 
-    if (cfg->psk != NULL) {
-        wb_u16(&w, EXT_PSK_MODES);
-        wb_u16(&w, 2);
-        wb_u8(&w, 1);
-        wb_u8(&w, 1); // psk_dhe_ke only
-    }
+    // Sent in both modes: without it a server (Go enforces this) will not
+    // issue session tickets, and pinned mode relies on tickets to make
+    // reconnects cheap.
+    wb_u16(&w, EXT_PSK_MODES);
+    wb_u16(&w, 2);
+    wb_u8(&w, 1);
+    wb_u8(&w, 1); // psk_dhe_ke only
 
     wb_u16(&w, EXT_RECORD_SIZE_LIMIT);
     wb_u16(&w, 2);

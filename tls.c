@@ -12,7 +12,10 @@
 int ms_connect(ms_tls *t, const ms_cfg *cfg) {
     memset(t, 0, sizeof *t);
     t->cfg = *cfg;
-    int psk_ok = cfg->psk != NULL && cfg->psk_len > 0 && cfg->psk_id != NULL;
+    // Exactly one auth mode: a config carrying both a PSK and a pin is a
+    // provisioning mistake and gets rejected, not silently resolved.
+    int psk_ok =
+        cfg->psk != NULL && cfg->psk_len > 0 && cfg->psk_id != NULL && cfg->server_pubkey == NULL;
     int pin_ok = cfg->psk == NULL && cfg->server_pubkey != NULL;
     if ((!psk_ok && !pin_ok) || cfg->buf == NULL || cfg->send == NULL || cfg->recv == NULL ||
         cfg->buf_len < 512) {

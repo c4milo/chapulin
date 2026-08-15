@@ -1,8 +1,8 @@
 # matasapos
 
 A TLS 1.3 client for devices with a few kilobytes of static RAM (SRAM)
-to spare. Sapo is Colombian for the guy who listens in; matasapos kills
-them.
+to spare. Sapo is Colombian for the guy who listens in; matasapos leaves
+him nothing to hear.
 
 matasapos speaks one profile: TLS 1.3 with
 `TLS_CHACHA20_POLY1305_SHA256` and x25519 key exchange. It offers no
@@ -55,7 +55,7 @@ targets shrink the pointer fields.
 | `ms_tls` session struct (includes 534 B TX staging) | 976 |
 | caller receive buffer (you choose; 2048 shown) | 2048 |
 | **total static working set** | **3024** |
-| peak transient stack, `ms_connect` (pinned mode: P-256 verify) | 3312 |
+| peak transient stack, `ms_connect` (pinned mode: P-256 verify) | 3344 |
 | peak transient stack, `ms_connect` (PSK mode: x25519 ladder) | 2608 |
 | peak transient stack, `ms_read` (worst case: KeyUpdate rekey) | 1632 |
 | peak transient stack, `ms_write` / `ms_close` | 736 / 688 |

@@ -39,7 +39,8 @@ func main() {
 	for {
 		c, err := ln.Accept()
 		if err != nil {
-			continue
+			// A test server should die loudly, not spin on a dead listener.
+			log.Fatal(err)
 		}
 		go func() {
 			defer c.Close()

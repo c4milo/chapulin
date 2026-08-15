@@ -20,13 +20,32 @@ fi
 
 PSK=0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20
 ID=sapo-01
-PORT=14433
+# Ports derived from our PID so parallel or stale runs cannot collide.
+PORT=$((20000 + $$ % 20000))
+PORT2=$((PORT + 1))
+PORT3=$((PORT + 2))
+
+# Waits until pid listens on port; dies if the process exits first (for
+# example when the port was taken and the server could not bind).
+wait_listen() {
+    local pid=$1 port=$2
+    for i in $(seq 1 40); do
+        kill -0 "$pid" 2>/dev/null || {
+            echo "FAIL e2e: server on port $port died at startup"
+            exit 1
+        }
+        nc -z 127.0.0.1 "$port" 2>/dev/null && return 0
+        sleep 0.5
+    done
+    echo "FAIL e2e: server on port $port never came up"
+    exit 1
+}
 
 "$OPENSSL" s_server -tls1_3 -ciphersuites TLS_CHACHA20_POLY1305_SHA256 \
     -psk "$PSK" -psk_identity "$ID" -nocert -accept "$PORT" -rev -quiet &
 SERVER=$!
 trap 'kill $SERVER 2>/dev/null || true' EXIT
-sleep 1
+wait_listen $SERVER "$PORT"
 
 TICKET=/tmp/ms-e2e-ticket
 rm -f "$TICKET"
@@ -74,12 +93,11 @@ PUB=$("$OPENSSL" ec -in "$DIR/key.pem" -text -noout 2>/dev/null | awk '/^pub:/{f
     exit 1
 }
 
-PORT2=14435
 "$OPENSSL" s_server -tls1_3 -ciphersuites TLS_CHACHA20_POLY1305_SHA256 \
     -cert "$DIR/cert.pem" -key "$DIR/key.pem" -accept "$PORT2" -rev -quiet &
 SERVER2=$!
 trap 'kill $SERVER $SERVER2 2>/dev/null || true; rm -rf "$DIR"' EXIT
-sleep 1
+wait_listen $SERVER2 "$PORT2"
 
 TICKET2=/tmp/ms-e2e-ticket2
 rm -f "$TICKET2"
@@ -90,18 +108,19 @@ if [ "$OUT" != "soterces nis" ]; then
     cat /tmp/ms-e2e-err3
     exit 1
 fi
-# And the pinned handshake still yields tickets, so reconnects resume.
-if [ -s "$TICKET2" ]; then
-    OUT=$(printf 'de nuevo\n' | ./bin/tlsclient 127.0.0.1 "$PORT2" "@$TICKET2" - 2>/dev/null)
-    if [ "$OUT" != "oveun ed" ]; then
-        echo "FAIL e2e pin-resume: got '$OUT'"
-        exit 1
-    fi
+# The pinned handshake must also yield tickets, so reconnects resume.
+[ -s "$TICKET2" ] || {
+    echo "FAIL e2e pin: no ticket after a pinned handshake"
+    exit 1
+}
+OUT=$(printf 'de nuevo\n' | ./bin/tlsclient 127.0.0.1 "$PORT2" "@$TICKET2" - 2>/dev/null)
+if [ "$OUT" != "oveun ed" ]; then
+    echo "FAIL e2e pin-resume: got '$OUT'"
+    exit 1
 fi
 
 # The real target: Go's crypto/tls, the stack Prometheus terminates with.
 if command -v go >/dev/null 2>&1; then
-    PORT3=14436
     # Build first so the server starts instantly, and run the binary
     # directly: go run's child would outlive a kill of the subshell and
     # hold pipes open past the script's exit.
@@ -110,17 +129,28 @@ if command -v go >/dev/null 2>&1; then
         -addr "127.0.0.1:$PORT3" >/dev/null 2>&1 &
     SERVER3=$!
     trap 'kill $SERVER $SERVER2 $SERVER3 2>/dev/null || true; rm -rf "$DIR"' EXIT
-    for i in $(seq 1 20); do
-        nc -z 127.0.0.1 "$PORT3" 2>/dev/null && break
-        sleep 0.5
-    done
-    OUT=$(printf 'hola go\n' | ./bin/tlsclient 127.0.0.1 "$PORT3" "pin:$PUB" - 2>/tmp/ms-e2e-err4)
+    wait_listen $SERVER3 "$PORT3"
+    TICKET3=/tmp/ms-e2e-ticket3
+    rm -f "$TICKET3"
+    OUT=$(printf 'hola go\n' | ./bin/tlsclient 127.0.0.1 "$PORT3" "pin:$PUB" - "$TICKET3" \
+        2>/tmp/ms-e2e-err4)
     if [ "$OUT" != "og aloh" ]; then
         echo "FAIL e2e go: got '$OUT'"
         cat /tmp/ms-e2e-err4
         exit 1
     fi
-    GO_LEG=" + go"
+    # Go only issues tickets when the hello offers psk_dhe_ke; resuming
+    # here proves both the offer and the resumption path against Go.
+    [ -s "$TICKET3" ] || {
+        echo "FAIL e2e go: no ticket from the Go server"
+        exit 1
+    }
+    OUT=$(printf 'una mas\n' | ./bin/tlsclient 127.0.0.1 "$PORT3" "@$TICKET3" - 2>/dev/null)
+    if [ "$OUT" != "sam anu" ]; then
+        echo "FAIL e2e go-resume: got '$OUT'"
+        exit 1
+    fi
+    GO_LEG=" + go + go-resume"
 else
     GO_LEG=" (go leg skipped)"
 fi

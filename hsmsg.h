@@ -1,5 +1,5 @@
 // Handshake message construction and the wire constants both build and
-// parse sides share. The only message a PSK client ever builds besides
+// parse sides share. The only message the client ever builds besides
 // Finished is the ClientHello, so that is what lives here.
 #ifndef MS_HSMSG_H
 #define MS_HSMSG_H

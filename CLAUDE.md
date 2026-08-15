@@ -1,7 +1,8 @@
 # matasapos rules
 
 matasapos is a TLS 1.3-only client for devices with a few kB of SRAM to
-spare. Sapo = eavesdropper; this kills them. Home: github.com/c4milo.
+spare. Sapo = eavesdropper; this leaves him nothing to hear. Home:
+github.com/c4milo.
 
 - C11, libc only. No third-party code, no OS assumptions beyond the
   caller-supplied I/O callbacks. The target is a bare-metal MCU or an
@@ -11,14 +12,18 @@ spare. Sapo = eavesdropper; this kills them. Home: github.com/c4milo.
   bench/sram.sh measures the README's memory numbers; never estimate
   them, and re-measure when the code changes.
 - One profile, no negotiation surface: TLS 1.3, TLS_CHACHA20_POLY1305_SHA256,
-  x25519, ECDHE-PSK (psk_dhe_ke) only. No X.509, no raw public keys, no
-  0-RTT, no compression, no renegotiation-era anything. The client offers
-  exactly one of everything; the server takes it or the handshake fails
-  closed.
+  x25519, and one of two auth modes — ECDHE-PSK (psk_dhe_ke) or a pinned
+  P-256 server key checked against CertificateVerify. No X.509 parsing
+  (pinned mode hashes the certificate into the transcript, never reads
+  it), no RFC 7250 raw-public-key certificate types, no 0-RTT, no
+  compression, no renegotiation-era anything. Within a mode the client
+  offers exactly one of everything; the server takes it or the handshake
+  fails closed.
 - One concern per file pair, dependencies pointing down only:
   `ct.[ch]` (constant-time bytes) ← `sha256.[ch]` ← `hkdf.[ch]`
   (HMAC + HKDF + TLS labels) ← `chacha20.[ch]` + `poly1305.[ch]` ←
-  `aead.[ch]` (RFC 8439 seal/open) ← `x25519.[ch]` ← `record.[ch]`
+  `aead.[ch]` (RFC 8439 seal/open) ← `x25519.[ch]` + `p256.[ch]`
+  (ECDSA verify, pinned mode) ← `record.[ch]`
   (record layer) ← `handshake.[ch]` (client state machine) ← `tls.[ch]`
   (public API) ← demo/test mains. Firmware takes everything below
   `tls.[ch]` as-is and supplies I/O callbacks and `ms_rand_bytes`.
