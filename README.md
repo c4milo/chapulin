@@ -138,6 +138,7 @@ values.
 | p256 | the DER parser and limb marshalling stay safe on hostile signatures (direct proof); a carry lemma covers the Montgomery multiply | signatures ≤ 80 B |
 | record | seal works across its contract; rec_open stays safe on fully hostile bytes | records ≤ 160 B |
 | hsparse | the ServerHello and EncryptedExtensions parsers stay safe on hostile bytes | messages ≤ 256 B |
+| tlspost | the post-handshake parser (NewSessionTicket, KeyUpdate) stays safe on hostile decrypted bytes and consumes no more than its input | messages ≤ 128 B |
 
 CBMC found one real bug during development: `carry()` left-shifted a
 negative value (`c << 16`), which is undefined behavior in C even though
@@ -151,9 +152,11 @@ The following claims rest on tests, not proofs:
   a prior Coq/VST functional proof by Schwabe et al. The limb-growth
   invariant that connects multiply outputs to add/sub inputs remains an
   open proof task.
-- The post-handshake pump in tls.c rests on e2e, the mock-transport unit
-  tests, and the posths fuzzer. Its CBMC harness is the last one
-  missing.
+- The post-handshake parser (handle_post_hs) is proven on hostile bytes
+  (the tlspost harness). The surrounding ch_read/ch_write/ch_close driver
+  — the record pump and cross-record reassembly — does not converge as one
+  CBMC formula, so it rests on e2e, the mock-transport unit tests, and the
+  posths fuzzer.
 - P-256 functional correctness rests on RFC 6979 vectors plus fresh
   signatures that the Lean spec mints and the C must accept. The
   scalar-multiplication loops compose proven pieces, but CBMC does not

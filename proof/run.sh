@@ -108,6 +108,7 @@ launch fast full record 165 "" ct.c
 launch fast full p256 85 "" buf.c
 launch fast full hkdf 120 "" ct.c
 launch fast full hsparse 260 "parse_sh.0:66,parse_ee.0:66,main.0:600,main.1:600" buf.c
+launch fast full tlspost 132 "handle_post_hs.0:33,fill_nondet.0:130" --object-bits 11 buf.c ct.c session.c
 launch fast full chacha20 165 "chacha20_xor.1:5"
 launch fast full poly1305 85 "blocks.0:8" ct.c
 launch fast full buf 100 ""
