@@ -63,6 +63,10 @@ Home: github.com/c4milo.
   metaphors.
 - Linters follow fix-or-drop: fix the finding, or disable the check in
   `.clang-tidy` with its reason. Never `NOLINT` in code.
+- CI pins the same tool versions the development machine runs (see the
+  env block in .github/workflows/check.yml). When the local toolchain
+  upgrades, bump the pins in the same commit. Never adapt code or
+  suppressions to an older checker.
 - Commits are Conventional Commits (feat/fix/docs/test/refactor/perf/
   build/ci/chore), enforced by commitlint via `.githooks/commit-msg`
   (`make hooks` once after clone) and `make lint-commits` in check.

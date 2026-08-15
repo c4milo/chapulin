@@ -11,19 +11,47 @@ jobs:
     # `make prove` (CBMC over every harness) dominates the wall clock.
     timeout-minutes: 90
     env:
-      # noble ships clang 16-18; pin so a metapackage bump can't shift
-      # lint results. The Makefile's ?= picks these up.
-      CLANG_TIDY: clang-tidy-18
-      CLANG_FORMAT: clang-format-18
+      # CI runs the same tool versions as development. When the local
+      # toolchain upgrades, bump these pins in the same commit — never
+      # adapt the code to an older checker. The Makefile's ?= picks
+      # these up.
+      LLVM_MAJOR: 22
+      CLANG_TIDY: clang-tidy-22
+      CLANG_FORMAT: clang-format-22
+      CPPCHECK_VERSION: 2.21.0
+      CPPCHECK: /home/runner/cppcheck-bin/cppcheck
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0 # commitlint lints commit ranges, not just HEAD
 
-      - name: Install lint tools
+      - name: Install clang tools (apt.llvm.org, pinned major)
         run: |
-          sudo apt-get update
-          sudo apt-get install -y clang-tidy-18 clang-format-18 cppcheck
+          wget -qO llvm.sh https://apt.llvm.org/llvm.sh
+          sudo bash llvm.sh "$LLVM_MAJOR"
+          sudo apt-get install -y "clang-tidy-$LLVM_MAJOR" "clang-format-$LLVM_MAJOR"
+
+      - name: Cache cppcheck build
+        id: cppcheck-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/cppcheck-bin
+          key: cppcheck-${{ runner.os }}-${{ env.CPPCHECK_VERSION }}
+
+      - name: Build cppcheck at the development version
+        if: steps.cppcheck-cache.outputs.cache-hit != 'true'
+        run: |
+          curl -fsSL "https://github.com/danmar/cppcheck/archive/refs/tags/$CPPCHECK_VERSION.tar.gz" | tar xz
+          cmake -S "cppcheck-$CPPCHECK_VERSION" -B cppcheck-build -DCMAKE_BUILD_TYPE=Release >/dev/null
+          cmake --build cppcheck-build -j"$(nproc)" >/dev/null
+          mkdir -p ~/cppcheck-bin
+          cp cppcheck-build/bin/cppcheck ~/cppcheck-bin/
+
+      - name: Check tool versions match the pins
+        run: |
+          "$CLANG_TIDY" --version
+          "$CLANG_FORMAT" --version
+          "$CPPCHECK" --version | grep -F "$CPPCHECK_VERSION"
 
       - name: Install CBMC
         run: |
