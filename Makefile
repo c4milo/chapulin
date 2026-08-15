@@ -93,12 +93,29 @@ else
 endif
 
 # CBMC proofs: memory safety and absence of UB per module, at the bounds
-# each harness documents. proof/run.sh fails on the first violated claim.
+# each harness documents. The fast tier (seconds to a few minutes) gates
+# every check; the four SAT heavyweights run as prove-slow in CI and
+# before a release. prove-all is both.
+.PHONY: prove-slow prove-all
 prove:
 ifeq ($(CBMC),)
 	@echo "SKIP cbmc: not on PATH (brew install cbmc)"
 else
-	./proof/run.sh
+	./proof/run.sh fast
+endif
+
+prove-slow:
+ifeq ($(CBMC),)
+	@echo "SKIP cbmc: not on PATH (brew install cbmc)"
+else
+	./proof/run.sh slow
+endif
+
+prove-all:
+ifeq ($(CBMC),)
+	@echo "SKIP cbmc: not on PATH (brew install cbmc)"
+else
+	./proof/run.sh all
 endif
 
 fmt:

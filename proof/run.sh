@@ -27,6 +27,11 @@
 set -uo pipefail
 cd "$(dirname "$0")/.."
 
+# Tier argument: "fast" (seconds-to-minutes, runs in every make check),
+# "slow" (the four SAT heavyweights, run by CI and before release), or
+# "all" (default).
+TIER="${1:-all}"
+
 CBMC="${CBMC:-cbmc}"
 LOGDIR=proof/results
 mkdir -p "$LOGDIR"
@@ -37,6 +42,11 @@ BASE=(--bounds-check --pointer-check --pointer-overflow-check
 POOL="${PROVE_JOBS:-4}"
 
 launch() {
+    local tier="$1"
+    shift
+    if [ "$TIER" != "all" ] && [ "$TIER" != "$tier" ]; then
+        return
+    fi
     while [ "$(jobs -pr | wc -l)" -ge "$POOL" ]; do
         sleep 1
     done
@@ -59,21 +69,21 @@ launch() {
 # trailing them.
 NAMES=()
 PIDS=()
-launch full handshake 100 "fetch_record.0:45,next_msg.0:140,parse_sh.0:66,parse_ee.0:66,fill_nondet.0:600" buf.c ct.c
-launch full aead 85 "blocks.0:10,chacha20_xor.1:4" chacha20.c poly1305.c ct.c
-launch noovf x25519 65 "" ct.c
-launch full hkdf_expand 120 "hkdf_expand.0:5" ct.c
-launch full sha256 3 "fill_nondet.0:97,sha256_update.0:66,sha256_update.1:3,sha256_update.2:66,sha256_final.0:65,sha256_final.1:9,sha256_final.2:9,compress.0:17,compress.1:49,compress.2:65"
-launch full record 165 "" ct.c
-launch full p256 85 "" buf.c
-launch full hkdf 120 "" ct.c
-launch full hsparse 260 "parse_sh.0:66,parse_ee.0:66,main.0:600,main.1:600" buf.c
-launch full chacha20 165 "chacha20_xor.1:5"
-launch full poly1305 85 "blocks.0:8" ct.c
-launch full buf 100 ""
-launch full ct 65 ""
-launch full x25519_mul 20 ""
-launch full p256_mul 20 ""
+launch slow full handshake 100 "fetch_record.0:45,next_msg.0:140,parse_sh.0:66,parse_ee.0:66,fill_nondet.0:600" buf.c ct.c
+launch slow full aead 85 "blocks.0:10,chacha20_xor.1:4" chacha20.c poly1305.c ct.c
+launch slow noovf x25519 65 "" ct.c
+launch slow full hkdf_expand 120 "hkdf_expand.0:5" ct.c
+launch fast full sha256 3 "fill_nondet.0:97,sha256_update.0:66,sha256_update.1:3,sha256_update.2:66,sha256_final.0:65,sha256_final.1:9,sha256_final.2:9,compress.0:17,compress.1:49,compress.2:65"
+launch fast full record 165 "" ct.c
+launch fast full p256 85 "" buf.c
+launch fast full hkdf 120 "" ct.c
+launch fast full hsparse 260 "parse_sh.0:66,parse_ee.0:66,main.0:600,main.1:600" buf.c
+launch fast full chacha20 165 "chacha20_xor.1:5"
+launch fast full poly1305 85 "blocks.0:8" ct.c
+launch fast full buf 100 ""
+launch fast full ct 65 ""
+launch fast full x25519_mul 20 ""
+launch fast full p256_mul 20 ""
 
 FAIL=0
 for i in "${!PIDS[@]}"; do
@@ -98,4 +108,4 @@ done
 if [ $FAIL -ne 0 ]; then
     exit 1
 fi
-echo "prove: all harnesses verified"
+echo "prove($TIER): all harnesses verified"

@@ -72,3 +72,7 @@ jobs:
       - run: make hooks
 
       - run: make check
+
+      # The four SAT heavyweights; the fast proof tier already ran in check.
+      - name: Slow-tier proofs
+        run: make prove-slow
