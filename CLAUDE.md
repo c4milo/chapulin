@@ -8,8 +8,8 @@ spare. Sapo = eavesdropper; this kills them. Home: github.com/c4milo.
   lwIP-class socket stack.
 - Zero heap. No malloc anywhere, ever — one static `ms_tls` session
   struct plus a caller-provided record buffer is the entire working set.
-  The SRAM headline (session struct + record buffer, measured, not
-  estimated) leads the README and every change re-earns it.
+  The README's memory numbers are measured (bench/sram.sh), never
+  estimated, and get re-measured when the code changes.
 - One profile, no negotiation surface: TLS 1.3, TLS_CHACHA20_POLY1305_SHA256,
   x25519, ECDHE-PSK (psk_dhe_ke) only. No X.509, no raw public keys, no
   0-RTT, no compression, no renegotiation-era anything. The client offers
@@ -29,7 +29,7 @@ spare. Sapo = eavesdropper; this kills them. Home: github.com/c4milo.
   poly1305's final reduction), never an `if`.
   ChaCha20/Poly1305/x25519 are constant time by construction — keep them
   that way; AES never enters this codebase precisely to avoid tables.
-- Proofs are part of `check`, not a side quest. Every module carries a
+- Proofs run in `check`, not on the side. Every module carries a
   CBMC harness in `proof/` proving memory safety and absence of UB
   (bounds, pointer validity, arithmetic overflow, division) over
   unconstrained inputs at the module's real bound. Crypto primitives

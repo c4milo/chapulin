@@ -22,7 +22,7 @@ can never send a record it cannot hold. (One sizing note for pinned
 mode: the peer's Certificate message must fit the receive buffer — a
 self-signed leaf is ~600 bytes; CA chains need a bigger buffer.)
 
-The RFC MUSTs a minimal client cannot shed are all in: HelloRetryRequest
+The RFC MUSTs a minimal client still has to honor are all in: HelloRetryRequest
 with cookie echo and transcript restart, KeyUpdate in both directions,
 NewSessionTicket parsing with resumption-PSK derivation handed to the
 application, and RFC 9257 binder discipline over the truncated
@@ -48,26 +48,26 @@ fields):
 | peak transient stack, `ms_read` (worst: KeyUpdate rekey) | 1632 |
 | peak transient stack, `ms_write` / `ms_close` | 736 / 688 |
 
-Regenerate with `bench/sram.sh`, which walks the real call graph
-(objdump-extracted edges weighted by `-fstack-usage` frames) — a
-hand-picked chain understated `ms_read` by half until the graph walk
-replaced it.
+Regenerate with `bench/sram.sh`. It computes each entry point's worst
+case from the object code's call graph weighted by `-fstack-usage`
+frames, not from a hand-picked call chain.
 
 No malloc anywhere, no VLAs, no alloca. For comparison, the smallest
 published TLS 1.3 PSK working sets elsewhere: wolfSSL ~6.2 kB heap plus
-buffers, mbedTLS ~9–15 kB and cannot run without an allocator, and both
-park a 16 kB record buffer next to that unless the peer cooperates.
-`docs/landscape.md` has the full survey with sources.
+buffers, mbedTLS ~9–15 kB and unable to run without an allocator, and
+both need a 16 kB record buffer unless the peer supports
+record_size_limit. `docs/landscape.md` has the full survey with sources.
 
 ## Verification
 
-`make prove` runs CBMC over every module as part of `make check`. Each
-harness drives the module with unconstrained inputs at the documented
-bound and proves memory safety (bounds, pointer validity) and absence of
-UB (signed overflow, undefined shifts, division) for every input in that
-space, plus the functional claims below. Bounded proof, honest bounds:
-where a bound is the module's real maximum the proof is total for that
-code; where it is not, the bound is stated here.
+CBMC proves every module memory-safe (bounds, pointer validity) and free
+of undefined behavior (signed overflow, undefined shifts, division) for
+every input within each harness's documented bound, plus the functional
+claims below. Where a bound is the module's real maximum, the proof
+covers all inputs; where it is not, the bound is stated in the table.
+The proofs run in two tiers: `make check` runs the eleven that finish in
+seconds to a few minutes; `make prove-slow` runs the four long ones
+(handshake driver, aead, x25519, hkdf expand), and CI runs both.
 
 The suite is layered, mlkem-native style: leaf modules are proven
 concrete; hkdf and record are proven against contract-checking stubs of
@@ -90,9 +90,10 @@ values).
 | record | seal across contract; rec_open safe on fully hostile bytes, padding strip over any AEAD output | records ≤ 160 B |
 | hsparse | ServerHello + EncryptedExtensions parsers safe on hostile bytes | messages ≤ 256 B |
 
-The proofs already earned their keep once: CBMC flagged `carry()`'s
-`c << 16` on a negative `c` — UB every compiler happens to tolerate —
-now a well-defined multiply.
+CBMC found one real bug during development: `carry()` left-shifted a
+negative value (`c << 16`), which is undefined behavior in C even though
+compilers tolerate it. It is now a multiply with the same code
+generation.
 
 What is tested but not yet proved, stated plainly:
 
@@ -132,10 +133,10 @@ co-satisfy.
 `make diff` builds the spec with `lake`, runs its selftests, then drives
 ~2,750 random-input comparisons (including P-256 signatures the spec mints that the C must accept) between every C module and the spec over
 a pipe (deterministic seed; part of `make check`, skipped when elan is
-not installed). This is the Cedar model: proofs establish memory safety,
-vectors establish point correctness, and the oracle establishes that the
-C computes the same *function* as a spec simple enough to audit against
-the RFC by eye.
+not installed). The three layers cover different failure classes: proofs
+cover memory safety, vectors cover known answers, and the oracle checks
+that the C computes the same function as a short spec that can be read
+next to the RFC.
 
 ## Using it
 
@@ -167,16 +168,24 @@ space from the code and the proofs.
 
 ## Building
 
-`make check` = build + lint (clang-tidy, clang-format, cppcheck, all
-warnings as errors, fix-or-drop policy) + unit tests (RFC vectors) + e2e
-against OpenSSL 3 + CBMC proofs. See `CLAUDE.md` for the house rules.
+`make check` runs the whole gate: build, lint (clang-tidy, clang-format,
+cppcheck, commitlint, all warnings as errors), unit tests (RFC vectors),
+e2e against OpenSSL 3 and Go, the Lean differential oracle, and the fast
+proof tier. Separate targets: `make prove-slow` (the four long proofs),
+`make timing` (statistical constant-time check; load-sensitive), `make
+fuzz` (libFuzzer smoke runs), `make hooks` (once after clone, enables
+the commit-msg hook). See `CLAUDE.md` for the house rules.
 
 ## Non-goals
 
-0-RTT (the IETF IoT profile says MUST NOT anyway), DTLS, X.509, raw
-public keys, cipher agility, server role. One honest caveat: the IETF
-TLS 1.3 IoT profile's mandatory suite is AES-128-CCM-8; matasapos is
-ChaCha-only by design (no tables, constant time on anything), which is
-the right call when you control both ends — and a deliberate
-incompatibility when you don't. An AES-CCM build flag would be the first
-thing v2 discusses.
+0-RTT (the IETF IoT profile forbids it anyway), DTLS, X.509 chain
+validation (pinned mode accepts a certificate but never parses it — the
+signature against the provisioned key is the authentication), CA
+bundles, revocation, client certificates, cipher agility, server role,
+and any insecure-fallback option. Two caveats: the IETF
+TLS 1.3 IoT profile's mandatory suite is AES-128-CCM-8, and matasapos is
+ChaCha-only (no lookup tables, constant time on any core) — fine when
+you control both ends, incompatible with a server that insists on AES.
+An AES-CCM build flag is the most likely v2 addition. And pin the key of
+a server whose key is stable: automatic key rotation (for example
+Let's Encrypt defaults) breaks pins.

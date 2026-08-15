@@ -17,17 +17,17 @@ allocator, still malloc semantics
 Its shipped minimal-PSK example config is TLS 1.2 only.
 
 **wolfSSL** (GPLv3 since 5.8.2 — a licensing break from GPLv2 — or
-commercial). The famous LeanPSK 20 kB build is TLS 1.2 only. TLS 1.3
+commercial). The widely cited LeanPSK 20 kB build is TLS 1.2 only. TLS 1.3
 PSK-only: "less than 50 kB" code, no RAM figure published
 ([wolfSSL](https://www.wolfssl.com/small-tls-1-3-psk/)); measured 6.2 kB
 peak heap in the arXiv paper above. Static-memory mode exists, still
 allocator semantics.
 
-**BearSSL** (MIT). The philosophical ancestor: zero malloc, constant-time
+**BearSSL** (MIT). The closest design ancestor: zero malloc, constant-time
 by default, ~25 kB RAM dominated by 16 kB record buffers. **Still no
 TLS 1.3 in 2026** ([status](https://bearssl.org/tls13.html) unchanged
 since ~2018); curl dropped it for that. Effectively frozen — this is the
-vacuum matasapos fills.
+gap matasapos fills.
 
 **picotls** (MIT). TLS 1.3, built for H2O/QUIC servers; malloc-backed
 growable buffers; no embedded footprint story.
@@ -69,7 +69,7 @@ figure beyond a user-supplied 16 kB frame buffer.
   proves an entire ML-KEM implementation memory-safe/type-safe with CBMC
   contracts. Production-scale precedent — never yet applied to a whole
   TLS stack.
-- Cautionary tale worth internalizing:
+- A caution:
   [eprint 2026/192](https://eprint.iacr.org/2026/192.pdf) found 13 vulns
   in *verified* crypto libraries — 9 in unverified glue, 4 in specs. The
   answer is whole-stack coverage and an explicit statement of what is
