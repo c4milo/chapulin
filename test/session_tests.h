@@ -200,19 +200,28 @@ static void test_p256(void) {
 }
 
 // A spent sequence space refuses to protect or accept further records
-// instead of wrapping into (key, nonce) reuse.
+// instead of wrapping into (key, nonce) reuse. The boundary is exact: the
+// last representable sequence still works; UINT64_MAX refuses.
 static void test_seq_exhaustion(void) {
     uint8_t secret[SHA256_LEN];
     ch_rand_bytes(secret, sizeof secret);
-    rec_dir d;
-    rec_dir_init(&d, secret);
-    d.seq = UINT64_MAX;
     uint8_t rec[64];
     uint8_t pt[8] = {0};
     size_t n = 0;
-    CHECK(rec_seal(&d, REC_APPDATA, pt, sizeof pt, rec, sizeof rec, &n) == -1);
     uint8_t type = 0;
-    CHECK(rec_open(&d, rec, sizeof rec, rec, sizeof rec, &n, &type) == -1);
+
+    // The last representable sequence still protects a record.
+    rec_dir d;
+    rec_dir_init(&d, secret);
+    d.seq = UINT64_MAX - 1;
+    CHECK(rec_seal(&d, REC_APPDATA, pt, sizeof pt, rec, sizeof rec, &n) == 0);
+
+    // One past it, both directions refuse before the increment could wrap.
+    rec_dir e;
+    rec_dir_init(&e, secret);
+    e.seq = UINT64_MAX;
+    CHECK(rec_seal(&e, REC_APPDATA, pt, sizeof pt, rec, sizeof rec, &n) == -1);
+    CHECK(rec_open(&e, rec, sizeof rec, rec, sizeof rec, &n, &type) == -1);
 }
 
 // ch_connect's config validation: exactly one auth mode, sane buffer. A

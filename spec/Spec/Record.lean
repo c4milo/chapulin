@@ -24,6 +24,13 @@ context). The inner plaintext is `content ‖ ContentType` (no padding),
 the AAD is the 5-byte record header `17 03 03 ‖ len16` where the
 length covers the inner plaintext plus the 16-byte tag, and the output
 is `header ‖ AEAD-Encrypt(...)`.
+
+Domain: `seq < 2^64 - 1`. RFC 8446 §5.5 requires the sender to stop before
+the 64-bit sequence number wraps, so the C refuses `seq = 2^64 - 1` (its
+last representable value) rather than reuse a nonce on the next record.
+This transform is the pure protection function and does not model that
+refusal; the boundary is a unit test, and the differential run keeps
+`seq = 2^64 - 1` out of the compared domain.
 -/
 def «seal» (trafficSecret : ByteArray) (seq : Nat) (ctype : UInt8) (pt : ByteArray) : ByteArray :=
   let key := Spec.Hkdf.expandLabel trafficSecret "key" ByteArray.empty 32

@@ -324,7 +324,13 @@ static void diff_rec_seal(void) {
         uint8_t pt[200];
         size_t n = rng_below(201);
         rng_fill(pt, n);
+        // Any sequence the C actually seals; it refuses UINT64_MAX to stop
+        // before a wrap (RFC 8446 §5.5), which the pure spec does not model,
+        // so that one value stays out of the compared domain.
         uint64_t seq = rng_next();
+        if (seq == UINT64_MAX) {
+            seq = UINT64_MAX - 1;
+        }
         uint8_t type = (uint8_t)rng_below(256);
         rec_dir d;
         rec_dir_init(&d, secret);
