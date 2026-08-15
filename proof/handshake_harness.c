@@ -1,4 +1,4 @@
-// Proves: ms_handshake — the record pump, cross-record reassembly,
+// Proves: ch_handshake — the record pump, cross-record reassembly,
 // ServerHello/EE parsing, HRR restart, and the run() state machine — is
 // memory-safe and UB-free against ANY record stream a peer can send, at a
 // 96-byte receive buffer (every reassembly and compaction state is
@@ -21,29 +21,29 @@
 #include "session.h"
 #include "x25519.h"
 
-void ms_rand_bytes(uint8_t *p, size_t n) {
+void ch_rand_bytes(uint8_t *p, size_t n) {
     fill_nondet(p, n);
 }
 
-int io_send_all(const ms_cfg *cfg, const uint8_t *p, size_t n) {
+int io_send_all(const ch_cfg *cfg, const uint8_t *p, size_t n) {
     __CPROVER_assert(cfg != NULL, "send: cfg valid");
     __CPROVER_assert(n == 0 || __CPROVER_r_ok(p, n), "send: bytes readable");
-    return (nondet_u8() & 1) ? MS_OK : MS_EIO;
+    return (nondet_u8() & 1) ? CH_OK : CH_EIO;
 }
 
 // The hostile input source: any outer type, any body bytes, any length
 // the io contract admits (1..2^14+256 body, within cap), or any error.
-int io_read_record(const ms_cfg *cfg, uint8_t *buf, size_t cap, uint8_t *outer, size_t *reclen) {
+int io_read_record(const ch_cfg *cfg, uint8_t *buf, size_t cap, uint8_t *outer, size_t *reclen) {
     __CPROVER_assert(cfg != NULL, "read: cfg valid");
     uint8_t choice = nondet_u8();
     if (choice == 0) {
-        return MS_EIO;
+        return CH_EIO;
     }
     if (choice == 1) {
-        return MS_EPROTO;
+        return CH_EPROTO;
     }
     if (choice == 2 || cap < REC_HDR + 1) {
-        return MS_ECAP;
+        return CH_ECAP;
     }
     size_t body = nondet_size_t();
     __CPROVER_assume(body >= 1 && body <= 0x4000 + 256 && REC_HDR + body <= cap);
@@ -51,7 +51,7 @@ int io_read_record(const ms_cfg *cfg, uint8_t *buf, size_t cap, uint8_t *outer, 
     fill_nondet(buf, REC_HDR + body);
     *outer = nondet_u8();
     *reclen = REC_HDR + body;
-    return MS_OK;
+    return CH_OK;
 }
 
 void rec_dir_init(rec_dir *d, const uint8_t secret[SHA256_LEN]) {
@@ -98,7 +98,7 @@ int rec_open(rec_dir *d, const uint8_t *rec, size_t n, uint8_t *pt, size_t cap, 
     return 0;
 }
 
-size_t hs_build_ch(uint8_t *out, size_t cap, const ms_cfg *cfg, const uint8_t pub[32],
+size_t hs_build_ch(uint8_t *out, size_t cap, const ch_cfg *cfg, const uint8_t pub[32],
                    const uint8_t random32[32], uint16_t rsl, const uint8_t *cookie,
                    size_t cookielen) {
     (void)rsl;
@@ -195,23 +195,23 @@ int p256_ecdsa_verify(const uint8_t pub[64], const uint8_t msg_hash[32], const u
     return nondet_u8() & 1;
 }
 
-void tlsi_fail(ms_tls *t, uint8_t desc) {
+void tlsi_fail(ch_tls *t, uint8_t desc) {
     (void)desc;
     __CPROVER_assert(__CPROVER_w_ok(t, sizeof *t), "fail: session writable");
-    t->state = MS_ST_FAILED;
+    t->state = CH_ST_FAILED;
 }
 
-int tlsi_send_alert(ms_tls *t, uint8_t level, uint8_t desc) {
+int tlsi_send_alert(ch_tls *t, uint8_t level, uint8_t desc) {
     (void)level;
     (void)desc;
     __CPROVER_assert(__CPROVER_w_ok(t, sizeof *t), "alert: session writable");
-    return MS_OK;
+    return CH_OK;
 }
 
 #include "handshake.c"
 
 int main(void) {
-    static ms_tls t;
+    static ch_tls t;
     memset(&t, 0, sizeof t);
     uint8_t buf[96];
     uint8_t psk[32];
@@ -236,6 +236,6 @@ int main(void) {
         t.cfg.server_pubkey = pin; // pinned-key mode: server_auth path
     }
 
-    (void)ms_handshake(&t);
+    (void)ch_handshake(&t);
     return 0;
 }

@@ -8,8 +8,8 @@
 // consumes is built here. Included by test/diff.c after diffdrv.h
 // (single translation unit). Until the C p256 lands, the section still
 // exercises the spec ops against themselves.
-#ifndef MS_DIFFP256_H
-#define MS_DIFFP256_H
+#ifndef CH_DIFFP256_H
+#define CH_DIFFP256_H
 
 #ifdef __has_include
 #if __has_include("p256.h")

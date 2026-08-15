@@ -1,8 +1,8 @@
 // ChaCha20-Poly1305 AEAD (RFC 8439 §2.8). Verify-before-decrypt: open
 // computes the tag over the ciphertext first and never releases a byte of
 // plaintext on a bad tag.
-#ifndef MS_AEAD_H
-#define MS_AEAD_H
+#ifndef CH_AEAD_H
+#define CH_AEAD_H
 
 #include <stddef.h>
 #include <stdint.h>

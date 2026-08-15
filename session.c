@@ -6,23 +6,23 @@
 // A protected record can only be sealed with live keys; before any keys
 // exist the alert goes out in plaintext, and once keys are wiped there is
 // nothing legal left to say, so nothing is sent.
-int tlsi_send_alert(ms_tls *t, uint8_t level, uint8_t desc) {
+int tlsi_send_alert(ch_tls *t, uint8_t level, uint8_t desc) {
     const uint8_t body[2] = {level, desc};
     if (t->keys) {
         size_t n = 0;
         if (rec_seal(&t->wr, REC_ALERT, body, 2, t->tx, sizeof t->tx, &n) != 0) {
-            return MS_ECAP;
+            return CH_ECAP;
         }
         return io_send_all(&t->cfg, t->tx, n);
     }
-    if (t->state == MS_ST_START) {
+    if (t->state == CH_ST_START) {
         uint8_t rec[REC_HDR + 2] = {REC_ALERT, 0x03, 0x03, 0, 2, level, desc};
         return io_send_all(&t->cfg, rec, sizeof rec);
     }
-    return MS_OK;
+    return CH_OK;
 }
 
-void tlsi_wipe(ms_tls *t) {
+void tlsi_wipe(ch_tls *t) {
     ct_wipe(&t->rd, sizeof t->rd);
     ct_wipe(&t->wr, sizeof t->wr);
     ct_wipe(t->rd_secret, sizeof t->rd_secret);
@@ -33,8 +33,8 @@ void tlsi_wipe(ms_tls *t) {
     t->pt_len = 0;
 }
 
-void tlsi_fail(ms_tls *t, uint8_t desc) {
+void tlsi_fail(ch_tls *t, uint8_t desc) {
     (void)tlsi_send_alert(t, 2, desc);
     tlsi_wipe(t);
-    t->state = MS_ST_FAILED;
+    t->state = CH_ST_FAILED;
 }

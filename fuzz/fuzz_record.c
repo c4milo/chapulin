@@ -10,7 +10,7 @@
 
 #include "record.h"
 
-noreturn void ms_assert_fail(const char *cond, const char *file, int line) {
+noreturn void ch_assert_fail(const char *cond, const char *file, int line) {
     (void)cond;
     (void)file;
     (void)line;

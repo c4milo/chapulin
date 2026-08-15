@@ -4,8 +4,8 @@
 // (bounds, pointer validity, signed overflow, shifts, division) plus any
 // explicit asserts do the rest. Harnesses include the module .c to reach
 // statics, like the unit tests do.
-#ifndef MS_PROOF_HARNESS_H
-#define MS_PROOF_HARNESS_H
+#ifndef CH_PROOF_HARNESS_H
+#define CH_PROOF_HARNESS_H
 
 #include <stddef.h>
 #include <stdint.h>
@@ -15,12 +15,12 @@ size_t nondet_size_t(void);
 uint8_t nondet_u8(void);
 int64_t nondet_i64(void);
 
-// An MS_ASSERT firing is a proof failure, and execution stops there.
-noreturn void ms_assert_fail(const char *cond, const char *file, int line) {
+// An CH_ASSERT firing is a proof failure, and execution stops there.
+noreturn void ch_assert_fail(const char *cond, const char *file, int line) {
     (void)cond;
     (void)file;
     (void)line;
-    __CPROVER_assert(0, "MS_ASSERT fired");
+    __CPROVER_assert(0, "CH_ASSERT fired");
     __CPROVER_assume(0);
 }
 

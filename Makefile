@@ -9,7 +9,7 @@ LAKE ?= $(shell command -v lake || command -v $(HOME)/.elan/bin/lake)
 
 SRCS := ct.c sha256.c hkdf.c chacha20.c poly1305.c aead.c x25519.c p256.c \
         buf.c record.c keysched.c io.c hsmsg.c session.c handshake.c tls.c
-HDRS := ct.h sha256.h hkdf.h chacha20.h poly1305.h aead.h x25519.h p256.h ms_assert.h \
+HDRS := ct.h sha256.h hkdf.h chacha20.h poly1305.h aead.h x25519.h p256.h ch_assert.h \
         buf.h record.h keysched.h io.h hsmsg.h cfg.h session.h handshake.h tls.h rand.h
 LINT_C := $(SRCS) test/unit.c test/tlsclient.c test/diff.c test/timing.c
 # CBMC intrinsics don't compile under clang-tidy/cppcheck; harnesses get
@@ -70,7 +70,7 @@ ifeq ($(CPPCHECK),)
 	@echo "SKIP cppcheck: not on PATH (install cppcheck)"
 else
 	# constParameterCallback: I/O callback signatures are fixed by the
-	# ms_cfg contract in tls.h; const-ing an implementation's void *io
+	# ch_cfg contract in tls.h; const-ing an implementation's void *io
 	# would need function-pointer casts, which is worse.
 	$(CPPCHECK) --std=c11 --enable=warning,style,performance,portability \
 	  --inline-suppr --suppress=missingIncludeSystem \

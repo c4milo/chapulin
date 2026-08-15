@@ -1,8 +1,8 @@
 // ChaCha20 stream cipher (RFC 8439 §2.4). Constant time by construction:
 // adds, XORs, and fixed rotations only — no tables, no secret-indexed
 // loads, which is why AES never made the cut.
-#ifndef MS_CHACHA20_H
-#define MS_CHACHA20_H
+#ifndef CH_CHACHA20_H
+#define CH_CHACHA20_H
 
 #include <stddef.h>
 #include <stdint.h>

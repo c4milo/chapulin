@@ -2,8 +2,8 @@
 
 #include <string.h>
 
+#include "ch_assert.h"
 #include "ct.h"
-#include "ms_assert.h"
 
 void hmac_sha256(const uint8_t *key, size_t keylen, const uint8_t *msg, size_t msglen,
                  uint8_t out[SHA256_LEN]) {
@@ -46,8 +46,8 @@ void hkdf_extract(const uint8_t *salt, size_t saltlen, const uint8_t *ikm, size_
 
 void hkdf_expand(const uint8_t prk[SHA256_LEN], const uint8_t *info, size_t infolen, uint8_t *out,
                  size_t outlen) {
-    MS_ASSERT(outlen > 0 && outlen <= (size_t)255 * SHA256_LEN);
-    MS_ASSERT(infolen <= 64);
+    CH_ASSERT(outlen > 0 && outlen <= (size_t)255 * SHA256_LEN);
+    CH_ASSERT(infolen <= 64);
     // T(n) = HMAC(prk, T(n-1) | info | n); msg buffer sized for the max.
     uint8_t msg[SHA256_LEN + 64 + 1];
     uint8_t t[SHA256_LEN] = {0}; // T(0) is empty; tlen 0 keeps it out of round 1
@@ -72,9 +72,9 @@ void hkdf_expand(const uint8_t prk[SHA256_LEN], const uint8_t *info, size_t info
 void hkdf_expand_label(const uint8_t secret[SHA256_LEN], const char *label, const uint8_t *ctx,
                        size_t ctxlen, uint8_t *out, size_t outlen) {
     size_t lab = strlen(label);
-    MS_ASSERT(lab > 0 && lab <= HKDF_LABEL_MAX);
-    MS_ASSERT(ctxlen <= SHA256_LEN);
-    MS_ASSERT(outlen <= 0xffff);
+    CH_ASSERT(lab > 0 && lab <= HKDF_LABEL_MAX);
+    CH_ASSERT(ctxlen <= SHA256_LEN);
+    CH_ASSERT(outlen <= 0xffff);
     // struct { uint16 length; opaque label<7..255>; opaque context<0..255>; }
     uint8_t info[2 + 1 + 6 + HKDF_LABEL_MAX + 1 + SHA256_LEN];
     size_t p = 0;

@@ -2,8 +2,8 @@
 // (RFC 8446 §7.1). One file because TLS 1.3 uses them as one unit: every
 // key in the protocol is an HKDF-Expand-Label of some HKDF-Extract output,
 // and Finished is the lone bare-HMAC user.
-#ifndef MS_HKDF_H
-#define MS_HKDF_H
+#ifndef CH_HKDF_H
+#define CH_HKDF_H
 
 #include <stddef.h>
 #include <stdint.h>
@@ -16,7 +16,7 @@ void hmac_sha256(const uint8_t *key, size_t keylen, const uint8_t *msg, size_t m
 void hkdf_extract(const uint8_t *salt, size_t saltlen, const uint8_t *ikm, size_t ikmlen,
                   uint8_t prk[SHA256_LEN]);
 
-// out gets outlen bytes, outlen <= 255*32 per RFC 5869; matasapos never
+// out gets outlen bytes, outlen <= 255*32 per RFC 5869; chapulin never
 // asks for more than 32.
 void hkdf_expand(const uint8_t prk[SHA256_LEN], const uint8_t *info, size_t infolen, uint8_t *out,
                  size_t outlen);

@@ -3,8 +3,8 @@
 // transcript hash, the wire signature — is public, so the arithmetic is
 // deliberately variable time and carries none of the constant-time
 // burden the rest of this codebase does.
-#ifndef MS_P256_H
-#define MS_P256_H
+#ifndef CH_P256_H
+#define CH_P256_H
 
 #include <stddef.h>
 #include <stdint.h>

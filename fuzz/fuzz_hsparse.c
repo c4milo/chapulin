@@ -13,24 +13,24 @@
 #include "cfg.h"
 #include "session.h"
 
-noreturn void ms_assert_fail(const char *cond, const char *file, int line) {
+noreturn void ch_assert_fail(const char *cond, const char *file, int line) {
     (void)cond;
     (void)file;
     (void)line;
     abort();
 }
-void ms_rand_bytes(uint8_t *p, size_t n) {
+void ch_rand_bytes(uint8_t *p, size_t n) {
     (void)p;
     (void)n;
     abort();
 }
-int io_send_all(const ms_cfg *cfg, const uint8_t *p, size_t n) {
+int io_send_all(const ch_cfg *cfg, const uint8_t *p, size_t n) {
     (void)cfg;
     (void)p;
     (void)n;
     abort();
 }
-int io_read_record(const ms_cfg *cfg, uint8_t *buf, size_t cap, uint8_t *outer, size_t *reclen) {
+int io_read_record(const ch_cfg *cfg, uint8_t *buf, size_t cap, uint8_t *outer, size_t *reclen) {
     (void)cfg;
     (void)buf;
     (void)cap;
@@ -38,12 +38,12 @@ int io_read_record(const ms_cfg *cfg, uint8_t *buf, size_t cap, uint8_t *outer, 
     (void)reclen;
     abort();
 }
-void tlsi_fail(ms_tls *t, uint8_t desc) {
+void tlsi_fail(ch_tls *t, uint8_t desc) {
     (void)t;
     (void)desc;
     abort();
 }
-int tlsi_send_alert(ms_tls *t, uint8_t level, uint8_t desc) {
+int tlsi_send_alert(ch_tls *t, uint8_t level, uint8_t desc) {
     (void)t;
     (void)level;
     (void)desc;
@@ -57,9 +57,9 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
     memset(&si, 0, sizeof si);
     (void)parse_sh(data, size, &si);
 
-    ms_tls t;
+    ch_tls t;
     memset(&t, 0, sizeof t);
-    t.peer_limit = MS_TX_PT;
+    t.peer_limit = CH_TX_PT;
     hs h;
     memset(&h, 0, sizeof h);
     h.t = &t;

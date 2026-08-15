@@ -11,10 +11,10 @@
 #include <unistd.h>
 
 #include "aead.h"
+#include "ch_assert.h"
 #include "chacha20.h"
 #include "hkdf.h"
 #include "keysched.h"
-#include "ms_assert.h"
 #include "poly1305.h"
 #include "rand.h"
 #include "record.h"
@@ -27,7 +27,7 @@
 #include "diffdrv.h"
 #include "diffp256.h"
 
-noreturn void ms_assert_fail(const char *cond, const char *file, int line) {
+noreturn void ch_assert_fail(const char *cond, const char *file, int line) {
     (void)fprintf(stderr, "ASSERT %s:%d: %s\n", file, line, cond);
     abort();
 }

@@ -1,11 +1,11 @@
-// Bounds-checked byte reader and writer. Every wire byte in matasapos
+// Bounds-checked byte reader and writer. Every wire byte in chapulin
 // moves through these two; no raw buffer arithmetic exists outside them.
 // Errors are sticky: after the first overrun every later call is a no-op
 // and the final err check catches the lot, so parse/build code stays
 // straight-line. Multi-byte integers are big-endian on the wire (TLS) and
 // always move byte-by-byte — host endianness never leaks.
-#ifndef MS_BUF_H
-#define MS_BUF_H
+#ifndef CH_BUF_H
+#define CH_BUF_H
 
 #include <stddef.h>
 #include <stdint.h>

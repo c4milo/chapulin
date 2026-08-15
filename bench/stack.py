@@ -4,7 +4,7 @@
 Builds every library object with -fstack-usage, extracts the real call
 graph from the object code (arm64 `bl`/`b` sites via otool), and walks the
 max-weight path under each public entry point. Indirect calls (the
-caller's send/recv/on_ticket hooks and ms_rand_bytes) execute on the
+caller's send/recv/on_ticket hooks and ch_rand_bytes) execute on the
 caller's budget and are reported as such, not silently omitted.
 """
 import re
@@ -14,7 +14,7 @@ import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-ENTRIES = ["_ms_connect", "_ms_read", "_ms_write", "_ms_close"]
+ENTRIES = ["_ch_connect", "_ch_read", "_ch_write", "_ch_close"]
 SRCS = sorted(ROOT.glob("*.c"))
 
 
@@ -108,7 +108,7 @@ def main() -> int:
             depth, path = deepest(entry, fr, cg, ())
             chain = " > ".join(p.lstrip("_") for p in path)
             print(f"{entry.lstrip('_'):12} {depth:5} B  via {chain}")
-        print("(caller hooks — send/recv/on_ticket/ms_rand_bytes — run on the "
+        print("(caller hooks — send/recv/on_ticket/ch_rand_bytes — run on the "
               "caller's own stack budget)")
     return 0
 

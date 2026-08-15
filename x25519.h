@@ -2,8 +2,8 @@
 // 16-bit limbs in int64 words: uniform schoolbook products, small enough
 // bounds for machine checking, and constant time by construction — the
 // ladder branches on nothing and indexes memory by nothing secret.
-#ifndef MS_X25519_H
-#define MS_X25519_H
+#ifndef CH_X25519_H
+#define CH_X25519_H
 
 #include <stdint.h>
 

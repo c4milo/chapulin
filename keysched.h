@@ -1,8 +1,8 @@
 // TLS 1.3 key schedule (RFC 8446 §7.1), specialized to one PSK and
 // SHA-256. Pure functions over 32-byte secrets; the handshake owns where
 // they live and when they die.
-#ifndef MS_KEYSCHED_H
-#define MS_KEYSCHED_H
+#ifndef CH_KEYSCHED_H
+#define CH_KEYSCHED_H
 
 #include <stddef.h>
 #include <stdint.h>

@@ -2,8 +2,8 @@
 // buffers — no I/O, no allocation. One rec_dir per direction holds the
 // traffic key, IV, and sequence number; the handshake swaps secrets in as
 // the key schedule advances and KeyUpdate rekeys in place.
-#ifndef MS_RECORD_H
-#define MS_RECORD_H
+#ifndef CH_RECORD_H
+#define CH_RECORD_H
 
 #include <stddef.h>
 #include <stdint.h>

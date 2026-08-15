@@ -2,7 +2,7 @@
 // dispatcher (NewSessionTicket and KeyUpdate). It is static in tls.c, so
 // the harness includes the translation unit to reach it. The session is
 // zeroed with a live buffer length, a send callback that swallows the
-// KeyUpdate reply, and an on_ticket callback that touches every ms_ticket
+// KeyUpdate reply, and an on_ticket callback that touches every ch_ticket
 // field so any bad pointer or length the ticket parser hands out trips
 // AddressSanitizer.
 #include <stdint.h>
@@ -13,16 +13,16 @@
 #include "session.h"
 #include "tls.h"
 
-noreturn void ms_assert_fail(const char *cond, const char *file, int line) {
+noreturn void ch_assert_fail(const char *cond, const char *file, int line) {
     (void)cond;
     (void)file;
     (void)line;
     abort();
 }
 
-// tls.c pulls in ms_connect -> ms_handshake, which references this hook.
+// tls.c pulls in ch_connect -> ch_handshake, which references this hook.
 // handle_post_hs never drives a handshake, so a call here is a harness bug.
-void ms_rand_bytes(uint8_t *p, size_t n) {
+void ch_rand_bytes(uint8_t *p, size_t n) {
     (void)p;
     (void)n;
     abort();
@@ -34,10 +34,10 @@ static int send_ok(void *io, const uint8_t *p, size_t n) {
     (void)io;
     (void)p;
     (void)n;
-    return 0; // "all n bytes moved" per the ms_cfg contract
+    return 0; // "all n bytes moved" per the ch_cfg contract
 }
 
-static void on_ticket(void *io, const ms_ticket *tk) {
+static void on_ticket(void *io, const ch_ticket *tk) {
     (void)io;
     uint64_t acc = tk->lifetime_s + tk->age_add + tk->identity_len;
     for (size_t i = 0; i < sizeof tk->psk; i++) {
@@ -52,7 +52,7 @@ static void on_ticket(void *io, const ms_ticket *tk) {
 #include "tls.c"
 
 int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
-    ms_tls t;
+    ch_tls t;
     memset(&t, 0, sizeof t);
     uint8_t buf[0x4200];
     t.cfg.buf = buf;

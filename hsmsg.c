@@ -2,7 +2,7 @@
 
 #include "buf.h"
 
-size_t hs_build_ch(uint8_t *out, size_t cap, const ms_cfg *cfg, const uint8_t pub[32],
+size_t hs_build_ch(uint8_t *out, size_t cap, const ch_cfg *cfg, const uint8_t pub[32],
                    const uint8_t random32[32], uint16_t rsl, const uint8_t *cookie,
                    size_t cookielen) {
     wbuf w;

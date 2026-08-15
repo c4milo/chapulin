@@ -1,31 +1,31 @@
 // The caller-facing configuration and result codes, at the bottom of the
 // include graph so transport (io) and message building (hsmsg) can see
 // them without reaching up into the session or the public API.
-#ifndef MS_CFG_H
-#define MS_CFG_H
+#ifndef CH_CFG_H
+#define CH_CFG_H
 
 #include <stddef.h>
 #include <stdint.h>
 
 #include "sha256.h"
 
-#define MS_OK 0
-#define MS_EIO (-1)     // transport failed or closed under us
-#define MS_EPROTO (-2)  // peer broke the protocol; session dead
-#define MS_EAUTH (-3)   // authentication failed; session dead
-#define MS_ECAP (-4)    // caller buffer too small for the peer's message
-#define MS_ECLOSED (-5) // clean close_notify from the peer
+#define CH_OK 0
+#define CH_EIO (-1)     // transport failed or closed under us
+#define CH_EPROTO (-2)  // peer broke the protocol; session dead
+#define CH_EAUTH (-3)   // authentication failed; session dead
+#define CH_ECAP (-4)    // caller buffer too small for the peer's message
+#define CH_ECLOSED (-5) // clean close_notify from the peer
 
 // Outgoing records are staged in the session struct so writes never
 // disturb buffered incoming data; 512 bytes of plaintext per record.
-#define MS_TX_PT 512
+#define CH_TX_PT 512
 
 // Ticket identities beyond this cannot fit a future ClientHello, so
 // larger tickets are silently dropped rather than surfaced.
-#define MS_TICKET_ID_MAX 320
+#define CH_TICKET_ID_MAX 320
 
 // A resumption ticket surfaced to the application: store psk + identity
-// and present them on the next ms_connect (resumption = 1) for a cheaper
+// and present them on the next ch_connect (resumption = 1) for a cheaper
 // reconnect. Valid only during the callback; copy what you keep.
 typedef struct {
     const uint8_t *identity;
@@ -33,7 +33,7 @@ typedef struct {
     uint8_t psk[SHA256_LEN];
     uint32_t lifetime_s;
     uint32_t age_add;
-} ms_ticket;
+} ch_ticket;
 
 typedef struct {
     // Authentication is one of two modes:
@@ -67,7 +67,7 @@ typedef struct {
     void *io;
 
     // Optional; called once per NewSessionTicket.
-    void (*on_ticket)(void *io, const ms_ticket *ticket);
-} ms_cfg;
+    void (*on_ticket)(void *io, const ch_ticket *ticket);
+} ch_cfg;
 
 #endif

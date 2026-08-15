@@ -1,8 +1,8 @@
 // Handshake message construction and the wire constants both build and
 // parse sides share. The only message the client ever builds besides
 // Finished is the ClientHello, so that is what lives here.
-#ifndef MS_HSMSG_H
-#define MS_HSMSG_H
+#ifndef CH_HSMSG_H
+#define CH_HSMSG_H
 
 #include <stddef.h>
 #include <stdint.h>
@@ -59,7 +59,7 @@
 // pinned-key mode the hello offers signature_algorithms instead and has
 // no binder. rsl is our record_size_limit; cookie echoes an HRR cookie
 // (NULL first flight). Returns the total length, or 0 if cap is short.
-size_t hs_build_ch(uint8_t *out, size_t cap, const ms_cfg *cfg, const uint8_t pub[32],
+size_t hs_build_ch(uint8_t *out, size_t cap, const ch_cfg *cfg, const uint8_t pub[32],
                    const uint8_t random32[32], uint16_t rsl, const uint8_t *cookie,
                    size_t cookielen);
 

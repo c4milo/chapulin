@@ -1,6 +1,6 @@
 # Embedded TLS landscape (surveyed 2026-08-14)
 
-Why matasapos exists: no shipping C TLS stack is simultaneously (a)
+Why chapulin exists: no shipping C TLS stack is simultaneously (a)
 heap-free at few-kB SRAM, (b) TLS 1.3 PSK-minimal, and (c) carrying
 machine-checked proofs. Each row below holds at most one of those.
 
@@ -27,7 +27,7 @@ allocator semantics.
 by default, ~25 kB RAM dominated by 16 kB record buffers. **Still no
 TLS 1.3 in 2026** ([status](https://bearssl.org/tls13.html) unchanged
 since ~2018); curl dropped it for that. Effectively frozen — this is the
-gap matasapos fills.
+gap chapulin fills.
 
 **picotls** (MIT). TLS 1.3, built for H2O/QUIC servers; malloc-backed
 growable buffers; no embedded footprint story.
@@ -62,7 +62,7 @@ figure beyond a user-supplied 16 kB frame buffer.
 - **s2n-tls (AWS)**: SAW/Cryptol proofs for HMAC, DRBG, and the handshake
   state machine, in CI ([CAV'18](https://d1.awsstatic.com/Security/pdfs/Continuous_Formal_Verification_Of_Amazon_s2n.pdf)).
   Server-class; not whole-stack memory safety; needs a libcrypto.
-- **The methodology matasapos copies**: AWS proves the FreeRTOS core
+- **The methodology chapulin copies**: AWS proves the FreeRTOS core
   libraries memory-safe with CBMC
   ([coreMQTT](https://www.freertos.org/Documentation/03-Libraries/03-FreeRTOS-core/02-coreMQTT/00-coreMQTT)),
   and [mlkem-native](https://github.com/pq-code-package/mlkem-native)
@@ -90,6 +90,6 @@ anything) and fine when both ends are ours.
 Every competitor's RAM claim hides the 16,384+ B max record buffer.
 Published minima for a working TLS 1.3 PSK client: wolfSSL ~6.2 kB heap
 (buffers extra), mbedTLS ~9–15 kB (buffers extra), SharkSSL 13 kB
-total-system (cert-based). matasapos: 968 B session + a 2 kB record
+total-system (cert-based). chapulin: 968 B session + a 2 kB record
 buffer = ~3 kB total static, zero heap, buffer included — with
 record_size_limit making the small buffer safe rather than hopeful.

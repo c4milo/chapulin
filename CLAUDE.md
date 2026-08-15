@@ -1,13 +1,13 @@
-# matasapos rules
+# chapulin rules
 
-matasapos is a TLS 1.3-only client for devices with a few kB of SRAM to
-spare. Sapo = eavesdropper; this leaves him nothing to hear. Home:
-github.com/c4milo.
+chapulin is a TLS 1.3-only client for devices with a few kB of SRAM to
+spare, named after El Chapulín Colorado: small, unassuming, protective.
+Home: github.com/c4milo.
 
 - C11, libc only. No third-party code, no OS assumptions beyond the
   caller-supplied I/O callbacks. The target is a bare-metal MCU or an
   lwIP-class socket stack.
-- Zero heap. No malloc anywhere, ever — one static `ms_tls` session
+- Zero heap. No malloc anywhere, ever — one static `ch_tls` session
   struct plus a caller-provided record buffer is the entire working set.
   bench/sram.sh measures the README's memory numbers; never estimate
   them, and re-measure when the code changes.
@@ -26,7 +26,7 @@ github.com/c4milo.
   (ECDSA verify, pinned mode) ← `record.[ch]`
   (record layer) ← `handshake.[ch]` (client state machine) ← `tls.[ch]`
   (public API) ← demo/test mains. Firmware takes everything below
-  `tls.[ch]` as-is and supplies I/O callbacks and `ms_rand_bytes`.
+  `tls.[ch]` as-is and supplies I/O callbacks and `ch_rand_bytes`.
 - Everything that touches secret bytes is constant time: no secret-
   dependent branches, no secret-dependent memory indices. Comparisons go
   through `ct_memeq` and wipes through `ct_wipe`; constant-time selects,
@@ -47,8 +47,8 @@ github.com/c4milo.
   Never assume host endianness; emit and read multi-byte values
   byte-by-byte.
 - Operational errors (bad peer input, short buffers, I/O failure) return
-  `ms_err` codes and fail closed — alert, wipe keys, dead session.
-  `MS_ASSERT` is for programmer-error invariants only, seeded at contract
+  `ch_err` codes and fail closed — alert, wipe keys, dead session.
+  `CH_ASSERT` is for programmer-error invariants only, seeded at contract
   points, never in per-byte paths.
 - Record size discipline: the client always sends `record_size_limit`
   (RFC 8449) sized to the caller's buffer. A peer record over the limit is

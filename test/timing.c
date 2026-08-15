@@ -10,9 +10,9 @@
 #include <string.h>
 #include <time.h>
 
+#include "ch_assert.h"
 #include "chacha20.h"
 #include "ct.h"
-#include "ms_assert.h"
 #include "poly1305.h"
 #include "rand.h"
 #include "testrand.h"
@@ -32,7 +32,7 @@
 static int failures = 0;
 static volatile uint32_t sink; // keeps timed bodies from being elided
 
-noreturn void ms_assert_fail(const char *cond, const char *file, int line) {
+noreturn void ch_assert_fail(const char *cond, const char *file, int line) {
     (void)fprintf(stderr, "ASSERT %s:%d: %s\n", file, line, cond);
     abort();
 }
@@ -43,7 +43,7 @@ static uint64_t now_ns(void) {
     return (uint64_t)ts.tv_sec * 1000000000U + (uint64_t)ts.tv_nsec;
 }
 
-// xorshift64*, seeded once from ms_rand_bytes; drives only the class
+// xorshift64*, seeded once from ch_rand_bytes; drives only the class
 // schedule, never key material.
 static uint64_t rng_state;
 
@@ -139,7 +139,7 @@ static uint8_t eq_a[64];
 static uint8_t eq_b[64];
 
 static void eq_prep(int cls) {
-    ms_rand_bytes(eq_a, sizeof eq_a);
+    ch_rand_bytes(eq_a, sizeof eq_a);
     memcpy(eq_b, eq_a, sizeof eq_b);
     eq_b[0] ^= (uint8_t)cls;
 }
@@ -160,7 +160,7 @@ static uint8_t poly_key[POLY1305_KEY];
 static uint8_t poly_msg[256];
 
 static void poly_prep(int cls) {
-    ms_rand_bytes(poly_key, sizeof poly_key);
+    ch_rand_bytes(poly_key, sizeof poly_key);
     if (cls == 0) {
         memcpy(poly_key, poly_key_fixed, sizeof poly_key);
     }
@@ -183,7 +183,7 @@ static uint8_t cc_key[CHACHA20_KEY];
 static uint8_t cc_buf[256];
 
 static void cc_prep(int cls) {
-    ms_rand_bytes(cc_key, sizeof cc_key);
+    ch_rand_bytes(cc_key, sizeof cc_key);
     if (cls == 0) {
         memcpy(cc_key, cc_key_fixed, sizeof cc_key);
     }
@@ -203,7 +203,7 @@ static uint8_t x_scalar_fixed[X25519_LEN];
 static uint8_t x_scalar[X25519_LEN];
 
 static void x_prep(int cls) {
-    ms_rand_bytes(x_scalar, sizeof x_scalar);
+    ch_rand_bytes(x_scalar, sizeof x_scalar);
     if (cls == 0) {
         memcpy(x_scalar, x_scalar_fixed, sizeof x_scalar);
     }
@@ -224,13 +224,13 @@ static void report(const char *name, double t) {
 }
 
 int main(void) {
-    ms_rand_bytes((uint8_t *)&rng_state, sizeof rng_state);
+    ch_rand_bytes((uint8_t *)&rng_state, sizeof rng_state);
     rng_state |= 1;
-    ms_rand_bytes(poly_key_fixed, sizeof poly_key_fixed);
-    ms_rand_bytes(cc_key_fixed, sizeof cc_key_fixed);
-    ms_rand_bytes(x_scalar_fixed, sizeof x_scalar_fixed);
-    ms_rand_bytes(poly_msg, sizeof poly_msg);
-    ms_rand_bytes(cc_buf, sizeof cc_buf);
+    ch_rand_bytes(poly_key_fixed, sizeof poly_key_fixed);
+    ch_rand_bytes(cc_key_fixed, sizeof cc_key_fixed);
+    ch_rand_bytes(x_scalar_fixed, sizeof x_scalar_fixed);
+    ch_rand_bytes(poly_msg, sizeof poly_msg);
+    ch_rand_bytes(cc_buf, sizeof cc_buf);
 
     report("ct_memeq", measure(eq_prep, eq_run, FAST_N, WARMUP));
     report("poly1305", measure(poly_prep, poly_run, FAST_N, WARMUP));

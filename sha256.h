@@ -1,8 +1,8 @@
 // SHA-256 (FIPS 180-4). Streaming, because the handshake transcript hash
 // absorbs messages as they cross the wire; no message is ever buffered
 // whole for hashing.
-#ifndef MS_SHA256_H
-#define MS_SHA256_H
+#ifndef CH_SHA256_H
+#define CH_SHA256_H
 
 #include <stddef.h>
 #include <stdint.h>

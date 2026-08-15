@@ -1,7 +1,7 @@
 #include "poly1305.h"
 
+#include "ch_assert.h"
 #include "ct.h"
-#include "ms_assert.h"
 
 static uint32_t load32(const uint8_t *p) {
     return (uint32_t)p[0] | ((uint32_t)p[1] << 8) | ((uint32_t)p[2] << 16) | ((uint32_t)p[3] << 24);
@@ -106,7 +106,7 @@ void poly1305_update(poly1305 *p, const uint8_t *in, size_t n) {
     }
     // Here either the buffer drained above (fill 0) or n ran out first; the
     // remainder is under a block. The assert makes the invariant checkable.
-    MS_ASSERT(p->fill + n < 16);
+    CH_ASSERT(p->fill + n < 16);
     while (n > 0 && p->fill < sizeof p->block) {
         p->block[p->fill++] = *in++;
         n--;
@@ -114,7 +114,7 @@ void poly1305_update(poly1305 *p, const uint8_t *in, size_t n) {
 }
 
 void poly1305_final(poly1305 *p, uint8_t tag[POLY1305_TAG]) {
-    MS_ASSERT(p->fill < 16);
+    CH_ASSERT(p->fill < 16);
     if (p->fill > 0) {
         p->block[p->fill++] = 1;
         while (p->fill < 16) {

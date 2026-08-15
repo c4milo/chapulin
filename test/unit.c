@@ -7,11 +7,11 @@
 
 #include "aead.h"
 #include "buf.h"
+#include "ch_assert.h"
 #include "chacha20.h"
 #include "ct.h"
 #include "handshake.h"
 #include "hkdf.h"
-#include "ms_assert.h"
 #include "p256.h"
 #include "poly1305.h"
 #include "rand.h"
@@ -31,7 +31,7 @@ static int failures = 0;
         }                                                                                          \
     } while (0)
 
-noreturn void ms_assert_fail(const char *cond, const char *file, int line) {
+noreturn void ch_assert_fail(const char *cond, const char *file, int line) {
     (void)fprintf(stderr, "ASSERT %s:%d: %s\n", file, line, cond);
     abort();
 }
@@ -270,7 +270,7 @@ static void test_buf(void) {
 
 static void test_record(void) {
     uint8_t secret[SHA256_LEN];
-    ms_rand_bytes(secret, sizeof secret);
+    ch_rand_bytes(secret, sizeof secret);
     rec_dir tx;
     rec_dir rx;
     rec_dir_init(&tx, secret);
@@ -333,13 +333,13 @@ static int mock_recv(void *io, uint8_t *p, size_t n) {
     return (int)take;
 }
 
-static void mock_on_ticket(void *io, const ms_ticket *tk) {
+static void mock_on_ticket(void *io, const ch_ticket *tk) {
     (void)tk;
     ((mock_io *)io)->tickets++;
 }
 
 // Builds a connected session whose read keys mirror srv, fed by m.
-static void mock_session(ms_tls *t, mock_io *m, uint8_t *rxbuf, size_t rxlen,
+static void mock_session(ch_tls *t, mock_io *m, uint8_t *rxbuf, size_t rxlen,
                          const uint8_t secret[SHA256_LEN]) {
     memset(t, 0, sizeof *t);
     t->cfg.buf = rxbuf;
@@ -351,12 +351,12 @@ static void mock_session(ms_tls *t, mock_io *m, uint8_t *rxbuf, size_t rxlen,
     memcpy(t->rd_secret, secret, SHA256_LEN);
     rec_dir_init(&t->rd, t->rd_secret);
     uint8_t wsecret[SHA256_LEN];
-    ms_rand_bytes(wsecret, sizeof wsecret);
+    ch_rand_bytes(wsecret, sizeof wsecret);
     memcpy(t->wr_secret, wsecret, SHA256_LEN);
     rec_dir_init(&t->wr, t->wr_secret);
-    t->state = MS_ST_CONNECTED;
+    t->state = CH_ST_CONNECTED;
     t->keys = 1;
-    t->peer_limit = MS_TX_PT;
+    t->peer_limit = CH_TX_PT;
 }
 
 static void mock_push(mock_io *m, rec_dir *srv, uint8_t type, const uint8_t *pt, size_t n) {
@@ -370,12 +370,12 @@ static void mock_push(mock_io *m, rec_dir *srv, uint8_t type, const uint8_t *pt,
 // directions, then application data under the updated key.
 static void test_post_handshake(void) {
     uint8_t secret[SHA256_LEN];
-    ms_rand_bytes(secret, sizeof secret);
+    ch_rand_bytes(secret, sizeof secret);
     rec_dir srv;
     rec_dir_init(&srv, secret);
     mock_io m = {0};
     static uint8_t rxbuf[1024];
-    ms_tls t;
+    ch_tls t;
     mock_session(&t, &m, rxbuf, sizeof rxbuf, secret);
 
     // NST: lifetime, age_add, nonce(2), identity(90), no extensions.
@@ -410,26 +410,26 @@ static void test_post_handshake(void) {
     mock_push(&m, &srv, REC_APPDATA, (const uint8_t *)"hola", 4);
 
     uint8_t out[16];
-    int got = ms_read(&t, out, sizeof out);
+    int got = ch_read(&t, out, sizeof out);
     CHECK(got == 4 && memcmp(out, "hola", 4) == 0);
     CHECK(m.tickets == 1);
     CHECK(m.sent > 0); // the KeyUpdate reply went out
-    CHECK(t.state == MS_ST_CONNECTED);
+    CHECK(t.state == CH_ST_CONNECTED);
 
     // Zero-length reads are a caller bug, never the close sentinel.
-    CHECK(ms_read(&t, out, 0) == MS_ECAP);
+    CHECK(ch_read(&t, out, 0) == CH_ECAP);
 
     // Clean close: exactly one close_notify reply, then 0 forever and no
     // record sealed under wiped keys on a second close.
     const uint8_t close_notify[2] = {1, 0};
     mock_push(&m, &srv, REC_ALERT, close_notify, 2);
     size_t before_close = m.sent;
-    CHECK(ms_read(&t, out, sizeof out) == 0);
+    CHECK(ch_read(&t, out, sizeof out) == 0);
     CHECK(m.sent > before_close); // our close_notify, under live keys
     size_t after_close = m.sent;
-    ms_close(&t);
+    ch_close(&t);
     CHECK(m.sent == after_close); // keys wiped: nothing more on the wire
-    CHECK(ms_read(&t, out, sizeof out) == 0);
+    CHECK(ch_read(&t, out, sizeof out) == 0);
 }
 
 // ECDSA P-256/SHA-256 verify. Key and the "sample"/"test" signatures are
@@ -492,7 +492,7 @@ static void test_p256(void) {
               sig);
     CHECK(p256_ecdsa_verify(pub, hash, sig, n) == 1);
 
-    // "matasapos"
+    // "chapulin"
     unhex("233f842649c70a89c3c76f0f6cbc3ce8a2e7e853f3a179f9993098098e1451ab", hash);
     n = unhex("30440220515c3d6eb9e396b904d3feca7f54fdcd0cc1e997bf375dca515ad0a6c3b4035f"
               "022077ef4265782218e9cdc7fe27f236602794bb2c1a32285ced516bd5d77042d4d0",

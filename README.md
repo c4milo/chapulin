@@ -1,10 +1,10 @@
-# matasapos
+# chapulin
 
 A TLS 1.3 client for devices with a few kilobytes of static RAM (SRAM)
-to spare. Sapo is Colombian for the guy who listens in; matasapos leaves
-him nothing to hear.
+to spare. Named after El Chapulín Colorado: small, unassuming, and it
+protects you from the bad guys.
 
-matasapos speaks one profile: TLS 1.3 with
+chapulin speaks one profile: TLS 1.3 with
 `TLS_CHACHA20_POLY1305_SHA256` and x25519 key exchange. It offers no
 alternatives and negotiates nothing. The server accepts the profile or
 the handshake fails closed. There is no 0-RTT.
@@ -52,13 +52,13 @@ targets shrink the pointer fields.
 
 | what | bytes |
 |---|---|
-| `ms_tls` session struct (includes 534 B TX staging) | 976 |
+| `ch_tls` session struct (includes 534 B TX staging) | 976 |
 | caller receive buffer (you choose; 2048 shown) | 2048 |
 | **total static working set** | **3024** |
-| peak transient stack, `ms_connect` (pinned mode: P-256 verify) | 3344 |
-| peak transient stack, `ms_connect` (PSK mode: x25519 ladder) | 2608 |
-| peak transient stack, `ms_read` (worst case: KeyUpdate rekey) | 1632 |
-| peak transient stack, `ms_write` / `ms_close` | 736 / 688 |
+| peak transient stack, `ch_connect` (pinned mode: P-256 verify) | 3344 |
+| peak transient stack, `ch_connect` (PSK mode: x25519 ladder) | 2608 |
+| peak transient stack, `ch_read` (worst case: KeyUpdate rekey) | 1632 |
+| peak transient stack, `ch_write` / `ch_close` | 736 / 688 |
 
 The script computes each entry point's worst case from the object code's
 call graph, weighted by `-fstack-usage` frames. It does not rely on a
@@ -137,7 +137,7 @@ libraries and on mlkem-native, and this suite copies that method.
 
 ## The differential oracle
 
-`spec/` is an executable Lean 4 specification of everything matasapos
+`spec/` is an executable Lean 4 specification of everything chapulin
 computes: SHA-256, HKDF and the RFC 8446 §7.1 key schedule, ChaCha20,
 Poly1305 (the accumulator is a plain `Nat` mod 2^130−5), the AEAD,
 record framing, x25519, and P-256, all as definitional `Nat` arithmetic.
@@ -162,7 +162,7 @@ to the RFC.
 ```c
 static uint8_t rxbuf[2048];
 // PSK mode (provisioned shared key)…
-ms_cfg cfg = {
+ch_cfg cfg = {
     .psk = psk, .psk_len = 32,
     .psk_id = (const uint8_t *)"device-42", .psk_id_len = 9,
     .buf = rxbuf, .buf_len = sizeof rxbuf,
@@ -171,16 +171,16 @@ ms_cfg cfg = {
 };
 // …or pinned-key mode: no shared secret, just the server's raw P-256
 // public key (X||Y), provisioned once.
-// ms_cfg cfg = { .server_pubkey = pin64, .buf = rxbuf, ... };
-static ms_tls tls;
-if (ms_connect(&tls, &cfg) != MS_OK) { /* reconnect later */ }
-ms_write(&tls, data, n);
-int got = ms_read(&tls, out, sizeof out);
-ms_close(&tls);
+// ch_cfg cfg = { .server_pubkey = pin64, .buf = rxbuf, ... };
+static ch_tls tls;
+if (ch_connect(&tls, &cfg) != CH_OK) { /* reconnect later */ }
+ch_write(&tls, data, n);
+int got = ch_read(&tls, out, sizeof out);
+ch_close(&tls);
 ```
 
 The platform provides two blocking socket callbacks, bounded by its own
-timeouts, and wires `ms_rand_bytes` (rand.h) to its hardware random
+timeouts, and wires `ch_rand_bytes` (rand.h) to its hardware random
 number generator. Every error kills the session: the stack wipes its
 keys and the caller reconnects. Devices recover by reconnecting anyway,
 and the rule removes the entire resumable-error state space from the
@@ -205,14 +205,14 @@ for the house rules.
 
 ## Non-goals
 
-matasapos does not implement: 0-RTT (the IETF IoT profile forbids it),
+chapulin does not implement: 0-RTT (the IETF IoT profile forbids it),
 DTLS, X.509 chain validation, CA bundles, revocation, client
 certificates, cipher agility, the server role, or any insecure-fallback
 option. Pinned mode accepts a certificate but never parses it; the
 signature check against the provisioned key is the authentication.
 
 Two caveats. First, the IETF TLS 1.3 IoT profile's mandatory suite is
-AES-128-CCM-8, and matasapos is ChaCha-only because ChaCha needs no
+AES-128-CCM-8, and chapulin is ChaCha-only because ChaCha needs no
 lookup tables and runs in constant time on any core. That choice works
 when you control both ends and fails against a server that insists on
 AES; an AES-CCM build flag is the most likely v2 addition. Second, pin

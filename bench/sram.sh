@@ -15,7 +15,7 @@ cat > "$TMP/sz.c" <<'EOF'
 #include <stdio.h>
 #include "tls.h"
 int main(void) {
-    printf("ms_tls %zu\n", sizeof(ms_tls));
+    printf("ch_tls %zu\n", sizeof(ch_tls));
     return 0;
 }
 EOF

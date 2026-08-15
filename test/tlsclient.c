@@ -1,4 +1,4 @@
-// Host e2e client: connects to host port, speaks the matasapos profile,
+// Host e2e client: connects to host port, speaks the chapulin profile,
 // sends each line from stdin, prints what the server answers. Exists for
 // test/e2e.sh; firmware replaces this file and nothing below it.
 #include <arpa/inet.h>
@@ -11,12 +11,12 @@
 #include <sys/time.h>
 #include <unistd.h>
 
-#include "ms_assert.h"
+#include "ch_assert.h"
 #include "rand.h"
 #include "testrand.h"
 #include "tls.h"
 
-noreturn void ms_assert_fail(const char *cond, const char *file, int line) {
+noreturn void ch_assert_fail(const char *cond, const char *file, int line) {
     (void)fprintf(stderr, "ASSERT %s:%d: %s\n", file, line, cond);
     abort();
 }
@@ -50,7 +50,7 @@ static void put_hex(FILE *f, const uint8_t *p, size_t n) {
 
 // Persists one ticket as "identity-hex psk-hex age_add" so a later run can
 // resume with it.
-static void on_ticket(void *io, const ms_ticket *tk) {
+static void on_ticket(void *io, const ch_ticket *tk) {
     (void)io;
     (void)fprintf(stderr, "ticket: id %zu bytes, lifetime %us\n", tk->identity_len, tk->lifetime_s);
     if (g_ticket_path == NULL || g_ticket_saved) {
@@ -107,7 +107,7 @@ static int load_ticket(const char *path, uint8_t *id, size_t *idlen, uint8_t *ps
     if (f == NULL) {
         return -1;
     }
-    char idhex[2 * MS_TICKET_ID_MAX + 1];
+    char idhex[2 * CH_TICKET_ID_MAX + 1];
     char pskhex[2 * SHA256_LEN + 1];
     char agestr[16];
     int rc = fscanf(f, "%640s %64s %15s", idhex, pskhex, agestr);
@@ -120,7 +120,7 @@ static int load_ticket(const char *path, uint8_t *id, size_t *idlen, uint8_t *ps
     if (end == agestr || *end != 0 || age_add > 0xffffffffUL) {
         return -1;
     }
-    *idlen = unhex(idhex, id, MS_TICKET_ID_MAX);
+    *idlen = unhex(idhex, id, CH_TICKET_ID_MAX);
     *psklen = unhex(pskhex, psk, SHA256_LEN);
     *age = (uint32_t)age_add;
     return (*idlen > 0 && *psklen == SHA256_LEN) ? 0 : -1;
@@ -128,7 +128,7 @@ static int load_ticket(const char *path, uint8_t *id, size_t *idlen, uint8_t *ps
 
 // Fills the auth part of cfg: "pin:<pubkey-hex>" for pinned-key mode, a
 // saved ticket ("@file"), or an external psk-hex + identity pair.
-static int setup_psk(char **argv, ms_cfg *cfg, uint8_t *psk, size_t pskcap, uint8_t *id) {
+static int setup_psk(char **argv, ch_cfg *cfg, uint8_t *psk, size_t pskcap, uint8_t *id) {
     static uint8_t pin[64];
     if (strncmp(argv[3], "pin:", 4) == 0) {
         if (unhex(argv[3] + 4, pin, sizeof pin) != sizeof pin) {
@@ -191,9 +191,9 @@ int main(int argc, char **argv) {
     freeaddrinfo(ai);
 
     uint8_t psk[64];
-    uint8_t id[MS_TICKET_ID_MAX];
+    uint8_t id[CH_TICKET_ID_MAX];
     static uint8_t rxbuf[2048];
-    ms_cfg cfg = {0};
+    ch_cfg cfg = {0};
     if (setup_psk(argv, &cfg, psk, sizeof psk, id) != 0) {
         return 2;
     }
@@ -204,9 +204,9 @@ int main(int argc, char **argv) {
     cfg.io = &fd;
     cfg.on_ticket = on_ticket;
 
-    static ms_tls tls;
-    int rc = ms_connect(&tls, &cfg);
-    if (rc != MS_OK) {
+    static ch_tls tls;
+    int rc = ch_connect(&tls, &cfg);
+    if (rc != CH_OK) {
         (void)fprintf(stderr, "handshake failed: %d\n", rc);
         return 1;
     }
@@ -214,11 +214,11 @@ int main(int argc, char **argv) {
 
     char line[512];
     while (fgets(line, sizeof line, stdin) != NULL) {
-        if (ms_write(&tls, (const uint8_t *)line, strlen(line)) != MS_OK) {
+        if (ch_write(&tls, (const uint8_t *)line, strlen(line)) != CH_OK) {
             return 1;
         }
         uint8_t reply[512];
-        int got = ms_read(&tls, reply, sizeof reply);
+        int got = ch_read(&tls, reply, sizeof reply);
         if (got <= 0) {
             (void)fprintf(stderr, "read: %d\n", got);
             return got == 0 ? 0 : 1;
@@ -226,7 +226,7 @@ int main(int argc, char **argv) {
         (void)fwrite(reply, 1, (size_t)got, stdout);
         (void)fflush(stdout);
     }
-    ms_close(&tls);
+    ch_close(&tls);
     (void)close(fd);
     return 0;
 }

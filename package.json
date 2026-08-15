@@ -1,5 +1,5 @@
 {
-  "name": "matasapos-devtools",
+  "name": "chapulin-devtools",
   "private": true,
   "description": "Dev tooling only (commitlint); the stack itself is C11 + libc, no dependencies.",
   "devDependencies": {

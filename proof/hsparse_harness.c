@@ -11,19 +11,19 @@
 // handshake.c needs these symbols; the parsers under proof never call
 // them, and CBMC verifies that claim by proving the asserts unreachable.
 #include "tls.h"
-void ms_rand_bytes(uint8_t *p, size_t n) {
+void ch_rand_bytes(uint8_t *p, size_t n) {
     for (size_t i = 0; i < n; i++) {
         p[i] = nondet_u8();
     }
 }
-int io_send_all(const ms_cfg *cfg, const uint8_t *p, size_t n) {
+int io_send_all(const ch_cfg *cfg, const uint8_t *p, size_t n) {
     (void)cfg;
     (void)p;
     (void)n;
     __CPROVER_assert(0, "io_send_all unreachable from parsers");
     return -1;
 }
-int io_read_record(const ms_cfg *cfg, uint8_t *buf, size_t cap, uint8_t *outer, size_t *reclen) {
+int io_read_record(const ch_cfg *cfg, uint8_t *buf, size_t cap, uint8_t *outer, size_t *reclen) {
     (void)cfg;
     (void)buf;
     (void)cap;
@@ -32,12 +32,12 @@ int io_read_record(const ms_cfg *cfg, uint8_t *buf, size_t cap, uint8_t *outer, 
     __CPROVER_assert(0, "io_read_record unreachable from parsers");
     return -1;
 }
-void tlsi_fail(ms_tls *t, uint8_t desc) {
+void tlsi_fail(ch_tls *t, uint8_t desc) {
     (void)t;
     (void)desc;
     __CPROVER_assert(0, "tlsi_fail unreachable from parsers");
 }
-int tlsi_send_alert(ms_tls *t, uint8_t level, uint8_t desc) {
+int tlsi_send_alert(ch_tls *t, uint8_t level, uint8_t desc) {
     (void)t;
     (void)level;
     (void)desc;
@@ -69,13 +69,13 @@ int main(void) {
     }
     (void)parse_sh(msg, n, &si, nondet_u8() & 1);
 
-    ms_tls t;
+    ch_tls t;
     hs h;
     for (size_t i = 0; i < sizeof h; i++) {
         ((uint8_t *)&h)[i] = 0;
     }
     h.t = &t;
-    t.peer_limit = MS_TX_PT;
+    t.peer_limit = CH_TX_PT;
     (void)parse_ee(&h, msg, n);
     return 0;
 }

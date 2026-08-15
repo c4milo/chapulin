@@ -2,20 +2,20 @@
 // directions, the transcript, and the TX staging area — plus the
 // teardown and alert primitives every layer above record shares. Sits
 // between record and handshake in the include graph.
-#ifndef MS_SESSION_H
-#define MS_SESSION_H
+#ifndef CH_SESSION_H
+#define CH_SESSION_H
 
 #include "cfg.h"
 #include "record.h"
 #include "sha256.h"
 
-#define MS_ST_START 0
-#define MS_ST_CONNECTED 1
-#define MS_ST_CLOSED 2
-#define MS_ST_FAILED 3
+#define CH_ST_START 0
+#define CH_ST_CONNECTED 1
+#define CH_ST_CLOSED 2
+#define CH_ST_FAILED 3
 
 typedef struct {
-    ms_cfg cfg;
+    ch_cfg cfg;
     rec_dir rd;                    // server -> client protection
     rec_dir wr;                    // client -> server protection
     uint8_t rd_secret[SHA256_LEN]; // current traffic secrets, for KeyUpdate
@@ -28,17 +28,17 @@ typedef struct {
     // Unread plaintext of the current record, inside cfg.buf.
     size_t pt_off;
     size_t pt_len;
-    uint8_t tx[REC_HDR + MS_TX_PT + 1 + AEAD_TAG];
-} ms_tls;
+    uint8_t tx[REC_HDR + CH_TX_PT + 1 + AEAD_TAG];
+} ch_tls;
 
 // Sends an alert — encrypted iff keys are live, plaintext only before any
 // keys exist, nothing at all once they are wiped.
-int tlsi_send_alert(ms_tls *t, uint8_t level, uint8_t desc);
+int tlsi_send_alert(ch_tls *t, uint8_t level, uint8_t desc);
 
 // Alert (best effort), wipe all key material, mark the session failed.
-void tlsi_fail(ms_tls *t, uint8_t desc);
+void tlsi_fail(ch_tls *t, uint8_t desc);
 
 // Wipe all key material and buffered plaintext; keys go dead.
-void tlsi_wipe(ms_tls *t);
+void tlsi_wipe(ch_tls *t);
 
 #endif
