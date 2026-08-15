@@ -4,5 +4,4 @@ bin/
 proof/*.goto
 proof/results/
 node_modules/
-package-lock.json
 spec/.lake/

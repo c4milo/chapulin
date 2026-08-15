@@ -1,0 +1,74 @@
+name: check
+
+on:
+  push:
+    branches: [main] # branch pushes get checked via their PR run
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    # `make prove` (CBMC over every harness) dominates the wall clock.
+    timeout-minutes: 90
+    env:
+      # noble ships clang 16-18; pin so a metapackage bump can't shift
+      # lint results. The Makefile's ?= picks these up.
+      CLANG_TIDY: clang-tidy-18
+      CLANG_FORMAT: clang-format-18
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # commitlint lints commit ranges, not just HEAD
+
+      - name: Install lint tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang-tidy-18 clang-format-18 cppcheck
+
+      - name: Install CBMC
+        run: |
+          curl -fsSLO https://github.com/diffblue/cbmc/releases/download/cbmc-6.10.0/ubuntu-24.04-cbmc-6.10.0-Linux.deb
+          sudo dpkg -i ubuntu-24.04-cbmc-6.10.0-Linux.deb
+          cbmc --version
+
+      - name: Cache Lean toolchain and spec build
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.elan
+            spec/.lake
+          key: lean-${{ runner.os }}-${{ hashFiles('spec/lean-toolchain', 'spec/lakefile.toml', 'spec/lake-manifest.json') }}
+          restore-keys: lean-${{ runner.os }}-
+
+      - name: Cache npm
+        uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: npm-${{ runner.os }}-${{ hashFiles('package-lock.json', 'package.json') }}
+
+      - name: Install elan
+        # --default-toolchain none: lake installs the spec/lean-toolchain
+        # pin itself, so elan-init needn't pull an unused stable release.
+        run: |
+          if [ ! -x "$HOME/.elan/bin/elan" ]; then
+            curl https://elan.lean-lang.org/elan-init.sh -sSf | sh -s -- -y --default-toolchain none
+          fi
+          echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
+
+      - run: npm ci
+
+      - name: Lint pushed commits
+        # make check re-lints from the root; this pins any failure to the
+        # commits under review when a base exists. On main (HEAD is on
+        # origin/main) fall back to the full history.
+        run: |
+          if git rev-parse -q --verify origin/main >/dev/null \
+             && ! git merge-base --is-ancestor HEAD origin/main; then
+            npx --no-install commitlint --from origin/main --to HEAD
+          else
+            npx --no-install commitlint --from "$(git rev-list --max-parents=0 HEAD)" --to HEAD
+          fi
+
+      - run: make hooks
+
+      - run: make check
