@@ -68,7 +68,8 @@ values).
 | ct | memeq ≡ plain comparison, wipe zeroizes, no UB | all inputs ≤ 64 B |
 | buf | any 12-op reader/writer sequence safe, len ≤ cap invariant | buffers ≤ 64 B |
 | sha256 | no UB for any two-chunk split | messages ≤ 96 B |
-| hkdf | extract/expand/expand-label no UB over the proven sha256 contract | keys ≤ 160 B, out ≤ 96 B (all expand-loop paths) |
+| hkdf (two harnesses) | hmac/extract and expand/expand-label no UB over the proven sha256 contract | keys ≤ 96 B, out ≤ 96 B (all structural paths) |
+| handshake | the driver — record pump, cross-record reassembly, HRR restart, state machine — safe on ANY record stream, over the proven io/record/keysched contracts | 96 B receive buffer |
 | chacha20 | no UB, in-place, any counter | ≤ 160 B (3 blocks) |
 | poly1305 | no UB for any three-chunk split, 64-bit products bounded | messages ≤ 80 B |
 | aead | seal/open round-trip, forged tag ⇒ zero bytes written, backward-overlap decrypt (the record layer's in-place mode) | pt ≤ 64 B, aad ≤ 32 B |
