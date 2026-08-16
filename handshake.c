@@ -184,6 +184,7 @@ typedef struct {
     int ver_ok;
     int have_share;
     int psk_ok;
+    uint8_t seen; // extension types already parsed, bits per parse_sh_ext
     uint8_t server_pub[X25519_LEN];
     const uint8_t *cookie;
     size_t cookielen;
@@ -199,6 +200,27 @@ static int parse_sh_ext(rbuf *r, sh_info *si, int hrr, int psk_mode) {
     if (ext == EXT_PRE_SHARED_KEY && !psk_mode) {
         return CH_EPROTO; // selecting a PSK we never offered
     }
+    uint8_t bit;
+    switch (ext) {
+    case EXT_SUPPORTED_VERSIONS:
+        bit = 1U << 0;
+        break;
+    case EXT_KEY_SHARE:
+        bit = 1U << 1;
+        break;
+    case EXT_PRE_SHARED_KEY:
+        bit = 1U << 2;
+        break;
+    case EXT_COOKIE:
+        bit = 1U << 3;
+        break;
+    default:
+        return CH_EPROTO; // ServerHello may carry nothing else
+    }
+    if (si->seen & bit) {
+        return CH_EPROTO; // RFC 8446 §4.2: one extension of each type
+    }
+    si->seen |= bit;
     rbuf e;
     rb_init(&e, ep, elen);
     switch (ext) {
@@ -238,9 +260,11 @@ static int parse_sh_ext(rbuf *r, sh_info *si, int hrr, int psk_mode) {
         }
         break;
     default:
-        return CH_EPROTO; // ServerHello may carry nothing else
+        break; // unreachable: the first switch rejected everything else
     }
-    return e.err ? CH_EPROTO : CH_OK;
+    // RFC 8446 §4.2: extension_data matches its struct exactly, so a
+    // non-empty remainder is a decode error.
+    return e.err || rb_left(&e) != 0 ? CH_EPROTO : CH_OK;
 }
 
 static int parse_sh(const uint8_t *body, size_t n, sh_info *si, int psk_mode) {
@@ -284,6 +308,7 @@ static int parse_ee(hs *h, const uint8_t *body, size_t n) {
     if (r.err || extlen != rb_left(&r)) {
         return CH_EPROTO;
     }
+    uint8_t seen = 0; // bit 0 record_size_limit, bit 1 supported_groups
     while (rb_left(&r) > 0) {
         uint16_t ext = rb_u16(&r);
         size_t elen = rb_u16(&r);
@@ -291,11 +316,15 @@ static int parse_ee(hs *h, const uint8_t *body, size_t n) {
         if (ep == NULL) {
             return CH_EPROTO;
         }
+        uint8_t bit;
         if (ext == EXT_RECORD_SIZE_LIMIT) {
+            bit = 1U << 0;
             rbuf e;
             rb_init(&e, ep, elen);
             uint16_t lim = rb_u16(&e);
-            if (e.err || lim < 64) {
+            // §4.2: extension_data matches its struct exactly; the body
+            // is one u16, so a non-empty remainder is a decode error.
+            if (e.err || rb_left(&e) != 0 || lim < 64) {
                 return CH_EPROTO;
             }
             // The limit covers content plus the inner type byte.
@@ -303,10 +332,16 @@ static int parse_ee(hs *h, const uint8_t *body, size_t n) {
             if (pt < h->t->peer_limit) {
                 h->t->peer_limit = pt;
             }
-        } else if (ext != EXT_SUPPORTED_GROUPS) {
+        } else if (ext == EXT_SUPPORTED_GROUPS) {
+            bit = 1U << 1; // tolerated; its body is deliberately unread
+        } else {
             h->alert = ALERT_UNSUPPORTED_EXTENSION;
             return CH_EPROTO;
         }
+        if (seen & bit) {
+            return CH_EPROTO; // RFC 8446 §4.2: one extension of each type
+        }
+        seen |= bit;
     }
     return CH_OK;
 }
