@@ -26,6 +26,7 @@ enum class Status : int {
     auth = CH_EAUTH,
     cap = CH_ECAP,
     closed = CH_ECLOSED,
+    invalid = CH_EINVAL,
 };
 
 // Non-owning byte views, so read/write take one argument instead of a

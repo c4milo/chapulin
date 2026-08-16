@@ -254,6 +254,8 @@ int main(void) {
         __CPROVER_assume(pinlen == 64);
 #else
         __CPROVER_assume(pinlen >= 256 && pinlen <= sizeof pin && pinlen % 8 == 0);
+        // ch_connect rejects an even pin before the handshake ever runs.
+        __CPROVER_assume((pin[pinlen - 1] & 1) == 1);
 #endif
         t.cfg.server_pubkey_len = pinlen;
     }

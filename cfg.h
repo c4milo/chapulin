@@ -15,6 +15,7 @@
 #define CH_EAUTH (-3)   // authentication failed; session dead
 #define CH_ECAP (-4)    // caller buffer too small for the peer's message
 #define CH_ECLOSED (-5) // clean close_notify from the peer
+#define CH_EINVAL (-6)  // invalid configuration or call; nothing was sent
 
 // Outgoing records are staged in the session struct so writes never
 // disturb buffered incoming data; 512 bytes of plaintext per record.
@@ -43,7 +44,9 @@ typedef struct {
     //    key, provisioned like a PSK would be. The key is an RSA modulus
     //    (256..384 bytes big-endian, exponent fixed at 65537, RSA-PSS) by
     //    default, or 64 P-256 bytes (X||Y, ECDSA) when built with
-    //    -DCH_PIN_ECDSA — one algorithm per build, never both. The server
+    //    -DCH_PIN_ECDSA — one algorithm per build, never both. An RSA
+    //    modulus must be odd (any product of odd primes is); an even pin
+    //    is provisioning corruption and fails ch_connect with CH_EINVAL. The server
     //    proves possession by signing the handshake; its certificate is
     //    never parsed, only hashed into the transcript, so there are no
     //    chains, no names, no expiry — one key, fail closed. Works against

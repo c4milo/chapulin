@@ -28,8 +28,18 @@ int ch_connect(ch_tls *t, const ch_cfg *cfg) {
     if ((!psk_ok && !pin_ok) || cfg->buf == NULL || cfg->send == NULL || cfg->recv == NULL ||
         cfg->buf_len < 512) {
         t->state = CH_ST_FAILED;
-        return CH_ECAP;
+        return CH_EINVAL;
     }
+#ifndef CH_PIN_ECDSA
+    // Every real modulus is odd (a product of odd primes); an even pin is
+    // provisioning corruption. Rejected here so the failure points at the
+    // config — inside the handshake it would surface as CH_EAUTH and read
+    // like an attack.
+    if (pin_ok && (cfg->server_pubkey[cfg->server_pubkey_len - 1] & 1) == 0) {
+        t->state = CH_ST_FAILED;
+        return CH_EINVAL;
+    }
+#endif
     return ch_handshake(t);
 }
 
@@ -184,7 +194,7 @@ static int pump_once(ch_tls *t) {
 
 int ch_read(ch_tls *t, uint8_t *p, size_t n) {
     if (n == 0) {
-        return CH_ECAP; // 0 is the close sentinel; a zero-byte read is a caller bug
+        return CH_EINVAL; // 0 is the close sentinel; a zero-byte read is a caller bug
     }
     if (t->state == CH_ST_CLOSED) {
         return 0;

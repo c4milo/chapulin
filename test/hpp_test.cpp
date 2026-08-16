@@ -34,7 +34,7 @@ extern "C" void ch_rand_bytes(uint8_t *p, size_t n) {
 
 // A send that always fails, so connect reaches I/O and stops there — that
 // distinguishes a config that passed validation (io error) from one the
-// library rejected (CH_ECAP), without needing a real socket.
+// library rejected (CH_EINVAL), without needing a real socket.
 static int fail_send(void *, const uint8_t *, size_t) { return -1; }
 static int fail_recv(void *, uint8_t *, size_t) { return -1; }
 
@@ -62,10 +62,11 @@ int main() {
         CHECK(s.connect(cfg) == chapulin::Status::io);
     }
 
-    // Pinned mode: a valid config also reaches I/O.
+    // Pinned mode: a valid config also reaches I/O. The fill is odd, so
+    // the RSA build's even-pin reject does not fire.
     {
         uint8_t pin[kPinLen];
-        std::memset(pin, 0x02, sizeof pin);
+        std::memset(pin, 0x03, sizeof pin);
         chapulin::Config cfg(chapulin::Bytes{rxbuf}, io);
         cfg.pinned(chapulin::ConstBytes{pin, sizeof pin});
         chapulin::Session s;
@@ -75,12 +76,12 @@ int main() {
     // Both modes at once is rejected before any I/O.
     {
         uint8_t pin[kPinLen];
-        std::memset(pin, 0x02, sizeof pin);
+        std::memset(pin, 0x03, sizeof pin);
         chapulin::Config cfg(chapulin::Bytes{rxbuf}, io);
         cfg.psk(chapulin::ConstBytes{psk, sizeof psk}, chapulin::ConstBytes{id, sizeof id});
         cfg.pinned(chapulin::ConstBytes{pin, sizeof pin});
         chapulin::Session s;
-        CHECK(s.connect(cfg) == chapulin::Status::cap);
+        CHECK(s.connect(cfg) == chapulin::Status::invalid);
     }
 
     // The Session blocks above each destruct after a connect attempt, so
