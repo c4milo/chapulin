@@ -131,3 +131,13 @@ jobs:
       # The four SAT heavyweights; the fast proof tier already ran in check.
       - name: Slow-tier proofs
         run: make prove-slow
+
+      # A failed proof's one-line verdict is not diagnosable from the run
+      # output alone; keep the full solver logs.
+      - name: Upload proof logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: proof-results
+          path: proof/results/
+          if-no-files-found: ignore

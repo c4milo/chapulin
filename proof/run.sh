@@ -78,10 +78,13 @@ BASE=(--bounds-check --pointer-check --pointer-overflow-check
 
 # Admission budget: total memory minus headroom for the OS and whatever
 # else is open, and two cores held back. Each solver also runs under a
-# hard 6 GB address-space cap (Linux/CI, where OOM bites hardest; a no-op
-# on macOS, which lacks ulimit -v) so an outlier dies as a clean FAILED
-# instead of dragging the machine into swap. PROVE_JOBS still caps the
-# number of concurrent jobs when set.
+# hard address-space cap of its weight plus 4 GB, floor 6 (Linux/CI,
+# where OOM bites hardest; a no-op on macOS, which lacks ulimit -v) so an
+# outlier dies as a clean FAILED instead of dragging the machine into
+# swap. ulimit -v caps VIRTUAL address space, which runs well above
+# resident size — size caps from measured peaks, not wishes: a 5.7 GB-RSS
+# solve dies under a 6 GB VA cap. PROVE_JOBS still caps the number of
+# concurrent jobs when set.
 MEM_GB=8
 if [ "$(uname)" = "Darwin" ]; then
     MEM_GB=$(($(sysctl -n hw.memsize) / 1073741824))
@@ -95,7 +98,6 @@ if [ "$CPU_CAP" -lt 1 ]; then CPU_CAP=1; fi
 if [ -n "${PROVE_JOBS:-}" ] && [ "$PROVE_JOBS" -lt "$CPU_CAP" ]; then
     CPU_CAP=$PROVE_JOBS
 fi
-SOLVER_MEM_KB=$((6 * 1024 * 1024))
 
 HASHER="shasum -a 256"
 command -v shasum >/dev/null || HASHER="sha256sum"
@@ -137,11 +139,28 @@ inflight() {
 
 NJOBS=0
 NCACHED=0
+# launch <tier>[:<weight-gb>] <mode> <name> <unwind> <unwindset> [deps...]
+# The optional weight overrides the tier default (fast 2, slow 6) for
+# harnesses whose measured peak demands it; the job's address-space cap
+# follows as weight + 4 GB.
 launch() {
     local tier="$1"
     shift
+    local w=""
+    case "$tier" in
+    *:*)
+        w="${tier##*:}"
+        tier="${tier%%:*}"
+        ;;
+    esac
     if [ "$TIER" != "all" ] && [ "$TIER" != "$tier" ]; then
         return
+    fi
+    if [ -z "$w" ]; then
+        w=2
+        if [ "$tier" = "slow" ]; then
+            w=6
+        fi
     fi
     local mode="$1" name="$2" unwind="$3" unwindset="$4"
     shift 4
@@ -167,10 +186,6 @@ launch() {
         fi
     fi
 
-    local w=2
-    if [ "$tier" = "slow" ]; then
-        w=6
-    fi
     while :; do
         inflight
         if [ "$INFLIGHT_N" -eq 0 ]; then
@@ -181,8 +196,10 @@ launch() {
         fi
         sleep 1
     done
+    local cap_gb=$((w + 4))
+    if [ "$cap_gb" -lt 6 ]; then cap_gb=6; fi
     (
-        ulimit -v "$SOLVER_MEM_KB" 2>/dev/null || true
+        ulimit -v $((cap_gb * 1024 * 1024)) 2>/dev/null || true
         t0=$SECONDS
         "$CBMC" "${args[@]}" "${flags[@]}"
         rc=$?
@@ -202,9 +219,11 @@ launch slow full handshake 100 "fetch_record.0:45,next_msg.0:140,parse_sh.0:66,p
 launch slow full aead 85 "blocks.0:10,chacha20_xor.1:4" chacha20.c poly1305.c ct.c
 launch slow noovf x25519 65 "" ct.c
 launch slow full hkdf_expand 120 "hkdf_expand.0:5" ct.c
-launch fast full hsparse 260 "parse_sh.0:66,main.0:600,main.1:600" buf.c
+# Measured kissat-path peaks (macOS /usr/bin/time -l, RSS): hsparse
+# 9.3 GB, sha256 5.7 GB — both above the default weight and cap.
+launch fast:10 full hsparse 260 "parse_sh.0:66,main.0:600,main.1:600" buf.c
 launch fast full eeparse 260 "parse_ee.0:66,main.0:600" buf.c
-launch fast full sha256 3 "fill_nondet.0:97,sha256_update.0:66,sha256_update.1:3,sha256_update.2:66,sha256_final.0:65,sha256_final.1:9,sha256_final.2:9,compress.0:17,compress.1:49,compress.2:65"
+launch fast:6 full sha256 3 "fill_nondet.0:97,sha256_update.0:66,sha256_update.1:3,sha256_update.2:66,sha256_final.0:65,sha256_final.1:9,sha256_final.2:9,compress.0:17,compress.1:49,compress.2:65"
 launch fast full record 165 "" ct.c
 launch fast full rsa 385 "main.0:97,main.1:385,fill_nondet.0:385,ct_memeq.0:33,ge_bytes.0:385,modulus_bits.0:385,modulus_bits.1:9,mgf1.0:12,emsa_pss_verify.0:352,emsa_pss_verify.1:320,from_bytes.0:97,to_bytes.0:97" --object-bits 11 ct.c
 launch fast full p256 85 "" buf.c
@@ -233,8 +252,8 @@ while [ "$i" -lt "$NJOBS" ]; do
         grep "no body" "$log" | sort -u
         FAIL=1
     elif [ $rc -ne 0 ] || ! grep -q "VERIFICATION SUCCESSFUL" "$log"; then
-        if grep -qiE "bad_alloc|out of memory|Cannot allocate" "$log"; then
-            echo "FAILED (memory cap: raise the budget or split the harness)"
+        if grep -qiE "bad_alloc|out of memory|out-of-memory|Cannot allocate|Killed" "$log"; then
+            echo "FAILED (memory cap: raise the harness weight or split it)"
         else
             echo "FAILED"
         fi
