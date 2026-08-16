@@ -22,10 +22,11 @@
 #include "testrand.h"
 #include "x25519.h"
 
-// Driver plumbing (PRNG, hex, spec pipe) and the P-256 section live in
-// sibling headers of this, the only translation unit.
+// Driver plumbing (PRNG, hex, spec pipe) and the P-256 and RSA sections
+// live in sibling headers of this, the only translation unit.
 #include "diffdrv.h"
 #include "diffp256.h"
+#include "diffrsa.h"
 
 noreturn void ch_assert_fail(const char *cond, const char *file, int line) {
     (void)fprintf(stderr, "ASSERT %s:%d: %s\n", file, line, cond);
@@ -406,6 +407,7 @@ int main(int argc, char **argv) {
     diff_x25519();
     diff_x25519_base();
     diff_p256();
+    diff_rsa();
     if (fclose(to_spec) != 0 || fclose(from_spec) != 0) {
         die("closing spec pipes failed");
     }

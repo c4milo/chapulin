@@ -150,8 +150,8 @@ EOF
 
 hexc() { printf '%s' "$1" | sed 's/../0x&,/g'; }
 
-# The same vectors test/unit.c checks, so a wrong freestanding build fails
-# loudly instead of producing counts for garbage.
+# The same vectors test/unit.c and test/rsa_test.c check, so a wrong
+# freestanding build fails loudly instead of producing counts for garbage.
 cat > "$W/vectors.h" <<EOF
 // RFC 7748 §5.2 x25519 vector 1; RFC 6979 A.2.5 P-256 key with its
 // "sample" signature (SHA-256 hash of "sample", DER signature).
@@ -169,6 +169,32 @@ static const uint8_t P256_HASH[32] = {
 static const uint8_t P256_SIG[72] = {
     $(hexc 3046022100efd48b2aacb6a8fd1140dd9cd45e81d69d2c877b56aaf991c34d0ea84eaf3716)
     $(hexc 022100f7cb1c942d657c41d436c7a1b6e29f65f3e900dbb9aff4064dc4ab2f843acda8)};
+// test/rsa_test.c key A with its "vector one" signature: RSA-3072, PSS,
+// saltlen 32, MGF1-SHA256; the hash is SHA-256 of the vector-one message.
+static const uint8_t RSA_N[384] = {
+    $(hexc e9d26f221079cc18141338902c501646e0ebfa2d892c7d14ceebef13197041b0e370510fa9f7db7d)
+    $(hexc b28cb25c9d8ba8c26488e39274380d10ec07cf389fd2843657b93cd72fd4b7ac61d5943679263e8c)
+    $(hexc 67b918704ff60177f8c3c66cd96397857a20b83f837ab0f9037f23560ec93a8d2292597209148a1d)
+    $(hexc 355680f72323e282b37c199032f593103804c5ca28f515b4bcc3af8021f789181d0c9831135469a0)
+    $(hexc ceb0d19b1c63cd3cc3c0bc2cc2a4285961f141d869436b53db609bc84968c509d9f01da596f80b21)
+    $(hexc 69ac41f196f28431bb13a24ad54d29ef991ed6eaf6f7de4de4dad9fefe88fdf9ce2d0058627de3f9)
+    $(hexc 005c70a00ca7a151d354ff4829307ac918deea6699a45532e031cceb47e0f2c834e242cb0e997417)
+    $(hexc 499345ef23ee074dd4fc46da69b3c05d9c644b429f0d7233deb151264d42546a9b67d22c78a5c541)
+    $(hexc 3b725a403991191261513926e9072d762e6b584369ab9a85cc1ed0fa2a295756a3ac761066876c7e)
+    $(hexc 40d5e44042a731d25343c3c201ec5225c97b1367397d7fc3)};
+static const uint8_t RSA_HASH[32] = {
+    $(hexc 6b6512ead21e357c79e716ae2a5eb387cbb3786a1d3eb784b8cfcf443647f551)};
+static const uint8_t RSA_SIG[384] = {
+    $(hexc 3660ad5981502185fa10bfaa20287c78f3c6ab0fabd7c3b40659c36a5eb5aa3e6874d035fee34e37)
+    $(hexc ccd5dfe1ffc423cffa16b79b0272a507d351d1893d9cb7dc587610a797869139ffdb5f4127d9a613)
+    $(hexc c6957dc76559a337a0c8215d312944109ccce24505681782237fcb01528c7ba471b5690d6c9ffd71)
+    $(hexc 6f8a71ef31434940baaf75b0f7958a4a4b93c22b9d0f816016bec8495bc0167ce3393bc976b7515f)
+    $(hexc cc916535d757ad1c45f6be21f02a6f118091acf753f389ad76cb5ab5d8c3a78e12436caf4ee4d53c)
+    $(hexc 0e0c696928f6c8ecef0c011b8ae4b95c50220d3365488e83fe37014986a56797cc897009639b2c0f)
+    $(hexc 663e1baa3d3639c0c5509318eba257a41044d58270570da793ee84fceea0c3cf490484e5aa5657ff)
+    $(hexc b6b7efb8ed3fd35ea9068de4c3100c906e12d01e246f22a1e532741ca03ca675d2bac2a9b72766db)
+    $(hexc 9734b6fa518a66368f4a0afb669a54438d601303c531ddfd820b4bfd553a93c1936c1412e553882a)
+    $(hexc 10ab21f60407227572fe8ec82fbe1e9d9670bf5bc19acf10)};
 EOF
 
 # One operation per build, selected by -DOP_*, repeated ITERS times over
@@ -183,6 +209,7 @@ cat > "$W/driver.c" <<'EOF'
 #include "keysched.h"
 #include "p256.h"
 #include "record.h"
+#include "rsa.h"
 #include "sha256.h"
 #include "x25519.h"
 
@@ -193,12 +220,13 @@ static uint8_t msg[1400];
 static volatile uint32_t sink;
 
 #ifdef OP_HANDSHAKE
-// The crypto of one pinned-mode handshake in handshake.c run() order:
-// x25519 keygen and shared secret, the full key schedule with both
-// Finished MACs and all four traffic-key derivations, one P-256
-// CertificateVerify check, and 1932 bytes of transcript. Message parsing
-// and record protection stay out; the aead row covers the latter.
-// Returns a fold of the outputs, or all-ones on a failed check.
+// The crypto of one default-build (PIN=rsa) pinned handshake in
+// handshake.c run() order: x25519 keygen and shared secret, the full key
+// schedule with both Finished MACs and all four traffic-key derivations,
+// one RSA-3072-PSS CertificateVerify check, and 2244 bytes of transcript.
+// Message parsing and record protection stay out; the aead row covers the
+// latter. A PIN=ecdsa handshake swaps the rsa row's cost for the p256
+// row's. Returns a fold of the outputs, or all-ones on a failed check.
 static uint32_t hs_once(void) {
     static const uint8_t nopsk[SHA256_LEN] = {0};
     uint8_t early[32], binder[32], hs_sec[32], c_hs[32], s_hs[32];
@@ -241,10 +269,10 @@ static uint32_t hs_once(void) {
     sha256_update(&sc, hash, SHA256_LEN);
     sha256_final(&sc, signed_hash);
     sink = signed_hash[0];
-    if (p256_ecdsa_verify(P256_PUB, P256_HASH, P256_SIG, sizeof P256_SIG) != 1) {
+    if (rsa_pss_verify(RSA_N, sizeof RSA_N, RSA_HASH, RSA_SIG, sizeof RSA_SIG) != 1) {
         return 0xffffffffu;
     }
-    sha256_update(&tr, msg, 80); // CertificateVerify
+    sha256_update(&tr, msg, 392); // CertificateVerify (384-byte signature)
     snap = tr;
     sha256_final(&snap, hash);         // CH..CertificateVerify
     ks_verify_data(s_hs, hash, vdata); // server Finished MAC
@@ -306,6 +334,13 @@ int app_main(void) {
     }
     if (ITERS > 0) { bad = ok != ITERS; }
     acc += (uint32_t)ok;
+#elif defined(OP_RSA)
+    int ok = 0;
+    for (int k = 0; k < ITERS; k++) {
+        ok += rsa_pss_verify(RSA_N, sizeof RSA_N, RSA_HASH, RSA_SIG, sizeof RSA_SIG);
+    }
+    if (ITERS > 0) { bad = ok != ITERS; }
+    acc += (uint32_t)ok;
 #elif defined(OP_HANDSHAKE)
     for (int k = 0; k < ITERS; k++) {
         uint32_t r = hs_once();
@@ -326,7 +361,8 @@ CC="clang -target mips-linux-musl -march=mips32r2 -mno-abicalls -fno-pic -G0 \
     -Os -fno-stack-protector -ffreestanding -nostdlibinc -nostdlib \
     -fuse-ld=lld -static -I/src -I$W/shim -I$W"
 SRCS="/src/ct.c /src/sha256.c /src/hkdf.c /src/chacha20.c /src/poly1305.c \
-      /src/aead.c /src/x25519.c /src/p256.c /src/buf.c /src/keysched.c /src/record.c"
+      /src/aead.c /src/x25519.c /src/p256.c /src/rsa.c /src/rsa_mont.c \
+      /src/buf.c /src/keysched.c /src/record.c"
 
 build() { # $1 = OP macro  $2 = ITERS  -> binary path on stdout
     $CC "-DOP_$1" "-DITERS=$2" "$W/driver.c" "$W/runtime.c" $SRCS -o "$W/bin_$1_$2"
@@ -367,13 +403,14 @@ row hkdf_expand_label_32b HKDF 16
 row aead_seal_1kib AEAD_1K 16
 row x25519_scalarmult X25519 1
 row p256_ecdsa_verify P256 1
+row rsa_pss_verify_3072 RSA 1
 row handshake_crypto HANDSHAKE 1
 
 awk -v s="$N_SHA256_1K" -v h="$N_HKDF" -v a="$N_AEAD_1K" \
-    -v x="$N_X25519" -v p="$N_P256" -v hs="$N_HANDSHAKE" 'BEGIN {
+    -v x="$N_X25519" -v p="$N_P256" -v r="$N_RSA" -v hs="$N_HANDSHAKE" 'BEGIN {
     printf "# at 500 MHz and 1.0 IPC: sha256_1kib %.3f ms, hkdf_expand_label_32b %.3f ms, ", s / 5e5, h / 5e5
     printf "aead_seal_1kib %.3f ms, x25519_scalarmult %.3f ms, ", a / 5e5, x / 5e5
-    printf "p256_ecdsa_verify %.3f ms, handshake_crypto %.3f ms\n", p / 5e5, hs / 5e5
+    printf "p256_ecdsa_verify %.3f ms, rsa_pss_verify_3072 %.3f ms, handshake_crypto %.3f ms\n", p / 5e5, r / 5e5, hs / 5e5
 }'
 awk -v x="$N_X25519" -v hs="$N_HANDSHAKE" 'BEGIN {
     printf "x25519 share of handshake_crypto: 2 x %d = %d of %d insns (%.1f%%)\n",

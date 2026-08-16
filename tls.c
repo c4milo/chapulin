@@ -13,10 +13,18 @@ int ch_connect(ch_tls *t, const ch_cfg *cfg) {
     memset(t, 0, sizeof *t);
     t->cfg = *cfg;
     // Exactly one auth mode: a config carrying both a PSK and a pin is a
-    // provisioning mistake and gets rejected, not silently resolved.
+    // provisioning mistake and gets rejected, not silently resolved. The
+    // pin length must match the build's one algorithm — 64 raw P-256
+    // bytes under CH_PIN_ECDSA, an RSA-2048..3072 modulus otherwise.
     int psk_ok =
         cfg->psk != NULL && cfg->psk_len > 0 && cfg->psk_id != NULL && cfg->server_pubkey == NULL;
-    int pin_ok = cfg->psk == NULL && cfg->server_pubkey != NULL;
+#ifdef CH_PIN_ECDSA
+    int pin_len_ok = cfg->server_pubkey_len == 64;
+#else
+    int pin_len_ok = cfg->server_pubkey_len >= 256 && cfg->server_pubkey_len <= 384 &&
+                     cfg->server_pubkey_len % 8 == 0;
+#endif
+    int pin_ok = cfg->psk == NULL && cfg->server_pubkey != NULL && pin_len_ok;
     if ((!psk_ok && !pin_ok) || cfg->buf == NULL || cfg->send == NULL || cfg->recv == NULL ||
         cfg->buf_len < 512) {
         t->state = CH_ST_FAILED;

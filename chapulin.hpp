@@ -99,9 +99,12 @@ class Config {
         return *this;
     }
 
-    // Pinned server key: 64 raw P-256 bytes (X || Y), no PSK.
-    Config &pinned(const uint8_t (&server_pubkey)[64]) {
-        cfg_.server_pubkey = server_pubkey;
+    // Pinned server key, no PSK: an RSA modulus (256..384 raw big-endian
+    // bytes) by default, or 64 raw P-256 bytes (X || Y) in a CH_PIN_ECDSA
+    // build. ch_connect rejects a size the compiled algorithm cannot take.
+    Config &pinned(ConstBytes server_pubkey) {
+        cfg_.server_pubkey = server_pubkey.data;
+        cfg_.server_pubkey_len = server_pubkey.size;
         return *this;
     }
 

@@ -38,6 +38,14 @@ extern "C" void ch_rand_bytes(uint8_t *p, size_t n) {
 static int fail_send(void *, const uint8_t *, size_t) { return -1; }
 static int fail_recv(void *, uint8_t *, size_t) { return -1; }
 
+// Must match the algorithm the linked library object was built with; the
+// Makefile passes the same define to both compiles.
+#ifdef CH_PIN_ECDSA
+constexpr size_t kPinLen = 64;
+#else
+constexpr size_t kPinLen = 384;
+#endif
+
 int main() {
     static uint8_t rxbuf[2048];
     chapulin::Io io{fail_send, fail_recv, nullptr};
@@ -56,21 +64,21 @@ int main() {
 
     // Pinned mode: a valid config also reaches I/O.
     {
-        uint8_t pin[64];
+        uint8_t pin[kPinLen];
         std::memset(pin, 0x02, sizeof pin);
         chapulin::Config cfg(chapulin::Bytes{rxbuf}, io);
-        cfg.pinned(pin);
+        cfg.pinned(chapulin::ConstBytes{pin, sizeof pin});
         chapulin::Session s;
         CHECK(s.connect(cfg) == chapulin::Status::io);
     }
 
     // Both modes at once is rejected before any I/O.
     {
-        uint8_t pin[64];
+        uint8_t pin[kPinLen];
         std::memset(pin, 0x02, sizeof pin);
         chapulin::Config cfg(chapulin::Bytes{rxbuf}, io);
         cfg.psk(chapulin::ConstBytes{psk, sizeof psk}, chapulin::ConstBytes{id, sizeof id});
-        cfg.pinned(pin);
+        cfg.pinned(chapulin::ConstBytes{pin, sizeof pin});
         chapulin::Session s;
         CHECK(s.connect(cfg) == chapulin::Status::cap);
     }

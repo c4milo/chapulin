@@ -35,6 +35,17 @@
 #define SUITE_CHACHA20_POLY1305_SHA256 0x1303
 #define GROUP_X25519 0x001d
 #define SIGALG_ECDSA_P256_SHA256 0x0403
+#define SIGALG_RSA_PSS_RSAE_SHA256 0x0804
+
+// Pinned mode verifies exactly one signature algorithm per build: RSA-PSS
+// by default (what stock cert-based endpoints hold), ECDSA P-256 with
+// -DCH_PIN_ECDSA. The unselected verify module stays out of the packaged
+// library object (see PIN in the Makefile).
+#ifdef CH_PIN_ECDSA
+#define CH_PIN_SIGALG SIGALG_ECDSA_P256_SHA256
+#else
+#define CH_PIN_SIGALG SIGALG_RSA_PSS_RSAE_SHA256
+#endif
 
 // Alert descriptions (RFC 8446 §6).
 #define ALERT_CLOSE_NOTIFY 0

@@ -56,6 +56,16 @@ int p256_ecdsa_verify(const uint8_t pub[64], const uint8_t msg_hash[32], const u
     __CPROVER_assert(0, "p256 unreachable from parsers");
     return 0;
 }
+int rsa_pss_verify(const uint8_t *n, size_t nlen, const uint8_t msg_hash[32], const uint8_t *sig,
+                   size_t siglen) {
+    (void)n;
+    (void)nlen;
+    (void)msg_hash;
+    (void)sig;
+    (void)siglen;
+    __CPROVER_assert(0, "rsa unreachable from parsers");
+    return 0;
+}
 
 #include "handshake.c"
 

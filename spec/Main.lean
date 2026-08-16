@@ -29,6 +29,7 @@ def selftestAll : String :=
     ("record", Spec.Record.selftest),
     ("x25519", Spec.X25519.selftest),
     ("p256", Spec.P256.selftest),
+    ("rsa", Spec.Rsa.selftest),
     ("drbg", Spec.Drbg.selftest)]
   match mods.find? (fun m => !m.2) with
   | some (name, _) => s!"FAIL {name}"
@@ -118,6 +119,22 @@ def dispatch : List String → Option String
     let sb ← hexArg? s
     guard (pb.size == 64 && h.size == 32 && rb.size == 32 && sb.size == 32)
     return if Spec.P256.ecdsaVerify pb h (bytesToNatBE rb) (bytesToNatBE sb) then "1" else "0"
+  | ["rsa_verify", n, e, hash, sig] => do
+    let nb ← hexArg? n
+    let eNat ← e.toNat?
+    let h ← hexArg? hash
+    let sb ← hexArg? sig
+    guard (h.size == 32)
+    return if Spec.Rsa.pssVerify (bytesToNatBE nb) eNat h sb then "1" else "0"
+  | ["rsa_sign", n, d, _e, salt, hash] => do
+    let nb ← hexArg? n
+    let db ← hexArg? d
+    let saltb ← hexArg? salt
+    let h ← hexArg? hash
+    guard (saltb.size == 32 && h.size == 32)
+    match Spec.Rsa.rsaSign (bytesToNatBE nb) (bytesToNatBE db) h saltb with
+    | some sig => return emit sig
+    | none => return "FAIL"
   | _ => none
 
 partial def loop (stdin stdout : IO.FS.Stream) : IO Unit := do

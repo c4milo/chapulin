@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Runs every CBMC harness through a budget-aware parallel pool. The
 # proofs are independent, but each SAT instance can eat gigabytes, so a
-# job is admitted by its memory weight (slow tier 6 GB, fast tier 2 GB;
-# measured fast-tier peaks stay well under that) against the
+# job is admitted by its memory weight (slow tier 6 GB, fast tier 2 GB —
+# the biggest measured fast peak, rsa, is under 0.5 GB) against the
 # machine's budget, plus a free core; unbounded parallelism would thrash
 # the machine into being slower than sequential. Longest jobs launch
 # first. Each proof checks memory safety (bounds, pointer validity), UB
@@ -32,8 +32,8 @@
 # x25519 splits one proof in two: the concrete harness runs without the
 # signed-overflow class (mul's 256 symbolic multiplies never converge
 # under SAT with it), and x25519_mul proves the overflow lemma covering
-# exactly that arithmetic with full checks. p256 splits the same way,
-# and hsparse/eeparse split one parser per formula: SAT time grows
+# exactly that arithmetic with full checks. p256 and rsa split the same
+# way, and hsparse/eeparse split one parser per formula: SAT time grows
 # super-linearly with formula size, so two small instances beat one big
 # one by hours.
 set -uo pipefail
@@ -206,6 +206,7 @@ launch fast full hsparse 260 "parse_sh.0:66,main.0:600,main.1:600" buf.c
 launch fast full eeparse 260 "parse_ee.0:66,main.0:600" buf.c
 launch fast full sha256 3 "fill_nondet.0:97,sha256_update.0:66,sha256_update.1:3,sha256_update.2:66,sha256_final.0:65,sha256_final.1:9,sha256_final.2:9,compress.0:17,compress.1:49,compress.2:65"
 launch fast full record 165 "" ct.c
+launch fast full rsa 385 "main.0:97,main.1:385,fill_nondet.0:385,ct_memeq.0:33,ge_bytes.0:385,modulus_bits.0:385,modulus_bits.1:9,mgf1.0:12,emsa_pss_verify.0:352,emsa_pss_verify.1:320,from_bytes.0:97,to_bytes.0:97" --object-bits 11 ct.c
 launch fast full p256 85 "" buf.c
 launch fast full hkdf 120 "" ct.c
 launch fast full tlspost 132 "handle_post_hs.0:33,fill_nondet.0:130" --object-bits 11 buf.c ct.c session.c
@@ -216,6 +217,7 @@ launch fast full ct 65 ""
 launch fast full x25519_mul 20 ""
 launch fast full drbg 100 "ch_rand_bytes.3:4" ct.c
 launch fast full p256_mul 20 ""
+launch fast full rsa_mul 20 ""
 
 FAIL=0
 i=0

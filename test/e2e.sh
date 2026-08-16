@@ -21,13 +21,16 @@ fi
 # One temp dir holds every server key, ticket, and stderr file, so two runs
 # on the same host never share a path.
 DIR=$(mktemp -d)
-trap 'kill ${SERVER:-} ${SERVER2:-} ${SERVER3:-} 2>/dev/null || true; rm -rf "$DIR"' EXIT
+trap 'kill ${SERVER:-} ${SERVER2:-} ${SERVER3:-} ${SERVER4:-} ${SERVER5:-} 2>/dev/null || true
+      rm -rf "$DIR"' EXIT
 
-# Each run takes a disjoint 3-port slot. Multiplying the slot index by 4
-# keeps adjacent PIDs from overlapping triples.
-PORT=$((20000 + ($$ % 5000) * 4))
+# Each run takes a disjoint 5-port slot. Multiplying the slot index by 8
+# keeps adjacent PIDs from overlapping slots.
+PORT=$((20000 + ($$ % 5000) * 8))
 PORT2=$((PORT + 1))
 PORT3=$((PORT + 2))
+PORT4=$((PORT + 3))
+PORT5=$((PORT + 4))
 
 PSK=0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20
 ID=sapo-01
@@ -99,8 +102,8 @@ grep -q "^resuming" "$DIR/err2" || {
     exit 1
 }
 
-# --- Pinned key: a self-signed P-256 server, authenticated only by its
-# provisioned raw public key, no PSK anywhere ---
+# --- Pinned key, ECDSA build: a self-signed P-256 server, authenticated
+# only by its provisioned raw public key, no PSK anywhere ---
 "$OPENSSL" ecparam -name prime256v1 -genkey -noout -out "$DIR/key.pem" 2>/dev/null
 "$OPENSSL" req -x509 -key "$DIR/key.pem" -subj /CN=sapo -days 1 -out "$DIR/cert.pem" 2>/dev/null
 # Raw X||Y: the uncompressed point from the key, minus the 0x04 prefix.
@@ -117,16 +120,49 @@ SERVER2=$!
 wait_listen $SERVER2 "$PORT2"
 
 MSG='sin secretos'
-expect pin "soterces nis" "$DIR/err3" ./bin/tlsclient 127.0.0.1 "$PORT2" "pin:$PUB" - "$DIR/ticket2"
+expect pin-ecdsa "soterces nis" "$DIR/err3" \
+    ./bin/tlsclient_ecdsa 127.0.0.1 "$PORT2" "pin:$PUB" - "$DIR/ticket2"
 # The pinned handshake must also yield tickets, so reconnects resume.
 [ -s "$DIR/ticket2" ] || {
     echo "FAIL e2e pin: no ticket after a pinned handshake"
     exit 1
 }
 MSG='de nuevo'
-expect pin-resume "oveun ed" "$DIR/err3" ./bin/tlsclient 127.0.0.1 "$PORT2" "@$DIR/ticket2" -
+expect pin-ecdsa-resume "oveun ed" "$DIR/err3" ./bin/tlsclient_ecdsa 127.0.0.1 "$PORT2" "@$DIR/ticket2" -
 
-# --- Go's crypto/tls, the stack Prometheus terminates with ---
+# --- Pinned key, default build: a self-signed RSA-3072 server, the pin is
+# the raw modulus and the signature is RSA-PSS. The cert's own signature
+# is the stock PKCS#1 v1.5 self-signature: the client never parses it, so
+# only CertificateVerify must be PSS ---
+"$OPENSSL" genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:3072 \
+    -out "$DIR/rsakey.pem" 2>/dev/null
+"$OPENSSL" req -x509 -key "$DIR/rsakey.pem" -subj /CN=chapulin -days 1 \
+    -out "$DIR/rsacert.pem" 2>/dev/null
+MOD=$("$OPENSSL" rsa -in "$DIR/rsakey.pem" -noout -modulus 2>/dev/null \
+    | sed 's/^Modulus=//' | tr 'A-F' 'a-f')
+[ ${#MOD} -eq 768 ] || {
+    echo "FAIL e2e rsa: could not extract the server modulus"
+    exit 1
+}
+
+"$OPENSSL" s_server -tls1_3 -ciphersuites TLS_CHACHA20_POLY1305_SHA256 \
+    -cert "$DIR/rsacert.pem" -key "$DIR/rsakey.pem" -accept "$PORT4" -rev -quiet &
+SERVER4=$!
+wait_listen $SERVER4 "$PORT4"
+
+MSG='clave grande'
+expect pin-rsa "ednarg evalc" "$DIR/err5" \
+    ./bin/tlsclient 127.0.0.1 "$PORT4" "pin:$MOD" - "$DIR/ticket4"
+[ -s "$DIR/ticket4" ] || {
+    echo "FAIL e2e rsa: no ticket after a pinned handshake"
+    exit 1
+}
+MSG='otra ronda'
+expect pin-rsa-resume "adnor arto" "$DIR/err5" ./bin/tlsclient 127.0.0.1 "$PORT4" "@$DIR/ticket4" -
+
+# --- Go's crypto/tls, the stack Prometheus terminates with: once with the
+# P-256 cert against the ECDSA build, once with the RSA cert against the
+# default build ---
 if command -v go >/dev/null 2>&1; then
     # Build first so the server starts instantly, and run the binary
     # directly: go run's child would outlive a kill of the subshell and
@@ -135,10 +171,15 @@ if command -v go >/dev/null 2>&1; then
     "$DIR/goecho" -cert "$DIR/cert.pem" -key "$DIR/key.pem" -addr "127.0.0.1:$PORT3" \
         >/dev/null 2>&1 &
     SERVER3=$!
+    "$DIR/goecho" -cert "$DIR/rsacert.pem" -key "$DIR/rsakey.pem" -addr "127.0.0.1:$PORT5" \
+        >/dev/null 2>&1 &
+    SERVER5=$!
     wait_listen $SERVER3 "$PORT3"
+    wait_listen $SERVER5 "$PORT5"
 
     MSG='hola go'
-    expect go "og aloh" "$DIR/err4" ./bin/tlsclient 127.0.0.1 "$PORT3" "pin:$PUB" - "$DIR/ticket3"
+    expect go-ecdsa "og aloh" "$DIR/err4" \
+        ./bin/tlsclient_ecdsa 127.0.0.1 "$PORT3" "pin:$PUB" - "$DIR/ticket3"
     # Go issues tickets only when the hello offers psk_dhe_ke; resuming here
     # proves both the offer and the resumption path against Go.
     [ -s "$DIR/ticket3" ] || {
@@ -146,10 +187,20 @@ if command -v go >/dev/null 2>&1; then
         exit 1
     }
     MSG='una mas'
-    expect go-resume "sam anu" "$DIR/err4" ./bin/tlsclient 127.0.0.1 "$PORT3" "@$DIR/ticket3" -
-    GO_LEG=" + go + go-resume"
+    expect go-ecdsa-resume "sam anu" "$DIR/err4" ./bin/tlsclient_ecdsa 127.0.0.1 "$PORT3" "@$DIR/ticket3" -
+
+    MSG='go grande'
+    expect go-rsa "ednarg og" "$DIR/err6" \
+        ./bin/tlsclient 127.0.0.1 "$PORT5" "pin:$MOD" - "$DIR/ticket5"
+    [ -s "$DIR/ticket5" ] || {
+        echo "FAIL e2e go-rsa: no ticket from the Go server"
+        exit 1
+    }
+    MSG='ultima'
+    expect go-rsa-resume "amitlu" "$DIR/err6" ./bin/tlsclient 127.0.0.1 "$PORT5" "@$DIR/ticket5" -
+    GO_LEG=" + go x2 + go-resume x2"
 else
-    GO_LEG=" (go leg skipped)"
+    GO_LEG=" (go legs skipped)"
 fi
 
-echo "e2e: psk + tickets + resumption + pinned-key${GO_LEG} OK"
+echo "e2e: psk + tickets + resumption + pinned ecdsa + pinned rsa${GO_LEG} OK"

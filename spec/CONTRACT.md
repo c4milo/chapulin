@@ -42,6 +42,13 @@ Spec.P256.ecdsaSign   : (d k z : Nat) → Option (Nat × Nat)             -- FIP
                         -- signs so the oracle can mint valid signatures; the C
                         -- side only ever verifies.
 Spec.P256.ecdsaVerify : (pub hash : ByteArray) → (r s : Nat) → Bool    -- SEC 1 v2 §4.1.4
+Spec.Rsa.pssVerify    : (n e : Nat) → (mHash sig : ByteArray) → Bool    -- RFC 8017 §8.1.2,
+                        -- rsa_pss_rsae_sha256: SHA-256, MGF1-SHA256, saltLen 32.
+Spec.Rsa.pssSign      : (n d : Nat) → (mHash salt : ByteArray) →
+                        Option ByteArray                                -- RFC 8017 §8.1.1;
+                        -- rsaSign is an alias. The spec signs so the oracle can mint
+                        -- signatures the C verifier must accept; the C side only verifies.
+                        -- salt is explicit so a fixed value gives a reproducible signature.
 ```
 
 Shared helpers live in `Spec/Bytes.lean` (hex, BE/LE Nat coding, xor).

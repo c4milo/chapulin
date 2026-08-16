@@ -227,10 +227,18 @@ static void test_seq_exhaustion(void) {
 // ch_connect's config validation: exactly one auth mode, sane buffer. A
 // case that passes validation reaches I/O and dies there (empty queue
 // gives CH_EIO), which distinguishes it from a rejected config (CH_ECAP).
+// The pin size the compiled build accepts: a P-256 point or an RSA-3072
+// modulus. Boundary checks below use it plus each mode's exact limits.
+#ifdef CH_PIN_ECDSA
+#define TEST_PIN_LEN 64
+#else
+#define TEST_PIN_LEN 384
+#endif
+
 static void test_connect_cfg(void) {
     static uint8_t rxbuf[600];
     uint8_t psk[32] = {1};
-    uint8_t pin[64] = {2};
+    uint8_t pin[TEST_PIN_LEN] = {2};
     mock_io m = {0};
     ch_cfg cfg = {0};
     cfg.buf = rxbuf;
@@ -246,6 +254,7 @@ static void test_connect_cfg(void) {
     cfg.psk_id = (const uint8_t *)"d";
     cfg.psk_id_len = 1;
     cfg.server_pubkey = pin;
+    cfg.server_pubkey_len = sizeof pin;
     CHECK(ch_connect(&t, &cfg) == CH_ECAP); // both modes set
     cfg.server_pubkey = NULL;
     CHECK(ch_connect(&t, &cfg) == CH_EIO); // valid PSK config reaches I/O
@@ -255,6 +264,22 @@ static void test_connect_cfg(void) {
     cfg.psk_id_len = 0;
     cfg.server_pubkey = pin;
     CHECK(ch_connect(&t, &cfg) == CH_EIO); // valid pinned config reaches I/O
+#ifdef CH_PIN_ECDSA
+    cfg.server_pubkey_len = 63;
+    CHECK(ch_connect(&t, &cfg) == CH_ECAP); // P-256 pin must be exactly 64
+    cfg.server_pubkey_len = 65;
+    CHECK(ch_connect(&t, &cfg) == CH_ECAP);
+#else
+    cfg.server_pubkey_len = 256;
+    CHECK(ch_connect(&t, &cfg) == CH_EIO); // RSA-2048, the smallest pin
+    cfg.server_pubkey_len = 248;
+    CHECK(ch_connect(&t, &cfg) == CH_ECAP); // below the floor
+    cfg.server_pubkey_len = 392;
+    CHECK(ch_connect(&t, &cfg) == CH_ECAP); // above RSA-3072
+    cfg.server_pubkey_len = 260;
+    CHECK(ch_connect(&t, &cfg) == CH_ECAP); // not a multiple of 8 bytes
+#endif
+    cfg.server_pubkey_len = sizeof pin;
     cfg.buf_len = 511;
     CHECK(ch_connect(&t, &cfg) == CH_ECAP); // buffer below the floor
 }

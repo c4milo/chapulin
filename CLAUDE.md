@@ -13,17 +13,20 @@ Home: github.com/c4milo.
   them, and re-measure when the code changes.
 - One profile, no negotiation surface: TLS 1.3, TLS_CHACHA20_POLY1305_SHA256,
   x25519, and one of two auth modes — ECDHE-PSK (psk_dhe_ke) or a pinned
-  P-256 server key checked against CertificateVerify. No X.509 parsing
-  (pinned mode hashes the certificate into the transcript, never reads
-  it), no RFC 7250 raw-public-key certificate types, no 0-RTT, no
-  compression, no renegotiation-era anything. Within a mode the client
-  offers exactly one of everything; the server takes it or the handshake
-  fails closed.
+  server key checked against CertificateVerify. The pinned key is one
+  algorithm per build, chosen by the Makefile PIN variable: RSA-PSS up to
+  3072 bits (default, `rsa.[ch]`) or ECDSA P-256 (PIN=ecdsa, -DCH_PIN_ECDSA,
+  `p256.[ch]`) — never both in one library object, though test binaries
+  compile both so both stay tested. No X.509 parsing (pinned mode hashes
+  the certificate into the transcript, never reads it), no RFC 7250
+  raw-public-key certificate types, no 0-RTT, no compression, no
+  renegotiation-era anything. Within a mode the client offers exactly one
+  of everything; the server takes it or the handshake fails closed.
 - One concern per file pair, dependencies pointing down only:
   `ct.[ch]` (constant-time bytes) ← `sha256.[ch]` ← `hkdf.[ch]`
   (HMAC + HKDF + TLS labels) ← `chacha20.[ch]` + `poly1305.[ch]` ←
-  `aead.[ch]` (RFC 8439 seal/open) ← `x25519.[ch]` + `p256.[ch]`
-  (ECDSA verify, pinned mode) ← `record.[ch]`
+  `aead.[ch]` (RFC 8439 seal/open) ← `x25519.[ch]` + `p256.[ch]` +
+  `rsa.[ch]`/`rsa_mont.c` (pinned-mode verify) ← `record.[ch]`
   (record layer) ← `handshake.[ch]` (client state machine) ← `tls.[ch]`
   (public API) ← demo/test mains. Firmware takes everything below
   `tls.[ch]` as-is and supplies I/O callbacks and `ch_rand_bytes`.

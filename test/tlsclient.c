@@ -129,14 +129,18 @@ static int load_ticket(const char *path, uint8_t *id, size_t *idlen, uint8_t *ps
 // Fills the auth part of cfg: "pin:<pubkey-hex>" for pinned-key mode, a
 // saved ticket ("@file"), or an external psk-hex + identity pair.
 static int setup_psk(char **argv, ch_cfg *cfg, uint8_t *psk, size_t pskcap, uint8_t *id) {
-    static uint8_t pin[64];
+    // Sized for the largest pin either build takes: an RSA-3072 modulus.
+    // ch_connect enforces the exact length its compiled algorithm needs.
+    static uint8_t pin[384];
     if (strncmp(argv[3], "pin:", 4) == 0) {
-        if (unhex(argv[3] + 4, pin, sizeof pin) != sizeof pin) {
-            (void)fprintf(stderr, "pin must be 128 hex chars (P-256 X||Y)\n");
+        size_t n = unhex(argv[3] + 4, pin, sizeof pin);
+        if (n == 0) {
+            (void)fprintf(stderr, "pin must be hex: P-256 X||Y or an RSA modulus\n");
             return -1;
         }
         cfg->server_pubkey = pin;
-        (void)fprintf(stderr, "pinned-key mode\n");
+        cfg->server_pubkey_len = n;
+        (void)fprintf(stderr, "pinned-key mode (%zu-byte key)\n", n);
         return 0;
     }
     if (argv[3][0] == '@') {

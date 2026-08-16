@@ -7,9 +7,15 @@
 #include "hsmsg.h"
 #include "io.h"
 #include "keysched.h"
-#include "p256.h"
 #include "rand.h"
 #include "x25519.h"
+
+// Exactly one pinned-mode verifier is linked per build (Makefile PIN).
+#ifdef CH_PIN_ECDSA
+#include "p256.h"
+#else
+#include "rsa.h"
+#endif
 
 #define COOKIE_MAX 128
 
@@ -385,8 +391,9 @@ static int expect_finished(hs *h) {
 // Pinned-key server authentication (RFC 8446 §4.4.2-4.4.3): accept the
 // Certificate message with minimal framing checks — its contents are
 // authenticated by the signature, not by parsing — then require a
-// CertificateVerify whose ECDSA-P256 signature over the running
-// transcript checks out against the provisioned public key.
+// CertificateVerify whose signature (RSA-PSS by default, ECDSA-P256 under
+// CH_PIN_ECDSA) over the running transcript checks out against the
+// provisioned public key.
 static int server_auth(hs *h) {
     uint8_t type = 0;
     const uint8_t *raw = NULL;
@@ -427,7 +434,7 @@ static int server_auth(hs *h) {
         return CH_EPROTO;
     }
     rb_init(&r, raw + 4, rawlen - 4);
-    if (rb_u16(&r) != SIGALG_ECDSA_P256_SHA256) {
+    if (rb_u16(&r) != CH_PIN_SIGALG) {
         h->alert = ALERT_HANDSHAKE_FAILURE; // we offered exactly one algorithm
         return CH_EAUTH;
     }
@@ -454,7 +461,13 @@ static int server_auth(hs *h) {
     uint8_t signed_hash[SHA256_LEN];
     sha256_final(&s, signed_hash);
 
-    if (!p256_ecdsa_verify(h->t->cfg.server_pubkey, signed_hash, sig, siglen)) {
+#ifdef CH_PIN_ECDSA
+    int sig_ok = p256_ecdsa_verify(h->t->cfg.server_pubkey, signed_hash, sig, siglen);
+#else
+    int sig_ok = rsa_pss_verify(h->t->cfg.server_pubkey, h->t->cfg.server_pubkey_len, signed_hash,
+                                sig, siglen);
+#endif
+    if (!sig_ok) {
         h->alert = ALERT_DECRYPT_ERROR;
         return CH_EAUTH;
     }

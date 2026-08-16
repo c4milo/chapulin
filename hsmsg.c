@@ -62,7 +62,7 @@ size_t hs_build_ch(uint8_t *out, size_t cap, const ch_cfg *cfg, const uint8_t pu
         wb_u16(&w, EXT_SIGNATURE_ALGORITHMS);
         wb_u16(&w, 4);
         wb_u16(&w, 2);
-        wb_u16(&w, SIGALG_ECDSA_P256_SHA256);
+        wb_u16(&w, CH_PIN_SIGALG);
     } else {
         // pre_shared_key comes last (RFC 8446 §4.2.11).
         wb_u16(&w, EXT_PRE_SHARED_KEY);

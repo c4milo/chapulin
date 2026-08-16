@@ -7,6 +7,7 @@ max-weight path under each public entry point. Indirect calls (the
 caller's send/recv/on_ticket hooks and ch_rand_bytes) execute on the
 caller's budget and are reported as such, not silently omitted.
 """
+import os
 import re
 import subprocess
 import sys
@@ -17,11 +18,20 @@ ROOT = Path(__file__).resolve().parent.parent
 ENTRIES = ["_ch_connect", "_ch_read", "_ch_write", "_ch_close"]
 SRCS = sorted(ROOT.glob("*.c"))
 
+# STACK_CFLAGS: extra compile flags (e.g. -DCH_PIN_ECDSA to walk that
+# build). STACK_PRUNE: comma-separated functions removed from the graph,
+# for paths a mode provably never enters — PSK mode never reaches
+# server_auth (the cfg.psk gate in run()), so pruning it measures the
+# PSK-mode peak from the same objects.
+EXTRA_CFLAGS = os.environ.get("STACK_CFLAGS", "").split()
+PRUNE = {"_" + f for f in os.environ.get("STACK_PRUNE", "").split(",") if f}
+
 
 def build(tmp: Path) -> None:
     for src in SRCS:
         subprocess.run(
-            ["cc", "-std=c11", "-O2", "-I", str(ROOT), "-fstack-usage", "-c", str(src)],
+            ["cc", "-std=c11", "-O2", "-I", str(ROOT), "-fstack-usage", "-c", str(src)]
+            + EXTRA_CFLAGS,
             cwd=tmp, check=True, capture_output=True)
 
 
@@ -104,6 +114,11 @@ def main() -> int:
         build(tmp)
         fr = frames(tmp)
         cg = callgraph(tmp)
+        for fn in PRUNE:
+            cg.pop(fn, None)
+            fr.pop(fn, None)
+            for callees in cg.values():
+                callees.discard(fn)
         for entry in ENTRIES:
             depth, path = deepest(entry, fr, cg, ())
             chain = " > ".join(p.lstrip("_") for p in path)

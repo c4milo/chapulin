@@ -24,4 +24,9 @@ SESSION=$("$TMP/sz" | awk '{print $2}')
 
 echo "session struct:          ${SESSION} B"
 echo "static working set:      $((SESSION + 2048)) B (with a 2048 B receive buffer)"
+echo "-- default build (PIN=rsa); ch_connect peak = pinned RSA verify --"
 python3 bench/stack.py
+echo "-- PIN=ecdsa build; ch_connect peak = pinned P-256 verify --"
+STACK_CFLAGS=-DCH_PIN_ECDSA python3 bench/stack.py | head -1
+echo "-- PSK-mode ch_connect (server_auth pruned: PSK never enters it) --"
+STACK_PRUNE=server_auth python3 bench/stack.py | head -1

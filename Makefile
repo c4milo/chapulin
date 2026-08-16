@@ -10,11 +10,25 @@ CBMC ?= $(shell command -v cbmc)
 CXX ?= c++
 LAKE ?= $(shell command -v lake || command -v $(HOME)/.elan/bin/lake)
 
-SRCS := ct.c sha256.c hkdf.c chacha20.c poly1305.c aead.c x25519.c p256.c \
+SRCS := ct.c sha256.c hkdf.c chacha20.c poly1305.c aead.c x25519.c p256.c rsa.c rsa_mont.c \
         buf.c record.c keysched.c io.c hsmsg.c session.c handshake.c tls.c
-HDRS := ct.h sha256.h hkdf.h chacha20.h poly1305.h aead.h x25519.h p256.h ch_assert.h \
+HDRS := ct.h sha256.h hkdf.h chacha20.h poly1305.h aead.h x25519.h p256.h rsa.h ch_assert.h \
         buf.h record.h keysched.h io.h hsmsg.h cfg.h session.h handshake.h tls.h rand.h drbg.h
-LINT_C := $(SRCS) drbg.c test/unit.c test/tlsclient.c test/diff.c test/timing.c test/drbg_test.c
+LINT_C := $(SRCS) drbg.c test/unit.c test/tlsclient.c test/diff.c test/timing.c \
+          test/drbg_test.c test/rsa_test.c
+
+# Pinned mode verifies one signature algorithm per build: PIN=rsa
+# (default, RSA-PSS up to 3072 bits) or PIN=ecdsa (P-256, -DCH_PIN_ECDSA).
+# Test binaries compile both modules so both stay tested either way; the
+# packaged library object carries only the selected one.
+PIN ?= rsa
+ifeq ($(PIN),ecdsa)
+LIB_DEF := -DCH_PIN_ECDSA
+LIB_SRCS := $(filter-out rsa.c rsa_mont.c,$(SRCS))
+else
+LIB_DEF :=
+LIB_SRCS := $(filter-out p256.c,$(SRCS))
+endif
 # CBMC intrinsics don't compile under clang-tidy/cppcheck; harnesses get
 # clang-format only. Fuzzers include .c files for statics, same deal.
 PROOF_C := $(wildcard proof/*.c) proof/harness.h
@@ -24,15 +38,26 @@ FUZZ_C := $(wildcard fuzz/*.c)
 # the four public calls. Partial linking merges the modules; nmedit
 # (macOS) or objcopy (everything else) localizes every other symbol, so
 # the library cannot collide with application names. lib-check enforces
-# the export list as part of check.
-LIB_OBJS := $(SRCS:%.c=bin/obj/%.o)
+# the export list as part of check. Objects live under the PIN they were
+# built for, so switching PIN never reuses a stale object.
+LIB_OBJS := $(LIB_SRCS:%.c=bin/obj/$(PIN)/%.o)
 PUBLIC := ch_connect ch_read ch_write ch_close
 
-bin/obj/%.o: %.c $(HDRS)
-	@mkdir -p bin/obj
-	$(CC) $(CFLAGS) -I. -c $< -o $@
+bin/obj/$(PIN)/%.o: %.c $(HDRS)
+	@mkdir -p bin/obj/$(PIN)
+	$(CC) $(CFLAGS) $(LIB_DEF) -I. -c $< -o $@
 
-bin/chapulin.o: $(LIB_OBJS)
+# The packaged object is PIN-specific but lands at one path, so mtimes
+# alone cannot tell which PIN built it; the stamp rewrites (and so
+# triggers a relink) only when PIN changed since the last build.
+PIN_STAMP := bin/obj/pin-stamp
+$(PIN_STAMP): FORCE
+	@mkdir -p bin/obj
+	@[ "$$(cat $@ 2>/dev/null)" = "$(PIN)" ] || echo "$(PIN)" > $@
+.PHONY: FORCE
+FORCE:
+
+bin/chapulin.o: $(LIB_OBJS) $(PIN_STAMP)
 	ld -r -o $@ $(LIB_OBJS)
 ifeq ($(shell uname),Darwin)
 	printf '_%s\n' $(PUBLIC) > bin/exports.txt
@@ -50,7 +75,7 @@ lib: bin/chapulin.o
 CXXFLAGS ?= -std=c++17 -fno-exceptions -fno-rtti -Wall -Wextra -Wpedantic -Werror
 cxx-check: bin/chapulin.o chapulin.hpp test/hpp_test.cpp
 	@command -v $(CXX) >/dev/null || { echo "SKIP cxx-check: no C++ compiler"; exit 0; }
-	$(CXX) $(CXXFLAGS) -D_DEFAULT_SOURCE -I. -c test/hpp_test.cpp -o bin/hpp_test.o
+	$(CXX) $(CXXFLAGS) $(LIB_DEF) -D_DEFAULT_SOURCE -I. -c test/hpp_test.cpp -o bin/hpp_test.o
 	$(CXX) -o bin/hpp_test bin/hpp_test.o bin/chapulin.o
 	./bin/hpp_test
 
@@ -68,6 +93,12 @@ bin/drbg_test: test/drbg_test.c drbg.c chacha20.c ct.c $(HDRS)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) -I. -o $@ test/drbg_test.c drbg.c chacha20.c ct.c
 
+# RSA-PSS verify vectors; its own binary like drbg_test, so the module
+# stays testable without the rest of the stack.
+bin/rsa_test: test/rsa_test.c rsa.c rsa_mont.c sha256.c ct.c $(HDRS)
+	@mkdir -p bin
+	$(CC) $(CFLAGS) -I. -o $@ test/rsa_test.c rsa.c rsa_mont.c sha256.c ct.c
+
 bin/unit: test/unit.c test/session_tests.h $(SRCS) $(HDRS)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) -I. -o $@ test/unit.c $(SRCS)
@@ -76,14 +107,21 @@ bin/tlsclient: test/tlsclient.c $(SRCS) $(HDRS)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) -I. -o $@ test/tlsclient.c $(SRCS)
 
+# The same client compiled for the P-256 pinned mode; e2e runs both
+# builds against matching servers.
+bin/tlsclient_ecdsa: test/tlsclient.c $(SRCS) $(HDRS)
+	@mkdir -p bin
+	$(CC) $(CFLAGS) -DCH_PIN_ECDSA -I. -o $@ test/tlsclient.c $(SRCS)
+
 bin/diff: test/diff.c $(SRCS) $(HDRS)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) -I. -o $@ test/diff.c $(SRCS)
 
 .PHONY: check lint lint-tidy lint-format lint-cppcheck prove diff fmt clean
-check: bin/unit bin/tlsclient bin/drbg_test lint lib-check cxx-check
+check: bin/unit bin/tlsclient bin/tlsclient_ecdsa bin/drbg_test bin/rsa_test lint lib-check cxx-check
 	./bin/unit
 	./bin/drbg_test
+	./bin/rsa_test
 	./test/e2e.sh
 	$(MAKE) diff
 	$(MAKE) prove
@@ -114,7 +152,7 @@ lint-format:
 ifeq ($(CLANG_FORMAT),)
 	@echo "SKIP clang-format: not on PATH (ships with llvm)"
 else
-	$(CLANG_FORMAT) --dry-run --Werror $(LINT_C) $(HDRS) $(PROOF_C) $(FUZZ_C) test/testrand.h test/session_tests.h test/diffdrv.h test/diffp256.h
+	$(CLANG_FORMAT) --dry-run --Werror $(LINT_C) $(HDRS) $(PROOF_C) $(FUZZ_C) test/testrand.h test/session_tests.h test/diffdrv.h test/diffp256.h test/diffrsa.h
 endif
 
 lint-cppcheck:
@@ -172,7 +210,7 @@ endif
 
 fmt:
 ifneq ($(CLANG_FORMAT),)
-	$(CLANG_FORMAT) -i $(LINT_C) $(HDRS) $(PROOF_C) $(FUZZ_C) test/testrand.h test/session_tests.h test/diffdrv.h test/diffp256.h
+	$(CLANG_FORMAT) -i $(LINT_C) $(HDRS) $(PROOF_C) $(FUZZ_C) test/testrand.h test/session_tests.h test/diffdrv.h test/diffp256.h test/diffrsa.h
 endif
 
 bin/timing: test/timing.c $(SRCS) $(HDRS)
@@ -197,7 +235,7 @@ FUZZ_RECORD_LINK := record.c ct.c sha256.c hkdf.c chacha20.c poly1305.c aead.c
 FUZZ_HSPARSE_LINK := buf.c ct.c sha256.c hkdf.c chacha20.c poly1305.c aead.c \
                      x25519.c record.c keysched.c hsmsg.c
 FUZZ_POSTHS_LINK := handshake.c io.c record.c keysched.c session.c buf.c ct.c \
-                    sha256.c hkdf.c chacha20.c poly1305.c aead.c x25519.c hsmsg.c
+                    sha256.c hkdf.c chacha20.c poly1305.c aead.c x25519.c rsa.c rsa_mont.c hsmsg.c
 
 .PHONY: fuzz
 fuzz:

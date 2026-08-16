@@ -49,13 +49,30 @@ int tlsi_send_alert(ch_tls *t, uint8_t level, uint8_t desc) {
     (void)desc;
     abort();
 }
+int p256_ecdsa_verify(const uint8_t pub[64], const uint8_t msg_hash[32], const uint8_t *sig_der,
+                      size_t sig_len) {
+    (void)pub;
+    (void)msg_hash;
+    (void)sig_der;
+    (void)sig_len;
+    abort();
+}
+int rsa_pss_verify(const uint8_t *n, size_t nlen, const uint8_t msg_hash[32], const uint8_t *sig,
+                   size_t siglen) {
+    (void)n;
+    (void)nlen;
+    (void)msg_hash;
+    (void)sig;
+    (void)siglen;
+    abort();
+}
 
 #include "handshake.c"
 
 int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
     sh_info si;
     memset(&si, 0, sizeof si);
-    (void)parse_sh(data, size, &si);
+    (void)parse_sh(data, size, &si, (int)(size & 1));
 
     ch_tls t;
     memset(&t, 0, sizeof t);

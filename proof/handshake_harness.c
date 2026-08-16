@@ -195,6 +195,17 @@ int p256_ecdsa_verify(const uint8_t pub[64], const uint8_t msg_hash[32], const u
     return nondet_u8() & 1;
 }
 
+// The default build's pinned verifier; the driver under proof only routes
+// pointers into it, so the contract mirrors p256's. rsa_harness proves
+// the real body against hostile signatures.
+int rsa_pss_verify(const uint8_t *n, size_t nlen, const uint8_t msg_hash[32], const uint8_t *sig,
+                   size_t siglen) {
+    __CPROVER_assert(nlen == 0 || __CPROVER_r_ok(n, nlen), "rsa: modulus readable");
+    __CPROVER_assert(__CPROVER_r_ok(msg_hash, 32), "rsa: hash readable");
+    __CPROVER_assert(siglen == 0 || __CPROVER_r_ok(sig, siglen), "rsa: sig readable");
+    return nondet_u8() & 1;
+}
+
 void tlsi_fail(ch_tls *t, uint8_t desc) {
     (void)desc;
     __CPROVER_assert(__CPROVER_w_ok(t, sizeof *t), "fail: session writable");
@@ -216,7 +227,9 @@ int main(void) {
     uint8_t buf[96];
     uint8_t psk[32];
     uint8_t id[8];
-    uint8_t pin[64];
+    // Sized for the largest pin either build accepts (an RSA-3072
+    // modulus); the ECDSA build reads only its first 64 bytes.
+    uint8_t pin[384];
     fill_nondet(psk, sizeof psk);
     fill_nondet(id, sizeof id);
     fill_nondet(pin, sizeof pin);
@@ -233,7 +246,16 @@ int main(void) {
         t.cfg.psk_id_len = idlen;
         t.cfg.resumption = nondet_u8() & 1;
     } else {
-        t.cfg.server_pubkey = pin; // pinned-key mode: server_auth path
+        // Pinned-key mode: server_auth path. The length domain is what
+        // ch_connect admits before ch_handshake ever runs.
+        t.cfg.server_pubkey = pin;
+        size_t pinlen = nondet_size_t();
+#ifdef CH_PIN_ECDSA
+        __CPROVER_assume(pinlen == 64);
+#else
+        __CPROVER_assume(pinlen >= 256 && pinlen <= sizeof pin && pinlen % 8 == 0);
+#endif
+        t.cfg.server_pubkey_len = pinlen;
     }
 
     (void)ch_handshake(&t);

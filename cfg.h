@@ -39,13 +39,16 @@ typedef struct {
     // Authentication is one of two modes:
     //  - PSK: psk/psk_id set (external, resumption = 0) or a stored ticket
     //    (resumption = 1, obfuscated_age = ticket age ms + age_add).
-    //  - Pinned key: psk NULL, server_pubkey = the server's raw P-256
-    //    public key (X||Y, 64 bytes), provisioned like a PSK would be. The
-    //    server proves possession by signing the handshake; its
-    //    certificate is never parsed, only hashed into the transcript, so
-    //    there are no chains, no names, no expiry — one key, fail closed.
-    //    Works against stock cert-based endpoints (Go, OpenSSL); tickets
-    //    still arrive, so reconnects resume via PSK either way.
+    //  - Pinned key: psk NULL, server_pubkey = the server's raw public
+    //    key, provisioned like a PSK would be. The key is an RSA modulus
+    //    (256..384 bytes big-endian, exponent fixed at 65537, RSA-PSS) by
+    //    default, or 64 P-256 bytes (X||Y, ECDSA) when built with
+    //    -DCH_PIN_ECDSA — one algorithm per build, never both. The server
+    //    proves possession by signing the handshake; its certificate is
+    //    never parsed, only hashed into the transcript, so there are no
+    //    chains, no names, no expiry — one key, fail closed. Works against
+    //    stock cert-based endpoints (Go, OpenSSL); tickets still arrive,
+    //    so reconnects resume via PSK either way.
     const uint8_t *psk;
     size_t psk_len;
     const uint8_t *psk_id;
@@ -53,6 +56,7 @@ typedef struct {
     int resumption;
     uint32_t obfuscated_age;
     const uint8_t *server_pubkey;
+    size_t server_pubkey_len;
 
     // Receive buffer; its size (minus record overhead) is advertised as
     // our record_size_limit, so the peer can never overflow it.
