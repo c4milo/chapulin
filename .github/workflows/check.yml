@@ -8,8 +8,11 @@ on:
 jobs:
   check:
     runs-on: ubuntu-24.04
-    # `make prove` (CBMC over every harness) dominates the wall clock.
-    timeout-minutes: 90
+    # The proof tiers dominate the wall clock. A cold run — every proof,
+    # serialized by the runner's 2 admitted cores — needs hours; with the
+    # restored proof cache, a typical push re-proves only what changed
+    # and finishes in minutes. The budget covers the cold case.
+    timeout-minutes: 300
     env:
       # CI runs the same tool versions as development. When the local
       # toolchain upgrades, bump these pins in the same commit — never
@@ -126,11 +129,33 @@ jobs:
 
       - run: make hooks
 
+      # proof/run.sh skips any harness whose content key already recorded
+      # a success; restoring the marker directory makes CI incremental
+      # the same way development machines are.
+      - name: Restore proof cache
+        uses: actions/cache/restore@v4
+        with:
+          path: proof/.cache
+          key: proofs-${{ runner.os }}-${{ github.run_id }}
+          restore-keys: proofs-${{ runner.os }}-
+
       - run: make check
 
       # The four SAT heavyweights; the fast proof tier already ran in check.
       - name: Slow-tier proofs
         run: make prove-slow
+
+      # Save even on failure or timeout (always() runs on cancelled jobs):
+      # every verified harness has already recorded its key, so the next
+      # run re-proves only what this one did not finish. A timed-out cold
+      # run therefore converges over a couple of pushes instead of
+      # starting from zero each time.
+      - name: Save proof cache
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: proof/.cache
+          key: proofs-${{ runner.os }}-${{ github.run_id }}
 
       # A failed proof's one-line verdict is not diagnosable from the run
       # output alone; keep the full solver logs.
