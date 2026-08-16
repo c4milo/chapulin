@@ -49,6 +49,36 @@ Reseeding after boot is optional; when late entropy arrives, reseed with
 a hash of fresh bytes and current generator output, so the state never
 gets worse.
 
+## Parts with a hardware TRNG
+
+A hardware source changes where the seed comes from, not the shape of
+the wiring. Three patterns, strongest default first:
+
+1. **TRNG feeds the DRBG; the DRBG feeds `ch_rand_bytes`.** The default
+   even when the part has a real source. Raw physical sources drift with
+   temperature and voltage, can bias, and can fail silently — the
+   failure class the SP 800-90B health tests exist for. Behind the
+   DRBG, a degraded source degrades seed diversity instead of feeding
+   every output directly; output rate stays independent of the TRNG's,
+   so `ch_rand_bytes` latency is deterministic; and fast key erasure
+   adds the backtracking resistance the raw source lacks.
+2. **Hybrid reseed.** Seed from the TRNG at boot; on a schedule or on
+   wake-from-sleep, reseed with a hash of fresh TRNG bytes mixed with
+   output the generator just drew (the recipe `ch_drbg_seed`'s comment
+   supports). The state then never gets worse than either input, and a
+   TRNG that quietly dies after boot leaves the generator no weaker
+   than pattern 1.
+3. **TRNG wired directly as `ch_rand_bytes`.** Earned, not default:
+   appropriate only when the RNG block carries its own conditioning and
+   on-chip health tests that the vendor documents — the certified
+   DRBG-behind-TRNG designs. The criterion is the documentation of
+   conditioning and failure detection, not the vendor.
+
+The RTL838x-class reference target has none of this — its crypto engine
+does AES/SHA-1/MD5 only, with no random source — so that target always
+links the DRBG and seeds it as described above. The patterns here are
+for better-equipped parts.
+
 ## What not to do
 
 - Do not seed from a bare counter, the boot time, a MAC address, or any

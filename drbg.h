@@ -8,7 +8,12 @@
 //
 // Deliberately not part of the packaged library object: firmware with a
 // real RNG never links it, and the test binaries provide their own
-// ch_rand_bytes. Single-task, like the rest of the stack.
+// ch_rand_bytes. Single-task, like the rest of the stack — and single
+// instance: the generator state is the codebase's one piece of global
+// mutable data, so every session in an image draws from the same stream
+// and a reseed by one task changes what the others draw next. That is
+// the right trade for a reference implementation meant to be replaced;
+// an image that needs isolated generators wires its own ch_rand_bytes.
 #ifndef CH_DRBG_H
 #define CH_DRBG_H
 
