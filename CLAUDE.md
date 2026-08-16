@@ -79,6 +79,12 @@ Home: github.com/c4milo.
   env block in .github/workflows/check.yml). When the local toolchain
   upgrades, bump the pins in the same commit. Never adapt code or
   suppressions to an older checker.
+- CI compiles with gcc on purpose, even though development machines run
+  clang: chapulin's consumers are firmware trees whose vendor SDKs ship
+  gcc cross-compilers, so gcc-only diagnostics belong in CI, not in a
+  consumer's build. Between local clang and CI gcc, both major compiler
+  families stay covered without a second CI leg. Do not switch CI to
+  clang for convenience.
 - Commits are Conventional Commits (feat/fix/docs/test/refactor/perf/
   build/ci/chore), enforced by commitlint via `.githooks/commit-msg`
   (`make hooks` once after clone) and `make lint-commits` in check.
