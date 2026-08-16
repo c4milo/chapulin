@@ -1,21 +1,33 @@
-// Proves the carry lemma behind mont_mul (rsa_mont.c CIOS): in both passes
-// the uint64 accumulation v = x*y + t + c cannot wrap and its carry-out
-// fits back in one 32-bit limb — for ANY uint32 operands, re-establishing
-// c <= 2^32-1 step by step — and each pass's tail fold spills at most one
-// bit, so the carry word t[k] the next round reads only ever holds 0..2.
-// The bound is inductive, so a fixed step count stands in for the real
-// k-limb passes (k up to 96); the count never enters the argument.
-// mont_mul itself is undriven in both harnesses (its symbolic modexp never
-// leaves symex): every index walks a fixed MAXLIMBS-sized array under the
-// k <= 96 bound rsa_pss_verify's nlen gate enforces before rsa_vp1 runs.
-// The final conditional subtract (t < 2m at loop exit) is a functional
-// CIOS invariant resting on the vectors in test/rsa_test.c — same
-// standing as x25519's open limb-growth invariant.
+// Proves the two pieces of rsa_mont.c that rsa_harness's rsa_vp1 stub
+// leaves uncovered, with full checks:
+//
+// Marshalling. from_bytes and to_bytes — the byte<->limb conversions
+// RSAVP1 runs over the attacker's n and sig, both directions — driven
+// concretely at k = 96 (RSA-3072, the MAXLIMBS bound rsa_pss_verify's
+// nlen gate enforces before rsa_vp1 runs) over nondet bytes and limbs.
+// The maximal k is the binding case for every index; smaller k only
+// shrinks the loop counts.
+//
+// Carry lemma. Behind mont_mul (CIOS): in both passes the uint64
+// accumulation v = x*y + t + c cannot wrap and its carry-out fits back
+// in one 32-bit limb — for ANY uint32 operands, re-establishing
+// c <= 2^32-1 step by step — and each pass's tail fold spills at most
+// one bit, so the carry word t[k] the next round reads only ever holds
+// 0..2. The bound is inductive, so a fixed step count stands in for the
+// real k-limb passes; the count never enters the argument. mont_mul
+// itself is undriven in both harnesses (its symbolic modexp never
+// leaves symex): every index walks a fixed MAXLIMBS-sized array under
+// the k <= 96 bound. The final conditional subtract (t < 2m at loop
+// exit) is a functional CIOS invariant resting on the vectors in
+// test/rsa_test.c — same standing as x25519's open limb-growth
+// invariant.
 #include "harness.h"
 
 #include <stdint.h>
 
 uint32_t nondet_u32(void);
+
+#include "rsa_mont.c"
 
 // One CIOS pass, x nondet each step: a superset of both real passes (the
 // multiply pass holds x = a[i] fixed, the reduction pass runs with x = u).
@@ -33,6 +45,17 @@ static uint64_t mac_pass(uint64_t c) {
 }
 
 int main(void) {
+    // Marshalling at the k = 96 bound: 384 nondet bytes into limbs, 96
+    // nondet limbs back out to bytes.
+    uint8_t b[4 * MAXLIMBS];
+    uint32_t limbs[MAXLIMBS];
+    fill_nondet(b, sizeof b);
+    from_bytes(limbs, b, MAXLIMBS);
+    for (size_t i = 0; i < MAXLIMBS; i++) {
+        limbs[i] = nondet_u32();
+    }
+    to_bytes(b, limbs, MAXLIMBS);
+
     // Multiply pass, then its tail: v = t[k] + c spills at most one bit
     // into t[k+1].
     uint64_t c = mac_pass(0);

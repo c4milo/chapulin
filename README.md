@@ -216,7 +216,7 @@ sides agree. Each module carries its RFC vectors as a selftest, and the
 key schedule also matches RFC 8448's published trace values.
 
 `make diff` builds the spec with `lake`, runs its selftests, and then
-drives about 2,900 random-input comparisons between every C module and
+drives about 3,000 random-input comparisons between every C module and
 the spec over a pipe, with a deterministic seed. The comparisons include
 P-256 and RSA-PSS signatures that the spec mints and the C must accept —
 the spec holds the private keys and signs; the C, which can only verify,

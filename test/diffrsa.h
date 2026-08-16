@@ -1,6 +1,8 @@
 // RSASSA-PSS differential section: the Lean spec mints a signature
 // (rsa_sign) over a random digest with a fixed test keypair, and the C
-// verifier must accept it and reject a copy with one mutated hash byte.
+// verifier must accept it, reject a copy with one mutated hash byte,
+// and reject three one-byte signature flips (trailer position, padding
+// region, top byte).
 // The spec's own verifier is cross-checked on the same inputs, so the
 // section still exercises the oracle before rsa.[ch] land. The C side
 // only ever verifies; the private exponent stays on the spec side.
@@ -128,7 +130,32 @@ static void diff_rsa(void) {
                           "diff mismatch: C rsa_pss_verify accepted a mutated hash\n  h: %s\n", hh);
             exit(1);
         }
-        comparisons += 2;
+
+        // A one-byte signature flip must be rejected too. The mutated
+        // hash above only exercises the final compare; a signature flip
+        // scrambles the whole recovered EM through RSAVP1, so these
+        // exercise the earlier reject branches (the s >= n gate, the
+        // trailer, the top bits, the padding walk) instead. Flip at the
+        // trailer position (last byte), inside the padding region (EM
+        // is PS || 0x01 || salt || H || 0xbc, so PS spans the low
+        // nlen - 66 bytes), and at the top byte.
+        size_t flip[3];
+        flip[0] = siglen - 1;
+        flip[1] = 1 + rng_below(nlen - 67);
+        flip[2] = 0;
+        for (size_t j = 0; j < 3; j++) {
+            uint8_t badsig[384];
+            memcpy(badsig, sig, siglen);
+            badsig[flip[j]] ^= (uint8_t)(1 + rng_below(255));
+            if (rsa_pss_verify(n, nlen, hash, badsig, siglen) != 0) {
+                (void)fprintf(stderr,
+                              "diff mismatch: C rsa_pss_verify accepted a mutated signature\n"
+                              "  flipped byte: %zu\n  h: %s\n",
+                              flip[j], hh);
+                exit(1);
+            }
+        }
+        comparisons += 5;
 #endif
     }
 }
