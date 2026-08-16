@@ -142,8 +142,13 @@ jobs:
       - run: make check
 
       # The four SAT heavyweights; the fast proof tier already ran in check.
+      # The built-in solver, not kissat: the external-solver path
+      # materializes the whole formula before the DIMACS handoff, and on
+      # this runner's 16 GB that OOMs cbmc itself on the slow formulas —
+      # the incremental built-in solver has always fit them. kissat keeps
+      # the fast tier, where its wins are.
       - name: Slow-tier proofs
-        run: make prove-slow
+        run: PROVE_SOLVER=builtin make prove-slow
 
       # Save even on failure or timeout (always() runs on cancelled jobs):
       # every verified harness has already recorded its key, so the next

@@ -69,6 +69,15 @@ builtin) ;;
     ;;
 esac
 
+# The slow tier's default weight is solver-dependent: the external-solver
+# path materializes the whole formula before the DIMACS handoff and the
+# heavyweights peak past 10 GB there (measured as cbmc-side OOMs on a
+# 16 GB box), where the built-in incremental solver stays under 6.
+SLOW_W=6
+if [ ${#SOLVER_ARGS[@]} -gt 0 ] && [ "${SOLVER_ARGS[0]}" = "--external-sat-solver" ]; then
+    SLOW_W=12
+fi
+
 LOGDIR=proof/results
 CACHEDIR=proof/.cache
 mkdir -p "$LOGDIR" "$CACHEDIR"
@@ -159,7 +168,7 @@ launch() {
     if [ -z "$w" ]; then
         w=2
         if [ "$tier" = "slow" ]; then
-            w=6
+            w=$SLOW_W
         fi
     fi
     local mode="$1" name="$2" unwind="$3" unwindset="$4"
@@ -218,7 +227,7 @@ launch() {
 launch slow full handshake 100 "fetch_record.0:45,next_msg.0:140,parse_sh.0:66,parse_ee.0:66,fill_nondet.0:600" buf.c ct.c
 launch slow full aead 85 "blocks.0:10,chacha20_xor.1:4" chacha20.c poly1305.c ct.c
 launch slow noovf x25519 65 "" ct.c
-launch slow full hkdf_expand 120 "hkdf_expand.0:5" ct.c
+launch slow full hkdf_expand 120 "hkdf_expand.0:5" --object-bits 11 ct.c
 # Measured kissat-path peaks (macOS /usr/bin/time -l, RSS): hsparse
 # 9.9 GB, sha256 5.7 GB — both above the default weight and cap.
 launch fast:10 full hsparse 260 "parse_sh.0:66,main.0:600,main.1:600" buf.c
