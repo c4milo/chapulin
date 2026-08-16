@@ -63,6 +63,13 @@ jobs:
           sudo dpkg -i ubuntu-24.04-cbmc-6.10.0-Linux.deb
           cbmc --version
 
+      - name: Install kissat
+        # proof/run.sh uses kissat as the SAT back end when present;
+        # verdicts are solver-independent, kissat just gets there faster.
+        run: |
+          sudo apt-get install -y kissat
+          kissat --version
+
       - name: Cache Lean toolchain and spec build
         uses: actions/cache@v4
         with:

@@ -114,9 +114,10 @@ validity; undefined behavior covers signed overflow, invalid shifts, and
 division by zero. Where a bound equals the module's real maximum, the
 proof covers all inputs. Where it does not, the table states the bound.
 
-The proofs run in two tiers. `make check` runs the eleven proofs that
-finish in seconds to a few minutes. `make prove-slow` runs the four long
-ones (handshake driver, aead, x25519, hkdf expand). CI runs both tiers.
+The proofs run in two tiers. `make check` runs the fast tier, the proofs
+that finish in seconds to a few minutes. `make prove-slow` runs the four
+long ones (handshake driver, aead, x25519, hkdf expand). CI runs both
+tiers.
 
 The suite layers its proofs the way mlkem-native does. CBMC proves the
 leaf modules directly. Upper layers (hkdf, record, the handshake driver)
@@ -137,7 +138,8 @@ values.
 | x25519 | field operations are memory-safe (direct proof); a separate lemma proves the int64 arithmetic cannot overflow | limbs ≤ 2^24 |
 | p256 | the DER parser and limb marshalling stay safe on hostile signatures (direct proof); a carry lemma covers the Montgomery multiply | signatures ≤ 80 B |
 | record | seal works across its contract; rec_open stays safe on fully hostile bytes | records ≤ 160 B |
-| hsparse | the ServerHello and EncryptedExtensions parsers stay safe on hostile bytes | messages ≤ 256 B |
+| hsparse | the ServerHello parser stays safe on hostile bytes | messages ≤ 256 B |
+| eeparse | the EncryptedExtensions parser stays safe on hostile bytes | messages ≤ 256 B |
 | tlspost | the post-handshake parser (NewSessionTicket, KeyUpdate) stays safe on hostile decrypted bytes and consumes no more than its input | messages ≤ 128 B |
 | drbg | the reference generator stays safe for any request, seeded and across rekeys | requests ≤ 96 B |
 
@@ -248,9 +250,16 @@ Separate targets: `make lib` packages the library as one relocatable
 object (`bin/chapulin.o`) that exports exactly the four public calls —
 every internal symbol is localized, and `lib-check` (part of `check`)
 fails if the export list ever grows. `make prove-slow` runs the four
-long proofs; set `PROVE_SOLVER=smt2` to route proofs through z3's
-incremental SMT back end, which streams the formula and lowers peak
-memory. `make timing` runs the constant-time check (load-sensitive, so
+long proofs. The proof runner caches results by content — a harness whose
+preprocessed sources, flags, and checker version are byte-identical to
+its last successful run is skipped, so an incremental `make check`
+re-proves only what changed (`PROVE_NO_CACHE=1` forces a full run) — and
+schedules jobs by memory weight against the machine's budget, so a big
+machine runs the whole fast tier at once. It uses kissat as the SAT back
+end when installed (`brew install kissat`; verdicts are
+solver-independent, kissat just reaches them faster); `PROVE_SOLVER=builtin`
+forces CBMC's built-in solver and `PROVE_SOLVER=smt2` routes through z3's
+incremental SMT back end instead. `make timing` runs the constant-time check (load-sensitive, so
 run it on an idle machine). `make fuzz` smoke-runs the libFuzzer
 harnesses. `make hooks`, once after clone, enables the commit-msg hook.
 See `CLAUDE.md` for the house rules.

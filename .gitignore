@@ -3,6 +3,7 @@ bin/
 *.su
 proof/*.goto
 proof/results/
+proof/.cache/
 node_modules/
 spec/.lake/
 bin/hpp_test.o
