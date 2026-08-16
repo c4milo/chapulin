@@ -6,7 +6,7 @@
 //
 // Vectors were produced with OpenSSL 3.x:
 //   openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:{3072,2048}
-//   openssl dgst -sha256 -sign key.pem -sigopt rsa_padding_mode:pss \
+//   openssl dgst -sha256 -sign key.pem -sigopt rsa_padding_mode:pss
 //     -sigopt rsa_pss_saltlen:32 -sigopt rsa_mgf1_md:sha256 -out sig msg
 //   openssl rsa -in key.pem -noout -modulus   (raw big-endian modulus)
 #include <stdio.h>
