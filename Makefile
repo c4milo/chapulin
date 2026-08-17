@@ -21,7 +21,7 @@ LINT_C := $(SRCS) drbg.c test/unit.c test/tlsclient.c test/diff.c test/timing.c 
 # Test-local headers: prerequisites for every binary that includes them,
 # so a header edit rebuilds the binaries it changes.
 TESTH := test/testrand.h test/session_tests.h test/diffdrv.h test/diffp256.h \
-         test/diffrsa.h test/hsseqsrv.h
+         test/diffrsa.h test/hsseqsrv.h test/rfc8448_vectors.h test/rfc8448_tests.h
 
 # Pinned mode verifies one signature algorithm per build: PIN=rsa
 # (default, RSA-PSS up to 3072 bits) or PIN=ecdsa (P-256, -DCH_PIN_ECDSA).
@@ -174,7 +174,7 @@ lint-format:
 ifeq ($(CLANG_FORMAT),)
 	@echo "SKIP clang-format: not on PATH (ships with llvm)"
 else
-	$(CLANG_FORMAT) --dry-run --Werror $(LINT_C) $(HDRS) $(PROOF_C) $(FUZZ_C) test/testrand.h test/session_tests.h test/diffdrv.h test/diffp256.h test/diffrsa.h test/hsseqsrv.h
+	$(CLANG_FORMAT) --dry-run --Werror $(LINT_C) $(HDRS) $(PROOF_C) $(FUZZ_C) $(TESTH)
 endif
 
 lint-cppcheck:
@@ -232,7 +232,7 @@ endif
 
 fmt:
 ifneq ($(CLANG_FORMAT),)
-	$(CLANG_FORMAT) -i $(LINT_C) $(HDRS) $(PROOF_C) $(FUZZ_C) test/testrand.h test/session_tests.h test/diffdrv.h test/diffp256.h test/diffrsa.h test/hsseqsrv.h
+	$(CLANG_FORMAT) -i $(LINT_C) $(HDRS) $(PROOF_C) $(FUZZ_C) $(TESTH)
 endif
 
 bin/timing: test/timing.c $(SRCS) $(HDRS) $(TESTH)

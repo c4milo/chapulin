@@ -215,6 +215,18 @@ differential oracle only works when a shared misreading cannot make both
 sides agree. Each module carries its RFC vectors as a selftest, and the
 key schedule also matches RFC 8448's published trace values.
 
+The unit tests replay RFC 8448's traces at the transcript level: the
+section 3 1-RTT handshake message by message — the ECDHE shared secret,
+every derived secret at its transcript snapshot, both Finished MACs, and
+the ticket's resumption PSK — plus the section 4 PSK binder chain over
+that ticket and the section 5 HelloRetryRequest transcript restart. The
+traces protect records with AES-128-GCM, which chapulin excludes, so the
+replay stops at secrets and MACs and never opens a record. RFC 8448
+signs with an RSA-1024 key, below rsa_pss_verify's 2048-bit floor; the
+tests check that the public API refuses the key, then verify the trace's
+CertificateVerify one layer down, through the raw RSAVP1 modexp and a
+test-local PSS check.
+
 `make diff` builds the spec with `lake`, runs its selftests, and then
 drives about 3,000 random-input comparisons between every C module and
 the spec over a pipe, with a deterministic seed. The comparisons include

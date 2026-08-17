@@ -306,6 +306,7 @@ static void test_record(void) {
     CHECK(type == REC_ALERT && ptn == 2);
 }
 
+#include "rfc8448_tests.h"
 #include "session_tests.h"
 
 int main(void) {
@@ -319,6 +320,9 @@ int main(void) {
     test_p256();
     test_buf();
     test_record();
+    test_rfc8448_1rtt();
+    test_rfc8448_binder();
+    test_rfc8448_hrr();
     test_seq_exhaustion();
     test_post_handshake();
     test_connect_cfg();
