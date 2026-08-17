@@ -10,22 +10,22 @@
 
 #include "sha256.h"
 
-void hmac_sha256(const uint8_t *key, size_t keylen, const uint8_t *msg, size_t msglen,
+void hmac_sha256(const uint8_t *key, size_t key_len, const uint8_t *msg, size_t msg_len,
                  uint8_t out[SHA256_LEN]);
 
-void hkdf_extract(const uint8_t *salt, size_t saltlen, const uint8_t *ikm, size_t ikmlen,
+void hkdf_extract(const uint8_t *salt, size_t salt_len, const uint8_t *ikm, size_t ikm_len,
                   uint8_t prk[SHA256_LEN]);
 
-// out gets outlen bytes, outlen <= 255*32 per RFC 5869; chapulin never
+// out gets out_len bytes, out_len <= 255*32 per RFC 5869; chapulin never
 // asks for more than 32.
-void hkdf_expand(const uint8_t prk[SHA256_LEN], const uint8_t *info, size_t infolen, uint8_t *out,
-                 size_t outlen);
+void hkdf_expand(const uint8_t prk[SHA256_LEN], const uint8_t *info, size_t info_len, uint8_t *out,
+                 size_t out_len);
 
-// HKDF-Expand-Label(secret, "tls13 " + label, ctx, outlen). label excludes
+// HKDF-Expand-Label(secret, "tls13 " + label, ctx, out_len). label excludes
 // the "tls13 " prefix and is at most 12 bytes — the longest TLS 1.3 uses.
 #define HKDF_LABEL_MAX 12
 void hkdf_expand_label(const uint8_t secret[SHA256_LEN], const char *label, const uint8_t *ctx,
-                       size_t ctxlen, uint8_t *out, size_t outlen);
+                       size_t ctx_len, uint8_t *out, size_t out_len);
 
 // Derive-Secret(secret, label, transcript-hash).
 void hkdf_derive_secret(const uint8_t secret[SHA256_LEN], const char *label,

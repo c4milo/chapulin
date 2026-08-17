@@ -40,11 +40,11 @@ int main(void) {
     fill_nondet(info, sizeof info);
     fill_nondet(prk, sizeof prk);
 
-    size_t outlen = nondet_size_t();
-    size_t infolen = nondet_size_t();
-    __CPROVER_assume(outlen >= 1 && outlen <= sizeof out);
-    __CPROVER_assume(infolen <= sizeof info);
-    hkdf_expand(prk, info, infolen, out, outlen);
+    size_t out_len = nondet_size_t();
+    size_t info_len = nondet_size_t();
+    __CPROVER_assume(out_len >= 1 && out_len <= sizeof out);
+    __CPROVER_assume(info_len <= sizeof info);
+    hkdf_expand(prk, info, info_len, out, out_len);
 
     // Any label the contract admits, not just the ones TLS uses today.
     char label[HKDF_LABEL_MAX + 1];
@@ -56,10 +56,10 @@ int main(void) {
         label[i] = c;
     }
     label[lab] = 0;
-    size_t ctxlen = nondet_size_t();
-    __CPROVER_assume(ctxlen <= SHA256_LEN);
-    size_t outlen2 = nondet_size_t();
-    __CPROVER_assume(outlen2 >= 1 && outlen2 <= 64);
-    hkdf_expand_label(prk, label, info, ctxlen, out, outlen2);
+    size_t ctx_len = nondet_size_t();
+    __CPROVER_assume(ctx_len <= SHA256_LEN);
+    size_t out_len2 = nondet_size_t();
+    __CPROVER_assume(out_len2 >= 1 && out_len2 <= 64);
+    hkdf_expand_label(prk, label, info, ctx_len, out, out_len2);
     return 0;
 }

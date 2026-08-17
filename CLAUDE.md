@@ -94,6 +94,14 @@ Home: github.com/c4milo.
   real TLS 1.3 server once the handshake lands), not just compile.
 - Functions stay at cognitive complexity 20 or less; hand-written files
   under 500 lines.
+- Names spell words out. Module prefixes stay short — they are C's
+  namespaces (`ch_`, `ks_`, `rec_`, `rb_`/`wb_`, `hsp_`, `ct_`) — but
+  the stem after the prefix is real words: `parse_server_hello`, not
+  `parse_sh`; `record_len`, not `recn`. No vowel-dropping, no ad-hoc
+  abbreviation. Domain vocabulary the RFCs themselves use stays as the
+  RFCs spell it (`pt`, `aad`, `iv`, `psk`, `hrr`, `verify_data`,
+  `obfuscated_age`). One-letter names only for loop indices; `rc` for
+  return codes is C idiom and stays.
 - `chapulin.hpp` is an optional, header-only C++ wrapper: freestanding
   (only <cstddef>/<cstdint>), -fno-exceptions -fno-rtti, zero heap, no
   runtime cost over the C calls. It never gains logic the C core lacks —

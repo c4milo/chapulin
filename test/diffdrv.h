@@ -34,7 +34,7 @@ static inline void rng_fill(uint8_t *p, size_t n) {
 }
 
 // Line-protocol hex: lowercase, "-" for the empty string.
-static inline size_t hex_enc(char *dst, const uint8_t *p, size_t n) {
+static inline size_t hex_encode(char *dst, const uint8_t *p, size_t n) {
     static const char digits[] = "0123456789abcdef";
     if (n == 0) {
         dst[0] = '-';
@@ -49,7 +49,7 @@ static inline size_t hex_enc(char *dst, const uint8_t *p, size_t n) {
     return 2 * n;
 }
 
-static int hex_val(char c) {
+static int hex_digit(char c) {
     if (c >= '0' && c <= '9') {
         return c - '0';
     }
@@ -60,10 +60,10 @@ static int hex_val(char c) {
 }
 
 // Decodes exactly n bytes of lowercase hex; 0 on any bad digit.
-static inline int hex_dec(uint8_t *dst, const char *src, size_t n) {
+static inline int hex_decode(uint8_t *dst, const char *src, size_t n) {
     for (size_t i = 0; i < n; i++) {
-        int hi = hex_val(src[2 * i]);
-        int lo = hex_val(src[2 * i + 1]);
+        int hi = hex_digit(src[2 * i]);
+        int lo = hex_digit(src[2 * i + 1]);
         if (hi < 0 || lo < 0) {
             return 0;
         }
@@ -115,11 +115,11 @@ static void spawn_spec(const char *path) {
 // Sends one request line, hands back the raw response line. For answers
 // the driver cannot predict (e.g. spec-minted signatures); ERR and FAIL
 // are fatal here, so callers only ever see well-formed payloads.
-static void query(const char *cmd, char *out, size_t outn) {
+static void query(const char *cmd, char *out, size_t out_len) {
     (void)fputs(cmd, to_spec);
     (void)fputc('\n', to_spec);
     (void)fflush(to_spec);
-    if (fgets(out, (int)outn, from_spec) == NULL) {
+    if (fgets(out, (int)out_len, from_spec) == NULL) {
         die("spec process closed the pipe (did spec/.lake/build/bin/diffspec build?)");
     }
     char *nl = strchr(out, '\n');

@@ -3,8 +3,8 @@
 //
 // Marshalling. from_bytes and to_bytes — the byte<->limb conversions
 // RSAVP1 runs over the attacker's n and sig, both directions — driven
-// concretely at k = 96 (RSA-3072, the MAXLIMBS bound rsa_pss_verify's
-// nlen gate enforces before rsa_vp1 runs) over nondet bytes and limbs.
+// concretely at k = 96 (RSA-3072, the LIMBS_MAX bound rsa_pss_verify's
+// n_len gate enforces before rsa_vp1 runs) over nondet bytes and limbs.
 // The maximal k is the binding case for every index; smaller k only
 // shrinks the loop counts.
 //
@@ -16,7 +16,7 @@
 // 0..2. The bound is inductive, so a fixed step count stands in for the
 // real k-limb passes; the count never enters the argument. mont_mul
 // itself is undriven in both harnesses (its symbolic modexp never
-// leaves symex): every index walks a fixed MAXLIMBS-sized array under
+// leaves symex): every index walks a fixed LIMBS_MAX-sized array under
 // the k <= 96 bound. The final conditional subtract (t < 2m at loop
 // exit) is a functional CIOS invariant resting on the vectors in
 // test/rsa_test.c — same standing as x25519's open limb-growth
@@ -47,21 +47,21 @@ static uint64_t mac_pass(uint64_t c) {
 int main(void) {
     // Marshalling at the k = 96 bound: 384 nondet bytes into limbs, 96
     // nondet limbs back out to bytes.
-    uint8_t b[4 * MAXLIMBS];
-    uint32_t limbs[MAXLIMBS];
+    uint8_t b[4 * LIMBS_MAX];
+    uint32_t limbs[LIMBS_MAX];
     fill_nondet(b, sizeof b);
-    from_bytes(limbs, b, MAXLIMBS);
-    for (size_t i = 0; i < MAXLIMBS; i++) {
+    from_bytes(limbs, b, LIMBS_MAX);
+    for (size_t i = 0; i < LIMBS_MAX; i++) {
         limbs[i] = nondet_u32();
     }
-    to_bytes(b, limbs, MAXLIMBS);
+    to_bytes(b, limbs, LIMBS_MAX);
 
     // Multiply pass, then its tail: v = t[k] + c spills at most one bit
     // into t[k+1].
     uint64_t c = mac_pass(0);
     uint64_t v = (uint64_t)nondet_u32() + c;
-    uint32_t tk1 = (uint32_t)(v >> 32); // t[k+1] after the multiply tail
-    __CPROVER_assert(tk1 <= 1, "multiply tail spills one bit at most");
+    uint32_t t_k1 = (uint32_t)(v >> 32); // t[k+1] after the multiply tail
+    __CPROVER_assert(t_k1 <= 1, "multiply tail spills one bit at most");
 
     // Reduction pass: the first step folds u*m[0] + t[0] with no carry-in
     // and feeds the rest of the pass.
@@ -76,7 +76,7 @@ int main(void) {
 
     // The reduction tail folds t[k] = t[k+1] + spill; both are 0 or 1, so
     // the carry word the next round reads stays inside one limb.
-    uint64_t tk = (uint64_t)tk1 + spill;
-    __CPROVER_assert(tk <= UINT32_MAX, "carry word fold stays in one limb");
+    uint64_t t_k = (uint64_t)t_k1 + spill;
+    __CPROVER_assert(t_k <= UINT32_MAX, "carry word fold stays in one limb");
     return 0;
 }

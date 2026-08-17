@@ -24,9 +24,9 @@ void poly1305_init(poly1305 *p, const uint8_t key[POLY1305_KEY]) {
     p->fill = 0;
 }
 
-// Absorbs one 16-byte block. hibit is 1<<24 for full blocks, 0 for the
+// Absorbs one 16-byte block. high_bit is 1<<24 for full blocks, 0 for the
 // padded final partial block (whose 0x01 terminator is already in place).
-static void blocks(poly1305 *p, const uint8_t *m, size_t n, uint32_t hibit) {
+static void blocks(poly1305 *p, const uint8_t *m, size_t n, uint32_t high_bit) {
     uint32_t r0 = p->r[0];
     uint32_t r1 = p->r[1];
     uint32_t r2 = p->r[2];
@@ -46,7 +46,7 @@ static void blocks(poly1305 *p, const uint8_t *m, size_t n, uint32_t hibit) {
         h1 += (load32(m + 3) >> 2) & 0x3ffffff;
         h2 += (load32(m + 6) >> 4) & 0x3ffffff;
         h3 += (load32(m + 9) >> 6) & 0x3ffffff;
-        h4 += (load32(m + 12) >> 8) | hibit;
+        h4 += (load32(m + 12) >> 8) | high_bit;
 
         uint64_t d0 = (uint64_t)h0 * r0 + (uint64_t)h1 * s4 + (uint64_t)h2 * s3 +
                       (uint64_t)h3 * s2 + (uint64_t)h4 * s1;
@@ -181,12 +181,12 @@ void poly1305_final(poly1305 *p, uint8_t tag[POLY1305_TAG]) {
     f = (uint64_t)h3 + p->pad[3] + (f >> 32);
     h3 = (uint32_t)f;
 
-    const uint32_t hs[4] = {h0, h1, h2, h3};
+    const uint32_t out_words[4] = {h0, h1, h2, h3};
     for (size_t i = 0; i < 4; i++) {
-        tag[4 * i] = (uint8_t)hs[i];
-        tag[4 * i + 1] = (uint8_t)(hs[i] >> 8);
-        tag[4 * i + 2] = (uint8_t)(hs[i] >> 16);
-        tag[4 * i + 3] = (uint8_t)(hs[i] >> 24);
+        tag[4 * i] = (uint8_t)out_words[i];
+        tag[4 * i + 1] = (uint8_t)(out_words[i] >> 8);
+        tag[4 * i + 2] = (uint8_t)(out_words[i] >> 16);
+        tag[4 * i + 3] = (uint8_t)(out_words[i] >> 24);
     }
     ct_wipe(p, sizeof *p);
 }

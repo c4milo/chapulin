@@ -8,17 +8,17 @@
 #include "buf.c"
 
 int main(void) {
-    uint8_t wmem[64];
+    uint8_t write_mem[64];
     wbuf w;
     size_t cap = nondet_size_t();
-    __CPROVER_assume(cap <= sizeof wmem);
-    wb_init(&w, wmem, cap);
-    uint8_t rmem[64];
-    fill_nondet(rmem, sizeof rmem);
+    __CPROVER_assume(cap <= sizeof write_mem);
+    wb_init(&w, write_mem, cap);
+    uint8_t read_mem[64];
+    fill_nondet(read_mem, sizeof read_mem);
     rbuf r;
-    size_t rlen = nondet_size_t();
-    __CPROVER_assume(rlen <= sizeof rmem);
-    rb_init(&r, rmem, rlen);
+    size_t read_len = nondet_size_t();
+    __CPROVER_assume(read_len <= sizeof read_mem);
+    rb_init(&r, read_mem, read_len);
 
     uint8_t src[16];
     fill_nondet(src, sizeof src);
@@ -56,7 +56,7 @@ int main(void) {
             break;
         default: {
             size_t n = nondet_size_t();
-            __CPROVER_assume(n <= 96); // deliberately past rlen sometimes
+            __CPROVER_assume(n <= 96); // deliberately past read_len sometimes
             (void)rb_bytes(&r, n);
             break;
         }

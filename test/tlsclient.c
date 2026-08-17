@@ -50,9 +50,10 @@ static void put_hex(FILE *f, const uint8_t *p, size_t n) {
 
 // Persists one ticket as "identity-hex psk-hex age_add" so a later run can
 // resume with it.
-static void on_ticket(void *io, const ch_ticket *tk) {
+static void on_ticket(void *io, const ch_ticket *ticket) {
     (void)io;
-    (void)fprintf(stderr, "ticket: id %zu bytes, lifetime %us\n", tk->identity_len, tk->lifetime_s);
+    (void)fprintf(stderr, "ticket: id %zu bytes, lifetime %us\n", ticket->identity_len,
+                  ticket->lifetime_s);
     if (g_ticket_path == NULL || g_ticket_saved) {
         return;
     }
@@ -60,10 +61,10 @@ static void on_ticket(void *io, const ch_ticket *tk) {
     if (f == NULL) {
         return;
     }
-    put_hex(f, tk->identity, tk->identity_len);
+    put_hex(f, ticket->identity, ticket->identity_len);
     (void)fputc(' ', f);
-    put_hex(f, tk->psk, sizeof tk->psk);
-    (void)fprintf(f, " %u\n", tk->age_add);
+    put_hex(f, ticket->psk, sizeof ticket->psk);
+    (void)fprintf(f, " %u\n", ticket->age_add);
     (void)fclose(f);
     g_ticket_saved = 1;
 }
@@ -101,35 +102,35 @@ static size_t unhex(const char *hex, uint8_t *out, size_t cap) {
 // Loads a ticket saved by on_ticket. The identity replaces the psk-id, the
 // derived PSK replaces the external one, and obfuscated_age = 0 + age_add
 // (we reconnect within moments, so the true age rounds to zero).
-static int load_ticket(const char *path, uint8_t *id, size_t *idlen, uint8_t *psk, size_t *psklen,
+static int load_ticket(const char *path, uint8_t *id, size_t *id_len, uint8_t *psk, size_t *psk_len,
                        uint32_t *age) {
     FILE *f = fopen(path, "r");
     if (f == NULL) {
         return -1;
     }
-    char idhex[2 * CH_TICKET_ID_MAX + 1];
-    char pskhex[2 * SHA256_LEN + 1];
-    char agestr[16];
-    int rc = fscanf(f, "%640s %64s %15s", idhex, pskhex, agestr);
+    char id_hex[2 * CH_TICKET_ID_MAX + 1];
+    char psk_hex[2 * SHA256_LEN + 1];
+    char age_str[16];
+    int rc = fscanf(f, "%640s %64s %15s", id_hex, psk_hex, age_str);
     (void)fclose(f);
     if (rc != 3) {
         return -1;
     }
     char *end = NULL;
-    unsigned long age_add = strtoul(agestr, &end, 10);
-    if (end == agestr || *end != 0 || age_add > 0xffffffffUL) {
+    unsigned long age_add = strtoul(age_str, &end, 10);
+    if (end == age_str || *end != 0 || age_add > 0xffffffffUL) {
         return -1;
     }
-    *idlen = unhex(idhex, id, CH_TICKET_ID_MAX);
-    *psklen = unhex(pskhex, psk, SHA256_LEN);
+    *id_len = unhex(id_hex, id, CH_TICKET_ID_MAX);
+    *psk_len = unhex(psk_hex, psk, SHA256_LEN);
     *age = (uint32_t)age_add;
-    return (*idlen > 0 && *psklen == SHA256_LEN) ? 0 : -1;
+    return (*id_len > 0 && *psk_len == SHA256_LEN) ? 0 : -1;
 }
 
 // Fills the auth part of cfg: "pin:<pubkey-hex>[,<pubkey2-hex>]" for
 // pinned-key mode (the second pin is the staged rotation key), a saved
 // ticket ("@file"), or an external psk-hex + identity pair.
-static int setup_psk(char **argv, ch_cfg *cfg, uint8_t *psk, size_t pskcap, uint8_t *id) {
+static int setup_psk(char **argv, ch_cfg *cfg, uint8_t *psk, size_t psk_cap, uint8_t *id) {
     // Sized for the largest pin either build takes: an RSA-3072 modulus.
     // ch_connect enforces the exact length its compiled algorithm needs.
     static uint8_t pin[384];
@@ -160,24 +161,24 @@ static int setup_psk(char **argv, ch_cfg *cfg, uint8_t *psk, size_t pskcap, uint
         return 0;
     }
     if (argv[3][0] == '@') {
-        size_t idlen = 0;
-        size_t psklen = 0;
+        size_t id_len = 0;
+        size_t psk_len = 0;
         uint32_t age = 0;
-        if (load_ticket(argv[3] + 1, id, &idlen, psk, &psklen, &age) != 0) {
+        if (load_ticket(argv[3] + 1, id, &id_len, psk, &psk_len, &age) != 0) {
             (void)fprintf(stderr, "bad ticket file: %s\n", argv[3] + 1);
             return -1;
         }
         cfg->psk = psk;
-        cfg->psk_len = psklen;
+        cfg->psk_len = psk_len;
         cfg->psk_id = id;
-        cfg->psk_id_len = idlen;
+        cfg->psk_id_len = id_len;
         cfg->resumption = 1;
         cfg->obfuscated_age = age;
-        (void)fprintf(stderr, "resuming with a %zu-byte ticket\n", idlen);
+        (void)fprintf(stderr, "resuming with a %zu-byte ticket\n", id_len);
         return 0;
     }
     cfg->psk = psk;
-    cfg->psk_len = unhex(argv[3], psk, pskcap);
+    cfg->psk_len = unhex(argv[3], psk, psk_cap);
     if (cfg->psk_len == 0) {
         return -1;
     }

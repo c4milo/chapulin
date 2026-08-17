@@ -119,8 +119,8 @@ class Config {
         return *this;
     }
 
-    Config &on_ticket(void (*cb)(void *ctx, const ch_ticket *ticket)) {
-        cfg_.on_ticket = cb;
+    Config &on_ticket(void (*callback)(void *ctx, const ch_ticket *ticket)) {
+        cfg_.on_ticket = callback;
         return *this;
     }
 

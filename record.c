@@ -30,7 +30,7 @@ static void nonce_of(const rec_dir *d, uint8_t nonce[AEAD_NONCE]) {
 }
 
 int rec_seal(rec_dir *d, uint8_t type, const uint8_t *pt, size_t n, uint8_t *out, size_t cap,
-             size_t *outn) {
+             size_t *out_len) {
     if (d->seq == UINT64_MAX) {
         return -1; // RFC 8446 §5.5: stop before the next increment could wrap
     }
@@ -55,11 +55,11 @@ int rec_seal(rec_dir *d, uint8_t type, const uint8_t *pt, size_t n, uint8_t *out
     nonce_of(d, nonce);
     aead_seal(d->key, nonce, out, REC_HDR, inner, n + 1, inner, inner + n + 1);
     d->seq++;
-    *outn = REC_HDR + body;
+    *out_len = REC_HDR + body;
     return 0;
 }
 
-int rec_open(rec_dir *d, const uint8_t *rec, size_t n, uint8_t *pt, size_t cap, size_t *ptn,
+int rec_open(rec_dir *d, const uint8_t *rec, size_t n, uint8_t *pt, size_t cap, size_t *pt_len,
              uint8_t *type) {
     if (d->seq == UINT64_MAX) {
         return -1; // RFC 8446 §5.5: stop before the next increment could wrap
@@ -71,28 +71,28 @@ int rec_open(rec_dir *d, const uint8_t *rec, size_t n, uint8_t *pt, size_t cap, 
     if (rec[0] != REC_APPDATA || body != n - REC_HDR || body > 0x4000 + 256) {
         return -1;
     }
-    size_t innerlen = body - AEAD_TAG;
+    size_t inner_len = body - AEAD_TAG;
     // RFC 8446 §5.4: TLSInnerPlaintext (content + type + padding) tops out
     // at 2^14 + 1 even when our buffer could hold more.
-    if (innerlen > 0x4001 || innerlen > cap) {
+    if (inner_len > 0x4001 || inner_len > cap) {
         return -1;
     }
     uint8_t nonce[AEAD_NONCE];
     nonce_of(d, nonce);
-    if (!aead_open(d->key, nonce, rec, REC_HDR, rec + REC_HDR, innerlen, rec + REC_HDR + innerlen,
+    if (!aead_open(d->key, nonce, rec, REC_HDR, rec + REC_HDR, inner_len, rec + REC_HDR + inner_len,
                    pt)) {
         return -1;
     }
     d->seq++;
     // Strip zero padding to expose the inner content type; an all-zero
     // inner plaintext is malformed.
-    while (innerlen > 0 && pt[innerlen - 1] == 0) {
-        innerlen--;
+    while (inner_len > 0 && pt[inner_len - 1] == 0) {
+        inner_len--;
     }
-    if (innerlen == 0) {
+    if (inner_len == 0) {
         return -1;
     }
-    *type = pt[innerlen - 1];
-    *ptn = innerlen - 1;
+    *type = pt[inner_len - 1];
+    *pt_len = inner_len - 1;
     return 0;
 }

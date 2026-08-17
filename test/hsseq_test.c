@@ -49,13 +49,13 @@ noreturn void ch_assert_fail(const char *cond, const char *file, int line) {
 // stubs supply the "valid" verdict, so message order — not signature
 // math — is what runs here. Both verifiers exist so both PIN builds
 // link; rsa_test and the e2e cover the real ones.
-int rsa_pss_verify(const uint8_t *n, size_t nlen, const uint8_t msg_hash[32], const uint8_t *sig,
-                   size_t siglen) {
+int rsa_pss_verify(const uint8_t *n, size_t n_len, const uint8_t msg_hash[32], const uint8_t *sig,
+                   size_t sig_len) {
     (void)n;
-    (void)nlen;
+    (void)n_len;
     (void)msg_hash;
     (void)sig;
-    (void)siglen;
+    (void)sig_len;
     return 1;
 }
 
@@ -83,7 +83,7 @@ static const char *reject_why;
 // succeeds and the tail drains with every letter consumed; queue
 // exhaustion after full consumption is the normal end, not an error.
 static int run_case(const char *letters, size_t n, int psk) {
-    static mock_srv s;
+    static mock_server s;
     memset(&s, 0, sizeof s);
     s.seq = letters;
     s.len = n;
@@ -181,7 +181,7 @@ static void run_all(int depth, int psk) {
 }
 
 int main(void) {
-    x25519_base(srv_pub, srv_scalar);
+    x25519_base(server_pub, server_scalar);
     memset(test_pin, 2, sizeof test_pin);
     test_pin[TEST_PIN_LEN - 1] = 1; // ch_connect requires an odd RSA pin
 

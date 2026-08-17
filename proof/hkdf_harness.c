@@ -39,15 +39,15 @@ int main(void) {
     uint8_t key[96];
     uint8_t msg[48];
     uint8_t prk[SHA256_LEN];
-    size_t keylen = nondet_size_t();
-    size_t msglen = nondet_size_t();
-    __CPROVER_assume(keylen <= sizeof key);
-    __CPROVER_assume(msglen <= sizeof msg);
+    size_t key_len = nondet_size_t();
+    size_t msg_len = nondet_size_t();
+    __CPROVER_assume(key_len <= sizeof key);
+    __CPROVER_assume(msg_len <= sizeof msg);
     fill_nondet(key, sizeof key);
     fill_nondet(msg, sizeof msg);
 
-    hmac_sha256(key, keylen, msg, msglen, prk);
-    hkdf_extract(key, keylen, msg, msglen, prk);
-    hkdf_extract(NULL, 0, msg, msglen, prk);
+    hmac_sha256(key, key_len, msg, msg_len, prk);
+    hkdf_extract(key, key_len, msg, msg_len, prk);
+    hkdf_extract(NULL, 0, msg, msg_len, prk);
     return 0;
 }

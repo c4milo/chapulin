@@ -44,10 +44,10 @@ typedef struct {
 
 // Sends an alert — encrypted iff keys are live, plaintext only before any
 // keys exist, nothing at all once they are wiped.
-int tlsi_send_alert(ch_tls *t, uint8_t level, uint8_t desc);
+int tlsi_send_alert(ch_tls *t, uint8_t level, uint8_t description);
 
 // Alert (best effort), wipe all key material, mark the session failed.
-void tlsi_fail(ch_tls *t, uint8_t desc);
+void tlsi_fail(ch_tls *t, uint8_t description);
 
 // Wipe all key material and buffered plaintext; keys go dead.
 void tlsi_wipe(ch_tls *t);

@@ -33,9 +33,9 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
     ensure_ready();
     // Cap covers the largest inner plaintext rec_open will accept (2^14+1).
     uint8_t pt[0x4001];
-    size_t ptn = 0;
+    size_t pt_len = 0;
     uint8_t type = 0;
-    (void)rec_open(&g_dir, data, size, pt, sizeof pt, &ptn, &type);
+    (void)rec_open(&g_dir, data, size, pt, sizeof pt, &pt_len, &type);
     // Rekey on ~1/32 of inputs, keyed off the first byte.
     if (size > 0 && (data[0] & 0x1f) == 0) {
         rec_dir_update(g_secret, &g_dir);

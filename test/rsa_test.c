@@ -61,7 +61,7 @@ static const uint8_t n3072[] = {
 };
 
 // Signature over "chapulin rsa-pss vector one" under key A. Source:
-// openssl dgst -sha256 -sign, PSS, saltlen 32, MGF1-SHA256.
+// openssl dgst -sha256 -sign, PSS, salt_len 32, MGF1-SHA256.
 static const uint8_t sig1[] = {
     0x36, 0x60, 0xad, 0x59, 0x81, 0x50, 0x21, 0x85, 0xfa, 0x10, 0xbf, 0xaa, 0x20, 0x28, 0x7c, 0x78,
     0xf3, 0xc6, 0xab, 0x0f, 0xab, 0xd7, 0xc3, 0xb4, 0x06, 0x59, 0xc3, 0x6a, 0x5e, 0xb5, 0xaa, 0x3e,
@@ -177,31 +177,31 @@ int main(void) {
     CHECK(rsa_pss_verify(n2048, sizeof n2048, h3, sig3, sizeof sig3) == 1);
 
     // A flipped message-hash bit breaks H recomputation.
-    uint8_t hbad[32];
-    memcpy(hbad, h1, sizeof hbad);
-    hbad[0] ^= 0x01;
-    CHECK(rsa_pss_verify(n3072, sizeof n3072, hbad, sig1, sizeof sig1) == 0);
+    uint8_t bad_hash[32];
+    memcpy(bad_hash, h1, sizeof bad_hash);
+    bad_hash[0] ^= 0x01;
+    CHECK(rsa_pss_verify(n3072, sizeof n3072, bad_hash, sig1, sizeof sig1) == 0);
 
     // A flipped signature byte changes the recovered EM.
-    uint8_t sbad[sizeof sig1];
-    memcpy(sbad, sig1, sizeof sbad);
-    sbad[100] ^= 0x01;
-    CHECK(rsa_pss_verify(n3072, sizeof n3072, h1, sbad, sizeof sbad) == 0);
+    uint8_t bad_sig[sizeof sig1];
+    memcpy(bad_sig, sig1, sizeof bad_sig);
+    bad_sig[100] ^= 0x01;
+    CHECK(rsa_pss_verify(n3072, sizeof n3072, h1, bad_sig, sizeof bad_sig) == 0);
 
     // A signature equal to the modulus is out of range.
     CHECK(rsa_pss_verify(n3072, sizeof n3072, h1, n3072, sizeof n3072) == 0);
 
     // A signature one greater than the modulus is out of range.
-    uint8_t np1[sizeof n3072];
-    memcpy(np1, n3072, sizeof np1);
-    for (size_t i = sizeof np1; i-- > 0;) {
-        if (++np1[i] != 0) {
+    uint8_t n_plus_1[sizeof n3072];
+    memcpy(n_plus_1, n3072, sizeof n_plus_1);
+    for (size_t i = sizeof n_plus_1; i-- > 0;) {
+        if (++n_plus_1[i] != 0) {
             break;
         }
     }
-    CHECK(rsa_pss_verify(n3072, sizeof n3072, h1, np1, sizeof np1) == 0);
+    CHECK(rsa_pss_verify(n3072, sizeof n3072, h1, n_plus_1, sizeof n_plus_1) == 0);
 
-    // A truncated signature (siglen != nlen) is rejected.
+    // A truncated signature (sig_len != n_len) is rejected.
     CHECK(rsa_pss_verify(n3072, sizeof n3072, h1, sig1, sizeof sig1 - 1) == 0);
 
     // A modulus of a disallowed size (below the 256-byte minimum) is

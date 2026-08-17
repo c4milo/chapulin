@@ -12,7 +12,7 @@
 
 typedef struct {
     uint32_t h[8];
-    uint64_t nbytes; // total message bytes absorbed
+    uint64_t total_bytes; // total message bytes absorbed
     uint8_t block[SHA256_BLOCK];
     size_t fill; // bytes pending in block
 } sha256;

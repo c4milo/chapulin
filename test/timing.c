@@ -58,21 +58,21 @@ static uint64_t rng64(void) {
 
 // Exactly n samples per class in random order, so slow drift (thermal,
 // frequency scaling) lands on both classes equally.
-static uint8_t sched[2 * FAST_N];
+static uint8_t schedule[2 * FAST_N];
 
-static void shuffle_sched(size_t n) {
+static void shuffle_schedule(size_t n) {
     for (size_t i = 0; i < 2 * n; i++) {
-        sched[i] = (uint8_t)(i < n ? 0 : 1);
+        schedule[i] = (uint8_t)(i < n ? 0 : 1);
     }
     for (size_t i = 2 * n - 1; i > 0; i--) {
         size_t j = (size_t)(rng64() % (i + 1));
-        uint8_t tmp = sched[i];
-        sched[i] = sched[j];
-        sched[j] = tmp;
+        uint8_t tmp = schedule[i];
+        schedule[i] = schedule[j];
+        schedule[j] = tmp;
     }
 }
 
-static uint64_t lat[2][FAST_N];
+static uint64_t latency[2][FAST_N];
 
 static int cmp_u64(const void *a, const void *b) {
     uint64_t x = *(const uint64_t *)a;
@@ -100,37 +100,37 @@ static void cropped_stats(uint64_t *v, size_t n, double *mean, double *var, size
     *kept = k;
 }
 
-static double welch_t(uint64_t *a, size_t na, uint64_t *b, size_t nb) {
-    double ma;
-    double va;
-    double mb;
-    double vb;
-    size_t ka;
-    size_t kb;
-    cropped_stats(a, na, &ma, &va, &ka);
-    cropped_stats(b, nb, &mb, &vb, &kb);
-    return (ma - mb) / sqrt(va / (double)ka + vb / (double)kb);
+static double welch_t(uint64_t *a, size_t n_a, uint64_t *b, size_t n_b) {
+    double mean_a;
+    double var_a;
+    double mean_b;
+    double var_b;
+    size_t kept_a;
+    size_t kept_b;
+    cropped_stats(a, n_a, &mean_a, &var_a, &kept_a);
+    cropped_stats(b, n_b, &mean_b, &var_b, &kept_b);
+    return (mean_a - mean_b) / sqrt(var_a / (double)kept_a + var_b / (double)kept_b);
 }
 
-typedef void (*prep_fn)(int cls);
+typedef void (*prep_fn)(int class_id);
 typedef void (*run_fn)(void);
 
 static double measure(prep_fn prep, run_fn run, size_t n, size_t warm) {
-    shuffle_sched(n);
+    shuffle_schedule(n);
     for (size_t i = 0; i < warm; i++) {
         prep((int)(i & 1));
         run();
     }
     size_t count[2] = {0, 0};
     for (size_t i = 0; i < 2 * n; i++) {
-        int cls = sched[i];
-        prep(cls);
+        int class_id = schedule[i];
+        prep(class_id);
         uint64_t t0 = now_ns();
         run();
         uint64_t t1 = now_ns();
-        lat[cls][count[cls]++] = t1 - t0;
+        latency[class_id][count[class_id]++] = t1 - t0;
     }
-    return welch_t(lat[0], n, lat[1], n);
+    return welch_t(latency[0], n, latency[1], n);
 }
 
 // ct_memeq: equal buffers vs a difference at byte 0. An early-exit
@@ -138,10 +138,10 @@ static double measure(prep_fn prep, run_fn run, size_t n, size_t warm) {
 static uint8_t eq_a[64];
 static uint8_t eq_b[64];
 
-static void eq_prep(int cls) {
+static void eq_prep(int class_id) {
     ch_rand_bytes(eq_a, sizeof eq_a);
     memcpy(eq_b, eq_a, sizeof eq_b);
-    eq_b[0] ^= (uint8_t)cls;
+    eq_b[0] ^= (uint8_t)class_id;
 }
 
 static void eq_run(void) {
@@ -159,9 +159,9 @@ static uint8_t poly_key_fixed[POLY1305_KEY];
 static uint8_t poly_key[POLY1305_KEY];
 static uint8_t poly_msg[256];
 
-static void poly_prep(int cls) {
+static void poly_prep(int class_id) {
     ch_rand_bytes(poly_key, sizeof poly_key);
-    if (cls == 0) {
+    if (class_id == 0) {
         memcpy(poly_key, poly_key_fixed, sizeof poly_key);
     }
 }
@@ -178,23 +178,23 @@ static void poly_run(void) {
 }
 
 // chacha20_xor: 256-byte buffer, fixed key vs fresh random keys.
-static uint8_t cc_key_fixed[CHACHA20_KEY];
-static uint8_t cc_key[CHACHA20_KEY];
-static uint8_t cc_buf[256];
+static uint8_t chacha_key_fixed[CHACHA20_KEY];
+static uint8_t chacha_key[CHACHA20_KEY];
+static uint8_t chacha_buf[256];
 
-static void cc_prep(int cls) {
-    ch_rand_bytes(cc_key, sizeof cc_key);
-    if (cls == 0) {
-        memcpy(cc_key, cc_key_fixed, sizeof cc_key);
+static void chacha_prep(int class_id) {
+    ch_rand_bytes(chacha_key, sizeof chacha_key);
+    if (class_id == 0) {
+        memcpy(chacha_key, chacha_key_fixed, sizeof chacha_key);
     }
 }
 
-static void cc_run(void) {
+static void chacha_run(void) {
     static const uint8_t nonce[CHACHA20_NONCE] = {0};
     for (int r = 0; r < CHACHA_REPS; r++) {
-        chacha20_xor(cc_key, nonce, 1, cc_buf, cc_buf, sizeof cc_buf);
+        chacha20_xor(chacha_key, nonce, 1, chacha_buf, chacha_buf, sizeof chacha_buf);
     }
-    sink ^= cc_buf[0];
+    sink ^= chacha_buf[0];
 }
 
 // x25519: fixed scalar vs fresh random scalars on the base point. A
@@ -202,9 +202,9 @@ static void cc_run(void) {
 static uint8_t x_scalar_fixed[X25519_LEN];
 static uint8_t x_scalar[X25519_LEN];
 
-static void x_prep(int cls) {
+static void x_prep(int class_id) {
     ch_rand_bytes(x_scalar, sizeof x_scalar);
-    if (cls == 0) {
+    if (class_id == 0) {
         memcpy(x_scalar, x_scalar_fixed, sizeof x_scalar);
     }
 }
@@ -227,14 +227,14 @@ int main(void) {
     ch_rand_bytes((uint8_t *)&rng_state, sizeof rng_state);
     rng_state |= 1;
     ch_rand_bytes(poly_key_fixed, sizeof poly_key_fixed);
-    ch_rand_bytes(cc_key_fixed, sizeof cc_key_fixed);
+    ch_rand_bytes(chacha_key_fixed, sizeof chacha_key_fixed);
     ch_rand_bytes(x_scalar_fixed, sizeof x_scalar_fixed);
     ch_rand_bytes(poly_msg, sizeof poly_msg);
-    ch_rand_bytes(cc_buf, sizeof cc_buf);
+    ch_rand_bytes(chacha_buf, sizeof chacha_buf);
 
     report("ct_memeq", measure(eq_prep, eq_run, FAST_N, WARMUP));
     report("poly1305", measure(poly_prep, poly_run, FAST_N, WARMUP));
-    report("chacha20_xor", measure(cc_prep, cc_run, FAST_N, WARMUP));
+    report("chacha20_xor", measure(chacha_prep, chacha_run, FAST_N, WARMUP));
     report("x25519", measure(x_prep, x_run, X25519_N, 32));
     return failures ? 1 : 0;
 }

@@ -16,19 +16,19 @@
 #include "hkdf.h"
 
 void hkdf_expand_label(const uint8_t secret[SHA256_LEN], const char *label, const uint8_t *ctx,
-                       size_t ctxlen, uint8_t *out, size_t outlen) {
+                       size_t ctx_len, uint8_t *out, size_t out_len) {
     __CPROVER_assert(__CPROVER_r_ok(secret, SHA256_LEN), "label: secret readable");
     __CPROVER_assert(__CPROVER_r_ok(label, 1), "label: label readable");
-    __CPROVER_assert(ctxlen == 0 || __CPROVER_r_ok(ctx, ctxlen), "label: ctx readable");
-    __CPROVER_assert(__CPROVER_w_ok(out, outlen), "label: output writable");
-    fill_nondet(out, outlen);
+    __CPROVER_assert(ctx_len == 0 || __CPROVER_r_ok(ctx, ctx_len), "label: ctx readable");
+    __CPROVER_assert(__CPROVER_w_ok(out, out_len), "label: output writable");
+    fill_nondet(out, out_len);
 }
 
 void aead_seal(const uint8_t key[AEAD_KEY], const uint8_t nonce[AEAD_NONCE], const uint8_t *aad,
-               size_t aadlen, const uint8_t *pt, size_t n, uint8_t *ct, uint8_t tag[AEAD_TAG]) {
+               size_t aad_len, const uint8_t *pt, size_t n, uint8_t *ct, uint8_t tag[AEAD_TAG]) {
     __CPROVER_assert(__CPROVER_r_ok(key, AEAD_KEY), "seal: key readable");
     __CPROVER_assert(__CPROVER_r_ok(nonce, AEAD_NONCE), "seal: nonce readable");
-    __CPROVER_assert(aadlen == 0 || __CPROVER_r_ok(aad, aadlen), "seal: aad readable");
+    __CPROVER_assert(aad_len == 0 || __CPROVER_r_ok(aad, aad_len), "seal: aad readable");
     __CPROVER_assert(n == 0 || __CPROVER_r_ok(pt, n), "seal: pt readable");
     __CPROVER_assert(n == 0 || __CPROVER_w_ok(ct, n), "seal: ct writable");
     __CPROVER_assert(__CPROVER_w_ok(tag, AEAD_TAG), "seal: tag writable");
@@ -37,11 +37,11 @@ void aead_seal(const uint8_t key[AEAD_KEY], const uint8_t nonce[AEAD_NONCE], con
 }
 
 int aead_open(const uint8_t key[AEAD_KEY], const uint8_t nonce[AEAD_NONCE], const uint8_t *aad,
-              size_t aadlen, const uint8_t *ct, size_t n, const uint8_t tag[AEAD_TAG],
+              size_t aad_len, const uint8_t *ct, size_t n, const uint8_t tag[AEAD_TAG],
               uint8_t *pt) {
     __CPROVER_assert(__CPROVER_r_ok(key, AEAD_KEY), "open: key readable");
     __CPROVER_assert(__CPROVER_r_ok(nonce, AEAD_NONCE), "open: nonce readable");
-    __CPROVER_assert(aadlen == 0 || __CPROVER_r_ok(aad, aadlen), "open: aad readable");
+    __CPROVER_assert(aad_len == 0 || __CPROVER_r_ok(aad, aad_len), "open: aad readable");
     __CPROVER_assert(n == 0 || __CPROVER_r_ok(ct, n), "open: ct readable");
     __CPROVER_assert(__CPROVER_r_ok(tag, AEAD_TAG), "open: tag readable");
     if (nondet_u8() & 1) {
@@ -67,17 +67,18 @@ int main(void) {
     size_t n = nondet_size_t();
     __CPROVER_assume(n <= sizeof pt);
     uint8_t rec[REC_HDR + sizeof pt + 1 + AEAD_TAG];
-    size_t recn = 0;
-    __CPROVER_assert(rec_seal(&tx, nondet_u8(), pt, n, rec, sizeof rec, &recn) == 0, "seal fits");
+    size_t record_len = 0;
+    __CPROVER_assert(rec_seal(&tx, nondet_u8(), pt, n, rec, sizeof rec, &record_len) == 0,
+                     "seal fits");
 
     // Hostile input: any bytes, any claimed length; must return, not trap.
     uint8_t evil[160];
     fill_nondet(evil, sizeof evil);
-    size_t evillen = nondet_size_t();
-    __CPROVER_assume(evillen <= sizeof evil);
+    size_t evil_len = nondet_size_t();
+    __CPROVER_assume(evil_len <= sizeof evil);
     uint8_t out[160];
-    size_t outn = 0;
-    uint8_t otype = 0;
-    (void)rec_open(&tx, evil, evillen, out, sizeof out, &outn, &otype);
+    size_t out_len = 0;
+    uint8_t outer_type = 0;
+    (void)rec_open(&tx, evil, evil_len, out, sizeof out, &out_len, &outer_type);
     return 0;
 }

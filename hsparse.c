@@ -13,11 +13,11 @@ const uint8_t hsp_hrr_magic[32] = {0xcf, 0x21, 0xad, 0x74, 0xe5, 0x9a, 0x61, 0x1
                                    0x02, 0x1e, 0x65, 0xb8, 0x91, 0xc2, 0xa2, 0x11, 0x16, 0x7a, 0xbb,
                                    0x8c, 0x5e, 0x07, 0x9e, 0x09, 0xe2, 0xc8, 0xa8, 0x33, 0x9c};
 
-static int parse_sh_ext(rbuf *r, sh_info *si, int hrr, int psk_mode) {
+static int parse_server_hello_ext(rbuf *r, server_hello_info *info, int hrr, int psk_mode) {
     uint16_t ext = rb_u16(r);
-    size_t elen = rb_u16(r);
-    const uint8_t *ep = rb_bytes(r, elen);
-    if (ep == NULL) {
+    size_t ext_len = rb_u16(r);
+    const uint8_t *ext_data = rb_bytes(r, ext_len);
+    if (ext_data == NULL) {
         return CH_EPROTO;
     }
     if (ext == EXT_PRE_SHARED_KEY && !psk_mode) {
@@ -40,15 +40,15 @@ static int parse_sh_ext(rbuf *r, sh_info *si, int hrr, int psk_mode) {
     default:
         return CH_EPROTO; // ServerHello may carry nothing else
     }
-    if (si->seen & bit) {
+    if (info->seen & bit) {
         return CH_EPROTO; // RFC 8446 §4.2: one extension of each type
     }
-    si->seen |= bit;
+    info->seen |= bit;
     rbuf e;
-    rb_init(&e, ep, elen);
+    rb_init(&e, ext_data, ext_len);
     switch (ext) {
     case EXT_SUPPORTED_VERSIONS:
-        si->ver_ok = rb_u16(&e) == TLS13;
+        info->version_ok = rb_u16(&e) == TLS13;
         break;
     case EXT_KEY_SHARE:
         if (hrr) {
@@ -65,20 +65,20 @@ static int parse_sh_ext(rbuf *r, sh_info *si, int hrr, int psk_mode) {
             if (pub == NULL) {
                 return CH_EPROTO;
             }
-            memcpy(si->server_pub, pub, X25519_LEN);
-            si->have_share = 1;
+            memcpy(info->server_pub, pub, X25519_LEN);
+            info->have_share = 1;
         }
         break;
     case EXT_PRE_SHARED_KEY:
-        si->psk_ok = rb_u16(&e) == 0; // we offered exactly one identity
+        info->psk_ok = rb_u16(&e) == 0; // we offered exactly one identity
         break;
     case EXT_COOKIE:
         if (!hrr) {
             return CH_EPROTO;
         }
-        si->cookielen = rb_u16(&e);
-        si->cookie = rb_bytes(&e, si->cookielen);
-        if (si->cookie == NULL || si->cookielen > HSP_COOKIE_MAX) {
+        info->cookie_len = rb_u16(&e);
+        info->cookie = rb_bytes(&e, info->cookie_len);
+        if (info->cookie == NULL || info->cookie_len > HSP_COOKIE_MAX) {
             return CH_EPROTO;
         }
         break;
@@ -90,7 +90,7 @@ static int parse_sh_ext(rbuf *r, sh_info *si, int hrr, int psk_mode) {
     return e.err || rb_left(&e) != 0 ? CH_EPROTO : CH_OK;
 }
 
-int hsp_parse_sh(const uint8_t *body, size_t n, sh_info *si, int psk_mode) {
+int hsp_parse_server_hello(const uint8_t *body, size_t n, server_hello_info *info, int psk_mode) {
     rbuf r;
     rb_init(&r, body, n);
     if (rb_u16(&r) != 0x0303) {
@@ -100,58 +100,58 @@ int hsp_parse_sh(const uint8_t *body, size_t n, sh_info *si, int psk_mode) {
     if (random == NULL) {
         return CH_EPROTO;
     }
-    si->hrr = memcmp(random, hsp_hrr_magic, 32) == 0;
+    info->hrr = memcmp(random, hsp_hrr_magic, 32) == 0;
     if (rb_u8(&r) != 0) {
         return CH_EPROTO; // we sent an empty legacy_session_id; the echo must match
     }
     if (rb_u16(&r) != SUITE_CHACHA20_POLY1305_SHA256 || rb_u8(&r) != 0) {
         return CH_EPROTO;
     }
-    size_t extlen = rb_u16(&r);
-    if (r.err || extlen != rb_left(&r)) {
+    size_t exts_len = rb_u16(&r);
+    if (r.err || exts_len != rb_left(&r)) {
         return CH_EPROTO;
     }
     while (rb_left(&r) > 0) {
-        int rc = parse_sh_ext(&r, si, si->hrr, psk_mode);
+        int rc = parse_server_hello_ext(&r, info, info->hrr, psk_mode);
         if (rc != CH_OK) {
             return rc;
         }
     }
-    return si->ver_ok ? CH_OK : CH_EPROTO;
+    return info->version_ok ? CH_OK : CH_EPROTO;
 }
 
 // Encrypted extensions: take the peer's record_size_limit, tolerate
 // supported_groups (a server may volunteer it for later connections),
 // reject everything else — RFC 8446 §4.2 requires unsupported_extension
 // for anything the ClientHello did not offer.
-int hsp_parse_ee(const uint8_t *body, size_t n, uint16_t *peer_limit, uint8_t *alert) {
+int hsp_parse_encrypted_exts(const uint8_t *body, size_t n, uint16_t *peer_limit, uint8_t *alert) {
     rbuf r;
     rb_init(&r, body, n);
-    size_t extlen = rb_u16(&r);
-    if (r.err || extlen != rb_left(&r)) {
+    size_t exts_len = rb_u16(&r);
+    if (r.err || exts_len != rb_left(&r)) {
         return CH_EPROTO;
     }
     uint8_t seen = 0; // bit 0 record_size_limit, bit 1 supported_groups
     while (rb_left(&r) > 0) {
         uint16_t ext = rb_u16(&r);
-        size_t elen = rb_u16(&r);
-        const uint8_t *ep = rb_bytes(&r, elen);
-        if (ep == NULL) {
+        size_t ext_len = rb_u16(&r);
+        const uint8_t *ext_data = rb_bytes(&r, ext_len);
+        if (ext_data == NULL) {
             return CH_EPROTO;
         }
         uint8_t bit;
         if (ext == EXT_RECORD_SIZE_LIMIT) {
             bit = 1U << 0;
             rbuf e;
-            rb_init(&e, ep, elen);
-            uint16_t lim = rb_u16(&e);
+            rb_init(&e, ext_data, ext_len);
+            uint16_t limit = rb_u16(&e);
             // §4.2: extension_data matches its struct exactly; the body
             // is one u16, so a non-empty remainder is a decode error.
-            if (e.err || rb_left(&e) != 0 || lim < 64) {
+            if (e.err || rb_left(&e) != 0 || limit < 64) {
                 return CH_EPROTO;
             }
             // The limit covers content plus the inner type byte.
-            uint16_t pt = lim - 1;
+            uint16_t pt = limit - 1;
             if (pt < *peer_limit) {
                 *peer_limit = pt;
             }

@@ -78,27 +78,28 @@ static void diff_rsa(void) {
 #endif
     for (int i = 0; i < 40; i++) {
         // Alternate the two moduli across iterations.
-        const char *nh = (i & 1) ? diff_rsa_n3072 : diff_rsa_n2048;
-        const char *dh = (i & 1) ? diff_rsa_d3072 : diff_rsa_d2048;
-        size_t nlen = strlen(nh) / 2;
+        const char *n_hex = (i & 1) ? diff_rsa_n3072 : diff_rsa_n2048;
+        const char *d_hex = (i & 1) ? diff_rsa_d3072 : diff_rsa_d2048;
+        size_t n_len = strlen(n_hex) / 2;
 
         uint8_t hash[32];
         uint8_t salt[32];
         rng_fill(hash, sizeof hash);
         rng_fill(salt, sizeof salt);
-        char hh[65];
-        char sh[65];
-        (void)hex_enc(hh, hash, sizeof hash);
-        (void)hex_enc(sh, salt, sizeof salt);
+        char hash_hex[65];
+        char salt_hex[65];
+        (void)hex_encode(hash_hex, hash, sizeof hash);
+        (void)hex_encode(salt_hex, salt, sizeof salt);
 
         // The spec signs the digest under the fixed salt; the reply is
         // the raw k-octet signature as hex.
         char cmd[2048];
-        (void)snprintf(cmd, sizeof cmd, "rsa_sign %s %s %d %s %s", nh, dh, DIFF_RSA_E, sh, hh);
-        char sigh[1024];
-        query(cmd, sigh, sizeof sigh);
-        size_t siglen = strlen(sigh) / 2;
-        if (siglen != nlen || strlen(sigh) % 2 != 0) {
+        (void)snprintf(cmd, sizeof cmd, "rsa_sign %s %s %d %s %s", n_hex, d_hex, DIFF_RSA_E,
+                       salt_hex, hash_hex);
+        char sig_hex[1024];
+        query(cmd, sig_hex, sizeof sig_hex);
+        size_t sig_len = strlen(sig_hex) / 2;
+        if (sig_len != n_len || strlen(sig_hex) % 2 != 0) {
             die("rsa_sign: malformed spec response");
         }
 
@@ -106,28 +107,32 @@ static void diff_rsa(void) {
         uint8_t bad[32];
         memcpy(bad, hash, sizeof bad);
         bad[rng_below(sizeof bad)] ^= (uint8_t)(1 + rng_below(255));
-        char bh[65];
-        (void)hex_enc(bh, bad, sizeof bad);
+        char bad_hex[65];
+        (void)hex_encode(bad_hex, bad, sizeof bad);
 
         // Cross-check the spec's own verifier on the minted signature.
-        (void)snprintf(cmd, sizeof cmd, "rsa_verify %s %d %s %s", nh, DIFF_RSA_E, hh, sigh);
+        (void)snprintf(cmd, sizeof cmd, "rsa_verify %s %d %s %s", n_hex, DIFF_RSA_E, hash_hex,
+                       sig_hex);
         expect(cmd, "1");
-        (void)snprintf(cmd, sizeof cmd, "rsa_verify %s %d %s %s", nh, DIFF_RSA_E, bh, sigh);
+        (void)snprintf(cmd, sizeof cmd, "rsa_verify %s %d %s %s", n_hex, DIFF_RSA_E, bad_hex,
+                       sig_hex);
         expect(cmd, "0");
 
 #ifdef DIFF_HAVE_RSA
         uint8_t n[384];
         uint8_t sig[384];
-        if (nlen > sizeof n || !hex_dec(n, nh, nlen) || !hex_dec(sig, sigh, siglen)) {
+        if (n_len > sizeof n || !hex_decode(n, n_hex, n_len) ||
+            !hex_decode(sig, sig_hex, sig_len)) {
             die("rsa: malformed key or signature");
         }
-        if (rsa_pss_verify(n, nlen, hash, sig, siglen) != 1) {
-            (void)fprintf(stderr, "diff mismatch: C rsa_pss_verify rejected\n  h: %s\n", hh);
+        if (rsa_pss_verify(n, n_len, hash, sig, sig_len) != 1) {
+            (void)fprintf(stderr, "diff mismatch: C rsa_pss_verify rejected\n  h: %s\n", hash_hex);
             exit(1);
         }
-        if (rsa_pss_verify(n, nlen, bad, sig, siglen) != 0) {
+        if (rsa_pss_verify(n, n_len, bad, sig, sig_len) != 0) {
             (void)fprintf(stderr,
-                          "diff mismatch: C rsa_pss_verify accepted a mutated hash\n  h: %s\n", hh);
+                          "diff mismatch: C rsa_pss_verify accepted a mutated hash\n  h: %s\n",
+                          hash_hex);
             exit(1);
         }
 
@@ -138,20 +143,20 @@ static void diff_rsa(void) {
         // trailer, the top bits, the padding walk) instead. Flip at the
         // trailer position (last byte), inside the padding region (EM
         // is PS || 0x01 || salt || H || 0xbc, so PS spans the low
-        // nlen - 66 bytes), and at the top byte.
+        // n_len - 66 bytes), and at the top byte.
         size_t flip[3];
-        flip[0] = siglen - 1;
-        flip[1] = 1 + rng_below(nlen - 67);
+        flip[0] = sig_len - 1;
+        flip[1] = 1 + rng_below(n_len - 67);
         flip[2] = 0;
         for (size_t j = 0; j < 3; j++) {
-            uint8_t badsig[384];
-            memcpy(badsig, sig, siglen);
-            badsig[flip[j]] ^= (uint8_t)(1 + rng_below(255));
-            if (rsa_pss_verify(n, nlen, hash, badsig, siglen) != 0) {
+            uint8_t bad_sig[384];
+            memcpy(bad_sig, sig, sig_len);
+            bad_sig[flip[j]] ^= (uint8_t)(1 + rng_below(255));
+            if (rsa_pss_verify(n, n_len, hash, bad_sig, sig_len) != 0) {
                 (void)fprintf(stderr,
                               "diff mismatch: C rsa_pss_verify accepted a mutated signature\n"
                               "  flipped byte: %zu\n  h: %s\n",
-                              flip[j], hh);
+                              flip[j], hash_hex);
                 exit(1);
             }
         }

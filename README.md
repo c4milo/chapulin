@@ -179,7 +179,7 @@ The following claims rest on tests, not proofs:
   a prior Coq/VST functional proof by Schwabe et al. The limb-growth
   invariant that connects multiply outputs to add/sub inputs remains an
   open proof task.
-- The post-handshake parser (handle_post_hs) is proven on hostile bytes
+- The post-handshake parser (handle_post_handshake) is proven on hostile bytes
   (the tlspost harness). The surrounding ch_read/ch_write/ch_close driver
   — the record pump and cross-record reassembly — does not converge as one
   CBMC formula, so it rests on e2e, the mock-transport unit tests, and the

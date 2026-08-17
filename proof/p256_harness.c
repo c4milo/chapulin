@@ -27,8 +27,8 @@ int nondet_int(void);
 
 // Fully nondet limbs — a superset of the "below m" contract; no index in
 // p256.c depends on limb values, so safety must hold regardless.
-static void fe_nondet(uint32_t f[NLIMBS]) {
-    for (size_t i = 0; i < NLIMBS; i++) {
+static void fe_nondet(uint32_t f[LIMBS]) {
+    for (size_t i = 0; i < LIMBS; i++) {
         f[i] = nondet_u32();
     }
 }
@@ -54,9 +54,9 @@ int main(void) {
     uint8_t hash[32];
     fill_nondet(pub, sizeof pub);
     fill_nondet(hash, sizeof hash);
-    uint32_t a[NLIMBS];
-    uint32_t b[NLIMBS];
-    uint32_t o[NLIMBS];
+    uint32_t a[LIMBS];
+    uint32_t b[LIMBS];
+    uint32_t o[LIMBS];
     fe_from_bytes(a, pub);
     fe_from_bytes(b, pub + 32);
     fe_from_bytes(o, hash);

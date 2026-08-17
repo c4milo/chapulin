@@ -72,19 +72,19 @@ int main(void) {
             size_t n = 1 + rng_below(96);
             char cmd[256];
             char reply[512];
-            char shex[65];
-            hex_enc(shex, s0, sizeof s0);
-            (void)snprintf(cmd, sizeof cmd, "drbg %s %zu", shex, n);
+            char seed_hex[65];
+            hex_encode(seed_hex, s0, sizeof s0);
+            (void)snprintf(cmd, sizeof cmd, "drbg %s %zu", seed_hex, n);
             query(cmd, reply, sizeof reply);
             // reply: "<next-key-hex> <out-hex>"
-            char *sp = strchr(reply, ' ');
-            CHECK(sp != NULL);
-            if (sp == NULL) {
+            char *space = strchr(reply, ' ');
+            CHECK(space != NULL);
+            if (space == NULL) {
                 break;
             }
-            *sp = 0;
+            *space = 0;
             uint8_t want[96];
-            CHECK(hex_dec(want, sp + 1, n) == 1);
+            CHECK(hex_decode(want, space + 1, n) == 1);
             uint8_t got[96];
             ch_drbg_seed(s0);
             ch_rand_bytes(got, n);
@@ -92,16 +92,16 @@ int main(void) {
             // Second request must match the spec continuing from its
             // next key — proving the C rekeyed exactly as specified.
             uint8_t k1[32];
-            CHECK(hex_dec(k1, reply, 32) == 1);
-            hex_enc(shex, k1, sizeof k1);
-            (void)snprintf(cmd, sizeof cmd, "drbg %s %zu", shex, n);
+            CHECK(hex_decode(k1, reply, 32) == 1);
+            hex_encode(seed_hex, k1, sizeof k1);
+            (void)snprintf(cmd, sizeof cmd, "drbg %s %zu", seed_hex, n);
             query(cmd, reply, sizeof reply);
-            sp = strchr(reply, ' ');
-            CHECK(sp != NULL);
-            if (sp == NULL) {
+            space = strchr(reply, ' ');
+            CHECK(space != NULL);
+            if (space == NULL) {
                 break;
             }
-            CHECK(hex_dec(want, sp + 1, n) == 1);
+            CHECK(hex_decode(want, space + 1, n) == 1);
             ch_rand_bytes(got, n);
             CHECK(memcmp(got, want, n) == 0);
             comparisons += 2;

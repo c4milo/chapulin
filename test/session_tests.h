@@ -32,12 +32,12 @@ static int mock_recv(void *io, uint8_t *p, size_t n) {
     return (int)take;
 }
 
-static void mock_on_ticket(void *io, const ch_ticket *tk) {
-    (void)tk;
+static void mock_on_ticket(void *io, const ch_ticket *ticket) {
+    (void)ticket;
     ((mock_io *)io)->tickets++;
 }
 
-// Builds a connected session whose read keys mirror srv, fed by m.
+// Builds a connected session whose read keys mirror server, fed by m.
 static void mock_session(ch_tls *t, mock_io *m, uint8_t *rxbuf, size_t rxlen,
                          const uint8_t secret[SHA256_LEN]) {
     memset(t, 0, sizeof *t);
@@ -49,19 +49,20 @@ static void mock_session(ch_tls *t, mock_io *m, uint8_t *rxbuf, size_t rxlen,
     t->cfg.on_ticket = mock_on_ticket;
     memcpy(t->rd_secret, secret, SHA256_LEN);
     rec_dir_init(&t->rd, t->rd_secret);
-    uint8_t wsecret[SHA256_LEN];
-    ch_rand_bytes(wsecret, sizeof wsecret);
-    memcpy(t->wr_secret, wsecret, SHA256_LEN);
+    uint8_t write_secret[SHA256_LEN];
+    ch_rand_bytes(write_secret, sizeof write_secret);
+    memcpy(t->wr_secret, write_secret, SHA256_LEN);
     rec_dir_init(&t->wr, t->wr_secret);
     t->state = CH_ST_CONNECTED;
     t->keys = 1;
     t->peer_limit = CH_TX_PT;
 }
 
-static void mock_push(mock_io *m, rec_dir *srv, uint8_t type, const uint8_t *pt, size_t n) {
-    size_t recn = 0;
-    CHECK(rec_seal(srv, type, pt, n, m->data + m->len, sizeof m->data - m->len, &recn) == 0);
-    m->len += recn;
+static void mock_push(mock_io *m, rec_dir *server, uint8_t type, const uint8_t *pt, size_t n) {
+    size_t record_len = 0;
+    CHECK(rec_seal(server, type, pt, n, m->data + m->len, sizeof m->data - m->len, &record_len) ==
+          0);
+    m->len += record_len;
 }
 
 // Post-handshake behavior the e2e cannot reach: a NewSessionTicket
@@ -70,17 +71,17 @@ static void mock_push(mock_io *m, rec_dir *srv, uint8_t type, const uint8_t *pt,
 static void test_post_handshake(void) {
     uint8_t secret[SHA256_LEN];
     ch_rand_bytes(secret, sizeof secret);
-    rec_dir srv;
-    rec_dir_init(&srv, secret);
+    rec_dir server;
+    rec_dir_init(&server, secret);
     mock_io m = {0};
     static uint8_t rxbuf[1024];
     ch_tls t;
     mock_session(&t, &m, rxbuf, sizeof rxbuf, secret);
 
     // NST: lifetime, age_add, nonce(2), identity(90), no extensions.
-    uint8_t nst[4 + 105];
+    uint8_t ticket_msg[4 + 105];
     wbuf w;
-    wb_init(&w, nst, sizeof nst);
+    wb_init(&w, ticket_msg, sizeof ticket_msg);
     wb_u8(&w, 4); // HS_NEW_SESSION_TICKET
     size_t msg = wb_mark(&w, 3);
     wb_u16(&w, 0);
@@ -98,15 +99,15 @@ static void test_post_handshake(void) {
     CHECK(!w.err);
 
     // Fragment it: 10 bytes, then the rest (splits the ticket body).
-    mock_push(&m, &srv, REC_HANDSHAKE, nst, 10);
-    mock_push(&m, &srv, REC_HANDSHAKE, nst + 10, w.len - 10);
+    mock_push(&m, &server, REC_HANDSHAKE, ticket_msg, 10);
+    mock_push(&m, &server, REC_HANDSHAKE, ticket_msg + 10, w.len - 10);
     // KeyUpdate with update_requested, then data under the updated key.
-    const uint8_t ku[5] = {24, 0, 0, 1, 1};
-    mock_push(&m, &srv, REC_HANDSHAKE, ku, sizeof ku);
+    const uint8_t key_update[5] = {24, 0, 0, 1, 1};
+    mock_push(&m, &server, REC_HANDSHAKE, key_update, sizeof key_update);
     uint8_t s2[SHA256_LEN];
     memcpy(s2, secret, sizeof s2);
-    rec_dir_update(s2, &srv);
-    mock_push(&m, &srv, REC_APPDATA, (const uint8_t *)"hola", 4);
+    rec_dir_update(s2, &server);
+    mock_push(&m, &server, REC_APPDATA, (const uint8_t *)"hola", 4);
 
     uint8_t out[16];
     int got = ch_read(&t, out, sizeof out);
@@ -121,7 +122,7 @@ static void test_post_handshake(void) {
     // Clean close: exactly one close_notify reply, then 0 forever and no
     // record sealed under wiped keys on a second close.
     const uint8_t close_notify[2] = {1, 0};
-    mock_push(&m, &srv, REC_ALERT, close_notify, 2);
+    mock_push(&m, &server, REC_ALERT, close_notify, 2);
     size_t before_close = m.sent;
     CHECK(ch_read(&t, out, sizeof out) == 0);
     CHECK(m.sent > before_close); // our close_notify, under live keys
@@ -167,22 +168,22 @@ static void test_p256(void) {
     // Out-of-range scalars: r or s of 0 or n, s kept from the "sample"
     // vector where a live one is needed.
     uint8_t bad[96];
-    size_t bn = unhex("3026020100"
-                      "022100f7cb1c942d657c41d436c7a1b6e29f65f3e900dbb9aff4064dc4ab2f843acda8",
-                      bad);
-    CHECK(p256_ecdsa_verify(pub, hash, bad, bn) == 0); // r = 0
-    bn = unhex("3026022100efd48b2aacb6a8fd1140dd9cd45e81d69d2c877b56aaf991c34d0ea84eaf3716"
-               "020100",
-               bad);
-    CHECK(p256_ecdsa_verify(pub, hash, bad, bn) == 0); // s = 0
-    bn = unhex("3046022100ffffffff00000000ffffffffffffffffbce6faada7179e84f3b9cac2fc632551"
-               "022100f7cb1c942d657c41d436c7a1b6e29f65f3e900dbb9aff4064dc4ab2f843acda8",
-               bad);
-    CHECK(p256_ecdsa_verify(pub, hash, bad, bn) == 0); // r = n
-    bn = unhex("3046022100efd48b2aacb6a8fd1140dd9cd45e81d69d2c877b56aaf991c34d0ea84eaf3716"
-               "022100ffffffff00000000ffffffffffffffffbce6faada7179e84f3b9cac2fc632551",
-               bad);
-    CHECK(p256_ecdsa_verify(pub, hash, bad, bn) == 0); // s = n
+    size_t bad_len = unhex("3026020100"
+                           "022100f7cb1c942d657c41d436c7a1b6e29f65f3e900dbb9aff4064dc4ab2f843acda8",
+                           bad);
+    CHECK(p256_ecdsa_verify(pub, hash, bad, bad_len) == 0); // r = 0
+    bad_len = unhex("3026022100efd48b2aacb6a8fd1140dd9cd45e81d69d2c877b56aaf991c34d0ea84eaf3716"
+                    "020100",
+                    bad);
+    CHECK(p256_ecdsa_verify(pub, hash, bad, bad_len) == 0); // s = 0
+    bad_len = unhex("3046022100ffffffff00000000ffffffffffffffffbce6faada7179e84f3b9cac2fc632551"
+                    "022100f7cb1c942d657c41d436c7a1b6e29f65f3e900dbb9aff4064dc4ab2f843acda8",
+                    bad);
+    CHECK(p256_ecdsa_verify(pub, hash, bad, bad_len) == 0); // r = n
+    bad_len = unhex("3046022100efd48b2aacb6a8fd1140dd9cd45e81d69d2c877b56aaf991c34d0ea84eaf3716"
+                    "022100ffffffff00000000ffffffffffffffffbce6faada7179e84f3b9cac2fc632551",
+                    bad);
+    CHECK(p256_ecdsa_verify(pub, hash, bad, bad_len) == 0); // s = n
 
     // "test"
     unhex("9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08", hash);

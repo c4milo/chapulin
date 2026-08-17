@@ -34,7 +34,8 @@ int io_send_all(const ch_cfg *cfg, const uint8_t *p, size_t n) {
 
 // The hostile input source: any outer type, any body bytes, any length
 // the io contract admits (1..2^14+256 body, within cap), or any error.
-int io_read_record(const ch_cfg *cfg, uint8_t *buf, size_t cap, uint8_t *outer, size_t *reclen) {
+int io_read_record(const ch_cfg *cfg, uint8_t *buf, size_t cap, uint8_t *outer,
+                   size_t *record_len) {
     __CPROVER_assert(cfg != NULL, "read: cfg valid");
     uint8_t choice = nondet_u8();
     if (choice == 0) {
@@ -51,7 +52,7 @@ int io_read_record(const ch_cfg *cfg, uint8_t *buf, size_t cap, uint8_t *outer, 
     __CPROVER_assert(__CPROVER_w_ok(buf, REC_HDR + body), "read: buffer writable");
     fill_nondet(buf, REC_HDR + body);
     *outer = nondet_u8();
-    *reclen = REC_HDR + body;
+    *record_len = REC_HDR + body;
     return CH_OK;
 }
 
@@ -67,7 +68,7 @@ void rec_dir_update(uint8_t secret[SHA256_LEN], rec_dir *d) {
 }
 
 int rec_seal(rec_dir *d, uint8_t type, const uint8_t *pt, size_t n, uint8_t *out, size_t cap,
-             size_t *outn) {
+             size_t *out_len) {
     (void)type;
     __CPROVER_assert(__CPROVER_w_ok(d, sizeof *d), "seal: dir writable");
     __CPROVER_assert(n == 0 || __CPROVER_r_ok(pt, n), "seal: pt readable");
@@ -77,13 +78,13 @@ int rec_seal(rec_dir *d, uint8_t type, const uint8_t *pt, size_t n, uint8_t *out
     }
     __CPROVER_assert(__CPROVER_w_ok(out, total), "seal: out writable");
     fill_nondet(out, total);
-    *outn = total;
+    *out_len = total;
     return 0;
 }
 
 // All-or-nothing, like the proven aead contract: plaintext bytes appear
 // only on success, and never more than the buffer or 2^14+1.
-int rec_open(rec_dir *d, const uint8_t *rec, size_t n, uint8_t *pt, size_t cap, size_t *ptn,
+int rec_open(rec_dir *d, const uint8_t *rec, size_t n, uint8_t *pt, size_t cap, size_t *pt_len,
              uint8_t *type) {
     __CPROVER_assert(__CPROVER_w_ok(d, sizeof *d), "open: dir writable");
     __CPROVER_assert(n == 0 || __CPROVER_r_ok(rec, n), "open: record readable");
@@ -94,19 +95,19 @@ int rec_open(rec_dir *d, const uint8_t *rec, size_t n, uint8_t *pt, size_t cap, 
     __CPROVER_assume(out <= cap && out <= 0x4001);
     __CPROVER_assert(out == 0 || __CPROVER_w_ok(pt, out), "open: pt writable");
     fill_nondet(pt, out);
-    *ptn = out;
+    *pt_len = out;
     *type = nondet_u8();
     return 0;
 }
 
-size_t hs_build_ch(uint8_t *out, size_t cap, const ch_cfg *cfg, const uint8_t pub[32],
-                   const uint8_t random32[32], uint16_t rsl, const uint8_t *cookie,
-                   size_t cookielen) {
-    (void)rsl;
+size_t hs_build_client_hello(uint8_t *out, size_t cap, const ch_cfg *cfg, const uint8_t pub[32],
+                             const uint8_t random32[32], uint16_t record_size_limit,
+                             const uint8_t *cookie, size_t cookie_len) {
+    (void)record_size_limit;
     __CPROVER_assert(__CPROVER_r_ok(cfg->psk_id, cfg->psk_id_len), "ch: identity readable");
     __CPROVER_assert(__CPROVER_r_ok(pub, 32), "ch: share readable");
     __CPROVER_assert(__CPROVER_r_ok(random32, 32), "ch: random readable");
-    __CPROVER_assert(cookielen == 0 || __CPROVER_r_ok(cookie, cookielen), "ch: cookie readable");
+    __CPROVER_assert(cookie_len == 0 || __CPROVER_r_ok(cookie, cookie_len), "ch: cookie readable");
     if (nondet_u8() & 1) {
         return 0; // does not fit
     }
@@ -133,10 +134,10 @@ void sha256_final(sha256 *s, uint8_t out[SHA256_LEN]) {
     fill_nondet(out, SHA256_LEN);
 }
 
-void ks_early(const uint8_t *psk, size_t psklen, int resumption, uint8_t early[SHA256_LEN],
+void ks_early(const uint8_t *psk, size_t psk_len, int resumption, uint8_t early[SHA256_LEN],
               uint8_t binder_key[SHA256_LEN]) {
     (void)resumption;
-    __CPROVER_assert(psklen == 0 || __CPROVER_r_ok(psk, psklen), "ks: psk readable");
+    __CPROVER_assert(psk_len == 0 || __CPROVER_r_ok(psk, psk_len), "ks: psk readable");
     fill_nondet(early, SHA256_LEN);
     fill_nondet(binder_key, SHA256_LEN);
 }
@@ -149,19 +150,19 @@ void ks_verify_data(const uint8_t key[SHA256_LEN], const uint8_t transcript[SHA2
 }
 
 void ks_handshake(const uint8_t early[SHA256_LEN], const uint8_t ecdhe[32],
-                  const uint8_t transcript[SHA256_LEN], uint8_t hs[SHA256_LEN],
+                  const uint8_t transcript[SHA256_LEN], uint8_t handshake_secret[SHA256_LEN],
                   uint8_t c_hs[SHA256_LEN], uint8_t s_hs[SHA256_LEN]) {
     __CPROVER_assert(__CPROVER_r_ok(early, SHA256_LEN), "ks: early readable");
     __CPROVER_assert(__CPROVER_r_ok(ecdhe, 32), "ks: ecdhe readable");
     __CPROVER_assert(__CPROVER_r_ok(transcript, SHA256_LEN), "ks: transcript readable");
-    fill_nondet(hs, SHA256_LEN);
+    fill_nondet(handshake_secret, SHA256_LEN);
     fill_nondet(c_hs, SHA256_LEN);
     fill_nondet(s_hs, SHA256_LEN);
 }
 
-void ks_master(const uint8_t hs[SHA256_LEN], const uint8_t transcript[SHA256_LEN],
+void ks_master(const uint8_t handshake_secret[SHA256_LEN], const uint8_t transcript[SHA256_LEN],
                uint8_t master[SHA256_LEN], uint8_t c_ap[SHA256_LEN], uint8_t s_ap[SHA256_LEN]) {
-    __CPROVER_assert(__CPROVER_r_ok(hs, SHA256_LEN), "ks: hs readable");
+    __CPROVER_assert(__CPROVER_r_ok(handshake_secret, SHA256_LEN), "ks: handshake secret readable");
     __CPROVER_assert(__CPROVER_r_ok(transcript, SHA256_LEN), "ks: transcript readable");
     fill_nondet(master, SHA256_LEN);
     fill_nondet(c_ap, SHA256_LEN);
@@ -199,23 +200,23 @@ int p256_ecdsa_verify(const uint8_t pub[64], const uint8_t msg_hash[32], const u
 // The default build's pinned verifier; the driver under proof only routes
 // pointers into it, so the contract mirrors p256's. rsa_harness proves
 // the real body against hostile signatures.
-int rsa_pss_verify(const uint8_t *n, size_t nlen, const uint8_t msg_hash[32], const uint8_t *sig,
-                   size_t siglen) {
-    __CPROVER_assert(nlen == 0 || __CPROVER_r_ok(n, nlen), "rsa: modulus readable");
+int rsa_pss_verify(const uint8_t *n, size_t n_len, const uint8_t msg_hash[32], const uint8_t *sig,
+                   size_t sig_len) {
+    __CPROVER_assert(n_len == 0 || __CPROVER_r_ok(n, n_len), "rsa: modulus readable");
     __CPROVER_assert(__CPROVER_r_ok(msg_hash, 32), "rsa: hash readable");
-    __CPROVER_assert(siglen == 0 || __CPROVER_r_ok(sig, siglen), "rsa: sig readable");
+    __CPROVER_assert(sig_len == 0 || __CPROVER_r_ok(sig, sig_len), "rsa: sig readable");
     return nondet_u8() & 1;
 }
 
-void tlsi_fail(ch_tls *t, uint8_t desc) {
-    (void)desc;
+void tlsi_fail(ch_tls *t, uint8_t description) {
+    (void)description;
     __CPROVER_assert(__CPROVER_w_ok(t, sizeof *t), "fail: session writable");
     t->state = CH_ST_FAILED;
 }
 
-int tlsi_send_alert(ch_tls *t, uint8_t level, uint8_t desc) {
+int tlsi_send_alert(ch_tls *t, uint8_t level, uint8_t description) {
     (void)level;
-    (void)desc;
+    (void)description;
     __CPROVER_assert(__CPROVER_w_ok(t, sizeof *t), "alert: session writable");
     return CH_OK;
 }
@@ -241,11 +242,11 @@ int main(void) {
     if (nondet_u8() & 1) {
         t.cfg.psk = psk;
         t.cfg.psk_id = id;
-        size_t psklen = nondet_size_t();
+        size_t psk_len = nondet_size_t();
         size_t idlen = nondet_size_t();
-        __CPROVER_assume(psklen >= 1 && psklen <= sizeof psk);
+        __CPROVER_assume(psk_len >= 1 && psk_len <= sizeof psk);
         __CPROVER_assume(idlen >= 1 && idlen <= sizeof id);
-        t.cfg.psk_len = psklen;
+        t.cfg.psk_len = psk_len;
         t.cfg.psk_id_len = idlen;
         t.cfg.resumption = nondet_u8() & 1;
     } else {

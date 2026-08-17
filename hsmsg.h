@@ -68,10 +68,11 @@
 // zeroed binder: the binder occupies the final 32 bytes and the binder
 // transcript covers the first (length - CH_BINDERS_TAIL) bytes. In
 // pinned-key mode the hello offers signature_algorithms instead and has
-// no binder. rsl is our record_size_limit; cookie echoes an HRR cookie
-// (NULL first flight). Returns the total length, or 0 if cap is short.
-size_t hs_build_ch(uint8_t *out, size_t cap, const ch_cfg *cfg, const uint8_t pub[32],
-                   const uint8_t random32[32], uint16_t rsl, const uint8_t *cookie,
-                   size_t cookielen);
+// no binder. record_size_limit is the limit we advertise; cookie echoes
+// an HRR cookie (NULL first flight). Returns the total length, or 0 if
+// cap is short.
+size_t hs_build_client_hello(uint8_t *out, size_t cap, const ch_cfg *cfg, const uint8_t pub[32],
+                             const uint8_t random32[32], uint16_t record_size_limit,
+                             const uint8_t *cookie, size_t cookie_len);
 
 #endif

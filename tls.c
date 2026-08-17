@@ -64,50 +64,50 @@ int ch_connect(ch_tls *t, const ch_cfg *cfg) {
 static void handle_ticket(ch_tls *t, const uint8_t *body, size_t n) {
     rbuf r;
     rb_init(&r, body, n);
-    ch_ticket tk;
-    uint32_t hi = rb_u24(&r);              // u32 fields read as u24+u8 to keep the
-    tk.lifetime_s = (hi << 8) | rb_u8(&r); // reads sequenced
+    ch_ticket ticket;
+    uint32_t hi = rb_u24(&r);                  // u32 fields read as u24+u8 to keep the
+    ticket.lifetime_s = (hi << 8) | rb_u8(&r); // reads sequenced
     hi = rb_u24(&r);
-    tk.age_add = (hi << 8) | rb_u8(&r);
-    size_t noncelen = rb_u8(&r);
-    const uint8_t *nonce = rb_bytes(&r, noncelen);
-    tk.identity_len = rb_u16(&r);
-    tk.identity = rb_bytes(&r, tk.identity_len);
-    if (r.err || t->cfg.on_ticket == NULL || noncelen > SHA256_LEN ||
-        tk.identity_len > CH_TICKET_ID_MAX) {
+    ticket.age_add = (hi << 8) | rb_u8(&r);
+    size_t nonce_len = rb_u8(&r);
+    const uint8_t *nonce = rb_bytes(&r, nonce_len);
+    ticket.identity_len = rb_u16(&r);
+    ticket.identity = rb_bytes(&r, ticket.identity_len);
+    if (r.err || t->cfg.on_ticket == NULL || nonce_len > SHA256_LEN ||
+        ticket.identity_len > CH_TICKET_ID_MAX) {
         return;
     }
-    ks_res_psk(t->res_master, nonce, noncelen, tk.psk);
-    t->cfg.on_ticket(t->cfg.io, &tk);
-    ct_wipe(tk.psk, sizeof tk.psk);
+    ks_res_psk(t->res_master, nonce, nonce_len, ticket.psk);
+    t->cfg.on_ticket(t->cfg.io, &ticket);
+    ct_wipe(ticket.psk, sizeof ticket.psk);
 }
 
 // Handles the complete post-handshake messages in pt[0..n) — only
 // NewSessionTicket and KeyUpdate exist here — and reports through used
 // how many bytes were consumed. A trailing partial message is not an
 // error; the caller reassembles across records.
-static int handle_post_hs(ch_tls *t, const uint8_t *pt, size_t n, size_t *used) {
+static int handle_post_handshake(ch_tls *t, const uint8_t *pt, size_t n, size_t *used) {
     size_t off = 0;
     while (n - off >= 4) {
         uint8_t type = pt[off];
-        size_t mlen = ((size_t)pt[off + 1] << 16) | ((size_t)pt[off + 2] << 8) | pt[off + 3];
-        if (mlen > 0x4000 || 4 + mlen > t->cfg.buf_len) {
+        size_t msg_len = ((size_t)pt[off + 1] << 16) | ((size_t)pt[off + 2] << 8) | pt[off + 3];
+        if (msg_len > 0x4000 || 4 + msg_len > t->cfg.buf_len) {
             return CH_EPROTO; // could never fit; not a fragment worth waiting for
         }
-        if (off + 4 + mlen > n) {
+        if (off + 4 + msg_len > n) {
             break; // partial message, reassembled by the caller
         }
         const uint8_t *body = pt + off + 4;
         if (type == HS_NEW_SESSION_TICKET) {
-            handle_ticket(t, body, mlen);
-        } else if (type == HS_KEY_UPDATE && mlen == 1 && body[0] <= 1) {
+            handle_ticket(t, body, msg_len);
+        } else if (type == HS_KEY_UPDATE && msg_len == 1 && body[0] <= 1) {
             rec_dir_update(t->rd_secret, &t->rd);
             if (body[0] == 1) {
                 uint8_t msg[5] = {HS_KEY_UPDATE, 0, 0, 1, 0};
-                size_t outn = 0;
-                if (rec_seal(&t->wr, REC_HANDSHAKE, msg, sizeof msg, t->tx, sizeof t->tx, &outn) !=
-                        0 ||
-                    io_send_all(&t->cfg, t->tx, outn) != CH_OK) {
+                size_t out_len = 0;
+                if (rec_seal(&t->wr, REC_HANDSHAKE, msg, sizeof msg, t->tx, sizeof t->tx,
+                             &out_len) != 0 ||
+                    io_send_all(&t->cfg, t->tx, out_len) != CH_OK) {
                     return CH_EIO;
                 }
                 rec_dir_update(t->wr_secret, &t->wr);
@@ -115,25 +115,25 @@ static int handle_post_hs(ch_tls *t, const uint8_t *pt, size_t n, size_t *used) 
         } else {
             return CH_EPROTO;
         }
-        off += 4 + mlen;
+        off += 4 + msg_len;
     }
     *used = off;
     return CH_OK;
 }
 
-// Drains a post-handshake handshake message run that starts with ptn
+// Drains a post-handshake handshake message run that starts with pt_len
 // plaintext bytes in cfg.buf, pulling further records when a message is
 // fragmented across them (RFC 8446 §5.1 allows it, and our own
 // record_size_limit forces peers with large tickets into it). Fragments
 // of one message cannot be interleaved with other record types.
-static int pump_post_hs(ch_tls *t, size_t ptn) {
+static int pump_post_handshake(ch_tls *t, size_t pt_len) {
     uint8_t *buf = t->cfg.buf;
-    size_t fill = ptn;
+    size_t fill = pt_len;
     // Bounded like ch_read's quiet cap: a fragmented message must make
     // byte progress; an endless stream of empty fragments is an attack.
     for (int quiet = 0; quiet < CH_QUIET_CAP;) {
         size_t used = 0;
-        int rc = handle_post_hs(t, buf, fill, &used);
+        int rc = handle_post_handshake(t, buf, fill, &used);
         if (rc != CH_OK) {
             return rc;
         }
@@ -143,18 +143,18 @@ static int pump_post_hs(ch_tls *t, size_t ptn) {
         memmove(buf, buf + used, fill - used);
         fill -= used;
         uint8_t outer = 0;
-        size_t reclen = 0;
-        rc = io_read_record(&t->cfg, buf + fill, t->cfg.buf_len - fill, &outer, &reclen);
+        size_t record_len = 0;
+        rc = io_read_record(&t->cfg, buf + fill, t->cfg.buf_len - fill, &outer, &record_len);
         if (rc != CH_OK) {
             return rc;
         }
         size_t n = 0;
-        uint8_t itype = 0;
-        if (outer != REC_APPDATA || rec_open(&t->rd, buf + fill, reclen, buf + fill,
-                                             t->cfg.buf_len - fill, &n, &itype) != 0) {
+        uint8_t inner_type = 0;
+        if (outer != REC_APPDATA || rec_open(&t->rd, buf + fill, record_len, buf + fill,
+                                             t->cfg.buf_len - fill, &n, &inner_type) != 0) {
             return CH_EAUTH;
         }
-        if (itype != REC_HANDSHAKE) {
+        if (inner_type != REC_HANDSHAKE) {
             return CH_EPROTO;
         }
         if (n == 0) {
@@ -169,8 +169,8 @@ static int pump_post_hs(ch_tls *t, size_t ptn) {
 // post-handshake messages are handled, close_notify returns CH_ECLOSED.
 static int pump_once(ch_tls *t) {
     uint8_t outer = 0;
-    size_t reclen = 0;
-    int rc = io_read_record(&t->cfg, t->cfg.buf, t->cfg.buf_len, &outer, &reclen);
+    size_t record_len = 0;
+    int rc = io_read_record(&t->cfg, t->cfg.buf, t->cfg.buf_len, &outer, &record_len);
     if (rc != CH_OK) {
         tlsi_fail(t, ALERT_DECODE_ERROR);
         return rc;
@@ -179,25 +179,26 @@ static int pump_once(ch_tls *t) {
         tlsi_fail(t, ALERT_UNEXPECTED_MESSAGE);
         return CH_EPROTO;
     }
-    size_t ptn = 0;
-    uint8_t itype = 0;
-    if (rec_open(&t->rd, t->cfg.buf, reclen, t->cfg.buf, t->cfg.buf_len, &ptn, &itype) != 0) {
+    size_t pt_len = 0;
+    uint8_t inner_type = 0;
+    if (rec_open(&t->rd, t->cfg.buf, record_len, t->cfg.buf, t->cfg.buf_len, &pt_len,
+                 &inner_type) != 0) {
         tlsi_fail(t, ALERT_BAD_RECORD_MAC);
         return CH_EAUTH;
     }
-    if (itype == REC_APPDATA) {
+    if (inner_type == REC_APPDATA) {
         t->pt_off = 0;
-        t->pt_len = ptn;
+        t->pt_len = pt_len;
         return CH_OK;
     }
-    if (itype == REC_HANDSHAKE) {
-        rc = pump_post_hs(t, ptn);
+    if (inner_type == REC_HANDSHAKE) {
+        rc = pump_post_handshake(t, pt_len);
         if (rc != CH_OK) {
             tlsi_fail(t, rc == CH_EAUTH ? ALERT_BAD_RECORD_MAC : ALERT_UNEXPECTED_MESSAGE);
         }
         return rc;
     }
-    if (itype == REC_ALERT && ptn == 2 && t->cfg.buf[1] == ALERT_CLOSE_NOTIFY) {
+    if (inner_type == REC_ALERT && pt_len == 2 && t->cfg.buf[1] == ALERT_CLOSE_NOTIFY) {
         t->state = CH_ST_CLOSED;
         ch_close(t);
         return CH_ECLOSED;
@@ -245,15 +246,15 @@ int ch_write(ch_tls *t, const uint8_t *p, size_t n) {
     if (t->state != CH_ST_CONNECTED) {
         return CH_EPROTO;
     }
-    size_t lim = t->peer_limit < CH_TX_PT ? t->peer_limit : CH_TX_PT;
+    size_t limit = t->peer_limit < CH_TX_PT ? t->peer_limit : CH_TX_PT;
     while (n > 0) {
-        size_t take = n < lim ? n : lim;
-        size_t outn = 0;
-        if (rec_seal(&t->wr, REC_APPDATA, p, take, t->tx, sizeof t->tx, &outn) != 0) {
+        size_t take = n < limit ? n : limit;
+        size_t out_len = 0;
+        if (rec_seal(&t->wr, REC_APPDATA, p, take, t->tx, sizeof t->tx, &out_len) != 0) {
             tlsi_fail(t, ALERT_INTERNAL_ERROR);
             return CH_ECAP;
         }
-        int rc = io_send_all(&t->cfg, t->tx, outn);
+        int rc = io_send_all(&t->cfg, t->tx, out_len);
         if (rc != CH_OK) {
             tlsi_fail(t, ALERT_INTERNAL_ERROR);
             return rc;

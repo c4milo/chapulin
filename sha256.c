@@ -10,7 +10,7 @@ static const uint32_t K[64] = {
     0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
     0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2};
 
-static uint32_t rotr(uint32_t x, unsigned r) {
+static uint32_t rotate_right(uint32_t x, unsigned r) {
     return (x >> r) | (x << (32 - r));
 }
 
@@ -21,8 +21,8 @@ static void compress(uint32_t h[8], const uint8_t p[SHA256_BLOCK]) {
                ((uint32_t)p[4 * i + 2] << 8) | (uint32_t)p[4 * i + 3];
     }
     for (int i = 16; i < 64; i++) {
-        uint32_t s0 = rotr(w[i - 15], 7) ^ rotr(w[i - 15], 18) ^ (w[i - 15] >> 3);
-        uint32_t s1 = rotr(w[i - 2], 17) ^ rotr(w[i - 2], 19) ^ (w[i - 2] >> 10);
+        uint32_t s0 = rotate_right(w[i - 15], 7) ^ rotate_right(w[i - 15], 18) ^ (w[i - 15] >> 3);
+        uint32_t s1 = rotate_right(w[i - 2], 17) ^ rotate_right(w[i - 2], 19) ^ (w[i - 2] >> 10);
         w[i] = w[i - 16] + s0 + w[i - 7] + s1;
     }
     uint32_t a = h[0];
@@ -34,10 +34,10 @@ static void compress(uint32_t h[8], const uint8_t p[SHA256_BLOCK]) {
     uint32_t g = h[6];
     uint32_t hh = h[7];
     for (int i = 0; i < 64; i++) {
-        uint32_t S1 = rotr(e, 6) ^ rotr(e, 11) ^ rotr(e, 25);
+        uint32_t S1 = rotate_right(e, 6) ^ rotate_right(e, 11) ^ rotate_right(e, 25);
         uint32_t ch = (e & f) ^ (~e & g);
         uint32_t t1 = hh + S1 + ch + K[i] + w[i];
-        uint32_t S0 = rotr(a, 2) ^ rotr(a, 13) ^ rotr(a, 22);
+        uint32_t S0 = rotate_right(a, 2) ^ rotate_right(a, 13) ^ rotate_right(a, 22);
         uint32_t maj = (a & b) ^ (a & c) ^ (b & c);
         uint32_t t2 = S0 + maj;
         hh = g;
@@ -68,12 +68,12 @@ void sha256_init(sha256 *s) {
     s->h[5] = 0x9b05688c;
     s->h[6] = 0x1f83d9ab;
     s->h[7] = 0x5be0cd19;
-    s->nbytes = 0;
+    s->total_bytes = 0;
     s->fill = 0;
 }
 
 void sha256_update(sha256 *s, const uint8_t *in, size_t n) {
-    s->nbytes += n;
+    s->total_bytes += n;
     if (s->fill > 0) {
         while (n > 0 && s->fill < SHA256_BLOCK) {
             s->block[s->fill++] = *in++;
@@ -96,7 +96,7 @@ void sha256_update(sha256 *s, const uint8_t *in, size_t n) {
 }
 
 void sha256_final(sha256 *s, uint8_t out[SHA256_LEN]) {
-    uint64_t bits = s->nbytes * 8;
+    uint64_t bits = s->total_bytes * 8;
     uint8_t pad = 0x80;
     sha256_update(s, &pad, 1);
     uint8_t zero = 0;

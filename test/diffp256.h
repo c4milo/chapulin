@@ -66,30 +66,30 @@ static void diff_p256(void) {
         k[0] &= 0x7f;
         d[31] |= 1;
         k[31] |= 1;
-        char dh[65];
-        char kh[65];
-        char hh[65];
-        (void)hex_enc(dh, d, sizeof d);
-        (void)hex_enc(kh, k, sizeof k);
-        (void)hex_enc(hh, hash, sizeof hash);
+        char d_hex[65];
+        char k_hex[65];
+        char hash_hex[65];
+        (void)hex_encode(d_hex, d, sizeof d);
+        (void)hex_encode(k_hex, k, sizeof k);
+        (void)hex_encode(hash_hex, hash, sizeof hash);
         char cmd[512];
-        (void)snprintf(cmd, sizeof cmd, "p256_pub %s", dh);
-        char pubh[256];
-        query(cmd, pubh, sizeof pubh);
+        (void)snprintf(cmd, sizeof cmd, "p256_pub %s", d_hex);
+        char pub_hex[256];
+        query(cmd, pub_hex, sizeof pub_hex);
         uint8_t pub[64];
-        if (strlen(pubh) != 128 || !hex_dec(pub, pubh, sizeof pub)) {
+        if (strlen(pub_hex) != 128 || !hex_decode(pub, pub_hex, sizeof pub)) {
             die("p256_pub: malformed spec response");
         }
-        (void)snprintf(cmd, sizeof cmd, "p256_sign %s %s %s", dh, kh, hh);
-        char sig[256]; // "r-hex s-hex", split in place below
-        query(cmd, sig, sizeof sig);
-        if (strlen(sig) != 129 || sig[64] != ' ') {
+        (void)snprintf(cmd, sizeof cmd, "p256_sign %s %s %s", d_hex, k_hex, hash_hex);
+        char sig_hex[256]; // "r-hex s-hex", split in place below
+        query(cmd, sig_hex, sizeof sig_hex);
+        if (strlen(sig_hex) != 129 || sig_hex[64] != ' ') {
             die("p256_sign: malformed spec response");
         }
-        sig[64] = '\0'; // splits into the r and s hex words
+        sig_hex[64] = '\0'; // splits into the r and s hex words
         uint8_t r[32];
         uint8_t s[32];
-        if (!hex_dec(r, sig, sizeof r) || !hex_dec(s, sig + 65, sizeof s)) {
+        if (!hex_decode(r, sig_hex, sizeof r) || !hex_decode(s, sig_hex + 65, sizeof s)) {
             die("p256_sign: malformed spec response");
         }
         // The spec must stand behind its own signature, and drop it
@@ -97,26 +97,28 @@ static void diff_p256(void) {
         uint8_t bad[32];
         memcpy(bad, hash, sizeof bad);
         bad[rng_below(sizeof bad)] ^= (uint8_t)(1 + rng_below(255));
-        char bh[65];
-        (void)hex_enc(bh, bad, sizeof bad);
-        (void)snprintf(cmd, sizeof cmd, "p256_verify %s %s %s %s", pubh, hh, sig, sig + 65);
+        char bad_hex[65];
+        (void)hex_encode(bad_hex, bad, sizeof bad);
+        (void)snprintf(cmd, sizeof cmd, "p256_verify %s %s %s %s", pub_hex, hash_hex, sig_hex,
+                       sig_hex + 65);
         expect(cmd, "1");
-        (void)snprintf(cmd, sizeof cmd, "p256_verify %s %s %s %s", pubh, bh, sig, sig + 65);
+        (void)snprintf(cmd, sizeof cmd, "p256_verify %s %s %s %s", pub_hex, bad_hex, sig_hex,
+                       sig_hex + 65);
         expect(cmd, "0");
 #ifdef DIFF_HAVE_P256
         uint8_t der[72];
-        size_t dern = p256_der_sig(der, r, s);
-        if (p256_ecdsa_verify(pub, hash, der, dern) != 1) {
+        size_t der_len = p256_der_sig(der, r, s);
+        if (p256_ecdsa_verify(pub, hash, der, der_len) != 1) {
             (void)fprintf(
                 stderr, "diff mismatch: C p256_ecdsa_verify rejected\n  d: %s\n  k: %s\n  h: %s\n",
-                dh, kh, hh);
+                d_hex, k_hex, hash_hex);
             exit(1);
         }
-        if (p256_ecdsa_verify(pub, bad, der, dern) != 0) {
+        if (p256_ecdsa_verify(pub, bad, der, der_len) != 0) {
             (void)fprintf(
                 stderr,
                 "diff mismatch: C p256_ecdsa_verify accepted a mutated hash\n  d: %s\n  k: %s\n",
-                dh, kh);
+                d_hex, k_hex);
             exit(1);
         }
         comparisons += 2;

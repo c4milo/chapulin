@@ -24,7 +24,7 @@ static int failures = 0;
 
 // Golden ServerHello body (no handshake header): version 1.3 via
 // supported_versions plus an x25519 key_share, both exact-length.
-static const uint8_t sh_golden[] = {
+static const uint8_t server_hello_golden[] = {
     0x03, 0x03,                                     // legacy_version: 0x0303
     0x42, 0x42, 0x42, 0x42, 0x42, 0x42, 0x42, 0x42, // random, 32 bytes,
     0x42, 0x42, 0x42, 0x42, 0x42, 0x42, 0x42, 0x42, // any value that is
@@ -48,7 +48,7 @@ static const uint8_t sh_golden[] = {
 };
 
 // Golden EncryptedExtensions body: one exact-length record_size_limit.
-static const uint8_t ee_golden[] = {
+static const uint8_t encrypted_exts_golden[] = {
     0x00, 0x06, // extensions length: 6
     0x00, 0x1c, // extension_type: record_size_limit (28)
     0x00, 0x02, // extension length: 2
@@ -58,9 +58,9 @@ static const uint8_t ee_golden[] = {
 // Assembles a ServerHello body around the given extension bytes: the
 // golden message's fixed fields, then the extension block. hrr swaps
 // the random for the HRR sentinel.
-static size_t mk_sh(uint8_t *out, int hrr, const uint8_t *exts, size_t n) {
+static size_t make_server_hello(uint8_t *out, int hrr, const uint8_t *exts, size_t n) {
     size_t fixed = 2 + 32 + 1 + 2 + 1;
-    memcpy(out, sh_golden, fixed);
+    memcpy(out, server_hello_golden, fixed);
     if (hrr) {
         memcpy(out + 2, hsp_hrr_magic, 32);
     }
@@ -70,7 +70,7 @@ static size_t mk_sh(uint8_t *out, int hrr, const uint8_t *exts, size_t n) {
     return fixed + 2 + n;
 }
 
-static size_t mk_ee(uint8_t *out, const uint8_t *exts, size_t n) {
+static size_t make_encrypted_exts(uint8_t *out, const uint8_t *exts, size_t n) {
     out[0] = (uint8_t)(n >> 8);
     out[1] = (uint8_t)n;
     if (n > 0) {
@@ -79,124 +79,123 @@ static size_t mk_ee(uint8_t *out, const uint8_t *exts, size_t n) {
     return 2 + n;
 }
 
-static int sh_parse(const uint8_t *body, size_t n, int psk_mode) {
-    sh_info si;
-    memset(&si, 0, sizeof si);
-    return hsp_parse_sh(body, n, &si, psk_mode);
+static int try_server_hello(const uint8_t *body, size_t n, int psk_mode) {
+    server_hello_info info;
+    memset(&info, 0, sizeof info);
+    return hsp_parse_server_hello(body, n, &info, psk_mode);
 }
 
-static int ee_parse(const uint8_t *body, size_t n) {
+static int try_encrypted_exts(const uint8_t *body, size_t n) {
     uint16_t peer_limit = CH_TX_PT;
     uint8_t alert = 0;
-    return hsp_parse_ee(body, n, &peer_limit, &alert);
+    return hsp_parse_encrypted_exts(body, n, &peer_limit, &alert);
 }
 
-// Extension blobs for the ServerHello cases. sv = supported_versions,
-// ks = key_share, psk = pre_shared_key, ck = cookie.
-static const uint8_t sv_exact[] = {0x00, 0x2b, 0x00, 0x02, 0x03, 0x04};
-static const uint8_t sv_trail[] = {0x00, 0x2b, 0x00, 0x03, 0x03, 0x04, 0x00};
+// Extension blobs for the ServerHello cases, named by extension.
+static const uint8_t versions_exact[] = {0x00, 0x2b, 0x00, 0x02, 0x03, 0x04};
+static const uint8_t versions_trail[] = {0x00, 0x2b, 0x00, 0x03, 0x03, 0x04, 0x00};
 // The issue's lenient input: 4 junk bytes after a valid selected_version.
-static const uint8_t sv_junk[] = {0x00, 0x2b, 0x00, 0x06, 0x03, 0x04, 0xde, 0xad, 0xbe, 0xef};
-static const uint8_t sv_dup[] = {0x00, 0x2b, 0x00, 0x02, 0x03, 0x04,
-                                 0x00, 0x2b, 0x00, 0x02, 0x03, 0x04};
-static const uint8_t ks_exact[] = {0x00, 0x33, 0x00, 0x24, 0x00, 0x1d, 0x00, 0x20, 0x09, 0x09,
-                                   0x09, 0x09, 0x09, 0x09, 0x09, 0x09, 0x09, 0x09, 0x09, 0x09,
-                                   0x09, 0x09, 0x09, 0x09, 0x09, 0x09, 0x09, 0x09, 0x09, 0x09,
-                                   0x09, 0x09, 0x09, 0x09, 0x09, 0x09, 0x09, 0x09, 0x09, 0x09};
-static const uint8_t ks_trail[] = {0x00, 0x33, 0x00, 0x25, 0x00, 0x1d, 0x00, 0x20, 0x09, 0x09, 0x09,
-                                   0x09, 0x09, 0x09, 0x09, 0x09, 0x09, 0x09, 0x09, 0x09, 0x09, 0x09,
-                                   0x09, 0x09, 0x09, 0x09, 0x09, 0x09, 0x09, 0x09, 0x09, 0x09, 0x09,
-                                   0x09, 0x09, 0x09, 0x09, 0x09, 0x09, 0x09, 0x00};
+static const uint8_t versions_junk[] = {0x00, 0x2b, 0x00, 0x06, 0x03, 0x04, 0xde, 0xad, 0xbe, 0xef};
+static const uint8_t versions_dup[] = {0x00, 0x2b, 0x00, 0x02, 0x03, 0x04,
+                                       0x00, 0x2b, 0x00, 0x02, 0x03, 0x04};
+static const uint8_t key_share_exact[] = {
+    0x00, 0x33, 0x00, 0x24, 0x00, 0x1d, 0x00, 0x20, 0x09, 0x09, 0x09, 0x09, 0x09, 0x09,
+    0x09, 0x09, 0x09, 0x09, 0x09, 0x09, 0x09, 0x09, 0x09, 0x09, 0x09, 0x09, 0x09, 0x09,
+    0x09, 0x09, 0x09, 0x09, 0x09, 0x09, 0x09, 0x09, 0x09, 0x09, 0x09, 0x09};
+static const uint8_t key_share_trail[] = {
+    0x00, 0x33, 0x00, 0x25, 0x00, 0x1d, 0x00, 0x20, 0x09, 0x09, 0x09, 0x09, 0x09, 0x09,
+    0x09, 0x09, 0x09, 0x09, 0x09, 0x09, 0x09, 0x09, 0x09, 0x09, 0x09, 0x09, 0x09, 0x09,
+    0x09, 0x09, 0x09, 0x09, 0x09, 0x09, 0x09, 0x09, 0x09, 0x09, 0x09, 0x09, 0x00};
 static const uint8_t psk_exact[] = {0x00, 0x29, 0x00, 0x02, 0x00, 0x00};
 static const uint8_t psk_trail[] = {0x00, 0x29, 0x00, 0x03, 0x00, 0x00, 0x00};
-static const uint8_t ck_exact[] = {0x00, 0x2c, 0x00, 0x04, 0x00, 0x02, 0xaa, 0xbb};
-static const uint8_t ck_trail[] = {0x00, 0x2c, 0x00, 0x05, 0x00, 0x02, 0xaa, 0xbb, 0x00};
+static const uint8_t cookie_exact[] = {0x00, 0x2c, 0x00, 0x04, 0x00, 0x02, 0xaa, 0xbb};
+static const uint8_t cookie_trail[] = {0x00, 0x2c, 0x00, 0x05, 0x00, 0x02, 0xaa, 0xbb, 0x00};
 
-// Extension blobs for the EncryptedExtensions cases. rsl =
-// record_size_limit, sg = supported_groups.
-static const uint8_t rsl_exact[] = {0x00, 0x1c, 0x00, 0x02, 0x04, 0x01};
-static const uint8_t rsl_trail[] = {0x00, 0x1c, 0x00, 0x03, 0x04, 0x01, 0x00};
-static const uint8_t rsl_dup[] = {0x00, 0x1c, 0x00, 0x02, 0x04, 0x01,
-                                  0x00, 0x1c, 0x00, 0x02, 0x04, 0x01};
-static const uint8_t sg_tolerated[] = {0x00, 0x0a, 0x00, 0x04, 0xde, 0xad, 0xbe, 0xef};
-static const uint8_t sg_dup[] = {0x00, 0x0a, 0x00, 0x02, 0x00, 0x1d,
-                                 0x00, 0x0a, 0x00, 0x02, 0x00, 0x17};
+// Extension blobs for the EncryptedExtensions cases: record_size_limit
+// and supported_groups.
+static const uint8_t record_limit_exact[] = {0x00, 0x1c, 0x00, 0x02, 0x04, 0x01};
+static const uint8_t record_limit_trail[] = {0x00, 0x1c, 0x00, 0x03, 0x04, 0x01, 0x00};
+static const uint8_t record_limit_dup[] = {0x00, 0x1c, 0x00, 0x02, 0x04, 0x01,
+                                           0x00, 0x1c, 0x00, 0x02, 0x04, 0x01};
+static const uint8_t groups_tolerated[] = {0x00, 0x0a, 0x00, 0x04, 0xde, 0xad, 0xbe, 0xef};
+static const uint8_t groups_dup[] = {0x00, 0x0a, 0x00, 0x02, 0x00, 0x1d,
+                                     0x00, 0x0a, 0x00, 0x02, 0x00, 0x17};
 
 // Parses a ServerHello assembled around the given extension bytes.
-static int sh_case(const uint8_t *exts, size_t n, int hrr, int psk_mode) {
+static int server_hello_case(const uint8_t *exts, size_t n, int hrr, int psk_mode) {
     uint8_t buf[192];
-    size_t len = mk_sh(buf, hrr, exts, n);
-    return sh_parse(buf, len, psk_mode);
+    size_t len = make_server_hello(buf, hrr, exts, n);
+    return try_server_hello(buf, len, psk_mode);
 }
 
 // Parses an EncryptedExtensions assembled from the given extension bytes.
-static int ee_case(const uint8_t *exts, size_t n) {
+static int encrypted_exts_case(const uint8_t *exts, size_t n) {
     uint8_t buf[64];
-    size_t len = mk_ee(buf, exts, n);
-    return ee_parse(buf, len);
+    size_t len = make_encrypted_exts(buf, exts, n);
+    return try_encrypted_exts(buf, len);
 }
 
 // The alert contract: callers seed a default, and the parser overwrites
 // it only when it knows better. Returns the alert after the parse.
-static uint8_t ee_alert_case(const uint8_t *exts, size_t n, uint8_t seed) {
+static uint8_t encrypted_exts_alert_case(const uint8_t *exts, size_t n, uint8_t seed) {
     uint8_t buf[64];
-    size_t len = mk_ee(buf, exts, n);
+    size_t len = make_encrypted_exts(buf, exts, n);
     uint16_t peer_limit = CH_TX_PT;
     uint8_t alert = seed;
-    (void)hsp_parse_ee(buf, len, &peer_limit, &alert);
+    (void)hsp_parse_encrypted_exts(buf, len, &peer_limit, &alert);
     return alert;
 }
 
 // Same, with supported_versions prepended: CH_OK requires a selected
 // version, so this isolates the extension under test.
-static int sh_case2(const uint8_t *ext2, size_t n, int hrr, int psk_mode) {
+static int server_hello_case2(const uint8_t *ext2, size_t n, int hrr, int psk_mode) {
     uint8_t exts[96];
-    memcpy(exts, sv_exact, sizeof sv_exact);
-    memcpy(exts + sizeof sv_exact, ext2, n);
-    return sh_case(exts, sizeof sv_exact + n, hrr, psk_mode);
+    memcpy(exts, versions_exact, sizeof versions_exact);
+    memcpy(exts + sizeof versions_exact, ext2, n);
+    return server_hello_case(exts, sizeof versions_exact + n, hrr, psk_mode);
 }
 
 int main(void) {
     // The golden messages parse clean.
-    CHECK(sh_parse(sh_golden, sizeof sh_golden, 0) == CH_OK);
-    CHECK(ee_parse(ee_golden, sizeof ee_golden) == CH_OK);
+    CHECK(try_server_hello(server_hello_golden, sizeof server_hello_golden, 0) == CH_OK);
+    CHECK(try_encrypted_exts(encrypted_exts_golden, sizeof encrypted_exts_golden) == CH_OK);
 
     // Boundary pairs, ServerHello: each extension's exact-length body
     // parses; the same body plus one trailing byte is a decode error.
-    CHECK(sh_case(sv_exact, sizeof sv_exact, 0, 0) == CH_OK);
-    CHECK(sh_case(sv_trail, sizeof sv_trail, 0, 0) == CH_EPROTO);
-    CHECK(sh_case2(ks_exact, sizeof ks_exact, 0, 0) == CH_OK);
-    CHECK(sh_case2(ks_trail, sizeof ks_trail, 0, 0) == CH_EPROTO);
-    CHECK(sh_case2(psk_exact, sizeof psk_exact, 0, 1) == CH_OK);
-    CHECK(sh_case2(psk_trail, sizeof psk_trail, 0, 1) == CH_EPROTO);
-    CHECK(sh_case2(ck_exact, sizeof ck_exact, 1, 0) == CH_OK);
-    CHECK(sh_case2(ck_trail, sizeof ck_trail, 1, 0) == CH_EPROTO);
+    CHECK(server_hello_case(versions_exact, sizeof versions_exact, 0, 0) == CH_OK);
+    CHECK(server_hello_case(versions_trail, sizeof versions_trail, 0, 0) == CH_EPROTO);
+    CHECK(server_hello_case2(key_share_exact, sizeof key_share_exact, 0, 0) == CH_OK);
+    CHECK(server_hello_case2(key_share_trail, sizeof key_share_trail, 0, 0) == CH_EPROTO);
+    CHECK(server_hello_case2(psk_exact, sizeof psk_exact, 0, 1) == CH_OK);
+    CHECK(server_hello_case2(psk_trail, sizeof psk_trail, 0, 1) == CH_EPROTO);
+    CHECK(server_hello_case2(cookie_exact, sizeof cookie_exact, 1, 0) == CH_OK);
+    CHECK(server_hello_case2(cookie_trail, sizeof cookie_trail, 1, 0) == CH_EPROTO);
 
     // Regression, issue #10: junk after a valid selected_version once
     // parsed as valid TLS 1.3.
-    CHECK(sh_case(sv_junk, sizeof sv_junk, 0, 0) == CH_EPROTO);
+    CHECK(server_hello_case(versions_junk, sizeof versions_junk, 0, 0) == CH_EPROTO);
 
     // Duplicate extensions are illegal (§4.2), even byte-identical ones.
-    CHECK(sh_case(sv_dup, sizeof sv_dup, 0, 0) == CH_EPROTO);
+    CHECK(server_hello_case(versions_dup, sizeof versions_dup, 0, 0) == CH_EPROTO);
 
     // Boundary pair, EncryptedExtensions: record_size_limit exact
     // (the golden message) versus one trailing byte.
-    CHECK(ee_case(rsl_exact, sizeof rsl_exact) == CH_OK);
-    CHECK(ee_case(rsl_trail, sizeof rsl_trail) == CH_EPROTO);
-    CHECK(ee_case(rsl_dup, sizeof rsl_dup) == CH_EPROTO);
+    CHECK(encrypted_exts_case(record_limit_exact, sizeof record_limit_exact) == CH_OK);
+    CHECK(encrypted_exts_case(record_limit_trail, sizeof record_limit_trail) == CH_EPROTO);
+    CHECK(encrypted_exts_case(record_limit_dup, sizeof record_limit_dup) == CH_EPROTO);
     // supported_groups stays tolerated with an unread body...
-    CHECK(ee_case(sg_tolerated, sizeof sg_tolerated) == CH_OK);
+    CHECK(encrypted_exts_case(groups_tolerated, sizeof groups_tolerated) == CH_OK);
     // Alert contract: an extension we never offered upgrades the caller's
     // seeded default to unsupported_extension (RFC 8446 §4.2, wire value
     // 110); a plain decode failure leaves the seed untouched.
     static const uint8_t unknown_ext[] = {0x00, 0x2b, 0x00, 0x00};
-    CHECK(ee_case(unknown_ext, sizeof unknown_ext) == CH_EPROTO);
-    CHECK(ee_alert_case(unknown_ext, sizeof unknown_ext, 47) == 110);
-    CHECK(ee_alert_case(rsl_trail, sizeof rsl_trail, 47) == 47);
+    CHECK(encrypted_exts_case(unknown_ext, sizeof unknown_ext) == CH_EPROTO);
+    CHECK(encrypted_exts_alert_case(unknown_ext, sizeof unknown_ext, 47) == 110);
+    CHECK(encrypted_exts_alert_case(record_limit_trail, sizeof record_limit_trail, 47) == 47);
     // ...but may not repeat either.
-    CHECK(ee_case(sg_dup, sizeof sg_dup) == CH_EPROTO);
+    CHECK(encrypted_exts_case(groups_dup, sizeof groups_dup) == CH_EPROTO);
     // An empty extension block is a legal EncryptedExtensions.
-    CHECK(ee_case(NULL, 0) == CH_OK);
+    CHECK(encrypted_exts_case(NULL, 0) == CH_OK);
 
     if (failures > 0) {
         (void)fprintf(stderr, "%d failure(s)\n", failures);

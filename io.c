@@ -18,7 +18,8 @@ static int read_exact(const ch_cfg *cfg, uint8_t *p, size_t n) {
     return CH_OK;
 }
 
-int io_read_record(const ch_cfg *cfg, uint8_t *buf, size_t cap, uint8_t *outer, size_t *reclen) {
+int io_read_record(const ch_cfg *cfg, uint8_t *buf, size_t cap, uint8_t *outer,
+                   size_t *record_len) {
     if (cap < REC_HDR) {
         return CH_ECAP;
     }
@@ -38,6 +39,6 @@ int io_read_record(const ch_cfg *cfg, uint8_t *buf, size_t cap, uint8_t *outer, 
         return rc;
     }
     *outer = buf[0];
-    *reclen = REC_HDR + body;
+    *record_len = REC_HDR + body;
     return CH_OK;
 }

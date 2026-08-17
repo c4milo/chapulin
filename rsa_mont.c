@@ -10,7 +10,7 @@
 
 #include <string.h>
 
-#define MAXLIMBS 96 // RSA-3072 = 3072 bits = 96 * 32
+#define LIMBS_MAX 96 // RSA-3072 = 3072 bits = 96 * 32
 
 // 32 big-endian bytes per limb -> k little-endian limbs, byte by byte.
 static void from_bytes(uint32_t *o, const uint8_t *b, size_t k) {
@@ -42,13 +42,13 @@ static int cmp(const uint32_t *a, const uint32_t *b, size_t k) {
 }
 
 static uint32_t sub_raw(uint32_t *o, const uint32_t *a, const uint32_t *b, size_t k) {
-    uint64_t bw = 0;
+    uint64_t borrow = 0;
     for (size_t i = 0; i < k; i++) {
-        uint64_t v = (uint64_t)a[i] - b[i] - bw;
+        uint64_t v = (uint64_t)a[i] - b[i] - borrow;
         o[i] = (uint32_t)v;
-        bw = (v >> 32) & 1;
+        borrow = (v >> 32) & 1;
     }
-    return (uint32_t)bw;
+    return (uint32_t)borrow;
 }
 
 // -m^-1 mod 2^32 by Newton iteration. m0 is odd (n is a product of odd
@@ -71,9 +71,9 @@ static void mont_r2(uint32_t *r2, const uint32_t *m, size_t k) {
     for (size_t i = 0; i < 64 * k; i++) {
         uint32_t carry = 0;
         for (size_t j = 0; j < k; j++) {
-            uint32_t nv = (r2[j] << 1) | carry;
+            uint32_t shifted = (r2[j] << 1) | carry;
             carry = r2[j] >> 31;
-            r2[j] = nv;
+            r2[j] = shifted;
         }
         if (carry || cmp(r2, m, k) >= 0) {
             (void)sub_raw(r2, r2, m, k);
@@ -87,7 +87,7 @@ static void mont_r2(uint32_t *r2, const uint32_t *m, size_t k) {
 // a multiple of m in to zero t's low limb, and shifts down one limb.
 static void mont_mul(uint32_t *o, const uint32_t *a, const uint32_t *b, const uint32_t *m,
                      uint32_t m0inv, size_t k) {
-    uint32_t t[MAXLIMBS + 2];
+    uint32_t t[LIMBS_MAX + 2];
     memset(t, 0, (k + 2) * sizeof(uint32_t));
     for (size_t i = 0; i < k; i++) {
         uint64_t c = 0;
@@ -121,14 +121,14 @@ static void mont_mul(uint32_t *o, const uint32_t *a, const uint32_t *b, const ui
     }
 }
 
-void rsa_vp1(const uint8_t *n, size_t nlen, const uint8_t *sig, uint8_t *em) {
-    size_t k = nlen / 4;
-    uint32_t m[MAXLIMBS] = {0};
-    uint32_t base[MAXLIMBS] = {0};
-    uint32_t r2[MAXLIMBS];
-    uint32_t bm[MAXLIMBS];
-    uint32_t acc[MAXLIMBS];
-    uint32_t one[MAXLIMBS];
+void rsa_vp1(const uint8_t *n, size_t n_len, const uint8_t *sig, uint8_t *em) {
+    size_t k = n_len / 4;
+    uint32_t m[LIMBS_MAX] = {0};
+    uint32_t base[LIMBS_MAX] = {0};
+    uint32_t r2[LIMBS_MAX];
+    uint32_t base_mont[LIMBS_MAX];
+    uint32_t acc[LIMBS_MAX];
+    uint32_t one[LIMBS_MAX];
     from_bytes(m, n, k);
     from_bytes(base, sig, k);
     uint32_t m0inv = mont_m0inv(m[0]);
@@ -137,12 +137,12 @@ void rsa_vp1(const uint8_t *n, size_t nlen, const uint8_t *sig, uint8_t *em) {
     // acc holds the running power in the Montgomery domain. Start at
     // base*R (sig^1), square 16 times to reach sig^(2^16), then one
     // multiply by base*R for the +1, giving sig^65537.
-    mont_mul(bm, base, r2, m, m0inv, k);
-    memcpy(acc, bm, k * sizeof(uint32_t));
+    mont_mul(base_mont, base, r2, m, m0inv, k);
+    memcpy(acc, base_mont, k * sizeof(uint32_t));
     for (int i = 0; i < 16; i++) {
         mont_mul(acc, acc, acc, m, m0inv, k);
     }
-    mont_mul(acc, acc, bm, m, m0inv, k);
+    mont_mul(acc, acc, base_mont, m, m0inv, k);
 
     // Multiply by 1 to strip the R factor, then serialize.
     memset(one, 0, k * sizeof(uint32_t));

@@ -2,9 +2,9 @@
 
 #include "buf.h"
 
-size_t hs_build_ch(uint8_t *out, size_t cap, const ch_cfg *cfg, const uint8_t pub[32],
-                   const uint8_t random32[32], uint16_t rsl, const uint8_t *cookie,
-                   size_t cookielen) {
+size_t hs_build_client_hello(uint8_t *out, size_t cap, const ch_cfg *cfg, const uint8_t pub[32],
+                             const uint8_t random32[32], uint16_t record_size_limit,
+                             const uint8_t *cookie, size_t cookie_len) {
     wbuf w;
     wb_init(&w, out, cap);
 
@@ -47,13 +47,13 @@ size_t hs_build_ch(uint8_t *out, size_t cap, const ch_cfg *cfg, const uint8_t pu
 
     wb_u16(&w, EXT_RECORD_SIZE_LIMIT);
     wb_u16(&w, 2);
-    wb_u16(&w, rsl);
+    wb_u16(&w, record_size_limit);
 
     if (cookie != NULL) {
         wb_u16(&w, EXT_COOKIE);
-        wb_u16(&w, (uint16_t)(2 + cookielen));
-        wb_u16(&w, (uint16_t)cookielen);
-        wb_bytes(&w, cookie, cookielen);
+        wb_u16(&w, (uint16_t)(2 + cookie_len));
+        wb_u16(&w, (uint16_t)cookie_len);
+        wb_bytes(&w, cookie, cookie_len);
     }
 
     if (cfg->psk == NULL) {

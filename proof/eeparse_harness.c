@@ -1,9 +1,9 @@
-// Proves: the EncryptedExtensions parser (hsp_parse_ee) — a message
+// Proves: the EncryptedExtensions parser (hsp_parse_encrypted_exts) — a message
 // parser that faces attacker bytes under the handshake keys — is
 // memory-safe and UB-free on any input up to 256 bytes. Parse results
 // feed decisions and the peer_limit clamp, not memory offsets, so safety
 // here plus the rbuf proof covers this side of the handshake's parsing
-// attack surface; hsparse_harness proves hsp_parse_sh, its sibling. One
+// attack surface; hsparse_harness proves hsp_parse_server_hello, its sibling. One
 // parser per formula, the hkdf split's lesson: the combined instance
 // crossed from minutes into hours of SAT time. Built with hsparse.c and
 // buf.c on the CBMC command line — the parser's full dependency closure.
@@ -21,6 +21,6 @@ int main(void) {
 
     uint16_t peer_limit = CH_TX_PT;
     uint8_t alert = 0;
-    (void)hsp_parse_ee(msg, n, &peer_limit, &alert);
+    (void)hsp_parse_encrypted_exts(msg, n, &peer_limit, &alert);
     return 0;
 }

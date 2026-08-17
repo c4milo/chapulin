@@ -280,30 +280,30 @@ static void test_record(void) {
     uint8_t rec[128];
     uint8_t pt[128];
     for (int i = 0; i < 3; i++) { // sequence numbers must track
-        size_t recn = 0;
+        size_t record_len = 0;
         CHECK(rec_seal(&tx, REC_APPDATA, (const uint8_t *)msg, strlen(msg), rec, sizeof rec,
-                       &recn) == 0);
-        size_t ptn = 0;
+                       &record_len) == 0);
+        size_t pt_len = 0;
         uint8_t type = 0;
-        CHECK(rec_open(&rx, rec, recn, pt, sizeof pt, &ptn, &type) == 0);
-        CHECK(type == REC_APPDATA && ptn == strlen(msg) && memcmp(pt, msg, ptn) == 0);
+        CHECK(rec_open(&rx, rec, record_len, pt, sizeof pt, &pt_len, &type) == 0);
+        CHECK(type == REC_APPDATA && pt_len == strlen(msg) && memcmp(pt, msg, pt_len) == 0);
     }
     // Tampered record must fail, and a KeyUpdate rekey must still track.
-    size_t recn = 0;
-    CHECK(rec_seal(&tx, REC_APPDATA, (const uint8_t *)msg, strlen(msg), rec, sizeof rec, &recn) ==
-          0);
+    size_t record_len = 0;
+    CHECK(rec_seal(&tx, REC_APPDATA, (const uint8_t *)msg, strlen(msg), rec, sizeof rec,
+                   &record_len) == 0);
     rec[REC_HDR] ^= 1;
-    size_t ptn = 0;
+    size_t pt_len = 0;
     uint8_t type = 0;
-    CHECK(rec_open(&rx, rec, recn, pt, sizeof pt, &ptn, &type) == -1);
+    CHECK(rec_open(&rx, rec, record_len, pt, sizeof pt, &pt_len, &type) == -1);
     uint8_t s2[SHA256_LEN];
     memcpy(s2, secret, sizeof s2);
     rec_dir_update(secret, &tx);
     rec_dir_update(s2, &rx);
     CHECK(memcmp(secret, s2, sizeof s2) == 0);
-    CHECK(rec_seal(&tx, REC_ALERT, (const uint8_t *)"\1\0", 2, rec, sizeof rec, &recn) == 0);
-    CHECK(rec_open(&rx, rec, recn, pt, sizeof pt, &ptn, &type) == 0);
-    CHECK(type == REC_ALERT && ptn == 2);
+    CHECK(rec_seal(&tx, REC_ALERT, (const uint8_t *)"\1\0", 2, rec, sizeof rec, &record_len) == 0);
+    CHECK(rec_open(&rx, rec, record_len, pt, sizeof pt, &pt_len, &type) == 0);
+    CHECK(type == REC_ALERT && pt_len == 2);
 }
 
 #include "rfc8448_tests.h"

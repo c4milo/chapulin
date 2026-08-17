@@ -1,4 +1,4 @@
-// libFuzzer harness for handle_post_hs, the post-handshake message
+// libFuzzer harness for handle_post_handshake, the post-handshake message
 // dispatcher (NewSessionTicket and KeyUpdate). It is static in tls.c, so
 // the harness includes the translation unit to reach it. The session is
 // zeroed with a live buffer length, a send callback that swallows the
@@ -21,7 +21,7 @@ noreturn void ch_assert_fail(const char *cond, const char *file, int line) {
 }
 
 // tls.c pulls in ch_connect -> ch_handshake, which references this hook.
-// handle_post_hs never drives a handshake, so a call here is a harness bug.
+// handle_post_handshake never drives a handshake, so a call here is a harness bug.
 void ch_rand_bytes(uint8_t *p, size_t n) {
     (void)p;
     (void)n;
@@ -37,14 +37,14 @@ static int send_ok(void *io, const uint8_t *p, size_t n) {
     return 0; // "all n bytes moved" per the ch_cfg contract
 }
 
-static void on_ticket(void *io, const ch_ticket *tk) {
+static void on_ticket(void *io, const ch_ticket *ticket) {
     (void)io;
-    uint64_t acc = tk->lifetime_s + tk->age_add + tk->identity_len;
-    for (size_t i = 0; i < sizeof tk->psk; i++) {
-        acc += tk->psk[i];
+    uint64_t acc = ticket->lifetime_s + ticket->age_add + ticket->identity_len;
+    for (size_t i = 0; i < sizeof ticket->psk; i++) {
+        acc += ticket->psk[i];
     }
-    for (size_t i = 0; i < tk->identity_len; i++) {
-        acc += tk->identity[i];
+    for (size_t i = 0; i < ticket->identity_len; i++) {
+        acc += ticket->identity[i];
     }
     g_sink += acc;
 }
@@ -61,6 +61,6 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
     t.cfg.on_ticket = on_ticket;
 
     size_t used = 0;
-    (void)handle_post_hs(&t, data, size, &used);
+    (void)handle_post_handshake(&t, data, size, &used);
     return 0;
 }

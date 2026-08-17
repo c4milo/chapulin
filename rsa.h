@@ -10,17 +10,17 @@
 #include <stddef.h>
 #include <stdint.h>
 
-// Verifies a PSS signature. n is the raw big-endian modulus, nlen bytes,
+// Verifies a PSS signature. n is the raw big-endian modulus, n_len bytes,
 // 256 to 384 (RSA-2048 to RSA-3072) and a multiple of 8; sig must be
-// exactly nlen bytes; msg_hash is the 32-byte SHA-256 of the signed
+// exactly n_len bytes; msg_hash is the 32-byte SHA-256 of the signed
 // content. Returns 1 for a valid rsa_pss_rsae_sha256 signature
 // (MGF1-SHA256, saltLen = 32), 0 for anything else.
-int rsa_pss_verify(const uint8_t *n, size_t nlen, const uint8_t msg_hash[32], const uint8_t *sig,
-                   size_t siglen);
+int rsa_pss_verify(const uint8_t *n, size_t n_len, const uint8_t msg_hash[32], const uint8_t *sig,
+                   size_t sig_len);
 
 // Internal split boundary, defined in rsa_mont.c: em = sig^65537 mod n
-// (RSAVP1), all values nlen big-endian bytes. rsa.c handles every check;
+// (RSAVP1), all values n_len big-endian bytes. rsa.c handles every check;
 // the caller here guarantees sig < n. Not part of the public API.
-void rsa_vp1(const uint8_t *n, size_t nlen, const uint8_t *sig, uint8_t *em);
+void rsa_vp1(const uint8_t *n, size_t n_len, const uint8_t *sig, uint8_t *em);
 
 #endif

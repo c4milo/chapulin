@@ -19,15 +19,15 @@ int main(void) {
     fill_nondet(pt, sizeof pt);
 
     size_t n = nondet_size_t();
-    size_t aadlen = nondet_size_t();
+    size_t aad_len = nondet_size_t();
     __CPROVER_assume(n >= 1 && n <= sizeof pt);
-    __CPROVER_assume(aadlen <= sizeof aad);
+    __CPROVER_assume(aad_len <= sizeof aad);
 
-    aead_seal(key, nonce, aad, aadlen, pt, n, ct, tag);
+    aead_seal(key, nonce, aad, aad_len, pt, n, ct, tag);
 
     // Round-trip must authenticate and decrypt to the original.
     uint8_t back[64];
-    __CPROVER_assert(aead_open(key, nonce, aad, aadlen, ct, n, tag, back) == 1,
+    __CPROVER_assert(aead_open(key, nonce, aad, aad_len, ct, n, tag, back) == 1,
                      "genuine seal opens");
     for (size_t i = 0; i < n; i++) {
         __CPROVER_assert(back[i] == pt[i], "open round-trips");
@@ -37,8 +37,8 @@ int main(void) {
     // below ct; prove the backward overlap the aead.h contract grants.
     uint8_t frame[5 + 64];
     uint8_t tag2[AEAD_TAG];
-    aead_seal(key, nonce, aad, aadlen, pt, n, frame + 5, tag2);
-    __CPROVER_assert(aead_open(key, nonce, aad, aadlen, frame + 5, n, tag2, frame) == 1,
+    aead_seal(key, nonce, aad, aad_len, pt, n, frame + 5, tag2);
+    __CPROVER_assert(aead_open(key, nonce, aad, aad_len, frame + 5, n, tag2, frame) == 1,
                      "backward-overlap open succeeds");
     for (size_t i = 0; i < n; i++) {
         __CPROVER_assert(frame[i] == pt[i], "backward-overlap open round-trips");
@@ -60,7 +60,7 @@ int main(void) {
     for (size_t i = 0; i < sizeof out2; i++) {
         out2[i] = sentinel[i];
     }
-    __CPROVER_assert(aead_open(key, nonce, aad, aadlen, ct, n, forged, out2) == 0,
+    __CPROVER_assert(aead_open(key, nonce, aad, aad_len, ct, n, forged, out2) == 0,
                      "forged tag rejected");
     for (size_t i = 0; i < sizeof out2; i++) {
         __CPROVER_assert(out2[i] == sentinel[i], "failed open writes nothing");

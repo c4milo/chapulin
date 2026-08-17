@@ -38,7 +38,7 @@ void rec_dir_update(uint8_t secret[SHA256_LEN], rec_dir *d);
 // header + ciphertext + tag (n + REC_OVERHEAD bytes); returns 0, or -1 if
 // cap is short. pt may alias out + REC_HDR.
 int rec_seal(rec_dir *d, uint8_t type, const uint8_t *pt, size_t n, uint8_t *out, size_t cap,
-             size_t *outn);
+             size_t *out_len);
 
 // Unprotects one full record (header included, n = REC_HDR + body). Writes
 // the inner plaintext into pt (cap bytes), strips padding, returns the
@@ -47,7 +47,7 @@ int rec_seal(rec_dir *d, uint8_t type, const uint8_t *pt, size_t n, uint8_t *out
 // overlap aead_open explicitly supports. Returns 0, or -1 on
 // authentication failure, malformed record, or short cap — the caller
 // treats every -1 as fatal to the connection.
-int rec_open(rec_dir *d, const uint8_t *rec, size_t n, uint8_t *pt, size_t cap, size_t *ptn,
+int rec_open(rec_dir *d, const uint8_t *rec, size_t n, uint8_t *pt, size_t cap, size_t *pt_len,
              uint8_t *type);
 
 #endif
