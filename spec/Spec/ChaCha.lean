@@ -76,6 +76,101 @@ def xor (key nonce : ByteArray) (counter : UInt32) (data : ByteArray) : ByteArra
     out := out ++ xorBytes chunk ks
   return out
 
+/-!
+Proven properties. `xor_xor` is the keystream-determinism fact the AEAD
+round-trip theorem needs: the same key, nonce, and counter always
+produce the same keystream, so XORing twice is the identity.
+-/
+
+theorem block_size (key nonce : ByteArray) (counter : UInt32) :
+    (block key nonce counter).size = 64 := by
+  simp [block, emptyWithCapacity_eq,
+    size_foldl_append_const _ _ 4 (fun _ => natToBytesLE_size _ 4)]
+
+/-- Proof view of `xor`: the fold over the first `m` keystream blocks. -/
+private def xorBlocks (key nonce : ByteArray) (c : UInt32) (d : ByteArray) (m : Nat) :
+    ByteArray :=
+  (List.range' 0 m).foldl
+    (fun out j => out ++ xorBytes (d.extract (64 * j) (min (64 * j + 64) d.size))
+      (block key nonce (c + UInt32.ofNat j)))
+    ByteArray.empty
+
+private theorem xor_eq_xorBlocks (key nonce : ByteArray) (c : UInt32) (d : ByteArray) :
+    xor key nonce c d = xorBlocks key nonce c d ((d.size + 63) / 64) := by
+  simp [xor, xorBlocks, emptyWithCapacity_eq]
+
+private theorem xorBlocks_succ (key nonce : ByteArray) (c : UInt32) (d : ByteArray) (m : Nat) :
+    xorBlocks key nonce c d (m + 1) = xorBlocks key nonce c d m ++
+      xorBytes (d.extract (64 * m) (min (64 * m + 64) d.size))
+        (block key nonce (c + UInt32.ofNat m)) := by
+  simp [xorBlocks, List.range'_1_concat]
+
+private theorem xorBlocks_size (key nonce : ByteArray) (c : UInt32) (d : ByteArray) (m : Nat) :
+    (xorBlocks key nonce c d m).size = min (64 * m) d.size := by
+  induction m with
+  | zero => simp [xorBlocks]
+  | succ m ih =>
+    rw [xorBlocks_succ, ByteArray.size_append, ih, xorBytes_size, block_size,
+      ByteArray.size_extract]
+    omega
+
+theorem xor_size (key nonce : ByteArray) (c : UInt32) (d : ByteArray) :
+    (xor key nonce c d).size = d.size := by
+  rw [xor_eq_xorBlocks, xorBlocks_size]
+  omega
+
+/-- Byte `i` of the stream output is data byte `i` XOR keystream byte
+`i % 64` of block `counter + i / 64` — the RFC 8439 §2.4 layout. -/
+private theorem xorBlocks_getElem! (key nonce : ByteArray) (c : UInt32) (d : ByteArray)
+    (m i : Nat) (h : i < min (64 * m) d.size) :
+    (xorBlocks key nonce c d m)[i]! =
+      d[i]! ^^^ (block key nonce (c + UInt32.ofNat (i / 64)))[i % 64]! := by
+  induction m with
+  | zero => omega
+  | succ m ih =>
+    have hsz := xorBlocks_size key nonce c d m
+    rw [xorBlocks_succ]
+    by_cases hlt : i < min (64 * m) d.size
+    · rw [getElem!_pos _ i (by rw [ByteArray.size_append, hsz]; omega),
+        ByteArray.getElem_append_left (by omega),
+        ← getElem!_pos _ i (by omega)]
+      exact ih hlt
+    · have hchunk : (xorBytes (d.extract (64 * m) (min (64 * m + 64) d.size))
+          (block key nonce (c + UInt32.ofNat m))).size
+          = min (64 * m + 64) d.size - 64 * m := by
+        rw [xorBytes_size, block_size, ByteArray.size_extract]; omega
+      have hdiv : i / 64 = m := by omega
+      rw [getElem!_pos _ i (by rw [ByteArray.size_append, hsz, hchunk]; omega),
+        ByteArray.getElem_append_right (by rw [hsz]; omega),
+        getElem_xorBytes _ _ _ (by rw [hchunk, hsz]; omega)]
+      rw [getElem!_pos (d.extract (64 * m) (min (64 * m + 64) d.size)) _
+          (by rw [ByteArray.size_extract]; omega),
+        ByteArray.getElem_extract, ← getElem!_pos d _ (by omega)]
+      have hidx : 64 * m + (i - (xorBlocks key nonce c d m).size) = i := by
+        rw [hsz]; omega
+      have hmod : i - (xorBlocks key nonce c d m).size = i % 64 := by
+        rw [hsz]; omega
+      rw [hidx, hmod, hdiv]
+
+theorem xor_getElem! (key nonce : ByteArray) (c : UInt32) (d : ByteArray) (i : Nat)
+    (h : i < d.size) :
+    (xor key nonce c d)[i]! =
+      d[i]! ^^^ (block key nonce (c + UInt32.ofNat (i / 64)))[i % 64]! := by
+  rw [xor_eq_xorBlocks, xorBlocks_getElem!]
+  omega
+
+/-- The same keystream XORed twice is the identity: ChaCha20 decryption
+is ChaCha20 encryption (RFC 8439 §2.4). The keystream is a function of
+key, nonce, and counter alone, so both applications cancel bytewise. -/
+theorem xor_xor (key nonce : ByteArray) (c : UInt32) (d : ByteArray) :
+    xor key nonce c (xor key nonce c d) = d := by
+  have hs := xor_size key nonce c d
+  apply ByteArray.ext_getElem
+  · rw [xor_size, hs]
+  · intro i h1 h2
+    rw [← getElem!_pos _ i h1, xor_getElem! _ _ _ _ _ (by omega),
+      xor_getElem! _ _ _ _ _ h2, uint8_xor_cancel, getElem!_pos d i h2]
+
 /-- Test vectors: RFC 8439 §2.3.2 (block keystream) and §2.4.2
 (encryption). -/
 def selftest : Bool := Id.run do

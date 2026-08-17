@@ -35,6 +35,11 @@ def mac (key msg : ByteArray) : ByteArray := Id.run do
     acc := (r * (acc + n)) % p
   return natToBytesLE ((acc + s) % 2 ^ 128) 16
 
+/-- The tag is always 16 bytes (RFC 8439 §2.5: the low 128 bits of
+`acc + s`). -/
+theorem mac_size (key msg : ByteArray) : (mac key msg).size = 16 := by
+  simp [mac, Spec.Bytes.natToBytesLE_size]
+
 /-- Test vector: RFC 8439 §2.5.2. -/
 def selftest : Bool :=
   -- A malformed literal falls back to a 1-byte sentinel and breaks the

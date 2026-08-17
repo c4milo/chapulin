@@ -101,6 +101,38 @@ def schedule (psk ecdhe helloHash finHash : ByteArray) :
   let sAp := deriveSecret master "s ap traffic" finHash
   (cHs, sHs, cAp, sAp)
 
+/-!
+Proven properties: output lengths. RFC 5869 §2.3 defines the OKM as
+"the first L octets of T"; these lemmas discharge that clause for every
+input, so the key schedule always hands the record layer exactly the
+32-byte keys and 12-byte IVs it asks for.
+-/
+
+theorem hmac_size (key msg : ByteArray) : (hmac key msg).size = 32 := by
+  simp [hmac, Spec.Sha256.sha256_size]
+
+/-- `HKDF-Expand(prk, info, len)` returns exactly `len` bytes: the loop
+emits `32 * ceil(len/32) ≥ len` bytes and the final extract keeps
+`len`. -/
+theorem expand_size (prk info : ByteArray) (len : Nat) :
+    (expand prk info len).size = len := by
+  have h := foldl_inv_idx (List.range' 1 ((len + hashLen - 1) / hashLen))
+    (fun (b : ByteArray × ByteArray) (a : Nat) =>
+      (hmac prk (b.fst ++ info ++ ByteArray.mk #[UInt8.ofNat a]),
+       b.snd ++ hmac prk (b.fst ++ info ++ ByteArray.mk #[UInt8.ofNat a])))
+    (fun k s => s.snd.size = 32 * k)
+    (ByteArray.empty, ByteArray.empty)
+    (by simp)
+    (fun k b a hk => by simp [ByteArray.size_append, hmac_size, hk, Nat.mul_succ])
+  simp only [List.length_range'] at h
+  simp [expand, h]
+  simp only [hashLen] at *
+  omega
+
+theorem expandLabel_size (secret : ByteArray) (label : String) (ctx : ByteArray)
+    (len : Nat) : (expandLabel secret label ctx len).size = len := by
+  simp [expandLabel, expand_size]
+
 /-- Official vectors: HMAC-SHA-256 RFC 4231 test cases 1 and 2; HKDF
 RFC 5869 test case 1 (PRK and 42-byte OKM); the RFC 8448 §3 Early Secret
 and "derived" secret (an all-zero PSK trace, exercising `expandLabel` with

@@ -102,6 +102,228 @@ def accepts (mode : Mode) (msgs : List Msg) : Bool :=
   | some .connected | some .closed => true
   | _ => false
 
+/-!
+Proven safety invariants. Each one quantifies over every trace, so the
+differential run's agreement with the C state machine transfers a
+theorem, not a sample: an accepting C trace (over the compared domain)
+has exactly one Finished, no Certificate under PSK, exactly one
+Certificate then CertificateVerify then Finished under a pinned key,
+and at most one HelloRetryRequest.
+-/
+
+deriving instance DecidableEq for Msg
+deriving instance DecidableEq for State
+
+/-- `accepts` in terms of the fold it runs. -/
+private theorem accepts_iff (mode : Mode) (msgs : List Msg) :
+    accepts mode msgs = true ↔
+      ∃ t, msgs.foldlM (step mode) State.start = some t ∧
+        (t = State.connected ∨ t = State.closed) := by
+  unfold accepts
+  cases h : msgs.foldlM (step mode) State.start with
+  | none => simp
+  | some t => cases t <;> simp
+
+/-- Walk a per-step exact count through a whole successful fold. -/
+private theorem foldlM_count (mode : Mode) (cnt : State → Nat) (tgt : Msg)
+    (hstep : ∀ s s' m, step mode s m = some s' →
+      cnt s' = cnt s + (if m = tgt then 1 else 0)) :
+    ∀ (msgs : List Msg) (s t : State), msgs.foldlM (step mode) s = some t →
+      cnt t = cnt s + msgs.count tgt := by
+  intro msgs
+  induction msgs with
+  | nil =>
+    intro s t h
+    simp only [List.foldlM_nil] at h
+    cases h
+    simp
+  | cons x xs ih =>
+    intro s t h
+    simp only [List.foldlM_cons] at h
+    cases hx : step mode s x with
+    | none => rw [hx] at h; simp at h
+    | some s1 =>
+      rw [hx] at h
+      simp at h
+      rw [ih s1 t h, hstep s s1 x hx, List.count_cons]
+      simp only [beq_iff_eq]
+      omega
+
+/-- Walk a per-step count bound through a whole successful fold. -/
+private theorem foldlM_count_le (mode : Mode) (bnd : State → Nat) (tgt : Msg)
+    (hstep : ∀ s s' m, step mode s m = some s' →
+      bnd s + (if m = tgt then 1 else 0) ≤ bnd s') :
+    ∀ (msgs : List Msg) (s t : State), msgs.foldlM (step mode) s = some t →
+      msgs.count tgt + bnd s ≤ bnd t := by
+  intro msgs
+  induction msgs with
+  | nil =>
+    intro s t h
+    simp only [List.foldlM_nil] at h
+    cases h
+    simp
+  | cons x xs ih =>
+    intro s t h
+    simp only [List.foldlM_cons] at h
+    cases hx : step mode s x with
+    | none => rw [hx] at h; simp at h
+    | some s1 =>
+      rw [hx] at h
+      simp at h
+      have h1 := ih s1 t h
+      have h2 := hstep s s1 x hx
+      rw [List.count_cons]
+      simp only [beq_iff_eq] at *
+      omega
+
+/-- 1 once the server's Finished was taken, else 0. -/
+private def finSeen : State → Nat
+  | .connected | .closed => 1
+  | _ => 0
+
+private theorem step_finSeen (mode : Mode) (s s' : State) (m : Msg)
+    (h : step mode s m = some s') :
+    finSeen s' = finSeen s + (if m = Msg.finished then 1 else 0) := by
+  cases mode <;> cases s <;> cases m <;> simp [step] at h <;> cases h <;>
+    simp [finSeen]
+
+/-- Every accepting trace contains the server Finished exactly once
+(RFC 8446 §4.4.4: it ends the server's flight and gates the
+connection). -/
+theorem count_finished_of_accepts (mode : Mode) (msgs : List Msg)
+    (h : accepts mode msgs = true) : msgs.count .finished = 1 := by
+  obtain ⟨t, hfold, ht⟩ := (accepts_iff mode msgs).mp h
+  have := foldlM_count mode finSeen .finished (step_finSeen mode) msgs .start t hfold
+  rcases ht with rfl | rfl <;> (simp [finSeen] at this; omega)
+
+/-- No accepting trace omits the server Finished. -/
+theorem finished_mem_of_accepts (mode : Mode) (msgs : List Msg)
+    (h : accepts mode msgs = true) : Msg.finished ∈ msgs := by
+  have := count_finished_of_accepts mode msgs h
+  exact List.count_pos_iff.mp (by omega)
+
+/-- Under PSK the certificate-flight states are unreachable, so a
+successful step never consumes a Certificate (RFC 8446 §2.2). -/
+private theorem step_psk_no_cert (s s' : State) (m : Msg)
+    (hs : s ≠ State.awaitCert ∧ s ≠ State.awaitCV)
+    (h : step Mode.psk s m = some s') :
+    (s' ≠ State.awaitCert ∧ s' ≠ State.awaitCV) ∧ m ≠ Msg.certificate := by
+  cases s <;> cases m <;> simp [step] at h <;> cases h <;> simp_all
+
+/-- PSK-mode error-free traces never contain Certificate (§2.2: the
+server MUST NOT send the certificate flight when authenticating by
+PSK). Stated over any successful fold, so it covers accepting traces
+and every prefix of them. -/
+private theorem foldlM_psk_no_cert :
+    ∀ (msgs : List Msg) (s t : State),
+      (s ≠ State.awaitCert ∧ s ≠ State.awaitCV) →
+      msgs.foldlM (step Mode.psk) s = some t →
+      Msg.certificate ∉ msgs := by
+  intro msgs
+  induction msgs with
+  | nil => simp
+  | cons x xs ih =>
+    intro s t hs h
+    simp only [List.foldlM_cons] at h
+    cases hx : step Mode.psk s x with
+    | none => rw [hx] at h; simp at h
+    | some s1 =>
+      rw [hx] at h
+      simp at h
+      have ⟨hs1, hxc⟩ := step_psk_no_cert s s1 x hs hx
+      simp only [List.mem_cons, not_or]
+      exact ⟨fun he => hxc he.symm, ih s1 t hs1 h⟩
+
+/-- PSK-mode accepting traces never contain Certificate. -/
+theorem psk_no_certificate (msgs : List Msg) (h : accepts .psk msgs = true) :
+    Msg.certificate ∉ msgs := by
+  obtain ⟨t, hfold, _⟩ := (accepts_iff .psk msgs).mp h
+  exact foldlM_psk_no_cert msgs .start t (by simp) hfold
+
+/-- 1 once the pinned-mode flight passed Certificate, else 0. -/
+private def certSeen : State → Nat
+  | .awaitCV | .awaitFin | .connected | .closed => 1
+  | _ => 0
+
+private theorem step_certSeen (s s' : State) (m : Msg)
+    (h : step Mode.pinned s m = some s') :
+    certSeen s' = certSeen s + (if m = Msg.certificate then 1 else 0) := by
+  cases s <;> cases m <;> simp [step] at h <;> cases h <;> simp [certSeen]
+
+/-- 1 once the pinned-mode flight passed CertificateVerify, else 0. -/
+private def cvSeen : State → Nat
+  | .awaitFin | .connected | .closed => 1
+  | _ => 0
+
+private theorem step_cvSeen (s s' : State) (m : Msg)
+    (h : step Mode.pinned s m = some s') :
+    cvSeen s' = cvSeen s + (if m = Msg.certificateVerify then 1 else 0) := by
+  cases s <;> cases m <;> simp [step] at h <;> cases h <;> simp [cvSeen]
+
+/-- Pinned-mode accepting traces contain exactly one Certificate
+(RFC 8446 §4.4.2). -/
+theorem pinned_one_certificate (msgs : List Msg)
+    (h : accepts .pinned msgs = true) : msgs.count .certificate = 1 := by
+  obtain ⟨t, hfold, ht⟩ := (accepts_iff .pinned msgs).mp h
+  have := foldlM_count .pinned certSeen .certificate step_certSeen msgs .start t hfold
+  rcases ht with rfl | rfl <;> (simp [certSeen] at this; omega)
+
+/-- Pinned-mode accepting traces contain exactly one CertificateVerify
+(RFC 8446 §4.4.3). -/
+theorem pinned_one_certificateVerify (msgs : List Msg)
+    (h : accepts .pinned msgs = true) : msgs.count .certificateVerify = 1 := by
+  obtain ⟨t, hfold, ht⟩ := (accepts_iff .pinned msgs).mp h
+  have := foldlM_count .pinned cvSeen .certificateVerify step_cvSeen msgs .start t hfold
+  rcases ht with rfl | rfl <;> (simp [cvSeen] at this; omega)
+
+/--
+Pinned-mode message order (RFC 8446 §4.4): in an accepting trace, every
+prefix that contains CertificateVerify already contains Certificate,
+and every prefix that contains Finished already contains
+CertificateVerify. With the three counts pinned to one, this places the
+unique Certificate before the unique CertificateVerify before the
+unique Finished.
+-/
+theorem pinned_cert_order (msgs : List Msg) (h : accepts .pinned msgs = true)
+    (l r : List Msg) (hsplit : msgs = l ++ r) :
+    (Msg.certificateVerify ∈ l → Msg.certificate ∈ l) ∧
+    (Msg.finished ∈ l → Msg.certificateVerify ∈ l) := by
+  obtain ⟨t, hfold, _⟩ := (accepts_iff .pinned msgs).mp h
+  rw [hsplit, List.foldlM_append] at hfold
+  cases hs : l.foldlM (step .pinned) State.start with
+  | none => rw [hs] at hfold; simp at hfold
+  | some s =>
+    have hc := foldlM_count .pinned certSeen .certificate step_certSeen l .start s hs
+    have hv := foldlM_count .pinned cvSeen .certificateVerify step_cvSeen l .start s hs
+    have hf := foldlM_count .pinned finSeen .finished (step_finSeen .pinned) l .start s hs
+    refine ⟨fun hmem => ?_, fun hmem => ?_⟩
+    · have hvpos : 0 < l.count Msg.certificateVerify := List.count_pos_iff.mpr hmem
+      refine List.count_pos_iff.mp ?_
+      cases s <;> simp [certSeen, cvSeen] at hc hv <;> omega
+    · have hfpos : 0 < l.count Msg.finished := List.count_pos_iff.mpr hmem
+      refine List.count_pos_iff.mp ?_
+      cases s <;> simp [cvSeen, finSeen] at hv hf <;> omega
+
+/-- 0 HelloRetryRequests consumed at `start`, at most 1 anywhere else. -/
+private def hrrBound : State → Nat
+  | .start => 0
+  | _ => 1
+
+private theorem step_hrrBound (mode : Mode) (s s' : State) (m : Msg)
+    (h : step mode s m = some s') :
+    hrrBound s + (if m = Msg.helloRetryRequest then 1 else 0) ≤ hrrBound s' := by
+  cases mode <;> cases s <;> cases m <;> simp [step] at h <;> cases h <;>
+    simp [hrrBound]
+
+/-- No accepting trace contains two HelloRetryRequests (RFC 8446
+§4.1.4: a second HelloRetryRequest aborts the handshake). -/
+theorem hrr_at_most_one (mode : Mode) (msgs : List Msg)
+    (h : accepts mode msgs = true) : msgs.count .helloRetryRequest ≤ 1 := by
+  obtain ⟨t, hfold, ht⟩ := (accepts_iff mode msgs).mp h
+  have := foldlM_count_le mode hrrBound .helloRetryRequest (step_hrrBound mode)
+    msgs .start t hfold
+  rcases ht with rfl | rfl <;> (simp [hrrBound] at this; omega)
+
 /-- Line-protocol letter for one message. -/
 def msgOfChar? : Char → Option Msg
   | 'S' => some .serverHello

@@ -213,7 +213,12 @@ record framing, x25519, P-256, and RSA-PSS, all as definitional `Nat`
 arithmetic. The spec follows the RFC text and never the C, because a
 differential oracle only works when a shared misreading cannot make both
 sides agree. Each module carries its RFC vectors as a selftest, and the
-key schedule also matches RFC 8448's published trace values.
+key schedule also matches RFC 8448's published trace values. The spec
+also carries theorems about itself — AEAD round-trip and rejection
+soundness, the record round-trip at the AEAD layer, output lengths, and
+the handshake model's safety invariants (see spec/CONTRACT.md, "Proven
+properties") — so an agreement between C and spec transfers a proven
+fact, not just a matching answer.
 
 The unit tests replay RFC 8448's traces at the transcript level: the
 section 3 1-RTT handshake message by message — the ECDHE shared secret,

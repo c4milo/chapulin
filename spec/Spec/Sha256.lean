@@ -122,6 +122,25 @@ def sha256 (msg : ByteArray) : ByteArray := Id.run do
     out := out ++ natToBytesBE word.toNat 4
   return out
 
+/-- The compression function always returns eight words (FIPS 180-4
+§6.2.2 step 4). -/
+theorem compress_size (h w : Array UInt32) : (compress h w).size = 8 := by
+  simp [compress]
+
+/-- The digest is always 32 bytes: eight 32-bit words serialized as
+four big-endian bytes each. Size lemmas like this one are the base the
+HKDF and key-schedule length proofs build on. -/
+theorem sha256_size (msg : ByteArray) : (sha256 msg).size = 32 := by
+  have hh : (List.foldl
+      (fun b a => compress b (blockWords (pad msg) (a * 64)))
+      H0 (List.range' 0 ((pad msg).size / 64))).size = 8 :=
+    foldl_inv _ _ (fun h => h.size = 8) H0 rfl (fun b a _ => compress_size b _)
+  simp [sha256, emptyWithCapacity_eq]
+  rw [← Array.foldl_toList,
+    size_foldl_append_const (g := fun a : UInt32 => natToBytesBE a.toNat 4) _ 4
+      (fun a => natToBytesBE_size a.toNat 4)]
+  simp [Array.length_toList, hh]
+
 /-- FIPS 180-4 / NIST example vectors: SHA-256("abc") and the two-block
 message (FIPS 180-4 appendix examples, also NIST CAVP), plus SHA-256 of
 the empty string. -/

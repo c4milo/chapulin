@@ -39,6 +39,55 @@ def «seal» (trafficSecret : ByteArray) (seq : Nat) (ctype : UInt8) (pt : ByteA
   let header := ByteArray.mk #[0x17, 0x03, 0x03] ++ natToBytesBE (inner.size + 16) 2
   header ++ Spec.Aead.seal key (nonce iv seq) header inner
 
+theorem seal_size (secret : ByteArray) (seq : Nat) (ctype : UInt8) (pt : ByteArray) :
+    («seal» secret seq ctype pt).size = pt.size + 22 := by
+  have h3 : (ByteArray.mk #[0x17, 0x03, 0x03]).size = 3 := rfl
+  simp [«seal», ByteArray.size_append, Spec.Aead.seal_size, natToBytesBE_size,
+    ByteArray.size_push, h3]
+  omega
+
+/--
+Record round-trip. The spec models protection only — deprotection lives
+in the C read path — so the theorem states what that path checks:
+splitting the sealed record back into the 5-byte header, ciphertext,
+and tag, and opening with the §7.3 traffic key/IV and the §5.3 nonce,
+recovers the inner plaintext `pt ‖ ctype` for every secret, sequence
+number, content type, and plaintext.
+-/
+theorem aeadOpen_seal (secret : ByteArray) (seq : Nat) (ctype : UInt8) (pt : ByteArray) :
+    Spec.Aead.open?
+      (Spec.Hkdf.expandLabel secret "key" ByteArray.empty 32)
+      (nonce (Spec.Hkdf.expandLabel secret "iv" ByteArray.empty 12) seq)
+      ((«seal» secret seq ctype pt).extract 0 5)
+      ((«seal» secret seq ctype pt).extract 5 (5 + (pt.size + 1)))
+      ((«seal» secret seq ctype pt).extract (5 + (pt.size + 1)) (5 + (pt.size + 1) + 16))
+      = some (pt.push ctype) := by
+  have hseal : «seal» secret seq ctype pt
+      = (ByteArray.mk #[0x17, 0x03, 0x03] ++ natToBytesBE ((pt.push ctype).size + 16) 2)
+        ++ Spec.Aead.seal (Spec.Hkdf.expandLabel secret "key" ByteArray.empty 32)
+            (nonce (Spec.Hkdf.expandLabel secret "iv" ByteArray.empty 12) seq)
+            (ByteArray.mk #[0x17, 0x03, 0x03] ++ natToBytesBE ((pt.push ctype).size + 16) 2)
+            (pt.push ctype) := rfl
+  rw [hseal]
+  generalize Spec.Hkdf.expandLabel secret "key" ByteArray.empty 32 = key
+  generalize nonce (Spec.Hkdf.expandLabel secret "iv" ByteArray.empty 12) seq = nn
+  have hins : (pt.push ctype).size = pt.size + 1 := ByteArray.size_push ..
+  generalize hin : pt.push ctype = inner at hins ⊢
+  generalize hH : ByteArray.mk #[0x17, 0x03, 0x03] ++ natToBytesBE (inner.size + 16) 2
+    = header at *
+  have hhs : header.size = 5 := by
+    rw [← hH]
+    have h3 : (ByteArray.mk #[0x17, 0x03, 0x03]).size = 3 := rfl
+    simp [ByteArray.size_append, natToBytesBE_size, h3]
+  rw [show ((header ++ Spec.Aead.seal key nn header inner).extract 0 5)
+      = header from ByteArray.extract_append_eq_left hhs.symm]
+  rw [show (5 : Nat) + (pt.size + 1) = header.size + inner.size by omega,
+    show (5 : Nat) = header.size + 0 by omega,
+    ByteArray.extract_append_size_add' rfl]
+  rw [show header.size + inner.size + 16 = header.size + (inner.size + 16) by omega,
+    ByteArray.extract_append_size_add' rfl]
+  simpa [hins] using Spec.Aead.open?_seal key nn header inner
+
 /--
 Structural checks: header is `17 03 03`, its length field is
 `|pt| + 17` (content type byte plus tag), the record body matches

@@ -68,3 +68,50 @@ Spec.Handshake.accepts : (mode : Mode) → (msgs : List Msg) → Bool       -- f
 Shared helpers live in `Spec/Bytes.lean` (hex, BE/LE Nat coding, xor).
 Build with `~/.elan/bin/lake build` inside `spec/`; keep the build
 dependency-free (no mathlib).
+
+## Proven properties
+
+The spec also carries theorems, proved in the same module as the
+definition they are about and checked by `lake build`. Where the
+differential run shows C-and-spec agreement on the compared domain,
+these theorems say what that agreement buys: a property known of the
+model, not just a matching answer. All of them quantify over every
+input; none assume the RFC vectors.
+
+```
+Spec.ChaCha.xor_xor          xor k n c (xor k n c d) = d               -- keystream determinism:
+                             -- decryption is encryption (RFC 8439 §2.4)
+Spec.Aead.open?_seal         open? of seal's ct (first |pt| bytes) and tag (last 16)
+                             -- returns `some pt` for all key/nonce/aad/pt
+Spec.Aead.open?_ne_tag       tag ≠ recomputed Poly1305 tag → open? = none
+                             -- (needs Spec.Bytes.bytesToHex_inj: open? compares hex)
+Spec.Record.aeadOpen_seal    splitting Record.seal's output at 5 and 5+|pt|+1 and
+                             -- AEAD-opening with the §7.3 key/iv and §5.3 nonce returns
+                             -- `some (pt ++ [ctype])`. The spec has no Record.open —
+                             -- deprotection lives in the C read path — so the theorem
+                             -- states that path's check at the AEAD layer.
+Spec.Hkdf.expand_size        (expand prk info len).size = len          -- RFC 5869 §2.3 "first
+Spec.Hkdf.expandLabel_size   (expandLabel s l c len).size = len        -- L octets of T"
+Spec.Sha256.sha256_size      (sha256 msg).size = 32
+Spec.Handshake, over every accepting trace (both modes unless noted):
+  count_finished_of_accepts       exactly one Finished (§4.4.4)
+  finished_mem_of_accepts         no accepting trace omits Finished
+  psk_no_certificate              PSK: no Certificate anywhere (§2.2)
+  pinned_one_certificate          pinned: exactly one Certificate (§4.4.2)
+  pinned_one_certificateVerify    pinned: exactly one CertificateVerify (§4.4.3)
+  pinned_cert_order               pinned: every prefix with CertificateVerify has
+                                  Certificate, every prefix with Finished has
+                                  CertificateVerify — with the unit counts this is
+                                  C before CV before F (§4.4)
+  hrr_at_most_one                 at most one HelloRetryRequest (§4.1.4)
+```
+
+Size lemmas (`Poly.mac_size`, `ChaCha.block_size`, `Aead.seal_size`,
+`Record.seal_size`, `Hkdf.hmac_size`) and the `Spec/Bytes.lean` proof
+toolkit (fold characterizations, `xorBytes` involution,
+`bytesToHex_inj`) support the above and are exported for future proofs.
+
+Not proved, deliberately: functional correctness of the C (CBMC plus
+the differential carry that), cryptographic security notions, and
+x25519/P-256 group laws (mathlib-scale; out of scope for a
+dependency-free build).
