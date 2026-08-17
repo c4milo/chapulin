@@ -145,6 +145,41 @@ static void diff_expand_label(void) {
         (void)snprintf(cmd, sizeof cmd, "expand_label %s %s %s %zu", sh, lh, ch, outlen);
         expect(cmd, want);
     }
+
+    // Boundary rows the random domain never reaches. The last valid
+    // output length (255*HashLen, RFC 5869 §2.3) must agree byte for
+    // byte; the first invalid length and unencodable label/context
+    // fields (RFC 8446 §7.1 one-byte vectors) must be spec-side errors —
+    // the C asserts on those inputs, so the spec is the comparable half.
+    {
+        uint8_t secret[SHA256_LEN] = {7};
+        static uint8_t out[255 * SHA256_LEN];
+        hkdf_expand_label(secret, "key", NULL, 0, out, sizeof out);
+        char sh[65];
+        (void)hex_enc(sh, secret, sizeof secret);
+        static char want[2 * 255 * SHA256_LEN + 1];
+        (void)hex_enc(want, out, sizeof out);
+        static char cmd[2 * 255 * SHA256_LEN + 128];
+        (void)snprintf(cmd, sizeof cmd, "expand_label %s 6b6579 - %d", sh, 255 * SHA256_LEN);
+        expect(cmd, want);
+        (void)snprintf(cmd, sizeof cmd, "expand_label %s 6b6579 - %d", sh, 255 * SHA256_LEN + 1);
+        expect(cmd, "ERR expand_label len over 255*HashLen");
+        char big[513];
+        for (size_t i = 0; i < 250; i++) {
+            big[2 * i] = '4';
+            big[2 * i + 1] = '1';
+        }
+        big[500] = 0; // 250-byte label: "tls13 " prefix pushes it past 255
+        (void)snprintf(cmd, sizeof cmd, "expand_label %s %s - 32", sh, big);
+        expect(cmd, "ERR expand_label label unencodable");
+        for (size_t i = 0; i < 256; i++) {
+            big[2 * i] = '0';
+            big[2 * i + 1] = '0';
+        }
+        big[512] = 0; // 256-byte context: one over the one-byte vector
+        (void)snprintf(cmd, sizeof cmd, "expand_label %s 6b6579 %s 32", sh, big);
+        expect(cmd, "ERR expand_label context unencodable");
+    }
 }
 
 // The spec's schedule() must equal the C composition the handshake runs:
@@ -220,6 +255,31 @@ static void diff_chacha20(void) {
         char cmd[1024];
         (void)snprintf(cmd, sizeof cmd, "chacha20 %s %s %" PRIu32 " %s", kh, nh, counter, dh);
         expect(cmd, want);
+    }
+
+    // Boundaries: the maximal counter over a single block (no wrap
+    // inside the message) must agree; a counter past 32 bits has no C
+    // representation and must be a spec-side error, never a wrap.
+    {
+        uint8_t key[CHACHA20_KEY] = {1};
+        uint8_t nonce[CHACHA20_NONCE] = {2};
+        uint8_t data[64];
+        rng_fill(data, sizeof data);
+        uint8_t out[64];
+        chacha20_xor(key, nonce, 0xffffffffU, data, out, sizeof data);
+        char kh[65];
+        char nh[25];
+        char dh[129];
+        char want[129];
+        (void)hex_enc(kh, key, sizeof key);
+        (void)hex_enc(nh, nonce, sizeof nonce);
+        (void)hex_enc(dh, data, sizeof data);
+        (void)hex_enc(want, out, sizeof out);
+        char cmd[512];
+        (void)snprintf(cmd, sizeof cmd, "chacha20 %s %s 4294967295 %s", kh, nh, dh);
+        expect(cmd, want);
+        (void)snprintf(cmd, sizeof cmd, "chacha20 %s %s 4294967296 00", kh, nh);
+        expect(cmd, "ERR chacha20 counter over 32 bits");
     }
 }
 
@@ -350,6 +410,34 @@ static void diff_rec_seal(void) {
         char cmd[1024];
         (void)snprintf(cmd, sizeof cmd, "rec_seal %s %" PRIu64 " %u %s", sh, seq, type, ph);
         expect(cmd, want);
+    }
+
+    // Boundaries: a full 2^14-byte plaintext (RFC 8446 §5.1's sender
+    // cap) must agree end to end, and the wrap-guard sequence the C
+    // refuses (§5.5) must be a spec-side error, never a truncation.
+    {
+        uint8_t secret[SHA256_LEN] = {9};
+        static uint8_t pt[0x4000];
+        rng_fill(pt, sizeof pt);
+        rec_dir d;
+        rec_dir_init(&d, secret);
+        d.seq = 1;
+        static uint8_t rec[0x4000 + REC_OVERHEAD];
+        size_t recn = 0;
+        if (rec_seal(&d, 0x17, pt, sizeof pt, rec, sizeof rec, &recn) != 0) {
+            die("rec_seal refused the full-size plaintext");
+        }
+        char sh[65];
+        (void)hex_enc(sh, secret, sizeof secret);
+        static char ph[2 * 0x4000 + 1];
+        (void)hex_enc(ph, pt, sizeof pt);
+        static char want[2 * (0x4000 + REC_OVERHEAD) + 1];
+        (void)hex_enc(want, rec, recn);
+        static char cmd[2 * 0x4000 + 256];
+        (void)snprintf(cmd, sizeof cmd, "rec_seal %s 1 23 %s", sh, ph);
+        expect(cmd, want);
+        (void)snprintf(cmd, sizeof cmd, "rec_seal %s 18446744073709551615 23 00", sh);
+        expect(cmd, "ERR rec_seal seq at the wrap guard");
     }
 }
 

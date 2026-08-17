@@ -134,8 +134,14 @@ def pssVerify (n e : Nat) (mHash sig : ByteArray) : Bool :=
     if s ≥ n then false
     else
       let emBits := modBits - 1
-      let em := natToBytesBE (rsavp1 n e s) ((emBits + 7) / 8)
-      emsaPssVerify mHash em emBits
+      let emLen := (emBits + 7) / 8
+      let m := rsavp1 n e s
+      -- I2OSP (§4.1) errors when the integer exceeds the target width;
+      -- in verification that error is a reject (§8.1.2 step 3). Reachable
+      -- when modBits is not a multiple of 8; truncating instead would
+      -- hand the decoder bytes of a number that never came out of RSAVP1.
+      if m >= 256 ^ emLen then false
+      else emsaPssVerify mHash (natToBytesBE m emLen) emBits
 
 /-- RSASSA-PSS-SIGN (§8.1.1) with modulus `n`, private exponent `d`,
 message digest `mHash`, and an explicit `salt` (`sLen` octets). Returns

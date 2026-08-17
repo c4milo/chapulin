@@ -51,7 +51,16 @@ def dispatch : List String → Option String
     return emit (Spec.Hkdf.expand (← hexArg? prk) (← hexArg? info) l)
   | ["expand_label", secret, label, ctx, len] => do
     let lab ← String.fromUTF8? (← hexArg? label)
-    return emit (Spec.Hkdf.expandLabel (← hexArg? secret) lab (← hexArg? ctx) (← len.toNat?))
+    let c ← hexArg? ctx
+    let l ← len.toNat?
+    -- RFC 8446 §7.1: label<7..255> ("tls13 " + Label) and context<0..255>
+    -- are one-byte vectors, so oversize inputs are unencodable; RFC 5869
+    -- §2.3 caps L at 255*HashLen. Truncating instead would mint
+    -- well-formed output for inputs the RFCs reject.
+    if lab.utf8ByteSize + 6 > 255 then return "ERR expand_label label unencodable"
+    if c.size > 255 then return "ERR expand_label context unencodable"
+    if l > 255 * Spec.Hkdf.hashLen then return "ERR expand_label len over 255*HashLen"
+    return emit (Spec.Hkdf.expandLabel (← hexArg? secret) lab c l)
   | ["schedule", psk, ecdhe, h1, h2] => do
     let (cHs, sHs, cAp, sAp) :=
       Spec.Hkdf.schedule (← hexArg? psk) (← hexArg? ecdhe) (← hexArg? h1) (← hexArg? h2)
@@ -59,8 +68,11 @@ def dispatch : List String → Option String
   | ["chacha20", key, nonce, counter, data] => do
     let k ← hexArg? key
     let n ← hexArg? nonce
+    let ctr ← counter.toNat?
     guard (k.size == 32 && n.size == 12)
-    return emit (Spec.ChaCha.xor k n (UInt32.ofNat (← counter.toNat?)) (← hexArg? data))
+    -- UInt32.ofNat would alias 2^32 back onto 0; reject, never wrap.
+    if ctr > 0xffffffff then return "ERR chacha20 counter over 32 bits"
+    return emit (Spec.ChaCha.xor k n (UInt32.ofNat ctr) (← hexArg? data))
   | ["poly1305", key, msg] => do
     let k ← hexArg? key
     guard (k.size == 32)
@@ -80,9 +92,16 @@ def dispatch : List String → Option String
     | none => return "FAIL"
   | ["rec_seal", secret, seq, ctype, pt] => do
     let s ← hexArg? secret
+    let q ← seq.toNat?
     let c ← ctype.toNat?
+    let p ← hexArg? pt
     guard (s.size == 32 && c < 256)
-    return emit (Spec.Record.seal s (← seq.toNat?) (UInt8.ofNat c) (← hexArg? pt))
+    -- RFC 8446 §5.1 caps sender plaintext at 2^14, and §5.5 stops one
+    -- before the u64 sequence wraps (the C refuses UINT64_MAX). Untended,
+    -- both would truncate mod 2^16 / 2^64 into valid-looking records.
+    if p.size > 0x4000 then return "ERR rec_seal plaintext over 2^14"
+    if q >= 0xffffffffffffffff then return "ERR rec_seal seq at the wrap guard"
+    return emit (Spec.Record.seal s q (UInt8.ofNat c) p)
   | ["x25519", scalar, point] => do
     let k ← hexArg? scalar
     let u ← hexArg? point
@@ -97,7 +116,7 @@ def dispatch : List String → Option String
     let n ← nstr.toNat?
     guard (k.size == 32 && n <= 4096)
     let (k2, out) := Spec.Drbg.next k n
-    return s!"{bytesToHex k2} {bytesToHex out}"
+    return s!"{emit k2} {emit out}"
   | ["hsseq", mode, letters] => do
     let m ← match mode with
       | "psk" => some Spec.Handshake.Mode.psk

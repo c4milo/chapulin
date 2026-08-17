@@ -138,7 +138,9 @@ static inline void expect(const char *cmd, const char *want) {
     (void)fputs(cmd, to_spec);
     (void)fputc('\n', to_spec);
     (void)fflush(to_spec);
-    char got[2048];
+    // Sized for the largest reply any row produces: a sealed full-size
+    // record is 2*(2^14 + overhead) hex characters.
+    static char got[40960];
     if (fgets(got, sizeof got, from_spec) == NULL) {
         die("spec process closed the pipe (did spec/.lake/build/bin/diffspec build?)");
     }

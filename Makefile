@@ -18,6 +18,11 @@ HDRS := ct.h sha256.h hkdf.h chacha20.h poly1305.h aead.h x25519.h p256.h rsa.h 
 LINT_C := $(SRCS) drbg.c test/unit.c test/tlsclient.c test/diff.c test/timing.c \
           test/drbg_test.c test/rsa_test.c test/hsstrict_test.c test/hsseq_test.c
 
+# Test-local headers: prerequisites for every binary that includes them,
+# so a header edit rebuilds the binaries it changes.
+TESTH := test/testrand.h test/session_tests.h test/diffdrv.h test/diffp256.h \
+         test/diffrsa.h test/hsseqsrv.h
+
 # Pinned mode verifies one signature algorithm per build: PIN=rsa
 # (default, RSA-PSS up to 3072 bits) or PIN=ecdsa (P-256, -DCH_PIN_ECDSA).
 # Test binaries compile both modules so both stay tested either way; the
@@ -90,19 +95,19 @@ lib-check: bin/chapulin.o
 # The reference generator ships as source but stays out of the packaged
 # object: it implements the ch_rand_bytes import, which firmware with a
 # real RNG provides itself and the test binaries provide themselves.
-bin/drbg_test: test/drbg_test.c drbg.c chacha20.c ct.c $(HDRS)
+bin/drbg_test: test/drbg_test.c drbg.c chacha20.c ct.c $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) -I. -o $@ test/drbg_test.c drbg.c chacha20.c ct.c
 
 # RSA-PSS verify vectors; its own binary like drbg_test, so the module
 # stays testable without the rest of the stack.
-bin/rsa_test: test/rsa_test.c rsa.c rsa_mont.c sha256.c ct.c $(HDRS)
+bin/rsa_test: test/rsa_test.c rsa.c rsa_mont.c sha256.c ct.c $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) -I. -o $@ test/rsa_test.c rsa.c rsa_mont.c sha256.c ct.c
 
 # Parser strictness: drives the ServerHello/EE parsers directly; their
 # whole dependency closure is hsparse.c + buf.c.
-bin/hsstrict_test: test/hsstrict_test.c hsparse.c buf.c $(HDRS)
+bin/hsstrict_test: test/hsstrict_test.c hsparse.c buf.c $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) -I. -o $@ test/hsstrict_test.c hsparse.c buf.c
 
@@ -110,25 +115,25 @@ bin/hsstrict_test: test/hsstrict_test.c hsparse.c buf.c $(HDRS)
 # (ENUM_DEPTH overrides; 5 is ~354k sequences over both modes) against the
 # Lean state machine's verdict. Links the stack minus the pinned
 # verifiers, which it stubs — V in a sequence means "signature valid".
-bin/hsseq_test: test/hsseq_test.c $(SRCS) $(HDRS)
+bin/hsseq_test: test/hsseq_test.c $(SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) -I. -o $@ test/hsseq_test.c $(filter-out p256.c rsa.c rsa_mont.c,$(SRCS))
 
-bin/unit: test/unit.c test/session_tests.h $(SRCS) $(HDRS)
+bin/unit: test/unit.c $(SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) -I. -o $@ test/unit.c $(SRCS)
 
-bin/tlsclient: test/tlsclient.c $(SRCS) $(HDRS)
+bin/tlsclient: test/tlsclient.c $(SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) -I. -o $@ test/tlsclient.c $(SRCS)
 
 # The same client compiled for the P-256 pinned mode; e2e runs both
 # builds against matching servers.
-bin/tlsclient_ecdsa: test/tlsclient.c $(SRCS) $(HDRS)
+bin/tlsclient_ecdsa: test/tlsclient.c $(SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) -DCH_PIN_ECDSA -I. -o $@ test/tlsclient.c $(SRCS)
 
-bin/diff: test/diff.c $(SRCS) $(HDRS)
+bin/diff: test/diff.c $(SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) -I. -o $@ test/diff.c $(SRCS)
 
@@ -230,7 +235,7 @@ ifneq ($(CLANG_FORMAT),)
 	$(CLANG_FORMAT) -i $(LINT_C) $(HDRS) $(PROOF_C) $(FUZZ_C) test/testrand.h test/session_tests.h test/diffdrv.h test/diffp256.h test/diffrsa.h test/hsseqsrv.h
 endif
 
-bin/timing: test/timing.c $(SRCS) $(HDRS)
+bin/timing: test/timing.c $(SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) -I. -o $@ test/timing.c $(SRCS)
 

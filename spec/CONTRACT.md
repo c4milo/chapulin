@@ -7,8 +7,11 @@ The Lean spec is a differential oracle for the C stack. Rules:
    detail, it is in the RFC. Definitional style: arithmetic over `Nat`
    with explicit `mod`, no performance tricks unless a vector demands it.
 2. **Signatures are fixed** (namespaces and types exactly as below).
-3. Every module ends with a `selftest : Bool` that checks the RFC test
-   vectors for that module and is `true` iff all pass.
+3. Every module ends with a `selftest : Bool`, `true` iff all checks
+   pass. Most check the RFC's published vectors; Record and Drbg have no
+   third-party vectors and their selftests are structural (framing,
+   nonce construction, rekeying) — the differential and, for Record, the
+   planned RFC 8448 trace replay carry the known-answer weight there.
 
 ```
 Spec.Sha256.sha256    : ByteArray → ByteArray                          -- FIPS 180-4, 32 bytes out
@@ -34,6 +37,9 @@ Spec.Record.seal      : (trafficSecret : ByteArray) → (seq : Nat) →
                         -- RFC 8446 §5.2-5.3: key/iv = expandLabel secret "key"/"iv",
                         -- nonce = iv XOR seq (BE, low 8 bytes), inner = pt ++ [ctype],
                         -- header 17 03 03 len, out = header ++ seal(...)
+Spec.Drbg.next        : (key : ByteArray) → (n : Nat) →
+                        (ByteArray × ByteArray)                        -- fast key erasure over ChaCha20:
+                        -- (next key, n output bytes) from one request
 Spec.X25519.scalarMult : (scalar point : ByteArray) → ByteArray        -- RFC 7748 §5, Nat mod 2^255-19
 Spec.X25519.base       : (scalar : ByteArray) → ByteArray              -- point = 9
 Spec.P256.pubKey?     : (d : Nat) → Option ByteArray                   -- FIPS 186-4 §D.1.2.3, X‖Y 64 bytes
