@@ -27,7 +27,7 @@ verifies RSA-PSS (`rsa_pss_rsae_sha256`) and pins the raw modulus, 256
 to 384 bytes, so one binary covers RSA-2048 through RSA-3072 — the keys
 stock endpoints actually hold. `make PIN=ecdsa` builds the P-256
 alternative (`ecdsa_secp256r1_sha256`, a 64-byte X||Y pin) instead;
-these are the two signature algorithms RFC 8446 requires every TLS 1.3
+these are the two signature algorithms [RFC 8446](https://www.rfc-editor.org/rfc/rfc8446) requires every TLS 1.3
 implementation to support, so between them a chapulin build can pin any
 compliant server. Neither build carries the other's verifier.
 
@@ -38,7 +38,7 @@ per ticket lifetime, not per connection.
 The stack uses C11 and libc only, with zero heap. The working set is one
 session struct plus one receive buffer that the caller provides. The
 client advertises the buffer's size as its `record_size_limit`
-(RFC 8449), so a peer can never send a record the buffer cannot hold.
+([RFC 8449](https://www.rfc-editor.org/rfc/rfc8449)), so a peer can never send a record the buffer cannot hold.
 Pinned mode adds one sizing rule: the server's Certificate message must
 fit the receive buffer. A self-signed P-256 leaf needs about 600 bytes
 and a self-signed RSA-3072 leaf about 1.2 kB, so the 2 kB buffer below
@@ -48,10 +48,10 @@ the certificates arrive even though the client never reads them.
 The client honors the RFC requirements that even a minimal client must
 keep: HelloRetryRequest with cookie echo and transcript restart,
 KeyUpdate in both directions, NewSessionTicket parsing with
-resumption-PSK derivation handed to the application, and RFC 9257
+resumption-PSK derivation handed to the application, and [RFC 9257](https://www.rfc-editor.org/rfc/rfc9257)
 binder rules over the truncated ClientHello.
 
-`test/e2e.sh` exercises the profile against real peers. It runs a PSK
+[`test/e2e.sh`](test/e2e.sh) exercises the profile against real peers. It runs a PSK
 handshake, ticket resumption, and pinned-key handshakes — RSA-3072 with
 the default client, P-256 with the `PIN=ecdsa` client — against both
 OpenSSL 3 and Go's `crypto/tls`, and it moves application data both
@@ -59,7 +59,7 @@ ways throughout.
 
 ## Memory
 
-`bench/sram.sh` measures every number below on the host (arm64); 32-bit
+[`bench/sram.sh`](bench/sram.sh) measures every number below on the host (arm64); 32-bit
 targets shrink the pointer fields.
 
 | what | bytes |
@@ -85,11 +85,11 @@ alloca. For comparison, the smallest published TLS 1.3 PSK working sets
 elsewhere: wolfSSL needs about 6.2 kB of heap plus buffers; mbedTLS
 needs 9 to 15 kB and cannot run without an allocator; both need a 16 kB
 record buffer unless the peer supports `record_size_limit`.
-`docs/landscape.md` holds the full survey with sources.
+[`docs/landscape.md`](docs/landscape.md) holds the full survey with sources.
 
 ## On the device
 
-`bench/insn-mips.sh` and `bench/device-ram.sh` cross-compile for
+[`bench/insn-mips.sh`](bench/insn-mips.sh) and [`bench/device-ram.sh`](bench/device-ram.sh) cross-compile for
 mips32r2 (the RTL8382-class core) and measure on the real ISA:
 deterministic qemu instruction counts and `-Os` section sizes. CPU cost
 is published as instruction counts, not guessed milliseconds; the
@@ -174,7 +174,7 @@ code generation.
 
 The following claims rest on tests, not proofs:
 
-- x25519 functional correctness rests on the RFC 7748 vectors, including
+- x25519 functional correctness rests on the [RFC 7748](https://www.rfc-editor.org/rfc/rfc7748) vectors, including
   the 1,000-iteration chain. The limb scheme (TweetNaCl's) also carries
   a prior Coq/VST functional proof by Schwabe et al. The limb-growth
   invariant that connects multiply outputs to add/sub inputs remains an
@@ -184,7 +184,7 @@ The following claims rest on tests, not proofs:
   — the record pump and cross-record reassembly — does not converge as one
   CBMC formula, so it rests on e2e, the mock-transport unit tests, and the
   posths fuzzer.
-- P-256 functional correctness rests on RFC 6979 vectors plus fresh
+- P-256 functional correctness rests on [RFC 6979](https://www.rfc-editor.org/rfc/rfc6979) vectors plus fresh
   signatures that the Lean spec mints and the C must accept. The
   scalar-multiplication loops compose proven pieces, but CBMC does not
   run them whole.
@@ -213,10 +213,10 @@ record framing, x25519, P-256, and RSA-PSS, all as definitional `Nat`
 arithmetic. The spec follows the RFC text and never the C, because a
 differential oracle only works when a shared misreading cannot make both
 sides agree. Each module carries its RFC vectors as a selftest, and the
-key schedule also matches RFC 8448's published trace values. The spec
+key schedule also matches [RFC 8448](https://www.rfc-editor.org/rfc/rfc8448)'s published trace values. The spec
 also carries theorems about itself — AEAD round-trip and rejection
 soundness, the record round-trip at the AEAD layer, output lengths, and
-the handshake model's safety invariants (see spec/CONTRACT.md, "Proven
+the handshake model's safety invariants (see [`spec/CONTRACT.md`](spec/CONTRACT.md), "Proven
 properties") — so an agreement between C and spec transfers a proven
 fact, not just a matching answer.
 
@@ -241,8 +241,8 @@ must accept every signature and reject every mutated one. The target
 runs inside `make check` and skips itself when elan is not installed.
 
 The handshake state machine gets the same treatment one level up.
-`Spec/Handshake.lean` models RFC 8446 §4's message-ordering rules as an
-explicit step function, and `test/hsseq_test.c` enumerates every server
+[`spec/Spec/Handshake.lean`](spec/Spec/Handshake.lean) models RFC 8446 §4's message-ordering rules as an
+explicit step function, and [`test/hsseq_test.c`](test/hsseq_test.c) enumerates every server
 message sequence to depth 5 — 354,312 sequences across both auth modes —
 renders each as real TLS records over a mock transport (genuine key
 schedule and Finished MACs; only the pinned-mode signature check is
@@ -285,7 +285,7 @@ The platform provides two blocking socket callbacks, bounded by its own
 timeouts, and implements `ch_rand_bytes` (rand.h): from a hardware
 random number generator when the part has one, or from the seeded
 fast-key-erasure generator in `drbg.[ch]` when it does not — the
-RTL8382-class reference target has no such peripheral. `docs/entropy.md`
+RTL8382-class reference target has no such peripheral. [`docs/entropy.md`](docs/entropy.md)
 covers seed provisioning; the generator refuses to run unseeded. Every error kills the session: the stack wipes its
 keys and the caller reconnects. Devices recover by reconnecting anyway,
 and the rule removes the entire resumable-error state space from the
@@ -326,11 +326,11 @@ forces CBMC's built-in solver and `PROVE_SOLVER=smt2` routes through z3's
 incremental SMT back end instead. `make timing` runs the constant-time check (load-sensitive, so
 run it on an idle machine). `make fuzz` smoke-runs the libFuzzer
 harnesses. `make hooks`, once after clone, enables the commit-msg hook.
-See `CLAUDE.md` for the house rules.
+See [`CLAUDE.md`](CLAUDE.md) for the house rules.
 
 ## Non-goals
 
-docs/decisions.md records every trade this stack has made and why;
+[`docs/decisions.md`](docs/decisions.md) records every trade this stack has made and why;
 this section is the short version.
 
 chapulin does not implement: 0-RTT (the IETF IoT profile forbids it),
