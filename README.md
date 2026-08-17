@@ -223,10 +223,22 @@ the spec holds the private keys and signs; the C, which can only verify,
 must accept every signature and reject every mutated one. The target
 runs inside `make check` and skips itself when elan is not installed.
 
-The three layers cover different failure classes. Proofs cover memory
-safety. Vectors cover known answers. The oracle checks that the C
-computes the same function as a short spec that a reviewer can read next
-to the RFC.
+The handshake state machine gets the same treatment one level up.
+`Spec/Handshake.lean` models RFC 8446 §4's message-ordering rules as an
+explicit step function, and `test/hsseq_test.c` enumerates every server
+message sequence to depth 5 — 354,312 sequences across both auth modes —
+renders each as real TLS records over a mock transport (genuine key
+schedule and Finished MACs; only the pinned-mode signature check is
+scripted), runs the real client, and requires its accept/reject verdict
+to match the model's. The worst TLS implementation bugs on record were
+exactly such ordering bugs (early-CCS, skipped Finished — the
+SMACK/FREAK class), invisible to memory-safety proofs and golden-path
+e2e alike.
+
+The layers cover different failure classes. Proofs cover memory safety.
+Vectors cover known answers. The oracles check that the C computes the
+same functions — and accepts the same message orderings — as a short
+spec that a reviewer can read next to the RFC.
 
 ## Using it
 

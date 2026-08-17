@@ -30,7 +30,8 @@ def selftestAll : String :=
     ("x25519", Spec.X25519.selftest),
     ("p256", Spec.P256.selftest),
     ("rsa", Spec.Rsa.selftest),
-    ("drbg", Spec.Drbg.selftest)]
+    ("drbg", Spec.Drbg.selftest),
+    ("handshake", Spec.Handshake.selftest)]
   match mods.find? (fun m => !m.2) with
   | some (name, _) => s!"FAIL {name}"
   | none => "ok"
@@ -97,6 +98,13 @@ def dispatch : List String → Option String
     guard (k.size == 32 && n <= 4096)
     let (k2, out) := Spec.Drbg.next k n
     return s!"{bytesToHex k2} {bytesToHex out}"
+  | ["hsseq", mode, letters] => do
+    let m ← match mode with
+      | "psk" => some Spec.Handshake.Mode.psk
+      | "pinned" => some Spec.Handshake.Mode.pinned
+      | _ => none
+    let msgs ← Spec.Handshake.seq? (if letters == "-" then "" else letters)
+    return if Spec.Handshake.accepts m msgs then "1" else "0"
   | ["p256_pub", d] => do
     let db ← hexArg? d
     guard (db.size == 32)

@@ -16,7 +16,7 @@ HDRS := ct.h sha256.h hkdf.h chacha20.h poly1305.h aead.h x25519.h p256.h rsa.h 
         buf.h record.h keysched.h io.h hsmsg.h hsparse.h cfg.h session.h handshake.h tls.h \
         rand.h drbg.h
 LINT_C := $(SRCS) drbg.c test/unit.c test/tlsclient.c test/diff.c test/timing.c \
-          test/drbg_test.c test/rsa_test.c test/hsstrict_test.c
+          test/drbg_test.c test/rsa_test.c test/hsstrict_test.c test/hsseq_test.c
 
 # Pinned mode verifies one signature algorithm per build: PIN=rsa
 # (default, RSA-PSS up to 3072 bits) or PIN=ecdsa (P-256, -DCH_PIN_ECDSA).
@@ -106,6 +106,14 @@ bin/hsstrict_test: test/hsstrict_test.c hsparse.c buf.c $(HDRS)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) -I. -o $@ test/hsstrict_test.c hsparse.c buf.c
 
+# Sequence differential: every server message sequence to a bounded depth
+# (ENUM_DEPTH overrides; 5 is ~354k sequences over both modes) against the
+# Lean state machine's verdict. Links the stack minus the pinned
+# verifiers, which it stubs — V in a sequence means "signature valid".
+bin/hsseq_test: test/hsseq_test.c $(SRCS) $(HDRS)
+	@mkdir -p bin
+	$(CC) $(CFLAGS) -I. -o $@ test/hsseq_test.c $(filter-out p256.c rsa.c rsa_mont.c,$(SRCS))
+
 bin/unit: test/unit.c test/session_tests.h $(SRCS) $(HDRS)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) -I. -o $@ test/unit.c $(SRCS)
@@ -125,13 +133,14 @@ bin/diff: test/diff.c $(SRCS) $(HDRS)
 	$(CC) $(CFLAGS) -I. -o $@ test/diff.c $(SRCS)
 
 .PHONY: check lint lint-tidy lint-format lint-cppcheck prove diff fmt clean
-check: bin/unit bin/tlsclient bin/tlsclient_ecdsa bin/drbg_test bin/rsa_test bin/hsstrict_test lint lib-check cxx-check
+check: bin/unit bin/tlsclient bin/tlsclient_ecdsa bin/drbg_test bin/rsa_test bin/hsstrict_test bin/hsseq_test lint lib-check cxx-check
 	./bin/unit
 	./bin/drbg_test
 	./bin/rsa_test
 	./bin/hsstrict_test
 	./test/e2e.sh
 	$(MAKE) diff
+	./bin/hsseq_test
 	$(MAKE) prove
 
 # Differential oracle: the Lean spec in spec/ answers over a pipe and
@@ -160,7 +169,7 @@ lint-format:
 ifeq ($(CLANG_FORMAT),)
 	@echo "SKIP clang-format: not on PATH (ships with llvm)"
 else
-	$(CLANG_FORMAT) --dry-run --Werror $(LINT_C) $(HDRS) $(PROOF_C) $(FUZZ_C) test/testrand.h test/session_tests.h test/diffdrv.h test/diffp256.h test/diffrsa.h
+	$(CLANG_FORMAT) --dry-run --Werror $(LINT_C) $(HDRS) $(PROOF_C) $(FUZZ_C) test/testrand.h test/session_tests.h test/diffdrv.h test/diffp256.h test/diffrsa.h test/hsseqsrv.h
 endif
 
 lint-cppcheck:
@@ -218,7 +227,7 @@ endif
 
 fmt:
 ifneq ($(CLANG_FORMAT),)
-	$(CLANG_FORMAT) -i $(LINT_C) $(HDRS) $(PROOF_C) $(FUZZ_C) test/testrand.h test/session_tests.h test/diffdrv.h test/diffp256.h test/diffrsa.h
+	$(CLANG_FORMAT) -i $(LINT_C) $(HDRS) $(PROOF_C) $(FUZZ_C) test/testrand.h test/session_tests.h test/diffdrv.h test/diffp256.h test/diffrsa.h test/hsseqsrv.h
 endif
 
 bin/timing: test/timing.c $(SRCS) $(HDRS)

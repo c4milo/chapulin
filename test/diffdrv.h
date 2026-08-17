@@ -14,7 +14,7 @@
 // mismatch is reproducible bit-for-bit. Never seeded from time().
 static uint64_t rng_state = UINT64_C(0x6d617461736170f5);
 
-static uint64_t rng_next(void) {
+static inline uint64_t rng_next(void) {
     uint64_t x = rng_state;
     x ^= x << 13;
     x ^= x >> 7;
@@ -23,18 +23,18 @@ static uint64_t rng_next(void) {
     return x;
 }
 
-static size_t rng_below(size_t n) {
+static inline size_t rng_below(size_t n) {
     return (size_t)(rng_next() % n);
 }
 
-static void rng_fill(uint8_t *p, size_t n) {
+static inline void rng_fill(uint8_t *p, size_t n) {
     for (size_t i = 0; i < n; i++) {
         p[i] = (uint8_t)(rng_next() >> 56);
     }
 }
 
 // Line-protocol hex: lowercase, "-" for the empty string.
-static size_t hex_enc(char *dst, const uint8_t *p, size_t n) {
+static inline size_t hex_enc(char *dst, const uint8_t *p, size_t n) {
     static const char digits[] = "0123456789abcdef";
     if (n == 0) {
         dst[0] = '-';
@@ -60,7 +60,7 @@ static int hex_val(char c) {
 }
 
 // Decodes exactly n bytes of lowercase hex; 0 on any bad digit.
-static int hex_dec(uint8_t *dst, const char *src, size_t n) {
+static inline int hex_dec(uint8_t *dst, const char *src, size_t n) {
     for (size_t i = 0; i < n; i++) {
         int hi = hex_val(src[2 * i]);
         int lo = hex_val(src[2 * i + 1]);

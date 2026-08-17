@@ -49,6 +49,14 @@ Spec.Rsa.pssSign      : (n d : Nat) → (mHash salt : ByteArray) →
                         -- rsaSign is an alias. The spec signs so the oracle can mint
                         -- signatures the C verifier must accept; the C side only verifies.
                         -- salt is explicit so a fixed value gives a reproducible signature.
+Spec.Handshake.step   : (mode : Mode) → State → Msg → Option State      -- RFC 8446 §4 order of
+                        -- server-to-client messages after the ClientHello; none = fatal
+                        -- (unexpected_message). Msg has one constructor per line-protocol
+                        -- letter (S H E C R V F N K A L); Mode is psk or pinned.
+Spec.Handshake.accepts : (mode : Mode) → (msgs : List Msg) → Bool       -- fold step from start;
+                        -- accept iff every message is legal and the handshake completes
+                        -- (connected, optionally then close_notify). Line op:
+                        -- `hsseq <mode> <letters>` → 1/0, `-` for the empty sequence.
 ```
 
 Shared helpers live in `Spec/Bytes.lean` (hex, BE/LE Nat coding, xor).
