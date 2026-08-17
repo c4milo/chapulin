@@ -121,7 +121,7 @@ static void hash_now(const mock_server *s, uint8_t out[SHA256_LEN]) {
 }
 
 // ServerHello or HelloRetryRequest message, header included. hrr swaps
-// the random for the §4.1.3 sentinel and offers a cookie instead of a
+// the random for the §4.2.3 sentinel and offers a cookie instead of a
 // key_share (we offer only x25519, so an HRR never selects a share).
 static size_t build_server_hello(const mock_server *s, uint8_t *out, size_t cap, int hrr) {
     static const uint8_t cookie[8] = {0xc0, 0x0c, 0x1e};

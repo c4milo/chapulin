@@ -41,7 +41,7 @@ static int parse_server_hello_ext(rbuf *r, server_hello_info *info, int hrr, int
         return CH_EPROTO; // ServerHello may carry nothing else
     }
     if (info->seen & bit) {
-        return CH_EPROTO; // RFC 8446 §4.2: one extension of each type
+        return CH_EPROTO; // RFC 9846 §4.3: one extension of each type
     }
     info->seen |= bit;
     rbuf e;
@@ -85,7 +85,7 @@ static int parse_server_hello_ext(rbuf *r, server_hello_info *info, int hrr, int
     default:
         break; // unreachable: the first switch rejected everything else
     }
-    // RFC 8446 §4.2: extension_data matches its struct exactly, so a
+    // RFC 9846 §4.3: extension_data matches its struct exactly, so a
     // non-empty remainder is a decode error.
     return e.err || rb_left(&e) != 0 ? CH_EPROTO : CH_OK;
 }
@@ -122,7 +122,7 @@ int hsp_parse_server_hello(const uint8_t *body, size_t n, server_hello_info *inf
 
 // Encrypted extensions: take the peer's record_size_limit, tolerate
 // supported_groups (a server may volunteer it for later connections),
-// reject everything else — RFC 8446 §4.2 requires unsupported_extension
+// reject everything else — RFC 9846 §4.3 requires unsupported_extension
 // for anything the ClientHello did not offer.
 int hsp_parse_encrypted_exts(const uint8_t *body, size_t n, uint16_t *peer_limit, uint8_t *alert) {
     rbuf r;
@@ -145,7 +145,7 @@ int hsp_parse_encrypted_exts(const uint8_t *body, size_t n, uint16_t *peer_limit
             rbuf e;
             rb_init(&e, ext_data, ext_len);
             uint16_t limit = rb_u16(&e);
-            // §4.2: extension_data matches its struct exactly; the body
+            // §4.3: extension_data matches its struct exactly; the body
             // is one u16, so a non-empty remainder is a decode error.
             if (e.err || rb_left(&e) != 0 || limit < 64) {
                 return CH_EPROTO;
@@ -162,7 +162,7 @@ int hsp_parse_encrypted_exts(const uint8_t *body, size_t n, uint16_t *peer_limit
             return CH_EPROTO;
         }
         if (seen & bit) {
-            return CH_EPROTO; // RFC 8446 §4.2: one extension of each type
+            return CH_EPROTO; // RFC 9846 §4.3: one extension of each type
         }
         seen |= bit;
     }

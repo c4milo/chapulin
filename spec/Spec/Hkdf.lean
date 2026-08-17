@@ -2,7 +2,7 @@ import Spec.Sha256
 
 /-!
 HMAC-SHA-256 (RFC 2104), HKDF (RFC 5869), and the TLS 1.3 key-schedule
-pieces built on them (RFC 8446 §7.1). Written from the RFC text only.
+pieces built on them (RFC 9846 §7.1). Written from the RFC text only.
 -/
 
 namespace Spec.Hkdf
@@ -48,7 +48,7 @@ def expand (prk info : ByteArray) (len : Nat) : ByteArray := Id.run do
     okm := okm ++ t
   return okm.extract 0 len
 
-/-- RFC 8446 §7.1: `HKDF-Expand-Label(Secret, Label, Context, Length)` =
+/-- RFC 9846 §7.1: `HKDF-Expand-Label(Secret, Label, Context, Length)` =
 `HKDF-Expand(Secret, HkdfLabel, Length)` where HkdfLabel is
 
     struct {
@@ -67,7 +67,7 @@ def expandLabel (secret : ByteArray) (label : String) (ctx : ByteArray)
       ++ natToBytesBE ctx.size 1 ++ ctx
   expand secret info len
 
-/-- RFC 8446 §7.1: `Derive-Secret(Secret, Label, Messages) =
+/-- RFC 9846 §7.1: `Derive-Secret(Secret, Label, Messages) =
 HKDF-Expand-Label(Secret, Label, Transcript-Hash(Messages), Hash.length)`.
 The caller supplies the transcript hash directly. -/
 def deriveSecret (secret : ByteArray) (label : String)
@@ -75,10 +75,10 @@ def deriveSecret (secret : ByteArray) (label : String)
   expandLabel secret label transcriptHash hashLen
 
 /-- `Transcript-Hash("")` — the hash of the empty transcript, used where
-RFC 8446 §7.1 writes `Derive-Secret(., "derived", "")`. -/
+RFC 9846 §7.1 writes `Derive-Secret(., "derived", "")`. -/
 def emptyHash : ByteArray := sha256 ByteArray.empty
 
-/-- RFC 8446 §7.1 key schedule with a PSK, ECDHE, and no early data:
+/-- RFC 9846 §7.1 key schedule with a PSK, ECDHE, and no early data:
 
     Early Secret     = HKDF-Extract(salt = 0, IKM = PSK)
     Handshake Secret = HKDF-Extract(Derive-Secret(Early, "derived", ""), ECDHE)

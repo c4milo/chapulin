@@ -1,4 +1,4 @@
-// TLS 1.3 key schedule (RFC 8446 §7.1), specialized to one PSK and
+// TLS 1.3 key schedule (RFC 9846 §7.1), specialized to one PSK and
 // SHA-256. Pure functions over 32-byte secrets; the handshake owns where
 // they live and when they die.
 #ifndef CH_KEYSCHED_H

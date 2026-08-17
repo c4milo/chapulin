@@ -90,7 +90,7 @@ static int fetch_record(handshake_state *h) {
             return rc;
         }
         if (outer == REC_CCS) {
-            // Middlebox-compat noise, never hashed. RFC 8446 §5: the body
+            // Middlebox-compat noise, never hashed. RFC 9846 §5: the body
             // must be exactly one 0x01 byte; the count cap keeps a hostile
             // plaintext CCS stream from pinning the handshake forever.
             if (record_len != REC_HDR + 1 || t->cfg.buf[part + REC_HDR] != 1 || ++h->ccs_seen > 4) {
@@ -177,7 +177,7 @@ static int send_client_hello(handshake_state *h) {
 }
 
 // Replaces the transcript after HRR: Hash(message_hash || 00 00 20 ||
-// Hash(CH1)) || HRR, per RFC 8446 §4.4.1.
+// Hash(CH1)) || HRR, per RFC 9846 §4.1.
 static void hrr_transcript(handshake_state *h, const uint8_t *raw, size_t raw_len) {
     uint8_t ch1[SHA256_LEN];
     sha256_final(&h->t->transcript, ch1);
@@ -253,7 +253,7 @@ static int expect_finished(handshake_state *h) {
     return CH_OK;
 }
 
-// Pinned-key server authentication (RFC 8446 §4.4.2-4.4.3): accept the
+// Pinned-key server authentication (RFC 9846 §4.5.1 and §4.5.2): accept the
 // Certificate message with minimal framing checks — its contents are
 // authenticated by the signature, not by parsing — then require a
 // CertificateVerify whose signature (RSA-PSS by default, ECDSA-P256 under
@@ -310,7 +310,7 @@ static int server_auth(handshake_state *h) {
         return CH_EPROTO;
     }
 
-    // Signed content per §4.4.3: 64 spaces, context string, NUL, transcript.
+    // Signed content per §4.5.2: 64 spaces, context string, NUL, transcript.
     static const char ctx[] = "TLS 1.3, server CertificateVerify";
     uint8_t pad[64];
     memset(pad, ' ', sizeof pad);
@@ -406,7 +406,7 @@ static int run(handshake_state *h) {
         ks_early(t->cfg.psk, t->cfg.psk_len, t->cfg.resumption, h->early, h->binder_key);
     } else {
         // No PSK: the early secret extracts from a hash-length zero string
-        // (RFC 8446 §7.1) and the binder key is never used.
+        // (RFC 9846 §7.1) and the binder key is never used.
         static const uint8_t no_psk[SHA256_LEN] = {0};
         ks_early(no_psk, sizeof no_psk, 0, h->early, h->binder_key);
     }
@@ -444,7 +444,7 @@ static int run(handshake_state *h) {
         return CH_EPROTO;
     }
     // Seed the default first: the parser overrides it only when it has a
-    // more specific alert (unsupported_extension, RFC 8446 §4.2), and
+    // more specific alert (unsupported_extension, RFC 9846 §4.3), and
     // that override must survive to the wire.
     h->alert = ALERT_ILLEGAL_PARAMETER;
     rc = hsp_parse_encrypted_exts(raw + 4, raw_len - 4, &t->peer_limit, &h->alert);

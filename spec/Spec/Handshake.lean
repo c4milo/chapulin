@@ -1,5 +1,5 @@
 /-!
-TLS 1.3 handshake message ordering per RFC 8446 §4, written from the
+TLS 1.3 handshake message ordering per RFC 9846 §4, written from the
 RFC text as an executable oracle. The model tracks only the order of
 server-to-client messages after the ClientHello; each message body is
 assumed valid (a valid ServerHello selects our profile, a Finished
@@ -13,8 +13,8 @@ namespace Spec.Handshake
 
 /--
 Auth mode. Under `psk` the server authenticates via the pre-shared
-key, so RFC 8446 §2.2 forbids the certificate flight. Under `pinned`
-the server authenticates via certificate, so §4.4 makes Certificate,
+key, so RFC 9846 §2.2 forbids the certificate flight. Under `pinned`
+the server authenticates via certificate, so §4.5 makes Certificate,
 CertificateVerify, and Finished mandatory, in that order.
 -/
 inductive Mode
@@ -27,20 +27,20 @@ per line-protocol letter. Order is the model; bodies are assumed
 valid.
 -/
 inductive Msg
-  | serverHello         -- S, §4.1.3
-  | helloRetryRequest   -- H, §4.1.4
-  | encryptedExtensions -- E, §4.3.1
-  | certificate         -- C, §4.4.2
-  | certificateRequest  -- R, §4.3.2
-  | certificateVerify   -- V, §4.4.3
-  | finished            -- F, §4.4.4
-  | newSessionTicket    -- N, §4.6.1
-  | keyUpdate           -- K, §4.6.3
+  | serverHello         -- S, §4.2.3
+  | helloRetryRequest   -- H, §4.2.4
+  | encryptedExtensions -- E, §4.4.1
+  | certificate         -- C, §4.5.1
+  | certificateRequest  -- R, §4.4.2
+  | certificateVerify   -- V, §4.5.2
+  | finished            -- F, §4.5.3
+  | newSessionTicket    -- N, §4.7.1
+  | keyUpdate           -- K, §4.7.3
   | appData             -- A, §5.1
   | closeNotify         -- L, §6.1
 
 /--
-Client progress through the server's flight. RFC 8446 §4 fixes the
+Client progress through the server's flight. RFC 9846 §4 fixes the
 message order and makes an out-of-order message fatal
 (unexpected_message), so each state expects exactly the next legal
 messages.
@@ -59,30 +59,30 @@ inductive State
 Feed one message to the client. `none` is a fatal error: a handshake
 message out of the §4 order, a certificate-flight message under PSK
 (§2.2), a CertificateRequest (the client offers no certificate and
-fails closed instead of answering §4.4.2 with an empty Certificate),
-post-handshake traffic before the handshake completes (§4.6.1, §4.6.3,
+fails closed instead of answering §4.5.1 with an empty Certificate),
+post-handshake traffic before the handshake completes (§4.7.1, §4.7.3,
 §5.1), or anything after close_notify (§6.1).
 -/
 def step (mode : Mode) : State → Msg → Option State
-  -- §4.1.3/§4.1.4: ServerHello or HelloRetryRequest answers the
+  -- §4.2.3/§4.2.4: ServerHello or HelloRetryRequest answers the
   -- ClientHello.
   | .start, .serverHello => some .gotSH
   | .start, .helloRetryRequest => some .retried
-  -- §4.1.4: only a ServerHello may follow a HelloRetryRequest; a second
+  -- §4.2.4: only a ServerHello may follow a HelloRetryRequest; a second
   -- HelloRetryRequest aborts with unexpected_message.
   | .retried, .serverHello => some .gotSH
-  -- §4.3.1: EncryptedExtensions comes immediately after the ServerHello.
+  -- §4.4.1: EncryptedExtensions comes immediately after the ServerHello.
   -- §2.2: under PSK the server sends no certificate flight, so Finished
-  -- is next; §4.4.2 puts Certificate next in pinned mode.
+  -- is next; §4.5.1 puts Certificate next in pinned mode.
   | .gotSH, .encryptedExtensions =>
     some (match mode with | .psk => .awaitFin | .pinned => .awaitCert)
   | .awaitCert, .certificate => some .awaitCV
-  -- §4.4.3: CertificateVerify comes immediately after Certificate.
+  -- §4.5.2: CertificateVerify comes immediately after Certificate.
   | .awaitCV, .certificateVerify => some .awaitFin
-  -- §4.4.4: Finished ends the server's flight; §4.4.4 also makes it the
+  -- §4.5.3: Finished ends the server's flight; §4.5.3 also makes it the
   -- gate for application data, so this is where the client connects.
   | .awaitFin, .finished => some .connected
-  -- §4.6.1/§4.6.3/§5.1: tickets, key updates, and application data are
+  -- §4.7.1/§4.7.3/§5.1: tickets, key updates, and application data are
   -- legal only after the handshake completes.
   | .connected, .newSessionTicket => some .connected
   | .connected, .keyUpdate => some .connected
@@ -94,7 +94,7 @@ def step (mode : Mode) : State → Msg → Option State
 /--
 Run a whole sequence from the fresh-ClientHello state. Accept iff
 every message is legal in order and the client completes the handshake
-(§4.4.4), optionally followed by a clean close. An error-free but
+(§4.5.3), optionally followed by a clean close. An error-free but
 unfinished prefix rejects: the client never connected.
 -/
 def accepts (mode : Mode) (msgs : List Msg) : Bool :=
@@ -188,7 +188,7 @@ private theorem step_finSeen (mode : Mode) (s s' : State) (m : Msg)
     simp [finSeen]
 
 /-- Every accepting trace contains the server Finished exactly once
-(RFC 8446 §4.4.4: it ends the server's flight and gates the
+(RFC 9846 §4.5.3: it ends the server's flight and gates the
 connection). -/
 theorem count_finished_of_accepts (mode : Mode) (msgs : List Msg)
     (h : accepts mode msgs = true) : msgs.count .finished = 1 := by
@@ -203,7 +203,7 @@ theorem finished_mem_of_accepts (mode : Mode) (msgs : List Msg)
   exact List.count_pos_iff.mp (by omega)
 
 /-- Under PSK the certificate-flight states are unreachable, so a
-successful step never consumes a Certificate (RFC 8446 §2.2). -/
+successful step never consumes a Certificate (RFC 9846 §2.2). -/
 private theorem step_psk_no_cert (s s' : State) (m : Msg)
     (hs : s ≠ State.awaitCert ∧ s ≠ State.awaitCV)
     (h : step Mode.psk s m = some s') :
@@ -261,7 +261,7 @@ private theorem step_cvSeen (s s' : State) (m : Msg)
   cases s <;> cases m <;> simp [step] at h <;> cases h <;> simp [cvSeen]
 
 /-- Pinned-mode accepting traces contain exactly one Certificate
-(RFC 8446 §4.4.2). -/
+(RFC 9846 §4.5.1). -/
 theorem pinned_one_certificate (msgs : List Msg)
     (h : accepts .pinned msgs = true) : msgs.count .certificate = 1 := by
   obtain ⟨t, hfold, ht⟩ := (accepts_iff .pinned msgs).mp h
@@ -269,7 +269,7 @@ theorem pinned_one_certificate (msgs : List Msg)
   rcases ht with rfl | rfl <;> (simp [certSeen] at this; omega)
 
 /-- Pinned-mode accepting traces contain exactly one CertificateVerify
-(RFC 8446 §4.4.3). -/
+(RFC 9846 §4.5.2). -/
 theorem pinned_one_certificateVerify (msgs : List Msg)
     (h : accepts .pinned msgs = true) : msgs.count .certificateVerify = 1 := by
   obtain ⟨t, hfold, ht⟩ := (accepts_iff .pinned msgs).mp h
@@ -277,7 +277,7 @@ theorem pinned_one_certificateVerify (msgs : List Msg)
   rcases ht with rfl | rfl <;> (simp [cvSeen] at this; omega)
 
 /--
-Pinned-mode message order (RFC 8446 §4.4): in an accepting trace, every
+Pinned-mode message order (RFC 9846 §4.5): in an accepting trace, every
 prefix that contains CertificateVerify already contains Certificate,
 and every prefix that contains Finished already contains
 CertificateVerify. With the three counts pinned to one, this places the
@@ -315,8 +315,8 @@ private theorem step_hrrBound (mode : Mode) (s s' : State) (m : Msg)
   cases mode <;> cases s <;> cases m <;> simp [step] at h <;> cases h <;>
     simp [hrrBound]
 
-/-- No accepting trace contains two HelloRetryRequests (RFC 8446
-§4.1.4: a second HelloRetryRequest aborts the handshake). -/
+/-- No accepting trace contains two HelloRetryRequests (RFC 9846
+§4.2.4: a second HelloRetryRequest aborts the handshake). -/
 theorem hrr_at_most_one (mode : Mode) (msgs : List Msg)
     (h : accepts mode msgs = true) : msgs.count .helloRetryRequest ≤ 1 := by
   obtain ⟨t, hfold, ht⟩ := (accepts_iff mode msgs).mp h
@@ -355,8 +355,8 @@ def selftest : Bool :=
     | some msgs => accepts mode msgs == want
     | none => false
   let vectors : List (Mode × String × Bool) := [
-    -- Legal shapes: §2.2 PSK flight, §4.4 certificate flight, one
-    -- §4.1.4 retry round, §4.6/§5.1/§6.1 tails.
+    -- Legal shapes: §2.2 PSK flight, §4.5 certificate flight, one
+    -- §4.2.4 retry round, §4.7/§5.1/§6.1 tails.
     (.psk, "SEF", true),
     (.psk, "HSEF", true),
     (.psk, "SEFL", true),
@@ -366,7 +366,7 @@ def selftest : Bool :=
     (.pinned, "HSECVF", true),
     (.pinned, "SECVFA", true),
     (.pinned, "HSECVFNKAL", true),
-    -- §4.4.4: no Finished, so the handshake never completes; error-free
+    -- §4.5.3: no Finished, so the handshake never completes; error-free
     -- prefixes reject too.
     (.pinned, "SECV", false),
     (.psk, "SE", false),
@@ -374,22 +374,22 @@ def selftest : Bool :=
     -- §2.2: under PSK the server MUST NOT send the certificate flight.
     (.psk, "SECVF", false),
     (.psk, "SEVF", false),
-    -- §4.3.2: the client offers no certificate; the profile treats a
+    -- §4.4.2: the client offers no certificate; the profile treats a
     -- CertificateRequest as fatal.
     (.pinned, "SERCVF", false),
-    -- §4.1.4: a second HelloRetryRequest aborts with unexpected_message.
+    -- §4.2.4: a second HelloRetryRequest aborts with unexpected_message.
     (.psk, "HHSEF", false),
     (.pinned, "HHSECVF", false),
-    -- §4.6.1/§4.6.3/§5.1: no tickets, key updates, or application data
+    -- §4.7.1/§4.7.3/§5.1: no tickets, key updates, or application data
     -- before the handshake completes.
     (.psk, "NSEF", false),
     (.psk, "SENF", false),
     (.psk, "SEKF", false),
     (.psk, "SEAF", false),
     (.pinned, "SECVAF", false),
-    -- §4.4.3: CertificateVerify comes immediately after Certificate.
+    -- §4.5.2: CertificateVerify comes immediately after Certificate.
     (.pinned, "SEVCF", false),
-    -- §4.3.1: EncryptedExtensions comes immediately after the ServerHello.
+    -- §4.4.1: EncryptedExtensions comes immediately after the ServerHello.
     (.psk, "SF", false),
     (.pinned, "SCVF", false),
     -- §4: a handshake message out of order is fatal; a second

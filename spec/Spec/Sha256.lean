@@ -35,7 +35,7 @@ def smallSigma0 (x : UInt32) : UInt32 := rotr 7 x ^^^ rotr 18 x ^^^ (x >>> 3)
 /-- FIPS 180-4 §4.1.2 (4.7): `σ₁(x) = ROTR¹⁷(x) ⊕ ROTR¹⁹(x) ⊕ SHR¹⁰(x)`. -/
 def smallSigma1 (x : UInt32) : UInt32 := rotr 17 x ^^^ rotr 19 x ^^^ (x >>> 10)
 
-/-- FIPS 180-4 §4.2.2: the sixty-four constant words K₀…K₆₃ (first 32 bits
+/-- FIPS 180-4 §4.3.2: the sixty-four constant words K₀…K₆₃ (first 32 bits
 of the fractional parts of the cube roots of the first 64 primes). -/
 def K : Array UInt32 := #[
   0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5,

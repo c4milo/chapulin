@@ -19,10 +19,10 @@ Spec.Hkdf.hmac        : (key msg : ByteArray) → ByteArray              -- RFC 
 Spec.Hkdf.extract     : (salt ikm : ByteArray) → ByteArray             -- RFC 5869
 Spec.Hkdf.expand      : (prk info : ByteArray) → (len : Nat) → ByteArray
 Spec.Hkdf.expandLabel : (secret : ByteArray) → (label : String) →
-                        (ctx : ByteArray) → (len : Nat) → ByteArray    -- RFC 8446 §7.1
+                        (ctx : ByteArray) → (len : Nat) → ByteArray    -- RFC 9846 §7.1
 Spec.Hkdf.schedule    : (psk ecdhe helloHash finHash : ByteArray) →
                         (ByteArray × ByteArray × ByteArray × ByteArray)
-                        -- (cHs, sHs, cAp, sAp) per RFC 8446 §7.1 with a PSK and
+                        -- (cHs, sHs, cAp, sAp) per RFC 9846 §7.1 with a PSK and
                         -- no early data: early = extract 0 psk;
                         -- hs = extract (deriveSecret early "derived" empty) ecdhe;
                         -- cHs/sHs from helloHash; master from hs;
@@ -34,7 +34,7 @@ Spec.Aead.seal        : (key nonce aad pt : ByteArray) → ByteArray     -- RFC 
 Spec.Aead.open?       : (key nonce aad ct tag : ByteArray) → Option ByteArray
 Spec.Record.seal      : (trafficSecret : ByteArray) → (seq : Nat) →
                         (ctype : UInt8) → (pt : ByteArray) → ByteArray
-                        -- RFC 8446 §5.2-5.3: key/iv = expandLabel secret "key"/"iv",
+                        -- RFC 9846 §5.2-5.3: key/iv = expandLabel secret "key"/"iv",
                         -- nonce = iv XOR seq (BE, low 8 bytes), inner = pt ++ [ctype],
                         -- header 17 03 03 len, out = header ++ seal(...)
 Spec.Drbg.next        : (key : ByteArray) → (n : Nat) →
@@ -55,7 +55,7 @@ Spec.Rsa.pssSign      : (n d : Nat) → (mHash salt : ByteArray) →
                         -- rsaSign is an alias. The spec signs so the oracle can mint
                         -- signatures the C verifier must accept; the C side only verifies.
                         -- salt is explicit so a fixed value gives a reproducible signature.
-Spec.Handshake.step   : (mode : Mode) → State → Msg → Option State      -- RFC 8446 §4 order of
+Spec.Handshake.step   : (mode : Mode) → State → Msg → Option State      -- RFC 9846 §4 order of
                         -- server-to-client messages after the ClientHello; none = fatal
                         -- (unexpected_message). Msg has one constructor per line-protocol
                         -- letter (S H E C R V F N K A L); Mode is psk or pinned.
@@ -94,16 +94,16 @@ Spec.Hkdf.expand_size        (expand prk info len).size = len          -- RFC 58
 Spec.Hkdf.expandLabel_size   (expandLabel s l c len).size = len        -- L octets of T"
 Spec.Sha256.sha256_size      (sha256 msg).size = 32
 Spec.Handshake, over every accepting trace (both modes unless noted):
-  count_finished_of_accepts       exactly one Finished (§4.4.4)
+  count_finished_of_accepts       exactly one Finished (§4.5.3)
   finished_mem_of_accepts         no accepting trace omits Finished
   psk_no_certificate              PSK: no Certificate anywhere (§2.2)
-  pinned_one_certificate          pinned: exactly one Certificate (§4.4.2)
-  pinned_one_certificateVerify    pinned: exactly one CertificateVerify (§4.4.3)
+  pinned_one_certificate          pinned: exactly one Certificate (§4.5.1)
+  pinned_one_certificateVerify    pinned: exactly one CertificateVerify (§4.5.2)
   pinned_cert_order               pinned: every prefix with CertificateVerify has
                                   Certificate, every prefix with Finished has
                                   CertificateVerify — with the unit counts this is
-                                  C before CV before F (§4.4)
-  hrr_at_most_one                 at most one HelloRetryRequest (§4.1.4)
+                                  C before CV before F (§4.5)
+  hrr_at_most_one                 at most one HelloRetryRequest (§4.2.4)
 ```
 
 Size lemmas (`Poly.mac_size`, `ChaCha.block_size`, `Aead.seal_size`,

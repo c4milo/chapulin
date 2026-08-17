@@ -1,5 +1,5 @@
 // HMAC-SHA-256 (RFC 2104), HKDF (RFC 5869), and the TLS 1.3 label scheme
-// (RFC 8446 §7.1). One file because TLS 1.3 uses them as one unit: every
+// (RFC 9846 §7.1). One file because TLS 1.3 uses them as one unit: every
 // key in the protocol is an HKDF-Expand-Label of some HKDF-Extract output,
 // and Finished is the lone bare-HMAC user.
 #ifndef CH_HKDF_H

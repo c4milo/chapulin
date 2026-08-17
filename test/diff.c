@@ -150,7 +150,7 @@ static void diff_expand_label(void) {
     // Boundary rows the random domain never reaches. The last valid
     // output length (255*HashLen, RFC 5869 §2.3) must agree byte for
     // byte; the first invalid length and unencodable label/context
-    // fields (RFC 8446 §7.1 one-byte vectors) must be spec-side errors —
+    // fields (RFC 9846 §7.1 one-byte vectors) must be spec-side errors —
     // the C asserts on those inputs, so the spec is the comparable half.
     {
         uint8_t secret[SHA256_LEN] = {7};
@@ -394,7 +394,7 @@ static void diff_rec_seal(void) {
         size_t n = rng_below(201);
         rng_fill(pt, n);
         // Any sequence the C actually seals; it refuses UINT64_MAX to stop
-        // before a wrap (RFC 8446 §5.5), which the pure spec does not model,
+        // before a wrap (RFC 9846 §5.5), which the pure spec does not model,
         // so that one value stays out of the compared domain.
         uint64_t seq = rng_next();
         if (seq == UINT64_MAX) {
@@ -421,7 +421,7 @@ static void diff_rec_seal(void) {
         expect(cmd, want);
     }
 
-    // Boundaries: a full 2^14-byte plaintext (RFC 8446 §5.1's sender
+    // Boundaries: a full 2^14-byte plaintext (RFC 9846 §5.1's sender
     // cap) must agree end to end, and the wrap-guard sequence the C
     // refuses (§5.5) must be a spec-side error, never a truncation.
     {

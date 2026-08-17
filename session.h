@@ -36,6 +36,7 @@ typedef struct {
     // cfg.server_pubkey2, 0 before a pinned handshake completes. Public
     // information — operators read it to watch key rotation progress.
     uint8_t pin_slot;
+    uint64_t send_epochs; // KeyUpdates we have sent; capped per §4.7.3
     // Unread plaintext of the current record, inside cfg.buf.
     size_t pt_off;
     size_t pt_len;

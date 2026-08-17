@@ -27,7 +27,7 @@ verifies RSA-PSS (`rsa_pss_rsae_sha256`) and pins the raw modulus, 256
 to 384 bytes, so one binary covers RSA-2048 through RSA-3072 — the keys
 stock endpoints actually hold. `make PIN=ecdsa` builds the P-256
 alternative (`ecdsa_secp256r1_sha256`, a 64-byte X||Y pin) instead;
-these are the two signature algorithms [RFC 8446](https://www.rfc-editor.org/rfc/rfc8446) requires every TLS 1.3
+these are the two signature algorithms [RFC 9846](https://www.rfc-editor.org/rfc/rfc9846) requires every TLS 1.3
 implementation to support, so between them a chapulin build can pin any
 compliant server. Neither build carries the other's verifier.
 
@@ -64,9 +64,9 @@ targets shrink the pointer fields.
 
 | what | bytes |
 |---|---|
-| `ch_tls` session struct (includes 534 B TX staging) | 1000 |
+| `ch_tls` session struct (includes 534 B TX staging) | 1008 |
 | caller receive buffer (you choose; 2048 shown) | 2048 |
-| **total static working set** | **3048** |
+| **total static working set** | **3056** |
 | peak transient stack, `ch_connect` (default: RSA-3072 verify) | 5200 |
 | peak transient stack, `ch_connect` (`PIN=ecdsa`: P-256 verify) | 3680 |
 | peak transient stack, `ch_connect` (PSK mode: x25519 ladder) | 2608 |
@@ -207,7 +207,7 @@ libraries and on mlkem-native, and this suite copies that method.
 ## The differential oracle
 
 `spec/` is an executable Lean 4 specification of everything chapulin
-computes: SHA-256, HKDF and the RFC 8446 §7.1 key schedule, ChaCha20,
+computes: SHA-256, HKDF and the RFC 9846 §7.1 key schedule, ChaCha20,
 Poly1305 (the accumulator is a plain `Nat` mod 2^130−5), the AEAD,
 record framing, x25519, P-256, and RSA-PSS, all as definitional `Nat`
 arithmetic. The spec follows the RFC text and never the C, because a
@@ -241,7 +241,7 @@ must accept every signature and reject every mutated one. The target
 runs inside `make check` and skips itself when elan is not installed.
 
 The handshake state machine gets the same treatment one level up.
-[`spec/Spec/Handshake.lean`](spec/Spec/Handshake.lean) models RFC 8446 §4's message-ordering rules as an
+[`spec/Spec/Handshake.lean`](spec/Spec/Handshake.lean) models RFC 9846 §4's message-ordering rules as an
 explicit step function, and [`test/hsseq_test.c`](test/hsseq_test.c) enumerates every server
 message sequence to depth 5 — 354,312 sequences across both auth modes —
 renders each as real TLS records over a mock transport (genuine key

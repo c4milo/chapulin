@@ -325,6 +325,7 @@ int main(void) {
     test_rfc8448_hrr();
     test_seq_exhaustion();
     test_post_handshake();
+    test_alerts_and_epochs();
     test_connect_cfg();
     if (failures > 0) {
         (void)fprintf(stderr, "%d failure(s)\n", failures);

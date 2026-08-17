@@ -1,4 +1,4 @@
-// TLS 1.3 record protection (RFC 8446 §5). Pure transforms over caller
+// TLS 1.3 record protection (RFC 9846 §5). Pure transforms over caller
 // buffers — no I/O, no allocation. One rec_dir per direction holds the
 // traffic key, IV, and sequence number; the handshake swaps secrets in as
 // the key schedule advances and KeyUpdate rekeys in place.

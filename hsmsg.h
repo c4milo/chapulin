@@ -47,8 +47,9 @@
 #define CH_PIN_SIGALG SIGALG_RSA_PSS_RSAE_SHA256
 #endif
 
-// Alert descriptions (RFC 8446 §6).
+// Alert descriptions (RFC 9846 §6).
 #define ALERT_CLOSE_NOTIFY 0
+#define ALERT_USER_CANCELED 90
 #define ALERT_UNEXPECTED_MESSAGE 10
 #define ALERT_BAD_RECORD_MAC 20
 #define ALERT_RECORD_OVERFLOW 22

@@ -1,6 +1,6 @@
 // Encoding strictness for the ServerHello and EncryptedExtensions
 // parsers (issue #10): every extension body must match its struct
-// exactly (RFC 8446 §4.2 makes trailing bytes a decode error) and no
+// exactly (RFC 9846 §4.3 makes trailing bytes a decode error) and no
 // extension type may repeat. Each behavior gets a boundary pair: the
 // exact-length body parses, the same body plus one byte fails. The
 // parsers live in hsparse.c and depend only on buf.c, so those two files
@@ -175,7 +175,7 @@ int main(void) {
     // parsed as valid TLS 1.3.
     CHECK(server_hello_case(versions_junk, sizeof versions_junk, 0, 0) == CH_EPROTO);
 
-    // Duplicate extensions are illegal (§4.2), even byte-identical ones.
+    // Duplicate extensions are illegal (§4.3), even byte-identical ones.
     CHECK(server_hello_case(versions_dup, sizeof versions_dup, 0, 0) == CH_EPROTO);
 
     // Boundary pair, EncryptedExtensions: record_size_limit exact
@@ -186,7 +186,7 @@ int main(void) {
     // supported_groups stays tolerated with an unread body...
     CHECK(encrypted_exts_case(groups_tolerated, sizeof groups_tolerated) == CH_OK);
     // Alert contract: an extension we never offered upgrades the caller's
-    // seeded default to unsupported_extension (RFC 8446 §4.2, wire value
+    // seeded default to unsupported_extension (RFC 9846 §4.3, wire value
     // 110); a plain decode failure leaves the seed untouched.
     static const uint8_t unknown_ext[] = {0x00, 0x2b, 0x00, 0x00};
     CHECK(encrypted_exts_case(unknown_ext, sizeof unknown_ext) == CH_EPROTO);

@@ -18,7 +18,7 @@
 #define HSP_COOKIE_MAX 128
 
 // The ServerHello.random value that marks a HelloRetryRequest
-// (RFC 8446 §4.1.3).
+// (RFC 9846 §4.2.3).
 extern const uint8_t hsp_hrr_magic[32];
 
 // Everything hsp_parse_server_hello learns from one ServerHello.
@@ -42,8 +42,8 @@ int hsp_parse_server_hello(const uint8_t *body, size_t n, server_hello_info *inf
 // Parses an EncryptedExtensions body. Lowers *peer_limit to the peer's
 // record_size_limit when one arrives. Callers seed *alert with their
 // default; the parser overwrites it only when it knows better (an
-// extension we never offered gets unsupported_extension, RFC 8446
-// §4.2). Returns CH_OK or CH_EPROTO.
+// extension we never offered gets unsupported_extension, RFC 9846
+// §4.3). Returns CH_OK or CH_EPROTO.
 int hsp_parse_encrypted_exts(const uint8_t *body, size_t n, uint16_t *peer_limit, uint8_t *alert);
 
 #endif

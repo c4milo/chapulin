@@ -82,6 +82,26 @@ static void handle_ticket(ch_tls *t, const uint8_t *body, size_t n) {
     ct_wipe(ticket.psk, sizeof ticket.psk);
 }
 
+// One KeyUpdate: the read direction always rekeys — receivers are
+// forbidden from enforcing the peer's epoch cap (RFC 9846 §4.7.3) — and
+// a reply goes out only when requested and while our own epoch count is
+// under the cap the same section puts on senders.
+static int handle_key_update(ch_tls *t, uint8_t request) {
+    rec_dir_update(t->rd_secret, &t->rd);
+    if (request != 1 || t->send_epochs >= 0xffffffffffffULL) {
+        return CH_OK;
+    }
+    uint8_t msg[5] = {HS_KEY_UPDATE, 0, 0, 1, 0};
+    size_t out_len = 0;
+    if (rec_seal(&t->wr, REC_HANDSHAKE, msg, sizeof msg, t->tx, sizeof t->tx, &out_len) != 0 ||
+        io_send_all(&t->cfg, t->tx, out_len) != CH_OK) {
+        return CH_EIO;
+    }
+    rec_dir_update(t->wr_secret, &t->wr);
+    t->send_epochs++;
+    return CH_OK;
+}
+
 // Handles the complete post-handshake messages in pt[0..n) — only
 // NewSessionTicket and KeyUpdate exist here — and reports through used
 // how many bytes were consumed. A trailing partial message is not an
@@ -101,16 +121,9 @@ static int handle_post_handshake(ch_tls *t, const uint8_t *pt, size_t n, size_t 
         if (type == HS_NEW_SESSION_TICKET) {
             handle_ticket(t, body, msg_len);
         } else if (type == HS_KEY_UPDATE && msg_len == 1 && body[0] <= 1) {
-            rec_dir_update(t->rd_secret, &t->rd);
-            if (body[0] == 1) {
-                uint8_t msg[5] = {HS_KEY_UPDATE, 0, 0, 1, 0};
-                size_t out_len = 0;
-                if (rec_seal(&t->wr, REC_HANDSHAKE, msg, sizeof msg, t->tx, sizeof t->tx,
-                             &out_len) != 0 ||
-                    io_send_all(&t->cfg, t->tx, out_len) != CH_OK) {
-                    return CH_EIO;
-                }
-                rec_dir_update(t->wr_secret, &t->wr);
+            int rc = handle_key_update(t, body[0]);
+            if (rc != CH_OK) {
+                return rc;
             }
         } else {
             return CH_EPROTO;
@@ -123,7 +136,7 @@ static int handle_post_handshake(ch_tls *t, const uint8_t *pt, size_t n, size_t 
 
 // Drains a post-handshake handshake message run that starts with pt_len
 // plaintext bytes in cfg.buf, pulling further records when a message is
-// fragmented across them (RFC 8446 §5.1 allows it, and our own
+// fragmented across them (RFC 9846 §5.1 allows it, and our own
 // record_size_limit forces peers with large tickets into it). Fragments
 // of one message cannot be interleaved with other record types.
 static int pump_post_handshake(ch_tls *t, size_t pt_len) {
@@ -202,6 +215,12 @@ static int pump_once(ch_tls *t) {
         t->state = CH_ST_CLOSED;
         ch_close(t);
         return CH_ECLOSED;
+    }
+    if (inner_type == REC_ALERT && pt_len == 2 && t->cfg.buf[1] == ALERT_USER_CANCELED) {
+        // RFC 9846 §6.1: user_canceled precedes a close_notify; keep
+        // reading for it. ch_read's quiet cap bounds a hostile stream of
+        // these like any other dataless record.
+        return CH_OK;
     }
     tlsi_fail(t, ALERT_UNEXPECTED_MESSAGE);
     return CH_EPROTO;

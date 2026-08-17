@@ -66,7 +66,7 @@ static void mock_push(mock_io *m, rec_dir *server, uint8_t type, const uint8_t *
 }
 
 // Post-handshake behavior the e2e cannot reach: a NewSessionTicket
-// fragmented across records (RFC 8446 §5.1), a KeyUpdate that rekeys both
+// fragmented across records (RFC 9846 §5.1), a KeyUpdate that rekeys both
 // directions, then application data under the updated key.
 static void test_post_handshake(void) {
     uint8_t secret[SHA256_LEN];
@@ -235,6 +235,47 @@ static void test_seq_exhaustion(void) {
 #else
 #define TEST_PIN_LEN 384
 #endif
+
+// RFC 9846 conformance the e2e cannot steer: a user_canceled alert is
+// read through until close_notify arrives, and a sender at the KeyUpdate
+// epoch cap ignores update_requested instead of replying.
+static void test_alerts_and_epochs(void) {
+    uint8_t secret[SHA256_LEN];
+    ch_rand_bytes(secret, sizeof secret);
+    rec_dir server;
+    rec_dir_init(&server, secret);
+    mock_io m = {0};
+    static uint8_t rxbuf[1024];
+    ch_tls t;
+    mock_session(&t, &m, rxbuf, sizeof rxbuf, secret);
+
+    // user_canceled, then close_notify: a clean close, not an error.
+    const uint8_t user_canceled[2] = {1, 90};
+    const uint8_t close_notify[2] = {1, 0};
+    mock_push(&m, &server, REC_ALERT, user_canceled, 2);
+    mock_push(&m, &server, REC_ALERT, close_notify, 2);
+    uint8_t out[16];
+    CHECK(ch_read(&t, out, sizeof out) == 0);
+
+    // At the epoch cap: the receive keys still update (we can read data
+    // under the peer's new key) but no reply KeyUpdate goes out.
+    mock_io m2 = {0};
+    ch_tls t2;
+    mock_session(&t2, &m2, rxbuf, sizeof rxbuf, secret);
+    t2.send_epochs = 0xffffffffffffULL;
+    rec_dir server2;
+    rec_dir_init(&server2, secret);
+    const uint8_t key_update[5] = {24, 0, 0, 1, 1};
+    mock_push(&m2, &server2, REC_HANDSHAKE, key_update, sizeof key_update);
+    uint8_t s2[SHA256_LEN];
+    memcpy(s2, secret, sizeof s2);
+    rec_dir_update(s2, &server2);
+    mock_push(&m2, &server2, REC_APPDATA, (const uint8_t *)"hola", 4);
+    size_t sent_before = m2.sent;
+    int got = ch_read(&t2, out, sizeof out);
+    CHECK(got == 4 && memcmp(out, "hola", 4) == 0);
+    CHECK(m2.sent == sent_before); // no reply at the cap
+}
 
 static void test_connect_cfg(void) {
     static uint8_t rxbuf[600];

@@ -64,7 +64,7 @@ size_t hs_build_client_hello(uint8_t *out, size_t cap, const ch_cfg *cfg, const 
         wb_u16(&w, 2);
         wb_u16(&w, CH_PIN_SIGALG);
     } else {
-        // pre_shared_key comes last (RFC 8446 §4.2.11).
+        // pre_shared_key comes last (RFC 9846 §4.3.11).
         wb_u16(&w, EXT_PRE_SHARED_KEY);
         size_t psk = wb_mark(&w, 2);
         size_t ids = wb_mark(&w, 2);

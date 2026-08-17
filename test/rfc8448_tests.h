@@ -79,7 +79,7 @@ static int rfc8448_pss_ok(const uint8_t msg_hash[SHA256_LEN], const uint8_t em[1
 }
 
 // Verifies the section 3 CertificateVerify over the CH..Certificate
-// transcript hash. Content per RFC 8446 §4.4.3.
+// transcript hash. Content per RFC 9846 §4.5.2.
 static void rfc8448_check_cv(const uint8_t transcript_hash[SHA256_LEN]) {
     // 0f | 000084 | 0804 (rsa_pss_rsae_sha256) | 0080 | 128-byte sig.
     CHECK(rfc8448_s3_cv[0] == 0x0f && rfc8448_s3_cv[3] == 0x84);
@@ -212,8 +212,8 @@ static void test_rfc8448_binder(void) {
 // Section 5: the HelloRetryRequest transcript restart and the
 // handshake secrets it feeds.
 static void test_rfc8448_hrr(void) {
-    // CH1 collapses to a synthetic message_hash message (RFC 8446
-    // §4.4.1); the transcript restarts from it.
+    // CH1 collapses to a synthetic message_hash message (RFC 9846
+    // §4.1); the transcript restarts from it.
     uint8_t h1[SHA256_LEN];
     sha256_of(rfc8448_s5_ch1, sizeof rfc8448_s5_ch1, h1);
     static const uint8_t synth_hdr[4] = {0xfe, 0x00, 0x00, 0x20};

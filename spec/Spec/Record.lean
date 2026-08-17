@@ -2,7 +2,7 @@ import Spec.Hkdf
 import Spec.Aead
 
 /-!
-TLS 1.3 record protection per RFC 8446 §5.2–5.3, written from the RFC
+TLS 1.3 record protection per RFC 9846 §5.2–5.3, written from the RFC
 text as an executable oracle. Fixed profile: TLS_CHACHA20_POLY1305
 (32-byte key, 12-byte IV, 16-byte tag).
 -/
@@ -10,7 +10,7 @@ namespace Spec.Record
 open Spec.Bytes
 
 /--
-RFC 8446 §5.3: the per-record nonce — the 64-bit sequence number in
+RFC 9846 §5.3: the per-record nonce — the 64-bit sequence number in
 network (big-endian) byte order, left-padded with zeros to the IV
 length, XORed with the write IV.
 -/
@@ -18,14 +18,14 @@ def nonce (iv : ByteArray) (seq : Nat) : ByteArray :=
   xorBytes iv (ByteArray.mk (Array.replicate (iv.size - 8) 0) ++ natToBytesBE seq 8)
 
 /--
-RFC 8446 §5.2: protect one record. Traffic key and IV come from the
+RFC 9846 §5.2: protect one record. Traffic key and IV come from the
 traffic secret via HKDF-Expand-Label (§7.3: `"key"`/`"iv"`, empty
 context). The inner plaintext is `content ‖ ContentType` (no padding),
 the AAD is the 5-byte record header `17 03 03 ‖ len16` where the
 length covers the inner plaintext plus the 16-byte tag, and the output
 is `header ‖ AEAD-Encrypt(...)`.
 
-Domain: `seq < 2^64 - 1`. RFC 8446 §5.5 requires the sender to stop before
+Domain: `seq < 2^64 - 1`. RFC 9846 §5.5 requires the sender to stop before
 the 64-bit sequence number wraps, so the C refuses `seq = 2^64 - 1` (its
 last representable value) rather than reuse a nonce on the next record.
 This transform is the pure protection function and does not model that

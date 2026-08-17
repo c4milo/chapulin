@@ -53,7 +53,7 @@ def dispatch : List String → Option String
     let lab ← String.fromUTF8? (← hexArg? label)
     let c ← hexArg? ctx
     let l ← len.toNat?
-    -- RFC 8446 §7.1: label<7..255> ("tls13 " + Label) and context<0..255>
+    -- RFC 9846 §7.1: label<7..255> ("tls13 " + Label) and context<0..255>
     -- are one-byte vectors, so oversize inputs are unencodable; RFC 5869
     -- §2.3 caps L at 255*HashLen. Truncating instead would mint
     -- well-formed output for inputs the RFCs reject.
@@ -96,7 +96,7 @@ def dispatch : List String → Option String
     let c ← ctype.toNat?
     let p ← hexArg? pt
     guard (s.size == 32 && c < 256)
-    -- RFC 8446 §5.1 caps sender plaintext at 2^14, and §5.5 stops one
+    -- RFC 9846 §5.1 caps sender plaintext at 2^14, and §5.5 stops one
     -- before the u64 sequence wraps (the C refuses UINT64_MAX). Untended,
     -- both would truncate mod 2^16 / 2^64 into valid-looking records.
     if p.size > 0x4000 then return "ERR rec_seal plaintext over 2^14"
