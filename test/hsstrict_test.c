@@ -136,6 +136,17 @@ static int ee_case(const uint8_t *exts, size_t n) {
     return ee_parse(buf, len);
 }
 
+// The alert contract: callers seed a default, and the parser overwrites
+// it only when it knows better. Returns the alert after the parse.
+static uint8_t ee_alert_case(const uint8_t *exts, size_t n, uint8_t seed) {
+    uint8_t buf[64];
+    size_t len = mk_ee(buf, exts, n);
+    uint16_t peer_limit = CH_TX_PT;
+    uint8_t alert = seed;
+    (void)hsp_parse_ee(buf, len, &peer_limit, &alert);
+    return alert;
+}
+
 // Same, with supported_versions prepended: CH_OK requires a selected
 // version, so this isolates the extension under test.
 static int sh_case2(const uint8_t *ext2, size_t n, int hrr, int psk_mode) {
@@ -175,6 +186,13 @@ int main(void) {
     CHECK(ee_case(rsl_dup, sizeof rsl_dup) == CH_EPROTO);
     // supported_groups stays tolerated with an unread body...
     CHECK(ee_case(sg_tolerated, sizeof sg_tolerated) == CH_OK);
+    // Alert contract: an extension we never offered upgrades the caller's
+    // seeded default to unsupported_extension (RFC 8446 §4.2, wire value
+    // 110); a plain decode failure leaves the seed untouched.
+    static const uint8_t unknown_ext[] = {0x00, 0x2b, 0x00, 0x00};
+    CHECK(ee_case(unknown_ext, sizeof unknown_ext) == CH_EPROTO);
+    CHECK(ee_alert_case(unknown_ext, sizeof unknown_ext, 47) == 110);
+    CHECK(ee_alert_case(rsl_trail, sizeof rsl_trail, 47) == 47);
     // ...but may not repeat either.
     CHECK(ee_case(sg_dup, sizeof sg_dup) == CH_EPROTO);
     // An empty extension block is a legal EncryptedExtensions.

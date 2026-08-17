@@ -40,8 +40,10 @@ typedef struct {
 int hsp_parse_sh(const uint8_t *body, size_t n, sh_info *si, int psk_mode);
 
 // Parses an EncryptedExtensions body. Lowers *peer_limit to the peer's
-// record_size_limit when one arrives; writes *alert only for an
-// extension we never offered. Returns CH_OK or CH_EPROTO.
+// record_size_limit when one arrives. Callers seed *alert with their
+// default; the parser overwrites it only when it knows better (an
+// extension we never offered gets unsupported_extension, RFC 8446
+// §4.2). Returns CH_OK or CH_EPROTO.
 int hsp_parse_ee(const uint8_t *body, size_t n, uint16_t *peer_limit, uint8_t *alert);
 
 #endif

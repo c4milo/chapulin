@@ -436,9 +436,12 @@ static int run(hs *h) {
         h->alert = ALERT_UNEXPECTED_MESSAGE;
         return CH_EPROTO;
     }
+    // Seed the default first: the parser overrides it only when it has a
+    // more specific alert (unsupported_extension, RFC 8446 §4.2), and
+    // that override must survive to the wire.
+    h->alert = ALERT_ILLEGAL_PARAMETER;
     rc = hsp_parse_ee(raw + 4, rawlen - 4, &t->peer_limit, &h->alert);
     if (rc != CH_OK) {
-        h->alert = ALERT_ILLEGAL_PARAMETER;
         return rc;
     }
     sha256_update(&t->transcript, raw, rawlen);
