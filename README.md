@@ -330,6 +330,9 @@ See `CLAUDE.md` for the house rules.
 
 ## Non-goals
 
+docs/decisions.md records every trade this stack has made and why;
+this section is the short version.
+
 chapulin does not implement: 0-RTT (the IETF IoT profile forbids it),
 DTLS, X.509 chain validation, CA bundles, revocation, client
 certificates, cipher agility, the server role, or any insecure-fallback
