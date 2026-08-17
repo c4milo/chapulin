@@ -11,9 +11,10 @@ CXX ?= c++
 LAKE ?= $(shell command -v lake || command -v $(HOME)/.elan/bin/lake)
 
 SRCS := ct.c sha256.c hkdf.c chacha20.c poly1305.c aead.c x25519.c p256.c rsa.c rsa_mont.c \
-        buf.c record.c keysched.c io.c hsmsg.c session.c handshake.c tls.c
+        buf.c record.c keysched.c io.c hsmsg.c hsparse.c session.c handshake.c tls.c
 HDRS := ct.h sha256.h hkdf.h chacha20.h poly1305.h aead.h x25519.h p256.h rsa.h ch_assert.h \
-        buf.h record.h keysched.h io.h hsmsg.h cfg.h session.h handshake.h tls.h rand.h drbg.h
+        buf.h record.h keysched.h io.h hsmsg.h hsparse.h cfg.h session.h handshake.h tls.h \
+        rand.h drbg.h
 LINT_C := $(SRCS) drbg.c test/unit.c test/tlsclient.c test/diff.c test/timing.c \
           test/drbg_test.c test/rsa_test.c test/hsstrict_test.c
 
@@ -99,12 +100,11 @@ bin/rsa_test: test/rsa_test.c rsa.c rsa_mont.c sha256.c ct.c $(HDRS)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) -I. -o $@ test/rsa_test.c rsa.c rsa_mont.c sha256.c ct.c
 
-# Parser strictness: drives the static ServerHello/EE parsers directly by
-# including handshake.c, so handshake.c stays off the link line.
-bin/hsstrict_test: test/hsstrict_test.c $(SRCS) $(HDRS)
+# Parser strictness: drives the ServerHello/EE parsers directly; their
+# whole dependency closure is hsparse.c + buf.c.
+bin/hsstrict_test: test/hsstrict_test.c hsparse.c buf.c $(HDRS)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -I. -o $@ test/hsstrict_test.c buf.c ct.c sha256.c hkdf.c chacha20.c \
-	    poly1305.c aead.c x25519.c record.c keysched.c hsmsg.c
+	$(CC) $(CFLAGS) -I. -o $@ test/hsstrict_test.c hsparse.c buf.c
 
 bin/unit: test/unit.c test/session_tests.h $(SRCS) $(HDRS)
 	@mkdir -p bin
@@ -240,9 +240,8 @@ FUZZ_CC ?= $(shell command -v $(LLVM_BIN)/clang || command -v clang)
 FUZZ_CFLAGS := -std=c11 -O1 -g -fsanitize=fuzzer,address -D_DEFAULT_SOURCE -I.
 FUZZ_TIME ?= 30
 FUZZ_RECORD_LINK := record.c ct.c sha256.c hkdf.c chacha20.c poly1305.c aead.c
-FUZZ_HSPARSE_LINK := buf.c ct.c sha256.c hkdf.c chacha20.c poly1305.c aead.c \
-                     x25519.c record.c keysched.c hsmsg.c
-FUZZ_POSTHS_LINK := handshake.c io.c record.c keysched.c session.c buf.c ct.c \
+FUZZ_HSPARSE_LINK := hsparse.c buf.c
+FUZZ_POSTHS_LINK := handshake.c hsparse.c io.c record.c keysched.c session.c buf.c ct.c \
                     sha256.c hkdf.c chacha20.c poly1305.c aead.c x25519.c rsa.c rsa_mont.c hsmsg.c
 
 .PHONY: fuzz

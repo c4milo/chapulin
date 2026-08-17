@@ -27,7 +27,8 @@ Home: github.com/c4milo.
   (HMAC + HKDF + TLS labels) ← `chacha20.[ch]` + `poly1305.[ch]` ←
   `aead.[ch]` (RFC 8439 seal/open) ← `x25519.[ch]` + `p256.[ch]` +
   `rsa.[ch]`/`rsa_mont.c` (pinned-mode verify) ← `record.[ch]`
-  (record layer) ← `handshake.[ch]` (client state machine) ← `tls.[ch]`
+  (record layer) ← `hsparse.[ch]` (SH/EE message parsers) ←
+  `handshake.[ch]` (client state machine) ← `tls.[ch]`
   (public API) ← demo/test mains. Firmware takes everything below
   `tls.[ch]` as-is and supplies I/O callbacks and `ch_rand_bytes`.
 - Everything that touches secret bytes is constant time: no secret-

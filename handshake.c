@@ -5,6 +5,7 @@
 #include "buf.h"
 #include "ct.h"
 #include "hsmsg.h"
+#include "hsparse.h"
 #include "io.h"
 #include "keysched.h"
 #include "rand.h"
@@ -16,8 +17,6 @@
 #else
 #include "rsa.h"
 #endif
-
-#define COOKIE_MAX 128
 
 // Everything the handshake needs beyond the session, on one stack frame;
 // wiped wholesale when the handshake ends either way.
@@ -32,7 +31,7 @@ typedef struct {
     uint8_t c_hs[SHA256_LEN];
     uint8_t s_hs[SHA256_LEN];
     uint8_t master[SHA256_LEN];
-    uint8_t cookie[COOKIE_MAX];
+    uint8_t cookie[HSP_COOKIE_MAX];
     size_t cookielen;
     uint16_t rsl;
     int encrypted;
@@ -40,10 +39,6 @@ typedef struct {
     uint8_t quiet;    // records that added no handshake bytes
     uint8_t alert;    // what to tell the peer if we abort
 } hs;
-
-static const uint8_t hrr_magic[32] = {
-    0xcf, 0x21, 0xad, 0x74, 0xe5, 0x9a, 0x61, 0x11, 0xbe, 0x1d, 0x8c, 0x02, 0x1e, 0x65, 0xb8, 0x91,
-    0xc2, 0xa2, 0x11, 0x16, 0x7a, 0xbb, 0x8c, 0x5e, 0x07, 0x9e, 0x09, 0xe2, 0xc8, 0xa8, 0x33, 0x9c};
 
 // Appends one record's handshake bytes at buf[part..]. Plaintext records
 // shed their header in place; protected ones decrypt in place.
@@ -179,173 +174,6 @@ static int send_ch(hs *h) {
     return io_send_all(&t->cfg, t->tx, REC_HDR + n);
 }
 
-typedef struct {
-    int hrr;
-    int ver_ok;
-    int have_share;
-    int psk_ok;
-    uint8_t seen; // extension types already parsed, bits per parse_sh_ext
-    uint8_t server_pub[X25519_LEN];
-    const uint8_t *cookie;
-    size_t cookielen;
-} sh_info;
-
-static int parse_sh_ext(rbuf *r, sh_info *si, int hrr, int psk_mode) {
-    uint16_t ext = rb_u16(r);
-    size_t elen = rb_u16(r);
-    const uint8_t *ep = rb_bytes(r, elen);
-    if (ep == NULL) {
-        return CH_EPROTO;
-    }
-    if (ext == EXT_PRE_SHARED_KEY && !psk_mode) {
-        return CH_EPROTO; // selecting a PSK we never offered
-    }
-    uint8_t bit;
-    switch (ext) {
-    case EXT_SUPPORTED_VERSIONS:
-        bit = 1U << 0;
-        break;
-    case EXT_KEY_SHARE:
-        bit = 1U << 1;
-        break;
-    case EXT_PRE_SHARED_KEY:
-        bit = 1U << 2;
-        break;
-    case EXT_COOKIE:
-        bit = 1U << 3;
-        break;
-    default:
-        return CH_EPROTO; // ServerHello may carry nothing else
-    }
-    if (si->seen & bit) {
-        return CH_EPROTO; // RFC 8446 §4.2: one extension of each type
-    }
-    si->seen |= bit;
-    rbuf e;
-    rb_init(&e, ep, elen);
-    switch (ext) {
-    case EXT_SUPPORTED_VERSIONS:
-        si->ver_ok = rb_u16(&e) == TLS13;
-        break;
-    case EXT_KEY_SHARE:
-        if (hrr) {
-            // We offer only x25519, so an HRR can never legally ask for a
-            // different share: selecting ours is redundant (illegal) and
-            // selecting another group is unsupported. Both are fatal.
-            return CH_EPROTO;
-        }
-        if (rb_u16(&e) != GROUP_X25519 || rb_u16(&e) != X25519_LEN) {
-            return CH_EPROTO;
-        }
-        {
-            const uint8_t *pub = rb_bytes(&e, X25519_LEN);
-            if (pub == NULL) {
-                return CH_EPROTO;
-            }
-            memcpy(si->server_pub, pub, X25519_LEN);
-            si->have_share = 1;
-        }
-        break;
-    case EXT_PRE_SHARED_KEY:
-        si->psk_ok = rb_u16(&e) == 0; // we offered exactly one identity
-        break;
-    case EXT_COOKIE:
-        if (!hrr) {
-            return CH_EPROTO;
-        }
-        si->cookielen = rb_u16(&e);
-        si->cookie = rb_bytes(&e, si->cookielen);
-        if (si->cookie == NULL || si->cookielen > COOKIE_MAX) {
-            return CH_EPROTO;
-        }
-        break;
-    default:
-        break; // unreachable: the first switch rejected everything else
-    }
-    // RFC 8446 §4.2: extension_data matches its struct exactly, so a
-    // non-empty remainder is a decode error.
-    return e.err || rb_left(&e) != 0 ? CH_EPROTO : CH_OK;
-}
-
-static int parse_sh(const uint8_t *body, size_t n, sh_info *si, int psk_mode) {
-    rbuf r;
-    rb_init(&r, body, n);
-    if (rb_u16(&r) != 0x0303) {
-        return CH_EPROTO;
-    }
-    const uint8_t *random = rb_bytes(&r, 32);
-    if (random == NULL) {
-        return CH_EPROTO;
-    }
-    si->hrr = memcmp(random, hrr_magic, 32) == 0;
-    if (rb_u8(&r) != 0) {
-        return CH_EPROTO; // we sent an empty legacy_session_id; the echo must match
-    }
-    if (rb_u16(&r) != SUITE_CHACHA20_POLY1305_SHA256 || rb_u8(&r) != 0) {
-        return CH_EPROTO;
-    }
-    size_t extlen = rb_u16(&r);
-    if (r.err || extlen != rb_left(&r)) {
-        return CH_EPROTO;
-    }
-    while (rb_left(&r) > 0) {
-        int rc = parse_sh_ext(&r, si, si->hrr, psk_mode);
-        if (rc != CH_OK) {
-            return rc;
-        }
-    }
-    return si->ver_ok ? CH_OK : CH_EPROTO;
-}
-
-// Encrypted extensions: take the peer's record_size_limit, tolerate
-// supported_groups (a server may volunteer it for later connections),
-// reject everything else — RFC 8446 §4.2 requires unsupported_extension
-// for anything the ClientHello did not offer.
-static int parse_ee(hs *h, const uint8_t *body, size_t n) {
-    rbuf r;
-    rb_init(&r, body, n);
-    size_t extlen = rb_u16(&r);
-    if (r.err || extlen != rb_left(&r)) {
-        return CH_EPROTO;
-    }
-    uint8_t seen = 0; // bit 0 record_size_limit, bit 1 supported_groups
-    while (rb_left(&r) > 0) {
-        uint16_t ext = rb_u16(&r);
-        size_t elen = rb_u16(&r);
-        const uint8_t *ep = rb_bytes(&r, elen);
-        if (ep == NULL) {
-            return CH_EPROTO;
-        }
-        uint8_t bit;
-        if (ext == EXT_RECORD_SIZE_LIMIT) {
-            bit = 1U << 0;
-            rbuf e;
-            rb_init(&e, ep, elen);
-            uint16_t lim = rb_u16(&e);
-            // §4.2: extension_data matches its struct exactly; the body
-            // is one u16, so a non-empty remainder is a decode error.
-            if (e.err || rb_left(&e) != 0 || lim < 64) {
-                return CH_EPROTO;
-            }
-            // The limit covers content plus the inner type byte.
-            uint16_t pt = lim - 1;
-            if (pt < h->t->peer_limit) {
-                h->t->peer_limit = pt;
-            }
-        } else if (ext == EXT_SUPPORTED_GROUPS) {
-            bit = 1U << 1; // tolerated; its body is deliberately unread
-        } else {
-            h->alert = ALERT_UNSUPPORTED_EXTENSION;
-            return CH_EPROTO;
-        }
-        if (seen & bit) {
-            return CH_EPROTO; // RFC 8446 §4.2: one extension of each type
-        }
-        seen |= bit;
-    }
-    return CH_OK;
-}
-
 // Replaces the transcript after HRR: Hash(message_hash || 00 00 20 ||
 // Hash(CH1)) || HRR, per RFC 8446 §4.4.1.
 static void hrr_transcript(hs *h, const uint8_t *raw, size_t rawlen) {
@@ -371,7 +199,7 @@ static int read_sh(hs *h, sh_info *si) {
         return CH_EPROTO;
     }
     memset(si, 0, sizeof *si);
-    rc = parse_sh(raw + 4, rawlen - 4, si, h->t->cfg.psk != NULL);
+    rc = hsp_parse_sh(raw + 4, rawlen - 4, si, h->t->cfg.psk != NULL);
     if (rc != CH_OK) {
         h->alert = ALERT_ILLEGAL_PARAMETER;
         return rc;
@@ -608,7 +436,7 @@ static int run(hs *h) {
         h->alert = ALERT_UNEXPECTED_MESSAGE;
         return CH_EPROTO;
     }
-    rc = parse_ee(h, raw + 4, rawlen - 4);
+    rc = hsp_parse_ee(raw + 4, rawlen - 4, &t->peer_limit, &h->alert);
     if (rc != CH_OK) {
         h->alert = ALERT_ILLEGAL_PARAMETER;
         return rc;

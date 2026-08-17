@@ -2,80 +2,16 @@
 // parsers (issue #10): every extension body must match its struct
 // exactly (RFC 8446 §4.2 makes trailing bytes a decode error) and no
 // extension type may repeat. Each behavior gets a boundary pair: the
-// exact-length body parses, the same body plus one byte fails. Both
-// parsers are static in handshake.c, so this test includes the
-// translation unit, stubbing the session hooks the parsers never call —
-// the same shape as fuzz/fuzz_hsparse.c. Its own binary with a private
-// main, like the other standalone test mains.
+// exact-length body parses, the same body plus one byte fails. The
+// parsers live in hsparse.c and depend only on buf.c, so those two files
+// are the whole link line. Its own binary with a private main, like the
+// other standalone test mains.
 #include <stdint.h>
 #include <stdio.h>
-#include <stdlib.h>
-#include <stdnoreturn.h>
 #include <string.h>
 
 #include "cfg.h"
-#include "ch_assert.h"
-#include "io.h"
-#include "p256.h"
-#include "rand.h"
-#include "rsa.h"
-#include "session.h"
-
-noreturn void ch_assert_fail(const char *cond, const char *file, int line) {
-    (void)cond;
-    (void)file;
-    (void)line;
-    abort();
-}
-// The stub writes exist only to match the non-const prototypes; the
-// parsers never call any of these hooks.
-void ch_rand_bytes(uint8_t *p, size_t n) {
-    memset(p, 0, n);
-    abort();
-}
-int io_send_all(const ch_cfg *cfg, const uint8_t *p, size_t n) {
-    (void)cfg;
-    (void)p;
-    (void)n;
-    abort();
-}
-int io_read_record(const ch_cfg *cfg, uint8_t *buf, size_t cap, uint8_t *outer, size_t *reclen) {
-    (void)cfg;
-    memset(buf, 0, cap);
-    *outer = 0;
-    *reclen = 0;
-    abort();
-}
-void tlsi_fail(ch_tls *t, uint8_t desc) {
-    (void)t;
-    (void)desc;
-    abort();
-}
-int tlsi_send_alert(ch_tls *t, uint8_t level, uint8_t desc) {
-    (void)t;
-    (void)level;
-    (void)desc;
-    abort();
-}
-int p256_ecdsa_verify(const uint8_t pub[64], const uint8_t msg_hash[32], const uint8_t *sig_der,
-                      size_t sig_len) {
-    (void)pub;
-    (void)msg_hash;
-    (void)sig_der;
-    (void)sig_len;
-    abort();
-}
-int rsa_pss_verify(const uint8_t *n, size_t nlen, const uint8_t msg_hash[32], const uint8_t *sig,
-                   size_t siglen) {
-    (void)n;
-    (void)nlen;
-    (void)msg_hash;
-    (void)sig;
-    (void)siglen;
-    abort();
-}
-
-#include "handshake.c"
+#include "hsparse.h"
 
 static int failures = 0;
 #define CHECK(cond)                                                                                \
@@ -126,7 +62,7 @@ static size_t mk_sh(uint8_t *out, int hrr, const uint8_t *exts, size_t n) {
     size_t fixed = 2 + 32 + 1 + 2 + 1;
     memcpy(out, sh_golden, fixed);
     if (hrr) {
-        memcpy(out + 2, hrr_magic, 32);
+        memcpy(out + 2, hsp_hrr_magic, 32);
     }
     out[fixed] = (uint8_t)(n >> 8);
     out[fixed + 1] = (uint8_t)n;
@@ -146,17 +82,13 @@ static size_t mk_ee(uint8_t *out, const uint8_t *exts, size_t n) {
 static int sh_parse(const uint8_t *body, size_t n, int psk_mode) {
     sh_info si;
     memset(&si, 0, sizeof si);
-    return parse_sh(body, n, &si, psk_mode);
+    return hsp_parse_sh(body, n, &si, psk_mode);
 }
 
 static int ee_parse(const uint8_t *body, size_t n) {
-    ch_tls t;
-    memset(&t, 0, sizeof t);
-    t.peer_limit = CH_TX_PT;
-    hs h;
-    memset(&h, 0, sizeof h);
-    h.t = &t;
-    return parse_ee(&h, body, n);
+    uint16_t peer_limit = CH_TX_PT;
+    uint8_t alert = 0;
+    return hsp_parse_ee(body, n, &peer_limit, &alert);
 }
 
 // Extension blobs for the ServerHello cases. sv = supported_versions,

@@ -224,14 +224,14 @@ launch() {
 
 # Longest first, so stragglers overlap the quick wins instead of
 # trailing them.
-launch slow full handshake 100 "fetch_record.0:45,next_msg.0:140,parse_sh.0:66,parse_ee.0:66,fill_nondet.0:600" buf.c ct.c
+launch slow full handshake 100 "fetch_record.0:45,next_msg.0:140,hsp_parse_sh.0:66,hsp_parse_ee.0:66,fill_nondet.0:600" hsparse.c buf.c ct.c
 launch slow full aead 85 "blocks.0:10,chacha20_xor.1:4" chacha20.c poly1305.c ct.c
 launch slow noovf x25519 65 "" ct.c
 launch slow full hkdf_expand 120 "hkdf_expand.0:5" --object-bits 11 ct.c
 # Measured kissat-path peaks (macOS /usr/bin/time -l, RSS): hsparse
 # 9.9 GB, sha256 5.7 GB — both above the default weight and cap.
-launch fast:10 full hsparse 260 "parse_sh.0:66,main.0:600,main.1:600" buf.c
-launch fast full eeparse 260 "parse_ee.0:66,main.0:600" buf.c
+launch fast:10 full hsparse 260 "hsp_parse_sh.0:66,main.0:600" hsparse.c buf.c
+launch fast full eeparse 260 "hsp_parse_ee.0:66" hsparse.c buf.c
 launch fast:6 full sha256 3 "fill_nondet.0:97,sha256_update.0:66,sha256_update.1:3,sha256_update.2:66,sha256_final.0:65,sha256_final.1:9,sha256_final.2:9,compress.0:17,compress.1:49,compress.2:65"
 launch fast full record 165 "" ct.c
 launch fast full rsa 385 "fill_nondet.0:385,ct_memeq.0:33,ge_bytes.0:385,modulus_bits.0:385,modulus_bits.1:9,mgf1.0:12,emsa_pss_verify.0:352,emsa_pss_verify.1:320,rsa_pss_verify.0:385" --object-bits 11 --max-field-sensitivity-array-size 385 ct.c

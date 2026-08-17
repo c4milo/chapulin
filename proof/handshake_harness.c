@@ -7,7 +7,8 @@
 // Layered proof: io, record protection, the key schedule, hashing, and
 // x25519 are stubs asserting their proven contracts and havocing results,
 // so nothing here depends on crypto values — the object under proof is
-// the driver's own arithmetic and state. buf.c and ct.c are real.
+// the driver's own arithmetic and state. buf.c, ct.c, and hsparse.c are
+// real.
 #include "harness.h"
 
 #include <string.h>
