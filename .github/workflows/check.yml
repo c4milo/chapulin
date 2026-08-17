@@ -5,6 +5,12 @@ on:
     branches: [main] # branch pushes get checked via their PR run
   pull_request:
 
+# One run per branch: a new push supersedes older runs. Cancelled runs
+# still execute their always() cache save, so no proof work is lost.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   check:
     runs-on: ubuntu-24.04
