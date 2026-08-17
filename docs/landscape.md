@@ -1,4 +1,4 @@
-# Embedded TLS landscape (surveyed 2026-08-14)
+# Embedded TLS landscape (surveyed 2026-08-14; completeness re-swept 2026-08-17)
 
 Why chapulin exists: no shipping C TLS stack is simultaneously (a)
 heap-free at few-kB SRAM, (b) TLS 1.3 PSK-minimal, and (c) carrying
@@ -14,14 +14,21 @@ stack reducible to ~2.6 kB with small AES tables, so ~9.4 kB floor).
 Cannot run without an allocator — the official fallback is a static-pool
 allocator, still malloc semantics
 ([KB](https://mbed-tls.readthedocs.io/en/latest/kb/how-to/using-static-memory-instead-of-the-heap/)).
-Its shipped minimal-PSK example config is TLS 1.2 only.
+Its shipped minimal-PSK example config is TLS 1.2 only. PQShield's
+PQMicroLib (announced Embedded World 2026) sells drop-in post-quantum
+TLS for embedded as an Mbed TLS integration — PQ crypto under 5 kB by
+their claim, TLS layer and footprint are Mbed TLS's.
 
 **wolfSSL** (GPLv3 since 5.8.2 — a licensing break from GPLv2 — or
 commercial). The widely cited LeanPSK 20 kB build is TLS 1.2 only. TLS 1.3
 PSK-only: "less than 50 kB" code, no RAM figure published
 ([wolfSSL](https://www.wolfssl.com/small-tls-1-3-psk/)); measured 6.2 kB
 peak heap in the arXiv paper above. Static-memory mode exists, still
-allocator semantics.
+allocator semantics. wolfSSL's own answer to the minimal-client niche is
+[wolfNanoTLS](https://github.com/aidangarske/wolfNanoTLS) (GPL-3.0,
+created 2026-06): TLS 1.3-only, client-first, a zero-dynamic-allocation
+mode — no published flash/RAM numbers yet, crypto inherited from
+wolfSSL.
 
 **BearSSL** (MIT). The closest design ancestor: zero malloc, constant-time
 by default, ~25 kB RAM dominated by 16 kB record buffers. **Still no
@@ -48,6 +55,36 @@ client, no_std, no allocator, PSK — the closest architectural cousin.
 Self-described work-in-progress, no proofs, no C ABI, no published RAM
 figure beyond a user-supplied 16 kB frame buffer.
 
+**krabitls** (Rust, Apache-2.0,
+[kaidokert](https://github.com/kaidokert/krabitls-rs)). New (crate first
+published 2026-06): TLS 1.3-only client, optional DTLS 1.3, and it
+publishes real numbers — .text 37.5–96.2 KiB and peak stack
+9.7–111.6 kB depending on the algorithm set. The most serious new
+entrant; still 3–10x chapulin's stack and no proofs, no C ABI.
+
+**NetX Duo Secure** (MIT since the 2024 move to Eclipse ThreadX;
+ex-Express Logic/Azure RTOS). TLS 1.2 + 1.3 client/server built for
+MCUs; configuration knobs to shrink RAM (single-hash builds), but no
+TLS-specific ROM/RAM numbers published. The established stack this
+survey originally missed.
+
+**Tuxera TLS module** (commercial; ex-HCC Embedded, which also absorbed
+InterNiche). Standalone MISRA C:2012-compliant TLS 1.3 module for MCUs
+with or without an RTOS, ~20 kB ROM / ~8 kB RAM at its 2020 launch;
+ISO 26262-ready variant. Assurance story is process compliance (MISRA
+report), not proofs.
+
+**SEGGER emSSL** (commercial). The best published commercial footprints:
+17–43 kB ROM, static RAM "tens of bytes" plus ~1.5 kB per connection —
+but the headline minima are for legacy suites (RC4, CBC-SHA1), and per
+its own manual (v3.10.0, 2025-07) it is TLS 1.0–1.2 only. No TLS 1.3.
+
+**DigiCert TrustCore SDK / NanoSSL** (Mocana lineage; AGPLv3 since the
+Aug 2025 open-sourcing, or commercial). TLS/DTLS 1.3 client+server with
+post-quantum algorithms and a long industrial track record — but
+~90 kB for the SSL library plus ~311 kB of crypto (ARM), an order of
+magnitude above kB-class.
+
 ## Verified TLS/crypto
 
 - **HACL*/EverCrypt**: verified primitives, extracted C usable
@@ -58,7 +95,27 @@ figure beyond a user-supplied 16 kB frame buffer.
 - **Bertie** ([Cryspen](https://github.com/cryspen/bertie)): minimal
   TLS 1.3 in hacspec/Rust, same single-suite product shape, verified
   protocol; explicitly not for production, allocation-heavy, not C, not
-  embedded.
+  embedded. The CCS'25 paper
+  ([eprint 2025/980](https://eprint.iacr.org/2025/980)) completes the
+  verification ("Bert13"), classical and post-quantum suites.
+- **secunet's agentic Ada/SPARK suite**
+  ([arXiv 2607.14340](https://arxiv.org/abs/2607.14340), 2026-07): a
+  ~15 kLOC SPARK-verified TLS 1.3 client running bare-metal on the Muen
+  separation kernel — the closest published relative of a verified
+  minimal client. No footprint numbers published; Ada/SPARK toolchain,
+  not C.
+- **OCaml-TLS / MirageOS**
+  ([mirleft](https://github.com/mirleft/ocaml-tls), BSD-2): memory-safe
+  TLS 1.3 since 2020, actively maintained (v2.1.2, 2026-07); needs the
+  OCaml runtime and GC — unikernel/server class, not firmware.
+- **rustls** (Apache/MIT/ISC): memory-safe with a real assurance stack —
+  Cure53 audit, Prossimo-funded maintainer, verified crypto via
+  aws-lc-rs; no_std-capable since 0.23 but code size and RAM remain
+  desktop-class, and it needs atomics.
+- **RecordFlux / GreenTLS** (AdaCore, Apache-2.0): TLS 1.3 message
+  parsers generated from provable message specifications — a
+  methodology cousin of our Lean-spec approach; the TLS artifact is a
+  parser layer grafted onto Fizz, not a standalone client.
 - **s2n-tls (AWS)**: SAW/Cryptol proofs for HMAC, DRBG, and the handshake
   state machine, in CI ([CAV'18](https://d1.awsstatic.com/Security/pdfs/Continuous_Formal_Verification_Of_Amazon_s2n.pdf)).
   Server-class; not whole-stack memory safety; needs a libcrypto.
@@ -90,6 +147,6 @@ anything) and fine when both ends are ours.
 Every competitor's RAM claim hides the 16,384+ B max record buffer.
 Published minima for a working TLS 1.3 PSK client: wolfSSL ~6.2 kB heap
 (buffers extra), mbedTLS ~9–15 kB (buffers extra), SharkSSL 13 kB
-total-system (cert-based). chapulin: 968 B session + a 2 kB record
+total-system (cert-based). chapulin: 1,008 B session + a 2 kB record
 buffer = ~3 kB total static, zero heap, buffer included — with
 record_size_limit making the small buffer safe rather than hopeful.
