@@ -240,6 +240,8 @@ static void test_connect_cfg(void) {
     uint8_t psk[32] = {1};
     uint8_t pin[TEST_PIN_LEN] = {2};
     pin[TEST_PIN_LEN - 1] = 1; // a real RSA modulus is odd
+    uint8_t pin2[TEST_PIN_LEN] = {4};
+    pin2[TEST_PIN_LEN - 1] = 3; // slot B must be odd too
     mock_io m = {0};
     ch_cfg cfg = {0};
     cfg.buf = rxbuf;
@@ -284,8 +286,33 @@ static void test_connect_cfg(void) {
     cfg.server_pubkey_len = sizeof pin;
     cfg.buf_len = 511;
     CHECK(ch_connect(&t, &cfg) == CH_EINVAL); // buffer below the floor
-#ifndef CH_PIN_ECDSA
     cfg.buf_len = sizeof rxbuf;
+
+    // Slot B (key rotation): optional, but bound to every slot-A rule.
+    cfg.server_pubkey2 = pin2;
+    cfg.server_pubkey2_len = sizeof pin2;
+    CHECK(ch_connect(&t, &cfg) == CH_EIO); // both slots valid reaches I/O
+    CHECK(t.pin_slot == 0);                // no pin matched anything yet
+    cfg.server_pubkey2_len = TEST_PIN_LEN - 1;
+    CHECK(ch_connect(&t, &cfg) == CH_EINVAL); // bad slot-B length
+    cfg.server_pubkey2_len = sizeof pin2;
+    cfg.server_pubkey = NULL;
+    CHECK(ch_connect(&t, &cfg) == CH_EINVAL); // slot B never stands alone
+    cfg.psk = psk;
+    cfg.psk_len = sizeof psk;
+    cfg.psk_id = (const uint8_t *)"d";
+    cfg.psk_id_len = 1;
+    CHECK(ch_connect(&t, &cfg) == CH_EINVAL); // ... not even beside a PSK
+    cfg.psk = NULL;
+    cfg.psk_len = 0;
+    cfg.psk_id = NULL;
+    cfg.psk_id_len = 0;
+    cfg.server_pubkey = pin;
+#ifndef CH_PIN_ECDSA
+    pin2[TEST_PIN_LEN - 1] = 2; // even slot B: same corruption check as A
+    CHECK(ch_connect(&t, &cfg) == CH_EINVAL);
+    cfg.server_pubkey2 = NULL;
+    cfg.server_pubkey2_len = 0;
     pin[TEST_PIN_LEN - 1] = 2; // even low byte: provisioning corruption
     CHECK(ch_connect(&t, &cfg) == CH_EINVAL);
 #endif

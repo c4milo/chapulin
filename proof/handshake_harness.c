@@ -231,9 +231,11 @@ int main(void) {
     // Sized for the largest pin either build accepts (an RSA-3072
     // modulus); the ECDSA build reads only its first 64 bytes.
     uint8_t pin[384];
+    uint8_t pin2[384];
     fill_nondet(psk, sizeof psk);
     fill_nondet(id, sizeof id);
     fill_nondet(pin, sizeof pin);
+    fill_nondet(pin2, sizeof pin2);
     t.cfg.buf = buf;
     t.cfg.buf_len = sizeof buf;
     if (nondet_u8() & 1) {
@@ -259,6 +261,18 @@ int main(void) {
         __CPROVER_assume((pin[pinlen - 1] & 1) == 1);
 #endif
         t.cfg.server_pubkey_len = pinlen;
+        // Optional slot B (key rotation), in the same validated domain.
+        if (nondet_u8() & 1) {
+            t.cfg.server_pubkey2 = pin2;
+            size_t pin2len = nondet_size_t();
+#ifdef CH_PIN_ECDSA
+            __CPROVER_assume(pin2len == 64);
+#else
+            __CPROVER_assume(pin2len >= 256 && pin2len <= sizeof pin2 && pin2len % 8 == 0);
+            __CPROVER_assume((pin2[pin2len - 1] & 1) == 1);
+#endif
+            t.cfg.server_pubkey2_len = pin2len;
+        }
     }
 
     (void)ch_handshake(&t);

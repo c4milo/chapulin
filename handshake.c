@@ -255,8 +255,8 @@ static int expect_finished(hs *h) {
 // Certificate message with minimal framing checks — its contents are
 // authenticated by the signature, not by parsing — then require a
 // CertificateVerify whose signature (RSA-PSS by default, ECDSA-P256 under
-// CH_PIN_ECDSA) over the running transcript checks out against the
-// provisioned public key.
+// CH_PIN_ECDSA) over the running transcript checks out against either
+// provisioned pin slot (slot B holds the staged next key, docs/rotation.md).
 static int server_auth(hs *h) {
     uint8_t type = 0;
     const uint8_t *raw = NULL;
@@ -311,25 +311,30 @@ static int server_auth(hs *h) {
     // Signed content per §4.4.3: 64 spaces, context string, NUL, transcript.
     static const char ctx[] = "TLS 1.3, server CertificateVerify";
     uint8_t pad[64];
-    for (size_t i = 0; i < sizeof pad; i++) {
-        pad[i] = ' ';
-    }
+    memset(pad, ' ', sizeof pad);
     sha256 s;
     sha256_init(&s);
     sha256_update(&s, pad, sizeof pad);
-    sha256_update(&s, (const uint8_t *)ctx, sizeof ctx - 1);
-    uint8_t nul = 0;
-    sha256_update(&s, &nul, 1);
+    sha256_update(&s, (const uint8_t *)ctx, sizeof ctx); // sizeof keeps the NUL
     sha256_update(&s, hash, SHA256_LEN);
     uint8_t signed_hash[SHA256_LEN];
     sha256_final(&s, signed_hash);
 
+    // Slot A, then slot B: pins, transcript hash, and signature are all
+    // public, so the second attempt's variable timing leaks nothing.
+    const uint8_t *keys[2] = {h->t->cfg.server_pubkey, h->t->cfg.server_pubkey2};
+    int sig_ok = 0;
+    for (int i = 0; i < 2 && !sig_ok && keys[i] != NULL; i++) {
 #ifdef CH_PIN_ECDSA
-    int sig_ok = p256_ecdsa_verify(h->t->cfg.server_pubkey, signed_hash, sig, siglen);
+        sig_ok = p256_ecdsa_verify(keys[i], signed_hash, sig, siglen);
 #else
-    int sig_ok = rsa_pss_verify(h->t->cfg.server_pubkey, h->t->cfg.server_pubkey_len, signed_hash,
-                                sig, siglen);
+        size_t len = i == 0 ? h->t->cfg.server_pubkey_len : h->t->cfg.server_pubkey2_len;
+        sig_ok = rsa_pss_verify(keys[i], len, signed_hash, sig, siglen);
 #endif
+        if (sig_ok) {
+            h->t->pin_slot = (uint8_t)(i + 1);
+        }
+    }
     if (!sig_ok) {
         h->alert = ALERT_DECRYPT_ERROR;
         return CH_EAUTH;

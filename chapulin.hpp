@@ -109,6 +109,16 @@ class Config {
         return *this;
     }
 
+    // Optional second pin, the staged "next" key during server key
+    // rotation: the handshake accepts either and Session::pin_slot()
+    // reports which. Same length rules as pinned(), and only valid
+    // alongside it — ch_connect rejects a lone next pin.
+    Config &pinned_next(ConstBytes server_pubkey) {
+        cfg_.server_pubkey2 = server_pubkey.data;
+        cfg_.server_pubkey2_len = server_pubkey.size;
+        return *this;
+    }
+
     Config &on_ticket(void (*cb)(void *ctx, const ch_ticket *ticket)) {
         cfg_.on_ticket = cb;
         return *this;
@@ -139,6 +149,11 @@ class Session {
     }
 
     Read read(Bytes into) { return Read{ch_read(&tls_, into.data, into.size)}; }
+
+    // Which pin authenticated the server: 1 = pinned(), 2 = pinned_next(),
+    // 0 before a pinned handshake completes. Public information, for
+    // watching key rotation progress.
+    int pin_slot() const { return tls_.pin_slot; }
 
     // Sends close_notify under live keys and wipes; safe to call more than
     // once, and the destructor calls it too.

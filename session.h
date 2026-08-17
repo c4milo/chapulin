@@ -32,6 +32,10 @@ typedef struct {
     uint16_t peer_limit; // max plaintext per record the peer accepts
     uint8_t state;
     uint8_t keys; // record protection live; alerts encrypt iff set
+    // Which pin authenticated the server: 1 = cfg.server_pubkey, 2 =
+    // cfg.server_pubkey2, 0 before a pinned handshake completes. Public
+    // information — operators read it to watch key rotation progress.
+    uint8_t pin_slot;
     // Unread plaintext of the current record, inside cfg.buf.
     size_t pt_off;
     size_t pt_len;

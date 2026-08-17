@@ -73,6 +73,31 @@ int main() {
         CHECK(s.connect(cfg) == chapulin::Status::io);
     }
 
+    // Both pin slots set (key rotation): still a valid config, and the
+    // slot report reads 0 until a pinned handshake completes.
+    {
+        uint8_t pin[kPinLen];
+        uint8_t next[kPinLen];
+        std::memset(pin, 0x03, sizeof pin);
+        std::memset(next, 0x05, sizeof next);
+        chapulin::Config cfg(chapulin::Bytes{rxbuf}, io);
+        cfg.pinned(chapulin::ConstBytes{pin, sizeof pin});
+        cfg.pinned_next(chapulin::ConstBytes{next, sizeof next});
+        chapulin::Session s;
+        CHECK(s.connect(cfg) == chapulin::Status::io);
+        CHECK(s.pin_slot() == 0);
+    }
+
+    // A staged next pin without a current one is rejected before any I/O.
+    {
+        uint8_t next[kPinLen];
+        std::memset(next, 0x05, sizeof next);
+        chapulin::Config cfg(chapulin::Bytes{rxbuf}, io);
+        cfg.pinned_next(chapulin::ConstBytes{next, sizeof next});
+        chapulin::Session s;
+        CHECK(s.connect(cfg) == chapulin::Status::invalid);
+    }
+
     // Both modes at once is rejected before any I/O.
     {
         uint8_t pin[kPinLen];

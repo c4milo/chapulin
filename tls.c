@@ -25,17 +25,31 @@ int ch_connect(ch_tls *t, const ch_cfg *cfg) {
                      cfg->server_pubkey_len % 8 == 0;
 #endif
     int pin_ok = cfg->psk == NULL && cfg->server_pubkey != NULL && pin_len_ok;
+    // The optional second pin (key rotation) obeys every slot-A rule and
+    // never stands alone: pinned mode still requires server_pubkey.
+#ifdef CH_PIN_ECDSA
+    int pin2_len_ok = cfg->server_pubkey2_len == 64;
+#else
+    int pin2_len_ok = cfg->server_pubkey2_len >= 256 && cfg->server_pubkey2_len <= 384 &&
+                      cfg->server_pubkey2_len % 8 == 0;
+#endif
+    if (cfg->server_pubkey2 != NULL && (!pin_ok || !pin2_len_ok)) {
+        t->state = CH_ST_FAILED;
+        return CH_EINVAL;
+    }
     if ((!psk_ok && !pin_ok) || cfg->buf == NULL || cfg->send == NULL || cfg->recv == NULL ||
         cfg->buf_len < 512) {
         t->state = CH_ST_FAILED;
         return CH_EINVAL;
     }
 #ifndef CH_PIN_ECDSA
-    // Every real modulus is odd (a product of odd primes); an even pin is
-    // provisioning corruption. Rejected here so the failure points at the
-    // config — inside the handshake it would surface as CH_EAUTH and read
-    // like an attack.
-    if (pin_ok && (cfg->server_pubkey[cfg->server_pubkey_len - 1] & 1) == 0) {
+    // Every real modulus is odd (a product of odd primes); an even pin in
+    // either slot is provisioning corruption. Rejected here so the failure
+    // points at the config — inside the handshake it would surface as
+    // CH_EAUTH and read like an attack.
+    if ((pin_ok && (cfg->server_pubkey[cfg->server_pubkey_len - 1] & 1) == 0) ||
+        (cfg->server_pubkey2 != NULL &&
+         (cfg->server_pubkey2[cfg->server_pubkey2_len - 1] & 1) == 0)) {
         t->state = CH_ST_FAILED;
         return CH_EINVAL;
     }

@@ -126,13 +126,19 @@ static int load_ticket(const char *path, uint8_t *id, size_t *idlen, uint8_t *ps
     return (*idlen > 0 && *psklen == SHA256_LEN) ? 0 : -1;
 }
 
-// Fills the auth part of cfg: "pin:<pubkey-hex>" for pinned-key mode, a
-// saved ticket ("@file"), or an external psk-hex + identity pair.
+// Fills the auth part of cfg: "pin:<pubkey-hex>[,<pubkey2-hex>]" for
+// pinned-key mode (the second pin is the staged rotation key), a saved
+// ticket ("@file"), or an external psk-hex + identity pair.
 static int setup_psk(char **argv, ch_cfg *cfg, uint8_t *psk, size_t pskcap, uint8_t *id) {
     // Sized for the largest pin either build takes: an RSA-3072 modulus.
     // ch_connect enforces the exact length its compiled algorithm needs.
     static uint8_t pin[384];
+    static uint8_t pin2[384];
     if (strncmp(argv[3], "pin:", 4) == 0) {
+        char *sep = strchr(argv[3] + 4, ',');
+        if (sep != NULL) {
+            *sep = 0;
+        }
         size_t n = unhex(argv[3] + 4, pin, sizeof pin);
         if (n == 0) {
             (void)fprintf(stderr, "pin must be hex: P-256 X||Y or an RSA modulus\n");
@@ -140,7 +146,17 @@ static int setup_psk(char **argv, ch_cfg *cfg, uint8_t *psk, size_t pskcap, uint
         }
         cfg->server_pubkey = pin;
         cfg->server_pubkey_len = n;
-        (void)fprintf(stderr, "pinned-key mode (%zu-byte key)\n", n);
+        if (sep != NULL) {
+            size_t n2 = unhex(sep + 1, pin2, sizeof pin2);
+            if (n2 == 0) {
+                (void)fprintf(stderr, "second pin must be hex like the first\n");
+                return -1;
+            }
+            cfg->server_pubkey2 = pin2;
+            cfg->server_pubkey2_len = n2;
+        }
+        (void)fprintf(stderr, "pinned-key mode (%zu-byte key%s)\n", n,
+                      sep != NULL ? " + staged next" : "");
         return 0;
     }
     if (argv[3][0] == '@') {
@@ -174,8 +190,9 @@ int main(int argc, char **argv) {
     if (argc != 5 && argc != 6) {
         (void)fprintf(stderr,
                       "usage: %s host port psk-hex psk-id [save-ticket-file]\n"
-                      "       %s host port @ticket-file - [save-ticket-file]\n",
-                      argv[0], argv[0]);
+                      "       %s host port @ticket-file - [save-ticket-file]\n"
+                      "       %s host port pin:hex[,hex2] - [save-ticket-file]\n",
+                      argv[0], argv[0], argv[0]);
         return 2;
     }
     g_ticket_path = argc == 6 ? argv[5] : NULL;
@@ -215,6 +232,10 @@ int main(int argc, char **argv) {
         return 1;
     }
     (void)fprintf(stderr, "connected\n");
+    if (cfg.server_pubkey != NULL) {
+        // e2e asserts on this line to watch rotation: 2 = the staged pin.
+        (void)fprintf(stderr, "pin slot %u\n", tls.pin_slot);
+    }
 
     char line[512];
     while (fgets(line, sizeof line, stdin) != NULL) {

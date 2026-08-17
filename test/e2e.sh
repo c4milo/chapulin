@@ -21,16 +21,17 @@ fi
 # One temp dir holds every server key, ticket, and stderr file, so two runs
 # on the same host never share a path.
 DIR=$(mktemp -d)
-trap 'kill ${SERVER:-} ${SERVER2:-} ${SERVER3:-} ${SERVER4:-} ${SERVER5:-} 2>/dev/null || true
+trap 'kill ${SERVER:-} ${SERVER2:-} ${SERVER3:-} ${SERVER4:-} ${SERVER5:-} ${SERVER6:-} 2>/dev/null || true
       rm -rf "$DIR"' EXIT
 
-# Each run takes a disjoint 5-port slot. Multiplying the slot index by 8
+# Each run takes a disjoint 6-port slot. Multiplying the slot index by 8
 # keeps adjacent PIDs from overlapping slots.
 PORT=$((20000 + ($$ % 5000) * 8))
 PORT2=$((PORT + 1))
 PORT3=$((PORT + 2))
 PORT4=$((PORT + 3))
 PORT5=$((PORT + 4))
+PORT6=$((PORT + 5))
 
 PSK=0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20
 ID=sapo-01
@@ -160,6 +161,46 @@ expect pin-rsa "ednarg evalc" "$DIR/err5" \
 MSG='otra ronda'
 expect pin-rsa-resume "adnor arto" "$DIR/err5" ./bin/tlsclient 127.0.0.1 "$PORT4" "@$DIR/ticket4" -
 
+# --- Rotation (docs/rotation.md): stage a second RSA key as slot B, then
+# restart the server on it. Against the old server both pins match slot A;
+# against the new one the same client must report slot B — a key switch
+# with no client re-provisioning ---
+"$OPENSSL" genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:3072 \
+    -out "$DIR/rsakey2.pem" 2>/dev/null
+"$OPENSSL" req -x509 -key "$DIR/rsakey2.pem" -subj /CN=chapulin -days 1 \
+    -out "$DIR/rsacert2.pem" 2>/dev/null
+MOD2=$("$OPENSSL" rsa -in "$DIR/rsakey2.pem" -noout -modulus 2>/dev/null \
+    | sed 's/^Modulus=//' | tr 'A-F' 'a-f')
+[ ${#MOD2} -eq 768 ] || {
+    echo "FAIL e2e rotation: could not extract the next modulus"
+    exit 1
+}
+
+MSG='todavia la vieja'
+expect rotate-old "ajeiv al aivadot" "$DIR/err7" \
+    ./bin/tlsclient 127.0.0.1 "$PORT4" "pin:$MOD,$MOD2" -
+grep -q "^pin slot 1$" "$DIR/err7" || {
+    echo "FAIL e2e rotation: old server did not report slot 1"
+    cat "$DIR/err7"
+    exit 1
+}
+
+kill $SERVER4 2>/dev/null || true
+wait $SERVER4 2>/dev/null || true
+"$OPENSSL" s_server -tls1_3 -ciphersuites TLS_CHACHA20_POLY1305_SHA256 \
+    -cert "$DIR/rsacert2.pem" -key "$DIR/rsakey2.pem" -accept "$PORT6" -rev -quiet &
+SERVER6=$!
+wait_listen $SERVER6 "$PORT6"
+
+MSG='clave nueva'
+expect rotate-new "aveun evalc" "$DIR/err7" \
+    ./bin/tlsclient 127.0.0.1 "$PORT6" "pin:$MOD,$MOD2" -
+grep -q "^pin slot 2$" "$DIR/err7" || {
+    echo "FAIL e2e rotation: rotated server did not report slot 2"
+    cat "$DIR/err7"
+    exit 1
+}
+
 # --- Go's crypto/tls, the stack Prometheus terminates with: once with the
 # P-256 cert against the ECDSA build, once with the RSA cert against the
 # default build ---
@@ -203,4 +244,4 @@ else
     GO_LEG=" (go legs skipped)"
 fi
 
-echo "e2e: psk + tickets + resumption + pinned ecdsa + pinned rsa${GO_LEG} OK"
+echo "e2e: psk + tickets + resumption + pinned ecdsa + pinned rsa + rotation${GO_LEG} OK"

@@ -64,12 +64,12 @@ targets shrink the pointer fields.
 
 | what | bytes |
 |---|---|
-| `ch_tls` session struct (includes 534 B TX staging) | 984 |
+| `ch_tls` session struct (includes 534 B TX staging) | 1000 |
 | caller receive buffer (you choose; 2048 shown) | 2048 |
-| **total static working set** | **3032** |
-| peak transient stack, `ch_connect` (default: RSA-3072 verify) | 5232 |
-| peak transient stack, `ch_connect` (`PIN=ecdsa`: P-256 verify) | 3712 |
-| peak transient stack, `ch_connect` (PSK mode: x25519 ladder) | 2640 |
+| **total static working set** | **3048** |
+| peak transient stack, `ch_connect` (default: RSA-3072 verify) | 5200 |
+| peak transient stack, `ch_connect` (`PIN=ecdsa`: P-256 verify) | 3680 |
+| peak transient stack, `ch_connect` (PSK mode: x25519 ladder) | 2608 |
 | peak transient stack, `ch_read` (worst case: KeyUpdate rekey) | 1632 |
 | peak transient stack, `ch_write` / `ch_close` | 736 / 688 |
 

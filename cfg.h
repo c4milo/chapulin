@@ -61,6 +61,13 @@ typedef struct {
     const uint8_t *server_pubkey;
     size_t server_pubkey_len;
 
+    // Optional second pin, the staged "next" key during server key
+    // rotation: the handshake accepts a CertificateVerify matching either
+    // slot and records which in ch_tls.pin_slot. Same length and oddness
+    // rules as server_pubkey, never set without it. See docs/rotation.md.
+    const uint8_t *server_pubkey2;
+    size_t server_pubkey2_len;
+
     // Receive buffer; its size (minus record overhead) is advertised as
     // our record_size_limit, so the peer can never overflow it.
     uint8_t *buf;
