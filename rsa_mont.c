@@ -10,7 +10,7 @@
 
 #include <string.h>
 
-#define LIMBS_MAX 96 // RSA-3072 = 3072 bits = 96 * 32
+#define LIMBS_MAX 96 // limb: one 32-bit word of a big number; RSA-3072 = 96 limbs
 
 // 32 big-endian bytes per limb -> k little-endian limbs, byte by byte.
 static void from_bytes(uint32_t *o, const uint8_t *b, size_t k) {

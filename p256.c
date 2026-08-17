@@ -11,7 +11,7 @@
 
 #include "buf.h"
 
-#define LIMBS 8
+#define LIMBS 8 // limb: one 32-bit word of a big number; P-256 = 8 limbs
 
 typedef struct {
     uint32_t m[LIMBS];  // the modulus
