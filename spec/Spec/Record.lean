@@ -10,6 +10,12 @@ namespace Spec.Record
 open Spec.Bytes
 
 /--
+RFC 9846 §7.2: the next generation of a traffic secret,
+`HKDF-Expand-Label(secret, "traffic upd", "", Hash.length)`. -/
+def nextSecret (secret : ByteArray) : ByteArray :=
+  Spec.Hkdf.expandLabel secret "traffic upd" ByteArray.empty 32
+
+/--
 RFC 9846 §5.3: the per-record nonce — the 64-bit sequence number in
 network (big-endian) byte order, left-padded with zeros to the IV
 length, XORed with the write IV.

@@ -117,6 +117,10 @@ def dispatch : List String → Option String
     guard (k.size == 32 && n <= 4096)
     let (k2, out) := Spec.Drbg.next k n
     return s!"{emit k2} {emit out}"
+  | ["traffic_upd", secret] => do
+    let s ← hexArg? secret
+    guard (s.size == 32)
+    return emit (Spec.Record.nextSecret s)
   | ["hsseq", mode, letters] => do
     let m ← match mode with
       | "psk" => some Spec.Handshake.Mode.psk

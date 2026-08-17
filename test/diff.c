@@ -450,6 +450,26 @@ static void diff_rec_seal(void) {
     }
 }
 
+// The KeyUpdate secret derivation (RFC 9846 §7.2). No third-party vector
+// exists (RFC 8448 has no KeyUpdate) and e2e never triggers one, so this
+// row is the derivation's only independent check.
+static void diff_traffic_update(void) {
+    for (int i = 0; i < 50; i++) {
+        uint8_t secret[SHA256_LEN];
+        rng_fill(secret, sizeof secret);
+        char secret_hex[65];
+        (void)hex_encode(secret_hex, secret, sizeof secret);
+        rec_dir d;
+        rec_dir_init(&d, secret);
+        rec_dir_update(secret, &d); // advances the secret in place
+        char want[65];
+        (void)hex_encode(want, secret, sizeof secret);
+        char cmd[128];
+        (void)snprintf(cmd, sizeof cmd, "traffic_upd %s", secret_hex);
+        expect(cmd, want);
+    }
+}
+
 static void diff_x25519(void) {
     for (int i = 0; i < 100; i++) {
         uint8_t scalar[X25519_LEN];
@@ -501,6 +521,7 @@ int main(int argc, char **argv) {
     diff_aead_seal();
     diff_aead_open();
     diff_rec_seal();
+    diff_traffic_update();
     diff_x25519();
     diff_x25519_base();
     diff_p256();

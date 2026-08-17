@@ -118,6 +118,8 @@ int main(void) {
     fill_nondet(t.res_master, sizeof t.res_master);
     fill_nondet((uint8_t *)&t.wr, sizeof t.wr);
     fill_nondet((uint8_t *)&t.rd, sizeof t.rd);
+    // Any epoch count, so both sides of the §4.7.3 sender cap are proven.
+    fill_nondet((uint8_t *)&t.send_epochs, sizeof t.send_epochs);
 
     uint8_t pt[128];
     fill_nondet(pt, sizeof pt);

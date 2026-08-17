@@ -40,6 +40,7 @@ Spec.Record.seal      : (trafficSecret : ByteArray) → (seq : Nat) →
 Spec.Drbg.next        : (key : ByteArray) → (n : Nat) →
                         (ByteArray × ByteArray)                        -- fast key erasure over ChaCha20:
                         -- (next key, n output bytes) from one request
+Spec.Record.nextSecret : (secret : ByteArray) → ByteArray             -- RFC 9846 §7.2 "traffic upd"
 Spec.X25519.scalarMult : (scalar point : ByteArray) → ByteArray        -- RFC 7748 §5, Nat mod 2^255-19
 Spec.X25519.base       : (scalar : ByteArray) → ByteArray              -- point = 9
 Spec.P256.pubKey?     : (d : Nat) → Option ByteArray                   -- FIPS 186-4 §D.1.2.3, X‖Y 64 bytes
