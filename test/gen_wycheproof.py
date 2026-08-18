@@ -21,11 +21,29 @@ import sys
 from pathlib import Path
 
 
+# The AEAD test drives fixed 1024-byte stack buffers; a longer message
+# is skipped, not overflowed. Kept in sync with wycheproof_test.c.
+WP_AEAD_MSG_MAX = 1024
+
+
 def bytes_of(hexstr, expect_len=None, what=""):
     b = bytes.fromhex(hexstr)
     if expect_len is not None and len(b) != expect_len:
         raise SystemExit(f"{what}: got {len(b)} bytes, declared {expect_len}")
     return b
+
+
+# Every non-hex field that reaches the generated C goes through this: the
+# vectors track upstream HEAD, so a hostile or malformed value must not be
+# interpolated into a struct initializer. Coerce to int and bound it, or
+# the run stops. Without this a string tcId could break out of the array
+# and inject top-level C that make check then compiles and runs.
+def uint_of(v, hi, what):
+    if isinstance(v, bool) or not isinstance(v, int):
+        raise SystemExit(f"{what}: expected an integer, got {type(v).__name__} {v!r}")
+    if v < 0 or v > hi:
+        raise SystemExit(f"{what}: {v} out of range 0..{hi}")
+    return v
 
 
 class Blob:
@@ -63,7 +81,7 @@ def gen_x25519(d, out):
                 kind = 1  # must reject: TLS 1.3 forbids the zero secret
             else:
                 kind = 2  # acceptable: either verdict, but a match if accepted
-            rows.append((t["tcId"], blob.add(priv + pub + shared), kind))
+            rows.append((uint_of(t["tcId"], 0xffffffff, "x25519 tcId"), blob.add(priv + pub + shared), kind))
     emit_blob(out, "wp_x25519_data", blob)
     out.append("static const struct { uint32_t tc; uint32_t off; uint8_t kind; } wp_x25519[] = {")
     for tc, off, kind in rows:
@@ -77,9 +95,10 @@ def gen_aead(d, out):
     blob = Blob()
     rows = []
     skipped = 0
+    oversize = 0
     for g in d["testGroups"]:
         if g["keySize"] != 256 or g["ivSize"] != 96 or g["tagSize"] != 128:
-            skipped += len(g["tests"])  # inexpressible by the fixed-size API
+            skipped += len(g["tests"])  # key, nonce, or tag size the fixed API cannot express
             continue
         for t in g["tests"]:
             key = bytes_of(t["key"], 32, f"aead tc{t['tcId']} key")
@@ -90,8 +109,12 @@ def gen_aead(d, out):
             ct = bytes_of(t["ct"])
             if len(ct) != len(msg):
                 raise SystemExit(f"aead tc{t['tcId']}: ct/msg length mismatch")
+            if len(msg) > WP_AEAD_MSG_MAX or len(aad) > WP_AEAD_MSG_MAX:
+                oversize += 1  # larger than the test's fixed buffers
+                continue
             off = blob.add(key + iv + tag + aad + msg + ct)
-            rows.append((t["tcId"], off, len(aad), len(msg), 1 if t["result"] == "valid" else 0))
+            rows.append((uint_of(t["tcId"], 0xffffffff, "aead tcId"), off, len(aad), len(msg),
+                         1 if t["result"] == "valid" else 0))
     emit_blob(out, "wp_aead_data", blob)
     out.append(
         "static const struct { uint32_t tc; uint32_t off; uint16_t aad_len;"
@@ -101,7 +124,8 @@ def gen_aead(d, out):
         out.append(f"    {{{tc}, {off}, {alen}, {mlen}, {valid}}},")
     out.append("};")
     out.append("")
-    out.append(f"#define WP_AEAD_SKIPPED {skipped} // nonce sizes the nonce[12] API cannot express")
+    out.append(f"#define WP_AEAD_SKIPPED {skipped} // key/nonce/tag sizes the fixed API cannot express")
+    out.append(f"#define WP_AEAD_OVERSIZE {oversize} // messages larger than the test's 1 KB buffers")
     out.append("")
     return len(rows)
 
@@ -123,8 +147,8 @@ def gen_hkdf(d, out):
                 continue
             off = blob.add(ikm + salt + info + okm)
             rows.append(
-                (t["tcId"], off, len(ikm), len(salt), len(info), len(okm), size,
-                 1 if t["result"] == "valid" else 0)
+                (uint_of(t["tcId"], 0xffffffff, "hkdf tcId"), off, len(ikm), len(salt), len(info),
+                 len(okm), uint_of(size, 8160, "hkdf size"), 1 if t["result"] == "valid" else 0)
             )
     emit_blob(out, "wp_hkdf_data", blob)
     out.append(
@@ -152,7 +176,8 @@ def gen_ecdsa(d, out):
             msg, sig = bytes_of(t["msg"]), bytes_of(t["sig"])
             off = blob.add(msg + sig)
             rows.append(
-                (t["tcId"], pub_off, off, len(msg), len(sig), 1 if t["result"] == "valid" else 0)
+                (uint_of(t["tcId"], 0xffffffff, "ecdsa tcId"), pub_off, off, len(msg),
+                 len(sig), 1 if t["result"] == "valid" else 0)
             )
     emit_blob(out, "wp_ecdsa_data", blob)
     out.append(
@@ -180,8 +205,8 @@ def gen_rsa(files, out):
                 msg, sig = bytes_of(t["msg"]), bytes_of(t["sig"])
                 off = blob.add(msg + sig)
                 rows.append(
-                    (t["tcId"], n_off, len(n), off, len(msg), len(sig),
-                     1 if t["result"] == "valid" else 0)
+                    (uint_of(t["tcId"], 0xffffffff, "rsa tcId"), n_off, len(n), off,
+                     len(msg), len(sig), 1 if t["result"] == "valid" else 0)
                 )
     emit_blob(out, "wp_rsa_data", blob)
     out.append(

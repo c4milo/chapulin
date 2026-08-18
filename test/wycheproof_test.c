@@ -85,6 +85,12 @@ static void run_aead(void) {
         const uint8_t *msg = aad + wp_aead[i].aad_len;
         const uint8_t *ct = msg + wp_aead[i].msg_len;
         size_t n = wp_aead[i].msg_len;
+        // The generator skips anything longer, so this never trips; it is
+        // a hard backstop because the vectors track upstream HEAD.
+        if (n > 1024 || wp_aead[i].aad_len > 1024) {
+            fail("aead", wp_aead[i].tc, "message exceeds the test buffer");
+            continue;
+        }
         uint8_t got_ct[1024];
         uint8_t got_tag[16];
         uint8_t got_pt[1024];
@@ -103,9 +109,9 @@ static void run_aead(void) {
             }
         }
     }
-    printf("wycheproof chacha20-poly1305: %zu cases, %d skipped (nonce sizes the fixed API"
-           " cannot express)\n",
-           COUNT(wp_aead), WP_AEAD_SKIPPED);
+    printf("wycheproof chacha20-poly1305: %zu cases, %d skipped (key/nonce/tag sizes the fixed"
+           " API cannot express), %d skipped (over the 1 KB test buffer)\n",
+           COUNT(wp_aead), WP_AEAD_SKIPPED, WP_AEAD_OVERSIZE);
 }
 
 static void run_hkdf(void) {
