@@ -171,11 +171,12 @@ endif
 # and gcovr merges the whole tree into one number. The gate reads that
 # one number only — per-file floors invite gaming and churn.
 #
-# COVERAGE_FLOOR ratchets by hand: it sits at measured-minus-one, and
-# it moves up in the same diff that adds the tests. A PR that lowers
-# the number must either add tests or move the floor down in the same
-# diff, with the reason in the commit message.
-COVERAGE_FLOOR := 93
+# COVERAGE_FLOOR ratchets by hand: it sits at measured-minus-one
+# against CI's toolchain (gcc/gcov reads a few tenths lower than local
+# llvm-cov), and it moves up in the same diff that adds the tests. A PR
+# that lowers the number must either add tests or move the floor down
+# in the same diff, with the reason in the commit message.
+COVERAGE_FLOOR := 92
 GCOVR ?= $(shell command -v gcovr)
 GCOV_TOOL := $(shell $(CC) --version 2>/dev/null | grep -qi clang \
   && echo "$$(xcrun --find llvm-cov 2>/dev/null || command -v llvm-cov) gcov" || echo gcov)
@@ -184,6 +185,7 @@ COV_LIB_OBJS = $(SRCS:%.c=$$d/%.o)
 .PHONY: coverage
 coverage:
 ifeq ($(GCOVR),)
+	@[ -z "$$CI" ] || { echo "coverage: gcovr missing on CI; the floor gate must not skip"; exit 1; }
 	@echo "SKIP coverage: gcovr not on PATH (pip install gcovr)"
 else
 	@rm -rf bin/cov bin/coverage.md && mkdir -p bin/cov/html
@@ -241,7 +243,8 @@ WYCHEPROOF_DIR := bin/wycheproof
 wycheproof:
 	@if [ ! -d $(WYCHEPROOF_DIR)/.git ]; then \
 	  git clone --quiet --depth 1 https://github.com/C2SP/wycheproof $(WYCHEPROOF_DIR) \
-	    || { echo "SKIP wycheproof: no checkout and no network"; exit 0; }; \
+	    || { [ -n "$$CI" ] && { echo "wycheproof clone failed and CI must not skip a gate"; exit 1; }; \
+	         echo "SKIP wycheproof: no checkout and no network"; exit 0; }; \
 	fi; \
 	python3 test/gen_wycheproof.py $(WYCHEPROOF_DIR) bin/wycheproof_vectors.h && \
 	$(CC) $(CFLAGS) -I. -Ibin -o bin/wycheproof_test test/wycheproof_test.c \
@@ -277,7 +280,7 @@ lint-docs:
 	  grep -q "^### $$id " docs/invariants.md \
 	    || { echo "lint-docs: invariants.yml cites $$id, which has no entry in docs/invariants.md"; rc=1; }; \
 	done; \
-	for rule in $$(grep -o '\`inv-[a-z0-9-]*\`' docs/invariants.md | tr -d '\`' | sort -u); do \
+	for rule in $$(grep -o '`inv-[a-z0-9-]*`' docs/invariants.md | tr -d '`' | sort -u); do \
 	  grep -q "id: $$rule" .semgrep/invariants.yml \
 	    || { echo "lint-docs: docs/invariants.md claims rule $$rule, which invariants.yml does not define"; rc=1; }; \
 	done; exit $$rc
@@ -285,6 +288,7 @@ lint-docs:
 SEMGREP ?= $(shell command -v semgrep)
 lint-invariants:
 ifeq ($(SEMGREP),)
+	@[ -z "$$CI" ] || { echo "lint-invariants: semgrep missing on CI; the gate must not skip"; exit 1; }
 	@echo "SKIP semgrep: not on PATH (pip install --require-hashes -r .semgrep/requirements.txt)"
 else
 	# Local rules only and --metrics=off, never --config auto or a

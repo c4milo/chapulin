@@ -218,8 +218,10 @@ which convention holds them.
 - **Mechanism.** `CH_ASSERT` never compiles away
   ([ch_assert.h](../ch_assert.h)); a device maps `ch_assert_fail` to
   its fault handler.
-- **Check.** Convention; the HKDF Wycheproof skips demonstrate the
-  asserts firing on out-of-domain input.
+- **Check.** Convention. The HKDF Wycheproof cases outside the
+  asserted domain are excluded from the run precisely because the
+  asserts would fault on them; the exclusion documents the boundary,
+  it does not exercise the assert.
 - **Violation.** A PR wraps CH_ASSERT in `#ifdef DEBUG` to save
   bytes.
 - See [decisions: Engineering](decisions.md#engineering).
@@ -236,9 +238,10 @@ which convention holds them.
 - **Mechanism.** Constant-time construction; ChaCha20/Poly1305/x25519
   have no table lookups by design.
 - **Check.** Semgrep-structural (`inv-16-no-variable-time-compare`) bans
-  memcmp/strcmp in
-  library sources, with hsparse.c allowlisted for its public-data
-  compare; `make timing` (Welch's t-test) gives statistical evidence.
+  memcmp/strcmp in library sources, with hsparse.c allowlisted for its
+  public-data compare — the allowlist is file-wide, so review holds the
+  line on any new compare added to that file; `make timing` (Welch's
+  t-test) gives statistical evidence.
   Semgrep cannot know a buffer is secret — the real guards remain
   construction and the t-test.
 - **Violation.** A PR compares a binder or tag with memcmp because
