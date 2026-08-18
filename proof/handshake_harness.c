@@ -1,19 +1,22 @@
 // Proves: ch_handshake — the record pump, cross-record reassembly,
-// ServerHello/EE parsing, HRR restart, and the run() state machine — is
+// HRR restart, and the run() state machine — is
 // memory-safe and UB-free against ANY record stream a peer can send, at a
 // 96-byte receive buffer (every reassembly and compaction state is
 // reachable at that size; larger buffers only repeat the middle).
 //
-// Layered proof: io, record protection, the key schedule, hashing, and
-// x25519 are stubs asserting their proven contracts and havocing results,
-// so nothing here depends on crypto values — the object under proof is
-// the driver's own arithmetic and state. buf.c, ct.c, and hsparse.c are
-// real.
+// Layered proof: io, record protection, the key schedule, hashing,
+// x25519, and the two message parsers are stubs asserting their proven
+// contracts and havocing results — the parsers are proven concrete in
+// hsparse_harness and eeparse_harness, so dragging their real bodies
+// into this formula only grows it (measured: past CI's whole budget).
+// The object under proof is the driver's own arithmetic and state.
+// buf.c and ct.c are real.
 #include "harness.h"
 
 #include <string.h>
 
 #include "hsmsg.h"
+#include "hsparse.h"
 #include "io.h"
 #include "keysched.h"
 #include "p256.h"
@@ -206,6 +209,37 @@ int rsa_pss_verify(const uint8_t *n, size_t n_len, const uint8_t msg_hash[32], c
     __CPROVER_assert(__CPROVER_r_ok(msg_hash, 32), "rsa: hash readable");
     __CPROVER_assert(sig_len == 0 || __CPROVER_r_ok(sig, sig_len), "rsa: sig readable");
     return nondet_u8() & 1;
+}
+
+// Parser contracts (proven in their own harnesses): on success the
+// cookie is NULL or points into the caller's message with a bounded
+// length — the guarantee read_server_hello's copy relies on. Everything
+// else havocs.
+int hsp_parse_server_hello(const uint8_t *body, size_t n, server_hello_info *info, int psk_mode) {
+    (void)psk_mode;
+    __CPROVER_assert(n == 0 || __CPROVER_r_ok(body, n), "sh: body readable");
+    __CPROVER_assert(__CPROVER_w_ok(info, sizeof *info), "sh: info writable");
+    fill_nondet((uint8_t *)info, sizeof *info);
+    if (nondet_u8() & 1) {
+        info->cookie = NULL;
+        info->cookie_len = 0;
+    } else {
+        size_t off = nondet_size_t();
+        size_t cookie_len = nondet_size_t();
+        __CPROVER_assume(off <= n && cookie_len <= n - off && cookie_len <= HSP_COOKIE_MAX);
+        info->cookie = body + off;
+        info->cookie_len = cookie_len;
+    }
+    return (nondet_u8() & 1) ? CH_OK : CH_EPROTO;
+}
+
+int hsp_parse_encrypted_exts(const uint8_t *body, size_t n, uint16_t *peer_limit, uint8_t *alert) {
+    __CPROVER_assert(n == 0 || __CPROVER_r_ok(body, n), "ee: body readable");
+    __CPROVER_assert(__CPROVER_w_ok(peer_limit, sizeof *peer_limit), "ee: limit writable");
+    __CPROVER_assert(__CPROVER_w_ok(alert, sizeof *alert), "ee: alert writable");
+    fill_nondet((uint8_t *)peer_limit, sizeof *peer_limit);
+    fill_nondet(alert, sizeof *alert);
+    return (nondet_u8() & 1) ? CH_OK : CH_EPROTO;
 }
 
 void tlsi_fail(ch_tls *t, uint8_t description) {
