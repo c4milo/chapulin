@@ -4,6 +4,7 @@ on:
   push:
     branches: [main] # branch pushes get checked via their PR run
   pull_request:
+  workflow_dispatch: # finish a timed-out run's remainder from the banked cache
 
 # One run per branch: a new push supersedes older runs. Cancelled runs
 # still execute their always() cache save, so no proof work is lost.
