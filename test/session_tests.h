@@ -211,9 +211,11 @@ static void test_ch_write(void) {
     CHECK(ch_write(&t2, msg, 65) == CH_EIO);
     CHECK(t2.state == CH_ST_FAILED && t2.keys == 0);
     CHECK(ch_write(&t2, msg, 1) == CH_EPROTO); // dead sessions refuse writes
-    size_t sent_after_fail = m2.sent;
+    // Count attempts, not bytes: the armed failure knob keeps sent from
+    // growing even if close wrongly transmitted, so bytes cannot fail.
+    int sends_after_fail = m2.sends;
     ch_close(&t2);
-    CHECK(m2.sent == sent_after_fail); // wiped keys: close sends nothing
+    CHECK(m2.sends == sends_after_fail); // wiped keys: close attempts nothing
 }
 
 // The receive-side padding strip (RFC 9846 §5.4): chapulin never sends
