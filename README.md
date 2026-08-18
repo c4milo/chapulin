@@ -193,6 +193,13 @@ The following claims rest on tests, not proofs:
   and the C must accept. The PSS decode is proven on hostile bytes and
   the Montgomery multiply carries its carry lemma, but CBMC does not run
   the 3072-bit exponentiation whole.
+- Every primitive additionally runs the [Wycheproof](https://github.com/C2SP/wycheproof)
+  attack-derived suites (`make wycheproof`, in `make check`): ~1,600
+  cases across x25519, ChaCha20-Poly1305, HKDF-SHA256, ECDSA P-256, and
+  RSA-PSS, tracking the latest vectors on purpose. The only skips are
+  in chapulin's favor: AEAD nonce sizes the fixed `nonce[12]` API
+  cannot express, and HKDF requests outside the domain `CH_ASSERT`
+  faults on rather than serving.
 - Constant-time behavior comes from construction: no branch and no
   memory index depends on a secret, and the stack avoids AES because of
   its lookup tables. `make timing` checks this statistically (Welch's

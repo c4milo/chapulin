@@ -148,6 +148,7 @@ check: bin/unit bin/tlsclient bin/tlsclient_ecdsa bin/drbg_test bin/rsa_test bin
 	./bin/drbg_test
 	./bin/rsa_test
 	./bin/hsstrict_test
+	$(MAKE) wycheproof
 	./test/e2e.sh
 	$(MAKE) diff
 	./bin/hsseq_test
@@ -163,6 +164,26 @@ else
 	$(MAKE) bin/diff
 	./bin/diff
 endif
+
+# Wycheproof (C2SP): attack-derived vectors against every primitive.
+# Deliberately latest-not-pinned, unlike every other CI input: the
+# suite grows by adding attack cases, and a new case failing is exactly
+# the alarm we want, as early as C2SP publishes it. An upstream change
+# reddening CI is signal, not flake — triage the new case first. CI
+# clones fresh every run (bin/ is not cached); locally, rm -rf the
+# checkout to refresh. Offline with no checkout, the target skips the
+# way lint skips absent tools. Every run logs the vector commit.
+WYCHEPROOF_DIR := bin/wycheproof
+.PHONY: wycheproof
+wycheproof:
+	@if [ ! -d $(WYCHEPROOF_DIR)/.git ]; then \
+	  git clone --quiet --depth 1 https://github.com/C2SP/wycheproof $(WYCHEPROOF_DIR) \
+	    || { echo "SKIP wycheproof: no checkout and no network"; exit 0; }; \
+	fi; \
+	python3 test/gen_wycheproof.py $(WYCHEPROOF_DIR) bin/wycheproof_vectors.h && \
+	$(CC) $(CFLAGS) -I. -Ibin -o bin/wycheproof_test test/wycheproof_test.c \
+	  x25519.c chacha20.c poly1305.c aead.c hkdf.c sha256.c p256.c rsa.c rsa_mont.c buf.c ct.c && \
+	./bin/wycheproof_test
 
 # Checks and thresholds live in .clang-tidy; every disable carries a reason
 # there (fix-or-drop, never NOLINT in code).
