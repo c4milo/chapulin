@@ -100,6 +100,8 @@ int hsp_parse_server_hello(const uint8_t *body, size_t n, server_hello_info *inf
     if (random == NULL) {
         return CH_EPROTO;
     }
+    // Variable time on purpose: both sides are public (an RFC constant
+    // against wire bytes). The inv-16 allowlist names this compare.
     info->hrr = memcmp(random, hsp_hrr_magic, 32) == 0;
     if (rb_u8(&r) != 0) {
         return CH_EPROTO; // we sent an empty legacy_session_id; the echo must match

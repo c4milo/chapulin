@@ -67,6 +67,12 @@ jobs:
           "$CLANG_FORMAT" --version
           "$CPPCHECK" --version | grep -F "$CPPCHECK_VERSION"
 
+      - name: Install semgrep (hash-pinned)
+        # The only pip package in the security path, so it installs
+        # from the hash-pinned requirements file. lint-invariants runs
+        # it with local rules and --metrics=off only.
+        run: pip install --require-hashes -r .semgrep/requirements.txt
+
       - name: Install CBMC
         run: |
           curl -fsSLO https://github.com/diffblue/cbmc/releases/download/cbmc-6.10.0/ubuntu-24.04-cbmc-6.10.0-Linux.deb

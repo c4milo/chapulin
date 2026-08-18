@@ -351,8 +351,11 @@ two-slot pin makes a planned rotation safe.
 ## Contributing and security
 
 [CONTRIBUTING.md](CONTRIBUTING.md) states the quality bar, the naming
-system, and the workflow. Vulnerabilities go through the private route
-in [SECURITY.md](SECURITY.md), never the public tracker.
+system, and the workflow. [`docs/invariants.md`](docs/invariants.md)
+catalogs the invariants a change must never break; `make
+lint-invariants` enforces the machine-checkable ones with semgrep.
+Vulnerabilities go through the private route in
+[SECURITY.md](SECURITY.md), never the public tracker.
 
 ## License
 

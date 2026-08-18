@@ -2,6 +2,11 @@ CC ?= cc
 # -D_DEFAULT_SOURCE: glibc hides POSIX and getrandom under -std=c11 without
 # it; macOS ignores it.
 CFLAGS ?= -Wall -Wextra -Wpedantic -Werror -std=c11 -O2 -D_DEFAULT_SOURCE
+# INV-19: -Wvla bans variable frames everywhere; the frame budget is
+# enforced per library source by lint-stack, because host test mains
+# legitimately keep whole vector tables in their frames.
+CFLAGS += -Wvla
+STACK_BUDGET := 2560
 LLVM_BIN := /opt/homebrew/opt/llvm/bin
 CLANG_TIDY ?= $(shell command -v clang-tidy || command -v $(LLVM_BIN)/clang-tidy)
 CLANG_FORMAT ?= $(shell command -v clang-format || command -v $(LLVM_BIN)/clang-format)
@@ -137,7 +142,7 @@ bin/diff: test/diff.c $(SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) -I. -o $@ test/diff.c $(SRCS)
 
-.PHONY: check lint lint-tidy lint-format lint-cppcheck lint-docs prove diff fmt clean
+.PHONY: check lint lint-tidy lint-format lint-cppcheck lint-docs lint-invariants prove diff fmt clean
 check: bin/unit bin/tlsclient bin/tlsclient_ecdsa bin/drbg_test bin/rsa_test bin/hsstrict_test bin/hsseq_test lint lib-check cxx-check
 	./bin/unit
 	./bin/drbg_test
@@ -161,15 +166,54 @@ endif
 
 # Checks and thresholds live in .clang-tidy; every disable carries a reason
 # there (fix-or-drop, never NOLINT in code).
-lint: lint-tidy lint-format lint-cppcheck lint-commits lint-docs
+lint: lint-tidy lint-format lint-cppcheck lint-commits lint-docs lint-invariants lint-stack
+
+# INV-19: bounded stack. The budget is the measured worst library
+# frame (rsa_vp1's RSA-3072 limb temporaries, 2,400 bytes) rounded up;
+# a frame past it is a build error, not a bench surprise. Each source
+# compiles alone so a breach names its file.
+lint-stack:
+	@mkdir -p bin/obj/stack
+	@rc=0; for f in $(SRCS) drbg.c; do \
+	  $(CC) $(CFLAGS) -Wframe-larger-than=$(STACK_BUDGET) -I. -c $$f -o bin/obj/stack/$$f.o || rc=1; \
+	done; rm -rf bin/obj/stack; \
+	[ $$rc -eq 0 ] && echo "lint-stack: every library frame under $(STACK_BUDGET) B"; exit $$rc
 
 # Every document must be named in the README; an orphaned doc is a doc
-# nobody finds. Pure shell, so it never skips.
+# nobody finds. The second and third loops keep the invariants
+# doc-to-rules mapping honest in both directions: every INV id the
+# rules cite has an entry, and every rule id the doc claims exists.
+# Pure shell, so it never skips.
 DOCS_MD := $(wildcard docs/*.md) SECURITY.md CONTRIBUTING.md
 lint-docs:
 	@rc=0; for d in $(DOCS_MD); do \
 	  grep -q "$$d" README.md || { echo "lint-docs: README does not name $$d"; rc=1; }; \
+	done; \
+	for id in $$(grep -o 'INV-[0-9]*' .semgrep/invariants.yml | sort -u); do \
+	  grep -q "^### $$id " docs/invariants.md \
+	    || { echo "lint-docs: invariants.yml cites $$id, which has no entry in docs/invariants.md"; rc=1; }; \
+	done; \
+	for rule in $$(grep -o '\`inv-[a-z0-9-]*\`' docs/invariants.md | tr -d '\`' | sort -u); do \
+	  grep -q "id: $$rule" .semgrep/invariants.yml \
+	    || { echo "lint-docs: docs/invariants.md claims rule $$rule, which invariants.yml does not define"; rc=1; }; \
 	done; exit $$rc
+
+SEMGREP ?= $(shell command -v semgrep)
+lint-invariants:
+ifeq ($(SEMGREP),)
+	@echo "SKIP semgrep: not on PATH (pip install --require-hashes -r .semgrep/requirements.txt)"
+else
+	# Local rules only and --metrics=off, never --config auto or a
+	# registry config: those fetch rules from and upload scan context
+	# to semgrep.dev. The version pin lives in .semgrep/requirements.txt
+	# with hashes because semgrep carries a large dependency tree and is
+	# the only pip package in the security path.
+	$(SEMGREP) scan --metrics=off --quiet --error \
+	  --config .semgrep/invariants.yml --exclude '.semgrep' .
+	@$(SEMGREP) --metrics=off --test \
+	  --config .semgrep/invariants.yml .semgrep/invariants.c >/dev/null \
+	  && echo "lint-invariants: rules clean, tripwires trip"
+endif
 
 lint-tidy:
 ifeq ($(CLANG_TIDY),)
