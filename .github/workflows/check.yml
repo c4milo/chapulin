@@ -19,6 +19,11 @@ jobs:
   coverage:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
+    # The badge step commits the regenerated SVG back to main; the
+    # default token is read-only, so this job alone gets write. The
+    # check job keeps the read-only default.
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
       - run: pip install gcovr==8.6
