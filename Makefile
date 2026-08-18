@@ -292,8 +292,12 @@ else
 	# to semgrep.dev. The version pin lives in .semgrep/requirements.txt
 	# with hashes because semgrep carries a large dependency tree and is
 	# the only pip package in the security path.
+	# Tracked files only: CI builds tools from source inside the
+	# workspace, and a dot target would audit their sources too. The
+	# violation file is excluded here because semgrep scans explicit
+	# targets regardless of --exclude.
 	$(SEMGREP) scan --metrics=off --quiet --error \
-	  --config .semgrep/invariants.yml --exclude '.semgrep' .
+	  --config .semgrep/invariants.yml $$(git ls-files '*.c' '*.h' ':!.semgrep')
 	@$(SEMGREP) --metrics=off --test \
 	  --config .semgrep/invariants.yml .semgrep/invariants.c >/dev/null \
 	  && echo "lint-invariants: rules clean, tripwires trip"
