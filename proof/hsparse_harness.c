@@ -10,6 +10,7 @@
 // havoc the callee and void the proof.
 #include "harness.h"
 
+#include "cfg.h"
 #include "hsparse.h"
 
 int main(void) {
@@ -22,6 +23,19 @@ int main(void) {
     for (size_t i = 0; i < sizeof info; i++) {
         ((uint8_t *)&info)[i] = 0;
     }
-    (void)hsp_parse_server_hello(msg, n, &info, nondet_u8() & 1);
+    int rc = hsp_parse_server_hello(msg, n, &info, nondet_u8() & 1);
+
+    // Postcondition the handshake driver proof relies on: read_server_hello
+    // does memcpy(cookie[HSP_COOKIE_MAX], info.cookie, info.cookie_len) on
+    // success, so on success the cookie is null or points inside msg with a
+    // length within both the message and the destination. Asserting it here
+    // is what lets handshake_harness stub this parser soundly instead of
+    // assuming the bound by hand.
+    if (rc == CH_OK && info.cookie != NULL) {
+        __CPROVER_assert(info.cookie >= msg && info.cookie <= msg + n, "cookie points into msg");
+        __CPROVER_assert(info.cookie_len <= (size_t)(msg + n - info.cookie),
+                         "cookie_len within msg");
+        __CPROVER_assert(info.cookie_len <= HSP_COOKIE_MAX, "cookie_len within destination");
+    }
     return 0;
 }
