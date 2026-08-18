@@ -345,7 +345,14 @@ lookup tables and runs in constant time on any core. That choice works
 when you control both ends and fails against a server that insists on
 AES; an AES-CCM build flag is the most likely v2 addition. Second, pin
 the key of a server whose key is stable. Automatic key rotation, such as
-Let's Encrypt defaults, breaks pins.
+Let's Encrypt defaults, breaks pins; [`docs/rotation.md`](docs/rotation.md) shows how the
+two-slot pin makes a planned rotation safe.
+
+## Contributing and security
+
+[CONTRIBUTING.md](CONTRIBUTING.md) states the quality bar, the naming
+system, and the workflow. Vulnerabilities go through the private route
+in [SECURITY.md](SECURITY.md), never the public tracker.
 
 ## License
 

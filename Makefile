@@ -137,7 +137,7 @@ bin/diff: test/diff.c $(SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) -I. -o $@ test/diff.c $(SRCS)
 
-.PHONY: check lint lint-tidy lint-format lint-cppcheck prove diff fmt clean
+.PHONY: check lint lint-tidy lint-format lint-cppcheck lint-docs prove diff fmt clean
 check: bin/unit bin/tlsclient bin/tlsclient_ecdsa bin/drbg_test bin/rsa_test bin/hsstrict_test bin/hsseq_test lint lib-check cxx-check
 	./bin/unit
 	./bin/drbg_test
@@ -161,7 +161,15 @@ endif
 
 # Checks and thresholds live in .clang-tidy; every disable carries a reason
 # there (fix-or-drop, never NOLINT in code).
-lint: lint-tidy lint-format lint-cppcheck lint-commits
+lint: lint-tidy lint-format lint-cppcheck lint-commits lint-docs
+
+# Every document must be named in the README; an orphaned doc is a doc
+# nobody finds. Pure shell, so it never skips.
+DOCS_MD := $(wildcard docs/*.md) SECURITY.md CONTRIBUTING.md
+lint-docs:
+	@rc=0; for d in $(DOCS_MD); do \
+	  grep -q "$$d" README.md || { echo "lint-docs: README does not name $$d"; rc=1; }; \
+	done; exit $$rc
 
 lint-tidy:
 ifeq ($(CLANG_TIDY),)
