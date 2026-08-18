@@ -7,7 +7,7 @@ Use GitHub's private vulnerability reporting: open the repository's
 "Report a vulnerability". The report stays private, and the advisory
 and CVE, if one is warranted, come out of the same thread.
 
-If you cannot use GitHub, email caguilar@coreweave.com with the same
+If you cannot use GitHub, email camilo.aguilar@gmail.com with the same
 details you would put in the report.
 
 Do not open a public issue for a vulnerability.
