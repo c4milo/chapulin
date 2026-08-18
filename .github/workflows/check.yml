@@ -25,7 +25,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - run: pip install gcovr==8.6
       - run: make coverage
       - name: Render the coverage tables on the run page
@@ -52,7 +52,7 @@ jobs:
         run: echo "::error file=Makefile::coverage fell below COVERAGE_FLOOR; add tests or move the floor down in the same diff with the reason in the commit message"
       - name: Upload the HTML report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: coverage-html
           path: bin/cov/html/
@@ -76,7 +76,7 @@ jobs:
       CPPCHECK_VERSION: 2.21.0
       CPPCHECK: /home/runner/cppcheck-inst/bin/cppcheck
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0 # commitlint lints commit ranges, not just HEAD
 
@@ -88,7 +88,7 @@ jobs:
 
       - name: Cache cppcheck install
         id: cppcheck-cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/cppcheck-inst
           key: cppcheck-${{ runner.os }}-${{ env.CPPCHECK_VERSION }}-inst
@@ -125,7 +125,7 @@ jobs:
           cbmc --version
 
       - name: Cache kissat install
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/kissat-inst
           key: kissat-${{ runner.os }}-rel-4.0.4
@@ -148,7 +148,7 @@ jobs:
           ~/kissat-inst/kissat --version
 
       - name: Cache Lean toolchain and spec build
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
             ~/.elan
@@ -157,7 +157,7 @@ jobs:
           restore-keys: lean-${{ runner.os }}-
 
       - name: Cache npm
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/.npm
           key: npm-${{ runner.os }}-${{ hashFiles('package-lock.json', 'package.json') }}
@@ -191,7 +191,7 @@ jobs:
       # a success; restoring the marker directory makes CI incremental
       # the same way development machines are.
       - name: Restore proof cache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v6
         with:
           path: proof/.cache
           key: proofs-${{ runner.os }}-${{ github.run_id }}
@@ -215,7 +215,7 @@ jobs:
       # starting from zero each time.
       - name: Save proof cache
         if: always()
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v6
         with:
           path: proof/.cache
           key: proofs-${{ runner.os }}-${{ github.run_id }}
@@ -224,7 +224,7 @@ jobs:
       # output alone; keep the full solver logs.
       - name: Upload proof logs on failure
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: proof-results
           path: proof/results/
