@@ -193,6 +193,9 @@ The following claims rest on tests, not proofs:
   and the C must accept. The PSS decode is proven on hostile bytes and
   the Montgomery multiply carries its carry lemma, but CBMC does not run
   the 3072-bit exponentiation whole.
+- Line coverage over the library sources is measured (`make coverage`,
+  five host binaries, both PIN builds merged) and gated in CI at the
+  Makefile's `COVERAGE_FLOOR`; the HTML report ships as a CI artifact.
 - Every primitive additionally runs the [Wycheproof](https://github.com/C2SP/wycheproof)
   attack-derived suites (`make wycheproof`, in `make check`): ~1,600
   cases across x25519, ChaCha20-Poly1305, HKDF-SHA256, ECDSA P-256, and

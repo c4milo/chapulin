@@ -13,6 +13,30 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Fast signal while the proof tiers grind: line coverage over the
+  # library sources, five host binaries x two PIN builds, gated on the
+  # Makefile's COVERAGE_FLOOR. No proofs, no e2e, minutes not hours.
+  coverage:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - run: pip install gcovr==8.6
+      - run: make coverage
+      - name: Render the coverage tables on the run page
+        if: always()
+        run: cat bin/coverage.md >> "$GITHUB_STEP_SUMMARY" 2>/dev/null || true
+      - name: Annotate a floor breach
+        if: failure()
+        run: echo "::error file=Makefile::coverage fell below COVERAGE_FLOOR; add tests or move the floor down in the same diff with the reason in the commit message"
+      - name: Upload the HTML report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-html
+          path: bin/cov/html/
+          if-no-files-found: ignore
+
   check:
     runs-on: ubuntu-24.04
     # The proof tiers dominate the wall clock. A cold run — every proof,

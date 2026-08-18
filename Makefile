@@ -165,6 +165,69 @@ else
 	./bin/diff
 endif
 
+# Line coverage over the library sources, merged across the five host
+# test binaries and both PIN builds. Per-pin object dirs share .gcno
+# files, so each binary run accumulates counts into the same .gcda set
+# and gcovr merges the whole tree into one number. The gate reads that
+# one number only — per-file floors invite gaming and churn.
+#
+# COVERAGE_FLOOR ratchets by hand: it sits at measured-minus-one, and
+# it moves up in the same diff that adds the tests. A PR that lowers
+# the number must either add tests or move the floor down in the same
+# diff, with the reason in the commit message.
+COVERAGE_FLOOR := 93
+GCOVR ?= $(shell command -v gcovr)
+GCOV_TOOL := $(shell $(CC) --version 2>/dev/null | grep -qi clang \
+  && echo "$$(xcrun --find llvm-cov 2>/dev/null || command -v llvm-cov) gcov" || echo gcov)
+COV_CC = $(CC) --coverage -O0 -std=c11 -D_DEFAULT_SOURCE $$def -I.
+COV_LIB_OBJS = $(SRCS:%.c=$$d/%.o)
+.PHONY: coverage
+coverage:
+ifeq ($(GCOVR),)
+	@echo "SKIP coverage: gcovr not on PATH (pip install gcovr)"
+else
+	@rm -rf bin/cov bin/coverage.md && mkdir -p bin/cov/html
+	@echo "| binary | PIN | result |" > bin/coverage.md
+	@echo "| --- | --- | --- |" >> bin/coverage.md
+	@set -e; for pin in rsa ecdsa; do \
+	  def=""; [ $$pin = ecdsa ] && def=-DCH_PIN_ECDSA; \
+	  d=bin/cov/$$pin; mkdir -p $$d; \
+	  for f in $(SRCS) drbg.c; do $(COV_CC) -c $$f -o $$d/$${f%.c}.o; done; \
+	  $(COV_CC) test/unit.c $(COV_LIB_OBJS) -o $$d/unit; \
+	  $(COV_CC) test/drbg_test.c $$d/drbg.o $$d/chacha20.o $$d/ct.o -o $$d/drbg_test; \
+	  $(COV_CC) test/rsa_test.c $$d/rsa.o $$d/rsa_mont.o $$d/sha256.o $$d/ct.o -o $$d/rsa_test; \
+	  $(COV_CC) test/hsstrict_test.c $$d/hsparse.o $$d/buf.o -o $$d/hsstrict_test; \
+	  $(COV_CC) test/hsseq_test.c \
+	    $(filter-out $$d/p256.o $$d/rsa.o $$d/rsa_mont.o,$(COV_LIB_OBJS)) -o $$d/hsseq_test; \
+	  for b in unit drbg_test rsa_test hsstrict_test hsseq_test; do \
+	    if ENUM_DEPTH=4 ./$$d/$$b > /dev/null; then \
+	      echo "| $$b | $$pin | pass |" >> bin/coverage.md; \
+	    else \
+	      echo "| $$b | $$pin | FAIL |" >> bin/coverage.md; exit 1; \
+	    fi; \
+	  done; \
+	done
+	@echo "" >> bin/coverage.md
+	# ENUM_DEPTH=4 above: line coverage saturates well below the check
+	# tier's depth 5; the deeper run buys sequences, not lines, and
+	# costs minutes at -O0. The filter keeps the report to the root
+	# library sources; test mains and generated code stay out.
+	# suspicious_hits.warn: the x25519 ladder legitimately racks up
+	# billions of hits across both PIN runs; the counter magnitude
+	# does not affect line coverage.
+	$(GCOVR) --root . bin/cov --filter '^[a-z0-9_]+\.c$$' \
+	  --gcov-executable "$(GCOV_TOOL)" \
+	  --gcov-ignore-parse-errors suspicious_hits.warn_once_per_file \
+	  --markdown bin/coverage-table.md --html-details bin/cov/html/index.html \
+	  --print-summary --fail-under-line $(COVERAGE_FLOOR) \
+	  || { echo "coverage: total line coverage fell below the $(COVERAGE_FLOOR)% floor" >> bin/coverage.md; \
+	       cat bin/coverage-table.md >> bin/coverage.md; exit 1; }
+	@cat bin/coverage-table.md >> bin/coverage.md
+	@echo "" >> bin/coverage.md
+	@echo "Floor: $(COVERAGE_FLOOR)% (ratchets by hand; see the comment at COVERAGE_FLOOR)" >> bin/coverage.md
+	@echo "coverage: report at bin/cov/html/index.html, summary at bin/coverage.md"
+endif
+
 # Wycheproof (C2SP): attack-derived vectors against every primitive.
 # Deliberately latest-not-pinned, unlike every other CI input: the
 # suite grows by adding attack cases, and a new case failing is exactly
