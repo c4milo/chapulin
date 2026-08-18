@@ -1,5 +1,7 @@
 # chapulin
 
+![coverage](.github/badges/coverage.svg)
+
 A TLS 1.3 client for devices with a few kilobytes of static RAM (SRAM)
 to spare. Named after El Chapulín Colorado: small, unassuming, and it
 protects you from the bad guys.

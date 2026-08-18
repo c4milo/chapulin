@@ -219,7 +219,7 @@ else
 	  --gcov-executable "$(GCOV_TOOL)" \
 	  --gcov-ignore-parse-errors suspicious_hits.warn_once_per_file \
 	  --markdown bin/coverage-table.md --html-details bin/cov/html/index.html \
-	  --print-summary --fail-under-line $(COVERAGE_FLOOR) \
+	  --print-summary --json-summary bin/coverage.json --fail-under-line $(COVERAGE_FLOOR) \
 	  || { echo "coverage: total line coverage fell below the $(COVERAGE_FLOOR)% floor" >> bin/coverage.md; \
 	       cat bin/coverage-table.md >> bin/coverage.md; exit 1; }
 	@cat bin/coverage-table.md >> bin/coverage.md
