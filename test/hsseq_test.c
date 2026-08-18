@@ -46,26 +46,29 @@ noreturn void ch_assert_fail(const char *cond, const char *file, int line) {
 }
 
 // V renders a CertificateVerify with dummy signature bytes and these
-// stubs supply the "valid" verdict, so message order — not signature
-// math — is what runs here. Both verifiers exist so both PIN builds
-// link; rsa_test and the e2e cover the real ones.
+// stubs supply the verdict, so message order and pin-slot selection —
+// not signature math — is what runs here. When stub_accept is set, only
+// that exact key object verifies (a pointer compare: server_auth passes
+// the cfg's own pin pointers through), which is what makes the slot
+// tests below mean something. Both verifiers exist so both PIN builds
+// link; rsa_test, wycheproof, and the e2e cover the real ones.
+static const uint8_t *stub_accept; // NULL accepts any key
+
 int rsa_pss_verify(const uint8_t *n, size_t n_len, const uint8_t msg_hash[32], const uint8_t *sig,
                    size_t sig_len) {
-    (void)n;
     (void)n_len;
     (void)msg_hash;
     (void)sig;
     (void)sig_len;
-    return 1;
+    return stub_accept == NULL || n == stub_accept;
 }
 
 int p256_ecdsa_verify(const uint8_t pub[64], const uint8_t msg_hash[32], const uint8_t *sig_der,
                       size_t sig_len) {
-    (void)pub;
     (void)msg_hash;
     (void)sig_der;
     (void)sig_len;
-    return 1;
+    return stub_accept == NULL || pub == stub_accept;
 }
 
 #define ALPHABET "SHECRVFNKAL"
@@ -82,57 +85,68 @@ static const char *reject_why;
 // Runs the real client over one sequence. Accept (1) iff ch_connect
 // succeeds and the tail drains with every letter consumed; queue
 // exhaustion after full consumption is the normal end, not an error.
+static mock_server srv;                 // file scope so tests can read captured alerts
+static ch_tls client_session;           // and the accepted pin slot
+static uint8_t test_pin2[TEST_PIN_LEN]; // slot B, wired when use_pin2 is set
+static int use_pin2;
+
+static void case_config(ch_cfg *cfg, uint8_t *rxbuf, size_t rxlen, int psk) {
+    memset(cfg, 0, sizeof *cfg);
+    cfg->buf = rxbuf;
+    cfg->buf_len = rxlen;
+    cfg->send = mock_send;
+    cfg->recv = mock_recv;
+    cfg->io = &srv;
+    if (psk) {
+        cfg->psk = test_psk;
+        cfg->psk_len = sizeof test_psk;
+        cfg->psk_id = (const uint8_t *)"hsseq";
+        cfg->psk_id_len = 5;
+        return;
+    }
+    cfg->server_pubkey = test_pin;
+    cfg->server_pubkey_len = sizeof test_pin;
+    if (use_pin2) {
+        cfg->server_pubkey2 = test_pin2;
+        cfg->server_pubkey2_len = sizeof test_pin2;
+    }
+}
+
 static int run_case(const char *letters, size_t n, int psk) {
-    static mock_server s;
-    memset(&s, 0, sizeof s);
-    s.seq = letters;
-    s.len = n;
-    s.psk = psk;
-    sha256_init(&s.transcript);
+    memset(&srv, 0, sizeof srv);
+    srv.seq = letters;
+    srv.len = n;
+    srv.psk = psk;
+    sha256_init(&srv.transcript);
 
     static uint8_t rxbuf[1024];
     ch_cfg cfg;
-    memset(&cfg, 0, sizeof cfg);
-    cfg.buf = rxbuf;
-    cfg.buf_len = sizeof rxbuf;
-    cfg.send = mock_send;
-    cfg.recv = mock_recv;
-    cfg.io = &s;
-    if (psk) {
-        cfg.psk = test_psk;
-        cfg.psk_len = sizeof test_psk;
-        cfg.psk_id = (const uint8_t *)"hsseq";
-        cfg.psk_id_len = 5;
-    } else {
-        cfg.server_pubkey = test_pin;
-        cfg.server_pubkey_len = sizeof test_pin;
-    }
+    case_config(&cfg, rxbuf, sizeof rxbuf, psk);
 
     reject_why = "accepted";
-    static ch_tls t;
-    int rc = ch_connect(&t, &cfg);
+    int rc = ch_connect(&client_session, &cfg);
     if (rc != CH_OK) {
-        reject_why = rc == CH_EIO && seq_spent(&s) ? "handshake starved (sequence too short)"
-                                                   : "handshake refused a record";
+        reject_why = rc == CH_EIO && seq_spent(&srv) ? "handshake starved (sequence too short)"
+                                                     : "handshake refused a record";
         return 0;
     }
     for (;;) {
-        if (seq_spent(&s)) {
+        if (seq_spent(&srv)) {
             return 1; // every letter consumed, session still alive
         }
         uint8_t out[64];
-        int got = ch_read(&t, out, sizeof out);
+        int got = ch_read(&client_session, out, sizeof out);
         if (got > 0) {
             continue;
         }
         if (got == 0) {
-            if (seq_spent(&s)) {
+            if (seq_spent(&srv)) {
                 return 1; // clean close_notify ended the sequence
             }
             reject_why = "letters left after close_notify";
             return 0;
         }
-        if (got == CH_EIO && seq_spent(&s)) {
+        if (got == CH_EIO && seq_spent(&srv)) {
             return 1; // the tail drained; only the transport EOF is left
         }
         reject_why = "tail refused a record";
@@ -196,6 +210,68 @@ int main(void) {
     CHECK(run_case("SEF", 3, 1) == 1);
     CHECK(run_case("HSEFNKA", 7, 1) == 1);
     CHECK(run_case("SECVF", 5, 1) == 0); // certificate flight under PSK
+
+    // Pin slot B (issue #6's specified mock test). The stub accepts
+    // exactly one key object, so these run the real slot loop: the
+    // handshake must succeed by whichever slot holds the accepted key,
+    // record which, and fail closed with decrypt_error when neither
+    // slot verifies. Slot order must not matter.
+    memset(test_pin2, 4, sizeof test_pin2);
+    test_pin2[TEST_PIN_LEN - 1] = 3; // odd, like every valid RSA pin
+    use_pin2 = 1;
+    stub_accept = test_pin;
+    CHECK(run_case("SECVF", 5, 0) == 1);
+    CHECK(client_session.pin_slot == 1); // 1-based: 1 = slot A, 0 = no pin used
+    stub_accept = test_pin2;
+    CHECK(run_case("SECVF", 5, 0) == 1); // rotated key: slot B accepts
+    CHECK(client_session.pin_slot == 2);
+    static const uint8_t third_key[TEST_PIN_LEN] = {0};
+    stub_accept = third_key; // a key in neither slot
+    CHECK(run_case("SECVF", 5, 0) == 0);
+    CHECK(srv.alerts > 0 && srv.last_alert == ALERT_DECRYPT_ERROR);
+    use_pin2 = 0;
+    stub_accept = test_pin2;
+    CHECK(run_case("SECVF", 5, 0) == 0); // no slot B configured: B's key fails
+    CHECK(srv.last_alert == ALERT_DECRYPT_ERROR);
+    stub_accept = NULL;
+
+    // Malformation -> alert table (issue #11): each mutation bends one
+    // field; the table asserts the alert description byte the client
+    // puts on the wire. MUT_REC_OVER documents current behavior: an
+    // over-limit record fails io_read_record and dies as decode_error
+    // (RFC 8449 prefers record_overflow; tracked separately).
+    static const struct {
+        int mut;
+        const char *seq;
+        int psk;
+        uint8_t alert;
+    } alert_cases[] = {
+        {MUT_SH_SUITE,   "SEF",   1, ALERT_ILLEGAL_PARAMETER },
+        {MUT_SH_VERSION, "SEF",   1, ALERT_ILLEGAL_PARAMETER },
+        {MUT_SH_ECHO,    "SEF",   1, ALERT_ILLEGAL_PARAMETER },
+        {MUT_CV_ALG,     "SECVF", 0, ALERT_HANDSHAKE_FAILURE },
+        {MUT_FIN_MAC,    "SEF",   1, ALERT_DECRYPT_ERROR     },
+        {MUT_HS_TYPE,    "SEF",   1, ALERT_UNEXPECTED_MESSAGE},
+        {MUT_REC_OVER,   "SEFA",  1, ALERT_DECODE_ERROR      },
+        {MUT_NONE,       "SECF",  0, ALERT_UNEXPECTED_MESSAGE}, // CV skipped
+        {MUT_NONE,       "SEC",   1, ALERT_HANDSHAKE_FAILURE }, // cert under PSK
+        {MUT_NONE,       "SER",   0, ALERT_HANDSHAKE_FAILURE }, // CertificateRequest
+        {MUT_NONE,       "SS",    1, ALERT_UNEXPECTED_MESSAGE}, // second ServerHello
+        {MUT_NONE,       "HH",    1, ALERT_UNEXPECTED_MESSAGE}, // repeated HRR
+    };
+    for (size_t i = 0; i < sizeof alert_cases / sizeof alert_cases[0]; i++) {
+        mut_mode = alert_cases[i].mut;
+        int accepted = run_case(alert_cases[i].seq, strlen(alert_cases[i].seq), alert_cases[i].psk);
+        mut_mode = MUT_NONE;
+        if (accepted != 0 || srv.alerts == 0 || srv.last_alert != alert_cases[i].alert) {
+            failures++;
+            (void)fprintf(stderr,
+                          "FAIL alert case %zu (mut=%d seq=%s): accepted=%d alerts=%d got=%u"
+                          " want=%u\n",
+                          i, alert_cases[i].mut, alert_cases[i].seq, accepted, srv.alerts,
+                          srv.last_alert, alert_cases[i].alert);
+        }
+    }
 
     int depth = 5;
     const char *env = getenv("ENUM_DEPTH");

@@ -13,6 +13,20 @@
 #define PHASE_HS 1
 #define PHASE_APP 2
 
+// Encoding mutations for the alert-assertion table: MUT_NONE is the
+// honest server; each other value bends exactly one field of one
+// message, and the table in hsseq_test.c asserts which alert the
+// client puts on the wire for it.
+#define MUT_NONE 0
+#define MUT_SH_SUITE 1   // ServerHello picks a suite we did not offer
+#define MUT_SH_VERSION 2 // legacy_version 0x0301 instead of 0x0303
+#define MUT_SH_ECHO 3    // nonempty legacy_session_id_echo
+#define MUT_CV_ALG 4     // CertificateVerify carries a different algorithm
+#define MUT_FIN_MAC 5    // Finished verify_data corrupted
+#define MUT_HS_TYPE 6    // unknown handshake message type in place of EE
+#define MUT_REC_OVER 7   // record body over the client's record_size_limit
+static int mut_mode;
+
 typedef struct {
     const char *seq;
     size_t len;
@@ -31,6 +45,14 @@ typedef struct {
     uint8_t handshake_secret[SHA256_LEN];
     uint8_t s_hs[SHA256_LEN]; // server handshake traffic secret
     uint8_t s_ap[SHA256_LEN]; // server application traffic secret
+    // The server's copies of the client's traffic keys, so mock_send can
+    // open what the client transmits and capture its alerts.
+    rec_dir rd_hs;
+    rec_dir rd_ap;
+    int have_rd_hs;
+    int have_rd_ap;
+    uint8_t last_alert; // description byte of the last fatal alert seen
+    int alerts;         // fatal alerts captured
 } mock_server;
 
 static const uint8_t test_psk[32] = {0x4d};
@@ -46,13 +68,31 @@ static uint8_t test_pin[TEST_PIN_LEN]; // filled in main; content never verified
 
 static int mock_send(void *io, const uint8_t *p, size_t n) {
     mock_server *s = io;
-    // Each send call carries exactly one record (io_send_all's contract);
-    // only plaintext ClientHellos matter to the mock.
+    // Each send call carries exactly one record (io_send_all's contract).
     if (n > REC_HDR && p[0] == REC_HANDSHAKE && p[REC_HDR] == HS_CLIENT_HELLO &&
         s->client_hello_count < 2 && n - REC_HDR <= sizeof s->client_hello[0]) {
         memcpy(s->client_hello[s->client_hello_count], p + REC_HDR, n - REC_HDR);
         s->client_hello_len[s->client_hello_count] = n - REC_HDR;
         s->client_hello_count++;
+        return 0;
+    }
+    // A fatal alert before any keys exist arrives in plaintext.
+    if (n == REC_HDR + 2 && p[0] == REC_ALERT && p[REC_HDR] == 2) {
+        s->last_alert = p[REC_HDR + 1];
+        s->alerts++;
+        return 0;
+    }
+    // Sealed client records: try the handshake then the application
+    // keys — rec_open advances a direction's sequence only on success,
+    // so the wrong try leaves its counter alone.
+    uint8_t pt[128];
+    size_t pt_len = 0;
+    uint8_t type = 0;
+    int opened = (s->have_rd_hs && rec_open(&s->rd_hs, p, n, pt, sizeof pt, &pt_len, &type) == 0) ||
+                 (s->have_rd_ap && rec_open(&s->rd_ap, p, n, pt, sizeof pt, &pt_len, &type) == 0);
+    if (opened && type == REC_ALERT && pt_len == 2 && pt[0] == 2) {
+        s->last_alert = pt[1];
+        s->alerts++;
     }
     return 0;
 }
@@ -129,7 +169,7 @@ static size_t build_server_hello(const mock_server *s, uint8_t *out, size_t cap,
     wb_init(&w, out, cap);
     wb_u8(&w, HS_SERVER_HELLO);
     size_t msg = wb_mark(&w, 3);
-    wb_u16(&w, 0x0303);
+    wb_u16(&w, mut_mode == MUT_SH_VERSION ? 0x0301 : 0x0303);
     if (hrr) {
         wb_bytes(&w, hsp_hrr_magic, 32);
     } else {
@@ -137,8 +177,13 @@ static size_t build_server_hello(const mock_server *s, uint8_t *out, size_t cap,
             wb_u8(&w, 0x42); // any random that is not the HRR sentinel
         }
     }
-    wb_u8(&w, 0); // legacy_session_id_echo: we sent an empty session id
-    wb_u16(&w, SUITE_CHACHA20_POLY1305_SHA256);
+    if (mut_mode == MUT_SH_ECHO) {
+        wb_u8(&w, 1); // we sent an empty session id; any echo is a lie
+        wb_u8(&w, 0x77);
+    } else {
+        wb_u8(&w, 0); // legacy_session_id_echo: we sent an empty session id
+    }
+    wb_u16(&w, mut_mode == MUT_SH_SUITE ? 0x1301 : SUITE_CHACHA20_POLY1305_SHA256);
     wb_u8(&w, 0);
     size_t exts = wb_mark(&w, 2);
     wb_u16(&w, EXT_SUPPORTED_VERSIONS);
@@ -197,6 +242,8 @@ static void render_server_hello(mock_server *s) {
     uint8_t c_hs[SHA256_LEN];
     hash_now(s, hash);
     ks_handshake(early, ecdhe, hash, s->handshake_secret, c_hs, s->s_hs);
+    rec_dir_init(&s->rd_hs, c_hs);
+    s->have_rd_hs = 1;
     push_record(s, REC_HANDSHAKE, msg, n); // plaintext: the phase flips below
     rec_dir_init(&s->wr, s->s_hs);
     s->phase = PHASE_HS;
@@ -226,6 +273,9 @@ static void render_finished(mock_server *s) {
     uint8_t hash[SHA256_LEN];
     hash_now(s, hash);
     ks_verify_data(s->s_hs, hash, msg + 4);
+    if (mut_mode == MUT_FIN_MAC) {
+        msg[4] ^= 0x01;
+    }
     sha256_update(&s->transcript, msg, sizeof msg);
     push_record(s, REC_HANDSHAKE, msg, sizeof msg);
     if (s->phase == PHASE_HS) {
@@ -233,6 +283,8 @@ static void render_finished(mock_server *s) {
         uint8_t c_ap[SHA256_LEN];
         hash_now(s, hash);
         ks_master(s->handshake_secret, hash, master, c_ap, s->s_ap);
+        rec_dir_init(&s->rd_ap, c_ap);
+        s->have_rd_ap = 1;
         rec_dir_init(&s->wr, s->s_ap);
         s->phase = PHASE_APP;
     }
@@ -300,6 +352,13 @@ static void render(mock_server *s, char letter) {
         render_hrr(s);
         break;
     case 'E':
+        if (mut_mode == MUT_HS_TYPE) {
+            uint8_t bogus[6];
+            memcpy(bogus, encrypted_exts, sizeof bogus);
+            bogus[0] = 99; // a type no dispatcher arm claims
+            push_record(s, REC_HANDSHAKE, bogus, sizeof bogus);
+            break;
+        }
         sha256_update(&s->transcript, encrypted_exts, sizeof encrypted_exts);
         push_record(s, REC_HANDSHAKE, encrypted_exts, sizeof encrypted_exts);
         break;
@@ -318,7 +377,7 @@ static void render(mock_server *s, char letter) {
         wb_init(&w, msg, sizeof msg);
         wb_u8(&w, HS_CERTIFICATE_VERIFY);
         size_t m = wb_mark(&w, 3);
-        wb_u16(&w, CH_PIN_SIGALG);
+        wb_u16(&w, mut_mode == MUT_CV_ALG ? (uint16_t)0x0805 : (uint16_t)CH_PIN_SIGALG);
         wb_u16(&w, 64);
         for (int i = 0; i < 64; i++) {
             wb_u8(&w, 0x5a);
@@ -341,6 +400,13 @@ static void render(mock_server *s, char letter) {
         }
         break;
     case 'A':
+        if (mut_mode == MUT_REC_OVER) {
+            // Over the record_size_limit the client computed from its
+            // 1024-byte buffer, but under the absolute record cap.
+            static uint8_t big[1500];
+            push_record(s, REC_APPDATA, big, sizeof big);
+            break;
+        }
         push_record(s, REC_APPDATA, (const uint8_t *)"hola", 4);
         break;
     case 'L':

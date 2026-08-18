@@ -6,17 +6,32 @@
 #define CH_SESSION_TESTS_H
 
 // Mock transport: the "server" is a byte queue we stuff records into.
+// The send side captures the client's bytes so tests can decrypt them
+// with the server's copy of the client write key, and fail_after makes
+// the Nth send call return an I/O error (0 = never fail).
 typedef struct {
     uint8_t data[4096];
     size_t len;
     size_t off;
     int tickets;
-    size_t sent; // bytes the client transmitted (KeyUpdate replies etc.)
+    size_t sent;      // bytes the client transmitted (KeyUpdate replies etc.)
+    uint8_t tx[4096]; // capture of everything the client sent
+    size_t tx_len;
+    int sends;      // send calls so far
+    int fail_after; // fail the send when sends reaches this count
 } mock_io;
 
 static int mock_send(void *io, const uint8_t *p, size_t n) {
-    (void)p;
-    ((mock_io *)io)->sent += n;
+    mock_io *m = io;
+    m->sends++;
+    if (m->fail_after != 0 && m->sends >= m->fail_after) {
+        return -1;
+    }
+    if (m->tx_len + n <= sizeof m->tx) {
+        memcpy(m->tx + m->tx_len, p, n);
+        m->tx_len += n;
+    }
+    m->sent += n;
     return 0;
 }
 
@@ -39,7 +54,7 @@ static void mock_on_ticket(void *io, const ch_ticket *ticket) {
 
 // Builds a connected session whose read keys mirror server, fed by m.
 static void mock_session(ch_tls *t, mock_io *m, uint8_t *rxbuf, size_t rxlen,
-                         const uint8_t secret[SHA256_LEN]) {
+                         const uint8_t secret[SHA256_LEN], uint8_t wr_secret_out[SHA256_LEN]) {
     memset(t, 0, sizeof *t);
     t->cfg.buf = rxbuf;
     t->cfg.buf_len = rxlen;
@@ -51,6 +66,9 @@ static void mock_session(ch_tls *t, mock_io *m, uint8_t *rxbuf, size_t rxlen,
     rec_dir_init(&t->rd, t->rd_secret);
     uint8_t write_secret[SHA256_LEN];
     ch_rand_bytes(write_secret, sizeof write_secret);
+    if (wr_secret_out != NULL) {
+        memcpy(wr_secret_out, write_secret, SHA256_LEN);
+    }
     memcpy(t->wr_secret, write_secret, SHA256_LEN);
     rec_dir_init(&t->wr, t->wr_secret);
     t->state = CH_ST_CONNECTED;
@@ -76,7 +94,7 @@ static void test_post_handshake(void) {
     mock_io m = {0};
     static uint8_t rxbuf[1024];
     ch_tls t;
-    mock_session(&t, &m, rxbuf, sizeof rxbuf, secret);
+    mock_session(&t, &m, rxbuf, sizeof rxbuf, secret, NULL);
 
     // NST: lifetime, age_add, nonce(2), identity(90), no extensions.
     uint8_t ticket_msg[4 + 105];
@@ -130,6 +148,119 @@ static void test_post_handshake(void) {
     ch_close(&t);
     CHECK(m.sent == after_close); // keys wiped: nothing more on the wire
     CHECK(ch_read(&t, out, sizeof out) == 0);
+}
+
+// Pops one record off the client's captured transmit bytes and opens it
+// with the server's copy of the client write key.
+static size_t mock_pop_client_record(mock_io *m, size_t at, rec_dir *reader, uint8_t *pt,
+                                     size_t cap, size_t *pt_len, uint8_t *type) {
+    CHECK(m->tx_len >= at + REC_HDR);
+    size_t body = ((size_t)m->tx[at + 3] << 8) | m->tx[at + 4];
+    CHECK(m->tx_len >= at + REC_HDR + body);
+    CHECK(rec_open(reader, m->tx + at, REC_HDR + body, pt, cap, pt_len, type) == 0);
+    return at + REC_HDR + body;
+}
+
+// The ch_write chunk loop over the mock transport: the exact-limit and
+// limit-plus-one boundaries against a server-side reader, then an I/O
+// failure mid-loop, which must kill the session with no partial record
+// state surviving.
+static void test_ch_write(void) {
+    uint8_t secret[SHA256_LEN];
+    ch_rand_bytes(secret, sizeof secret);
+    mock_io m = {0};
+    static uint8_t rxbuf[1024];
+    ch_tls t;
+    uint8_t wr_secret[SHA256_LEN];
+    mock_session(&t, &m, rxbuf, sizeof rxbuf, secret, wr_secret);
+    t.peer_limit = 64; // a small limit makes the boundary cheap to cross
+
+    rec_dir reader;
+    rec_dir_init(&reader, wr_secret);
+    uint8_t msg[65];
+    for (size_t i = 0; i < sizeof msg; i++) {
+        msg[i] = (uint8_t)i;
+    }
+    uint8_t pt[512];
+    size_t pt_len = 0;
+    uint8_t type = 0;
+
+    // Exactly peer_limit: one record, no remainder record after it.
+    CHECK(ch_write(&t, msg, 64) == CH_OK);
+    CHECK(m.sends == 1);
+    size_t at = mock_pop_client_record(&m, 0, &reader, pt, sizeof pt, &pt_len, &type);
+    CHECK(type == REC_APPDATA && pt_len == 64 && memcmp(pt, msg, 64) == 0);
+    CHECK(at == m.tx_len);
+
+    // peer_limit + 1: exactly two records, 64 bytes then 1.
+    CHECK(ch_write(&t, msg, 65) == CH_OK);
+    CHECK(m.sends == 3);
+    at = mock_pop_client_record(&m, at, &reader, pt, sizeof pt, &pt_len, &type);
+    CHECK(type == REC_APPDATA && pt_len == 64 && memcmp(pt, msg, 64) == 0);
+    at = mock_pop_client_record(&m, at, &reader, pt, sizeof pt, &pt_len, &type);
+    CHECK(type == REC_APPDATA && pt_len == 1 && pt[0] == msg[64]);
+    CHECK(at == m.tx_len);
+
+    // An EIO between chunks: the first record goes out, the second send
+    // fails. The session dies — keys wiped, no further bytes ever leave.
+    mock_io m2 = {0};
+    m2.fail_after = 2;
+    ch_tls t2;
+    mock_session(&t2, &m2, rxbuf, sizeof rxbuf, secret, NULL);
+    t2.peer_limit = 64;
+    CHECK(ch_write(&t2, msg, 65) == CH_EIO);
+    CHECK(t2.state == CH_ST_FAILED && t2.keys == 0);
+    CHECK(ch_write(&t2, msg, 1) == CH_EPROTO); // dead sessions refuse writes
+    size_t sent_after_fail = m2.sent;
+    ch_close(&t2);
+    CHECK(m2.sent == sent_after_fail); // wiped keys: close sends nothing
+}
+
+// The receive-side padding strip (RFC 9846 §5.4): chapulin never sends
+// padding and neither do the e2e peers, so this path runs nowhere else.
+// Seal an inner plaintext with trailing zeros after the content type by
+// hand and check the content and type come back right.
+static void test_record_padding(void) {
+    uint8_t secret[SHA256_LEN];
+    ch_rand_bytes(secret, sizeof secret);
+    rec_dir server;
+    rec_dir_init(&server, secret);
+    rec_dir client;
+    rec_dir_init(&client, secret);
+
+    // inner = "pad" + type(APPDATA) + 5 zeros of padding.
+    uint8_t inner[9] = {'p', 'a', 'd', REC_APPDATA, 0, 0, 0, 0, 0};
+    uint8_t rec[REC_HDR + sizeof inner + AEAD_TAG];
+    rec[0] = REC_APPDATA; // outer type is always application_data
+    rec[1] = 0x03;
+    rec[2] = 0x03;
+    rec[3] = 0;
+    rec[4] = sizeof inner + AEAD_TAG;
+    uint8_t nonce[AEAD_NONCE];
+    for (size_t i = 0; i < AEAD_NONCE; i++) {
+        nonce[i] = server.iv[i]; // seq 0: nonce is the static IV
+    }
+    aead_seal(server.key, nonce, rec, REC_HDR, inner, sizeof inner, rec + REC_HDR,
+              rec + REC_HDR + sizeof inner);
+    server.seq++;
+
+    uint8_t pt[32];
+    size_t pt_len = 0;
+    uint8_t type = 0;
+    CHECK(rec_open(&client, rec, sizeof rec, pt, sizeof pt, &pt_len, &type) == 0);
+    CHECK(type == REC_APPDATA && pt_len == 3 && memcmp(pt, "pad", 3) == 0);
+
+    // All-padding record (no content type at all) must be rejected.
+    uint8_t empty[4] = {0, 0, 0, 0};
+    rec[4] = sizeof empty + AEAD_TAG;
+    for (size_t i = 0; i < AEAD_NONCE; i++) {
+        nonce[i] = server.iv[i] ^ (i == AEAD_NONCE - 1 ? 1 : 0); // seq 1
+    }
+    aead_seal(server.key, nonce, rec, REC_HDR, empty, sizeof empty, rec + REC_HDR,
+              rec + REC_HDR + sizeof empty);
+    client.seq = 1;
+    CHECK(rec_open(&client, rec, REC_HDR + sizeof empty + AEAD_TAG, pt, sizeof pt, &pt_len,
+                   &type) == -1);
 }
 
 // ECDSA P-256/SHA-256 verify. Key and the "sample"/"test" signatures are
@@ -247,7 +378,7 @@ static void test_alerts_and_epochs(void) {
     mock_io m = {0};
     static uint8_t rxbuf[1024];
     ch_tls t;
-    mock_session(&t, &m, rxbuf, sizeof rxbuf, secret);
+    mock_session(&t, &m, rxbuf, sizeof rxbuf, secret, NULL);
 
     // user_canceled, then close_notify: a clean close, not an error.
     const uint8_t user_canceled[2] = {1, 90};
@@ -261,7 +392,7 @@ static void test_alerts_and_epochs(void) {
     // under the peer's new key) but no reply KeyUpdate goes out.
     mock_io m2 = {0};
     ch_tls t2;
-    mock_session(&t2, &m2, rxbuf, sizeof rxbuf, secret);
+    mock_session(&t2, &m2, rxbuf, sizeof rxbuf, secret, NULL);
     t2.send_epochs = 0xffffffffffffULL;
     rec_dir server2;
     rec_dir_init(&server2, secret);

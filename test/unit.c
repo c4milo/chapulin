@@ -327,6 +327,8 @@ int main(void) {
     test_post_handshake();
     test_alerts_and_epochs();
     test_connect_cfg();
+    test_ch_write();
+    test_record_padding();
     if (failures > 0) {
         (void)fprintf(stderr, "%d failure(s)\n", failures);
         return 1;
