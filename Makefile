@@ -15,6 +15,11 @@ CBMC ?= $(shell command -v cbmc)
 CXX ?= c++
 LAKE ?= $(shell command -v lake || command -v $(HOME)/.elan/bin/lake)
 
+# On CI a missing tool must fail its gate, not skip it: a workflow edit
+# that drops an install step would otherwise disable a check silently.
+# Locally the skip stays a convenience. Usage: $(call REQUIRE_ON_CI,name)
+REQUIRE_ON_CI = @[ -z "$$CI" ] || { echo "$(1): missing on CI; the gate must not skip"; exit 1; }
+
 SRCS := ct.c sha256.c hkdf.c chacha20.c poly1305.c aead.c x25519.c p256.c rsa.c rsa_mont.c \
         buf.c record.c keysched.c io.c hsmsg.c hsparse.c session.c handshake.c tls.c
 HDRS := ct.h sha256.h hkdf.h chacha20.h poly1305.h aead.h x25519.h p256.h rsa.h ch_assert.h \
@@ -85,7 +90,9 @@ lib: bin/chapulin.o
 # firmware C++ consumer would use it.
 CXXFLAGS ?= -std=c++17 -fno-exceptions -fno-rtti -Wall -Wextra -Wpedantic -Werror
 cxx-check: bin/chapulin.o chapulin.hpp test/hpp_test.cpp
-	@command -v $(CXX) >/dev/null || { echo "SKIP cxx-check: no C++ compiler"; exit 0; }
+	@command -v $(CXX) >/dev/null || { \
+	  [ -n "$$CI" ] && { echo "$(CXX): missing on CI; the gate must not skip"; exit 1; }; \
+	  echo "SKIP cxx-check: no C++ compiler"; exit 0; }
 	$(CXX) $(CXXFLAGS) $(LIB_DEF) -D_DEFAULT_SOURCE -I. -c test/hpp_test.cpp -o bin/hpp_test.o
 	$(CXX) -o bin/hpp_test bin/hpp_test.o bin/chapulin.o
 	./bin/hpp_test
@@ -158,6 +165,7 @@ check: bin/unit bin/tlsclient bin/tlsclient_ecdsa bin/drbg_test bin/rsa_test bin
 # test/diff.c compares every C module against it on random inputs.
 diff:
 ifeq ($(LAKE),)
+	$(call REQUIRE_ON_CI,lake)
 	@echo "SKIP diff: lake not on PATH (install elan: https://leanprover.github.io)"
 else
 	cd spec && $(LAKE) build
@@ -185,7 +193,7 @@ COV_LIB_OBJS = $(SRCS:%.c=$$d/%.o)
 .PHONY: coverage
 coverage:
 ifeq ($(GCOVR),)
-	@[ -z "$$CI" ] || { echo "coverage: gcovr missing on CI; the floor gate must not skip"; exit 1; }
+	$(call REQUIRE_ON_CI,gcovr)
 	@echo "SKIP coverage: gcovr not on PATH (pip install gcovr)"
 else
 	@rm -rf bin/cov bin/coverage.md && mkdir -p bin/cov/html
@@ -288,7 +296,7 @@ lint-docs:
 SEMGREP ?= $(shell command -v semgrep)
 lint-invariants:
 ifeq ($(SEMGREP),)
-	@[ -z "$$CI" ] || { echo "lint-invariants: semgrep missing on CI; the gate must not skip"; exit 1; }
+	$(call REQUIRE_ON_CI,semgrep)
 	@echo "SKIP semgrep: not on PATH (pip install --require-hashes -r .semgrep/requirements.txt)"
 else
 	# Local rules only and --metrics=off, never --config auto or a
@@ -309,6 +317,7 @@ endif
 
 lint-tidy:
 ifeq ($(CLANG_TIDY),)
+	$(call REQUIRE_ON_CI,clang-tidy)
 	@echo "SKIP clang-tidy: not on PATH (ships with llvm)"
 else
 	$(CLANG_TIDY) --quiet $(LINT_C) -- -std=c11 -D_DEFAULT_SOURCE -I.
@@ -316,6 +325,7 @@ endif
 
 lint-format:
 ifeq ($(CLANG_FORMAT),)
+	$(call REQUIRE_ON_CI,clang-format)
 	@echo "SKIP clang-format: not on PATH (ships with llvm)"
 else
 	$(CLANG_FORMAT) --dry-run --Werror $(LINT_C) $(HDRS) $(PROOF_C) $(FUZZ_C) $(TESTH)
@@ -323,6 +333,7 @@ endif
 
 lint-cppcheck:
 ifeq ($(CPPCHECK),)
+	$(call REQUIRE_ON_CI,cppcheck)
 	@echo "SKIP cppcheck: not on PATH (install cppcheck)"
 else
 	# constParameterCallback: I/O callback signatures are fixed by the
@@ -342,6 +353,7 @@ hooks:
 
 lint-commits:
 ifeq ($(shell command -v npx),)
+	$(call REQUIRE_ON_CI,npx)
 	@echo "SKIP commitlint: npx not on PATH (install node)"
 else
 	npx --no-install commitlint --from=$(shell git rev-list --max-parents=0 HEAD)~0 --to=HEAD \
@@ -355,6 +367,7 @@ endif
 .PHONY: prove-slow prove-all
 prove:
 ifeq ($(CBMC),)
+	$(call REQUIRE_ON_CI,cbmc)
 	@echo "SKIP cbmc: not on PATH (brew install cbmc)"
 else
 	./proof/run.sh fast
@@ -362,6 +375,7 @@ endif
 
 prove-slow:
 ifeq ($(CBMC),)
+	$(call REQUIRE_ON_CI,cbmc)
 	@echo "SKIP cbmc: not on PATH (brew install cbmc)"
 else
 	./proof/run.sh slow
@@ -369,6 +383,7 @@ endif
 
 prove-all:
 ifeq ($(CBMC),)
+	$(call REQUIRE_ON_CI,cbmc)
 	@echo "SKIP cbmc: not on PATH (brew install cbmc)"
 else
 	./proof/run.sh all
@@ -409,6 +424,7 @@ fuzz:
 	tmp=$$(mktemp); \
 	if ! printf '%s\n' "$$probe" | $(FUZZ_CC) -fsanitize=fuzzer,address -x c - -o "$$tmp" 2>/dev/null; then \
 	  rm -f "$$tmp"; \
+	  [ -n "$$CI" ] && { echo "$(FUZZ_CC): missing on CI; the gate must not skip"; exit 1; }; \
 	  echo "SKIP fuzz: $(FUZZ_CC) lacks libFuzzer (install llvm: brew install llvm)"; \
 	  exit 0; \
 	fi; \
