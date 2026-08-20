@@ -259,6 +259,54 @@ wycheproof:
 	  x25519.c chacha20.c poly1305.c aead.c hkdf.c sha256.c p256.c rsa.c rsa_mont.c buf.c ct.c && \
 	./bin/wycheproof_test
 
+# Sanitizer lane: the deterministic suites under ASan + UBSan, test
+# binaries only — sanitized codegen must never leak into coverage,
+# timing, or release objects, so the lane builds into bin/san with its
+# own compile lines, like coverage does. O picks the optimization
+# level and the output names it, because "passed UBSan" is ambiguous
+# without one: -O0 sees code the optimizer would delete, -O2 is what
+# ships. -fno-sanitize-recover=all turns any finding into an abort, so
+# CI fails on the finding; no suite aborts on purpose (CH_ASSERT never
+# fires on the clean tree), so exit status is the pass condition.
+# LeakSanitizer joins free on Linux ASan; for a zero-heap library any
+# leak is a real bug. Sanitizers are blind to timing: this lane says
+# nothing about INV-16, which stays with construction and the t-test.
+O ?= 2
+SAN_CFLAGS = $(filter-out -O2,$(CFLAGS)) -O$(O) -g \
+  -fsanitize=address,undefined -fno-sanitize-recover=all
+.PHONY: san-check san-selftest
+san-check:
+	@rm -rf bin/san && mkdir -p bin/san
+	@echo "san-check at -O$(O) with $$($(CC) --version | head -1)"
+	$(CC) $(SAN_CFLAGS) -I. -o bin/san/unit test/unit.c $(SRCS)
+	$(CC) $(SAN_CFLAGS) -I. -o bin/san/drbg_test test/drbg_test.c drbg.c chacha20.c ct.c
+	$(CC) $(SAN_CFLAGS) -I. -o bin/san/rsa_test test/rsa_test.c rsa.c rsa_mont.c sha256.c ct.c
+	$(CC) $(SAN_CFLAGS) -I. -o bin/san/hsstrict_test test/hsstrict_test.c hsparse.c buf.c
+	$(CC) $(SAN_CFLAGS) -I. -o bin/san/hsseq_test test/hsseq_test.c \
+	  $(filter-out p256.c rsa.c rsa_mont.c,$(SRCS))
+	@set -e; for b in unit drbg_test rsa_test hsstrict_test hsseq_test; do \
+	  echo "== $$b (SAN -O$(O))"; ENUM_DEPTH=4 ./bin/san/$$b; done
+	@if [ -d $(WYCHEPROOF_DIR)/.git ] \
+	  || git clone --quiet --depth 1 https://github.com/C2SP/wycheproof $(WYCHEPROOF_DIR) 2>/dev/null; then \
+	  python3 test/gen_wycheproof.py $(WYCHEPROOF_DIR) bin/wycheproof_vectors.h && \
+	  $(CC) $(SAN_CFLAGS) -I. -Ibin -o bin/san/wycheproof_test test/wycheproof_test.c \
+	    x25519.c chacha20.c poly1305.c aead.c hkdf.c sha256.c p256.c rsa.c rsa_mont.c buf.c ct.c && \
+	  echo "== wycheproof_test (SAN -O$(O))" && ./bin/san/wycheproof_test; \
+	else \
+	  [ -n "$$CI" ] && { echo "wycheproof: clone failed and CI must not skip a gate"; exit 1; }; \
+	  echo "SKIP san wycheproof: no checkout and no network"; \
+	fi
+	$(MAKE) san-selftest
+
+# Proves the sanitizer has teeth on every run, not once in a scratch
+# branch: a committed, deliberate out-of-bounds read that must abort.
+san-selftest:
+	@mkdir -p bin/san
+	$(CC) $(SAN_CFLAGS) -I. -o bin/san/selftest test/san_selftest.c
+	@if ./bin/san/selftest >/dev/null 2>&1; then \
+	  echo "san-selftest: the deliberate violation did not trip the sanitizer"; exit 1; \
+	else echo "san-selftest: sanitizer trips as required"; fi
+
 # Big-endian MIPS lane: the byte-exact suites on the deployment ISA.
 # Every other test runs on little-endian x86-64; this lane proves no
 # host byte order leaked into the wire path or the crypto, and lets the
@@ -272,20 +320,21 @@ wycheproof:
 # and the x86 lane owns the deep run.
 CROSS ?=
 RUNNER ?=
+CROSS_EXTRA ?= # extra flags for the cross lane (nightly adds UBSan here)
 .PHONY: cross-check
 cross-check:
 	@[ -n "$(CROSS)" ] || { echo "cross-check: set CROSS=<toolchain-prefix> (and RUNNER=<emulator>)"; exit 1; }
 	@mkdir -p bin/cross
-	$(CROSS)gcc $(CFLAGS) -static -I. -o bin/cross/unit test/unit.c $(SRCS)
-	$(CROSS)gcc $(CFLAGS) -static -I. -o bin/cross/drbg_test test/drbg_test.c drbg.c chacha20.c ct.c
-	$(CROSS)gcc $(CFLAGS) -static -I. -o bin/cross/rsa_test test/rsa_test.c rsa.c rsa_mont.c sha256.c ct.c
-	$(CROSS)gcc $(CFLAGS) -static -I. -o bin/cross/hsstrict_test test/hsstrict_test.c hsparse.c buf.c
-	$(CROSS)gcc $(CFLAGS) -static -I. -o bin/cross/hsseq_test test/hsseq_test.c \
+	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) -static -I. -o bin/cross/unit test/unit.c $(SRCS)
+	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) -static -I. -o bin/cross/drbg_test test/drbg_test.c drbg.c chacha20.c ct.c
+	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) -static -I. -o bin/cross/rsa_test test/rsa_test.c rsa.c rsa_mont.c sha256.c ct.c
+	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) -static -I. -o bin/cross/hsstrict_test test/hsstrict_test.c hsparse.c buf.c
+	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) -static -I. -o bin/cross/hsseq_test test/hsseq_test.c \
 	  $(filter-out p256.c rsa.c rsa_mont.c,$(SRCS))
 	@if [ -d $(WYCHEPROOF_DIR)/.git ] \
 	  || git clone --quiet --depth 1 https://github.com/C2SP/wycheproof $(WYCHEPROOF_DIR) 2>/dev/null; then \
 	  python3 test/gen_wycheproof.py $(WYCHEPROOF_DIR) bin/wycheproof_vectors.h && \
-	  $(CROSS)gcc $(CFLAGS) -static -I. -Ibin -o bin/cross/wycheproof_test test/wycheproof_test.c \
+	  $(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) -static -I. -Ibin -o bin/cross/wycheproof_test test/wycheproof_test.c \
 	    x25519.c chacha20.c poly1305.c aead.c hkdf.c sha256.c p256.c rsa.c rsa_mont.c buf.c ct.c; \
 	else \
 	  [ -n "$$CI" ] && { echo "wycheproof: clone failed and CI must not skip a gate"; exit 1; }; \

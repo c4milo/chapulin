@@ -4,7 +4,7 @@ on:
   push:
     branches: [main] # branch pushes get checked via their PR run
   pull_request:
-  workflow_dispatch: # finish a timed-out run's remainder from the banked cache
+  workflow_dispatch: # rerun the PR lane on demand; the nightly workflow has its own
 
 # One run per branch: a new push supersedes older runs. Cancelled runs
 # still execute their always() cache save, so no proof work is lost.
@@ -58,6 +58,18 @@ jobs:
           path: bin/cov/html/
           if-no-files-found: ignore
 
+  # ASan + UBSan over the deterministic suites at -O2, the level that
+  # ships; the nightly runs the same suites at -O0, where UBSan sees
+  # code the optimizer would delete. The committed canary in
+  # test/san_selftest.c proves on every run that the sanitizer is
+  # armed.
+  san:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - run: make san-check SAN=1 O=2
+
   # The deployment ISA: big-endian mips32r2 under qemu-user. Every
   # byte-exact suite (RFC 8448 traces, Wycheproof, unit vectors) must
   # pass on the target's byte order and code generation, not only on
@@ -72,11 +84,9 @@ jobs:
 
   check:
     runs-on: ubuntu-24.04
-    # The proof tiers dominate the wall clock. A cold run — every proof,
-    # serialized by the runner's 2 admitted cores — needs hours; with the
-    # restored proof cache, a typical push re-proves only what changed
-    # and finishes in minutes. The budget covers the cold case.
-    timeout-minutes: 300
+    # The PR-lane budget: every job in this workflow fits 30 minutes of
+    # wall clock. The slow proof tier lives in the nightly workflow.
+    timeout-minutes: 45
     env:
       # CI runs the same tool versions as development. When the local
       # toolchain upgrades, bump these pins in the same commit — never
@@ -211,14 +221,8 @@ jobs:
 
       - run: make check
 
-      # The four SAT heavyweights; the fast proof tier already ran in check.
-      # The built-in solver, not kissat: the external-solver path
-      # materializes the whole formula before the DIMACS handoff, and on
-      # this runner's 16 GB that OOMs cbmc itself on the slow formulas —
-      # the incremental built-in solver has always fit them. kissat keeps
-      # the fast tier, where its wins are.
-      - name: Slow-tier proofs
-        run: PROVE_SOLVER=builtin make prove-slow
+      # The four SAT heavyweights run in the nightly workflow; this job
+      # gates pushes and PRs in minutes with the fast tier.
 
       # Save even on failure or timeout (always() runs on cancelled jobs):
       # every verified harness has already recorded its key, so the next

@@ -141,8 +141,9 @@ proof covers all inputs. Where it does not, the table states the bound.
 
 The proofs run in two tiers. `make check` runs the fast tier, the proofs
 that finish in seconds to a few minutes. `make prove-slow` runs the four
-long ones (handshake driver, aead, x25519, hkdf expand). CI runs both
-tiers.
+long ones (handshake driver, aead, x25519, hkdf expand). CI runs the
+fast tier on every push and the slow tier nightly and on demand; a red
+nightly blocks the next release, never an in-flight change.
 
 The suite layers its proofs the way mlkem-native does. CBMC proves the
 leaf modules directly. Upper layers (hkdf, record, the handshake driver)
@@ -195,6 +196,14 @@ The following claims rest on tests, not proofs:
   and the C must accept. The PSS decode is proven on hostile bytes and
   the Montgomery multiply carries its carry lemma, but CBMC does not run
   the 3072-bit exponentiation whole.
+- Every deterministic suite also runs under AddressSanitizer and
+  UndefinedBehaviorSanitizer (`make san-check`), at the shipping
+  optimization level on every push and at `-O0` nightly; a committed
+  canary proves the sanitizer is armed on each run. And the same
+  suites run on big-endian mips32r2 under qemu (`make cross-check`),
+  so the deployment ISA checks the byte-exact vectors, not only
+  x86-64. Sanitizers say nothing about timing; constant-time claims
+  stay with construction and `make timing`.
 - Line coverage over the library sources is measured (`make coverage`,
   five host binaries, both PIN builds merged) and gated in CI at the
   Makefile's `COVERAGE_FLOOR`; the HTML report ships as a CI artifact.

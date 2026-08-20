@@ -1,0 +1,127 @@
+name: nightly
+
+# The slow lane. The check workflow gates every push and PR in
+# minutes; everything here runs on a schedule (or on demand) because
+# it costs hours or exists to catch drift, not regressions in the
+# diff at hand. Policy: a red nightly opens an issue via the report
+# job below and blocks the next release; it does not block in-flight
+# PRs. A check that becomes fast enough graduates to the PR lane, and
+# one that outgrows the PR budget (30 minutes wall) demotes to here.
+on:
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  # The four SAT heavyweights, hours on a cold cache. The cache save
+  # runs even on failure or timeout, so interrupted runs converge
+  # across nights instead of starting over.
+  prove-slow:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 300
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install CBMC
+        run: |
+          curl -fsSLO https://github.com/diffblue/cbmc/releases/download/cbmc-6.10.0/ubuntu-24.04-cbmc-6.10.0-Linux.deb
+          sudo dpkg -i ubuntu-24.04-cbmc-6.10.0-Linux.deb
+      - name: Build and install kissat
+        # run.sh prefers kissat when present: it has beaten the built-in
+        # solver by hours on every formula in this repo, and the slow
+        # tier's raised address-space caps now leave room for its
+        # formula materialization. A cap kill is a clean FAILED, no
+        # worse than the built-in solver not converging.
+        run: |
+          curl -fsSL https://github.com/arminbiere/kissat/archive/refs/tags/rel-4.0.4.tar.gz | tar xz
+          cd kissat-rel-4.0.4 && ./configure && make -j"$(nproc)"
+          mkdir -p ~/kissat-inst && cp build/kissat ~/kissat-inst/
+          echo "$HOME/kissat-inst" >> "$GITHUB_PATH"
+      - name: Restore proof cache
+        uses: actions/cache/restore@v6
+        with:
+          path: proof/.cache
+          key: proofs-${{ runner.os }}-${{ github.run_id }}
+          restore-keys: proofs-${{ runner.os }}-
+      - run: make prove-slow
+      - name: Save proof cache
+        if: always()
+        uses: actions/cache/save@v6
+        with:
+          path: proof/.cache
+          key: proofs-${{ runner.os }}-${{ github.run_id }}
+      - name: Upload proof logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: proof-results
+          path: proof/results/
+          if-no-files-found: ignore
+
+  # The deeper UB pass: -O0 sees code the optimizer would delete. The
+  # PR lane runs the same suites at -O2, the level that ships.
+  san-deep:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+      - run: make san-check SAN=1 O=0
+
+  # UBSan on the deployment ISA: endianness and MIPS code generation
+  # meet the undefined-behavior checks. ASan stays off here — its
+  # shadow memory does not map cleanly under qemu-user.
+  mips-ubsan:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+      - run: sudo apt-get update -q && sudo apt-get install -y -q gcc-mips-linux-gnu qemu-user
+      - run: >
+          make cross-check CROSS=mips-linux-gnu- RUNNER=qemu-mips
+          CROSS_EXTRA="-fsanitize=undefined -fno-sanitize-recover=all -static-libubsan"
+
+  # Longer fuzz runs than a PR could afford; the corpus persists so
+  # every night extends the last one instead of rediscovering it.
+  fuzz:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+      - name: Restore fuzz corpus
+        uses: actions/cache/restore@v6
+        with:
+          path: bin/fuzz
+          key: fuzz-corpus-${{ github.run_id }}
+          restore-keys: fuzz-corpus-
+      - run: sudo apt-get update -q && sudo apt-get install -y -q clang
+      - run: make fuzz FUZZ_CC=clang FUZZ_TIME=600
+      - name: Save fuzz corpus
+        if: always()
+        uses: actions/cache/save@v6
+        with:
+          path: bin/fuzz
+          key: fuzz-corpus-${{ github.run_id }}
+
+  # A red nightly must be triaged, not scrolled past: file one issue
+  # per broken night unless an open nightly-failure issue already
+  # exists.
+  report:
+    needs: [prove-slow, san-deep, mips-ubsan, fuzz]
+    if: failure()
+    runs-on: ubuntu-24.04
+    permissions:
+      issues: write
+    steps:
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          open=$(gh issue list --repo "$GITHUB_REPOSITORY" --state open \
+            --search "nightly failure in:title" --json number --jq length)
+          if [ "$open" -eq 0 ]; then
+            gh issue create --repo "$GITHUB_REPOSITORY" \
+              --title "nightly failure: $(date -u +%F)" \
+              --body "Run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID
+          Policy: triage before the next release; nightly reds block releases, not PRs."
+          fi
