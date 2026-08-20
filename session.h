@@ -16,6 +16,33 @@
 #define CH_QUIET_CAP 32
 #endif
 
+// TX staging past the record header. One array serves two lifetimes
+// that never overlap: ClientHello construction until the hello (or its
+// HRR retry) is sent, then sealed-record staging from the client
+// Finished onward. A build whose ClientHello outgrows one sealed
+// record (a PQ key share) raises this for that build alone; every
+// other build keeps today's size. The hello is never streamed instead:
+// the PSK binder is an HMAC over the contiguous truncated hello, so a
+// streaming builder would buffer the message anyway to compute it. See
+// docs/decisions.md ("Memory and runtime").
+//
+// This constant sets the session struct's size. Define it identically
+// for the library object and every build that includes this header, or
+// the two disagree on sizeof(ch_tls) and the library writes past the
+// caller's allocation.
+#ifndef CH_TX_STAGE
+#define CH_TX_STAGE (CH_TX_PT + 1 + AEAD_TAG)
+#endif
+// The packaged library object always compiles as C, so these guards
+// run on every real build; the C++ wrapper only re-includes the
+// header. The ceiling is RFC 9846 section 5.1: a handshake record body
+// caps at 2^14, and the hello ships as one record.
+#ifndef __cplusplus
+_Static_assert(CH_TX_STAGE >= CH_TX_PT + 1 + AEAD_TAG,
+               "TX staging must hold at least one sealed record");
+_Static_assert(CH_TX_STAGE <= 0x4000, "a handshake record body caps at 2^14");
+#endif
+
 #define CH_ST_START 0
 #define CH_ST_CONNECTED 1
 #define CH_ST_CLOSED 2
@@ -40,7 +67,7 @@ typedef struct {
     // Unread plaintext of the current record, inside cfg.buf.
     size_t pt_off;
     size_t pt_len;
-    uint8_t tx[REC_HDR + CH_TX_PT + 1 + AEAD_TAG];
+    uint8_t tx[REC_HDR + CH_TX_STAGE];
 } ch_tls;
 
 // Sends an alert — encrypted iff keys are live, plaintext only before any

@@ -459,8 +459,10 @@ static void test_connect_cfg(void) {
     CHECK(ch_connect(&t, &cfg) == CH_EINVAL); // not a multiple of 8 bytes
 #endif
     cfg.server_pubkey_len = sizeof pin;
-    cfg.buf_len = 511;
-    CHECK(ch_connect(&t, &cfg) == CH_EINVAL); // buffer below the floor
+    cfg.buf_len = CH_MIN_RXBUF - 1;
+    CHECK(ch_connect(&t, &cfg) == CH_EINVAL); // first size below the floor
+    cfg.buf_len = CH_MIN_RXBUF;
+    CHECK(ch_connect(&t, &cfg) == CH_EIO); // the floor itself reaches I/O
     cfg.buf_len = sizeof rxbuf;
 
     // Slot B (key rotation): optional, but bound to every slot-A rule.

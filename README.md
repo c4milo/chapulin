@@ -67,13 +67,17 @@ targets shrink the pointer fields.
 | what | bytes |
 |---|---|
 | `ch_tls` session struct (includes 534 B TX staging) | 1008 |
-| caller receive buffer (you choose; 2048 shown) | 2048 |
+| caller receive buffer (you choose; floor `CH_MIN_RXBUF` = 512; 2048 shown) | 2048 |
 | **total static working set** | **3056** |
 | peak transient stack, `ch_connect` (default: RSA-3072 verify) | 5200 |
 | peak transient stack, `ch_connect` (`PIN=ecdsa`: P-256 verify) | 3680 |
 | peak transient stack, `ch_connect` (PSK mode: x25519 ladder) | 2608 |
 | peak transient stack, `ch_read` (worst case: KeyUpdate rekey) | 1632 |
 | peak transient stack, `ch_write` / `ch_close` | 736 / 688 |
+
+The figures cover the library alone. Anything the integrator adds —
+transport buffers, or a bounce buffer for a hardware-crypto engine that
+needs aligned or contiguous memory — is RAM on top of these numbers.
 
 The script computes each entry point's worst case from the object code's
 call graph, weighted by `-fstack-usage` frames. It does not rely on a

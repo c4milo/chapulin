@@ -103,9 +103,32 @@ does nothing more.
     sent) is distinct from `CH_ECAP` (runtime capacity), so
     provisioning corruption never reads as an attack on the wire.
 
+18. **One TX staging array, sized per build.** The ClientHello
+    builder and the sealed-record path share the session's single TX
+    array; their lifetimes never overlap — the hello and any HRR retry
+    are sent before the first sealed record. A build whose hello
+    outgrows one sealed record (a PQ key share) raises `CH_TX_STAGE`
+    for that build alone. Cost: nothing today; a PQ build pays exactly
+    its hello's size, once. Gain: no second buffer on devices that
+    never need one, and the handshake proof keeps a single staging
+    array to model. Streaming the hello in record-sized pieces stays
+    rejected: the PSK binder is an HMAC over the contiguous truncated
+    hello, so a streaming builder would buffer the message anyway to
+    compute it.
+19. **The receive-buffer floor is a build constant.** `ch_connect`
+    validates `buf_len` against `CH_MIN_RXBUF` and fails with
+    `CH_EINVAL` before anything is sent. A feature that raises what a
+    build itself requires (a certificate chain parser, a PQ key share)
+    raises the constant, so a buffer that build can never work with
+    fails at configuration — where the mistake is — instead of
+    mid-handshake as `CH_ECAP`, where it would read like an attack.
+    The floor covers what the build can know. A pinned server's
+    certificate chain stays the server's choice, so pinned deployments
+    still size the buffer for their server, above the floor.
+
 ## Assurance
 
-18. **Bounded model checking, layered, with a published ledger.** Leaf
+20. **Bounded model checking, layered, with a published ledger.** Leaf
     modules prove concrete; upper layers prove against
     contract-checking stubs of the proven layer below. Where a formula
     will not converge, the harness pins a representative bound and
@@ -113,13 +136,13 @@ does nothing more.
     proofs that finish, and claims nobody has to take on faith — the
     README states what is proved, at what bound, and what is only
     tested.
-19. **The Lean spec is written from the RFCs, never from the C**, is
+21. **The Lean spec is written from the RFCs, never from the C**, is
     partial exactly where the RFCs are partial, and carries theorems
     about itself. Cost: everything is implemented twice. Gain: a shared
     misreading of an RFC cannot make both sides agree, and each
     C-versus-spec agreement transfers a proven property, not just a
     matching answer.
-20. **The RFC 8448 replay stops at secrets and MACs.** The traces
+22. **The RFC 8448 replay stops at secrets and MACs.** The traces
     protect records with AES-128-GCM, which this stack excludes, and
     sign with an RSA-1024 key, below the verifier's floor — so the
     tests check the floor holds, then verify the trace's
@@ -129,19 +152,19 @@ does nothing more.
 
 ## Engineering
 
-21. **Four exported symbols.** The library packages as one relocatable
+23. **Four exported symbols.** The library packages as one relocatable
     object; partial linking plus symbol localization does the
     namespacing, so sources keep natural names and applications cannot
     collide with internals.
-22. **CI compiles with gcc on purpose** while development machines run
+24. **CI compiles with gcc on purpose** while development machines run
     clang: consumers are firmware trees whose vendor SDKs ship gcc
     cross-compilers, so gcc-only diagnostics belong in CI. Between the
     two, both major compiler families stay covered without a second CI
     leg.
-23. **Tool versions pin to the development machine's.** When the local
+25. **Tool versions pin to the development machine's.** When the local
     toolchain upgrades, the CI pins bump in the same commit. Code never
     adapts to an older checker.
-24. **Two proof solvers, each where its memory profile fits.** kissat
+26. **Two proof solvers, each where its memory profile fits.** kissat
     runs the fast tier (measured: verdicts in seconds to minutes where
     the built-in solver ran for hours); CI's slow tier keeps the
     built-in solver, because the external-solver path materializes the

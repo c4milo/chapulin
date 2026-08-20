@@ -38,7 +38,7 @@ int ch_connect(ch_tls *t, const ch_cfg *cfg) {
         return CH_EINVAL;
     }
     if ((!psk_ok && !pin_ok) || cfg->buf == NULL || cfg->send == NULL || cfg->recv == NULL ||
-        cfg->buf_len < 512) {
+        cfg->buf_len < CH_MIN_RXBUF) {
         t->state = CH_ST_FAILED;
         return CH_EINVAL;
     }
