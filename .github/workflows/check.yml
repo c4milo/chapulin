@@ -58,6 +58,18 @@ jobs:
           path: bin/cov/html/
           if-no-files-found: ignore
 
+  # The deployment ISA: big-endian mips32r2 under qemu-user. Every
+  # byte-exact suite (RFC 8448 traces, Wycheproof, unit vectors) must
+  # pass on the target's byte order and code generation, not only on
+  # the x86-64 the other jobs run.
+  mips:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - run: sudo apt-get update -q && sudo apt-get install -y -q gcc-mips-linux-gnu qemu-user
+      - run: make cross-check CROSS=mips-linux-gnu- RUNNER=qemu-mips
+
   check:
     runs-on: ubuntu-24.04
     # The proof tiers dominate the wall clock. A cold run — every proof,

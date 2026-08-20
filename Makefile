@@ -259,6 +259,42 @@ wycheproof:
 	  x25519.c chacha20.c poly1305.c aead.c hkdf.c sha256.c p256.c rsa.c rsa_mont.c buf.c ct.c && \
 	./bin/wycheproof_test
 
+# Big-endian MIPS lane: the byte-exact suites on the deployment ISA.
+# Every other test runs on little-endian x86-64; this lane proves no
+# host byte order leaked into the wire path or the crypto, and lets the
+# vectors meet mips32r2 code generation. CROSS names the toolchain
+# prefix and RUNNER the emulator; the same command runs locally and on
+# CI:  make cross-check CROSS=mips-linux-gnu- RUNNER=qemu-mips
+# Static binaries, so the emulator needs no target sysroot. The suites
+# run from bin/cross on purpose: hsseq then skips the Lean-spec
+# comparison (the oracle is a host binary), keeping its direct ordering
+# and alert tables; depth 3 keeps the emulated enumeration to minutes,
+# and the x86 lane owns the deep run.
+CROSS ?=
+RUNNER ?=
+.PHONY: cross-check
+cross-check:
+	@[ -n "$(CROSS)" ] || { echo "cross-check: set CROSS=<toolchain-prefix> (and RUNNER=<emulator>)"; exit 1; }
+	@mkdir -p bin/cross
+	$(CROSS)gcc $(CFLAGS) -static -I. -o bin/cross/unit test/unit.c $(SRCS)
+	$(CROSS)gcc $(CFLAGS) -static -I. -o bin/cross/drbg_test test/drbg_test.c drbg.c chacha20.c ct.c
+	$(CROSS)gcc $(CFLAGS) -static -I. -o bin/cross/rsa_test test/rsa_test.c rsa.c rsa_mont.c sha256.c ct.c
+	$(CROSS)gcc $(CFLAGS) -static -I. -o bin/cross/hsstrict_test test/hsstrict_test.c hsparse.c buf.c
+	$(CROSS)gcc $(CFLAGS) -static -I. -o bin/cross/hsseq_test test/hsseq_test.c \
+	  $(filter-out p256.c rsa.c rsa_mont.c,$(SRCS))
+	@if [ -d $(WYCHEPROOF_DIR)/.git ] \
+	  || git clone --quiet --depth 1 https://github.com/C2SP/wycheproof $(WYCHEPROOF_DIR) 2>/dev/null; then \
+	  python3 test/gen_wycheproof.py $(WYCHEPROOF_DIR) bin/wycheproof_vectors.h && \
+	  $(CROSS)gcc $(CFLAGS) -static -I. -Ibin -o bin/cross/wycheproof_test test/wycheproof_test.c \
+	    x25519.c chacha20.c poly1305.c aead.c hkdf.c sha256.c p256.c rsa.c rsa_mont.c buf.c ct.c; \
+	else \
+	  [ -n "$$CI" ] && { echo "wycheproof: clone failed and CI must not skip a gate"; exit 1; }; \
+	  echo "SKIP cross wycheproof: no checkout and no network"; \
+	fi
+	@set -e; cd bin/cross; for b in unit drbg_test rsa_test hsstrict_test hsseq_test; do \
+	  echo "== $$b ($(RUNNER))"; ENUM_DEPTH=3 $(RUNNER) ./$$b; done; \
+	if [ -x wycheproof_test ]; then echo "== wycheproof_test ($(RUNNER))"; $(RUNNER) ./wycheproof_test; fi
+
 # Lean spec hygiene: the escape hatches that would quietly weaken the
 # proofs are banned from the model (spec/Spec/, Spec.lean) — sorry,
 # admit, native_decide, unsafe, axiom declarations, and kernel-limit
