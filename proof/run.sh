@@ -4,8 +4,7 @@
 # job is admitted by its memory weight (slow tier 6 GB, fast tier 2 GB —
 # the biggest measured fast peak, rsa, is under 0.5 GB) against the
 # machine's budget, plus a free core; unbounded parallelism would thrash
-# the machine into being slower than sequential. Longest jobs launch
-# first. Each proof checks memory safety (bounds, pointer validity), UB
+# the machine into being slower than sequential. Each proof checks memory safety (bounds, pointer validity), UB
 # (signed overflow, undefined shifts, division), and the harness's
 # explicit asserts, over all inputs within the documented bounds;
 # --unwinding-assertions proves the loop bounds themselves.
@@ -87,7 +86,8 @@ BASE=(--bounds-check --pointer-check --pointer-overflow-check
 
 # Admission budget: total memory minus headroom for the OS and whatever
 # else is open, and two cores held back. Each solver also runs under a
-# hard address-space cap of its weight plus 4 GB, floor 6 (Linux/CI,
+# hard address-space cap: weight + 4 GB for fast jobs, + 10 for slow
+# ones, floor 6 (Linux/CI,
 # where OOM bites hardest; a no-op on macOS, which lacks ulimit -v) so an
 # outlier dies as a clean FAILED instead of dragging the machine into
 # swap. ulimit -v caps VIRTUAL address space, which runs well above
@@ -150,8 +150,8 @@ NJOBS=0
 NCACHED=0
 # launch <tier>[:<weight-gb>] <mode> <name> <unwind> <unwindset> [deps...]
 # The optional weight overrides the tier default (fast 2, slow 6) for
-# harnesses whose measured peak demands it; the job's address-space cap
-# follows as weight + 4 GB.
+# harnesses whose measured peak demands it; the address-space cap adds
+# the tier's headroom on top.
 launch() {
     local tier="$1"
     shift
@@ -205,7 +205,16 @@ launch() {
         fi
         sleep 1
     done
-    local cap_gb=$((w + 4))
+    # Fast jobs get a tight cap sized from their measured peaks. Slow
+    # jobs get weight + 10: cbmc's VIRTUAL footprint under the built-in
+    # solver runs far past resident (measured on CI: the aead formula
+    # died at a 10 GB VA cap in 43 s, and x25519 proved all 501
+    # properties and then died in the final phase), and slow jobs run
+    # close to serial anyway, so the OS's OOM handling is the real
+    # backstop there.
+    local headroom=4
+    if [ "$tier" = "slow" ]; then headroom=10; fi
+    local cap_gb=$((w + headroom))
     if [ "$cap_gb" -lt 6 ]; then cap_gb=6; fi
     (
         ulimit -v $((cap_gb * 1024 * 1024)) 2>/dev/null || true
@@ -224,10 +233,14 @@ launch() {
 
 # Longest first, so stragglers overlap the quick wins instead of
 # trailing them.
-launch slow full handshake 100 "fetch_record.0:45,next_msg.0:140,fill_nondet.0:600" buf.c ct.c
+# Shortest first: on CI the slow jobs run close to serial, and a run
+# that hits the workflow timeout banks every finished proof — so the
+# order decides how much a partial run saves. Re-dispatching the
+# workflow finishes the remainder from the banked cache.
+launch slow full hkdf_expand 120 "hkdf_expand.0:5" --object-bits 11 ct.c
 launch slow full aead 85 "blocks.0:10,chacha20_xor.1:4" chacha20.c poly1305.c ct.c
 launch slow noovf x25519 65 "" ct.c
-launch slow full hkdf_expand 120 "hkdf_expand.0:5" --object-bits 11 ct.c
+launch slow full handshake 100 "fetch_record.0:45,next_msg.0:140,fill_nondet.0:600" buf.c ct.c
 # Measured kissat-path peaks (macOS /usr/bin/time -l, RSS): hsparse
 # 9.9 GB, sha256 5.7 GB — both above the default weight and cap.
 launch fast:10 full hsparse 260 "hsp_parse_server_hello.0:66,main.0:600" hsparse.c buf.c
