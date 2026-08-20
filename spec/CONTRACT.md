@@ -116,3 +116,32 @@ Not proved, deliberately: functional correctness of the C (CBMC plus
 the differential carry that), cryptographic security notions, and
 x25519/P-256 group laws (mathlib-scale; out of scope for a
 dependency-free build).
+
+## Proof status by module
+
+The machine-versus-convention line for the spec, kept honest by `make
+lint-spec` (hygiene: no escape hatches in the model; the load-bearing
+theorems rest on Lean's three standard axioms only). "Vector-checked"
+means the module's selftest plus the differential oracle carry it;
+"proven" means theorems beyond that.
+
+| module | theorems | what is proven vs only vector-checked |
+| --- | --- | --- |
+| Bytes | 14 | proof toolkit: fold characterizations, xor involution, hex injectivity |
+| Handshake | 8 | state-machine safety invariants (Finished count, PSK/pinned flight shapes, HRR bound) |
+| ChaCha | 4 | block size and structural lemmas; keystream itself vector-checked |
+| Aead | 3 | seal/open round trip, tag rejection, output size |
+| Hkdf | 3 | output lengths; derivations vector-checked |
+| Record | 2 | seal/open round trip, record size |
+| Sha256 | 2 | structural lemmas; compression function vector-checked |
+| Poly | 1 | MAC size; arithmetic vector-checked |
+| P256 | 0 | executable oracle only: RFC 6979 vectors and the differential |
+| Rsa | 0 | executable oracle only: OpenSSL vectors and the differential |
+| X25519 | 0 | executable oracle only: RFC 7748 vectors and the differential |
+| Drbg | 0 | executable oracle only: structural selftest and the differential |
+
+The four zero-theorem modules are the hardest and the most
+security-critical; they are executable and vector-checked but carry no
+proven properties. The missing theorems, in value order: Drbg key
+advance and seed determinism, X25519 ladder invariants, then the
+P-256 and RSA arithmetic lemmas.

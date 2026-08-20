@@ -149,7 +149,7 @@ bin/diff: test/diff.c $(SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) -I. -o $@ test/diff.c $(SRCS)
 
-.PHONY: check lint lint-tidy lint-format lint-cppcheck lint-docs lint-invariants prove diff fmt clean
+.PHONY: check lint lint-tidy lint-format lint-cppcheck lint-docs lint-invariants lint-spec prove diff fmt clean
 check: bin/unit bin/tlsclient bin/tlsclient_ecdsa bin/drbg_test bin/rsa_test bin/hsstrict_test bin/hsseq_test lint lib-check cxx-check
 	./bin/unit
 	./bin/drbg_test
@@ -259,9 +259,46 @@ wycheproof:
 	  x25519.c chacha20.c poly1305.c aead.c hkdf.c sha256.c p256.c rsa.c rsa_mont.c buf.c ct.c && \
 	./bin/wycheproof_test
 
+# Lean spec hygiene: the escape hatches that would quietly weaken the
+# proofs are banned from the model (spec/Spec/, Spec.lean) — sorry,
+# admit, native_decide, unsafe, axiom declarations, and kernel-limit
+# bumps. Main.lean is the IO oracle driver, not the model; its one
+# `partial def loop` (a REPL cannot be proven terminating) is the sole
+# allowed use. The axiom check then proves the load-bearing theorems
+# rest only on Lean's three standard axioms.
+SPEC_MODEL := $(wildcard spec/Spec/*.lean) spec/Spec.lean
+lint-spec:
+ifeq ($(LAKE),)
+	$(call REQUIRE_ON_CI,lake)
+	@echo "SKIP lint-spec: lake not on PATH (install elan: https://leanprover.github.io)"
+else
+	@rc=0; for f in $(SPEC_MODEL) spec/Main.lean; do \
+	  hits=$$(sed 's/--.*//' $$f \
+	    | grep -nwE 'sorry|admit|native_decide|unsafe' ; \
+	    sed 's/--.*//' $$f | grep -nE '^[[:space:]]*axiom[[:space:]]' ; \
+	    sed 's/--.*//' $$f | grep -nE 'set_option[[:space:]]+(maxHeartbeats|maxRecDepth)') ; \
+	  [ -z "$$hits" ] || { printf '%s\n' "$$hits" | sed "s|^|$$f:|"; rc=1; }; \
+	done; \
+	for f in $(SPEC_MODEL); do \
+	  hits=$$(sed 's/--.*//' $$f | grep -nwE 'partial'); \
+	  [ -z "$$hits" ] || { printf '%s\n' "$$hits" | sed "s|^|$$f:|"; rc=1; }; \
+	done; \
+	[ $$rc -eq 0 ] || { echo "lint-spec: banned escape hatch in the model"; exit 1; }
+	@cd spec && $(LAKE) build 2>&1 | tee /tmp/lake-build.log \
+	  && ! grep -q "warning:" /tmp/lake-build.log \
+	  || { echo "lint-spec: lake build warnings are errors here"; exit 1; }
+	@cd spec && $(LAKE) env lean AxiomCheck.lean > /tmp/axioms.log 2>&1 \
+	  || { cat /tmp/axioms.log; exit 1; }
+	@! grep -oE "depends on axioms: \[[^]]*\]" /tmp/axioms.log \
+	  | tr ',[]' '\n' | sed 's/.*axioms: //;s/^ *//;s/ *$$//' | grep -v '^$$' \
+	  | grep -vxE 'propext|Classical\.choice|Quot\.sound' \
+	  || { echo "lint-spec: a load-bearing theorem depends on a non-standard axiom"; exit 1; }
+	@echo "lint-spec: model clean, theorems rest on the standard axioms only"
+endif
+
 # Checks and thresholds live in .clang-tidy; every disable carries a reason
 # there (fix-or-drop, never NOLINT in code).
-lint: lint-tidy lint-format lint-cppcheck lint-commits lint-docs lint-invariants lint-stack
+lint: lint-tidy lint-format lint-cppcheck lint-commits lint-docs lint-invariants lint-stack lint-spec
 
 # INV-19: bounded stack. The budget is the measured worst library
 # frame (rsa_vp1's RSA-3072 limb temporaries, 2,400 bytes) rounded up;
