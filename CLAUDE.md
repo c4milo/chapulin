@@ -89,7 +89,8 @@ Home: github.com/c4milo.
 - Commits are Conventional Commits (feat/fix/docs/test/refactor/perf/
   build/ci/chore), enforced by commitlint via `.githooks/commit-msg`
   (`make hooks` once after clone) and `make lint-commits` in check.
-  Bodies still explain WHY and wrap at 100 columns.
+  Bodies stay short: a few sentences of WHY, wrapped at 100 columns.
+  The diff shows the what.
 - Every change passes `make check` (lint + unit + proofs; e2e against a
   real TLS 1.3 server once the handshake lands), not just compile.
 - Functions stay at cognitive complexity 20 or less; hand-written files
