@@ -242,7 +242,7 @@ else
 	  $(COV_CC) test/drbg_test.c $$d/drbg.o $$d/chacha20.o $$d/ct.o -o $$d/drbg_test; \
 	  $(COV_CC) test/rsa_test.c $$d/rsa.o $$d/rsa_mont.o $$d/sha256.o $$d/ct.o -o $$d/rsa_test; \
 	  $(COV_CC) test/hsstrict_test.c $$d/hsparse.o $$d/buf.o -o $$d/hsstrict_test; \
-	  verifier="$$d/rsa.o $$d/rsa_mont.o"; [ $$pin = ecdsa ] && verifier=$$d/p256.o; \
+	  verifier="$$d/rsa.o $$d/rsa_mont.o"; if [ $$pin = ecdsa ]; then verifier=$$d/p256.o; fi; \
 	  $(COV_CC) $$def test/x509strict_test.c $$d/x509.o $$d/x509_der.o $$d/buf.o $$d/sha256.o \
 	    $$d/ct.o $$verifier -o $$d/x509strict_test; \
 	  $(COV_CC) test/hsseq_test.c \
@@ -264,6 +264,7 @@ else
 	# billions of hits across both PIN runs; the counter magnitude
 	# does not affect line coverage.
 	$(GCOVR) --root . bin/cov --filter '^[a-z0-9_]+\.c$$' \
+	  --merge-mode-functions=separate \
 	  --gcov-executable "$(GCOV_TOOL)" \
 	  --gcov-ignore-parse-errors suspicious_hits.warn_once_per_file \
 	  --markdown bin/coverage-table.md --html-details bin/cov/html/index.html \
