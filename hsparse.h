@@ -44,6 +44,21 @@ int hsp_parse_server_hello(const uint8_t *body, size_t n, server_hello_info *inf
 // default; the parser overwrites it only when it knows better (an
 // extension we never offered gets unsupported_extension, RFC 9846
 // §4.3). Returns CH_OK or CH_EPROTO.
+// Certificate body framing: the empty certificate_request_context,
+// then the exact-fill CertificateEntry list. On CH_OK *list points
+// into body — the raw bytes the CA build's certificate parser
+// consumes. The caller seeds *alert; the parser overwrites it when
+// it knows better (a nonempty context).
+int hsp_parse_certificate(const uint8_t *body, size_t n, const uint8_t **list, size_t *list_len,
+                          uint8_t *alert);
+
+// CertificateVerify body: the one offered algorithm, then the
+// signature, exact-fill. On CH_OK *sig points into body and lives as
+// long as it does. The caller seeds *alert; the parser overwrites it
+// only when it knows better (wrong algorithm).
+int hsp_parse_certificate_verify(const uint8_t *body, size_t n, const uint8_t **sig,
+                                 size_t *sig_len, uint8_t *alert);
+
 int hsp_parse_encrypted_exts(const uint8_t *body, size_t n, uint16_t *peer_limit, uint8_t *alert);
 
 #endif

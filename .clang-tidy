@@ -45,7 +45,7 @@ Checks: >
   -readability-math-missing-parentheses
 WarningsAsErrors: '*'
 CheckOptions:
-  readability-function-cognitive-complexity.Threshold: '20'
+  readability-function-cognitive-complexity.Threshold: '15'
   # Without this, the if inside every expanded CHECK() dominates the test
   # functions' scores; production macros here contain no control flow.
   readability-function-cognitive-complexity.IgnoreMacros: 'true'

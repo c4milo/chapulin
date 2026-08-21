@@ -112,24 +112,9 @@ static void case_config(ch_cfg *cfg, uint8_t *rxbuf, size_t rxlen, int psk) {
     }
 }
 
-static int run_case(const char *letters, size_t n, int psk) {
-    memset(&srv, 0, sizeof srv);
-    srv.seq = letters;
-    srv.len = n;
-    srv.psk = psk;
-    sha256_init(&srv.transcript);
-
-    static uint8_t rxbuf[1024];
-    ch_cfg cfg;
-    case_config(&cfg, rxbuf, sizeof rxbuf, psk);
-
-    reject_why = "accepted";
-    int rc = ch_connect(&client_session, &cfg);
-    if (rc != CH_OK) {
-        reject_why = rc == CH_EIO && seq_spent(&srv) ? "handshake starved (sequence too short)"
-                                                     : "handshake refused a record";
-        return 0;
-    }
+// Drains the post-handshake tail with ch_read: accept (1) iff every
+// letter is consumed before close_notify or transport EOF cuts it off.
+static int drain_tail(void) {
     for (;;) {
         if (seq_spent(&srv)) {
             return 1; // every letter consumed, session still alive
@@ -152,6 +137,27 @@ static int run_case(const char *letters, size_t n, int psk) {
         reject_why = "tail refused a record";
         return 0;
     }
+}
+
+static int run_case(const char *letters, size_t n, int psk) {
+    memset(&srv, 0, sizeof srv);
+    srv.seq = letters;
+    srv.len = n;
+    srv.psk = psk;
+    sha256_init(&srv.transcript);
+
+    static uint8_t rxbuf[1024];
+    ch_cfg cfg;
+    case_config(&cfg, rxbuf, sizeof rxbuf, psk);
+
+    reject_why = "accepted";
+    int rc = ch_connect(&client_session, &cfg);
+    if (rc != CH_OK) {
+        reject_why = rc == CH_EIO && seq_spent(&srv) ? "handshake starved (sequence too short)"
+                                                     : "handshake refused a record";
+        return 0;
+    }
+    return drain_tail();
 }
 
 static long mismatches;

@@ -268,11 +268,11 @@ static void certd_mutant_row(const char *alg, const char *ca_hex, const uint8_t 
     certd_row(alg, ca_hex, ca_key, ca_len, list, n, NULL);
 }
 
-// Walks the spine and sends every mutant's verdict row: the whole
-// point is that the C parser and the spec reject each one for the
-// same input, whichever check catches it first.
-static void certd_mutants(const char *alg, const char *ca_hex, const uint8_t *ca_key, size_t ca_len,
-                          const uint8_t *cert, size_t cert_len) {
+// Walks the decoded spine and sends one row per mutant: the long-form
+// length everywhere, the grow for INTEGERs and containers, and the
+// other-params swap at both pinned-sigalg sites.
+static void certd_spine_rows(const char *alg, const char *ca_hex, const uint8_t *ca_key,
+                             size_t ca_len, const uint8_t *cert, size_t cert_len) {
     static uint8_t mut[CERTD_CERT_MAX + 8];
     static uint8_t pinned[80];
     static uint8_t other[80];
@@ -304,6 +304,36 @@ static void certd_mutants(const char *alg, const char *ca_hex, const uint8_t *ca
     if (sigalg_hits != 2) {
         mut_die("pinned signature algorithm not found in both places");
     }
+}
+
+// Grows the extension list to the count bound and sends the exact
+// boundary pair: at the bound the CA signature rejects, one past it
+// the bound itself does.
+static void certd_count_bound_rows(const char *alg, const char *ca_hex, const uint8_t *ca_key,
+                                   size_t ca_len, const uint8_t *cert, size_t cert_len) {
+    static uint8_t grow[CERTD_CERT_MAX + 8];
+    static uint8_t grow_next[CERTD_CERT_MAX + 8];
+    memcpy(grow, cert, cert_len);
+    size_t grow_len = cert_len;
+    for (size_t count = 2; count < CH_X509_EXT_COUNT_MAX + 1U; count++) {
+        grow_len = insert_unknown(grow_next, grow, grow_len, (uint8_t)(0x3e + count));
+        memcpy(grow, grow_next, grow_len);
+        if (count + 1 >= CH_X509_EXT_COUNT_MAX) {
+            certd_mutant_row(alg, ca_hex, ca_key, ca_len, grow, grow_len);
+        }
+    }
+    if (ext_count(grow, grow_len) != CH_X509_EXT_COUNT_MAX + 1U) {
+        mut_die("extension growth drifted off the count bound");
+    }
+}
+
+// Walks the spine and sends every mutant's verdict row: the whole
+// point is that the C parser and the spec reject each one for the
+// same input, whichever check catches it first.
+static void certd_mutants(const char *alg, const char *ca_hex, const uint8_t *ca_key, size_t ca_len,
+                          const uint8_t *cert, size_t cert_len) {
+    static uint8_t mut[CERTD_CERT_MAX + 8];
+    certd_spine_rows(alg, ca_hex, ca_key, ca_len, cert, cert_len);
     // present-DEFAULT on the non-critical EKU extension.
     size_t eku = find_ext(cert, cert_len, (const uint8_t[]){0x55, 0x1d, 0x25});
     size_t n = certd_default_false(mut, cert, cert_len, eku);
@@ -335,20 +365,7 @@ static void certd_mutants(const char *alg, const char *ca_hex, const uint8_t *ca
     // The extension count bound: growing to exactly
     // CH_X509_EXT_COUNT_MAX rejects on the signature, one more on the
     // bound.
-    static uint8_t grow[CERTD_CERT_MAX + 8];
-    static uint8_t grow_next[CERTD_CERT_MAX + 8];
-    memcpy(grow, cert, cert_len);
-    size_t grow_len = cert_len;
-    for (size_t count = 2; count < CH_X509_EXT_COUNT_MAX + 1U; count++) {
-        grow_len = insert_unknown(grow_next, grow, grow_len, (uint8_t)(0x3e + count));
-        memcpy(grow, grow_next, grow_len);
-        if (count + 1 >= CH_X509_EXT_COUNT_MAX) {
-            certd_mutant_row(alg, ca_hex, ca_key, ca_len, grow, grow_len);
-        }
-    }
-    if (ext_count(grow, grow_len) != CH_X509_EXT_COUNT_MAX + 1U) {
-        mut_die("extension growth drifted off the count bound");
-    }
+    certd_count_bound_rows(alg, ca_hex, ca_key, ca_len, cert, cert_len);
 }
 
 #include "diffx509bounds.h"

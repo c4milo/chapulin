@@ -9,6 +9,13 @@ contributor's summary.
 
 ## The bar
 
+Write for the auditor who did not write it. chapulin optimizes for
+third-party review: spelled-out names, functions under cognitive
+complexity 15, pure predicates with state changes on their own
+lines, byte-compares against named constants instead of
+decode-and-judge. When compact and auditable conflict, auditable
+wins (docs/decisions.md records the trade).
+
 New code lands with its assurance attached. By change type:
 
 | Change | Must land with |

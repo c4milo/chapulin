@@ -73,6 +73,28 @@ static int accept_record(handshake_state *h, size_t part, uint8_t outer, size_t 
 // Reads records until one carrying handshake bytes lands, decrypting once
 // keys are up, and appends its plaintext to the unconsumed bytes already
 // in cfg.buf so messages may span records.
+// Middlebox-compat noise, never hashed. RFC 9846 §5: exactly one
+// 0x01 byte. Each call spends one of the four tolerated CCS
+// records, so a hostile stream stays finite.
+static int ccs_tolerable(handshake_state *h, size_t part, size_t record_len) {
+    if (record_len != REC_HDR + 1 || h->t->cfg.buf[part + REC_HDR] != 1) {
+        return 0;
+    }
+    h->ccs_seen++;
+    return h->ccs_seen <= 4;
+}
+
+// An empty fragment is legal once in a while; a stream of them must
+// not pin the handshake. A fragment that made progress is free; an
+// empty one spends quiet budget.
+static int quiet_stream_capped(handshake_state *h, size_t part) {
+    if (h->t->pt_len != part) {
+        return 0;
+    }
+    h->quiet++;
+    return h->quiet > CH_QUIET_CAP;
+}
+
 static int fetch_record(handshake_state *h) {
     ch_tls *t = h->t;
     if (t->pt_off > 0) {
@@ -90,10 +112,7 @@ static int fetch_record(handshake_state *h) {
             return rc;
         }
         if (outer == REC_CCS) {
-            // Middlebox-compat noise, never hashed. RFC 9846 §5: the body
-            // must be exactly one 0x01 byte; the count cap keeps a hostile
-            // plaintext CCS stream from pinning the handshake forever.
-            if (record_len != REC_HDR + 1 || t->cfg.buf[part + REC_HDR] != 1 || ++h->ccs_seen > 4) {
+            if (!ccs_tolerable(h, part, record_len)) {
                 h->alert = ALERT_UNEXPECTED_MESSAGE;
                 return CH_EPROTO;
             }
@@ -106,9 +125,7 @@ static int fetch_record(handshake_state *h) {
         if (rc != CH_OK) {
             return rc;
         }
-        // An empty handshake fragment is legal once in a while, but an
-        // endless stream of them must not pin the handshake forever.
-        if (t->pt_len == part && ++h->quiet > CH_QUIET_CAP) {
+        if (quiet_stream_capped(h, part)) {
             h->alert = ALERT_UNEXPECTED_MESSAGE;
             return CH_EPROTO;
         }
@@ -253,13 +270,10 @@ static int expect_finished(handshake_state *h) {
     return CH_OK;
 }
 
-// Pinned-key server authentication (RFC 9846 §4.5.1 and §4.5.2): accept the
-// Certificate message with minimal framing checks — its contents are
-// authenticated by the signature, not by parsing — then require a
-// CertificateVerify whose signature (RSA-PSS by default, ECDSA-P256 under
-// CH_PIN_ECDSA) over the running transcript checks out against either
-// provisioned pin slot (slot B holds the staged next key, docs/rotation.md).
-static int server_auth(handshake_state *h) {
+// CertificateVerify: parse, rebuild the §4.5.2 signed content, and
+// verify against pin slot A then B. The TRUST=ca build swaps in the
+// leaf key here.
+static int check_certificate_verify(handshake_state *h, const uint8_t hash[SHA256_LEN]) {
     uint8_t type = 0;
     const uint8_t *raw = NULL;
     size_t raw_len = 0;
@@ -267,47 +281,16 @@ static int server_auth(handshake_state *h) {
     if (rc != CH_OK) {
         return rc;
     }
-    if (type == HS_CERTIFICATE_REQUEST) {
-        h->alert = ALERT_HANDSHAKE_FAILURE; // no client certificates here
-        return CH_EAUTH;
-    }
-    if (type != HS_CERTIFICATE) {
-        h->alert = ALERT_UNEXPECTED_MESSAGE;
-        return CH_EPROTO;
-    }
-    rbuf r;
-    rb_init(&r, raw + 4, raw_len - 4);
-    if (rb_u8(&r) != 0) {
-        h->alert = ALERT_ILLEGAL_PARAMETER; // certificate_request_context
-        return CH_EPROTO;
-    }
-    size_t list_len = rb_u24(&r);
-    if (r.err || list_len != rb_left(&r) || list_len == 0) {
-        h->alert = ALERT_DECODE_ERROR;
-        return CH_EPROTO;
-    }
-    sha256_update(&h->t->transcript, raw, raw_len);
-
-    uint8_t hash[SHA256_LEN];
-    (void)hash_now(h, hash);
-    rc = next_msg(h, &type, &raw, &raw_len);
-    if (rc != CH_OK) {
-        return rc;
-    }
     if (type != HS_CERTIFICATE_VERIFY) {
         h->alert = ALERT_UNEXPECTED_MESSAGE;
         return CH_EPROTO;
     }
-    rb_init(&r, raw + 4, raw_len - 4);
-    if (rb_u16(&r) != CH_PIN_SIGALG) {
-        h->alert = ALERT_HANDSHAKE_FAILURE; // we offered exactly one algorithm
-        return CH_EAUTH;
-    }
-    size_t sig_len = rb_u16(&r);
-    const uint8_t *sig = rb_bytes(&r, sig_len);
-    if (sig == NULL || rb_left(&r) != 0) {
-        h->alert = ALERT_DECODE_ERROR;
-        return CH_EPROTO;
+    const uint8_t *sig = NULL;
+    size_t sig_len = 0;
+    h->alert = ALERT_DECODE_ERROR;
+    rc = hsp_parse_certificate_verify(raw + 4, raw_len - 4, &sig, &sig_len, &h->alert);
+    if (rc != CH_OK) {
+        return rc;
     }
 
     // Signed content per §4.5.2: 64 spaces, context string, NUL, transcript.
@@ -343,6 +326,42 @@ static int server_auth(handshake_state *h) {
     }
     sha256_update(&h->t->transcript, raw, raw_len);
     return CH_OK;
+}
+
+// Pinned-key server authentication (RFC 9846 §4.5.1 and §4.5.2): accept the
+// Certificate message with minimal framing checks — its contents are
+// authenticated by the signature, not by parsing — then require a
+// CertificateVerify whose signature (RSA-PSS by default, ECDSA-P256 under
+// CH_PIN_ECDSA) over the running transcript checks out against either
+// provisioned pin slot (slot B holds the staged next key, docs/rotation.md).
+static int server_auth(handshake_state *h) {
+    uint8_t type = 0;
+    const uint8_t *raw = NULL;
+    size_t raw_len = 0;
+    int rc = next_msg(h, &type, &raw, &raw_len);
+    if (rc != CH_OK) {
+        return rc;
+    }
+    if (type == HS_CERTIFICATE_REQUEST) {
+        h->alert = ALERT_HANDSHAKE_FAILURE; // no client certificates here
+        return CH_EAUTH;
+    }
+    if (type != HS_CERTIFICATE) {
+        h->alert = ALERT_UNEXPECTED_MESSAGE;
+        return CH_EPROTO;
+    }
+    const uint8_t *list = NULL;
+    size_t list_len = 0;
+    h->alert = ALERT_DECODE_ERROR;
+    rc = hsp_parse_certificate(raw + 4, raw_len - 4, &list, &list_len, &h->alert);
+    if (rc != CH_OK) {
+        return rc;
+    }
+    sha256_update(&h->t->transcript, raw, raw_len);
+
+    uint8_t hash[SHA256_LEN];
+    (void)hash_now(h, hash);
+    return check_certificate_verify(h, hash);
 }
 
 static int send_client_finished(handshake_state *h, const uint8_t *hash) {

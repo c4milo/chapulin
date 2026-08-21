@@ -166,3 +166,11 @@ does nothing more.
     whole formula and exhausts a 16 GB runner. Verdicts are
     solver-independent. A content-keyed cache re-proves only what
     changed.
+27. **Third-party audit is the optimization target.** Every
+    review-facing trade — spelled-out names, the complexity-15 gate,
+    pure predicates with state changes on their own lines, pinned
+    byte constants instead of decode-and-judge — pays a little
+    compactness for a lot of reviewability. Cost: more lines and
+    more named helpers than the terse form. Gain: a security library
+    earns trust through reviewers who did not write it, and every
+    clever compression taxes each of them.

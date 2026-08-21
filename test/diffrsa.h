@@ -72,6 +72,55 @@ static const char *const diff_rsa_d3072 =
     "0651cbe0ac50e1669c2d6d6958340ca6193a43c4b02f3d626f99f525c6826475"
     "11f97ddf33f1e701fad583c11eb8fbbf75c5a4929f78a706676408c4a4dfde81";
 
+#ifdef DIFF_HAVE_RSA
+// Runs the C verifier over one minted row: accept the good signature,
+// reject the mutated hash, and reject three one-byte signature flips.
+static void diff_rsa_check_c(const char *n_hex, size_t n_len, const uint8_t *hash,
+                             const uint8_t *bad, const char *sig_hex, size_t sig_len,
+                             const char *hash_hex) {
+    uint8_t n[384];
+    uint8_t sig[384];
+    if (n_len > sizeof n || !hex_decode(n, n_hex, n_len) || !hex_decode(sig, sig_hex, sig_len)) {
+        die("rsa: malformed key or signature");
+    }
+    if (rsa_pss_verify(n, n_len, hash, sig, sig_len) != 1) {
+        (void)fprintf(stderr, "diff mismatch: C rsa_pss_verify rejected\n  h: %s\n", hash_hex);
+        exit(1);
+    }
+    if (rsa_pss_verify(n, n_len, bad, sig, sig_len) != 0) {
+        (void)fprintf(stderr, "diff mismatch: C rsa_pss_verify accepted a mutated hash\n  h: %s\n",
+                      hash_hex);
+        exit(1);
+    }
+
+    // A one-byte signature flip must be rejected too. The mutated
+    // hash above only exercises the final compare; a signature flip
+    // scrambles the whole recovered EM through RSAVP1, so these
+    // exercise the earlier reject branches (the s >= n gate, the
+    // trailer, the top bits, the padding walk) instead. Flip at the
+    // trailer position (last byte), inside the padding region (EM
+    // is PS || 0x01 || salt || H || 0xbc, so PS spans the low
+    // n_len - 66 bytes), and at the top byte.
+    size_t flip[3];
+    flip[0] = sig_len - 1;
+    flip[1] = 1 + rng_below(n_len - 67);
+    flip[2] = 0;
+    for (size_t j = 0; j < 3; j++) {
+        uint8_t bad_sig[384];
+        memcpy(bad_sig, sig, sig_len);
+        bad_sig[flip[j]] ^= (uint8_t)(1 + rng_below(255));
+        if (rsa_pss_verify(n, n_len, hash, bad_sig, sig_len) != 0) {
+            (void)fprintf(stderr,
+                          "diff mismatch: C rsa_pss_verify accepted a mutated signature\n"
+                          "  flipped byte: %zu\n  h: %s\n",
+                          flip[j], hash_hex);
+            exit(1);
+        }
+    }
+    comparisons += 5;
+}
+#endif
+
 static void diff_rsa(void) {
 #ifndef DIFF_HAVE_RSA
     (void)fprintf(stderr, "diff: rsa: spec-only pass, rsa.h not present yet\n");
@@ -119,48 +168,7 @@ static void diff_rsa(void) {
         expect(cmd, "0");
 
 #ifdef DIFF_HAVE_RSA
-        uint8_t n[384];
-        uint8_t sig[384];
-        if (n_len > sizeof n || !hex_decode(n, n_hex, n_len) ||
-            !hex_decode(sig, sig_hex, sig_len)) {
-            die("rsa: malformed key or signature");
-        }
-        if (rsa_pss_verify(n, n_len, hash, sig, sig_len) != 1) {
-            (void)fprintf(stderr, "diff mismatch: C rsa_pss_verify rejected\n  h: %s\n", hash_hex);
-            exit(1);
-        }
-        if (rsa_pss_verify(n, n_len, bad, sig, sig_len) != 0) {
-            (void)fprintf(stderr,
-                          "diff mismatch: C rsa_pss_verify accepted a mutated hash\n  h: %s\n",
-                          hash_hex);
-            exit(1);
-        }
-
-        // A one-byte signature flip must be rejected too. The mutated
-        // hash above only exercises the final compare; a signature flip
-        // scrambles the whole recovered EM through RSAVP1, so these
-        // exercise the earlier reject branches (the s >= n gate, the
-        // trailer, the top bits, the padding walk) instead. Flip at the
-        // trailer position (last byte), inside the padding region (EM
-        // is PS || 0x01 || salt || H || 0xbc, so PS spans the low
-        // n_len - 66 bytes), and at the top byte.
-        size_t flip[3];
-        flip[0] = sig_len - 1;
-        flip[1] = 1 + rng_below(n_len - 67);
-        flip[2] = 0;
-        for (size_t j = 0; j < 3; j++) {
-            uint8_t bad_sig[384];
-            memcpy(bad_sig, sig, sig_len);
-            bad_sig[flip[j]] ^= (uint8_t)(1 + rng_below(255));
-            if (rsa_pss_verify(n, n_len, hash, bad_sig, sig_len) != 0) {
-                (void)fprintf(stderr,
-                              "diff mismatch: C rsa_pss_verify accepted a mutated signature\n"
-                              "  flipped byte: %zu\n  h: %s\n",
-                              flip[j], hash_hex);
-                exit(1);
-            }
-        }
-        comparisons += 5;
+        diff_rsa_check_c(n_hex, n_len, hash, bad, sig_hex, sig_len, hash_hex);
 #endif
     }
 }

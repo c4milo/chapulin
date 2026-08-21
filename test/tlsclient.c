@@ -127,55 +127,67 @@ static int load_ticket(const char *path, uint8_t *id, size_t *id_len, uint8_t *p
     return (*id_len > 0 && *psk_len == SHA256_LEN) ? 0 : -1;
 }
 
-// Fills the auth part of cfg: "pin:<pubkey-hex>[,<pubkey2-hex>]" for
-// pinned-key mode (the second pin is the staged rotation key), a saved
-// ticket ("@file"), or an external psk-hex + identity pair.
-static int setup_psk(char **argv, ch_cfg *cfg, uint8_t *psk, size_t psk_cap, uint8_t *id) {
+// Owns the "pin:<pubkey-hex>[,<pubkey2-hex>]" form: parses one or two
+// hex pins into cfg (the second pin is the staged rotation key).
+static int setup_pin(char *arg, ch_cfg *cfg) {
     // Sized for the largest pin either build takes: an RSA-3072 modulus.
     // ch_connect enforces the exact length its compiled algorithm needs.
     static uint8_t pin[384];
     static uint8_t pin2[384];
-    if (strncmp(argv[3], "pin:", 4) == 0) {
-        char *sep = strchr(argv[3] + 4, ',');
-        if (sep != NULL) {
-            *sep = 0;
-        }
-        size_t n = unhex(argv[3] + 4, pin, sizeof pin);
-        if (n == 0) {
-            (void)fprintf(stderr, "pin must be hex: P-256 X||Y or an RSA modulus\n");
+    char *sep = strchr(arg, ',');
+    if (sep != NULL) {
+        *sep = 0;
+    }
+    size_t n = unhex(arg, pin, sizeof pin);
+    if (n == 0) {
+        (void)fprintf(stderr, "pin must be hex: P-256 X||Y or an RSA modulus\n");
+        return -1;
+    }
+    cfg->server_pubkey = pin;
+    cfg->server_pubkey_len = n;
+    if (sep != NULL) {
+        size_t n2 = unhex(sep + 1, pin2, sizeof pin2);
+        if (n2 == 0) {
+            (void)fprintf(stderr, "second pin must be hex like the first\n");
             return -1;
         }
-        cfg->server_pubkey = pin;
-        cfg->server_pubkey_len = n;
-        if (sep != NULL) {
-            size_t n2 = unhex(sep + 1, pin2, sizeof pin2);
-            if (n2 == 0) {
-                (void)fprintf(stderr, "second pin must be hex like the first\n");
-                return -1;
-            }
-            cfg->server_pubkey2 = pin2;
-            cfg->server_pubkey2_len = n2;
-        }
-        (void)fprintf(stderr, "pinned-key mode (%zu-byte key%s)\n", n,
-                      sep != NULL ? " + staged next" : "");
-        return 0;
+        cfg->server_pubkey2 = pin2;
+        cfg->server_pubkey2_len = n2;
+    }
+    (void)fprintf(stderr, "pinned-key mode (%zu-byte key%s)\n", n,
+                  sep != NULL ? " + staged next" : "");
+    return 0;
+}
+
+// Owns the "@ticket-file" form: loads a saved ticket into cfg for resumption.
+static int setup_ticket(const char *path, ch_cfg *cfg, uint8_t *psk, uint8_t *id) {
+    size_t id_len = 0;
+    size_t psk_len = 0;
+    uint32_t age = 0;
+    if (load_ticket(path, id, &id_len, psk, &psk_len, &age) != 0) {
+        (void)fprintf(stderr, "bad ticket file: %s\n", path);
+        return -1;
+    }
+    cfg->psk = psk;
+    cfg->psk_len = psk_len;
+    cfg->psk_id = id;
+    cfg->psk_id_len = id_len;
+    cfg->resumption = 1;
+    cfg->obfuscated_age = age;
+    (void)fprintf(stderr, "resuming with a %zu-byte ticket\n", id_len);
+    return 0;
+}
+
+// Fills the auth part of cfg: one branch per argv form — "pin:..." for
+// pinned-key mode, "@file" for a saved ticket, or an external psk-hex +
+// identity pair. The TRUST=ca build adds its "ca:" form as one more
+// branch here.
+static int setup_psk(char **argv, ch_cfg *cfg, uint8_t *psk, size_t psk_cap, uint8_t *id) {
+    if (strncmp(argv[3], "pin:", 4) == 0) {
+        return setup_pin(argv[3] + 4, cfg);
     }
     if (argv[3][0] == '@') {
-        size_t id_len = 0;
-        size_t psk_len = 0;
-        uint32_t age = 0;
-        if (load_ticket(argv[3] + 1, id, &id_len, psk, &psk_len, &age) != 0) {
-            (void)fprintf(stderr, "bad ticket file: %s\n", argv[3] + 1);
-            return -1;
-        }
-        cfg->psk = psk;
-        cfg->psk_len = psk_len;
-        cfg->psk_id = id;
-        cfg->psk_id_len = id_len;
-        cfg->resumption = 1;
-        cfg->obfuscated_age = age;
-        (void)fprintf(stderr, "resuming with a %zu-byte ticket\n", id_len);
-        return 0;
+        return setup_ticket(argv[3] + 1, cfg, psk, id);
     }
     cfg->psk = psk;
     cfg->psk_len = unhex(argv[3], psk, psk_cap);
@@ -185,6 +197,46 @@ static int setup_psk(char **argv, ch_cfg *cfg, uint8_t *psk, size_t psk_cap, uin
     cfg->psk_id = (const uint8_t *)argv[4];
     cfg->psk_id_len = strlen(argv[4]);
     return 0;
+}
+
+// Owns the TCP setup: resolves host and port, connects with a 10-second
+// receive timeout, and returns the socket, or -1 on failure.
+static int dial_host(const char *host, const char *port) {
+    struct addrinfo hints = {0};
+    hints.ai_socktype = SOCK_STREAM;
+    struct addrinfo *ai = NULL;
+    if (getaddrinfo(host, port, &hints, &ai) != 0) {
+        return -1;
+    }
+    int fd = socket(ai->ai_family, ai->ai_socktype, 0);
+    struct timeval tv = {10, 0};
+    (void)setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof tv);
+    if (fd < 0 || connect(fd, ai->ai_addr, ai->ai_addrlen) != 0) {
+        perror("connect");
+        return -1;
+    }
+    freeaddrinfo(ai);
+    return fd;
+}
+
+// Owns the echo loop: sends each stdin line, prints the reply. Returns the
+// process exit code, or -1 once stdin ends and the caller should close.
+static int echo_lines(ch_tls *tls) {
+    char line[512];
+    while (fgets(line, sizeof line, stdin) != NULL) {
+        if (ch_write(tls, (const uint8_t *)line, strlen(line)) != CH_OK) {
+            return 1;
+        }
+        uint8_t reply[512];
+        int got = ch_read(tls, reply, sizeof reply);
+        if (got <= 0) {
+            (void)fprintf(stderr, "read: %d\n", got);
+            return got == 0 ? 0 : 1;
+        }
+        (void)fwrite(reply, 1, (size_t)got, stdout);
+        (void)fflush(stdout);
+    }
+    return -1;
 }
 
 int main(int argc, char **argv) {
@@ -197,20 +249,10 @@ int main(int argc, char **argv) {
         return 2;
     }
     g_ticket_path = argc == 6 ? argv[5] : NULL;
-    struct addrinfo hints = {0};
-    hints.ai_socktype = SOCK_STREAM;
-    struct addrinfo *ai = NULL;
-    if (getaddrinfo(argv[1], argv[2], &hints, &ai) != 0) {
+    int fd = dial_host(argv[1], argv[2]);
+    if (fd < 0) {
         return 2;
     }
-    int fd = socket(ai->ai_family, ai->ai_socktype, 0);
-    struct timeval tv = {10, 0};
-    (void)setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof tv);
-    if (fd < 0 || connect(fd, ai->ai_addr, ai->ai_addrlen) != 0) {
-        perror("connect");
-        return 2;
-    }
-    freeaddrinfo(ai);
 
     uint8_t psk[64];
     uint8_t id[CH_TICKET_ID_MAX];
@@ -238,19 +280,9 @@ int main(int argc, char **argv) {
         (void)fprintf(stderr, "pin slot %u\n", tls.pin_slot);
     }
 
-    char line[512];
-    while (fgets(line, sizeof line, stdin) != NULL) {
-        if (ch_write(&tls, (const uint8_t *)line, strlen(line)) != CH_OK) {
-            return 1;
-        }
-        uint8_t reply[512];
-        int got = ch_read(&tls, reply, sizeof reply);
-        if (got <= 0) {
-            (void)fprintf(stderr, "read: %d\n", got);
-            return got == 0 ? 0 : 1;
-        }
-        (void)fwrite(reply, 1, (size_t)got, stdout);
-        (void)fflush(stdout);
+    int exit_code = echo_lines(&tls);
+    if (exit_code >= 0) {
+        return exit_code;
     }
     ch_close(&tls);
     (void)close(fd);

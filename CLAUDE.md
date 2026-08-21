@@ -96,7 +96,12 @@ Home: github.com/c4milo.
   The diff shows the what.
 - Every change passes `make check` (lint + unit + proofs; e2e against a
   real TLS 1.3 server once the handshake lands), not just compile.
-- Functions stay at cognitive complexity 20 or less; hand-written files
+- The code optimizes for third-party audit: when compact and
+  auditable conflict, auditable wins. A predicate-named function is
+  pure; state changes get their own line. Prefer a byte-compare
+  against a named constant over decode-and-judge. The naming,
+  complexity, and prose rules below all serve this.
+- Functions stay at cognitive complexity 15 or less; hand-written files
   under 500 lines.
 - Names spell words out. Module prefixes stay short — they are C's
   namespaces (`ch_`, `ks_`, `rec_`, `rb_`/`wb_`, `hsp_`, `ct_`) — but

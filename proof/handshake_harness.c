@@ -242,6 +242,48 @@ int hsp_parse_encrypted_exts(const uint8_t *body, size_t n, uint16_t *peer_limit
     return (nondet_u8() & 1) ? CH_OK : CH_EPROTO;
 }
 
+// On success the list points into the caller's message with a length
+// that fits it — the pointer contract the transcript update and the
+// coming CA build rest on.
+int hsp_parse_certificate(const uint8_t *body, size_t n, const uint8_t **list, size_t *list_len,
+                          uint8_t *alert) {
+    __CPROVER_assert(n == 0 || __CPROVER_r_ok(body, n), "cert: body readable");
+    __CPROVER_assert(__CPROVER_w_ok(list, sizeof *list), "cert: list out writable");
+    __CPROVER_assert(__CPROVER_w_ok(list_len, sizeof *list_len), "cert: len out writable");
+    __CPROVER_assert(__CPROVER_w_ok(alert, sizeof *alert), "cert: alert writable");
+    fill_nondet(alert, sizeof *alert);
+    if (nondet_u8() & 1) {
+        return CH_EPROTO;
+    }
+    size_t off = nondet_size_t();
+    size_t len = nondet_size_t();
+    __CPROVER_assume(off <= n && len <= n - off);
+    *list = body + off;
+    *list_len = len;
+    return CH_OK;
+}
+
+// On success the signature points into the caller's message with a
+// length that fits it — what check_certificate_verify hands the
+// verifier.
+int hsp_parse_certificate_verify(const uint8_t *body, size_t n, const uint8_t **sig,
+                                 size_t *sig_len, uint8_t *alert) {
+    __CPROVER_assert(n == 0 || __CPROVER_r_ok(body, n), "cv: body readable");
+    __CPROVER_assert(__CPROVER_w_ok(sig, sizeof *sig), "cv: sig out writable");
+    __CPROVER_assert(__CPROVER_w_ok(sig_len, sizeof *sig_len), "cv: len out writable");
+    __CPROVER_assert(__CPROVER_w_ok(alert, sizeof *alert), "cv: alert writable");
+    fill_nondet(alert, sizeof *alert);
+    if (nondet_u8() & 1) {
+        return (nondet_u8() & 1) ? CH_EPROTO : CH_EAUTH;
+    }
+    size_t off = nondet_size_t();
+    size_t len = nondet_size_t();
+    __CPROVER_assume(off <= n && len <= n - off);
+    *sig = body + off;
+    *sig_len = len;
+    return CH_OK;
+}
+
 void tlsi_fail(ch_tls *t, uint8_t description) {
     (void)description;
     __CPROVER_assert(__CPROVER_w_ok(t, sizeof *t), "fail: session writable");
