@@ -18,7 +18,7 @@
 //   greater_or_equal, modulus_bits : direct lemma calls over a fully nondet
 //                     modulus and signature (see below)
 //
-// Two stubs replace already-proven layers at their link seams:
+// Two stubs replace already-proven layers at their link boundaries:
 //
 //   rsa_vp1 : asserts the rsa.h contract — n and sig readable and em
 //             writable, all n_len bytes — and havocs em. The nondet em
