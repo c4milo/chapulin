@@ -90,8 +90,11 @@ jobs:
       - run: make san-check SAN=1 O=0
 
   # UBSan on the deployment ISA: endianness and MIPS code generation
-  # meet the undefined-behavior checks. ASan stays off here — its
-  # shadow memory does not map cleanly under qemu-user.
+  # meet the undefined-behavior checks. Trap mode, because Ubuntu's
+  # MIPS cross toolchain ships no UBSan runtime: a UB hit dies as
+  # SIGILL in a named test instead of printing, which is enough for
+  # a gate. ASan stays off here — its shadow memory does not map
+  # cleanly under qemu-user.
   mips-ubsan:
     runs-on: ubuntu-24.04
     timeout-minutes: 45
@@ -100,7 +103,7 @@ jobs:
       - run: sudo apt-get update -q && sudo apt-get install -y -q gcc-mips-linux-gnu qemu-user
       - run: >
           make cross-check CROSS=mips-linux-gnu- RUNNER=qemu-mips
-          CROSS_EXTRA="-fsanitize=undefined -fno-sanitize-recover=all -static-libubsan"
+          CROSS_EXTRA="-fsanitize=undefined -fsanitize-undefined-trap-on-error"
 
   # Longer fuzz runs than a PR could afford; the corpus persists so
   # every night extends the last one instead of rediscovering it.

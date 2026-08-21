@@ -102,6 +102,16 @@ elif [ -r /proc/meminfo ]; then
 fi
 BUDGET_GB=$((MEM_GB - 6))
 if [ "$BUDGET_GB" -lt 4 ]; then BUDGET_GB=4; fi
+# The external solver is a big-box optimization: its slow-tier jobs
+# weigh 12 GB, and on a machine whose budget cannot admit that (a
+# 16 GB CI runner budgets 9) the admission loop would wait forever —
+# the job times out having run nothing. Fall back to the built-in
+# solver there; its slow tier stays under 6 GB and admits.
+if [ "$SLOW_W" -gt "$BUDGET_GB" ]; then
+    echo "prove: budget ${BUDGET_GB} GB cannot admit ${SLOW_W} GB external-solver jobs; using the built-in solver"
+    SOLVER_ARGS=()
+    SLOW_W=6
+fi
 CPU_CAP=$(($(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4) - 2))
 if [ "$CPU_CAP" -lt 1 ]; then CPU_CAP=1; fi
 if [ -n "${PROVE_JOBS:-}" ] && [ "$PROVE_JOBS" -lt "$CPU_CAP" ]; then
@@ -170,6 +180,13 @@ launch() {
         tier="${tier%%:*}"
         ;;
     esac
+    # A weight above the budget could never be admitted and the
+    # launch loop would wait forever; clamp it and let the address-
+    # space cap turn a genuinely oversized solve into a named FAILED.
+    if [ -n "$w" ] && [ "$w" -gt "$BUDGET_GB" ]; then
+        echo "prove: clamping $2 weight ${w} to the ${BUDGET_GB} GB budget"
+        w=$BUDGET_GB
+    fi
     if [ "$TIER" != "all" ] && [ "$TIER" != "$tier" ]; then
         return
     fi
@@ -224,6 +241,9 @@ launch() {
     if [ "$tier" = "slow" ]; then headroom=10; fi
     local cap_gb=$((w + headroom))
     if [ "$cap_gb" -lt 6 ]; then cap_gb=6; fi
+    # Never hand a solver more address space than the machine has:
+    # past that line the OS kills the runner, not the job.
+    if [ "$MEM_GB" -gt 2 ] && [ "$cap_gb" -gt $((MEM_GB - 1)) ]; then cap_gb=$((MEM_GB - 1)); fi
     (
         ulimit -v $((cap_gb * 1024 * 1024)) 2>/dev/null || true
         t0=$SECONDS
