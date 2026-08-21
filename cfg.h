@@ -21,23 +21,18 @@
 // disturb buffered incoming data; 512 bytes of plaintext per record.
 #define CH_TX_PT 512
 
-// Smallest receive buffer ch_connect accepts. The profile's own
-// control flights (ServerHello through Finished, tickets, KeyUpdate)
-// reassemble within 512 bytes. Pinned mode also reassembles the
-// server's Certificate message, and its size is the server's choice,
-// so pinned deployments size the buffer for their server's chain (the
-// e2e suite uses 2048). A feature that raises what a build itself
-// requires (a certificate chain parser, a PQ key share) raises the
-// floor here, so a buffer that build can never work with fails at
-// configuration as CH_EINVAL instead of mid-handshake as CH_ECAP.
-// The floor only rises: the base profile needs its 512 bytes in every
-// build. The C++ wrapper re-includes this header; the C library build
-// always runs the guard.
+// Smallest receive buffer ch_connect accepts. The profile's control
+// flights fit in 512 bytes. A pinned server's Certificate message has
+// no fixed size, so pinned deployments size the buffer for their
+// server's chain (the e2e suite uses 2048). A build that needs more
+// room raises the floor, so a too-small buffer fails at setup with
+// CH_EINVAL, not mid-handshake with CH_ECAP. See docs/decisions.md 19.
 #ifndef CH_MIN_RXBUF
 #define CH_MIN_RXBUF 512
 #endif
+// The library builds as C, so the guard always runs.
 #ifndef __cplusplus
-_Static_assert(CH_MIN_RXBUF >= 512, "the receive floor never drops below the base profile's 512");
+_Static_assert(CH_MIN_RXBUF >= 512, "the floor only rises; the base profile needs 512");
 #endif
 
 // Ticket identities beyond this cannot fit a future ClientHello, so

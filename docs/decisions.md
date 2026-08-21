@@ -104,27 +104,22 @@ does nothing more.
     provisioning corruption never reads as an attack on the wire.
 
 18. **One TX staging array, sized per build.** The ClientHello
-    builder and the sealed-record path share the session's single TX
-    array; their lifetimes never overlap — the hello and any HRR retry
-    are sent before the first sealed record. A build whose hello
-    outgrows one sealed record (a PQ key share) raises `CH_TX_STAGE`
-    for that build alone. Cost: nothing today; a PQ build pays exactly
-    its hello's size, once. Gain: no second buffer on devices that
-    never need one, and the handshake proof keeps a single staging
-    array to model. Streaming the hello in record-sized pieces stays
-    rejected: the PSK binder is an HMAC over the contiguous truncated
-    hello, so a streaming builder would buffer the message anyway to
-    compute it.
+    builder and the sealed-record path share the session's TX array;
+    their lifetimes never overlap. A build whose hello outgrows one
+    sealed record (a PQ key share) raises `CH_TX_STAGE` for that build
+    alone. A second array would cost every build the hello's bytes,
+    and the handshake proof keeps one array to model. Streaming the
+    hello stays rejected: the PSK binder is an HMAC over the
+    contiguous truncated hello, so a streaming builder would buffer
+    the message anyway.
 19. **The receive-buffer floor is a build constant.** `ch_connect`
-    validates `buf_len` against `CH_MIN_RXBUF` and fails with
-    `CH_EINVAL` before anything is sent. A feature that raises what a
-    build itself requires (a certificate chain parser, a PQ key share)
-    raises the constant, so a buffer that build can never work with
-    fails at configuration — where the mistake is — instead of
-    mid-handshake as `CH_ECAP`, where it would read like an attack.
-    The floor covers what the build can know. A pinned server's
-    certificate chain stays the server's choice, so pinned deployments
-    still size the buffer for their server, above the floor.
+    checks `buf_len` against `CH_MIN_RXBUF` before anything is sent.
+    A feature that needs more room raises the constant, so a
+    too-small buffer fails at setup with `CH_EINVAL`, not
+    mid-handshake with `CH_ECAP`, where it would read like an attack.
+    The floor covers only what the build can know: a pinned server's
+    chain is the server's choice, so pinned deployments size above
+    the floor.
 
 ## Assurance
 
