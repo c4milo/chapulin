@@ -30,6 +30,12 @@ void aead_seal(const uint8_t *key, const uint8_t *nonce, const uint8_t *aad, siz
                const uint8_t *pt, size_t n, uint8_t *out, uint8_t *tag);
 int memcmp(const void *a, const void *b, size_t n);
 int pkcs1_verify(const uint8_t *sig, size_t n);
+int x509_read_header(void *r, uint8_t tag, size_t *out_len);
+int asn1_get_tag(const uint8_t *p, size_t n);
+int der_parse(const uint8_t *sig, size_t n, uint8_t *r, uint8_t *s);
+int x509_verify_leaf(const uint8_t *list, size_t list_len, const uint8_t *ca_key_a, size_t ca_a_len,
+                     const uint8_t *ca_key_b, size_t ca_b_len, void *out, uint8_t *alert);
+long time(long *t);
 void *malloc(size_t n);
 void free(void *p);
 
@@ -59,6 +65,20 @@ int use_everything(void) {
     void *p = malloc(16);
     // ruleid: inv-2-no-allocator
     free(p);
-    // ruleid: inv-5-no-certificate-parsing
+
+    uint8_t buf[32];
+    size_t len = 0;
+    // ruleid: inv-5-profiled-cert-parser
+    x509_read_header(0, 0x30, &len);
+    // ruleid: inv-5-profiled-cert-parser
+    asn1_get_tag(buf, sizeof buf);
+    // ruleid: inv-5-profiled-cert-parser
+    der_parse(buf, sizeof buf, buf, buf);
+    // ruleid: inv-20-cert-entry-point
+    x509_verify_leaf(buf, sizeof buf, buf, sizeof buf, buf, sizeof buf, 0, buf);
+    // ruleid: inv-20-no-time-calls
+    time(0);
+
+    // ruleid: inv-6-no-pkcs1
     return pkcs1_verify(0, 0) + helper(1);
 }

@@ -17,7 +17,8 @@ Home: github.com/c4milo.
   algorithm per build, chosen by the Makefile PIN variable: RSA-PSS up to
   3072 bits (default, `rsa.[ch]`) or ECDSA P-256 (PIN=ecdsa, -DCH_PIN_ECDSA,
   `p256.[ch]`) — never both in one library object, though test binaries
-  compile both so both stay tested. No X.509 parsing (pinned mode hashes
+  compile both so both stay tested. No X.509 parsing outside the CA-mode
+  profile in x509.[ch] (pinned mode hashes
   the certificate into the transcript, never reads it), no RFC 7250
   raw-public-key certificate types, no 0-RTT, no compression, no
   renegotiation-era anything. Within a mode the client offers exactly one
@@ -26,7 +27,9 @@ Home: github.com/c4milo.
   `ct.[ch]` (constant-time bytes) ← `sha256.[ch]` ← `hkdf.[ch]`
   (HMAC + HKDF + TLS labels) ← `chacha20.[ch]` + `poly1305.[ch]` ←
   `aead.[ch]` (RFC 8439 seal/open) ← `x25519.[ch]` + `p256.[ch]` +
-  `rsa.[ch]`/`rsa_mont.c` (pinned-mode verify) ← `record.[ch]`
+  `rsa.[ch]`/`rsa_mont.c` (pinned-mode verify) ←
+  `x509.[ch]`/`x509_der.c` (profiled certificate verify, CA mode) ←
+  `record.[ch]`
   (record layer) ← `hsparse.[ch]` (SH/EE message parsers) ←
   `handshake.[ch]` (client state machine) ← `tls.[ch]`
   (public API) ← demo/test mains. Firmware takes everything below

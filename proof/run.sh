@@ -118,10 +118,18 @@ cache_key() {
     {
         "$CBMC" --version 2>/dev/null
         printf '%s\n' "$@"
-        local a
+        # Launch-line defines (-DCH_PIN_ECDSA and friends) select code;
+        # the preprocess must see them or an edit inside a gated block
+        # would reuse another variant's cached proof.
+        local a defs=""
         for a in "$@"; do
             case "$a" in
-            *.c) cc -E -D__CPROVER__ -I . "$a" 2>/dev/null || true ;;
+            -D*) defs="$defs $a" ;;
+            esac
+        done
+        for a in "$@"; do
+            case "$a" in
+            *.c) cc -E -D__CPROVER__ $defs -I . "$a" 2>/dev/null || true ;;
             esac
         done
     } | $HASHER | awk '{print $1}'
@@ -251,6 +259,17 @@ launch fast full rsa 385 "fill_nondet.0:385,ct_memeq.0:33,greater_or_equal.0:385
 launch fast full p256 85 "" buf.c
 launch fast full hkdf 120 "" ct.c
 launch fast full tlspost 132 "handle_post_handshake.0:33,fill_nondet.0:130" --object-bits 11 buf.c ct.c session.c
+# x509: primitives concrete (both variants), the walker with stubbed
+# primitives. The ECDSA walker proves the full two-entry bound in
+# every check; the RSA walker's full formula does not converge, so
+# its fast slot proves the single-max-entry bound nightly-free and
+# the measured numbers put it beside the SAT heavyweights instead.
+# Weights are measured peaks (kissat): der 2.0 GB, parse_ecdsa
+# 5.6 GB, parse rsa 7.1 GB.
+launch fast:3 full x509der 452 "fill_nondet.0:449,ct_memeq.0:68" buf.c ct.c
+launch fast:3 full x509der_ecdsa 452 "fill_nondet.0:449,ct_memeq.0:68" buf.c ct.c
+launch fast:6 full x509parse_ecdsa 260 "fill_nondet.0:257,ct_memeq.0:68" buf.c ct.c
+launch slow:8 full x509parse 844 "fill_nondet.0:841,ct_memeq.0:68" buf.c ct.c
 launch fast full chacha20 165 "chacha20_xor.1:5"
 launch fast full poly1305 85 "blocks.0:8" ct.c
 launch fast full buf 100 ""

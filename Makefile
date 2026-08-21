@@ -21,17 +21,20 @@ LAKE ?= $(shell command -v lake || command -v $(HOME)/.elan/bin/lake)
 REQUIRE_ON_CI = @[ -z "$$CI" ] || { echo "$(1): missing on CI; the gate must not skip"; exit 1; }
 
 SRCS := ct.c sha256.c hkdf.c chacha20.c poly1305.c aead.c x25519.c p256.c rsa.c rsa_mont.c \
-        buf.c record.c keysched.c io.c hsmsg.c hsparse.c session.c handshake.c tls.c
+        x509.c x509_der.c buf.c record.c keysched.c io.c hsmsg.c hsparse.c session.c \
+        handshake.c tls.c
 HDRS := ct.h sha256.h hkdf.h chacha20.h poly1305.h aead.h x25519.h p256.h rsa.h ch_assert.h \
-        buf.h record.h keysched.h io.h hsmsg.h hsparse.h cfg.h session.h handshake.h tls.h \
-        rand.h drbg.h
+        x509.h buf.h record.h keysched.h io.h hsmsg.h hsparse.h cfg.h session.h handshake.h \
+        tls.h rand.h drbg.h
 LINT_C := $(SRCS) drbg.c test/unit.c test/tlsclient.c test/diff.c test/timing.c \
-          test/drbg_test.c test/rsa_test.c test/hsstrict_test.c test/hsseq_test.c
+          test/drbg_test.c test/rsa_test.c test/hsstrict_test.c test/hsseq_test.c \
+          test/x509strict_test.c
 
 # Test-local headers: prerequisites for every binary that includes them,
 # so a header edit rebuilds the binaries it changes.
 TESTH := test/testrand.h test/session_tests.h test/diffdrv.h test/diffp256.h \
-         test/diffrsa.h test/hsseqsrv.h test/rfc8448_vectors.h test/rfc8448_tests.h
+         test/diffrsa.h test/hsseqsrv.h test/rfc8448_vectors.h test/rfc8448_tests.h \
+         test/x509_vectors.h test/x509mut.h test/x509chain_tests.h test/diffx509.h test/diffx509bounds.h test/diffx509chain.h
 
 # Pinned mode verifies one signature algorithm per build: PIN=rsa
 # (default, RSA-PSS up to 3072 bits) or PIN=ecdsa (P-256, -DCH_PIN_ECDSA).
@@ -45,6 +48,10 @@ else
 LIB_DEF :=
 LIB_SRCS := $(filter-out p256.c,$(SRCS))
 endif
+# The certificate parser ships only in a CA-trust build (a later
+# change); today every packaged object excludes it. Test binaries
+# compile it so it stays tested.
+LIB_SRCS := $(filter-out x509.c x509_der.c,$(LIB_SRCS))
 # CBMC intrinsics don't compile under clang-tidy/cppcheck; harnesses get
 # clang-format only. Fuzzers include .c files for statics, same deal.
 PROOF_C := $(wildcard proof/*.c) proof/harness.h
@@ -123,6 +130,17 @@ bin/hsstrict_test: test/hsstrict_test.c hsparse.c buf.c $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) -I. -o $@ test/hsstrict_test.c hsparse.c buf.c
 
+# Certificate grammar strictness: one binary per PIN, because the
+# profile's grammar is the build's grammar.
+X509STRICT_SRC := test/x509strict_test.c x509.c x509_der.c buf.c sha256.c ct.c
+bin/x509strict: $(X509STRICT_SRC) rsa.c rsa_mont.c $(HDRS) $(TESTH)
+	@mkdir -p bin
+	$(CC) $(CFLAGS) -I. -o $@ $(X509STRICT_SRC) rsa.c rsa_mont.c
+
+bin/x509strict_ecdsa: $(X509STRICT_SRC) p256.c $(HDRS) $(TESTH)
+	@mkdir -p bin
+	$(CC) $(CFLAGS) -DCH_PIN_ECDSA -I. -o $@ $(X509STRICT_SRC) p256.c
+
 # Sequence differential: every server message sequence to a bounded depth
 # (ENUM_DEPTH overrides; 5 is ~354k sequences over both modes) against the
 # Lean state machine's verdict. Links the stack minus the pinned
@@ -150,16 +168,33 @@ bin/diff: test/diff.c $(SRCS) $(HDRS) $(TESTH)
 	$(CC) $(CFLAGS) -I. -o $@ test/diff.c $(SRCS)
 
 .PHONY: check lint lint-tidy lint-format lint-cppcheck lint-docs lint-invariants lint-spec prove diff fmt clean
-check: bin/unit bin/tlsclient bin/tlsclient_ecdsa bin/drbg_test bin/rsa_test bin/hsstrict_test bin/hsseq_test lint lib-check cxx-check
+check: bin/unit bin/tlsclient bin/tlsclient_ecdsa bin/drbg_test bin/rsa_test bin/hsstrict_test bin/x509strict bin/x509strict_ecdsa bin/hsseq_test lint lib-check cxx-check
 	./bin/unit
 	./bin/drbg_test
 	./bin/rsa_test
 	./bin/hsstrict_test
+	./bin/x509strict
+	./bin/x509strict_ecdsa
 	$(MAKE) wycheproof
 	./test/e2e.sh
 	$(MAKE) diff
 	./bin/hsseq_test
 	$(MAKE) prove
+
+# The ECDSA-arm differential: bin/diff compiles the RSA parser, so
+# the P-256 certificate rows only meet real C in this variant. The
+# nightly lane runs it; the PR lane keeps one diff build.
+.PHONY: diff-ecdsa
+diff-ecdsa:
+ifeq ($(LAKE),)
+	$(call REQUIRE_ON_CI,lake)
+	@echo "SKIP diff-ecdsa: lake not on PATH (install elan: https://leanprover.github.io)"
+else
+	cd spec && $(LAKE) build
+	@mkdir -p bin
+	$(CC) $(CFLAGS) -DCH_PIN_ECDSA -I. -o bin/diff_ecdsa test/diff.c $(SRCS)
+	./bin/diff_ecdsa
+endif
 
 # Differential oracle: the Lean spec in spec/ answers over a pipe and
 # test/diff.c compares every C module against it on random inputs.
@@ -207,9 +242,12 @@ else
 	  $(COV_CC) test/drbg_test.c $$d/drbg.o $$d/chacha20.o $$d/ct.o -o $$d/drbg_test; \
 	  $(COV_CC) test/rsa_test.c $$d/rsa.o $$d/rsa_mont.o $$d/sha256.o $$d/ct.o -o $$d/rsa_test; \
 	  $(COV_CC) test/hsstrict_test.c $$d/hsparse.o $$d/buf.o -o $$d/hsstrict_test; \
+	  verifier="$$d/rsa.o $$d/rsa_mont.o"; [ $$pin = ecdsa ] && verifier=$$d/p256.o; \
+	  $(COV_CC) $$def test/x509strict_test.c $$d/x509.o $$d/x509_der.o $$d/buf.o $$d/sha256.o \
+	    $$d/ct.o $$verifier -o $$d/x509strict_test; \
 	  $(COV_CC) test/hsseq_test.c \
 	    $(filter-out $$d/p256.o $$d/rsa.o $$d/rsa_mont.o,$(COV_LIB_OBJS)) -o $$d/hsseq_test; \
-	  for b in unit drbg_test rsa_test hsstrict_test hsseq_test; do \
+	  for b in unit drbg_test rsa_test hsstrict_test x509strict_test hsseq_test; do \
 	    if ENUM_DEPTH=4 ./$$d/$$b > /dev/null; then \
 	      echo "| $$b | $$pin | pass |" >> bin/coverage.md; \
 	    else \
@@ -282,9 +320,11 @@ san-check:
 	$(CC) $(SAN_CFLAGS) -I. -o bin/san/drbg_test test/drbg_test.c drbg.c chacha20.c ct.c
 	$(CC) $(SAN_CFLAGS) -I. -o bin/san/rsa_test test/rsa_test.c rsa.c rsa_mont.c sha256.c ct.c
 	$(CC) $(SAN_CFLAGS) -I. -o bin/san/hsstrict_test test/hsstrict_test.c hsparse.c buf.c
+	$(CC) $(SAN_CFLAGS) -I. -o bin/san/x509strict_test $(X509STRICT_SRC) rsa.c rsa_mont.c
+	$(CC) $(SAN_CFLAGS) -DCH_PIN_ECDSA -I. -o bin/san/x509strict_ecdsa $(X509STRICT_SRC) p256.c
 	$(CC) $(SAN_CFLAGS) -I. -o bin/san/hsseq_test test/hsseq_test.c \
 	  $(filter-out p256.c rsa.c rsa_mont.c,$(SRCS))
-	@set -e; for b in unit drbg_test rsa_test hsstrict_test hsseq_test; do \
+	@set -e; for b in unit drbg_test rsa_test hsstrict_test x509strict_test x509strict_ecdsa hsseq_test; do \
 	  echo "== $$b (SAN -O$(O))"; ENUM_DEPTH=4 ./bin/san/$$b; done
 	@if [ -d $(WYCHEPROOF_DIR)/.git ] \
 	  || git clone --quiet --depth 1 https://github.com/C2SP/wycheproof $(WYCHEPROOF_DIR) 2>/dev/null; then \
@@ -329,6 +369,8 @@ cross-check:
 	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) -static -I. -o bin/cross/drbg_test test/drbg_test.c drbg.c chacha20.c ct.c
 	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) -static -I. -o bin/cross/rsa_test test/rsa_test.c rsa.c rsa_mont.c sha256.c ct.c
 	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) -static -I. -o bin/cross/hsstrict_test test/hsstrict_test.c hsparse.c buf.c
+	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) -static -I. -o bin/cross/x509strict_test $(X509STRICT_SRC) rsa.c rsa_mont.c
+	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) -static -DCH_PIN_ECDSA -I. -o bin/cross/x509strict_ecdsa $(X509STRICT_SRC) p256.c
 	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) -static -I. -o bin/cross/hsseq_test test/hsseq_test.c \
 	  $(filter-out p256.c rsa.c rsa_mont.c,$(SRCS))
 	@if [ -d $(WYCHEPROOF_DIR)/.git ] \
@@ -340,7 +382,7 @@ cross-check:
 	  [ -n "$$CI" ] && { echo "wycheproof: clone failed and CI must not skip a gate"; exit 1; }; \
 	  echo "SKIP cross wycheproof: no checkout and no network"; \
 	fi
-	@set -e; cd bin/cross; for b in unit drbg_test rsa_test hsstrict_test hsseq_test; do \
+	@set -e; cd bin/cross; for b in unit drbg_test rsa_test hsstrict_test x509strict_test x509strict_ecdsa hsseq_test; do \
 	  echo "== $$b ($(RUNNER))"; ENUM_DEPTH=3 $(RUNNER) ./$$b; done; \
 	if [ -x wycheproof_test ]; then echo "== wycheproof_test ($(RUNNER))"; $(RUNNER) ./wycheproof_test; fi
 
@@ -538,6 +580,7 @@ FUZZ_RECORD_LINK := record.c ct.c sha256.c hkdf.c chacha20.c poly1305.c aead.c
 FUZZ_HSPARSE_LINK := hsparse.c buf.c
 FUZZ_POSTHS_LINK := handshake.c hsparse.c io.c record.c keysched.c session.c buf.c ct.c \
                     sha256.c hkdf.c chacha20.c poly1305.c aead.c x25519.c rsa.c rsa_mont.c hsmsg.c
+FUZZ_X509_LINK := x509.c x509_der.c buf.c ct.c sha256.c rsa.c rsa_mont.c
 
 .PHONY: fuzz
 fuzz:
@@ -551,11 +594,12 @@ fuzz:
 	  exit 0; \
 	fi; \
 	rm -f "$$tmp"; \
-	for t in record hsparse posths; do mkdir -p bin/fuzz/work_$$t; done; \
+	for t in record hsparse posths x509; do mkdir -p bin/fuzz/work_$$t; done; \
 	$(FUZZ_CC) $(FUZZ_CFLAGS) fuzz/fuzz_record.c  $(FUZZ_RECORD_LINK)  -o bin/fuzz/fuzz_record; \
 	$(FUZZ_CC) $(FUZZ_CFLAGS) fuzz/fuzz_hsparse.c $(FUZZ_HSPARSE_LINK) -o bin/fuzz/fuzz_hsparse; \
 	$(FUZZ_CC) $(FUZZ_CFLAGS) fuzz/fuzz_posths.c  $(FUZZ_POSTHS_LINK)  -o bin/fuzz/fuzz_posths; \
-	for t in record hsparse posths; do \
+	$(FUZZ_CC) $(FUZZ_CFLAGS) fuzz/fuzz_x509.c    $(FUZZ_X509_LINK)    -o bin/fuzz/fuzz_x509; \
+	for t in record hsparse posths x509; do \
 	  ./bin/fuzz/fuzz_$$t bin/fuzz/work_$$t fuzz/corpus/fuzz_$$t \
 	    -artifact_prefix=bin/fuzz/ -max_total_time=$(FUZZ_TIME); \
 	done

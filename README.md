@@ -144,8 +144,9 @@ division by zero. Where a bound equals the module's real maximum, the
 proof covers all inputs. Where it does not, the table states the bound.
 
 The proofs run in two tiers. `make check` runs the fast tier, the proofs
-that finish in seconds to a few minutes. `make prove-slow` runs the four
-long ones (handshake driver, aead, x25519, hkdf expand). CI runs the
+that finish in seconds to a few minutes. `make prove-slow` runs the five
+long ones (handshake driver, aead, x25519, hkdf expand, and the RSA-arm
+certificate walker). CI runs the
 fast tier on every push and the slow tier nightly and on demand; a red
 nightly blocks the next release, never an in-flight change.
 
@@ -173,6 +174,15 @@ values.
 | eeparse | the EncryptedExtensions parser stays safe on hostile bytes | messages ≤ 256 B |
 | tlspost | the post-handshake parser (NewSessionTicket, KeyUpdate) stays safe on hostile decrypted bytes and consumes no more than its input | messages ≤ 128 B |
 | drbg | the reference generator stays safe for any request, seeded and across rekeys | requests ≤ 96 B |
+| x509der (two harnesses) | every DER primitive — lengths, serials, times, key-usage bits, SPKI key extraction, extension TLVs — stays safe on hostile bytes and honors the pointer contracts the walker rests on, in both PIN builds | inputs ≤ 448 B |
+| x509parse (two harnesses) | the certificate walker stays safe on any CertificateEntry list with the primitives and verifiers stubbed to their proven contracts; the ECDSA build proves the full two-entry flight, the RSA build one maximum certificate (its two-entry walk rests on the ECDSA proof — the walker differs only in the SPKI arm) | ECDSA: full flight ≤ 256 B; RSA: ≤ 840 B, slow tier |
+
+The x509 harnesses cover the certificate parser the tree carries for
+the coming CA-trust mode; [docs/ca.md](docs/ca.md) is that mode's
+operational contract — issuance profile, lifetimes, custody, and how
+external CAs serve chapulin fleets. Today's packaged library object excludes
+that parser entirely, and pinned mode still never reads a
+certificate — the claims above describe what ships.
 
 CBMC found one real bug during development: `carry()` left-shifted a
 negative value (`c << 16`), which is undefined behavior in C even though
@@ -258,7 +268,7 @@ CertificateVerify one layer down, through the raw RSAVP1 modexp and a
 test-local PSS check.
 
 `make diff` builds the spec with `lake`, runs its selftests, and then
-drives about 3,000 random-input comparisons between every C module and
+drives about 3,300 random-input comparisons between every C module and
 the spec over a pipe, with a deterministic seed. The comparisons include
 P-256 and RSA-PSS signatures that the spec mints and the C must accept —
 the spec holds the private keys and signs; the C, which can only verify,

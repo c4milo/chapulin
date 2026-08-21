@@ -30,6 +30,7 @@ def selftestAll : String :=
     ("x25519", Spec.X25519.selftest),
     ("p256", Spec.P256.selftest),
     ("rsa", Spec.Rsa.selftest),
+    ("x509", Spec.X509.selftest),
     ("drbg", Spec.Drbg.selftest),
     ("handshake", Spec.Handshake.selftest)]
   match mods.find? (fun m => !m.2) with
@@ -165,6 +166,81 @@ def dispatch : List String → Option String
     guard (saltb.size == 32 && h.size == 32)
     match Spec.Rsa.rsaSign (bytesToNatBE nb) (bytesToNatBE db) h saltb with
     | some sig => return emit sig
+    | none => return "FAIL"
+  | ["x509parse", alg, caKey, list] => do
+    let a ← Spec.X509.algOf? alg
+    let ck ← hexArg? caKey
+    let l ← hexArg? list
+    return match Spec.X509.parse a ck l with
+      | some key => s!"ok {bytesToHex key}"
+      | none => "ERR x509 reject"
+  | ["x509mint", "rsa", n, d, salt, serial, issuer, validity, subject, leafKey, exts] => do
+    let nb ← hexArg? n
+    let db ← hexArg? d
+    let saltB ← hexArg? salt
+    let serialB ← hexArg? serial
+    let issuerB ← hexArg? issuer
+    let validityB ← hexArg? validity
+    let subjectB ← hexArg? subject
+    let leafKeyB ← hexArg? leafKey
+    let extsB ← hexArg? exts
+    guard (saltB.size == 32)
+    match Spec.X509.mint (.rsa (bytesToNatBE nb) (bytesToNatBE db) saltB) serialB issuerB
+        validityB subjectB leafKeyB extsB with
+    | some out => return emit out
+    | none => return "FAIL"
+  | ["x509mint", "p256", d, k, serial, issuer, validity, subject, leafKey, exts] => do
+    let db ← hexArg? d
+    let kb ← hexArg? k
+    let serialB ← hexArg? serial
+    let issuerB ← hexArg? issuer
+    let validityB ← hexArg? validity
+    let subjectB ← hexArg? subject
+    let leafKeyB ← hexArg? leafKey
+    let extsB ← hexArg? exts
+    guard (db.size == 32 && kb.size == 32)
+    match Spec.X509.mint (.p256 (bytesToNatBE db) (bytesToNatBE kb)) serialB issuerB validityB
+        subjectB leafKeyB extsB with
+    | some out => return emit out
+    | none => return "FAIL"
+  | ["x509mintchain", "rsa", caN, caD, intN, intD, salt, serial, issuer, validity, subject,
+      leafKey, leafExts, intExts] => do
+    let caNB ← hexArg? caN
+    let caDB ← hexArg? caD
+    let intNB ← hexArg? intN
+    let intDB ← hexArg? intD
+    let saltB ← hexArg? salt
+    let serialB ← hexArg? serial
+    let issuerB ← hexArg? issuer
+    let validityB ← hexArg? validity
+    let subjectB ← hexArg? subject
+    let leafKeyB ← hexArg? leafKey
+    let leafExtsB ← hexArg? leafExts
+    let intExtsB ← hexArg? intExts
+    guard (saltB.size == 32)
+    match Spec.X509.mintChain (.rsa (bytesToNatBE caNB) (bytesToNatBE caDB) saltB)
+        (.rsa (bytesToNatBE intNB) (bytesToNatBE intDB) saltB) serialB issuerB validityB
+        subjectB leafKeyB leafExtsB intExtsB with
+    | some out => return emit out
+    | none => return "FAIL"
+  | ["x509mintchain", "p256", caD, caK, intD, intK, serial, issuer, validity, subject,
+      leafKey, leafExts, intExts] => do
+    let caDB ← hexArg? caD
+    let caKB ← hexArg? caK
+    let intDB ← hexArg? intD
+    let intKB ← hexArg? intK
+    let serialB ← hexArg? serial
+    let issuerB ← hexArg? issuer
+    let validityB ← hexArg? validity
+    let subjectB ← hexArg? subject
+    let leafKeyB ← hexArg? leafKey
+    let leafExtsB ← hexArg? leafExts
+    let intExtsB ← hexArg? intExts
+    guard (caDB.size == 32 && caKB.size == 32 && intDB.size == 32 && intKB.size == 32)
+    match Spec.X509.mintChain (.p256 (bytesToNatBE caDB) (bytesToNatBE caKB))
+        (.p256 (bytesToNatBE intDB) (bytesToNatBE intKB)) serialB issuerB validityB subjectB
+        leafKeyB leafExtsB intExtsB with
+    | some out => return emit out
     | none => return "FAIL"
   | _ => none
 

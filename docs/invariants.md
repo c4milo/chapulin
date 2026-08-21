@@ -82,30 +82,72 @@ which convention holds them.
 
 ## Deleted by absence
 
-### INV-5 — no ASN.1, no X.509
+### INV-5 — one profiled certificate parser
 
-- **Claim.** The stack contains no certificate or ASN.1 parser.
-  Pinned mode hashes the certificate into the transcript and never
-  reads it.
-- **Mechanism.** Absence. The one DER reader (`der_parse` in
-  `p256.c`) reads exactly one ECDSA-Sig-Value, rejects non-minimal
-  lengths, and parses nothing else.
-- **Check.** Semgrep-tripwire (`inv-5-no-certificate-parsing`): the identifiers `asn1_`,
-  `x509`, `der_parse` outside p256.c.
-- **Violation.** A PR "just reads the SubjectPublicKeyInfo" and the
-  largest historical TLS bug class walks in.
+- **Claim.** Exactly one certificate parser exists, and it accepts
+  exactly the own-CA profile: X.509 v3, one or two CertificateEntry
+  items with empty per-entry extensions — the leaf alone, or the
+  leaf plus the one intermediate that signed it — anchored at the CA with
+  the build's one algorithm, canonical DER on every decoded field,
+  keyUsage and extendedKeyUsage required, no name matching, no
+  clock. Any widening of that grammar is the violation, whether it
+  lands inside the parser or beside it. Raw-pin builds compile none
+  of it: they hash the certificate into the transcript and never
+  read it.
+- **Mechanism.** The length-first canonical-DER decoder in
+  `x509_der.c` (definite lengths, minimal encodings, exact-fill of
+  every container; rejection precedes interpretation) plus the
+  pinned profile constants in `x509.c`, byte-compared, never
+  matched loosely. The only DER reader outside the cert files
+  (`der_parse` in `p256.c`) reads exactly one ECDSA-Sig-Value and
+  parses nothing else.
+- **Check.** Semgrep-tripwire (`inv-5-profiled-cert-parser`): calls
+  to identifiers matching `x509_`, `asn1_`, or `der_` outside
+  p256.c, x509.c, and x509_der.c. Grammar widening inside the cert
+  files is held by the boundary-pair tests and review; the rule
+  catches a second parser growing elsewhere.
+- **Violation.** A PR accepts a second CertificateEntry, an
+  absent-params AlgorithmIdentifier, or an unknown critical
+  extension "for compatibility" — or "just reads the
+  SubjectPublicKeyInfo" from a new module and the largest
+  historical TLS bug class walks in unprofiled.
 - See [decisions: Trust model](decisions.md#trust-model).
 
 ### INV-6 — no PKCS#1 v1.5
 
 - **Claim.** RSA exists only as PSS verify. No v1.5 signature or
-  encryption padding, ever.
-- **Mechanism.** Absence; `rsa.c` implements EMSA-PSS decode only.
-- **Check.** Semgrep-tripwire: the identifier `pkcs1`, in the shared
-  `inv-5-no-certificate-parsing` rule.
+  encryption padding, ever — the certificate profile included.
+- **Mechanism.** Absence; `rsa.c` implements EMSA-PSS decode only,
+  and `x509.c`'s pinned signature AlgorithmIdentifier names
+  RSASSA-PSS, so a v1.5-signed leaf fails the byte compare.
+- **Check.** Semgrep-tripwire (`inv-6-no-pkcs1`): the identifier
+  `pkcs1`, with no cert-file exemption.
 - **Violation.** A PR adds v1.5 verify "for compatibility" with an
   old server, importing Bleichenbacher-shaped risk.
 - See [decisions: Cryptography](decisions.md#cryptography).
+
+### INV-20 — the certificate parser stays contained
+
+- **Claim.** `x509_verify_leaf` is the parser's one public entry,
+  called only from `handshake.c`, and the library never reads a
+  clock: certificate validity is CA reissuance policy, not a
+  device-side time check.
+- **Mechanism.** Single-entry design — the DER primitives sit
+  behind the profile walker, and the walker sits behind one
+  function. `x509_read_time` checks the Time shape and ignores the
+  digits, so no code path wants a clock.
+- **Check.** Semgrep-structural (`inv-20-cert-entry-point`): no
+  `x509_verify_leaf` call outside handshake.c, with x509.c excluded
+  as the definition site. Semgrep-tripwire
+  (`inv-20-no-time-calls`): calls to `time`, `clock_gettime`,
+  `gettimeofday`, `localtime`, or `gmtime` in library sources,
+  complementing `inv-2-freestanding`'s time.h include ban at the
+  call level; test/timing.c calls `clock_gettime` legitimately and
+  sits in the standard excludes.
+- **Violation.** A PR checks notBefore against a device clock the
+  firmware cannot trust, or calls the verifier from a new site that
+  skips the handshake's alert and wipe discipline.
+- See [decisions: Trust model](decisions.md#trust-model).
 
 ### INV-7 — no negotiation
 

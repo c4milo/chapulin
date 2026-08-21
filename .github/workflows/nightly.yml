@@ -60,6 +60,26 @@ jobs:
           path: proof/results/
           if-no-files-found: ignore
 
+  # The ECDSA-arm differential: the PR lane's bin/diff compiles the
+  # RSA parser, so the P-256 certificate rows meet real C only here.
+  diff-ecdsa:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install elan
+        run: |
+          curl -sSf https://elan.lean-lang.org/elan-init.sh | sh -s -- -y --default-toolchain none
+          echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
+      - name: Cache Lean toolchain and build
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.elan
+            spec/.lake
+          key: lean-${{ hashFiles('spec/lean-toolchain', 'spec/lakefile.toml', 'spec/lake-manifest.json') }}
+      - run: make diff-ecdsa
+
   # The deeper UB pass: -O0 sees code the optimizer would delete. The
   # PR lane runs the same suites at -O2, the level that ships.
   san-deep:

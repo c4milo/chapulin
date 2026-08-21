@@ -8,10 +8,11 @@ The Lean spec is a differential oracle for the C stack. Rules:
    with explicit `mod`, no performance tricks unless a vector demands it.
 2. **Signatures are fixed** (namespaces and types exactly as below).
 3. Every module ends with a `selftest : Bool`, `true` iff all checks
-   pass. Most check the RFC's published vectors; Record and Drbg have no
-   third-party vectors and their selftests are structural (framing,
-   nonce construction, rekeying) — the differential and, for Record, the
-   planned RFC 8448 trace replay carry the known-answer weight there.
+   pass. Most check the RFC's published vectors; Record, Drbg, and X509
+   have no third-party vectors and their selftests are structural
+   (framing, nonce construction, rekeying, mint/parse round trips) —
+   the differential and, for Record, the planned RFC 8448 trace replay
+   carry the known-answer weight there.
 
 ```
 Spec.Sha256.sha256    : ByteArray → ByteArray                          -- FIPS 180-4, 32 bytes out
@@ -56,6 +57,57 @@ Spec.Rsa.pssSign      : (n d : Nat) → (mHash salt : ByteArray) →
                         -- rsaSign is an alias. The spec signs so the oracle can mint
                         -- signatures the C verifier must accept; the C side only verifies.
                         -- salt is explicit so a fixed value gives a reproducible signature.
+Spec.X509.parse       : Alg → (caKey list : ByteArray) → Option ByteArray
+                        -- profiled chain acceptance over the RFC 8446 §4.4.2
+                        -- CertificateEntry list (empty per-entry extensions):
+                        -- one entry, the leaf verified directly under caKey;
+                        -- or two, the leaf then the intermediate — the
+                        -- intermediate verified under caKey and the leaf under
+                        -- the intermediate's SPKI. Each certificate: at most
+                        -- `certMax alg` bytes — 768 (p256) or 1536 (rsa),
+                        -- mirroring x509.h's per-build CH_X509_MAX defaults
+                        -- (the C cap is overridable per build; the spec models
+                        -- the defaults) — in canonical DER (X.690 §10, with
+                        -- §8.19-minimal extnID subidentifiers), the RFC 5280
+                        -- v3 profile with its
+                        -- arm's extensions — leaf: keyUsage(digitalSignature)
+                        -- + extendedKeyUsage(serverAuth); intermediate:
+                        -- keyUsage(keyCertSign) + basicConstraints(CA=TRUE,
+                        -- pathLen 0), extendedKeyUsage forbidden. `some`
+                        -- carries the leaf's SPKI key bytes (RSA modulus
+                        -- value, or P-256 X‖Y). Alg is rsa (e = 65537, caKey =
+                        -- modulus bytes) or p256 (caKey = X‖Y). Line op:
+                        -- `x509parse <alg> <cakey> <list>` →
+                        -- `ok <key>` / `ERR x509 reject`.
+Spec.X509.mint        : CaKey → (serial issuer validity subject leafKey exts :
+                        ByteArray) → Option ByteArray
+                        -- canonical CA-signed leaf as a one-entry
+                        -- CertificateEntry list; the driver supplies every
+                        -- field and the CA private key (rsa n/d and a 32-byte
+                        -- PSS salt, or p256 d/k), so the C parser must accept
+                        -- every minted certificate. `ecdsaSigDer` is the
+                        -- spec-side ECDSA-Sig-Value encoder the p256 arm signs
+                        -- through. Line ops: `x509mint rsa <n> <d> <salt>
+                        -- <serial> <issuer> <validity> <subject> <leafkey>
+                        -- <exts>` and `x509mint p256 <d> <k> <serial> ...same
+                        -- fields` → `<list>` / `FAIL`.
+Spec.X509.mintChain   : (ca int : CaKey) → (serial issuer validity subject
+                        leafKey leafExts intExts : ByteArray) →
+                        Option ByteArray
+                        -- canonical chained pair as a two-entry
+                        -- CertificateEntry list: the leaf (leafExts) signed by
+                        -- the intermediate key, then the intermediate — its
+                        -- SPKI is int's own public key, its extensions
+                        -- intExts — signed by the CA. Both certificates share
+                        -- the driver-supplied serial, issuer, validity, and
+                        -- subject. The C parser must accept every minted
+                        -- chain whose extensions are on-profile; off-profile
+                        -- intExts mint chains the profile check alone must
+                        -- reject. Line ops: `x509mintchain rsa <ca_n> <ca_d>
+                        -- <int_n> <int_d> <salt> <serial> <issuer> <validity>
+                        -- <subject> <leafkey> <leafexts> <intexts>` and
+                        -- `x509mintchain p256 <ca_d> <ca_k> <int_d> <int_k>
+                        -- <serial> ...same fields` → `<list>` / `FAIL`.
 Spec.Handshake.step   : (mode : Mode) → State → Msg → Option State      -- RFC 9846 §4 order of
                         -- server-to-client messages after the ClientHello; none = fatal
                         -- (unexpected_message). Msg has one constructor per line-protocol
@@ -139,9 +191,10 @@ means the module's selftest plus the differential oracle carry it;
 | Rsa | 0 | executable oracle only: OpenSSL vectors and the differential |
 | X25519 | 0 | executable oracle only: RFC 7748 vectors and the differential |
 | Drbg | 0 | executable oracle only: structural selftest and the differential |
+| X509 | 0 | executable oracle only: mint/parse round trips for the single leaf and the chained pair (self-checked signatures; OpenSSL material is exercised by the C strictness suite) and the differential |
 
-The four zero-theorem modules are the hardest and the most
+The five zero-theorem modules are the hardest and the most
 security-critical; they are executable and vector-checked but carry no
 proven properties. The missing theorems, in value order: Drbg key
-advance and seed determinism, X25519 ladder invariants, then the
-P-256 and RSA arithmetic lemmas.
+advance and seed determinism, X25519 ladder invariants, the X509
+mint-then-parse round trip, then the P-256 and RSA arithmetic lemmas.

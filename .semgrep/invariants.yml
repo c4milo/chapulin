@@ -92,21 +92,76 @@ rules:
       - pattern: aead_seal(...)
       - pattern: aead_open(...)
 
-  - id: inv-5-no-certificate-parsing
+  - id: inv-5-profiled-cert-parser
     languages: [c]
     severity: ERROR
     message: >-
-      INV-5/INV-6: no ASN.1, no X.509, no PKCS#1 v1.5. p256.c's
-      der_parse reads exactly one ECDSA-Sig-Value and is the only
-      allowed DER reader. Tripwire grade: this catches honest drift
-      by name, not a reintroduction under another name.
+      INV-5: exactly one certificate parser. DER and X.509 readers
+      live in x509_der.c behind x509.c's profile walker, and p256.c's
+      der_parse reads exactly one ECDSA-Sig-Value. A call anywhere
+      else is a second parser growing. Tripwire grade: this catches
+      honest drift by name, not a reintroduction under another name.
     paths:
-      exclude: [test, proof, fuzz, spec, bench, bin, p256.c]
+      exclude: [test, proof, fuzz, spec, bench, bin, p256.c, x509.c, x509_der.c]
     patterns:
       - pattern: $F(...)
       - metavariable-regex:
           metavariable: $F
-          regex: .*(pkcs1|asn1_|x509|der_parse).*
+          regex: .*(x509_|asn1_|der_).*
+      # The one public entry point is not a second parser; its own
+      # call-site rule is inv-20-cert-entry-point.
+      - metavariable-pattern:
+          metavariable: $F
+          patterns:
+            - pattern-not: x509_verify_leaf
+
+  - id: inv-6-no-pkcs1
+    languages: [c]
+    severity: ERROR
+    message: >-
+      INV-6: no PKCS#1 v1.5, anywhere — the cert files included. RSA
+      exists only as PSS verify; v1.5 padding imports
+      Bleichenbacher-shaped risk. Tripwire grade: this catches honest
+      drift by name, not a reintroduction under another name.
+    paths:
+      exclude: [test, proof, fuzz, spec, bench, bin]
+    patterns:
+      - pattern: $F(...)
+      - metavariable-regex:
+          metavariable: $F
+          regex: .*pkcs1.*
+
+  - id: inv-20-cert-entry-point
+    languages: [c]
+    severity: ERROR
+    message: >-
+      INV-20: x509_verify_leaf has one audited call site, in
+      handshake.c, where every failure feeds the alert and wipe
+      discipline. A new call site needs its own audit — amend
+      docs/invariants.md in the same PR. x509.c is excluded because
+      it defines the entry, not because it may call it.
+    paths:
+      exclude: [test, proof, fuzz, spec, bench, bin, handshake.c, x509.c]
+    pattern: x509_verify_leaf(...)
+
+  - id: inv-20-no-time-calls
+    languages: [c]
+    severity: ERROR
+    message: >-
+      INV-20: the library never reads a clock. Certificate validity
+      is CA reissuance policy, not a device-side time check; the
+      target has no clock worth trusting. Complements
+      inv-2-freestanding's time.h include ban at the call level.
+      test/timing.c calls clock_gettime legitimately and sits in the
+      standard excludes.
+    paths:
+      exclude: [test, proof, fuzz, spec, bench, bin]
+    pattern-either:
+      - pattern: time(...)
+      - pattern: clock_gettime(...)
+      - pattern: gettimeofday(...)
+      - pattern: localtime(...)
+      - pattern: gmtime(...)
 
   - id: inv-18-no-global-mutable-state
     languages: [regex]

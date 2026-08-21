@@ -27,6 +27,7 @@
 #include "diffdrv.h"
 #include "diffp256.h"
 #include "diffrsa.h"
+#include "diffx509.h"
 
 noreturn void ch_assert_fail(const char *cond, const char *file, int line) {
     (void)fprintf(stderr, "ASSERT %s:%d: %s\n", file, line, cond);
@@ -526,6 +527,7 @@ int main(int argc, char **argv) {
     diff_x25519_base();
     diff_p256();
     diff_rsa();
+    diff_x509();
     if (fclose(to_spec) != 0 || fclose(from_spec) != 0) {
         die("closing spec pipes failed");
     }
