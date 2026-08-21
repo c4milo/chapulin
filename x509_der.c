@@ -285,6 +285,21 @@ int x509_read_spki(rbuf *r, const uint8_t **key, size_t *key_len) {
 }
 #endif
 
+// X.690 §8.19: each OID subidentifier is base-128 with minimal
+// octets — a subidentifier may not start with 0x80 — and the last
+// octet completes one. Without this, one OID has many encodings and
+// a duplicate could pose as an unknown extension.
+static int oid_minimal(const uint8_t *oid, size_t n) {
+    int at_subid_start = 1;
+    for (size_t i = 0; i < n; i++) {
+        if (at_subid_start && oid[i] == 0x80) {
+            return 0;
+        }
+        at_subid_start = (oid[i] & 0x80) == 0;
+    }
+    return at_subid_start; // a set high bit on the last octet is a cut
+}
+
 // One Extension: SEQUENCE { extnID OBJECT IDENTIFIER, critical
 // BOOLEAN DEFAULT FALSE, extnValue OCTET STRING }. Canonical DER: a
 // FALSE critical must be absent; TRUE is exactly 01 01 ff. The whole
@@ -308,22 +323,8 @@ int x509_read_extension(rbuf *e, size_t tlv_cap, x509_extension *out) {
     }
     out->oid = rb_bytes(&x, oid_len);
     out->oid_len = oid_len;
-    if (out->oid == NULL) {
+    if (out->oid == NULL || !oid_minimal(out->oid, oid_len)) {
         return 0;
-    }
-    // X.690 §8.19: each subidentifier is base-128 with minimal
-    // octets — a subidentifier may not start with 0x80 — and the
-    // last octet completes one. Without this, one OID has many
-    // encodings and a duplicate could pose as an unknown extension.
-    int at_subid_start = 1;
-    for (size_t i = 0; i < oid_len; i++) {
-        if (at_subid_start && out->oid[i] == 0x80) {
-            return 0;
-        }
-        at_subid_start = (out->oid[i] & 0x80) == 0;
-    }
-    if (!at_subid_start) {
-        return 0; // truncated final subidentifier
     }
     uint8_t tag = rb_u8(&x);
     out->critical = 0;
