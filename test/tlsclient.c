@@ -186,6 +186,11 @@ static int setup_psk(char **argv, ch_cfg *cfg, uint8_t *psk, size_t psk_cap, uin
     if (strncmp(argv[3], "pin:", 4) == 0) {
         return setup_pin(argv[3] + 4, cfg);
     }
+    if (strncmp(argv[3], "ca:", 3) == 0) {
+        // The CA build reads the same slots as a CA key; the prefix
+        // only names the operator's intent.
+        return setup_pin(argv[3] + 3, cfg);
+    }
     if (argv[3][0] == '@') {
         return setup_ticket(argv[3] + 1, cfg, psk, id);
     }
@@ -256,7 +261,12 @@ int main(int argc, char **argv) {
 
     uint8_t psk[64];
     uint8_t id[CH_TICKET_ID_MAX];
+#ifdef CH_TRUST_CA
+    // The CA build's floor covers a two-certificate flight.
+    static uint8_t rxbuf[4096];
+#else
     static uint8_t rxbuf[2048];
+#endif
     ch_cfg cfg = {0};
     if (setup_psk(argv, &cfg, psk, sizeof psk, id) != 0) {
         return 2;

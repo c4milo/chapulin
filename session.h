@@ -19,7 +19,7 @@
 // TX staging past the record header. One array serves two lifetimes
 // that never overlap: ClientHello construction, then sealed-record
 // staging. A build whose hello outgrows one sealed record (a PQ key
-// share) raises this for that build alone. See docs/decisions.md 18.
+// share) raises this for that build alone. See docs/decisions.md 20.
 //
 // This constant sets sizeof(ch_tls). The library object and every
 // build that includes this header must agree on it.

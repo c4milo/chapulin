@@ -21,10 +21,10 @@ LAKE ?= $(shell command -v lake || command -v $(HOME)/.elan/bin/lake)
 REQUIRE_ON_CI = @[ -z "$$CI" ] || { echo "$(1): missing on CI; the gate must not skip"; exit 1; }
 
 SRCS := ct.c sha256.c hkdf.c chacha20.c poly1305.c aead.c x25519.c p256.c rsa.c rsa_mont.c \
-        x509.c x509_der.c buf.c record.c keysched.c io.c hsmsg.c hsparse.c session.c \
+        x509.c x509_der.c buf.c record.c keysched.c io.c hsmsg.c hsparse.c hspump.c session.c \
         handshake.c tls.c
 HDRS := ct.h sha256.h hkdf.h chacha20.h poly1305.h aead.h x25519.h p256.h rsa.h ch_assert.h \
-        x509.h buf.h record.h keysched.h io.h hsmsg.h hsparse.h cfg.h session.h handshake.h \
+        x509.h buf.h record.h keysched.h io.h hsmsg.h hsparse.h hspump.h cfg.h session.h handshake.h \
         tls.h rand.h drbg.h
 LINT_C := $(SRCS) drbg.c test/unit.c test/tlsclient.c test/diff.c test/timing.c \
           test/drbg_test.c test/rsa_test.c test/hsstrict_test.c test/hsseq_test.c \
@@ -48,10 +48,15 @@ else
 LIB_DEF :=
 LIB_SRCS := $(filter-out p256.c,$(SRCS))
 endif
-# The certificate parser ships only in a CA-trust build (a later
-# change); today every packaged object excludes it. Test binaries
-# compile it so it stays tested.
+# Trust mode: TRUST=raw (default) pins server keys and ships no
+# certificate parser; TRUST=ca pins a CA key and includes it. One
+# mode per packaged object, like PIN.
+TRUST ?= raw
+ifeq ($(TRUST),ca)
+LIB_DEF += -DCH_TRUST_CA
+else
 LIB_SRCS := $(filter-out x509.c x509_der.c,$(LIB_SRCS))
+endif
 # CBMC intrinsics don't compile under clang-tidy/cppcheck; harnesses get
 # clang-format only. Fuzzers include .c files for statics, same deal.
 PROOF_C := $(wildcard proof/*.c) proof/harness.h
@@ -63,20 +68,21 @@ FUZZ_C := $(wildcard fuzz/*.c)
 # the library cannot collide with application names. lib-check enforces
 # the export list as part of check. Objects live under the PIN they were
 # built for, so switching PIN never reuses a stale object.
-LIB_OBJS := $(LIB_SRCS:%.c=bin/obj/$(PIN)/%.o)
+LIB_OBJS := $(LIB_SRCS:%.c=bin/obj/$(PIN)-$(TRUST)/%.o)
 PUBLIC := ch_connect ch_read ch_write ch_close
 
-bin/obj/$(PIN)/%.o: %.c $(HDRS)
-	@mkdir -p bin/obj/$(PIN)
+bin/obj/$(PIN)-$(TRUST)/%.o: %.c $(HDRS)
+	@mkdir -p bin/obj/$(PIN)-$(TRUST)
 	$(CC) $(CFLAGS) $(LIB_DEF) -I. -c $< -o $@
 
 # The packaged object is PIN-specific but lands at one path, so mtimes
 # alone cannot tell which PIN built it; the stamp rewrites (and so
-# triggers a relink) only when PIN changed since the last build.
+# triggers a relink) only when the PIN/TRUST pair changed since the
+# last build.
 PIN_STAMP := bin/obj/pin-stamp
 $(PIN_STAMP): FORCE
 	@mkdir -p bin/obj
-	@[ "$$(cat $@ 2>/dev/null)" = "$(PIN)" ] || echo "$(PIN)" > $@
+	@[ "$$(cat $@ 2>/dev/null)" = "$(PIN) $(TRUST)" ] || echo "$(PIN) $(TRUST)" > $@
 .PHONY: FORCE
 FORCE:
 
@@ -153,6 +159,12 @@ bin/unit: test/unit.c $(SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) -I. -o $@ test/unit.c $(SRCS)
 
+# The CA-build unit: the #ifdef CH_TRUST_CA test arms (floor
+# derivation, CA slot validation) only execute here.
+bin/unit_ca: test/unit.c $(SRCS) $(HDRS) $(TESTH)
+	@mkdir -p bin
+	$(CC) $(CFLAGS) -DCH_TRUST_CA -I. -o $@ test/unit.c $(SRCS)
+
 bin/tlsclient: test/tlsclient.c $(SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) -I. -o $@ test/tlsclient.c $(SRCS)
@@ -163,13 +175,24 @@ bin/tlsclient_ecdsa: test/tlsclient.c $(SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) -DCH_PIN_ECDSA -I. -o $@ test/tlsclient.c $(SRCS)
 
+# The CA-trust clients: the same main under -DCH_TRUST_CA, one per PIN,
+# so e2e proves certificate verification against real issued chains.
+bin/tlsclient_ca: test/tlsclient.c $(SRCS) $(HDRS) $(TESTH)
+	@mkdir -p bin
+	$(CC) $(CFLAGS) -DCH_TRUST_CA -I. -o $@ test/tlsclient.c $(SRCS)
+
+bin/tlsclient_ca_ecdsa: test/tlsclient.c $(SRCS) $(HDRS) $(TESTH)
+	@mkdir -p bin
+	$(CC) $(CFLAGS) -DCH_TRUST_CA -DCH_PIN_ECDSA -I. -o $@ test/tlsclient.c $(SRCS)
+
 bin/diff: test/diff.c $(SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) -I. -o $@ test/diff.c $(SRCS)
 
 .PHONY: check lint lint-tidy lint-format lint-cppcheck lint-docs lint-invariants lint-spec prove diff fmt clean
-check: bin/unit bin/tlsclient bin/tlsclient_ecdsa bin/drbg_test bin/rsa_test bin/hsstrict_test bin/x509strict bin/x509strict_ecdsa bin/hsseq_test lint lib-check cxx-check
+check: bin/unit bin/unit_ca bin/tlsclient bin/tlsclient_ecdsa bin/tlsclient_ca bin/tlsclient_ca_ecdsa bin/drbg_test bin/rsa_test bin/hsstrict_test bin/x509strict bin/x509strict_ecdsa bin/hsseq_test lint lib-check cxx-check
 	./bin/unit
+	./bin/unit_ca
 	./bin/drbg_test
 	./bin/rsa_test
 	./bin/hsstrict_test
@@ -579,7 +602,7 @@ FUZZ_CFLAGS := -std=c11 -O1 -g -fsanitize=fuzzer,address -D_DEFAULT_SOURCE -I.
 FUZZ_TIME ?= 30
 FUZZ_RECORD_LINK := record.c ct.c sha256.c hkdf.c chacha20.c poly1305.c aead.c
 FUZZ_HSPARSE_LINK := hsparse.c buf.c
-FUZZ_POSTHS_LINK := handshake.c hsparse.c io.c record.c keysched.c session.c buf.c ct.c \
+FUZZ_POSTHS_LINK := handshake.c hsparse.c hspump.c io.c record.c keysched.c session.c buf.c ct.c \
                     sha256.c hkdf.c chacha20.c poly1305.c aead.c x25519.c rsa.c rsa_mont.c hsmsg.c
 FUZZ_X509_LINK := x509.c x509_der.c buf.c ct.c sha256.c rsa.c rsa_mont.c
 

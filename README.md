@@ -19,10 +19,10 @@ The client authenticates the server in one of two modes:
   secret. The pin is public data: it needs integrity, not secrecy. The
   server proves possession of the private key by signing the handshake
   (CertificateVerify), and the client checks that signature against the
-  pin. The client hashes the server's certificate into the transcript
-  but never parses it: no ASN.1, no chains, no names, no expiry. Pinned
-  mode works against stock certificate-based endpoints such as Go's
-  `crypto/tls` and OpenSSL.
+  pin. A raw-pin build (the default) hashes the server's certificate
+  into the transcript but never parses it: no ASN.1, no chains, no
+  names, no expiry. Pinned mode works against stock certificate-based
+  endpoints such as Go's `crypto/tls` and OpenSSL.
 
 The pinned key is one signature algorithm per build. The default build
 verifies RSA-PSS (`rsa_pss_rsae_sha256`) and pins the raw modulus, 256
@@ -33,6 +33,24 @@ these are the two signature algorithms [RFC 9846](https://www.rfc-editor.org/rfc
 implementation to support, so between them a chapulin build can pin any
 compliant server. Neither build carries the other's verifier.
 
+`make TRUST=ca` turns the pin into a CA key. The same slots hold the
+public key of a certificate authority you run, the server presents its
+certificate chain — the leaf alone, or the leaf plus the one
+intermediate that signed it — and the client verifies the chain's
+signatures up to the pinned key with a profiled parser that CBMC
+proves memory-safe (see Verification). The check covers signatures and
+certificate shape only. There are no names, no clock, no expiry
+values, and no revocation lists; freshness comes from reissuance —
+short-lived leaves the CA renews on a schedule — so server keys rotate
+without touching a single device. The chain must use the build's one
+signature algorithm throughout; `TRUST=ca` composes with `PIN`.
+[`docs/ca.md`](docs/ca.md) is the mode's operational contract: the
+issuance profile, leaf lifetimes, key custody, and the exclusivity
+rule that makes a name-free check sufficient. Public CAs stay out of
+scope — their trust model requires the clock and name checks this
+device deliberately lacks. A public-CA-fronted server uses raw-pin
+mode with a stable server key instead.
+
 Both modes receive session tickets, so reconnects resume over PSK. In
 pinned mode the client therefore pays the signature verification once
 per ticket lifetime, not per connection.
@@ -42,10 +60,15 @@ session struct plus one receive buffer that the caller provides. The
 client advertises the buffer's size as its `record_size_limit`
 ([RFC 8449](https://www.rfc-editor.org/rfc/rfc8449)), so a peer can never send a record the buffer cannot hold.
 Pinned mode adds one sizing rule: the server's Certificate message must
-fit the receive buffer. A self-signed P-256 leaf needs about 600 bytes
-and a self-signed RSA-3072 leaf about 1.2 kB, so the 2 kB buffer below
-covers both; a CA chain needs a buffer sized to the whole chain, because
-the certificates arrive even though the client never reads them.
+fit the receive buffer. In a raw-pin build the chain's size is the
+server's choice, so the caller sizes for it — a self-signed P-256 leaf
+needs about 600 bytes and a self-signed RSA-3072 leaf about 1.2 kB, so
+the 2 kB buffer below covers both, and the certificates count even
+though a raw-pin client never reads them. A `TRUST=ca` build knows its
+own worst case and derives the floor instead: `CH_MIN_RXBUF` becomes
+`2*(CH_X509_MAX+5)+16` — 3,098 bytes in the RSA build, 1,562 in the
+ECDSA build — so a buffer too small for the largest admitted chain
+fails at setup, not mid-handshake.
 
 The client honors the RFC requirements that even a minimal client must
 keep: HelloRetryRequest with cookie echo and transcript restart,
@@ -57,7 +80,9 @@ binder rules over the truncated ClientHello.
 handshake, ticket resumption, and pinned-key handshakes — RSA-3072 with
 the default client, P-256 with the `PIN=ecdsa` client — against both
 OpenSSL 3 and Go's `crypto/tls`, and it moves application data both
-ways throughout.
+ways throughout. `TRUST=ca` clients on both PIN arms run CA-chain
+handshakes against OpenSSL: leaf plus intermediate, leaf alone, and CA
+slot rotation.
 
 ## Memory
 
@@ -69,11 +94,18 @@ targets shrink the pointer fields.
 | `ch_tls` session struct (includes 534 B TX staging) | 1008 |
 | caller receive buffer (you choose; floor `CH_MIN_RXBUF` = 512; 2048 shown) | 2048 |
 | **total static working set** | **3056** |
-| peak transient stack, `ch_connect` (default: RSA-3072 verify) | 5200 |
-| peak transient stack, `ch_connect` (`PIN=ecdsa`: P-256 verify) | 3680 |
+| peak transient stack, `ch_connect` (default: RSA-3072 verify) | 5168 |
+| peak transient stack, `ch_connect` (`PIN=ecdsa`: P-256 verify) | 3648 |
 | peak transient stack, `ch_connect` (PSK mode: x25519 ladder) | 2608 |
+| peak transient stack, `ch_connect` (`TRUST=ca`: chain verify, RSA / ECDSA) | 5744 / 3904 |
 | peak transient stack, `ch_read` (worst case: KeyUpdate rekey) | 1632 |
 | peak transient stack, `ch_write` / `ch_close` | 736 / 688 |
+
+The session struct measures the same 1008 bytes in `TRUST=ca` builds —
+the parser keeps its state on the handshake's transient stack. What a
+CA build changes is the receive-buffer floor, a compile-time fact:
+`CH_MIN_RXBUF` rises from 512 to the derived 3,098 bytes (RSA) or
+1,562 (ECDSA), sized to the largest admitted certificate chain.
 
 The figures cover the library alone. Anything the integrator adds —
 transport buffers, or a bounce buffer for a hardware-crypto engine that
@@ -177,12 +209,12 @@ values.
 | x509der (two harnesses) | every DER primitive — lengths, serials, times, key-usage bits, SPKI key extraction, extension TLVs — stays safe on hostile bytes and honors the pointer contracts the walker rests on, in both PIN builds | inputs ≤ 448 B |
 | x509parse (two harnesses) | the certificate walker stays safe on any CertificateEntry list with the primitives and verifiers stubbed to their proven contracts; the ECDSA build proves the full two-entry flight, the RSA build one maximum certificate (its two-entry walk rests on the ECDSA proof — the walker differs only in the SPKI arm) | ECDSA: full flight ≤ 256 B; RSA: ≤ 840 B, slow tier |
 
-The x509 harnesses cover the certificate parser the tree carries for
-the coming CA-trust mode; [docs/ca.md](docs/ca.md) is that mode's
-operational contract — issuance profile, lifetimes, custody, and how
-external CAs serve chapulin fleets. Today's packaged library object excludes
-that parser entirely, and pinned mode still never reads a
-certificate — the claims above describe what ships.
+The x509 harnesses cover the certificate parser behind the `TRUST=ca`
+build; [docs/ca.md](docs/ca.md) is that mode's operational contract —
+issuance profile, lifetimes, custody, and how external CAs serve
+chapulin fleets. A raw-pin build's packaged library object excludes
+the parser entirely, and raw-pin mode still never reads a
+certificate.
 
 CBMC found one real bug during development: `carry()` left-shifted a
 negative value (`c << 16`), which is undefined behavior in C even though
@@ -348,7 +380,9 @@ object (`bin/chapulin.o`) that exports exactly the four public calls —
 every internal symbol is localized, and `lib-check` (part of `check`)
 fails if the export list ever grows. `make PIN=ecdsa lib` packages the
 P-256 pinned build instead of the RSA default; the object carries only
-the selected verifier. `make prove-slow` runs the four
+the selected verifier. `make TRUST=ca lib` packages the CA-trust build,
+the only object that includes the certificate parser; it composes with
+`PIN`. `make prove-slow` runs the five
 long proofs. The proof runner caches results by content — a harness whose
 preprocessed sources, flags, and checker version are byte-identical to
 its last successful run is skipped, so an incremental `make check`
@@ -369,10 +403,14 @@ See [`CLAUDE.md`](CLAUDE.md) for the house rules.
 this section is the short version.
 
 chapulin does not implement: 0-RTT (the IETF IoT profile forbids it),
-DTLS, X.509 chain validation, CA bundles, revocation, client
-certificates, cipher agility, the server role, or any insecure-fallback
-option. Pinned mode accepts a certificate but never parses it; the
-signature check against the provisioned key is the authentication.
+DTLS, general X.509 path building, CA bundles, public-CA trust,
+revocation, client certificates, cipher agility, the server role, or
+any insecure-fallback option. Raw-pin mode accepts a certificate but
+never parses it; the signature check against the provisioned key is
+the authentication. The `TRUST=ca` build verifies exactly one profiled
+chain shape — a leaf, or a leaf plus one intermediate, signed with the
+build's one algorithm — against one pinned CA key; that is the whole
+X.509 surface.
 
 Two caveats. First, the IETF TLS 1.3 IoT profile's mandatory suite is
 AES-128-CCM-8, and chapulin is ChaCha-only because ChaCha needs no
@@ -381,7 +419,9 @@ when you control both ends and fails against a server that insists on
 AES; an AES-CCM build flag is the most likely v2 addition. Second, pin
 the key of a server whose key is stable. Automatic key rotation, such as
 Let's Encrypt defaults, breaks pins; [`docs/rotation.md`](docs/rotation.md) shows how the
-two-slot pin makes a planned rotation safe.
+two-slot pin makes a planned rotation safe, and `TRUST=ca` absorbs
+routine server-key churn entirely, because reissuance under the pinned
+CA replaces the device-side update.
 
 ## Contributing and security
 

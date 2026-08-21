@@ -22,13 +22,34 @@
 #define CH_TX_PT 512
 
 // Smallest receive buffer ch_connect accepts. The profile's control
-// flights fit in 512 bytes. A pinned server's Certificate message has
-// no fixed size, so pinned deployments size the buffer for their
+// flights fit in 512 bytes. A raw-pin server's Certificate message has
+// no fixed size, so raw-pin deployments size the buffer for their
 // server's chain (the e2e suite uses 2048). A build that needs more
 // room raises the floor, so a too-small buffer fails at setup with
-// CH_EINVAL, not mid-handshake with CH_ECAP. See docs/decisions.md 19.
+// CH_EINVAL, not mid-handshake with CH_ECAP. See docs/decisions.md 21.
+// The per-algorithm defaults, named so the mirrors derive from one
+// definition: the differential driver and the mutation kit size
+// their material from these, and spec/Spec/X509.lean pins the same
+// two numbers as the spec's modeled caps.
+#define CH_X509_DEFAULT_MAX_RSA 1536
+#define CH_X509_DEFAULT_MAX_ECDSA 768
+#ifndef CH_X509_MAX
+#ifdef CH_PIN_ECDSA
+#define CH_X509_MAX CH_X509_DEFAULT_MAX_ECDSA
+#else
+#define CH_X509_MAX CH_X509_DEFAULT_MAX_RSA
+#endif
+#endif
+
 #ifndef CH_MIN_RXBUF
+#ifdef CH_TRUST_CA
+// The CA build's floor holds the largest admitted Certificate
+// flight: two certificates at the cap plus their entry framing and
+// message header.
+#define CH_MIN_RXBUF (2 * (CH_X509_MAX + 5) + 16)
+#else
 #define CH_MIN_RXBUF 512
+#endif
 #endif
 // The library builds as C, so the guard always runs.
 #ifndef __cplusplus
@@ -60,12 +81,15 @@ typedef struct {
     //    default, or 64 P-256 bytes (X||Y, ECDSA) when built with
     //    -DCH_PIN_ECDSA — one algorithm per build, never both. An RSA
     //    modulus must be odd (any product of odd primes is); an even pin
-    //    is provisioning corruption and fails ch_connect with CH_EINVAL. The server
-    //    proves possession by signing the handshake; its certificate is
-    //    never parsed, only hashed into the transcript, so there are no
-    //    chains, no names, no expiry — one key, fail closed. Works against
-    //    stock cert-based endpoints (Go, OpenSSL); tickets still arrive,
-    //    so reconnects resume via PSK either way.
+    //    is provisioning corruption and fails ch_connect with CH_EINVAL.
+    //    The server proves possession by signing the handshake. A raw-pin
+    //    build never parses the certificate, only hashes it into the
+    //    transcript — no chains, no names, no expiry; one key, fail
+    //    closed — and works against stock cert-based endpoints (Go,
+    //    OpenSSL). A CH_TRUST_CA build reads the same slots as CA keys
+    //    instead: the server's chain must verify up to the pinned CA key
+    //    (see docs/ca.md). Tickets still arrive either way, so reconnects
+    //    resume via PSK.
     const uint8_t *psk;
     size_t psk_len;
     const uint8_t *psk_id;
@@ -75,10 +99,11 @@ typedef struct {
     const uint8_t *server_pubkey;
     size_t server_pubkey_len;
 
-    // Optional second pin, the staged "next" key during server key
-    // rotation: the handshake accepts a CertificateVerify matching either
-    // slot and records which in ch_tls.pin_slot. Same length and oddness
-    // rules as server_pubkey, never set without it. See docs/rotation.md.
+    // Optional second pin, the staged "next" key during key rotation:
+    // the server key in raw-pin builds, the CA key under CH_TRUST_CA.
+    // The handshake accepts a proof against either slot and records
+    // which in ch_tls.pin_slot. Same length and oddness rules as
+    // server_pubkey, never set without it. See docs/rotation.md.
     const uint8_t *server_pubkey2;
     size_t server_pubkey2_len;
 

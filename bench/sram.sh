@@ -30,3 +30,7 @@ echo "-- PIN=ecdsa build; ch_connect peak = pinned P-256 verify --"
 STACK_CFLAGS=-DCH_PIN_ECDSA python3 bench/stack.py | head -1
 echo "-- PSK-mode ch_connect (server_auth pruned: PSK never enters it) --"
 STACK_PRUNE=server_auth python3 bench/stack.py | head -1
+echo "-- TRUST=ca PIN=rsa; ch_connect peak = chain verify + leaf frame --"
+STACK_CFLAGS=-DCH_TRUST_CA python3 bench/stack.py | head -1
+echo "-- TRUST=ca PIN=ecdsa --"
+STACK_CFLAGS="-DCH_TRUST_CA -DCH_PIN_ECDSA" python3 bench/stack.py | head -1

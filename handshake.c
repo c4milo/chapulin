@@ -6,6 +6,7 @@
 #include "ct.h"
 #include "hsmsg.h"
 #include "hsparse.h"
+#include "hspump.h"
 #include "io.h"
 #include "keysched.h"
 #include "rand.h"
@@ -17,148 +18,9 @@
 #else
 #include "rsa.h"
 #endif
-
-// Everything the handshake needs beyond the session, on one stack frame;
-// wiped wholesale when the handshake ends either way.
-typedef struct {
-    ch_tls *t;
-    uint8_t priv[X25519_LEN];
-    uint8_t pub[X25519_LEN];
-    uint8_t random[32];
-    uint8_t early[SHA256_LEN];
-    uint8_t binder_key[SHA256_LEN];
-    uint8_t handshake_secret[SHA256_LEN];
-    uint8_t c_hs[SHA256_LEN];
-    uint8_t s_hs[SHA256_LEN];
-    uint8_t master[SHA256_LEN];
-    uint8_t cookie[HSP_COOKIE_MAX];
-    size_t cookie_len;
-    uint16_t record_size_limit;
-    int encrypted;
-    uint8_t ccs_seen; // compat-mode CCS records tolerated so far
-    uint8_t quiet;    // records that added no handshake bytes
-    uint8_t alert;    // what to tell the peer if we abort
-} handshake_state;
-
-// Appends one record's handshake bytes at buf[part..]. Plaintext records
-// shed their header in place; protected ones decrypt in place.
-static int accept_record(handshake_state *h, size_t part, uint8_t outer, size_t record_len) {
-    ch_tls *t = h->t;
-    uint8_t *buf = t->cfg.buf;
-    if (!h->encrypted) {
-        if (outer != REC_HANDSHAKE) {
-            return CH_EPROTO;
-        }
-        memmove(buf + part, buf + part + REC_HDR, record_len - REC_HDR);
-        t->pt_len = part + record_len - REC_HDR;
-        return CH_OK;
-    }
-    if (outer != REC_APPDATA) {
-        return CH_EPROTO;
-    }
-    size_t n = 0;
-    uint8_t inner_type = 0;
-    if (rec_open(&t->rd, buf + part, record_len, buf + part, t->cfg.buf_len - part, &n,
-                 &inner_type) != 0) {
-        h->alert = ALERT_BAD_RECORD_MAC;
-        return CH_EAUTH;
-    }
-    if (inner_type != REC_HANDSHAKE) {
-        return CH_EPROTO;
-    }
-    t->pt_len = part + n;
-    return CH_OK;
-}
-
-// Reads records until one carrying handshake bytes lands, decrypting once
-// keys are up, and appends its plaintext to the unconsumed bytes already
-// in cfg.buf so messages may span records.
-// Middlebox-compat noise, never hashed. RFC 9846 §5: exactly one
-// 0x01 byte. Each call spends one of the four tolerated CCS
-// records, so a hostile stream stays finite.
-static int ccs_tolerable(handshake_state *h, size_t part, size_t record_len) {
-    if (record_len != REC_HDR + 1 || h->t->cfg.buf[part + REC_HDR] != 1) {
-        return 0;
-    }
-    h->ccs_seen++;
-    return h->ccs_seen <= 4;
-}
-
-// An empty fragment is legal once in a while; a stream of them must
-// not pin the handshake. A fragment that made progress is free; an
-// empty one spends quiet budget.
-static int quiet_stream_capped(handshake_state *h, size_t part) {
-    if (h->t->pt_len != part) {
-        return 0;
-    }
-    h->quiet++;
-    return h->quiet > CH_QUIET_CAP;
-}
-
-static int fetch_record(handshake_state *h) {
-    ch_tls *t = h->t;
-    if (t->pt_off > 0) {
-        memmove(t->cfg.buf, t->cfg.buf + t->pt_off, t->pt_len - t->pt_off);
-        t->pt_len -= t->pt_off;
-        t->pt_off = 0;
-    }
-    for (;;) {
-        size_t part = t->pt_len;
-        uint8_t outer = 0;
-        size_t record_len = 0;
-        int rc =
-            io_read_record(&t->cfg, t->cfg.buf + part, t->cfg.buf_len - part, &outer, &record_len);
-        if (rc != CH_OK) {
-            return rc;
-        }
-        if (outer == REC_CCS) {
-            if (!ccs_tolerable(h, part, record_len)) {
-                h->alert = ALERT_UNEXPECTED_MESSAGE;
-                return CH_EPROTO;
-            }
-            continue;
-        }
-        if (outer == REC_ALERT) {
-            return CH_EPROTO; // peer aborted; nothing to salvage
-        }
-        rc = accept_record(h, part, outer, record_len);
-        if (rc != CH_OK) {
-            return rc;
-        }
-        if (quiet_stream_capped(h, part)) {
-            h->alert = ALERT_UNEXPECTED_MESSAGE;
-            return CH_EPROTO;
-        }
-        return CH_OK;
-    }
-}
-
-// Yields the next complete handshake message, raw (header included) for
-// the transcript. Pointers land in cfg.buf and die at the next call.
-static int next_msg(handshake_state *h, uint8_t *type, const uint8_t **raw, size_t *raw_len) {
-    ch_tls *t = h->t;
-    for (;;) {
-        const uint8_t *p = t->cfg.buf + t->pt_off;
-        size_t avail = t->pt_len - t->pt_off;
-        if (avail >= 4) {
-            size_t msg_len = ((size_t)p[1] << 16) | ((size_t)p[2] << 8) | p[3];
-            if (msg_len > 0x4000) {
-                return CH_EPROTO; // nothing we accept is this large
-            }
-            if (avail >= 4 + msg_len) {
-                *type = p[0];
-                *raw = p;
-                *raw_len = 4 + msg_len;
-                t->pt_off += 4 + msg_len;
-                return CH_OK;
-            }
-        }
-        int rc = fetch_record(h);
-        if (rc != CH_OK) {
-            return rc;
-        }
-    }
-}
+#ifdef CH_TRUST_CA
+#include "x509.h"
+#endif
 
 // Builds the ClientHello (echoing an HRR cookie on the retry), computes
 // the binder over the transcript-so-far plus the truncated message, and
@@ -209,7 +71,7 @@ static int read_server_hello(handshake_state *h, server_hello_info *info) {
     uint8_t type = 0;
     const uint8_t *raw = NULL;
     size_t raw_len = 0;
-    int rc = next_msg(h, &type, &raw, &raw_len);
+    int rc = hsr_next_msg(h, &type, &raw, &raw_len);
     if (rc != CH_OK) {
         return rc;
     }
@@ -246,7 +108,7 @@ static int expect_finished(handshake_state *h) {
     uint8_t type = 0;
     const uint8_t *raw = NULL;
     size_t raw_len = 0;
-    int rc = next_msg(h, &type, &raw, &raw_len);
+    int rc = hsr_next_msg(h, &type, &raw, &raw_len);
     if (rc != CH_OK) {
         return rc;
     }
@@ -277,7 +139,7 @@ static int check_certificate_verify(handshake_state *h, const uint8_t hash[SHA25
     uint8_t type = 0;
     const uint8_t *raw = NULL;
     size_t raw_len = 0;
-    int rc = next_msg(h, &type, &raw, &raw_len);
+    int rc = hsr_next_msg(h, &type, &raw, &raw_len);
     if (rc != CH_OK) {
         return rc;
     }
@@ -305,8 +167,18 @@ static int check_certificate_verify(handshake_state *h, const uint8_t hash[SHA25
     uint8_t signed_hash[SHA256_LEN];
     sha256_final(&s, signed_hash);
 
-    // Slot A, then slot B: pins, transcript hash, and signature are all
-    // public, so the second attempt's variable timing leaks nothing.
+    // All inputs are public, so variable timing leaks nothing.
+#ifdef CH_TRUST_CA
+    // The chain's leaf key signs the handshake; the pins already
+    // vouched for the chain in server_auth.
+    int sig_ok;
+#ifdef CH_PIN_ECDSA
+    sig_ok = p256_ecdsa_verify(h->leaf.key, signed_hash, sig, sig_len);
+#else
+    sig_ok = rsa_pss_verify(h->leaf.key, h->leaf.key_len, signed_hash, sig, sig_len);
+#endif
+#else
+    // Slot A, then slot B: the second attempt covers rotation.
     const uint8_t *keys[2] = {h->t->cfg.server_pubkey, h->t->cfg.server_pubkey2};
     int sig_ok = 0;
     for (int i = 0; i < 2 && !sig_ok && keys[i] != NULL; i++) {
@@ -320,6 +192,7 @@ static int check_certificate_verify(handshake_state *h, const uint8_t hash[SHA25
             h->t->pin_slot = (uint8_t)(i + 1);
         }
     }
+#endif
     if (!sig_ok) {
         h->alert = ALERT_DECRYPT_ERROR;
         return CH_EAUTH;
@@ -338,7 +211,7 @@ static int server_auth(handshake_state *h) {
     uint8_t type = 0;
     const uint8_t *raw = NULL;
     size_t raw_len = 0;
-    int rc = next_msg(h, &type, &raw, &raw_len);
+    int rc = hsr_next_msg(h, &type, &raw, &raw_len);
     if (rc != CH_OK) {
         return rc;
     }
@@ -357,6 +230,20 @@ static int server_auth(handshake_state *h) {
     if (rc != CH_OK) {
         return rc;
     }
+#ifdef CH_TRUST_CA
+    // CA mode: the chain must verify up to a pinned CA key before
+    // anything else happens; the leaf key then stands in for the
+    // pins at CertificateVerify. The raw message is hashed either
+    // way — the transcript covers what the server sent.
+    h->alert = ALERT_BAD_CERTIFICATE;
+    rc = x509_verify_leaf(list, list_len, h->t->cfg.server_pubkey, h->t->cfg.server_pubkey_len,
+                          h->t->cfg.server_pubkey2, h->t->cfg.server_pubkey2_len, &h->leaf,
+                          &h->alert);
+    if (rc != CH_OK) {
+        return rc;
+    }
+    h->t->pin_slot = h->leaf.ca_slot;
+#endif
     sha256_update(&h->t->transcript, raw, raw_len);
 
     uint8_t hash[SHA256_LEN];
@@ -454,7 +341,7 @@ static int run(handshake_state *h) {
     uint8_t type = 0;
     const uint8_t *raw = NULL;
     size_t raw_len = 0;
-    rc = next_msg(h, &type, &raw, &raw_len);
+    rc = hsr_next_msg(h, &type, &raw, &raw_len);
     if (rc != CH_OK) {
         return rc;
     }

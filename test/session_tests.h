@@ -411,7 +411,11 @@ static void test_alerts_and_epochs(void) {
 }
 
 static void test_connect_cfg(void) {
-    static uint8_t rxbuf[600];
+    // Sized to the compiled build's floor plus slack: 512 in raw-pin
+    // builds, the certificate-derived floor in CA builds (cfg.h). The
+    // floor boundary pair below therefore runs against whichever floor
+    // this build derives.
+    static uint8_t rxbuf[CH_MIN_RXBUF + 88];
     uint8_t psk[32] = {1};
     uint8_t pin[TEST_PIN_LEN] = {2};
     pin[TEST_PIN_LEN - 1] = 1; // a real RSA modulus is odd
@@ -464,6 +468,21 @@ static void test_connect_cfg(void) {
     cfg.buf_len = CH_MIN_RXBUF;
     CHECK(ch_connect(&t, &cfg) == CH_EIO); // the floor itself reaches I/O
     cfg.buf_len = sizeof rxbuf;
+#ifdef CH_TRUST_CA
+    // CA builds reuse both key slots as CA keys, and ch_connect applies
+    // the pin validation to them unchanged — every length and oddness
+    // case in this test doubles as the CA-key rule set. What is
+    // CA-specific is the floor: cfg.h derives it from the certificate
+    // cap, and the boundary pair above just ran against that derived
+    // value. Pin the derivation and the per-PIN number here so a cfg.h
+    // regression fails this test, not a live handshake.
+    CHECK(CH_MIN_RXBUF == 2 * (CH_X509_MAX + 5) + 16);
+#ifdef CH_PIN_ECDSA
+    CHECK(CH_MIN_RXBUF == 1562);
+#else
+    CHECK(CH_MIN_RXBUF == 3098);
+#endif
+#endif
 
     // Slot B (key rotation): optional, but bound to every slot-A rule.
     cfg.server_pubkey2 = pin2;

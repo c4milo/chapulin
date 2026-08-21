@@ -111,7 +111,10 @@ Spec.X509.mintChain   : (ca int : CaKey) → (serial issuer validity subject
 Spec.Handshake.step   : (mode : Mode) → State → Msg → Option State      -- RFC 9846 §4 order of
                         -- server-to-client messages after the ClientHello; none = fatal
                         -- (unexpected_message). Msg has one constructor per line-protocol
-                        -- letter (S H E C R V F N K A L); Mode is psk or pinned.
+                        -- letter (S H E C R V F N K A L); Mode is psk or pinned. `pinned`
+                        -- models the raw-pin build (TRUST=raw); CA builds share the
+                        -- message order but no sequence oracle covers them — the e2e
+                        -- run does.
 Spec.Handshake.accepts : (mode : Mode) → (msgs : List Msg) → Bool       -- fold step from start;
                         -- accept iff every message is legal and the handshake completes
                         -- (connected, optionally then close_notify). Line op:

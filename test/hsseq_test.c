@@ -10,6 +10,14 @@
 // ServerHello, Finished MACs, and record protection are genuine — a
 // wrong transcript or schedule shows up as a divergence. Only the
 // pinned-mode signature check is stubbed (V means "signature valid").
+//
+// Domain: this oracle models raw-pin mode. The client here links
+// without CH_TRUST_CA, and the spec's `pinned` Mode means a pinned
+// server key. TRUST=ca builds run the same message-order state machine
+// but replace the server_auth check with certificate verification, and
+// no sequence oracle covers that arm — only the e2e run exercises
+// CA-mode sequencing. This is an accepted, recorded limitation.
+//
 // Its own binary with a private main, like drbg_test; the link line is
 // the library sources minus p256.c/rsa.c/rsa_mont.c plus the stubs here.
 #include <stdio.h>

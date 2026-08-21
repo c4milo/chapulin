@@ -30,7 +30,8 @@ Home: github.com/c4milo.
   `rsa.[ch]`/`rsa_mont.c` (pinned-mode verify) ←
   `x509.[ch]`/`x509_der.c` (profiled certificate verify, CA mode) ←
   `record.[ch]`
-  (record layer) ← `hsparse.[ch]` (SH/EE message parsers) ←
+  (record layer) ← `hsparse.[ch]` (message parsers) ←
+  `hspump.[ch]` (record pump and reassembly) ←
   `handshake.[ch]` (client state machine) ← `tls.[ch]`
   (public API) ← demo/test mains. Firmware takes everything below
   `tls.[ch]` as-is and supplies I/O callbacks and `ch_rand_bytes`.
@@ -110,7 +111,11 @@ Home: github.com/c4milo.
   abbreviation. Domain vocabulary the RFCs themselves use stays as the
   RFCs spell it (`pt`, `aad`, `iv`, `psk`, `hrr`, `verify_data`,
   `obfuscated_age`). One-letter names only for loop indices; `rc` for
-  return codes is C idiom and stays.
+  return codes is C idiom and stays. `_len` always counts
+  bytes — the API's one length unit, never elements or bits. No
+  quantity crosses the API in two units. When counts coexist,
+  each names what it counts (`ext_count`); an operation's sole byte
+  count may stay the idiomatic `n`.
 - `chapulin.hpp` is an optional, header-only C++ wrapper: freestanding
   (only <cstddef>/<cstdint>), -fno-exceptions -fno-rtti, zero heap, no
   runtime cost over the C calls. It never gains logic the C core lacks —

@@ -220,7 +220,7 @@ static uint8_t msg[1400];
 static volatile uint32_t sink;
 
 #ifdef OP_HANDSHAKE
-// The crypto of one default-build (PIN=rsa) pinned handshake in
+// The crypto of one default-build (PIN=rsa, raw-pin trust) handshake in
 // handshake.c run() order: x25519 keygen and shared secret, the full key
 // schedule with both Finished MACs and all four traffic-key derivations,
 // one RSA-3072-PSS CertificateVerify check, and 2244 bytes of transcript.
@@ -249,7 +249,7 @@ static uint32_t hs_once(void) {
     rec_dir_init(&rd, s_hs);
     rec_dir_init(&wr, c_hs);
     sha256_update(&tr, msg, 40);   // EncryptedExtensions
-    sha256_update(&tr, msg, 1400); // Certificate: hashed, never parsed
+    sha256_update(&tr, msg, 1400); // Certificate: raw-pin mode only hashes it
     snap = tr;
     sha256_final(&snap, hash); // CH..Certificate
 

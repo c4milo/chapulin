@@ -1,5 +1,7 @@
 #include "tls.h"
 
+#include "ch_assert.h"
+
 #include <string.h>
 
 #include "buf.h"
@@ -227,6 +229,11 @@ static int pump_once(ch_tls *t) {
 }
 
 int ch_read(ch_tls *t, uint8_t *p, size_t n) {
+    // Contract-point guard: no input can set an undefined state; only
+    // programmer error or corrupted memory can. TigerStyle-class
+    // defense priced at zero per-byte cost (docs/decisions.md).
+    CH_ASSERT(t->state <= CH_ST_FAILED);
+
     if (n == 0) {
         return CH_EINVAL; // 0 is the close sentinel; a zero-byte read is a caller bug
     }
@@ -262,6 +269,11 @@ int ch_read(ch_tls *t, uint8_t *p, size_t n) {
 }
 
 int ch_write(ch_tls *t, const uint8_t *p, size_t n) {
+    // Contract-point guard: no input can set an undefined state; only
+    // programmer error or corrupted memory can. TigerStyle-class
+    // defense priced at zero per-byte cost (docs/decisions.md).
+    CH_ASSERT(t->state <= CH_ST_FAILED);
+
     if (t->state != CH_ST_CONNECTED) {
         return CH_EPROTO;
     }
@@ -285,6 +297,11 @@ int ch_write(ch_tls *t, const uint8_t *p, size_t n) {
 }
 
 void ch_close(ch_tls *t) {
+    // Contract-point guard: no input can set an undefined state; only
+    // programmer error or corrupted memory can. TigerStyle-class
+    // defense priced at zero per-byte cost (docs/decisions.md).
+    CH_ASSERT(t->state <= CH_ST_FAILED);
+
     if (t->keys) {
         (void)tlsi_send_alert(t, 1, ALERT_CLOSE_NOTIFY);
     }

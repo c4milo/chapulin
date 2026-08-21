@@ -21,17 +21,26 @@ fi
 # One temp dir holds every server key, ticket, and stderr file, so two runs
 # on the same host never share a path.
 DIR=$(mktemp -d)
-trap 'kill ${SERVER:-} ${SERVER2:-} ${SERVER3:-} ${SERVER4:-} ${SERVER5:-} ${SERVER6:-} 2>/dev/null || true
+trap 'kill ${SERVER:-} ${SERVER2:-} ${SERVER3:-} ${SERVER4:-} ${SERVER5:-} ${SERVER6:-} \
+           ${SERVER7:-} ${SERVER8:-} ${SERVER9:-} ${SERVER10:-} ${SERVER11:-} \
+           ${SERVER12:-} ${SERVER13:-} 2>/dev/null || true
       rm -rf "$DIR"' EXIT
 
-# Each run takes a disjoint 6-port slot. Multiplying the slot index by 8
+# Each run takes a disjoint 13-port slot. Multiplying the slot index by 16
 # keeps adjacent PIDs from overlapping slots.
-PORT=$((20000 + ($$ % 5000) * 8))
+PORT=$((20000 + ($$ % 2500) * 16))
 PORT2=$((PORT + 1))
 PORT3=$((PORT + 2))
 PORT4=$((PORT + 3))
 PORT5=$((PORT + 4))
 PORT6=$((PORT + 5))
+PORT7=$((PORT + 6))
+PORT8=$((PORT + 7))
+PORT9=$((PORT + 8))
+PORT10=$((PORT + 9))
+PORT11=$((PORT + 10))
+PORT12=$((PORT + 11))
+PORT13=$((PORT + 12))
 
 PSK=0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20
 ID=sapo-01
@@ -74,6 +83,34 @@ expect() {
         cat "$err"
         exit 1
     fi
+}
+
+# Runs the client expecting the handshake to fail with the given ch_err
+# code. Args: label, expected code, stderr file, then the client argv.
+expect_fail() {
+    local label=$1 rc=$2 err=$3
+    shift 3
+    if printf '%s\n' "$MSG" | "$@" >/dev/null 2>"$err"; then
+        echo "FAIL $label: handshake unexpectedly succeeded"
+        cat "$err"
+        exit 1
+    fi
+    grep -q "^handshake failed: $rc\$" "$err" || {
+        echo "FAIL $label: expected handshake failure $rc"
+        cat "$err"
+        exit 1
+    }
+}
+
+# Pin-string extractors for the CA legs. RSA builds pin the modulus as
+# lowercase hex; ECDSA builds pin the raw X||Y point from the key.
+rsa_modulus() {
+    "$OPENSSL" rsa -in "$1" -noout -modulus 2>/dev/null \
+        | sed 's/^Modulus=//' | tr 'A-F' 'a-f'
+}
+p256_pub() {
+    "$OPENSSL" ec -in "$1" -text -noout 2>/dev/null \
+        | awk '/^pub:/{f=1;next} f&&/^[^ ]/{f=0} f{gsub(/[ :]/,"");printf "%s",$0}' | cut -c3-130
 }
 
 # --- PSK: external key, then resume with the issued ticket ---
@@ -201,6 +238,166 @@ grep -q "^pin slot 2$" "$DIR/err7" || {
     exit 1
 }
 
+# --- CA mode, RSA build: a root -> intermediate -> leaf hierarchy per
+# docs/ca.md, all RSA-PSS. The client pins the root modulus and verifies
+# the presented chain. s_server must get the intermediate via -cert_chain:
+# extra certificates appended to the -cert file are silently dropped.
+cat > "$DIR/leaf.cnf" <<'EOF'
+keyUsage = critical, digitalSignature
+extendedKeyUsage = serverAuth
+basicConstraints = CA:FALSE
+EOF
+cat > "$DIR/int.cnf" <<'EOF'
+basicConstraints = critical, CA:TRUE, pathlen:0
+keyUsage = critical, keyCertSign, cRLSign
+EOF
+PSS=(-sha256 -sigopt rsa_padding_mode:pss -sigopt rsa_pss_saltlen:32)
+
+"$OPENSSL" genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:3072 \
+    -out "$DIR/caroot.key" 2>/dev/null
+"$OPENSSL" req -new -x509 -key "$DIR/caroot.key" -subj /CN=fleet-root -days 3650 \
+    "${PSS[@]}" -out "$DIR/caroot.pem" 2>/dev/null
+"$OPENSSL" genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:3072 \
+    -out "$DIR/caint.key" 2>/dev/null
+"$OPENSSL" req -new -key "$DIR/caint.key" -subj /CN=fleet-intermediate 2>/dev/null |
+"$OPENSSL" x509 -req -CA "$DIR/caroot.pem" -CAkey "$DIR/caroot.key" -days 365 \
+    "${PSS[@]}" -extfile "$DIR/int.cnf" -out "$DIR/caint.pem" 2>/dev/null
+"$OPENSSL" genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:3072 \
+    -out "$DIR/caleaf.key" 2>/dev/null
+"$OPENSSL" req -new -key "$DIR/caleaf.key" -subj /CN=controller-01 2>/dev/null |
+"$OPENSSL" x509 -req -CA "$DIR/caint.pem" -CAkey "$DIR/caint.key" -days 14 \
+    "${PSS[@]}" -extfile "$DIR/leaf.cnf" -out "$DIR/caleaf.pem" 2>/dev/null
+# Flat variant: the root signs the same leaf key directly.
+"$OPENSSL" req -new -key "$DIR/caleaf.key" -subj /CN=controller-01 2>/dev/null |
+"$OPENSSL" x509 -req -CA "$DIR/caroot.pem" -CAkey "$DIR/caroot.key" -days 14 \
+    "${PSS[@]}" -extfile "$DIR/leaf.cnf" -out "$DIR/caflat.pem" 2>/dev/null
+CAMOD=$(rsa_modulus "$DIR/caroot.key")
+[ ${#CAMOD} -eq 768 ] || {
+    echo "FAIL e2e ca-rsa: could not extract the root modulus"
+    exit 1
+}
+
+"$OPENSSL" s_server -tls1_3 -ciphersuites TLS_CHACHA20_POLY1305_SHA256 \
+    -cert "$DIR/caleaf.pem" -key "$DIR/caleaf.key" -cert_chain "$DIR/caint.pem" \
+    -accept "$PORT7" -rev -quiet &
+SERVER7=$!
+"$OPENSSL" s_server -tls1_3 -ciphersuites TLS_CHACHA20_POLY1305_SHA256 \
+    -cert "$DIR/caflat.pem" -key "$DIR/caleaf.key" -accept "$PORT8" -rev -quiet &
+SERVER8=$!
+wait_listen $SERVER7 "$PORT7"
+wait_listen $SERVER8 "$PORT8"
+
+MSG='cadena firmada'
+expect ca-rsa "adamrif anedac" "$DIR/err8" \
+    ./bin/tlsclient_ca 127.0.0.1 "$PORT7" "ca:$CAMOD" -
+MSG='hoja directa'
+expect ca-rsa-flat "atcerid ajoh" "$DIR/err8" \
+    ./bin/tlsclient_ca 127.0.0.1 "$PORT8" "ca:$CAMOD" -
+
+# --- CA slot rotation: slot A holds a stranger's key, slot B the real
+# root; the handshake must land on slot 2, mirroring pinned-key rotation.
+"$OPENSSL" genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:3072 \
+    -out "$DIR/wrongroot.key" 2>/dev/null
+"$OPENSSL" req -new -x509 -key "$DIR/wrongroot.key" -subj /CN=other-root -days 3650 \
+    "${PSS[@]}" -out "$DIR/wrongroot.pem" 2>/dev/null
+WRONGMOD=$(rsa_modulus "$DIR/wrongroot.key")
+
+MSG='segunda ranura'
+expect ca-rotation "arunar adnuges" "$DIR/err9" \
+    ./bin/tlsclient_ca 127.0.0.1 "$PORT7" "ca:$WRONGMOD,$CAMOD" -
+grep -q "^pin slot 2$" "$DIR/err9" || {
+    echo "FAIL e2e ca-rotation: client did not report CA slot 2"
+    cat "$DIR/err9"
+    exit 1
+}
+
+# --- CA mode, ECDSA build: the same hierarchy in P-256; OpenSSL signs
+# ecdsa-with-SHA256 by default, so the PSS sigopts drop out.
+"$OPENSSL" ecparam -name prime256v1 -genkey -noout -out "$DIR/ecroot.key" 2>/dev/null
+"$OPENSSL" req -new -x509 -key "$DIR/ecroot.key" -subj /CN=fleet-root -days 3650 \
+    -out "$DIR/ecroot.pem" 2>/dev/null
+"$OPENSSL" ecparam -name prime256v1 -genkey -noout -out "$DIR/ecint.key" 2>/dev/null
+"$OPENSSL" req -new -key "$DIR/ecint.key" -subj /CN=fleet-intermediate 2>/dev/null |
+"$OPENSSL" x509 -req -CA "$DIR/ecroot.pem" -CAkey "$DIR/ecroot.key" -days 365 \
+    -extfile "$DIR/int.cnf" -out "$DIR/ecint.pem" 2>/dev/null
+"$OPENSSL" ecparam -name prime256v1 -genkey -noout -out "$DIR/ecleaf.key" 2>/dev/null
+"$OPENSSL" req -new -key "$DIR/ecleaf.key" -subj /CN=controller-01 2>/dev/null |
+"$OPENSSL" x509 -req -CA "$DIR/ecint.pem" -CAkey "$DIR/ecint.key" -days 14 \
+    -extfile "$DIR/leaf.cnf" -out "$DIR/ecleaf.pem" 2>/dev/null
+"$OPENSSL" req -new -key "$DIR/ecleaf.key" -subj /CN=controller-01 2>/dev/null |
+"$OPENSSL" x509 -req -CA "$DIR/ecroot.pem" -CAkey "$DIR/ecroot.key" -days 14 \
+    -extfile "$DIR/leaf.cnf" -out "$DIR/ecflat.pem" 2>/dev/null
+ECROOTPUB=$(p256_pub "$DIR/ecroot.key")
+[ ${#ECROOTPUB} -eq 128 ] || {
+    echo "FAIL e2e ca-ecdsa: could not extract the root public key"
+    exit 1
+}
+
+"$OPENSSL" s_server -tls1_3 -ciphersuites TLS_CHACHA20_POLY1305_SHA256 \
+    -cert "$DIR/ecleaf.pem" -key "$DIR/ecleaf.key" -cert_chain "$DIR/ecint.pem" \
+    -accept "$PORT9" -rev -quiet &
+SERVER9=$!
+"$OPENSSL" s_server -tls1_3 -ciphersuites TLS_CHACHA20_POLY1305_SHA256 \
+    -cert "$DIR/ecflat.pem" -key "$DIR/ecleaf.key" -accept "$PORT10" -rev -quiet &
+SERVER10=$!
+wait_listen $SERVER9 "$PORT9"
+wait_listen $SERVER10 "$PORT10"
+
+MSG='curva chica'
+expect ca-ecdsa "acihc avruc" "$DIR/err10" \
+    ./bin/tlsclient_ca_ecdsa 127.0.0.1 "$PORT9" "ca:$ECROOTPUB" -
+MSG='sin intermedia'
+expect ca-ecdsa-flat "aidemretni nis" "$DIR/err10" \
+    ./bin/tlsclient_ca_ecdsa 127.0.0.1 "$PORT10" "ca:$ECROOTPUB" -
+
+# --- CA negatives, each a distinct rejection class. First: a leaf from
+# a CA the client does not pin fails authentication (CH_EAUTH is -3).
+"$OPENSSL" req -new -key "$DIR/caleaf.key" -subj /CN=controller-01 2>/dev/null |
+"$OPENSSL" x509 -req -CA "$DIR/wrongroot.pem" -CAkey "$DIR/wrongroot.key" -days 14 \
+    "${PSS[@]}" -extfile "$DIR/leaf.cnf" -out "$DIR/wrongleaf.pem" 2>/dev/null
+"$OPENSSL" s_server -tls1_3 -ciphersuites TLS_CHACHA20_POLY1305_SHA256 \
+    -cert "$DIR/wrongleaf.pem" -key "$DIR/caleaf.key" -accept "$PORT11" -rev -quiet &
+SERVER11=$!
+wait_listen $SERVER11 "$PORT11"
+MSG='no debe pasar'
+expect_fail ca-wrong-ca -3 "$DIR/err11" \
+    ./bin/tlsclient_ca 127.0.0.1 "$PORT11" "ca:$CAMOD" -
+
+# Second: three certificate entries. The profile admits one or two —
+# the root never travels — so leaf + intermediate + root must fail the
+# handshake even though every signature would check out (CH_EPROTO, -2).
+cat "$DIR/caint.pem" "$DIR/caroot.pem" > "$DIR/chain3.pem"
+"$OPENSSL" s_server -tls1_3 -ciphersuites TLS_CHACHA20_POLY1305_SHA256 \
+    -cert "$DIR/caleaf.pem" -key "$DIR/caleaf.key" -cert_chain "$DIR/chain3.pem" \
+    -accept "$PORT12" -rev -quiet &
+SERVER12=$!
+wait_listen $SERVER12 "$PORT12"
+expect_fail ca-three-entries -2 "$DIR/err12" \
+    ./bin/tlsclient_ca 127.0.0.1 "$PORT12" "ca:$CAMOD" -
+
+# Third: a non-canonical re-encoding. Rewrite the flat leaf's TBS length
+# as three-byte long form with a leading zero — same value, one more
+# byte — and grow the outer length to match. OpenSSL serves the TBS
+# bytes it parsed, so the mangled length reaches the wire; a mangled
+# OUTER length would be re-encoded minimal and never leave the server.
+# The strict decoder must refuse the non-minimal length (CH_EPROTO, -2).
+"$OPENSSL" x509 -in "$DIR/caflat.pem" -outform DER -out "$DIR/caflat.der"
+python3 - "$DIR/caflat.der" "$DIR/mangled.pem" <<'EOF'
+import base64, sys
+der = open(sys.argv[1], 'rb').read()
+assert der[0] == 0x30 and der[1] == 0x82 and der[4] == 0x30 and der[5] == 0x82
+outer = int.from_bytes(der[2:4], 'big') + 1
+out = der[:2] + outer.to_bytes(2, 'big') + bytes([0x30, 0x83, 0x00, der[6], der[7]]) + der[8:]
+pem = base64.encodebytes(out).decode()
+open(sys.argv[2], 'w').write('-----BEGIN CERTIFICATE-----\n' + pem + '-----END CERTIFICATE-----\n')
+EOF
+"$OPENSSL" s_server -tls1_3 -ciphersuites TLS_CHACHA20_POLY1305_SHA256 \
+    -cert "$DIR/mangled.pem" -key "$DIR/caleaf.key" -accept "$PORT13" -rev -quiet &
+SERVER13=$!
+wait_listen $SERVER13 "$PORT13"
+expect_fail ca-noncanonical -2 "$DIR/err13" \
+    ./bin/tlsclient_ca 127.0.0.1 "$PORT13" "ca:$CAMOD" -
+
 # --- Go's crypto/tls, the stack Prometheus terminates with: once with the
 # P-256 cert against the ECDSA build, once with the RSA cert against the
 # default build ---
@@ -244,4 +441,4 @@ else
     GO_LEG=" (go legs skipped)"
 fi
 
-echo "e2e: psk + tickets + resumption + pinned ecdsa + pinned rsa + rotation${GO_LEG} OK"
+echo "e2e: psk + tickets + resumption + pinned ecdsa + pinned rsa + rotation + ca rsa x2 + ca ecdsa x2 + ca rotation + ca negatives x3${GO_LEG} OK"

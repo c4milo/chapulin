@@ -137,8 +137,9 @@ magnitude above kB-class.
 Kept: HRR handling, KeyUpdate, NewSessionTicket → resumption PSK,
 record_size_limit (MTI, and the enabler of the SRAM headline), RFC 9257
 binder discipline, ECDHE-PSK (`psk_dhe_ke`), pluggable RNG.
-Cut: 0-RTT (profile says MUST NOT), DTLS, X.509/raw-pubkey, compressed
-certs, CID, exporters. Known deviation: the profile's MTI suite is
+Cut: 0-RTT (profile says MUST NOT), DTLS, X.509 beyond the profiled
+`TRUST=ca` chain check, RFC 7250 raw public keys, compressed certs,
+CID, exporters. Known deviation: the profile's MTI suite is
 AES-128-CCM-8; ChaCha-only is deliberate (no tables ⇒ constant time on
 anything) and fine when both ends are ours.
 

@@ -116,7 +116,10 @@ material via `test/gen_x509vectors.py <dir>`.
 ## Server configuration
 
 Send the leaf alone (flat hierarchy) or leaf then intermediate —
-never the root, never anything else. A third certificate fails the
+never the root, never anything else. With OpenSSL, pass the
+intermediate through `-cert_chain int.pem`: extra certificates
+appended to the `-cert` file are silently dropped, which strands the
+client with an unanchorable leaf. A third certificate fails the
 handshake. Watch OpenSSL's auto-chain behavior: `s_server` and
 libraries with default settings append the CA certificate the moment
 it sits in their store (a habitual `-CAfile` is enough), turning a

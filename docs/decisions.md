@@ -54,7 +54,9 @@ does nothing more.
 9. **RSA is verify-only**: exponent fixed at 65537, moduli of 256 to
    384 bytes, the pin is the raw modulus, no PKCS#1 v1.5, deliberately
    variable time. Cost: exotic keys are unsupported. Gain: a tiny
-   fixed-shape verifier with no ASN.1 anywhere. Variable time is safe
+   fixed-shape verifier with no ASN.1 in it. DER handling lives in
+   `x509_der.c` alone, and only `TRUST=ca` builds package that file;
+   `rsa.c` stays ASN.1-free in every build. Variable time is safe
    because every input to verification is public.
 10. **No Ed25519.** Cost: none today — no real server-certificate
    population uses it, and PSK already covers endpoints we control.
@@ -63,47 +65,82 @@ does nothing more.
 
 ## Trust model
 
-11. **Certificates are hashed into the transcript, never parsed.** No
-    X.509, no chains, no names, no expiry, no revocation, no trusted
-    clock. Cost: no PKI; the operator provisions a key. Gain: the
-    DER-parser vulnerability class does not exist here. CA pinning has
-    been evaluated and declined: the measurable costs (6 to 15 kB of
-    flash, one extra verify per chain link) are affordable, but it
-    readmits the parser class, needs a trusted clock for validity, and
-    a pinned public CA without name checking turns every certificate
-    that CA ever issued into a skeleton key.
-12. **Key rotation is a second pin slot, not CA indirection.** Cost: 16
-    bytes of config and an out-of-band recovery path for devices that
-    miss both pushes. Gain: rotation without a fleet flag day, inside
-    the trust model we already have. See docs/rotation.md.
+11. **Raw-pin builds hash certificates into the transcript, never
+    parse them.** No X.509, no chains, no names, no expiry, no
+    revocation, no trusted clock. Cost: no PKI; the operator
+    provisions a key. Gain: the DER-parser vulnerability class does
+    not exist in those builds. CA pinning was first declined on three
+    objections: it readmits the parser class, needs a trusted clock
+    for validity, and a pinned CA without name checking turns every
+    certificate that CA ever issued into a skeleton key. The
+    `TRUST=ca` build (entry 14) later answered each objection on its
+    own terms. The profile removes the clock objection by design: the
+    device reads no validity values, and freshness moves to
+    reissuance policy. It contains the parser objection by proof: a
+    fixed-grammar canonical-DER parser with CBMC memory-safety
+    proofs, a Lean differential oracle, and a fuzz harness. And it
+    accepts the skeleton-key objection and scopes it: the pinned key
+    must belong to a CA dedicated to the fleet, every leaf carries
+    `extendedKeyUsage` exactly serverAuth, and docs/ca.md makes
+    exclusivity of the pinned key the operator's contract.
+12. **Key rotation is a second pin slot.** Cost: 16 bytes of config
+    and an out-of-band recovery path for devices that miss both
+    pushes. Gain: rotation without a fleet flag day, inside the trust
+    model we already have. CA builds layer CA indirection on top of
+    the same two slots: the slots hold CA keys, routine server-key
+    rotation becomes reissuance and never touches devices, and the
+    slot pair rotates the CA key itself. See docs/rotation.md.
 13. **Tickets make both auth modes cheap.** Reconnects resume over PSK,
     so pinned mode pays its signature verification once per ticket
     lifetime; the recurring cost of any handshake is the two x25519
     operations.
+14. **CA trust is a build, not a negotiation.** `make TRUST=ca` pins a
+    CA public key in the pin slots and verifies the server's chain — a
+    leaf alone, or the leaf plus one intermediate — against it with a
+    profiled parser: canonical DER, the build's one signature
+    algorithm throughout, a fixed extension profile, signatures and
+    shape only. Cost: the parser's flash and stack, one or two extra
+    signature verifies on each full handshake, a receive-buffer floor
+    derived from the certificate cap, and no device-side revocation —
+    a stolen leaf key keeps authenticating until the CA key rotates,
+    because the device reads no dates. Gain: server keys rotate by
+    reissuance with zero device touches, and one pin covers a fleet
+    of servers. Freshness is issuance policy, not device state: short
+    leaf lifetimes and a monitored reissuance pipeline do the work
+    that expiry checking would. docs/ca.md is the operational
+    contract that makes the small device-side check sufficient.
+15. **Public CAs stay a non-goal.** Cost: operators run a dedicated CA
+    or contract a dedicated intermediate. Gain: the device keeps
+    needing no clock and no name matching — a public CA's trust model
+    requires both, and Let's Encrypt's signature algorithms sit
+    outside the profile besides. A public-CA-fronted server still
+    works through raw-pin mode with a stable server key. docs/ca.md
+    records the argument and the workable arrangements with external
+    CAs.
 
 ## Memory and runtime
 
-14. **Zero heap.** One caller-allocated session struct plus one
+16. **Zero heap.** One caller-allocated session struct plus one
     caller-provided receive buffer. Cost: the caller sizes memory up
     front. Gain: no allocator, no out-of-memory paths, and bounds the
     proofs can state exactly.
-15. **`record_size_limit` is the receive buffer's size.** Cost:
+17. **`record_size_limit` is the receive buffer's size.** Cost:
     strictness toward peers that ignore RFC 8449 — an oversized record
     is a protocol error, not a resize. Gain: a peer can never send what
     the buffer cannot hold.
-16. **Single task, single connection.** The reference random generator
+18. **Single task, single connection.** The reference random generator
     is opt-in source with global state, excluded from the packaged
     object. Cost: no multi-session generator isolation. Gain:
     `ch_rand_bytes` stays a clean import that firmware replaces; see
     docs/entropy.md.
-17. **Every operational error fails closed**: alert, wipe keys, dead
+19. **Every operational error fails closed**: alert, wipe keys, dead
     session, caller reconnects. Cost: no graceful recovery. Gain: the
     entire resumable-error state space is removed from the code and the
     proofs. Corollary: `CH_EINVAL` (invalid configuration, nothing
     sent) is distinct from `CH_ECAP` (runtime capacity), so
     provisioning corruption never reads as an attack on the wire.
 
-18. **One TX staging array, sized per build.** The ClientHello
+20. **One TX staging array, sized per build.** The ClientHello
     builder and the sealed-record path share the session's TX array;
     their lifetimes never overlap. A build whose hello outgrows one
     sealed record (a PQ key share) raises `CH_TX_STAGE` for that build
@@ -112,18 +149,20 @@ does nothing more.
     hello stays rejected: the PSK binder is an HMAC over the
     contiguous truncated hello, so a streaming builder would buffer
     the message anyway.
-19. **The receive-buffer floor is a build constant.** `ch_connect`
+21. **The receive-buffer floor is a build constant.** `ch_connect`
     checks `buf_len` against `CH_MIN_RXBUF` before anything is sent.
     A feature that needs more room raises the constant, so a
     too-small buffer fails at setup with `CH_EINVAL`, not
     mid-handshake with `CH_ECAP`, where it would read like an attack.
-    The floor covers only what the build can know: a pinned server's
-    chain is the server's choice, so pinned deployments size above
-    the floor.
+    The floor covers only what the build can know: a raw-pin server's
+    chain is the server's choice, so raw-pin deployments size above
+    the floor. A CA build does know its worst case — the certificate
+    cap bounds the chain — so it derives the floor from the cap
+    instead of picking a number: `2*(CH_X509_MAX+5)+16`.
 
 ## Assurance
 
-20. **Bounded model checking, layered, with a published ledger.** Leaf
+22. **Bounded model checking, layered, with a published ledger.** Leaf
     modules prove concrete; upper layers prove against
     contract-checking stubs of the proven layer below. Where a formula
     will not converge, the harness pins a representative bound and
@@ -131,13 +170,13 @@ does nothing more.
     proofs that finish, and claims nobody has to take on faith — the
     README states what is proved, at what bound, and what is only
     tested.
-21. **The Lean spec is written from the RFCs, never from the C**, is
+23. **The Lean spec is written from the RFCs, never from the C**, is
     partial exactly where the RFCs are partial, and carries theorems
     about itself. Cost: everything is implemented twice. Gain: a shared
     misreading of an RFC cannot make both sides agree, and each
     C-versus-spec agreement transfers a proven property, not just a
     matching answer.
-22. **The RFC 8448 replay stops at secrets and MACs.** The traces
+24. **The RFC 8448 replay stops at secrets and MACs.** The traces
     protect records with AES-128-GCM, which this stack excludes, and
     sign with an RSA-1024 key, below the verifier's floor — so the
     tests check the floor holds, then verify the trace's
@@ -147,26 +186,26 @@ does nothing more.
 
 ## Engineering
 
-23. **Four exported symbols.** The library packages as one relocatable
+25. **Four exported symbols.** The library packages as one relocatable
     object; partial linking plus symbol localization does the
     namespacing, so sources keep natural names and applications cannot
     collide with internals.
-24. **CI compiles with gcc on purpose** while development machines run
+26. **CI compiles with gcc on purpose** while development machines run
     clang: consumers are firmware trees whose vendor SDKs ship gcc
     cross-compilers, so gcc-only diagnostics belong in CI. Between the
     two, both major compiler families stay covered without a second CI
     leg.
-25. **Tool versions pin to the development machine's.** When the local
+27. **Tool versions pin to the development machine's.** When the local
     toolchain upgrades, the CI pins bump in the same commit. Code never
     adapts to an older checker.
-26. **Two proof solvers, each where its memory profile fits.** kissat
+28. **Two proof solvers, each where its memory profile fits.** kissat
     runs the fast tier (measured: verdicts in seconds to minutes where
     the built-in solver ran for hours); CI's slow tier keeps the
     built-in solver, because the external-solver path materializes the
     whole formula and exhausts a 16 GB runner. Verdicts are
     solver-independent. A content-keyed cache re-proves only what
     changed.
-27. **Third-party audit is the optimization target.** Every
+29. **Third-party audit is the optimization target.** Every
     review-facing trade — spelled-out names, the complexity-15 gate,
     pure predicates with state changes on their own lines, pinned
     byte constants instead of decode-and-judge — pays a little
@@ -174,3 +213,14 @@ does nothing more.
     more named helpers than the terse form. Gain: a security library
     earns trust through reviewers who did not write it, and every
     clever compression taxes each of them.
+30. **Assertions live at proof time; runtime keeps contract-point
+    guards.** TigerStyle asserts the negative space at runtime, two
+    per function, on in production. chapulin moves that space into
+    the CBMC layer — 193 proof assertions checked over every input
+    at the bound — because on an unattended device an abort on
+    hostile input is the denial of service. Runtime keeps only
+    contract-point guards that no input can trigger (state-enum
+    validity at the API entries), which also cover corrupted memory.
+    Cost: hardware faults mid-connection surface as failed
+    handshakes, not named aborts. Gain: exhaustive checking where
+    inputs are hostile, and no abort path an attacker can reach.

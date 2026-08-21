@@ -12,6 +12,7 @@
 #include <stdint.h>
 
 #include "buf.h"
+#include "cfg.h"
 
 // Largest single certificate the parser admits. Measured realistic
 // leaves and intermediates: 412..449 bytes (P-256), 1168..1205 bytes
@@ -19,19 +20,6 @@
 // extensions. A build with bigger certificates raises it; the
 // receive buffer must hold the whole Certificate flight, up to two
 // certificates plus framing.
-// The per-algorithm defaults, named so the mirrors derive from one
-// definition: the differential driver and the mutation kit size
-// their material from these, and spec/Spec/X509.lean pins the same
-// two numbers as the spec's modeled caps.
-#define CH_X509_DEFAULT_MAX_RSA 1536
-#define CH_X509_DEFAULT_MAX_ECDSA 768
-#ifndef CH_X509_MAX
-#ifdef CH_PIN_ECDSA
-#define CH_X509_MAX CH_X509_DEFAULT_MAX_ECDSA
-#else
-#define CH_X509_MAX CH_X509_DEFAULT_MAX_RSA
-#endif
-#endif
 #ifndef __cplusplus
 _Static_assert(CH_X509_MAX >= 512, "the smallest real leaf needs room");
 _Static_assert(CH_X509_MAX <= 0x3fe0, "a Certificate message must fit one handshake message");
