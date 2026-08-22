@@ -250,7 +250,14 @@ GCOV_TOOL := $(shell $(CC) --version 2>/dev/null | grep -qi clang \
 COV_CC = $(CC) --coverage -O0 -std=c11 -D_DEFAULT_SOURCE $$def -I.
 COV_LIB_OBJS = $(SRCS:%.c=$$d/%.o)
 .PHONY: coverage
-coverage:
+# What the Lean spec checks: which spec ops any driver exercises, and
+# how much of each shipping source the differential reaches on its own.
+# Lean has no line-coverage tool, so the C side is measured instead —
+# it answers the question that matters, which is how much of the code
+# that ships is checked against an independent model. Slow (an -O0
+# instrumented build), so it runs nightly rather than per PR.
+.PHONY: spec-coverage
+spec-coverage:
 ifeq ($(LAKE),)
 	$(call REQUIRE_ON_CI,lake)
 	@echo "SKIP spec-coverage: lake not on PATH (install elan: https://leanprover.github.io)"

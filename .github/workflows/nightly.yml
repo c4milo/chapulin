@@ -118,6 +118,29 @@ jobs:
           done
           echo "$runs random seeds, no mismatch" >> "$GITHUB_STEP_SUMMARY"
 
+  # What the Lean spec checks, rendered on the run page like the C
+  # coverage table. Nightly because the instrumented build is -O0.
+  spec-coverage:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install elan
+        run: |
+          curl -sSf https://elan.lean-lang.org/elan-init.sh | sh -s -- -y --default-toolchain none
+          echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
+      - name: Cache Lean toolchain and build
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.elan
+            spec/.lake
+          key: lean-${{ hashFiles('spec/lean-toolchain', 'spec/lakefile.toml', 'spec/lake-manifest.json') }}
+      - run: make spec-coverage
+      - name: Render the spec coverage table on the run page
+        if: always()
+        run: cat bin/spec-coverage.md >> "$GITHUB_STEP_SUMMARY" 2>/dev/null || true
+
   # The ECDSA-arm differential: the PR lane's bin/diff compiles the
   # RSA parser, so the P-256 certificate rows meet real C only here.
   diff-ecdsa:
@@ -189,7 +212,7 @@ jobs:
   # per broken night unless an open nightly-failure issue already
   # exists.
   report:
-    needs: [prove-slow, diff-random, diff-ecdsa, san-deep, mips-ubsan, fuzz]
+    needs: [prove-slow, diff-random, diff-ecdsa, spec-coverage, san-deep, mips-ubsan, fuzz]
     if: failure()
     runs-on: ubuntu-24.04
     permissions:
