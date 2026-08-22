@@ -97,6 +97,12 @@ jobs:
       CLANG_FORMAT: clang-format-22
       CPPCHECK_VERSION: 2.21.0
       CPPCHECK: /home/runner/cppcheck-inst/bin/cppcheck
+      # The runner image ships OpenSSL 3.0, which predates the
+      # `x509 -req -not_before` flag that docs/ca.md tells operators to
+      # use for epoch dates. Pinning the development version keeps e2e
+      # on the documented recipe instead of the 3.0 fallback.
+      OPENSSL_VERSION: 3.6.3
+      OPENSSL_PREFIX: /home/runner/openssl-inst
     steps:
       - uses: actions/checkout@v7
         with:
@@ -107,6 +113,38 @@ jobs:
           wget -qO llvm.sh https://apt.llvm.org/llvm.sh
           sudo bash llvm.sh "$LLVM_MAJOR"
           sudo apt-get install -y "clang-tidy-$LLVM_MAJOR" "clang-format-$LLVM_MAJOR"
+
+      - name: Cache OpenSSL install
+        id: openssl-cache
+        uses: actions/cache@v6
+        with:
+          path: ~/openssl-inst
+          key: openssl-${{ runner.os }}-${{ env.OPENSSL_VERSION }}-inst
+
+      - name: Build and install OpenSSL at the development version
+        if: steps.openssl-cache.outputs.cache-hit != 'true'
+        # no-shared so the app carries its own libcrypto: no
+        # LD_LIBRARY_PATH, and no chance of binding the system 3.0.
+        # no-docs skips the pod2man pass, which is most of the build.
+        run: |
+          curl -fsSL "https://github.com/openssl/openssl/releases/download/openssl-$OPENSSL_VERSION/openssl-$OPENSSL_VERSION.tar.gz" | tar xz
+          cd "openssl-$OPENSSL_VERSION"
+          ./Configure --prefix="$OPENSSL_PREFIX" --openssldir="$OPENSSL_PREFIX/ssl" \
+            no-shared no-docs
+          make -j"$(nproc)"
+          make install_sw
+
+      - name: Put the pinned OpenSSL first on PATH
+        run: |
+          echo "$OPENSSL_PREFIX/bin" >> "$GITHUB_PATH"
+
+      - name: Show which OpenSSL e2e will use
+        run: |
+          command -v openssl
+          openssl version
+          openssl x509 -help 2>&1 | grep -q -- '-not_before' \
+            && echo "e2e will use the documented -not_before recipe" \
+            || { echo "pinned OpenSSL lacks -not_before"; exit 1; }
 
       - name: Cache cppcheck install
         id: cppcheck-cache

@@ -405,12 +405,62 @@ expect_fail ca-noncanonical -2 "$DIR/err13" \
 # replays the bump must kill (docs/ca.md). Epoch 2 is 000103000000Z and
 # epoch 3 is 000104000000Z; notAfter stays 491231235959Z so wall-clock
 # tooling keeps working.
+# `openssl ca` rather than `openssl x509 -req`: the -not_before flag
+# that would set an absolute date on x509 arrived in OpenSSL 3.4, and
+# Ubuntu 24.04 ships 3.0. `ca -startdate` does the same job back to
+# 3.0, at the cost of the config, index, and serial files below.
+cat > "$DIR/epochca.cnf" <<EOF
+[ca]
+default_ca = epoch_ca
+[epoch_ca]
+dir = $DIR
+database = $DIR/index.txt
+serial = $DIR/serial
+new_certs_dir = $DIR
+certificate = $DIR/caint.pem
+private_key = $DIR/caint.key
+default_md = sha256
+policy = policy_any
+email_in_dn = no
+unique_subject = no
+x509_extensions = leaf_exts
+[policy_any]
+commonName = supplied
+[leaf_exts]
+keyUsage = critical, digitalSignature
+extendedKeyUsage = serverAuth
+basicConstraints = CA:FALSE
+EOF
+: > "$DIR/index.txt"
+echo 01 > "$DIR/serial"
+
+# Prefer the recipe docs/ca.md tells operators to use. `x509 -req
+# -not_before` arrived in OpenSSL 3.4; where it is missing, fall back
+# to `ca -startdate`, which reaches back to 3.0 and keeps the suite
+# runnable on an LTS distro. EPOCH_ISSUER=ca forces the fallback so
+# both paths get exercised.
+if [ "${EPOCH_ISSUER:-}" != "ca" ] &&
+   "$OPENSSL" x509 -help 2>&1 | grep -q -- '-not_before'; then
+    EPOCH_ISSUER=x509
+else
+    EPOCH_ISSUER=ca
+fi
+
 epoch_leaf() {
     local date=$1 out=$2
-    "$OPENSSL" req -new -key "$DIR/caleaf.key" -subj /CN=controller-01 2>/dev/null |
-    "$OPENSSL" x509 -req -CA "$DIR/caint.pem" -CAkey "$DIR/caint.key" \
-        -not_before "$date" -not_after 491231235959Z \
-        "${PSS[@]}" -extfile "$DIR/leaf.cnf" -out "$out" 2>/dev/null
+    "$OPENSSL" req -new -key "$DIR/caleaf.key" -subj /CN=controller-01 \
+        -out "$DIR/epoch.csr" 2>/dev/null
+    if [ "$EPOCH_ISSUER" = x509 ]; then
+        "$OPENSSL" x509 -req -in "$DIR/epoch.csr" -CA "$DIR/caint.pem" \
+            -CAkey "$DIR/caint.key" -not_before "$date" -not_after 491231235959Z \
+            "${PSS[@]}" -extfile "$DIR/leaf.cnf" -out "$out" 2>/dev/null
+    else
+        "$OPENSSL" ca -batch -config "$DIR/epochca.cnf" -in "$DIR/epoch.csr" \
+            -out "$out" -notext -startdate "$date" -enddate 491231235959Z \
+            -md sha256 -sigopt rsa_padding_mode:pss -sigopt rsa_pss_saltlen:32 \
+            >/dev/null 2>&1
+    fi
+    [ -s "$out" ] || { echo "FAIL e2e ca-epoch: could not issue at $date"; exit 1; }
 }
 epoch_leaf 000103000000Z "$DIR/epoch2.pem"
 epoch_leaf 000104000000Z "$DIR/epoch3.pem"
