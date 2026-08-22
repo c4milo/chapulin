@@ -15,11 +15,16 @@ this scale, strongest first:
    is no code path that could break it without rewriting the
    construction.
 3. *CBMC* — proved over all inputs at the harness's documented bound.
-4. *semgrep-structural* — a call-graph or state rule; catches any
+4. *Lean theorem* — proved over every input, unbounded, but of the
+   `spec/` model rather than the C. It reaches the C only through the
+   differential's agreement, so it ranks here: stronger than a
+   syntactic rule about what the code says, weaker than CBMC about
+   what the code does.
+5. *semgrep-structural* — a call-graph or state rule; catches any
    syntactic violation, honest or not.
-5. *semgrep-tripwire* — an identifier ban; catches honest drift, not a
+6. *semgrep-tripwire* — an identifier ban; catches honest drift, not a
    determined reintroduction under another name.
-6. *convention + t-test* — code review holds the line; `make timing`
+7. *convention + t-test* — code review holds the line; `make timing`
    gives statistical evidence after the fact.
 
 **Violation** is what a breaking PR looks like, so review knows the
@@ -225,8 +230,12 @@ which convention holds them.
   `rec_dir_update` is the only reset; the epoch cap lives in
   `handle_key_update`.
 - **Check.** CBMC (record and tlspost harnesses cover the guards);
-  semgrep-structural (`inv-10-seq-reset-only-in-record`): no
-  `.seq = 0` assignment outside record.c.
+  Lean theorem (`Spec.Record.nonce_inj`): distinct sequence numbers
+  below 2^64 give distinct nonces, so a repeat needs a repeated
+  counter, not a colliding construction — the counter half stays with
+  the mechanisms below; semgrep-structural
+  (`inv-10-seq-reset-only-in-record`): no `.seq = 0` assignment
+  outside record.c.
 - **Violation.** A PR resets a sequence counter from the handshake
   layer to "fix" a desync, and a nonce repeats under one key.
 - See [decisions: Cryptography](decisions.md#cryptography).
@@ -318,6 +327,32 @@ which convention holds them.
   construction and the t-test.
 - **Violation.** A PR compares a binder or tag with memcmp because
   the linker size looked better.
+- See [decisions: Cryptography](decisions.md#cryptography).
+
+### INV-22 — the server's flight arrives in one order
+
+- **Claim.** The client accepts exactly the server message orders
+  RFC 9846 §4 allows and no others: one ServerHello, one
+  EncryptedExtensions, no certificate flight under PSK, Certificate
+  then CertificateVerify then Finished under a pinned key, at most one
+  HelloRetryRequest and only as the opening message, no ticket, key
+  update, or application data before the Finished, and nothing after a
+  close_notify.
+- **Mechanism.** `handshake.c` reads the flight as a straight line —
+  `hello_exchange`, then `server_auth`, then `expect_finished` — and
+  each step compares the message type against the one it expects,
+  answering `ALERT_UNEXPECTED_MESSAGE` otherwise. There is no state
+  variable to desynchronize; the order is the call order.
+- **Check.** Lean theorem (17 in `Spec/Handshake.lean`, over every
+  trace the model admits, `accepts_decompose` bounding the flight at 4
+  messages under PSK and 6 under a pinned key); `hsseq_test`,
+  exhaustive over all 354,312 sequences to depth 5 in both auth modes,
+  comparing the real client's verdict against that model; CBMC
+  (`handshake` harness) for memory safety only, not for order.
+- **Violation.** A PR relaxes one type check to tolerate a message a
+  peer "usually" sends early, and a flight with a skipped
+  CertificateVerify authenticates. This is the SMACK and FREAK class:
+  invisible to memory-safety proofs and to a golden-path e2e run.
 - See [decisions: Cryptography](decisions.md#cryptography).
 
 ## Lifetime and state
