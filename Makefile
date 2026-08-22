@@ -203,6 +203,7 @@ check: bin/unit bin/unit_ca bin/tlsclient bin/tlsclient_ecdsa bin/tlsclient_ca b
 	./test/e2e.sh
 	$(MAKE) diff
 	./bin/hsseq_test
+	$(MAKE) proof-coverage
 	$(MAKE) prove
 
 # The ECDSA-arm differential: bin/diff compiles the RSA parser, so
@@ -251,8 +252,11 @@ COV_CC = $(CC) --coverage -O0 -std=c11 -D_DEFAULT_SOURCE $$def -I.
 COV_LIB_OBJS = $(SRCS:%.c=$$d/%.o)
 .PHONY: coverage
 # What CBMC proves: which sources a running harness compiles, and any
-# harness that exists but no launch line starts. Static and fast, so
-# it runs in check; --reach adds a slow cbmc pass and stays nightly.
+# harness that exists but no launch line starts. A static scan of a
+# tenth of a second, so check runs it and a harness added without a
+# launch line is caught on the same PR. It reports rather than fails:
+# the gaps it finds today are known and tracked. --reach adds a slow
+# cbmc pass and stays nightly.
 .PHONY: proof-coverage
 proof-coverage:
 	python3 proof/coverage.py

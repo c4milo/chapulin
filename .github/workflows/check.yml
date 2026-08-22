@@ -271,6 +271,9 @@ jobs:
           restore-keys: proofs-${{ runner.os }}-
 
       - run: make check
+      - name: Render what CBMC proves on the run page
+        if: always()
+        run: cat bin/proof-coverage.md >> "$GITHUB_STEP_SUMMARY" 2>/dev/null || true
 
       # The four SAT heavyweights run in the nightly workflow; this job
       # gates pushes and PRs in minutes with the fast tier.
