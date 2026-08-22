@@ -509,6 +509,7 @@ static void diff_x25519_base(void) {
 
 int main(int argc, char **argv) {
     const char *path = argc > 1 ? argv[1] : "spec/.lake/build/bin/diffspec";
+    (void)printf("diff: seed 0x%016llx\n", (unsigned long long)rng_seed_from_env());
     spawn_spec(path);
     expect("selftest", "ok");
     diff_sha256();

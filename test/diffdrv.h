@@ -10,9 +10,30 @@
 #include <string.h>
 #include <unistd.h>
 
-// xorshift64 with a fixed seed: every run replays the same inputs, so a
-// mismatch is reproducible bit-for-bit. Never seeded from time().
-static uint64_t rng_state = UINT64_C(0x6d617461736170f5);
+// xorshift64. The default seed is fixed, so an ordinary run replays
+// the same inputs and any mismatch reproduces bit for bit. That also
+// means a fixed-seed run explores nothing new once it has passed, so
+// the nightly lane sets CH_DIFF_SEED to a different value each night
+// and the driver prints the seed it used. A failure there replays by
+// setting the same value. Never seed from time(): a seed nobody
+// recorded is a failure nobody can reproduce.
+#define CH_DIFF_DEFAULT_SEED UINT64_C(0x6d617461736170f5)
+static uint64_t rng_state = CH_DIFF_DEFAULT_SEED;
+
+// Reads CH_DIFF_SEED, if set, as the seed. Returns the seed in use so
+// the caller can print it. A value that is not a number, or zero,
+// keeps the default: xorshift64 is all zeroes forever from zero.
+static inline uint64_t rng_seed_from_env(void) {
+    const char *text = getenv("CH_DIFF_SEED");
+    if (text != NULL) {
+        char *end = NULL;
+        unsigned long long value = strtoull(text, &end, 0);
+        if (end != text && *end == 0 && value != 0) {
+            rng_state = (uint64_t)value;
+        }
+    }
+    return rng_state;
+}
 
 static inline uint64_t rng_next(void) {
     uint64_t x = rng_state;

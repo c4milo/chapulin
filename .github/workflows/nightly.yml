@@ -60,6 +60,64 @@ jobs:
           path: proof/results/
           if-no-files-found: ignore
 
+  # Randomized differential, time-boxed. The PR lane runs the built-in
+  # seed so a failure there reproduces bit for bit. This lane draws a
+  # fresh seed per run and keeps going until its budget runs out, so
+  # the oracle explores inputs no earlier run has tried.
+  #
+  # Only a real mismatch fails the job. Running out of budget is the
+  # normal ending, not a failure: the point is to search for as long as
+  # the window allows, not to finish a fixed list. Each run takes about
+  # 30 seconds, so a 20-minute budget covers roughly 40 seeds and
+  # 130,000 comparisons.
+  #
+  # A failure prints the seed that found it. CH_DIFF_SEED replays that
+  # exact run anywhere, which is why the seed is drawn once and echoed
+  # rather than taken from the clock.
+  diff-random:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install elan
+        run: |
+          curl -sSf https://elan.lean-lang.org/elan-init.sh | sh -s -- -y --default-toolchain none
+          echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
+      - name: Cache Lean toolchain and build
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.elan
+            spec/.lake
+          key: lean-${{ hashFiles('spec/lean-toolchain', 'spec/lakefile.toml', 'spec/lake-manifest.json') }}
+      - name: Search random seeds until the budget runs out
+        env:
+          BUDGET_SECONDS: "1200"
+        run: |
+          set -uo pipefail
+          make bin/diff || exit 1
+          deadline=$(( $(date +%s) + BUDGET_SECONDS ))
+          runs=0
+          while [ "$(date +%s)" -lt "$deadline" ]; do
+            seed="0x$(openssl rand -hex 8)"
+            if ! output=$(CH_DIFF_SEED="$seed" ./bin/diff 2>&1); then
+              printf '%s\n' "$output" | tail -25
+              {
+                echo "### The differential found a mismatch"
+                echo
+                echo "Seed \`$seed\`, after $runs clean runs. Reproduce with:"
+                echo
+                echo '```'
+                echo "CH_DIFF_SEED=$seed make diff"
+                echo '```'
+              } >> "$GITHUB_STEP_SUMMARY"
+              exit 1
+            fi
+            runs=$(( runs + 1 ))
+            echo "seed $seed OK ($runs)"
+          done
+          echo "$runs random seeds, no mismatch" >> "$GITHUB_STEP_SUMMARY"
+
   # The ECDSA-arm differential: the PR lane's bin/diff compiles the
   # RSA parser, so the P-256 certificate rows meet real C only here.
   diff-ecdsa:
@@ -131,7 +189,7 @@ jobs:
   # per broken night unless an open nightly-failure issue already
   # exists.
   report:
-    needs: [prove-slow, san-deep, mips-ubsan, fuzz]
+    needs: [prove-slow, diff-random, diff-ecdsa, san-deep, mips-ubsan, fuzz]
     if: failure()
     runs-on: ubuntu-24.04
     permissions:
