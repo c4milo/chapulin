@@ -558,6 +558,206 @@ theorem closeNotify_last (mode : Mode) (msgs : List Msg)
     subst hsc
     exact foldlM_closed_nil mode r t hfold
 
+/--
+A post-handshake message keeps the client connected (RFC 9846 §4.7.1,
+§4.7.3, §5.1: tickets, key updates, and application data carry no state
+change beyond their own effect), so a whole run of them leaves the
+state at `connected`.
+-/
+theorem connected_stable (mode : Mode) (post : List Msg)
+    (h : ∀ x ∈ post, isPostHandshake x = true) :
+    post.foldlM (step mode) State.connected = some State.connected := by
+  revert h
+  induction post with
+  | nil => intro _; rfl
+  | cons x xs ih =>
+    intro h
+    have hx : isPostHandshake x = true := h x (by simp)
+    have hstep : step mode State.connected x = some State.connected := by
+      cases x <;> simp [isPostHandshake] at hx <;> rfl
+    rw [List.foldlM_cons, hstep]
+    simpa using ih (fun y hy => h y (by simp [hy]))
+
+/-- Longest flight, in messages, that reaches `connected`: four under
+PSK (HelloRetryRequest, ServerHello, EncryptedExtensions, Finished) and
+six under a pinned key, which adds Certificate and CertificateVerify
+(RFC 9846 §2.2, §4.2.4, §4.5). -/
+def flightBound : Mode → Nat
+  | .psk => 4
+  | .pinned => 6
+
+/-- Messages taken to arrive at a state, at most. `start` is the
+fresh-ClientHello state, so it costs nothing; each further state costs
+one more message than the state before it in the §4 order. -/
+private def flightRank : Mode → State → Nat
+  | _, .start => 0
+  | _, .retried => 1
+  | _, .gotSH => 2
+  | .psk, .awaitCert => 1
+  | .psk, .awaitCV => 2
+  | .psk, .awaitFin => 3
+  | .psk, .connected => 4
+  | .psk, .closed => 5
+  | .pinned, .awaitCert => 3
+  | .pinned, .awaitCV => 4
+  | .pinned, .awaitFin => 5
+  | .pinned, .connected => 6
+  | .pinned, .closed => 7
+
+/-- Every step before the handshake completes costs at least one rank,
+so the rank counts the messages spent so far. The `connected` state is
+the exception: §4.7 traffic returns to it without advancing. -/
+private theorem step_flightRank (mode : Mode) (s s' : State) (m : Msg)
+    (hs : s ≠ State.connected) (h : step mode s m = some s') :
+    flightRank mode s + 1 ≤ flightRank mode s' := by
+  cases mode <;> cases s <;> simp at hs <;> cases m <;> simp [step] at h <;>
+    cases h <;> simp [flightRank]
+
+/-- Only close_notify from `connected` reaches the closed state
+(RFC 9846 §6.1). -/
+private theorem step_closed_source (mode : Mode) (s : State) (m : Msg)
+    (h : step mode s m = some State.closed) : s = State.connected := by
+  cases mode <;> cases s <;> cases m <;> simp [step] at h <;> rfl
+
+/-- From `connected` a successful step either takes a post-handshake
+message and stays, or takes close_notify and closes (RFC 9846 §4.7,
+§5.1, §6.1). -/
+private theorem step_connected_cases (mode : Mode) (m : Msg) (s' : State)
+    (h : step mode State.connected m = some s') :
+    (isPostHandshake m = true ∧ s' = State.connected) ∨
+      (m = Msg.closeNotify ∧ s' = State.closed) := by
+  cases mode <;> cases m <;> simp [step] at h <;> cases h <;>
+    simp [isPostHandshake]
+
+/-- An error-free run that starts connected is post-handshake traffic
+followed by at most one close_notify. -/
+private theorem foldlM_from_connected (mode : Mode) :
+    ∀ (msgs : List Msg) (t : State),
+      msgs.foldlM (step mode) State.connected = some t →
+      ∃ ph tail, msgs = ph ++ tail ∧ (∀ x ∈ ph, isPostHandshake x = true) ∧
+        (tail = [] ∨ tail = [Msg.closeNotify]) := by
+  intro msgs
+  induction msgs with
+  | nil => intro _ _; exact ⟨[], [], rfl, by simp, Or.inl rfl⟩
+  | cons x xs ih =>
+    intro t h
+    simp only [List.foldlM_cons] at h
+    cases hx : step mode State.connected x with
+    | none => rw [hx] at h; simp at h
+    | some s1 =>
+      rw [hx] at h
+      simp at h
+      rcases step_connected_cases mode x s1 hx with ⟨hph, rfl⟩ | ⟨rfl, rfl⟩
+      · obtain ⟨ph, tail, hsplit, hph', htail⟩ := ih t h
+        refine ⟨x :: ph, tail, by rw [hsplit]; rfl, ?_, htail⟩
+        intro y hy
+        rcases List.mem_cons.mp hy with rfl | hy
+        · exact hph
+        · exact hph' y hy
+      · have hnil : xs = [] := foldlM_closed_nil mode xs t h
+        subst hnil
+        exact ⟨[], [Msg.closeNotify], rfl, by simp, Or.inr rfl⟩
+
+/-- Every error-free run that ends connected or closed splits at the
+point the client connects: a flight that reaches `connected`, bounded
+in length by the rank it climbs, and a remainder. -/
+private theorem foldlM_flight (mode : Mode) :
+    ∀ (msgs : List Msg) (s t : State), s ≠ State.closed →
+      msgs.foldlM (step mode) s = some t →
+      (t = State.connected ∨ t = State.closed) →
+      ∃ pre rest, msgs = pre ++ rest ∧
+        pre.foldlM (step mode) s = some State.connected ∧
+        flightRank mode s + pre.length ≤ flightRank mode State.connected := by
+  intro msgs
+  induction msgs with
+  | nil =>
+    intro s t hs h ht
+    simp only [List.foldlM_nil] at h
+    cases h
+    rcases ht with rfl | rfl
+    · exact ⟨[], [], rfl, rfl, by simp⟩
+    · exact absurd rfl hs
+  | cons x xs ih =>
+    intro s t hs h ht
+    cases Decidable.em (s = State.connected) with
+    | inl hc =>
+      subst hc
+      exact ⟨[], x :: xs, rfl, rfl, by simp⟩
+    | inr hc =>
+      simp only [List.foldlM_cons] at h
+      cases hx : step mode s x with
+      | none => rw [hx] at h; simp at h
+      | some s1 =>
+        rw [hx] at h
+        simp at h
+        have hs1 : s1 ≠ State.closed := by
+          intro he
+          subst he
+          exact hc (step_closed_source mode s x hx)
+        obtain ⟨pre, rest, hsplit, hpre, hlen⟩ := ih s1 t hs1 h ht
+        refine ⟨x :: pre, rest, by rw [hsplit]; rfl, ?_, ?_⟩
+        · rw [List.foldlM_cons, hx]
+          simpa using hpre
+        · have hr := step_flightRank mode s s1 x hc hx
+          simp only [List.length_cons]
+          omega
+
+/--
+Flight decomposition. Every accepting trace splits into three parts:
+the flight that completes the handshake, post-handshake traffic, and at
+most one close_notify. The flight ends at `connected`, so it is the
+whole handshake (RFC 9846 §4), and it is at most `flightBound mode`
+messages long. What follows the flight is only §4.7/§5.1 traffic and
+the §6.1 close_notify, which `connected_stable` and `step` show cannot
+change whether the trace accepts, so enumerating flights up to
+`flightBound mode` covers every accepting trace.
+-/
+theorem accepts_decompose (mode : Mode) (msgs : List Msg)
+    (h : accepts mode msgs = true) :
+    ∃ pre ph tail, msgs = pre ++ ph ++ tail ∧
+      pre.length ≤ flightBound mode ∧
+      pre.foldlM (step mode) State.start = some State.connected ∧
+      (∀ x ∈ ph, isPostHandshake x = true) ∧
+      (tail = [] ∨ tail = [Msg.closeNotify]) := by
+  obtain ⟨t, hfold, ht⟩ := (accepts_iff mode msgs).mp h
+  obtain ⟨pre, rest, hsplit, hpre, hlen⟩ :=
+    foldlM_flight mode msgs State.start t (by simp) hfold ht
+  have hrest : rest.foldlM (step mode) State.connected = some t := by
+    rw [hsplit, List.foldlM_append, hpre] at hfold
+    simpa using hfold
+  obtain ⟨ph, tail, hsplit2, hph, htail⟩ := foldlM_from_connected mode rest t hrest
+  refine ⟨pre, ph, tail, ?_, ?_, hpre, hph, htail⟩
+  · rw [hsplit, hsplit2, List.append_assoc]
+  · have hstart : flightRank mode State.start = 0 := by cases mode <;> rfl
+    have hconn : flightRank mode State.connected = flightBound mode := by
+      cases mode <;> rfl
+    omega
+
+/--
+The converse of `accepts_decompose`: any flight that reaches
+`connected`, followed by post-handshake traffic and at most one
+close_notify, accepts. With the decomposition this makes the flights of
+at most `flightBound mode` messages an exact account of what accepts.
+-/
+theorem accepts_of_flight (mode : Mode) (pre ph tail : List Msg)
+    (hpre : pre.foldlM (step mode) State.start = some State.connected)
+    (hph : ∀ x ∈ ph, isPostHandshake x = true)
+    (htail : tail = [] ∨ tail = [Msg.closeNotify]) :
+    accepts mode (pre ++ ph ++ tail) = true := by
+  have hfold : (pre ++ ph).foldlM (step mode) State.start = some State.connected := by
+    rw [List.foldlM_append, hpre]
+    simpa using connected_stable mode ph hph
+  rcases htail with rfl | rfl
+  · rw [List.append_nil]
+    unfold accepts
+    rw [hfold]
+  · have hclose : (pre ++ ph ++ [Msg.closeNotify]).foldlM (step mode) State.start
+        = some State.closed := by
+      rw [List.foldlM_append, hfold]
+      rfl
+    unfold accepts
+    rw [hclose]
+
 /-- Line-protocol letter for one message. -/
 def msgOfChar? : Char → Option Msg
   | 'S' => some .serverHello

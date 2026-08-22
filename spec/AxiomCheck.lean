@@ -21,3 +21,5 @@ import Spec.Drbg
 #print axioms Spec.Handshake.no_post_handshake_before_finished
 #print axioms Spec.Handshake.psk_no_certificateVerify
 #print axioms Spec.Handshake.closeNotify_last
+#print axioms Spec.Handshake.connected_stable
+#print axioms Spec.Handshake.accepts_decompose
