@@ -18,3 +18,6 @@ import Spec.Drbg
 #print axioms Spec.Drbg.next_key_indep
 #print axioms Spec.Record.nonce_inj
 #print axioms Spec.Bytes.natToBytesBE_inj
+#print axioms Spec.Handshake.no_post_handshake_before_finished
+#print axioms Spec.Handshake.psk_no_certificateVerify
+#print axioms Spec.Handshake.closeNotify_last

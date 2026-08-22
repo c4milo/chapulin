@@ -324,6 +324,240 @@ theorem hrr_at_most_one (mode : Mode) (msgs : List Msg)
     msgs .start t hfold
   rcases ht with rfl | rfl <;> (simp [hrrBound] at this; omega)
 
+/--
+True for the three messages RFC 9846 allows only after the handshake
+completes: NewSessionTicket (§4.7.1), KeyUpdate (§4.7.3), and
+application data (§5.1).
+-/
+def isPostHandshake : Msg → Bool
+  | .newSessionTicket | .keyUpdate | .appData => true
+  | _ => false
+
+/-- A post-handshake message steps only from `connected`, the state the
+client reaches by taking the Finished. -/
+private theorem step_postHandshake (mode : Mode) (s s' : State) (m : Msg)
+    (hph : isPostHandshake m = true) (h : step mode s m = some s') :
+    finSeen s = 1 := by
+  cases mode <;> cases m <;> simp [isPostHandshake] at hph <;>
+    cases s <;> simp [step] at h <;> simp [finSeen]
+
+/-- A successful fold that starts before the Finished and takes no
+Finished takes no post-handshake message either. -/
+private theorem foldlM_no_post_handshake (mode : Mode) :
+    ∀ (msgs : List Msg) (s t : State), finSeen s = 0 →
+      msgs.foldlM (step mode) s = some t → Msg.finished ∉ msgs →
+      ∀ m ∈ msgs, isPostHandshake m = false := by
+  intro msgs
+  induction msgs with
+  | nil => simp
+  | cons x xs ih =>
+    intro s t hs h hfin
+    simp only [List.foldlM_cons] at h
+    cases hx : step mode s x with
+    | none => rw [hx] at h; simp at h
+    | some s1 =>
+      rw [hx] at h
+      simp at h
+      simp only [List.mem_cons, not_or] at hfin
+      have hxf : x ≠ Msg.finished := fun he => hfin.1 he.symm
+      have hs1 : finSeen s1 = 0 := by
+        have h2 := step_finSeen mode s s1 x hx
+        rw [hs, if_neg hxf] at h2
+        simpa using h2
+      intro m hm
+      rcases List.mem_cons.mp hm with rfl | hm
+      · cases hpm : isPostHandshake m with
+        | false => rfl
+        | true =>
+          have := step_postHandshake mode s s1 m hpm hx
+          omega
+      · exact ih s1 t hs1 h hfin.2 m hm
+
+/--
+No post-handshake message appears before the server Finished (RFC 9846
+§4.7.1, §4.7.3, and §5.1 make tickets, key updates, and application
+data legal only once the handshake completes). In an accepting trace,
+every prefix that contains a NewSessionTicket, a KeyUpdate, or
+application data already contains the Finished.
+-/
+theorem no_post_handshake_before_finished (mode : Mode) (msgs : List Msg)
+    (h : accepts mode msgs = true) (l r : List Msg) (hsplit : msgs = l ++ r)
+    (m : Msg) (hph : isPostHandshake m = true) (hmem : m ∈ l) :
+    Msg.finished ∈ l := by
+  obtain ⟨t, hfold, _⟩ := (accepts_iff mode msgs).mp h
+  rw [hsplit, List.foldlM_append] at hfold
+  cases hs : l.foldlM (step mode) State.start with
+  | none => rw [hs] at hfold; simp at hfold
+  | some s =>
+    cases Decidable.em (Msg.finished ∈ l) with
+    | inl hfin => exact hfin
+    | inr hfin =>
+      have := foldlM_no_post_handshake mode l .start s rfl hs hfin m hmem
+      simp [this] at hph
+
+/-- Under PSK the certificate-flight states are unreachable, so a
+successful step never consumes a CertificateVerify (RFC 9846 §2.2). -/
+private theorem step_psk_no_cv (s s' : State) (m : Msg)
+    (hs : s ≠ State.awaitCert ∧ s ≠ State.awaitCV)
+    (h : step Mode.psk s m = some s') :
+    (s' ≠ State.awaitCert ∧ s' ≠ State.awaitCV) ∧ m ≠ Msg.certificateVerify := by
+  cases s <;> cases m <;> simp [step] at h <;> cases h <;> simp_all
+
+/-- PSK-mode error-free traces never contain CertificateVerify (§2.2:
+the server MUST NOT send the certificate flight when authenticating by
+PSK). Stated over any successful fold, so it covers accepting traces
+and every prefix of them. -/
+private theorem foldlM_psk_no_cv :
+    ∀ (msgs : List Msg) (s t : State),
+      (s ≠ State.awaitCert ∧ s ≠ State.awaitCV) →
+      msgs.foldlM (step Mode.psk) s = some t →
+      Msg.certificateVerify ∉ msgs := by
+  intro msgs
+  induction msgs with
+  | nil => simp
+  | cons x xs ih =>
+    intro s t hs h
+    simp only [List.foldlM_cons] at h
+    cases hx : step Mode.psk s x with
+    | none => rw [hx] at h; simp at h
+    | some s1 =>
+      rw [hx] at h
+      simp at h
+      have ⟨hs1, hxc⟩ := step_psk_no_cv s s1 x hs hx
+      simp only [List.mem_cons, not_or]
+      exact ⟨fun he => hxc he.symm, ih s1 t hs1 h⟩
+
+/-- PSK-mode accepting traces never contain CertificateVerify. -/
+theorem psk_no_certificateVerify (msgs : List Msg) (h : accepts .psk msgs = true) :
+    Msg.certificateVerify ∉ msgs := by
+  obtain ⟨t, hfold, _⟩ := (accepts_iff .psk msgs).mp h
+  exact foldlM_psk_no_cv msgs .start t (by simp) hfold
+
+/-- CertificateRequests consumed so far. `step` rejects that message in
+every state, so this stays 0 in every reachable state. -/
+private def certReqSeen : State → Nat
+  | _ => 0
+
+private theorem step_certReqSeen (mode : Mode) (s s' : State) (m : Msg)
+    (h : step mode s m = some s') :
+    certReqSeen s' = certReqSeen s + (if m = Msg.certificateRequest then 1 else 0) := by
+  cases mode <;> cases s <;> cases m <;> simp [step] at h <;> cases h <;>
+    simp [certReqSeen]
+
+/-- No accepting trace contains a CertificateRequest (RFC 9846 §4.4.2).
+The client offers no certificate, so it fails closed instead of
+answering with an empty Certificate: `step` returns `none` for
+CertificateRequest in every state and both modes. -/
+theorem no_certificateRequest_of_accepts (mode : Mode) (msgs : List Msg)
+    (h : accepts mode msgs = true) : msgs.count .certificateRequest = 0 := by
+  obtain ⟨t, hfold, ht⟩ := (accepts_iff mode msgs).mp h
+  have := foldlM_count mode certReqSeen .certificateRequest (step_certReqSeen mode)
+    msgs .start t hfold
+  rcases ht with rfl | rfl <;> (simp [certReqSeen] at this; omega)
+
+/-- 1 once EncryptedExtensions was taken, else 0. -/
+private def eeSeen : State → Nat
+  | .start | .retried | .gotSH => 0
+  | _ => 1
+
+private theorem step_eeSeen (mode : Mode) (s s' : State) (m : Msg)
+    (h : step mode s m = some s') :
+    eeSeen s' = eeSeen s + (if m = Msg.encryptedExtensions then 1 else 0) := by
+  cases mode <;> cases s <;> cases m <;> simp [step] at h <;> cases h <;>
+    simp [eeSeen]
+
+/-- Every accepting trace contains EncryptedExtensions exactly once
+(RFC 9846 §4.4.1: it follows the ServerHello immediately, and the
+handshake carries no second one). -/
+theorem count_encryptedExtensions_of_accepts (mode : Mode) (msgs : List Msg)
+    (h : accepts mode msgs = true) : msgs.count .encryptedExtensions = 1 := by
+  obtain ⟨t, hfold, ht⟩ := (accepts_iff mode msgs).mp h
+  have := foldlM_count mode eeSeen .encryptedExtensions (step_eeSeen mode)
+    msgs .start t hfold
+  rcases ht with rfl | rfl <;> (simp [eeSeen] at this; omega)
+
+/-- 1 once a ServerHello was taken, else 0. A HelloRetryRequest moves
+`start` to `retried`, which still counts 0, so the retry round does not
+change the total. -/
+private def shSeen : State → Nat
+  | .start | .retried => 0
+  | _ => 1
+
+private theorem step_shSeen (mode : Mode) (s s' : State) (m : Msg)
+    (h : step mode s m = some s') :
+    shSeen s' = shSeen s + (if m = Msg.serverHello then 1 else 0) := by
+  cases mode <;> cases s <;> cases m <;> simp [step] at h <;> cases h <;>
+    simp [shSeen]
+
+/-- Every accepting trace contains exactly one ServerHello (RFC 9846
+§4.2.3). The count is one whether or not the server sent a
+HelloRetryRequest: §4.2.4 lets the retry round precede the ServerHello,
+never replace it. -/
+theorem count_serverHello_of_accepts (mode : Mode) (msgs : List Msg)
+    (h : accepts mode msgs = true) : msgs.count .serverHello = 1 := by
+  obtain ⟨t, hfold, ht⟩ := (accepts_iff mode msgs).mp h
+  have := foldlM_count mode shSeen .serverHello (step_shSeen mode) msgs .start t hfold
+  rcases ht with rfl | rfl <;> (simp [shSeen] at this; omega)
+
+/-- 1 once close_notify was taken, else 0. -/
+private def closeSeen : State → Nat
+  | .closed => 1
+  | _ => 0
+
+private theorem step_closeSeen (mode : Mode) (s s' : State) (m : Msg)
+    (h : step mode s m = some s') :
+    closeSeen s' = closeSeen s + (if m = Msg.closeNotify then 1 else 0) := by
+  cases mode <;> cases s <;> cases m <;> simp [step] at h <;> cases h <;>
+    simp [closeSeen]
+
+/-- No accepting trace contains two close_notify messages (RFC 9846
+§6.1: close_notify moves the client to the closed state, where every
+message is fatal). -/
+theorem closeNotify_at_most_one (mode : Mode) (msgs : List Msg)
+    (h : accepts mode msgs = true) : msgs.count .closeNotify ≤ 1 := by
+  obtain ⟨t, hfold, ht⟩ := (accepts_iff mode msgs).mp h
+  have := foldlM_count mode closeSeen .closeNotify (step_closeSeen mode)
+    msgs .start t hfold
+  rcases ht with rfl | rfl <;> (simp [closeSeen] at this; omega)
+
+/-- Every message is fatal in the closed state (RFC 9846 §6.1). -/
+private theorem step_closed_none (mode : Mode) (m : Msg) :
+    step mode State.closed m = none := by
+  cases mode <;> cases m <;> rfl
+
+/-- An error-free run that starts closed takes no message. -/
+private theorem foldlM_closed_nil (mode : Mode) :
+    ∀ (msgs : List Msg) (t : State),
+      msgs.foldlM (step mode) State.closed = some t → msgs = [] := by
+  intro msgs t h
+  cases msgs with
+  | nil => rfl
+  | cons x xs => simp [List.foldlM_cons, step_closed_none] at h
+
+/--
+close_notify comes last (RFC 9846 §6.1: it ends the connection, and
+every message after it is fatal). In an accepting trace split as
+`l ++ r`, if `l` contains close_notify then `r` is empty. Together with
+`closeNotify_at_most_one` this puts the one close_notify an accepting
+trace may carry at the end of the trace.
+-/
+theorem closeNotify_last (mode : Mode) (msgs : List Msg)
+    (h : accepts mode msgs = true) (l r : List Msg) (hsplit : msgs = l ++ r)
+    (hmem : Msg.closeNotify ∈ l) : r = [] := by
+  obtain ⟨t, hfold, _⟩ := (accepts_iff mode msgs).mp h
+  rw [hsplit, List.foldlM_append] at hfold
+  cases hs : l.foldlM (step mode) State.start with
+  | none => rw [hs] at hfold; simp at hfold
+  | some s =>
+    rw [hs] at hfold
+    have hc := foldlM_count mode closeSeen .closeNotify (step_closeSeen mode)
+      l .start s hs
+    have hpos : 0 < l.count Msg.closeNotify := List.count_pos_iff.mpr hmem
+    have hsc : s = State.closed := by
+      cases s <;> simp [closeSeen] at hc ⊢ <;> omega
+    subst hsc
+    exact foldlM_closed_nil mode r t hfold
+
 /-- Line-protocol letter for one message. -/
 def msgOfChar? : Char → Option Msg
   | 'S' => some .serverHello

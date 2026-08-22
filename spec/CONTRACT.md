@@ -184,6 +184,19 @@ Spec.Handshake, over every accepting trace (both modes unless noted):
                                   Certificate, every prefix with Finished has
                                   CertificateVerify — with the unit counts this is
                                   C before CV before F (§4.5)
+  count_serverHello_of_accepts    exactly one ServerHello, HRR path included (§4.2.3)
+  count_encryptedExtensions_of_accepts
+                                  exactly one EncryptedExtensions (§4.4.1)
+  no_certificateRequest_of_accepts
+                                  none: the client offers no certificate and fails
+                                  closed rather than answer §4.4.2 with an empty one
+  psk_no_certificateVerify        PSK: no CertificateVerify either (§2.2)
+  no_post_handshake_before_finished
+                                  every prefix holding a NewSessionTicket, KeyUpdate or
+                                  application data already holds the Finished — the
+                                  handshake gates traffic (§4.7.1, §4.7.3, §5.1)
+  closeNotify_at_most_one         at most one close_notify (§6.1)
+  closeNotify_last                nothing follows a close_notify (§6.1)
   hrr_at_most_one                 at most one HelloRetryRequest (§4.2.4)
 ```
 
@@ -209,7 +222,7 @@ means the module's selftest plus the differential oracle carry it;
 | --- | --- | --- |
 | Bytes | 24 | proof toolkit: fold characterizations, xor involution and left cancellation, hex injectivity, big-endian round trip and injectivity |
 | Drbg | 13 | key advance (the next key is the counter-0 block, independent of the request size), key/output disjointness within one keystream, request-prefix consistency, session key chain |
-| Handshake | 7 | state-machine safety invariants (Finished count, PSK/pinned flight shapes, HRR bound) |
+| Handshake | 14 | state-machine safety invariants: exactly one ServerHello, EncryptedExtensions and Finished; no certificate flight under PSK; pinned flight shape and order; HRR bound; no CertificateRequest; no post-handshake message before Finished; close_notify at most once and last |
 | Record | 6 | seal/open round trip, record size, nonce size, nonce injectivity (distinct sequence numbers never share a nonce) |
 | ChaCha | 5 | block size, structural lemmas, keystream prefix stability; keystream itself vector-checked |
 | Hkdf | 5 | output lengths, schedule wiring and secret sizes; derivations vector-checked |
