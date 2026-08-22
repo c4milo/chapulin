@@ -57,7 +57,8 @@ Spec.Rsa.pssSign      : (n d : Nat) → (mHash salt : ByteArray) →
                         -- rsaSign is an alias. The spec signs so the oracle can mint
                         -- signatures the C verifier must accept; the C side only verifies.
                         -- salt is explicit so a fixed value gives a reproducible signature.
-Spec.X509.parse       : Alg → (caKey list : ByteArray) → Option ByteArray
+Spec.X509.parse       : Alg → (caKey list : ByteArray) →
+                        Option (ByteArray × Option Nat)
                         -- profiled chain acceptance over the RFC 8446 §4.4.2
                         -- CertificateEntry list (empty per-entry extensions):
                         -- one entry, the leaf verified directly under caKey;
@@ -75,10 +76,20 @@ Spec.X509.parse       : Alg → (caKey list : ByteArray) → Option ByteArray
                         -- keyUsage(keyCertSign) + basicConstraints(CA=TRUE,
                         -- pathLen 0), extendedKeyUsage forbidden. `some`
                         -- carries the leaf's SPKI key bytes (RSA modulus
-                        -- value, or P-256 X‖Y). Alg is rsa (e = 65537, caKey =
-                        -- modulus bytes) or p256 (caKey = X‖Y). Line op:
+                        -- value, or P-256 X‖Y) paired with its notBefore's
+                        -- revocation-epoch number: `some (yy*336 +
+                        -- (mm-1)*28 + (dd-1))` (0..16799) when the notBefore
+                        -- is epoch-shaped — UTCTime, all twelve leading
+                        -- characters ASCII digits, YY 00..49, MM 01..12,
+                        -- DD 01..28, HHMMSS zero — and `none` in the pair for
+                        -- every other valid Time shape (extraction stays
+                        -- permissive; the C driver enforces the epoch rule).
+                        -- The intermediate's validity digits go unread. Alg
+                        -- is rsa (e = 65537, caKey = modulus bytes) or p256
+                        -- (caKey = X‖Y). Line op:
                         -- `x509parse <alg> <cakey> <list>` →
-                        -- `ok <key>` / `ERR x509 reject`.
+                        -- `ok <key> <epoch>` (`-` when the notBefore is not
+                        -- epoch-shaped) / `ERR x509 reject`.
 Spec.X509.mint        : CaKey → (serial issuer validity subject leafKey exts :
                         ByteArray) → Option ByteArray
                         -- canonical CA-signed leaf as a one-entry

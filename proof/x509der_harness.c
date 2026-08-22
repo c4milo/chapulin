@@ -14,6 +14,10 @@
 //                          header + 21 content), so a trailing byte exists
 //   x509_read_time       : 20 bytes; the largest shape is 17 (tag + len +
 //                          15-digit GeneralizedTime)
+//   x509_read_time_epoch : 17 bytes, the largest Time shape itself,
+//                          run beside x509_read_time on identical
+//                          rbuf states to prove the two share one
+//                          acceptance grammar
 //   x509_read_keyusage   : 8 bytes; the largest shape is 5 (2-byte
 //                          header + 3 content), driven with both
 //                          required masks the walker passes — 0x80
@@ -95,6 +99,32 @@ int main(void) {
     __CPROVER_assume(time_len <= sizeof time_bytes);
     rb_init(&r, time_bytes, time_len);
     (void)x509_read_time(&r);
+
+    // x509_read_time_epoch at the 17-byte largest Time shape: a buffer
+    // under the 15-byte smallest shape never parses, an epoch-shaped
+    // date yields a number in 0..CH_EPOCH_MAX, and the
+    // accept/reject verdict equals x509_read_time's on an identical
+    // rbuf state — extraction leaves grammar acceptance unchanged.
+    {
+        uint8_t epoch_bytes[17];
+        fill_nondet(epoch_bytes, sizeof epoch_bytes);
+        size_t epoch_len = nondet_size_t();
+        __CPROVER_assume(epoch_len <= sizeof epoch_bytes);
+        rbuf shape;
+        rb_init(&shape, epoch_bytes, epoch_len);
+        int shape_rc = x509_read_time(&shape);
+        rb_init(&r, epoch_bytes, epoch_len);
+        uint32_t epoch_index = 0;
+        int epoch_ok = 0;
+        int rc = x509_read_time_epoch(&r, &epoch_index, &epoch_ok);
+        __CPROVER_assert(rc == shape_rc, "epoch verdict equals read_time on the same bytes");
+        if (epoch_len < 15) {
+            __CPROVER_assert(rc == 0, "a buffer under the smallest Time shape never parses");
+        }
+        if (rc == 1 && epoch_ok == 1) {
+            __CPROVER_assert(epoch_index <= CH_EPOCH_MAX, "epoch number stays in range");
+        }
+    }
 
     // x509_read_keyusage at its 8-byte bound, zero length included:
     // x509.c hands it an extnValue that may be empty. The nondet mask

@@ -124,6 +124,28 @@ class Config {
         return *this;
     }
 
+    // Optional monotonic revocation epoch (docs/ca.md), CA builds
+    // only: load reads the stored epoch, store persists a new one,
+    // both returning 0 on success. ch_connect rejects one callback
+    // without the other, and an epoch that is not an allowed date. A non-CA build
+    // rejects either callback rather than leave revocation unenforced.
+    Config &epoch(int (*load)(void *ctx, uint32_t *value), int (*store)(void *ctx, uint32_t value),
+                  void *ctx) {
+        cfg_.epoch_load = load;
+        cfg_.epoch_store = store;
+        cfg_.epoch_io = ctx;
+        return *this;
+    }
+
+    // The epoch a saved ticket was issued under (ch_ticket::epoch).
+    // A resumed session presents no certificate, so this is the only
+    // revocation check left: ch_connect refuses a ticket older than
+    // the stored epoch.
+    Config &ticket_epoch(uint32_t value) {
+        cfg_.ticket_epoch = value;
+        return *this;
+    }
+
     const ch_cfg &raw() const { return cfg_; }
 
   private:
@@ -154,6 +176,21 @@ class Session {
     // 0 before a pinned handshake completes. Public information, for
     // watching key rotation progress.
     int pin_slot() const { return tls_.pin_slot; }
+
+    // The revocation epoch this session accepted, and whether writing
+    // it failed. A failed write keeps the session alive, so the caller
+    // must retry: call epoch_store with tls.epoch until it returns 0,
+    // and alert an operator if it keeps failing (docs/ca.md).
+    uint32_t epoch() const { return tls_.epoch; }
+    bool epoch_store_failed() const { return tls_.epoch_store_failed != 0; }
+
+    // What the peer presented and how the rule judged it (CH_EPOCH_*),
+    // readable after a failed connect too. CH_EPOCH_REVOKED means the
+    // peer's epoch is below the stored one and the server is not yet
+    // reissued; CH_EPOCH_UNTRUSTED means the date should never have
+    // been issued. Lattice headroom is CH_EPOCH_MAX - epoch().
+    uint32_t epoch_seen() const { return tls_.epoch_seen; }
+    int epoch_status() const { return tls_.epoch_status; }
 
     // Sends close_notify under live keys and wipes; safe to call more than
     // once, and the destructor calls it too.

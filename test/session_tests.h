@@ -410,6 +410,118 @@ static void test_alerts_and_epochs(void) {
     CHECK(m2.sent == sent_before); // no reply at the cap
 }
 
+// The revocation epoch's config gates (docs/ca.md), all of which
+// must decide before the handshake sends a byte. mock_recv failing
+// the connect with CH_EIO marks the cases that got past them.
+static uint32_t epoch_mark;
+static int epoch_load_rc;
+static int epoch_stores;
+
+static int test_epoch_load(void *io, uint32_t *value) {
+    (void)io;
+    *value = epoch_mark;
+    return epoch_load_rc;
+}
+
+static int test_epoch_store(void *io, uint32_t value) {
+    (void)io;
+    (void)value;
+    epoch_stores++;
+    return 0;
+}
+
+static void test_epoch_cfg(void) {
+    static uint8_t rxbuf[CH_MIN_RXBUF + 88];
+    uint8_t pin[TEST_PIN_LEN] = {2};
+    pin[TEST_PIN_LEN - 1] = 1;
+    mock_io m = {0};
+    ch_cfg cfg = {0};
+    ch_tls t;
+    cfg.buf = rxbuf;
+    cfg.buf_len = sizeof rxbuf;
+    cfg.send = mock_send;
+    cfg.recv = mock_recv;
+    cfg.io = &m;
+    cfg.server_pubkey = pin;
+    cfg.server_pubkey_len = sizeof pin;
+
+    epoch_mark = 0;
+    epoch_load_rc = 0;
+    epoch_stores = 0;
+
+    // One callback alone is a provisioning mistake either way round.
+    cfg.epoch_load = test_epoch_load;
+    CHECK(ch_connect(&t, &cfg) == CH_EINVAL);
+    cfg.epoch_load = NULL;
+    cfg.epoch_store = test_epoch_store;
+    CHECK(ch_connect(&t, &cfg) == CH_EINVAL);
+    cfg.epoch_load = test_epoch_load;
+
+#ifdef CH_TRUST_CA
+    // The pair configured: storage that answers in range lets
+    // the connect through to I/O, and the session holds the epoch.
+    epoch_mark = 12;
+    CHECK(ch_connect(&t, &cfg) == CH_EIO);
+    CHECK(t.epoch == 12);
+    CHECK(t.epoch_store_failed == 0);
+    CHECK(epoch_stores == 0); // only an authenticated handshake writes
+    // No certificate was judged, so the caller is told nothing.
+    CHECK(t.epoch_status == CH_EPOCH_NONE);
+    CHECK(t.epoch_seen == 0);
+
+    // The last in-range value passes; the first one past it does not.
+    epoch_mark = CH_EPOCH_MAX;
+    CHECK(ch_connect(&t, &cfg) == CH_EIO);
+    epoch_mark = CH_EPOCH_MAX + 1;
+    CHECK(ch_connect(&t, &cfg) == CH_EINVAL);
+    epoch_mark = 0xffffffff; // an erased flash word
+    CHECK(ch_connect(&t, &cfg) == CH_EINVAL);
+
+    // Storage that cannot answer fails closed.
+    epoch_mark = 3;
+    epoch_load_rc = -1;
+    CHECK(ch_connect(&t, &cfg) == CH_EINVAL);
+    epoch_load_rc = 0;
+
+    // Resumption carries no certificate, so the ticket's own epoch is
+    // the only revocation check left: a ticket below the stored epoch
+    // was retired by the bump that raised it, and one at or above it
+    // still resumes.
+    static uint8_t psk[32] = {1};
+    cfg.server_pubkey = NULL;
+    cfg.server_pubkey_len = 0;
+    cfg.psk = psk;
+    cfg.psk_len = sizeof psk;
+    cfg.psk_id = (const uint8_t *)"d";
+    cfg.psk_id_len = 1;
+    cfg.resumption = 1;
+    epoch_mark = 10;
+    cfg.ticket_epoch = 9;
+    CHECK(ch_connect(&t, &cfg) == CH_EAUTH);
+    // The caller sees the verdict on the failing path too.
+    CHECK(t.epoch_status == CH_EPOCH_REVOKED);
+    CHECK(t.epoch_seen == 9);
+    cfg.ticket_epoch = 10;
+    CHECK(ch_connect(&t, &cfg) == CH_EIO);
+    CHECK(t.epoch_status == CH_EPOCH_MATCHED);
+    // A ticket above the stored epoch says that epoch went backwards.
+    cfg.ticket_epoch = 11;
+    CHECK(ch_connect(&t, &cfg) == CH_EIO);
+    CHECK(t.epoch_status == CH_EPOCH_AHEAD);
+    cfg.ticket_epoch = CH_EPOCH_MAX + 1; // corrupt ticket storage
+    CHECK(ch_connect(&t, &cfg) == CH_EINVAL);
+
+    // A fresh external PSK carries no ticket epoch to screen.
+    cfg.resumption = 0;
+    cfg.ticket_epoch = 0;
+    CHECK(ch_connect(&t, &cfg) == CH_EIO);
+#else
+    // Without CA mode there is no epoch to enforce, so a config that
+    // asks for one is refused rather than quietly ignored.
+    CHECK(ch_connect(&t, &cfg) == CH_EINVAL);
+#endif
+}
+
 static void test_connect_cfg(void) {
     // Sized to the compiled build's floor plus slack: 512 in raw-pin
     // builds, the certificate-derived floor in CA builds (cfg.h). The

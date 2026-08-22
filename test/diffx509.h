@@ -6,7 +6,10 @@
 // AlgorithmIdentifier, present-DEFAULT, trailing bytes, truncation,
 // extra entries, keyUsage named-bit breaks), and holds C and spec to
 // the same verdict (x509parse) over the same CertificateEntry-list
-// bytes. diffx509chain.h carries the two-entry chain rows. The RSA
+// bytes. An accept verdict is "ok <key> <epoch>": the leaf notBefore's
+// epoch number in decimal when it is epoch-shaped, the single
+// character "-" otherwise; the epoch rows walk that boundary.
+// diffx509chain.h carries the two-entry chain rows. The RSA
 // CA and leaf keys come from diffrsa.h and the TLV carving from
 // x509mut.h, so include this after diffdrv.h and diffrsa.h;
 // test/diff.c is the one translation unit.
@@ -51,6 +54,9 @@ static const char *const certd_serial_hex = "2a";
 static const char *const certd_name_hex = "310c300a06035504030c03636861";
 static const char *const certd_validity_hex =
     "170d3235303130313030303030305a180f32303335303130313030303030305a";
+// certd_validity_hex's notAfter TLV alone (GeneralizedTime
+// 20350101000000Z); the epoch rows pair it with their own notBefore.
+static const char *const certd_not_after_hex = "180f32303335303130313030303030305a";
 static const char *const certd_exts_hex =
     "300e0603551d0f0101ff04040302078030130603551d25040c300a06082b06010505070301";
 static const char *const certd_exts_no_eku_hex = "300e0603551d0f0101ff040403020780";
@@ -93,10 +99,49 @@ static const char *const certd_sigalg_p256_other_hex = "300c06082a8648ce3d040302
 
 static long certd_rows;
 
+// The epoch column every current mint produces: certd_validity_hex's
+// notBefore is UTCTime 250101000000Z, epoch number 25*336 = 8400.
+// The epoch rows point this at their own column around each call.
+static const char *certd_epoch_want = "8400";
+
 // Wraps one certificate as a CertificateEntry list: u24 length, the
 // bytes, empty (u16 0) per-entry extensions.
 static size_t certd_wrap(uint8_t *list, const uint8_t *cert, size_t cert_len) {
     return put_entry(list, cert, cert_len);
+}
+
+// The C parser's own verdict on one list, rendered as the oracle line
+// the spec must reproduce. Every mismatch against what the row
+// promised — an accepted mutant, another key, another epoch — dies
+// here, where the C side is the one under test.
+static void certd_c_verdict(const uint8_t *list, size_t list_len, const uint8_t *ca_key,
+                            size_t ca_len, const char *leaf_hex, char *want, size_t want_cap) {
+    x509_leaf_info info;
+    uint8_t alert = ALERT_BAD_CERTIFICATE;
+    int rc = x509_verify_leaf(list, list_len, ca_key, ca_len, NULL, 0, &info, &alert);
+    if (rc != CH_OK) {
+        // The C answer is the expectation in its own build, so a row
+        // that predicted an accept still holds the spec to this
+        // reject; the strictness suite owns accept/reject policy.
+        (void)snprintf(want, want_cap, "ERR x509 reject");
+        return;
+    }
+    if (leaf_hex == NULL) {
+        die("cert: the C parser accepted a mutant");
+    }
+    static char key_hex[2 * 384 + 1];
+    (void)hex_encode(key_hex, info.key, info.key_len);
+    if (strcmp(key_hex, leaf_hex) != 0) {
+        die("cert: the C parser extracted a different key");
+    }
+    char epoch_column[16] = "-";
+    if (info.epoch_ok) {
+        (void)snprintf(epoch_column, sizeof epoch_column, "%u", (unsigned)info.epoch);
+    }
+    if (strcmp(epoch_column, certd_epoch_want) != 0) {
+        die("cert: the C parser extracted a different epoch");
+    }
+    (void)snprintf(want, want_cap, "ok %s %s", leaf_hex, epoch_column);
 }
 
 // One verdict row over the same list bytes. When the build's PIN
@@ -108,31 +153,17 @@ static void certd_row(const char *alg, const char *ca_hex, const uint8_t *ca_key
                       const uint8_t *list, size_t list_len, const char *leaf_hex) {
     static char list_hex[2 * CERTD_LIST_MAX + 1];
     static char cmd[2 * CERTD_LIST_MAX + 1024];
-    static char want[2 * 384 + 8];
+    static char want[2 * 384 + 16];
     (void)hex_encode(list_hex, list, list_len);
     (void)snprintf(cmd, sizeof cmd, "x509parse %s %s %s", alg, ca_hex, list_hex);
     certd_rows++;
     if (strcmp(alg, certd_build_alg) == 0) {
-        x509_leaf_info info;
-        uint8_t alert = ALERT_BAD_CERTIFICATE;
-        int rc = x509_verify_leaf(list, list_len, ca_key, ca_len, NULL, 0, &info, &alert);
-        if (rc == CH_OK && leaf_hex == NULL) {
-            die("cert: the C parser accepted a mutant");
-        }
-        if (rc == CH_OK) {
-            memcpy(want, "ok ", 3);
-            (void)hex_encode(want + 3, info.key, info.key_len);
-            if (strcmp(want + 3, leaf_hex) != 0) {
-                die("cert: the C parser extracted a different key");
-            }
-        } else {
-            (void)snprintf(want, sizeof want, "ERR x509 reject");
-        }
+        certd_c_verdict(list, list_len, ca_key, ca_len, leaf_hex, want, sizeof want);
         expect(cmd, want);
         return;
     }
     if (leaf_hex != NULL) {
-        (void)snprintf(want, sizeof want, "ok %s", leaf_hex);
+        (void)snprintf(want, sizeof want, "ok %s %s", leaf_hex, certd_epoch_want);
         expect(cmd, want);
     } else {
         expect(cmd, "ERR x509 reject");
@@ -140,20 +171,21 @@ static void certd_row(const char *alg, const char *ca_hex, const uint8_t *ca_key
 }
 
 // Mints one leaf through the spec; the driver supplies every field,
-// serial value and subject content included. Returns the
+// serial value, validity, and subject content included. Returns the
 // CertificateEntry-list bytes.
-static size_t certd_mint(const char *alg, const char *serial_hex, const char *subject_hex,
-                         const char *leaf_hex, const char *exts_hex, uint8_t *list) {
+static size_t certd_mint_dated(const char *alg, const char *serial_hex, const char *validity_hex,
+                               const char *subject_hex, const char *leaf_hex, const char *exts_hex,
+                               uint8_t *list) {
     static char cmd[8192];
     static char list_hex[2 * (CERTD_CERT_MAX + 16) + 1];
     if (strcmp(alg, "rsa") == 0) {
         (void)snprintf(cmd, sizeof cmd, "x509mint rsa %s %s %s %s %s %s %s %s %s", diff_rsa_n2048,
-                       diff_rsa_d2048, certd_salt_hex, serial_hex, certd_name_hex,
-                       certd_validity_hex, subject_hex, leaf_hex, exts_hex);
+                       diff_rsa_d2048, certd_salt_hex, serial_hex, certd_name_hex, validity_hex,
+                       subject_hex, leaf_hex, exts_hex);
     } else {
         (void)snprintf(cmd, sizeof cmd, "x509mint p256 %s %s %s %s %s %s %s %s",
                        certd_p256_ca_d_hex, certd_p256_ca_k_hex, serial_hex, certd_name_hex,
-                       certd_validity_hex, subject_hex, leaf_hex, exts_hex);
+                       validity_hex, subject_hex, leaf_hex, exts_hex);
     }
     query(cmd, list_hex, sizeof list_hex);
     size_t n = strlen(list_hex);
@@ -162,6 +194,52 @@ static size_t certd_mint(const char *alg, const char *serial_hex, const char *su
         die("x509mint: malformed spec response");
     }
     return n / 2;
+}
+
+// The fixed-validity mint every non-epoch row shares.
+static size_t certd_mint(const char *alg, const char *serial_hex, const char *subject_hex,
+                         const char *leaf_hex, const char *exts_hex, uint8_t *list) {
+    return certd_mint_dated(alg, serial_hex, certd_validity_hex, subject_hex, leaf_hex, exts_hex,
+                            list);
+}
+
+// Epoch boundary rows: only the notBefore moves, every leaf stays
+// inside the grammar both sides accept, and only the epoch column
+// changes. The exact pairs: the first and last allowed dates, the
+// last valid day against the first day past the end, the first
+// invalid year, plus the off-column shapes (nonzero seconds,
+// GeneralizedTime, a non-digit body).
+static void certd_epoch_rows(const char *alg, const char *ca_hex, const uint8_t *ca_key,
+                             size_t ca_len, const char *leaf_hex) {
+    static const struct {
+        const char *not_before_hex;
+        const char *column;
+    } rows[9] = {
+        {"170d3030303130313030303030305a",     "0"    }, // 000101000000Z, the first allowed date
+        {"170d3439313232383030303030305a",     "16799"}, // 491228000000Z, the last allowed date
+        {"170d3530303130313030303030305a",     "-"    }, // 500101000000Z, the first invalid year
+        {"170d3030303132383030303030305a",     "27"   }, // 000128000000Z, the last valid day
+        {"170d3030303132393030303030305a",     "-"    }, // 000129000000Z, the first day not allowed
+        {"170d3030303130313030303030315a",     "-"    }, // 000101000001Z, nonzero seconds
+        {"180f32303030303130313030303030305a", "-"    }, // GeneralizedTime 20000101000000Z
+        // GeneralizedTime 20010300000000Z: read as a UTCTime body its
+        // first twelve digits are an epoch date (yy 20, mm 01, dd 03,
+        // midnight), so a reader that stopped checking the tag would
+        // answer 6722 here while the row above still looked right.
+        {"180f32303031303330303030303030305a", "-"    },
+        {"170d3041303130313030303030305a",     "-"    }, // 0A0101000000Z, a non-digit body
+    };
+    static uint8_t list[CERTD_CERT_MAX + 16];
+    static char validity_hex[80];
+    for (size_t i = 0; i < sizeof rows / sizeof rows[0]; i++) {
+        (void)snprintf(validity_hex, sizeof validity_hex, "%s%s", rows[i].not_before_hex,
+                       certd_not_after_hex);
+        size_t n = certd_mint_dated(alg, certd_serial_hex, validity_hex, certd_name_hex, leaf_hex,
+                                    certd_exts_hex, list);
+        certd_epoch_want = rows[i].column;
+        certd_row(alg, ca_hex, ca_key, ca_len, list, n, leaf_hex);
+        certd_epoch_want = "8400";
+    }
 }
 
 // The decoded spine: every TLV reachable through constructed
@@ -407,6 +485,7 @@ static void diff_x509_alg(const char *alg, const char *ca_hex, const char *leaf_
     certd_mutants(alg, ca_hex, ca_key, ca_len, cert, cert_len);
     certd_list_mutants(alg, ca_hex, ca_key, ca_len, cert, cert_len);
     certd_boundary_rows(alg, ca_hex, ca_key, ca_len, leaf_hex);
+    certd_epoch_rows(alg, ca_hex, ca_key, ca_len, leaf_hex);
     // A leaf without the EKU extension never authenticates a server.
     list_len =
         certd_mint(alg, certd_serial_hex, certd_name_hex, leaf_hex, certd_exts_no_eku_hex, list);

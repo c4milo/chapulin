@@ -8,8 +8,10 @@ values absent, minimal INTEGERs, named-bit BIT STRING minimality,
 §8.19-minimal OID subidentifiers. Every reader rejects a non-minimal
 or malformed encoding before it interprets any field, and the
 encoders emit the same minimal forms. `Spec.X509` layers the RFC 5280
-certificate grammar on top; the two field readers that profile
-shapes (`readSerial`, `readTime`) cite its sections inline.
+certificate grammar on top; the field readers that profile shapes
+(`readSerial`, `readTime`, `readTimeEpoch`) cite its sections
+inline. `readTimeEpoch` also extracts the revocation-epoch number
+index a leaf's notBefore may carry.
 -/
 
 namespace Spec.X509
@@ -114,6 +116,29 @@ def readTime (b : ByteArray) (off : Nat) : Option Nat := do
   guard (l.toNat == want ∧ off + 2 + want ≤ b.size)
   guard (b[off + 1 + want]! == 0x5a) -- 'Z' is the only admitted zone
   some (off + 2 + want)
+
+/-- `readTime` plus extraction, over exactly `readTime`'s shape rules:
+returns the offset past the Time and `some` of its epoch number `yy*336 + (mm-1)*28 + (dd-1)` (0..16799) when the Time is
+epoch-shaped — UTCTime, all twelve leading characters ASCII digits,
+YY 00..49, MM 01..12, DD 01..28, HHMMSS zero. Every other valid Time
+shape passes with `none`: extraction stays permissive, and the
+driver enforces only when the epoch callbacks are configured. -/
+def readTimeEpoch (b : ByteArray) (off : Nat) : Option (Nat × Option Nat) := do
+  let off' ← readTime b off
+  let t ← byteAt? b off
+  if t ≠ 0x17 then
+    return (off', none) -- GeneralizedTime is shape-valid, never epoch-shaped
+  let c := slice b (off + 2) 12 -- the digits, past the tag and length octets
+  if !(c.toList.all fun d => 0x30 ≤ d && d ≤ 0x39) then
+    return (off', none) -- shape-valid Time, not all digits
+  let digit (i : Nat) : Nat := c[i]!.toNat - 0x30
+  let yy := digit 0 * 10 + digit 1
+  let mm := digit 2 * 10 + digit 3
+  let dd := digit 4 * 10 + digit 5
+  let hms := digit 6 + digit 7 + digit 8 + digit 9 + digit 10 + digit 11
+  if yy > 49 || mm < 1 || mm > 12 || dd < 1 || dd > 28 || hms ≠ 0 then
+    return (off', none) -- a valid date, but not an allowed epoch
+  return (off', some (yy * 336 + (mm - 1) * 28 + (dd - 1)))
 
 /-- keyUsage extnValue: a named-bit BIT STRING in canonical DER
 (X.690 §11.2.2): trailing zero bits absent, unused-bit count matching

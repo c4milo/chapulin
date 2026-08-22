@@ -42,6 +42,11 @@ typedef struct {
     uint8_t key[CH_X509_KEY_MAX];
     size_t key_len;
     uint8_t ca_slot; // 1 = pin slot A anchors the chain, 2 = slot B
+    // The certificate's notBefore as an epoch number when it is
+    // epoch-shaped (epoch_ok = 1); the driver enforces the monotonic
+    // rule only when the epoch callbacks are configured.
+    uint32_t epoch;
+    uint8_t epoch_ok;
 } x509_leaf_info;
 
 // Parses the Certificate message's CertificateEntry list — the leaf
@@ -86,6 +91,7 @@ typedef struct {
 
 int x509_read_extension(rbuf *e, size_t tlv_cap, x509_extension *out);
 int x509_read_time(rbuf *r);
+int x509_read_time_epoch(rbuf *r, uint32_t *index, int *ok);
 int x509_read_keyusage(const uint8_t *v, size_t n, uint8_t required);
 int x509_read_spki(rbuf *r, const uint8_t **key, size_t *key_len);
 // Re-emits the canonical tag+length header for hashing; returns its

@@ -172,7 +172,8 @@ def dispatch : List String → Option String
     let ck ← hexArg? caKey
     let l ← hexArg? list
     return match Spec.X509.parse a ck l with
-      | some key => s!"ok {bytesToHex key}"
+      | some (key, some epoch) => s!"ok {bytesToHex key} {epoch}"
+      | some (key, none) => s!"ok {bytesToHex key} -"
       | none => "ERR x509 reject"
   | ["x509mint", "rsa", n, d, salt, serial, issuer, validity, subject, leafKey, exts] => do
     let nb ← hexArg? n

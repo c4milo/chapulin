@@ -49,7 +49,8 @@ static void put_hex(FILE *f, const uint8_t *p, size_t n) {
 }
 
 // Persists one ticket as "identity-hex psk-hex age_add" so a later run can
-// resume with it.
+// resume with it. The CA build appends the ticket's epoch as a fourth
+// field, so resumption can present it back as cfg.ticket_epoch.
 static void on_ticket(void *io, const ch_ticket *ticket) {
     (void)io;
     (void)fprintf(stderr, "ticket: id %zu bytes, lifetime %us\n", ticket->identity_len,
@@ -64,7 +65,11 @@ static void on_ticket(void *io, const ch_ticket *ticket) {
     put_hex(f, ticket->identity, ticket->identity_len);
     (void)fputc(' ', f);
     put_hex(f, ticket->psk, sizeof ticket->psk);
-    (void)fprintf(f, " %u\n", ticket->age_add);
+    (void)fprintf(f, " %u", ticket->age_add);
+#ifdef CH_TRUST_CA
+    (void)fprintf(f, " %u", ticket->epoch);
+#endif
+    (void)fputc('\n', f);
     (void)fclose(f);
     g_ticket_saved = 1;
 }
@@ -99,11 +104,22 @@ static size_t unhex(const char *hex, uint8_t *out, size_t cap) {
     return n;
 }
 
+static int parse_u32(const char *s, uint32_t *out) {
+    char *end = NULL;
+    unsigned long v = strtoul(s, &end, 10);
+    if (end == s || *end != 0 || v > 0xffffffffUL) {
+        return -1;
+    }
+    *out = (uint32_t)v;
+    return 0;
+}
+
 // Loads a ticket saved by on_ticket. The identity replaces the psk-id, the
 // derived PSK replaces the external one, and obfuscated_age = 0 + age_add
-// (we reconnect within moments, so the true age rounds to zero).
+// (we reconnect within moments, so the true age rounds to zero). A file
+// without the fourth field leaves ticket_epoch at zero.
 static int load_ticket(const char *path, uint8_t *id, size_t *id_len, uint8_t *psk, size_t *psk_len,
-                       uint32_t *age) {
+                       uint32_t *age, uint32_t *ticket_epoch) {
     FILE *f = fopen(path, "r");
     if (f == NULL) {
         return -1;
@@ -111,19 +127,17 @@ static int load_ticket(const char *path, uint8_t *id, size_t *id_len, uint8_t *p
     char id_hex[2 * CH_TICKET_ID_MAX + 1];
     char psk_hex[2 * SHA256_LEN + 1];
     char age_str[16];
-    int rc = fscanf(f, "%640s %64s %15s", id_hex, psk_hex, age_str);
+    char epoch_str[16] = "0";
+    int rc = fscanf(f, "%640s %64s %15s %15s", id_hex, psk_hex, age_str, epoch_str);
     (void)fclose(f);
-    if (rc != 3) {
+    if (rc < 3) {
         return -1;
     }
-    char *end = NULL;
-    unsigned long age_add = strtoul(age_str, &end, 10);
-    if (end == age_str || *end != 0 || age_add > 0xffffffffUL) {
+    if (parse_u32(age_str, age) != 0 || parse_u32(epoch_str, ticket_epoch) != 0) {
         return -1;
     }
     *id_len = unhex(id_hex, id, CH_TICKET_ID_MAX);
     *psk_len = unhex(psk_hex, psk, SHA256_LEN);
-    *age = (uint32_t)age_add;
     return (*id_len > 0 && *psk_len == SHA256_LEN) ? 0 : -1;
 }
 
@@ -159,12 +173,47 @@ static int setup_pin(char *arg, ch_cfg *cfg) {
     return 0;
 }
 
+#ifdef CH_TRUST_CA
+// The stored revocation epoch, kept as one decimal number in a file:
+// smallest thing that behaves like the integrator's persistent
+// storage. A missing file reads as epoch 0.
+static const char *g_epoch_path;
+
+static int epoch_load_file(void *io, uint32_t *value) {
+    (void)io;
+    *value = 0;
+    FILE *f = fopen(g_epoch_path, "r");
+    if (f == NULL) {
+        return 0;
+    }
+    unsigned long v = 0;
+    int got = fscanf(f, "%lu", &v);
+    (void)fclose(f);
+    if (got != 1 || v > CH_EPOCH_MAX) {
+        return -1;
+    }
+    *value = (uint32_t)v;
+    return 0;
+}
+
+static int epoch_store_file(void *io, uint32_t value) {
+    (void)io;
+    FILE *f = fopen(g_epoch_path, "w");
+    if (f == NULL) {
+        return -1;
+    }
+    (void)fprintf(f, "%u\n", value);
+    return fclose(f) == 0 ? 0 : -1;
+}
+#endif
+
 // Owns the "@ticket-file" form: loads a saved ticket into cfg for resumption.
 static int setup_ticket(const char *path, ch_cfg *cfg, uint8_t *psk, uint8_t *id) {
     size_t id_len = 0;
     size_t psk_len = 0;
     uint32_t age = 0;
-    if (load_ticket(path, id, &id_len, psk, &psk_len, &age) != 0) {
+    uint32_t ticket_epoch = 0;
+    if (load_ticket(path, id, &id_len, psk, &psk_len, &age, &ticket_epoch) != 0) {
         (void)fprintf(stderr, "bad ticket file: %s\n", path);
         return -1;
     }
@@ -174,7 +223,8 @@ static int setup_ticket(const char *path, ch_cfg *cfg, uint8_t *psk, uint8_t *id
     cfg->psk_id_len = id_len;
     cfg->resumption = 1;
     cfg->obfuscated_age = age;
-    (void)fprintf(stderr, "resuming with a %zu-byte ticket\n", id_len);
+    cfg->ticket_epoch = ticket_epoch;
+    (void)fprintf(stderr, "resuming with a %zu-byte ticket (epoch %u)\n", id_len, ticket_epoch);
     return 0;
 }
 
@@ -245,15 +295,15 @@ static int echo_lines(ch_tls *tls) {
 }
 
 int main(int argc, char **argv) {
-    if (argc != 5 && argc != 6) {
+    if (argc < 5 || argc > 7) {
         (void)fprintf(stderr,
-                      "usage: %s host port psk-hex psk-id [save-ticket-file]\n"
-                      "       %s host port @ticket-file - [save-ticket-file]\n"
-                      "       %s host port pin:hex[,hex2] - [save-ticket-file]\n",
+                      "usage: %s host port psk-hex psk-id [save-ticket-file [epoch-file]]\n"
+                      "       %s host port @ticket-file - [save-ticket-file [epoch-file]]\n"
+                      "       %s host port pin:hex[,hex2] - [save-ticket-file [epoch-file]]\n",
                       argv[0], argv[0], argv[0]);
         return 2;
     }
-    g_ticket_path = argc == 6 ? argv[5] : NULL;
+    g_ticket_path = argc >= 6 && argv[5][0] != '-' ? argv[5] : NULL;
     int fd = dial_host(argv[1], argv[2]);
     if (fd < 0) {
         return 2;
@@ -277,6 +327,13 @@ int main(int argc, char **argv) {
     cfg.recv = io_recv;
     cfg.io = &fd;
     cfg.on_ticket = on_ticket;
+#ifdef CH_TRUST_CA
+    if (argc == 7) {
+        g_epoch_path = argv[6];
+        cfg.epoch_load = epoch_load_file;
+        cfg.epoch_store = epoch_store_file;
+    }
+#endif
 
     static ch_tls tls;
     int rc = ch_connect(&tls, &cfg);
@@ -289,6 +346,12 @@ int main(int argc, char **argv) {
         // e2e asserts on this line to watch rotation: 2 = the staged pin.
         (void)fprintf(stderr, "pin slot %u\n", tls.pin_slot);
     }
+#ifdef CH_TRUST_CA
+    if (cfg.epoch_load != NULL) {
+        // e2e asserts on this line to watch the epoch move up.
+        (void)fprintf(stderr, "epoch %u store_failed %u\n", tls.epoch, tls.epoch_store_failed);
+    }
+#endif
 
     int exit_code = echo_lines(&tls);
     if (exit_code >= 0) {

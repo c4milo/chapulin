@@ -20,7 +20,9 @@ extension arm: the leaf requires keyUsage(digitalSignature) and
 extendedKeyUsage(serverAuth); the intermediate requires
 keyUsage(keyCertSign) and basicConstraints(CA=TRUE, pathLen 0) and
 forbids extendedKeyUsage. Acceptance returns the leaf's SPKI key
-bytes; every deviation is `none`.
+bytes together with the revocation-epoch number its notBefore
+carries when epoch-shaped (`readTimeEpoch` in `Spec.X509Der`); every
+deviation is `none`.
 
 `mint` and `mintChain` are the differential oracle's accept-side
 builders: the driver supplies every field and the private keys, and
@@ -255,14 +257,20 @@ def extensionWalk (isCa : Bool) (b : ByteArray) : Nat → Nat → Nat → Option
 /-- TBSCertificate body, first byte to last, exact-consume
 (RFC 5280 §4.1). issuer and subject are opaque bounded TLVs — no name
 matching by design — and validity holds exactly two Times. `isCa`
-picks the extension arm. Returns the SPKI key bytes. -/
-def readTbs (alg : Alg) (isCa : Bool) (tbs : ByteArray) : Option ByteArray := do
+picks the extension arm. Returns the SPKI key bytes; for the leaf the
+notBefore doubles as the revocation epoch, so its number
+travels out too — the intermediate's digits go unread. -/
+def readTbs (alg : Alg) (isCa : Bool) (tbs : ByteArray) : Option (ByteArray × Option Nat) := do
   let o1 ← matchAt tbs 0 versionV3
   let o2 ← readSerial tbs o1
   let o3 ← matchAt tbs o2 (sigAlg alg)
   let (_, o4) ← readTlv tbs o3 0x30 -- issuer, bound by the CA signature
   let (validity, o5) ← readTlv tbs o4 0x30
-  let v1 ← readTime validity 0
+  let (v1, epoch) ←
+    if isCa then do
+      let v1 ← readTime validity 0
+      some (v1, (none : Option Nat))
+    else readTimeEpoch validity 0
   let v2 ← readTime validity v1
   guard (v2 == validity.size)
   let (_, o6) ← readTlv tbs o5 0x30 -- subject
@@ -275,7 +283,7 @@ def readTbs (alg : Alg) (isCa : Bool) (tbs : ByteArray) : Option ByteArray := do
   -- The purpose binding is mandatory: keyUsage + extendedKeyUsage on
   -- the leaf, keyUsage + basicConstraints on the intermediate.
   guard (if isCa then seen &&& 1 == 1 ∧ seen &&& 4 == 4 else seen &&& 1 == 1 ∧ seen &&& 2 == 2)
-  some key
+  some (key, epoch)
 
 /-- The CA signature over the exact TBSCertificate bytes: RSASSA-PSS
 (RFC 8017 §8.1.2, e = 65537) against the modulus bytes, or ECDSA
@@ -303,20 +311,20 @@ where
 /-- Certificate ::= SEQUENCE { tbsCertificate, signatureAlgorithm,
 signatureValue } (RFC 5280 §4.1), exact-fill at every level. The outer
 algorithm must byte-equal the pinned constant and the signature BIT
-STRING carries 0 unused bits. Returns the SPKI key bytes, the SHA-256
-of the TBS bytes with their own header, and the signature — the chain
-step picks whose key must verify them. -/
+STRING carries 0 unused bits. Returns `readTbs`'s key-and-epoch pair,
+the SHA-256 of the TBS bytes with their own header, and the
+signature — the chain step picks whose key must verify them. -/
 def readCertificate (alg : Alg) (isCa : Bool) (cert : ByteArray) :
-    Option (ByteArray × ByteArray × ByteArray) := do
+    Option ((ByteArray × Option Nat) × ByteArray × ByteArray) := do
   let (body, o0) ← readTlv cert 0 0x30
   guard (o0 == cert.size)
   let (tbs, tbsEnd) ← readTlv body 0 0x30
-  let key ← readTbs alg isCa tbs
+  let keyEpoch ← readTbs alg isCa tbs
   let o1 ← matchAt body tbsEnd (sigAlg alg)
   let (sig, o2) ← readTlv body o1 0x03
   guard (o2 == body.size)
   guard (sig.size ≥ 2 ∧ sig[0]! == 0) -- signature bits fill whole bytes
-  some (key, Spec.Sha256.sha256 (slice body 0 tbsEnd), sig.extract 1 sig.size)
+  some (keyEpoch, Spec.Sha256.sha256 (slice body 0 tbsEnd), sig.extract 1 sig.size)
 
 /-- One CertificateEntry at `off` (RFC 8446 §4.4.2): u24 length,
 cert_data — at most the algorithm's `certMax` — empty (u16 0)
@@ -337,20 +345,22 @@ one entry (the leaf, verified directly under the CA key) or two (the
 leaf, then the intermediate — the intermediate verified under the CA
 key and the leaf under the intermediate's SPKI), and nothing after
 them: the root never travels. `some` carries the leaf's SPKI key
-bytes; every off-profile or non-canonical input is `none`. -/
-def parse (alg : Alg) (caKey list : ByteArray) : Option ByteArray := do
+bytes paired with its notBefore's revocation-epoch number —
+`none` in the pair when the notBefore is a valid Time off the
+range; every off-profile or non-canonical input is `none`. -/
+def parse (alg : Alg) (caKey list : ByteArray) : Option (ByteArray × Option Nat) := do
   let (leafCert, o1) ← entryAt? alg list 0
-  let (leafKey, leafHash, leafSig) ← readCertificate alg false leafCert
+  let (leafKeyEpoch, leafHash, leafSig) ← readCertificate alg false leafCert
   if o1 == list.size then do
     guard (checkSignature alg caKey leafHash leafSig)
-    some leafKey
+    some leafKeyEpoch
   else do
     let (intCert, o2) ← entryAt? alg list o1
     guard (o2 == list.size) -- a third entry is off-profile
-    let (intKey, intHash, intSig) ← readCertificate alg true intCert
+    let ((intKey, _), intHash, intSig) ← readCertificate alg true intCert
     guard (checkSignature alg caKey intHash intSig)
     guard (checkSignature alg intKey leafHash leafSig)
-    some leafKey
+    some leafKeyEpoch
 
 /-! ## Minting -/
 
@@ -429,7 +439,11 @@ def mintChain (ca int : CaKey) (serial issuer validity subject leafKey leafExts 
   some (entryBytes leafCert ++ entryBytes intCert)
 
 /-- Structural checks: a minted certificate parses back to the minted
-key under both algorithms; a genuinely signed variant whose serial
+key — and the epoch number of its epoch-shaped notBefore
+(`250101000000Z` is number 8400) — under both algorithms; the last
+allowed date (`491228000000Z`, 16799) extracts and the first day past
+the end (`491229000000Z`) parses with no epoch; a genuinely
+signed variant whose serial
 length is long-form fails on canonicality alone; the keyUsage-only
 variant fails on the missing EKU and the EKU-only variant on the
 missing keyUsage; the non-minimal-extnID variant fails on X.690
@@ -453,10 +467,20 @@ def selftest : Bool :=
      let int := CaKey.p256 intD intK
      (match mint ca serial name validity name leafPub profileExtensions with
       | some l =>
-        parse .p256 caPub l == some leafPub &&
+        parse .p256 caPub l == some (leafPub, some 8400) &&
           (parse .p256 leafPub l).isNone && -- wrong CA
           (parse .p256 caPub (l ++ ByteArray.mk #[0])).isNone -- trailing byte
       | none => false) &&
+       -- Epoch boundary: the last allowed date extracts; the first
+       -- day past the end is shape-valid but carries no epoch.
+       (let vLast := tlv 0x17 (ascii "491228000000Z") ++ tlv 0x18 (ascii "20350101000000Z")
+        match mint ca serial name vLast name leafPub profileExtensions with
+        | some l => parse .p256 caPub l == some (leafPub, some 16799)
+        | none => false) &&
+       (let vOff := tlv 0x17 (ascii "491229000000Z") ++ tlv 0x18 (ascii "20350101000000Z")
+        match mint ca serial name vOff name leafPub profileExtensions with
+        | some l => parse .p256 caPub l == some (leafPub, none)
+        | none => false) &&
        -- long-form serial length `02 81 01`: signature genuine, DER not
        (match mintCore ca (hexConst "02810101") name validity name leafPub profileExtensions with
         | some l => (parse .p256 caPub l).isNone
@@ -475,7 +499,7 @@ def selftest : Bool :=
        (match mintChain ca int serial name validity name leafPub profileExtensions
            caExtensions with
         | some l =>
-          parse .p256 caPub l == some leafPub &&
+          parse .p256 caPub l == some (leafPub, some 8400) &&
             (parse .p256 leafPub l).isNone && -- wrong CA on the chain head
             (parse .p256 caPub (l ++ ByteArray.mk #[0])).isNone -- trailing byte
         | none => false) &&
@@ -492,7 +516,7 @@ def selftest : Bool :=
    let leafMod := natToBytesBE (2 ^ 2047 + 987654321) 256
    match mint (.rsa n d salt) serial name validity name leafMod profileExtensions with
    | some l =>
-     parse .rsa (natBytesMin n) l == some leafMod &&
+     parse .rsa (natBytesMin n) l == some (leafMod, some 8400) &&
        (parse .rsa (natBytesMin n) (l.extract 0 (l.size - 1))).isNone -- truncation
    | none => false)
 

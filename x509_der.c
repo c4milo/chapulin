@@ -92,27 +92,31 @@ int x509_read_serial(rbuf *r) {
     return 1;
 }
 
-// One Time: UTCTime "YYMMDDHHMMSSZ" or GeneralizedTime
-// "YYYYMMDDHHMMSSZ" (RFC 5280 §4.1.2.5 admits exactly these shapes).
-// The digits go unread: no clock exists to compare them against.
-int x509_read_time(rbuf *r) {
+// One Time, shared by both readers: UTCTime "YYMMDDHHMMSSZ" (13
+// bytes) or GeneralizedTime "YYYYMMDDHHMMSSZ" (15), the only shapes
+// RFC 5280 §4.1.2.5 admits. Each ends in 'Z'; zulu is the only
+// admitted zone. Yields the content bytes; x509_read_time ignores
+// them because no clock exists to compare them against.
+static int read_time_bytes(rbuf *r, const uint8_t **c, size_t *want) {
     uint8_t tag = rb_u8(r);
-    size_t want;
     if (tag == 0x17) {
-        want = 13;
+        *want = 13;
     } else if (tag == 0x18) {
-        want = 15;
+        *want = 15;
     } else {
         return 0;
     }
-    if (rb_u8(r) != want) {
+    if (rb_u8(r) != *want) {
         return 0;
     }
-    const uint8_t *c = rb_bytes(r, want);
-    if (c == NULL) {
-        return 0;
-    }
-    return c[want - 1] == 0x5a; // 'Z': zulu time is the only admitted zone
+    *c = rb_bytes(r, *want);
+    return *c != NULL && (*c)[*want - 1] == 0x5a;
+}
+
+int x509_read_time(rbuf *r) {
+    const uint8_t *c = NULL;
+    size_t want = 0;
+    return read_time_bytes(r, &c, &want);
 }
 
 // keyUsage extnValue: a named-bit BIT STRING. Canonical DER strips
@@ -166,6 +170,39 @@ int x509_read_bitstring(rbuf *r, const uint8_t **bytes, size_t *n) {
         return 0;
     }
     *n = len - 1;
+    return 1;
+}
+
+// x509_read_time plus extraction. An epoch-shaped date — UTCTime,
+// YY 00..49, DD 01..28, HHMMSS zero — yields its epoch number
+// YY*336 + (MM-1)*28 + (DD-1) with ok = 1. Any other shape-valid Time
+// passes with ok = 0; the driver decides whether to enforce.
+int x509_read_time_epoch(rbuf *r, uint32_t *index, int *ok) {
+    const uint8_t *c = NULL;
+    size_t want = 0;
+    *ok = 0;
+    if (!read_time_bytes(r, &c, &want)) {
+        return 0;
+    }
+    if (want != 13) {
+        return 1; // GeneralizedTime is shape-valid, never epoch-shaped
+    }
+    uint32_t digit[12];
+    for (int i = 0; i < 12; i++) {
+        digit[i] = (uint32_t)c[i] - '0';
+        if (digit[i] > 9) {
+            return 1; // shape-valid Time, not all digits
+        }
+    }
+    uint32_t yy = digit[0] * 10 + digit[1];
+    uint32_t mm = digit[2] * 10 + digit[3];
+    uint32_t dd = digit[4] * 10 + digit[5];
+    uint32_t hms = digit[6] + digit[7] + digit[8] + digit[9] + digit[10] + digit[11];
+    if (yy > 49 || mm < 1 || mm > 12 || dd < 1 || dd > 28 || hms != 0) {
+        return 1; // a valid date, but not an allowed epoch
+    }
+    *index = yy * 336 + (mm - 1) * 28 + (dd - 1);
+    *ok = 1;
     return 1;
 }
 

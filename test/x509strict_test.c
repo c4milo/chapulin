@@ -113,6 +113,7 @@ static int run_cert(const uint8_t *cert, size_t n) {
 // Mutation helpers over the good leaf, plus the accept, list, and
 // two-entry chain cases, split into their own header for file size.
 #include "x509chain_tests.h"
+#include "x509epoch.h"
 
 static void test_outer_and_serial(void) {
     tlv_shape outer;
@@ -483,6 +484,9 @@ int main(void) {
     test_chain_intermediate();
     test_outer_and_serial();
     test_sigalg_and_time();
+    test_epoch_dates();
+    test_epoch_grammar_unchanged();
+    test_epoch_from_chain();
     test_spki();
     test_decoded_extensions();
     test_ext_shape();

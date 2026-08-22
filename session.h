@@ -54,6 +54,16 @@ typedef struct {
     // cfg.server_pubkey2, 0 before a pinned handshake completes. Public
     // information — operators read it to watch key rotation progress.
     uint8_t pin_slot;
+    // Highest epoch accepted: loaded at ch_connect, raised once a verified
+    // leaf authenticates the server. epoch_store_failed marks a failed
+    // persist; the session stays up. Both stay zero outside CA builds.
+    uint32_t epoch;
+    uint8_t epoch_store_failed;
+    // What the peer presented and how the rule judged it (CH_EPOCH_* in
+    // cfg.h). epoch_seen stays zero when the certificate carried no
+    // allowed date; epoch_status is then CH_EPOCH_UNTRUSTED.
+    uint32_t epoch_seen;
+    uint8_t epoch_status;
     uint64_t send_epochs; // KeyUpdates we have sent; capped per §4.7.3
     // Unread plaintext of the current record, inside cfg.buf.
     size_t pt_off;

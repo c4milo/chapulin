@@ -41,6 +41,8 @@ PORT10=$((PORT + 9))
 PORT11=$((PORT + 10))
 PORT12=$((PORT + 11))
 PORT13=$((PORT + 12))
+PORT14=$((PORT + 13))
+PORT15=$((PORT + 14))
 
 PSK=0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20
 ID=sapo-01
@@ -398,6 +400,89 @@ wait_listen $SERVER13 "$PORT13"
 expect_fail ca-noncanonical -2 "$DIR/err13" \
     ./bin/tlsclient_ca 127.0.0.1 "$PORT13" "ca:$CAMOD" -
 
+# --- The monotonic revocation epoch: a leaf whose notBefore is an epoch
+# date rather than an issuance time, a bump that revokes it, and the
+# replays the bump must kill (docs/ca.md). Epoch 2 is 000103000000Z and
+# epoch 3 is 000104000000Z; notAfter stays 491231235959Z so wall-clock
+# tooling keeps working.
+epoch_leaf() {
+    local date=$1 out=$2
+    "$OPENSSL" req -new -key "$DIR/caleaf.key" -subj /CN=controller-01 2>/dev/null |
+    "$OPENSSL" x509 -req -CA "$DIR/caint.pem" -CAkey "$DIR/caint.key" \
+        -not_before "$date" -not_after 491231235959Z \
+        "${PSS[@]}" -extfile "$DIR/leaf.cnf" -out "$out" 2>/dev/null
+}
+epoch_leaf 000103000000Z "$DIR/epoch2.pem"
+epoch_leaf 000104000000Z "$DIR/epoch3.pem"
+
+"$OPENSSL" s_server -tls1_3 -ciphersuites TLS_CHACHA20_POLY1305_SHA256 \
+    -cert "$DIR/epoch2.pem" -key "$DIR/caleaf.key" -cert_chain "$DIR/caint.pem" \
+    -accept "$PORT14" -rev -quiet &
+SERVER14=$!
+"$OPENSSL" s_server -tls1_3 -ciphersuites TLS_CHACHA20_POLY1305_SHA256 \
+    -cert "$DIR/epoch3.pem" -key "$DIR/caleaf.key" -cert_chain "$DIR/caint.pem" \
+    -accept "$PORT15" -rev -quiet &
+SERVER15=$!
+wait_listen $SERVER14 "$PORT14"
+wait_listen $SERVER15 "$PORT15"
+
+# A device provisioned at the current epoch connects and stays put.
+echo 2 > "$DIR/epoch.state"
+MSG='epoca dos'
+expect ca-epoch-equal "sod acope" "$DIR/err14" \
+    ./bin/tlsclient_ca 127.0.0.1 "$PORT14" "ca:$CAMOD" - - "$DIR/epoch.state"
+grep -q "^epoch 2 store_failed 0$" "$DIR/err14" || {
+    echo "FAIL e2e ca-epoch-equal: the epoch moved when it should not have"
+    exit 1
+}
+
+# A device that lags moves forward, and the new epoch is written.
+echo 1 > "$DIR/epoch.state"
+expect ca-epoch-advance "sod acope" "$DIR/err14" \
+    ./bin/tlsclient_ca 127.0.0.1 "$PORT14" "ca:$CAMOD" - "$DIR/epoch.ticket" "$DIR/epoch.state"
+grep -q "^epoch 2 store_failed 0$" "$DIR/err14" || {
+    echo "FAIL e2e ca-epoch-advance: the epoch did not move up"
+    exit 1
+}
+[ "$(cat "$DIR/epoch.state")" = 2 ] || {
+    echo "FAIL e2e ca-epoch-advance: the epoch was not written"
+    exit 1
+}
+
+# The bump: the reissued server moves the same device to epoch 3.
+MSG='epoca tres'
+expect ca-epoch-bump "sert acope" "$DIR/err15" \
+    ./bin/tlsclient_ca 127.0.0.1 "$PORT15" "ca:$CAMOD" - - "$DIR/epoch.state"
+[ "$(cat "$DIR/epoch.state")" = 3 ] || {
+    echo "FAIL e2e ca-epoch-bump: the bump did not persist"
+    exit 1
+}
+
+# Replaying the pre-bump leaf against the advanced device: revoked
+# (CH_EAUTH is -3), even though the certificate is genuine and its
+# chain still verifies to the pinned CA.
+MSG='epoca dos'
+expect_fail ca-epoch-revoked -3 "$DIR/err14" \
+    ./bin/tlsclient_ca 127.0.0.1 "$PORT14" "ca:$CAMOD" - - "$DIR/epoch.state"
+[ "$(cat "$DIR/epoch.state")" = 3 ] || {
+    echo "FAIL e2e ca-epoch-revoked: a rejected leaf moved the epoch"
+    exit 1
+}
+
+# The ticket saved at epoch 2 dies with the bump: resumption is the one
+# path that presents no certificate, so the ticket's own epoch carries
+# the check.
+expect_fail ca-epoch-ticket -3 "$DIR/err14" \
+    ./bin/tlsclient_ca 127.0.0.1 "$PORT15" "@$DIR/epoch.ticket" - - "$DIR/epoch.state"
+
+# An ordinary wall-clock leaf sits thousands of steps past the stored epoch, so
+# the jump bound rejects it: a mis-configured issuance tool fails loudly
+# instead of poisoning the fleet.
+expect_fail ca-epoch-unbounded -3 "$DIR/err7" \
+    ./bin/tlsclient_ca 127.0.0.1 "$PORT7" "ca:$CAMOD" - - "$DIR/epoch.state"
+
+kill $SERVER14 $SERVER15 2>/dev/null
+
 # --- Go's crypto/tls, the stack Prometheus terminates with: once with the
 # P-256 cert against the ECDSA build, once with the RSA cert against the
 # default build ---
@@ -441,4 +526,4 @@ else
     GO_LEG=" (go legs skipped)"
 fi
 
-echo "e2e: psk + tickets + resumption + pinned ecdsa + pinned rsa + rotation + ca rsa x2 + ca ecdsa x2 + ca rotation + ca negatives x3${GO_LEG} OK"
+echo "e2e: psk + tickets + resumption + pinned ecdsa + pinned rsa + rotation + ca rsa x2 + ca ecdsa x2 + ca rotation + ca negatives x3 + ca epoch x6${GO_LEG} OK"

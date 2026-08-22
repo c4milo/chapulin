@@ -158,9 +158,10 @@ static int parse_extensions(rbuf *t, int is_ca, uint8_t *alert) {
     return CH_OK;
 }
 
-// validity: SEQUENCE of exactly two Times; the values go unread
-// because no clock exists to compare them against.
-static int read_validity(rbuf *t) {
+// validity: SEQUENCE of exactly two Times. No clock exists to compare
+// them against. For a leaf, notBefore also serves as the revocation
+// epoch; its number goes to leaf->epoch.
+static int read_validity(rbuf *t, x509_leaf_info *leaf) {
     size_t validity_len = 0;
     if (!x509_read_header(t, 0x30, &validity_len)) {
         return 0;
@@ -171,17 +172,29 @@ static int read_validity(rbuf *t) {
     }
     rbuf v;
     rb_init(&v, validity, validity_len);
-    for (int i = 0; i < 2; i++) {
-        if (!x509_read_time(&v)) {
+    if (leaf != NULL) {
+        int epoch_ok = 0;
+        if (!x509_read_time_epoch(&v, &leaf->epoch, &epoch_ok)) {
             return 0;
         }
+        leaf->epoch_ok = (uint8_t)epoch_ok;
+    } else if (!x509_read_time(&v)) {
+        return 0;
+    }
+    if (!x509_read_time(&v)) {
+        return 0;
     }
     return !v.err && rb_left(&v) == 0;
 }
 
-// TBSCertificate body, first byte to last, exact-consume.
+// The TBSCertificate body, first byte to last, exact-consume. "TBS"
+// is RFC 5280's name for the part of a certificate the CA signs: the
+// serial, the algorithm, the names, the validity, the public key, and
+// the extensions. The signature that follows covers exactly these
+// bytes, which is why the caller hashes the range rather than
+// re-encoding what it parsed.
 static int parse_tbs(const uint8_t *tbs, size_t tbs_len, int is_ca, const uint8_t **key,
-                     size_t *key_len, uint8_t *alert) {
+                     size_t *key_len, x509_leaf_info *leaf, uint8_t *alert) {
     rbuf t;
     rb_init(&t, tbs, tbs_len);
     if (!x509_read_exact(&t, version_v3, sizeof version_v3)) {
@@ -197,7 +210,7 @@ static int parse_tbs(const uint8_t *tbs, size_t tbs_len, int is_ca, const uint8_
     if (!x509_skip(&t, 0x30)) {
         return CH_EPROTO; // issuer: opaque, bound by the CA signature
     }
-    if (!read_validity(&t)) {
+    if (!read_validity(&t, leaf)) {
         return CH_EPROTO;
     }
     if (!x509_skip(&t, 0x30)) {
@@ -221,8 +234,8 @@ static int parse_tbs(const uint8_t *tbs, size_t tbs_len, int is_ca, const uint8_
 // the SPKI key, the hash of the exact TBS bytes, and the signature —
 // all pointers into the caller's buffer — for the chain step.
 static int parse_certificate(const uint8_t *cert, size_t cert_len, int is_ca, const uint8_t **key,
-                             size_t *key_len, uint8_t tbs_hash[SHA256_LEN], const uint8_t **sig_out,
-                             size_t *sig_len_out, uint8_t *alert) {
+                             size_t *key_len, x509_leaf_info *leaf, uint8_t tbs_hash[SHA256_LEN],
+                             const uint8_t **sig_out, size_t *sig_len_out, uint8_t *alert) {
     rbuf r;
     rb_init(&r, cert, cert_len);
     size_t body_len = 0;
@@ -237,7 +250,7 @@ static int parse_certificate(const uint8_t *cert, size_t cert_len, int is_ca, co
     if (tbs == NULL) {
         return CH_EPROTO;
     }
-    int rc = parse_tbs(tbs, tbs_len, is_ca, key, key_len, alert);
+    int rc = parse_tbs(tbs, tbs_len, is_ca, key, key_len, leaf, alert);
     if (rc != CH_OK) {
         return rc;
     }
@@ -323,8 +336,8 @@ static int read_intermediate(rbuf *r, uint8_t int_hash[SHA256_LEN], chain_head *
     }
     const uint8_t *int_sig = NULL;
     size_t int_sig_len = 0;
-    int rc = parse_certificate(inter, inter_len, 1, &head->int_key, &head->int_key_len, int_hash,
-                               &int_sig, &int_sig_len, alert);
+    int rc = parse_certificate(inter, inter_len, 1, &head->int_key, &head->int_key_len, NULL,
+                               int_hash, &int_sig, &int_sig_len, alert);
     if (rc != CH_OK) {
         return rc;
     }
@@ -349,8 +362,10 @@ int x509_verify_leaf(const uint8_t *list, size_t list_len, const uint8_t *ca_key
     uint8_t leaf_hash[SHA256_LEN];
     const uint8_t *leaf_sig = NULL;
     size_t leaf_sig_len = 0;
-    int rc = parse_certificate(leaf, leaf_len, 0, &leaf_key, &leaf_key_len, leaf_hash, &leaf_sig,
-                               &leaf_sig_len, alert);
+    out->epoch = 0;
+    out->epoch_ok = 0;
+    int rc = parse_certificate(leaf, leaf_len, 0, &leaf_key, &leaf_key_len, out, leaf_hash,
+                               &leaf_sig, &leaf_sig_len, alert);
     if (rc != CH_OK) {
         return rc;
     }

@@ -207,6 +207,57 @@ static int check_certificate_verify(handshake_state *h, const uint8_t hash[SHA25
 // CertificateVerify whose signature (RSA-PSS by default, ECDSA-P256 under
 // CH_PIN_ECDSA) over the running transcript checks out against either
 // provisioned pin slot (slot B holds the staged next key, docs/rotation.md).
+#ifdef CH_TRUST_CA
+// The monotonic revocation rule (docs/ca.md), a no-op until the
+// caller configures the epoch callbacks. A CA-signed certificate is
+// public, so anyone can replay a leaf harvested from a real server.
+// Rejecting on the chain verdict alone is safe: it only fails the
+// handshake closed. Raising the stored epoch is not, because that
+// outlives the session, so epoch_commit raises it once the peer has
+// proved it holds the leaf key. Below the stored epoch means revoked.
+// A date that is not a valid epoch date, or is more than
+// CH_EPOCH_BOUND steps ahead, means a bad issuance or a poisoning
+// attempt.
+static int epoch_check(handshake_state *h) {
+    ch_tls *t = h->t;
+    if (t->cfg.epoch_load == NULL) {
+        return CH_OK;
+    }
+    // Set the status on failure too: both paths return CH_EAUTH, so
+    // only epoch_status separates revoked from out of range, and
+    // each needs a different response.
+    t->epoch_seen = h->leaf.epoch_ok ? h->leaf.epoch : 0;
+    if (!h->leaf.epoch_ok || h->leaf.epoch > t->epoch + CH_EPOCH_BOUND) {
+        t->epoch_status = CH_EPOCH_UNTRUSTED;
+        h->alert = ALERT_BAD_CERTIFICATE;
+        return CH_EAUTH;
+    }
+    if (h->leaf.epoch < t->epoch) {
+        t->epoch_status = CH_EPOCH_REVOKED;
+        h->alert = ALERT_CERTIFICATE_REVOKED;
+        return CH_EAUTH;
+    }
+    t->epoch_status = h->leaf.epoch > t->epoch ? CH_EPOCH_AHEAD : CH_EPOCH_MATCHED;
+    return CH_OK;
+}
+
+// Raises the stored epoch. Runs only after CertificateVerify proved
+// the peer holds the leaf key and Finished covered the transcript,
+// so the recorded epoch came from a real server, not from a copied
+// certificate. A PSK handshake never fills h->leaf, and the zeroed
+// epoch_ok stops it here. Persisting is best effort: a failed store
+// keeps the session and reports through epoch_store_failed, because
+// the connection is authenticated either way.
+static void epoch_commit(handshake_state *h) {
+    ch_tls *t = h->t;
+    if (t->cfg.epoch_load == NULL || !h->leaf.epoch_ok || h->leaf.epoch <= t->epoch) {
+        return;
+    }
+    t->epoch = h->leaf.epoch;
+    t->epoch_store_failed = t->cfg.epoch_store(t->cfg.epoch_io, h->leaf.epoch) != 0;
+}
+#endif
+
 static int server_auth(handshake_state *h) {
     uint8_t type = 0;
     const uint8_t *raw = NULL;
@@ -243,6 +294,10 @@ static int server_auth(handshake_state *h) {
         return rc;
     }
     h->t->pin_slot = h->leaf.ca_slot;
+    rc = epoch_check(h);
+    if (rc != CH_OK) {
+        return rc;
+    }
 #endif
     sha256_update(&h->t->transcript, raw, raw_len);
 
@@ -369,6 +424,9 @@ static int run(handshake_state *h) {
     if (rc != CH_OK) {
         return rc;
     }
+#ifdef CH_TRUST_CA
+    epoch_commit(h);
+#endif
 
     // Server Finished is in; derive the application schedule, answer with
     // our Finished under the handshake keys, then switch both directions.

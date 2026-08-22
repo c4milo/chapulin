@@ -115,6 +115,22 @@ int x509_read_time(rbuf *r) {
     return havoc_read(r, 17); // tag, length, 15-digit GeneralizedTime
 }
 
+// The leaf path reads its notBefore through the extracting reader.
+// Both outputs havoc, under the one postcondition the driver's bound
+// arithmetic rests on: an accepted epoch is in range. That
+// the reader's shape verdict matches x509_read_time's is proven in
+// the x509der harness, over the real body.
+int x509_read_time_epoch(rbuf *r, uint32_t *index, int *ok) {
+    __CPROVER_assert(__CPROVER_w_ok(index, sizeof *index), "epoch: index writable");
+    __CPROVER_assert(__CPROVER_w_ok(ok, sizeof *ok), "epoch: ok writable");
+    uint32_t value = 0;
+    fill_nondet((uint8_t *)&value, sizeof value);
+    __CPROVER_assume(value <= CH_EPOCH_MAX);
+    *index = value;
+    *ok = nondet_u8() & 1;
+    return havoc_read(r, 17);
+}
+
 // The walker demands digitalSignature (0x80) of the leaf and
 // keyCertSign (0x04) of the intermediate; asserting the mask pins that
 // routing here, because the profile split is the walker's own job.

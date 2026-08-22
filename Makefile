@@ -34,7 +34,8 @@ LINT_C := $(SRCS) drbg.c test/unit.c test/tlsclient.c test/diff.c test/timing.c 
 # so a header edit rebuilds the binaries it changes.
 TESTH := test/testrand.h test/session_tests.h test/diffdrv.h test/diffp256.h \
          test/diffrsa.h test/hsseqsrv.h test/rfc8448_vectors.h test/rfc8448_tests.h \
-         test/x509_vectors.h test/x509mut.h test/x509chain_tests.h test/diffx509.h test/diffx509bounds.h test/diffx509chain.h
+         test/x509_vectors.h test/x509mut.h test/x509chain_tests.h test/x509epoch.h \
+         test/diffx509.h test/diffx509bounds.h test/diffx509chain.h
 
 # Pinned mode verifies one signature algorithm per build: PIN=rsa
 # (default, RSA-PSS up to 3072 bits) or PIN=ecdsa (P-256, -DCH_PIN_ECDSA).
@@ -249,6 +250,15 @@ GCOV_TOOL := $(shell $(CC) --version 2>/dev/null | grep -qi clang \
 COV_CC = $(CC) --coverage -O0 -std=c11 -D_DEFAULT_SOURCE $$def -I.
 COV_LIB_OBJS = $(SRCS:%.c=$$d/%.o)
 .PHONY: coverage
+coverage:
+ifeq ($(LAKE),)
+	$(call REQUIRE_ON_CI,lake)
+	@echo "SKIP spec-coverage: lake not on PATH (install elan: https://leanprover.github.io)"
+else
+	cd spec && $(LAKE) build
+	python3 test/spec_coverage.py
+endif
+
 coverage:
 ifeq ($(GCOVR),)
 	$(call REQUIRE_ON_CI,gcovr)

@@ -11,6 +11,55 @@
 #include "io.h"
 #include "keysched.h"
 
+// Loads the stored epoch and checks a resuming ticket against it
+// (docs/ca.md). Storage that fails or answers out of range stops
+// the connection at config time, not mid-handshake, so revocation
+// state stays out of any path a peer can influence. Returns CH_OK
+// when no epoch is configured.
+static int epoch_init(ch_tls *t, const ch_cfg *cfg, int psk_ok) {
+#ifdef CH_TRUST_CA
+    // The callbacks come as a pair; one alone is a provisioning
+    // mistake, and store is the only way to write the epoch back.
+    if ((cfg->epoch_load == NULL) != (cfg->epoch_store == NULL)) {
+        return CH_EINVAL;
+    }
+    if (cfg->epoch_load == NULL) {
+        return CH_OK;
+    }
+    uint32_t stored = 0;
+    if (cfg->epoch_load(cfg->epoch_io, &stored) != 0 || stored > CH_EPOCH_MAX) {
+        return CH_EINVAL;
+    }
+    t->epoch = stored;
+    // A resumed session presents no certificate, so the ticket's epoch
+    // is the only revocation check left: a ticket below the stored
+    // epoch was retired by that bump. A ticket epoch over CH_EPOCH_MAX
+    // is corrupt ticket storage, so it returns CH_EINVAL, not CH_EAUTH.
+    if (!psk_ok || !cfg->resumption) {
+        return CH_OK;
+    }
+    if (cfg->ticket_epoch > CH_EPOCH_MAX) {
+        return CH_EINVAL;
+    }
+    t->epoch_seen = cfg->ticket_epoch;
+    if (cfg->ticket_epoch < stored) {
+        t->epoch_status = CH_EPOCH_REVOKED;
+        return CH_EAUTH;
+    }
+    // A ticket above the stored epoch means the store lost a bump that
+    // an earlier session wrote. The device would again trust the
+    // certificates that bump retired. Reported as CH_EPOCH_AHEAD.
+    t->epoch_status = cfg->ticket_epoch > stored ? CH_EPOCH_AHEAD : CH_EPOCH_MATCHED;
+    return CH_OK;
+#else
+    // No CA mode here, so nothing enforces an epoch. Reject such a
+    // config: unenforced revocation is worse than a failed connect.
+    (void)t;
+    (void)psk_ok;
+    return (cfg->epoch_load != NULL || cfg->epoch_store != NULL) ? CH_EINVAL : CH_OK;
+#endif
+}
+
 int ch_connect(ch_tls *t, const ch_cfg *cfg) {
     memset(t, 0, sizeof *t);
     t->cfg = *cfg;
@@ -56,6 +105,11 @@ int ch_connect(ch_tls *t, const ch_cfg *cfg) {
         return CH_EINVAL;
     }
 #endif
+    int rc = epoch_init(t, cfg, psk_ok);
+    if (rc != CH_OK) {
+        t->state = CH_ST_FAILED;
+        return rc;
+    }
     return ch_handshake(t);
 }
 
@@ -79,6 +133,7 @@ static void handle_ticket(ch_tls *t, const uint8_t *body, size_t n) {
         ticket.identity_len > CH_TICKET_ID_MAX) {
         return;
     }
+    ticket.epoch = t->epoch;
     ks_res_psk(t->res_master, nonce, nonce_len, ticket.psk);
     t->cfg.on_ticket(t->cfg.io, &ticket);
     ct_wipe(ticket.psk, sizeof ticket.psk);

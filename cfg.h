@@ -1,6 +1,12 @@
 // The caller-facing configuration and result codes, at the bottom of the
 // include graph so transport (io) and message building (hsmsg) can see
-// them without reaching up into the session or the public API.
+// them without needing the session or the public API.
+//
+// Everything here configures the CLIENT. chapulin has no server role,
+// so nothing in this file describes a server: server_pubkey is the key
+// this client pins FOR a server, not a key a server holds. Configure
+// the server in whatever software terminates TLS there — OpenSSL, Go,
+// or another stack — as docs/ca.md describes.
 #ifndef CH_CFG_H
 #define CH_CFG_H
 
@@ -69,7 +75,46 @@ typedef struct {
     uint8_t psk[SHA256_LEN];
     uint32_t lifetime_s;
     uint32_t age_add;
+    // The stored epoch when the ticket arrived; zero outside CA
+    // builds. Present it back in ch_cfg.ticket_epoch on resumption, so
+    // an epoch bump also retires every earlier ticket.
+    uint32_t epoch;
 } ch_ticket;
+
+// Monotonic revocation epoch (docs/ca.md). The CA writes each server
+// certificate's notBefore as one of a restricted set of dates — year
+// 2000..2049, day 01..28, time 000000Z — and advances it one step per
+// revocation. The value compared is the number YY*336 + (MM-1)*28 +
+// (DD-1), so CH_EPOCH_MAX is 49*336 + 11*28 + 27. A certificate more
+// than CH_EPOCH_BOUND steps above the stored epoch is rejected, so a
+// poisoned far-future date cannot lock the fleet out for good, and a
+// tool that stamped today's date exceeds the bound instead of raising
+// the stored epoch.
+#define CH_EPOCH_MAX 16799
+#ifndef CH_EPOCH_BOUND
+#define CH_EPOCH_BOUND 64
+#endif
+// No epoch exceeds CH_EPOCH_MAX, so a bound that large disables the
+// check; a bound of zero rejects every increase, so the fleet stays
+// at its provisioned epoch. Both are build mistakes, caught here, not
+// in the field. The upper guard also keeps the stored epoch plus the
+// bound inside uint32. The library builds as C, so the guard runs.
+#ifndef __cplusplus
+_Static_assert(CH_EPOCH_BOUND >= 1 && CH_EPOCH_BOUND < CH_EPOCH_MAX,
+               "the jump bound stays in range");
+#endif
+
+// How the epoch rule judged the certificate this session saw,
+// reported in ch_tls.epoch_status beside the value in
+// ch_tls.epoch_seen. The handshake fails on the last two. They stay
+// distinct because the operator response differs: a server behind the
+// fleet still needs reissuing, while an out-of-range date is a
+// mis-issued certificate or an attempt to strand the device.
+#define CH_EPOCH_NONE 0      // no epoch configured, or no certificate judged
+#define CH_EPOCH_MATCHED 1   // the peer's epoch equals the stored epoch
+#define CH_EPOCH_AHEAD 2     // above the stored epoch, inside the bound: it moves up
+#define CH_EPOCH_REVOKED 3   // below the stored epoch: a bump retired this certificate
+#define CH_EPOCH_UNTRUSTED 4 // not an allowed date, or too far ahead
 
 typedef struct {
     // Authentication is one of two modes:
@@ -121,6 +166,28 @@ typedef struct {
 
     // Optional; called once per NewSessionTicket.
     void (*on_ticket)(void *io, const ch_ticket *ticket);
+
+    // Revocation. Implement these if you need to retire a stolen
+    // server key. Without them, whoever steals a server's private key
+    // authenticates as that server until you replace the CA key on
+    // every device, because this client checks no expiry and no
+    // revocation list. With them, the CA counts revocations in each
+    // certificate and a device refuses any certificate older than the
+    // highest count it has accepted, so reissuing a server on a new
+    // key retires the old one. docs/ca.md has the procedure.
+    //
+    // Give both or neither. They store one uint32 in whatever
+    // persistent memory the device has. Both return 0 on success.
+    // A failed load fails ch_connect, so provision the fleet's
+    // current count before first use. A failed store keeps the
+    // session running and sets ch_tls.epoch_store_failed; the caller
+    // retries. On resumption, pass the saved ticket's count in
+    // ticket_epoch. Only a CH_TRUST_CA build enforces this; other
+    // builds reject a config that sets it rather than ignoring it.
+    int (*epoch_load)(void *epoch_io, uint32_t *value);
+    int (*epoch_store)(void *epoch_io, uint32_t value);
+    void *epoch_io;
+    uint32_t ticket_epoch;
 } ch_cfg;
 
 #endif
