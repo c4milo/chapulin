@@ -52,8 +52,12 @@ jobs:
         with:
           path: proof/.cache
           key: proofs-${{ runner.os }}-${{ github.run_id }}
-      - name: Upload proof logs on failure
-        if: failure()
+      # always(), not failure(): timeout-minutes cancels the job rather
+      # than failing it, so failure() skips exactly the run that needs
+      # the logs. run.sh writes one log per proof as it starts, so a
+      # cancelled run still says which proof was still going.
+      - name: Upload proof logs
+        if: always()
         uses: actions/upload-artifact@v7
         with:
           name: proof-results
@@ -223,7 +227,13 @@ jobs:
   # exists.
   report:
     needs: [prove-slow, diff-random, diff-ecdsa, spec-coverage, san-deep, mips-ubsan, fuzz]
-    if: failure()
+    # A job killed by timeout-minutes concludes as cancelled, not
+    # failed, so failure() alone skips this job and a timed-out night
+    # files nothing. Both prove-slow timeouts so far were reported only
+    # because diff-random failed alongside them.
+    if: >-
+      ${{ always() && (contains(needs.*.result, 'failure') ||
+      contains(needs.*.result, 'cancelled')) }}
     runs-on: ubuntu-24.04
     permissions:
       issues: write

@@ -292,8 +292,8 @@ jobs:
 
       # A failed proof's one-line verdict is not diagnosable from the run
       # output alone; keep the full solver logs.
-      - name: Upload proof logs on failure
-        if: failure()
+      - name: Upload proof logs
+        if: always()
         uses: actions/upload-artifact@v7
         with:
           name: proof-results
