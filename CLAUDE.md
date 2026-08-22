@@ -78,6 +78,20 @@ Home: github.com/c4milo.
   Two: short sentences with one idea each, terms defined before use,
   lists for list-like content, strong verbs, no rhetorical flourishes or
   metaphors.
+- Name what literally happens. The failure mode is a vague spatial
+  metaphor standing in for a plain verb: a value "reaches" storage
+  instead of being written, a change is "folded in" instead of added, a
+  boundary becomes a "seam" instead of the constant it is. Before an
+  abstract word, ask what literally happens and write that. Literal uses
+  stay — a device really cannot reach a server. This matters most in
+  comments, where an auditor cannot check the metaphor against anything.
+- One name per thing, and it is the name in the code. Never invent prose
+  shorthand for something a field or constant already names: write "the
+  stored epoch" for `ch_tls.epoch`, never "the mark". A second name
+  makes the reader hold a glossary the compiler cannot check, and it
+  rots as soon as the field is renamed. When two related values need
+  telling apart, take both names from the code (`epoch` and
+  `epoch_seen`), not from a metaphor.
 - Linters follow fix-or-drop: fix the finding, or disable the check in
   `.clang-tidy` with its reason. Never `NOLINT` in code.
 - CI pins the same tool versions the development machine runs (see the
