@@ -3,11 +3,22 @@
 # crypto/tls server, all TLS 1.3 with our single suite. -rev echoes each
 # line reversed, proving app data moves both ways.
 set -euo pipefail
+
+# Several openssl calls send stderr to /dev/null so the transcript stays
+# readable, which means set -e can kill the run with nothing printed.
+# Twice that hid a real break, so say where it happened.
+trap 'rc=$?; [ $rc -eq 0 ] || echo "FAIL e2e: aborted at line $LINENO (exit $rc)" >&2' ERR
 cd "$(dirname "$0")/.."
 
+# OPENSSL from the environment wins, so a caller can point the suite at
+# a specific build; otherwise take the first OpenSSL 3 on the usual
+# paths. Either way the choice must be OpenSSL 3.
+OPENSSL_WANTED="${OPENSSL:-}"
 OPENSSL=""
-for c in /opt/homebrew/opt/openssl@3/bin/openssl /opt/homebrew/opt/openssl/bin/openssl \
+for c in "$OPENSSL_WANTED" /opt/homebrew/opt/openssl@3/bin/openssl \
+         /opt/homebrew/opt/openssl/bin/openssl \
          /usr/local/opt/openssl/bin/openssl openssl; do
+    [ -n "$c" ] || continue
     if command -v "$c" >/dev/null 2>&1 && "$c" version 2>/dev/null | grep -q "^OpenSSL 3"; then
         OPENSSL="$c"
         break
@@ -405,63 +416,32 @@ expect_fail ca-noncanonical -2 "$DIR/err13" \
 # replays the bump must kill (docs/ca.md). Epoch 2 is 000103000000Z and
 # epoch 3 is 000104000000Z; notAfter stays 491231235959Z so wall-clock
 # tooling keeps working.
-# `openssl ca` rather than `openssl x509 -req`: the -not_before flag
-# that would set an absolute date on x509 arrived in OpenSSL 3.4, and
-# Ubuntu 24.04 ships 3.0. `ca -startdate` does the same job back to
-# 3.0, at the cost of the config, index, and serial files below.
-cat > "$DIR/epochca.cnf" <<EOF
-[ca]
-default_ca = epoch_ca
-[epoch_ca]
-dir = $DIR
-database = $DIR/index.txt
-serial = $DIR/serial
-new_certs_dir = $DIR
-certificate = $DIR/caint.pem
-private_key = $DIR/caint.key
-default_md = sha256
-policy = policy_any
-email_in_dn = no
-unique_subject = no
-x509_extensions = leaf_exts
-[policy_any]
-commonName = supplied
-[leaf_exts]
-keyUsage = critical, digitalSignature
-extendedKeyUsage = serverAuth
-basicConstraints = CA:FALSE
-EOF
-: > "$DIR/index.txt"
-echo 01 > "$DIR/serial"
-
-# Prefer the recipe docs/ca.md tells operators to use. `x509 -req
-# -not_before` arrived in OpenSSL 3.4; where it is missing, fall back
-# to `ca -startdate`, which reaches back to 3.0 and keeps the suite
-# runnable on an LTS distro. EPOCH_ISSUER=ca forces the fallback so
-# both paths get exercised.
-if [ "${EPOCH_ISSUER:-}" != "ca" ] &&
-   "$OPENSSL" x509 -help 2>&1 | grep -q -- '-not_before'; then
-    EPOCH_ISSUER=x509
+# Epoch dates need an absolute notBefore, which `x509 -req` gained in
+# OpenSSL 3.4. `ca -startdate` would reach further back but needs
+# -sigopt for PSS, and issuing v1.5 instead would be a silently wrong
+# certificate rather than a failure. So the legs skip on an older
+# OpenSSL rather than test a recipe docs/ca.md does not give. CI pins
+# the development version, so they always run there.
+if "$OPENSSL" x509 -help 2>&1 | grep -q -- '-not_before'; then
+    EPOCH_LEGS=yes
 else
-    EPOCH_ISSUER=ca
+    EPOCH_LEGS=no
+    echo "SKIP ca epoch legs: $("$OPENSSL" version) predates x509 -not_before (needs 3.4)"
 fi
 
 epoch_leaf() {
     local date=$1 out=$2
     "$OPENSSL" req -new -key "$DIR/caleaf.key" -subj /CN=controller-01 \
         -out "$DIR/epoch.csr" 2>/dev/null
-    if [ "$EPOCH_ISSUER" = x509 ]; then
-        "$OPENSSL" x509 -req -in "$DIR/epoch.csr" -CA "$DIR/caint.pem" \
-            -CAkey "$DIR/caint.key" -not_before "$date" -not_after 491231235959Z \
-            "${PSS[@]}" -extfile "$DIR/leaf.cnf" -out "$out" 2>/dev/null
-    else
-        "$OPENSSL" ca -batch -config "$DIR/epochca.cnf" -in "$DIR/epoch.csr" \
-            -out "$out" -notext -startdate "$date" -enddate 491231235959Z \
-            -md sha256 -sigopt rsa_padding_mode:pss -sigopt rsa_pss_saltlen:32 \
-            >/dev/null 2>&1
-    fi
+    "$OPENSSL" x509 -req -in "$DIR/epoch.csr" -CA "$DIR/caint.pem" \
+        -CAkey "$DIR/caint.key" -not_before "$date" -not_after 491231235959Z \
+        "${PSS[@]}" -extfile "$DIR/leaf.cnf" -out "$out" 2>/dev/null
     [ -s "$out" ] || { echo "FAIL e2e ca-epoch: could not issue at $date"; exit 1; }
 }
+
+EPOCH_LEG=""
+if [ "$EPOCH_LEGS" = yes ]; then
+    EPOCH_LEG=" + ca epoch x6"
 epoch_leaf 000103000000Z "$DIR/epoch2.pem"
 epoch_leaf 000104000000Z "$DIR/epoch3.pem"
 
@@ -532,6 +512,7 @@ expect_fail ca-epoch-unbounded -3 "$DIR/err7" \
     ./bin/tlsclient_ca 127.0.0.1 "$PORT7" "ca:$CAMOD" - - "$DIR/epoch.state"
 
 kill $SERVER14 $SERVER15 2>/dev/null
+fi
 
 # --- Go's crypto/tls, the stack Prometheus terminates with: once with the
 # P-256 cert against the ECDSA build, once with the RSA cert against the
@@ -576,4 +557,4 @@ else
     GO_LEG=" (go legs skipped)"
 fi
 
-echo "e2e: psk + tickets + resumption + pinned ecdsa + pinned rsa + rotation + ca rsa x2 + ca ecdsa x2 + ca rotation + ca negatives x3 + ca epoch x6${GO_LEG} OK"
+echo "e2e: psk + tickets + resumption + pinned ecdsa + pinned rsa + rotation + ca rsa x2 + ca ecdsa x2 + ca rotation + ca negatives x3${EPOCH_LEG}${GO_LEG} OK"

@@ -132,19 +132,32 @@ jobs:
           ./Configure --prefix="$OPENSSL_PREFIX" --openssldir="$OPENSSL_PREFIX/ssl" \
             no-shared no-docs
           make -j"$(nproc)"
-          make install_sw
+          # install_ssldirs too: install_sw alone leaves OPENSSLDIR
+          # without openssl.cnf, and `openssl req` needs it.
+          make install_sw install_ssldirs
 
       - name: Put the pinned OpenSSL first on PATH
         run: |
           echo "$OPENSSL_PREFIX/bin" >> "$GITHUB_PATH"
 
-      - name: Show which OpenSSL e2e will use
+      - name: Prove the pinned OpenSSL can issue what e2e needs
+        # Not just a version check: mint a certificate the way e2e does
+        # and read the date back. A toolchain that cannot issue is how
+        # this broke before, and the failure was silent.
         run: |
           command -v openssl
           openssl version
-          openssl x509 -help 2>&1 | grep -q -- '-not_before' \
-            && echo "e2e will use the documented -not_before recipe" \
-            || { echo "pinned OpenSSL lacks -not_before"; exit 1; }
+          tmp=$(mktemp -d)
+          openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 \
+            -out "$tmp/k.pem"
+          openssl req -new -key "$tmp/k.pem" -subj /CN=probe -out "$tmp/r.csr"
+          openssl x509 -req -in "$tmp/r.csr" -signkey "$tmp/k.pem" \
+            -not_before 000103000000Z -not_after 491231235959Z \
+            -sha256 -out "$tmp/c.pem"
+          openssl x509 -in "$tmp/c.pem" -noout -startdate |
+            grep -q "Jan  3 00:00:00 2000" ||
+            { echo "the pinned OpenSSL did not honour -not_before"; exit 1; }
+          echo "issued a certificate at an absolute notBefore"
 
       - name: Cache cppcheck install
         id: cppcheck-cache
