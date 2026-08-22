@@ -250,6 +250,13 @@ GCOV_TOOL := $(shell $(CC) --version 2>/dev/null | grep -qi clang \
 COV_CC = $(CC) --coverage -O0 -std=c11 -D_DEFAULT_SOURCE $$def -I.
 COV_LIB_OBJS = $(SRCS:%.c=$$d/%.o)
 .PHONY: coverage
+# What CBMC proves: which sources a running harness compiles, and any
+# harness that exists but no launch line starts. Static and fast, so
+# it runs in check; --reach adds a slow cbmc pass and stays nightly.
+.PHONY: proof-coverage
+proof-coverage:
+	python3 proof/coverage.py
+
 # What the Lean spec checks: which spec ops any driver exercises, and
 # how much of each shipping source the differential reaches on its own.
 # Lean has no line-coverage tool, so the C side is measured instead —

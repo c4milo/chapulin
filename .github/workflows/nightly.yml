@@ -137,6 +137,8 @@ jobs:
             spec/.lake
           key: lean-${{ hashFiles('spec/lean-toolchain', 'spec/lakefile.toml', 'spec/lake-manifest.json') }}
       - run: make spec-coverage
+      - name: Report what CBMC proves
+        run: make proof-coverage && cat bin/proof-coverage.md >> "$GITHUB_STEP_SUMMARY"
       - name: Render the spec coverage table on the run page
         if: always()
         run: cat bin/spec-coverage.md >> "$GITHUB_STEP_SUMMARY" 2>/dev/null || true
