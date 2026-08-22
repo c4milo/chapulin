@@ -191,4 +191,25 @@ def selftest : Bool :=
    | some s => pssVerify n e mHash2 s && !pssVerify n e (flip mHash2) s
    | none => false)
 
+
+theorem pssSign_size (n d : Nat) (mHash salt sig : ByteArray)
+    (h : pssSign n d mHash salt = some sig) :
+    sig.size = (bitLen n + 7) / 8 := by
+  simp only [pssSign] at h
+  cases he : emsaPssEncode mHash salt (bitLen n - 1) with
+  | none => rw [he] at h; simp at h
+  | some em => rw [he] at h; simp at h; subst h; exact natToBytesBE_size _ _
+
+theorem pssVerify_size (n e : Nat) (mHash sig : ByteArray)
+    (h : sig.size ≠ (bitLen n + 7) / 8) : pssVerify n e mHash sig = false := by
+  unfold pssVerify; simp [h]
+
+theorem pssVerify_hash_size (n e : Nat) (mHash sig : ByteArray)
+    (h : mHash.size ≠ hLen) : pssVerify n e mHash sig = false := by
+  unfold pssVerify emsaPssVerify; simp [h]
+
+theorem pssSign_hash_size (n d : Nat) (mHash salt : ByteArray)
+    (h : mHash.size ≠ hLen) : pssSign n d mHash salt = none := by
+  simp only [pssSign, emsaPssEncode]; simp [h]
+
 end Spec.Rsa

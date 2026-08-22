@@ -254,4 +254,113 @@ theorem bytesToHex_inj (a b : ByteArray) (h : bytesToHex a = bytesToHex b) : a =
   apply Array.toList_inj.mp
   exact hdata
 
+
+-- Big-endian coding lemmas. natToBytesBE_inj is the load-bearing one:
+-- Record.nonce_inj rests on it, and through that the no-nonce-reuse
+-- property of the record layer.
+
+theorem natToBytesBE_eq (n len : Nat) :
+    natToBytesBE n len =
+      ((List.range' 0 len).map fun i =>
+        UInt8.ofNat (n >>> ((len - 1 - i) * 8) % 256)).toByteArray := by
+  simp [natToBytesBE, foldl_push_eq_append, emptyWithCapacity_eq]
+
+theorem natToBytesBE_zero (n : Nat) : natToBytesBE n 0 = ByteArray.empty := by
+  simp [natToBytesBE_eq]
+
+theorem natToBytesBE_succ (n len : Nat) :
+    natToBytesBE n (len + 1)
+      = natToBytesBE (n / 256) len ++ ByteArray.mk #[UInt8.ofNat (n % 256)] := by
+  rw [natToBytesBE_eq, natToBytesBE_eq, List.range'_1_concat]
+  rw [List.map_append]
+  have hmap : ((List.range' 0 len).map fun i =>
+        UInt8.ofNat (n >>> ((len + 1 - 1 - i) * 8) % 256))
+      = ((List.range' 0 len).map fun i =>
+        UInt8.ofNat ((n / 256) >>> ((len - 1 - i) * 8) % 256)) := by
+    apply List.map_congr_left
+    intro i hi
+    have hlt : i < len := by
+      have := List.mem_range'.mp hi
+      omega
+    have hshift : (len + 1 - 1 - i) * 8 = 8 + (len - 1 - i) * 8 := by
+      have : len - i = (len - 1 - i) + 1 := by omega
+      omega
+    have h8 : n >>> 8 = n / 256 := by rw [Nat.shiftRight_eq_div_pow]
+    rw [hshift, Nat.shiftRight_add, h8]
+  have hlast : (List.map (fun i => UInt8.ofNat (n >>> ((len + 1 - 1 - i) * 8) % 256)) [0 + len])
+      = [UInt8.ofNat (n % 256)] := by
+    simp
+  rw [hmap, hlast, List.toByteArray_append]
+  rfl
+
+theorem bytesToNatBE_append_byte (a : ByteArray) (b : UInt8) :
+    bytesToNatBE (a ++ ByteArray.mk #[b]) = bytesToNatBE a * 256 + b.toNat := by
+  rw [bytesToNatBE, bytesToNatBE, byteArray_foldl_eq, byteArray_foldl_eq]
+  have : (a ++ ByteArray.mk #[b]).data.toList = a.data.toList ++ [b] := by simp
+  rw [this, List.foldl_append]
+  simp
+
+theorem bytesToNatBE_natToBytesBE (len : Nat) : ∀ n : Nat,
+    bytesToNatBE (natToBytesBE n len) = n % 2 ^ (8 * len) := by
+  induction len with
+  | zero =>
+    intro n
+    rw [natToBytesBE_zero, bytesToNatBE, byteArray_foldl_eq]
+    simp only [ByteArray.empty]
+    exact (Nat.mod_one n).symm
+  | succ len ih =>
+    intro n
+    have hb : (UInt8.ofNat (n % 256)).toNat = n % 256 := by
+      simp
+    have hpow : 2 ^ (8 * (len + 1)) = 2 ^ (8 * len) * 256 := by
+      rw [Nat.mul_succ, Nat.pow_add]
+    have h1 : n % (2 ^ (8 * len) * 256) % 256 = n % 256 :=
+      Nat.mod_mod_of_dvd n ⟨2 ^ (8 * len), Nat.mul_comm _ _⟩
+    have h2 : n % (2 ^ (8 * len) * 256) / 256 = n / 256 % 2 ^ (8 * len) := by
+      rw [Nat.mul_comm]
+      exact Nat.mod_mul_right_div_self n 256 (2 ^ (8 * len))
+    have h3 := Nat.div_add_mod (n % (2 ^ (8 * len) * 256)) 256
+    rw [h1, h2] at h3
+    rw [natToBytesBE_succ, bytesToNatBE_append_byte, ih, hb, hpow]
+    omega
+
+
+/-- Big-endian encoding is injective below the representable bound. -/
+theorem natToBytesBE_inj (len a b : Nat) (ha : a < 2 ^ (8 * len)) (hb : b < 2 ^ (8 * len))
+    (h : natToBytesBE a len = natToBytesBE b len) : a = b := by
+  have h1 := bytesToNatBE_natToBytesBE len a
+  have h2 := bytesToNatBE_natToBytesBE len b
+  rw [h, h2, Nat.mod_eq_of_lt hb] at h1
+  rw [Nat.mod_eq_of_lt ha] at h1
+  exact h1.symm
+
+
+/-- A zero-filled ByteArray has the length it was asked for. Shared by
+the modules that build padding out of zeros. -/
+theorem zeros_size (m : Nat) : (ByteArray.mk (Array.replicate m 0)).size = m := by
+  simp [ByteArray.size]
+
+/-- Zero is the XOR identity. -/
+theorem uint8_zero_xor (a : UInt8) : (0 : UInt8) ^^^ a = a := by
+  apply UInt8.toBitVec_inj.1
+  simp
+
+/-- XOR cancels on the left, so a fixed mask never merges two distinct
+values. Record.nonce_inj uses this to recover the sequence number. -/
+theorem uint8_xor_left_cancel (a x y : UInt8) (h : a ^^^ x = a ^^^ y) : x = y := by
+  have h1 : (a ^^^ x) ^^^ a = (a ^^^ y) ^^^ a := by rw [h]
+  apply UInt8.toBitVec_inj.1
+  have := congrArg UInt8.toBitVec h1
+  simpa [BitVec.xor_comm, BitVec.xor_assoc] using this
+
+
+/-- Every byte of a zero-filled ByteArray reads as zero, in range or
+out. -/
+theorem zeros_getElem_zero (m i : Nat) : (ByteArray.mk (Array.replicate m 0))[i]! = 0 := by
+  by_cases h : i < m
+  · rw [getElem!_pos _ i (by rw [zeros_size]; exact h)]
+    simp [ByteArray.getElem_eq_getElem_data]
+  · rw [getElem!_neg _ i (by rw [zeros_size]; omega)]
+    rfl
+
 end Spec.Bytes

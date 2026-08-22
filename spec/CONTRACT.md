@@ -160,6 +160,20 @@ Spec.Record.aeadOpen_seal    splitting Record.seal's output at 5 and 5+|pt|+1 an
 Spec.Hkdf.expand_size        (expand prk info len).size = len          -- RFC 5869 §2.3 "first
 Spec.Hkdf.expandLabel_size   (expandLabel s l c len).size = len        -- L octets of T"
 Spec.Sha256.sha256_size      (sha256 msg).size = 32
+Spec.Drbg.next_key_eq_block  the next key is the counter-0 ChaCha20 block under the
+                             -- current key, so key advance does not depend on how many
+                             -- output bytes the request asked for (next_key_indep)
+Spec.Drbg.next_key_out_disjoint
+                             -- the next key comes from keystream bytes 0..31 and the
+                             -- output from 32 onward: no output byte is a key byte,
+                             -- which is what fast key erasure rests on
+Spec.Drbg.next_out_prefix    a shorter request is a prefix of a longer one under the
+                             -- same key: every request is cut from one stream
+Spec.Record.nonce_inj        distinct sequence numbers below 2^64 give distinct record
+                             -- nonces (RFC 9846 §5.3): within one traffic key the
+                             -- nonce never repeats
+Spec.Bytes.natToBytesBE_inj  big-endian encoding is injective below 2^(8*len)
+                             -- (Record.nonce_inj rests on it)
 Spec.Handshake, over every accepting trace (both modes unless noted):
   count_finished_of_accepts       exactly one Finished (§4.5.3)
   finished_mem_of_accepts         no accepting trace omits Finished
@@ -193,22 +207,32 @@ means the module's selftest plus the differential oracle carry it;
 
 | module | theorems | what is proven vs only vector-checked |
 | --- | --- | --- |
-| Bytes | 14 | proof toolkit: fold characterizations, xor involution, hex injectivity |
-| Handshake | 8 | state-machine safety invariants (Finished count, PSK/pinned flight shapes, HRR bound) |
-| ChaCha | 4 | block size and structural lemmas; keystream itself vector-checked |
-| Aead | 3 | seal/open round trip, tag rejection, output size |
-| Hkdf | 3 | output lengths; derivations vector-checked |
-| Record | 2 | seal/open round trip, record size |
-| Sha256 | 2 | structural lemmas; compression function vector-checked |
+| Bytes | 24 | proof toolkit: fold characterizations, xor involution and left cancellation, hex injectivity, big-endian round trip and injectivity |
+| Drbg | 13 | key advance (the next key is the counter-0 block, independent of the request size), key/output disjointness within one keystream, request-prefix consistency, session key chain |
+| Handshake | 7 | state-machine safety invariants (Finished count, PSK/pinned flight shapes, HRR bound) |
+| Record | 6 | seal/open round trip, record size, nonce size, nonce injectivity (distinct sequence numbers never share a nonce) |
+| ChaCha | 5 | block size, structural lemmas, keystream prefix stability; keystream itself vector-checked |
+| Hkdf | 5 | output lengths, schedule wiring and secret sizes; derivations vector-checked |
+| Aead | 4 | seal/open round trip, tag rejection, output size, pad16 alignment |
+| Rsa | 4 | PSS signature and hash size contracts on both sign and verify; the arithmetic stays vector-checked |
+| Sha256 | 4 | structural lemmas, padding block alignment and message prefix; compression function vector-checked |
 | Poly | 1 | MAC size; arithmetic vector-checked |
 | P256 | 0 | executable oracle only: RFC 6979 vectors and the differential |
-| Rsa | 0 | executable oracle only: OpenSSL vectors and the differential |
 | X25519 | 0 | executable oracle only: RFC 7748 vectors and the differential |
-| Drbg | 0 | executable oracle only: structural selftest and the differential |
 | X509 | 0 | executable oracle only: mint/parse round trips for the single leaf and the chained pair (self-checked signatures; OpenSSL material is exercised by the C strictness suite) and the differential |
 
-The five zero-theorem modules are the hardest and the most
+The three remaining zero-theorem modules are the hardest and the most
 security-critical; they are executable and vector-checked but carry no
-proven properties. The missing theorems, in value order: Drbg key
-advance and seed determinism, X25519 ladder invariants, the X509
-mint-then-parse round trip, then the P-256 and RSA arithmetic lemmas.
+proven properties. The missing theorems, in value order: the X509
+mint-then-parse round trip, X25519 ladder invariants, then the P-256
+and RSA arithmetic lemmas. The RSA arithmetic is statable today without
+an interface change — the factorization enters as a hypothesis, not an
+argument — but its proof needs number theory the dependency-free build
+does not carry.
+
+None of these theorems say anything about the C. They constrain the
+model the differential compares against, so a spec regression fails
+`lake build` instead of silently weakening the oracle, and they state
+relations across runs — key independence, nonce injectivity, request
+prefixes — that a differential row, being one input and one output,
+cannot express.

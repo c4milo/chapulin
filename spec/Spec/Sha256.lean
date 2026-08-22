@@ -153,4 +153,19 @@ def selftest : Bool :=
   && vec ""
       "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
 
+
+theorem pad_blocks (msg : ByteArray) : (pad msg).size % 64 = 0 := by
+  have h1 : (ByteArray.mk #[0x80]).size = 1 := rfl
+  rw [pad]
+  simp only [ByteArray.size_append, natToBytesBE_size, zeros_size, h1]
+  omega
+
+-- 7. Sha256: padding keeps the message as a prefix.
+
+theorem pad_prefix (msg : ByteArray) : (pad msg).extract 0 msg.size = msg := by
+  rw [pad, ByteArray.append_assoc, ByteArray.append_assoc]
+  exact ByteArray.extract_append_eq_left rfl
+
+-- 8. ChaCha: the stream cipher is prefix consistent.
+
 end Spec.Sha256

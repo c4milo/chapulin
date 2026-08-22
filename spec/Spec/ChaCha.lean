@@ -196,5 +196,28 @@ def selftest : Bool := Id.run do
   let rtOk := bytesToHex (xor key (hx "000000000000004a00000000") 1 ct) == bytesToHex pt
   return ksOk && ctOk && rtOk
 
-end Spec.ChaCha
 
+theorem xor_prefix (key nonce : ByteArray) (c : UInt32) (d : ByteArray) (m : Nat)
+    (h : m ≤ d.size) :
+    (xor key nonce c d).extract 0 m
+      = xor key nonce c (d.extract 0 m) := by
+  apply ByteArray.ext_getElem
+  · rw [ByteArray.size_extract, xor_size, xor_size,
+      ByteArray.size_extract]
+  · intro i h1 h2
+    have hi : i < m := by
+      have hh := h1
+      rw [ByteArray.size_extract, xor_size] at hh
+      omega
+    rw [← getElem!_pos _ i h1, ← getElem!_pos _ i h2]
+    rw [getElem!_pos _ i (by rw [ByteArray.size_extract, xor_size]; omega),
+      ByteArray.getElem_extract,
+      ← getElem!_pos (xor key nonce c d) _
+        (by rw [xor_size]; omega)]
+    rw [xor_getElem! _ _ _ _ _ (by omega),
+      xor_getElem! _ _ _ _ _ (by rw [ByteArray.size_extract]; omega)]
+    rw [getElem!_pos (d.extract 0 m) i (by rw [ByteArray.size_extract]; omega),
+      ByteArray.getElem_extract, ← getElem!_pos d _ (by omega)]
+    simp
+
+end Spec.ChaCha

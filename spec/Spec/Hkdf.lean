@@ -206,4 +206,37 @@ def selftest : Bool :=
         && hex sAp8 == "a11af9f05531f856ad47116b45a950328204b4f44bfb6b3a4b4f1f3fcb631643"
   t1 && t2 && t3 && t4 && t5 && t6 && t7 && t8 && t9
 
+
+theorem schedule_eq (psk ecdhe helloHash finHash : ByteArray) :
+    schedule psk ecdhe helloHash finHash =
+      (expandLabel
+         (extract (deriveSecret
+           (extract (zeros 32) psk) "derived" emptyHash) ecdhe)
+         "c hs traffic" helloHash 32,
+       expandLabel
+         (extract (deriveSecret
+           (extract (zeros 32) psk) "derived" emptyHash) ecdhe)
+         "s hs traffic" helloHash 32,
+       expandLabel
+         (extract (deriveSecret
+           (extract (deriveSecret
+             (extract (zeros 32) psk) "derived" emptyHash) ecdhe)
+             "derived" emptyHash) (zeros 32))
+         "c ap traffic" finHash 32,
+       expandLabel
+         (extract (deriveSecret
+           (extract (deriveSecret
+             (extract (zeros 32) psk) "derived" emptyHash) ecdhe)
+             "derived" emptyHash) (zeros 32))
+         "s ap traffic" finHash 32) := rfl
+
+-- 2. Hkdf: every schedule output is 32 bytes.
+
+theorem schedule_sizes (psk ecdhe hh fh : ByteArray) :
+    let (a, b, c, d) := schedule psk ecdhe hh fh
+    a.size = 32 ∧ b.size = 32 ∧ c.size = 32 ∧ d.size = 32 := by
+  simp [schedule, deriveSecret, expandLabel_size, hashLen]
+
+-- 3. Record: nextSecret is 32 bytes.
+
 end Spec.Hkdf

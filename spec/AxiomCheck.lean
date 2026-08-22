@@ -6,6 +6,7 @@
 import Spec.Aead
 import Spec.Record
 import Spec.Handshake
+import Spec.Drbg
 
 #print axioms Spec.Aead.open?_seal
 #print axioms Spec.Aead.open?_ne_tag
@@ -13,3 +14,7 @@ import Spec.Handshake
 #print axioms Spec.Handshake.psk_no_certificate
 #print axioms Spec.Handshake.hrr_at_most_one
 #print axioms Spec.Handshake.count_finished_of_accepts
+#print axioms Spec.Drbg.next_key_out_disjoint
+#print axioms Spec.Drbg.next_key_indep
+#print axioms Spec.Record.nonce_inj
+#print axioms Spec.Bytes.natToBytesBE_inj

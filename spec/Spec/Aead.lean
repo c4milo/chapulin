@@ -115,5 +115,15 @@ def selftest : Bool := Id.run do
   let forgeOk := (open? key nonce aad ct badTag).isNone
   return sealOk && openOk && forgeOk
 
-end Spec.Aead
 
+theorem pad16_aligned (b : ByteArray) : (b ++ pad16 b).size % 16 = 0 := by
+  have he : ByteArray.empty.size = 0 := rfl
+  rw [ByteArray.size_append, pad16]
+  split
+  · next h => simp at h; rw [he]; omega
+  · next h => rw [zeros_size]; omega
+
+-- 6. Sha256: padding always produces whole 64-byte blocks, so the block
+-- loop covers the padded message exactly.
+
+end Spec.Aead

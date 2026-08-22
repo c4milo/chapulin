@@ -118,4 +118,60 @@ def selftest : Bool := Id.run do
   let seqOk := bytesToHex («seal» secret 0 0x17 pt) != bytesToHex out
   return headerOk && nonceOk && seqOk
 
+
+theorem nonce_size (iv : ByteArray) (seq : Nat) (h : 8 ≤ iv.size) :
+    (nonce iv seq).size = iv.size := by
+  have hz : ∀ m : Nat, (ByteArray.mk (Array.replicate m 0)).size = m :=
+    fun m => by simp [ByteArray.size]
+  rw [nonce, xorBytes_size, ByteArray.size_append, natToBytesBE_size, hz]
+  omega
+
+theorem nextSecret_size (s : ByteArray) : (nextSecret s).size = 32 := by
+  simp [nextSecret, Spec.Hkdf.expandLabel_size]
+
+-- 4. Record: the nonce is as long as the IV.
+
+theorem pad_getElem! (iv : ByteArray) (seq j : Nat) (hiv : 8 ≤ iv.size) (hj : j < 8) :
+    (ByteArray.mk (Array.replicate (iv.size - 8) 0) ++ natToBytesBE seq 8)[iv.size - 8 + j]!
+      = (natToBytesBE seq 8)[j]! := by
+  have hz := zeros_size (iv.size - 8)
+  have hs : (ByteArray.mk (Array.replicate (iv.size - 8) 0) ++ natToBytesBE seq 8).size
+      = iv.size := by
+    rw [ByteArray.size_append, hz, natToBytesBE_size]; omega
+  rw [getElem!_pos _ _ (by rw [hs]; omega),
+    ByteArray.getElem_append_right (by rw [hz]; omega),
+    ← getElem!_pos (natToBytesBE seq 8) _ (by rw [natToBytesBE_size]; omega)]
+  rw [hz]
+  congr 1
+  omega
+
+theorem nonce_inj (iv : ByteArray) (s1 s2 : Nat) (hiv : 8 ≤ iv.size)
+    (h1 : s1 < 2 ^ 64) (h2 : s2 < 2 ^ 64)
+    (h : nonce iv s1 = nonce iv s2) : s1 = s2 := by
+  have hz := zeros_size (iv.size - 8)
+  have hpsz : ∀ s : Nat, (ByteArray.mk (Array.replicate (iv.size - 8) 0)
+      ++ natToBytesBE s 8).size = iv.size := by
+    intro s; rw [ByteArray.size_append, hz, natToBytesBE_size]; omega
+  have hnsz : ∀ s : Nat, (nonce iv s).size = iv.size := by
+    intro s
+    rw [nonce, xorBytes_size, hpsz s]
+    omega
+  have key : natToBytesBE s1 8 = natToBytesBE s2 8 := by
+    apply ByteArray.ext_getElem
+    · rw [natToBytesBE_size, natToBytesBE_size]
+    · intro j hj1 hj2
+      have hj : j < 8 := by rw [natToBytesBE_size] at hj1; exact hj1
+      rw [← getElem!_pos _ j hj1, ← getElem!_pos _ j hj2]
+      rw [← pad_getElem! iv s1 j hiv hj, ← pad_getElem! iv s2 j hiv hj]
+      apply uint8_xor_left_cancel iv[iv.size - 8 + j]!
+      have e : ∀ s : Nat, (nonce iv s)[iv.size - 8 + j]!
+          = iv[iv.size - 8 + j]! ^^^ (ByteArray.mk (Array.replicate (iv.size - 8) 0)
+              ++ natToBytesBE s 8)[iv.size - 8 + j]! := by
+        intro s
+        rw [nonce,
+          getElem!_pos _ _ (by rw [xorBytes_size, hpsz s]; omega),
+          getElem_xorBytes _ _ _ (by rw [xorBytes_size, hpsz s]; omega)]
+      rw [← e s1, ← e s2, h]
+  exact natToBytesBE_inj 8 s1 s2 (by simpa using h1) (by simpa using h2) key
+
 end Spec.Record

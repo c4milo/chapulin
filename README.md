@@ -292,10 +292,14 @@ differential oracle only works when a shared misreading cannot make both
 sides agree. Each module carries its RFC vectors as a selftest, and the
 key schedule also matches [RFC 8448](https://www.rfc-editor.org/rfc/rfc8448)'s published trace values. The spec
 also carries theorems about itself — AEAD round-trip and rejection
-soundness, the record round-trip at the AEAD layer, output lengths, and
-the handshake model's safety invariants (see [`spec/CONTRACT.md`](spec/CONTRACT.md), "Proven
-properties") — so an agreement between C and spec transfers a proven
-fact, not just a matching answer.
+soundness, the record round-trip at the AEAD layer, record nonce
+injectivity, the generator's key advance and key/output separation,
+output lengths, and the handshake model's safety invariants (see
+[`spec/CONTRACT.md`](spec/CONTRACT.md), "Proven properties") — so an agreement between C and
+spec transfers a proven fact, not just a matching answer. The theorems
+constrain the model, not the C: they keep a spec regression from
+silently weakening the oracle, and they state relations across runs
+that a single comparison row cannot express.
 
 The unit tests replay RFC 8448's traces at the transcript level: the
 section 3 1-RTT handshake message by message — the ECDHE shared secret,
