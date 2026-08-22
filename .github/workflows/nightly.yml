@@ -95,7 +95,15 @@ jobs:
           BUDGET_SECONDS: "1200"
         run: |
           set -uo pipefail
+          # Build the spec, not just the C: bin/diff shells out to
+          # spec/.lake/build/bin/diffspec, and the cache above is a
+          # speedup, not a guarantee that the binary is there.
+          (cd spec && lake build) || exit 1
           make bin/diff || exit 1
+          # One run on the built-in seed first. If that fails the tree
+          # is broken, not the search, and the seed loop would report
+          # a random seed as the culprit.
+          ./bin/diff || { echo "the default seed already fails; not a search result"; exit 1; }
           deadline=$(( $(date +%s) + BUDGET_SECONDS ))
           runs=0
           while [ "$(date +%s)" -lt "$deadline" ]; do
