@@ -83,6 +83,16 @@ int p256_ecdsa_verify(const uint8_t pub[64], const uint8_t msg_hash[32], const u
 #define ALPHA_N 11
 #define DEPTH_MAX 8
 
+// The client derives its record_size_limit from the receive buffer, and
+// ch_connect refuses a buffer under CH_MIN_RXBUF (cfg.h). The mock's
+// over-limit record has to clear the same number, so both sides read it
+// from here instead of restating it as a literal.
+#if CH_MIN_RXBUF > 1024
+#define HSSEQ_RXBUF CH_MIN_RXBUF
+#else
+#define HSSEQ_RXBUF 1024
+#endif
+
 #include "hsseqsrv.h"
 
 // Why the client rejected, for the divergence report: transport
@@ -154,7 +164,7 @@ static int run_case(const char *letters, size_t n, int psk) {
     srv.psk = psk;
     sha256_init(&srv.transcript);
 
-    static uint8_t rxbuf[1024];
+    static uint8_t rxbuf[HSSEQ_RXBUF];
     ch_cfg cfg;
     case_config(&cfg, rxbuf, sizeof rxbuf, psk);
 

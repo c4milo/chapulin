@@ -30,8 +30,8 @@ static int mut_mode;
 typedef struct {
     const char *seq;
     size_t len;
-    size_t next;         // next letter to render
-    uint8_t queue[2048]; // rendered records the client has not read yet
+    size_t next;                           // next letter to render
+    uint8_t queue[2 * HSSEQ_RXBUF + 2048]; // rendered records the client has not read yet
     size_t queue_len;
     size_t queue_off;
     uint8_t client_hello[2][512]; // captured ClientHello messages, header included
@@ -402,8 +402,8 @@ static void render(mock_server *s, char letter) {
     case 'A':
         if (mut_mode == MUT_REC_OVER) {
             // Over the record_size_limit the client computed from its
-            // 1024-byte buffer, but under the absolute record cap.
-            static uint8_t big[1500];
+            // receive buffer, but under the absolute record cap.
+            static uint8_t big[HSSEQ_RXBUF + 476];
             push_record(s, REC_APPDATA, big, sizeof big);
             break;
         }
