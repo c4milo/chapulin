@@ -1,18 +1,36 @@
 # Operating a CA for chapulin devices
 
 Status: the parser and its proofs are in the tree; the `TRUST=ca`
-build that uses them lands next. This document is the operational
+build that uses them comes next. This document is the operational
 contract that build depends on. Read it before issuing anything.
 
-## The trust model in one paragraph
+## Three jobs, three readers
 
-A device pins one public key — the CA key — in the two provisioning
-slots the pinned-key mode already uses. The server presents its leaf
-certificate alone, or the leaf plus the one intermediate that signed
-it. The device checks signatures up to the pinned key and checks the
+This document covers three different machines. Find yours.
+
+| You run | You do | Sections |
+| --- | --- | --- |
+| The CA | Issue and reissue certificates | What the CA must sign, Issuance recipes, Verify an issued certificate, Key custody, CA software examples |
+| A server | Serve the right chain to devices | Server configuration |
+| Devices | Provision keys, write firmware | Provisioning a device, What the device reports, The jump bound, Turning the epoch on |
+
+The revocation epoch spans all three, so its section says which
+machine each step belongs to.
+
+## The trust model
+
+A device pins one public key, the CA key, in the two provisioning
+slots that pinned-key mode already uses. The server presents its own
+certificate, or that plus the one intermediate that signed it. PKI
+calls the server's own certificate the leaf, and the recipes below
+use that word in file names.
+
+The device checks signatures up to the pinned key, and checks the
 certificate shape against a fixed profile. It checks nothing else: no
-names, no expiry, no revocation lists. Everything this document
-requires exists to make that small check sufficient.
+names, no expiry, no revocation lists. The one exception is optional:
+with the monotonic epoch enabled, the device also reads the server
+certificate's notBefore as a counter. The rules below make that small
+check enough.
 
 ## What the CA must sign
 
@@ -31,7 +49,8 @@ Leaf certificates carry exactly this extension profile:
     extendedKeyUsage = serverAuth
     basicConstraints = CA:FALSE
 
-extendedKeyUsage must be exactly serverAuth: a leaf without it, or
+extendedKeyUsage must be exactly serverAuth: a server certificate
+without it, or
 with any other purpose, never authenticates a server. This is the
 device-side fence against mixed issuance — see "One purpose per
 hierarchy" below.
@@ -41,7 +60,7 @@ Intermediate certificates (optional, at most one) carry:
     basicConstraints = critical, CA:TRUE, pathlen:0
     keyUsage = critical, keyCertSign, cRLSign
 
-The pathlen:0 pins the hierarchy's depth at issuance: an
+pathlen:0 limits the hierarchy's depth at issuance: an
 intermediate that could sign further CAs is off-profile.
 
 Size: a certificate must fit the build's cap — 1536 bytes for RSA
@@ -53,8 +72,12 @@ Serial numbers: positive, at most 20 value bytes. Random 20-byte
 serials work.
 
 Validity dates: present and well-formed (UTCTime or GeneralizedTime,
-Zulu), but the device never reads the values — no clock exists. Set
-them for your own tooling's benefit.
+Zulu), but the device never reads them — no clock exists. Set them
+for your own tooling. In epoch mode this changes for
+the server certificate: its notBefore carries the revocation counter
+and must be
+an epoch date, never the issuance time. See "Revocation with the
+monotonic epoch".
 
 ## Issuance recipes
 
@@ -81,18 +104,20 @@ suite runs these same commands.
       -extfile leaf.cnf -out leaf.pem
 
 with `leaf.cnf` and `int.cnf` holding the extension profiles above.
-A flat hierarchy (root signs leaves directly) drops the middle step;
-devices then pin the root key and servers send the leaf alone.
+A flat hierarchy (the root signs server certificates directly) drops
+the middle step; devices then pin the root key and servers send one
+certificate.
 
-Go as the issuing CA works with two template settings: set
-`SignatureAlgorithm: x509.SHA256WithRSAPSS` explicitly (Go's RSA
-default is PKCS#1 v1.5, which devices reject) and the KU/EKU/BC
-values above. ECDSA templates match by default.
+Go as the issuing CA needs two template settings: set
+`SignatureAlgorithm: x509.SHA256WithRSAPSS` (Go's RSA
+default is PKCS#1 v1.5, which devices reject) and the keyUsage,
+extendedKeyUsage, and basicConstraints values above. ECDSA
+templates match by default.
 
 ## Verify an issued certificate
 
-Before any device sees a new CA's output, check one issued leaf
-against the profile. All four checks must pass:
+Before any device sees a certificate from a new CA, check one
+issued certificate against the profile. All four checks must pass:
 
     # 1. Signature algorithm: rsassaPss (RSA builds) or
     #    ecdsa-with-SHA256 (ECDSA builds), with SHA-256 throughout.
@@ -109,76 +134,321 @@ against the profile. All four checks must pass:
 
 Expect "Digital Signature", "TLS Web Server Authentication", and
 "CA:FALSE". Any other critical extension in the full `-text` output
-means rejection on the device. The definitive check is a staging
-device, or the repository's strictness suite pointed at your
-material via `test/gen_x509vectors.py <dir>`.
+means rejection on the device. For the definitive check, connect a staging device, or run
+the repository's strictness suite over your material with
+`test/gen_x509vectors.py <dir>`.
 
 ## Server configuration
 
-Send the leaf alone (flat hierarchy) or leaf then intermediate —
+Send the server certificate alone (flat hierarchy), or it and then
+the intermediate —
 never the root, never anything else. With OpenSSL, pass the
 intermediate through `-cert_chain int.pem`: extra certificates
-appended to the `-cert` file are silently dropped, which strands the
-client with an unanchorable leaf. A third certificate fails the
-handshake. Watch OpenSSL's auto-chain behavior: `s_server` and
-libraries with default settings append the CA certificate the moment
-it sits in their store (a habitual `-CAfile` is enough), turning a
-working fleet into a fail-closed outage. Keep the CA certificate out
-of the server's store, or set `SSL_MODE_NO_AUTO_CHAIN`.
+appended to the `-cert` file are silently dropped, and the client
+cannot anchor the chain. A third certificate fails the handshake.
+OpenSSL also auto-chains: `s_server` and libraries with default
+settings append the CA certificate whenever it sits in their store,
+and `-CAfile` puts it there. Every device then fails closed. Keep
+the CA certificate out of the server's store, or set
+`SSL_MODE_NO_AUTO_CHAIN`.
 
 ## Leaf lifetime
 
-Recommended: 14 days. The trade: shorter lifetimes shrink the value
-of a stolen leaf key (reissuance is this system's revocation), longer
+Recommended: 14 days. Shorter lifetimes cut the value of a stolen
+server key, because reissuance is this system's revocation. Longer
 lifetimes tolerate longer device offline periods and reissuance
-outages. Justify your number against the tail of your fleet's
-offline distribution, not its mean: with a 7-day lifetime and 2% of
-devices offline for 10 days at a time, that 2% returns to servers
-whose leaves it has never seen — which works — but a device that
-sleeps through a CA-key rotation needs the slot-B path, and a server
-whose reissuance stalled past the lifetime strands everyone. Days to
-weeks; never hours.
+outages. Size the number against the tail of your fleet's offline
+distribution, not its mean. With a 7-day lifetime and 2% of devices
+offline 10 days at a time, that 2% comes back to servers whose
+certificates it has never seen, which works. But a device that
+misses a
+CA-key rotation needs the slot-B path, and a server whose
+reissuance stalls past the lifetime cuts off every device that
+reaches it. Days to weeks; never hours.
 
 ## Reissuance is the freshness mechanism
 
-The device cannot check dates, so freshness is enforced by issuance
-policy, never device-side. That makes the reissuance pipeline a hard
-dependency of fleet connectivity:
+The device cannot check dates. Your issuance policy enforces
+freshness instead, so devices stay connected only while reissuance
+keeps running:
 
-- Monitor reissuance freshness and alert on staleness. This is an
-  operational precondition, not a nice-to-have.
+- Monitor reissuance freshness and alert on staleness.
 - Write the recovery path before deploying: who re-signs when the
-  signer is down, where the emergency long-lived leaf lives, and who
+  signer is down, where the emergency long-lived certificate is kept,
+  and who
   holds its key.
-- What reissuance does not cover: an attacker holding a stolen leaf
-  private key presents its still-valid certificate until the CA key
-  itself rotates. Reissuance revokes keys the attacker does not
-  hold. State this in your threat model rather than assuming
-  otherwise.
+- What reissuance does not cover: an attacker who holds a stolen
+  server private key presents its still-valid certificate until the CA key
+  rotates. With the epoch configured, two steps stop the attacker
+  sooner: reissue that server on a fresh key pair, then advance the
+  epoch
+  (see "Revoking a stolen key" below). Reissuance alone revokes only
+  keys the attacker does not hold. State this in your threat model.
+
+## Revocation with the monotonic epoch
+
+Reissuance alone cannot stop a thief who holds a server's private
+key: the certificate stays valid until the CA key rotates. The epoch
+fixes that. It is opt-in — leave the callbacks unset and none of this
+applies.
+
+The device has no clock, but it can compare numbers. The CA writes
+each server certificate's notBefore as an epoch date, not an issuance
+time, and
+adds one step to revoke. Each device stores the highest epoch it
+has accepted in `ch_tls.epoch`, and refuses any certificate below it
+with
+`certificate_revoked`.
+
+The stored epoch moves only after the server proves it holds the
+server's private key. Certificates are public, so anyone can copy one
+and replay it. If the epoch moved on the certificate alone, an
+attacker could push a device forward and cut it off from servers it
+still needs.
+
+### Seven scenarios
+
+Each diagram shows one task an operator or integrator does.
+
+**1. Revoking a compromised certificate.** New key pair, then advance
+the epoch.
+
+![Revoking a compromised certificate](img/epoch-revoke.svg)
+
+**2. Bootstrapping a new device.** Provision the current epoch.
+
+![Bootstrapping a new device](img/epoch-bootstrap.svg)
+
+**3. A device returns after downtime.** One handshake covers every
+missed step inside the jump bound.
+
+![A device returns after downtime](img/epoch-catch-up.svg)
+
+**4. Rotating certificates routinely.** Reissue at the same epoch and
+nothing moves.
+
+![Rotating certificates routinely](img/epoch-rotate.svg)
+
+**5. Rolling out a new epoch.** Reissue everything before any device
+sees
+it, or the fleet splits.
+
+![Rolling out a new epoch](img/epoch-rollout.svg)
+
+**6. Resuming with a ticket from an older epoch.** Refused before any
+byte is sent.
+
+![Resuming with an old ticket](img/epoch-resumption.svg)
+
+**7. An attacker replays a certificate.** Judged on arrival, recorded
+only after the handshake completes.
+
+![An attacker replays a certificate](img/epoch-replay.svg)
+
+### Which dates are allowed (CA)
+
+The epoch is a number from 0 to 16799. The CA writes it as a date so
+that ordinary tools still accept the certificate. Only these dates
+count:
+
+- UTCTime with year digits 00 to 49, so years 2000 to 2049
+- day of month 01 to 28
+- time exactly 000000Z
+
+The number is `YY*336 + (MM-1)*28 + (DD-1)`. 000101000000Z is 0 and
+491228000000Z is 16799, the highest. Each step is the next day, and
+day 28 steps to the 1st of the next month. To turn a number E back
+into its date:
+
+    printf '%02d%02d%02d000000Z\n' $((E/336)) $(((E%336)/28+1)) $((E%28+1))
+
+### Issuing at an epoch (CA)
+
+Give every server certificate the fleet's current epoch date, never
+the wall-clock time. With OpenSSL 3.4 or later, replace `-days` in the
+recipe
+with absolute dates:
+
+    openssl x509 -req ... -not_before 000103000000Z -not_after 491231235959Z ...
+
+Older OpenSSL sets absolute dates only through `openssl ca`, using
+`-startdate` and `-enddate`. Check one certificate before you ship it:
+
+    openssl x509 -in leaf.pem -outform DER | openssl asn1parse | grep TIME
+
+Both dates must print as UTCTIME, and notBefore must be the epoch
+date. Always use 491231235959Z for notAfter: the device ignores it,
+but 2049 keeps the encoding UTCTime and lets `openssl verify` succeed
+for decades. Intermediates keep ordinary dates.
+
+Never stamp today's date. It sits thousands of steps ahead of any
+fleet, so every device rejects it. A misconfigured issuing tool
+fails at your first staging handshake instead of reaching the
+fleet.
+
+To move the fleet forward, advance the date one step and reissue
+every server's certificate. Record the current epoch date wherever
+issuance
+runs.
+
+### Revoking a stolen key (CA)
+
+The epoch revokes certificates, not keys. Bumping alone does not stop
+a thief: the new certificate is public, so the attacker copies it from
+the real server and presents it with the key they already hold.
+
+Revoking a stolen key takes two steps:
+
+1. Generate a new key pair for that server and issue its new
+   certificate to the new key. Run `openssl genpkey` before the CSR.
+2. Bump the epoch, so the attacker's certificate falls below the
+   fleet and is refused.
+
+Without advancing the epoch, the old certificate works forever,
+because the
+device checks no expiry and no revocation list.
+
+Rotate every server's key if you cannot tell which one leaked.
+
+### The jump bound (device firmware)
+
+A device accepts a certificate at most `CH_EPOCH_BOUND` steps ahead
+of its
+stored epoch (64 by default) and rejects anything further, or off the
+allowed dates, with `bad_certificate`. Without that limit, one
+far-future
+date would push a device past every certificate the CA will ever
+issue.
+
+A device that misses more than `CH_EPOCH_BOUND` steps needs
+reprovisioning. A spare boxed today keeps its epoch while the fleet
+moves on, so after that many steps it can no longer connect.
+Reprovision stock before it ships.
+
+### Provisioning a device (factory and firmware)
+
+- Store the fleet's current epoch at manufacture. `ch_connect` fails
+  with `CH_EINVAL` if `epoch_load` fails or returns a value that is
+  not a valid epoch, so seed it before first use.
+- Set both callbacks or neither. They persist one uint32. A build
+  without CA mode rejects a config that sets them, rather than
+  ignoring them.
+- Use two storage slots. A torn single-slot write can leave a value
+  that fails every connect. Write the older slot, keep the newer one
+  until the write succeeds, and on load take the highest valid value.
+  Only two bad slots is a real failure.
+- Retry a failed write. `ch_tls.epoch_store_failed` says the value did
+  not persist; call `epoch_store` with `ch_tls.epoch` until it
+  succeeds. An unwritten epoch is lost at the next power cut, and the
+  device trusts revoked certificates again.
+- External PSKs have no certificate, so no epoch applies. Revoke one
+  by reprovisioning the device.
+
+Tickets carry the epoch they were issued under. Advancing the epoch
+retires them too.
+
+### Turning the epoch on for a fleet already in the field
+
+Order matters, and getting it wrong takes every device offline.
+
+A device with the callbacks set refuses any certificate whose
+notBefore is not an epoch date, and an ordinary wall-clock date is far
+out of range. So enable issuance first, firmware last:
+
+1. Switch the CA to epoch dates and reissue every server.
+2. Roll all servers onto the new certificates.
+3. Only then ship firmware that sets `epoch_load` and `epoch_store`,
+   provisioned with the fleet's current epoch.
+
+Reverse those and each device fails closed the moment it updates.
+
+A build without the callbacks ignores the epoch dates entirely, so
+step 1 and step 2 are safe to do well ahead of step 3.
+
+### Rolling out a new epoch (CA and servers)
+
+A device moves forward on the first newer certificate it
+authenticates, and
+then
+refuses older ones. Reissuing servers one at a time therefore splits
+the fleet: a device that reaches an updated server can no longer talk
+to the ones still waiting.
+
+Issue and stage every certificate first, then cut over together. If
+you
+cannot, treat the rollout as an outage window.
+
+### What the device reports (firmware)
+
+The library does not watch your fleet. It reports each session, and
+your application collects the results.
+
+Read these after `ch_connect`, whether it succeeded or failed:
+
+- `ch_tls.epoch` — this device's stored epoch. Send it with your
+  telemetry. The spread across a fleet is its drift; keep it under
+  `CH_EPOCH_BOUND`. Epochs left is `CH_EPOCH_MAX - epoch`.
+- `ch_tls.epoch_seen` — the epoch the peer presented.
+- `ch_tls.epoch_status` — the verdict:
+  - `CH_EPOCH_MATCHED` — the peer matches this device.
+  - `CH_EPOCH_AHEAD` — the peer is newer, so the device moves up. On a
+    resumed session it means the opposite: the ticket knows a newer
+    epoch than storage, so a write was lost.
+  - `CH_EPOCH_REVOKED` — the peer is older. The handshake failed.
+    Usually a server you have not reissued yet.
+  - `CH_EPOCH_UNTRUSTED` — the date is not an allowed one, or too far
+    ahead. The handshake failed. Never routine: a mis-issued
+    certificate, or
+    someone trying to strand the device.
+- `ch_tls.epoch_store_failed` — the value did not persist.
+
+Both failures return `CH_EAUTH`, so `epoch_status` is the only way to
+tell them apart, and they need opposite responses.
+
+### Limits
+
+A device learns of a new epoch only by completing a handshake. An
+attacker
+who keeps it away from every legitimate server keeps it on an old
+certificate. Isolation defeats every pull-based revocation scheme,
+CRLs included; put it in your threat model.
+
+The two rejections use different alerts, so a peer with genuine
+certificates can probe a device's epoch and learn which devices lag.
+The alerts stay distinct because operators need to tell the two
+failures apart, and successful handshakes leak the same thing.
+
+With the epoch deployed, certificate lifetime no longer carries
+revocation, so long-lived ones become reasonable. Without it, "Leaf
+lifetime"
+and "Reissuance is the freshness mechanism" stand as written.
+
+Epoch mode needs an issuer that writes an absolute notBefore. OpenSSL
+and EJBCA can. Vault and AD CS cannot, and step-ca rejects artificial
+values by default, so those three support CA mode without the epoch.
 
 ## Key custody
 
-The root key lives in an HSM or on an offline signer. This is a hard
-requirement: a CA-key compromise is fleet-wide and recoverable only
-by rotating the pinned key on every device. With an intermediate,
-the root touches nothing but intermediate issuance, and the online
-signer holds only the intermediate key.
+Keep the root key in an HSM or on an offline signer. A CA-key
+compromise is fleet-wide: you recover only by rotating the pinned key
+on every device. With an intermediate, the root signs only
+intermediates, and the online signer holds only the intermediate key.
 
 ## One purpose per hierarchy
 
-Sign server leaves with this hierarchy and nothing else. The EKU
+Sign server certificates with this hierarchy and nothing else. The EKU
 check means a certificate without exactly serverAuth never
 authenticates a server, so client or device certificates issued for
-mTLS do not become controller identities — but keep the hierarchies
-separate anyway; the fence should never take load.
+mTLS do not become controller identities. Keep the hierarchies
+separate anyway; do not rely on the EKU check alone.
 
 ## CA software examples
 
 The device's contract is the profile, not a vendor. Any issuer whose
-output passes "Verify an issued certificate" works. Verified recipes
-for common software follow; version floors and behaviors were checked
-against vendor documentation and source at the time of writing — the
-verification section remains the gate.
+output passes "Verify an issued certificate" works. Recipes for
+common software follow. Each version floor and behavior matches
+vendor documentation and source at the time of writing. Run
+"Verify an issued certificate" anyway.
 
 ### HashiCorp Vault (both arms; RSA arm needs Vault >= 1.12)
 
@@ -202,17 +472,18 @@ second a critical Name Constraints extension the device rejects.
         key_usage="DigitalSignature" client_flag=false ttl=336h
     vault write pki/issue/chapulin common_name="controller-01.fleet.example"
 
-`client_flag=false` is load-bearing: Vault's default adds clientAuth
+`client_flag=false` is required. Vault's default adds clientAuth
 to the EKU, which the device rejects. The ECDSA arm is the same with
 `key_type=ec key_bits=256` and no `use_pss` (no version floor).
-`basic_constraints_valid_for_non_ca=true` adds CA:FALSE to leaves;
-the device accepts leaves with or without it. Convert issued PEM to
+`basic_constraints_valid_for_non_ca=true` adds CA:FALSE to server
+certificates; the device accepts them with or without it. Convert issued PEM to
 DER at provisioning (`format=der` works on the issue endpoints).
 
 ### smallstep step-ca (both arms; RSA arm needs templates end to end)
 
 step-ca also signs through Go crypto, so the encodings match — but
-its defaults need two corrections: leaves get serverAuth+clientAuth
+its defaults need two corrections: certificates get
+serverAuth+clientAuth
 without a template, and RSA signatures are PKCS#1 v1.5 unless the
 template says otherwise. The leaf template:
 
@@ -236,10 +507,10 @@ profile.
 ### cfssl (ECDSA arm only)
 
 cfssl derives the signature algorithm from the CA key and can never
-produce RSASSA-PSS — a 3072-bit RSA CA would sign v1.5 with SHA-384,
-wrong twice. With a P-256 CA key it signs ecdsa-with-SHA256; a
+produce RSASSA-PSS. A 3072-bit RSA CA would sign v1.5 with SHA-384,
+wrong padding and wrong hash. With a P-256 CA key it signs ecdsa-with-SHA256; a
 signing profile with `"usages": ["digital signature", "server auth"]`
-and no issuer/OCSP/CRL URLs matches the leaf profile. Do not attempt
+and no issuer/OCSP/CRL URLs matches the server profile. Do not attempt
 the RSA arm with cfssl.
 
 ### EJBCA and Microsoft AD CS (viable, verify the encoding first)
@@ -247,9 +518,9 @@ the RSA arm with cfssl.
 Both support PSS (EJBCA: signing algorithm SHA256WithRSAandMGF1;
 AD CS: `AlternateSignatureAlgorithm=1` with a SHA-256 CNG key — a
 CA-wide switch) and ECDSA P-256, and both keep serials within 20
-bytes. Neither goes through Go's encoder, and the profile pins one
-exact PSS parameter encoding — so before trusting either, issue one
-certificate and run the verification section; if the signature
+bytes. Neither goes through Go's encoder, and the profile pins one exact
+PSS parameter encoding. Issue one certificate and run the
+verification section before trusting either. If the signature
 AlgorithmIdentifier's bytes differ from the profile, the device
 rejects it. Strip AIA/CDP/policy extensions from the template or
 profile to protect the size budget, and on AD CS note the PSS switch
@@ -265,8 +536,8 @@ move into your agreement with the operator:
   intermediate's key (or your dedicated root's), never a shared
   root: the device checks no names, so pinning a key that signs for
   other customers would let any of their serverAuth certificates
-  authenticate as your controller. Exclusivity of the pinned key is
-  the entire security requirement.
+  authenticate as your controller. The pinned key must sign no
+  other customer's certificates.
 - The operator signs with the build's algorithm and encoding, the
   profile extensions, and your chosen lifetime — the recipes above,
   which any mainstream CA software can produce.
@@ -275,19 +546,22 @@ move into your agreement with the operator:
   pre-existing intermediate almost never fits: the device rejects a
   missing pathlen:0, and it must reject a critical Name Constraints
   extension — it processes no names, and RFC 5280 requires rejecting
-  a critical extension it cannot honor. Scope the intermediate by
-  exclusivity of its key, not by names.
+  a critical extension it cannot honor. Keep the intermediate's key
+  exclusive; do not limit it by names.
 - The operational preconditions become contract terms: reissuance
   freshness monitoring, custody of the signing key, the recovery
   path, and single-purpose issuance under the dedicated key.
 - Their expiry bookkeeping cannot strand your devices — the device
-  never reads dates — but their reissuance cadence is still your
-  freshness mechanism, so their pipeline reliability bounds yours.
+  never reads dates as dates — but their reissuance cadence is still
+  your freshness mechanism, so their pipeline reliability bounds
+  yours. Epoch mode needs an external CA that writes the notBefore
+  you specify, which most managed CAs will not do; treat it as
+  unavailable unless the contract says otherwise.
 
-Public CAs remain out of scope: their trust model requires expiry
-and name checking the device deliberately does not have, and (for
-Let's Encrypt specifically) their signature algorithms sit outside
-the profile on both arms. See docs/decisions.md.
+Public CAs stay out of scope. Their trust model needs expiry and
+name checks the device omits by design. Let's Encrypt's signature
+algorithms also sit outside the profile on both arms. See
+docs/decisions.md.
 
 A public-CA-fronted server still works today, through pinned-key
 mode: it hashes the certificate without parsing it and verifies the
@@ -300,6 +574,9 @@ device.
 
 Writing the pinned key at provisioning and at rare rotations is
 fine. Do not design anything that persists per-connection or
-per-epoch state without checking the flash's write-cycle budget;
-the documented guidance for this hardware class is to persist such
-state at most daily.
+per-key-update state without checking the flash's write-cycle
+budget; the documented guidance for this hardware class is to
+persist such state at most daily. ("Per-key-update" here means the TLS
+KeyUpdate, not the revocation epoch. The revocation epoch writes
+once per revocation event, rarer than key rotation and well inside
+the budget.)

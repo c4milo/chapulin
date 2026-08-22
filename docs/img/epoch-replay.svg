@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="510" height="716" viewBox="0 0 510 716" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" role="img" aria-label="7. An attacker replays a certificate">
+<rect width="510" height="716" fill="#ffffff"/>
+<defs><marker id="a" markerWidth="9" markerHeight="9" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6 z" fill="#1b1f24"/></marker><marker id="ar" markerWidth="9" markerHeight="9" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6 z" fill="#cf222e"/></marker><marker id="ag" markerWidth="9" markerHeight="9" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6 z" fill="#1a7f37"/></marker></defs>
+<text x="34" y="34" font-size="17" font-weight="600" fill="#1b1f24">7. An attacker replays a certificate</text>
+<text x="34" y="55" font-size="12.5" fill="#57606a">Certificates are public, so holding one proves nothing.</text>
+<line x1="112" y1="112" x2="112" y2="654" stroke="#8c959f" stroke-width="1" stroke-dasharray="4 4"/>
+<rect x="34" y="82" width="156" height="28" rx="6" fill="#ffffff" stroke="#0969da" stroke-width="1.4"/>
+<text x="112" y="101" font-size="12.5" font-weight="600" text-anchor="middle" fill="#1b1f24">Device</text>
+<line x1="396" y1="112" x2="396" y2="654" stroke="#8c959f" stroke-width="1" stroke-dasharray="4 4"/>
+<rect x="318" y="82" width="156" height="28" rx="6" fill="#ffffff" stroke="#8c959f" stroke-width="1.4"/>
+<text x="396" y="101" font-size="12.5" font-weight="600" text-anchor="middle" fill="#1b1f24">Attacker</text>
+<rect x="39" y="113" width="147" height="26" rx="13" fill="#ddf4ff" stroke="#54aeff"/>
+<text x="112" y="131" font-size="12" text-anchor="middle" fill="#1b1f24" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">stored epoch = 2</text>
+<rect x="130" y="154" width="346" height="63" rx="5" fill="#fff8c5" stroke="#d4a72c"/>
+<text x="141" y="171" font-size="11.5" fill="#1b1f24">The attacker connected to a real server as an</text>
+<text x="141" y="188" font-size="11.5" fill="#1b1f24">ordinary client and copied its epoch-3 certificate.</text>
+<text x="141" y="205" font-size="11.5" fill="#1b1f24">The attacker has no private key.</text>
+<line x1="116" y1="259" x2="386" y2="259" stroke="#1b1f24" stroke-width="1.6" marker-end="url(#a)"/>
+<rect x="208" y="237" width="93" height="18" fill="#ffffff"/>
+<text x="254" y="251" font-size="12" text-anchor="middle" fill="#1b1f24" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">ClientHello</text>
+<line x1="392" y1="305" x2="122" y2="305" stroke="#1b1f24" stroke-width="1.6" marker-end="url(#a)"/>
+<rect x="137" y="283" width="235" height="18" fill="#ffffff"/>
+<text x="254" y="297" font-size="12" text-anchor="middle" fill="#1b1f24" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">Certificate (epoch 3, genuine)</text>
+<rect x="34" y="343" width="308" height="97" rx="5" fill="#fff8c5" stroke="#d4a72c"/>
+<text x="45" y="360" font-size="11.5" fill="#1b1f24">The chain verifies and 3 is within the bound,</text>
+<text x="45" y="377" font-size="11.5" fill="#1b1f24">so the rule judges the certificate. It writes</text>
+<text x="45" y="394" font-size="11.5" fill="#1b1f24">nothing. Had it moved the stored value here,</text>
+<text x="45" y="411" font-size="11.5" fill="#1b1f24">this handshake</text>
+<text x="45" y="428" font-size="11.5" fill="#1b1f24">would have pushed the device to 3 for good.</text>
+<line x1="392" y1="468" x2="122" y2="468" stroke="#cf222e" stroke-width="1.6" marker-end="url(#ar)"/>
+<rect x="129" y="446" width="250" height="18" fill="#ffffff"/>
+<text x="254" y="460" font-size="12" text-anchor="middle" fill="#cf222e" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">CertificateVerify  (cannot sign)</text>
+<rect x="34" y="506" width="251" height="46" rx="5" fill="#fff8c5" stroke="#d4a72c"/>
+<text x="45" y="523" font-size="11.5" fill="#1b1f24">The signature fails: no private key.</text>
+<text x="45" y="540" font-size="11.5" fill="#1b1f24">epoch_commit never runs.</text>
+<line x1="116" y1="580" x2="386" y2="580" stroke="#cf222e" stroke-width="1.6" marker-end="url(#ar)"/>
+<rect x="178" y="558" width="153" height="18" fill="#ffffff"/>
+<text x="254" y="572" font-size="12" text-anchor="middle" fill="#cf222e" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">alert decrypt_error</text>
+<rect x="39" y="611" width="147" height="26" rx="13" fill="#ddf4ff" stroke="#54aeff"/>
+<text x="112" y="629" font-size="12" text-anchor="middle" fill="#1b1f24" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">stored epoch = 2</text>
+<rect x="34" y="666" width="442" height="34" rx="6" fill="#cf222e" fill-opacity="0.10" stroke="#cf222e"/>
+<text x="48" y="688" font-size="12.5" font-weight="600" fill="#cf222e">The device stays at 2 and can still talk to epoch-2 servers.</text>
+</svg>

@@ -49,13 +49,14 @@ the live CA key, slot B the staged next one. `pin_slot` reports which
 CA key verified the presented chain.
 
 Routine server-key rotation stops touching devices in this mode. The
-server takes a new leaf certificate from the same CA, and every device
+server takes a new certificate from the same CA, and every device
 verifies it against the pin it already holds. The slot procedure
 exists for the rarer event: rotating the CA key itself.
 
 The three steps carry over unchanged, with the CA key in place of the
 server key. Stage the new CA public key in slot B over the TLS
-session. Move issuance to the new CA and roll servers onto its leaves;
+session. Move issuance to the new CA and roll servers onto its
+certificates;
 watch `pin_slot` flip from 1 to 2. Then promote the new key to slot A
 and stage the next one. The offline-device recovery path is the same
 as above.
@@ -68,10 +69,22 @@ Two CA-mode specifics:
   matches. Promote promptly. A stored hint that records the last
   matching slot would remove the waste, but it is not worth persistent
   state and code for a once-per-connection cost.
+- **The epoch rides through a CA rotation.** The revocation epoch
+  (see [ca.md](ca.md)) is device-side state, independent of which
+  slot anchored the chain. A new CA must adopt the fleet's current
+  epoch date on day one: issuing below the stored epoch reads as revoked
+  (`certificate_revoked`), and issuing far above it exceeds the jump bound.
+  Carry the epoch date over with the issuance keys.
 - **A stolen CA key has no device-side revocation.** The device checks
   no revocation lists and no expiry, so whoever holds the CA private
-  key authenticates as any server to every device. The only remedy is
-  this procedure run fleet-wide under pressure: stage a new CA key,
-  reissue every leaf, promote, retire the stolen key. Custody rules
-  that keep the root offline (see [ca.md](ca.md)) exist so you never
-  run that drill for real.
+  key authenticates as any server to every device. The epoch does not
+  change this: it revokes certificates, and whoever signs as the CA also
+  signs epochs — and can drive every device's stored epoch up at
+  will. The
+  only remedy is this procedure run fleet-wide under pressure: stage
+  a new CA key, reissue every server certificate, promote, retire the
+  stolen key —
+  then read `ch_tls.epoch` across the fleet and reprovision devices
+  whose marks were walked out of range. Custody rules that keep the
+  root offline (see [ca.md](ca.md)) exist so you never run that
+  drill for real.

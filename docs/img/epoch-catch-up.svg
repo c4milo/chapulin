@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="579" height="638" viewBox="0 0 579 638" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" role="img" aria-label="3. A device returns after downtime">
+<rect width="579" height="638" fill="#ffffff"/>
+<defs><marker id="a" markerWidth="9" markerHeight="9" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6 z" fill="#1b1f24"/></marker><marker id="ar" markerWidth="9" markerHeight="9" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6 z" fill="#cf222e"/></marker><marker id="ag" markerWidth="9" markerHeight="9" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6 z" fill="#1a7f37"/></marker></defs>
+<text x="34" y="34" font-size="17" font-weight="600" fill="#1b1f24">3. A device returns after downtime</text>
+<text x="34" y="55" font-size="12.5" fill="#57606a">It slept through several revocations and has to catch up.</text>
+<line x1="112" y1="112" x2="112" y2="576" stroke="#8c959f" stroke-width="1" stroke-dasharray="4 4"/>
+<rect x="34" y="82" width="156" height="28" rx="6" fill="#ffffff" stroke="#0969da" stroke-width="1.4"/>
+<text x="112" y="101" font-size="12.5" font-weight="600" text-anchor="middle" fill="#1b1f24">Device</text>
+<line x1="362" y1="112" x2="362" y2="576" stroke="#8c959f" stroke-width="1" stroke-dasharray="4 4"/>
+<rect x="284" y="82" width="156" height="28" rx="6" fill="#ffffff" stroke="#8c959f" stroke-width="1.4"/>
+<text x="362" y="101" font-size="12.5" font-weight="600" text-anchor="middle" fill="#1b1f24">Server</text>
+<rect x="39" y="113" width="147" height="26" rx="13" fill="#ddf4ff" stroke="#54aeff"/>
+<text x="112" y="131" font-size="12" text-anchor="middle" fill="#1b1f24" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">stored epoch = 2</text>
+<rect x="224" y="154" width="277" height="46" rx="5" fill="#fff8c5" stroke="#d4a72c"/>
+<text x="235" y="171" font-size="11.5" fill="#1b1f24">The fleet has revoked three times since.</text>
+<text x="235" y="188" font-size="11.5" fill="#1b1f24">Servers now carry epoch 5.</text>
+<line x1="116" y1="228" x2="352" y2="228" stroke="#1b1f24" stroke-width="1.6" marker-end="url(#a)"/>
+<rect x="191" y="206" width="93" height="18" fill="#ffffff"/>
+<text x="237" y="220" font-size="12" text-anchor="middle" fill="#1b1f24" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">ClientHello</text>
+<line x1="358" y1="274" x2="122" y2="274" stroke="#1b1f24" stroke-width="1.6" marker-end="url(#a)"/>
+<rect x="153" y="252" width="168" height="18" fill="#ffffff"/>
+<text x="237" y="266" font-size="12" text-anchor="middle" fill="#1b1f24" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">Certificate (epoch 5)</text>
+<rect x="34" y="312" width="308" height="63" rx="5" fill="#ddf4ff" stroke="#54aeff"/>
+<text x="45" y="329" font-size="11.5" fill="#1b1f24">5 - 2 = 3 steps, well inside the bound of 64.</text>
+<text x="45" y="346" font-size="11.5" fill="#1b1f24">One handshake covers any number of missed</text>
+<text x="45" y="363" font-size="11.5" fill="#1b1f24">steps, so long as the gap fits the bound.</text>
+<line x1="358" y1="403" x2="122" y2="403" stroke="#1b1f24" stroke-width="1.6" marker-end="url(#a)"/>
+<rect x="131" y="381" width="212" height="18" fill="#ffffff"/>
+<text x="237" y="395" font-size="12" text-anchor="middle" fill="#1b1f24" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">CertificateVerify, Finished</text>
+<rect x="39" y="434" width="147" height="26" rx="13" fill="#ddf4ff" stroke="#54aeff"/>
+<text x="112" y="452" font-size="12" text-anchor="middle" fill="#1b1f24" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">stored epoch = 5</text>
+<rect x="34" y="491" width="327" height="63" rx="5" fill="#fff8c5" stroke="#d4a72c"/>
+<text x="45" y="508" font-size="11.5" fill="#1b1f24">Past the bound the device would answer</text>
+<text x="45" y="525" font-size="11.5" fill="#1b1f24">bad_certificate instead, and only reprovisioning</text>
+<text x="45" y="542" font-size="11.5" fill="#1b1f24">brings it back.</text>
+<rect x="34" y="588" width="511" height="34" rx="6" fill="#1a7f37" fill-opacity="0.10" stroke="#1a7f37"/>
+<text x="48" y="610" font-size="12.5" font-weight="600" fill="#1a7f37">The device catches up in one handshake, skipping the epochs it missed.</text>
+</svg>

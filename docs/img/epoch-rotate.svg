@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1060" height="669" viewBox="0 0 1060 669" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" role="img" aria-label="4. Rotating certificates routinely">
+<rect width="1060" height="669" fill="#ffffff"/>
+<defs><marker id="a" markerWidth="9" markerHeight="9" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6 z" fill="#1b1f24"/></marker><marker id="ar" markerWidth="9" markerHeight="9" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6 z" fill="#cf222e"/></marker><marker id="ag" markerWidth="9" markerHeight="9" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6 z" fill="#1a7f37"/></marker></defs>
+<text x="34" y="34" font-size="17" font-weight="600" fill="#1b1f24">4. Rotating certificates routinely</text>
+<text x="34" y="55" font-size="12.5" fill="#57606a">Ordinary reissuance keeps the same epoch, so no device moves.</text>
+<line x1="112" y1="112" x2="112" y2="607" stroke="#8c959f" stroke-width="1" stroke-dasharray="4 4"/>
+<rect x="34" y="82" width="156" height="28" rx="6" fill="#ffffff" stroke="#0969da" stroke-width="1.4"/>
+<text x="112" y="101" font-size="12.5" font-weight="600" text-anchor="middle" fill="#1b1f24">CA</text>
+<line x1="530" y1="112" x2="530" y2="607" stroke="#8c959f" stroke-width="1" stroke-dasharray="4 4"/>
+<rect x="452" y="82" width="156" height="28" rx="6" fill="#ffffff" stroke="#8c959f" stroke-width="1.4"/>
+<text x="530" y="101" font-size="12.5" font-weight="600" text-anchor="middle" fill="#1b1f24">controller-01</text>
+<line x1="948" y1="112" x2="948" y2="607" stroke="#8c959f" stroke-width="1" stroke-dasharray="4 4"/>
+<rect x="870" y="82" width="156" height="28" rx="6" fill="#ffffff" stroke="#8c959f" stroke-width="1.4"/>
+<text x="948" y="101" font-size="12.5" font-weight="600" text-anchor="middle" fill="#1b1f24">Device</text>
+<rect x="718" y="120" width="308" height="29" rx="5" fill="#ddf4ff" stroke="#54aeff"/>
+<text x="729" y="137" font-size="11.5" fill="#1b1f24">stored epoch = 3, along with the whole fleet.</text>
+<rect x="34" y="169" width="321" height="63" rx="5" fill="#fff8c5" stroke="#d4a72c"/>
+<text x="45" y="186" font-size="11.5" fill="#1b1f24">Routine reissuance: a fresh certificate, and a</text>
+<text x="45" y="203" font-size="11.5" fill="#1b1f24">fresh key pair if you rotate on a schedule. The</text>
+<text x="45" y="220" font-size="11.5" fill="#1b1f24">epoch date does not change.</text>
+<line x1="116" y1="260" x2="520" y2="260" stroke="#1a7f37" stroke-width="1.6" marker-end="url(#ag)"/>
+<rect x="204" y="238" width="235" height="18" fill="#ffffff"/>
+<text x="321" y="252" font-size="12" text-anchor="middle" fill="#1a7f37" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">new certificate, still epoch 3</text>
+<line x1="944" y1="320" x2="540" y2="320" stroke="#1b1f24" stroke-width="1.6" marker-end="url(#a)"/>
+<rect x="693" y="298" width="93" height="18" fill="#ffffff"/>
+<text x="739" y="312" font-size="12" text-anchor="middle" fill="#1b1f24" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">ClientHello</text>
+<line x1="534" y1="366" x2="938" y2="366" stroke="#1b1f24" stroke-width="1.6" marker-end="url(#a)"/>
+<rect x="547" y="344" width="384" height="18" fill="#ffffff"/>
+<text x="739" y="358" font-size="12" text-anchor="middle" fill="#1b1f24" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">Certificate (epoch 3), CertificateVerify, Finished</text>
+<rect x="718" y="404" width="308" height="63" rx="5" fill="#ddf4ff" stroke="#54aeff"/>
+<text x="729" y="421" font-size="11.5" fill="#1b1f24">3 equals the stored 3: CH_EPOCH_MATCHED.</text>
+<text x="729" y="438" font-size="11.5" fill="#1b1f24">Nothing moves, nothing is written, nothing to</text>
+<text x="729" y="455" font-size="11.5" fill="#1b1f24">roll out.</text>
+<rect x="699" y="505" width="327" height="80" rx="5" fill="#fff8c5" stroke="#d4a72c"/>
+<text x="710" y="522" font-size="11.5" fill="#1b1f24">Rotation on its own does not revoke anything.</text>
+<text x="710" y="539" font-size="11.5" fill="#1b1f24">A thief holding an old key still has a valid</text>
+<text x="710" y="556" font-size="11.5" fill="#1b1f24">epoch-3 certificate until you advance the epoch.</text>
+<text x="710" y="573" font-size="11.5" fill="#1b1f24">That is use case 1.</text>
+<rect x="34" y="619" width="992" height="34" rx="6" fill="#1a7f37" fill-opacity="0.10" stroke="#1a7f37"/>
+<text x="48" y="641" font-size="12.5" font-weight="600" fill="#1a7f37">Rotate as often as you like: only advancing the epoch moves devices.</text>
+</svg>

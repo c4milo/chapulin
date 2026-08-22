@@ -135,7 +135,9 @@ which convention holds them.
 - **Mechanism.** Single-entry design — the DER primitives sit
   behind the profile walker, and the walker sits behind one
   function. `x509_read_time` checks the Time shape and ignores the
-  digits, so no code path wants a clock.
+  digits. `x509_read_time_epoch` does read them, but only as a
+  counter to compare against stored state (INV-21); nothing
+  compares a certificate to now, so no code path wants a clock.
 - **Check.** Semgrep-structural (`inv-20-cert-entry-point`): no
   `x509_verify_leaf` call outside handshake.c, with x509.c excluded
   as the definition site. Semgrep-tripwire
@@ -144,9 +146,37 @@ which convention holds them.
   complementing `inv-2-freestanding`'s time.h include ban at the
   call level; test/timing.c calls `clock_gettime` legitimately and
   sits in the standard excludes.
-- **Violation.** A PR checks notBefore against a device clock the
-  firmware cannot trust, or calls the verifier from a new site that
-  skips the handshake's alert and wipe discipline.
+- **Violation.** A PR compares an epoch date against a device clock
+  the firmware cannot trust — the epoch is an ordering, not a time —
+  or calls the verifier from a new site that skips the handshake's
+  alert and wipe discipline.
+- See [decisions: Trust model](decisions.md#trust-model).
+
+### INV-21 — the stored epoch only moves forward, and only for an authenticated server
+
+- **Claim.** Under the epoch callbacks, `ch_tls.epoch` never
+  decreases within or across sessions, and it changes only after a
+  handshake authenticates the peer.
+- **Mechanism.** Two functions, deliberately split. `epoch_check`
+  runs on the chain verdict and only rejects — below the stored epoch is
+  `ALERT_CERTIFICATE_REVOKED`, not an allowed date or past
+  `CH_EPOCH_BOUND` is `ALERT_BAD_CERTIFICATE` —
+  because a CA-signed certificate is public and proves nothing
+  about who presented it. `epoch_commit` performs the one
+  assignment and the one store, and `run` calls it after
+  `expect_finished`, so CertificateVerify and Finished have already
+  proved a real server is there. `ch_connect` refuses an epoch that
+  storage cannot supply or that is not an allowed epoch.
+- **Check.** `test_epoch_cfg` covers the config gates and asserts
+  nothing persists at connect time; the e2e `ca-epoch-*` legs
+  move a real device forward, then replay the pre-bump leaf and
+  the pre-bump ticket against it and require both to fail; the
+  x509der harness proves the reader's value stays in range,
+  which is what keeps the stored epoch plus the bound inside uint32.
+- **Violation.** A PR moves the update back into `server_auth` for
+  symmetry with the rejects, letting a replayed certificate advance
+  a device's persistent state; or a build sets `CH_EPOCH_BOUND`
+  outside the range the `_Static_assert` in cfg.h admits.
 - See [decisions: Trust model](decisions.md#trust-model).
 
 ### INV-7 — no negotiation

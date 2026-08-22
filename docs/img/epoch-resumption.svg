@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="565" height="541" viewBox="0 0 565 541" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" role="img" aria-label="6. Resuming with a ticket from an older epoch">
+<rect width="565" height="541" fill="#ffffff"/>
+<defs><marker id="a" markerWidth="9" markerHeight="9" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6 z" fill="#1b1f24"/></marker><marker id="ar" markerWidth="9" markerHeight="9" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6 z" fill="#cf222e"/></marker><marker id="ag" markerWidth="9" markerHeight="9" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6 z" fill="#1a7f37"/></marker></defs>
+<text x="34" y="34" font-size="17" font-weight="600" fill="#1b1f24">6. Resuming with a ticket from an older epoch</text>
+<text x="34" y="55" font-size="12.5" fill="#57606a">A resumed session sends no certificate, so the ticket carries the epoch.</text>
+<line x1="112" y1="112" x2="112" y2="479" stroke="#8c959f" stroke-width="1" stroke-dasharray="4 4"/>
+<rect x="34" y="82" width="156" height="28" rx="6" fill="#ffffff" stroke="#0969da" stroke-width="1.4"/>
+<text x="112" y="101" font-size="12.5" font-weight="600" text-anchor="middle" fill="#1b1f24">Device</text>
+<line x1="362" y1="112" x2="362" y2="479" stroke="#8c959f" stroke-width="1" stroke-dasharray="4 4"/>
+<rect x="284" y="82" width="156" height="28" rx="6" fill="#ffffff" stroke="#8c959f" stroke-width="1.4"/>
+<text x="362" y="101" font-size="12.5" font-weight="600" text-anchor="middle" fill="#1b1f24">Server</text>
+<rect x="39" y="113" width="147" height="26" rx="13" fill="#ddf4ff" stroke="#54aeff"/>
+<text x="112" y="131" font-size="12" text-anchor="middle" fill="#1b1f24" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">stored epoch = 3</text>
+<rect x="34" y="154" width="340" height="63" rx="5" fill="#fff8c5" stroke="#d4a72c"/>
+<text x="45" y="171" font-size="11.5" fill="#1b1f24">The saved ticket was issued at epoch 2, before</text>
+<text x="45" y="188" font-size="11.5" fill="#1b1f24">the epoch advanced. The application presents it as</text>
+<text x="45" y="205" font-size="11.5" fill="#1b1f24">cfg.ticket_epoch = 2.</text>
+<rect x="34" y="251" width="314" height="63" rx="5" fill="#fff8c5" stroke="#d4a72c"/>
+<text x="45" y="268" font-size="11.5" fill="#1b1f24">ch_connect compares 2 against the stored 3 and</text>
+<text x="45" y="285" font-size="11.5" fill="#1b1f24">refuses: CH_EPOCH_REVOKED, CH_EAUTH.</text>
+<text x="45" y="302" font-size="11.5" fill="#1b1f24">No socket is opened and no byte is sent.</text>
+<line x1="116" y1="342" x2="352" y2="342" stroke="#cf222e" stroke-width="1.6" marker-end="url(#ar)" stroke-dasharray="6 4"/>
+<rect x="179" y="320" width="116" height="18" fill="#ffffff"/>
+<text x="237" y="334" font-size="12" text-anchor="middle" fill="#cf222e" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">(nothing sent)</text>
+<rect x="34" y="394" width="308" height="63" rx="5" fill="#fff8c5" stroke="#d4a72c"/>
+<text x="45" y="411" font-size="11.5" fill="#1b1f24">The application drops the ticket and connects</text>
+<text x="45" y="428" font-size="11.5" fill="#1b1f24">again in full. That handshake carries a</text>
+<text x="45" y="445" font-size="11.5" fill="#1b1f24">certificate, which the epoch rule can check.</text>
+<rect x="34" y="491" width="497" height="34" rx="6" fill="#cf222e" fill-opacity="0.10" stroke="#cf222e"/>
+<text x="48" y="513" font-size="12.5" font-weight="600" fill="#cf222e">Advancing the epoch retires every ticket issued before it.</text>
+</svg>

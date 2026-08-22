@@ -80,7 +80,8 @@ does nothing more.
     fixed-grammar canonical-DER parser with CBMC memory-safety
     proofs, a Lean differential oracle, and a fuzz harness. And it
     accepts the skeleton-key objection and scopes it: the pinned key
-    must belong to a CA dedicated to the fleet, every leaf carries
+    must belong to a CA dedicated to the fleet, every server
+    certificate carries
     `extendedKeyUsage` exactly serverAuth, and docs/ca.md makes
     exclusivity of the pinned key the operator's contract.
 12. **Key rotation is a second pin slot.** Cost: 16 bytes of config
@@ -96,17 +97,18 @@ does nothing more.
     operations.
 14. **CA trust is a build, not a negotiation.** `make TRUST=ca` pins a
     CA public key in the pin slots and verifies the server's chain — a
-    leaf alone, or the leaf plus one intermediate — against it with a
+    server certificate alone, or that plus one intermediate — against
+    it with a
     profiled parser: canonical DER, the build's one signature
     algorithm throughout, a fixed extension profile, signatures and
     shape only. Cost: the parser's flash and stack, one or two extra
     signature verifies on each full handshake, a receive-buffer floor
     derived from the certificate cap, and no device-side revocation —
-    a stolen leaf key keeps authenticating until the CA key rotates,
+    a stolen server key keeps authenticating until the CA key rotates,
     because the device reads no dates. Gain: server keys rotate by
     reissuance with zero device touches, and one pin covers a fleet
     of servers. Freshness is issuance policy, not device state: short
-    leaf lifetimes and a monitored reissuance pipeline do the work
+    certificate lifetimes and a monitored reissuance pipeline do the work
     that expiry checking would. docs/ca.md is the operational
     contract that makes the small device-side check sufficient.
 15. **Public CAs stay a non-goal.** Cost: operators run a dedicated CA
@@ -224,3 +226,38 @@ does nothing more.
     Cost: hardware faults mid-connection surface as failed
     handshakes, not named aborts. Gain: exhaustive checking where
     inputs are hostile, and no abort path an attacker can reach.
+
+31. **Revocation travels in the server certificate's notBefore, on a
+    restricted set of dates.** A clockless device cannot check expiry
+    or fetch a
+    CRL, so reissuance alone never revokes a stolen server key. The
+    epoch turns notBefore into a counter the CA already signs: dates
+    restricted to UTCTime, YY 00..49, DD 01..28, midnight, compared
+    as the exact index `YY*336 + (MM-1)*28 + (DD-1)`. Alternatives
+    declined: a new certificate extension (every CA would have to
+    learn it, and the device would parse more), a serial-number
+    counter (issuance tools own serials), and GeneralizedTime dates
+    from 2000 on (RFC 5280 §4.1.2.5 mandates UTCTime through 2049,
+    so those certificates are unissuable). Cost: the CA must write
+    an absolute notBefore, which Vault, step-ca, and AD CS will not
+    do; advancing the epoch requires reissuing every server before
+    any device
+    sees it; and a device isolated from the fleet never learns of a
+    it. Gain: a device-side revocation check with no clock, no CRL,
+    no OCSP, and four bytes of device state. The epoch revokes
+    certificates; revoking a stolen key means reissuing that server
+    on a fresh key pair and advancing the epoch, so the old
+    certificate falls
+    below the stored epoch. Advancing is what makes key rotation stick.
+
+32. **The stored epoch moves only after the server authenticates.** A
+    CA-signed certificate is public, so presenting one proves
+    nothing about the presenter: an attacker can replay a genuine
+    higher-epoch certificate harvested from any real server. Rejecting on
+    the chain verdict alone is safe — it only fails the handshake
+    closed — but raising the stored epoch outlives the session, so
+    it waits until
+    CertificateVerify and Finished have proven a real server is
+    there. Cost: the rule splits across two call sites instead of
+    one. Gain: an unauthenticated peer cannot move device state that
+    outlives the session.
