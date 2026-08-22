@@ -35,7 +35,8 @@ LINT_C := $(SRCS) drbg.c test/unit.c test/tlsclient.c test/diff.c test/timing.c 
 TESTH := test/testrand.h test/session_tests.h test/diffdrv.h test/diffp256.h \
          test/diffrsa.h test/hsseqsrv.h test/rfc8448_vectors.h test/rfc8448_tests.h \
          test/x509_vectors.h test/x509mut.h test/x509chain_tests.h test/x509epoch.h \
-         test/diffx509.h test/diffx509bounds.h test/diffx509chain.h
+         test/diffx509.h test/diffx509bounds.h test/diffx509chain.h \
+         test/diffx509rand.h test/diffx509signed.h
 
 # Pinned mode verifies one signature algorithm per build: PIN=rsa
 # (default, RSA-PSS up to 3072 bits) or PIN=ecdsa (P-256, -DCH_PIN_ECDSA).

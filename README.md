@@ -310,12 +310,21 @@ CertificateVerify one layer down, through the raw RSAVP1 modexp and a
 test-local PSS check.
 
 `make diff` builds the spec with `lake`, runs its selftests, and then
-drives about 3,300 random-input comparisons between every C module and
+drives about 4,100 random-input comparisons between every C module and
 the spec over a pipe, with a deterministic seed. The comparisons include
 P-256 and RSA-PSS signatures that the spec mints and the C must accept —
 the spec holds the private keys and signs; the C, which can only verify,
-must accept every signature and reject every mutated one. The target
-runs inside `make check` and skips itself when elan is not installed.
+must accept every signature and reject every mutated one.
+
+About 730 of those comparisons feed the certificate parser generated
+DER: uniform bytes, edits at randomly chosen TLV sites, and leaves the
+spec re-signs around a generated serial, validity or extension set. A
+generated row predicts no verdict. The C parser answers first and the
+spec must reproduce that answer, leaf key bytes and epoch column
+included, so a row whose right answer nobody knows in advance still
+compares. `CH_DIFF_X509_ROWS` multiplies the certificate row count; the
+nightly seed search sets it to 4. The target runs inside `make check`
+and skips itself when elan is not installed.
 
 The handshake state machine gets the same treatment one level up.
 [`spec/Spec/Handshake.lean`](spec/Spec/Handshake.lean) models RFC 9846 §4's message-ordering rules as an

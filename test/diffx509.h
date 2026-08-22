@@ -448,6 +448,8 @@ static void certd_mutants(const char *alg, const char *ca_hex, const uint8_t *ca
 
 #include "diffx509bounds.h"
 #include "diffx509chain.h"
+#include "diffx509rand.h"
+#include "diffx509signed.h"
 
 // One algorithm's pass: mint, accept, mutate, and the wrong-CA and
 // missing-EKU rejects. wrong_ca_hex must be a well-formed key of the
@@ -534,7 +536,12 @@ static void diff_x509(void) {
     // not accept the chain — and the CA's own modulus as the leaf key.
     diff_x509_chain("rsa", diff_rsa_n2048, diff_rsa_n2048, diff_rsa_n3072);
     diff_x509_chain("p256", ca_pub_hex, leaf_pub_hex, leaf_pub_hex);
-    (void)printf("diff: x509: %ld verdict rows, C == spec\n", certd_rows);
+    // Randomized rows last: they consume the PRNG, so appending them
+    // leaves every earlier section's stream untouched.
+    certd_rand_pass("rsa", diff_rsa_n2048, diff_rsa_n3072);
+    certd_rand_pass("p256", ca_pub_hex, leaf_pub_hex);
+    (void)printf("diff: x509: %ld verdict rows (%ld randomized x%lu), C == spec\n", certd_rows,
+                 certd_rand_rows, certd_rand_multiplier());
 }
 
 #else // !DIFF_HAVE_CERT

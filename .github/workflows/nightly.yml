@@ -112,7 +112,7 @@ jobs:
           runs=0
           while [ "$(date +%s)" -lt "$deadline" ]; do
             seed="0x$(openssl rand -hex 8)"
-            if ! output=$(CH_DIFF_SEED="$seed" ./bin/diff 2>&1); then
+            if ! output=$(CH_DIFF_SEED="$seed" CH_DIFF_X509_ROWS=4 ./bin/diff 2>&1); then
               printf '%s\n' "$output" | tail -25
               {
                 echo "### The differential found a mismatch"
@@ -120,7 +120,7 @@ jobs:
                 echo "Seed \`$seed\`, after $runs clean runs. Reproduce with:"
                 echo
                 echo '```'
-                echo "CH_DIFF_SEED=$seed make diff"
+                echo "CH_DIFF_SEED=$seed CH_DIFF_X509_ROWS=4 make diff"
                 echo '```'
               } >> "$GITHUB_STEP_SUMMARY"
               exit 1
