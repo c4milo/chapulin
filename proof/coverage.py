@@ -9,7 +9,8 @@ and both are silent:
 
 1. A module has no harness, so nothing is proven about it.
 2. A harness exists but never runs, because no launch line in
-   proof/run.sh starts it. It passes review and proves nothing.
+   proof/run.sh starts it and no other harness includes it. It passes
+   review and proves nothing.
 3. A harness runs and returns no verdict, because the solver runs out
    of time or memory. It has a launch line, so this report lists it
    exactly like one that passed. The tier column is the only hint:
@@ -48,6 +49,17 @@ def launch_lines():
     return runs
 
 
+def included_harnesses():
+    """Harness stems that another harness includes. A shared body has no
+    launch line of its own and is not dormant: it runs through whichever
+    harness includes it."""
+    shared = set()
+    for path in (ROOT / "proof").glob("*_harness.c"):
+        for inc in re.findall(r'#include "([a-z0-9_]+)_harness\.c"', path.read_text()):
+            shared.add(inc)
+    return shared
+
+
 def harness_includes(path, seen=None):
     """Library sources a harness pulls in with #include, following a
     harness that wraps a sibling (the PIN variants do this)."""
@@ -71,8 +83,9 @@ def main():
     args = ap.parse_args()
 
     runs = launch_lines()
+    shared = included_harnesses()
     proven = {}   # library file -> harnesses that compile it and run
-    dormant = []  # harness with no launch line
+    dormant = []  # harness with no launch line and no harness including it
     for path in sorted((ROOT / "proof").glob("*_harness.c")):
         name = path.name[: -len("_harness.c")]
         # What CBMC compiles: what the harness includes, plus what the
@@ -81,7 +94,8 @@ def main():
         # counts as covered.
         closure = harness_includes(path)
         if name not in runs:
-            dormant.append((name, ", ".join(sorted(closure)) or "self-contained"))
+            if name not in shared:
+                dormant.append((name, ", ".join(sorted(closure)) or "self-contained"))
             continue
         closure |= runs[name][2]
         for src in closure:
