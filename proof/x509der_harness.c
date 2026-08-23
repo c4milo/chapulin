@@ -65,6 +65,30 @@ int main(void) {
         __CPROVER_assert(len <= rb_left(&r), "read_len yields len within the remaining bytes");
     }
 
+    // Spec.X509Der.readLen_canonical, proved of the model and asserted
+    // here of the C: a length the reader accepts is the one
+    // x509_emit_header would emit for that value, so the reader takes
+    // X.690 §10.1's single definite form and not BER's several. A
+    // lenient reader would let a peer re-encode a length inside a
+    // signed structure without disturbing the signature.
+    rb_init(&r, tlv, n);
+    len = 0;
+    if (x509_read_len(&r, &len)) {
+        // read_len consumes the length octets only, never the content.
+        size_t consumed = n - rb_left(&r);
+        uint8_t again[4];
+        // emit_header writes a tag then the length; the length starts at 1.
+        size_t emitted = x509_emit_header(0x30, len, again) - 1;
+        __CPROVER_assert(emitted == consumed,
+                         "an accepted length occupies the octets emit_header would use");
+        for (size_t i = 0; i < 3; i++) {
+            if (i < consumed) {
+                __CPROVER_assert(again[i + 1] == tlv[i],
+                                 "an accepted length is the encoding emit_header produces");
+            }
+        }
+    }
+
     // x509_read_header: tag byte plus the same length contract.
     rb_init(&r, tlv, n);
     if (x509_read_header(&r, nondet_u8(), &len)) {
