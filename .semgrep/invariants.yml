@@ -16,7 +16,7 @@ rules:
       INV-2: the library never allocates. All state lives in the
       caller's ch_tls and record buffer.
     paths:
-      exclude: [test, proof, fuzz, spec, bench, bin]
+      exclude: [test, proof, fuzz, spec, bench, bin, examples]
     pattern-either:
       - pattern: malloc(...)
       - pattern: calloc(...)
@@ -32,7 +32,7 @@ rules:
       and time.h stay out. Hosted facilities live in test/ and demo
       code only.
     paths:
-      exclude: [test, proof, fuzz, spec, bench, bin]
+      exclude: [test, proof, fuzz, spec, bench, bin, examples]
     pattern-either:
       - pattern: '#include <stdio.h>'
       - pattern: '#include <stdlib.h>'
@@ -49,7 +49,7 @@ rules:
       semgrep cannot know a buffer is secret, so the burden of proof
       is on the exception.
     paths:
-      exclude: [test, proof, fuzz, spec, bench, bin, hsparse.c]
+      exclude: [test, proof, fuzz, spec, bench, bin, examples, hsparse.c]
     pattern-either:
       - pattern: memcmp(...)
       - pattern: strcmp(...)
@@ -62,7 +62,7 @@ rules:
       counter. A reset anywhere else can repeat a nonce under a live
       key.
     paths:
-      exclude: [test, proof, fuzz, spec, bench, bin, record.c]
+      exclude: [test, proof, fuzz, spec, bench, bin, examples, record.c]
     pattern-either:
       - pattern: $D.seq = 0
       - pattern: $D->seq = 0
@@ -76,7 +76,7 @@ rules:
       amend docs/invariants.md in the same PR. drbg.c is excluded
       because it defines the hook, not because it may call it.
     paths:
-      exclude: [test, proof, fuzz, spec, bench, bin, handshake.c, drbg.c]
+      exclude: [test, proof, fuzz, spec, bench, bin, examples, handshake.c, drbg.c]
     pattern: ch_rand_bytes(...)
 
   - id: inv-1-seal-only-in-record
@@ -87,7 +87,7 @@ rules:
       use bypasses sequence-number and length discipline. aead.c is
       excluded as the definition site.
     paths:
-      exclude: [test, proof, fuzz, spec, bench, bin, record.c, aead.c]
+      exclude: [test, proof, fuzz, spec, bench, bin, examples, record.c, aead.c]
     pattern-either:
       - pattern: aead_seal(...)
       - pattern: aead_open(...)
@@ -102,7 +102,7 @@ rules:
       else is a second parser growing. Tripwire grade: this catches
       honest drift by name, not a reintroduction under another name.
     paths:
-      exclude: [test, proof, fuzz, spec, bench, bin, p256.c, x509.c, x509_der.c]
+      exclude: [test, proof, fuzz, spec, bench, bin, examples, p256.c, x509.c, x509_der.c]
     patterns:
       - pattern: $F(...)
       - metavariable-regex:
@@ -124,7 +124,7 @@ rules:
       Bleichenbacher-shaped risk. Tripwire grade: this catches honest
       drift by name, not a reintroduction under another name.
     paths:
-      exclude: [test, proof, fuzz, spec, bench, bin]
+      exclude: [test, proof, fuzz, spec, bench, bin, examples]
     patterns:
       - pattern: $F(...)
       - metavariable-regex:
@@ -141,7 +141,7 @@ rules:
       docs/invariants.md in the same PR. x509.c is excluded because
       it defines the entry, not because it may call it.
     paths:
-      exclude: [test, proof, fuzz, spec, bench, bin, handshake.c, x509.c]
+      exclude: [test, proof, fuzz, spec, bench, bin, examples, handshake.c, x509.c]
     pattern: x509_verify_leaf(...)
 
   - id: inv-20-no-time-calls
@@ -155,7 +155,7 @@ rules:
       test/timing_test.c calls clock_gettime legitimately and sits in the
       standard excludes.
     paths:
-      exclude: [test, proof, fuzz, spec, bench, bin]
+      exclude: [test, proof, fuzz, spec, bench, bin, examples]
     pattern-either:
       - pattern: time(...)
       - pattern: clock_gettime(...)
@@ -173,7 +173,7 @@ rules:
       library object. const tables are fine.
     paths:
       include: ['*.c', '*.h']
-      exclude: [test, proof, fuzz, spec, bench, bin, drbg.c]
+      exclude: [test, proof, fuzz, spec, bench, bin, examples, drbg.c]
     # A regex rule on purpose: the C grammar parses const-qualified
     # custom typedefs inconsistently, so AST patterns either miss
     # them or flag const tables. clang-format puts file-scope
