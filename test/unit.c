@@ -306,6 +306,7 @@ static void test_record(void) {
     CHECK(type == REC_ALERT && pt_len == 2);
 }
 
+#include "p256_tests.h"
 #include "rfc8448_tests.h"
 #include "session_tests.h"
 
