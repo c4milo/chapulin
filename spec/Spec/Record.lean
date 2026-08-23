@@ -47,9 +47,9 @@ def «seal» (trafficSecret : ByteArray) (seq : Nat) (ctype : UInt8) (pt : ByteA
 
 theorem seal_size (secret : ByteArray) (seq : Nat) (ctype : UInt8) (pt : ByteArray) :
     («seal» secret seq ctype pt).size = pt.size + 22 := by
-  have h3 : (ByteArray.mk #[0x17, 0x03, 0x03]).size = 3 := rfl
+  have h_prefix_size : (ByteArray.mk #[0x17, 0x03, 0x03]).size = 3 := rfl
   simp [«seal», ByteArray.size_append, Spec.Aead.seal_size, natToBytesBE_size,
-    ByteArray.size_push, h3]
+    ByteArray.size_push, h_prefix_size]
   omega
 
 /--
@@ -83,8 +83,8 @@ theorem aeadOpen_seal (secret : ByteArray) (seq : Nat) (ctype : UInt8) (pt : Byt
     = header at *
   have hhs : header.size = 5 := by
     rw [← hH]
-    have h3 : (ByteArray.mk #[0x17, 0x03, 0x03]).size = 3 := rfl
-    simp [ByteArray.size_append, natToBytesBE_size, h3]
+    have h_prefix_size : (ByteArray.mk #[0x17, 0x03, 0x03]).size = 3 := rfl
+    simp [ByteArray.size_append, natToBytesBE_size, h_prefix_size]
   rw [show ((header ++ Spec.Aead.seal key nn header inner).extract 0 5)
       = header from ByteArray.extract_append_eq_left hhs.symm]
   rw [show (5 : Nat) + (pt.size + 1) = header.size + inner.size by omega,
@@ -146,7 +146,7 @@ theorem pad_getElem! (iv : ByteArray) (seq j : Nat) (hiv : 8 ≤ iv.size) (hj : 
   omega
 
 theorem nonce_inj (iv : ByteArray) (s1 s2 : Nat) (hiv : 8 ≤ iv.size)
-    (h1 : s1 < 2 ^ 64) (h2 : s2 < 2 ^ 64)
+    (h_s1_lt : s1 < 2 ^ 64) (h_s2_lt : s2 < 2 ^ 64)
     (h : nonce iv s1 = nonce iv s2) : s1 = s2 := by
   have hz := zeros_size (iv.size - 8)
   have hpsz : ∀ s : Nat, (ByteArray.mk (Array.replicate (iv.size - 8) 0)
@@ -172,6 +172,6 @@ theorem nonce_inj (iv : ByteArray) (s1 s2 : Nat) (hiv : 8 ≤ iv.size)
           getElem!_pos _ _ (by rw [xorBytes_size, hpsz s]; omega),
           getElem_xorBytes _ _ _ (by rw [xorBytes_size, hpsz s]; omega)]
       rw [← e s1, ← e s2, h]
-  exact natToBytesBE_inj 8 s1 s2 (by simpa using h1) (by simpa using h2) key
+  exact natToBytesBE_inj 8 s1 s2 (by simpa using h_s1_lt) (by simpa using h_s2_lt) key
 
 end Spec.Record

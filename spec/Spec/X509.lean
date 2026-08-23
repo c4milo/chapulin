@@ -554,9 +554,9 @@ theorem entryAt?_sound (alg : Alg) (list : ByteArray) (off : Nat) (cert : ByteAr
       cert = slice list (off + 3) cert.size := by
   unfold entryAt? at h
   simp only [Option.bind_eq_bind] at h
-  obtain ⟨b0, h0, h⟩ := exists_of_bind_eq_some h
-  obtain ⟨b1, h1, h⟩ := exists_of_bind_eq_some h
-  obtain ⟨b2, h2, h⟩ := exists_of_bind_eq_some h
+  obtain ⟨b0, h_byte0, h⟩ := exists_of_bind_eq_some h
+  obtain ⟨b1, h_byte1, h⟩ := exists_of_bind_eq_some h
+  obtain ⟨b2, h_byte2, h⟩ := exists_of_bind_eq_some h
   obtain ⟨hlen, h⟩ := bind_guard_eq_some h
   obtain ⟨hfit, h⟩ := bind_guard_eq_some h
   obtain ⟨_, h⟩ := bind_guard_eq_some h

@@ -140,12 +140,12 @@ private theorem foldlM_count (mode : Mode) (cnt : State → Nat) (tgt : Msg)
   | cons x xs ih =>
     intro s t h
     simp only [List.foldlM_cons] at h
-    cases hx : step mode s x with
-    | none => rw [hx] at h; simp at h
+    cases h_head_step : step mode s x with
+    | none => rw [h_head_step] at h; simp at h
     | some s1 =>
-      rw [hx] at h
+      rw [h_head_step] at h
       simp at h
-      rw [ih s1 t h, hstep s s1 x hx, List.count_cons]
+      rw [ih s1 t h, hstep s s1 x h_head_step, List.count_cons]
       simp only [beq_iff_eq]
       omega
 
@@ -165,13 +165,13 @@ private theorem foldlM_count_le (mode : Mode) (bnd : State → Nat) (tgt : Msg)
   | cons x xs ih =>
     intro s t h
     simp only [List.foldlM_cons] at h
-    cases hx : step mode s x with
-    | none => rw [hx] at h; simp at h
+    cases h_head_step : step mode s x with
+    | none => rw [h_head_step] at h; simp at h
     | some s1 =>
-      rw [hx] at h
+      rw [h_head_step] at h
       simp at h
-      have h1 := ih s1 t h
-      have h2 := hstep s s1 x hx
+      have h_tail_le := ih s1 t h
+      have h_head_le := hstep s s1 x h_head_step
       rw [List.count_cons]
       simp only [beq_iff_eq] at *
       omega
@@ -225,12 +225,12 @@ private theorem foldlM_psk_no_cert :
   | cons x xs ih =>
     intro s t hs h
     simp only [List.foldlM_cons] at h
-    cases hx : step Mode.psk s x with
-    | none => rw [hx] at h; simp at h
+    cases h_head_step : step Mode.psk s x with
+    | none => rw [h_head_step] at h; simp at h
     | some s1 =>
-      rw [hx] at h
+      rw [h_head_step] at h
       simp at h
-      have ⟨hs1, hxc⟩ := step_psk_no_cert s s1 x hs hx
+      have ⟨hs1, hxc⟩ := step_psk_no_cert s s1 x hs h_head_step
       simp only [List.mem_cons, not_or]
       exact ⟨fun he => hxc he.symm, ih s1 t hs1 h⟩
 
@@ -353,23 +353,23 @@ private theorem foldlM_no_post_handshake (mode : Mode) :
   | cons x xs ih =>
     intro s t hs h hfin
     simp only [List.foldlM_cons] at h
-    cases hx : step mode s x with
-    | none => rw [hx] at h; simp at h
+    cases h_head_step : step mode s x with
+    | none => rw [h_head_step] at h; simp at h
     | some s1 =>
-      rw [hx] at h
+      rw [h_head_step] at h
       simp at h
       simp only [List.mem_cons, not_or] at hfin
       have hxf : x ≠ Msg.finished := fun he => hfin.1 he.symm
       have hs1 : finSeen s1 = 0 := by
-        have h2 := step_finSeen mode s s1 x hx
-        rw [hs, if_neg hxf] at h2
-        simpa using h2
+        have h_fin_step := step_finSeen mode s s1 x h_head_step
+        rw [hs, if_neg hxf] at h_fin_step
+        simpa using h_fin_step
       intro m hm
       rcases List.mem_cons.mp hm with rfl | hm
       · cases hpm : isPostHandshake m with
         | false => rfl
         | true =>
-          have := step_postHandshake mode s s1 m hpm hx
+          have := step_postHandshake mode s s1 m hpm h_head_step
           omega
       · exact ih s1 t hs1 h hfin.2 m hm
 
@@ -418,12 +418,12 @@ private theorem foldlM_psk_no_cv :
   | cons x xs ih =>
     intro s t hs h
     simp only [List.foldlM_cons] at h
-    cases hx : step Mode.psk s x with
-    | none => rw [hx] at h; simp at h
+    cases h_head_step : step Mode.psk s x with
+    | none => rw [h_head_step] at h; simp at h
     | some s1 =>
-      rw [hx] at h
+      rw [h_head_step] at h
       simp at h
-      have ⟨hs1, hxc⟩ := step_psk_no_cv s s1 x hs hx
+      have ⟨hs1, hxc⟩ := step_psk_no_cv s s1 x hs h_head_step
       simp only [List.mem_cons, not_or]
       exact ⟨fun he => hxc he.symm, ih s1 t hs1 h⟩
 
@@ -572,11 +572,11 @@ theorem connected_stable (mode : Mode) (post : List Msg)
   | nil => intro _; rfl
   | cons x xs ih =>
     intro h
-    have hx : isPostHandshake x = true := h x (by simp)
+    have h_head_post : isPostHandshake x = true := h x (by simp)
     have hstep : step mode State.connected x = some State.connected := by
-      cases x <;> simp [isPostHandshake] at hx <;> rfl
+      cases x <;> simp [isPostHandshake] at h_head_post <;> rfl
     rw [List.foldlM_cons, hstep]
-    simpa using ih (fun y hy => h y (by simp [hy]))
+    simpa using ih (fun y h_mem => h y (by simp [h_mem]))
 
 /-- Longest flight, in messages, that reaches `connected`: four under
 PSK (HelloRetryRequest, ServerHello, EncryptedExtensions, Finished) and
@@ -642,18 +642,18 @@ private theorem foldlM_from_connected (mode : Mode) :
   | cons x xs ih =>
     intro t h
     simp only [List.foldlM_cons] at h
-    cases hx : step mode State.connected x with
-    | none => rw [hx] at h; simp at h
+    cases h_head_step : step mode State.connected x with
+    | none => rw [h_head_step] at h; simp at h
     | some s1 =>
-      rw [hx] at h
+      rw [h_head_step] at h
       simp at h
-      rcases step_connected_cases mode x s1 hx with ⟨hph, rfl⟩ | ⟨rfl, rfl⟩
+      rcases step_connected_cases mode x s1 h_head_step with ⟨hph, rfl⟩ | ⟨rfl, rfl⟩
       · obtain ⟨ph, tail, hsplit, hph', htail⟩ := ih t h
         refine ⟨x :: ph, tail, by rw [hsplit]; rfl, ?_, htail⟩
-        intro y hy
-        rcases List.mem_cons.mp hy with rfl | hy
+        intro y h_mem
+        rcases List.mem_cons.mp h_mem with rfl | h_mem
         · exact hph
-        · exact hph' y hy
+        · exact hph' y h_mem
       · have hnil : xs = [] := foldlM_closed_nil mode xs t h
         subst hnil
         exact ⟨[], [Msg.closeNotify], rfl, by simp, Or.inr rfl⟩
@@ -685,20 +685,20 @@ private theorem foldlM_flight (mode : Mode) :
       exact ⟨[], x :: xs, rfl, rfl, by simp⟩
     | inr hc =>
       simp only [List.foldlM_cons] at h
-      cases hx : step mode s x with
-      | none => rw [hx] at h; simp at h
+      cases h_head_step : step mode s x with
+      | none => rw [h_head_step] at h; simp at h
       | some s1 =>
-        rw [hx] at h
+        rw [h_head_step] at h
         simp at h
         have hs1 : s1 ≠ State.closed := by
           intro he
           subst he
-          exact hc (step_closed_source mode s x hx)
+          exact hc (step_closed_source mode s x h_head_step)
         obtain ⟨pre, rest, hsplit, hpre, hlen⟩ := ih s1 t hs1 h ht
         refine ⟨x :: pre, rest, by rw [hsplit]; rfl, ?_, ?_⟩
-        · rw [List.foldlM_cons, hx]
+        · rw [List.foldlM_cons, h_head_step]
           simpa using hpre
-        · have hr := step_flightRank mode s s1 x hc hx
+        · have hr := step_flightRank mode s s1 x hc h_head_step
           simp only [List.length_cons]
           omega
 

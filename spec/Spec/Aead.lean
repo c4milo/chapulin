@@ -61,14 +61,15 @@ theorem open?_seal (key nonce aad pt : ByteArray) :
     open? key nonce aad ((«seal» key nonce aad pt).extract 0 pt.size)
       ((«seal» key nonce aad pt).extract pt.size (pt.size + 16)) = some pt := by
   have hct : (ChaCha.xor key nonce 1 pt).size = pt.size := ChaCha.xor_size key nonce 1 pt
-  have h1 : («seal» key nonce aad pt).extract 0 pt.size = ChaCha.xor key nonce 1 pt := by
+  have h_ct_prefix : («seal» key nonce aad pt).extract 0 pt.size
+      = ChaCha.xor key nonce 1 pt := by
     rw [«seal»]
     exact ByteArray.extract_append_eq_left hct.symm
-  have h2 : («seal» key nonce aad pt).extract pt.size (pt.size + 16)
+  have h_tag_suffix : («seal» key nonce aad pt).extract pt.size (pt.size + 16)
       = Poly.mac (polyKey key nonce) (macData aad (ChaCha.xor key nonce 1 pt)) := by
     rw [«seal»]
     exact ByteArray.extract_append_eq_right hct.symm (by rw [hct, Poly.mac_size])
-  rw [h1, h2, open?]
+  rw [h_ct_prefix, h_tag_suffix, open?]
   simp [ChaCha.xor_xor]
 
 /-- Rejection soundness: a tag that differs from the recomputed

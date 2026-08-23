@@ -164,12 +164,12 @@ is ChaCha20 encryption (RFC 8439 §2.4). The keystream is a function of
 key, nonce, and counter alone, so both applications cancel bytewise. -/
 theorem xor_xor (key nonce : ByteArray) (c : UInt32) (d : ByteArray) :
     xor key nonce c (xor key nonce c d) = d := by
-  have hs := xor_size key nonce c d
+  have h_size := xor_size key nonce c d
   apply ByteArray.ext_getElem
-  · rw [xor_size, hs]
-  · intro i h1 h2
-    rw [← getElem!_pos _ i h1, xor_getElem! _ _ _ _ _ (by omega),
-      xor_getElem! _ _ _ _ _ h2, uint8_xor_cancel, getElem!_pos d i h2]
+  · rw [xor_size, h_size]
+  · intro i h_lt_out h_lt_data
+    rw [← getElem!_pos _ i h_lt_out, xor_getElem! _ _ _ _ _ (by omega),
+      xor_getElem! _ _ _ _ _ h_lt_data, uint8_xor_cancel, getElem!_pos d i h_lt_data]
 
 /-- Test vectors: RFC 8439 §2.3.2 (block keystream) and §2.4.2
 (encryption). -/
@@ -204,12 +204,12 @@ theorem xor_prefix (key nonce : ByteArray) (c : UInt32) (d : ByteArray) (m : Nat
   apply ByteArray.ext_getElem
   · rw [ByteArray.size_extract, xor_size, xor_size,
       ByteArray.size_extract]
-  · intro i h1 h2
+  · intro i h_lt_prefix_of_xor h_lt_xor_of_prefix
     have hi : i < m := by
-      have hh := h1
-      rw [ByteArray.size_extract, xor_size] at hh
+      have h_bound := h_lt_prefix_of_xor
+      rw [ByteArray.size_extract, xor_size] at h_bound
       omega
-    rw [← getElem!_pos _ i h1, ← getElem!_pos _ i h2]
+    rw [← getElem!_pos _ i h_lt_prefix_of_xor, ← getElem!_pos _ i h_lt_xor_of_prefix]
     rw [getElem!_pos _ i (by rw [ByteArray.size_extract, xor_size]; omega),
       ByteArray.getElem_extract,
       ← getElem!_pos (xor key nonce c d) _

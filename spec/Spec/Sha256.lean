@@ -155,9 +155,9 @@ def selftest : Bool :=
 
 
 theorem pad_blocks (msg : ByteArray) : (pad msg).size % 64 = 0 := by
-  have h1 : (ByteArray.mk #[0x80]).size = 1 := rfl
+  have h_pad_byte_size : (ByteArray.mk #[0x80]).size = 1 := rfl
   rw [pad]
-  simp only [ByteArray.size_append, natToBytesBE_size, zeros_size, h1]
+  simp only [ByteArray.size_append, natToBytesBE_size, zeros_size, h_pad_byte_size]
   omega
 
 -- 7. Sha256: padding keeps the message as a prefix.

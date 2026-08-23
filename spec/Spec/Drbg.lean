@@ -63,10 +63,10 @@ theorem next_key_eq_block (k : ByteArray) (n : Nat) :
   rw [next_eq]
   apply ByteArray.ext_getElem
   · simp [ByteArray.size_extract, stream_size, Spec.ChaCha.block_size]
-  · intro i h1 h2
-    rw [← getElem!_pos _ i h1, ← getElem!_pos _ i h2]
+  · intro i h_lt_key h_lt_block
+    rw [← getElem!_pos _ i h_lt_key, ← getElem!_pos _ i h_lt_block]
     have hi : i < 32 := by
-      simpa [ByteArray.size_extract, stream_size] using h1
+      simpa [ByteArray.size_extract, stream_size] using h_lt_key
     rw [getElem!_pos _ i (by simp [ByteArray.size_extract, stream_size]; omega),
         ByteArray.getElem_extract,
         getElem!_pos _ i (by simp [ByteArray.size_extract, Spec.ChaCha.block_size]; omega),
@@ -116,9 +116,9 @@ theorem next_out_prefix (k : ByteArray) (n m : Nat) (h : n ≤ m) :
     (next k n).2 = (next k m).2.extract 0 n := by
   apply ByteArray.ext_getElem
   · rw [ByteArray.size_extract, next_out_size, next_out_size]; omega
-  · intro i h1 h2
-    have hi : i < n := by rw [next_out_size] at h1; exact h1
-    rw [← getElem!_pos _ i h1, ← getElem!_pos _ i h2, next_out_getElem! k n i hi]
+  · intro i h_lt_out h_lt_prefix
+    have hi : i < n := by rw [next_out_size] at h_lt_out; exact h_lt_out
+    rw [← getElem!_pos _ i h_lt_out, ← getElem!_pos _ i h_lt_prefix, next_out_getElem! k n i hi]
     rw [getElem!_pos _ i (by rw [ByteArray.size_extract, next_out_size]; omega),
         ByteArray.getElem_extract,
         ← getElem!_pos ((next k m).2) _ (by rw [next_out_size]; omega),

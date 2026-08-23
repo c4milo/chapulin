@@ -85,21 +85,21 @@ theorem foldl_push_eq_append {α} (l : List α) (f : α → UInt8) (init : ByteA
 
 /-- Carry an invariant through a fold. -/
 theorem foldl_inv {α β} (l : List α) (f : β → α → β) (P : β → Prop)
-    (init : β) (h0 : P init) (hstep : ∀ b a, P b → P (f b a)) :
+    (init : β) (h_init : P init) (hstep : ∀ b a, P b → P (f b a)) :
     P (l.foldl f init) := by
   induction l generalizing init with
-  | nil => exact h0
-  | cons x xs ih => exact ih (f init x) (hstep init x h0)
+  | nil => exact h_init
+  | cons x xs ih => exact ih (f init x) (hstep init x h_init)
 
 /-- Carry a position-indexed invariant through a fold. -/
 theorem foldl_inv_idx {α β} (l : List α) (f : β → α → β) (P : Nat → β → Prop)
-    (init : β) (h0 : P 0 init) (hstep : ∀ k b a, P k b → P (k + 1) (f b a)) :
+    (init : β) (h_init : P 0 init) (hstep : ∀ k b a, P k b → P (k + 1) (f b a)) :
     P l.length (l.foldl f init) := by
   induction l generalizing init P with
-  | nil => exact h0
+  | nil => exact h_init
   | cons x xs ih =>
     simpa [List.length_cons] using
-      ih (fun k b => P (k + 1) b) (f init x) (hstep 0 init x h0)
+      ih (fun k b => P (k + 1) b) (f init x) (hstep 0 init x h_init)
         (fun k b a hk => hstep (k + 1) b a hk)
 
 /-- An append-only fold of constant-size pieces grows by `c` per element. -/
@@ -142,10 +142,10 @@ theorem xorBytes_xorBytes (a b : ByteArray) (h : a.size ≤ b.size) :
   have hsz : (xorBytes a b).size = a.size := by rw [xorBytes_size]; omega
   apply ByteArray.ext_getElem
   · rw [xorBytes_size, hsz]; omega
-  · intro i h1 h2
+  · intro i h_lt_xor h_lt_a
     rw [getElem_xorBytes]
     rw [getElem!_pos (xorBytes a b) i (by omega), getElem_xorBytes a b i (by omega)]
-    rw [getElem!_pos a i h2, uint8_xor_cancel]
+    rw [getElem!_pos a i h_lt_a, uint8_xor_cancel]
 
 /-!
 `bytesToHex` injectivity. `Aead.open?` compares tags through
@@ -224,10 +224,12 @@ private theorem hexPair_inj (v w : UInt8) (h : hexPair v = hexPair w) : v = w :=
     intro u
     have hu := UInt8.toNat_lt u
     omega
-  have e1 := hd _ (by rw [(hb v).1]; exact (hlt v).1) _ (by rw [(hb w).1]; exact (hlt w).1) h.1
-  have e2 := hd _ (by rw [(hb v).2]; exact (hlt v).2) _ (by rw [(hb w).2]; exact (hlt w).2) h.2
-  rw [(hb v).1, (hb w).1] at e1
-  rw [(hb v).2, (hb w).2] at e2
+  have h_hi_eq :=
+    hd _ (by rw [(hb v).1]; exact (hlt v).1) _ (by rw [(hb w).1]; exact (hlt w).1) h.1
+  have h_lo_eq :=
+    hd _ (by rw [(hb v).2]; exact (hlt v).2) _ (by rw [(hb w).2]; exact (hlt w).2) h.2
+  rw [(hb v).1, (hb w).1] at h_hi_eq
+  rw [(hb v).2, (hb w).2] at h_lo_eq
   apply UInt8.toNat_inj.mp
   omega
 
@@ -240,9 +242,9 @@ private theorem flatMap_hexPair_inj :
   | x :: xs, y :: ys, h => by
     simp only [List.flatMap_cons, hexPair, List.cons_append, List.nil_append,
       List.cons.injEq] at h
-    obtain ⟨h1, h2, h3⟩ := h
-    have := hexPair_inj x y (by simp only [hexPair, h1, h2])
-    have := flatMap_hexPair_inj xs ys h3
+    obtain ⟨h_hi, h_lo, h_rest⟩ := h
+    have := hexPair_inj x y (by simp only [hexPair, h_hi, h_lo])
+    have := flatMap_hexPair_inj xs ys h_rest
     simp_all
 
 /-- `bytesToHex` is injective: distinct byte strings have distinct hex. -/
@@ -285,8 +287,8 @@ theorem natToBytesBE_succ (n len : Nat) :
     have hshift : (len + 1 - 1 - i) * 8 = 8 + (len - 1 - i) * 8 := by
       have : len - i = (len - 1 - i) + 1 := by omega
       omega
-    have h8 : n >>> 8 = n / 256 := by rw [Nat.shiftRight_eq_div_pow]
-    rw [hshift, Nat.shiftRight_add, h8]
+    have h_shift8 : n >>> 8 = n / 256 := by rw [Nat.shiftRight_eq_div_pow]
+    rw [hshift, Nat.shiftRight_add, h_shift8]
   have hlast : (List.map (fun i => UInt8.ofNat (n >>> ((len + 1 - 1 - i) * 8) % 256)) [0 + len])
       = [UInt8.ofNat (n % 256)] := by
     simp
@@ -314,25 +316,26 @@ theorem bytesToNatBE_natToBytesBE (len : Nat) : ∀ n : Nat,
       simp
     have hpow : 2 ^ (8 * (len + 1)) = 2 ^ (8 * len) * 256 := by
       rw [Nat.mul_succ, Nat.pow_add]
-    have h1 : n % (2 ^ (8 * len) * 256) % 256 = n % 256 :=
+    have h_low_byte : n % (2 ^ (8 * len) * 256) % 256 = n % 256 :=
       Nat.mod_mod_of_dvd n ⟨2 ^ (8 * len), Nat.mul_comm _ _⟩
-    have h2 : n % (2 ^ (8 * len) * 256) / 256 = n / 256 % 2 ^ (8 * len) := by
+    have h_high_bytes : n % (2 ^ (8 * len) * 256) / 256 = n / 256 % 2 ^ (8 * len) := by
       rw [Nat.mul_comm]
       exact Nat.mod_mul_right_div_self n 256 (2 ^ (8 * len))
-    have h3 := Nat.div_add_mod (n % (2 ^ (8 * len) * 256)) 256
-    rw [h1, h2] at h3
+    have h_split := Nat.div_add_mod (n % (2 ^ (8 * len) * 256)) 256
+    rw [h_low_byte, h_high_bytes] at h_split
     rw [natToBytesBE_succ, bytesToNatBE_append_byte, ih, hb, hpow]
     omega
 
 
 /-- Big-endian encoding is injective below the representable bound. -/
-theorem natToBytesBE_inj (len a b : Nat) (ha : a < 2 ^ (8 * len)) (hb : b < 2 ^ (8 * len))
-    (h : natToBytesBE a len = natToBytesBE b len) : a = b := by
-  have h1 := bytesToNatBE_natToBytesBE len a
-  have h2 := bytesToNatBE_natToBytesBE len b
-  rw [h, h2, Nat.mod_eq_of_lt hb] at h1
-  rw [Nat.mod_eq_of_lt ha] at h1
-  exact h1.symm
+theorem natToBytesBE_inj (len a b : Nat) (h_a_lt : a < 2 ^ (8 * len))
+    (h_b_lt : b < 2 ^ (8 * len))
+    (h_enc_eq : natToBytesBE a len = natToBytesBE b len) : a = b := by
+  have h_decode_a := bytesToNatBE_natToBytesBE len a
+  have h_decode_b := bytesToNatBE_natToBytesBE len b
+  rw [h_enc_eq, h_decode_b, Nat.mod_eq_of_lt h_b_lt] at h_decode_a
+  rw [Nat.mod_eq_of_lt h_a_lt] at h_decode_a
+  exact h_decode_a.symm
 
 
 /-- A zero-filled ByteArray has the length it was asked for. Shared by
@@ -348,9 +351,9 @@ theorem uint8_zero_xor (a : UInt8) : (0 : UInt8) ^^^ a = a := by
 /-- XOR cancels on the left, so a fixed mask never merges two distinct
 values. Record.nonce_inj uses this to recover the sequence number. -/
 theorem uint8_xor_left_cancel (a x y : UInt8) (h : a ^^^ x = a ^^^ y) : x = y := by
-  have h1 : (a ^^^ x) ^^^ a = (a ^^^ y) ^^^ a := by rw [h]
+  have h_xor_right : (a ^^^ x) ^^^ a = (a ^^^ y) ^^^ a := by rw [h]
   apply UInt8.toBitVec_inj.1
-  have := congrArg UInt8.toBitVec h1
+  have := congrArg UInt8.toBitVec h_xor_right
   simpa [BitVec.xor_comm, BitVec.xor_assoc] using this
 
 

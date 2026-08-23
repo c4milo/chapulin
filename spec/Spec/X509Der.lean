@@ -249,14 +249,14 @@ private theorem readLen_encodeLen_short (pre : ByteArray) (n : Nat) (tail : Byte
   have henc : encodeLen n = ByteArray.mk #[UInt8.ofNat n] := by
     simp [encodeLen, hn]
   have hsz : (encodeLen n).size = 1 := by rw [henc]; rfl
-  have h0 : byteAt? (pre ++ (encodeLen n ++ tail)) pre.size = some (UInt8.ofNat n) := by
+  have h_byte0 : byteAt? (pre ++ (encodeLen n ++ tail)) pre.size = some (UInt8.ofNat n) := by
     have h := byteAt?_append_right pre (encodeLen n ++ tail) 0
     rw [Nat.add_zero] at h
     rw [h, byteAt?_append_left _ _ 0 (by omega), henc]
     rfl
   have hval : (UInt8.ofNat n).toNat = n := by
     simp [Nat.mod_eq_of_lt (show n < 256 by omega)]
-  rw [readLen, h0]
+  rw [readLen, h_byte0]
   simp only [Option.bind_eq_bind, Option.bind_some, hval, hsz]
   rw [if_pos hn, if_pos (by rw [ByteArray.size_append, ByteArray.size_append, hsz]; omega)]
 
@@ -267,20 +267,20 @@ private theorem readLen_encodeLen_one (pre : ByteArray) (n : Nat) (tail : ByteAr
   have henc : encodeLen n = ByteArray.mk #[0x81, UInt8.ofNat n] := by
     simp [encodeLen, Nat.not_lt.mpr hlo, hn]
   have hsz : (encodeLen n).size = 2 := by rw [henc]; rfl
-  have h0 : byteAt? (pre ++ (encodeLen n ++ tail)) pre.size = some 0x81 := by
+  have h_byte0 : byteAt? (pre ++ (encodeLen n ++ tail)) pre.size = some 0x81 := by
     have h := byteAt?_append_right pre (encodeLen n ++ tail) 0
     rw [Nat.add_zero] at h
     rw [h, byteAt?_append_left _ _ 0 (by omega), henc]
     rfl
-  have h1 : byteAt? (pre ++ (encodeLen n ++ tail)) (pre.size + 1) = some (UInt8.ofNat n) := by
+  have h_byte1 : byteAt? (pre ++ (encodeLen n ++ tail)) (pre.size + 1) = some (UInt8.ofNat n) := by
     rw [byteAt?_append_right pre (encodeLen n ++ tail) 1,
       byteAt?_append_left _ _ 1 (by omega), henc]
     rfl
   have hval : (UInt8.ofNat n).toNat = n := by
     simp [Nat.mod_eq_of_lt (show n < 256 by omega)]
-  have h129 : (0x81 : UInt8).toNat = 129 := rfl
-  rw [readLen, h0]
-  simp only [Option.bind_eq_bind, Option.bind_some, h1, hval, hsz, h129]
+  have h_0x81_toNat : (0x81 : UInt8).toNat = 129 := rfl
+  rw [readLen, h_byte0]
+  simp only [Option.bind_eq_bind, Option.bind_some, h_byte1, hval, hsz, h_0x81_toNat]
   rw [if_neg (by omega), if_pos (by decide),
     if_pos (And.intro (by omega)
       (by rw [ByteArray.size_append, ByteArray.size_append, hsz]; omega))]
@@ -293,17 +293,17 @@ private theorem readLen_encodeLen_two (pre : ByteArray) (n : Nat) (tail : ByteAr
       = ByteArray.mk #[0x82, UInt8.ofNat (n / 256), UInt8.ofNat (n % 256)] := by
     simp [encodeLen, Nat.not_lt.mpr (show 0x80 ≤ n by omega), Nat.not_lt.mpr hlo]
   have hsz : (encodeLen n).size = 3 := by rw [henc]; rfl
-  have h0 : byteAt? (pre ++ (encodeLen n ++ tail)) pre.size = some 0x82 := by
+  have h_byte0 : byteAt? (pre ++ (encodeLen n ++ tail)) pre.size = some 0x82 := by
     have h := byteAt?_append_right pre (encodeLen n ++ tail) 0
     rw [Nat.add_zero] at h
     rw [h, byteAt?_append_left _ _ 0 (by omega), henc]
     rfl
-  have h1 : byteAt? (pre ++ (encodeLen n ++ tail)) (pre.size + 1)
+  have h_byte1 : byteAt? (pre ++ (encodeLen n ++ tail)) (pre.size + 1)
       = some (UInt8.ofNat (n / 256)) := by
     rw [byteAt?_append_right pre (encodeLen n ++ tail) 1,
       byteAt?_append_left _ _ 1 (by omega), henc]
     rfl
-  have h2 : byteAt? (pre ++ (encodeLen n ++ tail)) (pre.size + 2)
+  have h_byte2 : byteAt? (pre ++ (encodeLen n ++ tail)) (pre.size + 2)
       = some (UInt8.ofNat (n % 256)) := by
     rw [byteAt?_append_right pre (encodeLen n ++ tail) 2,
       byteAt?_append_left _ _ 2 (by omega), henc]
@@ -314,9 +314,9 @@ private theorem readLen_encodeLen_two (pre : ByteArray) (n : Nat) (tail : ByteAr
     simp [Nat.mod_eq_of_lt (show n % 256 < 256 by omega)]
   have hsum : (UInt8.ofNat (n / 256)).toNat * 256 + (UInt8.ofNat (n % 256)).toNat = n := by
     rw [hhi, hlo2]; omega
-  have h130 : (0x82 : UInt8).toNat = 130 := rfl
-  rw [readLen, h0]
-  simp only [Option.bind_eq_bind, Option.bind_some, h1, h2, hsum, hsz, h130]
+  have h_0x82_toNat : (0x82 : UInt8).toNat = 130 := rfl
+  rw [readLen, h_byte0]
+  simp only [Option.bind_eq_bind, Option.bind_some, h_byte1, h_byte2, hsum, hsz, h_0x82_toNat]
   rw [if_neg (by omega), if_neg (by decide), if_pos (by decide),
     if_pos (And.intro (by omega)
       (by rw [ByteArray.size_append, ByteArray.size_append, hsz]; omega))]
@@ -329,11 +329,11 @@ theorem readLen_encodeLen (pre : ByteArray) (n : Nat) (tail : ByteArray)
     (hn : n ≤ 0xffff) (ht : n ≤ tail.size) :
     readLen (pre ++ (encodeLen n ++ tail)) pre.size
       = some (n, pre.size + (encodeLen n).size) := by
-  rcases Nat.lt_or_ge n 0x80 with h | h
-  · exact readLen_encodeLen_short pre n tail h ht
-  · rcases Nat.lt_or_ge n 0x100 with h2 | h2
-    · exact readLen_encodeLen_one pre n tail h h2 ht
-    · exact readLen_encodeLen_two pre n tail h2 hn ht
+  rcases Nat.lt_or_ge n 0x80 with h_short | h_long
+  · exact readLen_encodeLen_short pre n tail h_short ht
+  · rcases Nat.lt_or_ge n 0x100 with h_one_octet | h_two_octets
+    · exact readLen_encodeLen_one pre n tail h_long h_one_octet ht
+    · exact readLen_encodeLen_two pre n tail h_two_octets hn ht
 
 /-- Length canonicality (X.690 §10.1): every length `readLen` accepts
 is written exactly as `encodeLen` writes it — the octets consumed are
@@ -366,58 +366,60 @@ theorem readLen_canonical (b : ByteArray) (off len co : Nat)
         rfl
       · rw [if_neg hle] at h; simp at h
     · rw [if_neg hf] at h
-      by_cases h81 : (first.toNat == 129) = true
-      · rw [if_pos h81] at h
-        cases hb1 : byteAt? b (off + 1) with
-        | none => rw [hb1] at h; simp at h
+      by_cases h_first_0x81 : (first.toNat == 129) = true
+      · rw [if_pos h_first_0x81] at h
+        cases h_byte1 : byteAt? b (off + 1) with
+        | none => rw [h_byte1] at h; simp at h
         | some l =>
-          rw [hb1] at h
+          rw [h_byte1] at h
           simp only [Option.bind_some] at h
           by_cases hc : 128 ≤ l.toNat ∧ off + 2 + l.toNat ≤ b.size
           · rw [if_pos hc] at h
             simp only [Option.some.injEq, Prod.mk.injEq] at h
             obtain ⟨rfl, rfl⟩ := h
-            have hlt1 : off + 1 < b.size := lt_of_byteAt? b (off + 1) l hb1
-            have hbe1 : b[off + 1] = l := getElem_of_byteAt? b (off + 1) l hb1 hlt1
+            have h_byte1_lt : off + 1 < b.size := lt_of_byteAt? b (off + 1) l h_byte1
+            have h_byte1_eq : b[off + 1] = l := getElem_of_byteAt? b (off + 1) l h_byte1 h_byte1_lt
             have hfirst : first = 0x81 := by
               apply UInt8.toNat_inj.mp
-              have h129 : (0x81 : UInt8).toNat = 129 := rfl
-              rw [h129]
-              exact eq_of_beq h81
+              have h_0x81_toNat : (0x81 : UInt8).toNat = 129 := rfl
+              rw [h_0x81_toNat]
+              exact eq_of_beq h_first_0x81
             have henc : encodeLen l.toNat = ByteArray.mk #[0x81, UInt8.ofNat l.toNat] := by
               have hlt256 : l.toNat < 256 := l.toNat_lt
               simp [encodeLen, Nat.not_lt.mpr hc.1, hlt256]
             have hsz : (encodeLen l.toNat).size = 2 := by rw [henc]; rfl
             refine ⟨by omega, by omega, ?_⟩
-            rw [hsz, slice, ByteArray.extract_add_two (by omega), henc, hbe, hbe1, hfirst]
+            rw [hsz, slice, ByteArray.extract_add_two (by omega), henc, hbe, h_byte1_eq, hfirst]
             simp only [ofNat_toNat]
             rfl
           · rw [if_neg hc] at h; simp at h
-      · rw [if_neg h81] at h
-        by_cases h82 : (first.toNat == 130) = true
-        · rw [if_pos h82] at h
-          cases hb1 : byteAt? b (off + 1) with
-          | none => rw [hb1] at h; simp at h
+      · rw [if_neg h_first_0x81] at h
+        by_cases h_first_0x82 : (first.toNat == 130) = true
+        · rw [if_pos h_first_0x82] at h
+          cases h_byte1 : byteAt? b (off + 1) with
+          | none => rw [h_byte1] at h; simp at h
           | some hi =>
-            cases hb2 : byteAt? b (off + 2) with
-            | none => rw [hb1, hb2] at h; simp at h
+            cases h_byte2 : byteAt? b (off + 2) with
+            | none => rw [h_byte1, h_byte2] at h; simp at h
             | some lo =>
-              rw [hb1, hb2] at h
+              rw [h_byte1, h_byte2] at h
               simp only [Option.bind_some] at h
               by_cases hc : 256 ≤ hi.toNat * 256 + lo.toNat ∧
                   off + 3 + (hi.toNat * 256 + lo.toNat) ≤ b.size
               · rw [if_pos hc] at h
                 simp only [Option.some.injEq, Prod.mk.injEq] at h
                 obtain ⟨rfl, rfl⟩ := h
-                have hlt1 : off + 1 < b.size := lt_of_byteAt? b (off + 1) hi hb1
-                have hlt2 : off + 2 < b.size := lt_of_byteAt? b (off + 2) lo hb2
-                have hbe1 : b[off + 1] = hi := getElem_of_byteAt? b (off + 1) hi hb1 hlt1
-                have hbe2 : b[off + 2] = lo := getElem_of_byteAt? b (off + 2) lo hb2 hlt2
+                have h_byte1_lt : off + 1 < b.size := lt_of_byteAt? b (off + 1) hi h_byte1
+                have h_byte2_lt : off + 2 < b.size := lt_of_byteAt? b (off + 2) lo h_byte2
+                have h_byte1_eq : b[off + 1] = hi :=
+                  getElem_of_byteAt? b (off + 1) hi h_byte1 h_byte1_lt
+                have h_byte2_eq : b[off + 2] = lo :=
+                  getElem_of_byteAt? b (off + 2) lo h_byte2 h_byte2_lt
                 have hfirst : first = 0x82 := by
                   apply UInt8.toNat_inj.mp
-                  have h130 : (0x82 : UInt8).toNat = 130 := rfl
-                  rw [h130]
-                  exact eq_of_beq h82
+                  have h_0x82_toNat : (0x82 : UInt8).toNat = 130 := rfl
+                  rw [h_0x82_toNat]
+                  exact eq_of_beq h_first_0x82
                 have hhi : hi.toNat < 256 := hi.toNat_lt
                 have hlo : lo.toNat < 256 := lo.toNat_lt
                 have hdiv : (hi.toNat * 256 + lo.toNat) / 256 = hi.toNat := by omega
@@ -428,12 +430,12 @@ theorem readLen_canonical (b : ByteArray) (off len co : Nat)
                 have hsz : (encodeLen (hi.toNat * 256 + lo.toNat)).size = 3 := by
                   rw [henc]; rfl
                 refine ⟨by omega, by omega, ?_⟩
-                rw [hsz, slice, ByteArray.extract_add_three (by omega), henc, hbe, hbe1, hbe2,
-                  hfirst]
+                rw [hsz, slice, ByteArray.extract_add_three (by omega), henc, hbe,
+                  h_byte1_eq, h_byte2_eq, hfirst]
                 simp only [ofNat_toNat]
                 rfl
               · rw [if_neg hc] at h; simp at h
-        · rw [if_neg h82] at h; simp at h
+        · rw [if_neg h_first_0x82] at h; simp at h
 
 /-! ### The TLV codec (X.690 §8.1) -/
 
@@ -456,11 +458,11 @@ theorem readTlv_tlv (tag : UInt8) (content rest : ByteArray)
         = C.extract i j := by
     intro A B C i j
     rw [ByteArray.extract_append_size_add' rfl, ByteArray.extract_append_size_add' rfl]
-  have h1 : (ByteArray.mk #[tag]).size = 1 := rfl
+  have h_tag_size : (ByteArray.mk #[tag]).size = 1 := rfl
   have hlen := readLen_encodeLen (ByteArray.mk #[tag]) content.size (content ++ rest) h
     (by rw [ByteArray.size_append]; omega)
-  rw [h1] at hlen
-  have h0 : byteAt? (ByteArray.mk #[tag] ++ (encodeLen content.size ++ (content ++ rest))) 0
+  rw [h_tag_size] at hlen
+  have h_byte0 : byteAt? (ByteArray.mk #[tag] ++ (encodeLen content.size ++ (content ++ rest))) 0
       = some tag := by
     rw [byteAt?_append_left _ _ 0 (by omega)]
     rfl
@@ -474,8 +476,8 @@ theorem readTlv_tlv (tag : UInt8) (content rest : ByteArray)
       hmid, ByteArray.extract_append_eq_left rfl]
   have hsize : (tlv tag content).size
       = 1 + (encodeLen content.size).size + content.size := by
-    rw [tlv, ByteArray.size_append, ByteArray.size_append, h1]
-  rw [readTlv, tlv_append, h0]
+    rw [tlv, ByteArray.size_append, ByteArray.size_append, h_tag_size]
+  rw [readTlv, tlv_append, h_byte0]
   simp only [Option.bind_eq_bind, Option.bind_some, beq_self_eq_true, Nat.zero_add]
   rw [hlen]
   simp only [Option.bind_some, hs, hsize]
@@ -485,12 +487,12 @@ theorem readTlv_tlv (tag : UInt8) (content rest : ByteArray)
 fails (X.690 §8.1.2). -/
 theorem readTlv_tlv_ne (tag want : UInt8) (content rest : ByteArray) (h : want ≠ tag) :
     readTlv (tlv tag content ++ rest) 0 want = none := by
-  have h1 : (ByteArray.mk #[tag]).size = 1 := rfl
-  have h0 : byteAt? (ByteArray.mk #[tag] ++ (encodeLen content.size ++ (content ++ rest))) 0
+  have h_tag_size : (ByteArray.mk #[tag]).size = 1 := rfl
+  have h_byte0 : byteAt? (ByteArray.mk #[tag] ++ (encodeLen content.size ++ (content ++ rest))) 0
       = some tag := by
     rw [byteAt?_append_left _ _ 0 (by omega)]
     rfl
-  rw [readTlv, tlv_append, h0]
+  rw [readTlv, tlv_append, h_byte0]
   simp only [Option.bind_eq_bind, Option.bind_some]
   rw [guard_neg (by simpa using fun hc => h (by rw [hc]))]
   rfl
@@ -574,12 +576,13 @@ private theorem beVal_lt (l : List UInt8) : beVal l < 256 ^ l.length := by
   | nil => simp [beVal]
   | cons x xs ih =>
     rw [beVal_cons, List.length_cons, Nat.pow_succ]
-    have hx : x.toNat + 1 ≤ 256 := by have := x.toNat_lt; omega
-    have h1 : (x.toNat + 1) * 256 ^ xs.length ≤ 256 * 256 ^ xs.length :=
-      Nat.mul_le_mul_right _ hx
-    have h2 : x.toNat * 256 ^ xs.length + 256 ^ xs.length = (x.toNat + 1) * 256 ^ xs.length := by
+    have h_succ_le : x.toNat + 1 ≤ 256 := by have := x.toNat_lt; omega
+    have h_scale_le : (x.toNat + 1) * 256 ^ xs.length ≤ 256 * 256 ^ xs.length :=
+      Nat.mul_le_mul_right _ h_succ_le
+    have h_factor :
+        x.toNat * 256 ^ xs.length + 256 ^ xs.length = (x.toNat + 1) * 256 ^ xs.length := by
       rw [Nat.add_mul, Nat.one_mul]
-    have h3 := Nat.mul_comm 256 (256 ^ xs.length)
+    have h_mul_comm := Nat.mul_comm 256 (256 ^ xs.length)
     omega
 
 private theorem beVal_inj : ∀ (l1 l2 : List UInt8), l1.length = l2.length →
@@ -595,18 +598,18 @@ private theorem beVal_inj : ∀ (l1 l2 : List UInt8), l1.length = l2.length →
       have hlen : xs.length = ys.length := by simpa using hl
       rw [beVal_cons, beVal_cons, hlen] at hv
       have hp : 0 < 256 ^ ys.length := Nat.pow_pos (by omega)
-      have hb1 : beVal xs < 256 ^ ys.length := by rw [← hlen]; exact beVal_lt xs
-      have hb2 : beVal ys < 256 ^ ys.length := beVal_lt ys
-      have hx : x.toNat = y.toNat := by
-        have e1 : (256 ^ ys.length * x.toNat + beVal xs) / 256 ^ ys.length = x.toNat := by
-          rw [Nat.mul_add_div hp, Nat.div_eq_of_lt hb1, Nat.add_zero]
-        have e2 : (256 ^ ys.length * y.toNat + beVal ys) / 256 ^ ys.length = y.toNat := by
-          rw [Nat.mul_add_div hp, Nat.div_eq_of_lt hb2, Nat.add_zero]
-        rw [Nat.mul_comm (256 ^ ys.length) x.toNat] at e1
-        rw [Nat.mul_comm (256 ^ ys.length) y.toNat] at e2
-        rw [← e1, ← e2, hv]
-      have hrest : beVal xs = beVal ys := by rw [hx] at hv; omega
-      rw [UInt8.toNat_inj.mp hx, ih ys hlen hrest]
+      have h_bound_xs : beVal xs < 256 ^ ys.length := by rw [← hlen]; exact beVal_lt xs
+      have h_bound_ys : beVal ys < 256 ^ ys.length := beVal_lt ys
+      have h_head_eq : x.toNat = y.toNat := by
+        have h_div_x : (256 ^ ys.length * x.toNat + beVal xs) / 256 ^ ys.length = x.toNat := by
+          rw [Nat.mul_add_div hp, Nat.div_eq_of_lt h_bound_xs, Nat.add_zero]
+        have h_div_y : (256 ^ ys.length * y.toNat + beVal ys) / 256 ^ ys.length = y.toNat := by
+          rw [Nat.mul_add_div hp, Nat.div_eq_of_lt h_bound_ys, Nat.add_zero]
+        rw [Nat.mul_comm (256 ^ ys.length) x.toNat] at h_div_x
+        rw [Nat.mul_comm (256 ^ ys.length) y.toNat] at h_div_y
+        rw [← h_div_x, ← h_div_y, hv]
+      have hrest : beVal xs = beVal ys := by rw [h_head_eq] at hv; omega
+      rw [UInt8.toNat_inj.mp h_head_eq, ih ys hlen hrest]
 
 private theorem bytesToNatBE_eq_beVal (b : ByteArray) : bytesToNatBE b = beVal b.data.toList := by
   rw [bytesToNatBE, byteArray_foldl_eq]
@@ -653,19 +656,19 @@ theorem natToBytesBE_bytesToNatBE (b : ByteArray) :
 
 /-- A leading byte that is not zero puts the value at or above
 `256 ^ (size - 1)`: the byte string carries no slack. -/
-theorem bytesToNatBE_ge (b : ByteArray) (h : 0 < b.size) (h0 : b[0]! ≠ 0) :
+theorem bytesToNatBE_ge (b : ByteArray) (h_size_pos : 0 < b.size) (h_byte0_ne_zero : b[0]! ≠ 0) :
     256 ^ (b.size - 1) ≤ bytesToNatBE b := by
-  have hc := toList_eq_cons b h
+  have hc := toList_eq_cons b h_size_pos
   have hlen : b.data.toList.tail.length = b.size - 1 := by
-    have h2 := length_toList b
-    rw [hc, List.length_cons] at h2
+    have h_list_len := length_toList b
+    rw [hc, List.length_cons] at h_list_len
     omega
-  have hx : 1 ≤ b[0]!.toNat := by
+  have h_head_pos : 1 ≤ b[0]!.toNat := by
     rcases Nat.eq_zero_or_pos b[0]!.toNat with hz | hp
-    · exact absurd (UInt8.toNat_inj.mp (by rw [hz]; rfl)) h0
+    · exact absurd (UInt8.toNat_inj.mp (by rw [hz]; rfl)) h_byte0_ne_zero
     · omega
   rw [bytesToNatBE_eq_beVal, hc, beVal_cons, hlen]
-  have hm := Nat.mul_le_mul_right (256 ^ (b.size - 1)) hx
+  have hm := Nat.mul_le_mul_right (256 ^ (b.size - 1)) h_head_pos
   omega
 
 /-! ### Minimal INTEGER content (X.690 §8.3.2) -/
@@ -675,30 +678,30 @@ private theorem natBytesMin_lt (v : Nat) :
   rcases Nat.eq_zero_or_pos v with rfl | hv
   · simp
   · rw [if_neg (by simp; omega)]
-    have h1 : v < 2 ^ (Nat.log2 v + 1) := Nat.lt_log2_self
-    have h2 : Nat.log2 v + 1 ≤ 8 * (Nat.log2 v / 8 + 1) := by omega
-    have h3 : (2 : Nat) ^ (Nat.log2 v + 1) ≤ 2 ^ (8 * (Nat.log2 v / 8 + 1)) :=
-      Nat.pow_le_pow_right (by omega) h2
+    have h_lt_log2_succ : v < 2 ^ (Nat.log2 v + 1) := Nat.lt_log2_self
+    have h_bits_bound : Nat.log2 v + 1 ≤ 8 * (Nat.log2 v / 8 + 1) := by omega
+    have h_pow_le_pow : (2 : Nat) ^ (Nat.log2 v + 1) ≤ 2 ^ (8 * (Nat.log2 v / 8 + 1)) :=
+      Nat.pow_le_pow_right (by omega) h_bits_bound
     rw [← pow256]
     omega
 
 private theorem natBytesMin_ge (v : Nat) (hv : v ≠ 0) :
     256 ^ ((if v == 0 then 1 else Nat.log2 v / 8 + 1) - 1) ≤ v := by
   rw [if_neg (by simp; omega), Nat.add_sub_cancel, ← pow256]
-  have h1 : (2 : Nat) ^ (8 * (Nat.log2 v / 8)) ≤ 2 ^ Nat.log2 v :=
+  have h_pow_floor_le : (2 : Nat) ^ (8 * (Nat.log2 v / 8)) ≤ 2 ^ Nat.log2 v :=
     Nat.pow_le_pow_right (by omega) (by omega)
-  have h2 : (2 : Nat) ^ Nat.log2 v ≤ v := Nat.log2_self_le hv
+  have h_pow_log2_le : (2 : Nat) ^ Nat.log2 v ≤ v := Nat.log2_self_le hv
   omega
 
-private theorem minLen_unique (v k : Nat) (hk : 0 < k) (h1 : 256 ^ (k - 1) ≤ v)
-    (h2 : v < 256 ^ k) : (if v == 0 then 1 else Nat.log2 v / 8 + 1) = k := by
+private theorem minLen_unique (v k : Nat) (hk : 0 < k) (h_lower : 256 ^ (k - 1) ≤ v)
+    (h_upper : v < 256 ^ k) : (if v == 0 then 1 else Nat.log2 v / 8 + 1) = k := by
   have hp : 0 < 256 ^ (k - 1) := Nat.pow_pos (by omega)
   have hv : v ≠ 0 := by omega
   rw [if_neg (by simp; omega)]
-  rw [← pow256] at h1
-  rw [← pow256] at h2
-  have e1 : 8 * (k - 1) ≤ Nat.log2 v := (Nat.le_log2 hv).mpr h1
-  have e2 : Nat.log2 v < 8 * k := (Nat.log2_lt hv).mpr h2
+  rw [← pow256] at h_lower
+  rw [← pow256] at h_upper
+  have h_log2_ge : 8 * (k - 1) ≤ Nat.log2 v := (Nat.le_log2 hv).mpr h_lower
+  have h_log2_lt : Nat.log2 v < 8 * k := (Nat.log2_lt hv).mpr h_upper
   omega
 
 /-- `natBytesMin` writes one byte for zero, else `⌊log2 v⌋ / 8 + 1`. -/
@@ -718,10 +721,12 @@ theorem bytesToNatBE_natBytesMin (v : Nat) : bytesToNatBE (natBytesMin v) = v :=
 /-- Minimality is exactly the absence of a leading zero byte: any byte
 string that starts with a nonzero byte is the one `natBytesMin` writes
 for its value. -/
-theorem natBytesMin_bytesToNatBE (b : ByteArray) (h : 0 < b.size) (h0 : b[0]! ≠ 0) :
+theorem natBytesMin_bytesToNatBE (b : ByteArray) (h_size_pos : 0 < b.size)
+    (h_byte0_ne_zero : b[0]! ≠ 0) :
     natBytesMin (bytesToNatBE b) = b := by
   rw [natBytesMin,
-    minLen_unique (bytesToNatBE b) b.size h (bytesToNatBE_ge b h h0) (bytesToNatBE_lt b),
+    minLen_unique (bytesToNatBE b) b.size h_size_pos
+      (bytesToNatBE_ge b h_size_pos h_byte0_ne_zero) (bytesToNatBE_lt b),
     natToBytesBE_bytesToNatBE]
 
 /-- `natBytesMin` never writes a leading zero byte for a nonzero value
@@ -732,8 +737,8 @@ theorem natBytesMin_head_ne_zero (v : Nat) (hv : v ≠ 0) : (natBytesMin v)[0]! 
   have hpos := natBytesMin_size_pos v
   have hc := toList_eq_cons (natBytesMin v) hpos
   have hlen : (natBytesMin v).data.toList.tail.length = (natBytesMin v).size - 1 := by
-    have h2 := length_toList (natBytesMin v)
-    rw [hc, List.length_cons] at h2
+    have h_list_len := length_toList (natBytesMin v)
+    rw [hc, List.length_cons] at h_list_len
     omega
   have hval : bytesToNatBE (natBytesMin v) = v := bytesToNatBE_natBytesMin v
   rw [bytesToNatBE_eq_beVal, hc, beVal_cons, hlen, hz] at hval
@@ -758,8 +763,8 @@ private theorem and_0x80_cases (x : UInt8) : x &&& 0x80 = 0 ∨ x &&& 0x80 = 0x8
       cases hi : decide (7 = i) with
       | false => simp
       | true =>
-        have h7 : 7 = i := of_decide_eq_true hi
-        subst h7
+        have h_bit7 : 7 = i := of_decide_eq_true hi
+        subst h_bit7
         simp [hb]
     | true =>
       right
@@ -769,18 +774,18 @@ private theorem and_0x80_cases (x : UInt8) : x &&& 0x80 = 0 ∨ x &&& 0x80 = 0x8
       cases hi : decide (7 = i) with
       | false => simp
       | true =>
-        have h7 : 7 = i := of_decide_eq_true hi
-        subst h7
+        have h_bit7 : 7 = i := of_decide_eq_true hi
+        subst h_bit7
         simp [hb]
-  have h80 : (0x80 : UInt8).toNat = 128 := rfl
-  have h0 : (0 : UInt8).toNat = 0 := rfl
-  rcases h x.toNat with h1 | h1
+  have h_0x80_toNat : (0x80 : UInt8).toNat = 128 := rfl
+  have h_zero_toNat : (0 : UInt8).toNat = 0 := rfl
+  rcases h x.toNat with h_clear | h_set
   · left
     apply UInt8.toNat_inj.mp
-    rw [UInt8.toNat_and, h80, h0, h1]
+    rw [UInt8.toNat_and, h_0x80_toNat, h_zero_toNat, h_clear]
   · right
     apply UInt8.toNat_inj.mp
-    rw [UInt8.toNat_and, h80, h1]
+    rw [UInt8.toNat_and, h_0x80_toNat, h_set]
 
 private theorem bytesToNatBE_pad (c : ByteArray) :
     bytesToNatBE (ByteArray.mk #[0] ++ c) = bytesToNatBE c := by
@@ -794,7 +799,7 @@ private theorem extract_head (c : ByteArray) (h : 1 < c.size) :
     omega
   rw [getElem!_pos _ 0 (by omega), getElem!_pos c 1 (by omega), ByteArray.getElem_extract]
 
-private theorem pad_split (c : ByteArray) (h : 0 < c.size) (h0 : c[0]! = 0) :
+private theorem pad_split (c : ByteArray) (h_size_pos : 0 < c.size) (h_byte0_zero : c[0]! = 0) :
     ByteArray.mk #[0] ++ c.extract 1 c.size = c := by
   have hone : (ByteArray.mk #[0]).size = 1 := rfl
   have hs : (c.extract 1 c.size).size = c.size - 1 := by
@@ -806,8 +811,8 @@ private theorem pad_split (c : ByteArray) (h : 0 < c.size) (h0 : c[0]! = 0) :
   · intro i hi hi'
     rcases Nat.eq_zero_or_pos i with rfl | hpos
     · rw [ByteArray.getElem_append_left (by omega)]
-      rw [getElem!_pos c 0 h] at h0
-      rw [← h0]
+      rw [getElem!_pos c 0 h_size_pos] at h_byte0_zero
+      rw [← h_byte0_zero]
       rfl
     · rw [ByteArray.getElem_append_right (by omega), ByteArray.getElem_extract]
       congr 1
@@ -831,11 +836,11 @@ theorem readDerInt_derIntNat (v : Nat) (rest : ByteArray)
       rw [hraw, if_pos hp]
     have hsz : (ByteArray.mk #[0] ++ natBytesMin v).size ≤ 0xffff := by
       rw [ByteArray.size_append, hone]; omega
-    have h0 : (ByteArray.mk #[0] ++ natBytesMin v)[0]! = 0 := by
+    have h_byte0 : (ByteArray.mk #[0] ++ natBytesMin v)[0]! = 0 := by
       refine getElem!_of_byteAt? _ 0 0 ?_
       rw [byteAt?_append_left _ _ 0 (by omega)]
       rfl
-    have h1 : (ByteArray.mk #[0] ++ natBytesMin v)[1]! = (natBytesMin v)[0]! := by
+    have h_byte1 : (ByteArray.mk #[0] ++ natBytesMin v)[1]! = (natBytesMin v)[0]! := by
       refine getElem!_of_byteAt? _ 1 _ ?_
       have hr := byteAt?_append_right (ByteArray.mk #[0]) (natBytesMin v) 0
       rw [hone] at hr
@@ -844,7 +849,7 @@ theorem readDerInt_derIntNat (v : Nat) (rest : ByteArray)
     have hsize2 : (ByteArray.mk #[0] ++ natBytesMin v).size ≥ 2 := by
       rw [ByteArray.size_append, hone]; omega
     rw [readDerInt, hd, readTlv_tlv 0x02 _ rest hsz]
-    simp only [Option.bind_eq_bind, Option.bind_some, h0, h1, bytesToNatBE_pad,
+    simp only [Option.bind_eq_bind, Option.bind_some, h_byte0, h_byte1, bytesToNatBE_pad,
       bytesToNatBE_natBytesMin]
     have hne : (ByteArray.mk #[0] ++ natBytesMin v).size ≠ 0 := by omega
     rw [guard_pos hne, guard_pos (show ((0 : UInt8) &&& 0x80 == 0) = true from rfl)]
@@ -860,7 +865,7 @@ theorem readDerInt_derIntNat (v : Nat) (rest : ByteArray)
     have hcond : ¬(((natBytesMin v)[0]! == 0) = true ∧ (natBytesMin v).size ≥ 2) := by
       intro hcc
       rcases Nat.eq_zero_or_pos v with rfl | hv
-      · have h1 : (natBytesMin 0).size = 1 := by rw [natBytesMin_size]; rfl
+      · have h_size_one : (natBytesMin 0).size = 1 := by rw [natBytesMin_size]; rfl
         omega
       · exact natBytesMin_head_ne_zero v (by omega) (eq_of_beq hcc.1)
     rw [readDerInt, hd, readTlv_tlv 0x02 _ rest hsz]
@@ -884,18 +889,18 @@ theorem derIntNat_bytesToNatBE (c : ByteArray) (hne : c.size ≠ 0)
        else natBytesMin (bytesToNatBE c)) := rfl
   rw [hraw]
   congr 1
-  by_cases h0 : c[0]! = 0
-  · by_cases h2 : 2 ≤ c.size
+  by_cases h_byte0 : c[0]! = 0
+  · by_cases h_size_two : 2 ≤ c.size
     · have hts : (c.extract 1 c.size).size = c.size - 1 := by
         rw [ByteArray.size_extract]; omega
       have ht0 : (c.extract 1 c.size)[0]! = c[1]! := extract_head c (by omega)
-      have hb := hmin h0 h2
+      have hb := hmin h_byte0 h_size_two
       have htne : (c.extract 1 c.size)[0]! ≠ 0 := by
         rw [ht0]
         intro hc
         rw [hc] at hb
         exact absurd hb (by decide)
-      have hsplit := pad_split c (by omega) h0
+      have hsplit := pad_split c (by omega) h_byte0
       have hv : bytesToNatBE c = bytesToNatBE (c.extract 1 c.size) := by
         have hpad := bytesToNatBE_pad (c.extract 1 c.size)
         rw [hsplit] at hpad
@@ -911,18 +916,18 @@ theorem derIntNat_bytesToNatBE (c : ByteArray) (hne : c.size ≠ 0)
         rw [hcl, List.length_cons] at hl
         exact List.length_eq_zero_iff.mp (by omega)
       have hv0 : bytesToNatBE c = 0 := by
-        rw [bytesToNatBE_eq_beVal, hcl, beVal_cons, htail, h0]
+        rw [bytesToNatBE_eq_beVal, hcl, beVal_cons, htail, h_byte0]
         rfl
       have hnm : natBytesMin (bytesToNatBE c) = c := by
         rw [hv0, natBytesMin]
-        have h1 : c.size = 1 := by omega
-        rw [← h1]
+        have h_size_one : c.size = 1 := by omega
+        rw [← h_size_one]
         have hb := natToBytesBE_bytesToNatBE c
         rw [hv0] at hb
         simpa using hb
-      rw [hnm, h0, if_neg (by decide)]
+      rw [hnm, h_byte0, if_neg (by decide)]
   · have hnm : natBytesMin (bytesToNatBE c) = c :=
-      natBytesMin_bytesToNatBE c (by omega) h0
+      natBytesMin_bytesToNatBE c (by omega) h_byte0
     rw [hnm, if_neg (by rw [hsign]; decide)]
 
 /-- INTEGER canonicality (X.690 §8.3.2): the bytes `readDerInt`
@@ -939,11 +944,11 @@ theorem readDerInt_canonical (b : ByteArray) (off v off' : Nat)
     obtain ⟨c, o⟩ := p
     rw [hr] at h
     simp only [Option.bind_eq_bind, Option.bind_some] at h
-    by_cases g1 : c.size ≠ 0
-    · rw [guard_pos g1] at h
+    by_cases h_nonempty : c.size ≠ 0
+    · rw [guard_pos h_nonempty] at h
       simp only [Option.bind_some] at h
-      by_cases g2 : (c[0]! &&& 0x80 == 0) = true
-      · rw [guard_pos g2] at h
+      by_cases h_sign_clear : (c[0]! &&& 0x80 == 0) = true
+      · rw [guard_pos h_sign_clear] at h
         simp only [Option.bind_some] at h
         have hfin : ∀ hmin : c[0]! = 0 → 2 ≤ c.size → c[1]! &&& 0x80 = 0x80,
             v = bytesToNatBE c → off' = o →
@@ -951,21 +956,22 @@ theorem readDerInt_canonical (b : ByteArray) (off v off' : Nat)
               slice b off (derIntNat v).size = derIntNat v := by
           intro hmin hv ho
           obtain ⟨hoff, _, hs⟩ := readTlv_canonical b off 0x02 c o hr
-          rw [hv, derIntNat_bytesToNatBE c g1 (eq_of_beq g2) hmin, ho]
+          rw [hv, derIntNat_bytesToNatBE c h_nonempty (eq_of_beq h_sign_clear) hmin, ho]
           exact ⟨hoff, hs⟩
-        by_cases g3 : ((c[0]! == 0) = true ∧ c.size ≥ 2)
-        · rw [if_pos g3] at h
-          by_cases g4 : (c[1]! &&& 0x80 == 0x80) = true
-          · rw [guard_pos g4] at h
+        by_cases h_padded : ((c[0]! == 0) = true ∧ c.size ≥ 2)
+        · rw [if_pos h_padded] at h
+          by_cases h_pad_needed : (c[1]! &&& 0x80 == 0x80) = true
+          · rw [guard_pos h_pad_needed] at h
             simp only [Option.bind_some, Option.some.injEq, Prod.mk.injEq] at h
-            exact hfin (fun _ _ => eq_of_beq g4) h.1.symm h.2.symm
-          · rw [guard_neg g4] at h; simp at h
-        · rw [if_neg g3] at h
+            exact hfin (fun _ _ => eq_of_beq h_pad_needed) h.1.symm h.2.symm
+          · rw [guard_neg h_pad_needed] at h; simp at h
+        · rw [if_neg h_padded] at h
           simp only [Option.some.injEq, Prod.mk.injEq] at h
-          refine hfin (fun hc0 hc2 => absurd ⟨?_, hc2⟩ g3) h.1.symm h.2.symm
-          simp [hc0]
-      · rw [guard_neg g2] at h; simp at h
-    · rw [guard_neg g1] at h; simp at h
+          refine hfin (fun h_byte0 h_size_two => absurd ⟨?_, h_size_two⟩ h_padded)
+            h.1.symm h.2.symm
+          simp [h_byte0]
+      · rw [guard_neg h_sign_clear] at h; simp at h
+    · rw [guard_neg h_nonempty] at h; simp at h
 
 /-! ### OID subidentifiers (X.690 §8.19.2) -/
 
@@ -1014,12 +1020,12 @@ theorem oidMinimal_last (pre : ByteArray) (x : UInt8)
 (X.690 §8.19.2: base-128 digits carry no leading zero). -/
 theorem oidMinimal_head_ne_pad (post : ByteArray) (y : UInt8)
     (h : oidMinimal (ByteArray.mk #[y] ++ post) = true) : y ≠ 0x80 := by
-  intro hy
+  intro h_pad
   rw [oidMinimal_eq, data_toList_append] at h
   have hl : (ByteArray.mk #[y]).data.toList = [y] := rfl
   rw [hl, List.foldl_append] at h
   have hstep : (List.foldl oidStep (true, true) [y]).1 = false := by
-    simp [oidStep, hy]
+    simp [oidStep, h_pad]
   rw [oidStep_false post.data.toList _ hstep] at h
   simp at h
 
@@ -1030,17 +1036,17 @@ and `oidMinimal_last` this is the whole rule: every subidentifier
 start is a byte other than 0x80, and the content ends on a complete
 subidentifier. -/
 theorem oidMinimal_no_pad (pre post : ByteArray) (x y : UInt8)
-    (h : oidMinimal (pre ++ ByteArray.mk #[x] ++ (ByteArray.mk #[y] ++ post)) = true)
-    (hx : x &&& 0x80 = 0) : y ≠ 0x80 := by
-  intro hy
-  rw [oidMinimal_eq, data_toList_append, data_toList_append, data_toList_append] at h
+    (h_minimal : oidMinimal (pre ++ ByteArray.mk #[x] ++ (ByteArray.mk #[y] ++ post)) = true)
+    (h_x_complete : x &&& 0x80 = 0) : y ≠ 0x80 := by
+  intro h_pad
+  rw [oidMinimal_eq, data_toList_append, data_toList_append, data_toList_append] at h_minimal
   have hlx : (ByteArray.mk #[x]).data.toList = [x] := rfl
   have hly : (ByteArray.mk #[y]).data.toList = [y] := rfl
-  rw [hlx, hly, List.foldl_append, List.foldl_append, List.foldl_append] at h
+  rw [hlx, hly, List.foldl_append, List.foldl_append, List.foldl_append] at h_minimal
   have hstep : ((List.foldl oidStep (List.foldl oidStep
       (List.foldl oidStep (true, true) pre.data.toList) [x]) [y])).1 = false := by
-    simp [oidStep, hx, hy]
-  rw [oidStep_false post.data.toList _ hstep] at h
-  simp at h
+    simp [oidStep, h_x_complete, h_pad]
+  rw [oidStep_false post.data.toList _ hstep] at h_minimal
+  simp at h_minimal
 
 end Spec.X509
