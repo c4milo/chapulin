@@ -81,6 +81,14 @@ int p256_ecdsa_verify(const uint8_t pub[64], const uint8_t msg_hash[32], const u
 
 #define ALPHABET "SHECRVFNKAL"
 #define ALPHA_N 11
+// The messages a flight can hold: everything the client may take before
+// it connects. Spec.Handshake.accepts_decompose bounds a flight at six
+// messages, so enumerating these to depth 6 covers every flight the
+// model admits — the full alphabet at depth 5 cannot, since HSECVF is
+// six long.
+#define FLIGHT_ALPHABET "SHECVF"
+#define FLIGHT_N 6
+#define FLIGHT_DEPTH 6
 #define DEPTH_MAX 8
 
 // The client derives its record_size_limit from the receive buffer, and
@@ -195,19 +203,20 @@ static void check_one(const char *letters, size_t len, int psk) {
     }
 }
 
-// Every sequence over the alphabet of each length 0..depth, one mode.
-static void run_all(int depth, int psk) {
+// Every sequence over the given alphabet of each length 0..depth, one
+// mode. The two callers below differ only in which letters they draw.
+static void run_alphabet(const char *alphabet, int alpha_n, int depth, int psk) {
     for (int len = 0; len <= depth; len++) {
         int idx[DEPTH_MAX] = {0};
         for (;;) {
             char letters[DEPTH_MAX + 1];
             for (int i = 0; i < len; i++) {
-                letters[i] = ALPHABET[idx[i]];
+                letters[i] = alphabet[idx[i]];
             }
             letters[len] = 0;
             check_one(letters, (size_t)len, psk);
             int i = len - 1;
-            while (i >= 0 && ++idx[i] == ALPHA_N) {
+            while (i >= 0 && ++idx[i] == alpha_n) {
                 idx[i] = 0;
                 i--;
             }
@@ -216,6 +225,19 @@ static void run_all(int depth, int psk) {
             }
         }
     }
+}
+
+// Every sequence over the alphabet of each length 0..depth, one mode.
+static void run_all(int depth, int psk) {
+    run_alphabet(ALPHABET, ALPHA_N, depth, psk);
+}
+
+// Every flight of each length 0..FLIGHT_DEPTH, one mode. Dropping the
+// four post-handshake letters shrinks the space far more than the extra
+// depth grows it, so this costs less than the full sweep and reaches
+// flights the full sweep never does.
+static void run_flights(int psk) {
+    run_alphabet(FLIGHT_ALPHABET, FLIGHT_N, FLIGHT_DEPTH, psk);
 }
 
 int main(void) {
@@ -315,6 +337,8 @@ int main(void) {
         (void)clock_gettime(CLOCK_MONOTONIC, &t0);
         run_all(depth, 1);
         run_all(depth, 0);
+        run_flights(1);
+        run_flights(0);
         (void)clock_gettime(CLOCK_MONOTONIC, &t1);
         double secs = (double)(t1.tv_sec - t0.tv_sec) + (double)(t1.tv_nsec - t0.tv_nsec) / 1e9;
         if (mismatches > 0) {
@@ -322,8 +346,9 @@ int main(void) {
                           comparisons);
             failures++;
         } else {
-            (void)printf("hsseq_test: %ld sequences (depth %d, both modes) in %.1f s, C == spec\n",
-                         comparisons, depth, secs);
+            (void)printf("hsseq_test: %ld sequences (all %d letters to depth %d, the %d "
+                         "handshake letters to depth %d, both modes) in %.1f s, C == spec\n",
+                         comparisons, ALPHA_N, depth, FLIGHT_N, FLIGHT_DEPTH, secs);
         }
     } else {
         (void)printf("hsseq_test: spec comparisons skipped (build spec/ first)\n");
