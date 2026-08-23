@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Checks that the suite fails when an invariant is broken.
 
-Run from the repository root: python3 test/mutants.py [name ...]
+Run from the repository root: python3 test/violations.py [name ...]
 
 docs/invariants.md says what must never break, and each entry there
 carries a Violation field describing what a breaking change looks like.
@@ -9,7 +9,10 @@ This turns those descriptions into edits and checks that some test
 actually objects. A test suite that passes on broken code is not
 guarding the invariant, whatever its name says.
 
-Each mutant lives in test/mutants/<name>.mut:
+make lint-invariants checks that the code does not violate an
+invariant. This checks that a test notices when it does.
+
+Each violation lives in test/violations/<name>.violation:
 
     invariant: INV-10
     file: record.c
@@ -24,11 +27,11 @@ The runner applies the edit, builds the named target, runs it, and
 requires a NONZERO exit. Three outcomes:
 
   caught     the target failed, so the invariant is guarded
-  SURVIVED   the target passed on broken code — a coverage hole
-  STALE      the old text is gone, so the mutant no longer applies
+  unguarded  the target passed on broken code — a coverage hole
+  STALE      the old text is gone, so the violation no longer applies
 
-STALE is a failure too. A mutant that silently stops matching is worse
-than none, because it reports success forever.
+STALE is a failure too. A violation that silently stops matching is
+worse than none, because it reports success forever.
 """
 
 import pathlib
@@ -36,7 +39,7 @@ import subprocess
 import sys
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-MUTANTS = ROOT / "test" / "mutants"
+VIOLATIONS = ROOT / "test" / "violations"
 
 
 def parse(path):
@@ -61,8 +64,8 @@ def parse(path):
 
 
 def run(name):
-    """Apply one mutant, build and run its target, restore, report."""
-    path = MUTANTS / f"{name}.mut"
+    """Apply one violation, build and run its target, restore, report."""
+    path = VIOLATIONS / f"{name}.violation"
     head, old, new = parse(path)
     target = ROOT / head["file"]
     original = target.read_text()
@@ -85,11 +88,11 @@ def run(name):
             built = subprocess.run(["make", binary], cwd=ROOT,
                                    capture_output=True, text=True)
             if built.returncode != 0:
-                # A mutant that will not compile proves nothing about the
+                # An edit that will not compile proves nothing about the
                 # tests, so say that rather than counting it as caught.
-                print(f"  SURVIVED {name}: {head['file']} no longer compiles; "
+                print(f"  unguarded {name}: {head['file']} no longer compiles; "
                       f"write an edit that builds")
-                return "survived"
+                return "unguarded"
         ran = subprocess.run([binary], cwd=ROOT, capture_output=True, text=True)
     finally:
         target.write_text(original)
@@ -98,23 +101,23 @@ def run(name):
     if ran.returncode != 0:
         print(f"  caught   {name} [{head['invariant']}] by {head['catches']}")
         return "caught"
-    print(f"  SURVIVED {name} [{head['invariant']}]: {head['catches']} passed "
+    print(f"  unguarded {name} [{head['invariant']}]: {head['catches']} passed "
           f"on broken code")
     print(f"           {head['reason']}")
-    return "survived"
+    return "unguarded"
 
 
 def main():
-    names = sys.argv[1:] or sorted(p.stem for p in MUTANTS.glob("*.mut"))
+    names = sys.argv[1:] or sorted(p.stem for p in VIOLATIONS.glob("*.violation"))
     if not names:
-        sys.exit("mutants: no mutants in test/mutants/")
-    print(f"mutants: {len(names)} to check")
-    tally = {"caught": 0, "survived": 0, "stale": 0}
+        sys.exit("test-invariants: nothing in test/violations/")
+    print(f"test-invariants: {len(names)} violations to check")
+    tally = {"caught": 0, "unguarded": 0, "stale": 0}
     for name in names:
         tally[run(name)] += 1
-    print(f"mutants: {tally['caught']} caught, {tally['survived']} survived, "
-          f"{tally['stale']} stale")
-    if tally["survived"] or tally["stale"]:
+    print(f"test-invariants: {tally['caught']} caught, "
+          f"{tally['unguarded']} unguarded, {tally['stale']} stale")
+    if tally["unguarded"] or tally["stale"]:
         sys.exit(1)
 
 

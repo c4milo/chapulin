@@ -3,7 +3,7 @@ file: handshake.c
 catches: test/e2e.sh
 reason: committing the epoch on the chain verdict alone lets a certificate
   that never proves possession of its key raise the device's stored
-  epoch, which outlives the session. KNOWN SURVIVOR: nothing catches
+  epoch, which outlives the session. UNGUARDED: nothing catches
   this today. epoch_commit is idempotent, so on a handshake that
   succeeds the early call is invisible; the violation shows only when
   the handshake fails after epoch_check passes. No test presents a

@@ -597,13 +597,14 @@ else
 	  || npx --no-install commitlint --from=HEAD~1 --to=HEAD
 endif
 
-# Breaks each invariant docs/invariants.md lists and requires some test
-# to object. A suite that passes on broken code is not guarding the
-# invariant, whatever its name says. Too slow for check (every mutant
-# rebuilds and reruns a target), so it runs nightly.
-.PHONY: mutants
-mutants: bin/unit bin/diff
-	python3 test/mutants.py
+# lint-invariants checks that the code does not violate an invariant.
+# This checks that a test notices when it does: each Violation field in
+# docs/invariants.md becomes an edit, and some test must object. Too
+# slow for check (each one rebuilds and reruns a target), so it runs
+# nightly.
+.PHONY: test-invariants
+test-invariants: bin/unit bin/diff
+	python3 test/violations.py
 
 # The nightly runs one job per slow proof, from a static matrix. A
 # launch line added without a matching matrix entry would simply never
