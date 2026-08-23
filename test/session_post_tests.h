@@ -17,7 +17,11 @@ static void test_post_handshake(void) {
     mock_io m = {0};
     static uint8_t rxbuf[1024];
     ch_tls t;
-    mock_session(&t, &m, rxbuf, sizeof rxbuf, secret, NULL);
+    // Keep the write secret so the reply can be opened, not just counted.
+    uint8_t wr_secret[SHA256_LEN];
+    mock_session(&t, &m, rxbuf, sizeof rxbuf, secret, wr_secret);
+    rec_dir reader;
+    rec_dir_init(&reader, wr_secret);
 
     // NST: lifetime, age_add, nonce(2), identity(90), no extensions.
     uint8_t ticket_msg[4 + 105];
@@ -54,8 +58,24 @@ static void test_post_handshake(void) {
     int got = ch_read(&t, out, sizeof out);
     CHECK(got == 4 && memcmp(out, "hola", 4) == 0);
     CHECK(m.tickets == 1);
-    CHECK(m.sent > 0); // the KeyUpdate reply went out
     CHECK(t.state == CH_ST_CONNECTED);
+
+    // Open the reply rather than counting bytes. §4.6.3 answers an
+    // update_requested with update_not_requested, and the client rekeys
+    // its own write direction straight after sending it. Counting alone
+    // passes even when that second rekey is missing, which would leave
+    // every later record sealed under the retired key.
+    uint8_t reply[16];
+    size_t reply_len = 0;
+    uint8_t reply_type = 0;
+    size_t at =
+        mock_pop_client_record(&m, 0, &reader, reply, sizeof reply, &reply_len, &reply_type);
+    const uint8_t want_reply[5] = {24, 0, 0, 1, 0};
+    CHECK(reply_type == REC_HANDSHAKE && reply_len == sizeof want_reply);
+    CHECK(memcmp(reply, want_reply, sizeof want_reply) == 0);
+    // Follow the client's write-side rekey; everything after opens under
+    // the new secret, and under the old one it does not.
+    rec_dir_update(wr_secret, &reader);
 
     // Zero-length reads are a caller bug, never the close sentinel.
     CHECK(ch_read(&t, out, 0) == CH_EINVAL);
@@ -67,6 +87,11 @@ static void test_post_handshake(void) {
     size_t before_close = m.sent;
     CHECK(ch_read(&t, out, sizeof out) == 0);
     CHECK(m.sent > before_close); // our close_notify, under live keys
+    // It opens only if the client rekeyed its write direction above.
+    at = mock_pop_client_record(&m, at, &reader, reply, sizeof reply, &reply_len, &reply_type);
+    CHECK(reply_type == REC_ALERT && reply_len == 2);
+    CHECK(reply[0] == 1 && reply[1] == 0);
+    CHECK(at == m.tx_len); // the reply and the close_notify, nothing else
     size_t after_close = m.sent;
     ch_close(&t);
     CHECK(m.sent == after_close); // keys wiped: nothing more on the wire
