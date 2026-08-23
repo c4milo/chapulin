@@ -36,6 +36,10 @@ typedef struct {
     uint8_t ccs_seen; // compat-mode CCS records tolerated so far
     uint8_t quiet;    // records that added no handshake bytes
     uint8_t alert;    // what to tell the peer if we abort
+    // Set by expect_finished once the server Finished MAC compared
+    // equal. epoch_commit asserts on it, so a commit moved earlier
+    // faults instead of raising state the peer never authenticated.
+    uint8_t server_finished_ok;
 #ifdef CH_TRUST_CA
     x509_leaf_info leaf; // the chain's verified leaf key, for CertificateVerify
 #endif
