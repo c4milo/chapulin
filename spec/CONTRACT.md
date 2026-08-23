@@ -310,14 +310,15 @@ Style, in rough order of how much it buys:
   branches doing the same four steps with different constants is one
   lemma taking those constants.
 - **Cite the standard** in the doc comment — RFC section, X.690 clause,
-  FIPS paragraph — the same as the definitions do.
+  FIPS paragraph — the same as the definitions do. `missingDocs` is on,
+  so a public declaration without one fails `make check`; the linter
+  cannot read a trailing `--` comment, only a `/-- ... -/` block.
 - **Delete the debris** once it is green: redundant `have`s, commented
   `rw` chains, single rewrites that collapse into one `rw [a, b, c]`.
   Four of Lean's own linters check this — `unreachableTactic`,
   `unnecessarySimpa`, `unusedRCasesPattern`, `tactic.unusedName`, on in
   `lakefile.toml` — and `make lint-spec` turns their warnings into
-  errors, so `make check` fails on debris. `missingDocs` is the one
-  rule here still on convention: 35 declarations predate it.
+  errors, so `make check` fails on debris.
 
 Naming follows mathlib's scheme even though mathlib is not a
 dependency: `snake_case`, `foo_of_bar` for an implication, suffixes
@@ -335,6 +336,9 @@ them wastes an afternoon:
 | casts | `qify` | `norm_cast`, `push_cast` (both present) |
 | field arithmetic | `field_simp` | rewrite by hand |
 | monotonicity | `gcongr` | the explicit lemma |
+
+Everything in this section is machine-checked except one rule: naming
+hypotheses. No linter reads intent, so that one rests on review.
 
 `omega`, `decide`, `norm_cast`, and `push_cast` are present and carry
 most of the arithmetic here. `DecidableEq` is derived for the model's
