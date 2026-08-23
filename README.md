@@ -287,7 +287,8 @@ libraries and on mlkem-native, and this suite copies that method.
 computes: SHA-256, HKDF and the RFC 9846 §7.1 key schedule, ChaCha20,
 Poly1305 (the accumulator is a plain `Nat` mod 2^130−5), the AEAD,
 record framing, x25519, P-256, and RSA-PSS, all as definitional `Nat`
-arithmetic. The spec follows the RFC text and never the C, because a
+arithmetic — and, above the primitives, the RFC 9846 §4 grammar of the
+four handshake messages a server sends this client. The spec follows the RFC text and never the C, because a
 differential oracle only works when a shared misreading cannot make both
 sides agree. Each module carries its RFC vectors as a selftest, and the
 key schedule also matches [RFC 8448](https://www.rfc-editor.org/rfc/rfc8448)'s published trace values. The spec
@@ -314,7 +315,7 @@ CertificateVerify one layer down, through the raw RSAVP1 modexp and a
 test-local PSS check.
 
 `make diff` builds the spec with `lake`, runs its selftests, and then
-drives about 4,100 random-input comparisons between every C module and
+drives about 6,000 random-input comparisons between every C module and
 the spec over a pipe, with a deterministic seed. The comparisons include
 P-256 and RSA-PSS signatures that the spec mints and the C must accept —
 the spec holds the private keys and signs; the C, which can only verify,

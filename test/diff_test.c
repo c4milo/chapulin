@@ -18,6 +18,7 @@
 // live in sibling headers of this, the only translation unit.
 #include "diff_driver.h"
 #include "diff_hash.h"
+#include "diff_hsparse.h"
 #include "diff_p256.h"
 #include "diff_record.h"
 #include "diff_rsa.h"
@@ -52,6 +53,10 @@ int main(int argc, char **argv) {
     diff_p256();
     diff_rsa();
     diff_x509();
+    diff_hs_server_hello();
+    diff_hs_encrypted_exts();
+    diff_hs_certificate();
+    diff_hs_certificate_verify();
     if (fclose(to_spec) != 0 || fclose(from_spec) != 0) {
         die("closing spec pipes failed");
     }

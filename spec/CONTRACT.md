@@ -62,6 +62,43 @@ Spec.P256.ecdsaSign   : (d k z : Nat) → Option (Nat × Nat)             -- FIP
                         -- signs so the oracle can mint valid signatures; the C
                         -- side only ever verifies.
 Spec.P256.ecdsaVerify : (pub hash : ByteArray) → (r s : Nat) → Bool    -- SEC 1 v2 §4.1.4
+Spec.Hsparse.parseServerHello : (pskOffered : Bool) → (msg : ByteArray) →
+                        Except Alert ServerHelloKind                    -- RFC 9846 §4.1.3, §4.1.4.
+                        -- Takes the whole Handshake structure of §4 (msg_type,
+                        -- uint24 length, body); hsparse.c's entry points take the
+                        -- body, so the driver frames it. pskOffered is hsparse.h's
+                        -- psk_mode: §4.2 makes a pre_shared_key response
+                        -- admissible only if the ClientHello offered one, and
+                        -- that is the one thing the message alone cannot settle.
+                        -- Everything else the profile fixes is a byte compare
+                        -- against a constant: legacy_version 0x0303, the empty
+                        -- legacy_session_id_echo hsmsg.c offers, the one cipher
+                        -- suite, x25519. Line op:
+                        -- `hs_server_hello <psk|nopsk> <msg>` →
+                        -- `sh <key_exchange> <selected_identity|->`
+                        -- / `hrr <cookie>` / `ERR hs_server_hello reject`.
+Spec.Hsparse.parseEncryptedExtensions : (msg : ByteArray) →
+                        Except Alert EncryptedExtensions               -- RFC 9846 §4.3.1.
+                        -- Line op: `hs_encrypted_extensions <msg>` →
+                        -- `ok <record_size_limit|->` (RFC 8449 §4, decimal, the
+                        -- extension's own value; hsparse.c stores it less the
+                        -- inner content-type octet) / `ERR ... reject`.
+Spec.Hsparse.parseCertificate : (msg : ByteArray) → Except Alert Certificate
+                        -- RFC 9846 §4.4.2: the empty certificate_request_context
+                        -- then the exact-fill CertificateEntry list, whose
+                        -- per-entry extensions must be ones the client offered —
+                        -- none. Line op: `hs_certificate <msg>` →
+                        -- `ok <entry_count> <leaf_cert_data>` / `ERR ... reject`.
+Spec.Hsparse.parseCertificateVerify : (scheme : Scheme) → (msg : ByteArray) →
+                        Except Alert CertificateVerify                 -- RFC 9846 §4.4.3:
+                        -- the one offered SignatureScheme, then an exact-fill
+                        -- `opaque signature<0..2^16-1>`. The signature's length
+                        -- is the verifier's business, not the parser's. Line op:
+                        -- `hs_certificate_verify <rsa|p256> <msg>` →
+                        -- `ok <algorithm> <signature>` / `ERR ... reject`.
+Spec.Hsparse.verifyContent : (transcriptHash : ByteArray) → ByteArray  -- RFC 9846 §4.4.3's
+                        -- 130 signed octets: 64 spaces, the context string, a
+                        -- zero, the hash. Line op: `hs_verify_content <hash>`.
 Spec.Rsa.pssVerify    : (n e : Nat) → (mHash sig : ByteArray) → Bool    -- RFC 8017 §8.1.2,
                         -- rsa_pss_rsae_sha256: SHA-256, MGF1-SHA256, saltLen 32.
 Spec.Rsa.pssSign      : (n d : Nat) → (mHash salt : ByteArray) →
@@ -147,6 +184,29 @@ Spec.Handshake.accepts : (mode : Mode) → (msgs : List Msg) → Bool       -- f
 Shared helpers live in `Spec/Bytes.lean` (hex, BE/LE Nat coding, xor).
 Build with `~/.elan/bin/lake build` inside `spec/`; keep the build
 dependency-free (no mathlib).
+
+## Where the C and the model split a check
+
+Both sides must refuse the same messages, but they need not refuse them
+in the same function. `hsparse.c` is a framing parser: it hands what it
+read to `handshake.c`, which decides whether the handshake can go on.
+The model has no layer above it, so it makes those decisions where it
+reads the field. Four checks fall on opposite sides of that line, and
+`test/diff_hsparse.h` projects the C answer down to the model's
+boundary rather than weakening the model to match the split:
+
+| check | C decides | model decides |
+| --- | --- | --- |
+| ServerHello with no key_share | `handshake.c:352`, on `have_share` | `parseServerHello` |
+| selected_identity outside the one offered index | `handshake.c:352`, on `psk_ok` | `parseServerHello` |
+| HelloRetryRequest with no cookie | `handshake.c`, on an absent cookie | `parseServerHello` |
+| CertificateEntry carrying an unoffered extension | the trust mode's certificate parser | `parseCertificate` |
+
+Each ends the handshake on both sides; only the layer that ends it
+differs. A fifth went the other way — the model bounded the
+CertificateVerify signature by the pinned key's size, which §4.4.3 does
+not do and `hsparse.c` leaves to the verifier — and the model gave the
+check up rather than the driver paper over it.
 
 ## Proven properties
 
@@ -244,6 +304,7 @@ means the module's selftest plus the differential oracle carry it;
 | --- | --- | --- |
 | Bytes | 24 | proof toolkit: fold characterizations, xor involution and left cancellation, hex injectivity, big-endian round trip and injectivity |
 | Drbg | 13 | key advance (the next key is the counter-0 block, independent of the request size), key/output disjointness within one keystream, request-prefix consistency, session key chain |
+| Hsparse | 14 | message-grammar soundness: an accepted ServerHello echoes the empty legacy_session_id the profile offers and a 32-octet x25519 key_exchange, and any selected_identity it reports is the single index one offered identity puts in range; a result is a HelloRetryRequest exactly when the Random is §4.1.4's fixed value; an accepted CertificateVerify reports the build's own pinned SignatureScheme and no other |
 | Handshake | 17 | state-machine safety invariants: exactly one ServerHello, EncryptedExtensions and Finished; no certificate flight under PSK; pinned flight shape and order; HRR bound; no CertificateRequest; no post-handshake message before Finished; close_notify at most once and last |
 | Record | 8 | seal/open round trip at both the AEAD and record layers, record size, nonce size, nonce injectivity (distinct sequence numbers never share a nonce), and that an accepted record never carries content type invalid(0) |
 | ChaCha | 5 | block size, structural lemmas, keystream prefix stability; keystream itself vector-checked |

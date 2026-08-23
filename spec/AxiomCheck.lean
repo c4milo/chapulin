@@ -9,6 +9,7 @@ import Spec.Handshake
 import Spec.Drbg
 import Spec.X509
 import Spec.X25519
+import Spec.Hsparse
 
 #print axioms Spec.Aead.open?_seal
 #print axioms Spec.Aead.open?_ne_tag
@@ -31,3 +32,9 @@ import Spec.X25519
 #print axioms Spec.X509.parse_key_signed
 #print axioms Spec.X25519.decodeScalar_mul_eight
 #print axioms Spec.X25519.decodeScalar_range
+#print axioms Spec.Hsparse.messageBody_sound
+#print axioms Spec.Hsparse.parseServerHello_sound
+#print axioms Spec.Hsparse.parseServerHello_random
+#print axioms Spec.Hsparse.parseCertificate_sound
+#print axioms Spec.Hsparse.parseCertificateVerify_sound
+#print axioms Spec.Hsparse.parseEncryptedExtensions_limit_ge_64

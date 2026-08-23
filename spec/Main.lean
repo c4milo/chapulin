@@ -19,6 +19,11 @@ def hexArg? (s : String) : Option ByteArray :=
 def emit (b : ByteArray) : String :=
   if b.size == 0 then "-" else bytesToHex b
 
+def emitNat? (n : Option Nat) : String :=
+  match n with
+  | some v => toString v
+  | none => "-"
+
 def selftestAll : String :=
   let mods : List (String × Bool) := [
     ("sha256", Spec.Sha256.selftest),
@@ -32,7 +37,8 @@ def selftestAll : String :=
     ("rsa", Spec.Rsa.selftest),
     ("x509", Spec.X509.selftest),
     ("drbg", Spec.Drbg.selftest),
-    ("handshake", Spec.Handshake.selftest)]
+    ("handshake", Spec.Handshake.selftest),
+    ("hsparse", Spec.Hsparse.selftest)]
   match mods.find? (fun m => !m.2) with
   | some (name, _) => s!"FAIL {name}"
   | none => "ok"
@@ -144,6 +150,51 @@ def dispatch : List String → Option String
       | _ => none
     let msgs ← Spec.Handshake.seq? (if letters == "-" then "" else letters)
     return if Spec.Handshake.accepts m msgs then "1" else "0"
+  -- The four RFC 9846 §4 message parsers take one whole Handshake
+  -- structure — msg_type, uint24 length, body — and reply with the
+  -- fields the client needs. Every refusal is one string, as `rec_open`
+  -- does: the RFC fixes different alerts for different checks (§4.2's
+  -- illegal_parameter and unsupported_extension, §9.2's
+  -- missing_extension, §6.2's decode_error) and some it leaves to the
+  -- implementation, so distinct strings would flag a spec-and-C
+  -- disagreement about which MUST fired first as a mismatch. The alert
+  -- itself lives in the model, where `Spec.Hsparse.Alert` names it.
+  | ["hs_server_hello", mode, msg] => do
+    let m ← hexArg? msg
+    -- `psk` and `nopsk` are hsparse.h's `psk_mode`: whether this
+    -- client's ClientHello offered a PSK, which RFC 9846 §4.2 makes
+    -- the test for whether a pre_shared_key response is admissible.
+    let offered ← match mode with
+      | "psk" => some true
+      | "nopsk" => some false
+      | _ => none
+    return match Spec.Hsparse.parseServerHello offered m with
+      | .ok (.serverHello f) =>
+        s!"sh {emit f.keyExchange} {emitNat? f.selectedIdentity}"
+      | .ok (.helloRetryRequest f) => s!"hrr {emit f.cookie}"
+      | .error _ => "ERR hs_server_hello reject"
+  | ["hs_encrypted_extensions", msg] => do
+    let m ← hexArg? msg
+    return match Spec.Hsparse.parseEncryptedExtensions m with
+      | .ok f => s!"ok {emitNat? f.recordSizeLimit}"
+      | .error _ => "ERR hs_encrypted_extensions reject"
+  | ["hs_certificate", msg] => do
+    let m ← hexArg? msg
+    return match Spec.Hsparse.parseCertificate m with
+      | .ok f => s!"ok {f.entryCount} {emit f.leafCert}"
+      | .error _ => "ERR hs_certificate reject"
+  | ["hs_certificate_verify", alg, msg] => do
+    let scheme ← Spec.Hsparse.schemeOf? alg
+    let m ← hexArg? msg
+    return match Spec.Hsparse.parseCertificateVerify scheme m with
+      | .ok f => s!"ok {f.algorithm} {emit f.signature}"
+      | .error _ => "ERR hs_certificate_verify reject"
+  | ["hs_verify_content", hash] => do
+    let h ← hexArg? hash
+    -- RFC 9846 §4.4.3 signs over the transcript hash, which is
+    -- SHA-256 under this profile's one cipher suite.
+    guard (h.size == 32)
+    return emit (Spec.Hsparse.verifyContent h)
   | ["p256_pub", d] => do
     let db ← hexArg? d
     guard (db.size == 32)
