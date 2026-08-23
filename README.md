@@ -13,6 +13,32 @@ takes it or the handshake fails. There is no 0-RTT.
 It uses C11 and libc only, and never calls `malloc`. The working set is
 one session struct plus one receive buffer you provide.
 
+## Why this exists
+
+Much of the internet's attack traffic comes from bot networks built out
+of embedded devices — routers, cameras, sensors — that someone else
+controls. They are easy to take over, and they stay taken over.
+
+Transport security is not the whole answer, but going without it is a
+large part of the problem, and the reason vendors go without is usually
+price or size.
+
+The small, well-supported embedded TLS stacks are commercial: SEGGER
+emSSL, SharkSSL, Tuxera. The widely deployed open one, wolfSSL, is
+GPLv3 or a licence fee, and proprietary firmware pays the fee. The
+permissively licensed stacks do not close the gap either. BearSSL is
+MIT, heap-free, and the closest design ancestor, but it still has no
+TLS 1.3 in 2026. picotls and Mbed TLS have TLS 1.3 and cannot run
+without an allocator, at 9 to 15 kB of working RAM.
+
+So a vendor with a few kilobytes of SRAM and no budget for middleware
+ships plaintext, or something hand-rolled, and the device joins the
+next bot network.
+
+chapulin answers that narrow case: TLS 1.3 in about 3 kB of static
+working set, no heap, Apache-2.0, and proofs an auditor can check
+rather than trust. [`docs/landscape.md`](docs/landscape.md) surveys the field with sources.
+
 ## Trusting the server
 
 Pick one mode at build time.
