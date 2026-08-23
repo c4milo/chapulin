@@ -28,7 +28,7 @@ HDRS := ct.h sha256.h hkdf.h chacha20.h poly1305.h aead.h x25519.h p256.h rsa.h 
         tls.h rand.h drbg.h
 LINT_C := $(SRCS) drbg.c test/unit_test.c test/tls_client.c test/diff_test.c test/timing_test.c \
           test/drbg_test.c test/rsa_test.c test/hsstrict_test.c test/hsseq_test.c \
-          test/x509_strict_test.c
+          test/x509_strict_test.c $(wildcard examples/*.c)
 
 # Test-local headers: prerequisites for every binary that includes them,
 # so a header edit rebuilds the binaries it changes.
@@ -196,7 +196,7 @@ bin/diff: test/diff_test.c $(SRCS) $(HDRS) $(TESTH)
 	$(CC) $(CFLAGS) -I. -o $@ test/diff_test.c $(SRCS)
 
 .PHONY: check lint lint-tidy lint-format lint-cppcheck lint-docs lint-invariants lint-spec prove diff fmt clean
-check: bin/unit bin/unit_ca bin/tlsclient bin/tlsclient_ecdsa bin/tlsclient_ca bin/tlsclient_ca_ecdsa bin/drbg_test bin/rsa_test bin/hsstrict_test bin/x509strict bin/x509strict_ecdsa bin/hsseq_test lint lib-check cxx-check
+check: examples-check bin/unit bin/unit_ca bin/tlsclient bin/tlsclient_ecdsa bin/tlsclient_ca bin/tlsclient_ca_ecdsa bin/drbg_test bin/rsa_test bin/hsstrict_test bin/x509strict bin/x509strict_ecdsa bin/hsseq_test lint lib-check cxx-check
 	./bin/unit
 	./bin/unit_ca
 	./bin/drbg_test
@@ -596,6 +596,23 @@ else
 	npx --no-install commitlint --from=$(shell git rev-list --max-parents=0 HEAD)~0 --to=HEAD \
 	  || npx --no-install commitlint --from=HEAD~1 --to=HEAD
 endif
+
+# The examples build and are linted, but never run: e2e covers live
+# behaviour. Building them is what stops the API drifting out from
+# under the one place a reader learns it from. ca_client.c needs the
+# CA-trust library, so it builds only in that mode.
+EXAMPLES := examples/psk_client.c examples/pinned_client.c
+ifeq ($(TRUST),ca)
+EXAMPLES += examples/ca_client.c
+endif
+
+.PHONY: examples-check
+examples-check: bin/chapulin.o
+	@for e in $(EXAMPLES); do \
+	  $(CC) $(CFLAGS) $(LIB_DEF) -I. -o /dev/null $$e bin/chapulin.o || exit 1; \
+	done
+	@echo "examples-check: $(words $(EXAMPLES)) example(s) build against the packaged library"
+
 
 # lint-invariants checks that the code does not violate an invariant.
 # This checks that a test notices when it does: each Violation field in
