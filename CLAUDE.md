@@ -117,7 +117,12 @@ Home: github.com/c4milo.
   against a named constant over decode-and-judge. The naming,
   complexity, and prose rules below all serve this.
 - Functions stay at cognitive complexity 15 or less; hand-written files
-  under 500 lines.
+  under 500 lines. `spec/` is exempt from the line count: both limits
+  serve third-party audit of the C, and in a proof file the audited
+  unit is the theorem statement, not the tactic script under it — Lean's
+  kernel checks that. Judge a spec module by whether each statement
+  reads in a few lines and carries no hypothesis it does not need; a
+  long proof of a short statement costs an auditor nothing.
 - Names spell words out. Module prefixes stay short — they are C's
   namespaces (`ch_`, `ks_`, `rec_`, `rb_`/`wb_`, `hsp_`, `ct_`) — but
   the stem after the prefix is real words: `parse_server_hello`, not

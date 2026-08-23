@@ -242,13 +242,17 @@ means the module's selftest plus the differential oracle carry it;
 | Poly | 1 | MAC size; arithmetic vector-checked |
 | P256 | 0 | executable oracle only: RFC 6979 vectors and the differential |
 | X25519 | 0 | executable oracle only: RFC 7748 vectors and the differential |
+| X509Der | 19 | DER canonicality: a length, a TLV, and an INTEGER are accepted only in the one encoding X.690 §10.1 and §8.3.2 admit, so the reader is DER-strict rather than BER-lenient; plus the encode/decode round trips and the §8.19.2 subidentifier rule |
 | X509 | 0 | executable oracle only: mint/parse round trips for the single leaf and the chained pair (self-checked signatures; OpenSSL material is exercised by the C strictness suite) and the differential |
 
-The three remaining zero-theorem modules are the hardest and the most
+The remaining zero-theorem modules are the hardest and the most
 security-critical; they are executable and vector-checked but carry no
-proven properties. The missing theorems, in value order: the X509
-mint-then-parse round trip, X25519 ladder invariants, then the P-256
-and RSA arithmetic lemmas. The RSA arithmetic is statable today without
+proven properties. The missing theorems, in value order: X509 parse
+soundness — an accepted list carries a CA signature over its own TBS
+and the key it reports — then X25519 ladder invariants, then the P-256
+and RSA arithmetic lemmas. The mint-then-parse round trip ranked here
+before; it is completeness, not soundness, and a parser that accepted
+everything would satisfy it, so parse soundness replaces it. The RSA arithmetic is statable today without
 an interface change — the factorization enters as a hypothesis, not an
 argument — but its proof needs number theory the dependency-free build
 does not carry.
