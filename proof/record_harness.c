@@ -54,7 +54,47 @@ int aead_open(const uint8_t key[AEAD_KEY], const uint8_t nonce[AEAD_NONCE], cons
 
 #include "record.c"
 
+// Spec.Record.nonce_inj, proved of the model, asserted here of the C:
+// distinct sequence numbers under one traffic key never build the same
+// nonce. A repeat would reuse a ChaCha20-Poly1305 nonce, which loses
+// confidentiality and lets a forgery through, so this is the one record
+// property worth proving over every input rather than sampling.
+static void nonce_is_injective(void) {
+    rec_dir lo;
+    rec_dir hi;
+    fill_nondet(lo.iv, AEAD_NONCE);
+    for (size_t i = 0; i < AEAD_NONCE; i++) {
+        hi.iv[i] = lo.iv[i]; // one traffic key, so one IV
+    }
+    uint8_t lo_bytes[8];
+    uint8_t hi_bytes[8];
+    fill_nondet(lo_bytes, sizeof lo_bytes);
+    fill_nondet(hi_bytes, sizeof hi_bytes);
+    lo.seq = 0;
+    hi.seq = 0;
+    for (size_t i = 0; i < 8; i++) {
+        lo.seq = (lo.seq << 8) | lo_bytes[i];
+        hi.seq = (hi.seq << 8) | hi_bytes[i];
+    }
+    __CPROVER_assume(lo.seq != hi.seq);
+
+    uint8_t lo_nonce[AEAD_NONCE];
+    uint8_t hi_nonce[AEAD_NONCE];
+    nonce_of(&lo, lo_nonce);
+    nonce_of(&hi, hi_nonce);
+
+    int differs = 0;
+    for (size_t i = 0; i < AEAD_NONCE; i++) {
+        if (lo_nonce[i] != hi_nonce[i]) {
+            differs = 1;
+        }
+    }
+    __CPROVER_assert(differs, "distinct sequence numbers build distinct nonces");
+}
+
 int main(void) {
+    nonce_is_injective();
+
     uint8_t secret[SHA256_LEN];
     fill_nondet(secret, sizeof secret);
     rec_dir tx;
