@@ -185,6 +185,107 @@ Shared helpers live in `Spec/Bytes.lean` (hex, BE/LE Nat coding, xor).
 Build with `~/.elan/bin/lake build` inside `spec/`; keep the build
 dependency-free (no mathlib).
 
+Three pieces, for the three places CONTRACT.md keeps this information.
+
+(1) In the signature block, after `Spec.Handshake.accepts`:
+
+```
+Spec.Epoch.check      : (bound stored : Nat) → (cert : Option Nat) → Bool
+                        -- docs/ca.md, INV-21: handshake.c's epoch_check over one
+                        -- leaf. cert is the certificate reader's epoch number —
+                        -- `some e` when the notBefore is epoch-shaped
+                        -- (leaf.epoch_ok set, value leaf.epoch), `none` for any
+                        -- other valid date. Accepts iff
+                        -- `stored ≤ e ≤ stored + bound`; the C's two refusals
+                        -- differ only by alert. No line op: see "Epoch is not an
+                        -- oracle" below.
+Spec.Epoch.commit     : (stored : Nat) → (cert : Option Nat) → Nat
+                        -- epoch_commit: raise the stored epoch to e when e is
+                        -- strictly higher, else leave it. Takes no bound, because
+                        -- the C function reads none.
+Spec.Epoch.step       : (bound stored : Nat) → (cert : Option Nat) → Nat
+                        -- one CA-mode handshake: commit only where check
+                        -- accepted. That is the C's call order — epoch_check in
+                        -- server_auth, epoch_commit in run after
+                        -- expect_finished — and it is what bounds the result.
+Spec.Epoch.storedAfter : (bound stored : Nat) → (certs : List (Option Nat)) → Nat
+                        -- ch_tls.epoch after one handshake per certificate, in
+                        -- order: `certs.foldl (step bound) stored`.
+Spec.Epoch.acceptedCount : (bound : Nat) → Nat → List (Option Nat) → Nat
+                        -- how many of those handshakes the check accepted, each
+                        -- judged against the stored epoch as it stood then.
+```
+
+(2) In "Proven properties", after the `Spec.Handshake` block:
+
+```
+Spec.Epoch, over the monotonic revocation epoch (docs/ca.md, INV-21). `bound` is
+quantified, so every statement covers every build's CH_EPOCH_BOUND:
+  commit_ge                     a commit never lowers the stored epoch
+  commit_le_of_check            a commit the check admitted raises it by at most
+                                bound; with commit_ge, an admitted commit that
+                                moves at all lands in (stored, stored + bound]
+  commit_takes_any_epoch        the bound belongs to the call order, not to
+                                epoch_commit: for every bound and stored epoch a
+                                certificate bound+1 steps ahead is one the check
+                                refuses and the commit would take
+  step_idem                     replaying an accepted certificate changes nothing
+  storedAfter_ge                over a list of certificates the stored epoch
+                                never decreases
+  storedAfter_le                and rises by at most bound per accepted
+                                certificate: n completed handshakes end no higher
+                                than stored + bound * n — the the jump bound rule,
+                                which no single-step statement expresses
+  storedAfter_eq_of_none_accepted
+                                a run that accepted nothing ends where it started
+  storedAfter_le_maxEpoch       a device at or below CH_EPOCH_MAX that sees only
+                                in-range numbers keeps one, so the stored side of
+                                `stored + bound` also stays inside uint32
+```
+
+(3) In "Proof status by module", one row:
+
+```
+| Epoch | 8 | the ordering and bound rule over the epoch value: commit monotonicity, the per-certificate bound, the run-level `stored + bound * accepted` ceiling, replay idempotence, and range preservation. Model only — no differential covers this module (below) |
+```
+
+(4) The honesty note, as a new section:
+
+## Epoch is not an oracle
+
+`Spec/Epoch.lean` breaks two rules this file states elsewhere, and
+both breaks are deliberate.
+
+It has no line op and no `selftest`. `epoch_check` and `epoch_commit`
+are `static` in `handshake.c`: nothing outside that translation unit
+can call them, so `test/diff_test.c` cannot drive them and a selftest
+would have nothing to compare against. Rule 3 asks every module for a
+selftest because every other module is an oracle; here an unreached
+one would be dead code.
+
+That makes the module weaker than the rest of `spec/`, and the weaker
+claim is the honest one. On docs/invariants.md's check scale a Lean
+theorem "reaches the C only through the differential's agreement" —
+and this module has no differential. Its theorems constrain the model
+and nothing else. They say what the ordering and bound rule
+guarantees for a device that applies it as the model does; no run
+compares that model against the C. A C change that breaks the rule —
+inverting the comparison in `epoch_commit`, dropping the bound term
+from `epoch_check`, or moving the commit to where a rejected
+certificate reaches it — leaves `lake build` green. INV-21 lists what
+does guard those on the C side: the `CH_ASSERT` on
+`server_finished_ok`, `test_epoch_cfg`, and the e2e `ca-epoch-*` legs.
+Reading these definitions against those two C functions is a manual
+step, and the module is written for it: both functions are short, and
+`check` and `commit` sit next to the C names they model.
+
+The model also drops three things the C does, each named in the
+module's own doc comment: the `cfg.epoch_load == NULL` gate that turns
+the feature off, the `epoch_status`/`epoch_seen` reporting, and the
+rule that a commit may run only after the server Finished — that last
+one is message order, which `CH_ASSERT(h->server_finished_ok)` enforces
+in the C and `Spec.Handshake` models as a trace property.
+
 ## Where the C and the model split a check
 
 Both sides must refuse the same messages, but they need not refuse them

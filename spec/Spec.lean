@@ -12,4 +12,5 @@ import Spec.X509Der
 import Spec.X509
 import Spec.Drbg
 import Spec.Handshake
+import Spec.Epoch
 import Spec.Hsparse
