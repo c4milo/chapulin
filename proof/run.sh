@@ -73,7 +73,12 @@ esac
 # heavyweights peak past 10 GB there (measured as cbmc-side OOMs on a
 # 16 GB box), where the built-in incremental solver stays under 6.
 SLOW_W=6
-SLOW_SOLVER_ARGS=("${SOLVER_ARGS[@]}")
+# Guarded copy: bash 3.2 errors on expanding an empty array under set -u,
+# and SOLVER_ARGS is empty whenever the built-in solver is in use.
+SLOW_SOLVER_ARGS=()
+if [ ${#SOLVER_ARGS[@]} -gt 0 ]; then
+    SLOW_SOLVER_ARGS=("${SOLVER_ARGS[@]}")
+fi
 if [ ${#SOLVER_ARGS[@]} -gt 0 ] && [ "${SOLVER_ARGS[0]}" = "--external-sat-solver" ]; then
     SLOW_W=12
 fi
@@ -287,6 +292,8 @@ launch() {
 # workflow finishes the remainder from the banked cache.
 launch slow full hkdf_expand 120 "hkdf_expand.0:5" --object-bits 11 ct.c
 launch slow full aead 85 "blocks.0:10,chacha20_xor.1:4" chacha20.c poly1305.c ct.c
+launch slow full aead_overlap 85 "blocks.0:10,chacha20_xor.1:4" chacha20.c poly1305.c ct.c
+launch slow full aead_forge 85 "blocks.0:10,chacha20_xor.1:4" chacha20.c poly1305.c ct.c
 launch slow noovf x25519 65 "" ct.c
 launch slow full handshake 100 "hsr_fetch_record.0:45,hsr_next_msg.0:140,fill_nondet.0:600" hspump.c buf.c ct.c
 # Measured kissat-path peaks (macOS /usr/bin/time -l, RSS): hsparse

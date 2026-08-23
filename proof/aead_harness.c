@@ -1,7 +1,12 @@
 // Proves: aead_seal and aead_open are memory-safe and UB-free for any
-// plaintext up to 64 bytes and any AAD up to 32 bytes, and open is
-// all-or-nothing — on any forged tag it writes no plaintext (checked by
-// asserting the output buffer's sentinel survives a failed open).
+// plaintext up to 64 bytes and any AAD up to 32 bytes, and that a
+// genuine seal opens back to the plaintext it sealed.
+//
+// The other two properties the aead.h contract states have their own
+// harnesses: aead_overlap for the backward-overlap decrypt the record
+// layer uses, aead_forge for all-or-nothing rejection. One formula
+// carried all three and the SAT solver ran out of memory on it, since
+// SAT cost grows super-linearly with formula size.
 #include "harness.h"
 
 #include "aead.c"
@@ -25,45 +30,11 @@ int main(void) {
 
     aead_seal(key, nonce, aad, aad_len, pt, n, ct, tag);
 
-    // Round-trip must authenticate and decrypt to the original.
     uint8_t back[64];
     __CPROVER_assert(aead_open(key, nonce, aad, aad_len, ct, n, tag, back) == 1,
                      "genuine seal opens");
     for (size_t i = 0; i < n; i++) {
         __CPROVER_assert(back[i] == pt[i], "open round-trips");
-    }
-
-    // The record layer decrypts in place with pt sitting REC_HDR bytes
-    // below ct; prove the backward overlap the aead.h contract grants.
-    uint8_t frame[5 + 64];
-    uint8_t tag2[AEAD_TAG];
-    aead_seal(key, nonce, aad, aad_len, pt, n, frame + 5, tag2);
-    __CPROVER_assert(aead_open(key, nonce, aad, aad_len, frame + 5, n, tag2, frame) == 1,
-                     "backward-overlap open succeeds");
-    for (size_t i = 0; i < n; i++) {
-        __CPROVER_assert(frame[i] == pt[i], "backward-overlap open round-trips");
-    }
-
-    // A tag that differs anywhere must fail and write nothing.
-    uint8_t forged[AEAD_TAG];
-    fill_nondet(forged, sizeof forged);
-    uint32_t same = 1;
-    for (size_t i = 0; i < AEAD_TAG; i++) {
-        if (forged[i] != tag[i]) {
-            same = 0;
-        }
-    }
-    __CPROVER_assume(!same);
-    uint8_t sentinel[64];
-    fill_nondet(sentinel, sizeof sentinel);
-    uint8_t out2[64];
-    for (size_t i = 0; i < sizeof out2; i++) {
-        out2[i] = sentinel[i];
-    }
-    __CPROVER_assert(aead_open(key, nonce, aad, aad_len, ct, n, forged, out2) == 0,
-                     "forged tag rejected");
-    for (size_t i = 0; i < sizeof out2; i++) {
-        __CPROVER_assert(out2[i] == sentinel[i], "failed open writes nothing");
     }
     return 0;
 }
