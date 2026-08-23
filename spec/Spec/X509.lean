@@ -41,7 +41,9 @@ def extTlvMax : Nat := 256
 
 /-- The build's one signature algorithm; RSA fixes `e = 65537`. -/
 inductive Alg
+  /-- RSA-PSS with SHA-256, MGF1-SHA256, salt length 32 (RFC 8017). -/
   | rsa
+  /-- ECDSA over NIST P-256 with SHA-256 (FIPS 186-4). -/
   | p256
 deriving BEq
 
@@ -61,9 +63,13 @@ def algOf? : String → Option Alg
 /-- The CA signing key the oracle mints with: RSA modulus, private
 exponent and PSS salt, or a P-256 private scalar and nonce. -/
 inductive CaKey
+  /-- RSA signer: modulus, private exponent, and the PSS salt, which is
+  explicit so a fixed value gives a reproducible signature. -/
   | rsa (n d : Nat) (salt : ByteArray)
+  /-- P-256 signer: private scalar and the per-signature nonce. -/
   | p256 (d k : Nat)
 
+/-- The algorithm a signing key belongs to. -/
 def CaKey.alg : CaKey → Alg
   | .rsa .. => .rsa
   | .p256 .. => .p256
@@ -114,7 +120,9 @@ def rsaExponent : ByteArray := hexConst "0203010001"
 
 /-- Extension OID contents, arc 2.5.29 (RFC 5280 §4.2.1). -/
 def oidKeyUsage : ByteArray := hexConst "551d0f"
+/-- extendedKeyUsage, arc 2.5.29.37 (RFC 5280 §4.2.1.12). -/
 def oidExtKeyUsage : ByteArray := hexConst "551d25"
+/-- basicConstraints, arc 2.5.29.19 (RFC 5280 §4.2.1.9). -/
 def oidBasicConstraints : ByteArray := hexConst "551d13"
 
 /-- ExtKeyUsageSyntax holding exactly id-kp-serverAuth

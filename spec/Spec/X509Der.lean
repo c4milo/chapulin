@@ -47,6 +47,8 @@ def derIntNat (v : Nat) : ByteArray :=
 
 /-! ## Reader -/
 
+/-- The byte at `off`, or `none` past the end. Every reader goes
+through it, so no read runs off the buffer. -/
 def byteAt? (b : ByteArray) (off : Nat) : Option UInt8 :=
   if h : off < b.size then some b[off] else none
 

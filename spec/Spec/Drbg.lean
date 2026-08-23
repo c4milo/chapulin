@@ -14,6 +14,8 @@ namespace Spec.Drbg
 
 open Spec.Bytes
 
+/-- The all-zero 12-byte nonce every request draws under, since the
+key changes on each one. -/
 def zeroNonce : ByteArray :=
   ByteArray.mk (Array.replicate 12 0)
 

@@ -5,12 +5,15 @@ look at the C implementation — modules are written from the RFC text.
 -/
 namespace Spec.Bytes
 
+/-- One lowercase hex digit as its value; `none` for anything else. -/
 def hexDigit? (c : Char) : Option UInt8 :=
   if '0' ≤ c ∧ c ≤ '9' then some (UInt8.ofNat (c.toNat - '0'.toNat))
   else if 'a' ≤ c ∧ c ≤ 'f' then some (UInt8.ofNat (c.toNat - 'a'.toNat + 10))
   else if 'A' ≤ c ∧ c ≤ 'F' then some (UInt8.ofNat (c.toNat - 'A'.toNat + 10))
   else none
 
+/-- Decodes an even-length lowercase hex string; `none` on any other
+input. The line protocol uses this for every byte-string argument. -/
 def hexToBytes? (s : String) : Option ByteArray := do
   let cs := s.toList
   if cs.length % 2 ≠ 0 then none
@@ -24,6 +27,7 @@ def hexToBytes? (s : String) : Option ByteArray := do
       | _, _ => none
     go cs (ByteArray.emptyWithCapacity (cs.length / 2))
 
+/-- Renders bytes as lowercase hex, two characters each. -/
 def bytesToHex (b : ByteArray) : String :=
   let digits := "0123456789abcdef".toList.toArray
   b.foldl (init := "") fun s v =>
@@ -51,6 +55,7 @@ def bytesToNatLE (b : ByteArray) : Nat :=
 def bytesToNatBE (b : ByteArray) : Nat :=
   b.foldl (init := 0) fun acc v => acc * 256 + v.toNat
 
+/-- Byte-wise XOR, truncated to the shorter argument. -/
 def xorBytes (a b : ByteArray) : ByteArray := Id.run do
   let n := min a.size b.size
   let mut out := ByteArray.emptyWithCapacity n
@@ -58,6 +63,8 @@ def xorBytes (a b : ByteArray) : ByteArray := Id.run do
     out := out.push (a[i]! ^^^ b[i]!)
   return out
 
+/-- A string as its UTF-8 bytes, for the ASCII labels the RFCs spell
+out literally. -/
 def ascii (s : String) : ByteArray := s.toUTF8
 
 /-!

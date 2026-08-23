@@ -18,7 +18,10 @@ the server authenticates via certificate, so §4.5 makes Certificate,
 CertificateVerify, and Finished mandatory, in that order.
 -/
 inductive Mode
+  /-- The server authenticates with the pre-shared key (§2.2). -/
   | psk
+  /-- The server authenticates with a certificate the client can pin
+  or chain to a pinned CA (§4.5). -/
   | pinned
 
 /--
@@ -27,17 +30,28 @@ per line-protocol letter. Order is the model; bodies are assumed
 valid.
 -/
 inductive Msg
-  | serverHello         -- S, §4.2.3
-  | helloRetryRequest   -- H, §4.2.4
-  | encryptedExtensions -- E, §4.4.1
-  | certificate         -- C, §4.5.1
-  | certificateRequest  -- R, §4.4.2
-  | certificateVerify   -- V, §4.5.2
-  | finished            -- F, §4.5.3
-  | newSessionTicket    -- N, §4.7.1
-  | keyUpdate           -- K, §4.7.3
-  | appData             -- A, §5.1
-  | closeNotify         -- L, §6.1
+  /-- ServerHello: the server answers the ClientHello. Line-protocol letter S. -/
+  | serverHello
+  /-- HelloRetryRequest: the server asks for a second ClientHello. Line-protocol letter H. -/
+  | helloRetryRequest
+  /-- EncryptedExtensions: the first message under handshake keys. Line-protocol letter E. -/
+  | encryptedExtensions
+  /-- Certificate: the server certificate flight. Line-protocol letter C. -/
+  | certificate
+  /-- CertificateRequest: this client offers none and fails closed. Line-protocol letter R. -/
+  | certificateRequest
+  /-- CertificateVerify: the server's signature over the transcript. Line-protocol letter V. -/
+  | certificateVerify
+  /-- Finished: ends the flight and completes the handshake. Line-protocol letter F. -/
+  | finished
+  /-- NewSessionTicket: a resumption ticket, post-handshake only. Line-protocol letter N. -/
+  | newSessionTicket
+  /-- KeyUpdate: rekeys a traffic direction, post-handshake only. Line-protocol letter K. -/
+  | keyUpdate
+  /-- Application data, legal once the handshake completes. Line-protocol letter A. -/
+  | appData
+  /-- close_notify: ends the connection. Line-protocol letter L. -/
+  | closeNotify
 
 /--
 Client progress through the server's flight. RFC 9846 §4 fixes the
@@ -46,14 +60,22 @@ message order and makes an out-of-order message fatal
 messages.
 -/
 inductive State
-  | start     -- ClientHello sent; expect ServerHello or HelloRetryRequest
-  | retried   -- HelloRetryRequest taken; expect the retry ServerHello
-  | gotSH     -- ServerHello taken; expect EncryptedExtensions
-  | awaitCert -- pinned only: expect Certificate
-  | awaitCV   -- Certificate taken; expect CertificateVerify
-  | awaitFin  -- expect Finished
-  | connected -- handshake complete; only post-handshake traffic is legal
-  | closed    -- close_notify taken; nothing more is legal
+  /-- ClientHello sent; expect ServerHello or HelloRetryRequest. -/
+  | start
+  /-- HelloRetryRequest taken; expect the retry ServerHello. -/
+  | retried
+  /-- ServerHello taken; expect EncryptedExtensions. -/
+  | gotSH
+  /-- Pinned only: expect Certificate. -/
+  | awaitCert
+  /-- Certificate taken; expect CertificateVerify. -/
+  | awaitCV
+  /-- Expect Finished. -/
+  | awaitFin
+  /-- Handshake complete; only post-handshake traffic is legal. -/
+  | connected
+  /-- close_notify taken; nothing more is legal. -/
+  | closed
 
 /--
 Feed one message to the client. `none` is a fatal error: a handshake
