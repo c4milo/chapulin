@@ -263,3 +263,73 @@ model the differential compares against, so a spec regression fails
 relations across runs — key independence, nonce injectivity, request
 prefixes — that a differential row, being one input and one output,
 cannot express.
+
+## Writing proofs here
+
+A theorem is read far more often than it is written, and it is read by
+someone deciding whether to trust the C. Optimize for that reader.
+
+**The statement is the audit unit.** Its proof is checked by Lean's
+kernel; nobody has to follow the tactic script. So a long proof of a
+short statement costs an auditor nothing, while a short proof of a
+sprawling statement costs everything. Keep a statement to a few lines
+and carry no hypothesis it does not need.
+
+**Never restate a definition's internals in a hypothesis — derive
+them.** A theorem that assumes how `mint` builds its TBSCertificate,
+rather than unfolding the `mint` call it was handed, keeps compiling
+after that layout changes: the hypotheses become unsatisfiable and the
+theorem turns vacuously true, with nothing failing. Derive what you
+need from the call, so a layout change breaks the proof instead of
+hollowing the statement.
+
+**Prove the direction that carries weight.** `parse (mint x) = some x`
+is completeness, and a parser that accepted everything would satisfy
+it. `parse list = some k → a signature over that list verified` is
+soundness. Prefer soundness; say which one a theorem gives when it is
+not obvious.
+
+Style, in rough order of how much it buys:
+
+- **Name hypotheses for what they say**, never `h1`, `h2`, `hx`. Use
+  `h_fits`, `h_minimal`, `h_verified`. The rule the C follows —
+  names spell words out — does not stop at the language boundary.
+- **Break a goal with `have`**, one named intermediate claim at a time,
+  instead of one tactic block that lands the whole thing.
+- **Chain equalities with `calc`** rather than a dense `rw` sequence.
+  The chain reads like the mathematics; the sequence reads like a
+  diff.
+- **Go forward, not backward.** `obtain` and `rcases` on what you have
+  beat `apply` on what you want, because the reader can follow along
+  without running Lean.
+- **`refine` with `?_` holes** instead of a bare `apply`, so each
+  remaining goal is written down rather than conjured.
+- **One deduction per line.** Wrap at 100 columns like everything else.
+- **Factor repeated case analysis into a private lemma.** Three
+  branches doing the same four steps with different constants is one
+  lemma taking those constants.
+- **Cite the standard** in the doc comment — RFC section, X.690 clause,
+  FIPS paragraph — the same as the definitions do.
+- **Delete the debris** once it is green: redundant `have`s, commented
+  `rw` chains, single rewrites that collapse into one `rw [a, b, c]`.
+
+Naming follows mathlib's scheme even though mathlib is not a
+dependency: `snake_case`, `foo_of_bar` for an implication, suffixes
+`_size`, `_inj`, `_canonical`, `_sound`. A Lean reader should
+recognize the shape without being told.
+
+**Tactics that do not exist here.** This build carries no mathlib, and
+several tactics people reach for first are mathlib-only. Reaching for
+them wastes an afternoon:
+
+| want | absent | use instead |
+| --- | --- | --- |
+| contradiction | `by_contra` | `cases Decidable.em p with` |
+| arithmetic goals | `linarith`, `nlinarith`, `positivity` | `omega` |
+| casts | `qify` | `norm_cast`, `push_cast` (both present) |
+| field arithmetic | `field_simp` | rewrite by hand |
+| monotonicity | `gcongr` | the explicit lemma |
+
+`omega`, `decide`, `norm_cast`, and `push_cast` are present and carry
+most of the arithmetic here. `DecidableEq` is derived for the model's
+inductive types, so `Decidable.em` is constructive on them.
