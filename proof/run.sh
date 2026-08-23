@@ -194,6 +194,12 @@ launch() {
     if [ "$TIER" != "all" ] && [ "$TIER" != "$tier" ]; then
         return
     fi
+    # PROVE_ONLY runs a single named harness. CI gives each slow proof
+    # its own job this way, so one that never converges starves only
+    # itself of the job's time budget instead of the whole tier.
+    if [ -n "${PROVE_ONLY:-}" ] && [ "$PROVE_ONLY" != "$2" ]; then
+        return
+    fi
     if [ -z "$w" ]; then
         w=2
         if [ "$tier" = "slow" ]; then
