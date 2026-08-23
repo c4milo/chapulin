@@ -1,26 +1,28 @@
-// Example: a device with a provisioned pre-shared key connects, sends
-// one request, reads one reply, and closes.
-//
-// PSK mode is the smallest way to use chapulin. The device and the
-// server already share secret bytes and a name for them, so this client
-// parses no certificate and checks no signature. The x25519 exchange
-// still runs (psk_dhe_ke), so someone who steals the PSK tomorrow
-// cannot decrypt the traffic they recorded today.
-//
-// This file is built, not run: the test suite covers live handshakes.
-// To try it by hand, start a server on port 4433 and run it:
-//
-//   openssl s_server -tls1_3 -ciphersuites TLS_CHACHA20_POLY1305_SHA256 \
-//       -psk 0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20 \
-//       -psk_identity device-42 -nocert -accept 4433 -rev -quiet
-//
-//   make lib
-//   cc -Wall -Wextra -Wpedantic -Werror -std=c11 -D_DEFAULT_SOURCE -I. \
-//       examples/psk_client.c bin/chapulin.o -o psk_client
-//
-// Every line below that belongs to this host rather than to firmware is
-// marked SWAP. Those are the parts you replace; the rest is what a
-// device writes.
+/*
+ * Example: a device with a provisioned pre-shared key connects, sends
+ * one request, reads one reply, and closes.
+ *
+ * PSK mode is the smallest way to use chapulin. The device and the
+ * server already share secret bytes and a name for them, so this client
+ * parses no certificate and checks no signature. The x25519 exchange
+ * still runs (psk_dhe_ke), so someone who steals the PSK tomorrow
+ * cannot decrypt the traffic they recorded today.
+ *
+ * This file is built, not run: the test suite covers live handshakes.
+ * To try it by hand, start a server on port 4433 and run it:
+ *
+ *   openssl s_server -tls1_3 -ciphersuites TLS_CHACHA20_POLY1305_SHA256 \
+ *       -psk 0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20 \
+ *       -psk_identity device-42 -nocert -accept 4433 -rev -quiet
+ *
+ *   make lib
+ *   cc -Wall -Wextra -Wpedantic -Werror -std=c11 -D_DEFAULT_SOURCE -I. \
+ *       examples/psk_client.c bin/chapulin.o -o psk_client
+ *
+ * Every line below that belongs to this host rather than to firmware is
+ * marked SWAP. Those are the parts you replace; the rest is what a
+ * device writes.
+ */
 #include <netdb.h>
 #include <stdio.h>
 #include <stdlib.h>
