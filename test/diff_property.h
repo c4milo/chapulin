@@ -64,7 +64,7 @@ static void property_record_round_trip(void) {
             pt[n - 1] = 1;
         }
         uint8_t type = rng_below(2) == 0 ? REC_APPDATA : REC_HANDSHAKE;
-        uint64_t seq = ((uint64_t)rng_next() << 32) ^ rng_next();
+        uint64_t seq = (rng_next() << 32) ^ rng_next();
         static uint8_t rec[1024];
         rec_dir reader;
         size_t len = property_seal_one(&reader, rec, sizeof rec, pt, n, type, seq);
@@ -91,14 +91,14 @@ static void property_record_tamper_refused(void) {
         uint8_t pt[128];
         size_t n = 1 + rng_below(sizeof pt);
         rng_fill(pt, n);
-        uint64_t seq = ((uint64_t)rng_next() << 32) ^ rng_next();
+        uint64_t seq = (rng_next() << 32) ^ rng_next();
         static uint8_t rec[512];
         rec_dir reader;
         size_t len = property_seal_one(&reader, rec, sizeof rec, pt, n, REC_APPDATA, seq);
 
         // Flip one bit anywhere in the record, header included.
         size_t at = rng_below(len);
-        rec[at] ^= (uint8_t)(1u << rng_below(8));
+        rec[at] ^= (uint8_t)(1U << rng_below(8));
 
         static uint8_t got[128];
         size_t got_len = 0;
@@ -118,7 +118,7 @@ static void property_record_sequence_bound(void) {
         uint8_t pt[64];
         size_t n = 1 + rng_below(sizeof pt);
         rng_fill(pt, n);
-        uint64_t seq = ((uint64_t)rng_next() << 32) ^ rng_next();
+        uint64_t seq = (rng_next() << 32) ^ rng_next();
         static uint8_t rec[256];
         rec_dir reader;
         size_t len = property_seal_one(&reader, rec, sizeof rec, pt, n, REC_APPDATA, seq);
