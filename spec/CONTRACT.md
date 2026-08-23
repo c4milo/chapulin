@@ -243,16 +243,17 @@ means the module's selftest plus the differential oracle carry it;
 | P256 | 0 | executable oracle only: RFC 6979 vectors and the differential |
 | X25519 | 0 | executable oracle only: RFC 7748 vectors and the differential |
 | X509Der | 19 | DER canonicality: a length, a TLV, and an INTEGER are accepted only in the one encoding X.690 §10.1 and §8.3.2 admit, so the reader is DER-strict rather than BER-lenient; plus the encode/decode round trips and the §8.19.2 subidentifier rule |
-| X509 | 0 | executable oracle only: mint/parse round trips for the single leaf and the chained pair (self-checked signatures; OpenSSL material is exercised by the C strictness suite) and the differential |
+| X509 | 4 | parse soundness: an accepted list reports a key only after a signature over the complete DER of the TBSCertificate that carried it verified under the pinned key, or under an intermediate the pinned key itself signed; the entry is a byte range of the list and no third entry can follow. Acceptance policy beyond that is executable oracle only: mint/parse round trips for the single leaf and the chained pair (self-checked signatures; OpenSSL material is exercised by the C strictness suite) and the differential |
 
-The remaining zero-theorem modules are the hardest and the most
+The two remaining zero-theorem modules are the hardest and the most
 security-critical; they are executable and vector-checked but carry no
-proven properties. The missing theorems, in value order: X509 parse
-soundness — an accepted list carries a CA signature over its own TBS
-and the key it reports — then X25519 ladder invariants, then the P-256
-and RSA arithmetic lemmas. The mint-then-parse round trip ranked here
-before; it is completeness, not soundness, and a parser that accepted
-everything would satisfy it, so parse soundness replaces it. The RSA arithmetic is statable today without
+proven properties. The missing theorems, in value order: X25519 ladder
+invariants, then the P-256 and RSA arithmetic lemmas — all three need
+number theory this dependency-free build does not carry. The
+mint-then-parse round trip is deliberately not on the list: it is
+completeness, not soundness, a parser that accepted everything would
+satisfy it, and the differential already mints and parses on every row
+against the real C. The RSA arithmetic is statable today without
 an interface change — the factorization enters as a hypothesis, not an
 argument — but its proof needs number theory the dependency-free build
 does not carry.

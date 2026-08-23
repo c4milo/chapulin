@@ -520,4 +520,187 @@ def selftest : Bool :=
        (parse .rsa (natBytesMin n) (l.extract 0 (l.size - 1))).isNone -- truncation
    | none => false)
 
+
+/-! ## Parse soundness -/
+
+/-- A successful `Option` bind ran its continuation on a value the
+first computation actually produced. -/
+private theorem exists_of_bind_eq_some {α β : Type} {x : Option α} {f : α → Option β} {b : β}
+    (h : x.bind f = some b) : ∃ a, x = some a ∧ f a = some b := by
+  cases x with
+  | none => simp at h
+  | some a => exact ⟨a, rfl, h⟩
+
+private theorem guard_eq_ite (p : Prop) [Decidable p] :
+    (guard p : Option Unit) = if p then some () else none := rfl
+
+/-- A `guard` the do-block ran past held. -/
+private theorem bind_guard_eq_some {α : Type} {p : Prop} [Decidable p] {f : Unit → Option α}
+    {a : α} (h : (guard p : Option Unit).bind f = some a) : p ∧ f () = some a := by
+  rw [guard_eq_ite] at h
+  cases Decidable.em p with
+  | inl hp => rw [if_pos hp] at h; exact ⟨hp, h⟩
+  | inr hp => rw [if_neg hp] at h; simp at h
+
+/-- An accepted CertificateEntry is a byte range of the list it was
+read from (RFC 8446 §4.4.2): the entry starts with the u24 length, the
+certificate follows, and the u16 zero extensions close it, so the
+entry spans `cert.size + 5` bytes and ends at or before the list's end.
+The certificate is nonempty and within the algorithm's `certMax`. -/
+theorem entryAt?_sound (alg : Alg) (list : ByteArray) (off : Nat) (cert : ByteArray) (off' : Nat)
+    (h : entryAt? alg list off = some (cert, off')) :
+    cert.size ≠ 0 ∧ cert.size ≤ certMax alg ∧
+      off' = off + 3 + cert.size + 2 ∧ off' ≤ list.size ∧
+      cert = slice list (off + 3) cert.size := by
+  unfold entryAt? at h
+  simp only [Option.bind_eq_bind] at h
+  obtain ⟨b0, h0, h⟩ := exists_of_bind_eq_some h
+  obtain ⟨b1, h1, h⟩ := exists_of_bind_eq_some h
+  obtain ⟨b2, h2, h⟩ := exists_of_bind_eq_some h
+  obtain ⟨hlen, h⟩ := bind_guard_eq_some h
+  obtain ⟨hfit, h⟩ := bind_guard_eq_some h
+  obtain ⟨_, h⟩ := bind_guard_eq_some h
+  simp only [Option.some.injEq, Prod.mk.injEq] at h
+  obtain ⟨rfl, rfl⟩ := h
+  have hsz : (slice list (off + 3) (b0.toNat * 65536 + b1.toNat * 256 + b2.toNat)).size
+      = b0.toNat * 65536 + b1.toNat * 256 + b2.toNat := by
+    rw [slice, ByteArray.size_extract]
+    omega
+  rw [hsz]
+  exact ⟨hlen.1, hlen.2, rfl, by omega, rfl⟩
+
+/--
+Parse soundness (RFC 5280 §6.1, RFC 8446 §4.4.2). `parse` never
+reports a key it did not first take from a certificate in the list and
+verify a signature chain over.
+
+Every accepting run pins the leaf: the reported key and epoch are
+exactly what `readCertificate` read out of the list's first
+CertificateEntry, and that entry's certificate is the byte range
+`slice list 3 leafCert.size`, so the key travelled with the bytes the
+leaf hash covers.
+
+The chain then closes in one of two ways, and in both the list holds
+nothing else — a third entry cannot hide past the one that ends it.
+One entry: the leaf entry runs to `list.size` and the CA key verifies
+the leaf's own signature. Two entries: the second entry starts where
+the first ends, runs to `list.size` exactly, and its certificate parses
+under the intermediate arm — `isCa` true, so keyCertSign and
+basicConstraints(CA=TRUE) held; the CA key verifies the intermediate
+and the intermediate's own SPKI key verifies the leaf.
+-/
+theorem parse_sound (alg : Alg) (caKey list key : ByteArray) (epoch : Option Nat)
+    (h : parse alg caKey list = some (key, epoch)) :
+    ∃ leafCert o1 leafHash leafSig,
+      entryAt? alg list 0 = some (leafCert, o1) ∧
+      leafCert = slice list 3 leafCert.size ∧
+      o1 = 3 + leafCert.size + 2 ∧
+      readCertificate alg false leafCert = some ((key, epoch), leafHash, leafSig) ∧
+      ((o1 = list.size ∧ checkSignature alg caKey leafHash leafSig = true) ∨
+        (∃ intCert intKey intEpoch intHash intSig,
+          o1 ≠ list.size ∧
+          entryAt? alg list o1 = some (intCert, list.size) ∧
+          intCert = slice list (o1 + 3) intCert.size ∧
+          list.size = o1 + 3 + intCert.size + 2 ∧
+          readCertificate alg true intCert = some ((intKey, intEpoch), intHash, intSig) ∧
+          checkSignature alg caKey intHash intSig = true ∧
+          checkSignature alg intKey leafHash leafSig = true)) := by
+  unfold parse at h
+  simp only [Option.bind_eq_bind] at h
+  obtain ⟨⟨leafCert, o1⟩, he, h⟩ := exists_of_bind_eq_some h
+  simp only at h
+  obtain ⟨⟨⟨lk, lep⟩, lh, ls⟩, hc, h⟩ := exists_of_bind_eq_some h
+  simp only at h
+  obtain ⟨_, _, ho1, _, hslice⟩ := entryAt?_sound alg list 0 leafCert o1 he
+  have ho1' : o1 = 3 + leafCert.size + 2 := by omega
+  cases hif : o1 == list.size with
+  | true =>
+    rw [hif] at h
+    simp only [if_pos] at h
+    obtain ⟨hsig, hres⟩ := bind_guard_eq_some h
+    simp only [Option.some.injEq, Prod.mk.injEq] at hres
+    obtain ⟨rfl, rfl⟩ := hres
+    exact ⟨leafCert, o1, lh, ls, he, hslice, ho1', hc, Or.inl ⟨by simpa using hif, hsig⟩⟩
+  | false =>
+    rw [hif] at h
+    simp only [Bool.false_eq_true, if_false] at h
+    obtain ⟨⟨intCert, o2⟩, hie, h⟩ := exists_of_bind_eq_some h
+    simp only at h
+    obtain ⟨ho2, h⟩ := bind_guard_eq_some h
+    obtain ⟨⟨⟨ik, iep⟩, ih, is⟩, hic, h⟩ := exists_of_bind_eq_some h
+    simp only at h
+    obtain ⟨hs1, h⟩ := bind_guard_eq_some h
+    obtain ⟨hs2, hres⟩ := bind_guard_eq_some h
+    simp only [Option.some.injEq, Prod.mk.injEq] at hres
+    obtain ⟨rfl, rfl⟩ := hres
+    have ho2' : o2 = list.size := by simpa using ho2
+    subst ho2'
+    obtain ⟨_, _, hio, _, hislice⟩ := entryAt?_sound alg list o1 intCert list.size hie
+    exact ⟨leafCert, o1, lh, ls, he, hslice, ho1', hc,
+      Or.inr ⟨intCert, ik, iep, ih, is, by simpa using hif, hie, hislice, hio, hic, hs1, hs2⟩⟩
+
+/-- The digest an accepted certificate hands out is the SHA-256 of the
+complete DER encoding of the TBSCertificate the key came from — tag
+and length octets included, exactly the bytes RFC 5280 §4.1.1.3 says
+the signature covers. The key and epoch are `readTbs`'s reading of
+that same TBSCertificate. -/
+theorem readCertificate_hash (alg : Alg) (isCa : Bool) (cert : ByteArray)
+    (keyEpoch : ByteArray × Option Nat) (hash sig : ByteArray)
+    (h : readCertificate alg isCa cert = some (keyEpoch, hash, sig)) :
+    ∃ tbs, readTbs alg isCa tbs = some keyEpoch ∧
+      hash = Spec.Sha256.sha256 (tlv 0x30 tbs) := by
+  unfold readCertificate at h
+  simp only [Option.bind_eq_bind] at h
+  obtain ⟨⟨body, o0⟩, hb, h⟩ := exists_of_bind_eq_some h
+  simp only at h
+  obtain ⟨_, h⟩ := bind_guard_eq_some h
+  obtain ⟨⟨tbs, tbsEnd⟩, ht, h⟩ := exists_of_bind_eq_some h
+  simp only at h
+  obtain ⟨ke, hke, h⟩ := exists_of_bind_eq_some h
+  obtain ⟨_, _, h⟩ := exists_of_bind_eq_some h
+  obtain ⟨⟨sigBits, o2⟩, _, h⟩ := exists_of_bind_eq_some h
+  simp only at h
+  obtain ⟨_, h⟩ := bind_guard_eq_some h
+  obtain ⟨_, h⟩ := bind_guard_eq_some h
+  simp only [Option.some.injEq, Prod.mk.injEq] at h
+  obtain ⟨rfl, rfl, _⟩ := h
+  obtain ⟨hend, _, hsl⟩ := readTlv_canonical body 0 0x30 tbs tbsEnd ht
+  refine ⟨tbs, hke, ?_⟩
+  rw [hend, Nat.zero_add, hsl]
+
+/--
+The chain reading of `parse_sound` (RFC 5280 §6.1). Whatever key
+`parse` reports, it came out of a TBSCertificate by `readTbs`, and the
+signature that verified is over the SHA-256 of that same
+TBSCertificate's complete DER encoding — tag and length included — so
+no accepting path reports a key without checking a signature over the
+bytes that carried it.
+
+The verifying key is one the CA stands behind: either `caKey` itself,
+or an intermediate's SPKI key read from the entry that closes the
+list, whose own TBSCertificate `caKey` signed.
+-/
+theorem parse_key_signed (alg : Alg) (caKey list key : ByteArray) (epoch : Option Nat)
+    (h : parse alg caKey list = some (key, epoch)) :
+    ∃ leafCert leafTbs leafSig signerKey,
+      leafCert = slice list 3 leafCert.size ∧
+      readCertificate alg false leafCert
+        = some ((key, epoch), Spec.Sha256.sha256 (tlv 0x30 leafTbs), leafSig) ∧
+      readTbs alg false leafTbs = some (key, epoch) ∧
+      checkSignature alg signerKey (Spec.Sha256.sha256 (tlv 0x30 leafTbs)) leafSig = true ∧
+      (signerKey = caKey ∨
+        ∃ intCert intTbs intEpoch intSig,
+          entryAt? alg list (3 + leafCert.size + 2) = some (intCert, list.size) ∧
+          readTbs alg true intTbs = some (signerKey, intEpoch) ∧
+          checkSignature alg caKey (Spec.Sha256.sha256 (tlv 0x30 intTbs)) intSig = true) := by
+  obtain ⟨leafCert, o1, lh, ls, _, hslice, ho1, hc, hbranch⟩ :=
+    parse_sound alg caKey list key epoch h
+  subst ho1
+  obtain ⟨leafTbs, hlt, rfl⟩ := readCertificate_hash alg false leafCert (key, epoch) lh ls hc
+  rcases hbranch with ⟨_, hsig⟩ | ⟨intCert, ik, iep, ih, is, _, hie, _, _, hic, hs1, hs2⟩
+  · exact ⟨leafCert, leafTbs, ls, caKey, hslice, hc, hlt, hsig, Or.inl rfl⟩
+  · obtain ⟨intTbs, hit, rfl⟩ := readCertificate_hash alg true intCert (ik, iep) ih is hic
+    exact ⟨leafCert, leafTbs, ls, ik, hslice, hc, hlt, hs2,
+      Or.inr ⟨intCert, intTbs, iep, is, hie, hit, hs1⟩⟩
+
 end Spec.X509

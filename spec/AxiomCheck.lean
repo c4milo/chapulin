@@ -7,6 +7,7 @@ import Spec.Aead
 import Spec.Record
 import Spec.Handshake
 import Spec.Drbg
+import Spec.X509
 
 #print axioms Spec.Aead.open?_seal
 #print axioms Spec.Aead.open?_ne_tag
@@ -23,3 +24,5 @@ import Spec.Drbg
 #print axioms Spec.Handshake.closeNotify_last
 #print axioms Spec.Handshake.connected_stable
 #print axioms Spec.Handshake.accepts_decompose
+#print axioms Spec.X509.parse_sound
+#print axioms Spec.X509.parse_key_signed
