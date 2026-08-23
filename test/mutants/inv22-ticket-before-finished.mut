@@ -1,0 +1,19 @@
+invariant: INV-22
+file: handshake.c
+catches: hsseq_test
+reason: tolerating a NewSessionTicket ahead of the server Finished accepts a
+  flight RFC 9846 forbids: the client takes a post-handshake message
+  inside the flight, before anything authenticates it
+
+--- old
+    if (type == HS_CERTIFICATE || type == HS_CERTIFICATE_REQUEST) {
+--- new
+    if (type == HS_NEW_SESSION_TICKET) {
+        // Some servers put the first ticket in with the flight; take it
+        // and read on rather than failing the handshake.
+        rc = hsr_next_msg(h, &type, &raw, &raw_len);
+        if (rc != CH_OK) {
+            return rc;
+        }
+    }
+    if (type == HS_CERTIFICATE || type == HS_CERTIFICATE_REQUEST) {

@@ -597,6 +597,14 @@ else
 	  || npx --no-install commitlint --from=HEAD~1 --to=HEAD
 endif
 
+# Breaks each invariant docs/invariants.md lists and requires some test
+# to object. A suite that passes on broken code is not guarding the
+# invariant, whatever its name says. Too slow for check (every mutant
+# rebuilds and reruns a target), so it runs nightly.
+.PHONY: mutants
+mutants: bin/unit bin/diff
+	python3 test/mutants.py
+
 # The nightly runs one job per slow proof, from a static matrix. A
 # launch line added without a matching matrix entry would simply never
 # run in CI, and nothing would say so.
@@ -615,7 +623,7 @@ lint-matrix:
 
 # CBMC proofs: memory safety and absence of UB per module, at the bounds
 # each harness documents. The fast tier (seconds to a few minutes) gates
-# every check; the five SAT heavyweights run as prove-slow in CI and
+# every check; the seven SAT heavyweights run as prove-slow in CI and
 # before a release. prove-all is both.
 .PHONY: prove-slow prove-all
 prove:

@@ -1,0 +1,13 @@
+invariant: INV-10
+file: record.c
+catches: unit
+reason: dropping the send-side wrap guard lets the sequence counter roll over
+  from UINT64_MAX to 0, so the same (key, nonce) pair protects two records
+
+--- old
+    if (d->seq == UINT64_MAX) {
+        return -1; // RFC 9846 §5.5: stop before the next increment could wrap
+    }
+    size_t body = n + 1 + AEAD_TAG; // inner type byte + tag
+--- new
+    size_t body = n + 1 + AEAD_TAG; // inner type byte + tag

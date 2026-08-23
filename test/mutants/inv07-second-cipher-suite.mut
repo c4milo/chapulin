@@ -1,0 +1,18 @@
+invariant: INV-7
+file: hsparse.c
+catches: diff
+reason: the ServerHello cipher-suite check takes a second value, so a server
+  can steer the client off its one profiled suite and downgrade surface
+  exists again
+
+--- old
+    if (rb_u16(&r) != SUITE_CHACHA20_POLY1305_SHA256 || rb_u8(&r) != 0) {
+        return CH_EPROTO;
+    }
+--- new
+    // Accept TLS_AES_128_GCM_SHA256 too: some servers pick it even
+    // though we did not offer it.
+    uint16_t suite = rb_u16(&r);
+    if ((suite != SUITE_CHACHA20_POLY1305_SHA256 && suite != 0x1301) || rb_u8(&r) != 0) {
+        return CH_EPROTO;
+    }

@@ -1,0 +1,10 @@
+invariant: INV-10
+file: record.c
+catches: diff
+reason: truncating the sequence number to 32 bits makes the nonce
+  repeat after 2^32 records under one key
+
+--- old
+        nonce[AEAD_NONCE - 1 - i] ^= (uint8_t)(d->seq >> (8 * i));
+--- new
+        nonce[AEAD_NONCE - 1 - i] ^= (uint8_t)((uint32_t)d->seq >> (8 * i));

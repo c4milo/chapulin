@@ -1,0 +1,17 @@
+invariant: INV-17
+file: session.c
+catches: unit
+reason: tlsi_fail returns before tlsi_wipe when the alert cannot go out, so a
+  dead session keeps its traffic keys, handshake secrets and resumption
+  master in SRAM
+
+--- old
+void tlsi_fail(ch_tls *t, uint8_t description) {
+    (void)tlsi_send_alert(t, 2, description);
+--- new
+void tlsi_fail(ch_tls *t, uint8_t description) {
+    if (tlsi_send_alert(t, 2, description) != CH_OK) {
+        // The transport is gone, so there is nothing more to do here.
+        t->state = CH_ST_FAILED;
+        return;
+    }

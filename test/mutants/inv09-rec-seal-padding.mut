@@ -1,0 +1,54 @@
+invariant: INV-9
+file: record.c
+catches: diff
+reason: rec_seal starts emitting 16 bytes of TLSInnerPlaintext padding, so the
+  client sends padding the invariant says it never sends and every record
+  grows past the measured SRAM and vector sizes
+
+--- old
+    size_t body = n + 1 + AEAD_TAG; // inner type byte + tag
+    if (body > 0x4000 + 256 || REC_HDR + body > cap) {
+        return -1;
+    }
+    out[0] = REC_APPDATA; // outer type is always application_data
+    out[1] = 0x03;
+    out[2] = 0x03;
+    out[3] = (uint8_t)(body >> 8);
+    out[4] = (uint8_t)body;
+
+    // Build TLSInnerPlaintext in place: content || type, no padding.
+    uint8_t *inner = out + REC_HDR;
+    for (size_t i = 0; i < n; i++) {
+        inner[i] = pt[i];
+    }
+    inner[n] = type;
+
+    uint8_t nonce[AEAD_NONCE];
+    nonce_of(d, nonce);
+    aead_seal(d->key, nonce, out, REC_HDR, inner, n + 1, inner, inner + n + 1);
+--- new
+    // Pad every record to hide plaintext lengths from traffic analysis.
+    size_t pad = 16;
+    size_t body = n + 1 + pad + AEAD_TAG; // inner type byte + padding + tag
+    if (body > 0x4000 + 256 || REC_HDR + body > cap) {
+        return -1;
+    }
+    out[0] = REC_APPDATA; // outer type is always application_data
+    out[1] = 0x03;
+    out[2] = 0x03;
+    out[3] = (uint8_t)(body >> 8);
+    out[4] = (uint8_t)body;
+
+    // Build TLSInnerPlaintext in place: content || type || zero padding.
+    uint8_t *inner = out + REC_HDR;
+    for (size_t i = 0; i < n; i++) {
+        inner[i] = pt[i];
+    }
+    inner[n] = type;
+    for (size_t i = 0; i < pad; i++) {
+        inner[n + 1 + i] = 0;
+    }
+
+    uint8_t nonce[AEAD_NONCE];
+    nonce_of(d, nonce);
+    aead_seal(d->key, nonce, out, REC_HDR, inner, n + 1 + pad, inner, inner + n + 1 + pad);

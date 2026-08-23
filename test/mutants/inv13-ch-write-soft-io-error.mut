@@ -1,0 +1,18 @@
+invariant: INV-13
+file: tls.c
+catches: unit
+reason: ch_write returns the transport error without the alert-wipe-dead
+  funnel, so a failed session keeps live keys and the caller can retry
+  writing past it
+
+--- old
+        int rc = io_send_all(&t->cfg, t->tx, out_len);
+        if (rc != CH_OK) {
+            tlsi_fail(t, ALERT_INTERNAL_ERROR);
+            return rc;
+        }
+--- new
+        int rc = io_send_all(&t->cfg, t->tx, out_len);
+        if (rc != CH_OK) {
+            return rc; // transient transport error; the caller may retry
+        }

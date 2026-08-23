@@ -1,0 +1,10 @@
+invariant: INV-12
+file: tls.c
+catches: unit
+reason: the KeyUpdate reply is sealed with the receive direction's rec_dir, so one
+  key and sequence counter now covers records travelling both ways
+
+--- old
+    if (rec_seal(&t->wr, REC_HANDSHAKE, msg, sizeof msg, t->tx, sizeof t->tx, &out_len) != 0 ||
+--- new
+    if (rec_seal(&t->rd, REC_HANDSHAKE, msg, sizeof msg, t->tx, sizeof t->tx, &out_len) != 0 ||
