@@ -313,6 +313,11 @@ Style, in rough order of how much it buys:
   FIPS paragraph — the same as the definitions do.
 - **Delete the debris** once it is green: redundant `have`s, commented
   `rw` chains, single rewrites that collapse into one `rw [a, b, c]`.
+  Four of Lean's own linters check this — `unreachableTactic`,
+  `unnecessarySimpa`, `unusedRCasesPattern`, `tactic.unusedName`, on in
+  `lakefile.toml` — and `make lint-spec` turns their warnings into
+  errors, so `make check` fails on debris. `missingDocs` is the one
+  rule here still on convention: 35 declarations predate it.
 
 Naming follows mathlib's scheme even though mathlib is not a
 dependency: `snake_case`, `foo_of_bar` for an implication, suffixes

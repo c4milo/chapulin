@@ -3,6 +3,18 @@ defaultTargets = ["diffspec"]
 
 [[lean_lib]]
 name = "Spec"
+# Lean's built-in linters, run on every `lake build`. These four find
+# nothing today; they are on so that tactic debris cannot creep back in
+# — the style guide in CONTRACT.md asks for that and grep cannot check
+# it. linter.missingDocs stays off until the 35 declarations it flags
+# carry doc comments; turning it on before then would bury real
+# findings under known ones.
+leanOptions = [
+  { name = "linter.extra.unreachableTactic", value = true },
+  { name = "linter.unnecessarySimpa", value = true },
+  { name = "linter.unusedRCasesPattern", value = true },
+  { name = "linter.tactic.unusedName", value = true },
+]
 
 [[lean_exe]]
 name = "diffspec"
