@@ -67,9 +67,33 @@ jobs:
           restore-keys: |
             proofs-${{ runner.os }}-${{ matrix.proof }}-
             proofs-${{ runner.os }}-
-      - run: make prove-slow
+      - name: Prove
+        run: |
+          set -o pipefail
+          make prove-slow 2>&1 | tee /tmp/prove.out
         env:
           PROVE_ONLY: ${{ matrix.proof }}
+      # Put the verdict on the run page. run.sh already prints the line
+      # that matters — property count and wall time, or the named
+      # failure — but a leg the timeout cancels never reaches it, so
+      # fall back to the log's last lines, which name the phase it died
+      # in. Either beats downloading an artifact to find out.
+      - name: Summarize verdict
+        if: always()
+        run: |
+          {
+            echo "### ${{ matrix.proof }}"
+            echo
+            echo '```'
+            if grep -qE '^${{ matrix.proof }} ' /tmp/prove.out 2>/dev/null; then
+              grep -vE '^(make|\./proof/run\.sh)' /tmp/prove.out | tail -20
+            else
+              echo 'no verdict: the leg hit its timeout. Last phase reached:'
+              tail -3 'proof/results/${{ matrix.proof }}.log' 2>/dev/null \
+                || echo '(the proof never started)'
+            fi
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
       - name: Save proof cache
         if: always()
         uses: actions/cache/save@v6
