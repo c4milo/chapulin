@@ -39,7 +39,7 @@ set -uo pipefail
 cd "$(dirname "$0")/.."
 
 # Tier argument: "fast" (seconds-to-minutes, runs in every make check),
-# "slow" (the five SAT heavyweights, run by CI and before release), or
+# "slow" (the seven SAT heavyweights, run by CI and before release), or
 # "all" (default).
 TIER="${1:-all}"
 

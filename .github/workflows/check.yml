@@ -275,7 +275,7 @@ jobs:
         if: always()
         run: cat bin/proof-coverage.md >> "$GITHUB_STEP_SUMMARY" 2>/dev/null || true
 
-      # The five SAT heavyweights run in the nightly workflow; this job
+      # The seven SAT heavyweights run in the nightly workflow; this job
       # gates pushes and PRs in minutes with the fast tier.
 
       # Save even on failure or timeout (always() runs on cancelled jobs):
