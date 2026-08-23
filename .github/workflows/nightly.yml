@@ -16,42 +16,66 @@ permissions:
   contents: read
 
 jobs:
-  # The five SAT heavyweights, hours on a cold cache. The cache save
-  # runs even on failure or timeout, so interrupted runs converge
+  # The five SAT heavyweights, hours on a cold cache — one job each, so
+  # a proof that never converges starves only its own leg. The cache
+  # save runs even on failure or timeout, so interrupted runs converge
   # across nights instead of starting over.
   prove-slow:
     runs-on: ubuntu-24.04
     timeout-minutes: 300
+    strategy:
+      # Every leg runs to its own verdict: one heavyweight failing tells
+      # us nothing about the other four, and cancelling their multi-hour
+      # solves would throw away the run's whole point.
+      fail-fast: false
+      matrix:
+        proof: [hkdf_expand, aead, x25519, handshake, x509parse]
     steps:
       - uses: actions/checkout@v7
       - name: Install CBMC
         run: |
           curl -fsSLO https://github.com/diffblue/cbmc/releases/download/cbmc-6.11.0/ubuntu-24.04-cbmc-6.11.0-Linux.deb
           sudo dpkg -i ubuntu-24.04-cbmc-6.11.0-Linux.deb
+      - name: Cache kissat install
+        uses: actions/cache@v6
+        with:
+          path: ~/kissat-inst
+          key: kissat-${{ runner.os }}-rel-4.0.4
       - name: Build and install kissat
-        # run.sh prefers kissat when present: it has beaten the built-in
-        # solver by hours on every formula in this repo, and the slow
-        # tier's raised address-space caps now leave room for its
-        # formula materialization. A cap kill is a clean FAILED, no
-        # worse than the built-in solver not converging.
+        # The slow tier reaches for kissat only on a runner whose budget
+        # admits its 12 GB weight; a standard runner budgets 8 and falls
+        # back to the built-in solver, which run.sh says on stdout. The
+        # step stays so a larger runner picks kissat up without an edit,
+        # and the cache keeps it to seconds.
         run: |
-          curl -fsSL https://github.com/arminbiere/kissat/archive/refs/tags/rel-4.0.4.tar.gz | tar xz
-          cd kissat-rel-4.0.4 && ./configure && make -j"$(nproc)"
-          mkdir -p ~/kissat-inst && cp build/kissat ~/kissat-inst/
+          if [ ! -x ~/kissat-inst/kissat ]; then
+            curl -fsSL https://github.com/arminbiere/kissat/archive/refs/tags/rel-4.0.4.tar.gz | tar xz
+            cd kissat-rel-4.0.4
+            ./configure
+            make -j"$(nproc)"
+            mkdir -p ~/kissat-inst
+            cp build/kissat ~/kissat-inst/
+          fi
           echo "$HOME/kissat-inst" >> "$GITHUB_PATH"
+      # One cache per harness: the legs run concurrently and a shared
+      # key would let whichever finishes last discard the rest.
       - name: Restore proof cache
         uses: actions/cache/restore@v6
         with:
           path: proof/.cache
-          key: proofs-${{ runner.os }}-${{ github.run_id }}
-          restore-keys: proofs-${{ runner.os }}-
+          key: proofs-${{ runner.os }}-${{ matrix.proof }}-${{ github.run_id }}
+          restore-keys: |
+            proofs-${{ runner.os }}-${{ matrix.proof }}-
+            proofs-${{ runner.os }}-
       - run: make prove-slow
+        env:
+          PROVE_ONLY: ${{ matrix.proof }}
       - name: Save proof cache
         if: always()
         uses: actions/cache/save@v6
         with:
           path: proof/.cache
-          key: proofs-${{ runner.os }}-${{ github.run_id }}
+          key: proofs-${{ runner.os }}-${{ matrix.proof }}-${{ github.run_id }}
       # always(), not failure(): timeout-minutes cancels the job rather
       # than failing it, so failure() skips exactly the run that needs
       # the logs. run.sh writes one log per proof as it starts, so a
@@ -60,7 +84,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: proof-results
+          name: proof-results-${{ matrix.proof }}
           path: proof/results/
           if-no-files-found: ignore
 
@@ -240,12 +264,22 @@ jobs:
     steps:
       - env:
           GH_TOKEN: ${{ github.token }}
+          NEEDS: ${{ toJSON(needs) }}
         run: |
           open=$(gh issue list --repo "$GITHUB_REPOSITORY" --state open \
             --search "nightly failure in:title" --json number --jq length)
           if [ "$open" -eq 0 ]; then
+            # Name the jobs that broke. A matrix reports one rolled-up
+            # result, so this says prove-slow without saying which of its
+            # five legs; the run page has that.
+            broke=$(printf '%s' "$NEEDS" | jq -r 'to_entries
+              | map(select(.value.result != "success"))
+              | map("- \(.key): \(.value.result)") | join("\n")')
             gh issue create --repo "$GITHUB_REPOSITORY" \
               --title "nightly failure: $(date -u +%F)" \
               --body "Run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID
+
+          $broke
+
           Policy: triage before the next release; nightly reds block releases, not PRs."
           fi
