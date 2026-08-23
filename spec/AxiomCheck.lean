@@ -10,6 +10,7 @@ import Spec.Drbg
 import Spec.X509
 import Spec.X25519
 import Spec.Hsparse
+import Spec.Epoch
 
 #print axioms Spec.Aead.open?_seal
 #print axioms Spec.Aead.open?_ne_tag
@@ -38,3 +39,11 @@ import Spec.Hsparse
 #print axioms Spec.Hsparse.parseCertificate_sound
 #print axioms Spec.Hsparse.parseCertificateVerify_sound
 #print axioms Spec.Hsparse.parseEncryptedExtensions_limit_ge_64
+#print axioms Spec.Epoch.commit_ge
+#print axioms Spec.Epoch.commit_le_of_check
+#print axioms Spec.Epoch.commit_takes_any_epoch
+#print axioms Spec.Epoch.step_idem
+#print axioms Spec.Epoch.storedAfter_ge
+#print axioms Spec.Epoch.storedAfter_le
+#print axioms Spec.Epoch.storedAfter_eq_of_none_accepted
+#print axioms Spec.Epoch.storedAfter_le_maxEpoch
