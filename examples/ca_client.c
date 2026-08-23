@@ -1,53 +1,55 @@
-// A chapulin client for the TRUST=ca build: the device pins the public
-// key of a CA you run, and each server presents its own certificate
-// chain.
-//
-// Everything except the trust decision matches the other examples in
-// this directory. You fill in a ch_cfg, call ch_connect, then ch_write,
-// ch_read, and ch_close. Three things change, and this file marks each
-// one:
-//
-//   1. The pinned bytes are a CA key, not one server's key. One key
-//      now authenticates every server that CA signs for.
-//   2. CH_MIN_RXBUF rises. The CA build knows the largest chain it
-//      admits, so it derives the floor and this file sizes its buffer
-//      from the constant.
-//   3. Two optional callbacks turn on the revocation epoch, the only
-//      way this client refuses a certificate it can otherwise verify.
-//
-// What the check covers: the chain verifies up to the pinned CA key,
-// and every certificate matches a fixed shape — version, serial, one
-// signature algorithm, keyUsage, extendedKeyUsage, basicConstraints,
-// canonical DER on every decoded field. The server sends its own
-// certificate, or that plus the one intermediate that signed it. Two
-// entries is the maximum: a server that also sends the root fails the
-// handshake, and OpenSSL appends the root on its own whenever the root
-// sits in the server's store. docs/ca.md, "Server configuration",
-// covers that.
-//
-// What the check does not cover: names and time. The client never
-// compares a hostname against the certificate, and it never reads
-// notBefore or notAfter as a date, because the target has no clock.
-// The revocation epoch below is the one thing read out of notBefore,
-// and it reads it as a number. Freshness comes from your issuance
-// policy instead: sign short-lived certificates and reissue them on a
-// schedule. docs/ca.md states the contract your CA must meet, and this
-// file is worth nothing without it.
-//
-// Build the library, then this file against it:
-//
-//   make TRUST=ca lib                 # RSA-PSS chains, the default PIN
-//   make TRUST=ca PIN=ecdsa lib       # P-256 chains instead
-//   cc -Wall -Wextra -Wpedantic -Werror -std=c11 -D_DEFAULT_SOURCE \
-//      -DCH_TRUST_CA -I. -o ca_client examples/ca_client.c bin/chapulin.o
-//
-// Pass -DCH_TRUST_CA to your own translation units too, not just to the
-// library. CH_MIN_RXBUF depends on it, and this file sizes its receive
-// buffer from that constant.
-//
-// This example builds and links on a POSIX host. It is not a device
-// port. Every line a firmware tree replaces carries a "Replace on a
-// device" comment.
+/*
+ * A chapulin client for the TRUST=ca build: the device pins the public
+ * key of a CA you run, and each server presents its own certificate
+ * chain.
+ *
+ * Everything except the trust decision matches the other examples in
+ * this directory. You fill in a ch_cfg, call ch_connect, then ch_write,
+ * ch_read, and ch_close. Three things change, and this file marks each
+ * one:
+ *
+ *   1. The pinned bytes are a CA key, not one server's key. One key
+ *      now authenticates every server that CA signs for.
+ *   2. CH_MIN_RXBUF rises. The CA build knows the largest chain it
+ *      admits, so it derives the floor and this file sizes its buffer
+ *      from the constant.
+ *   3. Two optional callbacks turn on the revocation epoch, the only
+ *      way this client refuses a certificate it can otherwise verify.
+ *
+ * What the check covers: the chain verifies up to the pinned CA key,
+ * and every certificate matches a fixed shape — version, serial, one
+ * signature algorithm, keyUsage, extendedKeyUsage, basicConstraints,
+ * canonical DER on every decoded field. The server sends its own
+ * certificate, or that plus the one intermediate that signed it. Two
+ * entries is the maximum: a server that also sends the root fails the
+ * handshake, and OpenSSL appends the root on its own whenever the root
+ * sits in the server's store. docs/ca.md, "Server configuration",
+ * covers that.
+ *
+ * What the check does not cover: names and time. The client never
+ * compares a hostname against the certificate, and it never reads
+ * notBefore or notAfter as a date, because the target has no clock.
+ * The revocation epoch below is the one thing read out of notBefore,
+ * and it reads it as a number. Freshness comes from your issuance
+ * policy instead: sign short-lived certificates and reissue them on a
+ * schedule. docs/ca.md states the contract your CA must meet, and this
+ * file is worth nothing without it.
+ *
+ * Build the library, then this file against it:
+ *
+ *   make TRUST=ca lib                 # RSA-PSS chains, the default PIN
+ *   make TRUST=ca PIN=ecdsa lib       # P-256 chains instead
+ *   cc -Wall -Wextra -Wpedantic -Werror -std=c11 -D_DEFAULT_SOURCE \
+ *      -DCH_TRUST_CA -I. -o ca_client examples/ca_client.c bin/chapulin.o
+ *
+ * Pass -DCH_TRUST_CA to your own translation units too, not just to the
+ * library. CH_MIN_RXBUF depends on it, and this file sizes its receive
+ * buffer from that constant.
+ *
+ * This example builds and links on a POSIX host. It is not a device
+ * port. Every line a firmware tree replaces carries a "Replace on a
+ * device" comment.
+ */
 
 #include <netdb.h>
 #include <signal.h>

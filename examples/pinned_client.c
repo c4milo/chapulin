@@ -1,37 +1,39 @@
-// Pinned-key mode, chapulin's default build: the device holds the
-// server's public key and checks the server's handshake signature
-// against it.
-//
-// A pin is public data. It needs integrity, not secrecy: an attacker who
-// reads it learns the same key the server hands to everyone who
-// connects. Provision it the way you provision a PSK, but the
-// requirement is different: a pin must be unmodifiable by anyone but
-// you, not unreadable.
-//
-// What this example shows:
-//   1. Where the pin comes from, and how long it must be in each of the
-//      two PIN builds.
-//   2. How to size the receive buffer. Pinned mode constrains it in a
-//      way PSK mode does not, and ch_connect cannot check the difference
-//      for you.
-//   3. The two-slot pin, and reading ch_tls.pin_slot after a connect to
-//      watch a key rotation move through a fleet.
-//
-// This file is written to be read and lifted. It builds; it proves
-// nothing. test/e2e.sh runs the live handshakes against OpenSSL and Go.
-//
-// Build it against the packaged library object, from the repo root:
-//
-//   make lib                                     # RSA-PSS pins
-//   cc -Wall -Wextra -Wpedantic -Werror -std=c11 -D_DEFAULT_SOURCE -I. \
-//      -o pinned_client examples/pinned_client.c bin/chapulin.o
-//
-// For P-256 pins, build the library with `make lib PIN=ecdsa` and add
-// -DCH_PIN_ECDSA to that cc line. -D_DEFAULT_SOURCE is for this file's
-// POSIX sockets, not for chapulin: glibc hides getaddrinfo and
-// getrandom under -std=c11 without it.
-//
-// Run: ./pinned_client 192.0.2.10 4433 server_pin.bin [next_pin.bin]
+/*
+ * Pinned-key mode, chapulin's default build: the device holds the
+ * server's public key and checks the server's handshake signature
+ * against it.
+ *
+ * A pin is public data. It needs integrity, not secrecy: an attacker who
+ * reads it learns the same key the server hands to everyone who
+ * connects. Provision it the way you provision a PSK, but the
+ * requirement is different: a pin must be unmodifiable by anyone but
+ * you, not unreadable.
+ *
+ * What this example shows:
+ *   1. Where the pin comes from, and how long it must be in each of the
+ *      two PIN builds.
+ *   2. How to size the receive buffer. Pinned mode constrains it in a
+ *      way PSK mode does not, and ch_connect cannot check the difference
+ *      for you.
+ *   3. The two-slot pin, and reading ch_tls.pin_slot after a connect to
+ *      watch a key rotation move through a fleet.
+ *
+ * This file is written to be read and lifted. It builds; it proves
+ * nothing. test/e2e.sh runs the live handshakes against OpenSSL and Go.
+ *
+ * Build it against the packaged library object, from the repo root:
+ *
+ *   make lib                                     # RSA-PSS pins
+ *   cc -Wall -Wextra -Wpedantic -Werror -std=c11 -D_DEFAULT_SOURCE -I. \
+ *      -o pinned_client examples/pinned_client.c bin/chapulin.o
+ *
+ * For P-256 pins, build the library with `make lib PIN=ecdsa` and add
+ * -DCH_PIN_ECDSA to that cc line. -D_DEFAULT_SOURCE is for this file's
+ * POSIX sockets, not for chapulin: glibc hides getaddrinfo and
+ * getrandom under -std=c11 without it.
+ *
+ * Run: ./pinned_client 192.0.2.10 4433 server_pin.bin [next_pin.bin]
+ */
 #include <netdb.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -47,42 +49,44 @@
 #include "rand.h"
 #include "tls.h"
 
-// --- Getting the pin -------------------------------------------------
-//
-// The pin is the server's public key as raw bytes: no PEM, no DER
-// wrapper, no certificate. Each build pins one algorithm, and the
-// Makefile's PIN variable picks which.
-//
-// Default build (PIN=rsa): the RSA modulus, big-endian, 256 to 384 bytes
-// in multiples of 8, which covers RSA-2048 through RSA-3072. chapulin
-// fixes the public exponent at 65537 and verifies RSA-PSS, so the
-// modulus is the whole pin.
-//
-//   openssl rsa -in server.key -noout -modulus \
-//     | sed 's/^Modulus=//' | xxd -r -p > server_pin.bin
-//
-// Swap `rsa -in server.key` for `x509 -in server.crt` when the
-// certificate is all you hold; both print the same modulus.
-//
-// PIN=ecdsa build: the P-256 public point as X||Y, exactly 64 bytes,
-// without the 0x04 uncompressed-point prefix. The last 64 bytes of the
-// DER SubjectPublicKeyInfo are exactly that.
-//
-//   openssl ec -in server.key -pubout -outform DER \
-//     | tail -c 64 > server_pin.bin
-//
-//   openssl x509 -in server.crt -pubkey -noout \
-//     | openssl ec -pubin -pubout -outform DER | tail -c 64 > server_pin.bin
-//
-// The RSA build also checks that the modulus is odd. Every real modulus
-// is, being a product of odd primes, so an even one is corrupted
-// provisioning: ch_connect rejects it with CH_EINVAL before sending
-// anything, instead of letting it surface later as a failed signature
-// that would read like an attack.
-//
-// One algorithm per build, and neither build carries the other's
-// verifier. An RSA pin handed to a PIN=ecdsa build is the wrong length,
-// and ch_connect answers CH_EINVAL.
+/*
+ * --- Getting the pin -------------------------------------------------
+ *
+ * The pin is the server's public key as raw bytes: no PEM, no DER
+ * wrapper, no certificate. Each build pins one algorithm, and the
+ * Makefile's PIN variable picks which.
+ *
+ * Default build (PIN=rsa): the RSA modulus, big-endian, 256 to 384 bytes
+ * in multiples of 8, which covers RSA-2048 through RSA-3072. chapulin
+ * fixes the public exponent at 65537 and verifies RSA-PSS, so the
+ * modulus is the whole pin.
+ *
+ *   openssl rsa -in server.key -noout -modulus \
+ *     | sed 's/^Modulus=//' | xxd -r -p > server_pin.bin
+ *
+ * Swap `rsa -in server.key` for `x509 -in server.crt` when the
+ * certificate is all you hold; both print the same modulus.
+ *
+ * PIN=ecdsa build: the P-256 public point as X||Y, exactly 64 bytes,
+ * without the 0x04 uncompressed-point prefix. The last 64 bytes of the
+ * DER SubjectPublicKeyInfo are exactly that.
+ *
+ *   openssl ec -in server.key -pubout -outform DER \
+ *     | tail -c 64 > server_pin.bin
+ *
+ *   openssl x509 -in server.crt -pubkey -noout \
+ *     | openssl ec -pubin -pubout -outform DER | tail -c 64 > server_pin.bin
+ *
+ * The RSA build also checks that the modulus is odd. Every real modulus
+ * is, being a product of odd primes, so an even one is corrupted
+ * provisioning: ch_connect rejects it with CH_EINVAL before sending
+ * anything, instead of letting it surface later as a failed signature
+ * that would read like an attack.
+ *
+ * One algorithm per build, and neither build carries the other's
+ * verifier. An RSA pin handed to a PIN=ecdsa build is the wrong length,
+ * and ch_connect answers CH_EINVAL.
+ */
 
 // The pin length this build accepts. Change 384 to 256 for an RSA-2048
 // server: ch_connect compares the length you pass in
