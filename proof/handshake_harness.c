@@ -284,6 +284,16 @@ int tlsi_send_alert(ch_tls *t, uint8_t level, uint8_t description) {
 
 #include "handshake.c"
 
+// One auth mode per formula. Driving both under a nondet branch put the
+// two flights in one formula and CBMC ran out of memory on it after
+// 399 s. The modes share no state — the config picks one before
+// ch_handshake runs — so proving them apart proves the same disjunction
+// in two pieces. handshake_psk and handshake_pin define the selector and
+// include this file; it has no launch line of its own.
+#if !defined(CH_PROOF_PSK) && !defined(CH_PROOF_PIN)
+#error "define CH_PROOF_PSK or CH_PROOF_PIN"
+#endif
+
 int main(void) {
     static ch_tls t;
     memset(&t, 0, sizeof t);
@@ -300,7 +310,8 @@ int main(void) {
     fill_nondet(pin2, sizeof pin2);
     t.cfg.buf = buf;
     t.cfg.buf_len = sizeof buf;
-    if (nondet_u8() & 1) {
+#ifdef CH_PROOF_PSK
+    {
         t.cfg.psk = psk;
         t.cfg.psk_id = id;
         size_t psk_len = nondet_size_t();
@@ -310,7 +321,9 @@ int main(void) {
         t.cfg.psk_len = psk_len;
         t.cfg.psk_id_len = idlen;
         t.cfg.resumption = nondet_u8() & 1;
-    } else {
+    }
+#else
+    {
         // Pinned-key mode: server_auth path. The length domain is what
         // ch_connect admits before ch_handshake ever runs.
         t.cfg.server_pubkey = pin;
@@ -336,6 +349,7 @@ int main(void) {
             t.cfg.server_pubkey2_len = pin2len;
         }
     }
+#endif
 
     (void)ch_handshake(&t);
     return 0;

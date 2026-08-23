@@ -295,7 +295,8 @@ launch slow full aead 85 "blocks.0:10,chacha20_xor.1:4" chacha20.c poly1305.c ct
 launch slow full aead_overlap 85 "blocks.0:10,chacha20_xor.1:4" chacha20.c poly1305.c ct.c
 launch slow full aead_forge 85 "blocks.0:10,chacha20_xor.1:4" chacha20.c poly1305.c ct.c
 launch slow noovf x25519 65 "" ct.c
-launch slow full handshake 100 "hsr_fetch_record.0:45,hsr_next_msg.0:140,fill_nondet.0:600" hspump.c buf.c ct.c
+launch slow full handshake_psk 100 "hsr_fetch_record.0:45,hsr_next_msg.0:140,fill_nondet.0:600" hspump.c buf.c ct.c
+launch slow full handshake_pin 100 "hsr_fetch_record.0:45,hsr_next_msg.0:140,fill_nondet.0:600" hspump.c buf.c ct.c
 # Measured kissat-path peaks (macOS /usr/bin/time -l, RSS): hsparse
 # 9.9 GB, sha256 5.7 GB — both above the default weight and cap.
 launch fast:10 full hsparse 260 "hsp_parse_server_hello.0:66,main.0:600" hsparse.c buf.c

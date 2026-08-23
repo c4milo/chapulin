@@ -14,6 +14,8 @@
 // (the code is shared outside the CA arm), the x509parse proofs for
 // the arm's parser, and the e2e and unit_ca suites.
 #define CH_TRUST_CA 1
+// Certificates reach this driver only in the pinned arm.
+#define CH_PROOF_PIN 1
 
 #include "harness.h"
 #include "x509.h"
