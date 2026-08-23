@@ -13,6 +13,8 @@ import Spec.X25519
 #print axioms Spec.Aead.open?_seal
 #print axioms Spec.Aead.open?_ne_tag
 #print axioms Spec.Record.aeadOpen_seal
+#print axioms Spec.Record.open?_seal
+#print axioms Spec.Record.open?_type_sound
 #print axioms Spec.Handshake.psk_no_certificate
 #print axioms Spec.Handshake.hrr_at_most_one
 #print axioms Spec.Handshake.count_finished_of_accepts

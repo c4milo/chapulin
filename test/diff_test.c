@@ -19,7 +19,6 @@
 #include "diff_driver.h"
 #include "diff_hash.h"
 #include "diff_p256.h"
-#include "diff_property.h"
 #include "diff_record.h"
 #include "diff_rsa.h"
 #include "diff_x25519.h"
@@ -46,13 +45,13 @@ int main(int argc, char **argv) {
     diff_aead_seal();
     diff_aead_open();
     diff_rec_seal();
+    diff_rec_open();
     diff_traffic_update();
     diff_x25519();
     diff_x25519_base();
     diff_p256();
     diff_rsa();
     diff_x509();
-    diff_properties();
     if (fclose(to_spec) != 0 || fclose(from_spec) != 0) {
         die("closing spec pipes failed");
     }

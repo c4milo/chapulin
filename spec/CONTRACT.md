@@ -41,6 +41,18 @@ Spec.Record.seal      : (trafficSecret : ByteArray) → (seq : Nat) →
 Spec.Drbg.next        : (key : ByteArray) → (n : Nat) →
                         (ByteArray × ByteArray)                        -- fast key erasure over ChaCha20:
                         -- (next key, n output bytes) from one request
+Spec.Record.open?     : (trafficSecret : ByteArray) → (seq : Nat) →
+                        (rec : ByteArray) → Option (ByteArray × UInt8)
+                        -- RFC 9846 §5.2-5.4 deprotection, the inverse of seal:
+                        -- outer type 17, the length field against the record,
+                        -- the §5.2 record_overflow and §5.4 inner ceilings, the
+                        -- AEAD tag under the §5.3 nonce, then §5.4's scan from
+                        -- the end for the content type. The type is handed back
+                        -- as found — which types are legal where belongs to the
+                        -- reader above this layer, as it does in the C, so the
+                        -- two model the same function. Line op:
+                        -- `rec_open <secret> <seq> <record>` →
+                        -- `ok <ctype> <content>` / `ERR rec_open reject`.
 Spec.Record.nextSecret : (secret : ByteArray) → ByteArray             -- RFC 9846 §7.2 "traffic upd"
 Spec.X25519.scalarMult : (scalar point : ByteArray) → ByteArray        -- RFC 7748 §5, Nat mod 2^255-19
 Spec.X25519.base       : (scalar : ByteArray) → ByteArray              -- point = 9
@@ -154,9 +166,9 @@ Spec.Aead.open?_ne_tag       tag ≠ recomputed Poly1305 tag → open? = none
                              -- (needs Spec.Bytes.bytesToHex_inj: open? compares hex)
 Spec.Record.aeadOpen_seal    splitting Record.seal's output at 5 and 5+|pt|+1 and
                              -- AEAD-opening with the §7.3 key/iv and §5.3 nonce returns
-                             -- `some (pt ++ [ctype])`. The spec has no Record.open —
-                             -- deprotection lives in the C read path — so the theorem
-                             -- states that path's check at the AEAD layer.
+                             -- `some (pt ++ [ctype])`. `open?_seal` states the same
+                             -- round trip at the record layer, where deprotection
+                             -- now lives; this one remains as its AEAD-layer step.
 Spec.Hkdf.expand_size        (expand prk info len).size = len          -- RFC 5869 §2.3 "first
 Spec.Hkdf.expandLabel_size   (expandLabel s l c len).size = len        -- L octets of T"
 Spec.Sha256.sha256_size      (sha256 msg).size = 32
@@ -233,7 +245,7 @@ means the module's selftest plus the differential oracle carry it;
 | Bytes | 24 | proof toolkit: fold characterizations, xor involution and left cancellation, hex injectivity, big-endian round trip and injectivity |
 | Drbg | 13 | key advance (the next key is the counter-0 block, independent of the request size), key/output disjointness within one keystream, request-prefix consistency, session key chain |
 | Handshake | 17 | state-machine safety invariants: exactly one ServerHello, EncryptedExtensions and Finished; no certificate flight under PSK; pinned flight shape and order; HRR bound; no CertificateRequest; no post-handshake message before Finished; close_notify at most once and last |
-| Record | 6 | seal/open round trip, record size, nonce size, nonce injectivity (distinct sequence numbers never share a nonce) |
+| Record | 8 | seal/open round trip at both the AEAD and record layers, record size, nonce size, nonce injectivity (distinct sequence numbers never share a nonce), and that an accepted record never carries content type invalid(0) |
 | ChaCha | 5 | block size, structural lemmas, keystream prefix stability; keystream itself vector-checked |
 | Hkdf | 5 | output lengths, schedule wiring and secret sizes; derivations vector-checked |
 | Aead | 4 | seal/open round trip, tag rejection, output size, pad16 alignment |

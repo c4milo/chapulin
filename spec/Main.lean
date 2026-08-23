@@ -103,6 +103,21 @@ def dispatch : List String → Option String
     if p.size > 0x4000 then return "ERR rec_seal plaintext over 2^14"
     if q >= 0xffffffffffffffff then return "ERR rec_seal seq at the wrap guard"
     return emit (Spec.Record.seal s q (UInt8.ofNat c) p)
+  | ["rec_open", secret, seq, rec] => do
+    let s ← hexArg? secret
+    let q ← seq.toNat?
+    let r ← hexArg? rec
+    guard (s.size == 32)
+    -- RFC 9846 §5.3 keeps the reader's sequence number 64-bit and unwrapped,
+    -- the same guard rec_seal stops at; past it the nonce would repeat.
+    if q >= 0xffffffffffffffff then return "ERR rec_open seq at the wrap guard"
+    -- One reply for every refusal: the RFC's alerts differ (record_overflow,
+    -- bad_record_mac, unexpected_message) but the oracle compares the
+    -- accept/refuse boundary, and distinct strings would flag a spec-and-C
+    -- disagreement about which MUST fired first as a mismatch.
+    match Spec.Record.open? s q r with
+    | some (content, ctype) => return s!"ok {ctype.toNat} {emit content}"
+    | none => return "ERR rec_open reject"
   | ["x25519", scalar, point] => do
     let k ← hexArg? scalar
     let u ← hexArg? point
