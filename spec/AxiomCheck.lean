@@ -8,6 +8,7 @@ import Spec.Record
 import Spec.Handshake
 import Spec.Drbg
 import Spec.X509
+import Spec.X25519
 
 #print axioms Spec.Aead.open?_seal
 #print axioms Spec.Aead.open?_ne_tag
@@ -26,3 +27,5 @@ import Spec.X509
 #print axioms Spec.Handshake.accepts_decompose
 #print axioms Spec.X509.parse_sound
 #print axioms Spec.X509.parse_key_signed
+#print axioms Spec.X25519.decodeScalar_mul_eight
+#print axioms Spec.X25519.decodeScalar_range

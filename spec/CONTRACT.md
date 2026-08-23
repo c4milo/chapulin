@@ -241,15 +241,19 @@ means the module's selftest plus the differential oracle carry it;
 | Sha256 | 4 | structural lemmas, padding block alignment and message prefix; compression function vector-checked |
 | Poly | 1 | MAC size; arithmetic vector-checked |
 | P256 | 0 | executable oracle only: RFC 6979 vectors and the differential |
-| X25519 | 0 | executable oracle only: RFC 7748 vectors and the differential |
+| X25519 | 2 | RFC 7748 §5 clamping: every decoded scalar is a multiple of the cofactor 8, and has bit 254 set with bit 255 clear. The first keeps `k * P` in the prime-order subgroup, the second fixes the ladder's iteration count. The ladder arithmetic itself stays vector-checked |
 | X509Der | 19 | DER canonicality: a length, a TLV, and an INTEGER are accepted only in the one encoding X.690 §10.1 and §8.3.2 admit, so the reader is DER-strict rather than BER-lenient; plus the encode/decode round trips and the §8.19.2 subidentifier rule |
 | X509 | 4 | parse soundness: an accepted list reports a key only after a signature over the complete DER of the TBSCertificate that carried it verified under the pinned key, or under an intermediate the pinned key itself signed; the entry is a byte range of the list and no third entry can follow. Acceptance policy beyond that is executable oracle only: mint/parse round trips for the single leaf and the chained pair (self-checked signatures; OpenSSL material is exercised by the C strictness suite) and the differential |
 
-The two remaining zero-theorem modules are the hardest and the most
+The one remaining zero-theorem module, P-256, is among the hardest and the most
 security-critical; they are executable and vector-checked but carry no
 proven properties. The missing theorems, in value order: X25519 ladder
 invariants, then the P-256 and RSA arithmetic lemmas — all three need
-number theory this dependency-free build does not carry. The
+number theory this dependency-free build does not carry. What is
+provable without it has now been taken: the clamping guarantees are
+properties of the scalar, not of the group, and no differential row
+could have caught a clamping bug, since the C and the spec would agree
+while both were wrong. The
 mint-then-parse round trip is deliberately not on the list: it is
 completeness, not soundness, a parser that accepted everything would
 satisfy it, and the differential already mints and parses on every row
