@@ -1,0 +1,11 @@
+invariant: INV-14
+file: tls.c
+catches: unit
+reason: a config carrying both a PSK and a pin is no longer refused, it
+  silently resolves to pinned mode, so a provisioning mistake picks an
+  auth mode instead of failing closed
+
+--- old
+    int pin_ok = cfg->psk == NULL && cfg->server_pubkey != NULL && pin_len_ok;
+--- new
+    int pin_ok = cfg->server_pubkey != NULL && pin_len_ok;

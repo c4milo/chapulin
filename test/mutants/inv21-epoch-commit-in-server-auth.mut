@@ -1,0 +1,26 @@
+invariant: INV-21
+file: handshake.c
+catches: test/e2e.sh
+reason: committing the epoch on the chain verdict alone lets a certificate
+  that never proves possession of its key raise the device's stored
+  epoch, which outlives the session. KNOWN SURVIVOR: nothing catches
+  this today. epoch_commit is idempotent, so on a handshake that
+  succeeds the early call is invisible; the violation shows only when
+  the handshake fails after epoch_check passes. No test presents a
+  chain that verifies and then fails authentication, so neither
+  unit_ca nor e2e objects. e2e's ca-epoch legs replay a pre-bump leaf,
+  which epoch_check rejects earlier — they cover replay, not the
+  commit point
+
+--- old
+    rc = epoch_check(h);
+    if (rc != CH_OK) {
+        return rc;
+    }
+--- new
+    rc = epoch_check(h);
+    if (rc != CH_OK) {
+        return rc;
+    }
+    // Symmetry with the rejects: judge and record in one place.
+    epoch_commit(h);

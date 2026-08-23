@@ -1,0 +1,16 @@
+invariant: INV-3
+file: x25519.c
+catches: unit
+reason: the RFC 7748 clamp does not stop a low-order peer point from driving
+  the shared secret to zero, so dropping the test derives handshake
+  keys from a value the peer fully controls
+
+--- old
+    static const uint8_t zeros[X25519_LEN] = {0};
+    ladder(out, scalar, point);
+    return !ct_memeq(out, zeros, X25519_LEN);
+--- new
+    // The clamp puts the scalar in the prime-order subgroup, so the
+    // ladder cannot land on the identity.
+    ladder(out, scalar, point);
+    return 1;

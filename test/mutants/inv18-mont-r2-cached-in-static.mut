@@ -1,0 +1,21 @@
+invariant: INV-18
+file: rsa_mont.c
+catches: rsa_test
+reason: rsa_vp1 caches the Montgomery R^2 constant in a function-scope static,
+  so the second key verified in a process silently reuses the first
+  key's constant and every later verify is wrong
+
+--- old
+    uint32_t m0inv = mont_m0inv(m[0]);
+    mont_r2(r2, m, k);
+--- new
+    uint32_t m0inv = mont_m0inv(m[0]);
+    // mont_r2 costs 64k doublings and the pin never changes, so keep the
+    // first result and reuse it.
+    static uint32_t r2_cache[LIMBS_MAX];
+    static int r2_ready;
+    if (!r2_ready) {
+        mont_r2(r2_cache, m, k);
+        r2_ready = 1;
+    }
+    memcpy(r2, r2_cache, k * sizeof(uint32_t));

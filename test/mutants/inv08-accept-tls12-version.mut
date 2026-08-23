@@ -1,0 +1,11 @@
+invariant: INV-8
+file: hsparse.c
+catches: diff
+reason: supported_versions stops pinning 1.3, so a server that selects TLS 1.2
+  completes the ServerHello instead of failing closed
+
+--- old
+        info->version_ok = rb_u16(&e) == TLS13;
+--- new
+        // Tolerate a server that echoes the legacy 0x0303 here.
+        info->version_ok = rb_u16(&e) >= 0x0303;

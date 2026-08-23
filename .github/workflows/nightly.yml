@@ -112,6 +112,44 @@ jobs:
           path: proof/results/
           if-no-files-found: ignore
 
+  # Breaks each invariant docs/invariants.md lists and requires a test to
+  # object. Nightly, not check: every mutant rebuilds and reruns a target.
+  # A survivor is a real coverage hole, so a red leg here is a finding,
+  # not a flake.
+  mutants:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install elan
+        run: |
+          curl -sSf https://elan.lean-lang.org/elan-init.sh | sh -s -- -y --default-toolchain none
+          echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
+      - name: Cache Lean toolchain and build
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.elan
+            spec/.lake
+          key: lean-${{ hashFiles('spec/lean-toolchain', 'spec/lakefile.toml', 'spec/lake-manifest.json') }}
+      - uses: actions/setup-go@v6
+        with:
+          go-version: stable
+      - name: Break every invariant and see what objects
+        run: |
+          set -o pipefail
+          make mutants 2>&1 | tee /tmp/mutants.out
+      - name: Put the tally on the run page
+        if: always()
+        run: |
+          {
+            echo '### mutants'
+            echo
+            echo '```'
+            cat /tmp/mutants.out 2>/dev/null || echo '(the run produced no output)'
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
   # Randomized differential, time-boxed. The PR lane runs the built-in
   # seed so a failure there reproduces bit for bit. This lane draws a
   # fresh seed per run and keeps going until its budget runs out, so
@@ -274,7 +312,7 @@ jobs:
   # per broken night unless an open nightly-failure issue already
   # exists.
   report:
-    needs: [prove-slow, diff-random, diff-ecdsa, spec-coverage, san-deep, mips-ubsan, fuzz]
+    needs: [prove-slow, diff-random, diff-ecdsa, spec-coverage, san-deep, mips-ubsan, fuzz, mutants]
     # A job killed by timeout-minutes concludes as cancelled, not
     # failed, so failure() alone skips this job and a timed-out night
     # files nothing. Both prove-slow timeouts so far were reported only

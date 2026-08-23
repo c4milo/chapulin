@@ -1,0 +1,11 @@
+invariant: INV-10
+file: tls.c
+catches: unit
+reason: the client answers a KeyUpdate but never rekeys its own write
+  direction, so every later record is sealed under the retired key
+
+--- old
+    rec_dir_update(t->wr_secret, &t->wr);
+    t->send_epochs++;
+--- new
+    t->send_epochs++;
