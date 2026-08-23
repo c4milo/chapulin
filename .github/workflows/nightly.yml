@@ -16,7 +16,7 @@ permissions:
   contents: read
 
 jobs:
-  # The four SAT heavyweights, hours on a cold cache. The cache save
+  # The five SAT heavyweights, hours on a cold cache. The cache save
   # runs even on failure or timeout, so interrupted runs converge
   # across nights instead of starting over.
   prove-slow:
@@ -26,8 +26,8 @@ jobs:
       - uses: actions/checkout@v7
       - name: Install CBMC
         run: |
-          curl -fsSLO https://github.com/diffblue/cbmc/releases/download/cbmc-6.10.0/ubuntu-24.04-cbmc-6.10.0-Linux.deb
-          sudo dpkg -i ubuntu-24.04-cbmc-6.10.0-Linux.deb
+          curl -fsSLO https://github.com/diffblue/cbmc/releases/download/cbmc-6.11.0/ubuntu-24.04-cbmc-6.11.0-Linux.deb
+          sudo dpkg -i ubuntu-24.04-cbmc-6.11.0-Linux.deb
       - name: Build and install kissat
         # run.sh prefers kissat when present: it has beaten the built-in
         # solver by hours on every formula in this repo, and the slow

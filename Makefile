@@ -599,7 +599,7 @@ endif
 
 # CBMC proofs: memory safety and absence of UB per module, at the bounds
 # each harness documents. The fast tier (seconds to a few minutes) gates
-# every check; the four SAT heavyweights run as prove-slow in CI and
+# every check; the five SAT heavyweights run as prove-slow in CI and
 # before a release. prove-all is both.
 .PHONY: prove-slow prove-all
 prove:

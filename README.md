@@ -178,9 +178,9 @@ is left on the table there.
 
 ## Verification
 
-The C Bounded Model Checker (CBMC) proves every module memory-safe and
-free of undefined behavior, for every input within each harness's
-documented bound. Memory safety covers array bounds and pointer
+Every module carries a C Bounded Model Checker (CBMC) harness proving it
+memory-safe and free of undefined behavior, for every input within that
+harness's documented bound. Memory safety covers array bounds and pointer
 validity; undefined behavior covers signed overflow, invalid shifts, and
 division by zero. Where a bound equals the module's real maximum, the
 proof covers all inputs. Where it does not, the table states the bound.
@@ -191,6 +191,11 @@ long ones (handshake driver, aead, x25519, hkdf expand, and the RSA-arm
 certificate walker). CI runs the
 fast tier on every push and the slow tier nightly and on demand; a red
 nightly blocks the next release, never an in-flight change.
+
+The table below marks every row that rests on the slow tier. Those rows
+carry the verdict of the last nightly that finished, not of the current
+commit, and a slow harness that returns no verdict leaves its rows
+unproven until it does. The fast-tier rows gate every push.
 
 The suite layers its proofs the way mlkem-native does. CBMC proves the
 leaf modules directly. Upper layers (hkdf, record, the handshake driver)
@@ -203,12 +208,12 @@ values.
 | ct | memeq matches a plain comparison, wipe zeroizes, no undefined behavior | all inputs ≤ 64 B |
 | buf | any 12-operation reader/writer sequence stays safe; length never exceeds capacity | buffers ≤ 64 B |
 | sha256 | safe for any two-chunk split | messages ≤ 96 B |
-| hkdf (two harnesses) | hmac/extract and expand/expand-label safe over the proven sha256 contract | keys ≤ 96 B, output ≤ 96 B |
-| handshake | the driver stays safe on any record stream: record pump, cross-record reassembly, HRR restart, state machine, both auth modes | 96 B receive buffer |
+| hkdf (two harnesses) | hmac/extract and expand/expand-label safe over the proven sha256 contract | keys ≤ 96 B; output ≤ 96 B, expand: slow tier |
+| handshake | the driver stays safe on any record stream: record pump, cross-record reassembly, HRR restart, state machine, both auth modes | 96 B receive buffer, slow tier |
 | chacha20 | safe, including in-place use, at any counter | ≤ 160 B (3 blocks) |
 | poly1305 | safe for any three-chunk split; 64-bit products stay in range | messages ≤ 80 B |
-| aead | seal/open round-trips; a forged tag writes zero bytes; backward-overlap decrypt works (the record layer's in-place mode) | plaintext ≤ 64 B, aad ≤ 32 B |
-| x25519 | field operations are memory-safe (direct proof); a separate lemma proves the int64 arithmetic cannot overflow | limbs ≤ 2^24 |
+| aead | seal/open round-trips; a forged tag writes zero bytes; backward-overlap decrypt works (the record layer's in-place mode) | plaintext ≤ 64 B, aad ≤ 32 B, slow tier |
+| x25519 | field operations are memory-safe (direct proof, slow tier); a separate lemma proves the int64 arithmetic cannot overflow (fast tier) | limbs ≤ 2^24 |
 | p256 | the DER parser and limb marshalling stay safe on hostile signatures (direct proof); a carry lemma covers the Montgomery multiply | signatures ≤ 80 B |
 | rsa (two harnesses) | the PSS decode — range checks, MGF1 masking, salt walk, H′ compare — and the limb marshalling stay safe with the RSAVP1 result replaced by arbitrary bytes; a carry lemma covers the Montgomery multiply | 384 B modulus, every byte hostile |
 | record | seal works across its contract; rec_open stays safe on fully hostile bytes | records ≤ 160 B |
@@ -277,8 +282,9 @@ The following claims rest on tests, not proofs:
   P-256 and RSA verification are variable-time on purpose: all of their
   inputs are public.
 
-No other stack in this space carries whole-stack machine-checked memory
-safety. The closest prior art is AWS's CBMC work on the FreeRTOS core
+No other stack in this space carries machine-checked memory safety
+across as much of itself, from the constant-time helpers up to the
+handshake driver. The closest prior art is AWS's CBMC work on the FreeRTOS core
 libraries and on mlkem-native, and this suite copies that method.
 
 ## The differential oracle

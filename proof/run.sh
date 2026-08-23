@@ -39,7 +39,7 @@ set -uo pipefail
 cd "$(dirname "$0")/.."
 
 # Tier argument: "fast" (seconds-to-minutes, runs in every make check),
-# "slow" (the four SAT heavyweights, run by CI and before release), or
+# "slow" (the five SAT heavyweights, run by CI and before release), or
 # "all" (default).
 TIER="${1:-all}"
 
@@ -73,6 +73,7 @@ esac
 # heavyweights peak past 10 GB there (measured as cbmc-side OOMs on a
 # 16 GB box), where the built-in incremental solver stays under 6.
 SLOW_W=6
+SLOW_SOLVER_ARGS=("${SOLVER_ARGS[@]}")
 if [ ${#SOLVER_ARGS[@]} -gt 0 ] && [ "${SOLVER_ARGS[0]}" = "--external-sat-solver" ]; then
     SLOW_W=12
 fi
@@ -103,13 +104,16 @@ fi
 BUDGET_GB=$((MEM_GB - 6))
 if [ "$BUDGET_GB" -lt 4 ]; then BUDGET_GB=4; fi
 # The external solver is a big-box optimization: its slow-tier jobs
-# weigh 12 GB, and on a machine whose budget cannot admit that (a
-# 16 GB CI runner budgets 9) the admission loop would wait forever —
-# the job times out having run nothing. Fall back to the built-in
-# solver there; its slow tier stays under 6 GB and admits.
+# weigh 12 GB, and a machine whose budget cannot admit that (a 16 GB CI
+# runner budgets 9) would serialize them at a weight it cannot honor.
+# Fall back to the built-in solver for the slow tier there; it stays
+# under 6 GB and admits. The fast tier keeps the external solver either
+# way: its wins live there — the ServerHello parser returns no verdict
+# in 131 minutes built-in and under a minute with kissat — and its jobs
+# never carry the slow tier's weight.
 if [ "$SLOW_W" -gt "$BUDGET_GB" ]; then
-    echo "prove: budget ${BUDGET_GB} GB cannot admit ${SLOW_W} GB external-solver jobs; using the built-in solver"
-    SOLVER_ARGS=()
+    echo "prove: budget ${BUDGET_GB} GB cannot admit ${SLOW_W} GB external-solver jobs; the slow tier uses the built-in solver"
+    SLOW_SOLVER_ARGS=()
     SLOW_W=6
 fi
 CPU_CAP=$(($(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4) - 2))
@@ -203,8 +207,18 @@ launch() {
         flags=("${BASE[@]}")
     fi
     local args=("proof/${name}_harness.c" "$@" -I . --unwind "$unwind")
-    if [ ${#SOLVER_ARGS[@]} -gt 0 ]; then
-        args+=("${SOLVER_ARGS[@]}")
+    # bash 3.2 errors on expanding an empty array under set -u, so each
+    # arm checks its length before expanding, as the caller below does.
+    local solver=()
+    if [ "$tier" = "slow" ]; then
+        if [ ${#SLOW_SOLVER_ARGS[@]} -gt 0 ]; then
+            solver=("${SLOW_SOLVER_ARGS[@]}")
+        fi
+    elif [ ${#SOLVER_ARGS[@]} -gt 0 ]; then
+        solver=("${SOLVER_ARGS[@]}")
+    fi
+    if [ ${#solver[@]} -gt 0 ]; then
+        args+=("${solver[@]}")
     fi
     if [ -n "$unwindset" ]; then
         args+=(--unwindset "$unwindset")

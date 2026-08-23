@@ -193,8 +193,8 @@ jobs:
 
       - name: Install CBMC
         run: |
-          curl -fsSLO https://github.com/diffblue/cbmc/releases/download/cbmc-6.10.0/ubuntu-24.04-cbmc-6.10.0-Linux.deb
-          sudo dpkg -i ubuntu-24.04-cbmc-6.10.0-Linux.deb
+          curl -fsSLO https://github.com/diffblue/cbmc/releases/download/cbmc-6.11.0/ubuntu-24.04-cbmc-6.11.0-Linux.deb
+          sudo dpkg -i ubuntu-24.04-cbmc-6.11.0-Linux.deb
           cbmc --version
 
       - name: Cache kissat install
@@ -275,7 +275,7 @@ jobs:
         if: always()
         run: cat bin/proof-coverage.md >> "$GITHUB_STEP_SUMMARY" 2>/dev/null || true
 
-      # The four SAT heavyweights run in the nightly workflow; this job
+      # The five SAT heavyweights run in the nightly workflow; this job
       # gates pushes and PRs in minutes with the fast tier.
 
       # Save even on failure or timeout (always() runs on cancelled jobs):
