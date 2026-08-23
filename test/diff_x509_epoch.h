@@ -1,8 +1,8 @@
 // The epoch boundary rows of the certificate differential: the one
 // row family that varies the leaf's notBefore, so it is the family
-// that drives the accept line's epoch column. Included by diffx509.h
-// after certd_mint_dated and certd_row, the diffx509bounds.h
-// pattern; test/diff.c is the one translation unit.
+// that drives the accept line's epoch column. Included by diff_x509.h
+// after certd_mint_dated and certd_row, the diff_x509_bounds.h
+// pattern; test/diff_test.c is the one translation unit.
 #ifndef CH_DIFFX509EPOCH_H
 #define CH_DIFFX509EPOCH_H
 

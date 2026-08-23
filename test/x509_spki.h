@@ -2,8 +2,8 @@
 // encoding rules the parser holds the build's pinned key algorithm
 // to — the AlgorithmIdentifier OID, and then the P-256 point or the
 // RSA modulus and exponent inside the BIT STRING. Included by
-// x509strict_test.c after its vectors and helpers, the
-// x509chain_tests.h pattern; not a standalone translation unit.
+// x509_strict_test.c after its vectors and helpers, the
+// x509_chain_tests.h pattern; not a standalone translation unit.
 #ifndef CH_X509SPKI_H
 #define CH_X509SPKI_H
 
@@ -81,8 +81,8 @@ static void test_spki(void) {
     // range but not a multiple of 8) all reject. The accept sides
     // already exist: 384 is this build's good leaf in test_accept,
     // and 256 verifies in the differential chain driver — diff_x509
-    // in test/diffx509.h mints the RSA chain leaf with the 2048-bit
-    // key via test/diffx509chain.h.
+    // in test/diff_x509.h mints the RSA chain leaf with the 2048-bit
+    // key via test/diff_x509_chain.h.
     static const size_t bad_modulus_lens[3] = {255, 385, 260};
     for (size_t i = 0; i < 3; i++) {
         size_t vlen = bad_modulus_lens[i];

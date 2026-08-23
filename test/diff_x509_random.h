@@ -2,12 +2,12 @@
 // parsers must reject every row here, so the oracle is blunt: the
 // value is DER agreement and crash coverage over shapes no
 // hand-written row reaches, not killing an epoch-reader mutation.
-// The rows that carry a real CA signature live in diffx509signed.h.
+// The rows that carry a real CA signature live in diff_x509_signed.h.
 //
-// Included by diffx509.h after certd_collect and certd_mint_dated
+// Included by diff_x509.h after certd_collect and certd_mint_dated
 // exist; this is not a standalone translation unit.
-#ifndef CH_DIFFX509RAND_H
-#define CH_DIFFX509RAND_H
+#ifndef CH_DIFF_X509_RANDOM_H
+#define CH_DIFF_X509_RANDOM_H
 
 #define CERTD_RAND_NOISE_ROWS 150
 #define CERTD_RAND_EDIT_ROWS 400
@@ -31,8 +31,8 @@ typedef struct {
 
 static long certd_rand_rows;
 
-// Defined in diffx509signed.h, which builds on the context and row
-// function above. diffx509.h includes that header after this one, so
+// Defined in diff_x509_signed.h, which builds on the context and row
+// function above. diff_x509.h includes that header after this one, so
 // the pass function at the end of this file needs the declaration.
 static void certd_mint_rows(const certd_rand_ctx *ctx);
 

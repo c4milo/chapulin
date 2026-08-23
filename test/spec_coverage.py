@@ -12,7 +12,7 @@ that can be measured and that matter:
 
 2. C coverage from the differential alone. The share of each shipping
    source file that the differential reaches, measured with gcov over
-   a build that runs only test/diff.c. This answers the question the
+   a build that runs only test/diff_test.c. This answers the question the
    Lean spec exists to answer — how much of the code that ships is
    checked against an independent model — and it is the number that
    shows which modules the spec does not model at all.
@@ -44,11 +44,11 @@ def spec_ops():
     return sorted(set(re.findall(r'^\s*\|\s*\["([a-z0-9_]+)"', body, re.M)))
 
 
-# Every driver that talks to the spec, not only test/diff.c: drbg_test
+# Every driver that talks to the spec, not only test/diff_test.c: drbg_test
 # and hsseq_test each own an op and speak the same protocol.
-DRIVERS = ["diff.c", "diffdrv.h", "diffp256.h", "diffrsa.h", "diffx509.h",
-           "diffx509bounds.h", "diffx509chain.h", "drbg_test.c", "hsseq_test.c",
-           "hsseqsrv.h"]
+DRIVERS = ["diff_test.c", "diff_driver.h", "diff_p256.h", "diff_rsa.h", "diff_x509.h",
+           "diff_x509_bounds.h", "diff_x509_chain.h", "drbg_test.c", "hsseq_test.c",
+           "hsseq_server.h"]
 
 
 def driven_ops():
@@ -82,7 +82,7 @@ def build_and_run():
                        check=True, cwd=ROOT)
         objs.append(str(obj))
     binary = OUT_DIR / "diff"
-    subprocess.run(["gcc", *flags, str(ROOT / "test" / "diff.c"), *objs,
+    subprocess.run(["gcc", *flags, str(ROOT / "test" / "diff_test.c"), *objs,
                     "-o", str(binary)], check=True, cwd=ROOT)
     spec_bin = ROOT / "spec" / ".lake" / "build" / "bin" / "diffspec"
     if not spec_bin.exists():

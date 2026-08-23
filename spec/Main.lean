@@ -1,7 +1,7 @@
 import Spec
 
 /-!
-Line-protocol dispatcher for the differential oracle (`test/diff.c`
+Line-protocol dispatcher for the differential oracle (`test/diff_test.c`
 drives it over pipes). One request per line, `op arg1 arg2 ...`; byte
 arguments are lowercase hex with `-` for the empty string, numeric
 arguments (lengths, counters, sequence numbers, content types) are

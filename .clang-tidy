@@ -12,7 +12,7 @@
 # - clang-analyzer-security.insecureAPI.DeprecatedOrUnsafeBufferHandling:
 #   recommends Annex K _s functions that glibc, macOS, and newlib never
 #   shipped; bounds live in the rbuf/wbuf layers instead.
-# - bugprone-suspicious-include: test/unit.c and proof harnesses include
+# - bugprone-suspicious-include: test/unit_test.c and proof harnesses include
 #   the .c files under test on purpose, to reach static internals.
 # - misc-include-cleaner: reasons about textual includes, not POSIX
 #   contracts; false-positives on umbrella headers.

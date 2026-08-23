@@ -21,7 +21,7 @@ New code lands with its assurance attached. By change type:
 | Change | Must land with |
 | --- | --- |
 | New parser or message handler | CBMC harness over hostile bytes at the real bound, plus negative tests that assert the reject fires and picks the right alert |
-| New crypto primitive | Lean spec module, RFC/selftest vectors in `test/unit.c`, differential entries in `test/diff.c`, CBMC harness |
+| New crypto primitive | Lean spec module, RFC/selftest vectors in `test/unit_test.c`, differential entries in `test/diff_test.c`, CBMC harness |
 | Behavior change | The RFC section cited at the code, and the same-commit three-surface update: code, Lean spec, tests |
 | Boundary change | An exact boundary test: the last valid value works, the first invalid one fails |
 | Any change | `make check` green on both PIN builds (`make check` and `make check PIN=ecdsa`) |

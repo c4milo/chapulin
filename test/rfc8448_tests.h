@@ -3,7 +3,7 @@
 // snapshots it, which single-primitive vectors cannot check. The traces
 // protect records with AES-GCM, which chapulin excludes, so the replay
 // stops at secrets and MACs and never seals a record. Included by
-// test/unit.c only, after its CHECK macro and includes.
+// test/unit_test.c only, after its CHECK macro and includes.
 //
 // RFC 8448 signs with an RSA-1024 key and rsa_pss_verify enforces a
 // 2048-bit floor, so the CertificateVerify check runs one layer down:

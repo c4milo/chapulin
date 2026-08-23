@@ -47,14 +47,14 @@ Home: github.com/c4milo.
   (bounds, pointer validity, arithmetic overflow, division) over
   unconstrained inputs at the module's real bound. Crypto primitives
   additionally prove functional equivalence to a tiny reference spec at
-  bounded sizes, plus RFC test vectors in `test/unit.c`. The README's
+  bounded sizes, plus RFC test vectors in `test/unit_test.c`. The README's
   verification section states exactly what is proved, at what bounds, and
   what is only tested — never overclaim.
 - A crypto or protocol change touches three surfaces, not one. When you
   change behavior in a C module, update in the same commit: (1) the code,
   (2) its Lean spec in `spec/` if the change alters what the spec models
   or its stated domain, and (3) the tests — unit vectors, the differential
-  driver in `test/diff.c` (keep its input domain inside what both C and
+  driver in `test/diff_test.c` (keep its input domain inside what both C and
   spec agree on), and the CBMC harness if the contract moved. A fix that
   the spec and oracle do not know about is a divergence the differential
   run cannot catch. Boundary changes get an exact boundary test (the last

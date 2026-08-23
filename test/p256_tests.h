@@ -1,6 +1,6 @@
 // The ECDSA P-256 verify vectors: one RFC 6979 key, three good
 // signatures, and the mutations and out-of-range scalars that must be
-// refused. Included by test/unit.c only, after its CHECK macro and
+// refused. Included by test/unit_test.c only, after its CHECK macro and
 // unhex helper.
 #ifndef CH_P256_TESTS_H
 #define CH_P256_TESTS_H

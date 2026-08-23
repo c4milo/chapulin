@@ -1,8 +1,8 @@
 // Host implementation of the ch_rand_bytes hook (rand.h) for test
 // binaries. Included by exactly one translation unit per binary. Firmware
 // never sees this file — it wires the hook to its TRNG.
-#ifndef CH_TESTRAND_H
-#define CH_TESTRAND_H
+#ifndef CH_TEST_RANDOM_H
+#define CH_TEST_RANDOM_H
 
 #include <stdlib.h>
 

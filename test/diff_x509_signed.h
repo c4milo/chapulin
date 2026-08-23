@@ -11,10 +11,10 @@
 // of the seed constant. Stratifying puts every family in every run
 // and leaves the randomness in the digits inside each family.
 //
-// Included by diffx509.h after diffx509rand.h, whose pass context and
+// Included by diff_x509.h after diff_x509_random.h, whose pass context and
 // row function this builds on.
-#ifndef CH_DIFFX509SIGNED_H
-#define CH_DIFFX509SIGNED_H
+#ifndef CH_DIFF_X509_SIGNED_H
+#define CH_DIFF_X509_SIGNED_H
 
 #define CERTD_MINT_VALIDITY_ROWS 52
 #define CERTD_MINT_EXTS_ROWS 24

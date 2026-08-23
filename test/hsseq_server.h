@@ -2,10 +2,10 @@
 // letter of a message sequence into one real TLS record on demand, as
 // the client's recv drains the queue. Rendering is lazy because the
 // retry flight after a HelloRetryRequest depends on the second
-// ClientHello. Included by test/hsseq_test.c only, after diffdrv.h
+// ClientHello. Included by test/hsseq_test.c only, after diff_driver.h
 // (for die) and the chapulin headers it uses.
-#ifndef CH_HSSEQSRV_H
-#define CH_HSSEQSRV_H
+#ifndef CH_HSSEQ_SERVER_H
+#define CH_HSSEQ_SERVER_H
 
 // What the server has sent so far, deciding how the next record is
 // protected: nothing yet, the handshake flight, or post-Finished.

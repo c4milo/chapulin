@@ -10,7 +10,7 @@
 // The signature crosses the pipe as raw k-octet hex (no DER: PKCS #1
 // PSS signatures are a plain octet string, unlike ECDSA). Two keys, a
 // 2048-bit and a 3072-bit modulus, alternate so both moduli are tested.
-// Included by test/diff.c after diffdrv.h (single translation unit).
+// Included by test/diff_test.c after diff_driver.h (single translation unit).
 #ifndef CH_DIFFRSA_H
 #define CH_DIFFRSA_H
 

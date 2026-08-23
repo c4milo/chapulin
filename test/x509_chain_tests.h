@@ -1,6 +1,6 @@
 // Chain (two-entry) cases for the certificate grammar suite: the
 // helpers and tests for leaf-plus-intermediate lists. Included by
-// x509strict_test.c after its vectors and helpers, the
+// x509_strict_test.c after its vectors and helpers, the
 // session_tests.h pattern; not a standalone translation unit.
 
 // Builds a two-entry list — the first argument in the leaf slot,

@@ -3,7 +3,7 @@
 // semantics) and ch_connect's config validation. This file holds the
 // mock transport every one of those tests drives; the tests themselves
 // live in session_post_tests.h and session_cfg_tests.h, included at the
-// bottom. Included by test/unit.c only, after its CHECK macro and
+// bottom. Included by test/unit_test.c only, after its CHECK macro and
 // includes.
 #ifndef CH_SESSION_TESTS_H
 #define CH_SESSION_TESTS_H

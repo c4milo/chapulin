@@ -5,8 +5,8 @@
 // cases survive vector regeneration. Test-side only — the strict
 // decoder under test shares nothing with these helpers. Any splice
 // that misses a TLV boundary is a test bug and aborts.
-#ifndef CH_CERTMUT_H
-#define CH_CERTMUT_H
+#ifndef CH_X509_MUTATE_H
+#define CH_X509_MUTATE_H
 
 #include <stdint.h>
 #include <stdio.h>

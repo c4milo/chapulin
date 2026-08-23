@@ -2,7 +2,7 @@
 // 8439 AEAD seal and open, the record layer's rec_seal, and the
 // KeyUpdate traffic-secret step. Every row runs the C module and the
 // Lean spec on the same input and compares the bytes.
-// Included by test/diff.c after diffdrv.h (single translation unit).
+// Included by test/diff_test.c after diff_driver.h (single translation unit).
 #ifndef CH_DIFFRECORD_H
 #define CH_DIFFRECORD_H
 

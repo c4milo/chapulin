@@ -2,8 +2,8 @@
 // date boundaries x509_read_time_epoch draws. ch_connect's epoch
 // gates need the whole library, so they live in session_tests.h
 // beside the other config cases. Included by
-// x509strict_test.c after its vectors and helpers, the
-// x509chain_tests.h pattern; not a standalone translation unit.
+// x509_strict_test.c after its vectors and helpers, the
+// x509_chain_tests.h pattern; not a standalone translation unit.
 
 // Runs one Time TLV through the extracting reader. Returns the
 // reader's shape verdict and reports the extraction through the two

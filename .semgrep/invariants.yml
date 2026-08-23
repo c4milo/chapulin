@@ -152,7 +152,7 @@ rules:
       is CA reissuance policy, not a device-side time check; the
       target has no clock worth trusting. Complements
       inv-2-freestanding's time.h include ban at the call level.
-      test/timing.c calls clock_gettime legitimately and sits in the
+      test/timing_test.c calls clock_gettime legitimately and sits in the
       standard excludes.
     paths:
       exclude: [test, proof, fuzz, spec, bench, bin]

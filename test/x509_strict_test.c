@@ -2,7 +2,7 @@
 // every boundary in the profile gets an exact pair — the last valid
 // encoding passes and the first invalid one fails with the alert
 // x509.h maps to it. Mutants come from the good vector by splices
-// (test/x509mut.h) that rebuild every enclosing DER length, so the
+// (test/x509_mutate.h) that rebuild every enclosing DER length, so the
 // cases survive vector regeneration without hand-patched offsets. A
 // mutant that stays inside the grammar proves it by reaching
 // signature verification (CH_EAUTH, unknown_ca) — its TBS bytes no
@@ -19,8 +19,8 @@
 #include "ch_assert.h"
 #include "hsmsg.h"
 #include "x509.h"
+#include "x509_mutate.h"
 #include "x509_vectors.h"
-#include "x509mut.h"
 
 static int failures = 0;
 #define CHECK(cond)                                                                                \
@@ -113,9 +113,9 @@ static int run_cert(const uint8_t *cert, size_t n) {
 // Mutation helpers over the good leaf, plus the accept, list,
 // two-entry chain, and SubjectPublicKeyInfo cases, split into their
 // own headers for file size.
-#include "x509chain_tests.h"
-#include "x509epoch.h"
-#include "x509spki.h"
+#include "x509_chain_tests.h"
+#include "x509_epoch.h"
+#include "x509_spki.h"
 
 static void test_outer_and_serial(void) {
     tlv_shape outer;

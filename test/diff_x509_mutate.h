@@ -5,9 +5,9 @@
 // entries, keyUsage named-bit breaks, the extension size and count
 // bounds), and sends one verdict row per mutant. Every mutant must be
 // rejected on both sides, whichever check catches it first. The TLV
-// carving comes from x509mut.h. Included by diffx509.h after
-// certd_wrap and certd_row, and before diffx509rand.h, which walks
-// the same spine; test/diff.c is the one translation unit.
+// carving comes from x509_mutate.h. Included by diff_x509.h after
+// certd_wrap and certd_row, and before diff_x509_random.h, which walks
+// the same spine; test/diff_test.c is the one translation unit.
 #ifndef CH_DIFFX509MUTATE_H
 #define CH_DIFFX509MUTATE_H
 

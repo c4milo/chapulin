@@ -12,17 +12,17 @@
 
 #include "ch_assert.h"
 #include "rand.h"
-#include "testrand.h"
+#include "test_random.h"
 
 // Driver plumbing (PRNG, hex, spec pipe) and every primitive's section
 // live in sibling headers of this, the only translation unit.
-#include "diffdrv.h"
-#include "diffhash.h"
-#include "diffp256.h"
-#include "diffrecord.h"
-#include "diffrsa.h"
-#include "diffx25519.h"
-#include "diffx509.h"
+#include "diff_driver.h"
+#include "diff_hash.h"
+#include "diff_p256.h"
+#include "diff_record.h"
+#include "diff_rsa.h"
+#include "diff_x25519.h"
+#include "diff_x509.h"
 
 noreturn void ch_assert_fail(const char *cond, const char *file, int line) {
     (void)fprintf(stderr, "ASSERT %s:%d: %s\n", file, line, cond);

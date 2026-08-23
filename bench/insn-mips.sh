@@ -150,7 +150,7 @@ EOF
 
 hexc() { printf '%s' "$1" | sed 's/../0x&,/g'; }
 
-# The same vectors test/unit.c and test/rsa_test.c check, so a wrong
+# The same vectors test/unit_test.c and test/rsa_test.c check, so a wrong
 # freestanding build fails loudly instead of producing counts for garbage.
 cat > "$W/vectors.h" <<EOF
 // RFC 7748 §5.2 x25519 vector 1; RFC 6979 A.2.5 P-256 key with its

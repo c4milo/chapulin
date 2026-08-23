@@ -26,20 +26,20 @@ SRCS := ct.c sha256.c hkdf.c chacha20.c poly1305.c aead.c x25519.c p256.c rsa.c 
 HDRS := ct.h sha256.h hkdf.h chacha20.h poly1305.h aead.h x25519.h p256.h rsa.h ch_assert.h \
         x509.h buf.h record.h keysched.h io.h hsmsg.h hsparse.h hspump.h cfg.h session.h handshake.h \
         tls.h rand.h drbg.h
-LINT_C := $(SRCS) drbg.c test/unit.c test/tlsclient.c test/diff.c test/timing.c \
+LINT_C := $(SRCS) drbg.c test/unit_test.c test/tls_client.c test/diff_test.c test/timing_test.c \
           test/drbg_test.c test/rsa_test.c test/hsstrict_test.c test/hsseq_test.c \
-          test/x509strict_test.c
+          test/x509_strict_test.c
 
 # Test-local headers: prerequisites for every binary that includes them,
 # so a header edit rebuilds the binaries it changes.
-TESTH := test/testrand.h test/session_tests.h test/session_post_tests.h \
-         test/session_cfg_tests.h test/p256_tests.h test/diffdrv.h test/diffhash.h \
-         test/diffp256.h test/diffrecord.h test/diffrsa.h test/diffx25519.h \
-         test/hsseqsrv.h test/rfc8448_vectors.h test/rfc8448_tests.h \
-         test/x509_vectors.h test/x509mut.h test/x509chain_tests.h test/x509epoch.h \
-         test/x509spki.h test/diffx509.h test/diffx509bounds.h test/diffx509chain.h \
-         test/diffx509epoch.h test/diffx509mutate.h test/diffx509rand.h \
-         test/diffx509signed.h
+TESTH := test/test_random.h test/session_tests.h test/session_post_tests.h \
+         test/session_cfg_tests.h test/p256_tests.h test/diff_driver.h test/diff_hash.h \
+         test/diff_p256.h test/diff_record.h test/diff_rsa.h test/diff_x25519.h \
+         test/hsseq_server.h test/rfc8448_vectors.h test/rfc8448_tests.h \
+         test/x509_vectors.h test/x509_mutate.h test/x509_chain_tests.h test/x509_epoch.h \
+         test/x509_spki.h test/diff_x509.h test/diff_x509_bounds.h test/diff_x509_chain.h \
+         test/diff_x509_epoch.h test/diff_x509_mutate.h test/diff_x509_random.h \
+         test/diff_x509_signed.h
 
 # Pinned mode verifies one signature algorithm per build: PIN=rsa
 # (default, RSA-PSS up to 3072 bits) or PIN=ecdsa (P-256, -DCH_PIN_ECDSA).
@@ -143,7 +143,7 @@ bin/hsstrict_test: test/hsstrict_test.c hsparse.c buf.c $(HDRS) $(TESTH)
 
 # Certificate grammar strictness: one binary per PIN, because the
 # profile's grammar is the build's grammar.
-X509STRICT_SRC := test/x509strict_test.c x509.c x509_der.c buf.c sha256.c ct.c
+X509STRICT_SRC := test/x509_strict_test.c x509.c x509_der.c buf.c sha256.c ct.c
 bin/x509strict: $(X509STRICT_SRC) rsa.c rsa_mont.c $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) -I. -o $@ $(X509STRICT_SRC) rsa.c rsa_mont.c
@@ -160,39 +160,39 @@ bin/hsseq_test: test/hsseq_test.c $(SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) -I. -o $@ test/hsseq_test.c $(filter-out p256.c rsa.c rsa_mont.c,$(SRCS))
 
-bin/unit: test/unit.c $(SRCS) $(HDRS) $(TESTH)
+bin/unit: test/unit_test.c $(SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -I. -o $@ test/unit.c $(SRCS)
+	$(CC) $(CFLAGS) -I. -o $@ test/unit_test.c $(SRCS)
 
 # The CA-build unit: the #ifdef CH_TRUST_CA test arms (floor
 # derivation, CA slot validation) only execute here.
-bin/unit_ca: test/unit.c $(SRCS) $(HDRS) $(TESTH)
+bin/unit_ca: test/unit_test.c $(SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -DCH_TRUST_CA -I. -o $@ test/unit.c $(SRCS)
+	$(CC) $(CFLAGS) -DCH_TRUST_CA -I. -o $@ test/unit_test.c $(SRCS)
 
-bin/tlsclient: test/tlsclient.c $(SRCS) $(HDRS) $(TESTH)
+bin/tlsclient: test/tls_client.c $(SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -I. -o $@ test/tlsclient.c $(SRCS)
+	$(CC) $(CFLAGS) -I. -o $@ test/tls_client.c $(SRCS)
 
 # The same client compiled for the P-256 pinned mode; e2e runs both
 # builds against matching servers.
-bin/tlsclient_ecdsa: test/tlsclient.c $(SRCS) $(HDRS) $(TESTH)
+bin/tlsclient_ecdsa: test/tls_client.c $(SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -DCH_PIN_ECDSA -I. -o $@ test/tlsclient.c $(SRCS)
+	$(CC) $(CFLAGS) -DCH_PIN_ECDSA -I. -o $@ test/tls_client.c $(SRCS)
 
 # The CA-trust clients: the same main under -DCH_TRUST_CA, one per PIN,
 # so e2e proves certificate verification against real issued chains.
-bin/tlsclient_ca: test/tlsclient.c $(SRCS) $(HDRS) $(TESTH)
+bin/tlsclient_ca: test/tls_client.c $(SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -DCH_TRUST_CA -I. -o $@ test/tlsclient.c $(SRCS)
+	$(CC) $(CFLAGS) -DCH_TRUST_CA -I. -o $@ test/tls_client.c $(SRCS)
 
-bin/tlsclient_ca_ecdsa: test/tlsclient.c $(SRCS) $(HDRS) $(TESTH)
+bin/tlsclient_ca_ecdsa: test/tls_client.c $(SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -DCH_TRUST_CA -DCH_PIN_ECDSA -I. -o $@ test/tlsclient.c $(SRCS)
+	$(CC) $(CFLAGS) -DCH_TRUST_CA -DCH_PIN_ECDSA -I. -o $@ test/tls_client.c $(SRCS)
 
-bin/diff: test/diff.c $(SRCS) $(HDRS) $(TESTH)
+bin/diff: test/diff_test.c $(SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -I. -o $@ test/diff.c $(SRCS)
+	$(CC) $(CFLAGS) -I. -o $@ test/diff_test.c $(SRCS)
 
 .PHONY: check lint lint-tidy lint-format lint-cppcheck lint-docs lint-invariants lint-spec prove diff fmt clean
 check: bin/unit bin/unit_ca bin/tlsclient bin/tlsclient_ecdsa bin/tlsclient_ca bin/tlsclient_ca_ecdsa bin/drbg_test bin/rsa_test bin/hsstrict_test bin/x509strict bin/x509strict_ecdsa bin/hsseq_test lint lib-check cxx-check
@@ -221,12 +221,12 @@ ifeq ($(LAKE),)
 else
 	cd spec && $(LAKE) build
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -DCH_PIN_ECDSA -I. -o bin/diff_ecdsa test/diff.c $(SRCS)
+	$(CC) $(CFLAGS) -DCH_PIN_ECDSA -I. -o bin/diff_ecdsa test/diff_test.c $(SRCS)
 	./bin/diff_ecdsa
 endif
 
 # Differential oracle: the Lean spec in spec/ answers over a pipe and
-# test/diff.c compares every C module against it on random inputs.
+# test/diff_test.c compares every C module against it on random inputs.
 diff:
 ifeq ($(LAKE),)
 	$(call REQUIRE_ON_CI,lake)
@@ -293,12 +293,12 @@ else
 	  def=""; [ $$pin = ecdsa ] && def=-DCH_PIN_ECDSA; \
 	  d=bin/cov/$$pin; mkdir -p $$d; \
 	  for f in $(SRCS) drbg.c; do $(COV_CC) -c $$f -o $$d/$${f%.c}.o; done; \
-	  $(COV_CC) test/unit.c $(COV_LIB_OBJS) -o $$d/unit; \
+	  $(COV_CC) test/unit_test.c $(COV_LIB_OBJS) -o $$d/unit; \
 	  $(COV_CC) test/drbg_test.c $$d/drbg.o $$d/chacha20.o $$d/ct.o -o $$d/drbg_test; \
 	  $(COV_CC) test/rsa_test.c $$d/rsa.o $$d/rsa_mont.o $$d/sha256.o $$d/ct.o -o $$d/rsa_test; \
 	  $(COV_CC) test/hsstrict_test.c $$d/hsparse.o $$d/buf.o -o $$d/hsstrict_test; \
 	  verifier="$$d/rsa.o $$d/rsa_mont.o"; if [ $$pin = ecdsa ]; then verifier=$$d/p256.o; fi; \
-	  $(COV_CC) $$def test/x509strict_test.c $$d/x509.o $$d/x509_der.o $$d/buf.o $$d/sha256.o \
+	  $(COV_CC) $$def test/x509_strict_test.c $$d/x509.o $$d/x509_der.o $$d/buf.o $$d/sha256.o \
 	    $$d/ct.o $$verifier -o $$d/x509strict_test; \
 	  $(COV_CC) test/hsseq_test.c \
 	    $(filter-out $$d/p256.o $$d/rsa.o $$d/rsa_mont.o,$(COV_LIB_OBJS)) -o $$d/hsseq_test; \
@@ -372,7 +372,7 @@ SAN_CFLAGS = $(filter-out -O2,$(CFLAGS)) -O$(O) -g \
 san-check:
 	@rm -rf bin/san && mkdir -p bin/san
 	@echo "san-check at -O$(O) with $$($(CC) --version | head -1)"
-	$(CC) $(SAN_CFLAGS) -I. -o bin/san/unit test/unit.c $(SRCS)
+	$(CC) $(SAN_CFLAGS) -I. -o bin/san/unit test/unit_test.c $(SRCS)
 	$(CC) $(SAN_CFLAGS) -I. -o bin/san/drbg_test test/drbg_test.c drbg.c chacha20.c ct.c
 	$(CC) $(SAN_CFLAGS) -I. -o bin/san/rsa_test test/rsa_test.c rsa.c rsa_mont.c sha256.c ct.c
 	$(CC) $(SAN_CFLAGS) -I. -o bin/san/hsstrict_test test/hsstrict_test.c hsparse.c buf.c
@@ -421,7 +421,7 @@ CROSS_EXTRA ?= # extra flags for the cross lane (nightly adds UBSan here)
 cross-check:
 	@[ -n "$(CROSS)" ] || { echo "cross-check: set CROSS=<toolchain-prefix> (and RUNNER=<emulator>)"; exit 1; }
 	@mkdir -p bin/cross
-	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) -static -I. -o bin/cross/unit test/unit.c $(SRCS)
+	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) -static -I. -o bin/cross/unit test/unit_test.c $(SRCS)
 	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) -static -I. -o bin/cross/drbg_test test/drbg_test.c drbg.c chacha20.c ct.c
 	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) -static -I. -o bin/cross/rsa_test test/rsa_test.c rsa.c rsa_mont.c sha256.c ct.c
 	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) -static -I. -o bin/cross/hsstrict_test test/hsstrict_test.c hsparse.c buf.c
@@ -630,9 +630,9 @@ ifneq ($(CLANG_FORMAT),)
 	$(CLANG_FORMAT) -i $(LINT_C) $(HDRS) $(PROOF_C) $(FUZZ_C) $(TESTH)
 endif
 
-bin/timing: test/timing.c $(SRCS) $(HDRS) $(TESTH)
+bin/timing: test/timing_test.c $(SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -I. -o $@ test/timing.c $(SRCS)
+	$(CC) $(CFLAGS) -I. -o $@ test/timing_test.c $(SRCS)
 
 # Constant-time check (Welch's t over interleaved input classes). Load-
 # sensitive, so it is not part of check; run it on an otherwise idle box.

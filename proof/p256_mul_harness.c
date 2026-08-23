@@ -5,7 +5,7 @@
 // one bit, so the overflow word t[LIMBS+1] only ever holds 0 or 1.
 // mont_mul's memory safety (concrete index walk) is p256_harness.c. The
 // final single conditional subtract (t < 2m at loop exit) is a functional
-// CIOS invariant resting on the RFC 6979 vectors in test/unit.c — same
+// CIOS invariant resting on the RFC 6979 vectors in test/unit_test.c — same
 // standing as x25519's open limb-growth invariant.
 #include "harness.h"
 

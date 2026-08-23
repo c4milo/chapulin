@@ -17,7 +17,7 @@
 #include "rand.h"
 #include "record.h"
 #include "sha256.h"
-#include "testrand.h"
+#include "test_random.h"
 #include "tls.h"
 #include "x25519.h"
 

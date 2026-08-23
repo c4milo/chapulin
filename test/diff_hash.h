@@ -2,7 +2,7 @@
 // HKDF extract and expand, the TLS 1.3 expand_label encoding, and the
 // key schedule the handshake composes from them. Every row runs the C
 // module and the Lean spec on the same input and compares the bytes.
-// Included by test/diff.c after diffdrv.h (single translation unit).
+// Included by test/diff_test.c after diff_driver.h (single translation unit).
 #ifndef CH_DIFFHASH_H
 #define CH_DIFFHASH_H
 

@@ -5,7 +5,7 @@
 // unless both agree on the whole curve. The C side never signs.
 //
 // r/s cross the pipe as raw 32-byte hex; the DER wrapping the C API
-// consumes is built here. Included by test/diff.c after diffdrv.h
+// consumes is built here. Included by test/diff_test.c after diff_driver.h
 // (single translation unit). Until the C p256 lands, the section still
 // exercises the spec ops against themselves.
 #ifndef CH_DIFFP256_H

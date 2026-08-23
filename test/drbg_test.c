@@ -10,7 +10,7 @@
 
 #include "ch_assert.h"
 #include "chacha20.h"
-#include "diffdrv.h"
+#include "diff_driver.h"
 #include "drbg.h"
 #include "rand.h"
 

@@ -6,7 +6,7 @@
 // third entry, four off-profile intermediates each genuinely
 // CA-signed so the profile check alone rejects them, a leaf the pin
 // signed instead of the intermediate, and truncations. Included by
-// diffx509.h only, after certd_row and certd_mint; test/diff.c is
+// diff_x509.h only, after certd_row and certd_mint; test/diff_test.c is
 // the one translation unit.
 #ifndef CH_DIFFX509CHAIN_H
 #define CH_DIFFX509CHAIN_H
@@ -34,7 +34,7 @@ static void certd_list_mutants(const char *alg, const char *ca_hex, const uint8_
 
 // P-256 intermediate: its own private scalar (the chain's middle
 // signer; its point becomes the intermediate's SPKI) and signing
-// nonce. The RSA chain reuses the diffrsa.h 3072-bit key as the
+// nonce. The RSA chain reuses the diff_rsa.h 3072-bit key as the
 // intermediate and the 2048-bit key as the CA.
 static const char *const certd_p256_int_d_hex =
     "2e9f0c2b1d4a68355c7e01f2a9b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5";

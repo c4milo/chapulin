@@ -1,7 +1,7 @@
 // x25519 differential section: the scalar multiplication of a random
 // point and of the base point. Both rows run the C module and the Lean
 // spec on the same scalar and compare the 32 output bytes.
-// Included by test/diff.c after diffdrv.h (single translation unit).
+// Included by test/diff_test.c after diff_driver.h (single translation unit).
 #ifndef CH_DIFFX25519_H
 #define CH_DIFFX25519_H
 

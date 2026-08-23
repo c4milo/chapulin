@@ -15,7 +15,7 @@
 #include "ct.h"
 #include "poly1305.h"
 #include "rand.h"
-#include "testrand.h"
+#include "test_random.h"
 #include "x25519.h"
 
 // Per-class sample counts. Inner repeat loops amplify a one-byte early

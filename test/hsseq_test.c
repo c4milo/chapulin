@@ -28,14 +28,14 @@
 
 #include "buf.h"
 #include "ch_assert.h"
-#include "diffdrv.h"
+#include "diff_driver.h"
 #include "hsmsg.h"
 #include "hsparse.h"
 #include "keysched.h"
 #include "p256.h"
 #include "record.h"
 #include "rsa.h"
-#include "testrand.h"
+#include "test_random.h"
 #include "tls.h"
 #include "x25519.h"
 
@@ -101,7 +101,7 @@ int p256_ecdsa_verify(const uint8_t pub[64], const uint8_t msg_hash[32], const u
 #define HSSEQ_RXBUF 1024
 #endif
 
-#include "hsseqsrv.h"
+#include "hsseq_server.h"
 
 // Why the client rejected, for the divergence report: transport
 // exhaustion (the sequence ended before the client was satisfied) is a

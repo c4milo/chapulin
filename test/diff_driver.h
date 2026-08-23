@@ -1,8 +1,8 @@
 // Plumbing for the differential oracle driver: deterministic PRNG, hex
 // codecs, and the pipe protocol to the Lean spec process. Included by
-// test/diff.c only (single translation unit, like testrand.h).
-#ifndef CH_DIFFDRV_H
-#define CH_DIFFDRV_H
+// test/diff_test.c only (single translation unit, like test_random.h).
+#ifndef CH_DIFF_DRIVER_H
+#define CH_DIFF_DRIVER_H
 
 #include <stdint.h>
 #include <stdio.h>

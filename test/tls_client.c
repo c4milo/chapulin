@@ -13,7 +13,7 @@
 
 #include "ch_assert.h"
 #include "rand.h"
-#include "testrand.h"
+#include "test_random.h"
 #include "tls.h"
 
 noreturn void ch_assert_fail(const char *cond, const char *file, int line) {

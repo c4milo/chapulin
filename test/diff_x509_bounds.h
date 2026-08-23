@@ -1,7 +1,7 @@
 // Boundary and cap rows for the certificate differential: the exact
 // last-valid/first-invalid pairs for serials, extension sizes and
 // counts, and the per-algorithm certificate cap, each freshly signed
-// by the spec. Included by diffx509.h after the mint helpers, the
+// by the spec. Included by diff_x509.h after the mint helpers, the
 // session_tests.h pattern; not a standalone translation unit.
 
 // Accept-side boundary pairs, each freshly signed by the spec: the

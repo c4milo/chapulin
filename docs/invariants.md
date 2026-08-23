@@ -149,7 +149,7 @@ which convention holds them.
   (`inv-20-no-time-calls`): calls to `time`, `clock_gettime`,
   `gettimeofday`, `localtime`, or `gmtime` in library sources,
   complementing `inv-2-freestanding`'s time.h include ban at the
-  call level; test/timing.c calls `clock_gettime` legitimately and
+  call level; test/timing_test.c calls `clock_gettime` legitimately and
   sits in the standard excludes.
 - **Violation.** A PR compares an epoch date against a device clock
   the firmware cannot trust — the epoch is an ordering, not a time —

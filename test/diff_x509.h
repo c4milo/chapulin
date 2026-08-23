@@ -11,13 +11,13 @@
 // character "-" otherwise. This file holds the fixed mint material,
 // the mint and verdict-row helpers every row family shares, and the
 // per-algorithm pass that calls them. The families live in siblings:
-// diffx509mutate.h carries the mutation classes, diffx509epoch.h the
-// epoch boundary rows, and diffx509chain.h the two-entry chain rows.
-// The RSA CA and leaf keys come from diffrsa.h and the TLV carving
-// from x509mut.h, so include this after diffdrv.h and diffrsa.h;
-// test/diff.c is the one translation unit.
-#ifndef CH_DIFFCERT_H
-#define CH_DIFFCERT_H
+// diff_x509_mutate.h carries the mutation classes, diff_x509_epoch.h the
+// epoch boundary rows, and diff_x509_chain.h the two-entry chain rows.
+// The RSA CA and leaf keys come from diff_rsa.h and the TLV carving
+// from x509_mutate.h, so include this after diff_driver.h and diff_rsa.h;
+// test/diff_test.c is the one translation unit.
+#ifndef CH_DIFF_X509_H
+#define CH_DIFF_X509_H
 
 #ifdef __has_include
 #if __has_include("x509.h")
@@ -25,7 +25,7 @@
 #include "hsmsg.h"
 #include "x509.h"
 
-#include "x509mut.h"
+#include "x509_mutate.h"
 #define DIFF_HAVE_CERT 1
 #endif
 #endif
@@ -206,12 +206,12 @@ static size_t certd_mint(const char *alg, const char *serial_hex, const char *su
                             list);
 }
 
-#include "diffx509bounds.h"
-#include "diffx509chain.h"
-#include "diffx509epoch.h"
-#include "diffx509mutate.h"
-#include "diffx509rand.h"
-#include "diffx509signed.h"
+#include "diff_x509_bounds.h"
+#include "diff_x509_chain.h"
+#include "diff_x509_epoch.h"
+#include "diff_x509_mutate.h"
+#include "diff_x509_random.h"
+#include "diff_x509_signed.h"
 
 // One algorithm's pass: mint, accept, mutate, and the wrong-CA and
 // missing-EKU rejects. wrong_ca_hex must be a well-formed key of the
