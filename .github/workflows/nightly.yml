@@ -16,7 +16,7 @@ permissions:
   contents: read
 
 jobs:
-  # The five SAT heavyweights, hours on a cold cache — one job each, so
+  # The seven SAT heavyweights, hours on a cold cache — one job each, so
   # a proof that never converges starves only its own leg. The cache
   # save runs even on failure or timeout, so interrupted runs converge
   # across nights instead of starting over.

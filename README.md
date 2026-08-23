@@ -59,13 +59,13 @@ shrinks the pointer fields.
 
 | what | bytes |
 |---|---|
-| `ch_tls` session struct (includes 534 B TX staging) | 1008 |
+| `ch_tls` session struct (includes 534 B TX staging) | 1056 |
 | receive buffer you provide (2048 shown; floor `CH_MIN_RXBUF`) | 2048 |
-| **total static working set** | **3056** |
+| **total static working set** | **3104** |
 | peak stack, `ch_connect` (RSA-3072 verify) | 5168 |
 | peak stack, `ch_connect` (`PIN=ecdsa`) | 3648 |
-| peak stack, `ch_connect` (PSK) | 2608 |
-| peak stack, `ch_connect` (`TRUST=ca`, RSA / ECDSA) | 5744 / 3904 |
+| peak stack, `ch_connect` (PSK) | 2592 |
+| peak stack, `ch_connect` (`TRUST=ca`, RSA / ECDSA) | 5760 / 3952 |
 | peak stack, `ch_read` (worst case: KeyUpdate rekey) | 1632 |
 | peak stack, `ch_write` / `ch_close` | 736 / 688 |
 
@@ -125,14 +125,18 @@ would change that trade.
 
 Four layers cover four different failure classes.
 
-**Proofs cover memory safety.** Every module carries a
-[CBMC](https://www.cprover.org/cbmc/) harness proving it free of out-of-bounds access, invalid
-pointers, signed overflow, bad shifts, and division by zero — for every
-input within the harness's bound. Where a bound equals the module's
-real maximum, the proof covers all inputs.
+**Proofs cover memory safety.** Twenty of the twenty-three library
+sources are compiled into a [CBMC](https://www.cprover.org/cbmc/) harness, which proves them free of
+out-of-bounds access, invalid pointers, bad shifts, and division by
+zero, for every input within the harness's bound. Signed overflow is
+checked too, except in the one harness that turns it off (see the
+x25519 row). `hsmsg.c`, `io.c`, and `keysched.c` have no harness.
+`make check` regenerates the source-by-source table in
+`bin/proof-coverage.md`. Where a bound equals the module's real
+maximum, the proof covers all inputs.
 
 The proofs run in two tiers. `make check` runs the fast tier and gates
-every push. `make prove-slow` runs the five long ones, which CI runs
+every push. `make prove-slow` runs the seven long ones, which CI runs
 nightly. A slow-tier row below carries the verdict of the last nightly
 leg that finished, not of the current commit. A harness that starts and
 returns no verdict proves nothing, and this table cannot tell that
@@ -144,11 +148,11 @@ apart from one that passed — so for the slow rows, read the nightly.
 | buf | any 12-operation reader/writer run stays safe; length never exceeds capacity | buffers ≤ 64 B |
 | sha256 | safe for any two-chunk split | messages ≤ 96 B |
 | hkdf (two harnesses) | hmac/extract and expand/expand-label safe over the proven sha256 contract | keys ≤ 96 B; output ≤ 96 B, expand: slow tier |
-| handshake | the driver stays safe on any record stream: pump, reassembly, HRR restart, state machine, both modes | 96 B receive buffer, slow tier |
+| handshake | the driver stays safe on any record stream: pump, reassembly, HRR restart, state machine, in PSK and pinned-key mode. The `TRUST=ca` driver has a harness but no launch line, so it is unproven | 96 B receive buffer, slow tier |
 | chacha20 | safe at any counter, including in place | ≤ 160 B |
 | poly1305 | safe for any three-chunk split; 64-bit products stay in range | messages ≤ 80 B |
 | aead (three harnesses) | seal/open round-trips; a forged tag writes zero bytes; backward-overlap decrypt works | plaintext ≤ 64 B, aad ≤ 32 B, slow tier |
-| x25519 | field operations are memory-safe (slow tier); a separate lemma proves the int64 arithmetic cannot overflow (fast tier) | limbs ≤ 2^24 |
+| x25519 | field operations are memory-safe, with the signed-overflow class turned off (slow tier); a separate lemma proves mul's int64 accumulation and fold cannot overflow (fast tier). Nothing proves signed overflow in carry, add, sub or pack | limbs ≤ 2^24 |
 | p256 | the DER parser and limb marshalling stay safe on hostile signatures; a carry lemma covers the Montgomery multiply | signatures ≤ 80 B |
 | rsa (two harnesses) | the PSS decode and limb marshalling stay safe with the RSAVP1 result replaced by arbitrary bytes | 384 B modulus, every byte hostile |
 | record | seal works across its contract; rec_open stays safe on fully hostile bytes | records ≤ 160 B |
@@ -171,11 +175,35 @@ secrets and MACs and never opens a record.
 
 **A Lean spec covers what the code computes.** See below.
 
-**These rest on tests, not proofs:** x25519 functional correctness
-(the [RFC 7748](https://www.rfc-editor.org/rfc/rfc7748) vectors, including the 1,000-iteration chain);
-constant-time behavior, which `make timing` checks statistically with a
-Welch's t-test — evidence, not proof. P-256 and RSA verification are
-variable-time on purpose, because all of their inputs are public.
+**These rest on tests, not proofs:**
+
+- x25519 and P-256 and RSA functional correctness. Each rests on
+  published vectors ([RFC 7748](https://www.rfc-editor.org/rfc/rfc7748) including the 1,000-iteration chain,
+  [RFC 6979](https://www.rfc-editor.org/rfc/rfc6979), OpenSSL-produced PSS at 2048 and 3072 bits) plus fresh
+  signatures the Lean spec mints and the C must accept. CBMC proves
+  the pieces; it does not run a scalar multiplication or a 3072-bit
+  exponentiation whole. For x25519 the limb-growth invariant, which
+  connects multiply outputs to add/sub inputs, is still an open proof
+  task.
+- The connected-phase driver. The post-handshake parser is proven on
+  hostile bytes, but the `ch_read` / `ch_write` / `ch_close` loop
+  around it — the record pump and cross-record reassembly — does not
+  converge as one CBMC formula. It rests on end-to-end runs, the
+  mock-transport unit tests, and the fuzzer.
+- Constant-time behavior. It comes from construction: no branch and no
+  memory index depends on a secret, and the stack avoids AES because of
+  its lookup tables. `make timing` checks this with a Welch's t-test,
+  which is evidence, not proof. P-256 and RSA verification are
+  variable-time on purpose, since all of their inputs are public.
+
+Three more suites run on every push and add evidence rather than
+proof. [Wycheproof](https://github.com/C2SP/wycheproof)'s attack-derived cases (`make wycheproof`, about 1,600
+across x25519, ChaCha20-Poly1305, HKDF-SHA256, P-256 and RSA-PSS).
+AddressSanitizer and UndefinedBehaviorSanitizer over every
+deterministic suite (`make san-check`), with a committed canary proving
+the sanitizer is armed. And the same suites on big-endian mips32r2
+under qemu (`make cross-check`), so the deployment ISA checks the
+byte-exact vectors too. Line coverage is measured and gated in CI.
 
 ## The differential oracle
 
@@ -263,7 +291,7 @@ Other targets:
   (`bin/chapulin.o`) exporting exactly the four public calls. Every
   internal symbol is localized, and `lib-check` fails if the export
   list ever grows. Compose with `PIN=ecdsa` and `TRUST=ca`.
-- `make prove-slow` runs the five long proofs. The runner caches by
+- `make prove-slow` runs the seven long proofs. The runner caches by
   content, so an incremental run re-proves only what changed
   (`PROVE_NO_CACHE=1` forces a full run). It uses [kissat](https://github.com/arminbiere/kissat) when
   installed, which reaches the same verdicts faster;
