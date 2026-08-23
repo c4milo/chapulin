@@ -7,31 +7,10 @@
 // Layered proof: sha256 is replaced by stubs asserting the contract its
 // own proof established (valid context, readable input, writable output)
 // and havocing results, so nothing here depends on hash values.
+#define CH_PROOF_STUB_SHA256
 #include "harness.h"
 
 #include "sha256.h"
-
-void sha256_init(sha256 *s) {
-    __CPROVER_assert(__CPROVER_w_ok(s, sizeof *s), "init: ctx writable");
-    fill_nondet((uint8_t *)s, sizeof *s);
-}
-
-void sha256_update(sha256 *s, const uint8_t *in, size_t n) {
-    __CPROVER_assert(__CPROVER_w_ok(s, sizeof *s), "update: ctx writable");
-    __CPROVER_assert(n == 0 || __CPROVER_r_ok(in, n), "update: input readable");
-}
-
-void sha256_final(sha256 *s, uint8_t out[SHA256_LEN]) {
-    __CPROVER_assert(__CPROVER_w_ok(s, sizeof *s), "final: ctx writable");
-    __CPROVER_assert(__CPROVER_w_ok(out, SHA256_LEN), "final: output writable");
-    fill_nondet(out, SHA256_LEN);
-}
-
-void sha256_of(const uint8_t *in, size_t n, uint8_t out[SHA256_LEN]) {
-    __CPROVER_assert(n == 0 || __CPROVER_r_ok(in, n), "of: input readable");
-    __CPROVER_assert(__CPROVER_w_ok(out, SHA256_LEN), "of: output writable");
-    fill_nondet(out, SHA256_LEN);
-}
 
 #include "hkdf.c"
 

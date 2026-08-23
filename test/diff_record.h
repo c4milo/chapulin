@@ -231,6 +231,78 @@ static void diff_rec_seal(void) {
 // The KeyUpdate secret derivation (RFC 9846 §7.2). No third-party vector
 // exists (RFC 8448 has no KeyUpdate) and e2e never triggers one, so this
 // row is the derivation's only independent check.
+// Deprotection, the direction the spec models as of Record.open?. Two
+// families: a record this build sealed, which must open to the same
+// plaintext and content type on both sides, and a record with one bit
+// flipped, which must be refused on both. The C answers first and the
+// spec must reproduce it, so a divergence in either direction shows.
+static void diff_rec_open(void) {
+    for (int i = 0; i < 200; i++) {
+        uint8_t secret[SHA256_LEN];
+        rng_fill(secret, sizeof secret);
+        uint8_t pt[200];
+        size_t n = rng_below(201);
+        rng_fill(pt, n);
+        // rec_open reads the content type off the end of the inner
+        // plaintext after stripping zero padding (RFC 9846 §5.4), so a
+        // zero type is not recoverable and stays out of the domain.
+        uint8_t type = (uint8_t)(1 + rng_below(255));
+        uint64_t seq = rng_next();
+        if (seq >= UINT64_MAX - 1) {
+            seq = UINT64_MAX - 2;
+        }
+        rec_dir writer;
+        rec_dir_init(&writer, secret);
+        writer.seq = seq;
+        uint8_t rec[200 + REC_OVERHEAD];
+        size_t record_len = 0;
+        if (rec_seal(&writer, type, pt, n, rec, sizeof rec, &record_len) != 0) {
+            die("rec_seal refused a sized buffer");
+        }
+        // One row in three flips a bit, so both sides must refuse.
+        int tampered = rng_below(3) == 0;
+        if (tampered) {
+            size_t at = rng_below(record_len);
+            rec[at] ^= (uint8_t)(1U << rng_below(8));
+        }
+
+        // One row in four reads at a different sequence number, which is a
+        // different nonce (RFC 9846 §5.3) and so a different tag. Both
+        // sides must refuse, and neither may be fooled into agreeing.
+        uint64_t read_seq = seq;
+        if (!tampered && rng_below(4) == 0) {
+            read_seq = seq ^ (1 + (rng_next() & 0xffff));
+            if (read_seq >= UINT64_MAX - 1) {
+                read_seq = seq;
+            }
+        }
+        rec_dir reader;
+        rec_dir_init(&reader, secret);
+        reader.seq = read_seq;
+        uint8_t got[200 + 1];
+        size_t got_len = 0;
+        uint8_t got_type = 0;
+        int rc = rec_open(&reader, rec, record_len, got, sizeof got, &got_len, &got_type);
+
+        char secret_hex[65];
+        (void)hex_encode(secret_hex, secret, sizeof secret);
+        char rec_hex[2 * (200 + REC_OVERHEAD) + 1];
+        (void)hex_encode(rec_hex, rec, record_len);
+        char want[2 * (200 + 1) + 32];
+        if (rc != 0) {
+            (void)snprintf(want, sizeof want, "ERR rec_open reject");
+        } else {
+            char got_hex[2 * (200 + 1) + 1];
+            (void)hex_encode(got_hex, got, got_len);
+            (void)snprintf(want, sizeof want, "ok %u %s", (unsigned)got_type, got_hex);
+        }
+        char cmd[2 * (200 + REC_OVERHEAD) + 256];
+        (void)snprintf(cmd, sizeof cmd, "rec_open %s %llu %s", secret_hex,
+                       (unsigned long long)read_seq, rec_hex);
+        expect(cmd, want);
+    }
+}
+
 static void diff_traffic_update(void) {
     for (int i = 0; i < 50; i++) {
         uint8_t secret[SHA256_LEN];

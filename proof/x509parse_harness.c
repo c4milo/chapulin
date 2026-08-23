@@ -35,6 +35,7 @@
 // The CA-key domain is a superset of what ch_connect admits (the RSA
 // stub never needs the odd-modulus bit), so nothing here rests on
 // ch_connect's validation.
+#define CH_PROOF_STUB_SHA256
 #include "harness.h"
 
 #include "buf.h"
@@ -215,20 +216,6 @@ size_t x509_emit_header(uint8_t tag, size_t len, uint8_t out[4]) {
 
 // sha256 stubs: assert the contract the real code relies on, havoc the
 // digest; the walker's memory shape never depends on a digest value.
-void sha256_init(sha256 *s) {
-    __CPROVER_assert(__CPROVER_w_ok(s, sizeof *s), "sha: ctx writable");
-}
-
-void sha256_update(sha256 *s, const uint8_t *in, size_t n) {
-    __CPROVER_assert(__CPROVER_w_ok(s, sizeof *s), "sha: ctx writable");
-    __CPROVER_assert(n == 0 || __CPROVER_r_ok(in, n), "sha: input readable");
-}
-
-void sha256_final(sha256 *s, uint8_t out[SHA256_LEN]) {
-    __CPROVER_assert(__CPROVER_w_ok(s, sizeof *s), "sha: ctx writable");
-    __CPROVER_assert(__CPROVER_w_ok(out, SHA256_LEN), "sha: out writable");
-    fill_nondet(out, SHA256_LEN);
-}
 
 // The build's signature verifier: the walker only routes pointers into
 // it, so the stub asserts readability and answers nondet — both

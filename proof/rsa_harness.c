@@ -62,6 +62,7 @@
 // expands the byte arrays element-wise, so the launch line raises
 // --max-field-sensitivity-array-size above the 384-byte width; without
 // it the decode goes symbolic and the CNF lands back at 7 GB.
+#define CH_PROOF_STUB_SHA256
 #include "harness.h"
 
 #include "ct.h"
@@ -69,20 +70,6 @@
 
 // sha256 stubs: assert the contract the real code relies on, havoc the
 // digest. MGF1's block loop and byte accounting stay concrete.
-void sha256_init(sha256 *s) {
-    __CPROVER_assert(__CPROVER_w_ok(s, sizeof *s), "sha: ctx writable");
-}
-
-void sha256_update(sha256 *s, const uint8_t *in, size_t n) {
-    __CPROVER_assert(__CPROVER_w_ok(s, sizeof *s), "sha: ctx writable");
-    __CPROVER_assert(n == 0 || __CPROVER_r_ok(in, n), "sha: input readable");
-}
-
-void sha256_final(sha256 *s, uint8_t out[SHA256_LEN]) {
-    __CPROVER_assert(__CPROVER_w_ok(s, sizeof *s), "sha: ctx writable");
-    __CPROVER_assert(__CPROVER_w_ok(out, SHA256_LEN), "sha: out writable");
-    fill_nondet(out, SHA256_LEN);
-}
 
 #include "rsa.c"
 

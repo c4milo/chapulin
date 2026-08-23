@@ -11,6 +11,7 @@
 // into this formula only grows it (measured: past CI's whole budget).
 // The object under proof is the driver's own arithmetic and state.
 // buf.c and ct.c are real.
+#define CH_PROOF_STUB_SHA256
 #include "harness.h"
 
 #include <string.h>
@@ -119,22 +120,6 @@ size_t hs_build_client_hello(uint8_t *out, size_t cap, const ch_cfg *cfg, const 
     __CPROVER_assert(__CPROVER_w_ok(out, n), "ch: out writable");
     fill_nondet(out, n);
     return n;
-}
-
-void sha256_init(sha256 *s) {
-    __CPROVER_assert(__CPROVER_w_ok(s, sizeof *s), "sha: ctx writable");
-    fill_nondet((uint8_t *)s, sizeof *s);
-}
-
-void sha256_update(sha256 *s, const uint8_t *in, size_t n) {
-    __CPROVER_assert(__CPROVER_w_ok(s, sizeof *s), "sha: ctx writable");
-    __CPROVER_assert(n == 0 || __CPROVER_r_ok(in, n), "sha: input readable");
-}
-
-void sha256_final(sha256 *s, uint8_t out[SHA256_LEN]) {
-    __CPROVER_assert(__CPROVER_w_ok(s, sizeof *s), "sha: ctx writable");
-    __CPROVER_assert(__CPROVER_w_ok(out, SHA256_LEN), "sha: out writable");
-    fill_nondet(out, SHA256_LEN);
 }
 
 void ks_early(const uint8_t *psk, size_t psk_len, int resumption, uint8_t early[SHA256_LEN],
