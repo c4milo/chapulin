@@ -17,6 +17,8 @@ Each violation lives in test/violations/<name>.violation:
     invariant: INV-10
     file: record.c
     catches: unit
+    builds: bin/unit          (optional; required when catches is a script,
+                               which builds nothing of its own)
     reason: one line on what breaks
     --- old
     <text to find, exactly once>
@@ -80,12 +82,20 @@ def run(name):
         # Touch so make rebuilds: an edit inside the same second as the
         # last build otherwise leaves the binary alone.
         target.touch()
-        # A "catches" with a slash is a script to run as-is; otherwise
-        # it names a binary under bin/ that make builds first.
+        # A "catches" with a slash is a script run as-is; otherwise it
+        # names a binary under bin/. Either way something must be built
+        # from the edited source first: a script that builds nothing of
+        # its own (test/e2e.sh runs no make) would otherwise run
+        # yesterday's binaries and report on code it never compiled.
         target_is_script = "/" in head["catches"]
         binary = head["catches"] if target_is_script else f"bin/{head['catches']}"
-        if not target_is_script:
-            built = subprocess.run(["make", binary], cwd=ROOT,
+        builds = head.get("builds", "" if target_is_script else binary).split()
+        if target_is_script and not builds:
+            print(f"  STALE    {name}: a script target needs a 'builds' line "
+                  f"naming what to rebuild from the edited source")
+            return "stale"
+        if builds:
+            built = subprocess.run(["make", *builds], cwd=ROOT,
                                    capture_output=True, text=True)
             if built.returncode != 0:
                 # An edit that will not compile proves nothing about the

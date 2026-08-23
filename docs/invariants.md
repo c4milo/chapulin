@@ -172,16 +172,29 @@ which convention holds them.
   `expect_finished`, so CertificateVerify and Finished have already
   proved a real server is there. `ch_connect` refuses an epoch that
   storage cannot supply or that is not an allowed epoch.
-- **Check.** `test_epoch_cfg` covers the config gates and asserts
-  nothing persists at connect time; the e2e `ca-epoch-*` legs
-  move a real device forward, then replay the pre-bump leaf and
-  the pre-bump ticket against it and require both to fail; the
-  x509der harness proves the reader's value stays in range,
-  which is what keeps the stored epoch plus the bound inside uint32.
+- **Check.** `CH_ASSERT` — `epoch_commit` faults unless
+  `expect_finished` already set `server_finished_ok`, so a commit
+  moved earlier aborts before it can write, on every CA handshake,
+  whether or not the epoch callbacks are configured. It is a runtime
+  abort, not a compile error: the misplaced call still builds.
+  `test_epoch_cfg` covers the config gates and asserts nothing
+  persists at connect time; the e2e `ca-epoch-*` legs move a real
+  device forward, then replay the pre-bump leaf and the pre-bump
+  ticket against it and require both to fail — they cover the replay
+  direction, not the commit point; the x509der harness proves the
+  reader's value stays in range, which is what keeps the stored epoch
+  plus the bound inside uint32.
+  Not covered: an author who moves the commit and moves or duplicates
+  the `server_finished_ok = 1` alongside it defeats the assert, and
+  nothing checks the monotonicity comparison itself — inverting
+  `h->leaf.epoch <= t->epoch` leaves the assert silent, and only the
+  e2e `ca-epoch-equal` leg objects.
 - **Violation.** A PR moves the update back into `server_auth` for
   symmetry with the rejects, letting a replayed certificate advance
-  a device's persistent state; or a build sets `CH_EPOCH_BOUND`
-  outside the range the `_Static_assert` in cfg.h admits.
+  a device's persistent state (`make test-invariants` runs this one,
+  as `inv21-epoch-commit-in-server-auth`); or a build sets
+  `CH_EPOCH_BOUND` outside the range the `_Static_assert` in cfg.h
+  admits.
 - See [decisions: Trust model](decisions.md#trust-model).
 
 ### INV-7 — no negotiation

@@ -3,6 +3,7 @@
 #include <string.h>
 
 #include "buf.h"
+#include "ch_assert.h"
 #include "ct.h"
 #include "hsmsg.h"
 #include "hsparse.h"
@@ -129,6 +130,7 @@ static int expect_finished(handshake_state *h) {
         return CH_EAUTH;
     }
     sha256_update(&h->t->transcript, raw, raw_len);
+    h->server_finished_ok = 1;
     return CH_OK;
 }
 
@@ -250,6 +252,13 @@ static int epoch_check(handshake_state *h) {
 // the connection is authenticated either way.
 static void epoch_commit(handshake_state *h) {
     ch_tls *t = h->t;
+    // run() calls this once, after expect_finished returned CH_OK. An
+    // earlier call is a programmer error, not bad peer input: it would
+    // raise state that outlives the session on a certificate anyone can
+    // copy. The check sits above the early return on purpose — below
+    // it, a commit that repeats the stored epoch returns without
+    // running and the mistake would surface only sometimes.
+    CH_ASSERT(h->server_finished_ok);
     if (t->cfg.epoch_load == NULL || !h->leaf.epoch_ok || h->leaf.epoch <= t->epoch) {
         return;
     }
