@@ -34,7 +34,7 @@ LINT_C := $(SRCS) drbg.c test/unit_test.c test/tls_client.c test/diff_test.c tes
 # so a header edit rebuilds the binaries it changes.
 TESTH := test/test_random.h test/session_tests.h test/session_post_tests.h \
          test/session_cfg_tests.h test/p256_tests.h test/diff_driver.h test/diff_hash.h \
-         test/diff_p256.h test/diff_record.h test/diff_rsa.h test/diff_x25519.h \
+         test/diff_p256.h test/diff_property.h test/diff_record.h test/diff_rsa.h test/diff_x25519.h \
          test/hsseq_server.h test/rfc8448_vectors.h test/rfc8448_tests.h \
          test/x509_vectors.h test/x509_mutate.h test/x509_chain_tests.h test/x509_epoch.h \
          test/x509_spki.h test/diff_x509.h test/diff_x509_bounds.h test/diff_x509_chain.h \
