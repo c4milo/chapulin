@@ -109,14 +109,19 @@ fi
 BUDGET_GB=$((MEM_GB - 6))
 if [ "$BUDGET_GB" -lt 4 ]; then BUDGET_GB=4; fi
 # The external solver is a big-box optimization: its slow-tier jobs
-# weigh 12 GB, and a machine whose budget cannot admit that (a 16 GB CI
-# runner budgets 9) would serialize them at a weight it cannot honor.
-# Fall back to the built-in solver for the slow tier there; it stays
-# under 6 GB and admits. The fast tier keeps the external solver either
-# way: its wins live there — the ServerHello parser returns no verdict
-# in 131 minutes built-in and under a minute with kissat — and its jobs
-# never carry the slow tier's weight.
-if [ "$SLOW_W" -gt "$BUDGET_GB" ]; then
+# weigh 12 GB, and a machine whose budget cannot admit that would
+# serialize them at a weight it cannot honor. Fall back to the built-in
+# solver for the slow tier there. The fast tier keeps the external
+# solver either way: its wins live there — the ServerHello parser
+# returns no verdict in 131 minutes built-in and under a minute with
+# kissat — and its jobs never carry the slow tier's weight.
+#
+# PROVE_ONLY is the exception, and it is what CI runs: one harness per
+# job. The weight decides only how many jobs share a machine, the
+# launch loop admits a lone job whatever it weighs, and the
+# address-space cap below is MEM_GB-1 either way. So the downgrade
+# would cost kissat's hours and buy nothing.
+if [ "$SLOW_W" -gt "$BUDGET_GB" ] && [ -z "${PROVE_ONLY:-}" ]; then
     echo "prove: budget ${BUDGET_GB} GB cannot admit ${SLOW_W} GB external-solver jobs; the slow tier uses the built-in solver"
     SLOW_SOLVER_ARGS=()
     SLOW_W=6
