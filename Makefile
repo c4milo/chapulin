@@ -482,7 +482,7 @@ endif
 
 # Checks and thresholds live in .clang-tidy; every disable carries a reason
 # there (fix-or-drop, never NOLINT in code).
-lint: lint-tidy lint-format lint-cppcheck lint-commits lint-docs lint-invariants lint-stack lint-size lint-spec
+lint: lint-tidy lint-format lint-cppcheck lint-commits lint-docs lint-invariants lint-stack lint-size lint-matrix lint-spec
 
 # INV-19: bounded stack. The budget is the measured worst library
 # frame (rsa_vp1's RSA-3072 limb temporaries, 2,400 bytes) rounded up;
@@ -596,6 +596,22 @@ else
 	npx --no-install commitlint --from=$(shell git rev-list --max-parents=0 HEAD)~0 --to=HEAD \
 	  || npx --no-install commitlint --from=HEAD~1 --to=HEAD
 endif
+
+# The nightly runs one job per slow proof, from a static matrix. A
+# launch line added without a matching matrix entry would simply never
+# run in CI, and nothing would say so.
+.PHONY: lint-matrix
+lint-matrix:
+	@a=$$(awk '$$1=="launch" && $$2 ~ /^slow/ {print $$4}' proof/run.sh | sort | tr '\n' ' '); \
+	 b=$$(sed -n 's/.*proof: \[\(.*\)\]/\1/p' .github/workflows/nightly.yml \
+	      | tr -d ' ' | tr ',' '\n' | sort | tr '\n' ' '); \
+	 if [ "$$a" != "$$b" ]; then \
+	   echo "lint-matrix: nightly matrix and run.sh slow tier disagree"; \
+	   echo "  run.sh:  $$a"; \
+	   echo "  nightly: $$b"; \
+	   exit 1; \
+	 fi; \
+	 echo "lint-matrix: nightly runs every slow proof"
 
 # CBMC proofs: memory safety and absence of UB per module, at the bounds
 # each harness documents. The fast tier (seconds to a few minutes) gates

@@ -29,7 +29,7 @@ jobs:
       # solves would throw away the run's whole point.
       fail-fast: false
       matrix:
-        proof: [hkdf_expand, aead, x25519, handshake, x509parse]
+        proof: [hkdf_expand, aead, aead_overlap, aead_forge, x25519, handshake, x509parse]
     steps:
       - uses: actions/checkout@v7
       - name: Install CBMC
