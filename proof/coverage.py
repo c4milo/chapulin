@@ -10,8 +10,12 @@ and both are silent:
 1. A module has no harness, so nothing is proven about it.
 2. A harness exists but never runs, because no launch line in
    proof/run.sh starts it. It passes review and proves nothing.
+3. A harness runs and returns no verdict, because the solver runs out
+   of time or memory. It has a launch line, so this report lists it
+   exactly like one that passed. The tier column is the only hint:
+   a slow row's verdict comes from the nightly, not from this run.
 
-A third failure needs CBMC itself: a harness whose unwind bound is too
+A fourth failure needs CBMC itself: a harness whose unwind bound is too
 small to reach the interesting code still reports success. Pass
 --reach to measure that with `cbmc --cover location`; it is slow, so
 it stays off by default.
@@ -98,10 +102,17 @@ def main():
         tiers = ",".join(sorted({runs[n][0].split(":")[0] for n in names}))
         lines.append(f"| `{src}` | {', '.join(sorted(names))} | {tiers} |")
     lines += ["", f"{len(LIB) - len(uncovered)} of {len(LIB)} sources are "
-                  f"compiled into a harness that runs. Everything CBMC",
-              "compiles is checked for memory safety and undefined behaviour",
-              "on the paths the harness drives; a source listed here against",
-              "its own harness is also proven against its contract.", ""]
+                  f"compiled into a harness with a launch line. Everything",
+              "CBMC compiles is checked for memory safety and undefined",
+              "behaviour on the paths the harness drives; a source listed",
+              "here against its own harness is also proven against its",
+              "contract.", "",
+              "A fast row gates every push: `make check` runs it and a red",
+              "one stops the build. A slow row carries the verdict of the",
+              "last nightly leg that finished, not of this commit. A harness",
+              "that starts and returns no verdict proves nothing, and this",
+              "table cannot tell that apart from one that passed — for the",
+              "slow rows, read the nightly.", ""]
     if uncovered:
         lines.append("No harness: " + ", ".join(f"`{s}`" for s in uncovered) + ".")
         lines.append("")
@@ -120,8 +131,8 @@ def main():
 
     REPORT.parent.mkdir(exist_ok=True)
     REPORT.write_text("\n".join(lines) + "\n")
-    print(f"proof-coverage: {len(LIB) - len(uncovered)}/{len(LIB)} sources proven, "
-          f"{len(dormant)} dormant harness(es) -> {REPORT.relative_to(ROOT)}")
+    print(f"proof-coverage: {len(LIB) - len(uncovered)}/{len(LIB)} sources in a "
+          f"launched harness, {len(dormant)} dormant -> {REPORT.relative_to(ROOT)}")
     if uncovered:
         print("proof-coverage: no harness for " + ", ".join(uncovered))
     for name, _ in sorted(dormant):
