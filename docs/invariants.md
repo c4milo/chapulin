@@ -334,21 +334,31 @@ which convention holds them.
 - **Claim.** The client accepts exactly the server message orders
   RFC 9846 §4 allows and no others: one ServerHello, one
   EncryptedExtensions, no certificate flight under PSK, Certificate
-  then CertificateVerify then Finished under a pinned key, at most one
-  HelloRetryRequest and only as the opening message, no ticket, key
-  update, or application data before the Finished, and nothing after a
-  close_notify.
+  then CertificateVerify then Finished when the server authenticates
+  with a certificate, at most one HelloRetryRequest and only as the
+  opening message, no ticket, key update, or application data before
+  the Finished, and nothing after a close_notify. The order is the
+  same whether the certificate is checked against a pinned server key
+  (TRUST=raw) or a pinned CA (TRUST=ca).
 - **Mechanism.** `handshake.c` reads the flight as a straight line —
   `hello_exchange`, then `server_auth`, then `expect_finished` — and
   each step compares the message type against the one it expects,
   answering `ALERT_UNEXPECTED_MESSAGE` otherwise. There is no state
-  variable to desynchronize; the order is the call order.
+  variable to desynchronize; the order is the call order. Every one of
+  those type checks sits outside the `CH_TRUST_CA` conditionals, which
+  only add chain verification between Certificate and
+  CertificateVerify, so both trust builds compile the same order from
+  the same lines.
 - **Check.** Lean theorem (17 in `Spec/Handshake.lean`, over every
-  trace the model admits, `accepts_decompose` bounding the flight at 4
-  messages under PSK and 6 under a pinned key); `hsseq_test`,
-  exhaustive over all 354,312 sequences to depth 5 in both auth modes,
-  comparing the real client's verdict against that model; CBMC
-  (`handshake` harness) for memory safety only, not for order.
+  trace the model admits; `accepts_decompose` bounds the flight at 4
+  messages in the spec's `psk` Mode and 6 in its `pinned` Mode);
+  `hsseq_test`, exhaustive over all 354,312 sequences to depth 5 in
+  both auth modes, comparing the real client's verdict against that
+  model — but it links TRUST=raw only, so the CA build's order rests
+  on the shared lines named above plus the e2e run, not on the oracle;
+  CBMC (`handshake` harness) for memory safety only, not for order.
+  Depth 5 also stops one short of the longest flight the model admits,
+  HSECVF, which a hand-written case covers instead.
 - **Violation.** A PR relaxes one type check to tolerate a message a
   peer "usually" sends early, and a flight with a skipped
   CertificateVerify authenticates. This is the SMACK and FREAK class:
