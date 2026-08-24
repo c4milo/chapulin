@@ -208,6 +208,7 @@ check: examples-check bin/unit bin/unit_ca bin/tlsclient bin/tlsclient_ecdsa bin
 	./test/e2e.sh
 	$(MAKE) diff
 	./bin/hsseq_test
+	$(MAKE) test-invariants-fast
 	$(MAKE) proof-coverage
 	$(MAKE) prove
 
@@ -631,7 +632,23 @@ examples-check: bin/example_psk bin/example_pinned bin/example_ca
 # slow for check (each one rebuilds and reruns a target), so it runs
 # nightly.
 .PHONY: test-invariants
-test-invariants: bin/unit bin/diff
+# The violation runner requires each target to PASS on unedited source
+# before it trusts the target's verdict on an edit, so every prerequisite
+# a violation names must build here. bin/diff needs the Lean oracle
+# (built by the diff recipe's lake step); the epoch violation drives e2e,
+# which needs the CA clients.
+# The fast tier: violations backed by the second-scale binaries (unit,
+# the strictness parsers, rsa_test), so the PR lane runs them. The diff,
+# hsseq and e2e-backed violations stay in the nightly full run — each of
+# those targets is slow enough that a baseline plus a mutation pass costs
+# real minutes.
+.PHONY: test-invariants-fast
+test-invariants-fast: bin/unit bin/unit_ca bin/x509strict bin/x509strict_ecdsa bin/rsa_test bin/drbg_test bin/hsstrict_test
+	python3 test/violations.py --tier=fast
+
+# The whole set, fast tier plus the hsseq_test and e2e-backed
+# violations that cost minutes each. Nightly.
+test-invariants: bin/unit bin/diff bin/tlsclient bin/tlsclient_ecdsa bin/tlsclient_ca bin/tlsclient_ca_ecdsa bin/example_psk bin/example_pinned bin/example_ca
 	python3 test/violations.py
 
 # The nightly runs one job per slow proof, from a static matrix. A

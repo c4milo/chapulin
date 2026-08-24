@@ -1,6 +1,7 @@
 invariant: INV-10
 file: record.c
 catches: diff
+builds: bin/diff
 reason: truncating the sequence number to 32 bits makes the nonce
   repeat after 2^32 records under one key
 
