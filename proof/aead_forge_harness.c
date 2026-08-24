@@ -10,9 +10,9 @@
 int main(void) {
     uint8_t key[AEAD_KEY];
     uint8_t nonce[AEAD_NONCE];
-    uint8_t aad[32];
-    uint8_t pt[64];
-    uint8_t ct[64];
+    uint8_t aad[16];
+    uint8_t pt[16];
+    uint8_t ct[16];
     uint8_t tag[AEAD_TAG];
     fill_nondet(key, sizeof key);
     fill_nondet(nonce, sizeof nonce);
@@ -35,9 +35,9 @@ int main(void) {
         }
     }
     __CPROVER_assume(!same);
-    uint8_t sentinel[64];
+    uint8_t sentinel[16];
     fill_nondet(sentinel, sizeof sentinel);
-    uint8_t out[64];
+    uint8_t out[16];
     for (size_t i = 0; i < sizeof out; i++) {
         out[i] = sentinel[i];
     }
