@@ -35,7 +35,9 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	log.Printf("listening on %s", *addr)
+	// Report what the kernel actually bound, so a caller passing
+	// port 0 can discover it. e2e.sh reads this line.
+	log.Printf("listening on %s", ln.Addr().String())
 	for {
 		c, err := ln.Accept()
 		if err != nil {
