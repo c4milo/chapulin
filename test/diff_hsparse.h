@@ -343,9 +343,15 @@ static void diff_hs_certificate(void) {
             // a nonempty certificate_request_context, a trailing octet
             // — plus mut 2, an entry extension the client never
             // offered: §4.4.2 makes it an unsupported_extension, but
-            // the C parser hands the list to the trust mode's parser
-            // without reading the entries, so that one refusal lives a
-            // layer up while the model makes it here.
+            // hsp_parse_certificate hands the list on without reading
+            // the entries, so that one refusal lives a layer up. The CA
+            // build makes it in x509_verify_leaf (empty per-entry
+            // extensions required); the pinned build never parses the
+            // entries at all — it hashes the certificate into the
+            // transcript and authenticates by the signature, so the
+            // unread extension changes nothing an attacker can use. The
+            // model refuses it either way; see CONTRACT.md's split
+            // table.
             (void)snprintf(want, sizeof want, "ERR hs_certificate reject");
             CH_ASSERT(mut == 2 || rc != CH_OK);
         } else {

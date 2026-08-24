@@ -262,11 +262,20 @@ boundary rather than weakening the model to match the split:
 | CertificateEntry carrying an unoffered extension | the trust mode's certificate parser | `parseCertificate` |
 | ServerHello that ignores the offered PSK | `hello_exchange`, on `psk_ok` | nothing — both parsers accept it; whether resumption was required sits above them |
 
-Each ends the handshake on both sides; only the layer that ends it
-differs. One more went the other way — the model bounded the
-CertificateVerify signature by the pinned key's size, which §4.4.3 does
-not do and `hsparse.c` leaves to the verifier — and the model gave the
-check up rather than the driver paper over it.
+Each ends the handshake on both sides, except the last: the unoffered
+CertificateEntry extension is refused only in the `TRUST=ca` build,
+where `x509_verify_leaf` requires empty per-entry extensions. A pinned
+build never reads the entries — it hashes the certificate into the
+transcript and authenticates by the signature — so §4.4.2's MUST-abort
+for that extension is unenforced there. The unread extension changes
+nothing the signature does not already cover, so the gap is by design;
+the model refuses the extension in both builds, and the driver projects
+the CA-build verdict.
+
+One more went the other way — the model bounded the CertificateVerify
+signature by the pinned key's size, which §4.4.3 does not do and
+`hsparse.c` leaves to the verifier — and the model gave the check up
+rather than the driver paper over it.
 
 ## Proven properties
 
