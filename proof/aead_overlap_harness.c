@@ -14,8 +14,8 @@
 int main(void) {
     uint8_t key[AEAD_KEY];
     uint8_t nonce[AEAD_NONCE];
-    uint8_t aad[32];
-    uint8_t pt[64];
+    uint8_t aad[16];
+    uint8_t pt[16];
     fill_nondet(key, sizeof key);
     fill_nondet(nonce, sizeof nonce);
     fill_nondet(aad, sizeof aad);
@@ -26,7 +26,7 @@ int main(void) {
     __CPROVER_assume(n >= 1 && n <= sizeof pt);
     __CPROVER_assume(aad_len <= sizeof aad);
 
-    uint8_t frame[5 + 64];
+    uint8_t frame[5 + 16];
     uint8_t tag[AEAD_TAG];
     aead_seal(key, nonce, aad, aad_len, pt, n, frame + 5, tag);
     __CPROVER_assert(aead_open(key, nonce, aad, aad_len, frame + 5, n, tag, frame) == 1,

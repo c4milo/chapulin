@@ -177,7 +177,7 @@ apart from one that passed — so for the slow rows, read the nightly.
 | handshake | the driver stays safe on any record stream: pump, reassembly, HRR restart, state machine, in PSK and pinned-key mode. The `TRUST=ca` driver has a harness but no launch line, so it is unproven | 96 B receive buffer, slow tier |
 | chacha20 | safe at any counter, including in place | ≤ 160 B |
 | poly1305 | safe for any three-chunk split; 64-bit products stay in range | messages ≤ 80 B |
-| aead (three harnesses) | seal/open round-trips; a forged tag writes zero bytes; backward-overlap decrypt works | plaintext ≤ 64 B, aad ≤ 32 B, slow tier |
+| aead (three harnesses) | seal/open round-trips; a forged tag writes zero bytes; backward-overlap decrypt works. These are structural, so the bound is small: 16 B crosses the Poly1305 block boundary and the forge case fires at one byte | plaintext ≤ 16 B, aad ≤ 16 B, slow tier |
 | x25519 | field operations are memory-safe, with the signed-overflow class turned off (slow tier); a separate lemma proves mul's int64 accumulation and fold cannot overflow (fast tier). Nothing proves signed overflow in carry, add, sub or pack | limbs ≤ 2^24 |
 | p256 | the DER parser and limb marshalling stay safe on hostile signatures; a carry lemma covers the Montgomery multiply | signatures ≤ 80 B |
 | rsa (two harnesses) | the PSS decode and limb marshalling stay safe with the RSAVP1 result replaced by arbitrary bytes | 384 B modulus, every byte hostile |

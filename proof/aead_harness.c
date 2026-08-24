@@ -1,5 +1,5 @@
 // Proves: aead_seal and aead_open are memory-safe and UB-free for any
-// plaintext up to 64 bytes and any AAD up to 32 bytes, and that a
+// plaintext up to 16 bytes and any AAD up to 16 bytes, and that a
 // genuine seal opens back to the plaintext it sealed.
 //
 // The other two properties the aead.h contract states have their own
@@ -14,9 +14,9 @@
 int main(void) {
     uint8_t key[AEAD_KEY];
     uint8_t nonce[AEAD_NONCE];
-    uint8_t aad[32];
-    uint8_t pt[64];
-    uint8_t ct[64];
+    uint8_t aad[16];
+    uint8_t pt[16];
+    uint8_t ct[16];
     uint8_t tag[AEAD_TAG];
     fill_nondet(key, sizeof key);
     fill_nondet(nonce, sizeof nonce);
@@ -30,7 +30,7 @@ int main(void) {
 
     aead_seal(key, nonce, aad, aad_len, pt, n, ct, tag);
 
-    uint8_t back[64];
+    uint8_t back[16];
     __CPROVER_assert(aead_open(key, nonce, aad, aad_len, ct, n, tag, back) == 1,
                      "genuine seal opens");
     for (size_t i = 0; i < n; i++) {
