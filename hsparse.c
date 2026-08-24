@@ -70,8 +70,12 @@ static int parse_server_hello_ext(rbuf *r, server_hello_info *info, int hrr, int
     if (ext_data == NULL) {
         return CH_EPROTO;
     }
-    if (ext == EXT_PRE_SHARED_KEY && !psk_mode) {
-        return CH_EPROTO; // selecting a PSK we never offered
+    if (ext == EXT_PRE_SHARED_KEY && (hrr || !psk_mode)) {
+        // Selecting a PSK we never offered, or selecting one from a
+        // HelloRetryRequest: RFC 9846 §4.1.4 does not list
+        // pre_shared_key for a retry, and §4.2 makes a recognized
+        // extension in a message it is not specified for fatal.
+        return CH_EPROTO;
     }
     uint8_t bit = server_hello_ext_bit(ext);
     if (bit == 0) {

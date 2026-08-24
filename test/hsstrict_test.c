@@ -170,6 +170,10 @@ int main(void) {
     CHECK(server_hello_case2(psk_trail, sizeof psk_trail, 0, 1) == CH_EPROTO);
     CHECK(server_hello_case2(cookie_exact, sizeof cookie_exact, 1, 0) == CH_OK);
     CHECK(server_hello_case2(cookie_trail, sizeof cookie_trail, 1, 0) == CH_EPROTO);
+    // §4.1.4 lists no pre_shared_key for a HelloRetryRequest: the same
+    // body a final ServerHello accepts (the psk_exact pair above) is
+    // fatal from a retry, even with a PSK offered.
+    CHECK(server_hello_case2(psk_exact, sizeof psk_exact, 1, 1) == CH_EPROTO);
 
     // Regression, issue #10: junk after a valid selected_version once
     // parsed as valid TLS 1.3.

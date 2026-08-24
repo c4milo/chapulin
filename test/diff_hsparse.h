@@ -20,6 +20,7 @@
 
 // ExtensionType values this section builds with (RFC 9846 §4.2,
 // RFC 8449 §4).
+#define HSPD_SERVER_NAME 0
 #define HSPD_SUPPORTED_GROUPS 10
 #define HSPD_RECORD_SIZE_LIMIT 28
 #define HSPD_PRE_SHARED_KEY 41
@@ -138,6 +139,11 @@ static void hspd_sh_retry_exts(wbuf *w, size_t mut, const uint8_t *cookie, size_
         wb_u16(w, 2);
         wb_u16(w, HSPD_X25519);
     }
+    if (mut == 16) { // §4.1.4 lists no pre_shared_key for a retry
+        wb_u16(w, HSPD_PRE_SHARED_KEY);
+        wb_u16(w, 2);
+        wb_u16(w, 0);
+    }
 }
 
 // The ServerHello branch's extensions (§4.1.3): the key share, and a
@@ -166,7 +172,7 @@ static void diff_hs_server_hello(void) {
         plan.psk_offered = (int)rng_below(2);
         int hrr = rng_below(4) == 0;
         // One deliberate deviation per row, drawn from the menu the RFC
-        // and the profile between them make illegal; 16 and up leave
+        // and the profile between them make illegal; 17 and up leave
         // the message on profile.
         size_t mut = rng_below(20);
 
@@ -233,6 +239,10 @@ static void hspd_ee_build(wbuf *w, size_t mut, int have_limit, uint16_t limit) {
         wb_u16(w, HSPD_KEY_SHARE);
         wb_u16(w, 2);
         wb_u16(w, HSPD_X25519);
+    }
+    if (mut == 5) { // a server_name ack the client never asked for
+        wb_u16(w, HSPD_SERVER_NAME);
+        wb_u16(w, 0);
     }
     wb_patch16(w, exts);
     if (mut == 4) {
