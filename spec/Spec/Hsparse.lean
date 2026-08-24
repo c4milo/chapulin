@@ -520,11 +520,13 @@ server_name acknowledgement (RFC 6066 §3), supported_groups
 `CLAUDE.md` says the client always sends.
 -/
 def encryptedExtensionsAllowed : List Nat :=
-  [extServerName, extSupportedGroups, extRecordSizeLimit]
+  [extSupportedGroups, extRecordSizeLimit]
 
 /--
 Extension types RFC 9846 §4.2 permits in EncryptedExtensions that this
-client never requests: max_fragment_length(1), use_srtp(14),
+client never requests: server_name(0) — the profile sends no SNI, so a
+server_name acknowledgement is a response to a request that never went
+out — max_fragment_length(1), use_srtp(14),
 heartbeat(15), application_layer_protocol_negotiation(16), the RFC 7250
 certificate-type pair (19, 20), and early_data(42) — the profile has no
 0-RTT and no raw public keys. §4.2 makes an unrequested response an
@@ -532,7 +534,8 @@ unsupported_extension, which is a different refusal from §4.3.1's
 illegal_parameter for an extension that has no business in this message
 at all.
 -/
-def encryptedExtensionsUnrequested : List Nat := [1, 14, 15, 16, 19, 20, extEarlyData]
+def encryptedExtensionsUnrequested : List Nat :=
+  [extServerName, 1, 14, 15, 16, 19, 20, extEarlyData]
 
 /-- The alert an extension that does not belong in EncryptedExtensions
 earns: unsupported_extension when the RFC allows it here but the client
@@ -564,14 +567,6 @@ def readRecordSizeLimit? (exts : List (Nat × ByteArray)) : Except Alert (Option
   | none => .ok none
   | some data => do return some (← readRecordSizeLimit data)
 
-/-- RFC 6066 §3: a server acknowledges the client's server_name by
-echoing an extension of length zero, so anything in the data is out of
-the specified range (§6.2). -/
-def checkServerNameAck (exts : List (Nat × ByteArray)) : Except Alert Unit :=
-  match extensionData? exts extServerName with
-  | none => .ok ()
-  | some data => ensure (data.size = 0) .decodeError
-
 /-- RFC 9846 §4.2.7: supported_groups carries `NamedGroup
 named_group_list<2..2^16-2>`, an even number of octets and at least
 one group, filling the extension exactly. The groups themselves go
@@ -591,12 +586,13 @@ RFC 9846 §4.3.1: `struct { Extension extensions<0..2^16-1>; }`, and
 forbidden extensions and if any are found MUST abort the handshake
 with an illegal_parameter alert".
 
-The block may be empty. Of the three extensions the profile admits,
-server_name is the RFC 6066 §3 acknowledgement and carries no data,
-supported_groups is a `NamedGroup named_group_list<2..2^16-2>` whose
+The block may be empty. The profile admits two extensions here:
+supported_groups, a `NamedGroup named_group_list<2..2^16-2>` whose
 contents §4.2.7 tells the client not to act on during the handshake —
 so the framing is checked and the groups go unread — and
-record_size_limit is the only one whose value the client needs.
+record_size_limit, the only one whose value the client needs. This
+client sends no server_name, so a server_name acknowledgement is an
+unrequested response and earns §4.2's unsupported_extension.
 -/
 def parseEncryptedExtensions (msg : ByteArray) : Except Alert EncryptedExtensions := do
   let body ← messageBody msg encryptedExtensionsType
@@ -604,7 +600,6 @@ def parseEncryptedExtensions (msg : ByteArray) : Except Alert EncryptedExtension
   ensure (off = body.size) .decodeError
   let exts ← extensionList extBytes
   ensureAllowed encryptedExtensionsAllowed encryptedExtensionsAlert exts
-  checkServerNameAck exts
   checkSupportedGroups exts
   let recordSizeLimit ← readRecordSizeLimit? exts
   return { recordSizeLimit }
@@ -901,8 +896,9 @@ def selftest : Bool := Id.run do
     -- The profile has no 0-RTT, so early_data is a response it never asked for.
     limitOf (encryptedExtensionsOf (extension extEarlyData ByteArray.empty)) == none &&
     limitOf (encryptedExtensionsOf (extension extKeyShare (u16 x25519Group))) == none &&
-    limitOf (encryptedExtensionsOf (extension extServerName ByteArray.empty)) ==
-      some none &&
+    -- §4.2: this client sends no server_name, so its acknowledgement,
+    -- empty or not, is an unrequested response the client refuses.
+    limitOf (encryptedExtensionsOf (extension extServerName ByteArray.empty)) == none &&
     limitOf (encryptedExtensionsOf (extension extServerName (ascii "x"))) == none &&
     limitOf (encryptedExtensionsOf (extension extSupportedGroups
       (vec16 (u16 x25519Group)))) == some none &&
@@ -1210,7 +1206,6 @@ theorem parseEncryptedExtensions_limit_ge_64 (msg : ByteArray)
   obtain ⟨_, -, h_accepted⟩ := exists_of_bind_eq_ok h_accepted
   obtain ⟨⟨_, _⟩, -, h_accepted⟩ := exists_of_bind_eq_ok h_accepted
   obtain ⟨-, h_accepted⟩ := of_ensure_bind h_accepted
-  obtain ⟨_, -, h_accepted⟩ := exists_of_bind_eq_ok h_accepted
   obtain ⟨_, -, h_accepted⟩ := exists_of_bind_eq_ok h_accepted
   obtain ⟨_, -, h_accepted⟩ := exists_of_bind_eq_ok h_accepted
   obtain ⟨_, -, h_accepted⟩ := exists_of_bind_eq_ok h_accepted
