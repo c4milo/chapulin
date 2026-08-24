@@ -37,6 +37,9 @@
 #include "rand.h"
 #include "tls.h"
 
+// Where the demo server listens. argv overrides both, so the same
+// binary can be pointed at a staging box; firmware compiles the real
+// address in, or reads it from provisioning.
 #define SERVER_HOST "127.0.0.1"
 #define SERVER_PORT "4433"
 
@@ -343,10 +346,10 @@ static int exchange(ch_tls *tls) {
 // Runs one session from socket to close. Returns CH_OK when the reply
 // arrived; any other return means the session is dead and its keys are
 // already wiped.
-static int run_session(void) {
-    int fd = tcp_connect(SERVER_HOST, SERVER_PORT);
+static int run_session(const char *host, const char *port) {
+    int fd = tcp_connect(host, port);
     if (fd < 0) {
-        (void)fprintf(stderr, "cannot reach %s:%s\n", SERVER_HOST, SERVER_PORT);
+        (void)fprintf(stderr, "cannot reach %s:%s\n", host, port);
         return CH_EIO;
     }
     // ch_connect copies this struct into the session but not the bytes
@@ -386,15 +389,22 @@ static int run_session(void) {
     return rc;
 }
 
-int main(void) {
+int main(int argc, char **argv) {
+    if (argc != 1 && argc != 3) {
+        (void)fprintf(stderr, "usage: %s [host port]\n", argv[0]);
+        return 2;
+    }
+    const char *host = argc == 3 ? argv[1] : SERVER_HOST;
+    const char *port = argc == 3 ? argv[2] : SERVER_PORT;
+
     // Two sessions on purpose. The first authenticates with the
     // provisioned PSK and stores the ticket the server issues; the
     // second presents that ticket. A device does the same thing across a
     // reboot or a dropped link, with more time in between.
-    if (run_session() != CH_OK) {
+    if (run_session(host, port) != CH_OK) {
         return 1;
     }
-    if (run_session() != CH_OK) {
+    if (run_session(host, port) != CH_OK) {
         return 1;
     }
     return 0;

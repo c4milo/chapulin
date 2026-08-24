@@ -27,13 +27,12 @@
  * covers that.
  *
  * What the check does not cover: names and time. The client never
- * compares a hostname against the certificate, and it never reads
- * notBefore or notAfter as a date, because the target has no clock.
- * The revocation epoch below is the one thing read out of notBefore,
- * and it reads it as a number. Freshness comes from your issuance
- * policy instead: sign short-lived certificates and reissue them on a
- * schedule. docs/ca.md states the contract your CA must meet, and this
- * file is worth nothing without it.
+ * compares a hostname, and never reads notBefore or notAfter as a date,
+ * because the target has no clock — the revocation epoch below is the
+ * one thing read out of notBefore, and it reads it as a number.
+ * Freshness comes from issuance instead: sign short-lived certificates
+ * and reissue on a schedule. docs/ca.md states the contract your CA
+ * must meet, and this file is worth nothing without it.
  *
  * Build the library, then this file against it:
  *
@@ -43,18 +42,18 @@
  *      -DCH_TRUST_CA -I. -o ca_client examples/ca_client.c bin/chapulin.o
  *
  * Pass -DCH_TRUST_CA to your own translation units too, not just to the
- * library. CH_MIN_RXBUF depends on it, and this file sizes its receive
+ * library: CH_MIN_RXBUF depends on it and this file sizes its receive
  * buffer from that constant.
  *
- * This example builds and links on a POSIX host. It is not a device
- * port. Every line a firmware tree replaces carries a "Replace on a
- * device" comment.
+ * This builds on a POSIX host and is not a device port. Every line a
+ * firmware tree replaces carries a "Replace on a device" comment.
  */
 
 #include <netdb.h>
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <sys/socket.h>
 #include <sys/time.h>
 #include <unistd.h>
@@ -75,21 +74,47 @@
 //   openssl rsa -in caroot.key -noout -modulus   # RSA: hex, strip "Modulus="
 //   openssl ec -in ecroot.key -text -noout       # ECDSA: the "pub:" block
 //
-// Replace on a device: read these bytes from the region your factory
-// provisions. The CA key is public data, so it needs integrity but not
-// secrecy, and it can sit in flash beside the firmware.
+// The CA key this device trusts. It is public data, so it needs
+// integrity but not secrecy, and it can sit in flash beside the
+// firmware.
 //
-// The zeros below are a placeholder that keeps this file compiling on
-// its own. They do not connect to anything. An RSA modulus is a product
-// of odd primes and so is odd; ch_connect rejects this even one with
-// CH_EINVAL before sending a byte. A PIN=ecdsa build checks only the
-// length at setup, so there the zeros fail later, during the handshake.
+// Replace on a device: read these bytes from the region your factory
+// provisions. This example reads them from a file so it can run against
+// a real CA, which is also what lets the e2e suite catch it if the API
+// around it changes.
 #ifdef CH_PIN_ECDSA
 #define CA_KEY_LEN 64
 #else
 #define CA_KEY_LEN 384
 #endif
-static const uint8_t ca_key[CA_KEY_LEN] = {0};
+static uint8_t ca_key[CA_KEY_LEN];
+
+// Fills ca_key from a file holding exactly the key and nothing else.
+// Measuring first turns a provisioning mistake into a message that says
+// so: a short or long file read as CA_KEY_LEN bytes would fail much
+// later as CH_EAUTH, which reads like an attack rather than a typo.
+static int read_ca_key(const char *path) {
+    FILE *f = fopen(path, "rb");
+    if (f == NULL) {
+        (void)fprintf(stderr, "cannot open %s\n", path);
+        return -1;
+    }
+    if (fseek(f, 0, SEEK_END) != 0 || ftell(f) != CA_KEY_LEN) {
+        (void)fprintf(stderr, "%s: this build pins exactly %d CA key bytes\n", path, CA_KEY_LEN);
+        (void)fclose(f);
+        return -1;
+    }
+    size_t got = 0;
+    if (fseek(f, 0, SEEK_SET) == 0) {
+        got = fread(ca_key, 1, (size_t)CA_KEY_LEN, f);
+    }
+    (void)fclose(f);
+    if (got != (size_t)CA_KEY_LEN) {
+        (void)fprintf(stderr, "cannot read %s\n", path);
+        return -1;
+    }
+    return 0;
+}
 
 // Rotating the CA key uses a second slot: set cfg.server_pubkey2 to the
 // next CA key and the handshake accepts a chain anchored at either one.
@@ -194,23 +219,20 @@ static int dial(const char *host, const char *port) {
 // Set them and the CA gets a revocation mechanism that needs no clock.
 // The CA writes an epoch into each server certificate's notBefore field
 // and adds one step to revoke. A device stores the highest epoch it has
-// accepted, in ch_tls.epoch, and refuses any certificate below it. The
-// epoch runs from 0 to CH_EPOCH_MAX. docs/ca.md gives the date
-// encoding, the issuance procedure, and the order to enable it in — get
-// that order wrong and the fleet goes offline.
+// accepted and refuses any certificate below it. docs/ca.md gives the
+// date encoding, the issuance procedure, and the order to enable it in
+// — get that order wrong and the fleet goes offline.
 //
 // What the API enforces:
 //
-//   - Give both callbacks or neither. One alone fails with CH_EINVAL.
-//   - A build without CH_TRUST_CA rejects a config that sets them,
-//     rather than accepting a revocation rule it cannot enforce.
-//   - epoch_load runs inside ch_connect before any byte goes out. A
-//     load that fails, or that returns a value above CH_EPOCH_MAX,
-//     fails ch_connect with CH_EINVAL. Provision the fleet's current
-//     epoch at manufacture; an unprovisioned device never connects.
-//   - epoch_store runs after CertificateVerify proved the server holds
-//     the leaf key, and only when the certificate's epoch sits above
-//     the stored epoch. Certificates are public, so moving on the
+//   - Give both callbacks or neither. One alone fails with CH_EINVAL,
+//     as does setting them in a build without CH_TRUST_CA.
+//   - epoch_load runs inside ch_connect before any byte goes out, and a
+//     load that fails or returns above CH_EPOCH_MAX fails ch_connect.
+//     Provision the epoch at manufacture; an unprovisioned device never
+//     connects.
+//   - epoch_store runs only after CertificateVerify proved the server
+//     holds the leaf key. Certificates are public, so moving on the
 //     certificate alone would let anyone replay one and push a device
 //     past the servers it still needs.
 //   - A failed store does not kill the session. It sets
@@ -225,13 +247,19 @@ static int dial(const char *host, const char *port) {
 // the highest valid slot; store writes the slot holding the older
 // value, so the newer value survives a torn write.
 //
-// Replace on a device: slot_read and slot_write use one file per slot
-// so the example runs on a host. On a device they read and write two
-// flash words in different erase blocks. The epoch changes once per
-// revocation, far inside any flash write budget (docs/ca.md, "Flash
-// wear").
+// Replace on a device: slot_read and slot_write use a file so the
+// example runs on a host. On a device they read and write a flash word.
+// The epoch changes once per revocation, far inside any flash write
+// budget (docs/ca.md, "Flash wear").
+//
+// Production wants two slots in different erase blocks, not the one
+// here: a power cut during a write can leave a slot unreadable, and a
+// device whose only slot is corrupt fails every later ch_connect with
+// CH_EINVAL. Load takes the highest readable slot, store overwrites the
+// one holding the older value. That is storage engineering rather than
+// anything about this API, so it stays out of the example.
 typedef struct {
-    const char *slot_path[2];
+    const char *slot_path;
 } epoch_slots;
 
 static int slot_read(const char *path, uint32_t *value) {
@@ -254,56 +282,23 @@ static int slot_read(const char *path, uint32_t *value) {
     return 0;
 }
 
-static int slot_write(const char *path, uint32_t value) {
-    FILE *f = fopen(path, "w");
+static int epoch_load(void *epoch_io, uint32_t *value) {
+    const epoch_slots *slots = epoch_io;
+    // An unreadable slot fails ch_connect with CH_EINVAL, which is the
+    // right answer: a device that cannot read its epoch cannot enforce
+    // revocation, and answering zero would trust every certificate the
+    // CA has ever issued.
+    return slot_read(slots->slot_path, value);
+}
+
+static int epoch_store(void *epoch_io, uint32_t value) {
+    const epoch_slots *slots = epoch_io;
+    FILE *f = fopen(slots->slot_path, "w");
     if (f == NULL) {
         return -1;
     }
     (void)fprintf(f, "%u\n", value);
     return fclose(f) == 0 ? 0 : -1;
-}
-
-// The slot to overwrite: an unreadable one, or the one holding the
-// older value.
-static unsigned slot_to_write(int ok_a, uint32_t a, int ok_b, uint32_t b) {
-    if (!ok_a) {
-        return 0;
-    }
-    if (!ok_b) {
-        return 1;
-    }
-    return b < a ? 1 : 0;
-}
-
-static int epoch_load(void *epoch_io, uint32_t *value) {
-    const epoch_slots *slots = epoch_io;
-    uint32_t a = 0;
-    uint32_t b = 0;
-    int ok_a = slot_read(slots->slot_path[0], &a) == 0;
-    int ok_b = slot_read(slots->slot_path[1], &b) == 0;
-    if (!ok_a && !ok_b) {
-        // Both slots unreadable, so ch_connect fails with CH_EINVAL.
-        // That is the right answer. A device that cannot read its
-        // epoch cannot enforce revocation, and answering zero would
-        // trust every certificate the CA has ever issued.
-        return -1;
-    }
-    // Take the highest valid slot.
-    if (!ok_a) {
-        *value = b;
-        return 0;
-    }
-    *value = (ok_b && b > a) ? b : a;
-    return 0;
-}
-
-static int epoch_store(void *epoch_io, uint32_t value) {
-    const epoch_slots *slots = epoch_io;
-    uint32_t a = 0;
-    uint32_t b = 0;
-    int ok_a = slot_read(slots->slot_path[0], &a) == 0;
-    int ok_b = slot_read(slots->slot_path[1], &b) == 0;
-    return slot_write(slots->slot_path[slot_to_write(ok_a, a, ok_b, b)], value);
 }
 
 static const char *epoch_verdict(uint8_t status) {
@@ -372,45 +367,54 @@ static void on_ticket(void *io, const ch_ticket *ticket) {
 // One request and one reply, to show that ch_write and ch_read do not
 // change between trust modes. Returns 0 on success.
 static int one_exchange(ch_tls *tls) {
-    static const uint8_t request[] = "GET /health HTTP/1.0\r\n\r\n";
+    static const uint8_t request[] = "estado\n";
     if (ch_write(tls, request, sizeof request - 1) != CH_OK) {
         (void)fprintf(stderr, "write failed\n");
         return -1;
     }
-    // ch_read hands back what one record held, never more, so a reply
-    // spanning several records needs this loop. 0 is the peer's
-    // close_notify and ends the exchange; below 0 is a ch_err code.
-    for (;;) {
-        uint8_t reply[256];
-        int got = ch_read(tls, reply, sizeof reply);
+    // ch_read hands back what one record held, never more, so framing
+    // stays the application's job. This reply is one line, so read until
+    // the newline arrives. A protocol that ends on close instead would
+    // loop until ch_read returns 0.
+    uint8_t reply[256];
+    size_t have = 0;
+    while (have < sizeof reply) {
+        int got = ch_read(tls, reply + have, sizeof reply - have);
         if (got == 0) {
-            return 0;
+            break; // the peer closed before the newline
         }
         if (got < 0) {
             (void)fprintf(stderr, "read returned %d\n", got);
             return -1;
         }
-        (void)fwrite(reply, 1, (size_t)got, stdout);
-        (void)fflush(stdout);
+        have += (size_t)got;
+        if (memchr(reply, '\n', have) != NULL) {
+            break;
+        }
     }
+    (void)fwrite(reply, 1, have, stdout);
+    (void)fflush(stdout);
+    return 0;
 }
 
 // Points cfg at the two slot files and turns the revocation epoch on.
 // Without this the client verifies chains and enforces no revocation.
 static void configure_epoch(ch_cfg *cfg, epoch_slots *slots, char **argv) {
-    slots->slot_path[0] = argv[3];
-    slots->slot_path[1] = argv[4];
+    slots->slot_path = argv[4];
     cfg->epoch_load = epoch_load;
     cfg->epoch_store = epoch_store;
     cfg->epoch_io = slots;
 }
 
 int main(int argc, char **argv) {
-    if (argc != 3 && argc != 5) {
+    if (argc != 4 && argc != 5) {
         (void)fprintf(stderr,
-                      "usage: %s host port [epoch-slot-a epoch-slot-b]\n"
-                      "  without the two slot files the revocation epoch stays off\n",
+                      "usage: %s host port ca-key-file [epoch-file]\n"
+                      "  without the epoch file the revocation epoch stays off\n",
                       argv[0]);
+        return 2;
+    }
+    if (read_ca_key(argv[3]) != 0) {
         return 2;
     }
     // Replace on a device: POSIX only. Without this, writing to a

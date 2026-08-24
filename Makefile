@@ -601,17 +601,28 @@ endif
 # behaviour. Building them is what stops the API drifting out from
 # under the one place a reader learns it from. ca_client.c needs the
 # CA-trust library, so it builds only in that mode.
-EXAMPLES := examples/psk_client.c examples/pinned_client.c
-ifeq ($(TRUST),ca)
-EXAMPLES += examples/ca_client.c
-endif
+# The examples build against the packaged library, the way a consumer
+# links them, and e2e.sh then runs them against real servers. Building
+# alone catches a changed signature; only running catches a changed
+# meaning, and the reviewers found exactly that class of bug in the
+# first drafts.
+bin/example_psk: examples/psk_client.c bin/chapulin.o
+	@mkdir -p bin
+	$(CC) $(CFLAGS) -I. -o $@ examples/psk_client.c bin/chapulin.o
+
+bin/example_pinned: examples/pinned_client.c bin/chapulin.o
+	@mkdir -p bin
+	$(CC) $(CFLAGS) -I. -o $@ examples/pinned_client.c bin/chapulin.o
+
+# The CA example needs the CA-trust library, so it links its own copy of
+# the sources rather than the packaged raw-pin object.
+bin/example_ca: examples/ca_client.c $(SRCS) $(HDRS)
+	@mkdir -p bin
+	$(CC) $(CFLAGS) -DCH_TRUST_CA -I. -o $@ examples/ca_client.c $(SRCS)
 
 .PHONY: examples-check
-examples-check: bin/chapulin.o
-	@for e in $(EXAMPLES); do \
-	  $(CC) $(CFLAGS) $(LIB_DEF) -I. -o /dev/null $$e bin/chapulin.o || exit 1; \
-	done
-	@echo "examples-check: $(words $(EXAMPLES)) example(s) build against the packaged library"
+examples-check: bin/example_psk bin/example_pinned bin/example_ca
+	@echo "examples-check: every example builds against the packaged library"
 
 
 # lint-invariants checks that the code does not violate an invariant.
