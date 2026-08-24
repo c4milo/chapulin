@@ -146,6 +146,18 @@ def run(name):
     finally:
         target.write_text(original)
         target.touch()
+        # The mutation build future-dated the source, so the binaries it
+        # produced sit AHEAD of the restored source's mtime and make
+        # would keep them forever — a later `make check` then runs a
+        # binary built from the mutant. Delete them so the next build
+        # starts from the restored source. (This is how a poisoned
+        # bin/rsa_test once failed a full check an hour after the
+        # violation run that made it.)
+        for b in builds:
+            if b.startswith("bin/"):
+                (ROOT / b).unlink(missing_ok=True)
+        if not target_is_script and binary.startswith("bin/"):
+            (ROOT / binary).unlink(missing_ok=True)
 
     if rc != 0:
         print(f"  caught   {name} [{head['invariant']}] by {head['catches']}")
