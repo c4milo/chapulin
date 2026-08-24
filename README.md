@@ -29,7 +29,7 @@ GPLv3 or a licence fee, and proprietary firmware pays the fee. The
 permissively licensed stacks do not close the gap either. BearSSL is
 MIT, heap-free, and the closest design ancestor, but it still has no
 TLS 1.3 in 2026. picotls and Mbed TLS have TLS 1.3 and cannot run
-without an allocator, at 9 to 15 kB of working RAM.
+without an allocator, Mbed TLS at 9 to 15 kB of working RAM.
 
 So a vendor with a few kilobytes of SRAM and no budget for middleware
 ships plaintext, or something hand-rolled, and the device joins the
@@ -162,8 +162,8 @@ x25519 row). `hsmsg.c`, `io.c`, and `keysched.c` have no harness.
 maximum, the proof covers all inputs.
 
 The proofs run in two tiers. `make check` runs the fast tier and gates
-every push. `make prove-slow` runs the seven long ones, which CI runs
-nightly. A slow-tier row below carries the verdict of the last nightly
+every push. `make prove-slow` runs the slow-tier legs, which CI runs
+nightly, one job each. A slow-tier row below carries the verdict of the last nightly
 leg that finished, not of the current commit. A harness that starts and
 returns no verdict proves nothing, and this table cannot tell that
 apart from one that passed — so for the slow rows, read the nightly.
@@ -317,7 +317,7 @@ Other targets:
   (`bin/chapulin.o`) exporting exactly the four public calls. Every
   internal symbol is localized, and `lib-check` fails if the export
   list ever grows. Compose with `PIN=ecdsa` and `TRUST=ca`.
-- `make prove-slow` runs the seven long proofs. The runner caches by
+- `make prove-slow` runs the slow-tier proofs, one per nightly job. The runner caches by
   content, so an incremental run re-proves only what changed
   (`PROVE_NO_CACHE=1` forces a full run). It uses [kissat](https://github.com/arminbiere/kissat) when
   installed, which reaches the same verdicts faster;
