@@ -84,8 +84,11 @@ jobs:
 
   check:
     runs-on: ubuntu-24.04
-    # The PR-lane budget: every job in this workflow fits 30 minutes of
-    # wall clock. The slow proof tier lives in the nightly workflow.
+    # The PR-lane budget. This job is the long one: it lands between 10
+    # minutes on a warm proof cache and around 35 cold, so the cap sits
+    # at 45 rather than close to the median. The slow proof tier lives
+    # in the nightly workflow; if this job starts approaching the cap,
+    # move work there rather than raising it.
     timeout-minutes: 45
     env:
       # CI runs the same tool versions as development. When the local

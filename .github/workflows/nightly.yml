@@ -6,7 +6,7 @@ name: nightly
 # diff at hand. Policy: a red nightly opens an issue via the report
 # job below and blocks the next release; it does not block in-flight
 # PRs. A check that becomes fast enough graduates to the PR lane, and
-# one that outgrows the PR budget (30 minutes wall) demotes to here.
+# one that outgrows the PR budget (45 minutes wall) demotes to here.
 on:
   schedule:
     - cron: "17 3 * * *"
