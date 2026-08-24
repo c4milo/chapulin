@@ -286,7 +286,7 @@ which convention holds them.
   is no error a caller can retry past.
 - **Mechanism.** Fail-closed policy; `tlsi_fail` is the single
   funnel.
-- **Check.** Convention; hsseq's 354k-sequence run asserts no
+- **Check.** Convention; hsseq's 466k-sequence run asserts no
   sequence revives a failed session.
 - **Violation.** A PR returns a "soft" error that leaves keys live so
   the caller can retry a read.
@@ -365,13 +365,13 @@ which convention holds them.
 - **Check.** Lean theorem (17 in `Spec/Handshake.lean`, over every
   trace the model admits; `accepts_decompose` bounds the flight at 4
   messages in the spec's `psk` Mode and 6 in its `pinned` Mode);
-  `hsseq_test`, exhaustive over all 354,312 sequences to depth 5 in
-  both auth modes, comparing the real client's verdict against that
-  model — but it links TRUST=raw only, so the CA build's order rests
-  on the shared lines named above plus the e2e run, not on the oracle;
-  CBMC (`handshake` harness) for memory safety only, not for order.
-  Depth 5 also stops one short of the longest flight the model admits,
-  HSECVF, which a hand-written case covers instead.
+  `hsseq_test`, exhaustive over 466,286 sequences — all eleven letters
+  to depth 5, and the six handshake letters to depth 6 so the longest
+  flight the model admits is reached — in both auth modes, comparing
+  the real client's verdict against that model. It links TRUST=raw
+  only, so the CA build's order rests on the shared lines named above
+  plus the e2e run, not on the oracle; CBMC (`handshake` harness) for
+  memory safety only, not for order.
 - **Violation.** A PR relaxes one type check to tolerate a message a
   peer "usually" sends early, and a flight with a skipped
   CertificateVerify authenticates. This is the SMACK and FREAK class:

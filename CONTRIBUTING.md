@@ -57,7 +57,7 @@ Domain vocabulary keeps the RFCs' own spelling: `pt`, `aad`, `iv`,
   `make hooks` once after clone, or CI tells you at PR time. Bodies
   explain why and wrap at 100 columns.
 - `make check` runs the build, linters, unit and differential tests,
-  and the fast proof tier. The seven slow proofs run as
+  and the fast proof tier. The slow proofs run as
   `make prove-slow` in CI and before a release.
 - The PIN variable splits the pinned-key build: RSA-PSS by default,
   `PIN=ecdsa` for P-256. One algorithm per library object; test both.

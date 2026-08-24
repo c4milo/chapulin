@@ -179,17 +179,6 @@ Spec.Handshake.accepts : (mode : Mode) → (msgs : List Msg) → Bool       -- f
                         -- accept iff every message is legal and the handshake completes
                         -- (connected, optionally then close_notify). Line op:
                         -- `hsseq <mode> <letters>` → 1/0, `-` for the empty sequence.
-```
-
-Shared helpers live in `Spec/Bytes.lean` (hex, BE/LE Nat coding, xor).
-Build with `~/.elan/bin/lake build` inside `spec/`; keep the build
-dependency-free (no mathlib).
-
-Three pieces, for the three places CONTRACT.md keeps this information.
-
-(1) In the signature block, after `Spec.Handshake.accepts`:
-
-```
 Spec.Epoch.check      : (bound stored : Nat) → (cert : Option Nat) → Bool
                         -- docs/ca.md, INV-21: handshake.c's epoch_check over one
                         -- leaf. cert is the certificate reader's epoch number —
@@ -216,40 +205,9 @@ Spec.Epoch.acceptedCount : (bound : Nat) → Nat → List (Option Nat) → Nat
                         -- judged against the stored epoch as it stood then.
 ```
 
-(2) In "Proven properties", after the `Spec.Handshake` block:
-
-```
-Spec.Epoch, over the monotonic revocation epoch (docs/ca.md, INV-21). `bound` is
-quantified, so every statement covers every build's CH_EPOCH_BOUND:
-  commit_ge                     a commit never lowers the stored epoch
-  commit_le_of_check            a commit the check admitted raises it by at most
-                                bound; with commit_ge, an admitted commit that
-                                moves at all lands in (stored, stored + bound]
-  commit_takes_any_epoch        the bound belongs to the call order, not to
-                                epoch_commit: for every bound and stored epoch a
-                                certificate bound+1 steps ahead is one the check
-                                refuses and the commit would take
-  step_idem                     replaying an accepted certificate changes nothing
-  storedAfter_ge                over a list of certificates the stored epoch
-                                never decreases
-  storedAfter_le                and rises by at most bound per accepted
-                                certificate: n completed handshakes end no higher
-                                than stored + bound * n — the the jump bound rule,
-                                which no single-step statement expresses
-  storedAfter_eq_of_none_accepted
-                                a run that accepted nothing ends where it started
-  storedAfter_le_maxEpoch       a device at or below CH_EPOCH_MAX that sees only
-                                in-range numbers keeps one, so the stored side of
-                                `stored + bound` also stays inside uint32
-```
-
-(3) In "Proof status by module", one row:
-
-```
-| Epoch | 8 | the ordering and bound rule over the epoch value: commit monotonicity, the per-certificate bound, the run-level `stored + bound * accepted` ceiling, replay idempotence, and range preservation. Model only — no differential covers this module (below) |
-```
-
-(4) The honesty note, as a new section:
+Shared helpers live in `Spec/Bytes.lean` (hex, BE/LE Nat coding, xor).
+Build with `~/.elan/bin/lake build` inside `spec/`; keep the build
+dependency-free (no mathlib).
 
 ## Epoch is not an oracle
 
@@ -292,19 +250,20 @@ Both sides must refuse the same messages, but they need not refuse them
 in the same function. `hsparse.c` is a framing parser: it hands what it
 read to `handshake.c`, which decides whether the handshake can go on.
 The model has no layer above it, so it makes those decisions where it
-reads the field. Four checks fall on opposite sides of that line, and
+reads the field. Five checks fall on opposite sides of that line, and
 `test/diff_hsparse.h` projects the C answer down to the model's
 boundary rather than weakening the model to match the split:
 
 | check | C decides | model decides |
 | --- | --- | --- |
-| ServerHello with no key_share | `handshake.c:352`, on `have_share` | `parseServerHello` |
-| selected_identity outside the one offered index | `handshake.c:352`, on `psk_ok` | `parseServerHello` |
+| ServerHello with no key_share | `hello_exchange`, on `have_share` | `parseServerHello` |
+| selected_identity outside the one offered index | `hello_exchange`, on `psk_ok` | `parseServerHello` |
 | HelloRetryRequest with no cookie | `handshake.c`, on an absent cookie | `parseServerHello` |
 | CertificateEntry carrying an unoffered extension | the trust mode's certificate parser | `parseCertificate` |
+| ServerHello that ignores the offered PSK | `hello_exchange`, on `psk_ok` | nothing — both parsers accept it; whether resumption was required sits above them |
 
 Each ends the handshake on both sides; only the layer that ends it
-differs. A fifth went the other way — the model bounded the
+differs. One more went the other way — the model bounded the
 CertificateVerify signature by the pinned key's size, which §4.4.3 does
 not do and `hsparse.c` leaves to the verifier — and the model gave the
 check up rather than the driver paper over it.
@@ -393,6 +352,29 @@ the differential carry that), cryptographic security notions, and
 x25519/P-256 group laws (mathlib-scale; out of scope for a
 dependency-free build).
 
+Spec.Epoch, over the monotonic revocation epoch (docs/ca.md, INV-21). `bound` is
+quantified, so every statement covers every build's CH_EPOCH_BOUND:
+  commit_ge                     a commit never lowers the stored epoch
+  commit_le_of_check            a commit the check admitted raises it by at most
+                                bound; with commit_ge, an admitted commit that
+                                moves at all lands in (stored, stored + bound]
+  commit_takes_any_epoch        the bound belongs to the call order, not to
+                                epoch_commit: for every bound and stored epoch a
+                                certificate bound+1 steps ahead is one the check
+                                refuses and the commit would take
+  step_idem                     replaying an accepted certificate changes nothing
+  storedAfter_ge                over a list of certificates the stored epoch
+                                never decreases
+  storedAfter_le                and rises by at most bound per accepted
+                                certificate: n completed handshakes end no higher
+                                than stored + bound * n — the jump bound rule,
+                                which no single-step statement expresses
+  storedAfter_eq_of_none_accepted
+                                a run that accepted nothing ends where it started
+  storedAfter_le_maxEpoch       a device at or below CH_EPOCH_MAX that sees only
+                                in-range numbers keeps one, so the stored side of
+                                `stored + bound` also stays inside uint32
+
 ## Proof status by module
 
 The machine-versus-convention line for the spec, kept honest by `make
@@ -405,7 +387,7 @@ means the module's selftest plus the differential oracle carry it;
 | --- | --- | --- |
 | Bytes | 24 | proof toolkit: fold characterizations, xor involution and left cancellation, hex injectivity, big-endian round trip and injectivity |
 | Drbg | 13 | key advance (the next key is the counter-0 block, independent of the request size), key/output disjointness within one keystream, request-prefix consistency, session key chain |
-| Hsparse | 14 | message-grammar soundness: an accepted ServerHello echoes the empty legacy_session_id the profile offers and a 32-octet x25519 key_exchange, and any selected_identity it reports is the single index one offered identity puts in range; a result is a HelloRetryRequest exactly when the Random is §4.1.4's fixed value; an accepted CertificateVerify reports the build's own pinned SignatureScheme and no other |
+| Hsparse | 7 | message-grammar soundness: an accepted ServerHello echoes the empty legacy_session_id the profile offers and a 32-octet x25519 key_exchange, and any selected_identity it reports is the single index one offered identity puts in range; a result is a HelloRetryRequest exactly when the Random is §4.1.4's fixed value; an accepted CertificateVerify reports the build's own pinned SignatureScheme and no other |
 | Handshake | 17 | state-machine safety invariants: exactly one ServerHello, EncryptedExtensions and Finished; no certificate flight under PSK; pinned flight shape and order; HRR bound; no CertificateRequest; no post-handshake message before Finished; close_notify at most once and last |
 | Record | 8 | seal/open round trip at both the AEAD and record layers, record size, nonce size, nonce injectivity (distinct sequence numbers never share a nonce), and that an accepted record never carries content type invalid(0) |
 | ChaCha | 5 | block size, structural lemmas, keystream prefix stability; keystream itself vector-checked |
@@ -418,9 +400,10 @@ means the module's selftest plus the differential oracle carry it;
 | X25519 | 2 | RFC 7748 §5 clamping: every decoded scalar is a multiple of the cofactor 8, and has bit 254 set with bit 255 clear. The first keeps `k * P` in the prime-order subgroup, the second fixes the ladder's iteration count. The ladder arithmetic itself stays vector-checked |
 | X509Der | 19 | DER canonicality: a length, a TLV, and an INTEGER are accepted only in the one encoding X.690 §10.1 and §8.3.2 admit, so the reader is DER-strict rather than BER-lenient; plus the encode/decode round trips and the §8.19.2 subidentifier rule |
 | X509 | 4 | parse soundness: an accepted list reports a key only after a signature over the complete DER of the TBSCertificate that carried it verified under the pinned key, or under an intermediate the pinned key itself signed; the entry is a byte range of the list and no third entry can follow. Acceptance policy beyond that is executable oracle only: mint/parse round trips for the single leaf and the chained pair (self-checked signatures; OpenSSL material is exercised by the C strictness suite) and the differential |
+| Epoch | 8 | the ordering and bound rule over the epoch value: commit monotonicity, the per-certificate bound, the run-level `stored + bound * accepted` ceiling, replay idempotence, and range preservation. Model only — no differential covers this module (below) |
 
 The one remaining zero-theorem module, P-256, is among the hardest and the most
-security-critical; they are executable and vector-checked but carry no
+security-critical; it is executable and vector-checked but carries no
 proven properties. The missing theorems, in value order: X25519 ladder
 invariants, then the P-256 and RSA arithmetic lemmas — all three need
 number theory this dependency-free build does not carry. What is

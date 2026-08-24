@@ -148,6 +148,6 @@ anything) and fine when both ends are ours.
 Every competitor's RAM claim hides the 16,384+ B max record buffer.
 Published minima for a working TLS 1.3 PSK client: wolfSSL ~6.2 kB heap
 (buffers extra), mbedTLS ~9–15 kB (buffers extra), SharkSSL 13 kB
-total-system (cert-based). chapulin: 1,008 B session + a 2 kB record
+total-system (cert-based). chapulin: 1,056 B session + a 2 kB record
 buffer = ~3 kB total static, zero heap, buffer included — with
 record_size_limit making the small buffer safe rather than hopeful.

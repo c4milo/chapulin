@@ -333,11 +333,9 @@ def helloRetryRequestExtensions : List Nat :=
 /--
 RFC 9846 §4.1.3, read down the struct:
 
-* `legacy_version` is read past, not judged. §4.2.1 says a client
-  "MUST ignore the ServerHello.legacy_version value" whenever
-  supported_versions is present, and §9.2 makes that extension
-  required in a ServerHello, so the field is ignored on every message
-  this parser accepts;
+* `legacy_version` is 0x0303 exactly. §4.1.3 freezes the field at that
+  value and §4.2.1's real version moves to supported_versions, so
+  any other legacy_version is an illegal_parameter;
 * `random` is 32 octets, handed on for the §4.1.4 comparison;
 * `legacy_session_id_echo<0..32>`: a longer echo is a field out of the
   specified range, decode_error (§6.2). Whether it matches the
@@ -723,12 +721,11 @@ signature<0..2^16-1>; }`, filling the message exactly.
   code point that passes. §4.4.3 requires the algorithm be one the
   client offered but names no alert for one that is not, so the
   refusal is `unspecified`;
-* `signature`: profile — its length is bounded by the pinned key. The
-  RFC's own vector admits anything up to 2^16-1, and a zero-heap
-  client cannot hold what it cannot verify, so a length outside the
-  scheme's range is a field out of the specified range (§6.2). Whether
-  the signature verifies is not decided here; §4.4.3 makes that failure
-  a decrypt_error, and it belongs to `Spec.Rsa.pssVerify` or
+* `signature`: `opaque signature<0..2^16-1>`, exact-fill. §4.4.3 sets
+  no length rule of its own — what lengths a scheme admits is the
+  verifier's business, so no bound is imposed here. Whether the
+  signature verifies is not decided here either; §4.4.3 makes that
+  failure a decrypt_error, and it belongs to `Spec.Rsa.pssVerify` or
   `Spec.P256.ecdsaVerify` over `verifyContent`.
 -/
 def parseCertificateVerify (scheme : Scheme) (msg : ByteArray) :

@@ -154,7 +154,7 @@ bin/x509strict_ecdsa: $(X509STRICT_SRC) p256.c $(HDRS) $(TESTH)
 	$(CC) $(CFLAGS) -DCH_PIN_ECDSA -I. -o $@ $(X509STRICT_SRC) p256.c
 
 # Sequence differential: every server message sequence to a bounded depth
-# (ENUM_DEPTH overrides; 5 is ~354k sequences over both modes) against the
+# (ENUM_DEPTH overrides; the default sweep is ~466k sequences over both modes) against the
 # Lean state machine's verdict. Links the stack minus the pinned
 # verifiers, which it stubs — V in a sequence means "signature valid".
 bin/hsseq_test: test/hsseq_test.c $(SRCS) $(HDRS) $(TESTH)
@@ -623,7 +623,7 @@ bin/example_ca: examples/ca_client.c $(SRCS) $(HDRS)
 
 .PHONY: examples-check
 examples-check: bin/example_psk bin/example_pinned bin/example_ca
-	@echo "examples-check: every example builds against the packaged library"
+	@echo "examples-check: the PSK and pinned examples link the packaged library; ca_client links the CA-trust sources"
 
 
 # lint-invariants checks that the code does not violate an invariant.

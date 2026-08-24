@@ -32,10 +32,10 @@ fi
 # One temp dir holds every server key, ticket, and stderr file, so two runs
 # on the same host never share a path.
 DIR=$(mktemp -d)
-trap 'kill ${SERVER:-} ${SERVER2:-} ${SERVER3:-} ${SERVER4:-} ${SERVER5:-} ${SERVER6:-} \
-           ${SERVER7:-} ${SERVER8:-} ${SERVER9:-} ${SERVER10:-} ${SERVER11:-} \
-           ${SERVER12:-} ${SERVER13:-} ${SERVER16:-} 2>/dev/null || true
-      rm -rf "$DIR"' EXIT
+# Every start_server/start_goecho appends its pid to SRV_PIDS, so this
+# kills all of them without a hand-maintained list to fall behind.
+SRV_PIDS=""
+trap 'kill $SRV_PIDS 2>/dev/null || true; rm -rf "$DIR"' EXIT
 
 # Nothing here picks a port. Each server binds port 0, the kernel
 # assigns a free one, and the helpers below read it back — so two runs
@@ -58,6 +58,7 @@ start_server() {
     local log="$DIR/server$SRV_N.log"
     "$OPENSSL" s_server "$@" -accept 0 > "$log" 2>&1 &
     SRV_PID=$!
+    SRV_PIDS="$SRV_PIDS $SRV_PID"
     disown "$SRV_PID" 2>/dev/null || true
     read_port "$SRV_PID" "$log" 's/^ACCEPT .*:\([0-9][0-9]*\)$/\1/p'
 }
@@ -68,6 +69,7 @@ start_goecho() {
     local log="$DIR/server$SRV_N.log"
     "$DIR/goecho" "$@" -addr 127.0.0.1:0 > "$log" 2>&1 &
     SRV_PID=$!
+    SRV_PIDS="$SRV_PIDS $SRV_PID"
     disown "$SRV_PID" 2>/dev/null || true
     read_port "$SRV_PID" "$log" 's/.*listening on .*:\([0-9][0-9]*\)$/\1/p'
 }

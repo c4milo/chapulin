@@ -16,7 +16,7 @@ permissions:
   contents: read
 
 jobs:
-  # The seven SAT heavyweights, hours on a cold cache — one job each, so
+  # The slow-tier proofs, hours on a cold cache — one job each, so
   # a proof that never converges starves only its own leg. The cache
   # save runs even on failure or timeout, so interrupted runs converge
   # across nights instead of starting over.
@@ -25,7 +25,7 @@ jobs:
     timeout-minutes: 300
     strategy:
       # Every leg runs to its own verdict: one heavyweight failing tells
-      # us nothing about the other four, and cancelling their multi-hour
+      # us nothing about the others, and cancelling their multi-hour
       # solves would throw away the run's whole point.
       fail-fast: false
       matrix:
@@ -42,11 +42,13 @@ jobs:
           path: ~/kissat-inst
           key: kissat-${{ runner.os }}-rel-4.0.4
       - name: Build and install kissat
-        # The slow tier reaches for kissat only on a runner whose budget
-        # admits its 12 GB weight; a standard runner budgets 8 and falls
-        # back to the built-in solver, which run.sh says on stdout. The
-        # step stays so a larger runner picks kissat up without an edit,
-        # and the cache keeps it to seconds.
+        # Every leg here sets PROVE_ONLY, and a lone proof keeps kissat
+        # whatever it weighs — the budget fallback applies only to whole-
+        # tier runs, so on these legs kissat always runs. The trade: a
+        # formula whose kissat-path peak clears the ~14 GiB address-space
+        # cap dies as a fast, named FAILED instead of grinding under the
+        # built-in solver — better than a 300-minute cancellation, and
+        # x25519 went from cancelled-at-cap to 847 s this way.
         run: |
           if [ ! -x ~/kissat-inst/kissat ]; then
             curl -fsSL https://github.com/arminbiere/kissat/archive/refs/tags/rel-4.0.4.tar.gz | tar xz
@@ -63,7 +65,7 @@ jobs:
         uses: actions/cache/restore@v6
         with:
           path: proof/.cache
-          key: proofs-${{ runner.os }}-${{ matrix.proof }}-${{ github.run_id }}
+          key: proofs-${{ runner.os }}-${{ matrix.proof }}-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: |
             proofs-${{ runner.os }}-${{ matrix.proof }}-
             proofs-${{ runner.os }}-
@@ -99,7 +101,7 @@ jobs:
         uses: actions/cache/save@v6
         with:
           path: proof/.cache
-          key: proofs-${{ runner.os }}-${{ matrix.proof }}-${{ github.run_id }}
+          key: proofs-${{ runner.os }}-${{ matrix.proof }}-${{ github.run_id }}-${{ github.run_attempt }}
       # always(), not failure(): timeout-minutes cancels the job rather
       # than failing it, so failure() skips exactly the run that needs
       # the logs. run.sh writes one log per proof as it starts, so a

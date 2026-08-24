@@ -270,7 +270,7 @@ jobs:
         uses: actions/cache/restore@v6
         with:
           path: proof/.cache
-          key: proofs-${{ runner.os }}-${{ github.run_id }}
+          key: proofs-${{ runner.os }}-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: proofs-${{ runner.os }}-
 
       - run: make check
@@ -278,7 +278,7 @@ jobs:
         if: always()
         run: cat bin/proof-coverage.md >> "$GITHUB_STEP_SUMMARY" 2>/dev/null || true
 
-      # The seven SAT heavyweights run in the nightly workflow; this job
+      # The slow-tier proofs run in the nightly workflow; this job
       # gates pushes and PRs in minutes with the fast tier.
 
       # Save even on failure or timeout (always() runs on cancelled jobs):
@@ -291,7 +291,7 @@ jobs:
         uses: actions/cache/save@v6
         with:
           path: proof/.cache
-          key: proofs-${{ runner.os }}-${{ github.run_id }}
+          key: proofs-${{ runner.os }}-${{ github.run_id }}-${{ github.run_attempt }}
 
       # A failed proof's one-line verdict is not diagnosable from the run
       # output alone; keep the full solver logs.
