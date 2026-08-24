@@ -1,7 +1,7 @@
 invariant: INV-21
 file: handshake.c
 catches: test/e2e.sh
-builds: bin/tlsclient_ca bin/tlsclient_ca_ecdsa
+builds: bin/tlsclient bin/tlsclient_ecdsa bin/tlsclient_ca bin/tlsclient_ca_ecdsa bin/example_psk bin/example_pinned bin/example_ca
 reason: committing the epoch on the chain verdict alone lets a certificate
   that never proves possession of its key raise the device's stored
   epoch, which outlives the session. epoch_commit asserts on

@@ -1,6 +1,7 @@
 invariant: INV-9
 file: record.c
 catches: diff
+builds: bin/diff
 reason: rec_seal starts emitting 16 bytes of TLSInnerPlaintext padding, so the
   client sends padding the invariant says it never sends and every record
   grows past the measured SRAM and vector sizes

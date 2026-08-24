@@ -366,4 +366,11 @@ done
 if [ $FAIL -ne 0 ]; then
     exit 1
 fi
+# A PROVE_ONLY that matched no launch line proves nothing, and "all
+# verified" over zero jobs reads as success. A typo in the harness name
+# lands here; fail rather than bless it.
+if [ -n "${PROVE_ONLY:-}" ] && [ $((NJOBS + NCACHED)) -eq 0 ]; then
+    echo "prove: PROVE_ONLY='$PROVE_ONLY' matched no launch line in the $TIER tier"
+    exit 1
+fi
 echo "prove($TIER): $NJOBS proved + $NCACHED cached, all verified"

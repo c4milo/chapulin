@@ -36,9 +36,15 @@ STALE is a failure too. A violation that silently stops matching is
 worse than none, because it reports success forever.
 """
 
+import os
 import pathlib
 import subprocess
+import time
 import sys
+
+# Each violation rebuilds and reruns its target, worth watching in
+# real time, so flush per line rather than buffering until exit.
+sys.stdout.reconfigure(line_buffering=True)
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 VIOLATIONS = ROOT / "test" / "violations"
@@ -77,38 +83,71 @@ def run(name):
               f"{original.count(old)} times in {head['file']}, expected 1")
         return "stale"
 
+    # A "catches" with a slash is a script run as-is; otherwise it names
+    # a binary under bin/. Either way the target must be built from the
+    # source under test; a script that builds nothing of its own
+    # (test/e2e.sh runs no make) needs a 'builds' line saying what to.
+    target_is_script = "/" in head["catches"]
+    binary = head["catches"] if target_is_script else f"bin/{head['catches']}"
+    builds = head.get("builds", "" if target_is_script else binary).split()
+    if target_is_script and not builds:
+        print(f"  STALE    {name}: a script target needs a 'builds' line "
+              f"naming what to rebuild from the edited source")
+        return "stale"
+
+    def rebuild_and_run():
+        """Rebuild the prerequisites from the source on disk now, then run
+        the target. Returns (built_ok, run_returncode).
+
+        make decides staleness by whole-second mtimes, and a prior
+        violation's edit-then-restore plus this one's edit can all land in
+        one tick — leaving a binary make thinks is current but that was
+        built from other source. So the edited file's mtime is pushed a
+        minute into the future before each build: make then always sees
+        it as newer than any binary and rebuilds, and the verdict depends
+        on the source rather than on build-cache timing. A minute ahead of
+        the object files, not deleting them, keeps the rebuild
+        incremental — a delete would recompile every source each time."""
+        future = time.time() + 60
+        os.utime(target, (future, future))
+        if builds:
+            b = subprocess.run(["make", *builds], cwd=ROOT,
+                               capture_output=True, text=True)
+            if b.returncode != 0:
+                return False, None
+        r = subprocess.run([binary], cwd=ROOT, capture_output=True, text=True)
+        return True, r.returncode
+
+    # Baseline: the target must PASS on unedited source in this
+    # environment before its verdict on an edit means anything. Without
+    # it, a target that fails for an unrelated reason — a missing binary,
+    # an absent oracle — makes the edit look caught when it was never
+    # compiled in. "Break X, expect failure" says nothing unless X
+    # demonstrably passes first.
+    base_built, base_rc = rebuild_and_run()
+    if not base_built:
+        print(f"  ERROR    {name}: {' '.join(builds)} does not build on clean "
+              f"source; cannot establish a baseline")
+        return "error"
+    if base_rc != 0:
+        print(f"  ERROR    {name}: {head['catches']} fails on unedited source "
+              f"(exit {base_rc}); its verdict on an edit would be meaningless")
+        return "error"
+
     try:
         target.write_text(original.replace(old, new, 1))
-        # Touch so make rebuilds: an edit inside the same second as the
-        # last build otherwise leaves the binary alone.
-        target.touch()
-        # A "catches" with a slash is a script run as-is; otherwise it
-        # names a binary under bin/. Either way something must be built
-        # from the edited source first: a script that builds nothing of
-        # its own (test/e2e.sh runs no make) would otherwise run
-        # yesterday's binaries and report on code it never compiled.
-        target_is_script = "/" in head["catches"]
-        binary = head["catches"] if target_is_script else f"bin/{head['catches']}"
-        builds = head.get("builds", "" if target_is_script else binary).split()
-        if target_is_script and not builds:
-            print(f"  STALE    {name}: a script target needs a 'builds' line "
-                  f"naming what to rebuild from the edited source")
-            return "stale"
-        if builds:
-            built = subprocess.run(["make", *builds], cwd=ROOT,
-                                   capture_output=True, text=True)
-            if built.returncode != 0:
-                # An edit that will not compile proves nothing about the
-                # tests, so say that rather than counting it as caught.
-                print(f"  unguarded {name}: {head['file']} no longer compiles; "
-                      f"write an edit that builds")
-                return "unguarded"
-        ran = subprocess.run([binary], cwd=ROOT, capture_output=True, text=True)
+        built, rc = rebuild_and_run()
+        if not built:
+            # An edit that will not compile proves nothing about the
+            # tests, so say that rather than counting it as caught.
+            print(f"  unguarded {name}: {head['file']} no longer compiles; "
+                  f"write an edit that builds")
+            return "unguarded"
     finally:
         target.write_text(original)
         target.touch()
 
-    if ran.returncode != 0:
+    if rc != 0:
         print(f"  caught   {name} [{head['invariant']}] by {head['catches']}")
         return "caught"
     print(f"  unguarded {name} [{head['invariant']}]: {head['catches']} passed "
@@ -117,17 +156,42 @@ def run(name):
     return "unguarded"
 
 
+# The fast tier for the PR lane is the targets that run in seconds: the
+# unit suite, the strictness parsers, rsa_test. Left out are the ones
+# whose single run is expensive — the exhaustive handshake enumeration
+# (minutes), the end-to-end suite (needs live servers), and the
+# differential (each run drives ~6000 oracle comparisons, so a baseline
+# and a mutation pass together are ~30s per violation). The tier follows
+# the target, so no per-violation field drifts from what the check runs.
+FAST_TARGETS = {"unit", "unit_ca", "x509strict", "x509strict_ecdsa",
+                "rsa_test", "drbg_test", "hsstrict_test"}
+
+
+def catches_of(name):
+    return parse(VIOLATIONS / f"{name}.violation")[0]["catches"]
+
+
 def main():
-    names = sys.argv[1:] or sorted(p.stem for p in VIOLATIONS.glob("*.violation"))
+    args = [a for a in sys.argv[1:] if not a.startswith("--")]
+    tier = next((a[len("--tier="):] for a in sys.argv[1:]
+                 if a.startswith("--tier=")), None)
+    names = args or sorted(p.stem for p in VIOLATIONS.glob("*.violation"))
+    if tier == "fast":
+        names = [n for n in names if catches_of(n) in FAST_TARGETS]
+    elif tier == "slow":
+        names = [n for n in names if catches_of(n) not in FAST_TARGETS]
+    elif tier is not None:
+        sys.exit(f"test-invariants: unknown --tier={tier} (want fast or slow)")
     if not names:
         sys.exit("test-invariants: nothing in test/violations/")
     print(f"test-invariants: {len(names)} violations to check")
-    tally = {"caught": 0, "unguarded": 0, "stale": 0}
+    tally = {"caught": 0, "unguarded": 0, "stale": 0, "error": 0}
     for name in names:
         tally[run(name)] += 1
     print(f"test-invariants: {tally['caught']} caught, "
-          f"{tally['unguarded']} unguarded, {tally['stale']} stale")
-    if tally["unguarded"] or tally["stale"]:
+          f"{tally['unguarded']} unguarded, {tally['stale']} stale, "
+          f"{tally['error']} error")
+    if tally["unguarded"] or tally["stale"] or tally["error"]:
         sys.exit(1)
 
 

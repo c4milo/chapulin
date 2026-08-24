@@ -1,6 +1,7 @@
 invariant: INV-8
 file: hsparse.c
 catches: diff
+builds: bin/diff
 reason: supported_versions stops pinning 1.3, so a server that selects TLS 1.2
   completes the ServerHello instead of failing closed
 
