@@ -371,6 +371,18 @@ static int run(handshake_state *h) {
     ch_tls *t = h->t;
     ch_rand_bytes(h->priv, sizeof h->priv);
     ch_rand_bytes(h->random, sizeof h->random);
+    // run() zeroed h, so a hook that returned without writing leaves
+    // both of these zero, and nothing downstream would notice: the
+    // handshake completes and the peer can predict the key. A real draw
+    // is all-zero with probability 2^-256, so this checks the
+    // integrator's hook against rand.h's contract rather than checking
+    // peer input, which is what CH_ASSERT is for. It cannot tell a weak
+    // generator from a strong one; nothing here can.
+    {
+        static const uint8_t unwritten[X25519_LEN] = {0};
+        CH_ASSERT(!ct_memeq(h->priv, unwritten, sizeof h->priv));
+        CH_ASSERT(!ct_memeq(h->random, unwritten, sizeof h->random));
+    }
     x25519_base(h->pub, h->priv);
     if (t->cfg.psk != NULL) {
         ks_early(t->cfg.psk, t->cfg.psk_len, t->cfg.resumption, h->early, h->binder_key);
