@@ -37,27 +37,10 @@ trap 'kill ${SERVER:-} ${SERVER2:-} ${SERVER3:-} ${SERVER4:-} ${SERVER5:-} ${SER
            ${SERVER12:-} ${SERVER13:-} ${SERVER16:-} 2>/dev/null || true
       rm -rf "$DIR"' EXIT
 
-# Each run takes a disjoint 32-port slot, of which 16 are in use. The
-# slot was 16 wide and exactly full, so the next port added would have
-# landed on the following run's PORT and failed only for some PIDs. The
-# modulus shrinks to keep the top of the range under 65535: the highest
-# port this can name is 20000 + 1399*32 + 31.
-PORT=$((20000 + ($$ % 1400) * 32))
-PORT2=$((PORT + 1))
-PORT3=$((PORT + 2))
-PORT4=$((PORT + 3))
-PORT5=$((PORT + 4))
-PORT6=$((PORT + 5))
-PORT7=$((PORT + 6))
-PORT8=$((PORT + 7))
-PORT9=$((PORT + 8))
-PORT10=$((PORT + 9))
-PORT11=$((PORT + 10))
-PORT12=$((PORT + 11))
-PORT13=$((PORT + 12))
-PORT14=$((PORT + 13))
-PORT15=$((PORT + 14))
-PORT16=$((PORT + 15))
+# Nothing here picks a port. Each server binds port 0, the kernel
+# assigns a free one, and the helpers below read it back — so two runs
+# on one machine cannot collide however many servers either starts.
+SRV_N=0
 
 PSK=0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20
 ID=sapo-01
@@ -65,20 +48,47 @@ ID=sapo-01
 # Waits until pid listens on port; fails if the process exits first (for
 # example when the port was taken and the server could not bind). Uses a
 # bash TCP probe so no netcat is required.
-wait_listen() {
-    local pid=$1 port=$2
+# Starts an s_server on a kernel-assigned port. Sets SRV_PID and
+# SRV_PORT. Every argument is passed through, so a caller adds only what
+# its leg needs. -quiet is deliberately absent: it suppresses the ACCEPT
+# line this reads the port from, and the server's chatter goes to a log
+# rather than the console anyway.
+start_server() {
+    SRV_N=$((SRV_N + 1))
+    local log="$DIR/server$SRV_N.log"
+    "$OPENSSL" s_server "$@" -accept 0 > "$log" 2>&1 &
+    SRV_PID=$!
+    disown "$SRV_PID" 2>/dev/null || true
+    read_port "$SRV_PID" "$log" 's/^ACCEPT .*:\([0-9][0-9]*\)$/\1/p'
+}
+
+# The same for the Go echo server, which prints Go's own Addr().
+start_goecho() {
+    SRV_N=$((SRV_N + 1))
+    local log="$DIR/server$SRV_N.log"
+    "$DIR/goecho" "$@" -addr 127.0.0.1:0 > "$log" 2>&1 &
+    SRV_PID=$!
+    disown "$SRV_PID" 2>/dev/null || true
+    read_port "$SRV_PID" "$log" 's/.*listening on .*:\([0-9][0-9]*\)$/\1/p'
+}
+
+# Waits for a just-started server to report the port it bound, and
+# leaves it in SRV_PORT. A server that exits first is a configuration
+# error worth showing, so its log goes to the console.
+read_port() {
+    local pid=$1 log=$2 script=$3
     for _ in $(seq 1 40); do
+        SRV_PORT=$(sed -n "$script" "$log" 2>/dev/null | head -1)
+        [ -n "$SRV_PORT" ] && return 0
         kill -0 "$pid" 2>/dev/null || {
-            echo "FAIL e2e: server on port $port died at startup"
+            echo "FAIL e2e: server exited before it reported a port"
+            cat "$log"
             exit 1
         }
-        (exec 3<>"/dev/tcp/127.0.0.1/$port") 2>/dev/null && {
-            exec 3>&- 2>/dev/null || true
-            return 0
-        }
-        sleep 0.5
+        sleep 0.25
     done
-    echo "FAIL e2e: server on port $port never came up"
+    echo "FAIL e2e: server never reported a port"
+    cat "$log"
     exit 1
 }
 
@@ -137,10 +147,9 @@ p256_pub() {
 }
 
 # --- PSK: external key, then resume with the issued ticket ---
-"$OPENSSL" s_server -tls1_3 -ciphersuites TLS_CHACHA20_POLY1305_SHA256 \
-    -psk "$PSK" -psk_identity "$ID" -nocert -accept "$PORT" -rev -quiet &
-SERVER=$!
-wait_listen $SERVER "$PORT"
+start_server -tls1_3 -ciphersuites TLS_CHACHA20_POLY1305_SHA256 -psk "$PSK" -psk_identity "$ID" -nocert -rev
+SERVER=$SRV_PID
+PORT=$SRV_PORT
 
 MSG='hola sapo'
 expect psk "opas aloh" "$DIR/err" ./bin/tlsclient 127.0.0.1 "$PORT" "$PSK" "$ID" "$DIR/ticket"
@@ -173,10 +182,9 @@ grep -q "^resuming" "$DIR/err2" || {
 # The server is started with the identity psk_client.c's own header
 # tells a reader to use, so this leg checks the documented recipe and
 # not a variant of it.
-"$OPENSSL" s_server -tls1_3 -ciphersuites TLS_CHACHA20_POLY1305_SHA256 \
-    -psk "$PSK" -psk_identity device-42 -nocert -accept "$PORT16" -rev -quiet &
-SERVER16=$!
-wait_listen $SERVER16 "$PORT16"
+start_server -tls1_3 -ciphersuites TLS_CHACHA20_POLY1305_SHA256 -psk "$PSK" -psk_identity device-42 -nocert -rev
+SERVER16=$SRV_PID
+PORT16=$SRV_PORT
 expect example-psk "opas aloh
 opas aloh" "$DIR/err_ex_psk" ./bin/example_psk 127.0.0.1 "$PORT16"
 grep -q "connected with a stored ticket" "$DIR/err_ex_psk" || {
@@ -197,10 +205,9 @@ PUB=$("$OPENSSL" ec -in "$DIR/key.pem" -text -noout 2>/dev/null \
     exit 1
 }
 
-"$OPENSSL" s_server -tls1_3 -ciphersuites TLS_CHACHA20_POLY1305_SHA256 \
-    -cert "$DIR/cert.pem" -key "$DIR/key.pem" -accept "$PORT2" -rev -quiet &
-SERVER2=$!
-wait_listen $SERVER2 "$PORT2"
+start_server -tls1_3 -ciphersuites TLS_CHACHA20_POLY1305_SHA256 -cert "$DIR/cert.pem" -key "$DIR/key.pem" -rev
+SERVER2=$SRV_PID
+PORT2=$SRV_PORT
 
 MSG='sin secretos'
 expect pin-ecdsa "soterces nis" "$DIR/err3" \
@@ -228,10 +235,9 @@ MOD=$("$OPENSSL" rsa -in "$DIR/rsakey.pem" -noout -modulus 2>/dev/null \
     exit 1
 }
 
-"$OPENSSL" s_server -tls1_3 -ciphersuites TLS_CHACHA20_POLY1305_SHA256 \
-    -cert "$DIR/rsacert.pem" -key "$DIR/rsakey.pem" -accept "$PORT4" -rev -quiet &
-SERVER4=$!
-wait_listen $SERVER4 "$PORT4"
+start_server -tls1_3 -ciphersuites TLS_CHACHA20_POLY1305_SHA256 -cert "$DIR/rsacert.pem" -key "$DIR/rsakey.pem" -rev
+SERVER4=$SRV_PID
+PORT4=$SRV_PORT
 
 MSG='clave grande'
 expect pin-rsa "ednarg evalc" "$DIR/err5" \
@@ -275,10 +281,9 @@ expect example-pinned "gnip" "$DIR/err_ex_pin" \
 
 kill $SERVER4 2>/dev/null || true
 wait $SERVER4 2>/dev/null || true
-"$OPENSSL" s_server -tls1_3 -ciphersuites TLS_CHACHA20_POLY1305_SHA256 \
-    -cert "$DIR/rsacert2.pem" -key "$DIR/rsakey2.pem" -accept "$PORT6" -rev -quiet &
-SERVER6=$!
-wait_listen $SERVER6 "$PORT6"
+start_server -tls1_3 -ciphersuites TLS_CHACHA20_POLY1305_SHA256 -cert "$DIR/rsacert2.pem" -key "$DIR/rsakey2.pem" -rev
+SERVER6=$SRV_PID
+PORT6=$SRV_PORT
 
 MSG='clave nueva'
 expect rotate-new "aveun evalc" "$DIR/err7" \
@@ -328,15 +333,12 @@ CAMOD=$(rsa_modulus "$DIR/caroot.key")
     exit 1
 }
 
-"$OPENSSL" s_server -tls1_3 -ciphersuites TLS_CHACHA20_POLY1305_SHA256 \
-    -cert "$DIR/caleaf.pem" -key "$DIR/caleaf.key" -cert_chain "$DIR/caint.pem" \
-    -accept "$PORT7" -rev -quiet &
-SERVER7=$!
-"$OPENSSL" s_server -tls1_3 -ciphersuites TLS_CHACHA20_POLY1305_SHA256 \
-    -cert "$DIR/caflat.pem" -key "$DIR/caleaf.key" -accept "$PORT8" -rev -quiet &
-SERVER8=$!
-wait_listen $SERVER7 "$PORT7"
-wait_listen $SERVER8 "$PORT8"
+start_server -tls1_3 -ciphersuites TLS_CHACHA20_POLY1305_SHA256 -cert "$DIR/caleaf.pem" -key "$DIR/caleaf.key" -cert_chain "$DIR/caint.pem" -rev
+SERVER7=$SRV_PID
+PORT7=$SRV_PORT
+start_server -tls1_3 -ciphersuites TLS_CHACHA20_POLY1305_SHA256 -cert "$DIR/caflat.pem" -key "$DIR/caleaf.key" -rev
+SERVER8=$SRV_PID
+PORT8=$SRV_PORT
 
 MSG='cadena firmada'
 expect ca-rsa "adamrif anedac" "$DIR/err8" \
@@ -396,15 +398,12 @@ ECROOTPUB=$(p256_pub "$DIR/ecroot.key")
     exit 1
 }
 
-"$OPENSSL" s_server -tls1_3 -ciphersuites TLS_CHACHA20_POLY1305_SHA256 \
-    -cert "$DIR/ecleaf.pem" -key "$DIR/ecleaf.key" -cert_chain "$DIR/ecint.pem" \
-    -accept "$PORT9" -rev -quiet &
-SERVER9=$!
-"$OPENSSL" s_server -tls1_3 -ciphersuites TLS_CHACHA20_POLY1305_SHA256 \
-    -cert "$DIR/ecflat.pem" -key "$DIR/ecleaf.key" -accept "$PORT10" -rev -quiet &
-SERVER10=$!
-wait_listen $SERVER9 "$PORT9"
-wait_listen $SERVER10 "$PORT10"
+start_server -tls1_3 -ciphersuites TLS_CHACHA20_POLY1305_SHA256 -cert "$DIR/ecleaf.pem" -key "$DIR/ecleaf.key" -cert_chain "$DIR/ecint.pem" -rev
+SERVER9=$SRV_PID
+PORT9=$SRV_PORT
+start_server -tls1_3 -ciphersuites TLS_CHACHA20_POLY1305_SHA256 -cert "$DIR/ecflat.pem" -key "$DIR/ecleaf.key" -rev
+SERVER10=$SRV_PID
+PORT10=$SRV_PORT
 
 MSG='curva chica'
 expect ca-ecdsa "acihc avruc" "$DIR/err10" \
@@ -418,10 +417,9 @@ expect ca-ecdsa-flat "aidemretni nis" "$DIR/err10" \
 "$OPENSSL" req -new -key "$DIR/caleaf.key" -subj /CN=controller-01 2>/dev/null |
 "$OPENSSL" x509 -req -CA "$DIR/wrongroot.pem" -CAkey "$DIR/wrongroot.key" -days 14 \
     "${PSS[@]}" -extfile "$DIR/leaf.cnf" -out "$DIR/wrongleaf.pem" 2>/dev/null
-"$OPENSSL" s_server -tls1_3 -ciphersuites TLS_CHACHA20_POLY1305_SHA256 \
-    -cert "$DIR/wrongleaf.pem" -key "$DIR/caleaf.key" -accept "$PORT11" -rev -quiet &
-SERVER11=$!
-wait_listen $SERVER11 "$PORT11"
+start_server -tls1_3 -ciphersuites TLS_CHACHA20_POLY1305_SHA256 -cert "$DIR/wrongleaf.pem" -key "$DIR/caleaf.key" -rev
+SERVER11=$SRV_PID
+PORT11=$SRV_PORT
 MSG='no debe pasar'
 expect_fail ca-wrong-ca -3 "$DIR/err11" \
     ./bin/tlsclient_ca 127.0.0.1 "$PORT11" "ca:$CAMOD" -
@@ -430,11 +428,9 @@ expect_fail ca-wrong-ca -3 "$DIR/err11" \
 # the root never travels — so leaf + intermediate + root must fail the
 # handshake even though every signature would check out (CH_EPROTO, -2).
 cat "$DIR/caint.pem" "$DIR/caroot.pem" > "$DIR/chain3.pem"
-"$OPENSSL" s_server -tls1_3 -ciphersuites TLS_CHACHA20_POLY1305_SHA256 \
-    -cert "$DIR/caleaf.pem" -key "$DIR/caleaf.key" -cert_chain "$DIR/chain3.pem" \
-    -accept "$PORT12" -rev -quiet &
-SERVER12=$!
-wait_listen $SERVER12 "$PORT12"
+start_server -tls1_3 -ciphersuites TLS_CHACHA20_POLY1305_SHA256 -cert "$DIR/caleaf.pem" -key "$DIR/caleaf.key" -cert_chain "$DIR/chain3.pem" -rev
+SERVER12=$SRV_PID
+PORT12=$SRV_PORT
 expect_fail ca-three-entries -2 "$DIR/err12" \
     ./bin/tlsclient_ca 127.0.0.1 "$PORT12" "ca:$CAMOD" -
 
@@ -454,10 +450,9 @@ out = der[:2] + outer.to_bytes(2, 'big') + bytes([0x30, 0x83, 0x00, der[6], der[
 pem = base64.encodebytes(out).decode()
 open(sys.argv[2], 'w').write('-----BEGIN CERTIFICATE-----\n' + pem + '-----END CERTIFICATE-----\n')
 EOF
-"$OPENSSL" s_server -tls1_3 -ciphersuites TLS_CHACHA20_POLY1305_SHA256 \
-    -cert "$DIR/mangled.pem" -key "$DIR/caleaf.key" -accept "$PORT13" -rev -quiet &
-SERVER13=$!
-wait_listen $SERVER13 "$PORT13"
+start_server -tls1_3 -ciphersuites TLS_CHACHA20_POLY1305_SHA256 -cert "$DIR/mangled.pem" -key "$DIR/caleaf.key" -rev
+SERVER13=$SRV_PID
+PORT13=$SRV_PORT
 expect_fail ca-noncanonical -2 "$DIR/err13" \
     ./bin/tlsclient_ca 127.0.0.1 "$PORT13" "ca:$CAMOD" -
 
@@ -495,16 +490,12 @@ if [ "$EPOCH_LEGS" = yes ]; then
 epoch_leaf 000103000000Z "$DIR/epoch2.pem"
 epoch_leaf 000104000000Z "$DIR/epoch3.pem"
 
-"$OPENSSL" s_server -tls1_3 -ciphersuites TLS_CHACHA20_POLY1305_SHA256 \
-    -cert "$DIR/epoch2.pem" -key "$DIR/caleaf.key" -cert_chain "$DIR/caint.pem" \
-    -accept "$PORT14" -rev -quiet &
-SERVER14=$!
-"$OPENSSL" s_server -tls1_3 -ciphersuites TLS_CHACHA20_POLY1305_SHA256 \
-    -cert "$DIR/epoch3.pem" -key "$DIR/caleaf.key" -cert_chain "$DIR/caint.pem" \
-    -accept "$PORT15" -rev -quiet &
-SERVER15=$!
-wait_listen $SERVER14 "$PORT14"
-wait_listen $SERVER15 "$PORT15"
+start_server -tls1_3 -ciphersuites TLS_CHACHA20_POLY1305_SHA256 -cert "$DIR/epoch2.pem" -key "$DIR/caleaf.key" -cert_chain "$DIR/caint.pem" -rev
+SERVER14=$SRV_PID
+PORT14=$SRV_PORT
+start_server -tls1_3 -ciphersuites TLS_CHACHA20_POLY1305_SHA256 -cert "$DIR/epoch3.pem" -key "$DIR/caleaf.key" -cert_chain "$DIR/caint.pem" -rev
+SERVER15=$SRV_PID
+PORT15=$SRV_PORT
 
 # A device provisioned at the current epoch connects and stays put.
 echo 2 > "$DIR/epoch.state"
@@ -572,14 +563,12 @@ if command -v go >/dev/null 2>&1; then
     # directly: go run's child would outlive a kill of the subshell and
     # hold pipes open past the script's exit.
     (cd test/goecho && go build -o "$DIR/goecho" .)
-    "$DIR/goecho" -cert "$DIR/cert.pem" -key "$DIR/key.pem" -addr "127.0.0.1:$PORT3" \
-        >/dev/null 2>&1 &
-    SERVER3=$!
-    "$DIR/goecho" -cert "$DIR/rsacert.pem" -key "$DIR/rsakey.pem" -addr "127.0.0.1:$PORT5" \
-        >/dev/null 2>&1 &
-    SERVER5=$!
-    wait_listen $SERVER3 "$PORT3"
-    wait_listen $SERVER5 "$PORT5"
+    start_goecho -cert "$DIR/cert.pem" -key "$DIR/key.pem"
+    SERVER3=$SRV_PID
+    PORT3=$SRV_PORT
+    start_goecho -cert "$DIR/rsacert.pem" -key "$DIR/rsakey.pem"
+    SERVER5=$SRV_PID
+    PORT5=$SRV_PORT
 
     MSG='hola go'
     expect go-ecdsa "og aloh" "$DIR/err4" \
