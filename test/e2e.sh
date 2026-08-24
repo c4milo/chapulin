@@ -34,10 +34,10 @@ fi
 DIR=$(mktemp -d)
 trap 'kill ${SERVER:-} ${SERVER2:-} ${SERVER3:-} ${SERVER4:-} ${SERVER5:-} ${SERVER6:-} \
            ${SERVER7:-} ${SERVER8:-} ${SERVER9:-} ${SERVER10:-} ${SERVER11:-} \
-           ${SERVER12:-} ${SERVER13:-} 2>/dev/null || true
+           ${SERVER12:-} ${SERVER13:-} ${SERVER16:-} 2>/dev/null || true
       rm -rf "$DIR"' EXIT
 
-# Each run takes a disjoint 13-port slot. Multiplying the slot index by 16
+# Each run takes a disjoint 16-port slot. Multiplying the slot index by 16
 # keeps adjacent PIDs from overlapping slots.
 PORT=$((20000 + ($$ % 2500) * 16))
 PORT2=$((PORT + 1))
@@ -54,6 +54,7 @@ PORT12=$((PORT + 11))
 PORT13=$((PORT + 12))
 PORT14=$((PORT + 13))
 PORT15=$((PORT + 14))
+PORT16=$((PORT + 15))
 
 PSK=0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20
 ID=sapo-01
@@ -121,6 +122,12 @@ rsa_modulus() {
     "$OPENSSL" rsa -in "$1" -noout -modulus 2>/dev/null \
         | sed 's/^Modulus=//' | tr 'A-F' 'a-f'
 }
+# The examples read a pin from a file holding the raw bytes, the way a
+# device reads it from provisioned flash; the test client takes hex on
+# its command line instead. python3 is already a dependency here.
+hex_to_file() {
+    python3 -c 'import sys,binascii;open(sys.argv[2],"wb").write(binascii.unhexlify(sys.argv[1]))' "$1" "$2"
+}
 p256_pub() {
     "$OPENSSL" ec -in "$1" -text -noout 2>/dev/null \
         | awk '/^pub:/{f=1;next} f&&/^[^ ]/{f=0} f{gsub(/[ :]/,"");printf "%s",$0}' | cut -c3-130
@@ -150,6 +157,28 @@ MSG='otra vez'
 expect resumption "zev arto" "$DIR/err2" ./bin/tlsclient 127.0.0.1 "$PORT" "@$DIR/ticket" -
 grep -q "^resuming" "$DIR/err2" || {
     echo "FAIL e2e resumption: did not use the ticket"
+    exit 1
+}
+
+# --- The examples, run rather than merely compiled. Building them
+# catches a changed signature; only running them catches a changed
+# meaning, which is the failure a compiled-only example hides. Each
+# reuses a server an earlier leg already started.
+#
+# psk_client runs two sessions of its own: the first on the provisioned
+# key, the second on the ticket the first stored, so one run covers both.
+# The server is started with the identity psk_client.c's own header
+# tells a reader to use, so this leg checks the documented recipe and
+# not a variant of it.
+"$OPENSSL" s_server -tls1_3 -ciphersuites TLS_CHACHA20_POLY1305_SHA256 \
+    -psk "$PSK" -psk_identity device-42 -nocert -accept "$PORT16" -rev -quiet &
+SERVER16=$!
+wait_listen $SERVER16 "$PORT16"
+expect example-psk "opas aloh
+opas aloh" "$DIR/err_ex_psk" ./bin/example_psk 127.0.0.1 "$PORT16"
+grep -q "connected with a stored ticket" "$DIR/err_ex_psk" || {
+    echo "FAIL example-psk: the second session did not resume"
+    cat "$DIR/err_ex_psk"
     exit 1
 }
 
@@ -235,6 +264,12 @@ grep -q "^pin slot 1$" "$DIR/err7" || {
     exit 1
 }
 
+# The pinned example against the same RSA server, reading its pin from
+# a file the way a device reads provisioned flash.
+hex_to_file "$MOD" "$DIR/pin_a.bin"
+expect example-pinned "gnip" "$DIR/err_ex_pin" \
+    ./bin/example_pinned 127.0.0.1 "$PORT4" "$DIR/pin_a.bin"
+
 kill $SERVER4 2>/dev/null || true
 wait $SERVER4 2>/dev/null || true
 "$OPENSSL" s_server -tls1_3 -ciphersuites TLS_CHACHA20_POLY1305_SHA256 \
@@ -306,6 +341,18 @@ expect ca-rsa "adamrif anedac" "$DIR/err8" \
 MSG='hoja directa'
 expect ca-rsa-flat "atcerid ajoh" "$DIR/err8" \
     ./bin/tlsclient_ca 127.0.0.1 "$PORT8" "ca:$CAMOD" -
+
+# The CA example against the same chain server, reading the root's
+# modulus from a file. Its epoch callbacks stay off here: the epoch legs
+# below cover that path, and this leg is about the chain check.
+hex_to_file "$CAMOD" "$DIR/ca_key.bin"
+expect example-ca "odatse" "$DIR/err_ex_ca" \
+    ./bin/example_ca 127.0.0.1 "$PORT7" "$DIR/ca_key.bin"
+grep -q "CA pin slot 1" "$DIR/err_ex_ca" || {
+    echo "FAIL example-ca: did not report the slot that verified"
+    cat "$DIR/err_ex_ca"
+    exit 1
+}
 
 # --- CA slot rotation: slot A holds a stranger's key, slot B the real
 # root; the handshake must land on slot 2, mirroring pinned-key rotation.
