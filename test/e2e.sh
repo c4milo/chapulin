@@ -37,9 +37,12 @@ trap 'kill ${SERVER:-} ${SERVER2:-} ${SERVER3:-} ${SERVER4:-} ${SERVER5:-} ${SER
            ${SERVER12:-} ${SERVER13:-} ${SERVER16:-} 2>/dev/null || true
       rm -rf "$DIR"' EXIT
 
-# Each run takes a disjoint 16-port slot. Multiplying the slot index by 16
-# keeps adjacent PIDs from overlapping slots.
-PORT=$((20000 + ($$ % 2500) * 16))
+# Each run takes a disjoint 32-port slot, of which 16 are in use. The
+# slot was 16 wide and exactly full, so the next port added would have
+# landed on the following run's PORT and failed only for some PIDs. The
+# modulus shrinks to keep the top of the range under 65535: the highest
+# port this can name is 20000 + 1399*32 + 31.
+PORT=$((20000 + ($$ % 1400) * 32))
 PORT2=$((PORT + 1))
 PORT3=$((PORT + 2))
 PORT4=$((PORT + 3))
@@ -604,4 +607,4 @@ else
     GO_LEG=" (go legs skipped)"
 fi
 
-echo "e2e: psk + tickets + resumption + pinned ecdsa + pinned rsa + rotation + ca rsa x2 + ca ecdsa x2 + ca rotation + ca negatives x3${EPOCH_LEG}${GO_LEG} OK"
+echo "e2e: psk + tickets + resumption + pinned ecdsa + pinned rsa + rotation + ca rsa x2 + ca ecdsa x2 + ca rotation + ca negatives x3${EPOCH_LEG}${GO_LEG} + examples x3 OK"
