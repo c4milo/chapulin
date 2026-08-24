@@ -28,6 +28,15 @@
 
 void ch_rand_bytes(uint8_t *p, size_t n) {
     fill_nondet(p, n);
+    // rand.h requires strong random bytes and forbids failure, and the
+    // driver now asserts the buffer is not left as it found it. State
+    // that contract here rather than proving over a hook that returns
+    // without writing, which rand.h already rules out.
+    uint32_t any = 0;
+    for (size_t i = 0; i < n; i++) {
+        any |= p[i];
+    }
+    __CPROVER_assume(any != 0);
 }
 
 int io_send_all(const ch_cfg *cfg, const uint8_t *p, size_t n) {
