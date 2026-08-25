@@ -20,6 +20,24 @@ Spec.Sha3.sha3_256    : ByteArray → ByteArray                          -- FIPS
 Spec.Sha3.sha3_512    : ByteArray → ByteArray                          -- FIPS 202, 64 bytes out
 Spec.Sha3.shake128    : ByteArray → (outLen : Nat) → ByteArray         -- FIPS 202 XOF
 Spec.Sha3.shake256    : ByteArray → (outLen : Nat) → ByteArray         -- FIPS 202 XOF
+Spec.MlKem.keygen     : (d z : ByteArray) → ByteArray × ByteArray      -- FIPS 203 §7.1,
+                        -- ML-KEM-768: (ek, dk) = (1184, 2400) bytes from the
+                        -- two 32-byte seeds, via §6.1's derandomized
+                        -- ML-KEM.KeyGen_internal. Line op:
+                        -- `mlkem_keygen <d> <z>` → `<ek> <dk>`.
+Spec.MlKem.encaps     : (ek m : ByteArray) → Option (ByteArray × ByteArray)
+                        -- FIPS 203 §7.2 with §6.2's derandomized
+                        -- ML-KEM.Encaps_internal: some (ct, ss) =
+                        -- (1088, 32) bytes; none when ek fails §7.2's
+                        -- checks: not 1184 bytes, or a coefficient not
+                        -- reduced mod q.
+                        -- Line op: `mlkem_encaps <ek> <m>` →
+                        -- `<ct> <ss>` / `FAIL`.
+Spec.MlKem.decaps     : (dk ct : ByteArray) → ByteArray                -- FIPS 203 §7.3
+                        -- via §6.3's ML-KEM.Decaps_internal: the 32-byte
+                        -- shared secret; a tampered ciphertext yields the
+                        -- implicit-reject secret J(z ‖ ct), never an error.
+                        -- Line op: `mlkem_decaps <dk> <ct>` → `<ss>`.
 Spec.Hkdf.hmac        : (key msg : ByteArray) → ByteArray              -- RFC 2104 w/ SHA-256
 Spec.Hkdf.extract     : (salt ikm : ByteArray) → ByteArray             -- RFC 5869
 Spec.Hkdf.expand      : (prk info : ByteArray) → (len : Nat) → ByteArray
@@ -313,6 +331,13 @@ Spec.Sha3.absorb_size        (absorb rate padded).size = 200           -- the st
 Spec.Sha3.squeeze_size       (squeeze rate state outLen).size = outLen -- at a real rate
 Spec.Sha3.pad_blocks         (pad rate domain msg).size % rate = 0     -- §B.2 pad10*1
 Spec.Sha3.pad_prefix         padding keeps the message as a prefix
+Spec.MlKem.keygen_ek_size    (keygen d z).1.size = 1184                -- FIPS 203 §6.1 key sizes
+Spec.MlKem.keygen_dk_size    z.size = 32 → (keygen d z).2.size = 2400
+Spec.MlKem.encaps_ct_size    encaps ek m = some (ct, ss) → ct.size = 1088   -- §6.2
+Spec.MlKem.decaps_size       (decaps dk ct).size = 32                  -- §6.3, both the normal
+                             -- and the implicit-reject branch
+Spec.MlKem.byteEncode_size   (byteEncode F d).size = 32 * d            -- §4.2.1 ByteEncode_d,
+Spec.MlKem.encode3_size      (encode3 v d).size = 96 * d               -- and over a rank-3 vector
 Spec.Drbg.next_key_eq_block  the next key is the counter-0 ChaCha20 block under the
                              -- current key, so key advance does not depend on how many
                              -- output bytes the request asked for (next_key_indep)
@@ -416,6 +441,8 @@ means the module's selftest plus the differential oracle carry it;
 | Aead | 4 | seal/open round trip, tag rejection, output size, pad16 alignment |
 | Rsa | 4 | PSS signature and hash size contracts on both sign and verify; the arithmetic stays vector-checked |
 | Sha256 | 4 | structural lemmas, padding block alignment and message prefix; compression function vector-checked |
+| Sha3 | 8 | output lengths for the two hashes and two XOFs, sponge state size, padding block alignment and message prefix; the permutation itself vector-checked |
+| MlKem | 6 | FIPS 203 §6.1-6.3 output-length contracts (ek 1184, dk 2400, ct 1088, shared secret 32 on both decapsulation branches) and the ByteEncode length law they rest on; the NTT, sampling, and compression arithmetic stay vector-checked |
 | Poly | 1 | MAC size; arithmetic vector-checked |
 | P256 | 0 | executable oracle only: RFC 6979 vectors and the differential |
 | X25519 | 2 | RFC 7748 §5 clamping: every decoded scalar is a multiple of the cofactor 8, and has bit 254 set with bit 255 clear. The first keeps `k * P` in the prime-order subgroup, the second fixes the ladder's iteration count. The ladder arithmetic itself stays vector-checked |

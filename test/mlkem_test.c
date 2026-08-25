@@ -75,6 +75,22 @@ static void test_implicit_reject(void) {
     CHECK(memcmp(ss, ss2, MLKEM_SS_LEN) == 0);
 }
 
+// CCTV's unluckysample vectors: the ek's embedded rho forces SampleNTT
+// past 575 XOF bytes (the read cap sits at 1536). Encaps from the ek
+// and decaps from the dk both re-run that sampling; the keygen
+// direction is unusable because the file derives rho without the
+// FIPS 203 final domain byte, which the vectors header states.
+static void test_cctv_unlucky(void) {
+    uint8_t ct[MLKEM_CT_LEN];
+    uint8_t ss[MLKEM_SS_LEN];
+    CHECK(mlkem_encaps_derand(ct, ss, mlk_unlucky_ek, mlk_unlucky_m) == 0);
+    CHECK(memcmp(ct, mlk_unlucky_c, MLKEM_CT_LEN) == 0);
+    CHECK(memcmp(ss, mlk_unlucky_K, MLKEM_SS_LEN) == 0);
+    uint8_t ss2[MLKEM_SS_LEN];
+    mlkem_decaps(ss2, mlk_unlucky_c, mlk_unlucky_dk);
+    CHECK(memcmp(ss2, mlk_unlucky_K, MLKEM_SS_LEN) == 0);
+}
+
 // The encaps modulus check (FIPS 203 Section 7.2): an encapsulation key
 // whose coefficients do not survive a ByteDecode/ByteEncode round trip
 // is rejected. Setting the top coefficient bytes to 0xff overflows q.
@@ -92,6 +108,7 @@ int main(void) {
     test_kats();
     test_cctv_decaps();
     test_cctv_strcmp();
+    test_cctv_unlucky();
     test_implicit_reject();
     test_encaps_rejects_bad_key();
     if (failures == 0) {

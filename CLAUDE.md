@@ -24,8 +24,9 @@ Home: github.com/c4milo.
   renegotiation-era anything. Within a mode the client offers exactly one
   of everything; the server takes it or the handshake fails closed.
 - One concern per file pair, dependencies pointing down only:
-  `ct.[ch]` (constant-time bytes) ← `sha256.[ch]` + `sha3.[ch]`
-  (test-only until the ML-KEM build lands) ← `hkdf.[ch]`
+  `ct.[ch]` (constant-time bytes) ← `sha256.[ch]` + `sha3.[ch]` ←
+  `mlkem.[ch]`/`mlkem_poly.[ch]` (ML-KEM-768; with `sha3.[ch]`, test-only
+  until the KEX=pq build lands) ← `hkdf.[ch]`
   (HMAC + HKDF + TLS labels) ← `chacha20.[ch]` + `poly1305.[ch]` ←
   `aead.[ch]` (RFC 8439 seal/open) ← `x25519.[ch]` + `p256.[ch]` +
   `rsa.[ch]`/`rsa_mont.c` (pinned-mode verify) ←
@@ -51,6 +52,14 @@ Home: github.com/c4milo.
   bounded sizes, plus RFC test vectors in `test/unit_test.c`. The README's
   verification section states exactly what is proved, at what bounds, and
   what is only tested — never overclaim.
+- Write harnesses by docs/proofs.md. The rules that keep formulas
+  solvable: SAT cost tracks the multiply count per formula, so split
+  along it; store nondet values through the object's own type, never a
+  byte-pointer fill of a typed object; havoc every operand freshly
+  before every call; cover the aliasing shapes real callers use; and
+  measure each launch line with `/usr/bin/time -v` under run.sh's exact
+  flags before committing it — a launch line whose formula has not been
+  seen to converge proves nothing.
 - A crypto or protocol change touches three surfaces, not one. When you
   change behavior in a C module, update in the same commit: (1) the code,
   (2) its Lean spec in `spec/` if the change alters what the spec models

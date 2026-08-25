@@ -151,7 +151,7 @@ would change that trade.
 
 Four layers cover four different failure classes.
 
-**Proofs cover memory safety.** Twenty-one of the twenty-four C
+**Proofs cover memory safety.** Twenty-three of the twenty-six C
 sources are compiled into a [CBMC](https://www.cprover.org/cbmc/) harness, which proves them free of
 out-of-bounds access, invalid pointers, bad shifts, and division by
 zero, for every input within the harness's bound. Signed overflow is
@@ -163,7 +163,9 @@ maximum, the proof covers all inputs.
 
 The proofs run in two tiers. `make check` runs the fast tier and gates
 every push. `make prove-slow` runs the slow-tier legs, which CI runs
-nightly, one job each. A slow-tier row below carries the verdict of the last nightly
+nightly, one job each. [`docs/proofs.md`](docs/proofs.md) is the
+harness playbook: the measured cost model and the rules that keep a
+formula solvable. A slow-tier row below carries the verdict of the last nightly
 leg that finished, not of the current commit. A harness that starts and
 returns no verdict proves nothing, and this table cannot tell that
 apart from one that passed — so for the slow rows, read the nightly.
@@ -174,6 +176,7 @@ apart from one that passed — so for the slow rows, read the nightly.
 | buf | any 12-operation reader/writer run stays safe; length never exceeds capacity | buffers ≤ 64 B |
 | sha256 | safe for any two-chunk split | messages ≤ 96 B |
 | sha3 (two harnesses) | every mode is safe for a one-call message and XOF output from a fresh context; the SHAKE streaming calls are safe from any context state — arbitrary lanes, either rate, every position — for split absorbs and squeezes | one-call: messages ≤ 200 B, output ≤ 400 B; streaming: chunks ≤ 32 B |
+| mlkem (six harnesses) | keygen, encaps, and decaps are safe for every seed, message, and hostile key or ciphertext, with the polynomial layer stubbed to its contracts; the polynomial layer is safe over full-range int16 coefficients — a superset of anything the KEM layer passes it, so no coefficient value can overflow the reduction arithmetic. Sampling, reductions, and coding prove in the fast tier; the NTT, the two halves of its inverse, and the base multiplication, whose chained-product overflow proofs are the SAT-hard part, each prove in their own slow-tier formula | the full domain: every input is a fixed-size array, and the sampling read stops at its 1536-byte cap |
 | hkdf (two harnesses) | hmac/extract and expand/expand-label safe over the proven sha256 contract | keys ≤ 96 B; output ≤ 96 B, expand: slow tier |
 | handshake | the driver stays safe on any record stream: pump, reassembly, HRR restart, state machine, in PSK and pinned-key mode. The `TRUST=ca` driver has a harness but no launch line, so it is unproven | 96 B receive buffer, slow tier |
 | chacha20 | safe at any counter, including in place | ≤ 160 B |
@@ -235,8 +238,9 @@ byte-exact vectors too. Line coverage is measured and gated in CI.
 ## The differential oracle
 
 [`spec/`](spec/) is an executable [Lean 4](https://lean-lang.org/) specification of everything chapulin
-computes: SHA-256, HKDF and the key schedule, ChaCha20, Poly1305, the
-AEAD, record framing, x25519, P-256, RSA-PSS, and the grammar of the
+computes: SHA-256, SHA-3 and both SHAKE XOFs, ML-KEM-768, HKDF and the
+key schedule, ChaCha20, Poly1305, the AEAD, record framing, x25519,
+P-256, RSA-PSS, and the grammar of the
 four handshake messages a server sends. It follows the RFC text and
 never the C, because a differential oracle only works when a shared
 misreading cannot make both sides agree.

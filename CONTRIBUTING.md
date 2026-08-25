@@ -45,7 +45,8 @@ tree — the abbreviation budget is spent on this one system.
 | `ks_` | Key schedule (`keysched.[ch]`) |
 | `rec_` | Record protection (`record.[ch]`) |
 | `hs_` / `hsp_` | Handshake message build and parse (`hsmsg.[ch]`, `hsparse.[ch]`) |
-| `rsa_`, `p256_`, `x25519_`, `aead_`, `hkdf_`, `sha256_`, `drbg_`, `io_` | The self-naming crypto and I/O modules |
+| `rsa_`, `p256_`, `x25519_`, `aead_`, `hkdf_`, `sha256_`, `sha3_`, `shake_`, `mlkem_`, `drbg_`, `io_` | The self-naming crypto and I/O modules |
+| `mlk_` | ML-KEM's polynomial layer (`mlkem_poly.[ch]`) |
 
 Domain vocabulary keeps the RFCs' own spelling: `pt`, `aad`, `iv`,
 `psk`, `hrr`, `verify_data`. One-letter names only for loop indices;

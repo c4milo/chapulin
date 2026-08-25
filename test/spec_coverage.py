@@ -32,7 +32,7 @@ REPORT = ROOT / "bin" / "spec-coverage.md"
 
 # The library sources the differential could reach. Kept explicit so a
 # new module shows up as a missing row rather than vanishing.
-SRCS = """ct.c sha256.c sha3.c hkdf.c chacha20.c poly1305.c aead.c x25519.c p256.c
+SRCS = """ct.c sha256.c sha3.c mlkem.c mlkem_poly.c hkdf.c chacha20.c poly1305.c aead.c x25519.c p256.c
 rsa.c rsa_mont.c x509.c x509_der.c buf.c record.c keysched.c io.c hsmsg.c
 hsparse.c hspump.c session.c handshake.c tls.c""".split()
 
@@ -46,7 +46,7 @@ def spec_ops():
 
 # Every driver that talks to the spec, not only test/diff_test.c: drbg_test
 # and hsseq_test each own an op and speak the same protocol.
-DRIVERS = ["diff_test.c", "diff_driver.h", "diff_p256.h", "diff_rsa.h", "diff_sha3.h",
+DRIVERS = ["diff_test.c", "diff_driver.h", "diff_mlkem.h", "diff_p256.h", "diff_rsa.h", "diff_sha3.h",
            "diff_x509.h", "diff_x509_bounds.h", "diff_x509_chain.h", "drbg_test.c",
            "hsseq_test.c", "hsseq_server.h"]
 

@@ -25,9 +25,10 @@ SRCS := ct.c sha256.c hkdf.c chacha20.c poly1305.c aead.c x25519.c p256.c rsa.c 
         handshake.c tls.c
 HDRS := ct.h sha256.h hkdf.h chacha20.h poly1305.h aead.h x25519.h p256.h rsa.h ch_assert.h \
         x509.h buf.h record.h keysched.h io.h hsmsg.h hsparse.h hspump.h cfg.h session.h handshake.h \
-        tls.h rand.h drbg.h sha3.h
-LINT_C := $(SRCS) drbg.c sha3.c test/unit_test.c test/tls_client.c test/diff_test.c test/timing_test.c \
-          test/drbg_test.c test/rsa_test.c test/sha3_test.c test/hsstrict_test.c test/hsseq_test.c \
+        tls.h rand.h drbg.h sha3.h mlkem.h mlkem_poly.h
+LINT_C := $(SRCS) drbg.c sha3.c mlkem.c mlkem_poly.c test/unit_test.c test/tls_client.c \
+          test/diff_test.c test/timing_test.c test/drbg_test.c test/rsa_test.c test/sha3_test.c \
+          test/mlkem_test.c test/hsstrict_test.c test/hsseq_test.c \
           test/x509_strict_test.c $(wildcard examples/*.c)
 
 # Test-local headers: prerequisites for every binary that includes them,
@@ -40,7 +41,7 @@ TESTH := test/test_random.h test/session_tests.h test/session_post_tests.h \
          test/x509_vectors.h test/x509_mutate.h test/x509_chain_tests.h test/x509_epoch.h \
          test/x509_spki.h test/diff_x509.h test/diff_x509_bounds.h test/diff_x509_chain.h \
          test/diff_x509_epoch.h test/diff_x509_mutate.h test/diff_x509_random.h \
-         test/diff_x509_signed.h test/diff_sha3.h
+         test/diff_x509_signed.h test/diff_sha3.h test/diff_mlkem.h test/mlkem_vectors.h
 
 # Pinned mode verifies one signature algorithm per build: PIN=rsa
 # (default, RSA-PSS up to 3072 bits) or PIN=ecdsa (P-256, -DCH_PIN_ECDSA).
@@ -142,6 +143,12 @@ bin/sha3_test: test/sha3_test.c sha3.c ct.c $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) -I. -o $@ test/sha3_test.c sha3.c ct.c
 
+# ML-KEM-768 known answers, the CCTV decaps anchors, and the input
+# checks. Its own binary, out of the packaged object like sha3 (#21).
+bin/mlkem_test: test/mlkem_test.c mlkem.c mlkem_poly.c sha3.c ct.c $(HDRS) $(TESTH)
+	@mkdir -p bin
+	$(CC) $(CFLAGS) -I. -o $@ test/mlkem_test.c mlkem.c mlkem_poly.c sha3.c ct.c
+
 # Parser strictness: drives the ServerHello/EE parsers directly; their
 # whole dependency closure is hsparse.c + buf.c.
 bin/hsstrict_test: test/hsstrict_test.c hsparse.c buf.c $(HDRS) $(TESTH)
@@ -197,17 +204,18 @@ bin/tlsclient_ca_ecdsa: test/tls_client.c $(SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) -DCH_TRUST_CA -DCH_PIN_ECDSA -I. -o $@ test/tls_client.c $(SRCS)
 
-bin/diff: test/diff_test.c $(SRCS) sha3.c $(HDRS) $(TESTH)
+bin/diff: test/diff_test.c $(SRCS) sha3.c mlkem.c mlkem_poly.c $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -I. -o $@ test/diff_test.c $(SRCS) sha3.c
+	$(CC) $(CFLAGS) -I. -o $@ test/diff_test.c $(SRCS) sha3.c mlkem.c mlkem_poly.c
 
 .PHONY: check lint lint-tidy lint-format lint-cppcheck lint-docs lint-invariants lint-spec prove diff fmt clean
-check: examples-check bin/unit bin/unit_ca bin/tlsclient bin/tlsclient_ecdsa bin/tlsclient_ca bin/tlsclient_ca_ecdsa bin/drbg_test bin/rsa_test bin/sha3_test bin/hsstrict_test bin/x509strict bin/x509strict_ecdsa bin/hsseq_test lint lib-check cxx-check
+check: examples-check bin/unit bin/unit_ca bin/tlsclient bin/tlsclient_ecdsa bin/tlsclient_ca bin/tlsclient_ca_ecdsa bin/drbg_test bin/rsa_test bin/sha3_test bin/mlkem_test bin/hsstrict_test bin/x509strict bin/x509strict_ecdsa bin/hsseq_test lint lib-check cxx-check
 	./bin/unit
 	./bin/unit_ca
 	./bin/drbg_test
 	./bin/rsa_test
 	./bin/sha3_test
+	./bin/mlkem_test
 	./bin/hsstrict_test
 	./bin/x509strict
 	./bin/x509strict_ecdsa
@@ -230,7 +238,7 @@ ifeq ($(LAKE),)
 else
 	cd spec && $(LAKE) build
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -DCH_PIN_ECDSA -I. -o bin/diff_ecdsa test/diff_test.c $(SRCS) sha3.c
+	$(CC) $(CFLAGS) -DCH_PIN_ECDSA -I. -o bin/diff_ecdsa test/diff_test.c $(SRCS) sha3.c mlkem.c mlkem_poly.c
 	./bin/diff_ecdsa
 endif
 
@@ -385,12 +393,13 @@ san-check:
 	$(CC) $(SAN_CFLAGS) -I. -o bin/san/drbg_test test/drbg_test.c drbg.c chacha20.c ct.c
 	$(CC) $(SAN_CFLAGS) -I. -o bin/san/rsa_test test/rsa_test.c rsa.c rsa_mont.c sha256.c ct.c
 	$(CC) $(SAN_CFLAGS) -I. -o bin/san/sha3_test test/sha3_test.c sha3.c ct.c
+	$(CC) $(SAN_CFLAGS) -I. -o bin/san/mlkem_test test/mlkem_test.c mlkem.c mlkem_poly.c sha3.c ct.c
 	$(CC) $(SAN_CFLAGS) -I. -o bin/san/hsstrict_test test/hsstrict_test.c hsparse.c buf.c
 	$(CC) $(SAN_CFLAGS) -I. -o bin/san/x509strict_test $(X509STRICT_SRC) rsa.c rsa_mont.c
 	$(CC) $(SAN_CFLAGS) -DCH_PIN_ECDSA -I. -o bin/san/x509strict_ecdsa $(X509STRICT_SRC) p256.c
 	$(CC) $(SAN_CFLAGS) -I. -o bin/san/hsseq_test test/hsseq_test.c \
 	  $(filter-out p256.c rsa.c rsa_mont.c,$(SRCS))
-	@set -e; for b in unit drbg_test rsa_test sha3_test hsstrict_test x509strict_test x509strict_ecdsa hsseq_test; do \
+	@set -e; for b in unit drbg_test rsa_test sha3_test mlkem_test hsstrict_test x509strict_test x509strict_ecdsa hsseq_test; do \
 	  echo "== $$b (SAN -O$(O))"; ENUM_DEPTH=4 ./bin/san/$$b; done
 	@if [ -d $(WYCHEPROOF_DIR)/.git ] \
 	  || git clone --quiet --depth 1 https://github.com/C2SP/wycheproof $(WYCHEPROOF_DIR) 2>/dev/null; then \
@@ -435,6 +444,7 @@ cross-check:
 	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) -static -I. -o bin/cross/drbg_test test/drbg_test.c drbg.c chacha20.c ct.c
 	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) -static -I. -o bin/cross/rsa_test test/rsa_test.c rsa.c rsa_mont.c sha256.c ct.c
 	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) -static -I. -o bin/cross/sha3_test test/sha3_test.c sha3.c ct.c
+	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) -static -I. -o bin/cross/mlkem_test test/mlkem_test.c mlkem.c mlkem_poly.c sha3.c ct.c
 	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) -static -I. -o bin/cross/hsstrict_test test/hsstrict_test.c hsparse.c buf.c
 	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) -static -I. -o bin/cross/x509strict_test $(X509STRICT_SRC) rsa.c rsa_mont.c
 	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) -static -DCH_PIN_ECDSA -I. -o bin/cross/x509strict_ecdsa $(X509STRICT_SRC) p256.c
@@ -449,7 +459,7 @@ cross-check:
 	  [ -n "$$CI" ] && { echo "wycheproof: clone failed and CI must not skip a gate"; exit 1; }; \
 	  echo "SKIP cross wycheproof: no checkout and no network"; \
 	fi
-	@set -e; cd bin/cross; for b in unit drbg_test rsa_test sha3_test hsstrict_test x509strict_test x509strict_ecdsa hsseq_test; do \
+	@set -e; cd bin/cross; for b in unit drbg_test rsa_test sha3_test mlkem_test hsstrict_test x509strict_test x509strict_ecdsa hsseq_test; do \
 	  echo "== $$b ($(RUNNER))"; ENUM_DEPTH=3 $(RUNNER) ./$$b; done; \
 	if [ -x wycheproof_test ]; then echo "== wycheproof_test ($(RUNNER))"; $(RUNNER) ./wycheproof_test; fi
 
@@ -685,7 +695,7 @@ lint-matrix:
 
 # CBMC proofs: memory safety and absence of UB per module, at the bounds
 # each harness documents. The fast tier (seconds to a few minutes) gates
-# every check; the seven SAT heavyweights run as prove-slow in CI and
+# every check; the SAT heavyweights run as prove-slow in CI and
 # before a release. prove-all is both.
 .PHONY: prove-slow prove-all
 prove:

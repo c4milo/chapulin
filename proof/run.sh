@@ -39,7 +39,7 @@ set -uo pipefail
 cd "$(dirname "$0")/.."
 
 # Tier argument: "fast" (seconds-to-minutes, runs in every make check),
-# "slow" (the seven SAT heavyweights, run by CI and before release), or
+# "slow" (the SAT heavyweights, run by CI and before release), or
 # "all" (default).
 TIER="${1:-all}"
 
@@ -302,6 +302,14 @@ launch slow full aead_forge 85 "blocks.0:10,chacha20_xor.1:4" chacha20.c poly130
 launch slow noovf x25519 65 "" ct.c
 launch slow full handshake_psk 100 "hsr_fetch_record.0:45,hsr_next_msg.0:140,fill_nondet.0:600" hspump.c buf.c ct.c
 launch slow full handshake_pin 100 "hsr_fetch_record.0:45,hsr_next_msg.0:140,fill_nondet.0:600" hspump.c buf.c ct.c
+# ML-KEM's chained-product functions, one formula each; the inverse
+# NTT is two half formulas, because the whole transform returns no
+# verdict in 900 s (the mlkem comment below states the split and the
+# measured peaks).
+launch slow:5 full mlkem_ntt 260 ""
+launch slow:4 full mlkem_invntt_low 260 ""
+launch slow:4 full mlkem_invntt_high 260 ""
+launch slow:5 full mlkem_basemul 260 ""
 # Measured kissat-path peaks (macOS /usr/bin/time -l, RSS): hsparse
 # 9.9 GB, sha256 5.7 GB — both above the default weight and cap.
 launch fast:10 full hsparse 260 "hsp_parse_server_hello.0:66,main.0:600" hsparse.c buf.c
@@ -313,6 +321,18 @@ launch fast:6 full sha256 3 "fill_nondet.0:97,sha256_update.0:66,sha256_update.1
 # 2.7 GB / 174 s, sha3_stream 1.7 GB / 89 s (cbmc 6.11.0, 4 cores).
 launch fast:4 full sha3 26 "absorb.0:2,absorb.1:169,absorb.2:4,absorb.3:169,squeeze.0:170,squeeze.1:169,squeeze.2:5,ct_wipe.0:201,fill_nondet.0:202" ct.c
 launch fast full sha3_stream 26 "absorb.0:34,absorb.1:1,absorb.2:1,absorb.3:34,squeeze.0:34,squeeze.1:34,squeeze.2:2,ct_wipe.0:201,fill_nondet.0:202" ct.c
+# ML-KEM splits six ways: the KEM layer over contract stubs of the
+# polynomial layer; the polynomial layer minus its chained-product
+# functions; and one slow formula each for the NTT, the two halves of
+# the inverse NTT, and the base multiplication, whose signed-overflow
+# proofs over full-range coefficients are the SAT-hard part. SAT cost
+# grows with the multiply count in one formula, so the split follows
+# the multiplies — and every formula keeps the checks on, no noovf
+# mode. Measured peaks (kissat): mlkem 1.4 GB / 45 s, mlkem_poly
+# 2.2 GB / 167 s, ntt 3.3 GB / 195 s, invntt halves 2.7 GB / 349 s
+# and 2.8 GB / 186 s, basemul 3.6 GB / 254 s.
+launch fast full mlkem 385 "fill_nondet.0:2401,ct_wipe.0:1537,ct_memeq.0:1089" ct.c
+launch fast:3 full mlkem_poly 260 "mlk_sample_ntt.0:513,fill_nondet.0:1537,ct_wipe.0:225" ct.c
 launch fast full record 165 "" ct.c
 launch fast full rsa 385 "fill_nondet.0:385,ct_memeq.0:33,greater_or_equal.0:385,modulus_bits.0:385,modulus_bits.1:9,mgf1.0:12,emsa_pss_verify.0:352,emsa_pss_verify.1:320,rsa_pss_verify.0:385" --object-bits 11 --max-field-sensitivity-array-size 385 ct.c
 launch fast full p256 85 "" buf.c

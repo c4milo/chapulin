@@ -5,6 +5,7 @@
 -- what this catches; the hygiene grep catches the declaration itself.
 import Spec.Aead
 import Spec.Sha3
+import Spec.MlKem
 import Spec.Record
 import Spec.Handshake
 import Spec.Drbg
@@ -147,3 +148,9 @@ import Spec.Epoch
 #print axioms Spec.Sha3.shake256_size
 #print axioms Spec.Sha3.pad_blocks
 #print axioms Spec.Sha3.pad_prefix
+#print axioms Spec.MlKem.byteEncode_size
+#print axioms Spec.MlKem.encode3_size
+#print axioms Spec.MlKem.keygen_ek_size
+#print axioms Spec.MlKem.keygen_dk_size
+#print axioms Spec.MlKem.encaps_ct_size
+#print axioms Spec.MlKem.decaps_size

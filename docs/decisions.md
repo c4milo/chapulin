@@ -63,9 +63,21 @@ does nothing more.
    Gain: no second hash function (Ed25519 needs SHA-512) and no third
    pin mode.
 
+11. **Rejection sampling reads a fixed 1536-byte XOF budget per
+    polynomial.** FIPS 203's SampleNTT reads an unbounded SHAKE128
+    stream; `mlk_sample_ntt` stops after `MLK_SAMPLE_GROUPS` (512)
+    three-byte groups. Cost: a seed that needed more than 1536 bytes
+    would leave the polynomial's tail holding the caller's values —
+    and no reachable seed does: 704 bytes already put the probability
+    of needing more below 2^-128 (C2SP/CCTV's bound), and the
+    adversarial unluckysample vector, built to need over 575 bytes,
+    passes. Gain: every loop in the ML-KEM module has a static bound,
+    so the CBMC harness proves memory safety with unwinding
+    assertions on rather than assuming an unproven loop bound.
+
 ## Trust model
 
-11. **Raw-pin builds hash certificates into the transcript, never
+12. **Raw-pin builds hash certificates into the transcript, never
     parse them.** No X.509, no chains, no names, no expiry, no
     revocation, no trusted clock. Cost: no PKI; the operator
     provisions a key. Gain: the DER-parser vulnerability class does
@@ -73,7 +85,7 @@ does nothing more.
     objections: it readmits the parser class, needs a trusted clock
     for validity, and a pinned CA without name checking turns every
     certificate that CA ever issued into a skeleton key. The
-    `TRUST=ca` build (entry 14) later answered each objection on its
+    `TRUST=ca` build (entry 15) later answered each objection on its
     own terms. The profile removes the clock objection by design: the
     device reads no validity values, and freshness moves to
     reissuance policy. It contains the parser objection by proof: a
@@ -84,18 +96,18 @@ does nothing more.
     certificate carries
     `extendedKeyUsage` exactly serverAuth, and docs/ca.md makes
     exclusivity of the pinned key the operator's contract.
-12. **Key rotation is a second pin slot.** Cost: 16 bytes of config
+13. **Key rotation is a second pin slot.** Cost: 16 bytes of config
     and an out-of-band recovery path for devices that miss both
     pushes. Gain: rotation without a fleet flag day, inside the trust
     model we already have. CA builds layer CA indirection on top of
     the same two slots: the slots hold CA keys, routine server-key
     rotation becomes reissuance and never touches devices, and the
     slot pair rotates the CA key itself. See docs/rotation.md.
-13. **Tickets make both auth modes cheap.** Reconnects resume over PSK,
+14. **Tickets make both auth modes cheap.** Reconnects resume over PSK,
     so pinned mode pays its signature verification once per ticket
     lifetime; the recurring cost of any handshake is the two x25519
     operations.
-14. **CA trust is a build, not a negotiation.** `make TRUST=ca` pins a
+15. **CA trust is a build, not a negotiation.** `make TRUST=ca` pins a
     CA public key in the pin slots and verifies the server's chain — a
     server certificate alone, or that plus one intermediate — against
     it with a
@@ -111,7 +123,7 @@ does nothing more.
     certificate lifetimes and a monitored reissuance pipeline do the work
     that expiry checking would. docs/ca.md is the operational
     contract that makes the small device-side check sufficient.
-15. **Public CAs stay a non-goal.** Cost: operators run a dedicated CA
+16. **Public CAs stay a non-goal.** Cost: operators run a dedicated CA
     or contract a dedicated intermediate. Gain: the device keeps
     needing no clock and no name matching — a public CA's trust model
     requires both, and Let's Encrypt's signature algorithms sit
@@ -122,27 +134,27 @@ does nothing more.
 
 ## Memory and runtime
 
-16. **Zero heap.** One caller-allocated session struct plus one
+17. **Zero heap.** One caller-allocated session struct plus one
     caller-provided receive buffer. Cost: the caller sizes memory up
     front. Gain: no allocator, no out-of-memory paths, and bounds the
     proofs can state exactly.
-17. **`record_size_limit` is the receive buffer's size.** Cost:
+18. **`record_size_limit` is the receive buffer's size.** Cost:
     strictness toward peers that ignore RFC 8449 — an oversized record
     is a protocol error, not a resize. Gain: a peer can never send what
     the buffer cannot hold.
-18. **Single task, single connection.** The reference random generator
+19. **Single task, single connection.** The reference random generator
     is opt-in source with global state, excluded from the packaged
     object. Cost: no multi-session generator isolation. Gain:
     `ch_rand_bytes` stays a clean import that firmware replaces; see
     docs/entropy.md.
-19. **Every operational error fails closed**: alert, wipe keys, dead
+20. **Every operational error fails closed**: alert, wipe keys, dead
     session, caller reconnects. Cost: no graceful recovery. Gain: the
     entire resumable-error state space is removed from the code and the
     proofs. Corollary: `CH_EINVAL` (invalid configuration, nothing
     sent) is distinct from `CH_ECAP` (runtime capacity), so
     provisioning corruption never reads as an attack on the wire.
 
-20. **One TX staging array, sized per build.** The ClientHello
+21. **One TX staging array, sized per build.** The ClientHello
     builder and the sealed-record path share the session's TX array;
     their lifetimes never overlap. A build whose hello outgrows one
     sealed record (a PQ key share) raises `CH_TX_STAGE` for that build
@@ -151,7 +163,7 @@ does nothing more.
     hello stays rejected: the PSK binder is an HMAC over the
     contiguous truncated hello, so a streaming builder would buffer
     the message anyway.
-21. **The receive-buffer floor is a build constant.** `ch_connect`
+22. **The receive-buffer floor is a build constant.** `ch_connect`
     checks `buf_len` against `CH_MIN_RXBUF` before anything is sent.
     A feature that needs more room raises the constant, so a
     too-small buffer fails at setup with `CH_EINVAL`, not
@@ -164,7 +176,7 @@ does nothing more.
 
 ## Assurance
 
-22. **Bounded model checking, layered, with a published ledger.** Leaf
+23. **Bounded model checking, layered, with a published ledger.** Leaf
     modules prove concrete; upper layers prove against
     contract-checking stubs of the proven layer below. Where a formula
     will not converge, the harness pins a representative bound and
@@ -172,13 +184,13 @@ does nothing more.
     proofs that finish, and claims nobody has to take on faith — the
     README states what is proved, at what bound, and what is only
     tested.
-23. **The Lean spec is written from the RFCs, never from the C**, is
+24. **The Lean spec is written from the RFCs, never from the C**, is
     partial exactly where the RFCs are partial, and carries theorems
     about itself. Cost: everything is implemented twice. Gain: a shared
     misreading of an RFC cannot make both sides agree, and each
     C-versus-spec agreement transfers a proven property, not just a
     matching answer.
-24. **The RFC 8448 replay stops at secrets and MACs.** The traces
+25. **The RFC 8448 replay stops at secrets and MACs.** The traces
     protect records with AES-128-GCM, which this stack excludes, and
     sign with an RSA-1024 key, below the verifier's floor — so the
     tests check the floor holds, then verify the trace's
@@ -188,26 +200,26 @@ does nothing more.
 
 ## Engineering
 
-25. **Four exported symbols.** The library packages as one relocatable
+26. **Four exported symbols.** The library packages as one relocatable
     object; partial linking plus symbol localization does the
     namespacing, so sources keep natural names and applications cannot
     collide with internals.
-26. **CI compiles with gcc on purpose** while development machines run
+27. **CI compiles with gcc on purpose** while development machines run
     clang: consumers are firmware trees whose vendor SDKs ship gcc
     cross-compilers, so gcc-only diagnostics belong in CI. Between the
     two, both major compiler families stay covered without a second CI
     leg.
-27. **Tool versions pin to the development machine's.** When the local
+28. **Tool versions pin to the development machine's.** When the local
     toolchain upgrades, the CI pins bump in the same commit. Code never
     adapts to an older checker.
-28. **Two proof solvers, each where its memory profile fits.** kissat
+29. **Two proof solvers, each where its memory profile fits.** kissat
     runs the fast tier (measured: verdicts in seconds to minutes where
     the built-in solver ran for hours); CI's slow tier keeps the
     built-in solver, because the external-solver path materializes the
     whole formula and exhausts a 16 GB runner. Verdicts are
     solver-independent. A content-keyed cache re-proves only what
     changed.
-29. **Third-party audit is the optimization target.** Every
+30. **Third-party audit is the optimization target.** Every
     review-facing trade — spelled-out names, the complexity-15 gate,
     pure predicates with state changes on their own lines, pinned
     byte constants instead of decode-and-judge — pays a little
@@ -215,7 +227,7 @@ does nothing more.
     more named helpers than the terse form. Gain: a security library
     earns trust through reviewers who did not write it, and every
     clever compression taxes each of them.
-30. **Assertions live at proof time; runtime keeps contract-point
+31. **Assertions live at proof time; runtime keeps contract-point
     guards.** TigerStyle asserts the negative space at runtime, two
     per function, on in production. chapulin moves that space into
     the CBMC layer — 193 proof assertions checked over every input
@@ -227,7 +239,7 @@ does nothing more.
     handshakes, not named aborts. Gain: exhaustive checking where
     inputs are hostile, and no abort path an attacker can reach.
 
-31. **Revocation travels in the server certificate's notBefore, on a
+32. **Revocation travels in the server certificate's notBefore, on a
     restricted set of dates.** A clockless device cannot check expiry
     or fetch a
     CRL, so reissuance alone never revokes a stolen server key. The
@@ -250,7 +262,7 @@ does nothing more.
     certificate falls
     below the stored epoch. Advancing is what makes key rotation stick.
 
-32. **The stored epoch moves only after the server authenticates.** A
+33. **The stored epoch moves only after the server authenticates.** A
     CA-signed certificate is public, so presenting one proves
     nothing about the presenter: an attacker can replay a genuine
     higher-epoch certificate harvested from any real server. Rejecting on

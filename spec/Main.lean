@@ -6,8 +6,10 @@ drives it over pipes). One request per line, `op arg1 arg2 ...`; byte
 arguments are lowercase hex with `-` for the empty string, numeric
 arguments (lengths, counters, sequence numbers, content types) are
 decimal. One response line per request: hex bytes (`-` when empty),
-`FAIL` for an AEAD open mismatch or a degenerate P-256 sign/pub input,
-or `ERR <why>`. P-256 r/s travel as raw 32-byte hex; DER stays on the
+`FAIL` for an input the modeled function itself refuses (an AEAD open
+mismatch, a degenerate P-256 sign/pub input, a refused ML-KEM
+encapsulation key, an unsatisfiable RSA sign or X.509 mint), or
+`ERR <why>` for a request outside the protocol. P-256 r/s travel as raw 32-byte hex; DER stays on the
 C side.
 -/
 
@@ -28,6 +30,7 @@ def selftestAll : String :=
   let mods : List (String × Bool) := [
     ("sha256", Spec.Sha256.selftest),
     ("sha3", Spec.Sha3.selftest),
+    ("mlkem", Spec.MlKem.selftest),
     ("hkdf", Spec.Hkdf.selftest),
     ("chacha", Spec.ChaCha.selftest),
     ("poly", Spec.Poly.selftest),
@@ -62,6 +65,26 @@ def dispatch : List String → Option String
     let l ← len.toNat?
     guard (l <= 4096)
     return emit (Spec.Sha3.shake256 (← hexArg? m) l)
+  | ["mlkem_keygen", d, z] => do
+    let db ← hexArg? d
+    let zb ← hexArg? z
+    guard (db.size == 32 && zb.size == 32)
+    let (ek, dk) := Spec.MlKem.keygen db zb
+    return s!"{emit ek} {emit dk}"
+  | ["mlkem_encaps", ek, m] => do
+    let ekb ← hexArg? ek
+    let mb ← hexArg? m
+    guard (mb.size == 32)
+    -- FIPS 203 §7.2: an encapsulation key that fails the modulus check
+    -- is refused, the FAIL string the aead rows already use.
+    match Spec.MlKem.encaps ekb mb with
+    | some (ct, ss) => return s!"{emit ct} {emit ss}"
+    | none => return "FAIL"
+  | ["mlkem_decaps", dk, ct] => do
+    let dkb ← hexArg? dk
+    let ctb ← hexArg? ct
+    guard (dkb.size == 2400 && ctb.size == 1088)
+    return emit (Spec.MlKem.decaps dkb ctb)
   | ["hmac", k, m] => do
     return emit (Spec.Hkdf.hmac (← hexArg? k) (← hexArg? m))
   | ["hkdf_extract", salt, ikm] => do

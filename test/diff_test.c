@@ -19,6 +19,7 @@
 #include "diff_driver.h"
 #include "diff_hash.h"
 #include "diff_hsparse.h"
+#include "diff_mlkem.h"
 #include "diff_p256.h"
 #include "diff_record.h"
 #include "diff_rsa.h"
@@ -41,6 +42,9 @@ int main(int argc, char **argv) {
     diff_sha3_512();
     diff_shake128();
     diff_shake256();
+    diff_mlkem_keygen();
+    diff_mlkem_encaps();
+    diff_mlkem_decaps();
     diff_hmac();
     diff_hkdf_extract();
     diff_hkdf_expand();

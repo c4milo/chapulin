@@ -29,7 +29,7 @@ jobs:
       # solves would throw away the run's whole point.
       fail-fast: false
       matrix:
-        proof: [hkdf_expand, aead, aead_overlap, aead_forge, x25519, handshake_psk, handshake_pin, x509parse]
+        proof: [hkdf_expand, aead, aead_overlap, aead_forge, x25519, handshake_psk, handshake_pin, x509parse, mlkem_ntt, mlkem_invntt_low, mlkem_invntt_high, mlkem_basemul]
     steps:
       - uses: actions/checkout@v7
       - name: Install CBMC
@@ -335,7 +335,7 @@ jobs:
           if [ "$open" -eq 0 ]; then
             # Name the jobs that broke. A matrix reports one rolled-up
             # result, so this says prove-slow without saying which of its
-            # five legs; the run page has that.
+            # legs; the run page has that.
             broke=$(printf '%s' "$NEEDS" | jq -r 'to_entries
               | map(select(.value.result != "success"))
               | map("- \(.key): \(.value.result)") | join("\n")')
