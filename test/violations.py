@@ -71,6 +71,13 @@ def parse(path):
     return head, "\n".join(old).strip("\n"), "\n".join(new).strip("\n")
 
 
+def tail(output, lines=5):
+    """The last few non-blank lines of a failed step's output, indented
+    to sit under the ERROR line that quotes them."""
+    kept = [l for l in (output or "").splitlines() if l.strip()][-lines:]
+    return "".join(f"           {l}\n" for l in kept)
+
+
 def run(name):
     """Apply one violation, build and run its target, restore, report."""
     path = VIOLATIONS / f"{name}.violation"
@@ -97,7 +104,10 @@ def run(name):
 
     def rebuild_and_run():
         """Rebuild the prerequisites from the source on disk now, then run
-        the target. Returns (built_ok, run_returncode).
+        the target. Returns (built_ok, run_returncode, output), where
+        output is the failed step's stderr (stdout when stderr is
+        empty) — the baseline error quotes it, because the target's
+        own message otherwise never reaches the log.
 
         make decides staleness by whole-second mtimes, and a prior
         violation's edit-then-restore plus this one's edit can all land in
@@ -114,9 +124,9 @@ def run(name):
             b = subprocess.run(["make", *builds], cwd=ROOT,
                                capture_output=True, text=True)
             if b.returncode != 0:
-                return False, None
+                return False, None, b.stderr or b.stdout
         r = subprocess.run([binary], cwd=ROOT, capture_output=True, text=True)
-        return True, r.returncode
+        return True, r.returncode, r.stderr or r.stdout
 
     # Baseline: the target must PASS on unedited source in this
     # environment before its verdict on an edit means anything. Without
@@ -124,19 +134,21 @@ def run(name):
     # an absent oracle — makes the edit look caught when it was never
     # compiled in. "Break X, expect failure" says nothing unless X
     # demonstrably passes first.
-    base_built, base_rc = rebuild_and_run()
+    base_built, base_rc, base_output = rebuild_and_run()
     if not base_built:
         print(f"  ERROR    {name}: {' '.join(builds)} does not build on clean "
               f"source; cannot establish a baseline")
+        print(tail(base_output), end="")
         return "error"
     if base_rc != 0:
         print(f"  ERROR    {name}: {head['catches']} fails on unedited source "
               f"(exit {base_rc}); its verdict on an edit would be meaningless")
+        print(tail(base_output), end="")
         return "error"
 
     try:
         target.write_text(original.replace(old, new, 1))
-        built, rc = rebuild_and_run()
+        built, rc, _ = rebuild_and_run()
         if not built:
             # An edit that will not compile proves nothing about the
             # tests, so say that rather than counting it as caught.
