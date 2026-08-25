@@ -342,6 +342,25 @@ which convention holds them.
   the linker size looked better.
 - See [decisions: Cryptography](decisions.md#cryptography).
 
+### INV-23 — no division in the ML-KEM module
+
+- **Claim.** The ML-KEM sources contain no `/` and no `%` operator.
+  Every modular reduction is a Barrett or Montgomery multiply-shift
+  against a named constant, and every loop bound is a written-out
+  literal.
+- **Mechanism.** KyberSlash (2024) was a family of timing leaks from
+  compilers emitting a division instruction on secret-derived values
+  in Kyber's compression step; libraries that reduced by
+  multiply-shift were unaffected. A rule on the operator is coarser
+  than a rule on secrecy, and that is the point: semgrep cannot know
+  which values are secret, so the module gives up the operators
+  entirely and the question never comes up.
+- **Check.** Semgrep-structural (`inv-23-no-division-in-mlkem`): any
+  `/`, `%`, `/=`, or `%=` in an `mlkem*` source fails the lint.
+- **Violation.** A PR compresses a coefficient with `x % MLKEM_Q`
+  because it reads better than the Barrett sequence, and a target's
+  divider leaks the coefficient through its cycle count.
+
 ### INV-22 — the server's flight arrives in one order
 
 - **Claim.** The client accepts exactly the server message orders

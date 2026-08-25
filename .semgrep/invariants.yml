@@ -54,6 +54,23 @@ rules:
       - pattern: memcmp(...)
       - pattern: strcmp(...)
 
+  - id: inv-23-no-division-in-mlkem
+    languages: [c]
+    severity: ERROR
+    message: >-
+      INV-23: the ML-KEM sources use no division or modulo operator,
+      ever — KyberSlash was a compiler emitting a division instruction
+      on secret-derived values. Reduce with the module's Barrett or
+      Montgomery multiply-shift helpers, and write loop bounds as
+      literals.
+    paths:
+      include: ['mlkem*']
+    pattern-either:
+      - pattern: '$A / $B'
+      - pattern: '$A % $B'
+      - pattern: '$A /= $B'
+      - pattern: '$A %= $B'
+
   - id: inv-10-seq-reset-only-in-record
     languages: [c]
     severity: ERROR
