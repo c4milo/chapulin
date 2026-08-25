@@ -19,10 +19,7 @@ int main(void) {
     size_t n = nondet_size_t();
     __CPROVER_assume(n <= sizeof msg);
 
-    server_hello_info info;
-    for (size_t i = 0; i < sizeof info; i++) {
-        ((uint8_t *)&info)[i] = 0;
-    }
+    server_hello_info info = {0};
     int rc = hsp_parse_server_hello(msg, n, &info, nondet_u8() & 1);
 
     // Postcondition the handshake driver proof relies on: read_server_hello

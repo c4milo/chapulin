@@ -35,7 +35,9 @@ int x509_verify_leaf(const uint8_t *list, size_t list_len, const uint8_t *ca_key
     __CPROVER_assert(__CPROVER_w_ok(out, sizeof *out), "x509: leaf out writable");
     __CPROVER_assert(__CPROVER_w_ok(alert, sizeof *alert), "x509: alert writable");
     *alert = nondet_u8();
-    fill_nondet((uint8_t *)out, sizeof *out);
+    fill_nondet(out->key, sizeof out->key);
+    out->epoch = (uint32_t)nondet_size_t();
+    out->epoch_ok = nondet_u8();
     size_t key_len = nondet_size_t();
     __CPROVER_assume(key_len <= CH_X509_KEY_MAX);
     out->key_len = key_len;

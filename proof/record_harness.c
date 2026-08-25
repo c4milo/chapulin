@@ -1,16 +1,24 @@
 // Proves: rec_dir_init/update, rec_seal, and rec_open are memory-safe and
 // UB-free — rec_open on FULLY HOSTILE bytes (any string up to 160 bytes
-// presented as a record), rec_seal across its size contract. The padding
+// presented as a record), both into a separate buffer and in place
+// (pt == rec, the shape both shipped callers use), and rec_seal across
+// its size contract and over the whole rec_dir domain: any key, IV, and
+// sequence number — the seq == UINT64_MAX arm both seal and open refuse
+// included — into an output buffer of any claimed size. The padding
 // strip and type extraction run over havoc'd plaintext, which covers
 // every decrypt result the AEAD could ever produce.
 //
 // Layered proof: hkdf and aead are replaced by stubs asserting the
-// contracts their own harnesses proved, havocing outputs. aead_open's
-// stub writes plaintext only when it reports success — exactly the
-// all-or-nothing property the aead proof established. The functional
-// round-trip (type/length preserved) is proven at the aead layer and
-// tested end to end in unit and e2e.
+// contracts their own harnesses proved — hkdf_expand_label's stub also
+// asserts its callee's CH_ASSERT preconditions, so a caller change
+// violating them fails here, not only at runtime — havocing outputs.
+// aead_open's stub writes plaintext only when it reports success —
+// exactly the all-or-nothing property the aead proof established. The
+// functional round-trip (type/length preserved) is proven at the aead
+// layer and tested end to end in unit and e2e.
 #include "harness.h"
+
+#include <string.h>
 
 #include "aead.h"
 #include "hkdf.h"
@@ -21,6 +29,12 @@ void hkdf_expand_label(const uint8_t secret[SHA256_LEN], const char *label, cons
     __CPROVER_assert(__CPROVER_r_ok(label, 1), "label: label readable");
     __CPROVER_assert(ctx_len == 0 || __CPROVER_r_ok(ctx, ctx_len), "label: ctx readable");
     __CPROVER_assert(__CPROVER_w_ok(out, out_len), "label: output writable");
+    // The callee's CH_ASSERT preconditions (hkdf.c), asserted so a
+    // caller that breaks them fails this proof, not only the runtime.
+    size_t label_len = strlen(label);
+    __CPROVER_assert(label_len > 0 && label_len <= HKDF_LABEL_MAX, "label: length in contract");
+    __CPROVER_assert(ctx_len <= SHA256_LEN, "label: ctx within contract");
+    __CPROVER_assert(out_len <= 0xffff, "label: output within contract");
     fill_nondet(out, out_len);
 }
 
@@ -120,5 +134,26 @@ int main(void) {
     size_t out_len = 0;
     uint8_t outer_type = 0;
     (void)rec_open(&tx, evil, evil_len, out, sizeof out, &out_len, &outer_type);
+
+    // The whole rec_dir domain — any key, IV, and sequence number,
+    // covering the seq == UINT64_MAX refusal — with an output buffer of
+    // any claimed size, so the short-buffer arm fires too.
+    rec_dir any;
+    fill_nondet(any.key, AEAD_KEY);
+    fill_nondet(any.iv, AEAD_NONCE);
+    any.seq = (uint64_t)nondet_i64();
+    fill_nondet(pt, sizeof pt);
+    n = nondet_size_t();
+    __CPROVER_assume(n <= sizeof pt);
+    size_t cap = nondet_size_t();
+    __CPROVER_assume(cap <= sizeof rec);
+    (void)rec_seal(&any, nondet_u8(), pt, n, rec, cap, &record_len);
+
+    // Both shipped callers decrypt in place (pt == rec), so the proof
+    // drives that shape from the havocked direction state.
+    fill_nondet(evil, sizeof evil);
+    evil_len = nondet_size_t();
+    __CPROVER_assume(evil_len <= sizeof evil);
+    (void)rec_open(&any, evil, evil_len, evil, sizeof evil, &out_len, &outer_type);
     return 0;
 }

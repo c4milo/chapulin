@@ -76,9 +76,19 @@ int main(void) {
     fe_nondet(a);
     fe_nondet(b);
     mont_mul(o, a, b, &MODP);
-    mont_mul(a, a, b, &MODN); // o aliasing a, as mod_inv squares
+    fe_nondet(a);
+    fe_nondet(b);
+    mont_mul(a, a, b, &MODN); // o aliasing a
+    fe_nondet(a);
+    mont_mul(a, a, a, &MODN); // o == a == b, mod_inv's mont_mul(acc, acc, acc)
+    fe_nondet(a);
+    fe_nondet(b);
     mod_mul(o, a, b, &MODP);
+    fe_nondet(a);
+    fe_nondet(b);
     mod_mul(a, a, b, &MODN);
+    fe_nondet(a);
+    mod_mul(a, a, a, &MODP); // point_double's mod_mul(r.z, r.z, r.z)
     fe_nondet(a);
     fe_nondet(b);
     (void)on_curve(a, b);

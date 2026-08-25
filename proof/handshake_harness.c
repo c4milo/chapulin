@@ -69,15 +69,27 @@ int io_read_record(const ch_cfg *cfg, uint8_t *buf, size_t cap, uint8_t *outer,
     return CH_OK;
 }
 
+uint64_t nondet_u64(void);
+int nondet_int(void);
+
+// Typed stores: a byte-pointer fill through a member pointer makes
+// every store a whole-object update of the enclosing struct in the
+// SSA (docs/proofs.md).
+static void fill_rec_dir_nondet(rec_dir *d) {
+    fill_nondet(d->key, sizeof d->key);
+    fill_nondet(d->iv, sizeof d->iv);
+    d->seq = nondet_u64();
+}
+
 void rec_dir_init(rec_dir *d, const uint8_t secret[SHA256_LEN]) {
     __CPROVER_assert(__CPROVER_r_ok(secret, SHA256_LEN), "dir: secret readable");
-    fill_nondet((uint8_t *)d, sizeof *d);
+    fill_rec_dir_nondet(d);
 }
 
 void rec_dir_update(uint8_t secret[SHA256_LEN], rec_dir *d) {
     __CPROVER_assert(__CPROVER_w_ok(secret, SHA256_LEN), "upd: secret writable");
     fill_nondet(secret, SHA256_LEN);
-    fill_nondet((uint8_t *)d, sizeof *d);
+    fill_rec_dir_nondet(d);
 }
 
 int rec_seal(rec_dir *d, uint8_t type, const uint8_t *pt, size_t n, uint8_t *out, size_t cap,
@@ -88,6 +100,10 @@ int rec_seal(rec_dir *d, uint8_t type, const uint8_t *pt, size_t n, uint8_t *out
     size_t total = REC_HDR + n + 1 + AEAD_TAG;
     if (n + 1 + AEAD_TAG > 0x4000 + 256 || total > cap) {
         return -1;
+    }
+    if (nondet_u8() & 1) {
+        return -1; // the real function also refuses at seq == UINT64_MAX,
+                   // which this stub does not track: any call may fail
     }
     __CPROVER_assert(__CPROVER_w_ok(out, total), "seal: out writable");
     fill_nondet(out, total);
@@ -117,7 +133,8 @@ size_t hs_build_client_hello(uint8_t *out, size_t cap, const ch_cfg *cfg, const 
                              const uint8_t random32[32], uint16_t record_size_limit,
                              const uint8_t *cookie, size_t cookie_len) {
     (void)record_size_limit;
-    __CPROVER_assert(__CPROVER_r_ok(cfg->psk_id, cfg->psk_id_len), "ch: identity readable");
+    __CPROVER_assert(cfg->psk_id_len == 0 || __CPROVER_r_ok(cfg->psk_id, cfg->psk_id_len),
+                     "ch: identity readable");
     __CPROVER_assert(__CPROVER_r_ok(pub, 32), "ch: share readable");
     __CPROVER_assert(__CPROVER_r_ok(random32, 32), "ch: random readable");
     __CPROVER_assert(cookie_len == 0 || __CPROVER_r_ok(cookie, cookie_len), "ch: cookie readable");
@@ -125,6 +142,10 @@ size_t hs_build_client_hello(uint8_t *out, size_t cap, const ch_cfg *cfg, const 
         return 0; // does not fit
     }
     size_t n = nondet_size_t();
+    // ASSUMED, not proven: a successful build returns at least the
+    // binders tail plus the handshake header. hsmsg.c has no harness
+    // (the README names it), so this contract rests on the unit tests
+    // until one exists; the binder patching below is what leans on it.
     __CPROVER_assume(n >= CH_BINDERS_TAIL + 4 && n <= cap);
     __CPROVER_assert(__CPROVER_w_ok(out, n), "ch: out writable");
     fill_nondet(out, n);
@@ -213,7 +234,12 @@ int hsp_parse_server_hello(const uint8_t *body, size_t n, server_hello_info *inf
     (void)psk_mode;
     __CPROVER_assert(n == 0 || __CPROVER_r_ok(body, n), "sh: body readable");
     __CPROVER_assert(__CPROVER_w_ok(info, sizeof *info), "sh: info writable");
-    fill_nondet((uint8_t *)info, sizeof *info);
+    info->hrr = nondet_int();
+    info->version_ok = nondet_int();
+    info->have_share = nondet_int();
+    info->psk_ok = nondet_int();
+    info->seen = nondet_u8();
+    fill_nondet(info->server_pub, sizeof info->server_pub);
     if (nondet_u8() & 1) {
         info->cookie = NULL;
         info->cookie_len = 0;
@@ -231,14 +257,15 @@ int hsp_parse_encrypted_exts(const uint8_t *body, size_t n, uint16_t *peer_limit
     __CPROVER_assert(n == 0 || __CPROVER_r_ok(body, n), "ee: body readable");
     __CPROVER_assert(__CPROVER_w_ok(peer_limit, sizeof *peer_limit), "ee: limit writable");
     __CPROVER_assert(__CPROVER_w_ok(alert, sizeof *alert), "ee: alert writable");
-    fill_nondet((uint8_t *)peer_limit, sizeof *peer_limit);
+    *peer_limit = (uint16_t)nondet_size_t();
     fill_nondet(alert, sizeof *alert);
     return (nondet_u8() & 1) ? CH_OK : CH_EPROTO;
 }
 
 // On success the list points into the caller's message with a length
 // that fits it — the pointer contract the transcript update and the
-// coming CA build rest on.
+// coming CA build rest on. certparse_harness.c proves the real parser
+// keeps it, on hostile bytes.
 int hsp_parse_certificate(const uint8_t *body, size_t n, const uint8_t **list, size_t *list_len,
                           uint8_t *alert) {
     __CPROVER_assert(n == 0 || __CPROVER_r_ok(body, n), "cert: body readable");
@@ -259,7 +286,8 @@ int hsp_parse_certificate(const uint8_t *body, size_t n, const uint8_t **list, s
 
 // On success the signature points into the caller's message with a
 // length that fits it — what check_certificate_verify hands the
-// verifier.
+// verifier. certparse_harness.c proves the real parser keeps it, on
+// hostile bytes.
 int hsp_parse_certificate_verify(const uint8_t *body, size_t n, const uint8_t **sig,
                                  size_t *sig_len, uint8_t *alert) {
     __CPROVER_assert(n == 0 || __CPROVER_r_ok(body, n), "cv: body readable");

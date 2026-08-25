@@ -20,6 +20,16 @@ int main(void) {
     uint32_t counter = (uint32_t)nondet_size_t();
 
     chacha20_xor(key, nonce, counter, buf, buf, n);
+
+    // Out-of-place, the shape the harness comment always claimed: a
+    // fresh source and a distinct destination.
+    uint8_t src[160];
+    uint8_t dst[160];
+    fill_nondet(src, sizeof src);
+    n = nondet_size_t();
+    __CPROVER_assume(n <= sizeof src);
+    chacha20_xor(key, nonce, counter, src, dst, n);
+
     chacha20_block(key, nonce, counter, keystream);
     return 0;
 }

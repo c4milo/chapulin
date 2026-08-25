@@ -49,6 +49,7 @@ void sha256_init(sha256 *s) {
 void sha256_update(sha256 *s, const uint8_t *in, size_t n) {
     __CPROVER_assert(__CPROVER_w_ok(s, sizeof *s), "sha256_update: ctx writable");
     __CPROVER_assert(n == 0 || __CPROVER_r_ok(in, n), "sha256_update: input readable");
+    fill_nondet((uint8_t *)s, sizeof *s);
 }
 
 void sha256_final(sha256 *s, uint8_t out[SHA256_LEN]) {

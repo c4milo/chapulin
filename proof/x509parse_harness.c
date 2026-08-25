@@ -51,10 +51,11 @@
 #endif
 
 // One strict-reader step: consume a nondet prefix of what remains —
-// never more than the primitive's own consumption bound — through the
-// real rbuf, then fail or succeed nondeterministically. Success implies
-// the reader entered and left with err clear, the shape x509der_harness
-// proves for every primitive; failure may consume and may set err.
+// never more than the primitive's own consumption bound, which
+// x509der_harness asserts for each primitive on every outcome —
+// through the real rbuf, then fail or succeed nondeterministically.
+// Success implies the reader entered and left with err clear, the
+// shape x509der_harness proves; failure may consume and may set err.
 static int havoc_read(rbuf *r, size_t max_take) {
     __CPROVER_assert(__CPROVER_w_ok(r, sizeof *r), "stub: rbuf writable");
     size_t take = nondet_size_t();
@@ -124,8 +125,7 @@ int x509_read_time(rbuf *r) {
 int x509_read_time_epoch(rbuf *r, uint32_t *index, int *ok) {
     __CPROVER_assert(__CPROVER_w_ok(index, sizeof *index), "epoch: index writable");
     __CPROVER_assert(__CPROVER_w_ok(ok, sizeof *ok), "epoch: ok writable");
-    uint32_t value = 0;
-    fill_nondet((uint8_t *)&value, sizeof value);
+    uint32_t value = (uint32_t)nondet_size_t();
     __CPROVER_assume(value <= CH_EPOCH_MAX);
     *index = value;
     *ok = nondet_u8() & 1;

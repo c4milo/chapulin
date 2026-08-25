@@ -19,20 +19,24 @@
 # Structure is layered, mlkem-native style: leaf modules (ct, buf,
 # sha256, chacha20, poly1305, aead, x25519 field ops) are proven concrete;
 # upper layers (hkdf, record, the handshake driver) are proven against
-# contract-checking stubs of the already-proven layer below — every stub
-# asserts pointer/size validity and havocs outputs, so nothing upper
-# depends on crypto values.
+# contract-checking stubs of the layer below — every stub asserts
+# pointer/size validity and havocs outputs, so nothing upper depends on
+# crypto values. Most stubbed layers are proven in their own harnesses;
+# io.c, keysched.c, and hsmsg.c have none (the README says so), so
+# their stubs assert contracts the unit tests carry.
 #
 # Every harness gets its full dependency closure on the command line — a
 # missing body would make CBMC havoc the callee and the proof unsound, so
 # results are rejected on "no body". Loops that contain block functions
 # get tight per-loop bounds; plain byte loops get the buffer bound.
 #
-# x25519 splits one proof in two: the concrete harness runs without the
-# signed-overflow class (mul's 256 symbolic multiplies never converge
-# under SAT with it), and x25519_mul proves the overflow lemma covering
-# exactly that arithmetic with full checks. p256 and rsa split the same
-# way, and hsparse/eeparse split one parser per formula: SAT time grows
+# x25519 splits by check set and by shape: the mul harnesses run
+# without the signed-overflow class (mul's 256 symbolic multiplies
+# never converge under SAT with it) at one caller aliasing shape per
+# formula, x25519_mul proves the overflow lemma for that arithmetic
+# with full checks, and x25519_ops proves the linear ops whole with
+# full checks. p256 and rsa split by check set the same way, and
+# hsparse/eeparse split one parser per formula: SAT time grows
 # super-linearly with formula size, so two small instances beat one big
 # one by hours.
 set -uo pipefail
@@ -289,17 +293,28 @@ launch() {
     RUNNING="$RUNNING $!:$w"
 }
 
-# Longest first, so stragglers overlap the quick wins instead of
-# trailing them.
 # Shortest first: on CI the slow jobs run close to serial, and a run
 # that hits the workflow timeout banks every finished proof — so the
 # order decides how much a partial run saves. Re-dispatching the
 # workflow finishes the remainder from the banked cache.
+# hkdf_expand splits one function per formula: widening the domains to
+# the contract bounds (info 64, output 96) stopped the combined formula
+# converging in 1800 s. Measured apart (kissat): expand 745 s / 2.2 GB,
+# expand_label 747 s / 2.2 GB.
 launch slow full hkdf_expand 120 "hkdf_expand.0:5" --object-bits 11 ct.c
+launch slow full hkdf_expand_label 120 "hkdf_expand.0:5" --object-bits 11 ct.c
 launch slow full aead 85 "blocks.0:10,chacha20_xor.1:4" chacha20.c poly1305.c ct.c
 launch slow full aead_overlap 85 "blocks.0:10,chacha20_xor.1:4" chacha20.c poly1305.c ct.c
 launch slow full aead_forge 85 "blocks.0:10,chacha20_xor.1:4" chacha20.c poly1305.c ct.c
-launch slow noovf x25519 65 "" ct.c
+# aead_inplace has no launch line: its formula returned no verdict in an
+# hour under kissat (3.8 GB and climbing), and an unconverged launch line
+# proves nothing (docs/proofs.md). The harness is written and reviewed, so
+# adding the line is the whole job once the formula converges.
+launch slow:5 noovf x25519 65 "" ct.c
+launch slow:5 noovf x25519_mul_alias_a 65 ""
+launch slow:5 noovf x25519_mul_alias_b 65 ""
+launch slow:5 noovf x25519_mul_inputs_alias 65 ""
+launch slow:5 noovf x25519_sqr 65 ""
 launch slow full handshake_psk 100 "hsr_fetch_record.0:45,hsr_next_msg.0:140,fill_nondet.0:600" hspump.c buf.c ct.c
 launch slow full handshake_pin 100 "hsr_fetch_record.0:45,hsr_next_msg.0:140,fill_nondet.0:600" hspump.c buf.c ct.c
 # ML-KEM's chained-product functions, one formula each; the inverse
@@ -314,11 +329,12 @@ launch slow:5 full mlkem_basemul 260 ""
 # 9.9 GB, sha256 5.7 GB — both above the default weight and cap.
 launch fast:10 full hsparse 260 "hsp_parse_server_hello.0:66,main.0:600" hsparse.c buf.c
 launch fast full eeparse 260 "hsp_parse_encrypted_exts.0:66" hsparse.c buf.c
+launch fast full certparse 260 "" hsparse.c buf.c
 launch fast:6 full sha256 3 "fill_nondet.0:97,sha256_update.0:66,sha256_update.1:3,sha256_update.2:66,sha256_final.0:65,sha256_final.1:9,sha256_final.2:9,compress.0:17,compress.1:49,compress.2:65"
 # sha3's loops number by back-edge order, so the block loops' inner
 # copy loop precedes its while: absorb is head, block-copy, block-while,
 # tail; squeeze is head, block-copy, block-while. Measured peaks: sha3
-# 2.7 GB / 174 s, sha3_stream 1.7 GB / 89 s (cbmc 6.11.0, 4 cores).
+# 2.7 GB / 174 s, sha3_stream 1.8 GB / 139 s (cbmc 6.11.0, 4 cores).
 launch fast:4 full sha3 26 "absorb.0:2,absorb.1:169,absorb.2:4,absorb.3:169,squeeze.0:170,squeeze.1:169,squeeze.2:5,ct_wipe.0:201,fill_nondet.0:202" ct.c
 launch fast full sha3_stream 26 "absorb.0:34,absorb.1:1,absorb.2:1,absorb.3:34,squeeze.0:34,squeeze.1:34,squeeze.2:2,ct_wipe.0:201,fill_nondet.0:202" ct.c
 # ML-KEM splits six ways: the KEM layer over contract stubs of the
@@ -333,27 +349,31 @@ launch fast full sha3_stream 26 "absorb.0:34,absorb.1:1,absorb.2:1,absorb.3:34,s
 # and 2.8 GB / 186 s, basemul 3.6 GB / 254 s.
 launch fast full mlkem 385 "fill_nondet.0:2401,ct_wipe.0:1537,ct_memeq.0:1089" ct.c
 launch fast:3 full mlkem_poly 260 "mlk_sample_ntt.0:513,fill_nondet.0:1537,ct_wipe.0:225" ct.c
-launch fast full record 165 "" ct.c
+# record: measured 830 s / 3.0 GB (kissat) since the direction-domain
+# and in-place-open shapes joined the formula — under the fast pool's
+# 1034 s pole (x509parse_ecdsa), so it stays a push-gate leg.
+launch fast:4 full record 165 "" ct.c
 launch fast full rsa 385 "fill_nondet.0:385,ct_memeq.0:33,greater_or_equal.0:385,modulus_bits.0:385,modulus_bits.1:9,mgf1.0:12,emsa_pss_verify.0:352,emsa_pss_verify.1:320,rsa_pss_verify.0:385" --object-bits 11 --max-field-sensitivity-array-size 385 ct.c
 launch fast full p256 85 "" buf.c
 launch fast full hkdf 120 "" ct.c
 launch fast full tlspost 132 "handle_post_handshake.0:33,fill_nondet.0:130" --object-bits 11 buf.c ct.c session.c
 # x509: primitives concrete (both variants), the walker with stubbed
 # primitives. The ECDSA walker proves the full two-entry bound in
-# every check; the RSA walker's full formula does not converge, so
-# its fast slot proves the single-max-entry bound nightly-free and
-# the measured numbers put it beside the SAT heavyweights instead.
-# Weights are measured peaks (kissat): der 2.0 GB, parse_ecdsa
-# 5.6 GB, parse rsa 7.1 GB.
+# every check; the RSA walker's formula is a SAT heavyweight, so it
+# runs in the slow tier at the single-max-RSA-certificate bound.
+# Weights are measured peaks (kissat): der 1.4 GB, parse_ecdsa
+# 2.4 GB (down from 5.6 with the typed stub stores), parse rsa
+# 7.1 GB.
 launch fast:3 full x509der 452 "fill_nondet.0:449,ct_memeq.0:68" buf.c ct.c
 launch fast:3 full x509der_ecdsa 452 "fill_nondet.0:449,ct_memeq.0:68" buf.c ct.c
-launch fast:6 full x509parse_ecdsa 260 "fill_nondet.0:257,ct_memeq.0:68" buf.c ct.c
+launch fast:4 full x509parse_ecdsa 260 "fill_nondet.0:257,ct_memeq.0:68" buf.c ct.c
 launch slow:8 full x509parse 844 "fill_nondet.0:841,ct_memeq.0:68" buf.c ct.c
 launch fast full chacha20 165 "chacha20_xor.1:5"
 launch fast full poly1305 85 "blocks.0:8" ct.c
 launch fast full buf 100 ""
 launch fast full ct 65 ""
 launch fast full x25519_mul 20 ""
+launch fast full x25519_ops 260 ""
 launch fast full drbg 100 "ch_rand_bytes.3:4" ct.c
 launch fast full p256_mul 20 ""
 launch fast full rsa_mul 20 "fill_nondet.0:385,from_bytes.0:97,main.0:97,to_bytes.0:97"

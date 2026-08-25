@@ -10,17 +10,18 @@
 //   x509_read_exact      : compare of up to 67 bytes, the largest pinned
 //                          constant (the RSA-PSS AlgorithmIdentifier)
 //   x509_skip            : header plus content over the 448-byte buffer
-//   x509_read_serial     : 24 bytes; the largest shape is 23 (2-byte
-//                          header + 21 content), so a trailing byte exists
-//   x509_read_time       : 20 bytes; the largest shape is 17 (tag + len +
-//                          15-digit GeneralizedTime)
-//   x509_read_time_epoch : 17 bytes, the largest Time shape itself,
-//                          run beside x509_read_time on identical
-//                          rbuf states to prove the two share one
-//                          acceptance grammar
-//   x509_read_keyusage   : 8 bytes; the largest shape is 5 (2-byte
-//                          header + 3 content), driven with both
-//                          required masks the walker passes — 0x80
+//   x509_read_serial     : the 448-byte buffer — the walker hands it
+//                          the remaining TBS rbuf, so every length
+//                          form and the len > 21 reject can execute
+//                          (the largest accepted shape is 23)
+//   x509_read_time       : the 448-byte buffer, same caller shape;
+//                          the largest accepted shape is 17
+//   x509_read_time_epoch : the 448-byte buffer, run beside
+//                          x509_read_time on identical rbuf states to
+//                          prove the two share one acceptance grammar
+//   x509_read_keyusage   : 256 bytes, CH_X509_EXT_TLV_MAX — the cap on
+//                          the extnValue the walker passes; driven
+//                          with both required masks — 0x80
 //                          digitalSignature (leaf) and 0x04
 //                          keyCertSign (intermediate)
 //   x509_read_spki       : 448 bytes; a 3072-bit RSA SPKI measures 422
@@ -64,6 +65,9 @@ int main(void) {
         __CPROVER_assert(!r.err, "read_len success leaves err clear");
         __CPROVER_assert(len <= rb_left(&r), "read_len yields len within the remaining bytes");
     }
+    // The consumption cap x509parse_harness's stub replays: at most the
+    // three length octets, whatever the outcome.
+    __CPROVER_assert(n - rb_left(&r) <= 3, "read_len consumes at most 3 octets");
 
     // Spec.X509Der.readLen_canonical, proved of the model and asserted
     // here of the C: a length the reader accepts is the one
@@ -95,6 +99,7 @@ int main(void) {
         __CPROVER_assert(!r.err, "read_header success leaves err clear");
         __CPROVER_assert(len <= rb_left(&r), "read_header yields len within the remaining bytes");
     }
+    __CPROVER_assert(n - rb_left(&r) <= 4, "read_header consumes at most tag plus 3 octets");
 
     // x509_read_exact at the largest pinned constant's width.
     uint8_t want[67];
@@ -103,34 +108,39 @@ int main(void) {
     __CPROVER_assume(want_len <= sizeof want);
     rb_init(&r, tlv, n);
     (void)x509_read_exact(&r, want, want_len);
+    __CPROVER_assert(n - rb_left(&r) <= want_len,
+                     "read_exact consumes at most the constant's width");
 
     // x509_skip: any tag, any admitted length.
     rb_init(&r, tlv, n);
     (void)x509_skip(&r, nondet_u8());
 
-    // x509_read_serial at its 24-byte bound.
-    uint8_t serial[24];
+    // x509_read_serial over the rbuf shape its caller hands it.
+    uint8_t serial[448];
     fill_nondet(serial, sizeof serial);
     size_t serial_len = nondet_size_t();
     __CPROVER_assume(serial_len <= sizeof serial);
     rb_init(&r, serial, serial_len);
     (void)x509_read_serial(&r);
+    __CPROVER_assert(serial_len - rb_left(&r) <= 23,
+                     "read_serial consumes at most its largest shape");
 
-    // x509_read_time at its 20-byte bound.
-    uint8_t time_bytes[20];
+    // x509_read_time over the rbuf shape its caller hands it.
+    uint8_t time_bytes[448];
     fill_nondet(time_bytes, sizeof time_bytes);
     size_t time_len = nondet_size_t();
     __CPROVER_assume(time_len <= sizeof time_bytes);
     rb_init(&r, time_bytes, time_len);
     (void)x509_read_time(&r);
+    __CPROVER_assert(time_len - rb_left(&r) <= 17, "read_time consumes at most its largest shape");
 
-    // x509_read_time_epoch at the 17-byte largest Time shape: a buffer
-    // under the 15-byte smallest shape never parses, an epoch-shaped
-    // date yields a number in 0..CH_EPOCH_MAX, and the
+    // x509_read_time_epoch over the caller's rbuf shape: a buffer
+    // under the 15-byte smallest Time shape never parses, an
+    // epoch-shaped date yields a number in 0..CH_EPOCH_MAX, and the
     // accept/reject verdict equals x509_read_time's on an identical
     // rbuf state — extraction leaves grammar acceptance unchanged.
     {
-        uint8_t epoch_bytes[17];
+        uint8_t epoch_bytes[448];
         fill_nondet(epoch_bytes, sizeof epoch_bytes);
         size_t epoch_len = nondet_size_t();
         __CPROVER_assume(epoch_len <= sizeof epoch_bytes);
@@ -142,6 +152,8 @@ int main(void) {
         int epoch_ok = 0;
         int rc = x509_read_time_epoch(&r, &epoch_index, &epoch_ok);
         __CPROVER_assert(rc == shape_rc, "epoch verdict equals read_time on the same bytes");
+        __CPROVER_assert(epoch_len - rb_left(&r) <= 17,
+                         "read_time_epoch consumes at most the largest Time shape");
         if (epoch_len < 15) {
             __CPROVER_assert(rc == 0, "a buffer under the smallest Time shape never parses");
         }
@@ -150,11 +162,11 @@ int main(void) {
         }
     }
 
-    // x509_read_keyusage at its 8-byte bound, zero length included:
-    // x509.c hands it an extnValue that may be empty. The nondet mask
-    // choice drives both callers' demands, the leaf's digitalSignature
-    // and the intermediate's keyCertSign.
-    uint8_t ku[8];
+    // x509_read_keyusage at the 256-byte extnValue cap, zero length
+    // included: x509.c hands it an extnValue that may be empty. The
+    // nondet mask choice drives both callers' demands, the leaf's
+    // digitalSignature and the intermediate's keyCertSign.
+    uint8_t ku[256];
     fill_nondet(ku, sizeof ku);
     size_t ku_len = nondet_size_t();
     __CPROVER_assume(ku_len <= sizeof ku);

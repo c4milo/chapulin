@@ -155,8 +155,8 @@ Four layers cover four different failure classes.
 sources are compiled into a [CBMC](https://www.cprover.org/cbmc/) harness, which proves them free of
 out-of-bounds access, invalid pointers, bad shifts, and division by
 zero, for every input within the harness's bound. Signed overflow is
-checked too, except in the one harness that turns it off (see the
-x25519 row). `hsmsg.c`, `io.c`, and `keysched.c` have no harness.
+checked too, except in the three x25519 mul harnesses that turn it off
+(see the x25519 row). `hsmsg.c`, `io.c`, and `keysched.c` have no harness.
 `make check` regenerates the source-by-source table in
 `bin/proof-coverage.md`. Where a bound equals the module's real
 maximum, the proof covers all inputs.
@@ -177,19 +177,19 @@ apart from one that passed — so for the slow rows, read the nightly.
 | sha256 | safe for any two-chunk split | messages ≤ 96 B |
 | sha3 (two harnesses) | every mode is safe for a one-call message and XOF output from a fresh context; the SHAKE streaming calls are safe from any context state — arbitrary lanes, either rate, every position — for split absorbs and squeezes | one-call: messages ≤ 200 B, output ≤ 400 B; streaming: chunks ≤ 32 B |
 | mlkem (six harnesses) | keygen, encaps, and decaps are safe for every seed, message, and hostile key or ciphertext, with the polynomial layer stubbed to its contracts; the polynomial layer is safe over full-range int16 coefficients — a superset of anything the KEM layer passes it, so no coefficient value can overflow the reduction arithmetic. Sampling, reductions, and coding prove in the fast tier; the NTT, the two halves of its inverse, and the base multiplication, whose chained-product overflow proofs are the SAT-hard part, each prove in their own slow-tier formula | the full domain: every input is a fixed-size array, and the sampling read stops at its 1536-byte cap |
-| hkdf (two harnesses) | hmac/extract and expand/expand-label safe over the proven sha256 contract | keys ≤ 96 B; output ≤ 96 B, expand: slow tier |
+| hkdf (two harnesses) | hmac/extract and expand/expand-label safe over the proven sha256 contract | keys ≤ 96 B, hmac/extract messages ≤ 48 B; expand/expand-label output ≤ 96 B and info ≤ 64 B (the contract bound), expand: slow tier |
 | handshake | the driver stays safe on any record stream: pump, reassembly, HRR restart, state machine, in PSK and pinned-key mode. The `TRUST=ca` driver has a harness but no launch line, so it is unproven | 96 B receive buffer, slow tier |
-| chacha20 | safe at any counter, including in place | ≤ 160 B |
+| chacha20 | safe at any counter, in place and into a distinct buffer | ≤ 160 B |
 | poly1305 | safe for any three-chunk split; 64-bit products stay in range | messages ≤ 80 B |
-| aead (three harnesses) | seal/open round-trips; a forged tag writes zero bytes; backward-overlap decrypt works. These are structural, so the bound is small: 16 B crosses the Poly1305 block boundary and the forge case fires at one byte | plaintext ≤ 16 B, aad ≤ 16 B, slow tier |
-| x25519 | field operations are memory-safe, with the signed-overflow class turned off (slow tier); a separate lemma proves mul's int64 accumulation and fold cannot overflow (fast tier). Nothing proves signed overflow in carry, add, sub or pack | limbs ≤ 2^24 |
+| aead (three harnesses) | seal/open round-trips; a forged tag writes zero bytes; backward-overlap decrypt works. These are structural, so the bound is small: 16 B crosses the Poly1305 block boundary and the forge case fires at one byte. Sealing fully in place (`pt == ct`, the shape every outgoing record uses) is **not proven**: `proof/aead_inplace_harness.c` states it, but the formula has returned no verdict, so it carries no launch line | plaintext ≤ 16 B, aad ≤ 16 B, slow tier |
+| x25519 (five harnesses) | carry, add, sub, pack, cswap, and unpack are safe with every check on, add and sub in the ladder's aliased shape too, and the ladder's scalar bit index stays in bounds (fast tier); mul's index walk is safe in every caller aliasing shape — distinct, output aliasing either input, and sqr's all-one-object — with the signed-overflow class off (slow tier, one shape set per formula), and a separate lemma proves mul's int64 accumulation and fold cannot overflow (fast tier). The ladder's limb-growth composition is still an open task | limbs ≤ 2^24; into carry, ≤ 2^58 |
 | p256 | the DER parser and limb marshalling stay safe on hostile signatures; a carry lemma covers the Montgomery multiply | signatures ≤ 80 B |
-| rsa (two harnesses) | the PSS decode and limb marshalling stay safe with the RSAVP1 result replaced by arbitrary bytes | 384 B modulus, every byte hostile |
-| record | seal works across its contract; rec_open stays safe on fully hostile bytes | records ≤ 160 B |
-| hsparse, eeparse | the ServerHello and EncryptedExtensions parsers stay safe on hostile bytes | messages ≤ 256 B |
+| rsa (two harnesses) | the PSS decode and limb marshalling stay safe with the RSAVP1 result replaced by arbitrary bytes | 384 B modulus, every byte hostile except the top one, which each call pins to one of the three alignment shapes the decode takes — a symbolic top bit was measured at 7 GB of CNF |
+| record | seal works across its contract and returns, not traps, over the whole direction state — any key, IV, and sequence number, the saturation refusal included — and any claimed buffer size; rec_open stays safe on fully hostile bytes, into a separate buffer and in place, the shape both shipped callers use | records ≤ 160 B |
+| hsparse, eeparse, certparse | the ServerHello, EncryptedExtensions, Certificate, and CertificateVerify parsers stay safe on hostile bytes, and the certificate list and signature slices they hand back lie inside the message | messages ≤ 256 B |
 | tlspost | the post-handshake parser stays safe on hostile decrypted bytes and consumes no more than its input | messages ≤ 128 B |
 | drbg | the generator stays safe for any request, seeded and across rekeys | requests ≤ 96 B |
-| x509der (two harnesses) | every DER primitive stays safe on hostile bytes and honors the pointer contracts the walker rests on, in both builds | inputs ≤ 448 B |
+| x509der (two harnesses) | every DER primitive stays safe on hostile bytes at the rbuf shape its caller hands it, honors the pointer contracts the walker rests on, and consumes no more than the per-primitive cap the walker proof replays, in both builds | inputs ≤ 448 B; keyusage at its 256 B extnValue cap |
 | x509parse (two harnesses) | the certificate walker stays safe on any entry list, primitives stubbed to their proven contracts | ECDSA: ≤ 256 B; RSA: ≤ 840 B, slow tier |
 
 CBMC found one real bug during development: `carry()` left-shifted a

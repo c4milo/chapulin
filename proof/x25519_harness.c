@@ -1,23 +1,26 @@
-// Proves x25519's field arithmetic memory-safe at generous limb bounds
-// (2^24 — far above the ~2^17 the ladder produces), and UB-free for the
-// linear ops:
+// Proves: mul's memory-safe index walk over the 31-limb product, at
+// generous limb bounds (2^24 — far above the ~2^17 the ladder
+// produces), with distinct operands. The aliasing shapes the callers
+// use are one formula each — x25519_mul_alias_a (mul(c, c, a)),
+// x25519_mul_alias_b (mul(a, c, a)), x25519_mul_inputs_alias
+// (sqr(d, e)), and x25519_sqr (invert's sqr(c, c)) — because one
+// 64-bit limb multiply fills a formula near the solver cap: two in one
+// was killed at 7 GB, four at 14 GB.
 //
-//   unpack -> limbs in [0, 2^16)         (asserted)
-//   carry  : |in| < 2^58  -> no UB       (covers any product fold)
-//   add/sub: |in| < 2^24  -> no UB
-//   mul/sqr: memory-safe index walk over the 31-limb product (this
-//            harness, run without the overflow class); the impossibility
-//            of int64 overflow in the accumulation and fold is
-//            x25519_mul_harness.c, proven with full checks — asking SAT
-//            for both at once on 256 symbolic multiplies does not finish
-//   pack   : |in| < 2^24  -> canonical 32 bytes, no UB
-//   cswap  : bit 0/1      -> no UB
+// This harness runs without the signed-overflow class: mul's 256
+// symbolic multiplies never converge under SAT with it. The class is
+// carried elsewhere — x25519_mul_harness.c proves the int64
+// accumulation and fold lemma, and x25519_ops_harness.c proves carry,
+// add, sub, pack, cswap, and unpack whole with full checks — so the
+// x25519 harnesses together cover every field op, each with the
+// strongest check set that converges.
 //
 // The tight limb-growth invariant (mul output ranges feeding add/sub
-// feeding mul) is an open slow-tier task — see the README's verification
-// table. Functional correctness rests on the RFC 7748 vectors including
-// the 1,000-iteration chain, and this exact limb scheme (TweetNaCl's)
-// carries a prior Coq/VST functional proof by Schwabe et al.
+// feeding mul) is an open slow-tier task — see the README's
+// verification table. Functional correctness rests on the RFC 7748
+// vectors including the 1,000-iteration chain, and this exact limb
+// scheme (TweetNaCl's) carries a prior Coq/VST functional proof by
+// Schwabe et al.
 #include "harness.h"
 
 #include "x25519.c"
@@ -36,30 +39,8 @@ int main(void) {
     fe b;
     fe o;
 
-    uint8_t bytes[X25519_LEN];
-    fill_nondet(bytes, sizeof bytes);
-    unpack(o, bytes);
-    for (size_t i = 0; i < 16; i++) {
-        __CPROVER_assert(o[i] >= 0 && o[i] < (int64_t)1 << 16, "unpack is carried");
-    }
-
     assume_range(a, -GEN, GEN);
     assume_range(b, -GEN, GEN);
-    add(o, a, b);
-    sub(o, a, b);
     mul(o, a, b);
-
-    assume_range(a, -((int64_t)1 << 58), (int64_t)1 << 58);
-    carry(a);
-
-    assume_range(a, -GEN, GEN);
-    uint8_t out[X25519_LEN];
-    pack(out, a);
-
-    assume_range(a, -GEN, GEN);
-    assume_range(b, -GEN, GEN);
-    int64_t bit = nondet_i64();
-    __CPROVER_assume(bit == 0 || bit == 1);
-    cswap(a, b, bit);
     return 0;
 }

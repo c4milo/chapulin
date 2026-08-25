@@ -16,8 +16,8 @@ static int64_t product_sum(void) {
     for (int i = 0; i < 16; i++) {
         int64_t a = nondet_i64();
         int64_t b = nondet_i64();
-        __CPROVER_assume(a > -GEN && a < GEN);
-        __CPROVER_assume(b > -GEN && b < GEN);
+        __CPROVER_assume(a >= -GEN && a < GEN);
+        __CPROVER_assume(b >= -GEN && b < GEN);
         s += a * b; // overflow-checked by CBMC
     }
     return s;

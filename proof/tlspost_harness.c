@@ -41,10 +41,21 @@ int io_read_record(const ch_cfg *cfg, uint8_t *buf, size_t cap, uint8_t *outer,
     return CH_EIO;
 }
 
+uint64_t nondet_u64(void);
+
+// Typed stores: a byte-pointer fill through a member pointer makes
+// every store a whole-object update of the enclosing struct in the
+// SSA (docs/proofs.md).
+static void fill_rec_dir_nondet(rec_dir *d) {
+    fill_nondet(d->key, sizeof d->key);
+    fill_nondet(d->iv, sizeof d->iv);
+    d->seq = nondet_u64();
+}
+
 void rec_dir_update(uint8_t secret[SHA256_LEN], rec_dir *d) {
     __CPROVER_assert(__CPROVER_w_ok(secret, SHA256_LEN), "upd: secret writable");
     fill_nondet(secret, SHA256_LEN);
-    fill_nondet((uint8_t *)d, sizeof *d);
+    fill_rec_dir_nondet(d);
 }
 
 int rec_seal(rec_dir *d, uint8_t type, const uint8_t *pt, size_t n, uint8_t *out, size_t cap,
@@ -55,6 +66,10 @@ int rec_seal(rec_dir *d, uint8_t type, const uint8_t *pt, size_t n, uint8_t *out
     size_t total = REC_HDR + n + 1 + AEAD_TAG;
     if (total > cap) {
         return -1;
+    }
+    if (nondet_u8() & 1) {
+        return -1; // the real function also refuses at seq == UINT64_MAX,
+                   // which this stub does not track: any call may fail
     }
     __CPROVER_assert(__CPROVER_w_ok(out, total), "seal: out writable");
     fill_nondet(out, total);
@@ -73,7 +88,7 @@ void ks_res_psk(const uint8_t res_master[SHA256_LEN], const uint8_t *nonce, size
 void rec_dir_init(rec_dir *d, const uint8_t secret[SHA256_LEN]) {
     (void)secret;
     __CPROVER_assert(0, "rec_dir_init unreachable");
-    fill_nondet((uint8_t *)d, sizeof *d);
+    fill_rec_dir_nondet(d);
 }
 int rec_open(rec_dir *d, const uint8_t *rec, size_t n, uint8_t *pt, size_t cap, size_t *pt_len,
              uint8_t *type) {
@@ -116,10 +131,10 @@ int main(void) {
     fill_nondet(t.rd_secret, sizeof t.rd_secret);
     fill_nondet(t.wr_secret, sizeof t.wr_secret);
     fill_nondet(t.res_master, sizeof t.res_master);
-    fill_nondet((uint8_t *)&t.wr, sizeof t.wr);
-    fill_nondet((uint8_t *)&t.rd, sizeof t.rd);
+    fill_rec_dir_nondet(&t.wr);
+    fill_rec_dir_nondet(&t.rd);
     // Any epoch count, so both sides of the §4.7.3 sender cap are proven.
-    fill_nondet((uint8_t *)&t.send_epochs, sizeof t.send_epochs);
+    t.send_epochs = nondet_u64();
 
     uint8_t pt[128];
     fill_nondet(pt, sizeof pt);

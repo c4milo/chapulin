@@ -1,7 +1,12 @@
 // Proves: hkdf_expand and hkdf_expand_label are memory-safe and UB-free
 // for any output up to 96 bytes (three blocks: the T(1) special case, the
 // chained middle, a partial tail — every structural path), any info up to
-// 48, any label 1..12, any context up to 32. The RFC 5869 255-block
+// 64 — the contract's own CH_ASSERT bound, above the 54 expand_label
+// builds — any label 1..12, any context up to 32. One function per
+// formula: each call carries a whole expand body, and both in one
+// returned no verdict in 1800 s once info reached the contract bound.
+// hkdf_expand_label_harness.c defines the selector and includes this
+// file, the handshake variants' pattern. The RFC 5869 255-block
 // maximum only repeats the middle case, and symbolic offsets over an 8 kB
 // output array stall the solver. The extract/hmac half is
 // hkdf_harness.c; the sha256 stubs assert its proven contract.
@@ -13,18 +18,19 @@
 #include "hkdf.c"
 
 int main(void) {
-    uint8_t info[48];
+    uint8_t info[64];
     uint8_t prk[SHA256_LEN];
     uint8_t out[3 * SHA256_LEN];
     fill_nondet(info, sizeof info);
     fill_nondet(prk, sizeof prk);
 
+#ifndef CH_PROOF_EXPAND_LABEL
     size_t out_len = nondet_size_t();
     size_t info_len = nondet_size_t();
     __CPROVER_assume(out_len >= 1 && out_len <= sizeof out);
     __CPROVER_assume(info_len <= sizeof info);
     hkdf_expand(prk, info, info_len, out, out_len);
-
+#else
     // Any label the contract admits, not just the ones TLS uses today.
     char label[HKDF_LABEL_MAX + 1];
     size_t lab = nondet_size_t();
@@ -35,10 +41,12 @@ int main(void) {
         label[i] = c;
     }
     label[lab] = 0;
+    fill_nondet(info, sizeof info);
     size_t ctx_len = nondet_size_t();
     __CPROVER_assume(ctx_len <= SHA256_LEN);
     size_t out_len2 = nondet_size_t();
-    __CPROVER_assume(out_len2 >= 1 && out_len2 <= 64);
+    __CPROVER_assume(out_len2 >= 1 && out_len2 <= sizeof out);
     hkdf_expand_label(prk, label, info, ctx_len, out, out_len2);
+#endif
     return 0;
 }

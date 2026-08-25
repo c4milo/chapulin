@@ -13,8 +13,14 @@
 
 #include "sha3.c"
 
+uint64_t nondet_u64(void);
+
+// Typed stores: a byte-pointer fill of the uint64 lanes makes every
+// store a whole-object update in the SSA (docs/proofs.md).
 static void fill_context(shake *s) {
-    fill_nondet((uint8_t *)s->lane, sizeof s->lane);
+    for (size_t i = 0; i < 25; i++) {
+        s->lane[i] = nondet_u64();
+    }
     s->rate = nondet_size_t();
     __CPROVER_assume(s->rate == SHAKE128_RATE || s->rate == SHAKE256_RATE);
     s->pos = nondet_size_t();
