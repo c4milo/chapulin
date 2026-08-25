@@ -30,15 +30,36 @@
 #define HSPD_KEY_SHARE 51
 
 #define HSPD_X25519 0x001d
+#define HSPD_X25519MLKEM768 0x11ec
 #define HSPD_SUITE 0x1303 // TLS_CHACHA20_POLY1305_SHA256
 
-#define HSPD_BODY_MAX 1024
+// The build offers one group (CH_KEX_GROUP); the model takes the
+// matching Makefile KEX token so both narrow the same way, like the
+// signature scheme token below. The wrong-group mutation writes the
+// other build's group, so each build's run diffs the cross-build
+// refusal: a classic client refuses a hybrid selection and a hybrid
+// client refuses a classic one.
+#ifdef CH_KEX_PQ
+#define HSPD_KEX_TOKEN "pq"
+#define HSPD_OTHER_GROUP HSPD_X25519
+#else
+#define HSPD_KEX_TOKEN "x25519"
+#define HSPD_OTHER_GROUP HSPD_X25519MLKEM768
+#endif
+
+// Sized for the hybrid build's largest ServerHello body: the 38-byte
+// prefix, the extension-block length, the supported_versions and
+// pre_shared_key extensions, and a key_share extension whose
+// extension_data is 4 octets of group and length plus the 1120-byte
+// share. The command and hex buffers below derive from this, so they
+// scale with it.
+#define HSPD_BODY_MAX 1280
 
 // The C parsers take a message body; the model takes the whole
 // Handshake structure of RFC 9846 §4 — msg_type, uint24 length, then
 // the body those two frame. Every request reframes the body so the two
-// sides read the same message. `arg` is the op's leading argument, or
-// "" for the ops that take none.
+// sides read the same message. `arg` is the op's leading arguments,
+// space-separated, or "" for the ops that take none.
 static void hspd_request(char *cmd, size_t cap, const char *op, const char *arg, uint8_t type,
                          const uint8_t *body, size_t n) {
     uint8_t msg[HSPD_BODY_MAX + 4];
@@ -79,7 +100,10 @@ static void hspd_sh_row(const hspd_sh_plan *plan, const uint8_t *body, size_t n)
     int deferred =
         info.hrr ? info.cookie == NULL : !info.have_share || (plan->psk_ext && !info.psk_ok);
 
-    char want[2 * HSP_COOKIE_MAX + 64];
+    // The want buffer holds the largest accepted reply: "sh ", the
+    // share's hex (2240 characters in the hybrid build), and the
+    // identity — or "hrr " and the cookie's hex.
+    char want[2 * CH_KEX_SERVER_SHARE + 2 * HSP_COOKIE_MAX + 64];
     if (rc != CH_OK || deferred) {
         (void)snprintf(want, sizeof want, "ERR hs_server_hello reject");
     } else if (info.hrr) {
@@ -87,14 +111,24 @@ static void hspd_sh_row(const hspd_sh_plan *plan, const uint8_t *body, size_t n)
         (void)hex_encode(cookie_hex, info.cookie, info.cookie_len);
         (void)snprintf(want, sizeof want, "hrr %s", cookie_hex);
     } else {
-        char pub_hex[2 * X25519_LEN + 1];
-        (void)hex_encode(pub_hex, info.server_pub, X25519_LEN);
-        (void)snprintf(want, sizeof want, "sh %s %s", pub_hex, plan->psk_ext ? "0" : "-");
+        // The model reports the whole key_exchange value; the C parser
+        // splits it into server_ct and server_pub (hybrid) or stores
+        // server_pub alone, so the row reassembles the wire order —
+        // ML-KEM ciphertext first (RFC 10024).
+        char share_hex[2 * CH_KEX_SERVER_SHARE + 1];
+#ifdef CH_KEX_PQ
+        size_t ct_hex_len = hex_encode(share_hex, info.server_ct, MLKEM_CT_LEN);
+        (void)hex_encode(share_hex + ct_hex_len, info.server_pub, X25519_LEN);
+#else
+        (void)hex_encode(share_hex, info.server_pub, X25519_LEN);
+#endif
+        (void)snprintf(want, sizeof want, "sh %s %s", share_hex, plan->psk_ext ? "0" : "-");
     }
 
     char cmd[2 * (HSPD_BODY_MAX + 4) + 64];
-    hspd_request(cmd, sizeof cmd, "hs_server_hello", plan->psk_offered ? "psk" : "nopsk",
-                 HSPD_SERVER_HELLO, body, n);
+    char arg[16];
+    (void)snprintf(arg, sizeof arg, "%s %s", plan->psk_offered ? "psk" : "nopsk", HSPD_KEX_TOKEN);
+    hspd_request(cmd, sizeof cmd, "hs_server_hello", arg, HSPD_SERVER_HELLO, body, n);
     expect(cmd, want);
 }
 
@@ -134,10 +168,10 @@ static void hspd_sh_retry_exts(wbuf *w, size_t mut, const uint8_t *cookie, size_
         wb_u16(w, (uint16_t)(mut == 8 ? 0 : cookie_len));
         wb_bytes(w, cookie, cookie_len);
     }
-    if (mut == 9) { // a retry selecting a group is §4.1.4 illegal
+    if (mut == 9) { // a retry selecting the build's group is §4.1.4 illegal
         wb_u16(w, HSPD_KEY_SHARE);
         wb_u16(w, 2);
-        wb_u16(w, HSPD_X25519);
+        wb_u16(w, CH_KEX_GROUP);
     }
     if (mut == 16) { // §4.1.4 lists no pre_shared_key for a retry
         wb_u16(w, HSPD_PRE_SHARED_KEY);
@@ -152,10 +186,12 @@ static void hspd_sh_retry_exts(wbuf *w, size_t mut, const uint8_t *cookie, size_
 static void hspd_sh_share_exts(wbuf *w, size_t mut, hspd_sh_plan *plan, const uint8_t *share) {
     if (mut != 10) {
         wb_u16(w, HSPD_KEY_SHARE);
-        wb_u16(w, (uint16_t)(X25519_LEN + 4));
-        wb_u16(w, mut == 11 ? 0x0017 : HSPD_X25519);
-        wb_u16(w, (uint16_t)(mut == 12 ? X25519_LEN - 1 : X25519_LEN));
-        wb_bytes(w, share, X25519_LEN);
+        wb_u16(w, (uint16_t)(CH_KEX_SERVER_SHARE + 4));
+        // mut 11: the other build's group, so each run diffs the
+        // cross-build refusal.
+        wb_u16(w, mut == 11 ? HSPD_OTHER_GROUP : CH_KEX_GROUP);
+        wb_u16(w, (uint16_t)(mut == 12 ? CH_KEX_SERVER_SHARE - 1 : CH_KEX_SERVER_SHARE));
+        wb_bytes(w, share, CH_KEX_SERVER_SHARE);
     }
     if (plan->psk_offered ? rng_below(2) == 0 : mut == 13) {
         plan->psk_ext = 1;
@@ -181,7 +217,7 @@ static void diff_hs_server_hello(void) {
         if (hrr) {
             memcpy(random, hsp_hrr_magic, sizeof random);
         }
-        uint8_t share[X25519_LEN];
+        uint8_t share[CH_KEX_SERVER_SHARE];
         rng_fill(share, sizeof share);
         uint8_t cookie[HSP_COOKIE_MAX];
         size_t cookie_len = 1 + rng_below(HSP_COOKIE_MAX);

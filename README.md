@@ -7,8 +7,10 @@ El Chapulín Colorado: small, unassuming, and it protects you from the
 bad guys.
 
 chapulin speaks one profile and negotiates nothing:
-`TLS_CHACHA20_POLY1305_SHA256` with x25519 key exchange. The server
-takes it or the handshake fails. There is no 0-RTT.
+`TLS_CHACHA20_POLY1305_SHA256` with x25519 key exchange, or the
+X25519MLKEM768 hybrid instead when you build `make KEX=pq`. One group
+per build, never both in one ClientHello. The server takes it or the
+handshake fails. There is no 0-RTT.
 
 It uses C11 and libc only, and never calls `malloc`. The working set is
 one session struct plus one receive buffer you provide.
@@ -88,12 +90,25 @@ shrinks the pointer fields.
 | `ch_tls` session struct (includes 534 B TX staging) | 1056 |
 | receive buffer you provide (2048 shown; floor `CH_MIN_RXBUF`) | 2048 |
 | **total static working set** | **3104** |
+| `ch_tls` under `KEX=pq` (includes 1806 B TX staging) | 2328 |
+| **total static working set, `KEX=pq`** (2048 buffer) | **4376** |
 | peak stack, `ch_connect` (RSA-3072 verify) | 5168 |
 | peak stack, `ch_connect` (`PIN=ecdsa`) | 3648 |
 | peak stack, `ch_connect` (PSK) | 2592 |
 | peak stack, `ch_connect` (`TRUST=ca`, RSA / ECDSA) | 5760 / 3952 |
 | peak stack, `ch_read` (worst case: KeyUpdate rekey) | 1632 |
 | peak stack, `ch_write` / `ch_close` | 736 / 688 |
+
+The hybrid build costs more of both. The session struct grows because
+the ClientHello carries a 1,216-byte key share and is built whole into
+one staging array, and the stack grows because ML-KEM's K-PKE encrypt
+holds three polynomial vectors and two polynomials: 5,744 bytes in that
+one frame, against a 2,560-byte budget for every other build (INV-19
+carries the per-build numbers). Its `ch_connect` peak is **not measured
+yet**: `bench/stack.py` reads arm64 relocations and reports nothing
+usable on other hosts, so the whole-chain number has to come from the
+reference machine. Until it does, 5,744 bytes is the floor, not the
+peak. A device that cannot spare it builds the classic key exchange.
 
 You size the receive buffer, and the client advertises that size as its
 `record_size_limit` ([RFC 8449](https://www.rfc-editor.org/rfc/rfc8449)), so a peer can never send a record the
@@ -151,7 +166,7 @@ would change that trade.
 
 Four layers cover four different failure classes.
 
-**Proofs cover memory safety.** Twenty-three of the twenty-six C
+**Proofs cover memory safety.** Twenty-four of the twenty-seven C
 sources are compiled into a [CBMC](https://www.cprover.org/cbmc/) harness, which proves them free of
 out-of-bounds access, invalid pointers, bad shifts, and division by
 zero, for every input within the harness's bound. Signed overflow is
@@ -178,7 +193,7 @@ apart from one that passed — so for the slow rows, read the nightly.
 | sha3 (two harnesses) | every mode is safe for a one-call message and XOF output from a fresh context; the SHAKE streaming calls are safe from any context state — arbitrary lanes, either rate, every position — for split absorbs and squeezes | one-call: messages ≤ 200 B, output ≤ 400 B; streaming: chunks ≤ 32 B |
 | mlkem (six harnesses) | keygen, encaps, and decaps are safe for every seed, message, and hostile key or ciphertext, with the polynomial layer stubbed to its contracts; the polynomial layer is safe over full-range int16 coefficients — a superset of anything the KEM layer passes it, so no coefficient value can overflow the reduction arithmetic. Sampling, reductions, and coding prove in the fast tier; the NTT, the two halves of its inverse, and the base multiplication, whose chained-product overflow proofs are the SAT-hard part, each prove in their own slow-tier formula | the full domain: every input is a fixed-size array, and the sampling read stops at its 1536-byte cap |
 | hkdf (two harnesses) | hmac/extract and expand/expand-label safe over the proven sha256 contract | keys ≤ 96 B, hmac/extract messages ≤ 48 B; expand/expand-label output ≤ 96 B and info ≤ 64 B (the contract bound), expand: slow tier |
-| handshake | the driver stays safe on any record stream: pump, reassembly, HRR restart, state machine, in PSK and pinned-key mode. The `TRUST=ca` driver has a harness but no launch line, so it is unproven | 96 B receive buffer, slow tier |
+| handshake | the driver stays safe on any record stream: pump, reassembly, HRR restart, state machine, in PSK and pinned-key mode. The `TRUST=ca` driver has a harness but no launch line, so it is unproven, and no harness builds with `-DCH_KEX_PQ` at all — the hybrid driver's share expansion and decapsulation carry no proof, only the differential, the sequence enumeration and the e2e legs | 96 B receive buffer, slow tier |
 | chacha20 | safe at any counter, in place and into a distinct buffer | ≤ 160 B |
 | poly1305 | safe for any three-chunk split; 64-bit products stay in range | messages ≤ 80 B |
 | aead (three harnesses) | seal/open round-trips; a forged tag writes zero bytes; backward-overlap decrypt works. These are structural, so the bound is small: 16 B crosses the Poly1305 block boundary and the forge case fires at one byte. Sealing fully in place (`pt == ct`, the shape every outgoing record uses) is **not proven**: `proof/aead_inplace_harness.c` states it, but the formula has returned no verdict, so it carries no launch line | plaintext ≤ 16 B, aad ≤ 16 B, slow tier |
@@ -186,7 +201,7 @@ apart from one that passed — so for the slow rows, read the nightly.
 | p256 | the DER parser and limb marshalling stay safe on hostile signatures; a carry lemma covers the Montgomery multiply | signatures ≤ 80 B |
 | rsa (two harnesses) | the PSS decode and limb marshalling stay safe with the RSAVP1 result replaced by arbitrary bytes | 384 B modulus, every byte hostile except the top one, which each call pins to one of the three alignment shapes the decode takes — a symbolic top bit was measured at 7 GB of CNF |
 | record | seal works across its contract and returns, not traps, over the whole direction state — any key, IV, and sequence number, the saturation refusal included — and any claimed buffer size; rec_open stays safe on fully hostile bytes, into a separate buffer and in place, the shape both shipped callers use | records ≤ 160 B |
-| hsparse, eeparse, certparse | the ServerHello, EncryptedExtensions, Certificate, and CertificateVerify parsers stay safe on hostile bytes, and the certificate list and signature slices they hand back lie inside the message | messages ≤ 256 B |
+| hsparse, eeparse, certparse | the ServerHello, EncryptedExtensions, Certificate, and CertificateVerify parsers stay safe on hostile bytes, and the certificate list and signature slices they hand back lie inside the message. The 256-byte bound cannot hold a hybrid key_share, so the `KEX=pq` arm of the ServerHello parser is unproven | messages ≤ 256 B |
 | tlspost | the post-handshake parser stays safe on hostile decrypted bytes and consumes no more than its input | messages ≤ 128 B |
 | drbg | the generator stays safe for any request, seeded and across rekeys | requests ≤ 96 B |
 | x509der (two harnesses) | every DER primitive stays safe on hostile bytes at the rbuf shape its caller hands it, honors the pointer contracts the walker rests on, and consumes no more than the per-primitive cap the walker proof replays, in both builds | inputs ≤ 448 B; keyusage at its 256 B extnValue cap |
@@ -321,7 +336,7 @@ Other targets:
 - `make lib` packages the library as one relocatable object
   (`bin/chapulin.o`) exporting exactly the four public calls. Every
   internal symbol is localized, and `lib-check` fails if the export
-  list ever grows. Compose with `PIN=ecdsa` and `TRUST=ca`.
+  list ever grows. Compose with `PIN=ecdsa`, `TRUST=ca` and `KEX=pq`.
 - `make prove-slow` runs the slow-tier proofs, one per nightly job. The runner caches by
   content, so an incremental run re-proves only what changed
   (`PROVE_NO_CACHE=1` forces a full run). It uses [kissat](https://github.com/arminbiere/kissat) when

@@ -32,7 +32,7 @@
 // no fixed size, so raw-pin deployments size the buffer for their
 // server's chain (the e2e suite uses 2048). A build that needs more
 // room raises the floor, so a too-small buffer fails at setup with
-// CH_EINVAL, not mid-handshake with CH_ECAP. See docs/decisions.md 21.
+// CH_EINVAL, not mid-handshake with CH_ECAP. See docs/decisions.md 23.
 // The per-algorithm defaults, named so the mirrors derive from one
 // definition: the differential driver and the mutation kit size
 // their material from these, and spec/Spec/X509.lean pins the same
@@ -48,12 +48,31 @@
 #endif
 
 #ifndef CH_MIN_RXBUF
+// Two independent demands, and the buffer must satisfy both. The trust
+// mode sets the largest admitted Certificate flight: two certificates
+// at the cap plus their entry framing and message header. The key
+// exchange sets the largest ServerHello record: 5-byte record header,
+// 4-byte message header, 40-byte fixed body, then the
+// supported_versions (6), key_share (2 + 2 + 2 + 2 + 1120 = 1128),
+// and pre_shared_key (6) replies. At the default caps the CA demand is
+// the larger, but CH_X509_MAX is overridable down to 512, which puts
+// its flight under the hybrid ServerHello — so take the maximum rather
+// than assume an ordering a build can change.
 #ifdef CH_TRUST_CA
-// The CA build's floor holds the largest admitted Certificate
-// flight: two certificates at the cap plus their entry framing and
-// message header.
-#define CH_MIN_RXBUF (2 * (CH_X509_MAX + 5) + 16)
+#define CH_TRUST_MIN_RXBUF (2 * (CH_X509_MAX + 5) + 16)
 #else
+#define CH_TRUST_MIN_RXBUF 512
+#endif
+#ifdef CH_KEX_PQ
+#define CH_KEX_MIN_RXBUF (5 + 4 + 40 + 6 + 1128 + 6)
+#else
+#define CH_KEX_MIN_RXBUF 512
+#endif
+#if defined(CH_TRUST_CA) || defined(CH_KEX_PQ)
+#define CH_MIN_RXBUF (CH_TRUST_MIN_RXBUF > CH_KEX_MIN_RXBUF ? CH_TRUST_MIN_RXBUF : CH_KEX_MIN_RXBUF)
+#else
+// Neither feature raises the floor, so the base profile's 512 stands on
+// its own rather than as a comparison of two equal terms.
 #define CH_MIN_RXBUF 512
 #endif
 #endif

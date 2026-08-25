@@ -20,7 +20,7 @@ void ks_verify_data(const uint8_t key[SHA256_LEN], const uint8_t transcript[SHA2
 
 // handshake_secret = Extract(Derive-Secret(early, "derived", ""), ecdhe);
 // c/s handshake traffic secrets from the CH..SH transcript.
-void ks_handshake(const uint8_t early[SHA256_LEN], const uint8_t ecdhe[32],
+void ks_handshake(const uint8_t early[SHA256_LEN], const uint8_t *ecdhe, size_t ecdhe_len,
                   const uint8_t transcript[SHA256_LEN], uint8_t handshake_secret[SHA256_LEN],
                   uint8_t c_hs[SHA256_LEN], uint8_t s_hs[SHA256_LEN]);
 

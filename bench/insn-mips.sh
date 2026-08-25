@@ -245,7 +245,7 @@ static uint32_t hs_once(void) {
     }
     snap = tr;
     sha256_final(&snap, hash); // CH..SH
-    ks_handshake(early, ecdhe, hash, hs_sec, c_hs, s_hs);
+    ks_handshake(early, ecdhe, sizeof ecdhe, hash, hs_sec, c_hs, s_hs);
     rec_dir_init(&rd, s_hs);
     rec_dir_init(&wr, c_hs);
     sha256_update(&tr, msg, 40);   // EncryptedExtensions

@@ -3,9 +3,10 @@
 // squeezes an open-ended stream from one absorbed seed (matrix
 // expansion never knows its output length up front).
 //
-// Compiled into test binaries only: nothing in the packaged object
-// calls SHA-3 until the ML-KEM build lands (#21), the way the
-// unselected PIN algorithm stays tested without shipping.
+// The KEX=pq build packages this with mlkem.c, which squeezes both its
+// matrix expansion and its noise from here. Every other build compiles
+// it into test binaries only, the way the unselected PIN algorithm
+// stays tested without shipping.
 #ifndef CH_SHA3_H
 #define CH_SHA3_H
 

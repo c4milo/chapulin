@@ -10,7 +10,9 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "buf.h"
 #include "cfg.h"
+#include "hsmsg.h"
 #include "hsparse.h"
 
 static int failures = 0;
@@ -98,6 +100,37 @@ static const uint8_t versions_trail[] = {0x00, 0x2b, 0x00, 0x03, 0x03, 0x04, 0x0
 static const uint8_t versions_junk[] = {0x00, 0x2b, 0x00, 0x06, 0x03, 0x04, 0xde, 0xad, 0xbe, 0xef};
 static const uint8_t versions_dup[] = {0x00, 0x2b, 0x00, 0x02, 0x03, 0x04,
                                        0x00, 0x2b, 0x00, 0x02, 0x03, 0x04};
+#ifdef CH_KEX_PQ
+// The hybrid key_share body is 2 + 2 + 1120 bytes, too large for a
+// literal: main fills these through build_key_share_cases below, with
+// the same shapes as the classic literals in the other build — the
+// exact-length extension, then the same extension with its length one
+// larger and one trailing byte.
+static uint8_t key_share_exact[2 + 2 + 2 + 2 + CH_KEX_SERVER_SHARE];
+static uint8_t key_share_trail[sizeof key_share_exact + 1];
+
+// Fills key_share_exact and key_share_trail for the hybrid build. The
+// share bytes are arbitrary: the parser stores them, never checks them.
+static void build_key_share_cases(void) {
+    wbuf w;
+    wb_init(&w, key_share_exact, sizeof key_share_exact);
+    wb_u16(&w, EXT_KEY_SHARE);
+    wb_u16(&w, 2 + 2 + CH_KEX_SERVER_SHARE);
+    wb_u16(&w, CH_KEX_GROUP);
+    wb_u16(&w, CH_KEX_SERVER_SHARE);
+    for (size_t i = 0; i < CH_KEX_SERVER_SHARE; i++) {
+        wb_u8(&w, 0x09);
+    }
+    CHECK(!w.err && w.len == sizeof key_share_exact);
+    // The trailing-byte case: the extension length grows by one and one
+    // zero byte follows the share.
+    memcpy(key_share_trail, key_share_exact, sizeof key_share_exact);
+    size_t trail_body = 2 + 2 + CH_KEX_SERVER_SHARE + 1;
+    key_share_trail[2] = (uint8_t)(trail_body >> 8);
+    key_share_trail[3] = (uint8_t)trail_body;
+    key_share_trail[sizeof key_share_trail - 1] = 0x00;
+}
+#else
 static const uint8_t key_share_exact[] = {
     0x00, 0x33, 0x00, 0x24, 0x00, 0x1d, 0x00, 0x20, 0x09, 0x09, 0x09, 0x09, 0x09, 0x09,
     0x09, 0x09, 0x09, 0x09, 0x09, 0x09, 0x09, 0x09, 0x09, 0x09, 0x09, 0x09, 0x09, 0x09,
@@ -106,6 +139,8 @@ static const uint8_t key_share_trail[] = {
     0x00, 0x33, 0x00, 0x25, 0x00, 0x1d, 0x00, 0x20, 0x09, 0x09, 0x09, 0x09, 0x09, 0x09,
     0x09, 0x09, 0x09, 0x09, 0x09, 0x09, 0x09, 0x09, 0x09, 0x09, 0x09, 0x09, 0x09, 0x09,
     0x09, 0x09, 0x09, 0x09, 0x09, 0x09, 0x09, 0x09, 0x09, 0x09, 0x09, 0x09, 0x00};
+#endif
+
 static const uint8_t psk_exact[] = {0x00, 0x29, 0x00, 0x02, 0x00, 0x00};
 static const uint8_t psk_trail[] = {0x00, 0x29, 0x00, 0x03, 0x00, 0x00, 0x00};
 static const uint8_t cookie_exact[] = {0x00, 0x2c, 0x00, 0x04, 0x00, 0x02, 0xaa, 0xbb};
@@ -121,9 +156,20 @@ static const uint8_t groups_tolerated[] = {0x00, 0x0a, 0x00, 0x04, 0xde, 0xad, 0
 static const uint8_t groups_dup[] = {0x00, 0x0a, 0x00, 0x02, 0x00, 0x1d,
                                      0x00, 0x0a, 0x00, 0x02, 0x00, 0x17};
 
+// The assembled cases hold the 38 fixed bytes, the 2-byte extensions
+// length, and at most supported_versions (6) plus one key_share in its
+// trailing-byte shape (9 + CH_KEX_SERVER_SHARE); the caps round up.
+#ifdef CH_KEX_PQ
+#define SH_CASE_CAP (64 + CH_KEX_SERVER_SHARE)
+#define SH_EXTS_CAP (24 + CH_KEX_SERVER_SHARE)
+#else
+#define SH_CASE_CAP 192
+#define SH_EXTS_CAP 96
+#endif
+
 // Parses a ServerHello assembled around the given extension bytes.
 static int server_hello_case(const uint8_t *exts, size_t n, int hrr, int psk_mode) {
-    uint8_t buf[192];
+    uint8_t buf[SH_CASE_CAP];
     size_t len = make_server_hello(buf, hrr, exts, n);
     return try_server_hello(buf, len, psk_mode);
 }
@@ -149,15 +195,23 @@ static uint8_t encrypted_exts_alert_case(const uint8_t *exts, size_t n, uint8_t 
 // Same, with supported_versions prepended: CH_OK requires a selected
 // version, so this isolates the extension under test.
 static int server_hello_case2(const uint8_t *ext2, size_t n, int hrr, int psk_mode) {
-    uint8_t exts[96];
+    uint8_t exts[SH_EXTS_CAP];
     memcpy(exts, versions_exact, sizeof versions_exact);
     memcpy(exts + sizeof versions_exact, ext2, n);
     return server_hello_case(exts, sizeof versions_exact + n, hrr, psk_mode);
 }
 
 int main(void) {
-    // The golden messages parse clean.
+#ifdef CH_KEX_PQ
+    build_key_share_cases();
+    // The golden ServerHello offers an x25519 key_share, so the hybrid
+    // build must refuse it; the key_share_exact case below is this
+    // build's clean-parse anchor.
+    CHECK(try_server_hello(server_hello_golden, sizeof server_hello_golden, 0) == CH_EPROTO);
+#else
+    // The golden ServerHello parses clean.
     CHECK(try_server_hello(server_hello_golden, sizeof server_hello_golden, 0) == CH_OK);
+#endif
     CHECK(try_encrypted_exts(encrypted_exts_golden, sizeof encrypted_exts_golden) == CH_OK);
 
     // Boundary pairs, ServerHello: each extension's exact-length body

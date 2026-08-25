@@ -2,8 +2,9 @@
 // the reference bytes exactly, decaps round-trips, the ciphertext input
 // check rejects a malformed key, and the implicit-reject path returns
 // the reference shared secret on a tampered ciphertext. Its own binary,
-// like drbg_test and sha3_test: mlkem.c stays out of the packaged
-// object until the KEX=pq build calls it (#21).
+// like drbg_test and sha3_test: the module stays testable without the
+// rest of the stack, and only the KEX=pq build packages mlkem.c into
+// the library object.
 #include <stdio.h>
 #include <string.h>
 
@@ -38,6 +39,17 @@ static void test_kats(void) {
         uint8_t ss2[MLKEM_SS_LEN];
         mlkem_decaps(ss2, ct, dk);
         CHECK(memcmp(ss2, mlk_kat_K[i], MLKEM_SS_LEN) == 0);
+    }
+}
+
+// mlkem_keygen_dk writes the same dk as mlkem_keygen_derand, with the
+// ek readable at the dk + 1152 slice (FIPS 203's own dk layout).
+static void test_keygen_dk_matches(void) {
+    for (int i = 0; i < MLKEM_KAT_COUNT; i++) {
+        uint8_t dk2[MLKEM_DK_LEN];
+        mlkem_keygen_dk(dk2, mlk_kat_d[i], mlk_kat_z[i]);
+        CHECK(memcmp(dk2, mlk_kat_dk[i], MLKEM_DK_LEN) == 0);
+        CHECK(memcmp(dk2 + 1152, mlk_kat_ek[i], MLKEM_EK_LEN) == 0);
     }
 }
 
@@ -106,6 +118,7 @@ static void test_encaps_rejects_bad_key(void) {
 
 int main(void) {
     test_kats();
+    test_keygen_dk_matches();
     test_cctv_decaps();
     test_cctv_strcmp();
     test_cctv_unlucky();

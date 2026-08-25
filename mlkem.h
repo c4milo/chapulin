@@ -6,8 +6,9 @@
 // audited sites in handshake.c (INV-4). keygen and encaps take their
 // seeds as arguments; nothing here calls ch_rand_bytes.
 //
-// Compiled into test binaries only, like sha3.c: the packaged object
-// links both once the KEX=pq build lands (#21).
+// The KEX=pq build packages mlkem.c, mlkem_poly.c, and sha3.c into the
+// library object; every other build compiles them into test binaries
+// only.
 #ifndef CH_MLKEM_H
 #define CH_MLKEM_H
 
@@ -23,7 +24,12 @@
 
 // Derives (ek, dk) from a 32-byte d and 32-byte z (FIPS 203 Algorithm
 // 16, ML-KEM.KeyGen_internal). d seeds the K-PKE key pair; z is the
-// implicit-reject secret, copied into dk.
+// implicit-reject secret, copied into dk. Both functions write the same
+// dk; mlkem_keygen_derand also copies the ek out. FIPS 203's dk layout
+// carries the ek at dk + 1152, so a caller that stores only the (d, z)
+// seed calls mlkem_keygen_dk and reads its ek there, spending one
+// dk-sized buffer instead of two.
+void mlkem_keygen_dk(uint8_t dk[MLKEM_DK_LEN], const uint8_t d[32], const uint8_t z[32]);
 void mlkem_keygen_derand(uint8_t ek[MLKEM_EK_LEN], uint8_t dk[MLKEM_DK_LEN], const uint8_t d[32],
                          const uint8_t z[32]);
 

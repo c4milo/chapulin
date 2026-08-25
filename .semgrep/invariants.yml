@@ -88,8 +88,8 @@ rules:
     languages: [c]
     severity: ERROR
     message: >-
-      INV-4: randomness is consumed at two audited sites in
-      handshake.c. A new call site needs its own seeding audit —
+      INV-4: randomness is consumed at three audited sites in
+      handshake.c (the third only in the KEX=pq build). A new call site needs its own seeding audit —
       amend docs/invariants.md in the same PR. drbg.c is excluded
       because it defines the hook, not because it may call it.
     paths:

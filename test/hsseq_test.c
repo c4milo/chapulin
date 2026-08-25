@@ -91,15 +91,21 @@ int p256_ecdsa_verify(const uint8_t pub[64], const uint8_t msg_hash[32], const u
 #define FLIGHT_DEPTH 6
 #define DEPTH_MAX 8
 
-// The client derives its record_size_limit from the receive buffer, and
-// ch_connect refuses a buffer under CH_MIN_RXBUF (cfg.h). The mock's
-// over-limit record has to clear the same number, so both sides read it
-// from here instead of restating it as a literal.
-#if CH_MIN_RXBUF > 1024
-#define HSSEQ_RXBUF CH_MIN_RXBUF
-#else
-#define HSSEQ_RXBUF 1024
-#endif
+// The client's receive buffer. ch_connect refuses a buffer under
+// CH_MIN_RXBUF (cfg.h), and the client derives its record_size_limit
+// from the buffer it gets, so the mock's over-limit record reads the
+// size from here instead of restating it as a literal.
+//
+// The buffer sits 512 bytes above the floor because the floor holds an
+// honest ServerHello record exactly (cfg.h derives it that way in the
+// hybrid build). Two cases in the alert table send a larger one on
+// purpose: MUT_SH_ECHO adds a session_id_echo byte, and the second
+// ServerHello of "SS" arrives sealed, which adds a content-type byte
+// and a 16-byte tag. At the floor the client refuses both as records it
+// cannot buffer and reports decode_error, so neither case reaches the
+// field check it asserts. The classic floor is 512, which makes this
+// the 1024 that build has always used.
+#define HSSEQ_RXBUF (CH_MIN_RXBUF + 512)
 
 #include "hsseq_server.h"
 

@@ -22,8 +22,8 @@ everything:
 | --- | --- |
 | `supported_versions` | TLS 1.3 (0x0304) |
 | `cipher_suites` | TLS_CHACHA20_POLY1305_SHA256 (0x1303) |
-| `supported_groups` | x25519 (0x001d) |
-| `key_share` | one x25519 share |
+| `supported_groups` | x25519 (0x001d), or X25519MLKEM768 (0x11ec) in a `KEX=pq` build |
+| `key_share` | one share of that group |
 | `psk_key_exchange_modes` | psk_dhe_ke |
 | `signature_algorithms` | rsa_pss_rsae_sha256 (0x0804), or ecdsa_secp256r1_sha256 (0x0403) in a `PIN=ecdsa` build. Pinned-key and CA modes only |
 | `record_size_limit` | the receive buffer minus 21 bytes, capped at 16385 (RFC 8449) |
@@ -33,10 +33,10 @@ The ClientHello carries no `server_name`, no ALPN, and no `early_data`.
 A server that selects a certificate by SNI serves its default
 certificate to every device.
 
-The server must support TLS 1.3, TLS_CHACHA20_POLY1305_SHA256, and
-x25519. If it cannot, the handshake fails: the client sends an alert,
-wipes its keys, and the application reconnects later. There is no
-fallback to anything.
+The server must support TLS 1.3, TLS_CHACHA20_POLY1305_SHA256, and the
+group the build offers. If it cannot, the handshake fails: the client
+sends an alert, wipes its keys, and the application reconnects later.
+There is no fallback to anything.
 
 ## What the server must not do
 
@@ -55,9 +55,9 @@ Each item names the `ch_err` code the client returns (`cfg.h`).
   `CH_EPROTO` (-2). Both stacks follow this rule on their own, because
   the client offers nothing that would make them answer.
 - **Do not send a HelloRetryRequest carrying `key_share`.** The client
-  offers x25519 in both `supported_groups` and `key_share`, so no retry
-  is ever needed. It accepts one HelloRetryRequest, cookie only; a
-  retry that names a group is `CH_EPROTO` (-2). Do not turn on
+  offers its one group in both `supported_groups` and `key_share`, so
+  no retry is ever needed. It accepts one HelloRetryRequest, cookie
+  only; a retry that names a group is `CH_EPROTO` (-2). Do not turn on
   stateless HelloRetryRequest cookies.
 - **Do not send more than two certificate entries, and never the
   root** (CA mode). Three entries are `CH_EPROTO` (-2) even when every
@@ -107,8 +107,9 @@ top-level [`README.md`](../../README.md) gives the measured sizes.
 ## PSK mode
 
 The device holds a provisioned secret in `cfg.psk` and its label in
-`cfg.psk_id`. The handshake runs psk_dhe_ke, so it still does an x25519
-exchange and still has forward secrecy. No certificate is involved.
+`cfg.psk_id`. The handshake runs psk_dhe_ke, so it still does the
+build's key exchange and still has forward secrecy. No certificate is
+involved.
 
 ### OpenSSL 3
 
@@ -132,7 +133,10 @@ openssl s_server -accept 4433 \
   with. A real server runs its own application instead.
 - `-groups x25519` and `-max_send_frag` do not appear in
   `test/e2e.sh`. They restrict the server to the profile and cap the
-  record size. Add them.
+  record size. Add them. A `KEX=pq` client needs
+  `-groups X25519MLKEM768` instead, which OpenSSL 3.5 and later
+  support; the same substitution applies to every `s_server` command
+  below.
 
 In your own OpenSSL program, a TLS 1.3 external PSK goes through
 `SSL_CTX_set_psk_find_session_callback`. The older
@@ -246,8 +250,10 @@ an echo loop around it. The e2e suite runs it against both PIN builds.
   configurable. None is needed: the client offers one suite, so Go
   selects it.
 - `CurvePreferences` defaults to a list that starts with post-quantum
-  hybrids. The client lists only x25519 in `supported_groups`, so Go
-  selects x25519 either way. Setting the field states the choice.
+  hybrids. A default client lists only x25519 in `supported_groups`, so
+  Go selects x25519 either way. Setting the field states the choice. A
+  `KEX=pq` client lists only X25519MLKEM768, so serving that build
+  means `tls.X25519MLKEM768` here.
 - `MinVersion` is not optional. Go's default minimum is TLS 1.2, which
   this client never speaks but other traffic to the same port might.
 

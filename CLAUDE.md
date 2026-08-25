@@ -12,12 +12,17 @@ Home: github.com/c4milo.
   bench/sram.sh measures the README's memory numbers; never estimate
   them, and re-measure when the code changes.
 - One profile, no negotiation surface: TLS 1.3, TLS_CHACHA20_POLY1305_SHA256,
-  x25519, and one of two auth modes — ECDHE-PSK (psk_dhe_ke) or a pinned
-  server key checked against CertificateVerify. The pinned key is one
+  one key-exchange group, and one of two auth modes — ECDHE-PSK
+  (psk_dhe_ke) or a pinned server key checked against CertificateVerify.
+  The pinned key is one
   algorithm per build, chosen by the Makefile PIN variable: RSA-PSS up to
   3072 bits (default, `rsa.[ch]`) or ECDSA P-256 (PIN=ecdsa, -DCH_PIN_ECDSA,
   `p256.[ch]`) — never both in one library object, though test binaries
-  compile both so both stay tested. No X.509 parsing outside the CA-mode
+  compile both so both stay tested. The key exchange is one group per
+  build, chosen by the Makefile KEX variable: x25519 (default) or the
+  X25519MLKEM768 hybrid (KEX=pq, -DCH_KEX_PQ, `mlkem.[ch]`) — never both
+  in one ClientHello, so a pq client and a classic-only server fail
+  closed against each other. No X.509 parsing outside the CA-mode
   profile in x509.[ch] (pinned mode hashes
   the certificate into the transcript, never reads it), no RFC 7250
   raw-public-key certificate types, no 0-RTT, no compression, no
@@ -25,8 +30,8 @@ Home: github.com/c4milo.
   of everything; the server takes it or the handshake fails closed.
 - One concern per file pair, dependencies pointing down only:
   `ct.[ch]` (constant-time bytes) ← `sha256.[ch]` + `sha3.[ch]` ←
-  `mlkem.[ch]`/`mlkem_poly.[ch]` (ML-KEM-768; with `sha3.[ch]`, test-only
-  until the KEX=pq build lands) ← `hkdf.[ch]`
+  `mlkem.[ch]`/`mlkem_poly.[ch]` (ML-KEM-768; the KEX=pq build packages
+  them with `sha3.[ch]`, other builds keep them test-only) ← `hkdf.[ch]`
   (HMAC + HKDF + TLS labels) ← `chacha20.[ch]` + `poly1305.[ch]` ←
   `aead.[ch]` (RFC 8439 seal/open) ← `x25519.[ch]` + `p256.[ch]` +
   `rsa.[ch]`/`rsa_mont.c` (pinned-mode verify) ←
@@ -34,6 +39,8 @@ Home: github.com/c4milo.
   `record.[ch]`
   (record layer) ← `hsparse.[ch]` (message parsers) ←
   `hspump.[ch]` (record pump and reassembly) ←
+  `handshake_auth.[ch]` (server authentication: the Certificate and
+  CertificateVerify flight, and the CA build's revocation epoch) ←
   `handshake.[ch]` (client state machine) ← `tls.[ch]`
   (public API) ← demo/test mains. Firmware takes everything below
   `tls.[ch]` as-is and supplies I/O callbacks and `ch_rand_bytes`.

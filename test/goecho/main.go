@@ -22,16 +22,25 @@ func main() {
 	cert := flag.String("cert", "", "PEM certificate")
 	key := flag.String("key", "", "PEM key")
 	addr := flag.String("addr", "127.0.0.1:14434", "listen address")
+	groups := flag.String("groups", "", `"x25519mlkem768" accepts only that group; empty keeps Go's defaults`)
 	flag.Parse()
 
 	pair, err := tls.LoadX509KeyPair(*cert, *key)
 	if err != nil {
 		log.Fatal(err)
 	}
-	ln, err := tls.Listen("tcp", *addr, &tls.Config{
+	cfg := &tls.Config{
 		Certificates: []tls.Certificate{pair},
 		MinVersion:   tls.VersionTLS13,
-	})
+	}
+	switch *groups {
+	case "":
+	case "x25519mlkem768":
+		cfg.CurvePreferences = []tls.CurveID{tls.X25519MLKEM768}
+	default:
+		log.Fatalf("unknown -groups value %q", *groups)
+	}
+	ln, err := tls.Listen("tcp", *addr, cfg)
 	if err != nil {
 		log.Fatal(err)
 	}

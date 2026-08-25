@@ -167,11 +167,11 @@ void ks_verify_data(const uint8_t key[SHA256_LEN], const uint8_t transcript[SHA2
     fill_nondet(out, SHA256_LEN);
 }
 
-void ks_handshake(const uint8_t early[SHA256_LEN], const uint8_t ecdhe[32],
+void ks_handshake(const uint8_t early[SHA256_LEN], const uint8_t *ecdhe, size_t ecdhe_len,
                   const uint8_t transcript[SHA256_LEN], uint8_t handshake_secret[SHA256_LEN],
                   uint8_t c_hs[SHA256_LEN], uint8_t s_hs[SHA256_LEN]) {
     __CPROVER_assert(__CPROVER_r_ok(early, SHA256_LEN), "ks: early readable");
-    __CPROVER_assert(__CPROVER_r_ok(ecdhe, 32), "ks: ecdhe readable");
+    __CPROVER_assert(ecdhe_len == 0 || __CPROVER_r_ok(ecdhe, ecdhe_len), "ks: ecdhe readable");
     __CPROVER_assert(__CPROVER_r_ok(transcript, SHA256_LEN), "ks: transcript readable");
     fill_nondet(handshake_secret, SHA256_LEN);
     fill_nondet(c_hs, SHA256_LEN);

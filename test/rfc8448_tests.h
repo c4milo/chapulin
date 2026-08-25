@@ -142,7 +142,7 @@ static void test_rfc8448_1rtt(void) {
     uint8_t handshake_secret[SHA256_LEN];
     uint8_t c_hs[SHA256_LEN];
     uint8_t s_hs[SHA256_LEN];
-    ks_handshake(early, shared, h, handshake_secret, c_hs, s_hs);
+    ks_handshake(early, shared, sizeof shared, h, handshake_secret, c_hs, s_hs);
     CHECK(memcmp(handshake_secret, rfc8448_s3_hs_secret, SHA256_LEN) == 0);
     CHECK(memcmp(c_hs, rfc8448_s3_c_hs_traffic, SHA256_LEN) == 0);
     CHECK(memcmp(s_hs, rfc8448_s3_s_hs_traffic, SHA256_LEN) == 0);
@@ -238,7 +238,7 @@ static void test_rfc8448_hrr(void) {
     uint8_t handshake_secret[SHA256_LEN];
     uint8_t c_hs[SHA256_LEN];
     uint8_t s_hs[SHA256_LEN];
-    ks_handshake(early, rfc8448_s5_ecdhe, h, handshake_secret, c_hs, s_hs);
+    ks_handshake(early, rfc8448_s5_ecdhe, sizeof rfc8448_s5_ecdhe, h, handshake_secret, c_hs, s_hs);
     CHECK(memcmp(c_hs, rfc8448_s5_c_hs_traffic, SHA256_LEN) == 0);
     CHECK(memcmp(s_hs, rfc8448_s5_s_hs_traffic, SHA256_LEN) == 0);
 }

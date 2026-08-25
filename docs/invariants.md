@@ -75,8 +75,10 @@ which convention holds them.
 ### INV-4 — randomness only through the hook
 
 - **Claim.** All randomness flows through `ch_rand_bytes`, consumed
-  at exactly two audited sites (key-share scalar, ClientHello
-  random), both in `handshake.c`.
+  at exactly three audited sites, all in `handshake.c`: the
+  key-share scalar, the ClientHello random, and the ML-KEM (d, z)
+  seed, which only the `KEX=pq` build draws. Every draw carries the
+  same all-zero check against a hook that writes nothing.
 - **Mechanism.** The hook is the only randomness import; the library
   defines no fallback.
 - **Check.** Semgrep-structural (`inv-4-randomness-sites`): no `ch_rand_bytes` call
@@ -167,12 +169,13 @@ which convention holds them.
   `ALERT_CERTIFICATE_REVOKED`, not an allowed date or past
   `CH_EPOCH_BOUND` is `ALERT_BAD_CERTIFICATE` —
   because a CA-signed certificate is public and proves nothing
-  about who presented it. `epoch_commit` performs the one
+  about who presented it. Both live in `handshake_auth.c`.
+  `hsa_epoch_commit` performs the one
   assignment and the one store, and `run` calls it after
   `expect_finished`, so CertificateVerify and Finished have already
   proved a real server is there. `ch_connect` refuses an epoch that
   storage cannot supply or that is not an allowed epoch.
-- **Check.** `CH_ASSERT` — `epoch_commit` faults unless
+- **Check.** `CH_ASSERT` — `hsa_epoch_commit` faults unless
   `expect_finished` already set `server_finished_ok`, so a commit
   moved earlier aborts before it can write, on every CA handshake,
   whether or not the epoch callbacks are configured. It is a runtime
@@ -189,7 +192,7 @@ which convention holds them.
   nothing checks the monotonicity comparison itself — inverting
   `h->leaf.epoch <= t->epoch` leaves the assert silent, and only the
   e2e `ca-epoch-equal` leg objects.
-- **Violation.** A PR moves the update back into `server_auth` for
+- **Violation.** A PR moves the update back into `hsa_server_auth` for
   symmetry with the rejects, letting a replayed certificate advance
   a device's persistent state (`make test-invariants` runs this one,
   as `inv21-epoch-commit-in-server-auth`); or a build sets
@@ -373,7 +376,7 @@ which convention holds them.
   same whether the certificate is checked against a pinned server key
   (TRUST=raw) or a pinned CA (TRUST=ca).
 - **Mechanism.** `handshake.c` reads the flight as a straight line —
-  `hello_exchange`, then `server_auth`, then `expect_finished` — and
+  `hello_exchange`, then `hsa_server_auth`, then `expect_finished` — and
   each step compares the message type against the one it expects,
   answering `ALERT_UNEXPECTED_MESSAGE` otherwise. There is no state
   variable to desynchronize; the order is the call order. Every one of
@@ -434,13 +437,26 @@ which convention holds them.
 ### INV-19 — bounded stack
 
 - **Claim.** No VLAs, no recursion, and no function frame over the
-  budget: 2,560 bytes (measured worst today: `rsa_vp1` at 2,400).
+  build's budget: 2,560 bytes for every build except `KEX=pq`
+  (measured worst there: `rsa_vp1` at 2,400), and 6,144 for `KEX=pq`
+  (measured worst: `mlk_pke_encrypt` at 5,744). ML-KEM's own working
+  memory sets that ceiling — K-PKE encrypt holds three polynomial
+  vectors and two polynomials — but chapulin's hybrid plumbing clears
+  2,560 as well: `ch_handshake` at 3,456 and `send_client_hello` at
+  2,672, the latter holding the re-expanded decapsulation key. A
+  device that cannot spare the budget builds the classic key
+  exchange.
 - **Mechanism.** Compiler-enforced: `-Wvla` in global CFLAGS bans
-  variable frames everywhere, and `make lint-stack` compiles every
-  library source under `-Wframe-larger-than=2560`, so the README's
+  variable frames everywhere, and `make lint-stack` compiles the
+  sources this build packages, under the defines it packages them
+  with, at `-Wframe-larger-than=$(STACK_BUDGET)`, so the README's
   stack numbers are a compile-time contract, not a bench
-  observation. Host test mains are exempt from the frame budget;
-  they keep vector tables in their frames.
+  observation. Until the hybrid build landed the recipe iterated
+  `$(SRCS)` without `$(LIB_DEF)`, so it measured the default build
+  whatever PIN, TRUST or KEX asked for and no variant was ever
+  checked; the pq frames are what exposed it. Host test mains are
+  exempt from the frame budget; they keep vector tables in their
+  frames.
 - **Check.** Type-system grade (the compiler refuses); bench/sram.sh
   measures the whole-call-chain peaks the README reports.
 - **Violation.** A PR sizes a scratch buffer from a length field, or

@@ -34,7 +34,11 @@ typedef struct {
     uint8_t queue[2 * HSSEQ_RXBUF + 2048]; // rendered records the client has not read yet
     size_t queue_len;
     size_t queue_off;
-    uint8_t client_hello[2][512]; // captured ClientHello messages, header included
+    // Captured ClientHello messages, header included. The client builds
+    // its hello inside the session's TX staging area, so CH_TX_STAGE
+    // bounds the message in every build; the hybrid build's 1216-byte
+    // share is what pushes it past 512.
+    uint8_t client_hello[2][CH_TX_STAGE];
     size_t client_hello_len[2];
     int client_hello_count; // ClientHellos captured
     int absorbed;           // ClientHellos folded into the transcript
@@ -58,6 +62,17 @@ typedef struct {
 static const uint8_t test_psk[32] = {0x4d};
 static const uint8_t server_scalar[X25519_LEN] = {0x07, 0x5e};
 static uint8_t server_pub[X25519_LEN]; // x25519_base(server_scalar), once in main
+
+#ifdef CH_KEX_PQ
+// The hybrid build's ML-KEM half. server_m is fixed like server_scalar:
+// the mock needs deterministic keys, not secrecy. render_server_hello
+// encapsulates against the captured encapsulation key; then
+// build_server_hello sends server_ct and the key schedule takes
+// server_ss.
+static const uint8_t server_m[32] = {0x4b, 0x3a};
+static uint8_t server_ct[MLKEM_CT_LEN];
+static uint8_t server_ss[MLKEM_SS_LEN];
+#endif
 
 #ifdef CH_PIN_ECDSA
 #define TEST_PIN_LEN 64
@@ -130,7 +145,9 @@ static void absorb_client_hellos(mock_server *s) {
     }
 }
 
-// Digs the x25519 public key out of the latest captured ClientHello.
+// Digs the key_share bytes out of the latest captured ClientHello: the
+// x25519 public key, or in the hybrid build the ML-KEM encapsulation
+// key with the x25519 public key after it.
 static const uint8_t *client_share(const mock_server *s) {
     rbuf r;
     rb_init(&r, s->client_hello[s->client_hello_count - 1],
@@ -147,11 +164,11 @@ static const uint8_t *client_share(const mock_server *s) {
         if (ext_data == NULL) {
             break;
         }
-        if (ext == EXT_KEY_SHARE && ext_len == 2 + 2 + 2 + X25519_LEN) {
-            return ext_data + 6; // shares length, group, key length, then the key
+        if (ext == EXT_KEY_SHARE && ext_len == 2 + 2 + 2 + CH_KEX_CLIENT_SHARE) {
+            return ext_data + 6; // shares length, group, key length, then the share
         }
     }
-    die("no x25519 key_share in the captured ClientHello");
+    die("no key_share for the build's group in the captured ClientHello");
     return NULL;
 }
 
@@ -160,9 +177,16 @@ static void hash_now(const mock_server *s, uint8_t out[SHA256_LEN]) {
     sha256_final(&transcript, out);
 }
 
+// One rendered ServerHello or HelloRetryRequest message: 4-byte header,
+// 38-byte fixed body, 2-byte extensions length, then at most
+// supported_versions (6), key_share (8 + CH_KEX_SERVER_SHARE) or the
+// HRR cookie block (14), and pre_shared_key (6), plus slack for the
+// mutations that grow a field.
+#define HSSEQ_SH_MAX (72 + CH_KEX_SERVER_SHARE)
+
 // ServerHello or HelloRetryRequest message, header included. hrr swaps
 // the random for the §4.2.3 sentinel and offers a cookie instead of a
-// key_share (we offer only x25519, so an HRR never selects a share).
+// key_share (we offer only one group, so an HRR never selects a share).
 static size_t build_server_hello(const mock_server *s, uint8_t *out, size_t cap, int hrr) {
     static const uint8_t cookie[8] = {0xc0, 0x0c, 0x1e};
     wbuf w;
@@ -196,9 +220,12 @@ static size_t build_server_hello(const mock_server *s, uint8_t *out, size_t cap,
         wb_bytes(&w, cookie, sizeof cookie);
     } else {
         wb_u16(&w, EXT_KEY_SHARE);
-        wb_u16(&w, 2 + 2 + X25519_LEN);
-        wb_u16(&w, GROUP_X25519);
-        wb_u16(&w, X25519_LEN);
+        wb_u16(&w, 2 + 2 + CH_KEX_SERVER_SHARE);
+        wb_u16(&w, CH_KEX_GROUP);
+        wb_u16(&w, CH_KEX_SERVER_SHARE);
+#ifdef CH_KEX_PQ
+        wb_bytes(&w, server_ct, MLKEM_CT_LEN); // ML-KEM first (RFC 10024)
+#endif
         wb_bytes(&w, server_pub, X25519_LEN);
         if (s->psk) {
             wb_u16(&w, EXT_PRE_SHARED_KEY);
@@ -218,7 +245,13 @@ static size_t build_server_hello(const mock_server *s, uint8_t *out, size_t cap,
 // handshake traffic secrets; anywhere later it is just an out-of-order
 // message under the current keys, which the client must refuse.
 static void render_server_hello(mock_server *s) {
-    uint8_t msg[128];
+    uint8_t msg[HSSEQ_SH_MAX];
+#ifdef CH_KEX_PQ
+    // Encapsulate before the build: build_server_hello sends server_ct.
+    if (mlkem_encaps_derand(server_ct, server_ss, client_share(s), server_m) != 0) {
+        die("captured encapsulation key fails the modulus check");
+    }
+#endif
     size_t n = build_server_hello(s, msg, sizeof msg, 0);
     if (s->phase != PHASE_CLEAR) {
         push_record(s, REC_HANDSHAKE, msg, n);
@@ -226,10 +259,21 @@ static void render_server_hello(mock_server *s) {
     }
     absorb_client_hellos(s);
     sha256_update(&s->transcript, msg, n);
+    // The client's IKM, mirrored here: the ML-KEM shared secret then
+    // the x25519 shared secret in the hybrid build, x25519 alone
+    // otherwise.
+#ifdef CH_KEX_PQ
+    uint8_t ecdhe[MLKEM_SS_LEN + X25519_LEN];
+    memcpy(ecdhe, server_ss, MLKEM_SS_LEN);
+    if (!x25519(ecdhe + MLKEM_SS_LEN, server_scalar, client_share(s) + MLKEM_EK_LEN)) {
+        die("client key share is low order");
+    }
+#else
     uint8_t ecdhe[X25519_LEN];
     if (!x25519(ecdhe, server_scalar, client_share(s))) {
         die("client key share is low order");
     }
+#endif
     uint8_t early[SHA256_LEN];
     uint8_t binder[SHA256_LEN];
     if (s->psk) {
@@ -241,7 +285,7 @@ static void render_server_hello(mock_server *s) {
     uint8_t hash[SHA256_LEN];
     uint8_t c_hs[SHA256_LEN];
     hash_now(s, hash);
-    ks_handshake(early, ecdhe, hash, s->handshake_secret, c_hs, s->s_hs);
+    ks_handshake(early, ecdhe, sizeof ecdhe, hash, s->handshake_secret, c_hs, s->s_hs);
     rec_dir_init(&s->rd_hs, c_hs);
     s->have_rd_hs = 1;
     push_record(s, REC_HANDSHAKE, msg, n); // plaintext: the phase flips below
@@ -251,7 +295,7 @@ static void render_server_hello(mock_server *s) {
 
 // H: mirror of handshake.c's hrr_transcript on the first flight.
 static void render_hrr(mock_server *s) {
-    uint8_t msg[128];
+    uint8_t msg[HSSEQ_SH_MAX];
     size_t n = build_server_hello(s, msg, sizeof msg, 1);
     if (s->phase == PHASE_CLEAR) {
         absorb_client_hellos(s);

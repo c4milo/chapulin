@@ -19,12 +19,21 @@
 // TX staging past the record header. One array serves two lifetimes
 // that never overlap: ClientHello construction, then sealed-record
 // staging. A build whose hello outgrows one sealed record (a PQ key
-// share) raises this for that build alone. See docs/decisions.md 20.
+// share) raises this for that build alone. See docs/decisions.md 22.
 //
 // This constant sets sizeof(ch_tls). The library object and every
 // build that includes this header must agree on it.
 #ifndef CH_TX_STAGE
+#ifdef CH_KEX_PQ
+// The hybrid ClientHello outgrows the sealed-record staging: 163
+// bytes of PSK-mode fixed part, the 1216-byte share in place of 32
+// (+1184), the largest ticket identity (CH_TICKET_ID_MAX, 320), and
+// the largest retry cookie with its framing (6 + 128). 1801 bytes;
+// larger than CH_TX_PT + 1 + AEAD_TAG, so it sets the array here.
+#define CH_TX_STAGE 1801
+#else
 #define CH_TX_STAGE (CH_TX_PT + 1 + AEAD_TAG)
+#endif
 #endif
 // The library builds as C, so the guards always run. The ceiling is
 // RFC 9846's 2^14 record-body cap; the hello ships as one record.

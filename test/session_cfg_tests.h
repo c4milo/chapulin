@@ -129,10 +129,11 @@ static void test_epoch_cfg(void) {
 }
 
 static void test_connect_cfg(void) {
-    // Sized to the compiled build's floor plus slack: 512 in raw-pin
-    // builds, the certificate-derived floor in CA builds (cfg.h). The
-    // floor boundary pair below therefore runs against whichever floor
-    // this build derives.
+    // Sized to the compiled build's floor plus slack: 512 in classic
+    // raw-pin builds, the ServerHello-derived floor in hybrid builds,
+    // the certificate-derived floor in CA builds (cfg.h). The floor
+    // boundary pair below therefore runs against whichever floor this
+    // build derives.
     static uint8_t rxbuf[CH_MIN_RXBUF + 88];
     uint8_t psk[32] = {1};
     uint8_t pin[TEST_PIN_LEN] = {2};
@@ -200,6 +201,17 @@ static void test_connect_cfg(void) {
 #else
     CHECK(CH_MIN_RXBUF == 3098);
 #endif
+#endif
+#if defined(CH_KEX_PQ) && !defined(CH_TRUST_CA)
+    // The hybrid build's floor: cfg.h derives it from the plaintext
+    // ServerHello record — 5-byte record header, 4-byte message header,
+    // 40-byte fixed body, then the supported_versions (6), key_share
+    // (2 + 2 + 2 + 2 + 1120 = 1128), and pre_shared_key (6) replies.
+    // The boundary pair above just ran against this value. Pin the
+    // derivation and the number here so a cfg.h regression fails this
+    // test, not a live handshake.
+    CHECK(CH_MIN_RXBUF == 5 + 4 + 40 + 6 + 1128 + 6);
+    CHECK(CH_MIN_RXBUF == 1189);
 #endif
 
     // Slot B (key rotation): optional, but bound to every slot-A rule.

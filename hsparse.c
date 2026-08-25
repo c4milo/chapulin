@@ -33,14 +33,21 @@ static uint8_t server_hello_ext_bit(uint16_t ext) {
 // key_share: our one offered group, echoed with the server's public.
 static int parse_key_share(rbuf *e, server_hello_info *info, int hrr) {
     if (hrr) {
-        // We offer only x25519, so an HRR can never legally ask for a
-        // different share: selecting ours is redundant (illegal) and
-        // selecting another group is unsupported. Both are fatal.
+        // The build offers one group, so an HRR can never legally ask
+        // for a different share: selecting ours is redundant (illegal)
+        // and selecting another group is unsupported. Both are fatal.
         return CH_EPROTO;
     }
-    if (rb_u16(e) != GROUP_X25519 || rb_u16(e) != X25519_LEN) {
+    if (rb_u16(e) != CH_KEX_GROUP || rb_u16(e) != CH_KEX_SERVER_SHARE) {
         return CH_EPROTO;
     }
+#ifdef CH_KEX_PQ
+    const uint8_t *ct = rb_bytes(e, MLKEM_CT_LEN);
+    if (ct == NULL) {
+        return CH_EPROTO;
+    }
+    info->server_ct = ct;
+#endif
     const uint8_t *pub = rb_bytes(e, X25519_LEN);
     if (pub == NULL) {
         return CH_EPROTO;

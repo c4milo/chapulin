@@ -315,8 +315,8 @@ launch slow:5 noovf x25519_mul_alias_a 65 ""
 launch slow:5 noovf x25519_mul_alias_b 65 ""
 launch slow:5 noovf x25519_mul_inputs_alias 65 ""
 launch slow:5 noovf x25519_sqr 65 ""
-launch slow full handshake_psk 100 "hsr_fetch_record.0:45,hsr_next_msg.0:140,fill_nondet.0:600" hspump.c buf.c ct.c
-launch slow full handshake_pin 100 "hsr_fetch_record.0:45,hsr_next_msg.0:140,fill_nondet.0:600" hspump.c buf.c ct.c
+launch slow full handshake_psk 100 "hsr_fetch_record.0:45,hsr_next_msg.0:140,fill_nondet.0:600" handshake_auth.c hspump.c buf.c ct.c
+launch slow full handshake_pin 100 "hsr_fetch_record.0:45,hsr_next_msg.0:140,fill_nondet.0:600" handshake_auth.c hspump.c buf.c ct.c
 # ML-KEM's chained-product functions, one formula each; the inverse
 # NTT is two half formulas, because the whole transform returns no
 # verdict in 900 s (the mlkem comment below states the split and the

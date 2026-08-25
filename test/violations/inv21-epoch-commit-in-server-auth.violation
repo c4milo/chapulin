@@ -1,10 +1,10 @@
 invariant: INV-21
-file: handshake.c
+file: handshake_auth.c
 catches: test/e2e.sh
 builds: bin/tlsclient bin/tlsclient_ecdsa bin/tlsclient_ca bin/tlsclient_ca_ecdsa bin/example_psk bin/example_pinned bin/example_ca
 reason: committing the epoch on the chain verdict alone lets a certificate
   that never proves possession of its key raise the device's stored
-  epoch, which outlives the session. epoch_commit asserts on
+  epoch, which outlives the session. hsa_epoch_commit asserts on
   server_finished_ok, so the moved call faults on the first CA leg —
   before it can write, and whether or not epoch callbacks are
   configured
@@ -20,4 +20,4 @@ reason: committing the epoch on the chain verdict alone lets a certificate
         return rc;
     }
     // Symmetry with the rejects: judge and record in one place.
-    epoch_commit(h);
+    hsa_epoch_commit(h);

@@ -49,7 +49,10 @@ Spec.Hkdf.schedule    : (psk ecdhe helloHash finHash : ByteArray) →
                         -- no early data: early = extract 0 psk;
                         -- hs = extract (deriveSecret early "derived" empty) ecdhe;
                         -- cHs/sHs from helloHash; master from hs;
-                        -- cAp/sAp from finHash.
+                        -- cAp/sAp from finHash. ecdhe is the key-exchange
+                        -- IKM at any length — HKDF sets no size — and the
+                        -- builds feed two: 32 octets (x25519) or 64 (the
+                        -- hybrid's mlkem_ss then x25519_ss, RFC 10024's order).
 Spec.ChaCha.xor       : (key nonce : ByteArray) → (counter : UInt32) →
                         (data : ByteArray) → ByteArray                 -- RFC 8439 §2.4
 Spec.Poly.mac         : (key msg : ByteArray) → ByteArray              -- RFC 8439 §2.5, Nat mod 2^130-5
@@ -84,19 +87,25 @@ Spec.P256.ecdsaSign   : (d k z : Nat) → Option (Nat × Nat)             -- FIP
                         -- signs so the oracle can mint valid signatures; the C
                         -- side only ever verifies.
 Spec.P256.ecdsaVerify : (pub hash : ByteArray) → (r s : Nat) → Bool    -- SEC 1 v2 §4.1.4
-Spec.Hsparse.parseServerHello : (pskOffered : Bool) → (msg : ByteArray) →
+Spec.Hsparse.parseServerHello : (kex : Kex) → (pskOffered : Bool) → (msg : ByteArray) →
                         Except Alert ServerHelloKind                    -- RFC 9846 §4.1.3, §4.1.4.
                         -- Takes the whole Handshake structure of §4 (msg_type,
                         -- uint24 length, body); hsparse.c's entry points take the
-                        -- body, so the driver frames it. pskOffered is hsparse.h's
+                        -- body, so the driver frames it. kex is the Makefile's
+                        -- KEX variable, as Scheme is its PIN: the build's one
+                        -- offered group, which fixes the key_share group code
+                        -- point (x25519 0x001D, or RFC 10024's X25519MLKEM768
+                        -- 0x11EC) and the server share size (32, or 1120 —
+                        -- the ML-KEM-768 ciphertext then the x25519 value).
+                        -- pskOffered is hsparse.h's
                         -- psk_mode: §4.2 makes a pre_shared_key response
                         -- admissible only if the ClientHello offered one, and
                         -- that is the one thing the message alone cannot settle.
                         -- Everything else the profile fixes is a byte compare
                         -- against a constant: legacy_version 0x0303, the empty
                         -- legacy_session_id_echo hsmsg.c offers, the one cipher
-                        -- suite, x25519. Line op:
-                        -- `hs_server_hello <psk|nopsk> <msg>` →
+                        -- suite, the build's group. Line op:
+                        -- `hs_server_hello <psk|nopsk> <x25519|pq> <msg>` →
                         -- `sh <key_exchange> <selected_identity|->`
                         -- / `hrr <cookie>` / `ERR hs_server_hello reject`.
 Spec.Hsparse.parseEncryptedExtensions : (msg : ByteArray) →
@@ -211,13 +220,13 @@ Spec.Epoch.check      : (bound stored : Nat) → (cert : Option Nat) → Bool
                         -- differ only by alert. No line op: see "Epoch is not an
                         -- oracle" below.
 Spec.Epoch.commit     : (stored : Nat) → (cert : Option Nat) → Nat
-                        -- epoch_commit: raise the stored epoch to e when e is
+                        -- hsa_epoch_commit: raise the stored epoch to e when e is
                         -- strictly higher, else leave it. Takes no bound, because
                         -- the C function reads none.
 Spec.Epoch.step       : (bound stored : Nat) → (cert : Option Nat) → Nat
                         -- one CA-mode handshake: commit only where check
                         -- accepted. That is the C's call order — epoch_check in
-                        -- server_auth, epoch_commit in run after
+                        -- hsa_server_auth, hsa_epoch_commit in run after
                         -- expect_finished — and it is what bounds the result.
 Spec.Epoch.storedAfter : (bound stored : Nat) → (certs : List (Option Nat)) → Nat
                         -- ch_tls.epoch after one handshake per certificate, in
@@ -236,12 +245,17 @@ dependency-free (no mathlib).
 `Spec/Epoch.lean` breaks two rules this file states elsewhere, and
 both breaks are deliberate.
 
-It has no line op and no `selftest`. `epoch_check` and `epoch_commit`
-are `static` in `handshake.c`: nothing outside that translation unit
-can call them, so `test/diff_test.c` cannot drive them and a selftest
-would have nothing to compare against. Rule 3 asks every module for a
-selftest because every other module is an oracle; here an unreached
-one would be dead code.
+It has no line op and no `selftest`. Both functions live in
+`handshake_auth.c`: `epoch_check` is `static` there, so nothing
+outside that translation unit can call it at all, and while
+`hsa_epoch_commit` has external linkage — the state machine in
+`handshake.c` calls it after the server Finished — driving it from
+`test/diff_test.c` would mean building a whole `handshake_state` with
+the epoch callbacks configured, not passing two numbers. So the
+differential still has nothing to compare against, and a selftest
+would have nothing to check. Rule 3 asks every module for a selftest
+because every other module is an oracle; here an unreached one would
+be dead code.
 
 That makes the module weaker than the rest of `spec/`, and the weaker
 claim is the honest one. On docs/invariants.md's check scale a Lean
@@ -250,7 +264,7 @@ and this module has no differential. Its theorems constrain the model
 and nothing else. They say what the ordering and bound rule
 guarantees for a device that applies it as the model does; no run
 compares that model against the C. A C change that breaks the rule —
-inverting the comparison in `epoch_commit`, dropping the bound term
+inverting the comparison in `hsa_epoch_commit`, dropping the bound term
 from `epoch_check`, or moving the commit to where a rejected
 certificate reaches it — leaves `lake build` green. INV-21 lists what
 does guard those on the C side: the `CH_ASSERT` on
@@ -405,7 +419,7 @@ quantified, so every statement covers every build's CH_EPOCH_BOUND:
                                 bound; with commit_ge, an admitted commit that
                                 moves at all lands in (stored, stored + bound]
   commit_takes_any_epoch        the bound belongs to the call order, not to
-                                epoch_commit: for every bound and stored epoch a
+                                hsa_epoch_commit: for every bound and stored epoch a
                                 certificate bound+1 steps ahead is one the check
                                 refuses and the commit would take
   step_idem                     replaying an accepted certificate changes nothing
@@ -433,7 +447,7 @@ means the module's selftest plus the differential oracle carry it;
 | --- | --- | --- |
 | Bytes | 24 | proof toolkit: fold characterizations, xor involution and left cancellation, hex injectivity, big-endian round trip and injectivity |
 | Drbg | 13 | key advance (the next key is the counter-0 block, independent of the request size), key/output disjointness within one keystream, request-prefix consistency, session key chain |
-| Hsparse | 7 | message-grammar soundness: an accepted ServerHello echoes the empty legacy_session_id the profile offers and a 32-octet x25519 key_exchange, and any selected_identity it reports is the single index one offered identity puts in range; a result is a HelloRetryRequest exactly when the Random is §4.1.4's fixed value; an accepted CertificateVerify reports the build's own pinned SignatureScheme and no other |
+| Hsparse | 7 | message-grammar soundness, quantified over both `Kex` builds: an accepted ServerHello echoes the empty legacy_session_id the profile offers and a key_exchange of exactly `kex.serverShareSize` octets (32 x25519, 1120 hybrid), and any selected_identity it reports is the single index one offered identity puts in range; a result is a HelloRetryRequest exactly when the Random is §4.1.4's fixed value; an accepted CertificateVerify reports the build's own pinned SignatureScheme and no other |
 | Handshake | 17 | state-machine safety invariants: exactly one ServerHello, EncryptedExtensions and Finished; no certificate flight under PSK; pinned flight shape and order; HRR bound; no CertificateRequest; no post-handshake message before Finished; close_notify at most once and last |
 | Record | 8 | seal/open round trip at both the AEAD and record layers, record size, nonce size, nonce injectivity (distinct sequence numbers never share a nonce), and that an accepted record never carries content type invalid(0) |
 | ChaCha | 5 | block size, structural lemmas, keystream prefix stability; keystream itself vector-checked |

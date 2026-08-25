@@ -133,3 +133,9 @@ int hsr_next_msg(handshake_state *h, uint8_t *type, const uint8_t **raw, size_t 
         }
     }
 }
+
+int hsr_transcript_hash(handshake_state *h, uint8_t out[SHA256_LEN]) {
+    sha256 transcript = h->t->transcript;
+    sha256_final(&transcript, out);
+    return CH_OK;
+}

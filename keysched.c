@@ -24,12 +24,12 @@ void ks_verify_data(const uint8_t key[SHA256_LEN], const uint8_t transcript[SHA2
     ct_wipe(finished_key, sizeof finished_key);
 }
 
-void ks_handshake(const uint8_t early[SHA256_LEN], const uint8_t ecdhe[32],
+void ks_handshake(const uint8_t early[SHA256_LEN], const uint8_t *ecdhe, size_t ecdhe_len,
                   const uint8_t transcript[SHA256_LEN], uint8_t handshake_secret[SHA256_LEN],
                   uint8_t c_hs[SHA256_LEN], uint8_t s_hs[SHA256_LEN]) {
     uint8_t derived[SHA256_LEN];
     hkdf_derive_secret(early, "derived", empty_hash, derived);
-    hkdf_extract(derived, SHA256_LEN, ecdhe, 32, handshake_secret);
+    hkdf_extract(derived, SHA256_LEN, ecdhe, ecdhe_len, handshake_secret);
     hkdf_derive_secret(handshake_secret, "c hs traffic", transcript, c_hs);
     hkdf_derive_secret(handshake_secret, "s hs traffic", transcript, s_hs);
     ct_wipe(derived, sizeof derived);

@@ -177,13 +177,19 @@ static void mlk_reject_secret(uint8_t out[32], const uint8_t z[32],
     ct_wipe(&s, sizeof s);
 }
 
+void mlkem_keygen_dk(uint8_t dk[MLKEM_DK_LEN], const uint8_t d[32], const uint8_t z[32]) {
+    // dk = dkpke || ek || H(ek) || z, the ek written in place at
+    // dk + 1152: a caller that stores only the (d, z) seed re-expands
+    // into one dk-sized buffer and reads the ek out of the slice.
+    mlk_pke_keygen(dk + 1152, dk, d);
+    sha3_256(dk + 1152, MLKEM_EK_LEN, dk + 2336);
+    memcpy(dk + 2368, z, 32);
+}
+
 void mlkem_keygen_derand(uint8_t ek[MLKEM_EK_LEN], uint8_t dk[MLKEM_DK_LEN], const uint8_t d[32],
                          const uint8_t z[32]) {
-    // dk = dkpke || ek || H(ek) || z.
-    mlk_pke_keygen(ek, dk, d);
-    memcpy(dk + 1152, ek, MLKEM_EK_LEN);
-    sha3_256(ek, MLKEM_EK_LEN, dk + 2336);
-    memcpy(dk + 2368, z, 32);
+    mlkem_keygen_dk(dk, d, z);
+    memcpy(ek, dk + 1152, MLKEM_EK_LEN);
 }
 
 int mlkem_encaps_derand(uint8_t ct[MLKEM_CT_LEN], uint8_t ss[MLKEM_SS_LEN],

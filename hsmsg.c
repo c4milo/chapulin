@@ -2,9 +2,12 @@
 
 #include "buf.h"
 
-size_t hs_build_client_hello(uint8_t *out, size_t cap, const ch_cfg *cfg, const uint8_t pub[32],
-                             const uint8_t random32[32], uint16_t record_size_limit,
-                             const uint8_t *cookie, size_t cookie_len) {
+size_t hs_build_client_hello(uint8_t *out, size_t cap, const ch_cfg *cfg,
+#ifdef CH_KEX_PQ
+                             const uint8_t ek[MLKEM_EK_LEN],
+#endif
+                             const uint8_t pub[32], const uint8_t random32[32],
+                             uint16_t record_size_limit, const uint8_t *cookie, size_t cookie_len) {
     wbuf w;
     wb_init(&w, out, cap);
 
@@ -28,13 +31,16 @@ size_t hs_build_client_hello(uint8_t *out, size_t cap, const ch_cfg *cfg, const 
     wb_u16(&w, EXT_SUPPORTED_GROUPS);
     wb_u16(&w, 4);
     wb_u16(&w, 2);
-    wb_u16(&w, GROUP_X25519);
+    wb_u16(&w, CH_KEX_GROUP);
 
     wb_u16(&w, EXT_KEY_SHARE);
-    wb_u16(&w, 2 + 2 + 2 + 32);
-    wb_u16(&w, 2 + 2 + 32); // client_shares length
-    wb_u16(&w, GROUP_X25519);
-    wb_u16(&w, 32);
+    wb_u16(&w, 2 + 2 + 2 + CH_KEX_CLIENT_SHARE);
+    wb_u16(&w, 2 + 2 + CH_KEX_CLIENT_SHARE); // client_shares length
+    wb_u16(&w, CH_KEX_GROUP);
+    wb_u16(&w, CH_KEX_CLIENT_SHARE);
+#ifdef CH_KEX_PQ
+    wb_bytes(&w, ek, MLKEM_EK_LEN); // ML-KEM first (RFC 10024)
+#endif
     wb_bytes(&w, pub, 32);
 
     // Sent in both modes: without it a server (Go enforces this) will not

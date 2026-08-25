@@ -34,8 +34,35 @@
 #define TLS13 0x0304
 #define SUITE_CHACHA20_POLY1305_SHA256 0x1303
 #define GROUP_X25519 0x001d
+#define GROUP_X25519MLKEM768 0x11ec
+
+// The one group this build offers, and its share size on each side.
+// The hybrid share order is RFC 10024's: the ML-KEM bytes come first
+// on both sides, despite the group name.
+#ifdef CH_KEX_PQ
+#include "mlkem.h"
+#define CH_KEX_GROUP GROUP_X25519MLKEM768
+#define CH_KEX_CLIENT_SHARE (MLKEM_EK_LEN + 32)
+#define CH_KEX_SERVER_SHARE (MLKEM_CT_LEN + 32)
+#else
+#define CH_KEX_GROUP GROUP_X25519
+#define CH_KEX_CLIENT_SHARE 32
+#define CH_KEX_SERVER_SHARE 32
+#endif
 #define SIGALG_ECDSA_P256_SHA256 0x0403
 #define SIGALG_RSA_PSS_RSAE_SHA256 0x0804
+
+// The largest ClientHello this build can emit, as three variable terms
+// over a 137-byte remainder. The remainder is everything whose size a
+// build cannot change: the handshake and body headers, the fixed
+// extensions, and the framing of the three variable ones — their type
+// and length words, and the pre_shared_key and cookie envelopes. The
+// terms are the largest ticket identity a resumption may carry, the
+// largest cookie an HRR may hand back, and the build's key share.
+// Measured against hs_build_client_hello: 617 classic, 1801 for pq. The
+// hello is built whole into one TX staging array, so CH_TX_STAGE must
+// hold this; handshake.c asserts it where both constants are visible.
+#define CH_HELLO_MAX (137 + CH_TICKET_ID_MAX + HSP_COOKIE_MAX + CH_KEX_CLIENT_SHARE)
 
 // Pinned mode verifies exactly one signature algorithm per build: RSA-PSS
 // by default (what stock cert-based endpoints hold), ECDSA P-256 with
@@ -76,8 +103,13 @@
 // no binder. record_size_limit is the limit we advertise; cookie echoes
 // an HRR cookie (NULL first flight). Returns the total length, or 0 if
 // cap is short.
-size_t hs_build_client_hello(uint8_t *out, size_t cap, const ch_cfg *cfg, const uint8_t pub[32],
-                             const uint8_t random32[32], uint16_t record_size_limit,
-                             const uint8_t *cookie, size_t cookie_len);
+// The hybrid build's share carries the ML-KEM encapsulation key ahead
+// of the x25519 public value, so its builder takes both.
+size_t hs_build_client_hello(uint8_t *out, size_t cap, const ch_cfg *cfg,
+#ifdef CH_KEX_PQ
+                             const uint8_t ek[MLKEM_EK_LEN],
+#endif
+                             const uint8_t pub[32], const uint8_t random32[32],
+                             uint16_t record_size_limit, const uint8_t *cookie, size_t cookie_len);
 
 #endif

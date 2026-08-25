@@ -593,9 +593,47 @@ if command -v go >/dev/null 2>&1; then
     }
     MSG='ultima'
     expect go-rsa-resume "amitlu" "$DIR/err6" ./bin/tlsclient 127.0.0.1 "$PORT5" "@$DIR/ticket5" -
-    GO_LEG=" + go x2 + go-resume x2"
+
+    # --- Hybrid key exchange: the same RSA cert on a Go server that
+    # accepts only X25519MLKEM768, against the KEX=pq client build,
+    # ticket resumption included. The classic client offers only
+    # x25519, so the pq-only server refuses the handshake and the
+    # client fails closed (CH_EPROTO, -2).
+    start_goecho -groups x25519mlkem768 -cert "$DIR/rsacert.pem" -key "$DIR/rsakey.pem"
+    PORT17=$SRV_PORT
+
+    MSG='hibrido'
+    expect go-pq "odirbih" "$DIR/err_pq" \
+        ./bin/tlsclient_pq 127.0.0.1 "$PORT17" "pin:$MOD" - "$DIR/ticket_pq"
+    [ -s "$DIR/ticket_pq" ] || {
+        echo "FAIL e2e go-pq: no ticket from the Go server"
+        exit 1
+    }
+    MSG='otra vuelta'
+    expect go-pq-resume "atleuv arto" "$DIR/err_pq" \
+        ./bin/tlsclient_pq 127.0.0.1 "$PORT17" "@$DIR/ticket_pq" -
+    MSG='no debe pasar'
+    expect_fail go-pq-refuses-classic -2 "$DIR/err_pq" \
+        ./bin/tlsclient 127.0.0.1 "$PORT17" "pin:$MOD" -
+    GO_LEG=" + go x2 + go-resume x2 + go-pq x2 + go-pq-refuses-classic"
 else
     GO_LEG=" (go legs skipped)"
 fi
 
-echo "e2e: psk + tickets + resumption + pinned ecdsa + pinned rsa + rotation + ca rsa x2 + ca ecdsa x2 + ca rotation + ca negatives x3${EPOCH_LEG}${GO_LEG} + examples x3 OK"
+# --- The same hybrid exchange against OpenSSL's s_server. `openssl
+# list -tls-groups` arrived in 3.5 alongside the group itself, so
+# grepping its output for X25519MLKEM768 is the support probe; an older
+# OpenSSL skips the leg, and CI's pinned version runs it.
+if "$OPENSSL" list -tls-groups 2>/dev/null | grep -qi x25519mlkem768; then
+    OPENSSL_PQ_LEG=" + openssl-pq"
+    start_server -tls1_3 -ciphersuites TLS_CHACHA20_POLY1305_SHA256 -groups X25519MLKEM768 -cert "$DIR/rsacert.pem" -key "$DIR/rsakey.pem" -rev
+    PORT18=$SRV_PORT
+    MSG='hibrido openssl'
+    expect openssl-pq "lssnepo odirbih" "$DIR/err_pq2" \
+        ./bin/tlsclient_pq 127.0.0.1 "$PORT18" "pin:$MOD" -
+else
+    OPENSSL_PQ_LEG=""
+    echo "SKIP openssl pq leg: $("$OPENSSL" version) does not list X25519MLKEM768 (needs 3.5)"
+fi
+
+echo "e2e: psk + tickets + resumption + pinned ecdsa + pinned rsa + rotation + ca rsa x2 + ca ecdsa x2 + ca rotation + ca negatives x3${EPOCH_LEG}${GO_LEG}${OPENSSL_PQ_LEG} + examples x3 OK"

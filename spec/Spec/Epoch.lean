@@ -12,12 +12,12 @@ below the stored epoch means a retired certificate, too far above it
 means a mis-issued one or an attempt to strand the device.
 
 Two C functions apply the rule, and this module models both plus the
-order they run in: `epoch_check` refuses, `epoch_commit` performs the
+order they run in: `epoch_check` refuses, `hsa_epoch_commit` performs the
 one assignment. Three things the C does stay outside the model.
 Neither function runs when `cfg.epoch_load` is `NULL`, so the model
 covers a device with the callbacks configured. `epoch_check` also
 records `epoch_status` and `epoch_seen`, which report the verdict
-rather than decide it. And `epoch_commit` may run only after the
+rather than decide it. And `hsa_epoch_commit` may run only after the
 server Finished, which the C states as
 `CH_ASSERT(h->server_finished_ok)` and which message order, not epoch
 arithmetic, decides — `Spec.Handshake` is where that lives.
@@ -28,9 +28,11 @@ here instead of a definition, so every theorem below holds for every
 build's value and none of them needs that range.
 
 Unlike every other module in `spec/`, this one is not a differential
-oracle. `epoch_check` and `epoch_commit` are `static` in
-`handshake.c`, so no driver can call them and nothing compares these
-definitions against the C. The theorems are about the model alone; see
+oracle. Both functions live in `handshake_auth.c`: `epoch_check` is
+`static` there, and while `hsa_epoch_commit` has external linkage,
+driving it would mean building a whole `handshake_state` with the epoch
+callbacks configured rather than passing two numbers. So no driver
+calls them and nothing compares these definitions against the C. The theorems are about the model alone; see
 CONTRACT.md.
 -/
 namespace Spec.Epoch
@@ -60,7 +62,7 @@ def check (bound stored : Nat) (cert : Option Nat) : Bool :=
   | some e => stored ≤ e && e ≤ stored + bound
 
 /--
-`epoch_commit`: raise the stored epoch to the certificate's number,
+`hsa_epoch_commit`: raise the stored epoch to the certificate's number,
 and only ever upward. `bound` is absent from this signature because it
 is absent from the C function: the jump bound sits entirely
 in `check`, which is why a commit is safe only where a check already
@@ -73,8 +75,8 @@ def commit (stored : Nat) (cert : Option Nat) : Nat :=
 
 /--
 One CA-mode handshake against one certificate. `epoch_check` runs in
-`server_auth` on the chain verdict and fails the handshake closed when
-it rejects; `epoch_commit` runs in `run` after `expect_finished`, so
+`hsa_server_auth` on the chain verdict and fails the handshake closed when
+it rejects; `hsa_epoch_commit` runs in `run` after `expect_finished`, so
 it sees only certificates the check accepted. The model holds the two
 calls together because their order is what bounds the result.
 -/
@@ -102,7 +104,7 @@ def acceptedCount (bound : Nat) : Nat → List (Option Nat) → Nat
       + acceptedCount bound (step bound stored cert) rest
 
 /--
-The stored epoch never decreases across a commit: `epoch_commit` takes
+The stored epoch never decreases across a commit: `hsa_epoch_commit` takes
 a strictly higher number or leaves the stored epoch alone, for every
 certificate, accepted or not. This is INV-21's monotonicity half.
 -/
@@ -132,7 +134,7 @@ theorem commit_le_of_check (bound stored : Nat) (cert : Option Nat)
     split <;> omega
 
 /--
-The jump bound lives in `check`, not in `epoch_commit`. For every
+The jump bound lives in `check`, not in `hsa_epoch_commit`. For every
 `bound` and every stored epoch, a certificate dated `bound + 1` steps
 ahead is one the check refuses and the commit would take. So a commit
 is safe only where a refused certificate cannot reach it, and moving
@@ -191,7 +193,7 @@ private theorem storedAfter_cons (bound stored : Nat) (cert : Option Nat)
 Replaying an accepted certificate is a no-op: a second handshake
 against the same certificate ends where the first one left the stored
 epoch. Once a certificate has been committed the rule reports
-`CH_EPOCH_MATCHED` for it and `epoch_commit` returns without storing,
+`CH_EPOCH_MATCHED` for it and `hsa_epoch_commit` returns without storing,
 so a copied certificate cannot ratchet a device up one step at a time.
 -/
 theorem step_idem (bound stored : Nat) (cert : Option Nat) :

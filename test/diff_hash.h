@@ -164,13 +164,15 @@ static void diff_expand_label(void) {
 
 // The spec's schedule() must equal the C composition the handshake runs:
 // ks_early -> ks_handshake (hello transcript) -> ks_master (finished
-// transcript), per CONTRACT.md.
-static void diff_schedule(void) {
+// transcript), per CONTRACT.md. ecdhe_len is the key-exchange IKM
+// width: 32 bytes for the classic build's x25519 secret, 64 for the
+// hybrid build's mlkem_ss-then-x25519_ss concatenation.
+static void diff_schedule_rows(size_t ecdhe_len) {
     for (int i = 0; i < 100; i++) {
         uint8_t psk[32];
         rng_fill(psk, sizeof psk);
-        uint8_t ecdhe[32];
-        rng_fill(ecdhe, sizeof ecdhe);
+        uint8_t ecdhe[64];
+        rng_fill(ecdhe, ecdhe_len);
         uint8_t hello[SHA256_LEN];
         rng_fill(hello, sizeof hello);
         uint8_t finished[SHA256_LEN];
@@ -181,15 +183,15 @@ static void diff_schedule(void) {
         uint8_t handshake_secret[SHA256_LEN];
         uint8_t c_hs[SHA256_LEN];
         uint8_t s_hs[SHA256_LEN];
-        ks_handshake(early, ecdhe, hello, handshake_secret, c_hs, s_hs);
+        ks_handshake(early, ecdhe, ecdhe_len, hello, handshake_secret, c_hs, s_hs);
         uint8_t master[SHA256_LEN];
         uint8_t c_ap[SHA256_LEN];
         uint8_t s_ap[SHA256_LEN];
         ks_master(handshake_secret, finished, master, c_ap, s_ap);
         char psk_hex[65];
         (void)hex_encode(psk_hex, psk, sizeof psk);
-        char ecdhe_hex[65];
-        (void)hex_encode(ecdhe_hex, ecdhe, sizeof ecdhe);
+        char ecdhe_hex[129];
+        (void)hex_encode(ecdhe_hex, ecdhe, ecdhe_len);
         char hello_hex[65];
         (void)hex_encode(hello_hex, hello, sizeof hello);
         char finished_hex[65];
@@ -209,6 +211,14 @@ static void diff_schedule(void) {
         (void)snprintf(want, sizeof want, "%s %s %s %s", c_hs_hex, s_hs_hex, c_ap_hex, s_ap_hex);
         expect(cmd, want);
     }
+}
+
+// Both IKM widths run in every build: ks_handshake takes (ecdhe,
+// ecdhe_len) and Spec.Hkdf.schedule takes a ByteArray of any size, so
+// nothing about the comparison is build-specific.
+static void diff_schedule(void) {
+    diff_schedule_rows(32);
+    diff_schedule_rows(64);
 }
 
 #endif

@@ -29,6 +29,12 @@ typedef struct {
     int psk_ok;
     uint8_t seen; // extension types already parsed, bits per parse_server_hello_ext
     uint8_t server_pub[X25519_LEN];
+#ifdef CH_KEX_PQ
+    // The ML-KEM ciphertext, MLKEM_CT_LEN bytes into the caller's
+    // message — like cookie, the pointer dies at the next pump call;
+    // the handshake decapsulates before one runs.
+    const uint8_t *server_ct;
+#endif
     const uint8_t *cookie; // into the caller's message; NULL if absent
     size_t cookie_len;
 } server_hello_info;

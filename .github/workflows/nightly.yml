@@ -114,6 +114,45 @@ jobs:
           path: proof/results/
           if-no-files-found: ignore
 
+  # The hybrid build's state-machine enumeration. The classic one runs in
+  # check; the two together cost 19 of check's 45 measured minutes against
+  # a 45-minute job timeout, so this one moved here rather than deciding
+  # the push lane by the clock. It is the only place the pq
+  # HelloRetryRequest path runs: the client offers one group, so a real
+  # server either takes the share or fails, and only the mock can send a
+  # cookie retry.
+  hsseq-pq:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install elan
+        run: |
+          curl -sSf https://elan.lean-lang.org/elan-init.sh | sh -s -- -y --default-toolchain none
+          echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
+      - name: Cache Lean toolchain and build
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.elan
+            spec/.lake
+          key: lean-${{ hashFiles('spec/lean-toolchain', 'spec/lakefile.toml', 'spec/lake-manifest.json') }}
+      - name: Enumerate every server message sequence, KEX=pq
+        run: |
+          set -o pipefail
+          make bin/hsseq_pq
+          ./bin/hsseq_pq 2>&1 | tee /tmp/hsseq_pq.out
+      - name: Put the verdict on the run page
+        if: always()
+        run: |
+          {
+            echo '### hsseq (KEX=pq)'
+            echo
+            echo '```'
+            tail -5 /tmp/hsseq_pq.out 2>/dev/null || echo '(the run produced no output)'
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
   # Breaks each invariant docs/invariants.md lists and requires a test to
   # object. Nightly, not check: each one rebuilds and reruns a target. An
   # unguarded invariant is a real coverage hole, so a red leg here is a
@@ -263,6 +302,27 @@ jobs:
           key: lean-${{ hashFiles('spec/lean-toolchain', 'spec/lakefile.toml', 'spec/lake-manifest.json') }}
       - run: make diff-ecdsa
 
+  # The hybrid-arm differential: the PR lane's bin/diff compiles the
+  # x25519 key_share parser, so the 1120-byte hybrid share meets real C
+  # only here.
+  diff-pq:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install elan
+        run: |
+          curl -sSf https://elan.lean-lang.org/elan-init.sh | sh -s -- -y --default-toolchain none
+          echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
+      - name: Cache Lean toolchain and build
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.elan
+            spec/.lake
+          key: lean-${{ hashFiles('spec/lean-toolchain', 'spec/lakefile.toml', 'spec/lake-manifest.json') }}
+      - run: make diff-pq
+
   # The deeper UB pass: -O0 sees code the optimizer would delete. The
   # PR lane runs the same suites at -O2, the level that ships.
   san-deep:
@@ -314,7 +374,7 @@ jobs:
   # per broken night unless an open nightly-failure issue already
   # exists.
   report:
-    needs: [prove-slow, diff-random, diff-ecdsa, spec-coverage, san-deep, mips-ubsan, fuzz, test-invariants]
+    needs: [prove-slow, diff-random, diff-ecdsa, spec-coverage, san-deep, mips-ubsan, fuzz, test-invariants, hsseq-pq, diff-pq]
     # A job killed by timeout-minutes concludes as cancelled, not
     # failed, so failure() alone skips this job and a timed-out night
     # files nothing. Both prove-slow timeouts so far were reported only

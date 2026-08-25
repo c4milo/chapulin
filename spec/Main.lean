@@ -197,7 +197,7 @@ def dispatch : List String → Option String
   -- implementation, so distinct strings would flag a spec-and-C
   -- disagreement about which MUST fired first as a mismatch. The alert
   -- itself lives in the model, where `Spec.Hsparse.Alert` names it.
-  | ["hs_server_hello", mode, msg] => do
+  | ["hs_server_hello", mode, kex, msg] => do
     let m ← hexArg? msg
     -- `psk` and `nopsk` are hsparse.h's `psk_mode`: whether this
     -- client's ClientHello offered a PSK, which RFC 9846 §4.2 makes
@@ -206,7 +206,10 @@ def dispatch : List String → Option String
       | "psk" => some true
       | "nopsk" => some false
       | _ => none
-    return match Spec.Hsparse.parseServerHello offered m with
+    -- `x25519` and `pq` are the Makefile's KEX values: the build's one
+    -- offered group, which fixes the key_share group and share size.
+    let k ← Spec.Hsparse.kexOf? kex
+    return match Spec.Hsparse.parseServerHello k offered m with
       | .ok (.serverHello f) =>
         s!"sh {emit f.keyExchange} {emitNat? f.selectedIdentity}"
       | .ok (.helloRetryRequest f) => s!"hrr {emit f.cookie}"
