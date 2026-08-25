@@ -325,6 +325,17 @@ every server's certificate. Record the current epoch date wherever
 issuance
 runs.
 
+The epoch has one writer. Serialize bumps through a single counter
+with compare-and-set semantics: two operators advancing concurrently
+can land on the same step, and one of the two revocations then
+revokes nothing.
+
+A leaf mis-issued a few steps ahead, but inside `CH_EPOCH_BOUND`,
+moves every device that authenticates its server up to it. Recover
+with the procedure in "Rolling out a new epoch": reissue every server
+at the higher epoch and cut over. No device needs reprovisioning. A
+leaf past the bound moves nothing, because every device refuses it.
+
 ### Revoking a stolen key (CA)
 
 The epoch revokes certificates, not keys. Bumping alone does not stop
@@ -367,10 +378,13 @@ Reprovision stock before it ships.
 - Set both callbacks or neither. They persist one uint32. A build
   without CA mode rejects a config that sets them, rather than
   ignoring them.
-- Use two storage slots. A torn single-slot write can leave a value
-  that fails every connect. Write the older slot, keep the newer one
-  until the write succeeds, and on load take the highest valid value.
-  Only two bad slots is a real failure.
+- Use two storage slots, each value beside its own checksum. A torn
+  single-slot write can leave a value that fails every connect. Write
+  the older slot, keep the newer one until the write succeeds, and on
+  load take the highest value whose checksum verifies. The checksum is what makes a
+  bit flip recoverable in place: a stored epoch can be lowered only by
+  reprovisioning, so a flip toward a higher bare value would stand
+  until then. Only two bad slots is a real failure.
 - Retry a failed write. `ch_tls.epoch_store_failed` says the value did
   not persist; call `epoch_store` with `ch_tls.epoch` until it
   succeeds. An unwritten epoch is lost at the next power cut, and the
@@ -446,6 +460,21 @@ attacker
 who keeps it away from every legitimate server keeps it on an old
 certificate. Isolation defeats every pull-based revocation scheme,
 CRLs included; put it in your threat model.
+
+Resumption never advances the stored epoch: it moves only when the
+device authenticates a certificate, and a resumed session presents
+none. A device that always resumes drifts behind a bumping fleet
+until its next full handshake lands past the jump bound. Bound the
+streak in the application: clear `resumption` and run a full
+handshake every so many connects, chosen so the fleet's usual bump
+rate cannot cover `CH_EPOCH_BOUND` steps between two full handshakes.
+
+Epochs run 0 to 16799, and a stored epoch never decreases. Even a
+fleet that bumps daily takes 46 years to reach `CH_EPOCH_MAX`; alert
+on `CH_EPOCH_MAX - epoch` from your telemetry anyway. A fleet at
+`CH_EPOCH_MAX` cannot bump again; recovery is a CA rotation: rotate
+the pinned key and reprovision the stored epoch — reprovisioning is
+the one write that sets a stored epoch lower.
 
 The two rejections use different alerts, so a peer with genuine
 certificates can probe a device's epoch and learn which devices lag.

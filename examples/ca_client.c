@@ -243,21 +243,26 @@ static int dial(const char *host, const char *port) {
 
 // One uint32 is the entire persistent state. Use two storage slots: a
 // power cut during a write can leave a slot unreadable, and a device
-// whose only slot is corrupt fails every later ch_connect. Load takes
-// the highest valid slot; store writes the slot holding the older
-// value, so the newer value survives a torn write.
+// whose only slot is corrupt fails every later ch_connect. This
+// example loads the highest valid slot and writes the slot holding
+// the older value, so the newer value survives a torn write; the
+// production scheme below adds a checksum per slot.
 //
 // Replace on a device: slot_read and slot_write use a file so the
 // example runs on a host. On a device they read and write a flash word.
 // The epoch changes once per revocation, far inside any flash write
 // budget (docs/ca.md, "Flash wear").
 //
-// Production wants two slots in different erase blocks, not the one
-// here: a power cut during a write can leave a slot unreadable, and a
-// device whose only slot is corrupt fails every later ch_connect with
-// CH_EINVAL. Load takes the highest readable slot, store overwrites the
-// one holding the older value. That is storage engineering rather than
-// anything about this API, so it stays out of the example.
+// Production wants two slots in different erase blocks, each value
+// beside its own checksum, not the one file here: a power cut during a
+// write can leave a slot unreadable, and a device whose only slot is
+// corrupt fails every later ch_connect with CH_EINVAL. Load takes the
+// highest value whose checksum verifies — a stored epoch can be
+// lowered only by reprovisioning, so a bit flip toward a higher bare
+// value stands until then. Store overwrites the slot holding the
+// older value. That is
+// storage engineering rather than anything about this API, so it
+// stays out of the example.
 typedef struct {
     const char *slot_path;
 } epoch_slots;
