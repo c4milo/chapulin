@@ -1,8 +1,8 @@
 # Operating a CA for chapulin devices
 
-Status: the parser and its proofs are in the tree; the `TRUST=ca`
-build that uses them comes next. This document is the operational
-contract that build depends on. Read it before issuing anything.
+Status: the parser, its proofs, and the `TRUST=ca` build that uses
+them are in the tree. This document is the operational contract that
+build depends on. Read it before issuing anything.
 
 ## Three jobs, three readers
 
@@ -10,7 +10,7 @@ This document covers three different machines. Find yours.
 
 | You run | You do | Sections |
 | --- | --- | --- |
-| The CA | Issue and reissue certificates | What the CA must sign, Issuance recipes, Verify an issued certificate, Key custody, CA software examples |
+| The CA | Issue and reissue certificates | What the CA must sign, Issuance recipes, Verify an issued certificate, From certificate to pinned key, Key custody, CA software examples |
 | A server | Serve the right chain to devices | Server configuration |
 | Devices | Provision keys, write firmware | Provisioning a device, What the device reports, The jump bound, Turning the epoch on |
 
@@ -137,6 +137,40 @@ Expect "Digital Signature", "TLS Web Server Authentication", and
 means rejection on the device. For the definitive check, connect a staging device, or run
 the repository's strictness suite over your material with
 `test/gen_x509vectors.py <dir>`.
+
+## From certificate to pinned key
+
+The device pins raw key bytes, not a certificate: `server_pubkey`
+takes an RSA modulus (256 to 384 bytes, big-endian) or the 64-byte
+P-256 X||Y point. chapulin has no PEM decoder, so the conversion runs
+where your provisioning or fleet tooling runs, one command per arm:
+
+    # RSA build: the modulus, as raw bytes.
+    openssl x509 -in root.pem -noout -modulus \
+      | sed 's/^Modulus=//' | xxd -r -p > ca_key.bin
+
+    # ECDSA build: X||Y, the last 64 bytes of the uncompressed point.
+    openssl x509 -in root.pem -pubkey -noout \
+      | openssl ec -pubin -outform DER | tail -c 64 > ca_key.bin
+
+The EC pipeline reads the uncompressed point encoding every recipe
+in this document produces. A pin of the wrong length fails
+`ch_connect` with `CH_EINVAL`.
+
+The same commands on a server's own certificate produce the pin for
+raw-pin builds; whose key the bytes are depends only on which
+certificate goes in.
+
+Conversion authenticates nothing. The bytes are as trustworthy as the
+channel that carried the certificate — for a rotation in the field
+that channel is the TLS session itself, as docs/rotation.md
+describes. Run "Verify an issued certificate" first, then convert.
+
+Convert before the material leaves your tooling, even when it
+travels to devices over the air: the converted bytes cost one command
+there and nothing on the device. An on-device decoder would be
+justified only where a fleet server relays an operator-signed blob it
+cannot parse; no such decoder exists in the tree today.
 
 ## Server configuration
 
