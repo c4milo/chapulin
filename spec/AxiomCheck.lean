@@ -4,6 +4,7 @@
 -- Classical.choice, Quot.sound). A stray axiom in a proof is exactly
 -- what this catches; the hygiene grep catches the declaration itself.
 import Spec.Aead
+import Spec.Sha3
 import Spec.Record
 import Spec.Handshake
 import Spec.Drbg
@@ -138,3 +139,11 @@ import Spec.Epoch
 #print axioms Spec.Sha256.sha256_size
 #print axioms Spec.Sha256.pad_blocks
 #print axioms Spec.Sha256.pad_prefix
+#print axioms Spec.Sha3.absorb_size
+#print axioms Spec.Sha3.squeeze_size
+#print axioms Spec.Sha3.sha3_256_size
+#print axioms Spec.Sha3.sha3_512_size
+#print axioms Spec.Sha3.shake128_size
+#print axioms Spec.Sha3.shake256_size
+#print axioms Spec.Sha3.pad_blocks
+#print axioms Spec.Sha3.pad_prefix

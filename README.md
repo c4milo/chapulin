@@ -151,7 +151,7 @@ would change that trade.
 
 Four layers cover four different failure classes.
 
-**Proofs cover memory safety.** Twenty of the twenty-three library
+**Proofs cover memory safety.** Twenty-one of the twenty-four C
 sources are compiled into a [CBMC](https://www.cprover.org/cbmc/) harness, which proves them free of
 out-of-bounds access, invalid pointers, bad shifts, and division by
 zero, for every input within the harness's bound. Signed overflow is
@@ -173,6 +173,7 @@ apart from one that passed — so for the slow rows, read the nightly.
 | ct | memeq matches a plain compare, wipe zeroizes | inputs ≤ 64 B |
 | buf | any 12-operation reader/writer run stays safe; length never exceeds capacity | buffers ≤ 64 B |
 | sha256 | safe for any two-chunk split | messages ≤ 96 B |
+| sha3 (two harnesses) | every mode is safe for a one-call message and XOF output from a fresh context; the SHAKE streaming calls are safe from any context state — arbitrary lanes, either rate, every position — for split absorbs and squeezes | one-call: messages ≤ 200 B, output ≤ 400 B; streaming: chunks ≤ 32 B |
 | hkdf (two harnesses) | hmac/extract and expand/expand-label safe over the proven sha256 contract | keys ≤ 96 B; output ≤ 96 B, expand: slow tier |
 | handshake | the driver stays safe on any record stream: pump, reassembly, HRR restart, state machine, in PSK and pinned-key mode. The `TRUST=ca` driver has a harness but no launch line, so it is unproven | 96 B receive buffer, slow tier |
 | chacha20 | safe at any counter, including in place | ≤ 160 B |

@@ -27,6 +27,7 @@ def emitNat? (n : Option Nat) : String :=
 def selftestAll : String :=
   let mods : List (String × Bool) := [
     ("sha256", Spec.Sha256.selftest),
+    ("sha3", Spec.Sha3.selftest),
     ("hkdf", Spec.Hkdf.selftest),
     ("chacha", Spec.ChaCha.selftest),
     ("poly", Spec.Poly.selftest),
@@ -47,6 +48,20 @@ def dispatch : List String → Option String
   | ["selftest"] => some selftestAll
   | ["sha256", m] => do
     return emit (Spec.Sha256.sha256 (← hexArg? m))
+  | ["sha3_256", m] => do
+    return emit (Spec.Sha3.sha3_256 (← hexArg? m))
+  | ["sha3_512", m] => do
+    return emit (Spec.Sha3.sha3_512 (← hexArg? m))
+  | ["shake128", m, len] => do
+    let l ← len.toNat?
+    -- The XOF output is unbounded; cap a request the way drbg is
+    -- capped, so a broken driver line cannot ask for megabytes.
+    guard (l <= 4096)
+    return emit (Spec.Sha3.shake128 (← hexArg? m) l)
+  | ["shake256", m, len] => do
+    let l ← len.toNat?
+    guard (l <= 4096)
+    return emit (Spec.Sha3.shake256 (← hexArg? m) l)
   | ["hmac", k, m] => do
     return emit (Spec.Hkdf.hmac (← hexArg? k) (← hexArg? m))
   | ["hkdf_extract", salt, ikm] => do

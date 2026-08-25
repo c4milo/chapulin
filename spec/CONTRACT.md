@@ -16,6 +16,10 @@ The Lean spec is a differential oracle for the C stack. Rules:
 
 ```
 Spec.Sha256.sha256    : ByteArray → ByteArray                          -- FIPS 180-4, 32 bytes out
+Spec.Sha3.sha3_256    : ByteArray → ByteArray                          -- FIPS 202, 32 bytes out
+Spec.Sha3.sha3_512    : ByteArray → ByteArray                          -- FIPS 202, 64 bytes out
+Spec.Sha3.shake128    : ByteArray → (outLen : Nat) → ByteArray         -- FIPS 202 XOF
+Spec.Sha3.shake256    : ByteArray → (outLen : Nat) → ByteArray         -- FIPS 202 XOF
 Spec.Hkdf.hmac        : (key msg : ByteArray) → ByteArray              -- RFC 2104 w/ SHA-256
 Spec.Hkdf.extract     : (salt ikm : ByteArray) → ByteArray             -- RFC 5869
 Spec.Hkdf.expand      : (prk info : ByteArray) → (len : Nat) → ByteArray
@@ -301,6 +305,14 @@ Spec.Record.aeadOpen_seal    splitting Record.seal's output at 5 and 5+|pt|+1 an
 Spec.Hkdf.expand_size        (expand prk info len).size = len          -- RFC 5869 §2.3 "first
 Spec.Hkdf.expandLabel_size   (expandLabel s l c len).size = len        -- L octets of T"
 Spec.Sha256.sha256_size      (sha256 msg).size = 32
+Spec.Sha3.sha3_256_size      (sha3_256 msg).size = 32                  -- FIPS 202 §6.1-6.2
+Spec.Sha3.sha3_512_size      (sha3_512 msg).size = 64
+Spec.Sha3.shake128_size      (shake128 msg outLen).size = outLen
+Spec.Sha3.shake256_size      (shake256 msg outLen).size = outLen
+Spec.Sha3.absorb_size        (absorb rate padded).size = 200           -- the state string
+Spec.Sha3.squeeze_size       (squeeze rate state outLen).size = outLen -- at a real rate
+Spec.Sha3.pad_blocks         (pad rate domain msg).size % rate = 0     -- §B.2 pad10*1
+Spec.Sha3.pad_prefix         padding keeps the message as a prefix
 Spec.Drbg.next_key_eq_block  the next key is the counter-0 ChaCha20 block under the
                              -- current key, so key advance does not depend on how many
                              -- output bytes the request asked for (next_key_indep)

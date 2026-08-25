@@ -24,7 +24,8 @@ Home: github.com/c4milo.
   renegotiation-era anything. Within a mode the client offers exactly one
   of everything; the server takes it or the handshake fails closed.
 - One concern per file pair, dependencies pointing down only:
-  `ct.[ch]` (constant-time bytes) ← `sha256.[ch]` ← `hkdf.[ch]`
+  `ct.[ch]` (constant-time bytes) ← `sha256.[ch]` + `sha3.[ch]`
+  (test-only until the ML-KEM build lands) ← `hkdf.[ch]`
   (HMAC + HKDF + TLS labels) ← `chacha20.[ch]` + `poly1305.[ch]` ←
   `aead.[ch]` (RFC 8439 seal/open) ← `x25519.[ch]` + `p256.[ch]` +
   `rsa.[ch]`/`rsa_mont.c` (pinned-mode verify) ←
