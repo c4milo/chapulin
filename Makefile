@@ -634,8 +634,9 @@ examples-check: bin/example_psk bin/example_pinned bin/example_ca
 .PHONY: test-invariants
 # The violation runner requires each target to PASS on unedited source
 # before it trusts the target's verdict on an edit, so every prerequisite
-# a violation names must build here. bin/diff needs the Lean oracle
-# (built by the diff recipe's lake step); the epoch violation drives e2e,
+# a violation names must build here. bin/diff execs the Lean oracle at
+# run time and nothing else in this target's lane builds it, so the
+# recipe runs the lake step itself; the epoch violation drives e2e,
 # which needs the CA clients.
 # The fast tier: violations backed by the second-scale binaries (unit,
 # the strictness parsers, rsa_test), so the PR lane runs them. The diff,
@@ -649,7 +650,13 @@ test-invariants-fast: bin/unit bin/unit_ca bin/x509strict bin/x509strict_ecdsa b
 # The whole set, fast tier plus the hsseq_test and e2e-backed
 # violations that cost minutes each. Nightly.
 test-invariants: bin/unit bin/diff bin/tlsclient bin/tlsclient_ecdsa bin/tlsclient_ca bin/tlsclient_ca_ecdsa bin/example_psk bin/example_pinned bin/example_ca
+ifeq ($(LAKE),)
+	$(call REQUIRE_ON_CI,lake)
+	@echo "SKIP test-invariants: lake not on PATH (install elan: https://leanprover.github.io)"
+else
+	cd spec && $(LAKE) build
 	python3 test/violations.py
+endif
 
 # The nightly runs one job per slow proof, from a static matrix. A
 # launch line added without a matching matrix entry would simply never
