@@ -366,6 +366,16 @@ launch fast full handshake_post 132 "handle_post_handshake.0:33,fill_nondet.0:13
 # 78 MB (kissat). The hybrid ServerHello parser stays unproven: the
 # 256-byte handshake_parser bound cannot hold a 1,128-byte key share.
 launch fast full hybrid_secret 65 "fill_nondet.0:2401,ct_wipe.0:2401" -DCH_KEX_PQ ct.c
+# The parser half of the hybrid build (#47). parse_key_share is
+# driven directly because handshake_parser bounds its message at
+# 256 bytes and a hybrid key_share extension is 1,128: raising
+# that bound would grow the fast tier's heaviest formula (9.9 GB)
+# rather than add a second cheap one. Proves what hybrid_secret's
+# harness assumes — an accepted share hands back a whole readable
+# ciphertext inside the bytes the parser consumed, so neither
+# proof rests on the assumption alone. Measured: 654 properties,
+# 1 s, 164 MB (kissat).
+launch fast full key_share 1200 "fill_nondet.0:1133" -DCH_KEX_PQ buf.c
 # x509: primitives concrete (both variants), the walker with stubbed
 # primitives. The ECDSA walker proves the full two-entry bound in
 # every check; the RSA walker's formula is a SAT heavyweight, so it
