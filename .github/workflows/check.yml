@@ -106,10 +106,18 @@ jobs:
       # on the documented recipe instead of the 3.0 fallback.
       OPENSSL_VERSION: 3.6.3
       OPENSSL_PREFIX: /home/runner/openssl-inst
+      # test/goecho backs the e2e go and go-pq legs, and which curves Go
+      # offers by default moves between releases. Without this the legs
+      # ran on whatever Go the runner image shipped.
+      GO_VERSION: "1.27.0"
     steps:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0 # commitlint lints commit ranges, not just HEAD
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version: ${{ env.GO_VERSION }}
 
       - name: Install clang tools (apt.llvm.org, pinned major)
         run: |
@@ -194,6 +202,8 @@ jobs:
             || { echo "clang-format is not the pinned LLVM $LLVM_MAJOR"; exit 1; }
           "$CPPCHECK" --version | grep -qF "$CPPCHECK_VERSION" \
             || { echo "cppcheck is not the pinned $CPPCHECK_VERSION"; exit 1; }
+          go version | grep -qF "go$GO_VERSION " \
+            || { echo "go is not the pinned $GO_VERSION"; exit 1; }
 
       - name: Install semgrep (hash-pinned)
         # The only pip package in the security path, so it installs

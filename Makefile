@@ -331,7 +331,7 @@ bin/diff: test/diff_test.c $(SRCS) sha3.c mlkem.c mlkem_poly.c $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) -I. -o $@ test/diff_test.c $(SRCS) sha3.c mlkem.c mlkem_poly.c
 
-.PHONY: check lint lint-tidy lint-format lint-cppcheck lint-docs lint-invariants lint-spec prove diff fmt clean
+.PHONY: check lint lint-tidy lint-format lint-cppcheck lint-docs lint-invariants lint-go-pin lint-spec prove diff fmt clean
 # bin/handshake_sequence_pq is built here but run by the nightly, not by check: the
 # two enumerations together cost 19 of check's 45 measured minutes and
 # the CI job's timeout is 45, so the second one would decide the lane by
@@ -684,7 +684,7 @@ endif
 
 # Checks and thresholds live in .clang-tidy; every disable carries a reason
 # there (fix-or-drop, never NOLINT in code).
-lint: lint-tidy lint-format lint-cppcheck lint-commits lint-docs lint-invariants lint-stack lint-size lint-matrix lint-spec
+lint: lint-tidy lint-format lint-cppcheck lint-commits lint-docs lint-invariants lint-stack lint-size lint-matrix lint-go-pin lint-spec
 
 # INV-19: bounded stack. The budget is the measured worst library
 # frame (rsa_vp1's RSA-3072 limb temporaries, 2,400 bytes) rounded up;
@@ -877,6 +877,22 @@ lint-matrix:
 	   exit 1; \
 	 fi; \
 	 echo "lint-matrix: nightly runs every slow proof"
+
+# The Go toolchain is pinned in two workflows and GitHub Actions has no
+# way to share an env block between them, so the pair is checked instead.
+# check.yml's GO_VERSION is the pin of record.
+.PHONY: lint-go-pin
+lint-go-pin:
+	@a=$$(sed -n 's/^ *GO_VERSION: *"\(.*\)"/\1/p' .github/workflows/check.yml); \
+	 b=$$(sed -n 's/^ *go-version: *"\(.*\)"/\1/p' .github/workflows/nightly.yml); \
+	 if [ -z "$$a" ]; then echo "lint-go-pin: check.yml declares no GO_VERSION"; exit 1; fi; \
+	 if [ -z "$$b" ]; then echo "lint-go-pin: nightly.yml pins no go-version"; exit 1; fi; \
+	 for v in $$b; do \
+	   if [ "$$v" != "$$a" ]; then \
+	     echo "lint-go-pin: nightly pins Go $$v, check.yml pins $$a"; exit 1; \
+	   fi; \
+	 done; \
+	 echo "lint-go-pin: both workflows pin Go $$a"
 
 # CBMC proofs: memory safety and absence of UB per module, at the bounds
 # each harness documents. The fast tier (seconds to a few minutes) gates
