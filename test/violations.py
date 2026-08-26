@@ -161,7 +161,7 @@ def run(name):
         # The mutation build future-dated the source, so the binaries it
         # produced sit AHEAD of the restored source's mtime and make
         # would keep them forever — a later `make check` then runs a
-        # binary built from the mutant. Delete them so the next build
+        # binary built from the violation. Delete them so the next build
         # starts from the restored source. (This is how a poisoned
         # bin/rsa_test once failed a full check an hour after the
         # violation run that made it.)
