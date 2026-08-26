@@ -196,7 +196,7 @@ static int handle_post_handshake(ch_tls *t, const uint8_t *pt, size_t n, size_t 
 // fragmented across them (RFC 9846 §5.1 allows it, and our own
 // record_size_limit forces peers with large tickets into it). Fragments
 // of one message cannot be interleaved with other record types.
-static int pump_post_handshake(ch_tls *t, size_t pt_len) {
+static int read_post_handshake(ch_tls *t, size_t pt_len) {
     uint8_t *buf = t->cfg.buf;
     size_t fill = pt_len;
     // Bounded like ch_read's quiet cap: a fragmented message must make
@@ -237,7 +237,7 @@ static int pump_post_handshake(ch_tls *t, size_t pt_len) {
 
 // Reads and dispatches one record: application data lands in the buffer,
 // post-handshake messages are handled, close_notify returns CH_ECLOSED.
-static int pump_once(ch_tls *t) {
+static int dispatch_one_record(ch_tls *t) {
     uint8_t outer = 0;
     size_t record_len = 0;
     int rc = io_read_record(&t->cfg, t->cfg.buf, t->cfg.buf_len, &outer, &record_len);
@@ -262,7 +262,7 @@ static int pump_once(ch_tls *t) {
         return CH_OK;
     }
     if (inner_type == REC_HANDSHAKE) {
-        rc = pump_post_handshake(t, pt_len);
+        rc = read_post_handshake(t, pt_len);
         if (rc != CH_OK) {
             tlsi_fail(t, rc == CH_EAUTH ? ALERT_BAD_RECORD_MAC : ALERT_UNEXPECTED_MESSAGE);
         }
@@ -311,7 +311,7 @@ int ch_read(ch_tls *t, uint8_t *p, size_t n) {
             t->pt_off += take;
             return (int)take;
         }
-        int rc = pump_once(t);
+        int rc = dispatch_one_record(t);
         if (rc == CH_ECLOSED) {
             return 0;
         }
