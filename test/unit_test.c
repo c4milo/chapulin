@@ -11,6 +11,8 @@
 #include "chacha20.h"
 #include "ct.h"
 #include "handshake.h"
+#include "handshake_message.h"
+#include "handshake_parser.h"
 #include "hkdf.h"
 #include "p256.h"
 #include "poly1305.h"
@@ -328,6 +330,7 @@ int main(void) {
     test_post_handshake();
     test_alerts_and_epochs();
     test_connect_cfg();
+    test_hello_staging_boundary();
     test_epoch_cfg();
     test_ch_write();
     test_record_padding();

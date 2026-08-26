@@ -128,6 +128,54 @@ static void test_epoch_cfg(void) {
 #endif
 }
 
+// The ClientHello staging boundary (#46). CH_TX_STAGE must hold the
+// largest hello this build can emit, and CH_HELLO_MAX is that size, so
+// the pair below is exact: at CH_HELLO_MAX the worst reachable hello —
+// a resumption carrying a CH_TICKET_ID_MAX identity that then answers a
+// HelloRetryRequest with an HSP_COOKIE_MAX cookie — is built whole, and
+// one byte less refuses. Before the classic build covered its own hello
+// this second case was what a device met mid-handshake, as CH_ECAP.
+static void test_hello_staging_boundary(void) {
+    static uint8_t out[CH_HELLO_MAX];
+    static uint8_t identity[CH_TICKET_ID_MAX];
+    static uint8_t cookie[HSP_COOKIE_MAX];
+    uint8_t pub[32] = {0};
+    uint8_t random32[32] = {0};
+#ifdef CH_KEX_PQ
+    static uint8_t ek[MLKEM_EK_LEN];
+#endif
+    ch_cfg cfg = {0};
+    cfg.psk = identity; // any non-NULL selects the PSK arm
+    cfg.psk_id = identity;
+    cfg.psk_id_len = sizeof identity;
+    cfg.resumption = 1;
+    cfg.obfuscated_age = 0xffffffffu;
+
+#ifdef CH_KEX_PQ
+#define BUILD_HELLO(cap)                                                                           \
+    hs_build_client_hello(out, (cap), &cfg, ek, pub, random32, 0xffff, cookie, sizeof cookie)
+#else
+#define BUILD_HELLO(cap)                                                                           \
+    hs_build_client_hello(out, (cap), &cfg, pub, random32, 0xffff, cookie, sizeof cookie)
+#endif
+    // The last valid capacity builds it, and fills the array exactly:
+    // CH_HELLO_MAX is the size of the worst hello, not an over-estimate.
+    CHECK(BUILD_HELLO(CH_HELLO_MAX) == CH_HELLO_MAX);
+    // One byte less refuses rather than truncating.
+    CHECK(BUILD_HELLO(CH_HELLO_MAX - 1) == 0);
+#undef BUILD_HELLO
+
+    // The staging array is sized from that bound, so a session can
+    // always hold what the builder can emit. Pin the per-build numbers
+    // too, so a constant regression fails here, not a live handshake.
+    CHECK(CH_TX_STAGE >= CH_HELLO_MAX);
+#ifdef CH_KEX_PQ
+    CHECK(CH_HELLO_MAX == 1801);
+#else
+    CHECK(CH_HELLO_MAX == 617);
+#endif
+}
+
 static void test_connect_cfg(void) {
     // Sized to the compiled build's floor plus slack: 512 in classic
     // raw-pin builds, the ServerHello-derived floor in hybrid builds,

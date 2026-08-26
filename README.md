@@ -88,9 +88,9 @@ shrinks the pointer fields.
 
 | what | bytes |
 |---|---|
-| `ch_tls` session struct (includes 534 B TX staging) | 1056 |
+| `ch_tls` session struct (includes 622 B TX staging) | 1144 |
 | receive buffer you provide (2048 shown; floor `CH_MIN_RXBUF`) | 2048 |
-| **total static working set** | **3104** |
+| **total static working set** | **3192** |
 | `ch_tls` under `KEX=pq` (includes 1806 B TX staging) | 2328 |
 | **total static working set, `KEX=pq`** (2048 buffer) | **4376** |
 | peak stack, `ch_connect` (RSA-3072 verify) | 5168 |

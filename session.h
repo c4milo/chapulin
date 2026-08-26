@@ -23,16 +23,24 @@
 //
 // This constant sets sizeof(ch_tls). The library object and every
 // build that includes this header must agree on it.
+// TX staging holds two different things, and the array takes whichever
+// is larger: one sealed application record (CH_TX_PT + 1 + AEAD_TAG),
+// or the largest ClientHello this build can emit. The hello wins in
+// both builds. These are CH_HELLO_MAX's value per build, repeated here
+// as literals because handshake_message.h sits above this header and
+// cannot be included from it; handshake.c asserts the two agree, where
+// both constants are visible, so a stale literal fails the build
+// rather than shipping.
 #ifndef CH_TX_STAGE
 #ifdef CH_KEX_PQ
-// The hybrid ClientHello outgrows the sealed-record staging: 163
-// bytes of PSK-mode fixed part, the 1216-byte share in place of 32
-// (+1184), the largest ticket identity (CH_TICKET_ID_MAX, 320), and
-// the largest retry cookie with its framing (6 + 128). 1801 bytes;
-// larger than CH_TX_PT + 1 + AEAD_TAG, so it sets the array here.
+// 137 fixed + 320 ticket identity + 128 cookie with framing + the
+// 1216-byte hybrid share.
 #define CH_TX_STAGE 1801
 #else
-#define CH_TX_STAGE (CH_TX_PT + 1 + AEAD_TAG)
+// The same sum with a 32-byte x25519 share: 617. Above the 529 a
+// sealed record needs, which is why a maximum ticket identity plus a
+// maximum retry cookie used to fail closed with CH_ECAP (#46).
+#define CH_TX_STAGE 617
 #endif
 #endif
 // The library builds as C, so the guards always run. The ceiling is

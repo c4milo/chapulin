@@ -181,9 +181,15 @@ does nothing more.
 
 22. **One TX staging array, sized per build.** The ClientHello
     builder and the sealed-record path share the session's TX array;
-    their lifetimes never overlap. A build whose hello outgrows one
-    sealed record (a PQ key share) raises `CH_TX_STAGE` for that build
-    alone. A second array would cost every build the hello's bytes,
+    their lifetimes never overlap. `CH_TX_STAGE` is whichever is
+    larger, per build, and the hello wins in both: 617 bytes classic,
+    1801 with a hybrid key share, against the 529 a sealed record
+    needs. The classic figure used to be the sealed record's, which
+    left a maximum ticket identity plus a maximum retry cookie failing
+    closed with `CH_ECAP` mid-handshake (#46); covering the hello
+    costs that build 88 bytes and lets the same compile-time assert
+    run everywhere. A second array would cost every build the hello's
+    bytes,
     and the handshake proof keeps one array to model. Streaming the
     hello stays rejected: the PSK binder is an HMAC over the
     contiguous truncated hello, so a streaming builder would buffer

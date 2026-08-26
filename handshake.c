@@ -26,15 +26,11 @@
 
 // The hello is built whole into the TX staging array (docs/decisions.md
 // 22), so the array must hold the largest one this build can emit.
-// KEX=pq sizes CH_TX_STAGE to exactly that. The classic build's 529
-// bytes do not reach its own 617-byte worst case — a resumption
-// carrying a max-size ticket identity that then answers an HRR with a
-// max-size cookie fails closed with CH_ECAP — so the check runs where
-// it holds rather than being written as a claim that is not true.
-#ifdef CH_KEX_PQ
+// Both builds size CH_TX_STAGE to exactly that, and this is where the
+// two constants meet: session.h cannot see CH_HELLO_MAX, so it repeats
+// the value, and a drift between them fails the build here.
 #ifndef __cplusplus
 _Static_assert(CH_HELLO_MAX <= CH_TX_STAGE, "the largest ClientHello must fit TX staging");
-#endif
 #endif
 
 // Builds the ClientHello (echoing an HRR cookie on the retry), computes
