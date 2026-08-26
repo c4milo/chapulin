@@ -245,6 +245,15 @@ secrets and MACs and never opens a record.
   its lookup tables. `make timing` checks this with a Welch's t-test,
   which is evidence, not proof. P-256 and RSA verification are
   variable-time on purpose, since all of their inputs are public.
+- The quality of the random bytes, which rests on nothing here at all.
+  `ch_rand_bytes` is the image's to supply, and no check in a library
+  can grade it: a weak generator completes the handshake, sends a key
+  share that looks uniform on the wire, and returns `CH_OK`. Two things
+  narrow the gap and neither closes it. The build makes the choice
+  explicit instead of silent — `RAND=extern` or `RAND=drbg`, no default
+  — and every draw in `handshake.c` is compared against all-zero, which
+  catches a hook that returned without writing. A weak generator passes
+  both. [`docs/entropy.md`](docs/entropy.md) carries the rest.
 
 Three more suites run on every push and add evidence rather than
 proof. [Wycheproof](https://github.com/C2SP/wycheproof)'s attack-derived cases (`make wycheproof`, about 1,600
@@ -326,6 +335,15 @@ one, or the seeded generator in `drbg.[ch]` if it does not — the
 RTL8382-class reference target has none. It refuses to run unseeded;
 [`docs/entropy.md`](docs/entropy.md) covers seed provisioning.
 
+Say which of the two the image uses. `RAND=extern` leaves
+`ch_rand_bytes` for you to define, so an image that never wired a
+generator fails to link. `RAND=drbg` packages the reference generator
+and exports a fifth call, `ch_drbg_seed`, for the image to call once at
+boot. There is no default: a build naming neither stops at an `#error`.
+No build can judge a generator — a weak one completes the handshake,
+sends a key share that looks uniform, and returns `CH_OK` — so writing
+the choice down is the only part a compiler can hold you to.
+
 Any error kills the session. The stack wipes its keys and you
 reconnect. Devices recover by reconnecting anyway, and the rule removes
 the whole resumable-error state space from the code and the proofs.
@@ -338,10 +356,13 @@ and the fast proof tier.
 
 Other targets:
 
-- `make lib` packages the library as one relocatable object
+- `make lib RAND=extern` packages the library as one relocatable object
   (`bin/chapulin.o`) exporting exactly the four public calls. Every
   internal symbol is localized, and `lib-check` fails if the export
-  list ever grows. Compose with `PIN=ecdsa`, `TRUST=ca` and `KEX=pq`.
+  list ever grows. `RAND=drbg` packages the reference generator instead
+  and exports `ch_drbg_seed` as a fifth call. `RAND` is the one build
+  variable with no default. Compose with `PIN=ecdsa`, `TRUST=ca` and
+  `KEX=pq`.
 - `make prove-slow` runs the slow-tier proofs, one per nightly job. The runner caches by
   content, so an incremental run re-proves only what changed
   (`PROVE_NO_CACHE=1` forces a full run). It uses [kissat](https://github.com/arminbiere/kissat) when

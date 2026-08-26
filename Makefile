@@ -16,6 +16,19 @@ STACK_BUDGET := 2560
 ifeq ($(KEX),pq)
 STACK_BUDGET := 6144
 endif
+
+# cfg.h makes the entropy pattern a declared build choice with no
+# default, so every translation unit that sees cfg.h must say which
+# pattern its image uses. Every host binary built here supplies its own
+# ch_rand_bytes — test/test_random.h for the test mains, an OS-entropy
+# shim in the examples, a stub in the fuzz and proof harnesses that
+# reach randomness at all — so they declare it once, here. Two recipes are not host binaries and filter it
+# back out: the packaged object declares through RAND below, and
+# bin/drbg_test links the reference generator instead of supplying a
+# hook.
+HOST_RAND_DEF := -DCH_RAND_EXTERN
+CFLAGS += $(HOST_RAND_DEF)
+LIB_CFLAGS = $(filter-out $(HOST_RAND_DEF),$(CFLAGS))
 LLVM_BIN := /opt/homebrew/opt/llvm/bin
 CLANG_TIDY ?= $(shell command -v clang-tidy || command -v $(LLVM_BIN)/clang-tidy)
 CLANG_FORMAT ?= $(shell command -v clang-format || command -v $(LLVM_BIN)/clang-format)
@@ -92,6 +105,24 @@ ifeq ($(KEX),pq)
 LIB_DEF += -DCH_KEX_PQ
 LIB_SRCS += sha3.c mlkem.c mlkem_poly.c
 endif
+# Entropy pattern, and the one build variable with no default: RAND=extern
+# leaves ch_rand_bytes undefined for the image to supply, RAND=drbg packages
+# the reference generator and exports ch_drbg_seed so the image seeds it at
+# boot. Neither is a default because the choice is the point (#41): a weak
+# generator completes the handshake and reports success, so the only thing a
+# build can enforce is that somebody wrote the choice down. Naming neither
+# reaches cfg.h's #error, which is where a firmware tree compiling these
+# sources with its own build system meets the same demand.
+ifeq ($(RAND),drbg)
+LIB_DEF += -DCH_RAND_DRBG
+LIB_SRCS += drbg.c
+PUBLIC_RAND := ch_drbg_seed
+else ifeq ($(RAND),extern)
+LIB_DEF += -DCH_RAND_EXTERN
+PUBLIC_RAND :=
+else ifneq ($(RAND),)
+$(error RAND=$(RAND) is not an entropy pattern; use RAND=extern or RAND=drbg)
+endif
 # CBMC intrinsics don't compile under clang-tidy/cppcheck; harnesses get
 # clang-format only. Fuzzers include .c files for statics, same deal.
 PROOF_C := $(wildcard proof/*.c) proof/harness.h
@@ -101,23 +132,28 @@ FUZZ_C := $(wildcard fuzz/*.c)
 # the four public calls. Partial linking merges the modules; nmedit
 # (macOS) or objcopy (everything else) localizes every other symbol, so
 # the library cannot collide with application names. lib-check enforces
-# the export list as part of check. Objects live under the PIN they were
-# built for, so switching PIN never reuses a stale object.
-LIB_OBJS := $(LIB_SRCS:%.c=bin/obj/$(PIN)-$(TRUST)-$(KEX)/%.o)
-PUBLIC := ch_connect ch_read ch_write ch_close
+# the export list as part of check. Objects live under the variant that
+# built them, so switching PIN, TRUST, KEX or RAND never reuses a stale
+# object.
+LIB_VARIANT := $(PIN)-$(TRUST)-$(KEX)-$(RAND)
+LIB_OBJS := $(LIB_SRCS:%.c=bin/obj/$(LIB_VARIANT)/%.o)
+# RAND=drbg packages the generator, so ch_drbg_seed becomes part of the
+# API the image calls and lib-check covers it like the other four.
+PUBLIC := ch_connect ch_read ch_write ch_close $(PUBLIC_RAND)
 
-bin/obj/$(PIN)-$(TRUST)-$(KEX)/%.o: %.c $(HDRS)
-	@mkdir -p bin/obj/$(PIN)-$(TRUST)-$(KEX)
-	$(CC) $(CFLAGS) $(LIB_DEF) -I. -c $< -o $@
+bin/obj/$(LIB_VARIANT)/%.o: %.c $(HDRS)
+	@mkdir -p bin/obj/$(LIB_VARIANT)
+	$(CC) $(LIB_CFLAGS) $(LIB_DEF) -I. -c $< -o $@
 
-# The packaged object is PIN-specific but lands at one path, so mtimes
-# alone cannot tell which PIN built it; the stamp rewrites (and so
-# triggers a relink) only when the PIN/TRUST pair changed since the
-# last build.
+# The packaged object is variant-specific but lands at one path, so
+# mtimes alone cannot tell which variant built it; the stamp rewrites
+# (and so triggers a relink) only when PIN, TRUST, KEX or RAND changed
+# since the last build. RAND belongs here because it changes the link
+# and the export list even when no object's contents move.
 PIN_STAMP := bin/obj/pin-stamp
 $(PIN_STAMP): FORCE
 	@mkdir -p bin/obj
-	@[ "$$(cat $@ 2>/dev/null)" = "$(PIN) $(TRUST) $(KEX)" ] || echo "$(PIN) $(TRUST) $(KEX)" > $@
+	@[ "$$(cat $@ 2>/dev/null)" = "$(LIB_VARIANT)" ] || echo "$(LIB_VARIANT)" > $@
 .PHONY: FORCE
 FORCE:
 
@@ -151,13 +187,46 @@ lib-check: bin/chapulin.o
 	@diff -u bin/expected.txt bin/exported.txt || { \
 	  echo "lib-check: exported symbols differ from the public API"; exit 1; }
 	@echo "lib-check: $$(wc -l < bin/exported.txt | tr -d ' ') exported symbols, all public API"
+# #41 calls the undefined import chapulin's strongest randomness property:
+# an image that never wired a generator does not link. RAND=drbg trades it
+# away deliberately, so assert whichever one this build promised rather
+# than leaving the difference to a reader of the Makefile.
+ifeq ($(RAND),drbg)
+	@if nm -u bin/chapulin.o | awk '{print $$NF}' | sed 's/^_//' | grep -qx ch_rand_bytes; then \
+	  echo "lib-check: RAND=drbg packages the generator, so ch_rand_bytes must be defined here, not imported"; exit 1; fi
+	@echo "lib-check: ch_rand_bytes is defined in the object; the image seeds it with ch_drbg_seed at boot"
+else
+	@if ! nm -u bin/chapulin.o | awk '{print $$NF}' | sed 's/^_//' | grep -qx ch_rand_bytes; then \
+	  echo "lib-check: RAND=extern must leave ch_rand_bytes undefined, so an image that forgets the hook fails to link"; exit 1; fi
+	@echo "lib-check: ch_rand_bytes is undefined in the object; a forgotten hook is a link error"
+endif
 
-# The reference generator ships as source but stays out of the packaged
-# object: it implements the ch_rand_bytes import, which firmware with a
-# real RNG provides itself and the test binaries provide themselves.
+# The declaration in cfg.h is the whole feature, so check that it fires.
+# tls.c is enough to drive it: it includes cfg.h, where the guard lives.
+# LIB_CFLAGS is the flag set with the host declaration filtered out, so
+# the "neither" arm really names neither.
+.PHONY: rand-check
+rand-check:
+	@set -e; \
+	for d in "" "-DCH_RAND_EXTERN -DCH_RAND_DRBG"; do \
+	  if $(CC) $(LIB_CFLAGS) $$d -I. -fsyntax-only tls.c 2>/dev/null; then \
+	    echo "rand-check: tls.c compiled with [$$d]; the cfg.h guard did not fire"; exit 1; \
+	  fi; \
+	done; \
+	for d in -DCH_RAND_EXTERN -DCH_RAND_DRBG; do \
+	  $(CC) $(LIB_CFLAGS) $$d -I. -fsyntax-only tls.c || { \
+	    echo "rand-check: tls.c must compile with $$d alone"; exit 1; }; \
+	done; \
+	echo "rand-check: cfg.h admits exactly one of CH_RAND_EXTERN and CH_RAND_DRBG"
+
+# The reference generator's own vectors. It builds here whatever RAND
+# says, because the module is the subject of the test rather than the
+# image's choice — so this is the one recipe that declares CH_RAND_DRBG
+# on its own. Whether the packaged object also carries drbg.c is RAND's
+# business, not this binary's.
 bin/drbg_test: test/drbg_test.c drbg.c chacha20.c ct.c $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -I. -o $@ test/drbg_test.c drbg.c chacha20.c ct.c
+	$(CC) $(LIB_CFLAGS) -DCH_RAND_DRBG -I. -o $@ test/drbg_test.c drbg.c chacha20.c ct.c
 
 # RSA-PSS verify vectors; its own binary like drbg_test, so the module
 # stays testable without the rest of the stack.
@@ -270,7 +339,18 @@ bin/diff: test/diff_test.c $(SRCS) sha3.c mlkem.c mlkem_poly.c $(HDRS) $(TESTH)
 # vary with the key exchange; what pq changes is share sizes and secret
 # derivation, and handshake_strict_pq, the differential and the e2e pq legs
 # cover those on every push.
-check: examples-check bin/unit bin/unit_ca bin/unit_pq bin/tlsclient bin/tlsclient_ecdsa bin/tlsclient_ca bin/tlsclient_ca_ecdsa bin/tlsclient_pq bin/drbg_test bin/rsa_test bin/sha3_test bin/mlkem_test bin/handshake_strict_test bin/handshake_strict_pq bin/x509strict bin/x509strict_ecdsa bin/handshake_sequence_test bin/handshake_sequence_pq lint lib-check cxx-check
+check: bin/unit bin/unit_ca bin/unit_pq bin/tlsclient bin/tlsclient_ecdsa bin/tlsclient_ca bin/tlsclient_ca_ecdsa bin/tlsclient_pq bin/drbg_test bin/rsa_test bin/sha3_test bin/mlkem_test bin/handshake_strict_test bin/handshake_strict_pq bin/x509strict bin/x509strict_ecdsa bin/handshake_sequence_test bin/handshake_sequence_pq lint rand-check
+	# The packaged object is built once per entropy pattern, because
+	# lib-check reads a different export list and a different import
+	# list in each. Only the object is built twice: the examples and
+	# hpp_test define ch_rand_bytes, so they are extern-pattern programs.
+	# Linking one against the drbg object succeeds and produces a binary
+	# that cannot run — its own hook is dead code and nothing calls
+	# ch_drbg_seed, so the first draw faults on CH_ASSERT(g_seeded).
+	# The extern pass therefore runs last, since bin/chapulin.o and the
+	# example binaries land at fixed paths and e2e below runs them.
+	$(MAKE) lib-check RAND=drbg
+	$(MAKE) lib-check cxx-check examples-check RAND=extern
 	./bin/unit
 	./bin/unit_ca
 	./bin/unit_pq
@@ -347,7 +427,7 @@ COVERAGE_FLOOR := 92
 GCOVR ?= $(shell command -v gcovr)
 GCOV_TOOL := $(shell $(CC) --version 2>/dev/null | grep -qi clang \
   && echo "$$(xcrun --find llvm-cov 2>/dev/null || command -v llvm-cov) gcov" || echo gcov)
-COV_CC = $(CC) --coverage -O0 -std=c11 -D_DEFAULT_SOURCE $$def -I.
+COV_CC = $(CC) --coverage -O0 -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) $$def -I.
 COV_LIB_OBJS = $(SRCS:%.c=$$d/%.o)
 .PHONY: coverage
 # What CBMC proves: which sources a running harness compiles, and any
@@ -655,7 +735,7 @@ lint-tidy:
 ifeq ($(CLANG_TIDY),)
 	$(call REQUIRE,clang-tidy,it ships with llvm — see the LLVM_MAJOR pin in .github/workflows/check.yml)
 else
-	$(CLANG_TIDY) --quiet $(LINT_C) -- -std=c11 -D_DEFAULT_SOURCE -I.
+	$(CLANG_TIDY) --quiet $(LINT_C) -- -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -I.
 endif
 
 lint-format:
@@ -672,9 +752,14 @@ else
 	# constParameterCallback: I/O callback signatures are fixed by the
 	# ch_cfg contract in tls.h; const-ing an implementation's void *io
 	# would need function-pointer casts, which is worse.
+	# cfg.h demands a declared entropy pattern, so cppcheck needs one to
+	# get past the preprocessor. Passing -D alone would limit it to that
+	# single configuration; --force keeps it exploring CH_PIN_ECDSA,
+	# CH_TRUST_CA and CH_KEX_PQ the way it did before the declaration
+	# existed. Measured at 3.1 s without and 10.4 s with, over 42 files.
 	$(CPPCHECK) --std=c11 --enable=warning,style,performance,portability \
 	  --inline-suppr --suppress=missingIncludeSystem \
-	  --suppress=constParameterCallback \
+	  --suppress=constParameterCallback $(HOST_RAND_DEF) --force \
 	  --error-exitcode=1 --quiet $(LINT_C)
 endif
 
@@ -818,7 +903,7 @@ timing: bin/timing
 # skipped with a message otherwise. New corpus units and crash repros land
 # under bin/ (gitignored); fuzz/corpus/* stays read-only seed input.
 FUZZ_CC ?= $(shell command -v $(LLVM_BIN)/clang || command -v clang)
-FUZZ_CFLAGS := -std=c11 -O1 -g -fsanitize=fuzzer,address -D_DEFAULT_SOURCE -I.
+FUZZ_CFLAGS := -std=c11 -O1 -g -fsanitize=fuzzer,address -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -I.
 FUZZ_TIME ?= 30
 FUZZ_RECORD_LINK := record.c ct.c sha256.c hkdf.c chacha20.c poly1305.c aead.c
 FUZZ_HANDSHAKE_PARSER_LINK := handshake_parser.c buf.c

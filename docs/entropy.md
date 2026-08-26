@@ -15,6 +15,28 @@ a documented disaster class: Heninger, Durumeric, Wustrow, Halderman,
 whole device fleets that seeded from nothing. The rules below exist to
 keep chapulin devices out of that paper's sequel.
 
+## Declare which generator the image uses
+
+The build names the pattern, and there is no default.
+
+| Declaration | The image does this | The packaged object holds this |
+| --- | --- | --- |
+| `RAND=extern` (`-DCH_RAND_EXTERN`) | Defines `ch_rand_bytes` itself: a hardware RNG, or a generator of its own | `ch_rand_bytes` stays undefined, so an image that never wired one fails to link |
+| `RAND=drbg` (`-DCH_RAND_DRBG`) | Calls `ch_drbg_seed` once at boot, with 32 bytes assembled as below | `drbg.c`, and `ch_drbg_seed` exported beside the four public calls |
+
+A build that names neither stops at an `#error` in `cfg.h`. That is the
+only part of this page a compiler can enforce. No library can grade an
+integrator's generator: a weak one completes the handshake, sends a key
+share that looks uniform on the wire, and returns `CH_OK`. Requiring the
+declaration does not make the generator good. It makes the choice one
+somebody made rather than one nobody looked at.
+
+Under `RAND=drbg` the packaged object calls the generator it carries, so
+a `ch_rand_bytes` the image also defines is never reached. An image
+moving from `extern` to `drbg` has to move its entropy into the
+`ch_drbg_seed` call; leaving it in a hook that no longer runs would seed
+nothing, and the generator faults on the first draw.
+
 ## Layer the seed — never one source alone
 
 Mix all of the following into the boot seed (concatenate and hash with

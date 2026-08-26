@@ -226,7 +226,10 @@ launch() {
     if [ "$mode" = "noovf" ]; then
         flags=("${BASE[@]}")
     fi
-    local args=("proof/${name}_harness.c" "$@" -I . --unwind "$unwind")
+    # cfg.h demands a declared entropy pattern (#41). Every harness either
+    # defines ch_rand_bytes itself or never reaches randomness, so they all
+    # declare extern, the same way the host binaries in the Makefile do.
+    local args=("proof/${name}_harness.c" "$@" -DCH_RAND_EXTERN -I . --unwind "$unwind")
     # bash 3.2 errors on expanding an empty array under set -u, so each
     # arm checks its length before expanding, as the caller below does.
     local solver=()

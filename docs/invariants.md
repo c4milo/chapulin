@@ -80,8 +80,12 @@ which convention holds them.
   key-share scalar, the ClientHello random, and the ML-KEM (d, z)
   seed, which only the `KEX=pq` build draws. Every draw carries the
   same all-zero check against a hook that writes nothing.
-- **Mechanism.** The hook is the only randomness import; the library
-  defines no fallback.
+- **Mechanism.** The hook is the only randomness path into the library,
+  and which side defines it is a declared build choice with no default.
+  `RAND=extern` leaves it an undefined import, so an image that never
+  wired a generator fails to link; `RAND=drbg` satisfies it with the
+  reference generator in `drbg.c`, which faults on an unseeded draw.
+  Neither build carries a fallback that quietly produces bytes.
 - **Check.** Semgrep-structural (`inv-4-randomness-sites`): no `ch_rand_bytes` call
   outside `handshake.c`.
 - **Violation.** A PR conjures a nonce or padding bytes from a new

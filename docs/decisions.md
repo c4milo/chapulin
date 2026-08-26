@@ -168,10 +168,26 @@ does nothing more.
     is a protocol error, not a resize. Gain: a peer can never send what
     the buffer cannot hold.
 20. **Single task, single connection.** The reference random generator
-    is opt-in source with global state, excluded from the packaged
-    object. Cost: no multi-session generator isolation. Gain:
+    has global state, so every session in an image draws from one
+    stream. Cost: no multi-session generator isolation. Gain:
     `ch_rand_bytes` stays a clean import that firmware replaces; see
     docs/entropy.md.
+
+    **Which generator an image uses is declared, never defaulted**
+    (#41). `RAND=extern` leaves `ch_rand_bytes` undefined, so an image
+    that never wired a generator fails to link; `RAND=drbg` packages
+    `drbg.c` and exports `ch_drbg_seed`, which also puts the
+    generator's `CH_ASSERT(g_seeded)` into a shipped object for the
+    first time. Naming neither reaches an `#error` in `cfg.h` rather
+    than one in the Makefile, because a firmware tree compiles these
+    sources with its own build system and a Makefile-only check would
+    miss exactly the integrator this targets. Cost: every consumer
+    build writes one more line, and the break reaches every existing
+    consumer at once. Gain: "I supply my own generator" is a statement
+    somebody made rather than a step nobody took. Rejected: a weak
+    `ch_rand_bytes` default, which would convert the link error into a
+    build that succeeds — wolfSSL's `USE_TEST_GENSEED` shape, where a
+    skipped decision looks like a made one.
 
     The hook returns `void`, and giving it a `ch_err` return was
     considered and deferred (#41). A return code is the honest answer

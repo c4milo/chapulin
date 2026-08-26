@@ -15,6 +15,22 @@
 
 #include "sha256.h"
 
+// The entropy pattern is a declared build choice with no default. An
+// image either supplies its own ch_rand_bytes (-DCH_RAND_EXTERN) or
+// links the reference generator in drbg.[ch] and seeds it once at boot
+// with ch_drbg_seed (-DCH_RAND_DRBG). Neither macro selects code. The
+// declaration exists because no build can judge an integrator's
+// generator: a weak one completes the handshake, produces a key share
+// that looks uniform on the wire, and returns CH_OK, so the only
+// defence left is making the choice a written line in the image's build
+// files rather than one nobody made. docs/entropy.md says how to seed.
+#if defined(CH_RAND_EXTERN) && defined(CH_RAND_DRBG)
+#error "CH_RAND_EXTERN and CH_RAND_DRBG are exclusive: declare exactly one"
+#endif
+#if !defined(CH_RAND_EXTERN) && !defined(CH_RAND_DRBG)
+#error "no entropy pattern declared: use -DCH_RAND_EXTERN or -DCH_RAND_DRBG (docs/entropy.md)"
+#endif
+
 #define CH_OK 0
 #define CH_EIO (-1)     // transport failed or closed under us
 #define CH_EPROTO (-2)  // peer broke the protocol; session dead

@@ -73,6 +73,12 @@ Domain vocabulary keeps the RFCs' own spelling: `pt`, `aad`, `iv`,
   branch still gets; skipping a linter hides a verdict already at hand.
 - The PIN variable splits the pinned-key build: RSA-PSS by default,
   `PIN=ecdsa` for P-256. One algorithm per library object; test both.
+- The RAND variable declares the entropy pattern and is the one build
+  variable with no default: `RAND=extern` when the image supplies
+  `ch_rand_bytes`, `RAND=drbg` to package the reference generator and
+  export `ch_drbg_seed`. `make lib` needs one of them; `make check`
+  builds both. A build naming neither stops at an `#error` in `cfg.h`,
+  which is the point — docs/decisions.md 20 has the reasoning.
 - Generated files never get committed. `test/gen_rfc8448.py` and
   friends regenerate them into `bin/`; if you change a generator,
   the diff shows in the tests that consume its output.
