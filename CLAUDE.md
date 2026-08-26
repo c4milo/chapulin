@@ -127,7 +127,10 @@ Home: github.com/c4milo.
   build/ci/chore), enforced by commitlint via `.githooks/commit-msg`
   (`make hooks` once after clone) and `make lint-commits` in check.
   Bodies stay short: a few sentences of WHY, wrapped at 100 columns.
-  The diff shows the what.
+  The diff shows the what, so never restate it. Use plain English and
+  the voice of one engineer telling another why the change exists.
+  Cut every word that adds no information: no preamble, no summary of
+  the patch, no repeating the subject line in the body.
 - Every change passes `make check` (lint + unit + proofs; e2e against a
   real TLS 1.3 server once the handshake lands), not just compile.
 - The code optimizes for third-party audit: when compact and
