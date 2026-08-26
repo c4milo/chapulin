@@ -331,7 +331,7 @@ bin/diff: test/diff_test.c $(SRCS) sha3.c mlkem.c mlkem_poly.c $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) -I. -o $@ test/diff_test.c $(SRCS) sha3.c mlkem.c mlkem_poly.c
 
-.PHONY: check lint lint-tidy lint-format lint-cppcheck lint-docs lint-invariants lint-go-pin lint-violation-builds lint-spec prove diff fmt clean
+.PHONY: check lint lint-tidy lint-format lint-cppcheck lint-docs lint-invariants lint-go-pin lint-violation-builds lint-commit-citations lint-spec prove diff fmt clean
 # bin/handshake_sequence_pq is built here but run by the nightly, not by check: the
 # two enumerations together cost 19 of check's 45 measured minutes and
 # the CI job's timeout is 45, so the second one would decide the lane by
@@ -684,7 +684,7 @@ endif
 
 # Checks and thresholds live in .clang-tidy; every disable carries a reason
 # there (fix-or-drop, never NOLINT in code).
-lint: lint-tidy lint-format lint-cppcheck lint-commits lint-docs lint-invariants lint-stack lint-size lint-matrix lint-go-pin lint-violation-builds lint-spec
+lint: lint-tidy lint-format lint-cppcheck lint-commits lint-docs lint-invariants lint-stack lint-size lint-matrix lint-go-pin lint-violation-builds lint-commit-citations lint-spec
 
 # INV-19: bounded stack. The budget is the measured worst library
 # frame (rsa_vp1's RSA-3072 limb temporaries, 2,400 bytes) rounded up;
@@ -901,6 +901,26 @@ lint-go-pin:
 .PHONY: lint-violation-builds
 lint-violation-builds:
 	@python3 test/violations.py --lint-builds
+
+# A commit body citing a hash is only useful while that hash resolves, and
+# a history rewrite orphans every one it moved. Nothing warns: the text
+# still reads fine, and it fails only for somebody cloning fresh. Matches
+# exactly seven hex characters carrying at least one a-f, which is git's
+# abbreviation here and keeps job ids and file digests out; an all-digit
+# abbreviation would go unchecked, and none exist.
+.PHONY: lint-commit-citations
+lint-commit-citations:
+	@shas=$$(mktemp); git log --format=%H > $$shas; rc=0; \
+	 for c in $$(git log --format=%H); do \
+	   for t in $$(git log -1 --format=%b $$c | grep -v '^Claude-Session:' \
+	       | perl -ne 'while(/(?<![0-9a-fx])\b([0-9a-f]{7})\b/g){my $$h=$$1; print "$$h\n" if $$h =~ /[a-f]/}' \
+	       | sort -u); do \
+	     grep -q "^$$t" $$shas || { \
+	       echo "lint-commit-citations: $$(git log -1 --format=%h $$c) cites $$t, which no commit reaches"; \
+	       rc=1; }; \
+	   done; \
+	 done; rm -f $$shas; \
+	 [ $$rc -eq 0 ] && echo "lint-commit-citations: every hash a commit body cites resolves"; exit $$rc
 
 # CBMC proofs: memory safety and absence of UB per module, at the bounds
 # each harness documents. The fast tier (seconds to a few minutes) gates
