@@ -390,20 +390,33 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           NEEDS: ${{ toJSON(needs) }}
         run: |
-          open=$(gh issue list --repo "$GITHUB_REPOSITORY" --state open \
-            --search "nightly failure in:title" --json number --jq length)
-          if [ "$open" -eq 0 ]; then
-            # Name the jobs that broke. A matrix reports one rolled-up
-            # result, so this says prove-slow without saying which of its
-            # legs; the run page has that.
-            broke=$(printf '%s' "$NEEDS" | jq -r 'to_entries
-              | map(select(.value.result != "success"))
-              | map("- \(.key): \(.value.result)") | join("\n")')
+          # Name the jobs that broke. A matrix reports one rolled-up
+          # result, so this says prove-slow without saying which of its
+          # legs; the run page has that.
+          broke=$(printf '%s' "$NEEDS" | jq -r 'to_entries
+            | map(select(.value.result != "success"))
+            | map("- \(.key): \(.value.result)") | join("\n")')
+          run_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          existing=$(gh issue list --repo "$GITHUB_REPOSITORY" --state open \
+            --search "nightly failure in:title" --json number --jq '.[0].number // empty')
+          if [ -z "$existing" ]; then
             gh issue create --repo "$GITHUB_REPOSITORY" \
               --title "nightly failure: $(date -u +%F)" \
-              --body "Run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID
+              --body "Run: $run_url
 
           $broke
 
           Policy: triage before the next release; nightly reds block releases, not PRs."
+          else
+            # One issue per outage, not one per night — but never silence.
+            # Dedup used to skip the report entirely while any nightly
+            # issue was open, so sixteen consecutive reds filed one issue
+            # and a new failure mode would have gone unseen for as long as
+            # a stale triage ticket sat there. Comment instead: no new
+            # issue, and a job list that changes is visible the next
+            # morning rather than never.
+            gh issue comment "$existing" --repo "$GITHUB_REPOSITORY" \
+              --body "Still red: $run_url
+
+          $broke"
           fi
