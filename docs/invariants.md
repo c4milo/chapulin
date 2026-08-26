@@ -62,9 +62,10 @@ which convention holds them.
 - **Claim.** A key exchange landing on a small-order point (an
   all-zero shared secret) cannot be missed.
 - **Mechanism.** `x25519()` returns 0 on an all-zero shared secret
-  and 1 otherwise; the single call site in `handshake.c` fails the
-  handshake unless it returns 1. Wycheproof's small-order battery
-  exercises the rejection.
+  and 1 otherwise. One call site compiles per build, both in
+  `handshake.c`: the hybrid secret under `KEX=pq`, the classic key
+  exchange otherwise. Each fails the handshake unless it returns 1.
+  Wycheproof's small-order battery exercises the rejection.
 - **Check.** Structural arithmetic (the check is the return value,
   not a side channel of it); convention holds the call site to
   checking it.
@@ -136,7 +137,7 @@ which convention holds them.
 ### INV-20 — the certificate parser stays contained
 
 - **Claim.** `x509_verify_leaf` is the parser's one public entry,
-  called only from `handshake.c`, and the library never reads a
+  called only from `handshake_auth.c`, and the library never reads a
   clock: certificate validity is CA reissuance policy, not a
   device-side time check.
 - **Mechanism.** Single-entry design — the DER primitives sit
@@ -146,8 +147,8 @@ which convention holds them.
   counter to compare against stored state (INV-21); nothing
   compares a certificate to now, so no code path wants a clock.
 - **Check.** Semgrep-structural (`inv-20-cert-entry-point`): no
-  `x509_verify_leaf` call outside handshake.c, with x509.c excluded
-  as the definition site. Semgrep-tripwire
+  `x509_verify_leaf` call outside handshake_auth.c, with x509.c
+  excluded as the definition site. Semgrep-tripwire
   (`inv-20-no-time-calls`): calls to `time`, `clock_gettime`,
   `gettimeofday`, `localtime`, or `gmtime` in library sources,
   complementing `inv-2-freestanding`'s time.h include ban at the

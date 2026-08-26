@@ -285,7 +285,7 @@ void mlk_poly_tomsg(uint8_t msg[32], const mlk_poly *p) {
 // hit the remaining coefficients keep the value the caller's poly held.
 void mlk_sample_ntt(mlk_poly *p, const uint8_t seed[32], uint8_t x0, uint8_t x1) {
     shake s;
-    uint8_t idx[2] = {x0, x1};
+    const uint8_t idx[2] = {x0, x1};
     uint8_t buf[3];
     shake128_init(&s);
     shake_absorb(&s, seed, 32);

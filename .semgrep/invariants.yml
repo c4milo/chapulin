@@ -153,12 +153,12 @@ rules:
     severity: ERROR
     message: >-
       INV-20: x509_verify_leaf has one audited call site, in
-      handshake.c, where every failure feeds the alert and wipe
+      handshake_auth.c, where every failure feeds the alert and wipe
       discipline. A new call site needs its own audit — amend
       docs/invariants.md in the same PR. x509.c is excluded because
       it defines the entry, not because it may call it.
     paths:
-      exclude: [test, proof, fuzz, spec, bench, bin, examples, handshake.c, x509.c]
+      exclude: [test, proof, fuzz, spec, bench, bin, examples, handshake_auth.c, x509.c]
     pattern: x509_verify_leaf(...)
 
   - id: inv-20-no-time-calls
