@@ -23,7 +23,9 @@ SRCS = sorted(ROOT.glob("*.c"))
 # for paths a mode provably never enters — PSK mode never reaches
 # server_auth (the cfg.psk gate in run()), so pruning it measures the
 # PSK-mode peak from the same objects.
-EXTRA_CFLAGS = os.environ.get("STACK_CFLAGS", "").split()
+# cfg.h refuses a build that declares no entropy pattern. This walks the
+# call graph, never links a generator, so it measures the extern shape.
+EXTRA_CFLAGS = ["-DCH_RAND_EXTERN"] + os.environ.get("STACK_CFLAGS", "").split()
 PRUNE = {"_" + f for f in os.environ.get("STACK_PRUNE", "").split(",") if f}
 
 

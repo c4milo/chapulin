@@ -19,9 +19,9 @@ int main(void) {
     return 0;
 }
 EOF
-cc -std=c11 -I. -o "$TMP/sz" "$TMP/sz.c"
+cc -std=c11 -DCH_RAND_EXTERN -I. -o "$TMP/sz" "$TMP/sz.c"
 SESSION=$("$TMP/sz" | awk '{print $2}')
-cc -std=c11 -DCH_KEX_PQ -I. -o "$TMP/sz_pq" "$TMP/sz.c"
+cc -std=c11 -DCH_RAND_EXTERN -DCH_KEX_PQ -I. -o "$TMP/sz_pq" "$TMP/sz.c"
 SESSION_PQ=$("$TMP/sz_pq" | awk '{print $2}')
 
 echo "session struct:          ${SESSION} B"
