@@ -30,7 +30,7 @@
 #include "ch_assert.h"
 #include "diff_driver.h"
 #include "handshake_message.h"
-#include "handshake_parse.h"
+#include "handshake_parser.h"
 #include "keysched.h"
 #include "p256.h"
 #include "record.h"

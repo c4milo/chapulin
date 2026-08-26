@@ -29,7 +29,7 @@ a MUST but names no alert, the verdict is `Alert.unspecified` and the
 doc comment says so, rather than inventing one: a guessed alert would
 report a disagreement that is not a bug.
 -/
-namespace Spec.HandshakeParse
+namespace Spec.HandshakeParser
 
 open Spec.Bytes
 
@@ -781,7 +781,7 @@ def parseCertificateVerify (scheme : Scheme) (msg : ByteArray) :
   -- §4.4.3 frames the signature as `opaque signature<0..2^16-1>` and
   -- says nothing about its length: what lengths are admissible is the
   -- signature algorithm's business, settled when the signature is
-  -- verified. handshake_parse.c leaves it there too.
+  -- verified. handshake_parser.c leaves it there too.
   return { algorithm, signature }
 
 /-! ## Encoders, for the selftest and for minting differential inputs -/
@@ -1320,4 +1320,4 @@ theorem parseCertificateVerify_sound (scheme : Scheme) (msg : ByteArray)
   obtain rfl := eq_of_pure_eq_ok h_accepted
   exact h_pinned
 
-end Spec.HandshakeParse
+end Spec.HandshakeParser

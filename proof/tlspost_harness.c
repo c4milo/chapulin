@@ -5,7 +5,7 @@
 // attacker-facing parser; a peer that reaches a connected session feeds
 // it arbitrary decrypted bytes.
 //
-// The full ch_read/pump_post_handshake driver that calls this (record pump,
+// The full ch_read/pump_post_handshake driver that calls this (record reading,
 // cross-record reassembly, ch_write, ch_close) does not converge as one
 // CBMC formula; its integration is covered by test/e2e.sh, the
 // mock-transport unit tests, and fuzz/fuzz_post_handshake.c. Here the record I/O,

@@ -1,7 +1,7 @@
 // The two attacker-facing handshake message parsers, split out of
 // handshake.c so proof, fuzz, and strictness-test builds compile them
-// without the state machine. Contract in handshake_parse.h.
-#include "handshake_parse.h"
+// without the state machine. Contract in handshake_parser.h.
+#include "handshake_parser.h"
 
 #include <string.h>
 

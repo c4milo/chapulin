@@ -34,7 +34,7 @@ REPORT = ROOT / "bin" / "spec-coverage.md"
 # new module shows up as a missing row rather than vanishing.
 SRCS = """ct.c sha256.c sha3.c mlkem.c mlkem_poly.c hkdf.c chacha20.c poly1305.c aead.c x25519.c p256.c
 rsa.c rsa_mont.c x509.c x509_der.c buf.c record.c keysched.c io.c handshake_message.c
-handshake_parse.c handshake_pump.c session.c handshake_auth.c handshake.c tls.c""".split()
+handshake_parser.c handshake_record.c session.c handshake_auth.c handshake.c tls.c""".split()
 
 
 def spec_ops():

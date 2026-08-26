@@ -1,5 +1,5 @@
 invariant: INV-7
-file: handshake_parse.c
+file: handshake_parser.c
 catches: diff
 builds: bin/diff
 reason: the ServerHello cipher-suite check takes a second value, so a server

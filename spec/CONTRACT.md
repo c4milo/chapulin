@@ -87,17 +87,17 @@ Spec.P256.ecdsaSign   : (d k z : Nat) → Option (Nat × Nat)             -- FIP
                         -- signs so the oracle can mint valid signatures; the C
                         -- side only ever verifies.
 Spec.P256.ecdsaVerify : (pub hash : ByteArray) → (r s : Nat) → Bool    -- SEC 1 v2 §4.1.4
-Spec.HandshakeParse.parseServerHello : (kex : Kex) → (pskOffered : Bool) → (msg : ByteArray) →
+Spec.HandshakeParser.parseServerHello : (kex : Kex) → (pskOffered : Bool) → (msg : ByteArray) →
                         Except Alert ServerHelloKind                    -- RFC 9846 §4.1.3, §4.1.4.
                         -- Takes the whole Handshake structure of §4 (msg_type,
-                        -- uint24 length, body); handshake_parse.c's entry points take the
+                        -- uint24 length, body); handshake_parser.c's entry points take the
                         -- body, so the driver frames it. kex is the Makefile's
                         -- KEX variable, as Scheme is its PIN: the build's one
                         -- offered group, which fixes the key_share group code
                         -- point (x25519 0x001D, or RFC 10024's X25519MLKEM768
                         -- 0x11EC) and the server share size (32, or 1120 —
                         -- the ML-KEM-768 ciphertext then the x25519 value).
-                        -- pskOffered is handshake_parse.h's
+                        -- pskOffered is handshake_parser.h's
                         -- psk_mode: §4.2 makes a pre_shared_key response
                         -- admissible only if the ClientHello offered one, and
                         -- that is the one thing the message alone cannot settle.
@@ -108,26 +108,26 @@ Spec.HandshakeParse.parseServerHello : (kex : Kex) → (pskOffered : Bool) → (
                         -- `hs_server_hello <psk|nopsk> <x25519|pq> <msg>` →
                         -- `sh <key_exchange> <selected_identity|->`
                         -- / `hrr <cookie>` / `ERR hs_server_hello reject`.
-Spec.HandshakeParse.parseEncryptedExtensions : (msg : ByteArray) →
+Spec.HandshakeParser.parseEncryptedExtensions : (msg : ByteArray) →
                         Except Alert EncryptedExtensions               -- RFC 9846 §4.3.1.
                         -- Line op: `hs_encrypted_extensions <msg>` →
                         -- `ok <record_size_limit|->` (RFC 8449 §4, decimal, the
-                        -- extension's own value; handshake_parse.c stores it less the
+                        -- extension's own value; handshake_parser.c stores it less the
                         -- inner content-type octet) / `ERR ... reject`.
-Spec.HandshakeParse.parseCertificate : (msg : ByteArray) → Except Alert Certificate
+Spec.HandshakeParser.parseCertificate : (msg : ByteArray) → Except Alert Certificate
                         -- RFC 9846 §4.4.2: the empty certificate_request_context
                         -- then the exact-fill CertificateEntry list, whose
                         -- per-entry extensions must be ones the client offered —
                         -- none. Line op: `hs_certificate <msg>` →
                         -- `ok <entry_count> <leaf_cert_data>` / `ERR ... reject`.
-Spec.HandshakeParse.parseCertificateVerify : (scheme : Scheme) → (msg : ByteArray) →
+Spec.HandshakeParser.parseCertificateVerify : (scheme : Scheme) → (msg : ByteArray) →
                         Except Alert CertificateVerify                 -- RFC 9846 §4.4.3:
                         -- the one offered SignatureScheme, then an exact-fill
                         -- `opaque signature<0..2^16-1>`. The signature's length
                         -- is the verifier's business, not the parser's. Line op:
                         -- `hs_certificate_verify <rsa|p256> <msg>` →
                         -- `ok <algorithm> <signature>` / `ERR ... reject`.
-Spec.HandshakeParse.verifyContent : (transcriptHash : ByteArray) → ByteArray  -- RFC 9846 §4.4.3's
+Spec.HandshakeParser.verifyContent : (transcriptHash : ByteArray) → ByteArray  -- RFC 9846 §4.4.3's
                         -- 130 signed octets: 64 spaces, the context string, a
                         -- zero, the hash. Line op: `hs_verify_content <hash>`.
 Spec.Rsa.pssVerify    : (n e : Nat) → (mHash sig : ByteArray) → Bool    -- RFC 8017 §8.1.2,
@@ -283,11 +283,11 @@ in the C and `Spec.Handshake` models as a trace property.
 ## Where the C and the model split a check
 
 Both sides must refuse the same messages, but they need not refuse them
-in the same function. `handshake_parse.c` is a framing parser: it hands what it
+in the same function. `handshake_parser.c` is a framing parser: it hands what it
 read to `handshake.c`, which decides whether the handshake can go on.
 The model has no layer above it, so it makes those decisions where it
 reads the field. Five checks fall on opposite sides of that line, and
-`test/diff_handshake_parse.h` projects the C answer down to the model's
+`test/diff_handshake_parser.h` projects the C answer down to the model's
 boundary rather than weakening the model to match the split:
 
 | check | C decides | model decides |
@@ -310,7 +310,7 @@ the CA-build verdict.
 
 One more went the other way — the model bounded the CertificateVerify
 signature by the pinned key's size, which §4.4.3 does not do and
-`handshake_parse.c` leaves to the verifier — and the model gave the check up
+`handshake_parser.c` leaves to the verifier — and the model gave the check up
 rather than the driver paper over it.
 
 ## Proven properties
@@ -447,7 +447,7 @@ means the module's selftest plus the differential oracle carry it;
 | --- | --- | --- |
 | Bytes | 24 | proof toolkit: fold characterizations, xor involution and left cancellation, hex injectivity, big-endian round trip and injectivity |
 | Drbg | 13 | key advance (the next key is the counter-0 block, independent of the request size), key/output disjointness within one keystream, request-prefix consistency, session key chain |
-| HandshakeParse | 7 | message-grammar soundness, quantified over both `Kex` builds: an accepted ServerHello echoes the empty legacy_session_id the profile offers and a key_exchange of exactly `kex.serverShareSize` octets (32 x25519, 1120 hybrid), and any selected_identity it reports is the single index one offered identity puts in range; a result is a HelloRetryRequest exactly when the Random is §4.1.4's fixed value; an accepted CertificateVerify reports the build's own pinned SignatureScheme and no other |
+| HandshakeParser | 7 | message-grammar soundness, quantified over both `Kex` builds: an accepted ServerHello echoes the empty legacy_session_id the profile offers and a key_exchange of exactly `kex.serverShareSize` octets (32 x25519, 1120 hybrid), and any selected_identity it reports is the single index one offered identity puts in range; a result is a HelloRetryRequest exactly when the Random is §4.1.4's fixed value; an accepted CertificateVerify reports the build's own pinned SignatureScheme and no other |
 | Handshake | 17 | state-machine safety invariants: exactly one ServerHello, EncryptedExtensions and Finished; no certificate flight under PSK; pinned flight shape and order; HRR bound; no CertificateRequest; no post-handshake message before Finished; close_notify at most once and last |
 | Record | 8 | seal/open round trip at both the AEAD and record layers, record size, nonce size, nonce injectivity (distinct sequence numbers never share a nonce), and that an accepted record never carries content type invalid(0) |
 | ChaCha | 5 | block size, structural lemmas, keystream prefix stability; keystream itself vector-checked |

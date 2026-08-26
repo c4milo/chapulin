@@ -40,7 +40,7 @@
 // a key pointing into the input with key_len 64 (ECDSA build) or
 // 256..384 in whole 8-byte steps (RSA build). Proving them here is what
 // lets x509parse_harness stub these primitives soundly, the way
-// handshake_parse_harness's cookie asserts license handshake_harness's stub.
+// handshake_parser_harness's cookie asserts license handshake_harness's stub.
 // Built with buf.c on the CBMC command line — the file's full dependency
 // closure; a missing body would havoc the callee and void the proof.
 #include "harness.h"

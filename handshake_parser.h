@@ -5,8 +5,8 @@
 // results mean. External linkage so proof, fuzz, and strictness-test
 // builds reach the parsers without the state machine; the packaged
 // library object localizes them like every other internal symbol.
-#ifndef CH_HANDSHAKE_PARSE_H
-#define CH_HANDSHAKE_PARSE_H
+#ifndef CH_HANDSHAKE_PARSER_H
+#define CH_HANDSHAKE_PARSER_H
 
 #include <stddef.h>
 #include <stdint.h>
@@ -31,7 +31,7 @@ typedef struct {
     uint8_t server_pub[X25519_LEN];
 #ifdef CH_KEX_PQ
     // The ML-KEM ciphertext, MLKEM_CT_LEN bytes into the caller's
-    // message — like cookie, the pointer dies at the next pump call;
+    // message — like cookie, the pointer dies at the next record read;
     // the handshake decapsulates before one runs.
     const uint8_t *server_ct;
 #endif

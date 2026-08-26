@@ -332,11 +332,11 @@ which convention holds them.
   Comparisons on secret data go through `ct_memeq`, selects through
   branchless masks. Variable time is allowed only where every input
   is public, stated at the call site — P-256 and RSA verify, and the
-  HRR-magic compare in handshake_parse.c.
+  HRR-magic compare in handshake_parser.c.
 - **Mechanism.** Constant-time construction; ChaCha20/Poly1305/x25519
   have no table lookups by design.
 - **Check.** Semgrep-structural (`inv-16-no-variable-time-compare`) bans
-  memcmp/strcmp in library sources, with handshake_parse.c allowlisted for its
+  memcmp/strcmp in library sources, with handshake_parser.c allowlisted for its
   public-data compare — the allowlist is file-wide, so review holds the
   line on any new compare added to that file; `make timing` (Welch's
   t-test) gives statistical evidence.

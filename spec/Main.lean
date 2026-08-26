@@ -42,7 +42,7 @@ def selftestAll : String :=
     ("x509", Spec.X509.selftest),
     ("drbg", Spec.Drbg.selftest),
     ("handshake", Spec.Handshake.selftest),
-    ("handshake_parse", Spec.HandshakeParse.selftest)]
+    ("handshake_parser", Spec.HandshakeParser.selftest)]
   match mods.find? (fun m => !m.2) with
   | some (name, _) => s!"FAIL {name}"
   | none => "ok"
@@ -196,10 +196,10 @@ def dispatch : List String → Option String
   -- missing_extension, §6.2's decode_error) and some it leaves to the
   -- implementation, so distinct strings would flag a spec-and-C
   -- disagreement about which MUST fired first as a mismatch. The alert
-  -- itself lives in the model, where `Spec.HandshakeParse.Alert` names it.
+  -- itself lives in the model, where `Spec.HandshakeParser.Alert` names it.
   | ["hs_server_hello", mode, kex, msg] => do
     let m ← hexArg? msg
-    -- `psk` and `nopsk` are handshake_parse.h's `psk_mode`: whether this
+    -- `psk` and `nopsk` are handshake_parser.h's `psk_mode`: whether this
     -- client's ClientHello offered a PSK, which RFC 9846 §4.2 makes
     -- the test for whether a pre_shared_key response is admissible.
     let offered ← match mode with
@@ -208,26 +208,26 @@ def dispatch : List String → Option String
       | _ => none
     -- `x25519` and `pq` are the Makefile's KEX values: the build's one
     -- offered group, which fixes the key_share group and share size.
-    let k ← Spec.HandshakeParse.kexOf? kex
-    return match Spec.HandshakeParse.parseServerHello k offered m with
+    let k ← Spec.HandshakeParser.kexOf? kex
+    return match Spec.HandshakeParser.parseServerHello k offered m with
       | .ok (.serverHello f) =>
         s!"sh {emit f.keyExchange} {emitNat? f.selectedIdentity}"
       | .ok (.helloRetryRequest f) => s!"hrr {emit f.cookie}"
       | .error _ => "ERR hs_server_hello reject"
   | ["hs_encrypted_extensions", msg] => do
     let m ← hexArg? msg
-    return match Spec.HandshakeParse.parseEncryptedExtensions m with
+    return match Spec.HandshakeParser.parseEncryptedExtensions m with
       | .ok f => s!"ok {emitNat? f.recordSizeLimit}"
       | .error _ => "ERR hs_encrypted_extensions reject"
   | ["hs_certificate", msg] => do
     let m ← hexArg? msg
-    return match Spec.HandshakeParse.parseCertificate m with
+    return match Spec.HandshakeParser.parseCertificate m with
       | .ok f => s!"ok {f.entryCount} {emit f.leafCert}"
       | .error _ => "ERR hs_certificate reject"
   | ["hs_certificate_verify", alg, msg] => do
-    let scheme ← Spec.HandshakeParse.schemeOf? alg
+    let scheme ← Spec.HandshakeParser.schemeOf? alg
     let m ← hexArg? msg
-    return match Spec.HandshakeParse.parseCertificateVerify scheme m with
+    return match Spec.HandshakeParser.parseCertificateVerify scheme m with
       | .ok f => s!"ok {f.algorithm} {emit f.signature}"
       | .error _ => "ERR hs_certificate_verify reject"
   | ["hs_verify_content", hash] => do
@@ -235,7 +235,7 @@ def dispatch : List String → Option String
     -- RFC 9846 §4.4.3 signs over the transcript hash, which is
     -- SHA-256 under this profile's one cipher suite.
     guard (h.size == 32)
-    return emit (Spec.HandshakeParse.verifyContent h)
+    return emit (Spec.HandshakeParser.verifyContent h)
   | ["p256_pub", d] => do
     let db ← hexArg? d
     guard (db.size == 32)

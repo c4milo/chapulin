@@ -1,4 +1,4 @@
-// Proves: ch_handshake — the record pump, cross-record reassembly,
+// Proves: ch_handshake — record reading, cross-record reassembly,
 // HRR restart, and the run() state machine — is
 // memory-safe and UB-free against ANY record stream a peer can send, at a
 // 96-byte receive buffer (every reassembly and compaction state is
@@ -7,7 +7,7 @@
 // Layered proof: io, record protection, the key schedule, hashing,
 // x25519, and the two message parsers are stubs asserting their proven
 // contracts and havocing results — the parsers are proven concrete in
-// handshake_parse_harness and eeparse_harness, so dragging their real bodies
+// handshake_parser_harness and eeparse_harness, so dragging their real bodies
 // into this formula only grows it (measured: past CI's whole budget).
 // The object under proof is the driver's own arithmetic and state.
 // buf.c and ct.c are real.
@@ -17,7 +17,7 @@
 #include <string.h>
 
 #include "handshake_message.h"
-#include "handshake_parse.h"
+#include "handshake_parser.h"
 #include "io.h"
 #include "keysched.h"
 #include "p256.h"

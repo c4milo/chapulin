@@ -26,7 +26,7 @@ of the input domain.
 
 So: one formula per concern, and when a formula holds more than
 roughly a thousand multiplies, split it — along the multiply count,
-not along file boundaries. handshake_parse/eeparse and the three ML-KEM
+not along file boundaries. handshake_parser/eeparse and the three ML-KEM
 chained-product formulas are the precedents.
 
 ## Rules
@@ -85,7 +85,7 @@ converge, restructure it; do not shop for solvers.
 In order, with precedents:
 
 1. **Split the harness** into more formulas over the same code
-   (handshake_parse/eeparse; the ML-KEM fast/slow split).
+   (handshake_parser/eeparse; the ML-KEM fast/slow split).
 2. **Split the code** at a literal boundary so each piece is one
    provable function (sha3's block-structured sponge;
    `mlk_invntt_low`/`mlk_invntt_high`). State in a comment that the

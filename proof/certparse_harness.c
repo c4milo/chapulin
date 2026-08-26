@@ -6,13 +6,13 @@
 // handshake driver's stubs assume exactly those contracts; this
 // harness is what discharges them. One formula for both parsers: each
 // is a short rbuf walk, so together they stay minutes from the
-// handshake_parse/eeparse split point. Built with handshake_parse.c and buf.c on the
+// handshake_parser/eeparse split point. Built with handshake_parser.c and buf.c on the
 // CBMC command line — the full dependency closure; a missing body
 // would havoc the callee and void the proof (see run.sh).
 #include "harness.h"
 
 #include "cfg.h"
-#include "handshake_parse.h"
+#include "handshake_parser.h"
 
 int main(void) {
     uint8_t msg[256];

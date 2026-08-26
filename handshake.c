@@ -7,8 +7,8 @@
 #include "ct.h"
 #include "handshake_auth.h"
 #include "handshake_message.h"
-#include "handshake_parse.h"
-#include "handshake_pump.h"
+#include "handshake_parser.h"
+#include "handshake_record.h"
 #include "io.h"
 #include "keysched.h"
 #include "rand.h"
@@ -98,7 +98,7 @@ static int send_client_hello(handshake_state *h) {
 
 // Decapsulates into ikm[0..31] and runs x25519 into ikm[32..63] —
 // ML-KEM first, RFC 10024's order despite the group's name. The ct
-// pointer reads out of the live ServerHello record; no pump call sits
+// pointer reads out of the live ServerHello record; no record read sits
 // between the parse and this. Decapsulation cannot fail (a tampered
 // ciphertext yields the implicit-reject secret); the x25519 all-zero
 // refusal stays, and on it the half-built secret is wiped.

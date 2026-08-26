@@ -1,10 +1,10 @@
-// The handshake's record pump: reads records, tolerates compat-mode
+// The handshake reads records here, tolerates compat-mode
 // CCS noise within its cap, decrypts once keys are up, and
 // reassembles complete handshake messages across records in cfg.buf.
 // Split from handshake.c so the driver file stays one readable
-// concern; external linkage keeps the pump provable and fuzzable on
-// its own. Contract in handshake_pump.h.
-#include "handshake_pump.h"
+// concern; external linkage keeps the reader provable and fuzzable on
+// its own. Contract in handshake_record.h.
+#include "handshake_record.h"
 
 #include <string.h>
 

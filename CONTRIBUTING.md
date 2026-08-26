@@ -44,8 +44,8 @@ tree — the abbreviation budget is spent on this one system.
 | `ct_` | Constant-time bytes (`ct.[ch]`) |
 | `ks_` | Key schedule (`keysched.[ch]`) |
 | `rec_` | Record protection (`record.[ch]`) |
-| `hs_` / `hsp_` | Handshake message build and parse (`handshake_message.[ch]`, `handshake_parse.[ch]`) |
-| `hsr_` / `hsa_` | Handshake record pump (`handshake_pump.[ch]`) and server authentication (`handshake_auth.[ch]`) |
+| `hs_` / `hsp_` | Handshake message build and parse (`handshake_message.[ch]`, `handshake_parser.[ch]`) |
+| `hsr_` / `hsa_` | Handshake record reading (`handshake_record.[ch]`) and server authentication (`handshake_auth.[ch]`) |
 | `rsa_`, `p256_`, `x25519_`, `aead_`, `hkdf_`, `sha256_`, `sha3_`, `shake_`, `mlkem_`, `drbg_`, `io_` | The self-naming crypto and I/O modules |
 | `mlk_` | ML-KEM's polynomial layer (`mlkem_poly.[ch]`) |
 

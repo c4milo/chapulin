@@ -41,10 +41,10 @@ REQUIRE_ON_CI = @[ -z "$$CI" ] || { echo "$(1): missing on CI; the gate must not
 REQUIRE = @echo "$(1): missing, and a linter must not skip. $(2)"; exit 1
 
 SRCS := ct.c sha256.c hkdf.c chacha20.c poly1305.c aead.c x25519.c p256.c rsa.c rsa_mont.c \
-        x509.c x509_der.c buf.c record.c keysched.c io.c handshake_message.c handshake_parse.c handshake_pump.c session.c \
+        x509.c x509_der.c buf.c record.c keysched.c io.c handshake_message.c handshake_parser.c handshake_record.c session.c \
         handshake_auth.c handshake.c tls.c
 HDRS := ct.h sha256.h hkdf.h chacha20.h poly1305.h aead.h x25519.h p256.h rsa.h ch_assert.h \
-        x509.h buf.h record.h keysched.h io.h handshake_message.h handshake_parse.h handshake_pump.h cfg.h session.h handshake_auth.h handshake.h \
+        x509.h buf.h record.h keysched.h io.h handshake_message.h handshake_parser.h handshake_record.h cfg.h session.h handshake_auth.h handshake.h \
         tls.h rand.h drbg.h sha3.h mlkem.h mlkem_poly.h
 LINT_C := $(SRCS) drbg.c sha3.c mlkem.c mlkem_poly.c test/unit_test.c test/tls_client.c \
           test/diff_test.c test/timing_test.c test/drbg_test.c test/rsa_test.c test/sha3_test.c \
@@ -55,7 +55,7 @@ LINT_C := $(SRCS) drbg.c sha3.c mlkem.c mlkem_poly.c test/unit_test.c test/tls_c
 # so a header edit rebuilds the binaries it changes.
 TESTH := test/test_random.h test/session_tests.h test/session_post_tests.h \
          test/session_cfg_tests.h test/p256_tests.h test/diff_driver.h test/diff_hash.h \
-         test/diff_handshake_parse.h test/diff_p256.h test/diff_record.h test/diff_rsa.h \
+         test/diff_handshake_parser.h test/diff_p256.h test/diff_record.h test/diff_rsa.h \
          test/diff_x25519.h test/handshake_sequence_server.h test/rfc8448_vectors.h \
          test/rfc8448_tests.h \
          test/x509_vectors.h test/x509_mutate.h test/x509_chain_tests.h test/x509_epoch.h \
@@ -178,10 +178,10 @@ bin/mlkem_test: test/mlkem_test.c mlkem.c mlkem_poly.c sha3.c ct.c $(HDRS) $(TES
 	$(CC) $(CFLAGS) -I. -o $@ test/mlkem_test.c mlkem.c mlkem_poly.c sha3.c ct.c
 
 # Parser strictness: drives the ServerHello/EE parsers directly; their
-# whole dependency closure is handshake_parse.c + buf.c.
-bin/handshake_strict_test: test/handshake_strict_test.c handshake_parse.c buf.c $(HDRS) $(TESTH)
+# whole dependency closure is handshake_parser.c + buf.c.
+bin/handshake_strict_test: test/handshake_strict_test.c handshake_parser.c buf.c $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -I. -o $@ test/handshake_strict_test.c handshake_parse.c buf.c
+	$(CC) $(CFLAGS) -I. -o $@ test/handshake_strict_test.c handshake_parser.c buf.c
 
 # Certificate grammar strictness: one binary per PIN, because the
 # profile's grammar is the build's grammar.
@@ -227,9 +227,9 @@ bin/handshake_sequence_pq: test/handshake_sequence_test.c $(SRCS) sha3.c mlkem.c
 	$(CC) $(CFLAGS) -DCH_KEX_PQ -I. -o $@ test/handshake_sequence_test.c \
 	  $(filter-out p256.c rsa.c rsa_mont.c,$(SRCS)) sha3.c mlkem.c mlkem_poly.c
 
-bin/handshake_strict_pq: test/handshake_strict_test.c handshake_parse.c buf.c $(HDRS) $(TESTH)
+bin/handshake_strict_pq: test/handshake_strict_test.c handshake_parser.c buf.c $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -DCH_KEX_PQ -I. -o $@ test/handshake_strict_test.c handshake_parse.c buf.c
+	$(CC) $(CFLAGS) -DCH_KEX_PQ -I. -o $@ test/handshake_strict_test.c handshake_parser.c buf.c
 
 bin/tlsclient: test/tls_client.c $(SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
@@ -391,7 +391,7 @@ else
 	  $(COV_CC) test/unit_test.c $(COV_LIB_OBJS) -o $$d/unit; \
 	  $(COV_CC) test/drbg_test.c $$d/drbg.o $$d/chacha20.o $$d/ct.o -o $$d/drbg_test; \
 	  $(COV_CC) test/rsa_test.c $$d/rsa.o $$d/rsa_mont.o $$d/sha256.o $$d/ct.o -o $$d/rsa_test; \
-	  $(COV_CC) test/handshake_strict_test.c $$d/handshake_parse.o $$d/buf.o -o $$d/handshake_strict_test; \
+	  $(COV_CC) test/handshake_strict_test.c $$d/handshake_parser.o $$d/buf.o -o $$d/handshake_strict_test; \
 	  verifier="$$d/rsa.o $$d/rsa_mont.o"; if [ $$pin = ecdsa ]; then verifier=$$d/p256.o; fi; \
 	  $(COV_CC) $$def test/x509_strict_test.c $$d/x509.o $$d/x509_der.o $$d/buf.o $$d/sha256.o \
 	    $$d/ct.o $$verifier -o $$d/x509strict_test; \
@@ -472,7 +472,7 @@ san-check:
 	$(CC) $(SAN_CFLAGS) -I. -o bin/san/rsa_test test/rsa_test.c rsa.c rsa_mont.c sha256.c ct.c
 	$(CC) $(SAN_CFLAGS) -I. -o bin/san/sha3_test test/sha3_test.c sha3.c ct.c
 	$(CC) $(SAN_CFLAGS) -I. -o bin/san/mlkem_test test/mlkem_test.c mlkem.c mlkem_poly.c sha3.c ct.c
-	$(CC) $(SAN_CFLAGS) -I. -o bin/san/handshake_strict_test test/handshake_strict_test.c handshake_parse.c buf.c
+	$(CC) $(SAN_CFLAGS) -I. -o bin/san/handshake_strict_test test/handshake_strict_test.c handshake_parser.c buf.c
 	$(CC) $(SAN_CFLAGS) -I. -o bin/san/x509strict_test $(X509STRICT_SRC) rsa.c rsa_mont.c
 	$(CC) $(SAN_CFLAGS) -DCH_PIN_ECDSA -I. -o bin/san/x509strict_ecdsa $(X509STRICT_SRC) p256.c
 	$(CC) $(SAN_CFLAGS) -I. -o bin/san/handshake_sequence_test test/handshake_sequence_test.c \
@@ -523,7 +523,7 @@ cross-check:
 	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) -static -I. -o bin/cross/rsa_test test/rsa_test.c rsa.c rsa_mont.c sha256.c ct.c
 	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) -static -I. -o bin/cross/sha3_test test/sha3_test.c sha3.c ct.c
 	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) -static -I. -o bin/cross/mlkem_test test/mlkem_test.c mlkem.c mlkem_poly.c sha3.c ct.c
-	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) -static -I. -o bin/cross/handshake_strict_test test/handshake_strict_test.c handshake_parse.c buf.c
+	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) -static -I. -o bin/cross/handshake_strict_test test/handshake_strict_test.c handshake_parser.c buf.c
 	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) -static -I. -o bin/cross/x509strict_test $(X509STRICT_SRC) rsa.c rsa_mont.c
 	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) -static -DCH_PIN_ECDSA -I. -o bin/cross/x509strict_ecdsa $(X509STRICT_SRC) p256.c
 	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) -static -I. -o bin/cross/handshake_sequence_test test/handshake_sequence_test.c \
@@ -821,8 +821,8 @@ FUZZ_CC ?= $(shell command -v $(LLVM_BIN)/clang || command -v clang)
 FUZZ_CFLAGS := -std=c11 -O1 -g -fsanitize=fuzzer,address -D_DEFAULT_SOURCE -I.
 FUZZ_TIME ?= 30
 FUZZ_RECORD_LINK := record.c ct.c sha256.c hkdf.c chacha20.c poly1305.c aead.c
-FUZZ_HANDSHAKE_PARSE_LINK := handshake_parse.c buf.c
-FUZZ_POST_HANDSHAKE_LINK := handshake.c handshake_parse.c handshake_pump.c io.c record.c keysched.c session.c buf.c ct.c \
+FUZZ_HANDSHAKE_PARSER_LINK := handshake_parser.c buf.c
+FUZZ_POST_HANDSHAKE_LINK := handshake.c handshake_parser.c handshake_record.c io.c record.c keysched.c session.c buf.c ct.c \
                     sha256.c hkdf.c chacha20.c poly1305.c aead.c x25519.c rsa.c rsa_mont.c handshake_message.c
 FUZZ_X509_LINK := x509.c x509_der.c buf.c ct.c sha256.c rsa.c rsa_mont.c
 
@@ -838,12 +838,12 @@ fuzz:
 	  exit 0; \
 	fi; \
 	rm -f "$$tmp"; \
-	for t in record handshake_parse post_handshake x509; do mkdir -p bin/fuzz/work_$$t; done; \
+	for t in record handshake_parser post_handshake x509; do mkdir -p bin/fuzz/work_$$t; done; \
 	$(FUZZ_CC) $(FUZZ_CFLAGS) fuzz/fuzz_record.c  $(FUZZ_RECORD_LINK)  -o bin/fuzz/fuzz_record; \
-	$(FUZZ_CC) $(FUZZ_CFLAGS) fuzz/fuzz_handshake_parse.c $(FUZZ_HANDSHAKE_PARSE_LINK) -o bin/fuzz/fuzz_handshake_parse; \
+	$(FUZZ_CC) $(FUZZ_CFLAGS) fuzz/fuzz_handshake_parser.c $(FUZZ_HANDSHAKE_PARSER_LINK) -o bin/fuzz/fuzz_handshake_parser; \
 	$(FUZZ_CC) $(FUZZ_CFLAGS) fuzz/fuzz_post_handshake.c  $(FUZZ_POST_HANDSHAKE_LINK)  -o bin/fuzz/fuzz_post_handshake; \
 	$(FUZZ_CC) $(FUZZ_CFLAGS) fuzz/fuzz_x509.c    $(FUZZ_X509_LINK)    -o bin/fuzz/fuzz_x509; \
-	for t in record handshake_parse post_handshake x509; do \
+	for t in record handshake_parser post_handshake x509; do \
 	  ./bin/fuzz/fuzz_$$t bin/fuzz/work_$$t fuzz/corpus/fuzz_$$t \
 	    -artifact_prefix=bin/fuzz/ -max_total_time=$(FUZZ_TIME); \
 	done

@@ -43,13 +43,13 @@ rules:
     severity: ERROR
     message: >-
       INV-16: comparisons in library sources go through ct_memeq.
-      handshake_parse.c is the one allowed exception: its HRR-magic compare
+      handshake_parser.c is the one allowed exception: its HRR-magic compare
       reads only public bytes, stated at the site. If your data is
       public too, state it and extend the allowlist in the same PR;
       semgrep cannot know a buffer is secret, so the burden of proof
       is on the exception.
     paths:
-      exclude: [test, proof, fuzz, spec, bench, bin, examples, handshake_parse.c]
+      exclude: [test, proof, fuzz, spec, bench, bin, examples, handshake_parser.c]
     pattern-either:
       - pattern: memcmp(...)
       - pattern: strcmp(...)

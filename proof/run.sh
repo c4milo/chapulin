@@ -36,7 +36,7 @@
 # formula, x25519_mul proves the overflow lemma for that arithmetic
 # with full checks, and x25519_ops proves the linear ops whole with
 # full checks. p256 and rsa split by check set the same way, and
-# handshake_parse/eeparse split one parser per formula: SAT time grows
+# handshake_parser/eeparse split one parser per formula: SAT time grows
 # super-linearly with formula size, so two small instances beat one big
 # one by hours.
 set -uo pipefail
@@ -315,8 +315,8 @@ launch slow:5 noovf x25519_mul_alias_a 65 ""
 launch slow:5 noovf x25519_mul_alias_b 65 ""
 launch slow:5 noovf x25519_mul_inputs_alias 65 ""
 launch slow:5 noovf x25519_sqr 65 ""
-launch slow full handshake_psk 100 "hsr_fetch_record.0:45,hsr_next_msg.0:140,fill_nondet.0:600" handshake_auth.c handshake_pump.c buf.c ct.c
-launch slow full handshake_pin 100 "hsr_fetch_record.0:45,hsr_next_msg.0:140,fill_nondet.0:600" handshake_auth.c handshake_pump.c buf.c ct.c
+launch slow full handshake_psk 100 "hsr_fetch_record.0:45,hsr_next_msg.0:140,fill_nondet.0:600" handshake_auth.c handshake_record.c buf.c ct.c
+launch slow full handshake_pin 100 "hsr_fetch_record.0:45,hsr_next_msg.0:140,fill_nondet.0:600" handshake_auth.c handshake_record.c buf.c ct.c
 # ML-KEM's chained-product functions, one formula each; the inverse
 # NTT is two half formulas, because the whole transform returns no
 # verdict in 900 s (the mlkem comment below states the split and the
@@ -325,11 +325,11 @@ launch slow:5 full mlkem_ntt 260 ""
 launch slow:4 full mlkem_invntt_low 260 ""
 launch slow:4 full mlkem_invntt_high 260 ""
 launch slow:5 full mlkem_basemul 260 ""
-# Measured kissat-path peaks (macOS /usr/bin/time -l, RSS): handshake_parse
+# Measured kissat-path peaks (macOS /usr/bin/time -l, RSS): handshake_parser
 # 9.9 GB, sha256 5.7 GB — both above the default weight and cap.
-launch fast:10 full handshake_parse 260 "hsp_parse_server_hello.0:66,main.0:600" handshake_parse.c buf.c
-launch fast full eeparse 260 "hsp_parse_encrypted_exts.0:66" handshake_parse.c buf.c
-launch fast full certparse 260 "" handshake_parse.c buf.c
+launch fast:10 full handshake_parser 260 "hsp_parse_server_hello.0:66,main.0:600" handshake_parser.c buf.c
+launch fast full eeparse 260 "hsp_parse_encrypted_exts.0:66" handshake_parser.c buf.c
+launch fast full certparse 260 "" handshake_parser.c buf.c
 launch fast:6 full sha256 3 "fill_nondet.0:97,sha256_update.0:66,sha256_update.1:3,sha256_update.2:66,sha256_final.0:65,sha256_final.1:9,sha256_final.2:9,compress.0:17,compress.1:49,compress.2:65"
 # sha3's loops number by back-edge order, so the block loops' inner
 # copy loop precedes its while: absorb is head, block-copy, block-while,

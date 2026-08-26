@@ -1,5 +1,5 @@
 invariant: INV-8
-file: handshake_parse.c
+file: handshake_parser.c
 catches: diff
 builds: bin/diff
 reason: supported_versions stops pinning 1.3, so a server that selects TLS 1.2

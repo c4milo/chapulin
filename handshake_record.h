@@ -1,14 +1,14 @@
-// The handshake driver's state and its record pump. The state lives
+// The handshake driver's state and its record reading. The state lives
 // on ch_handshake's stack and is wiped wholesale when the handshake
-// ends either way; the pump yields records and whole messages out of
-// cfg.buf, where pointers die at the next pump call.
-#ifndef CH_HANDSHAKE_PUMP_H
-#define CH_HANDSHAKE_PUMP_H
+// ends either way; it yields records and whole messages out of
+// cfg.buf, where pointers die at the next record read.
+#ifndef CH_HANDSHAKE_RECORD_H
+#define CH_HANDSHAKE_RECORD_H
 
 #include <stddef.h>
 #include <stdint.h>
 
-#include "handshake_parse.h"
+#include "handshake_parser.h"
 #include "session.h"
 #include "sha256.h"
 #include "x25519.h"

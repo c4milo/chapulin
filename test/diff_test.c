@@ -17,7 +17,7 @@
 // Driver plumbing (PRNG, hex, spec pipe) and every primitive's section
 // live in sibling headers of this, the only translation unit.
 #include "diff_driver.h"
-#include "diff_handshake_parse.h"
+#include "diff_handshake_parser.h"
 #include "diff_hash.h"
 #include "diff_mlkem.h"
 #include "diff_p256.h"

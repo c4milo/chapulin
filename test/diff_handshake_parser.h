@@ -1,16 +1,16 @@
 // Handshake message parsing differential section: the four server-to-
-// client messages handshake_parse.c reads before the peer is authenticated —
+// client messages handshake_parser.c reads before the peer is authenticated —
 // ServerHello (including HelloRetryRequest), EncryptedExtensions,
 // Certificate, and CertificateVerify. Every row builds one message,
 // runs the C parser and the Lean spec on it, and compares.
 // Included by test/diff_test.c after diff_driver.h (single translation unit).
-#ifndef CH_DIFFHANDSHAKE_PARSE_H
-#define CH_DIFFHANDSHAKE_PARSE_H
+#ifndef CH_DIFFHANDSHAKE_PARSER_H
+#define CH_DIFFHANDSHAKE_PARSER_H
 
 #include "buf.h"
 #include "cfg.h"
 #include "handshake_message.h"
-#include "handshake_parse.h"
+#include "handshake_parser.h"
 
 // HandshakeType values (RFC 9846 §4).
 #define HSPD_SERVER_HELLO 2
@@ -69,7 +69,7 @@ static void hspd_request(char *cmd, size_t cap, const char *op, const char *arg,
     wb_u24(&w, (uint32_t)n);
     wb_bytes(&w, body, n);
     if (w.err) {
-        die("handshake_parse: framing buffer too small");
+        die("handshake_parser: framing buffer too small");
     }
     char hex[2 * sizeof msg + 1];
     (void)hex_encode(hex, msg, w.len);
@@ -240,7 +240,7 @@ static void diff_hs_server_hello(void) {
         }
         wb_patch16(&w, exts);
         if (w.err) {
-            die("handshake_parse: ServerHello buffer too small");
+            die("handshake_parser: ServerHello buffer too small");
         }
         if (mut == 15) {
             wb_u8(&w, 0); // §4 makes the extension vector's length exact
@@ -298,7 +298,7 @@ static void diff_hs_encrypted_exts(void) {
         wb_init(&w, body, sizeof body);
         hspd_ee_build(&w, mut, have_limit, limit);
         if (w.err) {
-            die("handshake_parse: EncryptedExtensions buffer too small");
+            die("handshake_parser: EncryptedExtensions buffer too small");
         }
 
         // The C parser lowers the caller's limit and stores it less the
@@ -366,7 +366,7 @@ static void diff_hs_certificate(void) {
         wb_init(&w, body, sizeof body);
         hspd_cert_build(&w, mut, entries, leaf, leaf_len);
         if (w.err) {
-            die("handshake_parse: Certificate buffer too small");
+            die("handshake_parser: Certificate buffer too small");
         }
 
         const uint8_t *clist = NULL;
@@ -426,7 +426,7 @@ static void diff_hs_certificate_verify(void) {
             wb_u8(&w, 0); // trailing octet past the exact-fill signature
         }
         if (w.err) {
-            die("handshake_parse: CertificateVerify buffer too small");
+            die("handshake_parser: CertificateVerify buffer too small");
         }
 
         const uint8_t *csig = NULL;

@@ -5,13 +5,13 @@
 // handshake's parsing attack surface; eeparse_harness proves
 // hsp_parse_encrypted_exts, its sibling. One parser per formula, the hkdf split's
 // lesson: the combined instance crossed from minutes into hours of SAT
-// time. Built with handshake_parse.c and buf.c on the CBMC command line — the
+// time. Built with handshake_parser.c and buf.c on the CBMC command line — the
 // parser's full dependency closure. See run.sh: a missing body would
 // havoc the callee and void the proof.
 #include "harness.h"
 
 #include "cfg.h"
-#include "handshake_parse.h"
+#include "handshake_parser.h"
 
 int main(void) {
     uint8_t msg[256];
