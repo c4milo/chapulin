@@ -93,11 +93,12 @@ shrinks the pointer fields.
 | **total static working set** | **3192** |
 | `ch_tls` under `KEX=pq` (includes 1806 B TX staging) | 2328 |
 | **total static working set, `KEX=pq`** (2048 buffer) | **4376** |
-| peak stack, `ch_connect` (RSA-3072 verify) | 5168 |
-| peak stack, `ch_connect` (`PIN=ecdsa`) | 3648 |
-| peak stack, `ch_connect` (PSK) | 2592 |
-| peak stack, `ch_connect` (`TRUST=ca`, RSA / ECDSA) | 5760 / 3952 |
-| peak stack, `ch_read` (worst case: KeyUpdate rekey) | 1632 |
+| peak stack, `ch_connect` (RSA-3072 verify) | 5056 |
+| peak stack, `ch_connect` (`PIN=ecdsa`) | 3536 |
+| peak stack, `ch_connect` (PSK) | 2480 |
+| peak stack, `ch_connect` (`TRUST=ca`, RSA / ECDSA) | 5504 / 3696 |
+| peak stack, `ch_read` (worst case: KeyUpdate rekey) | 1712 |
+| peak stack, `ch_connect` (`KEX=pq`) | 15808 |
 | peak stack, `ch_write` / `ch_close` | 736 / 688 |
 
 The hybrid build costs more of both. The session struct grows because
@@ -105,11 +106,11 @@ the ClientHello carries a 1,216-byte key share and is built whole into
 one staging array, and the stack grows because ML-KEM's K-PKE encrypt
 holds three polynomial vectors and two polynomials: 5,744 bytes in that
 one frame, against a 2,560-byte budget for every other build (INV-19
-carries the per-build numbers). Its `ch_connect` peak is **not measured
-yet**: `bench/stack.py` reads arm64 relocations and reports nothing
-usable on other hosts, so the whole-chain number has to come from the
-reference machine. Until it does, 5,744 bytes is the floor, not the
-peak. A device that cannot spare it builds the classic key exchange.
+carries the per-build numbers). The whole chain peaks at 15,808 bytes,
+through `mlkem_decaps` into K-PKE encrypt and Keccak, so the hybrid
+build needs about three times the stack of the classic one rather than
+the single frame's 5,744. A device that cannot spare it builds the
+classic key exchange.
 
 You size the receive buffer, and the client advertises that size as its
 `record_size_limit` ([RFC 8449](https://www.rfc-editor.org/rfc/rfc8449)), so a peer can never send a record the
