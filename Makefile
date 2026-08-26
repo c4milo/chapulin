@@ -853,11 +853,15 @@ test-invariants-fast: bin/unit bin/unit_ca bin/x509strict bin/x509strict_ecdsa b
 
 # The whole set, fast tier plus the handshake_sequence_test and e2e-backed
 # violations that cost minutes each. Nightly.
-test-invariants: bin/unit bin/diff bin/tlsclient bin/tlsclient_ecdsa bin/tlsclient_ca bin/tlsclient_ca_ecdsa bin/example_psk bin/example_pinned bin/example_ca
+test-invariants: bin/unit bin/diff bin/tlsclient bin/tlsclient_ecdsa bin/tlsclient_ca bin/tlsclient_ca_ecdsa
 ifeq ($(LAKE),)
 	$(call REQUIRE_ON_CI,lake)
 	@echo "SKIP test-invariants: lake not on PATH (install elan: https://leanprover.github.io)"
 else
+	# The examples link the packaged object, and RAND has no default, so
+	# they cannot be prerequisites of a target invoked without one. check
+	# builds them through the same recursion.
+	$(MAKE) RAND=extern bin/example_psk bin/example_pinned bin/example_ca
 	cd spec && $(LAKE) build
 	python3 test/violations.py
 endif
