@@ -172,6 +172,18 @@ does nothing more.
     object. Cost: no multi-session generator isolation. Gain:
     `ch_rand_bytes` stays a clean import that firmware replaces; see
     docs/entropy.md.
+
+    The hook returns `void`, and giving it a `ch_err` return was
+    considered and deferred (#41). A return code is the honest answer
+    for a transient hardware fault, but it breaks the one function
+    every consumer firmware tree implements, for a case `rand.h`
+    already covers by contract: a generator that cannot produce bytes
+    blocks or faults rather than returning short. What the `void`
+    return does not catch is a hook that returns without writing, and
+    that is why every draw in `handshake.c` is followed by an all-zero
+    check against `rand.h`'s contract. Neither the check nor any
+    signature can tell a weak generator from a strong one; nothing in
+    a library can.
 21. **Every operational error fails closed**: alert, wipe keys, dead
     session, caller reconnects. Cost: no graceful recovery. Gain: the
     entire resumable-error state space is removed from the code and the
