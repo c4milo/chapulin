@@ -149,7 +149,7 @@ static void test_hello_staging_boundary(void) {
     cfg.psk_id = identity;
     cfg.psk_id_len = sizeof identity;
     cfg.resumption = 1;
-    cfg.obfuscated_age = 0xffffffffu;
+    cfg.obfuscated_age = 0xffffffffU;
 
 #ifdef CH_KEX_PQ
 #define BUILD_HELLO(cap)                                                                           \
