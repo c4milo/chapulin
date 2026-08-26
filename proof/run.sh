@@ -369,6 +369,12 @@ launch fast:4 full io 24 ""
 # over 32-byte secrets; sha256 is harness.h's stub, since the schedule's
 # arithmetic is length handling rather than compression.
 launch fast full keysched 120 "" ct.c
+# epoch: 0 s, 27 MB. The CA arm's own rules. handshake_ca drives the whole CA
+# driver and does not converge (#37), so this proves the part that is
+# specific to the arm -- the verdict matching its reported status, and
+# the stored epoch never moving backwards -- and leaves the record
+# reading to handshake_psk and handshake_pin.
+launch fast full epoch 40 "" ct.c
 launch fast full handshake_post 132 "handle_post_handshake.0:33,fill_nondet.0:130" --object-bits 11 buf.c ct.c session.c
 # The only launch line that builds the hybrid key exchange (#47).
 # hybrid_secret over any seed, any server ciphertext and any server
