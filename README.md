@@ -167,13 +167,13 @@ would change that trade.
 
 Four layers cover four different failure classes.
 
-**Proofs cover memory safety.** Twenty-four of the twenty-eight C
+**Proofs cover memory safety.** Twenty-five of the twenty-eight C
 sources are compiled into a [CBMC](https://www.cprover.org/cbmc/) harness, which proves them free of
 out-of-bounds access, invalid pointers, bad shifts, and division by
 zero, for every input within the harness's bound. Signed overflow is
 checked too, except in the three x25519 mul harnesses that turn it off
-(see the x25519 row). `handshake_message.c`, `io.c`, `keysched.c`, and
-`tls.c` have no harness.
+(see the x25519 row). `io.c`, `keysched.c`, and `tls.c` have no
+harness.
 `make check` regenerates the source-by-source table in
 `bin/proof-coverage.md`. Where a bound equals the module's real
 maximum, the proof covers all inputs.
@@ -198,6 +198,7 @@ apart from one that passed — so for the slow rows, read the nightly.
 | handshake | the driver stays safe on any record stream: record reading, reassembly, HRR restart, state machine, in PSK and pinned-key mode. The `TRUST=ca` driver has a harness but no launch line, so it is unproven | 96 B receive buffer, slow tier |
 | hybrid_secret | the `KEX=pq` shared-secret derivation is safe for any stored seed, any server ciphertext and any server share, and a refused key exchange wipes all 64 bytes rather than leaving half a secret on the stack (INV-3). ML-KEM and x25519 are stubbed to their contracts, which their own harnesses prove. This is the only leg that builds `-DCH_KEX_PQ`: the rest of the hybrid driver carries the differential, the sequence enumeration and the e2e legs, not a proof | the full domain, fast tier |
 | key_share | the `KEX=pq` arm of the ServerHello key_share parser is safe on any extension bytes, and an accepted share hands back a whole readable ML-KEM ciphertext lying inside the bytes the parser consumed — the contract `hybrid_secret` depends on, so neither proof rests on it as an assumption | extension ≤ 1,132 B, the full hybrid share, fast tier |
+| hello_build | the ClientHello builder writes nothing outside the caller's buffer at any capacity, for every cookie and PSK identity a caller may pass, and returns either zero or a length that fits. It also checks the bound itself: at `CH_HELLO_MAX` the build always succeeds, so the constant `handshake.c` asserts `CH_TX_STAGE` against is sufficient, not merely plausible | capacity ≤ `CH_HELLO_MAX`, identity ≤ 320 B, cookie ≤ 128 B |
 | chacha20 | safe at any counter, in place and into a distinct buffer | ≤ 160 B — three blocks, full, full, partial |
 | poly1305 | safe for any three-chunk split; 64-bit products stay in range | messages ≤ 80 B — five blocks, crossing the buffered-block path in every alignment. The five-call shape `aead.c` uses is exercised only to 48 B, by the aead harnesses |
 | aead (three harnesses) | seal/open round-trips; a forged tag writes zero bytes; backward-overlap decrypt works. These are structural, so the bound is small: 16 B crosses the Poly1305 block boundary and the forge case fires at one byte. Sealing fully in place (`pt == ct`, the shape every outgoing record uses) is **not proven**: `proof/aead_inplace_harness.c` states it, but the formula has returned no verdict, so it carries no launch line | plaintext ≤ 16 B, aad ≤ 16 B, slow tier |

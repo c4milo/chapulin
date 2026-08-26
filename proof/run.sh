@@ -376,6 +376,14 @@ launch fast full hybrid_secret 65 "fill_nondet.0:2401,ct_wipe.0:2401" -DCH_KEX_P
 # proof rests on the assumption alone. Measured: 654 properties,
 # 1 s, 164 MB (kissat).
 launch fast full key_share 1200 "fill_nondet.0:1133" -DCH_KEX_PQ buf.c
+# handshake_message.c was the last library source no harness
+# compiled (#33). Beyond memory safety this checks the constant
+# handshake.c asserts CH_TX_STAGE against: at CH_HELLO_MAX the
+# build always succeeds, so the bound is sufficient rather than
+# plausible. wbuf is real here — refusing to overflow is its
+# contract, and the point is that the builder uses it correctly.
+# Measured: 486 properties, 5 s, 46 MB (kissat).
+launch fast full hello_build 400 "fill_nondet.0:321,wb_bytes.0:321" buf.c
 # x509: primitives concrete (both variants), the walker with stubbed
 # primitives. The ECDSA walker proves the full two-entry bound in
 # every check; the RSA walker's formula is a SAT heavyweight, so it
