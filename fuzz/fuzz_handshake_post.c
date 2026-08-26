@@ -1,10 +1,10 @@
 // libFuzzer harness for handle_post_handshake, the post-handshake message
-// dispatcher (NewSessionTicket and KeyUpdate). It is static in tls.c, so
-// the harness includes the translation unit to reach it. The session is
-// zeroed with a live buffer length, a send callback that swallows the
-// KeyUpdate reply, and an on_ticket callback that touches every ch_ticket
-// field so any bad pointer or length the ticket parser hands out trips
-// AddressSanitizer.
+// dispatcher (NewSessionTicket and KeyUpdate). It is static in
+// handshake_post.c, so the harness includes that translation unit to reach
+// it. The session is zeroed with a live buffer length, a send callback that
+// swallows the KeyUpdate reply, and an on_ticket callback that touches every
+// ch_ticket field so any bad pointer or length the ticket parser hands out
+// trips AddressSanitizer.
 #include <stdint.h>
 #include <stdlib.h>
 #include <stdnoreturn.h>
@@ -20,7 +20,7 @@ noreturn void ch_assert_fail(const char *cond, const char *file, int line) {
     abort();
 }
 
-// tls.c pulls in ch_connect -> ch_handshake, which references this hook.
+// handshake.c pulls in ch_handshake, which references this hook.
 // handle_post_handshake never drives a handshake, so a call here is a harness bug.
 void ch_rand_bytes(uint8_t *p, size_t n) {
     (void)p;

@@ -84,7 +84,8 @@ void ks_res_psk(const uint8_t res_master[SHA256_LEN], const uint8_t *nonce, size
     fill_nondet(psk, SHA256_LEN);
 }
 
-// These exist so tls.c links; handle_post_handshake never calls them.
+// These exist so handshake_post.c links; handle_post_handshake never
+// calls them.
 void rec_dir_init(rec_dir *d, const uint8_t secret[SHA256_LEN]) {
     (void)secret;
     __CPROVER_assert(0, "rec_dir_init unreachable");

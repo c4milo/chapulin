@@ -11,7 +11,7 @@
 // bounds its message at 256 bytes and a hybrid key_share extension is
 // 1,128, so the accepting path there is unreachable at that bound.
 //
-// Layered proof, the handshake-stubs-hsparse pattern: mlkem and x25519
+// Layered proof, the handshake-stubs-handshake_parser pattern: mlkem and x25519
 // are stubs asserting their headers' contracts and havocing outputs, so
 // mlkem.c, mlkem_poly.c, sha3.c and x25519.c are NOT linked. What is
 // under proof is hybrid_secret's own pointer handling and wipe
