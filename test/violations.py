@@ -188,7 +188,7 @@ def run(name):
 # and a mutation pass together are ~30s per violation). The tier follows
 # the target, so no per-violation field drifts from what the check runs.
 FAST_TARGETS = {"unit", "unit_ca", "x509strict", "x509strict_ecdsa",
-                "rsa_test", "drbg_test", "hsstrict_test"}
+                "rsa_test", "drbg_test", "handshake_strict_test"}
 
 
 def catches_of(name):

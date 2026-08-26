@@ -9,7 +9,7 @@
 #include <stdint.h>
 #include <string.h>
 
-#include "hsmsg.h"
+#include "handshake_message.h"
 #include "x509.h"
 
 #ifdef CH_PIN_ECDSA

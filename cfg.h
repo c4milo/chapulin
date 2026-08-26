@@ -1,5 +1,5 @@
 // The caller-facing configuration and result codes, at the bottom of the
-// include graph so transport (io) and message building (hsmsg) can see
+// include graph so transport (io) and message building (handshake_message) can see
 // them without needing the session or the public API.
 //
 // Everything here configures the CLIENT. chapulin has no server role,

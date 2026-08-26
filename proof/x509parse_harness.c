@@ -24,7 +24,7 @@
 // asserts against an empty path — caught by asserting 0 there and
 // expecting a counterexample, a check worth repeating after edits.)
 //
-// Layered proof, the handshake-stubs-hsparse pattern: the x509_ DER
+// Layered proof, the handshake-stubs-handshake_parse pattern: the x509_ DER
 // primitives are stubs asserting their x509.h contracts and havocing
 // outputs within exactly what x509der_harness proves — x509_der.c is
 // NOT linked, so the object under proof is the walker's own
@@ -40,7 +40,7 @@
 
 #include "buf.h"
 #include "cfg.h"
-#include "hsmsg.h"
+#include "handshake_message.h"
 #include "sha256.h"
 #include "x509.h"
 

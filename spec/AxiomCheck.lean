@@ -11,7 +11,7 @@ import Spec.Handshake
 import Spec.Drbg
 import Spec.X509
 import Spec.X25519
-import Spec.Hsparse
+import Spec.HandshakeParse
 import Spec.Epoch
 
 #print axioms Spec.Aead.open?_seal
@@ -35,12 +35,12 @@ import Spec.Epoch
 #print axioms Spec.X509.parse_key_signed
 #print axioms Spec.X25519.decodeScalar_mul_eight
 #print axioms Spec.X25519.decodeScalar_range
-#print axioms Spec.Hsparse.messageBody_sound
-#print axioms Spec.Hsparse.parseServerHello_sound
-#print axioms Spec.Hsparse.parseServerHello_random
-#print axioms Spec.Hsparse.parseCertificate_sound
-#print axioms Spec.Hsparse.parseCertificateVerify_sound
-#print axioms Spec.Hsparse.parseEncryptedExtensions_limit_ge_64
+#print axioms Spec.HandshakeParse.messageBody_sound
+#print axioms Spec.HandshakeParse.parseServerHello_sound
+#print axioms Spec.HandshakeParse.parseServerHello_random
+#print axioms Spec.HandshakeParse.parseCertificate_sound
+#print axioms Spec.HandshakeParse.parseCertificateVerify_sound
+#print axioms Spec.HandshakeParse.parseEncryptedExtensions_limit_ge_64
 #print axioms Spec.Epoch.commit_ge
 #print axioms Spec.Epoch.commit_le_of_check
 #print axioms Spec.Epoch.commit_takes_any_epoch
@@ -126,7 +126,7 @@ import Spec.Epoch
 #print axioms Spec.Hkdf.expandLabel_size
 #print axioms Spec.Hkdf.schedule_eq
 #print axioms Spec.Hkdf.schedule_sizes
-#print axioms Spec.Hsparse.eq_of_bytesEq
+#print axioms Spec.HandshakeParse.eq_of_bytesEq
 #print axioms Spec.Poly.mac_size
 #print axioms Spec.Record.seal_size
 #print axioms Spec.Record.nonce_size

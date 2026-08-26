@@ -3,7 +3,7 @@
 // exactly (RFC 9846 §4.3 makes trailing bytes a decode error) and no
 // extension type may repeat. Each behavior gets a boundary pair: the
 // exact-length body parses, the same body plus one byte fails. The
-// parsers live in hsparse.c and depend only on buf.c, so those two files
+// parsers live in handshake_parse.c and depend only on buf.c, so those two files
 // are the whole link line. Its own binary with a private main, like the
 // other standalone test mains.
 #include <stdint.h>
@@ -12,8 +12,8 @@
 
 #include "buf.h"
 #include "cfg.h"
-#include "hsmsg.h"
-#include "hsparse.h"
+#include "handshake_message.h"
+#include "handshake_parse.h"
 
 static int failures = 0;
 #define CHECK(cond)                                                                                \
@@ -259,6 +259,6 @@ int main(void) {
         (void)fprintf(stderr, "%d failure(s)\n", failures);
         return 1;
     }
-    (void)printf("hsstrict_test: all checks passed\n");
+    (void)printf("handshake_strict_test: all checks passed\n");
     return 0;
 }

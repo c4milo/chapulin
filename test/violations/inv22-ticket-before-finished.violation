@@ -1,6 +1,6 @@
 invariant: INV-22
 file: handshake.c
-catches: hsseq_test
+catches: handshake_sequence_test
 reason: tolerating a NewSessionTicket ahead of the server Finished accepts a
   flight RFC 9846 forbids: the client takes a post-handshake message
   inside the flight, before anything authenticates it

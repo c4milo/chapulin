@@ -41,22 +41,22 @@ REQUIRE_ON_CI = @[ -z "$$CI" ] || { echo "$(1): missing on CI; the gate must not
 REQUIRE = @echo "$(1): missing, and a linter must not skip. $(2)"; exit 1
 
 SRCS := ct.c sha256.c hkdf.c chacha20.c poly1305.c aead.c x25519.c p256.c rsa.c rsa_mont.c \
-        x509.c x509_der.c buf.c record.c keysched.c io.c hsmsg.c hsparse.c hspump.c session.c \
+        x509.c x509_der.c buf.c record.c keysched.c io.c handshake_message.c handshake_parse.c handshake_pump.c session.c \
         handshake_auth.c handshake.c tls.c
 HDRS := ct.h sha256.h hkdf.h chacha20.h poly1305.h aead.h x25519.h p256.h rsa.h ch_assert.h \
-        x509.h buf.h record.h keysched.h io.h hsmsg.h hsparse.h hspump.h cfg.h session.h handshake_auth.h handshake.h \
+        x509.h buf.h record.h keysched.h io.h handshake_message.h handshake_parse.h handshake_pump.h cfg.h session.h handshake_auth.h handshake.h \
         tls.h rand.h drbg.h sha3.h mlkem.h mlkem_poly.h
 LINT_C := $(SRCS) drbg.c sha3.c mlkem.c mlkem_poly.c test/unit_test.c test/tls_client.c \
           test/diff_test.c test/timing_test.c test/drbg_test.c test/rsa_test.c test/sha3_test.c \
-          test/mlkem_test.c test/hsstrict_test.c test/hsseq_test.c \
+          test/mlkem_test.c test/handshake_strict_test.c test/handshake_sequence_test.c \
           test/x509_strict_test.c $(wildcard examples/*.c)
 
 # Test-local headers: prerequisites for every binary that includes them,
 # so a header edit rebuilds the binaries it changes.
 TESTH := test/test_random.h test/session_tests.h test/session_post_tests.h \
          test/session_cfg_tests.h test/p256_tests.h test/diff_driver.h test/diff_hash.h \
-         test/diff_hsparse.h test/diff_p256.h test/diff_record.h test/diff_rsa.h \
-         test/diff_x25519.h test/hsseq_server.h test/rfc8448_vectors.h \
+         test/diff_handshake_parse.h test/diff_p256.h test/diff_record.h test/diff_rsa.h \
+         test/diff_x25519.h test/handshake_sequence_server.h test/rfc8448_vectors.h \
          test/rfc8448_tests.h \
          test/x509_vectors.h test/x509_mutate.h test/x509_chain_tests.h test/x509_epoch.h \
          test/x509_spki.h test/diff_x509.h test/diff_x509_bounds.h test/diff_x509_chain.h \
@@ -178,10 +178,10 @@ bin/mlkem_test: test/mlkem_test.c mlkem.c mlkem_poly.c sha3.c ct.c $(HDRS) $(TES
 	$(CC) $(CFLAGS) -I. -o $@ test/mlkem_test.c mlkem.c mlkem_poly.c sha3.c ct.c
 
 # Parser strictness: drives the ServerHello/EE parsers directly; their
-# whole dependency closure is hsparse.c + buf.c.
-bin/hsstrict_test: test/hsstrict_test.c hsparse.c buf.c $(HDRS) $(TESTH)
+# whole dependency closure is handshake_parse.c + buf.c.
+bin/handshake_strict_test: test/handshake_strict_test.c handshake_parse.c buf.c $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -I. -o $@ test/hsstrict_test.c hsparse.c buf.c
+	$(CC) $(CFLAGS) -I. -o $@ test/handshake_strict_test.c handshake_parse.c buf.c
 
 # Certificate grammar strictness: one binary per PIN, because the
 # profile's grammar is the build's grammar.
@@ -198,9 +198,9 @@ bin/x509strict_ecdsa: $(X509STRICT_SRC) p256.c $(HDRS) $(TESTH)
 # (ENUM_DEPTH overrides; the default sweep is ~466k sequences over both modes) against the
 # Lean state machine's verdict. Links the stack minus the pinned
 # verifiers, which it stubs — V in a sequence means "signature valid".
-bin/hsseq_test: test/hsseq_test.c $(SRCS) $(HDRS) $(TESTH)
+bin/handshake_sequence_test: test/handshake_sequence_test.c $(SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -I. -o $@ test/hsseq_test.c $(filter-out p256.c rsa.c rsa_mont.c,$(SRCS))
+	$(CC) $(CFLAGS) -I. -o $@ test/handshake_sequence_test.c $(filter-out p256.c rsa.c rsa_mont.c,$(SRCS))
 
 bin/unit: test/unit_test.c $(SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
@@ -216,20 +216,20 @@ bin/unit_ca: test/unit_test.c $(SRCS) $(HDRS) $(TESTH)
 # CH_KEX_PQ test arms (share sizes, the receive-buffer floor, the mock
 # server's encapsulation) only execute under -DCH_KEX_PQ, which also
 # pulls the ML-KEM modules onto the link line (the same additions
-# KEX=pq makes to LIB_SRCS). hsstrict_pq needs no ML-KEM code: the
+# KEX=pq makes to LIB_SRCS). handshake_strict_pq needs no ML-KEM code: the
 # parser only reads lengths.
 bin/unit_pq: test/unit_test.c $(SRCS) sha3.c mlkem.c mlkem_poly.c $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) -DCH_KEX_PQ -I. -o $@ test/unit_test.c $(SRCS) sha3.c mlkem.c mlkem_poly.c
 
-bin/hsseq_pq: test/hsseq_test.c $(SRCS) sha3.c mlkem.c mlkem_poly.c $(HDRS) $(TESTH)
+bin/handshake_sequence_pq: test/handshake_sequence_test.c $(SRCS) sha3.c mlkem.c mlkem_poly.c $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -DCH_KEX_PQ -I. -o $@ test/hsseq_test.c \
+	$(CC) $(CFLAGS) -DCH_KEX_PQ -I. -o $@ test/handshake_sequence_test.c \
 	  $(filter-out p256.c rsa.c rsa_mont.c,$(SRCS)) sha3.c mlkem.c mlkem_poly.c
 
-bin/hsstrict_pq: test/hsstrict_test.c hsparse.c buf.c $(HDRS) $(TESTH)
+bin/handshake_strict_pq: test/handshake_strict_test.c handshake_parse.c buf.c $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -DCH_KEX_PQ -I. -o $@ test/hsstrict_test.c hsparse.c buf.c
+	$(CC) $(CFLAGS) -DCH_KEX_PQ -I. -o $@ test/handshake_strict_test.c handshake_parse.c buf.c
 
 bin/tlsclient: test/tls_client.c $(SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
@@ -263,14 +263,14 @@ bin/diff: test/diff_test.c $(SRCS) sha3.c mlkem.c mlkem_poly.c $(HDRS) $(TESTH)
 	$(CC) $(CFLAGS) -I. -o $@ test/diff_test.c $(SRCS) sha3.c mlkem.c mlkem_poly.c
 
 .PHONY: check lint lint-tidy lint-format lint-cppcheck lint-docs lint-invariants lint-spec prove diff fmt clean
-# bin/hsseq_pq is built here but run by the nightly, not by check: the
+# bin/handshake_sequence_pq is built here but run by the nightly, not by check: the
 # two enumerations together cost 19 of check's 45 measured minutes and
 # the CI job's timeout is 45, so the second one would decide the lane by
 # the clock. The sequences it walks are message ordering, which does not
 # vary with the key exchange; what pq changes is share sizes and secret
-# derivation, and hsstrict_pq, the differential and the e2e pq legs
+# derivation, and handshake_strict_pq, the differential and the e2e pq legs
 # cover those on every push.
-check: examples-check bin/unit bin/unit_ca bin/unit_pq bin/tlsclient bin/tlsclient_ecdsa bin/tlsclient_ca bin/tlsclient_ca_ecdsa bin/tlsclient_pq bin/drbg_test bin/rsa_test bin/sha3_test bin/mlkem_test bin/hsstrict_test bin/hsstrict_pq bin/x509strict bin/x509strict_ecdsa bin/hsseq_test bin/hsseq_pq lint lib-check cxx-check
+check: examples-check bin/unit bin/unit_ca bin/unit_pq bin/tlsclient bin/tlsclient_ecdsa bin/tlsclient_ca bin/tlsclient_ca_ecdsa bin/tlsclient_pq bin/drbg_test bin/rsa_test bin/sha3_test bin/mlkem_test bin/handshake_strict_test bin/handshake_strict_pq bin/x509strict bin/x509strict_ecdsa bin/handshake_sequence_test bin/handshake_sequence_pq lint lib-check cxx-check
 	./bin/unit
 	./bin/unit_ca
 	./bin/unit_pq
@@ -278,14 +278,14 @@ check: examples-check bin/unit bin/unit_ca bin/unit_pq bin/tlsclient bin/tlsclie
 	./bin/rsa_test
 	./bin/sha3_test
 	./bin/mlkem_test
-	./bin/hsstrict_test
-	./bin/hsstrict_pq
+	./bin/handshake_strict_test
+	./bin/handshake_strict_pq
 	./bin/x509strict
 	./bin/x509strict_ecdsa
 	$(MAKE) wycheproof
 	./test/e2e.sh
 	$(MAKE) diff
-	./bin/hsseq_test
+	./bin/handshake_sequence_test
 	$(MAKE) test-invariants-fast
 	$(MAKE) proof-coverage
 	$(MAKE) prove
@@ -391,13 +391,13 @@ else
 	  $(COV_CC) test/unit_test.c $(COV_LIB_OBJS) -o $$d/unit; \
 	  $(COV_CC) test/drbg_test.c $$d/drbg.o $$d/chacha20.o $$d/ct.o -o $$d/drbg_test; \
 	  $(COV_CC) test/rsa_test.c $$d/rsa.o $$d/rsa_mont.o $$d/sha256.o $$d/ct.o -o $$d/rsa_test; \
-	  $(COV_CC) test/hsstrict_test.c $$d/hsparse.o $$d/buf.o -o $$d/hsstrict_test; \
+	  $(COV_CC) test/handshake_strict_test.c $$d/handshake_parse.o $$d/buf.o -o $$d/handshake_strict_test; \
 	  verifier="$$d/rsa.o $$d/rsa_mont.o"; if [ $$pin = ecdsa ]; then verifier=$$d/p256.o; fi; \
 	  $(COV_CC) $$def test/x509_strict_test.c $$d/x509.o $$d/x509_der.o $$d/buf.o $$d/sha256.o \
 	    $$d/ct.o $$verifier -o $$d/x509strict_test; \
-	  $(COV_CC) test/hsseq_test.c \
-	    $(filter-out $$d/p256.o $$d/rsa.o $$d/rsa_mont.o,$(COV_LIB_OBJS)) -o $$d/hsseq_test; \
-	  for b in unit drbg_test rsa_test hsstrict_test x509strict_test hsseq_test; do \
+	  $(COV_CC) test/handshake_sequence_test.c \
+	    $(filter-out $$d/p256.o $$d/rsa.o $$d/rsa_mont.o,$(COV_LIB_OBJS)) -o $$d/handshake_sequence_test; \
+	  for b in unit drbg_test rsa_test handshake_strict_test x509strict_test handshake_sequence_test; do \
 	    if ENUM_DEPTH=4 ./$$d/$$b > /dev/null; then \
 	      echo "| $$b | $$pin | pass |" >> bin/coverage.md; \
 	    else \
@@ -472,12 +472,12 @@ san-check:
 	$(CC) $(SAN_CFLAGS) -I. -o bin/san/rsa_test test/rsa_test.c rsa.c rsa_mont.c sha256.c ct.c
 	$(CC) $(SAN_CFLAGS) -I. -o bin/san/sha3_test test/sha3_test.c sha3.c ct.c
 	$(CC) $(SAN_CFLAGS) -I. -o bin/san/mlkem_test test/mlkem_test.c mlkem.c mlkem_poly.c sha3.c ct.c
-	$(CC) $(SAN_CFLAGS) -I. -o bin/san/hsstrict_test test/hsstrict_test.c hsparse.c buf.c
+	$(CC) $(SAN_CFLAGS) -I. -o bin/san/handshake_strict_test test/handshake_strict_test.c handshake_parse.c buf.c
 	$(CC) $(SAN_CFLAGS) -I. -o bin/san/x509strict_test $(X509STRICT_SRC) rsa.c rsa_mont.c
 	$(CC) $(SAN_CFLAGS) -DCH_PIN_ECDSA -I. -o bin/san/x509strict_ecdsa $(X509STRICT_SRC) p256.c
-	$(CC) $(SAN_CFLAGS) -I. -o bin/san/hsseq_test test/hsseq_test.c \
+	$(CC) $(SAN_CFLAGS) -I. -o bin/san/handshake_sequence_test test/handshake_sequence_test.c \
 	  $(filter-out p256.c rsa.c rsa_mont.c,$(SRCS))
-	@set -e; for b in unit drbg_test rsa_test sha3_test mlkem_test hsstrict_test x509strict_test x509strict_ecdsa hsseq_test; do \
+	@set -e; for b in unit drbg_test rsa_test sha3_test mlkem_test handshake_strict_test x509strict_test x509strict_ecdsa handshake_sequence_test; do \
 	  echo "== $$b (SAN -O$(O))"; ENUM_DEPTH=4 ./bin/san/$$b; done
 	@if [ -d $(WYCHEPROOF_DIR)/.git ] \
 	  || git clone --quiet --depth 1 https://github.com/C2SP/wycheproof $(WYCHEPROOF_DIR) 2>/dev/null; then \
@@ -507,7 +507,7 @@ san-selftest:
 # prefix and RUNNER the emulator; the same command runs locally and on
 # CI:  make cross-check CROSS=mips-linux-gnu- RUNNER=qemu-mips
 # Static binaries, so the emulator needs no target sysroot. The suites
-# run from bin/cross on purpose: hsseq then skips the Lean-spec
+# run from bin/cross on purpose: handshake_sequence then skips the Lean-spec
 # comparison (the oracle is a host binary), keeping its direct ordering
 # and alert tables; depth 3 keeps the emulated enumeration to minutes,
 # and the x86 lane owns the deep run.
@@ -523,10 +523,10 @@ cross-check:
 	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) -static -I. -o bin/cross/rsa_test test/rsa_test.c rsa.c rsa_mont.c sha256.c ct.c
 	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) -static -I. -o bin/cross/sha3_test test/sha3_test.c sha3.c ct.c
 	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) -static -I. -o bin/cross/mlkem_test test/mlkem_test.c mlkem.c mlkem_poly.c sha3.c ct.c
-	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) -static -I. -o bin/cross/hsstrict_test test/hsstrict_test.c hsparse.c buf.c
+	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) -static -I. -o bin/cross/handshake_strict_test test/handshake_strict_test.c handshake_parse.c buf.c
 	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) -static -I. -o bin/cross/x509strict_test $(X509STRICT_SRC) rsa.c rsa_mont.c
 	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) -static -DCH_PIN_ECDSA -I. -o bin/cross/x509strict_ecdsa $(X509STRICT_SRC) p256.c
-	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) -static -I. -o bin/cross/hsseq_test test/hsseq_test.c \
+	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) -static -I. -o bin/cross/handshake_sequence_test test/handshake_sequence_test.c \
 	  $(filter-out p256.c rsa.c rsa_mont.c,$(SRCS))
 	@if [ -d $(WYCHEPROOF_DIR)/.git ] \
 	  || git clone --quiet --depth 1 https://github.com/C2SP/wycheproof $(WYCHEPROOF_DIR) 2>/dev/null; then \
@@ -537,7 +537,7 @@ cross-check:
 	  [ -n "$$CI" ] && { echo "wycheproof: clone failed and CI must not skip a gate"; exit 1; }; \
 	  echo "SKIP cross wycheproof: no checkout and no network"; \
 	fi
-	@set -e; cd bin/cross; for b in unit drbg_test rsa_test sha3_test mlkem_test hsstrict_test x509strict_test x509strict_ecdsa hsseq_test; do \
+	@set -e; cd bin/cross; for b in unit drbg_test rsa_test sha3_test mlkem_test handshake_strict_test x509strict_test x509strict_ecdsa handshake_sequence_test; do \
 	  echo "== $$b ($(RUNNER))"; ENUM_DEPTH=3 $(RUNNER) ./$$b; done; \
 	if [ -x wycheproof_test ]; then echo "== wycheproof_test ($(RUNNER))"; $(RUNNER) ./wycheproof_test; fi
 
@@ -734,14 +734,14 @@ examples-check: bin/example_psk bin/example_pinned bin/example_ca
 # which needs the CA clients.
 # The fast tier: violations backed by the second-scale binaries (unit,
 # the strictness parsers, rsa_test), so the PR lane runs them. The diff,
-# hsseq and e2e-backed violations stay in the nightly full run — each of
+# handshake_sequence and e2e-backed violations stay in the nightly full run — each of
 # those targets is slow enough that a baseline plus a mutation pass costs
 # real minutes.
 .PHONY: test-invariants-fast
-test-invariants-fast: bin/unit bin/unit_ca bin/x509strict bin/x509strict_ecdsa bin/rsa_test bin/drbg_test bin/hsstrict_test
+test-invariants-fast: bin/unit bin/unit_ca bin/x509strict bin/x509strict_ecdsa bin/rsa_test bin/drbg_test bin/handshake_strict_test
 	python3 test/violations.py --tier=fast
 
-# The whole set, fast tier plus the hsseq_test and e2e-backed
+# The whole set, fast tier plus the handshake_sequence_test and e2e-backed
 # violations that cost minutes each. Nightly.
 test-invariants: bin/unit bin/diff bin/tlsclient bin/tlsclient_ecdsa bin/tlsclient_ca bin/tlsclient_ca_ecdsa bin/example_psk bin/example_pinned bin/example_ca
 ifeq ($(LAKE),)
@@ -821,9 +821,9 @@ FUZZ_CC ?= $(shell command -v $(LLVM_BIN)/clang || command -v clang)
 FUZZ_CFLAGS := -std=c11 -O1 -g -fsanitize=fuzzer,address -D_DEFAULT_SOURCE -I.
 FUZZ_TIME ?= 30
 FUZZ_RECORD_LINK := record.c ct.c sha256.c hkdf.c chacha20.c poly1305.c aead.c
-FUZZ_HSPARSE_LINK := hsparse.c buf.c
-FUZZ_POSTHS_LINK := handshake.c hsparse.c hspump.c io.c record.c keysched.c session.c buf.c ct.c \
-                    sha256.c hkdf.c chacha20.c poly1305.c aead.c x25519.c rsa.c rsa_mont.c hsmsg.c
+FUZZ_HANDSHAKE_PARSE_LINK := handshake_parse.c buf.c
+FUZZ_POST_HANDSHAKE_LINK := handshake.c handshake_parse.c handshake_pump.c io.c record.c keysched.c session.c buf.c ct.c \
+                    sha256.c hkdf.c chacha20.c poly1305.c aead.c x25519.c rsa.c rsa_mont.c handshake_message.c
 FUZZ_X509_LINK := x509.c x509_der.c buf.c ct.c sha256.c rsa.c rsa_mont.c
 
 .PHONY: fuzz
@@ -838,12 +838,12 @@ fuzz:
 	  exit 0; \
 	fi; \
 	rm -f "$$tmp"; \
-	for t in record hsparse posths x509; do mkdir -p bin/fuzz/work_$$t; done; \
+	for t in record handshake_parse post_handshake x509; do mkdir -p bin/fuzz/work_$$t; done; \
 	$(FUZZ_CC) $(FUZZ_CFLAGS) fuzz/fuzz_record.c  $(FUZZ_RECORD_LINK)  -o bin/fuzz/fuzz_record; \
-	$(FUZZ_CC) $(FUZZ_CFLAGS) fuzz/fuzz_hsparse.c $(FUZZ_HSPARSE_LINK) -o bin/fuzz/fuzz_hsparse; \
-	$(FUZZ_CC) $(FUZZ_CFLAGS) fuzz/fuzz_posths.c  $(FUZZ_POSTHS_LINK)  -o bin/fuzz/fuzz_posths; \
+	$(FUZZ_CC) $(FUZZ_CFLAGS) fuzz/fuzz_handshake_parse.c $(FUZZ_HANDSHAKE_PARSE_LINK) -o bin/fuzz/fuzz_handshake_parse; \
+	$(FUZZ_CC) $(FUZZ_CFLAGS) fuzz/fuzz_post_handshake.c  $(FUZZ_POST_HANDSHAKE_LINK)  -o bin/fuzz/fuzz_post_handshake; \
 	$(FUZZ_CC) $(FUZZ_CFLAGS) fuzz/fuzz_x509.c    $(FUZZ_X509_LINK)    -o bin/fuzz/fuzz_x509; \
-	for t in record hsparse posths x509; do \
+	for t in record handshake_parse post_handshake x509; do \
 	  ./bin/fuzz/fuzz_$$t bin/fuzz/work_$$t fuzz/corpus/fuzz_$$t \
 	    -artifact_prefix=bin/fuzz/ -max_total_time=$(FUZZ_TIME); \
 	done

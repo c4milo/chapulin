@@ -8,9 +8,9 @@
 
 #include "ch_assert.h"
 #include "ct.h"
-#include "hsmsg.h"
-#include "hsparse.h"
-#include "hspump.h"
+#include "handshake_message.h"
+#include "handshake_parse.h"
+#include "handshake_pump.h"
 #include "session.h"
 
 // Exactly one pinned-mode verifier is linked per build (Makefile PIN).

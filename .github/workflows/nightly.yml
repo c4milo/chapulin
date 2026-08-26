@@ -121,7 +121,7 @@ jobs:
   # HelloRetryRequest path runs: the client offers one group, so a real
   # server either takes the share or fails, and only the mock can send a
   # cookie retry.
-  hsseq-pq:
+  handshake-sequence-pq:
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
@@ -140,16 +140,16 @@ jobs:
       - name: Enumerate every server message sequence, KEX=pq
         run: |
           set -o pipefail
-          make bin/hsseq_pq
-          ./bin/hsseq_pq 2>&1 | tee /tmp/hsseq_pq.out
+          make bin/handshake_sequence_pq
+          ./bin/handshake_sequence_pq 2>&1 | tee /tmp/handshake_sequence_pq.out
       - name: Put the verdict on the run page
         if: always()
         run: |
           {
-            echo '### hsseq (KEX=pq)'
+            echo '### handshake_sequence (KEX=pq)'
             echo
             echo '```'
-            tail -5 /tmp/hsseq_pq.out 2>/dev/null || echo '(the run produced no output)'
+            tail -5 /tmp/handshake_sequence_pq.out 2>/dev/null || echo '(the run produced no output)'
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
@@ -374,7 +374,7 @@ jobs:
   # per broken night unless an open nightly-failure issue already
   # exists.
   report:
-    needs: [prove-slow, diff-random, diff-ecdsa, spec-coverage, san-deep, mips-ubsan, fuzz, test-invariants, hsseq-pq, diff-pq]
+    needs: [prove-slow, diff-random, diff-ecdsa, spec-coverage, san-deep, mips-ubsan, fuzz, test-invariants, handshake-sequence-pq, diff-pq]
     # A job killed by timeout-minutes concludes as cancelled, not
     # failed, so failure() alone skips this job and a timed-out night
     # files nothing. Both prove-slow timeouts so far were reported only

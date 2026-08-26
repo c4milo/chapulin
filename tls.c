@@ -7,7 +7,7 @@
 #include "buf.h"
 #include "ct.h"
 #include "handshake.h"
-#include "hsmsg.h"
+#include "handshake_message.h"
 #include "io.h"
 #include "keysched.h"
 

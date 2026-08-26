@@ -171,7 +171,7 @@ sources are compiled into a [CBMC](https://www.cprover.org/cbmc/) harness, which
 out-of-bounds access, invalid pointers, bad shifts, and division by
 zero, for every input within the harness's bound. Signed overflow is
 checked too, except in the three x25519 mul harnesses that turn it off
-(see the x25519 row). `hsmsg.c`, `io.c`, and `keysched.c` have no harness.
+(see the x25519 row). `handshake_message.c`, `io.c`, and `keysched.c` have no harness.
 `make check` regenerates the source-by-source table in
 `bin/proof-coverage.md`. Where a bound equals the module's real
 maximum, the proof covers all inputs.
@@ -201,7 +201,7 @@ apart from one that passed — so for the slow rows, read the nightly.
 | p256 | the DER parser and limb marshalling stay safe on hostile signatures; a carry lemma covers the Montgomery multiply | signatures ≤ 80 B |
 | rsa (two harnesses) | the PSS decode and limb marshalling stay safe with the RSAVP1 result replaced by arbitrary bytes | 384 B modulus, every byte hostile except the top one, which each call pins to one of the three alignment shapes the decode takes — a symbolic top bit was measured at 7 GB of CNF |
 | record | seal works across its contract and returns, not traps, over the whole direction state — any key, IV, and sequence number, the saturation refusal included — and any claimed buffer size; rec_open stays safe on fully hostile bytes, into a separate buffer and in place, the shape both shipped callers use | records ≤ 160 B |
-| hsparse, eeparse, certparse | the ServerHello, EncryptedExtensions, Certificate, and CertificateVerify parsers stay safe on hostile bytes, and the certificate list and signature slices they hand back lie inside the message. The 256-byte bound cannot hold a hybrid key_share, so the `KEX=pq` arm of the ServerHello parser is unproven | messages ≤ 256 B |
+| handshake_parse, eeparse, certparse | the ServerHello, EncryptedExtensions, Certificate, and CertificateVerify parsers stay safe on hostile bytes, and the certificate list and signature slices they hand back lie inside the message. The 256-byte bound cannot hold a hybrid key_share, so the `KEX=pq` arm of the ServerHello parser is unproven | messages ≤ 256 B |
 | tlspost | the post-handshake parser stays safe on hostile decrypted bytes and consumes no more than its input | messages ≤ 128 B |
 | drbg | the generator stays safe for any request, seeded and across rekeys | requests ≤ 96 B |
 | x509der (two harnesses) | every DER primitive stays safe on hostile bytes at the rbuf shape its caller hands it, honors the pointer contracts the walker rests on, and consumes no more than the per-primitive cap the walker proof replays, in both builds | inputs ≤ 448 B; keyusage at its 256 B extnValue cap |
@@ -277,7 +277,7 @@ from quietly weakening the oracle. [`spec/CONTRACT.md`](spec/CONTRACT.md) lists 
 
 The state machine gets the same treatment one level up.
 [`spec/Spec/Handshake.lean`](spec/Spec/Handshake.lean) models the message-ordering rules as a step
-function, and [`test/hsseq_test.c`](test/hsseq_test.c) enumerates every server message
+function, and [`test/handshake_sequence_test.c`](test/handshake_sequence_test.c) enumerates every server message
 sequence the model admits — all eleven letters to depth 5, and the six
 handshake letters to depth 6, in both modes, 466,286 in all. It renders
 each as real records over a mock transport, runs the real client, and

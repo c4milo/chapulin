@@ -29,7 +29,7 @@ a MUST but names no alert, the verdict is `Alert.unspecified` and the
 doc comment says so, rather than inventing one: a guessed alert would
 report a disagreement that is not a bug.
 -/
-namespace Spec.Hsparse
+namespace Spec.HandshakeParse
 
 open Spec.Bytes
 
@@ -404,7 +404,7 @@ def serverHelloPrefix (msg : ByteArray) : Except Alert ServerHelloPrefix := do
   -- §4.1.3: legacy_session_id_echo is "the contents of the client's
   -- legacy_session_id field", and a client that receives any other
   -- value MUST abort with illegal_parameter. This profile needs no
-  -- middlebox compatibility, so hsmsg.c sends the field empty and the
+  -- middlebox compatibility, so handshake_message.c sends the field empty and the
   -- only echo that can match is the empty one. Like the cipher suite
   -- and the group, the offer is a constant, so the check belongs here
   -- rather than with the caller.
@@ -781,7 +781,7 @@ def parseCertificateVerify (scheme : Scheme) (msg : ByteArray) :
   -- §4.4.3 frames the signature as `opaque signature<0..2^16-1>` and
   -- says nothing about its length: what lengths are admissible is the
   -- signature algorithm's business, settled when the signature is
-  -- verified. hsparse.c leaves it there too.
+  -- verified. handshake_parse.c leaves it there too.
   return { algorithm, signature }
 
 /-! ## Encoders, for the selftest and for minting differential inputs -/
@@ -836,7 +836,7 @@ differential run.
 -/
 def selftest : Bool := Id.run do
   let random := ByteArray.mk (Array.replicate 32 0x5a)
-  -- hsmsg.c offers an empty legacy_session_id, so the echo is empty.
+  -- handshake_message.c offers an empty legacy_session_id, so the echo is empty.
   let sessionId := ByteArray.mk #[]
   let share := ByteArray.mk (Array.replicate 32 0x77)
   let versionExt := extension extSupportedVersions (u16 tls13Version)
@@ -1320,4 +1320,4 @@ theorem parseCertificateVerify_sound (scheme : Scheme) (msg : ByteArray)
   obtain rfl := eq_of_pure_eq_ok h_accepted
   exact h_pinned
 
-end Spec.Hsparse
+end Spec.HandshakeParse

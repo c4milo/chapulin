@@ -6,7 +6,7 @@
 #ifndef CH_HANDSHAKE_AUTH_H
 #define CH_HANDSHAKE_AUTH_H
 
-#include "hspump.h"
+#include "handshake_pump.h"
 
 // Reads the server's Certificate and CertificateVerify and authenticates
 // the peer: against the pinned key in a raw-pin build, or against a

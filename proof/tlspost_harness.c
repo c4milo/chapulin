@@ -8,7 +8,7 @@
 // The full ch_read/pump_post_handshake driver that calls this (record pump,
 // cross-record reassembly, ch_write, ch_close) does not converge as one
 // CBMC formula; its integration is covered by test/e2e.sh, the
-// mock-transport unit tests, and fuzz/fuzz_posths.c. Here the record I/O,
+// mock-transport unit tests, and fuzz/fuzz_post_handshake.c. Here the record I/O,
 // crypto, and key schedule are stubs asserting their proven contracts,
 // so what is under proof is the parser's own arithmetic. buf.c and ct.c
 // are real.
@@ -16,7 +16,7 @@
 
 #include <string.h>
 
-#include "hsmsg.h"
+#include "handshake_message.h"
 #include "io.h"
 #include "keysched.h"
 #include "record.h"

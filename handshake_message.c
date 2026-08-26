@@ -1,4 +1,4 @@
-#include "hsmsg.h"
+#include "handshake_message.h"
 
 #include "buf.h"
 

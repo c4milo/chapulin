@@ -17,7 +17,7 @@
 
 #include "cfg.h"
 #include "ch_assert.h"
-#include "hsmsg.h"
+#include "handshake_message.h"
 #include "x509.h"
 #include "x509_mutate.h"
 #include "x509_vectors.h"

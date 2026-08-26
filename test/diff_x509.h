@@ -22,7 +22,7 @@
 #ifdef __has_include
 #if __has_include("x509.h")
 #include "cfg.h"
-#include "hsmsg.h"
+#include "handshake_message.h"
 #include "x509.h"
 
 #include "x509_mutate.h"

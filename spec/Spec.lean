@@ -15,4 +15,4 @@ import Spec.X509
 import Spec.Drbg
 import Spec.Handshake
 import Spec.Epoch
-import Spec.Hsparse
+import Spec.HandshakeParse

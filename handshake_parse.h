@@ -5,8 +5,8 @@
 // results mean. External linkage so proof, fuzz, and strictness-test
 // builds reach the parsers without the state machine; the packaged
 // library object localizes them like every other internal symbol.
-#ifndef CH_HSPARSE_H
-#define CH_HSPARSE_H
+#ifndef CH_HANDSHAKE_PARSE_H
+#define CH_HANDSHAKE_PARSE_H
 
 #include <stddef.h>
 #include <stdint.h>

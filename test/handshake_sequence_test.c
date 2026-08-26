@@ -1,7 +1,7 @@
 // Sequence differential for the handshake state machine (issue #3):
 // enumerate every server message sequence up to a depth, render each as
 // real TLS records over a mock transport, run the real client, and
-// require its accept/reject verdict to equal the Lean model's hsseq
+// require its accept/reject verdict to equal the Lean model's handshake_sequence
 // oracle. One letter per server message: S ServerHello, H
 // HelloRetryRequest, E EncryptedExtensions, C Certificate, R
 // CertificateRequest, V CertificateVerify, F Finished, N
@@ -29,8 +29,8 @@
 #include "buf.h"
 #include "ch_assert.h"
 #include "diff_driver.h"
-#include "hsmsg.h"
-#include "hsparse.h"
+#include "handshake_message.h"
+#include "handshake_parse.h"
 #include "keysched.h"
 #include "p256.h"
 #include "record.h"
@@ -105,9 +105,9 @@ int p256_ecdsa_verify(const uint8_t pub[64], const uint8_t msg_hash[32], const u
 // cannot buffer and reports decode_error, so neither case reaches the
 // field check it asserts. The classic floor is 512, which makes this
 // the 1024 that build has always used.
-#define HSSEQ_RXBUF (CH_MIN_RXBUF + 512)
+#define HANDSHAKE_SEQUENCE_RXBUF (CH_MIN_RXBUF + 512)
 
-#include "hsseq_server.h"
+#include "handshake_sequence_server.h"
 
 // Why the client rejected, for the divergence report: transport
 // exhaustion (the sequence ended before the client was satisfied) is a
@@ -130,10 +130,12 @@ static void case_config(ch_cfg *cfg, uint8_t *rxbuf, size_t rxlen, int psk) {
     cfg->recv = mock_recv;
     cfg->io = &srv;
     if (psk) {
+        // The length derives from the literal so the two cannot drift.
+        static const char psk_identity[] = "handshake_sequence";
         cfg->psk = test_psk;
         cfg->psk_len = sizeof test_psk;
-        cfg->psk_id = (const uint8_t *)"hsseq";
-        cfg->psk_id_len = 5;
+        cfg->psk_id = (const uint8_t *)psk_identity;
+        cfg->psk_id_len = sizeof psk_identity - 1;
         return;
     }
     cfg->server_pubkey = test_pin;
@@ -178,7 +180,7 @@ static int run_case(const char *letters, size_t n, int psk) {
     srv.psk = psk;
     sha256_init(&srv.transcript);
 
-    static uint8_t rxbuf[HSSEQ_RXBUF];
+    static uint8_t rxbuf[HANDSHAKE_SEQUENCE_RXBUF];
     ch_cfg cfg;
     case_config(&cfg, rxbuf, sizeof rxbuf, psk);
 
@@ -197,14 +199,17 @@ static long mismatches;
 static void check_one(const char *letters, size_t len, int psk) {
     int c = run_case(letters, len, psk);
     const char *why = reject_why;
-    char cmd[DEPTH_MAX + 16];
+    // Sized from the longest command this builds, so renaming the op
+    // resizes the buffer instead of overflowing it.
+    char cmd[sizeof "handshake_sequence pinned " + DEPTH_MAX];
     char reply[16];
-    (void)snprintf(cmd, sizeof cmd, "hsseq %s %s", psk ? "psk" : "pinned", len > 0 ? letters : "-");
+    (void)snprintf(cmd, sizeof cmd, "handshake_sequence %s %s", psk ? "psk" : "pinned",
+                   len > 0 ? letters : "-");
     query(cmd, reply, sizeof reply);
     comparisons++;
     if (c != (strcmp(reply, "1") == 0)) {
         mismatches++;
-        (void)fprintf(stderr, "hsseq mismatch: mode=%s seq=%s C=%d spec=%s (C: %s)\n",
+        (void)fprintf(stderr, "handshake_sequence mismatch: mode=%s seq=%s C=%d spec=%s (C: %s)\n",
                       psk ? "psk" : "pinned", len > 0 ? letters : "-", c, reply, why);
     }
 }
@@ -348,22 +353,23 @@ int main(void) {
         (void)clock_gettime(CLOCK_MONOTONIC, &t1);
         double secs = (double)(t1.tv_sec - t0.tv_sec) + (double)(t1.tv_nsec - t0.tv_nsec) / 1e9;
         if (mismatches > 0) {
-            (void)fprintf(stderr, "hsseq_test: %ld mismatch(es) in %ld sequences\n", mismatches,
-                          comparisons);
+            (void)fprintf(stderr, "handshake_sequence_test: %ld mismatch(es) in %ld sequences\n",
+                          mismatches, comparisons);
             failures++;
         } else {
-            (void)printf("hsseq_test: %ld sequences (all %d letters to depth %d, the %d "
-                         "handshake letters to depth %d, both modes) in %.1f s, C == spec\n",
-                         comparisons, ALPHA_N, depth, FLIGHT_N, FLIGHT_DEPTH, secs);
+            (void)printf(
+                "handshake_sequence_test: %ld sequences (all %d letters to depth %d, the %d "
+                "handshake letters to depth %d, both modes) in %.1f s, C == spec\n",
+                comparisons, ALPHA_N, depth, FLIGHT_N, FLIGHT_DEPTH, secs);
         }
     } else {
-        (void)printf("hsseq_test: spec comparisons skipped (build spec/ first)\n");
+        (void)printf("handshake_sequence_test: spec comparisons skipped (build spec/ first)\n");
     }
 
     if (failures > 0) {
         (void)fprintf(stderr, "%d failure(s)\n", failures);
         return 1;
     }
-    (void)printf("hsseq_test: all checks passed\n");
+    (void)printf("handshake_sequence_test: all checks passed\n");
     return 0;
 }

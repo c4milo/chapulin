@@ -2,13 +2,13 @@
 // on ch_handshake's stack and is wiped wholesale when the handshake
 // ends either way; the pump yields records and whole messages out of
 // cfg.buf, where pointers die at the next pump call.
-#ifndef CH_HSPUMP_H
-#define CH_HSPUMP_H
+#ifndef CH_HANDSHAKE_PUMP_H
+#define CH_HANDSHAKE_PUMP_H
 
 #include <stddef.h>
 #include <stdint.h>
 
-#include "hsparse.h"
+#include "handshake_parse.h"
 #include "session.h"
 #include "sha256.h"
 #include "x25519.h"

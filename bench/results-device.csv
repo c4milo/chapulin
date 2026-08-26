@@ -12,7 +12,7 @@ buf,1688,0,1688,40,wb_mark,1044,48
 record,1236,19,1255,88,rec_seal,1163,96
 keysched,832,177,1009,88,ks_master,917,112
 io,400,0,400,56,io_read_record,308,80
-hsmsg,884,0,884,72,hs_build_ch,816,112
+handshake_message,884,0,884,72,hs_build_ch,816,112
 session,408,0,408,64,tlsi_send_alert,336,48
 handshake,4928,98,5026,776,ch_handshake,4298,848
 tls,2316,5,2321,208,ch_read,1753,240

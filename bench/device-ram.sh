@@ -42,7 +42,7 @@ EOF
 # p256 is measured too so the PIN=ecdsa column stays known, but the totals
 # below count the default build only.
 SRCS="ct sha256 hkdf chacha20 poly1305 aead x25519 rsa rsa_mont buf record keysched \
-      io hsmsg session handshake tls"
+      io handshake_message session handshake tls"
 EXTRA_SRCS="p256"
 
 DEV="$CLANG $TRIPLE -Os -ffreestanding -nostdlibinc -fstack-usage -I$ROOT -I$TMP/shim -c"

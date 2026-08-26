@@ -1,13 +1,13 @@
 // The two attacker-facing handshake message parsers, split out of
 // handshake.c so proof, fuzz, and strictness-test builds compile them
-// without the state machine. Contract in hsparse.h.
-#include "hsparse.h"
+// without the state machine. Contract in handshake_parse.h.
+#include "handshake_parse.h"
 
 #include <string.h>
 
 #include "buf.h"
 #include "cfg.h"
-#include "hsmsg.h"
+#include "handshake_message.h"
 
 const uint8_t hsp_hrr_magic[32] = {0xcf, 0x21, 0xad, 0x74, 0xe5, 0x9a, 0x61, 0x11, 0xbe, 0x1d, 0x8c,
                                    0x02, 0x1e, 0x65, 0xb8, 0x91, 0xc2, 0xa2, 0x11, 0x16, 0x7a, 0xbb,

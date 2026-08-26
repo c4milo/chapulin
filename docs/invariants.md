@@ -208,7 +208,7 @@ which convention holds them.
   the server takes it or the handshake fails closed.
 - **Mechanism.** Absence of selection code; the PIN build flag picks
   the sigalg at compile time, never at runtime.
-- **Check.** Convention; hsstrict asserts the reject on any
+- **Check.** Convention; handshake_strict asserts the reject on any
   ServerHello that picks anything else.
 - **Violation.** A PR accepts a second cipher suite value in
   ServerHello and downgrade surface exists again.
@@ -219,7 +219,7 @@ which convention holds them.
 - **Claim.** No TLS 1.2, no renegotiation, no compression, no 0-RTT.
 - **Mechanism.** Absence; the supported_versions extension pins 1.3
   and the parser rejects everything else.
-- **Check.** Convention plus hsstrict negative cases.
+- **Check.** Convention plus handshake_strict negative cases.
 - **Violation.** A PR handles a 1.2 alert "gracefully" instead of
   failing closed.
 - See [decisions: Protocol surface](decisions.md#protocol-surface).
@@ -290,7 +290,7 @@ which convention holds them.
   is no error a caller can retry past.
 - **Mechanism.** Fail-closed policy; `tlsi_fail` is the single
   funnel.
-- **Check.** Convention; hsseq's 466k-sequence run asserts no
+- **Check.** Convention; handshake_sequence's 466k-sequence run asserts no
   sequence revives a failed session.
 - **Violation.** A PR returns a "soft" error that leaves keys live so
   the caller can retry a read.
@@ -303,7 +303,7 @@ which convention holds them.
   HRR, dual auth configs, and an even RSA pin.
 - **Mechanism.** Fail-closed policy, each refusal an explicit branch
   with its alert.
-- **Check.** hsstrict table cases per refusal; CBMC proves the
+- **Check.** handshake_strict table cases per refusal; CBMC proves the
   branches memory-safe.
 - **Violation.** A PR relaxes one refusal for interop with a broken
   server.
@@ -332,11 +332,11 @@ which convention holds them.
   Comparisons on secret data go through `ct_memeq`, selects through
   branchless masks. Variable time is allowed only where every input
   is public, stated at the call site — P-256 and RSA verify, and the
-  HRR-magic compare in hsparse.c.
+  HRR-magic compare in handshake_parse.c.
 - **Mechanism.** Constant-time construction; ChaCha20/Poly1305/x25519
   have no table lookups by design.
 - **Check.** Semgrep-structural (`inv-16-no-variable-time-compare`) bans
-  memcmp/strcmp in library sources, with hsparse.c allowlisted for its
+  memcmp/strcmp in library sources, with handshake_parse.c allowlisted for its
   public-data compare — the allowlist is file-wide, so review holds the
   line on any new compare added to that file; `make timing` (Welch's
   t-test) gives statistical evidence.
@@ -388,7 +388,7 @@ which convention holds them.
 - **Check.** Lean theorem (17 in `Spec/Handshake.lean`, over every
   trace the model admits; `accepts_decompose` bounds the flight at 4
   messages in the spec's `psk` Mode and 6 in its `pinned` Mode);
-  `hsseq_test`, exhaustive over 466,286 sequences — all eleven letters
+  `handshake_sequence_test`, exhaustive over 466,286 sequences — all eleven letters
   to depth 5, and the six handshake letters to depth 6 so the longest
   flight the model admits is reached — in both auth modes, comparing
   the real client's verdict against that model. It links TRUST=raw

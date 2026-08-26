@@ -10,7 +10,7 @@
 #include "buf.h"
 #include "cfg.h"
 #include "ct.h"
-#include "hsmsg.h"
+#include "handshake_message.h"
 #include "sha256.h"
 
 #ifdef CH_PIN_ECDSA

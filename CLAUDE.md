@@ -37,8 +37,8 @@ Home: github.com/c4milo.
   `rsa.[ch]`/`rsa_mont.c` (pinned-mode verify) ←
   `x509.[ch]`/`x509_der.c` (profiled certificate verify, CA mode) ←
   `record.[ch]`
-  (record layer) ← `hsparse.[ch]` (message parsers) ←
-  `hspump.[ch]` (record pump and reassembly) ←
+  (record layer) ← `handshake_parse.[ch]` (message parsers) ←
+  `handshake_pump.[ch]` (record pump and reassembly) ←
   `handshake_auth.[ch]` (server authentication: the Certificate and
   CertificateVerify flight, and the CA build's revocation epoch) ←
   `handshake.[ch]` (client state machine) ← `tls.[ch]`

@@ -3,14 +3,14 @@
 // reassembles complete handshake messages across records in cfg.buf.
 // Split from handshake.c so the driver file stays one readable
 // concern; external linkage keeps the pump provable and fuzzable on
-// its own. Contract in hspump.h.
-#include "hspump.h"
+// its own. Contract in handshake_pump.h.
+#include "handshake_pump.h"
 
 #include <string.h>
 
 #include "buf.h"
 #include "cfg.h"
-#include "hsmsg.h"
+#include "handshake_message.h"
 #include "io.h"
 #include "record.h"
 

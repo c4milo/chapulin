@@ -5,7 +5,7 @@
 // chained Montgomery products (this transform, the two halves of its
 // inverse, the base multiplication) each get their own slow-tier
 // formula: SAT cost grows with the number of multiplies in one
-// formula — the same reason hsparse and eeparse split — and merging
+// formula — the same reason handshake_parse and eeparse split — and merging
 // these with the rest of the module was killed at 14 GB. The overflow
 // verdict is the interesting one: it shows the reduction constants
 // keep every intermediate product inside int32 whatever the input

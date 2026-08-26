@@ -1,8 +1,8 @@
 // Handshake message construction and the wire constants both build and
 // parse sides share. The only message the client ever builds besides
 // Finished is the ClientHello, so that is what lives here.
-#ifndef CH_HSMSG_H
-#define CH_HSMSG_H
+#ifndef CH_HANDSHAKE_MESSAGE_H
+#define CH_HANDSHAKE_MESSAGE_H
 
 #include <stddef.h>
 #include <stdint.h>

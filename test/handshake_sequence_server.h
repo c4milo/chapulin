@@ -2,10 +2,10 @@
 // letter of a message sequence into one real TLS record on demand, as
 // the client's recv drains the queue. Rendering is lazy because the
 // retry flight after a HelloRetryRequest depends on the second
-// ClientHello. Included by test/hsseq_test.c only, after diff_driver.h
+// ClientHello. Included by test/handshake_sequence_test.c only, after diff_driver.h
 // (for die) and the chapulin headers it uses.
-#ifndef CH_HSSEQ_SERVER_H
-#define CH_HSSEQ_SERVER_H
+#ifndef CH_HANDSHAKE_SEQUENCE_SERVER_H
+#define CH_HANDSHAKE_SEQUENCE_SERVER_H
 
 // What the server has sent so far, deciding how the next record is
 // protected: nothing yet, the handshake flight, or post-Finished.
@@ -15,7 +15,7 @@
 
 // Encoding mutations for the alert-assertion table: MUT_NONE is the
 // honest server; each other value bends exactly one field of one
-// message, and the table in hsseq_test.c asserts which alert the
+// message, and the table in handshake_sequence_test.c asserts which alert the
 // client puts on the wire for it.
 #define MUT_NONE 0
 #define MUT_SH_SUITE 1   // ServerHello picks a suite we did not offer
@@ -30,8 +30,9 @@ static int mut_mode;
 typedef struct {
     const char *seq;
     size_t len;
-    size_t next;                           // next letter to render
-    uint8_t queue[2 * HSSEQ_RXBUF + 2048]; // rendered records the client has not read yet
+    size_t next; // next letter to render
+    uint8_t
+        queue[2 * HANDSHAKE_SEQUENCE_RXBUF + 2048]; // rendered records the client has not read yet
     size_t queue_len;
     size_t queue_off;
     // Captured ClientHello messages, header included. The client builds
@@ -182,7 +183,7 @@ static void hash_now(const mock_server *s, uint8_t out[SHA256_LEN]) {
 // supported_versions (6), key_share (8 + CH_KEX_SERVER_SHARE) or the
 // HRR cookie block (14), and pre_shared_key (6), plus slack for the
 // mutations that grow a field.
-#define HSSEQ_SH_MAX (72 + CH_KEX_SERVER_SHARE)
+#define HANDSHAKE_SEQUENCE_SH_MAX (72 + CH_KEX_SERVER_SHARE)
 
 // ServerHello or HelloRetryRequest message, header included. hrr swaps
 // the random for the §4.2.3 sentinel and offers a cookie instead of a
@@ -245,7 +246,7 @@ static size_t build_server_hello(const mock_server *s, uint8_t *out, size_t cap,
 // handshake traffic secrets; anywhere later it is just an out-of-order
 // message under the current keys, which the client must refuse.
 static void render_server_hello(mock_server *s) {
-    uint8_t msg[HSSEQ_SH_MAX];
+    uint8_t msg[HANDSHAKE_SEQUENCE_SH_MAX];
 #ifdef CH_KEX_PQ
     // Encapsulate before the build: build_server_hello sends server_ct.
     if (mlkem_encaps_derand(server_ct, server_ss, client_share(s), server_m) != 0) {
@@ -295,7 +296,7 @@ static void render_server_hello(mock_server *s) {
 
 // H: mirror of handshake.c's hrr_transcript on the first flight.
 static void render_hrr(mock_server *s) {
-    uint8_t msg[HSSEQ_SH_MAX];
+    uint8_t msg[HANDSHAKE_SEQUENCE_SH_MAX];
     size_t n = build_server_hello(s, msg, sizeof msg, 1);
     if (s->phase == PHASE_CLEAR) {
         absorb_client_hellos(s);
@@ -447,7 +448,7 @@ static void render(mock_server *s, char letter) {
         if (mut_mode == MUT_REC_OVER) {
             // Over the record_size_limit the client computed from its
             // receive buffer, but under the absolute record cap.
-            static uint8_t big[HSSEQ_RXBUF + 476];
+            static uint8_t big[HANDSHAKE_SEQUENCE_RXBUF + 476];
             push_record(s, REC_APPDATA, big, sizeof big);
             break;
         }

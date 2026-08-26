@@ -7,7 +7,7 @@
 // Layered proof: io, record protection, the key schedule, hashing,
 // x25519, and the two message parsers are stubs asserting their proven
 // contracts and havocing results — the parsers are proven concrete in
-// hsparse_harness and eeparse_harness, so dragging their real bodies
+// handshake_parse_harness and eeparse_harness, so dragging their real bodies
 // into this formula only grows it (measured: past CI's whole budget).
 // The object under proof is the driver's own arithmetic and state.
 // buf.c and ct.c are real.
@@ -16,8 +16,8 @@
 
 #include <string.h>
 
-#include "hsmsg.h"
-#include "hsparse.h"
+#include "handshake_message.h"
+#include "handshake_parse.h"
 #include "io.h"
 #include "keysched.h"
 #include "p256.h"
@@ -143,7 +143,7 @@ size_t hs_build_client_hello(uint8_t *out, size_t cap, const ch_cfg *cfg, const 
     }
     size_t n = nondet_size_t();
     // ASSUMED, not proven: a successful build returns at least the
-    // binders tail plus the handshake header. hsmsg.c has no harness
+    // binders tail plus the handshake header. handshake_message.c has no harness
     // (the README names it), so this contract rests on the unit tests
     // until one exists; the binder patching below is what leans on it.
     __CPROVER_assume(n >= CH_BINDERS_TAIL + 4 && n <= cap);
