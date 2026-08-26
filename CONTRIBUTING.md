@@ -61,6 +61,15 @@ Domain vocabulary keeps the RFCs' own spelling: `pt`, `aad`, `iv`,
 - `make check` runs the build, linters, unit and differential tests,
   and the fast proof tier. The slow proofs run as
   `make prove-slow` in CI and before a release.
+- The lint tools are required, not optional. clang-tidy, clang-format,
+  cppcheck, semgrep, commitlint and lake each fail `make lint` when
+  missing, on every machine. A lint gate that skipped would let
+  `make check` exit 0 with a finding still waiting on CI. Install them
+  at the versions the env block in `.github/workflows/check.yml` pins.
+  Targets outside `lint` still skip locally and fail only on CI — cbmc
+  for the proofs, gcovr for coverage, and lake for the differential and
+  the spec coverage report. Skipping those costs coverage the pushed
+  branch still gets; skipping a linter hides a verdict already at hand.
 - The PIN variable splits the pinned-key build: RSA-PSS by default,
   `PIN=ecdsa` for P-256. One algorithm per library object; test both.
 - Generated files never get committed. `test/gen_rfc8448.py` and

@@ -29,6 +29,17 @@ LAKE ?= $(shell command -v lake || command -v $(HOME)/.elan/bin/lake)
 # Locally the skip stays a convenience. Usage: $(call REQUIRE_ON_CI,name)
 REQUIRE_ON_CI = @[ -z "$$CI" ] || { echo "$(1): missing on CI; the gate must not skip"; exit 1; }
 
+# A missing linter fails everywhere, CI or not. A lint gate that skips
+# is worse than no gate: check exits 0, the run reads green, and the
+# finding lands on CI after the push instead of before it. ac3b0d2
+# reached main red exactly that way, with cppcheck and semgrep absent
+# and their two SKIP lines scrolled off the top of a thirty-minute run.
+# Tools outside the lint target keep REQUIRE_ON_CI: skipping a proof or
+# a differential locally costs coverage the pushed branch still gets,
+# while skipping a linter hides a verdict that was already available.
+# Usage: $(call REQUIRE,name,how to install it)
+REQUIRE = @echo "$(1): missing, and a linter must not skip. $(2)"; exit 1
+
 SRCS := ct.c sha256.c hkdf.c chacha20.c poly1305.c aead.c x25519.c p256.c rsa.c rsa_mont.c \
         x509.c x509_der.c buf.c record.c keysched.c io.c hsmsg.c hsparse.c hspump.c session.c \
         handshake_auth.c handshake.c tls.c
@@ -540,8 +551,7 @@ cross-check:
 SPEC_MODEL := $(wildcard spec/Spec/*.lean) spec/Spec.lean
 lint-spec:
 ifeq ($(LAKE),)
-	$(call REQUIRE_ON_CI,lake)
-	@echo "SKIP lint-spec: lake not on PATH (install elan: https://leanprover.github.io)"
+	$(call REQUIRE,lint-spec,lake is not on PATH — install elan from https://leanprover.github.io)
 else
 	@rc=0; for f in $(SPEC_MODEL) spec/Main.lean; do \
 	  hits=$$(sed 's/--.*//' $$f \
@@ -623,8 +633,7 @@ lint-docs:
 SEMGREP ?= $(shell command -v semgrep)
 lint-invariants:
 ifeq ($(SEMGREP),)
-	$(call REQUIRE_ON_CI,semgrep)
-	@echo "SKIP semgrep: not on PATH (pip install --require-hashes -r .semgrep/requirements.txt)"
+	$(call REQUIRE,semgrep,pip install --require-hashes -r .semgrep/requirements.txt)
 else
 	# Local rules only and --metrics=off, never --config auto or a
 	# registry config: those fetch rules from and upload scan context
@@ -644,24 +653,21 @@ endif
 
 lint-tidy:
 ifeq ($(CLANG_TIDY),)
-	$(call REQUIRE_ON_CI,clang-tidy)
-	@echo "SKIP clang-tidy: not on PATH (ships with llvm)"
+	$(call REQUIRE,clang-tidy,it ships with llvm — see the LLVM_MAJOR pin in .github/workflows/check.yml)
 else
 	$(CLANG_TIDY) --quiet $(LINT_C) -- -std=c11 -D_DEFAULT_SOURCE -I.
 endif
 
 lint-format:
 ifeq ($(CLANG_FORMAT),)
-	$(call REQUIRE_ON_CI,clang-format)
-	@echo "SKIP clang-format: not on PATH (ships with llvm)"
+	$(call REQUIRE,clang-format,it ships with llvm — see the LLVM_MAJOR pin in .github/workflows/check.yml)
 else
 	$(CLANG_FORMAT) --dry-run --Werror $(LINT_C) $(HDRS) $(PROOF_C) $(FUZZ_C) $(TESTH)
 endif
 
 lint-cppcheck:
 ifeq ($(CPPCHECK),)
-	$(call REQUIRE_ON_CI,cppcheck)
-	@echo "SKIP cppcheck: not on PATH (install cppcheck)"
+	$(call REQUIRE,cppcheck,build it at the CPPCHECK_VERSION pinned in .github/workflows/check.yml)
 else
 	# constParameterCallback: I/O callback signatures are fixed by the
 	# ch_cfg contract in tls.h; const-ing an implementation's void *io
@@ -680,8 +686,7 @@ hooks:
 
 lint-commits:
 ifeq ($(shell command -v npx),)
-	$(call REQUIRE_ON_CI,npx)
-	@echo "SKIP commitlint: npx not on PATH (install node)"
+	$(call REQUIRE,commitlint,npx is not on PATH — install node then run npm ci)
 else
 	npx --no-install commitlint --from=$(shell git rev-list --max-parents=0 HEAD)~0 --to=HEAD \
 	  || npx --no-install commitlint --from=HEAD~1 --to=HEAD
