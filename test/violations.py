@@ -38,6 +38,7 @@ worse than none, because it reports success forever.
 
 import os
 import pathlib
+import re
 import subprocess
 import time
 import sys
@@ -198,7 +199,39 @@ def catches_of(name):
     return parse(VIOLATIONS / f"{name}.violation")[0]["catches"]
 
 
+def lint_builds():
+    """A script target runs no make, so its 'builds' line is the only thing
+    that puts binaries on disk. A name missing there fails quietly: the
+    baseline runs a binary nobody built and that invariant loses its
+    verdict. INV-21 lost bin/tlsclient_pq this way when KEX=pq added the
+    go-pq legs."""
+    bad = 0
+    for path in sorted(VIOLATIONS.glob("*.violation")):
+        head, _, _ = parse(path)
+        catches = head["catches"]
+        if "/" not in catches:
+            continue
+        script = pathlib.Path(catches)
+        if not script.exists():
+            print(f"lint-violation-builds: {path.name} catches {catches}, which is missing")
+            bad = 1
+            continue
+        needs = set(re.findall(r"\./(bin/[a-z0-9_]+)", script.read_text()))
+        builds = set(head.get("builds", "").split())
+        missing = sorted(needs - builds)
+        if missing:
+            print(f"lint-violation-builds: {path.name} runs {' '.join(missing)} "
+                  f"but does not build it")
+            bad = 1
+    if bad:
+        return 1
+    print("lint-violation-builds: every script target names the binaries it runs")
+    return 0
+
+
 def main():
+    if "--lint-builds" in sys.argv[1:]:
+        sys.exit(lint_builds())
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
     tier = next((a[len("--tier="):] for a in sys.argv[1:]
                  if a.startswith("--tier=")), None)

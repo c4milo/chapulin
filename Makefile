@@ -331,7 +331,7 @@ bin/diff: test/diff_test.c $(SRCS) sha3.c mlkem.c mlkem_poly.c $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) -I. -o $@ test/diff_test.c $(SRCS) sha3.c mlkem.c mlkem_poly.c
 
-.PHONY: check lint lint-tidy lint-format lint-cppcheck lint-docs lint-invariants lint-go-pin lint-spec prove diff fmt clean
+.PHONY: check lint lint-tidy lint-format lint-cppcheck lint-docs lint-invariants lint-go-pin lint-violation-builds lint-spec prove diff fmt clean
 # bin/handshake_sequence_pq is built here but run by the nightly, not by check: the
 # two enumerations together cost 19 of check's 45 measured minutes and
 # the CI job's timeout is 45, so the second one would decide the lane by
@@ -684,7 +684,7 @@ endif
 
 # Checks and thresholds live in .clang-tidy; every disable carries a reason
 # there (fix-or-drop, never NOLINT in code).
-lint: lint-tidy lint-format lint-cppcheck lint-commits lint-docs lint-invariants lint-stack lint-size lint-matrix lint-go-pin lint-spec
+lint: lint-tidy lint-format lint-cppcheck lint-commits lint-docs lint-invariants lint-stack lint-size lint-matrix lint-go-pin lint-violation-builds lint-spec
 
 # INV-19: bounded stack. The budget is the measured worst library
 # frame (rsa_vp1's RSA-3072 limb temporaries, 2,400 bytes) rounded up;
@@ -893,6 +893,14 @@ lint-go-pin:
 	   fi; \
 	 done; \
 	 echo "lint-go-pin: both workflows pin Go $$a"
+
+# A violation whose target is a script must name every binary that script
+# runs: a script runs no make, so the 'builds' line is the only thing that
+# puts them on disk. A name missing there fails quietly, since the baseline
+# runs a binary nobody built and that invariant loses its verdict.
+.PHONY: lint-violation-builds
+lint-violation-builds:
+	@python3 test/violations.py --lint-builds
 
 # CBMC proofs: memory safety and absence of UB per module, at the bounds
 # each harness documents. The fast tier (seconds to a few minutes) gates
