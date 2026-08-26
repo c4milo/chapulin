@@ -908,7 +908,8 @@ FUZZ_TIME ?= 30
 FUZZ_RECORD_LINK := record.c ct.c sha256.c hkdf.c chacha20.c poly1305.c aead.c
 FUZZ_HANDSHAKE_PARSER_LINK := handshake_parser.c buf.c
 FUZZ_HANDSHAKE_POST_LINK := handshake.c handshake_parser.c handshake_record.c io.c record.c keysched.c session.c buf.c ct.c \
-                    sha256.c hkdf.c chacha20.c poly1305.c aead.c x25519.c rsa.c rsa_mont.c handshake_message.c
+                    sha256.c hkdf.c chacha20.c poly1305.c aead.c x25519.c rsa.c rsa_mont.c handshake_message.c \
+                    handshake_auth.c
 FUZZ_X509_LINK := x509.c x509_der.c buf.c ct.c sha256.c rsa.c rsa_mont.c
 
 .PHONY: fuzz
