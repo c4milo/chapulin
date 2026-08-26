@@ -173,8 +173,9 @@ sources are compiled into a [CBMC](https://www.cprover.org/cbmc/) harness, which
 out-of-bounds access, invalid pointers, bad shifts, and division by
 zero, for every input within the harness's bound. Signed overflow is
 checked too, except in the three x25519 mul harnesses that turn it off
-(see the x25519 row). `io.c`, `keysched.c`, and `tls.c` have no
-harness.
+(see the x25519 row). `tls.c` is the one source with no harness: the
+post-handshake parser moved to its own file and took the harness with
+it, leaving the four public calls unproven.
 `make check` regenerates the source-by-source table in
 `bin/proof-coverage.md`. Where a bound equals the module's real
 maximum, the proof covers all inputs.

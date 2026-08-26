@@ -359,6 +359,16 @@ launch fast:4 full record 165 "" ct.c
 launch fast full rsa 385 "fill_nondet.0:385,ct_memeq.0:33,greater_or_equal.0:385,modulus_bits.0:385,modulus_bits.1:9,mgf1.0:12,emsa_pss_verify.0:352,emsa_pss_verify.1:320,rsa_pss_verify.0:385" --object-bits 11 --max-field-sensitivity-array-size 385 ct.c
 launch fast full p256 85 "" buf.c
 launch fast full hkdf 120 "" ct.c
+# io: 458 s under this script's own flags. The transport shim over the
+# caller's callbacks, proven against a recv that honours no contract: it
+# returns any int, so read_exact's got <= 0 || got > n is under proof
+# rather than assumed. The 16-byte buffer bounds its per-byte loop, which
+# is what sets the unwind.
+launch fast:4 full io 24 ""
+# keysched: 13 s under this script's own flags. Extract and Expand-Label sequencing
+# over 32-byte secrets; sha256 is harness.h's stub, since the schedule's
+# arithmetic is length handling rather than compression.
+launch fast full keysched 120 "" ct.c
 launch fast full handshake_post 132 "handle_post_handshake.0:33,fill_nondet.0:130" --object-bits 11 buf.c ct.c session.c
 # The only launch line that builds the hybrid key exchange (#47).
 # hybrid_secret over any seed, any server ciphertext and any server
