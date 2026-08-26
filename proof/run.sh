@@ -357,6 +357,15 @@ launch fast full rsa 385 "fill_nondet.0:385,ct_memeq.0:33,greater_or_equal.0:385
 launch fast full p256 85 "" buf.c
 launch fast full hkdf 120 "" ct.c
 launch fast full handshake_post 132 "handle_post_handshake.0:33,fill_nondet.0:130" --object-bits 11 buf.c ct.c session.c
+# The only launch line that builds the hybrid key exchange (#47).
+# hybrid_secret over any seed, any server ciphertext and any server
+# share, with mlkem and x25519 stubbed to their headers' contracts —
+# their own harnesses prove the arithmetic, and driving a 2400-byte
+# expansion and 256 symbolic multiplies here would be the shape
+# docs/proofs.md says not to build. Measured: 508 properties, 3 s,
+# 78 MB (kissat). The hybrid ServerHello parser stays unproven: the
+# 256-byte handshake_parser bound cannot hold a 1,128-byte key share.
+launch fast full hybrid_secret 65 "fill_nondet.0:2401,ct_wipe.0:2401" -DCH_KEX_PQ ct.c
 # x509: primitives concrete (both variants), the walker with stubbed
 # primitives. The ECDSA walker proves the full two-entry bound in
 # every check; the RSA walker's formula is a SAT heavyweight, so it
