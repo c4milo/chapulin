@@ -121,7 +121,10 @@ def run(name):
         future = time.time() + 60
         os.utime(target, (future, future))
         if builds:
-            b = subprocess.run(["make", *builds], cwd=ROOT,
+            # RAND has no default and the examples link the packaged
+            # object, so a bare make stops at cfg.h's #error. check
+            # builds them the same way.
+            b = subprocess.run(["make", "RAND=extern", *builds], cwd=ROOT,
                                capture_output=True, text=True)
             if b.returncode != 0:
                 return False, None, b.stderr or b.stdout
