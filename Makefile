@@ -412,6 +412,31 @@ else
 	./bin/diff
 endif
 
+# The sequence enumerations compare against spec/.lake/build/bin/diffspec,
+# and handshake_sequence_test skips the comparison when that binary is
+# absent. A caller that runs the binary directly therefore has to build the
+# spec first, or a restored cache decides what gets compared.
+.PHONY: handshake-sequence handshake-sequence-pq
+# Only the oracle build is guarded: the enumeration itself still runs
+# without lake, comparing nothing, which is what the binary does alone.
+handshake-sequence: bin/handshake_sequence_test
+ifeq ($(LAKE),)
+	$(call REQUIRE_ON_CI,lake)
+	@echo "SKIP spec comparison: lake not on PATH (install elan: https://leanprover.github.io)"
+else
+	cd spec && $(LAKE) build
+endif
+	./bin/handshake_sequence_test
+
+handshake-sequence-pq: bin/handshake_sequence_pq
+ifeq ($(LAKE),)
+	$(call REQUIRE_ON_CI,lake)
+	@echo "SKIP spec comparison: lake not on PATH (install elan: https://leanprover.github.io)"
+else
+	cd spec && $(LAKE) build
+endif
+	./bin/handshake_sequence_pq
+
 # Line coverage over the library sources, merged across the five host
 # test binaries and both PIN builds. Per-pin object dirs share .gcno
 # files, so each binary run accumulates counts into the same .gcda set

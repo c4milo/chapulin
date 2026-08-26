@@ -136,12 +136,11 @@ jobs:
           path: |
             ~/.elan
             spec/.lake
-          key: lean-${{ hashFiles('spec/lean-toolchain', 'spec/lakefile.toml', 'spec/lake-manifest.json') }}
+          key: lean-${{ hashFiles('spec/lean-toolchain', 'spec/lakefile.toml', 'spec/lake-manifest.json', 'spec/**/*.lean') }}
       - name: Enumerate every server message sequence, KEX=pq
         run: |
           set -o pipefail
-          make bin/handshake_sequence_pq
-          ./bin/handshake_sequence_pq 2>&1 | tee /tmp/handshake_sequence_pq.out
+          make handshake-sequence-pq 2>&1 | tee /tmp/handshake_sequence_pq.out
       - name: Put the verdict on the run page
         if: always()
         run: |
@@ -172,7 +171,7 @@ jobs:
           path: |
             ~/.elan
             spec/.lake
-          key: lean-${{ hashFiles('spec/lean-toolchain', 'spec/lakefile.toml', 'spec/lake-manifest.json') }}
+          key: lean-${{ hashFiles('spec/lean-toolchain', 'spec/lakefile.toml', 'spec/lake-manifest.json', 'spec/**/*.lean') }}
       - uses: actions/setup-go@v6
         with:
           go-version: stable
@@ -220,7 +219,7 @@ jobs:
           path: |
             ~/.elan
             spec/.lake
-          key: lean-${{ hashFiles('spec/lean-toolchain', 'spec/lakefile.toml', 'spec/lake-manifest.json') }}
+          key: lean-${{ hashFiles('spec/lean-toolchain', 'spec/lakefile.toml', 'spec/lake-manifest.json', 'spec/**/*.lean') }}
       - name: Search random seeds until the budget runs out
         env:
           BUDGET_SECONDS: "1200"
@@ -274,7 +273,7 @@ jobs:
           path: |
             ~/.elan
             spec/.lake
-          key: lean-${{ hashFiles('spec/lean-toolchain', 'spec/lakefile.toml', 'spec/lake-manifest.json') }}
+          key: lean-${{ hashFiles('spec/lean-toolchain', 'spec/lakefile.toml', 'spec/lake-manifest.json', 'spec/**/*.lean') }}
       - run: make spec-coverage
       - name: Report what CBMC proves
         run: make proof-coverage && cat bin/proof-coverage.md >> "$GITHUB_STEP_SUMMARY"
@@ -299,7 +298,7 @@ jobs:
           path: |
             ~/.elan
             spec/.lake
-          key: lean-${{ hashFiles('spec/lean-toolchain', 'spec/lakefile.toml', 'spec/lake-manifest.json') }}
+          key: lean-${{ hashFiles('spec/lean-toolchain', 'spec/lakefile.toml', 'spec/lake-manifest.json', 'spec/**/*.lean') }}
       - run: make diff-ecdsa
 
   # The hybrid-arm differential: the PR lane's bin/diff compiles the
@@ -320,7 +319,7 @@ jobs:
           path: |
             ~/.elan
             spec/.lake
-          key: lean-${{ hashFiles('spec/lean-toolchain', 'spec/lakefile.toml', 'spec/lake-manifest.json') }}
+          key: lean-${{ hashFiles('spec/lean-toolchain', 'spec/lakefile.toml', 'spec/lake-manifest.json', 'spec/**/*.lean') }}
       - run: make diff-pq
 
   # The deeper UB pass: -O0 sees code the optimizer would delete. The

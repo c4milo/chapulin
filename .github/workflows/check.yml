@@ -236,7 +236,7 @@ jobs:
           path: |
             ~/.elan
             spec/.lake
-          key: lean-${{ runner.os }}-${{ hashFiles('spec/lean-toolchain', 'spec/lakefile.toml', 'spec/lake-manifest.json') }}
+          key: lean-${{ runner.os }}-${{ hashFiles('spec/lean-toolchain', 'spec/lakefile.toml', 'spec/lake-manifest.json', 'spec/**/*.lean') }}
           restore-keys: lean-${{ runner.os }}-
 
       - name: Cache npm
