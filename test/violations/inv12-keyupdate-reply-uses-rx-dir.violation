@@ -1,5 +1,5 @@
 invariant: INV-12
-file: tls.c
+file: handshake_post.c
 catches: unit
 reason: the KeyUpdate reply is sealed with the receive direction's rec_dir, so one
   key and sequence counter now covers records travelling both ways

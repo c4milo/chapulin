@@ -246,7 +246,7 @@ which convention holds them.
 - **Mechanism.** Structural arithmetic in `record.c`;
   `rec_dir_update` is the only reset; the epoch cap lives in
   `handle_key_update`.
-- **Check.** CBMC (record and tlspost harnesses cover the guards);
+- **Check.** CBMC (record and handshake_post harnesses cover the guards);
   Lean theorem (`Spec.Record.nonce_inj`): distinct sequence numbers
   below 2^64 give distinct nonces, so a repeat needs a repeated
   counter, not a colliding construction — the counter half stays with

@@ -41,7 +41,9 @@ Home: github.com/c4milo.
   `handshake_record.[ch]` (record reading and message reassembly) ←
   `handshake_auth.[ch]` (server authentication: the Certificate and
   CertificateVerify flight, and the CA build's revocation epoch) ←
-  `handshake.[ch]` (client state machine) ← `tls.[ch]`
+  `handshake.[ch]` (client state machine) ←
+  `handshake_post.[ch]` (NewSessionTicket and KeyUpdate, the messages
+  that arrive after the handshake) ← `tls.[ch]`
   (public API) ← demo/test mains. Firmware takes everything below
   `tls.[ch]` as-is and supplies I/O callbacks and `ch_rand_bytes`.
 - Everything that touches secret bytes is constant time: no secret-

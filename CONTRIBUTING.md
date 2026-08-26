@@ -46,6 +46,7 @@ tree — the abbreviation budget is spent on this one system.
 | `rec_` | Record protection (`record.[ch]`) |
 | `hs_` / `hsp_` | Handshake message build and parse (`handshake_message.[ch]`, `handshake_parser.[ch]`) |
 | `hsr_` / `hsa_` | Handshake record reading (`handshake_record.[ch]`) and server authentication (`handshake_auth.[ch]`) |
+| `hspost_` | The post-handshake messages (`handshake_post.[ch]`). Spelled out because the family's one-letter suffixes are spoken for |
 | `rsa_`, `p256_`, `x25519_`, `aead_`, `hkdf_`, `sha256_`, `sha3_`, `shake_`, `mlkem_`, `drbg_`, `io_` | The self-naming crypto and I/O modules |
 | `mlk_` | ML-KEM's polynomial layer (`mlkem_poly.[ch]`) |
 

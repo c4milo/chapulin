@@ -1,5 +1,5 @@
 invariant: INV-10
-file: tls.c
+file: handshake_post.c
 catches: unit
 reason: the client answers a KeyUpdate but never rekeys its own write
   direction, so every later record is sealed under the retired key

@@ -49,7 +49,7 @@ static void on_ticket(void *io, const ch_ticket *ticket) {
     g_sink += acc;
 }
 
-#include "tls.c"
+#include "handshake_post.c"
 
 int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
     ch_tls t;

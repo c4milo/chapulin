@@ -8,7 +8,7 @@
 // The full ch_read driver that calls this (record reading,
 // cross-record reassembly, ch_write, ch_close) does not converge as one
 // CBMC formula; its integration is covered by test/e2e.sh, the
-// mock-transport unit tests, and fuzz/fuzz_post_handshake.c. Here the record I/O,
+// mock-transport unit tests, and fuzz/fuzz_handshake_post.c. Here the record I/O,
 // crypto, and key schedule are stubs asserting their proven contracts,
 // so what is under proof is the parser's own arithmetic. buf.c and ct.c
 // are real.
@@ -117,7 +117,7 @@ static void on_ticket(void *io, const ch_ticket *ticket) {
                      "cb: identity readable");
 }
 
-#include "tls.c"
+#include "handshake_post.c"
 
 int main(void) {
     static ch_tls t;
