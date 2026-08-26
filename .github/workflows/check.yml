@@ -183,10 +183,17 @@ jobs:
           cmake --install cppcheck-build >/dev/null
 
       - name: Check tool versions match the pins
+        # Assert, do not print. The clang tools are installed by
+        # versioned name, so an edit that set CLANG_TIDY to the
+        # unversioned binary would silently lint with whatever the
+        # runner ships while this step still passed.
         run: |
-          "$CLANG_TIDY" --version
-          "$CLANG_FORMAT" --version
-          "$CPPCHECK" --version | grep -F "$CPPCHECK_VERSION"
+          "$CLANG_TIDY" --version | grep -qE "version $LLVM_MAJOR\\." \
+            || { echo "clang-tidy is not the pinned LLVM $LLVM_MAJOR"; exit 1; }
+          "$CLANG_FORMAT" --version | grep -qE "version $LLVM_MAJOR\\." \
+            || { echo "clang-format is not the pinned LLVM $LLVM_MAJOR"; exit 1; }
+          "$CPPCHECK" --version | grep -qF "$CPPCHECK_VERSION" \
+            || { echo "cppcheck is not the pinned $CPPCHECK_VERSION"; exit 1; }
 
       - name: Install semgrep (hash-pinned)
         # The only pip package in the security path, so it installs

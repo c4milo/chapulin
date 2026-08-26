@@ -83,6 +83,22 @@ does nothing more.
     fails the handshake closed. Gain: no group negotiation, the same
     rule the rest of the profile follows (entry 1).
 
+    Offering both groups and taking whichever the server picks was
+    considered and rejected. It fails where it would matter most: the
+    threat is harvest-now-decrypt-later, so a client that offers both
+    and meets a server without ML-KEM completes a classically
+    protected session, the recording stays decryptable later, and no
+    part of the API reports which exchange ran. Fail-closed answers
+    instead that a completed handshake was post-quantum. This is not
+    a downgrade attack — the transcript hash and the server's
+    signature or binder authenticate the group choice — it is the
+    honest server that has no ML-KEM. The cost is also paid whether
+    or not the hybrid is used: measured with gcc -Os on x86-64, the
+    library sources are 25.0 kB of .text plus .rodata classically and
+    32.3 kB in the hybrid build, and the session struct 1,056 bytes
+    against 2,328, so a negotiating build carries ML-KEM on every
+    connection including the ones that never run it.
+
 ## Trust model
 
 13. **Raw-pin builds hash certificates into the transcript, never

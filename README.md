@@ -8,7 +8,8 @@ bad guys.
 
 chapulin speaks one profile and negotiates nothing:
 `TLS_CHACHA20_POLY1305_SHA256` with x25519 key exchange, or the
-X25519MLKEM768 hybrid instead when you build `make KEX=pq`. One group
+X25519MLKEM768 hybrid ([RFC 10024](https://www.rfc-editor.org/rfc/rfc10024))
+instead when you build `make KEX=pq`. One group
 per build, never both in one ClientHello. The server takes it or the
 handshake fails. There is no 0-RTT.
 
@@ -190,13 +191,13 @@ apart from one that passed — so for the slow rows, read the nightly.
 |---|---|---|
 | ct | memeq matches a plain compare, wipe zeroizes | inputs ≤ 64 B |
 | buf | any 12-operation reader/writer run stays safe; length never exceeds capacity | buffers ≤ 64 B |
-| sha256 | safe for any two-chunk split | messages ≤ 96 B |
+| sha256 | safe for any two-chunk split | messages ≤ 96 B — every fill state the padding path can see, since fill is the length mod 64 and 0..96 covers all 64 residues |
 | sha3 (two harnesses) | every mode is safe for a one-call message and XOF output from a fresh context; the SHAKE streaming calls are safe from any context state — arbitrary lanes, either rate, every position — for split absorbs and squeezes | one-call: messages ≤ 200 B, output ≤ 400 B; streaming: chunks ≤ 32 B |
 | mlkem (six harnesses) | keygen, encaps, and decaps are safe for every seed, message, and hostile key or ciphertext, with the polynomial layer stubbed to its contracts; the polynomial layer is safe over full-range int16 coefficients — a superset of anything the KEM layer passes it, so no coefficient value can overflow the reduction arithmetic. Sampling, reductions, and coding prove in the fast tier; the NTT, the two halves of its inverse, and the base multiplication, whose chained-product overflow proofs are the SAT-hard part, each prove in their own slow-tier formula | the full domain: every input is a fixed-size array, and the sampling read stops at its 1536-byte cap |
 | hkdf (two harnesses) | hmac/extract and expand/expand-label safe over the proven sha256 contract | keys ≤ 96 B, hmac/extract messages ≤ 48 B; expand/expand-label output ≤ 96 B and info ≤ 64 B (the contract bound), expand: slow tier |
 | handshake | the driver stays safe on any record stream: record reading, reassembly, HRR restart, state machine, in PSK and pinned-key mode. The `TRUST=ca` driver has a harness but no launch line, so it is unproven, and no harness builds with `-DCH_KEX_PQ` at all — the hybrid driver's share expansion and decapsulation carry no proof, only the differential, the sequence enumeration and the e2e legs | 96 B receive buffer, slow tier |
-| chacha20 | safe at any counter, in place and into a distinct buffer | ≤ 160 B |
-| poly1305 | safe for any three-chunk split; 64-bit products stay in range | messages ≤ 80 B |
+| chacha20 | safe at any counter, in place and into a distinct buffer | ≤ 160 B — three blocks, full, full, partial |
+| poly1305 | safe for any three-chunk split; 64-bit products stay in range | messages ≤ 80 B — five blocks, crossing the buffered-block path in every alignment. The five-call shape `aead.c` uses is exercised only to 48 B, by the aead harnesses |
 | aead (three harnesses) | seal/open round-trips; a forged tag writes zero bytes; backward-overlap decrypt works. These are structural, so the bound is small: 16 B crosses the Poly1305 block boundary and the forge case fires at one byte. Sealing fully in place (`pt == ct`, the shape every outgoing record uses) is **not proven**: `proof/aead_inplace_harness.c` states it, but the formula has returned no verdict, so it carries no launch line | plaintext ≤ 16 B, aad ≤ 16 B, slow tier |
 | x25519 (five harnesses) | carry, add, sub, pack, cswap, and unpack are safe with every check on, add and sub in the ladder's aliased shape too, and the ladder's scalar bit index stays in bounds (fast tier); mul's index walk is safe in every caller aliasing shape — distinct, output aliasing either input, and sqr's all-one-object — with the signed-overflow class off (slow tier, one shape set per formula), and a separate lemma proves mul's int64 accumulation and fold cannot overflow (fast tier). The ladder's limb-growth composition is still an open task | limbs ≤ 2^24; into carry, ≤ 2^58 |
 | p256 | the DER parser and limb marshalling stay safe on hostile signatures; a carry lemma covers the Montgomery multiply | signatures ≤ 80 B |
@@ -206,7 +207,7 @@ apart from one that passed — so for the slow rows, read the nightly.
 | handshake_post | the post-handshake parser stays safe on hostile decrypted bytes and consumes no more than its input | messages ≤ 128 B |
 | drbg | the generator stays safe for any request, seeded and across rekeys | requests ≤ 96 B |
 | x509der (two harnesses) | every DER primitive stays safe on hostile bytes at the rbuf shape its caller hands it, honors the pointer contracts the walker rests on, and consumes no more than the per-primitive cap the walker proof replays, in both builds | inputs ≤ 448 B; keyusage at its 256 B extnValue cap |
-| x509parse (two harnesses) | the certificate walker stays safe on any entry list, primitives stubbed to their proven contracts | ECDSA: ≤ 256 B; RSA: ≤ 840 B, slow tier |
+| x509parse (two harnesses) | the certificate walker stays safe on any entry list, primitives stubbed to their proven contracts. Only the ECDSA build proves the full two-entry flight; the RSA bound holds one maximum certificate plus framing, so its two-entry walk rests on the ECDSA proof and the walker being identical outside the SPKI arm | ECDSA: ≤ 256 B, two entries; RSA: ≤ 840 B, one entry, slow tier |
 
 CBMC found one real bug during development: `carry()` left-shifted a
 negative value, which is undefined behavior even though compilers
