@@ -56,12 +56,21 @@ REQUIRE = @echo "$(1): missing, and a linter must not skip. $(2)"; exit 1
 
 SRCS := ct.c sha256.c hkdf.c chacha20.c poly1305.c aead.c x25519.c p256.c rsa.c rsa_mont.c \
         x509.c x509_der.c buf.c record.c keysched.c io.c handshake_message.c handshake_parser.c handshake_record.c session.c \
-        handshake_auth.c handshake.c handshake_post.c tls.c
+        handshake_auth.c handshake.c handshake_post.c tls.c softmul.c
+
 HDRS := ct.h sha256.h hkdf.h chacha20.h poly1305.h aead.h x25519.h p256.h rsa.h ch_assert.h \
         x509.h buf.h record.h keysched.h io.h handshake_message.h handshake_parser.h handshake_record.h cfg.h session.h handshake_auth.h handshake.h handshake_post.h \
         tls.h rand.h drbg.h sha3.h mlkem.h mlkem_poly.h
-LINT_C := $(SRCS) drbg.c sha3.c mlkem.c mlkem_poly.c test/unit_test.c test/tls_client.c \
-          test/diff_test.c test/timing_test.c test/drbg_test.c test/rsa_test.c test/sha3_test.c \
+# softmul.c is excluded on purpose. It has to define __mulsi3 and
+# __muldi3 -- the names the compiler emits, so they replace the runtime
+# library's -- and clang-tidy rejects those as reserved identifiers that
+# should have internal linkage. Both are true and neither is fixable: the
+# ABI picks the names and external linkage is the whole point. Excluding
+# one file keeps bugprone-reserved-identifier and misc-use-internal-linkage
+# working everywhere else, which disabling them in .clang-tidy would not.
+# clang-format still covers it, and so does lint-runtime-symbols.
+LINT_C := $(filter-out softmul.c,$(SRCS)) drbg.c sha3.c mlkem.c mlkem_poly.c test/unit_test.c test/tls_client.c \
+          test/diff_test.c test/timing_test.c test/drbg_test.c test/softmul_test.c test/rsa_test.c test/sha3_test.c \
           test/mlkem_test.c test/handshake_strict_test.c test/handshake_sequence_test.c \
           test/x509_strict_test.c $(wildcard examples/*.c)
 
@@ -229,6 +238,13 @@ bin/drbg_test: test/drbg_test.c drbg.c chacha20.c ct.c $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(LIB_CFLAGS) -DCH_RAND_DRBG -I. -o $@ test/drbg_test.c drbg.c chacha20.c ct.c
 
+# softmul.c only compiles where there is no hardware multiplier, so the
+# test forces it on and includes the unit. The host has a multiplier,
+# which is what makes the compiler's own `*` an independent oracle.
+bin/softmul_test: test/softmul_test.c softmul.c $(HDRS) $(TESTH)
+	@mkdir -p bin
+	$(CC) $(CFLAGS) -I. -o $@ test/softmul_test.c
+
 # RSA-PSS verify vectors; its own binary like drbg_test, so the module
 # stays testable without the rest of the stack.
 bin/rsa_test: test/rsa_test.c rsa.c rsa_mont.c sha256.c ct.c $(HDRS) $(TESTH)
@@ -340,7 +356,7 @@ bin/diff: test/diff_test.c $(SRCS) sha3.c mlkem.c mlkem_poly.c $(HDRS) $(TESTH)
 # vary with the key exchange; what pq changes is share sizes and secret
 # derivation, and handshake_strict_pq, the differential and the e2e pq legs
 # cover those on every push.
-check: bin/unit bin/unit_ca bin/unit_pq bin/tlsclient bin/tlsclient_ecdsa bin/tlsclient_ca bin/tlsclient_ca_ecdsa bin/tlsclient_pq bin/drbg_test bin/rsa_test bin/sha3_test bin/mlkem_test bin/handshake_strict_test bin/handshake_strict_pq bin/x509strict bin/x509strict_ecdsa bin/handshake_sequence_test bin/handshake_sequence_pq lint rand-check
+check: bin/unit bin/unit_ca bin/unit_pq bin/tlsclient bin/tlsclient_ecdsa bin/tlsclient_ca bin/tlsclient_ca_ecdsa bin/tlsclient_pq bin/drbg_test bin/softmul_test bin/rsa_test bin/sha3_test bin/mlkem_test bin/handshake_strict_test bin/handshake_strict_pq bin/x509strict bin/x509strict_ecdsa bin/handshake_sequence_test bin/handshake_sequence_pq lint rand-check
 	# The packaged object is built once per entropy pattern, because
 	# lib-check reads a different export list and a different import
 	# list in each. Only the object is built twice: the examples and
@@ -356,6 +372,7 @@ check: bin/unit bin/unit_ca bin/unit_pq bin/tlsclient bin/tlsclient_ecdsa bin/tl
 	./bin/unit_ca
 	./bin/unit_pq
 	./bin/drbg_test
+	./bin/softmul_test
 	./bin/rsa_test
 	./bin/sha3_test
 	./bin/mlkem_test
@@ -922,8 +939,11 @@ lint-violation-builds:
 # riscv32 clang has no libc headers; adding a shim to check modules that
 # do no secret arithmetic would buy nothing.
 RV_SRCS := ct.c sha256.c chacha20.c poly1305.c aead.c x25519.c x509_der.c record.c \
-           keysched.c io.c handshake_message.c session.c sha3.c mlkem_poly.c
-RV_ALLOWED := __muldi3 __mulsi3 __udivsi3
+           keysched.c io.c handshake_message.c session.c sha3.c mlkem_poly.c softmul.c
+# What is left after softmul.c supplies the multiplies. sha3's division is
+# `% 5` on Keccak's loop counters, a public index, so it is a performance
+# matter rather than a leak -- #53 separates the two.
+RV_ALLOWED := __udivsi3
 .PHONY: lint-runtime-symbols
 lint-runtime-symbols:
 ifeq ($(CLANG_RV),)
@@ -935,7 +955,11 @@ else
 	     -D_DEFAULT_SOURCE -DCH_RAND_EXTERN -DCH_KEX_PQ -I. -c $$f -o $$d/$${f%.c}.o 2>/dev/null \
 	     || { echo "lint-runtime-symbols: $$f does not build for rv32ic"; rc=1; }; \
 	 done; \
-	 got=$$($(LLVM_BIN)/llvm-nm -u $$d/*.o 2>/dev/null | grep -oE '__[a-z0-9]+' | sort -u); \
+	 $(LLVM_BIN)/llvm-nm -u $$d/*.o 2>/dev/null | grep -oE '__[a-z0-9]+' | sort -u > $$d/.und; \
+	 $(LLVM_BIN)/llvm-nm --defined-only $$d/*.o 2>/dev/null | awk '{print $$3}' \
+	   | grep -E '^__[a-z0-9]+$$' | sort -u > $$d/.def; \
+	 got=$$(comm -23 $$d/.und $$d/.def); \
+	 [ -s $$d/.und ] || { echo "lint-runtime-symbols: read no symbols; llvm-nm or the build failed"; rc=1; }; \
 	 for sym in $$got; do \
 	   echo "$(RV_ALLOWED)" | tr ' ' '\n' | grep -qx "$$sym" \
 	     || { echo "lint-runtime-symbols: $$sym is a new compiler-runtime dependency (see #53)"; rc=1; }; \

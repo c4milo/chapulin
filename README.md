@@ -247,6 +247,13 @@ secrets and MACs and never opens a record.
   its lookup tables. `make timing` checks this with a Welch's t-test,
   which is evidence, not proof. P-256 and RSA verification are
   variable-time on purpose, since all of their inputs are public.
+  On a core with no hardware multiplier the compiler turns every `*`
+  into a runtime-library call that branches on its operands, which would
+  undo this in poly1305, x25519 and ML-KEM; `softmul.c` supplies
+  constant-time `__mulsi3` and `__muldi3` under those names, so they
+  replace the library's at link time. `make lint-runtime-symbols` builds
+  for rv32ic and fails on any runtime call beyond the one that remains,
+  `__udivsi3`, which sha3 uses for `% 5` over public loop counters.
 - The quality of the random bytes, which rests on nothing here at all.
   `ch_rand_bytes` is the image's to supply, and no check in a library
   can grade it: a weak generator completes the handshake, sends a key

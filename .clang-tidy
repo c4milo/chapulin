@@ -25,6 +25,14 @@
 # - readability-math-missing-parentheses: byte-packing indices like
 #   p[4 * i + 1] saturate this codebase; the precedence is grade-school and
 #   the parens would be pure noise.
+# softmul.c is excluded from diagnostics rather than any check being
+# disabled. It must define __mulsi3 and __muldi3 -- the names the compiler
+# emits, so they replace the runtime library's on a core with no hardware
+# multiplier -- and those are reserved identifiers with external linkage by
+# necessity. bugprone-reserved-identifier and misc-use-internal-linkage stay
+# on for every other file; the test includes the unit, so the exclusion has
+# to be by path rather than by target.
+ExcludeHeaderFilterRegex: 'softmul\.c'
 Checks: >
   -*,
   bugprone-*,

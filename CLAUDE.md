@@ -50,7 +50,11 @@ Home: github.com/c4milo.
   dependent branches, no secret-dependent memory indices. Comparisons go
   through `ct_memeq` and wipes through `ct_wipe`; constant-time selects,
   where needed, are branchless mask arithmetic inline (x25519's `cswap`,
-  poly1305's final reduction), never an `if`.
+  poly1305's final reduction), never an `if`. A core with no hardware
+  multiplier turns `*` into a runtime-library call that branches on its
+  operands, so `softmul.c` supplies constant-time `__mulsi3`/`__muldi3`
+  under the compiler's own names; it compiles to nothing where the
+  instruction exists.
   ChaCha20/Poly1305/x25519 are constant time by construction — keep them
   that way; AES never enters this codebase precisely to avoid tables.
 - Proofs run in `check`, not on the side. Every module carries a
