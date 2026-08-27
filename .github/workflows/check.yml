@@ -128,7 +128,10 @@ jobs:
         run: |
           wget -qO llvm.sh https://apt.llvm.org/llvm.sh
           sudo bash llvm.sh "$LLVM_MAJOR"
-          sudo apt-get install -y "clang-tidy-$LLVM_MAJOR" "clang-format-$LLVM_MAJOR"
+          # llvm-$LLVM_MAJOR carries llvm-nm, which lint-runtime-symbols reads
+          # the rv32ic objects with. llvm.sh alone does not install it.
+          sudo apt-get install -y "clang-tidy-$LLVM_MAJOR" "clang-format-$LLVM_MAJOR" \
+            "llvm-$LLVM_MAJOR"
 
       - name: Cache OpenSSL install
         id: openssl-cache

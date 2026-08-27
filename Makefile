@@ -33,6 +33,13 @@ LLVM_BIN := /opt/homebrew/opt/llvm/bin
 CLANG_TIDY ?= $(shell command -v clang-tidy || command -v $(LLVM_BIN)/clang-tidy)
 CLANG_FORMAT ?= $(shell command -v clang-format || command -v $(LLVM_BIN)/clang-format)
 CLANG_RV ?= $(shell command -v $(LLVM_BIN)/clang || command -v clang)
+# Resolved like the tools above rather than assumed under LLVM_BIN, which is
+# a Homebrew path that exists only on the development machine. Hardcoding it
+# made lint-runtime-symbols read no symbols on CI and fail there for six
+# commits (https://github.com/c4milo/chapulin/issues/53). CI installs the
+# versioned name, so that is the second candidate.
+LLVM_NM ?= $(shell command -v llvm-nm || command -v llvm-nm-$(LLVM_MAJOR) \
+             || command -v $(LLVM_BIN)/llvm-nm)
 CPPCHECK ?= $(shell command -v cppcheck)
 CBMC ?= $(shell command -v cbmc)
 CXX ?= c++
@@ -1040,6 +1047,8 @@ lint-issue-links:
 lint-runtime-symbols:
 ifeq ($(CLANG_RV),)
 	$(call REQUIRE,clang,it ships with llvm — see the LLVM_MAJOR pin in .github/workflows/check.yml)
+else ifeq ($(LLVM_NM),)
+	$(call REQUIRE,llvm-nm,it ships with llvm — see the LLVM_MAJOR pin in .github/workflows/check.yml)
 else
 	@d=$$(mktemp -d); rc=0; \
 	 for f in $(RV_SRCS); do \
@@ -1047,8 +1056,8 @@ else
 	     -D_DEFAULT_SOURCE -DCH_RAND_EXTERN -DCH_KEX_PQ -I. -c $$f -o $$d/$${f%.c}.o 2>/dev/null \
 	     || { echo "lint-runtime-symbols: $$f does not build for rv32ic"; rc=1; }; \
 	 done; \
-	 $(LLVM_BIN)/llvm-nm -u $$d/*.o 2>/dev/null | grep -oE '__[a-z0-9]+' | sort -u > $$d/.und; \
-	 $(LLVM_BIN)/llvm-nm --defined-only $$d/*.o 2>/dev/null | awk '{print $$3}' \
+	 $(LLVM_NM) -u $$d/*.o 2>/dev/null | grep -oE '__[a-z0-9]+' | sort -u > $$d/.und; \
+	 $(LLVM_NM) --defined-only $$d/*.o 2>/dev/null | awk '{print $$3}' \
 	   | grep -E '^__[a-z0-9]+$$' | sort -u > $$d/.def; \
 	 got=$$(comm -23 $$d/.und $$d/.def); \
 	 [ -s $$d/.und ] || { echo "lint-runtime-symbols: read no symbols; llvm-nm or the build failed"; rc=1; }; \
