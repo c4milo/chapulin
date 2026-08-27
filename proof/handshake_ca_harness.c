@@ -7,12 +7,24 @@
 // The chain verifier is a stub asserting its x509.h contract — its
 // real body is proven in the x509parse harnesses. The object under
 // proof stays the driver's own arithmetic and state.
-// Status: no launch line yet. Both PIN variants leave kissat without
-// a verdict in 25 minutes at the raw driver's bounds; a converging
-// configuration is being measured, and the launch line lands with
-// it. Until then the CA driver's assurance is the raw driver proof
-// (the code is shared outside the CA arm), the x509parse proofs for
-// the arm's parser, and the e2e and unit_ca suites.
+// Status: no launch line, and none is expected at these bounds. The
+// shared driver runs out of memory during symbolic execution, before a
+// solver sees the formula (#37), so no choice of solver or time budget
+// reaches a verdict. Measured here, holding the driver otherwise fixed:
+// the RSA arm gave no verdict in 1h45m, and the ECDSA arm, whose leaf
+// key is 64 bytes against RSA's 384, finished in 0.6 s at
+// fill_nondet.0:260 but fails the unwinding assertion there and gave no
+// verdict at 400. The cliff sits between those, so every configuration
+// is either unsound or unaffordable. What drives the cost is the volume
+// of symbolic input and the key size, not the receive buffer -- halving
+// that moved the peak 13.9 GB to 13.95 GB.
+//
+// The file stays because proof-coverage names it on every run, which is
+// how the gap stays visible; deleting it would leave the CA driver
+// equally unproven and silent about it. Its assurance today is the raw
+// driver proof (the code is shared outside the CA arm), the x509parse
+// proofs for the arm's parser, the epoch harness for the arm's own
+// rules, and the e2e and unit_ca suites.
 #define CH_TRUST_CA 1
 // Certificates reach this driver only in the pinned arm.
 #define CH_PROOF_PIN 1
