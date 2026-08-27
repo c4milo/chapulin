@@ -98,6 +98,11 @@ jobs:
       LLVM_MAJOR: 22
       CLANG_TIDY: clang-tidy-22
       CLANG_FORMAT: clang-format-22
+      # The codegen lints disassemble what this compiler emits, so it has to
+      # be the pinned one. Unset, it fell back to the runner image's default
+      # clang and lint-wide-multiply read a different lowering than the
+      # development machine.
+      CLANG_RV: clang-22
       CPPCHECK_VERSION: 2.21.0
       CPPCHECK: /home/runner/cppcheck-inst/bin/cppcheck
       # The runner image ships whatever shellcheck Ubuntu packages, and the
@@ -226,6 +231,8 @@ jobs:
             || { echo "clang-format is not the pinned LLVM $LLVM_MAJOR"; exit 1; }
           "$CPPCHECK" --version | grep -qF "$CPPCHECK_VERSION" \
             || { echo "cppcheck is not the pinned $CPPCHECK_VERSION"; exit 1; }
+          "$CLANG_RV" --version | grep -qE "version $LLVM_MAJOR\\." \
+            || { echo "CLANG_RV is not the pinned LLVM $LLVM_MAJOR"; exit 1; }
           go version | grep -qF "go$GO_VERSION " \
             || { echo "go is not the pinned $GO_VERSION"; exit 1; }
           "$SHELLCHECK" --version | grep -qF "version: $SHELLCHECK_VERSION" \

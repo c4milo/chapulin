@@ -993,6 +993,12 @@ RV_ALLOWED := __udivsi3
 # the optimiser recognises the loop and puts the modulo back -- and no
 # secret is divided, so it is recorded rather than fought.
 #
+# Going over a ceiling fails. Coming in under one only prints, because the
+# single non-zero entry is sha3's modulo over public counters, and whether a
+# given compiler build lowers it to a multiply-high is not a security
+# property. The entries that matter are zero, and zero cannot be undershot,
+# so every secret-touching module is still held exactly.
+#
 # p256.c and rsa.c are absent because they multiply nothing secret. The
 # client verifies signatures and never makes them: p256_ecdsa_verify and
 # rsa_pss_verify read a server or CA public key, a transcript hash and a
@@ -1024,7 +1030,7 @@ else
 	    if [ "$$n" -gt "$$cap" ]; then \
 	      echo "lint-wide-multiply: $$f emits $$n wide multiplies on $$arch, ceiling is $$cap (see https://github.com/c4milo/chapulin/issues/53)"; rc=1; \
 	    elif [ "$$n" -lt "$$cap" ]; then \
-	      echo "lint-wide-multiply: $$f is down to $$n from $$cap on $$arch — lower the ceiling"; rc=1; \
+	      echo "lint-wide-multiply: $$f is down to $$n from $$cap on $$arch — lower the ceiling"; \
 	    fi; \
 	  done; \
 	done; \
