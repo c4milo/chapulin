@@ -13,20 +13,36 @@ set -euo pipefail
 
 if [ "${1:-}" != "--inside" ]; then
     cd "$(dirname "$0")/.."
+    # shellcheck source=bench/toolchain.env
+    . bench/toolchain.env
     command -v docker >/dev/null 2>&1 || {
         echo "SKIP insn count: docker not available" >&2
         exit 0
     }
-    docker run --rm -v "$PWD":/src:ro -w /src alpine \
+    TMPOUT=$(mktemp)
+    trap 'rm -f "$TMPOUT"' EXIT
+    docker run --rm -e "CLANG_MAJOR=$CLANG_MAJOR" \
+        -v "$PWD":/src:ro -w /src "alpine@$ALPINE_DIGEST" \
         sh -c 'apk add -q bash clang lld qemu-mips >/dev/null 2>&1 \
                && exec bash /src/bench/insn-mips.sh --inside' \
-        > bench/results-insn.csv
+        > "$TMPOUT"
+    # Redirecting straight at the committed file truncated it the moment the
+    # run started, so a failing measurement destroyed the last good numbers.
+    mv "$TMPOUT" bench/results-insn.csv
     echo "wrote bench/results-insn.csv" >&2
     exit 0
 fi
 
 # ---- inside the container from here on; CSV goes to stdout ----
-clang --version | head -1 >&2
+# The digest pins the base image, not apk, which resolves against the live
+# repository. A compiler whose major moved would publish different numbers
+# for unchanged sources, so stop rather than measure (bench/toolchain.env).
+cver=$(clang --version | head -1)
+case "$cver" in
+*"clang version ${CLANG_MAJOR:?}."*) ;;
+*) echo "FAIL: expected clang $CLANG_MAJOR, container has: $cver" >&2; exit 1 ;;
+esac
+echo "$cver" >&2
 
 W=/tmp/insn
 mkdir -p "$W/shim"

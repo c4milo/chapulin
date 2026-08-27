@@ -19,13 +19,16 @@ set -euo pipefail
 
 if [ "${1:-}" != "--inside" ]; then
     cd "$(dirname "$0")/.."
+    # shellcheck source=bench/toolchain.env
+    . bench/toolchain.env
     command -v docker >/dev/null 2>&1 || {
         echo "SKIP mips audit: docker not available" >&2
         exit 0
     }
     TMPOUT=$(mktemp)
     trap 'rm -f "$TMPOUT"' EXIT
-    docker run --rm -v "$PWD":/src:ro -w /src alpine \
+    docker run --rm -e "CLANG_MAJOR=$CLANG_MAJOR" \
+        -v "$PWD":/src:ro -w /src "alpine@$ALPINE_DIGEST" \
         sh -c 'apk add -q bash clang llvm >/dev/null 2>&1 \
                && exec bash /src/bench/audit-mips.sh --inside' \
         > "$TMPOUT"
@@ -181,7 +184,15 @@ eval "$(stats chacha20.o block C)"
     exit 1
 }
 
-CLANG_VER=$(clang --version | head -1)
+# The digest pins the base image, not apk, which resolves against the live
+# repository. A compiler whose major moved would publish different numbers
+# for unchanged sources, so stop rather than measure (bench/toolchain.env).
+cver=$(clang --version | head -1)
+case "$cver" in
+*"clang version ${CLANG_MAJOR:?}."*) ;;
+*) echo "FAIL: expected clang $CLANG_MAJOR, container has: $cver" >&2; exit 1 ;;
+esac
+CLANG_VER=$cver
 
 cat <<EOF
 # mips32r2 codegen notes
