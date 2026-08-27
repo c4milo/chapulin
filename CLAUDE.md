@@ -125,6 +125,11 @@ Home: github.com/c4milo.
   label; C, shell and Makefile comments spell the URL out. `make
   lint-issue-links` enforces this, and it reads this file too, so the
   rule is stated without an example of what it forbids.
+- Dev tooling lives in `tools/`, never at the repo root: the lint helper
+  scripts and the node packages commitlint needs. `tools/` is not built
+  into the library. Shell scripts stay with the thing they operate on
+  (`bench/`, `proof/`, `test/`), because that is where a reader looks for
+  them.
 - Linters follow fix-or-drop: fix the finding, or disable the check in
   `.clang-tidy` with its reason. Never `NOLINT` in code.
 - CI pins the same tool versions the development machine runs (see the

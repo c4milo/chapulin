@@ -1,6 +1,14 @@
 #!/bin/sh
 # Conventional-commit gate. Wire up once with: make hooks
-if ! npx --no-install commitlint --edit "$1"; then
-    echo "commit-msg: conventional commit required (npm install if commitlint is missing)" >&2
+#
+# Dev tooling lives in tools/, so commitlint installs there and npx cannot
+# resolve it from the repo root, where git runs this hook.
+CL=tools/node_modules/.bin/commitlint
+if [ ! -x "$CL" ]; then
+    echo "commit-msg: commitlint is missing — run: npm ci --prefix tools" >&2
+    exit 1
+fi
+if ! "$CL" --config tools/commitlint.config.mjs --edit "$1"; then
+    echo "commit-msg: conventional commit required" >&2
     exit 1
 fi

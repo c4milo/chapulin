@@ -38,7 +38,7 @@ jobs:
         # run; the rebase-pull absorbs a concurrent push.
         if: github.ref == 'refs/heads/main'
         run: |
-          python3 .github/coverage-badge.py bin/coverage.json > .github/badges/coverage.svg
+          python3 tools/coverage-badge.py bin/coverage.json > .github/badges/coverage.svg
           if ! git diff --quiet .github/badges/coverage.svg; then
             git config user.name "github-actions[bot]"
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
@@ -253,7 +253,7 @@ jobs:
         uses: actions/cache@v6
         with:
           path: ~/.npm
-          key: npm-${{ runner.os }}-${{ hashFiles('package-lock.json', 'package.json') }}
+          key: npm-${{ runner.os }}-${{ hashFiles('tools/package-lock.json', 'tools/package.json') }}
 
       - name: Install elan
         # --default-toolchain none: lake installs the spec/lean-toolchain
@@ -265,6 +265,7 @@ jobs:
           echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
 
       - run: npm ci
+        working-directory: tools
 
       - name: Lint pushed commits
         # make check re-lints from the root; this pins any failure to the

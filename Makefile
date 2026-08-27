@@ -817,18 +817,23 @@ else
 	  --error-exitcode=1 --quiet $(LINT_C)
 endif
 
+# Dev tooling lives in tools/, so npm installs into tools/node_modules and
+# npx cannot resolve commitlint from the repo root. Name the binary and its
+# config outright.
+COMMITLINT := tools/node_modules/.bin/commitlint --config tools/commitlint.config.mjs
+
 # One-time setup: point git at the committed hooks (commit-msg runs
-# commitlint; npm install first).
+# commitlint; run npm ci in tools/ first).
 .PHONY: hooks lint-commits
 hooks:
 	git config core.hooksPath .githooks
 
 lint-commits:
-ifeq ($(shell command -v npx),)
-	$(call REQUIRE,commitlint,npx is not on PATH — install node then run npm ci)
+ifeq ($(wildcard tools/node_modules/.bin/commitlint),)
+	$(call REQUIRE,commitlint,install node then run: npm ci --prefix tools)
 else
-	npx --no-install commitlint --from=$(shell git rev-list --max-parents=0 HEAD)~0 --to=HEAD \
-	  || npx --no-install commitlint --from=HEAD~1 --to=HEAD
+	$(COMMITLINT) --from=$(shell git rev-list --max-parents=0 HEAD)~0 --to=HEAD \
+	  || $(COMMITLINT) --from=HEAD~1 --to=HEAD
 endif
 
 # The examples build and are linted, but never run: e2e covers live
@@ -1013,7 +1018,7 @@ else
 endif
 .PHONY: lint-issue-links
 lint-issue-links:
-	@python3 .github/issue-links.py
+	@python3 tools/issue-links.py
 
 .PHONY: lint-runtime-symbols
 lint-runtime-symbols:
@@ -1166,9 +1171,9 @@ fuzz:
 lint-commits-range:
 	@if git rev-parse -q --verify origin/main >/dev/null && \
 	    ! git merge-base --is-ancestor HEAD origin/main; then \
-	    npx --no-install commitlint --from origin/main --to HEAD; \
+	    $(COMMITLINT) --from origin/main --to HEAD; \
 	else \
-	    npx --no-install commitlint --from "$$(git rev-list --max-parents=0 HEAD)" --to HEAD; \
+	    $(COMMITLINT) --from "$$(git rev-list --max-parents=0 HEAD)" --to HEAD; \
 	fi
 
 clean:
