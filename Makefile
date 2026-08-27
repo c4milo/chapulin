@@ -373,15 +373,18 @@ bin/diff: test/diff_test.c $(SRCS) sha3.c mlkem.c mlkem_poly.c $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) -I. -o $@ test/diff_test.c $(SRCS) sha3.c mlkem.c mlkem_poly.c
 
-.PHONY: check lint lint-tidy lint-format lint-cppcheck lint-docs lint-invariants lint-go-pin lint-violation-builds lint-fuzz-budget lint-runtime-symbols lint-wide-multiply lint-commit-citations lint-issue-links lint-shellcheck lint-bench-numbers lint-spec prove diff fmt clean
-# bin/handshake_sequence_pq is built here but run by the nightly, not by check: the
-# two enumerations together cost 19 of check's 45 measured minutes and
-# the CI job's timeout is 45, so the second one would decide the lane by
-# the clock. The sequences it walks are message ordering, which does not
-# vary with the key exchange; what pq changes is share sizes and secret
-# derivation, and handshake_strict_pq, the differential and the e2e pq legs
-# cover those on every push.
-check: bin/unit bin/unit_ca bin/unit_pq bin/tlsclient bin/tlsclient_ecdsa bin/tlsclient_ca bin/tlsclient_ca_ecdsa bin/tlsclient_pq bin/drbg_test bin/softmul_test bin/rsa_test bin/sha3_test bin/mlkem_test bin/handshake_strict_test bin/handshake_strict_pq bin/x509strict bin/x509strict_ecdsa bin/handshake_sequence_test bin/handshake_sequence_pq lint rand-check
+.PHONY: check check-slow ci lint lint-tidy lint-format lint-cppcheck lint-docs lint-invariants lint-go-pin lint-violation-builds lint-fuzz-budget lint-runtime-symbols lint-wide-multiply lint-commit-citations lint-issue-links lint-shellcheck lint-bench-numbers lint-spec prove diff fmt clean
+# check is the inner loop and holds a one-minute budget, so it runs what
+# answers "did I break the build or a contract": the linters, every unit
+# and strict-parser binary, the packaged-object export check, and the
+# Wycheproof vectors. Measured at about 47 s.
+#
+# check-slow holds everything whose cost is minutes: the proofs, e2e
+# against a real server, the spec differential, the sequence enumerations,
+# and the invariant violation builds. The nightly runs it. Splitting on
+# duration rather than on importance is deliberate -- nothing here is
+# optional, and a change is not finished until check-slow passes too.
+check: bin/unit bin/unit_ca bin/unit_pq bin/tlsclient bin/tlsclient_ecdsa bin/tlsclient_ca bin/tlsclient_ca_ecdsa bin/tlsclient_pq bin/drbg_test bin/softmul_test bin/rsa_test bin/sha3_test bin/mlkem_test bin/handshake_strict_test bin/handshake_strict_pq bin/x509strict bin/x509strict_ecdsa lint rand-check
 	# The packaged object is built once per entropy pattern, because
 	# lib-check reads a different export list and a different import
 	# list in each. Only the object is built twice: the examples and
@@ -406,11 +409,35 @@ check: bin/unit bin/unit_ca bin/unit_pq bin/tlsclient bin/tlsclient_ecdsa bin/tl
 	./bin/x509strict
 	./bin/x509strict_ecdsa
 	$(MAKE) wycheproof
+	$(MAKE) proof-coverage
+
+# What CI runs, decided here rather than in the workflow: the workflow
+# calls one target and this file says which tier that means. GitHub sets
+# GITHUB_EVENT_NAME; it is empty on a development machine, where ci runs
+# both halves.
+#
+# A pull request gets the one-minute check so review stays fast. A merge to
+# main and the nightly get the slow half too, because that is where a
+# regression must not survive.
+.PHONY: ci
+ci:
+ifeq ($(GITHUB_EVENT_NAME),pull_request)
+	$(MAKE) check
+	@echo "ci: pull request, so the slow half is skipped; a merge to main runs it"
+else
+	$(MAKE) check-slow
+endif
+
+# The slow half. bin/handshake_sequence_pq walks the same message ordering
+# as its classic sibling; what pq changes is share sizes and secret
+# derivation, which handshake_strict_pq, the differential and the e2e pq
+# legs cover.
+.PHONY: check-slow
+check-slow: check bin/handshake_sequence_test bin/handshake_sequence_pq
 	./test/e2e.sh
 	$(MAKE) diff
 	./bin/handshake_sequence_test
 	$(MAKE) test-invariants-fast
-	$(MAKE) proof-coverage
 	$(MAKE) prove
 
 # The ECDSA-arm differential: bin/diff compiles the RSA parser, so

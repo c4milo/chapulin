@@ -4,6 +4,11 @@ on:
   push:
     branches: [main] # branch pushes get checked via their PR run
   pull_request:
+  # The slow half runs on merges to main and here. A pull request gets the
+  # one-minute check only, so review stays fast; main and the nightly get
+  # everything.
+  schedule:
+    - cron: "47 2 * * *"
   workflow_dispatch: # rerun the PR lane on demand; the nightly workflow has its own
 
 # One run per branch: a new push supersedes older runs. Cancelled runs
@@ -89,7 +94,7 @@ jobs:
     # at 45 rather than close to the median. The slow proof tier lives
     # in the nightly workflow; if this job starts approaching the cap,
     # move work there rather than raising it.
-    timeout-minutes: 45
+    timeout-minutes: 180 # the slow half runs here on main and nightly
     env:
       # CI runs the same tool versions as development. When the local
       # toolchain upgrades, bump these pins in the same commit — never
@@ -324,7 +329,9 @@ jobs:
           key: proofs-${{ runner.os }}-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: proofs-${{ runner.os }}-
 
-      - run: make check
+      # One target. Which tier it means is decided in the Makefile, so the
+      # workflow holds no copy of that rule.
+      - run: make ci
       - name: Render what CBMC proves on the run page
         if: always()
         run: cat bin/proof-coverage.md >> "$GITHUB_STEP_SUMMARY" 2>/dev/null || true

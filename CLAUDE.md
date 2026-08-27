@@ -60,7 +60,11 @@ Home: github.com/c4milo.
   `lint-wide-multiply` holds the count at zero.
   ChaCha20/Poly1305/x25519 are constant time by construction — keep them
   that way; AES never enters this codebase precisely to avoid tables.
-- Proofs run in `check`, not on the side. Every module carries a
+- Proofs are mandatory, not optional, but they run in `check-slow`
+  rather than `check`: `check` holds a one-minute budget so it stays
+  usable as the inner loop, and the fast proof tier alone costs
+  thirty minutes. A change is not finished until `check-slow` passes,
+  and the nightly runs it. Every module carries a
   CBMC harness in `proof/` proving memory safety and absence of UB
   (bounds, pointer validity, arithmetic overflow, division) over
   unconstrained inputs at the module's real bound. Crypto primitives
@@ -153,8 +157,13 @@ Home: github.com/c4milo.
   `docs/`, not the body: state the why in a sentence and name the
   document. Write the body from the diff; never trim a long draft down,
   because editing anchors on the draft and lands long every time.
-- Every change passes `make check` (lint + unit + proofs; e2e against a
-  real TLS 1.3 server once the handshake lands), not just compile.
+- Every change passes `make check` (lint, unit, strict-parser and
+  Wycheproof vectors, the packaged-object export list) before it is
+  committed, and `make check-slow` (proofs, e2e against a real TLS 1.3
+  server, the spec differential, the sequence enumerations, the invariant
+  violation builds) before it is called done. Neither is optional; they
+  are split by duration, so `check` answers in about a minute and
+  `check-slow` runs in the nightly.
 - The code optimizes for third-party audit: when compact and
   auditable conflict, auditable wins. A predicate-named function is
   pure; state changes get their own line. Prefer a byte-compare

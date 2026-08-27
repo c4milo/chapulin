@@ -24,7 +24,7 @@ New code lands with its assurance attached. By change type:
 | New crypto primitive | Lean spec module, RFC/selftest vectors in `test/unit_test.c`, differential entries in `test/diff_test.c`, CBMC harness |
 | Behavior change | The RFC section cited at the code, and the same-commit three-surface update: code, Lean spec, tests |
 | Boundary change | An exact boundary test: the last valid value works, the first invalid one fails |
-| Any change | `make check` green on both PIN builds (`make check` and `make check PIN=ecdsa`) |
+| Any change | `make check` green on both PIN builds (`make check` and `make check PIN=ecdsa`), then `make check-slow` |
 
 A PR must not break an invariant in
 [docs/invariants.md](docs/invariants.md) without amending that
@@ -59,8 +59,12 @@ Domain vocabulary keeps the RFCs' own spelling: `pt`, `aad`, `iv`,
 - Commits are Conventional Commits, enforced by commitlint: run
   `npm ci --prefix tools` and `make hooks` once after clone, or CI tells
   you at PR time. Bodies explain why and wrap at 100 columns.
-- `make check` runs the build, linters, unit and differential tests,
-  and the fast proof tier. The slow proofs run as
+- `make check` is the inner loop and answers in about a minute: build,
+  linters, unit and strict-parser tests, Wycheproof vectors, and the
+  packaged-object export list. `make check-slow` runs what costs minutes —
+  the proofs, e2e against a real server, the spec differential, the
+  sequence enumerations — and the nightly runs it. Both must pass; they
+  are split by duration, not by importance. The slow proof tier runs as
   `make prove-slow` in CI and before a release.
 - Dev tooling lives in `tools/`: the lint helper scripts and the node
   packages commitlint needs. Nothing there is built into the library.
