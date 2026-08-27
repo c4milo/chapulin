@@ -230,6 +230,11 @@ jobs:
             || { echo "go is not the pinned $GO_VERSION"; exit 1; }
           "$SHELLCHECK" --version | grep -qF "version: $SHELLCHECK_VERSION" \
             || { echo "shellcheck is not the pinned $SHELLCHECK_VERSION"; exit 1; }
+          # lint-runtime-symbols reads the rv32ic objects with this. Assert it
+          # here so a missing package names itself instead of surfacing as an
+          # empty symbol list inside make.
+          command -v "llvm-nm-$LLVM_MAJOR" >/dev/null || command -v llvm-nm >/dev/null \
+            || { echo "llvm-nm is missing; install llvm-$LLVM_MAJOR"; exit 1; }
 
       - name: Install semgrep (hash-pinned)
         # The only pip package in the security path, so it installs
@@ -295,15 +300,10 @@ jobs:
 
       - name: Lint pushed commits
         # make check re-lints from the root; this pins any failure to the
-        # commits under review when a base exists. On main (HEAD is on
-        # origin/main) fall back to the full history.
-        run: |
-          if git rev-parse -q --verify origin/main >/dev/null \
-             && ! git merge-base --is-ancestor HEAD origin/main; then
-            npx --no-install commitlint --from origin/main --to HEAD
-          else
-            npx --no-install commitlint --from "$(git rev-list --max-parents=0 HEAD)" --to HEAD
-          fi
+        # commits under review when a base exists. The range logic lives in
+        # the Makefile so this step cannot drift from it: an inline copy is
+        # what broke when commitlint moved under tools/.
+        run: make lint-commits-range
 
       - run: make hooks
 
