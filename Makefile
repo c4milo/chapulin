@@ -348,7 +348,7 @@ bin/diff: test/diff_test.c $(SRCS) sha3.c mlkem.c mlkem_poly.c $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) -I. -o $@ test/diff_test.c $(SRCS) sha3.c mlkem.c mlkem_poly.c
 
-.PHONY: check lint lint-tidy lint-format lint-cppcheck lint-docs lint-invariants lint-go-pin lint-violation-builds lint-fuzz-budget lint-runtime-symbols lint-commit-citations lint-spec prove diff fmt clean
+.PHONY: check lint lint-tidy lint-format lint-cppcheck lint-docs lint-invariants lint-go-pin lint-violation-builds lint-fuzz-budget lint-runtime-symbols lint-wide-multiply lint-commit-citations lint-spec prove diff fmt clean
 # bin/handshake_sequence_pq is built here but run by the nightly, not by check: the
 # two enumerations together cost 19 of check's 45 measured minutes and
 # the CI job's timeout is 45, so the second one would decide the lane by
@@ -702,7 +702,7 @@ endif
 
 # Checks and thresholds live in .clang-tidy; every disable carries a reason
 # there (fix-or-drop, never NOLINT in code).
-lint: lint-tidy lint-format lint-cppcheck lint-commits lint-docs lint-invariants lint-stack lint-size lint-matrix lint-go-pin lint-violation-builds lint-fuzz-budget lint-runtime-symbols lint-commit-citations lint-spec
+lint: lint-tidy lint-format lint-cppcheck lint-commits lint-docs lint-invariants lint-stack lint-size lint-matrix lint-go-pin lint-violation-builds lint-fuzz-budget lint-runtime-symbols lint-wide-multiply lint-commit-citations lint-spec
 
 # INV-19: bounded stack. The budget is the measured worst library
 # frame (rsa_vp1's RSA-3072 limb temporaries, 2,400 bytes) rounded up;
@@ -944,6 +944,36 @@ RV_SRCS := ct.c sha256.c chacha20.c poly1305.c aead.c x25519.c x509_der.c record
 # `% 5` on Keccak's loop counters, a public index, so it is a performance
 # matter rather than a leak -- #53 separates the two.
 RV_ALLOWED := __udivsi3
+
+# The Cortex-M3 has two multiply opcodes: mul is constant-time, umull is
+# not -- it returns sooner when both operands are below 65536, and has
+# undocumented early exits on zero and powers of two. The 32->64 one has
+# been used to extract Curve25519 keys. So a product wider than 32 bits
+# reached from a secret is a leak on that part, whatever the source says
+# (#53). 64-bit addition is fine: it is two 32-bit adds.
+#
+# These are the counts today, and they are a ceiling that may only fall.
+# sha3's one is `% 5` over Keccak's public loop counters, so it is here to
+# keep the total honest rather than because it leaks.
+M3_CEILING := poly1305.c:25 mlkem_poly.c:6 x25519.c:3 sha3.c:1
+.PHONY: lint-wide-multiply
+lint-wide-multiply:
+ifeq ($(CLANG_RV),)
+	$(call REQUIRE,clang,it ships with llvm — see the LLVM_MAJOR pin in .github/workflows/check.yml)
+else
+	@rc=0; for e in $(M3_CEILING); do \
+	  f=$${e%%:*}; cap=$${e##*:}; \
+	  n=$$($(CLANG_RV) -target thumbv7m-none-eabi -mcpu=cortex-m3 -Os -std=c11 \
+	      -D_DEFAULT_SOURCE -DCH_RAND_EXTERN -DCH_KEX_PQ -I. -S $$f -o - 2>/dev/null \
+	      | grep -cE '\b(umull|smull|umlal|smlal)\b'); \
+	  if [ "$$n" -gt "$$cap" ]; then \
+	    echo "lint-wide-multiply: $$f emits $$n wide multiplies, ceiling is $$cap (see #53)"; rc=1; \
+	  elif [ "$$n" -lt "$$cap" ]; then \
+	    echo "lint-wide-multiply: $$f is down to $$n from $$cap — lower the ceiling"; rc=1; \
+	  fi; \
+	done; \
+	[ $$rc -eq 0 ] && echo "lint-wide-multiply: every module at its recorded ceiling"; exit $$rc
+endif
 .PHONY: lint-runtime-symbols
 lint-runtime-symbols:
 ifeq ($(CLANG_RV),)
