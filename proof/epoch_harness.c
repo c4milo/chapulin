@@ -5,8 +5,8 @@
 // let a replayed certificate undo a bump.
 //
 // Narrow on purpose. The CA arm's whole driver does not converge
-// (#37), so this proves the arm's own arithmetic and leaves the
-// record reading to handshake_psk and handshake_pin.
+// (https://github.com/c4milo/chapulin/issues/37), so this proves the arm's own
+// arithmetic and leaves the record reading to handshake_psk and handshake_pin.
 #define CH_TRUST_CA 1
 #define CH_PROOF_PIN 1
 #define CH_PROOF_STUB_SHA256

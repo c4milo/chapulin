@@ -1,7 +1,7 @@
-// Proves: hs_build_client_hello — the one builder, and the last library
-// source with no harness (#33) — writes nothing outside the caller's
-// buffer for any capacity, and that CH_HELLO_MAX is a correct upper
-// bound on what it can emit.
+// Proves: hs_build_client_hello — the one builder, and the last library source
+// with no harness (https://github.com/c4milo/chapulin/issues/33) — writes
+// nothing outside the caller's buffer for any capacity, and that CH_HELLO_MAX
+// is a correct upper bound on what it can emit.
 //
 // Three properties. Memory safety over any cap, any cookie and any PSK
 // identity within the lengths callers may pass. The return contract:

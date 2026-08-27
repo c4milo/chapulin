@@ -1,15 +1,15 @@
-// Sequence differential for the handshake state machine (issue #3):
-// enumerate every server message sequence up to a depth, render each as
-// real TLS records over a mock transport, run the real client, and
-// require its accept/reject verdict to equal the Lean model's handshake_sequence
-// oracle. One letter per server message: S ServerHello, H
-// HelloRetryRequest, E EncryptedExtensions, C Certificate, R
-// CertificateRequest, V CertificateVerify, F Finished, N
-// NewSessionTicket, K KeyUpdate, A application data, L close_notify.
-// The mock server derives real keys from the captured ClientHello, so
-// ServerHello, Finished MACs, and record protection are genuine — a
-// wrong transcript or schedule shows up as a divergence. Only the
-// pinned-mode signature check is stubbed (V means "signature valid").
+// Sequence differential for the handshake state machine
+// (https://github.com/c4milo/chapulin/issues/3): enumerate every server
+// message sequence up to a depth, render each as real TLS records over a mock
+// transport, run the real client, and require its accept/reject verdict to
+// equal the Lean model's handshake_sequence oracle. One letter per server
+// message: S ServerHello, H HelloRetryRequest, E EncryptedExtensions, C
+// Certificate, R CertificateRequest, V CertificateVerify, F Finished, N
+// NewSessionTicket, K KeyUpdate, A application data, L close_notify. The mock
+// server derives real keys from the captured ClientHello, so ServerHello,
+// Finished MACs, and record protection are genuine — a wrong transcript or
+// schedule shows up as a divergence. Only the pinned-mode signature check is
+// stubbed (V means "signature valid").
 //
 // Domain: this oracle models raw-pin mode. The client here links
 // without CH_TRUST_CA, and the spec's `pinned` Mode means a pinned
@@ -268,11 +268,11 @@ int main(void) {
     CHECK(run_case("HSEFNKA", 7, 1) == 1);
     CHECK(run_case("SECVF", 5, 1) == 0); // certificate flight under PSK
 
-    // Pin slot B (issue #6's specified mock test). The stub accepts
-    // exactly one key object, so these run the real slot loop: the
-    // handshake must succeed by whichever slot holds the accepted key,
-    // record which, and fail closed with decrypt_error when neither
-    // slot verifies. Slot order must not matter.
+    // Pin slot B, the mock test https://github.com/c4milo/chapulin/issues/6
+    // specifies. The stub accepts exactly one key object, so these run the
+    // real slot loop: the handshake must succeed by whichever slot holds the
+    // accepted key, record which, and fail closed with decrypt_error when
+    // neither slot verifies. Slot order must not matter.
     memset(test_pin2, 4, sizeof test_pin2);
     test_pin2[TEST_PIN_LEN - 1] = 3; // odd, like every valid RSA pin
     use_pin2 = 1;
@@ -292,11 +292,12 @@ int main(void) {
     CHECK(srv.last_alert == ALERT_DECRYPT_ERROR);
     stub_accept = NULL;
 
-    // Malformation -> alert table (issue #11): each mutation bends one
-    // field; the table asserts the alert description byte the client
-    // puts on the wire. MUT_REC_OVER documents current behavior: an
-    // over-limit record fails io_read_record and dies as decode_error
-    // (RFC 8449 prefers record_overflow; tracked separately).
+    // Malformation -> alert table
+    // (https://github.com/c4milo/chapulin/issues/11): each mutation bends one
+    // field; the table asserts the alert description byte the client puts on
+    // the wire. MUT_REC_OVER documents current behavior: an over-limit record
+    // fails io_read_record and dies as decode_error (RFC 8449 prefers
+    // record_overflow; tracked separately).
     static const struct {
         int mut;
         const char *seq;

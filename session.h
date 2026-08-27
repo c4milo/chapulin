@@ -37,9 +37,10 @@
 // 1216-byte hybrid share.
 #define CH_TX_STAGE 1801
 #else
-// The same sum with a 32-byte x25519 share: 617. Above the 529 a
-// sealed record needs, which is why a maximum ticket identity plus a
-// maximum retry cookie used to fail closed with CH_ECAP (#46).
+// The same sum with a 32-byte x25519 share: 617. Above the 529 a sealed record
+// needs, which is why a maximum ticket identity plus a maximum retry cookie
+// used to fail closed with CH_ECAP
+// (https://github.com/c4milo/chapulin/issues/46).
 #define CH_TX_STAGE 617
 #endif
 #endif

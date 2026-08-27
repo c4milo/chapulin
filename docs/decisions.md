@@ -174,11 +174,11 @@ does nothing more.
     docs/entropy.md.
 
     **Which generator an image uses is declared, never defaulted**
-    (#41). `RAND=extern` leaves `ch_rand_bytes` undefined, so an image
-    that never wired a generator fails to link; `RAND=drbg` packages
-    `drbg.c` and exports `ch_drbg_seed`, which also puts the
-    generator's `CH_ASSERT(g_seeded)` into a shipped object for the
-    first time. Naming neither reaches an `#error` in `cfg.h` rather
+    ([#41](https://github.com/c4milo/chapulin/issues/41)). `RAND=extern`
+    leaves `ch_rand_bytes` undefined, so an image that never wired a
+    generator fails to link; `RAND=drbg` packages `drbg.c` and exports
+    `ch_drbg_seed`, which also puts the generator's `CH_ASSERT(g_seeded)`
+    into a shipped object for the first time. Naming neither reaches an `#error` in `cfg.h` rather
     than one in the Makefile, because a firmware tree compiles these
     sources with its own build system and a Makefile-only check would
     miss exactly the integrator this targets. Cost: every consumer
@@ -189,17 +189,16 @@ does nothing more.
     build that succeeds — wolfSSL's `USE_TEST_GENSEED` shape, where a
     skipped decision looks like a made one.
 
-    The hook returns `void`, and giving it a `ch_err` return was
-    considered and deferred (#41). A return code is the honest answer
-    for a transient hardware fault, but it breaks the one function
-    every consumer firmware tree implements, for a case `rand.h`
-    already covers by contract: a generator that cannot produce bytes
-    blocks or faults rather than returning short. What the `void`
-    return does not catch is a hook that returns without writing, and
-    that is why every draw in `handshake.c` is followed by an all-zero
-    check against `rand.h`'s contract. Neither the check nor any
-    signature can tell a weak generator from a strong one; nothing in
-    a library can.
+    The hook returns `void`, and giving it a `ch_err` return was considered
+    and deferred ([#41](https://github.com/c4milo/chapulin/issues/41)). A
+    return code is the honest answer for a transient hardware fault, but it
+    breaks the one function every consumer firmware tree implements, for a
+    case `rand.h` already covers by contract: a generator that cannot
+    produce bytes blocks or faults rather than returning short. What the
+    `void` return does not catch is a hook that returns without writing, and
+    that is why every draw in `handshake.c` is followed by an all-zero check
+    against `rand.h`'s contract. Neither the check nor any signature can
+    tell a weak generator from a strong one; nothing in a library can.
 21. **Every operational error fails closed**: alert, wipe keys, dead
     session, caller reconnects. Cost: no graceful recovery. Gain: the
     entire resumable-error state space is removed from the code and the
@@ -208,20 +207,18 @@ does nothing more.
     provisioning corruption never reads as an attack on the wire.
 
 22. **One TX staging array, sized per build.** The ClientHello
-    builder and the sealed-record path share the session's TX array;
-    their lifetimes never overlap. `CH_TX_STAGE` is whichever is
-    larger, per build, and the hello wins in both: 617 bytes classic,
-    1801 with a hybrid key share, against the 529 a sealed record
-    needs. The classic figure used to be the sealed record's, which
-    left a maximum ticket identity plus a maximum retry cookie failing
-    closed with `CH_ECAP` mid-handshake (#46); covering the hello
-    costs that build 88 bytes and lets the same compile-time assert
-    run everywhere. A second array would cost every build the hello's
-    bytes,
-    and the handshake proof keeps one array to model. Streaming the
-    hello stays rejected: the PSK binder is an HMAC over the
-    contiguous truncated hello, so a streaming builder would buffer
-    the message anyway.
+    builder and the sealed-record path share the session's TX array; their
+    lifetimes never overlap. `CH_TX_STAGE` is whichever is larger, per
+    build, and the hello wins in both: 617 bytes classic, 1801 with a hybrid
+    key share, against the 529 a sealed record needs. The classic figure
+    used to be the sealed record's, which left a maximum ticket identity
+    plus a maximum retry cookie failing closed with `CH_ECAP` mid-handshake
+    ([#46](https://github.com/c4milo/chapulin/issues/46)); covering the
+    hello costs that build 88 bytes and lets the same compile-time assert
+    run everywhere. A second array would cost every build the hello's bytes,
+    and the handshake proof keeps one array to model. Streaming the hello
+    stays rejected: the PSK binder is an HMAC over the contiguous truncated
+    hello, so a streaming builder would buffer the message anyway.
 23. **The receive-buffer floor is a build constant.** `ch_connect`
     checks `buf_len` against `CH_MIN_RXBUF` before anything is sent.
     A feature that needs more room raises the constant, so a

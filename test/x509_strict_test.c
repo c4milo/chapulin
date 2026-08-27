@@ -1,4 +1,5 @@
-// Grammar strictness for the profiled certificate parser (issue #22):
+// Grammar strictness for the profiled certificate parser
+// (https://github.com/c4milo/chapulin/issues/22):
 // every boundary in the profile gets an exact pair — the last valid
 // encoding passes and the first invalid one fails with the alert
 // x509.h maps to it. Mutants come from the good vector by splices

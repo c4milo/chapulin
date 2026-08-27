@@ -6,10 +6,11 @@
 // x25519 all-zero refusal, INV-3 — every one of those 64 bytes is zero,
 // so a rejected key exchange cannot leave half a secret on the stack.
 //
-// This is the only harness that builds with -DCH_KEX_PQ (#47). The
-// hybrid ServerHello parser is still unproven: proof/handshake_parser
-// bounds its message at 256 bytes and a hybrid key_share extension is
-// 1,128, so the accepting path there is unreachable at that bound.
+// This is the only harness that builds with -DCH_KEX_PQ
+// (https://github.com/c4milo/chapulin/issues/47). The hybrid ServerHello
+// parser is still unproven: proof/handshake_parser bounds its message at 256
+// bytes and a hybrid key_share extension is 1,128, so the accepting path there
+// is unreachable at that bound.
 //
 // Layered proof, the handshake-stubs-handshake_parser pattern: mlkem and x25519
 // are stubs asserting their headers' contracts and havocing outputs, so

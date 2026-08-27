@@ -1,13 +1,13 @@
 // Constant-time software multiply, for cores with no hardware multiplier.
 //
 // A core without a multiply instruction turns every `*` into a call to the
-// compiler's runtime library, and those routines are shift-and-add loops
-// that branch on the multiplier's bits: they iterate once per bit up to
-// the operand's bit length, and add only where a bit is set. Duration and
-// power both follow the operand. poly1305 multiplies by half the one-time
-// MAC key, x25519 by the private scalar, and mlkem_poly by secret
-// coefficients, so on such a core the library's constant-time claim would
-// hold in the source and not in what executes (#53).
+// compiler's runtime library, and those routines are shift-and-add loops that
+// branch on the multiplier's bits: they iterate once per bit up to the
+// operand's bit length, and add only where a bit is set. Duration and power
+// both follow the operand. poly1305 multiplies by half the one-time MAC key,
+// x25519 by the private scalar, and mlkem_poly by secret coefficients, so on
+// such a core the library's constant-time claim would hold in the source and
+// not in what executes (https://github.com/c4milo/chapulin/issues/53).
 //
 // These definitions carry the names the compiler emits, so they replace
 // the runtime library's at link time and no crypto source changes. Both

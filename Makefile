@@ -118,11 +118,12 @@ endif
 # Entropy pattern, and the one build variable with no default: RAND=extern
 # leaves ch_rand_bytes undefined for the image to supply, RAND=drbg packages
 # the reference generator and exports ch_drbg_seed so the image seeds it at
-# boot. Neither is a default because the choice is the point (#41): a weak
-# generator completes the handshake and reports success, so the only thing a
-# build can enforce is that somebody wrote the choice down. Naming neither
-# reaches cfg.h's #error, which is where a firmware tree compiling these
-# sources with its own build system meets the same demand.
+# boot. Neither is a default because the choice is the point
+# (https://github.com/c4milo/chapulin/issues/41): a weak generator completes
+# the handshake and reports success, so the only thing a build can enforce is
+# that somebody wrote the choice down. Naming neither reaches cfg.h's #error,
+# which is where a firmware tree compiling these sources with its own build
+# system meets the same demand.
 ifeq ($(RAND),drbg)
 LIB_DEF += -DCH_RAND_DRBG
 LIB_SRCS += drbg.c
@@ -197,10 +198,11 @@ lib-check: bin/chapulin.o
 	@diff -u bin/expected.txt bin/exported.txt || { \
 	  echo "lib-check: exported symbols differ from the public API"; exit 1; }
 	@echo "lib-check: $$(wc -l < bin/exported.txt | tr -d ' ') exported symbols, all public API"
-# #41 calls the undefined import chapulin's strongest randomness property:
-# an image that never wired a generator does not link. RAND=drbg trades it
-# away deliberately, so assert whichever one this build promised rather
-# than leaving the difference to a reader of the Makefile.
+# https://github.com/c4milo/chapulin/issues/41 calls the undefined import
+# chapulin's strongest randomness property: an image that never wired a
+# generator does not link. RAND=drbg trades it away deliberately, so assert
+# whichever one this build promised rather than leaving the difference to a
+# reader of the Makefile.
 ifeq ($(RAND),drbg)
 	@if nm -u bin/chapulin.o | awk '{print $$NF}' | sed 's/^_//' | grep -qx ch_rand_bytes; then \
 	  echo "lib-check: RAND=drbg packages the generator, so ch_rand_bytes must be defined here, not imported"; exit 1; fi
@@ -251,14 +253,16 @@ bin/rsa_test: test/rsa_test.c rsa.c rsa_mont.c sha256.c ct.c $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) -I. -o $@ test/rsa_test.c rsa.c rsa_mont.c sha256.c ct.c
 
-# SHA-3 vectors and the SHAKE streaming contract. Its own binary: sha3.c
-# stays out of the packaged object until the ML-KEM build calls it (#21).
+# SHA-3 vectors and the SHAKE streaming contract. Its own binary: sha3.c stays
+# out of the packaged object until the ML-KEM build calls it
+# (https://github.com/c4milo/chapulin/issues/21).
 bin/sha3_test: test/sha3_test.c sha3.c ct.c $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) -I. -o $@ test/sha3_test.c sha3.c ct.c
 
-# ML-KEM-768 known answers, the CCTV decaps anchors, and the input
-# checks. Its own binary, out of the packaged object like sha3 (#21).
+# ML-KEM-768 known answers, the CCTV decaps anchors, and the input checks. Its
+# own binary, out of the packaged object like sha3
+# (https://github.com/c4milo/chapulin/issues/21).
 bin/mlkem_test: test/mlkem_test.c mlkem.c mlkem_poly.c sha3.c ct.c $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) -I. -o $@ test/mlkem_test.c mlkem.c mlkem_poly.c sha3.c ct.c
@@ -348,7 +352,7 @@ bin/diff: test/diff_test.c $(SRCS) sha3.c mlkem.c mlkem_poly.c $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) -I. -o $@ test/diff_test.c $(SRCS) sha3.c mlkem.c mlkem_poly.c
 
-.PHONY: check lint lint-tidy lint-format lint-cppcheck lint-docs lint-invariants lint-go-pin lint-violation-builds lint-fuzz-budget lint-runtime-symbols lint-wide-multiply lint-commit-citations lint-spec prove diff fmt clean
+.PHONY: check lint lint-tidy lint-format lint-cppcheck lint-docs lint-invariants lint-go-pin lint-violation-builds lint-fuzz-budget lint-runtime-symbols lint-wide-multiply lint-commit-citations lint-issue-links lint-spec prove diff fmt clean
 # bin/handshake_sequence_pq is built here but run by the nightly, not by check: the
 # two enumerations together cost 19 of check's 45 measured minutes and
 # the CI job's timeout is 45, so the second one would decide the lane by
@@ -702,7 +706,7 @@ endif
 
 # Checks and thresholds live in .clang-tidy; every disable carries a reason
 # there (fix-or-drop, never NOLINT in code).
-lint: lint-tidy lint-format lint-cppcheck lint-commits lint-docs lint-invariants lint-stack lint-size lint-matrix lint-go-pin lint-violation-builds lint-fuzz-budget lint-runtime-symbols lint-wide-multiply lint-commit-citations lint-spec
+lint: lint-tidy lint-format lint-cppcheck lint-commits lint-docs lint-invariants lint-stack lint-size lint-matrix lint-go-pin lint-violation-builds lint-fuzz-budget lint-runtime-symbols lint-wide-multiply lint-commit-citations lint-issue-links lint-spec
 
 # INV-19: bounded stack. The budget is the measured worst library
 # frame (rsa_vp1's RSA-3072 limb temporaries, 2,400 bytes) rounded up;
@@ -924,33 +928,36 @@ lint-go-pin:
 lint-violation-builds:
 	@python3 test/violations.py --lint-builds
 
-# A core without the M extension has no hardware multiply, so every `*`
-# becomes a libgcc call, and those routines branch on their operands
-# (#53). That is a variable-time sequence reached from secret data, which
-# INV-23's ban on / and % cannot see: it bans source-level division, and
-# this is the compiler emitting a routine for multiplication.
+# A core without the M extension has no hardware multiply, so every `*` becomes
+# a libgcc call, and those routines branch on their operands
+# (https://github.com/c4milo/chapulin/issues/53). That is a variable-time
+# sequence reached from secret data, which INV-23's ban on / and % cannot see:
+# it bans source-level division, and this is the compiler emitting a routine
+# for multiplication.
 #
-# The list is what rv32ic pulls today, not what is acceptable. It exists
-# so a NEW compiler-runtime dependency fails here rather than in a
-# review, and it shrinks to empty when #53 is resolved. clang carries the
-# riscv32 target, so this needs no cross toolchain.
-# The sources that compile freestanding, which is every module that
-# multiplies a secret. The rest reach for <string.h>, and a bare-metal
-# riscv32 clang has no libc headers; adding a shim to check modules that
-# do no secret arithmetic would buy nothing.
+# The list is what rv32ic pulls today, not what is acceptable. It exists so a
+# NEW compiler-runtime dependency fails here rather than in a review, and it
+# shrinks to empty when https://github.com/c4milo/chapulin/issues/53 is
+# resolved. clang carries the riscv32 target, so this needs no cross toolchain.
+# The sources that compile freestanding, which is every module that multiplies
+# a secret. The rest reach for <string.h>, and a bare-metal riscv32 clang has
+# no libc headers; adding a shim to check modules that do no secret arithmetic
+# would buy nothing.
 RV_SRCS := ct.c sha256.c chacha20.c poly1305.c aead.c x25519.c x509_der.c record.c \
            keysched.c io.c handshake_message.c session.c sha3.c mlkem_poly.c softmul.c
-# What is left after softmul.c supplies the multiplies. sha3's division is
-# `% 5` on Keccak's loop counters, a public index, so it is a performance
-# matter rather than a leak -- #53 separates the two.
+# What is left after softmul.c supplies the multiplies. sha3's division is `%
+# 5` on Keccak's loop counters, a public index, so it is a performance matter
+# rather than a leak -- https://github.com/c4milo/chapulin/issues/53 separates
+# the two.
 RV_ALLOWED := __udivsi3
 
-# The Cortex-M3 has two multiply opcodes: mul is constant-time, umull is
-# not -- it returns sooner when both operands are below 65536, and has
-# undocumented early exits on zero and powers of two. The 32->64 one has
-# been used to extract Curve25519 keys. So a product wider than 32 bits
-# reached from a secret is a leak on that part, whatever the source says
-# (#53). 64-bit addition is fine: it is two 32-bit adds.
+# The Cortex-M3 has two multiply opcodes: mul is constant-time, umull is not --
+# it returns sooner when both operands are below 65536, and has undocumented
+# early exits on zero and powers of two. The 32->64 one has been used to
+# extract Curve25519 keys. So a product wider than 32 bits reached from a
+# secret is a leak on that part, whatever the source says
+# (https://github.com/c4milo/chapulin/issues/53). 64-bit addition is fine: it
+# is two 32-bit adds.
 #
 # These are the counts today, and they are a ceiling that may only fall.
 # sha3's one is `% 5` over Keccak's public loop counters, so it is here to
@@ -967,13 +974,17 @@ else
 	      -D_DEFAULT_SOURCE -DCH_RAND_EXTERN -DCH_KEX_PQ -I. -S $$f -o - 2>/dev/null \
 	      | grep -cE '\b(umull|smull|umlal|smlal)\b'); \
 	  if [ "$$n" -gt "$$cap" ]; then \
-	    echo "lint-wide-multiply: $$f emits $$n wide multiplies, ceiling is $$cap (see #53)"; rc=1; \
+	    echo "lint-wide-multiply: $$f emits $$n wide multiplies, ceiling is $$cap (see https://github.com/c4milo/chapulin/issues/53)"; rc=1; \
 	  elif [ "$$n" -lt "$$cap" ]; then \
 	    echo "lint-wide-multiply: $$f is down to $$n from $$cap — lower the ceiling"; rc=1; \
 	  fi; \
 	done; \
 	[ $$rc -eq 0 ] && echo "lint-wide-multiply: every module at its recorded ceiling"; exit $$rc
 endif
+.PHONY: lint-issue-links
+lint-issue-links:
+	@python3 .github/issue-links.py
+
 .PHONY: lint-runtime-symbols
 lint-runtime-symbols:
 ifeq ($(CLANG_RV),)
@@ -992,10 +1003,10 @@ else
 	 [ -s $$d/.und ] || { echo "lint-runtime-symbols: read no symbols; llvm-nm or the build failed"; rc=1; }; \
 	 for sym in $$got; do \
 	   echo "$(RV_ALLOWED)" | tr ' ' '\n' | grep -qx "$$sym" \
-	     || { echo "lint-runtime-symbols: $$sym is a new compiler-runtime dependency (see #53)"; rc=1; }; \
+	     || { echo "lint-runtime-symbols: $$sym is a new compiler-runtime dependency (see https://github.com/c4milo/chapulin/issues/53)"; rc=1; }; \
 	 done; \
 	 rm -rf $$d; \
-	 [ $$rc -eq 0 ] && echo "lint-runtime-symbols: rv32ic pulls only the runtime calls #53 records"; exit $$rc
+	 [ $$rc -eq 0 ] && echo "lint-runtime-symbols: rv32ic pulls only the runtime calls https://github.com/c4milo/chapulin/issues/53 records"; exit $$rc
 endif
 
 # The fuzz job's budget is per target, so adding a target silently

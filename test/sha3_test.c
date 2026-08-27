@@ -1,8 +1,8 @@
-// SHA-3 and SHAKE against the published FIPS 202 example values, plus
-// the streaming contract: split absorbs and split squeezes produce the
-// one-shot stream. Its own binary because nothing in the packaged
-// object calls SHA-3 yet (#21); the module stays testable without the
-// rest of the stack, the way drbg_test and rsa_test do.
+// SHA-3 and SHAKE against the published FIPS 202 example values, plus the
+// streaming contract: split absorbs and split squeezes produce the one-shot
+// stream. Its own binary because nothing in the packaged object calls SHA-3
+// yet (https://github.com/c4milo/chapulin/issues/21); the module stays
+// testable without the rest of the stack, the way drbg_test and rsa_test do.
 #include <stdio.h>
 #include <string.h>
 

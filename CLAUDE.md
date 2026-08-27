@@ -54,7 +54,10 @@ Home: github.com/c4milo.
   multiplier turns `*` into a runtime-library call that branches on its
   operands, so `softmul.c` supplies constant-time `__mulsi3`/`__muldi3`
   under the compiler's own names; it compiles to nothing where the
-  instruction exists.
+  instruction exists. A multiplier that exists and is variable-time is
+  the other half: `ct.h` builds widening products from 16x16 pieces
+  unless the architecture is on its verified list, and
+  `lint-wide-multiply` holds the count at zero.
   ChaCha20/Poly1305/x25519 are constant time by construction — keep them
   that way; AES never enters this codebase precisely to avoid tables.
 - Proofs run in `check`, not on the side. Every module carries a
@@ -115,6 +118,13 @@ Home: github.com/c4milo.
   rots as soon as the field is renamed. When two related values need
   telling apart, take both names from the code (`epoch` and
   `epoch_seen`), not from a metaphor.
+- Every GitHub issue reference carries its full URL
+  (`https://github.com/c4milo/chapulin/issues/53`), never the bare
+  hash-and-number form. A reader holding only the source tree cannot
+  resolve a bare number. Markdown may keep the short form as the link
+  label; C, shell and Makefile comments spell the URL out. `make
+  lint-issue-links` enforces this, and it reads this file too, so the
+  rule is stated without an example of what it forbids.
 - Linters follow fix-or-drop: fix the finding, or disable the check in
   `.clang-tidy` with its reason. Never `NOLINT` in code.
 - CI pins the same tool versions the development machine runs (see the

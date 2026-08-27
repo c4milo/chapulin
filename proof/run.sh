@@ -226,7 +226,8 @@ launch() {
     if [ "$mode" = "noovf" ]; then
         flags=("${BASE[@]}")
     fi
-    # cfg.h demands a declared entropy pattern (#41). Every harness either
+    # cfg.h demands a declared entropy pattern
+    # (https://github.com/c4milo/chapulin/issues/41). Every harness either
     # defines ch_rand_bytes itself or never reaches randomness, so they all
     # declare extern, the same way the host binaries in the Makefile do.
     local args=("proof/${name}_harness.c" "$@" -DCH_RAND_EXTERN -I . --unwind "$unwind")
@@ -370,38 +371,38 @@ launch fast:4 full io 24 ""
 # arithmetic is length handling rather than compression.
 launch fast full keysched 120 "" ct.c
 # epoch: 0 s, 27 MB. The CA arm's own rules. handshake_ca drives the whole CA
-# driver and does not converge (#37), so this proves the part that is
-# specific to the arm -- the verdict matching its reported status, and
-# the stored epoch never moving backwards -- and leaves the record
-# reading to handshake_psk and handshake_pin.
+# driver and does not converge (https://github.com/c4milo/chapulin/issues/37),
+# so this proves the part that is specific to the arm -- the verdict matching
+# its reported status, and the stored epoch never moving backwards -- and
+# leaves the record reading to handshake_psk and handshake_pin.
 launch fast full epoch 40 "" ct.c
 launch fast full handshake_post 132 "handle_post_handshake.0:33,fill_nondet.0:130" --object-bits 11 buf.c ct.c session.c
-# The only launch line that builds the hybrid key exchange (#47).
-# hybrid_secret over any seed, any server ciphertext and any server
-# share, with mlkem and x25519 stubbed to their headers' contracts —
-# their own harnesses prove the arithmetic, and driving a 2400-byte
-# expansion and 256 symbolic multiplies here would be the shape
-# docs/proofs.md says not to build. Measured: 508 properties, 3 s,
-# 78 MB (kissat). The hybrid ServerHello parser stays unproven: the
-# 256-byte handshake_parser bound cannot hold a 1,128-byte key share.
+# The only launch line that builds the hybrid key exchange
+# (https://github.com/c4milo/chapulin/issues/47). hybrid_secret over any seed,
+# any server ciphertext and any server share, with mlkem and x25519 stubbed to
+# their headers' contracts — their own harnesses prove the arithmetic, and
+# driving a 2400-byte expansion and 256 symbolic multiplies here would be the
+# shape docs/proofs.md says not to build. Measured: 508 properties, 3 s, 78 MB
+# (kissat). The hybrid ServerHello parser stays unproven: the 256-byte
+# handshake_parser bound cannot hold a 1,128-byte key share.
 launch fast full hybrid_secret 65 "fill_nondet.0:2401,ct_wipe.0:2401" -DCH_KEX_PQ ct.c
-# The parser half of the hybrid build (#47). parse_key_share is
-# driven directly because handshake_parser bounds its message at
-# 256 bytes and a hybrid key_share extension is 1,128: raising
-# that bound would grow the fast tier's heaviest formula (9.9 GB)
-# rather than add a second cheap one. Proves what hybrid_secret's
-# harness assumes — an accepted share hands back a whole readable
-# ciphertext inside the bytes the parser consumed, so neither
-# proof rests on the assumption alone. Measured: 654 properties,
-# 1 s, 164 MB (kissat).
+# The parser half of the hybrid build
+# (https://github.com/c4milo/chapulin/issues/47). parse_key_share is driven
+# directly because handshake_parser bounds its message at 256 bytes and a
+# hybrid key_share extension is 1,128: raising that bound would grow the fast
+# tier's heaviest formula (9.9 GB) rather than add a second cheap one. Proves
+# what hybrid_secret's harness assumes — an accepted share hands back a whole
+# readable ciphertext inside the bytes the parser consumed, so neither proof
+# rests on the assumption alone. Measured: 654 properties, 1 s, 164 MB
+# (kissat).
 launch fast full key_share 1200 "fill_nondet.0:1133" -DCH_KEX_PQ buf.c
-# handshake_message.c was the last library source no harness
-# compiled (#33). Beyond memory safety this checks the constant
-# handshake.c asserts CH_TX_STAGE against: at CH_HELLO_MAX the
-# build always succeeds, so the bound is sufficient rather than
-# plausible. wbuf is real here — refusing to overflow is its
-# contract, and the point is that the builder uses it correctly.
-# Measured: 486 properties, 5 s, 46 MB (kissat).
+# handshake_message.c was the last library source no harness compiled
+# (https://github.com/c4milo/chapulin/issues/33). Beyond memory safety this
+# checks the constant handshake.c asserts CH_TX_STAGE against: at CH_HELLO_MAX
+# the build always succeeds, so the bound is sufficient rather than plausible.
+# wbuf is real here — refusing to overflow is its contract, and the point is
+# that the builder uses it correctly. Measured: 486 properties, 5 s, 46 MB
+# (kissat).
 launch fast full hello_build 400 "fill_nondet.0:321,wb_bytes.0:321" buf.c
 # x509: primitives concrete (both variants), the walker with stubbed
 # primitives. The ECDSA walker proves the full two-entry bound in

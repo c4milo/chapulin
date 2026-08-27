@@ -128,13 +128,14 @@ static void test_epoch_cfg(void) {
 #endif
 }
 
-// The ClientHello staging boundary (#46). CH_TX_STAGE must hold the
-// largest hello this build can emit, and CH_HELLO_MAX is that size, so
-// the pair below is exact: at CH_HELLO_MAX the worst reachable hello —
-// a resumption carrying a CH_TICKET_ID_MAX identity that then answers a
-// HelloRetryRequest with an HSP_COOKIE_MAX cookie — is built whole, and
-// one byte less refuses. Before the classic build covered its own hello
-// this second case was what a device met mid-handshake, as CH_ECAP.
+// The ClientHello staging boundary
+// (https://github.com/c4milo/chapulin/issues/46). CH_TX_STAGE must hold the
+// largest hello this build can emit, and CH_HELLO_MAX is that size, so the
+// pair below is exact: at CH_HELLO_MAX the worst reachable hello — a
+// resumption carrying a CH_TICKET_ID_MAX identity that then answers a
+// HelloRetryRequest with an HSP_COOKIE_MAX cookie — is built whole, and one
+// byte less refuses. Before the classic build covered its own hello this
+// second case was what a device met mid-handshake, as CH_ECAP.
 static void test_hello_staging_boundary(void) {
     static uint8_t out[CH_HELLO_MAX];
     static uint8_t identity[CH_TICKET_ID_MAX];

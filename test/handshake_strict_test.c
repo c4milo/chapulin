@@ -1,11 +1,11 @@
-// Encoding strictness for the ServerHello and EncryptedExtensions
-// parsers (issue #10): every extension body must match its struct
-// exactly (RFC 9846 §4.3 makes trailing bytes a decode error) and no
-// extension type may repeat. Each behavior gets a boundary pair: the
-// exact-length body parses, the same body plus one byte fails. The
-// parsers live in handshake_parser.c and depend only on buf.c, so those two files
-// are the whole link line. Its own binary with a private main, like the
-// other standalone test mains.
+// Encoding strictness for the ServerHello and EncryptedExtensions parsers
+// (https://github.com/c4milo/chapulin/issues/10): every extension body must
+// match its struct exactly (RFC 9846 §4.3 makes trailing bytes a decode error)
+// and no extension type may repeat. Each behavior gets a boundary pair: the
+// exact-length body parses, the same body plus one byte fails. The parsers
+// live in handshake_parser.c and depend only on buf.c, so those two files are
+// the whole link line. Its own binary with a private main, like the other
+// standalone test mains.
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
@@ -229,7 +229,8 @@ int main(void) {
     // fatal from a retry, even with a PSK offered.
     CHECK(server_hello_case2(psk_exact, sizeof psk_exact, 1, 1) == CH_EPROTO);
 
-    // Regression, issue #10: junk after a valid selected_version once
+    // Regression, https://github.com/c4milo/chapulin/issues/10:
+    // junk after a valid selected_version once
     // parsed as valid TLS 1.3.
     CHECK(server_hello_case(versions_junk, sizeof versions_junk, 0, 0) == CH_EPROTO);
 
