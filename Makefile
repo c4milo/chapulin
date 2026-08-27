@@ -32,6 +32,7 @@ LIB_CFLAGS = $(filter-out $(HOST_RAND_DEF),$(CFLAGS))
 LLVM_BIN := /opt/homebrew/opt/llvm/bin
 CLANG_TIDY ?= $(shell command -v clang-tidy || command -v $(LLVM_BIN)/clang-tidy)
 CLANG_FORMAT ?= $(shell command -v clang-format || command -v $(LLVM_BIN)/clang-format)
+CLANG_RV ?= $(shell command -v $(LLVM_BIN)/clang || command -v clang)
 CPPCHECK ?= $(shell command -v cppcheck)
 CBMC ?= $(shell command -v cbmc)
 CXX ?= c++
@@ -331,7 +332,7 @@ bin/diff: test/diff_test.c $(SRCS) sha3.c mlkem.c mlkem_poly.c $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) -I. -o $@ test/diff_test.c $(SRCS) sha3.c mlkem.c mlkem_poly.c
 
-.PHONY: check lint lint-tidy lint-format lint-cppcheck lint-docs lint-invariants lint-go-pin lint-violation-builds lint-fuzz-budget lint-commit-citations lint-spec prove diff fmt clean
+.PHONY: check lint lint-tidy lint-format lint-cppcheck lint-docs lint-invariants lint-go-pin lint-violation-builds lint-fuzz-budget lint-runtime-symbols lint-commit-citations lint-spec prove diff fmt clean
 # bin/handshake_sequence_pq is built here but run by the nightly, not by check: the
 # two enumerations together cost 19 of check's 45 measured minutes and
 # the CI job's timeout is 45, so the second one would decide the lane by
@@ -684,7 +685,7 @@ endif
 
 # Checks and thresholds live in .clang-tidy; every disable carries a reason
 # there (fix-or-drop, never NOLINT in code).
-lint: lint-tidy lint-format lint-cppcheck lint-commits lint-docs lint-invariants lint-stack lint-size lint-matrix lint-go-pin lint-violation-builds lint-fuzz-budget lint-commit-citations lint-spec
+lint: lint-tidy lint-format lint-cppcheck lint-commits lint-docs lint-invariants lint-stack lint-size lint-matrix lint-go-pin lint-violation-builds lint-fuzz-budget lint-runtime-symbols lint-commit-citations lint-spec
 
 # INV-19: bounded stack. The budget is the measured worst library
 # frame (rsa_vp1's RSA-3072 limb temporaries, 2,400 bytes) rounded up;
@@ -905,6 +906,43 @@ lint-go-pin:
 .PHONY: lint-violation-builds
 lint-violation-builds:
 	@python3 test/violations.py --lint-builds
+
+# A core without the M extension has no hardware multiply, so every `*`
+# becomes a libgcc call, and those routines branch on their operands
+# (#53). That is a variable-time sequence reached from secret data, which
+# INV-23's ban on / and % cannot see: it bans source-level division, and
+# this is the compiler emitting a routine for multiplication.
+#
+# The list is what rv32ic pulls today, not what is acceptable. It exists
+# so a NEW compiler-runtime dependency fails here rather than in a
+# review, and it shrinks to empty when #53 is resolved. clang carries the
+# riscv32 target, so this needs no cross toolchain.
+# The sources that compile freestanding, which is every module that
+# multiplies a secret. The rest reach for <string.h>, and a bare-metal
+# riscv32 clang has no libc headers; adding a shim to check modules that
+# do no secret arithmetic would buy nothing.
+RV_SRCS := ct.c sha256.c chacha20.c poly1305.c aead.c x25519.c x509_der.c record.c \
+           keysched.c io.c handshake_message.c session.c sha3.c mlkem_poly.c
+RV_ALLOWED := __muldi3 __mulsi3 __udivsi3
+.PHONY: lint-runtime-symbols
+lint-runtime-symbols:
+ifeq ($(CLANG_RV),)
+	$(call REQUIRE,clang,it ships with llvm — see the LLVM_MAJOR pin in .github/workflows/check.yml)
+else
+	@d=$$(mktemp -d); rc=0; \
+	 for f in $(RV_SRCS); do \
+	   $(CLANG_RV) -target riscv32-unknown-elf -march=rv32ic -mabi=ilp32 -Os -std=c11 \
+	     -D_DEFAULT_SOURCE -DCH_RAND_EXTERN -DCH_KEX_PQ -I. -c $$f -o $$d/$${f%.c}.o 2>/dev/null \
+	     || { echo "lint-runtime-symbols: $$f does not build for rv32ic"; rc=1; }; \
+	 done; \
+	 got=$$($(LLVM_BIN)/llvm-nm -u $$d/*.o 2>/dev/null | grep -oE '__[a-z0-9]+' | sort -u); \
+	 for sym in $$got; do \
+	   echo "$(RV_ALLOWED)" | tr ' ' '\n' | grep -qx "$$sym" \
+	     || { echo "lint-runtime-symbols: $$sym is a new compiler-runtime dependency (see #53)"; rc=1; }; \
+	 done; \
+	 rm -rf $$d; \
+	 [ $$rc -eq 0 ] && echo "lint-runtime-symbols: rv32ic pulls only the runtime calls #53 records"; exit $$rc
+endif
 
 # The fuzz job's budget is per target, so adding a target silently
 # overruns its timeout. GitHub reports that as cancelled, not failed,
