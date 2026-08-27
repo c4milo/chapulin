@@ -150,7 +150,6 @@ p256_pub() {
 
 # --- PSK: external key, then resume with the issued ticket ---
 start_server -tls1_3 -ciphersuites TLS_CHACHA20_POLY1305_SHA256 -psk "$PSK" -psk_identity "$ID" -nocert -rev
-SERVER=$SRV_PID
 PORT=$SRV_PORT
 
 MSG='hola sapo'
@@ -185,7 +184,6 @@ grep -q "^resuming" "$DIR/err2" || {
 # tells a reader to use, so this leg checks the documented recipe and
 # not a variant of it.
 start_server -tls1_3 -ciphersuites TLS_CHACHA20_POLY1305_SHA256 -psk "$PSK" -psk_identity device-42 -nocert -rev
-SERVER16=$SRV_PID
 PORT16=$SRV_PORT
 expect example-psk "opas aloh
 opas aloh" "$DIR/err_ex_psk" ./bin/example_psk 127.0.0.1 "$PORT16"
@@ -208,7 +206,6 @@ PUB=$("$OPENSSL" ec -in "$DIR/key.pem" -text -noout 2>/dev/null \
 }
 
 start_server -tls1_3 -ciphersuites TLS_CHACHA20_POLY1305_SHA256 -cert "$DIR/cert.pem" -key "$DIR/key.pem" -rev
-SERVER2=$SRV_PID
 PORT2=$SRV_PORT
 
 MSG='sin secretos'
@@ -284,7 +281,6 @@ expect example-pinned "gnip" "$DIR/err_ex_pin" \
 kill $SERVER4 2>/dev/null || true
 wait $SERVER4 2>/dev/null || true
 start_server -tls1_3 -ciphersuites TLS_CHACHA20_POLY1305_SHA256 -cert "$DIR/rsacert2.pem" -key "$DIR/rsakey2.pem" -rev
-SERVER6=$SRV_PID
 PORT6=$SRV_PORT
 
 MSG='clave nueva'
@@ -336,10 +332,8 @@ CAMOD=$(rsa_modulus "$DIR/caroot.key")
 }
 
 start_server -tls1_3 -ciphersuites TLS_CHACHA20_POLY1305_SHA256 -cert "$DIR/caleaf.pem" -key "$DIR/caleaf.key" -cert_chain "$DIR/caint.pem" -rev
-SERVER7=$SRV_PID
 PORT7=$SRV_PORT
 start_server -tls1_3 -ciphersuites TLS_CHACHA20_POLY1305_SHA256 -cert "$DIR/caflat.pem" -key "$DIR/caleaf.key" -rev
-SERVER8=$SRV_PID
 PORT8=$SRV_PORT
 
 MSG='cadena firmada'
@@ -401,10 +395,8 @@ ECROOTPUB=$(p256_pub "$DIR/ecroot.key")
 }
 
 start_server -tls1_3 -ciphersuites TLS_CHACHA20_POLY1305_SHA256 -cert "$DIR/ecleaf.pem" -key "$DIR/ecleaf.key" -cert_chain "$DIR/ecint.pem" -rev
-SERVER9=$SRV_PID
 PORT9=$SRV_PORT
 start_server -tls1_3 -ciphersuites TLS_CHACHA20_POLY1305_SHA256 -cert "$DIR/ecflat.pem" -key "$DIR/ecleaf.key" -rev
-SERVER10=$SRV_PID
 PORT10=$SRV_PORT
 
 MSG='curva chica'
@@ -420,7 +412,6 @@ expect ca-ecdsa-flat "aidemretni nis" "$DIR/err10" \
 "$OPENSSL" x509 -req -CA "$DIR/wrongroot.pem" -CAkey "$DIR/wrongroot.key" -days 14 \
     "${PSS[@]}" -extfile "$DIR/leaf.cnf" -out "$DIR/wrongleaf.pem" 2>/dev/null
 start_server -tls1_3 -ciphersuites TLS_CHACHA20_POLY1305_SHA256 -cert "$DIR/wrongleaf.pem" -key "$DIR/caleaf.key" -rev
-SERVER11=$SRV_PID
 PORT11=$SRV_PORT
 MSG='no debe pasar'
 expect_fail ca-wrong-ca -3 "$DIR/err11" \
@@ -431,7 +422,6 @@ expect_fail ca-wrong-ca -3 "$DIR/err11" \
 # handshake even though every signature would check out (CH_EPROTO, -2).
 cat "$DIR/caint.pem" "$DIR/caroot.pem" > "$DIR/chain3.pem"
 start_server -tls1_3 -ciphersuites TLS_CHACHA20_POLY1305_SHA256 -cert "$DIR/caleaf.pem" -key "$DIR/caleaf.key" -cert_chain "$DIR/chain3.pem" -rev
-SERVER12=$SRV_PID
 PORT12=$SRV_PORT
 expect_fail ca-three-entries -2 "$DIR/err12" \
     ./bin/tlsclient_ca 127.0.0.1 "$PORT12" "ca:$CAMOD" -
@@ -453,7 +443,6 @@ pem = base64.encodebytes(out).decode()
 open(sys.argv[2], 'w').write('-----BEGIN CERTIFICATE-----\n' + pem + '-----END CERTIFICATE-----\n')
 EOF
 start_server -tls1_3 -ciphersuites TLS_CHACHA20_POLY1305_SHA256 -cert "$DIR/mangled.pem" -key "$DIR/caleaf.key" -rev
-SERVER13=$SRV_PID
 PORT13=$SRV_PORT
 expect_fail ca-noncanonical -2 "$DIR/err13" \
     ./bin/tlsclient_ca 127.0.0.1 "$PORT13" "ca:$CAMOD" -
@@ -566,10 +555,8 @@ if command -v go >/dev/null 2>&1; then
     # hold pipes open past the script's exit.
     (cd test/goecho && go build -o "$DIR/goecho" .)
     start_goecho -cert "$DIR/cert.pem" -key "$DIR/key.pem"
-    SERVER3=$SRV_PID
     PORT3=$SRV_PORT
     start_goecho -cert "$DIR/rsacert.pem" -key "$DIR/rsakey.pem"
-    SERVER5=$SRV_PID
     PORT5=$SRV_PORT
 
     MSG='hola go'

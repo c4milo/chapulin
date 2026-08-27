@@ -65,8 +65,8 @@ Domain vocabulary keeps the RFCs' own spelling: `pt`, `aad`, `iv`,
 - Dev tooling lives in `tools/`: the lint helper scripts and the node
   packages commitlint needs. Nothing there is built into the library.
 - The lint tools are required, not optional. clang-tidy, clang-format,
-  cppcheck, semgrep, commitlint and lake each fail `make lint` when
-  missing, on every machine. A lint gate that skipped would let
+  cppcheck, semgrep, shellcheck, commitlint and lake each fail `make lint`
+  when missing, on every machine. A lint gate that skipped would let
   `make check` exit 0 with a finding still waiting on CI. Install them
   at the versions the env block in `.github/workflows/check.yml` pins.
   Targets outside `lint` still skip locally and fail only on CI — cbmc

@@ -8,6 +8,13 @@
 # branch closes; calls do not count as loops). Fails loudly if the loop
 # structure stops matching the prose. Writes the findings to
 # bench/notes-mips.md and stdout. Skips without docker.
+#
+# The eval calls below assign the P_, M_ and C_ variables from stats()
+# output. shellcheck does not follow eval, so it reports every one of them
+# as unassigned. One file-level disable replaces a directive on nearly
+# every line from the checks to the report text. Dropping the check costs
+# little here because set -u still stops the run on a misspelled name.
+# shellcheck disable=SC2154
 set -euo pipefail
 
 if [ "${1:-}" != "--inside" ]; then
@@ -16,10 +23,16 @@ if [ "${1:-}" != "--inside" ]; then
         echo "SKIP mips audit: docker not available" >&2
         exit 0
     }
+    TMPOUT=$(mktemp)
+    trap 'rm -f "$TMPOUT"' EXIT
     docker run --rm -v "$PWD":/src:ro -w /src alpine \
         sh -c 'apk add -q bash clang llvm >/dev/null 2>&1 \
                && exec bash /src/bench/audit-mips.sh --inside' \
-        | tee bench/notes-mips.md
+        > "$TMPOUT"
+    # tee would have truncated the committed file before the run produced a
+    # line, so a failing audit destroyed last run's results.
+    mv "$TMPOUT" bench/notes-mips.md
+    cat bench/notes-mips.md
     echo "wrote bench/notes-mips.md" >&2
     exit 0
 fi
@@ -45,7 +58,12 @@ for src in poly1305 p256 chacha20; do
     $CC "/src/$src.c" -o "$W/$src.o"
 done
 
-OBJDUMP=$(command -v llvm-objdump || ls /usr/lib/llvm*/bin/llvm-objdump | head -1)
+# The llvm package does not always put llvm-objdump on PATH, so fall back to
+# the versioned install directory and take the first match. Check the result
+# because an unmatched glob would otherwise pass its own pattern along as a
+# filename.
+OBJDUMP=$(command -v llvm-objdump || printf '%s\n' /usr/lib/llvm*/bin/llvm-objdump | head -1)
+[ -x "$OBJDUMP" ] || { echo "FAIL: the container has no llvm-objdump" >&2; exit 1; }
 
 # Per-function statistics from the disassembly. Every backward branch or
 # jump (calls and returns excluded) closes a loop; loops are reported in
@@ -100,6 +118,7 @@ END {
             lin[k]++
             if (m == "maddu") { lmaddu[k]++ }
             if (m == "multu") { lmultu[k]++ }
+            if (m == "mul") { lmul[k]++ }
             if (ismem) { lmem[k]++ }
         }
     }
@@ -108,8 +127,8 @@ END {
     printf "maddu=%d multu=%d mult=%d mul=%d", \
         mall["maddu"] + 0, mall["multu"] + 0, mall["mult"] + 0, mall["mul"] + 0
     for (k = 1; k <= nl; k++) {
-        printf " loop%d_insns=%d loop%d_maddu=%d loop%d_multu=%d loop%d_mem=%d", \
-            k, lin[k] + 0, k, lmaddu[k] + 0, k, lmultu[k] + 0, k, lmem[k] + 0
+        printf " loop%d_insns=%d loop%d_maddu=%d loop%d_multu=%d loop%d_mul=%d loop%d_mem=%d", \
+            k, lin[k] + 0, k, lmaddu[k] + 0, k, lmultu[k] + 0, k, lmul[k] + 0, k, lmem[k] + 0
     }
     printf "\n"
 }
@@ -141,13 +160,16 @@ eval "$(stats chacha20.o block C)"
     echo "FAIL: mont_mul multiply lowering changed (mtlo/mthi=$M_mtlohi, multu=$M_multu)" >&2
     exit 1
 }
-[ "$P_loop1_multu" -eq 5 ] && [ "$P_loop1_maddu" -eq 20 ] || {
-    echo "FAIL: blocks() loop has $P_loop1_multu multu + $P_loop1_maddu maddu, prose assumes 5+20" >&2
+# ct_widemul builds each limb product from four 16x16 pieces, so blocks()
+# must reach the hi/lo multiplier zero times. A non-zero count here is the
+# leak returning, and lint-wide-multiply guards the same property from the
+# source side (https://github.com/c4milo/chapulin/issues/53).
+[ "$P_multu" -eq 0 ] && [ "$P_maddu" -eq 0 ] && [ "$P_mult" -eq 0 ] || {
+    echo "FAIL: blocks() reaches the hi/lo multiplier: $P_multu multu, $P_maddu maddu, $P_mult mult" >&2
     exit 1
 }
-[ "$P_multu" -eq "$P_loop1_multu" ] && [ "$P_maddu" -eq "$P_loop1_maddu" ] \
-    && [ "$P_mult" -eq 0 ] && [ "$P_mul" -eq 0 ] || {
-    echo "FAIL: blocks() multiplies outside the block loop, prose assumes none" >&2
+[ "$P_mul" -eq 100 ] && [ "$P_loop1_mul" -eq 100 ] || {
+    echo "FAIL: blocks() has $P_mul mul ($P_loop1_mul in the block loop), prose assumes 100 in the loop" >&2
     exit 1
 }
 [ "$M_mul" -eq 1 ] && [ "$M_loop1_maddu" -eq 1 ] && [ "$M_loop2_maddu" -eq 1 ] || {
@@ -170,14 +192,15 @@ bench/insn-mips.sh ($CLANG_VER,
 bench/audit-mips.sh regenerates this file and fails if the shapes below
 change.
 
-## poly1305.c blocks(): maddu, 25 multiplies per block
+## poly1305.c blocks(): mul only, 100 multiplies per block
 
 blocks() keeps its single 16-byte block loop. The loop body is
-$P_loop1_insns instructions with $P_loop1_multu multu and $P_loop1_maddu
-maddu per block: clang lowers each of the five 64-bit limb sums d0..d4
-to one multu plus four maddu in the hi/lo accumulator, so the 25 limb
-products cost exactly 25 multiply instructions per block, with no other
-multiplies in the function (mult $P_mult, mul $P_mul).
+$P_loop1_insns instructions with $P_loop1_mul mul per block and nothing
+in the hi/lo multiplier: multu $P_multu, maddu $P_maddu, mult $P_mult.
+ct_widemul builds each of the 25 limb products from four 16x16 pieces,
+so the 25 products cost 100 mul. mips32r2 documents no timing for mul
+either, but the operands are 16 bits wide by construction, which is what
+the decomposition buys here.
 
 ## p256.c mont_mul(): maddu for every product
 

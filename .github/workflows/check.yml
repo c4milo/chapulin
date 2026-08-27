@@ -100,6 +100,11 @@ jobs:
       CLANG_FORMAT: clang-format-22
       CPPCHECK_VERSION: 2.21.0
       CPPCHECK: /home/runner/cppcheck-inst/bin/cppcheck
+      # The runner image ships whatever shellcheck Ubuntu packages, and the
+      # codes it reports move between releases. lint-shellcheck must fail on
+      # the same set the development machine sees.
+      SHELLCHECK_VERSION: 0.11.0
+      SHELLCHECK: /home/runner/shellcheck-inst/shellcheck
       # The runner image ships OpenSSL 3.0, which predates the
       # `x509 -req -not_before` flag that docs/ca.md tells operators to
       # use for epoch dates. Pinning the development version keeps e2e
@@ -190,6 +195,22 @@ jobs:
           cmake --build cppcheck-build -j"$(nproc)" >/dev/null
           cmake --install cppcheck-build >/dev/null
 
+      - name: Cache shellcheck
+        id: shellcheck-cache
+        uses: actions/cache@v6
+        with:
+          path: ~/shellcheck-inst
+          key: shellcheck-${{ runner.os }}-${{ env.SHELLCHECK_VERSION }}-inst
+
+      - name: Install shellcheck at the pinned version
+        if: steps.shellcheck-cache.outputs.cache-hit != 'true'
+        # The project ships a static binary, so there is nothing to build.
+        run: |
+          mkdir -p "$HOME/shellcheck-inst"
+          curl -fsSL "https://github.com/koalaman/shellcheck/releases/download/v$SHELLCHECK_VERSION/shellcheck-v$SHELLCHECK_VERSION.linux.x86_64.tar.xz" \
+            | tar xJ -C "$HOME/shellcheck-inst" --strip-components=1 \
+                "shellcheck-v$SHELLCHECK_VERSION/shellcheck"
+
       - name: Check tool versions match the pins
         # Assert, do not print. The clang tools are installed by
         # versioned name, so an edit that set CLANG_TIDY to the
@@ -204,6 +225,8 @@ jobs:
             || { echo "cppcheck is not the pinned $CPPCHECK_VERSION"; exit 1; }
           go version | grep -qF "go$GO_VERSION " \
             || { echo "go is not the pinned $GO_VERSION"; exit 1; }
+          "$SHELLCHECK" --version | grep -qF "version: $SHELLCHECK_VERSION" \
+            || { echo "shellcheck is not the pinned $SHELLCHECK_VERSION"; exit 1; }
 
       - name: Install semgrep (hash-pinned)
         # The only pip package in the security path, so it installs

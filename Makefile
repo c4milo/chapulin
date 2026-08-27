@@ -54,6 +54,13 @@ REQUIRE_ON_CI = @[ -z "$$CI" ] || { echo "$(1): missing on CI; the gate must not
 # Usage: $(call REQUIRE,name,how to install it)
 REQUIRE = @echo "$(1): missing, and a linter must not skip. $(2)"; exit 1
 
+SHELLCHECK ?= shellcheck
+
+# Every shell script the repo ships, asked of git rather than listed here:
+# a hand-kept list is what let bench/device-ram.sh fall four modules behind
+# the build.
+SH_SRCS := $(shell git ls-files '*.sh' '.githooks/*')
+
 SRCS := ct.c sha256.c hkdf.c chacha20.c poly1305.c aead.c x25519.c p256.c rsa.c rsa_mont.c \
         x509.c x509_der.c buf.c record.c keysched.c io.c handshake_message.c handshake_parser.c handshake_record.c session.c \
         handshake_auth.c handshake.c handshake_post.c tls.c softmul.c
@@ -359,7 +366,7 @@ bin/diff: test/diff_test.c $(SRCS) sha3.c mlkem.c mlkem_poly.c $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) -I. -o $@ test/diff_test.c $(SRCS) sha3.c mlkem.c mlkem_poly.c
 
-.PHONY: check lint lint-tidy lint-format lint-cppcheck lint-docs lint-invariants lint-go-pin lint-violation-builds lint-fuzz-budget lint-runtime-symbols lint-wide-multiply lint-commit-citations lint-issue-links lint-spec prove diff fmt clean
+.PHONY: check lint lint-tidy lint-format lint-cppcheck lint-docs lint-invariants lint-go-pin lint-violation-builds lint-fuzz-budget lint-runtime-symbols lint-wide-multiply lint-commit-citations lint-issue-links lint-shellcheck lint-spec prove diff fmt clean
 # bin/handshake_sequence_pq is built here but run by the nightly, not by check: the
 # two enumerations together cost 19 of check's 45 measured minutes and
 # the CI job's timeout is 45, so the second one would decide the lane by
@@ -713,7 +720,7 @@ endif
 
 # Checks and thresholds live in .clang-tidy; every disable carries a reason
 # there (fix-or-drop, never NOLINT in code).
-lint: lint-tidy lint-format lint-cppcheck lint-commits lint-docs lint-invariants lint-stack lint-size lint-matrix lint-go-pin lint-violation-builds lint-fuzz-budget lint-runtime-symbols lint-wide-multiply lint-commit-citations lint-issue-links lint-spec
+lint: lint-tidy lint-format lint-cppcheck lint-commits lint-docs lint-invariants lint-stack lint-size lint-matrix lint-go-pin lint-violation-builds lint-fuzz-budget lint-runtime-symbols lint-wide-multiply lint-commit-citations lint-issue-links lint-shellcheck lint-spec
 
 # INV-19: bounded stack. The budget is the measured worst library
 # frame (rsa_vp1's RSA-3072 limb temporaries, 2,400 bytes) rounded up;
@@ -1016,6 +1023,15 @@ else
 	done; \
 	[ $$rc -eq 0 ] && echo "lint-wide-multiply: every module at its recorded ceiling on m3 and mips32r2"; exit $$rc
 endif
+.PHONY: lint-shellcheck
+lint-shellcheck:
+ifeq ($(shell command -v $(SHELLCHECK) 2>/dev/null),)
+	$(call REQUIRE,shellcheck,brew install shellcheck — see the SHELLCHECK_VERSION pin in .github/workflows/check.yml)
+else
+	@$(SHELLCHECK) -f gcc $(SH_SRCS) \
+	  && echo "lint-shellcheck: every shell script clean"
+endif
+
 .PHONY: lint-issue-links
 lint-issue-links:
 	@python3 tools/issue-links.py

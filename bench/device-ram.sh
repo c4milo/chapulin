@@ -14,8 +14,14 @@ ROOT=$PWD
 
 TRIPLE="-target mips-none-elf -mcpu=mips32r2"
 CLANG=clang
+# TRIPLE holds three arguments, so it must word-split here. Quoted, clang reads
+# the whole string as one unknown argument and rejects it, both probes fail, and
+# the script skips the measurement instead of taking it.
+# shellcheck disable=SC2086
 echo 'int probe;' | $CLANG $TRIPLE -c -x c - -o /dev/null 2>/dev/null \
     || CLANG=/opt/homebrew/opt/llvm/bin/clang
+# The fallback clang gets the same three arguments, so TRIPLE word-splits again.
+# shellcheck disable=SC2086
 echo 'int probe;' | $CLANG $TRIPLE -c -x c - -o /dev/null 2>/dev/null || {
     echo "SKIP device model: no clang with a MIPS backend (brew install llvm)" >&2
     exit 0

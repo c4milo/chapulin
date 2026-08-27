@@ -6,14 +6,15 @@ bench/insn-mips.sh (Alpine clang version 22.1.3,
 bench/audit-mips.sh regenerates this file and fails if the shapes below
 change.
 
-## poly1305.c blocks(): maddu, 25 multiplies per block
+## poly1305.c blocks(): mul only, 100 multiplies per block
 
 blocks() keeps its single 16-byte block loop. The loop body is
-222 instructions with 5 multu and 20
-maddu per block: clang lowers each of the five 64-bit limb sums d0..d4
-to one multu plus four maddu in the hi/lo accumulator, so the 25 limb
-products cost exactly 25 multiply instructions per block, with no other
-multiplies in the function (mult 0, mul 0).
+622 instructions with 100 mul per block and nothing
+in the hi/lo multiplier: multu 0, maddu 0, mult 0.
+ct_widemul builds each of the 25 limb products from four 16x16 pieces,
+so the 25 products cost 100 mul. mips32r2 documents no timing for mul
+either, but the operands are 16 bits wide by construction, which is what
+the decomposition buys here.
 
 ## p256.c mont_mul(): maddu for every product
 

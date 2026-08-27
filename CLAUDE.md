@@ -129,7 +129,8 @@ Home: github.com/c4milo.
   scripts and the node packages commitlint needs. `tools/` is not built
   into the library. Shell scripts stay with the thing they operate on
   (`bench/`, `proof/`, `test/`), because that is where a reader looks for
-  them.
+  them. `make lint-shellcheck` runs shellcheck over every one of them,
+  including the git hooks.
 - Linters follow fix-or-drop: fix the finding, or disable the check in
   `.clang-tidy` with its reason. Never `NOLINT` in code.
 - CI pins the same tool versions the development machine runs (see the

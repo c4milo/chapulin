@@ -365,6 +365,11 @@ SRCS="/src/ct.c /src/sha256.c /src/hkdf.c /src/chacha20.c /src/poly1305.c \
       /src/buf.c /src/keysched.c /src/record.c"
 
 build() { # $1 = OP macro  $2 = ITERS  -> binary path on stdout
+    # CC holds the compiler and its flags, SRCS the thirteen source paths.
+    # The shell has to split both into separate arguments; quoting either
+    # would hand clang one argument containing spaces. Neither value holds a
+    # glob character, so the other half of SC2086 does not apply.
+    # shellcheck disable=SC2086
     $CC "-DOP_$1" "-DITERS=$2" "$W/driver.c" "$W/runtime.c" $SRCS -o "$W/bin_$1_$2"
     echo "$W/bin_$1_$2"
 }

@@ -40,7 +40,10 @@
 # super-linearly with formula size, so two small instances beat one big
 # one by hours.
 set -uo pipefail
-cd "$(dirname "$0")/.."
+# Every path below is relative to the repo root, and set -e is off, so a
+# failed cd would run the proofs against the sources in the caller's
+# directory instead.
+cd "$(dirname "$0")/.." || exit 1
 
 # Tier argument: "fast" (seconds-to-minutes, runs in every make check),
 # "slow" (the SAT heavyweights, run by CI and before release), or
@@ -156,6 +159,9 @@ cache_key() {
             esac
         done
         for a in "$@"; do
+            # defs holds one -D argument per define, and the unquoted
+            # expansion below passes each one to cc as its own argument.
+            # shellcheck disable=SC2086
             case "$a" in
             *.c) cc -E -D__CPROVER__ $defs -I . "$a" 2>/dev/null || true ;;
             esac
@@ -290,9 +296,9 @@ launch() {
         echo "run.sh: wall $((SECONDS - t0))s"
         exit $rc
     ) > "$LOGDIR/$name.log" 2>&1 &
-    NAMES[$NJOBS]="$name"
-    PIDS[$NJOBS]=$!
-    KEYS[$NJOBS]="$key"
+    NAMES[NJOBS]="$name"
+    PIDS[NJOBS]=$!
+    KEYS[NJOBS]="$key"
     NJOBS=$((NJOBS + 1))
     RUNNING="$RUNNING $!:$w"
 }
