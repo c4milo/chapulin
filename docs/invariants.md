@@ -332,11 +332,16 @@ which convention holds them.
 
 ### INV-16 — constant time where secrets flow
 
-- **Claim.** No branch and no memory index depends on a secret.
-  Comparisons on secret data go through `ct_memeq`, selects through
-  branchless masks. Variable time is allowed only where every input
-  is public, stated at the call site — P-256 and RSA verify, and the
-  HRR-magic compare in handshake_parser.c.
+- **Claim.** No branch and no memory index depends on a secret, and no
+  instruction the compiler emits for one does either. Comparisons on
+  secret data go through `ct_memeq`, selects through branchless masks.
+  Variable time is allowed only where every input is public, stated at
+  the call site — P-256 and RSA verify, and the HRR-magic compare in
+  handshake_parser.c.
+  The second half does not hold everywhere yet. A core whose 32-to-64
+  multiply is variable-time, the Cortex-M3 above all, runs 35 such
+  products in poly1305, mlkem_poly, x25519 and sha3; #53 tracks the
+  work and `lint-wide-multiply` holds the count as a falling ceiling.
 - **Mechanism.** Constant-time construction; ChaCha20/Poly1305/x25519
   have no table lookups by design.
 - **Check.** Semgrep-structural (`inv-16-no-variable-time-compare`) bans
@@ -346,6 +351,16 @@ which convention holds them.
   t-test) gives statistical evidence.
   Semgrep cannot know a buffer is secret — the real guards remain
   construction and the t-test.
+  Those two see source text and one host's timing, and neither can see
+  what the compiler emits, which is the gap this invariant was missing:
+  KyberSlash and the Cortex-M3 multiply are both instruction selection,
+  not source. Two build-time checks close it. `lint-wide-multiply`
+  compiles for Cortex-M3 and counts the 32-to-64 multiply opcodes that
+  run in variable time. `lint-runtime-symbols` builds for rv32ic, where
+  there is no multiplier at all, and fails on a runtime-library call
+  beyond the ones recorded — `softmul.c` supplies constant-time
+  `__mulsi3` and `__muldi3` so the library's branching ones are never
+  linked.
 - **Violation.** A PR compares a binder or tag with memcmp because
   the linker size looked better.
 - See [decisions: Cryptography](decisions.md#cryptography).
