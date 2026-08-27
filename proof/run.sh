@@ -419,6 +419,13 @@ launch fast full chacha20 165 "chacha20_xor.1:5"
 launch fast full poly1305 85 "blocks.0:8" ct.c
 launch fast full buf 100 ""
 launch fast full ct 65 ""
+# The software multiply, for cores with no multiplier. UB and the fixed
+# loop counts over unconstrained 32- and 64-bit inputs; the product
+# itself against the C operator only at 8-bit operands, the widest
+# bound whose formula converges. Measured: 5 properties, 34 s. The
+# harness comment carries the widths that gave no verdict; multiplier
+# equivalence is the classic hard SAT instance.
+launch fast full softmul 65 ""
 launch fast full x25519_mul 20 ""
 launch fast full x25519_ops 260 ""
 launch fast full drbg 100 "ch_rand_bytes.3:4" ct.c

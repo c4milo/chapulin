@@ -10,6 +10,13 @@
 #define CH_SOFT_MUL 1
 #include "softmul.c"
 
+// ct.h picks the native multiply on architectures whose own is
+// constant-time, so forcing the decomposed form here is what makes the
+// compiler's `*` an independent oracle for it. Both paths ship, so both
+// need checking against something that is not the other.
+#define CH_CT_WIDEMUL 1
+#include "ct.h"
+
 static int failures;
 
 #define CHECK(cond)                                                                                \
@@ -49,6 +56,16 @@ int main(void) {
             CHECK(__muldi3(edge64[i], edge64[j]) == (uint64_t)(edge64[i] * edge64[j]));
         }
     }
+    // ct_widemul and its signed and small-constant forms, decomposed here,
+    // against the host's native product.
+    static const int32_t se[] = {0, 1, -1, 2, -2, INT32_MAX, INT32_MIN, 65535, -65535, 65536};
+    for (size_t i = 0; i < sizeof se / sizeof *se; i++) {
+        for (size_t j = 0; j < sizeof se / sizeof *se; j++) {
+            CHECK(ct_widemul((uint32_t)se[i], (uint32_t)se[j]) ==
+                  (uint64_t)(uint32_t)se[i] * (uint32_t)se[j]);
+            CHECK(ct_widemul_s(se[i], se[j]) == (int64_t)se[i] * se[j]);
+        }
+    }
     long n = 0;
     for (int k = 0; k < 200000; k++) {
         uint32_t a = (uint32_t)rng_next();
@@ -57,7 +74,10 @@ int main(void) {
         uint64_t x = rng_next();
         uint64_t y = rng_next();
         CHECK(__muldi3(x, y) == (uint64_t)(x * y));
-        n += 2;
+        CHECK(ct_widemul(a, b) == (uint64_t)a * b);
+        CHECK(ct_widemul_s((int32_t)a, (int32_t)b) == (int64_t)(int32_t)a * (int32_t)b);
+        CHECK(ct_mulsmall(x, b) == (uint64_t)(x * b));
+        n += 5;
     }
     if (failures != 0) {
         (void)printf("softmul_test: %d failures\n", failures);

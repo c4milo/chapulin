@@ -1,9 +1,9 @@
 op,insns,stack_high_water_bytes
 sha256_1kib,67605,592
 hkdf_expand_label_32b,22311,1072
-aead_seal_1kib,47439,528
-x25519_scalarmult,28675222,1632
+aead_seal_1kib,73938,584
+x25519_scalarmult,40307299,1632
 p256_ecdsa_verify,46029602,1572
 rsa_pss_verify_3072,11625119,3824
-handshake_crypto,69690895,4848
-# at 500 MHz and 1.0 IPC: sha256_1kib 0.135 ms, hkdf_expand_label_32b 0.045 ms, aead_seal_1kib 0.095 ms, x25519_scalarmult 57.350 ms, p256_ecdsa_verify 92.059 ms, rsa_pss_verify_3072 23.250 ms, handshake_crypto 139.382 ms
+handshake_crypto,92955040,4856
+# at 500 MHz and 1.0 IPC: sha256_1kib 0.135 ms, hkdf_expand_label_32b 0.045 ms, aead_seal_1kib 0.148 ms, x25519_scalarmult 80.615 ms, p256_ecdsa_verify 92.059 ms, rsa_pss_verify_3072 23.250 ms, handshake_crypto 185.910 ms

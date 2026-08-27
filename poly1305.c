@@ -48,16 +48,16 @@ static void blocks(poly1305 *p, const uint8_t *m, size_t n, uint32_t high_bit) {
         h3 += (load32(m + 9) >> 6) & 0x3ffffff;
         h4 += (load32(m + 12) >> 8) | high_bit;
 
-        uint64_t d0 = (uint64_t)h0 * r0 + (uint64_t)h1 * s4 + (uint64_t)h2 * s3 +
-                      (uint64_t)h3 * s2 + (uint64_t)h4 * s1;
-        uint64_t d1 = (uint64_t)h0 * r1 + (uint64_t)h1 * r0 + (uint64_t)h2 * s4 +
-                      (uint64_t)h3 * s3 + (uint64_t)h4 * s2;
-        uint64_t d2 = (uint64_t)h0 * r2 + (uint64_t)h1 * r1 + (uint64_t)h2 * r0 +
-                      (uint64_t)h3 * s4 + (uint64_t)h4 * s3;
-        uint64_t d3 = (uint64_t)h0 * r3 + (uint64_t)h1 * r2 + (uint64_t)h2 * r1 +
-                      (uint64_t)h3 * r0 + (uint64_t)h4 * s4;
-        uint64_t d4 = (uint64_t)h0 * r4 + (uint64_t)h1 * r3 + (uint64_t)h2 * r2 +
-                      (uint64_t)h3 * r1 + (uint64_t)h4 * r0;
+        uint64_t d0 = ct_widemul(h0, r0) + ct_widemul(h1, s4) + ct_widemul(h2, s3) +
+                      ct_widemul(h3, s2) + ct_widemul(h4, s1);
+        uint64_t d1 = ct_widemul(h0, r1) + ct_widemul(h1, r0) + ct_widemul(h2, s4) +
+                      ct_widemul(h3, s3) + ct_widemul(h4, s2);
+        uint64_t d2 = ct_widemul(h0, r2) + ct_widemul(h1, r1) + ct_widemul(h2, r0) +
+                      ct_widemul(h3, s4) + ct_widemul(h4, s3);
+        uint64_t d3 = ct_widemul(h0, r3) + ct_widemul(h1, r2) + ct_widemul(h2, r1) +
+                      ct_widemul(h3, r0) + ct_widemul(h4, s4);
+        uint64_t d4 = ct_widemul(h0, r4) + ct_widemul(h1, r3) + ct_widemul(h2, r2) +
+                      ct_widemul(h3, r1) + ct_widemul(h4, r0);
 
         uint64_t c = d0 >> 26;
         h0 = (uint32_t)d0 & 0x3ffffff;

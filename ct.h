@@ -14,4 +14,120 @@ uint32_t ct_memeq(const uint8_t *a, const uint8_t *b, size_t n);
 // dead-store elimination.
 void ct_wipe(void *p, size_t n);
 
+// Architectures whose widening multiply is constant-time.
+//
+// Adding one is a claim about silicon, so it needs evidence in the comment
+// beside it, not just a guess that a modern part is fine. Anything not
+// listed gets the decomposed form: being wrong about a listed part costs
+// the guarantee silently, and being wrong about an unlisted one only costs
+// speed. Define CH_CT_WIDEMUL to force the decomposition anywhere, and
+// CH_NATIVE_WIDEMUL to assert a native multiply this list does not know.
+//
+//   __x86_64__  64-bit x86. The variable-time parts are the 32-bit 80386
+//               and 80486; every 64-bit design has fixed-latency mul.
+//   __aarch64__ ARMv8-A. madd and umulh are fixed latency; the ARM parts
+//               with data-dependent multiplies are 32-bit, the Cortex-M3
+//               above all.
+//
+// Known variable-time and deliberately absent:
+//
+//   ARM Cortex-M3   umull returns early when both operands are below
+//                   65536, and on zero and powers of two.
+//   mips32r2        GCC's own 4K scheduler model says the latency moves
+//                   with operand size: "16x32 is faster, but there's no
+//                   way to detect this" for 4Kc mult, and "MUL 16x16 or
+//                   32x16 forces 1 cycle stall, while MUL 32x32 forces 2"
+//                   for the 3-operand form. 4Kp is a 32-cycle iterative
+//                   multiplier. This is the reference target, so the
+//                   decomposition runs in production, not only in tests.
+//   riscv           The ISA carries a ratified extension, Zkt, whose
+//                   whole purpose is to attest data-independent latency,
+//                   and M's multiply is on its list. A part that does not
+//                   declare Zkt promises nothing. Declaring it for a part
+//                   that does is a change to this list with the vendor
+//                   statement quoted beside it.
+//   32-bit x86      No constant-time 32-to-64 multiply.
+//   32-bit PowerPC  mulhwu/mullw both terminate early.
+//   ARM pre-Thumb-2 No 32-to-64 opcode; the fallback branches.
+//
+// What the decomposition rests on, stated plainly: it removes the 32-to-64
+// multiply, and what is left is the 32-to-32 one. ARM documents that as
+// single-cycle on the M3, so the guarantee is complete there. mips32r2 is
+// weaker -- the same GCC model quoted above says the 3-operand mul stalls
+// by operand size, so on a 4K part the decomposition narrows every operand
+// to 16 bits and makes the sequence uniform, but the residual timing of
+// mul itself is undocumented. A part that must not depend on that needs a
+// build with no multiply instruction at all, which softmul.c supplies only
+// where the compiler already emits calls (a core with no multiplier).
+// Closing that gap for a core that has a variable-time multiplier is not
+// done.
+//
+// See https://github.com/c4milo/chapulin/issues/53.
+#if !defined(CH_CT_WIDEMUL) && !defined(CH_NATIVE_WIDEMUL)
+#if defined(__x86_64__) || defined(__aarch64__)
+#define CH_NATIVE_WIDEMUL 1
+#endif
+#endif
+
+// a * b, widened, using only 32-to-32 multiplies.
+//
+// A 32-to-64 multiply is variable-time on some cores -- the Cortex-M3's umull
+// returns sooner when both operands are below 65536, and has undocumented
+// early exits on zero and powers of two, which has been used to extract
+// Curve25519 keys. Its 32-to-32 mul is constant-time, so four 16x16 products
+// and a recombination out of shifts and adds are not. The operands' halves are
+// full width by construction, so nothing here depends on the values (INV-16,
+// https://github.com/c4milo/chapulin/issues/53).
+static inline uint64_t ct_widemul(uint32_t a, uint32_t b) {
+#ifdef CH_NATIVE_WIDEMUL
+    return (uint64_t)a * b;
+#else
+    uint32_t al = a & 0xFFFFU;
+    uint32_t ah = a >> 16;
+    uint32_t bl = b & 0xFFFFU;
+    uint32_t bh = b >> 16;
+    uint32_t ll = al * bl;
+    uint32_t lh = al * bh;
+    uint32_t hl = ah * bl;
+    uint32_t hh = ah * bh;
+    uint64_t mid = (uint64_t)lh + hl;
+    return ((uint64_t)hh << 32) + (mid << 16) + ll;
+#endif
+}
+
+// a * k for a 64-bit a and a small constant k, low 64 bits.
+//
+// Writing a constant multiply as shifts does not work: the optimiser
+// recognises the pattern and emits the wide multiply again. Routing the
+// low half through ct_widemul survives, because four 16x16 products are
+// not a shape it folds back.
+static inline uint64_t ct_mulsmall(uint64_t a, uint32_t k) {
+#ifdef CH_NATIVE_WIDEMUL
+    return a * k;
+#else
+    uint64_t lo = ct_widemul((uint32_t)a, k);
+    uint32_t hi = (uint32_t)(a >> 32) * k; // only the low 32 bits survive the shift
+    return lo + ((uint64_t)hi << 32);
+#endif
+}
+
+// The signed form. Two's complement makes a signed product the unsigned
+// one over the same bit patterns, less b<<32 when a is negative and a<<32
+// when b is negative; the corrections are masked rather than branched, so
+// the sign of a secret limb stays off the control path.
+static inline int64_t ct_widemul_s(int32_t a, int32_t b) {
+#ifdef CH_NATIVE_WIDEMUL
+    return (int64_t)a * b;
+#else
+    uint32_t ua = (uint32_t)a;
+    uint32_t ub = (uint32_t)b;
+    uint64_t p = ct_widemul(ua, ub);
+    uint64_t ma = (uint64_t)0 - (uint64_t)(ua >> 31);
+    uint64_t mb = (uint64_t)0 - (uint64_t)(ub >> 31);
+    p -= ((uint64_t)ub << 32) & ma;
+    p -= ((uint64_t)ua << 32) & mb;
+    return (int64_t)p;
+#endif
+}
+
 #endif

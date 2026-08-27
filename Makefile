@@ -148,6 +148,13 @@ FUZZ_C := $(wildcard fuzz/*.c)
 # object.
 LIB_VARIANT := $(PIN)-$(TRUST)-$(KEX)-$(RAND)
 LIB_OBJS := $(LIB_SRCS:%.c=bin/obj/$(LIB_VARIANT)/%.o)
+
+# bench/device-ram.sh sizes the same modules the build packages. It asks
+# here rather than keeping its own list, which is how that list fell four
+# modules behind the handshake split.
+.PHONY: print-lib-srcs
+print-lib-srcs:
+	@echo $(LIB_SRCS)
 # RAND=drbg packages the generator, so ch_drbg_seed becomes part of the
 # API the image calls and lib-check covers it like the other four.
 PUBLIC := ch_connect ch_read ch_write ch_close $(PUBLIC_RAND)
@@ -959,27 +966,50 @@ RV_ALLOWED := __udivsi3
 # (https://github.com/c4milo/chapulin/issues/53). 64-bit addition is fine: it
 # is two 32-bit adds.
 #
-# These are the counts today, and they are a ceiling that may only fall.
-# sha3's one is `% 5` over Keccak's public loop counters, so it is here to
-# keep the total honest rather than because it leaks.
-M3_CEILING := poly1305.c:25 mlkem_poly.c:6 x25519.c:3 sha3.c:1
+# Every module that multiplies a secret is at zero: ct_widemul and
+# ct_mulsmall in ct.h build a wide product out of 16x16 pieces, and the
+# M3's 32->32 multiply is constant-time. The one left is sha3's `% 5` over
+# Keccak's public loop counters, which the compiler emits as a
+# multiply-high. Writing it as conditional subtraction does not help --
+# the optimiser recognises the loop and puts the modulo back -- and no
+# secret is divided, so it is recorded rather than fought.
+#
+# p256.c and rsa.c are absent because they multiply nothing secret. The
+# client verifies signatures and never makes them: p256_ecdsa_verify and
+# rsa_pss_verify read a server or CA public key, a transcript hash and a
+# signature, all of which the peer already sent in the clear. There is no
+# signing entry point in this library to add one to.
+# Both targets are checked, not just the M3. mips32r2 is the reference
+# part, and a comment claiming the decomposition runs there proves nothing
+# on its own -- a compiler that folded the 16x16 pieces back into a mult
+# would leave the claim standing and the leak restored. Each spec is
+# name:triple:cpu-flag:comma-separated opcodes.
+WIDEMUL_SPECS := \
+  m3:thumbv7m-none-eabi:-mcpu=cortex-m3:umull,smull,umlal,smlal \
+  mips32r2:mips-linux-musl:-march=mips32r2:mult,multu,madd,maddu
+WIDEMUL_CEILING := poly1305.c:0 mlkem_poly.c:0 x25519.c:0 sha3.c:1
 .PHONY: lint-wide-multiply
 lint-wide-multiply:
 ifeq ($(CLANG_RV),)
 	$(call REQUIRE,clang,it ships with llvm — see the LLVM_MAJOR pin in .github/workflows/check.yml)
 else
-	@rc=0; for e in $(M3_CEILING); do \
-	  f=$${e%%:*}; cap=$${e##*:}; \
-	  n=$$($(CLANG_RV) -target thumbv7m-none-eabi -mcpu=cortex-m3 -Os -std=c11 \
-	      -D_DEFAULT_SOURCE -DCH_RAND_EXTERN -DCH_KEX_PQ -I. -S $$f -o - 2>/dev/null \
-	      | grep -cE '\b(umull|smull|umlal|smlal)\b'); \
-	  if [ "$$n" -gt "$$cap" ]; then \
-	    echo "lint-wide-multiply: $$f emits $$n wide multiplies, ceiling is $$cap (see https://github.com/c4milo/chapulin/issues/53)"; rc=1; \
-	  elif [ "$$n" -lt "$$cap" ]; then \
-	    echo "lint-wide-multiply: $$f is down to $$n from $$cap — lower the ceiling"; rc=1; \
-	  fi; \
+	@rc=0; for spec in $(WIDEMUL_SPECS); do \
+	  arch=$${spec%%:*}; rest=$${spec#*:}; \
+	  triple=$${rest%%:*}; rest=$${rest#*:}; \
+	  cpu=$${rest%%:*}; ops=$$(echo "$${rest#*:}" | tr ',' '|'); \
+	  for e in $(WIDEMUL_CEILING); do \
+	    f=$${e%%:*}; cap=$${e##*:}; \
+	    n=$$($(CLANG_RV) -target $$triple $$cpu -Os -std=c11 \
+	        -D_DEFAULT_SOURCE -DCH_RAND_EXTERN -DCH_KEX_PQ -I. -S $$f -o - 2>/dev/null \
+	        | grep -cE "\\b($$ops)\\b"); \
+	    if [ "$$n" -gt "$$cap" ]; then \
+	      echo "lint-wide-multiply: $$f emits $$n wide multiplies on $$arch, ceiling is $$cap (see https://github.com/c4milo/chapulin/issues/53)"; rc=1; \
+	    elif [ "$$n" -lt "$$cap" ]; then \
+	      echo "lint-wide-multiply: $$f is down to $$n from $$cap on $$arch — lower the ceiling"; rc=1; \
+	    fi; \
+	  done; \
 	done; \
-	[ $$rc -eq 0 ] && echo "lint-wide-multiply: every module at its recorded ceiling"; exit $$rc
+	[ $$rc -eq 0 ] && echo "lint-wide-multiply: every module at its recorded ceiling on m3 and mips32r2"; exit $$rc
 endif
 .PHONY: lint-issue-links
 lint-issue-links:

@@ -49,7 +49,9 @@ static uint16_t mlk_freeze(int16_t a) {
 // divide. 1290168 = ceil(2^32 / q); the +1664 supplies the rounding, and
 // the rounding is exact only with the ceiling, not the floor.
 static uint16_t mlk_compress(uint16_t x, unsigned d) {
-    uint64_t t = (((uint64_t)x << d) + 1664U) * 1290168U;
+    // x < q and d <= 11, so the left operand is under 2^23 and this is a
+    // 32x32 product: ct_widemul keeps it off the M3's variable-time umull.
+    uint64_t t = ct_widemul(((uint32_t)x << d) + 1664U, 1290168U);
     return (uint16_t)((t >> 32) & ((1U << d) - 1U));
 }
 

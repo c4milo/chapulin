@@ -338,10 +338,11 @@ which convention holds them.
   Variable time is allowed only where every input is public, stated at
   the call site — P-256 and RSA verify, and the HRR-magic compare in
   handshake_parser.c.
-  The second half does not hold everywhere yet. A core whose 32-to-64
-  multiply is variable-time, the Cortex-M3 above all, runs 35 such
-  products in poly1305, mlkem_poly, x25519 and sha3; #53 tracks the
-  work and `lint-wide-multiply` holds the count as a falling ceiling.
+  That second half is why `ct.h` builds widening products out of 16x16
+  pieces on any architecture not known to multiply in constant time:
+  a Cortex-M3 ran 35 variable-time products before, and runs none in
+  poly1305, mlkem_poly or x25519 now. One remains in sha3, `% 5` over
+  Keccak's public loop counters, which divides no secret.
 - **Mechanism.** Constant-time construction; ChaCha20/Poly1305/x25519
   have no table lookups by design.
 - **Check.** Semgrep-structural (`inv-16-no-variable-time-compare`) bans

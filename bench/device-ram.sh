@@ -41,12 +41,23 @@ EOF
 # The sources the Makefile links into the default (PIN=rsa) bin/chapulin.o;
 # p256 is measured too so the PIN=ecdsa column stays known, but the totals
 # below count the default build only.
-SRCS="ct sha256 hkdf chacha20 poly1305 aead x25519 rsa rsa_mont buf record keysched \
-      io handshake_message session handshake tls"
+# The module list comes from the Makefile, so it cannot drift from what
+# the build packages. LIB_SRCS for the default profile (PIN=rsa,
+# TRUST=pinned, KEX=x25519); RAND=extern keeps the generator out, since
+# the caller supplies entropy.
+SRCS=$(make -s --no-print-directory -C "$ROOT" print-lib-srcs RAND=extern \
+      | tr ' ' '\n' | sed 's/\.c$//' | tr '\n' ' ')
 EXTRA_SRCS="p256"
 
-DEV="$CLANG $TRIPLE -Os -ffreestanding -nostdlibinc -fstack-usage -I$ROOT -I$TMP/shim -c"
-HOSTCC="$CLANG -Os -fstack-usage -I$ROOT -c"
+# An empty list would size nothing and still print a totals row, which
+# reads as a real measurement. Fail instead.
+[ -n "$SRCS" ] || {
+    echo "device model: make print-lib-srcs returned no sources" >&2
+    exit 1
+}
+
+DEV="$CLANG $TRIPLE -Os -ffreestanding -nostdlibinc -fstack-usage -DCH_RAND_EXTERN -I$ROOT -I$TMP/shim -c"
+HOSTCC="$CLANG -Os -fstack-usage -DCH_RAND_EXTERN -I$ROOT -c"
 
 sections() { # $1 = section pattern  $2 = object: summed bytes
     "$SIZE" -A "$2" | awk -v pat="$1" '$1 ~ pat { sum += $2 } END { print sum + 0 }'

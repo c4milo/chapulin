@@ -158,22 +158,30 @@ an in-order core, so read it as a lower bound.
 
 | work | instructions | ms (500 MHz, 1 IPC) |
 |---|---|---|
-| AEAD seal, per 1 KB record | 47 k | 0.1 |
+| AEAD seal, per 1 KB record | 74 k | 0.15 |
 | SHA-256, per 1 KB | 68 k | 0.14 |
-| x25519 scalar multiply | 28.7 M | 57 |
+| x25519 scalar multiply | 40.3 M | 81 |
 | RSA-3072 PSS verify (default) | 11.6 M | 23 |
 | P-256 verify (`PIN=ecdsa`) | 46.0 M | 92 |
-| full pinned handshake crypto (default) | 69.7 M | 139 |
+| full pinned handshake crypto (default) | 93.0 M | 186 |
 
-Flash is 26.4 kB for the default build (`.text` + `.rodata`, `-Os`).
-The `PIN=ecdsa` build trades 2.3 kB of RSA for 6.1 kB of P-256 and
-totals 30.1 kB.
+The multiply decomposition that keeps secrets off a variable-time
+`umull` sets the first and third rows. Measured against the same
+benchmark without it: AEAD seal costs 56% more, x25519 41% more, and
+the whole pinned handshake 33% more, or 47 ms at 500 MHz. SHA-256 and
+both signature verifies are unchanged, because SHA-256 does not
+multiply and the verifies read only public bytes.
+
+Flash is 29.0 kB for the default build (`.text` + `.rodata`, `-Os`),
+of which the multiply decomposition is 1.7 kB, nearly all of it
+poly1305's unrolled block. The `PIN=ecdsa` build trades 2.3 kB of RSA
+for 5.9 kB of P-256 and totals 32.6 kB.
 
 Public-key work dominates. Every handshake runs two x25519 for forward
-secrecy, whichever mode it is in, so about 115 ms is the recurring
-floor and 82% of the pinned handshake's crypto. The signature verify is
+secrecy, whichever mode it is in, so about 161 ms is the recurring
+floor and 87% of the pinned handshake's crypto. The signature verify is
 paid only on the first pinned connection; resumptions skip it. Record
-crypto is about 0.1 ms per kilobyte, which is negligible beside the
+crypto is about 0.15 ms per kilobyte, which is negligible beside the
 handshake. Because a device typically opens one long-lived connection,
 chapulin keeps the 16-bit-limb x25519 for its machine-checked overflow
 proof rather than a faster wide-limb version. Many short connections
@@ -183,7 +191,7 @@ would change that trade.
 
 Four layers cover four different failure classes.
 
-**Proofs cover memory safety.** Twenty-five of the twenty-eight C
+**Proofs cover memory safety.** Twenty-eight of the twenty-nine C
 sources are compiled into a [CBMC](https://www.cprover.org/cbmc/) harness, which proves them free of
 out-of-bounds access, invalid pointers, bad shifts, and division by
 zero, for every input within the harness's bound. Signed overflow is
@@ -269,15 +277,24 @@ secrets and MACs and never opens a record.
   replace the library's at link time. `make lint-runtime-symbols` builds
   for rv32ic and fails on any runtime call beyond the one that remains,
   `__udivsi3`, which sha3 uses for `% 5` over public loop counters.
-  A multiplier that exists but is variable-time is a different problem,
-  and this does not solve it: ARM's Cortex-M3 `umull` returns sooner
-  when both operands are below 65536, with further undocumented exits on
-  zero and powers of two, and 32-bit x86 and PowerPC have the same
-  shape. BearSSL answers that by restructuring its big integers into
-  15-bit limbs so every product fits in 32 bits, then forcing the
-  operands' top bits so the hardware cannot shortcut. poly1305 and
-  x25519 here form 64-bit products, so a core in that class is not
-  covered.
+  A multiplier that exists but is variable-time is the other half. ARM's
+  Cortex-M3 `umull` returns sooner when both operands are below 65536,
+  with further undocumented exits on zero and powers of two, and 32-bit
+  x86 and PowerPC have the same shape; the M3's 32-to-32 `mul` does not.
+  So `ct.h` builds every widening product out of four 16x16 pieces, and
+  poly1305, x25519 and ML-KEM emit no wide multiply on the M3 or on
+  mips32r2 — `make lint-wide-multiply` disassembles for both and holds
+  the count at zero. What is left is the 32-to-32 multiply, which ARM
+  documents as single-cycle on the M3. mips32r2 does not document its
+  own, so the decomposition narrows that part's exposure rather than
+  closing it; `ct.h` says so beside the entry. The
+  plain product is used instead on architectures whose own is
+  constant-time, listed in `ct.h` with the evidence for each; anything
+  unlisted gets the decomposition, because being wrong about a listed
+  part is silent and being wrong about an unlisted one only costs
+  speed. That cost is measured, not assumed: 33% of the pinned
+  handshake's crypto and 1.7 kB of flash, itemised under Speed and
+  flash above.
 - The quality of the random bytes, which rests on nothing here at all.
   `ch_rand_bytes` is the image's to supply, and no check in a library
   can grade it: a weak generator completes the handshake, sends a key
