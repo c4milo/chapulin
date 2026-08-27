@@ -363,7 +363,11 @@ jobs:
           key: fuzz-corpus-${{ github.run_id }}
           restore-keys: fuzz-corpus-
       - run: sudo apt-get update -q && sudo apt-get install -y -q clang
-      - run: make fuzz FUZZ_CC=clang FUZZ_TIME=600
+      # FUZZ_TIME is per target and make fuzz runs five, so the budget
+      # is 5 x 480 = 40 minutes inside the 45-minute cap. Four targets
+      # at 600 fit; the fifth pushed the job to 50 and it was cancelled
+      # at the cap two nights running, fuzzing nothing at all.
+      - run: make fuzz FUZZ_CC=clang FUZZ_TIME=480
       - name: Save fuzz corpus
         if: always()
         uses: actions/cache/save@v6

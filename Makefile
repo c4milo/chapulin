@@ -331,7 +331,7 @@ bin/diff: test/diff_test.c $(SRCS) sha3.c mlkem.c mlkem_poly.c $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) -I. -o $@ test/diff_test.c $(SRCS) sha3.c mlkem.c mlkem_poly.c
 
-.PHONY: check lint lint-tidy lint-format lint-cppcheck lint-docs lint-invariants lint-go-pin lint-violation-builds lint-commit-citations lint-spec prove diff fmt clean
+.PHONY: check lint lint-tidy lint-format lint-cppcheck lint-docs lint-invariants lint-go-pin lint-violation-builds lint-fuzz-budget lint-commit-citations lint-spec prove diff fmt clean
 # bin/handshake_sequence_pq is built here but run by the nightly, not by check: the
 # two enumerations together cost 19 of check's 45 measured minutes and
 # the CI job's timeout is 45, so the second one would decide the lane by
@@ -684,7 +684,7 @@ endif
 
 # Checks and thresholds live in .clang-tidy; every disable carries a reason
 # there (fix-or-drop, never NOLINT in code).
-lint: lint-tidy lint-format lint-cppcheck lint-commits lint-docs lint-invariants lint-stack lint-size lint-matrix lint-go-pin lint-violation-builds lint-commit-citations lint-spec
+lint: lint-tidy lint-format lint-cppcheck lint-commits lint-docs lint-invariants lint-stack lint-size lint-matrix lint-go-pin lint-violation-builds lint-fuzz-budget lint-commit-citations lint-spec
 
 # INV-19: bounded stack. The budget is the measured worst library
 # frame (rsa_vp1's RSA-3072 limb temporaries, 2,400 bytes) rounded up;
@@ -905,6 +905,23 @@ lint-go-pin:
 .PHONY: lint-violation-builds
 lint-violation-builds:
 	@python3 test/violations.py --lint-builds
+
+# The fuzz job's budget is per target, so adding a target silently
+# overruns its timeout. GitHub reports that as cancelled, not failed,
+# and a cancelled fuzz job has fuzzed nothing -- which is how two
+# nights ran with no fuzzing at all after the fifth target landed.
+.PHONY: lint-fuzz-budget
+lint-fuzz-budget:
+	@n=$$(grep -c '$$(FUZZ_CC) $$(FUZZ_CFLAGS) fuzz/' Makefile); \
+	 t=$$(sed -n 's/.*make fuzz .*FUZZ_TIME=\([0-9]*\).*/\1/p' .github/workflows/nightly.yml); \
+	 cap=$$(awk '/^  fuzz:/{f=1} f&&/timeout-minutes:/{print $$2; exit}' .github/workflows/nightly.yml); \
+	 [ -n "$$t" ] && [ -n "$$cap" ] || { echo "lint-fuzz-budget: cannot read FUZZ_TIME or the job timeout"; exit 1; }; \
+	 used=$$(( n * t / 60 )); \
+	 if [ "$$used" -ge "$$cap" ]; then \
+	   echo "lint-fuzz-budget: $$n targets x $$t s = $$used min, at or over the job's $$cap-minute cap"; \
+	   exit 1; \
+	 fi; \
+	 echo "lint-fuzz-budget: $$n targets x $$t s = $$used min, inside the $$cap-minute cap"
 
 # A commit body citing a hash is only useful while that hash resolves, and
 # a history rewrite orphans every one it moved. Nothing warns: the text
