@@ -38,6 +38,21 @@ So a vendor with a few kilobytes of SRAM and no budget for middleware
 ships plaintext, or something hand-rolled, and the device joins the
 next bot network.
 
+What changed is the attacker's cost. Reading firmware for mistakes, and
+turning one vendor's mistake into a fleet-wide one, is now cheap enough
+to do at scale. Side channels moved the same way: machine learning cuts
+the traces a power analysis needs by orders of magnitude, so a leak that
+was theoretical because nobody would gather a million traces is worth
+gathering a thousand for. A defect that survived because exploiting it
+was tedious does not survive any more.
+
+That is the case for proving rather than asserting. The profile here is
+small enough to state exactly, which is what makes it small enough to
+check: every module carries a CBMC harness, the crypto runs against a
+Lean specification on every build, and the verification section below
+says what is proved, at what bound, and what is only tested. Where a
+guarantee does not hold, it says so.
+
 chapulin answers that narrow case: TLS 1.3 in about 3 kB of static
 working set, no heap, Apache-2.0, and proofs an auditor can check
 rather than trust. [`docs/landscape.md`](docs/landscape.md) surveys the field with sources.
@@ -254,6 +269,15 @@ secrets and MACs and never opens a record.
   replace the library's at link time. `make lint-runtime-symbols` builds
   for rv32ic and fails on any runtime call beyond the one that remains,
   `__udivsi3`, which sha3 uses for `% 5` over public loop counters.
+  A multiplier that exists but is variable-time is a different problem,
+  and this does not solve it: ARM's Cortex-M3 `umull` returns sooner
+  when both operands are below 65536, with further undocumented exits on
+  zero and powers of two, and 32-bit x86 and PowerPC have the same
+  shape. BearSSL answers that by restructuring its big integers into
+  15-bit limbs so every product fits in 32 bits, then forcing the
+  operands' top bits so the hardware cannot shortcut. poly1305 and
+  x25519 here form 64-bit products, so a core in that class is not
+  covered.
 - The quality of the random bytes, which rests on nothing here at all.
   `ch_rand_bytes` is the image's to supply, and no check in a library
   can grade it: a weak generator completes the handshake, sends a key
