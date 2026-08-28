@@ -182,6 +182,7 @@ bin/obj/$(LIB_VARIANT)/%.o: %.c $(HDRS)
 # (and so triggers a relink) only when PIN, TRUST, KEX or RAND changed
 # since the last build. RAND belongs here because it changes the link
 # and the export list even when no object's contents move.
+
 PIN_STAMP := bin/obj/pin-stamp
 $(PIN_STAMP): FORCE
 	@mkdir -p bin/obj
@@ -189,7 +190,17 @@ $(PIN_STAMP): FORCE
 .PHONY: FORCE
 FORCE:
 
-bin/chapulin.o: $(LIB_OBJS) $(PIN_STAMP)
+# The linked object lives under the variant that built it, like the objects
+# it is made of. It used to sit at the fixed bin/chapulin.o, and that path
+# cannot be kept honest by timestamps: which bytes are correct depends on
+# PIN, TRUST, KEX and RAND, not on any file being newer. check links drbg
+# and extern back to back, both landed in the same second, make 3.81
+# compares mtimes to the second, and the extern pass relinked nothing --
+# so the object kept drbg's ch_drbg_seed export and lib-check failed on a
+# tree that was correct.
+LIB_OBJ := bin/obj/$(LIB_VARIANT)/chapulin.o
+
+$(LIB_OBJ): $(LIB_OBJS) $(PIN_STAMP)
 	ld -r -o $@ $(LIB_OBJS)
 ifeq ($(shell uname),Darwin)
 	printf '_%s\n' $(PUBLIC) > bin/exports.txt
@@ -199,22 +210,24 @@ else
 endif
 
 .PHONY: lib lib-check cxx-check
-lib: bin/chapulin.o
+lib: $(LIB_OBJ)
+	@cp $(LIB_OBJ) bin/chapulin.o
 
 # The optional C++ wrapper (chapulin.hpp) compiles under -fno-exceptions
 # -fno-rtti and links against the packaged library object, the way a
 # firmware C++ consumer would use it.
 CXXFLAGS ?= -std=c++17 -fno-exceptions -fno-rtti -Wall -Wextra -Wpedantic -Werror
-cxx-check: bin/chapulin.o chapulin.hpp test/hpp_test.cpp
+cxx-check: $(LIB_OBJ) chapulin.hpp test/hpp_test.cpp
 	@command -v $(CXX) >/dev/null || { \
 	  [ -n "$$CI" ] && { echo "$(CXX): missing on CI; the gate must not skip"; exit 1; }; \
 	  echo "SKIP cxx-check: no C++ compiler"; exit 0; }
 	$(CXX) $(CXXFLAGS) $(LIB_DEF) -D_DEFAULT_SOURCE -I. -c test/hpp_test.cpp -o bin/hpp_test.o
-	$(CXX) -o bin/hpp_test bin/hpp_test.o bin/chapulin.o
+	$(CXX) -o bin/hpp_test bin/hpp_test.o $(LIB_OBJ)
 	./bin/hpp_test
 
-lib-check: bin/chapulin.o
-	@nm -g bin/chapulin.o | awk '$$2 ~ /^[TDSB]$$/ {print $$3}' | sed 's/^_//' | sort > bin/exported.txt
+lib-check: $(LIB_OBJ)
+	@cp $(LIB_OBJ) bin/chapulin.o
+	@nm -g $(LIB_OBJ) | awk '$$2 ~ /^[TDSB]$$/ {print $$3}' | sed 's/^_//' | sort > bin/exported.txt
 	@printf '%s\n' $(PUBLIC) | sort > bin/expected.txt
 	@diff -u bin/expected.txt bin/exported.txt || { \
 	  echo "lib-check: exported symbols differ from the public API"; exit 1; }
@@ -225,11 +238,11 @@ lib-check: bin/chapulin.o
 # whichever one this build promised rather than leaving the difference to a
 # reader of the Makefile.
 ifeq ($(RAND),drbg)
-	@if nm -u bin/chapulin.o | awk '{print $$NF}' | sed 's/^_//' | grep -qx ch_rand_bytes; then \
+	@if nm -u $(LIB_OBJ) | awk '{print $$NF}' | sed 's/^_//' | grep -qx ch_rand_bytes; then \
 	  echo "lib-check: RAND=drbg packages the generator, so ch_rand_bytes must be defined here, not imported"; exit 1; fi
 	@echo "lib-check: ch_rand_bytes is defined in the object; the image seeds it with ch_drbg_seed at boot"
 else
-	@if ! nm -u bin/chapulin.o | awk '{print $$NF}' | sed 's/^_//' | grep -qx ch_rand_bytes; then \
+	@if ! nm -u $(LIB_OBJ) | awk '{print $$NF}' | sed 's/^_//' | grep -qx ch_rand_bytes; then \
 	  echo "lib-check: RAND=extern must leave ch_rand_bytes undefined, so an image that forgets the hook fails to link"; exit 1; fi
 	@echo "lib-check: ch_rand_bytes is undefined in the object; a forgotten hook is a link error"
 endif
@@ -894,13 +907,13 @@ endif
 # alone catches a changed signature; only running catches a changed
 # meaning, and the reviewers found exactly that class of bug in the
 # first drafts.
-bin/example_psk: examples/psk_client.c bin/chapulin.o
+bin/example_psk: examples/psk_client.c $(LIB_OBJ)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -I. -o $@ examples/psk_client.c bin/chapulin.o
+	$(CC) $(CFLAGS) -I. -o $@ examples/psk_client.c $(LIB_OBJ)
 
-bin/example_pinned: examples/pinned_client.c bin/chapulin.o
+bin/example_pinned: examples/pinned_client.c $(LIB_OBJ)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -I. -o $@ examples/pinned_client.c bin/chapulin.o
+	$(CC) $(CFLAGS) -I. -o $@ examples/pinned_client.c $(LIB_OBJ)
 
 # The CA example needs the CA-trust library, so it links its own copy of
 # the sources rather than the packaged raw-pin object.
