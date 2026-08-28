@@ -18,9 +18,41 @@
 #
 # See https://github.com/c4milo/chapulin/issues/55.
 
-# Measured with cbmc 6.11.0, the version CI pins. Harnesses not listed are
-# reported by the nightly but not gated yet; copy the number it prints to
-# add one.
-ct 94.1
+# Measured with cbmc 6.11.0, the version CI pins.
+
 buf 90.2
+certparse 29.2
+chacha20 98.1
+ct 94.1
+drbg 84.4
+epoch 36.1
+hello_build 76.9
+hkdf 52.5
+hybrid_secret 20.2
+key_share 21.9
+keysched 87.3
+p256_mul 86.7
+poly1305 94.3
 record 95.0
+rsa_mul 32.3
+softmul 91.3
+
+# Not gated, because CBMC version 6.11.0 (cbmc-6.11.0) 64-bit arm64 macos does not converge on them
+# at five minutes a harness. This is a limit of the measurement, not a
+# gap someone forgot: the same solver cost that makes the proof slow
+# makes counting its reachable locations slow. The nightly gets a
+# longer budget and reports whatever it manages; add a line here from
+# its table when one of these starts finishing.
+#
+#   eeparse
+#   handshake_parser
+#   handshake_post
+#   io
+#   mlkem
+#   mlkem_poly
+#   p256
+#   rsa
+#   sha256
+#   sha3
+#   sha3_stream
+#   x25519_mul
