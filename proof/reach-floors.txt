@@ -1,0 +1,26 @@
+# Reachability floors: the share of program locations each harness reaches
+# at its configured bound, measured by `cbmc --cover location` under the
+# same --unwind, --unwindset and -D flags its launch line proves under.
+#
+# Why a floor rather than a threshold: a harness that stubs its dependencies
+# legitimately reaches less of its translation unit than one that compiles
+# them concretely, so there is no single number that is right for all of
+# them. What is always wrong is a harness reaching less than it used to,
+# because that means a bound shrank below the code the harness names and the
+# proof still reports success. That is the failure this file exists to
+# catch, and it is not hypothetical: 7206f4c and 93e9504 both shipped
+# proofs that passed while proving less than they claimed.
+#
+# One "name percent" line per harness. A harness absent from this file is
+# measured and reported but not gated; the nightly publishes the table, so
+# adding a line is a matter of copying the number it printed. Lower a floor
+# only with the reason in the commit body.
+#
+# See https://github.com/c4milo/chapulin/issues/55.
+
+# Measured with cbmc 6.11.0, the version CI pins. Harnesses not listed are
+# reported by the nightly but not gated yet; copy the number it prints to
+# add one.
+ct 94.1
+buf 90.2
+record 95.0

@@ -39,13 +39,19 @@ LIB = sorted(p.name for p in ROOT.glob("*.c"))
 
 
 def launch_lines():
-    """Harness name -> (tier, unwind, linked sources) per running line."""
+    """Harness name -> (tier, unwind, linked sources, unwindset, defines).
+
+    The unwindset and the -D flags are part of the bound: --reach has to
+    measure under the same ones run.sh proves under, or a loop that the
+    launch line unwinds far enough looks unreachable and the reachability
+    number says nothing about the real proof."""
     text = (ROOT / "proof" / "run.sh").read_text()
     runs = {}
-    for m in re.finditer(r"^launch (\S+) (\w+) (\S+) (\d+) (.*)$", text, re.M):
-        tier, _mode, name, unwind, rest = m.groups()
+    for m in re.finditer(r'^launch (\S+) (\w+) (\S+) (\d+) "([^"]*)"(.*)$', text, re.M):
+        tier, _mode, name, unwind, unwindset, rest = m.groups()
         linked = re.findall(r"\b([a-z0-9_]+\.c)\b", rest)
-        runs[name] = (tier, int(unwind), set(linked))
+        defines = re.findall(r"(-D\S+)", rest)
+        runs[name] = (tier, int(unwind), set(linked), unwindset, defines)
     return runs
 
 
@@ -140,8 +146,10 @@ def main():
             lines.append(f"| `{name}` | `{subject or 'unknown'}` |")
         lines.append("")
 
+    reach_dead, reach_fell = [], []
     if args.reach:
-        lines += reach_table(runs)
+        reach_lines, reach_dead, reach_fell = reach_table(runs)
+        lines += reach_lines
 
     REPORT.parent.mkdir(exist_ok=True)
     REPORT.write_text("\n".join(lines) + "\n")
@@ -151,12 +159,39 @@ def main():
         print("proof-coverage: no harness for " + ", ".join(uncovered))
     for name, _ in sorted(dormant):
         print(f"proof-coverage: {name} has no launch line")
+    for name in reach_dead:
+        print(f"proof-coverage: {name} reaches no code at its bound; the "
+              f"proof passes without entering what it names")
+    for name, got, floor in reach_fell:
+        print(f"proof-coverage: {name} reaches {got}% of its locations, under "
+              f"its recorded {floor}% floor; the bound no longer enters what "
+              f"the harness names")
+    if reach_dead or reach_fell:
+        return 1
+
+
+def reach_floors():
+    """Harness -> the lowest reach share it is allowed to report."""
+    path = ROOT / "proof" / "reach-floors.txt"
+    floors = {}
+    if not path.exists():
+        return floors
+    for line in path.read_text().splitlines():
+        line = line.split("#", 1)[0].strip()
+        if not line:
+            continue
+        name, pct = line.split()
+        floors[name] = float(pct)
+    return floors
 
 
 def reach_table(runs):
     """Per harness, the share of its goto locations CBMC can reach at
     the configured bound. A low number means the bound stops the proof
     short of the code it claims to cover."""
+    dead = []
+    fell = []
+    floors = reach_floors()
     out = ["### Reachability at the configured bounds", "",
            "`cbmc --cover location`: the share of program locations the",
            "harness can reach. A low number means the unwind bound stops",
@@ -166,18 +201,45 @@ def reach_table(runs):
         harness = ROOT / "proof" / f"{name}_harness.c"
         if not harness.exists():
             continue
-        cmd = ["cbmc", str(harness), "-I", str(ROOT), "--cover", "location",
-               "--unwind", str(runs[name][1])]
+        tier, unwind, linked, unwindset, defines = runs[name]
+        cmd = ["cbmc", str(harness)]
+        cmd += [str(ROOT / src) for src in sorted(linked)]
+        # cfg.h demands a declared entropy pattern, and run.sh gives every
+        # harness the extern one.
+        cmd += ["-DCH_RAND_EXTERN", *defines, "-I", str(ROOT),
+                "--cover", "location", "--unwind", str(unwind)]
+        if unwindset:
+            cmd += ["--unwindset", unwindset]
         try:
             res = subprocess.run(cmd, capture_output=True, text=True, timeout=900)
         except subprocess.TimeoutExpired:
             out.append(f"| `{name}` | timed out |")
             continue
         m = re.search(r"\*\* (\d+) of (\d+) covered \(([0-9.]+)%\)", res.stdout)
-        out.append(f"| `{name}` | {m.group(3)}% ({m.group(1)}/{m.group(2)}) |"
-                   if m else f"| `{name}` | not measured |")
+        if not m:
+            out.append(f"| `{name}` | not measured |")
+            continue
+        reached, total, pct = int(m.group(1)), int(m.group(2)), m.group(3)
+        floor = floors.get(name)
+        mark = ""
+        if floor is not None:
+            mark = f" (floor {floor}%)"
+            if float(pct) < floor:
+                mark = f" **below its {floor}% floor**"
+                fell.append((name, float(pct), floor))
+        out.append(f"| `{name}` | {pct}% ({reached}/{total}){mark} |")
+        # Reaching nothing is the failure this measurement exists to catch:
+        # the bound stops before the harness enters the code it names, and
+        # the proof still reports success. Anything above zero is a number
+        # to read, not a verdict, because a harness that stubs its
+        # dependencies legitimately reaches less than one that does not.
+        if reached == 0 and total > 0:
+            dead.append(name)
     out.append("")
-    return out
+    if dead:
+        out += ["**Reaches nothing at its bound:** " +
+                ", ".join(f"`{n}`" for n in dead) + ".", ""]
+    return out, dead, fell
 
 
 if __name__ == "__main__":

@@ -531,6 +531,14 @@ COV_LIB_OBJS = $(SRCS:%.c=$$d/%.o)
 # launch line is caught on the same PR. It reports rather than fails:
 # the gaps it finds today are known and tracked. --reach adds a slow
 # cbmc pass and stays nightly.
+# Reachability at the configured bounds. cbmc --cover location answers
+# what a passing verdict cannot: whether the bound is large enough to enter
+# the code the harness names. It costs minutes per harness, so the nightly
+# runs it (https://github.com/c4milo/chapulin/issues/55).
+.PHONY: proof-reach
+proof-reach:
+	python3 proof/coverage.py --reach
+
 .PHONY: proof-coverage
 proof-coverage:
 	python3 proof/coverage.py

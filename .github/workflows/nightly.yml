@@ -20,6 +20,24 @@ jobs:
   # a proof that never converges starves only its own leg. The cache
   # save runs even on failure or timeout, so interrupted runs converge
   # across nights instead of starting over.
+  # Whether each harness's bound is large enough to enter the code it
+  # names. A passing verdict cannot answer that, and the tree has shipped
+  # proofs that passed while proving less than they claimed (7206f4c,
+  # 93e9504). Slow, so it runs here rather than in check.
+  proof-reach:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 300
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install CBMC
+        run: |
+          curl -fsSLO https://github.com/diffblue/cbmc/releases/download/cbmc-6.11.0/ubuntu-24.04-cbmc-6.11.0-Linux.deb
+          sudo dpkg -i ubuntu-24.04-cbmc-6.11.0-Linux.deb
+      - run: make proof-reach
+      - name: Render the reachability table on the run page
+        if: always()
+        run: cat bin/proof-coverage.md >> "$GITHUB_STEP_SUMMARY" 2>/dev/null || true
+
   prove-slow:
     runs-on: ubuntu-24.04
     timeout-minutes: 300
