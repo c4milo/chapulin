@@ -756,7 +756,7 @@ else
 	@! grep -oE "depends on axioms: \[[^]]*\]" /tmp/axioms.log \
 	  | tr ',[]' '\n' | sed 's/.*axioms: //;s/^ *//;s/ *$$//' | grep -v '^$$' \
 	  | grep -vxE 'propext|Classical\.choice|Quot\.sound' \
-	  || { echo "lint-spec: a load-bearing theorem depends on a non-standard axiom"; exit 1; }
+	  || { echo "lint-spec: a theorem in the model depends on a non-standard axiom"; exit 1; }
 	@echo "lint-spec: model clean, theorems rest on the standard axioms only"
 endif
 

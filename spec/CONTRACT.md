@@ -438,8 +438,9 @@ quantified, so every statement covers every build's CH_EPOCH_BOUND:
 ## Proof status by module
 
 The machine-versus-convention line for the spec, kept honest by `make
-lint-spec` (hygiene: no escape hatches in the model; the load-bearing
-theorems rest on Lean's three standard axioms only). "Vector-checked"
+lint-spec` (hygiene: no escape hatches in the model; every theorem the
+`Spec` modules declare rests on Lean's three standard axioms only, private
+theorems included). "Vector-checked"
 means the module's selftest plus the differential oracle carry it;
 "proven" means theorems beyond that.
 

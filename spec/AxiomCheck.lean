@@ -1,156 +1,90 @@
 -- Run by make lint-spec, never part of the library build: prints the
--- axioms each load-bearing theorem depends on, and the gate asserts
--- nothing appears beyond Lean's three standard ones (propext,
--- Classical.choice, Quot.sound). A stray axiom in a proof is exactly
--- what this catches; the hygiene grep catches the declaration itself.
-import Spec.Aead
-import Spec.Sha3
-import Spec.MlKem
-import Spec.Record
-import Spec.Handshake
-import Spec.Drbg
-import Spec.X509
-import Spec.X25519
-import Spec.HandshakeParser
-import Spec.Epoch
+-- axioms each theorem depends on, and the gate asserts nothing appears
+-- beyond Lean's three standard ones (propext, Classical.choice,
+-- Quot.sound). A stray axiom in a proof is exactly what this catches;
+-- the hygiene grep catches the declaration itself.
+--
+-- The theorems come from the environment, not from a list in this file. A
+-- hand-written list of `#print axioms` lines fell behind the proofs it
+-- gated, and nothing reported the omissions: a theorem the list leaves out
+-- is a theorem nobody checks. Reading the environment cannot fall behind,
+-- because the import that compiles a theorem also puts it in the
+-- environment, and it reaches the private theorems, whose stored names a
+-- list of source-level names cannot spell. See
+-- https://github.com/c4milo/chapulin/issues/42.
+import Spec
+import Lean
 
-#print axioms Spec.Aead.open?_seal
-#print axioms Spec.Aead.open?_ne_tag
-#print axioms Spec.Record.aeadOpen_seal
-#print axioms Spec.Record.open?_seal
-#print axioms Spec.Record.open?_type_sound
-#print axioms Spec.Handshake.psk_no_certificate
-#print axioms Spec.Handshake.hrr_at_most_one
-#print axioms Spec.Handshake.count_finished_of_accepts
-#print axioms Spec.Drbg.next_key_out_disjoint
-#print axioms Spec.Drbg.next_key_indep
-#print axioms Spec.Record.nonce_inj
-#print axioms Spec.Bytes.natToBytesBE_inj
-#print axioms Spec.Handshake.no_post_handshake_before_finished
-#print axioms Spec.Handshake.psk_no_certificateVerify
-#print axioms Spec.Handshake.closeNotify_last
-#print axioms Spec.Handshake.connected_stable
-#print axioms Spec.Handshake.accepts_decompose
-#print axioms Spec.X509.parse_sound
-#print axioms Spec.X509.parse_key_signed
-#print axioms Spec.X25519.decodeScalar_mul_eight
-#print axioms Spec.X25519.decodeScalar_range
-#print axioms Spec.HandshakeParser.messageBody_sound
-#print axioms Spec.HandshakeParser.parseServerHello_sound
-#print axioms Spec.HandshakeParser.parseServerHello_random
-#print axioms Spec.HandshakeParser.parseCertificate_sound
-#print axioms Spec.HandshakeParser.parseCertificateVerify_sound
-#print axioms Spec.HandshakeParser.parseEncryptedExtensions_limit_ge_64
-#print axioms Spec.Epoch.commit_ge
-#print axioms Spec.Epoch.commit_le_of_check
-#print axioms Spec.Epoch.commit_takes_any_epoch
-#print axioms Spec.Epoch.step_idem
-#print axioms Spec.Epoch.storedAfter_ge
-#print axioms Spec.Epoch.storedAfter_le
-#print axioms Spec.Epoch.storedAfter_eq_of_none_accepted
-#print axioms Spec.Epoch.storedAfter_le_maxEpoch
-#print axioms Spec.Handshake.accepts_of_flight
-#print axioms Spec.Handshake.closeNotify_at_most_one
-#print axioms Spec.Handshake.count_encryptedExtensions_of_accepts
-#print axioms Spec.Handshake.count_serverHello_of_accepts
-#print axioms Spec.Handshake.finished_mem_of_accepts
-#print axioms Spec.Handshake.no_certificateRequest_of_accepts
-#print axioms Spec.Handshake.pinned_cert_order
-#print axioms Spec.Handshake.pinned_one_certificate
-#print axioms Spec.Handshake.pinned_one_certificateVerify
-#print axioms Spec.X509.entryAt?_sound
-#print axioms Spec.X509.readCertificate_hash
--- X509Der.lean declares namespace Spec.X509, so its theorems list here.
-#print axioms Spec.X509.readLen_encodeLen
-#print axioms Spec.X509.readLen_canonical
-#print axioms Spec.X509.readTlv_tlv
-#print axioms Spec.X509.readTlv_tlv_ne
-#print axioms Spec.X509.readTlv_canonical
-#print axioms Spec.X509.bytesToNatBE_lt
-#print axioms Spec.X509.natToBytesBE_bytesToNatBE
-#print axioms Spec.X509.bytesToNatBE_ge
-#print axioms Spec.X509.natBytesMin_size
-#print axioms Spec.X509.bytesToNatBE_natBytesMin
-#print axioms Spec.X509.natBytesMin_bytesToNatBE
-#print axioms Spec.X509.natBytesMin_head_ne_zero
-#print axioms Spec.X509.readDerInt_derIntNat
-#print axioms Spec.X509.derIntNat_bytesToNatBE
-#print axioms Spec.X509.readDerInt_canonical
-#print axioms Spec.X509.oidMinimal_empty
-#print axioms Spec.X509.oidMinimal_last
-#print axioms Spec.X509.oidMinimal_head_ne_pad
-#print axioms Spec.X509.oidMinimal_no_pad
-#print axioms Spec.Aead.seal_size
-#print axioms Spec.Aead.pad16_aligned
-#print axioms Spec.Bytes.emptyWithCapacity_eq
-#print axioms Spec.Bytes.foldl_push_eq_append
-#print axioms Spec.Bytes.foldl_inv
-#print axioms Spec.Bytes.foldl_inv_idx
-#print axioms Spec.Bytes.size_foldl_append_const
-#print axioms Spec.Bytes.natToBytesBE_size
-#print axioms Spec.Bytes.natToBytesLE_size
-#print axioms Spec.Bytes.xorBytes_eq
-#print axioms Spec.Bytes.xorBytes_size
-#print axioms Spec.Bytes.getElem_xorBytes
-#print axioms Spec.Bytes.uint8_xor_cancel
-#print axioms Spec.Bytes.xorBytes_xorBytes
-#print axioms Spec.Bytes.byteArray_foldl_eq
-#print axioms Spec.Bytes.bytesToHex_inj
-#print axioms Spec.Bytes.natToBytesBE_eq
-#print axioms Spec.Bytes.natToBytesBE_zero
-#print axioms Spec.Bytes.natToBytesBE_succ
-#print axioms Spec.Bytes.bytesToNatBE_append_byte
-#print axioms Spec.Bytes.bytesToNatBE_natToBytesBE
-#print axioms Spec.Bytes.zeros_size
-#print axioms Spec.Bytes.uint8_zero_xor
-#print axioms Spec.Bytes.uint8_xor_left_cancel
-#print axioms Spec.Bytes.zeros_getElem_zero
-#print axioms Spec.ChaCha.block_size
-#print axioms Spec.ChaCha.xor_size
-#print axioms Spec.ChaCha.xor_getElem!
-#print axioms Spec.ChaCha.xor_xor
-#print axioms Spec.ChaCha.xor_prefix
-#print axioms Spec.Drbg.next_eq
-#print axioms Spec.Drbg.stream_size
-#print axioms Spec.Drbg.stream_getElem!
-#print axioms Spec.Drbg.next_key_size
-#print axioms Spec.Drbg.next_out_size
-#print axioms Spec.Drbg.next_key_eq_block
-#print axioms Spec.Drbg.next_key_getElem!
-#print axioms Spec.Drbg.next_out_getElem!
-#print axioms Spec.Drbg.next_out_prefix
-#print axioms Spec.Drbg.gen_sizes
-#print axioms Spec.Drbg.gen_key_indep_of_sizes
-#print axioms Spec.Hkdf.hmac_size
-#print axioms Spec.Hkdf.expand_size
-#print axioms Spec.Hkdf.expandLabel_size
-#print axioms Spec.Hkdf.schedule_eq
-#print axioms Spec.Hkdf.schedule_sizes
-#print axioms Spec.HandshakeParser.eq_of_bytesEq
-#print axioms Spec.Poly.mac_size
-#print axioms Spec.Record.seal_size
-#print axioms Spec.Record.nonce_size
-#print axioms Spec.Record.nextSecret_size
-#print axioms Spec.Record.pad_getElem!
-#print axioms Spec.Rsa.pssSign_size
-#print axioms Spec.Rsa.pssVerify_size
-#print axioms Spec.Rsa.pssVerify_hash_size
-#print axioms Spec.Rsa.pssSign_hash_size
-#print axioms Spec.Sha256.compress_size
-#print axioms Spec.Sha256.sha256_size
-#print axioms Spec.Sha256.pad_blocks
-#print axioms Spec.Sha256.pad_prefix
-#print axioms Spec.Sha3.absorb_size
-#print axioms Spec.Sha3.squeeze_size
-#print axioms Spec.Sha3.sha3_256_size
-#print axioms Spec.Sha3.sha3_512_size
-#print axioms Spec.Sha3.shake128_size
-#print axioms Spec.Sha3.shake256_size
-#print axioms Spec.Sha3.pad_blocks
-#print axioms Spec.Sha3.pad_prefix
-#print axioms Spec.MlKem.byteEncode_size
-#print axioms Spec.MlKem.encode3_size
-#print axioms Spec.MlKem.keygen_ek_size
-#print axioms Spec.MlKem.keygen_dk_size
-#print axioms Spec.MlKem.encaps_ct_size
-#print axioms Spec.MlKem.decaps_size
+open Lean Elab Command
+
+namespace AxiomCheck
+
+/-- True when `name` is the `Spec` module or one of its submodules. -/
+def isSpecModule (name : Name) : Bool :=
+  (`Spec).isPrefixOf name
+
+/--
+Every theorem the `Spec` modules declare, sorted so two runs print the same
+lines in the same order.
+
+Each theorem is selected by the module that declares it, not by the
+namespace its name sits in. The two differ, and the difference is large: a
+private theorem is stored under a name like
+`_private.Spec.Sha3.0.Spec.Sha3.round_size`, which no filter on the `Spec`
+namespace matches, and `X509Der.lean` declares into `Spec.X509` rather than
+into a namespace of its own. Compiler-generated theorems, such as the
+`injEq` of a structure, come from the same modules and get checked too.
+-/
+def specTheorems (env : Environment) : Array Name :=
+  let fromSpec := env.header.moduleNames.map isSpecModule
+  let names := env.constants.fold (init := #[]) fun acc name info =>
+    if info.isTheorem then
+      match env.getModuleIdxFor? name with
+      | some idx => if fromSpec.getD idx.toNat false then acc.push name else acc
+      | none => acc
+    else acc
+  names.qsort Name.lt
+
+/--
+The module name each `Spec/*.lean` file defines. make lint-spec runs this
+file with `spec/` as the working directory, so the path is relative to it.
+-/
+def specModuleFiles : IO (Array Name) := do
+  let mut modules : Array Name := #[]
+  for entry in (← System.FilePath.readDir "Spec") do
+    if (← entry.path.isDir) then
+      throw <| IO.userError s!"Spec/{entry.fileName} is a directory, and this \
+        check reads only the flat Spec/*.lean files"
+    if entry.fileName.endsWith ".lean" then
+      let some stem := entry.path.fileStem
+        | throw <| IO.userError s!"Spec/{entry.fileName} has no stem to name a \
+            module after"
+      modules := modules.push (.str `Spec stem)
+  return modules
+
+end AxiomCheck
+
+run_cmd do
+  let env ← getEnv
+  -- spec/Spec.lean lists its imports by hand, so a new module can miss it.
+  -- That module still compiles under lake build, but its theorems never
+  -- enter this environment, which is the same gap the hand-written list of
+  -- theorems had.
+  for module in (← AxiomCheck.specModuleFiles) do
+    unless env.header.moduleNames.contains module do
+      throwError "{module} exists but spec/Spec.lean does not import it, so \
+        its theorems go unchecked"
+  let theorems := AxiomCheck.specTheorems env
+  -- An empty run would print no axiom lines at all, and the Makefile gate
+  -- reads no lines as nothing to report. Fail instead of passing silently.
+  if theorems.isEmpty then
+    throwError "the Spec modules declare no theorems, so this check would \
+      pass without checking anything"
+  for name in theorems do
+    let axioms ← collectAxioms name
+    let listed := ", ".intercalate (axioms.qsort Name.lt |>.toList.map toString)
+    -- The shape `#print axioms` emits, which the Makefile gate greps for. A
+    -- theorem that rests on no axiom prints an empty list, and the gate
+    -- reads that as nothing to report.
+    logInfo s!"'{name}' depends on axioms: [{listed}]"
+  logInfo s!"AxiomCheck: {theorems.size} theorems checked"
