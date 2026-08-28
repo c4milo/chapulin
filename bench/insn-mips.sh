@@ -177,6 +177,16 @@ static const uint8_t X25519_POINT[32] = {
     $(hexc e6db6867583030db3594c1a424b15f7c726624ec26b3353b10a903a6d0ab1c4c)};
 static const uint8_t X25519_WANT[32] = {
     $(hexc c3da55379de9c6908e94ea4df28d084f32eccf03491c71f754b4075577a28552)};
+// FIPS 203 known-answer vector 0, the same seeds test/mlkem_test.c checks,
+// so a wrong freestanding build fails loudly instead of counting garbage.
+static const uint8_t MLKEM_D[32] = {
+    $(hexc aeed86158e34d8e1f0a0b5eea10f6c10e8d5827ad42f444abb29c79510103184)};
+static const uint8_t MLKEM_Z[32] = {
+    $(hexc e3ee0a22d4686b6c8cb995e25893cdf12a974dc71a3672a706118f53a813dec7)};
+static const uint8_t MLKEM_M[32] = {
+    $(hexc a877c13d2d9b9ce9cb3a5708c8912103f0b052869c2aaccc34ea8268ed16c0b7)};
+static const uint8_t MLKEM_K_WANT[32] = {
+    $(hexc b100ca39eaf924878e62dd8fe70b6ba78d95e2d53217ba55c07d904c25d73850)};
 static const uint8_t P256_PUB[64] = {
     $(hexc 60fed4ba255a9d31c961eb74c6356d68c049b8923b61fa6ce669622e60f29fb6)
     $(hexc 7903fe1008b8bc99a41ae9e95628bc64f2f1b20c2d7e9f5177a3c294d4462299)};
@@ -223,6 +233,7 @@ cat > "$W/driver.c" <<'EOF'
 #include "ct.h"
 #include "hkdf.h"
 #include "keysched.h"
+#include "mlkem.h"
 #include "p256.h"
 #include "record.h"
 #include "rsa.h"
@@ -231,8 +242,14 @@ cat > "$W/driver.c" <<'EOF'
 
 #include "vectors.h"
 
-// Fixed message bytes; only lengths shape the work below.
-static uint8_t msg[1400];
+// Fixed message bytes; only lengths shape the work below. The hybrid
+// ClientHello is the longest flight, so its length sizes the buffer and
+// comes from MLKEM_EK_LEN rather than a number written here.
+#define CH_CLASSIC_LEN 218
+#define SH_CLASSIC_LEN 122
+#define CH_HYBRID_LEN (CH_CLASSIC_LEN + MLKEM_EK_LEN)
+#define SH_HYBRID_LEN (SH_CLASSIC_LEN + MLKEM_CT_LEN)
+static uint8_t msg[CH_HYBRID_LEN];
 static volatile uint32_t sink;
 
 #ifdef OP_HANDSHAKE
@@ -254,8 +271,8 @@ static uint32_t hs_once(void) {
     x25519_base(pub, X25519_SCALAR);
     ks_early(nopsk, sizeof nopsk, 0, early, binder);
     sha256_init(&tr);
-    sha256_update(&tr, msg, 218); // ClientHello
-    sha256_update(&tr, msg, 122); // ServerHello
+    sha256_update(&tr, msg, CH_CLASSIC_LEN); // ClientHello
+    sha256_update(&tr, msg, SH_CLASSIC_LEN); // ServerHello
     if (!x25519(ecdhe, X25519_SCALAR, X25519_POINT)) {
         return 0xffffffffu;
     }
@@ -311,6 +328,78 @@ static uint32_t hs_once(void) {
 }
 #endif
 
+#if defined(OP_HANDSHAKE_PQ)
+static uint32_t hs_once_pq(void) {
+    static const uint8_t nopsk[SHA256_LEN] = {0};
+    uint8_t early[32], binder[32], hs_sec[32], c_hs[32], s_hs[32];
+    uint8_t master[32], c_ap[32], s_ap[32], res[32];
+    uint8_t pub[32], hash[32], vdata[32], wire[32];
+    uint8_t ikm[MLKEM_SS_LEN + X25519_LEN];
+    static uint8_t server_ct[MLKEM_CT_LEN];
+    rec_dir rd, wr;
+    sha256 tr, snap;
+
+    // ClientHello: the x25519 share, and the ML-KEM key pair re-expanded
+    // from its seed. Only dk is needed here; the ek bytes live inside it.
+    x25519_base(pub, X25519_SCALAR);
+    {
+        uint8_t dk[MLKEM_DK_LEN];
+        mlkem_keygen_dk(dk, MLKEM_D, MLKEM_Z);
+        sink = dk[0];
+    }
+    ks_early(nopsk, sizeof nopsk, 0, early, binder);
+    sha256_init(&tr);
+    sha256_update(&tr, msg, CH_HYBRID_LEN);
+    sha256_update(&tr, msg, SH_HYBRID_LEN);
+
+    // hybrid_secret: second expansion, decapsulate, then x25519. ML-KEM
+    // occupies ikm[0..31] and x25519 ikm[32..63], RFC 10024's order.
+    {
+        uint8_t dk[MLKEM_DK_LEN];
+        mlkem_keygen_dk(dk, MLKEM_D, MLKEM_Z);
+        mlkem_decaps(ikm, server_ct, dk);
+    }
+    if (!x25519(ikm + MLKEM_SS_LEN, X25519_SCALAR, X25519_POINT)) {
+        return 0xffffffffu;
+    }
+    snap = tr;
+    sha256_final(&snap, hash);
+    ks_handshake(early, ikm, sizeof ikm, hash, hs_sec, c_hs, s_hs);
+    rec_dir_init(&rd, s_hs);
+    rec_dir_init(&wr, c_hs);
+
+    // The rest of the flight is the classic one: pq changes share sizes
+    // and secret derivation, not the messages after ServerHello.
+    sha256_update(&tr, msg, 40);
+    sha256_update(&tr, msg, 1400);
+    snap = tr;
+    sha256_final(&snap, hash);
+    if (rsa_pss_verify(RSA_N, sizeof RSA_N, RSA_HASH, RSA_SIG, sizeof RSA_SIG) != 1) {
+        return 0xffffffffu;
+    }
+    sha256_update(&tr, msg, 392);
+    snap = tr;
+    sha256_final(&snap, hash);
+    ks_verify_data(s_hs, hash, vdata);
+    for (size_t i = 0; i < 32; i++) { wire[i] = vdata[i]; }
+    if (!ct_memeq(vdata, wire, SHA256_LEN)) {
+        return 0xffffffffu;
+    }
+    sha256_update(&tr, msg, 36);
+    snap = tr;
+    sha256_final(&snap, hash);
+    ks_master(hs_sec, hash, master, c_ap, s_ap);
+    ks_verify_data(c_hs, hash, vdata);
+    sha256_update(&tr, msg, 36);
+    snap = tr;
+    sha256_final(&snap, hash);
+    ks_res_master(master, hash, res);
+    rec_dir_init(&rd, s_ap);
+    rec_dir_init(&wr, c_ap);
+    return (uint32_t)res[0] + rd.key[0] + wr.iv[0] + binder[0] + pub[0];
+}
+#endif
+
 int app_main(void) {
     for (size_t i = 0; i < sizeof msg; i++) { msg[i] = (uint8_t)(i * 251u + 17u); }
     uint32_t acc = 0;
@@ -357,6 +446,30 @@ int app_main(void) {
     }
     if (ITERS > 0) { bad = ok != ITERS; }
     acc += (uint32_t)ok;
+#elif defined(OP_MLKEM_KEYGEN)
+    static uint8_t ek[MLKEM_EK_LEN], dk[MLKEM_DK_LEN];
+    for (int k = 0; k < ITERS; k++) {
+        mlkem_keygen_derand(ek, dk, MLKEM_D, MLKEM_Z);
+        acc += dk[0];
+    }
+#elif defined(OP_MLKEM_DECAPS)
+    // The key pair and ciphertext are built outside the loop, so the
+    // ITERS=0 baseline carries them and the subtraction leaves decaps alone.
+    static uint8_t ek[MLKEM_EK_LEN], dk[MLKEM_DK_LEN];
+    static uint8_t kem_ct[MLKEM_CT_LEN], ss[MLKEM_SS_LEN];
+    mlkem_keygen_derand(ek, dk, MLKEM_D, MLKEM_Z);
+    if (mlkem_encaps_derand(kem_ct, ss, ek, MLKEM_M) != 0) { return 3; }
+    for (int k = 0; k < ITERS; k++) {
+        mlkem_decaps(ss, kem_ct, dk);
+        acc += ss[0];
+    }
+    if (ITERS > 0) { bad = !ct_memeq(ss, MLKEM_K_WANT, MLKEM_SS_LEN); }
+#elif defined(OP_HANDSHAKE_PQ)
+    for (int k = 0; k < ITERS; k++) {
+        uint32_t r = hs_once_pq();
+        if (r == 0xffffffffu) { bad = 1; }
+        acc += r;
+    }
 #elif defined(OP_HANDSHAKE)
     for (int k = 0; k < ITERS; k++) {
         uint32_t r = hs_once();
@@ -378,10 +491,11 @@ CC="clang -target mips-linux-musl -march=mips32r2 -mno-abicalls -fno-pic -G0 \
     -fuse-ld=lld -static -I/src -I$W/shim -I$W"
 SRCS="/src/ct.c /src/sha256.c /src/hkdf.c /src/chacha20.c /src/poly1305.c \
       /src/aead.c /src/x25519.c /src/p256.c /src/rsa.c /src/rsa_mont.c \
-      /src/buf.c /src/keysched.c /src/record.c"
+      /src/buf.c /src/keysched.c /src/record.c \
+      /src/sha3.c /src/mlkem.c /src/mlkem_poly.c"
 
 build() { # $1 = OP macro  $2 = ITERS  -> binary path on stdout
-    # CC holds the compiler and its flags, SRCS the thirteen source paths.
+    # CC holds the compiler and its flags, SRCS the sixteen source paths.
     # The shell has to split both into separate arguments; quoting either
     # would hand clang one argument containing spaces. Neither value holds a
     # glob character, so the other half of SC2086 does not apply.
@@ -425,7 +539,10 @@ row aead_seal_1kib AEAD_1K 16
 row x25519_scalarmult X25519 1
 row p256_ecdsa_verify P256 1
 row rsa_pss_verify_3072 RSA 1
+row mlkem_keygen MLKEM_KEYGEN 4
+row mlkem_decaps MLKEM_DECAPS 4
 row handshake_crypto HANDSHAKE 1
+row handshake_crypto_pq HANDSHAKE_PQ 1
 
 awk -v s="$N_SHA256_1K" -v h="$N_HKDF" -v a="$N_AEAD_1K" \
     -v x="$N_X25519" -v p="$N_P256" -v r="$N_RSA" -v hs="$N_HANDSHAKE" 'BEGIN {

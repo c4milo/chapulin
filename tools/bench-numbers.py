@@ -20,6 +20,9 @@ OPS = {
     "rsa_pss_verify_3072": "RSA-3072 PSS verify (default)",
     "p256_ecdsa_verify": "P-256 verify (`PIN=ecdsa`)",
     "handshake_crypto": "full pinned handshake crypto (default)",
+    "mlkem_keygen": "ML-KEM-768 keygen (`KEX=pq`)",
+    "mlkem_decaps": "ML-KEM-768 decapsulate (`KEX=pq`)",
+    "handshake_crypto_pq": "full hybrid handshake crypto (`KEX=pq`)",
 }
 
 

@@ -164,6 +164,9 @@ an in-order core, so read it as a lower bound.
 | RSA-3072 PSS verify (default) | 11.6 M | 23 |
 | P-256 verify (`PIN=ecdsa`) | 46.0 M | 92 |
 | full pinned handshake crypto (default) | 93.0 M | 186 |
+| ML-KEM-768 keygen (`KEX=pq`) | 3.2 M | 6 |
+| ML-KEM-768 decapsulate (`KEX=pq`) | 3.6 M | 7 |
+| full hybrid handshake crypto (`KEX=pq`) | 103.1 M | 206 |
 
 The multiply decomposition that keeps secrets off a variable-time
 `umull` sets the first and third rows. Measured against the same
@@ -176,6 +179,15 @@ Flash is 29.0 kB for the default build (`.text` + `.rodata`, `-Os`),
 of which the multiply decomposition is 1.7 kB, nearly all of it
 poly1305's unrolled block. The `PIN=ecdsa` build trades 2.3 kB of RSA
 for 5.9 kB of P-256 and totals 32.6 kB.
+
+The hybrid key exchange costs less than its wire size suggests. `KEX=pq`
+adds two ML-KEM key expansions and one decapsulation — the key pair lives
+as a 64-byte seed and is re-expanded rather than stored, which
+[`docs/decisions.md`](docs/decisions.md) 24 explains — for 10.1 M
+instructions, 11% over the classic handshake. One ML-KEM-768 keygen is
+an order of magnitude cheaper than one x25519 on this core, because
+chapulin keeps the 16-bit-limb ladder for its machine-checked overflow
+proof.
 
 Public-key work dominates. Every handshake runs two x25519 for forward
 secrecy, whichever mode it is in, so about 161 ms is the recurring
