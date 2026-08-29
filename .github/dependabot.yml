@@ -19,10 +19,10 @@
 # Actions updates, `build` for the npm ones. Both types are in commitlint's
 # list, and the header is the only part these settings control. Dependabot
 # writes the body itself and wraps none of it, so every one of its commits
-# would fail body-max-line-length and turn the pull request red, which
-# auto-merge reads as "do not merge". tools/commitlint.config.mjs therefore
-# ignores messages carrying Dependabot's sign-off trailer, and carries the
-# reasoning.
+# would fail body-max-line-length and turn the pull request red, and auto-merge
+# waits for a green check, so nothing would ever merge.
+# tools/commitlint.config.mjs therefore ignores messages carrying Dependabot's
+# sign-off trailer, and carries the reasoning.
 version: 2
 
 updates:

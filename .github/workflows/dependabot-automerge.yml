@@ -12,7 +12,7 @@ name: dependabot auto-merge
 #
 # What does not auto-merge: a major update. CLAUDE.md forbids adapting code
 # or suppressions to an older checker, and a major release of an action costs
-# the same kind of work in the other direction — it can drop a Node runtime,
+# the same kind of work — it can drop a Node runtime,
 # rename an output, or change a default, and deciding what that breaks here
 # is a person's job. A major update waits for review.
 #
@@ -26,8 +26,18 @@ name: dependabot auto-merge
 # refuses to enable auto-merge on a branch that requires no status checks, so
 # main needs at least one required check.
 
+# pull_request_target, not pull_request. A run that a Dependabot pull_request
+# triggers is treated as coming from a fork and gets a read-only token, and the
+# permissions block below cannot raise it, so `gh pr merge` would take a 403 on
+# every run. pull_request_target runs in the base repository's context, where
+# the token can write.
+#
+# That event is safe here only because this workflow checks out nothing and
+# runs no code from the pull request: it reads metadata and calls gh. Do not
+# add actions/checkout. Checking out github.event.pull_request.head.sha under
+# pull_request_target hands a write-scoped token to whatever the branch holds.
 on:
-  pull_request:
+  pull_request_target:
 
 # Read-only by default. The one job that writes asks for exactly what it
 # writes.
@@ -46,9 +56,9 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     # contents: write enables auto-merge; pull-requests: write lets
-    # fetch-metadata read the pull request and gh act on it. A pull_request
-    # event from Dependabot starts with a read-only token, so the job has to
-    # ask for both.
+    # fetch-metadata read the pull request and gh act on it. These take effect
+    # under pull_request_target and would not under pull_request, which is why
+    # the trigger is what it is.
     permissions:
       contents: write
       pull-requests: write
