@@ -37,7 +37,7 @@ record 95.0
 rsa_mul 32.3
 softmul 91.3
 
-# Not gated, because CBMC version 6.11.0 (cbmc-6.11.0) 64-bit arm64 macos does not converge on them
+# Not gated, because `cbmc --cover location` does not converge on them
 # at five minutes a harness. This is a limit of the measurement, not a
 # gap someone forgot: the same solver cost that makes the proof slow
 # makes counting its reachable locations slow. The nightly gets a
