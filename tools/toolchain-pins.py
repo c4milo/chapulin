@@ -24,7 +24,11 @@ ROOT = Path(__file__).resolve().parent.parent
 PINS = ROOT / "tools" / "toolchain.env"
 WORKFLOWS = sorted((ROOT / ".github" / "workflows").glob("*.yml"))
 
-LOADER = "Load the toolchain pins"
+# What matters is that the job sources the pins file, not what the step that
+# does it is called. check.yml and nightly.yml source it from a step named
+# "Load the toolchain pins"; toolchain-pins.yml sources it directly, because
+# reading and rewriting that file is the job.
+LOADS_PINS = re.compile(r"\.\s+\.?/?tools/toolchain\.env\b")
 
 # LLVM_MAJOR is checked through the versioned binary names rather than the
 # bare number, because "22" also appears in runner labels and timeouts.
@@ -90,10 +94,10 @@ def main():
                 for name in pins
                 if re.search(rf"\${name}\b", body) or f"env.{name}" in body
             }
-            if used and LOADER not in body:
+            if used and not LOADS_PINS.search(body):
                 problems.append(
-                    f"{rel}: job {job!r} reads {', '.join(sorted(used))} but has no "
-                    f"{LOADER!r} step, so the value is the empty string"
+                    f"{rel}: job {job!r} reads {', '.join(sorted(used))} without "
+                    "sourcing tools/toolchain.env, so the value is the empty string"
                 )
 
     if problems:
