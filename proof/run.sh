@@ -313,9 +313,15 @@ launch() {
 # expand_label 747 s / 2.2 GB.
 launch slow full hkdf_expand 120 "hkdf_expand.0:5" --object-bits 11 ct.c
 launch slow full hkdf_expand_label 120 "hkdf_expand.0:5" --object-bits 11 ct.c
-launch slow full aead 85 "blocks.0:10,chacha20_xor.1:4" chacha20.c poly1305.c ct.c
-launch slow full aead_overlap 85 "blocks.0:10,chacha20_xor.1:4" chacha20.c poly1305.c ct.c
-launch slow full aead_forge 85 "blocks.0:10,chacha20_xor.1:4" chacha20.c poly1305.c ct.c
+# These three prove aead.c's framing against the contract stubs in
+# proof/aead_stubs.h rather than compiling chacha20.c and poly1305.c into
+# every formula. Concretely they returned no verdict in five hours a night;
+# measured now: 3 s, 2 s and 2 s. What the stubs model, and what moved from
+# proof to argument, is written at the top of that header
+# (https://github.com/c4milo/chapulin/issues/56).
+launch fast full aead 85 "fill_nondet.0:65" ct.c
+launch fast full aead_overlap 85 "fill_nondet.0:65" ct.c
+launch fast full aead_forge 85 "fill_nondet.0:65" ct.c
 # aead_inplace has no launch line: its formula returned no verdict in an
 # hour under kissat (3.8 GB and climbing), and an unconverged launch line
 # proves nothing (docs/proofs.md). The harness is written and reviewed, so

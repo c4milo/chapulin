@@ -5,6 +5,8 @@
 // Split out of aead_harness.c; see aead_overlap_harness.c for why.
 #include "harness.h"
 
+#include "aead_stubs.h"
+
 #include "aead.c"
 
 int main(void) {

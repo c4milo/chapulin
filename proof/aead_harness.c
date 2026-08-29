@@ -9,6 +9,8 @@
 // SAT cost grows super-linearly with formula size.
 #include "harness.h"
 
+#include "aead_stubs.h"
+
 #include "aead.c"
 
 int main(void) {

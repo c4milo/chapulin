@@ -9,6 +9,8 @@
 // aead and aead_forge this covers what the single harness asserted.
 #include "harness.h"
 
+#include "aead_stubs.h"
+
 #include "aead.c"
 
 int main(void) {
