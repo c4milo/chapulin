@@ -55,22 +55,74 @@ def read_pins():
 
 
 def split_jobs(text):
-    """Yield (job_name, body) for each top-level job in a workflow."""
+    """Yield (job_name, body) for each job under the top-level `jobs:` key.
+
+    Jobs are found by indentation, which is what YAML uses to delimit them,
+    rather than by how the name is spelled. Keying on the name missed
+    `build: # only on tags` and `"build":` — both legal — and a missed header
+    is not a skipped job but a job whose body merges into the one above it,
+    so a job with no loader step inherits the loader of its predecessor and
+    the check passes when it should fail.
+    """
     lines = text.split("\n")
-    starts = [
-        (i, m.group(1))
-        for i, line in enumerate(lines)
-        if (m := re.match(r"^  ([A-Za-z][\w-]*):\s*$", line))
-    ]
-    # Everything above the first job header is `on:`/`env:` preamble.
-    for n, (i, name) in enumerate(starts):
-        end = starts[n + 1][0] if n + 1 < len(starts) else len(lines)
+    try:
+        start = next(
+            i for i, l in enumerate(lines) if re.match(r"^jobs:\s*(#.*)?$", l)
+        )
+    except StopIteration:
+        return
+
+    heads = []
+    end_of_jobs = len(lines)
+    for i in range(start + 1, len(lines)):
+        line = lines[i]
+        if line.strip() and not line.startswith(" "):
+            end_of_jobs = i  # a new top-level key closes the jobs block
+            break
+        if re.match(r"^  [^\s#].*:", line):
+            name = line.strip().split(":", 1)[0].strip("\"'")
+            heads.append((i, name))
+
+    for n, (i, name) in enumerate(heads):
+        end = heads[n + 1][0] if n + 1 < len(heads) else end_of_jobs
         yield name, "\n".join(lines[i:end])
+
+
+# A version tag is a pointer its owner can move; a commit SHA is not. Every
+# action reference was converted by hand, and nothing stopped the next one from
+# arriving as a tag: `uses: some-org/thing@v2` pasted from a README passed every
+# check in the tree. Local `./` paths are exempt because they carry no upstream.
+USES = re.compile(r"^\s*-?\s*uses:\s*(\S+)(?:\s+#\s*(\S+))?")
+PINNED_REF = re.compile(r"^[\w.-]+/[\w.-]+(?:/[\w.-]+)*@[0-9a-f]{40}$")
+
+
+def check_action_refs(problems):
+    """Every `uses:` names a 40-character commit SHA and its version in a comment."""
+    for wf in WORKFLOWS:
+        rel = wf.relative_to(ROOT)
+        for i, line in enumerate(wf.read_text().split("\n"), 1):
+            m = USES.match(line)
+            if not m:
+                continue
+            ref, comment = m.group(1), m.group(2)
+            if ref.startswith("./"):
+                continue
+            if not PINNED_REF.match(ref):
+                problems.append(
+                    f"{rel}:{i}: {ref} is not pinned to a commit SHA; a tag can be "
+                    f"moved by whoever owns the action\n    {line.strip()}"
+                )
+            elif not comment:
+                problems.append(
+                    f"{rel}:{i}: {ref} has no trailing version comment, so a reader "
+                    f"cannot tell which release this is\n    {line.strip()}"
+                )
 
 
 def main():
     pins = read_pins()
     problems = []
+    check_action_refs(problems)
 
     hardcoded = {v: k for k, v in pins.items() if k not in LITERAL_SKIP}
     for pattern in DERIVED:
@@ -105,9 +157,15 @@ def main():
             print(f"lint-pins: {p}")
         return 1
 
+    refs = sum(
+        1
+        for w in WORKFLOWS
+        for line in w.read_text().split("\n")
+        if USES.match(line)
+    )
     print(
-        f"lint-pins: {len(pins)} versions, one source, "
-        f"every job that reads one loads it"
+        f"lint-pins: {len(pins)} versions from one file, {refs} action refs on a "
+        f"commit SHA, every job that reads a pin loads it"
     )
     return 0
 
