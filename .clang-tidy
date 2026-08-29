@@ -22,6 +22,44 @@
 #   encoding. Fires on Linux builds of clang-tidy 22 and not on macOS
 #   builds of the same version, so this is the check's judgment, not a
 #   version gap.
+# - bugprone-signed-bitwise: 351 findings across the tree, none a defect. The
+#   crypto cores hold 245 of them and mean them: x25519 carries `int64_t
+#   fe[16]` limbs, and ct.h's widening multiply builds its corrections from
+#   two's-complement masks on signed values, which is what keeps a limb's sign
+#   off the control path. Most of the rest are integer promotion -- a uint8_t
+#   or uint16_t widens to signed int, and the value cannot be negative.
+#   The check's one genuinely undefined case, left-shifting a negative value,
+#   was already found and fixed by hand at x25519.c:23-26, with the reasoning
+#   written beside it.
+#   What replaces the check is stronger than the check. Every module carrying
+#   a finding runs a CBMC harness under run.sh's `full` set, which proves
+#   absence of signed overflow and UB over unconstrained inputs at the
+#   module's real bound: aead, buf, chacha20, ct, handshake_parser,
+#   handshake_post, hkdf, io, mlkem, mlkem_poly, p256, poly1305, record, rsa,
+#   sha256, sha3, x509, and x25519's ops and mul lemma. rsa_mont.c and
+#   handshake_message.c are covered too, through the rsa_mul and hello_build
+#   harnesses that compile them. One shipped source has no harness, tls.c, so
+#   its two sites were read by hand: both are `server_pubkey[len - 1] & 1` on
+#   a uint8_t array element, checking an RSA modulus is odd.
+#   `make lint-proof-cover` holds that claim: it fails when a shipped source is
+#   neither compiled by a `full` harness nor recorded in tools/proof-cover.py's
+#   audited list.
+# - readability-trailing-comma: 138 findings, every one cosmetic, and its
+#   automatic fix is unsafe on this tree. Most of them sit in test vector
+#   headers, which do not parse standalone -- they read identifiers the
+#   including .c file declares -- so clang-tidy builds a broken AST and applies
+#   its fix at the wrong offset. Run against test/x509_chain_tests.h it turned
+#   `size_t n = put_entry(...)` into `sizeof n = put_entry(...)`. Applying 138
+#   style edits by hand across the vector tables buys nothing a reader values,
+#   and clang-format, which is this tree's formatting authority, has no opinion
+#   on the trailing comma either way.
+# - clang-analyzer-optin.taint.GenericTaint: new in clang-tidy 23, and it can
+#   only ever fire outside the library. chapulin makes no system call at all --
+#   the caller supplies every I/O callback -- so no shipped source reaches
+#   execl, system or popen. Its one finding is test/diff_driver.h:124, where
+#   the differential driver execs the Lean spec binary named by argv[1]
+#   (test/diff_test.c:36, defaulting to spec/.lake/build/bin/diffspec). That is
+#   the developer naming a path on their own command line.
 # - readability-math-missing-parentheses: byte-packing indices like
 #   p[4 * i + 1] saturate this codebase; the precedence is grade-school and
 #   the parens would be pure noise.
@@ -44,13 +82,16 @@ Checks: >
   readability-*,
   -bugprone-easily-swappable-parameters,
   -bugprone-not-null-terminated-result,
+  -bugprone-signed-bitwise,
   -bugprone-suspicious-include,
   -clang-analyzer-security.insecureAPI.DeprecatedOrUnsafeBufferHandling,
+  -clang-analyzer-optin.taint.GenericTaint,
   -misc-include-cleaner,
   -readability-identifier-length,
   -readability-implicit-bool-conversion,
   -readability-magic-numbers,
-  -readability-math-missing-parentheses
+  -readability-math-missing-parentheses,
+  -readability-trailing-comma
 WarningsAsErrors: '*'
 CheckOptions:
   readability-function-cognitive-complexity.Threshold: '15'
