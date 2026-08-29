@@ -203,14 +203,14 @@ jobs:
           set -euo pipefail
           bumps="$RUNNER_TEMP/bumps.tsv"
 
-          while IFS=$'\t' read -r name old new url; do
+          while IFS=$'\t' read -r name _ new _; do
             sed -i "s|^$name=.*|$name=$new|" tools/toolchain.env
           done < "$bumps"
 
           # Assert, do not print. A sed that matched nothing leaves the old
           # value in place, and the pull request would then claim a bump it
           # never made.
-          while IFS=$'\t' read -r name old new url; do
+          while IFS=$'\t' read -r name _ new _; do
             grep -qxF "$name=$new" tools/toolchain.env ||
               { echo "the rewrite did not set $name to $new"; exit 1; }
           done < "$bumps"
