@@ -29,10 +29,21 @@ jobs:
     timeout-minutes: 300
     steps:
       - uses: actions/checkout@v7
+      - name: Load the toolchain pins
+        # tools/toolchain.env is the one place a tool version is written,
+        # so a bump moves one line and both this workflow and the Makefile
+        # follow it.
+        run: |
+          . tools/toolchain.env
+          {
+            echo "CBMC_VERSION=$CBMC_VERSION"
+            echo "KISSAT_VERSION=$KISSAT_VERSION"
+            echo "GO_VERSION=$GO_VERSION"
+          } >> "$GITHUB_ENV"
       - name: Install CBMC
         run: |
-          curl -fsSLO https://github.com/diffblue/cbmc/releases/download/cbmc-6.11.0/ubuntu-24.04-cbmc-6.11.0-Linux.deb
-          sudo dpkg -i ubuntu-24.04-cbmc-6.11.0-Linux.deb
+          curl -fsSLO "https://github.com/diffblue/cbmc/releases/download/cbmc-$CBMC_VERSION/ubuntu-24.04-cbmc-$CBMC_VERSION-Linux.deb"
+          sudo dpkg -i "ubuntu-24.04-cbmc-$CBMC_VERSION-Linux.deb"
       - run: make proof-reach
       - name: Render the reachability table on the run page
         if: always()
@@ -50,15 +61,26 @@ jobs:
         proof: [hkdf_expand, hkdf_expand_label, x25519, x25519_mul_alias_a, x25519_mul_alias_b, x25519_mul_inputs_alias, x25519_sqr, handshake_psk, handshake_pin, x509parse, mlkem_ntt, mlkem_invntt_low, mlkem_invntt_high, mlkem_basemul]
     steps:
       - uses: actions/checkout@v7
+      - name: Load the toolchain pins
+        # tools/toolchain.env is the one place a tool version is written,
+        # so a bump moves one line and both this workflow and the Makefile
+        # follow it.
+        run: |
+          . tools/toolchain.env
+          {
+            echo "CBMC_VERSION=$CBMC_VERSION"
+            echo "KISSAT_VERSION=$KISSAT_VERSION"
+            echo "GO_VERSION=$GO_VERSION"
+          } >> "$GITHUB_ENV"
       - name: Install CBMC
         run: |
-          curl -fsSLO https://github.com/diffblue/cbmc/releases/download/cbmc-6.11.0/ubuntu-24.04-cbmc-6.11.0-Linux.deb
-          sudo dpkg -i ubuntu-24.04-cbmc-6.11.0-Linux.deb
+          curl -fsSLO "https://github.com/diffblue/cbmc/releases/download/cbmc-$CBMC_VERSION/ubuntu-24.04-cbmc-$CBMC_VERSION-Linux.deb"
+          sudo dpkg -i "ubuntu-24.04-cbmc-$CBMC_VERSION-Linux.deb"
       - name: Cache kissat install
         uses: actions/cache@v6
         with:
           path: ~/kissat-inst
-          key: kissat-${{ runner.os }}-rel-4.0.4
+          key: kissat-${{ runner.os }}-${{ env.KISSAT_VERSION }}
       - name: Build and install kissat
         # Every leg here sets PROVE_ONLY, and a lone proof keeps kissat
         # whatever it weighs — the budget fallback applies only to whole-
@@ -69,8 +91,8 @@ jobs:
         # x25519 went from cancelled-at-cap to 847 s this way.
         run: |
           if [ ! -x ~/kissat-inst/kissat ]; then
-            curl -fsSL https://github.com/arminbiere/kissat/archive/refs/tags/rel-4.0.4.tar.gz | tar xz
-            cd kissat-rel-4.0.4
+            curl -fsSL "https://github.com/arminbiere/kissat/archive/refs/tags/$KISSAT_VERSION.tar.gz" | tar xz
+            cd "kissat-$KISSAT_VERSION"
             ./configure
             make -j"$(nproc)"
             mkdir -p ~/kissat-inst
@@ -179,6 +201,17 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v7
+      - name: Load the toolchain pins
+        # tools/toolchain.env is the one place a tool version is written,
+        # so a bump moves one line and both this workflow and the Makefile
+        # follow it.
+        run: |
+          . tools/toolchain.env
+          {
+            echo "CBMC_VERSION=$CBMC_VERSION"
+            echo "KISSAT_VERSION=$KISSAT_VERSION"
+            echo "GO_VERSION=$GO_VERSION"
+          } >> "$GITHUB_ENV"
       - name: Install elan
         run: |
           curl -sSf https://elan.lean-lang.org/elan-init.sh | sh -s -- -y --default-toolchain none
@@ -194,7 +227,7 @@ jobs:
         with:
           # Keep in step with GO_VERSION in check.yml, which is the pin of
           # record; lint-go-pin fails when the two drift.
-          go-version: "1.27.0"
+          go-version: ${{ env.GO_VERSION }}
       - name: Break every invariant and see what objects
         run: |
           set -o pipefail

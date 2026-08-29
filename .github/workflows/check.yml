@@ -96,39 +96,54 @@ jobs:
     # move work there rather than raising it.
     timeout-minutes: 180 # the slow half runs here on main and nightly
     env:
-      # CI runs the same tool versions as development. When the local
-      # toolchain upgrades, bump these pins in the same commit — never
-      # adapt the code to an older checker. The Makefile's ?= picks
-      # these up.
-      LLVM_MAJOR: 22
-      CLANG_TIDY: clang-tidy-22
-      CLANG_FORMAT: clang-format-22
-      # The codegen lints disassemble what this compiler emits, so it has to
-      # be the pinned one. Unset, it fell back to the runner image's default
-      # clang and lint-wide-multiply read a different lowering than the
-      # development machine.
-      CLANG_RV: clang-22
-      CPPCHECK_VERSION: 2.21.0
+      # Only the install paths live here. Every version comes from
+      # tools/toolchain.env, which the Makefile includes and the "Load the
+      # toolchain pins" step below reads into the job environment, so a
+      # runner and a development machine resolve the same pins from the same
+      # line. The version numbers used to sit in this block and nowhere
+      # else, which meant they applied on CI and not locally.
       CPPCHECK: /home/runner/cppcheck-inst/bin/cppcheck
-      # The runner image ships whatever shellcheck Ubuntu packages, and the
-      # codes it reports move between releases. lint-shellcheck must fail on
-      # the same set the development machine sees.
-      SHELLCHECK_VERSION: 0.11.0
       SHELLCHECK: /home/runner/shellcheck-inst/shellcheck
-      # The runner image ships OpenSSL 3.0, which predates the
-      # `x509 -req -not_before` flag that docs/ca.md tells operators to
-      # use for epoch dates. Pinning the development version keeps e2e
-      # on the documented recipe instead of the 3.0 fallback.
-      OPENSSL_VERSION: 3.6.3
       OPENSSL_PREFIX: /home/runner/openssl-inst
-      # test/goecho backs the e2e go and go-pq legs, and which curves Go
-      # offers by default moves between releases. Without this the legs
-      # ran on whatever Go the runner image shipped.
-      GO_VERSION: "1.27.0"
     steps:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0 # commitlint lints commit ranges, not just HEAD
+
+      - name: Load the toolchain pins
+        # tools/toolchain.env is the one place a tool version is written. The
+        # binary names are derived from LLVM_MAJOR here rather than repeated,
+        # so a bump moves one line. apt.llvm.org installs the versioned
+        # names, which is why CLANG_TIDY and friends are spelled with the
+        # major appended.
+        run: |
+          . tools/toolchain.env
+          {
+            echo "LLVM_MAJOR=$LLVM_MAJOR"
+            echo "CLANG_TIDY=clang-tidy-$LLVM_MAJOR"
+            echo "CLANG_FORMAT=clang-format-$LLVM_MAJOR"
+            # The codegen lints disassemble what this compiler emits, so it
+            # has to be the pinned one. Unset, it fell back to the runner
+            # image's default clang and lint-wide-multiply read a different
+            # lowering than the development machine.
+            echo "CLANG_RV=clang-$LLVM_MAJOR"
+            echo "CPPCHECK_VERSION=$CPPCHECK_VERSION"
+            # The runner image ships whatever shellcheck Ubuntu packages, and
+            # the codes it reports move between releases. lint-shellcheck must
+            # fail on the same set the development machine sees.
+            echo "SHELLCHECK_VERSION=$SHELLCHECK_VERSION"
+            # The runner image ships OpenSSL 3.0, which predates the
+            # `x509 -req -not_before` flag that docs/ca.md tells operators to
+            # use for epoch dates. Pinning the development version keeps e2e
+            # on the documented recipe instead of the 3.0 fallback.
+            echo "OPENSSL_VERSION=$OPENSSL_VERSION"
+            # test/goecho backs the e2e go and go-pq legs, and which curves Go
+            # offers by default moves between releases. Without this the legs
+            # ran on whatever Go the runner image shipped.
+            echo "GO_VERSION=$GO_VERSION"
+            echo "CBMC_VERSION=$CBMC_VERSION"
+            echo "KISSAT_VERSION=$KISSAT_VERSION"
+          } >> "$GITHUB_ENV"
 
       - uses: actions/setup-go@v6
         with:
@@ -256,15 +271,15 @@ jobs:
 
       - name: Install CBMC
         run: |
-          curl -fsSLO https://github.com/diffblue/cbmc/releases/download/cbmc-6.11.0/ubuntu-24.04-cbmc-6.11.0-Linux.deb
-          sudo dpkg -i ubuntu-24.04-cbmc-6.11.0-Linux.deb
+          curl -fsSLO "https://github.com/diffblue/cbmc/releases/download/cbmc-$CBMC_VERSION/ubuntu-24.04-cbmc-$CBMC_VERSION-Linux.deb"
+          sudo dpkg -i "ubuntu-24.04-cbmc-$CBMC_VERSION-Linux.deb"
           cbmc --version
 
       - name: Cache kissat install
         uses: actions/cache@v6
         with:
           path: ~/kissat-inst
-          key: kissat-${{ runner.os }}-rel-4.0.4
+          key: kissat-${{ runner.os }}-${{ env.KISSAT_VERSION }}
 
       - name: Build and install kissat at the development version
         # proof/run.sh uses kissat as the SAT back end when present;
@@ -273,8 +288,8 @@ jobs:
         # a dependency-free C build that takes seconds.
         run: |
           if [ ! -x ~/kissat-inst/kissat ]; then
-            curl -fsSL https://github.com/arminbiere/kissat/archive/refs/tags/rel-4.0.4.tar.gz | tar xz
-            cd kissat-rel-4.0.4
+            curl -fsSL "https://github.com/arminbiere/kissat/archive/refs/tags/$KISSAT_VERSION.tar.gz" | tar xz
+            cd "kissat-$KISSAT_VERSION"
             ./configure
             make -j"$(nproc)"
             mkdir -p ~/kissat-inst
