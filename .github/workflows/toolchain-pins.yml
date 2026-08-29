@@ -10,8 +10,8 @@ name: toolchain-pins
 # the bump costs, and a person reads that measurement and decides.
 #
 # GitHub Actions and the npm packages under tools/ are the other half of the
-# same problem, and Dependabot handles them: those updates produce no new
-# findings, so a green patch or minor release may merge on its own.
+# same problem, and .github/dependabot.yml handles them: those updates produce
+# no new findings, so a green patch or minor version may merge on its own.
 #
 # Two rules keep the proposal worth reading. LLVM_MAJOR is itself a major, so
 # this job reports the newest major. Every other pin moves only inside its own
@@ -27,13 +27,13 @@ name: toolchain-pins
 on:
   schedule:
     - cron: "37 5 * * 1" # Mondays, after the nightly and the daily check
-  workflow_dispatch: # run it by hand when a release lands mid-week
+  workflow_dispatch: # run it by hand when a release appears mid-week
 
 permissions:
   contents: write # push the branch this job commits to
   pull-requests: write # open or update the pull request
 
-# One run at a time: the branch below is a fixed name and two runs would
+# One run at a time: the branch below has a fixed name and two runs would
 # force-push over each other. Queue rather than cancel, so a run that has
 # already pushed still opens its pull request.
 concurrency:
@@ -50,6 +50,10 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          # Full history: GitHub refuses some pushes from a shallow clone, and
+          # this job pushes a branch. The repository is small, so a full
+          # clone costs about a second.
+          fetch-depth: 0
           # A pull request opened with GITHUB_TOKEN starts no workflow run, and
           # this pull request exists for its check run. Set the
           # TOOLCHAIN_PIN_TOKEN secret to a token with contents and
@@ -57,17 +61,30 @@ jobs:
           # opens, and someone has to close and reopen it to start the checks.
           token: ${{ secrets.TOOLCHAIN_PIN_TOKEN || secrets.GITHUB_TOKEN }}
 
+      - name: Load the toolchain pins
+        # tools/toolchain.env is the one place a tool version is written, so a
+        # bump moves one line and both this workflow and the Makefile follow
+        # it. This job loads every pin, because every pin is one it checks. The
+        # values here are the ones the checked-out ref holds, which is what the
+        # pull request reports as the old value.
+        run: |
+          . tools/toolchain.env
+          {
+            echo "LLVM_MAJOR=$LLVM_MAJOR"
+            echo "CPPCHECK_VERSION=$CPPCHECK_VERSION"
+            echo "SHELLCHECK_VERSION=$SHELLCHECK_VERSION"
+            echo "CBMC_VERSION=$CBMC_VERSION"
+            echo "KISSAT_VERSION=$KISSAT_VERSION"
+            echo "OPENSSL_VERSION=$OPENSSL_VERSION"
+            echo "GO_VERSION=$GO_VERSION"
+          } >> "$GITHUB_ENV"
+
       - name: Ask upstream for the newest release of each pin
         id: read
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-
-          # The pins, read from the file that owns them. Nothing here restates
-          # a version number: lint-pins fails a workflow that does.
-          . ./tools/toolchain.env
-
           tags="$RUNNER_TEMP/tags.txt"
           bumps="$RUNNER_TEMP/bumps.tsv"
           : > "$bumps"
@@ -87,7 +104,7 @@ jobs:
 
             pinned=${value#"$value_prefix"}
             series=${pinned%%.*}
-            # sort -V orders version numbers. The API returns tags in neither
+            # sort -V orders version numbers. The APIs return tags in neither
             # version nor release order, so never read the first line instead.
             candidates=$(sort -V -u)
             newest=$(printf '%s\n' "$candidates" |
@@ -96,8 +113,8 @@ jobs:
 
             if [ "${highest%%.*}" != "$series" ]; then
               echo "::notice::$name: upstream released $value_prefix$highest, a" \
-                   "new major series. This job keeps the pin at $value; crossing" \
-                   "a major is a decision for a person."
+                   "new major series. This job keeps the pin at $value, because" \
+                   "crossing a major is a decision for a person."
             fi
             if [ -z "$newest" ]; then
               echo "::warning::$name: upstream returned no $series.x release." \
@@ -105,8 +122,8 @@ jobs:
               return 0
             fi
             [ "$newest" != "$pinned" ] || return 0
-            # Only ever move forward. A withdrawn release or a parse that read
-            # the wrong tags must not rewrite a pin downwards.
+            # Only ever move forward. A withdrawn release, or a parse that read
+            # the wrong tags, must not rewrite a pin downwards.
             if [ "$(printf '%s\n%s\n' "$pinned" "$newest" | sort -V | tail -1)" != "$newest" ]; then
               echo "::warning::$name: upstream $newest is older than the pinned" \
                    "$pinned. Keeping $value."
@@ -117,8 +134,8 @@ jobs:
           }
 
           # LLVM. The pin is a major, so report the newest major and link to the
-          # newest full release inside it. Prereleases are the -rc tags, which
-          # the three-number filter drops as well.
+          # newest full release inside it. The three-number filter drops the -rc
+          # tags, which the prerelease flag drops as well.
           gh api "repos/llvm/llvm-project/releases?per_page=100" \
             --jq '.[] | select(.prerelease | not) | .tag_name' > "$tags"
           llvm_release=$(sed -n 's/^llvmorg-\([0-9][0-9.]*\)$/\1/p' "$tags" | sort -V | tail -1)
@@ -130,9 +147,9 @@ jobs:
           fi
 
           # cppcheck and kissat publish tags rather than releases, and the tags
-          # endpoint pages: cppcheck has over a hundred, so ask for all of them
-          # and let sort -V pick. The releases endpoints below return newest
-          # first, so one page of 100 covers years.
+          # endpoint pages: cppcheck has over a hundred tags, so ask for all of
+          # them and let sort -V pick. The releases endpoints below answer
+          # newest first, so one page of 100 covers years.
           gh api --paginate "repos/danmar/cppcheck/tags?per_page=100" --jq '.[].name' |
             sed -n 's/^\([0-9][0-9.]*\)$/\1/p' |
             consider CPPCHECK_VERSION "$CPPCHECK_VERSION" "" \
@@ -162,8 +179,8 @@ jobs:
               "https://github.com/openssl/openssl/releases/tag/openssl-"
 
           # go.dev is the only source that is not a GitHub repository. Its
-          # stable list names the two supported branches; sort -V picks the
-          # newer. curl -f so a bad response fails the step instead of feeding
+          # stable list names the two supported branches, and sort -V picks the
+          # newer. curl -f so a bad response fails this step instead of handing
           # consider an empty list.
           curl -fsSL "https://go.dev/dl/?mode=json" |
             jq -r '.[] | select(.stable) | .version' |
@@ -191,16 +208,16 @@ jobs:
           done < "$bumps"
 
           # Assert, do not print. A sed that matched nothing leaves the old
-          # value in place, and the pull request would claim a bump it never
-          # made.
+          # value in place, and the pull request would then claim a bump it
+          # never made.
           while IFS=$'\t' read -r name old new url; do
             grep -qxF "$name=$new" tools/toolchain.env ||
               { echo "the rewrite did not set $name to $new"; exit 1; }
           done < "$bumps"
 
-          # The Makefile includes this file and CI sources it, so a line that
-          # is not a comment, a blank, or NAME=value breaks one of the two
-          # readers. Quotes and spaces are what a careless rewrite adds.
+          # The Makefile includes this file and CI sources it, so a line that is
+          # not a comment, a blank, or NAME=value breaks one of the two readers.
+          # Spaces and quotes are what a careless rewrite adds.
           shape='^(#|$|[A-Z][A-Z0-9_]*=[^[:space:]"'"'"']*$)'
           if grep -nvE "$shape" tools/toolchain.env; then
             echo "the rewrite broke the NAME=value format shown above"
@@ -215,9 +232,9 @@ jobs:
           bumps="$RUNNER_TEMP/bumps.tsv"
           count=$(wc -l < "$bumps" | tr -d ' ')
 
-          # Conventional Commits, type build; commitlint runs on this branch in
-          # the check workflow. The subject starts lowercase and ends without a
-          # full stop, which is what config-conventional's subject-case and
+          # Conventional Commits, type build. commitlint runs on this branch in
+          # the check workflow, so the subject starts lowercase and ends without
+          # a full stop, which is what config-conventional's subject-case and
           # subject-full-stop rules require.
           if [ "$count" -eq 1 ]; then
             IFS=$'\t' read -r name old new url < "$bumps"
@@ -226,7 +243,7 @@ jobs:
             subject="build(toolchain): bump $count pins to their newest upstream releases"
           fi
 
-          # The pull request title is the commit subject, read back from the
+          # The pull request title is this commit subject, read back from this
           # same file, so the two cannot say different things.
           {
             echo "$subject"
@@ -273,9 +290,9 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-          # One fixed branch, rebuilt from the checked-out ref every run. A
-          # pull request that is already open therefore shows the pins that are
-          # stale today, not the ones that were stale the week it opened.
+          # One fixed branch, rebuilt from the checked-out ref every run. A pull
+          # request that is already open therefore lists the pins that are stale
+          # today, not the ones that were stale the week it opened.
           git checkout -B "$BRANCH"
           git add tools/toolchain.env
           git commit --file "$RUNNER_TEMP/commit-msg.txt"
