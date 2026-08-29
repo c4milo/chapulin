@@ -39,8 +39,12 @@ int main(void) {
     uint32_t wild_k = nondet_u32();
     (void)ct_mulsmall(wild_m, wild_k);
 
+    uint32_t wild_oa = nondet_u32();
+    uint32_t wild_ob = nondet_u32();
+    (void)ct_widemul_opaque(wild_oa, wild_ob);
+
     // Equivalence, at a measured bound. Same flags as the launch line: 8-bit
-    // operands verify in 33 s under kissat and 106 s under the built-in
+    // operands verify in 39 s under kissat and 106 s under the built-in
     // solver; 16-bit returned no verdict in 900 s and was stopped there.
     // 32-bit is unmeasured -- the 16-bit result made it not worth the run.
     // Equivalence of two multipliers is the classic hard SAT instance, which
@@ -67,6 +71,15 @@ int main(void) {
     // ct_mulsmall's callers pass a literal 37 or 38 (x25519.c), so k's high
     // half is a compile-time zero there. Prove it over a symbolic k anyway,
     // because the header states the general contract.
+    // The opaque form reads its operands through volatile and must return the
+    // same product; mlk_compress depends on both halves of that.
+    uint32_t oa = nondet_u32();
+    uint32_t ob = nondet_u32();
+    __CPROVER_assume(oa <= CH_WIDEMUL_BOUND);
+    __CPROVER_assume(ob <= CH_WIDEMUL_BOUND);
+    __CPROVER_assert(ct_widemul_opaque(oa, ob) == (uint64_t)oa * ob,
+                     "ct_widemul_opaque matches the C product");
+
     uint64_t m = nondet_u64();
     uint32_t k = nondet_u32();
     __CPROVER_assume(m <= CH_WIDEMUL_BOUND);

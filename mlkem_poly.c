@@ -50,8 +50,13 @@ static uint16_t mlk_freeze(int16_t a) {
 // the rounding is exact only with the ceiling, not the floor.
 static uint16_t mlk_compress(uint16_t x, unsigned d) {
     // x < q and d <= 11, so the left operand is under 2^23 and this is a
-    // 32x32 product: ct_widemul keeps it off the M3's variable-time umull.
-    uint64_t t = ct_widemul(((uint32_t)x << d) + 1664U, 1290168U);
+    // 32x32 product: the decomposition keeps it off the M3's variable-time
+    // umull. _opaque, because d is a compile-time constant at every call and
+    // the two smallest ones bound the operand under 2^16 -- d=1 reaches 8320
+    // and d=4 reaches 54912. That lets the optimiser prove the operand's high
+    // half is zero and rebuild a widening multiply from what is left, which
+    // clang 22 does on rv32imac for the d=1 call in mlk_poly_tomsg.
+    uint64_t t = ct_widemul_opaque(((uint32_t)x << d) + 1664U, 1290168U);
     return (uint16_t)((t >> 32) & ((1U << d) - 1U));
 }
 

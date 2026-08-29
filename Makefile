@@ -1114,7 +1114,8 @@ RV_ALLOWED := __udivsi3
 # name:triple:cpu-flag:comma-separated opcodes.
 WIDEMUL_SPECS := \
   m3:thumbv7m-none-eabi:-mcpu=cortex-m3:umull,smull,umlal,smlal \
-  mips32r2:mips-linux-musl:-march=mips32r2:mult,multu,madd,maddu
+  mips32r2:mips-linux-musl:-march=mips32r2:mult,multu,madd,maddu \
+  rv32imac:riscv32-unknown-elf:-march=rv32imac:mulh,mulhu,mulhsu
 WIDEMUL_CEILING := poly1305.c:0 mlkem_poly.c:0 x25519.c:0 sha3.c:1
 .PHONY: lint-wide-multiply
 lint-wide-multiply:

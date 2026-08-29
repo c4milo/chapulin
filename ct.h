@@ -83,6 +83,31 @@ static inline uint64_t ct_widemul(uint32_t a, uint32_t b) {
 #endif
 }
 
+// a * b, widened, for a caller whose operands the compiler can prove narrow.
+//
+// ct_widemul is four 16x16 products, and the optimiser is entitled to drop the
+// ones it can prove are zero. Where it proves a whole half zero it collapses
+// the remainder and may re-synthesize the widening instruction the
+// decomposition existed to avoid: clang 22 at -Os does exactly that for
+// mlk_compress on rv32imac, emitting slli then mulhu on the path that decodes
+// the shared secret.
+//
+// Reading the operands through volatile stops the inference, at the cost of a
+// store and a load each. That is why this is a separate entry rather than
+// ct_widemul's behaviour: the barrier costs 45% of poly1305's block on a
+// Cortex-M3, and poly1305 does not need it -- its operands are wide by
+// construction, so nothing is provably zero. Use this only where a caller's
+// operand has a compile-time bound under 2^16, and say so at the call site.
+static inline uint64_t ct_widemul_opaque(uint32_t a, uint32_t b) {
+#ifdef CH_WIDEMUL_NATIVE
+    return (uint64_t)a * b;
+#else
+    volatile uint32_t va = a;
+    volatile uint32_t vb = b;
+    return ct_widemul(va, vb);
+#endif
+}
+
 // a * k for a 64-bit a and a small constant k, low 64 bits.
 //
 // Writing a constant multiply as shifts does not work: the optimiser
