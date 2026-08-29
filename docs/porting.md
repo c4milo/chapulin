@@ -6,7 +6,9 @@ further; the fourth, entropy, has no default and cannot have one.
 
 This document covers what you decide and, more usefully, what you can check.
 Every claim below is something you can reproduce on your own target rather than
-take on trust, and one of them is a measured gap.
+take on trust. Writing it turned up a case where the mitigation was defeated by
+an optimiser on a target nothing gated, which is the reason the checking section
+exists.
 
 ## 1. The widening multiply
 
@@ -41,25 +43,30 @@ both are set.
 
 ### Check it on your target, because the compiler can undo it
 
-The decomposition is C, and an optimiser is free to recognise the four pieces
-and fold them back into the instruction they replaced. It does. Measured with
-clang 22 at `-Os`, decomposition on, counting widening multiplies:
+The decomposition is C, and an optimiser is free to prove one of the four
+pieces zero, collapse the rest, and rebuild the instruction the decomposition
+existed to avoid. It does. Measured with clang 22 at `-Os`, counting widening
+multiplies in the three modules that multiply secrets:
 
-| target | poly1305 | x25519 | mlkem_poly |
-| --- | --- | --- | --- |
-| Cortex-M0 / M3 / M4 | 0 | 0 | 0 |
-| ARMv7-A | 0 | 0 | 0 |
-| mips32r2 | 0 | 0 | 0 |
-| **rv32imac** | 0 | 0 | **1** |
+| target | before the fix below | now |
+| --- | --- | --- |
+| Cortex-M0 / M3 / M4, ARMv7-A, mips32r2 | 0 | 0 |
+| rv32imac | **1** | 0 |
 
-That one is real. On rv32imac, `mlk_compress(x, 1)` inlined into
-`mlk_poly_tomsg` gets refolded: clang emits `slli` then `mulhu`, rebuilding a
-widening multiply out of the pieces meant to avoid it. `mlk_poly_tomsg` decodes
-the shared secret, so on an rv32 part that does not declare Zkt, that
-instruction sees secret data. `make lint-wide-multiply` gates Cortex-M3 and
-mips32r2 only, which is why this went unnoticed.
+That one was real. `mlk_compress` takes a compile-time `d`, and the two
+smallest values bound its operand under 2^16 — `d=1` reaches 8320 and `d=4`
+reaches 54912. The optimiser proved the operand's high half zero and emitted
+`slli` then `mulhu` for the `d=1` call inlined into `mlk_poly_tomsg`, which
+decodes the shared secret. `mlk_compress` now calls `ct_widemul_opaque`, which
+reads its operands through `volatile` so the inference cannot be made.
 
-Point the same check at your own target:
+The cost is confined to that caller: `poly1305`'s block and `x25519`'s `mul`
+are instruction-for-instruction unchanged, because their operands are wide by
+construction and nothing in them is provably zero. A blanket barrier inside
+`ct_widemul` would have cost 45% of poly1305's block on a Cortex-M3.
+
+`make lint-wide-multiply` gates Cortex-M3, mips32r2 and rv32imac. Point it at
+your own target too:
 
 ```bash
 make lint-wide-multiply WIDEMUL_SPECS="mycore:my-triple:-mcpu=mycpu:umull,smull,umlal,smlal"
@@ -67,9 +74,9 @@ make lint-wide-multiply WIDEMUL_SPECS="mycore:my-triple:-mcpu=mycpu:umull,smull,
 
 The four fields are a label, the compiler triple, the CPU flag, and the
 comma-separated opcodes that count as widening on your ISA. It disassembles
-what your compiler emits and fails if any module exceeds its ceiling. A non-zero
-count is not automatically a defect — it is a place to look, as the rv32 row
-above shows.
+what your compiler emits and fails if any module exceeds its ceiling. Run it
+with the compiler and flags you actually ship, since this is a property of
+codegen and not of the source.
 
 ### What the decomposition does not cover
 
