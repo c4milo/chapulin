@@ -1,0 +1,294 @@
+name: toolchain-pins
+
+# Asks upstream whether the tool versions in tools/toolchain.env have newer
+# releases, and opens a pull request when they do.
+#
+# This job opens the pull request and never merges it. CLAUDE.md forbids
+# adapting the code or the suppressions to an older checker, so a newer
+# checker reports what it reports and each new finding is work to do in the
+# branch. The checks that run on the pull request are the measurement of what
+# the bump costs, and a person reads that measurement and decides.
+#
+# GitHub Actions and the npm packages under tools/ are the other half of the
+# same problem, and Dependabot handles them: those updates produce no new
+# findings, so a green patch or minor release may merge on its own.
+#
+# Two rules keep the proposal worth reading. LLVM_MAJOR is itself a major, so
+# this job reports the newest major. Every other pin moves only inside its own
+# major series; when a newer major series exists, the run page says so and the
+# pin keeps its value, because crossing a major is a decision for a person.
+# OpenSSL is the case that made this rule: the pin is 3.6.x and 4.0 shipped.
+#
+# ALPINE_DIGEST in bench/toolchain.env is out of scope on purpose. That digest
+# pins the image that produced the published benchmark numbers, so bumping it
+# means re-measuring bench/results-insn.csv and bench/notes-mips.md, which only
+# a person can do.
+
+on:
+  schedule:
+    - cron: "37 5 * * 1" # Mondays, after the nightly and the daily check
+  workflow_dispatch: # run it by hand when a release lands mid-week
+
+permissions:
+  contents: write # push the branch this job commits to
+  pull-requests: write # open or update the pull request
+
+# One run at a time: the branch below is a fixed name and two runs would
+# force-push over each other. Queue rather than cancel, so a run that has
+# already pushed still opens its pull request.
+concurrency:
+  group: toolchain-pins
+  cancel-in-progress: false
+
+env:
+  BRANCH: build/toolchain-pins
+
+jobs:
+  propose:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # A pull request opened with GITHUB_TOKEN starts no workflow run, and
+          # this pull request exists for its check run. Set the
+          # TOOLCHAIN_PIN_TOKEN secret to a token with contents and
+          # pull-requests write to get one. Without it the pull request still
+          # opens, and someone has to close and reopen it to start the checks.
+          token: ${{ secrets.TOOLCHAIN_PIN_TOKEN || secrets.GITHUB_TOKEN }}
+
+      - name: Ask upstream for the newest release of each pin
+        id: read
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          # The pins, read from the file that owns them. Nothing here restates
+          # a version number: lint-pins fails a workflow that does.
+          . ./tools/toolchain.env
+
+          tags="$RUNNER_TEMP/tags.txt"
+          bumps="$RUNNER_TEMP/bumps.tsv"
+          : > "$bumps"
+
+          # Records one bump when the newest release inside the pin's own major
+          # series is higher than the pin. Reads the candidate versions, one
+          # bare number per line, on standard input.
+          #
+          #   $1 the variable name in tools/toolchain.env
+          #   $2 its value, exactly as the file holds it
+          #   $3 the text that value carries before the number, empty for every
+          #      pin but KISSAT_VERSION
+          #   $4 the release notes URL up to the number
+          consider() {
+            local name=$1 value=$2 value_prefix=$3 url_prefix=$4
+            local pinned series candidates newest highest
+
+            pinned=${value#"$value_prefix"}
+            series=${pinned%%.*}
+            # sort -V orders version numbers. The API returns tags in neither
+            # version nor release order, so never read the first line instead.
+            candidates=$(sort -V -u)
+            newest=$(printf '%s\n' "$candidates" |
+                     sed -n "s/^\($series\.[0-9][0-9.]*\)\$/\1/p" | tail -1)
+            highest=$(printf '%s\n' "$candidates" | tail -1)
+
+            if [ "${highest%%.*}" != "$series" ]; then
+              echo "::notice::$name: upstream released $value_prefix$highest, a" \
+                   "new major series. This job keeps the pin at $value; crossing" \
+                   "a major is a decision for a person."
+            fi
+            if [ -z "$newest" ]; then
+              echo "::warning::$name: upstream returned no $series.x release." \
+                   "Keeping $value."
+              return 0
+            fi
+            [ "$newest" != "$pinned" ] || return 0
+            # Only ever move forward. A withdrawn release or a parse that read
+            # the wrong tags must not rewrite a pin downwards.
+            if [ "$(printf '%s\n%s\n' "$pinned" "$newest" | sort -V | tail -1)" != "$newest" ]; then
+              echo "::warning::$name: upstream $newest is older than the pinned" \
+                   "$pinned. Keeping $value."
+              return 0
+            fi
+            printf '%s\t%s\t%s\t%s\n' \
+              "$name" "$value" "$value_prefix$newest" "$url_prefix$newest" >> "$bumps"
+          }
+
+          # LLVM. The pin is a major, so report the newest major and link to the
+          # newest full release inside it. Prereleases are the -rc tags, which
+          # the three-number filter drops as well.
+          gh api "repos/llvm/llvm-project/releases?per_page=100" \
+            --jq '.[] | select(.prerelease | not) | .tag_name' > "$tags"
+          llvm_release=$(sed -n 's/^llvmorg-\([0-9][0-9.]*\)$/\1/p' "$tags" | sort -V | tail -1)
+          if [ -z "$llvm_release" ]; then
+            echo "::warning::LLVM_MAJOR: no llvmorg release came back. Keeping $LLVM_MAJOR."
+          elif [ "${llvm_release%%.*}" -gt "$LLVM_MAJOR" ]; then
+            printf '%s\t%s\t%s\t%s\n' LLVM_MAJOR "$LLVM_MAJOR" "${llvm_release%%.*}" \
+              "https://github.com/llvm/llvm-project/releases/tag/llvmorg-$llvm_release" >> "$bumps"
+          fi
+
+          # cppcheck and kissat publish tags rather than releases, and the tags
+          # endpoint pages: cppcheck has over a hundred, so ask for all of them
+          # and let sort -V pick. The releases endpoints below return newest
+          # first, so one page of 100 covers years.
+          gh api --paginate "repos/danmar/cppcheck/tags?per_page=100" --jq '.[].name' |
+            sed -n 's/^\([0-9][0-9.]*\)$/\1/p' |
+            consider CPPCHECK_VERSION "$CPPCHECK_VERSION" "" \
+              "https://github.com/danmar/cppcheck/releases/tag/"
+
+          gh api --paginate "repos/arminbiere/kissat/tags?per_page=100" --jq '.[].name' |
+            sed -n 's/^rel-\([0-9][0-9.]*\)$/\1/p' |
+            consider KISSAT_VERSION "$KISSAT_VERSION" "rel-" \
+              "https://github.com/arminbiere/kissat/releases/tag/rel-"
+
+          gh api "repos/koalaman/shellcheck/releases?per_page=100" \
+            --jq '.[] | select(.prerelease | not) | .tag_name' |
+            sed -n 's/^v\([0-9][0-9.]*\)$/\1/p' |
+            consider SHELLCHECK_VERSION "$SHELLCHECK_VERSION" "" \
+              "https://github.com/koalaman/shellcheck/releases/tag/v"
+
+          gh api "repos/diffblue/cbmc/releases?per_page=100" \
+            --jq '.[] | select(.prerelease | not) | .tag_name' |
+            sed -n 's/^cbmc-\([0-9][0-9.]*\)$/\1/p' |
+            consider CBMC_VERSION "$CBMC_VERSION" "" \
+              "https://github.com/diffblue/cbmc/releases/tag/cbmc-"
+
+          gh api "repos/openssl/openssl/releases?per_page=100" \
+            --jq '.[] | select(.prerelease | not) | .tag_name' |
+            sed -n 's/^openssl-\([0-9][0-9.]*\)$/\1/p' |
+            consider OPENSSL_VERSION "$OPENSSL_VERSION" "" \
+              "https://github.com/openssl/openssl/releases/tag/openssl-"
+
+          # go.dev is the only source that is not a GitHub repository. Its
+          # stable list names the two supported branches; sort -V picks the
+          # newer. curl -f so a bad response fails the step instead of feeding
+          # consider an empty list.
+          curl -fsSL "https://go.dev/dl/?mode=json" |
+            jq -r '.[] | select(.stable) | .version' |
+            sed -n 's/^go\([0-9][0-9.]*\)$/\1/p' |
+            consider GO_VERSION "$GO_VERSION" "" \
+              "https://go.dev/doc/devel/release#go"
+
+          if [ ! -s "$bumps" ]; then
+            echo "bumped=false" >> "$GITHUB_OUTPUT"
+            echo "every pin is the newest release in its major series" \
+              >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          echo "bumped=true" >> "$GITHUB_OUTPUT"
+          cut -f1-3 "$bumps"
+
+      - name: Rewrite the pins and check the file still parses
+        if: steps.read.outputs.bumped == 'true'
+        run: |
+          set -euo pipefail
+          bumps="$RUNNER_TEMP/bumps.tsv"
+
+          while IFS=$'\t' read -r name old new url; do
+            sed -i "s|^$name=.*|$name=$new|" tools/toolchain.env
+          done < "$bumps"
+
+          # Assert, do not print. A sed that matched nothing leaves the old
+          # value in place, and the pull request would claim a bump it never
+          # made.
+          while IFS=$'\t' read -r name old new url; do
+            grep -qxF "$name=$new" tools/toolchain.env ||
+              { echo "the rewrite did not set $name to $new"; exit 1; }
+          done < "$bumps"
+
+          # The Makefile includes this file and CI sources it, so a line that
+          # is not a comment, a blank, or NAME=value breaks one of the two
+          # readers. Quotes and spaces are what a careless rewrite adds.
+          shape='^(#|$|[A-Z][A-Z0-9_]*=[^[:space:]"'"'"']*$)'
+          if grep -nvE "$shape" tools/toolchain.env; then
+            echo "the rewrite broke the NAME=value format shown above"
+            exit 1
+          fi
+          git --no-pager diff --stat tools/toolchain.env
+
+      - name: Write the commit message and the pull request body
+        if: steps.read.outputs.bumped == 'true'
+        run: |
+          set -euo pipefail
+          bumps="$RUNNER_TEMP/bumps.tsv"
+          count=$(wc -l < "$bumps" | tr -d ' ')
+
+          # Conventional Commits, type build; commitlint runs on this branch in
+          # the check workflow. The subject starts lowercase and ends without a
+          # full stop, which is what config-conventional's subject-case and
+          # subject-full-stop rules require.
+          if [ "$count" -eq 1 ]; then
+            IFS=$'\t' read -r name old new url < "$bumps"
+            subject="build(toolchain): bump $name to $new"
+          else
+            subject="build(toolchain): bump $count pins to their newest upstream releases"
+          fi
+
+          # The pull request title is the commit subject, read back from the
+          # same file, so the two cannot say different things.
+          {
+            echo "$subject"
+            echo
+            echo ".github/workflows/toolchain-pins.yml wrote this from the upstream release"
+            echo "lists. Nothing is measured yet: the checks on this pull request are what"
+            echo "the new versions cost."
+            echo
+            while IFS=$'\t' read -r name old new url; do
+              echo "- $name: $old -> $new"
+            done < "$bumps"
+          } > "$RUNNER_TEMP/commit-msg.txt"
+
+          {
+            echo "\`.github/workflows/toolchain-pins.yml\` found newer upstream releases for"
+            echo "pins in \`tools/toolchain.env\` and opened this pull request. It does not"
+            echo "merge it."
+            echo
+            echo "| pin | from | to | release notes |"
+            echo "| --- | --- | --- | --- |"
+            while IFS=$'\t' read -r name old new url; do
+              echo "| \`$name\` | \`$old\` | \`$new\` | $url |"
+            done < "$bumps"
+            echo
+            echo "Nothing here is measured yet. A newer checker reports what it reports, and"
+            echo "CLAUDE.md forbids adapting the code or the suppressions to an older one, so"
+            echo "every new finding is work to do in this branch. The checks below are that"
+            echo "measurement, and merging is a decision for a person."
+            echo
+            echo "If no check run appears, GitHub suppressed it because a workflow token"
+            echo "opened this pull request. Close and reopen the pull request to start one."
+            echo
+            echo "Why this job proposes and never merges:"
+          } > "$RUNNER_TEMP/pr-body.md"
+
+          cat "$RUNNER_TEMP/pr-body.md" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Push the branch and open or update the pull request
+        if: steps.read.outputs.bumped == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.TOOLCHAIN_PIN_TOKEN || secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          # One fixed branch, rebuilt from the checked-out ref every run. A
+          # pull request that is already open therefore shows the pins that are
+          # stale today, not the ones that were stale the week it opened.
+          git checkout -B "$BRANCH"
+          git add tools/toolchain.env
+          git commit --file "$RUNNER_TEMP/commit-msg.txt"
+          git push --force origin "$BRANCH"
+
+          title=$(head -1 "$RUNNER_TEMP/commit-msg.txt")
+          open=$(gh pr list --repo "$GITHUB_REPOSITORY" --head "$BRANCH" \
+                   --state open --json url --jq '.[0].url // empty')
+          if [ -n "$open" ]; then
+            gh pr edit "$open" --title "$title" --body-file "$RUNNER_TEMP/pr-body.md"
+            echo "updated $open"
+          else
+            gh pr create --repo "$GITHUB_REPOSITORY" \
+              --base "$GITHUB_REF_NAME" --head "$BRANCH" \
+              --title "$title" --body-file "$RUNNER_TEMP/pr-body.md"
+          fi
