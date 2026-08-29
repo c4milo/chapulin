@@ -451,6 +451,17 @@ launch slow:8 full x509parse 844 "fill_nondet.0:841,ct_memeq.0:68" buf.c ct.c
 launch fast full chacha20 165 "chacha20_xor.1:5"
 launch fast full poly1305 85 "blocks.0:8" ct.c
 launch fast full buf 100 ""
+# handshake_record on its own, so the two drivers can stub it
+# (https://github.com/c4milo/chapulin/issues/37). Today proof-coverage reports
+# this module as covered by handshake_psk and handshake_pin alone, and neither
+# returns a verdict, so its only coverage is nominal.
+#
+# The receive buffer and CH_QUIET_CAP are small on purpose: the formula costs
+# their product with the fetch bound. Every reader state stays reachable
+# because the harness havocs pt_off, pt_len, ccs_seen, quiet and every buffer
+# byte on entry rather than walking records to get there. Measured under this
+# script's flags: 567 properties, 457 s, 0.99 GB.
+launch fast:4 full handshake_record 65 "hsr_fetch_record.0:6,hsr_next_msg.0:11,fill_nondet.0:33,fill_buf_nondet.0:13" --object-bits 11 -DCH_QUIET_CAP=1 -DCH_PROOF_RXBUF=12
 launch fast full ct 65 ""
 # The 16x16 decomposition, which is what every other proof rests on. Those
 # formulas verify the single-multiply form, because the launch line above
