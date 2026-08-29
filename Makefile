@@ -794,7 +794,7 @@ endif
 
 # Checks and thresholds live in .clang-tidy; every disable carries a reason
 # there (fix-or-drop, never NOLINT in code).
-lint: lint-toolchain lint-pins lint-tidy lint-format lint-cppcheck lint-commits lint-docs lint-invariants lint-stack lint-size lint-matrix lint-violation-builds lint-fuzz-budget lint-runtime-symbols lint-wide-multiply lint-commit-citations lint-issue-links lint-shellcheck lint-bench-numbers lint-spec
+lint: lint-toolchain lint-pins lint-proof-cover lint-tidy lint-format lint-cppcheck lint-commits lint-docs lint-invariants lint-stack lint-size lint-matrix lint-violation-builds lint-fuzz-budget lint-runtime-symbols lint-wide-multiply lint-commit-citations lint-issue-links lint-shellcheck lint-bench-numbers lint-spec
 
 # INV-19: bounded stack. The budget is the measured worst library
 # frame (rsa_vp1's RSA-3072 limb temporaries, 2,400 bytes) rounded up;
@@ -898,6 +898,14 @@ lint-toolchain:
 .PHONY: lint-pins
 lint-pins:
 	@python3 tools/toolchain-pins.py
+
+# .clang-tidy disables bugprone-signed-bitwise because the signed arithmetic
+# here is deliberate and CBMC proves the class the check approximates. That
+# argument holds only while every shipped source is proven with the
+# signed-overflow class on. tools/proof-cover.py carries the reasoning.
+.PHONY: lint-proof-cover
+lint-proof-cover:
+	@python3 tools/proof-cover.py
 
 lint-tidy:
 ifeq ($(CLANG_TIDY),)
