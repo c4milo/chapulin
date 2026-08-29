@@ -29,17 +29,36 @@ endif
 HOST_RAND_DEF := -DCH_RAND_EXTERN
 CFLAGS += $(HOST_RAND_DEF)
 LIB_CFLAGS = $(filter-out $(HOST_RAND_DEF),$(CFLAGS))
+# Every tool version comes from one file that CI sources and this include
+# reads, so a runner and a development machine resolve the same pins. Before
+# it, LLVM_MAJOR below was referenced and never defined here, so the pinned
+# candidates expanded to bare `llvm-nm-` and a development machine linted
+# with whatever clang-tidy it carried
+# A missing file is a hard
+# error on purpose: unpinned checks are worse than no checks.
+include tools/toolchain.env
+
+# Resolve the pinned major first, then fall back. apt.llvm.org installs the
+# versioned names, Homebrew installs a versioned keg, and an unversioned
+# binary is the last candidate rather than the first -- taking it first is
+# what let LLVM 23 run against a tree pinned to 22. Whichever candidate
+# wins, lint-toolchain asserts its version before any linter runs, so a
+# machine that resolves the wrong one is told which pin it missed instead of
+# reporting the code as broken.
 LLVM_BIN := /opt/homebrew/opt/llvm/bin
-CLANG_TIDY ?= $(shell command -v clang-tidy || command -v $(LLVM_BIN)/clang-tidy)
-CLANG_FORMAT ?= $(shell command -v clang-format || command -v $(LLVM_BIN)/clang-format)
-CLANG_RV ?= $(shell command -v $(LLVM_BIN)/clang || command -v clang)
-# Resolved like the tools above rather than assumed under LLVM_BIN, which is
-# a Homebrew path that exists only on the development machine. Hardcoding it
-# made lint-runtime-symbols read no symbols on CI and fail there for six
-# commits (https://github.com/c4milo/chapulin/issues/53). CI installs the
-# versioned name, so that is the second candidate.
-LLVM_NM ?= $(shell command -v llvm-nm || command -v llvm-nm-$(LLVM_MAJOR) \
-             || command -v $(LLVM_BIN)/llvm-nm)
+LLVM_PINNED_BIN := /opt/homebrew/opt/llvm@$(LLVM_MAJOR)/bin
+CLANG_TIDY ?= $(shell command -v clang-tidy-$(LLVM_MAJOR) \
+                || command -v $(LLVM_PINNED_BIN)/clang-tidy \
+                || command -v clang-tidy || command -v $(LLVM_BIN)/clang-tidy)
+CLANG_FORMAT ?= $(shell command -v clang-format-$(LLVM_MAJOR) \
+                  || command -v $(LLVM_PINNED_BIN)/clang-format \
+                  || command -v clang-format || command -v $(LLVM_BIN)/clang-format)
+CLANG_RV ?= $(shell command -v clang-$(LLVM_MAJOR) \
+              || command -v $(LLVM_PINNED_BIN)/clang \
+              || command -v $(LLVM_BIN)/clang || command -v clang)
+LLVM_NM ?= $(shell command -v llvm-nm-$(LLVM_MAJOR) \
+             || command -v $(LLVM_PINNED_BIN)/llvm-nm \
+             || command -v llvm-nm || command -v $(LLVM_BIN)/llvm-nm)
 CPPCHECK ?= $(shell command -v cppcheck)
 CBMC ?= $(shell command -v cbmc)
 CXX ?= c++
@@ -386,7 +405,7 @@ bin/diff: test/diff_test.c $(SRCS) sha3.c mlkem.c mlkem_poly.c $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) -I. -o $@ test/diff_test.c $(SRCS) sha3.c mlkem.c mlkem_poly.c
 
-.PHONY: check check-slow ci lint lint-tidy lint-format lint-cppcheck lint-docs lint-invariants lint-go-pin lint-violation-builds lint-fuzz-budget lint-runtime-symbols lint-wide-multiply lint-commit-citations lint-issue-links lint-shellcheck lint-bench-numbers lint-spec prove diff fmt clean
+.PHONY: check check-slow ci lint lint-tidy lint-format lint-cppcheck lint-docs lint-invariants lint-violation-builds lint-fuzz-budget lint-runtime-symbols lint-wide-multiply lint-commit-citations lint-issue-links lint-shellcheck lint-bench-numbers lint-spec prove diff fmt clean
 # check is the inner loop and holds a one-minute budget, so it runs what
 # answers "did I break the build or a contract": the linters, every unit
 # and strict-parser binary, the packaged-object export check, and the
@@ -775,7 +794,7 @@ endif
 
 # Checks and thresholds live in .clang-tidy; every disable carries a reason
 # there (fix-or-drop, never NOLINT in code).
-lint: lint-tidy lint-format lint-cppcheck lint-commits lint-docs lint-invariants lint-stack lint-size lint-matrix lint-go-pin lint-violation-builds lint-fuzz-budget lint-runtime-symbols lint-wide-multiply lint-commit-citations lint-issue-links lint-shellcheck lint-bench-numbers lint-spec
+lint: lint-toolchain lint-pins lint-tidy lint-format lint-cppcheck lint-commits lint-docs lint-invariants lint-stack lint-size lint-matrix lint-violation-builds lint-fuzz-budget lint-runtime-symbols lint-wide-multiply lint-commit-citations lint-issue-links lint-shellcheck lint-bench-numbers lint-spec
 
 # INV-19: bounded stack. The budget is the measured worst library
 # frame (rsa_vp1's RSA-3072 limb temporaries, 2,400 bytes) rounded up;
@@ -847,16 +866,48 @@ else
 	  && echo "lint-invariants: rules clean, tripwires trip"
 endif
 
+# Assert the resolved checkers are the pinned ones before any of them runs.
+# CI has asserted this since the pins existed; a development machine had no
+# equivalent, so an upgraded Homebrew LLVM reported eight new diagnostics in
+# x509_der.c and read as the code being broken rather than the checker having
+# moved. A version this does
+# not recognise is a stop, not a warning: CLAUDE.md forbids adapting code or
+# suppressions to an older checker, and the same rule makes a silent newer
+# one just as wrong.
+.PHONY: lint-toolchain
+lint-toolchain:
+	@rc=0; \
+	 for spec in "clang-tidy:$(CLANG_TIDY):version $(LLVM_MAJOR)\\." \
+	             "clang-format:$(CLANG_FORMAT):version $(LLVM_MAJOR)\\." \
+	             "clang:$(CLANG_RV):version $(LLVM_MAJOR)\\."; do \
+	   name=$${spec%%:*}; rest=$${spec#*:}; bin=$${rest%%:*}; want=$${rest#*:}; \
+	   if [ -z "$$bin" ]; then \
+	     echo "lint-toolchain: $$name is missing; the pin is LLVM $(LLVM_MAJOR) (tools/toolchain.env)"; rc=1; \
+	   elif ! "$$bin" --version 2>/dev/null | grep -qE "$$want"; then \
+	     echo "lint-toolchain: $$bin is $$("$$bin" --version 2>/dev/null | head -1)"; \
+	     echo "lint-toolchain: the pin is LLVM $(LLVM_MAJOR) (tools/toolchain.env). Install it, or bump the pin"; \
+	     echo "lint-toolchain: and take the new diagnostics as work -- never adapt the code to an older checker."; rc=1; \
+	   fi; \
+	 done; \
+	 [ $$rc -eq 0 ] && echo "lint-toolchain: every checker is the pinned LLVM $(LLVM_MAJOR)"; exit $$rc
+
+# tools/toolchain.env is the only place a tool version is written, and every
+# job that reads one loads it. tools/toolchain-pins.py carries the reasoning
+# for both halves.
+.PHONY: lint-pins
+lint-pins:
+	@python3 tools/toolchain-pins.py
+
 lint-tidy:
 ifeq ($(CLANG_TIDY),)
-	$(call REQUIRE,clang-tidy,it ships with llvm — see the LLVM_MAJOR pin in .github/workflows/check.yml)
+	$(call REQUIRE,clang-tidy,it ships with llvm — see the LLVM_MAJOR pin in tools/toolchain.env)
 else
 	$(CLANG_TIDY) --quiet $(LINT_C) -- -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -I.
 endif
 
 lint-format:
 ifeq ($(CLANG_FORMAT),)
-	$(call REQUIRE,clang-format,it ships with llvm — see the LLVM_MAJOR pin in .github/workflows/check.yml)
+	$(call REQUIRE,clang-format,it ships with llvm — see the LLVM_MAJOR pin in tools/toolchain.env)
 else
 	$(CLANG_FORMAT) --dry-run --Werror $(LINT_C) $(HDRS) $(PROOF_C) $(FUZZ_C) $(TESTH)
 endif
@@ -978,22 +1029,6 @@ lint-matrix:
 	 fi; \
 	 echo "lint-matrix: nightly runs every slow proof"
 
-# The Go toolchain is pinned in two workflows and GitHub Actions has no
-# way to share an env block between them, so the pair is checked instead.
-# check.yml's GO_VERSION is the pin of record.
-.PHONY: lint-go-pin
-lint-go-pin:
-	@a=$$(sed -n 's/^ *GO_VERSION: *"\(.*\)"/\1/p' .github/workflows/check.yml); \
-	 b=$$(sed -n 's/^ *go-version: *"\(.*\)"/\1/p' .github/workflows/nightly.yml); \
-	 if [ -z "$$a" ]; then echo "lint-go-pin: check.yml declares no GO_VERSION"; exit 1; fi; \
-	 if [ -z "$$b" ]; then echo "lint-go-pin: nightly.yml pins no go-version"; exit 1; fi; \
-	 for v in $$b; do \
-	   if [ "$$v" != "$$a" ]; then \
-	     echo "lint-go-pin: nightly pins Go $$v, check.yml pins $$a"; exit 1; \
-	   fi; \
-	 done; \
-	 echo "lint-go-pin: both workflows pin Go $$a"
-
 # A violation whose target is a script must name every binary that script
 # runs: a script runs no make, so the 'builds' line is the only thing that
 # puts them on disk. A name missing there fails quietly, since the baseline
@@ -1064,7 +1099,7 @@ WIDEMUL_CEILING := poly1305.c:0 mlkem_poly.c:0 x25519.c:0 sha3.c:1
 .PHONY: lint-wide-multiply
 lint-wide-multiply:
 ifeq ($(CLANG_RV),)
-	$(call REQUIRE,clang,it ships with llvm — see the LLVM_MAJOR pin in .github/workflows/check.yml)
+	$(call REQUIRE,clang,it ships with llvm — see the LLVM_MAJOR pin in tools/toolchain.env)
 else
 	@rc=0; for spec in $(WIDEMUL_SPECS); do \
 	  arch=$${spec%%:*}; rest=$${spec#*:}; \
@@ -1091,7 +1126,7 @@ lint-bench-numbers:
 .PHONY: lint-shellcheck
 lint-shellcheck:
 ifeq ($(shell command -v $(SHELLCHECK) 2>/dev/null),)
-	$(call REQUIRE,shellcheck,brew install shellcheck — see the SHELLCHECK_VERSION pin in .github/workflows/check.yml)
+	$(call REQUIRE,shellcheck,brew install shellcheck — see the SHELLCHECK_VERSION pin in tools/toolchain.env)
 else
 	@$(SHELLCHECK) -x -f gcc $(SH_SRCS) \
 	  && echo "lint-shellcheck: every shell script clean"
@@ -1104,9 +1139,9 @@ lint-issue-links:
 .PHONY: lint-runtime-symbols
 lint-runtime-symbols:
 ifeq ($(CLANG_RV),)
-	$(call REQUIRE,clang,it ships with llvm — see the LLVM_MAJOR pin in .github/workflows/check.yml)
+	$(call REQUIRE,clang,it ships with llvm — see the LLVM_MAJOR pin in tools/toolchain.env)
 else ifeq ($(LLVM_NM),)
-	$(call REQUIRE,llvm-nm,it ships with llvm — see the LLVM_MAJOR pin in .github/workflows/check.yml)
+	$(call REQUIRE,llvm-nm,it ships with llvm — see the LLVM_MAJOR pin in tools/toolchain.env)
 else
 	@d=$$(mktemp -d); rc=0; \
 	 for f in $(RV_SRCS); do \

@@ -137,10 +137,15 @@ Home: github.com/c4milo.
   including the git hooks.
 - Linters follow fix-or-drop: fix the finding, or disable the check in
   `.clang-tidy` with its reason. Never `NOLINT` in code.
-- CI pins the same tool versions the development machine runs (see the
-  env block in .github/workflows/check.yml). When the local toolchain
-  upgrades, bump the pins in the same commit. Never adapt code or
-  suppressions to an older checker.
+- CI pins the same tool versions the development machine runs. Every
+  version lives in `tools/toolchain.env`, which the Makefile includes and
+  the workflows source, so one line moves both. `make lint-pins` fails if a
+  workflow hardcodes a version that file already carries, or if a job reads
+  a pin without loading it, and `make lint-toolchain` fails if the resolved
+  checker is not the pinned one. Never adapt code or suppressions to an
+  older checker: a bump is work to do, which is why
+  .github/workflows/toolchain-pins.yml opens a pull request and never
+  merges it.
 - CI compiles with gcc on purpose, even though development machines run
   clang: chapulin's consumers are firmware trees whose vendor SDKs ship
   gcc cross-compilers, so gcc-only diagnostics belong in CI, not in a
