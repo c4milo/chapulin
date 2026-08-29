@@ -403,6 +403,11 @@ int got = ch_read(&tls, out, sizeof out);
 ch_close(&tls);
 ```
 
+[`docs/porting.md`](docs/porting.md) is the checklist for a new platform: what
+you decide, what has a safe default, and how to check on your own target that
+the constant-time multiply survived your compiler. It carries a measured case
+where it does not.
+
 You provide two blocking socket callbacks with your own timeouts, and
 `ch_rand_bytes` (`rand.h`). Use the hardware generator if the part has
 one, or the seeded generator in `drbg.[ch]` if it does not — the
