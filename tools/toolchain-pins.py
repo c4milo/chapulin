@@ -24,10 +24,10 @@ ROOT = Path(__file__).resolve().parent.parent
 PINS = ROOT / "tools" / "toolchain.env"
 WORKFLOWS = sorted((ROOT / ".github" / "workflows").glob("*.yml"))
 
-# What matters is that the job sources the pins file, not what the step that
-# does it is called. check.yml and nightly.yml source it from a step named
-# "Load the toolchain pins"; toolchain-pins.yml sources it directly, because
-# reading and rewriting that file is the job.
+# Match the source line, not the name of the step that runs it. Every workflow
+# calls that step "Load the toolchain pins" today, and a rename is a rename
+# rather than a defect; sourcing the file is the thing that has to happen, so
+# that is what this checks.
 LOADS_PINS = re.compile(r"\.\s+\.?/?tools/toolchain\.env\b")
 
 # LLVM_MAJOR is checked through the versioned binary names rather than the
