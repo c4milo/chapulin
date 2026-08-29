@@ -294,17 +294,32 @@ jobs:
           #
           # Rebuilding discards whatever the branch held, and the pull request
           # body invites a person to do the bump's work in that branch. So stop
-          # when the branch carries a commit this job did not write, and use a
-          # lease on the push so a commit that lands mid-run is not lost either.
+          # when the branch holds content the default branch does not.
+          #
+          # The question is what rebuilding would lose, so compare content and
+          # not authorship. Authorship answers the wrong question after a squash
+          # merge: the person's commits stay on the branch and are not ancestors
+          # of the default branch, so an author test reads them as unmerged
+          # forever and the job goes quiet every week from then on. Comparing
+          # trees recovers on its own, because a squash leaves the branch and the
+          # default branch holding the same content.
+          #
+          # tools/toolchain.env is excluded because it is the one file this job
+          # writes; the open pull request always differs there, and that
+          # difference is this job's own.
           git fetch origin "$BRANCH" 2>/dev/null || true
           if git rev-parse --verify -q "origin/$BRANCH" >/dev/null; then
-            mine="github-actions[bot]@users.noreply.github.com"
-            theirs=$(git log --format=%ae "origin/$BRANCH" --not "origin/$GITHUB_REF_NAME" |
-                     grep -cvF "$mine" || true)
-            if [ "${theirs:-0}" -gt 0 ]; then
-              echo "::notice::$BRANCH carries $theirs commit(s) from someone else." \
-                   "Leaving the branch alone so that work is not discarded."
-              exit 0
+            theirs=$(git diff --name-only "origin/$GITHUB_REF_NAME" "origin/$BRANCH" \
+                     -- . ":(exclude)tools/toolchain.env")
+            if [ -n "$theirs" ]; then
+              # Fail rather than warn. A job that stops on its own and stays
+              # green stops silently, and nobody learns the pins went stale.
+              # This state needs a person: merge that branch or delete it.
+              echo "::error::$BRANCH holds changes outside tools/toolchain.env," \
+                   "so rebuilding it would discard them. Merge or delete the" \
+                   "branch, then this job resumes."
+              printf '%s\n' "$theirs" | sed 's/^/  /'
+              exit 1
             fi
           fi
 
