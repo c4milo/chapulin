@@ -1,0 +1,62 @@
+# Dependabot watches the two places where this repository runs code it did
+# not write: the GitHub Actions in .github/workflows, which run with the
+# repository token, and the commitlint packages under tools/, which run on
+# a developer machine and on the runner. Neither ships in bin/chapulin.o.
+# An update to either is a routine update, so a green patch or minor
+# version may merge on its own.
+#
+# The checker, proof and test versions are not here. They live in
+# tools/toolchain.env, and .github/workflows/toolchain-pins.yml opens a
+# pull request for them and never merges it. CLAUDE.md forbids adapting
+# code or suppressions to an older checker, so a new clang-tidy, cppcheck
+# or CBMC reports what it reports, and those findings are work to do. A
+# person decides when to do that work.
+#
+# Actions are pinned to a commit SHA with the version tag in a trailing
+# comment. Dependabot rewrites both the SHA and the comment.
+#
+# The prefixes below keep the commit headers conventional: `ci` for the
+# Actions updates, `build` for the npm ones. Both types are in commitlint's
+# list, and the header is the only part these settings control. Dependabot
+# writes the body itself and wraps none of it, so every one of its commits
+# would fail body-max-line-length and turn the pull request red, which
+# auto-merge reads as "do not merge". tools/commitlint.config.mjs therefore
+# ignores messages carrying Dependabot's sign-off trailer, and carries the
+# reasoning.
+version: 2
+
+updates:
+  - package-ecosystem: github-actions
+    # Actions are read from .github/workflows, which Dependabot addresses
+    # as the repository root.
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "04:00"
+      timezone: Etc/UTC # after the 03:17 UTC nightly, so the two do not overlap
+    open-pull-requests-limit: 3
+    groups:
+      github-actions:
+        patterns: ["*"] # one pull request a week for every action
+    commit-message:
+      prefix: ci
+
+  - package-ecosystem: npm
+    # package.json and package-lock.json live in tools/, not at the root.
+    directory: "/tools"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "04:00"
+      timezone: Etc/UTC
+    open-pull-requests-limit: 2
+    groups:
+      commitlint:
+        patterns: ["@commitlint/*"] # the cli and its config move together
+    commit-message:
+      # Both packages are devDependencies, so prefix-development is the
+      # one Dependabot actually uses here. prefix covers anything that
+      # later lands as a runtime dependency.
+      prefix: build
+      prefix-development: build

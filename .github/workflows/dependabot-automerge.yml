@@ -1,0 +1,93 @@
+name: dependabot auto-merge
+
+# Turns on GitHub's auto-merge for a Dependabot pull request that moves a
+# dependency by a patch or minor version, and leaves every other update to a
+# person.
+#
+# What auto-merges: patch and minor updates to the GitHub Actions this
+# repository runs and to the npm devDependencies under tools/. Auto-merge
+# does not skip CI. GitHub holds the pull request until every check the
+# branch requires reports success, then merges it. A red check leaves the
+# pull request sitting open.
+#
+# What does not auto-merge: a major update. CLAUDE.md forbids adapting code
+# or suppressions to an older checker, and a major release of an action costs
+# the same kind of work in the other direction — it can drop a Node runtime,
+# rename an output, or change a default, and deciding what that breaks here
+# is a person's job. A major update waits for review.
+#
+# The checker, proof and test versions in tools/toolchain.env are not part of
+# this workflow. They have their own scheduled job in
+# .github/workflows/toolchain-pins.yml, which opens a pull request and never
+# merges it.
+#
+# Two repository settings must be on or this job does nothing:
+# Settings > General > "Allow auto-merge", and squash merging. GitHub also
+# refuses to enable auto-merge on a branch that requires no status checks, so
+# main needs at least one required check.
+
+on:
+  pull_request:
+
+# Read-only by default. The one job that writes asks for exactly what it
+# writes.
+permissions:
+  contents: read
+
+jobs:
+  automerge:
+    # Two tests on purpose. The first says Dependabot opened this pull
+    # request. The second says Dependabot, not a person, caused this run, so
+    # a commit pushed to a Dependabot branch by hand gets no auto-merge even
+    # though the pull request still lists Dependabot as its author.
+    if: >-
+      github.event.pull_request.user.login == 'dependabot[bot]' &&
+      github.actor == 'dependabot[bot]'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    # contents: write enables auto-merge; pull-requests: write lets
+    # fetch-metadata read the pull request and gh act on it. A pull_request
+    # event from Dependabot starts with a read-only token, so the job has to
+    # ask for both.
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Read the update type
+        id: metadata
+        uses: dependabot/fetch-metadata@21025c705c08248db411dc16f3619e6b5f9ea21a # v2.5.0
+        with:
+          github-token: ${{ github.token }}
+
+      - name: Enable auto-merge for a patch or minor update
+        if: >-
+          steps.metadata.outputs.update-type == 'version-update:semver-patch' ||
+          steps.metadata.outputs.update-type == 'version-update:semver-minor'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+        # --auto, never a plain merge: GitHub queues the merge and performs
+        # it only after the required checks pass, so nothing lands unchecked.
+        # --squash keeps main linear, which it is today — the history holds
+        # no merge commits.
+        run: |
+          gh pr merge --auto --squash "$PR_URL" || {
+            echo "could not enable auto-merge on $PR_URL"
+            echo "check that Settings > General has \"Allow auto-merge\" and squash"
+            echo "merging turned on, and that main requires at least one status check"
+            exit 1
+          }
+
+      - name: Report that a major update waits for a person
+        if: steps.metadata.outputs.update-type == 'version-update:semver-major'
+        env:
+          # Through the environment rather than ${{ }} inside the script, so
+          # the value cannot turn into shell syntax.
+          DEPENDENCY_NAMES: ${{ steps.metadata.outputs.dependency-names }}
+        run: |
+          {
+            echo "### No auto-merge: major update"
+            echo
+            echo "\`$DEPENDENCY_NAMES\` moves by a major version. Read the release"
+            echo "notes, run the checks, and merge it by hand."
+          } >> "$GITHUB_STEP_SUMMARY"
