@@ -1137,7 +1137,8 @@ else
 	    fi; \
 	  done; \
 	done; \
-	[ $$rc -eq 0 ] && echo "lint-wide-multiply: every module at its recorded ceiling on m3 and mips32r2"; exit $$rc
+	names=$$(for spec in $(WIDEMUL_SPECS); do printf "%s " "$${spec%%:*}"; done); \
+	[ $$rc -eq 0 ] && echo "lint-wide-multiply: every module at its recorded ceiling on $$names"; exit $$rc
 endif
 .PHONY: lint-bench-numbers
 lint-bench-numbers:
