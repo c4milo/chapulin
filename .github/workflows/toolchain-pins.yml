@@ -280,10 +280,11 @@ jobs:
             echo "every new finding is work to do in this branch. The checks below are that"
             echo "measurement, and merging is a decision for a person."
             echo
-            echo "If no check run appears below, a workflow token opened this pull"
-            echo "request, and GitHub starts no run for those. Close the pull request"
-            echo "and reopen it to start one. Setting the TOOLCHAIN_PIN_TOKEN secret"
-            echo "removes the step."
+            echo "A failed \`check\` carrying no jobs is not a test failure. A"
+            echo "workflow token opened this pull request, and GitHub records a run"
+            echo "for those and then suppresses it. Close this pull request and"
+            echo "reopen it to get a real run. Setting the TOOLCHAIN_PIN_TOKEN"
+            echo "secret removes the step."
           } > "$RUNNER_TEMP/pr-body.md"
 
           cat "$RUNNER_TEMP/pr-body.md" >> "$GITHUB_STEP_SUMMARY"
