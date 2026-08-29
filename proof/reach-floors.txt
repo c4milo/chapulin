@@ -26,6 +26,7 @@ chacha20 98.1
 ct 94.1
 drbg 84.4
 epoch 36.1
+handshake_record 92.1
 hello_build 76.9
 hkdf 52.5
 hybrid_secret 20.2
