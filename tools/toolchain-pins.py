@@ -30,8 +30,8 @@ WORKFLOWS = sorted((ROOT / ".github" / "workflows").glob("*.yml"))
 # that is what this checks.
 LOADS_PINS = re.compile(r"\.\s+\.?/?tools/toolchain\.env\b")
 
-# LLVM_MAJOR is checked through the versioned binary names rather than the
-# bare number, because "22" also appears in runner labels and timeouts.
+# LLVM_MAJOR is checked through the versioned binary names rather than the bare
+# number: a bare "22" also matches inside the actions/setup-go commit SHAs.
 DERIVED = ("clang-tidy-{LLVM_MAJOR}", "clang-format-{LLVM_MAJOR}", "clang-{LLVM_MAJOR}")
 LITERAL_SKIP = {"LLVM_MAJOR"}
 

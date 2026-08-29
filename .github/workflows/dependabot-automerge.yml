@@ -47,9 +47,10 @@ permissions:
 jobs:
   automerge:
     # Two tests on purpose. The first says Dependabot opened this pull
-    # request. The second says Dependabot, not a person, caused this run, so
-    # a commit pushed to a Dependabot branch by hand gets no auto-merge even
-    # though the pull request still lists Dependabot as its author.
+    # request; the second says Dependabot, not a person, caused this run, so a
+    # maintainer's push to the branch does not start another auto-merge run. It
+    # does not revoke auto-merge already enabled: GitHub clears that only on a
+    # push by someone without write access.
     if: >-
       github.event.pull_request.user.login == 'dependabot[bot]' &&
       github.actor == 'dependabot[bot]'
