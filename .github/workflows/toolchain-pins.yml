@@ -54,13 +54,19 @@ jobs:
           # this job pushes a branch. The repository is small, so a full
           # clone costs about a second.
           fetch-depth: 0
-          # TOOLCHAIN_PIN_TOKEN is required, not preferred. GITHUB_TOKEN cannot
-          # open a pull request while "Allow GitHub Actions to create and
-          # approve pull requests" is off, and one it did open would start no
-          # check run — which is the thing this pull request exists for. Give
-          # the secret contents and pull-requests write, or this job does
-          # nothing.
-          token: ${{ secrets.TOOLCHAIN_PIN_TOKEN }}
+          # GITHUB_TOKEN opens the pull request, now that the repository lets
+          # Actions create one. What it cannot do is start a workflow run on the
+          # pull request it opened, and this pull request exists for its check
+          # run: that run measures what the bump costs, and main requires the
+          # `check` job before anything merges. Closing and reopening the pull
+          # request starts it, which the body below says.
+          #
+          # TOOLCHAIN_PIN_TOKEN, carrying contents and pull-requests write,
+          # removes that step. It stays optional on purpose. A long-lived
+          # credential in a secret is a worse trade for a security library than
+          # one manual reopen on a pull request a person was going to read
+          # anyway.
+          token: ${{ secrets.TOOLCHAIN_PIN_TOKEN || secrets.GITHUB_TOKEN }}
 
       - name: Load the toolchain pins
         # tools/toolchain.env is the one place a tool version is written, so a
@@ -273,6 +279,11 @@ jobs:
             echo "CLAUDE.md forbids adapting the code or the suppressions to an older one, so"
             echo "every new finding is work to do in this branch. The checks below are that"
             echo "measurement, and merging is a decision for a person."
+            echo
+            echo "If no check run appears below, a workflow token opened this pull"
+            echo "request, and GitHub starts no run for those. Close the pull request"
+            echo "and reopen it to start one. Setting the TOOLCHAIN_PIN_TOKEN secret"
+            echo "removes the step."
           } > "$RUNNER_TEMP/pr-body.md"
 
           cat "$RUNNER_TEMP/pr-body.md" >> "$GITHUB_STEP_SUMMARY"
