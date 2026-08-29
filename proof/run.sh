@@ -236,7 +236,15 @@ launch() {
     # (https://github.com/c4milo/chapulin/issues/41). Every harness either
     # defines ch_rand_bytes itself or never reaches randomness, so they all
     # declare extern, the same way the host binaries in the Makefile do.
-    local args=("proof/${name}_harness.c" "$@" -DCH_RAND_EXTERN -I . --unwind "$unwind")
+    # -DCH_NATIVE_WIDEMUL, for the same reason the Makefile passes it to host
+    # binaries: ct.h has no architecture allowlist, and proving the four 16x16
+    # pieces inside every poly1305, x25519 and mlkem formula multiplies the
+    # multiply count these solvers already struggle with. The composed proofs
+    # therefore verify the single-multiply form, and ctwidemul proves the two
+    # forms compute the same function, so the verdicts carry to a target that
+    # runs the decomposition. ctwidemul overrides this with CH_CT_WIDEMUL.
+    local args=("proof/${name}_harness.c" "$@" -DCH_RAND_EXTERN -DCH_NATIVE_WIDEMUL \
+                -I . --unwind "$unwind")
     # bash 3.2 errors on expanding an empty array under set -u, so each
     # arm checks its length before expanding, as the caller below does.
     local solver=()
@@ -431,6 +439,15 @@ launch fast full chacha20 165 "chacha20_xor.1:5"
 launch fast full poly1305 85 "blocks.0:8" ct.c
 launch fast full buf 100 ""
 launch fast full ct 65 ""
+# The 16x16 decomposition, which is what every other proof rests on. Those
+# formulas verify the single-multiply form, because the launch line above
+# asserts CH_NATIVE_WIDEMUL; a target with no constant-time widening multiply
+# runs the decomposition instead, so the verdicts carry only if the two forms
+# compute the same function. This proves that. UB and shift range at full
+# 32-bit width, the products themselves at 8-bit operands -- the same bound
+# softmul uses, and for the same reason: multiplier equivalence is the classic
+# hard SAT instance. Measured, these flags: 8-bit verifies in 106 s.
+launch fast:3 full ctwidemul 65 "" -DCH_WIDEMUL_BOUND=0xFFU
 # The software multiply, for cores with no multiplier. UB and the fixed
 # loop counts over unconstrained 32- and 64-bit inputs; the product
 # itself against the C operator only at 8-bit operands, the widest

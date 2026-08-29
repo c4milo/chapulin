@@ -27,8 +27,19 @@ endif
 # bin/drbg_test links the reference generator instead of supplying a
 # hook.
 HOST_RAND_DEF := -DCH_RAND_EXTERN
-CFLAGS += $(HOST_RAND_DEF)
-LIB_CFLAGS = $(filter-out $(HOST_RAND_DEF),$(CFLAGS))
+# ct.h has no architecture allowlist, so every build gets the 16x16
+# decomposition unless it says otherwise. These binaries run on a development
+# machine and hold no secret worth timing, and the decomposition costs solver
+# time in the proofs and wall time in the tests, so the host asserts the native
+# multiply. It is an assertion about this machine and nothing else: LIB_CFLAGS
+# filters it out below, so the packaged object a consumer links keeps the safe
+# default for a target neither we nor the compiler knows.
+#
+# bin/timing overrides it with -DCH_CT_WIDEMUL, because the t-test exists to
+# measure the path that ships.
+HOST_WIDEMUL_DEF := -DCH_NATIVE_WIDEMUL
+CFLAGS += $(HOST_RAND_DEF) $(HOST_WIDEMUL_DEF)
+LIB_CFLAGS = $(filter-out $(HOST_RAND_DEF) $(HOST_WIDEMUL_DEF),$(CFLAGS))
 # Every tool version comes from one file that CI sources and this include
 # reads, so a runner and a development machine resolve the same pins. Before
 # it, LLVM_MAJOR below was referenced and never defined here, so the pinned
@@ -1242,9 +1253,19 @@ ifneq ($(CLANG_FORMAT),)
 	$(CLANG_FORMAT) -i $(LINT_C) $(HDRS) $(PROOF_C) $(FUZZ_C) $(TESTH)
 endif
 
+# -DCH_CT_WIDEMUL, because the point is to measure what ships. ct.h resolves
+# CH_NATIVE_WIDEMUL on any x86-64 or aarch64 development machine, so without
+# this flag the t-test times `(uint64_t)a * b` -- one instruction -- while a
+# part with no constant-time widening multiply runs the four 16x16 pieces.
+# The path the test existed to check was the one path it never ran.
+#
+# What this does and does not buy: a t-test on a development machine measures
+# whether the C has a data-dependent branch, not whether the target's own
+# multiply is uniform. That second question belongs to the silicon and to
+# ct.h's comment, not to this binary.
 bin/timing: test/timing_test.c $(SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -I. -o $@ test/timing_test.c $(SRCS)
+	$(CC) $(CFLAGS) -DCH_CT_WIDEMUL -I. -o $@ test/timing_test.c $(SRCS)
 
 # Constant-time check (Welch's t over interleaved input classes). Load-
 # sensitive, so it is not part of check; run it on an otherwise idle box.

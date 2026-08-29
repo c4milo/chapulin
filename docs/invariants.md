@@ -339,10 +339,18 @@ which convention holds them.
   the call site — P-256 and RSA verify, and the HRR-magic compare in
   handshake_parser.c.
   That second half is why `ct.h` builds widening products out of 16x16
-  pieces on any architecture not known to multiply in constant time:
-  a Cortex-M3 ran 35 variable-time products before, and runs none in
-  poly1305, mlkem_poly or x25519 now. One remains in sha3, `% 5` over
+  pieces on every architecture, unless the build asserts
+  `CH_NATIVE_WIDEMUL` for a part whose own widening multiply is
+  constant-time. No architecture macro carries that claim, so the header
+  names no architecture: the header records why, and the Makefile passes
+  the flag for host test binaries only, filtering it out of the packaged
+  object. A Cortex-M3 ran 35 variable-time products before and runs none
+  in poly1305, mlkem_poly or x25519 now. One remains in sha3, `% 5` over
   Keccak's public loop counters, which divides no secret.
+  The decomposition is also what makes every other proof describe the
+  target: those formulas verify the single-multiply form, and
+  `proof/ctwidemul_harness.c` proves the two forms compute the same
+  product at 8-bit operands, the widest bound whose formula converges.
 - **Mechanism.** Constant-time construction; ChaCha20/Poly1305/x25519
   have no table lookups by design.
 - **Check.** Semgrep-structural (`inv-16-no-variable-time-compare`) bans

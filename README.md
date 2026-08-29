@@ -299,14 +299,26 @@ secrets and MACs and never opens a record.
   the count at zero. What is left is the 32-to-32 multiply, which ARM
   documents as single-cycle on the M3. mips32r2 does not document its
   own, so the decomposition narrows that part's exposure rather than
-  closing it; `ct.h` says so beside the entry. The
-  plain product is used instead on architectures whose own is
-  constant-time, listed in `ct.h` with the evidence for each; anything
-  unlisted gets the decomposition, because being wrong about a listed
-  part is silent and being wrong about an unlisted one only costs
-  speed. That cost is measured, not assumed: 33% of the pinned
-  handshake's crypto and 1.7 kB of flash, itemised under Speed and
-  flash above.
+  closing it; `ct.h` says so. Every target gets the decomposition unless
+  its build passes `CH_NATIVE_WIDEMUL`, and there is no list of
+  architectures exempt by name: RISC-V publishes Zkt to attest
+  data-independent latency, Arm publishes FEAT_DIT and Intel DOITM, and
+  all three exist because the base architectures do not promise it, so
+  no architecture macro carries the claim. The Makefile passes that flag
+  for host test binaries, where nothing secret is at risk and solver
+  time is, and filters it out of the packaged object. That cost is
+  measured, not assumed: 33% of the pinned handshake's crypto and 1.7 kB
+  of flash, itemised under Speed and flash above.
+
+  The decomposition is also what carries every other proof to the
+  target. Those formulas verify the single-multiply form, since the
+  proof runner asserts `CH_NATIVE_WIDEMUL` on the development machine,
+  so they describe what ships only if the two forms compute the same
+  function. `proof/ctwidemul_harness.c` proves that: UB and shift range
+  at full 32-bit width, and the products themselves against the C
+  operator at 8-bit operands, the widest bound whose formula converges.
+  `make timing` measures the decomposed path rather than the host's
+  native one.
 - The quality of the random bytes, which rests on nothing here at all.
   `ch_rand_bytes` is the image's to supply, and no check in a library
   can grade it: a weak generator completes the handshake, sends a key
