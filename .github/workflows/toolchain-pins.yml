@@ -54,12 +54,13 @@ jobs:
           # this job pushes a branch. The repository is small, so a full
           # clone costs about a second.
           fetch-depth: 0
-          # A pull request opened with GITHUB_TOKEN starts no workflow run, and
-          # this pull request exists for its check run. Set the
-          # TOOLCHAIN_PIN_TOKEN secret to a token with contents and
-          # pull-requests write to get one. Without it the pull request still
-          # opens, and someone has to close and reopen it to start the checks.
-          token: ${{ secrets.TOOLCHAIN_PIN_TOKEN || secrets.GITHUB_TOKEN }}
+          # TOOLCHAIN_PIN_TOKEN is required, not preferred. GITHUB_TOKEN cannot
+          # open a pull request while "Allow GitHub Actions to create and
+          # approve pull requests" is off, and one it did open would start no
+          # check run — which is the thing this pull request exists for. Give
+          # the secret contents and pull-requests write, or this job does
+          # nothing.
+          token: ${{ secrets.TOOLCHAIN_PIN_TOKEN }}
 
       - name: Load the toolchain pins
         # tools/toolchain.env is the one place a tool version is written, so a
@@ -272,9 +273,6 @@ jobs:
             echo "CLAUDE.md forbids adapting the code or the suppressions to an older one, so"
             echo "every new finding is work to do in this branch. The checks below are that"
             echo "measurement, and merging is a decision for a person."
-            echo
-            echo "If no check run appears, GitHub suppressed it because a workflow token"
-            echo "opened this pull request. Close and reopen the pull request to start one."
           } > "$RUNNER_TEMP/pr-body.md"
 
           cat "$RUNNER_TEMP/pr-body.md" >> "$GITHUB_STEP_SUMMARY"
@@ -309,8 +307,21 @@ jobs:
           # difference is this job's own.
           git fetch origin "$BRANCH" 2>/dev/null || true
           if git rev-parse --verify -q "origin/$BRANCH" >/dev/null; then
-            theirs=$(git diff --name-only "origin/$GITHUB_REF_NAME" "origin/$BRANCH" \
-                     -- . ":(exclude)tools/toolchain.env")
+            # Ask only about files the branch itself changed since it forked.
+            # Comparing the two tips instead blames the branch for every commit
+            # the default branch has taken since, so an ordinary week of work on
+            # the default branch stops this job for good.
+            base="origin/$GITHUB_REF_NAME"
+            mb=$(git merge-base "$base" "origin/$BRANCH")
+            changed=$(git diff --name-only "$mb" "origin/$BRANCH" \
+                      -- . ":(exclude)tools/toolchain.env")
+            theirs=""
+            if [ -n "$changed" ]; then
+              # Still present as a difference against the default branch, so a
+              # squash merge that landed this work leaves nothing to protect.
+              # shellcheck disable=SC2086
+              theirs=$(git diff --name-only "$base" "origin/$BRANCH" -- $changed)
+            fi
             if [ -n "$theirs" ]; then
               # Fail rather than warn. A job that stops on its own and stays
               # green stops silently, and nobody learns the pins went stale.
@@ -337,5 +348,10 @@ jobs:
           else
             gh pr create --repo "$GITHUB_REPOSITORY" \
               --base "$GITHUB_REF_NAME" --head "$BRANCH" \
-              --title "$title" --body-file "$RUNNER_TEMP/pr-body.md"
+              --title "$title" --body-file "$RUNNER_TEMP/pr-body.md" || {
+              echo "could not open the pull request. The branch is pushed, so the"
+              echo "bumps are not lost. Check that TOOLCHAIN_PIN_TOKEN exists and"
+              echo "carries contents and pull-requests write."
+              exit 1
+            }
           fi

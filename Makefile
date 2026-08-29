@@ -879,7 +879,8 @@ lint-toolchain:
 	@rc=0; \
 	 for spec in "clang-tidy:$(CLANG_TIDY):version $(LLVM_MAJOR)\\." \
 	             "clang-format:$(CLANG_FORMAT):version $(LLVM_MAJOR)\\." \
-	             "clang:$(CLANG_RV):version $(LLVM_MAJOR)\\."; do \
+	             "clang:$(CLANG_RV):version $(LLVM_MAJOR)\\." \
+	             "llvm-nm:$(LLVM_NM):$(LLVM_MAJOR)\\."; do \
 	   name=$${spec%%:*}; rest=$${spec#*:}; bin=$${rest%%:*}; want=$${rest#*:}; \
 	   if [ -z "$$bin" ]; then \
 	     echo "lint-toolchain: $$name is missing; the pin is LLVM $(LLVM_MAJOR) (tools/toolchain.env)"; rc=1; \
