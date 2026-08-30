@@ -98,16 +98,20 @@ server on a fresh key pair and advance the counter.
 
 ## Memory
 
-[`bench/sram.sh`](bench/sram.sh) measures every number below on arm64. A 32-bit target
-shrinks the pointer fields.
+[`bench/sram.sh`](bench/sram.sh) measures every number below. The session
+struct is measured twice, once native on arm64 and once for rv32ic — the
+byte-count constants do not move, only the pointer fields, so a 32-bit device
+needs 80 bytes less than the host figure in either build. The stack peaks are
+arm64 only: `bench/stack.py` reads arm64 relocations, so an rv32 peak needs
+tooling that does not exist yet.
 
-| what | bytes |
-|---|---|
-| `ch_tls` session struct (includes 622 B TX staging) | 1144 |
-| receive buffer you provide (2048 shown; floor `CH_MIN_RXBUF`) | 2048 |
-| **total static working set** | **3192** |
-| `ch_tls` under `KEX=pq` (includes 1806 B TX staging) | 2328 |
-| **total static working set, `KEX=pq`** (2048 buffer) | **4376** |
+| what | arm64 | rv32 |
+|---|---|---|
+| `ch_tls` session struct (includes 622 B TX staging) | 1144 | 1064 |
+| receive buffer you provide (2048 shown; floor `CH_MIN_RXBUF`) | 2048 | 2048 |
+| **total static working set** | **3192** | **3112** |
+| `ch_tls` under `KEX=pq` (includes 1806 B TX staging) | 2328 | 2248 |
+| **total static working set, `KEX=pq`** (2048 buffer) | **4376** | **4296** |
 | peak stack, `ch_connect` (RSA-3072 verify) | 5056 |
 | peak stack, `ch_connect` (`PIN=ecdsa`) | 3536 |
 | peak stack, `ch_connect` (PSK) | 2480 |
