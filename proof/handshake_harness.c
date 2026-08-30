@@ -18,6 +18,7 @@
 
 #include "handshake_message.h"
 #include "handshake_parser.h"
+#include "handshake_record.h"
 #include "io.h"
 #include "keysched.h"
 #include "p256.h"
@@ -316,6 +317,80 @@ int tlsi_send_alert(ch_tls *t, uint8_t level, uint8_t description) {
     (void)level;
     (void)description;
     __CPROVER_assert(__CPROVER_w_ok(t, sizeof *t), "alert: session writable");
+    return CH_OK;
+}
+
+// The record reader, stubbed to the contract handshake_record_harness.c
+// proves on hostile streams. Compiling it here instead multiplies this
+// formula by the product of its two loop bounds and fill_nondet's: at the
+// shipped 45 x 140 x 618 that is about 1.2e10 steps, tens of terabytes, and
+// no verdict has ever come back (https://github.com/c4milo/chapulin/issues/37).
+// With these stubs the step count is the same at 2/2 as at 45/140, which is
+// what says the multiplicative term is gone rather than merely smaller.
+//
+// The contracts modelled here are exactly what that harness establishes.
+// hsr_fetch_record compacts, so pt_off is 0 on return; it yields any of the
+// four error codes the real one can, and sets h->alert on the paths that do.
+// hsr_next_msg returns a message lying wholly inside cfg.buf with at least the
+// 4-byte header, which is what lets handshake.c hand raw + 4 and raw_len - 4
+// to a parser without underflowing.
+int hsr_fetch_record(handshake_state *h) {
+    __CPROVER_assert(__CPROVER_w_ok(h, sizeof *h), "fetch: state writable");
+    ch_tls *t = h->t;
+    __CPROVER_assert(t->pt_off <= t->pt_len && t->pt_len <= t->cfg.buf_len,
+                     "fetch: caller keeps the unread window inside the buffer");
+    uint8_t pick = nondet_u8();
+    if (pick == 0) {
+        return CH_EIO;
+    }
+    if (pick == 1) {
+        h->alert = nondet_u8();
+        return CH_EPROTO;
+    }
+    if (pick == 2) {
+        return CH_ECAP;
+    }
+    if (pick == 3) {
+        h->alert = nondet_u8();
+        return CH_EAUTH;
+    }
+    size_t len = nondet_size_t();
+    __CPROVER_assume(len <= t->cfg.buf_len);
+    fill_nondet(t->cfg.buf, len);
+    t->pt_off = 0;
+    t->pt_len = len;
+    h->ccs_seen = nondet_u8();
+    h->quiet = nondet_u8();
+    return CH_OK;
+}
+
+int hsr_next_msg(handshake_state *h, uint8_t *type, const uint8_t **raw, size_t *raw_len) {
+    __CPROVER_assert(__CPROVER_w_ok(h, sizeof *h), "next: state writable");
+    __CPROVER_assert(__CPROVER_w_ok(type, 1), "next: type writable");
+    __CPROVER_assert(__CPROVER_w_ok(raw, sizeof *raw), "next: raw writable");
+    __CPROVER_assert(__CPROVER_w_ok(raw_len, sizeof *raw_len), "next: raw_len writable");
+    ch_tls *t = h->t;
+    int rc = hsr_fetch_record(h);
+    if (rc != CH_OK) {
+        return rc;
+    }
+    size_t off = nondet_size_t();
+    size_t n = nondet_size_t();
+    __CPROVER_assume(n >= 4 && n <= 4 + 0x4000);
+    __CPROVER_assume(off <= t->cfg.buf_len && n <= t->cfg.buf_len - off);
+    fill_nondet(t->cfg.buf, t->cfg.buf_len);
+    *type = nondet_u8();
+    *raw = t->cfg.buf + off;
+    *raw_len = n;
+    t->pt_off = nondet_size_t();
+    __CPROVER_assume(t->pt_off <= t->pt_len);
+    return CH_OK;
+}
+
+int hsr_transcript_hash(handshake_state *h, uint8_t out[SHA256_LEN]) {
+    __CPROVER_assert(__CPROVER_w_ok(h, sizeof *h), "hash: state writable");
+    __CPROVER_assert(__CPROVER_w_ok(out, SHA256_LEN), "hash: out writable");
+    fill_nondet(out, SHA256_LEN);
     return CH_OK;
 }
 
