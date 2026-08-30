@@ -239,7 +239,7 @@ apart from one that passed — so for the slow rows, read the nightly.
 | chacha20 | safe at any counter, in place and into a distinct buffer | ≤ 160 B — three blocks, full, full, partial |
 | poly1305 | safe for any three-chunk split; 64-bit products stay in range | messages ≤ 80 B — five blocks, crossing the buffered-block path in every alignment. The five-call shape `aead.c` uses is no longer exercised by a proof: the aead harnesses stub Poly1305, so that shape rests on the unit vectors, Wycheproof and the differential |
 | aead (three harnesses) | seal/open round-trips; a forged tag writes zero bytes; backward-overlap decrypt works. ChaCha20 and Poly1305 are stubbed to their contracts — a keystream that is the same for the same key, nonce and counter, and a tag that is a function of the bytes absorbed — which their own harnesses prove. Compiling them in returned no verdict in five hours; the stubbed formulas take about three seconds. What the stubs give up, and why the composition is an argument rather than a machine-checked step, is stated at the top of `proof/aead_stubs.h`. Sealing fully in place (`pt == ct`, the shape every outgoing record uses) is **not proven**: `proof/aead_inplace_harness.c` states it, but the formula has returned no verdict, so it carries no launch line | plaintext ≤ 16 B, aad ≤ 16 B, fast tier |
-| x25519 (five harnesses) | carry, add, sub, pack, cswap, and unpack are safe with every check on, add and sub in the ladder's aliased shape too, and the ladder's scalar bit index stays in bounds (fast tier); mul's index walk is safe in every caller aliasing shape — distinct, output aliasing either input, and sqr's all-one-object — with the signed-overflow class off (slow tier, one shape set per formula), and a separate lemma proves mul's int64 accumulation and fold cannot overflow (fast tier). The ladder's limb-growth composition is still an open task | limbs ≤ 2^24; into carry, ≤ 2^58 |
+| x25519 (five harnesses) | carry, add, sub, pack, cswap, and unpack are safe with every check on, add and sub in the ladder's aliased shape too, and the ladder's scalar bit index stays in bounds (fast tier); mul's index walk is safe in every caller aliasing shape — distinct, output aliasing either input, and sqr's all-one-object — with the signed-overflow class off (slow tier, one shape set per formula), and a separate lemma proves mul's int64 accumulation and fold cannot overflow (fast tier). Every one of these holds only inside the limb range in the next column, and nothing proves the ladder keeps its limbs there — see the conditional-proof note below | limbs ≤ 2^24; into carry, ≤ 2^58 |
 | p256 | the DER parser and limb marshalling stay safe on hostile signatures; a carry lemma covers the Montgomery multiply | signatures ≤ 80 B |
 | rsa (two harnesses) | the PSS decode and limb marshalling stay safe with the RSAVP1 result replaced by arbitrary bytes | 384 B modulus, every byte hostile except the top one, which each call pins to one of the three alignment shapes the decode takes — a symbolic top bit was measured at 7 GB of CNF |
 | record | seal works across its contract and returns, not traps, over the whole direction state — any key, IV, and sequence number, the saturation refusal included — and any claimed buffer size; rec_open stays safe on fully hostile bytes, into a separate buffer and in place, the shape both shipped callers use | records ≤ 160 B |
@@ -270,9 +270,27 @@ secrets and MACs and never opens a record.
   [RFC 6979](https://www.rfc-editor.org/rfc/rfc6979), OpenSSL-produced PSS at 2048 and 3072 bits) plus fresh
   signatures the Lean spec mints and the C must accept. CBMC proves
   the pieces; it does not run a scalar multiplication or a 3072-bit
-  exponentiation whole. For x25519 the limb-growth invariant, which
-  connects multiply outputs to add/sub inputs, is still an open proof
-  task.
+  exponentiation whole.
+- **x25519's field-op proofs are conditional, and nothing discharges the
+  condition.** Each one holds inside a stated limb range: `carry` at
+  `|limb| < 2^58`, and add, sub and pack at `< 2^24`. `x25519_mul`'s
+  lemma proves mul's accumulation and 38x fold land under 2^58, which is
+  what `carry` assumes, so those two meet. The step above them does not.
+  `ladder` runs 255 rounds of cswap, add, sub, mul, sqr and carry, and
+  `inv` 254 more, and nothing checks the limbs it hands each operation
+  are inside that operation's assumed range. The harness header calls the
+  ~2^17 the ladder is believed to produce an observation, not a checked
+  claim. So a missing `carry()` after a chain of adds would leave every
+  x25519 harness passing.
+  Unwinding the composition was measured and does not work: one ladder
+  step, and half of one, each demand more than about 14 GB, and the
+  demand does not fall with the multiply count, so shaving the step down
+  is not the lever. CBMC function contracts would close it by never
+  building the composed formula, and `docs/proofs.md` records why this
+  tree does not carry proof annotations in shipped source. Until that
+  trade changes, the limb-growth invariant is an assumption the x25519
+  proofs rest on, held by the RFC 7748 vectors and the differential
+  rather than by a checker.
 - The connected-phase driver. The post-handshake parser is proven on
   hostile bytes, but the `ch_read` / `ch_write` / `ch_close` loop
   around it — record reading and cross-record reassembly — does not
