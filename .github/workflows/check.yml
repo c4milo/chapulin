@@ -143,6 +143,8 @@ jobs:
             echo "GO_VERSION=$GO_VERSION"
             echo "CBMC_VERSION=$CBMC_VERSION"
             echo "KISSAT_VERSION=$KISSAT_VERSION"
+            echo "ACTIONLINT_VERSION=$ACTIONLINT_VERSION"
+            echo "ACTIONLINT_SHA256=$ACTIONLINT_SHA256"
           } >> "$GITHUB_ENV"
 
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
@@ -238,6 +240,25 @@ jobs:
           curl -fsSL "https://github.com/koalaman/shellcheck/releases/download/v$SHELLCHECK_VERSION/shellcheck-v$SHELLCHECK_VERSION.linux.x86_64.tar.xz" \
             | tar xJ -C "$HOME/shellcheck-inst" --strip-components=1 \
                 "shellcheck-v$SHELLCHECK_VERSION/shellcheck"
+
+      - name: Lint the workflows
+        # make lint-shellcheck covers the scripts in bench/, proof/ and test/.
+        # Nothing covered the shell inside these workflow files until this, and
+        # actionlint found a real defect there: backticks in a double-quoted
+        # echo, which the shell runs as a command. It lives here rather than in
+        # make check because that target must not need a Go binary to build a
+        # C library.
+        #
+        # The tarball is checked against the published checksum before it runs.
+        run: |
+          set -euo pipefail
+          url="https://github.com/rhysd/actionlint/releases/download/v$ACTIONLINT_VERSION"
+          curl -fsSLO "$url/actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
+          echo "$ACTIONLINT_SHA256  actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz" \
+            | sha256sum -c -
+          tar xzf "actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz" actionlint
+          ./actionlint .github/workflows/*.yml
+          echo "actionlint: every workflow clean"
 
       - name: Check tool versions match the pins
         # Assert, do not print. The clang tools are installed by
