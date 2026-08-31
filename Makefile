@@ -99,11 +99,11 @@ SHELLCHECK ?= shellcheck
 SH_SRCS := $(shell git ls-files '*.sh' '.githooks/*')
 
 SRCS := ct.c sha256.c hkdf.c chacha20.c poly1305.c aead.c x25519.c p256.c rsa.c rsa_mont.c \
-        pem.c x509.c x509_der.c buf.c record.c keysched.c io.c handshake_message.c handshake_parser.c handshake_record.c session.c \
+        pem.c x509.c x509_der.c x509_ca.c buf.c record.c keysched.c io.c handshake_message.c handshake_parser.c handshake_record.c session.c \
         handshake_auth.c handshake.c handshake_post.c tls.c softmul.c
 
 HDRS := ct.h sha256.h hkdf.h chacha20.h poly1305.h aead.h x25519.h p256.h rsa.h ch_assert.h \
-        pem.h x509.h buf.h record.h keysched.h io.h handshake_message.h handshake_parser.h handshake_record.h cfg.h session.h handshake_auth.h handshake.h handshake_post.h \
+        pem.h x509.h x509_ca.h buf.h record.h keysched.h io.h handshake_message.h handshake_parser.h handshake_record.h cfg.h session.h handshake_auth.h handshake.h handshake_post.h \
         tls.h rand.h drbg.h sha3.h mlkem.h mlkem_poly.h
 # softmul.c is excluded on purpose. It has to define __mulsi3 and
 # __muldi3 -- the names the compiler emits, so they replace the runtime
@@ -120,7 +120,7 @@ LINT_C := $(filter-out softmul.c,$(SRCS)) drbg.c sha3.c mlkem.c mlkem_poly.c tes
 
 # Test-local headers: prerequisites for every binary that includes them,
 # so a header edit rebuilds the binaries it changes.
-TESTH := test/test_random.h test/pem_armor.h test/pem_tests.h test/session_tests.h test/session_post_tests.h \
+TESTH := test/test_random.h test/pem_armor.h test/pem_tests.h test/x509_ca_tests.h test/session_tests.h test/session_post_tests.h \
          test/session_cfg_tests.h test/p256_tests.h test/diff_driver.h test/diff_hash.h \
          test/diff_handshake_parser.h test/diff_p256.h test/diff_pem.h test/diff_record.h test/diff_rsa.h \
          test/diff_x25519.h test/handshake_sequence_server.h test/rfc8448_vectors.h \
@@ -148,8 +148,11 @@ endif
 TRUST ?= raw
 ifeq ($(TRUST),ca)
 LIB_DEF += -DCH_TRUST_CA
+# Provisioning is a public call only where its parser is linked.
+PUBLIC_CA := ch_pubkey_from_pem
 else
-LIB_SRCS := $(filter-out pem.c x509.c x509_der.c,$(LIB_SRCS))
+PUBLIC_CA :=
+LIB_SRCS := $(filter-out pem.c x509.c x509_der.c x509_ca.c,$(LIB_SRCS))
 endif
 # Key exchange: KEX=x25519 (default) or KEX=pq (-DCH_KEX_PQ), the
 # X25519MLKEM768 hybrid — the ML-KEM and SHA-3 modules join the
@@ -201,7 +204,7 @@ print-lib-srcs:
 	@echo $(LIB_SRCS)
 # RAND=drbg packages the generator, so ch_drbg_seed becomes part of the
 # API the image calls and lib-check covers it like the other four.
-PUBLIC := ch_connect ch_read ch_write ch_close $(PUBLIC_RAND)
+PUBLIC := ch_connect ch_read ch_write ch_close $(PUBLIC_RAND) $(PUBLIC_CA)
 
 bin/obj/$(LIB_VARIANT)/%.o: %.c $(HDRS)
 	@mkdir -p bin/obj/$(LIB_VARIANT)
@@ -339,7 +342,17 @@ bin/handshake_strict_test: test/handshake_strict_test.c handshake_parser.c buf.c
 
 # Certificate grammar strictness: one binary per PIN, because the
 # profile's grammar is the build's grammar.
-X509STRICT_SRC := test/x509_strict_test.c pem.c x509.c x509_der.c buf.c sha256.c ct.c
+X509STRICT_SRC := test/x509_strict_test.c pem.c x509.c x509_der.c x509_ca.c buf.c sha256.c ct.c
+
+# The provisioning tool the e2e suite feeds real openssl armour to.
+PEMKEY_SRC := test/pemkey.c pem.c x509.c x509_der.c x509_ca.c buf.c sha256.c ct.c
+bin/pemkey: $(PEMKEY_SRC) rsa.c rsa_mont.c $(HDRS)
+	@mkdir -p bin
+	$(CC) $(CFLAGS) -DCH_TRUST_CA -I. -o $@ $(PEMKEY_SRC) rsa.c rsa_mont.c
+
+bin/pemkey_ecdsa: $(PEMKEY_SRC) p256.c $(HDRS)
+	@mkdir -p bin
+	$(CC) $(CFLAGS) -DCH_TRUST_CA -DCH_PIN_ECDSA -I. -o $@ $(PEMKEY_SRC) p256.c
 bin/x509strict: $(X509STRICT_SRC) rsa.c rsa_mont.c $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) -I. -o $@ $(X509STRICT_SRC) rsa.c rsa_mont.c
@@ -476,7 +489,7 @@ endif
 # derivation, which handshake_strict_pq, the differential and the e2e pq
 # legs cover.
 .PHONY: check-slow
-check-slow: check bin/handshake_sequence_test bin/handshake_sequence_pq
+check-slow: check bin/handshake_sequence_test bin/handshake_sequence_pq bin/pemkey bin/pemkey_ecdsa
 	./test/e2e.sh
 	$(MAKE) diff
 	./bin/handshake_sequence_test

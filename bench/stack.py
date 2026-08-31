@@ -15,7 +15,12 @@ import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+# The public calls, per build. ch_pubkey_from_pem exists only under
+# TRUST=ca, so it is measured only when the object defines it -- but an
+# entry that is listed and absent is a script bug, not a build variant,
+# so main() names the difference instead of printing a silent 0.
 ENTRIES = ["_ch_connect", "_ch_read", "_ch_write", "_ch_close"]
+CA_ENTRIES = ["_ch_pubkey_from_pem"]
 SRCS = sorted(ROOT.glob("*.c"))
 
 # STACK_CFLAGS: extra compile flags (e.g. -DCH_PIN_ECDSA to walk that
@@ -121,7 +126,17 @@ def main() -> int:
             fr.pop(fn, None)
             for callees in cg.values():
                 callees.discard(fn)
-        for entry in ENTRIES:
+        entries = list(ENTRIES)
+        for entry in CA_ENTRIES:
+            if entry in fr:
+                entries.append(entry)
+        missing = [e for e in ENTRIES if e not in fr]
+        if missing:
+            # A frame of 0 for a real entry point means the symbol was
+            # not measured, and deepest() would report it as free.
+            print(f"stack.py: no frame for {', '.join(missing)}", file=sys.stderr)
+            return 1
+        for entry in entries:
             depth, path = deepest(entry, fr, cg, ())
             chain = " > ".join(p.lstrip("_") for p in path)
             print(f"{entry.lstrip('_'):12} {depth:5} B  via {chain}")

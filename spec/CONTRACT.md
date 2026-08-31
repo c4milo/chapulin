@@ -151,6 +151,22 @@ Spec.Pem.decode?      : (derMax : Nat) → ByteArray → Option ByteArray
                         -- line terminator (§3's ABNF admits it), and an empty
                         -- body is rejected. Line op: `pemdecode <derMax> <hex>`
                         -- → `ok <der>` / `ERR pem reject`.
+Spec.X509Ca.caKey?    : Alg → (derMax : Nat) → ByteArray → Option ByteArray
+                        -- provisioning: one PEM certificate to the SPKI key
+                        -- bytes ch_cfg.server_pubkey takes. Composes
+                        -- Spec.Pem.decode? with the RFC 5280 §4.1 walk. NOT
+                        -- Spec.X509.parse's profile, and the differences are
+                        -- the point: the signature's framing is read and its
+                        -- bytes never checked, validity and issuer and subject
+                        -- go unread, basicConstraints must say cA TRUE and any
+                        -- pathLenConstraint is accepted (§4.2.1.9), keyUsage is
+                        -- optional and must permit keyCertSign when present
+                        -- (§4.2.1.3), extendedKeyUsage is not required and is
+                        -- rejected when critical like any unrecognized critical
+                        -- extension (§4.2). Decoding is not authenticating: this
+                        -- yields bytes, never a verdict. Line op:
+                        -- `pemcakey <alg> <derMax> <hex>` → `ok <key>` /
+                        -- `ERR pemcakey reject`.
 Spec.X509.parse       : Alg → (caKey list : ByteArray) →
                         Option (ByteArray × Option Nat)
                         -- profiled chain acceptance over the RFC 8446 §4.4.2
@@ -384,6 +400,14 @@ Spec.Pem.b64Value?_table     b64Value? of the i-th RFC 4648 §4 alphabet charact
                              -- is some i, all 64 — the table is the RFC's, not
                              -- a transcription of pem.c's compares
 Spec.Pem.decode?_size        decode? derMax input = some d → d.size ≤ derMax
+Spec.X509Ca.isCaTrue_iff     isCaTrue accepts exactly tlv 0x30 caTrue, alone or
+                             -- followed by one INTEGER TLV filling the SEQUENCE
+                             -- (any pathLenConstraint value, unread) — the two
+                             -- anchor encodings and nothing else
+Spec.X509Ca.caKey?_p256_size caKey? .p256 = some k → k.size = 64
+Spec.X509Ca.caKey?_rsa_size  caKey? .rsa = some k → 256 ≤ k.size ≤ 384, 8 | k.size
+                             -- both mirror what proof/x509ca_harness.c asserts
+                             -- of the C entry's outputs
 Spec.Record.nonce_inj        distinct sequence numbers below 2^64 give distinct record
                              -- nonces (RFC 9846 §5.3): within one traffic key the
                              -- nonce never repeats

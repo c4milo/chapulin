@@ -115,11 +115,13 @@ rules:
     message: >-
       INV-5: exactly one certificate parser. DER and X.509 readers
       live in x509_der.c behind x509.c's profile walker, and p256.c's
-      der_parse reads exactly one ECDSA-Sig-Value. A call anywhere
-      else is a second parser growing. Tripwire grade: this catches
+      der_parse reads exactly one ECDSA-Sig-Value. x509_ca.c reads
+      the same DER for provisioning and reaches no verdict. A call
+      anywhere else is a parser growing. Tripwire grade: this catches
       honest drift by name, not a reintroduction under another name.
     paths:
-      exclude: [test, proof, fuzz, spec, bench, bin, examples, p256.c, x509.c, x509_der.c]
+      exclude: [test, proof, fuzz, spec, bench, bin, examples, p256.c, x509.c, x509_der.c,
+                x509_ca.c]
     patterns:
       - pattern: $F(...)
       - metavariable-regex:
@@ -160,6 +162,19 @@ rules:
     paths:
       exclude: [test, proof, fuzz, spec, bench, bin, examples, handshake_auth.c, x509.c]
     pattern: x509_verify_leaf(...)
+
+  - id: inv-20-provisioning-entry
+    languages: [c]
+    severity: ERROR
+    message: >-
+      INV-20: ch_pubkey_from_pem is provisioning, called by firmware
+      and by no library source. A call from inside the library would
+      put the certificate reader on a path peer input can reach, which
+      is the fact INV-5's containment rests on. x509_ca.c is excluded
+      because it defines the entry, not because it may call it.
+    paths:
+      exclude: [test, proof, fuzz, spec, bench, bin, examples, x509_ca.c]
+    pattern: ch_pubkey_from_pem(...)
 
   - id: inv-20-no-time-calls
     languages: [c]

@@ -41,6 +41,7 @@ def selftestAll : String :=
     ("rsa", Spec.Rsa.selftest),
     ("pem", Spec.Pem.selftest),
     ("x509", Spec.X509.selftest),
+    ("x509ca", Spec.X509Ca.selftest),
     ("drbg", Spec.Drbg.selftest),
     ("handshake", Spec.Handshake.selftest),
     ("handshake_parser", Spec.HandshakeParser.selftest)]
@@ -281,6 +282,13 @@ def dispatch : List String → Option String
     return match cap.bind (fun c => Spec.Pem.decode? c p) with
       | some der => s!"ok {bytesToHex der}"
       | none => "ERR pem reject"
+  | ["pemcakey", alg, derMax, pem] => do
+    let a ← Spec.X509.algOf? alg
+    let cap := derMax.toNat?
+    let p ← hexArg? pem
+    return match cap.bind (fun c => Spec.X509Ca.caKey? a c p) with
+      | some key => s!"ok {bytesToHex key}"
+      | none => "ERR pemcakey reject"
   | ["x509parse", alg, caKey, list] => do
     let a ← Spec.X509.algOf? alg
     let ck ← hexArg? caKey

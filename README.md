@@ -141,6 +141,16 @@ and derives the floor for you: `CH_MIN_RXBUF` becomes 3,098 bytes
 (RSA) or 1,562 (ECDSA), so a buffer too small for the largest chain
 fails at setup rather than mid-handshake.
 
+Provisioning with `ch_pubkey_from_pem` needs three more caller-side
+buffers, none of them part of the static working set above and none of
+them live between calls: the staged PEM text (up to `CH_PEM_MAX`,
+3,136 bytes RSA or 1,600 ECDSA), a scratch array for the decoded
+certificate (`CH_X509_MAX`, 1,536 or 768), and the key slot the device
+already needed (`CH_X509_KEY_MAX`, 384 or 64). The scratch must not be
+`cfg.buf` while a session is live: `ch_read` serves unread plaintext
+out of that buffer across calls. The call itself measures 576 bytes of
+stack, reported by `bench/stack.py` beside the other public calls.
+
 The script computes each entry point's worst case from the object
 code's call graph. It does not rely on a hand-picked call chain. The
 RSA verify holds the deepest frames, so it sets the `ch_connect` peak
@@ -207,7 +217,7 @@ would change that trade.
 
 Four layers cover four different failure classes.
 
-**Proofs cover memory safety.** Twenty-eight of the twenty-nine C
+**Proofs cover memory safety.** Thirty of the thirty-one C
 sources are compiled into a [CBMC](https://www.cprover.org/cbmc/) harness, which proves them free of
 out-of-bounds access, invalid pointers, bad shifts, and division by
 zero, for every input within the harness's bound. Signed overflow is
@@ -253,6 +263,9 @@ apart from one that passed — so for the slow rows, read the nightly.
 | drbg | the generator stays safe for any request, seeded and across rekeys | requests ≤ 96 B |
 | x509der (two harnesses) | every DER primitive stays safe on hostile bytes at the rbuf shape its caller hands it, honors the pointer contracts the walker rests on, and consumes no more than the per-primitive cap the walker proof replays, in both builds | inputs ≤ 448 B; keyusage at its 256 B extnValue cap |
 | x509parse (two harnesses) | the certificate walker stays safe on any entry list, primitives stubbed to their proven contracts. Only the ECDSA build proves the full two-entry flight; the RSA bound holds one maximum certificate plus framing, so its two-entry walk rests on the ECDSA proof and the walker being identical outside the SPKI arm | ECDSA: ≤ 256 B, two entries; RSA: ≤ 840 B, one entry, slow tier |
+| pem_step (two harnesses) | `b64_value` returns exactly what RFC 4648 §4's alphabet table returns, on all 256 bytes; `pad_ok` is exactly §3.5's rule; and one body character preserves the decoder's accounting invariant from any state it admits, so induction carries that invariant to any input length | unbounded — one character, any state |
+| pem (two harnesses) | the PEM decoder stays safe on hostile bytes at the shipped caps and honors its contract: a success yields a non-empty length inside the caller's array, every rejection yields zero, and an input over `CH_PEM_MAX` is refused before a byte is read | inputs ≤ 64 B (see the limit below) |
+| x509ca (two harnesses) | the provisioning walk stays safe on any input and honors its contract: a success yields a key inside `CH_X509_KEY_MAX`, and every rejection yields zero with the key wiped. DER primitives stubbed to the contracts the `x509der` leg proves, and the SPKI stub deliberately returns lengths outside the real range so the entry's own bound check is what keeps the copy in range | any input; decoded certificate ≤ `CH_X509_MAX` |
 
 CBMC found one real bug during development: `carry()` left-shifted a
 negative value, which is undefined behavior even though compilers
@@ -268,6 +281,24 @@ secrets and MACs and never opens a record.
 **A Lean spec covers what the code computes.** See below.
 
 **These rest on tests, not proofs:**
+
+- PEM input longer than 64 bytes. The decoder is a per-character state
+  machine over symbolic bytes, the shape bounded model checking pays
+  most for — measured at roughly the third power of the input length,
+  so the shipped 3,136-byte cap is out of reach. 64 is the floor that
+  still works: the shortest accepting input is 58 bytes, and at 56 the
+  success arm is unreachable and its assertion passes vacuously while
+  the run still reports success. What carries past 64 is stated in
+  `proof/pem_harness.c`: `pem.c` does no raw buffer arithmetic, so
+  memory safety is `buf.c`'s, and `pem_step` proves the per-character
+  invariant from an arbitrary state. What does not carry is the
+  boundary sequence at lengths this bound never reaches, which
+  `test/diff_pem.h` exercises to `CH_PEM_MAX` against the Lean oracle
+  instead. No fuzz target covers this parser, on purpose: the
+  differential drives the same domain against an oracle that checks
+  the verdict and the bytes, where a fuzzer checks only for a crash,
+  and a sixth target would push the nightly fuzz job past the budget
+  `lint-fuzz-budget` holds.
 
 - x25519 and P-256 and RSA functional correctness. Each rests on
   published vectors ([RFC 7748](https://www.rfc-editor.org/rfc/rfc7748) including the 1,000-iteration chain,
@@ -366,20 +397,24 @@ byte-exact vectors too. Line coverage is measured and gated in CI.
 [`spec/`](spec/) is an executable [Lean 4](https://lean-lang.org/) specification of everything chapulin
 computes: SHA-256, SHA-3 and both SHAKE XOFs, ML-KEM-768, HKDF and the
 key schedule, ChaCha20, Poly1305, the AEAD, record framing, x25519,
-P-256, RSA-PSS, and the grammar of the
-four handshake messages a server sends. It follows the RFC text and
+P-256, RSA-PSS, the grammar of the
+four handshake messages a server sends, and the provisioning path —
+RFC 7468 armour with RFC 4648 base64, and the certificate walk that
+turns one PEM block into the key bytes a pin slot takes. It follows the RFC text and
 never the C, because a differential oracle only works when a shared
 misreading cannot make both sides agree.
 
 `make diff` builds the spec, runs its selftests, then drives about
-6,000 random-input comparisons between the C and the spec over a pipe,
+7,400 random-input comparisons between the C and the spec over a pipe,
 from a fixed seed. Some rows are signatures the spec mints and the C
 must accept: the spec holds the private keys and signs, and the C, which
 can only verify, must accept every genuine signature and reject every
 mutated one. About 730 rows feed the certificate parser generated DER —
 uniform bytes, edits at random TLV sites, and leaves the spec re-signs.
 Nobody knows those answers in advance, so the C answers first and the
-spec must reproduce it.
+spec must reproduce it. The provisioning rows work the same way, on
+certificates the spec mints and the driver armours at every line width
+the decoder admits.
 
 The spec also carries theorems about itself, so an agreement between C
 and spec transfers a proven fact rather than a matching answer. The
@@ -461,8 +496,10 @@ Other targets:
 - `make lib RAND=extern` packages the library as one relocatable object
   (`bin/chapulin.o`) exporting exactly the four public calls. Every
   internal symbol is localized, and `lib-check` fails if the export
-  list ever grows. `RAND=drbg` packages the reference generator instead
-  and exports `ch_drbg_seed` as a fifth call. `RAND` is the one build
+  list ever changes. The list is per build on two axes: `RAND=drbg`
+  packages the reference generator and exports `ch_drbg_seed`, and
+  `TRUST=ca` exports `ch_pubkey_from_pem` for provisioning, so a
+  `TRUST=ca RAND=drbg` object exports six. `RAND` is the one build
   variable with no default. Compose with `PIN=ecdsa`, `TRUST=ca` and
   `KEX=pq`.
 - `make prove-slow` runs the slow-tier proofs, one per nightly job. The runner caches by

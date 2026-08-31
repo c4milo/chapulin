@@ -444,8 +444,8 @@ launch fast full hello_build 400 "fill_nondet.0:321,wb_bytes.0:321" buf.c
 # Weights are measured peaks (kissat): der 1.4 GB, parse_ecdsa
 # 2.4 GB (down from 5.6 with the typed stub stores), parse rsa
 # 7.1 GB.
-# The provisioning decoder (https://github.com/c4milo/chapulin/issues/39),
-# proved in two pieces because the decoder is the shape bounded model
+# The provisioning path (https://github.com/c4milo/chapulin/issues/39),
+# proved in three pieces because the decoder is the shape bounded model
 # checking pays most for: a per-character state machine over symbolic
 # bytes, measured at roughly the third power of the input length.
 #
@@ -464,12 +464,18 @@ launch fast full hello_build 400 "fill_nondet.0:321,wb_bytes.0:321" buf.c
 # new shape -- 80 is 195 s / 4.6 GB, 160 is 1348 s / 7.3 GB -- and the
 # differential in test/diff_pem.h runs the full range to CH_PEM_MAX
 # against the Lean oracle, so the extra bound buys quantum count rather
-# than coverage. What no bound here proves is stated in
-# proof/pem_harness.c's header.
+# than coverage. What no bound here proves is stated in README's
+# verification section.
+#
+# x509ca proves the provisioning walk over any input, with the DER
+# primitives stubbed to the contracts x509der proves. Measured 7 s /
+# 0.34 GB rsa, 5 s / 0.15 GB ecdsa, 730 properties.
 launch fast full pem_step 66 "" buf.c ct.c
 launch fast full pem_step_ecdsa 66 "" buf.c ct.c
 launch fast:2 full pem 66 "" -DCH_PROOF_PEM_LEN=64 buf.c ct.c
 launch fast:2 full pem_ecdsa 66 "" -DCH_PROOF_PEM_LEN=64 buf.c ct.c
+launch fast:1 full x509ca 400 "fill_nondet.0:1537" buf.c ct.c
+launch fast:1 full x509ca_ecdsa 400 "fill_nondet.0:1537" buf.c ct.c
 launch fast:3 full x509der 452 "fill_nondet.0:449,ct_memeq.0:68" buf.c ct.c
 launch fast:3 full x509der_ecdsa 452 "fill_nondet.0:449,ct_memeq.0:68" buf.c ct.c
 launch fast:4 full x509parse_ecdsa 260 "fill_nondet.0:257,ct_memeq.0:68" buf.c ct.c

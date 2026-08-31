@@ -142,8 +142,8 @@ the repository's strictness suite over your material with
 
 The device pins raw key bytes, not a certificate: `server_pubkey`
 takes an RSA modulus (256 to 384 bytes, big-endian) or the 64-byte
-P-256 X||Y point. chapulin has no PEM decoder, so the conversion runs
-where your provisioning or fleet tooling runs, one command per arm:
+P-256 X||Y point. Convert where your provisioning or fleet tooling
+runs, one command per arm:
 
     # RSA build: the modulus, as raw bytes.
     openssl x509 -in root.pem -noout -modulus \
@@ -166,11 +166,35 @@ channel that carried the certificate — for a rotation in the field
 that channel is the TLS session itself, as docs/rotation.md
 describes. Run "Verify an issued certificate" first, then convert.
 
-Convert before the material leaves your tooling, even when it
-travels to devices over the air: the converted bytes cost one command
-there and nothing on the device. An on-device decoder would be
-justified only where a fleet server relays an operator-signed blob it
-cannot parse; no such decoder exists in the tree today.
+Convert before the material leaves your tooling, even when it travels
+to devices over the air: the converted bytes cost one command there
+and nothing on the device. That stays the default.
+
+A `TRUST=ca` build also exports `ch_pubkey_from_pem`, which reads one
+PEM CERTIFICATE block and copies out the same key bytes on the device
+(`x509_ca.h`). It earns its place in one case: a fleet server that
+relays an operator-signed blob it cannot itself reshape. Converting at
+such a relay would mean the relay rewrites what the operator signed.
+Everywhere else the command above is better — no parser on the device,
+no second exported call, and 2.4 kB less
+flash (pem.o plus x509_ca.o, measured by bench/device-ram.sh's recipe:
+mips32r2, -Os, .text plus .rodata).
+
+Decoding is not authenticating either. `ch_pubkey_from_pem` leaves the
+certificate's signature, dates and names unread; it checks only that
+the block decodes, that basicConstraints says CA:TRUE, and that
+keyUsage, when present, permits keyCertSign. Those catch an operator
+pushing a leaf by mistake. They stop no attacker: whoever can
+substitute the blob can set the bits. The key is trustworthy because
+the operator pushed it over the TLS session, exactly as a converted
+pin is.
+
+Both paths take exactly one certificate. `ch_pubkey_from_pem` rejects
+a file holding two blocks rather than reading the first, because the
+two pin slots are ordered in time — slot A current, slot B staged next
+(docs/rotation.md) — while a PEM file's blocks are ordered by
+hierarchy, and nothing in the file says which reading applies. Split a
+bundle before pushing it, and push each block to the slot you mean.
 
 ## Server configuration
 

@@ -34,8 +34,10 @@
 
 #ifdef CH_PIN_ECDSA
 static const char *const certd_build_alg = "p256";
+static const int certd_build_is_ecdsa = 1;
 #else
 static const char *const certd_build_alg = "rsa";
+static const int certd_build_is_ecdsa = 0;
 #endif
 
 // P-256 CA private scalar and signing nonce (the RFC 6979 §A.2.5 test
@@ -208,6 +210,8 @@ static size_t certd_mint(const char *alg, const char *serial_hex, const char *su
 
 #include "diff_x509_bounds.h"
 #include "diff_x509_chain.h"
+// After diff_x509_chain.h: the anchor extension sets are defined there.
+#include "diff_x509_ca.h"
 #include "diff_x509_epoch.h"
 #include "diff_x509_mutate.h"
 #include "diff_x509_random.h"
@@ -298,6 +302,9 @@ static void diff_x509(void) {
     // not accept the chain — and the CA's own modulus as the leaf key.
     diff_x509_chain("rsa", diff_rsa_n2048, diff_rsa_n2048, diff_rsa_n3072);
     diff_x509_chain("p256", ca_pub_hex, leaf_pub_hex, leaf_pub_hex);
+    // Provisioning: the build's own arm only, since ch_pubkey_from_pem
+    // reads one SPKI shape.
+    diff_x509_ca(certd_build_is_ecdsa ? leaf_pub_hex : diff_rsa_n3072);
     // Randomized rows last: they consume the PRNG, so appending them
     // leaves every earlier section's stream untouched.
     certd_rand_pass("rsa", diff_rsa_n2048, diff_rsa_n3072);

@@ -331,6 +331,33 @@ CAMOD=$(rsa_modulus "$DIR/caroot.key")
     exit 1
 }
 
+# Provisioning: the decoder must extract the same key from the armour
+# openssl just wrote that openssl reports for the key itself. This is
+# the only place real openssl-produced PEM reaches ch_pubkey_from_pem;
+# every other test armours a vector itself.
+PEMMOD=$(./bin/pemkey "$DIR/caroot.pem") || PEMMOD="REJECTED"
+if [ "$PEMMOD" = "$CAMOD" ]; then
+    echo "ok   ca-rsa-provision"
+else
+    echo "FAIL ca-rsa-provision: pemkey gave $PEMMOD, openssl gave $CAMOD"
+    exit 1
+fi
+# The leaf is the file an operator pushes by mistake: CA:FALSE, so the
+# walk must refuse it rather than pin a controller key as an anchor.
+if ./bin/pemkey "$DIR/caleaf.pem" >/dev/null 2>&1; then
+    echo "FAIL ca-rsa-provision-leaf: a leaf was accepted as a trust anchor"
+    exit 1
+fi
+echo "ok   ca-rsa-provision-leaf"
+# The intermediate is a legitimate anchor (docs/ca.md: pin the
+# intermediate when a managed CA signs beyond the fleet).
+if ./bin/pemkey "$DIR/caint.pem" >/dev/null 2>&1; then
+    echo "ok   ca-rsa-provision-intermediate"
+else
+    echo "FAIL ca-rsa-provision-intermediate: a real intermediate was refused"
+    exit 1
+fi
+
 start_server -tls1_3 -ciphersuites TLS_CHACHA20_POLY1305_SHA256 -cert "$DIR/caleaf.pem" -key "$DIR/caleaf.key" -cert_chain "$DIR/caint.pem" -rev
 PORT7=$SRV_PORT
 start_server -tls1_3 -ciphersuites TLS_CHACHA20_POLY1305_SHA256 -cert "$DIR/caflat.pem" -key "$DIR/caleaf.key" -rev
@@ -393,6 +420,14 @@ ECROOTPUB=$(p256_pub "$DIR/ecroot.key")
     echo "FAIL e2e ca-ecdsa: could not extract the root public key"
     exit 1
 }
+
+PEMPUB=$(./bin/pemkey_ecdsa "$DIR/ecroot.pem") || PEMPUB="REJECTED"
+if [ "$PEMPUB" = "$ECROOTPUB" ]; then
+    echo "ok   ca-ecdsa-provision"
+else
+    echo "FAIL ca-ecdsa-provision: pemkey gave $PEMPUB, openssl gave $ECROOTPUB"
+    exit 1
+fi
 
 start_server -tls1_3 -ciphersuites TLS_CHACHA20_POLY1305_SHA256 -cert "$DIR/ecleaf.pem" -key "$DIR/ecleaf.key" -cert_chain "$DIR/ecint.pem" -rev
 PORT9=$SRV_PORT

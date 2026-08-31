@@ -94,35 +94,46 @@ which convention holds them.
 
 ## Deleted by absence
 
-### INV-5 — one profiled certificate parser
+### INV-5 — one certificate verifier, one provisioning reader
 
-- **Claim.** Exactly one certificate parser exists, and it accepts
+- **Claim.** Exactly one certificate *verifier* exists, and it accepts
   exactly the own-CA profile: X.509 v3, one or two CertificateEntry
   items with empty per-entry extensions — the leaf alone, or the
   leaf plus the one intermediate that signed it — anchored at the CA with
   the build's one algorithm, canonical DER on every decoded field,
   keyUsage and extendedKeyUsage required, no name matching, no
   clock. Any widening of that grammar is the violation, whether it
-  lands inside the parser or beside it. Raw-pin builds compile none
-  of it: they hash the certificate into the transcript and never
+  lands inside the verifier or beside it. One other module reads
+  certificate DER: the provisioning reader in `x509_ca.c`, which
+  reaches no verdict — it returns key bytes, never a decision — leaves
+  the certificate's signature, dates and names unread, and is
+  unreachable from any path peer input takes. Raw-pin builds compile
+  neither: they hash the certificate into the transcript and never
   read it.
 - **Mechanism.** The length-first canonical-DER decoder in
   `x509_der.c` (definite lengths, minimal encodings, exact-fill of
-  every container; rejection precedes interpretation) plus the
-  pinned profile constants in `x509.c`, byte-compared, never
-  matched loosely. The only DER reader outside the cert files
-  (`der_parse` in `p256.c`) reads exactly one ECDSA-Sig-Value and
-  parses nothing else.
+  every container; rejection precedes interpretation) plus pinned
+  profile constants, byte-compared, never matched loosely: the
+  verifier's in `x509.c`, the reader's in `x509_ca.c` (version,
+  basicConstraints and keyUsage object identifiers, `cA` TRUE). The
+  reader's containment is a fact about includes: `x509_ca.h` and
+  `pem.h` are included by no library source except `x509_ca.c`
+  itself, so no session reaches it. The only DER reader outside
+  those four files (`der_parse` in `p256.c`) reads exactly one
+  ECDSA-Sig-Value and parses nothing else.
 - **Check.** Semgrep-tripwire (`inv-5-profiled-cert-parser`): calls
   to identifiers matching `x509_`, `asn1_`, or `der_` outside
-  p256.c, x509.c, and x509_der.c. Grammar widening inside the cert
-  files is held by the boundary-pair tests and review; the rule
-  catches a second parser growing elsewhere.
+  p256.c, x509.c, x509_der.c and x509_ca.c. Semgrep-structural
+  (`inv-20-provisioning-entry`) holds the containment half. Grammar
+  widening inside those files is held by the boundary-pair tests in
+  test/x509_ca_tests.h and review, as x509.c's always has been; the
+  tripwire catches a reader growing outside them.
 - **Violation.** A PR accepts a second CertificateEntry, an
   absent-params AlgorithmIdentifier, or an unknown critical
-  extension "for compatibility" — or "just reads the
-  SubjectPublicKeyInfo" from a new module and the largest
-  historical TLS bug class walks in unprofiled.
+  extension "for compatibility" — or a library source calls
+  `ch_pubkey_from_pem`, putting the provisioning reader on a path
+  peer input can reach, or the reader grows a verdict instead of
+  returning bytes.
 - See [decisions: Trust model](decisions.md#trust-model).
 
 ### INV-6 — no PKCS#1 v1.5
@@ -140,19 +151,26 @@ which convention holds them.
 
 ### INV-20 — the certificate parser stays contained
 
-- **Claim.** `x509_verify_leaf` is the parser's one public entry,
-  called only from `handshake_auth.c`, and the library never reads a
-  clock: certificate validity is CA reissuance policy, not a
-  device-side time check.
-- **Mechanism.** Single-entry design — the DER primitives sit
-  behind the profile walker, and the walker sits behind one
-  function. `x509_read_time` checks the Time shape and ignores the
+- **Claim.** `x509_verify_leaf` is the one entry the handshake
+  reaches, called only from `handshake_auth.c`. A `TRUST=ca` build
+  exports a second entry, `ch_pubkey_from_pem`, which firmware calls
+  while provisioning and no library source calls at all. Either way
+  the library never reads a clock: certificate validity is CA
+  reissuance policy, not a device-side time check.
+- **Mechanism.** Two entries, each contained by a different fact.
+  The DER primitives sit behind the profile walker and the walker
+  sits behind one function, which only `handshake_auth.c` calls. The
+  provisioning reader sits above them in `x509_ca.c` as a side
+  branch: nothing in the library includes its header, so a session
+  cannot reach it however the firmware uses it. `x509_read_time` checks the Time shape and ignores the
   digits. `x509_read_time_epoch` does read them, but only as a
   counter to compare against stored state (INV-21); nothing
   compares a certificate to now, so no code path wants a clock.
 - **Check.** Semgrep-structural (`inv-20-cert-entry-point`): no
   `x509_verify_leaf` call outside handshake_auth.c, with x509.c
-  excluded as the definition site. Semgrep-tripwire
+  excluded as the definition site. Semgrep-structural
+  (`inv-20-provisioning-entry`): no `ch_pubkey_from_pem` call in any
+  library source, with x509_ca.c excluded as the definition site. Semgrep-tripwire
   (`inv-20-no-time-calls`): calls to `time`, `clock_gettime`,
   `gettimeofday`, `localtime`, or `gmtime` in library sources,
   complementing `inv-2-freestanding`'s time.h include ban at the

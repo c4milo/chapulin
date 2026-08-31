@@ -23,7 +23,9 @@ Home: github.com/c4milo.
   X25519MLKEM768 hybrid (KEX=pq, -DCH_KEX_PQ, `mlkem.[ch]`) — never both
   in one ClientHello, so a pq client and a classic-only server fail
   closed against each other. No X.509 parsing outside the CA-mode
-  profile in x509.[ch] (pinned mode hashes
+  files: the profile verifier in x509.[ch] and the provisioning
+  reader in x509_ca.[ch], which reaches no verdict and no session
+  reaches (pinned mode hashes
   the certificate into the transcript, never reads it), no RFC 7250
   raw-public-key certificate types, no 0-RTT, no compression, no
   renegotiation-era anything. Within a mode the client offers exactly one
@@ -47,6 +49,12 @@ Home: github.com/c4milo.
   that arrive after the handshake) ← `tls.[ch]`
   (public API) ← demo/test mains. Firmware takes everything below
   `tls.[ch]` as-is and supplies I/O callbacks and `ch_rand_bytes`.
+  One pair sits off that chain rather than in it: `x509_ca.[ch]`
+  (provisioning — one PEM certificate to the key bytes
+  `ch_cfg.server_pubkey` takes) reads `pem.[ch]` and `x509.[ch]`, and
+  no library source reads it. A CA-mode build exports its
+  `ch_pubkey_from_pem` as a fifth public call, which firmware calls
+  while provisioning and no session reaches.
 - Everything that touches secret bytes is constant time: no secret-
   dependent branches, no secret-dependent memory indices. Comparisons go
   through `ct_memeq` and wipes through `ct_wipe`; constant-time selects,
