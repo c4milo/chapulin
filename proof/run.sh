@@ -444,6 +444,32 @@ launch fast full hello_build 400 "fill_nondet.0:321,wb_bytes.0:321" buf.c
 # Weights are measured peaks (kissat): der 1.4 GB, parse_ecdsa
 # 2.4 GB (down from 5.6 with the typed stub stores), parse rsa
 # 7.1 GB.
+# The provisioning decoder (https://github.com/c4milo/chapulin/issues/39),
+# proved in two pieces because the decoder is the shape bounded model
+# checking pays most for: a per-character state machine over symbolic
+# bytes, measured at roughly the third power of the input length.
+#
+# pem_step carries the weight. It proves b64_value against RFC 4648
+# section 4's table on all 256 bytes, pad_ok against section 3.5, and
+# b64_step's invariant from an ARBITRARY state -- so induction over it
+# holds at any length, not just the driver's bound. Measured 0.3 s,
+# 25 MB, 550 properties.
+#
+# pem proves the whole entry at the SHIPPED caps with the input length
+# bounded. 64 is the floor: the shortest accepting input is 58 bytes,
+# and at 56 the CH_OK arm is unreachable and its assertion passes
+# vacuously while the run still says SUCCESSFUL (confirmed by asserting
+# 0 there). Measured at 64: 63 s / 1.4 GB rsa, 71 s / 1.5 GB ecdsa, 551
+# properties. Higher bounds converge and cost more without covering a
+# new shape -- 80 is 195 s / 4.6 GB, 160 is 1348 s / 7.3 GB -- and the
+# differential in test/diff_pem.h runs the full range to CH_PEM_MAX
+# against the Lean oracle, so the extra bound buys quantum count rather
+# than coverage. What no bound here proves is stated in
+# proof/pem_harness.c's header.
+launch fast full pem_step 66 "" buf.c ct.c
+launch fast full pem_step_ecdsa 66 "" buf.c ct.c
+launch fast:2 full pem 66 "" -DCH_PROOF_PEM_LEN=64 buf.c ct.c
+launch fast:2 full pem_ecdsa 66 "" -DCH_PROOF_PEM_LEN=64 buf.c ct.c
 launch fast:3 full x509der 452 "fill_nondet.0:449,ct_memeq.0:68" buf.c ct.c
 launch fast:3 full x509der_ecdsa 452 "fill_nondet.0:449,ct_memeq.0:68" buf.c ct.c
 launch fast:4 full x509parse_ecdsa 260 "fill_nondet.0:257,ct_memeq.0:68" buf.c ct.c

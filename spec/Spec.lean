@@ -10,6 +10,7 @@ import Spec.P256
 import Spec.Rsa
 import Spec.Sha3
 import Spec.MlKem
+import Spec.Pem
 import Spec.X509Der
 import Spec.X509
 import Spec.Drbg

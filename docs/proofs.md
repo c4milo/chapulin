@@ -29,6 +29,24 @@ roughly a thousand multiplies, split it — along the multiply count,
 not along file boundaries. handshake_parser/eeparse and the three ML-KEM
 chained-product formulas are the precedents.
 
+Division and modulo cost more than multiplies, and the C source does
+not show it. CBMC builds them from the C, not from what the compiler
+would emit, so `x % 4` on a `size_t` becomes a full 64-bit division circuit
+even though the machine instruction is one `and`. `pem.c`'s base64 loop
+computed a group position that way, once per input character: at an
+unwind bound of 78 the formula returned no verdict in 120 s, and at
+3138 it spent 73 minutes in symbolic execution without reaching the
+solver. Writing the same expression as `x & 3U` verified the same formula
+(537 properties, unwind 78, kissat) in 84 s. Prefer a mask for a power of two, and keep a symbolic divisor
+out of a loop body.
+
+Loop-carried state costs at every unwinding. The same loop tracked two
+`size_t` running totals that only ever mattered mod 4 and against zero;
+replacing them with a 2-bit position, a 0..2 counter and a flag cut
+84 s to 62 s at the same unwind bound of 78, with no change to what
+the C computes.
+Size the state to what the algorithm needs, not to what is convenient.
+
 ## Rules
 
 **Store nondet values through the object's own type.** Filling a

@@ -99,11 +99,11 @@ SHELLCHECK ?= shellcheck
 SH_SRCS := $(shell git ls-files '*.sh' '.githooks/*')
 
 SRCS := ct.c sha256.c hkdf.c chacha20.c poly1305.c aead.c x25519.c p256.c rsa.c rsa_mont.c \
-        x509.c x509_der.c buf.c record.c keysched.c io.c handshake_message.c handshake_parser.c handshake_record.c session.c \
+        pem.c x509.c x509_der.c buf.c record.c keysched.c io.c handshake_message.c handshake_parser.c handshake_record.c session.c \
         handshake_auth.c handshake.c handshake_post.c tls.c softmul.c
 
 HDRS := ct.h sha256.h hkdf.h chacha20.h poly1305.h aead.h x25519.h p256.h rsa.h ch_assert.h \
-        x509.h buf.h record.h keysched.h io.h handshake_message.h handshake_parser.h handshake_record.h cfg.h session.h handshake_auth.h handshake.h handshake_post.h \
+        pem.h x509.h buf.h record.h keysched.h io.h handshake_message.h handshake_parser.h handshake_record.h cfg.h session.h handshake_auth.h handshake.h handshake_post.h \
         tls.h rand.h drbg.h sha3.h mlkem.h mlkem_poly.h
 # softmul.c is excluded on purpose. It has to define __mulsi3 and
 # __muldi3 -- the names the compiler emits, so they replace the runtime
@@ -120,9 +120,9 @@ LINT_C := $(filter-out softmul.c,$(SRCS)) drbg.c sha3.c mlkem.c mlkem_poly.c tes
 
 # Test-local headers: prerequisites for every binary that includes them,
 # so a header edit rebuilds the binaries it changes.
-TESTH := test/test_random.h test/session_tests.h test/session_post_tests.h \
+TESTH := test/test_random.h test/pem_armor.h test/pem_tests.h test/session_tests.h test/session_post_tests.h \
          test/session_cfg_tests.h test/p256_tests.h test/diff_driver.h test/diff_hash.h \
-         test/diff_handshake_parser.h test/diff_p256.h test/diff_record.h test/diff_rsa.h \
+         test/diff_handshake_parser.h test/diff_p256.h test/diff_pem.h test/diff_record.h test/diff_rsa.h \
          test/diff_x25519.h test/handshake_sequence_server.h test/rfc8448_vectors.h \
          test/rfc8448_tests.h \
          test/x509_vectors.h test/x509_mutate.h test/x509_chain_tests.h test/x509_epoch.h \
@@ -149,7 +149,7 @@ TRUST ?= raw
 ifeq ($(TRUST),ca)
 LIB_DEF += -DCH_TRUST_CA
 else
-LIB_SRCS := $(filter-out x509.c x509_der.c,$(LIB_SRCS))
+LIB_SRCS := $(filter-out pem.c x509.c x509_der.c,$(LIB_SRCS))
 endif
 # Key exchange: KEX=x25519 (default) or KEX=pq (-DCH_KEX_PQ), the
 # X25519MLKEM768 hybrid — the ML-KEM and SHA-3 modules join the
@@ -339,7 +339,7 @@ bin/handshake_strict_test: test/handshake_strict_test.c handshake_parser.c buf.c
 
 # Certificate grammar strictness: one binary per PIN, because the
 # profile's grammar is the build's grammar.
-X509STRICT_SRC := test/x509_strict_test.c x509.c x509_der.c buf.c sha256.c ct.c
+X509STRICT_SRC := test/x509_strict_test.c pem.c x509.c x509_der.c buf.c sha256.c ct.c
 bin/x509strict: $(X509STRICT_SRC) rsa.c rsa_mont.c $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) -I. -o $@ $(X509STRICT_SRC) rsa.c rsa_mont.c
@@ -619,8 +619,9 @@ else
 	  $(COV_CC) test/rsa_test.c $$d/rsa.o $$d/rsa_mont.o $$d/sha256.o $$d/ct.o -o $$d/rsa_test; \
 	  $(COV_CC) test/handshake_strict_test.c $$d/handshake_parser.o $$d/buf.o -o $$d/handshake_strict_test; \
 	  verifier="$$d/rsa.o $$d/rsa_mont.o"; if [ $$pin = ecdsa ]; then verifier=$$d/p256.o; fi; \
-	  $(COV_CC) $$def test/x509_strict_test.c $$d/x509.o $$d/x509_der.o $$d/buf.o $$d/sha256.o \
-	    $$d/ct.o $$verifier -o $$d/x509strict_test; \
+	  strict_objs=""; for f in $(filter-out test/x509_strict_test.c,$(X509STRICT_SRC)); do \
+	    strict_objs="$$strict_objs $$d/$${f%.c}.o"; done; \
+	  $(COV_CC) $$def test/x509_strict_test.c $$strict_objs $$verifier -o $$d/x509strict_test; \
 	  $(COV_CC) test/handshake_sequence_test.c \
 	    $(filter-out $$d/p256.o $$d/rsa.o $$d/rsa_mont.o,$(COV_LIB_OBJS)) -o $$d/handshake_sequence_test; \
 	  for b in unit drbg_test rsa_test handshake_strict_test x509strict_test handshake_sequence_test; do \

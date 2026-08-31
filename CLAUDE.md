@@ -35,6 +35,7 @@ Home: github.com/c4milo.
   (HMAC + HKDF + TLS labels) ← `chacha20.[ch]` + `poly1305.[ch]` ←
   `aead.[ch]` (RFC 8439 seal/open) ← `x25519.[ch]` + `p256.[ch]` +
   `rsa.[ch]`/`rsa_mont.c` (pinned-mode verify) ←
+  `pem.[ch]` (RFC 7468 armour and RFC 4648 base64, decode only) +
   `x509.[ch]`/`x509_der.c` (profiled certificate verify, CA mode) ←
   `record.[ch]`
   (record layer) ← `handshake_parser.[ch]` (message parsers) ←

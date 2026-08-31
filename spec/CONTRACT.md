@@ -137,6 +137,20 @@ Spec.Rsa.pssSign      : (n d : Nat) → (mHash salt : ByteArray) →
                         -- rsaSign is an alias. The spec signs so the oracle can mint
                         -- signatures the C verifier must accept; the C side only verifies.
                         -- salt is explicit so a fixed value gives a reproducible signature.
+Spec.Pem.decode?      : (derMax : Nat) → ByteArray → Option ByteArray
+                        -- RFC 7468 §2 armour and RFC 4648 §4 base64 for one
+                        -- CERTIFICATE block. Domain: the text at most
+                        -- `pemMax derMax` bytes; the BEGIN boundary exactly,
+                        -- terminated by LF or CRLF; CR and LF ignored anywhere
+                        -- in the body, so any line width decodes alike;
+                        -- RFC 4648 §3.5 canonical padding with the unused bits
+                        -- zero; the END boundary; nothing but CR and LF after
+                        -- it. Four deliberate departures from the RFCs, all
+                        -- narrowing: no explanatory text before the boundary
+                        -- (§5.2 allows it), no second block, a bare CR is not a
+                        -- line terminator (§3's ABNF admits it), and an empty
+                        -- body is rejected. Line op: `pemdecode <derMax> <hex>`
+                        -- → `ok <der>` / `ERR pem reject`.
 Spec.X509.parse       : Alg → (caKey list : ByteArray) →
                         Option (ByteArray × Option Nat)
                         -- profiled chain acceptance over the RFC 8446 §4.4.2
@@ -361,6 +375,15 @@ Spec.Drbg.next_key_out_disjoint
                              -- which is what fast key erasure rests on
 Spec.Drbg.next_out_prefix    a shorter request is a prefix of a longer one under the
                              -- same key: every request is cut from one stream
+Spec.Pem.decode?_encode      armour then decode is the identity: for non-empty der
+                             -- within derMax whose armoured text fits pemMax,
+                             -- decode? derMax (encode w der) = some der at EVERY
+                             -- line width w — the decoder accepts all of the
+                             -- encoder's range, independent of the C
+Spec.Pem.b64Value?_table     b64Value? of the i-th RFC 4648 §4 alphabet character
+                             -- is some i, all 64 — the table is the RFC's, not
+                             -- a transcription of pem.c's compares
+Spec.Pem.decode?_size        decode? derMax input = some d → d.size ≤ derMax
 Spec.Record.nonce_inj        distinct sequence numbers below 2^64 give distinct record
                              -- nonces (RFC 9846 §5.3): within one traffic key the
                              -- nonce never repeats

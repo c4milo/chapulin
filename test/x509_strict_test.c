@@ -114,6 +114,7 @@ static int run_cert(const uint8_t *cert, size_t n) {
 // Mutation helpers over the good leaf, plus the accept, list,
 // two-entry chain, and SubjectPublicKeyInfo cases, split into their
 // own headers for file size.
+#include "pem_tests.h"
 #include "x509_chain_tests.h"
 #include "x509_epoch.h"
 #include "x509_spki.h"
@@ -404,6 +405,7 @@ int main(void) {
     test_decoded_extensions();
     test_ext_shape();
     test_sigvalue();
+    pem_tests();
 
     if (failures > 0) {
         (void)fprintf(stderr, "%d failure(s)\n", failures);

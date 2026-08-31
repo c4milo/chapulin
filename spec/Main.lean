@@ -39,6 +39,7 @@ def selftestAll : String :=
     ("x25519", Spec.X25519.selftest),
     ("p256", Spec.P256.selftest),
     ("rsa", Spec.Rsa.selftest),
+    ("pem", Spec.Pem.selftest),
     ("x509", Spec.X509.selftest),
     ("drbg", Spec.Drbg.selftest),
     ("handshake", Spec.Handshake.selftest),
@@ -274,6 +275,12 @@ def dispatch : List String → Option String
     match Spec.Rsa.rsaSign (bytesToNatBE nb) (bytesToNatBE db) h saltb with
     | some sig => return emit sig
     | none => return "FAIL"
+  | ["pemdecode", derMax, pem] => do
+    let cap := derMax.toNat?
+    let p ← hexArg? pem
+    return match cap.bind (fun c => Spec.Pem.decode? c p) with
+      | some der => s!"ok {bytesToHex der}"
+      | none => "ERR pem reject"
   | ["x509parse", alg, caKey, list] => do
     let a ← Spec.X509.algOf? alg
     let ck ← hexArg? caKey

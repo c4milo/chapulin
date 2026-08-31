@@ -21,6 +21,7 @@
 #include "diff_hash.h"
 #include "diff_mlkem.h"
 #include "diff_p256.h"
+#include "diff_pem.h"
 #include "diff_record.h"
 #include "diff_rsa.h"
 #include "diff_sha3.h"
@@ -60,6 +61,7 @@ int main(int argc, char **argv) {
     diff_x25519();
     diff_x25519_base();
     diff_p256();
+    diff_pem();
     diff_rsa();
     diff_x509();
     diff_hs_server_hello();
