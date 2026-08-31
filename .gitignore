@@ -8,3 +8,4 @@ node_modules/
 spec/.lake/
 bin/hpp_test.o
 __pycache__/
+.claude/
