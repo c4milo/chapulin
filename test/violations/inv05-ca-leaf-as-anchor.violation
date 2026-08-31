@@ -1,0 +1,13 @@
+invariant: INV-5
+file: x509_ca.c
+catches: x509strict
+reason: skipping the cA TRUE compare pins a leaf certificate's key as a
+  trust anchor, so the file an operator pushes by mistake provisions the
+  device instead of failing
+
+--- old
+    if (!x509_read_exact(&v, ca_true, sizeof ca_true)) {
+        return 0; // cA absent or FALSE: a leaf, not an anchor
+    }
+--- new
+    (void)ca_true;

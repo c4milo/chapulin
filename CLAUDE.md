@@ -97,7 +97,13 @@ Home: github.com/c4milo.
   spec agree on), and the CBMC harness if the contract moved. A fix that
   the spec and oracle do not know about is a divergence the differential
   run cannot catch. Boundary changes get an exact boundary test (the last
-  valid value works, the first invalid one fails).
+  valid value works, the first invalid one fails). When a mutation
+  experiment shows a rule no test guards, land the mutant as a
+  `.violation` file in `test/violations/` — the framework for this
+  exists; never propose a new one. `test/violations.py` applies the
+  edit, rebuilds, and requires the named target to fail, and an edit
+  whose old text no longer matches fails as stale instead of passing
+  silently.
 - All parsing goes through the bounds-checked `rbuf` reader and all output
   bytes through the `wbuf` writer; no raw buffer arithmetic outside them.
   Never assume host endianness; emit and read multi-byte values

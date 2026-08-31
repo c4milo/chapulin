@@ -1,0 +1,16 @@
+invariant: INV-5
+file: x509_ca.c
+catches: x509strict
+reason: the provisioning walk accepts an unknown critical extension
+  instead of rejecting it, the same RFC 5280 §4.2 widening
+  inv05-unknown-critical-extension guards on the verifier
+
+--- old
+    // RFC 5280 section 4.2: an unrecognized critical extension MUST be
+    // rejected. Unknown non-critical ones go unread, which is how the
+    // subject and authority key identifiers pass.
+    return !ext->critical;
+--- new
+    // Unknown extensions carry nothing this walk reads, so skip them
+    // whether or not the CA marked them critical.
+    return 1;

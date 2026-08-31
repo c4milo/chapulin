@@ -1,0 +1,12 @@
+invariant: INV-5
+file: x509_ca.c
+catches: x509strict
+reason: a rejection that leaves earlier bytes in the caller's key array
+  breaks the failure contract — x509_read_spki sets its outputs on some
+  failing paths, so the entry's own wipe is what makes CH_EINVAL clean
+
+--- old
+    *key_len = 0;
+    ct_wipe(key, CH_X509_KEY_MAX);
+--- new
+    *key_len = 0;

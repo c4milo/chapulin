@@ -1,0 +1,11 @@
+invariant: INV-5
+file: x509_ca.c
+catches: x509strict
+reason: accepting a keyUsage without keyCertSign pins an anchor whose own
+  certificate says the key may not sign certificates — the rule x509.c
+  applies to every chain intermediate, dropped on the provisioning side
+
+--- old
+        return x509_read_keyusage(ext->value, ext->value_len, KEY_CERT_SIGN) != 0;
+--- new
+        return 1;

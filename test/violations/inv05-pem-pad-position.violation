@@ -1,0 +1,16 @@
+invariant: INV-5
+file: pem.c
+catches: x509strict
+reason: dropping RFC 4648 §3.5's pad-position rule accepts pads anywhere,
+  so inputs that are not canonical base64 decode instead of failing —
+  the grammar widens exactly where two encodings would map to one value
+
+--- old
+static int pad_ok(const base64_state *s) {
+    return s->npad < 2 && (s->pos == 2 || s->pos == 3);
+}
+--- new
+static int pad_ok(const base64_state *s) {
+    (void)s;
+    return 1;
+}

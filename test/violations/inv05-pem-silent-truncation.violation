@@ -1,0 +1,14 @@
+invariant: INV-5
+file: pem.c
+catches: x509strict
+reason: ignoring the writer's overflow turns a body larger than the DER
+  array into CH_OK with the first CH_X509_MAX bytes — a truncated
+  certificate handed to the walk as a complete one
+
+--- old
+    uint32_t unused = s->acc & ((1U << s->nbits) - 1U);
+    return unused == 0 && !w->err;
+--- new
+    uint32_t unused = s->acc & ((1U << s->nbits) - 1U);
+    (void)w;
+    return unused == 0;
