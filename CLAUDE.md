@@ -196,6 +196,9 @@ Home: github.com/c4milo.
   kernel checks that. Judge a spec module by whether each statement
   reads in a few lines and carries no hypothesis it does not need; a
   long proof of a short statement costs an auditor nothing.
+  spec/CONTRACT.md is the styleguide for writing in spec/ — follow its
+  "Writing proofs here" section, including the second pass that
+  shrinks a green proof's script with the statement frozen.
 - Names spell words out. Module prefixes stay short — they are C's
   namespaces (`ch_`, `ks_`, `rec_`, `rb_`/`wb_`, `hsp_`, `ct_`) — but
   the stem after the prefix is real words: `parse_server_hello`, not

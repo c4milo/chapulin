@@ -606,7 +606,22 @@ Style, in rough order of how much it buys:
 - **One deduction per line.** Wrap at 100 columns like everything else.
 - **Factor repeated case analysis into a private lemma.** Three
   branches doing the same four steps with different constants is one
-  lemma taking those constants.
+  lemma taking those constants. Both directions of an iff repeating
+  one arithmetic argument is the same rule.
+- **Search the library before writing a lemma.** A private induction
+  that re-proves `List.all_takeWhile` or `List.take_left` costs lines
+  and review and adds nothing the import did not already carry. Ask
+  `exact?` first; grep `Init/Data/List` second.
+- **Never state a definitional equality as a lemma.** If `rfl` proves
+  it, the kernel already knows it: unfold at the use site with
+  `simp only [f]` instead of naming a restatement of `f`'s body.
+- **State an equation, not a bundle of consequences.** An invariant
+  returned as `∃ x, f = x ∧ bound x ∧ special-case x` makes every
+  caller destructure and reassemble. When the quantity has a closed
+  form, state `f = the-closed-form` and let callers rewrite once.
+- **Inline a fact with one caller** unless its name carries audit
+  weight. A one-line `decide` used once reads better at its use site
+  than as a named theorem the reader must chase.
 - **Cite the standard** in the doc comment — RFC section, X.690 clause,
   FIPS paragraph — the same as the definitions do. `missingDocs` is on,
   so a public declaration without one fails `make check`; the linter
@@ -617,6 +632,16 @@ Style, in rough order of how much it buys:
   `unnecessarySimpa`, `unusedRCasesPattern`, `tactic.unusedName`, on in
   `lakefile.toml` — and `make lint-spec` turns their warnings into
   errors, so `make check` fails on debris.
+
+**Prove it, then shrink it.** Most of the simplifications above are
+invisible until a working proof exists: the closed form of an
+invariant, the library lemma an induction duplicates, the case
+analysis two directions share. So treat the first green build as the
+midpoint, not the finish. Freeze every public statement byte-for-byte
+and make a second pass over the scripts alone; the kernel re-checks
+the result, and a diff that touches no public statement is the proof
+the pass stayed inside its lane. A simplification that does not build
+reverts — small honest wins beat big broken ones.
 
 Naming follows mathlib's scheme even though mathlib is not a
 dependency: `snake_case`, `foo_of_bar` for an implication, suffixes
