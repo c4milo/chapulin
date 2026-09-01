@@ -782,6 +782,17 @@ M3_QEMU ?= $(shell command -v qemu-system-arm)
 M3_FLAGS = -mcpu=cortex-m3 -mthumb --specs=rdimon.specs $(CFLAGS) \
            -Wl,--no-warn-rwx-segments -T test/qemu/m3_semi.ld test/qemu/m3_start.c
 M3_RUN = $(M3_QEMU) -M mps2-an385 -cpu cortex-m3 -nographic -semihosting -kernel
+# Every deterministic suite, built and run natively — the tests-only
+# half of check, for platform-parity jobs (linux arm64 today) where
+# re-building the whole lint toolchain buys nothing. The roster is
+# check's own prerequisite list.
+.PHONY: suite-check
+suite-check: bin/unit bin/unit_ca bin/unit_pq bin/tlsclient bin/tlsclient_ecdsa bin/tlsclient_ca bin/tlsclient_ca_ecdsa bin/tlsclient_pq bin/drbg_test bin/softmul_test bin/rsa_test bin/sha3_test bin/mlkem_test bin/handshake_strict_test bin/handshake_strict_pq bin/x509strict bin/x509strict_ecdsa
+	@set -e; for b in unit unit_ca unit_pq drbg_test softmul_test rsa_test sha3_test mlkem_test \
+	  handshake_strict_test handshake_strict_pq x509strict x509strict_ecdsa; do \
+	  echo "== $$b (native)"; ./bin/$$b; done
+	$(MAKE) wycheproof
+
 .PHONY: m3-check
 m3-check:
 	@[ -n "$(M3_CC)" ] || { \
