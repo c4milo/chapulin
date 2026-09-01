@@ -7,6 +7,7 @@
 // TLS 1.3 requires the client to reject. Skips are reported, never
 // silent: AEAD nonce sizes the fixed nonce[12] API cannot express, and
 // HKDF cases outside the library's CH_ASSERT domain.
+#include <inttypes.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdnoreturn.h>
@@ -31,7 +32,7 @@ noreturn void ch_assert_fail(const char *cond, const char *file, int line) {
 static int failures;
 
 static void fail(const char *suite, uint32_t tc, const char *what) {
-    printf("FAIL %s tc%u: %s\n", suite, tc, what);
+    printf("FAIL %s tc%" PRIu32 ": %s\n", suite, tc, what);
     failures++;
 }
 

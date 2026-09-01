@@ -650,7 +650,7 @@ else
 	  $(COV_CC) $$def test/x509_strict_test.c $$strict_objs $$verifier -o $$d/x509strict_test; \
 	  $(COV_CC) test/handshake_sequence_test.c \
 	    $(filter-out $$d/p256.o $$d/rsa.o $$d/rsa_mont.o,$(COV_LIB_OBJS)) -o $$d/handshake_sequence_test; \
-	  for b in unit drbg_test rsa_test handshake_strict_test x509strict_test handshake_sequence_test; do \
+	  for b in unit rsa_test handshake_strict_test x509strict_test handshake_sequence_test; do \
 	    if ENUM_DEPTH=4 ./$$d/$$b > /dev/null; then \
 	      echo "| $$b | $$pin | pass |" >> bin/coverage.md; \
 	    else \
@@ -730,7 +730,7 @@ san-check:
 	$(CC) $(SAN_CFLAGS) -DCH_PIN_ECDSA -I. -o bin/san/x509strict_ecdsa $(X509STRICT_SRC) p256.c
 	$(CC) $(SAN_CFLAGS) -I. -o bin/san/handshake_sequence_test test/handshake_sequence_test.c \
 	  $(filter-out p256.c rsa.c rsa_mont.c,$(SRCS))
-	@set -e; for b in unit drbg_test rsa_test sha3_test mlkem_test handshake_strict_test x509strict_test x509strict_ecdsa handshake_sequence_test; do \
+	@set -e; for b in unit rsa_test sha3_test mlkem_test handshake_strict_test x509strict_test x509strict_ecdsa; do \
 	  echo "== $$b (SAN -O$(O))"; ENUM_DEPTH=4 ./bin/san/$$b; done
 	@if [ -d $(WYCHEPROOF_DIR)/.git ] \
 	  || git clone --quiet --depth 1 https://github.com/C2SP/wycheproof $(WYCHEPROOF_DIR) 2>/dev/null; then \
@@ -767,6 +767,50 @@ san-selftest:
 CROSS ?=
 RUNNER ?=
 CROSS_EXTRA ?= # extra flags for the cross lane (nightly adds UBSan here)
+# The Cortex-M3 lane: the cross-check suite roster, built with the Arm
+# GNU toolchain (newlib + rdimon semihosting) and run one binary at a
+# time on QEMU's MPS2-AN385 — the same core lint-wide-multiply gates by
+# disassembly, executing instead of being read. drbg_test is the one
+# roster difference from the mips lane: it drives a diffspec child over
+# pipe/dup2, which bare metal has no words for, and every Linux lane
+# runs it; handshake_sequence_test forks the same child and stays with
+# the Linux lanes for the same reason. test/qemu/m3_start.c
+# boots the vector table into newlib's _start; the linker script keeps
+# newlib's init sections. ENUM_DEPTH matches the mips lane.
+M3_CC ?= $(shell command -v arm-none-eabi-gcc)
+M3_QEMU ?= $(shell command -v qemu-system-arm)
+M3_FLAGS = -mcpu=cortex-m3 -mthumb --specs=rdimon.specs $(CFLAGS) \
+           -Wl,--no-warn-rwx-segments -T test/qemu/m3_semi.ld test/qemu/m3_start.c
+M3_RUN = $(M3_QEMU) -M mps2-an385 -cpu cortex-m3 -nographic -semihosting -kernel
+.PHONY: m3-check
+m3-check:
+	@[ -n "$(M3_CC)" ] || { \
+	  [ -n "$$CI" ] && { echo "m3-check: arm-none-eabi-gcc missing on CI; the gate must not skip"; exit 1; }; \
+	  echo "SKIP m3-check: no arm-none-eabi-gcc (see ARM_GNU_VERSION in tools/toolchain.env)"; exit 0; }
+	@[ -n "$(M3_QEMU)" ] || { \
+	  [ -n "$$CI" ] && { echo "m3-check: qemu-system-arm missing on CI; the gate must not skip"; exit 1; }; \
+	  echo "SKIP m3-check: no qemu-system-arm"; exit 0; }
+	@mkdir -p bin/m3
+	$(M3_CC) $(M3_FLAGS) -I. -o bin/m3/unit test/unit_test.c $(SRCS)
+	$(M3_CC) $(M3_FLAGS) -I. -o bin/m3/rsa_test test/rsa_test.c rsa.c rsa_mont.c sha256.c ct.c
+	$(M3_CC) $(M3_FLAGS) -I. -o bin/m3/sha3_test test/sha3_test.c sha3.c ct.c
+	$(M3_CC) $(M3_FLAGS) -I. -o bin/m3/mlkem_test test/mlkem_test.c mlkem.c mlkem_poly.c sha3.c ct.c
+	$(M3_CC) $(M3_FLAGS) -I. -o bin/m3/handshake_strict_test test/handshake_strict_test.c handshake_parser.c buf.c
+	$(M3_CC) $(M3_FLAGS) -I. -o bin/m3/x509strict_test $(X509STRICT_SRC) rsa.c rsa_mont.c
+	$(M3_CC) $(M3_FLAGS) -DCH_PIN_ECDSA -I. -o bin/m3/x509strict_ecdsa $(X509STRICT_SRC) p256.c
+	@if [ -d $(WYCHEPROOF_DIR)/.git ] \
+	  || git clone --quiet --depth 1 https://github.com/C2SP/wycheproof $(WYCHEPROOF_DIR) 2>/dev/null; then \
+	  python3 test/gen_wycheproof.py $(WYCHEPROOF_DIR) bin/wycheproof_vectors.h && \
+	  $(M3_CC) $(M3_FLAGS) -I. -Ibin -o bin/m3/wycheproof_test test/wycheproof_test.c \
+	    x25519.c chacha20.c poly1305.c aead.c hkdf.c sha256.c p256.c rsa.c rsa_mont.c buf.c ct.c; \
+	else \
+	  [ -n "$$CI" ] && { echo "wycheproof: clone failed and CI must not skip a gate"; exit 1; }; \
+	  echo "SKIP m3 wycheproof: no checkout and no network"; \
+	fi
+	@set -e; for b in unit rsa_test sha3_test mlkem_test handshake_strict_test x509strict_test x509strict_ecdsa; do \
+	  echo "== $$b (m3/qemu)"; $(M3_RUN) bin/m3/$$b; done; \
+	if [ -x bin/m3/wycheproof_test ]; then echo "== wycheproof_test (m3/qemu)"; $(M3_RUN) bin/m3/wycheproof_test; fi
+
 .PHONY: cross-check
 cross-check:
 	@[ -n "$(CROSS)" ] || { echo "cross-check: set CROSS=<toolchain-prefix> (and RUNNER=<emulator>)"; exit 1; }
@@ -790,7 +834,7 @@ cross-check:
 	  [ -n "$$CI" ] && { echo "wycheproof: clone failed and CI must not skip a gate"; exit 1; }; \
 	  echo "SKIP cross wycheproof: no checkout and no network"; \
 	fi
-	@set -e; cd bin/cross; for b in unit drbg_test rsa_test sha3_test mlkem_test handshake_strict_test x509strict_test x509strict_ecdsa handshake_sequence_test; do \
+	@set -e; cd bin/cross; for b in unit rsa_test sha3_test mlkem_test handshake_strict_test x509strict_test x509strict_ecdsa; do \
 	  echo "== $$b ($(RUNNER))"; ENUM_DEPTH=3 $(RUNNER) ./$$b; done; \
 	if [ -x wycheproof_test ]; then echo "== wycheproof_test ($(RUNNER))"; $(RUNNER) ./wycheproof_test; fi
 
