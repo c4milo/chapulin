@@ -57,23 +57,29 @@ def main():
     rc = 0
 
     insns = read_csv("bench/results-insn.csv")
+    m3 = read_csv("bench/results-insn-m3.csv")
     for op, label in OPS.items():
         if op not in insns:
             print("lint-bench-numbers: %s missing from bench/results-insn.csv" % op)
             rc = 1
             continue
-        want_n, want_ms = render_insns(insns[op]), render_ms(insns[op])
+        if op not in m3:
+            print("lint-bench-numbers: %s missing from bench/results-insn-m3.csv" % op)
+            rc = 1
+            continue
+        want = (render_insns(insns[op]), render_ms(insns[op]), render_insns(m3[op]))
         # the table row for this label, whatever its cell spacing
-        pattern = r"\|\s*%s\s*\|\s*([^|]+?)\s*\|\s*([^|]+?)\s*\|" % re.escape(label)
+        pattern = (r"\|\s*%s\s*\|\s*([^|]+?)\s*\|\s*([^|]+?)\s*\|\s*([^|]+?)\s*\|"
+                   % re.escape(label))
         m = re.search(pattern, readme)
         if not m:
             print("lint-bench-numbers: README has no speed row for %r" % label)
             rc = 1
             continue
-        got_n, got_ms = m.group(1), m.group(2)
-        if got_n != want_n or got_ms != want_ms:
-            print("lint-bench-numbers: %r says %s / %s, %d insns render as %s / %s"
-                  % (label, got_n, got_ms, insns[op], want_n, want_ms))
+        got = (m.group(1), m.group(2), m.group(3))
+        if got != want:
+            print("lint-bench-numbers: %r says %s / %s / %s; the CSVs render as %s / %s / %s"
+                  % ((label,) + got + want))
             rc = 1
 
     # Flash: the totals row of the device model, as kB in the prose.

@@ -167,23 +167,29 @@ a 16 kB record buffer unless the peer supports `record_size_limit`.
 [`bench/insn-mips.sh`](bench/insn-mips.sh) and [`bench/device-ram.sh`](bench/device-ram.sh) cross-compile for mips32r2
 (the RTL8382-class core) and measure on the real ISA. Cost is published
 as instruction counts, not guessed milliseconds. The millisecond column
-assumes 500 MHz and one instruction per cycle, which is optimistic for
-an in-order core, so read it as a lower bound.
+assumes 500 MHz and one instruction per cycle on that core, which is
+optimistic for an in-order design, so read it as a lower bound.
+[`bench/insn-m3.sh`](bench/insn-m3.sh) measures the same operations as
+thumbv7m instruction counts on QEMU's Cortex-M3, the core the m3 and
+freertos CI lanes execute. The M3 rows run the hardware multiplier —
+its `umull` is on the verified constant-time list — while the mips rows
+pay for the multiply decomposition, which is why the multiply-heavy M3
+rows undercut the mips ones.
 
-| work | instructions | ms (500 MHz, 1 IPC) |
-|---|---|---|
-| AEAD seal, per 1 KB record | 74 k | 0.15 |
-| SHA-256, per 1 KB | 68 k | 0.14 |
-| x25519 scalar multiply | 40.3 M | 81 |
-| RSA-3072 PSS verify (default) | 11.6 M | 23 |
-| P-256 verify (`PIN=ecdsa`) | 46.0 M | 92 |
-| full pinned handshake crypto (default) | 93.0 M | 186 |
-| ML-KEM-768 keygen (`KEX=pq`) | 3.2 M | 6 |
-| ML-KEM-768 decapsulate (`KEX=pq`) | 3.6 M | 7 |
-| full hybrid handshake crypto (`KEX=pq`) | 103.1 M | 206 |
+| work | mips32r2 insns | ms (500 MHz, 1 IPC) | Cortex-M3 insns |
+|---|---|---|---|
+| AEAD seal, per 1 KB record | 74 k | 0.15 | 35 k |
+| SHA-256, per 1 KB | 68 k | 0.14 | 57 k |
+| x25519 scalar multiply | 40.3 M | 81 | 12.1 M |
+| RSA-3072 PSS verify (default) | 11.6 M | 23 | 8.4 M |
+| P-256 verify (`PIN=ecdsa`) | 46.0 M | 92 | 26.7 M |
+| full pinned handshake crypto (default) | 93.0 M | 186 | 33.1 M |
+| ML-KEM-768 keygen (`KEX=pq`) | 3.2 M | 6 | 2.7 M |
+| ML-KEM-768 decapsulate (`KEX=pq`) | 3.6 M | 7 | 3.0 M |
+| full hybrid handshake crypto (`KEX=pq`) | 103.1 M | 206 | 41.5 M |
 
 The multiply decomposition that keeps secrets off a variable-time
-`umull` sets the first and third rows. Measured against the same
+`umull` sets the first and third mips rows. Measured against the same
 benchmark without it: AEAD seal costs 56% more, x25519 41% more, and
 the whole pinned handshake 33% more, or 47 ms at 500 MHz. SHA-256 and
 both signature verifies are unchanged, because SHA-256 does not
