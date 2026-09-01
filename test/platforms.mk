@@ -105,6 +105,27 @@ freertos-check:
 	fi
 	@[ "$$(git -C $(FREERTOS_TCP_DIR) rev-parse HEAD)" = "$(FREERTOS_PLUS_TCP_COMMIT)" ] \
 	  || { echo "freertos-check: Plus-TCP checkout is not the pinned commit"; exit 1; }
+	# Both test programs go through clang-tidy with the lane's flags and
+	# headers ($(M3_CC) supplies the newlib include path). Beyond
+	# lint-tidy's three freestanding drops (reserved identifiers,
+	# internal linkage, assembler -- the reasons live in the root
+	# Makefile), two more are off here: performance-no-int-to-ptr,
+	# because the NVIC and the ethernet MMIO live at integer addresses,
+	# and misc-header-include-cycle, because the cycles are in the
+	# vendor's own headers.
+	@if [ -n "$(CLANG_TIDY)" ]; then \
+	  $(CLANG_TIDY) --quiet --header-filter='test/freertos/.*' \
+	    --checks='-bugprone-reserved-identifier,-cert-dcl37-c,-cert-dcl51-cpp,-misc-use-internal-linkage,-portability-no-assembler,-performance-no-int-to-ptr,-misc-header-include-cycle' \
+	    test/freertos/boot_test.c test/freertos/tls_test.c -- \
+	    -std=c11 --target=armv7m-none-eabi -ffreestanding -DCH_RAND_EXTERN \
+	    -isystem "$$($(M3_CC) -print-sysroot)/include" \
+	    -I. -Itest/freertos \
+	    -I$(FREERTOS_KERNEL_DIR)/include -I$(FREERTOS_KERNEL_DIR)/portable/GCC/ARM_CM3 \
+	    -I$(FREERTOS_TCP_DIR)/source/include -I$(FREERTOS_TCP_DIR)/source/portable/Compiler/GCC \
+	    -I$(FREERTOS_TCP_DIR)/source/portable/NetworkInterface/MPS2_AN385/ether_lan9118; \
+	elif [ -n "$$CI" ]; then \
+	  echo "freertos-check: clang-tidy missing on CI; the lint must not skip"; exit 1; \
+	else echo "SKIP freertos tidy: no clang-tidy (see LLVM_MAJOR in tools/toolchain.env)"; fi
 	$(M3_CC) -mcpu=cortex-m3 -mthumb -Os -std=c11 -ffreestanding -nostdlib \
 	  -Wall -Wextra -Wl,--no-warn-rwx-segments -Wl,--entry=reset_handler \
 	  -DCH_RAND_EXTERN \

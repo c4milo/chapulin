@@ -17,10 +17,12 @@ extern uint8_t __bss_end[];
 extern uint8_t __stack_top[];
 
 static long semihost(long op, long param) {
-    register long r0 __asm__("r0") = op;
-    register long r1 __asm__("r1") = param;
-    __asm__ volatile("bkpt #0xAB" : "+r"(r0) : "r"(r1) : "memory");
-    return r0;
+    long res;
+    __asm__ volatile("mov r0, %1\n\tmov r1, %2\n\tbkpt #0xAB\n\tmov %0, r0"
+                     : "=r"(res)
+                     : "r"(op), "r"(param)
+                     : "r0", "r1", "memory");
+    return res;
 }
 static void plat_write(const char *s) {
     (void)semihost(0x04, (long)s);
@@ -51,29 +53,33 @@ void freertos_assert_fail(const char *file, int line) {
 
 static StaticTask_t idle_tcb;
 static StackType_t idle_stack[configMINIMAL_STACK_SIZE];
-void vApplicationGetIdleTaskMemory(StaticTask_t **tcb, StackType_t **stack, uint32_t *n) {
-    *tcb = &idle_tcb;
-    *stack = idle_stack;
-    *n = configMINIMAL_STACK_SIZE;
+void vApplicationGetIdleTaskMemory(StaticTask_t **ppxIdleTaskTCBBuffer,
+                                   StackType_t **ppxIdleTaskStackBuffer,
+                                   uint32_t *puxIdleTaskStackSize) {
+    *ppxIdleTaskTCBBuffer = &idle_tcb;
+    *ppxIdleTaskStackBuffer = idle_stack;
+    *puxIdleTaskStackSize = configMINIMAL_STACK_SIZE;
 }
 
 // Deterministic: TCP needs numbers, the test needs replayability.
-static uint32_t rng_state = 0x1234567u;
+static uint32_t rng_state = 0x1234567U;
 static uint32_t rng_next(void) {
     rng_state ^= rng_state << 13;
     rng_state ^= rng_state >> 17;
     rng_state ^= rng_state << 5;
     return rng_state;
 }
-BaseType_t xApplicationGetRandomNumber(uint32_t *out) {
-    *out = rng_next();
+BaseType_t xApplicationGetRandomNumber(uint32_t *pulNumber) {
+    *pulNumber = rng_next();
     return pdTRUE;
 }
-uint32_t ulApplicationGetNextSequenceNumber(uint32_t a, uint16_t b, uint32_t c, uint16_t d) {
-    (void)a;
-    (void)b;
-    (void)c;
-    (void)d;
+uint32_t ulApplicationGetNextSequenceNumber(uint32_t ulSourceAddress, uint16_t usSourcePort,
+                                            uint32_t ulDestinationAddress,
+                                            uint16_t usDestinationPort) {
+    (void)ulSourceAddress;
+    (void)usSourcePort;
+    (void)ulDestinationAddress;
+    (void)usDestinationPort;
     return rng_next();
 }
 
@@ -83,6 +89,7 @@ static NetworkEndPoint_t endpoint;
 
 NetworkInterface_t *pxMPS2_FillInterfaceDescriptor(BaseType_t idx, NetworkInterface_t *out);
 
+#include "rand.h"
 #include "tls.h"
 
 extern void ch_assert_fail(const char *cond, const char *file, int line);
@@ -130,8 +137,7 @@ static void client_task(void *arg) {
         plat_write("FAIL socket\n");
         plat_exit(1);
     }
-    struct freertos_sockaddr addr;
-    memset(&addr, 0, sizeof addr);
+    struct freertos_sockaddr addr = {0};
     addr.sin_family = FREERTOS_AF_INET;
     addr.sin_port = FreeRTOS_htons(4433);
     addr.sin_address.ulIP_IPv4 = FreeRTOS_inet_addr_quick(10, 0, 2, 2);
@@ -142,13 +148,12 @@ static void client_task(void *arg) {
 
     static uint8_t rxbuf[2048];
     static ch_tls tls;
-    ch_cfg cfg;
-    memset(&cfg, 0, sizeof cfg);
+    ch_cfg cfg = {0};
     cfg.buf = rxbuf;
     cfg.buf_len = sizeof rxbuf;
     cfg.send = io_send;
     cfg.recv = io_recv;
-    cfg.io = &sock;
+    cfg.io = (void *)&sock;
     cfg.psk = psk;
     cfg.psk_len = sizeof psk;
     cfg.psk_id = (const uint8_t *)"device-42";
@@ -191,10 +196,11 @@ static void client_task(void *arg) {
 static StaticTask_t client_tcb;
 static StackType_t client_stack[4096];
 
-void vApplicationIPNetworkEventHook_Multi(eIPCallbackEvent_t event, struct xNetworkEndPoint *ep) {
-    (void)ep;
+void vApplicationIPNetworkEventHook_Multi(eIPCallbackEvent_t eNetworkEvent,
+                                          struct xNetworkEndPoint *pxEndPoint) {
+    (void)pxEndPoint;
     static BaseType_t started = pdFALSE;
-    if (event == eNetworkUp && started == pdFALSE) {
+    if (eNetworkEvent == eNetworkUp && started == pdFALSE) {
         started = pdTRUE;
         plat_write("net up\n");
         (void)xTaskCreateStatic(client_task, "client", 4096, NULL, 2, client_stack, &client_tcb);

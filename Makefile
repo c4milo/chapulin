@@ -185,10 +185,12 @@ endif
 # clang-format only. Fuzzers include .c files for statics, same deal.
 PROOF_C := $(wildcard proof/*.c) proof/harness.h
 FUZZ_C := $(wildcard fuzz/*.c)
-# The Cortex-M3 QEMU smoke sources: formatted, but outside LINT_C --
-# clang-tidy parses with host flags, and the runtime's thumb asm and
-# freestanding shape belong to the target (the softmul.c precedent).
-QEMU_SMOKE_C := $(wildcard test/qemu/*.c test/freertos/*.c)
+# The QEMU and FreeRTOS smoke sources. LINT_C's host flags cannot parse
+# a freestanding image, so clang-tidy runs them in separate invocations:
+# lint-tidy carries a target-flag pass for the test/qemu files, and
+# freertos-check lints its two programs against the fetched kernel
+# headers. lint-format and lint-cppcheck take the list whole.
+QEMU_SMOKE_C := $(wildcard test/qemu/*.c test/qemu/*.h test/freertos/*.c test/freertos/*.h)
 
 # Firmware links bin/chapulin.o: one relocatable object exposing exactly
 # the four public calls. Partial linking merges the modules; nmedit
@@ -956,6 +958,22 @@ ifeq ($(CLANG_TIDY),)
 	$(call REQUIRE,clang-tidy,it ships with llvm — see the LLVM_MAJOR pin in tools/toolchain.env)
 else
 	$(CLANG_TIDY) --quiet $(LINT_C) -- -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -I.
+	# The M3 smoke runtimes and the KAT program lint with the target's
+	# own flags. Three checks are off, each with its reason:
+	# bugprone-reserved-identifier and its two cert aliases, because the
+	# linker script and the EABI name _start, __bss_start and
+	# __aeabi_*; misc-use-internal-linkage, because reset_handler, main
+	# and the mem routines are called by the vector fetch and the
+	# compiler's own lowering, which no header reaches; and
+	# portability-no-assembler, because semihosting is a bkpt
+	# instruction. The FreeRTOS programs need the fetched kernel
+	# headers, so freertos-check lints them (test/platforms.mk).
+	$(CLANG_TIDY) --quiet \
+	  --checks='-bugprone-reserved-identifier,-cert-dcl37-c,-cert-dcl51-cpp,-misc-use-internal-linkage,-portability-no-assembler' \
+	  test/qemu/m3_runtime.c test/qemu/m3_start.c test/qemu/m3_kat.c -- \
+	  -std=c11 --target=armv7m-none-eabi -ffreestanding -I. -Itest/qemu
+	# The host half of the KAT diff is ordinary hosted C; no checks off.
+	$(CLANG_TIDY) --quiet test/qemu/host_runtime.c -- -std=c11 -D_DEFAULT_SOURCE -I. -Itest/qemu
 endif
 
 lint-format:
@@ -981,6 +999,14 @@ else
 	  --inline-suppr --suppress=missingIncludeSystem \
 	  --suppress=constParameterCallback $(HOST_RAND_DEF) --force \
 	  --error-exitcode=1 --quiet $(LINT_C)
+	# The QEMU and FreeRTOS smoke sources, with two suppressions:
+	# unusedStructMember, because the hardware, not C, reads the vector
+	# table entries; and comparePointers, because __bss_start and
+	# __bss_end are one region to the linker and two objects to C.
+	$(CPPCHECK) --std=c11 --enable=warning,style,performance,portability \
+	  --suppress=missingIncludeSystem \
+	  --suppress=unusedStructMember --suppress=comparePointers \
+	  --error-exitcode=1 --quiet $(filter %.c,$(QEMU_SMOKE_C))
 endif
 
 # Dev tooling lives in tools/, so npm installs into tools/node_modules and

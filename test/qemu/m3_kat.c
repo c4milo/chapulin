@@ -15,8 +15,7 @@
 #include "sha256.h"
 #include "x25519.h"
 
-void plat_write(const char *s);
-void plat_exit(int code);
+#include "plat.h"
 
 noreturn void ch_assert_fail(const char *cond, const char *file, int line) {
     (void)cond;

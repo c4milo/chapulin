@@ -3,6 +3,7 @@
 // exit, and the byte-wise mem routines a freestanding build needs. On
 // the MPS2-AN385 everything -- code, data, stack -- lives in the ZBT
 // SRAM at address zero, so there is no flash-to-RAM copy.
+#include "plat.h"
 #include <stddef.h>
 #include <stdint.h>
 
@@ -14,10 +15,12 @@ int main(void);
 
 // ARM semihosting (BKPT 0xAB): operation in r0, parameter in r1.
 static long semihost(long op, long param) {
-    register long r0 __asm__("r0") = op;
-    register long r1 __asm__("r1") = param;
-    __asm__ volatile("bkpt #0xAB" : "+r"(r0) : "r"(r1) : "memory");
-    return r0;
+    long res;
+    __asm__ volatile("mov r0, %1\n\tmov r1, %2\n\tbkpt #0xAB\n\tmov %0, r0"
+                     : "=r"(res)
+                     : "r"(op), "r"(param)
+                     : "r0", "r1", "memory");
+    return res;
 }
 
 void plat_write(const char *s) {

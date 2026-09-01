@@ -127,8 +127,17 @@ jobs:
           # fail on the same set the development machine sees.
           . tools/toolchain.env
           { echo "ARM_GNU_VERSION=$ARM_GNU_VERSION"
-            echo "ARM_GNU_LINUX_SHA256=$ARM_GNU_LINUX_SHA256"; } >> "$GITHUB_ENV"
+            echo "ARM_GNU_LINUX_SHA256=$ARM_GNU_LINUX_SHA256"
+            echo "LLVM_MAJOR=$LLVM_MAJOR"; } >> "$GITHUB_ENV"
       - run: sudo apt-get update -q && sudo apt-get install -y -q qemu-system-arm
+      - name: Install clang-tidy (apt.llvm.org, pinned major)
+        # freertos-check lints its test programs against the fetched
+        # kernel headers, so the lane needs the same pinned clang-tidy
+        # the check job runs.
+        run: |
+          wget -qO llvm.sh https://apt.llvm.org/llvm.sh
+          sudo bash llvm.sh "$LLVM_MAJOR"
+          sudo apt-get install -y "clang-tidy-$LLVM_MAJOR"
       - name: Cache the Arm GNU toolchain
         id: armtc
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -159,8 +168,17 @@ jobs:
           # fail on the same set the development machine sees.
           . tools/toolchain.env
           { echo "ARM_GNU_VERSION=$ARM_GNU_VERSION"
-            echo "ARM_GNU_LINUX_SHA256=$ARM_GNU_LINUX_SHA256"; } >> "$GITHUB_ENV"
+            echo "ARM_GNU_LINUX_SHA256=$ARM_GNU_LINUX_SHA256"
+            echo "LLVM_MAJOR=$LLVM_MAJOR"; } >> "$GITHUB_ENV"
       - run: sudo apt-get update -q && sudo apt-get install -y -q qemu-system-arm
+      - name: Install clang-tidy (apt.llvm.org, pinned major)
+        # freertos-check lints its test programs against the fetched
+        # kernel headers, so the lane needs the same pinned clang-tidy
+        # the check job runs.
+        run: |
+          wget -qO llvm.sh https://apt.llvm.org/llvm.sh
+          sudo bash llvm.sh "$LLVM_MAJOR"
+          sudo apt-get install -y "clang-tidy-$LLVM_MAJOR"
       - name: Cache the Arm GNU toolchain
         id: armtc
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0

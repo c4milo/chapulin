@@ -12,10 +12,12 @@ extern uint8_t __bss_end[];
 extern uint8_t __stack_top[];
 
 static long semihost(long op, long param) {
-    register long r0 __asm__("r0") = op;
-    register long r1 __asm__("r1") = param;
-    __asm__ volatile("bkpt #0xAB" : "+r"(r0) : "r"(r1) : "memory");
-    return r0;
+    long res;
+    __asm__ volatile("mov r0, %1\n\tmov r1, %2\n\tbkpt #0xAB\n\tmov %0, r0"
+                     : "=r"(res)
+                     : "r"(op), "r"(param)
+                     : "r0", "r1", "memory");
+    return res;
 }
 static void plat_write(const char *s) {
     (void)semihost(0x04, (long)s);
@@ -46,10 +48,12 @@ void freertos_assert_fail(const char *file, int line) {
 
 static StaticTask_t idle_tcb;
 static StackType_t idle_stack[configMINIMAL_STACK_SIZE];
-void vApplicationGetIdleTaskMemory(StaticTask_t **tcb, StackType_t **stack, uint32_t *n) {
-    *tcb = &idle_tcb;
-    *stack = idle_stack;
-    *n = configMINIMAL_STACK_SIZE;
+void vApplicationGetIdleTaskMemory(StaticTask_t **ppxIdleTaskTCBBuffer,
+                                   StackType_t **ppxIdleTaskStackBuffer,
+                                   uint32_t *puxIdleTaskStackSize) {
+    *ppxIdleTaskTCBBuffer = &idle_tcb;
+    *ppxIdleTaskStackBuffer = idle_stack;
+    *puxIdleTaskStackSize = configMINIMAL_STACK_SIZE;
 }
 
 static volatile int pings;
