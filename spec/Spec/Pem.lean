@@ -12,8 +12,11 @@ and are stated in `pem.h`:
 * one CERTIFICATE block per input, so nothing but line terminators may
   follow the END boundary;
 * a byte cap on the text, derived from the DER cap so that every
-  certificate the parser admits fits at every line width this grammar
-  accepts.
+  certificate the parser admits fits at every line width of four
+  characters or more, CRLF included — the floor `pemMax`'s terminator
+  budget is sized for. Narrower wraps spend more bytes on terminators
+  than the cap budgets, and a full-cap certificate at width 1 is over
+  it: same DER, accepted at one width and over the cap at another.
 
 Two more departures from the RFCs, both narrowing:
 
@@ -90,7 +93,10 @@ def pemMax (derMax : Nat) : Nat :=
   body + (body / 4) * 2 + 64
 
 /-- One CERTIFICATE block to the DER it carries. CR and LF are ignored
-anywhere in the body, so any line width decodes the same. -/
+anywhere in the body, so every armoured text that fits the cap decodes
+to the same DER regardless of how it was wrapped. Whether it FITS
+depends on the width: below four characters a line the terminators
+outgrow `pemMax`'s budget at full cap. -/
 def decode? (derMax : Nat) (input : ByteArray) : Option ByteArray := do
   guard (input.size ≤ pemMax derMax)
   let cs := input.toList
@@ -812,6 +818,58 @@ private theorem b64Decode?_of_encode (der : ByteArray) (h0 : der.size ≠ 0) :
       simp
     have hmod : (4 * q + 4) % 4 = 0 := by omega
     simp [guard_true, hPlen, hmod, hfuse, mk_map_getElem]
+
+/-- Bool view of the inverse direction for one byte value: if it
+decodes, it is the alphabet character at its own value. -/
+private def invOk (n : Nat) : Bool :=
+  match b64Value? (UInt8.ofNat n) with
+  | some v =>
+    (ascii "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/")[v]! == UInt8.ofNat n
+  | none => true
+
+-- Four quarters so each decide fits the default recursion depth:
+-- lint-spec bans raising maxRecDepth, and one 256-case decide needs it.
+private theorem invOk_q0 : ∀ n, n < 64 → invOk n = true := by decide
+private theorem invOk_q1 : ∀ n, n < 64 → invOk (64 + n) = true := by decide
+private theorem invOk_q2 : ∀ n, n < 64 → invOk (128 + n) = true := by decide
+private theorem invOk_q3 : ∀ n, n < 64 → invOk (192 + n) = true := by decide
+
+private theorem invOk_all : ∀ n, n < 256 → invOk n = true := by
+  intro n h
+  rcases Nat.lt_or_ge n 64 with h0 | h64
+  · exact invOk_q0 n h0
+  rcases Nat.lt_or_ge n 128 with h1 | h128
+  · have := invOk_q1 (n - 64) (by omega); rwa [Nat.add_sub_cancel' h64] at this
+  rcases Nat.lt_or_ge n 192 with h2 | h192
+  · have := invOk_q2 (n - 128) (by omega); rwa [Nat.add_sub_cancel' h128] at this
+  · have := invOk_q3 (n - 192) (by omega); rwa [Nat.add_sub_cancel' h192] at this
+
+/-- `b64Value?` inverts the table: a byte that decodes to `v` IS the
+`v`-th alphabet character. `b64Value?_table` is the other direction;
+together they pin the accepted alphabet exactly — the definition's
+"every other byte is outside the alphabet" as a theorem rather than a
+comment. A widened range in `b64Value?` now fails the build instead of
+waiting for a random differential row to sample it. -/
+theorem b64Value?_inv (c : UInt8) (v : Nat) (h : b64Value? c = some v) :
+    (ascii "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/")[v]! = c := by
+  have h_ofNat : UInt8.ofNat c.toNat = c := by simp
+  have h_ok := invOk_all c.toNat c.toNat_lt
+  rw [invOk, h_ofNat, h] at h_ok
+  exact eq_of_beq h_ok
+
+/-- Exact-domain corollary: a byte decodes iff it is an alphabet
+character. -/
+theorem b64Value?_isSome_iff (c : UInt8) :
+    (b64Value? c).isSome = true ↔
+      ∃ i, i < 64 ∧
+        c = (ascii "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/")[i]! := by
+  constructor
+  · intro h_some
+    obtain ⟨v, hv⟩ := Option.isSome_iff_exists.mp h_some
+    exact ⟨v, b64Value?_lt c v hv, (b64Value?_inv c v hv).symm⟩
+  · rintro ⟨i, h_lt, rfl⟩
+    rw [Option.isSome_iff_exists]
+    exact ⟨i, b64Value?_table i h_lt⟩
 
 /-! ### `decode?`: the bound and the round trip -/
 

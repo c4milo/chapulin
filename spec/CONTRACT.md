@@ -142,7 +142,9 @@ Spec.Pem.decode?      : (derMax : Nat) → ByteArray → Option ByteArray
                         -- CERTIFICATE block. Domain: the text at most
                         -- `pemMax derMax` bytes; the BEGIN boundary exactly,
                         -- terminated by LF or CRLF; CR and LF ignored anywhere
-                        -- in the body, so any line width decodes alike;
+                        -- in the body, so every text under the cap decodes
+                        -- alike at any width (four characters or wider always
+                        -- fits; narrower can exceed the cap at full size);
                         -- RFC 4648 §3.5 canonical padding with the unused bits
                         -- zero; the END boundary; nothing but CR and LF after
                         -- it. Four deliberate departures from the RFCs, all
@@ -402,12 +404,21 @@ Spec.Pem.b64Value?_table     b64Value? of the i-th RFC 4648 §4 alphabet charact
 Spec.Pem.decode?_size        decode? derMax input = some d → d.size ≤ derMax
 Spec.X509Ca.isCaTrue_iff     isCaTrue accepts exactly tlv 0x30 caTrue, alone or
                              -- followed by one INTEGER TLV filling the SEQUENCE
-                             -- (any pathLenConstraint value, unread) — the two
+                             -- (any pathLenConstraint content bytes, empty or non-minimal included, unread) — the two
                              -- anchor encodings and nothing else
+Spec.Pem.b64Value?_inv       a byte that decodes to v IS the v-th alphabet
+                             -- character — with b64Value?_table, the accepted
+                             -- alphabet is pinned in both directions
+Spec.Pem.b64Value?_lt        b64Value? c = some v → v < 64
+Spec.X509Ca.readCertificate_frames
+                             an accepted certificate is exactly SEQUENCE(TBS,
+                             -- sigAlg, BIT STRING) with the unused-bits octet
+                             -- zero and a nonempty signature — trailing bytes
+                             -- and inter-TLV junk are build failures
 Spec.X509Ca.caKey?_p256_size caKey? .p256 = some k → k.size = 64
 Spec.X509Ca.caKey?_rsa_size  caKey? .rsa = some k → 256 ≤ k.size ≤ 384, 8 | k.size
-                             -- both mirror what proof/x509ca_harness.c asserts
-                             -- of the C entry's outputs
+                             -- both tighten what proof/x509ca_harness.c asserts
+                             -- of the C entry (the harness holds 0 < len <= max)
 Spec.Record.nonce_inj        distinct sequence numbers below 2^64 give distinct record
                              -- nonces (RFC 9846 §5.3): within one traffic key the
                              -- nonce never repeats
@@ -507,6 +518,8 @@ means the module's selftest plus the differential oracle carry it;
 | MlKem | 6 | FIPS 203 §6.1-6.3 output-length contracts (ek 1184, dk 2400, ct 1088, shared secret 32 on both decapsulation branches) and the ByteEncode length law they rest on; the NTT, sampling, and compression arithmetic stay vector-checked |
 | Poly | 1 | MAC size; arithmetic vector-checked |
 | P256 | 0 | executable oracle only: RFC 6979 vectors and the differential |
+| Pem | 6 | the accepted alphabet pinned in both directions against RFC 4648 §4's table; decode? never yields more than the cap and the bound is attained; armour-then-decode is the identity for every non-empty DER within the caps at every width whose text fits — each hypothesis carries an evaluated countermodel |
+| X509Ca | 6 | isCaTrue accepts exactly the two anchor encodings (the iff is kernel-checked false without its encodeLen-domain bound); an accepted certificate has exactly the SEQUENCE(TBS, sigAlg, BIT STRING) shape with the signature framing intact; the extracted key is exactly 64 bytes or 256..384 in 8-byte steps, tightening the CBMC harness's bound. Acceptance policy beyond the frame is executable oracle only: the differential's minted anchors, near shapes and mutations |
 | X25519 | 2 | RFC 7748 §5 clamping: every decoded scalar is a multiple of the cofactor 8, and has bit 254 set with bit 255 clear. The first keeps `k * P` in the prime-order subgroup, the second fixes the ladder's iteration count. The ladder arithmetic itself stays vector-checked |
 | X509Der | 19 | DER canonicality: a length, a TLV, and an INTEGER are accepted only in the one encoding X.690 §10.1 and §8.3.2 admit, so the reader is DER-strict rather than BER-lenient; plus the encode/decode round trips and the §8.19.2 subidentifier rule |
 | X509 | 4 | parse soundness: an accepted list reports a key only after a signature over the complete DER of the TBSCertificate that carried it verified under the pinned key, or under an intermediate the pinned key itself signed; the entry is a byte range of the list and no third entry can follow. Acceptance policy beyond that is executable oracle only: mint/parse round trips for the single leaf and the chained pair (self-checked signatures; OpenSSL material is exercised by the C strictness suite) and the differential |

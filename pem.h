@@ -21,8 +21,11 @@
 #include "cfg.h"
 
 // Largest PEM text the decoder reads. Derived from CH_X509_MAX so the
-// cap and the grammar agree: every certificate the parser admits must
-// fit at every line width the decoder accepts. Base64 spends four
+// cap and the grammar agree: every certificate the parser admits fits
+// at every line width of four characters or more, CRLF included. A
+// narrower wrap spends more bytes on terminators than the budget
+// below holds, so a full-size certificate wrapped at one character is
+// over the cap — rejected for its size, not its width. Base64 spends four
 // characters per three DER bytes; the terminator budget of two bytes
 // per four characters covers CRLF wrapping down to four characters a
 // line; 64 bytes cover the two boundary lines and their terminators.

@@ -140,11 +140,12 @@ def readCertificate (alg : Alg) (cert : ByteArray) : Option ByteArray := do
 `ch_cfg.server_pubkey` takes. -/
 def caKey? (alg : Alg) (derMax : Nat) (pem : ByteArray) : Option ByteArray := do
   let der ← Spec.Pem.decode? derMax pem
-  guard (der.size ≤ derMax)
+  -- No size guard: Spec.Pem.decode?_size already carries der.size ≤
+  -- derMax for every accepted input, so a guard here is provably dead.
   readCertificate alg der
 
 /-- Structural, like `Spec.X509`'s: no third party publishes vectors
-for a provisioning walk. The differential in test/diff_pem.h carries
+for a provisioning walk. The differential in test/diff_x509_ca.h carries
 the known-answer weight, minting certificates with `Spec.X509.mint`
 and comparing against the C. -/
 def selftest : Bool :=
@@ -562,6 +563,54 @@ theorem readCertificate_rsa_size (cert k : ByteArray)
   obtain ⟨tbs, htbs⟩ := readCertificate_tbs .rsa cert k h
   obtain ⟨off, endOff, hspki⟩ := readTbs_spki .rsa tbs k htbs
   exact readSpki_rsa_size tbs off k endOff hspki
+
+/-- A certificate `readCertificate` accepts has exactly the shape the
+walk's doc-comment names: the outer SEQUENCE around the TBS SEQUENCE,
+the signatureAlgorithm SEQUENCE and the signature BIT STRING — nothing
+between them, nothing after — with the BIT STRING's framing intact
+(the unused-bits octet zero, at least one content byte) and the TBS one
+`readTbs` accepts with the returned key. Trailing bytes, truncation
+after the TBS, and junk spliced between the inner TLVs are all
+regions the differential's mutations never generate; this makes each
+of them a build failure instead. -/
+theorem readCertificate_frames (alg : Alg) (cert key : ByteArray)
+    (h : readCertificate alg cert = some key) :
+    ∃ tbs sigalg sig,
+      cert = tlv 0x30 (tlv 0x30 tbs ++ tlv 0x30 sigalg ++ tlv 0x03 sig) ∧
+      2 ≤ sig.size ∧ sig[0]! = 0 ∧
+      readTbs alg tbs = some key := by
+  unfold readCertificate at h
+  obtain ⟨⟨body, endOff⟩, hcert, h⟩ := bind_some_elim h
+  obtain ⟨u1, hg1, h⟩ := bind_some_elim h
+  obtain ⟨⟨tbs, o1⟩, htlv1, h⟩ := bind_some_elim h
+  obtain ⟨k0, htbs, h⟩ := bind_some_elim h
+  obtain ⟨⟨sigalg, o2⟩, htlv2, h⟩ := bind_some_elim h
+  obtain ⟨⟨sig, o3⟩, htlv3, h⟩ := bind_some_elim h
+  obtain ⟨u2, hg2, h⟩ := bind_some_elim h
+  simp only [Option.some.injEq] at h
+  subst h
+  obtain ⟨hsig2, hsig0beq, ho3beq⟩ := guard_some hg2
+  have ho3 : o3 = body.size := eq_of_beq ho3beq
+  obtain ⟨hc_end, -, hc_slice⟩ := readTlv_canonical cert 0 0x30 body endOff hcert
+  obtain ⟨h1_end, -, h1_slice⟩ := readTlv_canonical body 0 0x30 tbs o1 htlv1
+  obtain ⟨h2_end, -, h2_slice⟩ := readTlv_canonical body o1 0x30 sigalg o2 htlv2
+  obtain ⟨h3_end, -, h3_slice⟩ := readTlv_canonical body o2 0x03 sig o3 htlv3
+  have hcert_eq : cert = tlv 0x30 body := by
+    have hend : endOff = cert.size := eq_of_beq (guard_some hg1)
+    rw [show (tlv 0x30 body).size = cert.size by omega] at hc_slice
+    rw [slice, Nat.zero_add, ByteArray.extract_zero_size] at hc_slice
+    exact hc_slice
+  have hbody : body = tlv 0x30 tbs ++ tlv 0x30 sigalg ++ tlv 0x03 sig := by
+    have hwhole : body.extract 0 body.size = body := ByteArray.extract_zero_size
+    rw [ByteArray.extract_eq_extract_append_extract o2 (by omega) (by omega)] at hwhole
+    rw [ByteArray.extract_eq_extract_append_extract o1 (by omega) (by omega)] at hwhole
+    rw [slice] at h1_slice h2_slice h3_slice
+    rw [show (0 : Nat) + (tlv 0x30 tbs).size = o1 by omega] at h1_slice
+    rw [show o1 + (tlv 0x30 sigalg).size = o2 by omega] at h2_slice
+    rw [show o2 + (tlv 0x03 sig).size = body.size by omega] at h3_slice
+    rw [h1_slice, h2_slice, h3_slice] at hwhole
+    exact hwhole.symm
+  exact ⟨tbs, sigalg, sig, by rw [hcert_eq, hbody], hsig2, eq_of_beq hsig0beq, htbs⟩
 
 /-- Every key `caKey?` yields under `.p256` is exactly 64 bytes: the
 X‖Y point `ch_cfg.server_pubkey` takes, and the ECDSA build's
