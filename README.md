@@ -403,7 +403,7 @@ a compatibility list:
 | mips32r2 (big-endian) | cross-built, under qemu user mode (`make cross-check`) | `mips` |
 | riscv32 | cross-built with Bootlin's pinned musl toolchain, under qemu user mode | `riscv32` |
 | Cortex-M3 (bare metal) | unmodified suites through newlib semihosting on QEMU's MPS2-AN385 (`make m3-check`) | `m3` |
-| FreeRTOS on Cortex-M3 | the pinned kernel boots and two static tasks must interleave (`make freertos-check`); the TCP stack and an in-task handshake are the lane's next rungs | `freertos` |
+| FreeRTOS on Cortex-M3 | the pinned kernel boots, two static tasks must interleave, and a task completes a TLS 1.3 handshake through FreeRTOS+TCP to a live `openssl s_server`, application data verified (`make freertos-check`) | `freertos` |
 
 Two suites stay off the bare-metal rows because they fork a `diffspec`
 child; every Linux row runs them. macOS is the development host and

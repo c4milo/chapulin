@@ -792,6 +792,7 @@ M3_RUN = $(M3_QEMU) -M mps2-an385 -cpu cortex-m3 -nographic -semihosting -kernel
 # kernel arrives by commit hash (tools/toolchain.env says why never by
 # ref) into a gitignored checkout, reused when already at the pin.
 FREERTOS_KERNEL_DIR ?= bin/freertos-kernel
+FREERTOS_TCP_DIR ?= bin/freertos-plus-tcp
 .PHONY: freertos-check
 freertos-check:
 	@[ -n "$(M3_CC)" ] || { \
@@ -815,9 +816,41 @@ freertos-check:
 	  -Itest/freertos -I$(FREERTOS_KERNEL_DIR)/include -I$(FREERTOS_KERNEL_DIR)/portable/GCC/ARM_CM3 \
 	  -T test/qemu/m3.ld -o bin/freertos/boot_test test/freertos/boot_test.c \
 	  $(FREERTOS_KERNEL_DIR)/tasks.c $(FREERTOS_KERNEL_DIR)/list.c \
-	  $(FREERTOS_KERNEL_DIR)/portable/GCC/ARM_CM3/port.c
+	  $(FREERTOS_KERNEL_DIR)/portable/GCC/ARM_CM3/port.c $(FREERTOS_KERNEL_DIR)/portable/MemMang/heap_4.c
 	@echo "== freertos boot_test (m3/qemu)"; \
 	 $(M3_RUN) bin/freertos/boot_test
+	@if [ "$$(git -C $(FREERTOS_TCP_DIR) rev-parse HEAD 2>/dev/null)" != "$(FREERTOS_PLUS_TCP_COMMIT)" ]; then \
+	  rm -rf $(FREERTOS_TCP_DIR); mkdir -p $(FREERTOS_TCP_DIR); \
+	  git -C $(FREERTOS_TCP_DIR) init -q; \
+	  git -C $(FREERTOS_TCP_DIR) fetch -q --depth 1 \
+	    https://github.com/FreeRTOS/FreeRTOS-Plus-TCP.git $(FREERTOS_PLUS_TCP_COMMIT); \
+	  git -C $(FREERTOS_TCP_DIR) -c advice.detachedHead=false checkout -q $(FREERTOS_PLUS_TCP_COMMIT); \
+	fi
+	@[ "$$(git -C $(FREERTOS_TCP_DIR) rev-parse HEAD)" = "$(FREERTOS_PLUS_TCP_COMMIT)" ] \
+	  || { echo "freertos-check: Plus-TCP checkout is not the pinned commit"; exit 1; }
+	$(M3_CC) -mcpu=cortex-m3 -mthumb -Os -std=c11 -ffreestanding -nostdlib \
+	  -Wall -Wextra -Wl,--no-warn-rwx-segments -Wl,--entry=reset_handler \
+	  -DCH_RAND_EXTERN \
+	  -Itest/freertos -I$(FREERTOS_KERNEL_DIR)/include -I$(FREERTOS_KERNEL_DIR)/portable/GCC/ARM_CM3 \
+	  -I$(FREERTOS_TCP_DIR)/source/include -I$(FREERTOS_TCP_DIR)/source/portable/Compiler/GCC \
+	  -I$(FREERTOS_TCP_DIR)/source/portable/NetworkInterface/MPS2_AN385/ether_lan9118 -I. \
+	  -T test/qemu/m3.ld -o bin/freertos/tls_test test/freertos/tls_test.c \
+	  $(FREERTOS_KERNEL_DIR)/tasks.c $(FREERTOS_KERNEL_DIR)/list.c $(FREERTOS_KERNEL_DIR)/queue.c \
+	  $(FREERTOS_KERNEL_DIR)/event_groups.c $(FREERTOS_KERNEL_DIR)/portable/GCC/ARM_CM3/port.c \
+	  $(FREERTOS_KERNEL_DIR)/portable/MemMang/heap_4.c \
+	  $(addprefix $(FREERTOS_TCP_DIR)/source/,FreeRTOS_IP.c FreeRTOS_IP_Timers.c FreeRTOS_IP_Utils.c \
+	    FreeRTOS_ARP.c FreeRTOS_ICMP.c FreeRTOS_Sockets.c FreeRTOS_Stream_Buffer.c FreeRTOS_TCP_IP.c \
+	    FreeRTOS_TCP_Reception.c FreeRTOS_TCP_State_Handling.c FreeRTOS_TCP_Transmission.c \
+	    FreeRTOS_TCP_Utils.c FreeRTOS_TCP_WIN.c FreeRTOS_UDP_IP.c FreeRTOS_IPv4.c FreeRTOS_IPv4_Utils.c \
+	    FreeRTOS_IPv4_Sockets.c FreeRTOS_TCP_IP_IPv4.c FreeRTOS_TCP_Transmission_IPv4.c \
+	    FreeRTOS_TCP_State_Handling_IPv4.c FreeRTOS_TCP_Utils_IPv4.c FreeRTOS_UDP_IPv4.c \
+	    FreeRTOS_Routing.c portable/BufferManagement/BufferAllocation_2.c \
+	    portable/NetworkInterface/MPS2_AN385/NetworkInterface.c \
+	    portable/NetworkInterface/MPS2_AN385/ether_lan9118/smsc9220_eth_drv.c) \
+	  ct.c sha256.c hkdf.c chacha20.c poly1305.c aead.c x25519.c pem.c x509.c x509_der.c x509_ca.c \
+	  buf.c record.c keysched.c io.c handshake_message.c handshake_parser.c handshake_record.c \
+	  session.c handshake_auth.c handshake.c handshake_post.c tls.c softmul.c rsa.c rsa_mont.c p256.c
+	QEMU="$(M3_QEMU)" ./test/qemu-freertos-tls.sh bin/freertos/tls_test
 
 .PHONY: suite-check
 suite-check: bin/unit bin/unit_ca bin/unit_pq bin/tlsclient bin/tlsclient_ecdsa bin/tlsclient_ca bin/tlsclient_ca_ecdsa bin/tlsclient_pq bin/drbg_test bin/softmul_test bin/rsa_test bin/sha3_test bin/mlkem_test bin/handshake_strict_test bin/handshake_strict_pq bin/x509strict bin/x509strict_ecdsa
@@ -1374,7 +1407,7 @@ endif
 
 fmt:
 ifneq ($(CLANG_FORMAT),)
-	$(CLANG_FORMAT) -i $(LINT_C) $(HDRS) $(PROOF_C) $(FUZZ_C) $(TESTH)
+	$(CLANG_FORMAT) -i $(LINT_C) $(HDRS) $(PROOF_C) $(FUZZ_C) $(QEMU_SMOKE_C) $(TESTH)
 endif
 
 # -DCH_CT_WIDEMUL, because the point is to measure what ships. ct.h resolves
