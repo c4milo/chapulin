@@ -188,7 +188,7 @@ FUZZ_C := $(wildcard fuzz/*.c)
 # The Cortex-M3 QEMU smoke sources: formatted, but outside LINT_C --
 # clang-tidy parses with host flags, and the runtime's thumb asm and
 # freestanding shape belong to the target (the softmul.c precedent).
-QEMU_SMOKE_C := $(wildcard test/qemu/*.c)
+QEMU_SMOKE_C := $(wildcard test/qemu/*.c test/freertos/*.c)
 
 # Firmware links bin/chapulin.o: one relocatable object exposing exactly
 # the four public calls. Partial linking merges the modules; nmedit
@@ -786,6 +786,39 @@ M3_RUN = $(M3_QEMU) -M mps2-an385 -cpu cortex-m3 -nographic -semihosting -kernel
 # half of check, for platform-parity jobs (linux arm64 today) where
 # re-building the whole lint toolchain buys nothing. The roster is
 # check's own prerequisite list.
+# The FreeRTOS lane: the pinned kernel booted on QEMU's MPS2-AN385 with
+# two statically allocated tasks that must interleave before PASS — the
+# scheduler, SysTick and PendSV proven, not just main reached. The
+# kernel arrives by commit hash (tools/toolchain.env says why never by
+# ref) into a gitignored checkout, reused when already at the pin.
+FREERTOS_KERNEL_DIR ?= bin/freertos-kernel
+.PHONY: freertos-check
+freertos-check:
+	@[ -n "$(M3_CC)" ] || { \
+	  [ -n "$$CI" ] && { echo "freertos-check: arm-none-eabi-gcc missing on CI; the gate must not skip"; exit 1; }; \
+	  echo "SKIP freertos-check: no arm-none-eabi-gcc (see ARM_GNU_VERSION in tools/toolchain.env)"; exit 0; }
+	@[ -n "$(M3_QEMU)" ] || { \
+	  [ -n "$$CI" ] && { echo "freertos-check: qemu-system-arm missing on CI; the gate must not skip"; exit 1; }; \
+	  echo "SKIP freertos-check: no qemu-system-arm"; exit 0; }
+	@if [ "$$(git -C $(FREERTOS_KERNEL_DIR) rev-parse HEAD 2>/dev/null)" != "$(FREERTOS_KERNEL_COMMIT)" ]; then \
+	  rm -rf $(FREERTOS_KERNEL_DIR); mkdir -p $(FREERTOS_KERNEL_DIR); \
+	  git -C $(FREERTOS_KERNEL_DIR) init -q; \
+	  git -C $(FREERTOS_KERNEL_DIR) fetch -q --depth 1 \
+	    https://github.com/FreeRTOS/FreeRTOS-Kernel.git $(FREERTOS_KERNEL_COMMIT); \
+	  git -C $(FREERTOS_KERNEL_DIR) -c advice.detachedHead=false checkout -q $(FREERTOS_KERNEL_COMMIT); \
+	fi
+	@[ "$$(git -C $(FREERTOS_KERNEL_DIR) rev-parse HEAD)" = "$(FREERTOS_KERNEL_COMMIT)" ] \
+	  || { echo "freertos-check: kernel checkout is not the pinned commit"; exit 1; }
+	@mkdir -p bin/freertos
+	$(M3_CC) -mcpu=cortex-m3 -mthumb -Os -std=c11 -ffreestanding -nostdlib \
+	  -Wall -Wextra -Wpedantic -Werror -Wl,--no-warn-rwx-segments -Wl,--entry=reset_handler \
+	  -Itest/freertos -I$(FREERTOS_KERNEL_DIR)/include -I$(FREERTOS_KERNEL_DIR)/portable/GCC/ARM_CM3 \
+	  -T test/qemu/m3.ld -o bin/freertos/boot_test test/freertos/boot_test.c \
+	  $(FREERTOS_KERNEL_DIR)/tasks.c $(FREERTOS_KERNEL_DIR)/list.c \
+	  $(FREERTOS_KERNEL_DIR)/portable/GCC/ARM_CM3/port.c
+	@echo "== freertos boot_test (m3/qemu)"; \
+	 $(M3_RUN) bin/freertos/boot_test
+
 .PHONY: suite-check
 suite-check: bin/unit bin/unit_ca bin/unit_pq bin/tlsclient bin/tlsclient_ecdsa bin/tlsclient_ca bin/tlsclient_ca_ecdsa bin/tlsclient_pq bin/drbg_test bin/softmul_test bin/rsa_test bin/sha3_test bin/mlkem_test bin/handshake_strict_test bin/handshake_strict_pq bin/x509strict bin/x509strict_ecdsa
 	@set -e; for b in unit unit_ca unit_pq drbg_test softmul_test rsa_test sha3_test mlkem_test \
