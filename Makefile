@@ -185,6 +185,10 @@ endif
 # clang-format only. Fuzzers include .c files for statics, same deal.
 PROOF_C := $(wildcard proof/*.c) proof/harness.h
 FUZZ_C := $(wildcard fuzz/*.c)
+# The insn benches' shared driver and vectors: formatted, but outside
+# LINT_C -- the drivers compile freestanding for two cross targets, not
+# with host flags (the proof-harness precedent).
+BENCH_C := $(wildcard bench/*.c bench/*.h)
 # The QEMU and FreeRTOS smoke sources. LINT_C's host flags cannot parse
 # a freestanding image, so clang-tidy runs them in separate invocations:
 # lint-tidy carries a target-flag pass for the test/qemu files, and
@@ -980,7 +984,7 @@ lint-format:
 ifeq ($(CLANG_FORMAT),)
 	$(call REQUIRE,clang-format,it ships with llvm — see the LLVM_MAJOR pin in tools/toolchain.env)
 else
-	$(CLANG_FORMAT) --dry-run --Werror $(LINT_C) $(HDRS) $(PROOF_C) $(FUZZ_C) $(QEMU_SMOKE_C) $(TESTH)
+	$(CLANG_FORMAT) --dry-run --Werror $(LINT_C) $(HDRS) $(PROOF_C) $(FUZZ_C) $(BENCH_C) $(QEMU_SMOKE_C) $(TESTH)
 endif
 
 lint-cppcheck:
@@ -1318,7 +1322,7 @@ endif
 
 fmt:
 ifneq ($(CLANG_FORMAT),)
-	$(CLANG_FORMAT) -i $(LINT_C) $(HDRS) $(PROOF_C) $(FUZZ_C) $(QEMU_SMOKE_C) $(TESTH)
+	$(CLANG_FORMAT) -i $(LINT_C) $(HDRS) $(PROOF_C) $(FUZZ_C) $(BENCH_C) $(QEMU_SMOKE_C) $(TESTH)
 endif
 
 # -DCH_CT_WIDEMUL, because the point is to measure what ships. ct.h resolves
