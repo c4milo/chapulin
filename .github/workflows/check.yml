@@ -17,6 +17,12 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+
+# Every job runs on a read-only token unless it says otherwise; the
+# coverage job raises its own. Stated so nothing rides the implicit
+# default, which is what the scanner flags.
+permissions:
+  contents: read
 jobs:
   # Fast signal while the proof tiers grind: line coverage over the
   # library sources, five host binaries x two PIN builds, gated on the
