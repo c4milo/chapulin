@@ -145,6 +145,41 @@ jobs:
           mkdir -p ~/armtc && tar -xJf /tmp/armtc.tar.xz -C ~/armtc --strip-components=1
       - run: make m3-check M3_CC="$HOME/armtc/bin/arm-none-eabi-gcc"
 
+  riscv32:
+    # riscv32 as a supported platform: the cross-check roster under
+    # qemu-riscv32 user mode, the mips job's own shape. apt carries no
+    # riscv32 cross compiler with a libc, so the toolchain is Bootlin's,
+    # pinned in tools/toolchain.env by the publisher's sha256 and cached
+    # by version. Its libc is ilp32d, so the lane runs the toolchain's
+    # own ABI; rv32imac codegen is gated separately by lint-wide-multiply.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Load the toolchain pins
+        run: |
+          set -euo pipefail
+          # fail on the same set the development machine sees.
+          . tools/toolchain.env
+          { echo "RV32_TC_VERSION=$RV32_TC_VERSION"
+            echo "RV32_TC_SHA256=$RV32_TC_SHA256"; } >> "$GITHUB_ENV"
+      - run: sudo apt-get update -q && sudo apt-get install -y -q qemu-user
+      - name: Cache the Bootlin toolchain
+        id: rv32tc
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/rv32tc
+          key: rv32tc-${{ env.RV32_TC_VERSION }}
+      - name: Install the Bootlin toolchain (pinned)
+        if: steps.rv32tc.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          url="https://toolchains.bootlin.com/downloads/releases/toolchains/riscv32-ilp32d/tarballs/riscv32-ilp32d--musl--${RV32_TC_VERSION}.tar.xz"
+          curl -sSL -o /tmp/rv32tc.tar.xz "$url"
+          echo "$RV32_TC_SHA256  /tmp/rv32tc.tar.xz" | sha256sum -c -
+          mkdir -p ~/rv32tc && tar -xJf /tmp/rv32tc.tar.xz -C ~/rv32tc --strip-components=1
+      - run: make cross-check CROSS="$HOME/rv32tc/bin/riscv32-linux-" RUNNER=qemu-riscv32
+
   check:
     runs-on: ubuntu-24.04
     # The PR-lane budget. This job is the long one: it lands between 10
