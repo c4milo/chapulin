@@ -935,15 +935,11 @@ theorem decode?_encode (derMax w : Nat) (der : ByteArray)
 /-! ### decode? soundness -/
 
 private theorem eatEol?_shape {cs r : List UInt8} (h : eatEol? cs = some r) :
-    cs = [10] ++ r ∨ cs = [13, 10] ++ r := by
+    ∃ eol, (eol = [10] ∨ eol = [13, 10]) ∧ cs = eol ++ r := by
   unfold eatEol? at h
   split at h
-  · injection h with h
-    subst h
-    exact Or.inr rfl
-  · injection h with h
-    subst h
-    exact Or.inl rfl
+  · exact ⟨[13, 10], Or.inr rfl, by rw [Option.some.inj h]; rfl⟩
+  · exact ⟨[10], Or.inl rfl, by rw [Option.some.inj h]; rfl⟩
   · simp at h
 
 private theorem drop_length_of_append {l₁ l₂ l : List UInt8} (h : l₁ ++ l₂ = l) :
@@ -967,26 +963,17 @@ theorem decode?_sound (derMax : Nat) (input der : ByteArray)
   subst hd
   obtain ⟨t, ht⟩ := List.isPrefixOf_iff_prefix.mp (of_guard_eq_some hpre)
   rw [drop_length_of_append ht] at hrest
-  obtain ⟨eol, heol, ht2⟩ : ∃ eol, (eol = [10] ∨ eol = [13, 10]) ∧ t = eol ++ rest := by
-    rcases eatEol?_shape hrest with h10 | h1310
-    · exact ⟨[10], Or.inl rfl, h10⟩
-    · exact ⟨[13, 10], Or.inr rfl, h1310⟩
-  have hafter : rest.takeWhile (· ≠ 45) ++ rest.dropWhile (· ≠ 45) = rest := by
-    rw [List.takeWhile_append_dropWhile]
+  obtain ⟨eol, heol, ht2⟩ := eatEol?_shape hrest
+  have hafter : rest.takeWhile (· ≠ 45) ++ rest.dropWhile (· ≠ 45) = rest :=
+    List.takeWhile_append_dropWhile
   have hendp := of_guard_eq_some hend
   have halltp := of_guard_eq_some hallt
   rw [drop_length_of_append hafter] at hendp halltp
   obtain ⟨tl, htl⟩ := List.isPrefixOf_iff_prefix.mp hendp
   rw [drop_length_of_append htl] at halltp
   refine ⟨eol, rest.takeWhile (· ≠ 45), tl, ?_, heol, ?_, ?_, hb64⟩
-  · calc input.toList
-        = beginLine ++ t := ht.symm
-      _ = beginLine ++ (eol ++ rest) := by rw [ht2]
-      _ = beginLine ++ (eol ++ (rest.takeWhile (· ≠ 45) ++ rest.dropWhile (· ≠ 45))) := by
-          rw [hafter]
-      _ = beginLine ++ (eol ++ (rest.takeWhile (· ≠ 45) ++ (endLine ++ tl))) := by rw [htl]
-      _ = beginLine ++ eol ++ rest.takeWhile (· ≠ 45) ++ endLine ++ tl := by
-          simp [List.append_assoc]
+  · simp only [List.append_assoc]
+    rw [htl, hafter, ← ht2, ht]
   · intro c hc
     exact of_decide_eq_true (List.all_eq_true.mp List.all_takeWhile c hc)
   · intro c hc
@@ -1009,18 +996,13 @@ private theorem wrapFold_length (W : Nat) :
       (chars.foldl (wrapStep W) (pre, col)).1.length
           = pre.length + chars.length + (col + chars.length) / W ∧
         (chars.foldl (wrapStep W) (pre, col)).2 = (col + chars.length) % W
-  | [], pre, col, h => by
-    refine ⟨?_, ?_⟩
-    · simp [Nat.div_eq_of_lt h]
-    · simp [Nat.mod_eq_of_lt h]
+  | [], pre, col, h => ⟨by simp [Nat.div_eq_of_lt h], by simp [Nat.mod_eq_of_lt h]⟩
   | c :: cs, pre, col, h => by
     rw [List.foldl_cons]
+    simp only [wrapStep]
     by_cases hb : (col + 1 == W) = true
     · have hW : col + 1 = W := eq_of_beq hb
-      have hs : wrapStep W (pre, col) c = (pre ++ [c] ++ [10], 0) := by
-        simp only [wrapStep]
-        rw [if_pos hb]
-      rw [hs]
+      rw [if_pos hb]
       obtain ⟨h1, h2⟩ := wrapFold_length W cs (pre ++ [c] ++ [10]) 0 (by omega)
       have harg : col + (c :: cs).length = cs.length + W := by
         simp only [List.length_cons]
@@ -1032,10 +1014,7 @@ private theorem wrapFold_length (W : Nat) :
         omega
       · rw [h2, harg, Nat.add_mod_right, Nat.zero_add]
     · have hne : col + 1 ≠ W := by simpa using hb
-      have hs : wrapStep W (pre, col) c = (pre ++ [c], col + 1) := by
-        simp only [wrapStep]
-        rw [if_neg hb]
-      rw [hs]
+      rw [if_neg hb]
       obtain ⟨h1, h2⟩ := wrapFold_length W cs (pre ++ [c]) (col + 1) (by omega)
       have harg : col + 1 + cs.length = col + (c :: cs).length := by
         simp only [List.length_cons]
@@ -1052,12 +1031,7 @@ private theorem wrapped_length_le (w : Nat) (der : ByteArray) :
       ≤ 29 + (bodyChars der).length
         + (bodyChars der).length / (if w == 0 then (bodyChars der).length + 1 else w) := by
   have hW : 0 < (if w == 0 then (bodyChars der).length + 1 else w) := by
-    by_cases h : (w == 0) = true
-    · rw [if_pos h]
-      omega
-    · rw [if_neg h]
-      have hw0 : w ≠ 0 := by simpa using h
-      omega
+    cases w <;> simp
   obtain ⟨h1, -⟩ := wrapFold_length (if w == 0 then (bodyChars der).length + 1 else w)
     (bodyChars der) (beginLine ++ [10]) 0 hW
   have hbegin : (beginLine ++ [10] : List UInt8).length = 28 := by
@@ -1098,16 +1072,9 @@ theorem encode_fits (derMax w : Nat) (der : ByteArray)
     (encode w der).size ≤ pemMax derMax := by
   have hL := bodyChars_length der
   have hwr := wrapped_length_le w der
-  have hne : ¬((w == 0) = true) := by simp; omega
-  rw [if_neg hne] at hwr
-  have hdw : (bodyChars der).length / w ≤ (bodyChars der).length / 4 := by
-    rw [Nat.le_div_iff_mul_le (by omega : 0 < 4)]
-    calc (bodyChars der).length / w * 4
-        ≤ (bodyChars der).length / w * w := Nat.mul_le_mul (Nat.le_refl _) hw
-      _ ≤ (bodyChars der).length := Nat.div_mul_le_self _ _
-  have hwr4 : (wrapped w der).length
-      ≤ 29 + (bodyChars der).length + (bodyChars der).length / 4 :=
-    Nat.le_trans hwr (Nat.add_le_add_left hdw _)
+  rw [if_neg (by simp; omega)] at hwr
+  have hdw : (bodyChars der).length / w ≤ (bodyChars der).length / 4 :=
+    Nat.div_le_div_left hw (by omega)
   have hsz := encode_size_eq w der
   have hpem : pemMax derMax
       = 4 * ((derMax + 2) / 3) + 4 * ((derMax + 2) / 3) / 4 * 2 + 64 := rfl
@@ -1120,11 +1087,7 @@ theorem encode_fits_zero (derMax : Nat) (der : ByteArray)
     (encode 0 der).size ≤ pemMax derMax := by
   have hL := bodyChars_length der
   have hwr := wrapped_length_le 0 der
-  have hif : (if (0 : Nat) == 0 then (bodyChars der).length + 1 else 0)
-      = (bodyChars der).length + 1 := rfl
-  have hdz : (bodyChars der).length / ((bodyChars der).length + 1) = 0 :=
-    Nat.div_eq_of_lt (by omega)
-  rw [hif, hdz] at hwr
+  rw [if_pos (show ((0 : Nat) == 0) = true from rfl), Nat.div_eq_of_lt (by omega)] at hwr
   have hsz := encode_size_eq 0 der
   have hpem : pemMax derMax
       = 4 * ((derMax + 2) / 3) + 4 * ((derMax + 2) / 3) / 4 * 2 + 64 := rfl
@@ -1135,12 +1098,12 @@ theorem encode_fits_zero (derMax : Nat) (der : ByteArray)
 `B64Grammar` restates acceptance declaratively, without running the
 decoder, and `b64Decode?_isSome_iff` proves the decoder succeeds on
 exactly the texts the grammar admits. The proof follows the decoder's
-own steps: `b64Decode?_steps` writes the do block as one bind chain,
-`take_pads` and `trailing_pads_of_append` connect the trailing-pad
-count to the body-plus-pads split, `mapM_values` and
-`mapM_isSome_of_all` handle the alphabet map, and `fold_state` carries
-`b64Fold`'s accumulator invariant: after any run of six-bit values the
-pending bits are the low bits of the last value. -/
+own steps: `take_pads` and `trailing_pads_of_append` connect the
+trailing-pad count to the body-plus-pads split, `mapM_values`,
+`mapM_getLast?` and `mapM_isSome_of_all` handle the alphabet map,
+`fold_state` computes `b64Fold`'s final accumulator — the low bits of
+the last six-bit value — and `pad_bits_zero_iff` turns that residue
+into §3.5's zero-pad-bits condition. -/
 
 /-- RFC 4648 §4 and §3.5 as one predicate: the text splits into a
 non-empty body and `npad ≤ 2` trailing pad bytes (61, `=`), the length
@@ -1158,46 +1121,17 @@ def B64Grammar (cs : List UInt8) : Prop :=
     (∀ c ∈ body, (b64Value? c).isSome = true) ∧
     (∀ c v, body.getLast? = some c → b64Value? c = some v → 4 ^ npad ∣ v)
 
-/-- The decoder as one bind chain: the do block's steps written out,
-so the proofs below can rewrite each guard on its own. -/
-private theorem b64Decode?_steps (cs : List UInt8) :
-    b64Decode? cs =
-      ((guard ((cs.reverse.takeWhile (· == 61)).length ≤ 2) : Option Unit) >>= fun _ =>
-        (guard ((cs.take (cs.length - (cs.reverse.takeWhile (· == 61)).length)).length ≠ 0) :
-            Option Unit) >>= fun _ =>
-        (guard (((cs.take (cs.length - (cs.reverse.takeWhile (· == 61)).length)).length
-              + (cs.reverse.takeWhile (· == 61)).length) % 4 == 0) : Option Unit) >>= fun _ =>
-        (cs.take (cs.length - (cs.reverse.takeWhile (· == 61)).length)).mapM b64Value? >>=
-          fun vals =>
-        (guard ((vals.foldl b64Fold ([], 0, 0)).2.1 == 0) : Option Unit) >>= fun _ =>
-        some (ByteArray.mk (vals.foldl b64Fold ([], 0, 0)).1.reverse.toArray)) := rfl
-
-/-- A member of `takeWhile p l` satisfies `p`. -/
-private theorem mem_takeWhile_prop (p : UInt8 → Bool) :
-    ∀ (l : List UInt8) (b : UInt8), b ∈ l.takeWhile p → p b = true
-  | c :: cs, b, h => by
-    rw [List.takeWhile_cons] at h
-    by_cases hc : p c = true
-    · rw [if_pos hc] at h
-      rcases List.mem_cons.mp h with rfl | h2
-      · exact hc
-      · exact mem_takeWhile_prop p cs b h2
-    · rw [if_neg hc] at h
-      simp at h
-  | [], b, h => by simp at h
-
 /-- The trailing-pad run is a `replicate` of its own length. -/
 private theorem takeWhile61_replicate (cs : List UInt8) :
     cs.reverse.takeWhile (· == 61)
       = List.replicate (cs.reverse.takeWhile (· == 61)).length 61 :=
-  List.eq_replicate_of_mem (fun b hb => eq_of_beq (mem_takeWhile_prop _ _ b hb))
+  List.eq_replicate_of_mem fun b hb =>
+    eq_of_beq (List.all_eq_true.mp List.all_takeWhile b hb)
 
 /-- Taking an appended list back up to the first part's length gives
 the first part. -/
 private theorem take_append_exact (B R : List UInt8) (n : Nat) (h : B.length = n) :
-    (B ++ R).take n = B := by
-  subst h
-  rw [List.take_append, List.take_length, Nat.sub_self, List.take_zero, List.append_nil]
+    (B ++ R).take n = B := h ▸ List.take_left
 
 /-- The split `b64Decode?` computes: the input is some prefix followed
 by its trailing-pad run, and the `take` up to that run is the
@@ -1220,79 +1154,56 @@ private theorem take_pads (cs : List UInt8) :
   rw [congrArg (List.take (cs.length - (cs.reverse.takeWhile (· == 61)).length)) hcs]
   exact take_append_exact _ _ _ (by rw [List.length_reverse]; omega)
 
-/-- `takeWhile` for the pad byte over a pad run followed by anything
-that does not start with a pad: exactly the run. -/
-private theorem takeWhile61_replicate_append (n : Nat) (rest : List UInt8)
-    (hhead : ∀ c, rest.head? = some c → (c == 61) = false) :
-    (List.replicate n 61 ++ rest).takeWhile (· == 61) = List.replicate n 61 := by
-  induction n with
-  | zero =>
-    cases rest with
-    | nil => rfl
-    | cons c cs =>
-      rw [List.replicate_zero, List.nil_append, List.takeWhile_cons,
-        if_neg (by simp [hhead c rfl])]
-  | succ k ih =>
-    rw [List.replicate_succ, List.cons_append, List.takeWhile_cons,
-      if_pos (show ((61 : UInt8) == 61) = true by decide), ih]
-
 /-- The trailing-pad count of body-plus-pads is the pad count, when
 the body does not itself end in a pad. -/
 private theorem trailing_pads_of_append (body : List UInt8) (npad : Nat)
     (h61 : ∀ c, body.getLast? = some c → (c == 61) = false) :
     ((body ++ List.replicate npad 61).reverse.takeWhile (· == 61)).length = npad := by
-  rw [List.reverse_append, List.reverse_replicate,
-    takeWhile61_replicate_append npad body.reverse
-      (fun c hc => h61 c (by rwa [List.head?_reverse] at hc)),
-    List.length_replicate]
-
-/-- The pad byte is outside the alphabet. -/
-private theorem b64Value?_pad : b64Value? 61 = none := by decide
+  have hrev : body.reverse.takeWhile (· == 61) = [] := by
+    cases hb : body.reverse with
+    | nil => rfl
+    | cons c cs =>
+      rw [List.takeWhile_cons,
+        if_neg (by simp [h61 c (by rw [← List.head?_reverse, hb]; rfl)])]
+  rw [List.reverse_append, List.reverse_replicate]
+  simp [hrev]
 
 /-- What a successful alphabet map says: same length, six-bit values,
-every input character in the alphabet, and the last value is the last
-character's. -/
+and every input character in the alphabet. -/
 private theorem mapM_values :
     ∀ (l : List UInt8) (vals : List Nat), l.mapM b64Value? = some vals →
-      vals.length = l.length ∧
-      (∀ v ∈ vals, v < 64) ∧
-      (∀ c ∈ l, (b64Value? c).isSome = true) ∧
-      (∀ c, l.getLast? = some c → vals.getLast? = b64Value? c)
+      vals.length = l.length ∧ (∀ v ∈ vals, v < 64) ∧
+        ∀ c ∈ l, (b64Value? c).isSome = true
   | [], vals, h => by
     rw [List.mapM_nil] at h
     obtain rfl : ([] : List Nat) = vals := by simpa using h
-    exact ⟨rfl, by simp, by simp, by simp⟩
+    exact ⟨rfl, by simp, by simp⟩
   | a :: l, vals, h => by
     rw [List.mapM_cons] at h
     simp only [Option.bind_eq_bind, Option.bind_eq_some_iff, Option.pure_def,
       Option.some.injEq] at h
     obtain ⟨v, hv, vs, hvs, rfl⟩ := h
-    obtain ⟨ih_len, ih_lt, ih_some, ih_last⟩ := mapM_values l vs hvs
-    refine ⟨by simp [ih_len], ?_, ?_, ?_⟩
-    · intro x hx
-      rcases List.mem_cons.mp hx with rfl | hx2
+    obtain ⟨ih_len, ih_lt, ih_some⟩ := mapM_values l vs hvs
+    refine ⟨by simp [ih_len], fun x hx => ?_, fun c hc => ?_⟩
+    · rcases List.mem_cons.mp hx with rfl | hx2
       · exact b64Value?_lt a x hv
       · exact ih_lt x hx2
-    · intro c hc
-      rcases List.mem_cons.mp hc with rfl | hc2
-      · rw [hv]; rfl
+    · rcases List.mem_cons.mp hc with rfl | hc2
+      · rw [hv]
+        rfl
       · exact ih_some c hc2
-    · intro c hc
-      cases l with
-      | nil =>
-        obtain rfl : vs = [] := by
-          simpa [List.length_eq_zero_iff] using ih_len
-        rw [List.getLast?_singleton] at hc ⊢
-        obtain rfl : a = c := by simpa using hc
-        rw [hv]
-      | cons b t =>
-        rw [List.getLast?_cons_cons] at hc
-        obtain ⟨w, ws, rfl⟩ : ∃ w ws, vs = w :: ws := by
-          cases vs with
-          | nil => simp at ih_len
-          | cons w ws => exact ⟨w, ws, rfl⟩
-        rw [List.getLast?_cons_cons]
-        exact ih_last c hc
+
+/-- A successful alphabet map sends the last input character to the
+last output value. -/
+private theorem mapM_getLast? (l : List UInt8) (vals : List Nat) (c : UInt8)
+    (hm : l.mapM b64Value? = some vals) (hc : l.getLast? = some c) :
+    ∃ v, b64Value? c = some v ∧ vals.getLast? = some v := by
+  obtain ⟨l', rfl⟩ := List.getLast?_eq_some_iff.mp hc
+  rw [List.mapM_append, List.mapM_cons, List.mapM_nil] at hm
+  simp only [Option.bind_eq_bind, Option.bind_eq_some_iff, Option.pure_def,
+    Option.some.injEq] at hm
+  obtain ⟨vs, -, w, ⟨v, hv, a, rfl, rfl⟩, rfl⟩ := hm
+  exact ⟨v, hv, List.getLast?_concat⟩
 
 /-- The alphabet map succeeds when every character is in the
 alphabet. -/
@@ -1305,40 +1216,30 @@ private theorem mapM_isSome_of_all :
     obtain ⟨vs, hvs⟩ := mapM_isSome_of_all l (fun c hc => h c (by simp [hc]))
     exact ⟨v :: vs, by rw [List.mapM_cons, hv, hvs]; rfl⟩
 
-/-- The fold invariant: over six-bit values `b64Fold` keeps `nbits`
-even and at most six, keeps `acc` under `2 ^ nbits`, advances `nbits`
-by six per value modulo eight, and leaves in `acc` exactly the low
-`nbits` bits of the last value. -/
+/-- The fold, solved: over six-bit values `b64Fold` advances `nbits`
+by six per value modulo eight, and leaves in the accumulator exactly
+the low `nbits` bits of the last value (`acc` again when no value
+arrived). -/
 private theorem fold_state :
     ∀ (vals : List Nat) (out : List UInt8) (acc nbits : Nat),
       (∀ v ∈ vals, v < 64) → nbits % 2 = 0 → nbits ≤ 6 → acc < 2 ^ nbits →
-      ∃ out' acc',
-        vals.foldl b64Fold (out, acc, nbits)
-          = (out', acc', (nbits + 6 * vals.length) % 8) ∧
-        acc' < 2 ^ ((nbits + 6 * vals.length) % 8) ∧
-        (vals = [] → acc' = acc) ∧
-        (∀ vlast, vals.getLast? = some vlast →
-          acc' = vlast % 2 ^ ((nbits + 6 * vals.length) % 8))
+      ∃ out', vals.foldl b64Fold (out, acc, nbits)
+        = (out', vals.getLast?.getD acc % 2 ^ ((nbits + 6 * vals.length) % 8),
+           (nbits + 6 * vals.length) % 8)
   | [], out, acc, nbits, _, _, hn6, ha => by
     have h8 : (nbits + 6 * ([] : List Nat).length) % 8 = nbits := by
       simp only [List.length_nil]
       omega
-    refine ⟨out, acc, by rw [List.foldl_nil, h8], by rw [h8]; exact ha, fun _ => rfl, ?_⟩
-    intro vlast hv
-    simp at hv
+    exact ⟨out, by
+      rw [List.foldl_nil, h8, List.getLast?_nil, Option.getD_none, Nat.mod_eq_of_lt ha]⟩
   | v :: vs, out, acc, nbits, hv64, hn2, hn6, ha => by
     have hv : v < 64 := hv64 v (by simp)
     have hvs64 : ∀ x ∈ vs, x < 64 := fun x hx => hv64 x (by simp [hx])
     rw [List.foldl_cons]
+    simp only [b64Fold]
     by_cases hge : nbits + 6 ≥ 8
-    case pos =>
-      have hstep : b64Fold (out, acc, nbits) v
-          = (UInt8.ofNat ((acc * 64 + v) / 2 ^ (nbits + 6 - 8)) :: out,
-             (acc * 64 + v) % 2 ^ (nbits + 6 - 8), nbits + 6 - 8) := by
-        simp only [b64Fold]
-        rw [if_pos hge]
-      rw [hstep]
-      obtain ⟨out', acc', hfold, hbound, hnil, hlast⟩ :=
+    · rw [if_pos hge]
+      obtain ⟨out', hfold⟩ :=
         fold_state vs (UInt8.ofNat ((acc * 64 + v) / 2 ^ (nbits + 6 - 8)) :: out)
           ((acc * 64 + v) % 2 ^ (nbits + 6 - 8)) (nbits + 6 - 8) hvs64
           (by omega) (by omega) (Nat.mod_lt _ (Nat.two_pow_pos _))
@@ -1346,53 +1247,39 @@ private theorem fold_state :
           = (nbits + 6 * (v :: vs).length) % 8 := by
         simp only [List.length_cons]
         omega
-      refine ⟨out', acc', by rw [hfold, h8], by rw [← h8]; exact hbound, ?_, ?_⟩
-      · intro hempty
-        exact absurd hempty (by simp)
-      · intro vlast hvl
-        cases vs with
-        | nil =>
-          rw [List.getLast?_singleton] at hvl
-          obtain rfl : v = vlast := by simpa using hvl
-          have hacc' : acc' = (acc * 64 + v) % 2 ^ (nbits + 6 - 8) := hnil rfl
-          rw [hacc', ← h8]
-          have hcases : nbits = 2 ∨ nbits = 4 ∨ nbits = 6 := by omega
-          rcases hcases with rfl | rfl | rfl <;> simp <;> omega
-        | cons w ws =>
-          rw [List.getLast?_cons_cons] at hvl
-          rw [← h8]
-          exact hlast vlast hvl
-    case neg =>
-      have hn0 : nbits = 0 := by omega
-      subst hn0
-      have ha0 : acc = 0 := by simpa using ha
-      subst ha0
-      have hstep : b64Fold (out, 0, 0) v = (out, v, 6) := by
-        simp only [b64Fold]
-        rw [if_neg hge]
-        simp
-      rw [hstep]
-      obtain ⟨out', acc', hfold, hbound, hnil, hlast⟩ :=
-        fold_state vs out v 6 hvs64 (by omega) (by omega) (by simpa using hv)
-      have h8 : (6 + 6 * vs.length) % 8 = (0 + 6 * (v :: vs).length) % 8 := by
+      refine ⟨out', ?_⟩
+      rw [hfold, h8, List.getLast?_cons]
+      cases hvl : vs.getLast? with
+      | some w => simp only [Option.getD_some]
+      | none =>
+        obtain rfl := List.getLast?_eq_none_iff.mp hvl
+        simp only [Option.getD_none, Option.getD_some, List.length_cons, List.length_nil]
+        have hcases : nbits = 2 ∨ nbits = 4 ∨ nbits = 6 := by omega
+        rcases hcases with rfl | rfl | rfl <;> simp <;> omega
+    · rw [if_neg hge]
+      obtain rfl : nbits = 0 := by omega
+      obtain rfl : acc = 0 := by simpa using ha
+      simp only [Nat.zero_mul, Nat.zero_add]
+      obtain ⟨out', hfold⟩ := fold_state vs out v 6 hvs64 (by omega) (by omega) (by omega)
+      have h8 : (6 + 6 * vs.length) % 8 = 6 * (v :: vs).length % 8 := by
         simp only [List.length_cons]
         omega
-      refine ⟨out', acc', by rw [hfold, h8], by rw [← h8]; exact hbound, ?_, ?_⟩
-      · intro hempty
-        exact absurd hempty (by simp)
-      · intro vlast hvl
-        cases vs with
-        | nil =>
-          rw [List.getLast?_singleton] at hvl
-          obtain rfl : v = vlast := by simpa using hvl
-          have hacc' : acc' = v := hnil rfl
-          rw [hacc']
-          simp
-          omega
-        | cons w ws =>
-          rw [List.getLast?_cons_cons] at hvl
-          rw [← h8]
-          exact hlast vlast hvl
+      exact ⟨out', by rw [hfold, h8, List.getLast?_cons, Option.getD_some]⟩
+
+/-- RFC 4648 §3.5's padding arithmetic: with `npad` pads closing a
+quantum of `len` characters, the pending low bits of the last six-bit
+value are zero exactly when `4 ^ npad` divides it. -/
+private theorem pad_bits_zero_iff (len npad v : Nat) (hnpad : npad ≤ 2)
+    (hmod : (len + npad) % 4 = 0) :
+    v % 2 ^ (6 * len % 8) = 0 ↔ 4 ^ npad ∣ v := by
+  have h3 : npad = 0 ∨ npad = 1 ∨ npad = 2 := by omega
+  rcases h3 with rfl | rfl | rfl
+  · rw [show 6 * len % 8 = 0 by omega]
+    omega
+  · rw [show 6 * len % 8 = 2 by omega]
+    omega
+  · rw [show 6 * len % 8 = 4 by omega]
+    omega
 
 /-- `b64Decode?` succeeds on exactly the texts `B64Grammar` admits:
 success of the executable decoder is equivalent to the declarative
@@ -1402,109 +1289,58 @@ theorem b64Decode?_isSome_iff (cs : List UInt8) :
   constructor
   · intro h
     obtain ⟨d, hd⟩ := Option.isSome_iff_exists.mp h
-    rw [b64Decode?_steps] at hd
-    simp only [Option.bind_eq_bind, Option.bind_eq_some_iff] at hd
-    obtain ⟨u1, hg1, u2, hg2, u3, hg3, vals, hvals, u4, hg4, -⟩ := hd
+    simp only [b64Decode?, Option.bind_eq_bind, Option.bind_eq_some_iff] at hd
+    obtain ⟨_, hg1, _, hg2, _, hg3, vals, hvals, hmatch⟩ := hd
     have hnpad : (cs.reverse.takeWhile (· == 61)).length ≤ 2 := of_guard_eq_some hg1
     have hne := of_guard_eq_some hg2
     have hmod := of_guard_eq_some hg3
-    have hacc := of_guard_eq_some hg4
     obtain ⟨B, hB, hBtake⟩ := take_pads cs
     rw [hBtake] at hne hmod hvals
-    obtain ⟨hlen, hlt, hsome, hlastv⟩ := mapM_values B vals hvals
+    obtain ⟨hlen, hlt, hsome⟩ := mapM_values B vals hvals
     have hBne : B ≠ [] := fun hnil => hne (by simp [hnil])
-    obtain ⟨clast, hclast⟩ := Option.isSome_iff_exists.mp (List.getLast?_isSome.mpr hBne)
-    obtain ⟨vlast, hvlast⟩ := Option.isSome_iff_exists.mp
-      (hsome clast (List.mem_of_getLast? hclast))
-    obtain ⟨out', acc', hfold, -, -, hlastacc⟩ :=
-      fold_state vals [] 0 0 hlt (by omega) (by omega) (by decide)
-    have hacc0 : acc' = 0 := by
-      rw [hfold] at hacc
-      simpa using hacc
-    have haccv : acc' = vlast % 2 ^ ((0 + 6 * vals.length) % 8) :=
-      hlastacc vlast (by rw [hlastv clast hclast, hvlast])
     have hmod' : (B.length + (cs.reverse.takeWhile (· == 61)).length) % 4 = 0 := by
       simpa using hmod
     refine ⟨B, (cs.reverse.takeWhile (· == 61)).length, hB, hnpad, hBne, hmod', hsome, ?_⟩
     intro c v hc hv
-    obtain rfl : clast = c := by
-      rw [hclast] at hc
-      simpa using hc
-    obtain rfl : vlast = v := by
-      rw [hvlast] at hv
-      simpa using hv
-    have hnp3 : (cs.reverse.takeWhile (· == 61)).length = 0
-        ∨ (cs.reverse.takeWhile (· == 61)).length = 1
-        ∨ (cs.reverse.takeWhile (· == 61)).length = 2 := by omega
-    rcases hnp3 with hnp | hnp | hnp <;> rw [hnp] at hmod' ⊢
-    · exact Nat.one_dvd vlast
-    · have hE : (0 + 6 * vals.length) % 8 = 2 := by omega
-      rw [hE, hacc0, show (2 : Nat) ^ 2 = 4 by decide] at haccv
-      have hv4 : vlast % 4 = 0 := haccv.symm
-      show 4 ^ 1 ∣ vlast
-      rw [show (4 : Nat) ^ 1 = 4 by decide]
-      omega
-    · have hE : (0 + 6 * vals.length) % 8 = 4 := by omega
-      rw [hE, hacc0, show (2 : Nat) ^ 4 = 16 by decide] at haccv
-      have hv16 : vlast % 16 = 0 := haccv.symm
-      show 4 ^ 2 ∣ vlast
-      rw [show (4 : Nat) ^ 2 = 16 by decide]
-      omega
+    obtain ⟨v', hv', hvalsl⟩ := mapM_getLast? B vals c hvals hc
+    obtain rfl : v = v' := Option.some.inj (hv.symm.trans hv')
+    obtain ⟨out', hfold⟩ := fold_state vals [] 0 0 hlt (by omega) (by omega) (by decide)
+    simp only [hfold] at hmatch
+    obtain ⟨_, hg4, -⟩ := hmatch
+    have hacc := of_guard_eq_some hg4
+    rw [hvalsl, Option.getD_some, Nat.zero_add, beq_iff_eq] at hacc
+    exact (pad_bits_zero_iff vals.length _ v hnpad (by omega)).mp hacc
   · rintro ⟨body, npad, rfl, hnpad, hne, hmod, hall, hlast⟩
     have h61 : ∀ c, body.getLast? = some c → (c == 61) = false := by
       intro c hc
       rw [beq_eq_false_iff_ne]
-      intro hceq
-      have hsome := hall c (List.mem_of_getLast? hc)
-      rw [hceq, b64Value?_pad] at hsome
-      simp at hsome
+      rintro rfl
+      have hsome := hall 61 (List.mem_of_getLast? hc)
+      simp [b64Value?] at hsome
     have hpadlen : (((body ++ List.replicate npad 61).reverse).takeWhile (· == 61)).length
         = npad := trailing_pads_of_append body npad h61
     have hbody : (body ++ List.replicate npad 61).take
-        ((body ++ List.replicate npad 61).length - npad) = body := by
-      apply take_append_exact
-      rw [List.length_append, List.length_replicate]
-      omega
+        ((body ++ List.replicate npad 61).length - npad) = body :=
+      take_append_exact _ _ _ (by rw [List.length_append, List.length_replicate]; omega)
     have hne' : body.length ≠ 0 := fun h0 => hne (List.length_eq_zero_iff.mp h0)
     obtain ⟨vals, hvals⟩ := mapM_isSome_of_all body hall
-    obtain ⟨hlen, hlt, -, hlastv⟩ := mapM_values body vals hvals
+    obtain ⟨hlen, hlt, -⟩ := mapM_values body vals hvals
     obtain ⟨clast, hclast⟩ := Option.isSome_iff_exists.mp (List.getLast?_isSome.mpr hne)
-    obtain ⟨vlast, hvlast⟩ := Option.isSome_iff_exists.mp
-      (hall clast (List.mem_of_getLast? hclast))
-    obtain ⟨out', acc', hfold, -, -, hlastacc⟩ :=
-      fold_state vals [] 0 0 hlt (by omega) (by omega) (by decide)
-    have haccv : acc' = vlast % 2 ^ ((0 + 6 * vals.length) % 8) :=
-      hlastacc vlast (by rw [hlastv clast hclast, hvlast])
+    obtain ⟨vlast, hvlast, hvalsl⟩ := mapM_getLast? body vals clast hvals hclast
+    obtain ⟨out', hfold⟩ := fold_state vals [] 0 0 hlt (by omega) (by omega) (by decide)
     have hdvd : 4 ^ npad ∣ vlast := hlast clast vlast hclast hvlast
-    have hacc0 : acc' = 0 := by
-      have hnp3 : npad = 0 ∨ npad = 1 ∨ npad = 2 := by omega
-      rcases hnp3 with rfl | rfl | rfl
-      · have hE : (0 + 6 * vals.length) % 8 = 0 := by omega
-        rw [hE] at haccv
-        simpa [Nat.mod_one] using haccv
-      · have hE : (0 + 6 * vals.length) % 8 = 2 := by omega
-        rw [hE, show (2 : Nat) ^ 2 = 4 by decide] at haccv
-        rw [show (4 : Nat) ^ 1 = 4 by decide] at hdvd
-        rw [haccv]
-        omega
-      · have hE : (0 + 6 * vals.length) % 8 = 4 := by omega
-        rw [hE, show (2 : Nat) ^ 4 = 16 by decide] at haccv
-        rw [show (4 : Nat) ^ 2 = 16 by decide] at hdvd
-        rw [haccv]
-        omega
-    subst hacc0
-    rw [Option.isSome_iff_exists]
-    refine ⟨ByteArray.mk out'.reverse.toArray, ?_⟩
-    rw [b64Decode?_steps, hpadlen, hbody]
-    rw [guard_pos hnpad]
+    simp only [b64Decode?]
+    rw [hpadlen, hbody, guard_pos hnpad]
     simp only [Option.bind_eq_bind, Option.bind_some]
     rw [guard_pos hne']
     simp only [Option.bind_some]
     rw [guard_pos (show ((body.length + npad) % 4 == 0) = true by simp [hmod])]
     simp only [Option.bind_some]
     rw [hvals]
-    simp only [Option.bind_some]
-    rw [hfold]
+    simp only [Option.bind_some, hfold, hvalsl, Option.getD_some, Nat.zero_add]
+    rw [guard_pos (show (vlast % 2 ^ (6 * vals.length % 8) == 0) = true by
+      rw [beq_iff_eq]
+      exact (pad_bits_zero_iff vals.length npad vlast hnpad (by omega)).mpr hdvd)]
     rfl
 
 end Spec.Pem
