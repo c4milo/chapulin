@@ -452,6 +452,14 @@ check: bin/unit bin/unit_ca bin/unit_pq bin/tlsclient bin/tlsclient_ecdsa bin/tl
 	# example binaries land at fixed paths and e2e below runs them.
 	$(MAKE) lib-check RAND=drbg
 	$(MAKE) lib-check cxx-check examples-check RAND=extern
+	# The CA arm packages the provisioning reader and its fifth export;
+	# without this leg neither the export list nor the C++ forwarder is
+	# checked by anything.
+	$(MAKE) lib-check cxx-check RAND=extern TRUST=ca
+	# The CA arm packages the provisioning reader and its fifth export;
+	# without this leg neither the export list nor the C++ forwarder is
+	# checked by anything.
+	$(MAKE) lib-check cxx-check RAND=extern TRUST=ca
 	./bin/unit
 	./bin/unit_ca
 	./bin/unit_pq

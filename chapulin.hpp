@@ -15,6 +15,9 @@
 
 extern "C" {
 #include "tls.h"
+#ifdef CH_TRUST_CA
+#include "x509_ca.h"
+#endif
 }
 
 namespace chapulin {
@@ -36,17 +39,22 @@ struct Bytes {
     uint8_t *data = nullptr;
     size_t size = 0;
     Bytes() = default;
-    Bytes(uint8_t *p, size_t n) : data(p), size(n) {}
-    template <size_t N> Bytes(uint8_t (&a)[N]) : data(a), size(N) {}
+    Bytes(uint8_t *p, size_t n) : data(p), size(n) {
+    }
+    template <size_t N> Bytes(uint8_t (&a)[N]) : data(a), size(N) {
+    }
 };
 
 struct ConstBytes {
     const uint8_t *data = nullptr;
     size_t size = 0;
     ConstBytes() = default;
-    ConstBytes(const uint8_t *p, size_t n) : data(p), size(n) {}
-    ConstBytes(Bytes b) : data(b.data), size(b.size) {}
-    template <size_t N> ConstBytes(const uint8_t (&a)[N]) : data(a), size(N) {}
+    ConstBytes(const uint8_t *p, size_t n) : data(p), size(n) {
+    }
+    ConstBytes(Bytes b) : data(b.data), size(b.size) {
+    }
+    template <size_t N> ConstBytes(const uint8_t (&a)[N]) : data(a), size(N) {
+    }
 };
 
 // Blocking I/O plus the random source, matching the C callback contract:
@@ -62,10 +70,18 @@ struct Io {
 // Result of a read: >0 bytes, 0 on a clean peer close, <0 on error.
 struct Read {
     int value = 0;
-    bool ok() const { return value > 0; }
-    bool at_end() const { return value == 0; }
-    size_t bytes() const { return value > 0 ? static_cast<size_t>(value) : 0; }
-    Status error() const { return value < 0 ? static_cast<Status>(value) : Status::ok; }
+    bool ok() const {
+        return value > 0;
+    }
+    bool at_end() const {
+        return value == 0;
+    }
+    size_t bytes() const {
+        return value > 0 ? static_cast<size_t>(value) : 0;
+    }
+    Status error() const {
+        return value < 0 ? static_cast<Status>(value) : Status::ok;
+    }
 };
 
 // Builds a ch_cfg for exactly one auth mode. Construct with a receive
@@ -146,11 +162,42 @@ class Config {
         return *this;
     }
 
-    const ch_cfg &raw() const { return cfg_; }
+    const ch_cfg &raw() const {
+        return cfg_;
+    }
 
   private:
     ch_cfg cfg_{};
 };
+
+#ifdef CH_TRUST_CA
+// Result of a provisioning decode: the key length when ok().
+struct Pubkey {
+    int value = 0;
+    size_t size = 0;
+    bool ok() const {
+        return value == CH_OK;
+    }
+    Status error() const {
+        return static_cast<Status>(value);
+    }
+};
+
+// Forwards ch_pubkey_from_pem: one PEM CERTIFICATE block to the key
+// bytes Config::pinned() takes. TRUST=ca builds only, because only they
+// link the certificate reader. Decoding is not authenticating — the
+// block's signature, names and dates go unread, and the key is
+// trustworthy because an operator pushed it, exactly as a raw pin is
+// (x509_ca.h says the rest). The array sizes carry the C contract:
+// der_scratch holds the decoded certificate during the call and nothing
+// after it, and must not be the receive buffer of a live Session.
+inline Pubkey pubkey_from_pem(ConstBytes pem, uint8_t (&der_scratch)[CH_X509_MAX],
+                              uint8_t (&key)[CH_X509_KEY_MAX]) {
+    Pubkey result;
+    result.value = ch_pubkey_from_pem(pem.data, pem.size, der_scratch, key, &result.size);
+    return result;
+}
+#endif
 
 // A session owns its ch_tls and closes it — wiping every key — when it is
 // destroyed. Non-copyable and non-movable: allocate it where it lives
@@ -160,7 +207,9 @@ class Session {
     Session() = default;
     Session(const Session &) = delete;
     Session &operator=(const Session &) = delete;
-    ~Session() { ch_close(&tls_); }
+    ~Session() {
+        ch_close(&tls_);
+    }
 
     Status connect(const Config &cfg) {
         return static_cast<Status>(ch_connect(&tls_, &cfg.raw()));
@@ -170,31 +219,45 @@ class Session {
         return static_cast<Status>(ch_write(&tls_, data.data, data.size));
     }
 
-    Read read(Bytes into) { return Read{ch_read(&tls_, into.data, into.size)}; }
+    Read read(Bytes into) {
+        return Read{ch_read(&tls_, into.data, into.size)};
+    }
 
     // Which pin authenticated the server: 1 = pinned(), 2 = pinned_next(),
     // 0 before a pinned handshake completes. Public information, for
     // watching key rotation progress.
-    int pin_slot() const { return tls_.pin_slot; }
+    int pin_slot() const {
+        return tls_.pin_slot;
+    }
 
     // The revocation epoch this session accepted, and whether writing
     // it failed. A failed write keeps the session alive, so the caller
     // must retry: call epoch_store with tls.epoch until it returns 0,
     // and alert an operator if it keeps failing (docs/ca.md).
-    uint32_t epoch() const { return tls_.epoch; }
-    bool epoch_store_failed() const { return tls_.epoch_store_failed != 0; }
+    uint32_t epoch() const {
+        return tls_.epoch;
+    }
+    bool epoch_store_failed() const {
+        return tls_.epoch_store_failed != 0;
+    }
 
     // What the peer presented and how the rule judged it (CH_EPOCH_*),
     // readable after a failed connect too. CH_EPOCH_REVOKED means the
     // peer's epoch is below the stored one and the server is not yet
     // reissued; CH_EPOCH_UNTRUSTED means the date should never have
     // been issued. Lattice headroom is CH_EPOCH_MAX - epoch().
-    uint32_t epoch_seen() const { return tls_.epoch_seen; }
-    int epoch_status() const { return tls_.epoch_status; }
+    uint32_t epoch_seen() const {
+        return tls_.epoch_seen;
+    }
+    int epoch_status() const {
+        return tls_.epoch_status;
+    }
 
     // Sends close_notify under live keys and wipes; safe to call more than
     // once, and the destructor calls it too.
-    void close() { ch_close(&tls_); }
+    void close() {
+        ch_close(&tls_);
+    }
 
   private:
     ch_tls tls_{};
