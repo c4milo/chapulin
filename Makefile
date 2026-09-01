@@ -1142,10 +1142,13 @@ else
 	  cpu=$${rest%%:*}; ops=$$(echo "$${rest#*:}" | tr ',' '|'); \
 	  for e in $(WIDEMUL_CEILING); do \
 	    f=$${e%%:*}; cap=$${e##*:}; \
+	    err=$$(mktemp); \
 	    asm=$$($(CLANG_RV) -target $$triple $$cpu -Os -std=c11 \
-	        -D_DEFAULT_SOURCE -DCH_RAND_EXTERN -DCH_KEX_PQ -I. -S $$f -o - 2>/dev/null) || { \
+	        -D_DEFAULT_SOURCE -DCH_RAND_EXTERN -DCH_KEX_PQ -I. -S $$f -o - 2>"$$err") || { \
 	      echo "lint-wide-multiply: $$f does not build for $$arch — a count of zero from a failed compile is not a measurement"; \
-	      rc=1; continue; }; \
+	      sed -n '1p' "$$err" | sed 's/^/lint-wide-multiply:   /'; \
+	      rm -f "$$err"; rc=1; continue; }; \
+	    rm -f "$$err"; \
 	    [ -n "$$asm" ] || { \
 	      echo "lint-wide-multiply: $$f produced no assembly for $$arch"; rc=1; continue; }; \
 	    n=$$(printf '%s' "$$asm" | grep -cE "\\b($$ops)\\b"); \
