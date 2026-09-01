@@ -36,21 +36,29 @@ jobs:
       - name: Render the coverage tables on the run page
         if: always()
         run: cat bin/coverage.md >> "$GITHUB_STEP_SUMMARY" 2>/dev/null || true
-      - name: Update the README coverage badge
-        # The badge is a checked-in SVG, regenerated here and committed
-        # only when the number changed: no badge service, no hand
-        # maintenance. [skip ci] keeps the bot commit from spawning a
-        # run; the rebase-pull absorbs a concurrent push.
+      - name: Update the coverage badge branch
+        # The badge is a generated SVG on its own orphan branch, so the
+        # job never pushes to main: branch protection now requires a
+        # green check on every main SHA, which a fresh bot commit cannot
+        # carry, and a bypass would re-open the push-to-main surface the
+        # protection closed. README links the badge from this branch.
         if: github.ref == 'refs/heads/main'
         run: |
-          python3 tools/coverage-badge.py bin/coverage.json > .github/badges/coverage.svg
-          if ! git diff --quiet .github/badges/coverage.svg; then
-            git config user.name "github-actions[bot]"
-            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          python3 tools/coverage-badge.py bin/coverage.json > /tmp/coverage.svg
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git fetch origin badges 2>/dev/null; then
+            git switch badges
+          else
+            git switch --orphan badges
+          fi
+          mkdir -p .github/badges
+          cp /tmp/coverage.svg .github/badges/coverage.svg
+          if ! git diff --quiet -- .github/badges/coverage.svg 2>/dev/null \
+              || ! git ls-files --error-unmatch .github/badges/coverage.svg >/dev/null 2>&1; then
             git add .github/badges/coverage.svg
-            git commit -m "chore: update the coverage badge [skip ci]"
-            git pull --rebase origin main
-            git push origin main
+            git commit -m "chore: update the coverage badge"
+            git push origin badges
           fi
       - name: Annotate a floor breach
         if: failure()

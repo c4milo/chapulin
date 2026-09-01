@@ -1,6 +1,6 @@
 # chapulin
 
-[![coverage](.github/badges/coverage.svg)](https://github.com/c4milo/chapulin/actions/workflows/check.yml?query=branch%3Amain)
+[![coverage](https://raw.githubusercontent.com/c4milo/chapulin/badges/.github/badges/coverage.svg)](https://github.com/c4milo/chapulin/actions/workflows/check.yml?query=branch%3Amain)
 
 A TLS 1.3 client for devices with a few kilobytes of RAM. Named after
 El Chapulín Colorado: small, unassuming, and it protects you from the
