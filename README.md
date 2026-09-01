@@ -388,9 +388,28 @@ proof. [Wycheproof](https://github.com/C2SP/wycheproof)'s attack-derived cases (
 across x25519, ChaCha20-Poly1305, HKDF-SHA256, P-256 and RSA-PSS).
 AddressSanitizer and UndefinedBehaviorSanitizer over every
 deterministic suite (`make san-check`), with a committed canary proving
-the sanitizer is armed. And the same suites on big-endian mips32r2
-under qemu (`make cross-check`), so the deployment ISA checks the
-byte-exact vectors too. Line coverage is measured and gated in CI.
+the sanitizer is armed. Line coverage is measured and gated in CI.
+
+## Supported platforms
+
+Supported means the suites run there in CI on every pull request and
+every merge to main — a claim each row's job re-earns per commit, not
+a compatibility list:
+
+| platform | how the suites run | CI job |
+| --- | --- | --- |
+| Linux x86_64 | natively, plus every lint, proof gate and sanitizer | `check`, `san` |
+| Linux arm64 | natively, the whole deterministic roster (`make suite-check`) | `arm64` |
+| mips32r2 (big-endian) | cross-built, under qemu user mode (`make cross-check`) | `mips` |
+| riscv32 | cross-built with Bootlin's pinned musl toolchain, under qemu user mode | `riscv32` |
+| Cortex-M3 (bare metal) | unmodified suites through newlib semihosting on QEMU's MPS2-AN385 (`make m3-check`) | `m3` |
+| FreeRTOS on Cortex-M3 | the pinned kernel boots and two static tasks must interleave (`make freertos-check`); the TCP stack and an in-task handshake are the lane's next rungs | `freertos` |
+
+Two suites stay off the bare-metal rows because they fork a `diffspec`
+child; every Linux row runs them. macOS is the development host and
+runs everything but is not a deployment target. For a platform not
+listed, [`docs/porting.md`](docs/porting.md) is the checklist, and the
+Cortex-M3 lane is the template for wiring a new emulated target.
 
 ## The differential oracle
 
