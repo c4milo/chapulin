@@ -3,7 +3,13 @@
 # root Makefile; everything here builds test images and runs them, and
 # none of it is part of the library build.
 
-M3_CC ?= $(shell command -v arm-none-eabi-gcc)
+# Prefer the Arm GNU toolchain release the CI pin names (the macOS cask
+# installs it under /Applications, off PATH) over whatever PATH carries:
+# Homebrew's arm-none-eabi-gcc formula is a bare compiler without
+# newlib's rdimon.specs, and it shadows the cask when both exist.
+M3_CC ?= $(shell command -v \
+  /Applications/ArmGNUToolchain/$(ARM_GNU_VERSION)/arm-none-eabi/bin/arm-none-eabi-gcc \
+  || command -v arm-none-eabi-gcc)
 M3_QEMU ?= $(shell command -v qemu-system-arm)
 M3_FLAGS = -mcpu=cortex-m3 -mthumb --specs=rdimon.specs $(CFLAGS) \
            -Wl,--no-warn-rwx-segments -T test/qemu/m3_semi.ld test/qemu/m3_start.c
