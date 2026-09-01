@@ -114,11 +114,11 @@ tooling that does not exist yet.
 | **total static working set, `KEX=pq`** (2048 buffer) | **4376** | **4296** |
 | peak stack, `ch_connect` (RSA-3072 verify) | 5056 |
 | peak stack, `ch_connect` (`PIN=ecdsa`) | 3536 |
-| peak stack, `ch_connect` (PSK) | 2480 |
+| peak stack, `ch_connect` (PSK) | 2432 |
 | peak stack, `ch_connect` (`TRUST=ca`, RSA / ECDSA) | 5504 / 3696 |
 | peak stack, `ch_read` (worst case: KeyUpdate rekey) | 1712 |
 | peak stack, `ch_connect` (`KEX=pq`) | 15808 |
-| peak stack, `ch_write` / `ch_close` | 736 / 688 |
+| peak stack, `ch_write` / `ch_close` | 848 / 800 |
 
 The hybrid build costs more of both. The session struct grows because
 the ClientHello carries a 1,216-byte key share and is built whole into
