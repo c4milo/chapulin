@@ -185,6 +185,10 @@ endif
 # clang-format only. Fuzzers include .c files for statics, same deal.
 PROOF_C := $(wildcard proof/*.c) proof/harness.h
 FUZZ_C := $(wildcard fuzz/*.c)
+# The Cortex-M3 QEMU smoke sources: formatted, but outside LINT_C --
+# clang-tidy parses with host flags, and the runtime's thumb asm and
+# freestanding shape belong to the target (the softmul.c precedent).
+QEMU_SMOKE_C := $(wildcard test/qemu/*.c)
 
 # Firmware links bin/chapulin.o: one relocatable object exposing exactly
 # the four public calls. Partial linking merges the modules; nmedit
@@ -498,6 +502,7 @@ endif
 # legs cover.
 .PHONY: check-slow
 check-slow: check bin/handshake_sequence_test bin/handshake_sequence_pq bin/pemkey bin/pemkey_ecdsa
+	./test/qemu-m3.sh
 	./test/e2e.sh
 	$(MAKE) diff
 	./bin/handshake_sequence_test
@@ -951,7 +956,7 @@ lint-format:
 ifeq ($(CLANG_FORMAT),)
 	$(call REQUIRE,clang-format,it ships with llvm — see the LLVM_MAJOR pin in tools/toolchain.env)
 else
-	$(CLANG_FORMAT) --dry-run --Werror $(LINT_C) $(HDRS) $(PROOF_C) $(FUZZ_C) $(TESTH)
+	$(CLANG_FORMAT) --dry-run --Werror $(LINT_C) $(HDRS) $(PROOF_C) $(FUZZ_C) $(QEMU_SMOKE_C) $(TESTH)
 endif
 
 lint-cppcheck:
