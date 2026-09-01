@@ -151,8 +151,53 @@ static void dca_mutation_rows(const char *leaf_hex) {
 // Only the build's own algorithm: ch_pubkey_from_pem reads one SPKI
 // arm, so a row in the other arm would compare the C's rejection
 // against the spec's acceptance and prove nothing about either.
+// The signature BIT STRING's framing, as exact pairs. A review found
+// the spec laxer than the C here -- accepting a nonzero unused-bits
+// octet and a one-byte BIT STRING -- and the random byte-flip rows
+// above reach that octet often enough to split the sides about once
+// per eleven nightly runs. These rows pin the boundary every run.
+static void dca_sig_framing_rows(const char *leaf_hex) {
+    static uint8_t entry[CERTD_CERT_MAX + 16];
+    static uint8_t mut[X509MUT_CAP];
+    (void)certd_mint(certd_build_alg, certd_serial_hex, certd_name_hex, leaf_hex,
+                     certd_int_exts_hex, entry);
+    const uint8_t *cert = NULL;
+    size_t cert_len = dca_unwrap(entry, &cert);
+    size_t body = nth_child(cert, cert_len, 0, 0);
+    (void)body;
+    size_t sig = nth_child(cert, cert_len, 0, 2);
+    tlv_shape sh;
+    tlv_read(cert + sig, cert_len - sig, &sh);
+
+    // A nonzero unused-bits octet: signature bits fill whole bytes.
+    (void)memcpy(mut, cert, cert_len);
+    mut[sig + sh.header_len] = 0x05;
+    dca_row(mut, cert_len, 64, "\n");
+
+    // A BIT STRING holding only the unused-bits octet: no signature.
+    static const uint8_t sig_empty[] = {0x03, 0x01, 0x00};
+    size_t n = splice(mut, cert, cert_len, sig, tlv_total(cert, cert_len, sig), sig_empty,
+                      sizeof sig_empty);
+    dca_row(mut, n, 64, "\n");
+
+    // basicConstraints carrying an empty pathLenConstraint INTEGER
+    // (30 05 01 01 ff 02 00). Both sides accept it -- the laxity
+    // isCaTrue_iff states -- and no minted certificate or mutation
+    // reaches a two-byte in-INTEGER edit, so the agreement was never
+    // exercised until this row.
+    static const uint8_t bc_empty_pathlen[] = {0x30, 0x11, 0x06, 0x03, 0x55, 0x1d, 0x13,
+                                               0x01, 0x01, 0xff, 0x04, 0x07, 0x30, 0x05,
+                                               0x01, 0x01, 0xff, 0x02, 0x00};
+    static const uint8_t oid_bc_local[3] = {0x55, 0x1d, 0x13};
+    size_t off = find_ext(cert, cert_len, oid_bc_local);
+    n = splice(mut, cert, cert_len, off, tlv_total(cert, cert_len, off), bc_empty_pathlen,
+               sizeof bc_empty_pathlen);
+    dca_row(mut, n, 64, "\n");
+}
+
 static void diff_x509_ca(const char *leaf_hex) {
     dca_extension_rows(leaf_hex);
+    dca_sig_framing_rows(leaf_hex);
     dca_mutation_rows(leaf_hex);
 }
 

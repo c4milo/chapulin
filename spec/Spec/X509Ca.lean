@@ -126,7 +126,14 @@ def readCertificate (alg : Alg) (cert : ByteArray) : Option ByteArray := do
   let key ← readTbs alg tbs
   let (_, o2) ← readTlv body o1 0x30 -- signatureAlgorithm
   let (sig, o3) ← readTlv body o2 0x03
-  guard (sig.size ≠ 0 ∧ o3 == body.size)
+  -- The BIT STRING's framing, exactly as the C reads it: at least the
+  -- unused-bits octet plus one content byte, and the unused-bits octet
+  -- zero because signature bits fill whole bytes (x509_der.c's
+  -- x509_read_bitstring, the same guard Spec.X509 line 334 applies on
+  -- the verifier path). A review found this walk laxer than the C
+  -- here -- accepting 03 01 00 and a nonzero unused-bits octet -- which
+  -- made the differential's byte-flip rows able to split the two sides.
+  guard (sig.size ≥ 2 ∧ sig[0]! == 0 ∧ o3 == body.size)
   some key
 
 /-- The exported entry: PEM text to the key bytes
