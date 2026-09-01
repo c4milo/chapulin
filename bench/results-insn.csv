@@ -6,7 +6,7 @@ x25519_scalarmult,40307299,1632
 p256_ecdsa_verify,46029602,1572
 rsa_pss_verify_3072,11625119,3824
 mlkem_keygen,3216543,6568
-mlkem_decaps,3614549,11704
+mlkem_decaps,3633938,11704
 handshake_crypto,92955054,4856
-handshake_crypto_pq,103095533,14832
+handshake_crypto_pq,103114922,14832
 # at 500 MHz and 1.0 IPC: sha256_1kib 0.135 ms, hkdf_expand_label_32b 0.045 ms, aead_seal_1kib 0.148 ms, x25519_scalarmult 80.615 ms, p256_ecdsa_verify 92.059 ms, rsa_pss_verify_3072 23.250 ms, handshake_crypto 185.910 ms
