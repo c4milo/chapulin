@@ -180,13 +180,18 @@ def selftest : Bool :=
 /-!
 ## Proofs
 
-Four public theorems pin the codec. `b64Value?_table` and
+Seven public theorems pin the codec. `b64Value?_table` and
 `b64Value?_lt` fix the alphabet: `b64Value?` maps each alphabet
 character to its index and returns only values below 64.
 `decode?_size` bounds the output: a DER that `decode?` returns fits
 `derMax`. `decode?_encode` is the round trip: `decode?` returns the
 exact DER `encode` armoured, at every line width, not just the widths
-the selftest runs.
+the selftest runs. `decode?_sound` is the frame: an input `decode?`
+accepts is the BEGIN line, a line terminator, a dash-free body, the
+END line, and a tail of line terminators, with the body's base64 the
+returned DER. `encode_fits` and `encode_fits_zero` discharge
+`decode?_encode`'s fits-the-cap hypothesis: armour at any width of
+four or more, or as one line, stays within `pemMax`.
 
 The private lemmas below follow the shape of the definitions: a proof
 view of `encode` as list folds, one lemma per layer of `decode?`, and
@@ -923,5 +928,203 @@ theorem decode?_encode (derMax w : Nat) (der : ByteArray)
   simp only [Option.bind_some]
   rw [guard_pos hmax]
   rfl
+
+/-! ### decode? soundness -/
+
+private theorem eatEol?_shape {cs r : List UInt8} (h : eatEol? cs = some r) :
+    cs = [10] ++ r ∨ cs = [13, 10] ++ r := by
+  unfold eatEol? at h
+  split at h
+  · injection h with h
+    subst h
+    exact Or.inr rfl
+  · injection h with h
+    subst h
+    exact Or.inl rfl
+  · simp at h
+
+private theorem drop_length_of_append {l₁ l₂ l : List UInt8} (h : l₁ ++ l₂ = l) :
+    l.drop l₁.length = l₂ := by
+  rw [← h, List.drop_left]
+
+/-- Soundness: an input `decode?` accepts has the RFC 7468 frame. The
+text is the BEGIN line, one line terminator, a body with no dash, the
+END line, and a tail of line terminators only — and the body's base64,
+CR and LF removed, is the returned DER. -/
+theorem decode?_sound (derMax : Nat) (input der : ByteArray)
+    (h : decode? derMax input = some der) :
+    ∃ eol body tail,
+      input.toList = beginLine ++ eol ++ body ++ endLine ++ tail ∧
+      (eol = [10] ∨ eol = [13, 10]) ∧
+      (∀ c ∈ body, c ≠ 45) ∧
+      (∀ c ∈ tail, c = 13 ∨ c = 10) ∧
+      b64Decode? (body.filter (fun c => c ≠ 13 ∧ c ≠ 10)) = some der := by
+  simp only [decode?, Option.bind_eq_bind, Option.bind_eq_some_iff, Option.some.injEq] at h
+  obtain ⟨_, -, _, hpre, rest, hrest, _, hend, _, hallt, der', hb64, _, -, hd⟩ := h
+  subst hd
+  obtain ⟨t, ht⟩ := List.isPrefixOf_iff_prefix.mp (of_guard_eq_some hpre)
+  rw [drop_length_of_append ht] at hrest
+  obtain ⟨eol, heol, ht2⟩ : ∃ eol, (eol = [10] ∨ eol = [13, 10]) ∧ t = eol ++ rest := by
+    rcases eatEol?_shape hrest with h10 | h1310
+    · exact ⟨[10], Or.inl rfl, h10⟩
+    · exact ⟨[13, 10], Or.inr rfl, h1310⟩
+  have hafter : rest.takeWhile (· ≠ 45) ++ rest.dropWhile (· ≠ 45) = rest := by
+    rw [List.takeWhile_append_dropWhile]
+  have hendp := of_guard_eq_some hend
+  have halltp := of_guard_eq_some hallt
+  rw [drop_length_of_append hafter] at hendp halltp
+  obtain ⟨tl, htl⟩ := List.isPrefixOf_iff_prefix.mp hendp
+  rw [drop_length_of_append htl] at halltp
+  refine ⟨eol, rest.takeWhile (· ≠ 45), tl, ?_, heol, ?_, ?_, hb64⟩
+  · calc input.toList
+        = beginLine ++ t := ht.symm
+      _ = beginLine ++ (eol ++ rest) := by rw [ht2]
+      _ = beginLine ++ (eol ++ (rest.takeWhile (· ≠ 45) ++ rest.dropWhile (· ≠ 45))) := by
+          rw [hafter]
+      _ = beginLine ++ (eol ++ (rest.takeWhile (· ≠ 45) ++ (endLine ++ tl))) := by rw [htl]
+      _ = beginLine ++ eol ++ rest.takeWhile (· ≠ 45) ++ endLine ++ tl := by
+          simp [List.append_assoc]
+  · intro c hc
+    exact of_decide_eq_true (List.all_eq_true.mp List.all_takeWhile c hc)
+  · intro c hc
+    simpa using List.all_eq_true.mp halltp c hc
+
+/-! ### encode size bound
+
+`decode?_encode` assumes the armoured text fits the cap; the theorems
+here discharge that assumption. `encode_fits` covers every line width
+of four characters or more — the floor `pemMax`'s terminator budget is
+sized for — and `encode_fits_zero` covers width zero, the single-line
+form. The count behind both: `bodyChars` spends four characters per
+three-byte group (`flatMap_charGroup_length`), the fold in `wrapped`
+adds one LF per full line plus one more for a nonempty last line
+(`wrapFold_length`), and the two boundary lines with their LFs cost 54
+bytes of `pemMax`'s 64-byte fixed budget. -/
+
+private theorem wrapFold_length (W : Nat) :
+    ∀ (chars pre : List UInt8) (col : Nat), col < W →
+      (chars.foldl (wrapStep W) (pre, col)).1.length
+          = pre.length + chars.length + (col + chars.length) / W ∧
+        (chars.foldl (wrapStep W) (pre, col)).2 = (col + chars.length) % W
+  | [], pre, col, h => by
+    refine ⟨?_, ?_⟩
+    · simp [Nat.div_eq_of_lt h]
+    · simp [Nat.mod_eq_of_lt h]
+  | c :: cs, pre, col, h => by
+    rw [List.foldl_cons]
+    by_cases hb : (col + 1 == W) = true
+    · have hW : col + 1 = W := eq_of_beq hb
+      have hs : wrapStep W (pre, col) c = (pre ++ [c] ++ [10], 0) := by
+        simp only [wrapStep]
+        rw [if_pos hb]
+      rw [hs]
+      obtain ⟨h1, h2⟩ := wrapFold_length W cs (pre ++ [c] ++ [10]) 0 (by omega)
+      have harg : col + (c :: cs).length = cs.length + W := by
+        simp only [List.length_cons]
+        omega
+      refine ⟨?_, ?_⟩
+      · rw [h1, harg, Nat.add_div_right cs.length (show 0 < W by omega), Nat.zero_add]
+        simp only [List.length_append, List.length_cons, List.length_nil]
+        generalize cs.length / W = q
+        omega
+      · rw [h2, harg, Nat.add_mod_right, Nat.zero_add]
+    · have hne : col + 1 ≠ W := by simpa using hb
+      have hs : wrapStep W (pre, col) c = (pre ++ [c], col + 1) := by
+        simp only [wrapStep]
+        rw [if_neg hb]
+      rw [hs]
+      obtain ⟨h1, h2⟩ := wrapFold_length W cs (pre ++ [c]) (col + 1) (by omega)
+      have harg : col + 1 + cs.length = col + (c :: cs).length := by
+        simp only [List.length_cons]
+        omega
+      refine ⟨?_, ?_⟩
+      · rw [h1, harg]
+        generalize (col + (c :: cs).length) / W = q
+        simp only [List.length_append, List.length_cons, List.length_nil]
+        omega
+      · rw [h2, harg]
+
+private theorem wrapped_length_le (w : Nat) (der : ByteArray) :
+    (wrapped w der).length
+      ≤ 29 + (bodyChars der).length
+        + (bodyChars der).length / (if w == 0 then (bodyChars der).length + 1 else w) := by
+  have hW : 0 < (if w == 0 then (bodyChars der).length + 1 else w) := by
+    by_cases h : (w == 0) = true
+    · rw [if_pos h]
+      omega
+    · rw [if_neg h]
+      have hw0 : w ≠ 0 := by simpa using h
+      omega
+  obtain ⟨h1, -⟩ := wrapFold_length (if w == 0 then (bodyChars der).length + 1 else w)
+    (bodyChars der) (beginLine ++ [10]) 0 hW
+  have hbegin : (beginLine ++ [10] : List UInt8).length = 28 := by
+    rw [beginLine, byteArray_toList_eq]
+    decide
+  rw [wrapped]
+  by_cases hcol : ((bodyChars der).foldl
+      (wrapStep (if w == 0 then (bodyChars der).length + 1 else w))
+      (beginLine ++ [10], 0)).2 ≠ 0
+  · rw [if_pos hcol, List.length_append, h1, hbegin, Nat.zero_add]
+    simp only [List.length_cons, List.length_nil]
+    omega
+  · rw [if_neg hcol, h1, hbegin, Nat.zero_add]
+    omega
+
+private theorem bodyChars_length (der : ByteArray) :
+    (bodyChars der).length = 4 * ((der.size + 2) / 3) := by
+  rw [bodyChars]
+  exact flatMap_charGroup_length der _
+
+private theorem encode_size_eq (w : Nat) (der : ByteArray) :
+    (encode w der).size = (wrapped w der).length + 26 := by
+  have hend : (endLine : List UInt8).length = 25 := by
+    rw [endLine, byteArray_toList_eq]
+    decide
+  rw [encode_eq]
+  show ((wrapped w der ++ endLine ++ [10]).toArray).size = (wrapped w der).length + 26
+  simp only [List.size_toArray, List.length_append, List.length_cons, List.length_nil,
+    hend]
+
+/-- Armoured output fits the text cap: at every line width of four
+characters or more, `encode`'s output is at most `pemMax derMax` bytes
+for DER of at most `derMax` bytes. This discharges `decode?_encode`'s
+`hfit` hypothesis, so everything the encoder emits at these widths
+decodes back. -/
+theorem encode_fits (derMax w : Nat) (der : ByteArray)
+    (hw : 4 ≤ w) (hmax : der.size ≤ derMax) :
+    (encode w der).size ≤ pemMax derMax := by
+  have hL := bodyChars_length der
+  have hwr := wrapped_length_le w der
+  have hne : ¬((w == 0) = true) := by simp; omega
+  rw [if_neg hne] at hwr
+  have hdw : (bodyChars der).length / w ≤ (bodyChars der).length / 4 := by
+    rw [Nat.le_div_iff_mul_le (by omega : 0 < 4)]
+    calc (bodyChars der).length / w * 4
+        ≤ (bodyChars der).length / w * w := Nat.mul_le_mul (Nat.le_refl _) hw
+      _ ≤ (bodyChars der).length := Nat.div_mul_le_self _ _
+  have hwr4 : (wrapped w der).length
+      ≤ 29 + (bodyChars der).length + (bodyChars der).length / 4 :=
+    Nat.le_trans hwr (Nat.add_le_add_left hdw _)
+  have hsz := encode_size_eq w der
+  have hpem : pemMax derMax
+      = 4 * ((derMax + 2) / 3) + 4 * ((derMax + 2) / 3) / 4 * 2 + 64 := rfl
+  omega
+
+/-- Width zero armours the body as one line, and that single-line form
+also fits the text cap. -/
+theorem encode_fits_zero (derMax : Nat) (der : ByteArray)
+    (hmax : der.size ≤ derMax) :
+    (encode 0 der).size ≤ pemMax derMax := by
+  have hL := bodyChars_length der
+  have hwr := wrapped_length_le 0 der
+  have hif : (if (0 : Nat) == 0 then (bodyChars der).length + 1 else 0)
+      = (bodyChars der).length + 1 := rfl
+  have hdz : (bodyChars der).length / ((bodyChars der).length + 1) = 0 :=
+    Nat.div_eq_of_lt (by omega)
+  rw [hif, hdz] at hwr
+  have hsz := encode_size_eq 0 der
+  have hpem : pemMax derMax
+      = 4 * ((derMax + 2) / 3) + 4 * ((derMax + 2) / 3) / 4 * 2 + 64 := rfl
+  omega
 
 end Spec.Pem

@@ -402,6 +402,14 @@ Spec.Pem.b64Value?_table     b64Value? of the i-th RFC 4648 §4 alphabet charact
                              -- is some i, all 64 — the table is the RFC's, not
                              -- a transcription of pem.c's compares
 Spec.Pem.decode?_size        decode? derMax input = some d → d.size ≤ derMax
+Spec.Pem.decode?_sound       an accepted input has the RFC 7468 frame: the text is
+                             -- beginLine, one line terminator, a dash-free body, endLine,
+                             -- and a tail of line terminators only — and the body's
+                             -- base64, CR and LF removed, is the returned DER
+Spec.Pem.encode_fits         (encode w der).size ≤ pemMax derMax for der.size ≤ derMax
+                             -- at every width w ≥ 4; encode_fits_zero adds width 0, the
+                             -- single-line form — decode?_encode's fits-the-cap
+                             -- hypothesis, discharged
 Spec.X509Ca.isCaTrue_iff     isCaTrue accepts exactly tlv 0x30 caTrue, alone or
                              -- followed by one INTEGER TLV filling the SEQUENCE
                              -- (any pathLenConstraint content bytes, empty or non-minimal included, unread) — the two
@@ -518,7 +526,7 @@ means the module's selftest plus the differential oracle carry it;
 | MlKem | 6 | FIPS 203 §6.1-6.3 output-length contracts (ek 1184, dk 2400, ct 1088, shared secret 32 on both decapsulation branches) and the ByteEncode length law they rest on; the NTT, sampling, and compression arithmetic stay vector-checked |
 | Poly | 1 | MAC size; arithmetic vector-checked |
 | P256 | 0 | executable oracle only: RFC 6979 vectors and the differential |
-| Pem | 6 | the accepted alphabet pinned in both directions against RFC 4648 §4's table; decode? never yields more than the cap and the bound is attained; armour-then-decode is the identity for every non-empty DER within the caps at every width whose text fits — each hypothesis carries an evaluated countermodel |
+| Pem | 9 | the accepted alphabet pinned in both directions against RFC 4648 §4's table; decode? never yields more than the cap and the bound is attained; armour-then-decode is the identity for every non-empty DER within the caps at every width whose text fits — each hypothesis carries an evaluated countermodel; an accepted input has the RFC 7468 frame with the body's base64 the returned DER; armour at any width of four or more, or as one line, fits the cap, discharging the round trip's fits hypothesis |
 | X509Ca | 6 | isCaTrue accepts exactly the two anchor encodings (the iff is kernel-checked false without its encodeLen-domain bound); an accepted certificate has exactly the SEQUENCE(TBS, sigAlg, BIT STRING) shape with the signature framing intact; the extracted key is exactly 64 bytes or 256..384 in 8-byte steps, tightening the CBMC harness's bound. Acceptance policy beyond the frame is executable oracle only: the differential's minted anchors, near shapes and mutations |
 | X25519 | 2 | RFC 7748 §5 clamping: every decoded scalar is a multiple of the cofactor 8, and has bit 254 set with bit 255 clear. The first keeps `k * P` in the prime-order subgroup, the second fixes the ladder's iteration count. The ladder arithmetic itself stays vector-checked |
 | X509Der | 19 | DER canonicality: a length, a TLV, and an INTEGER are accepted only in the one encoding X.690 §10.1 and §8.3.2 admit, so the reader is DER-strict rather than BER-lenient; plus the encode/decode round trips and the §8.19.2 subidentifier rule |
