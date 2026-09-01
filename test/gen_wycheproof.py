@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Convert five Wycheproof suites into one generated C header.
+"""Convert eight Wycheproof suites into one generated C header.
 
 Usage: gen_wycheproof.py <wycheproof-checkout> <output.h>
 
@@ -220,6 +220,85 @@ def gen_rsa(files, out):
     return len(rows)
 
 
+def gen_mlkem_keygen(d, out):
+    blob = Blob()
+    rows = []
+    for g in d["testGroups"]:
+        for t in g["tests"]:
+            seed = bytes_of(t["seed"], 64, f"mlkem keygen tc{t['tcId']} seed")
+            ek = bytes_of(t["ek"], 1184, f"mlkem keygen tc{t['tcId']} ek")
+            dk = bytes_of(t["dk"], 2400, f"mlkem keygen tc{t['tcId']} dk")
+            rows.append((uint_of(t["tcId"], 0xffffffff, "mlkem keygen tcId"),
+                         blob.add(seed + ek + dk)))
+    emit_blob(out, "wp_mlkem_keygen_data", blob)
+    out.append("static const struct { uint32_t tc; uint32_t off; } wp_mlkem_keygen[] = {")
+    for tc, off in rows:
+        out.append(f"    {{{tc}, {off}}},")
+    out.append("};")
+    out.append("")
+    return len(rows)
+
+
+def gen_mlkem_encaps(d, out):
+    blob = Blob()
+    rows = []
+    skipped = 0
+    for g in d["testGroups"]:
+        for t in g["tests"]:
+            ek = bytes_of(t["ek"])
+            if len(ek) != 1184:
+                skipped += 1  # an ek length the fixed ek[1184] API cannot express
+                continue
+            if t["result"] == "valid":
+                m = bytes_of(t["m"], 32, f"mlkem encaps tc{t['tcId']} m")
+                c = bytes_of(t["c"], 1088, f"mlkem encaps tc{t['tcId']} c")
+                k = bytes_of(t["K"], 32, f"mlkem encaps tc{t['tcId']} K")
+                rows.append((uint_of(t["tcId"], 0xffffffff, "mlkem encaps tcId"),
+                             blob.add(m + ek + c + k), 1))
+            else:
+                # A correct-length ek the modulus check must reject; m, c
+                # and K are absent or empty upstream, so zeros stand in
+                # and the test asserts only the nonzero return.
+                m = bytes_of(t.get("m", "")).ljust(32, b"\x00")[:32]
+                rows.append((uint_of(t["tcId"], 0xffffffff, "mlkem encaps tcId"),
+                             blob.add(m + ek + b"\x00" * 1088 + b"\x00" * 32), 0))
+    emit_blob(out, "wp_mlkem_encaps_data", blob)
+    out.append("static const struct { uint32_t tc; uint32_t off; uint8_t valid; } wp_mlkem_encaps[] = {")
+    for tc, off, valid in rows:
+        out.append(f"    {{{tc}, {off}, {valid}}},")
+    out.append("};")
+    out.append("")
+    out.append(f"#define WP_MLKEM_ENCAPS_SKIPPED {skipped} // ek lengths the fixed API cannot express")
+    out.append("")
+    return len(rows)
+
+
+def gen_mlkem_full(d, out):
+    blob = Blob()
+    rows = []
+    skipped = 0
+    for g in d["testGroups"]:
+        for t in g["tests"]:
+            if t["result"] != "valid":
+                skipped += 1  # seed, ek or c of a length the fixed API cannot express
+                continue
+            seed = bytes_of(t["seed"], 64, f"mlkem tc{t['tcId']} seed")
+            ek = bytes_of(t["ek"], 1184, f"mlkem tc{t['tcId']} ek")
+            c = bytes_of(t["c"], 1088, f"mlkem tc{t['tcId']} c")
+            k = bytes_of(t["K"], 32, f"mlkem tc{t['tcId']} K")
+            rows.append((uint_of(t["tcId"], 0xffffffff, "mlkem tcId"),
+                         blob.add(seed + ek + c + k)))
+    emit_blob(out, "wp_mlkem_data", blob)
+    out.append("static const struct { uint32_t tc; uint32_t off; } wp_mlkem[] = {")
+    for tc, off in rows:
+        out.append(f"    {{{tc}, {off}}},")
+    out.append("};")
+    out.append("")
+    out.append(f"#define WP_MLKEM_SKIPPED {skipped} // input lengths the fixed API cannot express")
+    out.append("")
+    return len(rows)
+
+
 def main():
     src = Path(sys.argv[1])
     dst = Path(sys.argv[2])
@@ -242,9 +321,12 @@ def main():
         [v1 / "rsa_pss_2048_sha256_mgf1_32_test.json", v1 / "rsa_pss_3072_sha256_mgf1_32_test.json"],
         out,
     )
+    n_kk = gen_mlkem_keygen(json.load(open(v1 / "mlkem_768_keygen_seed_test.json")), out)
+    n_ke = gen_mlkem_encaps(json.load(open(v1 / "mlkem_768_encaps_test.json")), out)
+    n_kf = gen_mlkem_full(json.load(open(v1 / "mlkem_768_test.json")), out)
     dst.write_text("\n".join(out) + "\n")
-    print(f"wycheproof vectors: x25519 {n_x}, aead {n_a}, hkdf {n_h}, ecdsa {n_e}, rsa {n_r}"
-          f" (commit {commit[:12]})")
+    print(f"wycheproof vectors: x25519 {n_x}, aead {n_a}, hkdf {n_h}, ecdsa {n_e}, rsa {n_r},"
+          f" mlkem keygen {n_kk} encaps {n_ke} full {n_kf} (commit {commit[:12]})")
 
 
 if __name__ == "__main__":

@@ -1,7 +1,9 @@
 // Drives the real chapulin APIs over the Wycheproof (C2SP) vectors in
 // bin/wycheproof_vectors.h: attack-derived inputs — small-order and
 // twist points, signature malleability, tag truncation — that broke
-// mature libraries. Valid cases must pass, invalid ones must be
+// mature libraries, and for ML-KEM-768 the encapsulation keys with a
+// coefficient at or above q that the FIPS 203 section 7.2 modulus
+// check must refuse. Valid cases must pass, invalid ones must be
 // rejected, and "acceptable" (Wycheproof: the implementation's choice)
 // is recorded either way, except zero-shared-secret x25519 cases, which
 // TLS 1.3 requires the client to reject. Skips are reported, never
@@ -22,6 +24,7 @@ noreturn void ch_assert_fail(const char *cond, const char *file, int line) {
 
 #include "aead.h"
 #include "hkdf.h"
+#include "mlkem.h"
 #include "p256.h"
 #include "rsa.h"
 #include "sha256.h"
@@ -175,6 +178,83 @@ static void run_rsa(void) {
     printf("wycheproof rsa-pss: %zu cases\n", COUNT(wp_rsa));
 }
 
+static void run_mlkem_keygen(void) {
+    for (size_t i = 0; i < COUNT(wp_mlkem_keygen); i++) {
+        const uint8_t *p = wp_mlkem_keygen_data + wp_mlkem_keygen[i].off;
+        const uint8_t *d = p; // seed is d then z (FIPS 203 Algorithm 19)
+        const uint8_t *z = p + 32;
+        const uint8_t *want_ek = p + 64;
+        const uint8_t *want_dk = p + 64 + MLKEM_EK_LEN;
+        static uint8_t ek[MLKEM_EK_LEN], dk[MLKEM_DK_LEN];
+        mlkem_keygen_derand(ek, dk, d, z);
+        if (memcmp(ek, want_ek, MLKEM_EK_LEN) != 0) {
+            fail("mlkem-keygen", wp_mlkem_keygen[i].tc, "ek mismatch");
+        }
+        if (memcmp(dk, want_dk, MLKEM_DK_LEN) != 0) {
+            fail("mlkem-keygen", wp_mlkem_keygen[i].tc, "dk mismatch");
+        }
+    }
+    printf("wycheproof mlkem-768 keygen: %zu cases\n", COUNT(wp_mlkem_keygen));
+}
+
+static void run_mlkem_encaps(void) {
+    size_t rejected = 0;
+    for (size_t i = 0; i < COUNT(wp_mlkem_encaps); i++) {
+        const uint8_t *p = wp_mlkem_encaps_data + wp_mlkem_encaps[i].off;
+        const uint8_t *m = p;
+        const uint8_t *ek = p + 32;
+        const uint8_t *want_ct = p + 32 + MLKEM_EK_LEN;
+        const uint8_t *want_k = p + 32 + MLKEM_EK_LEN + MLKEM_CT_LEN;
+        static uint8_t ct[MLKEM_CT_LEN], ss[MLKEM_SS_LEN];
+        int rc = mlkem_encaps_derand(ct, ss, ek, m);
+        if (wp_mlkem_encaps[i].valid) {
+            if (rc != 0) {
+                fail("mlkem-encaps", wp_mlkem_encaps[i].tc, "valid ek rejected");
+            } else if (memcmp(ct, want_ct, MLKEM_CT_LEN) != 0 ||
+                       memcmp(ss, want_k, MLKEM_SS_LEN) != 0) {
+                fail("mlkem-encaps", wp_mlkem_encaps[i].tc, "ct or K mismatch");
+            }
+        } else if (rc == 0) {
+            // A correct-length ek with a coefficient at or above q: the
+            // FIPS 203 section 7.2 modulus check must refuse it.
+            fail("mlkem-encaps", wp_mlkem_encaps[i].tc, "out-of-range ek accepted");
+        } else {
+            rejected++;
+        }
+    }
+    printf("wycheproof mlkem-768 encaps: %zu cases, %zu out-of-range ek rejected,"
+           " %d skipped (ek lengths the fixed API cannot express)\n",
+           COUNT(wp_mlkem_encaps), rejected, WP_MLKEM_ENCAPS_SKIPPED);
+}
+
+static void run_mlkem_full(void) {
+    for (size_t i = 0; i < COUNT(wp_mlkem); i++) {
+        const uint8_t *p = wp_mlkem_data + wp_mlkem[i].off;
+        const uint8_t *d = p;
+        const uint8_t *z = p + 32;
+        const uint8_t *want_ek = p + 64;
+        const uint8_t *c = p + 64 + MLKEM_EK_LEN;
+        const uint8_t *want_k = p + 64 + MLKEM_EK_LEN + MLKEM_CT_LEN;
+        static uint8_t ek[MLKEM_EK_LEN], dk[MLKEM_DK_LEN];
+        static uint8_t ss[MLKEM_SS_LEN];
+        mlkem_keygen_derand(ek, dk, d, z);
+        if (memcmp(ek, want_ek, MLKEM_EK_LEN) != 0) {
+            fail("mlkem", wp_mlkem[i].tc, "ek mismatch");
+            continue;
+        }
+        // K is the expected output either way: the real secret for an
+        // honest ciphertext, the implicit-rejection secret for a
+        // tampered one — decapsulation must not reveal which.
+        mlkem_decaps(ss, c, dk);
+        if (memcmp(ss, want_k, MLKEM_SS_LEN) != 0) {
+            fail("mlkem", wp_mlkem[i].tc, "K mismatch");
+        }
+    }
+    printf("wycheproof mlkem-768 full: %zu cases, %d skipped"
+           " (input lengths the fixed API cannot express)\n",
+           COUNT(wp_mlkem), WP_MLKEM_SKIPPED);
+}
+
 int main(void) {
     printf("wycheproof vectors at commit %s\n", WYCHEPROOF_COMMIT);
     run_x25519();
@@ -182,6 +262,9 @@ int main(void) {
     run_hkdf();
     run_ecdsa();
     run_rsa();
+    run_mlkem_keygen();
+    run_mlkem_encaps();
+    run_mlkem_full();
     if (failures) {
         printf("wycheproof: %d FAILURES\n", failures);
         return 1;
