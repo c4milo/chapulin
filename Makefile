@@ -1143,7 +1143,7 @@ else
 	  for e in $(WIDEMUL_CEILING); do \
 	    f=$${e%%:*}; cap=$${e##*:}; \
 	    err=$$(mktemp); \
-	    asm=$$($(CLANG_RV) -target $$triple $$cpu -Os -std=c11 \
+	    asm=$$($(CLANG_RV) -target $$triple $$cpu -Os -std=c11 -ffreestanding -nostdlibinc \
 	        -D_DEFAULT_SOURCE -DCH_RAND_EXTERN -DCH_KEX_PQ -I. -S $$f -o - 2>"$$err") || { \
 	      echo "lint-wide-multiply: $$f does not build for $$arch — a count of zero from a failed compile is not a measurement"; \
 	      sed -n '1p' "$$err" | sed 's/^/lint-wide-multiply:   /'; \
