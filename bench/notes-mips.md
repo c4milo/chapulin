@@ -9,7 +9,7 @@ change.
 ## poly1305.c blocks(): mul only, 100 multiplies per block
 
 blocks() keeps its single 16-byte block loop. The loop body is
-622 instructions with 100 mul per block and nothing
+744 instructions with 100 mul per block and nothing
 in the hi/lo multiplier: multu 0, maddu 0, mult 0.
 ct_widemul builds each of the 25 limb products from four 16x16 pieces,
 so the 25 products cost 100 mul. mips32r2 documents no timing for mul

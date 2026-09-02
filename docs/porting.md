@@ -40,8 +40,8 @@ ship a compiler neither gate measures, run the gate with it, or read
 
 **Your core has a multiplier whose timing you cannot document.** This is the
 default and needs no flag. `ct.h` builds every widening product from four 16x16
-pieces, which costs roughly 33% of the pinned handshake's crypto and 1.7 kB of
-flash (measured; see the README's Speed and flash table).
+pieces, which costs roughly 29% of the pinned handshake's crypto on mips32r2
+and 1.7 kB of flash (measured; see the README's Speed and flash table).
 
 **Your core's multiply is documented constant-time.** Pass
 `-DCH_NATIVE_WIDEMUL` and take the speed back. Do this only with a vendor
@@ -70,7 +70,12 @@ smallest values bound its operand under 2^16 — `d=1` reaches 8320 and `d=4`
 reaches 54912. The optimiser proved the operand's high half zero and emitted
 `slli` then `mulhu` for the `d=1` call inlined into `mlk_poly_tomsg`, which
 decodes the shared secret. `mlk_compress` now calls `ct_widemul_opaque`, which
-reads its operands through `volatile` so the inference cannot be made.
+reads its operands through `volatile` so the inference cannot be made, and
+which recombines its four products with compare-carries rather than
+`ct_widemul`'s ladder: LLVM's AggressiveInstCombine knows the ladder, and three
+other shift-and-mask shapes, as the high word of a 32x32 product, and where
+the low word is dead -- `mlk_compress` reads only the high word -- it puts the
+widening multiply back, volatile operands or not. `ct.h` states both forms.
 
 The cost is confined to that caller: `poly1305`'s block and `x25519`'s `mul`
 are instruction-for-instruction unchanged, because their operands are wide by
@@ -122,34 +127,41 @@ zero under every compiler.
 | compiler | poly1305.c | x25519.c | mlkem_poly.c | sha3.c (public `% 5`) |
 | --- | --- | --- | --- | --- |
 | clang 23, Cortex-M3, mips32r2, rv32imac | 0 | 0 | 0 | 1 multiply-high |
-| Arm GNU gcc 15.3, Cortex-M3 | 2 `umlal` | 2 `umull`, 2 `umlal` | 2 `umlal` | 5 `udiv` |
+| Arm GNU gcc 15.3, Cortex-M3 | 0 | 0 | 0 | 5 `udiv` |
 | gcc 12.4 (Ubuntu 24.04), mips32r2 | 0 | 0 | 0 | 5 `div` |
-| Bootlin gcc 14.3, rv32imac | 0 | 1 `mulhu` | 0 | 5 `rem` |
-| Bootlin gcc 14.3, rv32ic | 0 | 3 `__muldi3` | 0 | 5 `__modsi3` |
+| Bootlin gcc 14.3, rv32imac | 0 | 0 | 0 | 5 `rem` || Bootlin gcc 14.3, rv32ic | 0 | 0 | 0 | 5 `__modsi3` |
 
 rv32ic has no multiply or divide instruction to count, so that spec counts
 the runtime routines instead: a 64-bit product is a call to `__muldi3`, which
 a chapulin build resolves to `softmul.c`'s constant-time routine, and the
-`% 5` is a call to `__modsi3`. The three `__muldi3` calls in x25519 are the
-sign-mask rewrite that is one `mulhu` on rv32imac. `softmul.c` itself is at
-zero calls to `__muldi3` there, which is what that spec exists to hold.
+`% 5` is a call to `__modsi3`. `softmul.c` itself is at zero calls to
+`__muldi3` there, which is what that spec exists to hold.
 
 The sha3 column is Keccak's `% 5` over public loop counters, which divides no
-secret. The gcc entries in the other three columns are a leak, recorded and
-not accepted: gcc rewrites `(uint64_t)lh + hl` on two products it can prove
-narrow into one widening multiply-accumulate, and `x & (0 - bit)` into
-`x * bit`, a widening multiply by a secret bit. The gate holds those counts so
-they cannot grow and fails on any file above its own. The repair is a rework of
-`ct_widemul`, `ct_mulsmall` and `ct_widemul_s` in `ct.h` that has not landed.
-Until it does, a Cortex-M3 built with gcc runs `umull` and `umlal` on secret
-limbs in those three modules, and the gate's zero holds for the other
-twenty-one files; under clang it holds for all twenty-four.
+secret. The three gcc rows were not always zero. gcc rewrites
+`(uint64_t)lh + hl`, a 64-bit sum of two products it can prove narrow, into
+one widening multiply-accumulate, and `x & (0 - bit)` into `x * bit`, a
+widening multiply by a secret bit: two `umlal` in poly1305 and in mlkem_poly
+and two `umull` and two `umlal` in x25519 under the Arm gcc, one `mulhu` in
+x25519 under the riscv32 gcc. The gate recorded those counts as ceilings until
+`ct_widemul` moved to a recombination that never widens a product,
+`ct_widemul_s` and x25519's `cswap` moved their masks to an arithmetic shift of
+the sign bit, and every row went to zero
+([#106](https://github.com/c4milo/chapulin/issues/106)). The violation
+`test/violations/inv16-widemul-mid-widened.violation` puts the old sum back
+and requires the gcc gate to fail.
+
+The gate compiles at `-Os`. Measured by hand at `-O2` with the same four
+compilers: clang, the Arm gcc and the riscv32 gcc hold every row at zero, and
+the mips gcc folds two of poly1305's 25 limb products into `madd`, a
+multiply-accumulate through the 64-bit HI/LO pair, with the other 23 and the
+other two files at zero. The Arm gcc lowers sha3's `% 5` to four `umull` at
+`-O2` where `-Os` gave five `udiv`; both divide public loop counters.
 
 ### What the decomposition does not cover
 
-It removes the 32-to-64 multiply where the compiler keeps its pieces apart,
-which under gcc is not yet everywhere; the table above says where. What
-remains after that is the 32-to-32 one. Arm
+It removes the 32-to-64 multiply, and the table above is the measurement.
+What remains after that is the 32-to-32 one. Arm
 documents that as single-cycle on the M3, so the guarantee is complete there.
 mips32r2 does not document its own — GCC's 4K scheduler model says the
 three-operand `mul` stalls by operand size — so on that part the decomposition

@@ -15,5 +15,5 @@ stack_connect_ca_rsa,5504
 stack_connect_ca_ecdsa,3696
 stack_read,1712
 stack_connect_pq,15808
-stack_write,848
-stack_close,800
+stack_write,912
+stack_close,864

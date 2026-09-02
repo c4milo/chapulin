@@ -27,9 +27,14 @@ static void carry(fe o) {
     }
 }
 
-// Constant-time conditional swap: b is 1 or 0.
+// Constant-time conditional swap: b is 1 or 0. The mask is b's bit moved to
+// the top and spread down by an arithmetic shift. Written as `~(b - 1)`, gcc
+// saw a negated 0-or-1 value and rewrote `x & -b` as `x * b` (match.pd), a
+// umull of a secret limb by the secret bit on the M3, and it also selected
+// the stored limb with a branch on b; the shift form does neither
+// (https://github.com/c4milo/chapulin/issues/106).
 static void cswap(fe p, fe q, int64_t b) {
-    int64_t mask = ~(b - 1);
+    int64_t mask = (int64_t)((uint64_t)b << 63) >> 63;
     for (int i = 0; i < 16; i++) {
         int64_t t = mask & (p[i] ^ q[i]);
         p[i] ^= t;

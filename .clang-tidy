@@ -24,9 +24,10 @@
 #   version gap.
 # - bugprone-signed-bitwise: 351 findings across the tree, none a defect. The
 #   crypto cores hold 245 of them and mean them: x25519 carries `int64_t
-#   fe[16]` limbs, and ct.h's widening multiply builds its corrections from
-#   two's-complement masks on signed values, which is what keeps a limb's sign
-#   off the control path. Most of the rest are integer promotion -- a uint8_t
+#   fe[16]` limbs, and ct.h's signed multiply and x25519's cswap build their
+#   masks by an arithmetic shift of a sign bit, which is what keeps a limb's
+#   sign and the swap bit off the control path. Most of the rest are integer
+#   promotion -- a uint8_t
 #   or uint16_t widens to signed int, and the value cannot be negative.
 #   The check's one genuinely undefined case, left-shifting a negative value,
 #   was already found and fixed by hand at x25519.c:23-26, with the reasoning

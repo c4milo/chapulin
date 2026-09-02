@@ -1,0 +1,13 @@
+invariant: INV-16
+file: ct.h
+catches: softmul_test
+reason: dropping the carry out of ct_widemul_opaque's cross sum makes its
+  product wrong whenever that sum passes 2^32. Its one caller never gets
+  there -- mlk_compress's operands keep the cross sum under 2^28 -- so
+  the FIPS 203 answers over the decomposition pass; only the full-range
+  edge grid and 200k random products in softmul_test reach it
+
+--- old
+    uint32_t mid_carry = (uint32_t)(mid < lh);
+--- new
+    uint32_t mid_carry = 0;

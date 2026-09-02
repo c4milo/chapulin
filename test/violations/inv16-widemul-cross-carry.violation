@@ -1,12 +1,13 @@
 invariant: INV-16
 file: ct.h
 catches: unit_ct_widemul
-reason: summing ct_widemul's two 16x16 cross products in 32 bits drops
-  their carry, so the recombined product is wrong; every other unit
-  binary asserts CH_NATIVE_WIDEMUL and compiles the line out, so the
-  RFC 7748 and RFC 8439 vectors see it only over the decomposition
+reason: dropping the carry out of ct_widemul's first cross sum, which
+  poly1305's limb products overflow on nearly every block, makes the
+  recombined product wrong; every other unit binary asserts
+  CH_NATIVE_WIDEMUL and compiles the line out, so the RFC 7748 and RFC
+  8439 vectors see it only over the decomposition
 
 --- old
-    uint64_t mid = (uint64_t)lh + hl;
+    uint32_t hi = hh + (t >> 16) + (w1 >> 16);
 --- new
-    uint32_t mid = lh + hl;
+    uint32_t hi = hh + (w1 >> 16);

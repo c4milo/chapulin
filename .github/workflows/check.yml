@@ -101,9 +101,9 @@ jobs:
       - run: sudo apt-get update -q && sudo apt-get install -y -q gcc-mips-linux-gnu qemu-user
       - name: Count wide multiplies and divisions under the mips gcc
         # lint-wide-multiply in the check job measures clang. This lane
-        # ships gcc, and gcc does not keep ct.h's 16x16 pieces apart
-        # everywhere clang does
-        # (https://github.com/c4milo/chapulin/issues/86). The Makefile
+        # ships gcc, whose lowering is its own measurement: it once put
+        # a widening multiply back where clang did not
+        # (https://github.com/c4milo/chapulin/issues/106). The Makefile
         # picks the spec from the driver's -dumpmachine and fails when
         # none matches, so this step cannot measure nothing.
         run: make lint-wide-multiply-gcc WIDEMUL_GCC=mips-linux-gnu-gcc
@@ -166,12 +166,12 @@ jobs:
           mkdir -p ~/armtc && tar -xJf /tmp/armtc.tar.xz -C ~/armtc --strip-components=1
       - name: Count wide multiplies and divisions under the Arm gcc
         # lint-wide-multiply in the check job measures clang. This lane
-        # ships the gcc a firmware tree ships, and at -Os it re-fuses
-        # ct.h's 16x16 pieces into umlal and umull
-        # (https://github.com/c4milo/chapulin/issues/86); the Makefile
-        # records those counts and fails on any file above its own. The
-        # spec is picked from the driver's -dumpmachine and no match
-        # fails, so this step cannot measure nothing.
+        # ships the gcc a firmware tree ships, and gcc once fused ct.h's
+        # 16x16 pieces back into umlal and umull where clang kept them
+        # apart (https://github.com/c4milo/chapulin/issues/106); the
+        # Makefile holds every file at zero under it. The spec is picked
+        # from the driver's -dumpmachine and no match fails, so this step
+        # cannot measure nothing.
         run: make lint-wide-multiply-gcc WIDEMUL_GCC="$HOME/armtc/bin/arm-none-eabi-gcc"
       - run: make m3-check M3_CC="$HOME/armtc/bin/arm-none-eabi-gcc"
 
@@ -387,6 +387,11 @@ jobs:
             echo "ELAN_INIT_SHA256=$ELAN_INIT_SHA256"
             echo "ACTIONLINT_VERSION=$ACTIONLINT_VERSION"
             echo "ACTIONLINT_SHA256=$ACTIONLINT_SHA256"
+            # check-slow's test-invariants-fast runs the gcc codegen gate
+            # (test/lint-wide-multiply-gcc.sh), which needs the Arm GNU
+            # gcc the m3 lane pins.
+            echo "ARM_GNU_VERSION=$ARM_GNU_VERSION"
+            echo "ARM_GNU_LINUX_SHA256=$ARM_GNU_LINUX_SHA256"
           } >> "$GITHUB_ENV"
 
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
@@ -604,6 +609,29 @@ jobs:
         run: make lint-commits-range
 
       - run: make hooks
+
+      - name: Cache the Arm GNU toolchain
+        id: armtc
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/armtc
+          key: armtc-${{ env.ARM_GNU_VERSION }}-linux-x86_64
+      - name: Install the Arm GNU toolchain (pinned)
+        if: steps.armtc.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          url="https://gitlab.arm.com/api/v4/projects/tooling%2Fgnu-toolchains-for-arm/packages/generic/gnu-toolchain/${ARM_GNU_VERSION}/arm-gnu-toolchain-${ARM_GNU_VERSION}-x86_64-arm-none-eabi.tar.xz"
+          curl -sSL -o /tmp/armtc.tar.xz "$url"
+          echo "$ARM_GNU_LINUX_SHA256  /tmp/armtc.tar.xz" | sha256sum -c -
+          mkdir -p ~/armtc && tar -xJf /tmp/armtc.tar.xz -C ~/armtc --strip-components=1
+      - name: Put the Arm GNU gcc on PATH
+        # test/violations.py runs test/lint-wide-multiply-gcc.sh with no
+        # arguments, and the Makefile resolves that gate's gcc through
+        # M3_CC's PATH lookup, so the toolchain goes on PATH rather than
+        # being passed as a make variable. The inv16-widemul-mid-widened
+        # violation is the one only that gate catches
+        # (https://github.com/c4milo/chapulin/issues/106).
+        run: echo "$HOME/armtc/bin" >> "$GITHUB_PATH"
 
       # proof/run.sh skips any harness whose content key already recorded
       # a success; restoring the marker directory makes CI incremental

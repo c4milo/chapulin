@@ -120,7 +120,7 @@ so an rv32 peak needs tooling that does not exist yet.
 | peak stack, `ch_connect` (`TRUST=ca`, RSA / ECDSA) | 5504 / 3696 |
 | peak stack, `ch_read` (worst case: KeyUpdate rekey) | 1712 |
 | peak stack, `ch_connect` (`KEX=pq`) | 15808 |
-| peak stack, `ch_write` / `ch_close` | 848 / 800 |
+| peak stack, `ch_write` / `ch_close` | 912 / 864 |
 
 The hybrid build costs more of both. The session struct grows because
 the ClientHello carries a 1,216-byte key share and is built whole into
@@ -174,29 +174,26 @@ optimistic for an in-order design, so read it as a lower bound.
 [`bench/insn-m3.sh`](bench/insn-m3.sh) measures the same operations as
 thumbv7m instruction counts on QEMU's Cortex-M3, the core the m3 and
 freertos CI lanes execute, built with the pinned Arm GNU gcc. Both
-columns run the multiply decomposition firmware ships. On the M3 that
-gcc re-fuses part of it back into `umull` and `umlal` today
-([#106](https://github.com/c4milo/chapulin/issues/106)); the M3 counts
-are what that build executes, and they move when the rework lands.
+columns run the multiply decomposition firmware ships.
 
 | work | mips32r2 insns | ms (500 MHz, 1 IPC) | Cortex-M3 insns |
 |---|---|---|---|
-| AEAD seal, per 1 KB record | 74 k | 0.15 | 64 k |
+| AEAD seal, per 1 KB record | 82 k | 0.16 | 68 k |
 | SHA-256, per 1 KB | 68 k | 0.14 | 57 k |
-| x25519 scalar multiply | 40.3 M | 81 | 28.0 M |
+| x25519 scalar multiply | 38.9 M | 78 | 27.4 M |
 | RSA-3072 PSS verify (default) | 11.6 M | 23 | 8.4 M |
 | P-256 verify (`PIN=ecdsa`) | 46.0 M | 92 | 26.7 M |
-| full pinned handshake crypto (default) | 93.0 M | 186 | 65.0 M |
+| full pinned handshake crypto (default) | 90.2 M | 180 | 63.8 M |
 | ML-KEM-768 keygen (`KEX=pq`) | 3.2 M | 6 | 2.7 M |
 | ML-KEM-768 decapsulate (`KEX=pq`) | 3.6 M | 7 | 3.0 M |
-| full hybrid handshake crypto (`KEX=pq`) | 103.1 M | 206 | 73.5 M |
+| full hybrid handshake crypto (`KEX=pq`) | 100.4 M | 201 | 72.2 M |
 
 The multiply decomposition that keeps secrets off a variable-time
 `umull` sets the first and third rows in both columns. Measured against
 the same benchmark with the native multiply instead: on mips32r2, AEAD
-seal costs 56% more, x25519 41% more, and the whole pinned handshake
-33% more, or 47 ms at 500 MHz; on the Cortex-M3, AEAD seal costs 83%
-more, x25519 132% more, and the pinned handshake 96% more. SHA-256 and
+seal costs 73% more, x25519 36% more, and the whole pinned handshake
+29% more, or 41 ms at 500 MHz; on the Cortex-M3, AEAD seal costs 93%
+more, x25519 129% more, and the pinned handshake 94% more. SHA-256 and
 both signature verifies are unchanged, because SHA-256 does not
 multiply and the verifies read only public bytes.
 
@@ -208,7 +205,7 @@ for 5.9 kB of P-256 and totals 32.6 kB.
 The hybrid key exchange costs less than its wire size suggests. `KEX=pq`
 adds two ML-KEM key expansions and one decapsulation — the key pair lives
 as a 64-byte seed and is re-expanded rather than stored, which
-[`docs/decisions.md`](docs/decisions.md) 24 explains — for 10.1 M
+[`docs/decisions.md`](docs/decisions.md) 24 explains — for 10.2 M
 instructions, 11% over the classic handshake. One ML-KEM-768 keygen is
 an order of magnitude cheaper than one x25519 on this core, because
 chapulin keeps the 16-bit-limb ladder for its machine-checked overflow
@@ -381,21 +378,23 @@ secrets and MACs and never opens a record.
   condition-code suffix cannot hide one. Under the pinned clang every
   file is at zero except sha3, whose public `% 5` is one multiply-high.
   `make lint-wide-multiply-gcc` runs the same count under the gcc each
-  CI lane ships, and there the decomposition does not hold everywhere:
-  at `-Os` the Arm GNU gcc re-fuses ct_widemul's pieces into two `umlal`
-  in poly1305 and in mlkem_poly and two `umull` and two `umlal` in
-  x25519, and both it and the Bootlin riscv32 gcc rewrite ct_widemul_s's
-  sign mask as a multiply by the sign bit, one `mulhu` in x25519 on
-  rv32imac and, on rv32ic, where a 64-bit product is a call to
-  `__muldi3`, three such calls in x25519, which a chapulin build
-  resolves to `softmul.c`'s constant-time routine; gcc on mips32r2
-  keeps every piece apart. The gate records
-  those counts so they cannot grow and fails on any file above its own,
-  `docs/porting.md` tabulates them, and the repair in ct.h has not
-  landed: on a Cortex-M3 built with gcc, poly1305, x25519 and mlkem_poly
-  still reach `umull`. Where the decomposition holds, what is left is
-  the 32-to-32 multiply, which ARM
-  documents as single-cycle on the M3. mips32r2 does not document its
+  CI lane ships -- the Arm GNU gcc for the Cortex-M3, Ubuntu's gcc for
+  mips32r2 and the Bootlin gcc for rv32imac and rv32ic -- and every
+  file is at zero there too, except sha3's `% 5`, which each gcc lowers
+  to five hardware divisions, or on rv32ic to five calls to `__modsi3`. It was not always so: gcc fused the
+  decomposition's 64-bit cross-product sum back into `umlal`, and
+  rewrote the sign mask `x & (0 - bit)` in `ct_widemul_s` and in
+  x25519's `cswap` as a multiply by the secret bit, eight widening
+  multiplies on the M3 and one on rv32imac, until the rework in `ct.h`
+  and `x25519.c` removed both forms
+  ([#106](https://github.com/c4milo/chapulin/issues/106));
+  `test/violations/inv16-widemul-mid-widened.violation` puts the old
+  sum back and requires the gcc gate to object. The gate compiles at
+  `-Os`. Measured by hand at `-O2`, clang, the Arm gcc and the riscv32
+  gcc hold zero as well, and the mips gcc folds two of poly1305's 25
+  limb products into `madd`, a multiply-accumulate through the 64-bit
+  HI/LO pair; `docs/porting.md` records it. What is left is the
+  32-to-32 multiply, which ARM  documents as single-cycle on the M3. mips32r2 does not document its
   own, so the decomposition narrows that part's exposure rather than
   closing it; `ct.h` says so. Every target gets the decomposition unless
   its build passes `CH_NATIVE_WIDEMUL`, and there is no list of

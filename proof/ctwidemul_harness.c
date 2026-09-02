@@ -44,7 +44,7 @@ int main(void) {
     (void)ct_widemul_opaque(wild_oa, wild_ob);
 
     // Equivalence, at a measured bound. Same flags as the launch line: 8-bit
-    // operands verify in 39 s under kissat and 106 s under the built-in
+    // operands verify in 31 s under kissat and 219 s under the built-in
     // solver; 16-bit returned no verdict in 900 s and was stopped there.
     // 32-bit is unmeasured -- the 16-bit result made it not worth the run.
     // Equivalence of two multipliers is the classic hard SAT instance, which

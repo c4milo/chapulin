@@ -1,11 +1,11 @@
 op,insns
 sha256_1kib,57086
 hkdf_expand_label_32b,17162
-aead_seal_1kib,64161
-x25519_scalarmult,28023742
+aead_seal_1kib,67684
+x25519_scalarmult,27404362
 p256_ecdsa_verify,26660450
 rsa_pss_verify_3072,8400643
 mlkem_keygen,2668509
-mlkem_decaps,3033780
-handshake_crypto,65006879
-handshake_crypto_pq,73475089
+mlkem_decaps,3038765
+handshake_crypto,63768103
+handshake_crypto_pq,72241296

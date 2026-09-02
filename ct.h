@@ -68,6 +68,22 @@ void ct_wipe(void *p, size_t n);
 // and a recombination out of shifts and adds are not. The operands' halves are
 // full width by construction, so nothing here depends on the values (INV-16,
 // https://github.com/c4milo/chapulin/issues/53).
+//
+// The recombination is Hacker's Delight's mulhu ladder in 32-bit arithmetic,
+// and the two words meet only in the last line. None of its sums can
+// overflow: each product is at most (2^16-1)^2, each shifted-down piece at
+// most 2^16-1, and t, w1 and hi are one product plus one or two such pieces.
+// Keeping every sum in 32 bits is what defeats gcc: `(uint64_t)lh + hl`, the
+// form this used to take, is a 64-bit sum of a product gcc can prove fits 32
+// bits, and gcc's widening_mul pass turns that into one umlal per call on the
+// M3 (45 in poly1305 at -O2, where it widened more of the sum)
+// (https://github.com/c4milo/chapulin/issues/106). Here nothing is widened
+// before an add, so there is nothing for the pass to find.
+//
+// A compiler can add a pattern, so the form proves nothing by itself:
+// lint-wide-multiply and lint-wide-multiply-gcc read what each compiler emits
+// and hold every file at zero, and ct_widemul_opaque below is the one caller
+// shape that needed a different form.
 static inline uint64_t ct_widemul(uint32_t a, uint32_t b) {
 #ifdef CH_WIDEMUL_NATIVE
     return (uint64_t)a * b;
@@ -80,8 +96,11 @@ static inline uint64_t ct_widemul(uint32_t a, uint32_t b) {
     uint32_t lh = al * bh;
     uint32_t hl = ah * bl;
     uint32_t hh = ah * bh;
-    uint64_t mid = (uint64_t)lh + hl;
-    return ((uint64_t)hh << 32) + (mid << 16) + ll;
+    uint32_t t = hl + (ll >> 16);
+    uint32_t w1 = (t & 0xFFFFU) + lh;
+    uint32_t hi = hh + (t >> 16) + (w1 >> 16);
+    uint32_t lo = (w1 << 16) | (ll & 0xFFFFU);
+    return ((uint64_t)hi << 32) | lo;
 #endif
 }
 
@@ -100,13 +119,38 @@ static inline uint64_t ct_widemul(uint32_t a, uint32_t b) {
 // Cortex-M3, and poly1305 does not need it -- its operands are wide by
 // construction, so nothing is provably zero. Use this only where a caller's
 // operand has a compile-time bound under 2^16, and say so at the call site.
+//
+// The recombination is not ct_widemul's. mlk_compress reads only the high
+// word of the product, and LLVM's AggressiveInstCombine (foldMulHigh) knows
+// the ladder above, and three other shift-and-mask shapes, as the high word
+// of a 32x32 product: where the low word is dead it replaces the four
+// products with one widening multiply -- umull on the M3, mulhu on rv32imac,
+// multu on mips32r2 -- volatile operands or not
+// (https://github.com/c4milo/chapulin/issues/106). It does not know a carry
+// taken as a compare, `sum < addend`, so this form takes its two carries that
+// way. It costs more than the ladder, which is why ct_widemul does not use it.
 static inline uint64_t ct_widemul_opaque(uint32_t a, uint32_t b) {
 #ifdef CH_WIDEMUL_NATIVE
     return (uint64_t)a * b;
 #else
     volatile uint32_t va = a;
     volatile uint32_t vb = b;
-    return ct_widemul(va, vb);
+    uint32_t oa = va;
+    uint32_t ob = vb;
+    uint32_t al = oa & 0xFFFFU;
+    uint32_t ah = oa >> 16;
+    uint32_t bl = ob & 0xFFFFU;
+    uint32_t bh = ob >> 16;
+    uint32_t ll = al * bl;
+    uint32_t lh = al * bh;
+    uint32_t hl = ah * bl;
+    uint32_t hh = ah * bh;
+    uint32_t mid = lh + hl;
+    uint32_t mid_carry = (uint32_t)(mid < lh);
+    uint32_t lo = ll + (mid << 16);
+    uint32_t lo_carry = (uint32_t)(lo < ll);
+    uint32_t hi = hh + (mid >> 16) + (mid_carry << 16) + lo_carry;
+    return ((uint64_t)hi << 32) | lo;
 #endif
 }
 
@@ -128,8 +172,14 @@ static inline uint64_t ct_mulsmall(uint64_t a, uint32_t k) {
 
 // The signed form. Two's complement makes a signed product the unsigned
 // one over the same bit patterns, less b<<32 when a is negative and a<<32
-// when b is negative; the corrections are masked rather than branched, so
-// the sign of a secret limb stays off the control path.
+// when b is negative, so only the high word moves. Each correction is
+// masked, never branched: the mask is the operand's sign bit spread across
+// the word by an arithmetic shift, so the sign of a secret limb stays off
+// the control path. It used to be `0 - (ua >> 31)`, and gcc's match.pd
+// rewrites `X & -Y` as `X * Y` when it knows Y is 0 or 1 -- a widening
+// multiply by a secret bit, two umull in x25519 on the M3 and one mulhu on
+// rv32imac (https://github.com/c4milo/chapulin/issues/106). A shifted sign
+// bit is not a negated 0-or-1 value, so the rule does not apply.
 static inline int64_t ct_widemul_s(int32_t a, int32_t b) {
 #ifdef CH_WIDEMUL_NATIVE
     return (int64_t)a * b;
@@ -137,11 +187,10 @@ static inline int64_t ct_widemul_s(int32_t a, int32_t b) {
     uint32_t ua = (uint32_t)a;
     uint32_t ub = (uint32_t)b;
     uint64_t p = ct_widemul(ua, ub);
-    uint64_t ma = (uint64_t)0 - (uint64_t)(ua >> 31);
-    uint64_t mb = (uint64_t)0 - (uint64_t)(ub >> 31);
-    p -= ((uint64_t)ub << 32) & ma;
-    p -= ((uint64_t)ua << 32) & mb;
-    return (int64_t)p;
+    uint32_t ma = (uint32_t)(a >> 31);
+    uint32_t mb = (uint32_t)(b >> 31);
+    uint32_t hi = (uint32_t)(p >> 32) - (ub & ma) - (ua & mb);
+    return (int64_t)(((uint64_t)hi << 32) | (uint32_t)p);
 #endif
 }
 

@@ -56,12 +56,15 @@ int main(void) {
             CHECK(__muldi3(edge64[i], edge64[j]) == (uint64_t)(edge64[i] * edge64[j]));
         }
     }
-    // ct_widemul and its signed and small-constant forms, decomposed here,
-    // against the host's native product.
+    // ct_widemul, its opaque form (a second recombination, see ct.h) and its
+    // signed and small-constant forms, decomposed here, against the host's
+    // native product.
     static const int32_t se[] = {0, 1, -1, 2, -2, INT32_MAX, INT32_MIN, 65535, -65535, 65536};
     for (size_t i = 0; i < sizeof se / sizeof *se; i++) {
         for (size_t j = 0; j < sizeof se / sizeof *se; j++) {
             CHECK(ct_widemul((uint32_t)se[i], (uint32_t)se[j]) ==
+                  (uint64_t)(uint32_t)se[i] * (uint32_t)se[j]);
+            CHECK(ct_widemul_opaque((uint32_t)se[i], (uint32_t)se[j]) ==
                   (uint64_t)(uint32_t)se[i] * (uint32_t)se[j]);
             CHECK(ct_widemul_s(se[i], se[j]) == (int64_t)se[i] * se[j]);
         }
@@ -75,9 +78,10 @@ int main(void) {
         uint64_t y = rng_next();
         CHECK(__muldi3(x, y) == (uint64_t)(x * y));
         CHECK(ct_widemul(a, b) == (uint64_t)a * b);
+        CHECK(ct_widemul_opaque(a, b) == (uint64_t)a * b);
         CHECK(ct_widemul_s((int32_t)a, (int32_t)b) == (int64_t)(int32_t)a * (int32_t)b);
         CHECK(ct_mulsmall(x, b) == (uint64_t)(x * b));
-        n += 5;
+        n += 6;
     }
     if (failures != 0) {
         (void)printf("softmul_test: %d failures\n", failures);

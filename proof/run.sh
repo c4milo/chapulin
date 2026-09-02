@@ -507,7 +507,7 @@ launch fast full ct 65 ""
 # compute the same function. This proves that. UB and shift range at full
 # 32-bit width, the products themselves at 8-bit operands -- the same bound
 # softmul uses, and for the same reason: multiplier equivalence is the classic
-# hard SAT instance. Measured, these flags: 6 properties, 39 s.
+# hard SAT instance. Measured, these flags: 6 properties, 31 s.
 launch fast:3 full ctwidemul 65 "" -DCH_WIDEMUL_BOUND=0xFFU
 # The software multiply, for cores with no multiplier. UB and the fixed
 # loop counts over unconstrained 32- and 64-bit inputs; the product

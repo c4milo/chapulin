@@ -363,11 +363,12 @@ which convention holds them.
   names no architecture: the header records why, and the Makefile passes
   the flag for host test binaries only, filtering it out of the packaged
   object. A Cortex-M3 ran 35 variable-time products before and runs none
-  in poly1305, mlkem_poly or x25519 now under clang; under the Arm GNU
-  gcc six remain, because gcc re-fuses the pieces, and the README's
-  verification section states each one. One remains in sha3 under every
-  compiler, `% 5` over Keccak's public loop counters, which divides no
-  secret.
+  in poly1305, mlkem_poly or x25519 now, under clang and under the Arm
+  GNU gcc alike: gcc fused eight of them back until the rework in ct.h
+  and x25519.c removed the two forms it rewrote
+  ([#106](https://github.com/c4milo/chapulin/issues/106)). One remains
+  in sha3 under every compiler, `% 5` over Keccak's public loop
+  counters, which divides no secret.
   The decomposition is also what makes every other proof describe the
   target: those formulas verify the single-multiply form, and
   `proof/ctwidemul_harness.c` proves the two forms compute the same
@@ -388,26 +389,24 @@ which convention holds them.
   secret passes through (`CODEGEN_SRCS` in the Makefile).
   `lint-wide-multiply` compiles for Cortex-M3, mips32r2 and rv32imac
   under the pinned clang, and `lint-wide-multiply-gcc` under the gcc
-  each CI lane ships — the riscv32 one for rv32ic too, where a 64-bit
-  product is a call to `__muldi3` — and counts per file the widening
-  multiplies, the divisions and the 64-bit division runtime calls, each
-  opcode matched as a prefix so `umullne` counts as `umull`; every file
-  holds a recorded ceiling, zero except sha3's public `% 5` and the gcc
-  counts the README states. `lint-runtime-symbols` builds for rv32ic,
-  where there is no multiplier at all, and holds per file the
-  runtime-library calls it may make — `softmul.c` supplies constant-time
-  `__mulsi3` and `__muldi3` so the library's branching ones are never
-  linked, and the gate asserts it still defines them; the rv32ic gcc
-  spec holds `softmul.c` at zero calls to `__muldi3`, because gcc at
-  `-Os` once emitted one from inside `__muldi3` itself. Six `inv16-*`
-  violations in `test/violations/` prove each detection catches its
-  mutant.
-  Both count instructions; neither checks an answer. `make
+  each CI lane ships, and counts per file the widening multiplies, the
+  divisions and the 64-bit division runtime calls, each opcode matched
+  as a prefix so `umullne` counts as `umull`; every file holds a
+  recorded ceiling, zero except sha3's public `% 5`.
+  `lint-runtime-symbols` builds for rv32ic, where
+  there is no multiplier at all, and holds per file the runtime-library
+  calls it may make — `softmul.c` supplies constant-time `__mulsi3` and
+  `__muldi3` so the library's branching ones are never linked, and the
+  gate asserts it still defines them; the rv32ic gcc spec holds
+  `softmul.c` at zero calls to `__muldi3`, because gcc at `-Os` once
+  emitted one from inside `__muldi3` itself. Eight `inv16-*` violations
+  in `test/violations/` prove each detection catches its mutant, one of
+  them under the gcc gate alone.  Both count instructions; neither checks an answer. `make
   ct-widemul-check` (in `check-slow`) runs the unit, ML-KEM and
   Wycheproof vectors over the decomposition itself, which every other
   host binary compiles out, and `make test-invariants` requires it to
-  fail on a wrong recombination and on a narrowed `ct_widemul_opaque`
-  operand.
+  fail on a dropped carry in either recombination and on a narrowed
+  `ct_widemul_opaque` operand.
 - **Violation.** A PR compares a binder or tag with memcmp because
   the linker size looked better.
 - See [decisions: Cryptography](decisions.md#cryptography).

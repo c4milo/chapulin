@@ -1,0 +1,19 @@
+invariant: INV-16
+file: ct.h
+catches: test/lint-wide-multiply-gcc.sh
+reason: summing ct_widemul's two 16x16 cross products as a 64-bit value,
+  the recombination ct.h shipped until the rework, hands gcc a widening
+  it can prove exact, and its widening_mul pass fuses the product and the
+  add into umlal on the Cortex-M3 -- two per file at -Os, in poly1305,
+  x25519 and mlkem_poly; clang keeps the pieces apart, so the clang gate
+  passes this and only the gcc gate sees it
+
+--- old
+    uint32_t t = hl + (ll >> 16);
+    uint32_t w1 = (t & 0xFFFFU) + lh;
+    uint32_t hi = hh + (t >> 16) + (w1 >> 16);
+    uint32_t lo = (w1 << 16) | (ll & 0xFFFFU);
+    return ((uint64_t)hi << 32) | lo;
+--- new
+    uint64_t mid = (uint64_t)lh + hl;
+    return ((uint64_t)hh << 32) + (mid << 16) + ll;

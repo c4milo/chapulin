@@ -417,12 +417,12 @@ bin/handshake_strict_pq: test/handshake_strict_test.c handshake_parser.c buf.c $
 # the FIPS 203 known answers run over the four 16x16 pieces ct.h ships
 # rather than the host's one instruction. Every other host binary asserts
 # the native multiply, and test/softmul_test.c compares ct_widemul,
-# ct_widemul_s and ct_mulsmall against the compiler's product on their
-# own. So this is the one build where the decomposition as poly1305,
-# x25519 and mlkem_poly inline it, and the ct_widemul_opaque form
-# softmul_test skips, is checked against a published vector
-# (https://github.com/c4milo/chapulin/issues/92). ct-widemul-check runs
-# both, then wycheproof-ct-widemul below; check-slow calls it.
+# ct_widemul_opaque, ct_widemul_s and ct_mulsmall against the compiler's
+# product on their own. So this is the one build where the decomposition
+# as poly1305, x25519 and mlkem_poly inline it is checked against a
+# published vector (https://github.com/c4milo/chapulin/issues/92).
+# ct-widemul-check runs both, then wycheproof-ct-widemul below;
+# check-slow calls it.
 CT_WIDEMUL_CFLAGS = $(filter-out $(HOST_WIDEMUL_DEF),$(CFLAGS)) -DCH_CT_WIDEMUL
 bin/unit_ct_widemul: test/unit_test.c $(SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
@@ -1040,6 +1040,15 @@ else
 	# constParameterCallback: I/O callback signatures are fixed by the
 	# ch_cfg contract in tls.h; const-ing an implementation's void *io
 	# would need function-pointer casts, which is worse.
+	# shiftTooManyBitsSigned: it reports a signed right shift by width-1
+	# as undefined, and C11 6.5.7 makes a negative value's right shift
+	# implementation-defined, which every compiler chapulin targets
+	# defines as arithmetic. That shift is the sign-spread mask ct.h's
+	# ct_widemul_s and x25519's cswap build on purpose, the form gcc
+	# leaves alone where it rewrote `x & (0 - bit)` as a multiply
+	# (https://github.com/c4milo/chapulin/issues/106). The undefined
+	# class the check also covers, a left shift out of range, is proven
+	# absent by CBMC's --undefined-shift-check on every harness.
 	# cfg.h demands a declared entropy pattern, so cppcheck needs one to
 	# get past the preprocessor. Passing -D alone would limit it to that
 	# single configuration; --force keeps it exploring CH_PIN_ECDSA,
@@ -1047,7 +1056,8 @@ else
 	# existed. Measured at 3.1 s without and 10.4 s with, over 42 files.
 	$(CPPCHECK) --std=c11 --enable=warning,style,performance,portability \
 	  --inline-suppr --suppress=missingIncludeSystem \
-	  --suppress=constParameterCallback $(HOST_RAND_DEF) --force \
+	  --suppress=constParameterCallback --suppress=shiftTooManyBitsSigned \
+	  $(HOST_RAND_DEF) --force \
 	  --error-exitcode=1 --quiet $(LINT_C)
 	# The QEMU and FreeRTOS smoke sources, with two suppressions:
 	# unusedStructMember, because the hardware, not C, reads the vector
@@ -1142,13 +1152,14 @@ examples-check: bin/example_psk bin/example_pinned bin/example_ca
 # recipe runs the lake step itself; the epoch violation drives e2e,
 # which needs the CA clients.
 # The fast tier: violations backed by the second-scale binaries (unit,
-# the strictness parsers, rsa_test, the decomposed-multiply unit and
-# ML-KEM binaries), so the PR lane runs them. The diff,
+# the strictness parsers, rsa_test, softmul_test, the decomposed-multiply
+# unit and ML-KEM binaries) and the codegen gate scripts, so the PR lane
+# runs them. The diff,
 # handshake_sequence and e2e-backed violations stay in the nightly full run — each of
 # those targets is slow enough that a baseline plus a mutation pass costs
 # real minutes.
 .PHONY: test-invariants-fast
-test-invariants-fast: bin/unit bin/unit_ca bin/x509strict bin/x509strict_ecdsa bin/rsa_test bin/drbg_test bin/handshake_strict_test bin/unit_ct_widemul bin/mlkem_test_ct_widemul
+test-invariants-fast: bin/unit bin/unit_ca bin/x509strict bin/x509strict_ecdsa bin/rsa_test bin/drbg_test bin/handshake_strict_test bin/softmul_test bin/unit_ct_widemul bin/mlkem_test_ct_widemul
 	python3 test/violations.py --tier=fast
 
 # The whole set, fast tier plus the handshake_sequence_test and e2e-backed
@@ -1304,31 +1315,27 @@ WIDEMUL_SPECS := \
   rv32ic-gcc:gcc:riscv32-:-march=rv32ic,-mabi=ilp32:$(WIDEMUL_OPS_RV32I)
 # Per-spec ceilings, spec/file:count, where a spec measures a file above its
 # WIDEMUL_CEILING entry. Every number is measured with the spec's compiler
-# at its flags and -Os, and is one of two things.
+# at its flags and -Os. The only entries are sha3.c under each gcc: the
+# public `% 5`, five hardware divisions where clang's one multiply-high
+# stood.
 #
-# sha3.c under each gcc is the public `% 5`, five hardware divisions where
-# clang's one multiply-high stood.
+# poly1305.c, x25519.c and mlkem_poly.c held non-zero gcc entries once: the
+# leak https://github.com/c4milo/chapulin/issues/86 predicted, found the
+# first time the gate ran under gcc. arm-none-eabi-gcc fused ct_widemul's
+# `(uint64_t)lh + hl` -- a 64-bit sum of two products it could prove narrow
+# -- into umlal, and both it and the Bootlin riscv32 gcc rewrote the sign
+# mask `x & (0 - bit)` in ct_widemul_s and cswap as `x * bit`, a widening
+# multiply by a secret bit. ct.h and x25519.c no longer carry either form
+# (https://github.com/c4milo/chapulin/issues/106), every secret-bearing
+# file is at zero under every spec, and the
+# inv16-widemul-mid-widened violation keeps the first form caught.
 #
-# poly1305.c, x25519.c and mlkem_poly.c under gcc are NOT public: they are
-# the leak https://github.com/c4milo/chapulin/issues/86 predicted, found
-# the first time the gate ran under gcc. arm-none-eabi-gcc re-fuses ct_widemul's
-# 16x16 pieces into umlal and umull -- `(uint64_t)lh + hl` on two products
-# it can prove narrow becomes one widening multiply-accumulate -- and both
-# it and the Bootlin riscv32 gcc rewrite ct_widemul_s's sign mask
-# `x & (0 - bit)` as `x * bit`, a widening multiply by a secret bit. These
-# entries are a record, not an allowance: the gate holds them so they
-# cannot grow, the README's verification section states them, and the
-# repair is in ct.h, after which each drops to zero and the gate says so.
-#
-# rv32ic-gcc reads the same two findings through the runtime names: the
-# `% 5` is five calls to __modsi3, and the sign-mask rewrite's 64-bit
-# products are three calls to __muldi3 in x25519.c, where rv32imac shows
-# the one mulhu. softmul.c is at zero there, which is the point of the
-# spec (https://github.com/c4milo/chapulin/issues/107).
-WIDEMUL_CEILING_SPEC := m3-gcc/sha3.c:5 m3-gcc/poly1305.c:2 m3-gcc/x25519.c:4 m3-gcc/mlkem_poly.c:2 \
-                        mips32r2-gcc/sha3.c:5 \
-                        rv32imac-gcc/sha3.c:5 rv32imac-gcc/x25519.c:1 \
-                        rv32ic-gcc/sha3.c:5 rv32ic-gcc/x25519.c:3
+# rv32ic-gcc counts runtime names, since rv32ic has no multiply or divide
+# instruction: the `% 5` is five calls to __modsi3. softmul.c is at zero
+# calls to __muldi3 there, which is the point of the spec
+# (https://github.com/c4milo/chapulin/issues/107).
+WIDEMUL_CEILING_SPEC := m3-gcc/sha3.c:5 mips32r2-gcc/sha3.c:5 rv32imac-gcc/sha3.c:5 \
+                        rv32ic-gcc/sha3.c:5
 WIDEMUL_RUN ?= clang
 WIDEMUL_GCC ?= $(M3_CC)
 .PHONY: lint-wide-multiply lint-wide-multiply-gcc
