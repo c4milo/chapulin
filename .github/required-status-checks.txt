@@ -1,0 +1,18 @@
+# The status checks main requires before a merge: the set under
+# Settings > Branches > main > "Require status checks to pass", one
+# context name per line. Each name is a job id in
+# .github/workflows/check.yml, and a line starting with # is a comment.
+#
+# This file exists because that setting lives outside the tree, where no
+# diff shows it changing. The "Audit main's required status checks" step
+# in check.yml's check job reads the live set through the API and fails
+# when it differs from this file, or when a name here is not a job in
+# that workflow. Adding a check to the required set, dropping one, or
+# renaming a required job therefore takes a commit that shows the change.
+# https://github.com/c4milo/chapulin/issues/91
+#
+# To change the set, edit Settings and this file in one change. Auto-merge
+# (.github/workflows/dependabot-automerge.yml) waits on exactly these
+# checks, and GitHub refuses to enable it on a branch that requires none,
+# so this list is never empty.
+check

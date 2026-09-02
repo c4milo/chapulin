@@ -23,8 +23,10 @@ name: dependabot auto-merge
 #
 # Two repository settings must be on or this job does nothing:
 # Settings > General > "Allow auto-merge", and squash merging. GitHub also
-# refuses to enable auto-merge on a branch that requires no status checks, so
-# main needs at least one required check.
+# refuses to enable auto-merge on a branch that requires no status checks.
+# The checks main requires are listed in .github/required-status-checks.txt;
+# a Dependabot pull request merges only after every one of them passes, and
+# check.yml's check job fails when GitHub's setting and that file disagree.
 
 # pull_request_target, not pull_request. A run that a Dependabot pull_request
 # triggers is treated as coming from a fork and gets a read-only token, and the
@@ -85,7 +87,8 @@ jobs:
           gh pr merge --auto --squash "$PR_URL" || {
             echo "could not enable auto-merge on $PR_URL"
             echo "check that Settings > General has \"Allow auto-merge\" and squash"
-            echo "merging turned on, and that main requires at least one status check"
+            echo "merging turned on, and that main requires the checks listed in"
+            echo ".github/required-status-checks.txt"
             exit 1
           }
 

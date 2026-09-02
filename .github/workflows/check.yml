@@ -261,6 +261,63 @@ jobs:
         with:
           fetch-depth: 0 # commitlint lints commit ranges, not just HEAD
 
+      - name: Audit main's required status checks
+        # Settings > Branches decides which checks must pass before a merge,
+        # and no diff shows that setting change. .github/required-status-checks.txt
+        # records the set. This step reads the live set through the API and
+        # fails when the two differ, or when a required name is not a job id
+        # in this file: a renamed job would otherwise leave main waiting on a
+        # check that never reports, and a job added here would run without
+        # blocking a merge. https://github.com/c4milo/chapulin/issues/91
+        #
+        # The branch endpoint, not branches/main/protection: that one needs
+        # repository administration, which no GITHUB_TOKEN can hold, while
+        # the branch object carries required_status_checks for any reader of
+        # a public repository, so the job's read-only token is enough. The
+        # repository uses classic branch protection and no rulesets, so
+        # rules/branches/main returns nothing today; a move to rulesets
+        # empties this read and fails the step, which is the signal to read
+        # that endpoint instead.
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          roster=.github/required-status-checks.txt
+          workflow=.github/workflows/check.yml
+          want=$(sed 's/#.*//; s/[[:space:]]*$//; /^$/d' "$roster" | sort -u)
+          live=$(gh api "repos/$GITHUB_REPOSITORY/branches/main" \
+            --jq '.protection.required_status_checks.checks // [] | .[].context' | sort -u)
+          # Job ids sit at two-space indent under jobs:, which is how YAML
+          # delimits them. A job-level name: key would replace the id as the
+          # context name, so none may exist while this matches on ids.
+          jobs=$(awk '/^jobs:/ { in_jobs = 1; next }
+                      in_jobs && /^[^ #]/ { in_jobs = 0 }
+                      in_jobs && /^  [A-Za-z0-9_-]+:/ { sub(/:.*/, ""); sub(/^  /, ""); print }' \
+                   "$workflow" | sort -u)
+          echo "roster ($roster): $(paste -sd ' ' - <<< "$want")"
+          echo "live (Settings > Branches > main): $(paste -sd ' ' - <<< "$live")"
+          rc=0
+          if [ -z "$want" ]; then
+            echo "::error file=$roster::the roster is empty; main must require at least one check"
+            rc=1
+          fi
+          if [ "$want" != "$live" ]; then
+            echo "::error file=$roster::main's required status checks differ from the roster; change Settings or this file so they agree"
+            rc=1
+          fi
+          if grep -nE '^    name:' "$workflow"; then
+            echo "::error file=$workflow::a job-level name: replaces the job id as the check's context name, and this audit matches on ids"
+            rc=1
+          fi
+          while read -r name; do
+            [ -n "$name" ] || continue
+            grep -qxF "$name" <<< "$jobs" \
+              || { echo "::error file=$roster::$name is required but is not a job in $workflow"; rc=1; }
+          done <<< "$want"
+          unrequired=$(comm -23 <(printf '%s\n' "$jobs") <(printf '%s\n' "$want") | paste -sd ' ' -)
+          [ -z "$unrequired" ] || echo "::notice::jobs in $workflow that main does not require: $unrequired"
+          exit "$rc"
+
       - name: Load the toolchain pins
         # tools/toolchain.env is the one place a tool version is written. The
         # binary names are derived from LLVM_MAJOR here rather than repeated,

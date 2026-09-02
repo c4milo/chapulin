@@ -90,6 +90,11 @@ Domain vocabulary keeps the RFCs' own spelling: `pt`, `aad`, `iv`,
   the diff shows in the tests that consume its output.
 - Every document must be named in the README — `make lint-docs`
   fails on an orphan.
+- The status checks main requires before a merge are listed in
+  `.github/required-status-checks.txt`, one job id per line. A step in
+  `check.yml`'s check job fails when GitHub's branch setting and that
+  file disagree, so a change to the required set edits both in one
+  commit.
 
 ## Security reports are not PRs
 
