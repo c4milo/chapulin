@@ -176,7 +176,7 @@ PEM CERTIFICATE block and copies out the same key bytes on the device
 relays an operator-signed blob it cannot itself reshape. Converting at
 such a relay would mean the relay rewrites what the operator signed.
 Everywhere else the command above is better — no parser on the device,
-no second exported call, and 2.4 kB less
+no second exported call, and 2.5 kB less
 flash (pem.o plus x509_ca.o, measured by bench/device-ram.sh's recipe:
 mips32r2, -Os, .text plus .rodata).
 

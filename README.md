@@ -197,10 +197,10 @@ more, x25519 129% more, and the pinned handshake 94% more. SHA-256 and
 both signature verifies are unchanged, because SHA-256 does not
 multiply and the verifies read only public bytes.
 
-Flash is 29.0 kB for the default build (`.text` + `.rodata`, `-Os`),
-of which the multiply decomposition is 1.7 kB, nearly all of it
-poly1305's unrolled block. The `PIN=ecdsa` build trades 2.3 kB of RSA
-for 5.9 kB of P-256 and totals 32.6 kB.
+Flash is 28.2 kB for the default build (`.text` + `.rodata`, `-Os`),
+of which the multiply decomposition is 2.3 kB, nearly all of it
+poly1305's unrolled block. The `PIN=ecdsa` build trades 2.2 kB of RSA
+for 5.8 kB of P-256 and totals 31.7 kB.
 
 The hybrid key exchange costs less than its wire size suggests. `KEX=pq`
 adds two ML-KEM key expansions and one decapsulation — the key pair lives
@@ -404,7 +404,7 @@ secrets and MACs and never opens a record.
   no architecture macro carries the claim. The Makefile passes that flag
   for host test binaries, where nothing secret is at risk and solver
   time is, and filters it out of the packaged object. That cost is
-  measured, not assumed: 33% of the pinned handshake's crypto and 1.7 kB
+  measured, not assumed: 33% of the pinned handshake's crypto and 2.3 kB
   of flash, itemised under Speed and flash above.
 
   The decomposition is also what carries every other proof to the

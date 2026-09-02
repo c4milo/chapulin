@@ -49,7 +49,7 @@ does nothing more.
    P-256 behind `make PIN=ecdsa`, never both. Cost: switching means
    rebuilding. Gain: no signature-algorithm negotiation surface and a
    smaller binary. RSA won the default on measurement — its verify is
-   4x faster and 3.8 kB smaller in flash than P-256's — and RSA is what
+   4x faster and 3.5 kB smaller in flash than P-256's — and RSA is what
    stock endpoints hold.
 9. **RSA is verify-only**: exponent fixed at 65537, moduli of 256 to
    384 bytes, the pin is the raw modulus, no PKCS#1 v1.5, deliberately

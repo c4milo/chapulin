@@ -1,34 +1,58 @@
 #!/usr/bin/env bash
 # Models chapulin's flash and stack cost on a mips32r2 device instead of
 # deriving them from a hosted build: cross-compiles the default build's
-# seventeen library sources (no tests) at -Os, reads flash from each
-# object's .text+.rodata sections, and takes worst-case frames from
-# -fstack-usage. The same
-# sources build for the host arch at -Os alongside, so the two columns
-# compare like for like. Objects are sized, never linked, so a
+# library sources (no tests) at -Os, reads flash from each object's
+# .text+.rodata sections, and takes worst-case frames from -fstack-usage.
+# The same sources build for the host arch at -Os alongside, so the two
+# columns compare like for like. Objects are sized, never linked, so a
 # declaration-only libc shim stands in for string.h. Writes
-# bench/results-device.csv. Skips without a MIPS-capable clang.
+# bench/results-device.csv. Fails without the pinned clang.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 ROOT=$PWD
 
+# Every row is a property of what one compiler emits: a re-run under a
+# different clang major moved every row, untouched modules included
+# (https://github.com/c4milo/chapulin/issues/111). So the compiler is the
+# Makefile's CLANG_RV, resolved in its order (the versioned name, the
+# versioned Homebrew keg, then the unversioned candidates), and it must be
+# the LLVM_MAJOR that tools/toolchain.env pins or the script stops. The
+# unversioned candidates can be any major, which is why the check below
+# is not optional.
+# shellcheck source=tools/toolchain.env
+. tools/toolchain.env
+CLANG=$(make -s --no-print-directory -C "$ROOT" print-clang-rv)
+[ -n "$CLANG" ] || {
+    echo "FAIL device model: no clang found; the pin is LLVM $LLVM_MAJOR (tools/toolchain.env)" >&2
+    exit 1
+}
+CLANG_VERSION=$("$CLANG" --version | head -1)
+case "$CLANG_VERSION" in
+*"clang version $LLVM_MAJOR."*) ;;
+*)
+    echo "FAIL device model: $CLANG is $CLANG_VERSION" >&2
+    echo "FAIL device model: the pin is LLVM $LLVM_MAJOR (tools/toolchain.env). Every row of" >&2
+    echo "FAIL device model: bench/results-device.csv is a property of that compiler, so install" >&2
+    echo "FAIL device model: it, or bump the pin and re-measure; never measure with another." >&2
+    exit 1
+    ;;
+esac
+
 TRIPLE="-target mips-none-elf -mcpu=mips32r2"
-CLANG=clang
-# TRIPLE holds three arguments, so it must word-split here. Quoted, clang reads
-# the whole string as one unknown argument and rejects it, both probes fail, and
-# the script skips the measurement instead of taking it.
+# TRIPLE holds three arguments, so it must word-split here. Quoted, clang
+# reads the whole string as one unknown argument and rejects it.
 # shellcheck disable=SC2086
-echo 'int probe;' | $CLANG $TRIPLE -c -x c - -o /dev/null 2>/dev/null \
-    || CLANG=/opt/homebrew/opt/llvm/bin/clang
-# The fallback clang gets the same three arguments, so TRIPLE word-splits again.
-# shellcheck disable=SC2086
-echo 'int probe;' | $CLANG $TRIPLE -c -x c - -o /dev/null 2>/dev/null || {
-    echo "SKIP device model: no clang with a MIPS backend (brew install llvm)" >&2
-    exit 0
+echo 'int probe;' | "$CLANG" $TRIPLE -c -x c - -o /dev/null 2>/dev/null || {
+    echo "FAIL device model: $CLANG has no MIPS backend" >&2
+    exit 1
 }
 SIZE=$(dirname "$CLANG")/llvm-size
-[ -x "$SIZE" ] || SIZE=$(command -v llvm-size \
-    || echo /Library/Developer/CommandLineTools/usr/bin/llvm-size)
+[ -x "$SIZE" ] || SIZE=$(command -v "llvm-size-$LLVM_MAJOR" || command -v llvm-size || true)
+[ -n "$SIZE" ] || {
+    echo "FAIL device model: no llvm-size beside $CLANG or on PATH" >&2
+    exit 1
+}
+HOST_TRIPLE=$("$CLANG" -dumpmachine)
 
 TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT
@@ -80,7 +104,13 @@ for src in $SRCS $EXTRA_SRCS; do
 done
 
 OUT=bench/results-device.csv
-echo "module,mips_text_B,mips_rodata_B,mips_flash_B,mips_max_frame_B,mips_max_frame_fn,host_flash_B,host_max_frame_B" > "$OUT"
+# The comment line names the compiler that produced every row, so a
+# reader can tell a source change from a compiler change.
+# tools/bench-numbers.py skips lines that start with #.
+{
+    echo "# $CLANG_VERSION (LLVM_MAJOR=$LLVM_MAJOR, tools/toolchain.env); device $TRIPLE -Os; host $HOST_TRIPLE -Os"
+    echo "module,mips_text_B,mips_rodata_B,mips_flash_B,mips_max_frame_B,mips_max_frame_fn,host_flash_B,host_max_frame_B"
+} > "$OUT"
 
 T_TEXT=0
 T_RO=0
@@ -115,9 +145,8 @@ for src in $EXTRA_SRCS; do
     echo "$src (PIN=ecdsa),$TEXT,$RO,$((TEXT + RO)),$FRAME,$FN,$HOSTF,$HFRAME" >> "$OUT"
 done
 
-HOST_TRIPLE=$($CLANG -dumpmachine)
-echo "device flash and stack model ($CLANG $TRIPLE -Os; host = $HOST_TRIPLE -Os)"
-column -s, -t < "$OUT"
+echo "device flash and stack model ($CLANG_VERSION; $TRIPLE -Os; host = $HOST_TRIPLE -Os)"
+grep -v '^#' "$OUT" | column -s, -t
 echo
 echo "deepest -fstack-usage frames, mips32r2 -Os (frames, not call-graph"
 echo "peaks; bench/sram.sh walks the host call graph):"

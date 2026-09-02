@@ -215,6 +215,13 @@ LIB_OBJS := $(LIB_SRCS:%.c=bin/obj/$(LIB_VARIANT)/%.o)
 .PHONY: print-lib-srcs
 print-lib-srcs:
 	@echo $(LIB_SRCS)
+# bench/device-ram.sh builds with CLANG_RV, the clang the codegen lints
+# use. It asks here for the same reason: a copy of the candidate order
+# above would drift, and the numbers it publishes are the compiler's
+# (https://github.com/c4milo/chapulin/issues/111).
+.PHONY: print-clang-rv
+print-clang-rv:
+	@echo $(CLANG_RV)
 # RAND=drbg packages the generator, so ch_drbg_seed becomes part of the
 # API the image calls and lib-check covers it like the other four.
 PUBLIC := ch_connect ch_read ch_write ch_close $(PUBLIC_RAND) $(PUBLIC_CA)
