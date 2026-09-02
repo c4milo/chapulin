@@ -397,9 +397,14 @@ secrets and MACs and never opens a record.
   gcc hold zero as well, and the mips gcc folds two of poly1305's 25
   limb products into `madd`, a multiply-accumulate through the 64-bit
   HI/LO pair; `docs/porting.md` records it. What is left is the
-  32-to-32 multiply, which ARM  documents as single-cycle on the M3. mips32r2 does not document its
-  own, so the decomposition narrows that part's exposure rather than
-  closing it; `ct.h` says so. Every target gets the decomposition unless
+  32-to-32 multiply, which ARM documents as single-cycle on the M3.
+  mips32r2 does not document its own, so on that core the decomposition
+  narrows the exposure rather than closing it; `ct.h` says so, and
+  that is the stated assumption, by decision
+  (https://github.com/c4milo/chapulin/issues/53): a vendor statement
+  on the multiply's timing would close it, and nothing in this tree
+  can. The one measured residual is under mips gcc at `-O2`
+  (https://github.com/c4milo/chapulin/issues/122). Every target gets the decomposition unless
   its build passes `CH_NATIVE_WIDEMUL`, and there is no list of
   architectures exempt by name: RISC-V publishes Zkt to attest
   data-independent latency, Arm publishes FEAT_DIT and Intel DOITM, and
