@@ -128,15 +128,19 @@ jobs:
           . tools/toolchain.env
           { echo "ARM_GNU_VERSION=$ARM_GNU_VERSION"
             echo "ARM_GNU_LINUX_SHA256=$ARM_GNU_LINUX_SHA256"
-            echo "LLVM_MAJOR=$LLVM_MAJOR"; } >> "$GITHUB_ENV"
+            echo "LLVM_MAJOR=$LLVM_MAJOR"
+            echo "LLVM_SH_SHA256=$LLVM_SH_SHA256"; } >> "$GITHUB_ENV"
       - run: sudo apt-get update -q && sudo apt-get install -y -q qemu-system-arm
       - name: Install clang-tidy (apt.llvm.org, pinned major)
         # freertos-check lints its test programs against the fetched
         # kernel headers, so the lane needs the same pinned clang-tidy
-        # the check job runs.
+        # the check job runs. The script runs as root, so it is checked
+        # against LLVM_SH_SHA256 first.
         run: |
-          wget -qO llvm.sh https://apt.llvm.org/llvm.sh
-          sudo bash llvm.sh "$LLVM_MAJOR"
+          set -euo pipefail
+          wget -qO "$RUNNER_TEMP/llvm.sh" https://apt.llvm.org/llvm.sh
+          echo "$LLVM_SH_SHA256  $RUNNER_TEMP/llvm.sh" | sha256sum -c -
+          sudo bash "$RUNNER_TEMP/llvm.sh" "$LLVM_MAJOR"
           sudo apt-get install -y "clang-tidy-$LLVM_MAJOR"
       - name: Cache the Arm GNU toolchain
         id: armtc
@@ -169,15 +173,19 @@ jobs:
           . tools/toolchain.env
           { echo "ARM_GNU_VERSION=$ARM_GNU_VERSION"
             echo "ARM_GNU_LINUX_SHA256=$ARM_GNU_LINUX_SHA256"
-            echo "LLVM_MAJOR=$LLVM_MAJOR"; } >> "$GITHUB_ENV"
+            echo "LLVM_MAJOR=$LLVM_MAJOR"
+            echo "LLVM_SH_SHA256=$LLVM_SH_SHA256"; } >> "$GITHUB_ENV"
       - run: sudo apt-get update -q && sudo apt-get install -y -q qemu-system-arm
       - name: Install clang-tidy (apt.llvm.org, pinned major)
         # freertos-check lints its test programs against the fetched
         # kernel headers, so the lane needs the same pinned clang-tidy
-        # the check job runs.
+        # the check job runs. The script runs as root, so it is checked
+        # against LLVM_SH_SHA256 first.
         run: |
-          wget -qO llvm.sh https://apt.llvm.org/llvm.sh
-          sudo bash llvm.sh "$LLVM_MAJOR"
+          set -euo pipefail
+          wget -qO "$RUNNER_TEMP/llvm.sh" https://apt.llvm.org/llvm.sh
+          echo "$LLVM_SH_SHA256  $RUNNER_TEMP/llvm.sh" | sha256sum -c -
+          sudo bash "$RUNNER_TEMP/llvm.sh" "$LLVM_MAJOR"
           sudo apt-get install -y "clang-tidy-$LLVM_MAJOR"
       - name: Cache the Arm GNU toolchain
         id: armtc
@@ -263,6 +271,9 @@ jobs:
           . tools/toolchain.env
           {
             echo "LLVM_MAJOR=$LLVM_MAJOR"
+            # The script that installs them runs as root, so the install
+            # step checks it against this hash before running it.
+            echo "LLVM_SH_SHA256=$LLVM_SH_SHA256"
             echo "CLANG_TIDY=clang-tidy-$LLVM_MAJOR"
             echo "CLANG_FORMAT=clang-format-$LLVM_MAJOR"
             # The codegen lints disassemble what this compiler emits, so it
@@ -286,6 +297,7 @@ jobs:
             echo "GO_VERSION=$GO_VERSION"
             echo "CBMC_VERSION=$CBMC_VERSION"
             echo "KISSAT_VERSION=$KISSAT_VERSION"
+            echo "ELAN_INIT_SHA256=$ELAN_INIT_SHA256"
             echo "ACTIONLINT_VERSION=$ACTIONLINT_VERSION"
             echo "ACTIONLINT_SHA256=$ACTIONLINT_SHA256"
           } >> "$GITHUB_ENV"
@@ -295,9 +307,13 @@ jobs:
           go-version: ${{ env.GO_VERSION }}
 
       - name: Install clang tools (apt.llvm.org, pinned major)
+        # The script runs as root, so it is checked against LLVM_SH_SHA256
+        # first: LLVM_MAJOR pins what it is told to install, not the script.
         run: |
-          wget -qO llvm.sh https://apt.llvm.org/llvm.sh
-          sudo bash llvm.sh "$LLVM_MAJOR"
+          set -euo pipefail
+          wget -qO "$RUNNER_TEMP/llvm.sh" https://apt.llvm.org/llvm.sh
+          echo "$LLVM_SH_SHA256  $RUNNER_TEMP/llvm.sh" | sha256sum -c -
+          sudo bash "$RUNNER_TEMP/llvm.sh" "$LLVM_MAJOR"
           # llvm-$LLVM_MAJOR carries llvm-nm, which lint-runtime-symbols reads
           # the rv32ic objects with. llvm.sh alone does not install it.
           sudo apt-get install -y "clang-tidy-$LLVM_MAJOR" "clang-format-$LLVM_MAJOR" \
@@ -480,9 +496,13 @@ jobs:
       - name: Install elan
         # --default-toolchain none: lake installs the spec/lean-toolchain
         # pin itself, so elan-init needn't pull an unused stable release.
+        # The script is checked against ELAN_INIT_SHA256 before it runs.
         run: |
+          set -euo pipefail
           if [ ! -x "$HOME/.elan/bin/elan" ]; then
-            curl https://elan.lean-lang.org/elan-init.sh -sSf | sh -s -- -y --default-toolchain none
+            curl -sSf -o "$RUNNER_TEMP/elan-init.sh" https://elan.lean-lang.org/elan-init.sh
+            echo "$ELAN_INIT_SHA256  $RUNNER_TEMP/elan-init.sh" | sha256sum -c -
+            sh "$RUNNER_TEMP/elan-init.sh" -y --default-toolchain none
           fi
           echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
 

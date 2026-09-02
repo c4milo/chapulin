@@ -166,9 +166,16 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Load the toolchain pins
+        run: |
+          . tools/toolchain.env
+          echo "ELAN_INIT_SHA256=$ELAN_INIT_SHA256" >> "$GITHUB_ENV"
       - name: Install elan
         run: |
-          curl -sSf https://elan.lean-lang.org/elan-init.sh | sh -s -- -y --default-toolchain none
+          set -euo pipefail
+          curl -sSf -o "$RUNNER_TEMP/elan-init.sh" https://elan.lean-lang.org/elan-init.sh
+          echo "$ELAN_INIT_SHA256  $RUNNER_TEMP/elan-init.sh" | sha256sum -c -
+          sh "$RUNNER_TEMP/elan-init.sh" -y --default-toolchain none
           echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
       - name: Cache Lean toolchain and build
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -211,10 +218,14 @@ jobs:
             echo "CBMC_VERSION=$CBMC_VERSION"
             echo "KISSAT_VERSION=$KISSAT_VERSION"
             echo "GO_VERSION=$GO_VERSION"
+            echo "ELAN_INIT_SHA256=$ELAN_INIT_SHA256"
           } >> "$GITHUB_ENV"
       - name: Install elan
         run: |
-          curl -sSf https://elan.lean-lang.org/elan-init.sh | sh -s -- -y --default-toolchain none
+          set -euo pipefail
+          curl -sSf -o "$RUNNER_TEMP/elan-init.sh" https://elan.lean-lang.org/elan-init.sh
+          echo "$ELAN_INIT_SHA256  $RUNNER_TEMP/elan-init.sh" | sha256sum -c -
+          sh "$RUNNER_TEMP/elan-init.sh" -y --default-toolchain none
           echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
       - name: Cache Lean toolchain and build
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -262,9 +273,16 @@ jobs:
     timeout-minutes: 40
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Load the toolchain pins
+        run: |
+          . tools/toolchain.env
+          echo "ELAN_INIT_SHA256=$ELAN_INIT_SHA256" >> "$GITHUB_ENV"
       - name: Install elan
         run: |
-          curl -sSf https://elan.lean-lang.org/elan-init.sh | sh -s -- -y --default-toolchain none
+          set -euo pipefail
+          curl -sSf -o "$RUNNER_TEMP/elan-init.sh" https://elan.lean-lang.org/elan-init.sh
+          echo "$ELAN_INIT_SHA256  $RUNNER_TEMP/elan-init.sh" | sha256sum -c -
+          sh "$RUNNER_TEMP/elan-init.sh" -y --default-toolchain none
           echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
       - name: Cache Lean toolchain and build
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -316,9 +334,16 @@ jobs:
     timeout-minutes: 40
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Load the toolchain pins
+        run: |
+          . tools/toolchain.env
+          echo "ELAN_INIT_SHA256=$ELAN_INIT_SHA256" >> "$GITHUB_ENV"
       - name: Install elan
         run: |
-          curl -sSf https://elan.lean-lang.org/elan-init.sh | sh -s -- -y --default-toolchain none
+          set -euo pipefail
+          curl -sSf -o "$RUNNER_TEMP/elan-init.sh" https://elan.lean-lang.org/elan-init.sh
+          echo "$ELAN_INIT_SHA256  $RUNNER_TEMP/elan-init.sh" | sha256sum -c -
+          sh "$RUNNER_TEMP/elan-init.sh" -y --default-toolchain none
           echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
       - name: Cache Lean toolchain and build
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -341,9 +366,16 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Load the toolchain pins
+        run: |
+          . tools/toolchain.env
+          echo "ELAN_INIT_SHA256=$ELAN_INIT_SHA256" >> "$GITHUB_ENV"
       - name: Install elan
         run: |
-          curl -sSf https://elan.lean-lang.org/elan-init.sh | sh -s -- -y --default-toolchain none
+          set -euo pipefail
+          curl -sSf -o "$RUNNER_TEMP/elan-init.sh" https://elan.lean-lang.org/elan-init.sh
+          echo "$ELAN_INIT_SHA256  $RUNNER_TEMP/elan-init.sh" | sha256sum -c -
+          sh "$RUNNER_TEMP/elan-init.sh" -y --default-toolchain none
           echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
       - name: Cache Lean toolchain and build
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -362,9 +394,16 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Load the toolchain pins
+        run: |
+          . tools/toolchain.env
+          echo "ELAN_INIT_SHA256=$ELAN_INIT_SHA256" >> "$GITHUB_ENV"
       - name: Install elan
         run: |
-          curl -sSf https://elan.lean-lang.org/elan-init.sh | sh -s -- -y --default-toolchain none
+          set -euo pipefail
+          curl -sSf -o "$RUNNER_TEMP/elan-init.sh" https://elan.lean-lang.org/elan-init.sh
+          echo "$ELAN_INIT_SHA256  $RUNNER_TEMP/elan-init.sh" | sha256sum -c -
+          sh "$RUNNER_TEMP/elan-init.sh" -y --default-toolchain none
           echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
       - name: Cache Lean toolchain and build
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0

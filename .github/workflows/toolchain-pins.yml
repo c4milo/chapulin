@@ -19,6 +19,12 @@ name: toolchain-pins
 # pin keeps its value, because crossing a major is a decision for a person.
 # OpenSSL is the case that made this rule: the pin is 3.6.x and 4.0 shipped.
 #
+# The two install scripts CI executes, llvm.sh and elan-init.sh, have no
+# releases to ask about: tools/toolchain.env pins each by the sha256 of its
+# content. This job downloads both and proposes the new hash when upstream
+# serves a different file. The pull request's check run executes that file,
+# and a person reads the script before merging.
+#
 # ALPINE_DIGEST in bench/toolchain.env is out of scope on purpose. That digest
 # pins the image that produced the published benchmark numbers, so bumping it
 # means re-measuring bench/results-insn.csv and bench/notes-mips.md, which only
@@ -84,6 +90,8 @@ jobs:
             echo "KISSAT_VERSION=$KISSAT_VERSION"
             echo "OPENSSL_VERSION=$OPENSSL_VERSION"
             echo "GO_VERSION=$GO_VERSION"
+            echo "LLVM_SH_SHA256=$LLVM_SH_SHA256"
+            echo "ELAN_INIT_SHA256=$ELAN_INIT_SHA256"
           } >> "$GITHUB_ENV"
 
       - name: Ask upstream for the newest release of each pin
@@ -195,6 +203,25 @@ jobs:
             consider GO_VERSION "$GO_VERSION" "" \
               "https://go.dev/doc/devel/release#go"
 
+          # The install scripts have no release list. Each is pinned by
+          # content, so the only question is whether upstream serves a
+          # different file today: download it, hash it, and propose the
+          # hash when it moved.
+          #
+          #   $1 the variable name in tools/toolchain.env
+          #   $2 its value, the sha256 the file holds
+          #   $3 the script's URL, which the pull request links to
+          rehash() {
+            local name=$1 value=$2 url=$3 file now
+            file="$RUNNER_TEMP/$name"
+            curl -fsSL -o "$file" "$url"
+            now=$(sha256sum "$file" | cut -d' ' -f1)
+            [ "$now" != "$value" ] || return 0
+            printf '%s\t%s\t%s\t%s\n' "$name" "$value" "$now" "$url" >> "$bumps"
+          }
+          rehash LLVM_SH_SHA256 "$LLVM_SH_SHA256" https://apt.llvm.org/llvm.sh
+          rehash ELAN_INIT_SHA256 "$ELAN_INIT_SHA256" https://elan.lean-lang.org/elan-init.sh
+
           if [ ! -s "$bumps" ]; then
             echo "bumped=false" >> "$GITHUB_OUTPUT"
             echo "every pin is the newest release in its major series" \
@@ -245,7 +272,12 @@ jobs:
           # subject-full-stop rules require.
           if [ "$count" -eq 1 ]; then
             IFS=$'\t' read -r name old new url < "$bumps"
-            subject="build(toolchain): bump $name to $new"
+            case "$name" in
+              # A sha256 is 64 characters, over commitlint's 100-column
+              # header cap once the prefix is on; the body carries it.
+              *_SHA256) subject="build(toolchain): repin $name to the script upstream serves" ;;
+              *) subject="build(toolchain): bump $name to $new" ;;
+            esac
           else
             subject="build(toolchain): bump $count pins to their newest upstream releases"
           fi
@@ -269,7 +301,7 @@ jobs:
             echo "pins in \`tools/toolchain.env\` and opened this pull request. It does not"
             echo "merge it."
             echo
-            echo "| pin | from | to | release notes |"
+            echo "| pin | from | to | upstream |"
             echo "| --- | --- | --- | --- |"
             while IFS=$'\t' read -r name old new url; do
               echo "| \`$name\` | \`$old\` | \`$new\` | $url |"
