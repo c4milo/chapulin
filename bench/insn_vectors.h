@@ -1,6 +1,7 @@
-// The measurement inputs bench/insn-mips.sh and bench/insn-m3.sh
-// share. RFC 7748 §5.2 x25519 vector 1; RFC 6979 A.2.5 P-256 key with its
-// "sample" signature (SHA-256 hash of "sample", DER signature).
+// The measurement inputs bench/insn-mips.sh, bench/insn-m3.sh and
+// bench/insn-rv32.sh share. RFC 7748 §5.2 x25519 vector 1; RFC 6979
+// A.2.5 P-256 key with its "sample" signature (SHA-256 hash of
+// "sample", DER signature).
 static const uint8_t X25519_SCALAR[32] = {
     0xa5, 0x46, 0xe3, 0x6b, 0xf0, 0x52, 0x7c, 0x9d, 0x3b, 0x16, 0x15, 0x4b, 0x82, 0x46, 0x5e, 0xdd,
     0x62, 0x14, 0x4c, 0x0a, 0xc1, 0xfc, 0x5a, 0x18, 0x50, 0x6a, 0x22, 0x44, 0xba, 0x44, 0x9a, 0xc4,

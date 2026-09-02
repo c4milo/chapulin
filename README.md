@@ -166,36 +166,41 @@ a 16 kB record buffer unless the peer supports `record_size_limit`.
 
 ## Speed and flash
 
-[`bench/insn-mips.sh`](bench/insn-mips.sh) and [`bench/device-ram.sh`](bench/device-ram.sh) cross-compile for mips32r2
-(the RTL8382-class core) and measure on the real ISA. Cost is published
-as instruction counts, not guessed milliseconds. The millisecond column
-assumes 500 MHz and one instruction per cycle on that core, which is
-optimistic for an in-order design, so read it as a lower bound.
+[`bench/insn-mips.sh`](bench/insn-mips.sh) and [`bench/device-ram.sh`](bench/device-ram.sh) cross-compile for mips32r2,
+the reference target's ISA (32-bit, big-endian, in-order), and measure
+on that ISA. Cost is published as instruction counts, not guessed
+milliseconds. The millisecond column assumes 500 MHz and one
+instruction per cycle on that core, which is optimistic for an in-order
+design, so read it as a lower bound.
 [`bench/insn-m3.sh`](bench/insn-m3.sh) measures the same operations as
 thumbv7m instruction counts on QEMU's Cortex-M3, the core the m3 and
-freertos CI lanes execute, built with the pinned Arm GNU gcc. Both
-columns run the multiply decomposition firmware ships.
+freertos CI lanes execute, built with the pinned Arm GNU gcc.
+[`bench/insn-rv32.sh`](bench/insn-rv32.sh) measures them a third time
+as rv32imac instruction counts: the 32-bit little-endian build the
+riscv32 CI lane ships, compiled by the pinned Bootlin gcc at `-Os` and
+run under qemu-riscv32 user mode. All three instruction columns run
+the multiply decomposition firmware ships.
 
-| work | mips32r2 insns | ms (500 MHz, 1 IPC) | Cortex-M3 insns |
-|---|---|---|---|
-| AEAD seal, per 1 KB record | 82 k | 0.16 | 68 k |
-| SHA-256, per 1 KB | 68 k | 0.14 | 57 k |
-| x25519 scalar multiply | 38.9 M | 78 | 27.4 M |
-| RSA-3072 PSS verify (default) | 11.6 M | 23 | 8.4 M |
-| P-256 verify (`PIN=ecdsa`) | 46.0 M | 92 | 26.7 M |
-| full pinned handshake crypto (default) | 90.2 M | 180 | 63.8 M |
-| ML-KEM-768 keygen (`KEX=pq`) | 3.2 M | 6 | 2.7 M |
-| ML-KEM-768 decapsulate (`KEX=pq`) | 3.6 M | 7 | 3.0 M |
-| full hybrid handshake crypto (`KEX=pq`) | 100.4 M | 201 | 72.2 M |
+| work | mips32r2 insns | ms (500 MHz, 1 IPC) | Cortex-M3 insns | rv32imac insns |
+|---|---|---|---|---|
+| AEAD seal, per 1 KB record | 82 k | 0.16 | 68 k | 107 k |
+| SHA-256, per 1 KB | 68 k | 0.14 | 57 k | 90 k |
+| x25519 scalar multiply | 38.9 M | 78 | 27.4 M | 51.4 M |
+| RSA-3072 PSS verify (default) | 11.6 M | 23 | 8.4 M | 13.2 M |
+| P-256 verify (`PIN=ecdsa`) | 46.0 M | 92 | 26.7 M | 42.6 M |
+| full pinned handshake crypto (default) | 90.2 M | 180 | 63.8 M | 117.0 M |
+| ML-KEM-768 keygen (`KEX=pq`) | 3.2 M | 6 | 2.7 M | 3.6 M |
+| ML-KEM-768 decapsulate (`KEX=pq`) | 3.6 M | 7 | 3.0 M | 4.1 M |
+| full hybrid handshake crypto (`KEX=pq`) | 100.4 M | 201 | 72.2 M | 128.3 M |
 
 The multiply decomposition that keeps secrets off a variable-time
-`umull` sets the first and third rows in both columns. Measured against
-the same benchmark with the native multiply instead: on mips32r2, AEAD
-seal costs 73% more, x25519 36% more, and the whole pinned handshake
-29% more, or 41 ms at 500 MHz; on the Cortex-M3, AEAD seal costs 93%
-more, x25519 129% more, and the pinned handshake 94% more. SHA-256 and
-both signature verifies are unchanged, because SHA-256 does not
-multiply and the verifies read only public bytes.
+`umull` sets the first and third rows in every instruction column.
+Measured against the same benchmark with the native multiply instead:
+on mips32r2, AEAD seal costs 73% more, x25519 36% more, and the whole
+pinned handshake 29% more, or 41 ms at 500 MHz; on the Cortex-M3, AEAD
+seal costs 93% more, x25519 129% more, and the pinned handshake 94%
+more. SHA-256 and both signature verifies are unchanged, because
+SHA-256 does not multiply and the verifies read only public bytes.
 
 Flash is 28.2 kB for the default build (`.text` + `.rodata`, `-Os`),
 of which the multiply decomposition is 2.3 kB, nearly all of it
@@ -535,9 +540,11 @@ where it does not.
 
 You provide two blocking socket callbacks with your own timeouts, and
 `ch_rand_bytes` (`rand.h`). Use the hardware generator if the part has
-one, or the seeded generator in `drbg.[ch]` if it does not — the
-RTL8382-class reference target has none. It refuses to run unseeded;
-[`docs/entropy.md`](docs/entropy.md) covers seed provisioning.
+one, or the seeded generator in `drbg.[ch]` if it does not. The
+reference target has no random-number peripheral, and mips32r2 has no
+randomness instruction, so it uses the seeded one. That generator
+refuses to run unseeded; [`docs/entropy.md`](docs/entropy.md) covers
+seed provisioning.
 
 Say which of the two the image uses. `RAND=extern` leaves
 `ch_rand_bytes` for you to define, so an image that never wired a

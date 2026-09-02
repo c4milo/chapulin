@@ -1,6 +1,7 @@
 // The one platform hook besides I/O: fill p with n cryptographically
 // strong random bytes. A part with a hardware RNG wires this to it. A
-// part without one — the RTL8382-class reference target has none — uses
+// part without one — the reference target has no random-number
+// peripheral, and mips32r2 has no randomness instruction — uses
 // the seeded generator in drbg.[ch] and provisions its seed as
 // docs/entropy.md describes; a bare counter or clock is not a seed.
 // Either way the hook must not fail: a device without entropy has no

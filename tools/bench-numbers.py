@@ -87,27 +87,29 @@ def table_row(readme, label, cell_count):
 
 
 def check_speed(readme):
-    """Each speed row, rendered from the mips32r2 and Cortex-M3 counts."""
+    """Each speed row, rendered from the mips32r2, Cortex-M3 and rv32imac counts."""
     rc = 0
-    insns = read_csv("bench/results-insn.csv")
-    m3 = read_csv("bench/results-insn-m3.csv")
+    columns = [
+        ("bench/results-insn.csv", read_csv("bench/results-insn.csv")),
+        ("bench/results-insn-m3.csv", read_csv("bench/results-insn-m3.csv")),
+        ("bench/results-insn-rv32.csv", read_csv("bench/results-insn-rv32.csv")),
+    ]
     for op, label in OPS.items():
-        if op not in insns:
-            print("lint-bench-numbers: %s missing from bench/results-insn.csv" % op)
+        missing = [path for path, counts in columns if op not in counts]
+        if missing:
+            for path in missing:
+                print("lint-bench-numbers: %s missing from %s" % (op, path))
             rc = 1
             continue
-        if op not in m3:
-            print("lint-bench-numbers: %s missing from bench/results-insn-m3.csv" % op)
-            rc = 1
-            continue
-        want = (render_insns(insns[op]), render_ms(insns[op]), render_insns(m3[op]))
-        got = table_row(readme, label, 3)
+        mips, m3, rv32 = (counts[op] for _, counts in columns)
+        want = (render_insns(mips), render_ms(mips), render_insns(m3), render_insns(rv32))
+        got = table_row(readme, label, len(want))
         if got is None:
             print("lint-bench-numbers: README has no speed row for %r" % label)
             rc = 1
         elif got != want:
-            print("lint-bench-numbers: %r says %s / %s / %s; the CSVs render as %s / %s / %s"
-                  % ((label,) + got + want))
+            print("lint-bench-numbers: %r says %s; the CSVs render as %s"
+                  % (label, " / ".join(got), " / ".join(want)))
             rc = 1
     return rc
 

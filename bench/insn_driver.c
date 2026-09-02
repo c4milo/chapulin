@@ -1,7 +1,8 @@
 // One operation per build, selected by -DOP_*, repeated ITERS times
 // over fixed inputs; the ITERS=0 build of the same source is the
-// baseline. Shared by bench/insn-mips.sh and bench/insn-m3.sh; the
-// runtime under it is per-architecture and lives in each script.
+// baseline. Shared by bench/insn-mips.sh, bench/insn-m3.sh and
+// bench/insn-rv32.sh; the runtime under it is per-architecture and
+// lives in each script.
 #include <stddef.h>
 #include <stdint.h>
 

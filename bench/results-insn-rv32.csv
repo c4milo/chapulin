@@ -1,0 +1,12 @@
+# riscv32-linux-gcc.br_real (Buildroot 2021.11-18033-g83947c7bb6) 14.3.0; -march=rv32imac -mabi=ilp32 -Os; qemu-riscv32 user mode
+op,insns,stack_high_water_bytes
+sha256_1kib,89702,560
+hkdf_expand_label_32b,28519,1024
+aead_seal_1kib,107061,416
+x25519_scalarmult,51417134,1700
+p256_ecdsa_verify,42627238,1512
+rsa_pss_verify_3072,13224140,3800
+mlkem_keygen,3585326,6584
+mlkem_decaps,4073021,11624
+handshake_crypto,116969134,4840
+handshake_crypto_pq,128346407,14776

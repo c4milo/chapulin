@@ -1,7 +1,7 @@
 # Seeding the generator on parts without a hardware RNG
 
-The reference target (RTL8382-class, mips32r2) has no random number
-peripheral and MIPS has no randomness instruction, so `ch_rand_bytes`
+The reference target (a mips32r2 core) has no random number peripheral
+and MIPS has no randomness instruction, so `ch_rand_bytes`
 comes from the fast-key-erasure generator in `drbg.[ch]`, and the
 security of every handshake reduces to the quality of its 32-byte seed.
 The stack draws randomness at exactly two points, both in the handshake:
@@ -96,8 +96,8 @@ the wiring. Three patterns, strongest default first:
    DRBG-behind-TRNG designs. The criterion is the documentation of
    conditioning and failure detection, not the vendor.
 
-The RTL838x-class reference target has none of this — its crypto engine
-does AES/SHA-1/MD5 only, with no random source — so that target always
+The reference target has none of this — no random-number peripheral,
+and no randomness instruction in mips32r2 — so that target always
 links the DRBG and seeds it as described above. The patterns here are
 for better-equipped parts.
 
