@@ -80,10 +80,19 @@ void ct_wipe(void *p, size_t n);
 // (https://github.com/c4milo/chapulin/issues/106). Here nothing is widened
 // before an add, so there is nothing for the pass to find.
 //
+// gcc's other route is a machine pattern, not a pass: on mips32r2 a 32-bit
+// `product + x` is one madd through the HI/LO pair, and at -O2 the register
+// allocator takes it for two of the 75 such sums poly1305's block inlines,
+// on the same 16-bit halves. The gate records those two under the mips gcc
+// at -O2 (WIDEMUL_CEILING_SPEC in the Makefile). The one form that hands gcc
+// no such sum splits every product into 16-bit columns before any add, and
+// costs 38% of AEAD seal on mips32r2, so this ladder stays
+// (https://github.com/c4milo/chapulin/issues/122).
+//
 // A compiler can add a pattern, so the form proves nothing by itself:
 // lint-wide-multiply and lint-wide-multiply-gcc read what each compiler emits
-// and hold every file at zero, and ct_widemul_opaque below is the one caller
-// shape that needed a different form.
+// and hold every file at its recorded ceiling, and ct_widemul_opaque below is
+// the one caller shape that needed a different form.
 static inline uint64_t ct_widemul(uint32_t a, uint32_t b) {
 #ifdef CH_WIDEMUL_NATIVE
     return (uint64_t)a * b;

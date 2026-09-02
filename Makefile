@@ -1273,7 +1273,10 @@ CODEGEN_SRCS := $(foreach e,$(WIDEMUL_CEILING),$(firstword $(subst :, ,$(e))))
 #             (WIDEMUL_GCC), and a spec runs only when that driver's
 #             -dumpmachine starts with machine, so a CI lane runs the spec
 #             its toolchain is for and cannot run another's by mistake.
-#   flags     comma-separated: the CPU or arch selection the spec measures.
+#   flags     comma-separated: the CPU or arch selection the spec measures,
+#             and after it an optimisation level when the spec measures
+#             one other than -Os. The gate passes -Os before the flags,
+#             so a level in the flags wins.
 #   tokens    comma-separated. A token without a leading __ is an opcode
 #             and counts every instruction whose mnemonic begins with it,
 #             so umullne, umulls, umull.w and udiveq count under umull and
@@ -1308,8 +1311,11 @@ WIDEMUL_OPS_RV32I := __muldi3,__udiv,__div,__umod,__mod
 # Both compiler families are measured: CLAUDE.md names gcc-shipping
 # firmware trees as the audience, and gcc does not keep the 16x16 pieces
 # apart where clang does (https://github.com/c4milo/chapulin/issues/86).
-# The four gcc specs are the three CI toolchains: the Arm GNU release
-# ARM_GNU_VERSION pins, Ubuntu 24.04's gcc-mips-linux-gnu, and the Bootlin
+# The five gcc specs are the three CI toolchains: the Arm GNU release
+# ARM_GNU_VERSION pins; Ubuntu 24.04's gcc-mips-linux-gnu, which runs
+# twice -- at -Os like every other spec, and at -O2, the one compiler and
+# level where a secret-bearing file is not at zero
+# (https://github.com/c4milo/chapulin/issues/122); and the Bootlin
 # riscv32 toolchain RV32_TC_VERSION pins, which runs twice -- rv32imac,
 # and rv32ic, the core with no multiplier, where softmul.c compiles.
 WIDEMUL_SPECS := \
@@ -1318,13 +1324,29 @@ WIDEMUL_SPECS := \
   rv32imac:clang:riscv32-unknown-elf:-march=rv32imac:$(WIDEMUL_OPS_RV) \
   m3-gcc:gcc:arm-none-eabi:-mcpu=cortex-m3,-mthumb:$(WIDEMUL_OPS_ARM) \
   mips32r2-gcc:gcc:mips-:-march=mips32r2,-mabi=32:$(WIDEMUL_OPS_MIPS) \
+  mips32r2-gcc-O2:gcc:mips-:-march=mips32r2,-mabi=32,-O2:$(WIDEMUL_OPS_MIPS) \
   rv32imac-gcc:gcc:riscv32-:-march=rv32imac,-mabi=ilp32:$(WIDEMUL_OPS_RV) \
   rv32ic-gcc:gcc:riscv32-:-march=rv32ic,-mabi=ilp32:$(WIDEMUL_OPS_RV32I)
 # Per-spec ceilings, spec/file:count, where a spec measures a file above its
 # WIDEMUL_CEILING entry. Every number is measured with the spec's compiler
-# at its flags and -Os. The only entries are sha3.c under each gcc: the
-# public `% 5`, five hardware divisions where clang's one multiply-high
-# stood.
+# at its flags, at -Os unless the flags carry another level. The entries
+# are sha3.c under each gcc, the public `% 5`, five hardware divisions
+# where clang's one multiply-high stood, and poly1305.c under the mips
+# gcc at -O2, two madd.
+#
+# That two is a record, not an allowance. At -O2 the mips gcc inlines
+# ct_widemul into poly1305's block, and for two of the 75 `product + x`
+# sums the 25 recombinations hand it, its register allocator keeps the
+# accumulator in LO and emits madd (mtlo, madd, mflo) where the other 73
+# get mul and addu; -O1 gives four. The operands are the same 16-bit
+# halves either way. At -Os every gcc keeps ct_widemul out of line, so
+# the -Os specs read the recombination once per file and never inlined
+# under the block's register pressure; this spec is the one that does.
+# The form that hands gcc no such sum costs 38% of AEAD seal and 19% of
+# x25519 on mips32r2, so the ladder stays; docs/porting.md has the
+# measurements, and the inv16-widemul-compare-carries violation is the
+# edit this spec catches and the -Os spec does not
+# (https://github.com/c4milo/chapulin/issues/122).
 #
 # poly1305.c, x25519.c and mlkem_poly.c held non-zero gcc entries once: the
 # leak https://github.com/c4milo/chapulin/issues/86 predicted, found the
@@ -1334,15 +1356,15 @@ WIDEMUL_SPECS := \
 # mask `x & (0 - bit)` in ct_widemul_s and cswap as `x * bit`, a widening
 # multiply by a secret bit. ct.h and x25519.c no longer carry either form
 # (https://github.com/c4milo/chapulin/issues/106), every secret-bearing
-# file is at zero under every spec, and the
+# file is at zero under every -Os spec, and the
 # inv16-widemul-mid-widened violation keeps the first form caught.
 #
 # rv32ic-gcc counts runtime names, since rv32ic has no multiply or divide
 # instruction: the `% 5` is five calls to __modsi3. softmul.c is at zero
 # calls to __muldi3 there, which is the point of the spec
 # (https://github.com/c4milo/chapulin/issues/107).
-WIDEMUL_CEILING_SPEC := m3-gcc/sha3.c:5 mips32r2-gcc/sha3.c:5 rv32imac-gcc/sha3.c:5 \
-                        rv32ic-gcc/sha3.c:5
+WIDEMUL_CEILING_SPEC := m3-gcc/sha3.c:5 mips32r2-gcc/sha3.c:5 mips32r2-gcc-O2/sha3.c:5 \
+                        mips32r2-gcc-O2/poly1305.c:2 rv32imac-gcc/sha3.c:5 rv32ic-gcc/sha3.c:5
 WIDEMUL_RUN ?= clang
 WIDEMUL_GCC ?= $(M3_CC)
 .PHONY: lint-wide-multiply lint-wide-multiply-gcc
@@ -1376,7 +1398,7 @@ lint-wide-multiply:
 	     f=$${e%%:*}; cap=$${e##*:}; \
 	     for o in $(WIDEMUL_CEILING_SPEC); do [ "$${o%%:*}" = "$$arch/$$f" ] && cap=$${o##*:}; done; \
 	     err=$$(mktemp); \
-	     asm=$$($$cc $$flags -Os -std=c11 -ffreestanding -D_DEFAULT_SOURCE -DCH_RAND_EXTERN -DCH_KEX_PQ -I. -S $$f -o - 2>"$$err") || { \
+	     asm=$$($$cc -Os $$flags -std=c11 -ffreestanding -D_DEFAULT_SOURCE -DCH_RAND_EXTERN -DCH_KEX_PQ -I. -S $$f -o - 2>"$$err") || { \
 	       echo "lint-wide-multiply: $$f does not build for $$arch — a count of zero from a failed compile is not a measurement"; \
 	       sed -n '1p' "$$err" | sed 's/^/lint-wide-multiply:   /'; \
 	       rm -f "$$err"; rc=1; continue; }; \

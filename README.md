@@ -384,8 +384,8 @@ secrets and MACs and never opens a record.
   file is at zero except sha3, whose public `% 5` is one multiply-high.
   `make lint-wide-multiply-gcc` runs the same count under the gcc each
   CI lane ships -- the Arm GNU gcc for the Cortex-M3, Ubuntu's gcc for
-  mips32r2 and the Bootlin gcc for rv32imac and rv32ic -- and every
-  file is at zero there too, except sha3's `% 5`, which each gcc lowers
+  mips32r2 and the Bootlin gcc for rv32imac and rv32ic -- and at `-Os`
+  every file is at zero there too, except sha3's `% 5`, which each gcc lowers
   to five hardware divisions, or on rv32ic to five calls to `__modsi3`. It was not always so: gcc fused the
   decomposition's 64-bit cross-product sum back into `umlal`, and
   rewrote the sign mask `x & (0 - bit)` in `ct_widemul_s` and in
@@ -395,18 +395,22 @@ secrets and MACs and never opens a record.
   ([#106](https://github.com/c4milo/chapulin/issues/106));
   `test/violations/inv16-widemul-mid-widened.violation` puts the old
   sum back and requires the gcc gate to object. The gate compiles at
-  `-Os`. Measured by hand at `-O2`, clang, the Arm gcc and the riscv32
-  gcc hold zero as well, and the mips gcc folds two of poly1305's 25
-  limb products into `madd`, a multiply-accumulate through the 64-bit
-  HI/LO pair; `docs/porting.md` records it. What is left is the
-  32-to-32 multiply, which ARM documents as single-cycle on the M3.
-  mips32r2 does not document its own, so on that core the decomposition
-  narrows the exposure rather than closing it; `ct.h` says so, and
-  that is the stated assumption, by decision
+  `-Os`, and the mips gcc spec runs once more at `-O2`, where that gcc
+  inlines `ct_widemul` into poly1305's block and puts two of its 75
+  `product + x` sums through `madd`, a multiply-accumulate through the
+  64-bit HI/LO pair, on the same 16-bit operands. The gate holds that
+  count at two as a record, not an allowance: the one form that hands
+  gcc no such sum costs 38% of AEAD seal on mips32r2, and
+  `docs/porting.md` has the measurements and the violation the `-O2`
+  spec alone catches
+  ([#122](https://github.com/c4milo/chapulin/issues/122)). What is
+  left is the 32-to-32 multiply, which ARM documents as single-cycle
+  on the M3. mips32r2 does not document its own, so on that core the
+  decomposition narrows the exposure rather than closing it; `ct.h`
+  says so, and that is the stated assumption, by decision
   (https://github.com/c4milo/chapulin/issues/53): a vendor statement
   on the multiply's timing would close it, and nothing in this tree
-  can. The one measured residual is under mips gcc at `-O2`
-  (https://github.com/c4milo/chapulin/issues/122). Every target gets the decomposition unless
+  can. Every target gets the decomposition unless
   its build passes `CH_NATIVE_WIDEMUL`, and there is no list of
   architectures exempt by name: RISC-V publishes Zkt to attest
   data-independent latency, Arm publishes FEAT_DIT and Intel DOITM, and

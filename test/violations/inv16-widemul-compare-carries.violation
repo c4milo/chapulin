@@ -1,0 +1,28 @@
+invariant: INV-16
+file: ct.h
+catches: test/docker-mips.sh
+reason: ct_widemul_opaque's compare-carry recombination, written into
+  ct_widemul, hands gcc `ll + (mid << 16)` and `hh + ...` in place of
+  the ladder's sums, and at -O2 for mips32r2 the register allocator puts
+  four of poly1305's sums through madd where the ladder's two are
+  recorded (https://github.com/c4milo/chapulin/issues/122). At -Os every
+  gcc keeps ct_widemul out of line, so the -Os spec reads the lone body
+  at zero and passes this; only the mips32r2-gcc-O2 spec sees the
+  inlined form, only Ubuntu's mips gcc can run it, and the mips lane's
+  container is where that gcc runs locally. Its first step is the gate.
+  The lane skips without docker, and this then reports unguarded rather
+  than caught.
+
+--- old
+    uint32_t t = hl + (ll >> 16);
+    uint32_t w1 = (t & 0xFFFFU) + lh;
+    uint32_t hi = hh + (t >> 16) + (w1 >> 16);
+    uint32_t lo = (w1 << 16) | (ll & 0xFFFFU);
+    return ((uint64_t)hi << 32) | lo;
+--- new
+    uint32_t mid = lh + hl;
+    uint32_t mid_carry = (uint32_t)(mid < lh);
+    uint32_t lo = ll + (mid << 16);
+    uint32_t lo_carry = (uint32_t)(lo < ll);
+    uint32_t hi = hh + (mid >> 16) + (mid_carry << 16) + lo_carry;
+    return ((uint64_t)hi << 32) | lo;

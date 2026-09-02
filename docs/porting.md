@@ -88,8 +88,9 @@ Makefile: the chain from `ct.c` to `tls.c`, plus `drbg.c` and `softmul.c`),
 and counts per file the widening multiplies, the divisions and the calls into
 the compiler's 64-bit division runtime. `make lint-wide-multiply-gcc` is the
 same count under gcc, which is what a firmware tree ships; each CI lane runs it
-with its own toolchain, and the riscv32 lane's gcc matches two specs, rv32imac
-and rv32ic. Point it at the compiler you ship:
+with its own toolchain; the riscv32 lane's gcc matches two specs, rv32imac
+and rv32ic, and the mips lane's matches two, at `-Os` and at `-O2`. Point it
+at the compiler you ship:
 
 ```bash
 make lint-wide-multiply-gcc WIDEMUL_GCC=/path/to/arm-none-eabi-gcc
@@ -113,23 +114,26 @@ past it, and a token that begins with `__` counts every call to a runtime
 routine whose name begins with it, which is where a 64-bit division goes. Both
 can only over-count, and an over-count fails loudly. Run it with the compiler
 and flags you actually ship, since this is a property of codegen and not of
-the source; the gate compiles at `-Os`, so put your own level in the flags
-field if it differs. A new spec starts from the default ceilings, so the first
+the source; the gate passes `-Os` before the flags, so a level in the flags
+field wins, which is how the mips gcc spec below runs a second time at `-O2`.
+A new spec starts from the default ceilings, so the first
 thing it reports is how your compiler lowers sha3's public `% 5`; record that
 count for your label with `WIDEMUL_CEILING_SPEC="mycore/sha3.c:5"`, and read
 every other file it reports above zero as the finding it is.
 
 ### What each compiler emits today
 
-Counts per file at `-Os`, read from the gate. Every source not listed is at
-zero under every compiler.
+Counts per file at `-Os`, and for the mips gcc at `-O2` as well, read from
+the gate. Every source not listed is at zero under every compiler.
 
 | compiler | poly1305.c | x25519.c | mlkem_poly.c | sha3.c (public `% 5`) |
 | --- | --- | --- | --- | --- |
 | clang 23, Cortex-M3, mips32r2, rv32imac | 0 | 0 | 0 | 1 multiply-high |
 | Arm GNU gcc 15.3, Cortex-M3 | 0 | 0 | 0 | 5 `udiv` |
 | gcc 12.4 (Ubuntu 24.04), mips32r2 | 0 | 0 | 0 | 5 `div` |
-| Bootlin gcc 14.3, rv32imac | 0 | 0 | 0 | 5 `rem` || Bootlin gcc 14.3, rv32ic | 0 | 0 | 0 | 5 `__modsi3` |
+| gcc 12.4 (Ubuntu 24.04), mips32r2, `-O2` | 2 `madd` | 0 | 0 | 5 `div` |
+| Bootlin gcc 14.3, rv32imac | 0 | 0 | 0 | 5 `rem` |
+| Bootlin gcc 14.3, rv32ic | 0 | 0 | 0 | 5 `__modsi3` |
 
 rv32ic has no multiply or divide instruction to count, so that spec counts
 the runtime routines instead: a 64-bit product is a call to `__muldi3`, which
@@ -151,12 +155,44 @@ the sign bit, and every row went to zero
 `test/violations/inv16-widemul-mid-widened.violation` puts the old sum back
 and requires the gcc gate to fail.
 
-The gate compiles at `-Os`. Measured by hand at `-O2` with the same four
-compilers: clang, the Arm gcc and the riscv32 gcc hold every row at zero, and
-the mips gcc folds two of poly1305's 25 limb products into `madd`, a
-multiply-accumulate through the 64-bit HI/LO pair, with the other 23 and the
-other two files at zero. The Arm gcc lowers sha3's `% 5` to four `umull` at
-`-O2` where `-Os` gave five `udiv`; both divide public loop counters.
+The gate compiles at `-Os`, and the mips gcc spec runs once more at `-O2`,
+the one compiler and level where a secret-bearing file is not at zero. Its
+count of two is a record, not an allowance, and this is what it records
+([#122](https://github.com/c4milo/chapulin/issues/122)).
+
+At `-O2` the mips gcc inlines `ct_widemul` into poly1305's block, whose 25
+limb products hand it 75 sums of the shape `product + x`. On mips32r2 that
+shape is one machine pattern, `madd`, a multiply-accumulate through the
+64-bit HI/LO pair, and the register allocator takes it for two of the 75
+(`mtlo`, `madd`, `mflo`) where the other 73 get `mul` and `addu`; `-O1`
+gives four and `-O3` two. The operands are the same 16-bit halves either
+way, so the two change which multiplier runs, not the operand width the
+decomposition narrows. The zero at `-Os` is not the recombination's doing:
+there the Arm, mips and riscv32 gccs all keep `ct_widemul` out of line, 28
+to 30 references in poly1305's assembly, so the `-Os` specs read the
+recombination once per file and never inlined under the block's register
+pressure. The `-O2` spec is the one that does. clang inlines it at every
+level and reads zero at every level.
+
+Steering the C was measured before the record was chosen. The one form that
+hands gcc no `product + x` sum at all splits every product into 16-bit
+columns before any add. It holds zero at `-O1`, `-O2`, `-O3` and `-Os` under
+every compiler in the table, and it costs 38% of AEAD seal (81,976 to
+112,908 instructions per 1 KB) and 19% of x25519 (38.9 M to 46.4 M) on
+mips32r2, measured with `bench/insn-mips.sh`, and 26% to 42% of poly1305's
+block statically under clang on the three targets. Two cheaper forms that
+split only some of the products also read zero on this gcc, but each still
+hands it such a sum, so their zero is the allocator's choice and the next
+gcc need not repeat it. Reassociating the ladder's sums reads two, and the
+compare-carry recombination `ct_widemul_opaque` uses reads four. The ladder
+stays. The violation
+`test/violations/inv16-widemul-compare-carries.violation` writes that
+compare-carry form into `ct_widemul` and requires `test/docker-mips.sh`, the
+local run of the mips lane, to fail: the `-O2` spec reads four against its
+ceiling of two, and the `-Os` spec reads zero.
+
+The Arm gcc lowers sha3's `% 5` to four `umull` at `-O2` where `-Os` gave
+five `udiv`; both divide public loop counters.
 
 ### What the decomposition does not cover
 

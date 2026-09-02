@@ -392,7 +392,9 @@ which convention holds them.
   each CI lane ships, and counts per file the widening multiplies, the
   divisions and the 64-bit division runtime calls, each opcode matched
   as a prefix so `umullne` counts as `umull`; every file holds a
-  recorded ceiling, zero except sha3's public `% 5`.
+  recorded ceiling, zero except sha3's public `% 5` and, under the
+  mips gcc at `-O2`, the two `madd` poly1305's block gets on 16-bit
+  operands ([#122](https://github.com/c4milo/chapulin/issues/122)).
   `lint-runtime-symbols` builds for rv32ic, where
   there is no multiplier at all, and holds per file the runtime-library
   calls it may make — `softmul.c` supplies constant-time `__mulsi3` and
