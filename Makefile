@@ -468,10 +468,6 @@ check: bin/unit bin/unit_ca bin/unit_pq bin/tlsclient bin/tlsclient_ecdsa bin/tl
 	# without this leg neither the export list nor the C++ forwarder is
 	# checked by anything.
 	$(MAKE) lib-check cxx-check RAND=extern TRUST=ca
-	# The CA arm packages the provisioning reader and its fifth export;
-	# without this leg neither the export list nor the C++ forwarder is
-	# checked by anything.
-	$(MAKE) lib-check cxx-check RAND=extern TRUST=ca
 	./bin/unit
 	./bin/unit_ca
 	./bin/unit_pq
