@@ -20,6 +20,9 @@
 
 # Measured with cbmc 6.11.0, the version CI pins.
 
+aead 97.4
+aead_forge 96.9
+aead_overlap 97.4
 buf 90.2
 certparse 29.2
 chacha20 98.1
@@ -38,16 +41,23 @@ record 95.0
 rsa_mul 32.3
 softmul 91.3
 
-# Not gated, because `cbmc --cover location` does not converge on them
-# at five minutes a harness. This is a limit of the measurement, not a
-# gap someone forgot: the same solver cost that makes the proof slow
-# makes counting its reachable locations slow. The nightly gets a
-# longer budget and reports whatever it manages; add a line here from
-# its table when one of these starts finishing.
+# Not gated, because `cbmc --cover location` does not converge on them.
+# This is a limit of the measurement, not a gap someone forgot: the
+# same solver cost that makes the proof slow makes counting its
+# reachable locations slow. The nightly gets a longer budget and
+# reports whatever it manages; add a line here from its table when one
+# of these starts finishing. Each got five minutes a harness, except
+# handshake_pin and handshake_psk, which got ninety minutes each under
+# the flags proof/coverage.py passes (cbmc 6.11.0, built-in solver) and
+# were still in propositional reduction when the budget killed them, at
+# 8.3 GB and 7.4 GB peak RSS. proof/coverage.py stops a harness at
+# 900 s, so the nightly reports both as timed out.
 #
 #   eeparse
 #   handshake_parser
+#   handshake_pin
 #   handshake_post
+#   handshake_psk
 #   io
 #   mlkem
 #   mlkem_poly
