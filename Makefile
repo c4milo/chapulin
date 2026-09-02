@@ -454,12 +454,14 @@ check: bin/unit bin/unit_ca bin/unit_pq bin/tlsclient bin/tlsclient_ecdsa bin/tl
 	# The packaged object is built once per entropy pattern, because
 	# lib-check reads a different export list and a different import
 	# list in each. Only the object is built twice: the examples and
-	# hpp_test define ch_rand_bytes, so they are extern-pattern programs.
-	# Linking one against the drbg object succeeds and produces a binary
-	# that cannot run — its own hook is dead code and nothing calls
-	# ch_drbg_seed, so the first draw faults on CH_ASSERT(g_seeded).
-	# The extern pass therefore runs last, since bin/chapulin.o and the
-	# example binaries land at fixed paths and e2e below runs them.
+	# hpp_test define ch_rand_bytes, so they are extern-pattern programs
+	# and build in the extern pass only. The examples compile under the
+	# object's defines, so against the drbg object they stop at cfg.h,
+	# which rejects two entropy declarations, instead of linking into a
+	# binary whose first draw aborts on drbg.c's CH_ASSERT(g_seeded).
+	# Pass order does not matter to the fixed paths e2e runs: lib-check
+	# and the example targets copy the variant they built into place on
+	# every invocation.
 	$(MAKE) lib-check RAND=drbg
 	$(MAKE) lib-check cxx-check examples-check RAND=extern
 	# The CA arm packages the provisioning reader and its fifth export;
@@ -1032,22 +1034,45 @@ else
 	  || $(COMMITLINT) --from=HEAD~1 --to=HEAD
 endif
 
-# The examples build and are linted, but never run: e2e covers live
-# behaviour. Building them is what stops the API drifting out from
-# under the one place a reader learns it from. ca_client.c needs the
-# CA-trust library, so it builds only in that mode.
 # The examples build against the packaged library, the way a consumer
 # links them, and e2e.sh then runs them against real servers. Building
 # alone catches a changed signature; only running catches a changed
 # meaning, and the reviewers found exactly that class of bug in the
-# first drafts.
-bin/example_psk: examples/psk_client.c $(LIB_OBJ)
-	@mkdir -p bin
-	$(CC) $(CFLAGS) -I. -o $@ examples/psk_client.c $(LIB_OBJ)
+# first drafts. Building them is also what stops the API drifting out
+# from under the one place a reader learns it from.
+#
+# psk_client and pinned_client link $(LIB_OBJ), so they are built under
+# the variant that built it and compiled under $(LIB_DEF), the defines
+# the object was compiled with. session.h sizes ch_tls.tx by CH_KEX_PQ,
+# so an example compiled without the object's defines declares a ch_tls
+# of another size, and the link still succeeds. The fixed paths e2e.sh
+# runs are copies, refreshed on every invocation the way lib refreshes
+# bin/chapulin.o, because a timestamp cannot say which variant wrote
+# them: `make bin/example_psk RAND=drbg` followed in the same second by
+# `make examples-check RAND=extern` relinked nothing, since make 3.81
+# compares mtimes to the second, and e2e then ran a drbg-linked example
+# that aborted on drbg.c's CH_ASSERT(g_seeded)
+# (https://github.com/c4milo/chapulin/issues/89).
+EXAMPLE_PSK := bin/obj/$(LIB_VARIANT)/example_psk
+EXAMPLE_PINNED := bin/obj/$(LIB_VARIANT)/example_pinned
 
-bin/example_pinned: examples/pinned_client.c $(LIB_OBJ)
-	@mkdir -p bin
-	$(CC) $(CFLAGS) -I. -o $@ examples/pinned_client.c $(LIB_OBJ)
+$(EXAMPLE_PSK): examples/psk_client.c $(LIB_OBJ)
+	$(CC) $(CFLAGS) $(LIB_DEF) -I. -o $@ examples/psk_client.c $(LIB_OBJ)
+
+$(EXAMPLE_PINNED): examples/pinned_client.c $(LIB_OBJ)
+	$(CC) $(CFLAGS) $(LIB_DEF) -I. -o $@ examples/pinned_client.c $(LIB_OBJ)
+
+# Phony on purpose: the file at each path is whichever variant was copied
+# there last, so the copy runs on every invocation instead of when make
+# judges the path stale. The paths stay make targets because
+# test/violations.py builds and deletes the binaries e2e.sh runs by
+# these names.
+.PHONY: bin/example_psk bin/example_pinned
+bin/example_psk: $(EXAMPLE_PSK)
+	@cp $(EXAMPLE_PSK) $@
+
+bin/example_pinned: $(EXAMPLE_PINNED)
+	@cp $(EXAMPLE_PINNED) $@
 
 # The CA example needs the CA-trust library, so it links its own copy of
 # the sources rather than the packaged raw-pin object.
