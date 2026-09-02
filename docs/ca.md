@@ -394,6 +394,16 @@ reprovisioning. A spare boxed today keeps its epoch while the fleet
 moves on, so after that many steps it can no longer connect.
 Reprovision stock before it ships.
 
+That is the only recovery, by decision
+(https://github.com/c4milo/chapulin/issues/66). The alternative is a
+remote ladder: present certificates at increasing epochs, each within
+`CH_EPOCH_BOUND` of the last, until the device catches up. A ladder
+turns a bounded stranding into an unbounded walk, and every step the
+device accepts is a step an attacker holding an old leaf can replay.
+The bound exists to make that walk impossible, so `ch_connect` does
+not offer one. A boxed spare is a stock problem: reprovision it, or
+ship it before the fleet moves `CH_EPOCH_BOUND` steps.
+
 ### Provisioning a device (factory and firmware)
 
 - Store the fleet's current epoch at manufacture. `ch_connect` fails
