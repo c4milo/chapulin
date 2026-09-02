@@ -45,9 +45,11 @@ x25519_tail 53.1
 # Not gated, because `cbmc --cover location` does not converge on them.
 # This is a limit of the measurement, not a gap someone forgot: the
 # same solver cost that makes the proof slow makes counting its
-# reachable locations slow. The nightly gets a longer budget and
-# reports whatever it manages; add a line here from its table when one
-# of these starts finishing. Each got five minutes a harness, except
+# reachable locations slow. proof/coverage.py reads this block and
+# skips them: running them anyway cost the nightly its runner (a cover
+# formula grew past the VM's memory on 2026-09-02 and the job died
+# without a log). Re-measure one by hand with a longer budget, and move
+# it to the roster above when it converges. Each got five minutes a harness, except
 # handshake_pin and handshake_psk, which got ninety minutes each under
 # the flags proof/coverage.py passes (cbmc 6.11.0, built-in solver) and
 # were still in propositional reduction when the budget killed them, at

@@ -185,6 +185,43 @@ def reach_floors():
     return floors
 
 
+def reach_not_gated():
+    """The harnesses reach-floors.txt lists as not gated: cover does not
+    converge on them, so the nightly does not run them. The list is the
+    indented comment block under the file's "Not gated" heading."""
+    path = ROOT / "proof" / "reach-floors.txt"
+    names = set()
+    if not path.exists():
+        return names
+    for line in path.read_text().splitlines():
+        m = re.fullmatch(r"#\s{3}([a-z0-9_]+)", line)
+        if m:
+            names.add(m.group(1))
+    return names
+
+
+# A cover run that the floors file does not list as non-converging is
+# expected to finish in seconds to minutes and well under this much
+# memory. The cap turns an outlier into a reported failure; without it,
+# one runaway formula takes the whole runner down and the nightly logs
+# nothing (the 2026-09-02 run died that way).
+REACH_MEMORY_BYTES = 12 * 1024 ** 3
+
+
+def _cap_memory():
+    import resource
+    try:
+        _, hard = resource.getrlimit(resource.RLIMIT_AS)
+        cap = REACH_MEMORY_BYTES
+        if hard != resource.RLIM_INFINITY:
+            cap = min(cap, hard)
+        resource.setrlimit(resource.RLIMIT_AS, (cap, hard))
+    except (ValueError, OSError):
+        # macOS refuses some address-space limits; the cap protects the
+        # Linux runner, and a run without it is what every run was before.
+        pass
+
+
 def reach_table(runs):
     """Per harness, the share of its goto locations CBMC can reach at
     the configured bound. A low number means the bound stops the proof
@@ -192,6 +229,7 @@ def reach_table(runs):
     dead = []
     fell = []
     floors = reach_floors()
+    not_gated = reach_not_gated()
     out = ["### Reachability at the configured bounds", "",
            "`cbmc --cover location`: the share of program locations the",
            "harness can reach. A low number means the unwind bound stops",
@@ -200,6 +238,11 @@ def reach_table(runs):
     for name in sorted(runs):
         harness = ROOT / "proof" / f"{name}_harness.c"
         if not harness.exists():
+            continue
+        if name in not_gated:
+            out.append(f"| `{name}` | not gated: cover does not converge "
+                       "(proof/reach-floors.txt) |")
+            print(f"proof-reach: {name} not gated, skipped", flush=True)
             continue
         tier, unwind, linked, unwindset, defines = runs[name]
         cmd = ["cbmc", str(harness)]
@@ -211,14 +254,20 @@ def reach_table(runs):
         if unwindset:
             cmd += ["--unwindset", unwindset]
         try:
-            res = subprocess.run(cmd, capture_output=True, text=True, timeout=900)
+            res = subprocess.run(cmd, capture_output=True, text=True, timeout=900,
+                                 preexec_fn=_cap_memory)
         except subprocess.TimeoutExpired:
             out.append(f"| `{name}` | timed out |")
+            print(f"proof-reach: {name} timed out", flush=True)
             continue
         m = re.search(r"\*\* (\d+) of (\d+) covered \(([0-9.]+)%\)", res.stdout)
         if not m:
-            out.append(f"| `{name}` | not measured |")
+            why = "over memory" if res.returncode < 0 or "bad_alloc" in res.stderr \
+                else "not measured"
+            out.append(f"| `{name}` | {why} |")
+            print(f"proof-reach: {name} {why}", flush=True)
             continue
+        print(f"proof-reach: {name} {m.group(3)}%", flush=True)
         reached, total, pct = int(m.group(1)), int(m.group(2)), m.group(3)
         floor = floors.get(name)
         mark = ""

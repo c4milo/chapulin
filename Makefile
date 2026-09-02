@@ -650,7 +650,7 @@ COV_LIB_OBJS = $(SRCS:%.c=$$d/%.o)
 # runs it (https://github.com/c4milo/chapulin/issues/55).
 .PHONY: proof-reach
 proof-reach:
-	python3 proof/coverage.py --reach
+	python3 -u proof/coverage.py --reach
 
 .PHONY: proof-coverage
 proof-coverage:
