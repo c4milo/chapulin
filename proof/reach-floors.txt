@@ -1,6 +1,19 @@
 # Reachability floors: the share of program locations each harness reaches
 # at its configured bound, measured by `cbmc --cover location` under the
 # same --unwind, --unwindset and -D flags its launch line proves under.
+# proof/coverage.py builds that command from proof/run.sh: the launch
+# line's own sources and flags, then the -D flags launch() adds to every
+# harness. `python3 -u proof/coverage.py --reach --only NAME` measures one
+# harness that way and prints the command it ran, so a floor recorded by
+# hand and the nightly's number come from one command. From 6552715,
+# which added -DCH_NATIVE_WIDEMUL to launch(), until
+# https://github.com/c4milo/chapulin/issues/113 the cover command left
+# that define out, so the nightly measured poly1305 on ct.h's 16x16
+# decomposition and held it to a floor recorded on the native multiply
+# its proof compiles. `--cover location` counts basic blocks, and each
+# form of ct_widemul is one block, so poly1305 measured 149 of 158
+# (94.3%) under both commands on 2026-09-02: the fix moved the command,
+# not a floor.
 #
 # Why a floor rather than a threshold: a harness that stubs its dependencies
 # legitimately reaches less of its translation unit than one that compiles
@@ -48,22 +61,34 @@ x25519_tail 53.1
 # reachable locations slow. proof/coverage.py reads this block and
 # skips them: running them anyway cost the nightly its runner (a cover
 # formula grew past the VM's memory on 2026-09-02 and the job died
-# without a log). Re-measure one by hand with a longer budget, and move
-# it to the roster above when it converges. Each got five minutes a harness, except
-# handshake_pin and handshake_psk, which got ninety minutes each under
-# the flags proof/coverage.py passes (cbmc 6.11.0, built-in solver) and
-# were still in propositional reduction when the budget killed them, at
-# 8.3 GB and 7.4 GB peak RSS. proof/coverage.py stops a harness at
-# 900 s, so the nightly reports both as timed out. x25519_step was
-# still in propositional reduction at 4.4 GB when the 900 s cap
-# stopped it; x25519_tail, the same stub over four mul instances
-# instead of ten, finishes in 436 s and is gated above.
+# without a log). Re-measure one by hand: `--only NAME` runs a harness
+# named here under the gate's command and 900 s budget, and the command
+# it prints runs under any budget. Move it to the roster above when it
+# converges. Each got five minutes a harness, except handshake_pin and
+# handshake_psk, which got ninety minutes each, under the command
+# proof/coverage.py passed before
+# https://github.com/c4milo/chapulin/issues/113 (cbmc 6.11.0, built-in
+# solver, no -DCH_NATIVE_WIDEMUL). Of this block only mlkem_poly compiles
+# a ct_widemul-family function, so that define changes its formula
+# alone; the others were measured under the formula the gate runs now.
+# handshake_pin and handshake_psk were still in propositional reduction
+# when the budget killed them, at 8.3 GB and 7.4 GB peak RSS.
+# proof/coverage.py stops a harness at 900 s, so the nightly reports
+# both as timed out. hkdf_expand and hkdf_expand_label converge (60.0%
+# and 81.2% on 2026-09-02, about 520 s each) but at 16 GB of memory,
+# the whole of the nightly runner, which is the profile that killed the
+# job; they carry no floor, so they are listed here rather than run.
+# x25519_step was still in propositional reduction at 4.4 GB when the
+# 900 s cap stopped it; x25519_tail, the same stub over four mul
+# instances instead of ten, finishes in 436 s and is gated above.
 #
 #   eeparse
 #   handshake_parser
 #   handshake_pin
 #   handshake_post
 #   handshake_psk
+#   hkdf_expand
+#   hkdf_expand_label
 #   io
 #   mlkem
 #   mlkem_poly

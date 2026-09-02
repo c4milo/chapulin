@@ -27,6 +27,7 @@ Writes bin/proof-coverage.md and prints a summary.
 import argparse
 import pathlib
 import re
+import shlex
 import subprocess
 import sys
 
@@ -50,9 +51,43 @@ def launch_lines():
     for m in re.finditer(r'^launch (\S+) (\w+) (\S+) (\d+) "([^"]*)"(.*)$', text, re.M):
         tier, _mode, name, unwind, unwindset, rest = m.groups()
         linked = re.findall(r"\b([a-z0-9_]+\.c)\b", rest)
+        # Every flag the launch line carries, -D and otherwise: a launch
+        # line that needs --object-bits to prove needs it to cover too,
+        # or cbmc stops with "too many addressed objects" and the harness
+        # reports not measured -- which is how handshake_record's floor
+        # went unenforced (https://github.com/c4milo/chapulin/issues/57).
         defines = re.findall(r"(-D\S+)", rest)
-        runs[name] = (tier, int(unwind), set(linked), unwindset, defines)
+        options = re.findall(r"(--[a-z-]+ \S+)", rest)
+        flags = defines + [w for opt in options for w in opt.split()]
+        runs[name] = (tier, int(unwind), set(linked), unwindset, flags)
     return runs
+
+
+def launch_defines():
+    """The -D flags run.sh's launch() adds to every harness, in order.
+
+    Read from run.sh, not kept as a second list here. run.sh is the one
+    statement of what each proof compiles: a launch line carries the
+    flags one harness needs, and launch() adds the ones every harness
+    shares. A copy here drifted once: it named -DCH_RAND_EXTERN and left
+    out -DCH_NATIVE_WIDEMUL, which 6552715 added to launch(). From then
+    on the nightly measured poly1305 on the 16x16 decomposition in ct.h
+    and held it to a floor recorded on the native multiply its proof
+    compiles (https://github.com/c4milo/chapulin/issues/113). A flag file
+    both scripts read would end the drift too, but it would separate
+    each flag from the launch() comment that says why it is there, and
+    this script already reads run.sh for the launch lines.
+
+    ctwidemul needs no exception: launch() passes it -DCH_NATIVE_WIDEMUL
+    like every other harness, and its source defines CH_CT_WIDEMUL,
+    which ct.h lets win. The cover command copies that, not a rule."""
+    text = (ROOT / "proof" / "run.sh").read_text()
+    m = re.search(r"local args=\((.*?)\)", text, re.S)
+    defines = re.findall(r"(-D\S+)", m.group(1)) if m else []
+    if not defines:
+        sys.exit("proof-coverage: no -D flag found in run.sh's launch() "
+                 "`local args=(...)`; update launch_defines()")
+    return defines
 
 
 def included_harnesses():
@@ -86,9 +121,18 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--reach", action="store_true",
                     help="measure reachability with cbmc --cover location (slow)")
+    ap.add_argument("--only", action="append", default=[], metavar="HARNESS",
+                    help="with --reach, measure just this harness (repeatable) "
+                         "under the gate's own command; this is how one floor "
+                         "gets re-measured by hand. A harness the floors file "
+                         "lists as not gated runs when named here.")
     args = ap.parse_args()
 
     runs = launch_lines()
+    for name in args.only:
+        if name not in runs:
+            sys.exit(f"proof-coverage: --only {name} matches no launch line "
+                     "in proof/run.sh")
     shared = included_harnesses()
     proven = {}   # library file -> harnesses that compile it and run
     dormant = []  # harness with no launch line and no harness including it
@@ -148,7 +192,7 @@ def main():
 
     reach_dead, reach_fell = [], []
     if args.reach:
-        reach_lines, reach_dead, reach_fell = reach_table(runs)
+        reach_lines, reach_dead, reach_fell = reach_table(runs, set(args.only))
         lines += reach_lines
 
     REPORT.parent.mkdir(exist_ok=True)
@@ -222,14 +266,29 @@ def _cap_memory():
         pass
 
 
-def reach_table(runs):
+def reach_command(name, runs, shared_defines):
+    """The cover command for one harness: what its launch line links and
+    bounds, then the defines launch() adds, in run.sh's order."""
+    _tier, unwind, linked, unwindset, defines = runs[name]
+    cmd = ["cbmc", str(ROOT / "proof" / f"{name}_harness.c")]
+    cmd += [str(ROOT / src) for src in sorted(linked)]
+    cmd += [*defines, *shared_defines, "-I", str(ROOT),
+            "--cover", "location", "--unwind", str(unwind)]
+    if unwindset:
+        cmd += ["--unwindset", unwindset]
+    return cmd
+
+
+def reach_table(runs, only=frozenset()):
     """Per harness, the share of its goto locations CBMC can reach at
     the configured bound. A low number means the bound stops the proof
-    short of the code it claims to cover."""
+    short of the code it claims to cover. A non-empty `only` restricts
+    the run to those harnesses and lets a not-gated one run."""
     dead = []
     fell = []
     floors = reach_floors()
     not_gated = reach_not_gated()
+    shared_defines = launch_defines()
     out = ["### Reachability at the configured bounds", "",
            "`cbmc --cover location`: the share of program locations the",
            "harness can reach. A low number means the unwind bound stops",
@@ -237,22 +296,17 @@ def reach_table(runs):
            "| harness | locations reached |", "| --- | --- |"]
     for name in sorted(runs):
         harness = ROOT / "proof" / f"{name}_harness.c"
-        if not harness.exists():
+        if not harness.exists() or (only and name not in only):
             continue
-        if name in not_gated:
+        if name in not_gated and name not in only:
             out.append(f"| `{name}` | not gated: cover does not converge "
                        "(proof/reach-floors.txt) |")
             print(f"proof-reach: {name} not gated, skipped", flush=True)
             continue
-        tier, unwind, linked, unwindset, defines = runs[name]
-        cmd = ["cbmc", str(harness)]
-        cmd += [str(ROOT / src) for src in sorted(linked)]
-        # cfg.h demands a declared entropy pattern, and run.sh gives every
-        # harness the extern one.
-        cmd += ["-DCH_RAND_EXTERN", *defines, "-I", str(ROOT),
-                "--cover", "location", "--unwind", str(unwind)]
-        if unwindset:
-            cmd += ["--unwindset", unwindset]
+        cmd = reach_command(name, runs, shared_defines)
+        # The log carries the exact command, so a floor can be re-measured
+        # by hand under the flags the gate used and not a reconstruction.
+        print(f"proof-reach: {name} command: {shlex.join(cmd)}", flush=True)
         try:
             res = subprocess.run(cmd, capture_output=True, text=True, timeout=900,
                                  preexec_fn=_cap_memory)
@@ -266,6 +320,11 @@ def reach_table(runs):
                 else "not measured"
             out.append(f"| `{name}` | {why} |")
             print(f"proof-reach: {name} {why}", flush=True)
+            # A harness with a floor that returns no number is a failed
+            # gate, not a blank: the floor exists to notice regressions,
+            # and a silent blank is how one went unnoticed.
+            if name in floors:
+                fell.append((name, 0.0, floors[name]))
             continue
         print(f"proof-reach: {name} {m.group(3)}%", flush=True)
         reached, total, pct = int(m.group(1)), int(m.group(2)), m.group(3)
