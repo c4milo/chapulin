@@ -382,7 +382,12 @@ secrets and MACs and never opens a record.
   at full 32-bit width, and the products themselves against the C
   operator at 8-bit operands, the widest bound whose formula converges.
   `make timing` measures the decomposed path rather than the host's
-  native one.
+  native one. `make ct-widemul-check`, in `check-slow`, rebuilds the
+  unit, ML-KEM and Wycheproof binaries with `CH_CT_WIDEMUL`, so the
+  RFC 7748, RFC 8439 and RFC 8448 vectors, the FIPS 203 known answers
+  and the Wycheproof cases are also checked over the decomposition as
+  poly1305, x25519 and mlkem_poly inline it — evidence at those inputs,
+  while the proof stays at 8-bit operands.
 - The quality of the random bytes, which rests on nothing here at all.
   `ch_rand_bytes` is the image's to supply, and no check in a library
   can grade it: a weak generator completes the handshake, sends a key

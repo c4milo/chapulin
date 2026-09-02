@@ -388,6 +388,12 @@ which convention holds them.
   beyond the ones recorded — `softmul.c` supplies constant-time
   `__mulsi3` and `__muldi3` so the library's branching ones are never
   linked.
+  Both count instructions; neither checks an answer. `make
+  ct-widemul-check` (in `check-slow`) runs the unit, ML-KEM and
+  Wycheproof vectors over the decomposition itself, which every other
+  host binary compiles out, and `make test-invariants` requires it to
+  fail on a wrong recombination and on a narrowed `ct_widemul_opaque`
+  operand.
 - **Violation.** A PR compares a binder or tag with memcmp because
   the linker size looked better.
 - See [decisions: Cryptography](decisions.md#cryptography).

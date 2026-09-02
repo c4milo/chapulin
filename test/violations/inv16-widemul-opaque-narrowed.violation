@@ -1,0 +1,14 @@
+invariant: INV-16
+file: ct.h
+catches: mlkem_test_ct_widemul
+reason: narrowing ct_widemul_opaque's volatile copy of b to 16 bits
+  truncates the 1290168 mlk_compress passes, so every compressed
+  coefficient is wrong; the native builds in check never run this arm,
+  softmul_test skips the opaque form, and the equivalence proof's 8-bit
+  bound never reaches an operand the narrowing changes, so only the
+  FIPS 203 answers over the decomposition see it
+
+--- old
+    volatile uint32_t vb = b;
+--- new
+    volatile uint16_t vb = (uint16_t)b;

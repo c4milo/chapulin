@@ -39,7 +39,9 @@ void ct_wipe(void *p, size_t n);
 //                      firmware passes it only with a vendor statement.
 //   CH_CT_WIDEMUL      force the decomposition, whatever else is set.
 //                      bin/timing and proof/ctwidemul_harness.c use it to
-//                      measure and prove the path that ships.
+//                      measure and prove the path that ships, and
+//                      `make ct-widemul-check` runs the unit, ML-KEM and
+//                      Wycheproof vectors over it.
 //
 // What the decomposition rests on, stated plainly: it removes the 32-to-64
 // multiply, and what is left is the 32-to-32 one. ARM documents that as

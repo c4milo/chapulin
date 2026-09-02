@@ -36,7 +36,10 @@ HOST_RAND_DEF := -DCH_RAND_EXTERN
 # default for a target neither we nor the compiler knows.
 #
 # bin/timing overrides it with -DCH_CT_WIDEMUL, because the t-test exists to
-# measure the path that ships.
+# measure the path that ships. ct-widemul-check builds the vector binaries
+# with CT_WIDEMUL_CFLAGS, which filters the assertion out and sets
+# -DCH_CT_WIDEMUL, so the published answers run over that path once per
+# check-slow.
 HOST_WIDEMUL_DEF := -DCH_NATIVE_WIDEMUL
 CFLAGS += $(HOST_RAND_DEF) $(HOST_WIDEMUL_DEF)
 LIB_CFLAGS = $(filter-out $(HOST_RAND_DEF) $(HOST_WIDEMUL_DEF),$(CFLAGS))
@@ -408,6 +411,33 @@ bin/handshake_strict_pq: test/handshake_strict_test.c handshake_parser.c buf.c $
 	@mkdir -p bin
 	$(CC) $(CFLAGS) -DCH_KEX_PQ -I. -o $@ test/handshake_strict_test.c handshake_parser.c buf.c
 
+# The decomposed-multiply variants: bin/unit and bin/mlkem_test compiled
+# with the host's CH_NATIVE_WIDEMUL assertion filtered out and
+# CH_CT_WIDEMUL on, so the RFC 7748, RFC 8439 and RFC 8448 vectors and
+# the FIPS 203 known answers run over the four 16x16 pieces ct.h ships
+# rather than the host's one instruction. Every other host binary asserts
+# the native multiply, and test/softmul_test.c compares ct_widemul,
+# ct_widemul_s and ct_mulsmall against the compiler's product on their
+# own. So this is the one build where the decomposition as poly1305,
+# x25519 and mlkem_poly inline it, and the ct_widemul_opaque form
+# softmul_test skips, is checked against a published vector
+# (https://github.com/c4milo/chapulin/issues/92). ct-widemul-check runs
+# both, then wycheproof-ct-widemul below; check-slow calls it.
+CT_WIDEMUL_CFLAGS = $(filter-out $(HOST_WIDEMUL_DEF),$(CFLAGS)) -DCH_CT_WIDEMUL
+bin/unit_ct_widemul: test/unit_test.c $(SRCS) $(HDRS) $(TESTH)
+	@mkdir -p bin
+	$(CC) $(CT_WIDEMUL_CFLAGS) -I. -o $@ test/unit_test.c $(SRCS)
+
+bin/mlkem_test_ct_widemul: test/mlkem_test.c mlkem.c mlkem_poly.c sha3.c ct.c $(HDRS) $(TESTH)
+	@mkdir -p bin
+	$(CC) $(CT_WIDEMUL_CFLAGS) -I. -o $@ test/mlkem_test.c mlkem.c mlkem_poly.c sha3.c ct.c
+
+.PHONY: ct-widemul-check
+ct-widemul-check: bin/unit_ct_widemul bin/mlkem_test_ct_widemul
+	./bin/unit_ct_widemul
+	./bin/mlkem_test_ct_widemul
+	$(MAKE) wycheproof-ct-widemul
+
 bin/tlsclient: test/tls_client.c $(SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) -I. -o $@ test/tls_client.c $(SRCS)
@@ -503,9 +533,12 @@ endif
 # The slow half. bin/handshake_sequence_pq walks the same message ordering
 # as its classic sibling; what pq changes is share sizes and secret
 # derivation, which handshake_strict_pq, the differential and the e2e pq
-# legs cover.
+# legs cover. ct-widemul-check costs about 7 s, measured, nearly all of it
+# three compiles that would come out of check's one-minute budget, so it
+# sits here.
 .PHONY: check-slow
 check-slow: check bin/handshake_sequence_test bin/handshake_sequence_pq bin/pemkey bin/pemkey_ecdsa
+	$(MAKE) ct-widemul-check
 	./test/qemu-m3.sh
 	./test/e2e.sh
 	$(MAKE) diff
@@ -704,6 +737,21 @@ wycheproof:
 	$(CC) $(CFLAGS) -I. -Ibin -o bin/wycheproof_test test/wycheproof_test.c \
 	  x25519.c chacha20.c poly1305.c aead.c hkdf.c sha256.c p256.c rsa.c rsa_mont.c mlkem.c mlkem_poly.c sha3.c buf.c ct.c && \
 	./bin/wycheproof_test
+
+# The same suites over the decomposed multiply, for ct-widemul-check. The
+# clone-or-skip logic is the wycheproof target's, so a checkout an earlier
+# run left on disk is reused and an offline tree skips the same way.
+.PHONY: wycheproof-ct-widemul
+wycheproof-ct-widemul:
+	@if [ ! -d $(WYCHEPROOF_DIR)/.git ]; then \
+	  git clone --quiet --depth 1 https://github.com/C2SP/wycheproof $(WYCHEPROOF_DIR) \
+	    || { [ -n "$$CI" ] && { echo "wycheproof clone failed and CI must not skip a gate"; exit 1; }; \
+	         echo "SKIP wycheproof-ct-widemul: no checkout and no network"; exit 0; }; \
+	fi; \
+	python3 test/gen_wycheproof.py $(WYCHEPROOF_DIR) bin/wycheproof_vectors.h && \
+	$(CC) $(CT_WIDEMUL_CFLAGS) -I. -Ibin -o bin/wycheproof_test_ct_widemul test/wycheproof_test.c \
+	  x25519.c chacha20.c poly1305.c aead.c hkdf.c sha256.c p256.c rsa.c rsa_mont.c mlkem.c mlkem_poly.c sha3.c buf.c ct.c && \
+	./bin/wycheproof_test_ct_widemul
 
 # Sanitizer lane: the deterministic suites under ASan + UBSan, test
 # binaries only — sanitized codegen must never leak into coverage,
@@ -1094,12 +1142,13 @@ examples-check: bin/example_psk bin/example_pinned bin/example_ca
 # recipe runs the lake step itself; the epoch violation drives e2e,
 # which needs the CA clients.
 # The fast tier: violations backed by the second-scale binaries (unit,
-# the strictness parsers, rsa_test), so the PR lane runs them. The diff,
+# the strictness parsers, rsa_test, the decomposed-multiply unit and
+# ML-KEM binaries), so the PR lane runs them. The diff,
 # handshake_sequence and e2e-backed violations stay in the nightly full run — each of
 # those targets is slow enough that a baseline plus a mutation pass costs
 # real minutes.
 .PHONY: test-invariants-fast
-test-invariants-fast: bin/unit bin/unit_ca bin/x509strict bin/x509strict_ecdsa bin/rsa_test bin/drbg_test bin/handshake_strict_test
+test-invariants-fast: bin/unit bin/unit_ca bin/x509strict bin/x509strict_ecdsa bin/rsa_test bin/drbg_test bin/handshake_strict_test bin/unit_ct_widemul bin/mlkem_test_ct_widemul
 	python3 test/violations.py --tier=fast
 
 # The whole set, fast tier plus the handshake_sequence_test and e2e-backed
