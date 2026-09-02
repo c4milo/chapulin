@@ -199,8 +199,10 @@ Measured against the same benchmark with the native multiply instead:
 on mips32r2, AEAD seal costs 73% more, x25519 36% more, and the whole
 pinned handshake 29% more, or 41 ms at 500 MHz; on the Cortex-M3, AEAD
 seal costs 93% more, x25519 129% more, and the pinned handshake 94%
-more. SHA-256 and both signature verifies are unchanged, because
-SHA-256 does not multiply and the verifies read only public bytes.
+more; on rv32imac, AEAD seal costs 66% more, x25519 137% more, and the
+pinned handshake 104% more. SHA-256 and both signature verifies are
+unchanged, because SHA-256 does not multiply and the verifies read only
+public bytes.
 
 Flash is 28.2 kB for the default build (`.text` + `.rodata`, `-Os`),
 of which the multiply decomposition is 2.3 kB, nearly all of it
@@ -412,7 +414,7 @@ secrets and MACs and never opens a record.
   no architecture macro carries the claim. The Makefile passes that flag
   for host test binaries, where nothing secret is at risk and solver
   time is, and filters it out of the packaged object. That cost is
-  measured, not assumed: 33% of the pinned handshake's crypto and 2.3 kB
+  measured, not assumed: 29% of the pinned handshake's crypto and 2.3 kB
   of flash, itemised under Speed and flash above.
 
   The decomposition is also what carries every other proof to the
