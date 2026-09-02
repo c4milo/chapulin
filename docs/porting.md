@@ -26,14 +26,17 @@ and the add count is its Hamming weight. `softmul.c` handles this with no action
 from you: it defines `__mulsi3` and `__muldi3`, the names the ABI emits, so the
 linker resolves them in-tree instead of pulling the branching versions.
 
-One measured exception, not yet repaired. The Bootlin riscv32 gcc 14.3 at
-`-Os` for rv32ic rewrites the mask select in `softmul.c`'s `__muldi3`,
-`acc += a & mask`, as a multiply by the selected bit, and on a core with no
-multiplier that multiply is a call to `__muldi3` from inside `__muldi3`: the
-routine never returns. At `-O2` it keeps the mask. `lint-runtime-symbols`
-measures clang, which keeps the mask at both levels, and nothing gates gcc on
-rv32ic yet. Until `softmul.c` is reworked, build it under gcc at `-O2`, or read
-its disassembly for a call to its own name before you trust it.
+One measured defect, now repaired. The Bootlin riscv32 gcc 14.3 at `-Os` for
+rv32ic rewrote the mask select in `softmul.c`'s `__muldi3`, `a & (0 - bit)`,
+as `a * bit`, and on a core with no multiplier that 64-bit product is a call
+to `__muldi3` from inside `__muldi3`: the routine never returned. At `-O2` it
+kept the mask. The mask is now the bit shifted to the top and
+arithmetic-shifted back down, a form gcc keeps at `-O1`, `-O2`, `-O3` and
+`-Os`, and the rv32ic spec of `lint-wide-multiply-gcc` (below) counts the
+calls to `__muldi3` per file under that gcc and holds `softmul.c` at zero.
+`lint-runtime-symbols` measures clang, which keeps either mask form. If you
+ship a compiler neither gate measures, run the gate with it, or read
+`softmul.o`'s disassembly for a call to its own name before you trust it.
 
 **Your core has a multiplier whose timing you cannot document.** This is the
 default and needs no flag. `ct.h` builds every widening product from four 16x16
@@ -80,7 +83,8 @@ Makefile: the chain from `ct.c` to `tls.c`, plus `drbg.c` and `softmul.c`),
 and counts per file the widening multiplies, the divisions and the calls into
 the compiler's 64-bit division runtime. `make lint-wide-multiply-gcc` is the
 same count under gcc, which is what a firmware tree ships; each CI lane runs it
-with its own toolchain. Point it at the compiler you ship:
+with its own toolchain, and the riscv32 lane's gcc matches two specs, rv32imac
+and rv32ic. Point it at the compiler you ship:
 
 ```bash
 make lint-wide-multiply-gcc WIDEMUL_GCC=/path/to/arm-none-eabi-gcc
@@ -121,6 +125,14 @@ zero under every compiler.
 | Arm GNU gcc 15.3, Cortex-M3 | 2 `umlal` | 2 `umull`, 2 `umlal` | 2 `umlal` | 5 `udiv` |
 | gcc 12.4 (Ubuntu 24.04), mips32r2 | 0 | 0 | 0 | 5 `div` |
 | Bootlin gcc 14.3, rv32imac | 0 | 1 `mulhu` | 0 | 5 `rem` |
+| Bootlin gcc 14.3, rv32ic | 0 | 3 `__muldi3` | 0 | 5 `__modsi3` |
+
+rv32ic has no multiply or divide instruction to count, so that spec counts
+the runtime routines instead: a 64-bit product is a call to `__muldi3`, which
+a chapulin build resolves to `softmul.c`'s constant-time routine, and the
+`% 5` is a call to `__modsi3`. The three `__muldi3` calls in x25519 are the
+sign-mask rewrite that is one `mulhu` on rv32imac. `softmul.c` itself is at
+zero calls to `__muldi3` there, which is what that spec exists to hold.
 
 The sha3 column is Keccak's `% 5` over public loop counters, which divides no
 secret. The gcc entries in the other three columns are a leak, recorded and

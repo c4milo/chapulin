@@ -1264,26 +1264,44 @@ CODEGEN_SRCS := $(foreach e,$(WIDEMUL_CEILING),$(firstword $(subst :, ,$(e))))
 #             counts every call whose target begins with it, which is
 #             where a 64-bit division goes on every one of these cores.
 #             A prefix can only over-count, and an over-count fails the
-#             gate loudly; it cannot let a form through.
+#             gate loudly; it cannot let a form through. Assembler
+#             directives, the lines that begin with a dot, are dropped
+#             before the count: a file that defines a runtime routine
+#             names it in .globl, .type and .size, and none of those is
+#             a call. softmul.c is that file.
 # The arm list carries the Thumb-2 forms whose product or quotient is
 # wider than 32 bits, the DSP ones included, so it holds on an M4 too;
 # mips carries the r6 spellings beside the r2 ones for the same reason.
 WIDEMUL_OPS_ARM := umull,umlal,umaal,smull,smlal,smlsld,smmul,smmla,smmls,smulw,smlaw,udiv,sdiv,__aeabi_uidiv,__aeabi_idiv,__aeabi_uldiv,__aeabi_ldiv,__udiv,__div,__umod,__mod
 WIDEMUL_OPS_MIPS := mult,multu,madd,maddu,msub,msubu,muh,muhu,div,divu,ddiv,ddivu,mod,modu,__udiv,__div,__umod,__mod
 WIDEMUL_OPS_RV := mulh,mulhu,mulhsu,div,divu,rem,remu,__udiv,__div,__umod,__mod
+# rv32ic has no M extension, so there is no mulh to count: a 64-bit
+# product is a call to __muldi3 and a division a call into the __div and
+# __mod family, and those names are the whole list. On a chapulin build
+# __muldi3 is softmul.c's own constant-time routine, so a count is a
+# 64-bit product the decomposition should have kept out, the same finding
+# mulh is on rv32imac. __mulsi3 is not listed: it is the 32-to-32
+# multiply, which no spec counts as mul either, and poly1305, x25519 and
+# mlkem_poly call it once per 16x16 piece. softmul.c's zero holds one
+# more thing: gcc at -Os rewrote its masked add into a 64-bit multiply,
+# which on this core was a call to __muldi3 from inside __muldi3
+# (https://github.com/c4milo/chapulin/issues/107).
+WIDEMUL_OPS_RV32I := __muldi3,__udiv,__div,__umod,__mod
 # Both compiler families are measured: CLAUDE.md names gcc-shipping
 # firmware trees as the audience, and gcc does not keep the 16x16 pieces
 # apart where clang does (https://github.com/c4milo/chapulin/issues/86).
-# The three gcc specs are the three CI toolchains: the Arm GNU release
+# The four gcc specs are the three CI toolchains: the Arm GNU release
 # ARM_GNU_VERSION pins, Ubuntu 24.04's gcc-mips-linux-gnu, and the Bootlin
-# riscv32 toolchain RV32_TC_VERSION pins.
+# riscv32 toolchain RV32_TC_VERSION pins, which runs twice -- rv32imac,
+# and rv32ic, the core with no multiplier, where softmul.c compiles.
 WIDEMUL_SPECS := \
   m3:clang:thumbv7m-none-eabi:-mcpu=cortex-m3:$(WIDEMUL_OPS_ARM) \
   mips32r2:clang:mips-linux-musl:-march=mips32r2:$(WIDEMUL_OPS_MIPS) \
   rv32imac:clang:riscv32-unknown-elf:-march=rv32imac:$(WIDEMUL_OPS_RV) \
   m3-gcc:gcc:arm-none-eabi:-mcpu=cortex-m3,-mthumb:$(WIDEMUL_OPS_ARM) \
   mips32r2-gcc:gcc:mips-:-march=mips32r2,-mabi=32:$(WIDEMUL_OPS_MIPS) \
-  rv32imac-gcc:gcc:riscv32-:-march=rv32imac,-mabi=ilp32:$(WIDEMUL_OPS_RV)
+  rv32imac-gcc:gcc:riscv32-:-march=rv32imac,-mabi=ilp32:$(WIDEMUL_OPS_RV) \
+  rv32ic-gcc:gcc:riscv32-:-march=rv32ic,-mabi=ilp32:$(WIDEMUL_OPS_RV32I)
 # Per-spec ceilings, spec/file:count, where a spec measures a file above its
 # WIDEMUL_CEILING entry. Every number is measured with the spec's compiler
 # at its flags and -Os, and is one of two things.
@@ -1301,9 +1319,16 @@ WIDEMUL_SPECS := \
 # entries are a record, not an allowance: the gate holds them so they
 # cannot grow, the README's verification section states them, and the
 # repair is in ct.h, after which each drops to zero and the gate says so.
+#
+# rv32ic-gcc reads the same two findings through the runtime names: the
+# `% 5` is five calls to __modsi3, and the sign-mask rewrite's 64-bit
+# products are three calls to __muldi3 in x25519.c, where rv32imac shows
+# the one mulhu. softmul.c is at zero there, which is the point of the
+# spec (https://github.com/c4milo/chapulin/issues/107).
 WIDEMUL_CEILING_SPEC := m3-gcc/sha3.c:5 m3-gcc/poly1305.c:2 m3-gcc/x25519.c:4 m3-gcc/mlkem_poly.c:2 \
                         mips32r2-gcc/sha3.c:5 \
-                        rv32imac-gcc/sha3.c:5 rv32imac-gcc/x25519.c:1
+                        rv32imac-gcc/sha3.c:5 rv32imac-gcc/x25519.c:1 \
+                        rv32ic-gcc/sha3.c:5 rv32ic-gcc/x25519.c:3
 WIDEMUL_RUN ?= clang
 WIDEMUL_GCC ?= $(M3_CC)
 .PHONY: lint-wide-multiply lint-wide-multiply-gcc
@@ -1343,6 +1368,7 @@ lint-wide-multiply:
 	       rm -f "$$err"; rc=1; continue; }; \
 	     rm -f "$$err"; \
 	     [ -n "$$asm" ] || { echo "lint-wide-multiply: $$f produced no assembly for $$arch"; rc=1; continue; }; \
+	     asm=$$(printf '%s\n' "$$asm" | grep -vE '^[[:space:]]*\.'); \
 	     n=$$(printf '%s\n' "$$asm" | grep -cE "$$pattern"); \
 	     [ "$$n" -eq 0 ] || table="$$table $$f=$$n"; \
 	     if [ "$$n" -gt "$$cap" ]; then \

@@ -358,12 +358,16 @@ secrets and MACs and never opens a record.
   holds, file by file, the runtime calls each may make: `__mulsi3` in
   poly1305, x25519 and mlkem_poly, `__udivsi3` in sha3 for `% 5` over
   public loop counters, and none anywhere else; it also checks that
-  `softmul.c` still defines the two names it admits. It measures clang
-  only. Measured by hand under the Bootlin riscv32 gcc at `-Os`,
-  `softmul.c` itself is broken: gcc rewrites `__muldi3`'s mask select as
-  a multiply by the selected bit, which on that core is a call to
-  `__muldi3` from inside `__muldi3`. `docs/porting.md` states it, and
-  nothing gates it yet.
+  `softmul.c` still defines the two names it admits. It measures clang.
+  Under the Bootlin riscv32 gcc at `-Os`, `softmul.c` used to recurse:
+  gcc rewrote `__muldi3`'s mask select `a & (0 - bit)` as `a * bit`,
+  which on that core is a call to `__muldi3` from inside `__muldi3`.
+  The mask is now an arithmetic shift of the bit, a form gcc keeps at
+  every optimization level, and the rv32ic spec of
+  `make lint-wide-multiply-gcc` counts under that gcc the calls to
+  `__muldi3` in every secret-touching file and holds `softmul.c` at
+  zero, so the rewrite cannot come back unseen. `docs/porting.md` shows
+  the count per file.
   A multiplier that exists but is variable-time is the other half. ARM's
   Cortex-M3 `umull` returns sooner when both operands are below 65536,
   with further undocumented exits on zero and powers of two, and 32-bit
@@ -382,7 +386,10 @@ secrets and MACs and never opens a record.
   in poly1305 and in mlkem_poly and two `umull` and two `umlal` in
   x25519, and both it and the Bootlin riscv32 gcc rewrite ct_widemul_s's
   sign mask as a multiply by the sign bit, one `mulhu` in x25519 on
-  rv32imac; gcc on mips32r2 keeps every piece apart. The gate records
+  rv32imac and, on rv32ic, where a 64-bit product is a call to
+  `__muldi3`, three such calls in x25519, which a chapulin build
+  resolves to `softmul.c`'s constant-time routine; gcc on mips32r2
+  keeps every piece apart. The gate records
   those counts so they cannot grow and fails on any file above its own,
   `docs/porting.md` tabulates them, and the repair in ct.h has not
   landed: on a Cortex-M3 built with gcc, poly1305, x25519 and mlkem_poly

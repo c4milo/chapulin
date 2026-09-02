@@ -1,0 +1,17 @@
+invariant: INV-16
+file: softmul.c
+catches: test/docker-riscv32.sh
+reason: the mask written as `0 - bit` is a shape gcc rewrites into
+  `a * bit`, and at -Os for rv32ic it emits that 64-bit product as a
+  call to __muldi3 from inside __muldi3, so the first 64-bit product on a
+  core with no multiplier never returns
+  (https://github.com/c4milo/chapulin/issues/107); only the Bootlin gcc
+  can measure it, the riscv32 lane's container is where that gcc runs
+  locally, and its first step is the gate whose rv32ic-gcc spec holds
+  softmul.c at zero calls to __muldi3. The lane skips without docker, and
+  this then reports unguarded rather than caught.
+
+--- old
+        uint64_t mask = (uint64_t)((int64_t)(b << 63) >> 63); // 0 or all ones
+--- new
+        uint64_t mask = (uint64_t)0 - (b & 1U); // 0 or all ones

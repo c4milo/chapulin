@@ -40,6 +40,10 @@ if [ ! -x "$tc/$name/bin/riscv32-linux-gcc" ]; then
 fi
 
 # The same two steps the CI job runs, in its order: the codegen gate under
-# this gcc, then the suites.
+# this gcc -- both the rv32imac and the rv32ic spec match its
+# -dumpmachine, and the rv32ic one holds softmul.c at zero calls to
+# __muldi3 (https://github.com/c4milo/chapulin/issues/107) -- then the
+# suites. test/violations/inv16-softmul-mask-as-negate.violation names
+# this script as its catch target for the same reason.
 make lint-wide-multiply-gcc WIDEMUL_GCC="$tc/$name/bin/riscv32-linux-gcc"
 make cross-check CROSS="$tc/$name/bin/riscv32-linux-" RUNNER=qemu-riscv32

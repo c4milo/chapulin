@@ -227,7 +227,8 @@ jobs:
     # pinned in tools/toolchain.env by the publisher's sha256 and cached
     # by version. Its libc is ilp32d, so the lane runs the toolchain's
     # own ABI; rv32imac codegen is gated separately by lint-wide-multiply
-    # under clang in the check job and under this gcc in the step below.
+    # under clang in the check job and under this gcc in the step below,
+    # which also measures rv32ic, the core with no multiplier.
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
@@ -258,8 +259,12 @@ jobs:
         # lint-wide-multiply in the check job measures clang for
         # rv32imac; this is the same count under the gcc this lane ships
         # (https://github.com/c4milo/chapulin/issues/86). The Makefile
-        # picks the spec from the driver's -dumpmachine and fails when
-        # none matches, so this step cannot measure nothing.
+        # picks the specs from the driver's -dumpmachine and fails when
+        # none matches, so this step cannot measure nothing. Two match
+        # this driver: rv32imac, and rv32ic, where softmul.c compiles and
+        # is held at zero calls to __muldi3 -- gcc at -Os once emitted
+        # one from inside __muldi3 itself
+        # (https://github.com/c4milo/chapulin/issues/107).
         run: make lint-wide-multiply-gcc WIDEMUL_GCC="$HOME/rv32tc/bin/riscv32-linux-gcc"
       - run: make cross-check CROSS="$HOME/rv32tc/bin/riscv32-linux-" RUNNER=qemu-riscv32
 

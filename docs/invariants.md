@@ -388,16 +388,20 @@ which convention holds them.
   secret passes through (`CODEGEN_SRCS` in the Makefile).
   `lint-wide-multiply` compiles for Cortex-M3, mips32r2 and rv32imac
   under the pinned clang, and `lint-wide-multiply-gcc` under the gcc
-  each CI lane ships, and counts per file the widening multiplies, the
-  divisions and the 64-bit division runtime calls, each opcode matched
-  as a prefix so `umullne` counts as `umull`; every file holds a
-  recorded ceiling, zero except sha3's public `% 5` and the gcc counts
-  the README states. `lint-runtime-symbols` builds for rv32ic, where
-  there is no multiplier at all, and holds per file the runtime-library
-  calls it may make — `softmul.c` supplies constant-time `__mulsi3` and
-  `__muldi3` so the library's branching ones are never linked, and the
-  gate asserts it still defines them. Five `inv16-*` violations in
-  `test/violations/` prove each detection catches its mutant.
+  each CI lane ships — the riscv32 one for rv32ic too, where a 64-bit
+  product is a call to `__muldi3` — and counts per file the widening
+  multiplies, the divisions and the 64-bit division runtime calls, each
+  opcode matched as a prefix so `umullne` counts as `umull`; every file
+  holds a recorded ceiling, zero except sha3's public `% 5` and the gcc
+  counts the README states. `lint-runtime-symbols` builds for rv32ic,
+  where there is no multiplier at all, and holds per file the
+  runtime-library calls it may make — `softmul.c` supplies constant-time
+  `__mulsi3` and `__muldi3` so the library's branching ones are never
+  linked, and the gate asserts it still defines them; the rv32ic gcc
+  spec holds `softmul.c` at zero calls to `__muldi3`, because gcc at
+  `-Os` once emitted one from inside `__muldi3` itself. Six `inv16-*`
+  violations in `test/violations/` prove each detection catches its
+  mutant.
   Both count instructions; neither checks an answer. `make
   ct-widemul-check` (in `check-slow`) runs the unit, ML-KEM and
   Wycheproof vectors over the decomposition itself, which every other
