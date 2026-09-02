@@ -1190,97 +1190,244 @@ lint-matrix:
 lint-violation-builds:
 	@python3 test/violations.py --lint-builds
 
-# A core without the M extension has no hardware multiply, so every `*` becomes
-# a libgcc call, and those routines branch on their operands
-# (https://github.com/c4milo/chapulin/issues/53). That is a variable-time
-# sequence reached from secret data, which INV-23's ban on / and % cannot see:
-# it bans source-level division, and this is the compiler emitting a routine
-# for multiplication.
+# ---------------------------------------------------------------------------
+# Codegen gates. Two leaks are instruction selection rather than source, so
+# no source-level rule sees them (https://github.com/c4milo/chapulin/issues/53):
+# a widening multiply or a division the compiler emits for a secret operand,
+# and the runtime-library call a core without a multiplier makes for `*`.
+# lint-wide-multiply and lint-runtime-symbols read what the compiler emits.
 #
-# The list is what rv32ic pulls today, not what is acceptable. It exists so a
-# NEW compiler-runtime dependency fails here rather than in a review, and it
-# shrinks to empty when https://github.com/c4milo/chapulin/issues/53 is
-# resolved. clang carries the riscv32 target, so this needs no cross toolchain.
-# The sources that compile freestanding, which is every module that multiplies
-# a secret. The rest reach for <string.h>, and a bare-metal riscv32 clang has
-# no libc headers; adding a shim to check modules that do no secret arithmetic
-# would buy nothing.
-RV_SRCS := ct.c sha256.c chacha20.c poly1305.c aead.c x25519.c x509_der.c record.c \
-           keysched.c io.c handshake_message.c session.c sha3.c mlkem_poly.c softmul.c
-# What is left after softmul.c supplies the multiplies. sha3's division is `%
-# 5` on Keccak's loop counters, a public index, so it is a performance matter
-# rather than a leak -- https://github.com/c4milo/chapulin/issues/53 separates
-# the two.
-RV_ALLOWED := __udivsi3
+# CODEGEN_SRCS is every source a key, a shared secret, a session secret or
+# record plaintext passes through: the chain from ct.c up to tls.c, plus
+# drbg.c (the reference generator ships outside the packaged object, but a
+# firmware that picks RAND=drbg compiles it) and softmul.c (the multiply
+# itself, on a core with none). buf.c is in because the binder and the
+# Finished bytes pass through wbuf; its only arithmetic is on lengths, so
+# its ceiling is zero like the rest.
+#
+# Out, and why: p256.c, rsa.c and rsa_mont.c multiply on purpose -- three
+# wide multiply-accumulates each, measured -- over a server or CA public
+# key, a transcript hash and a signature, all of which the peer sent in the
+# clear, and the client never signs, so there is no signing entry point to
+# add a secret to. pem.c, x509.c, x509_der.c and x509_ca.c read
+# certificates, which are public too (gcc lowers x509_der.c's decimal date
+# digits to two madd on mips32r2, and nothing there is secret). A secret
+# arriving in any of these is a design change, and this list is where it
+# lands. Until https://github.com/c4milo/chapulin/issues/85 the gate read
+# four files and the rest went unmeasured.
+#
+# Ceilings are file:count and hold on every spec below unless
+# WIDEMUL_CEILING_SPEC names the spec and file. Going over fails. Coming in
+# under only prints, because the only non-zero entries are a public
+# division whose lowering is a compiler choice and a recorded leak that is
+# meant to fall, and zero cannot be undershot, so every other module is
+# held exactly.
+WIDEMUL_CEILING := ct.c:0 sha256.c:0 sha3.c:1 hkdf.c:0 chacha20.c:0 poly1305.c:0 aead.c:0 \
+                   x25519.c:0 mlkem.c:0 mlkem_poly.c:0 buf.c:0 record.c:0 keysched.c:0 io.c:0 \
+                   session.c:0 handshake_message.c:0 handshake_parser.c:0 handshake_record.c:0 \
+                   handshake_auth.c:0 handshake.c:0 handshake_post.c:0 tls.c:0 drbg.c:0 softmul.c:0
+CODEGEN_SRCS := $(foreach e,$(WIDEMUL_CEILING),$(firstword $(subst :, ,$(e))))
 
-# The Cortex-M3 has two multiply opcodes: mul is constant-time, umull is not --
-# it returns sooner when both operands are below 65536, and has undocumented
-# early exits on zero and powers of two. The 32->64 one has been used to
-# extract Curve25519 keys. So a product wider than 32 bits reached from a
-# secret is a leak on that part, whatever the source says
-# (https://github.com/c4milo/chapulin/issues/53). 64-bit addition is fine: it
-# is two 32-bit adds.
+# The Cortex-M3 has two multiply opcodes: mul is constant-time, umull is
+# not -- it returns sooner when both operands are below 65536, and has
+# undocumented early exits on zero and powers of two. The 32->64 one has
+# been used to extract Curve25519 keys. So a product wider than 32 bits
+# reached from a secret is a leak on that part, whatever the source says.
+# A division is the same shape on every core here: udiv, div and rem take
+# a data-dependent number of cycles (KyberSlash was a division on a
+# secret-derived coefficient), and a 64-bit quotient becomes a call into
+# the compiler's runtime, which branches on its operands. 64-bit addition
+# is fine: it is two 32-bit adds.
 #
-# Every module that multiplies a secret is at zero: ct_widemul and
-# ct_mulsmall in ct.h build a wide product out of 16x16 pieces, and the
-# M3's 32->32 multiply is constant-time. The one left is sha3's `% 5` over
-# Keccak's public loop counters, which the compiler emits as a
-# multiply-high. Writing it as conditional subtraction does not help --
-# the optimiser recognises the loop and puts the modulo back -- and no
-# secret is divided, so it is recorded rather than fought.
+# ct_widemul and ct_mulsmall in ct.h build a wide product out of 16x16
+# pieces, so every secret-touching module is at zero where the compiler
+# keeps the pieces apart. sha3's `% 5` over Keccak's public loop counters
+# is the one entry that is non-zero by design: clang lowers it to a
+# multiply-high, gcc to a hardware division, and no secret is divided, so
+# it is recorded rather than fought (writing it as conditional subtraction
+# does not help; the optimiser recognises the loop and puts the modulo
+# back).
 #
-# Going over a ceiling fails. Coming in under one only prints, because the
-# single non-zero entry is sha3's modulo over public counters, and whether a
-# given compiler build lowers it to a multiply-high is not a security
-# property. The entries that matter are zero, and zero cannot be undershot,
-# so every secret-touching module is still held exactly.
-#
-# p256.c and rsa.c are absent because they multiply nothing secret. The
-# client verifies signatures and never makes them: p256_ecdsa_verify and
-# rsa_pss_verify read a server or CA public key, a transcript hash and a
-# signature, all of which the peer already sent in the clear. There is no
-# signing entry point in this library to add one to.
-# Both targets are checked, not just the M3. mips32r2 is the reference
-# part, and a comment claiming the decomposition runs there proves nothing
-# on its own -- a compiler that folded the 16x16 pieces back into a mult
-# would leave the claim standing and the leak restored. Each spec is
-# name:triple:cpu-flag:comma-separated opcodes.
+# Each spec is name:compiler:machine:flags:tokens.
+#   compiler  clang or gcc. clang specs compile under $(CLANG_RV) with
+#             -target machine, always, and are part of lint. gcc specs
+#             compile under the driver lint-wide-multiply-gcc is given
+#             (WIDEMUL_GCC), and a spec runs only when that driver's
+#             -dumpmachine starts with machine, so a CI lane runs the spec
+#             its toolchain is for and cannot run another's by mistake.
+#   flags     comma-separated: the CPU or arch selection the spec measures.
+#   tokens    comma-separated. A token without a leading __ is an opcode
+#             and counts every instruction whose mnemonic begins with it,
+#             so umullne, umulls, umull.w and udiveq count under umull and
+#             udiv (a word-boundary match let the condition-code forms
+#             through). A token with a leading __ is a runtime routine and
+#             counts every call whose target begins with it, which is
+#             where a 64-bit division goes on every one of these cores.
+#             A prefix can only over-count, and an over-count fails the
+#             gate loudly; it cannot let a form through.
+# The arm list carries the Thumb-2 forms whose product or quotient is
+# wider than 32 bits, the DSP ones included, so it holds on an M4 too;
+# mips carries the r6 spellings beside the r2 ones for the same reason.
+WIDEMUL_OPS_ARM := umull,umlal,umaal,smull,smlal,smlsld,smmul,smmla,smmls,smulw,smlaw,udiv,sdiv,__aeabi_uidiv,__aeabi_idiv,__aeabi_uldiv,__aeabi_ldiv,__udiv,__div,__umod,__mod
+WIDEMUL_OPS_MIPS := mult,multu,madd,maddu,msub,msubu,muh,muhu,div,divu,ddiv,ddivu,mod,modu,__udiv,__div,__umod,__mod
+WIDEMUL_OPS_RV := mulh,mulhu,mulhsu,div,divu,rem,remu,__udiv,__div,__umod,__mod
+# Both compiler families are measured: CLAUDE.md names gcc-shipping
+# firmware trees as the audience, and gcc does not keep the 16x16 pieces
+# apart where clang does (https://github.com/c4milo/chapulin/issues/86).
+# The three gcc specs are the three CI toolchains: the Arm GNU release
+# ARM_GNU_VERSION pins, Ubuntu 24.04's gcc-mips-linux-gnu, and the Bootlin
+# riscv32 toolchain RV32_TC_VERSION pins.
 WIDEMUL_SPECS := \
-  m3:thumbv7m-none-eabi:-mcpu=cortex-m3:umull,smull,umlal,smlal \
-  mips32r2:mips-linux-musl:-march=mips32r2:mult,multu,madd,maddu \
-  rv32imac:riscv32-unknown-elf:-march=rv32imac:mulh,mulhu,mulhsu
-WIDEMUL_CEILING := poly1305.c:0 mlkem_poly.c:0 x25519.c:0 sha3.c:1
-.PHONY: lint-wide-multiply
+  m3:clang:thumbv7m-none-eabi:-mcpu=cortex-m3:$(WIDEMUL_OPS_ARM) \
+  mips32r2:clang:mips-linux-musl:-march=mips32r2:$(WIDEMUL_OPS_MIPS) \
+  rv32imac:clang:riscv32-unknown-elf:-march=rv32imac:$(WIDEMUL_OPS_RV) \
+  m3-gcc:gcc:arm-none-eabi:-mcpu=cortex-m3,-mthumb:$(WIDEMUL_OPS_ARM) \
+  mips32r2-gcc:gcc:mips-:-march=mips32r2,-mabi=32:$(WIDEMUL_OPS_MIPS) \
+  rv32imac-gcc:gcc:riscv32-:-march=rv32imac,-mabi=ilp32:$(WIDEMUL_OPS_RV)
+# Per-spec ceilings, spec/file:count, where a spec measures a file above its
+# WIDEMUL_CEILING entry. Every number is measured with the spec's compiler
+# at its flags and -Os, and is one of two things.
+#
+# sha3.c under each gcc is the public `% 5`, five hardware divisions where
+# clang's one multiply-high stood.
+#
+# poly1305.c, x25519.c and mlkem_poly.c under gcc are NOT public: they are
+# the leak https://github.com/c4milo/chapulin/issues/86 predicted, found
+# the first time the gate ran under gcc. arm-none-eabi-gcc re-fuses ct_widemul's
+# 16x16 pieces into umlal and umull -- `(uint64_t)lh + hl` on two products
+# it can prove narrow becomes one widening multiply-accumulate -- and both
+# it and the Bootlin riscv32 gcc rewrite ct_widemul_s's sign mask
+# `x & (0 - bit)` as `x * bit`, a widening multiply by a secret bit. These
+# entries are a record, not an allowance: the gate holds them so they
+# cannot grow, the README's verification section states them, and the
+# repair is in ct.h, after which each drops to zero and the gate says so.
+WIDEMUL_CEILING_SPEC := m3-gcc/sha3.c:5 m3-gcc/poly1305.c:2 m3-gcc/x25519.c:4 m3-gcc/mlkem_poly.c:2 \
+                        mips32r2-gcc/sha3.c:5 \
+                        rv32imac-gcc/sha3.c:5 rv32imac-gcc/x25519.c:1
+WIDEMUL_RUN ?= clang
+WIDEMUL_GCC ?= $(M3_CC)
+.PHONY: lint-wide-multiply lint-wide-multiply-gcc
 lint-wide-multiply:
+	@rc=0; ran=""; got=""; \
+	 for spec in $(WIDEMUL_SPECS); do \
+	   arch=$${spec%%:*}; rest=$${spec#*:}; \
+	   compiler=$${rest%%:*}; rest=$${rest#*:}; \
+	   machine=$${rest%%:*}; rest=$${rest#*:}; \
+	   flags=$$(echo "$${rest%%:*}" | tr ',' ' '); tokens=$${rest#*:}; \
+	   [ "$$compiler" = "$(WIDEMUL_RUN)" ] || continue; \
+	   case "$$compiler" in \
+	   clang) \
+	     [ -n "$(CLANG_RV)" ] || { echo "lint-wide-multiply: clang is missing, and a linter must not skip. It ships with llvm — see the LLVM_MAJOR pin in tools/toolchain.env"; exit 1; }; \
+	     cc="$(CLANG_RV) -target $$machine -nostdlibinc -Itools/freestanding" ;; \
+	   gcc) \
+	     [ -n "$(WIDEMUL_GCC)" ] || { echo "lint-wide-multiply: set WIDEMUL_GCC=<the gcc driver you ship>; there is no gcc to measure"; exit 1; }; \
+	     got=$$($(WIDEMUL_GCC) -dumpmachine 2>/dev/null) || { echo "lint-wide-multiply: $(WIDEMUL_GCC) does not answer -dumpmachine"; exit 1; }; \
+	     case "$$got" in "$$machine"*) ;; *) continue ;; esac; \
+	     cc="$(WIDEMUL_GCC)" ;; \
+	   *) echo "lint-wide-multiply: spec $$arch names compiler '$$compiler'; it is clang or gcc"; exit 1 ;; \
+	   esac; \
+	   ops=$$(echo "$$tokens" | tr ',' '\n' | grep -v '^__' | paste -sd '|' -); \
+	   calls=$$(echo "$$tokens" | tr ',' '\n' | grep '^__' | paste -sd '|' -); \
+	   pattern=""; \
+	   [ -z "$$ops" ] || pattern="^[[:space:]]+($$ops)"; \
+	   [ -z "$$calls" ] || pattern="$$pattern$${pattern:+|}[[:space:],(]($$calls)"; \
+	   [ -n "$$pattern" ] || { echo "lint-wide-multiply: spec $$arch lists no token to count"; exit 1; }; \
+	   ran="$$ran$$arch "; table=""; \
+	   for e in $(WIDEMUL_CEILING); do \
+	     f=$${e%%:*}; cap=$${e##*:}; \
+	     for o in $(WIDEMUL_CEILING_SPEC); do [ "$${o%%:*}" = "$$arch/$$f" ] && cap=$${o##*:}; done; \
+	     err=$$(mktemp); \
+	     asm=$$($$cc $$flags -Os -std=c11 -ffreestanding -D_DEFAULT_SOURCE -DCH_RAND_EXTERN -DCH_KEX_PQ -I. -S $$f -o - 2>"$$err") || { \
+	       echo "lint-wide-multiply: $$f does not build for $$arch — a count of zero from a failed compile is not a measurement"; \
+	       sed -n '1p' "$$err" | sed 's/^/lint-wide-multiply:   /'; \
+	       rm -f "$$err"; rc=1; continue; }; \
+	     rm -f "$$err"; \
+	     [ -n "$$asm" ] || { echo "lint-wide-multiply: $$f produced no assembly for $$arch"; rc=1; continue; }; \
+	     n=$$(printf '%s\n' "$$asm" | grep -cE "$$pattern"); \
+	     [ "$$n" -eq 0 ] || table="$$table $$f=$$n"; \
+	     if [ "$$n" -gt "$$cap" ]; then \
+	       echo "lint-wide-multiply: $$f emits $$n wide multiplies or divisions on $$arch, ceiling is $$cap (see https://github.com/c4milo/chapulin/issues/53)"; \
+	       printf '%s\n' "$$asm" | grep -E "$$pattern" | head -5 | sed 's/^[[:space:]]*/lint-wide-multiply:   /'; rc=1; \
+	     elif [ "$$n" -lt "$$cap" ]; then \
+	       echo "lint-wide-multiply: $$f is down to $$n from $$cap on $$arch — lower the ceiling"; \
+	     fi; \
+	   done; \
+	   echo "lint-wide-multiply: $$arch, $$($$cc --version 2>/dev/null | head -1):$${table:- every file at 0}"; \
+	 done; \
+	 [ -n "$$ran" ] || { echo "lint-wide-multiply: no $(WIDEMUL_RUN) spec ran$${got:+ — none matches $(WIDEMUL_GCC) ($$got); add one to WIDEMUL_SPECS}"; exit 1; }; \
+	 [ $$rc -eq 0 ] && echo "lint-wide-multiply: every module at its recorded ceiling on $$ran"; exit $$rc
+
+# The same gate under the gcc a firmware tree ships. WIDEMUL_GCC is the
+# driver: the spec whose machine prefix matches its -dumpmachine runs, and
+# no match fails rather than skips. The m3, mips and riscv32 CI jobs each
+# run this with their toolchain; locally it defaults to the Arm GNU release
+# the m3 lane uses (M3_CC in test/platforms.mk).
+lint-wide-multiply-gcc:
+	@$(MAKE) --no-print-directory lint-wide-multiply WIDEMUL_RUN=gcc WIDEMUL_GCC="$(WIDEMUL_GCC)"
+
+# A core without the M extension has no hardware multiply, so every `*`
+# becomes a libgcc call, and those routines branch on their operands
+# (https://github.com/c4milo/chapulin/issues/53). That is a variable-time
+# sequence reached from secret data, which INV-23's ban on / and % cannot
+# see: it bans source-level division, and this is the compiler emitting a
+# routine for multiplication. softmul.c supplies constant-time __mulsi3 and
+# __muldi3 under the names the compiler emits, so the branching ones are
+# never linked. clang carries the riscv32 target, so this needs no cross
+# toolchain.
+#
+# This gate builds every CODEGEN_SRCS file for rv32ic and holds two things:
+# which runtime routines each file pulls, and that softmul.c still defines
+# the ones the list admits.
+#
+# RV_ALLOWED is file:symbols, measured under the pinned clang; a file not
+# named pulls nothing. It used to be one list for all files, with softmul's
+# definitions subtracted from the union of everything undefined -- so a new
+# `*` in aead.c resolved to softmul's __mulsi3 and nothing said so, and a
+# new `/` anywhere hid behind sha3's __udivsi3
+# (https://github.com/c4milo/chapulin/issues/85). Now a symbol is judged in
+# the file that pulls it. sha3's __udivsi3 is Keccak's `% 5` over public
+# loop counters, a performance matter rather than a leak.
+RV_ALLOWED := poly1305.c:__mulsi3 x25519.c:__mulsi3 mlkem_poly.c:__mulsi3 sha3.c:__udivsi3
+# What softmul.c must define. The __mul* names RV_ALLOWED admits are
+# constant-time only because this file supplies them; if it stopped, the
+# admitted calls would bind to libgcc's and the allowlist would keep
+# passing. So the definitions are asserted, not assumed.
+RV_SOFTMUL := __muldi3 __mulsi3
+.PHONY: lint-runtime-symbols
+lint-runtime-symbols:
 ifeq ($(CLANG_RV),)
 	$(call REQUIRE,clang,it ships with llvm — see the LLVM_MAJOR pin in tools/toolchain.env)
+else ifeq ($(LLVM_NM),)
+	$(call REQUIRE,llvm-nm,it ships with llvm — see the LLVM_MAJOR pin in tools/toolchain.env)
 else
-	@rc=0; for spec in $(WIDEMUL_SPECS); do \
-	  arch=$${spec%%:*}; rest=$${spec#*:}; \
-	  triple=$${rest%%:*}; rest=$${rest#*:}; \
-	  cpu=$${rest%%:*}; ops=$$(echo "$${rest#*:}" | tr ',' '|'); \
-	  for e in $(WIDEMUL_CEILING); do \
-	    f=$${e%%:*}; cap=$${e##*:}; \
-	    err=$$(mktemp); \
-	    asm=$$($(CLANG_RV) -target $$triple $$cpu -Os -std=c11 -ffreestanding -nostdlibinc \
-	        -D_DEFAULT_SOURCE -DCH_RAND_EXTERN -DCH_KEX_PQ -I. -S $$f -o - 2>"$$err") || { \
-	      echo "lint-wide-multiply: $$f does not build for $$arch — a count of zero from a failed compile is not a measurement"; \
-	      sed -n '1p' "$$err" | sed 's/^/lint-wide-multiply:   /'; \
-	      rm -f "$$err"; rc=1; continue; }; \
-	    rm -f "$$err"; \
-	    [ -n "$$asm" ] || { \
-	      echo "lint-wide-multiply: $$f produced no assembly for $$arch"; rc=1; continue; }; \
-	    n=$$(printf '%s' "$$asm" | grep -cE "\\b($$ops)\\b"); \
-	    if [ "$$n" -gt "$$cap" ]; then \
-	      echo "lint-wide-multiply: $$f emits $$n wide multiplies on $$arch, ceiling is $$cap (see https://github.com/c4milo/chapulin/issues/53)"; rc=1; \
-	    elif [ "$$n" -lt "$$cap" ]; then \
-	      echo "lint-wide-multiply: $$f is down to $$n from $$cap on $$arch — lower the ceiling"; \
-	    fi; \
-	  done; \
-	done; \
-	names=$$(for spec in $(WIDEMUL_SPECS); do printf "%s " "$${spec%%:*}"; done); \
-	[ $$rc -eq 0 ] && echo "lint-wide-multiply: every module at its recorded ceiling on $$names"; exit $$rc
+	@d=$$(mktemp -d); rc=0; seen=0; \
+	 for f in $(CODEGEN_SRCS); do \
+	   $(CLANG_RV) -target riscv32-unknown-elf -march=rv32ic -mabi=ilp32 -Os -std=c11 -ffreestanding \
+	     -nostdlibinc -Itools/freestanding -D_DEFAULT_SOURCE -DCH_RAND_EXTERN -DCH_KEX_PQ -I. \
+	     -c $$f -o $$d/$${f%.c}.o 2>/dev/null \
+	     || { echo "lint-runtime-symbols: $$f does not build for rv32ic"; rc=1; continue; }; \
+	   allowed=""; \
+	   for e in $(RV_ALLOWED); do [ "$${e%%:*}" = "$$f" ] && allowed=$$(echo "$${e#*:}" | tr ',' ' '); done; \
+	   got=$$($(LLVM_NM) -u $$d/$${f%.c}.o 2>/dev/null | grep -oE '__[a-z0-9_]+' | sort -u); \
+	   for sym in $$got; do \
+	     seen=$$((seen + 1)); \
+	     echo "$$allowed" | tr ' ' '\n' | grep -qx "$$sym" \
+	       || { echo "lint-runtime-symbols: $$f pulls $$sym on rv32ic, a compiler-runtime dependency RV_ALLOWED does not record for it (see https://github.com/c4milo/chapulin/issues/53)"; rc=1; }; \
+	   done; \
+	   for sym in $$allowed; do \
+	     echo "$$got" | grep -qx "$$sym" \
+	       || echo "lint-runtime-symbols: $$f no longer pulls $$sym — drop it from RV_ALLOWED"; \
+	   done; \
+	 done; \
+	 [ "$$seen" -gt 0 ] || { echo "lint-runtime-symbols: read no undefined symbol from any object; llvm-nm or the build failed"; rc=1; }; \
+	 def=$$($(LLVM_NM) --defined-only $$d/softmul.o 2>/dev/null | awk '{print $$3}' | grep -E '^__' | sort | tr '\n' ' '); \
+	 want=$$(echo $(RV_SOFTMUL) | tr ' ' '\n' | sort | tr '\n' ' '); \
+	 [ "$$def" = "$$want" ] \
+	   || { echo "lint-runtime-symbols: softmul.c defines '$$def' on rv32ic; RV_SOFTMUL expects '$$want'"; rc=1; }; \
+	 rm -rf $$d; \
+	 [ $$rc -eq 0 ] && echo "lint-runtime-symbols: on rv32ic each file pulls only the runtime calls RV_ALLOWED records, and softmul.c defines $(RV_SOFTMUL)"; exit $$rc
 endif
+
 .PHONY: lint-bench-numbers
 lint-bench-numbers:
 	@python3 tools/bench-numbers.py
@@ -1297,32 +1444,6 @@ endif
 .PHONY: lint-issue-links
 lint-issue-links:
 	@python3 tools/issue-links.py
-
-.PHONY: lint-runtime-symbols
-lint-runtime-symbols:
-ifeq ($(CLANG_RV),)
-	$(call REQUIRE,clang,it ships with llvm — see the LLVM_MAJOR pin in tools/toolchain.env)
-else ifeq ($(LLVM_NM),)
-	$(call REQUIRE,llvm-nm,it ships with llvm — see the LLVM_MAJOR pin in tools/toolchain.env)
-else
-	@d=$$(mktemp -d); rc=0; \
-	 for f in $(RV_SRCS); do \
-	   $(CLANG_RV) -target riscv32-unknown-elf -march=rv32ic -mabi=ilp32 -Os -std=c11 \
-	     -D_DEFAULT_SOURCE -DCH_RAND_EXTERN -DCH_KEX_PQ -I. -c $$f -o $$d/$${f%.c}.o 2>/dev/null \
-	     || { echo "lint-runtime-symbols: $$f does not build for rv32ic"; rc=1; }; \
-	 done; \
-	 $(LLVM_NM) -u $$d/*.o 2>/dev/null | grep -oE '__[a-z0-9]+' | sort -u > $$d/.und; \
-	 $(LLVM_NM) --defined-only $$d/*.o 2>/dev/null | awk '{print $$3}' \
-	   | grep -E '^__[a-z0-9]+$$' | sort -u > $$d/.def; \
-	 got=$$(comm -23 $$d/.und $$d/.def); \
-	 [ -s $$d/.und ] || { echo "lint-runtime-symbols: read no symbols; llvm-nm or the build failed"; rc=1; }; \
-	 for sym in $$got; do \
-	   echo "$(RV_ALLOWED)" | tr ' ' '\n' | grep -qx "$$sym" \
-	     || { echo "lint-runtime-symbols: $$sym is a new compiler-runtime dependency (see https://github.com/c4milo/chapulin/issues/53)"; rc=1; }; \
-	 done; \
-	 rm -rf $$d; \
-	 [ $$rc -eq 0 ] && echo "lint-runtime-symbols: rv32ic pulls only the runtime calls https://github.com/c4milo/chapulin/issues/53 records"; exit $$rc
-endif
 
 # The fuzz job's budget is per target, so adding a target silently
 # overruns its timeout. GitHub reports that as cancelled, not failed,

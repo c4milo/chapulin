@@ -1,0 +1,15 @@
+invariant: INV-16
+file: poly1305.c
+catches: test/lint-wide-multiply.sh
+reason: the limb mask 0x3ffffff written as a modulo is a division by
+  2^26-1, and clang lowers it to a multiply-high on every target (umull
+  on the M3, multu on mips32r2, mulhu on rv32imac): a wide multiply on
+  the secret accumulator, the leak the 16x16 decomposition exists to
+  remove
+
+--- old
+        h1 += h0 >> 26;
+        h0 &= 0x3ffffff;
+--- new
+        h1 += h0 >> 26;
+        h0 %= 0x3ffffff;

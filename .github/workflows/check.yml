@@ -99,6 +99,14 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - run: sudo apt-get update -q && sudo apt-get install -y -q gcc-mips-linux-gnu qemu-user
+      - name: Count wide multiplies and divisions under the mips gcc
+        # lint-wide-multiply in the check job measures clang. This lane
+        # ships gcc, and gcc does not keep ct.h's 16x16 pieces apart
+        # everywhere clang does
+        # (https://github.com/c4milo/chapulin/issues/86). The Makefile
+        # picks the spec from the driver's -dumpmachine and fails when
+        # none matches, so this step cannot measure nothing.
+        run: make lint-wide-multiply-gcc WIDEMUL_GCC=mips-linux-gnu-gcc
       - run: make cross-check CROSS=mips-linux-gnu- RUNNER=qemu-mips
 
   arm64:
@@ -156,6 +164,15 @@ jobs:
           curl -sSL -o /tmp/armtc.tar.xz "$url"
           echo "$ARM_GNU_LINUX_SHA256  /tmp/armtc.tar.xz" | sha256sum -c -
           mkdir -p ~/armtc && tar -xJf /tmp/armtc.tar.xz -C ~/armtc --strip-components=1
+      - name: Count wide multiplies and divisions under the Arm gcc
+        # lint-wide-multiply in the check job measures clang. This lane
+        # ships the gcc a firmware tree ships, and at -Os it re-fuses
+        # ct.h's 16x16 pieces into umlal and umull
+        # (https://github.com/c4milo/chapulin/issues/86); the Makefile
+        # records those counts and fails on any file above its own. The
+        # spec is picked from the driver's -dumpmachine and no match
+        # fails, so this step cannot measure nothing.
+        run: make lint-wide-multiply-gcc WIDEMUL_GCC="$HOME/armtc/bin/arm-none-eabi-gcc"
       - run: make m3-check M3_CC="$HOME/armtc/bin/arm-none-eabi-gcc"
 
   freertos:
@@ -209,7 +226,8 @@ jobs:
     # riscv32 cross compiler with a libc, so the toolchain is Bootlin's,
     # pinned in tools/toolchain.env by the publisher's sha256 and cached
     # by version. Its libc is ilp32d, so the lane runs the toolchain's
-    # own ABI; rv32imac codegen is gated separately by lint-wide-multiply.
+    # own ABI; rv32imac codegen is gated separately by lint-wide-multiply
+    # under clang in the check job and under this gcc in the step below.
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
@@ -236,6 +254,13 @@ jobs:
           curl -sSL -o /tmp/rv32tc.tar.xz "$url"
           echo "$RV32_TC_SHA256  /tmp/rv32tc.tar.xz" | sha256sum -c -
           mkdir -p ~/rv32tc && tar -xJf /tmp/rv32tc.tar.xz -C ~/rv32tc --strip-components=1
+      - name: Count wide multiplies and divisions under the riscv32 gcc
+        # lint-wide-multiply in the check job measures clang for
+        # rv32imac; this is the same count under the gcc this lane ships
+        # (https://github.com/c4milo/chapulin/issues/86). The Makefile
+        # picks the spec from the driver's -dumpmachine and fails when
+        # none matches, so this step cannot measure nothing.
+        run: make lint-wide-multiply-gcc WIDEMUL_GCC="$HOME/rv32tc/bin/riscv32-linux-gcc"
       - run: make cross-check CROSS="$HOME/rv32tc/bin/riscv32-linux-" RUNNER=qemu-riscv32
 
   check:

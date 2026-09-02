@@ -351,16 +351,40 @@ secrets and MACs and never opens a record.
   undo this in poly1305, x25519 and ML-KEM; `softmul.c` supplies
   constant-time `__mulsi3` and `__muldi3` under those names, so they
   replace the library's at link time. `make lint-runtime-symbols` builds
-  for rv32ic and fails on any runtime call beyond the one that remains,
-  `__udivsi3`, which sha3 uses for `% 5` over public loop counters.
+  every secret-touching source for rv32ic under the pinned clang and
+  holds, file by file, the runtime calls each may make: `__mulsi3` in
+  poly1305, x25519 and mlkem_poly, `__udivsi3` in sha3 for `% 5` over
+  public loop counters, and none anywhere else; it also checks that
+  `softmul.c` still defines the two names it admits. It measures clang
+  only. Measured by hand under the Bootlin riscv32 gcc at `-Os`,
+  `softmul.c` itself is broken: gcc rewrites `__muldi3`'s mask select as
+  a multiply by the selected bit, which on that core is a call to
+  `__muldi3` from inside `__muldi3`. `docs/porting.md` states it, and
+  nothing gates it yet.
   A multiplier that exists but is variable-time is the other half. ARM's
   Cortex-M3 `umull` returns sooner when both operands are below 65536,
   with further undocumented exits on zero and powers of two, and 32-bit
   x86 and PowerPC have the same shape; the M3's 32-to-32 `mul` does not.
-  So `ct.h` builds every widening product out of four 16x16 pieces, and
-  poly1305, x25519 and ML-KEM emit no wide multiply on the M3 or on
-  mips32r2 — `make lint-wide-multiply` disassembles for both and holds
-  the count at zero. What is left is the 32-to-32 multiply, which ARM
+  So `ct.h` builds every widening product out of four 16x16 pieces.
+  `make lint-wide-multiply` compiles every secret-touching source — the
+  chain from ct.c to tls.c, drbg.c and softmul.c, twenty-four files —
+  for Cortex-M3, mips32r2 and rv32imac and counts, per file, the
+  widening multiplies, the divisions and the calls into the compiler's
+  64-bit division runtime, matching each opcode as a prefix so a
+  condition-code suffix cannot hide one. Under the pinned clang every
+  file is at zero except sha3, whose public `% 5` is one multiply-high.
+  `make lint-wide-multiply-gcc` runs the same count under the gcc each
+  CI lane ships, and there the decomposition does not hold everywhere:
+  at `-Os` the Arm GNU gcc re-fuses ct_widemul's pieces into two `umlal`
+  in poly1305 and in mlkem_poly and two `umull` and two `umlal` in
+  x25519, and both it and the Bootlin riscv32 gcc rewrite ct_widemul_s's
+  sign mask as a multiply by the sign bit, one `mulhu` in x25519 on
+  rv32imac; gcc on mips32r2 keeps every piece apart. The gate records
+  those counts so they cannot grow and fails on any file above its own,
+  `docs/porting.md` tabulates them, and the repair in ct.h has not
+  landed: on a Cortex-M3 built with gcc, poly1305, x25519 and mlkem_poly
+  still reach `umull`. Where the decomposition holds, what is left is
+  the 32-to-32 multiply, which ARM
   documents as single-cycle on the M3. mips32r2 does not document its
   own, so the decomposition narrows that part's exposure rather than
   closing it; `ct.h` says so. Every target gets the decomposition unless

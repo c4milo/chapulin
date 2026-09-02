@@ -26,6 +26,15 @@ and the add count is its Hamming weight. `softmul.c` handles this with no action
 from you: it defines `__mulsi3` and `__muldi3`, the names the ABI emits, so the
 linker resolves them in-tree instead of pulling the branching versions.
 
+One measured exception, not yet repaired. The Bootlin riscv32 gcc 14.3 at
+`-Os` for rv32ic rewrites the mask select in `softmul.c`'s `__muldi3`,
+`acc += a & mask`, as a multiply by the selected bit, and on a core with no
+multiplier that multiply is a call to `__muldi3` from inside `__muldi3`: the
+routine never returns. At `-O2` it keeps the mask. `lint-runtime-symbols`
+measures clang, which keeps the mask at both levels, and nothing gates gcc on
+rv32ic yet. Until `softmul.c` is reworked, build it under gcc at `-O2`, or read
+its disassembly for a call to its own name before you trust it.
+
 **Your core has a multiplier whose timing you cannot document.** This is the
 default and needs no flag. `ct.h` builds every widening product from four 16x16
 pieces, which costs roughly 33% of the pinned handshake's crypto and 1.7 kB of
@@ -65,22 +74,70 @@ are instruction-for-instruction unchanged, because their operands are wide by
 construction and nothing in them is provably zero. A blanket barrier inside
 `ct_widemul` would have cost 45% of poly1305's block on a Cortex-M3.
 
-`make lint-wide-multiply` gates Cortex-M3, mips32r2 and rv32imac. Point it at
-your own target too:
+`make lint-wide-multiply` gates Cortex-M3, mips32r2 and rv32imac under the
+pinned clang, over every source a secret passes through (`CODEGEN_SRCS` in the
+Makefile: the chain from `ct.c` to `tls.c`, plus `drbg.c` and `softmul.c`),
+and counts per file the widening multiplies, the divisions and the calls into
+the compiler's 64-bit division runtime. `make lint-wide-multiply-gcc` is the
+same count under gcc, which is what a firmware tree ships; each CI lane runs it
+with its own toolchain. Point it at the compiler you ship:
 
 ```bash
-make lint-wide-multiply WIDEMUL_SPECS="mycore:my-triple:-mcpu=mycpu:umull,smull,umlal,smlal"
+make lint-wide-multiply-gcc WIDEMUL_GCC=/path/to/arm-none-eabi-gcc
 ```
 
-The four fields are a label, the compiler triple, the CPU flag, and the
-comma-separated opcodes that count as widening on your ISA. It disassembles
-what your compiler emits and fails if any module exceeds its ceiling. Run it
-with the compiler and flags you actually ship, since this is a property of
-codegen and not of the source.
+The Makefile reads the driver's `-dumpmachine` and runs the spec whose machine
+prefix matches; no match fails rather than skips. For a core the list does not
+carry, add a spec:
+
+```bash
+make lint-wide-multiply-gcc WIDEMUL_GCC=/path/to/my-gcc \
+  WIDEMUL_SPECS="mycore:gcc:my-machine-prefix:-mcpu=mycpu,-mthumb:umull,umlal,umaal,smull,smlal,udiv,sdiv,__aeabi_uidiv,__aeabi_uldiv"
+```
+
+The five fields are a label; `clang` or `gcc`; the machine (clang's target
+triple, or the prefix of gcc's `-dumpmachine`); the comma-separated flags that
+select your core; and the comma-separated tokens that count on your ISA. A
+token counts every instruction whose mnemonic begins with it, so a
+condition-code or width suffix (`umullne`, `udiveq`, `umull.w`) cannot slip
+past it, and a token that begins with `__` counts every call to a runtime
+routine whose name begins with it, which is where a 64-bit division goes. Both
+can only over-count, and an over-count fails loudly. Run it with the compiler
+and flags you actually ship, since this is a property of codegen and not of
+the source; the gate compiles at `-Os`, so put your own level in the flags
+field if it differs. A new spec starts from the default ceilings, so the first
+thing it reports is how your compiler lowers sha3's public `% 5`; record that
+count for your label with `WIDEMUL_CEILING_SPEC="mycore/sha3.c:5"`, and read
+every other file it reports above zero as the finding it is.
+
+### What each compiler emits today
+
+Counts per file at `-Os`, read from the gate. Every source not listed is at
+zero under every compiler.
+
+| compiler | poly1305.c | x25519.c | mlkem_poly.c | sha3.c (public `% 5`) |
+| --- | --- | --- | --- | --- |
+| clang 23, Cortex-M3, mips32r2, rv32imac | 0 | 0 | 0 | 1 multiply-high |
+| Arm GNU gcc 15.3, Cortex-M3 | 2 `umlal` | 2 `umull`, 2 `umlal` | 2 `umlal` | 5 `udiv` |
+| gcc 12.4 (Ubuntu 24.04), mips32r2 | 0 | 0 | 0 | 5 `div` |
+| Bootlin gcc 14.3, rv32imac | 0 | 1 `mulhu` | 0 | 5 `rem` |
+
+The sha3 column is Keccak's `% 5` over public loop counters, which divides no
+secret. The gcc entries in the other three columns are a leak, recorded and
+not accepted: gcc rewrites `(uint64_t)lh + hl` on two products it can prove
+narrow into one widening multiply-accumulate, and `x & (0 - bit)` into
+`x * bit`, a widening multiply by a secret bit. The gate holds those counts so
+they cannot grow and fails on any file above its own. The repair is a rework of
+`ct_widemul`, `ct_mulsmall` and `ct_widemul_s` in `ct.h` that has not landed.
+Until it does, a Cortex-M3 built with gcc runs `umull` and `umlal` on secret
+limbs in those three modules, and the gate's zero holds for the other
+twenty-one files; under clang it holds for all twenty-four.
 
 ### What the decomposition does not cover
 
-It removes the 32-to-64 multiply. What remains is the 32-to-32 one. Arm
+It removes the 32-to-64 multiply where the compiler keeps its pieces apart,
+which under gcc is not yet everywhere; the table above says where. What
+remains after that is the 32-to-32 one. Arm
 documents that as single-cycle on the M3, so the guarantee is complete there.
 mips32r2 does not document its own — GCC's 4K scheduler model says the
 three-operand `mul` stalls by operand size — so on that part the decomposition

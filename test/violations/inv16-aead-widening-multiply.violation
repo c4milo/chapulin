@@ -1,0 +1,21 @@
+invariant: INV-16
+file: aead.c
+catches: test/lint-wide-multiply.sh
+reason: aead.c holds the key, the nonce and the plaintext, and sat
+  outside the four files the gate used to read, so a widening product
+  added here reached the M3's umull with nothing counting it; every
+  source that touches secret bytes is held at zero now
+
+--- old
+    uint8_t len[16];
+    for (int i = 0; i < 8; i++) {
+        len[i] = (uint8_t)((uint64_t)aad_len >> (8 * i));
+        len[8 + i] = (uint8_t)((uint64_t)n >> (8 * i));
+    }
+--- new
+    uint8_t len[16];
+    uint64_t total = (uint64_t)(uint32_t)aad_len * (uint32_t)n;
+    for (int i = 0; i < 8; i++) {
+        len[i] = (uint8_t)((uint64_t)aad_len >> (8 * i));
+        len[8 + i] = (uint8_t)(total >> (8 * i));
+    }

@@ -39,4 +39,7 @@ if [ ! -x "$tc/$name/bin/riscv32-linux-gcc" ]; then
     tar -xJf /tmp/rv32tc.tar.xz -C "$tc"
 fi
 
+# The same two steps the CI job runs, in its order: the codegen gate under
+# this gcc, then the suites.
+make lint-wide-multiply-gcc WIDEMUL_GCC="$tc/$name/bin/riscv32-linux-gcc"
 make cross-check CROSS="$tc/$name/bin/riscv32-linux-" RUNNER=qemu-riscv32

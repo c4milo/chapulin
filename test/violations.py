@@ -17,8 +17,11 @@ Each violation lives in test/violations/<name>.violation:
     invariant: INV-10
     file: record.c
     catches: unit
-    builds: bin/unit          (optional; required when catches is a script,
-                               which builds nothing of its own)
+    builds: bin/unit          (optional; required when catches is a script
+                               that runs a bin/ binary, since a script
+                               builds nothing of its own. A script that
+                               only runs make, such as
+                               test/lint-wide-multiply.sh, needs none)
     reason: one line on what breaks
     --- old
     <text to find, exactly once>
@@ -93,14 +96,16 @@ def run(name):
 
     # A "catches" with a slash is a script run as-is; otherwise it names
     # a binary under bin/. Either way the target must be built from the
-    # source under test; a script that builds nothing of its own
-    # (test/e2e.sh runs no make) needs a 'builds' line saying what to.
+    # source under test; a script that runs a bin/ binary and builds
+    # nothing of its own (test/e2e.sh runs no make) needs a 'builds' line
+    # saying what to. A script that only runs make (the codegen-gate
+    # scripts) compiles the edited source itself and needs none.
     target_is_script = "/" in head["catches"]
     binary = head["catches"] if target_is_script else f"bin/{head['catches']}"
     builds = head.get("builds", "" if target_is_script else binary).split()
-    if target_is_script and not builds:
-        print(f"  STALE    {name}: a script target needs a 'builds' line "
-              f"naming what to rebuild from the edited source")
+    if target_is_script and not builds and binaries_run_by(ROOT / head["catches"]):
+        print(f"  STALE    {name}: a script target that runs a bin/ binary needs "
+              f"a 'builds' line naming what to rebuild from the edited source")
         return "stale"
 
     def rebuild_and_run():
@@ -185,19 +190,27 @@ def run(name):
 
 
 # The fast tier for the PR lane is the targets that run in seconds: the
-# unit suite, the strictness parsers, rsa_test. Left out are the ones
-# whose single run is expensive — the exhaustive handshake enumeration
-# (minutes), the end-to-end suite (needs live servers), and the
-# differential (each run drives ~6000 oracle comparisons, so a baseline
-# and a mutation pass together are ~30s per violation). The tier follows
-# the target, so no per-violation field drifts from what the check runs.
+# unit suite, the strictness parsers, rsa_test, and the two codegen
+# gates, which compile with the pinned clang and answer in seconds. Left
+# out are the ones whose single run is expensive — the exhaustive
+# handshake enumeration (minutes), the end-to-end suite (needs live
+# servers), and the differential (each run drives ~6000 oracle
+# comparisons, so a baseline and a mutation pass together are ~30s per
+# violation). The tier follows the target, so no per-violation field
+# drifts from what the check runs.
 FAST_TARGETS = {"unit", "unit_ca", "x509strict", "x509strict_ecdsa",
                 "rsa_test", "drbg_test", "handshake_strict_test",
-                "unit_ct_widemul", "mlkem_test_ct_widemul"}
+                "unit_ct_widemul", "mlkem_test_ct_widemul",
+                "test/lint-wide-multiply.sh", "test/lint-runtime-symbols.sh"}
 
 
 def catches_of(name):
     return parse(VIOLATIONS / f"{name}.violation")[0]["catches"]
+
+
+def binaries_run_by(script):
+    """The bin/ binaries a script runs, read from its text."""
+    return set(re.findall(r"\./(bin/[a-z0-9_]+)", script.read_text()))
 
 
 def lint_builds():
@@ -217,7 +230,7 @@ def lint_builds():
             print(f"lint-violation-builds: {path.name} catches {catches}, which is missing")
             bad = 1
             continue
-        needs = set(re.findall(r"\./(bin/[a-z0-9_]+)", script.read_text()))
+        needs = binaries_run_by(script)
         builds = set(head.get("builds", "").split())
         missing = sorted(needs - builds)
         if missing:

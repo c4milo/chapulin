@@ -1,0 +1,12 @@
+invariant: INV-16
+file: poly1305.c
+catches: test/lint-wide-multiply.sh
+reason: a quotient under a condition: clang folds the branch into an IT
+  block and emits udivne on the M3, a mnemonic the gate's old
+  word-boundary match did not count (udiv is followed by a letter, not a
+  boundary); the gate now matches each opcode as a prefix of the mnemonic
+
+--- old
+    size_t whole = n & ~(size_t)15;
+--- new
+    size_t whole = (n & 1) ? n / p->fill : n;
