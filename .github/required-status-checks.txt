@@ -16,3 +16,10 @@
 # checks, and GitHub refuses to enable it on a branch that requires none,
 # so this list is never empty.
 check
+arm64
+m3
+freertos
+riscv32
+mips
+san
+coverage
