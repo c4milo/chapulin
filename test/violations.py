@@ -16,7 +16,10 @@ Each violation lives in test/violations/<name>.violation:
 
     invariant: INV-10
     file: record.c
-    catches: unit
+    catches: unit             (a bin/ binary by name, or a script by path
+                               followed by its arguments when it takes
+                               any: proof/prove-one.sh x25519_tail runs
+                               one CBMC harness)
     builds: bin/unit          (optional; required when catches is a script
                                that runs a bin/ binary, since a script
                                builds nothing of its own. A script that
@@ -94,16 +97,21 @@ def run(name):
               f"{original.count(old)} times in {head['file']}, expected 1")
         return "stale"
 
-    # A "catches" with a slash is a script run as-is; otherwise it names
-    # a binary under bin/. Either way the target must be built from the
-    # source under test; a script that runs a bin/ binary and builds
-    # nothing of its own (test/e2e.sh runs no make) needs a 'builds' line
-    # saying what to. A script that only runs make (the codegen-gate
-    # scripts) compiles the edited source itself and needs none.
-    target_is_script = "/" in head["catches"]
-    binary = head["catches"] if target_is_script else f"bin/{head['catches']}"
+    # A "catches" with a slash is a script run as-is, and the words after
+    # it are its arguments (proof/prove-one.sh takes the harness name);
+    # otherwise it names a binary under bin/. Either way the target must
+    # be built from the source under test; a script that runs a bin/
+    # binary and builds nothing of its own (test/e2e.sh runs no make)
+    # needs a 'builds' line saying what to. A script that only runs make
+    # (the codegen-gate scripts) or cbmc (proof/prove-one.sh) compiles the
+    # edited source itself and needs none.
+    command = head["catches"].split()
+    target_is_script = "/" in command[0]
+    if not target_is_script:
+        command = [f"bin/{command[0]}"]
+    binary = command[0]
     builds = head.get("builds", "" if target_is_script else binary).split()
-    if target_is_script and not builds and binaries_run_by(ROOT / head["catches"]):
+    if target_is_script and not builds and binaries_run_by(ROOT / binary):
         print(f"  STALE    {name}: a script target that runs a bin/ binary needs "
               f"a 'builds' line naming what to rebuild from the edited source")
         return "stale"
@@ -134,7 +142,7 @@ def run(name):
                                capture_output=True, text=True)
             if b.returncode != 0:
                 return False, None, b.stderr or b.stdout
-        r = subprocess.run([binary], cwd=ROOT, capture_output=True, text=True)
+        r = subprocess.run(command, cwd=ROOT, capture_output=True, text=True)
         return True, r.returncode, r.stderr or r.stdout
 
     # Baseline: the target must PASS on unedited source in this
@@ -198,7 +206,10 @@ def run(name):
 # servers), and the differential (each run drives ~6000 oracle
 # comparisons, so a baseline and a mutation pass together are ~30s per
 # violation). The tier follows the target, so no per-violation field
-# drifts from what the check runs.
+# drifts from what the check runs. The set holds whole catches lines, so
+# a line that carries an argument never matches: the proof-backed
+# violations (proof/prove-one.sh <harness>) run only in the nightly's
+# full test-invariants, where each is a CBMC proof of minutes, twice.
 FAST_TARGETS = {"unit", "unit_ca", "x509strict", "x509strict_ecdsa",
                 "rsa_test", "drbg_test", "handshake_strict_test",
                 "softmul_test", "unit_ct_widemul", "mlkem_test_ct_widemul",
@@ -227,9 +238,9 @@ def lint_builds():
         catches = head["catches"]
         if "/" not in catches:
             continue
-        script = pathlib.Path(catches)
+        script = pathlib.Path(catches.split()[0])
         if not script.exists():
-            print(f"lint-violation-builds: {path.name} catches {catches}, which is missing")
+            print(f"lint-violation-builds: {path.name} catches {script}, which is missing")
             bad = 1
             continue
         needs = binaries_run_by(script)

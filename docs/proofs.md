@@ -102,6 +102,16 @@ comment; set the weight at or above the measured peak. A verdict-less
 harness proves nothing, and the README calls that out — never commit a
 launch line whose formula has not been seen to converge.
 
+**Plant the bug the harness exists to catch, then land it.** A harness
+that cannot fail proves nothing, and a passing run does not show which
+kind it is. Apply the mutation by hand, run
+`proof/prove-one.sh NAME` -- run.sh's exact launch for one harness,
+exit nonzero unless it verifies, contract in its header -- and watch
+the property fail. Then land the edit as a `test/violations/*.violation`
+whose `catches` line names that same command, so the nightly keeps
+checking that the proof still sees it; the two `inv24-*` files are the
+precedent.
+
 **Structure beats solver.** kissat returns verdicts where the built-in
 solver has none after hours, so keep it installed. But no solver
 rescues a monolithic formula: incremental z3 timed out on the same
