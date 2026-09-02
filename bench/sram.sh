@@ -4,12 +4,18 @@
 # stack peaks from bench/stack.py, which walks the real call graph
 # (otool-extracted edges weighted by -fstack-usage frames) instead of any
 # hand-picked chain. Host-native today; the cross-compiled ASIC model
-# (pushkin's device-ram.sh) lands with the bench.
+# (pushkin's device-ram.sh) lands with the bench. Prints the report and
+# writes bench/results-sram.csv, the file make lint-bench-numbers compares
+# against the README's Memory table
+# (https://github.com/c4milo/chapulin/issues/90).
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
 TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT
+
+# The receive buffer the table shows; the static working sets add it.
+RXBUF=2048
 
 cat > "$TMP/sz.c" <<'EOF'
 #include <stdio.h>
@@ -55,20 +61,79 @@ PROBE
 fi
 
 echo "session struct:          ${SESSION} B"
-echo "static working set:      $((SESSION + 2048)) B (with a 2048 B receive buffer)"
+echo "static working set:      $((SESSION + RXBUF)) B (with a ${RXBUF} B receive buffer)"
 echo "session struct, rv32:    ${SESSION_RV32} B"
 echo "session struct (KEX=pq): ${SESSION_PQ} B"
-echo "static working set:      $((SESSION_PQ + 2048)) B (KEX=pq, 2048 B receive buffer)"
+echo "static working set:      $((SESSION_PQ + RXBUF)) B (KEX=pq, ${RXBUF} B receive buffer)"
 echo "session struct, rv32:    ${SESSION_RV32_PQ} B (KEX=pq)"
+
+# Each stack.py report is saved whole, so the CSV rows below come from the
+# same run the report prints.
+stack_report() { # $1 = report name, $2.. = VAR=value settings for stack.py
+    local name=$1
+    shift
+    env "$@" python3 bench/stack.py > "$TMP/$name.stack"
+}
+peak() { # $1 = report name, $2 = entry point -> its peak stack in bytes
+    awk -v entry="$2" '$1 == entry { print $2 }' "$TMP/$1.stack"
+}
+
 echo "-- default build (PIN=rsa); ch_connect peak = pinned RSA verify --"
-python3 bench/stack.py
+stack_report default
+cat "$TMP/default.stack"
 echo "-- PIN=ecdsa build; ch_connect peak = pinned P-256 verify --"
-STACK_CFLAGS=-DCH_PIN_ECDSA python3 bench/stack.py | head -1
+stack_report ecdsa STACK_CFLAGS=-DCH_PIN_ECDSA
+head -1 "$TMP/ecdsa.stack"
 echo "-- PSK-mode ch_connect (server_auth pruned: PSK never enters it) --"
-STACK_PRUNE=hsa_server_auth python3 bench/stack.py | head -1
+stack_report psk STACK_PRUNE=hsa_server_auth
+head -1 "$TMP/psk.stack"
 echo "-- TRUST=ca PIN=rsa; ch_connect peak = chain verify + leaf frame --"
-STACK_CFLAGS=-DCH_TRUST_CA python3 bench/stack.py | head -1
+stack_report ca_rsa STACK_CFLAGS=-DCH_TRUST_CA
+head -1 "$TMP/ca_rsa.stack"
 echo "-- TRUST=ca PIN=ecdsa --"
-STACK_CFLAGS="-DCH_TRUST_CA -DCH_PIN_ECDSA" python3 bench/stack.py | head -1
+stack_report ca_ecdsa "STACK_CFLAGS=-DCH_TRUST_CA -DCH_PIN_ECDSA"
+head -1 "$TMP/ca_ecdsa.stack"
 echo "-- KEX=pq; ch_connect peak includes ML-KEM's K-PKE frames --"
-STACK_CFLAGS=-DCH_KEX_PQ python3 bench/stack.py | head -1
+stack_report pq STACK_CFLAGS=-DCH_KEX_PQ
+head -1 "$TMP/pq.stack"
+
+# The CSV carries every column or nothing: without the rv32 toolchain the
+# report above says "unmeasured", and the committed CSV keeps the last
+# full measurement.
+if [ "$SESSION_RV32" = unmeasured ] || [ "$SESSION_RV32_PQ" = unmeasured ]; then
+    echo "SKIP bench/results-sram.csv: no rv32 toolchain, so the rv32 column is unmeasured" >&2
+    exit 0
+fi
+
+row() { # $1 = quantity, $2 = bytes -> one CSV line; refuses a non-number
+    case "$2" in
+    '' | *[!0-9]*) echo "FAIL: $1 measured as '$2', not a byte count" >&2; return 1 ;;
+    esac
+    echo "$1,$2"
+}
+# Written to a temporary file first: redirecting straight at the committed
+# file would truncate it before a failing row could stop the run.
+TMPOUT="$TMP/results-sram.csv"
+{
+    echo "quantity,bytes"
+    row session_struct_arm64 "$SESSION"
+    row session_struct_rv32 "$SESSION_RV32"
+    row receive_buffer "$RXBUF"
+    row static_working_set_arm64 "$((SESSION + RXBUF))"
+    row static_working_set_rv32 "$((SESSION_RV32 + RXBUF))"
+    row session_struct_pq_arm64 "$SESSION_PQ"
+    row session_struct_pq_rv32 "$SESSION_RV32_PQ"
+    row static_working_set_pq_arm64 "$((SESSION_PQ + RXBUF))"
+    row static_working_set_pq_rv32 "$((SESSION_RV32_PQ + RXBUF))"
+    row stack_connect_rsa "$(peak default ch_connect)"
+    row stack_connect_ecdsa "$(peak ecdsa ch_connect)"
+    row stack_connect_psk "$(peak psk ch_connect)"
+    row stack_connect_ca_rsa "$(peak ca_rsa ch_connect)"
+    row stack_connect_ca_ecdsa "$(peak ca_ecdsa ch_connect)"
+    row stack_read "$(peak default ch_read)"
+    row stack_connect_pq "$(peak pq ch_connect)"
+    row stack_write "$(peak default ch_write)"
+    row stack_close "$(peak default ch_close)"
+} > "$TMPOUT"
+mv "$TMPOUT" bench/results-sram.csv
+echo "wrote bench/results-sram.csv" >&2

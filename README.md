@@ -98,12 +98,14 @@ server on a fresh key pair and advance the counter.
 
 ## Memory
 
-[`bench/sram.sh`](bench/sram.sh) measures every number below. The session
-struct is measured twice, once native on arm64 and once for rv32ic — the
-byte-count constants do not move, only the pointer fields, so a 32-bit device
-needs 80 bytes less than the host figure in either build. The stack peaks are
-arm64 only: `bench/stack.py` reads arm64 relocations, so an rv32 peak needs
-tooling that does not exist yet.
+[`bench/sram.sh`](bench/sram.sh) measures every number below and writes
+them to [`bench/results-sram.csv`](bench/results-sram.csv);
+`make lint-bench-numbers` fails when this table disagrees with that file.
+The session struct is measured twice, once native on arm64 and once for
+rv32ic — the byte-count constants do not move, only the pointer fields, so
+a 32-bit device needs 80 bytes less than the host figure in either build.
+The stack peaks are arm64 only: `bench/stack.py` reads arm64 relocations,
+so an rv32 peak needs tooling that does not exist yet.
 
 | what | arm64 | rv32 |
 |---|---|---|
