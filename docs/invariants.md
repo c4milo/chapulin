@@ -399,7 +399,7 @@ which convention holds them.
   `__muldi3` so the library's branching ones are never linked, and the
   gate asserts it still defines them; the rv32ic gcc spec holds
   `softmul.c` at zero calls to `__muldi3`, because gcc at `-Os` once
-  emitted one from inside `__muldi3` itself. Eight `inv16-*` violations
+  emitted one from inside `__muldi3` itself. Ten `inv16-*` violations
   in `test/violations/` prove each detection catches its mutant, one of
   them under the gcc gate alone.  Both count instructions; neither checks an answer. `make
   ct-widemul-check` (in `check-slow`) runs the unit, ML-KEM and
