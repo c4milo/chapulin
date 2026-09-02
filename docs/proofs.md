@@ -79,6 +79,16 @@ of int16 to [0, q) saved 17% time and 3% memory. The wider theorem (no
 UB on hostile or corrupted state) costs almost nothing, and the stub
 discharge needs it.
 
+**Write a power-of-two bound as bit structure, not as comparisons.** A
+stub that returns a value in [-2^36, 2^36) can say so as
+`(int64_t)(nondet_u64() << 27) >> 27`, a 37-bit sign extension, or as
+`__CPROVER_assume(p > -2^36 && p < 2^36)`. Both mean the same set. The
+x25519 ladder step, whose ten mul calls each take 256 such values,
+proved in 540 s and 2.4 GB with the sign extension and in 1328 s and
+4.1 GB with the comparisons: the solver reads the top 27 bits as
+copies of bit 36 straight from the circuit, where the comparison form
+makes it learn that from two 64-bit subtractions per value.
+
 **Keep harness-reachable loop bounds concrete.** Unwinding a loop
 whose trip count is a symbolic parameter copies the body to the
 worst-case product of the nested bounds. A per-layer helper taking
@@ -113,7 +123,21 @@ In order, with precedents:
    (x25519_mul, p256_mul, rsa_mul). Disclose the split in the README
    row; the lemma must cover every shape at every operand range the
    function can produce.
-4. **Demote to the slow tier** and let CI's nightly budget carry it.
+4. **Replace a callee with its contract** and prove the contract in
+   the callee's own harness (aead over `proof/aead_stubs.h`;
+   x25519_step and x25519_tail over `proof/x25519_stubs.h`). The stub
+   header states what it models and what the composition gives up.
+   This works when no property in the caller reads the callee's
+   value beyond what the contract states: the ladder's properties are
+   all bounds, so mul's multiply is a bound. A `static inline` callee
+   in a header can be replaced without touching the source: include
+   the header first under its own name, `#define` the name to the
+   stub, then include the `.c`; the include guard keeps the `.c`'s own
+   `#include` from reading the real definition again. A `static`
+   function in the `.c` itself cannot be replaced this way, which is
+   why the x25519 stub sits one level down, at `ct_widemul_s`, rather
+   than at `mul`.
+5. **Demote to the slow tier** and let CI's nightly budget carry it.
    A slow row's verdict comes from the last nightly, and the README
    says so.
 

@@ -39,7 +39,10 @@
 # never converge under SAT with it) at one caller aliasing shape per
 # formula, x25519_mul proves the overflow lemma for that arithmetic
 # with full checks, and x25519_ops proves the linear ops whole with
-# full checks. p256 and rsa split by check set the same way, and
+# full checks. x25519_step and x25519_tail prove the ladder keeps its
+# limbs inside the range those proofs assume, with mul's multiply
+# replaced by the magnitude contract x25519_mul discharges
+# (proof/x25519_stubs.h). p256 and rsa split by check set the same way, and
 # handshake_parser/eeparse split one parser per formula: SAT time grows
 # super-linearly with formula size, so two small instances beat one big
 # one by hours.
@@ -395,6 +398,21 @@ launch fast:3 full mlkem_poly 260 "mlk_sample_ntt.0:513,fill_nondet.0:1537,ct_wi
 # and in-place-open shapes joined the formula — under the fast pool's
 # 1034 s pole (x509parse_ecdsa), so it stays a push-gate leg.
 launch fast:4 full record 165 "" ct.c
+# The x25519 ladder keeps its limbs inside the range the field-op proofs
+# assume (https://github.com/c4milo/chapulin/issues/50). x25519_step
+# proves one loop step on the shipped step(): from any state with
+# every limb in (-2^17, 2^17), the step hands mul only operands under
+# 2^18 and lands back inside the bound, so the 255 steps follow by
+# induction. x25519_tail proves mul's output form, one invert round and
+# the final multiply and pack from the same bound. Both replace mul's
+# multiply with the magnitude contract in proof/x25519_stubs.h, which
+# x25519_mul discharges: the step over the real products had no verdict
+# past 14 GB, and even with the contract, one formula holding the step
+# and the tail together had none after 27 minutes, so they are two.
+# Measured (kissat): x25519_step 473 properties, 513 s, 2.6 GB;
+# x25519_tail 458 properties, 156 s, 2.6 GB.
+launch fast:3 full x25519_step 17 ""
+launch fast:3 full x25519_tail 17 ""
 launch fast full rsa 385 "fill_nondet.0:385,ct_memeq.0:33,greater_or_equal.0:385,modulus_bits.0:385,modulus_bits.1:9,mgf1.0:12,emsa_pss_verify.0:352,emsa_pss_verify.1:320,rsa_pss_verify.0:385" --object-bits 11 --max-field-sensitivity-array-size 385 ct.c
 launch fast full p256 85 "" buf.c
 launch fast full hkdf 120 "" ct.c

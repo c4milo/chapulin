@@ -15,12 +15,12 @@
 // x25519 harnesses together cover every field op, each with the
 // strongest check set that converges.
 //
-// The tight limb-growth invariant (mul output ranges feeding add/sub
-// feeding mul) is an open slow-tier task — see the README's
-// verification table. Functional correctness rests on the RFC 7748
-// vectors including the 1,000-iteration chain, and this exact limb
-// scheme (TweetNaCl's) carries a prior Coq/VST functional proof by
-// Schwabe et al.
+// That the ladder keeps its limbs inside these bounds is
+// x25519_step_harness.c and x25519_tail_harness.c: every limb between
+// operations under 2^17, every mul operand under 2^18. Functional
+// correctness rests on the RFC 7748 vectors including the
+// 1,000-iteration chain, and this exact limb scheme (TweetNaCl's)
+// carries a prior Coq/VST functional proof by Schwabe et al.
 #include "harness.h"
 
 #include "x25519.c"

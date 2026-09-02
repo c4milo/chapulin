@@ -40,6 +40,7 @@ poly1305 94.3
 record 95.0
 rsa_mul 32.3
 softmul 91.3
+x25519_tail 53.1
 
 # Not gated, because `cbmc --cover location` does not converge on them.
 # This is a limit of the measurement, not a gap someone forgot: the
@@ -51,7 +52,10 @@ softmul 91.3
 # the flags proof/coverage.py passes (cbmc 6.11.0, built-in solver) and
 # were still in propositional reduction when the budget killed them, at
 # 8.3 GB and 7.4 GB peak RSS. proof/coverage.py stops a harness at
-# 900 s, so the nightly reports both as timed out.
+# 900 s, so the nightly reports both as timed out. x25519_step was
+# still in propositional reduction at 4.4 GB when the 900 s cap
+# stopped it; x25519_tail, the same stub over four mul instances
+# instead of ten, finishes in 436 s and is gated above.
 #
 #   eeparse
 #   handshake_parser
@@ -67,3 +71,4 @@ softmul 91.3
 #   sha3
 #   sha3_stream
 #   x25519_mul
+#   x25519_step

@@ -2,7 +2,8 @@
 // unpack — are memory-safe and UB-free with the signed-overflow check
 // on, at the documented caller bounds (|limb| < 2^58 into carry, the
 // range any product fold produces; |limb| < 2^24 into add/sub/pack,
-// far above the ~2^17 the ladder produces). add and sub are also
+// far above the 2^17 x25519_step proves the ladder holds them
+// under). add and sub are also
 // driven with the output aliasing the first input, the shape the
 // ladder uses at every step. This closes the overflow class for every
 // op except mul: mul's memory safety is x25519_harness.c (run without

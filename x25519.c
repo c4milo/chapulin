@@ -58,13 +58,15 @@ static void mul(fe o, const fe a, const fe b) {
     int64_t t[31] = {0};
     for (int i = 0; i < 16; i++) {
         for (int j = 0; j < 16; j++) {
-            // The narrowing is exact: a limb reaching here is at most
-            // 2^17 in absolute value, because carry() leaves every limb
-            // under 2^16 and add/sub at most double it. That is the bound
-            // x25519_mul_harness assumes at 2^24, and instrumenting mul()
-            // over the RFC 7748 vectors, 6000 random scalar multiplies and
-            // the low-order points put the largest limb seen at 131070 --
-            // 14 bits below where an int32 would overflow.
+            // The narrowing is exact: proof/x25519_step_harness.c proves
+            // every limb the ladder hands mul lies in (-2^18, 2^18). Two
+            // carry passes leave limbs 1..15 in [0, 2^16) and limb 0 in
+            // [-38, 2^16 + 38), and add/sub at most double that. That is
+            // well under the 2^24 x25519_mul_harness assumes, and
+            // instrumenting mul() over the RFC 7748 vectors, 6000 random
+            // scalar multiplies and the low-order points put the largest
+            // limb seen at 131070 -- 14 bits below where an int32 would
+            // overflow.
             t[i + j] += ct_widemul_s((int32_t)a[i], (int32_t)b[j]);
         }
     }
@@ -137,6 +139,38 @@ static void pack(uint8_t o[X25519_LEN], const fe n) {
     }
 }
 
+// One ladder step (RFC 7748 section 5): (a, c) and (b, d) are the two
+// projective points, r the scalar bit, x the base point, e and f
+// scratch that ladder() owns so it can wipe them with the rest. A
+// function of its own so proof/x25519_step_harness.c can run one step
+// over symbolic limbs and prove it keeps every limb inside the range
+// the field-op proofs assume; the loop in ladder() is the induction
+// over it.
+static void step(fe a, fe b, fe c, fe d, fe e, fe f, const fe x, int64_t r) {
+    cswap(a, b, r);
+    cswap(c, d, r);
+    add(e, a, c);
+    sub(a, a, c);
+    add(c, b, d);
+    sub(b, b, d);
+    sqr(d, e);
+    sqr(f, a);
+    mul(a, c, a);
+    mul(c, b, e);
+    add(e, a, c);
+    sub(a, a, c);
+    sqr(b, a);
+    sub(c, d, f);
+    mul(a, c, F121665);
+    add(a, a, d);
+    mul(c, c, a);
+    mul(a, d, f);
+    mul(d, b, x);
+    sqr(b, e);
+    cswap(a, b, r);
+    cswap(c, d, r);
+}
+
 static void ladder(uint8_t out[X25519_LEN], const uint8_t scalar[X25519_LEN],
                    const uint8_t point[X25519_LEN]) {
     uint8_t z[X25519_LEN];
@@ -163,28 +197,7 @@ static void ladder(uint8_t out[X25519_LEN], const uint8_t scalar[X25519_LEN],
 
     for (int i = 254; i >= 0; i--) {
         int64_t r = (z[i >> 3] >> (i & 7)) & 1;
-        cswap(a, b, r);
-        cswap(c, d, r);
-        add(e, a, c);
-        sub(a, a, c);
-        add(c, b, d);
-        sub(b, b, d);
-        sqr(d, e);
-        sqr(f, a);
-        mul(a, c, a);
-        mul(c, b, e);
-        add(e, a, c);
-        sub(a, a, c);
-        sqr(b, a);
-        sub(c, d, f);
-        mul(a, c, F121665);
-        add(a, a, d);
-        mul(c, c, a);
-        mul(a, d, f);
-        mul(d, b, x);
-        sqr(b, e);
-        cswap(a, b, r);
-        cswap(c, d, r);
+        step(a, b, c, d, e, f, x, r);
     }
     invert(c, c);
     mul(a, a, c);

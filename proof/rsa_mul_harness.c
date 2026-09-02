@@ -19,8 +19,7 @@
 // leaves symex): every index walks a fixed LIMBS_MAX-sized array under
 // the k <= 96 bound. The final conditional subtract (t < 2m at loop
 // exit) is a functional CIOS invariant resting on the vectors in
-// test/rsa_test.c — same standing as x25519's open limb-growth
-// invariant.
+// test/rsa_test.c, not on a proof.
 #include "harness.h"
 
 #include <stdint.h>
