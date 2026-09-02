@@ -21,6 +21,7 @@ handshake_auth,644,34,678,344,hsa_server_auth,566,400
 handshake,2416,253,2669,648,ch_handshake,2469,688
 handshake_post,996,5,1001,160,hspost_read,817,208
 tls,1640,112,1752,88,ch_read,1340,112
-softmul,0,0,0,,,0,
+# softmul: no function compiled for mips32r2 or the host, so -fstack-usage wrote no .su and its frame is 0
+softmul,0,0,0,0,,0,0
 total,27368,1504,28872,2360,rsa_vp1,23964,2384
 p256 (PIN=ecdsa),5624,264,5888,752,p256_ecdsa_verify,4832,800
