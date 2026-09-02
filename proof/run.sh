@@ -1,13 +1,17 @@
 #!/usr/bin/env bash
 # Runs every CBMC harness through a budget-aware parallel pool. The
 # proofs are independent, but each SAT instance can eat gigabytes, so a
-# job is admitted by its memory weight (slow tier 6 GB, fast tier 2 GB —
-# the biggest measured fast peak, rsa, is under 0.5 GB) against the
-# machine's budget, plus a free core; unbounded parallelism would thrash
-# the machine into being slower than sequential. Each proof checks memory safety (bounds, pointer validity), UB
-# (signed overflow, undefined shifts, division), and the harness's
-# explicit asserts, over all inputs within the documented bounds;
-# --unwinding-assertions proves the loop bounds themselves.
+# job is admitted by its memory weight against the machine's budget,
+# plus a free core; unbounded parallelism would thrash the machine into
+# being slower than sequential. The weight is the tier default (fast
+# 2 GB; slow 6 GB, or 12 GB under the external solver) unless the launch
+# line carries one sized from a measured peak. The biggest measured fast
+# peak is handshake_parser at 9.9 GB, so its launch line carries
+# fast:10; sha256 follows at 5.7 GB with fast:6. Each proof checks
+# memory safety (bounds, pointer validity), UB (signed overflow,
+# undefined shifts, division), and the harness's explicit asserts, over
+# all inputs within the documented bounds; --unwinding-assertions proves
+# the loop bounds themselves.
 #
 # Results are cached by content: a harness whose inputs are byte-identical
 # to its last VERIFICATION SUCCESSFUL run is skipped. The key hashes the
@@ -45,9 +49,10 @@ set -uo pipefail
 # directory instead.
 cd "$(dirname "$0")/.." || exit 1
 
-# Tier argument: "fast" (seconds-to-minutes, runs in every make check),
-# "slow" (the SAT heavyweights, run by CI and before release), or
-# "all" (default).
+# Tier argument: "fast" (seconds-to-minutes; make check-slow runs it
+# through the prove target, and CI runs that on every push to main but
+# not on a pull request, so make check never runs a proof), "slow" (the
+# SAT heavyweights, run by CI and before release), or "all" (default).
 TIER="${1:-all}"
 
 CBMC="${CBMC:-cbmc}"

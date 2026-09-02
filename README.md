@@ -235,9 +235,11 @@ it, leaving the four public calls unproven.
 `bin/proof-coverage.md`. Where a bound equals the module's real
 maximum, the proof covers all inputs.
 
-The proofs run in two tiers. `make check` runs the fast tier and gates
-every push. `make prove-slow` runs the slow-tier legs, which CI runs
-nightly, one job each. [`docs/proofs.md`](docs/proofs.md) is the
+The proofs run in two tiers. `make check-slow` runs the fast tier
+through `make prove`; CI runs it on every push to main but not on a
+pull request, which gets `make check` and no proof leg. `make
+prove-slow` runs the slow-tier legs, which CI runs nightly, one job
+each. [`docs/proofs.md`](docs/proofs.md) is the
 harness playbook: the measured cost model and the rules that keep a
 formula solvable. A slow-tier row below carries the verdict of the last nightly
 leg that finished, not of the current commit. A harness that starts and
