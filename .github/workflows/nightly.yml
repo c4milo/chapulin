@@ -205,7 +205,13 @@ jobs:
   # finding, not a flake.
   test-invariants:
     runs-on: ubuntu-24.04
-    timeout-minutes: 60
+    # 42 minutes measured before the two inv24 violations joined the set.
+    # Each of those runs a CBMC proof twice, the baseline and the mutant:
+    # the proofs take 156 s (x25519_tail) and 513 s (x25519_step) under
+    # kissat on the 4-core container proof/run.sh's figures come from, the
+    # mutants 233 s and 829 s on a 10-core development machine, and
+    # proof/prove-one.sh holds any one run to an hour.
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Load the toolchain pins
@@ -280,6 +286,34 @@ jobs:
         # violation is the one only that gate catches
         # (https://github.com/c4milo/chapulin/issues/106).
         run: echo "$HOME/armtc/bin" >> "$GITHUB_PATH"
+      - name: Install CBMC
+        # The two inv24 violations name proof/prove-one.sh as their catch
+        # target, which runs one x25519 ladder harness through
+        # proof/run.sh, and the baseline must verify here before the
+        # mutant's verdict counts
+        # (https://github.com/c4milo/chapulin/issues/121).
+        run: |
+          curl -fsSLO "https://github.com/diffblue/cbmc/releases/download/cbmc-$CBMC_VERSION/ubuntu-24.04-cbmc-$CBMC_VERSION-Linux.deb"
+          sudo dpkg -i "ubuntu-24.04-cbmc-$CBMC_VERSION-Linux.deb"
+      - name: Cache kissat install
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/kissat-inst
+          key: kissat-${{ runner.os }}-${{ env.KISSAT_VERSION }}
+      - name: Build and install kissat
+        # x25519_step verifies in 513 s under kissat and has no measured
+        # verdict under the built-in solver, so the wrapper's clock needs
+        # kissat here as much as the prove jobs do.
+        run: |
+          if [ ! -x ~/kissat-inst/kissat ]; then
+            curl -fsSL "https://github.com/arminbiere/kissat/archive/refs/tags/$KISSAT_VERSION.tar.gz" | tar xz
+            cd "kissat-$KISSAT_VERSION"
+            ./configure
+            make -j"$(nproc)"
+            mkdir -p ~/kissat-inst
+            cp build/kissat ~/kissat-inst/
+          fi
+          echo "$HOME/kissat-inst" >> "$GITHUB_PATH"
 
       - name: Break every invariant and see what objects
         run: |

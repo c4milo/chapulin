@@ -304,6 +304,33 @@ which convention holds them.
   message mid-handshake and a compaction step corrupts it.
 - See [decisions: Memory and runtime](decisions.md#memory-and-runtime).
 
+### INV-24 — the x25519 ladder stays inside its proven limb range
+
+- **Claim.** Between the ladder's operations every limb of `a`, `b`,
+  `c`, `d` and `x` lies in (-2^17, 2^17), and mul receives no operand
+  outside (-2^18, 2^18). Every x25519 field-op proof holds only inside
+  a stated limb range (the verification table in the README), so a
+  limb that leaves it turns those verdicts into statements about
+  inputs the code no longer produces.
+- **Mechanism.** mul ends in two carry passes, which leave limbs 1..15
+  in [0, 2^16) and limb 0 in [-38, 2^16 + 38); one add or sub of two
+  such values stays under 2^18; and `step()` applies at most one add
+  or sub to a value before the next mul takes it.
+- **Check.** CBMC: `x25519_step` proves one loop step from any state
+  inside the range lands inside it again, and `x25519_tail` proves
+  mul's output form, one `invert` round and the final multiply and
+  pack do the same
+  ([#50](https://github.com/c4milo/chapulin/issues/50)). The unit
+  vectors notice a limb only once it passes 2^31 and mul's narrowing
+  to int32 truncates it; the fourteen bits between the proven bound
+  and that point are watched by the proofs alone.
+- **Violation.** A PR drops one of mul's two carry passes to save
+  cycles, or replaces the step's last square with an add, and the
+  ladder hands the field ops limbs their proofs never covered. `make
+  test-invariants` runs both, as `inv24-x25519-mul-one-carry` and
+  `inv24-x25519-step-sqr-as-add`, through `proof/prove-one.sh`, which
+  runs one harness and fails unless it verifies.
+
 ## Fail-closed
 
 ### INV-13 — no resumable errors

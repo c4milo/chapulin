@@ -1,0 +1,21 @@
+invariant: INV-24
+file: x25519.c
+catches: proof/prove-one.sh x25519_tail
+reason: dropping one of mul's two carry passes leaves limb 0 holding the
+  top limb's fold, far outside (-2^17, 2^17), the range every x25519
+  field-op proof assumes and mul's narrowing to int32 relies on. bin/unit
+  fails on it too, once that narrowing truncates; the violation checks
+  that the proof sees the bound on its own, at 2^17, where the vectors
+  notice a limb only past 2^31
+  (https://github.com/c4milo/chapulin/pull/117 measured 4 of
+  x25519_tail's 458 properties failing). Each run is a proof of minutes,
+  so this belongs to the nightly's full test-invariants, never the fast
+  tier.
+
+--- old
+    carry(o);
+    carry(o);
+}
+--- new
+    carry(o);
+}

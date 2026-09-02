@@ -1170,7 +1170,11 @@ test-invariants-fast: bin/unit bin/unit_ca bin/x509strict bin/x509strict_ecdsa b
 	python3 test/violations.py --tier=fast
 
 # The whole set, fast tier plus the handshake_sequence_test and e2e-backed
-# violations that cost minutes each. Nightly.
+# violations that cost minutes each, and the proof-backed ones, whose
+# target is proof/prove-one.sh running one CBMC harness: those need cbmc
+# on PATH, and kissat for the harness to verify inside the wrapper's
+# clock. Without cbmc their baseline fails and the runner reports ERROR,
+# never caught. Nightly.
 test-invariants: bin/unit bin/diff bin/tlsclient bin/tlsclient_ecdsa bin/tlsclient_ca bin/tlsclient_ca_ecdsa
 ifeq ($(LAKE),)
 	$(call REQUIRE_ON_CI,lake)
