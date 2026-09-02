@@ -223,6 +223,11 @@ jobs:
             # violation target and needs the Arm GNU gcc the m3 lane pins.
             echo "ARM_GNU_VERSION=$ARM_GNU_VERSION"
             echo "ARM_GNU_LINUX_SHA256=$ARM_GNU_LINUX_SHA256"
+            # The five INV-16 violations whose catch target is a codegen
+            # lint need the pinned clang and llvm-nm, as the check job has.
+            echo "LLVM_MAJOR=$LLVM_MAJOR"
+            echo "LLVM_SH_SHA256=$LLVM_SH_SHA256"
+            echo "CLANG_RV=clang-$LLVM_MAJOR"
           } >> "$GITHUB_ENV"
       - name: Install elan
         run: |
@@ -257,6 +262,16 @@ jobs:
           curl -sSL -o /tmp/armtc.tar.xz "$url"
           echo "$ARM_GNU_LINUX_SHA256  /tmp/armtc.tar.xz" | sha256sum -c -
           mkdir -p ~/armtc && tar -xJf /tmp/armtc.tar.xz -C ~/armtc --strip-components=1
+      - name: Install clang tools (apt.llvm.org, pinned major)
+        # test/lint-wide-multiply.sh and test/lint-runtime-symbols.sh are
+        # catch targets here; the script runs as root, so it is checked
+        # against LLVM_SH_SHA256 first, as the check job does.
+        run: |
+          set -euo pipefail
+          wget -qO "$RUNNER_TEMP/llvm.sh" https://apt.llvm.org/llvm.sh
+          echo "$LLVM_SH_SHA256  $RUNNER_TEMP/llvm.sh" | sha256sum -c -
+          sudo bash "$RUNNER_TEMP/llvm.sh" "$LLVM_MAJOR"
+          sudo apt-get install -y "llvm-$LLVM_MAJOR"
       - name: Put the Arm GNU gcc on PATH
         # test/violations.py runs test/lint-wide-multiply-gcc.sh with no
         # arguments, and the Makefile resolves that gate's gcc through
