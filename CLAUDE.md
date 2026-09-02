@@ -65,8 +65,10 @@ Home: github.com/c4milo.
   under the compiler's own names; it compiles to nothing where the
   instruction exists. A multiplier that exists and is variable-time is
   the other half: `ct.h` builds widening products from 16x16 pieces
-  unless the architecture is on its verified list, and
-  `lint-wide-multiply` holds the count at zero.
+  unless the build asserts `CH_NATIVE_WIDEMUL`, which test binaries do
+  and firmware does only with a vendor statement, and
+  `lint-wide-multiply` holds the count at its recorded ceiling per
+  file and compiler.
   ChaCha20/Poly1305/x25519 are constant time by construction — keep them
   that way; AES never enters this codebase precisely to avoid tables.
 - Proofs are mandatory, not optional, but they run in `check-slow`

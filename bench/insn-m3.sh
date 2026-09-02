@@ -48,9 +48,13 @@ int main(void) {
 }
 RUNTIME
 
+# No CH_NATIVE_WIDEMUL: the host-test convention asserts the native
+# multiply where nothing secret is at risk, but firmware ships the
+# decomposition (LIB_CFLAGS filters the define out), and these counts
+# are for firmware.
 CC="$M3_CC -std=c11 -O2 -mcpu=cortex-m3 -mthumb --specs=rdimon.specs \
     -Wl,--no-warn-rwx-segments -T test/qemu/m3_semi.ld test/qemu/m3_start.c \
-    -DCH_NATIVE_WIDEMUL -I. -Ibench"
+    -I. -Ibench"
 SRCS="ct.c sha256.c hkdf.c chacha20.c poly1305.c aead.c x25519.c p256.c \
       rsa.c rsa_mont.c buf.c keysched.c record.c sha3.c mlkem.c mlkem_poly.c"
 
