@@ -318,6 +318,44 @@ def check_flash(readme):
     return rc
 
 
+def check_floor(readme):
+    """Two x25519 per handshake: the recurring floor in ms, and its share of
+    the pinned handshake's crypto, both from the mips32r2 column."""
+    insns = read_csv("bench/results-insn.csv", "insns")
+    two = 2 * insns["x25519_scalarmult"]
+    want_ms = render_ms(two)
+    want_pct = "%d" % round(100 * two / insns["handshake_crypto"])
+    m = re.search(r"so about (\d+) ms is the recurring floor and (\d+)% of the "
+                  r"pinned handshake's crypto", prose(readme))
+    if not m:
+        print("lint-bench-numbers: README does not state the two-x25519 floor")
+        return 1
+    if (m.group(1), m.group(2)) != (want_ms, want_pct):
+        print("lint-bench-numbers: README says two x25519 are %s ms and %s%% of the "
+              "pinned handshake; bench/results-insn.csv renders as %s ms and %s%%"
+              % (m.group(1), m.group(2), want_ms, want_pct))
+        return 1
+    return 0
+
+
+def check_flash_ecdsa(readme):
+    """The PIN=ecdsa trade: RSA out, P-256 in, and the total that leaves."""
+    flash = read_csv("bench/results-device.csv", "mips_flash_B")
+    rsa = flash["rsa"] + flash["rsa_mont"]
+    p256 = flash["p256 (PIN=ecdsa)"]
+    want = tuple("%.1f kB" % (b / 1024) for b in (rsa, p256, flash["total"] - rsa + p256))
+    m = re.search(r"trades ([0-9.]+ kB) of RSA for ([0-9.]+ kB) of P-256 and totals "
+                  r"([0-9.]+ kB)", prose(readme))
+    if not m:
+        print("lint-bench-numbers: README does not state the PIN=ecdsa flash trade")
+        return 1
+    if m.groups() != want:
+        print("lint-bench-numbers: README says PIN=ecdsa trades %s of RSA for %s of P-256 "
+              "and totals %s; the device model says %s, %s and %s" % (m.groups() + want))
+        return 1
+    return 0
+
+
 def main():
     readme = open("README.md").read()
     rc = 0
@@ -326,9 +364,11 @@ def main():
     rc |= check_decomposition_mips(readme)
     rc |= check_memory(readme)
     rc |= check_flash(readme)
+    rc |= check_flash_ecdsa(readme)
+    rc |= check_floor(readme)
     if rc == 0:
-        print("lint-bench-numbers: the README's speed, decomposition, memory and flash "
-              "figures match bench/")
+        print("lint-bench-numbers: the README's speed, decomposition, floor, memory and "
+              "flash figures match bench/")
     return rc
 
 

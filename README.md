@@ -233,8 +233,8 @@ chapulin keeps the 16-bit-limb ladder for its machine-checked overflow
 proof.
 
 Public-key work dominates. Every handshake runs two x25519 for forward
-secrecy, whichever mode it is in, so about 161 ms is the recurring
-floor and 87% of the pinned handshake's crypto. The signature verify is
+secrecy, whichever mode it is in, so about 156 ms is the recurring
+floor and 86% of the pinned handshake's crypto. The signature verify is
 paid only on the first pinned connection; resumptions skip it. Record
 crypto is about 0.15 ms per kilobyte, which is negligible beside the
 handshake. Because a device typically opens one long-lived connection,
