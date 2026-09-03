@@ -476,7 +476,7 @@ bin/diff: test/diff_test.c $(SRCS) sha3.c mlkem.c mlkem_poly.c $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) -I. -o $@ test/diff_test.c $(SRCS) sha3.c mlkem.c mlkem_poly.c
 
-.PHONY: check check-slow ci lint lint-tidy lint-format lint-cppcheck lint-docs lint-invariants lint-violation-builds lint-fuzz-budget lint-runtime-symbols lint-wide-multiply lint-commit-citations lint-issue-links lint-shellcheck lint-bench-numbers lint-spec prove diff fmt clean
+.PHONY: check check-slow ci lint lint-tidy lint-format lint-cppcheck lint-docs lint-conflict-markers lint-invariants lint-violation-builds lint-fuzz-budget lint-runtime-symbols lint-wide-multiply lint-commit-citations lint-issue-links lint-shellcheck lint-bench-numbers lint-spec prove diff fmt clean
 # check is the inner loop and holds a one-minute budget, so it runs what
 # answers "did I break the build or a contract": the linters, every unit
 # and strict-parser binary, the packaged-object export check, and the
@@ -897,7 +897,7 @@ endif
 
 # Checks and thresholds live in .clang-tidy; every disable carries a reason
 # there (fix-or-drop, never NOLINT in code).
-lint: lint-toolchain lint-pins lint-proof-cover lint-tidy lint-format lint-cppcheck lint-commits lint-docs lint-invariants lint-stack lint-size lint-matrix lint-violation-builds lint-fuzz-budget lint-runtime-symbols lint-wide-multiply lint-commit-citations lint-issue-links lint-shellcheck lint-bench-numbers lint-spec
+lint: lint-toolchain lint-pins lint-proof-cover lint-tidy lint-format lint-cppcheck lint-commits lint-docs lint-conflict-markers lint-invariants lint-stack lint-size lint-matrix lint-violation-builds lint-fuzz-budget lint-runtime-symbols lint-wide-multiply lint-commit-citations lint-issue-links lint-shellcheck lint-bench-numbers lint-spec
 
 # INV-19: bounded stack. The budget is the measured worst library
 # frame (rsa_vp1's RSA-3072 limb temporaries, 2,400 bytes) rounded up;
@@ -1510,6 +1510,30 @@ endif
 .PHONY: lint-issue-links
 lint-issue-links:
 	@python3 tools/issue-links.py
+
+# A merge or three-way apply that stops on a conflict writes its markers
+# into the file, and when nobody re-reads the file the commit keeps them
+# (https://github.com/c4milo/chapulin/issues/130). git writes every
+# conflict hunk as a `<<<<<<< label` line, a `=======` line and a
+# `>>>>>>> label` line; the diff3 and zdiff3 styles add a `||||||| base`
+# line between them, and an empty label (`git merge-file -L ''`) leaves
+# the seven characters alone on the line (xdiff/xmerge.c). So matching
+# the outer two lines finds every hunk, and the pattern is exactly what
+# git writes: seven markers, then a space or the end of the line. The
+# `=======` line is not matched on its own, because a bare `=======` is
+# also a Markdown setext heading underline; it is a marker only between
+# the outer pair, and the outer pair is already caught. -I skips binary
+# files: git never merges a binary file three-way, so it never writes
+# markers into one.
+.PHONY: lint-conflict-markers
+lint-conflict-markers:
+	@hits=$$(git grep -nIE '^(<<<<<<<|>>>>>>>)( |$$)' -- .); \
+	 if [ -n "$$hits" ]; then \
+	   printf '%s\n' "$$hits" | sed 's/^/lint-conflict-markers: /'; \
+	   echo "lint-conflict-markers: a merge or three-way apply left its markers in a tracked file"; \
+	   exit 1; \
+	 fi; \
+	 echo "lint-conflict-markers: no conflict marker in any tracked file"
 
 # The fuzz job's budget is per target, so adding a target silently
 # overruns its timeout. GitHub reports that as cancelled, not failed,
