@@ -394,15 +394,22 @@ reprovisioning. A spare boxed today keeps its epoch while the fleet
 moves on, so after that many steps it can no longer connect.
 Reprovision stock before it ships.
 
-That is the only recovery, by decision
-(https://github.com/c4milo/chapulin/issues/66). The alternative is a
-remote ladder: present certificates at increasing epochs, each within
-`CH_EPOCH_BOUND` of the last, until the device catches up. A ladder
-turns a bounded stranding into an unbounded walk, and every step the
-device accepts is a step an attacker holding an old leaf can replay.
-The bound exists to make that walk impossible, so `ch_connect` does
-not offer one. A boxed spare is a stock problem: reprovision it, or
-ship it before the fleet moves `CH_EPOCH_BOUND` steps.
+That is the supported recovery, by decision
+(https://github.com/c4milo/chapulin/issues/66). What the code enforces
+is narrower than "cannot be walked": `handshake_auth.c` refuses a leaf
+more than `CH_EPOCH_BOUND` steps ahead of the stored epoch in the
+session that presents it, and an accepted session moves the stored
+epoch. So a sequence of sessions, each presenting a leaf no more than
+`CH_EPOCH_BOUND` steps past the last, does walk a device forward; the
+bound caps one jump, not the walk. The leaves such a walk needs are
+old ones the CA issued along the way, and they verify for whoever
+holds them -- an operator who archived them, or an attacker who
+captured them. The decision is to keep exactly that: no helper in
+`ch_connect` for laddering, and no rule tighter than the per-session
+bound, which would strand healthy devices to close a walk that
+archived leaves make possible anyway. A boxed spare is a stock
+problem: reprovision it, or ship it before the fleet moves
+`CH_EPOCH_BOUND` steps.
 
 ### Provisioning a device (factory and firmware)
 
