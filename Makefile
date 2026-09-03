@@ -680,7 +680,7 @@ endif
 coverage:
 ifeq ($(GCOVR),)
 	$(call REQUIRE_ON_CI,gcovr)
-	@echo "SKIP coverage: gcovr not on PATH (pip install gcovr)"
+	@echo "SKIP coverage: gcovr not on PATH (pip install --require-hashes -r tools/coverage-requirements.txt)"
 else
 	@rm -rf bin/cov bin/coverage.md && mkdir -p bin/cov/html
 	@echo "| binary | PIN | result |" > bin/coverage.md
@@ -902,7 +902,7 @@ endif
 
 # Checks and thresholds live in .clang-tidy; every disable carries a reason
 # there (fix-or-drop, never NOLINT in code).
-lint: lint-toolchain lint-pins lint-proof-cover lint-tidy lint-format lint-cppcheck lint-commits lint-docs lint-conflict-markers lint-invariants lint-stack lint-size lint-tracked-ignored lint-matrix lint-violation-builds lint-fuzz-budget lint-runtime-symbols lint-wide-multiply lint-commit-citations lint-issue-links lint-shellcheck lint-bench-numbers lint-spec
+lint: lint-toolchain lint-pins lint-proof-cover lint-tidy lint-format lint-cppcheck lint-commits lint-docs lint-conflict-markers lint-invariants lint-stack lint-size lint-tracked-ignored lint-matrix lint-nightly-report lint-violation-builds lint-fuzz-budget lint-runtime-symbols lint-wide-multiply lint-commit-citations lint-issue-links lint-shellcheck lint-bench-numbers lint-spec
 
 # INV-19: bounded stack. The budget is the measured worst library
 # frame (rsa_vp1's RSA-3072 limb temporaries, 2,400 bytes) rounded up;
@@ -1222,6 +1222,14 @@ lint-matrix:
 	   exit 1; \
 	 fi; \
 	 echo "lint-matrix: nightly runs every slow proof"
+
+# The nightly's report job files an issue only for the jobs in its needs
+# list. A job left out of the list runs and goes red, and nothing says
+# so: proof-reach ran that way from the day it was added.
+# tools/nightly-report.py holds the list equal to the job set.
+.PHONY: lint-nightly-report
+lint-nightly-report:
+	@python3 tools/nightly-report.py
 
 # A violation whose target is a script must name every binary that script
 # runs: a script runs no make, so the 'builds' line is the only thing that

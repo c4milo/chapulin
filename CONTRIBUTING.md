@@ -72,7 +72,8 @@ Domain vocabulary keeps the RFCs' own spelling: `pt`, `aad`, `iv`,
   cppcheck, semgrep, shellcheck, commitlint and lake each fail `make lint`
   when missing, on every machine. A lint gate that skipped would let
   `make check` exit 0 with a finding still waiting on CI. Install them
-  at the versions the env block in `.github/workflows/check.yml` pins.
+  at the versions `tools/toolchain.env` pins, which the workflows load
+  through `.github/actions/load-pins`.
   Targets outside `lint` still skip locally and fail only on CI — cbmc
   for the proofs, gcovr for coverage, and lake for the differential and
   the spec coverage report. Skipping those costs coverage the pushed

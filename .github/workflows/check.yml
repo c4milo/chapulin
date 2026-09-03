@@ -30,14 +30,28 @@ jobs:
   coverage:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
-    # The badge step commits the regenerated SVG back to main; the
+    # The badge step pushes the regenerated SVG to the badges branch; the
     # default token is read-only, so this job alone gets write. The
     # check job keeps the read-only default.
     permissions:
       contents: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - run: pip install gcovr==8.6
+        with:
+          # The one job with a write token is also the one that installs
+          # pip packages. checkout would write the token to .git/config,
+          # where `make coverage` and every package it imports could
+          # read it. This keeps it out of .git/config: the badge step
+          # below is the only push, and it reads the token from its own
+          # env.
+          persist-credentials: false
+      - name: Install gcovr (hash-pinned)
+        # gcovr and its dependencies install from a hash-pinned
+        # requirements file, as semgrep does in the check job: a package
+        # substituted on the index would otherwise run in the one job
+        # that holds a write token. pip-compile --generate-hashes wrote
+        # the file, and its header records the command.
+        run: pip install --require-hashes -r tools/coverage-requirements.txt
       - run: make coverage
       - name: Render the coverage tables on the run page
         if: always()
@@ -49,10 +63,18 @@ jobs:
         # carry, and a bypass would re-open the push-to-main surface the
         # protection closed. README links the badge from this branch.
         if: github.ref == 'refs/heads/main'
+        env:
+          # The write token, in this step's env and nowhere else in the
+          # job. checkout stored nothing (persist-credentials above), so
+          # the push carries the token in its URL. git prints a URL
+          # without its credentials, and the runner masks the token.
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           python3 tools/coverage-badge.py bin/coverage.json > /tmp/coverage.svg
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          # The fetch is anonymous: the repository is public, and only
+          # the push needs the token.
           if git fetch origin badges 2>/dev/null; then
             git switch badges
           else
@@ -64,7 +86,7 @@ jobs:
               || ! git ls-files --error-unmatch .github/badges/coverage.svg >/dev/null 2>&1; then
             git add .github/badges/coverage.svg
             git commit -m "chore: update the coverage badge"
-            git push origin badges
+            git push "https://x-access-token:$GITHUB_TOKEN@github.com/$GITHUB_REPOSITORY" badges
           fi
       - name: Annotate a floor breach
         if: failure()
@@ -131,14 +153,8 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/load-pins
       - run: sudo apt-get update -q && sudo apt-get install -y -q qemu-system-arm
-      - name: Install clang-tidy (apt.llvm.org, pinned major)
-        # The same install as the freertos job. make m3-check itself runs
-        # no clang-tidy; the two Cortex-M3 lanes carry one toolchain.
-        uses: ./.github/actions/install-llvm
-        with:
-          major: ${{ env.LLVM_MAJOR }}
-          sha256: ${{ env.LLVM_SH_SHA256 }}
-          clang-tidy: "true"
+      # No clang-tidy here: make m3-check runs none. The freertos job
+      # installs it because freertos-check lints its test programs.
       - name: Install the Arm GNU toolchain (pinned)
         uses: ./.github/actions/install-arm-gnu
         with:

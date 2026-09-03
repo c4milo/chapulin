@@ -436,9 +436,13 @@ jobs:
 
   # A red nightly must be triaged, not scrolled past: file one issue
   # per broken night unless an open nightly-failure issue already
-  # exists.
+  # exists. Every other job in this file is in the needs list: a job
+  # left out runs and goes red, and nothing files anything, which is
+  # how proof-reach ran from the day it was added. make
+  # lint-nightly-report (tools/nightly-report.py) holds the list equal
+  # to the job set.
   report:
-    needs: [prove-slow, diff-random, diff-ecdsa, spec-coverage, san-deep, mips-ubsan, fuzz, test-invariants, handshake-sequence-pq, diff-pq]
+    needs: [proof-reach, prove-slow, diff-random, diff-ecdsa, spec-coverage, san-deep, mips-ubsan, fuzz, test-invariants, handshake-sequence-pq, diff-pq]
     # A job killed by timeout-minutes concludes as cancelled, not
     # failed, so failure() alone skips this job and a timed-out night
     # files nothing. Both prove-slow timeouts so far were reported only

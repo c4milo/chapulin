@@ -13,7 +13,16 @@ The second arrived with the fix. A job that reads a pin variable without
 running the action that loads it gets an empty string, and `go-version: ""`
 installs a default Go rather than failing. So every job that names a pin,
 in a script or in a `with:` value, must run ./.github/actions/load-pins
-before the first read.
+before the first read. A read is any of the three spellings a workflow
+has for a variable: `$NAME` and `${NAME}` in a run block, and `env.NAME`
+in an expression. A comment is not a read.
+
+The third is the one value the first check cannot search for. LLVM_MAJOR
+is a bare number, and a bare "23" also sits inside commit SHAs and
+sha256 values, so the workflows and action.yml files are checked through
+the versioned package names instead. The action scripts carry no hashes:
+there the bare token itself is rejected, so `llvm.sh 23` or `lld-23`
+typed by hand fails as `clang-23` does.
 
 Run through `make lint-pins`.
 """
@@ -40,6 +49,30 @@ LOADS_PINS = re.compile(r"^\s*(-\s+)?uses:\s*" + re.escape(LOADER) + r"\s*(#.*)?
 # number: a bare "22" also matches inside the actions/setup-go commit SHAs.
 DERIVED = ("clang-tidy-{LLVM_MAJOR}", "clang-format-{LLVM_MAJOR}", "clang-{LLVM_MAJOR}")
 LITERAL_SKIP = {"LLVM_MAJOR"}
+
+
+def bare_major(pins):
+    """The bare LLVM major as a whole token, for the action scripts only.
+
+    The scripts hold no SHAs or hashes, so the number itself can be searched
+    for there. A dotted version is not the token: the runner's own name,
+    ubuntu-24.04, would otherwise match the day the pin reads 24.
+    """
+    major = re.escape(pins["LLVM_MAJOR"])
+    return re.compile(rf"(?<!\d\.)\b{major}\b(?!\.\d)")
+
+
+def read_patterns(pins):
+    """One pattern per pin, matching every spelling a job reads it by.
+
+    `$NAME` and `${NAME}` in a run block, and `env.NAME` in an expression.
+    The braces form went unmatched once, so a job could read a pin that way
+    and pass. `$NAMEX` is another variable and does not match.
+    """
+    return {
+        name: re.compile(rf"\$\{{?{re.escape(name)}\b\}}?|\benv\.{re.escape(name)}\b")
+        for name in pins
+    }
 
 
 def read_pins():
@@ -166,6 +199,8 @@ def check_hardcoded(problems, pins):
         hardcoded[pattern.format(**pins)] = "LLVM_MAJOR"
     whole = {pins[name]: name for name in LITERAL_SKIP}
 
+    major = bare_major(pins)
+
     for f in WORKFLOWS + ACTIONS + SCRIPTS:
         text = f.read_text()
         rel = f.relative_to(ROOT)
@@ -175,6 +210,14 @@ def check_hardcoded(problems, pins):
                     problems.append(
                         f"{rel}:{i}: {name} is hardcoded as {value!r}; "
                         f"read it from tools/toolchain.env instead\n    {line.strip()}"
+                    )
+        if f.suffix == ".sh":
+            for i, line in enumerate(text.split("\n"), 1):
+                if major.search(line):
+                    problems.append(
+                        f"{rel}:{i}: LLVM_MAJOR is hardcoded as the bare "
+                        f"{pins['LLVM_MAJOR']!r}; read the major from the action's "
+                        f"input instead\n    {line.strip()}"
                     )
         if f.suffix != ".yml":
             continue
@@ -188,14 +231,17 @@ def check_hardcoded(problems, pins):
 
 def check_jobs_load(problems, pins):
     """Every job that reads a pin runs load-pins, and runs it first."""
+    patterns = read_patterns(pins)
     for wf in WORKFLOWS:
         rel = wf.relative_to(ROOT)
         for job, body in split_jobs(wf.read_text()):
             lines = body.split("\n")
             reads = {}
             for i, line in enumerate(lines):
-                for name in pins:
-                    if re.search(rf"\${name}\b", line) or f"env.{name}" in line:
+                if line.lstrip().startswith("#"):
+                    continue  # a comment naming a pin reads nothing
+                for name, pattern in patterns.items():
+                    if pattern.search(line):
                         reads.setdefault(name, i)
             if not reads:
                 continue
