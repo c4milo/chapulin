@@ -8,8 +8,8 @@ reason: turning the step's last square into an add of e to itself hands
   its own, which is what a rewrite that keeps the vectors right and the
   limbs wide would need (https://github.com/c4milo/chapulin/pull/117
   measured 2 of x25519_step's 473 properties failing). Each run is a
-  proof of minutes, so this belongs to the nightly's full
-  test-invariants, never the fast tier.
+  proof of minutes, so this belongs to the nightly's
+  test-invariants-proof-backed job, never the fast tier.
 
 --- old
     sqr(b, e);

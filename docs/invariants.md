@@ -327,9 +327,10 @@ which convention holds them.
 - **Violation.** A PR drops one of mul's two carry passes to save
   cycles, or replaces the step's last square with an add, and the
   ladder hands the field ops limbs their proofs never covered. `make
-  test-invariants` runs both, as `inv24-x25519-mul-one-carry` and
-  `inv24-x25519-step-sqr-as-add`, through `proof/prove-one.sh`, which
-  runs one harness and fails unless it verifies.
+  test-invariants-proof-backed` runs both, as `inv24-x25519-mul-one-carry`
+  and `inv24-x25519-step-sqr-as-add`, through `proof/prove-one.sh`, which
+  runs one harness and fails unless it verifies; the nightly gives that
+  class its own job.
 
 ## Fail-closed
 

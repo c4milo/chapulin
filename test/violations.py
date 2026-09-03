@@ -3,6 +3,14 @@
 
 Run from the repository root: python3 test/violations.py [name ...]
 
+    --tier=fast          only the second-scale targets FAST_TARGETS names
+    --tier=slow          every other target
+    --proof-backed       only the violations proof/prove-one.sh catches
+    --not-proof-backed   every other violation
+    --list               print the selected names, one per line; run nothing
+
+The selectors intersect. A selection that matches nothing is an error.
+
 docs/invariants.md says what must never break, and each entry there
 carries a Violation field describing what a breaking change looks like.
 This turns those descriptions into edits and checks that some test
@@ -55,6 +63,25 @@ sys.stdout.reconfigure(line_buffering=True)
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 VIOLATIONS = ROOT / "test" / "violations"
+
+# The one script target that runs a CBMC harness. A violation whose
+# catches line starts with it is proof-backed: its baseline and its
+# mutant are each a proof of minutes, so the nightly runs that class in
+# its own job, test-invariants-proof-backed, and every other violation
+# in test-invariants (https://github.com/c4milo/chapulin/issues/144).
+# The class is read from the catches line, never from a list kept by
+# hand, so a new proof-backed violation lands in the right job the day
+# it is added.
+PROOF_RUNNER = "proof/prove-one.sh"
+
+# prove-one.sh's exit status when its clock stops a run before cbmc
+# reports either way, coreutils timeout's number. A mutant that keeps
+# the formula from converging is not a mutant the proof refuted.
+NO_VERDICT_EXIT = 124
+
+
+def proof_backed(catches):
+    return catches.split()[0] == PROOF_RUNNER
 
 
 def parse(path):
@@ -165,7 +192,7 @@ def run(name):
 
     try:
         target.write_text(original.replace(old, new, 1))
-        built, rc, _ = rebuild_and_run()
+        built, rc, output = rebuild_and_run()
         if not built:
             # An edit that will not compile proves nothing about the
             # tests, so say that rather than counting it as caught.
@@ -188,6 +215,14 @@ def run(name):
         if not target_is_script and binary.startswith("bin/"):
             (ROOT / binary).unlink(missing_ok=True)
 
+    if rc == NO_VERDICT_EXIT and proof_backed(head["catches"]):
+        # The wrapper's clock stopped the run before cbmc reported either
+        # way. A formula the edit keeps from converging is not a formula
+        # the proof refuted, so this is not caught.
+        print(f"  ERROR    {name}: {head['catches']} returned no verdict on "
+              f"the edited source; a run the clock stopped refutes nothing")
+        print(tail(output), end="")
+        return "error"
     if rc != 0:
         print(f"  caught   {name} [{head['invariant']}] by {head['catches']}")
         return "caught"
@@ -209,7 +244,8 @@ def run(name):
 # drifts from what the check runs. The set holds whole catches lines, so
 # a line that carries an argument never matches: the proof-backed
 # violations (proof/prove-one.sh <harness>) run only in the nightly's
-# full test-invariants, where each is a CBMC proof of minutes, twice.
+# test-invariants-proof-backed job, where each is a CBMC proof of
+# minutes, twice, and lint_fast_targets refuses one typed in here.
 FAST_TARGETS = {"unit", "unit_ca", "x509strict", "x509strict_ecdsa",
                 "rsa_test", "drbg_test", "handshake_strict_test",
                 "softmul_test", "unit_ct_widemul", "mlkem_test_ct_widemul",
@@ -256,21 +292,59 @@ def lint_builds():
     return 0
 
 
-def main():
-    if "--lint-builds" in sys.argv[1:]:
-        sys.exit(lint_builds())
-    args = [a for a in sys.argv[1:] if not a.startswith("--")]
-    tier = next((a[len("--tier="):] for a in sys.argv[1:]
+def lint_fast_targets():
+    """FAST_TARGETS holds whole catches lines, so a proof-backed line gets
+    in only by being typed there. Refuse it on every invocation: the fast
+    tier is the PR lane's, and a CBMC proof run twice is not a PR-lane
+    cost. make check reaches this through lint-violation-builds."""
+    for line in sorted(FAST_TARGETS):
+        if proof_backed(line):
+            sys.exit(f"test-invariants: FAST_TARGETS holds {line!r}, a "
+                     f"proof-backed target; the fast tier runs in the PR lane "
+                     f"and a CBMC proof does not")
+
+
+def select(argv):
+    """The violation names argv picks: the positional names, or every
+    file in test/violations/, narrowed by the tier and class selectors."""
+    names = [a for a in argv if not a.startswith("--")]
+    names = names or sorted(p.stem for p in VIOLATIONS.glob("*.violation"))
+    tier = next((a[len("--tier="):] for a in argv
                  if a.startswith("--tier=")), None)
-    names = args or sorted(p.stem for p in VIOLATIONS.glob("*.violation"))
     if tier == "fast":
         names = [n for n in names if catches_of(n) in FAST_TARGETS]
     elif tier == "slow":
         names = [n for n in names if catches_of(n) not in FAST_TARGETS]
     elif tier is not None:
         sys.exit(f"test-invariants: unknown --tier={tier} (want fast or slow)")
+    if "--proof-backed" in argv and "--not-proof-backed" in argv:
+        sys.exit("test-invariants: --proof-backed and --not-proof-backed "
+                 "together select nothing")
+    if "--proof-backed" in argv:
+        names = [n for n in names if proof_backed(catches_of(n))]
+    if "--not-proof-backed" in argv:
+        names = [n for n in names if not proof_backed(catches_of(n))]
     if not names:
-        sys.exit("test-invariants: nothing in test/violations/")
+        sys.exit("test-invariants: the selection matches no violation in "
+                 "test/violations/")
+    return names
+
+
+OPTIONS = {"--lint-builds", "--list", "--proof-backed", "--not-proof-backed"}
+
+
+def main():
+    lint_fast_targets()
+    for flag in (a for a in sys.argv[1:] if a.startswith("--")):
+        if flag not in OPTIONS and not flag.startswith("--tier="):
+            # A misspelt selector must not fall through to the whole set.
+            sys.exit(f"test-invariants: unknown option {flag}")
+    if "--lint-builds" in sys.argv[1:]:
+        sys.exit(lint_builds())
+    names = select(sys.argv[1:])
+    if "--list" in sys.argv[1:]:
+        print("\n".join(names))
+        return
     print(f"test-invariants: {len(names)} violations to check")
     tally = {"caught": 0, "unguarded": 0, "stale": 0, "error": 0}
     for name in names:

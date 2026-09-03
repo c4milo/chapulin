@@ -1174,9 +1174,8 @@ examples-check: bin/example_psk bin/example_pinned bin/example_ca
 # lint-invariants checks that the code does not violate an invariant.
 # This checks that a test notices when it does: each Violation field in
 # docs/invariants.md becomes an edit, and some test must object. Too
-# slow for check (each one rebuilds and reruns a target), so it runs
-# nightly.
-.PHONY: test-invariants
+# slow for check (each one rebuilds and reruns a target), so the nightly
+# runs it, in two jobs.
 # The violation runner requires each target to PASS on unedited source
 # before it trusts the target's verdict on an edit, so every prerequisite
 # a violation names must build here. bin/diff execs the Lean oracle at
@@ -1186,32 +1185,51 @@ examples-check: bin/example_psk bin/example_pinned bin/example_ca
 # The fast tier: violations backed by the second-scale binaries (unit,
 # the strictness parsers, rsa_test, softmul_test, the decomposed-multiply
 # unit and ML-KEM binaries) and the codegen gate scripts, so the PR lane
-# runs them. The diff,
-# handshake_sequence and e2e-backed violations stay in the nightly full run — each of
-# those targets is slow enough that a baseline plus a mutation pass costs
-# real minutes.
+# runs them. The diff, handshake_sequence and e2e-backed violations run
+# in the nightly's test-invariants job — each of those targets is slow
+# enough that a baseline plus a mutation pass costs real minutes — and
+# the proof-backed ones in its test-invariants-proof-backed job.
 .PHONY: test-invariants-fast
 test-invariants-fast: bin/unit bin/unit_ca bin/x509strict bin/x509strict_ecdsa bin/rsa_test bin/drbg_test bin/handshake_strict_test bin/softmul_test bin/unit_ct_widemul bin/mlkem_test_ct_widemul
 	python3 test/violations.py --tier=fast
 
-# The whole set, fast tier plus the handshake_sequence_test and e2e-backed
-# violations that cost minutes each, and the proof-backed ones, whose
-# target is proof/prove-one.sh running one CBMC harness: those need cbmc
-# on PATH, and kissat for the harness to verify inside the wrapper's
-# clock. Without cbmc their baseline fails and the runner reports ERROR,
-# never caught. Nightly.
-test-invariants: bin/unit bin/diff bin/tlsclient bin/tlsclient_ecdsa bin/tlsclient_ca bin/tlsclient_ca_ecdsa
+# Every violation but the proof-backed ones: the fast tier plus the
+# handshake_sequence_test, diff and e2e-backed violations that cost
+# minutes each. The nightly's test-invariants job runs this.
+.PHONY: test-invariants-not-proof-backed
+test-invariants-not-proof-backed: bin/unit bin/diff bin/tlsclient bin/tlsclient_ecdsa bin/tlsclient_ca bin/tlsclient_ca_ecdsa
 ifeq ($(LAKE),)
 	$(call REQUIRE_ON_CI,lake)
-	@echo "SKIP test-invariants: lake not on PATH (install elan: https://leanprover.github.io)"
+	@echo "SKIP test-invariants-not-proof-backed: lake not on PATH (install elan: https://leanprover.github.io)"
 else
 	# The examples link the packaged object, and RAND has no default, so
 	# they cannot be prerequisites of a target invoked without one. check
 	# builds them through the same recursion.
 	$(MAKE) RAND=extern bin/example_psk bin/example_pinned bin/example_ca
 	cd spec && $(LAKE) build
-	python3 test/violations.py
+	python3 test/violations.py --not-proof-backed
 endif
+
+# The proof-backed violations, whose target is proof/prove-one.sh running
+# one CBMC harness: they need cbmc on PATH, and kissat for the harness to
+# verify inside the wrapper's clock. Without cbmc the baseline fails and
+# the runner reports ERROR, never caught. Each run is a proof of minutes,
+# twice, so the nightly gives the class its own job with its own timeout,
+# test-invariants-proof-backed
+# (https://github.com/c4milo/chapulin/issues/144). test/violations.py
+# reads the class from each catches line, so a new proof-backed
+# violation lands here without a Makefile edit.
+.PHONY: test-invariants-proof-backed
+test-invariants-proof-backed:
+	python3 test/violations.py --proof-backed
+
+# The whole set, one class after the other. Two recipe lines rather than
+# two prerequisites: the runner edits sources in place, so the classes
+# must never run at the same time under make -j.
+.PHONY: test-invariants
+test-invariants:
+	$(MAKE) test-invariants-not-proof-backed
+	$(MAKE) test-invariants-proof-backed
 
 # The nightly runs one job per slow proof, from a static matrix. A
 # launch line added without a matching matrix entry would simply never

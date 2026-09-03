@@ -167,16 +167,14 @@ jobs:
   # Breaks each invariant docs/invariants.md lists and requires a test to
   # object. Nightly, not check: each one rebuilds and reruns a target. An
   # unguarded invariant is a real coverage hole, so a red leg here is a
-  # finding, not a flake.
+  # finding, not a flake. Every violation but the proof-backed ones: those
+  # run in test-invariants-proof-backed below, each a CBMC proof twice, so
+  # a solver run that stalls costs this job nothing
+  # (https://github.com/c4milo/chapulin/issues/144).
   test-invariants:
     runs-on: ubuntu-24.04
-    # 42 minutes measured before the two inv24 violations joined the set.
-    # Each of those runs a CBMC proof twice, the baseline and the mutant:
-    # the proofs take 156 s (x25519_tail) and 513 s (x25519_step) under
-    # kissat on the 4-core container proof/run.sh's figures come from, the
-    # mutants 233 s and 829 s on a 10-core development machine, and
-    # proof/prove-one.sh holds any one run to an hour.
-    timeout-minutes: 120
+    # 42 minutes measured for this set.
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/load-pins
@@ -218,12 +216,42 @@ jobs:
         # violation is the one only that gate catches
         # (https://github.com/c4milo/chapulin/issues/106).
         run: echo "$HOME/armtc/bin" >> "$GITHUB_PATH"
+
+      - name: Break every invariant but the proof-backed ones and see what objects
+        run: |
+          set -o pipefail
+          make test-invariants-not-proof-backed 2>&1 | tee /tmp/invariants.out
+      - name: Put the tally on the run page
+        if: always()
+        run: |
+          {
+            echo '### test-invariants'
+            echo
+            echo '```'
+            cat /tmp/invariants.out 2>/dev/null || echo '(the run produced no output)'
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # The proof-backed violations: each names proof/prove-one.sh as its
+  # catch target, which runs one x25519 ladder harness through
+  # proof/run.sh, on the unedited source first and then on the edit
+  # (https://github.com/c4milo/chapulin/issues/121). Their own job, so a
+  # solver run that stalls starves only this one
+  # (https://github.com/c4milo/chapulin/issues/144). The proofs take
+  # 156 s (x25519_tail) and 513 s (x25519_step) under kissat on the
+  # 4-core container proof/run.sh's figures come from, the mutants 233 s
+  # and 829 s on a 10-core development machine, and prove-one.sh stops
+  # any one run at an hour and reports no verdict, which the runner
+  # counts as ERROR.
+  test-invariants-proof-backed:
+    runs-on: ubuntu-24.04
+    # A violation is two runs and prove-one.sh's clock holds each to an
+    # hour, so this is a backstop above that clock, not the budget.
+    timeout-minutes: 300
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/load-pins
       - name: Install CBMC
-        # The two inv24 violations name proof/prove-one.sh as their catch
-        # target, which runs one x25519 ladder harness through
-        # proof/run.sh, and the baseline must verify here before the
-        # mutant's verdict counts
-        # (https://github.com/c4milo/chapulin/issues/121).
         uses: ./.github/actions/install-cbmc
         with:
           version: ${{ env.CBMC_VERSION }}
@@ -236,21 +264,29 @@ jobs:
         with:
           version: ${{ env.KISSAT_VERSION }}
           sha256: ${{ env.KISSAT_SHA256 }}
-
-      - name: Break every invariant and see what objects
+      - name: Break the proof-backed invariants and see what the proofs object to
         run: |
           set -o pipefail
-          make test-invariants 2>&1 | tee /tmp/invariants.out
+          make test-invariants-proof-backed 2>&1 | tee /tmp/invariants-proof-backed.out
       - name: Put the tally on the run page
         if: always()
         run: |
           {
-            echo '### test-invariants'
+            echo '### test-invariants-proof-backed'
             echo
             echo '```'
-            cat /tmp/invariants.out 2>/dev/null || echo '(the run produced no output)'
+            cat /tmp/invariants-proof-backed.out 2>/dev/null || echo '(the run produced no output)'
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
+      # The runner quotes a failed step's last lines only; the solver log
+      # of the last run, the mutant's, is what a red night needs.
+      - name: Upload proof logs
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: proof-results-test-invariants-proof-backed
+          path: proof/results/
+          if-no-files-found: ignore
 
   # Randomized differential, time-boxed. The PR lane runs the built-in
   # seed so a failure there reproduces bit for bit. This lane draws a
@@ -447,7 +483,7 @@ jobs:
   # lint-nightly-report (tools/nightly-report.py) holds the list equal
   # to the job set.
   report:
-    needs: [proof-reach, prove-slow, diff-random, diff-ecdsa, spec-coverage, san-deep, mips-ubsan, fuzz, test-invariants, handshake-sequence-pq, diff-pq]
+    needs: [proof-reach, prove-slow, diff-random, diff-ecdsa, spec-coverage, san-deep, mips-ubsan, fuzz, test-invariants, test-invariants-proof-backed, handshake-sequence-pq, diff-pq]
     # A job killed by timeout-minutes concludes as cancelled, not
     # failed, so failure() alone skips this job and a timed-out night
     # files nothing. Both prove-slow timeouts so far were reported only

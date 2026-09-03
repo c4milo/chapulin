@@ -20,12 +20,17 @@
 #   edited x25519.c never reuses a verdict proven on the unedited one.
 #
 #   Exit nonzero when a property fails, a callee has no body, the solver
-#   dies under run.sh's address-space cap, cbmc is not installed, or the
-#   run passes PROVE_WALL_SECONDS (default 3600) of wall clock. run.sh
-#   has no clock of its own -- CI's job timeout is its budget -- and a
-#   mutant that stops a formula converging would otherwise hold
+#   dies under run.sh's address-space cap, or cbmc is not installed.
+#
+#   Exit 124, coreutils timeout's number, when the run passes
+#   PROVE_WALL_SECONDS (default 3600) of wall clock with no verdict.
+#   run.sh has no clock of its own -- CI's job timeout is its budget --
+#   and a mutant that stops a formula converging would otherwise hold
 #   test/violations.py until the nightly job's timeout cancels it, and
-#   every other violation's verdict with it. The slowest run measured
+#   every other violation's verdict with it. The runner counts 124 as
+#   ERROR, never caught: a formula that did not converge refuted
+#   nothing (https://github.com/c4milo/chapulin/issues/144). The
+#   slowest run measured
 #   under this wrapper is x25519_step refuting its mutant: 829 s under
 #   kissat on a 10-core development machine, against 513 s for the
 #   proof itself (proof/run.sh), and a CI runner is slower.
@@ -66,6 +71,6 @@ if kill -0 "$watchdog_pid" 2>/dev/null; then
 else
     echo "prove-one: $name returned no verdict in $budget s; the last lines of its log:"
     tail -3 "proof/results/$name.log" 2>/dev/null
-    rc=1
+    rc=124
 fi
 exit "$rc"
