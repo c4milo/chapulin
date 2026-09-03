@@ -171,15 +171,23 @@ the reference target's ISA (32-bit, big-endian, in-order), and measure
 on that ISA. Cost is published as instruction counts, not guessed
 milliseconds. The millisecond column assumes 500 MHz and one
 instruction per cycle on that core, which is optimistic for an in-order
-design, so read it as a lower bound.
+design, so read it as a lower bound. Every count is a property of what
+one compiler emits, so each column names its compiler. The mips32r2
+column is Alpine's clang 22 at `-Os` (`CLANG_MAJOR` in
+[`bench/toolchain.env`](bench/toolchain.env)); the flash figures below
+come from clang 23 at `-Os` (`LLVM_MAJOR` in
+[`tools/toolchain.env`](tools/toolchain.env)), the clang the codegen
+lints run.
 [`bench/insn-m3.sh`](bench/insn-m3.sh) measures the same operations as
 thumbv7m instruction counts on QEMU's Cortex-M3, the core the m3 and
-freertos CI lanes execute, built with the pinned Arm GNU gcc.
+freertos CI lanes execute, built with the pinned Arm GNU Toolchain
+15.3.rel1 gcc (`ARM_GNU_VERSION`) at `-O2`.
 [`bench/insn-rv32.sh`](bench/insn-rv32.sh) measures them a third time
 as rv32imac instruction counts: the 32-bit little-endian build the
-riscv32 CI lane ships, compiled by the pinned Bootlin gcc at `-Os` and
-run under qemu-riscv32 user mode. All three instruction columns run
-the multiply decomposition firmware ships.
+riscv32 CI lane ships, compiled by the pinned Bootlin gcc 14.3.0
+(`RV32_TC_VERSION`) at `-Os` and run under qemu-riscv32 user mode. All
+three instruction columns run the multiply decomposition firmware
+ships.
 
 | work | mips32r2 insns | ms (500 MHz, 1 IPC) | Cortex-M3 insns | rv32imac insns |
 |---|---|---|---|---|
@@ -204,10 +212,10 @@ pinned handshake 104% more. SHA-256 and both signature verifies are
 unchanged, because SHA-256 does not multiply and the verifies read only
 public bytes.
 
-Flash is 28.2 kB for the default build (`.text` + `.rodata`, `-Os`),
+Flash is 27.9 kB for the default build (`.text` + `.rodata`, `-Os`),
 of which the multiply decomposition is 2.3 kB, nearly all of it
 poly1305's unrolled block. The `PIN=ecdsa` build trades 2.2 kB of RSA
-for 5.8 kB of P-256 and totals 31.7 kB.
+for 5.8 kB of P-256 and totals 31.4 kB.
 
 The hybrid key exchange costs less than its wire size suggests. `KEX=pq`
 adds two ML-KEM key expansions and one decapsulation — the key pair lives

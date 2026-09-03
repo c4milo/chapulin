@@ -8,7 +8,8 @@
 # or interrupt is ever enabled, so counts are deterministic; an ITERS=0
 # build of the same binary is the baseline and the subtraction removes
 # boot, runtime setup and input setup. Counts are frequency-independent.
-# Writes bench/results-insn-m3.csv. Skips without the toolchain or QEMU.
+# Writes bench/results-insn-m3.csv. Skips without a toolchain or QEMU;
+# fails on a toolchain other than the pinned release.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 # shellcheck source=tools/toolchain.env
@@ -20,6 +21,25 @@ M3_CC=$(command -v \
 M3_QEMU=$(command -v qemu-system-arm || true)
 [ -n "$M3_CC" ] || { echo "SKIP m3 insn count: no arm-none-eabi-gcc" >&2; exit 0; }
 [ -n "$M3_QEMU" ] || { echo "SKIP m3 insn count: no qemu-system-arm" >&2; exit 0; }
+
+# Every row is a property of what one compiler emits, and the README
+# credits this column to the Arm GNU release ARM_GNU_VERSION pins, so
+# an arm-none-eabi-gcc of another release stops the script instead of
+# measuring (the device-ram.sh rule). The unversioned PATH candidate
+# above can be any release, which is why this check is not optional.
+# The compiler prints the release as 15.3.Rel1 where tools/toolchain.env
+# spells the download path's 15.3.rel1, so the match ignores case.
+M3_VERSION=$("$M3_CC" --version | head -1)
+case "$(printf '%s' "$M3_VERSION" | tr '[:upper:]' '[:lower:]')" in
+*"$(printf '%s' "$ARM_GNU_VERSION" | tr '[:upper:]' '[:lower:]')"*) ;;
+*)
+    echo "FAIL m3 insn count: $M3_CC is $M3_VERSION" >&2
+    echo "FAIL m3 insn count: the pin is Arm GNU $ARM_GNU_VERSION (tools/toolchain.env). Every row of" >&2
+    echo "FAIL m3 insn count: bench/results-insn-m3.csv is a property of that compiler, so install" >&2
+    echo "FAIL m3 insn count: it, or bump the pin and re-measure; never measure with another." >&2
+    exit 1
+    ;;
+esac
 
 W=$(mktemp -d)
 trap 'rm -rf "$W"' EXIT
@@ -106,7 +126,12 @@ TMPOUT=$(mktemp)
 # Redirecting straight at the committed file would truncate it the moment
 # the run starts, so a failing measurement would destroy the last good
 # numbers (the insn-mips.sh lesson).
+# The comment line names the compiler that produced every row, in the
+# shape insn-rv32.sh writes, so a reader can tell a source change from
+# a compiler change. tools/bench-numbers.py skips lines that start
+# with #.
 {
+    echo "# $M3_VERSION; -mcpu=cortex-m3 -mthumb -O2; qemu-system-arm mps2-an385"
     echo "op,insns"
     row() { # $1 = CSV name  $2 = OP macro  $3 = ITERS
         BASE=$(count "$(build "$2" 0)")

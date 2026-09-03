@@ -86,8 +86,18 @@ EXTRA_SRCS="p256"
     exit 1
 }
 
-DEV="$CLANG $TRIPLE -Os -ffreestanding -nostdlibinc -fstack-usage -DCH_RAND_EXTERN -I$ROOT -I$TMP/shim -c"
-HOSTCC="$CLANG -Os -fstack-usage -DCH_RAND_EXTERN -I$ROOT -c"
+# CH_ASSERT stores __FILE__ in .rodata, and the loop below compiles each
+# source by its absolute path so the .su files land beside the objects.
+# Without the map, every module that asserts carries the measuring
+# machine's checkout path, and a run from another directory moves the
+# total with no source change. The map rewrites the $ROOT/ prefix to
+# nothing, so __FILE__ is the repository-relative name and the count is
+# a property of the source alone. The pinned clang takes the flag
+# (clang has since 10, gcc since 8); a compiler that did not would
+# reject it as unknown and stop the first compile.
+PREFIX_MAP="-fmacro-prefix-map=$ROOT/="
+DEV="$CLANG $TRIPLE -Os -ffreestanding -nostdlibinc -fstack-usage $PREFIX_MAP -DCH_RAND_EXTERN -I$ROOT -I$TMP/shim -c"
+HOSTCC="$CLANG -Os -fstack-usage $PREFIX_MAP -DCH_RAND_EXTERN -I$ROOT -c"
 
 sections() { # $1 = section pattern  $2 = object: summed bytes
     "$SIZE" -A "$2" | awk -v pat="$1" '$1 ~ pat { sum += $2 } END { print sum + 0 }'

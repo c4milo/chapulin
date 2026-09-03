@@ -2,9 +2,9 @@
 module,mips_text_B,mips_rodata_B,mips_flash_B,mips_max_frame_B,mips_max_frame_fn,host_flash_B,host_max_frame_B
 ct,100,0,100,0,ct_wipe,76,0
 sha256,1388,256,1644,288,compress,1660,336
-hkdf,1200,278,1478,280,hmac_sha256,1458,320
+hkdf,1200,197,1397,280,hmac_sha256,1377,320
 chacha20,1108,0,1108,160,chacha20_xor,1004,208
-poly1305,4544,122,4666,344,blocks,2526,336
+poly1305,4544,41,4585,344,blocks,2445,336
 aead,680,16,696,216,mac,760,240
 x25519,3084,192,3276,1280,ladder,2596,1328
 rsa,844,8,852,1000,rsa_pss_verify,712,1040
@@ -18,10 +18,10 @@ handshake_parser,1608,32,1640,88,hsp_parse_encrypted_exts,1376,128
 handshake_record,928,0,928,144,hsr_transcript_hash,732,144
 session,360,0,360,64,tlsi_send_alert,328,48
 handshake_auth,644,34,678,344,hsa_server_auth,566,400
-handshake,2416,253,2669,648,ch_handshake,2469,688
+handshake,2416,172,2588,648,ch_handshake,2388,688
 handshake_post,996,5,1001,160,hspost_read,817,208
-tls,1640,112,1752,88,ch_read,1340,112
+tls,1640,31,1671,88,ch_read,1259,112
 # softmul: no function compiled for mips32r2 or the host, so -fstack-usage wrote no .su and its frame is 0
 softmul,0,0,0,0,,0,0
-total,27368,1504,28872,2360,rsa_vp1,23964,2384
+total,27368,1180,28548,2360,rsa_vp1,23640,2384
 p256 (PIN=ecdsa),5624,264,5888,752,p256_ecdsa_verify,4832,800

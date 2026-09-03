@@ -206,6 +206,11 @@ C2=$(count "$BIN")
 [ "$C1" -eq "$C2" ] || { echo "FAIL: counts not deterministic ($C1 vs $C2)" >&2; exit 1; }
 echo "determinism check: two runs, both $C1 insns" >&2
 
+# The comment line names the compiler that produced every row, in the
+# shape insn-rv32.sh writes, so a reader can tell a source change from
+# a compiler change. tools/bench-numbers.py skips lines that start
+# with #.
+echo "# $cver; -target mips-linux-musl -march=mips32r2 -Os; qemu-mips user mode"
 echo "op,insns,stack_high_water_bytes"
 row() { # $1 = CSV name  $2 = OP macro  $3 = ITERS  -> per-op insns on stdout fd 3
     BASE=$(count "$(build "$2" 0)")
