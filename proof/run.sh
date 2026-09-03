@@ -256,8 +256,11 @@ launch() {
     # pieces inside every poly1305, x25519 and mlkem formula multiplies the
     # multiply count these solvers already struggle with. The composed proofs
     # therefore verify the single-multiply form, and ctwidemul proves the two
-    # forms compute the same function, so the verdicts carry to a target that
-    # runs the decomposition. ctwidemul overrides this with CH_CT_WIDEMUL.
+    # forms compute the same function at 8-bit operands, the widest bound
+    # whose formula converges, so the verdicts carry to a target that runs
+    # the decomposition for operands inside that bound;
+    # https://github.com/c4milo/chapulin/issues/145 tracks the proof at the
+    # full operand range. ctwidemul overrides this with CH_CT_WIDEMUL.
     local args=("proof/${name}_harness.c" "$@" -DCH_RAND_EXTERN -DCH_NATIVE_WIDEMUL \
                 -I . --unwind "$unwind")
     # bash 3.2 errors on expanding an empty array under set -u, so each
@@ -354,9 +357,17 @@ launch slow:5 noovf x25519_mul_alias_a 65 ""
 launch slow:5 noovf x25519_mul_alias_b 65 ""
 launch slow:5 noovf x25519_mul_inputs_alias 65 ""
 launch slow:5 noovf x25519_sqr 65 ""
-# Two of these bounds were wrong, and neither could show it: the driver has
-# never returned a verdict (https://github.com/c4milo/chapulin/issues/37), so
-# the unwinding assertions they would have tripped never ran.
+# The two drivers, over the record reader's contract: b7cf0f3 stubbed the
+# reader and the formulas converge (https://github.com/c4milo/chapulin/issues/37).
+# The nightlies of 2026-09-02 proved handshake_pin (1673 properties, 245 s
+# and 274 s on two runs) and handshake_psk (1671 properties, 1743 s). A
+# second handshake_psk run that evening failed at the runner's memory
+# limit, 10 GB resident on a 16 GB machine
+# (https://github.com/c4milo/chapulin/issues/140).
+#
+# Two of these bounds were wrong, and until the reader was stubbed nothing
+# could show it: the driver returned no verdict, so the unwinding
+# assertions they would have tripped never ran.
 #
 # ct_wipe.0 was absent. ch_handshake wipes the whole handshake_state at
 # handshake.c:363 and sizeof(handshake_state) is 448, against a global unwind
@@ -444,10 +455,13 @@ launch fast:4 full io 24 ""
 # arithmetic is length handling rather than compression.
 launch fast full keysched 120 "" ct.c
 # epoch: 0 s, 27 MB. The CA arm's own rules. handshake_ca drives the whole CA
-# driver and does not converge (https://github.com/c4milo/chapulin/issues/37),
-# so this proves the part that is specific to the arm -- the verdict matching
-# its reported status, and the stored epoch never moving backwards -- and
-# leaves the record reading to handshake_psk and handshake_pin.
+# driver and has no launch line: its header records the runs that returned no
+# verdict (https://github.com/c4milo/chapulin/issues/37). handshake_psk and
+# handshake_pin run the same driver over the stubbed record reader and
+# converge. So this proves the part that is specific to the arm -- the
+# verdict matching its reported status, and the stored epoch never moving
+# backwards -- and leaves the driver's record reading to handshake_psk and
+# handshake_pin.
 launch fast full epoch 40 "" ct.c
 launch fast full handshake_post 132 "handle_post_handshake.0:33,fill_nondet.0:130" --object-bits 11 buf.c ct.c session.c
 # The only launch line that builds the hybrid key exchange
@@ -528,9 +542,11 @@ launch fast full chacha20 165 "chacha20_xor.1:5"
 launch fast full poly1305 85 "blocks.0:8" ct.c
 launch fast full buf 100 ""
 # handshake_record on its own, so the two drivers can stub it
-# (https://github.com/c4milo/chapulin/issues/37). Today proof-coverage reports
-# this module as covered by handshake_psk and handshake_pin alone, and neither
-# returns a verdict, so its only coverage is nominal.
+# (https://github.com/c4milo/chapulin/issues/37). Before this harness,
+# proof-coverage reported the module as covered by handshake_psk and
+# handshake_pin alone, and neither returned a verdict, so that coverage was
+# nominal. Both drivers converge over the stub now (their launch lines above
+# carry the 2026-09-02 numbers), and the reader's own contract is proven here.
 #
 # The receive buffer and CH_QUIET_CAP are small on purpose: the formula costs
 # their product with the fetch bound. Every reader state stays reachable

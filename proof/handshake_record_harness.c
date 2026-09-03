@@ -7,10 +7,11 @@
 // points; hsr_transcript_hash runs after it and must leave the running
 // transcript byte for byte as it found it.
 //
-// The harness exists so the two drivers can stub this module. Today
-// proof-coverage reports handshake_record.c as covered by handshake_psk
-// and handshake_pin alone, and neither returns a verdict
-// (https://github.com/c4milo/chapulin/issues/37).
+// The harness exists so the two drivers can stub this module. Before it,
+// proof-coverage reported handshake_record.c as covered by handshake_psk
+// and handshake_pin alone, and neither returned a verdict
+// (https://github.com/c4milo/chapulin/issues/37). Both converge over the
+// stub now; proof/run.sh's launch lines carry the nightly's numbers.
 //
 // Layered proof: io_read_record and rec_open are stubs asserting the
 // contracts their own proofs establish -- io_harness for the record

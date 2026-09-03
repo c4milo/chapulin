@@ -171,9 +171,11 @@ def main():
               "behaviour on the paths the harness drives; a source listed",
               "here against its own harness is also proven against its",
               "contract.", "",
-              "A fast row gates every push: `make check` runs it and a red",
-              "one stops the build. A slow row carries the verdict of the",
-              "last nightly leg that finished, not of this commit. A harness",
+              "A fast row's verdict comes from `make check-slow`, which runs",
+              "the fast tier through `make prove`; CI runs that on every push",
+              "to main and not on a pull request, which gets `make check` and",
+              "no proof leg. A slow row carries the verdict of the last",
+              "nightly leg that finished, not of this commit. A harness",
               "that starts and returns no verdict proves nothing, and this",
               "table cannot tell that apart from one that passed — for the",
               "slow rows, read the nightly.", ""]
@@ -315,6 +317,11 @@ def reach_table(runs, only=frozenset()):
         except subprocess.TimeoutExpired:
             out.append(f"| `{name}` | timed out |")
             print(f"proof-reach: {name} timed out", flush=True)
+            # The same rule as the no-number branch below: a floored
+            # harness that returns no number fails the gate. Before this
+            # a timeout skipped the floor check and the run stayed green.
+            if name in floors:
+                fell.append((name, 0.0, floors[name]))
             continue
         stale_ids = STALE_UNWINDSET.findall(res.stderr)
         if stale_ids:

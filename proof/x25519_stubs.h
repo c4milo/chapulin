@@ -18,9 +18,12 @@
 // with the bound written as `p > -2^36 && p < 2^36`.
 //
 // WHAT THE HARNESSES DO NOT PROVE: that the real product of two such
-// operands lies in that range. x25519_mul_harness.c proves it on the
-// real ct_widemul_s with every check on, and ctwidemul proves the
-// decomposed multiply computes the same function. Nothing in either
+// operands lies in that range. x25519_mul_harness.c proves it on
+// ct_widemul_s's native arm with every check on, and ctwidemul proves
+// the decomposed multiply computes the same function at 8-bit operands,
+// the widest bound whose formula converges;
+// https://github.com/c4milo/chapulin/issues/145 tracks the proof on the
+// decomposition at the contract's own operand range. Nothing in either
 // harness reads the product's value: every property is a bound, so the
 // bound is all the composition needs.
 //
@@ -30,6 +33,17 @@
 // 2^16 + 38, x25519_tail's first block) or one add or sub of two of those
 // (overflow-checked, under 2^18), and a value under 2^31 narrows exactly.
 // So the operand the stub checks is the limb itself.
+//
+// Checked, not only argued: cbmc's --conversion-check, run by hand on
+// 2026-09-03 under run.sh's other flags (cbmc 6.11.0, kissat 4.0.4),
+// passes both (int32_t) casts in mul on both harnesses. x25519_step:
+// 8 of 509 properties fail, 655 s, 3.9 GB. x25519_tail: 8 of 491,
+// 171 s, 2.3 GB. The eight failures are the same eight in both, and
+// none is a narrowing: each converts a value that can be negative
+// between int64 and uint64 on purpose -- the sign extension in
+// stub_widemul_s below, four in carry's fold, one in cswap's mask, two
+// in mul's 38x fold. That is why the check is not a launch line; this
+// paragraph records what it found.
 #ifndef CH_X25519_STUBS_H
 #define CH_X25519_STUBS_H
 

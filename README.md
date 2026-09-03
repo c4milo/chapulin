@@ -344,11 +344,15 @@ secrets and MACs and never opens a record.
   in one step, and that formula returned no verdict past 14 GB, so
   `proof/x25519_stubs.h` replaces `ct_widemul_s` with a contract —
   operands under 2^18, product in [-2^36, 2^36) — and `x25519_mul` proves
-  the real multiply meets it. No property in either harness reads a
-  product's value, only bounds, so the composition loses nothing the stub
-  header does not state. The stub also checks each operand after mul's
-  narrowing to int32; the header says why no limb reaches that narrowing
-  outside its exact range.
+  `ct_widemul_s`'s native arm meets it. The shipped 16x16 decomposition
+  is proven equal to that arm at 8-bit operands, the widest bound whose
+  formula converges (`ctwidemul`), and
+  [#145](https://github.com/c4milo/chapulin/issues/145) tracks the proof
+  on the decomposition at the contract's own operand range. No property
+  in either harness reads a product's value, only bounds, so the
+  composition loses nothing the stub header does not state. The stub
+  also checks each operand after mul's narrowing to int32; the header
+  says why no limb reaches that narrowing outside its exact range.
 - The connected-phase driver. The post-handshake parser is proven on
   hostile bytes, but the `ch_read` / `ch_write` / `ch_close` loop
   around it — record reading and cross-record reassembly — does not

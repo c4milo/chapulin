@@ -428,9 +428,12 @@ which convention holds them.
   `__muldi3` so the library's branching ones are never linked, and the
   gate asserts it still defines them; the rv32ic gcc spec holds
   `softmul.c` at zero calls to `__muldi3`, because gcc at `-Os` once
-  emitted one from inside `__muldi3` itself. Ten `inv16-*` violations
-  in `test/violations/` prove each detection catches its mutant, one of
-  them under the gcc gate alone.  Both count instructions; neither checks an answer. `make
+  emitted one from inside `__muldi3` itself. Eleven `inv16-*` violations
+  in `test/violations/` prove each detection catches its mutant. Three
+  of them catch only under a gcc gate: `inv16-widemul-mid-widened`
+  under `lint-wide-multiply-gcc`'s Arm gcc, `inv16-widemul-compare-carries`
+  in the mips lane, and `inv16-softmul-mask-as-negate` in the riscv32
+  lane. Both count instructions; neither checks an answer. `make
   ct-widemul-check` (in `check-slow`) runs the unit, ML-KEM and
   Wycheproof vectors over the decomposition itself, which every other
   host binary compiles out, and `make test-invariants` requires it to
