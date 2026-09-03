@@ -28,6 +28,7 @@ import argparse
 import pathlib
 import re
 import shlex
+import shutil
 import subprocess
 import sys
 
@@ -127,6 +128,12 @@ def main():
                          "gets re-measured by hand. A harness the floors file "
                          "lists as not gated runs when named here.")
     args = ap.parse_args()
+    # A missing cbmc is a setup error, not a measurement: without this
+    # the nightly's spec-coverage job, which installs no cbmc, died in a
+    # traceback, and a stub on PATH would read as 0.0% under a floor.
+    if args.reach and shutil.which("cbmc") is None:
+        sys.exit("proof-reach: cbmc is not on PATH; the reach measurement "
+                 "runs it, so install it or drop --reach")
 
     runs = launch_lines()
     for name in args.only:
@@ -209,6 +216,13 @@ def main():
         print(f"proof-coverage: {name} reaches no code at its bound; the "
               f"proof passes without entering what it names")
     for name, got, floor in reach_fell:
+        # got is a percentage, or the words for why there is none: a run
+        # that returned no number is a failed gate too, and saying "0.0%"
+        # for it sent a reader after the bound instead of the runner.
+        if isinstance(got, str):
+            print(f"proof-coverage: {name} {got}, so its recorded {floor}% "
+                  f"floor was not measured; the gate fails until it is")
+            continue
         print(f"proof-coverage: {name} reaches {got}% of its locations, under "
               f"its recorded {floor}% floor; the bound no longer enters what "
               f"the harness names")
@@ -321,7 +335,7 @@ def reach_table(runs, only=frozenset()):
             # harness that returns no number fails the gate. Before this
             # a timeout skipped the floor check and the run stayed green.
             if name in floors:
-                fell.append((name, 0.0, floors[name]))
+                fell.append((name, "timed out", floors[name]))
             continue
         stale_ids = STALE_UNWINDSET.findall(res.stderr)
         if stale_ids:
@@ -345,7 +359,7 @@ def reach_table(runs, only=frozenset()):
             # gate, not a blank: the floor exists to notice regressions,
             # and a silent blank is how one went unnoticed.
             if name in floors:
-                fell.append((name, 0.0, floors[name]))
+                fell.append((name, why, floors[name]))
             continue
         print(f"proof-reach: {name} {m.group(3)}%", flush=True)
         reached, total, pct = int(m.group(1)), int(m.group(2)), m.group(3)

@@ -519,6 +519,7 @@ check: bin/unit bin/unit_ca bin/unit_pq bin/tlsclient bin/tlsclient_ecdsa bin/tl
 	./bin/x509strict_ecdsa
 	$(MAKE) wycheproof
 	$(MAKE) proof-coverage
+	$(MAKE) proof-reach-smoke
 
 # What CI runs, decided here rather than in the workflow: the workflow
 # calls one target and this file says which tier that means. GitHub sets
@@ -655,10 +656,15 @@ proof-reach:
 .PHONY: proof-coverage
 proof-coverage:
 	python3 proof/coverage.py
-	# One cover run through --reach's own code path, on the cheapest
-	# gated harness (epoch: a third of a second), so check executes the
-	# branch the nightly runs; 0ab9862 deleted a function on that path
-	# and check stayed green until the nightly failed.
+
+# One cover run through --reach's own code path, on the cheapest gated
+# harness (epoch: a third of a second), so check executes the branch the
+# nightly runs; 0ab9862 deleted a function on that path and check stayed
+# green until the nightly failed. Its own target, not a line of
+# proof-coverage, because it needs cbmc and the nightly's spec-coverage
+# job runs proof-coverage on a runner without one.
+.PHONY: proof-reach-smoke
+proof-reach-smoke:
 	python3 -u proof/coverage.py --reach --only epoch
 
 # What the Lean spec checks: which spec ops any driver exercises, and
