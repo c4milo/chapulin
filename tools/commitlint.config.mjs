@@ -20,5 +20,14 @@ export default {
     // commit. What still holds the header to the conventional form is
     // .github/dependabot.yml, which sets the type: `ci` for the Actions
     // updates and `build` for the npm ones.
-    ignores: [(message) => /^Signed-off-by: dependabot\[bot\]/m.test(message)],
+    ignores: [
+        (message) => /^Signed-off-by: dependabot\[bot\]/m.test(message),
+        // ad36415 is #132 squash-merged through the GitHub UI, which wrote the
+        // pull request's title as the subject with no type. It is on main
+        // and cannot be rewritten, and lint-commits-range on main lints the
+        // whole history, so without this one exact match every push to main
+        // fails check forever. Exactly that header, nothing broader; the
+        // pr-title workflow keeps the next squash from landing typeless.
+        (message) => message.startsWith("Fail check on a conflict marker in a tracked file (#132)\n"),
+    ],
 };

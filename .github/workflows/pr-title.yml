@@ -1,0 +1,24 @@
+# A squash merge through the GitHub UI writes the pull request's title as
+# the commit subject. ad36415 landed on main that way with no type, and
+# lint-commits-range on main has failed on it since. This holds the title
+# to the same conventional form the commit-msg hook holds a commit to, so
+# whichever way a pull request merges, its subject lints.
+name: pr-title
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened]
+permissions:
+  contents: read
+jobs:
+  pr-title:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Lint the title as a commit subject
+        env:
+          TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          set -euo pipefail
+          npm ci --prefix tools --silent
+          printf '%s\n' "$TITLE" | tools/node_modules/.bin/commitlint --config tools/commitlint.config.mjs
