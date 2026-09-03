@@ -5,8 +5,11 @@
 # .text+.rodata sections, and takes worst-case frames from -fstack-usage.
 # The same sources build for the host arch at -Os alongside, so the two
 # columns compare like for like. Objects are sized, never linked, so a
-# declaration-only libc shim stands in for string.h. Writes
-# bench/results-device.csv. Fails without the pinned clang.
+# declaration-only libc shim stands in for string.h. The default build's
+# modules compile once more with -DCH_NATIVE_WIDEMUL, and their sum is
+# the `total (CH_NATIVE_WIDEMUL)` row: its distance from `total` is the
+# flash the multiply decomposition takes, the figure the README states.
+# Writes bench/results-device.csv. Fails without the pinned clang.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 ROOT=$PWD
@@ -56,7 +59,7 @@ HOST_TRIPLE=$("$CLANG" -dumpmachine)
 
 TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT
-mkdir "$TMP/shim" "$TMP/dev" "$TMP/host"
+mkdir "$TMP/shim" "$TMP/dev" "$TMP/host" "$TMP/dev-native" "$TMP/host-native"
 
 cat > "$TMP/shim/string.h" <<'EOF'
 #pragma once
@@ -140,8 +143,19 @@ for src in $SRCS $EXTRA_SRCS; do
     check_su "$TMP/dev/$src.o" '^\.text'
     check_su "$TMP/host/$src.o" '^__text'
 done
+# The default build's modules once more over the native multiply, for
+# the `total (CH_NATIVE_WIDEMUL)` row alone.
+for src in $SRCS; do
+    (cd "$TMP/dev-native" && $DEV -DCH_NATIVE_WIDEMUL "$ROOT/$src.c" -o "$src.o")
+    (cd "$TMP/host-native" && $HOSTCC -DCH_NATIVE_WIDEMUL "$ROOT/$src.c" -o "$src.o")
+    check_su "$TMP/dev-native/$src.o" '^\.text'
+    check_su "$TMP/host-native/$src.o" '^__text'
+done
 
-OUT=bench/results-device.csv
+# The rows collect under $TMP and move over the committed file only
+# once every row is written, so a failure between here and the end
+# leaves the last good numbers in place (the insn-mips.sh lesson).
+OUT=$TMP/results-device.csv
 # The comment line names the compiler that produced every row, so a
 # reader can tell a source change from a compiler change.
 # tools/bench-numbers.py skips lines that start with #.
@@ -150,19 +164,25 @@ OUT=bench/results-device.csv
     echo "module,mips_text_B,mips_rodata_B,mips_flash_B,mips_max_frame_B,mips_max_frame_fn,host_flash_B,host_max_frame_B"
 } > "$OUT"
 
-# Appends the row for module $1, labelled $2, and leaves its cells in
-# TEXT, RO, HOSTF, FRAME, FN and HFRAME for the totals. Where the module
-# compiled to no function there is no .su (see check_su): the frame is
-# 0, and a comment line above the row names the target and says why.
-# tools/bench-numbers.py skips comment lines, and so does the table
-# printed below, which repeats the notes under it instead.
-emit_row() {
-    TEXT=$(sections '^\.text' "$TMP/dev/$1.o")
-    RO=$(sections '^\.rodata' "$TMP/dev/$1.o")
+# Reads module $1's cells from the objects under $TMP/$2 (device) and
+# $TMP/$3 (host) into TEXT, RO, HOSTF, FRAME, FN and HFRAME.
+measure_module() {
+    TEXT=$(sections '^\.text' "$TMP/$2/$1.o")
+    RO=$(sections '^\.rodata' "$TMP/$2/$1.o")
     # Mach-O flash lives in __text, __const, __cstring, and __literalN.
-    HOSTF=$(sections '^__(text|const|cstring|literal)' "$TMP/host/$1.o")
-    read -r FRAME FN <<< "$(su_top "$TMP/dev/$1.su")"
-    read -r HFRAME _ <<< "$(su_top "$TMP/host/$1.su")"
+    HOSTF=$(sections '^__(text|const|cstring|literal)' "$TMP/$3/$1.o")
+    read -r FRAME FN <<< "$(su_top "$TMP/$2/$1.su")"
+    read -r HFRAME _ <<< "$(su_top "$TMP/$3/$1.su")"
+}
+
+# Appends the row for module $1, labelled $2, from the objects of the
+# shipped build. Where the module compiled to no function there is no
+# .su (see check_su): the frame is 0, and a comment line above the row
+# names the target and says why. tools/bench-numbers.py skips comment
+# lines, and so does the table printed below, which repeats the notes
+# under it instead.
+emit_row() {
+    measure_module "$1" dev host
     NO_SU=""
     if [ ! -e "$TMP/dev/$1.su" ]; then NO_SU="mips32r2"; fi
     if [ ! -e "$TMP/host/$1.su" ]; then NO_SU="${NO_SU:+$NO_SU or }the host"; fi
@@ -174,22 +194,35 @@ emit_row() {
     echo "$2,$TEXT,$RO,$((TEXT + RO)),$FRAME,$FN,$HOSTF,$HFRAME" >> "$OUT"
 }
 
-T_TEXT=0
-T_RO=0
-T_HOST=0
-T_FRAME=0
-T_FRAME_FN=""
-T_HFRAME=0
+# Sums the default build's modules from the objects under $TMP/$1
+# (device) and $TMP/$2 (host) and appends them as the row labelled $3.
+emit_total() {
+    T_TEXT=0
+    T_RO=0
+    T_HOST=0
+    T_FRAME=0
+    T_FRAME_FN=""
+    T_HFRAME=0
+    for src in $SRCS; do
+        measure_module "$src" "$1" "$2"
+        T_TEXT=$((T_TEXT + TEXT))
+        T_RO=$((T_RO + RO))
+        T_HOST=$((T_HOST + HOSTF))
+        if [ "$FRAME" -gt "$T_FRAME" ]; then T_FRAME=$FRAME; T_FRAME_FN=$FN; fi
+        if [ "$HFRAME" -gt "$T_HFRAME" ]; then T_HFRAME=$HFRAME; fi
+    done
+    echo "$3,$T_TEXT,$T_RO,$((T_TEXT + T_RO)),$T_FRAME,$T_FRAME_FN,$T_HOST,$T_HFRAME" >> "$OUT"
+}
+
 NOTES=""
 for src in $SRCS; do
     emit_row "$src" "$src"
-    T_TEXT=$((T_TEXT + TEXT))
-    T_RO=$((T_RO + RO))
-    T_HOST=$((T_HOST + HOSTF))
-    if [ "$FRAME" -gt "$T_FRAME" ]; then T_FRAME=$FRAME; T_FRAME_FN=$FN; fi
-    if [ "$HFRAME" -gt "$T_HFRAME" ]; then T_HFRAME=$HFRAME; fi
 done
-echo "total,$T_TEXT,$T_RO,$((T_TEXT + T_RO)),$T_FRAME,$T_FRAME_FN,$T_HOST,$T_HFRAME" >> "$OUT"
+emit_total dev host total
+# The same modules over the native multiply. tools/bench-numbers.py
+# renders the flash the decomposition takes as the difference between
+# the two total rows' mips_flash_B.
+emit_total dev-native host-native "total (CH_NATIVE_WIDEMUL)"
 
 # Out-of-build modules, sized but outside the totals: what a PIN=ecdsa
 # build swaps in for rsa + rsa_mont.
@@ -201,8 +234,20 @@ echo "device flash and stack model ($CLANG_VERSION; $TRIPLE -Os; host = $HOST_TR
 grep -v '^#' "$OUT" | column -s, -t
 printf '%s' "$NOTES"
 echo
+echo "flash the multiply decomposition takes, by module (mips32r2 -Os:"
+echo "mips_flash_B less the same module built with -DCH_NATIVE_WIDEMUL):"
+for src in $SRCS; do
+    measure_module "$src" dev host
+    SHIPPED=$((TEXT + RO))
+    measure_module "$src" dev-native host-native
+    if [ "$SHIPPED" -ne $((TEXT + RO)) ]; then
+        printf '  %5d B  %s\n' "$((SHIPPED - TEXT - RO))" "$src"
+    fi
+done
+echo
 echo "deepest -fstack-usage frames, mips32r2 -Os (frames, not call-graph"
 echo "peaks; bench/sram.sh walks the host call graph):"
 cat "$TMP"/dev/*.su | sort -t "$(printf '\t')" -k2,2nr | head -10 \
     | awk -F'\t' '{ printf "  %5d B  %s\n", $2, $1 }'
-echo "wrote $OUT"
+mv "$OUT" bench/results-device.csv
+echo "wrote bench/results-device.csv"

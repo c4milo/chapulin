@@ -8,8 +8,11 @@
 # or interrupt is ever enabled, so counts are deterministic; an ITERS=0
 # build of the same binary is the baseline and the subtraction removes
 # boot, runtime setup and input setup. Counts are frequency-independent.
-# Writes bench/results-insn-m3.csv. Skips without a toolchain or QEMU;
-# fails on a toolchain other than the pinned release.
+# Each row is measured twice: over the multiply decomposition firmware
+# ships (insns) and over the same driver built with -DCH_NATIVE_WIDEMUL
+# (native_insns), the pair the README's decomposition sentence is
+# rendered from. Writes bench/results-insn-m3.csv. Skips without a
+# toolchain or QEMU; fails on a toolchain other than the pinned release.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 # shellcheck source=tools/toolchain.env
@@ -68,24 +71,27 @@ int main(void) {
 }
 RUNTIME
 
-# No CH_NATIVE_WIDEMUL: the host-test convention asserts the native
-# multiply where nothing secret is at risk, but firmware ships the
-# decomposition (LIB_CFLAGS filters the define out), and these counts
-# are for firmware.
+# The multiply macro is per build (see build below): the insns column
+# is for firmware, which ships the decomposition (LIB_CFLAGS filters
+# CH_NATIVE_WIDEMUL out), and the native_insns column is the same
+# driver over the umull the decomposition exists to avoid.
 CC="$M3_CC -std=c11 -O2 -mcpu=cortex-m3 -mthumb --specs=rdimon.specs \
     -Wl,--no-warn-rwx-segments -T test/qemu/m3_semi.ld test/qemu/m3_start.c \
     -I. -Ibench"
 SRCS="ct.c sha256.c hkdf.c chacha20.c poly1305.c aead.c x25519.c p256.c \
       rsa.c rsa_mont.c buf.c keysched.c record.c sha3.c mlkem.c mlkem_poly.c"
 
-build() { # $1 = OP macro  $2 = ITERS  -> binary path on stdout
+# $3 selects the multiply: CH_CT_WIDEMUL is the decomposition firmware
+# ships (ct.h takes it as the default, so the define only names the
+# choice), CH_NATIVE_WIDEMUL the native instruction.
+build() { # $1 = OP macro  $2 = ITERS  $3 = multiply macro  -> binary path on stdout
     # CC holds the compiler and its flags, SRCS the sixteen source paths;
     # the shell must split both into separate arguments. Neither value
     # holds a glob character, so the other half of SC2086 does not apply.
     # shellcheck disable=SC2086
-    $CC "-DOP_$1" "-DITERS=$2" bench/insn_driver.c "$W/runtime.c" $SRCS \
-        -o "$W/bin_$1_$2"
-    echo "$W/bin_$1_$2"
+    $CC "-DOP_$1" "-DITERS=$2" "-D$3" bench/insn_driver.c "$W/runtime.c" $SRCS \
+        -o "$W/bin_$1_$2_$3"
+    echo "$W/bin_$1_$2_$3"
 }
 
 count_once() { # $1 = binary: exec-log line count on stdout
@@ -116,7 +122,7 @@ count() { # $1 = binary: executed-instruction count on stdout
 }
 
 # Determinism spot check: identical counts or the method is broken.
-BIN=$(build SHA256_1K 4)
+BIN=$(build SHA256_1K 4 CH_CT_WIDEMUL)
 C1=$(count "$BIN")
 C2=$(count "$BIN")
 [ "$C1" -eq "$C2" ] || { echo "FAIL: counts not deterministic ($C1 vs $C2)" >&2; exit 1; }
@@ -131,14 +137,18 @@ TMPOUT=$(mktemp)
 # a compiler change. tools/bench-numbers.py skips lines that start
 # with #.
 {
-    echo "# $M3_VERSION; -mcpu=cortex-m3 -mthumb -O2; qemu-system-arm mps2-an385"
-    echo "op,insns"
+    echo "# $M3_VERSION; -mcpu=cortex-m3 -mthumb -O2; qemu-system-arm mps2-an385; native_insns adds -DCH_NATIVE_WIDEMUL"
+    echo "op,insns,native_insns"
+    measure() { # $1 = OP macro  $2 = ITERS  $3 = multiply macro  -> per-op insns on stdout
+        BASE=$(count "$(build "$1" 0 "$3")")
+        FULL=$(count "$(build "$1" "$2" "$3")")
+        echo $(( (FULL - BASE) / $2 ))
+    }
     row() { # $1 = CSV name  $2 = OP macro  $3 = ITERS
-        BASE=$(count "$(build "$2" 0)")
-        FULL=$(count "$(build "$2" "$3")")
-        INSNS=$(( (FULL - BASE) / $3 ))
-        echo "$1,$INSNS"
-        echo "  $1: $INSNS insns" >&2
+        INSNS=$(measure "$2" "$3" CH_CT_WIDEMUL)
+        NATIVE=$(measure "$2" "$3" CH_NATIVE_WIDEMUL)
+        echo "$1,$INSNS,$NATIVE"
+        echo "  $1: $INSNS insns, $NATIVE with CH_NATIVE_WIDEMUL" >&2
     }
     row sha256_1kib SHA256_1K 16
     row hkdf_expand_label_32b HKDF 16

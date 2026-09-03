@@ -1,12 +1,13 @@
-op,insns,stack_high_water_bytes
-sha256_1kib,67606,592
-hkdf_expand_label_32b,22312,1072
-aead_seal_1kib,81976,748
-x25519_scalarmult,38934802,1632
-p256_ecdsa_verify,46029602,1572
-rsa_pss_verify_3072,11625119,3824
-mlkem_keygen,3216543,6568
-mlkem_decaps,3630098,11704
-handshake_crypto,90210060,4856
-handshake_crypto_pq,100366088,14832
+# Alpine clang version 22.1.3; -target mips-linux-musl -march=mips32r2 -Os; qemu-mips user mode; native_insns adds -DCH_NATIVE_WIDEMUL
+op,insns,native_insns,stack_high_water_bytes
+sha256_1kib,67606,67606,592
+hkdf_expand_label_32b,22312,22312,1072
+aead_seal_1kib,81976,47440,748
+x25519_scalarmult,38934802,28675222,1632
+p256_ecdsa_verify,46029602,46029602,1572
+rsa_pss_verify_3072,11625119,11625119,3824
+mlkem_keygen,3216543,3216543,6568
+mlkem_decaps,3630098,3594120,11704
+handshake_crypto,90210060,69690900,4856
+handshake_crypto_pq,100366088,79810950,14832
 # at 500 MHz and 1.0 IPC: sha256_1kib 0.135 ms, hkdf_expand_label_32b 0.045 ms, aead_seal_1kib 0.164 ms, x25519_scalarmult 77.870 ms, p256_ecdsa_verify 92.059 ms, rsa_pss_verify_3072 23.250 ms, handshake_crypto 180.420 ms

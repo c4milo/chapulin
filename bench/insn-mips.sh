@@ -7,8 +7,11 @@
 # the exec log. Counts are deterministic and baseline-subtracted: an
 # ITERS=0 build of the same binary removes startup, input setup, and the
 # stack paint. Every input is fixed and no I/O happens inside a measured
-# loop. memcpy is byte-wise here, so counts lean conservative. Writes
-# bench/results-insn.csv. Skips without docker.
+# loop. memcpy is byte-wise here, so counts lean conservative. Each row
+# is measured twice: over the multiply decomposition firmware ships
+# (insns) and over the same driver built with -DCH_NATIVE_WIDEMUL
+# (native_insns), the pair the README's decomposition sentence is
+# rendered from. Writes bench/results-insn.csv. Skips without docker.
 set -euo pipefail
 
 if [ "${1:-}" != "--inside" ]; then
@@ -179,14 +182,17 @@ SRCS="/src/ct.c /src/sha256.c /src/hkdf.c /src/chacha20.c /src/poly1305.c \
       /src/buf.c /src/keysched.c /src/record.c \
       /src/sha3.c /src/mlkem.c /src/mlkem_poly.c"
 
-build() { # $1 = OP macro  $2 = ITERS  -> binary path on stdout
+# $3 selects the multiply: CH_CT_WIDEMUL is the decomposition firmware
+# ships (ct.h takes it as the default, so the define only names the
+# choice), CH_NATIVE_WIDEMUL the native instruction.
+build() { # $1 = OP macro  $2 = ITERS  $3 = multiply macro  -> binary path on stdout
     # CC holds the compiler and its flags, SRCS the sixteen source paths.
     # The shell has to split both into separate arguments; quoting either
     # would hand clang one argument containing spaces. Neither value holds a
     # glob character, so the other half of SC2086 does not apply.
     # shellcheck disable=SC2086
-    $CC "-DOP_$1" "-DITERS=$2" /src/bench/insn_driver.c "$W/runtime.c" $SRCS -o "$W/bin_$1_$2"
-    echo "$W/bin_$1_$2"
+    $CC "-DOP_$1" "-DITERS=$2" "-D$3" /src/bench/insn_driver.c "$W/runtime.c" $SRCS -o "$W/bin_$1_$2_$3"
+    echo "$W/bin_$1_$2_$3"
 }
 
 run_plain() { # $1 = binary: guest's stack high-water on stdout, dies on bad exit
@@ -200,7 +206,7 @@ count() { # $1 = binary: executed-instruction count on stdout
 }
 
 # Determinism spot check: identical counts or the method is broken.
-BIN=$(build SHA256_1K 4)
+BIN=$(build SHA256_1K 4 CH_CT_WIDEMUL)
 C1=$(count "$BIN")
 C2=$(count "$BIN")
 [ "$C1" -eq "$C2" ] || { echo "FAIL: counts not deterministic ($C1 vs $C2)" >&2; exit 1; }
@@ -210,16 +216,19 @@ echo "determinism check: two runs, both $C1 insns" >&2
 # shape insn-rv32.sh writes, so a reader can tell a source change from
 # a compiler change. tools/bench-numbers.py skips lines that start
 # with #.
-echo "# $cver; -target mips-linux-musl -march=mips32r2 -Os; qemu-mips user mode"
-echo "op,insns,stack_high_water_bytes"
-row() { # $1 = CSV name  $2 = OP macro  $3 = ITERS  -> per-op insns on stdout fd 3
-    BASE=$(count "$(build "$2" 0)")
-    FULL_BIN=$(build "$2" "$3")
-    HW=$(run_plain "$FULL_BIN")
-    FULL=$(count "$FULL_BIN")
-    INSNS=$(( (FULL - BASE) / $3 ))
-    echo "$1,$INSNS,$HW"
-    echo "  $1: $INSNS insns, stack $HW B" >&2
+echo "# $cver; -target mips-linux-musl -march=mips32r2 -Os; qemu-mips user mode; native_insns adds -DCH_NATIVE_WIDEMUL"
+echo "op,insns,native_insns,stack_high_water_bytes"
+measure() { # $1 = OP macro  $2 = ITERS  $3 = multiply macro  -> per-op insns on stdout
+    BASE=$(count "$(build "$1" 0 "$3")")
+    FULL=$(count "$(build "$1" "$2" "$3")")
+    echo $(( (FULL - BASE) / $2 ))
+}
+row() { # $1 = CSV name  $2 = OP macro  $3 = ITERS
+    INSNS=$(measure "$2" "$3" CH_CT_WIDEMUL)
+    NATIVE=$(measure "$2" "$3" CH_NATIVE_WIDEMUL)
+    HW=$(run_plain "$(build "$2" "$3" CH_CT_WIDEMUL)")
+    echo "$1,$INSNS,$NATIVE,$HW"
+    echo "  $1: $INSNS insns, $NATIVE with CH_NATIVE_WIDEMUL, stack $HW B" >&2
     eval "N_$2=$INSNS"
 }
 

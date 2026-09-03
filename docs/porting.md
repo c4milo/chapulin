@@ -40,8 +40,9 @@ ship a compiler neither gate measures, run the gate with it, or read
 
 **Your core has a multiplier whose timing you cannot document.** This is the
 default and needs no flag. `ct.h` builds every widening product from four 16x16
-pieces, which costs roughly 29% of the pinned handshake's crypto on mips32r2
-and 2.3 kB of flash (measured; see the README's Speed and flash table).
+pieces. Measured, the pinned handshake's crypto costs 29% more on mips32r2, and
+the decomposition is 2.3 kB of flash; the README's Speed and flash section has
+every target's figures.
 
 **Your core's multiply is documented constant-time.** Pass
 `-DCH_NATIVE_WIDEMUL` and take the speed back. Do this only with a vendor
