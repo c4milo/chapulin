@@ -413,7 +413,10 @@ which convention holds them.
   what the compiler emits, which is the gap this invariant was missing:
   KyberSlash and the Cortex-M3 multiply are both instruction selection,
   not source. Two build-time checks close it, each over every source a
-  secret passes through (`CODEGEN_SRCS` in the Makefile).
+  secret passes through (`CODEGEN_SRCS` in the Makefile;
+  `lint-codegen-partition` holds every library source in that list or
+  in `WIDEMUL_PUBLIC`, the public-key and certificate sources that
+  multiply over bytes the peer sent in the clear, and never in both).
   `lint-wide-multiply` compiles for Cortex-M3, mips32r2 and rv32imac
   under the pinned clang, and `lint-wide-multiply-gcc` under the gcc
   each CI lane ships, and counts per file the widening multiplies, the

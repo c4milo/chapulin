@@ -476,7 +476,7 @@ bin/diff: test/diff_test.c $(SRCS) sha3.c mlkem.c mlkem_poly.c $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) -I. -o $@ test/diff_test.c $(SRCS) sha3.c mlkem.c mlkem_poly.c
 
-.PHONY: check check-slow ci lint lint-tidy lint-format lint-cppcheck lint-docs lint-conflict-markers lint-invariants lint-violation-builds lint-fuzz-budget lint-runtime-symbols lint-wide-multiply lint-commit-citations lint-issue-links lint-shellcheck lint-bench-numbers lint-spec prove diff fmt clean
+.PHONY: check check-slow ci lint lint-tidy lint-format lint-cppcheck lint-docs lint-conflict-markers lint-invariants lint-violation-builds lint-fuzz-budget lint-codegen-partition lint-runtime-symbols lint-wide-multiply lint-commit-citations lint-issue-links lint-shellcheck lint-bench-numbers lint-spec prove diff fmt clean
 # check is the inner loop and holds a one-minute budget, so it runs what
 # answers "did I break the build or a contract": the linters, every unit
 # and strict-parser binary, the packaged-object export check, and the
@@ -902,7 +902,7 @@ endif
 
 # Checks and thresholds live in .clang-tidy; every disable carries a reason
 # there (fix-or-drop, never NOLINT in code).
-lint: lint-toolchain lint-pins lint-proof-cover lint-tidy lint-format lint-cppcheck lint-commits lint-docs lint-conflict-markers lint-invariants lint-stack lint-size lint-tracked-ignored lint-matrix lint-nightly-report lint-violation-builds lint-fuzz-budget lint-runtime-symbols lint-wide-multiply lint-commit-citations lint-issue-links lint-shellcheck lint-bench-numbers lint-spec
+lint: lint-toolchain lint-pins lint-proof-cover lint-tidy lint-format lint-cppcheck lint-commits lint-docs lint-conflict-markers lint-invariants lint-stack lint-size lint-tracked-ignored lint-matrix lint-nightly-report lint-violation-builds lint-fuzz-budget lint-codegen-partition lint-runtime-symbols lint-wide-multiply lint-commit-citations lint-issue-links lint-shellcheck lint-bench-numbers lint-spec
 
 # INV-19: bounded stack. The budget is the measured worst library
 # frame (rsa_vp1's RSA-3072 limb temporaries, 2,400 bytes) rounded up;
@@ -1254,16 +1254,25 @@ lint-violation-builds:
 # Finished bytes pass through wbuf; its only arithmetic is on lengths, so
 # its ceiling is zero like the rest.
 #
-# Out, and why: p256.c, rsa.c and rsa_mont.c multiply on purpose -- three
-# wide multiply-accumulates each, measured -- over a server or CA public
-# key, a transcript hash and a signature, all of which the peer sent in the
-# clear, and the client never signs, so there is no signing entry point to
-# add a secret to. pem.c, x509.c, x509_der.c and x509_ca.c read
-# certificates, which are public too (gcc lowers x509_der.c's decimal date
-# digits to two madd on mips32r2, and nothing there is secret). A secret
-# arriving in any of these is a design change, and this list is where it
-# lands. Until https://github.com/c4milo/chapulin/issues/85 the gate read
-# four files and the rest went unmeasured.
+# WIDEMUL_PUBLIC is every other library source, each with the reason it
+# may multiply or divide: its operands are bytes the peer sent in the
+# clear.
+#   p256.c, rsa.c, rsa_mont.c: public-key verify. Each does three wide
+#     multiply-accumulates, measured, over a server or CA public key, a
+#     transcript hash and a signature, and the client never signs, so
+#     there is no signing entry point to add a secret to.
+#   pem.c, x509.c, x509_der.c, x509_ca.c: the certificate readers. The
+#     certificate is public too (gcc lowers x509_der.c's decimal date
+#     digits to two madd on mips32r2, and nothing there is secret).
+# A secret arriving in any of these is a design change, and this list is
+# where it lands. Until https://github.com/c4milo/chapulin/issues/85 the
+# gate read four files and the rest went unmeasured.
+#
+# Both lists are hand-kept, so lint-codegen-partition holds them to a
+# partition of the library sources: every source is in exactly one, and
+# every entry names a source. Without it a new secret-bearing file was
+# measured by neither gate until someone added it
+# (https://github.com/c4milo/chapulin/issues/143).
 #
 # Ceilings are file:count and hold on every spec below unless
 # WIDEMUL_CEILING_SPEC names the spec and file. Going over fails. Coming in
@@ -1276,6 +1285,33 @@ WIDEMUL_CEILING := ct.c:0 sha256.c:0 sha3.c:1 hkdf.c:0 chacha20.c:0 poly1305.c:0
                    session.c:0 handshake_message.c:0 handshake_parser.c:0 handshake_record.c:0 \
                    handshake_auth.c:0 handshake.c:0 handshake_post.c:0 tls.c:0 drbg.c:0 softmul.c:0
 CODEGEN_SRCS := $(foreach e,$(WIDEMUL_CEILING),$(firstword $(subst :, ,$(e))))
+WIDEMUL_PUBLIC := p256.c rsa.c rsa_mont.c pem.c x509.c x509_der.c x509_ca.c
+
+# The library sources are $(SRCS), drbg.c, and every .c file git tracks
+# at the repository root. The KEX=pq sources join LIB_SRCS by += rather
+# than through SRCS, and every library source is a root file whichever
+# build variable lists it, so git's view is the one no Makefile list can
+# fall behind (SH_SRCS is the precedent). $(SRCS) stays in the union so a
+# file listed before it is tracked fails here rather than on CI.
+.PHONY: lint-codegen-partition
+lint-codegen-partition:
+	@rc=0; \
+	 srcs=" $$({ printf '%s\n' $(SRCS) drbg.c; git ls-files '*.c' | grep -v /; } | sort -u | tr '\n' ' ')"; \
+	 for f in $$srcs; do \
+	   gated=0; public=0; \
+	   for g in $(CODEGEN_SRCS); do [ "$$g" = "$$f" ] && gated=1; done; \
+	   for p in $(WIDEMUL_PUBLIC); do [ "$$p" = "$$f" ] && public=1; done; \
+	   case "$$gated$$public" in \
+	     00) echo "lint-codegen-partition: $$f is in neither WIDEMUL_CEILING nor WIDEMUL_PUBLIC, so no codegen gate measures it"; rc=1 ;; \
+	     11) echo "lint-codegen-partition: $$f is in both WIDEMUL_CEILING and WIDEMUL_PUBLIC; a source is gated or public, never both"; rc=1 ;; \
+	   esac; \
+	 done; \
+	 for e in $(CODEGEN_SRCS) $(WIDEMUL_PUBLIC); do \
+	   case "$$srcs" in *" $$e "*) ;; \
+	     *) echo "lint-codegen-partition: $$e is in a gate list and is not a library source"; rc=1 ;; \
+	   esac; \
+	 done; \
+	 [ $$rc -eq 0 ] && echo "lint-codegen-partition: every library source is in exactly one of WIDEMUL_CEILING and WIDEMUL_PUBLIC"; exit $$rc
 
 # The Cortex-M3 has two multiply opcodes: mul is constant-time, umull is
 # not -- it returns sooner when both operands are below 65536, and has
