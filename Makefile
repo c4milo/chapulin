@@ -1246,10 +1246,12 @@ lint-violation-builds:
 	@python3 test/violations.py --lint-builds
 
 # ---------------------------------------------------------------------------
-# Codegen gates. Two leaks are instruction selection rather than source, so
+# Codegen gates. Three leaks are instruction selection rather than source, so
 # no source-level rule sees them (https://github.com/c4milo/chapulin/issues/53):
 # a widening multiply or a division the compiler emits for a secret operand,
-# and the runtime-library call a core without a multiplier makes for `*`.
+# the runtime-library call a core without a multiplier makes for `*`, and a
+# conditional branch the compiler chooses for a select the source wrote as
+# a mask (https://github.com/c4milo/chapulin/issues/141).
 # lint-wide-multiply and lint-runtime-symbols read what the compiler emits.
 #
 # CODEGEN_SRCS is every source a key, a shared secret, a session secret or
@@ -1339,7 +1341,7 @@ lint-codegen-partition:
 # does not help; the optimiser recognises the loop and puts the modulo
 # back).
 #
-# Each spec is name:compiler:machine:flags:tokens.
+# Each spec is name:compiler:machine:flags:tokens:branches.
 #   compiler  clang or gcc. clang specs compile under $(CLANG_RV) with
 #             -target machine, always, and are part of lint. gcc specs
 #             compile under the driver lint-wide-multiply-gcc is given
@@ -1363,6 +1365,10 @@ lint-codegen-partition:
 #             before the count: a file that defines a runtime routine
 #             names it in .globl, .type and .size, and none of those is
 #             a call. softmul.c is that file.
+#   branches  comma-separated opcodes, matched as prefixes the same way:
+#             the conditional-branch mnemonics of the ISA, one of the
+#             BRANCH_OPS lists below. Every file in BRANCH_SRCS holds a
+#             recorded count of them per spec.
 # The arm list carries the Thumb-2 forms whose product or quotient is
 # wider than 32 bits, the DSP ones included, so it holds on an M4 too;
 # mips carries the r6 spellings beside the r2 ones for the same reason.
@@ -1381,6 +1387,50 @@ WIDEMUL_OPS_RV := mulh,mulhu,mulhsu,div,divu,rem,remu,__udiv,__div,__umod,__mod
 # which on this core was a call to __muldi3 from inside __muldi3
 # (https://github.com/c4milo/chapulin/issues/107).
 WIDEMUL_OPS_RV32I := __muldi3,__udiv,__div,__umod,__mod
+# The second count, read from the same assembly: the conditional branches
+# each file emits (https://github.com/c4milo/chapulin/issues/141). INV-16
+# claims no emitted instruction branches on a secret, and the multiply
+# tokens above cannot see one. The compare-carries in ct_widemul_opaque,
+# `mid < lh` and `lo < ll`, and the sign masks in ct_widemul_s, cswap
+# and poly1305_final are branch-free in C, and each compiler in the table
+# lowers them to a predicated instruction, sltu or an arithmetic shift
+# today -- by its choice, and no check held it to that choice. This count
+# is the check. It cannot tell a branch on a public loop counter from one
+# on a limb, so every file in BRANCH_SRCS carries a measured count per
+# spec in BRANCH_CEILING, all of them loop control on public counts (a
+# block loop, x25519's ladder, poly1305's `n >= 16`, Keccak's round and
+# lane counters, softmul's fixed 32 and 64 iterations), and what the gate
+# holds is that the count does not grow: a branch a compiler puts on a
+# limb lands on top of the recorded ones.
+# test/violations/inv16-poly1305-final-sign-branch.violation writes
+# poly1305_final's select as an if on the last limb's sign, and the
+# count rises by one under every compiler in the table.
+# test/violations/inv16-widemul-s-sign-branch.violation writes
+# ct_widemul_s's two sign corrections as ifs: clang lowers both back to
+# the mask and its count does not move, and every gcc emits two branches
+# on the signs where x25519 inlines the routine, so only the gcc specs
+# see it -- the split the multiply count found first
+# (https://github.com/c4milo/chapulin/issues/106).
+#
+# arm counts every b<cond> -- both spellings of carry-set and carry-clear,
+# and the .w and .n widths through the prefix -- cbz and cbnz, the table
+# branches tbb and tbh, and the IT instruction, one per block. A
+# predicated instruction takes the same cycles on the Cortex-M3 whether
+# or not its condition holds, so an IT block is not a timing leak there;
+# it is counted because it is the form clang gives an if on a limb (it
+# mi, addmi), and a count that saw only b<cond> would pass that form
+# through. Unconditional b, bl, blx and bx do not count. mips counts beq,
+# bne and the four compare-with-zero branches, and the prefixes take the
+# likely (beql), link (bgezal), assembler (beqz, bnez) and r6 compact
+# (beqc, bltc, bgeuc) spellings with them; movz and movn are selects, not
+# branches, and do not count. rv32 counts the six base branches and the
+# compressed c.beqz and c.bnez, and the prefixes take the assembler's
+# beqz, bnez, bgt, ble, bgtu and bleu. No spec counts a jump through a
+# register (jr, jalr, a load into pc): it is a return as often as a table
+# jump, and no file in BRANCH_SRCS has a switch.
+BRANCH_OPS_ARM := beq,bne,bcs,bhs,bcc,blo,bmi,bpl,bvs,bvc,bhi,bls,bge,blt,bgt,ble,cbz,cbnz,tbb,tbh,it
+BRANCH_OPS_MIPS := beq,bne,blt,bge,bgt,ble
+BRANCH_OPS_RV := beq,bne,blt,bge,bgt,ble,c.beqz,c.bnez
 # Both compiler families are measured: CLAUDE.md names gcc-shipping
 # firmware trees as the audience, and gcc does not keep the 16x16 pieces
 # apart where clang does (https://github.com/c4milo/chapulin/issues/86).
@@ -1392,14 +1442,14 @@ WIDEMUL_OPS_RV32I := __muldi3,__udiv,__div,__umod,__mod
 # riscv32 toolchain RV32_TC_VERSION pins, which runs twice -- rv32imac,
 # and rv32ic, the core with no multiplier, where softmul.c compiles.
 WIDEMUL_SPECS := \
-  m3:clang:thumbv7m-none-eabi:-mcpu=cortex-m3:$(WIDEMUL_OPS_ARM) \
-  mips32r2:clang:mips-linux-musl:-march=mips32r2:$(WIDEMUL_OPS_MIPS) \
-  rv32imac:clang:riscv32-unknown-elf:-march=rv32imac:$(WIDEMUL_OPS_RV) \
-  m3-gcc:gcc:arm-none-eabi:-mcpu=cortex-m3,-mthumb:$(WIDEMUL_OPS_ARM) \
-  mips32r2-gcc:gcc:mips-:-march=mips32r2,-mabi=32:$(WIDEMUL_OPS_MIPS) \
-  mips32r2-gcc-O2:gcc:mips-:-march=mips32r2,-mabi=32,-O2:$(WIDEMUL_OPS_MIPS) \
-  rv32imac-gcc:gcc:riscv32-:-march=rv32imac,-mabi=ilp32:$(WIDEMUL_OPS_RV) \
-  rv32ic-gcc:gcc:riscv32-:-march=rv32ic,-mabi=ilp32:$(WIDEMUL_OPS_RV32I)
+  m3:clang:thumbv7m-none-eabi:-mcpu=cortex-m3:$(WIDEMUL_OPS_ARM):$(BRANCH_OPS_ARM) \
+  mips32r2:clang:mips-linux-musl:-march=mips32r2:$(WIDEMUL_OPS_MIPS):$(BRANCH_OPS_MIPS) \
+  rv32imac:clang:riscv32-unknown-elf:-march=rv32imac:$(WIDEMUL_OPS_RV):$(BRANCH_OPS_RV) \
+  m3-gcc:gcc:arm-none-eabi:-mcpu=cortex-m3,-mthumb:$(WIDEMUL_OPS_ARM):$(BRANCH_OPS_ARM) \
+  mips32r2-gcc:gcc:mips-:-march=mips32r2,-mabi=32:$(WIDEMUL_OPS_MIPS):$(BRANCH_OPS_MIPS) \
+  mips32r2-gcc-O2:gcc:mips-:-march=mips32r2,-mabi=32,-O2:$(WIDEMUL_OPS_MIPS):$(BRANCH_OPS_MIPS) \
+  rv32imac-gcc:gcc:riscv32-:-march=rv32imac,-mabi=ilp32:$(WIDEMUL_OPS_RV):$(BRANCH_OPS_RV) \
+  rv32ic-gcc:gcc:riscv32-:-march=rv32ic,-mabi=ilp32:$(WIDEMUL_OPS_RV32I):$(BRANCH_OPS_RV)
 # Per-spec ceilings, spec/file:count, where a spec measures a file above its
 # WIDEMUL_CEILING entry. Every number is measured with the spec's compiler
 # at its flags, at -Os unless the flags carry another level. The entries
@@ -1438,6 +1488,55 @@ WIDEMUL_SPECS := \
 # (https://github.com/c4milo/chapulin/issues/107).
 WIDEMUL_CEILING_SPEC := m3-gcc/sha3.c:5 mips32r2-gcc/sha3.c:5 mips32r2-gcc-O2/sha3.c:5 \
                         mips32r2-gcc-O2/poly1305.c:2 rv32imac-gcc/sha3.c:5 rv32ic-gcc/sha3.c:5
+# The files the branch count covers: the arithmetic under the record
+# layer, whose every input is a key, a limb or a block, and whose only
+# branches are loop control on public counts. The other CODEGEN_SRCS
+# files -- buf.c, record.c, keysched.c, io.c, session.c, the handshake
+# files and tls.c -- branch on lengths, types and states the peer sent in
+# the clear, several dozen each, so a count there would record the parser
+# and move with every feature. The multiply count still covers them; a
+# secret reaching their control paths is a design change, not a codegen
+# choice, and review holds that line.
+BRANCH_SRCS := ct.c sha256.c sha3.c hkdf.c chacha20.c poly1305.c aead.c x25519.c mlkem.c \
+               mlkem_poly.c drbg.c softmul.c
+# Per-spec branch ceilings, spec/file:count, one for every BRANCH_SRCS
+# file under every spec. A spec that lacks one fails, and the gate's own
+# output is where a new spec reads its numbers. Every number is measured
+# with the spec's compiler at its flags: make lint-wide-multiply for the
+# three clang rows, make lint-wide-multiply-gcc for m3-gcc, and
+# test/docker-mips.sh and test/docker-riscv32.sh for the other four.
+# Going over fails; coming in under prints, and the entry then comes
+# down. softmul.c compiles to nothing where a multiplier exists and to
+# its two fixed-count loops on rv32ic, which is the one nonzero entry
+# for it.
+BRANCH_CEILING := \
+  m3/ct.c:4 m3/sha256.c:17 m3/sha3.c:50 m3/hkdf.c:13 m3/chacha20.c:9 m3/poly1305.c:19 \
+  m3/aead.c:4 m3/x25519.c:34 m3/mlkem.c:14 m3/mlkem_poly.c:43 m3/drbg.c:9 m3/softmul.c:0 \
+  mips32r2/ct.c:4 mips32r2/sha256.c:16 mips32r2/sha3.c:29 mips32r2/hkdf.c:10 \
+  mips32r2/chacha20.c:7 mips32r2/poly1305.c:18 mips32r2/aead.c:2 mips32r2/x25519.c:31 \
+  mips32r2/mlkem.c:13 mips32r2/mlkem_poly.c:36 mips32r2/drbg.c:8 mips32r2/softmul.c:0 \
+  rv32imac/ct.c:4 rv32imac/sha256.c:17 rv32imac/sha3.c:38 rv32imac/hkdf.c:14 \
+  rv32imac/chacha20.c:8 rv32imac/poly1305.c:18 rv32imac/aead.c:2 rv32imac/x25519.c:31 \
+  rv32imac/mlkem.c:14 rv32imac/mlkem_poly.c:36 rv32imac/drbg.c:9 rv32imac/softmul.c:0 \
+  m3-gcc/ct.c:2 m3-gcc/sha256.c:12 m3-gcc/sha3.c:24 m3-gcc/hkdf.c:12 m3-gcc/chacha20.c:7 \
+  m3-gcc/poly1305.c:14 m3-gcc/aead.c:2 m3-gcc/x25519.c:23 m3-gcc/mlkem.c:14 \
+  m3-gcc/mlkem_poly.c:37 m3-gcc/drbg.c:8 m3-gcc/softmul.c:0 \
+  mips32r2-gcc/ct.c:2 mips32r2-gcc/sha256.c:12 mips32r2-gcc/sha3.c:21 mips32r2-gcc/hkdf.c:11 \
+  mips32r2-gcc/chacha20.c:6 mips32r2-gcc/poly1305.c:14 mips32r2-gcc/aead.c:2 \
+  mips32r2-gcc/x25519.c:20 mips32r2-gcc/mlkem.c:14 mips32r2-gcc/mlkem_poly.c:41 \
+  mips32r2-gcc/drbg.c:7 mips32r2-gcc/softmul.c:0 \
+  mips32r2-gcc-O2/ct.c:4 mips32r2-gcc-O2/sha256.c:23 mips32r2-gcc-O2/sha3.c:31 \
+  mips32r2-gcc-O2/hkdf.c:11 mips32r2-gcc-O2/chacha20.c:7 mips32r2-gcc-O2/poly1305.c:21 \
+  mips32r2-gcc-O2/aead.c:2 mips32r2-gcc-O2/x25519.c:28 mips32r2-gcc-O2/mlkem.c:18 \
+  mips32r2-gcc-O2/mlkem_poly.c:38 mips32r2-gcc-O2/drbg.c:8 mips32r2-gcc-O2/softmul.c:0 \
+  rv32imac-gcc/ct.c:2 rv32imac-gcc/sha256.c:15 rv32imac-gcc/sha3.c:26 rv32imac-gcc/hkdf.c:15 \
+  rv32imac-gcc/chacha20.c:10 rv32imac-gcc/poly1305.c:15 rv32imac-gcc/aead.c:4 \
+  rv32imac-gcc/x25519.c:23 rv32imac-gcc/mlkem.c:20 rv32imac-gcc/mlkem_poly.c:39 \
+  rv32imac-gcc/drbg.c:9 rv32imac-gcc/softmul.c:0 \
+  rv32ic-gcc/ct.c:2 rv32ic-gcc/sha256.c:15 rv32ic-gcc/sha3.c:26 rv32ic-gcc/hkdf.c:15 \
+  rv32ic-gcc/chacha20.c:10 rv32ic-gcc/poly1305.c:15 rv32ic-gcc/aead.c:4 \
+  rv32ic-gcc/x25519.c:23 rv32ic-gcc/mlkem.c:20 rv32ic-gcc/mlkem_poly.c:39 \
+  rv32ic-gcc/drbg.c:9 rv32ic-gcc/softmul.c:2
 WIDEMUL_RUN ?= clang
 WIDEMUL_GCC ?= $(M3_CC)
 .PHONY: lint-wide-multiply lint-wide-multiply-gcc
@@ -1447,7 +1546,9 @@ lint-wide-multiply:
 	   arch=$${spec%%:*}; rest=$${spec#*:}; \
 	   compiler=$${rest%%:*}; rest=$${rest#*:}; \
 	   machine=$${rest%%:*}; rest=$${rest#*:}; \
-	   flags=$$(echo "$${rest%%:*}" | tr ',' ' '); tokens=$${rest#*:}; \
+	   flags=$$(echo "$${rest%%:*}" | tr ',' ' '); rest=$${rest#*:}; \
+	   tokens=$${rest%%:*}; branches=""; \
+	   case "$$rest" in *:*) branches=$${rest#*:} ;; esac; \
 	   [ "$$compiler" = "$(WIDEMUL_RUN)" ] || continue; \
 	   case "$$compiler" in \
 	   clang) \
@@ -1466,7 +1567,9 @@ lint-wide-multiply:
 	   [ -z "$$ops" ] || pattern="^[[:space:]]+($$ops)"; \
 	   [ -z "$$calls" ] || pattern="$$pattern$${pattern:+|}[[:space:],(]($$calls)"; \
 	   [ -n "$$pattern" ] || { echo "lint-wide-multiply: spec $$arch lists no token to count"; exit 1; }; \
-	   ran="$$ran$$arch "; table=""; \
+	   [ -n "$$branches" ] || { echo "lint-wide-multiply: spec $$arch lists no conditional branch to count; the sixth field is the branch mnemonics of its ISA (BRANCH_OPS_ARM, BRANCH_OPS_MIPS or BRANCH_OPS_RV)"; exit 1; }; \
+	   bpattern="^[[:space:]]+($$(echo "$$branches" | tr ',' '\n' | paste -sd '|' -))"; \
+	   ran="$$ran$$arch "; table=""; btable=""; \
 	   for e in $(WIDEMUL_CEILING); do \
 	     f=$${e%%:*}; cap=$${e##*:}; \
 	     for o in $(WIDEMUL_CEILING_SPEC); do [ "$${o%%:*}" = "$$arch/$$f" ] && cap=$${o##*:}; done; \
@@ -1486,8 +1589,20 @@ lint-wide-multiply:
 	     elif [ "$$n" -lt "$$cap" ]; then \
 	       echo "lint-wide-multiply: $$f is down to $$n from $$cap on $$arch — lower the ceiling"; \
 	     fi; \
+	     case " $(BRANCH_SRCS) " in *" $$f "*) ;; *) continue ;; esac; \
+	     bcap=""; for o in $(BRANCH_CEILING); do [ "$${o%%:*}" = "$$arch/$$f" ] && bcap=$${o##*:}; done; \
+	     b=$$(printf '%s\n' "$$asm" | grep -cE "$$bpattern"); \
+	     btable="$$btable $$f=$$b"; \
+	     if [ -z "$$bcap" ]; then \
+	       echo "lint-wide-multiply: $$f has no branch ceiling for $$arch and emits $$b conditional branches; read them, then record $$arch/$$f:$$b in BRANCH_CEILING"; rc=1; \
+	     elif [ "$$b" -gt "$$bcap" ]; then \
+	       echo "lint-wide-multiply: $$f emits $$b conditional branches on $$arch, ceiling is $$bcap (see https://github.com/c4milo/chapulin/issues/141)"; \
+	       printf '%s\n' "$$asm" | grep -E "$$bpattern" | awk '{print $$1}' | sort | uniq -c | awk '{printf " %s=%s", $$2, $$1} END {print ""}' | sed 's/^/lint-wide-multiply:  /'; rc=1; \
+	     elif [ "$$b" -lt "$$bcap" ]; then \
+	       echo "lint-wide-multiply: $$f is down to $$b conditional branches from $$bcap on $$arch — lower the ceiling"; \
+	     fi; \
 	   done; \
-	   echo "lint-wide-multiply: $$arch, $$($$cc --version 2>/dev/null | head -1):$${table:- every file at 0}"; \
+	   echo "lint-wide-multiply: $$arch, $$($$cc --version 2>/dev/null | head -1):$${table:- every file at 0}; branches$$btable"; \
 	 done; \
 	 [ -n "$$ran" ] || { echo "lint-wide-multiply: no $(WIDEMUL_RUN) spec ran$${got:+ — none matches $(WIDEMUL_GCC) ($$got); add one to WIDEMUL_SPECS}"; exit 1; }; \
 	 [ $$rc -eq 0 ] && echo "lint-wide-multiply: every module at its recorded ceiling on $$ran"; exit $$rc

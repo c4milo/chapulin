@@ -1,0 +1,27 @@
+invariant: INV-16
+file: poly1305.c
+catches: test/lint-wide-multiply.sh
+reason: poly1305_final picks h or h - p by the sign of g4, the last
+  limb after the trial subtraction, through a mask. Written as an if
+  on that sign, whether the reduction borrowed -- a fact about the
+  tag's value -- decides which path runs. The multiply tokens see
+  nothing. The branch count does: every one of the eight specs emits
+  one more conditional branch in poly1305.c than its ceiling records,
+  the three clang targets and the Arm, mips and riscv32 gccs alike
+  (https://github.com/c4milo/chapulin/issues/141).
+
+--- old
+    uint32_t mask = (g4 >> 31) - 1;
+    h0 = (h0 & ~mask) | (g0 & mask);
+    h1 = (h1 & ~mask) | (g1 & mask);
+    h2 = (h2 & ~mask) | (g2 & mask);
+    h3 = (h3 & ~mask) | (g3 & mask);
+    h4 = (h4 & ~mask) | (g4 & mask);
+--- new
+    if ((int32_t)g4 >= 0) {
+        h0 = g0;
+        h1 = g1;
+        h2 = g2;
+        h3 = g3;
+        h4 = g4;
+    }

@@ -1,0 +1,26 @@
+invariant: INV-16
+file: ct.h
+catches: test/lint-wide-multiply-gcc.sh
+reason: ct_widemul_s corrects the high word once for each negative
+  operand through a mask of that operand's sign bit. Written as two ifs
+  on the signs, clang lowers both back to the mask and the clang gate's
+  count does not move, so that gate passes this; every gcc emits two
+  branches on the signs where x25519 inlines the routine -- two IT
+  blocks on the Cortex-M3, two bgez on mips32r2, two bge on rv32 -- and
+  x25519.c goes two over its ceiling under each gcc spec. The Arm gcc
+  is the one lint-wide-multiply-gcc resolves without docker, so it is
+  the catch target; test/docker-mips.sh and test/docker-riscv32.sh
+  object the same way (https://github.com/c4milo/chapulin/issues/141).
+
+--- old
+    uint32_t ma = (uint32_t)(a >> 31);
+    uint32_t mb = (uint32_t)(b >> 31);
+    uint32_t hi = (uint32_t)(p >> 32) - (ub & ma) - (ua & mb);
+--- new
+    uint32_t hi = (uint32_t)(p >> 32);
+    if (a < 0) {
+        hi -= ub;
+    }
+    if (b < 0) {
+        hi -= ua;
+    }

@@ -86,7 +86,9 @@ construction and nothing in them is provably zero. A blanket barrier inside
 pinned clang, over every source a secret passes through (`CODEGEN_SRCS` in the
 Makefile: the chain from `ct.c` to `tls.c`, plus `drbg.c` and `softmul.c`),
 and counts per file the widening multiplies, the divisions and the calls into
-the compiler's 64-bit division runtime. `make lint-wide-multiply-gcc` is the
+the compiler's 64-bit division runtime, and in the twelve arithmetic files
+under the record layer the conditional branches too ("What each compiler
+branches on today", below). `make lint-wide-multiply-gcc` is the
 same count under gcc, which is what a firmware tree ships; each CI lane runs it
 with its own toolchain; the riscv32 lane's gcc matches two specs, rv32imac
 and rv32ic, and the mips lane's matches two, at `-Os` and at `-O2`. Point it
@@ -102,12 +104,16 @@ carry, add a spec:
 
 ```bash
 make lint-wide-multiply-gcc WIDEMUL_GCC=/path/to/my-gcc \
-  WIDEMUL_SPECS="mycore:gcc:my-machine-prefix:-mcpu=mycpu,-mthumb:umull,umlal,umaal,smull,smlal,udiv,sdiv,__aeabi_uidiv,__aeabi_uldiv"
+  WIDEMUL_SPECS='mycore:gcc:my-machine-prefix:-mcpu=mycpu,-mthumb:$(WIDEMUL_OPS_ARM):$(BRANCH_OPS_ARM)'
 ```
 
-The five fields are a label; `clang` or `gcc`; the machine (clang's target
+The six fields are a label; `clang` or `gcc`; the machine (clang's target
 triple, or the prefix of gcc's `-dumpmachine`); the comma-separated flags that
-select your core; and the comma-separated tokens that count on your ISA. A
+select your core; the comma-separated tokens that count as a wide multiply or
+a division on your ISA; and the comma-separated conditional-branch mnemonics
+of your ISA. The Makefile holds one list of each per ISA (`WIDEMUL_OPS_ARM`
+and `BRANCH_OPS_ARM`, and the mips and rv32 pairs), and a make variable
+named inside the single quotes expands when the gate reads the spec. A
 token counts every instruction whose mnemonic begins with it, so a
 condition-code or width suffix (`umullne`, `udiveq`, `umull.w`) cannot slip
 past it, and a token that begins with `__` counts every call to a runtime
@@ -116,10 +122,14 @@ can only over-count, and an over-count fails loudly. Run it with the compiler
 and flags you actually ship, since this is a property of codegen and not of
 the source; the gate passes `-Os` before the flags, so a level in the flags
 field wins, which is how the mips gcc spec below runs a second time at `-O2`.
-A new spec starts from the default ceilings, so the first
-thing it reports is how your compiler lowers sha3's public `% 5`; record that
-count for your label with `WIDEMUL_CEILING_SPEC="mycore/sha3.c:5"`, and read
-every other file it reports above zero as the finding it is.
+A new spec starts from the default multiply ceilings and no branch ceilings,
+so the first things it reports are how your compiler lowers sha3's public
+`% 5` and the conditional-branch count of each of the twelve arithmetic
+files. Record the first for your label with
+`WIDEMUL_CEILING_SPEC="mycore/sha3.c:5"`, read every other file it reports
+above zero as the finding it is, and record the branch counts with
+`BRANCH_CEILING="mycore/ct.c:2 mycore/sha256.c:12 ..."` once you have read
+the branches and found each to be loop control.
 
 ### What each compiler emits today
 
@@ -194,6 +204,66 @@ ceiling of two, and the `-Os` spec reads zero.
 The Arm gcc lowers sha3's `% 5` to four `umull` at `-O2` where `-Os` gave
 five `udiv`; both divide public loop counters.
 
+### What each compiler branches on today
+
+The same pass counts the conditional branches per file — `b<cond>`, `cbz`,
+`cbnz`, `tbb`, `tbh` and the IT instruction on arm; `beq`, `bne` and the
+four compare-with-zero forms on mips; the six base branches and `c.beqz` and
+`c.bnez` on rv32 — in the twelve arithmetic files under the record layer
+(`BRANCH_SRCS` in the Makefile), and holds each at the ceiling
+`BRANCH_CEILING` records for that compiler
+([#141](https://github.com/c4milo/chapulin/issues/141)). Read from the gate:
+
+| compiler | ct | sha256 | sha3 | hkdf | chacha20 | poly1305 | aead | x25519 | mlkem | mlkem_poly | drbg | softmul |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| clang 23, Cortex-M3 | 4 | 17 | 50 | 13 | 9 | 19 | 4 | 34 | 14 | 43 | 9 | 0 |
+| clang 23, mips32r2 | 4 | 16 | 29 | 10 | 7 | 18 | 2 | 31 | 13 | 36 | 8 | 0 |
+| clang 23, rv32imac | 4 | 17 | 38 | 14 | 8 | 18 | 2 | 31 | 14 | 36 | 9 | 0 |
+| Arm GNU gcc 15.3, Cortex-M3 | 2 | 12 | 24 | 12 | 7 | 14 | 2 | 23 | 14 | 37 | 8 | 0 |
+| gcc 12.4 (Ubuntu 24.04), mips32r2 | 2 | 12 | 21 | 11 | 6 | 14 | 2 | 20 | 14 | 41 | 7 | 0 |
+| gcc 12.4 (Ubuntu 24.04), mips32r2, `-O2` | 4 | 23 | 31 | 11 | 7 | 21 | 2 | 28 | 18 | 38 | 8 | 0 |
+| Bootlin gcc 14.3, rv32imac | 2 | 15 | 26 | 15 | 10 | 15 | 4 | 23 | 20 | 39 | 9 | 0 |
+| Bootlin gcc 14.3, rv32ic | 2 | 15 | 26 | 15 | 10 | 15 | 4 | 23 | 20 | 39 | 9 | 2 |
+
+None of these is zero, and the gate does not claim they branch on public
+data: it cannot tell a loop counter from a limb. They are what each compiler
+emits for `ct_memeq`'s and `ct_wipe`'s loops, the block loops, x25519's
+255-step ladder, Keccak's round and lane counters, `hkdf`'s length checks and
+`softmul`'s fixed 32 and 64 iterations (the two `bne` on rv32ic, the one
+core where it compiles to anything), read and recorded. The Cortex-M3 clang
+counts include IT blocks — 22 of sha3's 50 and 12 of mlkem_poly's 43. A
+predicated instruction takes the same cycles on that core whether or not its
+condition holds, so an IT block is no timing leak there; the count holds them
+because an IT block is the form clang gives an `if` on a limb, and a count of
+`b<cond>` alone would pass that form through.
+
+What the gate holds is that no count grows. What the ceilings record is a
+choice each compiler made: the compare-carries `ct_widemul_opaque` takes,
+`mid < lh` and `lo < ll`, and the sign masks in `ct_widemul_s`, x25519's
+`cswap` and `poly1305_final` are branch-free in C, and every compiler in the
+table lowers them to a predicated instruction (`it lo`, `movlo`), to `sltu`
+or to an arithmetic shift. Until this count that was the compiler's choice,
+with nothing holding it. Two violations show what an `if` on a limb does to
+the count. `test/violations/inv16-poly1305-final-sign-branch.violation`
+writes `poly1305_final`'s select of `h` or `h - p` as an `if` on the sign of
+the last limb, and poly1305's count rises by one under all eight specs.
+`test/violations/inv16-widemul-s-sign-branch.violation` writes
+`ct_widemul_s`'s two sign corrections as `if`s: clang lowers both back to
+the mask and its count does not move, and every gcc emits two branches on
+the operands' signs where x25519 inlines the routine — two IT blocks on the
+Cortex-M3, two `bgez` on mips32r2, two `bge` on rv32 — so only the gcc gate
+objects. That is the split the multiply count found first
+([#106](https://github.com/c4milo/chapulin/issues/106)), and why both
+compiler families are measured.
+
+The count does not see a jump through a register (`jr`, `jalr`, a load into
+`pc`), which is a return as often as a table jump; no file it covers has a
+switch. The protocol files above the record layer are not counted: they
+branch on lengths, types and states the peer sent in the clear, several
+dozen each, and a count there would record the parser and move with every
+feature. A new spec must record all twelve ceilings before it passes, so a
+compiler the table does not carry cannot pass on counts nobody read.
+
 ### What the decomposition does not cover
 
 It removes the 32-to-64 multiply, and the table above is the measurement.
@@ -239,5 +309,12 @@ epoch. Neither has a default that is right for every deployment.
   decomposition so it measures the shipped path, but a Welch t-test on a
   development machine tells you the C has no data-dependent branch. Whether
   your part's multiply is uniform is a question for your silicon vendor.
+- **The branch count records what your compiler chose; it does not close
+  the question.** `lint-wide-multiply` holds each arithmetic file's
+  conditional-branch count at a ceiling measured per compiler, and those
+  ceilings are public loop control, not zero. A compiler the table does not
+  carry may lower a select to a branch, and the gate sees that only when you
+  run it with that compiler: add the spec, read and record its twelve
+  counts, and read the histogram it prints when one grows.
 - **The memory numbers are measured on arm64.** A 32-bit target shrinks the
   pointer fields; the README says which numbers move.

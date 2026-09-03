@@ -68,7 +68,9 @@ Home: github.com/c4milo.
   unless the build asserts `CH_NATIVE_WIDEMUL`, which test binaries do
   and firmware does only with a vendor statement, and
   `lint-wide-multiply` holds the count at its recorded ceiling per
-  file and compiler.
+  file and compiler, and beside it the conditional-branch count of
+  every arithmetic file, so a branch a compiler emits for a select
+  shows as a count that grows.
   ChaCha20/Poly1305/x25519 are constant time by construction — keep them
   that way; AES never enters this codebase precisely to avoid tables.
 - Proofs are mandatory, not optional, but they run in `check-slow`

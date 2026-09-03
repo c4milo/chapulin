@@ -121,7 +121,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - run: sudo apt-get update -q && sudo apt-get install -y -q gcc-mips-linux-gnu qemu-user
-      - name: Count wide multiplies and divisions under the mips gcc
+      - name: Count wide multiplies, divisions and conditional branches under the mips gcc
         # lint-wide-multiply in the check job measures clang. This lane
         # ships gcc, whose lowering is its own measurement: it once put
         # a widening multiply back where clang did not
@@ -160,7 +160,7 @@ jobs:
         with:
           version: ${{ env.ARM_GNU_VERSION }}
           sha256: ${{ env.ARM_GNU_LINUX_SHA256 }}
-      - name: Count wide multiplies and divisions under the Arm gcc
+      - name: Count wide multiplies, divisions and conditional branches under the Arm gcc
         # lint-wide-multiply in the check job measures clang. This lane
         # ships the gcc a firmware tree ships, and gcc once fused ct.h's
         # 16x16 pieces back into umlal and umull where clang kept them
@@ -217,7 +217,7 @@ jobs:
         with:
           version: ${{ env.RV32_TC_VERSION }}
           sha256: ${{ env.RV32_TC_SHA256 }}
-      - name: Count wide multiplies and divisions under the riscv32 gcc
+      - name: Count wide multiplies, divisions and conditional branches under the riscv32 gcc
         # lint-wide-multiply in the check job measures clang for
         # rv32imac; this is the same count under the gcc this lane ships
         # (https://github.com/c4milo/chapulin/issues/86). The Makefile

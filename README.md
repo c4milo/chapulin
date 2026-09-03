@@ -418,7 +418,26 @@ secrets and MACs and never opens a record.
   gcc no such sum costs 38% of AEAD seal on mips32r2, and
   `docs/porting.md` has the measurements and the violation the `-O2`
   spec alone catches
-  ([#122](https://github.com/c4milo/chapulin/issues/122)). What is
+  ([#122](https://github.com/c4milo/chapulin/issues/122)).
+  The same pass counts the conditional branches each compiler emits
+  — `b<cond>`, `cbz`, `cbnz` and IT blocks on arm, `beq`, `bne` and
+  the compare-with-zero forms on mips, the six base branches and the
+  compressed pair on rv32 — in the twelve arithmetic files under the
+  record layer, and holds each file at a ceiling measured per
+  compiler. Those ceilings are public loop control, not zero: the
+  block loops, x25519's ladder, Keccak's counters and softmul's fixed
+  iterations. So the gate holds that no count grows, not that no
+  branch exists, and what the ceilings record is that the
+  compare-carries in `ct_widemul_opaque` and the sign masks in
+  `ct_widemul_s` and `poly1305_final` compile to a predicated
+  instruction, `sltu` or a shift under every compiler measured --
+  each compiler's choice, with no check on it until the count
+  ([#141](https://github.com/c4milo/chapulin/issues/141)).
+  `test/violations/inv16-poly1305-final-sign-branch.violation` writes
+  the final select as an `if` on the last limb's sign and every spec's
+  count rises by one; `inv16-widemul-s-sign-branch` does the same to
+  `ct_widemul_s`, and clang lowers it back to the mask while every gcc
+  emits two branches in x25519, so only the gcc gate objects. What is
   left is the 32-to-32 multiply, which ARM documents as single-cycle
   on the M3. mips32r2 does not document its own, so on that core the
   decomposition narrows the exposure rather than closing it; `ct.h`

@@ -428,18 +428,41 @@ which convention holds them.
   recorded ceiling, zero except sha3's public `% 5` and, under the
   mips gcc at `-O2`, the two `madd` poly1305's block gets on 16-bit
   operands ([#122](https://github.com/c4milo/chapulin/issues/122)).
+  The same pass counts the conditional branches — `b<cond>`, `cbz`,
+  `cbnz`, the table branches and the IT instruction on arm; `beq`,
+  `bne` and the compare-with-zero forms on mips; the six base branches
+  and the compressed pair on rv32 — in the twelve arithmetic files
+  under the record layer (`BRANCH_SRCS`) and holds each at a ceiling
+  measured per compiler (`BRANCH_CEILING`). Those ceilings are not
+  zero: ct.c's two loops, the block loops, x25519's ladder, Keccak's
+  round and lane counters and softmul's fixed 32 and 64 iterations all
+  branch on public counts, and the count cannot tell those from a
+  branch on a limb. What it holds is that no count grows. What the
+  ceilings record is a choice each compiler made: the compare-carries
+  in `ct_widemul_opaque` and the sign masks in `ct_widemul_s`, `cswap`
+  and `poly1305_final` are branch-free in C, and every compiler in the
+  table lowers them to a predicated instruction, `sltu` or a shift —
+  until this count, nothing held it to that
+  ([#141](https://github.com/c4milo/chapulin/issues/141)).
+  `inv16-poly1305-final-sign-branch` writes the final select as an
+  `if` on the last limb's sign and the count rises by one under all
+  eight specs; `inv16-widemul-s-sign-branch` writes `ct_widemul_s`'s
+  corrections as `if`s on the operands' signs, which clang lowers back
+  to the mask and every gcc lowers to two branches in x25519, so only
+  the gcc gate sees it.
   `lint-runtime-symbols` builds for rv32ic, where
   there is no multiplier at all, and holds per file the runtime-library
   calls it may make — `softmul.c` supplies constant-time `__mulsi3` and
   `__muldi3` so the library's branching ones are never linked, and the
   gate asserts it still defines them; the rv32ic gcc spec holds
   `softmul.c` at zero calls to `__muldi3`, because gcc at `-Os` once
-  emitted one from inside `__muldi3` itself. Eleven `inv16-*` violations
-  in `test/violations/` prove each detection catches its mutant. Three
-  of them catch only under a gcc gate: `inv16-widemul-mid-widened`
-  under `lint-wide-multiply-gcc`'s Arm gcc, `inv16-widemul-compare-carries`
-  in the mips lane, and `inv16-softmul-mask-as-negate` in the riscv32
-  lane. Both count instructions; neither checks an answer. `make
+  emitted one from inside `__muldi3` itself. Thirteen `inv16-*` violations
+  in `test/violations/` prove each detection catches its mutant. Four
+  of them catch only under a gcc gate: `inv16-widemul-mid-widened` and
+  `inv16-widemul-s-sign-branch` under `lint-wide-multiply-gcc`'s Arm
+  gcc, `inv16-widemul-compare-carries` in the mips lane, and
+  `inv16-softmul-mask-as-negate` in the riscv32 lane. Both count
+  instructions; neither checks an answer. `make
   ct-widemul-check` (in `check-slow`) runs the unit, ML-KEM and
   Wycheproof vectors over the decomposition itself, which every other
   host binary compiles out, and `make test-invariants` requires it to
