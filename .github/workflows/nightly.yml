@@ -34,6 +34,7 @@ jobs:
         uses: ./.github/actions/install-cbmc
         with:
           version: ${{ env.CBMC_VERSION }}
+          sha256: ${{ env.CBMC_DEB_SHA256 }}
       - run: make proof-reach
       - name: Render the reachability table on the run page
         if: always()
@@ -56,6 +57,7 @@ jobs:
         uses: ./.github/actions/install-cbmc
         with:
           version: ${{ env.CBMC_VERSION }}
+          sha256: ${{ env.CBMC_DEB_SHA256 }}
       - name: Build and install kissat
         # Every leg here sets PROVE_ONLY, and a lone proof keeps kissat
         # whatever it weighs — the budget fallback applies only to whole-
@@ -67,6 +69,7 @@ jobs:
         uses: ./.github/actions/install-kissat
         with:
           version: ${{ env.KISSAT_VERSION }}
+          sha256: ${{ env.KISSAT_SHA256 }}
       # One cache per harness: the legs run concurrently and a shared
       # key would let whichever finishes last discard the rest.
       - name: Restore proof cache
@@ -224,6 +227,7 @@ jobs:
         uses: ./.github/actions/install-cbmc
         with:
           version: ${{ env.CBMC_VERSION }}
+          sha256: ${{ env.CBMC_DEB_SHA256 }}
       - name: Build and install kissat
         # x25519_step verifies in 513 s under kissat and has no measured
         # verdict under the built-in solver, so the wrapper's clock needs
@@ -231,6 +235,7 @@ jobs:
         uses: ./.github/actions/install-kissat
         with:
           version: ${{ env.KISSAT_VERSION }}
+          sha256: ${{ env.KISSAT_SHA256 }}
 
       - name: Break every invariant and see what objects
         run: |

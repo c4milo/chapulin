@@ -2,14 +2,19 @@
 # it on PATH. proof/run.sh takes kissat as the SAT back end when present;
 # verdicts are solver-independent, kissat just gets there faster. It is
 # not in the runner's apt archive, so this builds the release: a
-# dependency-free C build that takes seconds. The pin value comes from
+# dependency-free C build that takes seconds. The pin values come from
 # the job's env via ./.github/actions/load-pins: version is
-# KISSAT_VERSION.
+# KISSAT_VERSION and sha256 is KISSAT_SHA256, which the source tarball is
+# checked against before it is unpacked
+# (https://github.com/c4milo/chapulin/issues/142).
 name: install-kissat
 description: Build the pinned kissat and put it on PATH
 inputs:
   version:
     description: The kissat release tag (KISSAT_VERSION)
+    required: true
+  sha256:
+    description: The sha256 of the tag's source tarball (KISSAT_SHA256)
     required: true
 runs:
   using: composite
@@ -21,4 +26,5 @@ runs:
     - shell: bash
       env:
         VERSION: ${{ inputs.version }}
+        SHA256: ${{ inputs.sha256 }}
       run: bash "$GITHUB_ACTION_PATH/install.sh"

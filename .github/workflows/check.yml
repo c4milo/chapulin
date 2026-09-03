@@ -334,11 +334,15 @@ jobs:
 
       - name: Build and install OpenSSL at the development version
         if: steps.openssl-cache.outputs.cache-hit != 'true'
-        # no-shared so the app carries its own libcrypto: no
+        # The tarball is checked against the pinned hash before it is
+        # unpacked. no-shared so the app carries its own libcrypto: no
         # LD_LIBRARY_PATH, and no chance of binding the system 3.0.
         # no-docs skips the pod2man pass, which is most of the build.
         run: |
-          curl -fsSL "https://github.com/openssl/openssl/releases/download/openssl-$OPENSSL_VERSION/openssl-$OPENSSL_VERSION.tar.gz" | tar xz
+          tarball="openssl-$OPENSSL_VERSION.tar.gz"
+          curl -fsSL -o "$RUNNER_TEMP/$tarball" "https://github.com/openssl/openssl/releases/download/openssl-$OPENSSL_VERSION/$tarball"
+          echo "$OPENSSL_SHA256  $RUNNER_TEMP/$tarball" | sha256sum -c -
+          tar xzf "$RUNNER_TEMP/$tarball"
           cd "openssl-$OPENSSL_VERSION"
           ./Configure --prefix="$OPENSSL_PREFIX" --openssldir="$OPENSSL_PREFIX/ssl" \
             no-shared no-docs
@@ -379,10 +383,14 @@ jobs:
 
       - name: Build and install cppcheck at the development version
         if: steps.cppcheck-cache.outputs.cache-hit != 'true'
-        # Install into a cached prefix with FILESDIR baked to that prefix,
-        # so cppcheck finds std.cfg and the other cfg files at runtime.
+        # The tarball is checked against the pinned hash before it is
+        # unpacked. Install into a cached prefix with FILESDIR baked to
+        # that prefix, so cppcheck finds std.cfg and the other cfg files
+        # at runtime.
         run: |
-          curl -fsSL "https://github.com/danmar/cppcheck/archive/refs/tags/$CPPCHECK_VERSION.tar.gz" | tar xz
+          curl -fsSL -o "$RUNNER_TEMP/cppcheck.tar.gz" "https://github.com/danmar/cppcheck/archive/refs/tags/$CPPCHECK_VERSION.tar.gz"
+          echo "$CPPCHECK_SHA256  $RUNNER_TEMP/cppcheck.tar.gz" | sha256sum -c -
+          tar xzf "$RUNNER_TEMP/cppcheck.tar.gz"
           cmake -S "cppcheck-$CPPCHECK_VERSION" -B cppcheck-build \
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_INSTALL_PREFIX="$HOME/cppcheck-inst" \
@@ -400,11 +408,15 @@ jobs:
       - name: Install shellcheck at the pinned version
         if: steps.shellcheck-cache.outputs.cache-hit != 'true'
         # The project ships a static binary, so there is nothing to build.
+        # The tarball is checked against the pinned hash before it is
+        # unpacked.
         run: |
           mkdir -p "$HOME/shellcheck-inst"
-          curl -fsSL "https://github.com/koalaman/shellcheck/releases/download/v$SHELLCHECK_VERSION/shellcheck-v$SHELLCHECK_VERSION.linux.x86_64.tar.xz" \
-            | tar xJ -C "$HOME/shellcheck-inst" --strip-components=1 \
-                "shellcheck-v$SHELLCHECK_VERSION/shellcheck"
+          tarball="shellcheck-v$SHELLCHECK_VERSION.linux.x86_64.tar.xz"
+          curl -fsSL -o "$RUNNER_TEMP/$tarball" "https://github.com/koalaman/shellcheck/releases/download/v$SHELLCHECK_VERSION/$tarball"
+          echo "$SHELLCHECK_SHA256  $RUNNER_TEMP/$tarball" | sha256sum -c -
+          tar xJf "$RUNNER_TEMP/$tarball" -C "$HOME/shellcheck-inst" --strip-components=1 \
+            "shellcheck-v$SHELLCHECK_VERSION/shellcheck"
 
       - name: Lint the workflows
         # make lint-shellcheck covers the scripts in bench/, proof/ and test/,
@@ -461,11 +473,13 @@ jobs:
         uses: ./.github/actions/install-cbmc
         with:
           version: ${{ env.CBMC_VERSION }}
+          sha256: ${{ env.CBMC_DEB_SHA256 }}
 
       - name: Build and install kissat at the development version
         uses: ./.github/actions/install-kissat
         with:
           version: ${{ env.KISSAT_VERSION }}
+          sha256: ${{ env.KISSAT_SHA256 }}
 
       - name: Cache Lean toolchain and spec build
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0

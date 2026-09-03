@@ -160,8 +160,9 @@ Home: github.com/c4milo.
   version lives in `tools/toolchain.env`, which the Makefile includes and
   the workflows load through `.github/actions/load-pins`, so one line
   moves both. `make lint-pins` fails if a
-  workflow hardcodes a version that file already carries, or if a job reads
-  a pin without loading it, and `make lint-toolchain` fails if the resolved
+  workflow hardcodes a version that file already carries, if a job reads
+  a pin without loading it, or if a script or step downloads a pinned
+  file and no hash check follows, and `make lint-toolchain` fails if the resolved
   checker is not the pinned one. Never adapt code or suppressions to an
   older checker: a bump is work to do, which is why
   .github/workflows/toolchain-pins.yml opens a pull request and never

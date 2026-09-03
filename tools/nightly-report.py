@@ -59,7 +59,7 @@ def needs_of(body):
 
 def main():
     rel = NIGHTLY.relative_to(ROOT)
-    jobs = dict(toolchain_pins.split_jobs(NIGHTLY.read_text()))
+    jobs = {name: body for name, _, body in toolchain_pins.split_jobs(NIGHTLY.read_text())}
     if REPORT not in jobs:
         sys.exit(f"lint-nightly-report: {rel} has no {REPORT} job")
     needs = needs_of(jobs[REPORT])

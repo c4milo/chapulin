@@ -25,6 +25,15 @@ name: toolchain-pins
 # serves a different file. The pull request's check run executes that file,
 # and a person reads the script before merging.
 #
+# The release files CI downloads by version -- the cbmc .deb, the kissat,
+# cppcheck and OpenSSL source tarballs, the shellcheck binary -- each carry
+# a *_SHA256 pin beside the version, and the install step checks the
+# download against it. A version bump alone would fail that check, so when
+# this job bumps one of those versions it downloads the new release's file,
+# hashes it, and proposes the hash in the same pull request. The hash is
+# whatever upstream served that day; a person reads the release before
+# merging, as with the two scripts above.
+#
 # ALPINE_DIGEST in bench/toolchain.env is out of scope on purpose. That digest
 # pins the image that produced the published benchmark numbers, so bumping it
 # means re-measuring bench/results-insn.csv and bench/notes-mips.md, which only
@@ -97,8 +106,13 @@ jobs:
           #   $3 the text that value carries before the number, empty for every
           #      pin but KISSAT_VERSION
           #   $4 the release notes URL up to the number
+          #   $5 the *_SHA256 pin below it in tools/toolchain.env; empty when
+          #      CI downloads nothing by this pin
+          #   $6 the URL of the file that pin hashes, with @VERSION@ where the
+          #      value goes: the URL the install step composes
           consider() {
             local name=$1 value=$2 value_prefix=$3 url_prefix=$4
+            local hash_name=${5:-} asset_url=${6:-}
             local pinned series candidates newest highest
 
             pinned=${value#"$value_prefix"}
@@ -130,6 +144,30 @@ jobs:
             fi
             printf '%s\t%s\t%s\t%s\n' \
               "$name" "$value" "$value_prefix$newest" "$url_prefix$newest" >> "$bumps"
+            # The install step checks the download against the hash pin, so
+            # a version bump alone fails its own check run. Hash the new
+            # release's file and propose the two lines together.
+            [ -n "$hash_name" ] || return 0
+            rehash "$hash_name" "${!hash_name}" \
+              "${asset_url//@VERSION@/$value_prefix$newest}"
+          }
+
+          # Records one bump when the file at a URL does not hash to the pin.
+          # Two callers: consider, for the release file of a version it just
+          # bumped, and the two install scripts below, which have no release
+          # list and are pinned by content alone, so the only question is
+          # whether upstream serves a different file today.
+          #
+          #   $1 the variable name in tools/toolchain.env
+          #   $2 its value, the sha256 the file holds
+          #   $3 the file's URL, which the pull request links to
+          rehash() {
+            local name=$1 value=$2 url=$3 file now
+            file="$RUNNER_TEMP/$name"
+            curl -fsSL -o "$file" "$url"
+            now=$(sha256sum "$file" | cut -d' ' -f1)
+            [ "$now" != "$value" ] || return 0
+            printf '%s\t%s\t%s\t%s\n' "$name" "$value" "$now" "$url" >> "$bumps"
           }
 
           # LLVM. The pin is a major, so report the newest major and link to the
@@ -152,30 +190,40 @@ jobs:
           gh api --paginate "repos/danmar/cppcheck/tags?per_page=100" --jq '.[].name' |
             sed -n 's/^\([0-9][0-9.]*\)$/\1/p' |
             consider CPPCHECK_VERSION "$CPPCHECK_VERSION" "" \
-              "https://github.com/danmar/cppcheck/releases/tag/"
+              "https://github.com/danmar/cppcheck/releases/tag/" \
+              CPPCHECK_SHA256 \
+              "https://github.com/danmar/cppcheck/archive/refs/tags/@VERSION@.tar.gz"
 
           gh api --paginate "repos/arminbiere/kissat/tags?per_page=100" --jq '.[].name' |
             sed -n 's/^rel-\([0-9][0-9.]*\)$/\1/p' |
             consider KISSAT_VERSION "$KISSAT_VERSION" "rel-" \
-              "https://github.com/arminbiere/kissat/releases/tag/rel-"
+              "https://github.com/arminbiere/kissat/releases/tag/rel-" \
+              KISSAT_SHA256 \
+              "https://github.com/arminbiere/kissat/archive/refs/tags/@VERSION@.tar.gz"
 
           gh api "repos/koalaman/shellcheck/releases?per_page=100" \
             --jq '.[] | select(.prerelease | not) | .tag_name' |
             sed -n 's/^v\([0-9][0-9.]*\)$/\1/p' |
             consider SHELLCHECK_VERSION "$SHELLCHECK_VERSION" "" \
-              "https://github.com/koalaman/shellcheck/releases/tag/v"
+              "https://github.com/koalaman/shellcheck/releases/tag/v" \
+              SHELLCHECK_SHA256 \
+              "https://github.com/koalaman/shellcheck/releases/download/v@VERSION@/shellcheck-v@VERSION@.linux.x86_64.tar.xz"
 
           gh api "repos/diffblue/cbmc/releases?per_page=100" \
             --jq '.[] | select(.prerelease | not) | .tag_name' |
             sed -n 's/^cbmc-\([0-9][0-9.]*\)$/\1/p' |
             consider CBMC_VERSION "$CBMC_VERSION" "" \
-              "https://github.com/diffblue/cbmc/releases/tag/cbmc-"
+              "https://github.com/diffblue/cbmc/releases/tag/cbmc-" \
+              CBMC_DEB_SHA256 \
+              "https://github.com/diffblue/cbmc/releases/download/cbmc-@VERSION@/ubuntu-24.04-cbmc-@VERSION@-Linux.deb"
 
           gh api "repos/openssl/openssl/releases?per_page=100" \
             --jq '.[] | select(.prerelease | not) | .tag_name' |
             sed -n 's/^openssl-\([0-9][0-9.]*\)$/\1/p' |
             consider OPENSSL_VERSION "$OPENSSL_VERSION" "" \
-              "https://github.com/openssl/openssl/releases/tag/openssl-"
+              "https://github.com/openssl/openssl/releases/tag/openssl-" \
+              OPENSSL_SHA256 \
+              "https://github.com/openssl/openssl/releases/download/openssl-@VERSION@/openssl-@VERSION@.tar.gz"
 
           # go.dev is the only source that is not a GitHub repository. Its
           # stable list names the two supported branches, and sort -V picks the
@@ -187,22 +235,7 @@ jobs:
             consider GO_VERSION "$GO_VERSION" "" \
               "https://go.dev/doc/devel/release#go"
 
-          # The install scripts have no release list. Each is pinned by
-          # content, so the only question is whether upstream serves a
-          # different file today: download it, hash it, and propose the
-          # hash when it moved.
-          #
-          #   $1 the variable name in tools/toolchain.env
-          #   $2 its value, the sha256 the file holds
-          #   $3 the script's URL, which the pull request links to
-          rehash() {
-            local name=$1 value=$2 url=$3 file now
-            file="$RUNNER_TEMP/$name"
-            curl -fsSL -o "$file" "$url"
-            now=$(sha256sum "$file" | cut -d' ' -f1)
-            [ "$now" != "$value" ] || return 0
-            printf '%s\t%s\t%s\t%s\n' "$name" "$value" "$now" "$url" >> "$bumps"
-          }
+          # The two install scripts, pinned by content alone.
           rehash LLVM_SH_SHA256 "$LLVM_SH_SHA256" https://apt.llvm.org/llvm.sh
           rehash ELAN_INIT_SHA256 "$ELAN_INIT_SHA256" https://elan.lean-lang.org/elan-init.sh
 
@@ -254,16 +287,23 @@ jobs:
           # the check workflow, so the subject starts lowercase and ends without
           # a full stop, which is what config-conventional's subject-case and
           # subject-full-stop rules require.
-          if [ "$count" -eq 1 ]; then
+          #
+          # A *_SHA256 row for a release file rides with the version row it
+          # follows, so the subject counts versions. A sha256 is 64
+          # characters, over commitlint's 100-column header cap once the
+          # prefix is on, so the body carries it.
+          versions=$(grep -v $'_SHA256\t' "$bumps" || true)
+          version_count=$(printf '%s' "$versions" | grep -c . || true)
+          if [ "$version_count" -eq 1 ]; then
+            IFS=$'\t' read -r name old new url <<< "$versions"
+            subject="build(toolchain): bump $name to $new"
+          elif [ "$version_count" -gt 1 ]; then
+            subject="build(toolchain): bump $version_count pins to their newest upstream releases"
+          elif [ "$count" -eq 1 ]; then
             IFS=$'\t' read -r name old new url < "$bumps"
-            case "$name" in
-              # A sha256 is 64 characters, over commitlint's 100-column
-              # header cap once the prefix is on; the body carries it.
-              *_SHA256) subject="build(toolchain): repin $name to the script upstream serves" ;;
-              *) subject="build(toolchain): bump $name to $new" ;;
-            esac
+            subject="build(toolchain): repin $name to the script upstream serves"
           else
-            subject="build(toolchain): bump $count pins to their newest upstream releases"
+            subject="build(toolchain): repin $count scripts to what upstream serves"
           fi
 
           # The pull request title is this commit subject, read back from this

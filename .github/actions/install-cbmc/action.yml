@@ -1,11 +1,16 @@
 # Installs the pinned CBMC from the release .deb built for ubuntu-24.04,
-# the image every job here runs on. The pin value comes from the job's
-# env via ./.github/actions/load-pins: version is CBMC_VERSION.
+# the image every job here runs on. The pin values come from the job's
+# env via ./.github/actions/load-pins: version is CBMC_VERSION and sha256
+# is CBMC_DEB_SHA256, which the .deb is checked against before dpkg
+# installs it as root (https://github.com/c4milo/chapulin/issues/142).
 name: install-cbmc
 description: Install the pinned CBMC release
 inputs:
   version:
     description: The CBMC release (CBMC_VERSION)
+    required: true
+  sha256:
+    description: The sha256 of the ubuntu-24.04 .deb (CBMC_DEB_SHA256)
     required: true
 runs:
   using: composite
@@ -13,4 +18,5 @@ runs:
     - shell: bash
       env:
         VERSION: ${{ inputs.version }}
+        SHA256: ${{ inputs.sha256 }}
       run: bash "$GITHUB_ACTION_PATH/install.sh"

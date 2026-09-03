@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Check that tools/toolchain.env is the only place a tool version is written.
 
-Two failures, both silent without this check.
+Four failures, all silent without this check.
 
 The first is a workflow or a local action that hardcodes a version the pins
 file already carries. That is a second source of truth, and it drifts: the
@@ -24,6 +24,18 @@ the versioned package names instead. The action scripts carry no hashes:
 there the bare token itself is rejected, so `llvm.sh 23` or `lld-23`
 typed by hand fails as `clang-23` does.
 
+The fourth is a download nothing checks. A version pin names a release,
+and the install step downloads that release's file and unpacks or runs it,
+so the file is checked against its *_SHA256 pin first or the job runs
+whatever the server sent (https://github.com/c4milo/chapulin/issues/142).
+The action scripts exist to install what they fetch, so every fetch there
+needs a check. A workflow step or a local script may also fetch data that
+is nothing to check -- toolchain-pins.yml reads go.dev's release list --
+so there the rule is narrower: a fetch whose URL carries a version pin, on
+the fetch line or through a variable assigned from one earlier in the same
+unit, needs a check. A check is a `sha256sum -c` or `shasum -a 256 -c`
+that follows the fetch before the next one.
+
 Run through `make lint-pins`.
 """
 
@@ -37,6 +49,11 @@ WORKFLOWS = sorted((ROOT / ".github" / "workflows").glob("*.yml"))
 ACTIONS = sorted((ROOT / ".github" / "actions").glob("*/action.yml"))
 # The shell each action runs. It is where a version would be typed by hand.
 SCRIPTS = sorted((ROOT / ".github" / "actions").glob("*/*.sh"))
+# The scripts that mirror a CI lane on a development machine. They source
+# tools/toolchain.env and fetch the same toolchains the actions do.
+LOCAL_SCRIPTS = sorted(
+    p for d in ("bench", "proof", "test") for p in (ROOT / d).glob("*.sh")
+)
 
 # The one loader. It appends every pin to GITHUB_ENV, so a job that runs it
 # has loaded whatever it reads. A job that sources the file by hand and echoes
@@ -94,7 +111,10 @@ def read_pins():
 
 
 def split_jobs(text):
-    """Yield (job_name, body) for each job under the top-level `jobs:` key.
+    """Yield (job_name, head, body) for each job under the top-level `jobs:` key.
+
+    `head` is the index of the job's first line in `text`, so a finding
+    inside the body can name its line in the file.
 
     Jobs are found by indentation, which is what YAML uses to delimit them,
     rather than by how the name is spelled. Keying on the name missed
@@ -124,7 +144,7 @@ def split_jobs(text):
 
     for n, (i, name) in enumerate(heads):
         end = heads[n + 1][0] if n + 1 < len(heads) else end_of_jobs
-        yield name, "\n".join(lines[i:end])
+        yield name, i, "\n".join(lines[i:end])
 
 
 def pin_shaped_values(text):
@@ -234,7 +254,7 @@ def check_jobs_load(problems, pins):
     patterns = read_patterns(pins)
     for wf in WORKFLOWS:
         rel = wf.relative_to(ROOT)
-        for job, body in split_jobs(wf.read_text()):
+        for job, _, body in split_jobs(wf.read_text()):
             lines = body.split("\n")
             reads = {}
             for i, line in enumerate(lines):
@@ -261,12 +281,152 @@ def check_jobs_load(problems, pins):
                 )
 
 
+# curl or wget as a command: first on the line, or after a key, a pipe, a
+# separator, a subshell or sudo. `apt-get install curl` names the package
+# and matches nothing here.
+FETCH = re.compile(r"(?:^|[:|;&(`]|\$\()\s*(?:sudo\s+)?(?:curl|wget)\b")
+# The two spellings of a check: coreutils on the runners, perl's shasum on
+# a development Mac.
+CHECK = re.compile(r"\bsha256sum\s+(?:-c|--check)\b|\bshasum\s+-a\s*256\s+(?:-c|--check)\b")
+# A shell assignment, `name=` at the start of a word. A variable assigned
+# from a pinned one carries the pin to the fetch line that reads it.
+ASSIGN = re.compile(r"(?:^|\s)([A-Za-z_]\w*)=")
+# An action's env entries set from its inputs. The pins reach the action
+# script under these names (VERSION, SHA256), not their own.
+INPUT_ENV = re.compile(r"^\s+([A-Z][A-Z0-9_]*):\s*\$\{\{\s*inputs\.", re.M)
+
+
+def logical_lines(lines, first):
+    """Yield (line_no, text): comment lines dropped, backslash continuations joined.
+
+    `first` is the file line number of lines[0]; a joined command keeps the
+    number of its first line.
+    """
+    joined, start = "", None
+    for i, line in enumerate(lines):
+        body = line.strip()
+        if start is None and (not body or body.startswith("#")):
+            continue
+        if start is None:
+            start = first + i
+        if body.endswith("\\"):
+            joined += body[:-1] + " "
+            continue
+        yield start, joined + body
+        joined, start = "", None
+    if start is not None:
+        yield start, joined
+
+
+def reads_one_of(names):
+    """A pattern for `$NAME` or `${NAME...}` with NAME in names."""
+    if not names:
+        return re.compile(r"(?!)")
+    return re.compile(r"\$\{?(?:" + "|".join(map(re.escape, sorted(names))) + r")\b")
+
+
+def fetches(lines, first, pinned, every):
+    """Split one unit's fetches into (checked, unchecked).
+
+    A fetch is checked when a hash check follows it before the next fetch or
+    the end of the unit. `pinned` names the variables a pin can reach, and a
+    variable assigned from one joins the set as the unit is read. With
+    `every`, each fetch counts; otherwise only a fetch that reads a pinned
+    variable does.
+    """
+    pinned = set(pinned)
+    checked, unchecked, pending = [], [], None
+    for no, text in logical_lines(lines, first):
+        if CHECK.search(text):
+            if pending is not None:
+                checked.append(pending)
+            pending = None
+            continue
+        for m in ASSIGN.finditer(text):
+            if reads_one_of(pinned).search(text[m.end():]):
+                pinned.add(m.group(1))
+        if FETCH.search(text) and (every or reads_one_of(pinned).search(text)):
+            if pending is not None:
+                unchecked.append(pending)
+            pending = (no, text)
+    if pending is not None:
+        unchecked.append(pending)
+    return checked, unchecked
+
+
+def step_name(step, key_indent):
+    """The step's own `name:`, or its first line when it has none."""
+    for line in step:
+        m = re.match(r"^(?:\s{%d}|\s*-\s+)name:\s*(.*?)\s*$" % key_indent, line)
+        if m:
+            return m.group(1).strip("\"'")
+    return step[0].strip().lstrip("- ")
+
+
+def split_steps(lines):
+    """Yield (offset, name, step_lines) for each step of one job body.
+
+    Steps are the `- ` items under `steps:`, found by indentation as
+    split_jobs finds jobs: the first item sets the indent, and every later
+    line at that indent starting with `- ` opens the next step. A `- `
+    deeper in, inside a run block, is that step's text.
+    """
+    try:
+        steps_at = next(
+            i for i, l in enumerate(lines) if re.match(r"^\s*steps:\s*(#.*)?$", l)
+        )
+    except StopIteration:
+        return
+    heads, indent = [], None
+    for i in range(steps_at + 1, len(lines)):
+        m = re.match(r"^(\s*)-\s", lines[i])
+        if m and indent is None:
+            indent = len(m.group(1))
+        if m and len(m.group(1)) == indent:
+            heads.append(i)
+    for n, i in enumerate(heads):
+        end = heads[n + 1] if n + 1 < len(heads) else len(lines)
+        yield i, step_name(lines[i:end], indent + 2), lines[i:end]
+
+
+def check_fetches(problems, pins):
+    """Every download of a pinned release file is checked against a hash before use.
+
+    Returns the number of checked fetches, for the summary line.
+    """
+    units = []  # (file, where, line number of lines[0], lines, pinned names, every)
+    for f in SCRIPTS + ACTIONS:
+        names = set(pins) | set(INPUT_ENV.findall((f.parent / "action.yml").read_text()))
+        units.append((f, "the script", 1, f.read_text().split("\n"), names, True))
+    for wf in WORKFLOWS:
+        for job, head, body in split_jobs(wf.read_text()):
+            for offset, name, step in split_steps(body.split("\n")):
+                where = f"job {job!r} step {name!r}"
+                units.append((wf, where, head + offset + 1, step, set(pins), False))
+    for f in LOCAL_SCRIPTS:
+        units.append((f, "the script", 1, f.read_text().split("\n"), set(pins), False))
+
+    count = 0
+    for f, where, first, lines, names, every in units:
+        checked, unchecked = fetches(lines, first, names, every)
+        count += len(checked)
+        for no, text in unchecked:
+            problems.append(
+                f"{f.relative_to(ROOT)}:{no}: {where} downloads a file nothing "
+                f"checks: no sha256sum -c follows it. Check the download against "
+                f"its *_SHA256 pin in tools/toolchain.env before unpacking or "
+                f"running it\n    {text}"
+            )
+    return count
+
+
 def main():
     pins = read_pins()
     problems = []
     check_action_refs(problems)
     check_hardcoded(problems, pins)
     check_jobs_load(problems, pins)
+    downloads = check_fetches(problems, pins)
 
     if problems:
         for p in problems:
@@ -281,7 +441,8 @@ def main():
     )
     print(
         f"lint-pins: {len(pins)} versions from one file, {refs} action refs on a "
-        f"commit SHA, every job that reads a pin runs load-pins first"
+        f"commit SHA, every job that reads a pin runs load-pins first, "
+        f"{downloads} downloads each checked against a hash"
     )
     return 0
 
