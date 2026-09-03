@@ -400,6 +400,9 @@ which convention holds them.
   target: those formulas verify the single-multiply form, and
   `proof/ctwidemul_harness.c` proves the two forms compute the same
   product at 8-bit operands, the widest bound whose formula converges.
+  The x25519 ladder proofs rest on a product bound instead, and
+  `proof/x25519_mul_ct_harness.c` proves it on the decomposition at the
+  ladder's full operand range.
 - **Mechanism.** Constant-time construction; ChaCha20/Poly1305/x25519
   have no table lookups by design.
 - **Check.** Semgrep-structural (`inv-16-no-variable-time-compare`) bans

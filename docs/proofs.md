@@ -157,6 +157,19 @@ whose `catches` line names that same command, so the nightly keeps
 checking that the proof still sees it; the two `inv24-*` files are the
 precedent.
 
+**Ask for the bound the caller needs, not for equality.** Equality of
+two multipliers is the classic hard SAT instance: `ctwidemul`'s proof
+that ct.h's 16x16 decomposition computes the native product converges
+at 8-bit operands and returns no verdict at 16-bit in 900 s. The x25519
+ladder proofs never need equality. Their contract on `ct_widemul_s` is
+a magnitude bound, operands under 2^18 to a product under 2^36, and
+that bound proves on the decomposition at the full operand range: 21 s
+for the product block alone, 128 s and 1.7 GB for `x25519_mul_ct`, the
+whole overflow lemma over it
+(https://github.com/c4milo/chapulin/issues/145). When a stub states a
+bound, discharge the bound on the shipped code; leave equality to the
+proofs that read a value.
+
 **Structure beats solver.** kissat returns verdicts where the built-in
 solver has none after hours, so keep it installed. But no solver
 rescues a monolithic formula: incremental z3 timed out on the same

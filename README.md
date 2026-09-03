@@ -278,7 +278,7 @@ apart from one that passed — so for the slow rows, read the nightly.
 | chacha20 | safe at any counter, in place and into a distinct buffer | ≤ 160 B — three blocks, full, full, partial |
 | poly1305 | safe for any three-chunk split; 64-bit products stay in range | messages ≤ 80 B — five blocks, crossing the buffered-block path in every alignment. The five-call shape `aead.c` uses is no longer exercised by a proof: the aead harnesses stub Poly1305, so that shape rests on the unit vectors, Wycheproof and the differential |
 | aead (three harnesses) | seal/open round-trips; a forged tag writes zero bytes; backward-overlap decrypt works. ChaCha20 and Poly1305 are stubbed to their contracts — a keystream that is the same for the same key, nonce and counter, and a tag that is a function of the bytes absorbed — which their own harnesses prove. Compiling them in returned no verdict in five hours; the stubbed formulas take about three seconds. What the stubs give up, and why the composition is an argument rather than a machine-checked step, is stated at the top of `proof/aead_stubs.h`. Sealing fully in place (`pt == ct`, the shape every outgoing record uses) is **not proven**: `proof/aead_inplace_harness.c` states it, but the formula has returned no verdict, so it carries no launch line | plaintext ≤ 16 B, aad ≤ 16 B, fast tier |
-| x25519 (nine harnesses) | carry, add, sub, pack, cswap, and unpack are safe with every check on, add and sub in the ladder's aliased shape too, and the ladder's scalar bit index stays in bounds (fast tier); mul's index walk is safe in every caller aliasing shape — distinct, output aliasing either input, and sqr's all-one-object — with the signed-overflow class off (slow tier, one shape set per formula), and a separate lemma proves mul's int64 accumulation and fold cannot overflow (fast tier). Every one of these holds only inside the limb range in the next column, and `x25519_step` and `x25519_tail` prove the ladder keeps its limbs there: one loop step, on the shipped `step()`, takes any state with every limb in (-2^17, 2^17) back into that bound and hands mul only operands under 2^18; mul's output, one `invert` round, and the final multiply and pack do the same. The 255 steps and 254 rounds follow by induction from a base case read off `ladder()`'s prologue. Both harnesses replace mul's multiply with a magnitude contract (`proof/x25519_stubs.h`) that `x25519_mul` discharges — see the note below | limbs ≤ 2^24; into carry, ≤ 2^58; between the ladder's operations, < 2^17 |
+| x25519 (ten harnesses) | carry, add, sub, pack, cswap, and unpack are safe with every check on, add and sub in the ladder's aliased shape too, and the ladder's scalar bit index stays in bounds (fast tier); mul's index walk is safe in every caller aliasing shape — distinct, output aliasing either input, and sqr's all-one-object — with the signed-overflow class off (slow tier, one shape set per formula), and a separate lemma proves mul's int64 accumulation and fold cannot overflow (fast tier). Every one of these holds only inside the limb range in the next column, and `x25519_step` and `x25519_tail` prove the ladder keeps its limbs there: one loop step, on the shipped `step()`, takes any state with every limb in (-2^17, 2^17) back into that bound and hands mul only operands under 2^18; mul's output, one `invert` round, and the final multiply and pack do the same. The 255 steps and 254 rounds follow by induction from a base case read off `ladder()`'s prologue. Both harnesses replace mul's multiply with a magnitude contract (`proof/x25519_stubs.h`) that `x25519_mul` discharges on the native multiply and `x25519_mul_ct` on the shipped decomposition — see the note below | limbs ≤ 2^24; into carry, ≤ 2^58; between the ladder's operations, < 2^17 |
 | p256 | the DER parser and limb marshalling stay safe on hostile signatures; a carry lemma covers the Montgomery multiply | signatures ≤ 80 B |
 | rsa (two harnesses) | the PSS decode and limb marshalling stay safe with the RSAVP1 result replaced by arbitrary bytes | 384 B modulus, every byte hostile except the top one, which each call pins to one of the three alignment shapes the decode takes — a symbolic top bit was measured at 7 GB of CNF |
 | record | seal works across its contract and returns, not traps, over the whole direction state — any key, IV, and sequence number, the saturation refusal included — and any claimed buffer size; rec_open stays safe on fully hostile bytes, into a separate buffer and in place, the shape both shipped callers use | records ≤ 160 B |
@@ -343,14 +343,17 @@ secrets and MACs and never opens a record.
   abstraction: mul's 256 products per call put 2,560 symbolic multiplies
   in one step, and that formula returned no verdict past 14 GB, so
   `proof/x25519_stubs.h` replaces `ct_widemul_s` with a contract —
-  operands under 2^18, product in [-2^36, 2^36) — and `x25519_mul` proves
-  `ct_widemul_s`'s native arm meets it. The shipped 16x16 decomposition
-  is proven equal to that arm at 8-bit operands, the widest bound whose
-  formula converges (`ctwidemul`), and
-  [#145](https://github.com/c4milo/chapulin/issues/145) tracks the proof
-  on the decomposition at the contract's own operand range. No property
-  in either harness reads a product's value, only bounds, so the
-  composition loses nothing the stub header does not state. The stub
+  operands under 2^18, product in [-2^36, 2^36) — and two harnesses prove
+  `ct_widemul_s` meets it, each with every check on and at the contract's
+  own operand range: `x25519_mul` on the native `(int64_t)a * b` arm the
+  proof runner compiles, and `x25519_mul_ct` on the 16x16 decomposition
+  firmware ships ([#145](https://github.com/c4milo/chapulin/issues/145)).
+  A bound is a cheaper question than equality: `ctwidemul`'s proof that
+  the two forms compute the same product converges only at 8-bit
+  operands; the decomposition's product bound proves at the full range
+  in 128 s. No
+  property in the ladder harnesses reads a product's value, only bounds,
+  so the composition loses nothing the stub header does not state. The stub
   also checks each operand after mul's narrowing to int32; the header
   says why no limb reaches that narrowing outside its exact range.
 - The connected-phase driver. The post-handshake parser is proven on
@@ -440,13 +443,16 @@ secrets and MACs and never opens a record.
   function. `proof/ctwidemul_harness.c` proves that: UB and shift range
   at full 32-bit width, and the products themselves against the C
   operator at 8-bit operands, the widest bound whose formula converges.
+  The x25519 ladder proofs need less than equality: their contract on
+  `ct_widemul_s` is a product bound, and `x25519_mul_ct` proves it on the
+  decomposition at the ladder's full operand range.
   `make timing` measures the decomposed path rather than the host's
   native one. `make ct-widemul-check`, in `check-slow`, rebuilds the
   unit, ML-KEM and Wycheproof binaries with `CH_CT_WIDEMUL`, so the
   RFC 7748, RFC 8439 and RFC 8448 vectors, the FIPS 203 known answers
   and the Wycheproof cases are also checked over the decomposition as
   poly1305, x25519 and mlkem_poly inline it — evidence at those inputs,
-  while the proof stays at 8-bit operands.
+  while the equality proof stays at 8-bit operands.
 - The quality of the random bytes, which rests on nothing here at all.
   `ch_rand_bytes` is the image's to supply, and no check in a library
   can grade it: a weak generator completes the handshake, sends a key

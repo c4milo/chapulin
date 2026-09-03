@@ -231,7 +231,10 @@ epoch. Neither has a default that is right for every deployment.
   machine, where the runner passes `-DCH_NATIVE_WIDEMUL`. They carry to your
   build because `proof/ctwidemul_harness.c` proves the decomposition computes
   the same product — at 8-bit operands, the widest bound whose formula
-  converges. Wider operands are unproven.
+  converges. Wider operands are unproven, except where a proof needs
+  less than equality: the x25519 ladder rests on a product bound, and
+  `x25519_mul_ct` proves that bound on the decomposition at the ladder's
+  full operand range.
 - **`make timing` runs on the host, not your target.** It forces the
   decomposition so it measures the shipped path, but a Welch t-test on a
   development machine tells you the C has no data-dependent branch. Whether

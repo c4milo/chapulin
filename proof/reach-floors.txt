@@ -86,6 +86,9 @@ x25519_tail 52.7
 # x25519_step was still in propositional reduction at 4.4 GB when the
 # 900 s cap stopped it; x25519_tail, the same stub over four mul
 # instances instead of ten, finishes in 436 s and is gated above.
+# x25519_mul_ct is x25519_mul's lemma over the 16x16 decomposition; it
+# carries the same 32 int64 products and timed out the same way under
+# the gate's command on 2026-09-03 (cbmc 6.11.0, 1.4 GB at the cap).
 #
 #   eeparse
 #   handshake_parser
@@ -103,4 +106,5 @@ x25519_tail 52.7
 #   sha3
 #   sha3_stream
 #   x25519_mul
+#   x25519_mul_ct
 #   x25519_step

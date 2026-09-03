@@ -9,7 +9,9 @@
 // The last block is the product bound x25519_step_harness.c replaces
 // ct_widemul_s with: two operands under 2^18, the range that harness
 // proves the ladder hands mul, multiply to a value under 2^36. It runs
-// the real ct_widemul_s.
+// the real ct_widemul_s: the native arm here, and the 16x16
+// decomposition in x25519_mul_ct_harness.c, which includes this file
+// with CH_CT_WIDEMUL defined.
 #include "harness.h"
 
 #include "ct.h"

@@ -17,15 +17,16 @@
 // formula proved in 540 s and 2.4 GB that way, and in 1328 s and 4.1 GB
 // with the bound written as `p > -2^36 && p < 2^36`.
 //
-// WHAT THE HARNESSES DO NOT PROVE: that the real product of two such
-// operands lies in that range. x25519_mul_harness.c proves it on
-// ct_widemul_s's native arm with every check on, and ctwidemul proves
-// the decomposed multiply computes the same function at 8-bit operands,
-// the widest bound whose formula converges;
-// https://github.com/c4milo/chapulin/issues/145 tracks the proof on the
-// decomposition at the contract's own operand range. Nothing in either
-// harness reads the product's value: every property is a bound, so the
-// bound is all the composition needs.
+// WHAT DISCHARGES THE CONTRACT: that the real product of two such
+// operands lies in that range is proven elsewhere, with every check on
+// and at this operand range. x25519_mul_harness.c proves it on
+// ct_widemul_s's native arm, and x25519_mul_ct_harness.c on the 16x16
+// decomposition firmware ships
+// (https://github.com/c4milo/chapulin/issues/145). ctwidemul's proof
+// that the two forms compute the same product converges only at 8-bit
+// operands; the bound is the cheaper question, and the only one this
+// composition asks. Nothing in x25519_step or x25519_tail reads the
+// product's value: every property is a bound.
 //
 // One thing the stub cannot see: mul narrows each limb to int32 before
 // the multiply, so the stub checks the narrowed operand. Every limb that

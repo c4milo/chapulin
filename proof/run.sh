@@ -48,8 +48,9 @@
 # with full checks, and x25519_ops proves the linear ops whole with
 # full checks. x25519_step and x25519_tail prove the ladder keeps its
 # limbs inside the range those proofs assume, with mul's multiply
-# replaced by the magnitude contract x25519_mul discharges
-# (proof/x25519_stubs.h). p256 and rsa split by check set the same way, and
+# replaced by the magnitude contract (proof/x25519_stubs.h) that
+# x25519_mul discharges on the native multiply and x25519_mul_ct on
+# the shipped decomposition. p256 and rsa split by check set the same way, and
 # handshake_parser/eeparse split one parser per formula: SAT time grows
 # super-linearly with formula size, so two small instances beat one big
 # one by hours.
@@ -255,12 +256,14 @@ launch() {
     # binaries: ct.h has no architecture allowlist, and proving the four 16x16
     # pieces inside every poly1305, x25519 and mlkem formula multiplies the
     # multiply count these solvers already struggle with. The composed proofs
-    # therefore verify the single-multiply form, and ctwidemul proves the two
+    # therefore verify the single-multiply form. ctwidemul proves the two
     # forms compute the same function at 8-bit operands, the widest bound
-    # whose formula converges, so the verdicts carry to a target that runs
-    # the decomposition for operands inside that bound;
-    # https://github.com/c4milo/chapulin/issues/145 tracks the proof at the
-    # full operand range. ctwidemul overrides this with CH_CT_WIDEMUL.
+    # whose formula converges, so those verdicts carry to a target that runs
+    # the decomposition for operands inside that bound. x25519_mul_ct proves
+    # the product bound the ladder proofs rest on directly on the
+    # decomposition, at the full operand range
+    # (https://github.com/c4milo/chapulin/issues/145). Both harnesses
+    # override this with CH_CT_WIDEMUL, which ct.h lets win.
     local args=("proof/${name}_harness.c" "$@" -DCH_RAND_EXTERN -DCH_NATIVE_WIDEMUL \
                 -I . --unwind "$unwind")
     # bash 3.2 errors on expanding an empty array under set -u, so each
@@ -574,7 +577,10 @@ launch fast full ct 65 ""
 # compute the same function. This proves that. UB and shift range at full
 # 32-bit width, the products themselves at 8-bit operands -- the same bound
 # softmul uses, and for the same reason: multiplier equivalence is the classic
-# hard SAT instance. Measured, these flags: 6 properties, 31 s.
+# hard SAT instance. The x25519 ladder proofs ask less of the decomposition,
+# a product bound rather than equality, and x25519_mul_ct below proves that
+# at the ladder's full operand range. Measured, these flags: 6 properties,
+# 31 s.
 launch fast:3 full ctwidemul 65 "" -DCH_WIDEMUL_BOUND=0xFFU
 # The software multiply, for cores with no multiplier. UB and the fixed
 # loop counts over unconstrained 32- and 64-bit inputs; the product
@@ -584,6 +590,15 @@ launch fast:3 full ctwidemul 65 "" -DCH_WIDEMUL_BOUND=0xFFU
 # equivalence is the classic hard SAT instance.
 launch fast full softmul 65 ""
 launch fast full x25519_mul 20 ""
+# The same lemma with ct_widemul_s resolved to the 16x16 decomposition
+# firmware ships (the harness defines CH_CT_WIDEMUL), so the product
+# bound proof/x25519_stubs.h states is proven on the multiply that runs
+# on the target, not only on the native arm x25519_mul compiles
+# (https://github.com/c4milo/chapulin/issues/145). A bound is a cheaper
+# question than ctwidemul's equality: the product block alone proves in
+# 21 s. Measured, these flags: 8 properties, 128 s, 1.7 GB, and 2.1 GB
+# summed with kissat, which fast:3 covers.
+launch fast:3 full x25519_mul_ct 20 ""
 launch fast full x25519_ops 260 ""
 launch fast full drbg 100 "ch_rand_bytes.3:4" ct.c
 launch fast full p256_mul 20 ""
