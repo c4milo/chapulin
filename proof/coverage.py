@@ -244,39 +244,13 @@ def reach_not_gated():
     return names
 
 
-# A cover run that the floors file does not list as non-converging is
-# expected to finish in seconds to minutes and well under this much
-# memory. The cap turns an outlier into a reported failure; without it,
-# one runaway formula takes the whole runner down and the nightly logs
-# nothing (the 2026-09-02 run died that way).
-REACH_MEMORY_BYTES = 12 * 1024 ** 3
-
-
-def _cap_memory():
-    import resource
-    try:
-        _, hard = resource.getrlimit(resource.RLIMIT_AS)
-        cap = REACH_MEMORY_BYTES
-        if hard != resource.RLIM_INFINITY:
-            cap = min(cap, hard)
-        resource.setrlimit(resource.RLIMIT_AS, (cap, hard))
-    except (ValueError, OSError):
-        # macOS refuses some address-space limits; the cap protects the
-        # Linux runner, and a run without it is what every run was before.
-        pass
-
-
-def reach_command(name, runs, shared_defines):
-    """The cover command for one harness: what its launch line links and
-    bounds, then the defines launch() adds, in run.sh's order."""
-    _tier, unwind, linked, unwindset, defines = runs[name]
-    cmd = ["cbmc", str(ROOT / "proof" / f"{name}_harness.c")]
-    cmd += [str(ROOT / src) for src in sorted(linked)]
-    cmd += [*defines, *shared_defines, "-I", str(ROOT),
-            "--cover", "location", "--unwind", str(unwind)]
-    if unwindset:
-        cmd += ["--unwindset", unwindset]
-    return cmd
+# No memory cap on a cover run. An address-space limit was tried after
+# the 2026-09-02 runner death: under it cbmc printed "Solver ran out of
+# memory" and then "0 of 182 covered" with exit 0 for hello_build, a
+# harness that reaches 76.9% given the memory -- a false verdict, not a
+# contained failure. What protects the runner is the not-gated list
+# above: the formulas that outgrew it are skipped, and a run that still
+# runs out of memory is reported as such below.
 
 
 def reach_table(runs, only=frozenset()):
@@ -308,16 +282,18 @@ def reach_table(runs, only=frozenset()):
         # by hand under the flags the gate used and not a reconstruction.
         print(f"proof-reach: {name} command: {shlex.join(cmd)}", flush=True)
         try:
-            res = subprocess.run(cmd, capture_output=True, text=True, timeout=900,
-                                 preexec_fn=_cap_memory)
+            res = subprocess.run(cmd, capture_output=True, text=True, timeout=900)
         except subprocess.TimeoutExpired:
             out.append(f"| `{name}` | timed out |")
             print(f"proof-reach: {name} timed out", flush=True)
             continue
         m = re.search(r"\*\* (\d+) of (\d+) covered \(([0-9.]+)%\)", res.stdout)
-        if not m:
-            why = "over memory" if res.returncode < 0 or "bad_alloc" in res.stderr \
-                else "not measured"
+        # cbmc prints "ran out of memory" and then a summary of zero goals
+        # reached with exit 0, so the summary is read only when the solver
+        # did not say that.
+        out_of_memory = "ran out of memory" in res.stderr or "bad_alloc" in res.stderr
+        if not m or out_of_memory:
+            why = "over memory" if out_of_memory or res.returncode < 0 else "not measured"
             out.append(f"| `{name}` | {why} |")
             print(f"proof-reach: {name} {why}", flush=True)
             # A harness with a floor that returns no number is a failed

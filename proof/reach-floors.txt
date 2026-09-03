@@ -1,6 +1,11 @@
 # Reachability floors: the share of program locations each harness reaches
 # at its configured bound, measured by `cbmc --cover location` under the
 # same --unwind, --unwindset and -D flags its launch line proves under.
+# The numbers are the nightly runner's (ubuntu, the pinned cbmc): a
+# macOS build of the same harness carries a few more or fewer locations
+# in its goto model, so a floor measured there can sit a few tenths of
+# a percent off the runner's reading. Record what the nightly's own
+# table prints, not a local measurement.
 # proof/coverage.py builds that command from proof/run.sh: the launch
 # line's own sources and flags, then the -D flags launch() adds to every
 # harness. `python3 -u proof/coverage.py --reach --only NAME` measures one
@@ -53,7 +58,7 @@ poly1305 94.3
 record 95.0
 rsa_mul 32.3
 softmul 91.3
-x25519_tail 53.1
+x25519_tail 52.7
 
 # Not gated, because `cbmc --cover location` does not converge on them.
 # This is a limit of the measurement, not a gap someone forgot: the
