@@ -74,25 +74,9 @@ jobs:
           # anyway.
           token: ${{ secrets.TOOLCHAIN_PIN_TOKEN || secrets.GITHUB_TOKEN }}
 
-      - name: Load the toolchain pins
-        # tools/toolchain.env is the one place a tool version is written, so a
-        # bump moves one line and both this workflow and the Makefile follow
-        # it. This job loads every pin, because every pin is one it checks. The
-        # values here are the ones the checked-out ref holds, which is what the
-        # pull request reports as the old value.
-        run: |
-          . tools/toolchain.env
-          {
-            echo "LLVM_MAJOR=$LLVM_MAJOR"
-            echo "CPPCHECK_VERSION=$CPPCHECK_VERSION"
-            echo "SHELLCHECK_VERSION=$SHELLCHECK_VERSION"
-            echo "CBMC_VERSION=$CBMC_VERSION"
-            echo "KISSAT_VERSION=$KISSAT_VERSION"
-            echo "OPENSSL_VERSION=$OPENSSL_VERSION"
-            echo "GO_VERSION=$GO_VERSION"
-            echo "LLVM_SH_SHA256=$LLVM_SH_SHA256"
-            echo "ELAN_INIT_SHA256=$ELAN_INIT_SHA256"
-          } >> "$GITHUB_ENV"
+      # The values load-pins appends are the ones the checked-out ref holds,
+      # which is what the pull request reports as the old value.
+      - uses: ./.github/actions/load-pins
 
       - name: Ask upstream for the newest release of each pin
         id: read

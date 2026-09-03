@@ -156,7 +156,8 @@ Home: github.com/c4milo.
   `.clang-tidy` with its reason. Never `NOLINT` in code.
 - CI pins the same tool versions the development machine runs. Every
   version lives in `tools/toolchain.env`, which the Makefile includes and
-  the workflows source, so one line moves both. `make lint-pins` fails if a
+  the workflows load through `.github/actions/load-pins`, so one line
+  moves both. `make lint-pins` fails if a
   workflow hardcodes a version that file already carries, or if a job reads
   a pin without loading it, and `make lint-toolchain` fails if the resolved
   checker is not the pinned one. Never adapt code or suppressions to an

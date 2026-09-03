@@ -1,0 +1,13 @@
+# Appends every pin in tools/toolchain.env to GITHUB_ENV, so the steps
+# after this one read the same versions the Makefile includes. No inputs:
+# the pins are version strings and hashes, and a job that loads one it
+# never reads loses nothing. make lint-pins (tools/toolchain-pins.py)
+# requires this action in every job that reads a pin, and requires it to
+# run before the first read.
+name: load-pins
+description: Append every pin in tools/toolchain.env to GITHUB_ENV
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      run: bash "$GITHUB_ACTION_PATH/load.sh"

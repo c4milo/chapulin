@@ -1,0 +1,30 @@
+# Installs the pinned Arm GNU toolchain into ~/armtc, cached by version.
+# It puts nothing on PATH: the m3 and freertos jobs pass
+# ~/armtc/bin/arm-none-eabi-gcc as M3_CC, and the jobs that need the gcc
+# on PATH add it themselves and say why. The pin values come from the
+# job's env via ./.github/actions/load-pins: version is ARM_GNU_VERSION
+# and sha256 is ARM_GNU_LINUX_SHA256, which the download is checked
+# against before it is unpacked.
+name: install-arm-gnu
+description: Install the pinned Arm GNU toolchain into ~/armtc
+inputs:
+  version:
+    description: The Arm GNU toolchain release (ARM_GNU_VERSION)
+    required: true
+  sha256:
+    description: The sha256 of the Linux x86_64 tarball (ARM_GNU_LINUX_SHA256)
+    required: true
+runs:
+  using: composite
+  steps:
+    - id: cache
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ~/armtc
+        key: armtc-${{ inputs.version }}-linux-x86_64
+    - if: steps.cache.outputs.cache-hit != 'true'
+      shell: bash
+      env:
+        VERSION: ${{ inputs.version }}
+        SHA256: ${{ inputs.sha256 }}
+      run: bash "$GITHUB_ACTION_PATH/install.sh"

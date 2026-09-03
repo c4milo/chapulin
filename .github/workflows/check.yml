@@ -129,41 +129,21 @@ jobs:
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: Load the toolchain pins
-        run: |
-          set -euo pipefail
-          # fail on the same set the development machine sees.
-          . tools/toolchain.env
-          { echo "ARM_GNU_VERSION=$ARM_GNU_VERSION"
-            echo "ARM_GNU_LINUX_SHA256=$ARM_GNU_LINUX_SHA256"
-            echo "LLVM_MAJOR=$LLVM_MAJOR"
-            echo "LLVM_SH_SHA256=$LLVM_SH_SHA256"; } >> "$GITHUB_ENV"
+      - uses: ./.github/actions/load-pins
       - run: sudo apt-get update -q && sudo apt-get install -y -q qemu-system-arm
       - name: Install clang-tidy (apt.llvm.org, pinned major)
-        # freertos-check lints its test programs against the fetched
-        # kernel headers, so the lane needs the same pinned clang-tidy
-        # the check job runs. The script runs as root, so it is checked
-        # against LLVM_SH_SHA256 first.
-        run: |
-          set -euo pipefail
-          wget -qO "$RUNNER_TEMP/llvm.sh" https://apt.llvm.org/llvm.sh
-          echo "$LLVM_SH_SHA256  $RUNNER_TEMP/llvm.sh" | sha256sum -c -
-          sudo bash "$RUNNER_TEMP/llvm.sh" "$LLVM_MAJOR"
-          sudo apt-get install -y "clang-tidy-$LLVM_MAJOR"
-      - name: Cache the Arm GNU toolchain
-        id: armtc
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        # The same install as the freertos job. make m3-check itself runs
+        # no clang-tidy; the two Cortex-M3 lanes carry one toolchain.
+        uses: ./.github/actions/install-llvm
         with:
-          path: ~/armtc
-          key: armtc-${{ env.ARM_GNU_VERSION }}-linux-x86_64
+          major: ${{ env.LLVM_MAJOR }}
+          sha256: ${{ env.LLVM_SH_SHA256 }}
+          clang-tidy: "true"
       - name: Install the Arm GNU toolchain (pinned)
-        if: steps.armtc.outputs.cache-hit != 'true'
-        run: |
-          set -euo pipefail
-          url="https://gitlab.arm.com/api/v4/projects/tooling%2Fgnu-toolchains-for-arm/packages/generic/gnu-toolchain/${ARM_GNU_VERSION}/arm-gnu-toolchain-${ARM_GNU_VERSION}-x86_64-arm-none-eabi.tar.xz"
-          curl -sSL -o /tmp/armtc.tar.xz "$url"
-          echo "$ARM_GNU_LINUX_SHA256  /tmp/armtc.tar.xz" | sha256sum -c -
-          mkdir -p ~/armtc && tar -xJf /tmp/armtc.tar.xz -C ~/armtc --strip-components=1
+        uses: ./.github/actions/install-arm-gnu
+        with:
+          version: ${{ env.ARM_GNU_VERSION }}
+          sha256: ${{ env.ARM_GNU_LINUX_SHA256 }}
       - name: Count wide multiplies and divisions under the Arm gcc
         # lint-wide-multiply in the check job measures clang. This lane
         # ships the gcc a firmware tree ships, and gcc once fused ct.h's
@@ -183,41 +163,22 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: Load the toolchain pins
-        run: |
-          set -euo pipefail
-          # fail on the same set the development machine sees.
-          . tools/toolchain.env
-          { echo "ARM_GNU_VERSION=$ARM_GNU_VERSION"
-            echo "ARM_GNU_LINUX_SHA256=$ARM_GNU_LINUX_SHA256"
-            echo "LLVM_MAJOR=$LLVM_MAJOR"
-            echo "LLVM_SH_SHA256=$LLVM_SH_SHA256"; } >> "$GITHUB_ENV"
+      - uses: ./.github/actions/load-pins
       - run: sudo apt-get update -q && sudo apt-get install -y -q qemu-system-arm
       - name: Install clang-tidy (apt.llvm.org, pinned major)
         # freertos-check lints its test programs against the fetched
         # kernel headers, so the lane needs the same pinned clang-tidy
-        # the check job runs. The script runs as root, so it is checked
-        # against LLVM_SH_SHA256 first.
-        run: |
-          set -euo pipefail
-          wget -qO "$RUNNER_TEMP/llvm.sh" https://apt.llvm.org/llvm.sh
-          echo "$LLVM_SH_SHA256  $RUNNER_TEMP/llvm.sh" | sha256sum -c -
-          sudo bash "$RUNNER_TEMP/llvm.sh" "$LLVM_MAJOR"
-          sudo apt-get install -y "clang-tidy-$LLVM_MAJOR"
-      - name: Cache the Arm GNU toolchain
-        id: armtc
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        # the check job runs.
+        uses: ./.github/actions/install-llvm
         with:
-          path: ~/armtc
-          key: armtc-${{ env.ARM_GNU_VERSION }}-linux-x86_64
+          major: ${{ env.LLVM_MAJOR }}
+          sha256: ${{ env.LLVM_SH_SHA256 }}
+          clang-tidy: "true"
       - name: Install the Arm GNU toolchain (pinned)
-        if: steps.armtc.outputs.cache-hit != 'true'
-        run: |
-          set -euo pipefail
-          url="https://gitlab.arm.com/api/v4/projects/tooling%2Fgnu-toolchains-for-arm/packages/generic/gnu-toolchain/${ARM_GNU_VERSION}/arm-gnu-toolchain-${ARM_GNU_VERSION}-x86_64-arm-none-eabi.tar.xz"
-          curl -sSL -o /tmp/armtc.tar.xz "$url"
-          echo "$ARM_GNU_LINUX_SHA256  /tmp/armtc.tar.xz" | sha256sum -c -
-          mkdir -p ~/armtc && tar -xJf /tmp/armtc.tar.xz -C ~/armtc --strip-components=1
+        uses: ./.github/actions/install-arm-gnu
+        with:
+          version: ${{ env.ARM_GNU_VERSION }}
+          sha256: ${{ env.ARM_GNU_LINUX_SHA256 }}
       - run: make freertos-check M3_CC="$HOME/armtc/bin/arm-none-eabi-gcc"
 
   riscv32:
@@ -233,28 +194,13 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: Load the toolchain pins
-        run: |
-          set -euo pipefail
-          # fail on the same set the development machine sees.
-          . tools/toolchain.env
-          { echo "RV32_TC_VERSION=$RV32_TC_VERSION"
-            echo "RV32_TC_SHA256=$RV32_TC_SHA256"; } >> "$GITHUB_ENV"
+      - uses: ./.github/actions/load-pins
       - run: sudo apt-get update -q && sudo apt-get install -y -q qemu-user
-      - name: Cache the Bootlin toolchain
-        id: rv32tc
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ~/rv32tc
-          key: rv32tc-${{ env.RV32_TC_VERSION }}
       - name: Install the Bootlin toolchain (pinned)
-        if: steps.rv32tc.outputs.cache-hit != 'true'
-        run: |
-          set -euo pipefail
-          url="https://toolchains.bootlin.com/downloads/releases/toolchains/riscv32-ilp32d/tarballs/riscv32-ilp32d--musl--${RV32_TC_VERSION}.tar.xz"
-          curl -sSL -o /tmp/rv32tc.tar.xz "$url"
-          echo "$RV32_TC_SHA256  /tmp/rv32tc.tar.xz" | sha256sum -c -
-          mkdir -p ~/rv32tc && tar -xJf /tmp/rv32tc.tar.xz -C ~/rv32tc --strip-components=1
+        uses: ./.github/actions/install-rv32
+        with:
+          version: ${{ env.RV32_TC_VERSION }}
+          sha256: ${{ env.RV32_TC_SHA256 }}
       - name: Count wide multiplies and divisions under the riscv32 gcc
         # lint-wide-multiply in the check job measures clang for
         # rv32imac; this is the same count under the gcc this lane ships
@@ -278,11 +224,11 @@ jobs:
     timeout-minutes: 180 # the slow half runs here on main and nightly
     env:
       # Only the install paths live here. Every version comes from
-      # tools/toolchain.env, which the Makefile includes and the "Load the
-      # toolchain pins" step below reads into the job environment, so a
-      # runner and a development machine resolve the same pins from the same
-      # line. The version numbers used to sit in this block and nowhere
-      # else, which meant they applied on CI and not locally.
+      # tools/toolchain.env, which the Makefile includes and the load-pins
+      # action below appends to the job environment, so a runner and a
+      # development machine resolve the same pins from the same line. The
+      # version numbers used to sit in this block and nowhere else, which
+      # meant they applied on CI and not locally.
       CPPCHECK: /home/runner/cppcheck-inst/bin/cppcheck
       SHELLCHECK: /home/runner/shellcheck-inst/shellcheck
       OPENSSL_PREFIX: /home/runner/openssl-inst
@@ -348,68 +294,20 @@ jobs:
           [ -z "$unrequired" ] || echo "::notice::jobs in $workflow that main does not require: $unrequired"
           exit "$rc"
 
-      - name: Load the toolchain pins
-        # tools/toolchain.env is the one place a tool version is written. The
-        # binary names are derived from LLVM_MAJOR here rather than repeated,
-        # so a bump moves one line. apt.llvm.org installs the versioned
-        # names, which is why CLANG_TIDY and friends are spelled with the
-        # major appended.
-        run: |
-          . tools/toolchain.env
-          {
-            echo "LLVM_MAJOR=$LLVM_MAJOR"
-            # The script that installs them runs as root, so the install
-            # step checks it against this hash before running it.
-            echo "LLVM_SH_SHA256=$LLVM_SH_SHA256"
-            echo "CLANG_TIDY=clang-tidy-$LLVM_MAJOR"
-            echo "CLANG_FORMAT=clang-format-$LLVM_MAJOR"
-            # The codegen lints disassemble what this compiler emits, so it
-            # has to be the pinned one. Unset, it fell back to the runner
-            # image's default clang and lint-wide-multiply read a different
-            # lowering than the development machine.
-            echo "CLANG_RV=clang-$LLVM_MAJOR"
-            echo "CPPCHECK_VERSION=$CPPCHECK_VERSION"
-            # The runner image ships whatever shellcheck Ubuntu packages, and
-            # the codes it reports move between releases. lint-shellcheck must
-            # fail on the same set the development machine sees.
-            echo "SHELLCHECK_VERSION=$SHELLCHECK_VERSION"
-            # The runner image ships OpenSSL 3.0, which predates the
-            # `x509 -req -not_before` flag that docs/ca.md tells operators to
-            # use for epoch dates. Pinning the development version keeps e2e
-            # on the documented recipe instead of the 3.0 fallback.
-            echo "OPENSSL_VERSION=$OPENSSL_VERSION"
-            # test/goecho backs the e2e go and go-pq legs, and which curves Go
-            # offers by default moves between releases. Without this the legs
-            # ran on whatever Go the runner image shipped.
-            echo "GO_VERSION=$GO_VERSION"
-            echo "CBMC_VERSION=$CBMC_VERSION"
-            echo "KISSAT_VERSION=$KISSAT_VERSION"
-            echo "ELAN_INIT_SHA256=$ELAN_INIT_SHA256"
-            echo "ACTIONLINT_VERSION=$ACTIONLINT_VERSION"
-            echo "ACTIONLINT_SHA256=$ACTIONLINT_SHA256"
-            # check-slow's test-invariants-fast runs the gcc codegen gate
-            # (test/lint-wide-multiply-gcc.sh), which needs the Arm GNU
-            # gcc the m3 lane pins.
-            echo "ARM_GNU_VERSION=$ARM_GNU_VERSION"
-            echo "ARM_GNU_LINUX_SHA256=$ARM_GNU_LINUX_SHA256"
-          } >> "$GITHUB_ENV"
+      - uses: ./.github/actions/load-pins
 
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: ${{ env.GO_VERSION }}
 
       - name: Install clang tools (apt.llvm.org, pinned major)
-        # The script runs as root, so it is checked against LLVM_SH_SHA256
-        # first: LLVM_MAJOR pins what it is told to install, not the script.
-        run: |
-          set -euo pipefail
-          wget -qO "$RUNNER_TEMP/llvm.sh" https://apt.llvm.org/llvm.sh
-          echo "$LLVM_SH_SHA256  $RUNNER_TEMP/llvm.sh" | sha256sum -c -
-          sudo bash "$RUNNER_TEMP/llvm.sh" "$LLVM_MAJOR"
-          # llvm-$LLVM_MAJOR carries llvm-nm, which lint-runtime-symbols reads
-          # the rv32ic objects with. llvm.sh alone does not install it.
-          sudo apt-get install -y "clang-tidy-$LLVM_MAJOR" "clang-format-$LLVM_MAJOR" \
-            "llvm-$LLVM_MAJOR"
+        uses: ./.github/actions/install-llvm
+        with:
+          major: ${{ env.LLVM_MAJOR }}
+          sha256: ${{ env.LLVM_SH_SHA256 }}
+          clang-tidy: "true"
+          clang-format: "true"
+          llvm: "true" # llvm-nm, which lint-runtime-symbols reads with
 
       - name: Cache OpenSSL install
         id: openssl-cache
@@ -493,12 +391,14 @@ jobs:
                 "shellcheck-v$SHELLCHECK_VERSION/shellcheck"
 
       - name: Lint the workflows
-        # make lint-shellcheck covers the scripts in bench/, proof/ and test/.
-        # Nothing covered the shell inside these workflow files until this, and
-        # actionlint found a real defect there: backticks in a double-quoted
-        # echo, which the shell runs as a command. It lives here rather than in
-        # make check because that target must not need a Go binary to build a
-        # C library.
+        # make lint-shellcheck covers the scripts in bench/, proof/ and test/,
+        # and the install scripts under .github/actions/. Nothing covered the
+        # shell inside these workflow files until this, and actionlint found
+        # a real defect there: backticks in a double-quoted echo, which the
+        # shell runs as a command. It also checks each `with:` block against
+        # the inputs the local action under .github/actions/ declares. It
+        # lives here rather than in make check because that target must not
+        # need a Go binary to build a C library.
         #
         # The tarball is checked against the published checksum before it runs.
         run: |
@@ -542,33 +442,14 @@ jobs:
         run: pip install --require-hashes -r .semgrep/requirements.txt
 
       - name: Install CBMC
-        run: |
-          curl -fsSLO "https://github.com/diffblue/cbmc/releases/download/cbmc-$CBMC_VERSION/ubuntu-24.04-cbmc-$CBMC_VERSION-Linux.deb"
-          sudo dpkg -i "ubuntu-24.04-cbmc-$CBMC_VERSION-Linux.deb"
-          cbmc --version
-
-      - name: Cache kissat install
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        uses: ./.github/actions/install-cbmc
         with:
-          path: ~/kissat-inst
-          key: kissat-${{ runner.os }}-${{ env.KISSAT_VERSION }}
+          version: ${{ env.CBMC_VERSION }}
 
       - name: Build and install kissat at the development version
-        # proof/run.sh uses kissat as the SAT back end when present;
-        # verdicts are solver-independent, kissat just gets there faster.
-        # Not in the runner's apt archive, so build the pinned release —
-        # a dependency-free C build that takes seconds.
-        run: |
-          if [ ! -x ~/kissat-inst/kissat ]; then
-            curl -fsSL "https://github.com/arminbiere/kissat/archive/refs/tags/$KISSAT_VERSION.tar.gz" | tar xz
-            cd "kissat-$KISSAT_VERSION"
-            ./configure
-            make -j"$(nproc)"
-            mkdir -p ~/kissat-inst
-            cp build/kissat ~/kissat-inst/
-          fi
-          echo "$HOME/kissat-inst" >> "$GITHUB_PATH"
-          ~/kissat-inst/kissat --version
+        uses: ./.github/actions/install-kissat
+        with:
+          version: ${{ env.KISSAT_VERSION }}
 
       - name: Cache Lean toolchain and spec build
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -586,17 +467,9 @@ jobs:
           key: npm-${{ runner.os }}-${{ hashFiles('tools/package-lock.json', 'tools/package.json') }}
 
       - name: Install elan
-        # --default-toolchain none: lake installs the spec/lean-toolchain
-        # pin itself, so elan-init needn't pull an unused stable release.
-        # The script is checked against ELAN_INIT_SHA256 before it runs.
-        run: |
-          set -euo pipefail
-          if [ ! -x "$HOME/.elan/bin/elan" ]; then
-            curl -sSf -o "$RUNNER_TEMP/elan-init.sh" https://elan.lean-lang.org/elan-init.sh
-            echo "$ELAN_INIT_SHA256  $RUNNER_TEMP/elan-init.sh" | sha256sum -c -
-            sh "$RUNNER_TEMP/elan-init.sh" -y --default-toolchain none
-          fi
-          echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
+        uses: ./.github/actions/install-elan
+        with:
+          sha256: ${{ env.ELAN_INIT_SHA256 }}
 
       - run: npm ci
         working-directory: tools
@@ -610,20 +483,14 @@ jobs:
 
       - run: make hooks
 
-      - name: Cache the Arm GNU toolchain
-        id: armtc
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ~/armtc
-          key: armtc-${{ env.ARM_GNU_VERSION }}-linux-x86_64
       - name: Install the Arm GNU toolchain (pinned)
-        if: steps.armtc.outputs.cache-hit != 'true'
-        run: |
-          set -euo pipefail
-          url="https://gitlab.arm.com/api/v4/projects/tooling%2Fgnu-toolchains-for-arm/packages/generic/gnu-toolchain/${ARM_GNU_VERSION}/arm-gnu-toolchain-${ARM_GNU_VERSION}-x86_64-arm-none-eabi.tar.xz"
-          curl -sSL -o /tmp/armtc.tar.xz "$url"
-          echo "$ARM_GNU_LINUX_SHA256  /tmp/armtc.tar.xz" | sha256sum -c -
-          mkdir -p ~/armtc && tar -xJf /tmp/armtc.tar.xz -C ~/armtc --strip-components=1
+        # check-slow's test-invariants-fast runs the gcc codegen gate
+        # (test/lint-wide-multiply-gcc.sh), which needs the Arm GNU gcc
+        # the m3 lane pins.
+        uses: ./.github/actions/install-arm-gnu
+        with:
+          version: ${{ env.ARM_GNU_VERSION }}
+          sha256: ${{ env.ARM_GNU_LINUX_SHA256 }}
       - name: Put the Arm GNU gcc on PATH
         # test/violations.py runs test/lint-wide-multiply-gcc.sh with no
         # arguments, and the Makefile resolves that gate's gcc through

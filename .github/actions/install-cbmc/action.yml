@@ -1,0 +1,16 @@
+# Installs the pinned CBMC from the release .deb built for ubuntu-24.04,
+# the image every job here runs on. The pin value comes from the job's
+# env via ./.github/actions/load-pins: version is CBMC_VERSION.
+name: install-cbmc
+description: Install the pinned CBMC release
+inputs:
+  version:
+    description: The CBMC release (CBMC_VERSION)
+    required: true
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      env:
+        VERSION: ${{ inputs.version }}
+      run: bash "$GITHUB_ACTION_PATH/install.sh"

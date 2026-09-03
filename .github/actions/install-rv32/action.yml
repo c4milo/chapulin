@@ -1,0 +1,29 @@
+# Installs the pinned Bootlin riscv32 musl toolchain into ~/rv32tc, cached
+# by version. The jobs that use it spell the path out
+# (~/rv32tc/bin/riscv32-linux-), so it puts nothing on PATH. The pin
+# values come from the job's env via ./.github/actions/load-pins: version
+# is RV32_TC_VERSION and sha256 is RV32_TC_SHA256, the publisher's own
+# hash, which the download is checked against before it is unpacked.
+name: install-rv32
+description: Install the pinned Bootlin riscv32 toolchain into ~/rv32tc
+inputs:
+  version:
+    description: The Bootlin toolchain release (RV32_TC_VERSION)
+    required: true
+  sha256:
+    description: The publisher's sha256 of the tarball (RV32_TC_SHA256)
+    required: true
+runs:
+  using: composite
+  steps:
+    - id: cache
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ~/rv32tc
+        key: rv32tc-${{ inputs.version }}
+    - if: steps.cache.outputs.cache-hit != 'true'
+      shell: bash
+      env:
+        VERSION: ${{ inputs.version }}
+        SHA256: ${{ inputs.sha256 }}
+      run: bash "$GITHUB_ACTION_PATH/install.sh"

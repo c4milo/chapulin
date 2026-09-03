@@ -29,21 +29,11 @@ jobs:
     timeout-minutes: 300
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: Load the toolchain pins
-        # tools/toolchain.env is the one place a tool version is written,
-        # so a bump moves one line and both this workflow and the Makefile
-        # follow it.
-        run: |
-          . tools/toolchain.env
-          {
-            echo "CBMC_VERSION=$CBMC_VERSION"
-            echo "KISSAT_VERSION=$KISSAT_VERSION"
-            echo "GO_VERSION=$GO_VERSION"
-          } >> "$GITHUB_ENV"
+      - uses: ./.github/actions/load-pins
       - name: Install CBMC
-        run: |
-          curl -fsSLO "https://github.com/diffblue/cbmc/releases/download/cbmc-$CBMC_VERSION/ubuntu-24.04-cbmc-$CBMC_VERSION-Linux.deb"
-          sudo dpkg -i "ubuntu-24.04-cbmc-$CBMC_VERSION-Linux.deb"
+        uses: ./.github/actions/install-cbmc
+        with:
+          version: ${{ env.CBMC_VERSION }}
       - run: make proof-reach
       - name: Render the reachability table on the run page
         if: always()
@@ -61,26 +51,11 @@ jobs:
         proof: [hkdf_expand, hkdf_expand_label, x25519, x25519_mul_alias_a, x25519_mul_alias_b, x25519_mul_inputs_alias, x25519_sqr, handshake_psk, handshake_pin, x509parse, mlkem_ntt, mlkem_invntt_low, mlkem_invntt_high, mlkem_basemul]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: Load the toolchain pins
-        # tools/toolchain.env is the one place a tool version is written,
-        # so a bump moves one line and both this workflow and the Makefile
-        # follow it.
-        run: |
-          . tools/toolchain.env
-          {
-            echo "CBMC_VERSION=$CBMC_VERSION"
-            echo "KISSAT_VERSION=$KISSAT_VERSION"
-            echo "GO_VERSION=$GO_VERSION"
-          } >> "$GITHUB_ENV"
+      - uses: ./.github/actions/load-pins
       - name: Install CBMC
-        run: |
-          curl -fsSLO "https://github.com/diffblue/cbmc/releases/download/cbmc-$CBMC_VERSION/ubuntu-24.04-cbmc-$CBMC_VERSION-Linux.deb"
-          sudo dpkg -i "ubuntu-24.04-cbmc-$CBMC_VERSION-Linux.deb"
-      - name: Cache kissat install
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        uses: ./.github/actions/install-cbmc
         with:
-          path: ~/kissat-inst
-          key: kissat-${{ runner.os }}-${{ env.KISSAT_VERSION }}
+          version: ${{ env.CBMC_VERSION }}
       - name: Build and install kissat
         # Every leg here sets PROVE_ONLY, and a lone proof keeps kissat
         # whatever it weighs — the budget fallback applies only to whole-
@@ -89,16 +64,9 @@ jobs:
         # cap dies as a fast, named FAILED instead of grinding under the
         # built-in solver — better than a 300-minute cancellation, and
         # x25519 went from cancelled-at-cap to 847 s this way.
-        run: |
-          if [ ! -x ~/kissat-inst/kissat ]; then
-            curl -fsSL "https://github.com/arminbiere/kissat/archive/refs/tags/$KISSAT_VERSION.tar.gz" | tar xz
-            cd "kissat-$KISSAT_VERSION"
-            ./configure
-            make -j"$(nproc)"
-            mkdir -p ~/kissat-inst
-            cp build/kissat ~/kissat-inst/
-          fi
-          echo "$HOME/kissat-inst" >> "$GITHUB_PATH"
+        uses: ./.github/actions/install-kissat
+        with:
+          version: ${{ env.KISSAT_VERSION }}
       # One cache per harness: the legs run concurrently and a shared
       # key would let whichever finishes last discard the rest.
       - name: Restore proof cache
@@ -166,17 +134,11 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: Load the toolchain pins
-        run: |
-          . tools/toolchain.env
-          echo "ELAN_INIT_SHA256=$ELAN_INIT_SHA256" >> "$GITHUB_ENV"
+      - uses: ./.github/actions/load-pins
       - name: Install elan
-        run: |
-          set -euo pipefail
-          curl -sSf -o "$RUNNER_TEMP/elan-init.sh" https://elan.lean-lang.org/elan-init.sh
-          echo "$ELAN_INIT_SHA256  $RUNNER_TEMP/elan-init.sh" | sha256sum -c -
-          sh "$RUNNER_TEMP/elan-init.sh" -y --default-toolchain none
-          echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
+        uses: ./.github/actions/install-elan
+        with:
+          sha256: ${{ env.ELAN_INIT_SHA256 }}
       - name: Cache Lean toolchain and build
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -214,34 +176,11 @@ jobs:
     timeout-minutes: 120
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: Load the toolchain pins
-        # tools/toolchain.env is the one place a tool version is written,
-        # so a bump moves one line and both this workflow and the Makefile
-        # follow it.
-        run: |
-          . tools/toolchain.env
-          {
-            echo "CBMC_VERSION=$CBMC_VERSION"
-            echo "KISSAT_VERSION=$KISSAT_VERSION"
-            echo "GO_VERSION=$GO_VERSION"
-            echo "ELAN_INIT_SHA256=$ELAN_INIT_SHA256"
-            # The gcc codegen gate (test/lint-wide-multiply-gcc.sh) is a
-            # violation target and needs the Arm GNU gcc the m3 lane pins.
-            echo "ARM_GNU_VERSION=$ARM_GNU_VERSION"
-            echo "ARM_GNU_LINUX_SHA256=$ARM_GNU_LINUX_SHA256"
-            # The five INV-16 violations whose catch target is a codegen
-            # lint need the pinned clang and llvm-nm, as the check job has.
-            echo "LLVM_MAJOR=$LLVM_MAJOR"
-            echo "LLVM_SH_SHA256=$LLVM_SH_SHA256"
-            echo "CLANG_RV=clang-$LLVM_MAJOR"
-          } >> "$GITHUB_ENV"
+      - uses: ./.github/actions/load-pins
       - name: Install elan
-        run: |
-          set -euo pipefail
-          curl -sSf -o "$RUNNER_TEMP/elan-init.sh" https://elan.lean-lang.org/elan-init.sh
-          echo "$ELAN_INIT_SHA256  $RUNNER_TEMP/elan-init.sh" | sha256sum -c -
-          sh "$RUNNER_TEMP/elan-init.sh" -y --default-toolchain none
-          echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
+        uses: ./.github/actions/install-elan
+        with:
+          sha256: ${{ env.ELAN_INIT_SHA256 }}
       - name: Cache Lean toolchain and build
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -251,33 +190,23 @@ jobs:
           key: lean-${{ hashFiles('spec/lean-toolchain', 'spec/lakefile.toml', 'spec/lake-manifest.json', 'spec/**/*.lean') }}
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          # Keep in step with GO_VERSION in check.yml, which is the pin of
-          # record; lint-go-pin fails when the two drift.
           go-version: ${{ env.GO_VERSION }}
-      - name: Cache the Arm GNU toolchain
-        id: armtc
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ~/armtc
-          key: armtc-${{ env.ARM_GNU_VERSION }}-linux-x86_64
       - name: Install the Arm GNU toolchain (pinned)
-        if: steps.armtc.outputs.cache-hit != 'true'
-        run: |
-          set -euo pipefail
-          url="https://gitlab.arm.com/api/v4/projects/tooling%2Fgnu-toolchains-for-arm/packages/generic/gnu-toolchain/${ARM_GNU_VERSION}/arm-gnu-toolchain-${ARM_GNU_VERSION}-x86_64-arm-none-eabi.tar.xz"
-          curl -sSL -o /tmp/armtc.tar.xz "$url"
-          echo "$ARM_GNU_LINUX_SHA256  /tmp/armtc.tar.xz" | sha256sum -c -
-          mkdir -p ~/armtc && tar -xJf /tmp/armtc.tar.xz -C ~/armtc --strip-components=1
+        # The gcc codegen gate (test/lint-wide-multiply-gcc.sh) is a
+        # violation target and needs the Arm GNU gcc the m3 lane pins.
+        uses: ./.github/actions/install-arm-gnu
+        with:
+          version: ${{ env.ARM_GNU_VERSION }}
+          sha256: ${{ env.ARM_GNU_LINUX_SHA256 }}
       - name: Install clang tools (apt.llvm.org, pinned major)
-        # test/lint-wide-multiply.sh and test/lint-runtime-symbols.sh are
-        # catch targets here; the script runs as root, so it is checked
-        # against LLVM_SH_SHA256 first, as the check job does.
-        run: |
-          set -euo pipefail
-          wget -qO "$RUNNER_TEMP/llvm.sh" https://apt.llvm.org/llvm.sh
-          echo "$LLVM_SH_SHA256  $RUNNER_TEMP/llvm.sh" | sha256sum -c -
-          sudo bash "$RUNNER_TEMP/llvm.sh" "$LLVM_MAJOR"
-          sudo apt-get install -y "llvm-$LLVM_MAJOR"
+        # The five INV-16 violations whose catch target is a codegen lint
+        # (test/lint-wide-multiply.sh, test/lint-runtime-symbols.sh) need
+        # the pinned clang and llvm-nm, as the check job has.
+        uses: ./.github/actions/install-llvm
+        with:
+          major: ${{ env.LLVM_MAJOR }}
+          sha256: ${{ env.LLVM_SH_SHA256 }}
+          llvm: "true"
       - name: Put the Arm GNU gcc on PATH
         # test/violations.py runs test/lint-wide-multiply-gcc.sh with no
         # arguments, and the Makefile resolves that gate's gcc through
@@ -292,28 +221,16 @@ jobs:
         # proof/run.sh, and the baseline must verify here before the
         # mutant's verdict counts
         # (https://github.com/c4milo/chapulin/issues/121).
-        run: |
-          curl -fsSLO "https://github.com/diffblue/cbmc/releases/download/cbmc-$CBMC_VERSION/ubuntu-24.04-cbmc-$CBMC_VERSION-Linux.deb"
-          sudo dpkg -i "ubuntu-24.04-cbmc-$CBMC_VERSION-Linux.deb"
-      - name: Cache kissat install
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        uses: ./.github/actions/install-cbmc
         with:
-          path: ~/kissat-inst
-          key: kissat-${{ runner.os }}-${{ env.KISSAT_VERSION }}
+          version: ${{ env.CBMC_VERSION }}
       - name: Build and install kissat
         # x25519_step verifies in 513 s under kissat and has no measured
         # verdict under the built-in solver, so the wrapper's clock needs
         # kissat here as much as the prove jobs do.
-        run: |
-          if [ ! -x ~/kissat-inst/kissat ]; then
-            curl -fsSL "https://github.com/arminbiere/kissat/archive/refs/tags/$KISSAT_VERSION.tar.gz" | tar xz
-            cd "kissat-$KISSAT_VERSION"
-            ./configure
-            make -j"$(nproc)"
-            mkdir -p ~/kissat-inst
-            cp build/kissat ~/kissat-inst/
-          fi
-          echo "$HOME/kissat-inst" >> "$GITHUB_PATH"
+        uses: ./.github/actions/install-kissat
+        with:
+          version: ${{ env.KISSAT_VERSION }}
 
       - name: Break every invariant and see what objects
         run: |
@@ -349,17 +266,11 @@ jobs:
     timeout-minutes: 40
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: Load the toolchain pins
-        run: |
-          . tools/toolchain.env
-          echo "ELAN_INIT_SHA256=$ELAN_INIT_SHA256" >> "$GITHUB_ENV"
+      - uses: ./.github/actions/load-pins
       - name: Install elan
-        run: |
-          set -euo pipefail
-          curl -sSf -o "$RUNNER_TEMP/elan-init.sh" https://elan.lean-lang.org/elan-init.sh
-          echo "$ELAN_INIT_SHA256  $RUNNER_TEMP/elan-init.sh" | sha256sum -c -
-          sh "$RUNNER_TEMP/elan-init.sh" -y --default-toolchain none
-          echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
+        uses: ./.github/actions/install-elan
+        with:
+          sha256: ${{ env.ELAN_INIT_SHA256 }}
       - name: Cache Lean toolchain and build
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -410,17 +321,11 @@ jobs:
     timeout-minutes: 40
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: Load the toolchain pins
-        run: |
-          . tools/toolchain.env
-          echo "ELAN_INIT_SHA256=$ELAN_INIT_SHA256" >> "$GITHUB_ENV"
+      - uses: ./.github/actions/load-pins
       - name: Install elan
-        run: |
-          set -euo pipefail
-          curl -sSf -o "$RUNNER_TEMP/elan-init.sh" https://elan.lean-lang.org/elan-init.sh
-          echo "$ELAN_INIT_SHA256  $RUNNER_TEMP/elan-init.sh" | sha256sum -c -
-          sh "$RUNNER_TEMP/elan-init.sh" -y --default-toolchain none
-          echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
+        uses: ./.github/actions/install-elan
+        with:
+          sha256: ${{ env.ELAN_INIT_SHA256 }}
       - name: Cache Lean toolchain and build
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -442,17 +347,11 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: Load the toolchain pins
-        run: |
-          . tools/toolchain.env
-          echo "ELAN_INIT_SHA256=$ELAN_INIT_SHA256" >> "$GITHUB_ENV"
+      - uses: ./.github/actions/load-pins
       - name: Install elan
-        run: |
-          set -euo pipefail
-          curl -sSf -o "$RUNNER_TEMP/elan-init.sh" https://elan.lean-lang.org/elan-init.sh
-          echo "$ELAN_INIT_SHA256  $RUNNER_TEMP/elan-init.sh" | sha256sum -c -
-          sh "$RUNNER_TEMP/elan-init.sh" -y --default-toolchain none
-          echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
+        uses: ./.github/actions/install-elan
+        with:
+          sha256: ${{ env.ELAN_INIT_SHA256 }}
       - name: Cache Lean toolchain and build
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -470,17 +369,11 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: Load the toolchain pins
-        run: |
-          . tools/toolchain.env
-          echo "ELAN_INIT_SHA256=$ELAN_INIT_SHA256" >> "$GITHUB_ENV"
+      - uses: ./.github/actions/load-pins
       - name: Install elan
-        run: |
-          set -euo pipefail
-          curl -sSf -o "$RUNNER_TEMP/elan-init.sh" https://elan.lean-lang.org/elan-init.sh
-          echo "$ELAN_INIT_SHA256  $RUNNER_TEMP/elan-init.sh" | sha256sum -c -
-          sh "$RUNNER_TEMP/elan-init.sh" -y --default-toolchain none
-          echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
+        uses: ./.github/actions/install-elan
+        with:
+          sha256: ${{ env.ELAN_INIT_SHA256 }}
       - name: Cache Lean toolchain and build
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:

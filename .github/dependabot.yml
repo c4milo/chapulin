@@ -28,8 +28,11 @@ version: 2
 updates:
   - package-ecosystem: github-actions
     # Actions are read from .github/workflows, which Dependabot addresses
-    # as the repository root.
-    directory: "/"
+    # as the repository root, and from the local composite actions under
+    # .github/actions, whose action.yml files pin actions/cache by the
+    # same SHA the workflows do. Both directories sit in one group, so one
+    # pull request moves a SHA everywhere it is written.
+    directories: ["/", "/.github/actions/*"]
     schedule:
       interval: weekly
       day: monday

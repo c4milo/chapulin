@@ -3,15 +3,17 @@
 
 Two failures, both silent without this check.
 
-The first is a workflow that hardcodes a version the pins file already
-carries. That is a second source of truth, and it drifts: the pins used to
-live only in check.yml's env block, so they applied on CI and nowhere else,
-and a development machine linted with whatever clang-tidy it carried.
+The first is a workflow or a local action that hardcodes a version the pins
+file already carries. That is a second source of truth, and it drifts: the
+pins used to live only in check.yml's env block, so they applied on CI and
+nowhere else, and a development machine linted with whatever clang-tidy it
+carried.
 
 The second arrived with the fix. A job that reads a pin variable without
-running the step that loads it gets an empty string, and `go-version: ""`
-installs a default Go rather than failing. So every job that names a pin
-must also load the pins.
+running the action that loads it gets an empty string, and `go-version: ""`
+installs a default Go rather than failing. So every job that names a pin,
+in a script or in a `with:` value, must run ./.github/actions/load-pins
+before the first read.
 
 Run through `make lint-pins`.
 """
@@ -23,12 +25,16 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 PINS = ROOT / "tools" / "toolchain.env"
 WORKFLOWS = sorted((ROOT / ".github" / "workflows").glob("*.yml"))
+ACTIONS = sorted((ROOT / ".github" / "actions").glob("*/action.yml"))
+# The shell each action runs. It is where a version would be typed by hand.
+SCRIPTS = sorted((ROOT / ".github" / "actions").glob("*/*.sh"))
 
-# Match the source line, not the name of the step that runs it. Every workflow
-# calls that step "Load the toolchain pins" today, and a rename is a rename
-# rather than a defect; sourcing the file is the thing that has to happen, so
-# that is what this checks.
-LOADS_PINS = re.compile(r"\.\s+\.?/?tools/toolchain\.env\b")
+# The one loader. It appends every pin to GITHUB_ENV, so a job that runs it
+# has loaded whatever it reads. A job that sources the file by hand and echoes
+# the names it thinks it needs is the copy-paste the action replaced, and it
+# fails here like any other job with no loader step.
+LOADER = "./.github/actions/load-pins"
+LOADS_PINS = re.compile(r"^\s*(-\s+)?uses:\s*" + re.escape(LOADER) + r"\s*(#.*)?$")
 
 # LLVM_MAJOR is checked through the versioned binary names rather than the bare
 # number: a bare "22" also matches inside the actions/setup-go commit SHAs.
@@ -48,7 +54,7 @@ def read_pins():
         if name != name.strip() or value != value.strip() or '"' in value or "'" in value:
             sys.exit(
                 f"lint-pins: {name} must be NAME=value with no spaces or quotes; "
-                "the file is read by both `make include` and `sh .`"
+                "the file is read by `make include`, `sh .` and load-pins"
             )
         pins[name] = value
     return pins
@@ -88,24 +94,58 @@ def split_jobs(text):
         yield name, "\n".join(lines[i:end])
 
 
+def pin_shaped_values(text):
+    """Yield (line_no, value) for every `with:` entry and every input `default:`.
+
+    A bare "23" cannot be searched for across a file: it also sits inside
+    commit SHAs and sha256 values. These two places carry a value whole, so
+    they can be compared exactly: a `with:` entry handed to an action, and an
+    input's `default:` in an action.yml.
+    """
+    with_indent = None
+    for i, line in enumerate(text.split("\n"), 1):
+        body = line.lstrip()
+        if not body or body.startswith("#"):
+            continue
+        indent = len(line) - len(body)
+        if with_indent is not None and indent <= with_indent:
+            with_indent = None
+        if re.match(r"with:\s*(#.*)?$", body):
+            with_indent = indent
+            continue
+        m = re.match(r"([\w-]+):\s*(.*?)\s*(#.*)?$", body)
+        if not m:
+            continue
+        key, value = m.group(1), m.group(2)
+        if with_indent is not None or key == "default":
+            yield i, value.strip("\"'")
+
+
 # A version tag is a pointer its owner can move; a commit SHA is not. Every
 # action reference was converted by hand, and nothing stopped the next one from
 # arriving as a tag: `uses: some-org/thing@v2` pasted from a README passed every
-# check in the tree. Local `./` paths are exempt because they carry no upstream.
+# check in the tree. Local `./` paths carry no upstream, so for them the check
+# is that the path exists: actionlint validates a local action's inputs only
+# when it finds the action.yml, and says nothing when it does not.
 USES = re.compile(r"^\s*-?\s*uses:\s*(\S+)(?:\s+#\s*(\S+))?")
 PINNED_REF = re.compile(r"^[\w.-]+/[\w.-]+(?:/[\w.-]+)*@[0-9a-f]{40}$")
 
 
 def check_action_refs(problems):
-    """Every `uses:` names a 40-character commit SHA and its version in a comment."""
-    for wf in WORKFLOWS:
-        rel = wf.relative_to(ROOT)
-        for i, line in enumerate(wf.read_text().split("\n"), 1):
+    """Every `uses:` names a commit SHA with its version, or a local action that exists."""
+    for f in WORKFLOWS + ACTIONS:
+        rel = f.relative_to(ROOT)
+        for i, line in enumerate(f.read_text().split("\n"), 1):
             m = USES.match(line)
             if not m:
                 continue
             ref, comment = m.group(1), m.group(2)
             if ref.startswith("./"):
+                if not (ROOT / ref[2:] / "action.yml").is_file():
+                    problems.append(
+                        f"{rel}:{i}: {ref} has no action.yml, and actionlint skips a "
+                        f"local action it cannot find\n    {line.strip()}"
+                    )
                 continue
             if not PINNED_REF.match(ref):
                 problems.append(
@@ -119,19 +159,16 @@ def check_action_refs(problems):
                 )
 
 
-def main():
-    pins = read_pins()
-    problems = []
-    check_action_refs(problems)
-
+def check_hardcoded(problems, pins):
+    """No workflow, action or action script carries a value the pins file holds."""
     hardcoded = {v: k for k, v in pins.items() if k not in LITERAL_SKIP}
     for pattern in DERIVED:
         hardcoded[pattern.format(**pins)] = "LLVM_MAJOR"
+    whole = {pins[name]: name for name in LITERAL_SKIP}
 
-    for wf in WORKFLOWS:
-        text = wf.read_text()
-        rel = wf.relative_to(ROOT)
-
+    for f in WORKFLOWS + ACTIONS + SCRIPTS:
+        text = f.read_text()
+        rel = f.relative_to(ROOT)
         for value, name in sorted(hardcoded.items()):
             for i, line in enumerate(text.split("\n"), 1):
                 if value in line:
@@ -139,18 +176,51 @@ def main():
                         f"{rel}:{i}: {name} is hardcoded as {value!r}; "
                         f"read it from tools/toolchain.env instead\n    {line.strip()}"
                     )
-
-        for job, body in split_jobs(text):
-            used = {
-                name
-                for name in pins
-                if re.search(rf"\${name}\b", body) or f"env.{name}" in body
-            }
-            if used and not LOADS_PINS.search(body):
+        if f.suffix != ".yml":
+            continue
+        for i, value in pin_shaped_values(text):
+            if value in whole:
                 problems.append(
-                    f"{rel}: job {job!r} reads {', '.join(sorted(used))} without "
-                    "sourcing tools/toolchain.env, so the value is the empty string"
+                    f"{rel}:{i}: {whole[value]} is hardcoded as {value!r}; "
+                    f"pass ${{{{ env.{whole[value]} }}}} from load-pins instead"
                 )
+
+
+def check_jobs_load(problems, pins):
+    """Every job that reads a pin runs load-pins, and runs it first."""
+    for wf in WORKFLOWS:
+        rel = wf.relative_to(ROOT)
+        for job, body in split_jobs(wf.read_text()):
+            lines = body.split("\n")
+            reads = {}
+            for i, line in enumerate(lines):
+                for name in pins:
+                    if re.search(rf"\${name}\b", line) or f"env.{name}" in line:
+                        reads.setdefault(name, i)
+            if not reads:
+                continue
+            loader = next((i for i, l in enumerate(lines) if LOADS_PINS.match(l)), None)
+            names = ", ".join(sorted(reads))
+            if loader is None:
+                problems.append(
+                    f"{rel}: job {job!r} reads {names} without running {LOADER}, "
+                    "so the value is the empty string"
+                )
+                continue
+            early = sorted(name for name, i in reads.items() if i < loader)
+            if early:
+                problems.append(
+                    f"{rel}: job {job!r} reads {', '.join(early)} before {LOADER} "
+                    "runs, so the value is the empty string"
+                )
+
+
+def main():
+    pins = read_pins()
+    problems = []
+    check_action_refs(problems)
+    check_hardcoded(problems, pins)
+    check_jobs_load(problems, pins)
 
     if problems:
         for p in problems:
@@ -159,13 +229,13 @@ def main():
 
     refs = sum(
         1
-        for w in WORKFLOWS
-        for line in w.read_text().split("\n")
-        if USES.match(line)
+        for f in WORKFLOWS + ACTIONS
+        for line in f.read_text().split("\n")
+        if USES.match(line) and not USES.match(line).group(1).startswith("./")
     )
     print(
         f"lint-pins: {len(pins)} versions from one file, {refs} action refs on a "
-        f"commit SHA, every job that reads a pin loads it"
+        f"commit SHA, every job that reads a pin runs load-pins first"
     )
     return 0
 

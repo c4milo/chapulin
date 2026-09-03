@@ -1,0 +1,24 @@
+# Builds the pinned kissat into ~/kissat-inst, cached by version, and puts
+# it on PATH. proof/run.sh takes kissat as the SAT back end when present;
+# verdicts are solver-independent, kissat just gets there faster. It is
+# not in the runner's apt archive, so this builds the release: a
+# dependency-free C build that takes seconds. The pin value comes from
+# the job's env via ./.github/actions/load-pins: version is
+# KISSAT_VERSION.
+name: install-kissat
+description: Build the pinned kissat and put it on PATH
+inputs:
+  version:
+    description: The kissat release tag (KISSAT_VERSION)
+    required: true
+runs:
+  using: composite
+  steps:
+    - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ~/kissat-inst
+        key: kissat-${{ runner.os }}-${{ inputs.version }}
+    - shell: bash
+      env:
+        VERSION: ${{ inputs.version }}
+      run: bash "$GITHUB_ACTION_PATH/install.sh"

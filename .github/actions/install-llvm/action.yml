@@ -1,0 +1,38 @@
+# Installs the pinned LLVM major from apt.llvm.org: clang-<major> always,
+# and clang-tidy-<major>, clang-format-<major> and llvm-<major> (which
+# carries llvm-nm) when the job asks for them. It exports the versioned
+# names as CLANG_RV, CLANG_TIDY and CLANG_FORMAT, the variables the
+# Makefile reads. The pin values come from the job's env via
+# ./.github/actions/load-pins: major is LLVM_MAJOR and sha256 is
+# LLVM_SH_SHA256, the hash of llvm.sh. That script runs as root, so the
+# download is checked against the hash before it runs
+# (https://github.com/c4milo/chapulin/issues/87).
+name: install-llvm
+description: Install the pinned LLVM major from apt.llvm.org
+inputs:
+  major:
+    description: The LLVM major to install (LLVM_MAJOR)
+    required: true
+  sha256:
+    description: The sha256 of https://apt.llvm.org/llvm.sh (LLVM_SH_SHA256)
+    required: true
+  clang-tidy:
+    description: Also install clang-tidy-<major> and export CLANG_TIDY
+    default: "false"
+  clang-format:
+    description: Also install clang-format-<major> and export CLANG_FORMAT
+    default: "false"
+  llvm:
+    description: Also install llvm-<major>, the package that carries llvm-nm
+    default: "false"
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      env:
+        MAJOR: ${{ inputs.major }}
+        SHA256: ${{ inputs.sha256 }}
+        WITH_CLANG_TIDY: ${{ inputs.clang-tidy }}
+        WITH_CLANG_FORMAT: ${{ inputs.clang-format }}
+        WITH_LLVM: ${{ inputs.llvm }}
+      run: bash "$GITHUB_ACTION_PATH/install.sh"
