@@ -6,8 +6,9 @@
 # being slower than sequential. The weight is the tier default (fast
 # 2 GB; slow 6 GB, or 12 GB under the external solver) unless the launch
 # line carries one sized from a measured peak. The biggest measured fast
-# peak is handshake_parser at 9.9 GB, so its launch line carries
-# fast:10; sha256 follows at 5.7 GB with fast:6. Each proof checks
+# peak was handshake_parser at 9.9 GB, so its launch line carries
+# fast:10 (its comment records a later 4.6 GB measurement); sha256
+# follows at 5.7 GB with fast:6. Each proof checks
 # memory safety (bounds, pointer validity), UB (signed overflow,
 # undefined shifts, division), and the harness's explicit asserts, over
 # all inputs within the documented bounds; --unwinding-assertions proves
@@ -31,8 +32,14 @@
 #
 # Every harness gets its full dependency closure on the command line — a
 # missing body would make CBMC havoc the callee and the proof unsound, so
-# results are rejected on "no body". Loops that contain block functions
-# get tight per-loop bounds; plain byte loops get the buffer bound.
+# results are rejected on "no body". Results are also rejected when cbmc
+# warns that an --unwindset id names a loop or a function the goto model
+# does not have: that entry bounds nothing, and the loop it was written
+# for runs under the global --unwind instead
+# (https://github.com/c4milo/chapulin/issues/136). `cbmc --show-loops`
+# on a harness's command lists the ids it has. Loops that contain block
+# functions get tight per-loop bounds; plain byte loops get the buffer
+# bound.
 #
 # x25519 splits by check set and by shape: the mul harnesses run
 # without the signed-overflow class (mul's 256 symbolic multiplies
@@ -371,8 +378,18 @@ launch slow:4 full mlkem_invntt_low 260 ""
 launch slow:4 full mlkem_invntt_high 260 ""
 launch slow:5 full mlkem_basemul 260 ""
 # Measured kissat-path peaks (macOS /usr/bin/time -l, RSS): handshake_parser
-# 9.9 GB, sha256 5.7 GB — both above the default weight and cap.
-launch fast:10 full handshake_parser 260 "hsp_parse_server_hello.0:66,main.0:600" handshake_parser.c buf.c
+# 9.9 GB when its weight was set (4aa2eb7), sha256 5.7 GB — both above
+# the default weight and cap. handshake_parser's unwindset carried
+# main.0:600 from the first version of its harness, whose main looped;
+# c8e3c79 removed the last of those loops and kept the entry. The
+# model's loops are fill_nondet.0, hsp_parse_server_hello.0,
+# hsp_parse_encrypted_exts.0 and memcmp.0 (`cbmc --show-loops`), so the
+# entry bounded nothing and is gone
+# (https://github.com/c4milo/chapulin/issues/136). Measured without it:
+# 663 properties, 58 s, 4.6 GB. The weight stays at 10: the
+# address-space cap it sizes applies on Linux only, where this formula
+# was not re-measured.
+launch fast:10 full handshake_parser 260 "hsp_parse_server_hello.0:66" handshake_parser.c buf.c
 launch fast full eeparse 260 "hsp_parse_encrypted_exts.0:66" handshake_parser.c buf.c
 launch fast full certparse 260 "" handshake_parser.c buf.c
 launch fast:6 full sha256 3 "fill_nondet.0:97,sha256_update.0:66,sha256_update.1:3,sha256_update.2:66,sha256_final.0:65,sha256_final.1:9,sha256_final.2:9,compress.0:17,compress.1:49,compress.2:65"
@@ -457,9 +474,13 @@ launch fast full key_share 1200 "fill_nondet.0:1133" -DCH_KEX_PQ buf.c
 # checks the constant handshake.c asserts CH_TX_STAGE against: at CH_HELLO_MAX
 # the build always succeeds, so the bound is sufficient rather than plausible.
 # wbuf is real here — refusing to overflow is its contract, and the point is
-# that the builder uses it correctly. Measured: 486 properties, 5 s, 46 MB
-# (kissat).
-launch fast full hello_build 400 "fill_nondet.0:321,wb_bytes.0:321" buf.c
+# that the builder uses it correctly. fill_nondet.0 is the only loop in the
+# goto model (`cbmc --show-loops`): wb_bytes copies with memcpy and has
+# none, so the wb_bytes.0 entry this line carried from the day it was
+# written matched nothing and is gone
+# (https://github.com/c4milo/chapulin/issues/136). Measured: 486
+# properties, 3 s, 61 MB (kissat).
+launch fast full hello_build 400 "fill_nondet.0:321" buf.c
 # x509: primitives concrete (both variants), the walker with stubbed
 # primitives. The ECDSA walker proves the full two-entry bound in
 # every check; the RSA walker's formula is a SAT heavyweight, so it
@@ -560,6 +581,17 @@ while [ "$i" -lt "$NJOBS" ]; do
             echo "FAILED"
         fi
         grep -E "FAILURE" "$log" | sort -u | head -10
+        FAIL=1
+    elif grep -q "^loop identifier .* provided with unwindset" "$log"; then
+        # cbmc's three warnings for an id that bounds no single loop:
+        # "does not match any loop" when the function has no such loop,
+        # "for non-existent function" when the model has no such
+        # function, and "is ambiguous" when more than one loop matches.
+        # A verdict under any of them is not the verdict the launch line
+        # claims, so it is neither reported as verified nor cached.
+        # cbmc's line names the id.
+        echo "FAILED (unwindset names a loop the goto model does not have)"
+        grep "^loop identifier .* provided with unwindset" "$log" | sort -u
         FAIL=1
     else
         awk -v w="$wall" '/^\*\* .* failed/ {printf " %s  %s\n", $0, w; exit}' "$log"

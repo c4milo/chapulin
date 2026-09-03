@@ -655,6 +655,11 @@ proof-reach:
 .PHONY: proof-coverage
 proof-coverage:
 	python3 proof/coverage.py
+	# One cover run through --reach's own code path, on the cheapest
+	# gated harness (epoch: a third of a second), so check executes the
+	# branch the nightly runs; 0ab9862 deleted a function on that path
+	# and check stayed green until the nightly failed.
+	python3 -u proof/coverage.py --reach --only epoch
 
 # What the Lean spec checks: which spec ops any driver exercises, and
 # how much of each shipping source the differential reaches on its own.

@@ -190,9 +190,9 @@ def main():
             lines.append(f"| `{name}` | `{subject or 'unknown'}` |")
         lines.append("")
 
-    reach_dead, reach_fell = [], []
+    reach_dead, reach_fell, reach_stale = [], [], []
     if args.reach:
-        reach_lines, reach_dead, reach_fell = reach_table(runs, set(args.only))
+        reach_lines, reach_dead, reach_fell, reach_stale = reach_table(runs, set(args.only))
         lines += reach_lines
 
     REPORT.parent.mkdir(exist_ok=True)
@@ -210,7 +210,10 @@ def main():
         print(f"proof-coverage: {name} reaches {got}% of its locations, under "
               f"its recorded {floor}% floor; the bound no longer enters what "
               f"the harness names")
-    if reach_dead or reach_fell:
+    for name in reach_stale:
+        print(f"proof-coverage: {name}'s launch line bounds a loop its goto "
+              f"model does not have; run.sh fails the proof the same way")
+    if reach_dead or reach_fell or reach_stale:
         return 1
 
 
@@ -253,6 +256,31 @@ def reach_not_gated():
 # runs out of memory is reported as such below.
 
 
+def reach_command(name, runs, shared_defines):
+    """The cover command for one harness: what its launch line links and
+    bounds, then the defines launch() adds, in run.sh's order."""
+    _tier, unwind, linked, unwindset, defines = runs[name]
+    cmd = ["cbmc", str(ROOT / "proof" / f"{name}_harness.c")]
+    cmd += [str(ROOT / src) for src in sorted(linked)]
+    cmd += [*defines, *shared_defines, "-I", str(ROOT),
+            "--cover", "location", "--unwind", str(unwind)]
+    if unwindset:
+        cmd += ["--unwindset", unwindset]
+    return cmd
+
+
+# cbmc's three warnings, on stderr, for an --unwindset id that bounds no
+# single loop: "does not match any loop" when the function has no such
+# loop, "for non-existent function" when the goto model has no such
+# function, "is ambiguous" when more than one loop matches. run.sh fails
+# a proof on any of them; the cover command reads the same unwindset, so
+# a floor must not be measured under one either
+# (https://github.com/c4milo/chapulin/issues/136).
+STALE_UNWINDSET = re.compile(
+    r"^loop identifier (\S+) (?:for non-existent function )?provided with unwindset",
+    re.M)
+
+
 def reach_table(runs, only=frozenset()):
     """Per harness, the share of its goto locations CBMC can reach at
     the configured bound. A low number means the bound stops the proof
@@ -260,6 +288,7 @@ def reach_table(runs, only=frozenset()):
     the run to those harnesses and lets a not-gated one run."""
     dead = []
     fell = []
+    stale = []
     floors = reach_floors()
     not_gated = reach_not_gated()
     shared_defines = launch_defines()
@@ -286,6 +315,15 @@ def reach_table(runs, only=frozenset()):
         except subprocess.TimeoutExpired:
             out.append(f"| `{name}` | timed out |")
             print(f"proof-reach: {name} timed out", flush=True)
+            continue
+        stale_ids = STALE_UNWINDSET.findall(res.stderr)
+        if stale_ids:
+            out.append(f"| `{name}` | unwindset names no loop: "
+                       f"{', '.join(f'`{i}`' for i in stale_ids)} |")
+            print(f"proof-reach: {name} unwindset names {', '.join(stale_ids)}, "
+                  "which matches no loop in its goto model; fix the launch "
+                  "line in proof/run.sh", flush=True)
+            stale.append(name)
             continue
         m = re.search(r"\*\* (\d+) of (\d+) covered \(([0-9.]+)%\)", res.stdout)
         # cbmc prints "ran out of memory" and then a summary of zero goals
@@ -323,7 +361,7 @@ def reach_table(runs, only=frozenset()):
     if dead:
         out += ["**Reaches nothing at its bound:** " +
                 ", ".join(f"`{n}`" for n in dead) + ".", ""]
-    return out, dead, fell
+    return out, dead, fell, stale
 
 
 if __name__ == "__main__":

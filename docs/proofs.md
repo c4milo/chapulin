@@ -102,6 +102,15 @@ comment; set the weight at or above the measured peak. A verdict-less
 harness proves nothing, and the README calls that out — never commit a
 launch line whose formula has not been seen to converge.
 
+**Name loops the goto model has.** Check every `--unwindset` id on a
+launch line against `cbmc --show-loops` run on the same harness,
+sources and `-D` flags. An id for a loop or a function the model does
+not have bounds nothing, and the loop it was written for runs under
+the global `--unwind` instead. cbmc only warns about it, so `run.sh`
+and `coverage.py --reach` fail the launch on that warning
+(https://github.com/c4milo/chapulin/issues/136). The fix is the id
+`--show-loops` prints, or no entry when the loop is gone.
+
 **Plant the bug the harness exists to catch, then land it.** A harness
 that cannot fail proves nothing, and a passing run does not show which
 kind it is. Apply the mutation by hand, run
