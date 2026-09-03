@@ -110,6 +110,17 @@ static uint32_t hs_once(void) {
 #endif
 
 #if defined(OP_HANDSHAKE_PQ)
+// The crypto of one KEX=pq handshake: hs_once's flight with the hybrid
+// share in place of the x25519 one. Both scalar multiplications sit
+// inside the measured loop exactly as in hs_once, so a change to
+// x25519's count moves this row by twice x25519's delta, the step
+// handshake_crypto takes. An experiment once read this row unchanged
+// while x25519 moved. A clean rebuild of both drivers under one ct.h
+// edit does not reproduce that: +5,135,890 on x25519_scalarmult moved
+// both handshake rows by +10,271,808 from one 44,927-instruction
+// ITERS=0 baseline, and bench/insn-mips.sh has no build cache, so the
+// reading came from a binary built without the edit
+// (https://github.com/c4milo/chapulin/issues/129).
 static uint32_t hs_once_pq(void) {
     static const uint8_t nopsk[SHA256_LEN] = {0};
     uint8_t early[32], binder[32], hs_sec[32], c_hs[32], s_hs[32];
