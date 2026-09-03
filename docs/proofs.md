@@ -95,6 +95,42 @@ worst-case product of the nested bounds. A per-layer helper taking
 `len` cannot be proven by unwinding for this reason; split at literal
 boundaries instead, as `mlk_invntt_low`/`mlk_invntt_high` do.
 
+**Fill a stub's output at a constant length where the contract allows
+it.** A fill of `n` bytes, with `n` a symbolic value, unrolls to its
+loop's whole bound, and every unrolled iteration is a guarded update
+of the whole array that the formula keeps. The handshake drivers'
+ClientHello stub filled `n <= 617` bytes that way, twice: 12.4 M of a
+28.0 M-clause formula, measured by emptying the fill and reading
+`--dimacs`'s header. The builder's contract bounds its writes only by
+the caller's cap, so the stub now havocs all `cap` bytes -- a superset
+of the real outputs, at a length that is a `sizeof` expression, which
+symbolic execution unrolls to unguarded stores. The psk leg went from
+1462 s at 5.9 GB of cbmc and 5.9 GB of kissat to 231 s at 1.6 GB and
+7.8 GB, the pin leg from 415 s at 5.9 GB and 4.2 GB to 55 s at 1.1 GB
+and 2.2 GB, with the same properties
+(https://github.com/c4milo/chapulin/issues/140).
+
+**A constant in the source is not always a constant to symbolic
+execution.** The same drivers' record-reader stub fills
+`t->cfg.buf_len` bytes, a value main() sets to 96, and that fill still
+unrolled to the shared loop's 618-bound with a guard per store: the
+session struct takes byte-pointer writes from the SHA-256 stub, and
+after one its fields are expressions over the updated object, not
+constants. With those fills on the shared loop, symbolic execution took
+six times as long and 3.5 times the memory as with them on a loop of
+their own bounded at 97. So when a fill's length reaches the stub as
+anything but a literal or a `sizeof`, give it its own loop bounded by
+its buffer -- handshake_record_harness.c's `fill_buf_nondet` and now
+handshake_harness.c's -- and check `--dimacs`'s header rather than
+the source to know which case a fill is in.
+
+**A solver's peak is not a property of the formula alone.** kissat
+solved one intermediate form of the psk driver formula six times -- two
+cbmc builds, three DIMACS orderings of the same 28.0 M clauses -- and
+peaked between 3.8 and 10.2 GB; the landed form has peaked at 3.6, 5.7
+and 7.8 GB. Size the weight from the highest peak seen, and cut clauses
+rather than chase a low reading.
+
 **Measure, never estimate.** Run the candidate under
 `/usr/bin/time -v` with the exact launch flags, including the solver
 `run.sh` would pick. Record the peak and time in the launch-line

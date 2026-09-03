@@ -27,6 +27,22 @@
 #include "session.h"
 #include "x25519.h"
 
+// The record reader's fills get a loop of their own, bounded by the
+// receive buffer, for the reason handshake_record_harness.c gives its
+// stubs one: harness.h's fill_nondet is one static function whose single
+// --unwindset bound every call site shares, and the ClientHello stub
+// below needs that bound at 618. Both lengths the reader's stubs fill
+// reach them as symbolic values -- len by construction, and
+// t->cfg.buf_len too, as measured: on the shared loop these fills
+// unrolled to 618 guarded stores each, and symbolic execution took six
+// times as long and 3.5 times the memory as on this loop
+// (https://github.com/c4milo/chapulin/issues/140).
+static void fill_buf_nondet(uint8_t *p, size_t n) {
+    for (size_t i = 0; i < n; i++) {
+        p[i] = nondet_u8();
+    }
+}
+
 void ch_rand_bytes(uint8_t *p, size_t n) {
     fill_nondet(p, n);
     // rand.h requires strong random bytes and forbids failure, and the
@@ -148,8 +164,15 @@ size_t hs_build_client_hello(uint8_t *out, size_t cap, const ch_cfg *cfg, const 
     // (the README names it), so this contract rests on the unit tests
     // until one exists; the binder patching below is what leans on it.
     __CPROVER_assume(n >= CH_BINDERS_TAIL + 4 && n <= cap);
-    __CPROVER_assert(__CPROVER_w_ok(out, n), "ch: out writable");
-    fill_nondet(out, n);
+    // All cap bytes havoc, not n of them. The builder may write anywhere
+    // inside the caller's cap -- hello_build proves it writes nothing
+    // outside that and says nothing about the bytes past n -- so this is
+    // the contract, and a constant length is what keeps the fill cheap: a
+    // fill bounded by the symbolic n unrolls to 618 guarded array updates
+    // that the formula keeps, measured at 12.4 M of a 28.0 M-clause
+    // formula (https://github.com/c4milo/chapulin/issues/140).
+    __CPROVER_assert(__CPROVER_w_ok(out, cap), "ch: out writable");
+    fill_nondet(out, cap);
     return n;
 }
 
@@ -356,7 +379,7 @@ int hsr_fetch_record(handshake_state *h) {
     }
     size_t len = nondet_size_t();
     __CPROVER_assume(len <= t->cfg.buf_len);
-    fill_nondet(t->cfg.buf, len);
+    fill_buf_nondet(t->cfg.buf, len);
     t->pt_off = 0;
     t->pt_len = len;
     h->ccs_seen = nondet_u8();
@@ -378,7 +401,7 @@ int hsr_next_msg(handshake_state *h, uint8_t *type, const uint8_t **raw, size_t 
     size_t n = nondet_size_t();
     __CPROVER_assume(n >= 4 && n <= 4 + 0x4000);
     __CPROVER_assume(off <= t->cfg.buf_len && n <= t->cfg.buf_len - off);
-    fill_nondet(t->cfg.buf, t->cfg.buf_len);
+    fill_buf_nondet(t->cfg.buf, t->cfg.buf_len);
     *type = nondet_u8();
     *raw = t->cfg.buf + off;
     *raw_len = n;

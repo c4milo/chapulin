@@ -365,21 +365,33 @@ launch slow:5 noovf x25519_sqr 65 ""
 # limit, 10 GB resident on a 16 GB machine
 # (https://github.com/c4milo/chapulin/issues/140).
 #
-# Two of these bounds were wrong, and until the reader was stubbed nothing
-# could show it: the driver returned no verdict, so the unwinding
-# assertions they would have tripped never ran.
+# ct_wipe.0 is 449: ch_handshake wipes the whole handshake_state, and
+# sizeof(handshake_state) is 448 against a global unwind of 100. fill_nondet.0
+# is 618: send_client_hello passes sizeof t->tx - REC_HDR, which is 617, and
+# the ClientHello stub fills all of it. Both bounds were short or absent until
+# https://github.com/c4milo/chapulin/issues/37 stubbed the record reader; the
+# driver returned no verdict before that, so the unwinding assertions never
+# ran. fill_buf_nondet.0 is 97: the record reader's stubs fill at most the
+# 96-byte receive buffer, and both lengths they fill are symbolic to symbolic
+# execution, so that loop unrolls to its bound on every message and needs a
+# bound of its own (the harness says why).
 #
-# ct_wipe.0 was absent. ch_handshake wipes the whole handshake_state at
-# handshake.c:363 and sizeof(handshake_state) is 448, against a global unwind
-# of 100, so the byte loop needs 449. Five other launch lines set ct_wipe.0
-# already; this was an omission rather than a convention.
-#
-# fill_nondet.0 was 600 and needs 618. send_client_hello passes
-# sizeof t->tx - REC_HDR, which is 617, and the ClientHello stub fills up to
-# that, so the loop runs 618 times. Both were measured by stubbing the record
-# reader to make the formula converge far enough to see them.
-launch slow full handshake_psk 100 "fill_nondet.0:618,ct_wipe.0:449" handshake_auth.c buf.c ct.c
-launch slow full handshake_pin 100 "fill_nondet.0:618,ct_wipe.0:449" handshake_auth.c buf.c ct.c
+# The psk leg sat at the nightly runner's memory limit
+# (https://github.com/c4milo/chapulin/issues/140) because the ClientHello stub
+# filled a symbolic n <= 617 bytes, 618 guarded array updates per call that the
+# formula kept, and the reader's fills shared that 618 bound. Measured under
+# this script's flags (kissat; /usr/bin/time -l plus a 1 s RSS sampler of cbmc
+# and its kissat child, on a 10-core M1 Pro running other proofs), before and
+# after: psk 1671 properties, 1462 s, cbmc 5.9 GB, kissat 5.9 GB, then 1683,
+# 231 s, cbmc 1.6 GB, kissat 7.8 GB; pin 1673, 415 s, cbmc 5.9 GB, kissat
+# 4.2 GB, then 1685, 55 s, cbmc 1.1 GB, kissat 2.2 GB. In the pinned
+# ubuntu-24.04 container (cbmc 6.11.0, kissat 4.0.4, VmHWM from /proc) the psk
+# leg now takes 191 s at cbmc 1.9 GB and kissat 3.7 GB, 5.6 GB together, where
+# the runner measured 10 GB of cbmc alone. kissat's peak on this one formula
+# has been 3.7, 5.7 and 7.8 GB across three solves, so the tier's 12 GB default
+# weight stays.
+launch slow full handshake_psk 100 "fill_nondet.0:618,fill_buf_nondet.0:97,ct_wipe.0:449" handshake_auth.c buf.c ct.c
+launch slow full handshake_pin 100 "fill_nondet.0:618,fill_buf_nondet.0:97,ct_wipe.0:449" handshake_auth.c buf.c ct.c
 # ML-KEM's chained-product functions, one formula each; the inverse
 # NTT is two half formulas, because the whole transform returns no
 # verdict in 900 s (the mlkem comment below states the split and the
