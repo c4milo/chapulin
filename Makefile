@@ -897,7 +897,7 @@ endif
 
 # Checks and thresholds live in .clang-tidy; every disable carries a reason
 # there (fix-or-drop, never NOLINT in code).
-lint: lint-toolchain lint-pins lint-proof-cover lint-tidy lint-format lint-cppcheck lint-commits lint-docs lint-invariants lint-stack lint-size lint-matrix lint-violation-builds lint-fuzz-budget lint-runtime-symbols lint-wide-multiply lint-commit-citations lint-issue-links lint-shellcheck lint-bench-numbers lint-spec
+lint: lint-toolchain lint-pins lint-proof-cover lint-tidy lint-format lint-cppcheck lint-commits lint-docs lint-invariants lint-stack lint-size lint-tracked-ignored lint-matrix lint-violation-builds lint-fuzz-budget lint-runtime-symbols lint-wide-multiply lint-commit-citations lint-issue-links lint-shellcheck lint-bench-numbers lint-spec
 
 # INV-19: bounded stack. The budget is the measured worst library
 # frame (rsa_vp1's RSA-3072 limb temporaries, 2,400 bytes) rounded up;
@@ -918,6 +918,20 @@ lint-size:
 	  fi; \
 	done; \
 	[ $$rc -eq 0 ] && echo "lint-size: every hand-written C file under $(FILE_LINE_MAX) lines"; exit $$rc
+
+# .gitignore stops a future `git add`; it does not untrack a file the
+# index already holds, so adding a rule for a tracked file needs a
+# `git rm --cached` beside it. ac8faeb added the __pycache__/ rule and
+# skipped that step, so the commit meant to drop the cache file
+# committed a newer copy of it instead. The rules come from the
+# repository's own .gitignore files alone, never from a machine's
+# global excludes file, so the verdict is the same here and on CI.
+.PHONY: lint-tracked-ignored
+lint-tracked-ignored:
+	@rc=0; for f in $$(git ls-files -i -c --exclude-per-directory=.gitignore); do \
+	  echo "lint-tracked-ignored: $$f is tracked but .gitignore excludes it; git rm --cached untracks it"; rc=1; \
+	done; \
+	[ $$rc -eq 0 ] && echo "lint-tracked-ignored: no tracked file matches an ignore rule"; exit $$rc
 
 # Compiles what THIS build packages, with the defines it packages them
 # under: iterating $(SRCS) without $(LIB_DEF) measured the default build
