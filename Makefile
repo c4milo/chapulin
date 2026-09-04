@@ -736,36 +736,49 @@ else
 endif
 
 # Wycheproof (C2SP): attack-derived vectors against every primitive.
-# Deliberately latest-not-pinned, unlike every other CI input: the
-# suite grows by adding attack cases, and a new case failing is exactly
-# the alarm we want, as early as C2SP publishes it. An upstream change
-# reddening CI is signal, not flake — triage the new case first. CI
-# clones fresh every run (bin/ is not cached); locally, rm -rf the
-# checkout to refresh. Offline with no checkout, the target skips the
-# way lint skips absent tools. Every run logs the vector commit.
+# Fetched by WYCHEPROOF_COMMIT; tools/toolchain.env carries the reasoning:
+# the suite publishes no releases to pin, and a branch head lets two runs
+# read different cases. A new attack case is still the alarm we want,
+# so the weekly pin bump proposes the newer commit and that pull request
+# is where the case first fails. CI fetches fresh every run (bin/ is not
+# cached); locally the fetch replaces a checkout that is not the pinned
+# commit. Offline with no checkout, the target skips the way lint skips
+# absent tools. Every run logs the vector commit.
 WYCHEPROOF_DIR := bin/wycheproof
+WYCHEPROOF_URL := https://github.com/C2SP/wycheproof
+
+# The fetch, shared by the four targets that build the vectors: the three
+# below and the Cortex-M3 lane in test/platforms.mk. One copy, so all four
+# check the pin the same way. $(1) names the calling target in the skip and
+# failure messages. A shallow fetch of the one commit, as the FreeRTOS
+# kernel does, rather than a clone of the branch.
+define wycheproof_fetch
+if [ "$$(git -C $(WYCHEPROOF_DIR) rev-parse HEAD 2>/dev/null)" != "$(WYCHEPROOF_COMMIT)" ]; then \
+	  rm -rf $(WYCHEPROOF_DIR) && mkdir -p $(WYCHEPROOF_DIR) && \
+	  git -C $(WYCHEPROOF_DIR) init -q && \
+	  git -C $(WYCHEPROOF_DIR) fetch -q --depth 1 $(WYCHEPROOF_URL) $(WYCHEPROOF_COMMIT) && \
+	  git -C $(WYCHEPROOF_DIR) -c advice.detachedHead=false checkout -q $(WYCHEPROOF_COMMIT) \
+	    || { [ -n "$$CI" ] && { echo "$(1): the wycheproof fetch failed and CI must not skip a gate"; exit 1; }; \
+	         echo "SKIP $(1): the fetch of WYCHEPROOF_COMMIT failed; no network, or the pin names no commit"; exit 0; }; \
+	fi; \
+	[ "$$(git -C $(WYCHEPROOF_DIR) rev-parse HEAD)" = "$(WYCHEPROOF_COMMIT)" ] \
+	  || { echo "$(1): the wycheproof checkout is not WYCHEPROOF_COMMIT"; exit 1; }
+endef
+
 .PHONY: wycheproof
 wycheproof:
-	@if [ ! -d $(WYCHEPROOF_DIR)/.git ]; then \
-	  git clone --quiet --depth 1 https://github.com/C2SP/wycheproof $(WYCHEPROOF_DIR) \
-	    || { [ -n "$$CI" ] && { echo "wycheproof clone failed and CI must not skip a gate"; exit 1; }; \
-	         echo "SKIP wycheproof: no checkout and no network"; exit 0; }; \
-	fi; \
+	@$(call wycheproof_fetch,wycheproof); \
 	python3 test/gen_wycheproof.py $(WYCHEPROOF_DIR) bin/wycheproof_vectors.h && \
 	$(CC) $(CFLAGS) -I. -Ibin -o bin/wycheproof_test test/wycheproof_test.c \
 	  x25519.c chacha20.c poly1305.c aead.c hkdf.c sha256.c p256.c rsa.c rsa_mont.c mlkem.c mlkem_poly.c sha3.c buf.c ct.c && \
 	./bin/wycheproof_test
 
 # The same suites over the decomposed multiply, for ct-widemul-check. The
-# clone-or-skip logic is the wycheproof target's, so a checkout an earlier
-# run left on disk is reused and an offline tree skips the same way.
+# fetch is the wycheproof target's, so a checkout already at the pinned
+# commit is reused and an offline tree skips the same way.
 .PHONY: wycheproof-ct-widemul
 wycheproof-ct-widemul:
-	@if [ ! -d $(WYCHEPROOF_DIR)/.git ]; then \
-	  git clone --quiet --depth 1 https://github.com/C2SP/wycheproof $(WYCHEPROOF_DIR) \
-	    || { [ -n "$$CI" ] && { echo "wycheproof clone failed and CI must not skip a gate"; exit 1; }; \
-	         echo "SKIP wycheproof-ct-widemul: no checkout and no network"; exit 0; }; \
-	fi; \
+	@$(call wycheproof_fetch,wycheproof-ct-widemul); \
 	python3 test/gen_wycheproof.py $(WYCHEPROOF_DIR) bin/wycheproof_vectors.h && \
 	$(CC) $(CT_WIDEMUL_CFLAGS) -I. -Ibin -o bin/wycheproof_test_ct_widemul test/wycheproof_test.c \
 	  x25519.c chacha20.c poly1305.c aead.c hkdf.c sha256.c p256.c rsa.c rsa_mont.c mlkem.c mlkem_poly.c sha3.c buf.c ct.c && \
@@ -802,16 +815,11 @@ san-check:
 	  $(filter-out p256.c rsa.c rsa_mont.c,$(SRCS))
 	@set -e; for b in unit rsa_test sha3_test mlkem_test handshake_strict_test x509strict_test x509strict_ecdsa; do \
 	  echo "== $$b (SAN -O$(O))"; ENUM_DEPTH=4 ./bin/san/$$b; done
-	@if [ -d $(WYCHEPROOF_DIR)/.git ] \
-	  || git clone --quiet --depth 1 https://github.com/C2SP/wycheproof $(WYCHEPROOF_DIR) 2>/dev/null; then \
-	  python3 test/gen_wycheproof.py $(WYCHEPROOF_DIR) bin/wycheproof_vectors.h && \
-	  $(CC) $(SAN_CFLAGS) -I. -Ibin -o bin/san/wycheproof_test test/wycheproof_test.c \
-	    x25519.c chacha20.c poly1305.c aead.c hkdf.c sha256.c p256.c rsa.c rsa_mont.c mlkem.c mlkem_poly.c sha3.c buf.c ct.c && \
-	  echo "== wycheproof_test (SAN -O$(O))" && ./bin/san/wycheproof_test; \
-	else \
-	  [ -n "$$CI" ] && { echo "wycheproof: clone failed and CI must not skip a gate"; exit 1; }; \
-	  echo "SKIP san wycheproof: no checkout and no network"; \
-	fi
+	@$(call wycheproof_fetch,san wycheproof); \
+	python3 test/gen_wycheproof.py $(WYCHEPROOF_DIR) bin/wycheproof_vectors.h && \
+	$(CC) $(SAN_CFLAGS) -I. -Ibin -o bin/san/wycheproof_test test/wycheproof_test.c \
+	  x25519.c chacha20.c poly1305.c aead.c hkdf.c sha256.c p256.c rsa.c rsa_mont.c mlkem.c mlkem_poly.c sha3.c buf.c ct.c && \
+	echo "== wycheproof_test (SAN -O$(O))" && ./bin/san/wycheproof_test
 	$(MAKE) san-selftest
 
 # Proves the sanitizer has teeth on every run, not once in a scratch

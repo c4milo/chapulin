@@ -54,15 +54,10 @@ m3-check:
 	$(M3_CC) $(M3_FLAGS) -I. -o bin/m3/handshake_strict_test test/handshake_strict_test.c handshake_parser.c buf.c
 	$(M3_CC) $(M3_FLAGS) -I. -o bin/m3/x509strict_test $(X509STRICT_SRC) rsa.c rsa_mont.c
 	$(M3_CC) $(M3_FLAGS) -DCH_PIN_ECDSA -I. -o bin/m3/x509strict_ecdsa $(X509STRICT_SRC) p256.c
-	@if [ -d $(WYCHEPROOF_DIR)/.git ] \
-	  || git clone --quiet --depth 1 https://github.com/C2SP/wycheproof $(WYCHEPROOF_DIR) 2>/dev/null; then \
-	  python3 test/gen_wycheproof.py $(WYCHEPROOF_DIR) bin/wycheproof_vectors.h && \
-	  $(M3_CC) $(M3_FLAGS) -I. -Ibin -o bin/m3/wycheproof_test test/wycheproof_test.c \
-	    x25519.c chacha20.c poly1305.c aead.c hkdf.c sha256.c p256.c rsa.c rsa_mont.c mlkem.c mlkem_poly.c sha3.c buf.c ct.c; \
-	else \
-	  [ -n "$$CI" ] && { echo "wycheproof: clone failed and CI must not skip a gate"; exit 1; }; \
-	  echo "SKIP m3 wycheproof: no checkout and no network"; \
-	fi
+	@$(call wycheproof_fetch,m3 wycheproof); \
+	python3 test/gen_wycheproof.py $(WYCHEPROOF_DIR) bin/wycheproof_vectors.h && \
+	$(M3_CC) $(M3_FLAGS) -I. -Ibin -o bin/m3/wycheproof_test test/wycheproof_test.c \
+	  x25519.c chacha20.c poly1305.c aead.c hkdf.c sha256.c p256.c rsa.c rsa_mont.c mlkem.c mlkem_poly.c sha3.c buf.c ct.c
 	@set -e; for b in unit rsa_test sha3_test mlkem_test handshake_strict_test x509strict_test x509strict_ecdsa; do \
 	  echo "== $$b (m3/qemu)"; $(M3_RUN) bin/m3/$$b; done; \
 	if [ -x bin/m3/wycheproof_test ]; then echo "== wycheproof_test (m3/qemu)"; $(M3_RUN) bin/m3/wycheproof_test; fi

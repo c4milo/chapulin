@@ -34,6 +34,11 @@ name: toolchain-pins
 # whatever upstream served that day; a person reads the release before
 # merging, as with the two scripts above.
 #
+# WYCHEPROOF_COMMIT names a commit rather than a release, so this job asks
+# whether the branch has moved instead of which version is newest. Pinning the
+# vectors means a new attack case no longer reddens an unrelated pull request;
+# it reddens this one, which is where it belongs.
+#
 # ALPINE_DIGEST in bench/toolchain.env is out of scope on purpose. That digest
 # pins the image that produced the published benchmark numbers, so bumping it
 # means re-measuring bench/results-insn.csv and bench/notes-mips.md, which only
@@ -234,6 +239,21 @@ jobs:
             sed -n 's/^go\([0-9][0-9.]*\)$/\1/p' |
             consider GO_VERSION "$GO_VERSION" "" \
               "https://go.dev/doc/devel/release#go"
+
+          # Wycheproof publishes no releases and no tags, so the question is
+          # not which version is newest but whether the branch has moved.
+          # A new attack case is still the alarm the suite exists to raise;
+          # pinning moved that alarm here, where the pull request's own check
+          # run is what the new case fails.
+          wycheproof_head=$(gh api repos/C2SP/wycheproof/commits/main --jq '.sha')
+          if [ -z "$wycheproof_head" ]; then
+            echo "::warning::WYCHEPROOF_COMMIT: no commit came back. Keeping $WYCHEPROOF_COMMIT."
+          elif [ "$wycheproof_head" != "$WYCHEPROOF_COMMIT" ]; then
+            printf '%s\t%s\t%s\t%s\n' WYCHEPROOF_COMMIT "$WYCHEPROOF_COMMIT" \
+              "$wycheproof_head" \
+              "https://github.com/C2SP/wycheproof/compare/$WYCHEPROOF_COMMIT...$wycheproof_head" \
+              >> "$bumps"
+          fi
 
           # The two install scripts, pinned by content alone.
           rehash LLVM_SH_SHA256 "$LLVM_SH_SHA256" https://apt.llvm.org/llvm.sh
