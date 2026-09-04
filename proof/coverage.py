@@ -265,9 +265,11 @@ def reach_not_gated():
 
 # What one cover run gets, in seconds. The number is measured, and the
 # measurement is here because the 900 s it replaces was not: hello_build
-# converged in 278 s and 281 s on the nightly runner (runs 33715874614 and
-# 33717153636) and then timed out at 900 s on run 33731054741, under the
-# same command, the same sources and the same cbmc 6.11.0.
+# converged in 278 s, 281 s and 287 s on the nightly runner (runs
+# 33715874614, 33717153636 and 33851067664) and once timed out at 900 s
+# (run 33731054741), under the same command, the same sources and the same
+# cbmc 6.11.0. Three of those four sit inside 1.6% of each other, so the
+# 900 s excursion is not the spread of a noisy measurement.
 #
 # That run was not a slow one. Its other 19 converging harnesses each
 # finished within 17% of their own fastest time, median 1.01x, so a loaded
