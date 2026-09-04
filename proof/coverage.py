@@ -263,6 +263,26 @@ def reach_not_gated():
     return names
 
 
+# What one cover run gets, in seconds. The number is measured, and the
+# measurement is here because the 900 s it replaces was not: hello_build
+# converged in 278 s and 281 s on the nightly runner (runs 33715874614 and
+# 33717153636) and then timed out at 900 s on run 33731054741, under the
+# same command, the same sources and the same cbmc 6.11.0.
+#
+# That run was not a slow one. Its other 19 converging harnesses each
+# finished within 17% of their own fastest time, median 1.01x, so a loaded
+# runner does not explain it. The same command on a development machine ran
+# six times, 175 s to 195 s, and peaked at 12.2 GB. A harness holding three
+# quarters of a 16 GB runner has a wall time set by the memory free during
+# its own window, which a whole-run average cannot see.
+#
+# So the budget carries margin over the swing, not over the median: 1800 s
+# is about 6x what hello_build takes on the runner when it converges. The
+# other half of the fix is in reach-floors.txt, which now names the three
+# mlkem cover runs that return no verdict at this budget either, so raising
+# the number does not double what they spend.
+REACH_BUDGET_S = 1800
+
 # No memory cap on a cover run. An address-space limit was tried after
 # the 2026-09-02 runner death: under it cbmc printed "Solver ran out of
 # memory" and then "0 of 182 covered" with exit 0 for hello_build, a
@@ -327,10 +347,11 @@ def reach_table(runs, only=frozenset()):
         # by hand under the flags the gate used and not a reconstruction.
         print(f"proof-reach: {name} command: {shlex.join(cmd)}", flush=True)
         try:
-            res = subprocess.run(cmd, capture_output=True, text=True, timeout=900)
+            res = subprocess.run(cmd, capture_output=True, text=True,
+                                 timeout=REACH_BUDGET_S)
         except subprocess.TimeoutExpired:
-            out.append(f"| `{name}` | timed out |")
-            print(f"proof-reach: {name} timed out", flush=True)
+            out.append(f"| `{name}` | timed out at {REACH_BUDGET_S} s |")
+            print(f"proof-reach: {name} timed out at {REACH_BUDGET_S} s", flush=True)
             # The same rule as the no-number branch below: a floored
             # harness that returns no number fails the gate. Before this
             # a timeout skipped the floor check and the run stayed green.
