@@ -103,12 +103,17 @@ x25519_tail 52.7
 # proves all three, and prove-slow reports the three of them green.
 #
 # pem and pem_ecdsa timed out in those same five runs and are NOT listed
-# here, because they converge and the old 900 s budget was simply below
-# what they need: pem reached 74.6% in 1654 s under the gate's command on
-# a development machine on 2026-09-03 (cbmc 6.11.0, 8.1 GB peak), and
-# pem_ecdsa is that harness over the ECDSA arm and the smaller
-# CH_X509_MAX. Record their floors from the nightly's table once a run
-# under REACH_BUDGET_S prints numbers for them.
+# here, because they converge: pem reached 74.6% in 1654 s under the
+# gate's command on a development machine on 2026-09-03 (cbmc 6.11.0,
+# 8.1 GB peak), and pem_ecdsa is that harness over the ECDSA arm and the
+# smaller CH_X509_MAX. Do not read that as a promise that they now fit.
+# That machine runs hello_build's cover 1.51x faster than the runner, so
+# pem needs about 2500 runner-seconds against a 1800 s budget, and it has
+# 32 GB where the runner has 16 for a harness peaking at 8.1. They are
+# off this list because recording a harness that converges as one that
+# does not would be a false record, not because REACH_BUDGET_S is
+# expected to hold them. A budget of their own is
+# https://github.com/c4milo/chapulin/issues/163.
 #
 #   eeparse
 #   handshake_parser
