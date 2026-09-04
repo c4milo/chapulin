@@ -286,8 +286,7 @@ def reach_not_gated():
 #
 # This buys margin; it does not shrink the formula that needs it. A cover
 # run holding 12.2 GB of a 16 GB runner will move like this again, and one
-# budget cannot serve both a harness that converges in 185 s and pem, which
-# needs about 2500 s on the runner. Both are
+# budget still cannot serve both a 310 s harness and pem's 1665 s. Both are
 # https://github.com/c4milo/chapulin/issues/163.
 REACH_BUDGET_S = 1800
 

@@ -54,6 +54,8 @@ hybrid_secret 20.2
 key_share 21.9
 keysched 87.3
 p256_mul 86.7
+pem 74.6
+pem_ecdsa 74.6
 poly1305 94.3
 record 95.0
 rsa_mul 32.3
@@ -102,18 +104,19 @@ x25519_tail 52.7
 # the other half of the transform. Their proofs are unaffected: run.sh
 # proves all three, and prove-slow reports the three of them green.
 #
-# pem and pem_ecdsa timed out in those same five runs and are NOT listed
-# here, because they converge: pem reached 74.6% in 1654 s under the
-# gate's command on a development machine on 2026-09-03 (cbmc 6.11.0,
-# 8.1 GB peak), and pem_ecdsa is that harness over the ECDSA arm and the
-# smaller CH_X509_MAX. Do not read that as a promise that they now fit.
-# That machine runs hello_build's cover 1.51x faster than the runner, so
-# pem needs about 2500 runner-seconds against a 1800 s budget, and it has
-# 32 GB where the runner has 16 for a harness peaking at 8.1. They are
-# off this list because recording a harness that converges as one that
-# does not would be a false record, not because REACH_BUDGET_S is
-# expected to hold them. A budget of their own is
-# https://github.com/c4milo/chapulin/issues/163.
+# pem and pem_ecdsa timed out in those same five runs, at a budget below
+# what they need rather than because they do not converge. Under
+# REACH_BUDGET_S they do: run 33888303774 measured pem at 74.6% in 1665 s
+# and pem_ecdsa at 74.6% in 1503 s, and both are gated above.
+#
+# Their runner times also correct a wrong inference. pem takes 1654 s on a
+# development machine and 1665 s on the runner, a ratio of 1.01, while
+# hello_build takes 186 s there and 310 s here, a ratio of 1.67. The two
+# machines do not differ by one factor. hello_build peaks at 12.2 GB
+# against the runner's 16 GB and pays for it; pem peaks at 8.1 GB and does
+# not. Scale one harness's time by another harness's ratio and the answer
+# is wrong by 800 s, which is how a prediction that pem would still time
+# out survived until this run measured it.
 #
 #   eeparse
 #   handshake_parser
