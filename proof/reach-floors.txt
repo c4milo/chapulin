@@ -67,7 +67,7 @@ x25519_tail 52.7
 # skips them: running them anyway cost the nightly its runner (a cover
 # formula grew past the VM's memory on 2026-09-02 and the job died
 # without a log). Re-measure one by hand: `--only NAME` runs a harness
-# named here under the gate's command and 900 s budget, and the command
+# named here under the gate's command and REACH_BUDGET_S, and the command
 # it prints runs under any budget. Move it to the roster above when it
 # converges. Each got five minutes a harness, except handshake_pin and
 # handshake_psk, which got ninety minutes each, under the command
@@ -78,8 +78,8 @@ x25519_tail 52.7
 # alone; the others were measured under the formula the gate runs now.
 # handshake_pin and handshake_psk were still in propositional reduction
 # when the budget killed them, at 8.3 GB and 7.4 GB peak RSS.
-# proof/coverage.py stops a harness at 900 s, so the nightly reports
-# both as timed out. hkdf_expand and hkdf_expand_label converge (60.0%
+# proof/coverage.py stops a harness at REACH_BUDGET_S, so the nightly
+# reports both as timed out. hkdf_expand and hkdf_expand_label converge (60.0%
 # and 81.2% on 2026-09-02, about 520 s each) but at 16 GB of memory,
 # the whole of the nightly runner, which is the profile that killed the
 # job; they carry no floor, so they are listed here rather than run.
@@ -90,6 +90,26 @@ x25519_tail 52.7
 # carries the same 32 int64 products and timed out the same way under
 # the gate's command on 2026-09-03 (cbmc 6.11.0, 1.4 GB at the cap).
 #
+# mlkem_ntt, mlkem_invntt_low and mlkem_invntt_high timed out in all five
+# nightly runs whose logs remain (33686419744, 33691163738, 33715874614,
+# 33717153636, 33731054741), and the three of them took 45 minutes of
+# every one of those runs. They carry no floor, so each timeout gated
+# nothing. mlkem_ntt returned no verdict in 1800 s either, under the
+# gate's command on a development machine on 2026-09-03 (cbmc 6.11.0,
+# 6.3 GB at the cap). That machine runs hello_build's cover in 190 s
+# against the runner's 280, so 1800 s there buys more solver time than
+# 1800 s on the runner would. The other two are the same butterfly over
+# the other half of the transform. Their proofs are unaffected: run.sh
+# proves all three, and prove-slow reports the three of them green.
+#
+# pem and pem_ecdsa timed out in those same five runs and are NOT listed
+# here, because they converge and the old 900 s budget was simply below
+# what they need: pem reached 74.6% in 1654 s under the gate's command on
+# a development machine on 2026-09-03 (cbmc 6.11.0, 8.1 GB peak), and
+# pem_ecdsa is that harness over the ECDSA arm and the smaller
+# CH_X509_MAX. Record their floors from the nightly's table once a run
+# under REACH_BUDGET_S prints numbers for them.
+#
 #   eeparse
 #   handshake_parser
 #   handshake_pin
@@ -99,6 +119,9 @@ x25519_tail 52.7
 #   hkdf_expand_label
 #   io
 #   mlkem
+#   mlkem_invntt_high
+#   mlkem_invntt_low
+#   mlkem_ntt
 #   mlkem_poly
 #   p256
 #   rsa
