@@ -281,6 +281,12 @@ def reach_not_gated():
 # other half of the fix is in reach-floors.txt, which now names the three
 # mlkem cover runs that return no verdict at this budget either, so raising
 # the number does not double what they spend.
+#
+# This buys margin; it does not shrink the formula that needs it. A cover
+# run holding 12.2 GB of a 16 GB runner will move like this again, and one
+# budget cannot serve both a harness that converges in 185 s and pem, which
+# needs about 2500 s on the runner. Both are
+# https://github.com/c4milo/chapulin/issues/163.
 REACH_BUDGET_S = 1800
 
 # No memory cap on a cover run. An address-space limit was tried after
