@@ -28,16 +28,16 @@ estimate, and no number in this file is a substitute for `bench/sram.sh`.
 
 ## What a public chain actually looks like
 
-Every bound below comes from these captures, taken 2026-09-09. The point of
-recording them is that the mode's caps are answers to measurements rather
-than round numbers.
+Every bound below comes from these captures, taken 2026-09-15 and kept
+under `test/webpki_captures/`. The point of recording them is that the
+mode's caps are answers to measurements rather than round numbers.
 
 | endpoint | entries | `Certificate` body | shape, leaf first |
 | --- | --- | --- | --- |
 | `s3.amazonaws.com` | 3 | 4419 B | RSA-2048 leaf (2104 B) ← Amazon RSA 2048 M04 ← Amazon Root CA 1, cross-signed by Starfield |
 | `storage.googleapis.com` | 3 | 3791 B | P-256 leaf, sha256WithRSA ← WR2, RSA-2048 ← GTS Root R1, RSA-4096 |
 | `r2.cloudflarestorage.com` | 3 | 2925 B | P-256 leaf, ecdsa-with-SHA256 ← WE1, P-256, ecdsa-with-SHA384 ← GTS Root R4, P-384 |
-| `acme-v02.api.letsencrypt.org` | 4 | 3602 B | P-256 leaf, ecdsa-with-SHA384 ← YE2, P-384 ← Root YE, P-384 ← ISRG Root X2, P-384 |
+| `acme-v02.api.letsencrypt.org` | 4 | 3605 B | P-256 leaf, ecdsa-with-SHA384 ← YE2, P-384 ← Root YE, P-384 ← ISRG Root X2, P-384 |
 
 Four facts follow, and each one drives a decision further down.
 
@@ -239,7 +239,7 @@ measured inputs, and the formula is given.
 | constant | value | where it comes from |
 | --- | --- | --- |
 | `CH_WEBPKI_CERT_MAX` | 3072 | measured: the largest captured certificate is the 2104 B S3 leaf |
-| `CH_WEBPKI_CHAIN_MAX` | 3 | measured: every captured chain needs 2 |
+| `CH_WEBPKI_CHAIN_MAX` | 3 | measured: the Let's Encrypt capture needs 3 (leaf, YE2, Root YE, then the ISRG Root X2 anchor); the other three need 2 |
 | `CH_WEBPKI_FLIGHT_ENTRIES` | 4 | measured: Let's Encrypt sends 4 |
 | `CH_TRUST_MIN_RXBUF` | 12324 B | derived: `4 * (3072 + 5) + 16` |
 | `CH_WEBPKI_ANCHOR_MAX` | 12 | measured: 9 roots cover the four endpoints above |
@@ -314,10 +314,12 @@ Read this list as part of the profile, not as a list of future work.
 
 ## Where this profile is stricter than OpenSSL
 
-The test corpus is checked against `openssl verify -purpose sslserver
--verify_hostname` as an oracle. It agrees on 17 of 22 chains. All five
-disagreements are deliberate, and each is a rule that would otherwise rot
-unnoticed, so each carries a `test/violations/` mutant.
+`test/gen_webpki_corpus.py` runs every corpus chain through `openssl verify
+-purpose sslserver -verify_hostname` as an oracle, and fails unless the
+disagreements are exactly the seven it expects. openssl agrees on 17 of 24
+chains. Six of the seven disagreements are rows where this mode refuses what
+openssl accepts. Five of them are the table below: each is a rule that would
+otherwise rot unnoticed, so each carries a `test/violations/` mutant.
 
 | case | openssl | this mode | why |
 | --- | --- | --- | --- |
@@ -326,6 +328,13 @@ unnoticed, so each carries a `test/violations/` mutant.
 | SHA-1 signature | accepts | refuses | web PKI retired SHA-1 in 2017 |
 | RSA-1024 leaf | accepts | refuses | below the modulus floor |
 | critical `nameConstraints` | accepts | refuses | openssl implements them; this mode does not, and RFC 5280 requires refusing what it cannot honour |
+
+The sixth is `leaf_asserts_ca`: the leaf's basicConstraints asserts CA, which
+this mode refuses and openssl, under `-purpose sslserver`, does not read. The
+seventh is the one row where openssl refuses what this mode accepts,
+`not_after_boundary`: at `now_seconds` equal to `notAfter`, openssl's
+`X509_cmp_time` reports the leaf expired, and this mode accepts it, as
+"Validity" above states.
 
 ## Verification
 
@@ -365,8 +374,9 @@ here: never overclaim.
   cost grows with roughly the cube of input length. Where a bound cannot be
   reached, the README states the partial bound that was reached.
 - **Fixtures.** Two corpora, doing different jobs. The captured chains above
-  carry real extension bulk and test the bounds. A generated corpus of 22
-  chains — 5 positive mirroring the shapes above, 17 negative taking one rule
-  each — is small, offline and deterministic, and tests the logic. Both are
-  rendered into exact RFC 9846 §4.4.2 `Certificate` message bytes, so a test
-  feeds the parser what the wire would.
+  carry real extension bulk and test the bounds. A generated corpus of 24
+  chains — 7 positive (the four shapes above, one wildcard match and the two
+  validity boundaries), 17 negative taking one rule each — is small, offline
+  and deterministic, and tests the logic. `test/gen_webpki_corpus.py` renders
+  both into exact RFC 9846 §4.4.2 `Certificate` message bytes, so a test feeds
+  the parser what the wire would.

@@ -133,7 +133,7 @@ TESTH := test/test_random.h test/pem_armor.h test/pem_tests.h test/x509_ca_tests
          test/diff_x509_epoch.h test/diff_x509_mutate.h test/diff_x509_random.h \
          test/diff_x509_signed.h test/diff_sha3.h test/diff_sha512.h test/diff_p384.h test/diff_rsa_pkcs1.h \
          test/rsa_pkcs1_vectors.h test/rsa_wide_vectors.h test/rsa_pkcs1_wide_vectors.h \
-         test/diff_mlkem.h test/mlkem_vectors.h
+         test/diff_mlkem.h test/mlkem_vectors.h test/webpki_corpus.h
 
 # Each axis names its value or stops the build. RAND has done this since
 # https://github.com/c4milo/chapulin/issues/41; PIN, TRUST and KEX each
@@ -852,6 +852,16 @@ wycheproof:
 	$(CC) $(CFLAGS) $(RSA_WIDE_DEF) -I. -Ibin -o bin/wycheproof_test test/wycheproof_test.c \
 	  x25519.c chacha20.c poly1305.c aead.c hkdf.c sha256.c p256.c rsa.c rsa_mont.c mlkem.c mlkem_poly.c sha3.c buf.c ct.c sha512.c sha512_compress.c p384.c p384_field.c rsa_pkcs1.c && \
 	./bin/wycheproof_test
+
+# The web PKI chain fixtures, test/webpki_corpus.h, live in the tree like
+# test/rsa_pkcs1_vectors.h; regenerate them by hand. The keys under
+# test/webpki_corpus/keys/ and the captures under test/webpki_captures/
+# are fixed inputs, so a run over an unchanged tree reproduces the header
+# byte for byte. The generator runs the openssl CLI as its oracle and
+# opens no network connection.
+.PHONY: webpki-corpus
+webpki-corpus:
+	python3 test/gen_webpki_corpus.py
 
 # The same suites over the decomposed multiply, for ct-widemul-check. The
 # fetch is the wycheproof target's, so a checkout already at the pinned
