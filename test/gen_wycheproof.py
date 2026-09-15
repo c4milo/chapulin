@@ -408,7 +408,7 @@ def main():
     n_e256_512 = gen_ecdsa(json.load(open(v1 / "ecdsa_secp256r1_sha512_test.json")), out,
                            "ecdsa_p256_sha512", "secp256r1", "SHA-512", 32)
     # The RSA suites run up to RSA-4096: the test binary builds with
-    # -DCH_TRUST_WEBPKI, so rsa.h's CH_RSA_MODULUS_MAX is 512 there.
+    # -DCH_RSA_MODULUS_MAX=512, rsa.h's bound in the webpki build.
     n_r = gen_rsa(
         [v1 / "rsa_pss_2048_sha256_mgf1_32_test.json", v1 / "rsa_pss_3072_sha256_mgf1_32_test.json",
          v1 / "rsa_pss_4096_sha256_mgf1_32_test.json"],

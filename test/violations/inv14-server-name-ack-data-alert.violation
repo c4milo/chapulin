@@ -1,0 +1,15 @@
+invariant: INV-14
+file: handshake_parser.c
+catches: handshake_strict_webpki
+reason: a TRUST=webpki server_name acknowledgement that carries data
+  still fails, but with unsupported_extension, the alert for an
+  extension the client never offered, instead of decode_error, the
+  alert RFC 9846 §6 names for a body of the wrong length. The client
+  offered server_name, so the wire alert would name the wrong fault.
+  bin/handshake_strict_webpki's server_name alert rows object.
+
+--- old
+    return ext == EXT_SERVER_NAME ? ALERT_DECODE_ERROR : ALERT_UNSUPPORTED_EXTENSION;
+--- new
+    (void)ext;
+    return ALERT_UNSUPPORTED_EXTENSION;

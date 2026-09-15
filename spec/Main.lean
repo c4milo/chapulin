@@ -232,9 +232,17 @@ def dispatch : List String → Option String
         s!"sh {f.group} {emit f.keyExchange} {emitNat? f.selectedIdentity}"
       | .ok (.helloRetryRequest f) => s!"hrr {emit f.cookie}"
       | .error _ => "ERR hs_server_hello reject"
-  | ["hs_encrypted_extensions", msg] => do
+  | ["hs_encrypted_extensions", sni, msg] => do
     let m ← hexArg? msg
-    return match Spec.HandshakeParser.parseEncryptedExtensions m with
+    -- `sni` and `nosni` say whether the build's ClientHello sent
+    -- server_name: the TRUST=webpki build does, the raw and ca builds
+    -- do not, and RFC 6066 §3 admits the acknowledgement only in the
+    -- first case.
+    let sent ← match sni with
+      | "sni" => some true
+      | "nosni" => some false
+      | _ => none
+    return match Spec.HandshakeParser.parseEncryptedExtensions sent m with
       | .ok f => s!"ok {emitNat? f.recordSizeLimit}"
       | .error _ => "ERR hs_encrypted_extensions reject"
   | ["hs_certificate", msg] => do
@@ -243,9 +251,11 @@ def dispatch : List String → Option String
       | .ok f => s!"ok {f.entryCount} {emit f.leafCert}"
       | .error _ => "ERR hs_certificate reject"
   | ["hs_certificate_verify", alg, msg] => do
-    let scheme ← Spec.HandshakeParser.schemeOf? alg
+    -- `rsa` and `p256` are the pinned builds' one scheme; `webpki` is
+    -- the TRUST=webpki build's five-scheme offer.
+    let offer ← Spec.HandshakeParser.offerOf? alg
     let m ← hexArg? msg
-    return match Spec.HandshakeParser.parseCertificateVerify scheme m with
+    return match Spec.HandshakeParser.parseCertificateVerify offer m with
       | .ok f => s!"ok {f.algorithm} {emit f.signature}"
       | .error _ => "ERR hs_certificate_verify reject"
   | ["hs_verify_content", hash] => do

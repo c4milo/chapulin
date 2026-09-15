@@ -15,6 +15,9 @@
 #ifdef CH_TRUST_CA
 #include "x509.h"
 #endif
+#ifdef CH_TRUST_WEBPKI
+#include "webpki.h"
+#endif
 
 // Everything the handshake needs beyond the session, on one stack frame;
 // wiped wholesale when the handshake ends either way.
@@ -48,6 +51,11 @@ typedef struct {
     uint8_t server_finished_ok;
 #ifdef CH_TRUST_CA
     x509_leaf_info leaf; // the chain's verified leaf key, for CertificateVerify
+#endif
+#ifdef CH_TRUST_WEBPKI
+    // The verified leaf's key and its family, which webpki_verify_chain
+    // copies out and CertificateVerify's scheme must match.
+    webpki_leaf_info leaf;
 #endif
 } handshake_state;
 

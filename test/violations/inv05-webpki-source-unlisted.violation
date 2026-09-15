@@ -1,0 +1,13 @@
+invariant: INV-5
+file: Makefile
+catches: test/lint-trust-separation.sh
+reason: WEBPKI_SRCS stops listing webpki_sigalg.c, a file git tracks, so
+  the TRUST=webpki object leaves out the signature dispatch its chain
+  walk calls, and the list no longer names every webpki*.c file the
+  tree holds. The lint requires the TRUST=webpki object to package
+  every root webpki*.c file git tracks, so it objects.
+
+--- old
+WEBPKI_SRCS := webpki_time.c webpki_name.c webpki_spki.c webpki_sigalg.c
+--- new
+WEBPKI_SRCS := webpki_time.c webpki_name.c webpki_spki.c

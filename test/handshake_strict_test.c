@@ -5,7 +5,10 @@
 // exact-length body parses, the same body plus one byte fails. The parsers
 // live in handshake_parser.c and depend only on buf.c, so those two files are
 // the whole link line. Its own binary with a private main, like the other
-// standalone test mains.
+// standalone test mains. The same main also holds the CertificateVerify
+// algorithm rule and the server_name acknowledgement, whose arms differ by
+// trust mode, so the Makefile builds it once more as
+// bin/handshake_strict_webpki under -DCH_TRUST_WEBPKI.
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
@@ -192,6 +195,112 @@ static uint8_t encrypted_exts_alert_case(const uint8_t *exts, size_t n, uint8_t 
     return alert;
 }
 
+// A CertificateVerify body naming algorithm, then a 4-byte signature
+// and trailing extra bytes past its exact fill. Returns the parse
+// result, with the alert after a seed of 0 in *alert and, in a
+// TRUST=webpki build, the scheme the parser reported in *scheme.
+static int certificate_verify_case(uint16_t algorithm, size_t trailing, uint8_t *alert,
+                                   uint16_t *scheme) {
+    uint8_t body[16];
+    wbuf w;
+    wb_init(&w, body, sizeof body);
+    wb_u16(&w, algorithm);
+    wb_u16(&w, 4);
+    wb_u16(&w, 0x5a5a);
+    wb_u16(&w, 0x5a5a);
+    for (size_t i = 0; i < trailing; i++) {
+        wb_u8(&w, 0);
+    }
+    CHECK(!w.err);
+    const uint8_t *sig = NULL;
+    size_t sig_len = 0;
+    *alert = 0;
+    *scheme = 0;
+#ifdef CH_TRUST_WEBPKI
+    int rc = hsp_parse_certificate_verify(body, w.len, scheme, &sig, &sig_len, alert);
+#else
+    int rc = hsp_parse_certificate_verify(body, w.len, &sig, &sig_len, alert);
+#endif
+    CHECK(rc != CH_OK || (sig == body + 4 && sig_len == 4));
+    return rc;
+}
+
+// The CertificateVerify algorithm rule. A raw or ca build offered one
+// scheme and refuses every other with handshake_failure. A TRUST=webpki
+// build offered five: it accepts the three that may sign
+// CertificateVerify and reports which, and refuses every other scheme
+// the same way the other builds refuse one they did not offer, the two
+// PKCS#1 v1.5 schemes it offered for certificate signatures included
+// (RFC 9846 §4.4.3). Every accepted body is exact-fill: one trailing
+// byte fails.
+static void test_certificate_verify_schemes(void) {
+    uint8_t alert = 0;
+    uint16_t scheme = 0;
+#ifdef CH_TRUST_WEBPKI
+    static const uint16_t accepted[] = {SIGALG_RSA_PSS_RSAE_SHA256, SIGALG_ECDSA_P256_SHA256,
+                                        SIGALG_ECDSA_P384_SHA384};
+    for (size_t i = 0; i < sizeof accepted / sizeof accepted[0]; i++) {
+        CHECK(certificate_verify_case(accepted[i], 0, &alert, &scheme) == CH_OK);
+        CHECK(scheme == accepted[i] && alert == 0);
+        CHECK(certificate_verify_case(accepted[i], 1, &alert, &scheme) == CH_EPROTO);
+    }
+    // rsa_pkcs1_sha512 (0x0601) and rsa_pss_rsae_sha384 (0x0805) were
+    // never offered; the other two were offered for certificates only.
+    static const uint16_t refused[] = {SIGALG_RSA_PKCS1_SHA256, SIGALG_RSA_PKCS1_SHA384, 0x0601,
+                                       0x0805};
+#else
+    CHECK(certificate_verify_case(CH_PIN_SIGALG, 0, &alert, &scheme) == CH_OK);
+    CHECK(certificate_verify_case(CH_PIN_SIGALG, 1, &alert, &scheme) == CH_EPROTO);
+    static const uint16_t refused[] = {SIGALG_ECDSA_P384_SHA384,
+                                       SIGALG_RSA_PKCS1_SHA256,
+                                       SIGALG_RSA_PKCS1_SHA384,
+                                       0x0601,
+                                       0x0805,
+                                       CH_PIN_SIGALG == SIGALG_RSA_PSS_RSAE_SHA256
+                                           ? SIGALG_ECDSA_P256_SHA256
+                                           : SIGALG_RSA_PSS_RSAE_SHA256};
+#endif
+    for (size_t i = 0; i < sizeof refused / sizeof refused[0]; i++) {
+        CHECK(certificate_verify_case(refused[i], 0, &alert, &scheme) == CH_EAUTH);
+        CHECK(alert == ALERT_HANDSHAKE_FAILURE && scheme == 0);
+    }
+}
+
+// The server_name acknowledgement in EncryptedExtensions (RFC 6066 §3).
+// A raw or ca ClientHello sends no server_name, so any acknowledgement
+// is an unrequested response: unsupported_extension. A TRUST=webpki
+// hello sends one, so the empty acknowledgement parses, once, beside
+// the other two admitted extensions. There, an acknowledgement with one
+// byte of data has the wrong length for its empty extension_data, which
+// RFC 9846 §6 names decode_error.
+static const uint8_t server_name_empty[] = {0x00, 0x00, 0x00, 0x00};
+static const uint8_t server_name_data[] = {0x00, 0x00, 0x00, 0x01, 0x78};
+static const uint8_t server_name_dup[] = {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
+static const uint8_t server_name_beside_both[] = {0x00, 0x1c, 0x00, 0x02, 0x04, 0x01,
+                                                  0x00, 0x00, 0x00, 0x00, 0x00, 0x0a,
+                                                  0x00, 0x04, 0x00, 0x02, 0x00, 0x1d};
+
+static void test_server_name_acknowledgement(void) {
+    CHECK(encrypted_exts_case(server_name_data, sizeof server_name_data) == CH_EPROTO);
+#ifdef CH_TRUST_WEBPKI
+    // The last valid length, 0, parses; the first invalid one, 1, fails
+    // with decode_error (50), whichever seed the caller chose.
+    CHECK(encrypted_exts_case(server_name_empty, sizeof server_name_empty) == CH_OK);
+    CHECK(encrypted_exts_alert_case(server_name_data, sizeof server_name_data, 47) == 50);
+    CHECK(encrypted_exts_alert_case(server_name_data, sizeof server_name_data, 0) == 50);
+    CHECK(encrypted_exts_case(server_name_beside_both, sizeof server_name_beside_both) == CH_OK);
+    CHECK(encrypted_exts_case(server_name_dup, sizeof server_name_dup) == CH_EPROTO);
+    CHECK(encrypted_exts_alert_case(server_name_dup, sizeof server_name_dup, 47) == 47);
+#else
+    CHECK(encrypted_exts_alert_case(server_name_data, sizeof server_name_data, 47) == 110);
+    CHECK(encrypted_exts_case(server_name_empty, sizeof server_name_empty) == CH_EPROTO);
+    CHECK(encrypted_exts_alert_case(server_name_empty, sizeof server_name_empty, 47) == 110);
+    CHECK(encrypted_exts_case(server_name_beside_both, sizeof server_name_beside_both) ==
+          CH_EPROTO);
+    CHECK(encrypted_exts_case(server_name_dup, sizeof server_name_dup) == CH_EPROTO);
+#endif
+}
+
 // Same, with supported_versions prepended: CH_OK requires a selected
 // version, so this isolates the extension under test.
 static int server_hello_case2(const uint8_t *ext2, size_t n, int hrr, int psk_mode) {
@@ -255,6 +364,8 @@ int main(void) {
     CHECK(encrypted_exts_case(groups_dup, sizeof groups_dup) == CH_EPROTO);
     // An empty extension block is a legal EncryptedExtensions.
     CHECK(encrypted_exts_case(NULL, 0) == CH_OK);
+    test_server_name_acknowledgement();
+    test_certificate_verify_schemes();
 
     if (failures > 0) {
         (void)fprintf(stderr, "%d failure(s)\n", failures);

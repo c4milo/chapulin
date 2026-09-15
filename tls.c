@@ -57,7 +57,7 @@ static int epoch_init(ch_tls *t, const ch_cfg *cfg, int psk_ok) {
     return (cfg->epoch_load != NULL || cfg->epoch_store != NULL) ? CH_EINVAL : CH_OK;
 #endif
 }
-
+#ifndef CH_TRUST_WEBPKI
 // The pin length the build's one algorithm takes: 64 raw P-256 bytes
 // under CH_PIN_ECDSA, an RSA-2048..3072 modulus, a whole number of
 // 8-byte words, otherwise. Both pin slots obey it.
@@ -122,7 +122,7 @@ int ch_connect(ch_tls *t, const ch_cfg *cfg) {
     }
     return ch_handshake(t);
 }
-
+#endif
 // Reads and dispatches one record: application data lands in the buffer,
 // post-handshake messages are handled, close_notify returns CH_ECLOSED.
 static int dispatch_one_record(ch_tls *t) {
@@ -251,3 +251,102 @@ void ch_close(ch_tls *t) {
     tlsi_wipe(t);
     t->state = CH_ST_CLOSED;
 }
+
+#ifdef CH_TRUST_WEBPKI
+// A TRUST=webpki build's ch_connect and the config rules it checks. They
+// sit below every CH_ASSERT in this file, not beside the raw and ca
+// ch_connect above, because CH_ASSERT passes __LINE__: a line added
+// above an assertion changes the raw and ca objects, and this mode
+// leaves those objects byte for byte as they were (docs/webpki.md).
+
+// cfg.h writes CH_TRUST_MIN_RXBUF out as a number because webpki.h,
+// which names its two terms, includes cfg.h. This is where both are
+// visible, so a drift between them fails the build here.
+_Static_assert(CH_TRUST_MIN_RXBUF == CH_WEBPKI_FLIGHT_ENTRIES * (CH_WEBPKI_CERT_MAX + 5) + 16,
+               "cfg.h's webpki receive floor is the flight formula over webpki.h's bounds");
+
+// The anchor rule: 1 to CH_WEBPKI_ANCHOR_MAX anchors, each carrying a
+// non-empty name and a non-empty spki. The chain walk reads through
+// both pointers of every anchor it consults, so a NULL or empty entry
+// is refused here, before the handshake sends a byte.
+static int anchors_ok(const ch_cfg *cfg) {
+    if (cfg->anchors == NULL || cfg->anchor_count == 0 ||
+        cfg->anchor_count > CH_WEBPKI_ANCHOR_MAX) {
+        return 0;
+    }
+    for (size_t i = 0; i < cfg->anchor_count; i++) {
+        const ch_trust_anchor *a = &cfg->anchors[i];
+        if (a->name == NULL || a->name_len == 0 || a->spki == NULL || a->spki_len == 0) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+// The hostname rule: the shape webpki_hostname_ok checks. That check
+// reads hostname_len bytes through the pointer, so a NULL hostname is
+// refused before it runs.
+static int hostname_ok(const ch_cfg *cfg) {
+    return cfg->hostname != NULL && webpki_hostname_ok(cfg->hostname, cfg->hostname_len);
+}
+
+// The clock rule: now_seconds 0 is the value a caller who never set the
+// field leaves there, so it is refused as an unset clock. It names
+// 1970-01-01T00:00:00Z, a moment no certificate the walk admits is
+// valid at, so the refusal turns a certain CH_EAUTH mid-handshake into
+// a CH_EINVAL that names the config.
+static int clock_set(const ch_cfg *cfg) {
+    return cfg->now_seconds != 0;
+}
+
+// The PSK rule: no psk, no psk_id, both lengths 0, and no resumption. A
+// resumed handshake presents no certificate, so it would skip the
+// hostname check, and nothing binds a ticket to the hostname it was
+// issued for (docs/webpki.md, "No PSK, and no resumption"). A length
+// set without its pointer is refused too: it is a PSK config with a
+// field missing, not a chain config.
+static int psk_unset(const ch_cfg *cfg) {
+    return cfg->psk == NULL && cfg->psk_len == 0 && cfg->psk_id == NULL && cfg->psk_id_len == 0 &&
+           cfg->resumption == 0;
+}
+
+// The pin rule: this mode reads neither server_pubkey slot, so a config
+// that sets one, or only its length, is a provisioning mistake, not a
+// second trust path.
+static int pins_unset(const ch_cfg *cfg) {
+    return cfg->server_pubkey == NULL && cfg->server_pubkey_len == 0 &&
+           cfg->server_pubkey2 == NULL && cfg->server_pubkey2_len == 0;
+}
+
+// The one auth mode this build has, the chain: every rule above holds.
+static int chain_config_ok(const ch_cfg *cfg) {
+    return anchors_ok(cfg) && hostname_ok(cfg) && clock_set(cfg) && psk_unset(cfg) &&
+           pins_unset(cfg);
+}
+
+int ch_connect(ch_tls *t, const ch_cfg *cfg) {
+    memset(t, 0, sizeof *t);
+    t->cfg = *cfg;
+    if (!chain_config_ok(cfg) || cfg->buf == NULL || cfg->send == NULL || cfg->recv == NULL ||
+        cfg->buf_len < CH_MIN_RXBUF) {
+        t->state = CH_ST_FAILED;
+        return CH_EINVAL;
+    }
+#ifndef CH_KEX_PQ
+    // require_pq in a classic build: the raw and ca ch_connect above
+    // says why no handshake this build runs can satisfy it.
+    if (cfg->require_pq) {
+        t->state = CH_ST_FAILED;
+        return CH_EINVAL;
+    }
+#endif
+    // No PSK is set, so psk_ok is 0; epoch_init refuses the epoch
+    // callbacks, as it does in every build but TRUST=ca.
+    int rc = epoch_init(t, cfg, 0);
+    if (rc != CH_OK) {
+        t->state = CH_ST_FAILED;
+        return rc;
+    }
+    return ch_handshake(t);
+}
+#endif

@@ -94,7 +94,8 @@ struct Read {
 };
 
 // Builds a ch_cfg for exactly one auth mode. Construct with a receive
-// buffer and I/O, then call psk() or pinned() — not both.
+// buffer and I/O, then call psk() or pinned() — not both. A TRUST=webpki
+// build calls anchors(), hostname() and now_seconds() instead.
 class Config {
   public:
     Config(Bytes recv_buffer, Io io) {
@@ -179,6 +180,37 @@ class Config {
         cfg_.require_pq = on ? 1 : 0;
         return *this;
     }
+
+#ifdef CH_TRUST_WEBPKI
+    // Web PKI trust (ch_cfg.anchors and the fields after it), for a
+    // TRUST=webpki build: the roots the chain must verify up to, the
+    // hostname the leaf must name (an ASCII hostname, sent as
+    // server_name; convert a U-label to its A-label first), and the
+    // clock its dates are checked against, in seconds since
+    // 1970-01-01T00:00:00Z. Set all three and no psk() or pinned(). The
+    // array and the name are borrowed like every other byte view here.
+    // ch_connect checks them (docs/webpki.md). ch_cfg has these fields
+    // only in a TRUST=webpki build, so the setters exist only there too.
+    Config &anchors(const ch_trust_anchor *list, size_t count) {
+        cfg_.anchors = list;
+        cfg_.anchor_count = count;
+        return *this;
+    }
+    template <size_t N> Config &anchors(const ch_trust_anchor (&list)[N]) {
+        return anchors(list, N);
+    }
+
+    Config &hostname(ConstBytes name) {
+        cfg_.hostname = name.data;
+        cfg_.hostname_len = name.size;
+        return *this;
+    }
+
+    Config &now_seconds(uint64_t seconds) {
+        cfg_.now_seconds = seconds;
+        return *this;
+    }
+#endif
 
     const ch_cfg &raw() const {
         return cfg_;

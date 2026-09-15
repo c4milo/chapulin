@@ -398,7 +398,8 @@ jobs:
         run: cat bin/spec-coverage.md >> "$GITHUB_STEP_SUMMARY" 2>/dev/null || true
 
   # The ECDSA-arm differential: the PR lane's bin/diff compiles the
-  # RSA parser, so the P-256 certificate rows meet real C only here.
+  # RSA parser, so the P-256 certificate rows run against real C only
+  # here.
   diff-ecdsa:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
@@ -447,6 +448,33 @@ jobs:
       - name: Download Mathlib's compiled files
         uses: ./.github/actions/fetch-mathlib
       - run: make diff-pq
+
+  # The web PKI differential: the PR lane's bin/diff compiles the pinned
+  # EncryptedExtensions and CertificateVerify rules, so the server_name
+  # acknowledgement and the three webpki schemes run against real C only
+  # here.
+  diff-webpki:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/load-pins
+      - name: Install elan
+        uses: ./.github/actions/install-elan
+        with:
+          sha256: ${{ env.ELAN_INIT_SHA256 }}
+      - name: Cache Lean toolchain and spec build
+        # Mathlib's compiled files stay out of this cache and the next step
+        # downloads them; check.yml's step of the same name states why.
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.elan
+            spec/.lake/build
+          key: lean-${{ hashFiles('spec/lean-toolchain', 'spec/lakefile.toml', 'spec/lake-manifest.json', 'spec/*.lean', 'spec/Spec/*.lean') }}
+      - name: Download Mathlib's compiled files
+        uses: ./.github/actions/fetch-mathlib
+      - run: make diff-webpki
 
   # The deeper UB pass: -O0 sees code the optimizer would delete. The
   # PR lane runs the same suites at -O2, the level that ships.
@@ -507,7 +535,7 @@ jobs:
   # lint-nightly-report (tools/nightly-report.py) holds the list equal
   # to the job set.
   report:
-    needs: [proof-reach, prove-slow, diff-random, diff-ecdsa, spec-coverage, san-deep, mips-ubsan, fuzz, test-invariants, test-invariants-proof-backed, handshake-sequence-pq, diff-pq]
+    needs: [proof-reach, prove-slow, diff-random, diff-ecdsa, spec-coverage, san-deep, mips-ubsan, fuzz, test-invariants, test-invariants-proof-backed, handshake-sequence-pq, diff-pq, diff-webpki]
     # A job killed by timeout-minutes concludes as cancelled, not
     # failed, so failure() alone skips this job and a timed-out night
     # files nothing. Both prove-slow timeouts so far were reported only

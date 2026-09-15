@@ -23,6 +23,19 @@ size_t hs_build_client_hello(uint8_t *out, size_t cap, const ch_cfg *cfg,
 
     size_t exts = wb_mark(&w, 2);
 
+#ifdef CH_TRUST_WEBPKI
+    // server_name (RFC 6066 §3), first in the list as clients
+    // conventionally send it: a ServerNameList holding one host_name
+    // entry. The chain walk matches the leaf's subjectAltName against
+    // the same cfg->hostname bytes.
+    wb_u16(&w, EXT_SERVER_NAME);
+    wb_u16(&w, (uint16_t)(2 + 1 + 2 + cfg->hostname_len));
+    wb_u16(&w, (uint16_t)(1 + 2 + cfg->hostname_len)); // server_name_list length
+    wb_u8(&w, 0);                                      // name_type: host_name
+    wb_u16(&w, (uint16_t)cfg->hostname_len);
+    wb_bytes(&w, cfg->hostname, cfg->hostname_len);
+#endif
+
     wb_u16(&w, EXT_SUPPORTED_VERSIONS);
     wb_u16(&w, 3);
     wb_u8(&w, 2);
@@ -63,12 +76,27 @@ size_t hs_build_client_hello(uint8_t *out, size_t cap, const ch_cfg *cfg,
     }
 
     if (cfg->psk == NULL) {
+#ifdef CH_TRUST_WEBPKI
+        // A public chain: its links may be signed by any family, so offer
+        // every scheme the walk verifies (RFC 9846 §4.2.3). The first
+        // three may sign CertificateVerify; the two PKCS#1 v1.5 schemes
+        // are for certificate signatures only (§4.4.3).
+        wb_u16(&w, EXT_SIGNATURE_ALGORITHMS);
+        wb_u16(&w, 2 + 5 * 2);
+        wb_u16(&w, 5 * 2);
+        wb_u16(&w, SIGALG_RSA_PSS_RSAE_SHA256);
+        wb_u16(&w, SIGALG_ECDSA_P256_SHA256);
+        wb_u16(&w, SIGALG_ECDSA_P384_SHA384);
+        wb_u16(&w, SIGALG_RSA_PKCS1_SHA256);
+        wb_u16(&w, SIGALG_RSA_PKCS1_SHA384);
+#else
         // Pinned-key mode: the server authenticates by signature, so
         // offer the one algorithm the pin can be.
         wb_u16(&w, EXT_SIGNATURE_ALGORITHMS);
         wb_u16(&w, 4);
         wb_u16(&w, 2);
         wb_u16(&w, CH_PIN_SIGALG);
+#endif
     } else {
         // pre_shared_key comes last (RFC 9846 §4.3.11).
         wb_u16(&w, EXT_PRE_SHARED_KEY);

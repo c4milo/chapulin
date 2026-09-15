@@ -70,6 +70,10 @@ MEMORY = [
      [["session_struct_pq_arm64"], ["session_struct_pq_rv32"]]),
     ("**total static working set, `KEX=pq`** (2048 buffer)",
      [["static_working_set_pq_arm64"], ["static_working_set_pq_rv32"]]),
+    ("`ch_tls` under `TRUST=webpki` (includes 884 B TX staging)",
+     [["session_struct_webpki_arm64"], ["session_struct_webpki_rv32"]]),
+    ("**total static working set, `TRUST=webpki`** (12324 buffer, its floor)",
+     [["static_working_set_webpki_arm64"], ["static_working_set_webpki_rv32"]]),
     ("peak stack, `ch_connect` (RSA-3072 verify)", [["stack_connect_rsa"]]),
     ("peak stack, `ch_connect` (`PIN=ecdsa`)", [["stack_connect_ecdsa"]]),
     ("peak stack, `ch_connect` (PSK)", [["stack_connect_psk"]]),
@@ -271,21 +275,29 @@ def check_memory(readme):
 def check_memory_prose(readme, sram):
     """The two Memory sentences that restate a table figure."""
     rc = 0
-    # "needs N bytes less than the host figure in either build": one N for
-    # both builds, so the two differences must agree before the prose can.
+    # "needs N bytes less than the host figure in either device build":
+    # one N for the default and KEX=pq builds, so their differences must
+    # agree before the prose can. TRUST=webpki carries four more
+    # pointer-sized fields and gets its own sentence and its own N.
     less = sram["session_struct_arm64"] - sram["session_struct_rv32"]
     less_pq = sram["session_struct_pq_arm64"] - sram["session_struct_pq_rv32"]
-    m = re.search(r"needs ([0-9]+) bytes less than the host figure in either build", readme)
+    less_webpki = sram["session_struct_webpki_arm64"] - sram["session_struct_webpki_rv32"]
+    m = re.search(r"needs ([0-9]+) bytes less than the host figure in either device\s+build",
+                  readme)
+    m_webpki = re.search(r"so that build needs ([0-9]+)\s+bytes less than the host figure\s+on\s+rv32",
+                         readme)
     if less != less_pq:
         print("lint-bench-numbers: rv32 saves %d bytes in the default build but %d under "
               "KEX=pq; the README states one figure for both" % (less, less_pq))
         rc = 1
-    elif not m:
-        print("lint-bench-numbers: README does not state the rv32 saving")
+    elif not m or not m_webpki:
+        print("lint-bench-numbers: README does not state the rv32 saving for the device "
+              "builds and for TRUST=webpki")
         rc = 1
-    elif m.group(1) != "%d" % less:
-        print("lint-bench-numbers: README says rv32 saves %s bytes, the CSV says %d"
-              % (m.group(1), less))
+    elif m.group(1) != "%d" % less or m_webpki.group(1) != "%d" % less_webpki:
+        print("lint-bench-numbers: README says rv32 saves %s bytes (device builds) and %s "
+              "(TRUST=webpki), the CSV says %d and %d"
+              % (m.group(1), m_webpki.group(1), less, less_webpki))
         rc = 1
     want = "{:,}".format(sram["stack_connect_pq"])
     m = re.search(r"The whole chain peaks at ([0-9,]+) bytes", readme)

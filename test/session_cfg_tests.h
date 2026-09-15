@@ -5,6 +5,8 @@
 #ifndef CH_SESSION_CFG_TESTS_H
 #define CH_SESSION_CFG_TESTS_H
 
+#include "hello_exts.h"
+
 // ch_connect's config validation: exactly one auth mode, sane buffer. A
 // case that passes validation reaches I/O and dies there (empty queue
 // gives CH_EIO), which distinguishes it from a rejected config (CH_EINVAL).
@@ -310,6 +312,40 @@ static void test_connect_cfg(void) {
     pin[TEST_PIN_LEN - 1] = 2; // even low byte: provisioning corruption
     CHECK(ch_connect(&t, &cfg) == CH_EINVAL);
 #endif
+}
+
+// The hello a raw or ca build sends. Its ClientHello carries no
+// server_name, and its signature_algorithms lists the one scheme the
+// pin can be. A TRUST=webpki build sends both differently, and
+// test/webpki_session_cases.h checks that hello.
+static void test_pinned_hello_extensions(void) {
+    static uint8_t rxbuf[CH_MIN_RXBUF + 88];
+    uint8_t pin[TEST_PIN_LEN] = {2};
+    pin[TEST_PIN_LEN - 1] = 1;
+    mock_io m = {0};
+    ch_cfg cfg = {0};
+    ch_tls t;
+    cfg.buf = rxbuf;
+    cfg.buf_len = sizeof rxbuf;
+    cfg.send = mock_send;
+    cfg.recv = mock_recv;
+    cfg.io = &m;
+    cfg.server_pubkey = pin;
+    cfg.server_pubkey_len = sizeof pin;
+
+    // The first record the client sent is the plaintext hello; the
+    // alert that follows it when recv fails is not read.
+    CHECK(ch_connect(&t, &cfg) == CH_EIO);
+    CHECK(m.sends >= 1 && m.tx_len > REC_HDR && m.tx[0] == REC_HANDSHAKE);
+    const uint8_t *hello = m.tx + REC_HDR;
+    size_t hello_len = ((size_t)m.tx[3] << 8) | m.tx[4];
+    CHECK(REC_HDR + hello_len <= m.tx_len);
+    size_t ext_len = 0;
+    CHECK(hello_first_ext(hello, hello_len) == EXT_SUPPORTED_VERSIONS);
+    CHECK(hello_ext(hello, hello_len, EXT_SERVER_NAME, &ext_len) == NULL);
+    uint16_t schemes[8] = {0};
+    CHECK(hello_sigalgs(hello, hello_len, schemes, 8) == 1);
+    CHECK(schemes[0] == CH_PIN_SIGALG);
 }
 
 #endif

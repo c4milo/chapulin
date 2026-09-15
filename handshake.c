@@ -323,8 +323,9 @@ static int run(handshake_state *h) {
         return CH_EPROTO;
     }
     // Seed the default first: the parser overrides it only when it has a
-    // more specific alert (unsupported_extension, RFC 9846 §4.3), and
-    // that override must survive to the wire.
+    // more specific alert (unsupported_extension, RFC 9846 §4.3, and in a
+    // TRUST=webpki build decode_error for a server_name that carries
+    // data), and that override must survive to the wire.
     h->alert = ALERT_ILLEGAL_PARAMETER;
     rc = hsp_parse_encrypted_exts(raw + 4, raw_len - 4, &t->peer_limit, &h->alert);
     if (rc != CH_OK) {

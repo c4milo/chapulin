@@ -1,0 +1,13 @@
+invariant: INV-14
+file: tls.c
+catches: webpki_session_test
+reason: a TRUST=webpki config with now_seconds 0, a clock the caller
+  never set, passes ch_connect, and the handshake it starts fails later
+  with CH_EAUTH at the certificate dates instead of CH_EINVAL at the
+  config. bin/webpki_session_test's clock boundary rows object.
+
+--- old
+    return cfg->now_seconds != 0;
+--- new
+    (void)cfg;
+    return 1;

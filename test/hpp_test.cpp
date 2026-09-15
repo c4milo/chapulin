@@ -43,8 +43,10 @@ static int fail_recv(void *, uint8_t *, size_t) {
 }
 
 // Must match the algorithm the linked library object was built with; the
-// Makefile passes the same define to both compiles.
-#ifdef CH_PIN_ECDSA
+// Makefile passes the same define to both compiles. A TRUST=webpki object
+// reads no pin, so it has no length to match.
+#ifdef CH_TRUST_WEBPKI
+#elif defined(CH_PIN_ECDSA)
 constexpr size_t kPinLen = 64;
 #else
 constexpr size_t kPinLen = 384;
@@ -88,14 +90,67 @@ static void test_pubkey_from_pem() {
 }
 #endif
 
-int main() {
-    // Sized for whichever build floor is larger: a TRUST=ca build
-    // demands room for the whole Certificate flight (CH_TRUST_MIN_RXBUF
-    // is 3,098 under the RSA defaults), and a 2048-byte buffer there
-    // turns every would-be io result below into invalid.
-    static uint8_t rxbuf[CH_MIN_RXBUF > 2048 ? CH_MIN_RXBUF : 2048];
-    chapulin::Io io{fail_send, fail_recv, nullptr};
+// Sized for whichever build floor is larger: a TRUST=ca build demands
+// room for the whole Certificate flight (CH_TRUST_MIN_RXBUF is 3,098
+// under the RSA defaults), a TRUST=webpki build room for four
+// certificates (12,324), and a 2048-byte buffer there turns every
+// would-be io result below into invalid.
+static uint8_t rxbuf[CH_MIN_RXBUF > 2048 ? CH_MIN_RXBUF : 2048];
 
+#ifdef CH_TRUST_WEBPKI
+// The web PKI setters: a hostname and two anchors. The bytes are
+// placeholders, because ch_connect checks only that each anchor field
+// is set and non-empty, and every handshake here stops at the failing
+// send, before a certificate arrives.
+static const uint8_t kHost[] = {'s', '3', '.', 'e', 'x', 'a', 'm', 'p', 'l', 'e'};
+static const uint8_t kAnchorName[] = {0x30, 0x00};
+static const uint8_t kAnchorSpki[] = {0x30, 0x00};
+static const ch_trust_anchor kAnchors[2] = {
+    {kAnchorName, sizeof kAnchorName, kAnchorSpki, sizeof kAnchorSpki},
+    {kAnchorName, sizeof kAnchorName, kAnchorSpki, sizeof kAnchorSpki},
+};
+
+// The one auth mode this build has: anchors, a hostname and a clock set
+// through the typed setters, each of which writes its own ch_cfg field,
+// pass ch_connect's config check and fail at the send. A PSK or a pin
+// beside them, or a clock of 0, is refused before any I/O.
+static void test_webpki_config(chapulin::Io io) {
+    uint8_t psk[32];
+    std::memset(psk, 0x0b, sizeof psk);
+    const uint8_t id[] = {'d', 'e', 'v', '1'};
+    {
+        chapulin::Config cfg(chapulin::Bytes{rxbuf}, io);
+        cfg.anchors(kAnchors).hostname({kHost, sizeof kHost}).now_seconds(1789000000U);
+        CHECK(cfg.raw().anchors == kAnchors && cfg.raw().anchor_count == 2);
+        CHECK(cfg.raw().hostname == kHost && cfg.raw().hostname_len == sizeof kHost);
+        CHECK(cfg.raw().now_seconds == 1789000000U);
+        chapulin::Session s;
+        CHECK(s.connect(cfg) == chapulin::Status::io);
+    }
+    {
+        chapulin::Config cfg(chapulin::Bytes{rxbuf}, io);
+        cfg.anchors(kAnchors, 1).hostname({kHost, sizeof kHost}).now_seconds(1789000000U);
+        cfg.psk(chapulin::ConstBytes{psk, sizeof psk}, chapulin::ConstBytes{id, sizeof id});
+        chapulin::Session s;
+        CHECK(s.connect(cfg) == chapulin::Status::invalid);
+    }
+    {
+        chapulin::Config cfg(chapulin::Bytes{rxbuf}, io);
+        cfg.anchors(kAnchors, 1).hostname({kHost, sizeof kHost}).now_seconds(1789000000U);
+        cfg.pinned(chapulin::ConstBytes{psk, sizeof psk});
+        chapulin::Session s;
+        CHECK(s.connect(cfg) == chapulin::Status::invalid);
+    }
+    {
+        chapulin::Config cfg(chapulin::Bytes{rxbuf}, io);
+        cfg.anchors(kAnchors, 1).hostname({kHost, sizeof kHost}).now_seconds(0);
+        chapulin::Session s;
+        CHECK(s.connect(cfg) == chapulin::Status::invalid);
+    }
+}
+#else
+// The two auth modes this build has, through Config's typed calls.
+static void test_psk_and_pinned_config(chapulin::Io io) {
     uint8_t psk[32];
     std::memset(psk, 0x0b, sizeof psk);
     const uint8_t id[] = {'d', 'e', 'v', '1'};
@@ -172,6 +227,16 @@ int main() {
         chapulin::Session s;
         CHECK(s.connect(cfg) == chapulin::Status::invalid);
     }
+}
+#endif
+
+int main() {
+    chapulin::Io io{fail_send, fail_recv, nullptr};
+#ifdef CH_TRUST_WEBPKI
+    test_webpki_config(io);
+#else
+    test_psk_and_pinned_config(io);
+#endif
 
     // The Session blocks above each destruct after a connect attempt, so
     // the RAII close path runs here without a crash; the C unit test pins

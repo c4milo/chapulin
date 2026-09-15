@@ -31,6 +31,14 @@
 #error "no entropy pattern declared: use -DCH_RAND_EXTERN or -DCH_RAND_DRBG (docs/entropy.md)"
 #endif
 
+// A build has one trust mode (Makefile TRUST): raw pins by default,
+// -DCH_TRUST_CA, or -DCH_TRUST_WEBPKI. Both defines together would
+// compile the CA epoch rules and the web PKI config rules into one
+// ch_connect, which no mode describes.
+#if defined(CH_TRUST_CA) && defined(CH_TRUST_WEBPKI)
+#error "CH_TRUST_CA and CH_TRUST_WEBPKI are exclusive: a build has one trust mode"
+#endif
+
 #define CH_OK 0
 #define CH_EIO (-1)     // transport failed or closed under us
 #define CH_EPROTO (-2)  // peer broke the protocol; session dead
@@ -76,6 +84,13 @@
 // than assume an ordering a build can change.
 #ifdef CH_TRUST_CA
 #define CH_TRUST_MIN_RXBUF (2 * (CH_X509_MAX + 5) + 16)
+#elif defined(CH_TRUST_WEBPKI)
+// The same formula over the flight a public server sends: four entries
+// (CH_WEBPKI_FLIGHT_ENTRIES) of up to 3072 bytes each
+// (CH_WEBPKI_CERT_MAX), 12324 bytes (docs/webpki.md, "Bounds"). Those
+// two constants live in webpki.h, which includes this header, so the
+// value is written out here and tls.c asserts that it matches them.
+#define CH_TRUST_MIN_RXBUF (4 * (3072 + 5) + 16)
 #else
 #define CH_TRUST_MIN_RXBUF 512
 #endif
@@ -84,7 +99,7 @@
 #else
 #define CH_KEX_MIN_RXBUF 512
 #endif
-#if defined(CH_TRUST_CA) || defined(CH_KEX_PQ)
+#if defined(CH_TRUST_CA) || defined(CH_TRUST_WEBPKI) || defined(CH_KEX_PQ)
 #define CH_MIN_RXBUF (CH_TRUST_MIN_RXBUF > CH_KEX_MIN_RXBUF ? CH_TRUST_MIN_RXBUF : CH_KEX_MIN_RXBUF)
 #else
 // Neither feature raises the floor, so the base profile's 512 stands on
@@ -158,6 +173,28 @@ _Static_assert(CH_EPOCH_BOUND >= 1 && CH_EPOCH_BOUND < CH_EPOCH_MAX,
 #define CH_EPOCH_REVOKED 3   // below the stored epoch: a bump retired this certificate
 #define CH_EPOCH_UNTRUSTED 4 // not an allowed date, or too far ahead
 
+#ifdef CH_TRUST_WEBPKI
+// A trust anchor for a TRUST=webpki build: a root's subject Name and its
+// public key, each the whole DER TLV the root certificate carries — the
+// Name SEQUENCE and the SubjectPublicKeyInfo SEQUENCE, header included.
+// Nothing else is read from the root, not even its dates. The caller
+// embeds the roots it trusts; the array is the whole trust boundary,
+// and any anchor may certify any name (docs/webpki.md, "Trust anchors").
+// Only a TRUST=webpki build declares this type, the constant below and
+// the ch_cfg fields that use them (see the end of ch_cfg).
+typedef struct {
+    const uint8_t *name;
+    size_t name_len;
+    const uint8_t *spki;
+    size_t spki_len;
+} ch_trust_anchor;
+
+// Anchors one configuration may carry. The number is a measurement:
+// nine roots cover the endpoints docs/webpki.md captures, five of them
+// Amazon Trust Services'.
+#define CH_WEBPKI_ANCHOR_MAX 12
+#endif
+
 typedef struct {
     // Authentication is one of two modes:
     //  - PSK: psk/psk_id set (external, resumption = 0) or a stored ticket
@@ -179,6 +216,10 @@ typedef struct {
     //    instead: the server's chain must verify up to the pinned CA key
     //    (see docs/ca.md). Tickets still arrive either way, so reconnects
     //    resume via PSK.
+    // A CH_TRUST_WEBPKI build reads neither: it authenticates the server
+    // by a public chain, configured by the fields at the end of this
+    // struct. It refuses a config that sets any of these fields but
+    // obfuscated_age, which it never reads because it sends no PSK.
     const uint8_t *psk;
     size_t psk_len;
     const uint8_t *psk_id;
@@ -246,6 +287,40 @@ typedef struct {
     // docs/decisions.md 12 says why a build never falls back to the
     // other group.
     int require_pq;
+
+#ifdef CH_TRUST_WEBPKI
+    // Web PKI trust (TRUST=webpki, docs/webpki.md):
+    //  - anchors: anchor_count entries, 1 to CH_WEBPKI_ANCHOR_MAX, each
+    //    with a non-empty name and spki. The server's chain must verify
+    //    up to one of them.
+    //  - hostname: hostname_len bytes of an ASCII hostname that
+    //    webpki_hostname_ok (webpki.h) accepts: 1 to 253 bytes of
+    //    [A-Za-z0-9.-], no NUL, no empty label and no IP literal. A
+    //    caller with an internationalized name converts each U-label to
+    //    its A-label first. A dNSName in the leaf's subjectAltName must
+    //    match it, and the client sends it as the ClientHello's
+    //    server_name.
+    //  - now_seconds: the caller's clock, in seconds since
+    //    1970-01-01T00:00:00Z. Every certificate the walk reads must be
+    //    valid at it, compared exactly with no skew tolerance. 0 means
+    //    the caller never set the clock.
+    // ch_connect returns CH_EINVAL before it sends a byte when any of
+    // those rules fails, when now_seconds is 0, and when a webpki config
+    // sets psk, psk_len, psk_id, psk_id_len, resumption, either
+    // server_pubkey slot or its length, or the epoch callbacks. This
+    // mode reads no pin, and nothing binds a ticket to the hostname it
+    // was issued for (docs/webpki.md, "No PSK, and no resumption").
+    //
+    // These five fields exist only in a TRUST=webpki build, so the raw
+    // and ca objects keep the ch_cfg and ch_tls layout they had before
+    // this mode. A raw or ca build that sets one fails to compile, which
+    // is stricter than a CH_EINVAL from ch_connect.
+    const ch_trust_anchor *anchors;
+    size_t anchor_count;
+    const uint8_t *hostname;
+    size_t hostname_len;
+    uint64_t now_seconds;
+#endif
 } ch_cfg;
 
 #endif

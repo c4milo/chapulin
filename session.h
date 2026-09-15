@@ -26,13 +26,22 @@
 // TX staging holds two different things, and the array takes whichever
 // is larger: one sealed application record (CH_TX_PT + 1 + AEAD_TAG),
 // or the largest ClientHello this build can emit. The hello wins in
-// both builds. These are CH_HELLO_MAX's value per build, repeated here
+// every build. These are CH_HELLO_MAX's value per build, repeated here
 // as literals because handshake_message.h sits above this header and
 // cannot be included from it; handshake.c asserts the two agree, where
 // both constants are visible, so a stale literal fails the build
 // rather than shipping.
 #ifndef CH_TX_STAGE
-#ifdef CH_KEX_PQ
+#if defined(CH_TRUST_WEBPKI) && defined(CH_KEX_PQ)
+// The pq sum below plus the 262-byte server_name extension a
+// TRUST=webpki hello carries at the longest hostname (4 type and length,
+// 2 list length, 1 name_type, 2 name length, 253 name): 1801 + 262.
+#define CH_TX_STAGE 2063
+#elif defined(CH_TRUST_WEBPKI)
+// The classic sum below plus the same 262-byte server_name extension:
+// 617 + 262.
+#define CH_TX_STAGE 879
+#elif defined(CH_KEX_PQ)
 // 137 fixed + 320 ticket identity + 128 cookie with framing + the
 // 1216-byte hybrid share.
 #define CH_TX_STAGE 1801

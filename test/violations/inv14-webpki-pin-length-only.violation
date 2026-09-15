@@ -1,0 +1,14 @@
+invariant: INV-14
+file: tls.c
+catches: webpki_session_test
+reason: the TRUST=webpki pin rule reads only the two server_pubkey
+  pointers, so a config that sets server_pubkey_len or
+  server_pubkey2_len alone passes as a chain config, and a provisioning
+  mistake that dropped a pin goes unreported.
+  bin/webpki_session_test's length-only rows object.
+
+--- old
+    return cfg->server_pubkey == NULL && cfg->server_pubkey_len == 0 &&
+           cfg->server_pubkey2 == NULL && cfg->server_pubkey2_len == 0;
+--- new
+    return cfg->server_pubkey == NULL && cfg->server_pubkey2 == NULL;

@@ -54,7 +54,7 @@ static void diff_rsa_pkcs1_check_c(const char *n_hex, size_t n_len, const uint8_
     // The domain check diff_rsa.h's diff_rsa_check_c makes, for the same reason.
     if (n_len > CH_RSA_MODULUS_MAX) {
         die("rsa_pkcs1: CH_RSA_MODULUS_MAX is below the sampled modulus; build with "
-            "-DCH_TRUST_WEBPKI");
+            "-DCH_RSA_MODULUS_MAX=512");
     }
     if (rsa_pkcs1_verify(n, n_len, digest, digest_len, sig, sig_len) != 1) {
         (void)fprintf(stderr, "diff mismatch: C rsa_pkcs1_verify rejected\n  h: %s\n", digest_hex);

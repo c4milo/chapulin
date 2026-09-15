@@ -12,6 +12,7 @@
 #include "harness.h"
 
 #include "cfg.h"
+#include "handshake_message.h"
 #include "handshake_parser.h"
 
 int main(void) {
@@ -21,7 +22,20 @@ int main(void) {
     __CPROVER_assume(n <= sizeof msg);
 
     uint16_t peer_limit = CH_TX_PT;
-    uint8_t alert = 0;
+    uint8_t seed = nondet_u8();
+    uint8_t alert = seed;
     (void)hsp_parse_encrypted_exts(msg, n, &peer_limit, &alert);
+    // The alert contract handshake_parser.h states: the parser keeps the
+    // caller's seed or writes unsupported_extension. The TRUST=webpki
+    // arm, which eeparse_webpki proves, may also write decode_error, the
+    // alert for a server_name that carries data.
+#ifdef CH_TRUST_WEBPKI
+    __CPROVER_assert(alert == seed || alert == ALERT_UNSUPPORTED_EXTENSION ||
+                         alert == ALERT_DECODE_ERROR,
+                     "the parser keeps the seed or writes unsupported_extension or decode_error");
+#else
+    __CPROVER_assert(alert == seed || alert == ALERT_UNSUPPORTED_EXTENSION,
+                     "the parser keeps the seeded alert or writes unsupported_extension");
+#endif
     return 0;
 }

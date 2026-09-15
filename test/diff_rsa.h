@@ -11,9 +11,10 @@
 // PSS signatures are a plain octet string, unlike ECDSA). Three keys —
 // 2048, 3072 and 4096-bit moduli — rotate so every size a build admits
 // is tested: the spec verifies any modulus, and the C admits up to
-// CH_RSA_MODULUS_MAX bytes (rsa.h), 512 only under CH_TRUST_WEBPKI, so
-// bin/diff builds with that define and diff_rsa_check_c stops on a
-// build whose bound is below a sampled modulus.
+// CH_RSA_MODULUS_MAX bytes (rsa.h), 512 only when a build sets it there,
+// so bin/diff builds with -DCH_RSA_MODULUS_MAX=512 (the Makefile's
+// RSA_WIDE_DEF) and diff_rsa_check_c stops on a build whose bound is
+// below a sampled modulus.
 // Included by test/diff_test.c after diff_driver.h (single translation unit).
 #ifndef CH_DIFFRSA_H
 #define CH_DIFFRSA_H
@@ -140,7 +141,8 @@ static void diff_rsa_check_c(const char *n_hex, size_t n_len, const uint8_t *has
     // check rather than a static one, because lint-tidy compiles this
     // driver without the define.
     if (n_len > CH_RSA_MODULUS_MAX) {
-        die("rsa: CH_RSA_MODULUS_MAX is below the sampled modulus; build with -DCH_TRUST_WEBPKI");
+        die("rsa: CH_RSA_MODULUS_MAX is below the sampled modulus; build with "
+            "-DCH_RSA_MODULUS_MAX=512");
     }
     if (rsa_pss_verify(n, n_len, hash, sig, sig_len) != 1) {
         (void)fprintf(stderr, "diff mismatch: C rsa_pss_verify rejected\n  h: %s\n", hash_hex);

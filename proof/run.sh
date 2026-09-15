@@ -418,6 +418,22 @@ launch slow:5 full mlkem_basemul 260 ""
 launch fast:10 full handshake_parser 260 "hsp_parse_server_hello.0:66" handshake_parser.c buf.c
 launch fast full eeparse 260 "hsp_parse_encrypted_exts.0:66" handshake_parser.c buf.c
 launch fast full certparse 260 "" handshake_parser.c buf.c
+# The TRUST=webpki arms of the same two parsers, at the same 256-byte
+# bound: EncryptedExtensions admitting one empty server_name
+# acknowledgement and writing decode_error for one that carries data,
+# and CertificateVerify admitting three schemes, with certparse_webpki
+# asserting that an accepted scheme is one of them (the assertion fails
+# when one of the three is struck from it, so it is reached). Both
+# eeparse harnesses assert the alert contract: the parser keeps the seed
+# or writes unsupported_extension, and the webpki arm may also write
+# decode_error. -DCH_TRUST_WEBPKI is on the launch line because
+# handshake_parser.c is its own translation unit. Measured (cbmc 6.11.0,
+# kissat, PROVE_NO_CACHE=1 /usr/bin/time -l over this script, one
+# harness at a time, two runs): eeparse_webpki 510 properties, 39 s, 2.5
+# GB, and eeparse 504 properties, 28 s, 2.5 GB, both inside the fast
+# tier's default weight; certparse_webpki 545 properties, 1 s, 38 MB.
+launch fast full eeparse_webpki 260 "hsp_parse_encrypted_exts.0:66" -DCH_TRUST_WEBPKI handshake_parser.c buf.c
+launch fast full certparse_webpki 260 "" -DCH_TRUST_WEBPKI handshake_parser.c buf.c
 launch fast:6 full sha256 3 "fill_nondet.0:97,sha256_update.0:66,sha256_update.1:3,sha256_update.2:66,sha256_final.0:65,sha256_final.1:9,sha256_final.2:9,compress.0:17,compress.1:49,compress.2:65"
 # SHA-512 splits as ML-KEM does: the framing over a stubbed compression,
 # and the compression alone. One formula carrying both hashes and the
@@ -561,6 +577,13 @@ launch fast full key_share 1200 "fill_nondet.0:1133" -DCH_KEX_PQ buf.c
 # (https://github.com/c4milo/chapulin/issues/136). Measured: 486
 # properties, 3 s, 61 MB (kissat).
 launch fast full hello_build 400 "fill_nondet.0:321" buf.c
+# hello_build_webpki: the builder's TRUST=webpki arm, the server_name
+# extension over any hostname of up to CH_HOSTNAME_MAX bytes and the five
+# signature schemes, against that build's CH_HELLO_MAX of 879. The
+# sufficiency assertion is tight: moved to CH_HELLO_MAX - 1 it fails.
+# Measured (cbmc 6.11.0, kissat, PROVE_NO_CACHE=1 /usr/bin/time -l over
+# this script, two runs): 516 properties, 18 to 22 s, 78 to 83 MB.
+launch fast full hello_build_webpki 400 "fill_nondet.0:321" -DCH_TRUST_WEBPKI buf.c
 # x509: primitives concrete (both variants), the walker with stubbed
 # primitives. The ECDSA walker proves the full two-entry bound in
 # every check; the RSA walker's formula is a SAT heavyweight, so it

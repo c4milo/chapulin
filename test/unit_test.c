@@ -317,7 +317,7 @@ static void test_record(void) {
 
 // rsa.h's CH_RSA_MODULUS_MAX is 384 in every build this main links: the
 // device modes stop at RSA-3072. The RSA-4096 and RSA-4032 vectors that
-// bin/rsa_test verifies under -DCH_TRUST_WEBPKI are refused here by the
+// bin/rsa_test verifies at the webpki bound are refused here by the
 // size gate, before any arithmetic runs — the same bytes, the other
 // verdict, so the bound is what decides.
 _Static_assert(CH_RSA_MODULUS_MAX == 384, "unit links rsa.c at the device bound");
@@ -353,6 +353,7 @@ int main(void) {
     test_post_handshake();
     test_alerts_and_epochs();
     test_connect_cfg();
+    test_pinned_hello_extensions();
     test_hello_staging_boundary();
     test_epoch_cfg();
     test_ch_write();

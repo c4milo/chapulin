@@ -51,6 +51,17 @@ int main(void) {
         cfg.obfuscated_age = nondet_u32();
     }
 
+#ifdef CH_TRUST_WEBPKI
+    // hello_build_webpki: the builder puts server_name first in both
+    // arms, carrying any hostname of up to CH_HOSTNAME_MAX bytes, the
+    // length ch_connect's webpki_hostname_ok holds it to.
+    static uint8_t host[CH_HOSTNAME_MAX];
+    fill_nondet(host, sizeof host);
+    cfg.hostname = host;
+    cfg.hostname_len = nondet_size_t();
+    __CPROVER_assume(cfg.hostname_len <= CH_HOSTNAME_MAX);
+#endif
+
     size_t cookie_len = nondet_size_t();
     __CPROVER_assume(cookie_len <= HSP_COOKIE_MAX);
     const uint8_t *ck = (nondet_u8() & 1) ? cookie : NULL;

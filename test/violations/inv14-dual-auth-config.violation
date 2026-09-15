@@ -6,6 +6,6 @@ reason: a config carrying both a PSK and a pin is no longer refused, it
   auth mode instead of failing closed
 
 --- old
-    int pin_ok = cfg->psk == NULL && cfg->server_pubkey != NULL && pin_len_ok;
+        cfg->psk == NULL && cfg->server_pubkey != NULL && pin_len_ok(cfg->server_pubkey_len);
 --- new
-    int pin_ok = cfg->server_pubkey != NULL && pin_len_ok;
+        cfg->server_pubkey != NULL && pin_len_ok(cfg->server_pubkey_len);

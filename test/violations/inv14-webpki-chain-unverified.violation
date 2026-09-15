@@ -1,0 +1,18 @@
+invariant: INV-14
+file: handshake_auth.c
+catches: webpki_session_test
+reason: the TRUST=webpki build has no chain walk yet, and its
+  placeholder returns CH_OK instead of failing closed, so the handshake
+  goes on to Finished with no certificate checked. The change that adds
+  webpki.c replaces the placeholder, and must replace this violation
+  with one against the walk. bin/webpki_session_test's fail-closed
+  handshake objects.
+
+--- old
+    h->alert = ALERT_INTERNAL_ERROR;
+    return CH_EAUTH;
+#else
+--- new
+    h->alert = ALERT_INTERNAL_ERROR;
+    return CH_OK;
+#else

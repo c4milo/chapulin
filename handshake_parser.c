@@ -151,10 +151,6 @@ int hsp_parse_server_hello(const uint8_t *body, size_t n, server_hello_info *inf
     return info->version_ok ? CH_OK : CH_EPROTO;
 }
 
-// Encrypted extensions: take the peer's record_size_limit, tolerate
-// supported_groups (a server may volunteer it for later connections),
-// reject everything else — RFC 9846 §4.3 requires unsupported_extension
-// for anything the ClientHello did not offer.
 // Certificate framing per RFC 9846 §4.4.2; the entries themselves
 // are the trust mode's concern, not this parser's.
 int hsp_parse_certificate(const uint8_t *body, size_t n, const uint8_t **list, size_t *list_len,
@@ -174,16 +170,44 @@ int hsp_parse_certificate(const uint8_t *body, size_t n, const uint8_t **list, s
     return CH_OK;
 }
 
+#ifdef CH_TRUST_WEBPKI
+// The CertificateVerify algorithms a TRUST=webpki build accepts, one per
+// leaf key family the walk admits: rsa_pss_rsae_sha256,
+// ecdsa_secp256r1_sha256 and ecdsa_secp384r1_sha384. The ClientHello
+// also offered rsa_pkcs1_sha256 and rsa_pkcs1_sha384, for certificate
+// signatures only, and RFC 9846 §4.4.3 forbids them here. Every scheme
+// but the three gets the pinned builds' answer to a scheme they did not
+// offer: CH_EAUTH with handshake_failure.
+static int certificate_verify_scheme_ok(uint16_t algorithm) {
+    return algorithm == SIGALG_RSA_PSS_RSAE_SHA256 || algorithm == SIGALG_ECDSA_P256_SHA256 ||
+           algorithm == SIGALG_ECDSA_P384_SHA384;
+}
+#endif
+
 // CertificateVerify per RFC 9846 §4.4.3: we offered exactly one
-// signature algorithm, so the message may carry nothing else.
-int hsp_parse_certificate_verify(const uint8_t *body, size_t n, const uint8_t **sig,
-                                 size_t *sig_len, uint8_t *alert) {
+// signature algorithm, so the message may carry nothing else. A
+// TRUST=webpki build offered several and admits the three
+// certificate_verify_scheme_ok names, reporting which one in *scheme.
+int hsp_parse_certificate_verify(const uint8_t *body, size_t n,
+#ifdef CH_TRUST_WEBPKI
+                                 uint16_t *scheme,
+#endif
+                                 const uint8_t **sig, size_t *sig_len, uint8_t *alert) {
     rbuf r;
     rb_init(&r, body, n);
+#ifdef CH_TRUST_WEBPKI
+    uint16_t algorithm = rb_u16(&r);
+    if (!certificate_verify_scheme_ok(algorithm)) {
+        *alert = ALERT_HANDSHAKE_FAILURE;
+        return CH_EAUTH;
+    }
+    *scheme = algorithm;
+#else
     if (rb_u16(&r) != CH_PIN_SIGALG) {
         *alert = ALERT_HANDSHAKE_FAILURE;
         return CH_EAUTH;
     }
+#endif
     size_t len = rb_u16(&r);
     *sig = rb_bytes(&r, len);
     if (*sig == NULL || rb_left(&r) != 0) {
@@ -212,6 +236,31 @@ static int parse_record_size_limit(const uint8_t *ext_data, size_t ext_len, uint
     return CH_OK;
 }
 
+#ifdef CH_TRUST_WEBPKI
+// A TRUST=webpki ClientHello sent server_name, and RFC 6066 §3 lets the
+// server acknowledge it in EncryptedExtensions with empty
+// extension_data. That empty acknowledgement is the one server_name the
+// parser admits.
+static int server_name_acknowledged(uint16_t ext, size_t ext_len) {
+    return ext == EXT_SERVER_NAME && ext_len == 0;
+}
+
+// The alert for an extension the loop does not admit. A server_name
+// there carries data, because server_name_acknowledged admits the empty
+// one. That body has the wrong length for the empty extension_data RFC
+// 6066 §3 requires, and RFC 9846 §6 names that fault decode_error.
+// Every other extension was never offered: unsupported_extension
+// (RFC 9846 §4.3).
+static uint8_t unadmitted_extension_alert(uint16_t ext) {
+    return ext == EXT_SERVER_NAME ? ALERT_DECODE_ERROR : ALERT_UNSUPPORTED_EXTENSION;
+}
+#endif
+
+// Encrypted extensions: take the peer's record_size_limit, tolerate
+// supported_groups (a server may volunteer it for later connections)
+// and, in a TRUST=webpki build, one empty server_name acknowledgement;
+// reject everything else — RFC 9846 §4.3 requires unsupported_extension
+// for anything the ClientHello did not offer.
 int hsp_parse_encrypted_exts(const uint8_t *body, size_t n, uint16_t *peer_limit, uint8_t *alert) {
     rbuf r;
     rb_init(&r, body, n);
@@ -219,7 +268,8 @@ int hsp_parse_encrypted_exts(const uint8_t *body, size_t n, uint16_t *peer_limit
     if (r.err || exts_len != rb_left(&r)) {
         return CH_EPROTO;
     }
-    uint8_t seen = 0; // bit 0 record_size_limit, bit 1 supported_groups
+    // bit 0 record_size_limit, bit 1 supported_groups, bit 2 server_name
+    uint8_t seen = 0;
     while (rb_left(&r) > 0) {
         uint16_t ext = rb_u16(&r);
         size_t ext_len = rb_u16(&r);
@@ -235,8 +285,16 @@ int hsp_parse_encrypted_exts(const uint8_t *body, size_t n, uint16_t *peer_limit
             }
         } else if (ext == EXT_SUPPORTED_GROUPS) {
             bit = 1U << 1; // tolerated; its body is deliberately unread
+#ifdef CH_TRUST_WEBPKI
+        } else if (server_name_acknowledged(ext, ext_len)) {
+            bit = 1U << 2; // admitted once, like the other two
+#endif
         } else {
+#ifdef CH_TRUST_WEBPKI
+            *alert = unadmitted_extension_alert(ext);
+#else
             *alert = ALERT_UNSUPPORTED_EXTENSION;
+#endif
             return CH_EPROTO;
         }
         if (seen & bit) {

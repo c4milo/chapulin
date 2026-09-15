@@ -12,7 +12,7 @@
 // test/rsa_wide_vectors.h and test/rsa_pkcs1_wide_vectors.h the same
 // way: an RSA-4096 and an RSA-4032 key, the top of the webpki build's
 // modulus gate and one 8-byte step below it. This binary builds with
-// -DCH_TRUST_WEBPKI, so rsa.h's CH_RSA_MODULUS_MAX is 512 and those
+// -DCH_RSA_MODULUS_MAX=512, the webpki build's bound, so those
 // verify; at the device bound of 384 the same test expects the size
 // gate to refuse them.
 #include <stdio.h>

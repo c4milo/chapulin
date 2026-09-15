@@ -17,12 +17,15 @@ imposes on it. Each check's doc comment says which of the two it is.
 
 The profile: TLS 1.3 only, TLS_CHACHA20_POLY1305_SHA256, one
 key-exchange group per build (`Kex`: x25519, or the X25519MLKEM768
-hybrid), two auth modes (ECDHE-PSK or a pinned server key checked
-through CertificateVerify), no 0-RTT, no compression, no renegotiation,
-no RFC 7250 raw public keys, and `record_size_limit` (RFC 8449) always
+hybrid), two auth modes (ECDHE-PSK or a server key checked through
+CertificateVerify), no 0-RTT, no compression, no renegotiation, no RFC
+7250 raw public keys, and `record_size_limit` (RFC 8449) always
 offered. The client offers exactly one of everything, so most of the
 RFC's negotiation choices collapse to a byte compare against a
-constant.
+constant. The TRUST=webpki build is the one exception, and two
+parameters carry it: its ClientHello sends server_name
+(`parseEncryptedExtensions`'s `serverNameSent`), and it offers five
+signature schemes instead of one (`SignatureOffer`).
 
 Where the RFC fixes the alert, `Alert` names it. Where the RFC states
 a MUST but names no alert, the verdict is `Alert.unspecified` and the
@@ -566,35 +569,38 @@ structure EncryptedExtensions where
   recordSizeLimit : Option Nat
 
 /--
-The extension types this profile admits in EncryptedExtensions: the
-server_name acknowledgement (RFC 6066 §3), supported_groups
-(RFC 9846 §4.2.7), and record_size_limit (RFC 8449 §4), which
-`CLAUDE.md` says the client always sends.
+The extension types this profile admits in EncryptedExtensions:
+supported_groups (RFC 9846 §4.2.7) and record_size_limit (RFC 8449 §4),
+which `CLAUDE.md` says the client always sends, and the server_name
+acknowledgement (RFC 6066 §3) when `serverNameSent` says the ClientHello
+carried server_name. The TRUST=webpki build sends it; the raw and ca
+builds do not.
 -/
-def encryptedExtensionsAllowed : List Nat :=
-  [extSupportedGroups, extRecordSizeLimit]
+def encryptedExtensionsAllowed (serverNameSent : Bool) : List Nat :=
+  if serverNameSent then [extServerName, extSupportedGroups, extRecordSizeLimit]
+  else [extSupportedGroups, extRecordSizeLimit]
 
 /--
 Extension types RFC 9846 §4.2 permits in EncryptedExtensions that this
-client never requests: server_name(0) — the profile sends no SNI, so a
-server_name acknowledgement is a response to a request that never went
-out — max_fragment_length(1), use_srtp(14),
-heartbeat(15), application_layer_protocol_negotiation(16), the RFC 7250
-certificate-type pair (19, 20), and early_data(42) — the profile has no
-0-RTT and no raw public keys. §4.2 makes an unrequested response an
-unsupported_extension, which is a different refusal from §4.3.1's
-illegal_parameter for an extension that has no business in this message
-at all.
+client never requests: server_name(0) when `serverNameSent` is false —
+the ClientHello carried no SNI, so a server_name acknowledgement is a
+response to a request that never went out — max_fragment_length(1),
+use_srtp(14), heartbeat(15), application_layer_protocol_negotiation(16),
+the RFC 7250 certificate-type pair (19, 20), and early_data(42) — the
+profile has no 0-RTT and no raw public keys. §4.2 makes an unrequested
+response an unsupported_extension, which is a different refusal from
+§4.3.1's illegal_parameter for an extension that has no business in this
+message at all.
 -/
-def encryptedExtensionsUnrequested : List Nat :=
-  [extServerName, 1, 14, 15, 16, 19, 20, extEarlyData]
+def encryptedExtensionsUnrequested (serverNameSent : Bool) : List Nat :=
+  (if serverNameSent then [] else [extServerName]) ++ [1, 14, 15, 16, 19, 20, extEarlyData]
 
 /-- The alert an extension that does not belong in EncryptedExtensions
 earns: unsupported_extension when the RFC allows it here but the client
 never asked for it (§4.2), and otherwise §4.3.1's illegal_parameter for
 a forbidden extension, through `wrongMessageAlert`. -/
-def encryptedExtensionsAlert (t : Nat) : Alert :=
-  if encryptedExtensionsUnrequested.contains t then .unsupportedExtension
+def encryptedExtensionsAlert (serverNameSent : Bool) (t : Nat) : Alert :=
+  if (encryptedExtensionsUnrequested serverNameSent).contains t then .unsupportedExtension
   else wrongMessageAlert t
 
 /--
@@ -632,6 +638,16 @@ def checkSupportedGroups (exts : List (Nat × ByteArray)) : Except Alert Unit :=
     ensure (off = data.size) .decodeError
     ensure (2 ≤ groups.size ∧ groups.size % 2 = 0) .decodeError
 
+/-- RFC 6066 §3: a server that acknowledges server_name sends the
+extension with its extension_data empty. Data there gives the extension
+a body of the wrong length for its structure, which RFC 9846 §6 makes a
+decode_error, as `readRecordSizeLimit` does for a record_size_limit of
+the wrong length. -/
+def checkServerNameAck (exts : List (Nat × ByteArray)) : Except Alert Unit :=
+  match extensionData? exts extServerName with
+  | none => .ok ()
+  | some data => ensure (data.size = 0) .decodeError
+
 /--
 RFC 9846 §4.3.1: `struct { Extension extensions<0..2^16-1>; }`, and
 "the client MUST check EncryptedExtensions for the presence of any
@@ -642,17 +658,24 @@ The block may be empty. The profile admits two extensions here:
 supported_groups, a `NamedGroup named_group_list<2..2^16-2>` whose
 contents §4.2.7 tells the client not to act on during the handshake —
 so the framing is checked and the groups go unread — and
-record_size_limit, the only one whose value the client needs. This
-client sends no server_name, so a server_name acknowledgement is an
-unrequested response and earns §4.2's unsupported_extension.
+record_size_limit, the only one whose value the client needs.
+
+`serverNameSent` says whether the ClientHello carried server_name. When
+it did not, a server_name acknowledgement is an unrequested response and
+earns §4.2's unsupported_extension. When it did, the acknowledgement is a
+third admitted extension, once like every extension (§4.2), with the
+empty extension_data RFC 6066 §3 gives it.
 -/
-def parseEncryptedExtensions (msg : ByteArray) : Except Alert EncryptedExtensions := do
+def parseEncryptedExtensions (serverNameSent : Bool) (msg : ByteArray) :
+    Except Alert EncryptedExtensions := do
   let body ← messageBody msg encryptedExtensionsType
   let (extBytes, off) ← vec16At body 0
   ensure (off = body.size) .decodeError
   let exts ← extensionList extBytes
-  ensureAllowed encryptedExtensionsAllowed encryptedExtensionsAlert exts
+  ensureAllowed (encryptedExtensionsAllowed serverNameSent)
+    (encryptedExtensionsAlert serverNameSent) exts
   checkSupportedGroups exts
+  checkServerNameAck exts
   let recordSizeLimit ← readRecordSizeLimit? exts
   return { recordSizeLimit }
 
@@ -742,11 +765,52 @@ def Scheme.code : Scheme → Nat
   | .rsa => 0x0804
   | .p256 => 0x0403
 
-/-- The line protocol's scheme token, spelled as `Spec.X509.algOf?`
-spells the matching certificate algorithm. -/
-def schemeOf? : String → Option Scheme
-  | "rsa" => some .rsa
-  | "p256" => some .p256
+/--
+What a build's ClientHello offers in signature_algorithms (RFC 9846
+§4.2.3), which fixes what CertificateVerify may carry. A raw or ca build
+pins one `Scheme` and offers it alone. A TRUST=webpki build cannot know
+which algorithm family signed the chain the server will send, so it
+offers five.
+-/
+inductive SignatureOffer
+  /-- The raw and ca builds: the one scheme the Makefile's PIN pins. -/
+  | pinned (scheme : Scheme)
+  /-- The TRUST=webpki build. -/
+  | webpki
+
+/-- The SignatureScheme code points the offer lists, in the order the
+ClientHello sends them. The webpki list is rsa_pss_rsae_sha256,
+ecdsa_secp256r1_sha256 and ecdsa_secp384r1_sha384, one for each leaf key
+family, then rsa_pkcs1_sha256 and rsa_pkcs1_sha384 for the certificate
+signatures a public CA writes. -/
+def SignatureOffer.codes : SignatureOffer → List Nat
+  | .pinned scheme => [scheme.code]
+  | .webpki => [0x0804, 0x0403, 0x0503, 0x0401, 0x0501]
+
+/-- The RSASSA-PKCS1-v1_5 SignatureScheme code points RFC 9846 §4.2.3
+lists: rsa_pkcs1_sha256, rsa_pkcs1_sha384 and rsa_pkcs1_sha512. §4.4.3
+requires RSASSA-PSS for an RSA CertificateVerify whether or not these
+appear in signature_algorithms. -/
+def rsaPkcs1Schemes : List Nat := [0x0401, 0x0501, 0x0601]
+
+/-- The SignatureScheme code points a CertificateVerify may carry under
+the offer: the offered codes that §4.4.3 permits there. A pinned build's
+is its one scheme. The webpki build's are rsa_pss_rsae_sha256,
+ecdsa_secp256r1_sha256 and ecdsa_secp384r1_sha384, one per leaf key
+family; the two RSASSA-PKCS1-v1_5 schemes it offered are for certificate
+signatures only. `certificateVerifyCodes_permitted` proves each code is
+offered and none is in `rsaPkcs1Schemes`. -/
+def SignatureOffer.certificateVerifyCodes : SignatureOffer → List Nat
+  | .pinned scheme => [scheme.code]
+  | .webpki => [0x0804, 0x0403, 0x0503]
+
+/-- The line protocol's offer token: `rsa` and `p256` are the pinned
+builds, spelled as `Spec.X509.algOf?` spells the matching certificate
+algorithm, and `webpki` is the TRUST=webpki build. -/
+def offerOf? : String → Option SignatureOffer
+  | "rsa" => some (.pinned .rsa)
+  | "p256" => some (.pinned .p256)
+  | "webpki" => some .webpki
   | _ => none
 
 /-- What an accepted CertificateVerify hands the client. -/
@@ -771,10 +835,12 @@ def verifyContent (transcriptHash : ByteArray) : ByteArray :=
 RFC 9846 §4.4.3: `struct { SignatureScheme algorithm; opaque
 signature<0..2^16-1>; }`, filling the message exactly.
 
-* `algorithm`: profile — the build pins one scheme, so it is the only
-  code point that passes. §4.4.3 requires the algorithm be one the
-  client offered but names no alert for one that is not, so the
-  refusal is `unspecified`;
+* `algorithm`: one of `SignatureOffer.certificateVerifyCodes` — a
+  pinned build's one scheme, or the webpki build's three. §4.4.3
+  requires an offered scheme and forbids RSASSA-PKCS1-v1_5 here even
+  when offered, and the list keeps both rules. §4.4.3 names no alert
+  for a scheme outside it, so every such scheme gets one verdict,
+  `unspecified`;
 * `signature`: `opaque signature<0..2^16-1>`, exact-fill. §4.4.3 sets
   no length rule of its own — what lengths a scheme admits is the
   verifier's business, so no bound is imposed here. Whether the
@@ -782,11 +848,11 @@ signature<0..2^16-1>; }`, filling the message exactly.
   failure a decrypt_error, and it belongs to `Spec.Rsa.pssVerify` or
   `Spec.P256.ecdsaVerify` over `verifyContent`.
 -/
-def parseCertificateVerify (scheme : Scheme) (msg : ByteArray) :
+def parseCertificateVerify (offer : SignatureOffer) (msg : ByteArray) :
     Except Alert CertificateVerify := do
   let body ← messageBody msg certificateVerifyType
   let algorithm ← u16At body 0
-  ensure (algorithm = scheme.code) .unspecified
+  ensure (offer.certificateVerifyCodes.contains algorithm = true) .unspecified
   let (signature, off) ← vec16At body 2
   ensure (off = body.size) .decodeError
   -- §4.4.3 frames the signature as `opaque signature<0..2^16-1>` and
@@ -963,8 +1029,10 @@ def selftest : Bool := Id.run do
   -- §4.3.1 and RFC 8449 §4.
   let encryptedExtensionsOf (exts : ByteArray) : ByteArray :=
     message encryptedExtensionsType (vec16 exts)
-  let limitOf (msg : ByteArray) : Option (Option Nat) :=
-    (parseEncryptedExtensions msg).toOption.map (fun fields => fields.recordSizeLimit)
+  let limitSent (serverNameSent : Bool) (msg : ByteArray) : Option (Option Nat) :=
+    (parseEncryptedExtensions serverNameSent msg).toOption.map
+      (fun fields => fields.recordSizeLimit)
+  let limitOf := limitSent false
   let encryptedExtensionsOk :=
     limitOf (encryptedExtensionsOf ByteArray.empty) == some none &&
     limitOf (encryptedExtensionsOf (extension extRecordSizeLimit (u16 16385))) ==
@@ -984,6 +1052,25 @@ def selftest : Bool := Id.run do
     -- empty or not, is an unrequested response the client refuses.
     limitOf (encryptedExtensionsOf (extension extServerName ByteArray.empty)) == none &&
     limitOf (encryptedExtensionsOf (extension extServerName (ascii "x"))) == none &&
+    (match parseEncryptedExtensions false
+        (encryptedExtensionsOf (extension extServerName (ascii "x"))) with
+     | .error .unsupportedExtension => true
+     | _ => false) &&
+    -- RFC 6066 §3: a ClientHello that sent server_name admits its empty
+    -- acknowledgement, once, beside the other two. Data in it is a body
+    -- of the wrong length, a decode_error (RFC 9846 §6).
+    limitSent true (encryptedExtensionsOf (extension extServerName ByteArray.empty)) ==
+      some none &&
+    (match parseEncryptedExtensions true
+        (encryptedExtensionsOf (extension extServerName (ascii "x"))) with
+     | .error .decodeError => true
+     | _ => false) &&
+    limitSent true (encryptedExtensionsOf (extension extRecordSizeLimit (u16 64) ++
+      extension extServerName ByteArray.empty)) == some (some 64) &&
+    limitSent true (encryptedExtensionsOf (extension extServerName (ascii "x"))) == none &&
+    limitSent true (encryptedExtensionsOf (extension extServerName ByteArray.empty ++
+      extension extServerName ByteArray.empty)) == none &&
+    limitSent true (encryptedExtensionsOf (extension extEarlyData ByteArray.empty)) == none &&
     limitOf (encryptedExtensionsOf (extension extSupportedGroups
       (vec16 (u16 x25519Group)))) == some none &&
     limitOf (encryptedExtensionsOf (extension extSupportedGroups
@@ -1016,12 +1103,17 @@ def selftest : Bool := Id.run do
   let ecdsaSig := ByteArray.mk (Array.replicate 70 0x44)
   let verifyOf (algorithm : Nat) (sig : ByteArray) : ByteArray :=
     message certificateVerifyType (u16 algorithm ++ vec16 sig)
+  let verifiesUnder (offer : SignatureOffer) (algorithm : Nat) (sig : ByteArray) : Bool :=
+    match parseCertificateVerify offer (verifyOf algorithm sig) with
+    | .ok fields => fields.algorithm == algorithm && hex fields.signature == hex sig
+    | .error _ => false
   let verifies (scheme : Scheme) (msg : ByteArray) (sig : ByteArray) : Bool :=
-    match parseCertificateVerify scheme msg with
+    match parseCertificateVerify (.pinned scheme) msg with
     | .ok fields => fields.algorithm == scheme.code && hex fields.signature == hex sig
     | .error _ => false
-  let refuses (scheme : Scheme) (msg : ByteArray) : Bool :=
-    (parseCertificateVerify scheme msg).toOption.isNone
+  let refusesUnder (offer : SignatureOffer) (msg : ByteArray) : Bool :=
+    (parseCertificateVerify offer msg).toOption.isNone
+  let refuses (scheme : Scheme) (msg : ByteArray) : Bool := refusesUnder (.pinned scheme) msg
   let certificateVerifyOk :=
     verifies .rsa (verifyOf Scheme.rsa.code rsaSig) rsaSig &&
     verifies .p256 (verifyOf Scheme.p256.code ecdsaSig) ecdsaSig &&
@@ -1029,7 +1121,19 @@ def selftest : Bool := Id.run do
     refuses .p256 (verifyOf Scheme.rsa.code ecdsaSig) &&
     verifies .rsa (verifyOf Scheme.rsa.code (ByteArray.mk (Array.replicate 39 0x33)))
       (ByteArray.mk (Array.replicate 39 0x33)) &&
-    refuses .rsa (verifyOf Scheme.rsa.code rsaSig ++ ByteArray.mk #[0])
+    refuses .rsa (verifyOf Scheme.rsa.code rsaSig ++ ByteArray.mk #[0]) &&
+    -- The webpki offer: the three leaf-key schemes pass, the two
+    -- RSASSA-PKCS1-v1_5 schemes it offered are refused here (§4.4.3), and
+    -- so are schemes it never offered, rsa_pkcs1_sha512 and
+    -- rsa_pss_rsae_sha384.
+    verifiesUnder .webpki 0x0804 rsaSig && verifiesUnder .webpki 0x0403 ecdsaSig &&
+    verifiesUnder .webpki 0x0503 ecdsaSig &&
+    refusesUnder .webpki (verifyOf 0x0401 rsaSig) &&
+    refusesUnder .webpki (verifyOf 0x0501 rsaSig) &&
+    refusesUnder .webpki (verifyOf 0x0601 rsaSig) &&
+    refusesUnder .webpki (verifyOf 0x0805 rsaSig) &&
+    refusesUnder .webpki (verifyOf 0x0804 rsaSig ++ ByteArray.mk #[0]) &&
+    refuses .rsa (verifyOf 0x0503 ecdsaSig)
   -- §4.4.3: the signed content is 64 spaces, the context string, a zero, the hash.
   let transcript := Spec.Sha256.sha256 (ascii "transcript")
   let content := verifyContent transcript
@@ -1290,14 +1394,15 @@ RFC 8449 §4: an accepted record_size_limit is at least 64. The client
 sizes its record buffer against this number, and the RFC makes a
 smaller one a fatal error rather than a value to clamp.
 -/
-theorem parseEncryptedExtensions_limit_ge_64 (msg : ByteArray)
+theorem parseEncryptedExtensions_limit_ge_64 (serverNameSent : Bool) (msg : ByteArray)
     (fields : EncryptedExtensions) (limit : Nat)
-    (h_accepted : parseEncryptedExtensions msg = .ok fields)
+    (h_accepted : parseEncryptedExtensions serverNameSent msg = .ok fields)
     (h_limit : fields.recordSizeLimit = some limit) : 64 ≤ limit := by
   rw [parseEncryptedExtensions] at h_accepted
   obtain ⟨_, -, h_accepted⟩ := exists_of_bind_eq_ok h_accepted
   obtain ⟨⟨_, _⟩, -, h_accepted⟩ := exists_of_bind_eq_ok h_accepted
   obtain ⟨-, h_accepted⟩ := of_ensure_bind h_accepted
+  obtain ⟨_, -, h_accepted⟩ := exists_of_bind_eq_ok h_accepted
   obtain ⟨_, -, h_accepted⟩ := exists_of_bind_eq_ok h_accepted
   obtain ⟨_, -, h_accepted⟩ := exists_of_bind_eq_ok h_accepted
   obtain ⟨_, -, h_accepted⟩ := exists_of_bind_eq_ok h_accepted
@@ -1317,22 +1422,63 @@ theorem parseEncryptedExtensions_limit_ge_64 (msg : ByteArray)
     have h_out := Option.some.inj (eq_of_pure_eq_ok h_read)
     omega
 
+/-- Every code in `certificateVerifyCodes` is one the offer lists and none
+is an RSASSA-PKCS1-v1_5 scheme: the list keeps both §4.4.3 rules. -/
+private theorem certificateVerifyCodes_permitted (offer : SignatureOffer) (code : Nat)
+    (h_listed : offer.certificateVerifyCodes.contains code = true) :
+    offer.codes.contains code = true ∧ rsaPkcs1Schemes.contains code = false := by
+  cases offer with
+  | pinned scheme =>
+    cases scheme <;>
+      simp [SignatureOffer.certificateVerifyCodes, SignatureOffer.codes, Scheme.code,
+        rsaPkcs1Schemes] at h_listed ⊢ <;> omega
+  | webpki =>
+    simp [SignatureOffer.certificateVerifyCodes, SignatureOffer.codes, rsaPkcs1Schemes]
+      at h_listed ⊢
+    omega
+
 /--
 CertificateVerify soundness (RFC 9846 §4.4.3). An accepted message
-reports the build's own SignatureScheme and no other code point: the
-one algorithm the ClientHello offered is the one the parser admits.
+reports an algorithm the ClientHello offered, and never an
+RSASSA-PKCS1-v1_5 scheme, whatever the offer listed.
 -/
-theorem parseCertificateVerify_sound (scheme : Scheme) (msg : ByteArray)
+theorem parseCertificateVerify_sound (offer : SignatureOffer) (msg : ByteArray)
     (fields : CertificateVerify)
-    (h_accepted : parseCertificateVerify scheme msg = .ok fields) :
-    fields.algorithm = scheme.code := by
+    (h_accepted : parseCertificateVerify offer msg = .ok fields) :
+    offer.codes.contains fields.algorithm = true ∧
+      rsaPkcs1Schemes.contains fields.algorithm = false := by
   rw [parseCertificateVerify] at h_accepted
   obtain ⟨_, -, h_accepted⟩ := exists_of_bind_eq_ok h_accepted
   obtain ⟨_, -, h_accepted⟩ := exists_of_bind_eq_ok h_accepted
-  obtain ⟨h_pinned, h_accepted⟩ := of_ensure_bind h_accepted
+  obtain ⟨h_listed, h_accepted⟩ := of_ensure_bind h_accepted
   obtain ⟨⟨_, _⟩, -, h_accepted⟩ := exists_of_bind_eq_ok h_accepted
   obtain ⟨-, h_accepted⟩ := of_ensure_bind h_accepted
   obtain rfl := eq_of_pure_eq_ok h_accepted
-  exact h_pinned
+  exact certificateVerifyCodes_permitted offer _ h_listed
+
+/--
+A pinned build's CertificateVerify reports the build's own
+SignatureScheme and no other code point: the one algorithm the
+ClientHello offered is the one the parser admits.
+-/
+theorem parseCertificateVerify_pinned (scheme : Scheme) (msg : ByteArray)
+    (fields : CertificateVerify)
+    (h_accepted : parseCertificateVerify (.pinned scheme) msg = .ok fields) :
+    fields.algorithm = scheme.code := by
+  have h_offered := (parseCertificateVerify_sound (.pinned scheme) msg fields h_accepted).1
+  simpa [SignatureOffer.codes] using h_offered
+
+/--
+A webpki build's CertificateVerify reports one of the three schemes a
+leaf key signs with — rsa_pss_rsae_sha256, ecdsa_secp256r1_sha256 or
+ecdsa_secp384r1_sha384 — so the two PKCS#1 v1.5 schemes the ClientHello
+offered for certificate signatures never authenticate the handshake.
+-/
+theorem parseCertificateVerify_webpki (msg : ByteArray) (fields : CertificateVerify)
+    (h_accepted : parseCertificateVerify .webpki msg = .ok fields) :
+    fields.algorithm = 0x0804 ∨ fields.algorithm = 0x0403 ∨ fields.algorithm = 0x0503 := by
+  obtain ⟨h_offered, h_not_pkcs1⟩ := parseCertificateVerify_sound .webpki msg fields h_accepted
+  simp [SignatureOffer.codes, rsaPkcs1Schemes] at h_offered h_not_pkcs1
+  omega
 
 end Spec.HandshakeParser

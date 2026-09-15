@@ -1,0 +1,14 @@
+invariant: INV-14
+file: handshake_parser.c
+catches: handshake_strict_webpki
+reason: the TRUST=webpki EncryptedExtensions parser admits a server_name
+  that carries data, where RFC 6066 §3 allows only the empty
+  acknowledgement, so a body of the wrong length parses instead of
+  failing as a decode error. bin/handshake_strict_webpki's server_name
+  rows object.
+
+--- old
+    return ext == EXT_SERVER_NAME && ext_len == 0;
+--- new
+    (void)ext_len;
+    return ext == EXT_SERVER_NAME;

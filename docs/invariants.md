@@ -141,7 +141,13 @@ which convention holds them.
   widening inside those files is held by the boundary-pair tests in
   test/x509_ca_tests.h and test/webpki_spki_test.c, by the off-curve
   keys in test/webpki_sigalg_test.c, and by review, as x509.c's always
-  has been; the tripwire catches a reader growing outside them.
+  has been; the tripwire catches a reader growing outside them. Which
+  object packages which reader is held by `make lint-trust-separation`:
+  the raw and ca objects carry no `webpki_*.c` file and the webpki
+  object carries no `pem.c`, `x509.c` or `x509_ca.c`, with the webpki
+  file list read from git rather than from the Makefile's own filter
+  (`inv05-webpki-source-in-raw`), and every root `webpki*.c` file git
+  tracks must appear in `WEBPKI_SRCS` (`inv05-webpki-source-unlisted`).
 - **Violation.** A PR accepts a second CertificateEntry, an
   absent-params AlgorithmIdentifier, or an unknown critical
   extension "for compatibility" — or a library source calls
@@ -170,7 +176,12 @@ which convention holds them.
   verifier gets wrong.
 - **Check.** Semgrep-tripwire (`inv-6-no-pkcs1`): the identifier
   `pkcs1` outside `rsa_pkcs1.c` and `webpki_sigalg.c`, with no
-  exemption for the device modes' cert files.
+  exemption for the device modes' cert files. The webpki ClientHello
+  offers `rsa_pkcs1_sha256` and `rsa_pkcs1_sha384` for certificate
+  signatures, and `hsp_parse_certificate_verify` refuses both in
+  CertificateVerify, as RFC 9846 §4.4.3 requires;
+  bin/handshake_strict_webpki's rows hold that refusal
+  (`inv06-certificate-verify-pkcs1`).
 - **Violation.** A PR adds v1.5 verify to `rsa.c` or to the ca-mode
   profile "for compatibility" with an old server, or adds v1.5
   decryption anywhere, importing Bleichenbacher-shaped risk.
@@ -377,11 +388,20 @@ which convention holds them.
 
 - **Claim.** The client refuses: Certificate in PSK mode,
   CertificateRequest, psk_ke without DHE, a cookieless HRR, a second
-  HRR, dual auth configs, and an even RSA pin.
+  HRR, dual auth configs, and an even RSA pin. A TRUST=webpki build
+  also refuses a config that sets a PSK, a ticket, a pin or an epoch
+  callback, or a length field of one of them, a config whose clock
+  (`now_seconds`) is 0, and a server_name acknowledgement that carries
+  data. The web PKI fields exist only in that build, so a raw or ca
+  build that sets one fails to compile rather than returning
+  CH_EINVAL. Until the chain walk lands, a TRUST=webpki handshake
+  refuses at the Certificate message.
 - **Mechanism.** Fail-closed policy, each refusal an explicit branch
   with its alert.
 - **Check.** handshake_strict table cases per refusal; CBMC proves the
-  branches memory-safe.
+  branches memory-safe. The TRUST=webpki refusals have boundary rows in
+  test/webpki_session_cases.h and bin/handshake_strict_webpki, each
+  guarded by an `inv14-` violation.
 - **Violation.** A PR relaxes one refusal for interop with a broken
   server.
 - See [decisions: Protocol surface](decisions.md#protocol-surface).
@@ -592,8 +612,11 @@ which convention holds them.
 ### INV-19 — bounded stack
 
 - **Claim.** No VLAs, no recursion, and no function frame over the
-  build's budget: 2,560 bytes for every build except `KEX=pq`
-  (measured worst there: `rsa_vp1` at 2,400), and 6,144 for `KEX=pq`
+  build's budget: 2,560 bytes for every build except `TRUST=webpki` and
+  `KEX=pq` (measured worst there: `rsa_vp1` at 2,400); 4,096 for
+  `TRUST=webpki`, a host-side mode whose `rsa_vp1` verifies RSA-4096
+  over 128 limbs (measured 3,168 with clang 23 on arm64 and 3,128 with
+  Arm GNU gcc 16.2 on the Cortex-M3); and 6,144 for `KEX=pq`
   (measured worst: `mlk_pke_encrypt` at 5,744). ML-KEM's own working
   memory sets that ceiling — K-PKE encrypt holds three polynomial
   vectors and two polynomials — but chapulin's hybrid plumbing clears
@@ -613,7 +636,11 @@ which convention holds them.
   exempt from the frame budget; they keep vector tables in their
   frames.
 - **Check.** Type-system grade (the compiler refuses); bench/sram.sh
-  measures the whole-call-chain peaks the README reports.
+  measures the whole-call-chain peaks the README reports. `make check`
+  runs lint-stack for the build it was given through `lint`, and runs
+  `make lint-stack TRUST=webpki` as a leg of its own, so plain `make
+  check`, the target `make ci` runs on a pull request, holds the
+  4,096-byte budget too.
 - **Violation.** A PR sizes a scratch buffer from a length field, or
   adds a frame that silently outgrows the smallest supported SRAM.
 - See [decisions: Memory and runtime](decisions.md#memory-and-runtime).

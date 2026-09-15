@@ -22,7 +22,7 @@
 #ifdef CH_TRUST_CA
 #include "x509.h"
 #endif
-
+#ifndef CH_TRUST_WEBPKI
 // CertificateVerify: parse, rebuild the §4.5.2 signed content, and
 // verify against pin slot A then B. The TRUST=ca build swaps in the
 // leaf key here.
@@ -91,7 +91,7 @@ static int check_certificate_verify(handshake_state *h, const uint8_t hash[SHA25
     sha256_update(&h->t->transcript, raw, raw_len);
     return CH_OK;
 }
-
+#endif
 // Pinned-key server authentication (RFC 9846 §4.5.1 and §4.5.2): accept the
 // Certificate message with minimal framing checks — its contents are
 // authenticated by the signature, not by parsing — then require a
@@ -179,6 +179,23 @@ int hsa_server_auth(handshake_state *h) {
     if (rc != CH_OK) {
         return rc;
     }
+#ifdef CH_TRUST_WEBPKI
+    // The chain walk is not in this tree yet: webpki.h declares
+    // webpki_verify_chain, and no source defines it. Until the change
+    // that adds webpki.c replaces this block with the walk and a
+    // CertificateVerify matched to the leaf key, every TRUST=webpki
+    // handshake stops here with internal_error, before any certificate
+    // is trusted, and this build compiles no check_certificate_verify.
+    // test/webpki_session_test.c requires that failure. The #ifndef and
+    // #endif around check_certificate_verify take the place of two blank
+    // lines, so no line above hsa_epoch_commit's CH_ASSERT moves:
+    // CH_ASSERT passes __LINE__, and the raw and ca objects stay as they
+    // were.
+    (void)list;
+    (void)list_len;
+    h->alert = ALERT_INTERNAL_ERROR;
+    return CH_EAUTH;
+#else
 #ifdef CH_TRUST_CA
     // CA mode: the chain must verify up to a pinned CA key before
     // anything else happens; the leaf key then stands in for the
@@ -202,4 +219,5 @@ int hsa_server_auth(handshake_state *h) {
     uint8_t hash[SHA256_LEN];
     (void)hsr_transcript_hash(h, hash);
     return check_certificate_verify(h, hash);
+#endif
 }

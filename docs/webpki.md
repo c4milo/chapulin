@@ -21,7 +21,11 @@ client; it now scopes that to the device modes.
 
 ## Status
 
-Not implemented. This document is the design record and the plan of record.
+Partly implemented. The build mode, the configuration below, the ClientHello
+and the EncryptedExtensions reply are in the tree. The chain walk is not, so a
+`TRUST=webpki` handshake fails closed at the Certificate message with
+`internal_error` and `CH_EAUTH`. For the parts not yet in the tree, this
+document is the design record and the plan of record.
 Numbers marked *measured* come from a capture or a build. Numbers marked
 *derived* come from a formula over measured inputs. Nothing here is an
 estimate, and no number in this file is a substitute for `bench/sram.sh`.
@@ -237,10 +241,36 @@ The caller supplies an A-label. A hostname with non-ASCII bytes fails
 
 ## Trust anchors
 
-`ch_cfg` carries an array of anchors. Each anchor is a subject Name as its
-DER `Name` TLV, and a public key as its DER `SubjectPublicKeyInfo`. The
-caller embeds the roots it wants; nothing is bundled, nothing is fetched, and
-the array is the whole trust boundary.
+`ch_cfg.anchors` points at `ch_cfg.anchor_count` entries of
+`ch_trust_anchor`. Each entry is a subject Name as its DER `Name` TLV
+(`name`, `name_len`), and a public key as its DER `SubjectPublicKeyInfo`
+(`spki`, `spki_len`). The caller embeds the roots it wants; nothing is
+bundled, nothing is fetched, and the array is the whole trust boundary.
+
+The rest of the configuration is the hostname and the clock:
+
+- `ch_cfg.hostname` and `ch_cfg.hostname_len`: the ASCII hostname the
+  leaf must name, sent as the ClientHello's `server_name`.
+- `ch_cfg.now_seconds`: seconds since 1970-01-01T00:00:00Z. 0 means the
+  caller never set the clock.
+
+`ch_connect` returns `CH_EINVAL` before it sends a byte when:
+
+- `anchor_count` is outside 1 to `CH_WEBPKI_ANCHOR_MAX`, or any entry has
+  a NULL or empty `name` or `spki`;
+- the hostname fails `webpki_hostname_ok`;
+- `now_seconds` is 0;
+- `psk`, `psk_len`, `psk_id`, `psk_id_len` or `resumption` is set;
+- either `server_pubkey` slot, or its length, is set;
+- an epoch callback is set;
+- `buf_len` is under `CH_MIN_RXBUF`, 12,324 bytes in this mode.
+
+`ch_trust_anchor`, `CH_WEBPKI_ANCHOR_MAX` and the five `ch_cfg` fields
+exist only in a `TRUST=webpki` build, so the raw and ca objects keep the
+`ch_cfg` and `ch_tls` layout they had before this mode. A raw or ca build
+that sets one of the fields fails to compile. `chapulin.hpp` forwards the
+three through `Config::anchors`, `Config::hostname` and
+`Config::now_seconds`, which a raw or ca build does not declare either.
 
 Measured anchor sizes, from the captures: 120 B for a P-384 key, 294 B for
 RSA-2048, 550 B for RSA-4096.
@@ -280,6 +310,14 @@ measured. `CH_WEBPKI_CHAIN_MAX` of 3 admits one two-intermediate
 hierarchy; each further entry is one more signature an unauthenticated
 peer can force before any anchor is consulted, and one more certificate
 in the formula least likely to converge.
+
+The ClientHello this mode sends carries a `server_name` extension of up
+to 262 bytes and five signature schemes, so its largest hello,
+`CH_HELLO_MAX`, is 879 bytes, and 2,063 under `KEX=pq`. The session's
+TX staging array, `CH_TX_STAGE`, grows to match. The PSK arm sets that
+maximum even though this mode refuses a PSK, because the builder takes
+any config; the hello `ch_connect` lets this mode send is 528 bytes, or
+1,712 under `KEX=pq`.
 
 `CH_WEBPKI_FLIGHT_ENTRIES` is sized separately from the walk, because a
 server may append entries the walk never reads and every captured chain

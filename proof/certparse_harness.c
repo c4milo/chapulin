@@ -9,9 +9,13 @@
 // handshake_parser/eeparse split point. Built with handshake_parser.c and buf.c on the
 // CBMC command line — the full dependency closure; a missing body
 // would havoc the callee and void the proof (see run.sh).
+// certparse_webpki runs this harness with -DCH_TRUST_WEBPKI, where the
+// CertificateVerify parser also reports the scheme, and asserts that an
+// accepted scheme is one of the three a leaf key signs with.
 #include "harness.h"
 
 #include "cfg.h"
+#include "handshake_message.h"
 #include "handshake_parser.h"
 
 int main(void) {
@@ -34,8 +38,19 @@ int main(void) {
     const uint8_t *sig = 0;
     size_t sig_len = 0;
     alert = 0;
+#ifdef CH_TRUST_WEBPKI
+    uint16_t scheme = 0;
+    if (hsp_parse_certificate_verify(msg, n, &scheme, &sig, &sig_len, &alert) == CH_OK) {
+        __CPROVER_assert(sig >= msg && sig + sig_len <= msg + n, "signature lies inside the body");
+        __CPROVER_assert(scheme == SIGALG_RSA_PSS_RSAE_SHA256 ||
+                             scheme == SIGALG_ECDSA_P256_SHA256 ||
+                             scheme == SIGALG_ECDSA_P384_SHA384,
+                         "an accepted scheme is one a leaf key signs CertificateVerify with");
+    }
+#else
     if (hsp_parse_certificate_verify(msg, n, &sig, &sig_len, &alert) == CH_OK) {
         __CPROVER_assert(sig >= msg && sig + sig_len <= msg + n, "signature lies inside the body");
     }
+#endif
     return 0;
 }

@@ -121,9 +121,15 @@ Spec.HandshakeParser.parseServerHello : (kex : Kex) → (pskOffered : Bool) → 
                         -- decimal, read from the message on both sides:
                         -- the C stores it in server_hello_info.group, which
                         -- the handshake copies to ch_tls.group.
-Spec.HandshakeParser.parseEncryptedExtensions : (msg : ByteArray) →
+Spec.HandshakeParser.parseEncryptedExtensions : (serverNameSent : Bool) → (msg : ByteArray) →
                         Except Alert EncryptedExtensions               -- RFC 9846 §4.3.1.
-                        -- Line op: `hs_encrypted_extensions <msg>` →
+                        -- serverNameSent says whether the build's
+                        -- ClientHello carried server_name: TRUST=webpki's
+                        -- does, and RFC 6066 §3 then admits one empty
+                        -- acknowledgement, with data there a decode_error;
+                        -- the raw and ca builds' does not, and the
+                        -- acknowledgement is unrequested.
+                        -- Line op: `hs_encrypted_extensions <sni|nosni> <msg>` →
                         -- `ok <record_size_limit|->` (RFC 8449 §4, decimal, the
                         -- extension's own value; handshake_parser.c stores it less the
                         -- inner content-type octet) / `ERR ... reject`.
@@ -133,12 +139,15 @@ Spec.HandshakeParser.parseCertificate : (msg : ByteArray) → Except Alert Certi
                         -- per-entry extensions must be ones the client offered —
                         -- none. Line op: `hs_certificate <msg>` →
                         -- `ok <entry_count> <leaf_cert_data>` / `ERR ... reject`.
-Spec.HandshakeParser.parseCertificateVerify : (scheme : Scheme) → (msg : ByteArray) →
+Spec.HandshakeParser.parseCertificateVerify : (offer : SignatureOffer) → (msg : ByteArray) →
                         Except Alert CertificateVerify                 -- RFC 9846 §4.4.3:
-                        -- the one offered SignatureScheme, then an exact-fill
-                        -- `opaque signature<0..2^16-1>`. The signature's length
-                        -- is the verifier's business, not the parser's. Line op:
-                        -- `hs_certificate_verify <rsa|p256> <msg>` →
+                        -- one of `offer.certificateVerifyCodes`, then an
+                        -- exact-fill `opaque signature<0..2^16-1>`. offer is a
+                        -- pinned build's one Scheme, or the TRUST=webpki build's
+                        -- five, of which the three leaf-key schemes pass; every
+                        -- other scheme gets one verdict. The signature's
+                        -- length is the verifier's business, not the parser's.
+                        -- Line op: `hs_certificate_verify <rsa|p256|webpki> <msg>` →
                         -- `ok <algorithm> <signature>` / `ERR ... reject`.
 Spec.HandshakeParser.verifyContent : (transcriptHash : ByteArray) → ByteArray  -- RFC 9846 §4.4.3's
                         -- 130 signed octets: 64 spaces, the context string, a
@@ -717,7 +726,7 @@ means the module's selftest plus the differential oracle carry it;
 | --- | --- | --- |
 | Bytes | 24 | proof toolkit: fold characterizations, xor involution and left cancellation, hex injectivity, big-endian round trip and injectivity |
 | Drbg | 13 | key advance (the next key is the counter-0 block, independent of the request size), key/output disjointness within one keystream, request-prefix consistency, session key chain |
-| HandshakeParser | 7 | message-grammar soundness, quantified over both `Kex` builds: an accepted ServerHello echoes the empty legacy_session_id the profile offers and a key_exchange of exactly `kex.serverShareSize` octets (32 x25519, 1120 hybrid), and any selected_identity it reports is the single index one offered identity puts in range; a result is a HelloRetryRequest exactly when the Random is §4.1.4's fixed value; an accepted CertificateVerify reports the build's own pinned SignatureScheme and no other |
+| HandshakeParser | 9 | message-grammar soundness, quantified over both `Kex` builds: an accepted ServerHello echoes the empty legacy_session_id the profile offers and a key_exchange of exactly `kex.serverShareSize` octets (32 x25519, 1120 hybrid), and any selected_identity it reports is the single index one offered identity puts in range; a result is a HelloRetryRequest exactly when the Random is §4.1.4's fixed value; an accepted record_size_limit is at least 64 under either `serverNameSent`; an accepted CertificateVerify reports an offered scheme that is never RSASSA-PKCS1-v1_5, so a pinned build's is its own pinned SignatureScheme and the webpki build's is one of rsa_pss_rsae_sha256, ecdsa_secp256r1_sha256 and ecdsa_secp384r1_sha384 |
 | Handshake | 17 | state-machine safety invariants: exactly one ServerHello, EncryptedExtensions and Finished; no certificate flight under PSK; pinned flight shape and order; HRR bound; no CertificateRequest; no post-handshake message before Finished; close_notify at most once and last |
 | Record | 8 | seal/open round trip at both the AEAD and record layers, record size, nonce size, nonce injectivity (distinct sequence numbers never share a nonce), and that an accepted record never carries content type invalid(0) |
 | ChaCha | 5 | block size, structural lemmas, keystream prefix stability; keystream itself vector-checked |

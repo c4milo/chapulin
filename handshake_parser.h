@@ -55,7 +55,13 @@ int hsp_parse_server_hello(const uint8_t *body, size_t n, server_hello_info *inf
 // record_size_limit when one arrives. Callers seed *alert with their
 // default; the parser overwrites it only when it knows better (an
 // extension we never offered gets unsupported_extension, RFC 9846
-// §4.3). Returns CH_OK or CH_EPROTO.
+// §4.3). A TRUST=webpki build also admits one server_name with empty
+// extension_data, the acknowledgement RFC 6066 §3 allows for the
+// server_name its ClientHello sent. A server_name that carries data
+// there has the wrong length, and the parser writes decode_error
+// (RFC 9846 §6). Returns CH_OK or CH_EPROTO.
+int hsp_parse_encrypted_exts(const uint8_t *body, size_t n, uint16_t *peer_limit, uint8_t *alert);
+
 // Certificate body framing: the empty certificate_request_context,
 // then the exact-fill CertificateEntry list. On CH_OK *list points
 // into body — the raw bytes the CA build's certificate parser
@@ -68,9 +74,18 @@ int hsp_parse_certificate(const uint8_t *body, size_t n, const uint8_t **list, s
 // signature, exact-fill. On CH_OK *sig points into body and lives as
 // long as it does. The caller seeds *alert; the parser overwrites it
 // only when it knows better (wrong algorithm).
-int hsp_parse_certificate_verify(const uint8_t *body, size_t n, const uint8_t **sig,
-                                 size_t *sig_len, uint8_t *alert);
-
-int hsp_parse_encrypted_exts(const uint8_t *body, size_t n, uint16_t *peer_limit, uint8_t *alert);
+// A TRUST=webpki build takes one more out parameter: on CH_OK *scheme is
+// the algorithm the message named, one of SIGALG_RSA_PSS_RSAE_SHA256,
+// SIGALG_ECDSA_P256_SHA256 and SIGALG_ECDSA_P384_SHA384, and the caller
+// matches it against the leaf key's family. Any other algorithm returns
+// CH_EAUTH with handshake_failure, as a scheme the build did not offer
+// does in the other builds. That includes SIGALG_RSA_PKCS1_SHA256 and
+// SIGALG_RSA_PKCS1_SHA384, which the ClientHello offers for certificate
+// signatures and RFC 9846 §4.4.3 forbids in CertificateVerify.
+int hsp_parse_certificate_verify(const uint8_t *body, size_t n,
+#ifdef CH_TRUST_WEBPKI
+                                 uint16_t *scheme,
+#endif
+                                 const uint8_t **sig, size_t *sig_len, uint8_t *alert);
 
 #endif

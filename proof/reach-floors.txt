@@ -43,9 +43,11 @@ aead_forge 96.9
 aead_overlap 97.4
 buf 90.2
 certparse 29.2
+certparse_webpki 29.4  # local reading, cbmc 6.11.0 on arm64 macOS; replace with the nightly table's number
 chacha20 98.1
 ct 94.1
 drbg 84.4
+eeparse_webpki 29.5  # local reading, cbmc 6.11.0 on arm64 macOS; replace with the nightly table's number
 epoch 36.1
 handshake_record 92.1
 hello_build 76.9
@@ -130,6 +132,17 @@ x25519_tail 52.7
 # is wrong by 800 s, which is how a prediction that pem would still time
 # out survived until this run measured it.
 #
+# hello_build_webpki converges, and it is listed here for the reason
+# hkdf_expand is: the cost. Under the gate's command on a development
+# machine on 2026-09-15 (cbmc 6.11.0) it reached 78.8% in 1681 s of the
+# 1800 s budget, and 596 s of that was system time, the profile of a
+# machine paging. That machine runs hello_build's cover in 186 s against
+# the runner's 310, so the runner would reach the budget and report a
+# timeout. A floor plus a timeout fails the gate, so this harness carries
+# no floor and is skipped rather than run. hello_build, the same builder
+# without the server_name extension and the five signature schemes, is
+# gated above at 76.9%.
+#
 # p384 is p256's harness at twelve limbs and times out the same way:
 # under the gate's command on a development machine on 2026-09-15
 # (cbmc 6.11.0, -DCH_NATIVE_WIDEMUL) it was still in propositional
@@ -142,6 +155,7 @@ x25519_tail 52.7
 #   handshake_pin
 #   handshake_post
 #   handshake_psk
+#   hello_build_webpki
 #   hkdf_expand
 #   hkdf_expand_label
 #   io

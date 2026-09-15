@@ -29,6 +29,21 @@ cc -std=c11 -DCH_RAND_EXTERN -I. -o "$TMP/sz" "$TMP/sz.c"
 SESSION=$("$TMP/sz" | awk '{print $2}')
 cc -std=c11 -DCH_RAND_EXTERN -DCH_KEX_PQ -I. -o "$TMP/sz_pq" "$TMP/sz.c"
 SESSION_PQ=$("$TMP/sz_pq" | awk '{print $2}')
+# TRUST=webpki carries a larger ClientHello, so a larger TX staging array,
+# and it demands a receive buffer of CH_MIN_RXBUF, read from the build
+# rather than copied from cfg.h.
+cat > "$TMP/floor.c" <<'EOF'
+#include <stdio.h>
+#include "tls.h"
+int main(void) {
+    printf("floor %d\n", CH_MIN_RXBUF);
+    return 0;
+}
+EOF
+cc -std=c11 -DCH_RAND_EXTERN -DCH_TRUST_WEBPKI -I. -o "$TMP/sz_webpki" "$TMP/sz.c"
+SESSION_WEBPKI=$("$TMP/sz_webpki" | awk '{print $2}')
+cc -std=c11 -DCH_RAND_EXTERN -DCH_TRUST_WEBPKI -I. -o "$TMP/floor_webpki" "$TMP/floor.c"
+RXBUF_WEBPKI=$("$TMP/floor_webpki" | awk '{print $2}')
 
 # The same struct on a 32-bit target. The pointer fields are what move, so
 # the host number overstates what a device needs, and the README used to
@@ -40,6 +55,7 @@ RV32_CLANG=$(command -v /opt/homebrew/opt/llvm/bin/clang || command -v clang || 
 RV32_NM=$(command -v llvm-nm || command -v /opt/homebrew/opt/llvm/bin/llvm-nm || true)
 SESSION_RV32="unmeasured"
 SESSION_RV32_PQ="unmeasured"
+SESSION_RV32_WEBPKI="unmeasured"
 if [ -n "$RV32_CLANG" ] && [ -n "$RV32_NM" ]; then
     cat > "$TMP/probe.c" <<'PROBE'
 #include "session.h"
@@ -58,6 +74,7 @@ PROBE
     }
     SESSION_RV32=$(rv32_size "")
     SESSION_RV32_PQ=$(rv32_size "-DCH_KEX_PQ")
+    SESSION_RV32_WEBPKI=$(rv32_size "-DCH_TRUST_WEBPKI")
 fi
 
 echo "session struct:          ${SESSION} B"
@@ -66,6 +83,12 @@ echo "session struct, rv32:    ${SESSION_RV32} B"
 echo "session struct (KEX=pq): ${SESSION_PQ} B"
 echo "static working set:      $((SESSION_PQ + RXBUF)) B (KEX=pq, ${RXBUF} B receive buffer)"
 echo "session struct, rv32:    ${SESSION_RV32_PQ} B (KEX=pq)"
+echo "session struct (TRUST=webpki): ${SESSION_WEBPKI} B"
+echo "static working set:      $((SESSION_WEBPKI + RXBUF_WEBPKI)) B (TRUST=webpki, its ${RXBUF_WEBPKI} B floor)"
+echo "session struct, rv32:    ${SESSION_RV32_WEBPKI} B (TRUST=webpki)"
+# No TRUST=webpki stack row: that build's ch_connect stops at the
+# Certificate message until the chain walk lands, so a peak read from it
+# today would leave out the walk it exists to measure.
 
 # Each stack.py report is saved whole, so the CSV rows below come from the
 # same run the report prints.
@@ -100,7 +123,8 @@ head -1 "$TMP/pq.stack"
 # The CSV carries every column or nothing: without the rv32 toolchain the
 # report above says "unmeasured", and the committed CSV keeps the last
 # full measurement.
-if [ "$SESSION_RV32" = unmeasured ] || [ "$SESSION_RV32_PQ" = unmeasured ]; then
+if [ "$SESSION_RV32" = unmeasured ] || [ "$SESSION_RV32_PQ" = unmeasured ] ||
+    [ "$SESSION_RV32_WEBPKI" = unmeasured ]; then
     echo "SKIP bench/results-sram.csv: no rv32 toolchain, so the rv32 column is unmeasured" >&2
     exit 0
 fi
@@ -125,6 +149,11 @@ TMPOUT="$TMP/results-sram.csv"
     row session_struct_pq_rv32 "$SESSION_RV32_PQ"
     row static_working_set_pq_arm64 "$((SESSION_PQ + RXBUF))"
     row static_working_set_pq_rv32 "$((SESSION_RV32_PQ + RXBUF))"
+    row session_struct_webpki_arm64 "$SESSION_WEBPKI"
+    row session_struct_webpki_rv32 "$SESSION_RV32_WEBPKI"
+    row receive_buffer_webpki "$RXBUF_WEBPKI"
+    row static_working_set_webpki_arm64 "$((SESSION_WEBPKI + RXBUF_WEBPKI))"
+    row static_working_set_webpki_rv32 "$((SESSION_RV32_WEBPKI + RXBUF_WEBPKI))"
     row stack_connect_rsa "$(peak default ch_connect)"
     row stack_connect_ecdsa "$(peak ecdsa ch_connect)"
     row stack_connect_psk "$(peak psk ch_connect)"
