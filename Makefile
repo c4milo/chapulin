@@ -133,6 +133,16 @@ TESTH := test/test_random.h test/pem_armor.h test/pem_tests.h test/x509_ca_tests
          test/diff_x509_epoch.h test/diff_x509_mutate.h test/diff_x509_random.h \
          test/diff_x509_signed.h test/diff_sha3.h test/diff_mlkem.h test/mlkem_vectors.h
 
+# Each axis names its value or stops the build. RAND has done this since
+# https://github.com/c4milo/chapulin/issues/41; PIN, TRUST and KEX each
+# had a bare else, so a misspelled or not-yet-implemented value resolved
+# to the default and every gate passed against a build nobody asked for.
+# `make check TRUST=webpki` built and passed as TRUST=raw.
+#
+# Each axis contributes a filter rather than rewriting LIB_SRCS, and one
+# assignment below applies them together. Sequential rewrites made the
+# packaged source list depend on the order the axes appear in this file.
+
 # Pinned mode verifies one signature algorithm per build: PIN=rsa
 # (default, RSA-PSS up to 3072 bits) or PIN=ecdsa (P-256, -DCH_PIN_ECDSA).
 # Test binaries compile both modules so both stay tested either way; the
@@ -140,10 +150,12 @@ TESTH := test/test_random.h test/pem_armor.h test/pem_tests.h test/x509_ca_tests
 PIN ?= rsa
 ifeq ($(PIN),ecdsa)
 LIB_DEF := -DCH_PIN_ECDSA
-LIB_SRCS := $(filter-out rsa.c rsa_mont.c,$(SRCS))
-else
+PIN_FILTER := rsa.c rsa_mont.c
+else ifeq ($(PIN),rsa)
 LIB_DEF :=
-LIB_SRCS := $(filter-out p256.c,$(SRCS))
+PIN_FILTER := p256.c
+else
+$(error PIN=$(PIN) is not a pinned algorithm; use PIN=rsa or PIN=ecdsa)
 endif
 # Trust mode: TRUST=raw (default) pins server keys and ships no
 # certificate parser; TRUST=ca pins a CA key and includes it. One
@@ -153,10 +165,15 @@ ifeq ($(TRUST),ca)
 LIB_DEF += -DCH_TRUST_CA
 # Provisioning is a public call only where its parser is linked.
 PUBLIC_CA := ch_pubkey_from_pem
-else
+TRUST_FILTER :=
+else ifeq ($(TRUST),raw)
 PUBLIC_CA :=
-LIB_SRCS := $(filter-out pem.c x509.c x509_der.c x509_ca.c,$(LIB_SRCS))
+TRUST_FILTER := pem.c x509.c x509_der.c x509_ca.c
+else
+$(error TRUST=$(TRUST) is not a trust mode; use TRUST=raw or TRUST=ca)
 endif
+# The one assignment. Every axis above filters; nothing below rewrites.
+LIB_SRCS := $(filter-out $(PIN_FILTER) $(TRUST_FILTER),$(SRCS))
 # Key exchange: KEX=x25519 (default) or KEX=pq (-DCH_KEX_PQ), the
 # X25519MLKEM768 hybrid — the ML-KEM and SHA-3 modules join the
 # packaged object only there. One mode per object, like PIN and TRUST.
@@ -164,6 +181,8 @@ KEX ?= x25519
 ifeq ($(KEX),pq)
 LIB_DEF += -DCH_KEX_PQ
 LIB_SRCS += sha3.c mlkem.c mlkem_poly.c
+else ifneq ($(KEX),x25519)
+$(error KEX=$(KEX) is not a key exchange; use KEX=x25519 or KEX=pq)
 endif
 # Entropy pattern, and the one build variable with no default: RAND=extern
 # leaves ch_rand_bytes undefined for the image to supply, RAND=drbg packages
@@ -215,6 +234,38 @@ LIB_OBJS := $(LIB_SRCS:%.c=bin/obj/$(LIB_VARIANT)/%.o)
 .PHONY: print-lib-srcs
 print-lib-srcs:
 	@echo $(LIB_SRCS)
+.PHONY: print-lib-def
+print-lib-def:
+	@echo $(LIB_DEF)
+
+# The mode partition, checked from the build variables rather than
+# assumed from the ifeq chain above. Each axis value names the sources
+# its packaged object must carry and the sources it must not, and the
+# defines likewise. A value whose filter stops matching a renamed file,
+# or a new value that forgets its filter, fails here rather than in a
+# consumer's link. The check reads print-lib-srcs and print-lib-def
+# through a recursive make per axis value, so it costs no build; the
+# command-line value overrides whatever the outer make was given.
+.PHONY: lint-trust-separation
+lint-trust-separation:
+	@rc=0; \
+	check() { \
+	  axis=$$1; want=$$2; ban=$$3; wantdef=$$4; bandef=$$5; \
+	  srcs=" $$($(MAKE) -s -f $(firstword $(MAKEFILE_LIST)) print-lib-srcs $$axis) "; \
+	  defs=" $$($(MAKE) -s -f $(firstword $(MAKEFILE_LIST)) print-lib-def $$axis) "; \
+	  for f in $$want; do case "$$srcs" in *" $$f "*) ;; *) echo "lint-trust-separation: $$axis must package $$f"; rc=1;; esac; done; \
+	  for f in $$ban; do case "$$srcs" in *" $$f "*) echo "lint-trust-separation: $$axis must not package $$f"; rc=1;; esac; done; \
+	  for d in $$wantdef; do case "$$defs" in *" $$d "*) ;; *) echo "lint-trust-separation: $$axis must define $$d"; rc=1;; esac; done; \
+	  for d in $$bandef; do case "$$defs" in *" $$d "*) echo "lint-trust-separation: $$axis must not define $$d"; rc=1;; esac; done; \
+	}; \
+	check "TRUST=raw" "" "pem.c x509.c x509_der.c x509_ca.c" "" "-DCH_TRUST_CA"; \
+	check "TRUST=ca" "pem.c x509.c x509_der.c x509_ca.c" "" "-DCH_TRUST_CA" ""; \
+	check "PIN=rsa" "rsa.c rsa_mont.c" "p256.c" "" "-DCH_PIN_ECDSA"; \
+	check "PIN=ecdsa" "p256.c" "rsa.c rsa_mont.c" "-DCH_PIN_ECDSA" ""; \
+	check "KEX=x25519" "x25519.c" "sha3.c mlkem.c mlkem_poly.c" "" "-DCH_KEX_PQ"; \
+	check "KEX=pq" "x25519.c sha3.c mlkem.c mlkem_poly.c" "" "-DCH_KEX_PQ" ""; \
+	[ $$rc = 0 ] && echo "lint-trust-separation: every axis value packages exactly its own sources and defines"; \
+	exit $$rc
 # bench/device-ram.sh builds with CLANG_RV, the clang the codegen lints
 # use. It asks here for the same reason: a copy of the candidate order
 # above would drift, and the numbers it publishes are the compiler's
@@ -916,7 +967,7 @@ endif
 
 # Checks and thresholds live in .clang-tidy; every disable carries a reason
 # there (fix-or-drop, never NOLINT in code).
-lint: lint-toolchain lint-pins lint-proof-cover lint-tidy lint-format lint-cppcheck lint-commits lint-docs lint-conflict-markers lint-invariants lint-stack lint-size lint-tracked-ignored lint-matrix lint-nightly-report lint-violation-builds lint-fuzz-budget lint-codegen-partition lint-runtime-symbols lint-wide-multiply lint-commit-citations lint-issue-links lint-shellcheck lint-bench-numbers lint-spec
+lint: lint-toolchain lint-pins lint-proof-cover lint-tidy lint-format lint-cppcheck lint-commits lint-docs lint-conflict-markers lint-invariants lint-stack lint-size lint-tracked-ignored lint-matrix lint-nightly-report lint-violation-builds lint-fuzz-budget lint-codegen-partition lint-runtime-symbols lint-wide-multiply lint-commit-citations lint-issue-links lint-shellcheck lint-bench-numbers lint-spec lint-trust-separation
 
 # INV-19: bounded stack. The budget is the measured worst library
 # frame (rsa_vp1's RSA-3072 limb temporaries, 2,400 bytes) rounded up;
