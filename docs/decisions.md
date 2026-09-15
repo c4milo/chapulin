@@ -61,7 +61,10 @@ does nothing more.
 10. **No Ed25519.** Cost: none today — no real server-certificate
    population uses it, and PSK already covers endpoints we control.
    Gain: no second hash function (Ed25519 needs SHA-512) and no third
-   pin mode.
+   pin mode. `TRUST=webpki` does carry SHA-512, because a public chain's
+   signatures use SHA-384; the gain stays whole for the device modes,
+   and docs/webpki.md says why Ed25519 stays out of the public chain
+   too.
 
 11. **Rejection sampling reads a fixed 1536-byte XOF budget per
     polynomial.** FIPS 203's SampleNTT reads an unbounded SHAKE128
@@ -98,6 +101,13 @@ does nothing more.
     32.3 kB in the hybrid build, and the session struct 1,056 bytes
     against 2,328, so a negotiating build carries ML-KEM on every
     connection including the ones that never run it.
+
+    The one gap the argument above names — that no part of the API
+    reports which exchange ran — closes with the webpki work, in every
+    build: `ch_tls` reports the negotiated group, and a `ch_cfg` flag
+    fails the handshake when the exchange was not post-quantum. Under
+    `KEX=pq` the flag asserts a build-time property at run time. The
+    decision itself does not move: a build still offers one group.
 
 ## Trust model
 
@@ -148,14 +158,21 @@ does nothing more.
     certificate lifetimes and a monitored reissuance pipeline do the work
     that expiry checking would. docs/ca.md is the operational
     contract that makes the small device-side check sufficient.
-17. **Public CAs stay a non-goal.** Cost: operators run a dedicated CA
-    or contract a dedicated intermediate. Gain: the device keeps
-    needing no clock and no name matching — a public CA's trust model
-    requires both, and Let's Encrypt's signature algorithms sit
-    outside the profile besides. A public-CA-fronted server still
-    works through raw-pin mode with a stable server key. docs/ca.md
+17. **Public CAs stay a non-goal for the device modes.** Cost: an
+    operator of a device fleet runs a dedicated CA or contracts a
+    dedicated intermediate. Gain: a raw or ca device keeps needing no
+    clock and no name matching — a public CA's trust model requires
+    both, and a public CA's signature algorithms sit outside the device
+    profile besides. A public-CA-fronted server still works from a
+    device through raw-pin mode with a stable server key. docs/ca.md
     records the argument and the workable arrangements with external
     CAs.
+
+    A host-side client has the clock, the memory and the hostname a
+    public chain needs, and it may have no other way to reach the
+    endpoint it was written for. That is what `TRUST=webpki` is, and
+    entry 36 records it as a separate mode rather than as a change to
+    this one: raw and ca do not move.
 
 ## Memory and runtime
 
@@ -344,3 +361,21 @@ does nothing more.
     there. Cost: the rule splits across two call sites instead of
     one. Gain: an unauthenticated peer cannot move device state that
     outlives the session.
+
+36. **`TRUST=webpki` is a third trust mode, not a change to the other
+    two.** It verifies a public chain against caller-supplied anchors,
+    with hostnames and validity dates, so a host-side client can reach
+    a public endpoint. Cost: a clock the caller supplies, a receive
+    buffer measured in kilobytes, every signature family a public chain
+    uses in one object, and a mode that refuses PSK and resumption
+    because nothing binds a ticket to a hostname. Gain: the raw and ca
+    objects do not change — their sources, their defines and their
+    SRAM rows stay where they are, and `make lint-trust-separation`
+    holds the partition. docs/webpki.md states the profile, the
+    measured bounds, and what the mode does not check.
+
+    Extending TRUST=ca with optional dates and names was considered and
+    rejected: it would put clock and name logic inside the object a
+    device links. Verifying the chain in the caller instead of here was
+    considered and rejected: it duplicates a certificate parser in a
+    second language, outside this tree's proofs.

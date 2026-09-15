@@ -13,37 +13,63 @@ Home: github.com/c4milo.
   them, and re-measure when the code changes.
 - One profile, no negotiation surface: TLS 1.3, TLS_CHACHA20_POLY1305_SHA256,
   one key-exchange group, and one of two auth modes — ECDHE-PSK
-  (psk_dhe_ke) or a pinned server key checked against CertificateVerify.
+  (psk_dhe_ke) or a server key checked against CertificateVerify. The
+  Makefile TRUST variable chooses how that server key is trusted:
+  TRUST=raw pins the key itself, TRUST=ca pins a CA key the chain must
+  reach, and TRUST=webpki verifies a public chain against caller-supplied
+  anchors. raw and ca are the device modes and read no clock and no
+  names; webpki is the host-side mode, and it needs a clock, a hostname
+  and a receive buffer far larger than a device carries. docs/webpki.md
+  states its profile and what it does not check.
   The pinned key is one
   algorithm per build, chosen by the Makefile PIN variable: RSA-PSS up to
   3072 bits (default, `rsa.[ch]`) or ECDSA P-256 (PIN=ecdsa, -DCH_PIN_ECDSA,
-  `p256.[ch]`) — never both in one library object, though test binaries
-  compile both so both stay tested. The key exchange is one group per
+  `p256.[ch]`) — never both in one raw or ca library object, though test
+  binaries compile both so both stay tested. A TRUST=webpki object is the
+  one exception, and a public chain forces it: the links of one chain are
+  signed by different algorithm families, so that object carries
+  `rsa.[ch]`, `rsa_pkcs1.[ch]`, `p256.[ch]` and `p384.[ch]` at once and
+  PIN selects nothing in it. The key exchange is one group per
   build, chosen by the Makefile KEX variable: x25519 (default) or the
   X25519MLKEM768 hybrid (KEX=pq, -DCH_KEX_PQ, `mlkem.[ch]`) — never both
   in one ClientHello, so a pq client and a classic-only server fail
-  closed against each other. No X.509 parsing outside the CA-mode
-  files: the profile verifier in x509.[ch] and the provisioning
-  reader in x509_ca.[ch], which reaches no verdict and no session
-  reaches (pinned mode hashes
+  closed against each other. No X.509 parsing outside the certificate
+  files: the canonical DER reader in x509_der.[ch], the profile verifier
+  in x509.[ch] and the provisioning reader in x509_ca.[ch] under
+  TRUST=ca, and the chain verifier in webpki.[ch] with its pieces under
+  TRUST=webpki. x509_ca.[ch] reaches no verdict and no session reaches
+  it (pinned mode hashes
   the certificate into the transcript, never reads it), no RFC 7250
   raw-public-key certificate types, no 0-RTT, no compression, no
   renegotiation-era anything. Within a mode the client offers exactly one
   of everything; the server takes it or the handshake fails closed.
+  TRUST=webpki keeps that rule for the key exchange and the cipher suite
+  and breaks it for signatures alone: it offers several signature
+  schemes, because it cannot know which family signed the chain the
+  server will send.
 - One concern per file pair, dependencies pointing down only:
-  `ct.[ch]` (constant-time bytes) ← `sha256.[ch]` + `sha3.[ch]` ←
+  `ct.[ch]` (constant-time bytes) ← `sha256.[ch]` + `sha3.[ch]` +
+  `sha512.[ch]` (SHA-384 and SHA-512; the TRUST=webpki build packages
+  it, other builds keep it test-only) ←
   `mlkem.[ch]`/`mlkem_poly.[ch]` (ML-KEM-768; the KEX=pq build packages
   them with `sha3.[ch]`, other builds keep them test-only) ← `hkdf.[ch]`
   (HMAC + HKDF + TLS labels) ← `chacha20.[ch]` + `poly1305.[ch]` ←
   `aead.[ch]` (RFC 8439 seal/open) ← `x25519.[ch]` + `p256.[ch]` +
-  `rsa.[ch]`/`rsa_mont.c` (pinned-mode verify) ←
+  `rsa.[ch]`/`rsa_mont.c` (pinned-mode verify) + `p384.[ch]`/
+  `p384_field.[ch]` + `rsa_pkcs1.[ch]` (the chain signatures a public
+  CA writes, TRUST=webpki) ←
   `pem.[ch]` (RFC 7468 armour and RFC 4648 base64, decode only) +
-  `x509.[ch]`/`x509_der.c` (profiled certificate verify, CA mode) ←
+  `x509_der.[ch]` (canonical DER, read by both certificate verifiers) +
+  `x509.[ch]` (profiled certificate verify, TRUST=ca) +
+  `webpki.[ch]` with `webpki_cert.c`, `webpki_ext.c`, `webpki_name.c`,
+  `webpki_sigalg.c`, `webpki_spki.c` and `webpki_time.c` (chain verify
+  against caller-supplied anchors, TRUST=webpki) ←
   `record.[ch]`
   (record layer) ← `handshake_parser.[ch]` (message parsers) ←
   `handshake_record.[ch]` (record reading and message reassembly) ←
   `handshake_auth.[ch]` (server authentication: the Certificate and
-  CertificateVerify flight, and the CA build's revocation epoch) ←
+  CertificateVerify flight, the CA build's revocation epoch, and the
+  webpki build's chain walk and hostname check) ←
   `handshake.[ch]` (client state machine) ←
   `handshake_post.[ch]` (NewSessionTicket and KeyUpdate, the messages
   that arrive after the handshake) ← `tls.[ch]`

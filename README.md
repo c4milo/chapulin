@@ -79,6 +79,12 @@ no clock and no expiry: freshness comes from reissuing short-lived
 certificates on a schedule, so server keys rotate without touching a
 device. See [`docs/ca.md`](docs/ca.md).
 
+A third mode, `TRUST=webpki`, verifies a public chain against trust
+anchors the caller supplies, with hostnames and validity dates. It is
+host-side, not device-side: it needs a clock, a hostname and a receive
+buffer measured in kilobytes. [`docs/webpki.md`](docs/webpki.md) states
+its profile, its bounds, and what it does not check.
+
 One signature algorithm per build. The default verifies RSA-PSS and
 pins the raw modulus, 256 to 384 bytes, covering RSA-2048 through
 RSA-3072. `make PIN=ecdsa` verifies P-256 and pins 64 bytes instead.
