@@ -1,11 +1,49 @@
 // Conventional commits, enforced by .githooks/commit-msg locally and
 // `make lint-commits` in check. Bodies keep the house rule: explain WHY,
 // wrap at 100 columns.
+// The trailer keys this tree writes, and no others. conventional-commits-parser
+// 7 treats every line shaped `word: text` as a git trailer, and its one option,
+// issuePrefixes, widens that set and never narrows it, so a body sentence that
+// begins `why:` or `recovery:` opens a "footer" in the middle of a paragraph.
+// The stock footer-leading-blank rule then warns, and 23 commits already on
+// main do exactly that. The set is closed for the same reason: a paragraph
+// cannot become a trailer by starting with a capitalised word and a colon.
+// Case-insensitive, because three commits on main wrote Co-authored-by. The
+// reference keywords take a space as well as a colon, which is how GitHub
+// reads them and how this history writes them.
+const TRAILER_KEYS = ["Co-Authored-By", "Claude-Session", "Signed-off-by", "Reviewed-by",
+    "BREAKING CHANGE"];
+const REFERENCE_KEYS = ["Closes", "Fixes", "Refs"];
+const trailerLine = new RegExp(
+    `^(?:(?:${TRAILER_KEYS.join("|")}): |(?:${REFERENCE_KEYS.join("|")})[: ] ?)\\S`, "i");
+
+// The final run of trailer lines must follow a blank line, so a reader and
+// git interpret-trailers agree on where the body ends. A message with no
+// trailers passes; a trailer block that is the whole body sits directly
+// under the subject's blank line and passes too.
+function trailerLeadingBlank(parsed) {
+    const lines = parsed.raw.replace(/\s+$/, "").split("\n");
+    let start = lines.length;
+    while (start > 0 && trailerLine.test(lines[start - 1])) {
+        start--;
+    }
+    if (start === lines.length || start === 0) {
+        return [true];
+    }
+    return [lines[start - 1] === "", "trailers must have a leading blank line"];
+}
+
 export default {
     extends: ["@commitlint/config-conventional"],
+    plugins: [{ rules: { "trailer-leading-blank": trailerLeadingBlank } }],
     rules: {
         "header-max-length": [2, "always", 100],
         "body-max-line-length": [2, "always", 100],
+        // Off: it reads the parser's footer, which starts at any `word: text`
+        // line (see TRAILER_KEYS). trailer-leading-blank asks the same
+        // question of the real trailers only, and as an error, not a warning.
+        "footer-leading-blank": [0],
+        "trailer-leading-blank": [2, "always"],
     },
     // Dependabot writes its own body -- release notes, changelog links and a
     // machine-read `updated-dependencies` block -- and wraps none of it, so
