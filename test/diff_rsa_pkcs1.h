@@ -11,11 +11,13 @@
 // (RFC 9846 §4.4.3 forbids rsa_pkcs1_* there), and a public chain
 // carries both sha256WithRSAEncryption and sha384WithRSAEncryption. So
 // the rows alternate the digest length, 32 and 48, beside the modulus,
-// 2048 and 3072 bits; the digest length alone selects the DigestInfo.
+// 2048, 3072 and 4096 bits; the digest length alone selects the
+// DigestInfo.
 //
 // The signature crosses the pipe as raw k-octet hex, as in diff_rsa.h.
 // Included by test/diff_test.c after diff_driver.h and diff_rsa.h
-// (single translation unit): the keys and DIFF_RSA_E come from there.
+// (single translation unit): the keys, DIFF_RSA_E, DIFF_RSA_N_MAX and
+// DIFF_RSA_ROWS come from there.
 //
 // spec/Main.lean must serve two ops, shaped like rsa_sign and rsa_verify
 // without a salt; the digest length, 32 or 48, selects the DigestInfo:
@@ -34,8 +36,6 @@
 // Digest sizes the section alternates between.
 #define DIFF_PKCS1_SHA256_LEN 32
 #define DIFF_PKCS1_SHA384_LEN 48
-// Largest modulus the section signs under, in bytes (RSA-3072).
-#define DIFF_PKCS1_N_MAX 384
 // The DigestInfo prefix before the digest octets is 19 bytes for both
 // SHA-256 and SHA-384 (RFC 8017 §9.2 note 1), so T = 19 + digest_len.
 #define DIFF_PKCS1_DIGESTINFO_PREFIX_LEN 19
@@ -46,10 +46,15 @@
 static void diff_rsa_pkcs1_check_c(const char *n_hex, size_t n_len, const uint8_t *digest,
                                    const uint8_t *bad, size_t digest_len, const char *sig_hex,
                                    size_t sig_len, const char *digest_hex) {
-    uint8_t n[DIFF_PKCS1_N_MAX];
-    uint8_t sig[DIFF_PKCS1_N_MAX];
+    uint8_t n[DIFF_RSA_N_MAX];
+    uint8_t sig[DIFF_RSA_N_MAX];
     if (n_len > sizeof n || !hex_decode(n, n_hex, n_len) || !hex_decode(sig, sig_hex, sig_len)) {
         die("rsa_pkcs1: malformed key or signature");
+    }
+    // The domain check diff_rsa.h's diff_rsa_check_c makes, for the same reason.
+    if (n_len > CH_RSA_MODULUS_MAX) {
+        die("rsa_pkcs1: CH_RSA_MODULUS_MAX is below the sampled modulus; build with "
+            "-DCH_TRUST_WEBPKI");
     }
     if (rsa_pkcs1_verify(n, n_len, digest, digest_len, sig, sig_len) != 1) {
         (void)fprintf(stderr, "diff mismatch: C rsa_pkcs1_verify rejected\n  h: %s\n", digest_hex);
@@ -76,7 +81,7 @@ static void diff_rsa_pkcs1_check_c(const char *n_hex, size_t n_len, const uint8_
     flip[1] = 2 + rng_below(n_len - t_len - 3);
     flip[2] = 0;
     for (size_t j = 0; j < 3; j++) {
-        uint8_t bad_sig[DIFF_PKCS1_N_MAX];
+        uint8_t bad_sig[DIFF_RSA_N_MAX];
         memcpy(bad_sig, sig, sig_len);
         bad_sig[flip[j]] ^= (uint8_t)(1 + rng_below(255));
         if (rsa_pkcs1_verify(n, n_len, digest, digest_len, bad_sig, sig_len) != 0) {
@@ -95,13 +100,13 @@ static void diff_rsa_pkcs1(void) {
 #ifndef DIFF_HAVE_RSA_PKCS1
     (void)fprintf(stderr, "diff: rsa_pkcs1: spec-only pass, rsa_pkcs1.h not present yet\n");
 #endif
-    for (int i = 0; i < 40; i++) {
-        // Alternate the two moduli on bit 0 and the two digest lengths
-        // on bit 1, so every pairing runs ten rows.
-        const char *n_hex = (i & 1) ? diff_rsa_n3072 : diff_rsa_n2048;
-        const char *d_hex = (i & 1) ? diff_rsa_d3072 : diff_rsa_d2048;
+    for (int i = 0; i < DIFF_RSA_ROWS; i++) {
+        // Rotate the three moduli every row and the two digest lengths
+        // every three rows, so each of the six pairings runs eight rows.
+        const char *n_hex = diff_rsa_moduli[i % 3];
+        const char *d_hex = diff_rsa_private_exponents[i % 3];
         size_t n_len = strlen(n_hex) / 2;
-        size_t digest_len = (i & 2) ? DIFF_PKCS1_SHA384_LEN : DIFF_PKCS1_SHA256_LEN;
+        size_t digest_len = ((i / 3) % 2) ? DIFF_PKCS1_SHA384_LEN : DIFF_PKCS1_SHA256_LEN;
 
         uint8_t digest[DIFF_PKCS1_SHA384_LEN];
         rng_fill(digest, digest_len);
@@ -109,11 +114,11 @@ static void diff_rsa_pkcs1(void) {
         (void)hex_encode(digest_hex, digest, digest_len);
 
         // The spec signs the digest; the reply is the raw k-octet
-        // signature as hex.
-        char cmd[2048];
+        // signature as hex. Buffers sized as diff_rsa.h sizes its own.
+        char cmd[4 * DIFF_RSA_N_MAX + 256];
         (void)snprintf(cmd, sizeof cmd, "rsa_pkcs1_sign %s %s %d %s", n_hex, d_hex, DIFF_RSA_E,
                        digest_hex);
-        char sig_hex[1024];
+        char sig_hex[2 * DIFF_RSA_N_MAX + 2];
         query(cmd, sig_hex, sizeof sig_hex);
         size_t sig_len = strlen(sig_hex) / 2;
         if (sig_len != n_len || strlen(sig_hex) % 2 != 0) {

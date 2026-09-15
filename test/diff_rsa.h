@@ -8,8 +8,12 @@
 // only ever verifies; the private exponent stays on the spec side.
 //
 // The signature crosses the pipe as raw k-octet hex (no DER: PKCS #1
-// PSS signatures are a plain octet string, unlike ECDSA). Two keys, a
-// 2048-bit and a 3072-bit modulus, alternate so both moduli are tested.
+// PSS signatures are a plain octet string, unlike ECDSA). Three keys —
+// 2048, 3072 and 4096-bit moduli — rotate so every size a build admits
+// is tested: the spec verifies any modulus, and the C admits up to
+// CH_RSA_MODULUS_MAX bytes (rsa.h), 512 only under CH_TRUST_WEBPKI, so
+// bin/diff builds with that define and diff_rsa_check_c stops on a
+// build whose bound is below a sampled modulus.
 // Included by test/diff_test.c after diff_driver.h (single translation unit).
 #ifndef CH_DIFFRSA_H
 #define CH_DIFFRSA_H
@@ -21,8 +25,13 @@
 #endif
 #endif
 
-// Fixed public exponent for both test keys (F4).
+// Fixed public exponent for every test key (F4).
 #define DIFF_RSA_E 65537
+// Largest modulus the RSA sections sign under, in bytes (RSA-4096).
+#define DIFF_RSA_N_MAX 512
+// Rows per section: a multiple of the three moduli, and of the six
+// modulus-and-digest pairings diff_rsa_pkcs1.h rotates through.
+#define DIFF_RSA_ROWS 48
 
 // 2048-bit test key: modulus and private exponent, big-endian hex.
 static const char *const diff_rsa_n2048 =
@@ -72,16 +81,66 @@ static const char *const diff_rsa_d3072 =
     "0651cbe0ac50e1669c2d6d6958340ca6193a43c4b02f3d626f99f525c6826475"
     "11f97ddf33f1e701fad583c11eb8fbbf75c5a4929f78a706676408c4a4dfde81";
 
+// 4096-bit test key: modulus and private exponent, big-endian hex. The
+// modulus is DIFF_RSA_N_MAX bytes, the top of the webpki build's gate.
+static const char *const diff_rsa_n4096 =
+    "bd6084cdd3a650bf010d72921a82bca1f919505356fc875a21d7b504fe1cf599"
+    "adcaeaf7ef4ef24953bd54f6b871c0db35e489e2ecb482205048ed9be07f6659"
+    "0830c94ed64009a99a3d5d53ac29d4eff014fc6ea576162f835d5ffc539c2ba8"
+    "3514a96414959593984adc02a5f57e3d4dd56877627b8c303f25beafcb03d827"
+    "6b7f30f372569b8f277f324530801ed2fa81f0e44101ef11903ed0d15ba3f99b"
+    "5ccc31d2c8280696ab037217f8fce614378793178912122b518d4d98c69637e3"
+    "2ed1e7bd870c897ef06a811427998ac2b1e0ad70a67fe6905433c8798e70e162"
+    "fd8203217c9656954bde22d96297e9ed6376a8e17744c67718264ec58aa6e2f1"
+    "fec3de8819721712a74029e562f69e4995cb65781a14b1455f8d4c9b6b498c16"
+    "e9410020c13d018b7adc19c6fb38e3fe628cd6384efd9ae83185d26fd08a1899"
+    "a04898a8ab9de7cacfd9efe4ede205b1c6c2f01a468dde1141bce3a2fa52e4fb"
+    "021c4af11869e10ab8c0c3bd44985a23d99c95fb9dc7cb50dd167bb440e3a2be"
+    "bb7b0c54bed2c4a92ca8d04126e3ef6655cd72d68b7a3862aeaf8c2e8950806b"
+    "19c41f5d0f36cb758b39ba3ba7f3181c12fe6b3183016bec00cded237816b435"
+    "0ecd1b67150b1f37a36f2e08f9ad765af87ba7de0ac45a3b0b1bcf2e3541b901"
+    "32575d2dc53ec1c9173fae1c6b6d7114e257477ce77db120fd0aff630261548f";
+static const char *const diff_rsa_d4096 =
+    "1dc0e25cac44d47ee3481cee138d8d86d7ea403d37ccd3e9e1fdfab4dec53cae"
+    "79285e790c77978829c89f66bc07ddf312fe9078bf692f8b557c7fc873cc7b0f"
+    "6b42aefe31ef3c6abc8efe46127b3d620d3db42e20d4f2c60d9a4810642fd9de"
+    "c2fd8cb79551add47df83fa4dd8a3a86a089f25b2a1ff075f6c094106e91c60e"
+    "3b776fab70156764bb21e2e0b804092916040062fc4bb4d1f4f074427b116ce5"
+    "6f53ada848f0f0f2b9ca557755694bda1ff759b18d999c9283179e4f6ddeaac7"
+    "de27f5d99ddee70e089bd322902e317cf166dec3ca2fb77bdef4312a82a9fd8a"
+    "08a66548dced89e0f45b36ed21ee6d9471d772252a65fb2b39a21b278791e77f"
+    "34aded3fd9b4cd6e9998364839b11c5bf6ef6e0549a78bd8dabd27c8a25d7fb3"
+    "ee30a5f5d8000d524dae2d23613044406e0d66a66f3924f93dfd3b53cce5c132"
+    "f82f6b41941cbcc0024704d625d193c84d5e9fb4f1966f3be4ff8b84d40abe65"
+    "65dd45334cb7dd33a78678267aae312276c765a9e870b45f6e239c715c61b766"
+    "8d6e6386b2e1e16064637a3bc233286dbefe725a084619d930fc0386f77f790d"
+    "c89dea3d021640924297f3ca6ce451dec16045573a5950d2fd7a0187a94d060e"
+    "6d44ff114317a8fcd01dafb653e1495c39b9f0a6ad220e23e923734b4f04eb2c"
+    "d98d882b14249480e43ccfd2f91cfc0f3cd94b5e078d4b9bad4ba1f1f0131291";
+
+// The three keys in rotation order; both RSA sections index them by row.
+static const char *const diff_rsa_moduli[3] = {diff_rsa_n2048, diff_rsa_n3072, diff_rsa_n4096};
+static const char *const diff_rsa_private_exponents[3] = {diff_rsa_d2048, diff_rsa_d3072,
+                                                          diff_rsa_d4096};
+
 #ifdef DIFF_HAVE_RSA
 // Runs the C verifier over one minted row: accept the good signature,
 // reject the mutated hash, and reject three one-byte signature flips.
 static void diff_rsa_check_c(const char *n_hex, size_t n_len, const uint8_t *hash,
                              const uint8_t *bad, const char *sig_hex, size_t sig_len,
                              const char *hash_hex) {
-    uint8_t n[384];
-    uint8_t sig[384];
+    uint8_t n[DIFF_RSA_N_MAX];
+    uint8_t sig[DIFF_RSA_N_MAX];
     if (n_len > sizeof n || !hex_decode(n, n_hex, n_len) || !hex_decode(sig, sig_hex, sig_len)) {
         die("rsa: malformed key or signature");
+    }
+    // A build whose bound is below the sampled modulus would refuse the
+    // row at the size gate and report a divergence the spec cannot see;
+    // the domains must agree before a verdict means anything. A runtime
+    // check rather than a static one, because lint-tidy compiles this
+    // driver without the define.
+    if (n_len > CH_RSA_MODULUS_MAX) {
+        die("rsa: CH_RSA_MODULUS_MAX is below the sampled modulus; build with -DCH_TRUST_WEBPKI");
     }
     if (rsa_pss_verify(n, n_len, hash, sig, sig_len) != 1) {
         (void)fprintf(stderr, "diff mismatch: C rsa_pss_verify rejected\n  h: %s\n", hash_hex);
@@ -106,7 +165,7 @@ static void diff_rsa_check_c(const char *n_hex, size_t n_len, const uint8_t *has
     flip[1] = 1 + rng_below(n_len - 67);
     flip[2] = 0;
     for (size_t j = 0; j < 3; j++) {
-        uint8_t bad_sig[384];
+        uint8_t bad_sig[DIFF_RSA_N_MAX];
         memcpy(bad_sig, sig, sig_len);
         bad_sig[flip[j]] ^= (uint8_t)(1 + rng_below(255));
         if (rsa_pss_verify(n, n_len, hash, bad_sig, sig_len) != 0) {
@@ -125,10 +184,10 @@ static void diff_rsa(void) {
 #ifndef DIFF_HAVE_RSA
     (void)fprintf(stderr, "diff: rsa: spec-only pass, rsa.h not present yet\n");
 #endif
-    for (int i = 0; i < 40; i++) {
-        // Alternate the two moduli across iterations.
-        const char *n_hex = (i & 1) ? diff_rsa_n3072 : diff_rsa_n2048;
-        const char *d_hex = (i & 1) ? diff_rsa_d3072 : diff_rsa_d2048;
+    for (int i = 0; i < DIFF_RSA_ROWS; i++) {
+        // Rotate the three moduli across iterations.
+        const char *n_hex = diff_rsa_moduli[i % 3];
+        const char *d_hex = diff_rsa_private_exponents[i % 3];
         size_t n_len = strlen(n_hex) / 2;
 
         uint8_t hash[32];
@@ -141,11 +200,13 @@ static void diff_rsa(void) {
         (void)hex_encode(salt_hex, salt, sizeof salt);
 
         // The spec signs the digest under the fixed salt; the reply is
-        // the raw k-octet signature as hex.
-        char cmd[2048];
+        // the raw k-octet signature as hex. The command carries n and d
+        // as hex, then the exponent, the salt and the hash; the reply
+        // buffer holds the hex, the newline and the terminator.
+        char cmd[4 * DIFF_RSA_N_MAX + 256];
         (void)snprintf(cmd, sizeof cmd, "rsa_sign %s %s %d %s %s", n_hex, d_hex, DIFF_RSA_E,
                        salt_hex, hash_hex);
-        char sig_hex[1024];
+        char sig_hex[2 * DIFF_RSA_N_MAX + 2];
         query(cmd, sig_hex, sizeof sig_hex);
         size_t sig_len = strlen(sig_hex) / 2;
         if (sig_len != n_len || strlen(sig_hex) % 2 != 0) {

@@ -3,10 +3,11 @@
 //
 // Marshalling. from_bytes and to_bytes — the byte<->limb conversions
 // RSAVP1 runs over the attacker's n and sig, both directions — driven
-// concretely at k = 96 (RSA-3072, the LIMBS_MAX bound rsa_pss_verify's
-// n_len gate enforces before rsa_vp1 runs) over nondet bytes and limbs.
-// The maximal k is the binding case for every index; smaller k only
-// shrinks the loop counts.
+// concretely at k = LIMBS_MAX (96 for RSA-3072; 128 for RSA-4096 in the
+// rsa_mul_webpki variant, which sets CH_TRUST_WEBPKI), the bound
+// rsa_pss_verify's n_len gate enforces before rsa_vp1 runs, over nondet
+// bytes and limbs. The maximal k is the binding case for every index;
+// smaller k only shrinks the loop counts.
 //
 // Carry lemma. Behind mont_mul (CIOS): in both passes the uint64
 // accumulation v = x*y + t + c cannot wrap and its carry-out fits back
@@ -17,7 +18,7 @@
 // real k-limb passes; the count never enters the argument. mont_mul
 // itself is undriven in both harnesses (its symbolic modexp never
 // leaves symex): every index walks a fixed LIMBS_MAX-sized array under
-// the k <= 96 bound. The final conditional subtract (t < 2m at loop
+// the k <= LIMBS_MAX bound. The final conditional subtract (t < 2m at loop
 // exit) is a functional CIOS invariant resting on the vectors in
 // test/rsa_test.c, not on a proof.
 #include "harness.h"
@@ -44,8 +45,8 @@ static uint64_t mac_pass(uint64_t c) {
 }
 
 int main(void) {
-    // Marshalling at the k = 96 bound: 384 nondet bytes into limbs, 96
-    // nondet limbs back out to bytes.
+    // Marshalling at the k = LIMBS_MAX bound: 4 * LIMBS_MAX nondet bytes
+    // into limbs, LIMBS_MAX nondet limbs back out to bytes.
     uint8_t b[4 * LIMBS_MAX];
     uint32_t limbs[LIMBS_MAX];
     fill_nondet(b, sizeof b);

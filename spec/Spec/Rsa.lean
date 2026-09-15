@@ -18,6 +18,12 @@ Signing lives here so the oracle can mint signatures the C verifier must
 accept; the C side only ever verifies. `pssSign` (aliased `rsaSign`)
 takes the private exponent and an explicit salt, so a fixed salt gives a
 reproducible signature.
+
+The modulus is any `Nat`. The C verifier admits 256 to
+`CH_RSA_MODULUS_MAX` bytes in 8-byte steps — 384 in the device modes and
+512 under `CH_TRUST_WEBPKI` (`rsa.h`) — and the differential
+(`test/diff_rsa.h`) samples 2048, 3072 and 4096-bit moduli against a C
+built with that define, so every size the wider build admits is compared.
 -/
 
 namespace Spec.Rsa

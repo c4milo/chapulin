@@ -17,6 +17,11 @@ The digest's length alone selects the DigestInfo: 32 bytes is SHA-256,
 48 is SHA-384, and any other length encodes nothing. Signing lives here
 so the oracle can mint signatures the C verifier must accept; the C side
 only ever verifies.
+
+The modulus is any `Nat`, as in `Spec/Rsa.lean`; the C admits 256 to
+`CH_RSA_MODULUS_MAX` bytes (512 under `CH_TRUST_WEBPKI`, the build this
+verifier ships in), and the differential (`test/diff_rsa_pkcs1.h`)
+samples 2048, 3072 and 4096-bit moduli at both digest lengths.
 -/
 
 namespace Spec.RsaPkcs1

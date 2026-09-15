@@ -471,12 +471,23 @@ launch fast:4 full record 165 "" ct.c
 launch fast:3 full x25519_step 17 ""
 launch fast:3 full x25519_tail 17 ""
 launch fast full rsa 385 "fill_nondet.0:385,ct_memeq.0:33,greater_or_equal.0:385,modulus_bits.0:385,modulus_bits.1:9,mgf1.0:12,emsa_pss_verify.0:352,emsa_pss_verify.1:320,rsa_pss_verify.0:385" --object-bits 11 --max-field-sensitivity-array-size 385 ct.c
+# rsa_webpki is the same harness with CH_TRUST_WEBPKI set, so
+# CH_RSA_MODULUS_MAX is 512 (RSA-4096, the bound the webpki build
+# accepts): every bound above grows from the 384-byte width to the
+# 512-byte one, and the field-sensitivity size follows. Measured (cbmc
+# 6.11.0, kissat, /usr/bin/time -l): 250 properties, 70 s, 595 MB for
+# cbmc and 89 MB for kissat.
+launch fast full rsa_webpki 513 "fill_nondet.0:513,ct_memeq.0:33,greater_or_equal.0:513,modulus_bits.0:513,modulus_bits.1:9,mgf1.0:16,emsa_pss_verify.0:480,emsa_pss_verify.1:448,rsa_pss_verify.0:513" --object-bits 11 --max-field-sensitivity-array-size 513 ct.c
 # rsa_pkcs1 is rsa's shape without the alignment pins: v1.5 fills every
 # em_len byte, so the modulus stays wholly nondet and one call per
 # admitted digest length runs the encode-and-compare end to end over the
 # same rsa_vp1 stub. Measured (cbmc 6.11.0, kissat, /usr/bin/time -l):
 # 321 properties, 9.8 s, 105 MB.
 launch fast full rsa_pkcs1 385 "fill_nondet.0:385,ct_memeq.0:385,ct_wipe.0:385,greater_or_equal.0:385" --object-bits 11 --max-field-sensitivity-array-size 385 ct.c
+# rsa_pkcs1_webpki: the same harness at the 512-byte bound, as rsa_webpki
+# is to rsa. Measured (cbmc 6.11.0, kissat, /usr/bin/time -l): 321
+# properties, 17 s, 154 MB for cbmc and 84 MB for kissat.
+launch fast full rsa_pkcs1_webpki 513 "fill_nondet.0:513,ct_memeq.0:513,ct_wipe.0:513,greater_or_equal.0:513" --object-bits 11 --max-field-sensitivity-array-size 513 ct.c
 launch fast full p256 85 "" buf.c
 # p384 is p256's harness at twelve limbs: the same concrete pieces, the
 # same two loop drivers left to their proven bodies, sig up to 112 bytes
@@ -631,6 +642,11 @@ launch fast full p256_mul 20 ""
 # 6.11.0, kissat, /usr/bin/time -l): 7 properties, 2.1 s, 106 MB.
 launch fast full p384_mul 20 ""
 launch fast full rsa_mul 20 "fill_nondet.0:385,from_bytes.0:97,main.0:97,to_bytes.0:97"
+# rsa_mul_webpki: the marshalling at 128 limbs, the LIMBS_MAX of a
+# CH_TRUST_WEBPKI build (RSA-4096); the carry lemma is bound-free.
+# Measured (cbmc 6.11.0, kissat, /usr/bin/time -l): 331 properties,
+# 2.1 s, 73 MB.
+launch fast full rsa_mul_webpki 20 "fill_nondet.0:513,from_bytes.0:129,main.0:129,to_bytes.0:129"
 
 FAIL=0
 i=0

@@ -16,8 +16,9 @@
 #include <stdint.h>
 
 // Verifies a PKCS#1 v1.5 signature. n is the raw big-endian modulus,
-// n_len bytes, 256 to 384 (RSA-2048 to RSA-3072), a multiple of 8, and
-// odd; sig must be exactly n_len bytes; digest is the SHA-256 (32 bytes)
+// n_len bytes, 256 to CH_RSA_MODULUS_MAX (rsa.h: RSA-2048 to RSA-3072, or
+// to RSA-4096 under CH_TRUST_WEBPKI), a multiple of 8, and odd; sig must
+// be exactly n_len bytes; digest is the SHA-256 (32 bytes)
 // or SHA-384 (48 bytes) of the signed content, and digest_len selects
 // which DigestInfo the encoded message carries. Returns 1 for a valid
 // signature, 0 for anything else: a modulus outside the size gate, an

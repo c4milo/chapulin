@@ -157,8 +157,10 @@ typedef struct {
     //    (resumption = 1, obfuscated_age = ticket age ms + age_add).
     //  - Pinned key: psk NULL, server_pubkey = the server's raw public
     //    key, provisioned like a PSK would be. The key is an RSA modulus
-    //    (256..384 bytes big-endian, exponent fixed at 65537, RSA-PSS) by
-    //    default, or 64 P-256 bytes (X||Y, ECDSA) when built with
+    //    (256..384 bytes big-endian, RSA-2048 to RSA-3072 — the value
+    //    rsa.h's CH_RSA_MODULUS_MAX takes in the device modes; exponent
+    //    fixed at 65537, RSA-PSS) by default, or 64 P-256 bytes (X||Y,
+    //    ECDSA) when built with
     //    -DCH_PIN_ECDSA — one algorithm per build, never both. An RSA
     //    modulus must be odd (any product of odd primes is); an even pin
     //    is provisioning corruption and fails ch_connect with CH_EINVAL.

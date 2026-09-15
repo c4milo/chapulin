@@ -5,12 +5,15 @@
 // are little-endian uint32 and every product or carry lives in uint64,
 // the same shape as p256.c. Montgomery CIOS multiplication drives a
 // square-and-multiply exponentiation; 65537 = 2^16 + 1 costs 16 squares
-// and one multiply. Sizes run up to RSA-3072.
+// and one multiply. Sizes run up to CH_RSA_MODULUS_MAX bytes (rsa.h):
+// RSA-3072, or RSA-4096 under CH_TRUST_WEBPKI.
 #include "rsa.h"
 
 #include <string.h>
 
-#define LIMBS_MAX 96 // limb: one 32-bit word of a big number; RSA-3072 = 96 limbs
+// limb: one 32-bit word of a big number. RSA-3072 = 96 limbs, RSA-4096 =
+// 128; the count follows the one modulus bound rsa.h defines.
+#define LIMBS_MAX (CH_RSA_MODULUS_MAX / 4)
 
 // 32 big-endian bytes per limb -> k little-endian limbs, byte by byte.
 static void from_bytes(uint32_t *o, const uint8_t *b, size_t k) {

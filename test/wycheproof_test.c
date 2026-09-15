@@ -17,8 +17,10 @@
 // section 6.4 defines, because a public chain can sign a P-384 key with
 // SHA-256 or a P-256 key with SHA-512: the digest is an integer, so a
 // digest shorter than the order is used whole and a longer one keeps
-// its leftmost order-length bits. The RSA-4096 v1.5 suites stay out
-// until a later commit widens the RSA-3072 modulus limit.
+// its leftmost order-length bits. The RSA suites run up to RSA-4096:
+// this binary builds with -DCH_TRUST_WEBPKI, so rsa.h's
+// CH_RSA_MODULUS_MAX is 512 here, as it is in the webpki build that
+// verifies a public chain; the device builds stop at RSA-3072.
 #include <inttypes.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -44,6 +46,10 @@ noreturn void ch_assert_fail(const char *cond, const char *file, int line) {
 #include "x25519.h"
 
 #include "wycheproof_vectors.h"
+
+// The RSA-4096 suites need the webpki bound; a narrower build would
+// refuse every one of their cases at the size gate and fail here.
+_Static_assert(CH_RSA_MODULUS_MAX >= 512, "wycheproof_test builds with -DCH_TRUST_WEBPKI");
 
 static int failures;
 

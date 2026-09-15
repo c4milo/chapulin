@@ -9,9 +9,14 @@
 #include "ct.h"
 #include "sha256.h"
 
-#define HLEN 32         // SHA-256 output
-#define SLEN 32         // salt length, fixed
-#define MODULUS_MAX 384 // RSA-3072 modulus, the largest accepted
+#define HLEN 32 // SHA-256 output
+#define SLEN 32 // salt length, fixed
+
+// The gate in rsa_pss_verify keeps n_len a multiple of 8, and rsa_mont.c
+// counts limbs as CH_RSA_MODULUS_MAX / 4, so the bound itself must be
+// one. rsa.h defines it; a build that overrides it must keep the shape.
+_Static_assert(CH_RSA_MODULUS_MAX % 8 == 0 && CH_RSA_MODULUS_MAX >= 256,
+               "CH_RSA_MODULUS_MAX must be a multiple of 8 and at least 256");
 
 // 1 if the len-byte big-endian a >= b. Both operands are public.
 static int greater_or_equal(const uint8_t *a, const uint8_t *b, size_t len) {
@@ -84,7 +89,7 @@ static int emsa_pss_verify(const uint8_t msg_hash[32], const uint8_t *em, size_t
     }
 
     // DB = maskedDB XOR MGF1(H); then clear the same leftmost bits.
-    uint8_t db[MODULUS_MAX];
+    uint8_t db[CH_RSA_MODULUS_MAX];
     mgf1(hh, HLEN, db, db_len);
     for (size_t i = 0; i < db_len; i++) {
         db[i] ^= masked_db[i];
@@ -117,7 +122,7 @@ static int emsa_pss_verify(const uint8_t msg_hash[32], const uint8_t *em, size_t
 
 int rsa_pss_verify(const uint8_t *n, size_t n_len, const uint8_t msg_hash[32], const uint8_t *sig,
                    size_t sig_len) {
-    if (n_len < 256 || n_len > MODULUS_MAX || n_len % 8 != 0 || sig_len != n_len) {
+    if (n_len < 256 || n_len > CH_RSA_MODULUS_MAX || n_len % 8 != 0 || sig_len != n_len) {
         return 0;
     }
     // Reject a signature numerically >= the modulus (covers s == n and
@@ -126,7 +131,7 @@ int rsa_pss_verify(const uint8_t *n, size_t n_len, const uint8_t msg_hash[32], c
         return 0;
     }
 
-    uint8_t em[MODULUS_MAX];
+    uint8_t em[CH_RSA_MODULUS_MAX];
     rsa_vp1(n, n_len, sig, em);
 
     // emBits = modBits - 1; emLen = ceil(emBits / 8). For an openssl

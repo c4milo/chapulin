@@ -16,11 +16,10 @@
 #include "sha512.h"
 
 // The modulus size gate, byte for byte the one rsa_pss_verify applies:
-// RSA-2048 to RSA-3072 in 8-byte steps. rsa.c keeps its limit private, so
-// the value is repeated here; the two must move together, and
-// rsa_mont.c's LIMBS_MAX (96 limbs = 384 bytes) bounds both.
+// RSA-2048 up to CH_RSA_MODULUS_MAX (rsa.h) in 8-byte steps. The bound
+// is rsa.h's, so the two verifiers and rsa_mont.c's limb arrays move
+// together.
 #define MODULUS_MIN 256
-#define MODULUS_MAX 384
 #define MODULUS_STEP 8
 
 // EM = 0x00 || 0x01 || PS || 0x00 || T (RFC 8017 §9.2), with PS a run of
@@ -93,7 +92,7 @@ static void emsa_pkcs1_v1_5_encode(uint8_t *em, size_t em_len, const uint8_t *di
 
 int rsa_pkcs1_verify(const uint8_t *n, size_t n_len, const uint8_t *digest, size_t digest_len,
                      const uint8_t *sig, size_t sig_len) {
-    if (n_len < MODULUS_MIN || n_len > MODULUS_MAX || n_len % MODULUS_STEP != 0 ||
+    if (n_len < MODULUS_MIN || n_len > CH_RSA_MODULUS_MAX || n_len % MODULUS_STEP != 0 ||
         sig_len != n_len) {
         return 0;
     }
@@ -114,9 +113,9 @@ int rsa_pkcs1_verify(const uint8_t *n, size_t n_len, const uint8_t *digest, size
 
     // em = sig^65537 mod n as n_len bytes (I2OSP with k = n_len, RFC
     // 8017 §8.2.2 step 2), then the expected encoding at the same length.
-    uint8_t em[MODULUS_MAX];
+    uint8_t em[CH_RSA_MODULUS_MAX];
     rsa_vp1(n, n_len, sig, em);
-    uint8_t expected[MODULUS_MAX];
+    uint8_t expected[CH_RSA_MODULUS_MAX];
     emsa_pkcs1_v1_5_encode(expected, n_len, digest_info, digest, digest_len);
 
     // Both operands are public, so a plain byte compare would be sound;

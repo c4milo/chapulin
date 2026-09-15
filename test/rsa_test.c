@@ -9,6 +9,13 @@
 //   openssl dgst -sha256 -sign key.pem -sigopt rsa_padding_mode:pss
 //     -sigopt rsa_pss_saltlen:32 -sigopt rsa_mgf1_md:sha256 -out sig msg
 //   openssl rsa -in key.pem -noout -modulus   (raw big-endian modulus)
+//
+// test/rsa_wide_vectors.h adds an RSA-4096 and an RSA-4032 vector, the
+// top of the webpki build's modulus gate and one 8-byte step below it
+// (test/gen_rsa_wide_vectors.py quotes their commands). This binary
+// builds with -DCH_TRUST_WEBPKI, so rsa.h's CH_RSA_MODULUS_MAX is 512
+// and both verify; built at the device bound of 384, as the coverage
+// lane builds it, the same test expects the size gate to refuse them.
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdnoreturn.h>
@@ -16,7 +23,12 @@
 
 #include "ch_assert.h"
 #include "rsa.h"
+#include "rsa_wide_vectors.h"
 #include "sha256.h"
+
+// The gate test below knows the two bounds rsa.h defines and no other.
+_Static_assert(CH_RSA_MODULUS_MAX == 384 || CH_RSA_MODULUS_MAX == 512,
+               "rsa_test knows the device bound and the webpki bound");
 
 static int failures = 0;
 #define CHECK(cond)                                                                                \
@@ -207,6 +219,49 @@ static const uint8_t sig2047[] = {
     0xc6, 0x7e, 0xe3, 0x5c, 0x72, 0x08, 0x83, 0x0d, 0xe4, 0xe1, 0x3e, 0x68, 0x48, 0x79, 0xff, 0xc3,
 };
 
+// The modulus size gate at the build's bound, CH_RSA_MODULUS_MAX. The
+// RSA-4096 (512-byte) and RSA-4032 (504-byte) vectors verify exactly
+// when the bound admits 512 bytes and are refused by the gate otherwise;
+// a flipped byte is refused whichever the bound. Then the vector at the
+// bound itself verifies, and the same bytes, padded with eight zero
+// bytes to one step past the bound, or with four to a length between
+// steps, are refused by the gate alone, before any arithmetic runs.
+static void test_modulus_gate(void) {
+    const int wide = CH_RSA_MODULUS_MAX >= 512;
+    uint8_t h3072[32];
+    uint8_t h4096[32];
+    uint8_t h4032[32];
+    sha256_of((const uint8_t *)msg1, strlen(msg1), h3072);
+    sha256_of((const uint8_t *)rsa4096_message, strlen(rsa4096_message), h4096);
+    sha256_of((const uint8_t *)rsa4032_message, strlen(rsa4032_message), h4032);
+    CHECK(memcmp(h4096, rsa4096_sha256_digest, sizeof h4096) == 0);
+    CHECK(memcmp(h4032, rsa4032_sha256_digest, sizeof h4032) == 0);
+    CHECK(sizeof n4096 == 512 && sizeof rsa4096_pss_sig == 512);
+    CHECK(sizeof n4032 == 504 && sizeof rsa4032_pss_sig == 504);
+    CHECK(rsa_pss_verify(n4096, sizeof n4096, h4096, rsa4096_pss_sig, sizeof rsa4096_pss_sig) ==
+          wide);
+    CHECK(rsa_pss_verify(n4032, sizeof n4032, h4032, rsa4032_pss_sig, sizeof rsa4032_pss_sig) ==
+          wide);
+
+    uint8_t bad_sig[sizeof rsa4096_pss_sig];
+    memcpy(bad_sig, rsa4096_pss_sig, sizeof bad_sig);
+    bad_sig[200] ^= 0x01;
+    CHECK(rsa_pss_verify(n4096, sizeof n4096, h4096, bad_sig, sizeof bad_sig) == 0);
+
+    const uint8_t *top_n = wide ? n4096 : n3072;
+    const uint8_t *top_sig = wide ? rsa4096_pss_sig : sig1;
+    const uint8_t *top_hash = wide ? h4096 : h3072;
+    size_t top_len = wide ? sizeof n4096 : sizeof n3072;
+    CHECK(top_len == CH_RSA_MODULUS_MAX);
+    CHECK(rsa_pss_verify(top_n, top_len, top_hash, top_sig, top_len) == 1);
+    uint8_t wide_n[CH_RSA_MODULUS_MAX + 8] = {0};
+    uint8_t wide_sig[CH_RSA_MODULUS_MAX + 8] = {0};
+    memcpy(wide_n, top_n, top_len);
+    memcpy(wide_sig, top_sig, top_len);
+    CHECK(rsa_pss_verify(wide_n, sizeof wide_n, top_hash, wide_sig, sizeof wide_sig) == 0);
+    CHECK(rsa_pss_verify(wide_n, top_len + 4, top_hash, wide_sig, top_len + 4) == 0);
+}
+
 int main(void) {
     uint8_t h1[32];
     uint8_t h2[32];
@@ -265,6 +320,8 @@ int main(void) {
     // A modulus of a disallowed size (below the 256-byte minimum) is
     // rejected before any arithmetic runs.
     CHECK(rsa_pss_verify(n2048, 248, h3, sig3, 248) == 0);
+
+    test_modulus_gate();
 
     if (failures > 0) {
         (void)fprintf(stderr, "%d failure(s)\n", failures);

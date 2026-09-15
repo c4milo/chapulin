@@ -76,8 +76,11 @@ def build_and_run():
     OUT_DIR.mkdir(parents=True)
     # cfg.h refuses a build that declares no entropy pattern, and this
     # driver never links a generator, so it builds the extern pattern.
+    # -DCH_TRUST_WEBPKI, as the Makefile's bin/diff line passes: the RSA
+    # differential samples a 4096-bit modulus, which rsa.h admits only
+    # at that build's CH_RSA_MODULUS_MAX.
     flags = ["--coverage", "-O0", "-g", "-std=c11", "-D_DEFAULT_SOURCE",
-             "-DCH_RAND_EXTERN", "-DCH_TRUST_CA", f"-I{ROOT}"]
+             "-DCH_RAND_EXTERN", "-DCH_TRUST_CA", "-DCH_TRUST_WEBPKI", f"-I{ROOT}"]
     objs = []
     for src in SRCS:
         obj = OUT_DIR / (src[:-2] + ".o")

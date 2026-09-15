@@ -312,6 +312,29 @@ static void test_record(void) {
 #include "rfc8448_tests.h"
 #include "session_tests.h"
 
+#include "rsa.h"
+#include "rsa_wide_vectors.h"
+
+// rsa.h's CH_RSA_MODULUS_MAX is 384 in every build this main links: the
+// device modes stop at RSA-3072. The RSA-4096 and RSA-4032 vectors that
+// bin/rsa_test verifies under -DCH_TRUST_WEBPKI are refused here by the
+// size gate, before any arithmetic runs — the same bytes, the other
+// verdict, so the bound is what decides.
+_Static_assert(CH_RSA_MODULUS_MAX == 384, "unit links rsa.c at the device bound");
+static void test_rsa_device_bound(void) {
+    uint8_t digest[SHA256_LEN];
+    sha256_of((const uint8_t *)rsa4096_message, strlen(rsa4096_message), digest);
+    CHECK(memcmp(digest, rsa4096_sha256_digest, sizeof digest) == 0);
+    CHECK(sizeof n4096 == 512);
+    CHECK(rsa_pss_verify(n4096, sizeof n4096, digest, rsa4096_pss_sig, sizeof rsa4096_pss_sig) ==
+          0);
+    sha256_of((const uint8_t *)rsa4032_message, strlen(rsa4032_message), digest);
+    CHECK(memcmp(digest, rsa4032_sha256_digest, sizeof digest) == 0);
+    CHECK(sizeof n4032 == 504);
+    CHECK(rsa_pss_verify(n4032, sizeof n4032, digest, rsa4032_pss_sig, sizeof rsa4032_pss_sig) ==
+          0);
+}
+
 int main(void) {
     test_ct();
     test_sha256();
@@ -334,6 +357,7 @@ int main(void) {
     test_epoch_cfg();
     test_ch_write();
     test_record_padding();
+    test_rsa_device_bound();
     if (failures > 0) {
         (void)fprintf(stderr, "%d failure(s)\n", failures);
         return 1;

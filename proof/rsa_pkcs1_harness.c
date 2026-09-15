@@ -24,8 +24,9 @@
 //             past the stub is proven over more values than the real
 //             modexp can produce; rsa_mul_harness.c carries the modexp.
 //
-// Bounds. n_len is fixed to MODULUS_MAX through verify: the largest
-// admitted modulus is the binding case for every buffer index, and the
+// Bounds. n_len is fixed to CH_RSA_MODULUS_MAX through verify (384; 512
+// in the rsa_pkcs1_webpki variant, which sets CH_TRUST_WEBPKI): the
+// largest admitted modulus is the binding case for every buffer index, and the
 // smaller admitted sizes only shrink the fills — the reasoning
 // rsa_harness.c records for the same pin. Unlike PSS there is no
 // alignment to pin: v1.5 fills every em_len byte, so the modulus stays
@@ -50,9 +51,9 @@ void rsa_vp1(const uint8_t *n, size_t n_len, const uint8_t *sig, uint8_t *em) {
 }
 
 int main(void) {
-    size_t n_len = MODULUS_MAX;
-    uint8_t n[MODULUS_MAX];
-    uint8_t sig[MODULUS_MAX];
+    size_t n_len = CH_RSA_MODULUS_MAX;
+    uint8_t n[CH_RSA_MODULUS_MAX];
+    uint8_t sig[CH_RSA_MODULUS_MAX];
     uint8_t digest[SHA384_LEN];
     fill_nondet(n, n_len);
     fill_nondet(sig, n_len);
@@ -70,7 +71,7 @@ int main(void) {
 
     // The encoder at the smallest admitted length, where PS is shortest,
     // for the longer DigestInfo and digest.
-    uint8_t em[MODULUS_MAX];
+    uint8_t em[CH_RSA_MODULUS_MAX];
     emsa_pkcs1_v1_5_encode(em, MODULUS_MIN, digest_info_sha384, digest, SHA384_LEN);
     return 0;
 }

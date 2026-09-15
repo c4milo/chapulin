@@ -13,7 +13,7 @@
 //                     with zero_bits == 0 (the decode's top_mask shift at
 //                     its distance-8 edge, a shape no other case hits)
 //   emsa_pss_verify : the whole PSS/MGF1 decode — MGF1 masking into
-//                     db[MODULUS_MAX], the maskedDB XOR, the top-bit clear,
+//                     db[CH_RSA_MODULUS_MAX], the maskedDB XOR, the top-bit clear,
 //                     the PS/0x01/salt walk, and H' via ct_memeq
 //   greater_or_equal, modulus_bits : direct lemma calls over a fully nondet
 //                     modulus and signature (see below)
@@ -36,7 +36,8 @@
 //             byte accounting stay concrete; the decode's memory shape
 //             never depends on a digest value.
 //
-// Bounds. n_len is fixed to MODULUS_MAX (96 limbs): the largest admitted
+// Bounds. n_len is fixed to CH_RSA_MODULUS_MAX (96 limbs; 128 in the
+// rsa_webpki variant, which sets CH_TRUST_WEBPKI): the largest admitted
 // modulus is the binding case for every buffer bound and index, and the
 // smaller admitted sizes only shrink the loop counts — the same
 // representative-bound reasoning handshake_harness uses for its receive
@@ -60,7 +61,7 @@
 // underflow; and bits <= 8*n_len keeps emLen <= n_len, so off cannot
 // wrap. The pinned bytes only fold into constant offsets when symex
 // expands the byte arrays element-wise, so the launch line raises
-// --max-field-sensitivity-array-size above the 384-byte width; without
+// --max-field-sensitivity-array-size above the modulus width; without
 // it the decode goes symbolic and the CNF lands back at 7 GB.
 #define CH_PROOF_STUB_SHA256
 #include "harness.h"
@@ -85,9 +86,9 @@ void rsa_vp1(const uint8_t *n, size_t n_len, const uint8_t *sig, uint8_t *em) {
 int main(void) {
     // The wire surface: any modulus, signature, and message hash bytes,
     // any claimed signature length.
-    size_t n_len = MODULUS_MAX;
-    uint8_t n[MODULUS_MAX];
-    uint8_t sig[MODULUS_MAX];
+    size_t n_len = CH_RSA_MODULUS_MAX;
+    uint8_t n[CH_RSA_MODULUS_MAX];
+    uint8_t sig[CH_RSA_MODULUS_MAX];
     uint8_t hash[HLEN];
     fill_nondet(n, n_len);
     fill_nondet(sig, n_len);
@@ -117,7 +118,7 @@ int main(void) {
 
     // The decode at the length-check boundary (66 valid-edge, 65
     // early-return) and at the maximal emLen, over arbitrary bytes.
-    uint8_t em[MODULUS_MAX];
+    uint8_t em[CH_RSA_MODULUS_MAX];
     fill_nondet(em, n_len);
     (void)emsa_pss_verify(hash, em, n_len, 8 * n_len - 1);
     (void)emsa_pss_verify(hash, em, 66, 66 * 8 - 1);

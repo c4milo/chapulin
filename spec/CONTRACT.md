@@ -21,7 +21,10 @@ Spec.Sha512.sha384    : ByteArray → ByteArray                          -- FIPS
 Spec.P384.ecdsaVerify : (pub hash : ByteArray) → (r s : Nat) → Bool    -- FIPS 186-4 §6.4 over P-384,
                         -- X‖Y 96 bytes, a 48-byte hash; the caller truncates or pads any other length
 Spec.RsaPkcs1.pkcs1Verify : (n e : Nat) → (digest sig : ByteArray) → Bool
-                        -- RFC 8017 §8.2.2, the DigestInfo chosen by the digest length: 32 SHA-256, 48 SHA-384
+                        -- RFC 8017 §8.2.2, the DigestInfo chosen by the digest length: 32 SHA-256, 48 SHA-384.
+                        -- Domain: any n; the C admits 256..CH_RSA_MODULUS_MAX bytes in 8-byte
+                        -- steps (512 under CH_TRUST_WEBPKI, the build this verifier ships in),
+                        -- and the differential samples 2048, 3072 and 4096 bits at both digests.
 Spec.Sha3.sha3_256    : ByteArray → ByteArray                          -- FIPS 202, 32 bytes out
 Spec.Sha3.sha3_512    : ByteArray → ByteArray                          -- FIPS 202, 64 bytes out
 Spec.Sha3.shake128    : ByteArray → (outLen : Nat) → ByteArray         -- FIPS 202 XOF
@@ -137,7 +140,10 @@ Spec.HandshakeParser.verifyContent : (transcriptHash : ByteArray) → ByteArray 
                         -- 130 signed octets: 64 spaces, the context string, a
                         -- zero, the hash. Line op: `hs_verify_content <hash>`.
 Spec.Rsa.pssVerify    : (n e : Nat) → (mHash sig : ByteArray) → Bool    -- RFC 8017 §8.1.2,
-                        -- rsa_pss_rsae_sha256: SHA-256, MGF1-SHA256, saltLen 32.
+                        -- rsa_pss_rsae_sha256: SHA-256, MGF1-SHA256, saltLen 32. Domain: any n;
+                        -- the C admits 256..CH_RSA_MODULUS_MAX bytes in 8-byte steps (384 in the
+                        -- device modes, 512 under CH_TRUST_WEBPKI), and the differential samples
+                        -- 2048, 3072 and 4096 bits against a C built with that define.
 Spec.Rsa.pssSign      : (n d : Nat) → (mHash salt : ByteArray) →
                         Option ByteArray                                -- RFC 8017 §8.1.1;
                         -- rsaSign is an alias. The spec signs so the oracle can mint

@@ -407,16 +407,17 @@ def main():
                            "ecdsa_p384_sha256", "secp384r1", "SHA-256", 48)
     n_e256_512 = gen_ecdsa(json.load(open(v1 / "ecdsa_secp256r1_sha512_test.json")), out,
                            "ecdsa_p256_sha512", "secp256r1", "SHA-512", 32)
+    # The RSA suites run up to RSA-4096: the test binary builds with
+    # -DCH_TRUST_WEBPKI, so rsa.h's CH_RSA_MODULUS_MAX is 512 there.
     n_r = gen_rsa(
-        [v1 / "rsa_pss_2048_sha256_mgf1_32_test.json", v1 / "rsa_pss_3072_sha256_mgf1_32_test.json"],
+        [v1 / "rsa_pss_2048_sha256_mgf1_32_test.json", v1 / "rsa_pss_3072_sha256_mgf1_32_test.json",
+         v1 / "rsa_pss_4096_sha256_mgf1_32_test.json"],
         out,
     )
-    # rsa_signature_4096_sha256 and rsa_signature_4096_sha384 stay out:
-    # rsa_pkcs1_verify shares rsa.c's RSA-3072 modulus limit, and a later
-    # commit widens it and adds them.
     n_rp = gen_rsa_pkcs1(
         [v1 / "rsa_signature_2048_sha256_test.json", v1 / "rsa_signature_3072_sha256_test.json",
-         v1 / "rsa_signature_2048_sha384_test.json"],
+         v1 / "rsa_signature_4096_sha256_test.json", v1 / "rsa_signature_2048_sha384_test.json",
+         v1 / "rsa_signature_4096_sha384_test.json"],
         out,
     )
     n_kk = gen_mlkem_keygen(json.load(open(v1 / "mlkem_768_keygen_seed_test.json")), out)
