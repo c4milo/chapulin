@@ -285,8 +285,19 @@ Spec.Epoch.acceptedCount : (bound : Nat) → Nat → List (Option Nat) → Nat
 ```
 
 Shared helpers live in `Spec/Bytes.lean` (hex, BE/LE Nat coding, xor).
-Build with `~/.elan/bin/lake build` inside `spec/`; keep the build
-dependency-free (no mathlib).
+`Spec/Weierstrass.lean` is the curve arithmetic `Spec/P256.lean` and
+`Spec/P384.lean` share: each instantiates it at its own constants and
+keeps its own selftest, so the shared module has none and no line op.
+It is the one module that imports Mathlib directly.
+Build with `lake build` inside `spec/`. The build depends on Mathlib:
+`lakefile.toml` pins it to the tag `v4.33.0`, the release that targets
+the toolchain `lean-toolchain` pins, and `lake-manifest.json` records
+the commit that tag named. Run `lake exe cache get` inside `spec/` once
+after clone, and again when the pin moves. It downloads Mathlib's
+compiled files; without them `lake build` compiles Mathlib from source,
+which takes hours, so `make` checks for the files before every `lake
+build` and names the command when they are missing. CI runs the same
+command in `.github/actions/fetch-mathlib`.
 
 ## Epoch is not an oracle
 
@@ -449,6 +460,35 @@ Spec.X509Ca.caKey?_p256_size caKey? .p256 = some k → k.size = 64
 Spec.X509Ca.caKey?_rsa_size  caKey? .rsa = some k → 256 ≤ k.size ≤ 384, 8 | k.size
                              -- both tighten what proof/x509ca_harness.c asserts
                              -- of the C entry (the harness holds 0 < len <= max)
+Spec.Weierstrass, the curve arithmetic P256 and P384 instantiate, over any
+  curve y² = x³ - 3x + b; every theorem about the curve takes `Fact p.Prime`
+  and `2 < p` as hypotheses (`weierstrass` is Mathlib's WeierstrassCurve over
+  ZMod p with a₄ = -3, a₆ = b; `ofPoint` reads a Mathlib point back as the
+  reduced Nat pair):
+  powMod_eq                    powMod b e m = b ^ e % m, with no hypothesis on m
+  inv_cast                     ((inv x m : ℕ) : ZMod m) = (x : ZMod m)⁻¹ for x ≢ 0,
+                               -- m prime — Fermat's little theorem
+  inv_mul                      x * inv x m % m = 1 for x % m ≠ 0, m prime
+  Curve.onCurve_iff            onCurve x y = true ↔ weierstrass.Equation x y for x y < p
+  Curve.add_ofPoint            add (ofPoint P) (ofPoint Q) = ofPoint (P + Q): the affine
+                               -- group law is Mathlib's, the P + (-P) = O test and
+                               -- the tangent case included (SEC 1 v2 §2.2.1)
+  Curve.onCurve_add            closure: on-curve inputs whose sum is affine give an
+                               -- on-curve result, when 4a³ + 27b² ≢ 0 (mod p)
+  Curve.smul_ofPoint           smul k (ofPoint P) = ofPoint (k • P): double-and-add
+                               -- is Mathlib's nsmul
+  Curve.ecdsaVerify_ecdsaSign  ecdsaSign d k z = some (r, s) → pubKey? d = some pub →
+                               -- ecdsaVerify pub hash r s = true, for a hash of
+                               -- coordLen bytes with z its integer, under n prime,
+                               -- n • G = 0, G on the curve and p < 2^(8·coordLen).
+                               -- Completeness, not soundness: it says the oracle's
+                               -- signatures are ones the C must accept
+Spec.P256 and Spec.P384 restate seven of these (all but inv_cast) at their
+  own constants, under the same names: powMod_eq, inv_mul, onCurve_iff,
+  add_ofPoint, onCurve_add, smul_ofPoint, ecdsaVerify_ecdsaSign. `decide`
+  discharges `2 < p`, the discriminant, `G` on the curve and
+  `p < 2^(8·coordLen)`; `Fact p.Prime`, `Fact n.Prime` and `n • basePoint = 0`
+  stay hypotheses, because no tactic certifies a 256- or 384-bit prime
 Spec.Record.nonce_inj        distinct sequence numbers below 2^64 give distinct record
                              -- nonces (RFC 9846 §5.3): within one traffic key the
                              -- nonce never repeats
@@ -496,9 +536,13 @@ toolkit (fold characterizations, `xorBytes` involution,
 `bytesToHex_inj`) support the above and are exported for future proofs.
 
 Not proved, deliberately: functional correctness of the C (CBMC plus
-the differential carry that), cryptographic security notions, and
-x25519/P-256 group laws (mathlib-scale; out of scope for a
-dependency-free build).
+the differential carry that), cryptographic security notions, and the
+primality of the NIST constants — the P-256 and P-384 theorems take `p`
+prime, `n` prime and `n • G = 0` as hypotheses, because no tactic in
+Mathlib certifies a 256- or 384-bit prime and a primality certificate
+is out of scope. Not proved yet: the x25519 ladder's group law and the
+RSA arithmetic. Mathlib carries the number theory they need, so they
+are open work rather than out of scope.
 
 Spec.Epoch, over the monotonic revocation epoch (docs/ca.md, INV-21). `bound` is
 quantified, so every statement covers every build's CH_EPOCH_BOUND:
@@ -545,12 +589,13 @@ means the module's selftest plus the differential oracle carry it;
 | Rsa | 4 | PSS signature and hash size contracts on both sign and verify; the arithmetic stays vector-checked |
 | Sha256 | 4 | structural lemmas, padding block alignment and message prefix; compression function vector-checked |
 | Sha512 | 5 | output sizes for both hashes (64 and 48 bytes, one private lemma over the shared digest), compression size, padding block alignment and message prefix; compression function vector-checked |
-| P384 | 0 | executable oracle only: the RFC 6979 A.2.6 vectors and the differential, as P256 — the arithmetic theorems for both curves follow mathlib |
+| Weierstrass | 8 | the curve arithmetic P256 and P384 share, proved once over any odd prime `p`: `powMod` is modular exponentiation with no hypothesis on the modulus; Fermat inversion is the field inverse in `ZMod m` and inverts modulo `m`; membership is Mathlib's Weierstrass equation over `ZMod p`; `add` and `smul` agree with Mathlib's `+` and `nsmul` on points read through `ofPoint`, so the group law is Mathlib's, the `P + (-P) = O` test and the tangent case included; closure; and a signature the oracle mints verifies under the key it derives, given `n` prime and `n • G = 0`. No selftest and no line op: nothing drives it but its two instantiations |
+| P384 | 7 | `Weierstrass` at the P-384 constants, and its theorems restated at them: `decide` discharges `2 < p`, the discriminant, `G` on the curve and `p < 2^384`; `p` and `n` prime and `n • G = 0` stay hypotheses, because no tactic certifies them. Soundness of the verifier stays executable oracle only: the RFC 6979 A.2.6 vectors and the differential |
 | RsaPkcs1 | 4 | the encoding is exactly the modulus length; a signature of the wrong length never verifies and a signed one has the right length; a digest length naming no hash never verifies; the arithmetic stays vector-checked |
 | Sha3 | 8 | output lengths for the two hashes and two XOFs, sponge state size, padding block alignment and message prefix; the permutation itself vector-checked |
 | MlKem | 6 | FIPS 203 §6.1-6.3 output-length contracts (ek 1184, dk 2400, ct 1088, shared secret 32 on both decapsulation branches) and the ByteEncode length law they rest on; the NTT, sampling, and compression arithmetic stay vector-checked |
 | Poly | 1 | MAC size; arithmetic vector-checked |
-| P256 | 0 | executable oracle only: RFC 6979 vectors and the differential |
+| P256 | 7 | `Weierstrass` at the P-256 constants, and its theorems restated at them: `decide` discharges `2 < p`, the discriminant, `G` on the curve and `p < 2^256`; `p` and `n` prime and `n • G = 0` stay hypotheses, because no tactic certifies them. Soundness of the verifier stays executable oracle only: the RFC 6979 A.2.5 vector and the differential |
 | Pem | 10 | the accepted alphabet pinned in both directions against RFC 4648 §4's table; decode? never yields more than the cap and the bound is attained; armour-then-decode is the identity for every non-empty DER within the caps at every width whose text fits — each hypothesis carries an evaluated countermodel; an accepted input has the RFC 7468 frame with the body's base64 the returned DER; armour at any width of four or more, or as one line, fits the cap, discharging the round trip's fits hypothesis; base64 acceptance characterized as an iff against the declarative grammar |
 | X509Ca | 6 | isCaTrue accepts exactly the two anchor encodings (the iff is kernel-checked false without its encodeLen-domain bound); an accepted certificate has exactly the SEQUENCE(TBS, sigAlg, BIT STRING) shape with the signature framing intact; the extracted key is exactly 64 bytes or 256..384 in 8-byte steps, tightening the CBMC harness's bound. Acceptance policy beyond the frame is executable oracle only: the differential's minted anchors, near shapes and mutations |
 | X25519 | 2 | RFC 7748 §5 clamping: every decoded scalar is a multiple of the cofactor 8, and has bit 254 set with bit 255 clear. The first keeps `k * P` in the prime-order subgroup, the second fixes the ladder's iteration count. The ladder arithmetic itself stays vector-checked |
@@ -558,22 +603,23 @@ means the module's selftest plus the differential oracle carry it;
 | X509 | 4 | parse soundness: an accepted list reports a key only after a signature over the complete DER of the TBSCertificate that carried it verified under the pinned key, or under an intermediate the pinned key itself signed; the entry is a byte range of the list and no third entry can follow. Acceptance policy beyond that is executable oracle only: mint/parse round trips for the single leaf and the chained pair (self-checked signatures; OpenSSL material is exercised by the C strictness suite) and the differential |
 | Epoch | 8 | the ordering and bound rule over the epoch value: commit monotonicity, the per-certificate bound, the run-level `stored + bound * accepted` ceiling, replay idempotence, and range preservation. Model only — no differential covers this module (below) |
 
-The one remaining zero-theorem module, P-256, is among the hardest and the most
-security-critical; it is executable and vector-checked but carries no
-proven properties. The missing theorems, in value order: X25519 ladder
-invariants, then the P-256 and RSA arithmetic lemmas — all three need
-number theory this dependency-free build does not carry. What is
-provable without it has now been taken: the clamping guarantees are
+No module carries zero theorems. P-256 and P-384 were the last two and
+the most security-critical. `Spec/Weierstrass.lean` now defines their
+arithmetic once and proves it against Mathlib's `WeierstrassCurve`;
+each curve instantiates it, and the primality of the constants stays a
+hypothesis rather than a claim. The missing theorems, in value order:
+X25519 ladder invariants, then the RSA arithmetic lemmas. Both need
+number theory, which Mathlib now supplies.
+The clamping guarantees needed none, so they came first: they are
 properties of the scalar, not of the group, and no differential row
 could have caught a clamping bug, since the C and the spec would agree
-while both were wrong. The
-mint-then-parse round trip is deliberately not on the list: it is
-completeness, not soundness, a parser that accepted everything would
-satisfy it, and the differential already mints and parses on every row
-against the real C. The RSA arithmetic is statable today without
-an interface change — the factorization enters as a hypothesis, not an
-argument — but its proof needs number theory the dependency-free build
-does not carry.
+while both were wrong. The mint-then-parse round trip is deliberately
+not on the list: it is completeness, not soundness, a parser that
+accepted everything would satisfy it, and the differential already
+mints and parses on every row against the real C. The RSA arithmetic is
+statable today without an interface change — the factorization enters
+as a hypothesis, not an argument — and its proof can draw on Mathlib's
+number theory.
 
 None of these theorems say anything about the C. They constrain the
 model the differential compares against, so a spec regression fails
@@ -662,26 +708,24 @@ the result, and a diff that touches no public statement is the proof
 the pass stayed inside its lane. A simplification that does not build
 reverts — small honest wins beat big broken ones.
 
-Naming follows mathlib's scheme even though mathlib is not a
-dependency: `snake_case`, `foo_of_bar` for an implication, suffixes
+Naming follows Mathlib's scheme, so a name reads the same on both sides
+of an import: `snake_case`, `foo_of_bar` for an implication, suffixes
 `_size`, `_inj`, `_canonical`, `_sound`. A Lean reader should
 recognize the shape without being told.
 
-**Tactics that do not exist here.** This build carries no mathlib, and
-several tactics people reach for first are mathlib-only. Reaching for
-them wastes an afternoon:
+**Pick the smallest tactic that closes the goal.** Mathlib is a
+dependency, so its tactics are available: `by_contra`, `linarith`,
+`nlinarith`, `positivity`, `qify`, `field_simp` and `gcongr` among
+them. Prefer the smaller tactic where it suffices, because a reader can
+tell what it did: `omega` over `linarith` for linear arithmetic over
+`Nat` and `Int`, `decide` for a finite check, the explicit lemma over
+`gcongr`. A goal that needs the heavier tactic gets it; the rule says
+to try the smaller one first.
 
-| want | absent | use instead |
-| --- | --- | --- |
-| contradiction | `by_contra` | `cases Decidable.em p with` |
-| arithmetic goals | `linarith`, `nlinarith`, `positivity` | `omega` |
-| casts | `qify` | `norm_cast`, `push_cast` (both present) |
-| field arithmetic | `field_simp` | rewrite by hand |
-| monotonicity | `gcongr` | the explicit lemma |
+Everything in this section is machine-checked except two rules: naming
+hypotheses and the choice of tactic. No linter reads intent, so review
+checks those two.
 
-Everything in this section is machine-checked except one rule: naming
-hypotheses. No linter reads intent, so that one rests on review.
-
-`omega`, `decide`, `norm_cast`, and `push_cast` are present and carry
-most of the arithmetic here. `DecidableEq` is derived for the model's
-inductive types, so `Decidable.em` is constructive on them.
+`omega`, `decide`, `norm_cast`, and `push_cast` carry most of the
+arithmetic here. The model's inductive types derive `DecidableEq`, so
+`Decidable.em` is constructive on them.

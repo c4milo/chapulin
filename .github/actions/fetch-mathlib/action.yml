@@ -1,0 +1,24 @@
+# Downloads Mathlib's compiled files into spec/.lake/packages with
+# `lake exe cache get`, the command Mathlib publishes for the purpose.
+# lake compiles from source any dependency whose compiled files it does
+# not find, and Mathlib takes hours to compile, so every job that runs
+# `lake build` runs this first, after install-elan has put lake on PATH.
+# The command also clones the packages spec/lake-manifest.json pins, so
+# it runs on a fresh checkout.
+#
+# Each run downloads the files instead of restoring them from a GitHub
+# cache: they are 6.5 GB unpacked and 440 MB as downloaded, and GitHub
+# allots 10 GB of cache to the whole repository (the workflows' Lean
+# cache steps say the same). The archive names are hashes Mathlib's
+# cache tool computes from the source files, so for other sources the
+# tool finds no archive rather than rejecting one; nothing here checks
+# the downloaded bytes against a pin, and lint-pins sees no fetch
+# because the download is lake's, not curl's.
+name: fetch-mathlib
+description: Download Mathlib's compiled files for the spec build
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      working-directory: spec
+      run: bash "$GITHUB_ACTION_PATH/fetch.sh"

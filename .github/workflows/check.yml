@@ -482,12 +482,22 @@ jobs:
           sha256: ${{ env.KISSAT_SHA256 }}
 
       - name: Cache Lean toolchain and spec build
+        # spec/ depends on Mathlib (spec/lakefile.toml). Mathlib's compiled
+        # files are 6.5 GB unpacked, this key has two families (this
+        # workflow's and the nightly's), and GitHub allots 10 GB of cache to
+        # the whole repository, so the files stay out of the cache: the
+        # fetch-mathlib step below downloads them each run, 440 MB, with
+        # the command Mathlib publishes for it. The cache holds elan's
+        # toolchain and the Spec library's own build, 44 MB. The key names
+        # spec/*.lean and spec/Spec/*.lean rather than spec/**/*.lean,
+        # which would also hash the 9,500 .lean files of the packages under
+        # spec/.lake once they are on disk.
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             ~/.elan
-            spec/.lake
-          key: lean-${{ runner.os }}-${{ hashFiles('spec/lean-toolchain', 'spec/lakefile.toml', 'spec/lake-manifest.json', 'spec/**/*.lean') }}
+            spec/.lake/build
+          key: lean-${{ runner.os }}-${{ hashFiles('spec/lean-toolchain', 'spec/lakefile.toml', 'spec/lake-manifest.json', 'spec/*.lean', 'spec/Spec/*.lean') }}
           restore-keys: lean-${{ runner.os }}-
 
       - name: Cache npm
@@ -500,6 +510,12 @@ jobs:
         uses: ./.github/actions/install-elan
         with:
           sha256: ${{ env.ELAN_INIT_SHA256 }}
+
+      - name: Download Mathlib's compiled files
+        # After install-elan, which puts lake on PATH. Without these files
+        # make ci's first lake build would compile Mathlib from source; the
+        # Makefile's REQUIRE_MATHLIB fails by name instead.
+        uses: ./.github/actions/fetch-mathlib
 
       - run: npm ci
         working-directory: tools

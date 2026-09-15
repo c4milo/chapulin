@@ -546,15 +546,17 @@ misreading cannot make both sides agree.
 
 `make diff` builds the spec, runs its selftests, then drives about
 7,800 random-input comparisons between the C and the spec over a pipe,
-from a fixed seed. Some rows are signatures the spec mints and the C
-must accept: the spec holds the private keys and signs, and the C, which
-can only verify, must accept every genuine signature and reject every
-mutated one. About 730 rows feed the certificate parser generated DER —
-uniform bytes, edits at random TLV sites, and leaves the spec re-signs.
-Nobody knows those answers in advance, so the C answers first and the
-spec must reproduce it. The provisioning rows work the same way, on
-certificates the spec mints and the driver armours at every line width
-the decoder admits.
+from a fixed seed. The spec depends on Mathlib, so run `lake exe cache
+get` inside `spec/` once after clone to download Mathlib's compiled
+files; until then every spec target stops and names that command. Some
+rows are signatures the spec mints and the C must accept: the spec holds
+the private keys and signs, and the C, which can only verify, must
+accept every genuine signature and reject every mutated one. About 730
+rows feed the certificate parser generated DER — uniform bytes, edits at
+random TLV sites, and leaves the spec re-signs. Nobody knows those
+answers in advance, so the C answers first and the spec must reproduce
+it. The provisioning rows work the same way, on certificates the spec
+mints and the driver armours at every line width the decoder admits.
 
 The spec also carries theorems about itself, so an agreement between C
 and spec transfers a proven fact rather than a matching answer. The

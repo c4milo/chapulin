@@ -1,6 +1,17 @@
 name = "spec"
 defaultTargets = ["diffspec"]
 
+# Mathlib, pinned to the tag that targets the toolchain lean-toolchain
+# pins; lake-manifest.json records the exact commit the tag named. A
+# build downloads Mathlib's compiled .olean files with `lake exe cache
+# get` and never compiles Mathlib itself. The `leanOptions` below belong
+# to the `Spec` library alone: lake scopes them to the [[lean_lib]] that
+# declares them, so Mathlib's own linter settings stay Mathlib's.
+[[require]]
+name = "mathlib"
+git = "https://github.com/leanprover-community/mathlib4"
+rev = "v4.33.0"
+
 [[lean_lib]]
 name = "Spec"
 # Lean's built-in linters, run on every `lake build`. These four find

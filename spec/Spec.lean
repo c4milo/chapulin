@@ -6,6 +6,7 @@ import Spec.Poly
 import Spec.Aead
 import Spec.Record
 import Spec.X25519
+import Spec.Weierstrass
 import Spec.P256
 import Spec.Rsa
 import Spec.P384

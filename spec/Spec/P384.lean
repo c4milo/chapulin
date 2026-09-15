@@ -1,23 +1,25 @@
-import Spec.Bytes
+import Spec.Weierstrass
 
 /-!
 ECDSA over NIST P-384 (secp384r1), FIPS 186-4 §6 with the domain
 parameters of FIPS 186-4 §D.1.2.4 (same values as SEC 2 v2 §2.5.1).
 
-This is `Spec/P256.lean` at the P-384 parameters: plain `Nat`
-arithmetic with an explicit `% p` (or `% n`) after every operation,
-affine `Option (Nat × Nat)` points with `none` for the point at
-infinity, Fermat inversion, and `(x + p - y) % p` for subtraction on
-reduced operands so the `Nat` difference never underflows.
+The arithmetic is `Spec/Weierstrass.lean` at these parameters, as
+`Spec/P256.lean` is at its own: plain `Nat` arithmetic with an explicit
+`% p` (or `% n`) after every operation, affine `Option (Nat × Nat)`
+points with `none` for the point at infinity, and Fermat inversion.
+Every public name here is that module's definition applied to `curve`,
+so the theorems below are its theorems at these constants; `decide`
+discharges the decidable facts about them — `2 < p`, the discriminant,
+`G` on the curve, `p` below `2^384`. What stays a hypothesis is what no
+tactic certifies: `p` and `n` prime, and `n • G = 0`.
 
 The hash is exactly 48 bytes here, the length of SHA-384. A caller
 holding a digest of another length truncates or left-pads it first
 (FIPS 186-4 §6.4); that step lives with the caller, not in the curve.
 
 Signing lives here so the oracle can mint signatures the C verifier
-must accept; the C side never signs. The arithmetic theorems P-256
-lacks are absent here for the same reason — the dependency-free build
-carries no number theory (spec/CONTRACT.md) — and arrive with mathlib.
+must accept; the C side never signs.
 -/
 
 namespace Spec.P384
@@ -53,77 +55,42 @@ def coordLen : Nat := 48
 /-- Affine point; `none` is the point at infinity. -/
 abbrev Point := Option (Nat × Nat)
 
+/-- The domain parameters as `Spec/Weierstrass.lean` takes them. -/
+abbrev curve : Spec.Weierstrass.Curve :=
+  { p := p, b := b, n := n, gx := gx, gy := gy, coordLen := coordLen }
+
 /-- The base point `G`. -/
 def g : Point := some (gx, gy)
 
 /-- Square-and-multiply `b^e mod m`, reducing after every multiplication
 so intermediates never exceed `m^2`. -/
-def powMod (b e m : Nat) : Nat :=
-  go (b % m) e (1 % m)
-where
-  go (b e acc : Nat) : Nat :=
-    if _h : e = 0 then acc
-    else go (b * b % m) (e / 2) (if e % 2 = 1 then acc * b % m else acc)
-  termination_by e
-  decreasing_by omega
+def powMod (b e m : Nat) : Nat := Spec.Weierstrass.powMod b e m
 
 /-- Inversion mod a prime `m` by Fermat's little theorem: `x^(m-2) mod m`. -/
-def inv (x m : Nat) : Nat := powMod x (m - 2) m
+def inv (x m : Nat) : Nat := Spec.Weierstrass.inv x m
 
 /-- Curve membership: reduced coordinates with
 `y^2 ≡ x^3 + ax + b (mod p)`. With cofactor 1 this is the whole
 public-key validation (SEC 1 v2 §3.2.2.1; the order check is redundant). -/
-def onCurve (x y : Nat) : Bool :=
-  x < p && y < p && y * y % p == ((x * x % p * x % p + a * x % p) + b) % p
+def onCurve (x y : Nat) : Bool := curve.onCurve x y
 
-/-- Affine group law (SEC 1 v2 §2.2.1). `P + (-P) = O` covers doubling a
-point with `y = 0`; otherwise the chord (or tangent, for `P = Q`) slope
-`lam` gives `x3 = lam^2 - x1 - x2` and `y3 = lam(x1 - x3) - y1`. -/
-def add : Point → Point → Point
-  | none, q => q
-  | pt, none => pt
-  | some (x1, y1), some (x2, y2) =>
-    if x1 == x2 && (y1 + y2) % p == 0 then none
-    else
-      let lam :=
-        if x1 == x2 then (3 * (x1 * x1 % p) + a) % p * inv (2 * y1 % p) p % p
-        else (y2 + p - y1) % p * inv ((x2 + p - x1) % p) p % p
-      let x3 := (lam * lam % p + (p - x1) + (p - x2)) % p
-      let y3 := (lam * ((x1 + p - x3) % p) % p + (p - y1)) % p
-      some (x3, y3)
+/-- Affine group law (SEC 1 v2 §2.2.1). -/
+def add : Point → Point → Point := curve.add
 
 /-- Scalar multiplication by double-and-add over the bits of `k`. -/
-def smul (k : Nat) (pt : Point) : Point :=
-  go k pt none
-where
-  go (k : Nat) (q acc : Point) : Point :=
-    if _h : k = 0 then acc
-    else go (k / 2) (add q q) (if k % 2 = 1 then add acc q else acc)
-  termination_by k
-  decreasing_by omega
+def smul (k : Nat) (pt : Point) : Point := curve.smul k pt
 
 /-- Public key `Q = d·G` encoded as X‖Y, 48 bytes each big-endian
 (SEC 1 v2 §2.3.3 uncompressed, without the 0x04 tag); `none` unless
 `d ∈ [1, n-1]` (FIPS 186-4 §B.4). -/
-def pubKey? (d : Nat) : Option ByteArray :=
-  if d == 0 || d ≥ n then none
-  else match smul d g with
-    | none => none
-    | some (x, y) => some (natToBytesBE x coordLen ++ natToBytesBE y coordLen)
+def pubKey? (d : Nat) : Option ByteArray := curve.pubKey? d
 
 /-- ECDSA signing (FIPS 186-4 §6.4) with `d`, `k`, and the
 hash-as-integer `z` given explicitly: `r = (k·G).x mod n` and
 `s = k^-1 (z + r·d) mod n`. With SHA-384 and the 384-bit `n`, `z` is the
 whole digest, no truncation. `none` when `d` or `k` is outside
 `[1, n-1]` or `r`/`s` degenerates to 0. -/
-def ecdsaSign (d k z : Nat) : Option (Nat × Nat) :=
-  if d == 0 || d ≥ n || k == 0 || k ≥ n then none
-  else match smul k g with
-    | none => none
-    | some (x, _) =>
-      let r := x % n
-      let s := inv k n * ((z % n + r * d) % n) % n
-      if r == 0 || s == 0 then none else some (r, s)
+def ecdsaSign (d k z : Nat) : Option (Nat × Nat) := curve.ecdsaSign d k z
 
 /-- ECDSA verification (FIPS 186-4 §6.4 / SEC 1 v2 §4.1.4): `pub` is
 X‖Y (96 bytes), `hash` the 48-byte digest, `r`/`s` the signature
@@ -131,19 +98,76 @@ integers. Requires `r, s ∈ [1, n-1]` and the public point on the curve,
 then accepts iff `r ≡ (u1·G + u2·Q).x (mod n)` for `u1 = z·s^-1 mod n`,
 `u2 = r·s^-1 mod n`. -/
 def ecdsaVerify (pub hash : ByteArray) (r s : Nat) : Bool :=
-  if pub.size != 2 * coordLen || hash.size != coordLen then false
-  else
-    let qx := bytesToNatBE (pub.extract 0 coordLen)
-    let qy := bytesToNatBE (pub.extract coordLen (2 * coordLen))
-    if !onCurve qx qy then false
-    else if r == 0 || r ≥ n || s == 0 || s ≥ n then false
-    else
-      let w := inv s n
-      let u1 := bytesToNatBE hash * w % n
-      let u2 := r * w % n
-      match add (smul u1 g) (smul u2 (some (qx, qy))) with
-      | none => false
-      | some (x, _) => x % n == r
+  curve.ecdsaVerify pub hash r s
+
+/-! ## Proven properties
+
+The decidable facts about the constants, checked by the kernel. -/
+
+/-- The hypothesis every `Spec/Weierstrass.lean` theorem about the curve
+takes: it makes the reduced `p - 3` cast to `-3`. -/
+private theorem two_lt_p : 2 < p := by decide
+
+/-- The curve is nonsingular: `4a^3 + 27b^2 ≢ 0 (mod p)` (SEC 1 v2
+§3.1.1.2.1). -/
+private theorem discriminant_ne_zero : (4 * a ^ 3 + 27 * b ^ 2) % p ≠ 0 := by decide
+
+/-- The base point is on the curve (SEC 1 v2 §3.1.1.2.1). -/
+private theorem g_onCurve : onCurve gx gy = true := by decide
+
+-- `+kernel`: the elaborator refuses to fold an exponent above 256 and
+-- warns; the kernel folds it. Stated through `curve` so the use site
+-- unifies without folding it again.
+private theorem p_lt_two_pow : curve.p < 2 ^ (8 * curve.coordLen) := by decide +kernel
+
+/-- `powMod` is modular exponentiation, with no hypothesis on `m`. -/
+theorem powMod_eq (b e m : Nat) : powMod b e m = b ^ e % m :=
+  Spec.Weierstrass.powMod_eq b e m
+
+/-- Fermat inversion inverts: for a prime `m` and `x` not a multiple of
+`m`, `x * inv x m ≡ 1 (mod m)`. -/
+theorem inv_mul {x m : Nat} [Fact m.Prime] (h_nonzero : x % m ≠ 0) : x * inv x m % m = 1 :=
+  Spec.Weierstrass.inv_mul h_nonzero
+
+/-- Membership is Mathlib's Weierstrass equation on the reduced
+coordinates, for the curve `curve.weierstrass` with `a₄ = -3`, `a₆ = b`. -/
+theorem onCurve_iff [Fact p.Prime] {x y : Nat} (h_x_lt : x < p) (h_y_lt : y < p) :
+    onCurve x y = true ↔ curve.weierstrass.Equation x y :=
+  curve.onCurve_iff two_lt_p h_x_lt h_y_lt
+
+/-- `add` computes Mathlib's group law on points read through `ofPoint`,
+the point at infinity included (SEC 1 v2 §2.2.1). -/
+theorem add_ofPoint [Fact p.Prime] (P Q : curve.weierstrass.Point) :
+    add (curve.ofPoint P) (curve.ofPoint Q) = curve.ofPoint (P + Q) :=
+  curve.add_ofPoint two_lt_p P Q
+
+/-- Closure: the sum of two points on the curve is on the curve, whenever
+the sum is affine. -/
+theorem onCurve_add [Fact p.Prime] {x₁ y₁ x₂ y₂ x₃ y₃ : Nat} (h_on₁ : onCurve x₁ y₁ = true)
+    (h_on₂ : onCurve x₂ y₂ = true) (h_sum : add (some (x₁, y₁)) (some (x₂, y₂)) = some (x₃, y₃)) :
+    onCurve x₃ y₃ = true :=
+  curve.onCurve_add two_lt_p discriminant_ne_zero h_on₁ h_on₂ h_sum
+
+/-- `smul` computes Mathlib's `nsmul`. -/
+theorem smul_ofPoint [Fact p.Prime] (k : Nat) (P : curve.weierstrass.Point) :
+    smul k (curve.ofPoint P) = curve.ofPoint (k • P) :=
+  curve.smul_ofPoint two_lt_p k P
+
+/-- The base point `G` as a Mathlib point. -/
+def basePoint [Fact p.Prime] : curve.weierstrass.Point :=
+  curve.basePoint two_lt_p discriminant_ne_zero g_onCurve
+
+/-- Sign-then-verify round trip (FIPS 186-4 §6.4): a signature
+`ecdsaSign` mints for `d` verifies under `pubKey? d`. `n` prime and
+`n • G = 0` are the group facts the algorithm requires, taken as
+hypotheses. This is completeness — the oracle's signatures are ones the
+C must accept — not soundness of the verifier. -/
+theorem ecdsaVerify_ecdsaSign [Fact p.Prime] [Fact n.Prime] (h_order : n • basePoint = 0)
+    {d k r s : Nat} {pub hash : ByteArray}
+    (h_sign : ecdsaSign d k (bytesToNatBE hash) = some (r, s)) (h_pub : pubKey? d = some pub)
+    (h_hash : hash.size = coordLen) : ecdsaVerify pub hash r s = true :=
+  curve.ecdsaVerify_ecdsaSign two_lt_p discriminant_ne_zero g_onCurve p_lt_two_pow h_order
+    h_sign h_pub h_hash
 
 /-- The RFC 6979 §A.2.6 P-384/SHA-384 "sample" and "test" vectors (the
 RFC's private key, digests, and signatures; `k` recovered from them as

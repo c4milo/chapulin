@@ -142,13 +142,17 @@ jobs:
         uses: ./.github/actions/install-elan
         with:
           sha256: ${{ env.ELAN_INIT_SHA256 }}
-      - name: Cache Lean toolchain and build
+      - name: Cache Lean toolchain and spec build
+        # Mathlib's compiled files stay out of this cache and the next step
+        # downloads them; check.yml's step of the same name states why.
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             ~/.elan
-            spec/.lake
-          key: lean-${{ hashFiles('spec/lean-toolchain', 'spec/lakefile.toml', 'spec/lake-manifest.json', 'spec/**/*.lean') }}
+            spec/.lake/build
+          key: lean-${{ hashFiles('spec/lean-toolchain', 'spec/lakefile.toml', 'spec/lake-manifest.json', 'spec/*.lean', 'spec/Spec/*.lean') }}
+      - name: Download Mathlib's compiled files
+        uses: ./.github/actions/fetch-mathlib
       - name: Enumerate every server message sequence, KEX=pq
         run: |
           set -o pipefail
@@ -182,13 +186,17 @@ jobs:
         uses: ./.github/actions/install-elan
         with:
           sha256: ${{ env.ELAN_INIT_SHA256 }}
-      - name: Cache Lean toolchain and build
+      - name: Cache Lean toolchain and spec build
+        # Mathlib's compiled files stay out of this cache and the next step
+        # downloads them; check.yml's step of the same name states why.
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             ~/.elan
-            spec/.lake
-          key: lean-${{ hashFiles('spec/lean-toolchain', 'spec/lakefile.toml', 'spec/lake-manifest.json', 'spec/**/*.lean') }}
+            spec/.lake/build
+          key: lean-${{ hashFiles('spec/lean-toolchain', 'spec/lakefile.toml', 'spec/lake-manifest.json', 'spec/*.lean', 'spec/Spec/*.lean') }}
+      - name: Download Mathlib's compiled files
+        uses: ./.github/actions/fetch-mathlib
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: ${{ env.GO_VERSION }}
@@ -312,13 +320,17 @@ jobs:
         uses: ./.github/actions/install-elan
         with:
           sha256: ${{ env.ELAN_INIT_SHA256 }}
-      - name: Cache Lean toolchain and build
+      - name: Cache Lean toolchain and spec build
+        # Mathlib's compiled files stay out of this cache and the next step
+        # downloads them; check.yml's step of the same name states why.
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             ~/.elan
-            spec/.lake
-          key: lean-${{ hashFiles('spec/lean-toolchain', 'spec/lakefile.toml', 'spec/lake-manifest.json', 'spec/**/*.lean') }}
+            spec/.lake/build
+          key: lean-${{ hashFiles('spec/lean-toolchain', 'spec/lakefile.toml', 'spec/lake-manifest.json', 'spec/*.lean', 'spec/Spec/*.lean') }}
+      - name: Download Mathlib's compiled files
+        uses: ./.github/actions/fetch-mathlib
       - name: Search random seeds until the budget runs out
         env:
           BUDGET_SECONDS: "1200"
@@ -367,13 +379,17 @@ jobs:
         uses: ./.github/actions/install-elan
         with:
           sha256: ${{ env.ELAN_INIT_SHA256 }}
-      - name: Cache Lean toolchain and build
+      - name: Cache Lean toolchain and spec build
+        # Mathlib's compiled files stay out of this cache and the next step
+        # downloads them; check.yml's step of the same name states why.
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             ~/.elan
-            spec/.lake
-          key: lean-${{ hashFiles('spec/lean-toolchain', 'spec/lakefile.toml', 'spec/lake-manifest.json', 'spec/**/*.lean') }}
+            spec/.lake/build
+          key: lean-${{ hashFiles('spec/lean-toolchain', 'spec/lakefile.toml', 'spec/lake-manifest.json', 'spec/*.lean', 'spec/Spec/*.lean') }}
+      - name: Download Mathlib's compiled files
+        uses: ./.github/actions/fetch-mathlib
       - run: make spec-coverage
       - name: Report what CBMC proves
         run: make proof-coverage && cat bin/proof-coverage.md >> "$GITHUB_STEP_SUMMARY"
@@ -393,13 +409,17 @@ jobs:
         uses: ./.github/actions/install-elan
         with:
           sha256: ${{ env.ELAN_INIT_SHA256 }}
-      - name: Cache Lean toolchain and build
+      - name: Cache Lean toolchain and spec build
+        # Mathlib's compiled files stay out of this cache and the next step
+        # downloads them; check.yml's step of the same name states why.
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             ~/.elan
-            spec/.lake
-          key: lean-${{ hashFiles('spec/lean-toolchain', 'spec/lakefile.toml', 'spec/lake-manifest.json', 'spec/**/*.lean') }}
+            spec/.lake/build
+          key: lean-${{ hashFiles('spec/lean-toolchain', 'spec/lakefile.toml', 'spec/lake-manifest.json', 'spec/*.lean', 'spec/Spec/*.lean') }}
+      - name: Download Mathlib's compiled files
+        uses: ./.github/actions/fetch-mathlib
       - run: make diff-ecdsa
 
   # The hybrid-arm differential: the PR lane's bin/diff compiles the
@@ -415,13 +435,17 @@ jobs:
         uses: ./.github/actions/install-elan
         with:
           sha256: ${{ env.ELAN_INIT_SHA256 }}
-      - name: Cache Lean toolchain and build
+      - name: Cache Lean toolchain and spec build
+        # Mathlib's compiled files stay out of this cache and the next step
+        # downloads them; check.yml's step of the same name states why.
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             ~/.elan
-            spec/.lake
-          key: lean-${{ hashFiles('spec/lean-toolchain', 'spec/lakefile.toml', 'spec/lake-manifest.json', 'spec/**/*.lean') }}
+            spec/.lake/build
+          key: lean-${{ hashFiles('spec/lean-toolchain', 'spec/lakefile.toml', 'spec/lake-manifest.json', 'spec/*.lean', 'spec/Spec/*.lean') }}
+      - name: Download Mathlib's compiled files
+        uses: ./.github/actions/fetch-mathlib
       - run: make diff-pq
 
   # The deeper UB pass: -O0 sees code the optimizer would delete. The

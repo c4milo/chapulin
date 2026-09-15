@@ -83,6 +83,15 @@ LAKE ?= $(shell command -v lake || command -v $(HOME)/.elan/bin/lake)
 # Locally the skip stays a convenience. Usage: $(call REQUIRE_ON_CI,name)
 REQUIRE_ON_CI = @[ -z "$$CI" ] || { echo "$(1): missing on CI; the gate must not skip"; exit 1; }
 
+# spec/ depends on Mathlib (spec/lakefile.toml), and lake compiles from
+# source any dependency whose compiled files it does not find. Mathlib
+# takes hours to compile, so every `lake build` below first checks for
+# the file `lake exe cache get` downloads and names that command when
+# the file is missing. CI runs the command in
+# .github/actions/fetch-mathlib. Usage: $(call REQUIRE_MATHLIB,name)
+MATHLIB_OLEAN := spec/.lake/packages/mathlib/.lake/build/lib/lean/Mathlib.olean
+REQUIRE_MATHLIB = @[ -f $(MATHLIB_OLEAN) ] || { echo "$(1): $(MATHLIB_OLEAN) is missing, and lake would compile Mathlib from source; run 'cd spec && lake exe cache get' once (spec/CONTRACT.md)"; exit 1; }
+
 # A missing linter fails everywhere, CI or not. A lint gate that skips
 # is worse than no gate: check exits 0, the run reads green, and the
 # finding lands on CI after the push instead of before it. ac3b0d2
@@ -643,6 +652,7 @@ ifeq ($(LAKE),)
 	$(call REQUIRE_ON_CI,lake)
 	@echo "SKIP diff-ecdsa: lake not on PATH (install elan: https://leanprover.github.io)"
 else
+	$(call REQUIRE_MATHLIB,diff-ecdsa)
 	cd spec && $(LAKE) build
 	@mkdir -p bin
 	$(CC) $(CFLAGS) $(RSA_WIDE_DEF) -DCH_PIN_ECDSA -I. -o bin/diff_ecdsa test/diff_test.c $(SRCS) sha3.c sha512.c sha512_compress.c p384.c p384_field.c rsa_pkcs1.c mlkem.c mlkem_poly.c
@@ -658,6 +668,7 @@ ifeq ($(LAKE),)
 	$(call REQUIRE_ON_CI,lake)
 	@echo "SKIP diff-pq: lake not on PATH (install elan: https://leanprover.github.io)"
 else
+	$(call REQUIRE_MATHLIB,diff-pq)
 	cd spec && $(LAKE) build
 	@mkdir -p bin
 	$(CC) $(CFLAGS) $(RSA_WIDE_DEF) -DCH_KEX_PQ -I. -o bin/diff_pq test/diff_test.c $(SRCS) sha3.c sha512.c sha512_compress.c p384.c p384_field.c rsa_pkcs1.c mlkem.c mlkem_poly.c
@@ -671,6 +682,7 @@ ifeq ($(LAKE),)
 	$(call REQUIRE_ON_CI,lake)
 	@echo "SKIP diff: lake not on PATH (install elan: https://leanprover.github.io)"
 else
+	$(call REQUIRE_MATHLIB,diff)
 	cd spec && $(LAKE) build
 	$(MAKE) bin/diff
 	./bin/diff
@@ -688,6 +700,7 @@ ifeq ($(LAKE),)
 	$(call REQUIRE_ON_CI,lake)
 	@echo "SKIP spec comparison: lake not on PATH (install elan: https://leanprover.github.io)"
 else
+	$(call REQUIRE_MATHLIB,handshake-sequence)
 	cd spec && $(LAKE) build
 endif
 	./bin/handshake_sequence_test
@@ -697,6 +710,7 @@ ifeq ($(LAKE),)
 	$(call REQUIRE_ON_CI,lake)
 	@echo "SKIP spec comparison: lake not on PATH (install elan: https://leanprover.github.io)"
 else
+	$(call REQUIRE_MATHLIB,handshake-sequence-pq)
 	cd spec && $(LAKE) build
 endif
 	./bin/handshake_sequence_pq
@@ -759,6 +773,7 @@ ifeq ($(LAKE),)
 	$(call REQUIRE_ON_CI,lake)
 	@echo "SKIP spec-coverage: lake not on PATH (install elan: https://leanprover.github.io)"
 else
+	$(call REQUIRE_MATHLIB,spec-coverage)
 	cd spec && $(LAKE) build
 	python3 test/spec_coverage.py
 endif
@@ -998,6 +1013,7 @@ else
 	  [ -z "$$hits" ] || { printf '%s\n' "$$hits" | sed "s|^|$$f:|"; rc=1; }; \
 	done; \
 	[ $$rc -eq 0 ] || { echo "lint-spec: banned escape hatch in the model"; exit 1; }
+	$(call REQUIRE_MATHLIB,lint-spec)
 	@cd spec && $(LAKE) build 2>&1 | tee /tmp/lake-build.log \
 	  && ! grep -q "warning:" /tmp/lake-build.log \
 	  || { echo "lint-spec: lake build warnings are errors here"; exit 1; }
@@ -1310,6 +1326,7 @@ else
 	# they cannot be prerequisites of a target invoked without one. check
 	# builds them through the same recursion.
 	$(MAKE) RAND=extern bin/example_psk bin/example_pinned bin/example_ca
+	$(call REQUIRE_MATHLIB,test-invariants-not-proof-backed)
 	cd spec && $(LAKE) build
 	python3 test/violations.py --not-proof-backed
 endif
