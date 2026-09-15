@@ -15,6 +15,7 @@
 #include <string.h>
 
 #include "x509.h"
+#include "x509_der.h"
 
 // A test bug (a bad carve or splice), never a finding.
 static noreturn void mut_die(const char *what) {

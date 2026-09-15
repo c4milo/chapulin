@@ -18,6 +18,7 @@
 #include "ct.h"
 #include "pem.h"
 #include "x509.h"
+#include "x509_der.h"
 
 // [0] EXPLICIT version, v3. Same encoding x509.c pins.
 static const uint8_t version_v3[] = {0xa0, 0x03, 0x02, 0x01, 0x02};

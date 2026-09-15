@@ -3,7 +3,7 @@
 // CH_X509_KEY_MAX, and every rejection yields zero with the key wiped.
 //
 // Layered, the x509parse-stubs-x509der pattern: the x509_ DER
-// primitives are stubs asserting their x509.h contracts and havocing
+// primitives are stubs asserting their x509_der.h contracts and havocing
 // outputs, so x509_der.c is NOT linked and the object under proof is
 // the walk's own sequencing. pem_decode_certificate is stubbed to the
 // contract proof/pem_harness.c proves. buf.c is real.
@@ -22,6 +22,7 @@
 #include "cfg.h"
 #include "pem.h"
 #include "x509.h"
+#include "x509_der.h"
 
 uint32_t nondet_u32(void);
 int nondet_int(void);
@@ -54,7 +55,7 @@ int pem_decode_certificate(const uint8_t *pem, size_t pem_len, uint8_t der[CH_X5
     return CH_EINVAL;
 }
 
-// Every reader below asserts the contract x509.h states and havocs
+// Every reader below asserts the contract x509_der.h states and havocs
 // within what x509der_harness proves: on success err stays clear and
 // the reader consumed no more than was left.
 static int reader_ok(rbuf *r) {

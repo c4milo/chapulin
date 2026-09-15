@@ -12,6 +12,7 @@
 #include "ct.h"
 #include "handshake_message.h"
 #include "sha256.h"
+#include "x509_der.h"
 
 #ifdef CH_PIN_ECDSA
 #include "p256.h"

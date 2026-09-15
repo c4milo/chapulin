@@ -2,8 +2,8 @@
 // mechanism is a length-first strict decoder: every routine rejects a
 // non-minimal or malformed encoding before any field is interpreted,
 // so no value ever has a second accepted representation on the
-// decoded spine. Contract in x509.h; profile in x509.c.
-#include "x509.h"
+// decoded spine. Contract in x509_der.h; profile in x509.c.
+#include "x509_der.h"
 
 #include "buf.h"
 #include "cfg.h"

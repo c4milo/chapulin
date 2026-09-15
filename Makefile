@@ -106,7 +106,7 @@ SRCS := ct.c sha256.c hkdf.c chacha20.c poly1305.c aead.c x25519.c p256.c rsa.c 
         handshake_auth.c handshake.c handshake_post.c tls.c softmul.c
 
 HDRS := ct.h sha256.h hkdf.h chacha20.h poly1305.h aead.h x25519.h p256.h rsa.h ch_assert.h \
-        pem.h x509.h x509_ca.h buf.h record.h keysched.h io.h handshake_message.h handshake_parser.h handshake_record.h cfg.h session.h handshake_auth.h handshake.h handshake_post.h \
+        pem.h x509.h x509_der.h x509_ca.h buf.h record.h keysched.h io.h handshake_message.h handshake_parser.h handshake_record.h cfg.h session.h handshake_auth.h handshake.h handshake_post.h \
         tls.h rand.h drbg.h sha3.h sha512.h sha512_compress.h p384.h p384_field.h rsa_pkcs1.h mlkem.h mlkem_poly.h
 # softmul.c is excluded on purpose. It has to define __mulsi3 and
 # __muldi3 -- the names the compiler emits, so they replace the runtime

@@ -20,6 +20,7 @@
 #include "ch_assert.h"
 #include "handshake_message.h"
 #include "x509.h"
+#include "x509_der.h"
 #include "x509_mutate.h"
 #include "x509_vectors.h"
 

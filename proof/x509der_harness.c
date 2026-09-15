@@ -45,6 +45,11 @@
 // closure; a missing body would havoc the callee and void the proof.
 #include "harness.h"
 
+// x509.h defines CH_X509_EXT_TLV_MAX, the walker's per-extension cap
+// this harness drives x509_read_extension at. x509_der.c does not
+// include x509.h.
+#include "x509.h"
+
 #include "x509_der.c"
 
 int main(void) {

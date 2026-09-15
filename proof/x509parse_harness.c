@@ -25,7 +25,7 @@
 // expecting a counterexample, a check worth repeating after edits.)
 //
 // Layered proof, the handshake-stubs-handshake_parser pattern: the x509_ DER
-// primitives are stubs asserting their x509.h contracts and havocing
+// primitives are stubs asserting their x509_der.h contracts and havocing
 // outputs within exactly what x509der_harness proves — x509_der.c is
 // NOT linked, so the object under proof is the walker's own
 // arithmetic. sha256 and the build's signature verifier are contract
@@ -43,6 +43,7 @@
 #include "handshake_message.h"
 #include "sha256.h"
 #include "x509.h"
+#include "x509_der.h"
 
 #ifdef CH_PIN_ECDSA
 #include "p256.h"
