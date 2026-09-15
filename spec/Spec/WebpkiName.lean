@@ -4,16 +4,17 @@ import Spec.X509Der
 /-!
 Hostnames for the web PKI trust mode, written from RFC 6125 §6.4 (name
 matching), RFC 5280 §4.2.1.6 (GeneralNames), RFC 1035 §2.3.4 (label
-length) and RFC 6066 §3 (no IP literal in server_name) — never from
-the C sources.
+length), RFC 1123 §2.1 (label edges) and RFC 6066 §3 (no IP literal in
+server_name) — never from the C sources.
 
 The reference name is checked for shape before anything is matched
 against it: 1..253 bytes of `[A-Za-z0-9.-]`, every label 1..63 bytes,
-and a last label that is not all digits. Matching is over the dNSName
-entries of a GeneralNames, ASCII case-insensitively; a wildcard is the
-whole leftmost label of the presented name and stands for exactly one
-label of the reference name, and it needs two labels after it. Line
-ops: `webpki_hostname <hex>` → `1`/`0`; `webpki_san <san> <host>` →
+no label that starts or ends with '-', and a last label that is not
+all digits. Matching is over the dNSName entries of a GeneralNames,
+ASCII case-insensitively; a wildcard is the whole leftmost label of
+the presented name and stands for exactly one label of the reference
+name, and it needs two labels after it. Line ops:
+`webpki_hostname <hex>` → `1`/`0`; `webpki_san <san> <host>` →
 `1`/`0`, both bytes as hex.
 -/
 
@@ -28,6 +29,9 @@ def dot : UInt8 := 0x2e
 /-- The wildcard, '*', 0x2a. -/
 def star : UInt8 := 0x2a
 
+/-- The hyphen, '-', 0x2d. -/
+def hyphen : UInt8 := 0x2d
+
 /-- ASCII letters, either case. -/
 def isLetter (b : UInt8) : Bool := (0x41 ≤ b && b ≤ 0x5a) || (0x61 ≤ b && b ≤ 0x7a)
 
@@ -35,7 +39,7 @@ def isLetter (b : UInt8) : Bool := (0x41 ≤ b && b ≤ 0x5a) || (0x61 ≤ b && 
 def isDigit (b : UInt8) : Bool := 0x30 ≤ b && b ≤ 0x39
 
 /-- The reference-name alphabet `[A-Za-z0-9.-]`. -/
-def isHostByte (b : UInt8) : Bool := isLetter b || isDigit b || b == dot || b == 0x2d
+def isHostByte (b : UInt8) : Bool := isLetter b || isDigit b || b == dot || b == hyphen
 
 /-- Every label 1..63 bytes (RFC 1035 §2.3.4), `run` counting the
 current label so far. The 1 refuses an empty label, and with it a
@@ -45,14 +49,21 @@ def labelsOk : List UInt8 → Nat → Bool
   | b :: rest, run =>
     if b == dot then (1 ≤ run && run ≤ 63) && labelsOk rest 0 else labelsOk rest (run + 1)
 
+/-- A label neither starts nor ends with '-': RFC 952's label rule as
+RFC 1123 §2.1 amends it, where a label starts and ends with a letter or
+digit. -/
+def labelEdgesOk (label : List UInt8) : Bool :=
+  label.head? != some hyphen && label.getLast? != some hyphen
+
 /-- The bytes after the last dot. -/
 def lastLabel (h : List UInt8) : List UInt8 := (h.reverse.takeWhile (· != dot)).reverse
 
-/-- The shape check on the reference name. An all-digit last label is
-an IPv4 literal's shape, which RFC 6066 §3 forbids in server_name. -/
+/-- The shape check on the reference name. The labels are the byte
+runs between dots, `h.splitOn dot`. An all-digit last label is an IPv4
+literal's shape, which RFC 6066 §3 forbids in server_name. -/
 def hostnameOk (h : List UInt8) : Bool :=
   1 ≤ h.length && h.length ≤ 253 && h.all isHostByte && labelsOk h 0 &&
-    !(lastLabel h).all isDigit
+    (h.splitOn dot).all labelEdgesOk && !(lastLabel h).all isDigit
 
 /-- ASCII case folding: 'A'..'Z' to 'a'..'z', every other byte as is. -/
 def lower (b : UInt8) : UInt8 := if 0x41 ≤ b && b ≤ 0x5a then b + 0x20 else b
@@ -126,12 +137,13 @@ def matchSan (san : ByteArray) (host : List UInt8) : Bool :=
   | some es => es.any (fun e => e.1 == dnsNameTag && matchDnsName e.2.toList host)
   | none => false
 
-/-- Structural checks: the shape rules on the reference name, exact
-and folded matches, the wildcard on each side of its rules, a NUL in
-a presented name, a skipped iPAddress entry, and the GeneralName tag
-rule on both sides: [8] and [0] accepted, [9], a primitive [0], a
-constructed dNSName, universal tags and the high-tag-number form
-refused. -/
+/-- Structural checks: the shape rules on the reference name, a hyphen
+inside a label and at each of its edges, a 63-byte label on both sides
+of the hyphen rule, exact and folded matches, the wildcard on each
+side of its rules, a NUL in a presented name, a skipped iPAddress
+entry, and the GeneralName tag rule on both sides: [8] and [0]
+accepted, [9], a primitive [0], a constructed dNSName, universal tags
+and the high-tag-number form refused. -/
 def selftest : Bool :=
   let host (s : String) : List UInt8 := (ascii s).toList
   let entry (tag : UInt8) (s : String) : ByteArray :=
@@ -146,6 +158,19 @@ def selftest : Bool :=
     && !hostnameOk (host "192.0.2.1")
     && !hostnameOk (host "*.example.test")
     && !hostnameOk []
+    && hostnameOk (host "a-b")
+    && hostnameOk (host "xn--abc.example")
+    && !hostnameOk (host "-")
+    && !hostnameOk (host "-a")
+    && !hostnameOk (host "a-")
+    && !hostnameOk (host "a.-b")
+    && !hostnameOk (host "a-.b")
+    && !hostnameOk (host "-a.b")
+    && !hostnameOk (host "a.b-")
+    -- A 63-byte label of 'a', 61 hyphens and 'a', then the same length
+    -- ending in a hyphen.
+    && hostnameOk (0x61 :: List.replicate 61 hyphen ++ host "a.test")
+    && !hostnameOk (0x61 :: List.replicate 62 hyphen ++ host ".test")
     && matchSan (san [entry dnsNameTag "S3.Example.TEST"]) (host "s3.example.test")
     && matchSan (san [entry dnsNameTag "*.example.test"]) (host "s3.example.test")
     && !matchSan (san [entry dnsNameTag "*.example.test"]) (host "example.test")
@@ -198,7 +223,7 @@ private theorem hostnameOk_bytes (h : List UInt8) (h_ok : hostnameOk h = true) (
     (h_mem : b ∈ h) : isHostByte b = true := by
   unfold hostnameOk at h_ok
   simp only [Bool.and_eq_true, decide_eq_true_eq] at h_ok
-  exact List.all_eq_true.mp h_ok.1.1.2 b h_mem
+  exact List.all_eq_true.mp h_ok.1.1.1.2 b h_mem
 
 /-- An accepted reference name is 1..253 bytes, DNS's own limit and
 the bound the CBMC harness proves the C at. -/
@@ -206,7 +231,7 @@ theorem hostnameOk_length (h : List UInt8) (h_ok : hostnameOk h = true) :
     1 ≤ h.length ∧ h.length ≤ 253 := by
   unfold hostnameOk at h_ok
   simp only [Bool.and_eq_true, decide_eq_true_eq] at h_ok
-  exact ⟨h_ok.1.1.1.1, h_ok.1.1.1.2⟩
+  exact ⟨h_ok.1.1.1.1.1, h_ok.1.1.1.1.2⟩
 
 /-- An accepted reference name holds no NUL. -/
 theorem hostnameOk_no_nul (h : List UInt8) (h_ok : hostnameOk h = true) : 0 ∉ h := by
@@ -221,6 +246,51 @@ theorem hostnameOk_no_star (h : List UInt8) (h_ok : hostnameOk h = true) : star 
   have h_byte := hostnameOk_bytes h h_ok star h_mem
   rw [isHostByte_star] at h_byte
   exact Bool.false_ne_true h_byte
+
+/-- A byte of a label of `h` is a byte of `h`, and it is not a dot. -/
+private theorem mem_of_mem_splitOn (h label : List UInt8) (h_label : label ∈ h.splitOn dot)
+    (b : UInt8) (h_mem : b ∈ label) : b ∈ h ∧ b ≠ dot := by
+  induction h generalizing label with
+  | nil => simp_all
+  | cons x rest ih =>
+    rw [List.splitOn_cons_eq_if_modifyHead] at h_label
+    split at h_label
+    · rcases List.mem_cons.mp h_label with rfl | h_rest
+      · exact absurd h_mem List.not_mem_nil
+      · obtain ⟨h_in, h_not_dot⟩ := ih label h_rest h_mem
+        exact ⟨List.mem_cons_of_mem x h_in, h_not_dot⟩
+    · next h_x =>
+      obtain ⟨first, others, h_split⟩ := List.exists_cons_of_ne_nil (List.splitOn_ne_nil dot rest)
+      rw [h_split, List.modifyHead_cons, List.mem_cons] at h_label
+      rcases h_label with rfl | h_other
+      · rcases List.mem_cons.mp h_mem with rfl | h_first
+        · exact ⟨List.mem_cons_self, fun h_eq => h_x (beq_iff_eq.mpr h_eq)⟩
+        · obtain ⟨h_in, h_not_dot⟩ := ih first (h_split ▸ List.mem_cons_self) h_first
+          exact ⟨List.mem_cons_of_mem x h_in, h_not_dot⟩
+      · obtain ⟨h_in, h_not_dot⟩ := ih label (h_split ▸ List.mem_cons_of_mem first h_other) h_mem
+        exact ⟨List.mem_cons_of_mem x h_in, h_not_dot⟩
+
+/-- Every label of an accepted reference name, a byte run between dots,
+starts and ends with a letter or a digit and never with '-' (RFC 1123
+§2.1). -/
+theorem hostnameOk_label_edges (h : List UInt8) (h_ok : hostnameOk h = true) (label : List UInt8)
+    (h_label : label ∈ h.splitOn dot) :
+    (∀ b, label.head? = some b → (isLetter b || isDigit b) = true) ∧
+      ∀ b, label.getLast? = some b → (isLetter b || isDigit b) = true := by
+  have h_edges : labelEdgesOk label = true := by
+    unfold hostnameOk at h_ok
+    simp only [Bool.and_eq_true, decide_eq_true_eq] at h_ok
+    exact List.all_eq_true.mp h_ok.1.2 label h_label
+  unfold labelEdgesOk at h_edges
+  simp only [Bool.and_eq_true, bne_iff_ne, ne_eq] at h_edges
+  obtain ⟨h_head, h_last⟩ := h_edges
+  have h_edge (b : UInt8) (h_mem : b ∈ label) (h_not_hyphen : b ≠ hyphen) :
+      (isLetter b || isDigit b) = true := by
+    obtain ⟨h_in, h_not_dot⟩ := mem_of_mem_splitOn h label h_label b h_mem
+    simpa [isHostByte, h_not_dot, h_not_hyphen] using hostnameOk_bytes h h_ok b h_in
+  refine ⟨fun b h_b => ?_, fun b h_b => ?_⟩
+  · exact h_edge b (List.mem_of_mem_head? h_b) (fun h_eq => h_head (h_eq ▸ h_b))
+  · exact h_edge b (List.mem_of_getLast? h_b) (fun h_eq => h_last (h_eq ▸ h_b))
 
 /-- `lower` changes only 'A'..'Z', and it maps them to 'a'..'z', so a
 byte whose `lower` is below 'a' equals that result: a byte whose

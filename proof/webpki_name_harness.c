@@ -3,16 +3,18 @@
 // contract webpki_match_san depends on: a name it accepts is
 // 1..CH_HOSTNAME_MAX bytes and holds no byte outside [A-Za-z0-9.-] — a
 // nondet index stands for every position — so it holds neither NUL
-// nor '*'. And match_dns_name, the static the walk calls once per
-// dNSName entry, is safe in both its arms against any host of up to
-// CH_HOSTNAME_MAX bytes and any presented name of up to
-// CH_WEBPKI_EXT_TLV_MAX bytes. A dNSName's content lies inside one
-// Extension TLV, and webpki.h's contract for webpki_read_extensions
-// holds that TLV to CH_WEBPKI_EXT_TLV_MAX bytes, so no presented name
-// the walk passes is longer. The leading "*." is chosen by nondet, so the
-// wildcard arm is always in the formula. Spec.WebpkiName proves of the
-// model what these asserts check of the C: an accepted host holds no
-// NUL and no '*'.
+// nor '*'. Each '-' in it has a byte on both sides and neither of
+// those bytes is a dot, so no label starts or ends with '-'. And
+// match_dns_name, the static the walk calls once per dNSName entry, is
+// safe in both its arms against any host of up to CH_HOSTNAME_MAX
+// bytes and any presented name of up to CH_WEBPKI_EXT_TLV_MAX bytes. A
+// dNSName's content lies inside one Extension TLV, and webpki.h's
+// contract for webpki_read_extensions holds that TLV to
+// CH_WEBPKI_EXT_TLV_MAX bytes, so no presented name the walk passes is
+// longer. The leading "*." is chosen by nondet, so the wildcard arm is
+// always in the formula. Spec.WebpkiName proves of the model what
+// these asserts check of the C: an accepted host holds no NUL and no
+// '*', and no label of it starts or ends with '-'.
 //
 // The walk over a GeneralNames has its own harness, webpki_san: one
 // formula holding the walk and this compare at the real host bound
@@ -39,6 +41,12 @@ int main(void) {
         __CPROVER_assert(is_hostname_byte(host[i]), "an accepted host holds only its alphabet");
         __CPROVER_assert(host[i] != 0 && host[i] != '*',
                          "an accepted host holds no NUL and no '*'");
+        if (host[i] == '-') {
+            __CPROVER_assert(i > 0 && i < host_len - 1,
+                             "an accepted host neither starts nor ends with '-'");
+            __CPROVER_assert(host[i - 1] != '.' && host[i + 1] != '.',
+                             "no label of an accepted host starts or ends with '-'");
+        }
     }
 
     // One presented name against a fresh host, either arm.

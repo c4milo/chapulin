@@ -203,12 +203,15 @@ uint64_t webpki_pack_seconds(uint64_t now_seconds);
 // Hostnames. The reference name is checked for shape before anything
 // is matched against it: 1..CH_HOSTNAME_MAX bytes, only [A-Za-z0-9.-],
 // no empty label, no leading or trailing dot, no label over 63 bytes,
-// and a last label that is not all digits (RFC 6066 forbids an IP
-// literal in server_name). This check is the whole defence against a
-// presented name carrying NUL or '*': the reference name holds
-// neither, so a match compares equal-length byte ranges and a NUL in
-// a presented name can only fail. Returns 1 or 0. Defined in
-// webpki_name.c.
+// no label that starts or ends with '-', and a last label that is not
+// all digits (RFC 6066 forbids an IP literal in server_name). The
+// hyphen rule is the label rule of RFC 952 as RFC 1123 §2.1 amends it:
+// a label holds letters, digits and hyphens, and starts and ends with
+// a letter or digit, where RFC 952 required a letter first. This check
+// is the whole defence against a presented name carrying NUL or '*':
+// the reference name holds neither, so a match compares equal-length
+// byte ranges and a NUL in a presented name can only fail. Returns 1
+// or 0. Defined in webpki_name.c.
 int webpki_hostname_ok(const uint8_t *host, size_t host_len);
 
 // Matches host against the dNSName entries of a GeneralNames TLV

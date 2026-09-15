@@ -623,8 +623,11 @@ launch fast:1 full x509ca_ecdsa 400 "fill_nondet.0:1537" buf.c ct.c
 # extends the loop's proof to any length. Measured (cbmc 6.11.0,
 # kissat, /usr/bin/time -l, plus cbmc and kissat resident size summed
 # once a second): webpki_time 1065 properties, 4.3 s, 80 MB;
-# webpki_name 977 properties, 175 s and 178 s, 5.8 GB peak for one
-# process and 6.0 GiB summed, which fast:7 covers; webpki_san 975
+# webpki_name 1019 properties, 205 s and 208 s, 4.9 GB peak for one
+# process and 4.6 GiB summed. Other proofs held 6 GB of swap during
+# that reading and resident size reads low under swap, so the earlier
+# reading of the 977-property formula, 5.8 GB for one process and 6.0
+# GiB summed, still sets fast:7; webpki_san 975
 # properties, 234 s, 2.6 GB for one process and 3.1 GiB summed, which
 # fast:4 covers.
 launch fast full webpki_time 41 "" buf.c x509_der.c ct.c

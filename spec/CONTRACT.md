@@ -205,7 +205,8 @@ Spec.WebpkiTime.packSeconds : Nat → Nat
 Spec.WebpkiName.hostnameOk : List UInt8 → Bool
                         -- the reference name's shape: 1..253 bytes of
                         -- [A-Za-z0-9.-], every label 1..63 bytes (RFC 1035
-                        -- §2.3.4), a last label not all digits (RFC 6066 §3
+                        -- §2.3.4), no label that starts or ends with '-' (RFC
+                        -- 1123 §2.1), a last label not all digits (RFC 6066 §3
                         -- forbids an IP literal in server_name). Line op:
                         -- `webpki_hostname <hex>` → `1`/`0`.
 Spec.WebpkiName.matchSan : ByteArray → List UInt8 → Bool
@@ -573,6 +574,10 @@ Spec.WebpkiName.hostnameOk_no_nul
 Spec.WebpkiName.hostnameOk_no_star
                              hostnameOk h → 0 ∉ h, and '*' ∉ h: an accepted reference
                              -- name holds neither byte
+Spec.WebpkiName.hostnameOk_label_edges
+                             hostnameOk h → label ∈ h.splitOn dot → the label's first
+                             -- and last bytes, when it has them, are letters or
+                             -- digits: no label starts or ends with '-'
 Spec.WebpkiName.matchDnsName_mem
                              every byte of a matching presented name is a byte of the
                              -- reference name up to case, or one of the two bytes of
@@ -730,7 +735,7 @@ means the module's selftest plus the differential oracle carry it;
 | P256 | 7 | `Weierstrass` at the P-256 constants, and its theorems restated at them: `decide` discharges `2 < p`, the discriminant, `G` on the curve and `p < 2^256`; `p` and `n` prime and `n • G = 0` stay hypotheses, because no tactic certifies them. Soundness of the verifier stays executable oracle only: the RFC 6979 A.2.5 vector and the differential |
 | Pem | 10 | the accepted alphabet pinned in both directions against RFC 4648 §4's table; decode? never yields more than the cap and the bound is attained; armour-then-decode is the identity for every non-empty DER within the caps at every width whose text fits — each hypothesis carries an evaluated countermodel; an accepted input has the RFC 7468 frame with the body's base64 the returned DER; armour at any width of four or more, or as one line, fits the cap, discharging the round trip's fits hypothesis; base64 acceptance characterized as an iff against the declarative grammar |
 | WebpkiTime | 2 | the packed clock keeps the order of clocks (monotone over every count of seconds, the clamp included), and an accepted Time packs inside [19500101000000, 99991231235959]; the field parsing and the calendar conversion stay vector-checked |
-| WebpkiName | 8 | an accepted reference name holds no NUL and no '*' and is 1..253 bytes; every byte of a matching presented name is a reference byte up to case or one of the wildcard label's two, so against an accepted reference name a matching presented name holds no NUL and no '*' but a leading "*."; every entry of an accepted GeneralNames has one of GeneralName's nine tags; a match is a dNSName entry of such a GeneralNames and nothing else. The label rules and the wildcard's own arithmetic stay vector-checked |
+| WebpkiName | 9 | an accepted reference name holds no NUL and no '*' and is 1..253 bytes; every label of it starts and ends with a letter or digit, never '-'; every byte of a matching presented name is a reference byte up to case or one of the wildcard label's two, so against an accepted reference name a matching presented name holds no NUL and no '*' but a leading "*."; every entry of an accepted GeneralNames has one of GeneralName's nine tags; a match is a dNSName entry of such a GeneralNames and nothing else. The label length rules, the all-digit last label and the wildcard's own arithmetic stay vector-checked |
 | X509Ca | 6 | isCaTrue accepts exactly the two anchor encodings (the iff is kernel-checked false without its encodeLen-domain bound); an accepted certificate has exactly the SEQUENCE(TBS, sigAlg, BIT STRING) shape with the signature framing intact; the extracted key is exactly 64 bytes or 256..384 in 8-byte steps, tightening the CBMC harness's bound. Acceptance policy beyond the frame is executable oracle only: the differential's minted anchors, near shapes and mutations |
 | WebpkiSpki | 3 | the accepted RSA key is 256..512 bytes in multiples of 8 with its top bit set and odd, stated over the returned bytes from a reader that judges the decoded integer; the EC keys are 64 and 96 bytes. Acceptance beyond that is executable oracle only: the differential's spec-encoded keys and their perturbations |
 | WebpkiSigalg | 9 | the decoding reader accepts exactly the four canonical encodings, one algorithm each (the byte-compare view and the decode view agree); FIPS 186-4 §6.4's integer rule equals the C's byte cut for P-256 with SHA-384 and its zero pad for P-384 with SHA-256, with the pad lemma and big-endian concatenation lemma under them; the cap and both family mismatches refuse. The signature arithmetic is the RSA, P-256 and P-384 modules' and stays vector-checked |

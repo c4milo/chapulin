@@ -1,0 +1,16 @@
+invariant: INV-5
+file: webpki_name.c
+catches: webpki_name_test
+reason: dropping the refusal in label_edges_ok lets a reference name
+  whose label starts or ends with '-', such as "-a.b" or "a.b-", pass
+  webpki_hostname_ok. RFC 1123 §2.1 forbids such a label, rustls-webpki
+  refuses it, and docs/webpki.md states the rule. The matcher applies no
+  hyphen rule, so only the shape check refuses such a name.
+  bin/webpki_name_test's hyphen rows object.
+
+--- old
+        if (i == 0 || i == host_len - 1 || host[i - 1] == '.' || host[i + 1] == '.') {
+            return 0;
+        }
+--- new
+        (void)i;

@@ -63,6 +63,21 @@ static int labels_ok(const uint8_t *host, size_t host_len) {
     return run >= 1 && run <= LABEL_MAX;
 }
 
+// No label starts or ends with '-' (RFC 1123 §2.1, RFC 952). A byte
+// is a label's first when it is the name's first or follows a dot, and
+// a label's last when it is the name's last or precedes a dot.
+static int label_edges_ok(const uint8_t *host, size_t host_len) {
+    for (size_t i = 0; i < host_len; i++) {
+        if (host[i] != '-') {
+            continue;
+        }
+        if (i == 0 || i == host_len - 1 || host[i - 1] == '.' || host[i + 1] == '.') {
+            return 0;
+        }
+    }
+    return 1;
+}
+
 // The last label is the bytes after the last dot. RFC 6066 §3 forbids
 // an IPv4 literal in server_name, and its last label is all digits.
 static int last_label_all_digits(const uint8_t *host, size_t host_len) {
@@ -85,7 +100,8 @@ int webpki_hostname_ok(const uint8_t *host, size_t host_len) {
             return 0;
         }
     }
-    return labels_ok(host, host_len) && !last_label_all_digits(host, host_len);
+    return labels_ok(host, host_len) && label_edges_ok(host, host_len) &&
+           !last_label_all_digits(host, host_len);
 }
 
 static uint8_t ascii_lower(uint8_t c) {

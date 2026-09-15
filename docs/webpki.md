@@ -185,8 +185,9 @@ division, once per connection, outside any peer input.
 
 The reference name is checked for shape before anything is matched against
 it: only `[A-Za-z0-9.-]`, no empty label, no leading or trailing dot, no
-label over 63 bytes, and a last label that is not all digits, because RFC
-6066 forbids an IP literal in `server_name`.
+label over 63 bytes, no label that starts or ends with `-`, and a last label
+that is not all digits, because RFC 6066 forbids an IP literal in
+`server_name`.
 
 That check is the whole defence against a leaf whose subjectAltName carries
 `evil.example\0s3.amazonaws.com`. It is what guarantees the reference name
@@ -195,10 +196,18 @@ ranges and a NUL in a presented name can only fail. It therefore has its own
 invariant and its own mutant, because nothing else in the mode would notice
 if it were removed.
 
-The check does not apply RFC 1123's rule that a label neither starts nor
-ends with `-`, so `-a.b-` passes. That is deliberate. The check exists to
-refuse NUL and `*`, and matching compares bytes for equality, so a hyphen
-at a label edge matches only a presented name with the same hyphen.
+The hyphen rule is the label rule of RFC 952 as RFC 1123 §2.1 amends it. A
+label holds letters, digits and hyphens, and it starts and ends with a letter
+or a digit. RFC 1123 allows a leading digit, which RFC 952 did not. So
+`-a.b`, `a.b-`, `a-.b` and `a.-b` fail the check, and `a-b` and
+`xn--abc.example` pass it. rustls-webpki refuses such a reference name the
+same way. Go's `crypto/x509` checks only the start of a label: its
+`validHostname` refuses a label that starts with `-` and accepts one that
+ends with it.
+
+The matcher applies no hyphen rule to a presented name. A presented label
+that starts or ends with `-` matches only a reference label equal to it up to
+case, and the check refuses a reference name that holds such a label.
 
 Matching is `dNSName` only. There is no fallback to the subject common name,
 which is the rule every modern client follows and which OpenSSL's

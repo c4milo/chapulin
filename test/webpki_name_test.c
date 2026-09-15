@@ -1,6 +1,7 @@
 // The TRUST=webpki hostname shape check and subjectAltName matcher at
 // their boundaries: the 253-byte name and the 63-byte label on both
-// sides, every label rule, the alphabet, the all-digit last label;
+// sides, every label rule, a hyphen inside a label and at each of its
+// edges, the alphabet, the all-digit last label;
 // then exact and case-folded matches, the one-label wildcard and each
 // shape it refuses, a NUL in a presented name, entries of other
 // GeneralName types before the match, the GeneralName tag rule on
@@ -74,7 +75,33 @@ static void test_hostname_labels(void) {
     CHECK(hostname_ok("a.1.b") == 1);
     CHECK(hostname_ok("1a") == 1);
     CHECK(hostname_ok("a1") == 1);
-    CHECK(hostname_ok("-a.b-") == 1);
+}
+
+// No label starts or ends with '-' (RFC 1123 §2.1): a hyphen inside a
+// label passes, and one at either edge of the first, a middle or the
+// last label fails.
+static void test_hostname_hyphens(void) {
+    CHECK(hostname_ok("a-b") == 1);
+    CHECK(hostname_ok("xn--abc.example") == 1);
+    CHECK(hostname_ok("-") == 0);
+    CHECK(hostname_ok("-a") == 0);
+    CHECK(hostname_ok("a-") == 0);
+    CHECK(hostname_ok("-a.b") == 0);
+    CHECK(hostname_ok("a-.b") == 0);
+    CHECK(hostname_ok("a.-b") == 0);
+    CHECK(hostname_ok("a.b-") == 0);
+    CHECK(hostname_ok("-a.b-") == 0);
+    CHECK(hostname_ok("a.-b-.c") == 0);
+    CHECK(hostname_ok("a.b-c.d") == 1);
+    // A 63-byte label of 'a', 61 hyphens and 'a'; then the same length
+    // with the last 'a' replaced by a hyphen.
+    char label[80];
+    label[0] = 'a';
+    memset(label + 1, '-', 61);
+    memcpy(label + 62, "a.test", 7);
+    CHECK(hostname_ok(label) == 1);
+    label[62] = '-';
+    CHECK(hostname_ok(label) == 0);
 }
 
 static void test_hostname_alphabet(void) {
@@ -379,6 +406,7 @@ static void test_match_malformed(void) {
 int main(void) {
     test_hostname_length();
     test_hostname_labels();
+    test_hostname_hyphens();
     test_hostname_alphabet();
     test_match_exact();
     test_match_wildcard();
