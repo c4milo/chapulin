@@ -280,6 +280,7 @@ apart from one that passed — so for the slow rows, read the nightly.
 | ct | memeq matches a plain compare, wipe zeroizes | inputs ≤ 64 B |
 | buf | any 12-operation reader/writer run stays safe; length never exceeds capacity | buffers ≤ 64 B |
 | sha256 | safe for any two-chunk split | messages ≤ 96 B — every fill state the padding path can see, since fill is the length mod 64 and 0..96 covers all 64 residues |
+| sha512 (two harnesses) | the framing — block assembly across a two-chunk split, the padding and the 128-bit length — is safe for both SHA-512 and SHA-384 with the compression function stubbed to its contract; the compression function is safe over any state and any block, which discharges that stub | framing: messages ≤ 192 B — every fill state the padding path can see, since fill is the length mod 128 and 0..192 covers all 128 residues; compression: the full domain |
 | sha3 (two harnesses) | every mode is safe for a one-call message and XOF output from a fresh context; the SHAKE streaming calls are safe from any context state — arbitrary lanes, either rate, every position — for split absorbs and squeezes | one-call: messages ≤ 200 B, output ≤ 400 B; streaming: chunks ≤ 32 B |
 | mlkem (six harnesses) | keygen, encaps, and decaps are safe for every seed, message, and hostile key or ciphertext, with the polynomial layer stubbed to its contracts; the polynomial layer is safe over full-range int16 coefficients — a superset of anything the KEM layer passes it, so no coefficient value can overflow the reduction arithmetic. Sampling, reductions, and coding prove in the fast tier; the NTT, the two halves of its inverse, and the base multiplication, whose chained-product overflow proofs are the SAT-hard part, each prove in their own slow-tier formula | the full domain: every input is a fixed-size array, and the sampling read stops at its 1536-byte cap |
 | hkdf (two harnesses) | hmac/extract and expand/expand-label safe over the proven sha256 contract | keys ≤ 96 B, hmac/extract messages ≤ 48 B; expand/expand-label output ≤ 96 B and info ≤ 64 B (the contract bound), expand: slow tier |
@@ -498,6 +499,9 @@ secrets and MACs and never opens a record.
 Three more suites run on every push and add evidence rather than
 proof. [Wycheproof](https://github.com/C2SP/wycheproof)'s attack-derived cases (`make wycheproof`, about 1,600
 across x25519, ChaCha20-Poly1305, HKDF-SHA256, P-256 and RSA-PSS).
+Wycheproof tests no plain hash, so SHA-384 and SHA-512 rest on the
+FIPS 180-4 examples and RFC 6234 §8.5 in `test/sha512_test.c`, with the
+padding and block boundaries of the 128-byte block checked either side.
 AddressSanitizer and UndefinedBehaviorSanitizer over every
 deterministic suite (`make san-check`), with a committed canary proving
 the sanitizer is armed. Line coverage is measured and gated in CI.
@@ -526,7 +530,8 @@ Cortex-M3 lane is the template for wiring a new emulated target.
 ## The differential oracle
 
 [`spec/`](spec/) is an executable [Lean 4](https://lean-lang.org/) specification of everything chapulin
-computes: SHA-256, SHA-3 and both SHAKE XOFs, ML-KEM-768, HKDF and the
+computes: SHA-256, SHA-384 and SHA-512, SHA-3 and both SHAKE XOFs,
+ML-KEM-768, HKDF and the
 key schedule, ChaCha20, Poly1305, the AEAD, record framing, x25519,
 P-256, RSA-PSS, the grammar of the
 four handshake messages a server sends, and the provisioning path —
@@ -536,7 +541,7 @@ never the C, because a differential oracle only works when a shared
 misreading cannot make both sides agree.
 
 `make diff` builds the spec, runs its selftests, then drives about
-7,400 random-input comparisons between the C and the spec over a pipe,
+7,800 random-input comparisons between the C and the spec over a pipe,
 from a fixed seed. Some rows are signatures the spec mints and the C
 must accept: the spec holds the private keys and signs, and the C, which
 can only verify, must accept every genuine signature and reject every

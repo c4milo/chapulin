@@ -59,6 +59,8 @@ pem_ecdsa 74.6
 poly1305 94.3
 record 95.0
 rsa_mul 32.3
+sha512 90.9  # local reading, cbmc 6.11.0 on arm64 macOS; replace with the nightly table's number
+sha512_compress 97.1  # local reading, cbmc 6.11.0 on arm64 macOS; replace with the nightly table's number
 softmul 91.3
 x25519_tail 52.7
 

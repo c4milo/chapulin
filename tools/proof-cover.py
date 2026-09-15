@@ -41,8 +41,9 @@ def shipped_sources():
         m = re.search(rf"^{var} :?=(.*?)(?=\n\S)", mk, re.S | re.M)
         if m:
             out |= {t for t in re.split(r"[\s\\]+", m.group(1)) if t.endswith(".c")}
-    # drbg.c and the ML-KEM and SHA-3 sources join through build variables.
-    out |= {"drbg.c", "sha3.c", "mlkem.c", "mlkem_poly.c"}
+    # drbg.c and the ML-KEM, SHA-3 and SHA-512 sources join through build
+    # variables.
+    out |= {"drbg.c", "sha3.c", "sha512.c", "sha512_compress.c", "mlkem.c", "mlkem_poly.c"}
     return {s for s in out if (ROOT / s).exists()}
 
 

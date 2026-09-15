@@ -419,6 +419,20 @@ launch fast:10 full handshake_parser 260 "hsp_parse_server_hello.0:66" handshake
 launch fast full eeparse 260 "hsp_parse_encrypted_exts.0:66" handshake_parser.c buf.c
 launch fast full certparse 260 "" handshake_parser.c buf.c
 launch fast:6 full sha256 3 "fill_nondet.0:97,sha256_update.0:66,sha256_update.1:3,sha256_update.2:66,sha256_final.0:65,sha256_final.1:9,sha256_final.2:9,compress.0:17,compress.1:49,compress.2:65"
+# SHA-512 splits as ML-KEM does: the framing over a stubbed compression,
+# and the compression alone. One formula carrying both hashes and the
+# real compression returned no verdict in 43 min at a 12.9 GB peak; the
+# sha512 path alone with the real compression verified in 1308 s at
+# 15.3 GB, above the nightly runner's memory. The compression's cost was
+# never its own: over any state and block it proves in under a second.
+# The framing harness — both hashes, the compression stubbed — first
+# closed in seven hours at 10.2 GB with sha256.c's padding idiom, which
+# routes each pad byte through update; written flat into the pending
+# block (sha512.c's finalize) it closes in nine minutes. Measured after
+# the split (cbmc 6.11.0, kissat, /usr/bin/time -l): sha512_compress
+# 0.5 s / 24 MB, 259 properties; sha512 536 s / 2.0 GB, 417 properties.
+launch fast full sha512_compress 3 "main.0:9,fill_nondet.0:129,sha512_compress.0:17,sha512_compress.1:65,sha512_compress.2:81,load_be64.0:9"
+launch fast:3 full sha512 3 "fill_nondet.0:193,sha512_update.0:130,sha512_update.1:3,sha512_update.2:130,sha512_final.0:9,sha384_final.0:7,sha512_compress.0:9,store_be64.0:9,finalize.0:130,finalize.1:130"
 # sha3's loops number by back-edge order, so the block loops' inner
 # copy loop precedes its while: absorb is head, block-copy, block-while,
 # tail; squeeze is head, block-copy, block-while. Measured peaks: sha3

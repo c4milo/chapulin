@@ -9,6 +9,7 @@ import Spec.X25519
 import Spec.P256
 import Spec.Rsa
 import Spec.Sha3
+import Spec.Sha512
 import Spec.MlKem
 import Spec.Pem
 import Spec.X509Der

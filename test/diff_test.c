@@ -25,6 +25,7 @@
 #include "diff_record.h"
 #include "diff_rsa.h"
 #include "diff_sha3.h"
+#include "diff_sha512.h"
 #include "diff_x25519.h"
 #include "diff_x509.h"
 
@@ -39,6 +40,8 @@ int main(int argc, char **argv) {
     spawn_spec(path);
     expect("selftest", "ok");
     diff_sha256();
+    diff_sha512();
+    diff_sha384();
     diff_sha3_256();
     diff_sha3_512();
     diff_shake128();

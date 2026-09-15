@@ -107,7 +107,7 @@ SRCS := ct.c sha256.c hkdf.c chacha20.c poly1305.c aead.c x25519.c p256.c rsa.c 
 
 HDRS := ct.h sha256.h hkdf.h chacha20.h poly1305.h aead.h x25519.h p256.h rsa.h ch_assert.h \
         pem.h x509.h x509_ca.h buf.h record.h keysched.h io.h handshake_message.h handshake_parser.h handshake_record.h cfg.h session.h handshake_auth.h handshake.h handshake_post.h \
-        tls.h rand.h drbg.h sha3.h mlkem.h mlkem_poly.h
+        tls.h rand.h drbg.h sha3.h sha512.h sha512_compress.h mlkem.h mlkem_poly.h
 # softmul.c is excluded on purpose. It has to define __mulsi3 and
 # __muldi3 -- the names the compiler emits, so they replace the runtime
 # library's -- and clang-tidy rejects those as reserved identifiers that
@@ -116,8 +116,8 @@ HDRS := ct.h sha256.h hkdf.h chacha20.h poly1305.h aead.h x25519.h p256.h rsa.h 
 # one file keeps bugprone-reserved-identifier and misc-use-internal-linkage
 # working everywhere else, which disabling them in .clang-tidy would not.
 # clang-format still covers it, and so does lint-runtime-symbols.
-LINT_C := $(filter-out softmul.c,$(SRCS)) drbg.c sha3.c mlkem.c mlkem_poly.c test/unit_test.c test/tls_client.c \
-          test/diff_test.c test/timing_test.c test/drbg_test.c test/softmul_test.c test/rsa_test.c test/sha3_test.c \
+LINT_C := $(filter-out softmul.c,$(SRCS)) drbg.c sha3.c sha512.c sha512_compress.c mlkem.c mlkem_poly.c test/unit_test.c test/tls_client.c \
+          test/diff_test.c test/timing_test.c test/drbg_test.c test/softmul_test.c test/rsa_test.c test/sha3_test.c test/sha512_test.c \
           test/mlkem_test.c test/handshake_strict_test.c test/handshake_sequence_test.c \
           test/x509_strict_test.c $(wildcard examples/*.c)
 
@@ -131,7 +131,7 @@ TESTH := test/test_random.h test/pem_armor.h test/pem_tests.h test/x509_ca_tests
          test/x509_vectors.h test/x509_mutate.h test/x509_chain_tests.h test/x509_epoch.h \
          test/x509_spki.h test/diff_x509.h test/diff_x509_bounds.h test/diff_x509_chain.h \
          test/diff_x509_epoch.h test/diff_x509_mutate.h test/diff_x509_random.h \
-         test/diff_x509_signed.h test/diff_sha3.h test/diff_mlkem.h test/mlkem_vectors.h
+         test/diff_x509_signed.h test/diff_sha3.h test/diff_sha512.h test/diff_mlkem.h test/mlkem_vectors.h
 
 # Each axis names its value or stops the build. RAND has done this since
 # https://github.com/c4milo/chapulin/issues/41; PIN, TRUST and KEX each
@@ -404,6 +404,11 @@ bin/sha3_test: test/sha3_test.c sha3.c ct.c $(HDRS) $(TESTH)
 bin/mlkem_test: test/mlkem_test.c mlkem.c mlkem_poly.c sha3.c ct.c $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) -I. -o $@ test/mlkem_test.c mlkem.c mlkem_poly.c sha3.c ct.c
+# SHA-512 and SHA-384 vectors and the streaming contract. Its own binary,
+# out of the packaged object like sha3: only TRUST=webpki links sha512.c.
+bin/sha512_test: test/sha512_test.c sha512.c sha512_compress.c $(HDRS) $(TESTH)
+	@mkdir -p bin
+	$(CC) $(CFLAGS) -I. -o $@ test/sha512_test.c sha512.c sha512_compress.c
 
 # Parser strictness: drives the ServerHello/EE parsers directly; their
 # whole dependency closure is handshake_parser.c + buf.c.
@@ -523,9 +528,9 @@ bin/tlsclient_pq: test/tls_client.c $(SRCS) sha3.c mlkem.c mlkem_poly.c $(HDRS) 
 	@mkdir -p bin
 	$(CC) $(CFLAGS) -DCH_KEX_PQ -I. -o $@ test/tls_client.c $(SRCS) sha3.c mlkem.c mlkem_poly.c
 
-bin/diff: test/diff_test.c $(SRCS) sha3.c mlkem.c mlkem_poly.c $(HDRS) $(TESTH)
+bin/diff: test/diff_test.c $(SRCS) sha3.c sha512.c sha512_compress.c mlkem.c mlkem_poly.c $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -I. -o $@ test/diff_test.c $(SRCS) sha3.c mlkem.c mlkem_poly.c
+	$(CC) $(CFLAGS) -I. -o $@ test/diff_test.c $(SRCS) sha3.c sha512.c sha512_compress.c mlkem.c mlkem_poly.c
 
 .PHONY: check check-slow ci lint lint-tidy lint-format lint-cppcheck lint-docs lint-conflict-markers lint-invariants lint-violation-builds lint-fuzz-budget lint-codegen-partition lint-runtime-symbols lint-wide-multiply lint-commit-citations lint-issue-links lint-shellcheck lint-bench-numbers lint-spec prove diff fmt clean
 # check is the inner loop and holds a one-minute budget, so it runs what
@@ -538,7 +543,7 @@ bin/diff: test/diff_test.c $(SRCS) sha3.c mlkem.c mlkem_poly.c $(HDRS) $(TESTH)
 # and the invariant violation builds. The nightly runs it. Splitting on
 # duration rather than on importance is deliberate -- nothing here is
 # optional, and a change is not finished until check-slow passes too.
-check: bin/unit bin/unit_ca bin/unit_pq bin/tlsclient bin/tlsclient_ecdsa bin/tlsclient_ca bin/tlsclient_ca_ecdsa bin/tlsclient_pq bin/drbg_test bin/softmul_test bin/rsa_test bin/sha3_test bin/mlkem_test bin/handshake_strict_test bin/handshake_strict_pq bin/x509strict bin/x509strict_ecdsa lint rand-check
+check: bin/unit bin/unit_ca bin/unit_pq bin/tlsclient bin/tlsclient_ecdsa bin/tlsclient_ca bin/tlsclient_ca_ecdsa bin/tlsclient_pq bin/drbg_test bin/softmul_test bin/rsa_test bin/sha3_test bin/sha512_test bin/mlkem_test bin/handshake_strict_test bin/handshake_strict_pq bin/x509strict bin/x509strict_ecdsa lint rand-check
 	# The packaged object is built once per entropy pattern, because
 	# lib-check reads a different export list and a different import
 	# list in each. Only the object is built twice: the examples and
@@ -563,6 +568,7 @@ check: bin/unit bin/unit_ca bin/unit_pq bin/tlsclient bin/tlsclient_ecdsa bin/tl
 	./bin/softmul_test
 	./bin/rsa_test
 	./bin/sha3_test
+	./bin/sha512_test
 	./bin/mlkem_test
 	./bin/handshake_strict_test
 	./bin/handshake_strict_pq
@@ -616,7 +622,7 @@ ifeq ($(LAKE),)
 else
 	cd spec && $(LAKE) build
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -DCH_PIN_ECDSA -I. -o bin/diff_ecdsa test/diff_test.c $(SRCS) sha3.c mlkem.c mlkem_poly.c
+	$(CC) $(CFLAGS) -DCH_PIN_ECDSA -I. -o bin/diff_ecdsa test/diff_test.c $(SRCS) sha3.c sha512.c sha512_compress.c mlkem.c mlkem_poly.c
 	./bin/diff_ecdsa
 endif
 
@@ -631,7 +637,7 @@ ifeq ($(LAKE),)
 else
 	cd spec && $(LAKE) build
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -DCH_KEX_PQ -I. -o bin/diff_pq test/diff_test.c $(SRCS) sha3.c mlkem.c mlkem_poly.c
+	$(CC) $(CFLAGS) -DCH_KEX_PQ -I. -o bin/diff_pq test/diff_test.c $(SRCS) sha3.c sha512.c sha512_compress.c mlkem.c mlkem_poly.c
 	./bin/diff_pq
 endif
 
@@ -858,13 +864,14 @@ san-check:
 	$(CC) $(SAN_CFLAGS) -I. -o bin/san/drbg_test test/drbg_test.c drbg.c chacha20.c ct.c
 	$(CC) $(SAN_CFLAGS) -I. -o bin/san/rsa_test test/rsa_test.c rsa.c rsa_mont.c sha256.c ct.c
 	$(CC) $(SAN_CFLAGS) -I. -o bin/san/sha3_test test/sha3_test.c sha3.c ct.c
+	$(CC) $(SAN_CFLAGS) -I. -o bin/san/sha512_test test/sha512_test.c sha512.c sha512_compress.c
 	$(CC) $(SAN_CFLAGS) -I. -o bin/san/mlkem_test test/mlkem_test.c mlkem.c mlkem_poly.c sha3.c ct.c
 	$(CC) $(SAN_CFLAGS) -I. -o bin/san/handshake_strict_test test/handshake_strict_test.c handshake_parser.c buf.c
 	$(CC) $(SAN_CFLAGS) -I. -o bin/san/x509strict_test $(X509STRICT_SRC) rsa.c rsa_mont.c
 	$(CC) $(SAN_CFLAGS) -DCH_PIN_ECDSA -I. -o bin/san/x509strict_ecdsa $(X509STRICT_SRC) p256.c
 	$(CC) $(SAN_CFLAGS) -I. -o bin/san/handshake_sequence_test test/handshake_sequence_test.c \
 	  $(filter-out p256.c rsa.c rsa_mont.c,$(SRCS))
-	@set -e; for b in unit rsa_test sha3_test mlkem_test handshake_strict_test x509strict_test x509strict_ecdsa; do \
+	@set -e; for b in unit rsa_test sha3_test sha512_test mlkem_test handshake_strict_test x509strict_test x509strict_ecdsa; do \
 	  echo "== $$b (SAN -O$(O))"; ENUM_DEPTH=4 ./bin/san/$$b; done
 	@$(call wycheproof_fetch,san wycheproof); \
 	python3 test/gen_wycheproof.py $(WYCHEPROOF_DIR) bin/wycheproof_vectors.h && \
@@ -910,6 +917,7 @@ cross-check:
 	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) -static -I. -o bin/cross/drbg_test test/drbg_test.c drbg.c chacha20.c ct.c
 	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) -static -I. -o bin/cross/rsa_test test/rsa_test.c rsa.c rsa_mont.c sha256.c ct.c
 	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) -static -I. -o bin/cross/sha3_test test/sha3_test.c sha3.c ct.c
+	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) -static -I. -o bin/cross/sha512_test test/sha512_test.c sha512.c sha512_compress.c
 	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) -static -I. -o bin/cross/mlkem_test test/mlkem_test.c mlkem.c mlkem_poly.c sha3.c ct.c
 	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) -static -I. -o bin/cross/handshake_strict_test test/handshake_strict_test.c handshake_parser.c buf.c
 	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) -static -I. -o bin/cross/x509strict_test $(X509STRICT_SRC) rsa.c rsa_mont.c
@@ -925,7 +933,7 @@ cross-check:
 	  [ -n "$$CI" ] && { echo "wycheproof: clone failed and CI must not skip a gate"; exit 1; }; \
 	  echo "SKIP cross wycheproof: no checkout and no network"; \
 	fi
-	@set -e; cd bin/cross; for b in unit rsa_test sha3_test mlkem_test handshake_strict_test x509strict_test x509strict_ecdsa; do \
+	@set -e; cd bin/cross; for b in unit rsa_test sha3_test sha512_test mlkem_test handshake_strict_test x509strict_test x509strict_ecdsa; do \
 	  echo "== $$b ($(RUNNER))"; ENUM_DEPTH=3 $(RUNNER) ./$$b; done; \
 	if [ -x wycheproof_test ]; then echo "== wycheproof_test ($(RUNNER))"; $(RUNNER) ./wycheproof_test; fi
 
@@ -1349,6 +1357,12 @@ lint-violation-builds:
 #   pem.c, x509.c, x509_der.c, x509_ca.c: the certificate readers. The
 #     certificate is public too (gcc lowers x509_der.c's decimal date
 #     digits to two madd on mips32r2, and nothing there is secret).
+#   sha512.c, sha512_compress.c: SHA-384 for the signatures a public chain carries. Every
+#     byte it hashes is public — a certificate's TBS bytes, or the
+#     CertificateVerify signed content, which is 64 spaces, a context
+#     string and the transcript hash — and a hash has no multiply, so
+#     the gate would read zero either way. The list says what the file
+#     may see, not what it does.
 # A secret arriving in any of these is a design change, and this list is
 # where it lands. Until https://github.com/c4milo/chapulin/issues/85 the
 # gate read four files and the rest went unmeasured.
@@ -1370,7 +1384,7 @@ WIDEMUL_CEILING := ct.c:0 sha256.c:0 sha3.c:1 hkdf.c:0 chacha20.c:0 poly1305.c:0
                    session.c:0 handshake_message.c:0 handshake_parser.c:0 handshake_record.c:0 \
                    handshake_auth.c:0 handshake.c:0 handshake_post.c:0 tls.c:0 drbg.c:0 softmul.c:0
 CODEGEN_SRCS := $(foreach e,$(WIDEMUL_CEILING),$(firstword $(subst :, ,$(e))))
-WIDEMUL_PUBLIC := p256.c rsa.c rsa_mont.c pem.c x509.c x509_der.c x509_ca.c
+WIDEMUL_PUBLIC := p256.c rsa.c rsa_mont.c pem.c x509.c x509_der.c x509_ca.c sha512.c sha512_compress.c
 
 # The library sources are $(SRCS), drbg.c, and every .c file git tracks
 # at the repository root. The KEX=pq sources join LIB_SRCS by += rather

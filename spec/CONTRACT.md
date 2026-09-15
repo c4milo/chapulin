@@ -16,6 +16,8 @@ The Lean spec is a differential oracle for the C stack. Rules:
 
 ```
 Spec.Sha256.sha256    : ByteArray → ByteArray                          -- FIPS 180-4, 32 bytes out
+Spec.Sha512.sha512    : ByteArray → ByteArray                          -- FIPS 180-4 §6.4, 64 bytes out
+Spec.Sha512.sha384    : ByteArray → ByteArray                          -- FIPS 180-4 §6.5, 48 bytes out
 Spec.Sha3.sha3_256    : ByteArray → ByteArray                          -- FIPS 202, 32 bytes out
 Spec.Sha3.sha3_512    : ByteArray → ByteArray                          -- FIPS 202, 64 bytes out
 Spec.Sha3.shake128    : ByteArray → (outLen : Nat) → ByteArray         -- FIPS 202 XOF
@@ -528,6 +530,7 @@ means the module's selftest plus the differential oracle carry it;
 | Aead | 4 | seal/open round trip, tag rejection, output size, pad16 alignment |
 | Rsa | 4 | PSS signature and hash size contracts on both sign and verify; the arithmetic stays vector-checked |
 | Sha256 | 4 | structural lemmas, padding block alignment and message prefix; compression function vector-checked |
+| Sha512 | 5 | output sizes for both hashes (64 and 48 bytes, one private lemma over the shared digest), compression size, padding block alignment and message prefix; compression function vector-checked |
 | Sha3 | 8 | output lengths for the two hashes and two XOFs, sponge state size, padding block alignment and message prefix; the permutation itself vector-checked |
 | MlKem | 6 | FIPS 203 §6.1-6.3 output-length contracts (ek 1184, dk 2400, ct 1088, shared secret 32 on both decapsulation branches) and the ByteEncode length law they rest on; the NTT, sampling, and compression arithmetic stay vector-checked |
 | Poly | 1 | MAC size; arithmetic vector-checked |

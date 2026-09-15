@@ -49,8 +49,8 @@ Home: github.com/c4milo.
   server will send.
 - One concern per file pair, dependencies pointing down only:
   `ct.[ch]` (constant-time bytes) ← `sha256.[ch]` + `sha3.[ch]` +
-  `sha512.[ch]` (SHA-384 and SHA-512; the TRUST=webpki build packages
-  it, other builds keep it test-only) ←
+  `sha512.[ch]`/`sha512_compress.[ch]` (SHA-384 and SHA-512; the
+  TRUST=webpki build packages them, other builds keep them test-only) ←
   `mlkem.[ch]`/`mlkem_poly.[ch]` (ML-KEM-768; the KEX=pq build packages
   them with `sha3.[ch]`, other builds keep them test-only) ← `hkdf.[ch]`
   (HMAC + HKDF + TLS labels) ← `chacha20.[ch]` + `poly1305.[ch]` ←

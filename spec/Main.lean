@@ -30,6 +30,7 @@ def selftestAll : String :=
   let mods : List (String × Bool) := [
     ("sha256", Spec.Sha256.selftest),
     ("sha3", Spec.Sha3.selftest),
+    ("sha512", Spec.Sha512.selftest),
     ("mlkem", Spec.MlKem.selftest),
     ("hkdf", Spec.Hkdf.selftest),
     ("chacha", Spec.ChaCha.selftest),
@@ -53,6 +54,10 @@ def dispatch : List String → Option String
   | ["selftest"] => some selftestAll
   | ["sha256", m] => do
     return emit (Spec.Sha256.sha256 (← hexArg? m))
+  | ["sha512", m] => do
+    return emit (Spec.Sha512.sha512 (← hexArg? m))
+  | ["sha384", m] => do
+    return emit (Spec.Sha512.sha384 (← hexArg? m))
   | ["sha3_256", m] => do
     return emit (Spec.Sha3.sha3_256 (← hexArg? m))
   | ["sha3_512", m] => do
