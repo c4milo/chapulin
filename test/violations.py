@@ -233,9 +233,10 @@ def run(name):
 
 
 # The fast tier for the PR lane is the targets that run in seconds: the
-# unit suite, the strictness parsers, rsa_test, softmul_test, and the
-# three codegen gate scripts, which compile with the pinned clang and
-# with the Arm GNU gcc the m3 lane pins and answer in seconds. Left
+# unit suite, the strictness parsers, rsa_test, softmul_test, the two
+# webpki reader tests, and the three codegen gate scripts, which compile
+# with the pinned clang and with the Arm GNU gcc the m3 lane pins and
+# answer in seconds. Left
 # out are the ones whose single run is expensive — the exhaustive
 # handshake enumeration (minutes), the end-to-end suite (needs live
 # servers), and the differential (each run drives ~6000 oracle
@@ -249,6 +250,7 @@ def run(name):
 FAST_TARGETS = {"unit", "unit_ca", "x509strict", "x509strict_ecdsa",
                 "rsa_test", "drbg_test", "handshake_strict_test", "webpki_name_test",
                 "softmul_test", "unit_ct_widemul", "mlkem_test_ct_widemul",
+                "webpki_spki_test", "webpki_sigalg_test",
                 "test/lint-wide-multiply.sh", "test/lint-wide-multiply-gcc.sh",
                 "test/lint-runtime-symbols.sh"}
 

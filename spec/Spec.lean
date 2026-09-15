@@ -20,6 +20,8 @@ import Spec.X509
 import Spec.X509Ca
 import Spec.WebpkiTime
 import Spec.WebpkiName
+import Spec.WebpkiSpki
+import Spec.WebpkiSigalg
 import Spec.Drbg
 import Spec.Handshake
 import Spec.Epoch

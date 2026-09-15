@@ -1,0 +1,14 @@
+invariant: INV-5
+file: p384.c
+catches: webpki_sigalg_test
+reason: p384_ecdsa_verify stops checking the curve equation, so a key
+  that is not on P-384 verifies a signature forged for it, and
+  webpki_read_spki, which reads only the point's form, relies on this
+  check
+
+--- old
+    if (p384_compare(q.x, p384_modp.m) >= 0 || p384_compare(q.y, p384_modp.m) >= 0 ||
+        !on_curve(q.x, q.y)) {
+--- new
+    (void)on_curve(q.x, q.y);
+    if (p384_compare(q.x, p384_modp.m) >= 0 || p384_compare(q.y, p384_modp.m) >= 0) {

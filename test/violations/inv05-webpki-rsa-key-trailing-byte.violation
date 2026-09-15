@@ -1,0 +1,12 @@
+invariant: INV-5
+file: webpki_spki.c
+catches: webpki_spki_test
+reason: webpki_read_spki accepts a byte after the exponent inside
+  RSAPublicKey when the SEQUENCE length counts it, so two encodings yield
+  one key and the webpki grammar widens past canonical DER
+
+--- old
+    if (!x509_read_exact(&rsa_key, rsa_exponent, sizeof rsa_exponent) || rsa_key.err ||
+        rb_left(&rsa_key) != 0) {
+--- new
+    if (!x509_read_exact(&rsa_key, rsa_exponent, sizeof rsa_exponent) || rsa_key.err) {

@@ -1,0 +1,12 @@
+invariant: INV-5
+file: webpki_spki.c
+catches: webpki_spki_test
+reason: webpki_read_spki accepts a byte after the BIT STRING inside the
+  SubjectPublicKeyInfo SEQUENCE when the SEQUENCE length counts it, so two
+  encodings yield one key and the webpki grammar widens past canonical DER
+
+--- old
+    if (alg == 0 || !x509_read_bitstring(&fields, &bits, &bits_len) || fields.err ||
+        rb_left(&fields) != 0) {
+--- new
+    if (alg == 0 || !x509_read_bitstring(&fields, &bits, &bits_len) || fields.err) {

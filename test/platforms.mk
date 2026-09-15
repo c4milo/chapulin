@@ -22,8 +22,8 @@ FREERTOS_TCP_DIR ?= bin/freertos-plus-tcp
 # re-building the whole lint toolchain buys nothing. The roster is
 # check's own prerequisite list.
 .PHONY: suite-check
-suite-check: bin/unit bin/unit_ca bin/unit_pq bin/tlsclient bin/tlsclient_ecdsa bin/tlsclient_ca bin/tlsclient_ca_ecdsa bin/tlsclient_pq bin/drbg_test bin/softmul_test bin/rsa_test bin/sha3_test bin/sha512_test bin/p384_test bin/rsa_pkcs1_test bin/webpki_time_test bin/webpki_name_test bin/mlkem_test bin/handshake_strict_test bin/handshake_strict_pq bin/x509strict bin/x509strict_ecdsa
-	@set -e; for b in unit unit_ca unit_pq drbg_test softmul_test rsa_test sha3_test sha512_test p384_test rsa_pkcs1_test webpki_time_test webpki_name_test mlkem_test \
+suite-check: bin/unit bin/unit_ca bin/unit_pq bin/tlsclient bin/tlsclient_ecdsa bin/tlsclient_ca bin/tlsclient_ca_ecdsa bin/tlsclient_pq bin/drbg_test bin/softmul_test bin/rsa_test bin/sha3_test bin/sha512_test bin/p384_test bin/rsa_pkcs1_test bin/webpki_time_test bin/webpki_name_test bin/webpki_spki_test bin/webpki_sigalg_test bin/mlkem_test bin/handshake_strict_test bin/handshake_strict_pq bin/x509strict bin/x509strict_ecdsa
+	@set -e; for b in unit unit_ca unit_pq drbg_test softmul_test rsa_test sha3_test sha512_test p384_test rsa_pkcs1_test webpki_time_test webpki_name_test webpki_spki_test webpki_sigalg_test mlkem_test \
 	  handshake_strict_test handshake_strict_pq x509strict x509strict_ecdsa; do \
 	  echo "== $$b (native)"; ./bin/$$b; done
 	$(MAKE) wycheproof
@@ -55,6 +55,8 @@ m3-check:
 	$(M3_CC) $(M3_FLAGS) $(RSA_WIDE_DEF) -I. -o bin/m3/rsa_pkcs1_test test/rsa_pkcs1_test.c rsa_pkcs1.c rsa.c rsa_mont.c sha256.c sha512.c sha512_compress.c ct.c
 	$(M3_CC) $(M3_FLAGS) -I. -o bin/m3/webpki_time_test test/webpki_time_test.c $(WEBPKI_TIME_SRC)
 	$(M3_CC) $(M3_FLAGS) -I. -o bin/m3/webpki_name_test test/webpki_name_test.c $(WEBPKI_NAME_SRC)
+	$(M3_CC) $(M3_FLAGS) $(RSA_WIDE_DEF) -I. -o bin/m3/webpki_spki_test test/webpki_spki_test.c $(WEBPKI_SPKI_SRC)
+	$(M3_CC) $(M3_FLAGS) $(RSA_WIDE_DEF) -I. -o bin/m3/webpki_sigalg_test test/webpki_sigalg_test.c $(WEBPKI_SIGALG_SRC)
 	$(M3_CC) $(M3_FLAGS) -I. -o bin/m3/mlkem_test test/mlkem_test.c mlkem.c mlkem_poly.c sha3.c ct.c
 	$(M3_CC) $(M3_FLAGS) -I. -o bin/m3/handshake_strict_test test/handshake_strict_test.c handshake_parser.c buf.c
 	$(M3_CC) $(M3_FLAGS) -I. -o bin/m3/x509strict_test $(X509STRICT_SRC) rsa.c rsa_mont.c
@@ -63,7 +65,7 @@ m3-check:
 	python3 test/gen_wycheproof.py $(WYCHEPROOF_DIR) bin/wycheproof_vectors.h && \
 	$(M3_CC) $(M3_FLAGS) $(RSA_WIDE_DEF) -I. -Ibin -o bin/m3/wycheproof_test test/wycheproof_test.c \
 	  x25519.c chacha20.c poly1305.c aead.c hkdf.c sha256.c p256.c rsa.c rsa_mont.c mlkem.c mlkem_poly.c sha3.c buf.c ct.c sha512.c sha512_compress.c p384.c p384_field.c rsa_pkcs1.c
-	@set -e; for b in unit rsa_test sha3_test sha512_test p384_test rsa_pkcs1_test webpki_time_test webpki_name_test mlkem_test handshake_strict_test x509strict_test x509strict_ecdsa; do \
+	@set -e; for b in unit rsa_test sha3_test sha512_test p384_test rsa_pkcs1_test webpki_time_test webpki_name_test webpki_spki_test webpki_sigalg_test mlkem_test handshake_strict_test x509strict_test x509strict_ecdsa; do \
 	  echo "== $$b (m3/qemu)"; $(M3_RUN) bin/m3/$$b; done; \
 	if [ -x bin/m3/wycheproof_test ]; then echo "== wycheproof_test (m3/qemu)"; $(M3_RUN) bin/m3/wycheproof_test; fi
 

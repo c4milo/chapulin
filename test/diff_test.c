@@ -29,6 +29,7 @@
 #include "diff_sha3.h"
 #include "diff_sha512.h"
 #include "diff_webpki.h"
+#include "diff_webpki_sigalg.h"
 #include "diff_x25519.h"
 #include "diff_x509.h"
 
@@ -71,6 +72,7 @@ int main(int argc, char **argv) {
     diff_pem();
     diff_rsa();
     diff_rsa_pkcs1();
+    diff_webpki_sigalg();
     diff_x509();
     diff_webpki_time();
     diff_webpki_pack();

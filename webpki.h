@@ -152,14 +152,17 @@ int webpki_read_extensions(rbuf *t, int is_ca, webpki_cert *out, uint8_t *alert)
 // subjectPublicKeyInfo for the three admitted algorithms, each
 // AlgorithmIdentifier byte-compared against its one canonical
 // encoding, the RSA exponent byte-compared against 65537, the modulus
-// held to rsa.h's range and oddness, the EC point to the uncompressed
-// form. Returns 1 and fills out, or 0. Defined in webpki_spki.c.
+// held to rsa.h's range and oddness with exactly one 0x00 pad octet,
+// the EC point to the uncompressed form. Whether the point lies on the
+// curve is not checked here: p256_ecdsa_verify and p384_ecdsa_verify
+// check it before any arithmetic. Returns 1, fills out and advances r
+// past the SPKI, or returns 0. Defined in webpki_spki.c.
 int webpki_read_spki(rbuf *r, webpki_spki *out);
 
 // AlgorithmIdentifier TLV to WEBPKI_SIG_*, byte-compared against the
 // four canonical encodings: RSA ones carry NULL parameters, ECDSA
-// ones carry none (RFC 5758 §3.2). Returns 1 and sets *sigalg, or 0.
-// Defined in webpki_sigalg.c.
+// ones carry none (RFC 5758 §3.2). Returns 1, sets *sigalg and
+// advances r past the field, or returns 0. Defined in webpki_sigalg.c.
 int webpki_read_sigalg(rbuf *r, uint8_t *sigalg);
 
 // Verifies cert's signature under signer's key: hashes the re-emitted
@@ -169,8 +172,9 @@ int webpki_read_sigalg(rbuf *r, uint8_t *sigalg);
 // length, so this is where FIPS 186-4 §6.4 happens: a 48-byte digest
 // is cut to its leftmost 32 bytes for P-256, and a 32-byte digest is
 // left-padded with zeros to 48 for P-384, the same integer. An RSA
-// algorithm with an EC key, or the reverse, returns 0. All inputs are
-// public; variable time is deliberate. Returns 1 or 0. Defined in
+// algorithm with an EC key, or the reverse, returns 0, as does a
+// cert->tbs_len over CH_WEBPKI_CERT_MAX. All inputs are public;
+// variable time is deliberate. Returns 1 or 0. Defined in
 // webpki_sigalg.c.
 int webpki_verify(const webpki_cert *cert, const webpki_spki *signer);
 

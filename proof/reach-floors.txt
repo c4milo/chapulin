@@ -69,6 +69,8 @@ sha512_compress 97.1  # local reading, cbmc 6.11.0 on arm64 macOS; replace with 
 softmul 91.3
 webpki_name 21.7  # local reading, cbmc 6.11.0 on arm64 macOS; replace with the nightly table's number
 webpki_san 30.6  # local reading, cbmc 6.11.0 on arm64 macOS; replace with the nightly table's number
+webpki_sigalg 41.9  # local reading, cbmc 6.11.0 on arm64 macOS; replace with the nightly table's number
+webpki_spki 41.1  # local reading, cbmc 6.11.0 on arm64 macOS; replace with the nightly table's number
 webpki_time 33.3  # local reading, cbmc 6.11.0 on arm64 macOS; replace with the nightly table's number
 x25519_tail 52.7
 

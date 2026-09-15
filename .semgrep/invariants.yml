@@ -113,18 +113,19 @@ rules:
     languages: [c]
     severity: ERROR
     message: >-
-      INV-5: exactly one certificate parser. DER and X.509 readers
-      live in x509_der.c behind x509.c's profile walker, and the
-      der_parse in p256.c and the one in p384.c each read exactly one
-      ECDSA-Sig-Value. x509_ca.c reads the same DER for provisioning
-      and reaches no verdict, and the webpki_*.c files read it for the
-      TRUST=webpki chain verifier docs/webpki.md describes, packaged in
-      that object alone. A call anywhere else is a parser growing.
-      Tripwire grade: this catches honest drift by name, not a
+      INV-5: exactly one certificate parser per trust mode. DER and
+      X.509 readers live in x509_der.c behind x509.c's profile walker,
+      and the der_parse in p256.c and the one in p384.c each read
+      exactly one ECDSA-Sig-Value. x509_ca.c reads the same DER for
+      provisioning and reaches no verdict. The webpki_*.c files read it
+      for the TRUST=webpki chain verifier docs/webpki.md describes,
+      which only that object packages. A call anywhere else is a parser
+      growing. Tripwire grade: this catches honest drift by name, not a
       reintroduction under another name.
     paths:
       exclude: [test, proof, fuzz, spec, bench, bin, examples, p256.c, p384.c, x509.c,
-                x509_der.c, x509_ca.c, webpki.h, webpki_time.c, webpki_name.c]
+                x509_der.c, x509_ca.c, webpki.h, webpki_time.c, webpki_name.c,
+                webpki_spki.c, webpki_sigalg.c]
     patterns:
       - pattern: $F(...)
       - metavariable-regex:
@@ -141,15 +142,16 @@ rules:
     languages: [c]
     severity: ERROR
     message: >-
-      INV-6: PKCS#1 v1.5 lives in rsa_pkcs1.c alone, as signature
-      verify over a public chain, and only the TRUST=webpki object
-      packages that file (docs/webpki.md). Every other file, the cert
-      files included, sees RSA as PSS verify only, and v1.5 encryption
+      INV-6: PKCS#1 v1.5 lives in rsa_pkcs1.c and its one caller,
+      webpki_sigalg.c, as signature verify over a public chain, and
+      only the TRUST=webpki object packages those files
+      (docs/webpki.md). Every other file, the device modes' cert files
+      included, sees RSA as PSS verify only, and v1.5 encryption
       padding exists nowhere: that padding imports
       Bleichenbacher-shaped risk. Tripwire grade: this catches honest
       drift by name, not a reintroduction under another name.
     paths:
-      exclude: [test, proof, fuzz, spec, bench, bin, examples, rsa_pkcs1.c]
+      exclude: [test, proof, fuzz, spec, bench, bin, examples, rsa_pkcs1.c, webpki_sigalg.c]
     patterns:
       - pattern: $F(...)
       - metavariable-regex:

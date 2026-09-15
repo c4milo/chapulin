@@ -26,6 +26,11 @@ def emitNat? (n : Option Nat) : String :=
   | some v => toString v
   | none => "-"
 
+/-- A `webpki_sign` reply: the signer's SPKI and the signature, or `FAIL`. -/
+def webpkiSigned : Option (ByteArray × ByteArray) → String
+  | some (spki, sig) => s!"{emit spki} {emit sig}"
+  | none => "FAIL"
+
 def selftestAll : String :=
   let mods : List (String × Bool) := [
     ("sha256", Spec.Sha256.selftest),
@@ -47,6 +52,8 @@ def selftestAll : String :=
     ("x509ca", Spec.X509Ca.selftest),
     ("webpki_time", Spec.WebpkiTime.selftest),
     ("webpki_name", Spec.WebpkiName.selftest),
+    ("webpki_spki", Spec.WebpkiSpki.selftest),
+    ("webpki_sigalg", Spec.WebpkiSigalg.selftest),
     ("drbg", Spec.Drbg.selftest),
     ("handshake", Spec.Handshake.selftest),
     ("handshake_parser", Spec.HandshakeParser.selftest)]
@@ -361,6 +368,50 @@ def dispatch : List String → Option String
       | some (key, some epoch) => s!"ok {bytesToHex key} {epoch}"
       | some (key, none) => s!"ok {bytesToHex key} -"
       | none => "ERR x509 reject"
+  -- The TRUST=webpki readers take the whole TLV, as the C driver
+  -- projects its stream reader onto the whole input. Every refusal is
+  -- one string, as rec_open's are.
+  | ["webpki_spki", spki] => do
+    let b ← hexArg? spki
+    return match Spec.WebpkiSpki.readSpki? b with
+      | some (alg, key) => s!"ok {alg.name} {emit key}"
+      | none => "ERR webpki_spki reject"
+  | ["webpki_sigalg", der] => do
+    let b ← hexArg? der
+    return match Spec.WebpkiSigalg.readSigalg? b with
+      | some a => s!"ok {a.name}"
+      | none => "ERR webpki_sigalg reject"
+  -- The signer is an SPKI, read with readSpki? as the chain walk reads an
+  -- issuer's or an anchor's; a refused SPKI verifies nothing.
+  | ["webpki_verify", alg, spki, tbs, sig] => do
+    let a ← Spec.WebpkiSigalg.SigAlg.ofName? alg
+    let spkiB ← hexArg? spki
+    let tbsB ← hexArg? tbs
+    let sigB ← hexArg? sig
+    return match Spec.WebpkiSpki.readSpki? spkiB with
+      | none => "0"
+      | some (keyAlg, key) =>
+        if Spec.WebpkiSigalg.verify a keyAlg key tbsB sigB then "1" else "0"
+  | ["webpki_sign", alg, "rsa", n, d, tbs] => do
+    let a ← Spec.WebpkiSigalg.SigAlg.ofName? alg
+    let nb ← hexArg? n
+    let db ← hexArg? d
+    let tbsB ← hexArg? tbs
+    return webpkiSigned (Spec.WebpkiSigalg.sign a (.rsa (bytesToNatBE nb) (bytesToNatBE db)) tbsB)
+  | ["webpki_sign", alg, "p256", d, k, tbs] => do
+    let a ← Spec.WebpkiSigalg.SigAlg.ofName? alg
+    let db ← hexArg? d
+    let kb ← hexArg? k
+    let tbsB ← hexArg? tbs
+    guard (db.size == 32 && kb.size == 32)
+    return webpkiSigned (Spec.WebpkiSigalg.sign a (.p256 (bytesToNatBE db) (bytesToNatBE kb)) tbsB)
+  | ["webpki_sign", alg, "p384", d, k, tbs] => do
+    let a ← Spec.WebpkiSigalg.SigAlg.ofName? alg
+    let db ← hexArg? d
+    let kb ← hexArg? k
+    let tbsB ← hexArg? tbs
+    guard (db.size == 48 && kb.size == 48)
+    return webpkiSigned (Spec.WebpkiSigalg.sign a (.p384 (bytesToNatBE db) (bytesToNatBE kb)) tbsB)
   | ["x509mint", "rsa", n, d, salt, serial, issuer, validity, subject, leafKey, exts] => do
     let nb ← hexArg? n
     let db ← hexArg? d

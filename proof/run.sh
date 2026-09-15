@@ -489,6 +489,19 @@ launch fast full rsa_pkcs1 385 "fill_nondet.0:385,ct_memeq.0:385,ct_wipe.0:385,g
 # properties, 17 s, 154 MB for cbmc and 84 MB for kissat.
 launch fast full rsa_pkcs1_webpki 513 "fill_nondet.0:513,ct_memeq.0:513,ct_wipe.0:513,greater_or_equal.0:513" --object-bits 11 --max-field-sensitivity-array-size 513 ct.c
 launch fast full p256 85 "" buf.c
+# webpki_spki: webpki_read_spki over any bytes up to CH_WEBPKI_CERT_MAX,
+# with the real DER primitives, rbuf and ct_memeq, at the webpki
+# CH_RSA_MODULUS_MAX of 512. x509_der.c is its own translation unit on
+# the line because webpki_spki.c has a static of the same name.
+# Measured (cbmc 6.11.0, kissat, /usr/bin/time -l): 977 properties,
+# 16 s, 2.1 GB.
+launch fast:3 full webpki_spki 22 "fill_nondet.0:3073" -DCH_TRUST_WEBPKI x509_der.c buf.c ct.c
+# webpki_sigalg: webpki_read_sigalg concrete at the same bound, and
+# webpki_verify's dispatch over any certificate and signer with the two
+# hashes and the three verifiers stubbed to their headers' contracts.
+# The global unwind of 50 covers the stubs' 48-byte memcmp. Measured
+# (cbmc 6.11.0, kissat, /usr/bin/time -l): 1392 properties, 10 s, 1.1 GB.
+launch fast:2 full webpki_sigalg 50 "fill_nondet.0:3073" -DCH_TRUST_WEBPKI x509_der.c buf.c ct.c
 # p384 is p256's harness at twelve limbs: the same concrete pieces, the
 # same two loop drivers left to their proven bodies, sig up to 112 bytes
 # (a valid one is at most 104), the bit walk over [0,383]. Measured (cbmc

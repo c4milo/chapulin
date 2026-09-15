@@ -1,0 +1,13 @@
+invariant: INV-5
+file: p256.c
+catches: webpki_sigalg_test
+reason: p256_ecdsa_verify stops checking the curve equation, so a key
+  that is not on P-256 verifies a signature forged for it, and
+  webpki_read_spki, which reads only the point's form, relies on this
+  check
+
+--- old
+    if (fe_cmp(q.x, MODP.m) >= 0 || fe_cmp(q.y, MODP.m) >= 0 || !on_curve(q.x, q.y)) {
+--- new
+    (void)on_curve(q.x, q.y);
+    if (fe_cmp(q.x, MODP.m) >= 0 || fe_cmp(q.y, MODP.m) >= 0) {

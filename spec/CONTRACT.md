@@ -281,6 +281,42 @@ Spec.X509.mintChain   : (ca int : CaKey) → (serial issuer validity subject
                         -- <subject> <leafkey> <leafexts> <intexts>` and
                         -- `x509mintchain p256 <ca_d> <ca_k> <int_d> <int_k>
                         -- <serial> ...same fields` → `<list>` / `FAIL`.
+Spec.WebpkiSpki.readSpki? : ByteArray → Option (KeyAlg × ByteArray)
+                        -- TRUST=webpki SubjectPublicKeyInfo (RFC 5280 §4.1.2.7): the
+                        -- AlgorithmIdentifier decoded and judged — rsaEncryption with
+                        -- NULL (RFC 3279 §2.3.1), id-ecPublicKey with prime256v1 or
+                        -- secp384r1 (RFC 5480 §2.1.1) — then the key: RSAPublicKey as
+                        -- two DER INTEGERs, exponent 65537, modulus bit length a
+                        -- multiple of 64 from 2048 to 8 * modulusMax (512, the
+                        -- CH_TRUST_WEBPKI CH_RSA_MODULUS_MAX) and odd, returned as its
+                        -- big-endian bytes; or 0x04 ‖ X ‖ Y, returned as X ‖ Y. Whole
+                        -- TLV, exact-fill; the C reads a stream and the driver
+                        -- projects. The curve check is the verifier's. Line op:
+                        -- `webpki_spki <spki>` → `ok <rsa|p256|p384> <key>` /
+                        -- `ERR webpki_spki reject`.
+Spec.WebpkiSigalg.readSigalg? : ByteArray → Option SigAlg
+                        -- the certificate signatureAlgorithm (RFC 5280 §4.1.1.2),
+                        -- decoded and judged: sha256WithRSAEncryption and
+                        -- sha384WithRSAEncryption with NULL (RFC 4055 §5),
+                        -- ecdsa-with-SHA256 and ecdsa-with-SHA384 with no parameters
+                        -- (RFC 5758 §3.2). Whole TLV. Line op: `webpki_sigalg <der>` →
+                        -- `ok <rsa_sha256|rsa_sha384|ecdsa_sha256|ecdsa_sha384>` /
+                        -- `ERR webpki_sigalg reject`.
+Spec.WebpkiSigalg.verify : SigAlg → KeyAlg → (key tbs sig : ByteArray) → Bool
+                        -- the hash the algorithm names over tlv 0x30 tbs, then RFC 8017
+                        -- §8.2.2 with e = 65537 for an RSA algorithm and key, or ECDSA
+                        -- over the curve's message hash — FIPS 186-4 §6.4's leftmost
+                        -- min(N, outlen) bits as coordinate-length bytes — for an ECDSA
+                        -- algorithm and an EC key; false for a family mismatch or a tbs
+                        -- over certMax (3072, CH_WEBPKI_CERT_MAX). Line op:
+                        -- `webpki_verify <name> <spki> <tbs> <sig>` → 1/0, the spki read
+                        -- with readSpki? (refused → 0).
+Spec.WebpkiSigalg.sign : SigAlg → Signer → (tbs : ByteArray) → Option (ByteArray × ByteArray)
+                        -- the inverse the oracle mints with: (the signer's SPKI in
+                        -- encodeSpki's encoding, the signature), none for a family
+                        -- mismatch. Line ops: `webpki_sign <name> rsa <n> <d> <tbs>` and
+                        -- `webpki_sign <name> p256|p384 <d> <k> <tbs>` → `<spki> <sig>` /
+                        -- `FAIL`.
 Spec.Handshake.step   : (mode : Mode) → State → Msg → Option State      -- RFC 9846 §4 order of
                         -- server-to-client messages after the ClientHello; none = fatal
                         -- (unexpected_message). Msg has one constructor per line-protocol
@@ -557,6 +593,34 @@ Spec.WebpkiName.matchSan_sound
                              a match is a dNSName entry of a well-formed GeneralNames
                              -- that matchDnsName accepts — no other GeneralName type,
                              -- no fallback to the subject common name
+Spec.WebpkiSpki.readSpki?_rsa_key
+                             an accepted RSA key is 256..512 bytes in multiples of 8,
+                             -- 2^(8·size − 1) ≤ its value, and its value is odd: the byte
+                             -- form of the gate rsa_pkcs1_verify applies
+Spec.WebpkiSpki.readSpki?_p256_size   an accepted P-256 key is 64 bytes
+Spec.WebpkiSpki.readSpki?_p384_size   an accepted P-384 key is 96 bytes
+Spec.WebpkiSigalg.readSigalg?_iff
+                             readSigalg? b = some a ↔ b = encode a: the decoding reader
+                             -- accepts exactly the four encodings the C byte-compares, and
+                             -- each names one algorithm
+Spec.WebpkiSigalg.curveHash_p256_sha384
+                             a 48-byte digest's P-256 message hash is its first 32 bytes
+                             -- — the bytes the C's p256_ecdsa_verify reads from the digest
+Spec.WebpkiSigalg.curveHash_p384_sha256
+                             a 32-byte digest's P-384 message hash is 16 zero bytes then
+                             -- the digest — the bytes the C builds
+Spec.WebpkiSigalg.curveHash_whole
+                             a digest as long as the order is used whole
+Spec.WebpkiSigalg.bytesToNatBE_append
+                             bytesToNatBE (hi ++ lo) = bytesToNatBE hi * 256 ^ lo.size +
+                             -- bytesToNatBE lo: big-endian decoding of a concatenation,
+                             -- which curveHash_p256_sha384 and
+                             -- bytesToNatBE_zeroPad_append use
+Spec.WebpkiSigalg.bytesToNatBE_zeroPad_append
+                             zero bytes on the left keep a big-endian value
+Spec.WebpkiSigalg.verify_tbs_cap, verify_rsa_sigalg_ec_key, verify_ecdsa_sigalg_rsa_key
+                             a tbs over certMax, an RSA algorithm under an EC key and an
+                             -- ECDSA algorithm under an RSA key all verify false
 Spec.Record.nonce_inj        distinct sequence numbers below 2^64 give distinct record
                              -- nonces (RFC 9846 §5.3): within one traffic key the
                              -- nonce never repeats
@@ -668,6 +732,8 @@ means the module's selftest plus the differential oracle carry it;
 | WebpkiTime | 2 | the packed clock keeps the order of clocks (monotone over every count of seconds, the clamp included), and an accepted Time packs inside [19500101000000, 99991231235959]; the field parsing and the calendar conversion stay vector-checked |
 | WebpkiName | 8 | an accepted reference name holds no NUL and no '*' and is 1..253 bytes; every byte of a matching presented name is a reference byte up to case or one of the wildcard label's two, so against an accepted reference name a matching presented name holds no NUL and no '*' but a leading "*."; every entry of an accepted GeneralNames has one of GeneralName's nine tags; a match is a dNSName entry of such a GeneralNames and nothing else. The label rules and the wildcard's own arithmetic stay vector-checked |
 | X509Ca | 6 | isCaTrue accepts exactly the two anchor encodings (the iff is kernel-checked false without its encodeLen-domain bound); an accepted certificate has exactly the SEQUENCE(TBS, sigAlg, BIT STRING) shape with the signature framing intact; the extracted key is exactly 64 bytes or 256..384 in 8-byte steps, tightening the CBMC harness's bound. Acceptance policy beyond the frame is executable oracle only: the differential's minted anchors, near shapes and mutations |
+| WebpkiSpki | 3 | the accepted RSA key is 256..512 bytes in multiples of 8 with its top bit set and odd, stated over the returned bytes from a reader that judges the decoded integer; the EC keys are 64 and 96 bytes. Acceptance beyond that is executable oracle only: the differential's spec-encoded keys and their perturbations |
+| WebpkiSigalg | 9 | the decoding reader accepts exactly the four canonical encodings, one algorithm each (the byte-compare view and the decode view agree); FIPS 186-4 §6.4's integer rule equals the C's byte cut for P-256 with SHA-384 and its zero pad for P-384 with SHA-256, with the pad lemma and big-endian concatenation lemma under them; the cap and both family mismatches refuse. The signature arithmetic is the RSA, P-256 and P-384 modules' and stays vector-checked |
 | X25519 | 2 | RFC 7748 §5 clamping: every decoded scalar is a multiple of the cofactor 8, and has bit 254 set with bit 255 clear. The first keeps `k * P` in the prime-order subgroup, the second fixes the ladder's iteration count. The ladder arithmetic itself stays vector-checked |
 | X509Der | 19 | DER canonicality: a length, a TLV, and an INTEGER are accepted only in the one encoding X.690 §10.1 and §8.3.2 admit, so the reader is DER-strict rather than BER-lenient; plus the encode/decode round trips and the §8.19.2 subidentifier rule |
 | X509 | 4 | parse soundness: an accepted list reports a key only after a signature over the complete DER of the TBSCertificate that carried it verified under the pinned key, or under an intermediate the pinned key itself signed; the entry is a byte range of the list and no third entry can follow. Acceptance policy beyond that is executable oracle only: mint/parse round trips for the single leaf and the chained pair (self-checked signatures; OpenSSL material is exercised by the C strictness suite) and the differential |
