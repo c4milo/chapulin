@@ -195,9 +195,27 @@ ranges and a NUL in a presented name can only fail. It therefore has its own
 invariant and its own mutant, because nothing else in the mode would notice
 if it were removed.
 
+The check does not apply RFC 1123's rule that a label neither starts nor
+ends with `-`, so `-a.b-` passes. That is deliberate. The check exists to
+refuse NUL and `*`, and matching compares bytes for equality, so a hyphen
+at a label edge matches only a presented name with the same hyphen.
+
 Matching is `dNSName` only. There is no fallback to the subject common name,
 which is the rule every modern client follows and which OpenSSL's
 `-verify_hostname` does not — see the divergence table below.
+
+The walk reads the tag and the length of every GeneralName entry, including
+the entries after a match. The tag must be one of the nine DER identifier
+bytes of the CHOICE arms in RFC 5280 §4.2.1.6 (`a0`, `81`, `82`, `a3`, `a4`,
+`a5`, `86`, `87`, `88`), and the length must be minimal and inside the
+SEQUENCE. Any other entry refuses the whole subjectAltName, even after a
+match. The tag rule refuses the high-tag-number form, whose tag number
+continues past the first byte. A reader that took one tag byte would read
+the next byte as the length, and bytes inside that entry's content could
+then be read as a `dNSName` entry and match.
+
+A `dNSName` byte outside ASCII equals no byte of the reference name. That
+entry does not match, and the subjectAltName is not refused for it.
 
 A wildcard matches one label, in the leftmost position, as an entire label.
 So `*.example.test` matches `s3.example.test`, and does not match

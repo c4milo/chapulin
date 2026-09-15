@@ -67,6 +67,9 @@ rsa_webpki 91.7  # local reading, cbmc 6.11.0 on arm64 macOS; replace with the n
 sha512 90.9  # local reading, cbmc 6.11.0 on arm64 macOS; replace with the nightly table's number
 sha512_compress 97.1  # local reading, cbmc 6.11.0 on arm64 macOS; replace with the nightly table's number
 softmul 91.3
+webpki_name 21.7  # local reading, cbmc 6.11.0 on arm64 macOS; replace with the nightly table's number
+webpki_san 30.6  # local reading, cbmc 6.11.0 on arm64 macOS; replace with the nightly table's number
+webpki_time 33.3  # local reading, cbmc 6.11.0 on arm64 macOS; replace with the nightly table's number
 x25519_tail 52.7
 
 # Not gated, because `cbmc --cover location` does not converge on them.

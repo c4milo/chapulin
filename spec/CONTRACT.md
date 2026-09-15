@@ -185,6 +185,40 @@ Spec.X509Ca.caKey?    : Alg → (derMax : Nat) → ByteArray → Option ByteArra
                         -- yields bytes, never a verdict. Line op:
                         -- `pemcakey <alg> <derMax> <hex>` → `ok <key>` /
                         -- `ERR pemcakey reject`.
+Spec.WebpkiTime.readTime : ByteArray → (off : Nat) → Option (Nat × Nat)
+                        -- RFC 5280 §4.1.2.5: one Time TLV at off — UTCTime
+                        -- YYMMDDHHMMSSZ, its two-digit year 1950..2049 by the
+                        -- section's rule, or GeneralizedTime YYYYMMDDHHMMSSZ,
+                        -- admitted from 2050 — with X.690 §10.1's minimal length
+                        -- and every field in range, the day held to its month in
+                        -- its year. `some (packed, end)`: the decimal number
+                        -- YYYYMMDDHHMMSS and the offset past the Time. Line op:
+                        -- `webpki_time <hex>` → `ok <packed> <end>` /
+                        -- `ERR webpki_time reject`.
+Spec.WebpkiTime.packSeconds : Nat → Nat
+                        -- seconds since 1970-01-01T00:00:00Z in the same packed
+                        -- form, over the proleptic Gregorian calendar (RFC 3339
+                        -- §5.7's leap rule), clamped at 253402300799
+                        -- (9999-12-31T23:59:59Z) so the result stays inside
+                        -- readTime's range. Line op: `webpki_pack <seconds>` →
+                        -- `<packed>`.
+Spec.WebpkiName.hostnameOk : List UInt8 → Bool
+                        -- the reference name's shape: 1..253 bytes of
+                        -- [A-Za-z0-9.-], every label 1..63 bytes (RFC 1035
+                        -- §2.3.4), a last label not all digits (RFC 6066 §3
+                        -- forbids an IP literal in server_name). Line op:
+                        -- `webpki_hostname <hex>` → `1`/`0`.
+Spec.WebpkiName.matchSan : ByteArray → List UInt8 → Bool
+                        -- RFC 6125 §6.4 over the dNSName entries of one whole
+                        -- GeneralNames (RFC 5280 §4.2.1.6): ASCII
+                        -- case-insensitive equality, or a wildcard that is the
+                        -- whole leftmost label of the presented name, stands for
+                        -- exactly one label of the host and has two labels after
+                        -- it. Every entry's tag must be one of GeneralName's nine
+                        -- DER identifier bytes and its length minimal and inside
+                        -- the SEQUENCE; one entry that breaks either refuses the
+                        -- whole GeneralNames. Line op: `webpki_san <san> <host>` →
+                        -- `1`/`0`.
 Spec.X509.parse       : Alg → (caKey list : ByteArray) →
                         Option (ByteArray × Option Nat)
                         -- profiled chain acceptance over the RFC 8446 §4.4.2
@@ -489,6 +523,40 @@ Spec.P256 and Spec.P384 restate seven of these (all but inv_cast) at their
   discharges `2 < p`, the discriminant, `G` on the curve and
   `p < 2^(8·coordLen)`; `Fact p.Prime`, `Fact n.Prime` and `n • basePoint = 0`
   stay hypotheses, because no tactic certifies a 256- or 384-bit prime
+Spec.WebpkiTime.packSeconds_mono
+                             a ≤ b → packSeconds a ≤ packSeconds b: the packed clock
+                             -- keeps the order of clocks, which is what lets
+                             -- notBefore <= now <= notAfter compare packed numbers
+Spec.WebpkiTime.readTime_range
+                             readTime b off = some (p, end) →
+                             -- 19500101000000 ≤ p ≤ 99991231235959: an accepted Time
+                             -- packs inside the range the clamped clock stays in
+Spec.WebpkiName.hostnameOk_length
+                             hostnameOk h → 1 ≤ h.length ≤ 253, the CBMC bound
+Spec.WebpkiName.hostnameOk_no_nul
+Spec.WebpkiName.hostnameOk_no_star
+                             hostnameOk h → 0 ∉ h, and '*' ∉ h: an accepted reference
+                             -- name holds neither byte
+Spec.WebpkiName.matchDnsName_mem
+                             every byte of a matching presented name is a byte of the
+                             -- reference name up to case, or one of the two bytes of
+                             -- the wildcard label "*."
+Spec.WebpkiName.matchDnsName_no_nul
+                             against an accepted reference name, a matching presented
+                             -- name holds no NUL
+Spec.WebpkiName.matchDnsName_star
+                             against an accepted reference name, the only '*' a matching
+                             -- presented name can hold is its leading wildcard label:
+                             -- the name is "*." then a suffix with no '*'
+Spec.WebpkiName.generalNames?_tags
+                             generalNames? b = some es → every entry's tag is in
+                             -- generalNameTags: a universal tag, a number above 8, the
+                             -- wrong constructed bit or the high-tag-number form
+                             -- refuses the GeneralNames instead of being skipped
+Spec.WebpkiName.matchSan_sound
+                             a match is a dNSName entry of a well-formed GeneralNames
+                             -- that matchDnsName accepts — no other GeneralName type,
+                             -- no fallback to the subject common name
 Spec.Record.nonce_inj        distinct sequence numbers below 2^64 give distinct record
                              -- nonces (RFC 9846 §5.3): within one traffic key the
                              -- nonce never repeats
@@ -597,6 +665,8 @@ means the module's selftest plus the differential oracle carry it;
 | Poly | 1 | MAC size; arithmetic vector-checked |
 | P256 | 7 | `Weierstrass` at the P-256 constants, and its theorems restated at them: `decide` discharges `2 < p`, the discriminant, `G` on the curve and `p < 2^256`; `p` and `n` prime and `n • G = 0` stay hypotheses, because no tactic certifies them. Soundness of the verifier stays executable oracle only: the RFC 6979 A.2.5 vector and the differential |
 | Pem | 10 | the accepted alphabet pinned in both directions against RFC 4648 §4's table; decode? never yields more than the cap and the bound is attained; armour-then-decode is the identity for every non-empty DER within the caps at every width whose text fits — each hypothesis carries an evaluated countermodel; an accepted input has the RFC 7468 frame with the body's base64 the returned DER; armour at any width of four or more, or as one line, fits the cap, discharging the round trip's fits hypothesis; base64 acceptance characterized as an iff against the declarative grammar |
+| WebpkiTime | 2 | the packed clock keeps the order of clocks (monotone over every count of seconds, the clamp included), and an accepted Time packs inside [19500101000000, 99991231235959]; the field parsing and the calendar conversion stay vector-checked |
+| WebpkiName | 8 | an accepted reference name holds no NUL and no '*' and is 1..253 bytes; every byte of a matching presented name is a reference byte up to case or one of the wildcard label's two, so against an accepted reference name a matching presented name holds no NUL and no '*' but a leading "*."; every entry of an accepted GeneralNames has one of GeneralName's nine tags; a match is a dNSName entry of such a GeneralNames and nothing else. The label rules and the wildcard's own arithmetic stay vector-checked |
 | X509Ca | 6 | isCaTrue accepts exactly the two anchor encodings (the iff is kernel-checked false without its encodeLen-domain bound); an accepted certificate has exactly the SEQUENCE(TBS, sigAlg, BIT STRING) shape with the signature framing intact; the extracted key is exactly 64 bytes or 256..384 in 8-byte steps, tightening the CBMC harness's bound. Acceptance policy beyond the frame is executable oracle only: the differential's minted anchors, near shapes and mutations |
 | X25519 | 2 | RFC 7748 §5 clamping: every decoded scalar is a multiple of the cofactor 8, and has bit 254 set with bit 255 clear. The first keeps `k * P` in the prime-order subgroup, the second fixes the ladder's iteration count. The ladder arithmetic itself stays vector-checked |
 | X509Der | 19 | DER canonicality: a length, a TLV, and an INTEGER are accepted only in the one encoding X.690 §10.1 and §8.3.2 admit, so the reader is DER-strict rather than BER-lenient; plus the encode/decode round trips and the §8.19.2 subidentifier rule |

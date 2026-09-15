@@ -28,6 +28,7 @@
 #include "diff_rsa_pkcs1.h"
 #include "diff_sha3.h"
 #include "diff_sha512.h"
+#include "diff_webpki.h"
 #include "diff_x25519.h"
 #include "diff_x509.h"
 
@@ -71,6 +72,10 @@ int main(int argc, char **argv) {
     diff_rsa();
     diff_rsa_pkcs1();
     diff_x509();
+    diff_webpki_time();
+    diff_webpki_pack();
+    diff_webpki_hostname();
+    diff_webpki_san();
     diff_hs_server_hello();
     diff_hs_encrypted_exts();
     diff_hs_certificate();

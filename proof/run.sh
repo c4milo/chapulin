@@ -587,6 +587,36 @@ launch fast:2 full pem 66 "" -DCH_PROOF_PEM_LEN=64 buf.c ct.c
 launch fast:2 full pem_ecdsa 66 "" -DCH_PROOF_PEM_LEN=64 buf.c ct.c
 launch fast:1 full x509ca 400 "fill_nondet.0:1537" buf.c ct.c
 launch fast:1 full x509ca_ecdsa 400 "fill_nondet.0:1537" buf.c ct.c
+# The TRUST=webpki pieces that read no certificate. webpki_time proves
+# the Time reader over 40 nondet bytes from any reader state and the
+# clock packer over every uint64. The packer's order, a later clock
+# never packing lower, is left to the Lean model and the differential,
+# because asserting it over two nondet clocks returned no verdict in 30
+# minutes where the rest closes in seconds (the harness header says
+# so). webpki_name proves the hostname shape check at its real
+# 253-byte bound, and the per-entry dNSName compare with a 253-byte
+# host and a presented name of up to 1024 bytes, the Extension bound;
+# fill_nondet.0:1025 unwinds the fill of that name. The walk over a
+# whole GeneralNames is webpki_san below, because one formula holding
+# both wrote a 7.9 GB CNF at a 64-byte GeneralNames and returned no
+# verdict. webpki_san splits that walk the way pem_step and pem split
+# the PEM decoder: one entry (read_entry) from any reader state at the
+# real 1024-byte GeneralNames bound, and the loop over it at 32 bytes,
+# the bound where the unrolled loop converges. The same formula with
+# the loop at 64 bytes ran in kissat for 16 minutes with no verdict,
+# and before the split the whole walk at 1024 bytes was still
+# converting SSA at 30 minutes. The entry's contract, position forward
+# by two or more and never past the end, is the induction step that
+# extends the loop's proof to any length. Measured (cbmc 6.11.0,
+# kissat, /usr/bin/time -l, plus cbmc and kissat resident size summed
+# once a second): webpki_time 1065 properties, 4.3 s, 80 MB;
+# webpki_name 977 properties, 175 s and 178 s, 5.8 GB peak for one
+# process and 6.0 GiB summed, which fast:7 covers; webpki_san 975
+# properties, 234 s, 2.6 GB for one process and 3.1 GiB summed, which
+# fast:4 covers.
+launch fast full webpki_time 41 "" buf.c x509_der.c ct.c
+launch fast:7 full webpki_name 254 "fill_nondet.0:1025" buf.c x509_der.c ct.c
+launch fast:4 full webpki_san 17 "fill_nondet.0:1025,webpki_match_san.0:17" -DCH_PROOF_SAN_LEN=32 -DCH_PROOF_HOST_LEN=16 buf.c x509_der.c ct.c
 launch fast:3 full x509der 452 "fill_nondet.0:449,ct_memeq.0:68" buf.c ct.c
 launch fast:3 full x509der_ecdsa 452 "fill_nondet.0:449,ct_memeq.0:68" buf.c ct.c
 launch fast:4 full x509parse_ecdsa 260 "fill_nondet.0:257,ct_memeq.0:68" buf.c ct.c

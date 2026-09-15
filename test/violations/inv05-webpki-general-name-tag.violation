@@ -1,0 +1,16 @@
+invariant: INV-5
+file: webpki_name.c
+catches: webpki_name_test
+reason: dropping the GeneralName tag check lets read_entry take the
+  first byte of a high-tag-number header (9f 1f ...) as the whole tag
+  and the next byte as the length, so the walk frames later entries at
+  the wrong offsets and matches a dNSName hidden inside another entry's
+  content. Universal tags such as 04 and 00 are then skipped as entries.
+  bin/webpki_name_test's tag rows object.
+
+--- old
+    if (!is_general_name_tag(tag)) {
+        return 0;
+    }
+--- new
+    (void)is_general_name_tag;

@@ -118,13 +118,16 @@ which convention holds them.
   basicConstraints and keyUsage object identifiers, `cA` TRUE). The
   reader's containment is a fact about includes: `x509_ca.h` and
   `pem.h` are included by no library source except `x509_ca.c`
-  itself, so no session reaches it. The only DER readers outside
-  those four files (the `der_parse` in `p256.c` and the one in
-  `p384.c`) each read exactly one ECDSA-Sig-Value and parse nothing
-  else.
+  itself, so no session reaches it. The `TRUST=webpki` chain
+  verifier reads the same DER through the same primitives in its
+  `webpki_*.c` files ([webpki.md](webpki.md)), and only that mode's
+  object packages them. The only other DER readers (the `der_parse`
+  in `p256.c` and the one in `p384.c`) each read exactly one
+  ECDSA-Sig-Value and parse nothing else.
 - **Check.** Semgrep-tripwire (`inv-5-profiled-cert-parser`): calls
   to identifiers matching `x509_`, `asn1_`, or `der_` outside
-  p256.c, p384.c, x509.c, x509_der.c and x509_ca.c. Semgrep-structural
+  p256.c, p384.c, x509.c, x509_der.c, x509_ca.c, webpki.h,
+  webpki_time.c and webpki_name.c. Semgrep-structural
   (`inv-20-provisioning-entry`) holds the containment half. Grammar
   widening inside those files is held by the boundary-pair tests in
   test/x509_ca_tests.h and review, as x509.c's always has been; the

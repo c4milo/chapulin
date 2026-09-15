@@ -45,6 +45,8 @@ def selftestAll : String :=
     ("pem", Spec.Pem.selftest),
     ("x509", Spec.X509.selftest),
     ("x509ca", Spec.X509Ca.selftest),
+    ("webpki_time", Spec.WebpkiTime.selftest),
+    ("webpki_name", Spec.WebpkiName.selftest),
     ("drbg", Spec.Drbg.selftest),
     ("handshake", Spec.Handshake.selftest),
     ("handshake_parser", Spec.HandshakeParser.selftest)]
@@ -332,6 +334,25 @@ def dispatch : List String → Option String
     return match cap.bind (fun c => Spec.X509Ca.caKey? a c p) with
       | some key => s!"ok {bytesToHex key}"
       | none => "ERR pemcakey reject"
+  -- The TRUST=webpki routines that read no certificate. A Time is
+  -- read at offset 0 of the bytes given, and the reply includes the
+  -- offset past it, so the C side's consumption is compared too. The
+  -- clock takes a decimal second count; the two name ops answer 1/0.
+  | ["webpki_time", tlv] => do
+    let b ← hexArg? tlv
+    return match Spec.WebpkiTime.readTime b 0 with
+      | some (packed, endOff) => s!"ok {packed} {endOff}"
+      | none => "ERR webpki_time reject"
+  | ["webpki_pack", seconds] => do
+    let s ← seconds.toNat?
+    return toString (Spec.WebpkiTime.packSeconds s)
+  | ["webpki_hostname", host] => do
+    let h ← hexArg? host
+    return if Spec.WebpkiName.hostnameOk h.toList then "1" else "0"
+  | ["webpki_san", san, host] => do
+    let s ← hexArg? san
+    let h ← hexArg? host
+    return if Spec.WebpkiName.matchSan s h.toList then "1" else "0"
   | ["x509parse", alg, caKey, list] => do
     let a ← Spec.X509.algOf? alg
     let ck ← hexArg? caKey

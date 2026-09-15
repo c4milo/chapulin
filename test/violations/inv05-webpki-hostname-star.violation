@@ -1,0 +1,14 @@
+invariant: INV-5
+file: webpki_name.c
+catches: webpki_name_test
+reason: admitting '*' into the reference-name alphabet lets a caller's
+  "*.example.test" pass webpki_hostname_ok, the check docs/webpki.md
+  calls the whole defence against a presented name carrying NUL or '*':
+  the matcher compares equal-length byte ranges against the reference
+  name and refuses nothing itself, so the shape check has its own
+  mutant. bin/webpki_name_test's alphabet rows object.
+
+--- old
+    return is_letter(c) || is_digit(c) || c == '.' || c == '-';
+--- new
+    return is_letter(c) || is_digit(c) || c == '.' || c == '-' || c == '*';

@@ -252,7 +252,7 @@ would change that trade.
 
 Four layers cover four different failure classes.
 
-**Proofs cover memory safety.** Thirty of the thirty-one C
+**Proofs cover memory safety.** Thirty-seven of the thirty-eight C
 sources are compiled into a [CBMC](https://www.cprover.org/cbmc/) harness, which proves them free of
 out-of-bounds access, invalid pointers, bad shifts, and division by
 zero, for every input within the harness's bound. Signed overflow is
@@ -306,6 +306,9 @@ apart from one that passed — so for the slow rows, read the nightly.
 | pem_step (two harnesses) | `b64_value` returns exactly what RFC 4648 §4's alphabet table returns, on all 256 bytes; `pad_ok` is exactly §3.5's rule; and one body character preserves the decoder's accounting invariant from any state it admits, so induction carries that invariant to any input length | unbounded — one character, any state |
 | pem (two harnesses) | the PEM decoder stays safe on hostile bytes at the shipped caps and honors its contract: a success yields a non-empty length inside the caller's array, every rejection yields zero, and an input over `CH_PEM_MAX` is refused before a byte is read | inputs ≤ 64 B (see the limit below) |
 | x509ca (two harnesses) | the provisioning walk stays safe on any input and honors its contract: a success yields a key inside `CH_X509_KEY_MAX`, and every rejection yields zero with the key wiped. DER primitives stubbed to the contracts the `x509der` leg proves, and the SPKI stub deliberately returns lengths outside the real range so the entry's own bound check is what keeps the copy in range | any input; decoded certificate ≤ `CH_X509_MAX` |
+| webpki_time | the `TRUST=webpki` Time reader stays safe on hostile bytes from any reader state, any position and either err value included, and a success leaves err clear, consumes exactly one Time TLV (15 or 17 bytes) and yields a packed date inside [19500101000000, 99991231235959]; the clock packer stays safe over every uint64, its clamp at 9999-12-31T23:59:59Z included, and yields a value inside the same range. That the packer keeps the order of clocks is **not proven** here: asserted over two nondet clocks, it returned no verdict in 30 minutes. The evidence for that order is `Spec.WebpkiTime.packSeconds_mono` and the differential (below) | Time bytes ≤ 40 B; the clock at its full range |
+| webpki_name | the `TRUST=webpki` hostname shape check stays safe over any host and honors the contract `webpki_match_san` depends on: a name it accepts is 1..253 bytes of `[A-Za-z0-9.-]`, so it holds no NUL and no `*`; and the per-entry dNSName compare, both its exact and its wildcard arm, stays safe over any presented name against any host | host ≤ `CH_HOSTNAME_MAX` (253 B), the real bound; presented name ≤ `CH_WEBPKI_EXT_TLV_MAX` (1024 B), the Extension bound, which no dNSName inside an Extension exceeds |
+| webpki_san | the subjectAltName walk, in two parts like `pem_step` and `pem`: reading one GeneralName entry — its tag, its length, its content, the dNSName compare — is safe from any reader state, any position and either err value included. An entry it accepts starts with one of the nine GeneralName tags, leaves err clear, and moves the position forward by two or more bytes and never past the end, which is why the loop ends. `webpki_match_san` whole — the SEQUENCE header, its length check, the loop over entries — is safe on any bytes. The host is short in both parts: the walk passes it to the compare without change and reads no byte of it, and `webpki_name` proves that compare with a 253-byte host and a presented name of up to 1024 bytes (see the note below) | one entry at `CH_WEBPKI_EXT_TLV_MAX` (1024 B), the real bound; the whole walk ≤ 32 B — at 64 B the unrolled loop returned no verdict in 16 minutes, and before the split the walk at 1024 B was still being converted at 30 minutes; host ≤ 16 B |
 
 CBMC found one real bug during development: `carry()` left-shifted a
 negative value, which is undefined behavior even though compilers
@@ -488,6 +491,22 @@ secrets and MACs and never opens a record.
   and the Wycheproof cases are also checked over the decomposition as
   poly1305, x25519 and mlkem_poly inline it — evidence at those inputs,
   while the equality proof stays at 8-bit operands.
+- The `TRUST=webpki` subjectAltName walk against a full-length
+  hostname. `webpki_name` proves the per-entry dNSName compare with
+  the host at its real 253-byte bound and the presented name at 1024
+  bytes. `webpki_san` proves the walk over a whole GeneralNames with a
+  host of at most 16 bytes: one formula holding both wrote a 7.9 GB
+  CNF at a 64-byte GeneralNames, because every entry of the walk
+  repeats the compare against the whole host. No proof covers the two
+  together. The argument that they compose is that the walk passes
+  host and host_len to the compare without change and reads no byte
+  of host. That is a fact about a twenty-line function, checked by
+  reading, not by a solver. `test/diff_webpki.h` adds evidence: it
+  compares the walk with the Lean model over hosts and presented names
+  drawn from the seven-byte alphabet that file names. The clock packer's order,
+  a later clock never packing lower, has the same kind of evidence:
+  `Spec.WebpkiTime.packSeconds_mono` and the same differential, as the
+  `webpki_time` row says.
 - The quality of the random bytes, which rests on nothing here at all.
   `ch_rand_bytes` is the image's to supply, and no check in a library
   can grade it: a weak generator completes the handshake, sends a key

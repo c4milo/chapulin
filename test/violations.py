@@ -247,7 +247,7 @@ def run(name):
 # test-invariants-proof-backed job, where each is a CBMC proof of
 # minutes, twice, and lint_fast_targets refuses one typed in here.
 FAST_TARGETS = {"unit", "unit_ca", "x509strict", "x509strict_ecdsa",
-                "rsa_test", "drbg_test", "handshake_strict_test",
+                "rsa_test", "drbg_test", "handshake_strict_test", "webpki_name_test",
                 "softmul_test", "unit_ct_widemul", "mlkem_test_ct_widemul",
                 "test/lint-wide-multiply.sh", "test/lint-wide-multiply-gcc.sh",
                 "test/lint-runtime-symbols.sh"}

@@ -117,12 +117,14 @@ rules:
       live in x509_der.c behind x509.c's profile walker, and the
       der_parse in p256.c and the one in p384.c each read exactly one
       ECDSA-Sig-Value. x509_ca.c reads the same DER for provisioning
-      and reaches no verdict. A call anywhere else is a parser
-      growing. Tripwire grade: this catches honest drift by name, not
-      a reintroduction under another name.
+      and reaches no verdict, and the webpki_*.c files read it for the
+      TRUST=webpki chain verifier docs/webpki.md describes, packaged in
+      that object alone. A call anywhere else is a parser growing.
+      Tripwire grade: this catches honest drift by name, not a
+      reintroduction under another name.
     paths:
       exclude: [test, proof, fuzz, spec, bench, bin, examples, p256.c, p384.c, x509.c,
-                x509_der.c, x509_ca.c]
+                x509_der.c, x509_ca.c, webpki.h, webpki_time.c, webpki_name.c]
     patterns:
       - pattern: $F(...)
       - metavariable-regex:
