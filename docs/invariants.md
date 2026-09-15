@@ -118,12 +118,13 @@ which convention holds them.
   basicConstraints and keyUsage object identifiers, `cA` TRUE). The
   reader's containment is a fact about includes: `x509_ca.h` and
   `pem.h` are included by no library source except `x509_ca.c`
-  itself, so no session reaches it. The only DER reader outside
-  those four files (`der_parse` in `p256.c`) reads exactly one
-  ECDSA-Sig-Value and parses nothing else.
+  itself, so no session reaches it. The only DER readers outside
+  those four files (the `der_parse` in `p256.c` and the one in
+  `p384.c`) each read exactly one ECDSA-Sig-Value and parse nothing
+  else.
 - **Check.** Semgrep-tripwire (`inv-5-profiled-cert-parser`): calls
   to identifiers matching `x509_`, `asn1_`, or `der_` outside
-  p256.c, x509.c, x509_der.c and x509_ca.c. Semgrep-structural
+  p256.c, p384.c, x509.c, x509_der.c and x509_ca.c. Semgrep-structural
   (`inv-20-provisioning-entry`) holds the containment half. Grammar
   widening inside those files is held by the boundary-pair tests in
   test/x509_ca_tests.h and review, as x509.c's always has been; the
@@ -136,17 +137,26 @@ which convention holds them.
   returning bytes.
 - See [decisions: Trust model](decisions.md#trust-model).
 
-### INV-6 — no PKCS#1 v1.5
+### INV-6 — PKCS#1 v1.5 in one file, as verify only
 
-- **Claim.** RSA exists only as PSS verify. No v1.5 signature or
-  encryption padding, ever — the certificate profile included.
-- **Mechanism.** Absence; `rsa.c` implements EMSA-PSS decode only,
-  and `x509.c`'s pinned signature AlgorithmIdentifier names
-  RSASSA-PSS, so a v1.5-signed leaf fails the byte compare.
+- **Claim.** The device modes see RSA as PSS verify only: no v1.5
+  signature or encryption padding, the certificate profile included.
+  PKCS#1 v1.5 signature verify exists in one file, `rsa_pkcs1.c`,
+  because the captured AWS and GCS chains are signed with it
+  ([webpki.md](webpki.md)), and only the `TRUST=webpki` object
+  packages that file. No v1.5 encryption padding exists anywhere.
+- **Mechanism.** `rsa.c` implements EMSA-PSS decode only, and
+  `x509.c`'s pinned signature AlgorithmIdentifier names RSASSA-PSS,
+  so a v1.5-signed leaf fails the byte compare in the ca mode.
+  `rsa_pkcs1.c` verifies by building the expected encoded message
+  and comparing every one of its `n_len` bytes with `ct_memeq`; it
+  never parses the padding it receives, which is the step a lax
+  verifier gets wrong.
 - **Check.** Semgrep-tripwire (`inv-6-no-pkcs1`): the identifier
-  `pkcs1`, with no cert-file exemption.
-- **Violation.** A PR adds v1.5 verify "for compatibility" with an
-  old server, importing Bleichenbacher-shaped risk.
+  `pkcs1` outside `rsa_pkcs1.c`, with no cert-file exemption.
+- **Violation.** A PR adds v1.5 verify to `rsa.c` or to the ca-mode
+  profile "for compatibility" with an old server, or adds v1.5
+  decryption anywhere, importing Bleichenbacher-shaped risk.
 - See [decisions: Cryptography](decisions.md#cryptography).
 
 ### INV-20 — the certificate parser stays contained

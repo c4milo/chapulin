@@ -8,6 +8,8 @@ import Spec.Record
 import Spec.X25519
 import Spec.P256
 import Spec.Rsa
+import Spec.P384
+import Spec.RsaPkcs1
 import Spec.Sha3
 import Spec.Sha512
 import Spec.MlKem

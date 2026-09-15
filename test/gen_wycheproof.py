@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Convert eight Wycheproof suites into one generated C header.
+"""Convert the Wycheproof suites wycheproof_test.c drives into one
+generated C header.
 
 Usage: gen_wycheproof.py <wycheproof-checkout> <output.h>
 
@@ -9,10 +10,11 @@ suite becomes one data blob plus an index array of offsets, so the
 header stays a few symbols instead of thousands.
 
 Skips are encoded, not dropped, so the test binary can report them:
-AEAD cases whose nonce size the fixed nonce[12] API cannot express, and
+AEAD cases whose nonce size the fixed nonce[12] API cannot express,
 HKDF cases outside the library's CH_ASSERT domain (info > 64 bytes,
-okm 0 or > 255*32 bytes). Both categories are findings in chapulin's
-favor and the test prints their counts.
+okm 0 or > 255*32 bytes), and RSA PKCS#1 v1.5 groups whose public
+exponent is not the fixed 65537. All are findings in chapulin's favor
+and the test prints their counts.
 """
 
 import json
@@ -164,25 +166,39 @@ def gen_hkdf(d, out):
     return len(rows)
 
 
-def gen_ecdsa(d, out):
+# One ECDSA verify suite. name is the C symbol stem (wp_<name>_data and
+# wp_<name>); curve and sha are the values every group must declare, so
+# a suite file that changes shape upstream stops the run instead of
+# feeding the wrong digest to the wrong verifier; coord_len is the byte
+# length of one coordinate, so an uncompressed point is 1 + 2 * coord_len
+# bytes and the blob keeps the 2 * coord_len bytes of X||Y after the 0x04.
+# The runner hashes msg itself; only sig is stored as the wire carries it.
+# "acceptable" is recorded as a rejection: this is a verifier with one
+# accepted encoding, so a BER or otherwise lax signature must fail.
+def gen_ecdsa(d, out, name, curve, sha, coord_len):
     blob = Blob()
     rows = []
     for g in d["testGroups"]:
-        unc = bytes_of(g["publicKey"]["uncompressed"], 65, "ecdsa group public key")
+        if g["publicKey"]["curve"] != curve or g["sha"] != sha:
+            raise SystemExit(f"{name}: group is {g['publicKey']['curve']}/{g['sha']},"
+                             f" expected {curve}/{sha}")
+        unc = bytes_of(g["publicKey"]["uncompressed"], 1 + 2 * coord_len,
+                       f"{name} group public key")
         if unc[0] != 0x04:
-            raise SystemExit("ecdsa group public key is not an uncompressed point")
+            raise SystemExit(f"{name} group public key is not an uncompressed point")
         pub_off = blob.add(unc[1:])
         for t in g["tests"]:
             msg, sig = bytes_of(t["msg"]), bytes_of(t["sig"])
             off = blob.add(msg + sig)
             rows.append(
-                (uint_of(t["tcId"], 0xffffffff, "ecdsa tcId"), pub_off, off, len(msg),
-                 len(sig), 1 if t["result"] == "valid" else 0)
+                (uint_of(t["tcId"], 0xffffffff, f"{name} tcId"), pub_off, off,
+                 uint_of(len(msg), 0xffff, f"{name} msg_len"),
+                 uint_of(len(sig), 0xffff, f"{name} sig_len"), 1 if t["result"] == "valid" else 0)
             )
-    emit_blob(out, "wp_ecdsa_data", blob)
+    emit_blob(out, f"wp_{name}_data", blob)
     out.append(
         "static const struct { uint32_t tc; uint32_t pub_off; uint32_t off; uint16_t msg_len;"
-        " uint16_t sig_len; uint8_t valid; } wp_ecdsa[] = {"
+        f" uint16_t sig_len; uint8_t valid; }} wp_{name}[] = {{"
     )
     for row in rows:
         out.append("    {" + ", ".join(str(v) for v in row) + "},")
@@ -216,6 +232,69 @@ def gen_rsa(files, out):
     for row in rows:
         out.append("    {" + ", ".join(str(v) for v in row) + "},")
     out.append("};")
+    out.append("")
+    return len(rows)
+
+
+# The digest lengths rsa_pkcs1_verify's DigestInfo prefixes name, keyed by
+# the hash a v1.5 suite group declares.
+RSA_PKCS1_DIGEST_LEN = {"SHA-256": 32, "SHA-384": 48}
+
+
+# The RSASSA-PKCS1-v1_5 verify suites, several files into one arm. A
+# group's key is read from publicKey.modulus and publicKey.publicExponent
+# (the schema's hex fields); the modulus is cross-checked against the
+# publicKeyAsn DER, which carries the same INTEGER bytes, and its stripped
+# length against keySize. rsa_pkcs1_verify fixes e = 65537, so a group with
+# another exponent is skipped whole and counted, the way gen_aead counts
+# the sizes the AEAD API cannot express. The runner hashes msg with the
+# group's hash; digest_len tells it which. "acceptable" is recorded as a
+# rejection, as gen_ecdsa does: the one such case per suite is the
+# DigestInfo with the AlgorithmIdentifier's NULL parameter missing, and a
+# verifier that compares the encoding against one fixed prefix must
+# refuse it.
+def gen_rsa_pkcs1(files, out):
+    blob = Blob()
+    rows = []
+    skipped = 0
+    for path in files:
+        d = json.load(open(path))
+        for g in d["testGroups"]:
+            if g["publicKey"]["publicExponent"] != "010001":
+                skipped += len(g["tests"])  # an exponent the fixed e = 65537 verifier refuses
+                continue
+            modulus_der = bytes_of(g["publicKey"]["modulus"])
+            if modulus_der not in bytes_of(g["publicKeyAsn"]):
+                raise SystemExit(f"{path.name}: publicKey.modulus is not in publicKeyAsn")
+            n = modulus_der.lstrip(b"\x00")
+            if len(n) * 8 != g["keySize"]:
+                raise SystemExit(f"{path.name}: modulus is {len(n)} bytes, keySize {g['keySize']}")
+            if g["sha"] not in RSA_PKCS1_DIGEST_LEN:
+                raise SystemExit(f"{path.name}: group hash {g['sha']} has no DigestInfo prefix")
+            digest_len = RSA_PKCS1_DIGEST_LEN[g["sha"]]
+            n_off = blob.add(n)
+            for t in g["tests"]:
+                msg, sig = bytes_of(t["msg"]), bytes_of(t["sig"])
+                off = blob.add(msg + sig)
+                rows.append(
+                    (uint_of(t["tcId"], 0xffffffff, "rsa pkcs1 tcId"), n_off, off, len(n),
+                     uint_of(len(msg), 0xffff, "rsa pkcs1 msg_len"),
+                     uint_of(len(sig), 0xffff, "rsa pkcs1 sig_len"), digest_len,
+                     1 if t["result"] == "valid" else 0)
+                )
+    emit_blob(out, "wp_rsa_pkcs1_data", blob)
+    # Fields in size order, widest first, so the row carries no padding.
+    out.append(
+        "static const struct { uint32_t tc; uint32_t n_off; uint32_t off; uint16_t n_len;"
+        " uint16_t msg_len; uint16_t sig_len; uint8_t digest_len; uint8_t valid; }"
+        " wp_rsa_pkcs1[] = {"
+    )
+    for row in rows:
+        out.append("    {" + ", ".join(str(v) for v in row) + "},")
+    out.append("};")
+    out.append("")
+    out.append(f"#define WP_RSA_PKCS1_SKIPPED {skipped}"
+               " // groups with a public exponent other than 65537")
     out.append("")
     return len(rows)
 
@@ -316,16 +395,37 @@ def main():
     n_x = gen_x25519(json.load(open(v1 / "x25519_test.json")), out)
     n_a = gen_aead(json.load(open(v1 / "chacha20_poly1305_test.json")), out)
     n_h = gen_hkdf(json.load(open(v1 / "hkdf_sha256_test.json")), out)
-    n_e = gen_ecdsa(json.load(open(v1 / "ecdsa_secp256r1_sha256_test.json")), out)
+    # The four ECDSA arms: the two matched pairs a chain signs with, and
+    # the two mismatched digest lengths that exercise the FIPS 186-4
+    # section 6.4 rule the runner applies (a short digest is used whole,
+    # a long one is cut to the order's length).
+    n_e = gen_ecdsa(json.load(open(v1 / "ecdsa_secp256r1_sha256_test.json")), out,
+                    "ecdsa_p256_sha256", "secp256r1", "SHA-256", 32)
+    n_e384 = gen_ecdsa(json.load(open(v1 / "ecdsa_secp384r1_sha384_test.json")), out,
+                       "ecdsa_p384_sha384", "secp384r1", "SHA-384", 48)
+    n_e384_256 = gen_ecdsa(json.load(open(v1 / "ecdsa_secp384r1_sha256_test.json")), out,
+                           "ecdsa_p384_sha256", "secp384r1", "SHA-256", 48)
+    n_e256_512 = gen_ecdsa(json.load(open(v1 / "ecdsa_secp256r1_sha512_test.json")), out,
+                           "ecdsa_p256_sha512", "secp256r1", "SHA-512", 32)
     n_r = gen_rsa(
         [v1 / "rsa_pss_2048_sha256_mgf1_32_test.json", v1 / "rsa_pss_3072_sha256_mgf1_32_test.json"],
+        out,
+    )
+    # rsa_signature_4096_sha256 and rsa_signature_4096_sha384 stay out:
+    # rsa_pkcs1_verify shares rsa.c's RSA-3072 modulus limit, and a later
+    # commit widens it and adds them.
+    n_rp = gen_rsa_pkcs1(
+        [v1 / "rsa_signature_2048_sha256_test.json", v1 / "rsa_signature_3072_sha256_test.json",
+         v1 / "rsa_signature_2048_sha384_test.json"],
         out,
     )
     n_kk = gen_mlkem_keygen(json.load(open(v1 / "mlkem_768_keygen_seed_test.json")), out)
     n_ke = gen_mlkem_encaps(json.load(open(v1 / "mlkem_768_encaps_test.json")), out)
     n_kf = gen_mlkem_full(json.load(open(v1 / "mlkem_768_test.json")), out)
     dst.write_text("\n".join(out) + "\n")
-    print(f"wycheproof vectors: x25519 {n_x}, aead {n_a}, hkdf {n_h}, ecdsa {n_e}, rsa {n_r},"
+    print(f"wycheproof vectors: x25519 {n_x}, aead {n_a}, hkdf {n_h},"
+          f" ecdsa p256-sha256 {n_e} p384-sha384 {n_e384} p384-sha256 {n_e384_256}"
+          f" p256-sha512 {n_e256_512}, rsa-pss {n_r}, rsa-pkcs1 {n_rp},"
           f" mlkem keygen {n_kk} encaps {n_ke} full {n_kf} (commit {commit[:12]})")
 
 

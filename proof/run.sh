@@ -471,7 +471,18 @@ launch fast:4 full record 165 "" ct.c
 launch fast:3 full x25519_step 17 ""
 launch fast:3 full x25519_tail 17 ""
 launch fast full rsa 385 "fill_nondet.0:385,ct_memeq.0:33,greater_or_equal.0:385,modulus_bits.0:385,modulus_bits.1:9,mgf1.0:12,emsa_pss_verify.0:352,emsa_pss_verify.1:320,rsa_pss_verify.0:385" --object-bits 11 --max-field-sensitivity-array-size 385 ct.c
+# rsa_pkcs1 is rsa's shape without the alignment pins: v1.5 fills every
+# em_len byte, so the modulus stays wholly nondet and one call per
+# admitted digest length runs the encode-and-compare end to end over the
+# same rsa_vp1 stub. Measured (cbmc 6.11.0, kissat, /usr/bin/time -l):
+# 321 properties, 9.8 s, 105 MB.
+launch fast full rsa_pkcs1 385 "fill_nondet.0:385,ct_memeq.0:385,ct_wipe.0:385,greater_or_equal.0:385" --object-bits 11 --max-field-sensitivity-array-size 385 ct.c
 launch fast full p256 85 "" buf.c
+# p384 is p256's harness at twelve limbs: the same concrete pieces, the
+# same two loop drivers left to their proven bodies, sig up to 112 bytes
+# (a valid one is at most 104), the bit walk over [0,383]. Measured (cbmc
+# 6.11.0, kissat, /usr/bin/time -l): 975 properties, 46 s, 410 MB.
+launch fast full p384 113 "" buf.c
 launch fast full hkdf 120 "" ct.c
 # io: 458 s under this script's own flags. The transport shim over the
 # caller's callbacks, proven against a recv that honours no contract: it
@@ -616,6 +627,9 @@ launch fast:3 full x25519_mul_ct 20 ""
 launch fast full x25519_ops 260 ""
 launch fast full drbg 100 "ch_rand_bytes.3:4" ct.c
 launch fast full p256_mul 20 ""
+# p384_mul is p256_mul's carry lemma at twelve limbs. Measured (cbmc
+# 6.11.0, kissat, /usr/bin/time -l): 7 properties, 2.1 s, 106 MB.
+launch fast full p384_mul 20 ""
 launch fast full rsa_mul 20 "fill_nondet.0:385,from_bytes.0:97,main.0:97,to_bytes.0:97"
 
 FAIL=0

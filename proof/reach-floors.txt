@@ -54,11 +54,13 @@ hybrid_secret 20.2
 key_share 21.9
 keysched 87.3
 p256_mul 86.7
+p384_mul 86.7  # local reading, cbmc 6.11.0 on arm64 macOS; replace with the nightly table's number
 pem 74.6
 pem_ecdsa 74.6
 poly1305 94.3
 record 95.0
 rsa_mul 32.3
+rsa_pkcs1 90.3  # local reading, cbmc 6.11.0 on arm64 macOS; replace with the nightly table's number
 sha512 90.9  # local reading, cbmc 6.11.0 on arm64 macOS; replace with the nightly table's number
 sha512_compress 97.1  # local reading, cbmc 6.11.0 on arm64 macOS; replace with the nightly table's number
 softmul 91.3
@@ -120,6 +122,13 @@ x25519_tail 52.7
 # is wrong by 800 s, which is how a prediction that pem would still time
 # out survived until this run measured it.
 #
+# p384 is p256's harness at twelve limbs and times out the same way:
+# under the gate's command on a development machine on 2026-09-15
+# (cbmc 6.11.0, -DCH_NATIVE_WIDEMUL) it was still in propositional
+# reduction at 4.6 GB when the 1800 s cap stopped it. p384_mul, the
+# same stub over the field multiply alone, converges in seconds and is
+# gated above.
+#
 #   eeparse
 #   handshake_parser
 #   handshake_pin
@@ -134,6 +143,7 @@ x25519_tail 52.7
 #   mlkem_ntt
 #   mlkem_poly
 #   p256
+#   p384
 #   rsa
 #   sha256
 #   sha3

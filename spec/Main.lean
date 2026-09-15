@@ -40,6 +40,8 @@ def selftestAll : String :=
     ("x25519", Spec.X25519.selftest),
     ("p256", Spec.P256.selftest),
     ("rsa", Spec.Rsa.selftest),
+    ("p384", Spec.P384.selftest),
+    ("rsa_pkcs1", Spec.RsaPkcs1.selftest),
     ("pem", Spec.Pem.selftest),
     ("x509", Spec.X509.selftest),
     ("x509ca", Spec.X509Ca.selftest),
@@ -265,6 +267,42 @@ def dispatch : List String → Option String
     let sb ← hexArg? s
     guard (pb.size == 64 && h.size == 32 && rb.size == 32 && sb.size == 32)
     return if Spec.P256.ecdsaVerify pb h (bytesToNatBE rb) (bytesToNatBE sb) then "1" else "0"
+  | ["p384_pub", d] => do
+    let db ← hexArg? d
+    guard (db.size == 48)
+    match Spec.P384.pubKey? (bytesToNatBE db) with
+    | some pub => return emit pub
+    | none => return "FAIL"
+  | ["p384_sign", d, k, hash] => do
+    let db ← hexArg? d
+    let kb ← hexArg? k
+    let h ← hexArg? hash
+    guard (db.size == 48 && kb.size == 48 && h.size == 48)
+    match Spec.P384.ecdsaSign (bytesToNatBE db) (bytesToNatBE kb) (bytesToNatBE h) with
+    | some (r, s) => return s!"{emit (natToBytesBE r 48)} {emit (natToBytesBE s 48)}"
+    | none => return "FAIL"
+  | ["p384_verify", pub, hash, r, s] => do
+    let pb ← hexArg? pub
+    let h ← hexArg? hash
+    let rb ← hexArg? r
+    let sb ← hexArg? s
+    guard (pb.size == 96 && h.size == 48 && rb.size == 48 && sb.size == 48)
+    return if Spec.P384.ecdsaVerify pb h (bytesToNatBE rb) (bytesToNatBE sb) then "1" else "0"
+  | ["rsa_pkcs1_verify", n, e, digest, sig] => do
+    let nb ← hexArg? n
+    let eNat ← e.toNat?
+    let h ← hexArg? digest
+    let sb ← hexArg? sig
+    guard (h.size == 32 || h.size == 48)
+    return if Spec.RsaPkcs1.pkcs1Verify (bytesToNatBE nb) eNat h sb then "1" else "0"
+  | ["rsa_pkcs1_sign", n, d, _e, digest] => do
+    let nb ← hexArg? n
+    let db ← hexArg? d
+    let h ← hexArg? digest
+    guard (h.size == 32 || h.size == 48)
+    match Spec.RsaPkcs1.pkcs1Sign (bytesToNatBE nb) (bytesToNatBE db) h with
+    | some s => return emit s
+    | none => return "FAIL"
   | ["rsa_verify", n, e, hash, sig] => do
     let nb ← hexArg? n
     let eNat ← e.toNat?

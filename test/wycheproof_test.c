@@ -6,9 +6,19 @@
 // check must refuse. Valid cases must pass, invalid ones must be
 // rejected, and "acceptable" (Wycheproof: the implementation's choice)
 // is recorded either way, except zero-shared-secret x25519 cases, which
-// TLS 1.3 requires the client to reject. Skips are reported, never
-// silent: AEAD nonce sizes the fixed nonce[12] API cannot express, and
-// HKDF cases outside the library's CH_ASSERT domain.
+// TLS 1.3 requires the client to reject, and the signature suites, where
+// an acceptable case is a lax encoding the one-encoding verifiers must
+// refuse. Skips are reported, never silent: AEAD nonce sizes the fixed
+// nonce[12] API cannot express, HKDF cases outside the library's
+// CH_ASSERT domain, and RSA PKCS#1 v1.5 groups with a public exponent
+// other than the fixed 65537.
+//
+// The ECDSA arms cover the two digest-length mismatches FIPS 186-4
+// section 6.4 defines, because a public chain can sign a P-384 key with
+// SHA-256 or a P-256 key with SHA-512: the digest is an integer, so a
+// digest shorter than the order is used whole and a longer one keeps
+// its leftmost order-length bits. The RSA-4096 v1.5 suites stay out
+// until a later commit widens the RSA-3072 modulus limit.
 #include <inttypes.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -26,8 +36,11 @@ noreturn void ch_assert_fail(const char *cond, const char *file, int line) {
 #include "hkdf.h"
 #include "mlkem.h"
 #include "p256.h"
+#include "p384.h"
 #include "rsa.h"
+#include "rsa_pkcs1.h"
 #include "sha256.h"
+#include "sha512.h"
 #include "x25519.h"
 
 #include "wycheproof_vectors.h"
@@ -129,8 +142,7 @@ static void run_hkdf(void) {
         uint8_t out[8160];
         hkdf_extract(salt, wp_hkdf[i].salt_len, ikm, wp_hkdf[i].ikm_len, prk);
         hkdf_expand(prk, info, wp_hkdf[i].info_len, out, wp_hkdf[i].size);
-        int match = wp_hkdf[i].okm_len == wp_hkdf[i].size &&
-                    memcmp(out, okm, wp_hkdf[i].size) == 0;
+        int match = wp_hkdf[i].okm_len == wp_hkdf[i].size && memcmp(out, okm, wp_hkdf[i].size) == 0;
         if (wp_hkdf[i].valid && !match) {
             fail("hkdf", wp_hkdf[i].tc, "valid case mismatched");
         }
@@ -143,21 +155,74 @@ static void run_hkdf(void) {
            COUNT(wp_hkdf), WP_HKDF_SKIPPED);
 }
 
-static void run_ecdsa(void) {
-    for (size_t i = 0; i < COUNT(wp_ecdsa); i++) {
-        const uint8_t *pub = wp_ecdsa_data + wp_ecdsa[i].pub_off;
-        const uint8_t *p = wp_ecdsa_data + wp_ecdsa[i].off;
-        uint8_t hash[SHA256_LEN];
-        sha256 s;
-        sha256_init(&s);
-        sha256_update(&s, p, wp_ecdsa[i].msg_len);
-        sha256_final(&s, hash);
-        int ok = p256_ecdsa_verify(pub, hash, p + wp_ecdsa[i].msg_len, wp_ecdsa[i].sig_len);
-        if (ok != wp_ecdsa[i].valid) {
-            fail("ecdsa", wp_ecdsa[i].tc, ok ? "invalid signature accepted" : "valid rejected");
-        }
+// One signature verdict against the vector's, for every signature arm.
+static void check_verdict(const char *suite, uint32_t tc, int ok, int valid) {
+    if (ok != valid) {
+        fail(suite, tc, ok ? "invalid signature accepted" : "valid rejected");
     }
-    printf("wycheproof ecdsa-p256: %zu cases\n", COUNT(wp_ecdsa));
+}
+
+static void run_ecdsa_p256_sha256(void) {
+    for (size_t i = 0; i < COUNT(wp_ecdsa_p256_sha256); i++) {
+        const uint8_t *pub = wp_ecdsa_p256_sha256_data + wp_ecdsa_p256_sha256[i].pub_off;
+        const uint8_t *p = wp_ecdsa_p256_sha256_data + wp_ecdsa_p256_sha256[i].off;
+        uint8_t hash[SHA256_LEN];
+        sha256_of(p, wp_ecdsa_p256_sha256[i].msg_len, hash);
+        int ok = p256_ecdsa_verify(pub, hash, p + wp_ecdsa_p256_sha256[i].msg_len,
+                                   wp_ecdsa_p256_sha256[i].sig_len);
+        check_verdict("ecdsa-p256-sha256", wp_ecdsa_p256_sha256[i].tc, ok,
+                      wp_ecdsa_p256_sha256[i].valid);
+    }
+    printf("wycheproof ecdsa-p256-sha256: %zu cases\n", COUNT(wp_ecdsa_p256_sha256));
+}
+
+static void run_ecdsa_p384_sha384(void) {
+    for (size_t i = 0; i < COUNT(wp_ecdsa_p384_sha384); i++) {
+        const uint8_t *pub = wp_ecdsa_p384_sha384_data + wp_ecdsa_p384_sha384[i].pub_off;
+        const uint8_t *p = wp_ecdsa_p384_sha384_data + wp_ecdsa_p384_sha384[i].off;
+        uint8_t hash[SHA384_LEN];
+        sha384_of(p, wp_ecdsa_p384_sha384[i].msg_len, hash);
+        int ok = p384_ecdsa_verify(pub, hash, p + wp_ecdsa_p384_sha384[i].msg_len,
+                                   wp_ecdsa_p384_sha384[i].sig_len);
+        check_verdict("ecdsa-p384-sha384", wp_ecdsa_p384_sha384[i].tc, ok,
+                      wp_ecdsa_p384_sha384[i].valid);
+    }
+    printf("wycheproof ecdsa-p384-sha384: %zu cases\n", COUNT(wp_ecdsa_p384_sha384));
+}
+
+// A 32-byte digest under a P-384 key. FIPS 186-4 section 6.4 reads the
+// digest as an integer and uses it whole when it is shorter than the
+// order, so the same integer written as 48 big-endian bytes is the
+// SHA-256 output behind 16 zero bytes.
+static void run_ecdsa_p384_sha256(void) {
+    for (size_t i = 0; i < COUNT(wp_ecdsa_p384_sha256); i++) {
+        const uint8_t *pub = wp_ecdsa_p384_sha256_data + wp_ecdsa_p384_sha256[i].pub_off;
+        const uint8_t *p = wp_ecdsa_p384_sha256_data + wp_ecdsa_p384_sha256[i].off;
+        uint8_t hash[SHA384_LEN] = {0};
+        sha256_of(p, wp_ecdsa_p384_sha256[i].msg_len, hash + (SHA384_LEN - SHA256_LEN));
+        int ok = p384_ecdsa_verify(pub, hash, p + wp_ecdsa_p384_sha256[i].msg_len,
+                                   wp_ecdsa_p384_sha256[i].sig_len);
+        check_verdict("ecdsa-p384-sha256", wp_ecdsa_p384_sha256[i].tc, ok,
+                      wp_ecdsa_p384_sha256[i].valid);
+    }
+    printf("wycheproof ecdsa-p384-sha256: %zu cases\n", COUNT(wp_ecdsa_p384_sha256));
+}
+
+// A 64-byte digest under a P-256 key. FIPS 186-4 section 6.4 keeps the
+// leftmost 256 bits of a digest longer than the order, so the verifier
+// reads the first 32 bytes of the SHA-512 output and the rest is unused.
+static void run_ecdsa_p256_sha512(void) {
+    for (size_t i = 0; i < COUNT(wp_ecdsa_p256_sha512); i++) {
+        const uint8_t *pub = wp_ecdsa_p256_sha512_data + wp_ecdsa_p256_sha512[i].pub_off;
+        const uint8_t *p = wp_ecdsa_p256_sha512_data + wp_ecdsa_p256_sha512[i].off;
+        uint8_t hash[SHA512_LEN];
+        sha512_of(p, wp_ecdsa_p256_sha512[i].msg_len, hash);
+        int ok = p256_ecdsa_verify(pub, hash, p + wp_ecdsa_p256_sha512[i].msg_len,
+                                   wp_ecdsa_p256_sha512[i].sig_len);
+        check_verdict("ecdsa-p256-sha512", wp_ecdsa_p256_sha512[i].tc, ok,
+                      wp_ecdsa_p256_sha512[i].valid);
+    }
+    printf("wycheproof ecdsa-p256-sha512: %zu cases\n", COUNT(wp_ecdsa_p256_sha512));
 }
 
 static void run_rsa(void) {
@@ -165,17 +230,37 @@ static void run_rsa(void) {
         const uint8_t *n = wp_rsa_data + wp_rsa[i].n_off;
         const uint8_t *p = wp_rsa_data + wp_rsa[i].off;
         uint8_t hash[SHA256_LEN];
-        sha256 s;
-        sha256_init(&s);
-        sha256_update(&s, p, wp_rsa[i].msg_len);
-        sha256_final(&s, hash);
-        int ok = rsa_pss_verify(n, wp_rsa[i].n_len, hash, p + wp_rsa[i].msg_len,
-                                wp_rsa[i].sig_len);
-        if (ok != wp_rsa[i].valid) {
-            fail("rsa-pss", wp_rsa[i].tc, ok ? "invalid signature accepted" : "valid rejected");
-        }
+        sha256_of(p, wp_rsa[i].msg_len, hash);
+        int ok = rsa_pss_verify(n, wp_rsa[i].n_len, hash, p + wp_rsa[i].msg_len, wp_rsa[i].sig_len);
+        check_verdict("rsa-pss", wp_rsa[i].tc, ok, wp_rsa[i].valid);
     }
     printf("wycheproof rsa-pss: %zu cases\n", COUNT(wp_rsa));
+}
+
+// The v1.5 suites for SHA-256 and SHA-384 in one arm; digest_len picks
+// the hash, and with it the DigestInfo prefix rsa_pkcs1_verify expects.
+static void run_rsa_pkcs1(void) {
+    for (size_t i = 0; i < COUNT(wp_rsa_pkcs1); i++) {
+        const uint8_t *n = wp_rsa_pkcs1_data + wp_rsa_pkcs1[i].n_off;
+        const uint8_t *p = wp_rsa_pkcs1_data + wp_rsa_pkcs1[i].off;
+        size_t digest_len = wp_rsa_pkcs1[i].digest_len;
+        uint8_t digest[SHA384_LEN];
+        if (digest_len == SHA256_LEN) {
+            sha256_of(p, wp_rsa_pkcs1[i].msg_len, digest);
+        } else if (digest_len == SHA384_LEN) {
+            sha384_of(p, wp_rsa_pkcs1[i].msg_len, digest);
+        } else {
+            // The generator refuses any other hash, so this never trips;
+            // it is a hard backstop because the vectors track upstream.
+            fail("rsa-pkcs1", wp_rsa_pkcs1[i].tc, "digest length without a hash");
+            continue;
+        }
+        int ok = rsa_pkcs1_verify(n, wp_rsa_pkcs1[i].n_len, digest, digest_len,
+                                  p + wp_rsa_pkcs1[i].msg_len, wp_rsa_pkcs1[i].sig_len);
+        check_verdict("rsa-pkcs1", wp_rsa_pkcs1[i].tc, ok, wp_rsa_pkcs1[i].valid);
+    }
+    printf("wycheproof rsa-pkcs1: %zu cases, %d skipped (a public exponent other than 65537)\n",
+           COUNT(wp_rsa_pkcs1), WP_RSA_PKCS1_SKIPPED);
 }
 
 static void run_mlkem_keygen(void) {
@@ -260,8 +345,12 @@ int main(void) {
     run_x25519();
     run_aead();
     run_hkdf();
-    run_ecdsa();
+    run_ecdsa_p256_sha256();
+    run_ecdsa_p384_sha384();
+    run_ecdsa_p384_sha256();
+    run_ecdsa_p256_sha512();
     run_rsa();
+    run_rsa_pkcs1();
     run_mlkem_keygen();
     run_mlkem_encaps();
     run_mlkem_full();

@@ -18,6 +18,10 @@ The Lean spec is a differential oracle for the C stack. Rules:
 Spec.Sha256.sha256    : ByteArray → ByteArray                          -- FIPS 180-4, 32 bytes out
 Spec.Sha512.sha512    : ByteArray → ByteArray                          -- FIPS 180-4 §6.4, 64 bytes out
 Spec.Sha512.sha384    : ByteArray → ByteArray                          -- FIPS 180-4 §6.5, 48 bytes out
+Spec.P384.ecdsaVerify : (pub hash : ByteArray) → (r s : Nat) → Bool    -- FIPS 186-4 §6.4 over P-384,
+                        -- X‖Y 96 bytes, a 48-byte hash; the caller truncates or pads any other length
+Spec.RsaPkcs1.pkcs1Verify : (n e : Nat) → (digest sig : ByteArray) → Bool
+                        -- RFC 8017 §8.2.2, the DigestInfo chosen by the digest length: 32 SHA-256, 48 SHA-384
 Spec.Sha3.sha3_256    : ByteArray → ByteArray                          -- FIPS 202, 32 bytes out
 Spec.Sha3.sha3_512    : ByteArray → ByteArray                          -- FIPS 202, 64 bytes out
 Spec.Sha3.shake128    : ByteArray → (outLen : Nat) → ByteArray         -- FIPS 202 XOF
@@ -531,6 +535,8 @@ means the module's selftest plus the differential oracle carry it;
 | Rsa | 4 | PSS signature and hash size contracts on both sign and verify; the arithmetic stays vector-checked |
 | Sha256 | 4 | structural lemmas, padding block alignment and message prefix; compression function vector-checked |
 | Sha512 | 5 | output sizes for both hashes (64 and 48 bytes, one private lemma over the shared digest), compression size, padding block alignment and message prefix; compression function vector-checked |
+| P384 | 0 | executable oracle only: the RFC 6979 A.2.6 vectors and the differential, as P256 — the arithmetic theorems for both curves follow mathlib |
+| RsaPkcs1 | 4 | the encoding is exactly the modulus length; a signature of the wrong length never verifies and a signed one has the right length; a digest length naming no hash never verifies; the arithmetic stays vector-checked |
 | Sha3 | 8 | output lengths for the two hashes and two XOFs, sponge state size, padding block alignment and message prefix; the permutation itself vector-checked |
 | MlKem | 6 | FIPS 203 §6.1-6.3 output-length contracts (ek 1184, dk 2400, ct 1088, shared secret 32 on both decapsulation branches) and the ByteEncode length law they rest on; the NTT, sampling, and compression arithmetic stay vector-checked |
 | Poly | 1 | MAC size; arithmetic vector-checked |

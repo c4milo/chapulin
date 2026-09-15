@@ -114,14 +114,15 @@ rules:
     severity: ERROR
     message: >-
       INV-5: exactly one certificate parser. DER and X.509 readers
-      live in x509_der.c behind x509.c's profile walker, and p256.c's
-      der_parse reads exactly one ECDSA-Sig-Value. x509_ca.c reads
-      the same DER for provisioning and reaches no verdict. A call
-      anywhere else is a parser growing. Tripwire grade: this catches
-      honest drift by name, not a reintroduction under another name.
+      live in x509_der.c behind x509.c's profile walker, and the
+      der_parse in p256.c and the one in p384.c each read exactly one
+      ECDSA-Sig-Value. x509_ca.c reads the same DER for provisioning
+      and reaches no verdict. A call anywhere else is a parser
+      growing. Tripwire grade: this catches honest drift by name, not
+      a reintroduction under another name.
     paths:
-      exclude: [test, proof, fuzz, spec, bench, bin, examples, p256.c, x509.c, x509_der.c,
-                x509_ca.c]
+      exclude: [test, proof, fuzz, spec, bench, bin, examples, p256.c, p384.c, x509.c,
+                x509_der.c, x509_ca.c]
     patterns:
       - pattern: $F(...)
       - metavariable-regex:
@@ -138,12 +139,15 @@ rules:
     languages: [c]
     severity: ERROR
     message: >-
-      INV-6: no PKCS#1 v1.5, anywhere — the cert files included. RSA
-      exists only as PSS verify; v1.5 padding imports
+      INV-6: PKCS#1 v1.5 lives in rsa_pkcs1.c alone, as signature
+      verify over a public chain, and only the TRUST=webpki object
+      packages that file (docs/webpki.md). Every other file, the cert
+      files included, sees RSA as PSS verify only, and v1.5 encryption
+      padding exists nowhere: that padding imports
       Bleichenbacher-shaped risk. Tripwire grade: this catches honest
       drift by name, not a reintroduction under another name.
     paths:
-      exclude: [test, proof, fuzz, spec, bench, bin, examples]
+      exclude: [test, proof, fuzz, spec, bench, bin, examples, rsa_pkcs1.c]
     patterns:
       - pattern: $F(...)
       - metavariable-regex:
