@@ -102,12 +102,17 @@ does nothing more.
     against 2,328, so a negotiating build carries ML-KEM on every
     connection including the ones that never run it.
 
-    The one gap the argument above names — that no part of the API
-    reports which exchange ran — closes with the webpki work, in every
-    build: `ch_tls` reports the negotiated group, and a `ch_cfg` flag
-    fails the handshake when the exchange was not post-quantum. Under
-    `KEX=pq` the flag asserts a build-time property at run time. The
-    decision itself does not move: a build still offers one group.
+    Two fields close, in every build, the one gap the argument above
+    names — that no part of the API reports which exchange ran.
+    `ch_tls.group` reports the NamedGroup the ServerHello's key_share
+    selected, `CH_GROUP_X25519` or `CH_GROUP_X25519MLKEM768`, and
+    `ch_cfg.require_pq` fails the handshake when that group is not
+    `CH_GROUP_X25519MLKEM768`. Under `KEX=pq` the flag asserts a
+    build-time property at run time: the build offers the hybrid alone,
+    so the check reads the field the parser wrote and never the constant
+    the build offered. A classic build refuses the flag at `ch_connect`
+    with `CH_EINVAL`. The decision itself does not move: a build still
+    offers one group.
 
 ## Trust model
 

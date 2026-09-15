@@ -32,6 +32,15 @@ enum class Status : int {
     invalid = CH_EINVAL,
 };
 
+// The key-exchange group ch_tls.group reports: none until the
+// handshake accepts the ServerHello's key_share, then the one group
+// the build offers (cfg.h's CH_GROUP_* code points).
+enum class Group : uint16_t {
+    none = 0,
+    x25519 = CH_GROUP_X25519,
+    x25519mlkem768 = CH_GROUP_X25519MLKEM768,
+};
+
 // Non-owning byte views, so read/write take one argument instead of a
 // pointer and a length. Deliberately minimal — no <span> dependency, to
 // stay usable on the same freestanding toolchains the C core targets.
@@ -162,6 +171,15 @@ class Config {
         return *this;
     }
 
+    // Fail the handshake unless the key exchange is post-quantum
+    // (ch_cfg.require_pq). A KEX=pq build checks the flag against the
+    // group the ServerHello selected; a classic build cannot satisfy
+    // it, and ch_connect rejects the config before any I/O.
+    Config &require_pq(bool on) {
+        cfg_.require_pq = on ? 1 : 0;
+        return *this;
+    }
+
     const ch_cfg &raw() const {
         return cfg_;
     }
@@ -228,6 +246,12 @@ class Session {
     // watching key rotation progress.
     int pin_slot() const {
         return tls_.pin_slot;
+    }
+
+    // The key-exchange group that ran (ch_tls.group): Group::none until
+    // the handshake accepts the ServerHello's key_share.
+    Group group() const {
+        return static_cast<Group>(tls_.group);
     }
 
     // The revocation epoch this session accepted, and whether writing

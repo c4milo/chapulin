@@ -112,11 +112,12 @@ property entry 12 argues for: the threat is harvest-now-decrypt-later, and a
 client that fell back would complete a classically protected session against
 it. Reaching those four means building `KEX=x25519`, and accepting that.
 
-Entry 12's own argument names one gap: "no part of the API reports which
-exchange ran." That gap closes here. `ch_tls` reports the negotiated group,
-and `ch_cfg` carries a flag that fails the handshake when the exchange was
-not post-quantum. Under `KEX=pq` the flag asserts a build-time property at
-run time, which is what makes it worth having: checkable rather than assumed.
+Entry 12's own argument named one gap: "no part of the API reports which
+exchange ran." Two fields close it. `ch_tls.group` reports the group the
+ServerHello selected, and `ch_cfg.require_pq` fails the handshake when that
+group is not `CH_GROUP_X25519MLKEM768`. Under `KEX=pq` the flag asserts a
+build-time property at run time, which is what makes it worth having:
+checkable rather than assumed.
 
 ## The chain walk
 

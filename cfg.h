@@ -101,6 +101,13 @@ _Static_assert(CH_MIN_RXBUF >= 512, "the floor only rises; the base profile need
 // larger tickets are silently dropped rather than surfaced.
 #define CH_TICKET_ID_MAX 320
 
+// The NamedGroup code points of the two key exchanges a build can offer,
+// one per build (Makefile KEX): x25519 (RFC 9846 §4.2.7) by default, or
+// the X25519MLKEM768 hybrid (RFC 10024) under -DCH_KEX_PQ. ch_tls.group
+// reports which one the ServerHello selected.
+#define CH_GROUP_X25519 0x001d
+#define CH_GROUP_X25519MLKEM768 0x11ec
+
 // A resumption ticket surfaced to the application: store psk + identity
 // and present them on the next ch_connect (resumption = 1) for a cheaper
 // reconnect. Valid only during the callback; copy what you keep.
@@ -225,6 +232,20 @@ typedef struct {
     int (*epoch_store)(void *epoch_io, uint32_t value);
     void *epoch_io;
     uint32_t ticket_epoch;
+
+    // Refuse a session whose key exchange was not post-quantum. Set it
+    // and the handshake fails closed unless ch_tls.group is
+    // CH_GROUP_X25519MLKEM768 once the handshake accepts the
+    // ServerHello's key_share. A KEX=pq build offers that group alone
+    // and refuses any other, so there the flag checks at run time what
+    // the build promises, against the field the parser wrote rather
+    // than the constant the build offered. A classic build offers
+    // x25519 alone, so no handshake it runs can satisfy the flag;
+    // ch_connect rejects such a config with CH_EINVAL before it sends
+    // a byte, as it rejects epoch callbacks outside a CA build.
+    // docs/decisions.md 12 says why a build never falls back to the
+    // other group.
+    int require_pq;
 } ch_cfg;
 
 #endif

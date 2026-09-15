@@ -327,6 +327,9 @@ int main(int argc, char **argv) {
     cfg.recv = io_recv;
     cfg.io = &fd;
     cfg.on_ticket = on_ticket;
+    // REQUIRE_PQ in the environment sets ch_cfg.require_pq, so e2e drives
+    // the flag without a new positional argument.
+    cfg.require_pq = getenv("REQUIRE_PQ") != NULL;
 #ifdef CH_TRUST_CA
     if (argc == 7) {
         g_epoch_path = argv[6];
@@ -342,6 +345,8 @@ int main(int argc, char **argv) {
         return 1;
     }
     (void)fprintf(stderr, "connected\n");
+    // e2e asserts on this line: the group the ServerHello selected.
+    (void)fprintf(stderr, "group 0x%04x\n", (unsigned)tls.group);
     if (cfg.server_pubkey != NULL) {
         // e2e asserts on this line to watch rotation: 2 = the staged pin.
         (void)fprintf(stderr, "pin slot %u\n", tls.pin_slot);

@@ -338,6 +338,12 @@ structure ServerHello where
   /-- The echoed legacy_session_id, for the caller to compare against
   the one it sent (§4.1.3). -/
   sessionIdEcho : ByteArray
+  /-- The NamedGroup the key_share selected (§4.2.8). `readKeyShare`
+  accepts the build's `Kex.code` and no other, but the value here is
+  read from the message, as the C reads `ch_tls.group` from the wire,
+  so `parseServerHello_sound` states the equality instead of assuming
+  it. -/
+  group : Nat
   /-- The server's key_exchange value from key_share (§4.2.8): the
   x25519 public value, or the hybrid build's ML-KEM-768 ciphertext
   then x25519 public value (RFC 10024). -/
@@ -468,15 +474,20 @@ share (RFC 10024) — so any other length is out of the specified range.
 Whether the x25519 value is a low-order point is not decided here:
 §7.4.2 puts that check on the computed shared secret, after the key
 exchange this parser only feeds.
+
+Returns the group with the value. The check above admits only
+`kex.code`, but the reader returns the value the message carried, as
+`parse_key_share` writes `server_hello_info.group` from the wire.
 -/
-def readKeyShare (kex : Kex) (exts : List (Nat × ByteArray)) : Except Alert ByteArray := do
+def readKeyShare (kex : Kex) (exts : List (Nat × ByteArray)) :
+    Except Alert (Nat × ByteArray) := do
   let share ← requiredExtension exts extKeyShare .missingExtension
   let group ← u16At share 0
   ensure (group = kex.code) .illegalParameter
   let (keyExchange, off) ← vec16At share 2
   ensure (off = share.size) .decodeError
   ensure (keyExchange.size = kex.serverShareSize) .decodeError
-  return keyExchange
+  return (group, keyExchange)
 
 /--
 The ServerHello branch (RFC 9846 §4.1.3): only the three extensions
@@ -494,9 +505,9 @@ def serverHelloFields (kex : Kex) (pskOffered : Bool) (p : ServerHelloPrefix) :
   -- whose admissibility depends on what the ClientHello offered, so it
   -- is the one the profile cannot settle from the message alone.
   ensure (pskOffered || (extensionData? p.extensions extPreSharedKey).isNone) .unsupportedExtension
-  let keyExchange ← readKeyShare kex p.extensions
+  let (group, keyExchange) ← readKeyShare kex p.extensions
   let selectedIdentity ← readSelectedIdentity? p.extensions
-  return { sessionIdEcho := p.sessionIdEcho, keyExchange, selectedIdentity }
+  return { sessionIdEcho := p.sessionIdEcho, group, keyExchange, selectedIdentity }
 
 /--
 The HelloRetryRequest branch (RFC 9846 §4.1.4).
@@ -854,8 +865,8 @@ def selftest : Bool := Id.run do
       (identity : Option Nat) : Bool :=
     match parseServerHello kex true msg with
     | .ok (.serverHello fields) =>
-      hex fields.sessionIdEcho == hex sessionId && hex fields.keyExchange == hex want &&
-        fields.selectedIdentity == identity
+      hex fields.sessionIdEcho == hex sessionId && fields.group == kex.code &&
+        hex fields.keyExchange == hex want && fields.selectedIdentity == identity
     | _ => false
   let acceptsShare (msg : ByteArray) (identity : Option Nat) : Bool :=
     acceptsShareUnder .x25519 msg share identity
@@ -1171,31 +1182,32 @@ private theorem serverHelloPrefix_sound (msg : ByteArray) (p : ServerHelloPrefix
 
 /--
 The ServerHello branch's own fields (RFC 9846 §4.1.3, §4.2.8, §4.2.11):
-the echo is the empty one the profile offers, the key_exchange is
-exactly the `kex.serverShareSize` octets the build's group's share
-occupies, and a PSK identity, when there is one, is the single index
-the profile's one offered identity puts in range.
+the echo is the empty one the profile offers, the group is the build's
+one `kex.code`, the key_exchange is exactly the `kex.serverShareSize`
+octets the build's group's share occupies, and a PSK identity, when
+there is one, is the single index the profile's one offered identity
+puts in range.
 -/
 private theorem serverHelloFields_sound (kex : Kex) (pskOffered : Bool) (p : ServerHelloPrefix)
     (fields : ServerHello) (h_fields : serverHelloFields kex pskOffered p = .ok fields) :
-    fields.sessionIdEcho = p.sessionIdEcho ∧ fields.keyExchange.size = kex.serverShareSize ∧
+    fields.sessionIdEcho = p.sessionIdEcho ∧ fields.group = kex.code ∧
+      fields.keyExchange.size = kex.serverShareSize ∧
       ∀ identity, fields.selectedIdentity = some identity → identity = 0 := by
   rw [serverHelloFields] at h_fields
   obtain ⟨_, -, h_fields⟩ := exists_of_bind_eq_ok h_fields
   obtain ⟨-, h_fields⟩ := of_ensure_bind h_fields
-  obtain ⟨key, h_share, h_fields⟩ := exists_of_bind_eq_ok h_fields
+  obtain ⟨⟨group, key⟩, h_share, h_fields⟩ := exists_of_bind_eq_ok h_fields
   obtain ⟨identity, h_identity, h_fields⟩ := exists_of_bind_eq_ok h_fields
   obtain rfl := eq_of_pure_eq_ok h_fields
-  refine ⟨rfl, ?_, ?_⟩
-  · rw [readKeyShare] at h_share
-    obtain ⟨_, -, h_share⟩ := exists_of_bind_eq_ok h_share
-    obtain ⟨_, -, h_share⟩ := exists_of_bind_eq_ok h_share
-    obtain ⟨-, h_share⟩ := of_ensure_bind h_share
-    obtain ⟨⟨_, _⟩, -, h_share⟩ := exists_of_bind_eq_ok h_share
-    obtain ⟨-, h_share⟩ := of_ensure_bind h_share
-    obtain ⟨h_key_size, h_share⟩ := of_ensure_bind h_share
-    obtain rfl := eq_of_pure_eq_ok h_share
-    exact h_key_size
+  rw [readKeyShare] at h_share
+  obtain ⟨_, -, h_share⟩ := exists_of_bind_eq_ok h_share
+  obtain ⟨_, -, h_share⟩ := exists_of_bind_eq_ok h_share
+  obtain ⟨h_group, h_share⟩ := of_ensure_bind h_share
+  obtain ⟨⟨_, _⟩, -, h_share⟩ := exists_of_bind_eq_ok h_share
+  obtain ⟨-, h_share⟩ := of_ensure_bind h_share
+  obtain ⟨h_key_size, h_share⟩ := of_ensure_bind h_share
+  obtain ⟨rfl, rfl⟩ := Prod.mk.inj (eq_of_pure_eq_ok h_share)
+  refine ⟨rfl, h_group, h_key_size, ?_⟩
   · intro i h_some
     have h_identity_eq : identity = some i := h_some
     subst h_identity_eq
@@ -1211,15 +1223,18 @@ private theorem serverHelloFields_sound (kex : Kex) (pskOffered : Bool) (p : Ser
 /--
 ServerHello soundness (RFC 9846 §4.1.3, §4.2.8, §4.2.11). An accepted
 ServerHello reports a session id echo inside the `<0..32>` its vector
-allows, a key_exchange of exactly the `kex.serverShareSize` octets the
-build's group's share occupies — 32 for x25519, 1120 for the hybrid —
-and, when the server accepted a PSK, the only identity index the
-profile's single offered identity puts in range.
+allows, the build's one group `kex.code` — the equality
+`ch_cfg.require_pq` checks: a `KEX=pq` build accepts no group but
+X25519MLKEM768 — a key_exchange of exactly the `kex.serverShareSize`
+octets the build's group's share occupies — 32 for x25519, 1120 for the
+hybrid — and, when the server accepted a PSK, the only identity index
+the profile's single offered identity puts in range.
 -/
 theorem parseServerHello_sound (kex : Kex) (pskOffered : Bool) (msg : ByteArray)
     (fields : ServerHello)
     (h_accepted : parseServerHello kex pskOffered msg = .ok (.serverHello fields)) :
-    fields.sessionIdEcho.size = 0 ∧ fields.keyExchange.size = kex.serverShareSize ∧
+    fields.sessionIdEcho.size = 0 ∧ fields.group = kex.code ∧
+      fields.keyExchange.size = kex.serverShareSize ∧
       ∀ identity, fields.selectedIdentity = some identity → identity = 0 := by
   rw [parseServerHello] at h_accepted
   obtain ⟨p, h_prefix, h_accepted⟩ := exists_of_bind_eq_ok h_accepted
@@ -1230,9 +1245,9 @@ theorem parseServerHello_sound (kex : Kex) (pskOffered : Bool) (msg : ByteArray)
     exact ServerHelloKind.noConfusion (eq_of_pure_eq_ok h_accepted)
   · obtain ⟨read, h_read, h_accepted⟩ := exists_of_bind_eq_ok h_accepted
     obtain rfl := ServerHelloKind.serverHello.inj (eq_of_pure_eq_ok h_accepted)
-    obtain ⟨h_echo, h_key_size, h_identity⟩ :=
+    obtain ⟨h_echo, h_group, h_key_size, h_identity⟩ :=
       serverHelloFields_sound kex pskOffered p read h_read
-    exact ⟨by rw [h_echo]; exact h_echo_empty, h_key_size, h_identity⟩
+    exact ⟨by rw [h_echo]; exact h_echo_empty, h_group, h_key_size, h_identity⟩
 
 /--
 The §4.1.4 discrimination, stated both ways: an accepted result is a

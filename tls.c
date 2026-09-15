@@ -58,31 +58,29 @@ static int epoch_init(ch_tls *t, const ch_cfg *cfg, int psk_ok) {
 #endif
 }
 
+// The pin length the build's one algorithm takes: 64 raw P-256 bytes
+// under CH_PIN_ECDSA, an RSA-2048..3072 modulus, a whole number of
+// 8-byte words, otherwise. Both pin slots obey it.
+static int pin_len_ok(size_t len) {
+#ifdef CH_PIN_ECDSA
+    return len == 64;
+#else
+    return len >= 256 && len <= 384 && len % 8 == 0;
+#endif
+}
+
 int ch_connect(ch_tls *t, const ch_cfg *cfg) {
     memset(t, 0, sizeof *t);
     t->cfg = *cfg;
     // Exactly one auth mode: a config carrying both a PSK and a pin is a
-    // provisioning mistake and gets rejected, not silently resolved. The
-    // pin length must match the build's one algorithm — 64 raw P-256
-    // bytes under CH_PIN_ECDSA, an RSA-2048..3072 modulus otherwise.
+    // provisioning mistake and gets rejected, not silently resolved.
     int psk_ok =
         cfg->psk != NULL && cfg->psk_len > 0 && cfg->psk_id != NULL && cfg->server_pubkey == NULL;
-#ifdef CH_PIN_ECDSA
-    int pin_len_ok = cfg->server_pubkey_len == 64;
-#else
-    int pin_len_ok = cfg->server_pubkey_len >= 256 && cfg->server_pubkey_len <= 384 &&
-                     cfg->server_pubkey_len % 8 == 0;
-#endif
-    int pin_ok = cfg->psk == NULL && cfg->server_pubkey != NULL && pin_len_ok;
+    int pin_ok =
+        cfg->psk == NULL && cfg->server_pubkey != NULL && pin_len_ok(cfg->server_pubkey_len);
     // The optional second pin (key rotation) obeys every slot-A rule and
     // never stands alone: pinned mode still requires server_pubkey.
-#ifdef CH_PIN_ECDSA
-    int pin2_len_ok = cfg->server_pubkey2_len == 64;
-#else
-    int pin2_len_ok = cfg->server_pubkey2_len >= 256 && cfg->server_pubkey2_len <= 384 &&
-                      cfg->server_pubkey2_len % 8 == 0;
-#endif
-    if (cfg->server_pubkey2 != NULL && (!pin_ok || !pin2_len_ok)) {
+    if (cfg->server_pubkey2 != NULL && (!pin_ok || !pin_len_ok(cfg->server_pubkey2_len))) {
         t->state = CH_ST_FAILED;
         return CH_EINVAL;
     }
@@ -91,6 +89,20 @@ int ch_connect(ch_tls *t, const ch_cfg *cfg) {
         t->state = CH_ST_FAILED;
         return CH_EINVAL;
     }
+#ifndef CH_KEX_PQ
+    // require_pq asks that the key exchange be post-quantum. A KEX=pq
+    // build offers X25519MLKEM768 alone and compares ch_tls.group
+    // against it once parse_key_share accepts the ServerHello's
+    // key_share (handshake.c). This build offers x25519 alone, so no
+    // handshake it runs can satisfy the flag: ch_connect refuses the
+    // config before it sends a byte, as it refuses an epoch callback
+    // outside a CA build — a request the build cannot enforce is a
+    // provisioning mistake, not a no-op.
+    if (cfg->require_pq) {
+        t->state = CH_ST_FAILED;
+        return CH_EINVAL;
+    }
+#endif
 #ifndef CH_PIN_ECDSA
     // Every real modulus is odd (a product of odd primes); an even pin in
     // either slot is provisioning corruption. Rejected here so the failure

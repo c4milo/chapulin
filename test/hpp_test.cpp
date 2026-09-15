@@ -117,6 +117,24 @@ int main() {
         cfg.pinned(chapulin::ConstBytes{pin, sizeof pin});
         chapulin::Session s;
         CHECK(s.connect(cfg) == chapulin::Status::io);
+        // No ServerHello arrived, so the session reports no group.
+        CHECK(s.group() == chapulin::Group::none);
+    }
+
+    // require_pq: a classic build cannot satisfy it and rejects the
+    // config before any I/O; a KEX=pq build lets it through to I/O and
+    // checks it against the group the ServerHello selects.
+    {
+        chapulin::Config cfg(chapulin::Bytes{rxbuf}, io);
+        cfg.psk(chapulin::ConstBytes{psk, sizeof psk}, chapulin::ConstBytes{id, sizeof id});
+        cfg.require_pq(true);
+        chapulin::Session s;
+#ifdef CH_KEX_PQ
+        CHECK(s.connect(cfg) == chapulin::Status::io);
+#else
+        CHECK(s.connect(cfg) == chapulin::Status::invalid);
+#endif
+        CHECK(s.group() == chapulin::Group::none);
     }
 
     // Both pin slots set (key rotation): still a valid config, and the

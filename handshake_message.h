@@ -33,19 +33,18 @@
 
 #define TLS13 0x0304
 #define SUITE_CHACHA20_POLY1305_SHA256 0x1303
-#define GROUP_X25519 0x001d
-#define GROUP_X25519MLKEM768 0x11ec
 
-// The one group this build offers, and its share size on each side.
-// The hybrid share order is RFC 10024's: the ML-KEM bytes come first
-// on both sides, despite the group name.
+// The one group this build offers (its code point is one of cfg.h's
+// two CH_GROUP_* values), and its share size on each side. The hybrid
+// share order is RFC 10024's: the ML-KEM bytes come first on both
+// sides, despite the group name.
 #ifdef CH_KEX_PQ
 #include "mlkem.h"
-#define CH_KEX_GROUP GROUP_X25519MLKEM768
+#define CH_KEX_GROUP CH_GROUP_X25519MLKEM768
 #define CH_KEX_CLIENT_SHARE (MLKEM_EK_LEN + 32)
 #define CH_KEX_SERVER_SHARE (MLKEM_CT_LEN + 32)
 #else
-#define CH_KEX_GROUP GROUP_X25519
+#define CH_KEX_GROUP CH_GROUP_X25519
 #define CH_KEX_CLIENT_SHARE 32
 #define CH_KEX_SERVER_SHARE 32
 #endif

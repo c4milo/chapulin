@@ -38,7 +38,8 @@ static int parse_key_share(rbuf *e, server_hello_info *info, int hrr) {
         // and selecting another group is unsupported. Both are fatal.
         return CH_EPROTO;
     }
-    if (rb_u16(e) != CH_KEX_GROUP || rb_u16(e) != CH_KEX_SERVER_SHARE) {
+    uint16_t group = rb_u16(e);
+    if (group != CH_KEX_GROUP || rb_u16(e) != CH_KEX_SERVER_SHARE) {
         return CH_EPROTO;
     }
 #ifdef CH_KEX_PQ
@@ -53,6 +54,7 @@ static int parse_key_share(rbuf *e, server_hello_info *info, int hrr) {
         return CH_EPROTO;
     }
     memcpy(info->server_pub, pub, X25519_LEN);
+    info->group = group;
     info->have_share = 1;
     return CH_OK;
 }

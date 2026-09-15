@@ -220,7 +220,7 @@ def dispatch : List String → Option String
     let k ← Spec.HandshakeParser.kexOf? kex
     return match Spec.HandshakeParser.parseServerHello k offered m with
       | .ok (.serverHello f) =>
-        s!"sh {emit f.keyExchange} {emitNat? f.selectedIdentity}"
+        s!"sh {f.group} {emit f.keyExchange} {emitNat? f.selectedIdentity}"
       | .ok (.helloRetryRequest f) => s!"hrr {emit f.cookie}"
       | .error _ => "ERR hs_server_hello reject"
   | ["hs_encrypted_extensions", msg] => do

@@ -109,21 +109,21 @@ them to [`bench/results-sram.csv`](bench/results-sram.csv);
 `make lint-bench-numbers` fails when this table disagrees with that file.
 The session struct is measured twice, once native on arm64 and once for
 rv32ic — the byte-count constants do not move, only the pointer fields, so
-a 32-bit device needs 80 bytes less than the host figure in either build.
+a 32-bit device needs 72 bytes less than the host figure in either build.
 The stack peaks are arm64 only: `bench/stack.py` reads arm64 relocations,
 so an rv32 peak needs tooling that does not exist yet.
 
 | what | arm64 | rv32 |
 |---|---|---|
-| `ch_tls` session struct (includes 622 B TX staging) | 1144 | 1064 |
+| `ch_tls` session struct (includes 622 B TX staging) | 1144 | 1072 |
 | receive buffer you provide (2048 shown; floor `CH_MIN_RXBUF`) | 2048 | 2048 |
-| **total static working set** | **3192** | **3112** |
-| `ch_tls` under `KEX=pq` (includes 1806 B TX staging) | 2328 | 2248 |
-| **total static working set, `KEX=pq`** (2048 buffer) | **4376** | **4296** |
+| **total static working set** | **3192** | **3120** |
+| `ch_tls` under `KEX=pq` (includes 1806 B TX staging) | 2328 | 2256 |
+| **total static working set, `KEX=pq`** (2048 buffer) | **4376** | **4304** |
 | peak stack, `ch_connect` (RSA-3072 verify) | 5056 |
-| peak stack, `ch_connect` (`PIN=ecdsa`) | 3536 |
+| peak stack, `ch_connect` (`PIN=ecdsa`) | 3888 |
 | peak stack, `ch_connect` (PSK) | 2432 |
-| peak stack, `ch_connect` (`TRUST=ca`, RSA / ECDSA) | 5504 / 3696 |
+| peak stack, `ch_connect` (`TRUST=ca`, RSA / ECDSA) | 5504 / 4016 |
 | peak stack, `ch_read` (worst case: KeyUpdate rekey) | 1712 |
 | peak stack, `ch_connect` (`KEX=pq`) | 15808 |
 | peak stack, `ch_write` / `ch_close` | 912 / 864 |
@@ -288,7 +288,7 @@ apart from one that passed — so for the slow rows, read the nightly.
 | hkdf (two harnesses) | hmac/extract and expand/expand-label safe over the proven sha256 contract | keys ≤ 96 B, hmac/extract messages ≤ 48 B; expand/expand-label output ≤ 96 B and info ≤ 64 B (the contract bound), expand: slow tier |
 | handshake | the driver stays safe on any record stream: HRR restart, the state machine, and the flight's own arithmetic, in PSK and pinned-key mode. Record reading and message reassembly are stubbed here to the contract the `handshake_record` leg proves — compiling them multiplies this formula by the product of their loop bounds, past any runner. The `TRUST=ca` driver has a harness but no launch line, so it is unproven | 96 B receive buffer, slow tier |
 | hybrid_secret | the `KEX=pq` shared-secret derivation is safe for any stored seed, any server ciphertext and any server share, and a refused key exchange wipes all 64 bytes rather than leaving half a secret on the stack (INV-3). ML-KEM and x25519 are stubbed to their contracts, which their own harnesses prove. This is the only leg that builds `-DCH_KEX_PQ`: the rest of the hybrid driver carries the differential, the sequence enumeration and the e2e legs, not a proof | the full domain, fast tier |
-| key_share | the `KEX=pq` arm of the ServerHello key_share parser is safe on any extension bytes, and an accepted share hands back a whole readable ML-KEM ciphertext lying inside the bytes the parser consumed — the contract `hybrid_secret` depends on, so neither proof rests on it as an assumption | extension ≤ 1,132 B, the full hybrid share, fast tier |
+| key_share | the `KEX=pq` arm of the ServerHello key_share parser is safe on any extension bytes, and on acceptance it records the one group this build offers (`info.group == CH_KEX_GROUP`, the value `ch_tls.group` reports and `ch_cfg.require_pq` compares) and returns a whole readable ML-KEM ciphertext inside the bytes it consumed — the contract `hybrid_secret` assumes, so this proof discharges that assumption | extension ≤ 1,132 B, the full hybrid share, fast tier |
 | hello_build | the ClientHello builder writes nothing outside the caller's buffer at any capacity, for every cookie and PSK identity a caller may pass, and returns either zero or a length that fits. It also checks the bound itself: at `CH_HELLO_MAX` the build always succeeds, so the constant `handshake.c` asserts `CH_TX_STAGE` against is sufficient, not merely plausible | capacity ≤ `CH_HELLO_MAX`, identity ≤ 320 B, cookie ≤ 128 B |
 | chacha20 | safe at any counter, in place and into a distinct buffer | ≤ 160 B — three blocks, full, full, partial |
 | poly1305 | safe for any three-chunk split; 64-bit products stay in range | messages ≤ 80 B — five blocks, crossing the buffered-block path in every alignment. The five-call shape `aead.c` uses is no longer exercised by a proof: the aead harnesses stub Poly1305, so that shape rests on the unit vectors, Wycheproof and the differential |
@@ -600,6 +600,17 @@ ch_write(&tls, data, n);
 int got = ch_read(&tls, out, sizeof out);
 ch_close(&tls);
 ```
+
+`ch_tls.group` reports the key-exchange group the ServerHello selected:
+`CH_GROUP_X25519` or `CH_GROUP_X25519MLKEM768` (`cfg.h`), and 0 until
+the handshake accepts the ServerHello's key_share. Set
+`ch_cfg.require_pq` and the handshake fails closed when that group is
+not `CH_GROUP_X25519MLKEM768`. Under `KEX=pq` the flag checks at run
+time what the build promises, because that build offers the hybrid
+alone and refuses every other group; a classic build cannot satisfy it,
+so `ch_connect` returns `CH_EINVAL` before it sends a byte.
+[`docs/decisions.md`](docs/decisions.md) entry 12 says why a build
+offers one group and never falls back to the other.
 
 [`docs/porting.md`](docs/porting.md) is the checklist for a new platform: what
 you decide, what has a safe default, and how to check on your own target that

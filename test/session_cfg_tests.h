@@ -214,6 +214,7 @@ static void test_connect_cfg(void) {
     cfg.psk_id_len = 0;
     cfg.server_pubkey = pin;
     CHECK(ch_connect(&t, &cfg) == CH_EIO); // valid pinned config reaches I/O
+    CHECK(t.group == 0);                   // no ServerHello arrived, so no group
 #ifdef CH_PIN_ECDSA
     cfg.server_pubkey_len = 63;
     CHECK(ch_connect(&t, &cfg) == CH_EINVAL); // P-256 pin must be exactly 64
@@ -262,6 +263,24 @@ static void test_connect_cfg(void) {
     CHECK(CH_MIN_RXBUF == 5 + 4 + 40 + 6 + 1128 + 6);
     CHECK(CH_MIN_RXBUF == 1189);
 #endif
+
+    // require_pq (docs/decisions.md 12): a classic build offers x25519
+    // alone and cannot satisfy it, so ch_connect refuses the config
+    // before it sends a byte; a hybrid build offers X25519MLKEM768
+    // alone, so the flag passes validation and the handshake checks it
+    // once parse_key_share accepts the ServerHello's key_share. No
+    // ServerHello arrives here either way, so the reported group stays
+    // 0.
+    cfg.require_pq = 1;
+#ifdef CH_KEX_PQ
+    CHECK(ch_connect(&t, &cfg) == CH_EIO);
+#else
+    int sends_before = m.sends;
+    CHECK(ch_connect(&t, &cfg) == CH_EINVAL);
+    CHECK(m.sends == sends_before); // refused at config time: nothing left the client
+#endif
+    CHECK(t.group == 0);
+    cfg.require_pq = 0;
 
     // Slot B (key rotation): optional, but bound to every slot-A rule.
     cfg.server_pubkey2 = pin2;

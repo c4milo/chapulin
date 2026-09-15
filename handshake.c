@@ -225,12 +225,27 @@ static int hello_exchange(handshake_state *h, server_hello_info *info) {
             return CH_EPROTO;
         }
     }
+    // The group of the one key_share the parser accepted, or 0 when the
+    // ServerHello carried none: the session reports it either way.
+    h->t->group = info->group;
     if (!info->have_share || (h->t->cfg.psk != NULL && !info->psk_ok)) {
         // No ECDHE share, or a PSK server that ignored our identity and
         // would want certificates we did not pin.
         h->alert = ALERT_HANDSHAKE_FAILURE;
         return CH_EAUTH;
     }
+#ifdef CH_KEX_PQ
+    // require_pq checks at run time what this build promises: it offers
+    // X25519MLKEM768 alone and parse_key_share accepts no other group,
+    // so the compare reads the field the parser wrote, never the
+    // constant the build offered. The alert is the parser's own for a
+    // group the client did not offer. A classic build never runs this:
+    // ch_connect refuses the flag there before it sends a byte.
+    if (h->t->cfg.require_pq && h->t->group != CH_GROUP_X25519MLKEM768) {
+        h->alert = ALERT_ILLEGAL_PARAMETER;
+        return CH_EPROTO;
+    }
+#endif
     return CH_OK;
 }
 

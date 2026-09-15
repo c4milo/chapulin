@@ -111,8 +111,9 @@ static void hspd_sh_row(const hspd_sh_plan *plan, const uint8_t *body, size_t n)
         (void)hex_encode(cookie_hex, info.cookie, info.cookie_len);
         (void)snprintf(want, sizeof want, "hrr %s", cookie_hex);
     } else {
-        // The model reports the whole key_exchange value; the C parser
-        // splits it into server_ct and server_pub (hybrid) or stores
+        // The model reports the selected group and the whole
+        // key_exchange value; the C parser stores the group and splits
+        // the value into server_ct and server_pub (hybrid) or stores
         // server_pub alone, so the row reassembles the wire order —
         // ML-KEM ciphertext first (RFC 10024).
         char share_hex[2 * CH_KEX_SERVER_SHARE + 1];
@@ -122,7 +123,8 @@ static void hspd_sh_row(const hspd_sh_plan *plan, const uint8_t *body, size_t n)
 #else
         (void)hex_encode(share_hex, info.server_pub, X25519_LEN);
 #endif
-        (void)snprintf(want, sizeof want, "sh %s %s", share_hex, plan->psk_ext ? "0" : "-");
+        (void)snprintf(want, sizeof want, "sh %u %s %s", (unsigned)info.group, share_hex,
+                       plan->psk_ext ? "0" : "-");
     }
 
     char cmd[2 * (HSPD_BODY_MAX + 4) + 64];

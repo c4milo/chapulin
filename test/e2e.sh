@@ -245,6 +245,17 @@ expect pin-rsa "ednarg evalc" "$DIR/err5" \
     echo "FAIL e2e rsa: no ticket after a pinned handshake"
     exit 1
 }
+# The classic build reports x25519 (0x001d) as the group that ran.
+grep -q "^group 0x001d$" "$DIR/err5" || {
+    echo "FAIL e2e rsa: client did not report the x25519 group"
+    cat "$DIR/err5"
+    exit 1
+}
+# require_pq in a classic build: ch_connect refuses the config with
+# CH_EINVAL (-6) before it sends the ClientHello. The server only takes
+# the TCP dial, which the client makes before ch_connect.
+expect_fail pin-rsa-require-pq -6 "$DIR/err5b" \
+    env REQUIRE_PQ=1 ./bin/tlsclient 127.0.0.1 "$PORT4" "pin:$MOD" -
 MSG='otra ronda'
 expect pin-rsa-resume "adnor arto" "$DIR/err5" ./bin/tlsclient 127.0.0.1 "$PORT4" "@$DIR/ticket4" -
 
@@ -620,15 +631,22 @@ if command -v go >/dev/null 2>&1; then
     # accepts only X25519MLKEM768, against the KEX=pq client build,
     # ticket resumption included. The classic client offers only
     # x25519, so the pq-only server refuses the handshake and the
-    # client fails closed (CH_EPROTO, -2).
+    # client fails closed (CH_EPROTO, -2). The pq client runs under
+    # require_pq, which its build satisfies, and must report the
+    # hybrid group (0x11ec).
     start_goecho -groups x25519mlkem768 -cert "$DIR/rsacert.pem" -key "$DIR/rsakey.pem"
     PORT17=$SRV_PORT
 
     MSG='hibrido'
     expect go-pq "odirbih" "$DIR/err_pq" \
-        ./bin/tlsclient_pq 127.0.0.1 "$PORT17" "pin:$MOD" - "$DIR/ticket_pq"
+        env REQUIRE_PQ=1 ./bin/tlsclient_pq 127.0.0.1 "$PORT17" "pin:$MOD" - "$DIR/ticket_pq"
     [ -s "$DIR/ticket_pq" ] || {
         echo "FAIL e2e go-pq: no ticket from the Go server"
+        exit 1
+    }
+    grep -q "^group 0x11ec$" "$DIR/err_pq" || {
+        echo "FAIL e2e go-pq: client did not report the X25519MLKEM768 group"
+        cat "$DIR/err_pq"
         exit 1
     }
     MSG='otra vuelta'
@@ -652,10 +670,15 @@ if "$OPENSSL" list -tls-groups 2>/dev/null | grep -qi x25519mlkem768; then
     PORT18=$SRV_PORT
     MSG='hibrido openssl'
     expect openssl-pq "lssnepo odirbih" "$DIR/err_pq2" \
-        ./bin/tlsclient_pq 127.0.0.1 "$PORT18" "pin:$MOD" -
+        env REQUIRE_PQ=1 ./bin/tlsclient_pq 127.0.0.1 "$PORT18" "pin:$MOD" -
+    grep -q "^group 0x11ec$" "$DIR/err_pq2" || {
+        echo "FAIL e2e openssl-pq: client did not report the X25519MLKEM768 group"
+        cat "$DIR/err_pq2"
+        exit 1
+    }
 else
     OPENSSL_PQ_LEG=""
     echo "SKIP openssl pq leg: $("$OPENSSL" version) does not list X25519MLKEM768 (needs 3.5)"
 fi
 
-echo "e2e: psk + tickets + resumption + pinned ecdsa + pinned rsa + rotation + ca rsa x2 + ca ecdsa x2 + ca rotation + ca negatives x3${EPOCH_LEG}${GO_LEG}${OPENSSL_PQ_LEG} + examples x3 OK"
+echo "e2e: psk + tickets + resumption + pinned ecdsa + pinned rsa + require-pq refused + rotation + ca rsa x2 + ca ecdsa x2 + ca rotation + ca negatives x3${EPOCH_LEG}${GO_LEG}${OPENSSL_PQ_LEG} + examples x3 OK"

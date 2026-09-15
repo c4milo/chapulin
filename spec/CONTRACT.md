@@ -115,8 +115,12 @@ Spec.HandshakeParser.parseServerHello : (kex : Kex) → (pskOffered : Bool) → 
                         -- legacy_session_id_echo handshake_message.c offers, the one cipher
                         -- suite, the build's group. Line op:
                         -- `hs_server_hello <psk|nopsk> <x25519|pq> <msg>` →
-                        -- `sh <key_exchange> <selected_identity|->`
+                        -- `sh <group> <key_exchange> <selected_identity|->`
                         -- / `hrr <cookie>` / `ERR hs_server_hello reject`.
+                        -- group is the accepted key_share's NamedGroup in
+                        -- decimal, read from the message on both sides:
+                        -- the C stores it in server_hello_info.group, which
+                        -- the handshake copies to ch_tls.group.
 Spec.HandshakeParser.parseEncryptedExtensions : (msg : ByteArray) →
                         Except Alert EncryptedExtensions               -- RFC 9846 §4.3.1.
                         -- Line op: `hs_encrypted_extensions <msg>` →

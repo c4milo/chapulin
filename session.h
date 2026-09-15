@@ -72,6 +72,15 @@ typedef struct {
     // cfg.server_pubkey2, 0 before a pinned handshake completes. Public
     // information — operators read it to watch key rotation progress.
     uint8_t pin_slot;
+    // The NamedGroup of the key exchange that ran. hello_exchange
+    // (handshake.c) writes it from the ServerHello: the code point
+    // parse_key_share accepted — CH_GROUP_X25519 or
+    // CH_GROUP_X25519MLKEM768 (cfg.h), one per build — and 0 before
+    // any ServerHello or when it carried no key_share. Public
+    // information, like pin_slot: a caller reads it to see which
+    // exchange protected the session, and cfg.require_pq fails the
+    // handshake when it is not the hybrid.
+    uint16_t group;
     // Highest epoch accepted: loaded at ch_connect, raised once a verified
     // leaf authenticates the server. epoch_store_failed marks a failed
     // persist; the session stays up. Both stay zero outside CA builds.

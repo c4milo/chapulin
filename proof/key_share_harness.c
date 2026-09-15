@@ -42,6 +42,11 @@ int main(void) {
     if (rc == CH_OK) {
         __CPROVER_assert(hrr == 0, "an HRR key_share is always refused");
         __CPROVER_assert(info.have_share == 1, "acceptance sets have_share");
+        // The group the parser reports is the one this build offers,
+        // read from the wire: ch_tls.group reports this value and
+        // cfg.require_pq compares it, so the harness proves it beside
+        // the pointer contract.
+        __CPROVER_assert(info.group == CH_KEX_GROUP, "acceptance records the one offered group");
         // The contract hybrid_secret depends on: a whole ciphertext,
         // readable, inside the bytes this parser actually consumed.
         // Against e.off rather than against body, because body is

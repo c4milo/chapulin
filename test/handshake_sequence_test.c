@@ -121,6 +121,7 @@ static mock_server srv;                 // file scope so tests can read captured
 static ch_tls client_session;           // and the accepted pin slot
 static uint8_t test_pin2[TEST_PIN_LEN]; // slot B, wired when use_pin2 is set
 static int use_pin2;
+static int use_require_pq; // sets cfg.require_pq on every case while set
 
 static void case_config(ch_cfg *cfg, uint8_t *rxbuf, size_t rxlen, int psk) {
     memset(cfg, 0, sizeof *cfg);
@@ -129,6 +130,7 @@ static void case_config(ch_cfg *cfg, uint8_t *rxbuf, size_t rxlen, int psk) {
     cfg->send = mock_send;
     cfg->recv = mock_recv;
     cfg->io = &srv;
+    cfg->require_pq = use_require_pq;
     if (psk) {
         // The length derives from the literal so the two cannot drift.
         static const char psk_identity[] = "handshake_sequence";
@@ -186,6 +188,10 @@ static int run_case(const char *letters, size_t n, int psk) {
 
     reject_why = "accepted";
     int rc = ch_connect(&client_session, &cfg);
+    if (rc == CH_EINVAL) {
+        reject_why = "config refused before a byte was sent";
+        return 0;
+    }
     if (rc != CH_OK) {
         reject_why = rc == CH_EIO && seq_spent(&srv) ? "handshake starved (sequence too short)"
                                                      : "handshake refused a record";
@@ -267,6 +273,38 @@ int main(void) {
     CHECK(run_case("SEF", 3, 1) == 1);
     CHECK(run_case("HSEFNKA", 7, 1) == 1);
     CHECK(run_case("SECVF", 5, 1) == 0); // certificate flight under PSK
+
+    // The reported group (ch_tls.group): 0 before any ServerHello, the
+    // build's one group once the handshake accepts its key_share — in
+    // both auth modes and after a retry — and a refusal later in the
+    // handshake does not unset it: SECV fails at the missing Finished,
+    // after the handshake accepted the ServerHello.
+    CHECK(run_case("", 0, 0) == 0);
+    CHECK(client_session.group == 0);
+    CHECK(run_case("SECVF", 5, 0) == 1);
+    CHECK(client_session.group == CH_KEX_GROUP);
+    CHECK(run_case("HSEFNKA", 7, 1) == 1);
+    CHECK(client_session.group == CH_KEX_GROUP);
+    CHECK(run_case("SECV", 4, 0) == 0);
+    CHECK(client_session.group == CH_KEX_GROUP);
+
+    // require_pq (docs/decisions.md 12): the hybrid build offers
+    // X25519MLKEM768 alone, so the flag passes and the session reports
+    // that group; the classic build cannot satisfy it, and ch_connect
+    // refuses the config before it sends a byte.
+    use_require_pq = 1;
+#ifdef CH_KEX_PQ
+    CHECK(run_case("SECVF", 5, 0) == 1);
+    CHECK(client_session.group == CH_GROUP_X25519MLKEM768);
+    CHECK(run_case("SEF", 3, 1) == 1);
+    CHECK(client_session.group == CH_GROUP_X25519MLKEM768);
+#else
+    CHECK(run_case("SECVF", 5, 0) == 0);
+    CHECK(strcmp(reject_why, "config refused before a byte was sent") == 0);
+    CHECK(srv.client_hello_count == 0);
+    CHECK(client_session.group == 0);
+#endif
+    use_require_pq = 0;
 
     // Pin slot B, the mock test https://github.com/c4milo/chapulin/issues/6
     // specifies. The stub accepts exactly one key object, so these run the

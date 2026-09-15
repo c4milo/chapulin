@@ -529,10 +529,12 @@ launch fast full hybrid_secret 65 "fill_nondet.0:2401,ct_wipe.0:2401" -DCH_KEX_P
 # directly because handshake_parser bounds its message at 256 bytes and a
 # hybrid key_share extension is 1,128: raising that bound would grow the fast
 # tier's heaviest formula (9.9 GB) rather than add a second cheap one. Proves
-# what hybrid_secret's harness assumes — an accepted share hands back a whole
-# readable ciphertext inside the bytes the parser consumed, so neither proof
-# rests on the assumption alone. Measured: 654 properties, 1 s, 164 MB
-# (kissat).
+# two facts. First, what hybrid_secret's harness assumes: on acceptance the
+# parser returns a whole readable ciphertext inside the bytes it consumed, so
+# this proof discharges that assumption. Second, that the group the parser
+# records is the one this build offers, the value ch_tls.group reports and
+# cfg.require_pq compares. Measured: 661 properties, 1 s, 207 MB (kissat,
+# /usr/bin/time -l over this script).
 launch fast full key_share 1200 "fill_nondet.0:1133" -DCH_KEX_PQ buf.c
 # handshake_message.c was the last library source no harness compiled
 # (https://github.com/c4milo/chapulin/issues/33). Beyond memory safety this

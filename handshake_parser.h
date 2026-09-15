@@ -28,6 +28,12 @@ typedef struct {
     int have_share;
     int psk_ok;
     uint8_t seen; // extension types already parsed, bits per parse_server_hello_ext
+    // The NamedGroup the accepted key_share named; parse_key_share
+    // writes it beside have_share, and it is 0 until then. The parser
+    // accepts the build's one group and no other, so this is
+    // CH_KEX_GROUP whenever have_share is set, read from the wire
+    // rather than from that constant.
+    uint16_t group;
     uint8_t server_pub[X25519_LEN];
 #ifdef CH_KEX_PQ
     // The ML-KEM ciphertext, MLKEM_CT_LEN bytes into the caller's
