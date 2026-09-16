@@ -1019,7 +1019,7 @@ ifeq ($(GCOVR),)
 	@echo "SKIP coverage: gcovr not on PATH (pip install --require-hashes -r tools/coverage-requirements.txt)"
 else
 	@rm -rf bin/cov bin/coverage.md && mkdir -p bin/cov/html
-	@echo "| binary | PIN | result |" > bin/coverage.md
+	@echo "| binary | build | result |" > bin/coverage.md
 	@echo "| --- | --- | --- |" >> bin/coverage.md
 	@set -e; for pin in rsa ecdsa; do \
 	  def=""; [ $$pin = ecdsa ] && def=-DCH_PIN_ECDSA; \
@@ -1043,6 +1043,35 @@ else
 	    fi; \
 	  done; \
 	done
+	# The TRUST=webpki leg: one object set under -DCH_TRUST_WEBPKI, which
+	# widens the modulus gate the way RSA_WIDE_DEF does, then every
+	# binary check runs for the mode, each over the sources its own rule
+	# names. The strictness binary here runs the parsers' webpki arms.
+	@set -e; d=bin/cov/webpki; def=-DCH_TRUST_WEBPKI; mkdir -p $$d; \
+	  for f in $(sort $(WEBPKI_TEST_SRCS) $(WEBPKI_SRCS)); do $(COV_CC) -c $$f -o $$d/$${f%.c}.o; done; \
+	  link() { name=$$1; shift; objs=""; for f in "$$@"; do objs="$$objs $$d/$${f%.c}.o"; done; \
+	    $(COV_CC) test/$$name.c $$objs -o $$d/$$name; }; \
+	  link sha512_test sha512.c sha512_compress.c; \
+	  link p384_test p384.c p384_field.c buf.c sha512.c sha512_compress.c; \
+	  link rsa_pkcs1_test rsa_pkcs1.c rsa.c rsa_mont.c sha256.c sha512.c sha512_compress.c ct.c; \
+	  link webpki_time_test $(WEBPKI_TIME_SRC); \
+	  link webpki_name_test $(WEBPKI_NAME_SRC); \
+	  link webpki_spki_test $(WEBPKI_SPKI_SRC); \
+	  link webpki_sigalg_test $(WEBPKI_SIGALG_SRC); \
+	  link webpki_cert_test $(WEBPKI_CERT_SRC); \
+	  link webpki_chain_test $(WEBPKI_CHAIN_TEST_SRC); \
+	  link webpki_session_test $(WEBPKI_TEST_SRCS); \
+	  link webpki_auth_test $(WEBPKI_TEST_SRCS); \
+	  link handshake_strict_test handshake_parser.c buf.c; \
+	  for b in sha512_test p384_test rsa_pkcs1_test webpki_time_test webpki_name_test \
+	           webpki_spki_test webpki_sigalg_test webpki_cert_test webpki_chain_test \
+	           webpki_session_test webpki_auth_test handshake_strict_test; do \
+	    if ./$$d/$$b > /dev/null; then \
+	      echo "| $$b | webpki | pass |" >> bin/coverage.md; \
+	    else \
+	      echo "| $$b | webpki | FAIL |" >> bin/coverage.md; exit 1; \
+	    fi; \
+	  done
 	@echo "" >> bin/coverage.md
 	# ENUM_DEPTH=4 above: line coverage saturates well below the check
 	# tier's depth 5; the deeper run buys sequences, not lines, and
