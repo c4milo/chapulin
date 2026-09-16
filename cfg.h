@@ -73,24 +73,36 @@
 
 #ifndef CH_MIN_RXBUF
 // Two independent demands, and the buffer must satisfy both. The trust
-// mode sets the largest admitted Certificate flight: two certificates
-// at the cap plus their entry framing and message header. The key
-// exchange sets the largest ServerHello record: 5-byte record header,
-// 4-byte message header, 40-byte fixed body, then the
-// supported_versions (6), key_share (2 + 2 + 2 + 2 + 1120 = 1128),
-// and pre_shared_key (6) replies. At the default caps the CA demand is
-// the larger, but CH_X509_MAX is overridable down to 512, which puts
-// its flight under the hybrid ServerHello — so take the maximum rather
-// than assume an ordering a build can change.
+// mode sets the largest admitted Certificate message, and the buffer
+// must hold that message beside the record that completes it. The
+// message is a 4-byte handshake header, a 1-byte
+// certificate_request_context length and a 3-byte list length, 8 bytes,
+// then one entry per certificate: a 3-byte length, the certificate at
+// the cap, and a 2-byte empty extensions vector, the cap + 5.
+// handshake_record.c reassembles a message in place: the plaintext of
+// every earlier record sits at the front of the buffer, and the last
+// record lands after it whole, so the buffer also holds that record's
+// 5-byte header, its 1-byte inner content type and its 16-byte AEAD
+// tag, 22 bytes, whatever the fragmentation. A floor without those 22
+// bytes fails the largest admitted message with CH_ECAP one record
+// before it completes. The key exchange sets the largest ServerHello
+// record: 5-byte record header, 4-byte message header, 40-byte fixed
+// body, then the supported_versions (6), key_share
+// (2 + 2 + 2 + 2 + 1120 = 1128), and pre_shared_key (6) replies. At
+// the default caps the CA demand is the larger, but CH_X509_MAX is
+// overridable down to 512, which puts its flight under the hybrid
+// ServerHello — so take the maximum rather than assume an ordering a
+// build can change. test/rxbuf_floor_tests.h reassembles the largest
+// message at the floor and fails it at the floor minus one.
 #ifdef CH_TRUST_CA
-#define CH_TRUST_MIN_RXBUF (2 * (CH_X509_MAX + 5) + 16)
+#define CH_TRUST_MIN_RXBUF (2 * (CH_X509_MAX + 5) + 8 + 22)
 #elif defined(CH_TRUST_WEBPKI)
 // The same formula over the flight a public server sends: four entries
 // (CH_WEBPKI_FLIGHT_ENTRIES) of up to 3072 bytes each
-// (CH_WEBPKI_CERT_MAX), 12324 bytes (docs/webpki.md, "Bounds"). Those
+// (CH_WEBPKI_CERT_MAX), 12338 bytes (docs/webpki.md, "Bounds"). Those
 // two constants live in webpki.h, which includes this header, so the
 // value is written out here and tls.c asserts that it matches them.
-#define CH_TRUST_MIN_RXBUF (4 * (3072 + 5) + 16)
+#define CH_TRUST_MIN_RXBUF (4 * (3072 + 5) + 8 + 22)
 #else
 #define CH_TRUST_MIN_RXBUF 512
 #endif

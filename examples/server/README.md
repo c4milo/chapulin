@@ -367,7 +367,8 @@ handshake fails.
 ### Buffer size in CA mode
 
 A `TRUST=ca` build raises `CH_MIN_RXBUF` to hold the largest chain it
-admits: 3,098 bytes in the RSA build, 1,562 in the ECDSA build. A
+admits and the record that completes it: 3,112 bytes in the RSA build,
+1,576 in the ECDSA build. A
 device whose buffer is smaller fails at `ch_connect` with `CH_EINVAL`
 (-6) rather than mid-handshake. Each certificate the CA issues must
 also fit the build's per-certificate cap, which `docs/ca.md` states.

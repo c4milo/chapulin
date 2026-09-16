@@ -160,10 +160,12 @@ static void test_webpki_cfg_other_modes(void) {
     cfg.server_pubkey2_len = sizeof pin;
     CHECK(refused(&cfg));
 
-    // The floor is the four-entry flight, 12324 bytes, in both KEX
-    // builds: the last valid size is the valid config's own buffer.
-    CHECK(CH_MIN_RXBUF == 4 * (CH_WEBPKI_CERT_MAX + 5) + 16);
-    CHECK(CH_MIN_RXBUF == 12324);
+    // The floor is the four-entry flight plus the record that completes
+    // it, 12338 bytes, in both KEX builds: the last valid size is the
+    // valid config's own buffer. test_rxbuf_floor reassembles that
+    // flight at this size and fails it one byte under.
+    CHECK(CH_MIN_RXBUF == 4 * (CH_WEBPKI_CERT_MAX + 5) + 8 + REC_OVERHEAD);
+    CHECK(CH_MIN_RXBUF == 12338);
     cfg = valid_cfg(&s);
     cfg.buf_len = CH_MIN_RXBUF - 1;
     CHECK(refused(&cfg));

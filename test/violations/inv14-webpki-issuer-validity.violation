@@ -1,0 +1,18 @@
+invariant: INV-14
+file: webpki.c
+catches: webpki_chain_test
+reason: read_issuer skips the clock check on an intermediate, so a chain
+  under an expired or not-yet-valid CA certificate verifies whenever
+  its leaf is valid (docs/webpki.md, "The chain walk", step 6d). The
+  issuer_expired and issuer_not_yet_valid rows, whose leaf is valid at
+  the row's clock and whose intermediate is not, object.
+
+--- old
+    if (!validity_covers(issuer, now)) {
+        *alert = ALERT_CERTIFICATE_EXPIRED;
+        return CH_EAUTH;
+    }
+    if (!names_equal(issuer->subject, issuer->subject_len, cert->issuer, cert->issuer_len)) {
+--- new
+    (void)now;
+    if (!names_equal(issuer->subject, issuer->subject_len, cert->issuer, cert->issuer_len)) {

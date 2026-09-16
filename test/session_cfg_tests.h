@@ -247,11 +247,11 @@ static void test_connect_cfg(void) {
     // cap, and the boundary pair above just ran against that derived
     // value. Pin the derivation and the per-PIN number here so a cfg.h
     // regression fails this test, not a live handshake.
-    CHECK(CH_MIN_RXBUF == 2 * (CH_X509_MAX + 5) + 16);
+    CHECK(CH_MIN_RXBUF == 2 * (CH_X509_MAX + 5) + 8 + REC_OVERHEAD);
 #ifdef CH_PIN_ECDSA
-    CHECK(CH_MIN_RXBUF == 1562);
+    CHECK(CH_MIN_RXBUF == 1576);
 #else
-    CHECK(CH_MIN_RXBUF == 3098);
+    CHECK(CH_MIN_RXBUF == 3112);
 #endif
 #endif
 #if defined(CH_KEX_PQ) && !defined(CH_TRUST_CA)

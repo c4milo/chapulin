@@ -25,7 +25,8 @@ re-key; every certificate over that key changes, and so does the header.
 | `root_gcs_rsa4096.pem` | RSA-4096 | the gcs shape's anchor, as GTS Root R1 |
 | `root_p384.pem` | P-384 | the r2 and letsencrypt shapes' anchor |
 | `impostor_p384.pem` | P-384 | an anchor carrying the P-384 root's Name over this other key |
-| `int_aws_rsa2048.pem` | RSA-2048 | the aws intermediate |
+| `int_aws_rsa2048.pem` | RSA-2048 | the aws intermediate, and the short-validity intermediate over the same key |
+| `int_aws_rsa2048_v2.pem` | RSA-2048 | the aws intermediate's new key, certified under the old one |
 | `int_gcs_rsa2048.pem` | RSA-2048 | the gcs intermediate |
 | `int_r2_p256.pem` | P-256 | the r2 intermediate, and its constrained, non-CA and alias variants |
 | `int_le1_p384.pem` | P-384 | the letsencrypt intermediate below the other |
@@ -37,5 +38,7 @@ re-key; every certificate over that key changes, and so does the header.
 The corpus dates: leaves run 2026-01-01T00:00:00Z to
 2026-12-31T23:59:59Z, CA certificates 2025-01-01T00:00:00Z to
 2040-12-31T23:59:59Z, and `now_seconds` is 2026-07-01T00:00:00Z unless a
-row moves it to a boundary. `test/gen_webpki_corpus.py` prints the epoch
-values on every run.
+row moves it to a boundary. One intermediate, `int_aws_rsa2048_short`,
+runs 2026-03-01T00:00:00Z to 2026-09-30T23:59:59Z, inside the leaf
+window, so the four issuer validity rows move only its verdict.
+`test/gen_webpki_corpus.py` prints the epoch values on every run.

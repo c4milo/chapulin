@@ -18,7 +18,7 @@ sslserver -verify_hostname` at the row's now_seconds, and the run
 fails unless the set of rows where openssl disagrees with this mode is
 exactly EXPECTED_DISAGREEMENTS below: the rows docs/webpki.md's "Where
 this profile is stricter than OpenSSL" section lists in its table,
-plus the two that section records after the table.
+plus the three that section records after the table.
 
 The generator runs the openssl CLI and opens no network connection.
 """
@@ -47,11 +47,18 @@ def epoch(utc_time):
 
 # The corpus clock and the leaf's validity. The CA certificates are valid
 # over a wider window, so each date row moves only the leaf's verdict.
+# One intermediate, int_aws_rsa2048_short, is valid over a window inside
+# the leaf's, so a clock at its edges moves only the issuer's verdict.
 LEAF_NOT_BEFORE = "20260101000000Z"
 LEAF_NOT_AFTER = "20261231235959Z"
 CA_NOT_BEFORE = "20250101000000Z"
 CA_NOT_AFTER = "20401231235959Z"
+SHORT_NOT_BEFORE = "20260301000000Z"
+SHORT_NOT_AFTER = "20260930235959Z"
 NOW = epoch("20260701000000Z")
+
+# Labels whose validity is not the one their prefix picks.
+VALIDITY = {"int_aws_rsa2048_short": (SHORT_NOT_BEFORE, SHORT_NOT_AFTER)}
 
 # When the four captures were taken, in UTC; the row clock for them.
 CAPTURE_TIME_UTC = "20260915111915Z"
@@ -65,6 +72,7 @@ KEYS = {
     "root_p384": ("ec", "P-384"),
     "impostor_p384": ("ec", "P-384"),
     "int_aws_rsa2048": ("rsa", 2048),
+    "int_aws_rsa2048_v2": ("rsa", 2048),
     "int_gcs_rsa2048": ("rsa", 2048),
     "int_r2_p256": ("ec", "P-256"),
     "int_le1_p384": ("ec", "P-384"),
@@ -81,6 +89,7 @@ SUBJECT = {
     "root_gcs_rsa4096": "/C=US/O=Corpus/CN=Corpus GCS Root",
     "root_p384": "/C=US/O=Corpus/CN=Corpus P-384 Root",
     "int_aws_rsa2048": "/C=US/O=Corpus/CN=Corpus AWS Intermediate",
+    "int_aws_rsa2048_short": "/C=US/O=Corpus/CN=Corpus AWS Short Intermediate",
     "int_gcs_rsa2048": "/C=US/O=Corpus/CN=Corpus GCS Intermediate",
     "int_r2_p256": "/C=US/O=Corpus/CN=Corpus R2 Intermediate",
     "int_r2_p256_constrained": "/C=US/O=Corpus/CN=Corpus R2 Constrained Intermediate",
@@ -158,9 +167,22 @@ CERTS = [
     # ecdsa_secp384r1_sha384, the one CertificateVerify scheme whose
     # signed content this client hashes with SHA-384.
     ("leaf_r2_p384", "leaf_p384", "/CN=" + HOST, "int_r2_p256", leaf_ext(), "sha256"),
+    # The intermediate whose validity lies inside the leaf's, and a leaf
+    # under it, for the issuer validity rows.
+    ("int_aws_rsa2048_short", "int_aws_rsa2048", SUBJECT["int_aws_rsa2048_short"], "root_aws_rsa2048",
+     intermediate_ext(0), "sha256"),
+    ("leaf_aws_short", "leaf_rsa2048", "/CN=" + HOST, "int_aws_rsa2048_short", leaf_ext(RSA_LEAF_KU), "sha256"),
+    # The aws intermediate re-keyed under its own Name: the new key's
+    # certificate is signed by the old key, so its subject Name equals its
+    # issuer Name, which is what RFC 5280 section 6.1 calls self-issued.
+    ("int_aws_rsa2048_rekey", "int_aws_rsa2048_v2", SUBJECT["int_aws_rsa2048"], "int_aws_rsa2048",
+     intermediate_ext(0), "sha256"),
+    ("leaf_aws_rekey", "leaf_rsa2048", "/CN=" + HOST, "int_aws_rsa2048_rekey", leaf_ext(RSA_LEAF_KU), "sha256"),
 ]
 
 AWS = ["leaf_aws", "int_aws_rsa2048", "root_aws_rsa2048_cross"]
+AWS_SHORT = ["leaf_aws_short", "int_aws_rsa2048_short"]
+AWS_REKEY = ["leaf_aws_rekey", "int_aws_rsa2048_rekey", "int_aws_rsa2048"]
 R2 = ["leaf_r2", "int_r2_p256"]
 LE = ["leaf_le", "int_le1_p384", "int_le2_p384", "root_p384"]
 
@@ -211,8 +233,8 @@ CHAINS = [
           "matches one label.", hostname="a.b.example.test"),
     chain("wildcard_public_suffix", ["leaf_r2_wildcard_public_suffix", "int_r2_p256"], ["root_p384"],
           "wildcard_public_suffix",
-          "wildcard_public_suffix: subjectAltName *.com asked for example.com; a wildcard\n"
-          "directly under a public suffix is refused.", hostname="example.com"),
+          "wildcard_public_suffix: subjectAltName *.com asked for example.com; a pattern\n"
+          "with fewer than two labels after the wildcard matches nothing.", hostname="example.com"),
     chain("no_subject_alt_name", ["leaf_r2_no_san", "int_r2_p256"], ["root_p384"], "no_subject_alt_name",
           "no_subject_alt_name: the leaf names s3.example.test in its subject common name\n"
           "only. openssl falls back to the common name; this mode matches dNSName only."),
@@ -245,6 +267,25 @@ CHAINS = [
           "issuer_name_mismatch: the leaf's issuer Name is Corpus R2 Intermediate Alias, a\n"
           "second certificate over the intermediate's key. The sent intermediate's key\n"
           "verifies the signature, and its subject Name is not the leaf's issuer Name."),
+    chain("issuer_not_after_boundary", AWS_SHORT, ["root_aws_rsa2048"], "ok",
+          "issuer_not_after_boundary: the leaf under the short intermediate at now_seconds\n"
+          "= the intermediate's notAfter, the last valid instant; the leaf is valid for\n"
+          "three more months.", now=epoch(SHORT_NOT_AFTER)),
+    chain("issuer_expired", AWS_SHORT, ["root_aws_rsa2048"], "expired",
+          "issuer_expired: the same chain at the intermediate's notAfter + 1, inside the\n"
+          "leaf's validity.", now=epoch(SHORT_NOT_AFTER) + 1),
+    chain("issuer_not_before_boundary", AWS_SHORT, ["root_aws_rsa2048"], "ok",
+          "issuer_not_before_boundary: the same chain at the intermediate's notBefore, the\n"
+          "first valid instant; the leaf has been valid for two months.",
+          now=epoch(SHORT_NOT_BEFORE)),
+    chain("issuer_not_yet_valid", AWS_SHORT, ["root_aws_rsa2048"], "not_yet_valid",
+          "issuer_not_yet_valid: the same chain at the intermediate's notBefore - 1, inside\n"
+          "the leaf's validity.", now=epoch(SHORT_NOT_BEFORE) - 1),
+    chain("rekeyed_intermediate", AWS_REKEY, ["root_aws_rsa2048"], "ok",
+          "rekeyed_intermediate: the aws leaf under the intermediate's new key, whose\n"
+          "certificate is self-issued under the old key, then the old key's certificate at\n"
+          "pathLenConstraint 0. RFC 5280 section 6.1.4 (l) does not count the self-issued\n"
+          "certificate, so the constraint holds (docs/webpki.md, \"Decisions\")."),
     chain("anchor_key_mismatch", R2, ["impostor_p384"], "anchor_key_mismatch",
           "anchor_key_mismatch: the r2 chain against an anchor carrying the P-384 root's\n"
           "Name over a different key."),
@@ -255,14 +296,16 @@ CHAINS = [
 
 # Rows where openssl verify's verdict is not this mode's. Five are
 # docs/webpki.md's table, where openssl accepts what this mode refuses.
-# That section records the other two after the table. leaf_asserts_ca:
+# That section records the other three after the table. leaf_asserts_ca:
 # openssl reads no basicConstraints on a leaf under -purpose sslserver.
-# not_after_boundary: openssl's X509_cmp_time reports now_seconds equal
-# to notAfter as expired, and RFC 5280 section 4.1.2.5 makes notAfter the
-# last valid instant, which docs/webpki.md's "Validity" keeps.
+# not_after_boundary and issuer_not_after_boundary: openssl's
+# X509_cmp_time reports now_seconds equal to notAfter as expired, and RFC
+# 5280 section 4.1.2.5 makes notAfter the last valid instant, which
+# docs/webpki.md's "Validity" keeps.
 EXPECTED_DISAGREEMENTS = {
     "no_subject_alt_name", "key_usage_no_digital_signature", "sha1_signature",
     "rsa_1024_leaf", "critical_name_constraints", "leaf_asserts_ca", "not_after_boundary",
+    "issuer_not_after_boundary",
 }
 
 CAPTURE_ANCHORS = ["AmazonRootCA1", "SFSRootCAG2", "GTSRootR1", "GTSRootR4", "ISRGRootX2"]
@@ -289,7 +332,9 @@ def mint_all(minter):
     for serial, (label, key, subject, issuer, ext, digest) in enumerate(CERTS, 1):
         if callable(ext):
             ext = ext(minter)
-        if label.startswith("leaf"):
+        if label in VALIDITY:
+            not_before, not_after = VALIDITY[label]
+        elif label.startswith("leaf"):
             not_before, not_after = LEAF_NOT_BEFORE, LEAF_NOT_AFTER
         else:
             not_before, not_after = CA_NOT_BEFORE, CA_NOT_AFTER

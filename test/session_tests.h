@@ -97,6 +97,7 @@ static size_t mock_pop_client_record(mock_io *m, size_t at, rec_dir *reader, uin
     return at + REC_HDR + body;
 }
 
+#include "rxbuf_floor_tests.h"
 #include "session_cfg_tests.h"
 #include "session_post_tests.h"
 

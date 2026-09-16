@@ -259,10 +259,14 @@ void ch_close(ch_tls *t) {
 // above an assertion changes the raw and ca objects, and this mode
 // leaves those objects byte for byte as they were (docs/webpki.md).
 
-// cfg.h writes CH_TRUST_MIN_RXBUF out as a number because webpki.h,
-// which names its two terms, includes cfg.h. This is where both are
-// visible, so a drift between them fails the build here.
-_Static_assert(CH_TRUST_MIN_RXBUF == CH_WEBPKI_FLIGHT_ENTRIES * (CH_WEBPKI_CERT_MAX + 5) + 16,
+// cfg.h writes CH_TRUST_MIN_RXBUF out as numbers because webpki.h,
+// which names the two flight terms, includes cfg.h, and record.h, which
+// names the record overhead, sits above it. This is where all of them
+// are visible, so a drift between them fails the build here: the
+// largest admitted Certificate message plus REC_OVERHEAD, the bytes of
+// the record that completes it (cfg.h, CH_MIN_RXBUF).
+_Static_assert(CH_TRUST_MIN_RXBUF ==
+                   CH_WEBPKI_FLIGHT_ENTRIES * (CH_WEBPKI_CERT_MAX + 5) + 8 + REC_OVERHEAD,
                "cfg.h's webpki receive floor is the flight formula over webpki.h's bounds");
 
 // The anchor rule: 1 to CH_WEBPKI_ANCHOR_MAX anchors, each carrying a
@@ -349,4 +353,13 @@ int ch_connect(ch_tls *t, const ch_cfg *cfg) {
     }
     return ch_handshake(t);
 }
+#endif
+
+#ifdef CH_TRUST_CA
+// The ca floor's record term, checked against record.h the same way.
+// This block sits below every CH_ASSERT in the file, so it adds no
+// line above one (docs/webpki.md, "Bounds").
+_Static_assert(
+    CH_TRUST_MIN_RXBUF == 2 * (CH_X509_MAX + 5) + 8 + REC_OVERHEAD,
+    "cfg.h's ca receive floor is the two-entry flight plus the record that completes it");
 #endif

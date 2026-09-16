@@ -354,6 +354,7 @@ int main(void) {
     test_ticket_exact_fill();
     test_alerts_and_epochs();
     test_connect_cfg();
+    test_rxbuf_floor();
     test_pinned_hello_extensions();
     test_hello_staging_boundary();
     test_epoch_cfg();

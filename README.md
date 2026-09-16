@@ -130,7 +130,7 @@ so an rv32 peak needs tooling that does not exist yet.
 | `ch_tls` under `KEX=pq` (includes 1806 B TX staging) | 2328 | 2256 |
 | **total static working set, `KEX=pq`** (2048 buffer) | **4376** | **4304** |
 | `ch_tls` under `TRUST=webpki` (includes 884 B TX staging) | 1448 | 1360 |
-| **total static working set, `TRUST=webpki`** (12324 buffer, its floor) | **13772** | **13684** |
+| **total static working set, `TRUST=webpki`** (12338 buffer, its floor) | **13786** | **13698** |
 | peak stack, `ch_connect` (RSA-3072 verify) | 5056 |
 | peak stack, `ch_connect` (`PIN=ecdsa`) | 3888 |
 | peak stack, `ch_connect` (PSK) | 2432 |
@@ -157,11 +157,12 @@ buffer cannot hold. One extra rule in pinned mode: the server's
 Certificate message must also fit. A self-signed P-256 certificate
 needs about 600 bytes and an RSA-3072 one about 1.2 kB, so the 2 kB
 buffer above covers both. A `TRUST=ca` build knows its own worst case
-and derives the floor for you: `CH_MIN_RXBUF` becomes 3,098 bytes
-(RSA) or 1,562 (ECDSA), so a buffer too small for the largest chain
-fails at setup rather than mid-handshake. A `TRUST=webpki` build derives
-12,324 bytes the same way, four certificates at its 3,072-byte cap, and
-its session struct carries a larger TX staging array for the
+and derives the floor for you: `CH_MIN_RXBUF` becomes 3,112 bytes
+(RSA) or 1,576 (ECDSA), the largest Certificate message plus the record
+that completes it, so a buffer too small for the largest chain fails at
+setup rather than mid-handshake. A `TRUST=webpki` build derives 12,338
+bytes the same way, four certificates at its 3,072-byte cap, and its
+session struct carries a larger TX staging array for the
 `server_name` extension. Its `ch_connect` peaks at 7,168 bytes, through
 the chain walk into an RSA-4096 verify, which is the widest modulus a
 public root carries.
@@ -269,7 +270,7 @@ would change that trade.
 
 Four layers cover four different failure classes.
 
-**Proofs cover memory safety.** Forty-one of the forty-two C
+**Proofs cover memory safety.** Forty-two of the forty-three C
 sources are compiled into a [CBMC](https://www.cprover.org/cbmc/) harness, which proves them free of
 out-of-bounds access, invalid pointers, bad shifts, and division by
 zero, for every input within the harness's bound. Signed overflow is
@@ -624,8 +625,8 @@ the one-certificate parser with its extension walk. It follows the RFC text and
 never the C, because a differential oracle only works when a shared
 misreading cannot make both sides agree.
 
-`make diff` builds the spec, runs its selftests, then drives about
-19,300 random-input comparisons between the C and the spec over a pipe,
+`make diff` builds the spec, runs its selftests, then drives 19,668
+random-input comparisons between the C and the spec over a pipe,
 from a fixed seed. `make diff-ecdsa`, `make diff-pq` and `make
 diff-webpki` rebuild the same driver under `PIN=ecdsa`, `KEX=pq` and
 `TRUST=webpki`, whose parsers take other arms, and the nightly runs
@@ -640,7 +641,7 @@ random TLV sites, and leaves the spec re-signs. Nobody knows those
 answers in advance, so the C answers first and the spec must reproduce
 it. The provisioning rows work the same way, on certificates the spec
 mints and the driver armours at every line width the decoder admits.
-About 6,570 rows feed the `TRUST=webpki` certificate parser: every
+6,941 rows feed the `TRUST=webpki` certificate parser: every
 corpus and captured certificate under both arms, single-byte changes of
 them, and random extension lists inside one corpus certificate. Each
 reply carries every field's offset into the certificate, so the C's
@@ -701,7 +702,7 @@ static const ch_trust_anchor roots[] = {
     {amazon_root_ca_1_name, sizeof amazon_root_ca_1_name,
      amazon_root_ca_1_spki, sizeof amazon_root_ca_1_spki},
 };
-static uint8_t rxbuf[CH_MIN_RXBUF]; // 12,324 bytes in this mode
+static uint8_t rxbuf[CH_MIN_RXBUF]; // 12,338 bytes in this mode
 ch_cfg cfg = {
     .anchors = roots, .anchor_count = 1,
     .hostname = (const uint8_t *)"s3.amazonaws.com", .hostname_len = 16,
@@ -715,7 +716,7 @@ The hostname is an ASCII hostname of at most 253 bytes; convert a
 U-label to its A-label first. `ch_connect` returns `CH_EINVAL` before it
 sends a byte when the anchor count is outside 1 to 12, when an anchor
 has an empty name or key, when the hostname has any other shape, when
-`now_seconds` is 0, when the buffer is under the 12,324-byte floor, and
+`now_seconds` is 0, when the buffer is under the 12,338-byte floor, and
 when the config also sets a PSK, a ticket, a pin or an epoch callback.
 The anchor, hostname and clock fields exist only in a `TRUST=webpki`
 build, so a raw or ca build that sets one fails to compile. The hostname
@@ -799,9 +800,12 @@ See [`CLAUDE.md`](CLAUDE.md) for the house rules.
 ## Non-goals
 
 chapulin does not implement 0-RTT, DTLS, general X.509 path building,
-CA bundles, public-CA trust, CRL or OCSP revocation, client
-certificates, cipher agility, the server role, or any insecure
-fallback. [`docs/decisions.md`](docs/decisions.md) records every trade and why.
+CA bundles, CRL or OCSP revocation, client certificates, cipher
+agility, the server role, or any insecure fallback. The device modes,
+`TRUST=raw` and `TRUST=ca`, do not implement public-CA trust; the
+host-side `TRUST=webpki` mode does, against anchors the caller
+supplies, and [`docs/webpki.md`](docs/webpki.md) lists what it does not
+check. [`docs/decisions.md`](docs/decisions.md) records every trade and why.
 
 Two caveats worth knowing before you adopt it.
 

@@ -610,41 +610,11 @@ keyUsage = critical, keyCertSign, cRLSign
 EOF
 
 # Splits a self-signed root into the two DER fields a TRUST=webpki anchor
-# carries: its subject Name TLV and its SubjectPublicKeyInfo. openssl
-# writes the key directly; the Name is the sixth field of the
-# TBSCertificate, which a short TLV walk reaches.
+# carries, its subject Name TLV and its SubjectPublicKeyInfo, through
+# the script an integrator runs for the same job, so this suite tests
+# the recipe examples/webpki_client.c documents and not a copy of it.
 webpki_anchor() {
-    "$OPENSSL" x509 -in "$1" -noout -pubkey 2>/dev/null |
-        "$OPENSSL" pkey -pubin -outform DER -out "$2.spki" 2>/dev/null
-    "$OPENSSL" x509 -in "$1" -outform DER -out "$2.der" 2>/dev/null
-    python3 - "$2.der" "$2.name" <<'PY'
-import sys
-
-data = open(sys.argv[1], "rb").read()
-
-
-def tlv(b, off):
-    """(start, header length, content length) of the TLV at off."""
-    n = b[off + 1]
-    hdr = 2
-    if n & 0x80:
-        count = n & 0x7F
-        n = int.from_bytes(b[off + 2:off + 2 + count], "big")
-        hdr = 2 + count
-    return off, hdr, n
-
-
-# Certificate SEQUENCE, TBSCertificate SEQUENCE, then version [0],
-# serialNumber, signature, issuer and validity before subject.
-_, h1, _ = tlv(data, 0)
-_, h2, _ = tlv(data, h1)
-at = h1 + h2
-for _ in range(5):
-    start, hdr, n = tlv(data, at)
-    at = start + hdr + n
-start, hdr, n = tlv(data, at)
-open(sys.argv[2], "wb").write(data[start:start + hdr + n])
-PY
+    OPENSSL="$OPENSSL" ./examples/webpki-anchor.sh "$1" "$2" 2>/dev/null
 }
 
 "$OPENSSL" genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 \
@@ -708,6 +678,19 @@ MSG='ancla ajena'
 WEBPKI_HOST=$WEBPKI_HOSTNAME WEBPKI_NOW=$NOW \
     expect_fail webpki-unknown-anchor -3 "$DIR/err_wp_anchor" \
     ./bin/tlsclient_webpki 127.0.0.1 "$PORT_WEBPKI" "$WEBPKI_OTHER" -
+
+# The webpki example against the same chain server, reading the root's
+# two anchor files the way an integrator's program does and taking its
+# clock from the host. It sends its own line, "listo", whatever MSG is.
+MSG='listo'
+expect example-webpki "otsil" "$DIR/err_ex_wp" \
+    ./bin/example_webpki 127.0.0.1 "$PORT_WEBPKI" "$WEBPKI_HOSTNAME" \
+    "$DIR/wproot.name" "$DIR/wproot.spki"
+grep -q "verified up to one of 1 anchors" "$DIR/err_ex_wp" || {
+    echo "FAIL example-webpki: did not report the verified chain"
+    cat "$DIR/err_ex_wp"
+    exit 1
+}
 
 kill $SRV_PID 2>/dev/null
 
@@ -831,4 +814,4 @@ else
     echo "SKIP openssl pq leg: $("$OPENSSL" version) does not list X25519MLKEM768 (needs 3.5)"
 fi
 
-echo "e2e: psk + tickets + resumption + pinned ecdsa + pinned rsa + require-pq refused + rotation + ca rsa x2 + ca ecdsa x2 + ca rotation + ca negatives x3${EPOCH_LEG} + webpki rsa + webpki ecdsa x2 + webpki negatives x4${GO_LEG}${OPENSSL_PQ_LEG} + examples x3 OK"
+echo "e2e: psk + tickets + resumption + pinned ecdsa + pinned rsa + require-pq refused + rotation + ca rsa x2 + ca ecdsa x2 + ca rotation + ca negatives x3${EPOCH_LEG} + webpki rsa + webpki ecdsa x2 + webpki negatives x4${GO_LEG}${OPENSSL_PQ_LEG} + examples x4 OK"

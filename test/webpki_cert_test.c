@@ -222,7 +222,7 @@ static void test_corpus(void) {
         entries += f.count;
     }
     CHECK(refused == REFUSED_ROW_COUNT);
-    CHECK(entries == 64); // every entry of the 25 corpus chains
+    CHECK(entries == 75); // every entry of the 30 corpus chains
 }
 
 static const uint8_t leaf_host[] = "s3.example.test";

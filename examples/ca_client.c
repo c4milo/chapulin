@@ -36,14 +36,17 @@
  *
  * Build the library, then this file against it:
  *
- *   make TRUST=ca lib                 # RSA-PSS chains, the default PIN
- *   make TRUST=ca PIN=ecdsa lib       # P-256 chains instead
+ *   make TRUST=ca RAND=extern lib             # RSA-PSS chains, the default PIN
+ *   make TRUST=ca PIN=ecdsa RAND=extern lib   # P-256 chains instead
  *   cc -Wall -Wextra -Wpedantic -Werror -std=c11 -D_DEFAULT_SOURCE \
- *      -DCH_TRUST_CA -I. -o ca_client examples/ca_client.c bin/chapulin.o
+ *      -DCH_TRUST_CA -DCH_RAND_EXTERN -I. \
+ *      -o ca_client examples/ca_client.c bin/chapulin.o
  *
- * Pass -DCH_TRUST_CA to your own translation units too, not just to the
- * library: CH_MIN_RXBUF depends on it and this file sizes its receive
- * buffer from that constant.
+ * Pass -DCH_TRUST_CA and -DCH_RAND_EXTERN to your own translation units
+ * too, not just to the library: CH_MIN_RXBUF depends on the first and
+ * this file sizes its receive buffer from that constant, and cfg.h
+ * refuses to compile without a declared entropy pattern
+ * (docs/entropy.md). RAND has no default for the same reason.
  *
  * This builds on a POSIX host and is not a device port. Every line a
  * firmware tree replaces carries a "Replace on a device" comment.
@@ -441,8 +444,10 @@ int main(int argc, char **argv) {
     // CH_MIN_RXBUF is the floor ch_connect accepts, and the CA build
     // raises it, because the whole Certificate flight must fit at once:
     // up to two certificates at CH_X509_MAX plus their entry framing
-    // and the message header. That is 3098 bytes in the RSA build and
-    // 1562 under PIN=ecdsa, against 512 in a raw-pin build, where the
+    // and the message header, beside the header, inner content type
+    // and AEAD tag of the record that completes the message. That is
+    // 3112 bytes in the RSA build and
+    // 1576 under PIN=ecdsa, against 512 in a raw-pin build, where the
     // integrator sizes up for the server's certificate by hand. Sizing
     // from the constant means changing PIN or TRUST resizes the buffer,
     // and a buffer below the floor fails at setup with CH_EINVAL rather

@@ -5,8 +5,8 @@
 // mutations of its own inputs:
 //
 //   - the clock one and two seconds either way, and a day and a year
-//     either way, which steps the four rows that sit on a validity
-//     boundary past it
+//     either way, which steps the eight rows that sit on a validity
+//     boundary, the leaf's or an issuer's, past it
 //   - the hostname replaced by each of the five the corpus uses
 //   - each anchor dropped in turn, the anchor array emptied, and every
 //     anchor's key swapped for one no corpus certificate is signed
@@ -216,9 +216,10 @@ static size_t diff_chain_frame(uint8_t *out, const uint8_t *source, const size_t
 }
 
 // The clock stepped around each row's own. A row that sits on a
-// validity boundary — the corpus carries four of them — is compared one
-// second past it here, and a day and a year either way move the clock
-// well outside every validity.
+// validity boundary — the corpus carries eight of them, four on the
+// leaf's and four on an issuer's — is compared one second past it here,
+// and a day and a year either way move the clock well outside every
+// validity.
 static void diff_chain_clocks(const diff_chain_case *base) {
     static const int64_t steps[8] = {1, -1, 2, -2, 86400, -86400, 31536000, -31536000};
     for (size_t i = 0; i < 8; i++) {

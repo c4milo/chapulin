@@ -16,7 +16,8 @@ so the differential compares them:
 
 * `rejected` is the C's `CH_EPROTO`: the list framing, a certificate the
   profile refuses, an issuer whose subject is not this certificate's
-  issuer, and a pathLenConstraint the depth exceeds;
+  issuer, and a pathLenConstraint the CA certificates under it exceed,
+  where a self-issued certificate does not count (RFC 5280 §6.1.4 (l));
 * `expired` is `CH_EAUTH` with `certificate_expired`;
 * `unauthenticated` is `CH_EAUTH` with `bad_certificate`: no dNSName
   matches the hostname, or a signature fails under its issuer;
@@ -124,13 +125,14 @@ def readEntries? (list : ByteArray) : Option (List ByteArray) :=
 def validityCovers (c : Certificate) (now : Nat) : Bool :=
   decide (c.notBefore ≤ now) && decide (now ≤ c.notAfter)
 
-/-- RFC 5280 §4.2.1.9: an issuer at `depth` holds `depth - 1` CA
-certificates between itself and the leaf at depth 0, and an absent
-constraint admits any depth. -/
-def pathLenAdmits (issuer : Certificate) (depth : Nat) : Bool :=
+/-- RFC 5280 §4.2.1.9 and §6.1.4 (l): `below` is the number of CA
+certificates between an issuer and the leaf that are not self-issued,
+which its pathLenConstraint bounds; an absent constraint admits any
+number. -/
+def pathLenAdmits (issuer : Certificate) (below : Nat) : Bool :=
   match issuer.extensions.pathLen with
   | none => true
-  | some p => depth ≤ p + 1
+  | some p => below ≤ p
 
 /-- The issuer Name TLV of a parsed certificate. -/
 def issuerName (cert : ByteArray) (c : Certificate) : ByteArray :=
@@ -139,6 +141,12 @@ def issuerName (cert : ByteArray) (c : Certificate) : ByteArray :=
 /-- The subject Name TLV of a parsed certificate. -/
 def subjectName (cert : ByteArray) (c : Certificate) : ByteArray :=
   slice cert c.subject.off c.subject.len
+
+/-- RFC 5280 §6.1: a certificate is self-issued when its subject Name
+equals its issuer Name, which is what a CA re-keying under its own Name
+issues for the new key. -/
+def selfIssued (cert : ByteArray) (c : Certificate) : Bool :=
+  subjectName cert c == issuerName cert c
 
 /-- `cert`'s signature under a key: the TBSCertificate content the
 verifier re-emits the header for, and the signature BIT STRING's bytes. -/
@@ -157,10 +165,11 @@ def anchorVerifies (cfg : Config) (cert : ByteArray) (c : Certificate) : Bool :=
        | some (alg, key) => verifyUnder cert c alg key)
 
 /-- Steps 6a to 6g from the certificate in hand, which `read`
-certificates into the chain. The anchors come first at every depth, so a
-chain that reaches one leaves the entries after it unread. -/
+certificates into the chain with `below` of the issuers among them not
+self-issued. The anchors come first at every depth, so a chain that
+reaches one leaves the entries after it unread. -/
 def walkFrom (cfg : Config) (cert : ByteArray) (c : Certificate) (rest : List ByteArray)
-    (read : Nat) : Step :=
+    (read below : Nat) : Step :=
   if anchorVerifies cfg cert c then .reached
   else if read == chainMax then .unknownCa
   else
@@ -172,9 +181,10 @@ def walkFrom (cfg : Config) (cert : ByteArray) (c : Certificate) (rest : List By
       | some issuer =>
         if !validityCovers issuer cfg.now then .expired
         else if subjectName next issuer != issuerName cert c then .rejected
-        else if !pathLenAdmits issuer read then .rejected
+        else if !pathLenAdmits issuer below then .rejected
         else if !verifyUnder cert c issuer.keyAlg issuer.key then .unauthenticated
         else walkFrom cfg next issuer more (read + 1)
+          (if selfIssued next issuer then below else below + 1)
 
 /-- Step 5: a dNSName of the leaf's subjectAltName matches the reference
 hostname. A leaf with no subjectAltName matches nothing, and the leaf arm
@@ -196,7 +206,7 @@ def verifyChain (cfg : Config) (list : ByteArray) : Verdict :=
       if !validityCovers leaf cfg.now then .expired
       else if !hostMatches leafBytes leaf cfg.hostname then .unauthenticated
       else
-        match walkFrom cfg leafBytes leaf rest 1 with
+        match walkFrom cfg leafBytes leaf rest 1 0 with
         | .reached => .ok leaf.keyAlg leaf.key
         | .rejected => .rejected
         | .expired => .expired
@@ -273,36 +283,39 @@ def selftest : Bool :=
 /-- A verified signature path from the certificate in hand to an anchor:
 either an anchor names its issuer and verifies its signature, or the next
 entry is an issuer this mode admits, valid at the clock, named by this
-certificate, inside its own pathLenConstraint, whose key verifies this
-certificate, and which itself has a path. -/
-inductive HasPath (cfg : Config) : ByteArray → Certificate → List ByteArray → Nat → Prop where
+certificate, whose pathLenConstraint admits the `below` CA certificates
+under it, whose key verifies this certificate, and which itself has a
+path, counted below it unless it is self-issued. -/
+inductive HasPath (cfg : Config) :
+    ByteArray → Certificate → List ByteArray → Nat → Nat → Prop where
   /-- Step 6a: an anchor ends the path. -/
-  | anchor {cert : ByteArray} {c : Certificate} {rest : List ByteArray} {read : Nat}
-      (h : anchorVerifies cfg cert c = true) : HasPath cfg cert c rest read
+  | anchor {cert : ByteArray} {c : Certificate} {rest : List ByteArray} {read below : Nat}
+      (h : anchorVerifies cfg cert c = true) : HasPath cfg cert c rest read below
   /-- Steps 6c to 6g: the next entry is the issuer, and the path goes on. -/
-  | issuer {cert : ByteArray} {c : Certificate} {read : Nat} (next : ByteArray)
+  | issuer {cert : ByteArray} {c : Certificate} {read below : Nat} (next : ByteArray)
       (more : List ByteArray) (ic : Certificate)
       (h_parse : parseCertificate? true next = some ic)
       (h_valid : validityCovers ic cfg.now = true)
       (h_name : (subjectName next ic == issuerName cert c) = true)
-      (h_path : pathLenAdmits ic read = true)
+      (h_path : pathLenAdmits ic below = true)
       (h_sig : verifyUnder cert c ic.keyAlg ic.key = true)
-      (h_more : HasPath cfg next ic more (read + 1)) :
-      HasPath cfg cert c (next :: more) read
+      (h_more : HasPath cfg next ic more (read + 1)
+        (if selfIssued next ic then below else below + 1)) :
+      HasPath cfg cert c (next :: more) read below
 
 /-- A walk that reaches an anchor has a verified signature path to it. -/
 theorem walkFrom_reached (cfg : Config) (rest : List ByteArray) :
-    ∀ (cert : ByteArray) (c : Certificate) (read : Nat),
-      walkFrom cfg cert c rest read = .reached → HasPath cfg cert c rest read := by
+    ∀ (cert : ByteArray) (c : Certificate) (read below : Nat),
+      walkFrom cfg cert c rest read below = .reached → HasPath cfg cert c rest read below := by
   induction rest with
   | nil =>
-    intro cert c read h
+    intro cert c read below h
     rw [walkFrom] at h
     by_cases h_anchor : anchorVerifies cfg cert c
     · exact .anchor h_anchor
     · simp [h_anchor] at h
   | cons next more ih =>
-    intro cert c read h
+    intro cert c read below h
     rw [walkFrom] at h
     by_cases h_anchor : anchorVerifies cfg cert c
     · exact .anchor h_anchor
@@ -325,7 +338,7 @@ theorem walkFrom_reached (cfg : Config) (rest : List ByteArray) :
       split at h
       · simp at h
       rename_i h_sig
-      refine .issuer next more ic h_parse ?_ ?_ ?_ ?_ (ih next ic (read + 1) h)
+      refine .issuer next more ic h_parse ?_ ?_ ?_ ?_ (ih next ic (read + 1) _ h)
       · simpa using h_valid
       · simpa [bne] using h_name
       · simpa using h_path
@@ -344,7 +357,7 @@ theorem verifyChain_ok (cfg : Config) (list : ByteArray) (alg : KeyAlg) (key : B
         leaf.keyAlg = alg ∧ leaf.key = key ∧
         validityCovers leaf cfg.now = true ∧
         hostMatches leafBytes leaf cfg.hostname = true ∧
-        HasPath cfg leafBytes leaf rest 1 := by
+        HasPath cfg leafBytes leaf rest 1 0 := by
   unfold verifyChain at h
   split at h
   · simp at h
@@ -363,7 +376,7 @@ theorem verifyChain_ok (cfg : Config) (list : ByteArray) (alg : KeyAlg) (key : B
   · rename_i h_walk
     simp only [Verdict.ok.injEq] at h
     exact ⟨leafBytes, rest, leaf, h_entries, h_leaf, h.1, h.2, by simpa using h_valid,
-      by simpa using h_matched, walkFrom_reached cfg rest leafBytes leaf 1 h_walk⟩
+      by simpa using h_matched, walkFrom_reached cfg rest leafBytes leaf 1 0 h_walk⟩
   all_goals simp at h
 
 end Spec.Webpki

@@ -4,12 +4,13 @@
 //
 // The corpus half drives each row through webpki_verify_chain with that
 // row's anchors, hostname and now_seconds, and requires the row's
-// recorded verdict: CH_OK for the 8 positive rows and the 4 positive
+// recorded verdict: CH_OK for the 11 positive rows and the 4 positive
 // captures, and for each negative row the return code and the alert
 // webpki.h names for its rule. The bounds half reframes corpus entries
 // into new CertificateEntry lists: a trailing entry of junk, an entry
-// one byte over CH_WEBPKI_CERT_MAX, a fifth entry, and a chain that
-// would need a fourth certificate.
+// one byte over CH_WEBPKI_CERT_MAX, a fifth entry, a chain that would
+// need a fourth certificate, and a non-empty per-entry extensions
+// vector on the leaf's entry and on a trailing one.
 //
 // Its own binary, built with -DCH_TRUST_WEBPKI: ch_cfg carries the
 // anchors, the hostname and the clock only there, and the RSA-4096 keys
@@ -233,6 +234,12 @@ static void test_corpus(void) {
 #define ROW_AWS 0
 #define ROW_R2 2
 #define ROW_LETSENCRYPT 3
+#define ROW_ISSUER_NOT_AFTER_BOUNDARY 23
+#define ROW_ISSUER_EXPIRED 24
+#define ROW_ISSUER_NOT_BEFORE_BOUNDARY 25
+#define ROW_ISSUER_NOT_YET_VALID 26
+#define ROW_REKEYED_INTERMEDIATE 27
+#define ROW_ANCHOR_KEY_MISMATCH 28
 
 static const webpki_corpus_chain *row_named(size_t index, const char *name) {
     const webpki_corpus_chain *row = &webpki_corpus_chains[index];
@@ -281,6 +288,60 @@ static void test_validity_boundaries(void) {
     CHECK(strcmp(after_ok->expected, "ok") == 0 && strcmp(before_ok->expected, "ok") == 0);
     CHECK(strcmp(after_bad->expected, "expired") == 0);
     CHECK(strcmp(before_bad->expected, "not_yet_valid") == 0);
+}
+
+// The same four clocks against an issuer's validity (step 6d of
+// docs/webpki.md, "The chain walk"): the corpus's short intermediate is
+// valid over a window inside its leaf's, so at each of these clocks the
+// leaf is valid and only the intermediate's verdict moves. The rows are
+// one chain at four clocks one second apart in two places, the
+// intermediate's own two boundaries.
+static void test_issuer_validity_boundaries(void) {
+    const webpki_corpus_chain *after_ok =
+        row_named(ROW_ISSUER_NOT_AFTER_BOUNDARY, "issuer_not_after_boundary");
+    const webpki_corpus_chain *after_bad = row_named(ROW_ISSUER_EXPIRED, "issuer_expired");
+    const webpki_corpus_chain *before_ok =
+        row_named(ROW_ISSUER_NOT_BEFORE_BOUNDARY, "issuer_not_before_boundary");
+    const webpki_corpus_chain *before_bad =
+        row_named(ROW_ISSUER_NOT_YET_VALID, "issuer_not_yet_valid");
+    CHECK(after_ok->message == after_bad->message && before_ok->message == after_ok->message &&
+          before_bad->message == after_ok->message);
+    CHECK(after_bad->now_seconds == after_ok->now_seconds + 1);
+    CHECK(before_ok->now_seconds == before_bad->now_seconds + 1);
+    CHECK(strcmp(after_ok->expected, "ok") == 0 && strcmp(before_ok->expected, "ok") == 0);
+    CHECK(strcmp(after_bad->expected, "expired") == 0);
+    CHECK(strcmp(before_bad->expected, "not_yet_valid") == 0);
+    entries e = row_entries(after_ok);
+    webpki_cert leaf;
+    webpki_cert issuer;
+    uint8_t alert = ALERT_BAD_CERTIFICATE;
+    CHECK(e.count == 2);
+    CHECK(webpki_parse_certificate(e.cert[0], e.cert_len[0], 0, &leaf, &alert) == CH_OK);
+    CHECK(webpki_parse_certificate(e.cert[1], e.cert_len[1], 1, &issuer, &alert) == CH_OK);
+    CHECK(leaf.not_before < webpki_pack_seconds(before_bad->now_seconds));
+    CHECK(webpki_pack_seconds(after_bad->now_seconds) < leaf.not_after);
+    CHECK(issuer.not_before == webpki_pack_seconds(before_ok->now_seconds));
+    CHECK(issuer.not_after == webpki_pack_seconds(after_ok->now_seconds));
+}
+
+// RFC 5280 §6.1.4 (l), as docs/webpki.md's "Decisions" records it: a
+// self-issued certificate does not count against a pathLenConstraint.
+// The rekeyed_intermediate row is the aws leaf under the intermediate's
+// new key, whose certificate is self-issued under the old key, then the
+// old key's certificate at pathLenConstraint 0; the walk accepts it. A
+// walk that counted the self-issued certificate would refuse it.
+static void test_rekeyed_intermediate(void) {
+    const webpki_corpus_chain *row = row_named(ROW_REKEYED_INTERMEDIATE, "rekeyed_intermediate");
+    entries e = row_entries(row);
+    webpki_cert rekey;
+    webpki_cert old;
+    uint8_t alert = ALERT_BAD_CERTIFICATE;
+    CHECK(e.count == 3 && strcmp(row->expected, "ok") == 0);
+    CHECK(webpki_parse_certificate(e.cert[1], e.cert_len[1], 1, &rekey, &alert) == CH_OK);
+    CHECK(webpki_parse_certificate(e.cert[2], e.cert_len[2], 1, &old, &alert) == CH_OK);
+    CHECK(rekey.subject_len == rekey.issuer_len &&
+          memcmp(rekey.subject, rekey.issuer, rekey.subject_len) == 0);
+    CHECK(rekey.path_len == 0 && old.path_len == 0);
 }
 
 // A walk over a list this file framed, under a row's configuration.
@@ -377,7 +438,7 @@ static void test_chain_max_boundary(void) {
 // and the same chain under the real root is accepted.
 static void test_anchor_name_alone(void) {
     const webpki_corpus_chain *r2 = row_named(ROW_R2, "r2");
-    const webpki_corpus_chain *impostor = row_named(23, "anchor_key_mismatch");
+    const webpki_corpus_chain *impostor = row_named(ROW_ANCHOR_KEY_MISMATCH, "anchor_key_mismatch");
     CHECK(impostor->anchor_count == 1 && r2->anchor_count == 1);
     CHECK(impostor->anchors[0].name_len == r2->anchors[0].name_len &&
           memcmp(impostor->anchors[0].name, r2->anchors[0].name, r2->anchors[0].name_len) == 0);
@@ -386,28 +447,46 @@ static void test_anchor_name_alone(void) {
     CHECK(impostor->message == r2->message);
 }
 
-// Framing the list itself: an empty list and a non-empty per-entry
-// extensions vector are both refused before any certificate is parsed.
+// Framing the list itself: an empty list is refused with
+// bad_certificate before any certificate is parsed, and a non-empty
+// per-entry extensions vector with unsupported_extension, on the leaf's
+// entry and on a trailing entry the walk never parses alike
+// (docs/webpki.md, "Decisions"). The aws walk stops at entry 1, so
+// entry 2 is a trailing one.
 static void test_list_framing(void) {
     const webpki_corpus_chain *aws = row_named(ROW_AWS, "aws");
     entries e = row_entries(aws);
+    CHECK(e.count == 3);
     webpki_leaf_info leaf;
     uint8_t alert = ALERT_BAD_CERTIFICATE;
     static const uint8_t empty[1] = {0};
     CHECK(walk(aws, empty, 0, &leaf, &alert) == CH_EPROTO && alert == ALERT_BAD_CERTIFICATE);
     static uint8_t list[TEST_LIST_MAX];
     size_t list_len = frame_list(list, &e);
-    // The first entry's extensions vector is the two bytes after its
-    // u24 length and its certificate.
-    list[3 + e.cert_len[0] + 1] = 1;
+    // An entry's extensions vector is the two bytes after its u24
+    // length and its certificate.
+    size_t leaf_extensions = 3 + e.cert_len[0];
+    size_t trailing_extensions = list_len - 2;
+    list[leaf_extensions + 1] = 1;
     alert = 0;
-    CHECK(walk(aws, list, list_len, &leaf, &alert) == CH_EPROTO && alert == ALERT_BAD_CERTIFICATE);
+    CHECK(walk(aws, list, list_len, &leaf, &alert) == CH_EPROTO &&
+          alert == ALERT_UNSUPPORTED_EXTENSION);
+    list[leaf_extensions + 1] = 0;
+    list[trailing_extensions + 1] = 1;
+    alert = 0;
+    CHECK(walk(aws, list, list_len, &leaf, &alert) == CH_EPROTO &&
+          alert == ALERT_UNSUPPORTED_EXTENSION);
+    list[trailing_extensions + 1] = 0;
+    alert = 0;
+    CHECK(walk(aws, list, list_len, &leaf, &alert) == CH_OK);
 }
 
 int main(void) {
     test_corpus();
     test_leaf_key();
     test_validity_boundaries();
+    test_issuer_validity_boundaries();
+    test_rekeyed_intermediate();
     test_trailing_entry_unread();
     test_entry_size_boundary();
     test_flight_entries_boundary();

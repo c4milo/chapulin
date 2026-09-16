@@ -157,6 +157,12 @@ which convention holds them.
   file list read from git rather than from the Makefile's own filter
   (`inv05-webpki-source-in-raw`), and every root `webpki*.c` file git
   tracks must appear in `WEBPKI_SRCS` (`inv05-webpki-source-unlisted`).
+  Two of the rows where the webpki profile is stricter than openssl
+  ([webpki.md](webpki.md)) have their own guards over the corpus:
+  `inv05-webpki-sha1-signature` admits sha1WithRSAEncryption and
+  `inv05-webpki-rsa-1024-modulus` lowers the modulus floor, and
+  bin/webpki_chain_test's `sha1_signature` and `rsa_1024_leaf` rows
+  object to each.
 - **Violation.** A PR accepts a second CertificateEntry, an
   absent-params AlgorithmIdentifier, or an unknown critical
   extension "for compatibility" — or a library source calls
@@ -174,7 +180,7 @@ which convention holds them.
   ([webpki.md](webpki.md)). Its one caller is `webpki_sigalg.c`, which
   calls it for a certificate signed with `sha256WithRSAEncryption` or
   `sha384WithRSAEncryption`. Neither the raw nor the ca object packages
-  either file, and the Makefile has no `TRUST=webpki` object yet. No
+  either file; the `TRUST=webpki` object is the one that does. No
   v1.5 encryption padding exists anywhere.
 - **Mechanism.** `rsa.c` implements EMSA-PSS decode only, and
   `x509.c`'s pinned signature AlgorithmIdentifier names RSASSA-PSS,
@@ -409,7 +415,11 @@ which convention holds them.
   family's own verifier over the digest the scheme names, so a signature
   over any other digest is refused too. `webpki_verify_chain` fails
   closed with unknown_ca when the entries run out or CH_WEBPKI_CHAIN_MAX
-  is reached before an anchor verifies a signature.
+  is reached before an anchor verifies a signature, with
+  certificate_expired when `now_seconds` lies outside an issuer's
+  validity and not only the leaf's, and with unsupported_extension when
+  any CertificateEntry, a trailing one included, carries a non-empty
+  extensions vector.
 - **Mechanism.** Fail-closed policy, each refusal an explicit branch
   with its alert.
 - **Check.** handshake_strict table cases per refusal; CBMC proves the
@@ -428,7 +438,10 @@ which convention holds them.
   inv14-webpki-certificate-verify-sha384 and
   inv14-webpki-certificate-verify-p384-key. The walk's own fail-closed
   answer is bin/webpki_chain_test's anchor_key_mismatch row, guarded by
-  inv14-webpki-chain-unverified.
+  inv14-webpki-chain-unverified; its issuer validity rows,
+  issuer_expired and issuer_not_yet_valid, are guarded by
+  inv14-webpki-issuer-validity, and its list framing test by
+  inv14-webpki-entry-extensions.
 - **Violation.** A PR relaxes one refusal for interop with a broken
   server.
 - See [decisions: Protocol surface](decisions.md#protocol-surface).

@@ -10,10 +10,12 @@
 // webpki_name.c (hostnames), webpki_spki.c (public keys),
 // webpki_sigalg.c (signature algorithms and the verify dispatch),
 // webpki_ext.c (extensions), webpki_cert.c (one certificate) and
-// webpki.c (the walk). The INV-5 tripwire bans x509_* and webpki_*
-// calls outside the certificate files, so everything below
-// webpki_verify_chain is a module internal even with external
-// linkage, which the proof, fuzz and strictness builds need.
+// webpki.c (the walk). The INV-5 tripwire (.semgrep/invariants.yml)
+// bans calls named x509_*, asn1_* or der_* outside the certificate
+// files; it does not match webpki_* calls. Everything below
+// webpki_verify_chain has external linkage because the proof, fuzz
+// and strictness builds call it, and no lint keeps library code
+// from calling it: treat it as a module internal by convention.
 #ifndef CH_WEBPKI_H
 #define CH_WEBPKI_H
 
@@ -107,18 +109,22 @@ typedef struct {
 // validity and hostname, then walks issuers until an anchor both names
 // the issuer and verifies the signature, consulting the anchors before
 // reading each next entry. Entries after the terminating certificate
-// are not read. The caller seeds *alert with ALERT_BAD_CERTIFICATE;
-// the walk overwrites it only when it knows better:
+// are sized by read_entries and not parsed. The caller seeds *alert
+// with ALERT_BAD_CERTIFICATE; the walk overwrites it only when it
+// knows better:
 //   malformed DER, an entry over CH_WEBPKI_CERT_MAX, a serial over
 //   CH_WEBPKI_SERIAL_MAX, more than CH_WEBPKI_EXT_COUNT_MAX extensions
 //   or an Extension over CH_WEBPKI_EXT_TLV_MAX, more than
-//   CH_WEBPKI_FLIGHT_ENTRIES entries, a non-empty per-entry extensions
-//   vector                                   -> ALERT_BAD_CERTIFICATE, CH_EPROTO
+//   CH_WEBPKI_FLIGHT_ENTRIES entries             -> ALERT_BAD_CERTIFICATE, CH_EPROTO
+//   a non-empty per-entry extensions vector, on
+//   any entry (RFC 9846 §4.2: this client offered
+//   no extension a CertificateEntry answers)     -> ALERT_UNSUPPORTED_EXTENSION, CH_EPROTO
 //   a recognized off-profile fact: an algorithm or key the mode
 //   refuses, an unknown critical or duplicate extension, a leaf
 //   without subjectAltName, digitalSignature or serverAuth, an issuer
-//   without cA or keyCertSign, a pathLenConstraint the depth exceeds,
-//   an issuer whose subject is not this certificate's
+//   without cA or keyCertSign, a pathLenConstraint the CA certificates
+//   under it exceed (RFC 5280 §6.1.4 (l): a self-issued one does not
+//   count), an issuer whose subject is not this certificate's
 //   issuer                                    -> ALERT_UNSUPPORTED_CERTIFICATE, CH_EPROTO
 //   now_seconds outside a validity            -> ALERT_CERTIFICATE_EXPIRED, CH_EAUTH
 //   no dNSName matches the hostname           -> ALERT_BAD_CERTIFICATE, CH_EAUTH

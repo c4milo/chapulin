@@ -157,7 +157,7 @@ TESTH := test/test_random.h test/pem_armor.h test/pem_tests.h test/x509_ca_tests
          test/diff_webpki.h test/diff_mlkem.h test/mlkem_vectors.h test/webpki_corpus.h test/webpki_sigalg_vectors.h \
          test/diff_webpki_sigalg.h test/hello_exts.h test/webpki_session_cases.h \
          test/webpki_cert_mutants.h test/webpki_ext_mutants.h test/diff_webpki_cert.h \
-         test/webpki_auth_vectors.h
+         test/webpki_auth_vectors.h test/rxbuf_floor_tests.h
 
 # Each axis names its value or stops the build. RAND has done this since
 # https://github.com/c4milo/chapulin/issues/41; PIN, TRUST and KEX each
@@ -1157,13 +1157,19 @@ san-check:
 	$(CC) $(SAN_CFLAGS) $(RSA_WIDE_DEF) -I. -o bin/san/webpki_spki_test test/webpki_spki_test.c $(WEBPKI_SPKI_SRC)
 	$(CC) $(SAN_CFLAGS) $(RSA_WIDE_DEF) -I. -o bin/san/webpki_sigalg_test test/webpki_sigalg_test.c $(WEBPKI_SIGALG_SRC)
 	$(CC) $(SAN_CFLAGS) $(RSA_WIDE_DEF) -I. -o bin/san/webpki_cert_test test/webpki_cert_test.c $(WEBPKI_CERT_SRC)
+	# The walk, the session it runs inside and the CertificateVerify
+	# binding, over the TRUST=webpki object's own source set, so the
+	# sanitizers read the chain walk and the webpki ch_connect too.
+	$(CC) $(SAN_CFLAGS) -DCH_TRUST_WEBPKI -I. -o bin/san/webpki_chain_test test/webpki_chain_test.c $(WEBPKI_CHAIN_TEST_SRC)
+	$(CC) $(SAN_CFLAGS) -DCH_TRUST_WEBPKI -I. -o bin/san/webpki_session_test test/webpki_session_test.c $(WEBPKI_TEST_SRCS)
+	$(CC) $(SAN_CFLAGS) -DCH_TRUST_WEBPKI -I. -o bin/san/webpki_auth_test test/webpki_auth_test.c $(WEBPKI_TEST_SRCS)
 	$(CC) $(SAN_CFLAGS) -I. -o bin/san/mlkem_test test/mlkem_test.c mlkem.c mlkem_poly.c sha3.c ct.c
 	$(CC) $(SAN_CFLAGS) -I. -o bin/san/handshake_strict_test test/handshake_strict_test.c handshake_parser.c buf.c
 	$(CC) $(SAN_CFLAGS) -I. -o bin/san/x509strict_test $(X509STRICT_SRC) rsa.c rsa_mont.c
 	$(CC) $(SAN_CFLAGS) -DCH_PIN_ECDSA -I. -o bin/san/x509strict_ecdsa $(X509STRICT_SRC) p256.c
 	$(CC) $(SAN_CFLAGS) -I. -o bin/san/handshake_sequence_test test/handshake_sequence_test.c \
 	  $(filter-out p256.c rsa.c rsa_mont.c,$(SRCS))
-	@set -e; for b in unit rsa_test sha3_test sha512_test p384_test rsa_pkcs1_test webpki_time_test webpki_name_test webpki_spki_test webpki_sigalg_test webpki_cert_test mlkem_test handshake_strict_test x509strict_test x509strict_ecdsa; do \
+	@set -e; for b in unit rsa_test sha3_test sha512_test p384_test rsa_pkcs1_test webpki_time_test webpki_name_test webpki_spki_test webpki_sigalg_test webpki_cert_test webpki_chain_test webpki_session_test webpki_auth_test mlkem_test handshake_strict_test x509strict_test x509strict_ecdsa; do \
 	  echo "== $$b (SAN -O$(O))"; ENUM_DEPTH=4 ./bin/san/$$b; done
 	@$(call wycheproof_fetch,san wycheproof); \
 	python3 test/gen_wycheproof.py $(WYCHEPROOF_DIR) bin/wycheproof_vectors.h && \
@@ -1414,10 +1420,10 @@ lint-tidy:
 ifeq ($(CLANG_TIDY),)
 	$(call REQUIRE,clang-tidy,it ships with llvm — see the LLVM_MAJOR pin in tools/toolchain.env)
 else
-	# webpki.c and the three webpki test mains read ch_cfg fields that
-	# exist only under -DCH_TRUST_WEBPKI, so this pass, which defines no
-	# trust mode, leaves them to the next one.
-	$(CLANG_TIDY) --quiet $(filter-out webpki.c test/webpki_session_test.c test/webpki_chain_test.c test/webpki_auth_test.c,$(LINT_C)) -- \
+	# webpki.c, the three webpki test mains and the webpki example read
+	# ch_cfg fields that exist only under -DCH_TRUST_WEBPKI, so this
+	# pass, which defines no trust mode, leaves them to the next one.
+	$(CLANG_TIDY) --quiet $(filter-out webpki.c test/webpki_session_test.c test/webpki_chain_test.c test/webpki_auth_test.c examples/webpki_client.c,$(LINT_C)) -- \
 	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -I.
 	# The pass above defines no trust mode, so it reads none of the
 	# TRUST=webpki arms. This pass parses the sources that carry them or
@@ -1429,7 +1435,7 @@ else
 	$(CLANG_TIDY) --quiet tls.c handshake_parser.c handshake_message.c handshake_auth.c \
 	  handshake.c handshake_record.c webpki.c \
 	  test/webpki_session_test.c test/webpki_chain_test.c test/webpki_auth_test.c \
-	  test/handshake_strict_test.c test/diff_test.c -- \
+	  test/handshake_strict_test.c test/diff_test.c examples/webpki_client.c -- \
 	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_TRUST_WEBPKI -I.
 	$(CLANG_TIDY) --quiet test/webpki_session_test.c -- \
 	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_TRUST_WEBPKI -DCH_KEX_PQ -I.
@@ -1559,9 +1565,15 @@ bin/example_ca: examples/ca_client.c $(SRCS) $(HDRS)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) -DCH_TRUST_CA -I. -o $@ examples/ca_client.c $(SRCS)
 
+# The web PKI example needs the TRUST=webpki library, so it links its own
+# copy of the sources that object packages, under that object's define.
+bin/example_webpki: examples/webpki_client.c $(WEBPKI_TEST_SRCS) $(HDRS)
+	@mkdir -p bin
+	$(CC) $(CFLAGS) -DCH_TRUST_WEBPKI -I. -o $@ examples/webpki_client.c $(WEBPKI_TEST_SRCS)
+
 .PHONY: examples-check
-examples-check: bin/example_psk bin/example_pinned bin/example_ca
-	@echo "examples-check: the PSK and pinned examples link the packaged library; ca_client links the CA-trust sources"
+examples-check: bin/example_psk bin/example_pinned bin/example_ca bin/example_webpki
+	@echo "examples-check: the PSK and pinned examples link the packaged library; ca_client links the CA-trust sources; webpki_client links the TRUST=webpki sources"
 
 
 # lint-invariants checks that the code does not violate an invariant.

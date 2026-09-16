@@ -27,7 +27,9 @@ EncryptedExtensions reply, the certificate files and the chain walk in
 it checks CertificateVerify against the leaf key the walk copied out.
 `test/e2e.sh` runs that handshake against a local `openssl s_server` over
 a root, intermediate and leaf it mints for the run: the client verifies
-the chain, and the four negative legs each fail closed with the alert
+the chain, and the four negative legs each fail closed with `CH_EAUTH`.
+`test/e2e.sh` checks that return code and does not observe the alert;
+`test/webpki_cert_test.c` and `test/webpki_chain_test.c` pin the alerts
 `webpki.h`'s table names. No test here opens a network connection, and
 the captures under `test/webpki_captures/` are the only bytes in this
 tree a public endpoint ever sent.
@@ -82,6 +84,8 @@ Chain signatures, all of which the captures show in use:
 | `ecdsa-with-SHA384` | the Let's Encrypt links, the GTS root links |
 
 Public keys: RSA 2048, 3072 and 4096 bit moduli, and ECDSA P-256 and P-384.
+An RSA `publicExponent` must be 65537: `webpki_spki.c` compares its DER
+bytes against that one encoding and refuses every other value.
 RSA-4096 is not optional — GTS Root R1 is a 4096-bit key, so a client that
 refuses one cannot reach Google Cloud Storage.
 
@@ -111,6 +115,8 @@ a webpki object, the way `sha3.[ch]` is packaged only under `KEX=pq`.
 
 - **SHA-1 in any signature.** Web PKI retired it in 2017.
 - **Moduli below 2048 bits.**
+- **An RSA `publicExponent` other than 65537.** Every captured RSA key
+  carries 65537, and one admitted encoding keeps the reader a byte compare.
 - **P-521, brainpool, and every other curve.** Two curves cover the captures.
 - **Ed25519.** No public CA issues it for TLS server authentication.
 
@@ -149,8 +155,12 @@ The order matters. `webpki.h`'s alert table maps each failure to the alert the
 walk sends, and several steps share one alert. `depth` is 0 at the leaf.
 
 1. Read the `Certificate` message. Refuse a non-empty
-   `certificate_request_context`.
-2. Read entry 0 as the leaf. Refuse an entry over `CH_WEBPKI_CERT_MAX`.
+   `certificate_request_context`. Read every entry's framing, its
+   length and its extensions vector: refuse an entry over
+   `CH_WEBPKI_CERT_MAX`, more than `CH_WEBPKI_FLIGHT_ENTRIES` entries,
+   and a non-empty extensions vector on any entry, the last with
+   `unsupported_extension` (see "Decisions").
+2. Read entry 0 as the leaf.
 3. Check the leaf's profile: version 3, a serial inside 20 value bytes, a
    subjectAltName present, `keyUsage` asserting `digitalSignature`,
    `extendedKeyUsage` asserting `id-kp-serverAuth`, `basicConstraints` not
@@ -165,7 +175,9 @@ walk sends, and several steps share one alert. `depth` is 0 at the leaf.
    b. Otherwise read the next entry as the issuer. If there is none, fail.
    c. Check the issuer's profile: `basicConstraints` critical and asserting
       CA, `keyUsage` asserting `keyCertSign`, a `pathLenConstraint` that
-      admits the depth below it, and no unrecognized critical extension.
+      admits the CA certificates below it, where a self-issued one does
+      not count (RFC 5280 §6.1.4 (l); see "Decisions"), and no
+      unrecognized critical extension.
    d. Check the issuer's validity against `now_seconds`.
    e. Check that the issuer's subject Name equals this certificate's issuer
       Name, byte for byte.
@@ -173,15 +185,18 @@ walk sends, and several steps share one alert. `depth` is 0 at the leaf.
    g. Descend.
 
 Step 6a is what makes the measured AWS flight cost two signature
-verifications and leave the third entry unread, unparsed and unsized. It is
-also what makes a root re-keyed under one Name work, because every anchor
+verifications and leave the third entry unparsed and unverified; the next
+paragraph says what the walk still reads of it. Step 6a is also what makes a root re-keyed under one Name work, because every anchor
 naming the issuer is tried rather than only the first.
 
-Trailing entries after the terminating certificate are ignored, not refused.
-That reverses the ca profile deliberately, because a server may append
-certificates the walk never needs — every captured chain does. A strictness
-test pins the behaviour by replacing the trailing entry with invalid DER and
-requiring success.
+The certificate bytes of a trailing entry after the terminating certificate
+are never parsed, so a trailing entry may hold anything a CertificateEntry
+frames. That reverses the ca profile deliberately, because a server may
+append certificates the walk never needs — every captured chain does. A
+strictness test pins the behaviour by replacing the trailing entry with
+invalid DER and requiring success. The entry's framing is still read, on
+every entry: its length must fit the list and the cap, and its extensions
+vector must be empty.
 
 Name chaining alone never authorizes anything. An anchor whose subject Name
 matches but whose key does not verify the signature fails, and the corpus
@@ -193,6 +208,11 @@ carries that case.
 §4.1.2.5 makes `notAfter` the last instant of validity, not the first instant
 of expiry, and treating the two ends alike is why the boundary tests can name
 `notAfter` valid and `notAfter + 1` invalid.
+
+The same rule holds for every issuer the walk reads, at step 6d: the corpus
+rows `issuer_not_after_boundary` and `issuer_not_before_boundary` sit on an
+intermediate's two boundaries with the leaf valid throughout, and
+`issuer_expired` and `issuer_not_yet_valid` are one second past each.
 
 The anchor's own dates are not read. An anchor is trusted because the caller
 configured it, not because it carries a date, and a caller who ships an
@@ -254,7 +274,13 @@ A wildcard matches one label, in the leftmost position, as an entire label.
 So `*.example.test` matches `s3.example.test`, and does not match
 `example.test`, `a.b.example.test`, or anything under a name with fewer
 labels than the pattern. There is no partial-label wildcard: `s3*.example`
-matches nothing. A wildcard directly under a public suffix is refused.
+matches nothing. A pattern with fewer than two labels after the wildcard
+matches nothing, so `*.com` matches nothing. That count is the whole rule.
+This mode carries no public suffix list, so `*.co.uk` matches `a.co.uk`.
+The cost: a CA that issued a certificate for `*.co.uk` would let one key
+answer for every name under `co.uk`, and this client would accept it. The
+CA/Browser Forum Baseline Requirements forbid a CA to issue that
+certificate, and that rule is the only defence here.
 
 The caller supplies an A-label. A hostname with non-ASCII bytes fails
 `ch_connect`, and converting a U-label to punycode is the caller's job.
@@ -283,7 +309,7 @@ The rest of the configuration is the hostname and the clock:
 - `psk`, `psk_len`, `psk_id`, `psk_id_len` or `resumption` is set;
 - either `server_pubkey` slot, or its length, is set;
 - an epoch callback is set;
-- `buf_len` is under `CH_MIN_RXBUF`, 12,324 bytes in this mode.
+- `buf_len` is under `CH_MIN_RXBUF`, 12,338 bytes in this mode.
 
 `ch_trust_anchor`, `CH_WEBPKI_ANCHOR_MAX` and the five `ch_cfg` fields
 exist only in a `TRUST=webpki` build, so the raw and ca objects keep the
@@ -318,7 +344,7 @@ measured inputs, and the formula is given.
 | `CH_WEBPKI_CERT_MAX` | 3072 | measured: the largest captured certificate is the 2104 B S3 leaf |
 | `CH_WEBPKI_CHAIN_MAX` | 3 | measured: the Let's Encrypt capture needs 3 (leaf, YE2, Root YE, then the ISRG Root X2 anchor); the other three need 2 |
 | `CH_WEBPKI_FLIGHT_ENTRIES` | 4 | measured: Let's Encrypt sends 4 |
-| `CH_TRUST_MIN_RXBUF` | 12324 B | derived: `4 * (3072 + 5) + 16` |
+| `CH_TRUST_MIN_RXBUF` | 12338 B | derived: `4 * (3072 + 5) + 8 + 22`, the largest Certificate message plus the record that completes it |
 | `CH_WEBPKI_ANCHOR_MAX` | 12 | measured: 9 roots cover the four endpoints above |
 | `CH_WEBPKI_EXT_COUNT_MAX` | 16 | measured: the S3 leaf carries 10 |
 | `CH_WEBPKI_EXT_TLV_MAX` | 1024 | measured: the S3 leaf's subjectAltName Extension TLV is 653 B |
@@ -341,9 +367,14 @@ any config; the hello `ch_connect` lets this mode send is 528 bytes, or
 
 `CH_WEBPKI_FLIGHT_ENTRIES` is sized separately from the walk, because a
 server may append entries the walk never reads and every captured chain
-does. `CH_TRUST_MIN_RXBUF` follows the formula `cfg.h` already uses for
-the ca mode, widened from 2 entries to 4. That floor is the number that
-puts this mode on a host; a device build stays at 512 bytes.
+does. `CH_TRUST_MIN_RXBUF` follows the formula `cfg.h` uses for the ca
+mode, widened from 2 entries to 4: the message's 8 bytes of framing, the
+cap + 5 per entry, and the 22 bytes of the record that completes the
+message — its header, its inner content type and its AEAD tag — which
+`handshake_record.c` holds beside the message while it reassembles it.
+`test/rxbuf_floor_tests.h` reassembles that message at the floor and
+fails it one byte under. That floor is the number that puts this mode
+on a host; a device build stays at 512 bytes.
 
 `CH_HOSTNAME_MAX` is DNS's own limit rather than something shorter. A
 cap of 128 was considered and rejected: an S3 PrivateLink name of the
@@ -401,8 +432,8 @@ Read this list as part of the profile, not as a list of future work.
 
 `test/gen_webpki_corpus.py` runs every corpus chain through `openssl verify
 -purpose sslserver -verify_hostname` as an oracle, and fails unless the
-disagreements are exactly the seven it expects. openssl agrees on 17 of 24
-chains. Six of the seven disagreements are rows where this mode refuses what
+disagreements are exactly the eight it expects. openssl agrees on 22 of 30
+corpus chains. Six of the eight disagreements are rows where this mode refuses what
 openssl accepts. Five of them are the table below: each is a rule that would
 otherwise rot unnoticed, so each carries a `test/violations/` mutant.
 
@@ -416,10 +447,44 @@ otherwise rot unnoticed, so each carries a `test/violations/` mutant.
 
 The sixth is `leaf_asserts_ca`: the leaf's basicConstraints asserts CA, which
 this mode refuses and openssl, under `-purpose sslserver`, does not read. The
-seventh is the one row where openssl refuses what this mode accepts,
-`not_after_boundary`: at `now_seconds` equal to `notAfter`, openssl's
-`X509_cmp_time` reports the leaf expired, and this mode accepts it, as
-"Validity" above states.
+rows where openssl refuses what this mode accepts are `not_after_boundary`
+and `issuer_not_after_boundary`: at `now_seconds` equal to a certificate's
+`notAfter`, openssl's `X509_cmp_time` reports that certificate expired, and
+this mode accepts it, as "Validity" above states.
+
+## Decisions
+
+Two rules where this mode could have been stricter than the RFCs, what it
+does, and why.
+
+- **A self-issued certificate does not count against `pathLenConstraint`.**
+  RFC 5280 §6.1 calls a certificate self-issued when its subject Name
+  equals its issuer Name, which is what a CA re-keying under its own Name
+  issues for the new key under the old one. §6.1.4 (l) leaves such a
+  certificate out of the count `pathLenConstraint` bounds, and OpenSSL
+  follows the RFC. The stricter rule — count every certificate on the
+  path — was considered and rejected: it refuses a re-keyed CA's chain
+  that every other client accepts, and a public CA re-keys without
+  notice. The walk therefore counts, for each issuer, the CA
+  certificates it read below it whose subject Name differs from their
+  issuer Name (`webpki.c`, `self_issued` and `path_len_admits`;
+  `spec/Spec/Webpki.lean`, `selfIssued` and `pathLenAdmits`). Every other
+  rule still applies to a self-issued certificate: it is parsed under the
+  issuer arm, its validity is checked, and it verifies under the next
+  key. The corpus row `rekeyed_intermediate` pins the acceptance and
+  `path_len_exceeded` the refusal it does not relax; the differential
+  compares both against the spec.
+- **A CertificateEntry extension is refused on every entry, with
+  `unsupported_extension`.** RFC 9846 §4.4.2 lets a server answer a
+  `status_request` or `signed_certificate_timestamp` extension inside an
+  entry, and §4.2 says a peer that receives an extension it did not offer
+  aborts with `unsupported_extension`. This client offers neither, so an
+  entry extension is a reply to a request nobody made, wherever it sits:
+  the walk reads every entry's framing, the trailing ones included, and
+  refuses a non-empty extensions vector on any of them with that alert
+  (`read_entries` in `webpki.c`). Skipping the vector on a trailing entry
+  was considered and rejected: the walk would then accept bytes the RFC
+  tells it to refuse, and the framing is read either way.
 
 ## Verification
 
@@ -460,14 +525,16 @@ here: never overclaim.
   reached, the README states the partial bound that was reached. The walk
   itself turned out cheap rather than hard, because its harness stubs the
   parser and the verifiers and so keeps every certificate byte out of the
-  formula: `webpki_chain` returns a verdict in 113 s at 3.0 GB over a
-  48-byte entry list. What that costs is soundness: the stubs answer an
+  formula: `webpki_chain` proves 1103 properties in 117 s at 3.0 GB over a
+  48-byte entry list (cbmc 6.11.0 with kissat under `/usr/bin/time -l`,
+  through `proof/run.sh` on 2026-09-16). What that costs is soundness: the stubs answer an
   unconstrained verdict, so the proof says nothing about which chains the
   walk accepts, and `spec/Spec/Webpki.lean` states that property instead.
 - **Fixtures.** Two corpora, doing different jobs. The captured chains above
-  carry real extension bulk and test the bounds. A generated corpus of 25
-  chains — 8 positive (the four shapes above, a P-384 leaf, one wildcard match
-  and the two validity boundaries), 17 negative taking one rule each — is
+  carry real extension bulk and test the bounds. A generated corpus of 30
+  chains — 11 positive (the four shapes above, a P-384 leaf, one wildcard
+  match, the two leaf validity boundaries, the two issuer validity boundaries
+  and a re-keyed intermediate), 19 negative taking one rule each — is
   small, offline and deterministic, and tests the logic. `test/gen_webpki_corpus.py` renders
   both into exact RFC 9846 §4.4.2 `Certificate` message bytes, so a test feeds
   the parser what the wire would. `test/webpki_auth_vectors.h` adds a

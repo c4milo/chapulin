@@ -278,6 +278,7 @@ static int sends_client_hello(const ch_cfg *cfg) {
     return rc == CH_EIO && s->hello_len > 0;
 }
 
+#include "rxbuf_floor_tests.h"
 #include "webpki_session_cases.h"
 
 int main(void) {
@@ -285,6 +286,7 @@ int main(void) {
     test_webpki_cfg_clock();
     test_webpki_cfg_hostname();
     test_webpki_cfg_other_modes();
+    test_rxbuf_floor();
     test_webpki_hello();
     test_webpki_hello_boundary();
     test_webpki_handshake_fails_closed();

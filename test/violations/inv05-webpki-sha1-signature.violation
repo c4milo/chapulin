@@ -1,0 +1,19 @@
+invariant: INV-5
+file: webpki_sigalg.c
+catches: webpki_chain_test
+reason: webpki_read_sigalg admits sha1WithRSAEncryption as if it were
+  sha256WithRSAEncryption, so a SHA-1 certificate signature is no longer
+  refused as an algorithm outside the profile (docs/webpki.md, "Refused,
+  and why"). The sha1_signature row, whose leaf is signed
+  sha1WithRSAEncryption and must be refused with
+  unsupported_certificate, objects.
+
+--- old
+static const signature_algorithm signature_algorithms[] = {
+    {WEBPKI_SIG_RSA_SHA256,   sigalg_rsa_sha256,   sizeof sigalg_rsa_sha256  },
+--- new
+static const uint8_t sigalg_rsa_sha1[] = {0x30, 0x0d, 0x06, 0x09, 0x2a, 0x86, 0x48, 0x86,
+                                          0xf7, 0x0d, 0x01, 0x01, 0x05, 0x05, 0x00};
+static const signature_algorithm signature_algorithms[] = {
+    {WEBPKI_SIG_RSA_SHA256,   sigalg_rsa_sha1,     sizeof sigalg_rsa_sha1    },
+    {WEBPKI_SIG_RSA_SHA256,   sigalg_rsa_sha256,   sizeof sigalg_rsa_sha256  },

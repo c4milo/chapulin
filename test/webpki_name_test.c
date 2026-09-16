@@ -212,6 +212,10 @@ static void test_match_wildcard(void) {
     CHECK(match_one("*.", "example") == 0);
     CHECK(match_one("*.", "") == 0);
     CHECK(match_one("*.a.b", "x.a.b") == 1);
+    // No public suffix list: two labels after the wildcard is the
+    // whole rule, so *.co.uk matches a.co.uk (docs/webpki.md,
+    // "Hostnames").
+    CHECK(match_one("*.co.uk", "a.co.uk") == 1);
 }
 
 // A presented name with an embedded NUL never matches: the host

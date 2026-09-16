@@ -72,7 +72,7 @@ MEMORY = [
      [["static_working_set_pq_arm64"], ["static_working_set_pq_rv32"]]),
     ("`ch_tls` under `TRUST=webpki` (includes 884 B TX staging)",
      [["session_struct_webpki_arm64"], ["session_struct_webpki_rv32"]]),
-    ("**total static working set, `TRUST=webpki`** (12324 buffer, its floor)",
+    ("**total static working set, `TRUST=webpki`** (12338 buffer, its floor)",
      [["static_working_set_webpki_arm64"], ["static_working_set_webpki_rv32"]]),
     ("peak stack, `ch_connect` (RSA-3072 verify)", [["stack_connect_rsa"]]),
     ("peak stack, `ch_connect` (`PIN=ecdsa`)", [["stack_connect_ecdsa"]]),

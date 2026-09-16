@@ -2,7 +2,7 @@
 // over any CertificateEntry list of up to CH_PROOF_LIST_LEN bytes, any
 // anchor array of up to CH_PROOF_ANCHORS entries with unconstrained
 // bytes, any hostname and any clock, and its result contract holds. It
-// returns CH_OK, CH_EPROTO or CH_EAUTH; a refusal names one of the four
+// returns CH_OK, CH_EPROTO or CH_EAUTH; a refusal names one of the five
 // alerts webpki.h's table lists; and CH_OK leaves a leaf key the
 // message buffer's reuse cannot disturb — copied into out, at most
 // CH_WEBPKI_KEY_MAX bytes, under one of the three key algorithms.
@@ -25,8 +25,9 @@
 //   - webpki_pack_seconds (webpki_time): a packed date in range
 //
 // So the object under proof is the walk itself: the entry framing, the
-// anchor loop, the depth accounting, the pathLenConstraint arithmetic
-// and the memcpy of the leaf key.
+// anchor loop, the count of certificates read and of the non-self-issued
+// ones below each issuer, the pathLenConstraint arithmetic and the
+// memcpy of the leaf key.
 //
 // Not proved here: that the walk accepts only a chain whose signatures
 // verify. The stubs answer a nondet verdict, so the formula says
@@ -226,8 +227,9 @@ int main(void) {
                      "walk: CH_OK, CH_EPROTO or CH_EAUTH");
     if (rc != CH_OK) {
         __CPROVER_assert(alert == ALERT_BAD_CERTIFICATE || alert == ALERT_UNSUPPORTED_CERTIFICATE ||
-                             alert == ALERT_CERTIFICATE_EXPIRED || alert == ALERT_UNKNOWN_CA,
-                         "walk: a refusal names one of the four alerts");
+                             alert == ALERT_CERTIFICATE_EXPIRED || alert == ALERT_UNKNOWN_CA ||
+                             alert == ALERT_UNSUPPORTED_EXTENSION,
+                         "walk: a refusal names one of the five alerts");
         return 0;
     }
     __CPROVER_assert(alert == ALERT_BAD_CERTIFICATE, "walk: success keeps the alert");

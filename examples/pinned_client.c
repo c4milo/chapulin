@@ -23,12 +23,16 @@
  *
  * Build it against the packaged library object, from the repo root:
  *
- *   make lib                                     # RSA-PSS pins
- *   cc -Wall -Wextra -Wpedantic -Werror -std=c11 -D_DEFAULT_SOURCE -I. \
+ *   make lib RAND=extern                         # RSA-PSS pins
+ *   cc -Wall -Wextra -Wpedantic -Werror -std=c11 -D_DEFAULT_SOURCE \
+ *      -DCH_RAND_EXTERN -I. \
  *      -o pinned_client examples/pinned_client.c bin/chapulin.o
  *
- * For P-256 pins, build the library with `make lib PIN=ecdsa` and add
- * -DCH_PIN_ECDSA to that cc line. -D_DEFAULT_SOURCE is for this file's
+ * For P-256 pins, build the library with `make lib PIN=ecdsa RAND=extern`
+ * and add -DCH_PIN_ECDSA to that cc line. RAND=extern and -DCH_RAND_EXTERN
+ * declare that this file supplies ch_rand_bytes, which it does below;
+ * cfg.h refuses to compile without a declared entropy pattern
+ * (docs/entropy.md). -D_DEFAULT_SOURCE is for this file's
  * POSIX sockets, not for chapulin: glibc hides getaddrinfo and
  * getrandom under -std=c11 without it.
  *
