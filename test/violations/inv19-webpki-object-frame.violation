@@ -1,0 +1,24 @@
+invariant: INV-19
+file: p256.c
+catches: test/lint-stack-webpki.sh
+reason: p256_ecdsa_verify takes a 5,000-byte scratch buffer, over the
+  4,096-byte budget the TRUST=webpki object holds. PIN=rsa filters
+  p256.c out of every other packaged object, so the plain `make
+  lint-stack` compiles this file nowhere and passes; only the
+  TRUST=webpki leg objects.
+
+--- old
+    uint8_t r_be[32];
+    uint8_t s_be[32];
+    if (!der_parse(sig_der, sig_len, r_be, s_be)) {
+--- new
+    uint8_t scratch[5000];
+    for (size_t i = 0; i < sizeof scratch; i++) {
+        scratch[i] = (uint8_t)(sig_len + i);
+    }
+    if (scratch[sig_len % sizeof scratch] == 0xff) {
+        return 0;
+    }
+    uint8_t r_be[32];
+    uint8_t s_be[32];
+    if (!der_parse(sig_der, sig_len, r_be, s_be)) {

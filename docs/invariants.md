@@ -755,4 +755,8 @@ which convention holds them.
   4,096-byte budget too.
 - **Violation.** A PR sizes a scratch buffer from a length field, or
   adds a frame that silently outgrows the smallest supported SRAM.
+  `test/violations/inv19-webpki-object-frame.violation` is that mutant:
+  a 5,000-byte buffer in `p256_ecdsa_verify`, which `PIN=rsa` filters
+  out of every other object, so only the `TRUST=webpki` leg compiles the
+  file and objects.
 - See [decisions: Memory and runtime](decisions.md#memory-and-runtime).

@@ -820,8 +820,12 @@ routine key churn entirely.
 
 [CONTRIBUTING.md](CONTRIBUTING.md) states the quality bar and the workflow.
 [`docs/invariants.md`](docs/invariants.md) catalogs the invariants a change must never break;
-`make lint-invariants` enforces the machine-checkable ones. Report
-vulnerabilities through [SECURITY.md](SECURITY.md), never the public tracker.
+`make lint-invariants` enforces the machine-checkable ones.
+[`docs/impact.md`](docs/impact.md) covers `make impact`, which prints the
+gates a change can break so the inner loop runs those instead of the
+whole slow tier; it never replaces `make check` or `make check-slow`.
+Report vulnerabilities through [SECURITY.md](SECURITY.md), never the
+public tracker.
 
 ## License
 

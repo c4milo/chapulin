@@ -713,7 +713,14 @@ bin/diff: test/diff_test.c $(SRCS) sha3.c sha512.c sha512_compress.c p384.c p384
 	@mkdir -p bin
 	$(CC) $(CFLAGS) $(RSA_WIDE_DEF) -I. -o $@ test/diff_test.c $(SRCS) sha3.c sha512.c sha512_compress.c p384.c p384_field.c rsa_pkcs1.c webpki_sigalg.c webpki_cert.c mlkem.c mlkem_poly.c
 
-.PHONY: check check-slow ci lint lint-tidy lint-format lint-cppcheck lint-docs lint-conflict-markers lint-invariants lint-violation-builds lint-fuzz-budget lint-codegen-partition lint-runtime-symbols lint-wide-multiply lint-commit-citations lint-issue-links lint-shellcheck lint-bench-numbers lint-spec prove diff fmt clean
+# Build and run one test binary: make run-unit, make run-webpki_time_test.
+# check runs its roster from one recipe, which is the right shape for a
+# full run and the wrong one for an inner loop that wants a single
+# binary. tools/impact.py emits this form for every binary it selects.
+run-%: bin/%
+	./bin/$*
+
+.PHONY: check check-slow ci lint lint-tidy lint-format lint-cppcheck lint-docs lint-conflict-markers lint-invariants lint-violation-builds lint-impact lint-fuzz-budget lint-codegen-partition lint-runtime-symbols lint-wide-multiply lint-commit-citations lint-issue-links lint-shellcheck lint-bench-numbers lint-spec prove diff fmt clean
 # check is the inner loop and holds a one-minute budget, so it runs what
 # answers "did I break the build or a contract": the linters, every unit
 # and strict-parser binary, the packaged-object export check, and the
@@ -786,6 +793,32 @@ check: bin/unit bin/unit_ca bin/unit_pq bin/tlsclient bin/tlsclient_ecdsa bin/tl
 	$(MAKE) wycheproof
 	$(MAKE) proof-coverage
 	$(MAKE) proof-reach-smoke
+
+# The gates a change can break, and running them. BASE names the
+# revision to compare against (default HEAD); `git diff BASE` compares
+# it to the working tree, and the tool adds the untracked files, so a
+# dirty tree reports what it holds. docs/impact.md says what the
+# selection covers and what it deliberately over-selects; it is an
+# inner-loop tool, never a landing gate, and check and check-slow stay
+# in force before a commit.
+#
+# TIER drops the gates no tier below it runs: TIER=check keeps what
+# `make check` already runs, TIER=slow adds what check-slow adds, and
+# the default keeps the nightly-only lanes too. It narrows the plan, so
+# it is never what a change is judged by.
+.PHONY: impact impact-run
+BASE ?= HEAD
+TIER ?= nightly
+impact:
+	@python3 tools/impact.py --base $(BASE) --max-tier=$(TIER)
+
+impact-run:
+	@mkdir -p bin
+	@python3 tools/impact.py --base $(BASE) --max-tier=$(TIER) --commands > bin/impact.sh
+	@set -e; while read -r cmd; do \
+	  echo "== $$cmd"; sh -c "$$cmd"; \
+	done < bin/impact.sh; \
+	echo "impact-run: every selected gate passed"
 
 # What CI runs, decided here rather than in the workflow: the workflow
 # calls one target and this file says which tier that means. GitHub sets
@@ -1242,7 +1275,7 @@ endif
 
 # Checks and thresholds live in .clang-tidy; every disable carries a reason
 # there (fix-or-drop, never NOLINT in code).
-lint: lint-toolchain lint-pins lint-proof-cover lint-exact-fill lint-tidy lint-format lint-cppcheck lint-commits lint-docs lint-conflict-markers lint-invariants lint-stack lint-size lint-tracked-ignored lint-matrix lint-nightly-report lint-violation-builds lint-fuzz-budget lint-codegen-partition lint-runtime-symbols lint-wide-multiply lint-commit-citations lint-issue-links lint-shellcheck lint-bench-numbers lint-spec lint-trust-separation
+lint: lint-toolchain lint-pins lint-proof-cover lint-exact-fill lint-tidy lint-format lint-cppcheck lint-commits lint-docs lint-conflict-markers lint-invariants lint-stack lint-size lint-tracked-ignored lint-matrix lint-nightly-report lint-violation-builds lint-impact lint-fuzz-budget lint-codegen-partition lint-runtime-symbols lint-wide-multiply lint-commit-citations lint-issue-links lint-shellcheck lint-bench-numbers lint-spec lint-trust-separation
 
 # INV-19: bounded stack. The budget is the measured worst library
 # frame (rsa_vp1's RSA-3072 limb temporaries, 2,400 bytes) rounded up;
@@ -1625,6 +1658,22 @@ lint-nightly-report:
 .PHONY: lint-violation-builds
 lint-violation-builds:
 	@python3 test/violations.py --lint-builds
+
+# The impact selection, checked against test/violations/ as its ground
+# truth: every violation names a file and the target that objects when
+# that file breaks, so the plan for that file must select that target. A
+# plan that drops one would let an inner loop miss a failure the tree
+# already knows about. It reads files and starts a few make invocations,
+# a second or two, so check runs it rather than the slow tier.
+# docs/impact.md says what selection is for and what it never replaces.
+#
+# The checker sits in test/ and its subject sits in tools/. CLAUDE.md
+# puts dev tooling in tools/ and keeps a script with the thing it
+# operates on; this one reads test/violations/ as its data, so it stays
+# beside that data.
+.PHONY: lint-impact
+lint-impact:
+	@python3 test/impact_test.py
 
 # ---------------------------------------------------------------------------
 # Codegen gates. Three leaks are instruction selection rather than source, so
@@ -2196,6 +2245,16 @@ ifeq ($(CBMC),)
 else
 	./proof/run.sh all
 endif
+
+# One harness by name: make prove-one HARNESS=webpki_time. The wrapper
+# proof/prove-one.sh already runs a single launch line with that line's
+# flags, bounds, weight and solver, so this names it rather than
+# composing a second cbmc command that could drift. tools/impact.py
+# emits this form, and test/violations.py calls the script directly.
+.PHONY: prove-one
+prove-one:
+	@[ -n "$(HARNESS)" ] || { echo "prove-one: set HARNESS=<name as proof/run.sh spells it>"; exit 1; }
+	./proof/prove-one.sh $(HARNESS)
 
 fmt:
 ifneq ($(CLANG_FORMAT),)

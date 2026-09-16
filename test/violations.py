@@ -236,8 +236,9 @@ def run(name):
 # unit suite, the strictness parsers, rsa_test, softmul_test, the webpki
 # reader, session and certificate tests, the three codegen gate scripts, which compile
 # with the pinned clang and with the Arm GNU gcc the m3 lane pins and
-# answer in seconds, and the trust-separation lint script, which reads
-# the Makefile in three. Left
+# answer in seconds, the trust-separation lint script, which reads
+# the Makefile in three, and the TRUST=webpki frame-budget script, which
+# compiles that object's sources in two. Left
 # out are the ones whose single run is expensive — the exhaustive
 # handshake enumeration (minutes), the end-to-end suite (needs live
 # servers), and the differential (each run drives ~6000 oracle
@@ -257,7 +258,7 @@ FAST_TARGETS = {"unit", "unit_ca", "x509strict", "x509strict_ecdsa",
                 "webpki_time_test", "p384_test",
                 "test/lint-wide-multiply.sh", "test/lint-wide-multiply-gcc.sh",
                 "test/lint-runtime-symbols.sh", "test/lint-trust-separation.sh",
-                "test/lint-exact-fill.sh"}
+                "test/lint-exact-fill.sh", "test/lint-stack-webpki.sh"}
 
 
 def catches_of(name):
