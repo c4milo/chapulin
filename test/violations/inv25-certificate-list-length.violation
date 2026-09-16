@@ -1,0 +1,14 @@
+invariant: INV-25
+file: handshake_parser.c
+catches: handshake_strict_test
+builds: bin/handshake_strict_test
+reason: hsp_parse_certificate accepts a certificate_list shorter than the
+  Certificate message, so bytes after the vector are never read and two
+  messages carry one chain. RFC 9846 §4.4.2 ends the message at the
+  vector. test/handshake_strict_test.c's Certificate pair objects, and so
+  does lint-exact-fill, because the equality is the only one on r.
+
+--- old
+    if (r.err || len != rb_left(&r) || len == 0) {
+--- new
+    if (r.err || len > rb_left(&r) || len == 0) {

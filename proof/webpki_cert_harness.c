@@ -28,7 +28,7 @@
 // at any point, consuming any prefix and setting err, as the real
 // readers may. The DER primitives in x509_der.c, rbuf (buf.c) and
 // ct_memeq (ct.c) are real: the object under proof is the parser's own
-// field order, its exact-consume checks and its pointer arithmetic.
+// field order, its exact-fill checks and its pointer arithmetic.
 #include "harness.h"
 
 #include "buf.h"

@@ -1,0 +1,187 @@
+#!/usr/bin/env python3
+"""Check that every reader over a sliced container compares what is left to something.
+
+A reader that decodes a container's fields and never checks what is left
+accepts a trailing byte inside the container, so two encodings name one value.
+Two reviews caught that shape in three files at once. This turns the
+rule into a check: a function that builds an rbuf over a slice with
+`rb_init(&r, ...)` must also compare `rb_left(&r)` for equality -- a closing
+`rb_left(&r) == 0` or `!= 0`, or a header equality such as
+`len != rb_left(&r)` -- or carry an entry in ALLOWED below saying where its
+exact-fill check lives instead.
+
+The equality is the whole point. `while (rb_left(&r) > 0)` walks a list and
+`if (rb_left(&r) > 0)` guards an optional field; neither says anything about
+whether the fields fill the container, and every list reader in the tree has
+one. Accepting any mention of `rb_left` let a deleted `list_len !=
+rb_left(&w)` sit beside a surviving `while (rb_left(&w) > 0)` and pass.
+
+What it catches: a reader landed with no exact-fill check at all, which is the
+drift those three files had; a reader whose only `rb_left` is a loop condition
+or an optional-field guard; and a check written against a different reader than
+the one it opened.
+
+What it does not catch:
+
+* The removal of one of several equality checks on one rbuf. `read_rsa_key`
+  checks that the RSAPublicKey SEQUENCE fills the BIT STRING and again that
+  the two INTEGERs fill the SEQUENCE; delete either and the other still
+  answers this lint. Those readers are held by the boundary pairs in
+  `test/webpki_spki_test.c` and `test/webpki_cert_mutants.h`, and by the
+  `inv05-webpki-*` mutants that require them to object.
+* A check that is present and wrong -- `rb_left(&r) != 0` where `== 0` was
+  meant, a check on a path the parser can skip, or a check that runs before
+  the last field is read. It reads source text, so it knows nothing about
+  which branch runs.
+* A check that exists in only one `#ifdef` arm. Readers are keyed by file,
+  function and reader name, so `x509_read_spki`'s two `rb_init(&s, body,
+  len)` arms merge into one entry and a check in either arm answers for both.
+  That merging is also why the reader count printed at the end is one below
+  the tree's `rb_init` count.
+* A container parsed straight off a pointer, which builds no rbuf for this to
+  find. INV-25's rbuf rule is what keeps those from existing.
+
+Run through `make lint-exact-fill`.
+"""
+
+import re
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+
+# Readers whose exact-fill check sits in a function this one calls. Each
+# entry names that function and what it requires. Keys are file, function and
+# reader; an entry that no longer matches a reader is an error, so a renamed
+# reader is reported rather than silently exempt.
+ALLOWED = {
+    ("pem.c", "pem_decode_certificate", "r"): (
+        "read_tail(&r) requires every byte after the END line to be a line "
+        "terminator, so it consumes the rest or refuses it"
+    ),
+}
+
+READER = re.compile(r"\brb_init\(&(\w+)\s*,")
+
+
+def checked(body, reader):
+    """True when the body compares rb_left(&reader) for equality.
+
+    Either order counts: `rb_left(&r) == 0` closes a reader and
+    `len != rb_left(&r)` requires a header's length to fill it. A `>` or
+    `>=` comparison does not count -- that is a list walk or an optional
+    field, not a statement about the container being full.
+    """
+    call = re.escape(f"rb_left(&{reader})")
+    return re.search(r"%s\s*[=!]=|[=!]=\s*%s" % (call, call), body) is not None
+
+
+def strip_noise(text):
+    """Blank out comments and string literals, keeping every byte offset."""
+    out = list(text)
+    i, n = 0, len(text)
+    while i < n:
+        two = text[i:i + 2]
+        if two == "//":
+            while i < n and text[i] != "\n":
+                out[i] = " "
+                i += 1
+        elif two == "/*":
+            while i < n and text[i:i + 2] != "*/":
+                if text[i] != "\n":
+                    out[i] = " "
+                i += 1
+            for j in range(i, min(i + 2, n)):
+                out[j] = " "
+            i += 2
+        elif text[i] in "\"'":
+            quote = text[i]
+            i += 1
+            while i < n and text[i] != quote:
+                if text[i] == "\\":
+                    out[i] = " "
+                    i += 1
+                if i < n:
+                    if text[i] != "\n":
+                        out[i] = " "
+                    i += 1
+            i += 1
+        else:
+            i += 1
+    return "".join(out)
+
+
+def functions(path):
+    """Every top-level braced block in one file: name, body, first line number.
+
+    A file-scope initializer is a block too. It declares no reader, so it
+    costs one entry and no false report.
+    """
+    text = strip_noise(path.read_text())
+    found, depth, start, anchor, signature = [], 0, 0, 0, ""
+    for i, char in enumerate(text):
+        if char == "{":
+            if depth == 0:
+                start, signature = i, text[anchor:i]
+            depth += 1
+        elif char == "}":
+            depth -= 1
+            if depth == 0:
+                name = re.findall(r"(\w+)\s*\(", signature)
+                line = text.count("\n", 0, start) + 1
+                found.append((name[-1] if name else "?", text[start:i + 1], line))
+                anchor = i + 1
+        elif char == ";" and depth == 0:
+            anchor = i + 1
+    return found
+
+
+def problems_in(path):
+    out, seen = [], set()
+    for name, body, start in functions(path):
+        for reader in READER.findall(body):
+            key = (path.name, name, reader)
+            seen.add(key)
+            if checked(body, reader):
+                continue
+            if key in ALLOWED:
+                continue
+            out.append(
+                f"{path.name}:{start} {name} reads a container through rbuf "
+                f"{reader} and never compares rb_left(&{reader}) for equality, "
+                f"so bytes left inside the container pass unread. A "
+                f"`rb_left(&{reader}) > 0` loop or guard is not that check. "
+                f"Add the exact-fill check, or record where it lives in "
+                f"tools/exact-fill.py."
+            )
+    return out, seen
+
+
+def main():
+    problems, seen, readers = [], set(), 0
+    for path in sorted(ROOT.glob("*.c")):
+        found, keys = problems_in(path)
+        problems += found
+        seen |= keys
+        readers += len(keys)
+
+    for key in sorted(set(ALLOWED) - seen):
+        problems.append(
+            f"ALLOWED names {key[0]} {key[1]}'s reader {key[2]}, which no "
+            f"longer exists. Delete the entry or fix the name."
+        )
+
+    if problems:
+        for p in problems:
+            print(f"lint-exact-fill: {p}")
+        return 1
+
+    print(
+        f"lint-exact-fill: {readers} sliced readers in the library, "
+        f"{readers - len(ALLOWED)} checked in place, {len(ALLOWED)} one call down"
+    )
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

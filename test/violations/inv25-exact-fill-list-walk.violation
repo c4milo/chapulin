@@ -1,0 +1,13 @@
+invariant: INV-25
+file: x509.c
+catches: test/lint-exact-fill.sh
+reason: parse_extensions drops the equality that makes the Extensions
+  SEQUENCE fill its [3] wrapper and keeps the `while (rb_left(&w) > 0)`
+  walk below it. A walk says nothing about whether the fields fill the
+  container, so a lint that accepts any mention of rb_left passes this.
+  lint-exact-fill requires an equality, so it objects.
+
+--- old
+    if (!x509_read_header(&w, 0x30, &list_len) || list_len == 0 || list_len != rb_left(&w)) {
+--- new
+    if (!x509_read_header(&w, 0x30, &list_len) || list_len == 0) {

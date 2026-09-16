@@ -128,7 +128,7 @@ static void x509_ca_tests(void) {
         m = splice(mut, c, cn, ext_off, ext_len, grown, ext_len + sizeof der_null);
         CHECK(cat_rejects(pem, pem_armor(mut, m, 64, "\n", pem)));
 
-        // One byte after the outer SEQUENCE. The closing exact-consume
+        // One byte after the outer SEQUENCE. The closing exact-fill
         // catches this one, so it does not isolate the outer length.
         (void)memcpy(mut, c, cn);
         mut[cn] = 0x00;
@@ -153,6 +153,47 @@ static void x509_ca_tests(void) {
         size_t h = put_header(mut, 0x30, tbs_total);
         (void)memcpy(mut + h, c + tbs, tbs_total);
         CHECK(cat_rejects(pem, pem_armor(mut, h + tbs_total, 64, "\n", pem)));
+
+        // One byte after the signature, counted by the outer SEQUENCE.
+        // The outer length matches and every field reads, so only the
+        // closing exact-fill rejects this one.
+        tlv_shape outer;
+        tlv_read(c, cn, &outer);
+        h = put_header(mut, 0x30, outer.content_len + 1);
+        (void)memcpy(mut + h, c + outer.header_len, outer.content_len);
+        mut[h + outer.content_len] = 0x00;
+        CHECK(cat_rejects(pem, pem_armor(mut, h + outer.content_len + 1, 64, "\n", pem)));
+
+        // An extension inside the [3] wrapper and outside the
+        // Extensions SEQUENCE. It is well formed and unknown to the
+        // walk, so the walk itself would accept it: only the SEQUENCE's
+        // length check refuses it.
+        static const uint8_t past_list[] = {0x30, 0x07, 0x06, 0x03, 0x55, 0x1d, 0x09, 0x04, 0x00};
+        size_t list_off = nth_child(c, cn, ext_off, 0);
+        size_t list_len = tlv_total(c, cn, list_off);
+        size_t at = put_header(grown, 0xa3, list_len + sizeof past_list);
+        (void)memcpy(grown + at, c + list_off, list_len);
+        at += list_len;
+        (void)memcpy(grown + at, past_list, sizeof past_list);
+        m = splice(mut, c, cn, ext_off, ext_len, grown, at + sizeof past_list);
+        CHECK(cat_rejects(pem, pem_armor(mut, m, 64, "\n", pem)));
+
+        // basicConstraints: the pathLenConstraint outside the
+        // BasicConstraints SEQUENCE and inside the extnValue, then a
+        // byte after it inside the SEQUENCE. The first passes the
+        // reader's own cA compare and the skip, so only the SEQUENCE's
+        // length check refuses it; the second only the closing one.
+        static const uint8_t path_outside[] = {0x30, 0x0f, 0x06, 0x03, 0x55, 0x1d, 0x13, 0x04, 0x08,
+                                               0x30, 0x03, 0x01, 0x01, 0xff, 0x02, 0x01, 0x00};
+        static const uint8_t byte_after_path[] = {0x30, 0x10, 0x06, 0x03, 0x55, 0x1d,
+                                                  0x13, 0x04, 0x09, 0x30, 0x07, 0x01,
+                                                  0x01, 0xff, 0x02, 0x01, 0x00, 0x00};
+        off = find_ext(c, cn, oid_bc);
+        size_t bc_len = tlv_total(c, cn, off);
+        m = splice(mut, c, cn, off, bc_len, path_outside, sizeof path_outside);
+        CHECK(cat_rejects(pem, pem_armor(mut, m, 64, "\n", pem)));
+        m = splice(mut, c, cn, off, bc_len, byte_after_path, sizeof byte_after_path);
+        CHECK(cat_rejects(pem, pem_armor(mut, m, 64, "\n", pem)));
     }
 
     // Truncating the certificate must never yield a key. The armour

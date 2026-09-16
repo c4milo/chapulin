@@ -145,6 +145,16 @@ static void test_shapes(void) {
     // Nothing at all, and a lone tag.
     CHECK(read_raw(cut, 0, &packed, &left) == 0);
     CHECK(read_raw(cut, 1, &packed, &left) == 0);
+    // The length octet must name the shape's own length. Both of these
+    // carry a valid UTCTime in their first 13 bytes, so a reader that
+    // took the tag's fixed length for the field's length would read
+    // them and accept: only the equality refuses them.
+    static const uint8_t over[] = {0x17, 0x0e, '4', '9', '0', '1', '0', '1',
+                                   '0',  '0',  '0', '0', '0', '0', 'Z', 'Z'};
+    CHECK(read_raw(over, sizeof over, &packed, &left) == 0);
+    static const uint8_t under[] = {0x17, 0x0c, '4', '9', '0', '1', '0', '1',
+                                    '0',  '0',  '0', '0', '0', '0', 'Z'};
+    CHECK(read_raw(under, sizeof under, &packed, &left) == 0);
     // Bytes after the Time are left for the caller: the reader
     // consumes exactly one TLV.
     static const uint8_t trailing[] = {0x18, 0x0f, '2', '0', '5', '0', '0', '1',  '0', '1',

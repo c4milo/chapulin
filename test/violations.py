@@ -253,8 +253,10 @@ FAST_TARGETS = {"unit", "unit_ca", "x509strict", "x509strict_ecdsa",
                 "webpki_name_test", "webpki_session_test",
                 "softmul_test", "unit_ct_widemul", "mlkem_test_ct_widemul",
                 "webpki_spki_test", "webpki_sigalg_test", "webpki_cert_test",
+                "webpki_time_test", "p384_test",
                 "test/lint-wide-multiply.sh", "test/lint-wide-multiply-gcc.sh",
-                "test/lint-runtime-symbols.sh", "test/lint-trust-separation.sh"}
+                "test/lint-runtime-symbols.sh", "test/lint-trust-separation.sh",
+                "test/lint-exact-fill.sh"}
 
 
 def catches_of(name):

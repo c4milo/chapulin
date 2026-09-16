@@ -1,0 +1,17 @@
+invariant: INV-25
+file: handshake_post.c
+catches: test/lint-exact-fill.sh
+reason: handle_ticket opens an rbuf over the message and drops the only
+  rb_left call on it, which is the shape lint-exact-fill reports. The
+  unit binary objects to this mutant too, because the NewSessionTicket
+  boundary pair covers this reader; the lint is what reports the shape in
+  a reader whose boundary test nobody has written yet.
+
+--- old
+    if (r.err || rb_left(&r) != 0) {
+        return CH_EPROTO;
+    }
+--- new
+    if (r.err) {
+        return CH_EPROTO;
+    }

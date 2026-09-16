@@ -14,9 +14,21 @@
 
 // One NewSessionTicket: derive the resumption PSK and hand the ticket to
 // the application. Tickets we could never present again — nonce too long
-// for a KDF context, identity too big for our ClientHello — are skipped,
-// not fatal: a ticket is an optimization.
-static void handle_ticket(ch_tls *t, const uint8_t *body, size_t n) {
+// for a KDF context, identity too big for our ClientHello — return CH_OK
+// with nothing delivered: those messages decode, this client just cannot
+// use them, and a ticket is an optimization.
+//
+// A message whose own fields do not fill it does not decode at all, so
+// it returns CH_EPROTO and hspost_read's caller kills the session. That
+// is the answer the KeyUpdate arm below already gives a body that is not
+// one byte long.
+//
+// The extensions vector closes the message (RFC 9846 §4.6.1). Its
+// length is read and its bytes are not: the only extension defined
+// there is early_data, and chapulin sends no 0-RTT. Skipping by that
+// length is what leaves rb_left below at zero for a whole message and
+// above zero for a message that carries anything else.
+static int handle_ticket(ch_tls *t, const uint8_t *body, size_t n) {
     rbuf r;
     rb_init(&r, body, n);
     ch_ticket ticket;
@@ -28,14 +40,20 @@ static void handle_ticket(ch_tls *t, const uint8_t *body, size_t n) {
     const uint8_t *nonce = rb_bytes(&r, nonce_len);
     ticket.identity_len = rb_u16(&r);
     ticket.identity = rb_bytes(&r, ticket.identity_len);
-    if (r.err || t->cfg.on_ticket == NULL || nonce_len > SHA256_LEN ||
+    size_t ext_len = rb_u16(&r);
+    rb_skip(&r, ext_len);
+    if (r.err || rb_left(&r) != 0) {
+        return CH_EPROTO;
+    }
+    if (t->cfg.on_ticket == NULL || nonce_len > SHA256_LEN ||
         ticket.identity_len > CH_TICKET_ID_MAX) {
-        return;
+        return CH_OK;
     }
     ticket.epoch = t->epoch;
     ks_res_psk(t->res_master, nonce, nonce_len, ticket.psk);
     t->cfg.on_ticket(t->cfg.io, &ticket);
     ct_wipe(ticket.psk, sizeof ticket.psk);
+    return CH_OK;
 }
 
 // One KeyUpdate: the read direction always rekeys — receivers are
@@ -74,15 +92,15 @@ static int handle_post_handshake(ch_tls *t, const uint8_t *pt, size_t n, size_t 
             break; // partial message, reassembled by the caller
         }
         const uint8_t *body = pt + off + 4;
+        int rc = CH_EPROTO; // any other message type, and any KeyUpdate
+                            // whose body is not the one legal byte
         if (type == HS_NEW_SESSION_TICKET) {
-            handle_ticket(t, body, msg_len);
+            rc = handle_ticket(t, body, msg_len);
         } else if (type == HS_KEY_UPDATE && msg_len == 1 && body[0] <= 1) {
-            int rc = handle_key_update(t, body[0]);
-            if (rc != CH_OK) {
-                return rc;
-            }
-        } else {
-            return CH_EPROTO;
+            rc = handle_key_update(t, body[0]);
+        }
+        if (rc != CH_OK) {
+            return rc;
         }
         off += 4 + msg_len;
     }

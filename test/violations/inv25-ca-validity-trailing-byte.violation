@@ -1,0 +1,14 @@
+invariant: INV-25
+file: x509.c
+catches: x509strict
+builds: bin/x509strict
+reason: read_validity accepts bytes after notAfter inside the Validity
+  SEQUENCE, so a certificate carrying a third Time, or one stray byte,
+  parses and the two dates no longer fill the field. This is the ca
+  mode's copy of the webpki bug inv05-webpki-validity-trailing-byte
+  names; test/x509_exact_fill.h objects.
+
+--- old
+    return !v.err && rb_left(&v) == 0;
+--- new
+    return !v.err;

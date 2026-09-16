@@ -1,0 +1,14 @@
+invariant: INV-25
+file: webpki_time.c
+catches: webpki_time_test
+builds: bin/webpki_time_test
+reason: webpki_read_time takes the tag's fixed length for the field's
+  length and never compares it with the length octet, so a Time
+  declaring 14 octets and carrying a valid 13-octet UTCTime parses and
+  leaves a byte inside the Validity. test/webpki_time_test.c's length
+  pair objects.
+
+--- old
+    if (!x509_read_len(r, &len) || len != body_len) {
+--- new
+    if (!x509_read_len(r, &len)) {

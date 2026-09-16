@@ -262,7 +262,7 @@ def extensionWalk (isCa : Bool) (b : ByteArray) : Nat → Nat → Nat → Option
       let (seen', off') ← readExtension isCa b off seen
       extensionWalk isCa b fuel off' seen'
 
-/-- TBSCertificate body, first byte to last, exact-consume
+/-- TBSCertificate body, first byte to last, exact-fill
 (RFC 5280 §4.1). issuer and subject are opaque bounded TLVs — no name
 matching by design — and validity holds exactly two Times. `isCa`
 picks the extension arm. Returns the SPKI key bytes; for the leaf the

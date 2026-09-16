@@ -170,6 +170,10 @@ static const uint8_t groups_dup[] = {0x00, 0x0a, 0x00, 0x02, 0x00, 0x1d,
 #define SH_EXTS_CAP 96
 #endif
 
+// A Certificate case holds the context byte, the 3-byte list length, and
+// the few list bytes the boundary pair needs.
+#define CERT_CASE_CAP 16
+
 // Parses a ServerHello assembled around the given extension bytes.
 static int server_hello_case(const uint8_t *exts, size_t n, int hrr, int psk_mode) {
     uint8_t buf[SH_CASE_CAP];
@@ -301,6 +305,75 @@ static void test_server_name_acknowledgement(void) {
 #endif
 }
 
+// The extensions vector ends the message in both (RFC 9846 §4.1.3 and
+// §4.3), so an extension inside the message and outside the vector is a
+// decode error. Each pair keeps the same bytes and moves the vector's
+// length alone: a parser that walked the message instead of the vector
+// would read every extension and accept.
+static void test_extension_vector_fill(void) {
+    uint8_t exts[SH_EXTS_CAP];
+    memcpy(exts, versions_exact, sizeof versions_exact);
+    memcpy(exts + sizeof versions_exact, key_share_exact, sizeof key_share_exact);
+    uint8_t buf[SH_CASE_CAP];
+    size_t len = make_server_hello(buf, 0, exts, sizeof versions_exact + sizeof key_share_exact);
+    CHECK(try_server_hello(buf, len, 0) == CH_OK);
+    size_t fixed = 2 + 32 + 1 + 2 + 1;
+    buf[fixed] = (uint8_t)(sizeof versions_exact >> 8);
+    buf[fixed + 1] = (uint8_t)(sizeof versions_exact);
+    CHECK(try_server_hello(buf, len, 0) == CH_EPROTO);
+
+    uint8_t ee[64];
+    size_t ee_len = make_encrypted_exts(ee, record_limit_exact, sizeof record_limit_exact);
+    CHECK(try_encrypted_exts(ee, ee_len) == CH_OK);
+    ee[0] = 0;
+    ee[1] = 0;
+    CHECK(try_encrypted_exts(ee, ee_len) == CH_EPROTO);
+}
+
+// Assembles a Certificate body: an empty certificate_request_context,
+// then a certificate_list whose u24 length the caller sets and whose
+// bytes the caller sizes. RFC 9846 §4.4.2 ends the message at that
+// vector, so declared and supplied differ only in a malformed message.
+static size_t make_certificate(uint8_t *out, size_t declared, size_t supplied) {
+    wbuf w;
+    wb_init(&w, out, CERT_CASE_CAP);
+    wb_u8(&w, 0); // certificate_request_context: empty
+    wb_u24(&w, (uint32_t)declared);
+    for (size_t i = 0; i < supplied; i++) {
+        wb_u8(&w, (uint8_t)i);
+    }
+    CHECK(!w.err);
+    return w.len;
+}
+
+static int try_certificate(const uint8_t *body, size_t n, size_t *list_len) {
+    const uint8_t *list = NULL;
+    uint8_t alert = 0;
+    *list_len = 0;
+    return hsp_parse_certificate(body, n, &list, list_len, &alert);
+}
+
+// The certificate_list fills the Certificate message (RFC 9846 §4.4.2),
+// in both directions. The differential driver also feeds this parser a
+// trailing octet; this pair puts the boundary in `make check`, so the
+// mutant below it names a binary the fast tier builds.
+static void test_certificate_list_fill(void) {
+    uint8_t buf[CERT_CASE_CAP];
+    size_t list_len = 0;
+    // The last message the parser accepts: five declared, five supplied.
+    size_t len = make_certificate(buf, 5, 5);
+    CHECK(try_certificate(buf, len, &list_len) == CH_OK && list_len == 5);
+    // One byte past the vector, still inside the message.
+    CHECK(try_certificate(buf, make_certificate(buf, 5, 6), &list_len) == CH_EPROTO);
+    // The short direction: the vector claims one byte the message lacks.
+    CHECK(try_certificate(buf, make_certificate(buf, 6, 5), &list_len) == CH_EPROTO);
+    // SIZE (1..2^24-1): an empty list is not a certificate.
+    CHECK(try_certificate(buf, make_certificate(buf, 0, 0), &list_len) == CH_EPROTO);
+    // A non-empty certificate_request_context: we sent no request.
+    buf[0] = 1;
+    CHECK(try_certificate(buf, len, &list_len) == CH_EPROTO);
+}
+
 // Same, with supported_versions prepended: CH_OK requires a selected
 // version, so this isolates the extension under test.
 static int server_hello_case2(const uint8_t *ext2, size_t n, int hrr, int psk_mode) {
@@ -364,6 +437,8 @@ int main(void) {
     CHECK(encrypted_exts_case(groups_dup, sizeof groups_dup) == CH_EPROTO);
     // An empty extension block is a legal EncryptedExtensions.
     CHECK(encrypted_exts_case(NULL, 0) == CH_OK);
+    test_extension_vector_fill();
+    test_certificate_list_fill();
     test_server_name_acknowledgement();
     test_certificate_verify_schemes();
 

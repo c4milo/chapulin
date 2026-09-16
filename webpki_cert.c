@@ -4,7 +4,7 @@
 // the profile in docs/webpki.md ("The chain walk", steps 2, 3 and 6c).
 // x509.c's parse_certificate and parse_tbs are the ca mode's parser
 // over the same grammar, and this file keeps their order and their
-// exact-consume checks. The walk, the clock and the hostname are the
+// exact-fill checks. The walk, the clock and the hostname are the
 // caller's; this file decides none of them. Every byte here is public,
 // so variable time is fine and deliberate.
 #include "webpki.h"
@@ -107,7 +107,7 @@ static int unique_id_follows(const rbuf *t) {
     return !next.err && (tag == TAG_ISSUER_UNIQUE_ID || tag == TAG_SUBJECT_UNIQUE_ID);
 }
 
-// The TBSCertificate body, first byte to last, exact-consume.
+// The TBSCertificate body, first byte to last, exact-fill.
 static int read_tbs(const uint8_t *tbs, size_t tbs_len, int is_ca, webpki_cert *out,
                     const uint8_t **sigalg_tlv, size_t *sigalg_tlv_len, uint8_t *alert) {
     rbuf t;

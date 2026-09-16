@@ -1,0 +1,14 @@
+invariant: INV-25
+file: webpki_cert.c
+catches: webpki_cert_test
+builds: bin/webpki_cert_test
+reason: webpki_parse_certificate reads the TBS, the signature algorithm
+  and the signature from the whole entry without holding them to the
+  Certificate SEQUENCE's own length, so a certificate whose SEQUENCE
+  ends before its signature still parses. test/webpki_cert_mutants.h's
+  short-outer case objects.
+
+--- old
+    if (!x509_read_header(&r, TAG_SEQUENCE, &body_len) || body_len != rb_left(&r)) {
+--- new
+    if (!x509_read_header(&r, TAG_SEQUENCE, &body_len)) {

@@ -217,15 +217,30 @@ static void hspd_sh_share_exts(wbuf *w, size_t mut, hspd_sh_plan *plan, const ui
     }
 }
 
+// Writes the extensions vector's length into the two octets at exts.
+// end is the offset the vector stops at, which every row but one takes
+// from the block it wrote. wb_patch16 cannot do this, because it always
+// measures to w->len; the w->err guard is wb_patch16's, and it is here
+// for the same reason: a writer that overflowed never wrote the two
+// octets at exts.
+static void hspd_sh_patch_vector(wbuf *w, size_t exts, size_t end) {
+    if (w->err) {
+        return;
+    }
+    size_t n = end - exts - 2;
+    w->p[exts] = (uint8_t)(n >> 8);
+    w->p[exts + 1] = (uint8_t)n;
+}
+
 static void diff_hs_server_hello(void) {
     for (int i = 0; i < 600; i++) {
         hspd_sh_plan plan = {0};
         plan.psk_offered = (int)rng_below(2);
         int hrr = rng_below(4) == 0;
         // One deliberate deviation per row, drawn from the menu the RFC
-        // and the profile between them make illegal; 17 and up leave
+        // and the profile between them make illegal; 18 and up leave
         // the message on profile.
-        size_t mut = rng_below(20);
+        size_t mut = rng_below(21);
 
         uint8_t random[32];
         rng_fill(random, sizeof random);
@@ -244,6 +259,7 @@ static void diff_hs_server_hello(void) {
         hspd_sh_prefix(&w, mut, random);
         size_t exts = wb_mark(&w, 2);
         hspd_sh_version_ext(&w, mut);
+        size_t after_version = w.len;
         if (hrr) {
             hspd_sh_retry_exts(&w, mut, cookie, cookie_len);
         } else {
@@ -253,7 +269,12 @@ static void diff_hs_server_hello(void) {
             wb_u16(&w, HSPD_EARLY_DATA);
             wb_u16(&w, 0);
         }
-        wb_patch16(&w, exts);
+        // Every row but mut 17 gives the vector the whole block. Mut 17
+        // gives it supported_versions alone, so every later extension
+        // lies inside the message and outside the vector: §4.1.3 ends
+        // the message at the vector, and a parser that walked the
+        // message instead would read them all and accept.
+        hspd_sh_patch_vector(&w, exts, mut == 17 ? after_version : w.len);
         if (w.err) {
             die("handshake_parser: ServerHello buffer too small");
         }
@@ -315,6 +336,15 @@ static void hspd_ee_build(wbuf *w, size_t mut, int have_limit, uint16_t limit) {
     wb_patch16(w, exts);
     if (mut == 4) {
         wb_u8(w, 0); // trailing octet past the vector
+    }
+    if (mut == 8) {
+        // A whole supported_groups inside the message and outside the
+        // vector. §4.3 ends the message at the vector; a parser that
+        // walked the message instead would read it and accept.
+        wb_u16(w, HSPD_SUPPORTED_GROUPS);
+        wb_u16(w, 4);
+        wb_u16(w, 2);
+        wb_u16(w, HSPD_X25519);
     }
 }
 

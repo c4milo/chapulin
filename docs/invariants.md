@@ -427,6 +427,85 @@ which convention holds them.
   bytes.
 - See [decisions: Engineering](decisions.md#engineering).
 
+### INV-25 — every reader fills its container
+
+- **Claim.** A reader that decodes a container's fields requires those
+  fields to fill it. A byte left inside a DER TLV, a TLS extension's
+  `extension_data`, a length-prefixed vector or a handshake message
+  body is a refusal, not something to ignore. Without the rule two
+  encodings name one value: a certificate carrying a third Time inside
+  its Validity SEQUENCE parses as the two dates beside it, and a
+  NewSessionTicket with a byte after its extensions vector is handed to
+  the application as a whole message. A field the profile skips unread
+  is not an exception — `x509_skip` reads a whole TLV and
+  `hsp_parse_encrypted_exts` reads `supported_groups` by its own
+  length, so the container still ends where the field ends. The refusal
+  is a `ch_err` return like any other bad peer input, so it kills the
+  session: `handle_ticket` returns `CH_EPROTO` for a message its own
+  fields do not fill, the same answer the KeyUpdate arm beside it gives
+  a body that is not one byte long. It returns `CH_OK` and delivers
+  nothing only for a message that does fill itself and that this client
+  still cannot use, such as one whose nonce is longer than
+  `SHA256_LEN`.
+- **Mechanism.** Every container is read through an `rbuf` built over
+  its own slice, and the reader that built it compares `rb_left` before
+  it returns: `rb_left(&r) == 0` at the end, or a `len != rb_left(&r)`
+  equality at the header. `pem.c` is the one reader whose check runs in
+  a function it calls, `read_tail`.
+- **Check.** `make lint-exact-fill` (`tools/exact-fill.py`) reports a
+  library function that builds an `rbuf` over a slice and never compares
+  `rb_left` on it for equality, with that file's `ALLOWED` table holding
+  the one reader that checks in a callee, `pem.c`'s. Semgrep-tripwire
+  grade, and the exit codes below measure it rather than claim it. It
+  catches a reader landed with no check at all; a reader whose only
+  `rb_left` is a `while (rb_left(&r) > 0)` walk or a `> 0` guard on an
+  optional field, which describes every list reader in the tree; and a
+  check written against a different reader than the one it opened. It
+  misses the deletion of one of several equality checks on one `rbuf`.
+  Applying the four recorded webpki mutants to the sources and running
+  the lint,
+  `inv05-webpki-spki-trailing-byte` and
+  `inv05-webpki-validity-trailing-byte` exit 1 and
+  `inv05-webpki-rsa-key-trailing-byte` and
+  `inv05-webpki-basic-constraints-past-sequence` exit 0, because in each
+  of those two the reader's other equality survives the edit. The lint
+  also cannot tell whether a check is right — `!= 0` where `== 0` was
+  meant, a check on a path the parser can skip, or one that runs before
+  the last field is read — and it merges a function's `#ifdef` arms,
+  so a check in one arm answers for both.
+
+  Boundary pairs hold what the lint cannot, one per container, in both
+  directions: a container one byte longer than its fields fill, and a
+  container whose length stops before its own fields do, which the
+  closing `rb_left` never sees. `test/x509_exact_fill.h` covers the ca
+  mode's reader and `test/x509_ca_tests.h` the provisioning reader,
+  `test/webpki_cert_mutants.h`, `test/webpki_ext_mutants.h`,
+  `test/webpki_spki_test.c` and `test/webpki_time_test.c` the webpki
+  readers, `test/handshake_strict_test.c` the ServerHello and
+  EncryptedExtensions vectors and the Certificate list,
+  `test/p384_test.c` the P-384 signature, and
+  `test/session_post_tests.h` the NewSessionTicket. `make diff` reads
+  four of those containers a second time, against the Lean spec:
+  `test/diff_handshake_certificate.h` puts a trailing octet past the
+  certificate list and past the CertificateVerify signature, and
+  `test/diff_handshake_parser.h` puts bytes inside the ServerHello and
+  EncryptedExtensions messages and outside their extension vectors.
+
+  The `inv25-` and `inv05-webpki-*` mutants in `test/violations/` require
+  a named test to object, and each names one: `handshake_strict_test`
+  for the Certificate list and the EncryptedExtensions vector,
+  `x509strict` for the ca mode's Validity, `webpki_cert_test`,
+  `webpki_spki_test` and `webpki_time_test` for the webpki readers,
+  `p384_test` for the signature, `unit` for the NewSessionTicket, and
+  `test/lint-exact-fill.sh` for the two shapes the lint itself is meant
+  to report. Two readers in the list above carry no mutant yet: the
+  ServerHello extension vector and the provisioning reader in
+  `x509_ca.c`.
+- **Violation.** A PR adds a reader that decodes what it needs and
+  returns, leaving the rest of the container unread because "the
+  length already bounds it".
+- See [decisions: Trust model](decisions.md#trust-model).
+
 ## Timing
 
 ### INV-16 — constant time where secrets flow

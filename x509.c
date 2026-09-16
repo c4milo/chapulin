@@ -188,7 +188,7 @@ static int read_validity(rbuf *t, x509_leaf_info *leaf) {
     return !v.err && rb_left(&v) == 0;
 }
 
-// The TBSCertificate body, first byte to last, exact-consume. "TBS"
+// The TBSCertificate body, first byte to last, exact-fill. "TBS"
 // is RFC 5280's name for the part of a certificate the CA signs: the
 // serial, the algorithm, the names, the validity, the public key, and
 // the extensions. The signature that follows covers exactly these

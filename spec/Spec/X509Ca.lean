@@ -95,7 +95,7 @@ def extensionWalk (b : ByteArray) : Nat → Nat → Bool → Option Bool
       let (off', sawCa') ← readExtension b off sawCa
       extensionWalk b fuel off' sawCa'
 
-/-- TBSCertificate, exact-consume. Four fields are skipped whole:
+/-- TBSCertificate, exact-fill. Four fields are skipped whole:
 signatureAlgorithm is the anchor's own and is never checked, issuer
 and subject are names this profile does not read, and validity needs
 a clock the device does not have. -/

@@ -238,12 +238,12 @@ pinned handshake 104% more. SHA-256 and both signature verifies are
 unchanged, because SHA-256 does not multiply and the verifies read only
 public bytes.
 
-Flash is 27.9 kB for the default build (`.text` + `.rodata`, `-Os`),
+Flash is 28.0 kB for the default build (`.text` + `.rodata`, `-Os`),
 of which the multiply decomposition is 2.3 kB, nearly all of it
 poly1305's unrolled block: the `total (CH_NATIVE_WIDEMUL)` row of
 [`bench/results-device.csv`](bench/results-device.csv) sizes the same
 modules over the native multiply. The `PIN=ecdsa` build trades 2.2 kB
-of RSA for 5.8 kB of P-256 and totals 31.4 kB.
+of RSA for 5.8 kB of P-256 and totals 31.5 kB.
 
 The hybrid key exchange costs less than its wire size suggests. `KEX=pq`
 adds two ML-KEM key expansions and one decapsulation — the key pair lives

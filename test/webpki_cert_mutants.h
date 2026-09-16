@@ -266,6 +266,15 @@ static void test_structure(void) {
     tail[base_leaf_len] = 0x00;
     EXPECT_OK(tail, base_leaf_len, 0);
     EXPECT_BAD(tail, base_leaf_len + 1, 0);
+    // The other half of that rule: a Certificate SEQUENCE that ends
+    // before its own signature, which stays inside cert_len. Every
+    // field still reads, so only the length equality at the outer
+    // header refuses it.
+    tlv_shape outer;
+    tlv_read(base_leaf, base_leaf_len, &outer);
+    size_t at_outer = put_header(tail, 0x30, outer.content_len - sig_len);
+    memcpy(tail + at_outer, base_leaf + outer.header_len, outer.content_len);
+    EXPECT_BAD(tail, at_outer + outer.content_len, 0);
 }
 
 // notBefore equal to notAfter is accepted; notBefore a year after notAfter

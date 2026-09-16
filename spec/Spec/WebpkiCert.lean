@@ -296,7 +296,7 @@ def readValidity? (b : ByteArray) (off : Nat) : Option (Nat × Nat × Nat) := do
   guard (o2 == validity.size ∧ notBefore ≤ notAfter)
   some (notBefore, notAfter, validityEnd)
 
-/-- TBSCertificate (§4.1), first byte to last, exact-consume: version [0]
+/-- TBSCertificate (§4.1), first byte to last, exact-fill: version [0]
 EXPLICIT INTEGER 2, serialNumber, signature, issuer, validity, subject,
 subjectPublicKeyInfo, extensions [3], and nothing else, so neither unique
 identifier. -/

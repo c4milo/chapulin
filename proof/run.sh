@@ -543,7 +543,11 @@ launch fast full keysched 120 "" ct.c
 # backwards -- and leaves the driver's record reading to handshake_psk and
 # handshake_pin.
 launch fast full epoch 40 "" ct.c
-launch fast full handshake_post 132 "handle_post_handshake.0:33,fill_nondet.0:130" --object-bits 11 buf.c ct.c session.c
+# Weighted from the measured peak: 694 properties, 2.6 GB RSS in 293 s,
+# up from 1.9 GB in 154 s before handle_ticket read the ticket's
+# extensions vector, compared rb_left against zero and refused a message
+# its fields do not fill (INV-25).
+launch fast:3 full handshake_post 132 "handle_post_handshake.0:33,fill_nondet.0:130" --object-bits 11 buf.c ct.c session.c
 # The only launch line that builds the hybrid key exchange
 # (https://github.com/c4milo/chapulin/issues/47). hybrid_secret over any seed,
 # any server ciphertext and any server share, with mlkem and x25519 stubbed to

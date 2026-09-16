@@ -203,6 +203,13 @@ static void test_der_boundary(const uint8_t *pub) {
     sig[4] = 0x31;
     memcpy(sig + 5, body + 2, body_len - 2);
     CHECK(p384_ecdsa_verify(pub, hash, sig, 3 + body_len) == 0);
+
+    // The SEQUENCE one byte short of s, with r and s where they were:
+    // a reader that took sig_len for the SEQUENCE's end would read both
+    // INTEGERs and accept, so only the length equality refuses this.
+    sig[1] = DER_BODY_MAX - 1;
+    memcpy(sig + 2, body, body_len);
+    CHECK(p384_ecdsa_verify(pub, hash, sig, 2 + body_len) == 0);
 }
 
 // Three openssl signatures over random 64-byte messages.

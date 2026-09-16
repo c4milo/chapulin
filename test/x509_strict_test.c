@@ -119,6 +119,7 @@ static int run_cert(const uint8_t *cert, size_t n) {
 #include "x509_ca_tests.h"
 #include "x509_chain_tests.h"
 #include "x509_epoch.h"
+#include "x509_exact_fill.h"
 #include "x509_spki.h"
 
 static void test_outer_and_serial(void) {
@@ -404,6 +405,7 @@ int main(void) {
     test_epoch_grammar_unchanged();
     test_epoch_from_chain();
     test_spki();
+    test_exact_fill();
     test_decoded_extensions();
     test_ext_shape();
     test_sigvalue();

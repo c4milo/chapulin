@@ -351,6 +351,7 @@ int main(void) {
     test_rfc8448_hrr();
     test_seq_exhaustion();
     test_post_handshake();
+    test_ticket_exact_fill();
     test_alerts_and_epochs();
     test_connect_cfg();
     test_pinned_hello_extensions();

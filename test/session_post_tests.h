@@ -98,6 +98,100 @@ static void test_post_handshake(void) {
     CHECK(ch_read(&t, out, sizeof out) == 0);
 }
 
+// One NewSessionTicket message: the fields RFC 9846 §4.6.1 fixes, with a
+// nonce of nonce_len bytes, then whatever bytes the caller supplies where
+// the extensions vector belongs. wb_patch24 counts those bytes into the
+// message length, so a tail that is not a well-formed extensions vector
+// is a message whose fields do not fill it.
+static size_t build_ticket_msg(uint8_t *out, size_t cap, size_t nonce_len, const uint8_t *tail,
+                               size_t tail_len) {
+    wbuf w;
+    wb_init(&w, out, cap);
+    wb_u8(&w, HS_NEW_SESSION_TICKET);
+    size_t msg = wb_mark(&w, 3);
+    wb_u16(&w, 0);
+    wb_u16(&w, 3600); // lifetime
+    wb_u16(&w, 0);
+    wb_u16(&w, 7); // age_add
+    wb_u8(&w, (uint8_t)nonce_len);
+    for (size_t i = 0; i < nonce_len; i++) {
+        wb_u8(&w, (uint8_t)i); // nonce
+    }
+    wb_u16(&w, 4);
+    wb_bytes(&w, (const uint8_t *)"tick", 4); // identity
+    wb_bytes(&w, tail, tail_len);
+    wb_patch24(&w, msg);
+    CHECK(!w.err);
+    return w.len;
+}
+
+// Feeds one NewSessionTicket over the mock transport, with application
+// data behind it so a read that survives the ticket still returns those
+// four bytes. Returns ch_read's result and writes how many tickets
+// reached the application through tickets, plus the session state the
+// read left behind through state.
+static int read_after_ticket(size_t nonce_len, const uint8_t *tail, size_t tail_len, int *tickets,
+                             int *state) {
+    uint8_t secret[SHA256_LEN];
+    ch_rand_bytes(secret, sizeof secret);
+    rec_dir server;
+    rec_dir_init(&server, secret);
+    mock_io m = {0};
+    static uint8_t rxbuf[1024];
+    ch_tls t;
+    mock_session(&t, &m, rxbuf, sizeof rxbuf, secret, NULL);
+
+    uint8_t msg[96];
+    size_t msg_len = build_ticket_msg(msg, sizeof msg, nonce_len, tail, tail_len);
+    mock_push(&m, &server, REC_HANDSHAKE, msg, msg_len);
+    mock_push(&m, &server, REC_APPDATA, (const uint8_t *)"hola", 4);
+    uint8_t out[16];
+    int rc = ch_read(&t, out, sizeof out);
+    *tickets = m.tickets;
+    *state = t.state;
+    return rc;
+}
+
+// The NewSessionTicket fields must fill the message (RFC 9846 §4.6.1).
+// The boundary is exact: an empty extensions vector is the last message
+// the parser accepts, and one byte past it the first it refuses. A
+// refusal is fatal, not a skip: ch_read returns CH_EPROTO, the
+// application data behind the ticket never arrives, and the session
+// ends at CH_ST_FAILED. A ticket that fills its message but carries a
+// nonce this client cannot use is the other case, and it stays a skip.
+static void test_ticket_exact_fill(void) {
+    int tickets = 0;
+    int state = 0;
+    const uint8_t empty_exts[2] = {0, 0};
+    CHECK(read_after_ticket(2, empty_exts, sizeof empty_exts, &tickets, &state) == 4);
+    CHECK(tickets == 1 && state == CH_ST_CONNECTED);
+    // A ticket extension is read by nothing here — chapulin has no
+    // 0-RTT — so a well-formed vector with one in it still delivers.
+    const uint8_t one_ext[6] = {0, 4, 0, 42, 0, 0};
+    CHECK(read_after_ticket(2, one_ext, sizeof one_ext, &tickets, &state) == 4);
+    CHECK(tickets == 1 && state == CH_ST_CONNECTED);
+    // One byte past the empty vector, counted by the message length.
+    const uint8_t trailing_byte[3] = {0, 0, 0};
+    CHECK(read_after_ticket(2, trailing_byte, sizeof trailing_byte, &tickets, &state) == CH_EPROTO);
+    CHECK(tickets == 0 && state == CH_ST_FAILED);
+    // The extensions vector absent altogether.
+    CHECK(read_after_ticket(2, empty_exts, 0, &tickets, &state) == CH_EPROTO);
+    CHECK(tickets == 0 && state == CH_ST_FAILED);
+    // A vector whose length runs past the message.
+    const uint8_t overlong[2] = {0, 1};
+    CHECK(read_after_ticket(2, overlong, sizeof overlong, &tickets, &state) == CH_EPROTO);
+    CHECK(tickets == 0 && state == CH_ST_FAILED);
+
+    // The other arm, and the reason the refusal above must be its own
+    // branch: a nonce longer than SHA256_LEN fills its message, so the
+    // ticket is skipped and the session reads on. SHA256_LEN is the last
+    // nonce ks_res_psk accepts and SHA256_LEN + 1 the first it cannot.
+    CHECK(read_after_ticket(SHA256_LEN, empty_exts, sizeof empty_exts, &tickets, &state) == 4);
+    CHECK(tickets == 1 && state == CH_ST_CONNECTED);
+    CHECK(read_after_ticket(SHA256_LEN + 1, empty_exts, sizeof empty_exts, &tickets, &state) == 4);
+    CHECK(tickets == 0 && state == CH_ST_CONNECTED);
+}
+
 // The ch_write chunk loop over the mock transport: the exact-limit and
 // limit-plus-one boundaries against a server-side reader, then an I/O
 // failure mid-loop, which must kill the session with no partial record

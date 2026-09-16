@@ -1,0 +1,13 @@
+invariant: INV-25
+file: p384.c
+catches: p384_test
+builds: bin/p384_test
+reason: der_parse reads r and s from the whole signature buffer without
+  holding them to the SEQUENCE's own length, so an Ecdsa-Sig-Value whose
+  SEQUENCE ends before s does still verifies. test/p384_test.c's DER
+  length boundary objects.
+
+--- old
+    if (rb.err || len >= 0x80 || len != rb_left(&rb)) {
+--- new
+    if (rb.err || len >= 0x80) {
