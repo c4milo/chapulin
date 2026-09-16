@@ -1,0 +1,12 @@
+invariant: INV-5
+file: webpki_ext.c
+catches: webpki_cert_test
+reason: read_basic_constraints accepts bytes after the BasicConstraints
+  SEQUENCE inside the extnValue, so a pathLenConstraint written outside
+  the SEQUENCE is read as if the SEQUENCE held it. The basicConstraints
+  boundary mutants object.
+
+--- old
+    if (!x509_read_header(&v, TAG_SEQUENCE, &seq_len) || seq_len != rb_left(&v)) {
+--- new
+    if (!x509_read_header(&v, TAG_SEQUENCE, &seq_len)) {

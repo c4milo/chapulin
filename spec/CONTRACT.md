@@ -327,6 +327,38 @@ Spec.WebpkiSigalg.sign : SigAlg → Signer → (tbs : ByteArray) → Option (Byt
                         -- mismatch. Line ops: `webpki_sign <name> rsa <n> <d> <tbs>` and
                         -- `webpki_sign <name> p256|p384 <d> <k> <tbs>` → `<spki> <sig>` /
                         -- `FAIL`.
+Spec.WebpkiCert.parseCertificate? : (isCa : Bool) → (cert : ByteArray) → Option Certificate
+                        -- one TRUST=webpki certificate (RFC 5280 §4.1) under an arm, false
+                        -- for the leaf and true for an issuer: at most certificateMax
+                        -- (3072, CH_WEBPKI_CERT_MAX) bytes, exact-fill at every level;
+                        -- version 3 (§4.1.2.1); a serial readSerial accepts, at most 20
+                        -- value bytes (§4.1.2.2); a signature field readSigalg? accepts,
+                        -- which the outer signatureAlgorithm equals byte for byte
+                        -- (§4.1.1.2); issuer and subject as whole Name TLVs; a validity
+                        -- of two readTime values, notBefore no later than notAfter; an
+                        -- SPKI readSpki? accepts; readExtensions? at the extensions field
+                        -- and nothing after it, so no unique identifier (§4.1.2.8); a BIT
+                        -- STRING signature with zero unused bits and one byte or more.
+                        -- `some` carries every range as an offset and a length into the
+                        -- certificate. The alert a refusal names is not modeled. Line op:
+                        -- `webpki_cert <0|1> <cert>` → `ok <tbs off len> <issuer off len>
+                        -- <subject off len> <notBefore> <notAfter> <rsa|p256|p384> <key>
+                        -- <sigalg> <sig off len> <san off len | - 0> <seen> <cA>
+                        -- <pathLen | ->` / `ERR webpki_cert reject`.
+Spec.WebpkiCert.readExtensions? : (isCa : Bool) → (b : ByteArray) → (off : Nat) →
+                        Option (Extensions × Nat)
+                        -- extensions [3] EXPLICIT at off (§4.1): 1 to extensionCountMax (16)
+                        -- Extensions of at most extensionTlvMax (1024) bytes, §8.19-minimal
+                        -- extnIDs, each read at most once — keyUsage with the arm's bit
+                        -- among others (readKeyUsage, §4.2.1.3); extendedKeyUsage with
+                        -- id-kp-serverAuth among its purposes on the leaf and unread on an
+                        -- issuer (§4.2.1.12); basicConstraints in canonical DER, cA equal to
+                        -- the arm, critical on an issuer, a pathLenConstraint only with cA
+                        -- and at most 32767 (§4.2.1.9); subjectAltName recorded, unread
+                        -- (§4.2.1.6) — and every other extension skipped when not critical
+                        -- and refused when critical (§4.2). The leaf needs keyUsage,
+                        -- extendedKeyUsage and subjectAltName, an issuer keyUsage and
+                        -- basicConstraints. Driven through `webpki_cert`.
 Spec.Handshake.step   : (mode : Mode) → State → Msg → Option State      -- RFC 9846 §4 order of
                         -- server-to-client messages after the ClientHello; none = fatal
                         -- (unexpected_message). Msg has one constructor per line-protocol
@@ -635,6 +667,19 @@ Spec.WebpkiSigalg.bytesToNatBE_zeroPad_append
 Spec.WebpkiSigalg.verify_tbs_cap, verify_rsa_sigalg_ec_key, verify_ecdsa_sigalg_rsa_key
                              a tbs over certMax, an RSA algorithm under an EC key and an
                              -- ECDSA algorithm under an RSA key all verify false
+Spec.WebpkiCert.parseCertificate?_frames
+                             an accepted certificate is exactly tlv 0x30 (tlv 0x30 tbs ++
+                             -- encode sigAlg ++ tlv 0x03 sig), where tbs is the input's
+                             -- bytes at the recorded range, which lies inside the input,
+                             -- sigAlg is the recorded algorithm, and sig holds a zero
+                             -- unused-bits octet and a signature byte after it
+Spec.WebpkiCert.readExtensions?_subjectAltName, parseCertificate?_subjectAltName
+                             the recorded subjectAltName range lies inside the extensions
+                             -- field, and so inside the certificate's TBS content
+Spec.WebpkiCert.readExtensions?_complete, parseCertificate?_complete
+                             the leaf saw keyUsage, extendedKeyUsage and subjectAltName,
+                             -- with cA false; an issuer saw keyUsage and basicConstraints,
+                             -- with cA true
 Spec.Record.nonce_inj        distinct sequence numbers below 2^64 give distinct record
                              -- nonces (RFC 9846 §5.3): within one traffic key the
                              -- nonce never repeats
@@ -748,6 +793,7 @@ means the module's selftest plus the differential oracle carry it;
 | X509Ca | 6 | isCaTrue accepts exactly the two anchor encodings (the iff is kernel-checked false without its encodeLen-domain bound); an accepted certificate has exactly the SEQUENCE(TBS, sigAlg, BIT STRING) shape with the signature framing intact; the extracted key is exactly 64 bytes or 256..384 in 8-byte steps, tightening the CBMC harness's bound. Acceptance policy beyond the frame is executable oracle only: the differential's minted anchors, near shapes and mutations |
 | WebpkiSpki | 3 | the accepted RSA key is 256..512 bytes in multiples of 8 with its top bit set and odd, stated over the returned bytes from a reader that judges the decoded integer; the EC keys are 64 and 96 bytes. Acceptance beyond that is executable oracle only: the differential's spec-encoded keys and their perturbations |
 | WebpkiSigalg | 9 | the decoding reader accepts exactly the four canonical encodings, one algorithm each (the byte-compare view and the decode view agree); FIPS 186-4 §6.4's integer rule equals the C's byte cut for P-256 with SHA-384 and its zero pad for P-384 with SHA-256, with the pad lemma and big-endian concatenation lemma under them; the cap and both family mismatches refuse. The signature arithmetic is the RSA, P-256 and P-384 modules' and stays vector-checked |
+| WebpkiCert | 5 | an accepted certificate is exactly one Certificate SEQUENCE whose TBS content is the recorded range of the input and whose outer signatureAlgorithm is the encoding of the recorded algorithm; the recorded subjectAltName range lies inside the extensions field and the TBS content; the leaf saw keyUsage, extendedKeyUsage and subjectAltName with cA false, an issuer keyUsage and basicConstraints with cA true. Which values each extension admits, the caps and the other fields stay executable oracle only: the corpus certificates, their single-byte changes and the random extension lists of the differential |
 | X25519 | 2 | RFC 7748 §5 clamping: every decoded scalar is a multiple of the cofactor 8, and has bit 254 set with bit 255 clear. The first keeps `k * P` in the prime-order subgroup, the second fixes the ladder's iteration count. The ladder arithmetic itself stays vector-checked |
 | X509Der | 19 | DER canonicality: a length, a TLV, and an INTEGER are accepted only in the one encoding X.690 §10.1 and §8.3.2 admit, so the reader is DER-strict rather than BER-lenient; plus the encode/decode round trips and the §8.19.2 subidentifier rule |
 | X509 | 4 | parse soundness: an accepted list reports a key only after a signature over the complete DER of the TBSCertificate that carried it verified under the pinned key, or under an intermediate the pinned key itself signed; the entry is a byte range of the list and no third entry can follow. Acceptance policy beyond that is executable oracle only: mint/parse round trips for the single leaf and the chained pair (self-checked signatures; OpenSSL material is exercised by the C strictness suite) and the differential |

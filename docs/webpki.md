@@ -60,8 +60,9 @@ Four facts follow, and each one drives a decision further down.
    it reads the next entry, and stops at the first anchor that both names the
    issuer and verifies the signature.
 4. **A leaf carries more extensions, and a larger one, than the ca profile
-   admits.** The S3 leaf has ten extensions and a subjectAltName value of
-   roughly 700 bytes, against the ca profile's caps of eight and 256.
+   admits.** The S3 leaf has ten extensions, and its subjectAltName Extension
+   TLV is 653 bytes, of which the extnValue is 640. The ca profile caps them
+   at eight extensions and a 256-byte Extension TLV.
 
 ## Algorithms
 
@@ -125,8 +126,8 @@ checkable rather than assumed.
 
 ## The chain walk
 
-The order matters, and every step's failure is a distinct alert. `depth` is 0
-at the leaf.
+The order matters. `webpki.h`'s alert table maps each failure to the alert the
+walk sends, and several steps share one alert. `depth` is 0 at the leaf.
 
 1. Read the `Certificate` message. Refuse a non-empty
    `certificate_request_context`.
@@ -301,7 +302,7 @@ measured inputs, and the formula is given.
 | `CH_TRUST_MIN_RXBUF` | 12324 B | derived: `4 * (3072 + 5) + 16` |
 | `CH_WEBPKI_ANCHOR_MAX` | 12 | measured: 9 roots cover the four endpoints above |
 | `CH_WEBPKI_EXT_COUNT_MAX` | 16 | measured: the S3 leaf carries 10 |
-| `CH_WEBPKI_EXT_TLV_MAX` | 1024 | measured: the S3 leaf's subjectAltName value is roughly 700 B |
+| `CH_WEBPKI_EXT_TLV_MAX` | 1024 | measured: the S3 leaf's subjectAltName Extension TLV is 653 B |
 | `CH_HOSTNAME_MAX` | 253 | DNS's own limit |
 | `CH_RSA_MODULUS_MAX` | 512 under webpki, 384 otherwise | measured: GTS Root R1 is RSA-4096 |
 

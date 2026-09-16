@@ -656,6 +656,50 @@ launch fast:1 full x509ca_ecdsa 400 "fill_nondet.0:1537" buf.c ct.c
 launch fast full webpki_time 41 "" buf.c x509_der.c ct.c
 launch fast:7 full webpki_name 254 "fill_nondet.0:1025" buf.c x509_der.c ct.c
 launch fast:4 full webpki_san 17 "fill_nondet.0:1025,webpki_match_san.0:17" -DCH_PROOF_SAN_LEN=32 -DCH_PROOF_HOST_LEN=16 buf.c x509_der.c ct.c
+# The TRUST=webpki certificate parser and its extension walk. Every
+# number below is cbmc 6.11.0 with kissat under /usr/bin/time -l on a
+# 10-core development machine, measured while other proofs ran beside
+# it; "under run.sh" means PROVE_ONLY through this script's own launch.
+#
+# webpki_cert proves webpki_parse_certificate over any bytes up to one
+# past CH_WEBPKI_CERT_MAX and any arm value, with the four readers it
+# hands fields to stubbed to the contracts their own harnesses prove and
+# the DER primitives real. Under run.sh: 1200 properties, 189 s, 3.7 GB.
+# The same formula with an assert of 0 at its CH_OK tail fails that one
+# assert (1 of 1201, 300 s, 4.4 GB), so the tail is reached; fast:5
+# covers that peak.
+#
+# The extension walk splits the way webpki_san does, because a harness
+# cannot replace its statics with their contracts, so every composition
+# unrolls the readers below it. webpki_ext proves the pieces that read
+# one element at the real 1024-byte bound (one KeyPurposeId and
+# x509_read_extension from any reader state, basicConstraints over any
+# extnValue) and the purposes loop at 64 bytes. Under run.sh: 1217
+# properties, 386 s, 3.0 GB; run apart, the x509_read_extension half
+# peaked at 5.0 GB in 54 s, which fast:5 covers.
+#
+# webpki_ext_one judges one Extension from any reader and walk state
+# over a list of up to CH_PROOF_ONE_LEN bytes: at 64 bytes 249 s and
+# 1.6 GB; at 96 bytes 900 s and 2.6 GB, and under run.sh 1217
+# properties, 1278 s, 2.4 GB; at 128 bytes no verdict in 31 minutes. So
+# it runs at 96 bytes in the slow tier.
+#
+# webpki_ext_walk runs webpki_read_extensions whole over up to
+# CH_PROOF_EXT_LEN bytes read from their first byte. From any reader
+# state the walk converged at 32 bytes (314 s, 3.0 GB), where an assert
+# of 0 on each arm's success tail showed neither tail reached, and at
+# 40 bytes (1583 s, 5.3 GB); at 48 and 64 bytes it returned no verdict
+# in 31 minutes, kissat at 7.4 GB in one 64-byte run. From the first
+# byte it converged at 48 bytes (1218 properties, 1519 s, 3.0 GB; under
+# run.sh 1255 s, 5.0 GB), the first measured bound that holds the leaf's
+# shortest accepted field of 47 bytes, and returned no verdict at 64
+# bytes in 30 minutes. At 48 bytes an assert of 0 on each arm's success
+# tail fails both (2 of 1220, 2687 s, 7.5 GB), so both tails are
+# reached. So it runs at 48 bytes in the slow tier.
+launch fast:5 full webpki_cert 17 "fill_nondet.0:3074,ct_memeq.0:16" -DCH_TRUST_WEBPKI x509_der.c buf.c ct.c
+launch fast:5 full webpki_ext 18 "fill_nondet.0:1026,read_ext_key_usage.0:23,oid_minimal.0:17,ct_memeq.0:9" x509_der.c buf.c ct.c
+launch slow:3 full webpki_ext_one 18 "fill_nondet.0:97,read_ext_key_usage.0:33,oid_minimal.0:17,ct_memeq.0:9" -DCH_PROOF_ONE_LEN=96 x509_der.c buf.c ct.c
+launch slow:5 full webpki_ext_walk 18 "fill_nondet.0:49,webpki_read_extensions.0:8,read_ext_key_usage.0:13,oid_minimal.0:17,ct_memeq.0:9" --object-bits 11 -DCH_PROOF_EXT_LEN=48 x509_der.c buf.c ct.c
 launch fast:3 full x509der 452 "fill_nondet.0:449,ct_memeq.0:68" buf.c ct.c
 launch fast:3 full x509der_ecdsa 452 "fill_nondet.0:449,ct_memeq.0:68" buf.c ct.c
 launch fast:4 full x509parse_ecdsa 260 "fill_nondet.0:257,ct_memeq.0:68" buf.c ct.c

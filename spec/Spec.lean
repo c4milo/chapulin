@@ -22,6 +22,7 @@ import Spec.WebpkiTime
 import Spec.WebpkiName
 import Spec.WebpkiSpki
 import Spec.WebpkiSigalg
+import Spec.WebpkiCert
 import Spec.Drbg
 import Spec.Handshake
 import Spec.Epoch

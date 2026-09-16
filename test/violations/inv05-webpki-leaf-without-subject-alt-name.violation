@@ -1,0 +1,13 @@
+invariant: INV-5
+file: webpki_ext.c
+catches: webpki_cert_test
+reason: a leaf without subjectAltName is accepted, so the walk would
+  match the hostname against nothing and a client that falls back to the
+  subject common name, the openssl behaviour docs/webpki.md refuses,
+  becomes the only way to name the server. The corpus row
+  no_subject_alt_name objects.
+
+--- old
+#define LEAF_REQUIRED (WEBPKI_EXT_KEY_USAGE | WEBPKI_EXT_EXT_KEY_USAGE | WEBPKI_EXT_SAN)
+--- new
+#define LEAF_REQUIRED (WEBPKI_EXT_KEY_USAGE | WEBPKI_EXT_EXT_KEY_USAGE)

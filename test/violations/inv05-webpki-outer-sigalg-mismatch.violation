@@ -1,0 +1,14 @@
+invariant: INV-5
+file: webpki_cert.c
+catches: webpki_cert_test
+reason: the outer signatureAlgorithm is read as any SEQUENCE instead of
+  compared with the TBS signature field, so a certificate whose two
+  fields name different algorithms parses, against RFC 5280 §4.1.1.2.
+  Accepting the mismatch is itself the harm: the walk verifies under
+  cert->sigalg, which the TBS field sets, so the outer field becomes a
+  value no check reads. The mismatched sigAlg mutants object.
+
+--- old
+    if (!x509_read_exact(&r, sigalg_tlv, sigalg_tlv_len)) {
+--- new
+    if (!x509_skip(&r, TAG_SEQUENCE)) {

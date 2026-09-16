@@ -1,0 +1,12 @@
+invariant: INV-5
+file: webpki_ext.c
+catches: webpki_cert_test
+reason: the basicConstraints judgement stops comparing cA with the arm
+  on the leaf, so a leaf that asserts CA parses as a leaf, the row
+  docs/webpki.md records openssl accepting. The corpus row
+  leaf_asserts_ca and the leaf cA mutant object.
+
+--- old
+    if (ca != is_ca || (is_ca && !ext->critical) || (!ca && path_len >= 0)) {
+--- new
+    if ((is_ca && !ca) || (is_ca && !ext->critical) || (!ca && path_len >= 0)) {

@@ -1,0 +1,12 @@
+invariant: INV-5
+file: webpki_cert.c
+catches: webpki_cert_test
+reason: read_validity accepts bytes after notAfter inside the Validity
+  SEQUENCE, so a certificate carrying a third Time, or one stray byte,
+  parses and the two dates no longer fill the field. The Validity
+  boundary mutants object.
+
+--- old
+    return !v.err && rb_left(&v) == 0 && out->not_before <= out->not_after;
+--- new
+    return !v.err && out->not_before <= out->not_after;

@@ -114,7 +114,11 @@ which convention holds them.
   reads validity dates, `webpki_name.c` matches hostnames against
   subjectAltName, `webpki_spki.c` reads a public key and
   `webpki_sigalg.c` a signature algorithm, the last two by byte compare
-  against the canonical encodings the mode admits. The raw and ca
+  against the canonical encodings the mode admits. `webpki_cert.c` reads
+  one certificate's fields and hands each to its reader, and
+  `webpki_ext.c` reads its extensions: it decodes keyUsage,
+  extendedKeyUsage and basicConstraints, records subjectAltName, and
+  refuses every other critical extension. The raw and ca
   objects filter these files out, and `lint-trust-separation` checks
   that. The Makefile has no `TRUST=webpki` object yet, so today only
   test binaries and proof harnesses compile them.
@@ -135,11 +139,13 @@ which convention holds them.
 - **Check.** Semgrep-tripwire (`inv-5-profiled-cert-parser`): calls
   to identifiers matching `x509_`, `asn1_`, or `der_` outside
   p256.c, p384.c, x509.c, x509_der.c, x509_ca.c, webpki.h,
-  webpki_time.c, webpki_name.c, webpki_spki.c and webpki_sigalg.c.
+  webpki_time.c, webpki_name.c, webpki_spki.c, webpki_sigalg.c,
+  webpki_ext.c and webpki_cert.c.
   Semgrep-structural
   (`inv-20-provisioning-entry`) holds the containment half. Grammar
   widening inside those files is held by the boundary-pair tests in
-  test/x509_ca_tests.h and test/webpki_spki_test.c, by the off-curve
+  test/x509_ca_tests.h, test/webpki_spki_test.c,
+  test/webpki_cert_mutants.h and test/webpki_ext_mutants.h, by the off-curve
   keys in test/webpki_sigalg_test.c, and by review, as x509.c's always
   has been; the tripwire catches a reader growing outside them. Which
   object packages which reader is held by `make lint-trust-separation`:

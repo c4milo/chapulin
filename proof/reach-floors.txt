@@ -69,6 +69,10 @@ rsa_webpki 91.7  # local reading, cbmc 6.11.0 on arm64 macOS; replace with the n
 sha512 90.9  # local reading, cbmc 6.11.0 on arm64 macOS; replace with the nightly table's number
 sha512_compress 97.1  # local reading, cbmc 6.11.0 on arm64 macOS; replace with the nightly table's number
 softmul 91.3
+webpki_cert 56.7  # local reading, cbmc 6.11.0 on arm64 macOS; replace with the nightly table's number
+webpki_ext 40.0  # local reading, cbmc 6.11.0 on arm64 macOS; replace with the nightly table's number
+webpki_ext_one 51.4  # local reading, cbmc 6.11.0 on arm64 macOS; replace with the nightly table's number
+webpki_ext_walk 54.8  # local reading, cbmc 6.11.0 on arm64 macOS; replace with the nightly table's number
 webpki_name 24.2  # local reading, cbmc 6.11.0 on arm64 macOS; replace with the nightly table's number
 webpki_san 30.6  # local reading, cbmc 6.11.0 on arm64 macOS; replace with the nightly table's number
 webpki_sigalg 41.9  # local reading, cbmc 6.11.0 on arm64 macOS; replace with the nightly table's number

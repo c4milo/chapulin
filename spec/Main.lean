@@ -54,6 +54,7 @@ def selftestAll : String :=
     ("webpki_name", Spec.WebpkiName.selftest),
     ("webpki_spki", Spec.WebpkiSpki.selftest),
     ("webpki_sigalg", Spec.WebpkiSigalg.selftest),
+    ("webpki_cert", Spec.WebpkiCert.selftest),
     ("drbg", Spec.Drbg.selftest),
     ("handshake", Spec.Handshake.selftest),
     ("handshake_parser", Spec.HandshakeParser.selftest)]
@@ -402,6 +403,25 @@ def dispatch : List String → Option String
       | none => "0"
       | some (keyAlg, key) =>
         if Spec.WebpkiSigalg.verify a keyAlg key tbsB sigB then "1" else "0"
+  -- One certificate under an arm, 0 for the leaf and 1 for an issuer. The
+  -- reply lists every range as an offset and a length into the certificate,
+  -- the dates, the key, the algorithm, the signature range, the subjectAltName
+  -- range (`- 0` when absent), the webpki_cert.seen byte, cA and the
+  -- pathLenConstraint (`-` when absent), so the C side's pointers are compared.
+  | ["webpki_cert", arm, cert] => do
+    let isCa ← (match arm with | "0" => some false | "1" => some true | _ => none)
+    let b ← hexArg? cert
+    return match Spec.WebpkiCert.parseCertificate? isCa b with
+      | none => "ERR webpki_cert reject"
+      | some c =>
+        let e := c.extensions
+        let san := match e.subjectAltName with
+          | some r => s!"{r.off} {r.len}"
+          | none => "- 0"
+        s!"ok {c.tbs.off} {c.tbs.len} {c.issuer.off} {c.issuer.len} {c.subject.off} " ++
+          s!"{c.subject.len} {c.notBefore} {c.notAfter} {c.keyAlg.name} {emit c.key} " ++
+          s!"{c.sigAlg.name} {c.signature.off} {c.signature.len} {san} {e.seen} " ++
+          s!"{if e.isCa then 1 else 0} {emitNat? e.pathLen}"
   | ["webpki_sign", alg, "rsa", n, d, tbs] => do
     let a ← Spec.WebpkiSigalg.SigAlg.ofName? alg
     let nb ← hexArg? n

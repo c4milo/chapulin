@@ -268,7 +268,7 @@ would change that trade.
 
 Four layers cover four different failure classes.
 
-**Proofs cover memory safety.** Thirty-seven of the thirty-eight C
+**Proofs cover memory safety.** Forty-one of the forty-two C
 sources are compiled into a [CBMC](https://www.cprover.org/cbmc/) harness, which proves them free of
 out-of-bounds access, invalid pointers, bad shifts, and division by
 zero, for every input within the harness's bound. Signed overflow is
@@ -327,6 +327,8 @@ apart from one that passed — so for the slow rows, read the nightly.
 | webpki_time | the `TRUST=webpki` Time reader stays safe on hostile bytes from any reader state, any position and either err value included, and a success leaves err clear, consumes exactly one Time TLV (15 or 17 bytes) and yields a packed date inside [19500101000000, 99991231235959]; the clock packer stays safe over every uint64, its clamp at 9999-12-31T23:59:59Z included, and yields a value inside the same range. That the packer keeps the order of clocks is **not proven** here: asserted over two nondet clocks, it returned no verdict in 30 minutes. The evidence for that order is `Spec.WebpkiTime.packSeconds_mono` and the differential (below) | Time bytes ≤ 40 B; the clock at its full range |
 | webpki_name | the `TRUST=webpki` hostname shape check stays safe over any host and honors the contract `webpki_match_san` depends on: a name it accepts is 1..253 bytes of `[A-Za-z0-9.-]`, so it holds no NUL and no `*`, and every `-` in it has a byte other than a dot on each side, so no label starts or ends with `-`; and the per-entry dNSName compare, both its exact and its wildcard arm, stays safe over any presented name against any host | host ≤ `CH_HOSTNAME_MAX` (253 B), the real bound; presented name ≤ `CH_WEBPKI_EXT_TLV_MAX` (1024 B), the Extension bound, which no dNSName inside an Extension exceeds |
 | webpki_san | the subjectAltName walk, in two parts like `pem_step` and `pem`: reading one GeneralName entry — its tag, its length, its content, the dNSName compare — is safe from any reader state, any position and either err value included. An entry it accepts starts with one of the nine GeneralName tags, leaves err clear, and moves the position forward by two or more bytes and never past the end, which is why the loop ends. `webpki_match_san` whole — the SEQUENCE header, its length check, the loop over entries — is safe on any bytes. The host is short in both parts: the walk passes it to the compare without change and reads no byte of it, and `webpki_name` proves that compare with a 253-byte host and a presented name of up to 1024 bytes (see the note below) | one entry at `CH_WEBPKI_EXT_TLV_MAX` (1024 B), the real bound; the whole walk ≤ 32 B — at 64 B the unrolled loop returned no verdict in 16 minutes, and before the split the walk at 1024 B was still being converted at 30 minutes; host ≤ 16 B |
+| webpki_cert | `webpki_parse_certificate` over any bytes and any arm value, with the four readers it hands fields to (`webpki_read_sigalg`, `webpki_read_time`, `webpki_read_spki`, `webpki_read_extensions`) stubbed to the contracts their own harnesses prove and the DER primitives real. It returns `CH_OK` or `CH_EPROTO`, and a refusal leaves `ALERT_BAD_CERTIFICATE` or sets `ALERT_UNSUPPORTED_CERTIFICATE`. A success leaves the alert untouched and is at most `CH_WEBPKI_CERT_MAX` bytes. tbs lies inside the certificate; issuer, subject, the key and a non-NULL san lie inside tbs; the signature is non-empty, inside the certificate and after tbs. notBefore is no later than notAfter, the algorithm values are in range, and is_ca is the arm normalized to 0 or 1 with that arm's extensions seen. Asserting 0 at the success tail fails, so the tail is reached. The stubbed `webpki_read_extensions` contract is proven only at `webpki_ext_walk`'s bound (see the note below) | certificates ≤ 3,073 B, the real bound and the first length refused |
+| webpki_ext (three harnesses) | the certificate extension walk, in parts like `webpki_san`. `webpki_ext` proves the pieces that read one element: one KeyPurposeId from any reader state, which, when accepted, leaves err clear and moves the position forward by three bytes or more and never past the end, so the purposes loop ends; `x509_read_extension` at the 1024-byte cap from any reader state, whose accepted Extension takes 7 to 1024 bytes with its extnID and extnValue inside them; basicConstraints over any extnValue, cA 0 or 1 and a pathLenConstraint from −1 to 32767; and the whole purposes loop. `webpki_ext_one` judges one Extension from any reader state and any walk state before it: a refusal names one of the two alerts, and an accepted one consumes 7 to 1024 bytes, adds at most one seen bit not already set, moves san only with its bit and inside the consumed bytes, and moves is_ca and path_len only with basicConstraints, is_ca equal to the arm. `webpki_ext_walk` runs `webpki_read_extensions` whole, the field read from its first byte: on `CH_OK` the arm's required extensions were seen, is_ca equals the arm, path_len is −1 on the leaf, and san is inside the consumed bytes and present on the leaf. Asserting 0 on each arm's success tail fails both, so both are reached. `webpki_ext_one` and `webpki_ext_walk` are slow-tier legs | one KeyPurposeId, `x509_read_extension` and basicConstraints at `CH_WEBPKI_EXT_TLV_MAX` (1024 B), the real bound; the purposes loop ≤ 64 B; one judged Extension ≤ 96 B — at 128 B no verdict in 31 minutes; the whole walk ≤ 48 B, which holds the leaf's shortest accepted field of 47 B — from any reader state it converged at 40 B and returned no verdict at 48 B in 31 minutes, and from the first byte it returned none at 64 B in 30 minutes |
 
 CBMC found one real bug during development: `carry()` left-shifted a
 negative value, which is undefined behavior even though compilers
@@ -525,6 +527,24 @@ secrets and MACs and never opens a record.
   a later clock never packing lower, has the same kind of evidence:
   `Spec.WebpkiTime.packSeconds_mono` and the same differential, as the
   `webpki_time` row says.
+- The `TRUST=webpki` extension walk over a full-size extensions field.
+  The pieces that read one element are proved at the real 1024-byte
+  bound, but a proof that composes them unrolls every reader below it,
+  because a harness cannot replace the walk's statics with their
+  contracts: `webpki_ext_one` judges one Extension of at most 96 bytes
+  and `webpki_ext_walk` walks a field of at most 48 bytes. The S3 leaf's
+  subjectAltName Extension alone is 653 bytes. The argument for any
+  length is induction over the per-element contracts the pieces prove,
+  the position moving forward and never past the end with err clear,
+  checked by reading. `webpki_ext_walk` also starts its reader at the
+  buffer's first byte, where `webpki_parse_certificate` hands it a
+  reader in the middle of the TBS; the walk reads its bytes only
+  through rbuf, which reads at `p + off` either way. `webpki_cert` stubs
+  the walk to the contract `webpki_ext_walk` proves, so the certificate
+  parser inherits both gaps. `test/webpki_cert_test.c` and `test/diff_webpki_cert.h` add
+  evidence: every corpus and captured certificate, boundary mutants at
+  each cap, single-byte changes and random extension lists, against the
+  Lean model.
 - The quality of the random bytes, which rests on nothing here at all.
   `ch_rand_bytes` is the image's to supply, and no check in a library
   can grade it: a weak generator completes the handshake, sends a key
@@ -578,13 +598,14 @@ P-256, RSA-PSS, the grammar of the
 four handshake messages a server sends, the provisioning path —
 RFC 7468 armour with RFC 4648 base64, and the certificate walk that
 turns one PEM block into the key bytes a pin slot takes — and, for
-`TRUST=webpki`, the public-key and signature-algorithm readers and the
-certificate signature verify over RSA PKCS#1 v1.5, P-256 and P-384. It follows the RFC text and
+`TRUST=webpki`, the public-key and signature-algorithm readers, the
+certificate signature verify over RSA PKCS#1 v1.5, P-256 and P-384, and
+the one-certificate parser with its extension walk. It follows the RFC text and
 never the C, because a differential oracle only works when a shared
 misreading cannot make both sides agree.
 
 `make diff` builds the spec, runs its selftests, then drives about
-12,700 random-input comparisons between the C and the spec over a pipe,
+19,300 random-input comparisons between the C and the spec over a pipe,
 from a fixed seed. `make diff-ecdsa`, `make diff-pq` and `make
 diff-webpki` rebuild the same driver under `PIN=ecdsa`, `KEX=pq` and
 `TRUST=webpki`, whose parsers take other arms, and the nightly runs
@@ -599,6 +620,11 @@ random TLV sites, and leaves the spec re-signs. Nobody knows those
 answers in advance, so the C answers first and the spec must reproduce
 it. The provisioning rows work the same way, on certificates the spec
 mints and the driver armours at every line width the decoder admits.
+About 6,570 rows feed the `TRUST=webpki` certificate parser: every
+corpus and captured certificate under both arms, single-byte changes of
+them, and random extension lists inside one corpus certificate. Each
+reply carries every field's offset into the certificate, so the C's
+pointers are compared, not only its verdict.
 
 The spec also carries theorems about itself, so an agreement between C
 and spec transfers a proven fact rather than a matching answer. The

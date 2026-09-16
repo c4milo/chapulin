@@ -125,7 +125,7 @@ rules:
     paths:
       exclude: [test, proof, fuzz, spec, bench, bin, examples, p256.c, p384.c, x509.c,
                 x509_der.c, x509_ca.c, webpki.h, webpki_time.c, webpki_name.c,
-                webpki_spki.c, webpki_sigalg.c]
+                webpki_spki.c, webpki_sigalg.c, webpki_ext.c, webpki_cert.c]
     patterns:
       - pattern: $F(...)
       - metavariable-regex:

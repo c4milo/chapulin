@@ -1,0 +1,12 @@
+invariant: INV-5
+file: webpki_ext.c
+catches: webpki_cert_test
+reason: an unknown critical extension is skipped instead of refused, so
+  a critical nameConstraints the mode cannot honour, and the CT poison
+  extension of a precertificate, pass unread. The corpus row
+  critical_name_constraints and the critical mutants object.
+
+--- old
+        return ext.critical ? off_profile(alert) : CH_OK;
+--- new
+        return CH_OK;

@@ -110,8 +110,10 @@ typedef struct {
 // are not read. The caller seeds *alert with ALERT_BAD_CERTIFICATE;
 // the walk overwrites it only when it knows better:
 //   malformed DER, an entry over CH_WEBPKI_CERT_MAX, a serial over
-//   CH_WEBPKI_SERIAL_MAX, more than CH_WEBPKI_FLIGHT_ENTRIES entries,
-//   a non-empty per-entry extensions vector  -> ALERT_BAD_CERTIFICATE, CH_EPROTO
+//   CH_WEBPKI_SERIAL_MAX, more than CH_WEBPKI_EXT_COUNT_MAX extensions
+//   or an Extension over CH_WEBPKI_EXT_TLV_MAX, more than
+//   CH_WEBPKI_FLIGHT_ENTRIES entries, a non-empty per-entry extensions
+//   vector                                   -> ALERT_BAD_CERTIFICATE, CH_EPROTO
 //   a recognized off-profile fact: an algorithm or key the mode
 //   refuses, an unknown critical or duplicate extension, a leaf
 //   without subjectAltName, digitalSignature or serverAuth, an issuer
@@ -123,17 +125,29 @@ typedef struct {
 //   a signature that fails under its issuer   -> ALERT_BAD_CERTIFICATE, CH_EAUTH
 //   the entries run out before an anchor
 //   verifies, or CH_WEBPKI_CHAIN_MAX is reached -> ALERT_UNKNOWN_CA, CH_EAUTH
+// Four fields are the exception to the first row: malformed DER in one of
+// them reports ALERT_UNSUPPORTED_CERTIFICATE, because one reader answers
+// one verdict for both cases. webpki_read_sigalg compares the TBS
+// signature AlgorithmIdentifier against the four encodings the mode
+// admits, and x509_read_exact compares the outer signatureAlgorithm
+// against the TBS signature field it must equal, so a malformed field
+// differs from those bytes exactly as an unadmitted one does.
+// webpki_read_spki answers one 0 for a key the mode refuses and for
+// malformed DER, and x509_read_keyusage one 0 for a missing keyUsage bit
+// and for malformed DER. test/webpki_cert_test.c pins all four alerts.
 // Returns CH_OK with out filled, or the error above.
 int webpki_verify_chain(const uint8_t *list, size_t list_len, const ch_cfg *cfg,
                         webpki_leaf_info *out, uint8_t *alert);
 
 // One whole certificate: SEQUENCE { tbs, sigAlg, sigValue }, canonical
-// DER throughout, version 3, exactly the profile arm is_ca names — the
-// leaf (0) needs subjectAltName, keyUsage digitalSignature,
-// extendedKeyUsage id-kp-serverAuth and basicConstraints absent or
-// cA FALSE; an issuer (1) needs basicConstraints critical with cA
-// TRUE and keyUsage keyCertSign. Unrecognized critical extensions and
-// the issuerUniqueID and subjectUniqueID fields are refused. Fills out
+// DER on every field it decodes except the one KeyPurposeId case
+// webpki_read_extensions names, version 3, exactly the profile arm
+// is_ca names — the leaf (0) needs subjectAltName, keyUsage
+// digitalSignature, extendedKeyUsage id-kp-serverAuth and
+// basicConstraints absent or cA FALSE; an issuer (1) needs
+// basicConstraints critical with cA TRUE and keyUsage keyCertSign.
+// Unrecognized critical extensions and the issuerUniqueID and
+// subjectUniqueID fields are refused. Fills out
 // with pointers into cert. Alert convention as webpki_verify_chain.
 // Defined in webpki_cert.c.
 int webpki_parse_certificate(const uint8_t *cert, size_t cert_len, int is_ca, webpki_cert *out,
@@ -143,10 +157,23 @@ int webpki_parse_certificate(const uint8_t *cert, size_t cert_len, int is_ca, we
 // CH_WEBPKI_EXT_COUNT_MAX extensions of at most CH_WEBPKI_EXT_TLV_MAX
 // bytes each, judges keyUsage, extendedKeyUsage, basicConstraints and
 // subjectAltName by the arm is_ca names, records them in out->seen,
-// out->is_ca, out->path_len and out->san, skips unknown non-critical
-// extensions unread and refuses unknown critical ones and duplicates.
-// Returns CH_OK or CH_EPROTO with *alert as above. Defined in
-// webpki_ext.c.
+// out->is_ca, out->path_len and out->san, and refuses unknown critical
+// extensions and a second copy of any of the four it judges. A second
+// copy of an unknown extension is not refused. An unknown non-critical
+// extension is skipped with its extnValue unread, but its Extension TLV
+// is still read, so a malformed one, or an extnID over the 16 bytes
+// x509_read_extension admits, refuses the certificate.
+// keyUsage needs the arm's bit and admits others beside it;
+// extendedKeyUsage needs id-kp-serverAuth among its purposes on the
+// leaf and is not read on an issuer; a pathLenConstraint is a
+// canonical INTEGER of one or two content octets, only beside cA TRUE.
+// A KeyPurposeId other than id-kp-serverAuth is read for its tag and
+// length alone, so a non-minimal OBJECT IDENTIFIER beside serverAuth is
+// accepted; every extnID is checked for minimal sub-identifiers.
+// subjectAltName is recorded and not read here: an extnValue that is
+// empty or is not a GeneralNames passes this walk, and webpki_match_san
+// then refuses it as a hostname that does not match. Returns CH_OK or
+// CH_EPROTO with *alert as above. Defined in webpki_ext.c.
 int webpki_read_extensions(rbuf *t, int is_ca, webpki_cert *out, uint8_t *alert);
 
 // subjectPublicKeyInfo for the three admitted algorithms, each
