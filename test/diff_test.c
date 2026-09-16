@@ -31,6 +31,7 @@
 #include "diff_sha512.h"
 #include "diff_webpki.h"
 #include "diff_webpki_cert.h"
+#include "diff_webpki_chain.h"
 #include "diff_webpki_sigalg.h"
 #include "diff_x25519.h"
 #include "diff_x509.h"
@@ -81,6 +82,7 @@ int main(int argc, char **argv) {
     diff_webpki_hostname();
     diff_webpki_san();
     diff_webpki_cert();
+    diff_webpki_chain();
     diff_hs_server_hello();
     diff_hs_encrypted_exts();
     diff_hs_certificate();

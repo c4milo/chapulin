@@ -134,9 +134,10 @@ HDRS := ct.h sha256.h hkdf.h chacha20.h poly1305.h aead.h x25519.h p256.h rsa.h 
 # one file keeps bugprone-reserved-identifier and misc-use-internal-linkage
 # working everywhere else, which disabling them in .clang-tidy would not.
 # clang-format still covers it, and so does lint-runtime-symbols.
-LINT_C := $(filter-out softmul.c,$(SRCS)) drbg.c sha3.c sha512.c sha512_compress.c p384.c p384_field.c rsa_pkcs1.c webpki_sigalg.c webpki_cert.c mlkem.c mlkem_poly.c test/unit_test.c test/tls_client.c \
+LINT_C := $(filter-out softmul.c,$(SRCS)) drbg.c sha3.c sha512.c sha512_compress.c p384.c p384_field.c rsa_pkcs1.c webpki_sigalg.c webpki_cert.c webpki.c mlkem.c mlkem_poly.c test/unit_test.c test/tls_client.c \
           test/diff_test.c test/timing_test.c test/drbg_test.c test/softmul_test.c test/rsa_test.c test/sha3_test.c test/sha512_test.c test/p384_test.c test/rsa_pkcs1_test.c \
-          test/webpki_time_test.c test/webpki_name_test.c test/webpki_spki_test.c test/webpki_sigalg_test.c test/webpki_session_test.c test/webpki_cert_test.c \
+          test/webpki_time_test.c test/webpki_name_test.c test/webpki_spki_test.c test/webpki_sigalg_test.c test/webpki_session_test.c test/webpki_cert_test.c test/webpki_chain_test.c \
+          test/webpki_auth_test.c \
           test/mlkem_test.c test/handshake_strict_test.c test/handshake_sequence_test.c \
           test/x509_strict_test.c $(wildcard examples/*.c)
 
@@ -155,7 +156,8 @@ TESTH := test/test_random.h test/pem_armor.h test/pem_tests.h test/x509_ca_tests
          test/rsa_pkcs1_vectors.h test/rsa_wide_vectors.h test/rsa_pkcs1_wide_vectors.h \
          test/diff_webpki.h test/diff_mlkem.h test/mlkem_vectors.h test/webpki_corpus.h test/webpki_sigalg_vectors.h \
          test/diff_webpki_sigalg.h test/hello_exts.h test/webpki_session_cases.h \
-         test/webpki_cert_mutants.h test/webpki_ext_mutants.h test/diff_webpki_cert.h
+         test/webpki_cert_mutants.h test/webpki_ext_mutants.h test/diff_webpki_cert.h \
+         test/webpki_auth_vectors.h
 
 # Each axis names its value or stops the build. RAND has done this since
 # https://github.com/c4milo/chapulin/issues/41; PIN, TRUST and KEX each
@@ -196,7 +198,7 @@ endif
 # without webpki.c still builds; the object then fails every handshake
 # closed (handshake_auth.c).
 WEBPKI_SRCS := webpki_time.c webpki_name.c webpki_spki.c webpki_sigalg.c webpki_ext.c \
-                webpki_cert.c
+                webpki_cert.c webpki.c
 # The verifiers and the SHA-384 core a public chain needs. SRCS lists
 # x509_der.c, rsa.c, rsa_mont.c and p256.c already; these five it does
 # not, because the device objects never package them.
@@ -538,6 +540,15 @@ WEBPKI_CERT_SRC := webpki_cert.c webpki_ext.c webpki_time.c $(WEBPKI_SIGALG_SRC)
 bin/webpki_cert_test: test/webpki_cert_test.c $(WEBPKI_CERT_SRC) $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) $(RSA_WIDE_DEF) -I. -o $@ test/webpki_cert_test.c $(WEBPKI_CERT_SRC)
+# The TRUST=webpki chain walk: the corpus and the captures through
+# webpki_verify_chain, plus the lists that test reframes to reach the
+# bounds. It builds with -DCH_TRUST_WEBPKI rather than RSA_WIDE_DEF,
+# because ch_cfg declares the anchors, the hostname and the clock only
+# there, and that define widens the modulus gate the same way.
+WEBPKI_CHAIN_TEST_SRC := webpki.c webpki_name.c $(WEBPKI_CERT_SRC)
+bin/webpki_chain_test: test/webpki_chain_test.c $(WEBPKI_CHAIN_TEST_SRC) $(HDRS) $(TESTH)
+	@mkdir -p bin
+	$(CC) $(CFLAGS) -DCH_TRUST_WEBPKI -I. -o $@ test/webpki_chain_test.c $(WEBPKI_CHAIN_TEST_SRC)
 
 # Parser strictness: drives the ServerHello/EE parsers directly; their
 # whole dependency closure is handshake_parser.c + buf.c.
@@ -561,6 +572,14 @@ WEBPKI_TEST_SRCS := $(filter-out pem.c x509.c x509_ca.c,$(SRCS)) $(WEBPKI_CHAIN_
 bin/webpki_session_test: test/webpki_session_test.c $(WEBPKI_TEST_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) -DCH_TRUST_WEBPKI -I. -o $@ test/webpki_session_test.c $(WEBPKI_TEST_SRCS)
+# The TRUST=webpki CertificateVerify arm: hsa_server_auth over a corpus
+# chain and the signatures test/webpki_auth_vectors.h carries, linked
+# over the same sources the session test uses, because the flight runs
+# through the record reader and the chain walk to reach that arm.
+bin/webpki_auth_test: test/webpki_auth_test.c $(WEBPKI_TEST_SRCS) $(HDRS) $(TESTH)
+	@mkdir -p bin
+	$(CC) $(CFLAGS) -DCH_TRUST_WEBPKI -I. -o $@ test/webpki_auth_test.c $(WEBPKI_TEST_SRCS)
+
 bin/webpki_session_pq: test/webpki_session_test.c $(WEBPKI_TEST_SRCS) sha3.c mlkem.c mlkem_poly.c $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) -DCH_TRUST_WEBPKI -DCH_KEX_PQ -I. -o $@ test/webpki_session_test.c \
@@ -671,6 +690,13 @@ bin/tlsclient_ca_ecdsa: test/tls_client.c $(SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) -DCH_TRUST_CA -DCH_PIN_ECDSA -I. -o $@ test/tls_client.c $(SRCS)
 
+# The web PKI client: the same main under -DCH_TRUST_WEBPKI, over the
+# sources that object packages, so e2e proves the chain walk against a
+# chain openssl issued and a root the caller configures as an anchor.
+bin/tlsclient_webpki: test/tls_client.c $(WEBPKI_TEST_SRCS) $(HDRS) $(TESTH)
+	@mkdir -p bin
+	$(CC) $(CFLAGS) -DCH_TRUST_WEBPKI -I. -o $@ test/tls_client.c $(WEBPKI_TEST_SRCS)
+
 # The hybrid-build client: the same main under -DCH_KEX_PQ, with the
 # ML-KEM and SHA-3 sources KEX=pq adds to LIB_SRCS; e2e runs it against
 # servers that accept only X25519MLKEM768.
@@ -698,7 +724,7 @@ bin/diff: test/diff_test.c $(SRCS) sha3.c sha512.c sha512_compress.c p384.c p384
 # and the invariant violation builds. The nightly runs it. Splitting on
 # duration rather than on importance is deliberate -- nothing here is
 # optional, and a change is not finished until check-slow passes too.
-check: bin/unit bin/unit_ca bin/unit_pq bin/tlsclient bin/tlsclient_ecdsa bin/tlsclient_ca bin/tlsclient_ca_ecdsa bin/tlsclient_pq bin/drbg_test bin/softmul_test bin/rsa_test bin/sha3_test bin/sha512_test bin/p384_test bin/rsa_pkcs1_test bin/webpki_time_test bin/webpki_name_test bin/webpki_spki_test bin/webpki_sigalg_test bin/webpki_cert_test bin/mlkem_test bin/handshake_strict_test bin/handshake_strict_pq bin/handshake_strict_webpki bin/webpki_session_test bin/webpki_session_pq bin/x509strict bin/x509strict_ecdsa lint rand-check
+check: bin/unit bin/unit_ca bin/unit_pq bin/tlsclient bin/tlsclient_ecdsa bin/tlsclient_ca bin/tlsclient_ca_ecdsa bin/tlsclient_webpki bin/tlsclient_pq bin/drbg_test bin/softmul_test bin/rsa_test bin/sha3_test bin/sha512_test bin/p384_test bin/rsa_pkcs1_test bin/webpki_time_test bin/webpki_name_test bin/webpki_spki_test bin/webpki_sigalg_test bin/webpki_cert_test bin/webpki_chain_test bin/webpki_auth_test bin/mlkem_test bin/handshake_strict_test bin/handshake_strict_pq bin/handshake_strict_webpki bin/webpki_session_test bin/webpki_session_pq bin/x509strict bin/x509strict_ecdsa lint rand-check
 	# The packaged object is built once per entropy pattern, because
 	# lib-check reads a different export list and a different import
 	# list in each. Only the object is built twice: the examples and
@@ -711,7 +737,14 @@ check: bin/unit bin/unit_ca bin/unit_pq bin/tlsclient bin/tlsclient_ecdsa bin/tl
 	# and the example targets copy the variant they built into place on
 	# every invocation.
 	$(MAKE) lib-check RAND=drbg
-	$(MAKE) lib-check cxx-check examples-check RAND=extern
+	$(MAKE) lib-check cxx-check RAND=extern
+	# The examples are pinned to TRUST=raw, whatever TRUST this check was
+	# given. psk_client and pinned_client are raw-mode programs, and the
+	# fixed paths bin/example_psk and bin/example_pinned are what
+	# test/e2e.sh runs: `make check TRUST=webpki` used to leave the
+	# webpki-variant copies there, and the next e2e run started a PSK
+	# server against a client built for a mode that refuses a PSK.
+	$(MAKE) examples-check RAND=extern TRUST=raw
 	# The CA arm packages the provisioning reader and its fifth export;
 	# without this leg neither the export list nor the C++ forwarder is
 	# checked by anything.
@@ -740,6 +773,8 @@ check: bin/unit bin/unit_ca bin/unit_pq bin/tlsclient bin/tlsclient_ecdsa bin/tl
 	./bin/webpki_spki_test
 	./bin/webpki_sigalg_test
 	./bin/webpki_cert_test
+	./bin/webpki_chain_test
+	./bin/webpki_auth_test
 	./bin/mlkem_test
 	./bin/handshake_strict_test
 	./bin/handshake_strict_pq
@@ -832,7 +867,7 @@ else
 	$(call REQUIRE_MATHLIB,diff-webpki)
 	cd spec && $(LAKE) build
 	@mkdir -p bin
-	$(CC) $(CFLAGS) $(RSA_WIDE_DEF) -DCH_TRUST_WEBPKI -I. -o bin/diff_webpki test/diff_test.c $(SRCS) sha3.c sha512.c sha512_compress.c p384.c p384_field.c rsa_pkcs1.c webpki_sigalg.c webpki_cert.c mlkem.c mlkem_poly.c
+	$(CC) $(CFLAGS) $(RSA_WIDE_DEF) -DCH_TRUST_WEBPKI -I. -o bin/diff_webpki test/diff_test.c $(SRCS) sha3.c sha512.c sha512_compress.c p384.c p384_field.c rsa_pkcs1.c webpki_sigalg.c webpki_cert.c webpki.c mlkem.c mlkem_poly.c
 	./bin/diff_webpki
 endif
 
@@ -1038,6 +1073,14 @@ wycheproof:
 .PHONY: webpki-corpus
 webpki-corpus:
 	python3 test/gen_webpki_corpus.py
+
+# The CertificateVerify fixtures over those chains, test/webpki_auth_vectors.h.
+# The generator re-mints the same certificates and signs the transcript each
+# chain's Certificate message makes, so it runs after webpki-corpus. Its
+# RSA-PSS salt is random, so those rows change on every run.
+.PHONY: webpki-auth-vectors
+webpki-auth-vectors:
+	python3 test/gen_webpki_auth_vectors.py
 
 # The same suites over the decomposed multiply, for ct-widemul-check. The
 # fetch is the wycheproof target's, so a checkout already at the pinned
@@ -1338,21 +1381,22 @@ lint-tidy:
 ifeq ($(CLANG_TIDY),)
 	$(call REQUIRE,clang-tidy,it ships with llvm — see the LLVM_MAJOR pin in tools/toolchain.env)
 else
-	# test/webpki_session_test.c sets ch_cfg fields that exist only under
-	# -DCH_TRUST_WEBPKI, so this pass, which defines no trust mode, leaves
-	# it to the next one.
-	$(CLANG_TIDY) --quiet $(filter-out test/webpki_session_test.c,$(LINT_C)) -- \
+	# webpki.c and the three webpki test mains read ch_cfg fields that
+	# exist only under -DCH_TRUST_WEBPKI, so this pass, which defines no
+	# trust mode, leaves them to the next one.
+	$(CLANG_TIDY) --quiet $(filter-out webpki.c test/webpki_session_test.c test/webpki_chain_test.c test/webpki_auth_test.c,$(LINT_C)) -- \
 	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -I.
 	# The pass above defines no trust mode, so it reads none of the
 	# TRUST=webpki arms. This pass parses the sources that carry them or
 	# compile against the webpki layout of ch_cfg and handshake_state, and
-	# the three tests built under the define, with -DCH_TRUST_WEBPKI, so
+	# the four tests built under the define, with -DCH_TRUST_WEBPKI, so
 	# the cognitive-complexity threshold holds in that build too. The
 	# second pass adds -DCH_KEX_PQ for webpki_session_test.c's hybrid arm.
 	# Measured with clang-tidy 23.1.1: 2.9 s and 0.2 s.
 	$(CLANG_TIDY) --quiet tls.c handshake_parser.c handshake_message.c handshake_auth.c \
-	  handshake.c handshake_record.c \
-	  test/webpki_session_test.c test/handshake_strict_test.c test/diff_test.c -- \
+	  handshake.c handshake_record.c webpki.c \
+	  test/webpki_session_test.c test/webpki_chain_test.c test/webpki_auth_test.c \
+	  test/handshake_strict_test.c test/diff_test.c -- \
 	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_TRUST_WEBPKI -I.
 	$(CLANG_TIDY) --quiet test/webpki_session_test.c -- \
 	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_TRUST_WEBPKI -DCH_KEX_PQ -I.
@@ -1508,7 +1552,7 @@ examples-check: bin/example_psk bin/example_pinned bin/example_ca
 # baseline plus a mutation pass costs real minutes — and the
 # proof-backed ones in its test-invariants-proof-backed job.
 .PHONY: test-invariants-fast
-test-invariants-fast: bin/unit bin/unit_ca bin/x509strict bin/x509strict_ecdsa bin/rsa_test bin/drbg_test bin/handshake_strict_test bin/handshake_strict_webpki bin/webpki_session_test bin/softmul_test bin/unit_ct_widemul bin/mlkem_test_ct_widemul bin/webpki_spki_test bin/webpki_sigalg_test bin/webpki_cert_test
+test-invariants-fast: bin/unit bin/unit_ca bin/x509strict bin/x509strict_ecdsa bin/rsa_test bin/drbg_test bin/handshake_strict_test bin/handshake_strict_webpki bin/webpki_session_test bin/webpki_auth_test bin/softmul_test bin/unit_ct_widemul bin/mlkem_test_ct_widemul bin/webpki_spki_test bin/webpki_sigalg_test bin/webpki_cert_test
 	python3 test/violations.py --tier=fast
 
 # Every violation but the proof-backed ones: the fast tier plus the
@@ -1633,6 +1677,11 @@ lint-violation-builds:
 #     under TRUST=webpki. The extension walk multiplies a
 #     pathLenConstraint's high octet by 256, and every byte either file
 #     reads is from the wire.
+#   webpki.c: the chain walk under TRUST=webpki. It multiplies the two
+#     high octets of a CertificateEntry's u24 length, and compares
+#     Names, dates and depths. A public chain is public: every byte it
+#     reads is from the wire or from the caller's anchor table, and it
+#     never sees a key, a shared secret or record plaintext.
 # A secret arriving in any of these is a design change, and this list is
 # where it lands. Until https://github.com/c4milo/chapulin/issues/85 the
 # gate read four files and the rest went unmeasured.
@@ -1656,7 +1705,7 @@ WIDEMUL_CEILING := ct.c:0 sha256.c:0 sha3.c:1 hkdf.c:0 chacha20.c:0 poly1305.c:0
 CODEGEN_SRCS := $(foreach e,$(WIDEMUL_CEILING),$(firstword $(subst :, ,$(e))))
 WIDEMUL_PUBLIC := p256.c rsa.c rsa_mont.c pem.c x509.c x509_der.c x509_ca.c sha512.c sha512_compress.c \
                   p384.c p384_field.c rsa_pkcs1.c webpki_time.c webpki_name.c webpki_spki.c webpki_sigalg.c \
-                  webpki_ext.c webpki_cert.c
+                  webpki_ext.c webpki_cert.c webpki.c
 
 # The library sources are $(SRCS), drbg.c, and every .c file git tracks
 # at the repository root. The KEX=pq sources join LIB_SRCS by += rather
@@ -2187,6 +2236,13 @@ FUZZ_HANDSHAKE_POST_LINK := handshake.c handshake_parser.c handshake_record.c io
                     sha256.c hkdf.c chacha20.c poly1305.c aead.c x25519.c rsa.c rsa_mont.c handshake_message.c \
                     handshake_auth.c
 FUZZ_X509_LINK := x509.c x509_der.c buf.c ct.c sha256.c rsa.c rsa_mont.c
+# The TRUST=webpki walk and every file under it. -DCH_TRUST_WEBPKI is
+# not optional here: ch_cfg declares the anchors, the hostname and the
+# clock only there, and it widens the modulus gate to the RSA-4096 a
+# public root carries.
+FUZZ_WEBPKI_LINK := -DCH_TRUST_WEBPKI webpki.c webpki_cert.c webpki_ext.c webpki_name.c webpki_sigalg.c \
+                    webpki_spki.c webpki_time.c x509_der.c buf.c ct.c sha256.c sha512.c \
+                    sha512_compress.c p256.c p384.c p384_field.c rsa.c rsa_mont.c rsa_pkcs1.c
 FUZZ_HANDSHAKE_RECORD_LINK := handshake_record.c io.c record.c buf.c ct.c sha256.c hkdf.c \
                     chacha20.c poly1305.c aead.c
 
@@ -2202,13 +2258,14 @@ fuzz:
 	  exit 0; \
 	fi; \
 	rm -f "$$tmp"; \
-	for t in record handshake_parser handshake_record handshake_post x509; do mkdir -p bin/fuzz/work_$$t; done; \
+	for t in record handshake_parser handshake_record handshake_post x509 webpki; do mkdir -p bin/fuzz/work_$$t; done; \
 	$(FUZZ_CC) $(FUZZ_CFLAGS) fuzz/fuzz_record.c  $(FUZZ_RECORD_LINK)  -o bin/fuzz/fuzz_record; \
 	$(FUZZ_CC) $(FUZZ_CFLAGS) fuzz/fuzz_handshake_parser.c $(FUZZ_HANDSHAKE_PARSER_LINK) -o bin/fuzz/fuzz_handshake_parser; \
 	$(FUZZ_CC) $(FUZZ_CFLAGS) fuzz/fuzz_handshake_record.c $(FUZZ_HANDSHAKE_RECORD_LINK) -o bin/fuzz/fuzz_handshake_record; \
 	$(FUZZ_CC) $(FUZZ_CFLAGS) fuzz/fuzz_handshake_post.c  $(FUZZ_HANDSHAKE_POST_LINK)  -o bin/fuzz/fuzz_handshake_post; \
 	$(FUZZ_CC) $(FUZZ_CFLAGS) fuzz/fuzz_x509.c    $(FUZZ_X509_LINK)    -o bin/fuzz/fuzz_x509; \
-	for t in record handshake_parser handshake_record handshake_post x509; do \
+	$(FUZZ_CC) $(FUZZ_CFLAGS) fuzz/fuzz_webpki.c $(FUZZ_WEBPKI_LINK) -o bin/fuzz/fuzz_webpki; \
+	for t in record handshake_parser handshake_record handshake_post x509 webpki; do \
 	  ./bin/fuzz/fuzz_$$t bin/fuzz/work_$$t fuzz/corpus/fuzz_$$t \
 	    -artifact_prefix=bin/fuzz/ -max_total_time=$(FUZZ_TIME); \
 	done

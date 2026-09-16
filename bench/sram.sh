@@ -86,9 +86,6 @@ echo "session struct, rv32:    ${SESSION_RV32_PQ} B (KEX=pq)"
 echo "session struct (TRUST=webpki): ${SESSION_WEBPKI} B"
 echo "static working set:      $((SESSION_WEBPKI + RXBUF_WEBPKI)) B (TRUST=webpki, its ${RXBUF_WEBPKI} B floor)"
 echo "session struct, rv32:    ${SESSION_RV32_WEBPKI} B (TRUST=webpki)"
-# No TRUST=webpki stack row: that build's ch_connect stops at the
-# Certificate message until the chain walk lands, so a peak read from it
-# today would leave out the walk it exists to measure.
 
 # Each stack.py report is saved whole, so the CSV rows below come from the
 # same run the report prints.
@@ -116,6 +113,9 @@ head -1 "$TMP/ca_rsa.stack"
 echo "-- TRUST=ca PIN=ecdsa --"
 stack_report ca_ecdsa "STACK_CFLAGS=-DCH_TRUST_CA -DCH_PIN_ECDSA"
 head -1 "$TMP/ca_ecdsa.stack"
+echo "-- TRUST=webpki; ch_connect peak = chain walk + RSA-4096 verify --"
+stack_report webpki STACK_CFLAGS=-DCH_TRUST_WEBPKI
+head -1 "$TMP/webpki.stack"
 echo "-- KEX=pq; ch_connect peak includes ML-KEM's K-PKE frames --"
 stack_report pq STACK_CFLAGS=-DCH_KEX_PQ
 head -1 "$TMP/pq.stack"
@@ -159,6 +159,7 @@ TMPOUT="$TMP/results-sram.csv"
     row stack_connect_psk "$(peak psk ch_connect)"
     row stack_connect_ca_rsa "$(peak ca_rsa ch_connect)"
     row stack_connect_ca_ecdsa "$(peak ca_ecdsa ch_connect)"
+    row stack_connect_webpki "$(peak webpki ch_connect)"
     row stack_read "$(peak default ch_read)"
     row stack_connect_pq "$(peak pq ch_connect)"
     row stack_write "$(peak default ch_write)"

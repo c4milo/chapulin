@@ -515,11 +515,13 @@ jobs:
           key: fuzz-corpus-${{ github.run_id }}
           restore-keys: fuzz-corpus-
       - run: sudo apt-get update -q && sudo apt-get install -y -q clang
-      # FUZZ_TIME is per target and make fuzz runs five, so the budget
-      # is 5 x 480 = 40 minutes inside the 45-minute cap. Four targets
+      # FUZZ_TIME is per target and make fuzz runs six, so the budget
+      # is 6 x 400 = 40 minutes inside the 45-minute cap. Four targets
       # at 600 fit; the fifth pushed the job to 50 and it was cancelled
-      # at the cap two nights running, fuzzing nothing at all.
-      - run: make fuzz FUZZ_CC=clang FUZZ_TIME=480
+      # at the cap two nights running, fuzzing nothing at all. The sixth
+      # target, the TRUST=webpki chain walk, took the per-target time
+      # from 480 to 400 rather than the job's total from 40 minutes.
+      - run: make fuzz FUZZ_CC=clang FUZZ_TIME=400
       - name: Save fuzz corpus
         if: always()
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0

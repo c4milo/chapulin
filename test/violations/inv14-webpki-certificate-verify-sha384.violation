@@ -1,0 +1,15 @@
+invariant: INV-14
+file: handshake_auth.c
+catches: webpki_auth_test
+reason: the scheme that selects the SHA-384 signed content is the P-256
+  one, so a P-384 leaf's signature is checked over a SHA-256 digest and
+  a P-256 leaf's over a SHA-384 one. bin/webpki_auth_test's p384_sha384
+  row is the signature a real server writes, and its
+  p384_sha256_content row is the one this edit would accept instead.
+
+--- old
+    if (scheme == SIGALG_ECDSA_P384_SHA384) {
+        sha512 s384;
+--- new
+    if (scheme == SIGALG_ECDSA_P256_SHA256) {
+        sha512 s384;

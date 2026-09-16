@@ -15,6 +15,9 @@
 #include "rand.h"
 #include "test_random.h"
 #include "tls.h"
+#ifdef CH_TRUST_WEBPKI
+#include "webpki.h"
+#endif
 
 noreturn void ch_assert_fail(const char *cond, const char *file, int line) {
     (void)fprintf(stderr, "ASSERT %s:%d: %s\n", file, line, cond);
@@ -228,6 +231,55 @@ static int setup_ticket(const char *path, ch_cfg *cfg, uint8_t *psk, uint8_t *id
     return 0;
 }
 
+#ifdef CH_TRUST_WEBPKI
+// A TRUST=webpki anchor is two whole DER fields of a root certificate:
+// its subject Name TLV and its SubjectPublicKeyInfo. e2e.sh writes each
+// to its own file, so this client reads bytes and parses no certificate.
+static uint8_t g_anchor_name[512];
+static uint8_t g_anchor_spki[CH_WEBPKI_KEY_MAX + 64];
+static ch_trust_anchor g_anchors[1];
+
+// The whole file, or 0 when it does not open or does not fit.
+static size_t read_der_file(const char *path, uint8_t *out, size_t cap) {
+    FILE *f = fopen(path, "rb");
+    if (f == NULL) {
+        return 0;
+    }
+    size_t n = fread(out, 1, cap, f);
+    int overflowed = fgetc(f) != EOF;
+    (void)fclose(f);
+    return overflowed ? 0 : n;
+}
+
+// Owns the "webpki:name-file,spki-file" form. The hostname and the clock
+// come from WEBPKI_HOST and WEBPKI_NOW, the way REQUIRE_PQ passes the
+// post-quantum flag, so the positional arguments stay as they are.
+static int setup_webpki(char *spec, ch_cfg *cfg) {
+    char *comma = strchr(spec, ',');
+    const char *host = getenv("WEBPKI_HOST");
+    const char *now = getenv("WEBPKI_NOW");
+    if (comma == NULL || host == NULL || now == NULL) {
+        (void)fprintf(stderr, "webpki: need name-file,spki-file and WEBPKI_HOST, WEBPKI_NOW\n");
+        return -1;
+    }
+    *comma = '\0';
+    g_anchors[0].name = g_anchor_name;
+    g_anchors[0].name_len = read_der_file(spec, g_anchor_name, sizeof g_anchor_name);
+    g_anchors[0].spki = g_anchor_spki;
+    g_anchors[0].spki_len = read_der_file(comma + 1, g_anchor_spki, sizeof g_anchor_spki);
+    if (g_anchors[0].name_len == 0 || g_anchors[0].spki_len == 0) {
+        (void)fprintf(stderr, "webpki: could not read the anchor files\n");
+        return -1;
+    }
+    cfg->anchors = g_anchors;
+    cfg->anchor_count = 1;
+    cfg->hostname = (const uint8_t *)host;
+    cfg->hostname_len = strlen(host);
+    cfg->now_seconds = strtoull(now, NULL, 10);
+    return 0;
+}
+#endif
+
 // Fills the auth part of cfg: one branch per argv form — "pin:..." for
 // pinned-key mode, "@file" for a saved ticket, or an external psk-hex +
 // identity pair. The TRUST=ca build adds its "ca:" form as one more
@@ -236,6 +288,11 @@ static int setup_psk(char **argv, ch_cfg *cfg, uint8_t *psk, size_t psk_cap, uin
     if (strncmp(argv[3], "pin:", 4) == 0) {
         return setup_pin(argv[3] + 4, cfg);
     }
+#ifdef CH_TRUST_WEBPKI
+    if (strncmp(argv[3], "webpki:", 7) == 0) {
+        return setup_webpki(argv[3] + 7, cfg);
+    }
+#endif
     if (strncmp(argv[3], "ca:", 3) == 0) {
         // The CA build reads the same slots as a CA key; the prefix
         // only names the operator's intent.
@@ -314,6 +371,9 @@ int main(int argc, char **argv) {
 #ifdef CH_TRUST_CA
     // The CA build's floor covers a two-certificate flight.
     static uint8_t rxbuf[4096];
+#elif defined(CH_TRUST_WEBPKI)
+    // The web PKI floor covers four entries of 3072 bytes.
+    static uint8_t rxbuf[CH_MIN_RXBUF];
 #else
     static uint8_t rxbuf[2048];
 #endif

@@ -592,6 +592,156 @@ expect_fail ca-epoch-unbounded -3 "$DIR/err7" \
 kill $SERVER14 $SERVER15 2>/dev/null
 fi
 
+# --- Web PKI mode (docs/webpki.md): a root -> intermediate -> leaf
+# hierarchy the way a public CA issues one, all sha256WithRSAEncryption,
+# with the leaf naming its host in subjectAltName. The client carries the
+# root as its one anchor, the hostname the leaf names, and a clock inside
+# every validity. The negatives after it move one of those three.
+WEBPKI_HOSTNAME=webpki.example.test
+cat > "$DIR/wpleaf.cnf" <<EOF
+keyUsage = critical, digitalSignature
+extendedKeyUsage = serverAuth
+basicConstraints = CA:FALSE
+subjectAltName = DNS:$WEBPKI_HOSTNAME
+EOF
+cat > "$DIR/wpint.cnf" <<'EOF'
+basicConstraints = critical, CA:TRUE, pathlen:0
+keyUsage = critical, keyCertSign, cRLSign
+EOF
+
+# Splits a self-signed root into the two DER fields a TRUST=webpki anchor
+# carries: its subject Name TLV and its SubjectPublicKeyInfo. openssl
+# writes the key directly; the Name is the sixth field of the
+# TBSCertificate, which a short TLV walk reaches.
+webpki_anchor() {
+    "$OPENSSL" x509 -in "$1" -noout -pubkey 2>/dev/null |
+        "$OPENSSL" pkey -pubin -outform DER -out "$2.spki" 2>/dev/null
+    "$OPENSSL" x509 -in "$1" -outform DER -out "$2.der" 2>/dev/null
+    python3 - "$2.der" "$2.name" <<'PY'
+import sys
+
+data = open(sys.argv[1], "rb").read()
+
+
+def tlv(b, off):
+    """(start, header length, content length) of the TLV at off."""
+    n = b[off + 1]
+    hdr = 2
+    if n & 0x80:
+        count = n & 0x7F
+        n = int.from_bytes(b[off + 2:off + 2 + count], "big")
+        hdr = 2 + count
+    return off, hdr, n
+
+
+# Certificate SEQUENCE, TBSCertificate SEQUENCE, then version [0],
+# serialNumber, signature, issuer and validity before subject.
+_, h1, _ = tlv(data, 0)
+_, h2, _ = tlv(data, h1)
+at = h1 + h2
+for _ in range(5):
+    start, hdr, n = tlv(data, at)
+    at = start + hdr + n
+start, hdr, n = tlv(data, at)
+open(sys.argv[2], "wb").write(data[start:start + hdr + n])
+PY
+}
+
+"$OPENSSL" genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 \
+    -out "$DIR/wproot.key" 2>/dev/null
+"$OPENSSL" req -new -x509 -key "$DIR/wproot.key" -subj /CN=webpki-root -days 3650 \
+    -sha256 -out "$DIR/wproot.pem" 2>/dev/null
+"$OPENSSL" genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 \
+    -out "$DIR/wpint.key" 2>/dev/null
+"$OPENSSL" req -new -key "$DIR/wpint.key" -subj /CN=webpki-intermediate 2>/dev/null |
+"$OPENSSL" x509 -req -CA "$DIR/wproot.pem" -CAkey "$DIR/wproot.key" -days 365 \
+    -sha256 -extfile "$DIR/wpint.cnf" -out "$DIR/wpint.pem" 2>/dev/null
+"$OPENSSL" genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 \
+    -out "$DIR/wpleaf.key" 2>/dev/null
+"$OPENSSL" req -new -key "$DIR/wpleaf.key" -subj "/CN=$WEBPKI_HOSTNAME" 2>/dev/null |
+"$OPENSSL" x509 -req -CA "$DIR/wpint.pem" -CAkey "$DIR/wpint.key" -days 14 \
+    -sha256 -extfile "$DIR/wpleaf.cnf" -out "$DIR/wpleaf.pem" 2>/dev/null
+# A second root, so the unknown-anchor leg configures a real anchor that
+# signed nothing in this chain.
+"$OPENSSL" genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 \
+    -out "$DIR/wpother.key" 2>/dev/null
+"$OPENSSL" req -new -x509 -key "$DIR/wpother.key" -subj /CN=other-webpki-root -days 3650 \
+    -sha256 -out "$DIR/wpother.pem" 2>/dev/null
+webpki_anchor "$DIR/wproot.pem" "$DIR/wproot"
+webpki_anchor "$DIR/wpother.pem" "$DIR/wpother"
+
+start_server -tls1_3 -ciphersuites TLS_CHACHA20_POLY1305_SHA256 -cert "$DIR/wpleaf.pem" -key "$DIR/wpleaf.key" -cert_chain "$DIR/wpint.pem" -rev
+PORT_WEBPKI=$SRV_PORT
+WEBPKI_ANCHOR="webpki:$DIR/wproot.name,$DIR/wproot.spki"
+WEBPKI_OTHER="webpki:$DIR/wpother.name,$DIR/wpother.spki"
+NOW=$(date +%s)
+
+MSG='cadena publica'
+WEBPKI_HOST=$WEBPKI_HOSTNAME WEBPKI_NOW=$NOW \
+    expect webpki "acilbup anedac" "$DIR/err_wp" \
+    ./bin/tlsclient_webpki 127.0.0.1 "$PORT_WEBPKI" "$WEBPKI_ANCHOR" -
+
+# The hostname the caller asked for is not one the leaf names, so the
+# name check refuses the chain the signatures would otherwise carry.
+MSG='nombre ajeno'
+WEBPKI_HOST=other.example.test WEBPKI_NOW=$NOW \
+    expect_fail webpki-hostname -3 "$DIR/err_wp_host" \
+    ./bin/tlsclient_webpki 127.0.0.1 "$PORT_WEBPKI" "$WEBPKI_ANCHOR" -
+
+# A clock 30 days on: past the leaf's 14-day notAfter and inside every
+# other validity, so the leaf's own dates are what refuse it.
+MSG='reloj adelantado'
+WEBPKI_HOST=$WEBPKI_HOSTNAME WEBPKI_NOW=$((NOW + 30 * 86400)) \
+    expect_fail webpki-expired -3 "$DIR/err_wp_expired" \
+    ./bin/tlsclient_webpki 127.0.0.1 "$PORT_WEBPKI" "$WEBPKI_ANCHOR" -
+
+# A clock a day back: before the leaf's notBefore, the other end of the
+# same rule.
+MSG='reloj atrasado'
+WEBPKI_HOST=$WEBPKI_HOSTNAME WEBPKI_NOW=$((NOW - 86400)) \
+    expect_fail webpki-not-yet-valid -3 "$DIR/err_wp_early" \
+    ./bin/tlsclient_webpki 127.0.0.1 "$PORT_WEBPKI" "$WEBPKI_ANCHOR" -
+
+# A real anchor that signed nothing in this chain: the walk runs out of
+# entries with no anchor naming an issuer.
+MSG='ancla ajena'
+WEBPKI_HOST=$WEBPKI_HOSTNAME WEBPKI_NOW=$NOW \
+    expect_fail webpki-unknown-anchor -3 "$DIR/err_wp_anchor" \
+    ./bin/tlsclient_webpki 127.0.0.1 "$PORT_WEBPKI" "$WEBPKI_OTHER" -
+
+kill $SRV_PID 2>/dev/null
+
+# The same hierarchy with an ECDSA leaf, one server per curve. RFC 9846
+# section 4.4.3 binds the CertificateVerify scheme to the leaf key, so
+# only a P-256 leaf makes the client run ecdsa_secp256r1_sha256, and only
+# a P-384 leaf makes it hash the signed content with SHA-384. The RSA
+# leaf above runs neither arm. test/webpki_auth_vectors.h signs both
+# offline; these two legs are the same arms against a real server.
+webpki_ec_leaf() {
+    "$OPENSSL" genpkey -algorithm EC -pkeyopt "ec_paramgen_curve:$1" \
+        -out "$2.key" 2>/dev/null
+    "$OPENSSL" req -new -key "$2.key" -subj "/CN=$WEBPKI_HOSTNAME" 2>/dev/null |
+    "$OPENSSL" x509 -req -CA "$DIR/wpint.pem" -CAkey "$DIR/wpint.key" -days 14 \
+        -sha256 -extfile "$DIR/wpleaf.cnf" -out "$2.pem" 2>/dev/null
+    start_server -tls1_3 -ciphersuites TLS_CHACHA20_POLY1305_SHA256 -cert "$2.pem" -key "$2.key" -cert_chain "$DIR/wpint.pem" -rev
+}
+
+# Each leg reads the clock after minting its leaf: openssl writes
+# notBefore as the minting instant, and NOW above was read before it.
+webpki_ec_leaf P-256 "$DIR/wpleaf256"
+MSG='clave p256'
+WEBPKI_HOST=$WEBPKI_HOSTNAME WEBPKI_NOW=$(date +%s) \
+    expect webpki-p256 "652p evalc" "$DIR/err_wp_p256" \
+    ./bin/tlsclient_webpki 127.0.0.1 "$SRV_PORT" "$WEBPKI_ANCHOR" -
+kill $SRV_PID 2>/dev/null
+
+webpki_ec_leaf P-384 "$DIR/wpleaf384"
+MSG='clave p384'
+WEBPKI_HOST=$WEBPKI_HOSTNAME WEBPKI_NOW=$(date +%s) \
+    expect webpki-p384 "483p evalc" "$DIR/err_wp_p384" \
+    ./bin/tlsclient_webpki 127.0.0.1 "$SRV_PORT" "$WEBPKI_ANCHOR" -
+kill $SRV_PID 2>/dev/null
+
 # --- Go's crypto/tls, the stack Prometheus terminates with: once with the
 # P-256 cert against the ECDSA build, once with the RSA cert against the
 # default build ---
@@ -681,4 +831,4 @@ else
     echo "SKIP openssl pq leg: $("$OPENSSL" version) does not list X25519MLKEM768 (needs 3.5)"
 fi
 
-echo "e2e: psk + tickets + resumption + pinned ecdsa + pinned rsa + require-pq refused + rotation + ca rsa x2 + ca ecdsa x2 + ca rotation + ca negatives x3${EPOCH_LEG}${GO_LEG}${OPENSSL_PQ_LEG} + examples x3 OK"
+echo "e2e: psk + tickets + resumption + pinned ecdsa + pinned rsa + require-pq refused + rotation + ca rsa x2 + ca ecdsa x2 + ca rotation + ca negatives x3${EPOCH_LEG} + webpki rsa + webpki ecdsa x2 + webpki negatives x4${GO_LEG}${OPENSSL_PQ_LEG} + examples x3 OK"

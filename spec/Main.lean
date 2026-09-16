@@ -26,6 +26,18 @@ def emitNat? (n : Option Nat) : String :=
   | some v => toString v
   | none => "-"
 
+/-- The anchors of a `webpki_chain` request: `-` for none, else
+`name.spki` hex pairs joined by commas. -/
+def anchorsArg? (s : String) : Option (List Spec.Webpki.Anchor) :=
+  if s == "-" then some []
+  else (s.splitOn ",").mapM fun pair =>
+    match pair.splitOn "." with
+    | [n, k] => do
+      let nb ← hexArg? n
+      let kb ← hexArg? k
+      return { name := nb, spki := kb }
+    | _ => none
+
 /-- A `webpki_sign` reply: the signer's SPKI and the signature, or `FAIL`. -/
 def webpkiSigned : Option (ByteArray × ByteArray) → String
   | some (spki, sig) => s!"{emit spki} {emit sig}"
@@ -55,6 +67,7 @@ def selftestAll : String :=
     ("webpki_spki", Spec.WebpkiSpki.selftest),
     ("webpki_sigalg", Spec.WebpkiSigalg.selftest),
     ("webpki_cert", Spec.WebpkiCert.selftest),
+    ("webpki", Spec.Webpki.selftest),
     ("drbg", Spec.Drbg.selftest),
     ("handshake", Spec.Handshake.selftest),
     ("handshake_parser", Spec.HandshakeParser.selftest)]
@@ -422,6 +435,20 @@ def dispatch : List String → Option String
           s!"{c.subject.len} {c.notBefore} {c.notAfter} {c.keyAlg.name} {emit c.key} " ++
           s!"{c.sigAlg.name} {c.signature.off} {c.signature.len} {san} {e.seen} " ++
           s!"{if e.isCa then 1 else 0} {emitNat? e.pathLen}"
+  -- One chain walk: the clock as a packed date, the reference hostname, the
+  -- anchors, and the CertificateEntry list. The reply is the leaf key on
+  -- acceptance and otherwise the name of the refusal, which is the pair of
+  -- return code and alert the C answers.
+  | ["webpki_chain", now, host, anchors, list] => do
+    let n ← now.toNat?
+    let hostB ← hexArg? host
+    let anchorList ← anchorsArg? anchors
+    let listB ← hexArg? list
+    let cfg : Spec.Webpki.Config :=
+      { anchors := anchorList, hostname := hostB.toList, now := n }
+    return match Spec.Webpki.verifyChain cfg listB with
+      | .ok alg key => s!"ok {alg.name} {emit key}"
+      | v => v.name
   | ["webpki_sign", alg, "rsa", n, d, tbs] => do
     let a ← Spec.WebpkiSigalg.SigAlg.ofName? alg
     let nb ← hexArg? n

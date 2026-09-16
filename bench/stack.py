@@ -21,6 +21,10 @@ ROOT = Path(__file__).resolve().parent.parent
 # so main() names the difference instead of printing a silent 0.
 ENTRIES = ["_ch_connect", "_ch_read", "_ch_write", "_ch_close"]
 CA_ENTRIES = ["_ch_pubkey_from_pem"]
+# Every root source, minus the ones a build's defines exclude. webpki.c
+# reads the anchors, the hostname and the clock that ch_cfg declares only
+# under CH_TRUST_WEBPKI, so it compiles in that build alone; the other
+# webpki_*.c files read none of them and compile everywhere.
 SRCS = sorted(ROOT.glob("*.c"))
 
 # STACK_CFLAGS: extra compile flags (e.g. -DCH_PIN_ECDSA to walk that
@@ -31,6 +35,8 @@ SRCS = sorted(ROOT.glob("*.c"))
 # cfg.h refuses a build that declares no entropy pattern. This walks the
 # call graph, never links a generator, so it measures the extern shape.
 EXTRA_CFLAGS = ["-DCH_RAND_EXTERN"] + os.environ.get("STACK_CFLAGS", "").split()
+if "-DCH_TRUST_WEBPKI" not in EXTRA_CFLAGS:
+    SRCS = [s for s in SRCS if s.name != "webpki.c"]
 PRUNE = {"_" + f for f in os.environ.get("STACK_PRUNE", "").split(",") if f}
 
 

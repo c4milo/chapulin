@@ -72,6 +72,7 @@ KEYS = {
     "leaf_rsa2048": ("rsa", 2048),
     "leaf_rsa1024": ("rsa", 1024),
     "leaf_p256": ("ec", "P-256"),
+    "leaf_p384": ("ec", "P-384"),
 }
 
 SUBJECT = {
@@ -152,6 +153,11 @@ CERTS = [
     ("leaf_r2_constrained", "leaf_p256", "/CN=" + HOST, "int_r2_p256_constrained", leaf_ext(), "sha256"),
     ("leaf_r2_under_not_ca", "leaf_p256", "/CN=" + HOST, "int_r2_p256_not_ca", leaf_ext(), "sha256"),
     ("leaf_r2_under_alias", "leaf_p256", "/CN=" + HOST, "int_r2_p256_alias", leaf_ext(), "sha256"),
+    # Last, so every serial above keeps the value it had. The only P-384
+    # leaf key in the corpus: RFC 9846 section 4.4.3 binds that key to
+    # ecdsa_secp384r1_sha384, the one CertificateVerify scheme whose
+    # signed content this client hashes with SHA-384.
+    ("leaf_r2_p384", "leaf_p384", "/CN=" + HOST, "int_r2_p256", leaf_ext(), "sha256"),
 ]
 
 AWS = ["leaf_aws", "int_aws_rsa2048", "root_aws_rsa2048_cross"]
@@ -180,6 +186,11 @@ CHAINS = [
           "letsencrypt: P-256 leaf, ecdsa-with-SHA384 <- P-384 intermediate 1 <- P-384\n"
           "intermediate 2 <- P-384 anchor. Entry 3 is the anchor's own certificate; the\n"
           "walk stops at entry 2 and never reads it."),
+    chain("p384_leaf", ["leaf_r2_p384", "int_r2_p256"], ["root_p384"], "ok",
+          "p384_leaf: P-384 leaf, ecdsa-with-SHA256 <- P-256 intermediate, ecdsa-with-SHA384\n"
+          "<- P-384 anchor. The r2 shape with the leaf key family the other rows never\n"
+          "carry, which is what binds a CertificateVerify to ecdsa_secp384r1_sha384\n"
+          "(test/webpki_auth_vectors.h)."),
     chain("wildcard", ["leaf_r2_wildcard", "int_r2_p256"], ["root_p384"], "ok",
           "wildcard: the r2 shape with subjectAltName *.example.test, asked for s3.example.test."),
     chain("not_after_boundary", AWS, ["root_aws_rsa2048"], "ok",

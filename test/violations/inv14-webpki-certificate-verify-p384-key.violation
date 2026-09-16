@@ -1,0 +1,17 @@
+invariant: INV-14
+file: handshake_auth.c
+catches: webpki_auth_test
+reason: a P-384 leaf key goes to the P-256 verifier, which reads 64 of
+  its 96 bytes as a point and 32 of the 48 digest bytes. Every P-384
+  signature then fails, and a client that falls back would be
+  authenticating under a key nobody holds. bin/webpki_auth_test's
+  p384_sha384 row objects.
+
+--- old
+    if (leaf->alg == WEBPKI_KEY_P384) {
+        return p384_ecdsa_verify(leaf->key, signed_hash, sig, sig_len);
+    }
+--- new
+    if (leaf->alg == WEBPKI_KEY_P384) {
+        return p256_ecdsa_verify(leaf->key, signed_hash, sig, sig_len);
+    }

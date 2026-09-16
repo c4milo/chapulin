@@ -18,6 +18,7 @@ stack_connect_ecdsa,3888
 stack_connect_psk,2432
 stack_connect_ca_rsa,5504
 stack_connect_ca_ecdsa,4016
+stack_connect_webpki,7168
 stack_read,1712
 stack_connect_pq,15808
 stack_write,912

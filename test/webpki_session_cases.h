@@ -253,18 +253,19 @@ static void test_webpki_hello_boundary(void) {
                  psk_arm, chain_arm, CH_TX_STAGE);
 }
 
-// The walk is not in the tree, so a handshake that reads the
-// Certificate message stops there: CH_EAUTH, internal_error on the wire,
-// and the whole flight read. EncryptedExtensions carried an empty
-// server_name acknowledgement before it, which this build admits; the
-// same message with data in the acknowledgement is refused there instead.
+// The chain walk reads the Certificate message, and the mock's one
+// entry is eight bytes that are no certificate, so the handshake stops
+// there: CH_EPROTO, bad_certificate on the wire, and the whole flight
+// read. EncryptedExtensions carried an empty server_name acknowledgement
+// before it, which this build admits; the same message with data in the
+// acknowledgement is refused there instead.
 static void test_webpki_handshake_fails_closed(void) {
     mock_server s;
     ch_tls t;
     ch_cfg cfg = valid_cfg(&s);
     s.answer = 1;
-    CHECK(ch_connect(&t, &cfg) == CH_EAUTH);
-    CHECK(s.alert == ALERT_INTERNAL_ERROR);
+    CHECK(ch_connect(&t, &cfg) == CH_EPROTO);
+    CHECK(s.alert == ALERT_BAD_CERTIFICATE);
     CHECK(s.rendered && s.queue_off == s.queue_len);
     CHECK(t.state == CH_ST_FAILED);
 

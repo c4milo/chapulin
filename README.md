@@ -83,12 +83,12 @@ A third mode, `TRUST=webpki`, verifies a public chain against trust
 anchors the caller supplies, with hostnames and validity dates. It is
 host-side, not device-side: it needs a clock, a hostname and a receive
 buffer measured in kilobytes. [`docs/webpki.md`](docs/webpki.md) states
-its profile, its bounds, and what it does not check. The build mode, its
-configuration and its ClientHello are in the tree; the chain walk is
-not yet, so a `TRUST=webpki` handshake fails closed at the Certificate
-message today. The object carries every verifier a public chain needs
-at once — RSA-PSS, RSA PKCS#1 v1.5, P-256 and P-384 — so `PIN` selects
-nothing in it. It refuses a PSK and resumption: nothing binds a ticket
+its profile, its bounds, and what it does not check. The walk consults
+the anchors before it reads each next entry, so it stops at the first
+anchor that both names the issuer and verifies the signature and leaves
+the rest of the flight unread. The object carries every verifier a
+public chain needs at once — RSA-PSS, RSA PKCS#1 v1.5, P-256 and
+P-384 — so `PIN` selects nothing in it. It refuses a PSK and resumption: nothing binds a ticket
 to the hostname it was issued for, so every connection is a full
 handshake.
 
@@ -135,6 +135,7 @@ so an rv32 peak needs tooling that does not exist yet.
 | peak stack, `ch_connect` (`PIN=ecdsa`) | 3888 |
 | peak stack, `ch_connect` (PSK) | 2432 |
 | peak stack, `ch_connect` (`TRUST=ca`, RSA / ECDSA) | 5504 / 4016 |
+| peak stack, `ch_connect` (`TRUST=webpki`, RSA-4096 verify) | 7168 |
 | peak stack, `ch_read` (worst case: KeyUpdate rekey) | 1712 |
 | peak stack, `ch_connect` (`KEX=pq`) | 15808 |
 | peak stack, `ch_write` / `ch_close` | 912 / 864 |
@@ -161,9 +162,9 @@ and derives the floor for you: `CH_MIN_RXBUF` becomes 3,098 bytes
 fails at setup rather than mid-handshake. A `TRUST=webpki` build derives
 12,324 bytes the same way, four certificates at its 3,072-byte cap, and
 its session struct carries a larger TX staging array for the
-`server_name` extension. The table has no `TRUST=webpki` stack row:
-until the chain walk lands, that build's `ch_connect` stops at the
-Certificate message, so a peak measured now would leave the walk out.
+`server_name` extension. Its `ch_connect` peaks at 7,168 bytes, through
+the chain walk into an RSA-4096 verify, which is the widest modulus a
+public root carries.
 
 Provisioning with `ch_pubkey_from_pem` needs three more caller-side
 buffers, none of them part of the static working set above and none of
@@ -329,6 +330,8 @@ apart from one that passed — so for the slow rows, read the nightly.
 | webpki_san | the subjectAltName walk, in two parts like `pem_step` and `pem`: reading one GeneralName entry — its tag, its length, its content, the dNSName compare — is safe from any reader state, any position and either err value included. An entry it accepts starts with one of the nine GeneralName tags, leaves err clear, and moves the position forward by two or more bytes and never past the end, which is why the loop ends. `webpki_match_san` whole — the SEQUENCE header, its length check, the loop over entries — is safe on any bytes. The host is short in both parts: the walk passes it to the compare without change and reads no byte of it, and `webpki_name` proves that compare with a 253-byte host and a presented name of up to 1024 bytes (see the note below) | one entry at `CH_WEBPKI_EXT_TLV_MAX` (1024 B), the real bound; the whole walk ≤ 32 B — at 64 B the unrolled loop returned no verdict in 16 minutes, and before the split the walk at 1024 B was still being converted at 30 minutes; host ≤ 16 B |
 | webpki_cert | `webpki_parse_certificate` over any bytes and any arm value, with the four readers it hands fields to (`webpki_read_sigalg`, `webpki_read_time`, `webpki_read_spki`, `webpki_read_extensions`) stubbed to the contracts their own harnesses prove and the DER primitives real. It returns `CH_OK` or `CH_EPROTO`, and a refusal leaves `ALERT_BAD_CERTIFICATE` or sets `ALERT_UNSUPPORTED_CERTIFICATE`. A success leaves the alert untouched and is at most `CH_WEBPKI_CERT_MAX` bytes. tbs lies inside the certificate; issuer, subject, the key and a non-NULL san lie inside tbs; the signature is non-empty, inside the certificate and after tbs. notBefore is no later than notAfter, the algorithm values are in range, and is_ca is the arm normalized to 0 or 1 with that arm's extensions seen. Asserting 0 at the success tail fails, so the tail is reached. The stubbed `webpki_read_extensions` contract is proven only at `webpki_ext_walk`'s bound (see the note below) | certificates ≤ 3,073 B, the real bound and the first length refused |
 | webpki_ext (three harnesses) | the certificate extension walk, in parts like `webpki_san`. `webpki_ext` proves the pieces that read one element: one KeyPurposeId from any reader state, which, when accepted, leaves err clear and moves the position forward by three bytes or more and never past the end, so the purposes loop ends; `x509_read_extension` at the 1024-byte cap from any reader state, whose accepted Extension takes 7 to 1024 bytes with its extnID and extnValue inside them; basicConstraints over any extnValue, cA 0 or 1 and a pathLenConstraint from −1 to 32767; and the whole purposes loop. `webpki_ext_one` judges one Extension from any reader state and any walk state before it: a refusal names one of the two alerts, and an accepted one consumes 7 to 1024 bytes, adds at most one seen bit not already set, moves san only with its bit and inside the consumed bytes, and moves is_ca and path_len only with basicConstraints, is_ca equal to the arm. `webpki_ext_walk` runs `webpki_read_extensions` whole, the field read from its first byte: on `CH_OK` the arm's required extensions were seen, is_ca equals the arm, path_len is −1 on the leaf, and san is inside the consumed bytes and present on the leaf. Asserting 0 on each arm's success tail fails both, so both are reached. `webpki_ext_one` and `webpki_ext_walk` are slow-tier legs | one KeyPurposeId, `x509_read_extension` and basicConstraints at `CH_WEBPKI_EXT_TLV_MAX` (1024 B), the real bound; the purposes loop ≤ 64 B; one judged Extension ≤ 96 B — at 128 B no verdict in 31 minutes; the whole walk ≤ 48 B, which holds the leaf's shortest accepted field of 47 B — from any reader state it converged at 40 B and returned no verdict at 48 B in 31 minutes, and from the first byte it returned none at 64 B in 30 minutes |
+| webpki_chain | `webpki_verify_chain` over any CertificateEntry list and any anchor array, with the five calls it makes (`webpki_parse_certificate`, `webpki_read_spki`, `webpki_verify`, `webpki_match_san`, `webpki_pack_seconds`) stubbed to the contracts their own harnesses prove. It returns `CH_OK`, `CH_EPROTO` or `CH_EAUTH`; a refusal names one of the four alerts `webpki.h`'s table lists; a success keeps the caller's alert and copies out a leaf key of at most `CH_WEBPKI_KEY_MAX` bytes under one of the three key algorithms. Asserting 0 at the success tail fails, so the tail is reached. Which chains it accepts is **not proved** here: the verify and match stubs answer an unconstrained verdict, so the formula says nothing about soundness. `Spec.Webpki.verifyChain_ok` states that an accepted chain has a verified signature path to an anchor, and `test/webpki_chain_test.c` and `test/diff_webpki_chain.h` test it over the corpus | lists ≤ 48 B, which holds eight framed entries of 6 bytes each, so both the `CH_WEBPKI_FLIGHT_ENTRIES` refusal and the `CH_WEBPKI_CHAIN_MAX` one are inside it; 2 anchors of ≤ 8 B each |
+| certverify_webpki | the `TRUST=webpki` CertificateVerify arm of `handshake_auth.c`, over every signature scheme value and every leaf key family: a signature reaches a verifier only under the scheme the leaf key's family can produce, the verifier that runs is that family's own, and the signed content takes SHA-384 for a P-384 leaf and SHA-256 for every other. The record reader, the two hashes and the three verifiers are stubs the harness defines, each asserting what the arm passes it; `handshake_record`, `sha256`, `sha512` and the three verifier harnesses prove them, so whether a signature is genuine is **not proved** here. `test/webpki_auth_test.c` tests that over real chains and real signatures | CertificateVerify messages ≤ 12 B, leaf keys ≤ `CH_WEBPKI_KEY_MAX` |
 
 CBMC found one real bug during development: `carry()` left-shifted a
 negative value, which is undefined behavior even though compilers
@@ -545,6 +548,23 @@ secrets and MACs and never opens a record.
   evidence: every corpus and captured certificate, boundary mutants at
   each cap, single-byte changes and random extension lists, against the
   Lean model.
+- Which chains the `TRUST=webpki` walk accepts. `webpki_chain` proves the
+  walk memory-safe and UB-free over any entry list and any anchors, and
+  proves the shape of what it returns, but its stubs for
+  `webpki_verify` and `webpki_match_san` answer an unconstrained
+  verdict, so the formula says nothing about which chains reach
+  `CH_OK`. Putting the real verifiers in the formula would put an RSA
+  and two ECDSA verifications inside it, which no harness in this tree
+  converges on. `Spec.Webpki.verifyChain_ok` states the property
+  instead — an accepted chain has a verified signature path to an
+  anchor, with every step parsed under the issuer arm, covering the
+  clock, named by the certificate below it and inside its own
+  pathLenConstraint, and its leaf matched the caller's hostname through
+  a dNSName of its own subjectAltName — and Lean's kernel checks that
+  proof.
+  `test/webpki_chain_test.c` and `test/diff_webpki_chain.h` add
+  evidence at the bytes: the 25 minted chains, the 5 captured ones and
+  their clock, hostname, anchor, entry and byte mutations.
 - The quality of the random bytes, which rests on nothing here at all.
   `ch_rand_bytes` is the image's to supply, and no check in a library
   can grade it: a weak generator completes the handshake, sends a key

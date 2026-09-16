@@ -7,8 +7,15 @@ Two reviews caught that shape in three files at once. This turns the
 rule into a check: a function that builds an rbuf over a slice with
 `rb_init(&r, ...)` must also compare `rb_left(&r)` for equality -- a closing
 `rb_left(&r) == 0` or `!= 0`, or a header equality such as
-`len != rb_left(&r)` -- or carry an entry in ALLOWED below saying where its
-exact-fill check lives instead.
+`len != rb_left(&r)` -- or carry an entry in ALLOWED or WALKED below saying
+where its exact-fill check lives instead.
+
+WALKED is the one exception to that: a reader whose loop runs until the
+reader is empty and whose every failure returns has consumed the container by
+the time it succeeds, and there is no length of its own to compare. The tool
+holds such an entry to that shape -- the body must carry the
+`while (rb_left(&r) > 0)` loop -- so a reader that stops walking stops
+matching and is reported again.
 
 The equality is the whole point. `while (rb_left(&r) > 0)` walks a list and
 `if (rb_left(&r) > 0)` guards an optional field; neither says anything about
@@ -61,7 +68,26 @@ ALLOWED = {
     ),
 }
 
+# Readers that consume the container by walking it to its end. The loop
+# condition is the statement: it runs until the reader is empty, and every
+# failure inside it returns, so a success means the fields filled the
+# container. Keys are file, function and reader, and the entry holds only
+# while the loop is still there.
+WALKED = {
+    ("webpki.c", "read_entries", "r"): (
+        "the loop runs while rb_left(&r) > 0 and every framing failure "
+        "returns 0, so a success means the entries filled the list; the "
+        "certificate bytes inside a trailing entry stay unparsed on purpose "
+        "(docs/webpki.md, \"The chain walk\")"
+    ),
+}
+
 READER = re.compile(r"\brb_init\(&(\w+)\s*,")
+
+
+def walks_to_empty(body, reader):
+    """True when the body loops until the reader is empty."""
+    return re.search(r"while\s*\(\s*rb_left\(&%s\)\s*>\s*0\s*\)" % re.escape(reader), body) is not None
 
 
 def checked(body, reader):
@@ -146,6 +172,8 @@ def problems_in(path):
                 continue
             if key in ALLOWED:
                 continue
+            if key in WALKED and walks_to_empty(body, reader):
+                continue
             out.append(
                 f"{path.name}:{start} {name} reads a container through rbuf "
                 f"{reader} and never compares rb_left(&{reader}) for equality, "
@@ -165,11 +193,12 @@ def main():
         seen |= keys
         readers += len(keys)
 
-    for key in sorted(set(ALLOWED) - seen):
-        problems.append(
-            f"ALLOWED names {key[0]} {key[1]}'s reader {key[2]}, which no "
-            f"longer exists. Delete the entry or fix the name."
-        )
+    for table, name in ((ALLOWED, "ALLOWED"), (WALKED, "WALKED")):
+        for key in sorted(set(table) - seen):
+            problems.append(
+                f"{name} names {key[0]} {key[1]}'s reader {key[2]}, which no "
+                f"longer exists. Delete the entry or fix the name."
+            )
 
     if problems:
         for p in problems:
@@ -178,7 +207,8 @@ def main():
 
     print(
         f"lint-exact-fill: {readers} sliced readers in the library, "
-        f"{readers - len(ALLOWED)} checked in place, {len(ALLOWED)} one call down"
+        f"{readers - len(ALLOWED) - len(WALKED)} checked in place, "
+        f"{len(ALLOWED)} one call down, {len(WALKED)} walked to the end"
     )
     return 0
 

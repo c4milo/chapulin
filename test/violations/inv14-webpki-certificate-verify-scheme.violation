@@ -1,0 +1,21 @@
+invariant: INV-14
+file: handshake_auth.c
+catches: webpki_auth_test
+reason: the arm records illegal_parameter for a CertificateVerify whose
+  scheme the leaf key's family cannot produce, then verifies the
+  signature anyway instead of failing closed. bin/webpki_auth_test
+  sends each accepted row under every other scheme and requires
+  illegal_parameter, so the alert a refusal names is checked, not just
+  the fact that the handshake ended.
+
+--- old
+    if (scheme != leaf_scheme(h->leaf.alg)) {
+        // The server named a scheme its own leaf key cannot produce:
+        // the two messages disagree, so the parameter is illegal.
+        h->alert = ALERT_ILLEGAL_PARAMETER;
+        return CH_EAUTH;
+    }
+--- new
+    if (scheme != leaf_scheme(h->leaf.alg)) {
+        h->alert = ALERT_ILLEGAL_PARAMETER;
+    }

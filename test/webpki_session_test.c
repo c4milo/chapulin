@@ -1,11 +1,15 @@
-// The TRUST=webpki session code that the chain walk will run inside,
-// over a mock transport: ch_connect's config rules at their boundaries,
-// the ClientHello's server_name and signature_algorithms bytes, the
-// largest hello against CH_HELLO_MAX, and a handshake that reads the
-// Certificate message and fails closed, because no source defines the
-// walk yet. The Makefile builds it with -DCH_TRUST_WEBPKI over the
-// sources that object packages, once classic (bin/webpki_session_test)
-// and once under -DCH_KEX_PQ (bin/webpki_session_pq).
+// The TRUST=webpki session code the chain walk runs inside, over a mock
+// transport: ch_connect's config rules at their boundaries, the
+// ClientHello's server_name and signature_algorithms bytes, the largest
+// hello against CH_HELLO_MAX, and a handshake whose one certificate
+// entry is eight bytes of text, which the walk refuses with
+// bad_certificate. A flight the walk accepts is bin/webpki_auth_test's,
+// which drives hsa_server_auth over a corpus chain instead of a mock
+// server, because a mock cannot sign a CertificateVerify over a
+// transcript that carries this client's random ClientHello. The
+// Makefile builds this file with -DCH_TRUST_WEBPKI over the sources
+// that object packages, once classic (bin/webpki_session_test) and once
+// under -DCH_KEX_PQ (bin/webpki_session_pq).
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -173,7 +177,7 @@ static void render_server_hello(mock_server *s, sha256 *transcript) {
 
 // EncryptedExtensions with a server_name acknowledgement, and a
 // Certificate whose one entry is eight bytes that are no certificate:
-// the build refuses before it reads an entry.
+// the walk refuses them as malformed DER and the session fails closed.
 static void render_flight(mock_server *s) {
     sha256 transcript;
     sha256_init(&transcript);

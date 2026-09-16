@@ -359,6 +359,30 @@ Spec.WebpkiCert.readExtensions? : (isCa : Bool) → (b : ByteArray) → (off : N
                         -- and refused when critical (§4.2). The leaf needs keyUsage,
                         -- extendedKeyUsage and subjectAltName, an issuer keyUsage and
                         -- basicConstraints. Driven through `webpki_cert`.
+Spec.Webpki.verifyChain : Config → (list : ByteArray) → Verdict
+                        -- the TRUST=webpki chain walk (docs/webpki.md, "The chain
+                        -- walk") over one RFC 9846 §4.4.2 CertificateEntry list:
+                        -- readEntries? frames 1 to flightEntries (4) entries of at
+                        -- most certificateMax (3072) bytes; entry 0 parses under the
+                        -- leaf arm, its validity covers the clock at both ends
+                        -- inclusive, and a dNSName of its subjectAltName matches the
+                        -- hostname; then walkFrom consults the anchors at each depth
+                        -- before reading the next entry, and reads at most chainMax
+                        -- (3) certificates. The four refusals are the four pairs of
+                        -- return code and alert the C tells apart: rejected
+                        -- (CH_EPROTO), expired, unauthenticated (bad_certificate) and
+                        -- unknownCa. The alert itself is not modeled. Line op:
+                        -- `webpki_chain <packed clock> <hostname> <anchors> <list>` →
+                        -- `ok <rsa|p256|p384> <key>` / the refusal's name, where
+                        -- <anchors> is `-` or `name.spki` hex pairs joined by commas.
+Spec.Webpki.walkFrom  : Config → (cert : ByteArray) → Certificate → (rest : List ByteArray) →
+                        (read : Nat) → Step
+                        -- steps 6a to 6g from one certificate: an anchor whose subject
+                        -- Name equals this certificate's issuer Name and whose key
+                        -- verifies it ends the walk; otherwise the next entry is read
+                        -- as an issuer, checked against the clock, this certificate's
+                        -- issuer Name and its own pathLenConstraint, and must verify
+                        -- this certificate. Driven through `webpki_chain`.
 Spec.Handshake.step   : (mode : Mode) → State → Msg → Option State      -- RFC 9846 §4 order of
                         -- server-to-client messages after the ClientHello; none = fatal
                         -- (unexpected_message). Msg has one constructor per line-protocol
@@ -680,6 +704,17 @@ Spec.WebpkiCert.readExtensions?_complete, parseCertificate?_complete
                              the leaf saw keyUsage, extendedKeyUsage and subjectAltName,
                              -- with cA false; an issuer saw keyUsage and basicConstraints,
                              -- with cA true
+Spec.Webpki.walkFrom_reached, verifyChain_ok
+                             an accepted chain has a verified signature path to an
+                             -- anchor: HasPath holds from the leaf, so every step of
+                             -- the path parsed under the issuer arm, covered the clock,
+                             -- was named by the certificate below it, stayed inside its
+                             -- own pathLenConstraint and verified that certificate,
+                             -- and the path ends at an anchor that both names the last
+                             -- issuer and verifies it. The key the verdict carries is
+                             -- the leaf's own, the leaf's validity covered the clock,
+                             -- and a dNSName of the leaf's subjectAltName matched
+                             -- cfg.hostname
 Spec.Record.nonce_inj        distinct sequence numbers below 2^64 give distinct record
                              -- nonces (RFC 9846 §5.3): within one traffic key the
                              -- nonce never repeats
@@ -794,6 +829,7 @@ means the module's selftest plus the differential oracle carry it;
 | WebpkiSpki | 3 | the accepted RSA key is 256..512 bytes in multiples of 8 with its top bit set and odd, stated over the returned bytes from a reader that judges the decoded integer; the EC keys are 64 and 96 bytes. Acceptance beyond that is executable oracle only: the differential's spec-encoded keys and their perturbations |
 | WebpkiSigalg | 9 | the decoding reader accepts exactly the four canonical encodings, one algorithm each (the byte-compare view and the decode view agree); FIPS 186-4 §6.4's integer rule equals the C's byte cut for P-256 with SHA-384 and its zero pad for P-384 with SHA-256, with the pad lemma and big-endian concatenation lemma under them; the cap and both family mismatches refuse. The signature arithmetic is the RSA, P-256 and P-384 modules' and stays vector-checked |
 | WebpkiCert | 5 | an accepted certificate is exactly one Certificate SEQUENCE whose TBS content is the recorded range of the input and whose outer signatureAlgorithm is the encoding of the recorded algorithm; the recorded subjectAltName range lies inside the extensions field and the TBS content; the leaf saw keyUsage, extendedKeyUsage and subjectAltName with cA false, an issuer keyUsage and basicConstraints with cA true. Which values each extension admits, the caps and the other fields stay executable oracle only: the corpus certificates, their single-byte changes and the random extension lists of the differential |
+| Webpki | 2 | soundness of the walk: an accepted chain has a verified signature path to an anchor, stated as an inductive `HasPath` and proved for every walk that reaches one, and the leaf the accepted key comes from parsed under the leaf arm, was valid at the clock and matched `cfg.hostname` through a dNSName of its own subjectAltName. The entry framing and which refusal each failure names stay executable oracle only: the 25 corpus chains, the 5 captures and their clock, hostname, anchor, entry and byte mutations in the differential |
 | X25519 | 2 | RFC 7748 §5 clamping: every decoded scalar is a multiple of the cofactor 8, and has bit 254 set with bit 255 clear. The first keeps `k * P` in the prime-order subgroup, the second fixes the ladder's iteration count. The ladder arithmetic itself stays vector-checked |
 | X509Der | 19 | DER canonicality: a length, a TLV, and an INTEGER are accepted only in the one encoding X.690 §10.1 and §8.3.2 admit, so the reader is DER-strict rather than BER-lenient; plus the encode/decode round trips and the §8.19.2 subidentifier rule |
 | X509 | 4 | parse soundness: an accepted list reports a key only after a signature over the complete DER of the TBSCertificate that carried it verified under the pinned key, or under an intermediate the pinned key itself signed; the entry is a byte range of the list and no third entry can follow. Acceptance policy beyond that is executable oracle only: mint/parse round trips for the single leaf and the chained pair (self-checked signatures; OpenSSL material is exercised by the C strictness suite) and the differential |

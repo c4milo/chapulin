@@ -118,10 +118,13 @@ which convention holds them.
   one certificate's fields and hands each to its reader, and
   `webpki_ext.c` reads its extensions: it decodes keyUsage,
   extendedKeyUsage and basicConstraints, records subjectAltName, and
-  refuses every other critical extension. The raw and ca
+  refuses every other critical extension. `webpki.c` is the walk over
+  them: it frames the CertificateEntry list, checks the leaf's clock and
+  hostname, and walks issuers until an anchor both names the issuer and
+  verifies the signature. It is the mode's one entry point, the way
+  `x509_verify_leaf` is the ca mode's. The raw and ca
   objects filter these files out, and `lint-trust-separation` checks
-  that. The Makefile has no `TRUST=webpki` object yet, so today only
-  test binaries and proof harnesses compile them.
+  that.
 - **Mechanism.** The length-first canonical-DER decoder in
   `x509_der.c` (definite lengths, minimal encodings, exact-fill of
   every container; rejection precedes interpretation) plus pinned
@@ -400,14 +403,32 @@ which convention holds them.
   (`now_seconds`) is 0, and a server_name acknowledgement that carries
   data. The web PKI fields exist only in that build, so a raw or ca
   build that sets one fails to compile rather than returning
-  CH_EINVAL. Until the chain walk lands, a TRUST=webpki handshake
-  refuses at the Certificate message.
+  CH_EINVAL. `check_certificate_verify` (handshake_auth.c) refuses a
+  CertificateVerify whose signature scheme is not the one the leaf key's
+  family can produce, and it checks the signature that passes under that
+  family's own verifier over the digest the scheme names, so a signature
+  over any other digest is refused too. `webpki_verify_chain` fails
+  closed with unknown_ca when the entries run out or CH_WEBPKI_CHAIN_MAX
+  is reached before an anchor verifies a signature.
 - **Mechanism.** Fail-closed policy, each refusal an explicit branch
   with its alert.
 - **Check.** handshake_strict table cases per refusal; CBMC proves the
-  branches memory-safe. The TRUST=webpki refusals have boundary rows in
-  test/webpki_session_cases.h and bin/handshake_strict_webpki, each
-  guarded by an `inv14-` violation.
+  branches memory-safe. The TRUST=webpki config and server_name
+  refusals have boundary rows in test/webpki_session_cases.h and
+  bin/handshake_strict_webpki, each guarded by an `inv14-` violation.
+  The CertificateVerify rules are bin/webpki_auth_test, which drives
+  hsa_server_auth over one corpus chain per leaf key family with the
+  signatures in test/webpki_auth_vectors.h: an accepted row per family,
+  each of them again under every scheme the family cannot produce, and a
+  signature over the content hashed the other way. The
+  certverify_webpki CBMC harness proves the same two rules over every
+  scheme value and every leaf key byte. Three violations guard them,
+  and each fails both that test and that harness:
+  inv14-webpki-certificate-verify-scheme,
+  inv14-webpki-certificate-verify-sha384 and
+  inv14-webpki-certificate-verify-p384-key. The walk's own fail-closed
+  answer is bin/webpki_chain_test's anchor_key_mismatch row, guarded by
+  inv14-webpki-chain-unverified.
 - **Violation.** A PR relaxes one refusal for interop with a broken
   server.
 - See [decisions: Protocol surface](decisions.md#protocol-surface).
@@ -451,11 +472,17 @@ which convention holds them.
   its own slice, and the reader that built it compares `rb_left` before
   it returns: `rb_left(&r) == 0` at the end, or a `len != rb_left(&r)`
   equality at the header. `pem.c` is the one reader whose check runs in
-  a function it calls, `read_tail`.
+  a function it calls, `read_tail`. `webpki.c`'s `read_entries` is the
+  one whose loop is the statement: it runs until the reader is empty and
+  returns on every framing failure, so a success means the entries
+  filled the list, and the list carries no length of its own to compare.
 - **Check.** `make lint-exact-fill` (`tools/exact-fill.py`) reports a
   library function that builds an `rbuf` over a slice and never compares
   `rb_left` on it for equality, with that file's `ALLOWED` table holding
-  the one reader that checks in a callee, `pem.c`'s. Semgrep-tripwire
+  the one reader that checks in a callee, `pem.c`'s, and its `WALKED`
+  table the one that walks to the end, `webpki.c`'s. A `WALKED` entry
+  holds only while the `while (rb_left(&r) > 0)` loop is still there, so
+  a reader that stops walking is reported again. Semgrep-tripwire
   grade, and the exit codes below measure it rather than claim it. It
   catches a reader landed with no check at all; a reader whose only
   `rb_left` is a `while (rb_left(&r) > 0)` walk or a `> 0` guard on an

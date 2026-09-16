@@ -434,6 +434,19 @@ launch fast full certparse 260 "" handshake_parser.c buf.c
 # tier's default weight; certparse_webpki 545 properties, 1 s, 38 MB.
 launch fast full eeparse_webpki 260 "hsp_parse_encrypted_exts.0:66" -DCH_TRUST_WEBPKI handshake_parser.c buf.c
 launch fast full certparse_webpki 260 "" -DCH_TRUST_WEBPKI handshake_parser.c buf.c
+# certverify_webpki: the arm that reads what certparse_webpki parsed.
+# The scheme must be the one the leaf key's family can produce, and only
+# the P-384 scheme's signed content takes SHA-384. Both rules run over
+# every scheme value and every leaf key byte, which the vectors in
+# test/webpki_auth_vectors.h sample at three families. The record
+# reader, the hashes and the three verifiers are stubs the harness
+# defines; handshake_record, sha256, sha512 and the three verifier
+# harnesses prove them. Measured (cbmc 6.11.0, kissat, PROVE_NO_CACHE=1
+# /usr/bin/time -l over this script, one harness at a time): 743
+# properties, 1.4 s, 44 MB, well inside the fast tier's default weight.
+# Each of the three inv14-webpki-certificate-verify violations fails a
+# named assertion here as well as bin/webpki_auth_test.
+launch fast full certverify_webpki 260 "fill_nondet.0:513" -DCH_TRUST_WEBPKI handshake_parser.c buf.c
 launch fast:6 full sha256 3 "fill_nondet.0:97,sha256_update.0:66,sha256_update.1:3,sha256_update.2:66,sha256_final.0:65,sha256_final.1:9,sha256_final.2:9,compress.0:17,compress.1:49,compress.2:65"
 # SHA-512 splits as ML-KEM does: the framing over a stubbed compression,
 # and the compression alone. One formula carrying both hashes and the
@@ -704,6 +717,27 @@ launch fast:5 full webpki_cert 17 "fill_nondet.0:3074,ct_memeq.0:16" -DCH_TRUST_
 launch fast:5 full webpki_ext 18 "fill_nondet.0:1026,read_ext_key_usage.0:23,oid_minimal.0:17,ct_memeq.0:9" x509_der.c buf.c ct.c
 launch slow:3 full webpki_ext_one 18 "fill_nondet.0:97,read_ext_key_usage.0:33,oid_minimal.0:17,ct_memeq.0:9" -DCH_PROOF_ONE_LEN=96 x509_der.c buf.c ct.c
 launch slow:5 full webpki_ext_walk 18 "fill_nondet.0:49,webpki_read_extensions.0:8,read_ext_key_usage.0:13,oid_minimal.0:17,ct_memeq.0:9" --object-bits 11 -DCH_PROOF_EXT_LEN=48 x509_der.c buf.c ct.c
+# The TRUST=webpki chain walk, over a CertificateEntry list of up to
+# CH_PROOF_LIST_LEN bytes and CH_PROOF_ANCHORS anchors of unconstrained
+# bytes, with the five calls it makes stubbed to the contracts their own
+# harnesses prove. docs/webpki.md expected this to be the hardest formula
+# in the tree; it is not, because the stubs keep every certificate byte
+# out of it. What the formula does not say is which chains reach CH_OK:
+# the verify and match stubs answer a nondet verdict, so the walk's
+# soundness is the Lean model's and the corpus test's, not this proof's.
+#
+# 48 bytes is the bound: read_entries refuses a zero-length certificate,
+# so the shortest entry it accepts is 6 bytes (a 3-byte length, one
+# certificate byte, a 2-byte extensions vector) and 48 bytes holds
+# exactly eight. Both the CH_WEBPKI_FLIGHT_ENTRIES refusal and the
+# CH_WEBPKI_CHAIN_MAX one are inside that. Measured (cbmc 6.11.0, kissat,
+# /usr/bin/time -l, these flags): 1103 properties, 105 s, 3.3 GB at 48
+# bytes and 2 anchors, re-measured when read_entries' refusal started
+# writing its own alert; 1097 properties, 113 s and 3.0 GB before that; 142 s and 6.6 GB at 48 bytes and 3 anchors, and 62
+# s and 1.9 GB at 30 bytes. The same formula with an assert of 0 at its
+# CH_OK tail fails that one assert (1 of 1098, 133 s, 3.1 GB), so the
+# tail is reached. fast:4 covers the peak.
+launch fast:4 full webpki_chain 49 "main.0:3,fill_nondet.0:49,read_entries.0:7,anchor_verifies.0:3,webpki_verify_chain.0:5" -DCH_TRUST_WEBPKI -DCH_PROOF_LIST_LEN=48 buf.c ct.c
 launch fast:3 full x509der 452 "fill_nondet.0:449,ct_memeq.0:68" buf.c ct.c
 launch fast:3 full x509der_ecdsa 452 "fill_nondet.0:449,ct_memeq.0:68" buf.c ct.c
 launch fast:4 full x509parse_ecdsa 260 "fill_nondet.0:257,ct_memeq.0:68" buf.c ct.c

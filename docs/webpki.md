@@ -21,11 +21,17 @@ client; it now scopes that to the device modes.
 
 ## Status
 
-Partly implemented. The build mode, the configuration below, the ClientHello
-and the EncryptedExtensions reply are in the tree. The chain walk is not, so a
-`TRUST=webpki` handshake fails closed at the Certificate message with
-`internal_error` and `CH_EAUTH`. For the parts not yet in the tree, this
-document is the design record and the plan of record.
+Implemented. The build mode, the configuration below, the ClientHello, the
+EncryptedExtensions reply, the certificate files and the chain walk in
+`webpki.c` are all in the tree, and `handshake_auth.c` runs the walk before
+it checks CertificateVerify against the leaf key the walk copied out.
+`test/e2e.sh` runs that handshake against a local `openssl s_server` over
+a root, intermediate and leaf it mints for the run: the client verifies
+the chain, and the four negative legs each fail closed with the alert
+`webpki.h`'s table names. No test here opens a network connection, and
+the captures under `test/webpki_captures/` are the only bytes in this
+tree a public endpoint ever sent.
+
 Numbers marked *measured* come from a capture or a build. Numbers marked
 *derived* come from a formula over measured inputs. Nothing here is an
 estimate, and no number in this file is a substitute for `bench/sram.sh`.
@@ -84,6 +90,19 @@ stays the CertificateVerify algorithm, where RFC 9846 requires it for an RSA
 key. PKCS#1 v1.5 is admitted for certificate signatures and refused for
 CertificateVerify, which RFC 9846 §4.4.3 forbids: `rsa_pkcs1_*` codepoints
 appear in `signature_algorithms` for certificates only.
+
+CertificateVerify carries one scheme, and the leaf key's family decides which:
+`rsa_pss_rsae_sha256` for an RSA key, `ecdsa_secp256r1_sha256` for P-256 and
+`ecdsa_secp384r1_sha384` for P-384 (RFC 9846 §4.4.3).
+`check_certificate_verify` in `handshake_auth.c` refuses every other pairing
+with `illegal_parameter`, and verifies the signature that passes under that
+family's own verifier. The P-384 scheme is the one place in this client where
+the signed content takes SHA-384; the transcript hash inside that content stays
+32 bytes, because the cipher suite fixes it. `test/webpki_auth_test.c` drives
+the arm over one corpus chain per family with the signatures in
+`test/webpki_auth_vectors.h`, `test/e2e.sh` runs the two ECDSA arms against a
+local `openssl s_server`, and the `certverify_webpki` CBMC harness proves the
+binding and the hash choice over every scheme value and every leaf key family.
 
 SHA-384 needs a SHA-512 core, so `sha512.[ch]` is new. It is packaged only in
 a webpki object, the way `sha3.[ch]` is packaged only under `KEX=pq`.
@@ -433,16 +452,25 @@ here: never overclaim.
   the Wycheproof vectors above. Hostname matching is the opposite case — a
   pure predicate over a small alphabet, where random sampling covers the
   space meaningfully — and it is where the differential effort goes.
-- **CBMC.** A harness per module, at the module's real bound. Two are
+- **CBMC.** A harness per module, at the module's real bound. Two were
   expected to be hard and are called out rather than promised: the
   certificate parser, whose ca-mode counterpart already records no verdict in
   25 minutes for a two-entry formula at 7.1 GB, and the name matcher, whose
   cost grows with roughly the cube of input length. Where a bound cannot be
-  reached, the README states the partial bound that was reached.
+  reached, the README states the partial bound that was reached. The walk
+  itself turned out cheap rather than hard, because its harness stubs the
+  parser and the verifiers and so keeps every certificate byte out of the
+  formula: `webpki_chain` returns a verdict in 113 s at 3.0 GB over a
+  48-byte entry list. What that costs is soundness: the stubs answer an
+  unconstrained verdict, so the proof says nothing about which chains the
+  walk accepts, and `spec/Spec/Webpki.lean` states that property instead.
 - **Fixtures.** Two corpora, doing different jobs. The captured chains above
-  carry real extension bulk and test the bounds. A generated corpus of 24
-  chains — 7 positive (the four shapes above, one wildcard match and the two
-  validity boundaries), 17 negative taking one rule each — is small, offline
-  and deterministic, and tests the logic. `test/gen_webpki_corpus.py` renders
+  carry real extension bulk and test the bounds. A generated corpus of 25
+  chains — 8 positive (the four shapes above, a P-384 leaf, one wildcard match
+  and the two validity boundaries), 17 negative taking one rule each — is
+  small, offline and deterministic, and tests the logic. `test/gen_webpki_corpus.py` renders
   both into exact RFC 9846 §4.4.2 `Certificate` message bytes, so a test feeds
-  the parser what the wire would.
+  the parser what the wire would. `test/webpki_auth_vectors.h` adds a
+  CertificateVerify signature over three of those chains, one per leaf key
+  family, which is what `test/webpki_auth_test.c` drives `hsa_server_auth`
+  with.
