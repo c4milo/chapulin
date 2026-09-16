@@ -117,8 +117,9 @@ them to [`bench/results-sram.csv`](bench/results-sram.csv);
 The session struct is measured twice, once native on arm64 and once for
 rv32ic — the byte-count constants do not move, only the pointer fields, so
 a 32-bit device needs 72 bytes less than the host figure in either device
-build. `TRUST=webpki` adds four pointer-sized fields, two pointers and two
-`size_t`, so that build needs 88 bytes less than the host figure on rv32.
+build. `TRUST=webpki` adds six pointer-sized fields, three pointers and
+three `size_t`, so that build needs 96 bytes less than the host figure
+on rv32.
 The stack peaks are arm64 only: `bench/stack.py` reads arm64 relocations,
 so an rv32 peak needs tooling that does not exist yet.
 
@@ -129,13 +130,13 @@ so an rv32 peak needs tooling that does not exist yet.
 | **total static working set** | **3192** | **3120** |
 | `ch_tls` under `KEX=pq` (includes 1806 B TX staging) | 2328 | 2256 |
 | **total static working set, `KEX=pq`** (2048 buffer) | **4376** | **4304** |
-| `ch_tls` under `TRUST=webpki` (includes 884 B TX staging) | 1448 | 1360 |
-| **total static working set, `TRUST=webpki`** (12338 buffer, its floor) | **13786** | **13698** |
+| `ch_tls` under `TRUST=webpki` (includes 1154 B TX staging) | 1744 | 1648 |
+| **total static working set, `TRUST=webpki`** (12338 buffer, its floor) | **14082** | **13986** |
 | peak stack, `ch_connect` (RSA-3072 verify) | 5056 |
 | peak stack, `ch_connect` (`PIN=ecdsa`) | 3888 |
 | peak stack, `ch_connect` (PSK) | 2432 |
 | peak stack, `ch_connect` (`TRUST=ca`, RSA / ECDSA) | 5504 / 4016 |
-| peak stack, `ch_connect` (`TRUST=webpki`, RSA-4096 verify) | 7168 |
+| peak stack, `ch_connect` (`TRUST=webpki`, RSA-4096 verify) | 7200 |
 | peak stack, `ch_read` (worst case: KeyUpdate rekey) | 1712 |
 | peak stack, `ch_connect` (`KEX=pq`) | 15808 |
 | peak stack, `ch_write` / `ch_close` | 912 / 864 |
@@ -162,10 +163,10 @@ and derives the floor for you: `CH_MIN_RXBUF` becomes 3,112 bytes
 that completes it, so a buffer too small for the largest chain fails at
 setup rather than mid-handshake. A `TRUST=webpki` build derives 12,338
 bytes the same way, four certificates at its 3,072-byte cap, and its
-session struct carries a larger TX staging array for the
-`server_name` extension. Its `ch_connect` peaks at 7,168 bytes, through
-the chain walk into an RSA-4096 verify, which is the widest modulus a
-public root carries.
+session struct carries a larger TX staging array for the `server_name`
+and ALPN extensions. Its `ch_connect` peaks at 7,200
+bytes, through the chain walk into an RSA-4096 verify, which is the
+widest modulus a public root carries.
 
 Provisioning with `ch_pubkey_from_pem` needs three more caller-side
 buffers, none of them part of the static working set above and none of
@@ -309,7 +310,7 @@ apart from one that passed — so for the slow rows, read the nightly.
 | handshake | the driver stays safe on any record stream: HRR restart, the state machine, and the flight's own arithmetic, in PSK and pinned-key mode. Record reading and message reassembly are stubbed here to the contract the `handshake_record` leg proves — compiling them multiplies this formula by the product of their loop bounds, past any runner. The `TRUST=ca` driver has a harness but no launch line, so it is unproven | 96 B receive buffer, slow tier |
 | hybrid_secret | the `KEX=pq` shared-secret derivation is safe for any stored seed, any server ciphertext and any server share, and a refused key exchange wipes all 64 bytes rather than leaving half a secret on the stack (INV-3). ML-KEM and x25519 are stubbed to their contracts, which their own harnesses prove. This is the only leg that builds `-DCH_KEX_PQ`: the rest of the hybrid driver carries the differential, the sequence enumeration and the e2e legs, not a proof | the full domain, fast tier |
 | key_share | the `KEX=pq` arm of the ServerHello key_share parser is safe on any extension bytes, and on acceptance it records the one group this build offers (`info.group == CH_KEX_GROUP`, the value `ch_tls.group` reports and `ch_cfg.require_pq` compares) and returns a whole readable ML-KEM ciphertext inside the bytes it consumed — the contract `hybrid_secret` assumes, so this proof discharges that assumption | extension ≤ 1,132 B, the full hybrid share, fast tier |
-| hello_build (two harnesses) | the ClientHello builder writes nothing outside the caller's buffer at any capacity, for every cookie and PSK identity a caller may pass, and returns either zero or a length that fits. It also checks the bound itself: at `CH_HELLO_MAX` the build always succeeds, so the constant `handshake.c` asserts `CH_TX_STAGE` against is sufficient, not merely plausible. `hello_build_webpki` is the same harness under `-DCH_TRUST_WEBPKI`, with the server_name extension over any hostname and the five signature schemes, against that build's `CH_HELLO_MAX` of 879; there the bound is tight, because the assertion moved to `CH_HELLO_MAX - 1` fails | capacity ≤ `CH_HELLO_MAX`, identity ≤ 320 B, cookie ≤ 128 B, hostname ≤ 253 B |
+| hello_build (two harnesses) | the ClientHello builder writes nothing outside the caller's buffer at any capacity, for every cookie and PSK identity a caller may pass, and returns either zero or a length that fits. It also checks the bound itself: at `CH_HELLO_MAX` the build always succeeds, so the constant `handshake.c` asserts `CH_TX_STAGE` against is sufficient, not merely plausible. `hello_build_webpki` is the same harness under `-DCH_TRUST_WEBPKI`, with the server_name extension over any hostname, the ALPN extension over any offer, and the five signature schemes, against that build's `CH_HELLO_MAX` of 1,149; there the bound is tight, because the assertion moved to `CH_HELLO_MAX - 1` fails | capacity ≤ `CH_HELLO_MAX`, identity ≤ 320 B, cookie ≤ 128 B, hostname ≤ 253 B, 8 ALPN names ≤ 32 B each |
 | chacha20 | safe at any counter, in place and into a distinct buffer | ≤ 160 B — three blocks, full, full, partial |
 | poly1305 | safe for any three-chunk split; 64-bit products stay in range | messages ≤ 80 B — five blocks, crossing the buffered-block path in every alignment. The five-call shape `aead.c` uses is no longer exercised by a proof: the aead harnesses stub Poly1305, so that shape rests on the unit vectors, Wycheproof and the differential |
 | aead (three harnesses) | seal/open round-trips; a forged tag writes zero bytes; backward-overlap decrypt works. ChaCha20 and Poly1305 are stubbed to their contracts — a keystream that is the same for the same key, nonce and counter, and a tag that is a function of the bytes absorbed — which their own harnesses prove. Compiling them in returned no verdict in five hours; the stubbed formulas take about three seconds. What the stubs give up, and why the composition is an argument rather than a machine-checked step, is stated at the top of `proof/aead_stubs.h`. Sealing fully in place (`pt == ct`, the shape every outgoing record uses) is **not proven**: `proof/aead_inplace_harness.c` states it, but the formula has returned no verdict, so it carries no launch line | plaintext ≤ 16 B, aad ≤ 16 B, fast tier |
@@ -318,7 +319,7 @@ apart from one that passed — so for the slow rows, read the nightly.
 | rsa (four harnesses) | the PSS decode and limb marshalling stay safe with the RSAVP1 result replaced by arbitrary bytes; `rsa_webpki` and `rsa_mul_webpki` are the same two harnesses at the `CH_TRUST_WEBPKI` bound, `CH_RSA_MODULUS_MAX` of 512 | 384 B modulus, and 512 B under `CH_TRUST_WEBPKI`, every byte hostile except the top one, which each call pins to one of the three alignment shapes the decode takes — a symbolic top bit was measured at 7 GB of CNF |
 | record | seal works across its contract and returns, not traps, over the whole direction state — any key, IV, and sequence number, the saturation refusal included — and any claimed buffer size; rec_open stays safe on fully hostile bytes, into a separate buffer and in place, the shape both shipped callers use | records ≤ 160 B |
 | handshake_record | the record reader stays safe on any stream a peer can send — compaction, CCS tolerance, the quiet cap, in-place decryption, and reassembly across records — and a message it yields lies wholly inside `cfg.buf` with a length that agrees with its own 3-byte header. `hsr_transcript_hash` leaves the running transcript byte for byte as it found it. io_read_record and rec_open are stubbed to the contracts the `io` and `record` legs prove | 12 B receive buffer, `CH_QUIET_CAP` 1 |
-| handshake_parser, eeparse, certparse, eeparse_webpki, certparse_webpki | the ServerHello, EncryptedExtensions, Certificate, and CertificateVerify parsers stay safe on hostile bytes, and the certificate list and signature slices they hand back lie inside the message. The two `_webpki` harnesses prove the `TRUST=webpki` arms, the empty server_name acknowledgement and the three CertificateVerify schemes, and `certparse_webpki` also proves that an accepted scheme is one of those three. `eeparse` and `eeparse_webpki` also prove the EncryptedExtensions alert contract: the parser keeps the caller's seeded alert or writes unsupported_extension, and the `TRUST=webpki` arm may also write decode_error, its alert for a server_name that carries data. The parser writes no other alert. The 256-byte bound cannot hold a hybrid key_share, so the `KEX=pq` arm is driven by its own `key_share` leg instead | messages ≤ 256 B |
+| handshake_parser, eeparse, certparse, eeparse_webpki, eeparse_alpn, certparse_webpki | the ServerHello, EncryptedExtensions, Certificate, and CertificateVerify parsers stay safe on hostile bytes, and the certificate list and signature slices they hand back lie inside the message. The `_webpki` harnesses prove the `TRUST=webpki` arms, the empty server_name acknowledgement and the three CertificateVerify schemes, and `certparse_webpki` also proves that an accepted scheme is one of those three. The three `eeparse` harnesses also prove the EncryptedExtensions alert contract: the parser keeps the caller's seeded alert or writes unsupported_extension, a `TRUST=webpki` arm may also write decode_error, and with an ALPN offer it may also write illegal_parameter. The parser writes no other alert. `eeparse_alpn` proves the ALPN arm where it lives, over one extension body rather than a whole message: against an offer of up to 8 protocol names of up to 32 bytes, every byte and every length symbolic, an accepted body names a protocol the offer holds, a refused one leaves the caller's `CH_ALPN_NONE`, and the alert is the caller's seed or one of the arm's two. Driving that offer through the whole extension loop multiplies the two bounds and returned no verdict in 21 minutes, so the loop around the arm is `eeparse_webpki`'s, at its 256-byte message with an empty offer. The 256-byte bound cannot hold a hybrid key_share, so the `KEX=pq` arm is driven by its own `key_share` leg instead | messages ≤ 256 B; the ALPN arm one extension body ≤ 40 B against 8 names ≤ 32 B each |
 | handshake_post | the post-handshake parser stays safe on hostile decrypted bytes and consumes no more than its input | messages ≤ 128 B |
 | drbg | the generator stays safe for any request, seeded and across rekeys | requests ≤ 96 B |
 | x509der (two harnesses) | every DER primitive stays safe on hostile bytes at the rbuf shape its caller hands it, honors the pointer contracts the walker rests on, and consumes no more than the per-primitive cap the walker proof replays, in both builds | inputs ≤ 448 B; keyusage at its 256 B extnValue cap |
@@ -723,6 +724,36 @@ build, so a raw or ca build that sets one fails to compile. The hostname
 goes out as the ClientHello's `server_name`, and the hello offers five
 signature schemes, because a public chain's links may be signed by any
 of them.
+
+The same build negotiates the application protocol
+([RFC 7301](https://www.rfc-editor.org/rfc/rfc7301), ALPN). Offer the
+protocols you speak, in the order you prefer them, and read back which
+one the server picked:
+
+```c
+static const ch_alpn_protocol protocols[] = {
+    {(const uint8_t *)"h2", 2}, {(const uint8_t *)"http/1.1", 8},
+};
+cfg.alpn_protocols = protocols;
+cfg.alpn_count = 2;           // 1 to CH_ALPN_MAX (8); names to 32 bytes
+// ... ch_connect ...
+if (tls.alpn_selected == CH_ALPN_NONE) {
+    // The server selected none: it sent no ALPN extension at all,
+    // which RFC 7301 §3.2 allows. Speak your default or close.
+} else {
+    const ch_alpn_protocol *picked = &protocols[tls.alpn_selected];
+}
+```
+
+Offering nothing is legal and sends no extension. `ch_connect` returns
+`CH_EINVAL` for a count outside 1 to 8, a count without a list or a list
+without a count, a name that is NULL, empty or over 32 bytes, and two
+names that are equal. A server that selects a protocol you did not offer
+fails the handshake with `illegal_parameter`, and an ALPN reply to a
+config that offered none fails it with `unsupported_extension`.
+[`docs/webpki.md`](docs/webpki.md) has the whole refusal table, and
+[`docs/decisions.md`](docs/decisions.md) entry 37 says why this mode
+negotiates here and nowhere else.
 
 `ch_tls.group` reports the key-exchange group the ServerHello selected:
 `CH_GROUP_X25519` or `CH_GROUP_X25519MLKEM768` (`cfg.h`), and 0 until

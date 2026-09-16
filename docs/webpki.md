@@ -22,9 +22,10 @@ client; it now scopes that to the device modes.
 ## Status
 
 Implemented. The build mode, the configuration below, the ClientHello, the
-EncryptedExtensions reply, the certificate files and the chain walk in
-`webpki.c` are all in the tree, and `handshake_auth.c` runs the walk before
-it checks CertificateVerify against the leaf key the walk copied out.
+EncryptedExtensions reply, the ALPN negotiation, the certificate files and
+the chain walk in `webpki.c` are all in the tree, and `handshake_auth.c` runs
+the walk before it checks CertificateVerify against the leaf key the walk
+copied out.
 `test/e2e.sh` runs that handshake against a local `openssl s_server` over
 a root, intermediate and leaf it mints for the run: the client verifies
 the chain, and the four negative legs each fail closed with `CH_EAUTH`.
@@ -311,12 +312,12 @@ The rest of the configuration is the hostname and the clock:
 - an epoch callback is set;
 - `buf_len` is under `CH_MIN_RXBUF`, 12,338 bytes in this mode.
 
-`ch_trust_anchor`, `CH_WEBPKI_ANCHOR_MAX` and the five `ch_cfg` fields
+`ch_trust_anchor`, `CH_WEBPKI_ANCHOR_MAX` and the seven `ch_cfg` fields
 exist only in a `TRUST=webpki` build, so the raw and ca objects keep the
 `ch_cfg` and `ch_tls` layout they had before this mode. A raw or ca build
 that sets one of the fields fails to compile. `chapulin.hpp` forwards the
-three through `Config::anchors`, `Config::hostname` and
-`Config::now_seconds`, which a raw or ca build does not declare either.
+four through `Config::anchors`, `Config::hostname`, `Config::now_seconds`
+and `Config::alpn`, which a raw or ca build does not declare either.
 
 Measured anchor sizes, from the captures: 120 B for a P-384 key, 294 B for
 RSA-2048, 550 B for RSA-4096.
@@ -334,6 +335,58 @@ Any anchor may certify any name. The mode offers no per-anchor name
 constraint, so an anchor's authority is total: configure only anchors whose
 authority you accept over every name you will connect to.
 
+## Application protocols (ALPN)
+
+`ch_cfg.alpn_protocols` points at `ch_cfg.alpn_count` entries of
+`ch_alpn_protocol`, each a protocol name and its length. The ClientHello
+sends them as RFC 7301 §3.1's `ProtocolNameList`, in the caller's order,
+and the server picks one. This is the mode's second negotiation surface,
+after the signature schemes, and `docs/decisions.md` entry 37 states what
+it costs and what it buys.
+
+Offering nothing is legal: leave both fields zero and the hello carries no
+ALPN extension. Otherwise `ch_connect` returns `CH_EINVAL` before it sends
+a byte when:
+
+- `alpn_count` is outside 1 to `CH_ALPN_MAX`, or is set without
+  `alpn_protocols`, or `alpn_protocols` is set without a count;
+- any entry has a NULL `name`, an empty one, or one over
+  `CH_ALPN_NAME_MAX` bytes;
+- two entries carry the same name. A repeat would make the server's
+  selection name two indices, and `ch_tls.alpn_selected` reports one.
+
+`ch_tls.alpn_selected` is the index in `ch_cfg.alpn_protocols` of the
+protocol the server selected, or `CH_ALPN_NONE` when it selected none.
+Read it after `ch_connect` returns `CH_OK` and branch on it. There is no
+copy and no second buffer: the caller already owns the names.
+
+**A silent server is not a failure.** RFC 7301 §3.2 lets a server that
+does not implement ALPN answer without the extension, and this client
+accepts that: the handshake completes and `ch_tls.alpn_selected` is
+`CH_ALPN_NONE`. Failing closed there would refuse every endpoint that
+speaks `http/1.1` by convention. A caller that needs a protocol checks the
+field and closes the session itself.
+
+What the client does refuse, all fatal:
+
+| the EncryptedExtensions ALPN extension | alert |
+| --- | --- |
+| more than one `ProtocolName` | `decode_error` |
+| a `ProtocolName` of zero bytes | `decode_error` |
+| a list length the names do not fill, or a byte past the one name | `decode_error` |
+| a name the ClientHello did not offer | `illegal_parameter` |
+| any ALPN extension when the caller offered none | `unsupported_extension` |
+| a second ALPN extension in the same message | `illegal_parameter`, the alert `handshake.c` seeds for this message |
+
+RFC 7301 §3.2 fixes the first three by structure: the reply is the client's
+own structure "except that the 'ProtocolNameList' MUST contain exactly one
+'ProtocolName'", and §3.1 gives a `ProtocolName` 1 to 255 bytes. A body that
+is not one whole name has a length RFC 9846 §6 calls a `decode_error`. A
+name outside the offer is well formed and unacceptable, §6.2's
+`illegal_parameter`: §3.2 gives the server no way to select outside the
+offer, and one that shares no protocol with the client sends a
+`no_application_protocol` alert instead.
+
 ## Bounds
 
 Every cap and the measurement behind it. *Derived* means a formula over
@@ -349,6 +402,8 @@ measured inputs, and the formula is given.
 | `CH_WEBPKI_EXT_COUNT_MAX` | 16 | measured: the S3 leaf carries 10 |
 | `CH_WEBPKI_EXT_TLV_MAX` | 1024 | measured: the S3 leaf's subjectAltName Extension TLV is 653 B |
 | `CH_HOSTNAME_MAX` | 253 | DNS's own limit |
+| `CH_ALPN_MAX` | 8 | ClientHello budget: eight names of 32 bytes cost the hello 270 B |
+| `CH_ALPN_NAME_MAX` | 32 | the same budget; every protocol ID this tree offers or tests is under 11 B |
 | `CH_RSA_MODULUS_MAX` | 512 under webpki, 384 otherwise | measured: GTS Root R1 is RSA-4096 |
 
 `CH_WEBPKI_CERT_MAX` leaves 46% margin over the largest certificate
@@ -358,12 +413,21 @@ peer can force before any anchor is consulted, and one more certificate
 in the formula least likely to converge.
 
 The ClientHello this mode sends carries a `server_name` extension of up
-to 262 bytes and five signature schemes, so its largest hello,
-`CH_HELLO_MAX`, is 879 bytes, and 2,063 under `KEX=pq`. The session's
-TX staging array, `CH_TX_STAGE`, grows to match. The PSK arm sets that
-maximum even though this mode refuses a PSK, because the builder takes
-any config; the hello `ch_connect` lets this mode send is 528 bytes, or
-1,712 under `KEX=pq`.
+to 262 bytes, an ALPN extension of up to 270, and five signature
+schemes, so its largest hello, `CH_HELLO_MAX`, is 1,149 bytes, and
+2,333 under `KEX=pq`. The session's TX staging array, `CH_TX_STAGE`,
+grows to match, and `test/webpki_session_cases.h` measures the built
+hello against both numbers. The PSK arm sets that maximum even though
+this mode refuses a PSK, because the builder takes any config; the hello
+`ch_connect` lets this mode send is 798 bytes, or 1,982 under `KEX=pq`.
+
+`CH_ALPN_MAX` and `CH_ALPN_NAME_MAX` are that budget split two ways. The
+extension costs 4 type and length bytes, 2 list-length bytes, and one
+length byte per name, so eight names of 32 bytes cost 270. RFC 7301 §3.1
+allows a `ProtocolName` of up to 255 bytes, and four of those would cost
+the hello a kilobyte; 32 bytes holds every protocol ID this tree offers
+or tests, the longest being `http/1.1` at 8. Eight names is four times
+the two-name offer an HTTP caller sends.
 
 `CH_WEBPKI_FLIGHT_ENTRIES` is sized separately from the walk, because a
 server may append entries the walk never reads and every captured chain

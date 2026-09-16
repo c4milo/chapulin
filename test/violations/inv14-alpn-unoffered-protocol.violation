@@ -1,0 +1,15 @@
+invariant: INV-14
+file: handshake_parser.c
+catches: handshake_strict_webpki
+reason: the ALPN arm matches an offered protocol by length alone, so a
+  server that names "h3" is answered with the index of the two-byte
+  protocol the client did offer. RFC 7301 §3.2 gives the server no way
+  to select outside the offer, and the caller would then speak a
+  protocol the server never chose. bin/handshake_strict_webpki's
+  unoffered and prefix rows object.
+
+--- old
+        if (out->offered[i].name_len == name_len &&
+            memcmp(out->offered[i].name, name, name_len) == 0) {
+--- new
+        if (out->offered[i].name_len == name_len && name != NULL) {

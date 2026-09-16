@@ -441,7 +441,14 @@ which convention holds them.
   inv14-webpki-chain-unverified; its issuer validity rows,
   issuer_expired and issuer_not_yet_valid, are guarded by
   inv14-webpki-issuer-validity, and its list framing test by
-  inv14-webpki-entry-extensions.
+  inv14-webpki-entry-extensions. The ALPN rules have boundary rows in
+  the same two binaries — test/handshake_strict_alpn.h for the reply and
+  test/webpki_session_cases.h for the config and the reported selection
+  — and nine violations guard them: inv14-alpn-unoffered-protocol,
+  inv14-alpn-empty-name, inv14-alpn-list-length,
+  inv14-alpn-extension-trailing, inv14-alpn-without-offer,
+  inv14-alpn-duplicate-name, inv14-alpn-name-length,
+  inv14-alpn-count-cap and inv14-alpn-selection-unseeded.
 - **Violation.** A PR relaxes one refusal for interop with a broken
   server.
 - See [decisions: Protocol surface](decisions.md#protocol-surface).

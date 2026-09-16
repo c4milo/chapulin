@@ -1,0 +1,13 @@
+invariant: INV-14
+file: tls.c
+catches: webpki_session_test
+reason: ch_connect stops holding the offer to CH_ALPN_MAX entries, so a
+  longer list passes the config check and the ClientHello grows past
+  CH_HELLO_MAX. A count over 255 would also put the server's selection
+  outside the uint8_t ch_tls.alpn_selected reports it in.
+  bin/webpki_session_test's count boundary rows object.
+
+--- old
+    if (cfg->alpn_count == 0 || cfg->alpn_count > CH_ALPN_MAX) {
+--- new
+    if (cfg->alpn_count == 0) {

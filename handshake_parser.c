@@ -245,30 +245,115 @@ static int server_name_acknowledged(uint16_t ext, size_t ext_len) {
     return ext == EXT_SERVER_NAME && ext_len == 0;
 }
 
+// What the ALPN arm reads and writes: the protocol names the
+// ClientHello offered, the index it reports, and the alert a refusal
+// names. One struct so the two functions below take one pointer rather
+// than four parameters.
+typedef struct {
+    const ch_alpn_protocol *offered;
+    size_t offered_count;
+    uint8_t *selected;
+    uint8_t *alert;
+} alpn_out;
+
+// application_layer_protocol_negotiation in EncryptedExtensions
+// (RFC 7301 §3.2). The body is a ProtocolNameList, and §3.2 says it
+// "MUST contain exactly one ProtocolName"; a ProtocolName is
+// `opaque ProtocolName<1..2^8-1>`, so it holds at least one byte. Two
+// bodies fail that structure and get RFC 9846 §6's decode_error, the
+// alert for a length that is incorrect or a field outside the specified
+// range: a list that is not one whole name, which covers two names and
+// trailing bytes, and a name of zero bytes.
+//
+// A name the client did not offer is a different fault. The body is
+// well formed and its value is not acceptable, which RFC 9846 §6.2
+// names illegal_parameter. RFC 7301 §3.2 gives the server no way to
+// select outside the offer: a server that shares no protocol with the
+// client sends a no_application_protocol alert instead. The compare is
+// variable time on purpose, like the HRR-magic compare above: protocol
+// names are public on both sides.
+static int parse_alpn(const uint8_t *ext_data, size_t ext_len, const alpn_out *out) {
+    rbuf e;
+    rb_init(&e, ext_data, ext_len);
+    size_t list_len = rb_u16(&e);
+    size_t name_len = rb_u8(&e);
+    const uint8_t *name = rb_bytes(&e, name_len);
+    if (e.err || name_len == 0 || list_len != 1 + name_len || rb_left(&e) != 0) {
+        *out->alert = ALERT_DECODE_ERROR;
+        return CH_EPROTO;
+    }
+    for (size_t i = 0; i < out->offered_count; i++) {
+        if (out->offered[i].name_len == name_len &&
+            memcmp(out->offered[i].name, name, name_len) == 0) {
+            *out->selected = (uint8_t)i;
+            return CH_OK;
+        }
+    }
+    *out->alert = ALERT_ILLEGAL_PARAMETER;
+    return CH_EPROTO;
+}
+
+// The bit that marks one of this build's two extra extensions seen: the
+// empty server_name acknowledgement, or an ALPN selection the client
+// offered and parse_alpn accepted. ALPN is admitted only when the
+// ClientHello offered protocols, so with no offer it falls through as
+// an extension the client never requested. 0 says the loop does not
+// admit this extension, and out->alert then holds the alert parse_alpn
+// named, or the unsupported_extension the caller seeded it with.
+static uint8_t webpki_ext_bit(uint16_t ext, const uint8_t *ext_data, size_t ext_len,
+                              const alpn_out *out) {
+    if (server_name_acknowledged(ext, ext_len)) {
+        return 1U << 2;
+    }
+    if (ext == EXT_ALPN && out->offered_count > 0) {
+        return parse_alpn(ext_data, ext_len, out) == CH_OK ? (uint8_t)(1U << 3) : 0;
+    }
+    return 0;
+}
+
 // The alert for an extension the loop does not admit. A server_name
 // there carries data, because server_name_acknowledged admits the empty
 // one. That body has the wrong length for the empty extension_data RFC
-// 6066 §3 requires, and RFC 9846 §6 names that fault decode_error.
-// Every other extension was never offered: unsupported_extension
-// (RFC 9846 §4.3).
-static uint8_t unadmitted_extension_alert(uint16_t ext) {
-    return ext == EXT_SERVER_NAME ? ALERT_DECODE_ERROR : ALERT_UNSUPPORTED_EXTENSION;
+// 6066 §3 requires, and RFC 9846 §6 names that fault decode_error. An
+// ALPN extension the loop did not admit carries alpn_alert, which is
+// the alert parse_alpn named or, when no offer let it run,
+// unsupported_extension. Every other extension was never offered:
+// unsupported_extension (RFC 9846 §4.3).
+static uint8_t unadmitted_extension_alert(uint16_t ext, uint8_t alpn_alert) {
+    if (ext == EXT_SERVER_NAME) {
+        return ALERT_DECODE_ERROR;
+    }
+    return ext == EXT_ALPN ? alpn_alert : ALERT_UNSUPPORTED_EXTENSION;
 }
 #endif
 
 // Encrypted extensions: take the peer's record_size_limit, tolerate
 // supported_groups (a server may volunteer it for later connections)
-// and, in a TRUST=webpki build, one empty server_name acknowledgement;
-// reject everything else — RFC 9846 §4.3 requires unsupported_extension
-// for anything the ClientHello did not offer.
-int hsp_parse_encrypted_exts(const uint8_t *body, size_t n, uint16_t *peer_limit, uint8_t *alert) {
+// and, in a TRUST=webpki build, one empty server_name acknowledgement
+// and one ALPN selection; reject everything else — RFC 9846 §4.3
+// requires unsupported_extension for anything the ClientHello did not
+// offer.
+int hsp_parse_encrypted_exts(const uint8_t *body, size_t n, uint16_t *peer_limit,
+#ifdef CH_TRUST_WEBPKI
+                             const ch_alpn_protocol *offered, size_t offered_count,
+                             uint8_t *selected,
+#endif
+                             uint8_t *alert) {
+#ifdef CH_TRUST_WEBPKI
+    // parse_alpn writes over this one, so an ALPN extension the loop
+    // refuses carries its own alert and one it never reached carries
+    // the answer for an extension the client did not offer.
+    uint8_t alpn_alert = ALERT_UNSUPPORTED_EXTENSION;
+    const alpn_out alpn = {offered, offered_count, selected, &alpn_alert};
+#endif
     rbuf r;
     rb_init(&r, body, n);
     size_t exts_len = rb_u16(&r);
     if (r.err || exts_len != rb_left(&r)) {
         return CH_EPROTO;
     }
-    // bit 0 record_size_limit, bit 1 supported_groups, bit 2 server_name
+    // bit 0 record_size_limit, bit 1 supported_groups, bit 2 server_name,
+    // bit 3 application_layer_protocol_negotiation
     uint8_t seen = 0;
     while (rb_left(&r) > 0) {
         uint16_t ext = rb_u16(&r);
@@ -277,6 +362,11 @@ int hsp_parse_encrypted_exts(const uint8_t *body, size_t n, uint16_t *peer_limit
         if (ext_data == NULL) {
             return CH_EPROTO;
         }
+#ifdef CH_TRUST_WEBPKI
+        // Read before the chain rather than inside it, so this build's
+        // two extra extensions cost the chain one arm and not two.
+        uint8_t webpki_bit = webpki_ext_bit(ext, ext_data, ext_len, &alpn);
+#endif
         uint8_t bit;
         if (ext == EXT_RECORD_SIZE_LIMIT) {
             bit = 1U << 0;
@@ -286,12 +376,12 @@ int hsp_parse_encrypted_exts(const uint8_t *body, size_t n, uint16_t *peer_limit
         } else if (ext == EXT_SUPPORTED_GROUPS) {
             bit = 1U << 1; // tolerated; its body is deliberately unread
 #ifdef CH_TRUST_WEBPKI
-        } else if (server_name_acknowledged(ext, ext_len)) {
-            bit = 1U << 2; // admitted once, like the other two
+        } else if (webpki_bit != 0) {
+            bit = webpki_bit; // admitted once, like the other two
 #endif
         } else {
 #ifdef CH_TRUST_WEBPKI
-            *alert = unadmitted_extension_alert(ext);
+            *alert = unadmitted_extension_alert(ext, alpn_alert);
 #else
             *alert = ALERT_UNSUPPORTED_EXTENSION;
 #endif

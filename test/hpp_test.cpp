@@ -110,6 +110,18 @@ static const ch_trust_anchor kAnchors[2] = {
     {kAnchorName, sizeof kAnchorName, kAnchorSpki, sizeof kAnchorSpki},
 };
 
+// The ALPN offer the rows below make: "h2" and "http/1.1", the two an
+// HTTP client sends, and one name a byte over CH_ALPN_NAME_MAX, which
+// ch_connect refuses.
+static const uint8_t kH2[] = {'h', '2'};
+static const uint8_t kHttp11[] = {'h', 't', 't', 'p', '/', '1', '.', '1'};
+static const uint8_t kLongName[CH_ALPN_NAME_MAX + 1] = {'a'};
+static const ch_alpn_protocol kAlpn[2] = {
+    {kH2, sizeof kH2},
+    {kHttp11, sizeof kHttp11},
+};
+static const ch_alpn_protocol kAlpnTooLong[1] = {{kLongName, sizeof kLongName}};
+
 // The one auth mode this build has: anchors, a hostname and a clock set
 // through the typed setters, each of which writes its own ch_cfg field,
 // pass ch_connect's config check and fail at the send. A PSK or a pin
@@ -144,6 +156,25 @@ static void test_webpki_config(chapulin::Io io) {
     {
         chapulin::Config cfg(chapulin::Bytes{rxbuf}, io);
         cfg.anchors(kAnchors, 1).hostname({kHost, sizeof kHost}).now_seconds(0);
+        chapulin::Session s;
+        CHECK(s.connect(cfg) == chapulin::Status::invalid);
+    }
+    // ALPN: the setter writes both ch_cfg fields, a valid offer reaches
+    // I/O, and a session that never read an EncryptedExtensions reports
+    // no selection. A name over CH_ALPN_NAME_MAX is refused.
+    {
+        chapulin::Config cfg(chapulin::Bytes{rxbuf}, io);
+        cfg.anchors(kAnchors, 1).hostname({kHost, sizeof kHost}).now_seconds(1789000000U);
+        cfg.alpn(kAlpn);
+        CHECK(cfg.raw().alpn_protocols == kAlpn && cfg.raw().alpn_count == 2);
+        chapulin::Session s;
+        CHECK(s.connect(cfg) == chapulin::Status::io);
+        CHECK(s.alpn_selected() == chapulin::alpn_none);
+    }
+    {
+        chapulin::Config cfg(chapulin::Bytes{rxbuf}, io);
+        cfg.anchors(kAnchors, 1).hostname({kHost, sizeof kHost}).now_seconds(1789000000U);
+        cfg.alpn(kAlpnTooLong, 1);
         chapulin::Session s;
         CHECK(s.connect(cfg) == chapulin::Status::invalid);
     }

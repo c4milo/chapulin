@@ -426,13 +426,33 @@ launch fast full certparse 260 "" handshake_parser.c buf.c
 # when one of the three is struck from it, so it is reached). Both
 # eeparse harnesses assert the alert contract: the parser keeps the seed
 # or writes unsupported_extension, and the webpki arm may also write
-# decode_error. -DCH_TRUST_WEBPKI is on the launch line because
-# handshake_parser.c is its own translation unit. Measured (cbmc 6.11.0,
-# kissat, PROVE_NO_CACHE=1 /usr/bin/time -l over this script, one
-# harness at a time, two runs): eeparse_webpki 510 properties, 39 s, 2.5
-# GB, and eeparse 504 properties, 28 s, 2.5 GB, both inside the fast
+# decode_error. eeparse_webpki drives the block with an empty ALPN
+# offer, the shape a caller that skips ALPN configures, and asserts that
+# the parser then reports no selection; eeparse_alpn below proves the
+# arm that reads an offered protocol. -DCH_TRUST_WEBPKI is on the launch
+# line because handshake_parser.c is its own translation unit. Measured
+# (cbmc 6.11.0, kissat, PROVE_NO_CACHE=1 /usr/bin/time -l over this
+# script, one harness at a time): eeparse_webpki 611 properties, 61 s,
+# 5.1 GB, which its weight records — the ALPN arm sits inside the
+# per-extension read, so its formula rides along even where no offer
+# lets it run; eeparse 504 properties, 29 s, 2.5 GB, inside the fast
 # tier's default weight; certparse_webpki 545 properties, 1 s, 38 MB.
-launch fast full eeparse_webpki 260 "hsp_parse_encrypted_exts.0:66" -DCH_TRUST_WEBPKI handshake_parser.c buf.c
+launch fast:6 full eeparse_webpki 260 "hsp_parse_encrypted_exts.0:66" -DCH_TRUST_WEBPKI handshake_parser.c buf.c
+# eeparse_alpn: the ALPN arm (RFC 7301 §3.2) at the offer bound
+# ch_connect admits — CH_ALPN_MAX names of up to CH_ALPN_NAME_MAX bytes,
+# every byte and every length symbolic — over any extension body up to
+# 40 bytes. It asserts the selection contract on top of memory safety:
+# an accepted body names a protocol the offer holds, a refused one
+# leaves the caller's CH_ALPN_NONE, and the alert is the seed or one of
+# the arm's two. It reaches the static parse_alpn by including
+# handshake_parser.c, so buf.c is its whole dependency line. Driving the
+# same offer through the whole EncryptedExtensions loop instead
+# multiplies the two bounds: at a 256-byte message that formula reached
+# the SAT solver after 21 minutes with no verdict, and at 48 bytes it
+# verified once at 14.7 GB and then lost its solver to the machine's
+# memory. Measured (cbmc 6.11.0, kissat, PROVE_NO_CACHE=1
+# /usr/bin/time -l over this script): 616 properties, 4 s, 414 MB.
+launch fast full eeparse_alpn 260 "parse_alpn.0:9,memcmp.0:33" -DCH_TRUST_WEBPKI buf.c
 launch fast full certparse_webpki 260 "" -DCH_TRUST_WEBPKI handshake_parser.c buf.c
 # certverify_webpki: the arm that reads what certparse_webpki parsed.
 # The scheme must be the one the leaf key's family can produce, and only
@@ -594,13 +614,18 @@ launch fast full key_share 1200 "fill_nondet.0:1133" -DCH_KEX_PQ buf.c
 # (https://github.com/c4milo/chapulin/issues/136). Measured: 486
 # properties, 3 s, 61 MB (kissat).
 launch fast full hello_build 400 "fill_nondet.0:321" buf.c
-# hello_build_webpki: the builder's TRUST=webpki arm, the server_name
-# extension over any hostname of up to CH_HOSTNAME_MAX bytes and the five
-# signature schemes, against that build's CH_HELLO_MAX of 879. The
-# sufficiency assertion is tight: moved to CH_HELLO_MAX - 1 it fails.
-# Measured (cbmc 6.11.0, kissat, PROVE_NO_CACHE=1 /usr/bin/time -l over
-# this script, two runs): 516 properties, 18 to 22 s, 78 to 83 MB.
-launch fast full hello_build_webpki 400 "fill_nondet.0:321" -DCH_TRUST_WEBPKI buf.c
+# hello_build_webpki: the builder's TRUST=webpki arm — the server_name
+# extension over any hostname of up to CH_HOSTNAME_MAX bytes, the ALPN
+# extension over any offer of up to CH_ALPN_MAX names of up to
+# CH_ALPN_NAME_MAX bytes, and the five signature schemes — against that
+# build's CH_HELLO_MAX of 1149. The sufficiency assertion is tight:
+# moved to CH_HELLO_MAX - 1 it fails. The two ALPN loops carry their own
+# bounds because the global 400 unrolled both past the array they walk,
+# and CBMC then ran out of addressed objects (--object-bits, 256) rather
+# than returning a verdict. Measured (cbmc 6.11.0, kissat,
+# PROVE_NO_CACHE=1 /usr/bin/time -l over this script): 575 properties,
+# 62 s, 133 MB.
+launch fast full hello_build_webpki 400 "fill_nondet.0:321,main.0:9,write_alpn.0:9" -DCH_TRUST_WEBPKI buf.c
 # x509: primitives concrete (both variants), the walker with stubbed
 # primitives. The ECDSA walker proves the full two-entry bound in
 # every check; the RSA walker's formula is a SAT heavyweight, so it

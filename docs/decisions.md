@@ -384,3 +384,25 @@ does nothing more.
     device links. Verifying the chain in the caller instead of here was
     considered and rejected: it duplicates a certificate parser in a
     second language, outside this tree's proofs.
+
+37. **A `TRUST=webpki` caller offers a list of application protocols and
+    the server picks one.** ALPN (RFC 7301) is the mode's second
+    exception to the rule that the client offers exactly one of
+    everything, after the signature schemes. Cost: a negotiation
+    surface. The ClientHello carries up to `CH_ALPN_MAX` names, the
+    server chooses among them, and the outcome differs per connection,
+    so the caller reads `ch_tls.alpn_selected` and branches on it —
+    including on `CH_ALPN_NONE`, which says the server selected no
+    protocol. Gain: one handshake instead of a failed one and a
+    reconnect. An HTTP client that could offer one name would have to
+    guess `h2`, and a server that speaks `http/1.1` would cost it a
+    second full handshake.
+
+    Offering one protocol per build, the way `PIN` and `KEX` fix one
+    algorithm, was considered and rejected: a build cannot know what a
+    given endpoint speaks, and the fallback costs a whole connection.
+    Failing the handshake when the server sends no ALPN extension was
+    considered and rejected too: RFC 7301 §3.2 lets a server that does
+    not implement ALPN leave it out, so refusing there would refuse every
+    server that speaks `http/1.1` by convention. docs/webpki.md states
+    what the caller branches on and what the client refuses.

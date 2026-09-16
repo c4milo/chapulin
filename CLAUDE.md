@@ -44,9 +44,12 @@ Home: github.com/c4milo.
   renegotiation-era anything. Within a mode the client offers exactly one
   of everything; the server takes it or the handshake fails closed.
   TRUST=webpki keeps that rule for the key exchange and the cipher suite
-  and breaks it for signatures alone: it offers several signature
-  schemes, because it cannot know which family signed the chain the
-  server will send.
+  and breaks it twice. It offers several signature schemes, because it
+  cannot know which family signed the chain the server will send, and it
+  offers the list of ALPN protocols the caller configured, because it
+  cannot know which one the endpoint speaks; the server picks one and
+  ch_tls.alpn_selected reports it. docs/decisions.md 37 states what that
+  negotiation surface costs.
 - One concern per file pair, dependencies pointing down only:
   `ct.[ch]` (constant-time bytes) ← `sha256.[ch]` + `sha3.[ch]` +
   `sha512.[ch]`/`sha512_compress.[ch]` (SHA-384 and SHA-512; the

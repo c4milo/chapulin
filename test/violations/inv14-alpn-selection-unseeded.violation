@@ -1,0 +1,14 @@
+invariant: INV-14
+file: handshake.c
+catches: webpki_session_test
+reason: the session reports index 0 rather than CH_ALPN_NONE when the
+  server sent no ALPN extension, because ch_connect's memset left the
+  field at 0 and 0 is the first protocol the caller offered. RFC 7301
+  §3.2 lets a server that does not support ALPN send none, so a caller
+  would read the silence as a selection of its first preference.
+  bin/webpki_session_test's absent-extension row objects.
+
+--- old
+    t->alpn_selected = CH_ALPN_NONE;
+--- new
+    t->alpn_selected = 0;

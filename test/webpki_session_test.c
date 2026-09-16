@@ -54,6 +54,10 @@ typedef struct {
     int answer; // recv answers the hello; 0 fails recv at once
     int rendered;
     int sni_data; // EncryptedExtensions carries a server_name with one byte of data
+    // The ProtocolName an EncryptedExtensions ALPN extension selects,
+    // or NULL for a message that carries no ALPN extension.
+    const uint8_t *alpn_pick;
+    size_t alpn_pick_len;
     uint8_t queue[4096];
     size_t queue_len;
     size_t queue_off;
@@ -175,20 +179,43 @@ static void render_server_hello(mock_server *s, sha256 *transcript) {
     s->keys = 1;
 }
 
-// EncryptedExtensions with a server_name acknowledgement, and a
-// Certificate whose one entry is eight bytes that are no certificate:
-// the walk refuses them as malformed DER and the session fails closed.
+// EncryptedExtensions: the empty server_name acknowledgement this build
+// admits, and an ALPN selection when the case asked for one (RFC 7301
+// §3.2). sni_data puts one byte of data in the acknowledgement, which
+// the parser refuses as a body of the wrong length.
+static void push_encrypted_exts(mock_server *s) {
+    uint8_t msg[64];
+    wbuf w;
+    wb_init(&w, msg, sizeof msg);
+    wb_u8(&w, HS_ENCRYPTED_EXTENSIONS);
+    size_t body = wb_mark(&w, 3);
+    size_t exts = wb_mark(&w, 2);
+    wb_u16(&w, EXT_SERVER_NAME);
+    wb_u16(&w, s->sni_data ? 1 : 0);
+    if (s->sni_data) {
+        wb_u8(&w, 'x');
+    }
+    if (s->alpn_pick != NULL) {
+        wb_u16(&w, EXT_ALPN);
+        wb_u16(&w, (uint16_t)(2 + 1 + s->alpn_pick_len));
+        wb_u16(&w, (uint16_t)(1 + s->alpn_pick_len)); // ProtocolNameList length
+        wb_u8(&w, (uint8_t)s->alpn_pick_len);
+        wb_bytes(&w, s->alpn_pick, s->alpn_pick_len);
+    }
+    wb_patch16(&w, exts);
+    wb_patch24(&w, body);
+    CHECK(!w.err);
+    push_sealed(s, msg, w.len);
+}
+
+// That message, and a Certificate whose one entry is eight bytes that
+// are no certificate: the walk refuses them as malformed DER and the
+// session fails closed.
 static void render_flight(mock_server *s) {
     sha256 transcript;
     sha256_init(&transcript);
     render_server_hello(s, &transcript);
-    if (s->sni_data) {
-        static const uint8_t ee[] = {HS_ENCRYPTED_EXTENSIONS, 0, 0, 7, 0, 5, 0, 0, 0, 1, 'x'};
-        push_sealed(s, ee, sizeof ee);
-    } else {
-        static const uint8_t ee[] = {HS_ENCRYPTED_EXTENSIONS, 0, 0, 6, 0, 4, 0, 0, 0, 0};
-        push_sealed(s, ee, sizeof ee);
-    }
+    push_encrypted_exts(s);
     static const uint8_t cert[] = {HS_CERTIFICATE,
                                    0,
                                    0,
@@ -232,18 +259,40 @@ static int mock_recv(void *io, uint8_t *p, size_t n) {
     return (int)take;
 }
 
-// A valid TRUST=webpki config: two anchors, a hostname and a clock.
+// A valid TRUST=webpki config: two anchors, a hostname and a clock. It
+// offers no ALPN protocol, which is legal and sends no extension; the
+// ALPN rows set the two fields themselves.
 static uint8_t rxbuf[CH_MIN_RXBUF];
 static const uint8_t anchor_der[] = {0x30, 0x00};
 static ch_trust_anchor anchors[CH_WEBPKI_ANCHOR_MAX + 1];
 static const uint8_t host[] = {'s', '3', '.', 'e', 'x', 'a', 'm', 'p',
                                'l', 'e', '.', 't', 'e', 's', 't'};
 
+// The ALPN offer the rows configure, one entry past the cap so a row
+// can offer one too many. Entry 0 is "h2" and entry 1 is "http/1.1",
+// the two names an HTTP client offers; the rest are distinct two-byte
+// filler names, because ch_connect refuses a repeated name.
+static const uint8_t alpn_h2[] = {'h', '2'};
+static const uint8_t alpn_http11[] = {'h', 't', 't', 'p', '/', '1', '.', '1'};
+static uint8_t alpn_filler[CH_ALPN_MAX][2];
+static ch_alpn_protocol alpn[CH_ALPN_MAX + 1];
+
+static void fill_alpn(void) {
+    alpn[0] = (ch_alpn_protocol){alpn_h2, sizeof alpn_h2};
+    alpn[1] = (ch_alpn_protocol){alpn_http11, sizeof alpn_http11};
+    for (size_t i = 2; i < sizeof alpn / sizeof alpn[0]; i++) {
+        alpn_filler[i - 2][0] = 'p';
+        alpn_filler[i - 2][1] = (uint8_t)('0' + i);
+        alpn[i] = (ch_alpn_protocol){alpn_filler[i - 2], 2};
+    }
+}
+
 static ch_cfg valid_cfg(mock_server *s) {
     for (size_t i = 0; i < sizeof anchors / sizeof anchors[0]; i++) {
         anchors[i] =
             (ch_trust_anchor){anchor_der, sizeof anchor_der, anchor_der, sizeof anchor_der};
     }
+    fill_alpn();
     memset(s, 0, sizeof *s);
     ch_cfg cfg = {0};
     cfg.buf = rxbuf;
@@ -287,9 +336,13 @@ int main(void) {
     test_webpki_cfg_hostname();
     test_webpki_cfg_other_modes();
     test_rxbuf_floor();
+    test_webpki_cfg_alpn_count();
+    test_webpki_cfg_alpn_names();
     test_webpki_hello();
+    test_webpki_hello_alpn();
     test_webpki_hello_boundary();
     test_webpki_handshake_fails_closed();
+    test_webpki_handshake_reports_alpn();
     if (failures > 0) {
         (void)fprintf(stderr, "%d failure(s)\n", failures);
         return 1;

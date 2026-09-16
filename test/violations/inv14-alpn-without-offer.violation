@@ -1,0 +1,14 @@
+invariant: INV-14
+file: handshake_parser.c
+catches: handshake_strict_webpki
+reason: the parser reads an ALPN extension even when the ClientHello
+  offered no protocol, so a response to a request that never went out
+  is judged on its contents instead of refused. RFC 9846 §4.3 answers
+  an unrequested extension with unsupported_extension, and the alert
+  here becomes illegal_parameter, which names the wrong fault.
+  bin/handshake_strict_webpki's no-offer row objects.
+
+--- old
+    if (ext == EXT_ALPN && out->offered_count > 0) {
+--- new
+    if (ext == EXT_ALPN) {

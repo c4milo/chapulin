@@ -278,6 +278,49 @@ static int setup_webpki(char *spec, ch_cfg *cfg) {
     cfg->now_seconds = strtoull(now, NULL, 10);
     return 0;
 }
+
+// WEBPKI_ALPN carries the protocols to offer, comma separated, the way
+// WEBPKI_HOST carries the hostname: "h2,http/1.1". Unset or empty
+// offers none, which sends no extension. Splits the text in place, so
+// each name points into g_alpn_text and outlives the call.
+static char g_alpn_text[256];
+static ch_alpn_protocol g_alpn[CH_ALPN_MAX];
+
+static void setup_alpn(ch_cfg *cfg) {
+    const char *list = getenv("WEBPKI_ALPN");
+    if (list == NULL || list[0] == '\0') {
+        return;
+    }
+    (void)snprintf(g_alpn_text, sizeof g_alpn_text, "%s", list);
+    size_t count = 0;
+    char *name = g_alpn_text;
+    while (name != NULL && count < CH_ALPN_MAX) {
+        char *comma = strchr(name, ',');
+        if (comma != NULL) {
+            *comma = '\0';
+        }
+        g_alpn[count].name = (const uint8_t *)name;
+        g_alpn[count].name_len = strlen(name);
+        count++;
+        name = comma != NULL ? comma + 1 : NULL;
+    }
+    cfg->alpn_protocols = g_alpn;
+    cfg->alpn_count = count;
+}
+
+// The protocol the server selected, on the line e2e asserts against:
+// the name itself, or "none" when the server sent no ALPN extension.
+static void report_alpn(const ch_cfg *cfg, const ch_tls *tls) {
+    if (cfg->alpn_count == 0) {
+        return;
+    }
+    if (tls->alpn_selected == CH_ALPN_NONE) {
+        (void)fprintf(stderr, "alpn none\n");
+        return;
+    }
+    const ch_alpn_protocol *picked = &cfg->alpn_protocols[tls->alpn_selected];
+    (void)fprintf(stderr, "alpn %.*s\n", (int)picked->name_len, (const char *)picked->name);
+}
 #endif
 
 // Fills the auth part of cfg: one branch per argv form — "pin:..." for
@@ -390,6 +433,9 @@ int main(int argc, char **argv) {
     // REQUIRE_PQ in the environment sets ch_cfg.require_pq, so e2e drives
     // the flag without a new positional argument.
     cfg.require_pq = getenv("REQUIRE_PQ") != NULL;
+#ifdef CH_TRUST_WEBPKI
+    setup_alpn(&cfg);
+#endif
 #ifdef CH_TRUST_CA
     if (argc == 7) {
         g_epoch_path = argv[6];
@@ -407,6 +453,9 @@ int main(int argc, char **argv) {
     (void)fprintf(stderr, "connected\n");
     // e2e asserts on this line: the group the ServerHello selected.
     (void)fprintf(stderr, "group 0x%04x\n", (unsigned)tls.group);
+#ifdef CH_TRUST_WEBPKI
+    report_alpn(&cfg, &tls);
+#endif
     if (cfg.server_pubkey != NULL) {
         // e2e asserts on this line to watch rotation: 2 = the staged pin.
         (void)fprintf(stderr, "pin slot %u\n", tls.pin_slot);

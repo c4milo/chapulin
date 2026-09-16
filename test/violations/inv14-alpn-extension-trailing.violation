@@ -1,0 +1,13 @@
+invariant: INV-14
+file: handshake_parser.c
+catches: handshake_strict_webpki
+reason: the ALPN arm stops checking that the extension ends at the one
+  ProtocolName, so bytes after it parse instead of failing. RFC 9846
+  §4.3 makes extension_data match its structure exactly, and a reader
+  that ignores the remainder is where a smuggled second name would sit.
+  bin/handshake_strict_webpki's trailing-byte row objects.
+
+--- old
+    if (e.err || name_len == 0 || list_len != 1 + name_len || rb_left(&e) != 0) {
+--- new
+    if (e.err || name_len == 0 || list_len != 1 + name_len) {

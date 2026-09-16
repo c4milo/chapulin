@@ -47,7 +47,13 @@ certparse_webpki 29.4  # local reading, cbmc 6.11.0 on arm64 macOS; replace with
 chacha20 98.1
 ct 94.1
 drbg 84.4
-eeparse_webpki 29.5  # local reading, cbmc 6.11.0 on arm64 macOS; replace with the nightly table's number
+# eeparse_webpki fell from 29.5 to 29.4 when handshake_parser.c gained
+# parse_alpn: this harness drives the block with an empty ALPN offer, so
+# that function's locations are in its goto model and out of its reach.
+# eeparse_alpn is the harness that reaches them, and it carries its own
+# floor below.
+eeparse_webpki 29.4  # local reading, cbmc 6.11.0 on arm64 macOS; replace with the nightly table's number
+eeparse_alpn 21.5  # local reading, cbmc 6.11.0 on arm64 macOS; replace with the nightly table's number
 epoch 36.1
 handshake_record 92.1
 hello_build 76.9

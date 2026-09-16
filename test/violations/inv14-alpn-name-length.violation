@@ -1,0 +1,15 @@
+invariant: INV-14
+file: tls.c
+catches: webpki_session_test
+reason: ch_connect stops holding an offered protocol name to
+  CH_ALPN_NAME_MAX bytes, so a longer name passes the config check and
+  the ClientHello grows past the CH_HELLO_MAX the TX staging array is
+  sized for. The hello then fails to build and the session dies with
+  CH_ECAP mid-handshake instead of CH_EINVAL at the config.
+  bin/webpki_session_test's name-length boundary rows object.
+
+--- old
+    return protocol->name != NULL && protocol->name_len > 0 &&
+           protocol->name_len <= CH_ALPN_NAME_MAX;
+--- new
+    return protocol->name != NULL && protocol->name_len > 0;

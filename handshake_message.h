@@ -28,6 +28,7 @@
 #define EXT_SERVER_NAME 0 // RFC 6066 §3; sent by TRUST=webpki builds only
 #define EXT_SUPPORTED_GROUPS 10
 #define EXT_SIGNATURE_ALGORITHMS 13
+#define EXT_ALPN 16 // RFC 7301 §3.1; sent by TRUST=webpki builds only
 #define EXT_RECORD_SIZE_LIMIT 28
 #define EXT_PRE_SHARED_KEY 41
 #define EXT_SUPPORTED_VERSIONS 43
@@ -76,20 +77,25 @@
 // hello is built whole into one TX staging array, so CH_TX_STAGE must
 // hold this; handshake.c asserts it where both constants are visible.
 //
-// A TRUST=webpki build adds a fourth term, the server_name extension at
+// A TRUST=webpki build adds two more terms. The server_name extension at
 // the longest hostname: type and length words (4), the ServerNameList
 // length (2), the name_type byte (1), the HostName length (2) and
-// CH_HOSTNAME_MAX bytes, 262 in all. It also offers five signature
-// schemes instead of one, 8 bytes more, but those bytes sit in the arm a
-// config with no psk takes. That arm's 16-byte signature_algorithms
-// extension stays shorter than the 47 + CH_TICKET_ID_MAX bytes of the
-// pre_shared_key extension the other arm carries. So the largest hello
-// is still the pre_shared_key arm, now with the server_name extension:
-// 879 classic, 2063 for pq, measured by test/webpki_session_test.c.
+// CH_HOSTNAME_MAX bytes, 262 in all. And the ALPN extension at the
+// longest offer: type and length words (4), the ProtocolNameList length
+// (2), then CH_ALPN_MAX names of one length byte and CH_ALPN_NAME_MAX
+// bytes each, 270 in all. It also offers five signature schemes instead
+// of one, 8 bytes more, but those bytes sit in the arm a config with no
+// psk takes. That arm's 16-byte signature_algorithms extension stays
+// shorter than the 47 + CH_TICKET_ID_MAX bytes of the pre_shared_key
+// extension the other arm carries. So the largest hello is still the
+// pre_shared_key arm, now with both extensions: 1149 classic, 2333 for
+// pq, measured by test/webpki_session_test.c.
 #ifdef CH_TRUST_WEBPKI
 #define CH_HELLO_SERVER_NAME_MAX (4 + 2 + 1 + 2 + CH_HOSTNAME_MAX)
+#define CH_HELLO_ALPN_MAX (4 + 2 + CH_ALPN_MAX * (1 + CH_ALPN_NAME_MAX))
 #define CH_HELLO_MAX                                                                               \
-    (137 + CH_HELLO_SERVER_NAME_MAX + CH_TICKET_ID_MAX + HSP_COOKIE_MAX + CH_KEX_CLIENT_SHARE)
+    (137 + CH_HELLO_SERVER_NAME_MAX + CH_HELLO_ALPN_MAX + CH_TICKET_ID_MAX + HSP_COOKIE_MAX +      \
+     CH_KEX_CLIENT_SHARE)
 #else
 #define CH_HELLO_MAX (137 + CH_TICKET_ID_MAX + HSP_COOKIE_MAX + CH_KEX_CLIENT_SHARE)
 #endif
@@ -137,7 +143,9 @@
 // A TRUST=webpki build puts server_name first in the extension list,
 // carrying cfg->hostname, whose length the caller holds to
 // CH_HOSTNAME_MAX (ch_connect checks it with webpki_hostname_ok), and
-// its signature_algorithms lists the five schemes above.
+// its signature_algorithms lists the five schemes above. It writes the
+// ALPN extension next when cfg->alpn_count is not 0, listing
+// cfg->alpn_protocols in the caller's order (RFC 7301 §3.1).
 // The hybrid build's share carries the ML-KEM encapsulation key ahead
 // of the x25519 public value, so its builder takes both.
 size_t hs_build_client_hello(uint8_t *out, size_t cap, const ch_cfg *cfg,

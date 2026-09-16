@@ -60,6 +60,25 @@ int main(void) {
     cfg.hostname = host;
     cfg.hostname_len = nondet_size_t();
     __CPROVER_assume(cfg.hostname_len <= CH_HOSTNAME_MAX);
+    // The ALPN extension follows it whenever the offer is not empty, at
+    // the widest shape ch_connect admits: any count up to CH_ALPN_MAX
+    // and every name any bytes up to CH_ALPN_NAME_MAX. Both bounds are
+    // what CH_HELLO_MAX's ALPN term is built from, so the sufficiency
+    // assertion below covers them.
+    // One flat buffer rather than an array of arrays: every entry is
+    // then a slice of a single object, and CBMC's addressed-object
+    // budget (--object-bits, 256 by default) holds.
+    static uint8_t alpn_names[CH_ALPN_MAX * CH_ALPN_NAME_MAX];
+    fill_nondet(alpn_names, sizeof alpn_names);
+    ch_alpn_protocol alpn[CH_ALPN_MAX];
+    for (size_t i = 0; i < CH_ALPN_MAX; i++) {
+        alpn[i].name = alpn_names + i * CH_ALPN_NAME_MAX;
+        alpn[i].name_len = nondet_size_t();
+        __CPROVER_assume(alpn[i].name_len <= CH_ALPN_NAME_MAX);
+    }
+    cfg.alpn_protocols = alpn;
+    cfg.alpn_count = nondet_size_t();
+    __CPROVER_assume(cfg.alpn_count <= CH_ALPN_MAX);
 #endif
 
     size_t cookie_len = nondet_size_t();

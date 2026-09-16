@@ -2,6 +2,30 @@
 
 #include "buf.h"
 
+#ifdef CH_TRUST_WEBPKI
+// application_layer_protocol_negotiation (RFC 7301 §3.1): a
+// ProtocolNameList of one or more ProtocolName, each an opaque vector
+// with a one-byte length, in the order the caller listed them. A caller
+// that offers nothing gets no extension, which is how RFC 7301 says a
+// client asks for no protocol negotiation. ch_connect has already held
+// alpn_count to CH_ALPN_MAX and every name to CH_ALPN_NAME_MAX bytes,
+// so both length casts are in range.
+static void write_alpn(wbuf *w, const ch_cfg *cfg) {
+    if (cfg->alpn_count == 0) {
+        return;
+    }
+    wb_u16(w, EXT_ALPN);
+    size_t ext = wb_mark(w, 2);
+    size_t list = wb_mark(w, 2);
+    for (size_t i = 0; i < cfg->alpn_count; i++) {
+        wb_u8(w, (uint8_t)cfg->alpn_protocols[i].name_len);
+        wb_bytes(w, cfg->alpn_protocols[i].name, cfg->alpn_protocols[i].name_len);
+    }
+    wb_patch16(w, list);
+    wb_patch16(w, ext);
+}
+#endif
+
 size_t hs_build_client_hello(uint8_t *out, size_t cap, const ch_cfg *cfg,
 #ifdef CH_KEX_PQ
                              const uint8_t ek[MLKEM_EK_LEN],
@@ -34,6 +58,8 @@ size_t hs_build_client_hello(uint8_t *out, size_t cap, const ch_cfg *cfg,
     wb_u8(&w, 0);                                      // name_type: host_name
     wb_u16(&w, (uint16_t)cfg->hostname_len);
     wb_bytes(&w, cfg->hostname, cfg->hostname_len);
+
+    write_alpn(&w, cfg);
 #endif
 
     wb_u16(&w, EXT_SUPPORTED_VERSIONS);

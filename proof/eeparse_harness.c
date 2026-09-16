@@ -24,11 +24,28 @@ int main(void) {
     uint16_t peer_limit = CH_TX_PT;
     uint8_t seed = nondet_u8();
     uint8_t alert = seed;
+#ifdef CH_TRUST_WEBPKI
+    // No offer: the shape a caller that skips ALPN configures, where an
+    // ALPN extension is a response to a request that never went out.
+    // The arm that reads an offered protocol is eeparse_alpn's, which
+    // drives parse_alpn directly, because the two bounds multiply here.
+    const ch_alpn_protocol *offered = NULL;
+    size_t offered_count = 0;
+    uint8_t selected = CH_ALPN_NONE;
+    (void)hsp_parse_encrypted_exts(msg, n, &peer_limit, offered, offered_count, &selected, &alert);
+    // The selection contract handshake_parser.h states: the parser
+    // either leaves the caller's CH_ALPN_NONE or writes the index of a
+    // protocol the offer holds.
+    __CPROVER_assert(selected == CH_ALPN_NONE || (size_t)selected < offered_count,
+                     "an ALPN selection names a protocol the client offered");
+#else
     (void)hsp_parse_encrypted_exts(msg, n, &peer_limit, &alert);
+#endif
     // The alert contract handshake_parser.h states: the parser keeps the
     // caller's seed or writes unsupported_extension. The TRUST=webpki
-    // arm, which eeparse_webpki proves, may also write decode_error, the
-    // alert for a server_name that carries data.
+    // arm may also write decode_error, the alert for a server_name that
+    // carries data. With an offer it may also write illegal_parameter,
+    // which eeparse_alpn asserts over the arm that writes it.
 #ifdef CH_TRUST_WEBPKI
     __CPROVER_assert(alert == seed || alert == ALERT_UNSUPPORTED_EXTENSION ||
                          alert == ALERT_DECODE_ERROR,

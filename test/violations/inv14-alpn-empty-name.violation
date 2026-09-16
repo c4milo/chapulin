@@ -1,0 +1,14 @@
+invariant: INV-14
+file: handshake_parser.c
+catches: handshake_strict_webpki
+reason: the ALPN arm admits a ProtocolName of zero bytes, which RFC 7301
+  §3.1 puts outside the 1..255 range a ProtocolName takes. The empty
+  name matches no offered protocol, so the session fails with
+  illegal_parameter instead of the decode_error RFC 9846 §6 names for a
+  length out of range, and the wire alert names the wrong fault.
+  bin/handshake_strict_webpki's empty-name row objects.
+
+--- old
+    if (e.err || name_len == 0 || list_len != 1 + name_len || rb_left(&e) != 0) {
+--- new
+    if (e.err || list_len != 1 + name_len || rb_left(&e) != 0) {

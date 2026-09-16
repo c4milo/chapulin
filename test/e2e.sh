@@ -692,6 +692,51 @@ grep -q "verified up to one of 1 anchors" "$DIR/err_ex_wp" || {
     exit 1
 }
 
+# ALPN (RFC 7301): one handshake offers h2 and http/1.1, and the client
+# reads back which the server chose. s_server selects by its own -alpn
+# order, so each answer needs its own server. This one was started
+# without -alpn, so it sends no ALPN extension at all — §3.2 lets a
+# server that does not support ALPN leave it out, and the client
+# reports no selection instead of failing the handshake.
+MSG='sin alpn'
+WEBPKI_HOST=$WEBPKI_HOSTNAME WEBPKI_NOW=$NOW WEBPKI_ALPN='h2,http/1.1' \
+    expect webpki-alpn-absent "npla nis" "$DIR/err_wp_alpn_absent" \
+    ./bin/tlsclient_webpki 127.0.0.1 "$PORT_WEBPKI" "$WEBPKI_ANCHOR" -
+grep -q "^alpn none$" "$DIR/err_wp_alpn_absent" || {
+    echo "FAIL e2e webpki-alpn-absent: expected no selection"
+    cat "$DIR/err_wp_alpn_absent"
+    exit 1
+}
+
+kill $SRV_PID 2>/dev/null
+
+# The server supports h2 alone, so it selects the first name the client
+# offered.
+start_server -tls1_3 -ciphersuites TLS_CHACHA20_POLY1305_SHA256 -cert "$DIR/wpleaf.pem" -key "$DIR/wpleaf.key" -cert_chain "$DIR/wpint.pem" -alpn h2 -rev
+MSG='alpn h2'
+WEBPKI_HOST=$WEBPKI_HOSTNAME WEBPKI_NOW=$(date +%s) WEBPKI_ALPN='h2,http/1.1' \
+    expect webpki-alpn-h2 "2h npla" "$DIR/err_wp_alpn_h2" \
+    ./bin/tlsclient_webpki 127.0.0.1 "$SRV_PORT" "$WEBPKI_ANCHOR" -
+grep -q "^alpn h2$" "$DIR/err_wp_alpn_h2" || {
+    echo "FAIL e2e webpki-alpn-h2: expected h2"
+    cat "$DIR/err_wp_alpn_h2"
+    exit 1
+}
+kill $SRV_PID 2>/dev/null
+
+# The same offer against a server that supports http/1.1 alone: the
+# second name wins, so the reported index is the server's choice and not
+# the client's first preference.
+start_server -tls1_3 -ciphersuites TLS_CHACHA20_POLY1305_SHA256 -cert "$DIR/wpleaf.pem" -key "$DIR/wpleaf.key" -cert_chain "$DIR/wpint.pem" -alpn http/1.1 -rev
+MSG='alpn viejo'
+WEBPKI_HOST=$WEBPKI_HOSTNAME WEBPKI_NOW=$(date +%s) WEBPKI_ALPN='h2,http/1.1' \
+    expect webpki-alpn-http11 "ojeiv npla" "$DIR/err_wp_alpn_http11" \
+    ./bin/tlsclient_webpki 127.0.0.1 "$SRV_PORT" "$WEBPKI_ANCHOR" -
+grep -q "^alpn http/1.1$" "$DIR/err_wp_alpn_http11" || {
+    echo "FAIL e2e webpki-alpn-http11: expected http/1.1"
+    cat "$DIR/err_wp_alpn_http11"
+    exit 1
+}
 kill $SRV_PID 2>/dev/null
 
 # The same hierarchy with an ECDSA leaf, one server per curve. RFC 9846
@@ -814,4 +859,4 @@ else
     echo "SKIP openssl pq leg: $("$OPENSSL" version) does not list X25519MLKEM768 (needs 3.5)"
 fi
 
-echo "e2e: psk + tickets + resumption + pinned ecdsa + pinned rsa + require-pq refused + rotation + ca rsa x2 + ca ecdsa x2 + ca rotation + ca negatives x3${EPOCH_LEG} + webpki rsa + webpki ecdsa x2 + webpki negatives x4${GO_LEG}${OPENSSL_PQ_LEG} + examples x4 OK"
+echo "e2e: psk + tickets + resumption + pinned ecdsa + pinned rsa + require-pq refused + rotation + ca rsa x2 + ca ecdsa x2 + ca rotation + ca negatives x3${EPOCH_LEG} + webpki rsa + webpki ecdsa x2 + webpki negatives x4 + webpki alpn x3${GO_LEG}${OPENSSL_PQ_LEG} + examples x4 OK"

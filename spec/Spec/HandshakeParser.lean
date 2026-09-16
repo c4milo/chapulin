@@ -22,10 +22,11 @@ CertificateVerify), no 0-RTT, no compression, no renegotiation, no RFC
 7250 raw public keys, and `record_size_limit` (RFC 8449) always
 offered. The client offers exactly one of everything, so most of the
 RFC's negotiation choices collapse to a byte compare against a
-constant. The TRUST=webpki build is the one exception, and two
+constant. The TRUST=webpki build is the one exception, and three
 parameters carry it: its ClientHello sends server_name
-(`parseEncryptedExtensions`'s `serverNameSent`), and it offers five
-signature schemes instead of one (`SignatureOffer`).
+(`parseEncryptedExtensions`'s `serverNameSent`), it may offer several
+application protocols (`parseEncryptedExtensions`'s `alpnOffered`), and
+it offers five signature schemes instead of one (`SignatureOffer`).
 
 Where the RFC fixes the alert, `Alert` names it. Where the RFC states
 a MUST but names no alert, the verdict is `Alert.unspecified` and the
@@ -83,6 +84,10 @@ def extServerName : Nat := 0
 
 /-- ExtensionType supported_groups(10) (RFC 9846 §4.2.7). -/
 def extSupportedGroups : Nat := 10
+
+/-- ExtensionType application_layer_protocol_negotiation(16)
+(RFC 7301 §3.1). -/
+def extAlpn : Nat := 16
 
 /-- ExtensionType record_size_limit(28) (RFC 8449 §4). -/
 def extRecordSizeLimit : Nat := 28
@@ -567,40 +572,51 @@ structure EncryptedExtensions where
   /-- RFC 8449 §4's RecordSizeLimit, when the server answered the
   client's own; absent when it did not. -/
   recordSizeLimit : Option Nat
+  /-- The index in `alpnOffered` of the protocol RFC 7301 §3.2's ALPN
+  extension selected; absent when the server sent no such extension. -/
+  alpnSelected : Option Nat
 
 /--
 The extension types this profile admits in EncryptedExtensions:
 supported_groups (RFC 9846 §4.2.7) and record_size_limit (RFC 8449 §4),
-which `CLAUDE.md` says the client always sends, and the server_name
+which `CLAUDE.md` says the client always sends, the server_name
 acknowledgement (RFC 6066 §3) when `serverNameSent` says the ClientHello
-carried server_name. The TRUST=webpki build sends it; the raw and ca
-builds do not.
+carried server_name, and the ALPN selection (RFC 7301 §3.2) when
+`alpnOffered` holds the protocols the ClientHello offered. The
+TRUST=webpki build sends both; the raw and ca builds send neither.
 -/
-def encryptedExtensionsAllowed (serverNameSent : Bool) : List Nat :=
-  if serverNameSent then [extServerName, extSupportedGroups, extRecordSizeLimit]
-  else [extSupportedGroups, extRecordSizeLimit]
+def encryptedExtensionsAllowed (serverNameSent : Bool) (alpnOffered : List ByteArray) :
+    List Nat :=
+  (if serverNameSent then [extServerName] else []) ++
+    (if alpnOffered.isEmpty then [] else [extAlpn]) ++
+    [extSupportedGroups, extRecordSizeLimit]
 
 /--
 Extension types RFC 9846 §4.2 permits in EncryptedExtensions that this
 client never requests: server_name(0) when `serverNameSent` is false —
 the ClientHello carried no SNI, so a server_name acknowledgement is a
-response to a request that never went out — max_fragment_length(1),
-use_srtp(14), heartbeat(15), application_layer_protocol_negotiation(16),
-the RFC 7250 certificate-type pair (19, 20), and early_data(42) — the
-profile has no 0-RTT and no raw public keys. §4.2 makes an unrequested
-response an unsupported_extension, which is a different refusal from
-§4.3.1's illegal_parameter for an extension that has no business in this
-message at all.
+response to a request that never went out —
+application_layer_protocol_negotiation(16) when `alpnOffered` is empty,
+for the same reason, max_fragment_length(1), use_srtp(14),
+heartbeat(15), the RFC 7250 certificate-type pair (19, 20), and
+early_data(42) — the profile has no 0-RTT and no raw public keys. §4.2
+makes an unrequested response an unsupported_extension, which is a
+different refusal from §4.3.1's illegal_parameter for an extension that
+has no business in this message at all.
 -/
-def encryptedExtensionsUnrequested (serverNameSent : Bool) : List Nat :=
-  (if serverNameSent then [] else [extServerName]) ++ [1, 14, 15, 16, 19, 20, extEarlyData]
+def encryptedExtensionsUnrequested (serverNameSent : Bool) (alpnOffered : List ByteArray) :
+    List Nat :=
+  (if serverNameSent then [] else [extServerName]) ++
+    (if alpnOffered.isEmpty then [extAlpn] else []) ++ [1, 14, 15, 19, 20, extEarlyData]
 
 /-- The alert an extension that does not belong in EncryptedExtensions
 earns: unsupported_extension when the RFC allows it here but the client
 never asked for it (§4.2), and otherwise §4.3.1's illegal_parameter for
 a forbidden extension, through `wrongMessageAlert`. -/
-def encryptedExtensionsAlert (serverNameSent : Bool) (t : Nat) : Alert :=
-  if (encryptedExtensionsUnrequested serverNameSent).contains t then .unsupportedExtension
+def encryptedExtensionsAlert (serverNameSent : Bool) (alpnOffered : List ByteArray) (t : Nat) :
+    Alert :=
+  if (encryptedExtensionsUnrequested serverNameSent alpnOffered).contains t then
+    .unsupportedExtension
   else wrongMessageAlert t
 
 /--
@@ -648,6 +664,91 @@ def checkServerNameAck (exts : List (Nat × ByteArray)) : Except Alert Unit :=
   | none => .ok ()
   | some data => ensure (data.size = 0) .decodeError
 
+/-- The position of the first offered protocol equal to `name`, or
+`none` when the offer holds no such protocol. Written by recursion
+rather than through `List.findIdx?` so `offeredIndex?_lt_length` below
+follows by induction, and over `bytesEq` because `ByteArray` carries no
+`LawfulBEq` instance. -/
+def offeredIndex? (offered : List ByteArray) (name : ByteArray) : Option Nat :=
+  match offered with
+  | [] => none
+  | candidate :: rest =>
+    if bytesEq candidate name then some 0 else (offeredIndex? rest name).map (· + 1)
+
+/-- An index `offeredIndex?` returns is a position the offer holds. -/
+theorem offeredIndex?_lt_length (offered : List ByteArray) (name : ByteArray) (i : Nat)
+    (h_found : offeredIndex? offered name = some i) : i < offered.length := by
+  induction offered generalizing i with
+  | nil => simp [offeredIndex?] at h_found
+  | cons candidate rest ih =>
+    rw [offeredIndex?] at h_found
+    split at h_found
+    · simp only [Option.some.injEq] at h_found
+      simp [← h_found]
+    · match h_rest : offeredIndex? rest name with
+      | none => rw [h_rest] at h_found; simp at h_found
+      | some j =>
+        rw [h_rest] at h_found
+        simp only [Option.map_some, Option.some.injEq] at h_found
+        have := ih j h_rest
+        simp [← h_found]
+        omega
+
+/--
+RFC 7301 §3.2: the server's extension_data is the client's structure
+"except that the 'ProtocolNameList' MUST contain exactly one
+'ProtocolName'", and §3.1 makes a ProtocolName
+`opaque ProtocolName<1..2^8-1>`. A body that is not one whole name of at
+least one octet has a length RFC 9846 §6 calls a decode_error, as
+`readRecordSizeLimit` does.
+
+A name outside the client's own offer is a different fault: the body is
+well formed and its value is not acceptable, §6.2's illegal_parameter.
+§3.2 gives the server no way to select outside the offer — a server that
+shares no protocol with the client sends a no_application_protocol alert
+instead — so the client has no reason to accept one.
+-/
+def readAlpn (alpnOffered : List ByteArray) (data : ByteArray) : Except Alert Nat := do
+  let (list, off) ← vec16At data 0
+  ensure (off = data.size) .decodeError
+  let (name, off') ← vec8At list 0
+  ensure (off' = list.size) .decodeError
+  ensure (1 ≤ name.size) .decodeError
+  match offeredIndex? alpnOffered name with
+  | some i => pure i
+  | none => .error .illegalParameter
+
+/--
+RFC 7301 §3.1: the client's own `ProtocolNameList`, one
+`opaque ProtocolName<1..2^8-1>` after another until the list ends.
+`fuel` bounds the walk; every name costs at least two octets, so the
+list's own size is fuel enough. The differential driver reads the offer
+back out of the ClientHello the C client built, so both sides take one
+description of it.
+-/
+def protocolNamesAt (b : ByteArray) : Nat → Nat → List ByteArray → Option (List ByteArray)
+  | 0, off, acc => if off = b.size then some acc.reverse else none
+  | fuel + 1, off, acc =>
+    if off = b.size then some acc.reverse
+    else match vec8At b off with
+      | .ok (name, off') => if name.size = 0 then none
+                            else protocolNamesAt b fuel off' (name :: acc)
+      | .error _ => none
+
+/-- The whole `ProtocolNameList`, or `none` when the bytes are not one
+list of non-empty names. -/
+def protocolNames? (b : ByteArray) : Option (List ByteArray) :=
+  protocolNamesAt b b.size 0 []
+
+/-- RFC 7301 §3.2's selection when the server sent the extension, and
+`none` when it did not: §3.2 lets a server that does not support ALPN
+leave it out, so its absence is not a refusal. -/
+def readAlpn? (alpnOffered : List ByteArray) (exts : List (Nat × ByteArray)) :
+    Except Alert (Option Nat) :=
+  match extensionData? exts extAlpn with
+  | none => .ok none
+  | some data => do return some (← readAlpn alpnOffered data)
+
 /--
 RFC 9846 §4.3.1: `struct { Extension extensions<0..2^16-1>; }`, and
 "the client MUST check EncryptedExtensions for the presence of any
@@ -665,19 +766,26 @@ it did not, a server_name acknowledgement is an unrequested response and
 earns §4.2's unsupported_extension. When it did, the acknowledgement is a
 third admitted extension, once like every extension (§4.2), with the
 empty extension_data RFC 6066 §3 gives it.
+
+`alpnOffered` is the list of protocols the ClientHello offered, in the
+order it offered them, and it is empty when the hello sent no ALPN
+extension. An empty offer makes an ALPN selection an unrequested
+response too; a non-empty one makes it a fourth admitted extension,
+read by `readAlpn`.
 -/
-def parseEncryptedExtensions (serverNameSent : Bool) (msg : ByteArray) :
-    Except Alert EncryptedExtensions := do
+def parseEncryptedExtensions (serverNameSent : Bool) (alpnOffered : List ByteArray)
+    (msg : ByteArray) : Except Alert EncryptedExtensions := do
   let body ← messageBody msg encryptedExtensionsType
   let (extBytes, off) ← vec16At body 0
   ensure (off = body.size) .decodeError
   let exts ← extensionList extBytes
-  ensureAllowed (encryptedExtensionsAllowed serverNameSent)
-    (encryptedExtensionsAlert serverNameSent) exts
+  ensureAllowed (encryptedExtensionsAllowed serverNameSent alpnOffered)
+    (encryptedExtensionsAlert serverNameSent alpnOffered) exts
   checkSupportedGroups exts
   checkServerNameAck exts
+  let alpnSelected ← readAlpn? alpnOffered exts
   let recordSizeLimit ← readRecordSizeLimit? exts
-  return { recordSizeLimit }
+  return { recordSizeLimit, alpnSelected }
 
 /-! ## Certificate (RFC 9846 §4.4.2) -/
 
@@ -1030,7 +1138,7 @@ def selftest : Bool := Id.run do
   let encryptedExtensionsOf (exts : ByteArray) : ByteArray :=
     message encryptedExtensionsType (vec16 exts)
   let limitSent (serverNameSent : Bool) (msg : ByteArray) : Option (Option Nat) :=
-    (parseEncryptedExtensions serverNameSent msg).toOption.map
+    (parseEncryptedExtensions serverNameSent [] msg).toOption.map
       (fun fields => fields.recordSizeLimit)
   let limitOf := limitSent false
   let encryptedExtensionsOk :=
@@ -1052,7 +1160,7 @@ def selftest : Bool := Id.run do
     -- empty or not, is an unrequested response the client refuses.
     limitOf (encryptedExtensionsOf (extension extServerName ByteArray.empty)) == none &&
     limitOf (encryptedExtensionsOf (extension extServerName (ascii "x"))) == none &&
-    (match parseEncryptedExtensions false
+    (match parseEncryptedExtensions false []
         (encryptedExtensionsOf (extension extServerName (ascii "x"))) with
      | .error .unsupportedExtension => true
      | _ => false) &&
@@ -1061,7 +1169,7 @@ def selftest : Bool := Id.run do
     -- of the wrong length, a decode_error (RFC 9846 §6).
     limitSent true (encryptedExtensionsOf (extension extServerName ByteArray.empty)) ==
       some none &&
-    (match parseEncryptedExtensions true
+    (match parseEncryptedExtensions true []
         (encryptedExtensionsOf (extension extServerName (ascii "x"))) with
      | .error .decodeError => true
      | _ => false) &&
@@ -1076,6 +1184,45 @@ def selftest : Bool := Id.run do
     limitOf (encryptedExtensionsOf (extension extSupportedGroups
       (vec16 (ByteArray.mk #[0x00])))) == none &&
     limitOf (message certificateType (vec16 ByteArray.empty)) == none
+  -- RFC 7301 §3.2: a ClientHello that offered protocols admits one
+  -- selection, reported as an index into its own offer.
+  let h2 := ascii "h2"
+  let http11 := ascii "http/1.1"
+  let offer := [h2, http11]
+  let alpnExt (name : ByteArray) : ByteArray := extension extAlpn (vec16 (vec8 name))
+  let alpnOf (msg : ByteArray) : Option (Option Nat) :=
+    (parseEncryptedExtensions true offer msg).toOption.map (fun fields => fields.alpnSelected)
+  let refusesWith (offered : List ByteArray) (msg : ByteArray) (alert : Alert) : Bool :=
+    match parseEncryptedExtensions true offered msg with
+    | .error a => a == alert
+    | .ok _ => false
+  let alpnOk :=
+    alpnOf (encryptedExtensionsOf (alpnExt h2)) == some (some 0) &&
+    alpnOf (encryptedExtensionsOf (alpnExt http11)) == some (some 1) &&
+    -- §3.2 lets a server that does not support ALPN send no extension.
+    alpnOf (encryptedExtensionsOf ByteArray.empty) == some none &&
+    -- A protocol the client never offered, and a prefix of one it did.
+    alpnOf (encryptedExtensionsOf (alpnExt (ascii "h3"))) == none &&
+    alpnOf (encryptedExtensionsOf (alpnExt (ascii "h"))) == none &&
+    refusesWith offer (encryptedExtensionsOf (alpnExt (ascii "h3"))) .illegalParameter &&
+    -- §3.2: exactly one ProtocolName, and §3.1 gives it at least one
+    -- octet. Two names, an empty name and a trailing octet are each a
+    -- body of the wrong length.
+    alpnOf (encryptedExtensionsOf (extension extAlpn (vec16 (vec8 h2 ++ vec8 http11)))) == none &&
+    alpnOf (encryptedExtensionsOf (extension extAlpn (vec16 (vec8 ByteArray.empty)))) == none &&
+    refusesWith offer (encryptedExtensionsOf (extension extAlpn (vec16 (vec8 ByteArray.empty))))
+      .decodeError &&
+    alpnOf (encryptedExtensionsOf
+      (extension extAlpn (vec16 (vec8 h2) ++ ByteArray.mk #[0]))) == none &&
+    -- One selection only (§4.2), and only for a client that offered
+    -- protocols: with no offer the extension is an unrequested response.
+    alpnOf (encryptedExtensionsOf (alpnExt h2 ++ alpnExt h2)) == none &&
+    refusesWith [] (encryptedExtensionsOf (alpnExt h2)) .unsupportedExtension &&
+    -- The selection sits beside the other three admitted extensions.
+    (parseEncryptedExtensions true offer (encryptedExtensionsOf
+      (extension extRecordSizeLimit (u16 64) ++ extension extServerName ByteArray.empty ++
+        alpnExt h2))).toOption.map (fun f => (f.recordSizeLimit, f.alpnSelected)) ==
+      some (some 64, some 0)
   -- §4.4.2: the context is empty, the list is not, entries carry no extensions.
   let leaf := ByteArray.mk (Array.replicate 40 0xc1)
   let intermediate := ByteArray.mk (Array.replicate 24 0xc2)
@@ -1142,7 +1289,7 @@ def selftest : Bool := Id.run do
     hex (content.extract 64 97) == hex (ascii "TLS 1.3, server CertificateVerify") &&
     content[97]! == 0 && hex (content.extract 98 130) == hex transcript
   return hrrRandomOk && serverHelloOk && profileOk && hrrOk && kexOk &&
-    encryptedExtensionsOk && certificateOk && certificateVerifyOk && verifyContentOk
+    encryptedExtensionsOk && alpnOk && certificateOk && certificateVerifyOk && verifyContentOk
 
 /-! ## Soundness -/
 
@@ -1394,14 +1541,16 @@ RFC 8449 §4: an accepted record_size_limit is at least 64. The client
 sizes its record buffer against this number, and the RFC makes a
 smaller one a fatal error rather than a value to clamp.
 -/
-theorem parseEncryptedExtensions_limit_ge_64 (serverNameSent : Bool) (msg : ByteArray)
+theorem parseEncryptedExtensions_limit_ge_64 (serverNameSent : Bool)
+    (alpnOffered : List ByteArray) (msg : ByteArray)
     (fields : EncryptedExtensions) (limit : Nat)
-    (h_accepted : parseEncryptedExtensions serverNameSent msg = .ok fields)
+    (h_accepted : parseEncryptedExtensions serverNameSent alpnOffered msg = .ok fields)
     (h_limit : fields.recordSizeLimit = some limit) : 64 ≤ limit := by
   rw [parseEncryptedExtensions] at h_accepted
   obtain ⟨_, -, h_accepted⟩ := exists_of_bind_eq_ok h_accepted
   obtain ⟨⟨_, _⟩, -, h_accepted⟩ := exists_of_bind_eq_ok h_accepted
   obtain ⟨-, h_accepted⟩ := of_ensure_bind h_accepted
+  obtain ⟨_, -, h_accepted⟩ := exists_of_bind_eq_ok h_accepted
   obtain ⟨_, -, h_accepted⟩ := exists_of_bind_eq_ok h_accepted
   obtain ⟨_, -, h_accepted⟩ := exists_of_bind_eq_ok h_accepted
   obtain ⟨_, -, h_accepted⟩ := exists_of_bind_eq_ok h_accepted
@@ -1421,6 +1570,47 @@ theorem parseEncryptedExtensions_limit_ge_64 (serverNameSent : Bool) (msg : Byte
     obtain rfl := eq_of_pure_eq_ok h_value
     have h_out := Option.some.inj (eq_of_pure_eq_ok h_read)
     omega
+
+/--
+RFC 7301 §3.2: an accepted ALPN selection names a protocol the
+ClientHello offered. The client reports the selection as an index into
+its own offer (`ch_tls.alpn_selected`), so the index has to be one that
+list holds — a server cannot make the client read past the array it
+configured.
+-/
+theorem parseEncryptedExtensions_alpn_offered (serverNameSent : Bool)
+    (alpnOffered : List ByteArray) (msg : ByteArray) (fields : EncryptedExtensions) (i : Nat)
+    (h_accepted : parseEncryptedExtensions serverNameSent alpnOffered msg = .ok fields)
+    (h_selected : fields.alpnSelected = some i) : i < alpnOffered.length := by
+  rw [parseEncryptedExtensions] at h_accepted
+  obtain ⟨_, -, h_accepted⟩ := exists_of_bind_eq_ok h_accepted
+  obtain ⟨⟨_, _⟩, -, h_accepted⟩ := exists_of_bind_eq_ok h_accepted
+  obtain ⟨-, h_accepted⟩ := of_ensure_bind h_accepted
+  obtain ⟨_, -, h_accepted⟩ := exists_of_bind_eq_ok h_accepted
+  obtain ⟨_, -, h_accepted⟩ := exists_of_bind_eq_ok h_accepted
+  obtain ⟨_, -, h_accepted⟩ := exists_of_bind_eq_ok h_accepted
+  obtain ⟨_, -, h_accepted⟩ := exists_of_bind_eq_ok h_accepted
+  obtain ⟨selected, h_read, h_accepted⟩ := exists_of_bind_eq_ok h_accepted
+  obtain ⟨_, -, h_accepted⟩ := exists_of_bind_eq_ok h_accepted
+  obtain rfl := eq_of_pure_eq_ok h_accepted
+  have h_eq : selected = some i := h_selected
+  subst h_eq
+  rw [readAlpn?] at h_read
+  split at h_read
+  · simp at h_read
+  · obtain ⟨index, h_index, h_read⟩ := exists_of_bind_eq_ok h_read
+    have h_index_eq : index = i := Option.some.inj (eq_of_pure_eq_ok h_read)
+    subst h_index_eq
+    rw [readAlpn] at h_index
+    obtain ⟨⟨_, _⟩, -, h_index⟩ := exists_of_bind_eq_ok h_index
+    obtain ⟨-, h_index⟩ := of_ensure_bind h_index
+    obtain ⟨⟨_, _⟩, -, h_index⟩ := exists_of_bind_eq_ok h_index
+    obtain ⟨-, h_index⟩ := of_ensure_bind h_index
+    obtain ⟨-, h_index⟩ := of_ensure_bind h_index
+    split at h_index
+    · next found =>
+      exact offeredIndex?_lt_length _ _ _ (by rw [found]; exact congrArg _ (eq_of_pure_eq_ok h_index))
+    · simp at h_index
 
 /-- Every code in `certificateVerifyCodes` is one the offer lists and none
 is an RSASSA-PKCS1-v1_5 scheme: the list keeps both §4.4.3 rules. -/

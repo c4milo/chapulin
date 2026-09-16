@@ -259,6 +259,10 @@ void ch_close(ch_tls *t) {
 // above an assertion changes the raw and ca objects, and this mode
 // leaves those objects byte for byte as they were (docs/webpki.md).
 
+// ct.h is included here rather than at the top of the file for the same
+// reason: an include line above the assertions would move them.
+#include "ct.h"
+
 // cfg.h writes CH_TRUST_MIN_RXBUF out as numbers because webpki.h,
 // which names the two flight terms, includes cfg.h, and record.h, which
 // names the record overhead, sits above it. This is where all of them
@@ -322,10 +326,54 @@ static int pins_unset(const ch_cfg *cfg) {
            cfg->server_pubkey2 == NULL && cfg->server_pubkey2_len == 0;
 }
 
+// One offered ALPN protocol name: a non-NULL pointer and 1 to
+// CH_ALPN_NAME_MAX bytes. RFC 7301 §3.1 makes a ProtocolName 1 to 255
+// bytes; this mode's cap is shorter, and cfg.h says what it costs the
+// ClientHello.
+static int alpn_name_ok(const ch_alpn_protocol *protocol) {
+    return protocol->name != NULL && protocol->name_len > 0 &&
+           protocol->name_len <= CH_ALPN_NAME_MAX;
+}
+
+// Whether entry i repeats a name an earlier entry already offered. A
+// repeat offers the server the same protocol twice, and its selection
+// would name two indices, so ch_tls.alpn_selected could not report
+// which one the caller meant.
+static int alpn_name_repeats(const ch_cfg *cfg, size_t i) {
+    for (size_t j = 0; j < i; j++) {
+        if (cfg->alpn_protocols[i].name_len == cfg->alpn_protocols[j].name_len &&
+            ct_memeq(cfg->alpn_protocols[i].name, cfg->alpn_protocols[j].name,
+                     cfg->alpn_protocols[i].name_len)) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+// The ALPN rule: offering nothing is legal and sends no extension, so a
+// NULL list with a count of 0 passes. An offer is 1 to CH_ALPN_MAX
+// entries, each a name alpn_name_ok accepts and none repeating another.
+// A count without a list, or a list without a count, is a config with a
+// field missing, and is refused like a PSK length without its pointer.
+static int alpn_ok(const ch_cfg *cfg) {
+    if (cfg->alpn_protocols == NULL) {
+        return cfg->alpn_count == 0;
+    }
+    if (cfg->alpn_count == 0 || cfg->alpn_count > CH_ALPN_MAX) {
+        return 0;
+    }
+    for (size_t i = 0; i < cfg->alpn_count; i++) {
+        if (!alpn_name_ok(&cfg->alpn_protocols[i]) || alpn_name_repeats(cfg, i)) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
 // The one auth mode this build has, the chain: every rule above holds.
 static int chain_config_ok(const ch_cfg *cfg) {
     return anchors_ok(cfg) && hostname_ok(cfg) && clock_set(cfg) && psk_unset(cfg) &&
-           pins_unset(cfg);
+           pins_unset(cfg) && alpn_ok(cfg);
 }
 
 int ch_connect(ch_tls *t, const ch_cfg *cfg) {

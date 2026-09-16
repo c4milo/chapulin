@@ -24,6 +24,7 @@
 // RFC 8449 §4).
 #define HSPD_SERVER_NAME 0
 #define HSPD_SUPPORTED_GROUPS 10
+#define HSPD_ALPN 16
 #define HSPD_RECORD_SIZE_LIMIT 28
 #define HSPD_PRE_SHARED_KEY 41
 #define HSPD_EARLY_DATA 42
@@ -31,15 +32,28 @@
 #define HSPD_COOKIE 44
 #define HSPD_KEY_SHARE 51
 
-// The trust mode fixes two more narrowings, as the KEX token fixes the
-// group. A TRUST=webpki ClientHello sends server_name, so the model admits
-// its empty acknowledgement (`sni`), and offers five signature schemes,
-// so the model admits three of them in CertificateVerify (`webpki`). The
-// raw and ca builds send no server_name and offer the one pinned scheme.
+// The trust mode fixes three more narrowings, as the KEX token fixes
+// the group. A TRUST=webpki ClientHello sends server_name, so the model
+// admits its empty acknowledgement (`sni`); it may offer application
+// protocols, so the model admits one selection from that offer
+// (`hspd_alpn_names`); and it offers five signature schemes, so the
+// model admits three of them in CertificateVerify (`webpki`). The raw
+// and ca builds send no server_name, offer no protocol and offer the
+// one pinned scheme.
+// The protocols a row's ALPN extension selects from: "h2" and
+// "http/1.1" are what an HTTP client sends, and "x" is the shortest
+// ProtocolName RFC 7301 §3.1 admits. Every build builds from this
+// table; only a TRUST=webpki hello may offer any of them, so
+// HSPD_ALPN_OFFER_MAX is 0 in the other builds and every ALPN row there
+// is a response the client never requested.
+#define HSPD_ALPN_MAX 3
+static const char *const hspd_alpn_names[HSPD_ALPN_MAX] = {"h2", "http/1.1", "x"};
 #ifdef CH_TRUST_WEBPKI
 #define HSPD_SNI_TOKEN "sni"
+#define HSPD_ALPN_OFFER_MAX HSPD_ALPN_MAX
 #else
 #define HSPD_SNI_TOKEN "nosni"
+#define HSPD_ALPN_OFFER_MAX 0
 #endif
 
 #define HSPD_X25519 0x001d
@@ -305,9 +319,77 @@ static void hspd_ee_server_name(wbuf *w, size_t mut) {
     }
 }
 
+#ifdef CH_TRUST_WEBPKI
+// The ALPN offer a row makes: the first count names of
+// hspd_alpn_names, as the ch_alpn_protocol array the C parser matches
+// against and as the ProtocolNameList hex the model reads them back
+// from (RFC 7301 §3.1). A count of 0 writes the "-" token, the offer a
+// raw or ca hello makes and a webpki caller may make.
+static void hspd_alpn_offer(size_t count, ch_alpn_protocol *offer, char *token, size_t cap) {
+    uint8_t list[3 * (1 + 8)];
+    wbuf w;
+    wb_init(&w, list, sizeof list);
+    for (size_t i = 0; i < count; i++) {
+        const uint8_t *name = (const uint8_t *)hspd_alpn_names[i];
+        size_t name_len = strlen(hspd_alpn_names[i]);
+        offer[i].name = name;
+        offer[i].name_len = name_len;
+        wb_u8(&w, (uint8_t)name_len);
+        wb_bytes(&w, name, name_len);
+    }
+    if (w.err) {
+        die("handshake_parser: ALPN offer buffer too small");
+    }
+    if (count == 0) {
+        (void)snprintf(token, cap, "-");
+        return;
+    }
+    char hex[2 * sizeof list + 1];
+    (void)hex_encode(hex, list, w.len);
+    (void)snprintf(token, cap, "%s", hex);
+}
+#endif
+
+// The ALPN extension a row may carry (RFC 7301 §3.2). mut 9 selects one
+// name of the offer table, which the row's own offer may or may not
+// hold; mut 10 selects a protocol no table lists; mut 11 sends an empty
+// ProtocolName and mut 12 sends two, both bodies §3.2 refuses; mut 13
+// sends the extension twice. Every other row carries none.
+static void hspd_ee_alpn(wbuf *w, size_t mut, size_t pick) {
+    if (mut < 9 || mut > 13) {
+        return;
+    }
+    uint8_t list[2 * (1 + 8)];
+    wbuf l;
+    wb_init(&l, list, sizeof list);
+    if (mut == 11) {
+        wb_u8(&l, 0); // an empty ProtocolName: §3.1 gives it 1..255 bytes
+    } else if (mut == 10) {
+        wb_u8(&l, 2);
+        wb_bytes(&l, (const uint8_t *)"h3", 2);
+    } else {
+        size_t count = mut == 12 ? 2 : 1; // §3.2: exactly one name
+        for (size_t i = 0; i < count; i++) {
+            const char *name = hspd_alpn_names[(pick + i) % HSPD_ALPN_MAX];
+            wb_u8(&l, (uint8_t)strlen(name));
+            wb_bytes(&l, (const uint8_t *)name, strlen(name));
+        }
+    }
+    if (l.err) {
+        die("handshake_parser: ALPN list buffer too small");
+    }
+    size_t copies = mut == 13 ? 2 : 1;
+    for (size_t i = 0; i < copies; i++) {
+        wb_u16(w, HSPD_ALPN);
+        wb_u16(w, (uint16_t)(2 + l.len));
+        wb_u16(w, (uint16_t)l.len);
+        wb_bytes(w, list, l.len);
+    }
+}
+
 // The EncryptedExtensions extension block (§4.3.1), with the row's one
 // deviation written into it.
-static void hspd_ee_build(wbuf *w, size_t mut, int have_limit, uint16_t limit) {
+static void hspd_ee_build(wbuf *w, size_t mut, size_t pick, int have_limit, uint16_t limit) {
     size_t exts = wb_mark(w, 2);
     if (have_limit) {
         wb_u16(w, HSPD_RECORD_SIZE_LIMIT);
@@ -333,6 +415,7 @@ static void hspd_ee_build(wbuf *w, size_t mut, int have_limit, uint16_t limit) {
         wb_u16(w, HSPD_X25519);
     }
     hspd_ee_server_name(w, mut);
+    hspd_ee_alpn(w, mut, pick);
     wb_patch16(w, exts);
     if (mut == 4) {
         wb_u8(w, 0); // trailing octet past the vector
@@ -350,15 +433,21 @@ static void hspd_ee_build(wbuf *w, size_t mut, int have_limit, uint16_t limit) {
 
 static void diff_hs_encrypted_exts(void) {
     for (int i = 0; i < 400; i++) {
-        size_t mut = rng_below(10);
+        size_t mut = rng_below(14);
         int have_limit = rng_below(2) == 0;
         // RFC 8449 §4 floors the limit at 64; straddle it.
         uint16_t limit = (uint16_t)(60 + rng_below(16330));
+        // How many protocols this row's ClientHello offered, and which
+        // one the ALPN mutations select. A raw or ca build offers none,
+        // so HSPD_ALPN_MAX is 0 there and every ALPN row is a response
+        // the client never requested.
+        size_t offer_count = rng_below(HSPD_ALPN_OFFER_MAX + 1);
+        size_t pick = rng_below(HSPD_ALPN_MAX);
 
         uint8_t body[HSPD_BODY_MAX];
         wbuf w;
         wb_init(&w, body, sizeof body);
-        hspd_ee_build(&w, mut, have_limit, limit);
+        hspd_ee_build(&w, mut, pick, have_limit, limit);
         if (w.err) {
             die("handshake_parser: EncryptedExtensions buffer too small");
         }
@@ -369,18 +458,39 @@ static void diff_hs_encrypted_exts(void) {
         // lowers it, and undo the -1 here.
         uint16_t peer_limit = 0xffff;
         uint8_t alert = 0;
+        char alpn_token[64];
+#ifdef CH_TRUST_WEBPKI
+        ch_alpn_protocol offer[HSPD_ALPN_MAX];
+        hspd_alpn_offer(offer_count, offer, alpn_token, sizeof alpn_token);
+        uint8_t selected = CH_ALPN_NONE;
+        int rc = hsp_parse_encrypted_exts(body, w.len, &peer_limit, offer, offer_count, &selected,
+                                          &alert);
+        char picked[8] = "-";
+        if (selected != CH_ALPN_NONE) {
+            (void)snprintf(picked, sizeof picked, "%u", (unsigned)selected);
+        }
+        const char *selection = picked;
+#else
+        // No build but TRUST=webpki offers a protocol, so no build but
+        // that one can report a selection.
+        (void)offer_count;
+        (void)snprintf(alpn_token, sizeof alpn_token, "-");
         int rc = hsp_parse_encrypted_exts(body, w.len, &peer_limit, &alert);
+        const char *selection = "-";
+#endif
         char want[64];
         if (rc != CH_OK) {
             (void)snprintf(want, sizeof want, "ERR hs_encrypted_extensions reject");
         } else if (peer_limit == 0xffff) {
-            (void)snprintf(want, sizeof want, "ok -");
+            (void)snprintf(want, sizeof want, "ok - %s", selection);
         } else {
-            (void)snprintf(want, sizeof want, "ok %u", (unsigned)peer_limit + 1U);
+            (void)snprintf(want, sizeof want, "ok %u %s", (unsigned)peer_limit + 1U, selection);
         }
-        char cmd[2 * (HSPD_BODY_MAX + 4) + 64];
-        hspd_request(cmd, sizeof cmd, "hs_encrypted_extensions", HSPD_SNI_TOKEN,
-                     HSPD_ENCRYPTED_EXTENSIONS, body, w.len);
+        char cmd[2 * (HSPD_BODY_MAX + 4) + 96];
+        char arg[80];
+        (void)snprintf(arg, sizeof arg, "%s %s", HSPD_SNI_TOKEN, alpn_token);
+        hspd_request(cmd, sizeof cmd, "hs_encrypted_extensions", arg, HSPD_ENCRYPTED_EXTENSIONS,
+                     body, w.len);
         expect(cmd, want);
     }
 }

@@ -33,14 +33,16 @@
 // rather than shipping.
 #ifndef CH_TX_STAGE
 #if defined(CH_TRUST_WEBPKI) && defined(CH_KEX_PQ)
-// The pq sum below plus the 262-byte server_name extension a
-// TRUST=webpki hello carries at the longest hostname (4 type and length,
-// 2 list length, 1 name_type, 2 name length, 253 name): 1801 + 262.
-#define CH_TX_STAGE 2063
+// The pq sum below plus the two extensions a TRUST=webpki hello adds:
+// the 262-byte server_name at the longest hostname (4 type and length,
+// 2 list length, 1 name_type, 2 name length, 253 name) and the 270-byte
+// application_layer_protocol_negotiation at the longest offer (4 type
+// and length, 2 list length, then 8 names of 1 length byte and 32 name
+// bytes): 1801 + 262 + 270.
+#define CH_TX_STAGE 2333
 #elif defined(CH_TRUST_WEBPKI)
-// The classic sum below plus the same 262-byte server_name extension:
-// 617 + 262.
-#define CH_TX_STAGE 879
+// The classic sum below plus the same two extensions: 617 + 262 + 270.
+#define CH_TX_STAGE 1149
 #elif defined(CH_KEX_PQ)
 // 137 fixed + 320 ticket identity + 128 cookie with framing + the
 // 1216-byte hybrid share.
@@ -90,6 +92,18 @@ typedef struct {
     // exchange protected the session, and cfg.require_pq fails the
     // handshake when it is not the hybrid.
     uint16_t group;
+#ifdef CH_TRUST_WEBPKI
+    // Which protocol the server selected through ALPN (RFC 7301 §3.2):
+    // the index in ch_cfg.alpn_protocols of the name the
+    // EncryptedExtensions carried, or CH_ALPN_NONE (cfg.h) when the
+    // caller offered none or the server sent no ALPN extension.
+    // hsp_parse_encrypted_exts writes it, and ch_handshake seeds it
+    // with CH_ALPN_NONE, because index 0 is a protocol. Public
+    // information, like group: the caller reads it to choose which
+    // protocol to speak. Only a TRUST=webpki build declares it, so the
+    // raw and ca objects keep the ch_tls layout they had.
+    uint8_t alpn_selected;
+#endif
     // Highest epoch accepted: loaded at ch_connect, raised once a verified
     // leaf authenticates the server. epoch_store_failed marks a failed
     // persist; the session stays up. Both stay zero outside CA builds.

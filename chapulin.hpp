@@ -41,6 +41,15 @@ enum class Group : uint16_t {
     x25519mlkem768 = CH_GROUP_X25519MLKEM768,
 };
 
+#ifdef CH_TRUST_WEBPKI
+// Session::alpn_selected() when the server selected no application
+// protocol (cfg.h's CH_ALPN_NONE): the config offered none, or the
+// server sent no ALPN extension. Every other value is an index into the
+// list Config::alpn() was given. TRUST=webpki builds only, like the
+// ch_cfg and ch_tls fields behind it.
+constexpr int alpn_none = CH_ALPN_NONE;
+#endif
+
 // Non-owning byte views, so read/write take one argument instead of a
 // pointer and a length. Deliberately minimal — no <span> dependency, to
 // stay usable on the same freestanding toolchains the C core targets.
@@ -210,6 +219,22 @@ class Config {
         cfg_.now_seconds = seconds;
         return *this;
     }
+
+    // Application protocols to offer through ALPN (ch_cfg.alpn_protocols
+    // and ch_cfg.alpn_count), in the order you prefer them: 1 to
+    // CH_ALPN_MAX entries, each a name of 1 to CH_ALPN_NAME_MAX bytes,
+    // none repeating another. Calling nothing offers nothing, which is
+    // legal and sends no extension. The array is borrowed like every
+    // other byte view here. Session::alpn_selected() reports which entry
+    // the server picked.
+    Config &alpn(const ch_alpn_protocol *list, size_t count) {
+        cfg_.alpn_protocols = list;
+        cfg_.alpn_count = count;
+        return *this;
+    }
+    template <size_t N> Config &alpn(const ch_alpn_protocol (&list)[N]) {
+        return alpn(list, N);
+    }
 #endif
 
     const ch_cfg &raw() const {
@@ -285,6 +310,16 @@ class Session {
     Group group() const {
         return static_cast<Group>(tls_.group);
     }
+
+#ifdef CH_TRUST_WEBPKI
+    // Which protocol the server selected through ALPN
+    // (ch_tls.alpn_selected): an index into the list Config::alpn() was
+    // given, or alpn_none when the server selected none. Read it after
+    // connect() returns Status::ok and branch on it.
+    int alpn_selected() const {
+        return tls_.alpn_selected;
+    }
+#endif
 
     // The revocation epoch this session accepted, and whether writing
     // it failed. A failed write keeps the session alive, so the caller

@@ -205,6 +205,35 @@ typedef struct {
 // nine roots cover the endpoints docs/webpki.md captures, five of them
 // Amazon Trust Services'.
 #define CH_WEBPKI_ANCHOR_MAX 12
+
+// One application protocol name the caller offers through ALPN
+// (RFC 7301 §3.1), shaped like ch_trust_anchor: the caller owns the
+// bytes and they must outlive the session. "h2" is 2 bytes and
+// "http/1.1" is 8.
+typedef struct {
+    const uint8_t *name;
+    size_t name_len;
+} ch_alpn_protocol;
+
+// The two caps on that list. Both are ClientHello budget: the extension
+// costs 4 type and length bytes, 2 ProtocolNameList length bytes, and
+// one length byte per name, so CH_ALPN_MAX names of CH_ALPN_NAME_MAX
+// bytes cost 4 + 2 + 8 * (1 + 32) = 270 bytes, which is what
+// CH_HELLO_MAX and CH_TX_STAGE grow by in this mode
+// (test/webpki_session_cases.h measures the built hello). RFC 7301
+// allows a ProtocolName of 1 to 255 bytes, and four of those would cost
+// the hello a kilobyte, so 32 caps one name: every protocol ID this
+// tree offers or tests is under 11 bytes. Eight names is four times the
+// two-name offer an HTTP caller sends. ch_connect returns CH_EINVAL for
+// a longer name or a longer list.
+#define CH_ALPN_MAX 8
+#define CH_ALPN_NAME_MAX 32
+
+// ch_tls.alpn_selected when no protocol was selected: the caller
+// offered none, or the server sent no ALPN extension (RFC 7301 §3.2
+// lets a server that does not support ALPN leave it out). Every other
+// value is an index into ch_cfg.alpn_protocols.
+#define CH_ALPN_NONE 255
 #endif
 
 typedef struct {
@@ -332,6 +361,19 @@ typedef struct {
     const uint8_t *hostname;
     size_t hostname_len;
     uint64_t now_seconds;
+
+    // Application protocols to offer through ALPN (RFC 7301), in the
+    // order the caller prefers them: alpn_count entries, 0 to
+    // CH_ALPN_MAX. Offering none — alpn_protocols NULL and alpn_count 0
+    // — is legal and sends no extension. Every offered entry needs a
+    // non-NULL name of 1 to CH_ALPN_NAME_MAX bytes, and no two entries
+    // may carry the same name; ch_connect returns CH_EINVAL otherwise.
+    // The server picks one, and ch_tls.alpn_selected is its index in
+    // this array, or CH_ALPN_NONE when no protocol was selected. This
+    // is the second place the mode offers more than one of something,
+    // after the signature schemes (docs/decisions.md 37).
+    const ch_alpn_protocol *alpn_protocols;
+    size_t alpn_count;
 #endif
 } ch_cfg;
 

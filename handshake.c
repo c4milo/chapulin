@@ -327,7 +327,11 @@ static int run(handshake_state *h) {
     // TRUST=webpki build decode_error for a server_name that carries
     // data), and that override must survive to the wire.
     h->alert = ALERT_ILLEGAL_PARAMETER;
-    rc = hsp_parse_encrypted_exts(raw + 4, raw_len - 4, &t->peer_limit, &h->alert);
+    rc = hsp_parse_encrypted_exts(raw + 4, raw_len - 4, &t->peer_limit,
+#ifdef CH_TRUST_WEBPKI
+                                  t->cfg.alpn_protocols, t->cfg.alpn_count, &t->alpn_selected,
+#endif
+                                  &h->alert);
     if (rc != CH_OK) {
         return rc;
     }
@@ -373,6 +377,13 @@ int ch_handshake(ch_tls *t) {
     size_t room = t->cfg.buf_len - REC_HDR - AEAD_TAG;
     h.record_size_limit = room > 0x4001 ? 0x4001 : (uint16_t)room;
     t->peer_limit = CH_TX_PT;
+#ifdef CH_TRUST_WEBPKI
+    // ch_connect zeroed the session, and 0 is the first protocol in
+    // ch_cfg.alpn_protocols, so the no-selection value has to be written
+    // before the parser can report one (RFC 7301 §3.2 lets the server
+    // send no ALPN extension at all).
+    t->alpn_selected = CH_ALPN_NONE;
+#endif
 
     int rc = run(&h);
     uint8_t alert = h.alert;

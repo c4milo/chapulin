@@ -90,10 +90,36 @@ static int try_server_hello(const uint8_t *body, size_t n, int psk_mode) {
     return hsp_parse_server_hello(body, n, &info, psk_mode);
 }
 
+#ifdef CH_TRUST_WEBPKI
+// The ALPN offer every EncryptedExtensions row here makes (RFC 7301
+// §3.1). "h2" and "http/1.1" are what an HTTP client offers, "x" is the
+// shortest ProtocolName the RFC admits, and alpn_longest is
+// CH_ALPN_NAME_MAX bytes, the longest name ch_connect accepts; the last
+// two are the length boundary the ALPN rows select at.
+// test_alpn_selection fills alpn_longest before it uses it.
+static uint8_t alpn_longest[CH_ALPN_NAME_MAX];
+static const uint8_t alpn_h2[] = {'h', '2'};
+static const uint8_t alpn_http11[] = {'h', 't', 't', 'p', '/', '1', '.', '1'};
+static const uint8_t alpn_shortest[] = {'x'};
+static const ch_alpn_protocol alpn_offer[] = {
+    {alpn_h2,       sizeof alpn_h2      },
+    {alpn_http11,   sizeof alpn_http11  },
+    {alpn_shortest, sizeof alpn_shortest},
+    {alpn_longest,  sizeof alpn_longest }
+};
+#define ALPN_OFFER_COUNT (sizeof alpn_offer / sizeof alpn_offer[0])
+#endif
+
 static int try_encrypted_exts(const uint8_t *body, size_t n) {
     uint16_t peer_limit = CH_TX_PT;
     uint8_t alert = 0;
+#ifdef CH_TRUST_WEBPKI
+    uint8_t selected = CH_ALPN_NONE;
+    return hsp_parse_encrypted_exts(body, n, &peer_limit, alpn_offer, ALPN_OFFER_COUNT, &selected,
+                                    &alert);
+#else
     return hsp_parse_encrypted_exts(body, n, &peer_limit, &alert);
+#endif
 }
 
 // Extension blobs for the ServerHello cases, named by extension.
@@ -195,7 +221,13 @@ static uint8_t encrypted_exts_alert_case(const uint8_t *exts, size_t n, uint8_t 
     size_t len = make_encrypted_exts(buf, exts, n);
     uint16_t peer_limit = CH_TX_PT;
     uint8_t alert = seed;
+#ifdef CH_TRUST_WEBPKI
+    uint8_t selected = CH_ALPN_NONE;
+    (void)hsp_parse_encrypted_exts(buf, len, &peer_limit, alpn_offer, ALPN_OFFER_COUNT, &selected,
+                                   &alert);
+#else
     (void)hsp_parse_encrypted_exts(buf, len, &peer_limit, &alert);
+#endif
     return alert;
 }
 
@@ -383,6 +415,8 @@ static int server_hello_case2(const uint8_t *ext2, size_t n, int hrr, int psk_mo
     return server_hello_case(exts, sizeof versions_exact + n, hrr, psk_mode);
 }
 
+#include "handshake_strict_alpn.h"
+
 int main(void) {
 #ifdef CH_KEX_PQ
     build_key_share_cases();
@@ -440,6 +474,8 @@ int main(void) {
     test_extension_vector_fill();
     test_certificate_list_fill();
     test_server_name_acknowledgement();
+    test_alpn_selection();
+    test_alpn_in_block();
     test_certificate_verify_schemes();
 
     if (failures > 0) {

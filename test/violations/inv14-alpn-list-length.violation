@@ -1,0 +1,14 @@
+invariant: INV-14
+file: handshake_parser.c
+catches: handshake_strict_webpki
+reason: the ALPN arm stops checking that the ProtocolNameList length
+  counts the one name it holds, so a server may claim a list longer or
+  shorter than the bytes it sent and still be accepted. RFC 7301 §3.2
+  fixes that list at exactly one ProtocolName, and RFC 9846 §6 makes a
+  length that does not fit a decode_error.
+  bin/handshake_strict_webpki's claimed-length row objects.
+
+--- old
+    if (e.err || name_len == 0 || list_len != 1 + name_len || rb_left(&e) != 0) {
+--- new
+    if (e.err || name_len == 0 || list_len < name_len || rb_left(&e) != 0) {

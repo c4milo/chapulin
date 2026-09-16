@@ -11,6 +11,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "cfg.h"
 #include "x25519.h"
 
 // Longest HelloRetryRequest cookie we echo; anything larger is a
@@ -60,7 +61,25 @@ int hsp_parse_server_hello(const uint8_t *body, size_t n, server_hello_info *inf
 // server_name its ClientHello sent. A server_name that carries data
 // there has the wrong length, and the parser writes decode_error
 // (RFC 9846 §6). Returns CH_OK or CH_EPROTO.
-int hsp_parse_encrypted_exts(const uint8_t *body, size_t n, uint16_t *peer_limit, uint8_t *alert);
+//
+// A TRUST=webpki build takes three more parameters, the ALPN arm
+// (RFC 7301 §3.2). offered and offered_count are the protocol names the
+// ClientHello listed, ch_cfg.alpn_protocols and ch_cfg.alpn_count. The
+// caller seeds *selected with CH_ALPN_NONE, and the parser writes the
+// index of the one name an ALPN extension carried. An offer of nothing
+// (offered_count 0) makes an ALPN extension an unrequested response:
+// unsupported_extension, like early_data. With an offer, the parser
+// writes decode_error for a body that does not hold exactly one
+// ProtocolName of 1 to 255 bytes, and illegal_parameter for a name the
+// client did not offer. A message with no ALPN extension is accepted
+// and leaves *selected alone: RFC 7301 §3.2 lets a server that does not
+// support ALPN send none.
+int hsp_parse_encrypted_exts(const uint8_t *body, size_t n, uint16_t *peer_limit,
+#ifdef CH_TRUST_WEBPKI
+                             const ch_alpn_protocol *offered, size_t offered_count,
+                             uint8_t *selected,
+#endif
+                             uint8_t *alert);
 
 // Certificate body framing: the empty certificate_request_context,
 // then the exact-fill CertificateEntry list. On CH_OK *list points

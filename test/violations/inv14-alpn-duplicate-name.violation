@@ -1,0 +1,17 @@
+invariant: INV-14
+file: tls.c
+catches: webpki_session_test
+reason: ch_connect compares two offered protocol names by address rather
+  than by their bytes, so a config that offers the same name twice from
+  two buffers passes. The server's selection then names two indices, and
+  ch_tls.alpn_selected reports one, so a caller reading it cannot tell
+  which entry the server meant. bin/webpki_session_test's repeated-name
+  row offers the bytes of "h2" a second time from another address, and
+  objects.
+
+--- old
+        if (cfg->alpn_protocols[i].name_len == cfg->alpn_protocols[j].name_len &&
+            ct_memeq(cfg->alpn_protocols[i].name, cfg->alpn_protocols[j].name,
+                     cfg->alpn_protocols[i].name_len)) {
+--- new
+        if (cfg->alpn_protocols[i].name == cfg->alpn_protocols[j].name) {

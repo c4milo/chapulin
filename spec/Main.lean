@@ -246,7 +246,7 @@ def dispatch : List String → Option String
         s!"sh {f.group} {emit f.keyExchange} {emitNat? f.selectedIdentity}"
       | .ok (.helloRetryRequest f) => s!"hrr {emit f.cookie}"
       | .error _ => "ERR hs_server_hello reject"
-  | ["hs_encrypted_extensions", sni, msg] => do
+  | ["hs_encrypted_extensions", sni, alpn, msg] => do
     let m ← hexArg? msg
     -- `sni` and `nosni` say whether the build's ClientHello sent
     -- server_name: the TRUST=webpki build does, the raw and ca builds
@@ -256,8 +256,16 @@ def dispatch : List String → Option String
       | "sni" => some true
       | "nosni" => some false
       | _ => none
-    return match Spec.HandshakeParser.parseEncryptedExtensions sent m with
-      | .ok f => s!"ok {emitNat? f.recordSizeLimit}"
+    -- `alpn` carries the protocols the ClientHello offered, as the hex
+    -- of the ProtocolNameList it sent, or "-" for a hello that offered
+    -- none (RFC 7301 §3.1). Only a TRUST=webpki build offers any.
+    let offered ← match alpn with
+      | "-" => some []
+      | hex => do
+        let bytes ← hexArg? hex
+        Spec.HandshakeParser.protocolNames? bytes
+    return match Spec.HandshakeParser.parseEncryptedExtensions sent offered m with
+      | .ok f => s!"ok {emitNat? f.recordSizeLimit} {emitNat? f.alpnSelected}"
       | .error _ => "ERR hs_encrypted_extensions reject"
   | ["hs_certificate", msg] => do
     let m ← hexArg? msg
