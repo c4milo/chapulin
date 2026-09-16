@@ -961,7 +961,7 @@ endif
 # llvm-cov), and it moves up in the same diff that adds the tests. A PR
 # that lowers the number must either add tests or move the floor down
 # in the same diff, with the reason in the commit message.
-COVERAGE_FLOOR := 92
+COVERAGE_FLOOR := 93
 GCOVR ?= $(shell command -v gcovr)
 GCOV_TOOL := $(shell $(CC) --version 2>/dev/null | grep -qi clang \
   && echo "$$(xcrun --find llvm-cov 2>/dev/null || command -v llvm-cov) gcov" || echo gcov)
