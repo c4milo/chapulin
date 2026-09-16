@@ -308,6 +308,11 @@ print-lib-def:
 # PIN and KEX rows name TRUST=raw as well, because PIN selects nothing
 # under TRUST=webpki, and `make check TRUST=webpki` would otherwise hand
 # that value to their recursions.
+# The recursions pass --no-print-directory: GNU make 4 turns on -w for
+# a sub-make, and `make ci` runs this lint from one, so its captured
+# output would otherwise start with an "Entering directory" line and
+# the last name on a list would sit before a newline, not the space the
+# match below wants. `make -w lint-trust-separation` reproduces that.
 #
 # The webpki rows read their file lists from nowhere the build reads
 # them: the chain verifiers are written out, and the webpki*.c files are
@@ -326,8 +331,8 @@ lint-trust-separation:
 	@rc=0; \
 	check() { \
 	  axis=$$1; want=$$2; ban=$$3; wantdef=$$4; bandef=$$5; \
-	  srcs=" $$($(MAKE) -s -f $(firstword $(MAKEFILE_LIST)) print-lib-srcs $$axis) "; \
-	  defs=" $$($(MAKE) -s -f $(firstword $(MAKEFILE_LIST)) print-lib-def $$axis) "; \
+	  srcs=" $$($(MAKE) -s --no-print-directory -f $(firstword $(MAKEFILE_LIST)) print-lib-srcs $$axis) "; \
+	  defs=" $$($(MAKE) -s --no-print-directory -f $(firstword $(MAKEFILE_LIST)) print-lib-def $$axis) "; \
 	  for f in $$want; do case "$$srcs" in *" $$f "*) ;; *) echo "lint-trust-separation: $$axis must package $$f"; rc=1;; esac; done; \
 	  for f in $$ban; do case "$$srcs" in *" $$f "*) echo "lint-trust-separation: $$axis must not package $$f"; rc=1;; esac; done; \
 	  for d in $$wantdef; do case "$$defs" in *" $$d "*) ;; *) echo "lint-trust-separation: $$axis must define $$d"; rc=1;; esac; done; \
