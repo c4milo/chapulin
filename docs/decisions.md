@@ -406,3 +406,107 @@ does nothing more.
     not implement ALPN leave it out, so refusing there would refuse every
     server that speaks `http/1.1` by convention. docs/webpki.md states
     what the caller branches on and what the client refuses.
+
+38. **QUIC is a transport axis, and chapulin owns packet protection on
+    it, AES included.** RFC 9001 §4.1.3 removes the record layer: QUIC
+    carries bare handshake messages in CRYPTO frames and protects
+    packets itself. A `TRANSPORT=quic` build takes handshake bytes in,
+    hands handshake bytes out, and seals and opens every packet at every
+    level, so no traffic secret leaves the object. colibri, the HTTP/3
+    caller, owns everything that is not cryptography: packet numbers,
+    ACKs, loss recovery, congestion control, flow control, streams,
+    connection IDs, Retry and version negotiation logic, and path
+    validation. Cost, and most of it lands here: a fifth value in
+    `LIB_VARIANT` beside PIN, TRUST, KEX and RAND; fifteen exported
+    transport symbols against entry 28's four, on a `PUBLIC` whose
+    first term the axis selects —
+    `$(PUBLIC_TRANSPORT) $(PUBLIC_RAND) $(PUBLIC_CA)`, where
+    `PUBLIC_TRANSPORT` drops the four TLS names rather than adding to
+    them and the other two terms keep their meaning, so a TRUST=ca or
+    RAND=drbg QUIC object exports sixteen and one with both exports
+    seventeen; five library files replaced — `record.c`, `io.c`, `session.c`, `handshake.c` and
+    `tls.c`, 990 lines — and five more given a second arm under
+    `#ifdef`; entry 19's `record_size_limit` dropped, which leaves
+    `cfg.buf_len` as the only cap on what a peer can send; the KeyUpdate
+    entry 3 keeps turned into a connection error (RFC 9001 §6); two
+    exceptions to entry 21 inside this tree, because RFC 9001 §5.5
+    discards a packet it cannot authenticate instead of closing and
+    because a caller-order mistake leaves the session live; entry 37's
+    ALPN lifted out of `TRUST=webpki` into every trust mode, because RFC
+    9001 §8.1 requires it; and AES-128-GCM and AES-128-ECB entering the
+    codebase against entry 6. The largest piece is none of those. The
+    driver blocks on the wire at five `hsr_next_msg` call sites, two of
+    them in `handshake_auth.c`, so the caller-driven interface runs one
+    step per whole handshake message, moves the handshake frame — 448
+    bytes raw, 856 under TRUST=ca PIN=rsa, 976 under TRUST=webpki, 512
+    under KEX=pq — into the session, moves 233 of `handshake.c`'s 395
+    lines into a `handshake_flight.c` both transports compile, and
+    changes `handshake.o` in every TLS build. `handshake_psk` and
+    `handshake_pin`, two of `proof/run.sh`'s 83 launch lines, are
+    re-measured because that file moves under them. Gain: no second
+    crypto stack. Every traffic secret a QUIC connection uses is
+    derived, held, used and wiped inside one object this tree proves,
+    and RFC 9001 §9.5's requirement that header protection removal,
+    packet number recovery and packet protection removal happen together
+    without timing side channels is met inside this tree's constant-time
+    rules, measured by lint-wide-multiply on the 1-RTT path and argued
+    from public keys on the Initial one, instead of re-argued in a second
+    repository. Measured at `3432a5d`: the driver touches the record
+    layer at 15 call sites in three files and the key schedule at none,
+    and unchanged lines are 1,335 of 3,460 in a TRUST=raw object and
+    4,392 of 6,517 in a TRUST=webpki one.
+
+    Entry 6 does not fall; it gains one exception with a checkable
+    boundary. The AES ban exists to keep a secret key out of
+    table-driven code, and every key AES touches in QUIC is public: the
+    Initial keys come from the client's Destination Connection ID and a
+    salt RFC 9001 §5.2 prints, the Retry key and nonce are printed in
+    §5.8, and §5 states that neither packet type is considered to have
+    confidentiality or integrity protection. So AES may exist only
+    where the key is public — Initial packet protection (§5.2), Initial
+    header protection (§5.4.3) and the Retry integrity tag (§5.8) — and
+    never under a key from the TLS key schedule. A key type,
+    `aes_public_key`, that only `quic_initial.c` and `quic_retry.c`
+    construct is the first guard, and it is one a maintainer can write
+    around, because `quic.h` holds the type to store the Initial keys
+    and every file that sees the struct can write its initializer.
+    So the new invariant is Semgrep-tripwire, the grade this tree gives
+    an identifier ban: it permits exactly two callers and exactly three
+    key sources, and no other source may call a symbol whose name
+    begins `aes_` or `gcm_`, or construct the type. A reintroduction
+    under another name is what a tripwire does not catch, and the
+    reviewer reading the diff is what does. A Semgrep rule beside the
+    thirteen in `.semgrep/invariants.yml` fails the build on a third
+    caller,
+    `lint-codegen-partition` holds both files in `WIDEMUL_PUBLIC` where
+    a maintainer has to move them in plain view to admit a secret,
+    `lib-check` keeps their symbols out of `PUBLIC`, and a `.violation`
+    file proves the first gate works. The `CLAUDE.md` sentence and this
+    file's entry 6 change in the commit that lands the first AES
+    source; docs/quic.md carries both replacement texts. Be suspicious
+    of this: the safety sits in the call graph, not in the code, and a
+    constrained primitive tends to grow callers.
+
+    Handing per-level secrets out and letting the caller protect
+    packets was considered and rejected. A 32-byte secret is not a
+    packet protection layer: the caller would still write
+    HKDF-Expand-Label, HMAC-SHA-256, ChaCha20-Poly1305 and the §5.4.4
+    mask before it needed the AES, so that split moves seven primitives
+    outside this tree's proofs to keep two out, and five of the seven
+    touch real traffic secrets — the cost entry 36 refused to pay for
+    the certificate parser. One secret leaves the object today, the
+    resumption PSK in `ch_ticket.psk`, through `on_ticket`
+    (`handshake_post.c:53-54`); it is a key for a future connection,
+    not a live traffic secret, and a per-level traffic secret would be
+    the first live key to leave. A second TLS stack for
+    HTTP/3 was considered and rejected too: it gives one product two
+    trust models and two failure disciplines, and entry 12's
+    fail-closed post-quantum property would hold over TCP and not over
+    QUIC. Entry 12 stands in a QUIC build: one key-exchange group per
+    build, on the same PIN, TRUST, KEX and RAND axes.
+
+    Nothing is implemented yet. docs/quic.md states the interface by
+    the names the header will use, the suspendable driver step by step
+    with the state each step leaves behind, the measured reuse per
+    build, the bounds that need measuring, and the verification owed
+    against today's counts.

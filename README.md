@@ -837,6 +837,8 @@ agility, the server role, or any insecure fallback. The device modes,
 host-side `TRUST=webpki` mode does, against anchors the caller
 supplies, and [`docs/webpki.md`](docs/webpki.md) lists what it does not
 check. [`docs/decisions.md`](docs/decisions.md) records every trade and why.
+QUIC is not implemented either; [`docs/quic.md`](docs/quic.md) records
+the design of the `TRANSPORT=quic` mode, decided and not yet built.
 
 Two caveats worth knowing before you adopt it.
 
