@@ -25,7 +25,7 @@ and which `CLAUDE.md` sentences and numbered invariants a `TRANSPORT=quic`
 build falsifies. An appendix holds three replacement texts: the two AES rules
 and the file-pair chain. The section "What changes in `CLAUDE.md`" holds the
 other eight sentences, "What changes in `docs/invariants.md`" holds the four
-invariants the mode amends and the one it adds, and "What changes in
+invariants the mode amends and the two it adds, and "What changes in
 `docs/decisions.md`" holds the five entries it falsifies beside entry 6.
 
 `docs/decisions.md` entry 38 records the trade. `docs/webpki.md` is the model
@@ -34,13 +34,17 @@ QUIC build is still `TRUST=raw`, `TRUST=ca` or `TRUST=webpki`.
 
 ## Status
 
-Decided and not implemented. The design has chapulin owning packet protection
-at every level, with the AES exception below. No file in chapulin
-changed for the mode yet, and none of the files this document names as new
-exists.
+Decided, and the interface is written. The design has chapulin owning packet
+protection at every level, with the AES exception below. The nine headers this
+document names exist and no `.c` file does, so no build compiles the mode and
+the Makefile has no `TRANSPORT` axis yet. `make quic-footprint` prints what
+exists, read from the tree, and `make lint-quic-partition` holds the mode to
+the files named `quic*`.
 
 Every claim about chapulin names the file and line it came from, read at
-commit `3432a5d`. Numbers marked *measured* come from a program that ran, or
+commit `3432a5d`. The citations into `docs/invariants.md` are read after the
+commit that added INV-27 there, which moved every line below it. Numbers
+marked *measured* come from a program that ran, or
 from a command whose text is given. *Derived* means a formula over measured
 inputs, and the formula is shown. Nothing here is an estimate, and no number in
 this file substitutes for `bench/sram.sh`.
@@ -213,7 +217,7 @@ RFC prints. No traffic secret `keysched.c` derives is among them.
 
 The argument above is only as good as the rule that keeps it true tomorrow, so
 the rule has to be checkable, not merely stated. It is INV-26 in
-`docs/invariants.md`, which stops at INV-25 (`docs/invariants.md:471`), in the
+`docs/invariants.md`, which stops at INV-27 (`docs/invariants.md:279`), in the
 entry shape INV-20 already uses for the certificate parser, at the weaker of
 the two Semgrep grades for the reason below.
 
@@ -337,7 +341,7 @@ the design above, and each cell carries its derivation.
 | Lean modules: 2 more, `Spec/Aes.lean` and `Spec/Gcm.lean`, plus rows in `test/diff_test.c` | 30 modules in `spec/Spec/` | `ls spec/Spec/*.lean \| wc -l` |
 | Wycheproof: one suite, `aes_gcm_test.json`, and one generator arm | 18 vector files across 9 generator arms | read `test/gen_wycheproof.py:395-425` |
 | `lint-wide-multiply`: 16 more `BRANCH_CEILING` entries, for `quic_keys.c` and `quic_packet.c` across 8 compiler and architecture specs. `quic_aes.c` and `quic_gcm.c` owe none: `WIDEMUL_PUBLIC` means no codegen gate compiles them, and `lint-codegen-partition` fails a file in both lists (`Makefile:1822`) | 96 entries, 12 files across 8 specs | `Makefile:2020-2047` |
-| `docs/invariants.md`: one new invariant | stops at INV-25 | `docs/invariants.md:471` |
+| `docs/invariants.md`: 1 more invariant, INV-26. INV-27, the mode's partition, landed with the interface headers | stops at INV-27 | `docs/invariants.md:279` |
 | `test/violations/`: one new mutant | 89 files | `ls test/violations/*.violation \| wc -l` |
 | `.semgrep/invariants.yml`: 1 new rule, `inv-26-aes-public-keys-only`, carrying two patterns | 13 rules | `grep -c 'id:' .semgrep/invariants.yml` |
 
@@ -1005,7 +1009,7 @@ design keeps one step for both so the step table has one shape.
 
 Two details in that table are load-bearing. The wipe of `hs` at
 `HSQ_STEP_COMPLETE` is INV-17's rule that handshake secrets die at CONNECTED
-(`docs/invariants.md:712-716`), one round trip earlier than the TLS driver
+(`docs/invariants.md:770-774`), one round trip earlier than the TLS driver
 reaches it at `handshake.c:390`. And the CertificateVerify step recomputes
 the transcript hash rather than carrying it from the Certificate step, which
 is correct only while nothing touches `t.transcript` between the two steps; a
@@ -1266,7 +1270,7 @@ the handshake. The same messages go out in the same order and every refusal
 keeps its alert. `make check` and `make check-slow`
 are what hold that, in particular the 466,286-sequence enumeration of
 `test/handshake_sequence_test.c` against the Lean oracle
-(`docs/invariants.md:694-699`) and the e2e run against a real server.
+(`docs/invariants.md:752-757`) and the e2e run against a real server.
 
 Object bytes: one object changes, and the PR says which by comparing every
 `bin/obj/<variant>/*.o` before and after. `LIB_CFLAGS` (`Makefile:54`) is
@@ -1460,7 +1464,7 @@ close_notify, so its input domain stays inside what the C and the spec agree on
    (`handshake.c:390`). The wipe inside `hsf_derive_handshake_secrets` and
    the wipe of `hs` at `HSQ_STEP_COMPLETE` are what bound the rest.
 7. **INV-22's mechanism stops being "no state variable to desynchronize"**
-   (`docs/invariants.md:685-693`) for the QUIC build. What replaces it is the
+   (`docs/invariants.md:743-751`) for the QUIC build. What replaces it is the
    stored step, the default arm, the Lean `State` the step numbers copy,
    and the QUIC sequence
    differential, and that differential is real work in
@@ -2060,22 +2064,23 @@ before that commit.
 
 ## What changes in `docs/invariants.md`
 
-A `TRANSPORT=quic` build falsifies four numbered invariants and adds one. The
-file stops at INV-25 today (`docs/invariants.md:471`). Each row names the
+A `TRANSPORT=quic` build falsifies four numbered invariants and adds two. The
+file stops at INV-27 today (`docs/invariants.md:279`). Each row names the
 entry, what replaces it and the commit that applies it; nothing changes before
 that commit. Two more entries take a sentence rather than a row: INV-14's claim
-lists the refusals (`docs/invariants.md:404-410`) and INV-18's claim says all
-state lives in `ch_tls` (`docs/invariants.md:726`), and a QUIC build adds
+lists the refusals (`docs/invariants.md:462-468`) and INV-18's claim says all
+state lives in `ch_tls` (`docs/invariants.md:784`), and a QUIC build adds
 refusals to the first and holds its state in `ch_quic`, so the commit that lands
 `quic.[ch]` names the transport in both.
 
 | entry | replacement | commit |
 | --- | --- | --- |
 | INV-1, "one sealing path" (`docs/invariants.md:36-46`). Its claim is "Record protection is the only path that seals or opens bytes", its mechanism "only `record.c` calls them", and `inv-1-seal-only-in-record` implements it with `paths: exclude: [test, proof, fuzz, spec, bench, bin, examples, record.c, aead.c]` (`.semgrep/invariants.yml:99-110`). A QUIC build calls `aead_seal` and `aead_open` from `quic_packet.c`, so the claim is false and the rule fails on the first line of code | the claim becomes "Record protection is the only path that seals or opens bytes under `TRANSPORT=tls`, and packet protection is the only one under `TRANSPORT=quic`"; the mechanism names `record.c` as the TLS caller and `quic_packet.c` as the QUIC one, and adds that `quic_initial.c` and `quic_retry.c` seal and open with `gcm_seal` and `gcm_open`, which INV-26 governs and this rule does not match; the check names the amended `inv-1-seal-only-in-record`, whose exclude list becomes `[test, proof, fuzz, spec, bench, bin, examples, record.c, aead.c, quic_packet.c]` | `quic_packet.[ch]` |
-| INV-13, "no resumable errors" (`docs/invariants.md:390-400`). Its claim is "Every error kills the session: alert, wipe, dead. There is no error a caller can retry past", its mechanism "`tlsi_fail` is the single funnel", and its check the 466k-sequence run | the claim gains "under `TRANSPORT=quic` two errors leave the session live and nothing else does: `ch_quic_open`'s discard of a packet it cannot authenticate (RFC 9001 §5.5), which raises the §6.6 count and changes no key set, because `ch_quic_open` never installs an update and writes `key_set` only on a successful open, and `CH_EINVAL` from a `ch_quic_` entry, which changed nothing and may be called again"; the mechanism names `quic_fail` as the QUIC funnel beside `tlsi_fail`; the check names the QUIC sequence differential in `bin/quic_driver_test`, which asserts that no other return code leaves the session live | `quic.[ch]` for the `CH_EINVAL` half, `quic_packet.[ch]` for the discard |
-| INV-17, "secrets die at phase boundaries" (`docs/invariants.md:712-722`). Its claim is "every failure path wipes through `tlsi_wipe`" (`:714-715`) and its check "the wipe sits in the single `tlsi_fail` funnel" (`:719`). A QUIC object compiles no `session.c`, so neither function exists in it | the claim and the check name `quic_fail` under `TRANSPORT=quic` beside `tlsi_fail` under `TRANSPORT=tls`, and the claim adds that the QUIC driver wipes `hs` at `HSQ_STEP_COMPLETE`, one round trip before the TLS driver reaches the same wipe at `handshake.c:390` | `quic.[ch]` |
-| INV-22, "the server's flight arrives in one order" (`docs/invariants.md:674-708`). Its mechanism is "There is no state variable to desynchronize; the order is the call order" (`:688-689`), and its check is `handshake_sequence_test` (`:697`), which links TRUST=raw over the TLS driver (`:700`). A QUIC build stores `ch_quic.step`, so the mechanism is false there and the check covers no QUIC trace | the mechanism gains: under `TRANSPORT=quic` the order is the stored `ch_quic.step`, `hsq_advance`'s default arm, which answers `unexpected_message` for every value above `HSQ_STEP_COMPLETE`, and the step numbers that copy Lean's `State` constructor for constructor; the check names the QUIC sequence differential in `bin/quic_driver_test` against the same oracle under the transport `quic` | `quic_step.[ch]` |
+| INV-13, "no resumable errors" (`docs/invariants.md:448-458`). Its claim is "Every error kills the session: alert, wipe, dead. There is no error a caller can retry past", its mechanism "`tlsi_fail` is the single funnel", and its check the 466k-sequence run | the claim gains "under `TRANSPORT=quic` two errors leave the session live and nothing else does: `ch_quic_open`'s discard of a packet it cannot authenticate (RFC 9001 §5.5), which raises the §6.6 count and changes no key set, because `ch_quic_open` never installs an update and writes `key_set` only on a successful open, and `CH_EINVAL` from a `ch_quic_` entry, which changed nothing and may be called again"; the mechanism names `quic_fail` as the QUIC funnel beside `tlsi_fail`; the check names the QUIC sequence differential in `bin/quic_driver_test`, which asserts that no other return code leaves the session live | `quic.[ch]` for the `CH_EINVAL` half, `quic_packet.[ch]` for the discard |
+| INV-17, "secrets die at phase boundaries" (`docs/invariants.md:770-780`). Its claim is "every failure path wipes through `tlsi_wipe`" (`:772-773`) and its check "the wipe sits in the single `tlsi_fail` funnel" (`:777`). A QUIC object compiles no `session.c`, so neither function exists in it | the claim and the check name `quic_fail` under `TRANSPORT=quic` beside `tlsi_fail` under `TRANSPORT=tls`, and the claim adds that the QUIC driver wipes `hs` at `HSQ_STEP_COMPLETE`, one round trip before the TLS driver reaches the same wipe at `handshake.c:390` | `quic.[ch]` |
+| INV-22, "the server's flight arrives in one order" (`docs/invariants.md:732-766`). Its mechanism is "There is no state variable to desynchronize; the order is the call order" (`:746-747`), and its check is `handshake_sequence_test` (`:755`), which links TRUST=raw over the TLS driver (`:758`). A QUIC build stores `ch_quic.step`, so the mechanism is false there and the check covers no QUIC trace | the mechanism gains: under `TRANSPORT=quic` the order is the stored `ch_quic.step`, `hsq_advance`'s default arm, which answers `unexpected_message` for every value above `HSQ_STEP_COMPLETE`, and the step numbers that copy Lean's `State` constructor for constructor; the check names the QUIC sequence differential in `bin/quic_driver_test` against the same oracle under the transport `quic` | `quic_step.[ch]` |
 | INV-26, new: the AES exception. "The AES exception, stated as an invariant" above holds its claim, its mechanism, its check `inv-26-aes-public-keys-only` and its violation | the whole entry, written in the shape INV-20 uses, with its **Check** field reading "Semgrep-tripwire (`inv-26-aes-public-keys-only`)" and its claim naming the `aes_` and `gcm_` prefixes the rule matches, so the claim and the check say the same thing | the first AES source, `quic_aes.[ch]` |
+| INV-27, new, and the one row here that has landed: the partition. Every root file only a `TRANSPORT=quic` build compiles is named `quic*`, and the Makefile's `QUIC_SHARED` and `QUIC_CONDITIONAL` name the mode's text that is not | the whole entry, written in the shape INV-20 uses, with its **Check** field reading "Semgrep-tripwire grade (`make lint-quic-partition`, `tools/quic-partition.py`)" and three mutants in `test/violations/` measuring it | the interface headers, which landed it |
 
 ## What changes in `docs/decisions.md`
 

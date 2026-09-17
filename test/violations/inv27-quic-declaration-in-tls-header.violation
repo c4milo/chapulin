@@ -1,0 +1,25 @@
+invariant: INV-27
+file: tls.h
+catches: test/lint-quic-partition.sh
+reason: a QUIC-only declaration lands in tls.h, a header both
+  transports compile, so the mode owns text that no quic* name points
+  at. tls.h still declares its whole TLS surface without the define, so
+  a lint that compared each file against empty would see nothing. This
+  one compares the two runs against each other and reports the line
+  tls.h gains, because neither QUIC_SHARED nor QUIC_CONDITIONAL names
+  it.
+
+--- old
+void ch_close(ch_tls *t);
+
+#endif
+--- new
+void ch_close(ch_tls *t);
+
+#ifdef CH_TRANSPORT_QUIC
+// The transport parameters the peer sent, read from the session here
+// rather than from quic.h.
+const uint8_t *ch_quic_peer_params(const ch_tls *t, size_t *len);
+#endif
+
+#endif

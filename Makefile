@@ -125,7 +125,8 @@ SRCS := ct.c sha256.c hkdf.c chacha20.c poly1305.c aead.c x25519.c p256.c rsa.c 
 
 HDRS := ct.h sha256.h hkdf.h chacha20.h poly1305.h aead.h x25519.h p256.h rsa.h ch_assert.h \
         pem.h x509.h x509_der.h x509_ca.h webpki.h buf.h record.h keysched.h io.h handshake_message.h handshake_parser.h handshake_record.h cfg.h session.h handshake_auth.h handshake.h handshake_post.h \
-        tls.h rand.h drbg.h sha3.h sha512.h sha512_compress.h p384.h p384_field.h rsa_pkcs1.h mlkem.h mlkem_poly.h
+        tls.h rand.h drbg.h sha3.h sha512.h sha512_compress.h p384.h p384_field.h rsa_pkcs1.h mlkem.h mlkem_poly.h \
+        handshake_flight.h quic.h quic_aes.h quic_gcm.h quic_initial.h quic_keys.h quic_packet.h quic_retry.h quic_step.h
 # softmul.c is excluded on purpose. It has to define __mulsi3 and
 # __muldi3 -- the names the compiler emits, so they replace the runtime
 # library's -- and clang-tidy rejects those as reserved identifiers that
@@ -1316,7 +1317,7 @@ endif
 
 # Checks and thresholds live in .clang-tidy; every disable carries a reason
 # there (fix-or-drop, never NOLINT in code).
-lint: lint-toolchain lint-pins lint-proof-cover lint-exact-fill lint-tidy lint-format lint-cppcheck lint-commits lint-docs lint-conflict-markers lint-invariants lint-stack lint-size lint-tracked-ignored lint-matrix lint-nightly-report lint-violation-builds lint-impact lint-fuzz-budget lint-codegen-partition lint-runtime-symbols lint-wide-multiply lint-commit-citations lint-issue-links lint-shellcheck lint-bench-numbers lint-spec lint-trust-separation
+lint: lint-toolchain lint-pins lint-proof-cover lint-exact-fill lint-tidy lint-format lint-cppcheck lint-commits lint-docs lint-conflict-markers lint-invariants lint-stack lint-size lint-tracked-ignored lint-matrix lint-nightly-report lint-violation-builds lint-impact lint-fuzz-budget lint-codegen-partition lint-runtime-symbols lint-wide-multiply lint-commit-citations lint-issue-links lint-shellcheck lint-bench-numbers lint-spec lint-trust-separation lint-quic-partition lint-quic-surface
 
 # INV-19: bounded stack. The budget is the measured worst library
 # frame (rsa_vp1's RSA-3072 limb temporaries, 2,400 bytes) rounded up;
@@ -1450,6 +1451,52 @@ lint-proof-cover:
 .PHONY: lint-exact-fill
 lint-exact-fill:
 	@python3 tools/exact-fill.py
+
+# INV-27: the QUIC mode's partition, read from the preprocessor rather
+# than from a list kept by hand. A root file belongs to TRANSPORT=quic
+# when it writes no declaration without -DCH_TRANSPORT_QUIC and gains
+# something with it. The rule is that every such file is named quic*,
+# and that no other root file is one, so `git ls-files 'quic*'` names
+# every file the mode owns and a reader sees how much it covers without
+# reading the build. tools/quic-partition.py carries the reasoning, the
+# flags each run passes and what the check cannot see.
+#
+# The two lists below are the mode's text outside the prefix, and the
+# lint reads them from here.
+#
+# handshake_flight.[ch] is the one file the QUIC mode adds that both
+# transports compile: the TLS driver in handshake.c and the QUIC driver
+# in quic_step.c call the same flight handlers, so no protocol rule
+# exists twice (docs/quic.md, "The design: one whole message per step").
+# It carries no quic prefix on purpose, and QUIC_SHARED names it here so
+# a reader sees the exemption rather than reading the missing prefix as
+# a mistake. The exemption checks its file rather than skipping it: a
+# QUIC_SHARED file that becomes QUIC-only fails this lint too, under the
+# message that belongs to it, which says a file both transports compile
+# has stopped compiling in a TLS build.
+QUIC_SHARED := handshake_flight.c handshake_flight.h
+# The shared files that carry a #ifdef CH_TRANSPORT_QUIC arm: the
+# configuration, the session struct and the handshake layers the mode
+# reuses. Each holds text only a QUIC build compiles, so each is a place
+# to look that the prefix does not name, and a file that gains such an
+# arm without joining this list fails the lint. A file that stops
+# carrying one fails it too, so the list never sends a reader to a file
+# that holds nothing.
+QUIC_CONDITIONAL := cfg.h session.h handshake_record.h handshake_post.h \
+                    handshake_auth.h handshake_parser.h
+.PHONY: lint-quic-partition
+lint-quic-partition:
+	@CC='$(CC)' python3 tools/quic-partition.py
+
+# quic.h and docs/quic.md's interface table must name the same ch_quic_
+# entries. A name in one and not the other means the header and its
+# design record disagree about the public surface, which is a defect in
+# whichever moved last. `make quic-footprint` prints the same comparison
+# inside its report; this target is the one that fails, so the report
+# reaches no verdict of its own.
+.PHONY: lint-quic-surface
+lint-quic-surface:
+	@python3 tools/quic-footprint.py --check-surface
 
 lint-tidy:
 ifeq ($(CLANG_TIDY),)
@@ -2389,3 +2436,17 @@ lint-commits-range:
 
 clean:
 	rm -rf bin
+
+# What the TRANSPORT=quic mode covers, read from the tree: the files and
+# their line counts, the mode's text inside the CH_TRANSPORT_QUIC arms of
+# files a TLS build compiles too, the mode's share of the library, how
+# many declared functions have a definition, the ch_quic_ surface against
+# the interface table in docs/quic.md, and the standards the headers cite
+# section by section. It is a report, so it is not in `lint` and not in `check`, and
+# it reaches no verdict: it exits 0 on every count it prints, and stops
+# with a message only when something it reads is not there. The one
+# comparison in it that is a verdict, quic.h against docs/quic.md's
+# interface table, runs in `lint` under lint-quic-surface.
+.PHONY: quic-footprint
+quic-footprint:
+	@python3 tools/quic-footprint.py

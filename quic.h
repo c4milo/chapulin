@@ -29,12 +29,12 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "quic_aes.h"
 #include "cfg.h"
-#include "quic_gcm.h"
 #include "handshake_record.h"
-#include "quic_step.h"
+#include "quic_aes.h"
+#include "quic_gcm.h"
 #include "quic_keys.h"
+#include "quic_step.h"
 #include "session.h"
 
 // The bit ch_quic.levels_ready holds for one direction at one encryption level. level is

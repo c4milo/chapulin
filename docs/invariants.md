@@ -276,6 +276,64 @@ which convention holds them.
   admits.
 - See [decisions: Trust model](decisions.md#trust-model).
 
+### INV-27 — the QUIC mode stays in files named quic*
+
+- **Claim.** Every root source and header that only a `TRANSPORT=quic`
+  build compiles is named `quic*`, and no other root file is one. So
+  `git ls-files 'quic*'` names every file the mode owns, and a reader
+  sees where the QUIC code is without reading the build. Two lists in
+  the Makefile hold the mode's text under other names, and a reader who
+  wants all of it reads them too: `QUIC_SHARED`, the files both
+  transports compile, and `QUIC_CONDITIONAL`, the shared files that
+  carry a `#ifdef CH_TRANSPORT_QUIC` arm. `handshake_flight.[ch]` is
+  `QUIC_SHARED`: the QUIC mode adds it, both transports compile it, and
+  it carries no prefix for that reason.
+- **Mechanism.** The preprocessor decides, not a list. A file is
+  QUIC-only when it declares nothing without `-DCH_TRANSPORT_QUIC` and
+  gains something with it. The mode's own files put their whole body
+  inside one `#ifdef CH_TRANSPORT_QUIC`, so a TLS build compiles them
+  to nothing, includes included. The files both transports share fence
+  their QUIC arms instead and still declare their TLS text.
+  `handshake_flight.[ch]` holds the flight handlers both drivers call,
+  so no protocol rule exists twice; giving it the prefix would claim a
+  TLS build does not compile it, which is false.
+- **Check.** Semgrep-tripwire grade (`make lint-quic-partition`,
+  `tools/quic-partition.py`), and the mutants below measure it rather
+  than claim it. The lint preprocesses every root `.c` and `.h` file
+  twice, once without the transport define and once with it, and
+  compares the two outputs against each other. Comparing each against
+  empty instead would pass a QUIC-only declaration added to a file that
+  already declares something, which is the likeliest way the partition
+  breaks. `-fdirectives-only` keeps a macro the QUIC build does not
+  define from reading as changed text, and the line markers keep a
+  file's includes from answering for the file. It reports a `quic*`
+  file that declares something without the define, a file outside the
+  prefix that declares something only with it, a file that gains a
+  transport arm and is in neither list, a `QUIC_CONDITIONAL` entry
+  whose file has stopped carrying one, and a `quic*` file that `HDRS`
+  does not name, which is how the formatter would stop reading it. It
+  prints the counts it found, so no count is written down here. Three
+  mutants in `test/violations/` require `test/lint-quic-partition.sh`
+  to fail, and the fast tier runs all three: `inv27-quic-type-above-guard`
+  writes a typedef above `quic_aes.h`'s transport guard,
+  `inv27-quic-declaration-in-tls-header` adds a `ch_quic_` declaration
+  to `tls.h` inside a transport arm, and `inv27-quic-include-above-guard`
+  moves `quic_retry.h`'s `#include` lines above its guard.
+
+  What it does not catch. It reads whole files, so a QUIC-only function
+  inside a file both transports compile is invisible: a QUIC arm added
+  to `session.c` passes, and review is what catches that. A file that
+  gates its body on a `CH_QUIC_`-prefixed macro it does not define is
+  reported as one the lint cannot judge rather than judged, because the
+  lint defines `CH_TRANSPORT_QUIC` and nothing else. And the rule is a
+  naming rule: a determined author who writes the mode under other
+  names defeats it, which is what the tripwire grade means
+  (`docs/invariants.md:25-26`).
+- **Violation.** A PR adds `transport_keys.h`, a header only a QUIC
+  build compiles, under a name without the prefix, and
+  `git ls-files 'quic*'` stops naming every file the mode owns.
+- See [decisions: Engineering](decisions.md#engineering).
+
 ### INV-7 — no negotiation
 
 - **Claim.** One cipher suite, one group, one version, one signature

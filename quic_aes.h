@@ -71,8 +71,9 @@ typedef struct {
 // build one. Three build gates check the rest. The Semgrep rule
 // inv-26-aes-public-keys-only fails any call to an aes_ or gcm_ symbol,
 // and any aes_public_key initializer, outside quic_initial.c,
-// quic_retry.c, aes.c and gcm.c; a .violation mutant proves that rule
-// fires; lint-codegen-partition holds aes.c and gcm.c in WIDEMUL_PUBLIC,
+// quic_retry.c, quic_aes.c and quic_gcm.c; a .violation mutant proves
+// that rule fires; lint-codegen-partition holds quic_aes.c and
+// quic_gcm.c in WIDEMUL_PUBLIC,
 // the list whose comment says a secret arriving in any of these is a
 // design change; and lib-check keeps every aes_ and gcm_ symbol out of
 // the packaged object's exports, so no caller reuses this cipher on
@@ -122,7 +123,7 @@ int aes_public_key_initial(aes_public_key *k, const uint8_t *dcid, size_t dcid_l
 void aes_public_key_retry(aes_public_key *k);
 
 // One forward-cipher block under the packet protection key, k->key:
-// out = CIPH_K(in), FIPS 197 §5.1. gcm.c calls it for the counter
+// out = CIPH_K(in), FIPS 197 §5.1. quic_gcm.c calls it for the counter
 // blocks and the GHASH subkey of AEAD_AES_128_GCM.
 //
 // Requires: k was written by a constructor above; in and out point at

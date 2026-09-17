@@ -5,7 +5,7 @@
 // compiles it.
 //
 // This file and quic_retry.[ch] are the only sources that may call a
-// symbol aes.h or gcm.h declares. That rule is INV-26 in
+// symbol quic_aes.h or quic_gcm.h declares. That rule is INV-26 in
 // docs/invariants.md, the AES exception: a lookup-table cipher is
 // allowed in this tree only where every key it sees is public, and the
 // Initial keys are public because anyone who reads a long header reads
@@ -13,7 +13,8 @@
 // that conclusion itself: Initial packets are not considered to have
 // confidentiality or integrity protection (rfc9001.txt:999-1001). The
 // Semgrep rule inv-26-aes-public-keys-only fails a call to any aes_ or
-// gcm_ symbol outside quic_initial.c, quic_retry.c, aes.c and gcm.c.
+// gcm_ symbol outside quic_initial.c, quic_retry.c, quic_aes.c and
+// quic_gcm.c.
 // docs/quic.md, "Where packet protection lives", states the trade.
 //
 // Every encryption level above Initial runs ChaCha20-Poly1305 through
@@ -34,8 +35,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "quic_aes.h"
 #include "cfg.h"
+#include "quic_aes.h"
 #include "quic_gcm.h"
 #include "quic_packet.h"
 
@@ -49,8 +50,8 @@
 // starts QUIC_PN_MAX_LEN bytes past the packet number offset, because a
 // receiver that has not removed header protection yet does not know the
 // packet number length and takes the sample as if the field were its
-// longest. AES_BLOCK keeps the one meaning aes.h gives it, the FIPS 197
-// block, which is also the input §5.4.3 feeds to AES-ECB whole
+// longest. AES_BLOCK keeps the one meaning quic_aes.h gives it, the
+// FIPS 197 block, which is also the input §5.4.3 feeds to AES-ECB whole
 // (rfc9001.txt:1332-1336).
 //
 // The library builds as C, so the guard always runs. It holds the two

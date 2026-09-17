@@ -4,7 +4,7 @@
 // and the Retry integrity tag (§5.8). Only a TRANSPORT=quic build
 // compiles it, and the calls take an aes_public_key and nothing else,
 // so no key from the TLS key schedule reaches this AEAD. INV-26 in
-// docs/invariants.md states that rule and names the checks; aes.h
+// docs/invariants.md states that rule and names the checks; quic_aes.h
 // states it at the key type.
 //
 // Every QUIC level above Initial runs ChaCha20-Poly1305 through
@@ -34,7 +34,7 @@
 // it after the ciphertext. That is aead_seal's shape, for the same
 // reason.
 //
-// Requires: k was written by a constructor in aes.h; nonce points at
+// Requires: k was written by a constructor in quic_aes.h; nonce points at
 // AES_IV readable bytes; aad points at aad_len readable bytes, and aad
 // may be NULL when aad_len is 0; pt points at n readable bytes and ct
 // at n writable bytes, with pt == ct allowed and no other overlap; tag
@@ -77,7 +77,7 @@ int gcm_open(const aes_public_key *k, const uint8_t nonce[AES_IV], const uint8_t
 // because SP 800-38D's own vectors test it directly and its proof
 // harness drives it directly.
 //
-// Requires: k was written by a constructor in aes.h; aad points at
+// Requires: k was written by a constructor in quic_aes.h; aad points at
 // aad_len readable bytes and ct at n readable bytes, either of which
 // may be NULL when its length is 0; out points at AES_BLOCK writable
 // bytes.
