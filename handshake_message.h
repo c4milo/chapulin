@@ -126,7 +126,23 @@
 #define ALERT_DECODE_ERROR 50
 #define ALERT_DECRYPT_ERROR 51
 #define ALERT_INTERNAL_ERROR 80
+// missing_extension, RFC 9846 §6 (rfc9846.txt:3816). A TRANSPORT=quic
+// build writes it for an EncryptedExtensions that carries no
+// quic_transport_parameters, which RFC 9001 §8.2 makes an error of type
+// 0x016d (rfc9001.txt:1930-1936). §4.8's 0x0100 conversion reaches that
+// code from this description and no other.
+#define ALERT_MISSING_EXTENSION 109
 #define ALERT_UNSUPPORTED_EXTENSION 110
+// no_application_protocol, RFC 9846 §6 (rfc9846.txt:3823). A
+// TRANSPORT=quic build writes it whenever ALPN negotiation fails, which
+// RFC 9001 §8.1 makes error 0x0178 for a client (rfc9001.txt:1896-1902)
+// and which §4.8's conversion reaches from this description and no
+// other. A TRANSPORT=tls build keeps illegal_parameter there.
+//
+// Both descriptions are declared in every build, as the descriptions
+// above are, so proof/eeparse_harness.c reads one alert list on both
+// transports.
+#define ALERT_NO_APPLICATION_PROTOCOL 120
 
 // The binders list is a fixed 35-byte tail here (one 32-byte binder):
 // u16 list length, u8 binder length, 32 binder bytes.

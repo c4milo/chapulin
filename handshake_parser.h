@@ -62,22 +62,67 @@ int hsp_parse_server_hello(const uint8_t *body, size_t n, server_hello_info *inf
 // there has the wrong length, and the parser writes decode_error
 // (RFC 9846 §6). Returns CH_OK or CH_EPROTO.
 //
-// A TRUST=webpki build takes three more parameters, the ALPN arm
-// (RFC 7301 §3.2). offered and offered_count are the protocol names the
-// ClientHello listed, ch_cfg.alpn_protocols and ch_cfg.alpn_count. The
-// caller seeds *selected with CH_ALPN_NONE, and the parser writes the
-// index of the one name an ALPN extension carried. An offer of nothing
+// A TRUST=webpki build and a TRANSPORT=quic build take three more
+// parameters, the ALPN arm (RFC 7301 §3.2). Both take them for the same
+// reason and by the same guard cfg.h puts on ch_cfg.alpn_protocols: a
+// webpki build offers a protocol list over TCP, and RFC 9001 §8.1
+// requires ALPN of every QUIC client (rfc9001.txt:1891-1895). offered
+// and offered_count are the protocol names the ClientHello listed,
+// ch_cfg.alpn_protocols and ch_cfg.alpn_count. The caller seeds
+// *selected with CH_ALPN_NONE, and the parser writes the index of the
+// one name an ALPN extension carried. An offer of nothing
 // (offered_count 0) makes an ALPN extension an unrequested response:
 // unsupported_extension, like early_data. With an offer, the parser
 // writes decode_error for a body that does not hold exactly one
-// ProtocolName of 1 to 255 bytes, and illegal_parameter for a name the
-// client did not offer. A message with no ALPN extension is accepted
-// and leaves *selected alone: RFC 7301 §3.2 lets a server that does not
-// support ALPN send none.
+// ProtocolName of 1 to 255 bytes, and, for a name the client did not
+// offer, illegal_parameter under TRANSPORT=tls and
+// no_application_protocol under CH_TRANSPORT_QUIC: RFC 9001 §8.1 makes
+// a QUIC client terminate with error 0x0178 whenever ALPN negotiation
+// fails (rfc9001.txt:1896-1902), which §4.8's 0x0100 conversion reaches
+// from alert 120 and not from alert 47. A message with no ALPN
+// extension is accepted and leaves *selected alone: RFC 7301 §3.2 lets
+// a server that does not support ALPN send none. Under
+// CH_TRANSPORT_QUIC that is still accepted here, and
+// hsf_read_encrypted_extensions refuses the handshake that reached its
+// end with *selected at CH_ALPN_NONE.
+//
+// A TRANSPORT=quic build takes two more parameters and admits one more
+// extension type, quic_transport_parameters at code point 0x39 (RFC
+// 9001 §8.2, rfc9001.txt:1921-1923). On CH_OK *transport_params points
+// into body at that extension's body and *transport_params_len is that
+// body's length in bytes; the pointer dies at the next call that writes
+// cfg.buf, so the caller copies what it keeps. The parser reads none of
+// those bytes: their content belongs to the QUIC version in use and is
+// opaque to TLS (rfc9001.txt:1926-1928).
+//
+// Absence is a refusal there, not a CH_OK. §8.2 makes a client that
+// receives an EncryptedExtensions without the extension close with an
+// error of type 0x016d (rfc9001.txt:1930-1936), so under
+// CH_TRANSPORT_QUIC the parser reads its own seen mask before it
+// returns: a message with the quic_transport_parameters bit clear
+// writes missing_extension and returns CH_EPROTO, where the TLS arm
+// ends its loop with the mask unread. The boundary test is one
+// EncryptedExtensions carrying the extension accepted and the same
+// message with it removed refused with alert 109.
+//
+// The 0x39 arm sits under CH_TRANSPORT_QUIC alone, never under the
+// guard the ALPN block takes, so a TRANSPORT=tls build reaches the
+// unadmitted arm and answers unsupported_extension. RFC 9001 §8.2
+// requires exactly that of an implementation that understands the
+// extension on a transport that is not QUIC (rfc9001.txt:1945-1949).
+//
+// peer_limit keeps its parameter and its meaning on both transports.
+// Under CH_TRANSPORT_QUIC the caller passes a local it drops, because
+// that build declares no ch_tls.peer_limit: RFC 9001 §4.1.3 removes the
+// record layer record_size_limit sizes (rfc9001.txt:462-464), and
+// cfg.buf_len bounds one level's reassembled CRYPTO bytes instead.
 int hsp_parse_encrypted_exts(const uint8_t *body, size_t n, uint16_t *peer_limit,
-#ifdef CH_TRUST_WEBPKI
+#if defined(CH_TRUST_WEBPKI) || defined(CH_TRANSPORT_QUIC)
                              const ch_alpn_protocol *offered, size_t offered_count,
                              uint8_t *selected,
+#endif
+#ifdef CH_TRANSPORT_QUIC
+                             const uint8_t **transport_params, size_t *transport_params_len,
 #endif
                              uint8_t *alert);
 

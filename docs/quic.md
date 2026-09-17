@@ -217,27 +217,27 @@ the rule has to be checkable, not merely stated. It is INV-26 in
 entry shape INV-20 already uses for the certificate parser, at the weaker of
 the two Semgrep grades for the reason below.
 
-**What it forbids, exactly.** No source in this tree may pass a key to `aes.c`
-or `gcm.c` other than these three: the `hkdf_expand_label` output over
+**What it forbids, exactly.** No source in this tree may pass a key to `quic_aes.c`
+or `quic_gcm.c` other than these three: the `hkdf_expand_label` output over
 `initial_secret`, where `initial_secret` is `hkdf_extract` over RFC 9001 §5.2's
 printed salt and the Destination Connection ID the caller supplied; the header
 protection key expanded from that same secret; and the 16-byte constant of RFC
 9001 §5.8. Equivalently and more bluntly: exactly two library sources may call
-a symbol `aes.h` or `gcm.h` declares, `quic_initial.c` (the Initial packet
+a symbol `quic_aes.h` or `quic_gcm.h` declares, `quic_initial.c` (the Initial packet
 path) and `quic_retry.c` (the Retry tag check), and no other file may call one
 or construct the key type below. Every symbol those two headers declare begins
 `aes_` or `gcm_`; the invariant states that naming rule too, so its claim and
 the Semgrep rule that checks it name the same set of symbols.
 
 **The key type is the first guard, and it is not a compile-time proof.**
-`aes.h` declares a key type, `aes_public_key`, and two constructors:
+`quic_aes.h` declares a key type, `aes_public_key`, and two constructors:
 `aes_public_key_initial`, over the Initial secret's inputs, and
 `aes_public_key_retry`, over the §5.8 constant. Every `aes_` and `gcm_` entry
 takes that type and nothing else, so a call that passes a `rec_dir` key or a
 bare `uint8_t` array does not compile. The type cannot be opaque:
 `ch_quic_initial_keys` installs Initial keys for both directions, so `ch_quic`
 stores two `aes_public_key` values as `initial_rx` and `initial_tx`, `quic.h`
-includes `aes.h` to size them, and zero heap forbids the
+includes `quic_aes.h` to size them, and zero heap forbids the
 pointer-to-incomplete-type shape that would hide the definition. Every file
 that sees the session struct sees the definition too, and a maintainer who
 writes `aes_public_key k = { ... }` from a traffic secret gets a program that
@@ -249,11 +249,11 @@ INV-20's containment half holds, and it cannot be. That half is
 semgrep-structural, because no library source calls `ch_pubkey_from_pem` and
 nothing in the library includes `x509_ca.h` (`docs/invariants.md:216-218`,
 `docs/invariants.md:224-226`). This design puts `aes_public_key` in the session
-struct on purpose, so `quic.h` includes `aes.h` and every file that sees the
+struct on purpose, so `quic.h` includes `quic_aes.h` and every file that sees the
 struct sees the type. The gates below hold the rule, and the invariant claims
 no more than they check.
 
-**How a reviewer catches a violation.** Read two files. `aes.c` and `gcm.c`
+**How a reviewer catches a violation.** Read two files. `quic_aes.c` and `quic_gcm.c`
 take a key of one type and nothing else, so the question is only who calls
 them and who constructs that type. A grep for `aes_` and `gcm_` calls and for
 `aes_public_key` initializers over the library sources must return
@@ -273,9 +273,9 @@ something else.
    uses, because the regex constrains the same node the pattern matched. The
    second branch is `pattern: aes_public_key $K = ...;`, which catches the
    initializer. Either branch is an error outside `paths: exclude: [test,
-   proof, fuzz, spec, bench, bin, examples, quic_initial.c, quic_retry.c, aes.c, gcm.c]`, the two permitted
-   callers and the two definition sites. The regex covers every symbol `aes.h`
-   and `gcm.h` declare under those two prefixes, including a sixth symbol
+   proof, fuzz, spec, bench, bin, examples, quic_initial.c, quic_retry.c, quic_aes.c, quic_gcm.c]`, the two permitted
+   callers and the two definition sites. The regex covers every symbol `quic_aes.h`
+   and `quic_gcm.h` declare under those two prefixes, including a sixth symbol
    added tomorrow, which an enumerated list of names would not. It is still a
    tripwire rather than structural, because this tree grades this exact
    construct that way: `inv-5-profiled-cert-parser` is built from the same two
@@ -285,7 +285,7 @@ something else.
    under another name (`.semgrep/invariants.yml:123-124`,
    `docs/invariants.md:142`). An AES entry point named something else evades
    `^(aes|gcm)_`. So the invariant states the naming rule that makes its claim
-   and this check say the same thing: every symbol `aes.h` and `gcm.h` declare
+   and this check say the same thing: every symbol `quic_aes.h` and `quic_gcm.h` declare
    begins `aes_` or `gcm_`, and INV-26 claims that no library source outside
    `quic_initial.c` and `quic_retry.c` calls a symbol whose name begins `aes_`
    or `gcm_`, or constructs an `aes_public_key`. `.semgrep/invariants.yml`
@@ -297,11 +297,11 @@ something else.
    secret-bearing sources held at a wide-multiply count, which holds 24 files
    today, and `WIDEMUL_PUBLIC`, the sources whose every operand is public,
    which holds 19. The two sum to the 43 `.c` files at the repository root.
-   `aes.c` and `gcm.c` belong in `WIDEMUL_PUBLIC`, beside the entry the list
+   `quic_aes.c` and `quic_gcm.c` belong in `WIDEMUL_PUBLIC`, beside the entry the list
    already carries for each file saying what that file may see
    (`Makefile:1742-1783`). The Makefile states the consequence in its own
    words: "A secret arriving in any of these is a design change, and this list
-   is where it lands." Moving `aes.c` out of that list is the diff a reviewer
+   is where it lands." Moving `quic_aes.c` out of that list is the diff a reviewer
    looks for.
 3. `lib-check` (`Makefile:417-423`) diffs the packaged object's exported symbols
    against `PUBLIC` (`Makefile:363`) and fails on any difference. No `aes_` or
@@ -336,7 +336,7 @@ the design above, and each cell carries its derivation.
 | CBMC launch lines: 2 more, one `full` harness per new source, plus one more if the GCM formula splits the way `aead`'s did — four harness files, three launch lines (`proof/run.sh:351-355`) | 83 launch lines, 86 harness files | `grep -c '^[[:space:]]*launch ' proof/run.sh`; `ls proof/*_harness.c \| wc -l` |
 | Lean modules: 2 more, `Spec/Aes.lean` and `Spec/Gcm.lean`, plus rows in `test/diff_test.c` | 30 modules in `spec/Spec/` | `ls spec/Spec/*.lean \| wc -l` |
 | Wycheproof: one suite, `aes_gcm_test.json`, and one generator arm | 18 vector files across 9 generator arms | read `test/gen_wycheproof.py:395-425` |
-| `lint-wide-multiply`: 16 more `BRANCH_CEILING` entries, for `quic_keys.c` and `quic_packet.c` across 8 compiler and architecture specs. `aes.c` and `gcm.c` owe none: `WIDEMUL_PUBLIC` means no codegen gate compiles them, and `lint-codegen-partition` fails a file in both lists (`Makefile:1822`) | 96 entries, 12 files across 8 specs | `Makefile:2020-2047` |
+| `lint-wide-multiply`: 16 more `BRANCH_CEILING` entries, for `quic_keys.c` and `quic_packet.c` across 8 compiler and architecture specs. `quic_aes.c` and `quic_gcm.c` owe none: `WIDEMUL_PUBLIC` means no codegen gate compiles them, and `lint-codegen-partition` fails a file in both lists (`Makefile:1822`) | 96 entries, 12 files across 8 specs | `Makefile:2020-2047` |
 | `docs/invariants.md`: one new invariant | stops at INV-25 | `docs/invariants.md:471` |
 | `test/violations/`: one new mutant | 89 files | `ls test/violations/*.violation \| wc -l` |
 | `.semgrep/invariants.yml`: 1 new rule, `inv-26-aes-public-keys-only`, carrying two patterns | 13 rules | `grep -c 'id:' .semgrep/invariants.yml` |
@@ -361,21 +361,21 @@ joins exactly one of the two `lint-codegen-partition` lists.
 
 | pair | concern | codegen list, and why | harness | place in `CLAUDE.md`'s chain |
 | --- | --- | --- | --- | --- |
-| `aes.[ch]` | the AES-128 forward cipher (FIPS 197), the `aes_public_key` type and its two constructors | `WIDEMUL_PUBLIC`: every key it sees is public by INV-26 | `aes_harness.c` | beside `chacha20.[ch]`, under `hkdf.[ch]`, which the constructors call |
-| `gcm.[ch]` | AEAD_AES_128_GCM seal and open, and GHASH (SP 800-38D) | `WIDEMUL_PUBLIC`: the same three keys, and GHASH multiplies a public key by public ciphertext | `gcm_harness.c`, split the way `aead` split if a formula fails to converge | beside `aead.[ch]` |
+| `quic_aes.[ch]` | the AES-128 forward cipher (FIPS 197), the `aes_public_key` type and its two constructors | `WIDEMUL_PUBLIC`: every key it sees is public by INV-26 | `quic_aes_harness.c` | beside `chacha20.[ch]`, under `hkdf.[ch]`, which the constructors call |
+| `quic_gcm.[ch]` | AEAD_AES_128_GCM seal and open, and GHASH (SP 800-38D) | `WIDEMUL_PUBLIC`: the same three keys, and GHASH multiplies a public key by public ciphertext | `quic_gcm_harness.c`, split the way `aead` split if a formula fails to converge | beside `aead.[ch]` |
 | `quic_keys.[ch]` | the §5.1 labels `quic key`, `quic iv` and `quic hp`, the §6.1 `quic ku` step, and the per-level, per-direction key set that replaces `rec_dir`. It writes one `quic_hp_key` per direction per level when that level's traffic secret arrives, and the `quic ku` step rewrites the packet key and IV alone (RFC 9001 §5.4 and §6.1, `rfc9001.txt:1172-1174`, `rfc9001.txt:1607`) | `WIDEMUL_CEILING`, held at 0: it derives from traffic secrets. It joins `BRANCH_SRCS` with `quic_packet.c`, which is where the 16 new `BRANCH_CEILING` entries land | `quic_keys_harness.c` | in place of `record.[ch]` |
 | `quic_packet.[ch]` | §5.3 packet protection and §5.4.4 header protection under ChaCha20-Poly1305, the §6.5 receive key-set selection — the Key Phase bit picks the phase and the recovered packet number tells the previous phase from the next — the §5.4.2 length check and the §6.6 counters | `WIDEMUL_CEILING`, held at 0: it holds 1-RTT keys. It joins `BRANCH_SRCS` too, with both halves counted: §9.5 puts a MUST on the open path and another on the seal path | `quic_packet_harness.c`, and one more for open if the seal-and-open formula does not converge | beside `quic_keys.[ch]` |
-| `quic_initial.[ch]` | the Initial packet path: `ch_quic_initial_keys`, AES-128-GCM seal and open and the §5.4.3 AES-ECB mask under the Initial keys | `WIDEMUL_PUBLIC`: the Initial keys are public (RFC 9001 §5) | `quic_initial_harness.c` | beside `quic_packet.[ch]`, over `aes.[ch]` and `gcm.[ch]` |
+| `quic_initial.[ch]` | the Initial packet path: `ch_quic_initial_keys`, AES-128-GCM seal and open and the §5.4.3 AES-ECB mask under the Initial keys | `WIDEMUL_PUBLIC`: the Initial keys are public (RFC 9001 §5) | `quic_initial_harness.c` | beside `quic_packet.[ch]`, over `quic_aes.[ch]` and `quic_gcm.[ch]` |
 | `quic_retry.[ch]` | the §5.8 Retry integrity tag under the printed key and nonce | `WIDEMUL_PUBLIC`: the key is printed in the RFC | `quic_retry_harness.c` | beside `quic_initial.[ch]` |
 | `handshake_flight.[ch]` | the flight handlers both drivers call, moved out of `handshake.c` with their bodies unchanged but for the two edits "Entry points and their contracts" names: 233 of its 395 lines. Every build compiles it | `WIDEMUL_CEILING`, held at 0: it holds every handshake secret | none of its own; `handshake_psk`, `handshake_pin` and the step legs compile it, which is what `tools/proof-cover.py` requires | between `handshake_auth.[ch]` and `handshake.[ch]` |
-| `handshake_step.[ch]` | `HSQ_STEP_*`, `hsq_advance` and the six step functions: one whole handshake message each | `WIDEMUL_CEILING`, held at 0: the steps derive and install traffic secrets | `handshake_step_harness.c`, one launch line per step and mode | beside `handshake.[ch]`, over `handshake_flight.[ch]` |
+| `quic_step.[ch]` | `HSQ_STEP_*`, `hsq_advance` and the six step functions: one whole handshake message each | `WIDEMUL_CEILING`, held at 0: the steps derive and install traffic secrets | `quic_step_harness.c`, one launch line per step and mode | beside `handshake.[ch]`, over `handshake_flight.[ch]` |
 | `quic.[ch]` | `ch_quic`, the `ch_quic_` entries, the input loop, the staged output, and the wipe that replaces `tlsi_wipe` (`session.c:25-34`), because what it wipes is key sets rather than `rec_dir` | `WIDEMUL_CEILING`, held at 0, where `tls.c` sits today | `handshake_quic_harness.c` | in place of `tls.[ch]`, above every file in this table |
 
-`aes.[ch]` and `gcm.[ch]` are the only pairs the AES exception adds; the other
+`quic_aes.[ch]` and `quic_gcm.[ch]` are the only pairs the AES exception adds; the other
 seven are the transport. Four of the nine names appear in gate 1's `paths:
-exclude:` list — `aes.c`, `gcm.c`, `quic_initial.c` and `quic_retry.c`. The
+exclude:` list — `quic_aes.c`, `quic_gcm.c`, `quic_initial.c` and `quic_retry.c`. The
 other five are absent from it on purpose: a call from any of them to a symbol
-`aes.h` or `gcm.h` declares is exactly the error that rule reports. The
+`quic_aes.h` or `quic_gcm.h` declares is exactly the error that rule reports. The
 `WIDEMUL_PUBLIC` reason column joins the list's existing comment block
 (`Makefile:1742-1783`) as its own entries, and every `WIDEMUL_CEILING` row is
 an entry of the form `<name>.c:0` beside the twenty-four the list carries
@@ -386,7 +386,7 @@ change before they compile at all. Both gates that read the list build every
 file on it under one fixed flag set with no transport define:
 `lint-wide-multiply` at `Makefile:2085` and `lint-runtime-symbols` at
 `Makefile:2163-2165`, each with `-DCH_RAND_EXTERN -DCH_KEX_PQ -I.` and nothing
-else. `quic.c`, `quic_keys.c`, `quic_packet.c` and `handshake_step.c` do not
+else. `quic.c`, `quic_keys.c`, `quic_packet.c` and `quic_step.c` do not
 compile without `-DCH_TRANSPORT_QUIC`, because `CH_LEVEL_*` and the new
 `ch_cfg` fields sit under that guard, and adding the define to the shared line
 breaks `record.c`, `io.c`, `session.c`, `handshake.c` and `tls.c`, which stay
@@ -595,7 +595,7 @@ exception removed and the AES duplicated.
 What this split would have kept: `CLAUDE.md`'s AES sentence and entry 6 as
 written, no AES object, no INV-26, no new Wycheproof suite, and fewer new
 symbols in `PUBLIC`. It would not have kept GHASH out of a codegen gate,
-because no gate measures it either way: `gcm.c` sits in `WIDEMUL_PUBLIC`, and
+because no gate measures it either way: `quic_gcm.c` sits in `WIDEMUL_PUBLIC`, and
 neither `lint-wide-multiply` nor `lint-runtime-symbols` compiles a file on that
 list. The suspendable driver and
 the parser change are identical work either way.
@@ -966,7 +966,7 @@ second ClientHello (RFC 9846 §4.2.4, `rfc9846.txt:1444`), so an Initial byte
 that arrives with the HelloRetryRequest, before that hello has gone out, is
 out of order.
 
-**`hsq_advance(q)` is the one switch**, in `handshake_step.c`. It maps the
+**`hsq_advance(q)` is the one switch**, in `quic_step.c`. It maps the
 stored step to one of six step functions — `HSQ_STEP_AWAIT_SERVER_HELLO` and
 `HSQ_STEP_AWAIT_RETRY_HELLO` share one — and its default arm sets
 `unexpected_message` and returns `CH_EPROTO`. So a one-byte corruption of
@@ -1186,7 +1186,7 @@ the QUIC `hsr_next_msg`, whose one difference from the TLS one the header
 states in a paragraph: it never waits. It returns neither `CH_EIO` nor
 `CH_EAUTH`.
 
-**`handshake_step.[ch]`, prefix `hsq_`, QUIC only.** The `HSQ_STEP_*` values
+**`quic_step.[ch]`, prefix `hsq_`, QUIC only.** The `HSQ_STEP_*` values
 and `hsq_advance`, which requires a whole message at `pt_off` and on `CH_OK`
 may raise the step, move `rx_level`, write `t.tx`, install keys and fire the
 callbacks. On an error it leaves the alert in `hs.alert` and the caller kills
@@ -1291,7 +1291,7 @@ already records why this tree refuses that trade.
 | `cfg.h` | the ALPN block (`:213-236`, `:365-376`) widens to webpki or quic; a new QUIC block carries `CH_LEVEL_*`, `CH_KEY_*`, `CH_TRANSPORT_PARAMS_MAX`, the two fields and the two callbacks |
 | `handshake_message.c`, `handshake_parser.c` | the QUIC arms "The parser change, in full" specifies, plus `ALERT_MISSING_EXTENSION` 109 and `ALERT_NO_APPLICATION_PROTOCOL` 120 in `handshake_message.h:113-129` |
 | `tls.c` | the ALPN rule functions `:329-371` move into a header of static functions included where `tls.c:263` sits, below every `CH_ASSERT`. Byte identity is measured, not claimed; if `tls.o` moves, `quic.c` carries its own copy and a unit row holds the two to the same verdicts |
-| `Makefile` | `SRCS` (`:122-124`) and `HDRS` (`:126-128`) gain `handshake_flight`; a `TRANSPORT` axis beside `TRUST` (`:207-233`), defaulting to `tls`, which under `quic` adds `-DCH_TRANSPORT_QUIC`, drops `io.c record.c session.c handshake.c tls.c` and adds `quic.c handshake_step.c` and the packet-protection sources; `LIB_VARIANT` (`:287`); a `PUBLIC_TRANSPORT` variable and `PUBLIC` (`:363`) rewritten as `$(PUBLIC_TRANSPORT) $(PUBLIC_RAND) $(PUBLIC_CA)`, selected on the new axis the way `PUBLIC_CA` is selected on `TRUST` (`:211-221`); `lint-trust-separation` rows (`:329-353`); per-file defines on `WIDEMUL_CEILING`, read at `:2085` and `:2163-2165`; an `RV_ALLOWED` decision for each of the five new `WIDEMUL_CEILING` entries, and a row only where the file pulls a runtime symbol, because a row for a file that pulls nothing prints a line on every run (`Makefile:2175-2178`); a `bin/quic_driver_test` target over `test/quic_driver_test.c`, which `check` runs beside the other test binaries and which `test-invariants-fast` gains as a prerequisite (`Makefile:1635`); a `cxx-check TRANSPORT=quic` invocation beside the three at `:753`, `:764` and `:767`; a `bin/quic_test` target over `test/quic_vectors.c`, in the shape of `bin/sha3_test` (`:491-493`); and the three lint passes that read a file name. `LINT_C` (`:137`) gains the nine new sources and `test/quic_driver_test.c`, and `HDRS` (`:126-128`) gains the nine new headers, so `lint-format` and `lint-cppcheck` read them. `lint-tidy` gains a third pass in the shape of the `-DCH_TRUST_WEBPKI` pass at `:1470-1475`, over `quic.c handshake_step.c quic_keys.c quic_packet.c quic_initial.c quic_retry.c aes.c gcm.c handshake_flight.c handshake_record.c handshake_post.c handshake_parser.c handshake_message.c handshake_auth.c test/quic_driver_test.c` with `-DCH_TRANSPORT_QUIC`, and the four sources that need the define are filtered out of the first pass the way `webpki.c` is at `:1461`, because that pass declares no transport and reads none of the QUIC arms |
+| `Makefile` | `SRCS` (`:122-124`) and `HDRS` (`:126-128`) gain `handshake_flight`; a `TRANSPORT` axis beside `TRUST` (`:207-233`), defaulting to `tls`, which under `quic` adds `-DCH_TRANSPORT_QUIC`, drops `io.c record.c session.c handshake.c tls.c` and adds `quic.c quic_step.c` and the packet-protection sources; `LIB_VARIANT` (`:287`); a `PUBLIC_TRANSPORT` variable and `PUBLIC` (`:363`) rewritten as `$(PUBLIC_TRANSPORT) $(PUBLIC_RAND) $(PUBLIC_CA)`, selected on the new axis the way `PUBLIC_CA` is selected on `TRUST` (`:211-221`); `lint-trust-separation` rows (`:329-353`); per-file defines on `WIDEMUL_CEILING`, read at `:2085` and `:2163-2165`; an `RV_ALLOWED` decision for each of the five new `WIDEMUL_CEILING` entries, and a row only where the file pulls a runtime symbol, because a row for a file that pulls nothing prints a line on every run (`Makefile:2175-2178`); a `bin/quic_driver_test` target over `test/quic_driver_test.c`, which `check` runs beside the other test binaries and which `test-invariants-fast` gains as a prerequisite (`Makefile:1635`); a `cxx-check TRANSPORT=quic` invocation beside the three at `:753`, `:764` and `:767`; a `bin/quic_test` target over `test/quic_vectors.c`, in the shape of `bin/sha3_test` (`:491-493`); and the three lint passes that read a file name. `LINT_C` (`:137`) gains the nine new sources and `test/quic_driver_test.c`, and `HDRS` (`:126-128`) gains the nine new headers, so `lint-format` and `lint-cppcheck` read them. `lint-tidy` gains a third pass in the shape of the `-DCH_TRUST_WEBPKI` pass at `:1470-1475`, over `quic.c quic_step.c quic_keys.c quic_packet.c quic_initial.c quic_retry.c quic_aes.c quic_gcm.c handshake_flight.c handshake_record.c handshake_post.c handshake_parser.c handshake_message.c handshake_auth.c test/quic_driver_test.c` with `-DCH_TRANSPORT_QUIC`, and the four sources that need the define are filtered out of the first pass the way `webpki.c` is at `:1461`, because that pass declares no transport and reads none of the QUIC arms |
 | `test/violations.py` | `FAST_TARGETS` (`test/violations.py:252-261`) gains `"quic_driver_test"` and `"test/lint-invariants.sh"`. Without both names the nine driver mutants and the AES one fall into the slow tier (`test/violations.py:322-325`), which `check-slow` does not run: `Makefile:859` runs `test-invariants-fast` alone, so they would run in the nightly and not in the run `CLAUDE.md` calls the definition of done |
 | `io.c`, `record.c`, `session.c`, `keysched.c` | nothing |
 
@@ -1328,14 +1328,14 @@ the nightly matrix (`.github/workflows/nightly.yml:52`), which `lint-matrix`
    five properties `proof/handshake_record_harness.c:202-208` asserts, that
    `CH_EPROTO` names `ALERT_DECODE_ERROR` and `CH_ECAP` names
    `ALERT_INTERNAL_ERROR`, and the window bound on exit (`:210`).
-3. **`handshake_step_*`, new, one launch line per step and mode.**
-   `proof/handshake_step_harness.c` with selector files in the
+3. **`quic_step_*`, new, one launch line per step and mode.**
+   `proof/quic_step_harness.c` with selector files in the
    `CH_PROOF_PSK` and `CH_PROOF_PIN` pattern (`proof/handshake_psk_harness.c:5-7`):
    the ServerHello and EncryptedExtensions steps in both modes, because those
    two read `cfg.psk`, and the Certificate, CertificateVerify, Finished and
    complete steps in pin configuration, because the psk configuration never
    reaches the certificate steps and the other two read no mode. Each
-   includes `handshake_step.c` and compiles `handshake_flight.c
+   includes `quic_step.c` and compiles `handshake_flight.c
    handshake_auth.c buf.c ct.c` with `-DCH_TRANSPORT_QUIC`. The saved state
    is havocked per the table above, and havocked the way `docs/proofs.md`
    requires: every array through a typed nondet fill and never a byte-count
@@ -1384,7 +1384,7 @@ the nightly matrix (`.github/workflows/nightly.yml:52`), which `lint-matrix`
    leaves `io.c` to the TLS build alone.
 6. **Coverage.** `tools/proof-cover.py` fails a shipped source that no `full`
    harness compiles and no `AUDITED` entry lists. Leg 1 and leg 3 compile
-   `handshake_flight.c`, leg 3 compiles `handshake_step.c`, leg 4 compiles
+   `handshake_flight.c`, leg 3 compiles `quic_step.c`, leg 4 compiles
    `quic.c`, and leg 2 compiles the QUIC arm of `handshake_record.c`. No
    `AUDITED` entry is added.
 7. **Mutants, planted before the code lands.** Each is planted, watched to
@@ -1400,13 +1400,13 @@ the nightly matrix (`.github/workflows/nightly.yml:52`), which `lint-matrix`
 
    | mutant | `file` | `invariant` | `catches` |
    | --- | --- | --- | --- |
-   | the second-HelloRetryRequest compare removed from the ServerHello step | `handshake_step.c` | INV-14 | `quic_driver_test` |
+   | the second-HelloRetryRequest compare removed from the ServerHello step | `quic_step.c` | INV-14 | `quic_driver_test` |
    | `level < rx_level` accepted in `ch_quic_crypto_in` | `quic.c` | INV-22 | `quic_driver_test` |
    | the leftover-byte check removed from the driver, so bytes after the ServerHello survive the level move | `quic.c` | INV-22 | `quic_driver_test` |
    | the `tx_len != 0` refusal dropped, so a second `ch_quic_crypto_in` overwrites the staged hello | `quic.c` | INV-13 | `quic_driver_test` |
    | `hsr_peek_message` accepting a message larger than `cfg.buf_len` | `handshake_record.c` | INV-2 | `quic_driver_test` |
-   | a KeyUpdate accepted at `HSQ_STEP_COMPLETE` | `handshake_step.c` | INV-22 | `quic_driver_test` |
-   | the CertificateRequest arm folded into the KeyUpdate arm, so `ch_quic_error_code` reports 0x010a for a post-handshake CertificateRequest | `handshake_step.c` | INV-22 | `quic_driver_test` |
+   | a KeyUpdate accepted at `HSQ_STEP_COMPLETE` | `quic_step.c` | INV-22 | `quic_driver_test` |
+   | the CertificateRequest arm folded into the KeyUpdate arm, so `ch_quic_error_code` reports 0x010a for a post-handshake CertificateRequest | `quic_step.c` | INV-22 | `quic_driver_test` |
    | the §5.7 check removed from `ch_quic_open`, so a 1-RTT packet opens before `t.state` reaches `CH_ST_CONNECTED` | `quic.c` | INV-22 | `quic_driver_test` |
    | the next receive keys promoted inside `ch_quic_open` before the open succeeds, so a forged Key Phase bit installs a key update | `quic.c` | INV-13 | `quic_driver_test` |
    | the `seen` check removed from `hsp_parse_encrypted_exts`, so an EncryptedExtensions with no `quic_transport_parameters` is accepted | `handshake_parser.c` | INV-14 | `quic_driver_test` |
@@ -1469,7 +1469,7 @@ close_notify, so its input domain stays inside what the C and the spec agree on
 ### The summary of this section
 
 The suspendable driver moves 233 of `handshake.c`'s 395 lines into
-`handshake_flight.c`, which both transports compile; adds `handshake_step.c`
+`handshake_flight.c`, which both transports compile; adds `quic_step.c`
 and `quic.c`; splits `hsa_server_auth` into two entry points; adds the
 reader that takes bytes at `t.pt_off` beside the record reader in
 `handshake_record.c`;
@@ -1898,7 +1898,7 @@ Against 83 launch lines and 86 harness files today:
 
 - New: one per new source, by the names in "The new sources, by name":
   `quic_keys.c`, `quic_packet.c`, `quic_initial.c`, `quic_retry.c`,
-  `handshake_step.c` and `quic.c`, plus `aes.c` and `gcm.c`.
+  `quic_step.c` and `quic.c`, plus `quic_aes.c` and `quic_gcm.c`.
   `handshake_flight.c` is the exception and needs no harness of its own:
   `handshake_psk`, `handshake_pin` and the step legs compile it, which is
   what `tools/proof-cover.py` asks for. The QUIC arm of
@@ -1939,7 +1939,7 @@ the C and the spec agree on.
 
 **Tests.** RFC 9001 Appendix A.1 through A.5 are exact vectors, and they live
 in `test/quic_vectors.c`, which builds `bin/quic_test` over `quic_keys.c
-quic_packet.c quic_initial.c quic_retry.c aes.c gcm.c hkdf.c sha256.c
+quic_packet.c quic_initial.c quic_retry.c quic_aes.c quic_gcm.c hkdf.c sha256.c
 chacha20.c poly1305.c aead.c ct.c buf.c` under `-DCH_TRANSPORT_QUIC`. That is
 the shape `bin/sha3_test` (`Makefile:491-493`) and `bin/mlkem_test`
 (`Makefile:498-500`) already use for a mode's own sources, and `check` builds
@@ -2047,7 +2047,7 @@ before that commit.
 
 | sentence | replacement | commit |
 | --- | --- | --- |
-| `CLAUDE.md:103-104`, "AES never enters this codebase precisely to avoid tables" | the appendix text | the first AES source, `aes.[ch]` |
+| `CLAUDE.md:103-104`, "AES never enters this codebase precisely to avoid tables" | the appendix text | the first AES source, `quic_aes.[ch]` |
 | `CLAUDE.md:10-11`, "Zero heap. No malloc anywhere, ever — one static `ch_tls` session struct plus a caller-provided record buffer is the entire working set." | "Zero heap. No malloc anywhere, ever — one static session struct, `ch_tls` under `TRANSPORT=tls` and `ch_quic` under `TRANSPORT=quic`, plus one caller-provided buffer is the entire working set. The buffer holds records in a TLS build and one encryption level's CRYPTO bytes in a QUIC build." | `quic.[ch]` |
 | `CLAUDE.md:140-141`, "All parsing goes through the bounds-checked `rbuf` reader and all output bytes through the `wbuf` writer; no raw buffer arithmetic outside them." | the same sentence, then: "Header protection is the one exception, and only in `quic_packet.c`, the one file that writes a masked byte: RFC 9001 §5.4.1 XORs the first mask byte into the low four bits of byte 0 for a long header and the low five bits for a short header, and the next `pn_len` mask bytes into the packet number field, in the caller's `pkt` on the open path and in `out` on the seal path, which `quic_header_protect` and `quic_header_unprotect` do, on five mask bytes their caller computed, and nothing else does. The `pn_off + 4 + 16` length check runs before either, so the bytes they touch are inside a range already checked." | `quic_packet.[ch]` |
 | `CLAUDE.md:249-254`, "`chapulin.hpp` is an optional, header-only C++ wrapper ... `make cxx-check` compiles it against the packaged library object as part of check." | the same sentence, then: "A `TRANSPORT=quic` object exports the `ch_quic_` entries and none of the four TLS calls, so the wrapper forks with the object: `Session` sits under `#ifndef CH_TRANSPORT_QUIC` and `Quic` under `#ifdef CH_TRANSPORT_QUIC`, forwarding the QUIC entries and adding no logic either. `cxx-check` runs on both transports." | `quic.[ch]` |
@@ -2074,8 +2074,8 @@ refusals to the first and holds its state in `ch_quic`, so the commit that lands
 | INV-1, "one sealing path" (`docs/invariants.md:36-46`). Its claim is "Record protection is the only path that seals or opens bytes", its mechanism "only `record.c` calls them", and `inv-1-seal-only-in-record` implements it with `paths: exclude: [test, proof, fuzz, spec, bench, bin, examples, record.c, aead.c]` (`.semgrep/invariants.yml:99-110`). A QUIC build calls `aead_seal` and `aead_open` from `quic_packet.c`, so the claim is false and the rule fails on the first line of code | the claim becomes "Record protection is the only path that seals or opens bytes under `TRANSPORT=tls`, and packet protection is the only one under `TRANSPORT=quic`"; the mechanism names `record.c` as the TLS caller and `quic_packet.c` as the QUIC one, and adds that `quic_initial.c` and `quic_retry.c` seal and open with `gcm_seal` and `gcm_open`, which INV-26 governs and this rule does not match; the check names the amended `inv-1-seal-only-in-record`, whose exclude list becomes `[test, proof, fuzz, spec, bench, bin, examples, record.c, aead.c, quic_packet.c]` | `quic_packet.[ch]` |
 | INV-13, "no resumable errors" (`docs/invariants.md:390-400`). Its claim is "Every error kills the session: alert, wipe, dead. There is no error a caller can retry past", its mechanism "`tlsi_fail` is the single funnel", and its check the 466k-sequence run | the claim gains "under `TRANSPORT=quic` two errors leave the session live and nothing else does: `ch_quic_open`'s discard of a packet it cannot authenticate (RFC 9001 §5.5), which raises the §6.6 count and changes no key set, because `ch_quic_open` never installs an update and writes `key_set` only on a successful open, and `CH_EINVAL` from a `ch_quic_` entry, which changed nothing and may be called again"; the mechanism names `quic_fail` as the QUIC funnel beside `tlsi_fail`; the check names the QUIC sequence differential in `bin/quic_driver_test`, which asserts that no other return code leaves the session live | `quic.[ch]` for the `CH_EINVAL` half, `quic_packet.[ch]` for the discard |
 | INV-17, "secrets die at phase boundaries" (`docs/invariants.md:712-722`). Its claim is "every failure path wipes through `tlsi_wipe`" (`:714-715`) and its check "the wipe sits in the single `tlsi_fail` funnel" (`:719`). A QUIC object compiles no `session.c`, so neither function exists in it | the claim and the check name `quic_fail` under `TRANSPORT=quic` beside `tlsi_fail` under `TRANSPORT=tls`, and the claim adds that the QUIC driver wipes `hs` at `HSQ_STEP_COMPLETE`, one round trip before the TLS driver reaches the same wipe at `handshake.c:390` | `quic.[ch]` |
-| INV-22, "the server's flight arrives in one order" (`docs/invariants.md:674-708`). Its mechanism is "There is no state variable to desynchronize; the order is the call order" (`:688-689`), and its check is `handshake_sequence_test` (`:697`), which links TRUST=raw over the TLS driver (`:700`). A QUIC build stores `ch_quic.step`, so the mechanism is false there and the check covers no QUIC trace | the mechanism gains: under `TRANSPORT=quic` the order is the stored `ch_quic.step`, `hsq_advance`'s default arm, which answers `unexpected_message` for every value above `HSQ_STEP_COMPLETE`, and the step numbers that copy Lean's `State` constructor for constructor; the check names the QUIC sequence differential in `bin/quic_driver_test` against the same oracle under the transport `quic` | `handshake_step.[ch]` |
-| INV-26, new: the AES exception. "The AES exception, stated as an invariant" above holds its claim, its mechanism, its check `inv-26-aes-public-keys-only` and its violation | the whole entry, written in the shape INV-20 uses, with its **Check** field reading "Semgrep-tripwire (`inv-26-aes-public-keys-only`)" and its claim naming the `aes_` and `gcm_` prefixes the rule matches, so the claim and the check say the same thing | the first AES source, `aes.[ch]` |
+| INV-22, "the server's flight arrives in one order" (`docs/invariants.md:674-708`). Its mechanism is "There is no state variable to desynchronize; the order is the call order" (`:688-689`), and its check is `handshake_sequence_test` (`:697`), which links TRUST=raw over the TLS driver (`:700`). A QUIC build stores `ch_quic.step`, so the mechanism is false there and the check covers no QUIC trace | the mechanism gains: under `TRANSPORT=quic` the order is the stored `ch_quic.step`, `hsq_advance`'s default arm, which answers `unexpected_message` for every value above `HSQ_STEP_COMPLETE`, and the step numbers that copy Lean's `State` constructor for constructor; the check names the QUIC sequence differential in `bin/quic_driver_test` against the same oracle under the transport `quic` | `quic_step.[ch]` |
+| INV-26, new: the AES exception. "The AES exception, stated as an invariant" above holds its claim, its mechanism, its check `inv-26-aes-public-keys-only` and its violation | the whole entry, written in the shape INV-20 uses, with its **Check** field reading "Semgrep-tripwire (`inv-26-aes-public-keys-only`)" and its claim naming the `aes_` and `gcm_` prefixes the rule matches, so the claim and the check say the same thing | the first AES source, `quic_aes.[ch]` |
 
 ## What changes in `docs/decisions.md`
 
@@ -2111,7 +2111,7 @@ never enters this codebase precisely to avoid tables."):
 > their header protection (§5.4.3) and the Retry integrity tag (§5.8), and
 > every key those three use is public — derived from a printed salt and a
 > connection ID that travels in the clear, or printed in the RFC itself.
-> `aes.[ch]` and `gcm.[ch]` take a key type, `aes_public_key`, that only
+> `quic_aes.[ch]` and `quic_gcm.[ch]` take a key type, `aes_public_key`, that only
 > `quic_initial.c` and `quic_retry.c` may construct; INV-26 states the
 > rule, a Semgrep rule holds it and a `.violation` mutant proves the rule
 > fires, and both files sit in `WIDEMUL_PUBLIC`. No key from the TLS key
@@ -2140,9 +2140,9 @@ pair sits at the place "The new sources, by name" gives it, and the pairs a
 >   `mlkem.[ch]`/`mlkem_poly.[ch]` (ML-KEM-768; the KEX=pq build packages
 >   them with `sha3.[ch]`, other builds keep them test-only) ← `hkdf.[ch]`
 >   (HMAC + HKDF + TLS labels) ← `chacha20.[ch]` + `poly1305.[ch]` +
->   `aes.[ch]` (the AES-128 forward cipher of FIPS 197 and the
+>   `quic_aes.[ch]` (the AES-128 forward cipher of FIPS 197 and the
 >   `aes_public_key` type, TRANSPORT=quic; INV-26 names the three keys it
->   may see) ← `aead.[ch]` (RFC 8439 seal/open) + `gcm.[ch]`
+>   may see) ← `aead.[ch]` (RFC 8439 seal/open) + `quic_gcm.[ch]`
 >   (AEAD_AES_128_GCM and GHASH, TRANSPORT=quic) ← `x25519.[ch]` +
 >   `p256.[ch]` + `rsa.[ch]`/`rsa_mont.c` (pinned-mode verify) +
 >   `p384.[ch]`/`p384_field.[ch]` + `rsa_pkcs1.[ch]` (the chain signatures a
@@ -2156,8 +2156,8 @@ pair sits at the place "The new sources, by name" gives it, and the pairs a
 >   `record.[ch]` (record layer, TRANSPORT=tls) or `quic_keys.[ch]` (the
 >   RFC 9001 §5.1 labels and the §6.1 key update) + `quic_packet.[ch]`
 >   (§5.3 packet protection and §5.4.4 header protection) +
->   `quic_initial.[ch]` (the Initial packets, over `aes.[ch]` and
->   `gcm.[ch]`) + `quic_retry.[ch]` (the §5.8 Retry tag), TRANSPORT=quic ←
+>   `quic_initial.[ch]` (the Initial packets, over `quic_aes.[ch]` and
+>   `quic_gcm.[ch]`) + `quic_retry.[ch]` (the §5.8 Retry tag), TRANSPORT=quic ←
 >   `handshake_parser.[ch]` (message parsers) ←
 >   `handshake_record.[ch]` (record reading and message reassembly under
 >   TRANSPORT=tls, one level's ordered CRYPTO bytes reassembled into
@@ -2167,12 +2167,12 @@ pair sits at the place "The new sources, by name" gives it, and the pairs a
 >   webpki build's chain walk and hostname check) ←
 >   `handshake_flight.[ch]` (the flight handlers both transports compile) ←
 >   `handshake.[ch]` (client state machine, TRANSPORT=tls) or
->   `handshake_step.[ch]` (one step per whole handshake message,
+>   `quic_step.[ch]` (one step per whole handshake message,
 >   TRANSPORT=quic) ←
 >   `handshake_post.[ch]` (NewSessionTicket and KeyUpdate, the messages
 >   that arrive after the handshake) ← `tls.[ch]` (public API,
 >   TRANSPORT=tls) or `quic.[ch]` (public API, TRANSPORT=quic) ← demo/test
->   mains. A `TRANSPORT=quic` build compiles `handshake_step`, `quic`,
+>   mains. A `TRANSPORT=quic` build compiles `quic_step`, `quic`,
 >   `quic_keys`, `quic_packet`, `quic_initial` and `quic_retry`, with `aes`
 >   and `gcm` under the last two, in place of `io`, `record`, `session`,
 >   `handshake` and `tls`, and compiles `handshake_flight`,
