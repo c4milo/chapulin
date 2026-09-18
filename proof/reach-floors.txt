@@ -37,13 +37,26 @@
 # See https://github.com/c4milo/chapulin/issues/55.
 
 # Measured with cbmc 6.11.0, the version CI pins.
+#
+# certparse and hybrid_secret fell a tenth and three tenths on 2026-09-18
+# because their goto models grew, not because the bound entered less. Both
+# reach the same count they did at 4e9367a: certparse 89 locations, of 305
+# then and 306 now; hybrid_secret 55, of 272 then and 277 now. What each
+# gained is proved elsewhere. certparse gained parse_alpn, which
+# handshake_parser.c declares beside the certificate parser and the
+# eeparse_alpn launch line proves. hybrid_secret gained the five locations
+# of the require_pq check at handshake.c:238-247, which the harness
+# includes through handshake.c and does not enter; proof/key_share_harness.c
+# proves that comparison and six test files drive it. The counts here come
+# from each launch line's own --cover location command on arm64 macOS; the
+# percentages below are the nightly's.
 
 aead 97.4
 aead_forge 96.9
 aead_overlap 97.4
 buf 90.2
-certparse 29.2
-certparse_webpki 29.4  # local reading, cbmc 6.11.0 on arm64 macOS; replace with the nightly table's number
+certparse 29.1
+certparse_webpki 26.3
 chacha20 98.1
 ct 94.1
 drbg 84.4
@@ -58,7 +71,7 @@ epoch 36.1
 handshake_record 92.1
 hello_build 76.9
 hkdf 52.5
-hybrid_secret 20.2
+hybrid_secret 19.9
 key_share 21.9
 keysched 87.3
 p256_mul 86.7
@@ -81,7 +94,7 @@ webpki_ext 40.0  # local reading, cbmc 6.11.0 on arm64 macOS; replace with the n
 webpki_ext_one 51.4  # local reading, cbmc 6.11.0 on arm64 macOS; replace with the nightly table's number
 webpki_ext_walk 54.8  # local reading, cbmc 6.11.0 on arm64 macOS; replace with the nightly table's number
 webpki_name 24.2  # local reading, cbmc 6.11.0 on arm64 macOS; replace with the nightly table's number
-webpki_san 30.6  # local reading, cbmc 6.11.0 on arm64 macOS; replace with the nightly table's number
+webpki_san 29.8
 webpki_sigalg 41.9  # local reading, cbmc 6.11.0 on arm64 macOS; replace with the nightly table's number
 webpki_spki 41.1  # local reading, cbmc 6.11.0 on arm64 macOS; replace with the nightly table's number
 webpki_time 33.3  # local reading, cbmc 6.11.0 on arm64 macOS; replace with the nightly table's number
