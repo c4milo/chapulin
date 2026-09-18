@@ -20,7 +20,7 @@
 #define HSPD_CERTIFICATE 11
 #define HSPD_CERTIFICATE_VERIFY 15
 
-// ExtensionType values this section builds with (RFC 9846 §4.2,
+// ExtensionType values this section builds with (RFC 9846 §4.3,
 // RFC 8449 §4).
 #define HSPD_SERVER_NAME 0
 #define HSPD_SUPPORTED_GROUPS 10
@@ -120,7 +120,7 @@ static void hspd_sh_row(const hspd_sh_plan *plan, const uint8_t *body, size_t n)
     // model makes at parse time: a ServerHello with no usable key
     // share, a selected_identity outside the single index this client
     // offers, and a retry carrying no cookie — the only change a retry
-    // can ask this client for (RFC 9846 §4.1.4). Each ends the
+    // can ask this client for (RFC 9846 §4.2.4). Each ends the
     // handshake on both sides; only the layer that ends it differs, so
     // project C down to the model's boundary rather than weaken the
     // model to match the split.
@@ -161,7 +161,7 @@ static void hspd_sh_row(const hspd_sh_plan *plan, const uint8_t *body, size_t n)
     expect(cmd, want);
 }
 
-// legacy_version through legacy_compression_method (§4.1.3).
+// legacy_version through legacy_compression_method (§4.2.3).
 static void hspd_sh_prefix(wbuf *w, size_t mut, const uint8_t *random) {
     wb_u16(w, mut == 0 ? 0x0304 : 0x0303);
     wb_bytes(w, random, 32);
@@ -184,11 +184,11 @@ static void hspd_sh_version_ext(wbuf *w, size_t mut) {
     wb_u16(w, mut == 5 ? 3 : 2);
     wb_u16(w, mut == 6 ? 0x0303 : 0x0304);
     if (mut == 5) {
-        wb_u8(w, 0); // §4.2.1's selected_version is one u16, not a list
+        wb_u8(w, 0); // §4.3.1's selected_version is one u16, not a list
     }
 }
 
-// The retry branch's extensions (§4.1.4): the cookie, and the key_share
+// The retry branch's extensions (§4.2.4): the cookie, and the key_share
 // a retry may not carry.
 static void hspd_sh_retry_exts(wbuf *w, size_t mut, const uint8_t *cookie, size_t cookie_len) {
     if (mut != 7) {
@@ -197,21 +197,21 @@ static void hspd_sh_retry_exts(wbuf *w, size_t mut, const uint8_t *cookie, size_
         wb_u16(w, (uint16_t)(mut == 8 ? 0 : cookie_len));
         wb_bytes(w, cookie, cookie_len);
     }
-    if (mut == 9) { // a retry selecting the build's group is §4.1.4 illegal
+    if (mut == 9) { // a retry selecting the build's group is §4.2.4 illegal
         wb_u16(w, HSPD_KEY_SHARE);
         wb_u16(w, 2);
         wb_u16(w, CH_KEX_GROUP);
     }
-    if (mut == 16) { // §4.1.4 lists no pre_shared_key for a retry
+    if (mut == 16) { // §4.2.4 lists no pre_shared_key for a retry
         wb_u16(w, HSPD_PRE_SHARED_KEY);
         wb_u16(w, 2);
         wb_u16(w, 0);
     }
 }
 
-// The ServerHello branch's extensions (§4.1.3): the key share, and a
+// The ServerHello branch's extensions (§4.2.3): the key share, and a
 // pre_shared_key response — admissible only when the ClientHello
-// offered one (§4.2), which mut 13 defies.
+// offered one (§4.3), which mut 13 defies.
 static void hspd_sh_share_exts(wbuf *w, size_t mut, hspd_sh_plan *plan, const uint8_t *share) {
     if (mut != 10) {
         wb_u16(w, HSPD_KEY_SHARE);
@@ -285,7 +285,7 @@ static void diff_hs_server_hello(void) {
         }
         // Every row but mut 17 gives the vector the whole block. Mut 17
         // gives it supported_versions alone, so every later extension
-        // lies inside the message and outside the vector: §4.1.3 ends
+        // lies inside the message and outside the vector: §4.2.3 ends
         // the message at the vector, and a parser that walked the
         // message instead would read them all and accept.
         hspd_sh_patch_vector(&w, exts, mut == 17 ? after_version : w.len);
@@ -387,7 +387,7 @@ static void hspd_ee_alpn(wbuf *w, size_t mut, size_t pick) {
     }
 }
 
-// The EncryptedExtensions extension block (§4.3.1), with the row's one
+// The EncryptedExtensions extension block (§4.4.1), with the row's one
 // deviation written into it.
 static void hspd_ee_build(wbuf *w, size_t mut, size_t pick, int have_limit, uint16_t limit) {
     size_t exts = wb_mark(w, 2);
@@ -422,7 +422,7 @@ static void hspd_ee_build(wbuf *w, size_t mut, size_t pick, int have_limit, uint
     }
     if (mut == 8) {
         // A whole supported_groups inside the message and outside the
-        // vector. §4.3 ends the message at the vector; a parser that
+        // vector. §4.4.1 ends the message at the vector; a parser that
         // walked the message instead would read it and accept.
         wb_u16(w, HSPD_SUPPORTED_GROUPS);
         wb_u16(w, 4);

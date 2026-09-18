@@ -267,7 +267,7 @@ static int certificate_verify_case(uint16_t algorithm, size_t trailing, uint8_t 
 // CertificateVerify and reports which, and refuses every other scheme
 // the same way the other builds refuse one they did not offer, the two
 // PKCS#1 v1.5 schemes it offered for certificate signatures included
-// (RFC 9846 §4.4.3). Every accepted body is exact-fill: one trailing
+// (RFC 9846 §4.3.3). Every accepted body is exact-fill: one trailing
 // byte fails.
 static void test_certificate_verify_schemes(void) {
     uint8_t alert = 0;
@@ -337,8 +337,8 @@ static void test_server_name_acknowledgement(void) {
 #endif
 }
 
-// The extensions vector ends the message in both (RFC 9846 §4.1.3 and
-// §4.3), so an extension inside the message and outside the vector is a
+// The extensions vector ends the message in both (RFC 9846 §4.2.3 and
+// §4.4.1), so an extension inside the message and outside the vector is a
 // decode error. Each pair keeps the same bytes and moves the vector's
 // length alone: a parser that walked the message instead of the vector
 // would read every extension and accept.
@@ -364,7 +364,7 @@ static void test_extension_vector_fill(void) {
 
 // Assembles a Certificate body: an empty certificate_request_context,
 // then a certificate_list whose u24 length the caller sets and whose
-// bytes the caller sizes. RFC 9846 §4.4.2 ends the message at that
+// bytes the caller sizes. RFC 9846 §4.5.1 ends the message at that
 // vector, so declared and supplied differ only in a malformed message.
 static size_t make_certificate(uint8_t *out, size_t declared, size_t supplied) {
     wbuf w;
@@ -385,7 +385,7 @@ static int try_certificate(const uint8_t *body, size_t n, size_t *list_len) {
     return hsp_parse_certificate(body, n, &list, list_len, &alert);
 }
 
-// The certificate_list fills the Certificate message (RFC 9846 §4.4.2),
+// The certificate_list fills the Certificate message (RFC 9846 §4.5.1),
 // in both directions. The differential driver also feeds this parser a
 // trailing octet; this pair puts the boundary in `make check`, so the
 // mutant below it names a binary the fast tier builds.
@@ -440,7 +440,7 @@ int main(void) {
     CHECK(server_hello_case2(psk_trail, sizeof psk_trail, 0, 1) == CH_EPROTO);
     CHECK(server_hello_case2(cookie_exact, sizeof cookie_exact, 1, 0) == CH_OK);
     CHECK(server_hello_case2(cookie_trail, sizeof cookie_trail, 1, 0) == CH_EPROTO);
-    // §4.1.4 lists no pre_shared_key for a HelloRetryRequest: the same
+    // §4.2.4 lists no pre_shared_key for a HelloRetryRequest: the same
     // body a final ServerHello accepts (the psk_exact pair above) is
     // fatal from a retry, even with a PSK offered.
     CHECK(server_hello_case2(psk_exact, sizeof psk_exact, 1, 1) == CH_EPROTO);

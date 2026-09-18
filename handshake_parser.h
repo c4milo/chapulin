@@ -145,7 +145,7 @@ int hsp_parse_certificate(const uint8_t *body, size_t n, const uint8_t **list, s
 // CH_EAUTH with handshake_failure, as a scheme the build did not offer
 // does in the other builds. That includes SIGALG_RSA_PKCS1_SHA256 and
 // SIGALG_RSA_PKCS1_SHA384, which the ClientHello offers for certificate
-// signatures and RFC 9846 §4.4.3 forbids in CertificateVerify.
+// signatures and RFC 9846 §4.3.3 forbids in CertificateVerify.
 int hsp_parse_certificate_verify(const uint8_t *body, size_t n,
 #ifdef CH_TRUST_WEBPKI
                                  uint16_t *scheme,

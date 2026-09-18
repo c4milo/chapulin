@@ -4,7 +4,7 @@ catches: handshake_strict_webpki
 reason: the TRUST=webpki CertificateVerify parser admits rsa_pkcs1_sha256,
   which the ClientHello offers for certificate signatures only, so a
   server could sign the handshake with PKCS#1 v1.5, which RFC 9846
-  §4.4.3 forbids there. bin/handshake_strict_webpki's refused rows object.
+  §4.3.3 forbids there. bin/handshake_strict_webpki's refused rows object.
 
 --- old
     return algorithm == SIGALG_RSA_PSS_RSAE_SHA256 || algorithm == SIGALG_ECDSA_P256_SHA256 ||

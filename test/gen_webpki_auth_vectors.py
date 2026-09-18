@@ -9,7 +9,7 @@ test/webpki_auth_test.c can drive hsa_server_auth (handshake_auth.c)
 over a chain that verifies and a CertificateVerify the client must
 accept or refuse. The transcript hsa_server_auth hashes before it reads
 CertificateVerify is that one message, so the signed content of RFC 9846
-section 4.4.3 is fixed here: 64 spaces, the context string, a zero byte,
+section 4.5.2 is fixed here: 64 spaces, the context string, a zero byte,
 and SHA-256 of the Certificate message. Each row carries that hash too,
 and the test compares it against the hash it computes, so a corpus the
 generator no longer matches fails by name instead of as a signature
@@ -47,7 +47,7 @@ import webpki_corpus_mint as mint
 
 OUT = pathlib.Path(__file__).with_name("webpki_auth_vectors.h")
 
-# RFC 9846 section 4.4.3's signature schemes, as handshake_message.h
+# RFC 9846 section 4.3.3's signature schemes, as handshake_message.h
 # spells them.
 SIGALG_ECDSA_P256_SHA256 = 0x0403
 SIGALG_RSA_PSS_RSAE_SHA256 = 0x0804
@@ -65,7 +65,7 @@ SIGNERS = [
 
 
 def signed_content(message):
-    """The 130 octets of RFC 9846 section 4.4.3 over one Certificate
+    """The 130 octets of RFC 9846 section 4.5.2 over one Certificate
     message: 64 spaces, the context string, a zero byte, and the
     transcript hash, which is SHA-256 of that message alone."""
     transcript = hashlib.sha256(message).digest()
@@ -133,7 +133,7 @@ def build_rows(ossl, tmp, messages):
 
     row("rsa_pss", "aws", "rsa", SIGALG_RSA_PSS_RSAE_SHA256, good["rsa"], "ok",
         "rsa_pss: the RSA-2048 leaf signs rsa_pss_rsae_sha256, the one scheme\n"
-        "RFC 9846 section 4.4.3 leaves an RSA key.")
+        "RFC 9846 section 4.3.3 leaves an RSA key.")
     row("p256_sha256", "r2", "p256", SIGALG_ECDSA_P256_SHA256, good["p256"], "ok",
         "p256_sha256: the P-256 leaf signs ecdsa_secp256r1_sha256 over the\n"
         "SHA-256 signed content.")
@@ -169,7 +169,7 @@ HEADER = """\
 // is the whole transcript hsa_server_auth (handshake_auth.c) has hashed
 // when CertificateVerify arrives. transcript is SHA-256 of that message,
 // which test/webpki_auth_test.c recomputes and compares, and the
-// signature covers the 130 signed octets of RFC 9846 section 4.4.3 over
+// signature covers the 130 signed octets of RFC 9846 section 4.5.2 over
 // it. expected is the verdict the client must reach: "ok" or
 // "bad_signature". The test builds the refusals of the scheme rule
 // itself out of the accepted rows, because they need no signature of

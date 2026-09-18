@@ -33,7 +33,7 @@
 #endif
 
 #ifdef CH_TRUST_WEBPKI
-// The signed content of RFC 9846 §4.4.3: 64 spaces, the context string,
+// The signed content of RFC 9846 §4.5.2: 64 spaces, the context string,
 // a NUL byte, and the transcript hash. The signature scheme names the
 // hash that covers it, SHA-384 for ecdsa_secp384r1_sha384 and SHA-256
 // for the other two, while the transcript hash stays 32 bytes, because
@@ -62,7 +62,7 @@ static void hash_signed_content(uint16_t scheme, const uint8_t hash[SHA256_LEN],
 }
 
 // The one CertificateVerify scheme the leaf's key family can produce.
-// RFC 9846 §4.4.3 binds the hash to the curve for ECDSA and requires
+// RFC 9846 §4.3.3 binds the hash to the curve for ECDSA and requires
 // RSA-PSS for an RSA key, so each of the three key families the mode
 // admits names exactly one of the three schemes the build accepts.
 static uint16_t leaf_scheme(uint8_t alg) {
@@ -90,7 +90,7 @@ static int verify_leaf_signature(const webpki_leaf_info *leaf, const uint8_t *si
 }
 #endif
 
-// CertificateVerify: parse, rebuild the §4.4.3 signed content, and
+// CertificateVerify: parse, rebuild the §4.5.2 signed content, and
 // verify against pin slot A then B. The TRUST=ca and TRUST=webpki
 // builds swap in the chain's leaf key here.
 static int check_certificate_verify(handshake_state *h, const uint8_t hash[SHA256_LEN]) {
@@ -130,7 +130,7 @@ static int check_certificate_verify(handshake_state *h, const uint8_t hash[SHA25
     hash_signed_content(scheme, hash, signed_hash);
     int sig_ok = verify_leaf_signature(&h->leaf, signed_hash, sig, sig_len);
 #else
-    // Signed content per §4.4.3: 64 spaces, context string, NUL, transcript.
+    // Signed content per §4.5.2: 64 spaces, context string, NUL, transcript.
     static const char ctx[] = "TLS 1.3, server CertificateVerify";
     uint8_t pad[64];
     memset(pad, ' ', sizeof pad);

@@ -97,7 +97,7 @@ Spec.P256.ecdsaSign   : (d k z : Nat) → Option (Nat × Nat)             -- FIP
                         -- side only ever verifies.
 Spec.P256.ecdsaVerify : (pub hash : ByteArray) → (r s : Nat) → Bool    -- SEC 1 v2 §4.1.4
 Spec.HandshakeParser.parseServerHello : (kex : Kex) → (pskOffered : Bool) → (msg : ByteArray) →
-                        Except Alert ServerHelloKind                    -- RFC 9846 §4.1.3, §4.1.4.
+                        Except Alert ServerHelloKind                    -- RFC 9846 §4.2.3, §4.2.4.
                         -- Takes the whole Handshake structure of §4 (msg_type,
                         -- uint24 length, body); handshake_parser.c's entry points take the
                         -- body, so the driver frames it. kex is the Makefile's
@@ -107,7 +107,7 @@ Spec.HandshakeParser.parseServerHello : (kex : Kex) → (pskOffered : Bool) → 
                         -- 0x11EC) and the server share size (32, or 1120 —
                         -- the ML-KEM-768 ciphertext then the x25519 value).
                         -- pskOffered is handshake_parser.h's
-                        -- psk_mode: §4.2 makes a pre_shared_key response
+                        -- psk_mode: §4.3 makes a pre_shared_key response
                         -- admissible only if the ClientHello offered one, and
                         -- that is the one thing the message alone cannot settle.
                         -- Everything else the profile fixes is a byte compare
@@ -122,7 +122,7 @@ Spec.HandshakeParser.parseServerHello : (kex : Kex) → (pskOffered : Bool) → 
                         -- the C stores it in server_hello_info.group, which
                         -- the handshake copies to ch_tls.group.
 Spec.HandshakeParser.parseEncryptedExtensions : (serverNameSent : Bool) → (msg : ByteArray) →
-                        Except Alert EncryptedExtensions               -- RFC 9846 §4.3.1.
+                        Except Alert EncryptedExtensions               -- RFC 9846 §4.4.1.
                         -- serverNameSent says whether the build's
                         -- ClientHello carried server_name: TRUST=webpki's
                         -- does, and RFC 6066 §3 then admits one empty
@@ -134,13 +134,13 @@ Spec.HandshakeParser.parseEncryptedExtensions : (serverNameSent : Bool) → (msg
                         -- extension's own value; handshake_parser.c stores it less the
                         -- inner content-type octet) / `ERR ... reject`.
 Spec.HandshakeParser.parseCertificate : (msg : ByteArray) → Except Alert Certificate
-                        -- RFC 9846 §4.4.2: the empty certificate_request_context
+                        -- RFC 9846 §4.5.1: the empty certificate_request_context
                         -- then the exact-fill CertificateEntry list, whose
                         -- per-entry extensions must be ones the client offered —
                         -- none. Line op: `hs_certificate <msg>` →
                         -- `ok <entry_count> <leaf_cert_data>` / `ERR ... reject`.
 Spec.HandshakeParser.parseCertificateVerify : (offer : SignatureOffer) → (msg : ByteArray) →
-                        Except Alert CertificateVerify                 -- RFC 9846 §4.4.3:
+                        Except Alert CertificateVerify                 -- RFC 9846 §4.5.2:
                         -- one of `offer.certificateVerifyCodes`, then an
                         -- exact-fill `opaque signature<0..2^16-1>`. offer is a
                         -- pinned build's one Scheme, or the TRUST=webpki build's
@@ -149,7 +149,7 @@ Spec.HandshakeParser.parseCertificateVerify : (offer : SignatureOffer) → (msg 
                         -- length is the verifier's business, not the parser's.
                         -- Line op: `hs_certificate_verify <rsa|p256|webpki> <msg>` →
                         -- `ok <algorithm> <signature>` / `ERR ... reject`.
-Spec.HandshakeParser.verifyContent : (transcriptHash : ByteArray) → ByteArray  -- RFC 9846 §4.4.3's
+Spec.HandshakeParser.verifyContent : (transcriptHash : ByteArray) → ByteArray  -- RFC 9846 §4.5.2's
                         -- 130 signed octets: 64 spaces, the context string, a
                         -- zero, the hash. Line op: `hs_verify_content <hash>`.
 Spec.Rsa.pssVerify    : (n e : Nat) → (mHash sig : ByteArray) → Bool    -- RFC 8017 §8.1.2,
@@ -361,7 +361,7 @@ Spec.WebpkiCert.readExtensions? : (isCa : Bool) → (b : ByteArray) → (off : N
                         -- basicConstraints. Driven through `webpki_cert`.
 Spec.Webpki.verifyChain : Config → (list : ByteArray) → Verdict
                         -- the TRUST=webpki chain walk (docs/webpki.md, "The chain
-                        -- walk") over one RFC 9846 §4.4.2 CertificateEntry list:
+                        -- walk") over one RFC 9846 §4.5.1 CertificateEntry list:
                         -- readEntries? frames 1 to flightEntries (4) entries of at
                         -- most certificateMax (3072) bytes; entry 0 parses under the
                         -- leaf arm, its validity covers the clock at both ends
@@ -497,14 +497,14 @@ Each ends the handshake on both sides, except the last: the unoffered
 CertificateEntry extension is refused only in the `TRUST=ca` build,
 where `x509_verify_leaf` requires empty per-entry extensions. A pinned
 build never reads the entries — it hashes the certificate into the
-transcript and authenticates by the signature — so §4.4.2's MUST-abort
+transcript and authenticates by the signature — so §4.5.1's MUST-abort
 for that extension is unenforced there. The unread extension changes
 nothing the signature does not already cover, so the gap is by design;
 the model refuses the extension in both builds, and the driver projects
 the CA-build verdict.
 
 One more went the other way — the model bounded the CertificateVerify
-signature by the pinned key's size, which §4.4.3 does not do and
+signature by the pinned key's size, which §4.5.2 does not do and
 `handshake_parser.c` leaves to the verifier — and the model gave the check up
 rather than the driver paper over it.
 
@@ -806,7 +806,7 @@ means the module's selftest plus the differential oracle carry it;
 | --- | --- | --- |
 | Bytes | 24 | proof toolkit: fold characterizations, xor involution and left cancellation, hex injectivity, big-endian round trip and injectivity |
 | Drbg | 13 | key advance (the next key is the counter-0 block, independent of the request size), key/output disjointness within one keystream, request-prefix consistency, session key chain |
-| HandshakeParser | 9 | message-grammar soundness, quantified over both `Kex` builds: an accepted ServerHello echoes the empty legacy_session_id the profile offers and a key_exchange of exactly `kex.serverShareSize` octets (32 x25519, 1120 hybrid), and any selected_identity it reports is the single index one offered identity puts in range; a result is a HelloRetryRequest exactly when the Random is §4.1.4's fixed value; an accepted record_size_limit is at least 64 under either `serverNameSent`; an accepted CertificateVerify reports an offered scheme that is never RSASSA-PKCS1-v1_5, so a pinned build's is its own pinned SignatureScheme and the webpki build's is one of rsa_pss_rsae_sha256, ecdsa_secp256r1_sha256 and ecdsa_secp384r1_sha384 |
+| HandshakeParser | 9 | message-grammar soundness, quantified over both `Kex` builds: an accepted ServerHello echoes the empty legacy_session_id the profile offers and a key_exchange of exactly `kex.serverShareSize` octets (32 x25519, 1120 hybrid), and any selected_identity it reports is the single index one offered identity puts in range; a result is a HelloRetryRequest exactly when the Random is §4.2.4's fixed value; an accepted record_size_limit is at least 64 under either `serverNameSent`; an accepted CertificateVerify reports an offered scheme that is never RSASSA-PKCS1-v1_5, so a pinned build's is its own pinned SignatureScheme and the webpki build's is one of rsa_pss_rsae_sha256, ecdsa_secp256r1_sha256 and ecdsa_secp384r1_sha384 |
 | Handshake | 17 | state-machine safety invariants: exactly one ServerHello, EncryptedExtensions and Finished; no certificate flight under PSK; pinned flight shape and order; HRR bound; no CertificateRequest; no post-handshake message before Finished; close_notify at most once and last |
 | Record | 8 | seal/open round trip at both the AEAD and record layers, record size, nonce size, nonce injectivity (distinct sequence numbers never share a nonce), and that an accepted record never carries content type invalid(0) |
 | ChaCha | 5 | block size, structural lemmas, keystream prefix stability; keystream itself vector-checked |

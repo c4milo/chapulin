@@ -9,7 +9,7 @@ hostname matcher of `Spec.WebpkiName` and the signature verifier of
 `Spec.WebpkiSigalg`.
 
 `verifyChain` takes a configuration — the anchors, the reference
-hostname and the clock as a packed date — and one RFC 9846 §4.4.2
+hostname and the clock as a packed date — and one RFC 9846 §4.5.1
 CertificateEntry list, and answers one of five verdicts. The four
 refusals are exactly the four the C's return code and alert tell apart,
 so the differential compares them:

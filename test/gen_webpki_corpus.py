@@ -7,7 +7,7 @@ Two tables come out, as docs/webpki.md's "Verification" section lays
 them out. The minted corpus mirrors the four captured shapes and takes
 one rule per negative row; the captures under test/webpki_captures/
 carry the real extension bulk. The generator renders both into the
-exact RFC 9846 section 4.4.2 Certificate message bytes.
+exact RFC 9846 section 4.5.1 Certificate message bytes.
 
 Fixed inputs keep the header stable between runs: the keys under
 test/webpki_corpus/keys/ (webpki_corpus_mint.py mints each once, and
@@ -163,7 +163,7 @@ CERTS = [
     ("leaf_r2_under_not_ca", "leaf_p256", "/CN=" + HOST, "int_r2_p256_not_ca", leaf_ext(), "sha256"),
     ("leaf_r2_under_alias", "leaf_p256", "/CN=" + HOST, "int_r2_p256_alias", leaf_ext(), "sha256"),
     # Last, so every serial above keeps the value it had. The only P-384
-    # leaf key in the corpus: RFC 9846 section 4.4.3 binds that key to
+    # leaf key in the corpus: RFC 9846 section 4.5.2 binds that key to
     # ecdsa_secp384r1_sha384, the one CertificateVerify scheme whose
     # signed content this client hashes with SHA-384.
     ("leaf_r2_p384", "leaf_p384", "/CN=" + HOST, "int_r2_p256", leaf_ext(), "sha256"),

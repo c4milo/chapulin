@@ -8,10 +8,10 @@
 #include "diff_handshake_parser.h"
 
 // The certificate_request_context and the CertificateEntry list
-// (§4.4.2), with the row's one deviation written into them.
+// (§4.5.1), with the row's one deviation written into them.
 static void hspd_cert_build(wbuf *w, size_t mut, size_t entries, const uint8_t *leaf,
                             size_t leaf_len) {
-    if (mut == 1) { // §4.4.2: the client's context is empty
+    if (mut == 1) { // §4.5.1: the client's context is empty
         wb_u8(w, 2);
         wb_u16(w, 0);
     } else {
@@ -62,7 +62,7 @@ static void diff_hs_certificate(void) {
             // Framing the C parser decides for itself — an empty list,
             // a nonempty certificate_request_context, a trailing octet
             // — plus mut 2, an entry extension the client never
-            // offered: §4.4.2 makes it an unsupported_extension, but
+            // offered: §4.5.1 makes it an unsupported_extension, but
             // hsp_parse_certificate hands the list on without reading
             // the entries, so that one refusal lives a layer up. The CA
             // build makes it in x509_verify_leaf (empty per-entry
@@ -122,7 +122,7 @@ static uint16_t hspd_cv_algorithm(size_t mut) {
 
 static void diff_hs_certificate_verify(void) {
     // The build's offer: the model takes its name so both narrow the same
-    // way (RFC 9846 §4.4.3) — the pinned build's one scheme, or webpki.
+    // way (RFC 9846 §4.5.2) — the pinned build's one scheme, or webpki.
 #ifdef CH_TRUST_WEBPKI
     const char *scheme = "webpki";
 #elif CH_PIN_SIGALG == SIGALG_ECDSA_P256_SHA256

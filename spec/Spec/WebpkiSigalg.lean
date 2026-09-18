@@ -23,7 +23,7 @@ byte strings.
 content is `tbs` — with the hash the algorithm names, then checks the
 signature with `Spec.RsaPkcs1`, `Spec.P256` or `Spec.P384`. A
 certificate signature carries no binding between the digest length and
-the curve (RFC 9846 §4.4.3 binds them for CertificateVerify only), so
+the curve (RFC 9846 §4.3.3 binds them for CertificateVerify only), so
 the message hash an ECDSA check takes is FIPS 186-4 §6.4's leftmost
 `min(N, outlen)` bits of the digest, `N` the bit length of the curve's
 order, written here as an integer (`leftmostBits`). The C writes the

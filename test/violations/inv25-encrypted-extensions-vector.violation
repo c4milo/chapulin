@@ -4,7 +4,7 @@ catches: handshake_strict_test
 builds: bin/handshake_strict_test
 reason: hsp_parse_encrypted_exts walks the message body instead of the
   extensions vector, so an extension the vector's length leaves out is
-  still read and acted on. RFC 9846 §4.3 ends the message at the vector.
+  still read and acted on. RFC 9846 §4.4.1 ends the message at the vector.
   test/handshake_strict_test.c's vector pair objects.
 
 --- old

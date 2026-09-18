@@ -2,7 +2,7 @@
 // walk (webpki_ext.c) over every certificate the corpus header carries
 // and over hand-built mutants of one minted certificate.
 //
-// The corpus half reads each row's RFC 9846 §4.4.2 Certificate message
+// The corpus half reads each row's RFC 9846 §4.5.1 Certificate message
 // and parses every entry, the leaf with is_ca = 0 and each later entry
 // with is_ca = 1. A row whose rule belongs to this parser must fail at
 // its one broken entry with ALERT_UNSUPPORTED_CERTIFICATE, and every

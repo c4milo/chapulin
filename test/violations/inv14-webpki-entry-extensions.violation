@@ -4,7 +4,7 @@ catches: webpki_chain_test
 reason: read_entries accepts a non-empty per-entry extensions vector, so
   a CertificateEntry extension this client never offered — a
   status_request or signed_certificate_timestamp reply — is read past
-  instead of refused with unsupported_extension, against RFC 9846 §4.2
+  instead of refused with unsupported_extension, against RFC 9846 §4.3
   (docs/webpki.md, "Decisions"). The list framing test, which sets the
   vector on the leaf's entry and on a trailing one, objects.
 

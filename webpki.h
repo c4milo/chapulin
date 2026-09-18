@@ -97,7 +97,7 @@ typedef struct {
 // reused before CertificateVerify arrives. alg picks the
 // CertificateVerify scheme: rsa_pss_rsae_sha256 for an RSA key,
 // ecdsa_secp256r1_sha256 for P-256, ecdsa_secp384r1_sha384 for P-384
-// (RFC 9846 §4.4.3 binds the hash to the curve there, and only there).
+// (RFC 9846 §4.3.3 binds the hash to the curve there, and only there).
 typedef struct {
     uint8_t alg; // WEBPKI_KEY_*
     uint8_t key[CH_WEBPKI_KEY_MAX];
@@ -117,7 +117,7 @@ typedef struct {
 //   or an Extension over CH_WEBPKI_EXT_TLV_MAX, more than
 //   CH_WEBPKI_FLIGHT_ENTRIES entries             -> ALERT_BAD_CERTIFICATE, CH_EPROTO
 //   a non-empty per-entry extensions vector, on
-//   any entry (RFC 9846 §4.2: this client offered
+//   any entry (RFC 9846 §4.3: this client offered
 //   no extension a CertificateEntry answers)     -> ALERT_UNSUPPORTED_EXTENSION, CH_EPROTO
 //   a recognized off-profile fact: an algorithm or key the mode
 //   refuses, an unknown critical or duplicate extension, a leaf

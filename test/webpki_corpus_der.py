@@ -1,4 +1,4 @@
-"""DER reading and RFC 9846 section 4.4.2 rendering for gen_webpki_corpus.py.
+"""DER reading and RFC 9846 section 4.5.1 rendering for gen_webpki_corpus.py.
 
 The reader is the small subset the corpus needs: a TLV walk over one
 X.509 certificate that finds the subject Name, the SubjectPublicKeyInfo
@@ -104,7 +104,7 @@ def extension_measurements(cert):
 
 
 def certificate_message(entries):
-    """The RFC 9846 section 4.4.2 Certificate handshake message: msg_type
+    """The RFC 9846 section 4.5.1 Certificate handshake message: msg_type
     11, a 24-bit length, an empty certificate_request_context, and one
     CertificateEntry per DER certificate with an empty extensions vector."""
     body = b"".join(len(e).to_bytes(3, "big") + e + b"\x00\x00" for e in entries)

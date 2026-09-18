@@ -34,7 +34,7 @@ typedef struct {
     size_t count;
 } certificate_list;
 
-// The CertificateEntry list of RFC 9846 §4.4.2: each entry is a u24
+// The CertificateEntry list of RFC 9846 §4.5.1: each entry is a u24
 // certificate length, that many bytes, and a u16 extensions vector.
 // Returns CH_OK when the list holds 1 to CH_WEBPKI_FLIGHT_ENTRIES
 // entries of at most CH_WEBPKI_CERT_MAX bytes each, every extensions
@@ -44,7 +44,7 @@ typedef struct {
 // The framing of every entry is read, the trailing ones included, so a
 // CertificateEntry extension is refused wherever it sits: this client
 // offers no extension a CertificateEntry could answer, and RFC 9846
-// §4.2 names unsupported_extension for a reply to an extension the
+// §4.3 names unsupported_extension for a reply to an extension the
 // peer never sent (docs/webpki.md, "Decisions").
 static int read_entries(const uint8_t *list, size_t list_len, certificate_list *out,
                         uint8_t *alert) {

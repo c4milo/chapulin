@@ -4,9 +4,9 @@ import Spec.Sha256
 /-!
 The server-to-client handshake message grammar of RFC 9846 §4, written
 from the RFC text as an executable oracle. Four messages reach this
-client after its ClientHello: ServerHello (§4.1.3, which §4.1.4 also
-uses for a HelloRetryRequest), EncryptedExtensions (§4.3.1),
-Certificate (§4.4.2), and CertificateVerify (§4.4.3).
+client after its ClientHello: ServerHello (§4.2.3, which §4.2.4 also
+uses for a HelloRetryRequest), EncryptedExtensions (§4.4.1),
+Certificate (§4.5.1), and CertificateVerify (§4.5.2).
 
 Each parser takes one complete Handshake structure — `msg_type`, the
 `uint24 length`, and the body those two frame (§4) — and either
@@ -53,7 +53,7 @@ inductive Alert
   value is not acceptable, or is inconsistent with another field. -/
   | illegalParameter
   /-- unsupported_extension(110): the message carried an extension
-  response the client never requested (§4.2). -/
+  response the client never requested (§4.3). -/
   | unsupportedExtension
   /-- missing_extension(109): an extension §9.2 requires for the
   features in play is absent. -/
@@ -67,7 +67,7 @@ deriving BEq, DecidableEq
 /-! ## Message and extension code points -/
 
 /-- HandshakeType server_hello(2) (RFC 9846 §4). A HelloRetryRequest
-uses this same type; §4.1.4 tells the two apart by the Random. -/
+uses this same type; §4.2.4 tells the two apart by the Random. -/
 def serverHelloType : Nat := 2
 
 /-- HandshakeType encrypted_extensions(8) (RFC 9846 §4). -/
@@ -82,7 +82,7 @@ def certificateVerifyType : Nat := 15
 /-- ExtensionType server_name(0) (RFC 6066 §3). -/
 def extServerName : Nat := 0
 
-/-- ExtensionType supported_groups(10) (RFC 9846 §4.2.7). -/
+/-- ExtensionType supported_groups(10) (RFC 9846 §4.3.7). -/
 def extSupportedGroups : Nat := 10
 
 /-- ExtensionType application_layer_protocol_negotiation(16)
@@ -92,25 +92,25 @@ def extAlpn : Nat := 16
 /-- ExtensionType record_size_limit(28) (RFC 8449 §4). -/
 def extRecordSizeLimit : Nat := 28
 
-/-- ExtensionType pre_shared_key(41) (RFC 9846 §4.2.11). -/
+/-- ExtensionType pre_shared_key(41) (RFC 9846 §4.3.11). -/
 def extPreSharedKey : Nat := 41
 
-/-- ExtensionType early_data(42) (RFC 9846 §4.2.10). -/
+/-- ExtensionType early_data(42) (RFC 9846 §4.3.10). -/
 def extEarlyData : Nat := 42
 
-/-- ExtensionType supported_versions(43) (RFC 9846 §4.2.1). -/
+/-- ExtensionType supported_versions(43) (RFC 9846 §4.3.1). -/
 def extSupportedVersions : Nat := 43
 
-/-- ExtensionType cookie(44) (RFC 9846 §4.2.2). -/
+/-- ExtensionType cookie(44) (RFC 9846 §4.3.2). -/
 def extCookie : Nat := 44
 
-/-- ExtensionType key_share(51) (RFC 9846 §4.2.8). -/
+/-- ExtensionType key_share(51) (RFC 9846 §4.3.8). -/
 def extKeyShare : Nat := 51
 
 /--
-Every ExtensionType RFC 9846 §4.2 defines, together with RFC 8449's
+Every ExtensionType RFC 9846 §4.3 defines, together with RFC 8449's
 record_size_limit(28) and RFC 7250's certificate-type pair (19, 20).
-"Recognized" in §4.2's sense is a property of the implementation, and
+"Recognized" in §4.3's sense is a property of the implementation, and
 for this client it is exactly this list: the code points the profile
 knows about, whether or not it offers them.
 -/
@@ -124,20 +124,20 @@ def knownExtension (t : Nat) : Bool :=
 (RFC 9846 appendix B.4). The profile offers this one and no other. -/
 def cipherSuite : Nat := 0x1303
 
-/-- NamedGroup x25519(0x001D) (RFC 9846 §4.2.7): the KEX=x25519
+/-- NamedGroup x25519(0x001D) (RFC 9846 §4.3.7): the KEX=x25519
 build's one group. `Kex` below names both builds' groups. -/
 def x25519Group : Nat := 0x001d
 
 /-- ProtocolVersion 0x0304, the value a TLS 1.3 server puts in the
-ServerHello's supported_versions (RFC 9846 §4.2.1). -/
+ServerHello's supported_versions (RFC 9846 §4.3.1). -/
 def tls13Version : Nat := 0x0304
 
-/-- ProtocolVersion 0x0303 ("TLS 1.2"), the value §4.1.3 freezes into
+/-- ProtocolVersion 0x0303 ("TLS 1.2"), the value §4.2.3 freezes into
 the ServerHello's `legacy_version` field. The real version moves to
 supported_versions; this one is a constant on the wire. -/
 def legacyVersion : Nat := 0x0303
 
-/-- The x25519 public value is 32 bytes (RFC 9846 §4.2.8.2, RFC 7748
+/-- The x25519 public value is 32 bytes (RFC 9846 §4.3.8.2, RFC 7748
 §5). -/
 def x25519KeySize : Nat := 32
 
@@ -146,17 +146,17 @@ The one NamedGroup the build offers. `CLAUDE.md` fixes it at build time
 through the Makefile's KEX variable, the way PIN fixes `Scheme`, so
 exactly one of these is live in a library object. The client offers its
 build's group and no other, so a ServerHello selecting anything else is
-a group the client did not offer (RFC 9846 §4.2.8).
+a group the client did not offer (RFC 9846 §4.3.8).
 -/
 inductive Kex
-  /-- x25519(0x001D) (RFC 9846 §4.2.7). -/
+  /-- x25519(0x001D) (RFC 9846 §4.3.7). -/
   | x25519
   /-- X25519MLKEM768(0x11EC), the ML-KEM-768 + x25519 hybrid
   (RFC 10024). -/
   | pq
 deriving BEq
 
-/-- The build's NamedGroup code point (RFC 9846 §4.2.7 for x25519,
+/-- The build's NamedGroup code point (RFC 9846 §4.3.7 for x25519,
 RFC 10024 for X25519MLKEM768). -/
 def Kex.code : Kex → Nat
   | .x25519 => x25519Group
@@ -164,7 +164,7 @@ def Kex.code : Kex → Nat
 
 /--
 The octet count of the build's server key_exchange value (RFC 9846
-§4.2.8): the 32-octet x25519 public value (§4.2.8.2), or RFC 10024's
+§4.3.8): the 32-octet x25519 public value (§4.3.8.2), or RFC 10024's
 hybrid share — the 1088-octet ML-KEM-768 ciphertext then the 32-octet
 x25519 public value, ML-KEM first despite the group's name.
 -/
@@ -180,7 +180,7 @@ def kexOf? : String → Option Kex
   | _ => none
 
 /--
-RFC 9846 §4.1.4: the Random of a HelloRetryRequest is this fixed
+RFC 9846 §4.2.4: the Random of a HelloRetryRequest is this fixed
 value, the SHA-256 of the string "HelloRetryRequest". A ServerHello
 carrying it is a HelloRetryRequest and nothing else; `selftest` pins
 both the literal and the hash identity.
@@ -262,7 +262,7 @@ def messageBody (msg : ByteArray) (msgType : Nat) : Except Alert ByteArray := do
 /-! ## The extension block -/
 
 /--
-RFC 9846 §4.2: `struct { ExtensionType extension_type; opaque
+RFC 9846 §4.3: `struct { ExtensionType extension_type; opaque
 extension_data<0..2^16-1>; } Extension`, repeated until the block ends.
 `fuel` bounds the walk; every extension costs at least four octets, so
 the block's own size is fuel enough.
@@ -284,8 +284,8 @@ def hasDuplicate : List Nat → Bool
 
 /--
 The whole extension block as `(type, data)` pairs, in the order they
-appear. The block must end exactly where its length says (§4.2's
-vector framing, decode_error), and RFC 9846 §4.2 allows at most one
+appear. The block must end exactly where its length says (§4.3's
+vector framing, decode_error), and RFC 9846 §4.3 allows at most one
 extension of each type: "an endpoint that receives multiple extensions
 of the same type MUST abort the handshake with an illegal_parameter
 alert".
@@ -309,7 +309,7 @@ def requiredExtension (exts : List (Nat × ByteArray)) (t : Nat) (alert : Alert)
   | none => .error alert
 
 /--
-RFC 9846 §4.2 gives two rules for an extension that has no business in
+RFC 9846 §4.3 gives two rules for an extension that has no business in
 the message carrying it: an extension "which it recognizes and which is
 not specified for the message in which it appears" is an
 illegal_parameter, and a response the endpoint "did not send the
@@ -328,79 +328,79 @@ def ensureAllowed (allowed : List Nat) (alertFor : Nat → Alert)
   | some (t, _) => .error (alertFor t)
   | none => .ok ()
 
-/-! ## ServerHello and HelloRetryRequest (RFC 9846 §4.1.3, §4.1.4) -/
+/-! ## ServerHello and HelloRetryRequest (RFC 9846 §4.2.3, §4.2.4) -/
 
 /-- The ServerHello fields that precede the extension block, plus the
-block itself. §4.1.4 gives a HelloRetryRequest this same layout, so
+block itself. §4.2.4 gives a HelloRetryRequest this same layout, so
 both are read through here first. -/
 structure ServerHelloPrefix where
-  /-- Random: 32 octets (§4.1.3). -/
+  /-- Random: 32 octets (§4.2.3). -/
   random : ByteArray
-  /-- legacy_session_id_echo<0..32> (§4.1.3). -/
+  /-- legacy_session_id_echo<0..32> (§4.2.3). -/
   sessionIdEcho : ByteArray
   /-- extensions<6..2^16-1>, already split into typed pairs. -/
   extensions : List (Nat × ByteArray)
 
-/-- What an accepted ServerHello hands the client (RFC 9846 §4.1.3). -/
+/-- What an accepted ServerHello hands the client (RFC 9846 §4.2.3). -/
 structure ServerHello where
   /-- The echoed legacy_session_id, for the caller to compare against
-  the one it sent (§4.1.3). -/
+  the one it sent (§4.2.3). -/
   sessionIdEcho : ByteArray
-  /-- The NamedGroup the key_share selected (§4.2.8). `readKeyShare`
+  /-- The NamedGroup the key_share selected (§4.3.8). `readKeyShare`
   accepts the build's `Kex.code` and no other, but the value here is
   read from the message, as the C reads `ch_tls.group` from the wire,
   so `parseServerHello_sound` states the equality instead of assuming
   it. -/
   group : Nat
-  /-- The server's key_exchange value from key_share (§4.2.8): the
+  /-- The server's key_exchange value from key_share (§4.3.8): the
   x25519 public value, or the hybrid build's ML-KEM-768 ciphertext
   then x25519 public value (RFC 10024). -/
   keyExchange : ByteArray
   /-- pre_shared_key's selected_identity, absent when the server did
-  not accept a PSK (§4.2.11). -/
+  not accept a PSK (§4.3.11). -/
   selectedIdentity : Option Nat
 
 /-- What an accepted HelloRetryRequest hands the client
-(RFC 9846 §4.1.4). -/
+(RFC 9846 §4.2.4). -/
 structure HelloRetryRequest where
-  /-- The echoed legacy_session_id (§4.1.3). -/
+  /-- The echoed legacy_session_id (§4.2.3). -/
   sessionIdEcho : ByteArray
-  /-- The cookie the second ClientHello must carry back (§4.2.2). -/
+  /-- The cookie the second ClientHello must carry back (§4.3.2). -/
   cookie : ByteArray
 
-/-- A ServerHello is one of two messages, and RFC 9846 §4.1.4 makes
+/-- A ServerHello is one of two messages, and RFC 9846 §4.2.4 makes
 the Random the only thing that tells them apart. -/
 inductive ServerHelloKind
-  /-- The server's half of the key exchange (§4.1.3). -/
+  /-- The server's half of the key exchange (§4.2.3). -/
   | serverHello (fields : ServerHello)
-  /-- A retry request: same format, special Random (§4.1.4). -/
+  /-- A retry request: same format, special Random (§4.2.4). -/
   | helloRetryRequest (fields : HelloRetryRequest)
 
-/-- The extension types RFC 9846 §4.2 specifies for a ServerHello.
+/-- The extension types RFC 9846 §4.3 specifies for a ServerHello.
 Nothing else may appear in one. -/
 def serverHelloExtensions : List Nat := [extPreSharedKey, extSupportedVersions, extKeyShare]
 
-/-- The extension types RFC 9846 §4.2 specifies for a
+/-- The extension types RFC 9846 §4.3 specifies for a
 HelloRetryRequest. -/
 def helloRetryRequestExtensions : List Nat :=
   [extSupportedVersions, extCookie, extKeyShare]
 
 /--
-RFC 9846 §4.1.3, read down the struct:
+RFC 9846 §4.2.3, read down the struct:
 
-* `legacy_version` is 0x0303 exactly. §4.1.3 freezes the field at that
-  value and §4.2.1's real version moves to supported_versions, so
+* `legacy_version` is 0x0303 exactly. §4.2.3 freezes the field at that
+  value and §4.3.1's real version moves to supported_versions, so
   any other legacy_version is an illegal_parameter;
-* `random` is 32 octets, handed on for the §4.1.4 comparison;
+* `random` is 32 octets, handed on for the §4.2.4 comparison;
 * `legacy_session_id_echo<0..32>`: a longer echo is a field out of the
   specified range, decode_error (§6.2). Whether it matches the
-  ClientHello's is the caller's check — §4.1.3 makes a mismatch an
+  ClientHello's is the caller's check — §4.2.3 makes a mismatch an
   illegal_parameter, but this parser sees one message and not the
   ClientHello that preceded it, so the echo travels out in the fields;
 * `cipher_suite`: profile — the client offers
-  TLS_CHACHA20_POLY1305_SHA256 alone, and §4.1.3 makes a suite that
+  TLS_CHACHA20_POLY1305_SHA256 alone, and §4.2.3 makes a suite that
   was not offered an illegal_parameter;
-* `legacy_compression_method`: profile — no compression, and §4.1.3
+* `legacy_compression_method`: profile — no compression, and §4.2.3
   fixes the value at 0 with an illegal_parameter for anything else;
 * `extensions<6..2^16-1>`: the block ends the message, and a block
   under six octets cannot hold even one extension, so it is out of the
@@ -408,14 +408,14 @@ RFC 9846 §4.1.3, read down the struct:
 -/
 def serverHelloPrefix (msg : ByteArray) : Except Alert ServerHelloPrefix := do
   let body ← messageBody msg serverHelloType
-  -- §4.1.3: legacy_version "MUST be set to 0x0303"; a client that sees
+  -- §4.2.3: legacy_version "MUST be set to 0x0303"; a client that sees
   -- any other value MUST abort with illegal_parameter.
   let legacy ← u16At body 0
   ensure (legacy = legacyVersion) .illegalParameter
   let random ← bytesAt body 2 32
   let (sessionIdEcho, off) ← vec8At body 34
   ensure (sessionIdEcho.size ≤ 32) .decodeError
-  -- §4.1.3: legacy_session_id_echo is "the contents of the client's
+  -- §4.2.3: legacy_session_id_echo is "the contents of the client's
   -- legacy_session_id field", and a client that receives any other
   -- value MUST abort with illegal_parameter. This profile needs no
   -- middlebox compatibility, so handshake_message.c sends the field empty and the
@@ -434,13 +434,13 @@ def serverHelloPrefix (msg : ByteArray) : Except Alert ServerHelloPrefix := do
   return { random, sessionIdEcho, extensions }
 
 /--
-RFC 9846 §4.2.1: in a ServerHello or HelloRetryRequest the
+RFC 9846 §4.3.1: in a ServerHello or HelloRetryRequest the
 supported_versions extension_data is one `ProtocolVersion
 selected_version`, not a list, so any length but two is out of the
 specified range (§6.2). §9.2 makes the extension required in both
 messages, and its absence a missing_extension. A version "not offered
 by the client or ... prior to TLS 1.3" is an illegal_parameter
-(§4.2.1); the profile offers TLS 1.3 alone, so 0x0304 is the only
+(§4.3.1); the profile offers TLS 1.3 alone, so 0x0304 is the only
 value that passes.
 -/
 def checkSelectedVersion (exts : List (Nat × ByteArray)) : Except Alert Unit := do
@@ -449,10 +449,10 @@ def checkSelectedVersion (exts : List (Nat × ByteArray)) : Except Alert Unit :=
   ensure (bytesToNatBE data = tls13Version) .illegalParameter
 
 /--
-RFC 9846 §4.2.11: pre_shared_key in a ServerHello is `uint16
+RFC 9846 §4.3.11: pre_shared_key in a ServerHello is `uint16
 selected_identity`, two octets and no more, present only when the
 server accepted the PSK. Profile: the client offers exactly one
-identity, so the only index in range is 0, and §4.2.11 makes an
+identity, so the only index in range is 0, and §4.3.11 makes an
 out-of-range selected_identity an illegal_parameter. Whether the
 extension may appear at all is `serverHelloFields`' business: it turns
 on what the ClientHello offered, which this reader is not told.
@@ -467,7 +467,7 @@ def readSelectedIdentity? (exts : List (Nat × ByteArray)) : Except Alert (Optio
     return some identity
 
 /--
-RFC 9846 §4.2.8: key_share in a ServerHello is `KeyShareServerHello`,
+RFC 9846 §4.3.8: key_share in a ServerHello is `KeyShareServerHello`,
 one `KeyShareEntry` — `NamedGroup group` then `opaque
 key_exchange<1..2^16-1>` — filling the extension exactly. §9.2 requires
 the extension "for DHE or ECDHE key exchange", which both of the
@@ -475,9 +475,9 @@ profile's auth modes use (the PSK mode is psk_dhe_ke), so its absence
 is a missing_extension.
 
 Profile: the build's `Kex` group is the only one offered, and a group
-the client did not offer is an illegal_parameter (§4.2.8); the
+the client did not offer is an illegal_parameter (§4.3.8); the
 key_exchange value is `kex.serverShareSize` octets — 32 for an x25519
-public value (§4.2.8.2), 1120 for the hybrid's ciphertext-then-public
+public value (§4.3.8.2), 1120 for the hybrid's ciphertext-then-public
 share (RFC 10024) — so any other length is out of the specified range.
 Whether the x25519 value is a low-order point is not decided here:
 §7.4.2 puts that check on the computed shared secret, after the key
@@ -498,8 +498,8 @@ def readKeyShare (kex : Kex) (exts : List (Nat × ByteArray)) :
   return (group, keyExchange)
 
 /--
-The ServerHello branch (RFC 9846 §4.1.3): only the three extensions
-§4.2 specifies for a ServerHello may appear, a pre_shared_key response
+The ServerHello branch (RFC 9846 §4.2.3): only the three extensions
+§4.3 specifies for a ServerHello may appear, a pre_shared_key response
 only when the ClientHello offered one, the key share is read and
 narrowed to the build's one group, and the PSK identity comes back
 when the server accepted one.
@@ -507,7 +507,7 @@ when the server accepted one.
 def serverHelloFields (kex : Kex) (pskOffered : Bool) (p : ServerHelloPrefix) :
     Except Alert ServerHello := do
   ensureAllowed serverHelloExtensions wrongMessageAlert p.extensions
-  -- RFC 9846 §4.2: a server MUST NOT send an extension response the
+  -- RFC 9846 §4.3: a server MUST NOT send an extension response the
   -- client did not request, and a client that receives one MUST abort
   -- with unsupported_extension. `pre_shared_key` is the one response
   -- whose admissibility depends on what the ClientHello offered, so it
@@ -518,21 +518,21 @@ def serverHelloFields (kex : Kex) (pskOffered : Bool) (p : ServerHelloPrefix) :
   return { sessionIdEcho := p.sessionIdEcho, group, keyExchange, selectedIdentity }
 
 /--
-The HelloRetryRequest branch (RFC 9846 §4.1.4).
+The HelloRetryRequest branch (RFC 9846 §4.2.4).
 
-* only the three §4.2 HelloRetryRequest extensions may appear;
+* only the three §4.3 HelloRetryRequest extensions may appear;
 * key_share here is `NamedGroup selected_group`, two octets and no
-  key (§4.2.8) — and the profile rejects every one of them. The client
+  key (§4.3.8) — and the profile rejects every one of them. The client
   offers a key share for its build's one group and for nothing else,
   so a retry selecting that group "would not result in any change in
-  the ClientHello", which §4.1.4 makes an illegal_parameter, and a
+  the ClientHello", which §4.2.4 makes an illegal_parameter, and a
   retry selecting any other group asks for one the client did not
-  offer, which §4.2.8 makes an illegal_parameter too;
+  offer, which §4.3.8 makes an illegal_parameter too;
 * cookie is therefore required: it is the only change a retry can ask
-  this client for, and a retry that asks for no change is §4.1.4's
+  this client for, and a retry that asks for no change is §4.2.4's
   illegal_parameter. It is not a §9.2 required extension, so its
   absence is not a missing_extension;
-* `struct { opaque cookie<1..2^16-1>; }` (§4.2.2) fills the extension
+* `struct { opaque cookie<1..2^16-1>; }` (§4.3.2) fills the extension
   exactly, and an empty cookie is out of the specified range.
 -/
 def helloRetryRequestFields (p : ServerHelloPrefix) : Except Alert HelloRetryRequest := do
@@ -545,13 +545,13 @@ def helloRetryRequestFields (p : ServerHelloPrefix) : Except Alert HelloRetryReq
   return { sessionIdEcho := p.sessionIdEcho, cookie }
 
 /--
-RFC 9846 §4.1.3 and §4.1.4: one message type, two meanings. The shared
-prefix is read first, then §4.2.1's "clients MUST check for this
+RFC 9846 §4.2.3 and §4.2.4: one message type, two meanings. The shared
+prefix is read first, then §4.3.1's "clients MUST check for this
 extension prior to processing the rest of the ServerHello" puts the
 selected version next, and only then does the Random decide which
 message this is.
 
-The §4.1.3 downgrade sentinels are deliberately absent: the RFC scopes
+The §4.2.3 downgrade sentinels are deliberately absent: the RFC scopes
 that check to "TLS 1.3 clients receiving a ServerHello indicating TLS
 1.2 or below", and `checkSelectedVersion` has already refused every
 such message, so no accepted message can reach the check.
@@ -565,7 +565,7 @@ def parseServerHello (kex : Kex) (pskOffered : Bool) (msg : ByteArray) :
   else
     return .serverHello (← serverHelloFields kex pskOffered p)
 
-/-! ## EncryptedExtensions (RFC 9846 §4.3.1) -/
+/-! ## EncryptedExtensions (RFC 9846 §4.4.1) -/
 
 /-- What an accepted EncryptedExtensions hands the client. -/
 structure EncryptedExtensions where
@@ -578,7 +578,7 @@ structure EncryptedExtensions where
 
 /--
 The extension types this profile admits in EncryptedExtensions:
-supported_groups (RFC 9846 §4.2.7) and record_size_limit (RFC 8449 §4),
+supported_groups (RFC 9846 §4.3.7) and record_size_limit (RFC 8449 §4),
 which `CLAUDE.md` says the client always sends, the server_name
 acknowledgement (RFC 6066 §3) when `serverNameSent` says the ClientHello
 carried server_name, and the ALPN selection (RFC 7301 §3.2) when
@@ -592,16 +592,16 @@ def encryptedExtensionsAllowed (serverNameSent : Bool) (alpnOffered : List ByteA
     [extSupportedGroups, extRecordSizeLimit]
 
 /--
-Extension types RFC 9846 §4.2 permits in EncryptedExtensions that this
+Extension types RFC 9846 §4.3 permits in EncryptedExtensions that this
 client never requests: server_name(0) when `serverNameSent` is false —
 the ClientHello carried no SNI, so a server_name acknowledgement is a
 response to a request that never went out —
 application_layer_protocol_negotiation(16) when `alpnOffered` is empty,
 for the same reason, max_fragment_length(1), use_srtp(14),
 heartbeat(15), the RFC 7250 certificate-type pair (19, 20), and
-early_data(42) — the profile has no 0-RTT and no raw public keys. §4.2
+early_data(42) — the profile has no 0-RTT and no raw public keys. §4.3
 makes an unrequested response an unsupported_extension, which is a
-different refusal from §4.3.1's illegal_parameter for an extension that
+different refusal from §4.4.1's illegal_parameter for an extension that
 has no business in this message at all.
 -/
 def encryptedExtensionsUnrequested (serverNameSent : Bool) (alpnOffered : List ByteArray) :
@@ -611,7 +611,7 @@ def encryptedExtensionsUnrequested (serverNameSent : Bool) (alpnOffered : List B
 
 /-- The alert an extension that does not belong in EncryptedExtensions
 earns: unsupported_extension when the RFC allows it here but the client
-never asked for it (§4.2), and otherwise §4.3.1's illegal_parameter for
+never asked for it (§4.3), and otherwise §4.4.1's illegal_parameter for
 a forbidden extension, through `wrongMessageAlert`. -/
 def encryptedExtensionsAlert (serverNameSent : Bool) (alpnOffered : List ByteArray) (t : Nat) :
     Alert :=
@@ -641,10 +641,10 @@ def readRecordSizeLimit? (exts : List (Nat × ByteArray)) : Except Alert (Option
   | none => .ok none
   | some data => do return some (← readRecordSizeLimit data)
 
-/-- RFC 9846 §4.2.7: supported_groups carries `NamedGroup
+/-- RFC 9846 §4.3.7: supported_groups carries `NamedGroup
 named_group_list<2..2^16-2>`, an even number of octets and at least
 one group, filling the extension exactly. The groups themselves go
-unread: §4.2.7 tells the client not to act on them during this
+unread: §4.3.7 tells the client not to act on them during this
 handshake. -/
 def checkSupportedGroups (exts : List (Nat × ByteArray)) : Except Alert Unit :=
   match extensionData? exts extSupportedGroups with
@@ -750,21 +750,21 @@ def readAlpn? (alpnOffered : List ByteArray) (exts : List (Nat × ByteArray)) :
   | some data => do return some (← readAlpn alpnOffered data)
 
 /--
-RFC 9846 §4.3.1: `struct { Extension extensions<0..2^16-1>; }`, and
+RFC 9846 §4.4.1: `struct { Extension extensions<0..2^16-1>; }`, and
 "the client MUST check EncryptedExtensions for the presence of any
 forbidden extensions and if any are found MUST abort the handshake
 with an illegal_parameter alert".
 
 The block may be empty. The profile admits two extensions here:
 supported_groups, a `NamedGroup named_group_list<2..2^16-2>` whose
-contents §4.2.7 tells the client not to act on during the handshake —
+contents §4.3.7 tells the client not to act on during the handshake —
 so the framing is checked and the groups go unread — and
 record_size_limit, the only one whose value the client needs.
 
 `serverNameSent` says whether the ClientHello carried server_name. When
 it did not, a server_name acknowledgement is an unrequested response and
-earns §4.2's unsupported_extension. When it did, the acknowledgement is a
-third admitted extension, once like every extension (§4.2), with the
+earns §4.3's unsupported_extension. When it did, the acknowledgement is a
+third admitted extension, once like every extension (§4.3), with the
 empty extension_data RFC 6066 §3 gives it.
 
 `alpnOffered` is the list of protocols the ClientHello offered, in the
@@ -787,24 +787,24 @@ def parseEncryptedExtensions (serverNameSent : Bool) (alpnOffered : List ByteArr
   let recordSizeLimit ← readRecordSizeLimit? exts
   return { recordSizeLimit, alpnSelected }
 
-/-! ## Certificate (RFC 9846 §4.4.2) -/
+/-! ## Certificate (RFC 9846 §4.5.1) -/
 
 /-- What an accepted Certificate hands the client. -/
 structure Certificate where
   /-- How many CertificateEntry structures the list held. -/
   entryCount : Nat
   /-- The first entry's cert_data: the end-entity certificate
-  (§4.4.2, "the sender's certificate MUST come first"). -/
+  (§4.5.1, "the sender's certificate MUST come first"). -/
   leafCert : ByteArray
 
 /--
-The CertificateEntry list (RFC 9846 §4.4.2), walked entry by entry:
+The CertificateEntry list (RFC 9846 §4.5.1), walked entry by entry:
 `opaque cert_data<1..2^24-1>` then `Extension extensions<0..2^16-1>`.
 An empty cert_data is out of the specified range (§6.2).
 
-Profile: the per-entry extensions must be empty. §4.4.2 admits the
+Profile: the per-entry extensions must be empty. §4.5.1 admits the
 OCSP status_request and signed_certificate_timestamp responses there,
-and §4.2 makes any response the client did not request an
+and §4.3 makes any response the client did not request an
 unsupported_extension — this client requests neither. The entry's
 opaque is cert_data and never an ASN1_subjectPublicKeyInfo, because
 that choice is made by a server_certificate_type the profile refuses in
@@ -825,7 +825,7 @@ def entriesAt (b : ByteArray) : Nat → Nat → List ByteArray → Except Alert 
       entriesAt b fuel off2 (cert :: acc)
 
 /--
-RFC 9846 §4.4.2: `struct { opaque certificate_request_context<0..2^8-1>;
+RFC 9846 §4.5.1: `struct { opaque certificate_request_context<0..2^8-1>;
 CertificateEntry certificate_list<0..2^24-1>; }`.
 
 * certificate_request_context "SHALL be zero length" in the case of
@@ -833,7 +833,7 @@ CertificateEntry certificate_list<0..2^24-1>; }`.
   RFC states the requirement and names no alert for breaking it, so
   the refusal is `unspecified`;
 * the list ends the message;
-* §4.4.2.4: "If the server supplies an empty Certificate message, the
+* §4.5.1.3: "If the server supplies an empty Certificate message, the
   client MUST abort the handshake with a decode_error alert."
 
 Which chains are acceptable is not decided here. In the CA trust mode
@@ -854,7 +854,7 @@ def parseCertificate (msg : ByteArray) : Except Alert Certificate := do
   | [] => .error .decodeError
   | leaf :: rest => return { entryCount := rest.length + 1, leafCert := leaf }
 
-/-! ## CertificateVerify (RFC 9846 §4.4.3) -/
+/-! ## CertificateVerify (RFC 9846 §4.5.2) -/
 
 /--
 The one SignatureScheme the build pins. `CLAUDE.md` fixes it at build
@@ -868,14 +868,14 @@ inductive Scheme
   | p256
 deriving BEq
 
-/-- The SignatureScheme code point (RFC 9846 §4.2.3). -/
+/-- The SignatureScheme code point (RFC 9846 §4.3.3). -/
 def Scheme.code : Scheme → Nat
   | .rsa => 0x0804
   | .p256 => 0x0403
 
 /--
 What a build's ClientHello offers in signature_algorithms (RFC 9846
-§4.2.3), which fixes what CertificateVerify may carry. A raw or ca build
+§4.3.3), which fixes what CertificateVerify may carry. A raw or ca build
 pins one `Scheme` and offers it alone. A TRUST=webpki build cannot know
 which algorithm family signed the chain the server will send, so it
 offers five.
@@ -895,14 +895,14 @@ def SignatureOffer.codes : SignatureOffer → List Nat
   | .pinned scheme => [scheme.code]
   | .webpki => [0x0804, 0x0403, 0x0503, 0x0401, 0x0501]
 
-/-- The RSASSA-PKCS1-v1_5 SignatureScheme code points RFC 9846 §4.2.3
-lists: rsa_pkcs1_sha256, rsa_pkcs1_sha384 and rsa_pkcs1_sha512. §4.4.3
+/-- The RSASSA-PKCS1-v1_5 SignatureScheme code points RFC 9846 §4.3.3
+lists: rsa_pkcs1_sha256, rsa_pkcs1_sha384 and rsa_pkcs1_sha512. §4.3.3
 requires RSASSA-PSS for an RSA CertificateVerify whether or not these
 appear in signature_algorithms. -/
 def rsaPkcs1Schemes : List Nat := [0x0401, 0x0501, 0x0601]
 
 /-- The SignatureScheme code points a CertificateVerify may carry under
-the offer: the offered codes that §4.4.3 permits there. A pinned build's
+the offer: the offered codes that §4.5.2 permits there. A pinned build's
 is its one scheme. The webpki build's are rsa_pss_rsae_sha256,
 ecdsa_secp256r1_sha256 and ecdsa_secp384r1_sha384, one per leaf key
 family; the two RSASSA-PKCS1-v1_5 schemes it offered are for certificate
@@ -923,13 +923,13 @@ def offerOf? : String → Option SignatureOffer
 
 /-- What an accepted CertificateVerify hands the client. -/
 structure CertificateVerify where
-  /-- The SignatureScheme the server signed under (§4.4.3). -/
+  /-- The SignatureScheme the server signed under (§4.5.2). -/
   algorithm : Nat
   /-- The signature octets, for the verifier that runs next. -/
   signature : ByteArray
 
 /--
-RFC 9846 §4.4.3: the octets the CertificateVerify signature covers —
+RFC 9846 §4.5.2: the octets the CertificateVerify signature covers —
 64 octets of 0x20, the context string "TLS 1.3, server
 CertificateVerify", a single zero octet, and the transcript hash. The
 client builds this and hands it, not the transcript hash alone, to the
@@ -940,19 +940,19 @@ def verifyContent (transcriptHash : ByteArray) : ByteArray :=
     ++ ByteArray.mk #[0] ++ transcriptHash
 
 /--
-RFC 9846 §4.4.3: `struct { SignatureScheme algorithm; opaque
+RFC 9846 §4.5.2: `struct { SignatureScheme algorithm; opaque
 signature<0..2^16-1>; }`, filling the message exactly.
 
 * `algorithm`: one of `SignatureOffer.certificateVerifyCodes` — a
-  pinned build's one scheme, or the webpki build's three. §4.4.3
+  pinned build's one scheme, or the webpki build's three. §4.5.2
   requires an offered scheme and forbids RSASSA-PKCS1-v1_5 here even
-  when offered, and the list keeps both rules. §4.4.3 names no alert
+  when offered, and the list keeps both rules. §4.5.2 names no alert
   for a scheme outside it, so every such scheme gets one verdict,
   `unspecified`;
-* `signature`: `opaque signature<0..2^16-1>`, exact-fill. §4.4.3 sets
+* `signature`: `opaque signature<0..2^16-1>`, exact-fill. §4.5.2 sets
   no length rule of its own — what lengths a scheme admits is the
   verifier's business, so no bound is imposed here. Whether the
-  signature verifies is not decided here either; §4.4.3 makes that
+  signature verifies is not decided here either; §4.5.2 makes that
   failure a decrypt_error, and it belongs to `Spec.Rsa.pssVerify` or
   `Spec.P256.ecdsaVerify` over `verifyContent`.
 -/
@@ -963,7 +963,7 @@ def parseCertificateVerify (offer : SignatureOffer) (msg : ByteArray) :
   ensure (offer.certificateVerifyCodes.contains algorithm = true) .unspecified
   let (signature, off) ← vec16At body 2
   ensure (off = body.size) .decodeError
-  -- §4.4.3 frames the signature as `opaque signature<0..2^16-1>` and
+  -- §4.5.2 frames the signature as `opaque signature<0..2^16-1>` and
   -- says nothing about its length: what lengths are admissible is the
   -- signature algorithm's business, settled when the signature is
   -- verified. handshake_parser.c leaves it there too.
@@ -987,7 +987,7 @@ def vec16 (b : ByteArray) : ByteArray := u16 b.size ++ b
 /-- An `opaque x<0..2^24-1>` vector (RFC 9846 §3.4). -/
 def vec24 (b : ByteArray) : ByteArray := u24 b.size ++ b
 
-/-- One Extension: type and its data vector (RFC 9846 §4.2). -/
+/-- One Extension: type and its data vector (RFC 9846 §4.3). -/
 def extension (t : Nat) (data : ByteArray) : ByteArray := u16 t ++ vec16 data
 
 /-- One Handshake structure: msg_type, uint24 length, body
@@ -996,13 +996,13 @@ def message (msgType : Nat) (body : ByteArray) : ByteArray :=
   ByteArray.mk #[UInt8.ofNat msgType] ++ vec24 body
 
 /-- A ServerHello body around a caller-supplied Random and extension
-block (RFC 9846 §4.1.3), with the profile's cipher suite and no
+block (RFC 9846 §4.2.3), with the profile's cipher suite and no
 compression. -/
 def serverHelloBody (random sessionId exts : ByteArray) : ByteArray :=
   u16 legacyVersion ++ random ++ vec8 sessionId ++ u16 cipherSuite ++ ByteArray.mk #[0] ++ vec16 exts
 
 /-- One CertificateEntry: cert_data and its extension vector
-(RFC 9846 §4.4.2). -/
+(RFC 9846 §4.5.1). -/
 def certificateEntry (cert exts : ByteArray) : ByteArray := vec24 cert ++ vec16 exts
 
 /-! ## Selftest -/
@@ -1011,8 +1011,8 @@ def certificateEntry (cert exts : ByteArray) : ByteArray := vec24 cert ++ vec16 
 Structural checks: the message grammar has no third-party vectors, so
 the selftest builds one on-profile message of each kind, checks the
 fields come back, and then walks one case per refusal the RFC and the
-profile owe. The §4.1.4 Random is pinned twice over — against the
-literal §4.1.3 prints and against its stated derivation, the SHA-256 of
+profile owe. The §4.2.4 Random is pinned twice over — against the
+literal §4.2.3 prints and against its stated derivation, the SHA-256 of
 "HelloRetryRequest". The ServerHello rows run under both `Kex` values:
 one accepted message per build, the cross-group refusal each way, the
 hybrid share length at its boundary, and the retry branch under the
@@ -1027,7 +1027,7 @@ def selftest : Bool := Id.run do
   let versionExt := extension extSupportedVersions (u16 tls13Version)
   let keyShareExt := extension extKeyShare (u16 x25519Group ++ vec16 share)
   let hex := bytesToHex
-  -- The §4.1.4 Random, from the §4.1.3 literal and from its derivation.
+  -- The §4.2.4 Random, from the §4.2.3 literal and from its derivation.
   let hrrRandomOk := hex helloRetryRequestRandom ==
       "cf21ad74e59a6111be1d8c021e65b891c2a211167abb8c5e079e09e2c8a8339c" &&
     hex (Spec.Sha256.sha256 (ascii "HelloRetryRequest")) == hex helloRetryRequestRandom
@@ -1048,13 +1048,13 @@ def selftest : Bool := Id.run do
     (parseServerHello kex true msg).toOption.isNone
   let rejects (msg : ByteArray) : Bool := rejectsUnder .x25519 msg
   let serverHelloOk := acceptsShare good none &&
-    -- §4.1.3: legacy_version is frozen at 0x0303.
+    -- §4.2.3: legacy_version is frozen at 0x0303.
     rejects (message serverHelloType (ByteArray.mk #[0x03, 0x04] ++ random ++ vec8 sessionId ++
       u16 cipherSuite ++ ByteArray.mk #[0] ++ vec16 (versionExt ++ keyShareExt))) &&
-    -- §4.1.3: any echo but the empty one we offered is illegal_parameter.
+    -- §4.2.3: any echo but the empty one we offered is illegal_parameter.
     rejects (message serverHelloType (serverHelloBody random
       (ByteArray.mk (Array.replicate 32 0xa5)) (versionExt ++ keyShareExt))) &&
-    -- §4.2.11: the one identity the profile offers is index 0.
+    -- §4.3.11: the one identity the profile offers is index 0.
     acceptsShare (serverHelloOf (versionExt ++ keyShareExt ++
       extension extPreSharedKey (u16 0))) (some 0) &&
     rejects (serverHelloOf (versionExt ++ keyShareExt ++
@@ -1063,24 +1063,24 @@ def selftest : Bool := Id.run do
     rejects (good ++ ByteArray.mk #[0]) &&
     rejects (good.extract 0 (good.size - 1)) &&
     rejects (ByteArray.mk #[UInt8.ofNat certificateType] ++ good.extract 1 good.size) &&
-    -- §9.2 and §4.2.1: supported_versions is required and pins 0x0304.
+    -- §9.2 and §4.3.1: supported_versions is required and pins 0x0304.
     rejects (serverHelloOf keyShareExt) &&
     rejects (serverHelloOf (extension extSupportedVersions (u16 0x0303) ++ keyShareExt)) &&
     rejects (serverHelloOf (extension extSupportedVersions (u16 tls13Version ++ u16 0) ++
       keyShareExt)) &&
-    -- §9.2 and §4.2.8: key_share is required, x25519 only, 32 octets only.
+    -- §9.2 and §4.3.8: key_share is required, x25519 only, 32 octets only.
     rejects (serverHelloOf (versionExt ++ extension extCookie (vec16 (ascii "c")))) &&
     rejects (serverHelloOf (versionExt ++
       extension extKeyShare (u16 0x0017 ++ vec16 share))) &&
     rejects (serverHelloOf (versionExt ++
       extension extKeyShare (u16 x25519Group ++ vec16 (share.extract 0 31)))) &&
-    -- §4.2: one extension of each type, and only the three §4.2 admits here.
+    -- §4.3: one extension of each type, and only the three §4.3 admits here.
     rejects (serverHelloOf (versionExt ++ versionExt ++ keyShareExt)) &&
     rejects (serverHelloOf (versionExt ++ keyShareExt ++
       extension extServerName ByteArray.empty)) &&
     rejects (serverHelloOf (versionExt ++ keyShareExt ++
       extension 0xfeed ByteArray.empty))
-  -- §4.1.3: the profile's cipher suite, no compression, a 32-octet echo.
+  -- §4.2.3: the profile's cipher suite, no compression, a 32-octet echo.
   let handBuilt (suite : Nat) (compression : Nat) (sid : ByteArray) : ByteArray :=
     message serverHelloType (u16 0x0303 ++ random ++ vec8 sid ++ u16 suite ++
       ByteArray.mk #[UInt8.ofNat compression] ++ vec16 (versionExt ++ keyShareExt))
@@ -1088,7 +1088,7 @@ def selftest : Bool := Id.run do
     rejects (handBuilt 0x1301 0 sessionId) &&
     rejects (handBuilt cipherSuite 1 sessionId) &&
     rejects (handBuilt cipherSuite 0 (ByteArray.mk (Array.replicate 33 0xa5)))
-  -- §4.1.4: the same format under the special Random is a retry request.
+  -- §4.2.4: the same format under the special Random is a retry request.
   let cookie := ascii "retry me"
   let cookieExt := extension extCookie (vec16 cookie)
   let hrrOf (exts : ByteArray) : ByteArray :=
@@ -1109,7 +1109,7 @@ def selftest : Bool := Id.run do
     acceptsShare (message serverHelloType (serverHelloBody
       (helloRetryRequestRandom.extract 0 31 ++ ByteArray.mk #[0]) sessionId
       (versionExt ++ keyShareExt))) none
-  -- The KEX builds (§4.2.8, RFC 10024): each build accepts its own
+  -- The KEX builds (§4.3.8, RFC 10024): each build accepts its own
   -- group's share at its own length and refuses the other build's.
   let hybridShare := ByteArray.mk (Array.replicate 1120 0x88)
   let pqShareExtOf (keyExchange : ByteArray) : ByteArray :=
@@ -1134,7 +1134,7 @@ def selftest : Bool := Id.run do
      | _ => false) &&
     rejectsUnder .pq (hrrOf (versionExt ++ cookieExt ++
       extension extKeyShare (u16 Kex.pq.code)))
-  -- §4.3.1 and RFC 8449 §4.
+  -- §4.4.1 and RFC 8449 §4.
   let encryptedExtensionsOf (exts : ByteArray) : ByteArray :=
     message encryptedExtensionsType (vec16 exts)
   let limitSent (serverNameSent : Bool) (msg : ByteArray) : Option (Option Nat) :=
@@ -1156,7 +1156,7 @@ def selftest : Bool := Id.run do
     -- The profile has no 0-RTT, so early_data is a response it never asked for.
     limitOf (encryptedExtensionsOf (extension extEarlyData ByteArray.empty)) == none &&
     limitOf (encryptedExtensionsOf (extension extKeyShare (u16 x25519Group))) == none &&
-    -- §4.2: this client sends no server_name, so its acknowledgement,
+    -- §4.3: this client sends no server_name, so its acknowledgement,
     -- empty or not, is an unrequested response the client refuses.
     limitOf (encryptedExtensionsOf (extension extServerName ByteArray.empty)) == none &&
     limitOf (encryptedExtensionsOf (extension extServerName (ascii "x"))) == none &&
@@ -1214,7 +1214,7 @@ def selftest : Bool := Id.run do
       .decodeError &&
     alpnOf (encryptedExtensionsOf
       (extension extAlpn (vec16 (vec8 h2) ++ ByteArray.mk #[0]))) == none &&
-    -- One selection only (§4.2), and only for a client that offered
+    -- One selection only (§4.3), and only for a client that offered
     -- protocols: with no offer the extension is an unrequested response.
     alpnOf (encryptedExtensionsOf (alpnExt h2 ++ alpnExt h2)) == none &&
     refusesWith [] (encryptedExtensionsOf (alpnExt h2)) .unsupportedExtension &&
@@ -1223,7 +1223,7 @@ def selftest : Bool := Id.run do
       (extension extRecordSizeLimit (u16 64) ++ extension extServerName ByteArray.empty ++
         alpnExt h2))).toOption.map (fun f => (f.recordSizeLimit, f.alpnSelected)) ==
       some (some 64, some 0)
-  -- §4.4.2: the context is empty, the list is not, entries carry no extensions.
+  -- §4.5.1: the context is empty, the list is not, entries carry no extensions.
   let leaf := ByteArray.mk (Array.replicate 40 0xc1)
   let intermediate := ByteArray.mk (Array.replicate 24 0xc2)
   let certificateOf (context list : ByteArray) : ByteArray :=
@@ -1243,7 +1243,7 @@ def selftest : Bool := Id.run do
     parsedCert (certificateOf ByteArray.empty (entryOf leaf) ++ ByteArray.mk #[0]) == none &&
     parsedCert (message certificateType (vec8 ByteArray.empty ++ vec24 (entryOf leaf) ++
       ByteArray.mk #[0])) == none
-  -- §4.4.3: one pinned scheme, one signature, exact-fill. The
+  -- §4.5.2: one pinned scheme, one signature, exact-fill. The
   -- signature's own length is the verifier's business, not this
   -- parser's, so no length but a framing error is refused here.
   let rsaSig := ByteArray.mk (Array.replicate 256 0x33)
@@ -1270,7 +1270,7 @@ def selftest : Bool := Id.run do
       (ByteArray.mk (Array.replicate 39 0x33)) &&
     refuses .rsa (verifyOf Scheme.rsa.code rsaSig ++ ByteArray.mk #[0]) &&
     -- The webpki offer: the three leaf-key schemes pass, the two
-    -- RSASSA-PKCS1-v1_5 schemes it offered are refused here (§4.4.3), and
+    -- RSASSA-PKCS1-v1_5 schemes it offered are refused here (§4.3.3), and
     -- so are schemes it never offered, rsa_pkcs1_sha512 and
     -- rsa_pss_rsae_sha384.
     verifiesUnder .webpki 0x0804 rsaSig && verifiesUnder .webpki 0x0403 ecdsaSig &&
@@ -1281,7 +1281,7 @@ def selftest : Bool := Id.run do
     refusesUnder .webpki (verifyOf 0x0805 rsaSig) &&
     refusesUnder .webpki (verifyOf 0x0804 rsaSig ++ ByteArray.mk #[0]) &&
     refuses .rsa (verifyOf 0x0503 ecdsaSig)
-  -- §4.4.3: the signed content is 64 spaces, the context string, a zero, the hash.
+  -- §4.5.2: the signed content is 64 spaces, the context string, a zero, the hash.
   let transcript := Spec.Sha256.sha256 (ascii "transcript")
   let content := verifyContent transcript
   let verifyContentOk := content.size == 130 &&
@@ -1346,7 +1346,7 @@ theorem messageBody_sound (msg body : ByteArray) (msgType : Nat)
 
 /--
 An accepted CertificateEntry list yields only nonempty certificates:
-`opaque cert_data<1..2^24-1>` admits no empty entry (RFC 9846 §4.4.2).
+`opaque cert_data<1..2^24-1>` admits no empty entry (RFC 9846 §4.5.1).
 -/
 private theorem entriesAt_nonempty (b : ByteArray) : ∀ (fuel off : Nat)
     (acc certs : List ByteArray), (∀ c ∈ acc, c.size ≠ 0) →
@@ -1379,9 +1379,9 @@ private theorem entriesAt_nonempty (b : ByteArray) : ∀ (fuel off : Nat)
       | tail _ h_in_acc => exact h_acc c h_in_acc
 
 /--
-Certificate soundness (RFC 9846 §4.4.2, §4.4.2.4). An accepted message
+Certificate soundness (RFC 9846 §4.5.1, §4.5.1.3). An accepted message
 reports at least one entry and a nonempty leaf certificate: the empty
-certificate list §4.4.2.4 refuses cannot come back as an accepted one,
+certificate list §4.5.1.3 refuses cannot come back as an accepted one,
 and neither can an entry whose `cert_data<1..2^24-1>` is empty.
 -/
 theorem parseCertificate_sound (msg : ByteArray) (fields : Certificate)
@@ -1403,10 +1403,10 @@ theorem parseCertificate_sound (msg : ByteArray) (fields : Certificate)
     exact ⟨Nat.le_add_left 1 rest.length, h_nonempty leaf (by simp)⟩
 
 /--
-The shared ServerHello prefix (RFC 9846 §4.1.3): whatever the message
+The shared ServerHello prefix (RFC 9846 §4.2.3): whatever the message
 turns out to be, its Random is the 32 octets at offset 2 of the body
 and its session id echo is empty — the only echo that can match the
-empty legacy_session_id this profile offers (§4.1.3).
+empty legacy_session_id this profile offers (§4.2.3).
 -/
 private theorem serverHelloPrefix_sound (msg : ByteArray) (p : ServerHelloPrefix)
     (h_prefix : serverHelloPrefix msg = .ok p) :
@@ -1432,7 +1432,7 @@ private theorem serverHelloPrefix_sound (msg : ByteArray) (p : ServerHelloPrefix
   exact ⟨body, h_framed, bytesAt_eq h_random_read, h_echo_empty⟩
 
 /--
-The ServerHello branch's own fields (RFC 9846 §4.1.3, §4.2.8, §4.2.11):
+The ServerHello branch's own fields (RFC 9846 §4.2.3, §4.3.8, §4.3.11):
 the echo is the empty one the profile offers, the group is the build's
 one `kex.code`, the key_exchange is exactly the `kex.serverShareSize`
 octets the build's group's share occupies, and a PSK identity, when
@@ -1472,7 +1472,7 @@ private theorem serverHelloFields_sound (kex : Kex) (pskOffered : Bool) (p : Ser
       omega
 
 /--
-ServerHello soundness (RFC 9846 §4.1.3, §4.2.8, §4.2.11). An accepted
+ServerHello soundness (RFC 9846 §4.2.3, §4.3.8, §4.3.11). An accepted
 ServerHello reports a session id echo inside the `<0..32>` its vector
 allows, the build's one group `kex.code` — the equality
 `ch_cfg.require_pq` checks: a `KEX=pq` build accepts no group but
@@ -1501,9 +1501,9 @@ theorem parseServerHello_sound (kex : Kex) (pskOffered : Bool) (msg : ByteArray)
     exact ⟨by rw [h_echo]; exact h_echo_empty, h_group, h_key_size, h_identity⟩
 
 /--
-The §4.1.4 discrimination, stated both ways: an accepted result is a
+The §4.2.4 discrimination, stated both ways: an accepted result is a
 HelloRetryRequest exactly when the 32 octets of the message's Random
-field are §4.1.4's fixed value. Nothing else in the message moves the
+field are §4.2.4's fixed value. Nothing else in the message moves the
 verdict from one kind to the other.
 -/
 theorem parseServerHello_random (kex : Kex) (pskOffered : Bool) (msg : ByteArray)
@@ -1613,7 +1613,7 @@ theorem parseEncryptedExtensions_alpn_offered (serverNameSent : Bool)
     · simp at h_index
 
 /-- Every code in `certificateVerifyCodes` is one the offer lists and none
-is an RSASSA-PKCS1-v1_5 scheme: the list keeps both §4.4.3 rules. -/
+is an RSASSA-PKCS1-v1_5 scheme: the list keeps both §4.5.2 rules. -/
 private theorem certificateVerifyCodes_permitted (offer : SignatureOffer) (code : Nat)
     (h_listed : offer.certificateVerifyCodes.contains code = true) :
     offer.codes.contains code = true ∧ rsaPkcs1Schemes.contains code = false := by
@@ -1628,7 +1628,7 @@ private theorem certificateVerifyCodes_permitted (offer : SignatureOffer) (code 
     omega
 
 /--
-CertificateVerify soundness (RFC 9846 §4.4.3). An accepted message
+CertificateVerify soundness (RFC 9846 §4.5.2). An accepted message
 reports an algorithm the ClientHello offered, and never an
 RSASSA-PKCS1-v1_5 scheme, whatever the offer listed.
 -/

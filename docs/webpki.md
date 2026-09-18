@@ -60,7 +60,7 @@ Four facts follow, and each one drives a decision further down.
    `CLAUDE.md`'s "never both in one library object" now scopes to raw and ca.
 2. **Digest length and curve order disagree.** Let's Encrypt signs a P-256
    leaf with `ecdsa-with-SHA384`. Certificate signatures carry no
-   curve-to-hash binding; only CertificateVerify does, in RFC 9846 §4.4.3. So
+   curve-to-hash binding; only CertificateVerify does, in RFC 9846 §4.3.3. So
    ECDSA verification takes the leftmost `min(bitlen(n), bitlen(H))` bits per
    FIPS 186-4 §6.4, and a fixed 32-byte digest parameter cannot express it.
 3. **Every chain ends in a certificate the client must not need.** Amazon
@@ -93,12 +93,12 @@ refuses one cannot reach Google Cloud Storage.
 RSA-PSS does not appear in a public chain and is not admitted for one. It
 stays the CertificateVerify algorithm, where RFC 9846 requires it for an RSA
 key. PKCS#1 v1.5 is admitted for certificate signatures and refused for
-CertificateVerify, which RFC 9846 §4.4.3 forbids: `rsa_pkcs1_*` codepoints
+CertificateVerify, which RFC 9846 §4.3.3 forbids: `rsa_pkcs1_*` codepoints
 appear in `signature_algorithms` for certificates only.
 
 CertificateVerify carries one scheme, and the leaf key's family decides which:
 `rsa_pss_rsae_sha256` for an RSA key, `ecdsa_secp256r1_sha256` for P-256 and
-`ecdsa_secp384r1_sha384` for P-384 (RFC 9846 §4.4.3).
+`ecdsa_secp384r1_sha384` for P-384 (RFC 9846 §4.5.2).
 `check_certificate_verify` in `handshake_auth.c` refuses every other pairing
 with `illegal_parameter`, and verifies the signature that passes under that
 family's own verifier. The P-384 scheme is the one place in this client where
@@ -539,9 +539,9 @@ does, and why.
   `path_len_exceeded` the refusal it does not relax; the differential
   compares both against the spec.
 - **A CertificateEntry extension is refused on every entry, with
-  `unsupported_extension`.** RFC 9846 §4.4.2 lets a server answer a
+  `unsupported_extension`.** RFC 9846 §4.5.1 lets a server answer a
   `status_request` or `signed_certificate_timestamp` extension inside an
-  entry, and §4.2 says a peer that receives an extension it did not offer
+  entry, and §4.3 says a peer that receives an extension it did not offer
   aborts with `unsupported_extension`. This client offers neither, so an
   entry extension is a reply to a request nobody made, wherever it sits:
   the walk reads every entry's framing, the trailing ones included, and
@@ -600,7 +600,7 @@ here: never overclaim.
   match, the two leaf validity boundaries, the two issuer validity boundaries
   and a re-keyed intermediate), 19 negative taking one rule each — is
   small, offline and deterministic, and tests the logic. `test/gen_webpki_corpus.py` renders
-  both into exact RFC 9846 §4.4.2 `Certificate` message bytes, so a test feeds
+  both into exact RFC 9846 §4.5.1 `Certificate` message bytes, so a test feeds
   the parser what the wire would. `test/webpki_auth_vectors.h` adds a
   CertificateVerify signature over three of those chains, one per leaf key
   family, which is what `test/webpki_auth_test.c` drives `hsa_server_auth`

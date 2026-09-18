@@ -6,7 +6,7 @@
 // is the whole transcript hsa_server_auth (handshake_auth.c) has hashed
 // when CertificateVerify arrives. transcript is SHA-256 of that message,
 // which test/webpki_auth_test.c recomputes and compares, and the
-// signature covers the 130 signed octets of RFC 9846 section 4.4.3 over
+// signature covers the 130 signed octets of RFC 9846 section 4.5.2 over
 // it. expected is the verdict the client must reach: "ok" or
 // "bad_signature". The test builds the refusals of the scheme rule
 // itself out of the accepted rows, because they need no signature of
@@ -146,7 +146,7 @@ static const uint8_t webpki_auth_sig_p384_corrupt[103] = {
 };
 static const webpki_auth_vector webpki_auth_vectors[8] = {
     // rsa_pss: the RSA-2048 leaf signs rsa_pss_rsae_sha256, the one scheme
-    // RFC 9846 section 4.4.3 leaves an RSA key.
+    // RFC 9846 section 4.3.3 leaves an RSA key.
     {
         "rsa_pss", "aws", 0x0804,
         webpki_auth_transcript_aws, webpki_auth_sig_rsa_pss, sizeof webpki_auth_sig_rsa_pss,

@@ -23,7 +23,7 @@
 // is the answer the KeyUpdate arm below already gives a body that is not
 // one byte long.
 //
-// The extensions vector closes the message (RFC 9846 §4.6.1). Its
+// The extensions vector closes the message (RFC 9846 §4.7.1). Its
 // length is read and its bytes are not: the only extension defined
 // there is early_data, and chapulin sends no 0-RTT. Skipping by that
 // length is what leaves rb_left below at zero for a whole message and

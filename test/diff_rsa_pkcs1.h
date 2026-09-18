@@ -8,7 +8,7 @@
 // side only ever verifies; the private exponent stays on the spec side.
 //
 // v1.5 is a certificate-chain signature, never a CertificateVerify one
-// (RFC 9846 §4.4.3 forbids rsa_pkcs1_* there), and a public chain
+// (RFC 9846 §4.3.3 forbids rsa_pkcs1_* there), and a public chain
 // carries both sha256WithRSAEncryption and sha384WithRSAEncryption. So
 // the rows alternate the digest length, 32 and 48, beside the modulus,
 // 2048, 3072 and 4096 bits; the digest length alone selects the

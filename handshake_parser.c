@@ -81,8 +81,8 @@ static int parse_server_hello_ext(rbuf *r, server_hello_info *info, int hrr, int
     }
     if (ext == EXT_PRE_SHARED_KEY && (hrr || !psk_mode)) {
         // Selecting a PSK we never offered, or selecting one from a
-        // HelloRetryRequest: RFC 9846 §4.1.4 does not list
-        // pre_shared_key for a retry, and §4.2 makes a recognized
+        // HelloRetryRequest: RFC 9846 §4.2.4 does not list
+        // pre_shared_key for a retry, and §4.3 makes a recognized
         // extension in a message it is not specified for fatal.
         return CH_EPROTO;
     }
@@ -151,7 +151,7 @@ int hsp_parse_server_hello(const uint8_t *body, size_t n, server_hello_info *inf
     return info->version_ok ? CH_OK : CH_EPROTO;
 }
 
-// Certificate framing per RFC 9846 §4.4.2; the entries themselves
+// Certificate framing per RFC 9846 §4.5.1; the entries themselves
 // are the trust mode's concern, not this parser's.
 int hsp_parse_certificate(const uint8_t *body, size_t n, const uint8_t **list, size_t *list_len,
                           uint8_t *alert) {
@@ -175,7 +175,7 @@ int hsp_parse_certificate(const uint8_t *body, size_t n, const uint8_t **list, s
 // leaf key family the walk admits: rsa_pss_rsae_sha256,
 // ecdsa_secp256r1_sha256 and ecdsa_secp384r1_sha384. The ClientHello
 // also offered rsa_pkcs1_sha256 and rsa_pkcs1_sha384, for certificate
-// signatures only, and RFC 9846 §4.4.3 forbids them here. Every scheme
+// signatures only, and RFC 9846 §4.3.3 forbids them here. Every scheme
 // but the three gets the pinned builds' answer to a scheme they did not
 // offer: CH_EAUTH with handshake_failure.
 static int certificate_verify_scheme_ok(uint16_t algorithm) {
@@ -184,7 +184,7 @@ static int certificate_verify_scheme_ok(uint16_t algorithm) {
 }
 #endif
 
-// CertificateVerify per RFC 9846 §4.4.3: we offered exactly one
+// CertificateVerify per RFC 9846 §4.5.2: we offered exactly one
 // signature algorithm, so the message may carry nothing else. A
 // TRUST=webpki build offered several and admits the three
 // certificate_verify_scheme_ok names, reporting which one in *scheme.

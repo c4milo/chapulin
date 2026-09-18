@@ -194,7 +194,7 @@ which convention holds them.
   exemption for the device modes' cert files. The webpki ClientHello
   offers `rsa_pkcs1_sha256` and `rsa_pkcs1_sha384` for certificate
   signatures, and `hsp_parse_certificate_verify` refuses both in
-  CertificateVerify, as RFC 9846 §4.4.3 requires;
+  CertificateVerify, as RFC 9846 §4.3.3 requires;
   bin/handshake_strict_webpki's rows hold that refusal
   (`inv06-certificate-verify-pkcs1`).
 - **Violation.** A PR adds v1.5 verify to `rsa.c` or to the ca-mode

@@ -91,7 +91,7 @@ static void push_message(mock_source *s, const uint8_t *msg, size_t n) {
     s->len += w.len;
 }
 
-// The CertificateVerify message of RFC 9846 section 4.4.3: the scheme,
+// The CertificateVerify message of RFC 9846 section 4.5.2: the scheme,
 // then the signature as opaque signature<0..2^16-1>.
 static size_t build_certificate_verify(uint8_t *out, size_t cap, uint16_t scheme,
                                        const uint8_t *sig, size_t sig_len) {
@@ -172,7 +172,7 @@ static const verdict *verdict_for(const char *expected) {
     return &verdicts[0];
 }
 
-// The leaf key family RFC 9846 section 4.4.3 binds each scheme to, which
+// The leaf key family RFC 9846 section 4.5.2 binds each scheme to, which
 // an accepted row must have walked out of the chain.
 static uint8_t scheme_family(uint16_t scheme) {
     if (scheme == SIGALG_ECDSA_P256_SHA256) {

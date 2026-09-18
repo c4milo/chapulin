@@ -53,11 +53,11 @@
 #define CH_KEX_CLIENT_SHARE 32
 #define CH_KEX_SERVER_SHARE 32
 #endif
-// SignatureScheme code points (RFC 9846 §4.2.3). A raw or ca build
+// SignatureScheme code points (RFC 9846 §4.3.3). A raw or ca build
 // offers the first two, one per build (CH_PIN_SIGALG below). A
 // TRUST=webpki build offers all five, because it cannot know which
 // family signed the chain the server will send. The two PKCS#1 v1.5
-// schemes are offered for certificate signatures only: RFC 9846 §4.4.3
+// schemes are offered for certificate signatures only: RFC 9846 §4.3.3
 // forbids them in CertificateVerify, and hsp_parse_certificate_verify
 // refuses them there.
 #define SIGALG_ECDSA_P256_SHA256 0x0403

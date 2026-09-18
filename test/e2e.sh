@@ -740,7 +740,7 @@ grep -q "^alpn http/1.1$" "$DIR/err_wp_alpn_http11" || {
 kill $SRV_PID 2>/dev/null
 
 # The same hierarchy with an ECDSA leaf, one server per curve. RFC 9846
-# section 4.4.3 binds the CertificateVerify scheme to the leaf key, so
+# section 4.5.2 binds the CertificateVerify scheme to the leaf key, so
 # only a P-256 leaf makes the client run ecdsa_secp256r1_sha256, and only
 # a P-384 leaf makes it hash the signed content with SHA-384. The RSA
 # leaf above runs neither arm. test/webpki_auth_vectors.h signs both

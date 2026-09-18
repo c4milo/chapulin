@@ -104,9 +104,9 @@ size_t hs_build_client_hello(uint8_t *out, size_t cap, const ch_cfg *cfg,
     if (cfg->psk == NULL) {
 #ifdef CH_TRUST_WEBPKI
         // A public chain: its links may be signed by any family, so offer
-        // every scheme the walk verifies (RFC 9846 §4.2.3). The first
+        // every scheme the walk verifies (RFC 9846 §4.3.3). The first
         // three may sign CertificateVerify; the two PKCS#1 v1.5 schemes
-        // are for certificate signatures only (§4.4.3).
+        // are for certificate signatures only (§4.3.3).
         wb_u16(&w, EXT_SIGNATURE_ALGORITHMS);
         wb_u16(&w, 2 + 5 * 2);
         wb_u16(&w, 5 * 2);

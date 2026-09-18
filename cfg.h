@@ -155,7 +155,7 @@ _Static_assert(CH_MIN_RXBUF >= 512, "the floor only rises; the base profile need
 #define CH_TICKET_ID_MAX 320
 
 // The NamedGroup code points of the two key exchanges a build can offer, one per build
-// (Makefile KEX): x25519 (RFC 9846 §4.2.7) by default, or the X25519MLKEM768 hybrid
+// (Makefile KEX): x25519 (RFC 9846 §4.3.7) by default, or the X25519MLKEM768 hybrid
 // (RFC 10024) under -DCH_KEX_PQ. ch_tls.group reports which one the ServerHello selected.
 #define CH_GROUP_X25519 0x001d
 #define CH_GROUP_X25519MLKEM768 0x11ec

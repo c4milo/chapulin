@@ -223,7 +223,7 @@ def dispatch : List String → Option String
   -- The four RFC 9846 §4 message parsers take one whole Handshake
   -- structure — msg_type, uint24 length, body — and reply with the
   -- fields the client needs. Every refusal is one string, as `rec_open`
-  -- does: the RFC fixes different alerts for different checks (§4.2's
+  -- does: the RFC fixes different alerts for different checks (§4.3's
   -- illegal_parameter and unsupported_extension, §9.2's
   -- missing_extension, §6.2's decode_error) and some it leaves to the
   -- implementation, so distinct strings would flag a spec-and-C
@@ -232,7 +232,7 @@ def dispatch : List String → Option String
   | ["hs_server_hello", mode, kex, msg] => do
     let m ← hexArg? msg
     -- `psk` and `nopsk` are handshake_parser.h's `psk_mode`: whether this
-    -- client's ClientHello offered a PSK, which RFC 9846 §4.2 makes
+    -- client's ClientHello offered a PSK, which RFC 9846 §4.3 makes
     -- the test for whether a pre_shared_key response is admissible.
     let offered ← match mode with
       | "psk" => some true
@@ -282,7 +282,7 @@ def dispatch : List String → Option String
       | .error _ => "ERR hs_certificate_verify reject"
   | ["hs_verify_content", hash] => do
     let h ← hexArg? hash
-    -- RFC 9846 §4.4.3 signs over the transcript hash, which is
+    -- RFC 9846 §4.5.2 signs over the transcript hash, which is
     -- SHA-256 under this profile's one cipher suite.
     guard (h.size == 32)
     return emit (Spec.HandshakeParser.verifyContent h)

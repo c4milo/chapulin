@@ -60,7 +60,7 @@ static void test_post_handshake(void) {
     CHECK(m.tickets == 1);
     CHECK(t.state == CH_ST_CONNECTED);
 
-    // Open the reply rather than counting bytes. §4.6.3 answers an
+    // Open the reply rather than counting bytes. §4.7.3 answers an
     // update_requested with update_not_requested, and the client rekeys
     // its own write direction straight after sending it. Counting alone
     // passes even when that second rekey is missing, which would leave
@@ -98,7 +98,7 @@ static void test_post_handshake(void) {
     CHECK(ch_read(&t, out, sizeof out) == 0);
 }
 
-// One NewSessionTicket message: the fields RFC 9846 §4.6.1 fixes, with a
+// One NewSessionTicket message: the fields RFC 9846 §4.7.1 fixes, with a
 // nonce of nonce_len bytes, then whatever bytes the caller supplies where
 // the extensions vector belongs. wb_patch24 counts those bytes into the
 // message length, so a tail that is not a well-formed extensions vector
@@ -152,7 +152,7 @@ static int read_after_ticket(size_t nonce_len, const uint8_t *tail, size_t tail_
     return rc;
 }
 
-// The NewSessionTicket fields must fill the message (RFC 9846 §4.6.1).
+// The NewSessionTicket fields must fill the message (RFC 9846 §4.7.1).
 // The boundary is exact: an empty extensions vector is the last message
 // the parser accepts, and one byte past it the first it refuses. A
 // refusal is fatal, not a skip: ch_read returns CH_EPROTO, the

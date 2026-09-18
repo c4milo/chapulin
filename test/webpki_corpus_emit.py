@@ -18,7 +18,7 @@ HEADER = """\
 // rule per negative row; webpki_capture_chains holds the four public
 // chains that test the bounds, one of them at two values of now_seconds.
 // Every row is one call's inputs and the verdict it must reach: the exact
-// RFC 9846 section 4.4.2 Certificate message bytes, the anchors, the
+// RFC 9846 section 4.5.1 Certificate message bytes, the anchors, the
 // hostname and now_seconds.
 #ifndef CH_TEST_WEBPKI_CORPUS_H
 #define CH_TEST_WEBPKI_CORPUS_H

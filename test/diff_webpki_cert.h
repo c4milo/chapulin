@@ -120,7 +120,7 @@ static void diff_cert_compare(const uint8_t *cert, size_t n, int is_ca) {
     expect(cmd, want);
 }
 
-// Calls visit on every certificate of an RFC 9846 §4.4.2 Certificate
+// Calls visit on every certificate of an RFC 9846 §4.5.1 Certificate
 // message, with its entry index. The corpus messages are well-formed, so
 // a malformed one is a driver bug.
 static void diff_cert_entries(const uint8_t *message, size_t message_len,

@@ -156,7 +156,7 @@ int main(void) {
 
     int rc = check_certificate_verify(&h, hash);
 
-    // The binding of RFC 9846 section 4.4.3: a signature is checked
+    // The binding of RFC 9846 section 4.5.2: a signature is checked
     // only under the scheme the leaf key's family can produce, and the
     // verifier that ran is that family's own. Every alg byte that is
     // neither curve is an RSA key, which is what webpki_read_spki
