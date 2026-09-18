@@ -46,6 +46,14 @@ p384.c p384_field.c rsa.c rsa_mont.c rsa_pkcs1.c pem.c x509.c x509_der.c x509_ca
 handshake_parser.c handshake_record.c session.c handshake_auth.c handshake.c handshake_post.c tls.c
 quic.c quic_aes.c quic_gcm.c quic_initial.c quic_keys.c quic_packet.c quic_retry.c quic_step.c""".split()
 
+# Sources this leg names but cannot compile. webpki.c reads
+# ch_cfg.now_seconds, which cfg.h declares under -DCH_TRUST_WEBPKI and
+# refuses beside -DCH_TRUST_CA, so the leg that measures it is
+# `make diff-webpki` and bin/diff does not compile it either. Naming it
+# here keeps its row in the table, reading "not built", rather than
+# dropping the file from the report.
+TRUST_WEBPKI_ONLY = ["webpki.c"]
+
 
 def spec_ops():
     """Op names the spec's dispatch accepts."""
@@ -98,7 +106,7 @@ def build_and_run():
     flags = ["--coverage", "-O0", "-g", "-std=c11", "-D_DEFAULT_SOURCE",
              "-DCH_RAND_EXTERN", "-DCH_TRUST_CA", "-DCH_RSA_MODULUS_MAX=512", f"-I{ROOT}"]
     objs = []
-    for src in SRCS:
+    for src in (s for s in SRCS if s not in TRUST_WEBPKI_ONLY):
         obj = OUT_DIR / (src[:-2] + ".o")
         subprocess.run(["gcc", *flags, "-c", str(ROOT / src), "-o", str(obj)],
                        check=True, cwd=ROOT)
@@ -171,6 +179,11 @@ def main():
         lines.append(f"| `{src}` | {total} | {mark} |")
         (unmodelled if pct == 0 else modelled).append(src)
     lines += ["", summary, ""]
+    if TRUST_WEBPKI_ONLY:
+        lines.append("Built by `make diff-webpki` rather than this leg, which "
+                     "compiles under -DCH_TRUST_CA: "
+                     + ", ".join(f"`{s}`" for s in TRUST_WEBPKI_ONLY) + ".")
+        lines.append("")
     if unmodelled:
         lines.append("Not modelled by the spec: "
                      + ", ".join(f"`{s}`" for s in unmodelled) + ".")
