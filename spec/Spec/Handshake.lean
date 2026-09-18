@@ -101,8 +101,8 @@ def step (mode : Mode) : State → Msg → Option State
   | .awaitCert, .certificate => some .awaitCV
   -- §4.5.2: CertificateVerify comes immediately after Certificate.
   | .awaitCV, .certificateVerify => some .awaitFin
-  -- §4.5.3: Finished ends the server's flight; §4.5.3 also makes it the
-  -- gate for application data, so this is where the client connects.
+  -- §4.5.3: Finished ends the server's flight; §4.5.3 also requires it
+  -- before application data, so this is where the client connects.
   | .awaitFin, .finished => some .connected
   -- §4.7.1/§4.7.3/§5.1: tickets, key updates, and application data are
   -- legal only after the handshake completes.
@@ -210,8 +210,8 @@ private theorem step_finSeen (mode : Mode) (s s' : State) (m : Msg)
     simp [finSeen]
 
 /-- Every accepting trace contains the server Finished exactly once
-(RFC 9846 §4.5.3: it ends the server's flight and gates the
-connection). -/
+(RFC 9846 §4.5.3: it ends the server's flight and is required
+before the connection carries traffic). -/
 theorem count_finished_of_accepts (mode : Mode) (msgs : List Msg)
     (h : accepts mode msgs = true) : msgs.count .finished = 1 := by
   obtain ⟨t, hfold, ht⟩ := (accepts_iff mode msgs).mp h

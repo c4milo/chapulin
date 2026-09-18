@@ -48,7 +48,7 @@ noreturn void ch_assert_fail(const char *cond, const char *file, int line) {
 #include "wycheproof_vectors.h"
 
 // The RSA-4096 suites need the webpki bound; a narrower build would
-// refuse every one of their cases at the size gate and fail here.
+// refuse every one of their cases at the size check and fail here.
 _Static_assert(CH_RSA_MODULUS_MAX >= 512, "wycheproof_test builds with -DCH_RSA_MODULUS_MAX=512");
 
 static int failures;

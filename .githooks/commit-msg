@@ -1,5 +1,5 @@
 #!/bin/sh
-# Conventional-commit gate. Wire up once with: make hooks
+# Conventional-commit check. Wire up once with: make hooks
 #
 # Dev tooling lives in tools/, so commitlint installs there and npx cannot
 # resolve it from the repo root, where git runs this hook.

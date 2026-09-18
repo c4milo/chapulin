@@ -14,7 +14,7 @@
 //
 // Its own binary, built with -DCH_TRUST_WEBPKI: ch_cfg carries the
 // anchors, the hostname and the clock only there, and the RSA-4096 keys
-// in the captures pass webpki_read_spki's modulus gate only there.
+// in the captures pass webpki_read_spki's modulus size check only there.
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>

@@ -11,11 +11,11 @@
 //   openssl rsa -in key.pem -noout -modulus   (raw big-endian modulus)
 //
 // test/rsa_wide_vectors.h adds an RSA-4096 and an RSA-4032 vector, the
-// top of the webpki build's modulus gate and one 8-byte step below it
+// top of the webpki build's modulus range and one 8-byte step below it
 // (test/gen_rsa_wide_vectors.py quotes their commands). This binary
 // builds with -DCH_RSA_MODULUS_MAX=512, the webpki build's bound, so
 // both verify; built at the device bound of 384, as the coverage
-// lane builds it, the same test expects the size gate to refuse them.
+// lane builds it, the same test expects the size check to refuse them.
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdnoreturn.h>
@@ -26,7 +26,7 @@
 #include "rsa_wide_vectors.h"
 #include "sha256.h"
 
-// The gate test below knows the two bounds rsa.h defines and no other.
+// The modulus size test below knows the two bounds rsa.h defines and no other.
 _Static_assert(CH_RSA_MODULUS_MAX == 384 || CH_RSA_MODULUS_MAX == 512,
                "rsa_test knows the device bound and the webpki bound");
 
@@ -219,13 +219,13 @@ static const uint8_t sig2047[] = {
     0xc6, 0x7e, 0xe3, 0x5c, 0x72, 0x08, 0x83, 0x0d, 0xe4, 0xe1, 0x3e, 0x68, 0x48, 0x79, 0xff, 0xc3,
 };
 
-// The modulus size gate at the build's bound, CH_RSA_MODULUS_MAX. The
+// The modulus size check at the build's bound, CH_RSA_MODULUS_MAX. The
 // RSA-4096 (512-byte) and RSA-4032 (504-byte) vectors verify exactly
-// when the bound admits 512 bytes and are refused by the gate otherwise;
+// when the bound admits 512 bytes and are refused by the size check otherwise;
 // a flipped byte is refused whichever the bound. Then the vector at the
 // bound itself verifies, and the same bytes, padded with eight zero
 // bytes to one step past the bound, or with four to a length between
-// steps, are refused by the gate alone, before any arithmetic runs.
+// steps, are refused by the size check alone, before any arithmetic runs.
 static void test_modulus_gate(void) {
     const int wide = CH_RSA_MODULUS_MAX >= 512;
     uint8_t h3072[32];

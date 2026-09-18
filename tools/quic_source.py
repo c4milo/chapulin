@@ -4,7 +4,7 @@
 One concern: what a file says, not what the report makes of it. The
 functions here answer five questions about one .c or .h file -- what its
 comments say, what it declares, what it defines, which standards it
-cites, and which of its lines one macro gates -- and resolve() answers
+cites, and which of its lines one macro controls -- and resolve() answers
 the sixth across the whole mode.
 
 Nothing here knows about QUIC. tools/quic-footprint.py holds the file

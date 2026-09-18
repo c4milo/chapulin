@@ -42,7 +42,7 @@ static const key_algorithm key_algorithms[] = {
 };
 #define KEY_ALGORITHM_COUNT (sizeof key_algorithms / sizeof key_algorithms[0])
 
-// The modulus size gate rsa_pkcs1_verify applies: RSA-2048 up to
+// The modulus size check rsa_pkcs1_verify applies: RSA-2048 up to
 // CH_RSA_MODULUS_MAX (rsa.h) in 8-byte steps.
 #define MODULUS_MIN 256
 #define MODULUS_STEP_MASK 7U // a length is a whole step when these bits are zero

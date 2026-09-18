@@ -3,7 +3,7 @@
 // digest, signature, claimed digest length and claimed signature length.
 // Concrete (real bodies, real ct.c):
 //
-//   rsa_pkcs1_verify         : the size gate, the odd-modulus check, the
+//   rsa_pkcs1_verify         : the size check, the odd-modulus check, the
 //                              DigestInfo selection, the greater_or_equal
 //                              s >= n reject, the RSAVP1 call and the
 //                              whole-buffer ct_memeq — end to end
@@ -31,7 +31,7 @@
 // rsa_harness.c records for the same pin. Unlike PSS there is no
 // alignment to pin: v1.5 fills every em_len byte, so the modulus stays
 // fully nondet. The claimed signature length and digest length stay
-// nondet in the verify calls, so both sides of every gate run; the two
+// nondet in the verify calls, so both sides of every check run; the two
 // admitted digest lengths then run explicitly, because a nondet length
 // that happens to land on 32 or 48 is not a proof that each did.
 #include "harness.h"
@@ -59,11 +59,11 @@ int main(void) {
     fill_nondet(sig, n_len);
     fill_nondet(digest, sizeof digest);
 
-    // The lemma over fully nondet operands, apart from the gate.
+    // The lemma over fully nondet operands, apart from verify's checks.
     (void)greater_or_equal(sig, n, n_len);
 
     // The shipped function end to end: nondet claimed lengths first, so
-    // every gate's reject runs; then each admitted digest length, so the
+    // every check's reject runs; then each admitted digest length, so the
     // encode and the compare run at both.
     (void)rsa_pkcs1_verify(n, n_len, digest, nondet_size_t(), sig, nondet_size_t());
     (void)rsa_pkcs1_verify(n, n_len, digest, SHA256_LEN, sig, n_len);

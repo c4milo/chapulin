@@ -1,7 +1,7 @@
 invariant: INV-5
 file: webpki_spki.c
 catches: webpki_chain_test
-reason: the modulus gate admits a 128-byte modulus, so an RSA-1024 leaf
+reason: the modulus size check admits a 128-byte modulus, so an RSA-1024 leaf
   key passes webpki_read_spki and the walk copies it out as the key
   CertificateVerify will be checked under (docs/webpki.md, "Refused,
   and why": moduli below 2048 bits). The rsa_1024_leaf row, whose leaf

@@ -1,5 +1,5 @@
 // ch_connect's config validation: the auth-mode, pin-length, buffer-size
-// and revocation-epoch gates, all decided before the handshake sends a
+// and revocation-epoch checks, all decided before the handshake sends a
 // byte. Included by session_tests.h after the mock helpers exist; not a
 // standalone translation unit.
 #ifndef CH_SESSION_CFG_TESTS_H
@@ -18,7 +18,7 @@
 #define TEST_PIN_LEN 384
 #endif
 
-// The revocation epoch's config gates (docs/ca.md), all of which
+// The revocation epoch's config checks (docs/ca.md), all of which
 // must decide before the handshake sends a byte. mock_recv failing
 // the connect with CH_EIO marks the cases that got past them.
 static uint32_t epoch_mark;

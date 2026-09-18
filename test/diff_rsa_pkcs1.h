@@ -70,7 +70,7 @@ static void diff_rsa_pkcs1_check_c(const char *n_hex, size_t n_len, const uint8_
     // A one-byte signature flip must be rejected too. The mutated
     // digest above only exercises the final compare; a signature flip
     // scrambles the whole recovered EM through RSAVP1, so these
-    // exercise the earlier reject branches (the s >= n gate, the two
+    // exercise the earlier reject branches (the s >= n check, the two
     // leading bytes, the 0xff walk, the 0x00 separator, the DigestInfo
     // prefix) instead. EM is 0x00 || 0x01 || PS || 0x00 || T, so PS
     // spans bytes 2 to n_len - t_len - 2. Flip at the last byte,

@@ -4,8 +4,8 @@ catches: test/lint-wide-multiply.sh
 reason: a 64-bit remainder of the accumulator by a key limb is no
   instruction on any of these cores; it is a call into the compiler's
   runtime (__aeabi_uldivmod on the M3, __umoddi3 on mips32r2 and
-  rv32imac), whose loop branches on both secret operands, and the gate
-  counts those calls beside the opcodes
+  rv32imac), whose loop branches on both secret operands, and
+  lint-wide-multiply counts those calls beside the opcodes
 
 --- old
         uint64_t c = d0 >> 26;

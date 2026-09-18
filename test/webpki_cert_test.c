@@ -11,7 +11,7 @@
 // chains must parse whole. The mutant half is test/webpki_cert_mutants.h.
 //
 // Its own binary, built with -DCH_TRUST_WEBPKI so the RSA-4096 keys in
-// the captures pass webpki_read_spki's modulus gate, as they do in the
+// the captures pass webpki_read_spki's modulus size check, as they do in the
 // webpki object.
 #include <stdint.h>
 #include <stdio.h>

@@ -1,6 +1,6 @@
 // Revocation-epoch cases for the certificate grammar suite: the
 // date boundaries x509_read_time_epoch draws. ch_connect's epoch
-// gates need the whole library, so they live in session_tests.h
+// checks need the whole library, so they live in session_tests.h
 // beside the other config cases. Included by
 // x509_strict_test.c after its vectors and helpers, the
 // x509_chain_tests.h pattern; not a standalone translation unit.

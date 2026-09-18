@@ -78,7 +78,7 @@ static int sigalg_is_ecdsa(uint8_t sigalg) {
 
 // 1 when signer's key belongs to the family cert's signature algorithm
 // names, with the length that family's verifier reads. An RSA modulus's
-// length is rsa_pkcs1_verify's own gate.
+// length is rsa_pkcs1_verify's own check.
 static int signer_matches_sigalg(uint8_t sigalg, const webpki_spki *signer) {
     if (sigalg_is_rsa(sigalg)) {
         return signer->alg == WEBPKI_KEY_RSA;
@@ -135,7 +135,7 @@ int webpki_verify(const webpki_cert *cert, const webpki_spki *signer) {
     size_t digest_len = hash_signed_bytes(cert, digest);
     if (signer->alg == WEBPKI_KEY_RSA) {
         // rsa_pkcs1_verify refuses a signature whose length is not the
-        // modulus length, and a modulus outside its size gate.
+        // modulus length, and a modulus outside its size range.
         return rsa_pkcs1_verify(signer->key, signer->key_len, digest, digest_len, cert->sig,
                                 cert->sig_len);
     }

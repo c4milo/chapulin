@@ -32,7 +32,7 @@ suite-check: bin/unit bin/unit_ca bin/unit_pq bin/tlsclient bin/tlsclient_ecdsa 
 
 # The Cortex-M3 lane: the cross-check suite roster, built with the Arm
 # GNU toolchain (newlib + rdimon semihosting) and run one binary at a
-# time on QEMU's MPS2-AN385 — the same core lint-wide-multiply gates by
+# time on QEMU's MPS2-AN385 — the same core lint-wide-multiply checks by
 # disassembly, executing instead of being read. drbg_test is one of two
 # roster differences from the mips lane: it drives a diffspec child
 # over pipe/dup2, which bare metal has no words for, and
@@ -41,10 +41,10 @@ suite-check: bin/unit bin/unit_ca bin/unit_pq bin/tlsclient bin/tlsclient_ecdsa 
 .PHONY: m3-check
 m3-check:
 	@[ -n "$(M3_CC)" ] || { \
-	  [ -n "$$CI" ] && { echo "m3-check: arm-none-eabi-gcc missing on CI; the gate must not skip"; exit 1; }; \
+	  [ -n "$$CI" ] && { echo "m3-check: arm-none-eabi-gcc missing on CI; the check must not skip"; exit 1; }; \
 	  echo "SKIP m3-check: no arm-none-eabi-gcc (see ARM_GNU_VERSION in tools/toolchain.env)"; exit 0; }
 	@[ -n "$(M3_QEMU)" ] || { \
-	  [ -n "$$CI" ] && { echo "m3-check: qemu-system-arm missing on CI; the gate must not skip"; exit 1; }; \
+	  [ -n "$$CI" ] && { echo "m3-check: qemu-system-arm missing on CI; the check must not skip"; exit 1; }; \
 	  echo "SKIP m3-check: no qemu-system-arm"; exit 0; }
 	@mkdir -p bin/m3
 	$(M3_CC) $(M3_FLAGS) -I. -o bin/m3/unit test/unit_test.c $(SRCS)
@@ -82,10 +82,10 @@ m3-check:
 .PHONY: freertos-check
 freertos-check:
 	@[ -n "$(M3_CC)" ] || { \
-	  [ -n "$$CI" ] && { echo "freertos-check: arm-none-eabi-gcc missing on CI; the gate must not skip"; exit 1; }; \
+	  [ -n "$$CI" ] && { echo "freertos-check: arm-none-eabi-gcc missing on CI; the check must not skip"; exit 1; }; \
 	  echo "SKIP freertos-check: no arm-none-eabi-gcc (see ARM_GNU_VERSION in tools/toolchain.env)"; exit 0; }
 	@[ -n "$(M3_QEMU)" ] || { \
-	  [ -n "$$CI" ] && { echo "freertos-check: qemu-system-arm missing on CI; the gate must not skip"; exit 1; }; \
+	  [ -n "$$CI" ] && { echo "freertos-check: qemu-system-arm missing on CI; the check must not skip"; exit 1; }; \
 	  echo "SKIP freertos-check: no qemu-system-arm"; exit 0; }
 	@if [ "$$(git -C $(FREERTOS_KERNEL_DIR) rev-parse HEAD 2>/dev/null)" != "$(FREERTOS_KERNEL_COMMIT)" ]; then \
 	  rm -rf $(FREERTOS_KERNEL_DIR); mkdir -p $(FREERTOS_KERNEL_DIR); \

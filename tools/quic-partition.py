@@ -49,9 +49,9 @@ that reads the header.
 What this cannot see. It reads whole files, so a QUIC-only function
 inside a file both transports compile is invisible: a QUIC arm added to
 `session.c` passes, and review catches that. It also cannot judge a file
-that gates text on a `CH_QUIC_`-prefixed macro it does not define
-itself, because the lint defines `CH_TRANSPORT_QUIC` and nothing else,
-so it reports such a file rather than passing it.
+that compiles text only under a `CH_QUIC_`-prefixed macro it does not
+define itself, because the lint defines `CH_TRANSPORT_QUIC` and nothing
+else, so it reports such a file rather than passing it.
 """
 
 import os
@@ -131,9 +131,9 @@ def plural(count, word):
 
 
 def unresolved_macros(path):
-    """The `CH_QUIC_` macros one file gates text on and does not define
-    itself. The lint defines `CH_TRANSPORT_QUIC` and nothing else, so an
-    arm behind one of these stays closed in both runs and the file's
+    """The `CH_QUIC_` macros one file compiles text under and does not
+    define itself. The lint defines `CH_TRANSPORT_QUIC` and nothing else,
+    so an arm behind one of these stays closed in both runs and the file's
     verdict would be read off text neither build compiles. A file's own
     include guard is a definition, which is why it is not one of these.
     """
@@ -175,10 +175,10 @@ def judge(path, quic, shared, conditional):
                       f"lint cannot judge it"]
     unresolved = unresolved_macros(path)
     if unresolved:
-        return None, [f"{path} gates text on {', '.join(unresolved)}, which "
-                      f"it does not define and this lint does not define "
-                      f"either, so this lint cannot judge it; gate the "
-                      f"mode's text on CH_TRANSPORT_QUIC"]
+        return None, [f"{path} compiles text under {', '.join(unresolved)}, "
+                      f"which it does not define and this lint does not "
+                      f"define either, so this lint cannot judge it; make "
+                      f"the mode's text conditional on CH_TRANSPORT_QUIC"]
 
     whole_off, own_off = off
     _, own_on = on

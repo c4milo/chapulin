@@ -68,7 +68,7 @@ static void test_accept(void) {
     // The other build's leaf carries the other algorithm end to end.
     // The RSA build reads the smaller P-256 leaf and rejects its
     // AlgorithmIdentifier; the ECDSA build's cap is 768 and the RSA
-    // leaf exceeds it, so the size gate rejects it first.
+    // leaf exceeds it, so the size check rejects it first.
 #ifdef CH_PIN_ECDSA
     {
         static uint8_t big_list[sizeof certv_leaf_rsa + 8];

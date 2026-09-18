@@ -3,7 +3,7 @@
 // ch_cfg.server_pubkey takes raw key bytes, and a device is handed a
 // certificate. This bridges the two. It is built only under
 // CH_TRUST_CA, because it rests on the certificate parser that only
-// that mode links -- the gate is a dependency, not a difference in
+// that mode links -- the condition is a dependency, not a difference in
 // behaviour. The key it returns is a CA key or a server key depending
 // on nothing but which slot the caller assigns it to, so the name says
 // public key and not CA.

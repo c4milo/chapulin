@@ -7,8 +7,8 @@ reason: the mask written as `0 - bit` is a shape gcc rewrites into
   core with no multiplier never returns
   (https://github.com/c4milo/chapulin/issues/107); only the Bootlin gcc
   can measure it, the riscv32 lane's container is where that gcc runs
-  locally, and its first step is the gate whose rv32ic-gcc spec holds
-  softmul.c at zero calls to __muldi3. The lane skips without docker, and
+  locally, and its first step is lint-wide-multiply-gcc, whose rv32ic-gcc
+  spec holds softmul.c at zero calls to __muldi3. The lane skips without docker, and
   this then reports unguarded rather than caught.
 
 --- old

@@ -21,7 +21,7 @@
 // be exactly n_len bytes; digest is the SHA-256 (32 bytes)
 // or SHA-384 (48 bytes) of the signed content, and digest_len selects
 // which DigestInfo the encoded message carries. Returns 1 for a valid
-// signature, 0 for anything else: a modulus outside the size gate, an
+// signature, 0 for anything else: a modulus outside the size range, an
 // even modulus, a digest length other than 32 or 48, a signature length
 // other than n_len, a signature at or above the modulus, or an encoded
 // message that differs from the expected one in any byte.

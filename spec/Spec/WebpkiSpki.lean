@@ -174,7 +174,7 @@ def selftest : Bool :=
 ## Proofs
 
 `rsaKey?` states its profile over the decoded modulus. The theorem below
-restates it over the returned bytes, the form the C gate reads: a size
+restates it over the returned bytes, the form the C check reads: a size
 from 256 to `modulusMax` in multiples of 8, the top bit of the top byte
 set, and the value odd.
 -/

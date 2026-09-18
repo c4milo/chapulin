@@ -30,9 +30,9 @@
 # proofs that passed while proving less than they claimed.
 #
 # One "name percent" line per harness. A harness absent from this file is
-# measured and reported but not gated; the nightly publishes the table, so
-# adding a line is a matter of copying the number it printed. Lower a floor
-# only with the reason in the commit body.
+# measured and reported but carries no floor; the nightly publishes the
+# table, so adding a line is a matter of copying the number it printed.
+# Lower a floor only with the reason in the commit body.
 #
 # See https://github.com/c4milo/chapulin/issues/55.
 
@@ -87,14 +87,14 @@ webpki_spki 41.1  # local reading, cbmc 6.11.0 on arm64 macOS; replace with the 
 webpki_time 33.3  # local reading, cbmc 6.11.0 on arm64 macOS; replace with the nightly table's number
 x25519_tail 52.7
 
-# Not gated, because `cbmc --cover location` does not converge on them.
+# No floor, because `cbmc --cover location` does not converge on them.
 # This is a limit of the measurement, not a gap someone forgot: the
 # same solver cost that makes the proof slow makes counting its
 # reachable locations slow. proof/coverage.py reads this block and
 # skips them: running them anyway cost the nightly its runner (a cover
 # formula grew past the VM's memory on 2026-09-02 and the job died
 # without a log). Re-measure one by hand: `--only NAME` runs a harness
-# named here under the gate's command and REACH_BUDGET_S, and the command
+# named here under the cover command and REACH_BUDGET_S, and the command
 # it prints runs under any budget. Move it to the roster above when it
 # converges. Each got five minutes a harness, except handshake_pin and
 # handshake_psk, which got ninety minutes each, under the command
@@ -102,7 +102,8 @@ x25519_tail 52.7
 # https://github.com/c4milo/chapulin/issues/113 (cbmc 6.11.0, built-in
 # solver, no -DCH_NATIVE_WIDEMUL). Of this block only mlkem_poly compiles
 # a ct_widemul-family function, so that define changes its formula
-# alone; the others were measured under the formula the gate runs now.
+# alone; the others were measured under the formula the cover command
+# runs now.
 # handshake_pin and handshake_psk were still in propositional reduction
 # when the budget killed them, at 8.3 GB and 7.4 GB peak RSS.
 # proof/coverage.py stops a harness at REACH_BUDGET_S, so the nightly
@@ -112,17 +113,17 @@ x25519_tail 52.7
 # job; they carry no floor, so they are listed here rather than run.
 # x25519_step was still in propositional reduction at 4.4 GB when the
 # 900 s cap stopped it; x25519_tail, the same stub over four mul
-# instances instead of ten, finishes in 436 s and is gated above.
+# instances instead of ten, finishes in 436 s and carries a floor above.
 # x25519_mul_ct is x25519_mul's lemma over the 16x16 decomposition; it
 # carries the same 32 int64 products and timed out the same way under
-# the gate's command on 2026-09-03 (cbmc 6.11.0, 1.4 GB at the cap).
+# the cover command on 2026-09-03 (cbmc 6.11.0, 1.4 GB at the cap).
 #
 # mlkem_ntt, mlkem_invntt_low and mlkem_invntt_high timed out in all five
 # nightly runs whose logs remain (33686419744, 33691163738, 33715874614,
 # 33717153636, 33731054741), and the three of them took 45 minutes of
-# every one of those runs. They carry no floor, so each timeout gated
+# every one of those runs. They carry no floor, so each timeout failed
 # nothing. mlkem_ntt returned no verdict in 1800 s either, under the
-# gate's command on a development machine on 2026-09-03 (cbmc 6.11.0,
+# cover command on a development machine on 2026-09-03 (cbmc 6.11.0,
 # 6.3 GB at the cap). That machine runs hello_build's cover in 190 s
 # against the runner's 280, so 1800 s there buys more solver time than
 # 1800 s on the runner would. The other two are the same butterfly over
@@ -132,7 +133,7 @@ x25519_tail 52.7
 # pem and pem_ecdsa timed out in those same five runs, at a budget below
 # what they need rather than because they do not converge. Under
 # REACH_BUDGET_S they do: run 33888303774 measured pem at 74.6% in 1665 s
-# and pem_ecdsa at 74.6% in 1503 s, and both are gated above.
+# and pem_ecdsa at 74.6% in 1503 s, and both carry floors above.
 #
 # Their runner times also correct a wrong inference. pem takes 1654 s on a
 # development machine and 1665 s on the runner, a ratio of 1.01, while
@@ -144,22 +145,22 @@ x25519_tail 52.7
 # out survived until this run measured it.
 #
 # hello_build_webpki converges, and it is listed here for the reason
-# hkdf_expand is: the cost. Under the gate's command on a development
+# hkdf_expand is: the cost. Under the cover command on a development
 # machine on 2026-09-15 (cbmc 6.11.0) it reached 78.8% in 1681 s of the
 # 1800 s budget, and 596 s of that was system time, the profile of a
 # machine paging. That machine runs hello_build's cover in 186 s against
 # the runner's 310, so the runner would reach the budget and report a
-# timeout. A floor plus a timeout fails the gate, so this harness carries
+# timeout. A floor plus a timeout fails the check, so this harness carries
 # no floor and is skipped rather than run. hello_build, the same builder
-# without the server_name extension and the five signature schemes, is
-# gated above at 76.9%.
+# without the server_name extension and the five signature schemes,
+# has a floor recorded above at 76.9%.
 #
 # p384 is p256's harness at twelve limbs and times out the same way:
-# under the gate's command on a development machine on 2026-09-15
+# under the cover command on a development machine on 2026-09-15
 # (cbmc 6.11.0, -DCH_NATIVE_WIDEMUL) it was still in propositional
 # reduction at 4.6 GB when the 1800 s cap stopped it. p384_mul, the
-# same stub over the field multiply alone, converges in seconds and is
-# gated above.
+# same stub over the field multiply alone, converges in seconds and
+# carries a floor above.
 #
 #   eeparse
 #   handshake_parser

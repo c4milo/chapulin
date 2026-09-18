@@ -5,8 +5,8 @@ reason: summing ct_widemul's two 16x16 cross products as a 64-bit value,
   the recombination ct.h shipped until the rework, hands gcc a widening
   it can prove exact, and its widening_mul pass fuses the product and the
   add into umlal on the Cortex-M3 -- two per file at -Os, in poly1305,
-  x25519 and mlkem_poly; clang keeps the pieces apart, so the clang gate
-  passes this and only the gcc gate sees it
+  x25519 and mlkem_poly; clang keeps the pieces apart, so lint-wide-multiply
+  passes this and only lint-wide-multiply-gcc sees it
 
 --- old
     uint32_t t = hl + (ll >> 16);

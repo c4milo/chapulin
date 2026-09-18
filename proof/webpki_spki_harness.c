@@ -10,7 +10,7 @@
 //     minimum size, so the equality leaves no container room for a byte
 //     after its last field and no header room for a longer length form
 //   - so the reader consumed at most SPKI_MAX bytes, the largest
-//     SubjectPublicKeyInfo the modulus gate admits: a SEQUENCE header,
+//     SubjectPublicKeyInfo the modulus size check admits: a SEQUENCE header,
 //     rsaEncryption's 15-byte AlgorithmIdentifier, a BIT STRING header
 //     and its unused-bits octet, the RSAPublicKey and INTEGER headers,
 //     the pad octet, CH_RSA_MODULUS_MAX value bytes and the 5-byte

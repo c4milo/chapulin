@@ -105,7 +105,7 @@ int main(void) {
     // The shipped function, end to end, at three alignment shapes. A
     // concrete top byte pins off and emBits (see header); sig, hash,
     // sig_len, and the remaining modulus bytes stay nondet, so both
-    // sides of the sig_len gate, the s >= n reject, the scan, and the
+    // sides of the sig_len check, the s >= n reject, the scan, and the
     // decode all run in every call.
     n[0] = 0x80; // top bit set: emLen == n_len, off == 0, zero_bits == 1
     (void)rsa_pss_verify(n, n_len, hash, sig, nondet_size_t());

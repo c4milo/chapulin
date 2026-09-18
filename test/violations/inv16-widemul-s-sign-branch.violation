@@ -3,8 +3,9 @@ file: ct.h
 catches: test/lint-wide-multiply-gcc.sh
 reason: ct_widemul_s corrects the high word once for each negative
   operand through a mask of that operand's sign bit. Written as two ifs
-  on the signs, clang lowers both back to the mask and the clang gate's
-  count does not move, so that gate passes this; every gcc emits two
+  on the signs, clang lowers both back to the mask and
+  lint-wide-multiply's count does not move, so that check passes this;
+  every gcc emits two
   branches on the signs where x25519 inlines the routine -- two IT
   blocks on the Cortex-M3, two bgez on mips32r2, two bge on rv32 -- and
   x25519.c goes two over its ceiling under each gcc spec. The Arm gcc

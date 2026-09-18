@@ -124,9 +124,9 @@ def main():
                     help="measure reachability with cbmc --cover location (slow)")
     ap.add_argument("--only", action="append", default=[], metavar="HARNESS",
                     help="with --reach, measure just this harness (repeatable) "
-                         "under the gate's own command; this is how one floor "
+                         "under the cover command; this is how one floor "
                          "gets re-measured by hand. A harness the floors file "
-                         "lists as not gated runs when named here.")
+                         "lists as carrying no floor runs when named here.")
     args = ap.parse_args()
     # A missing cbmc is a setup error, not a measurement: without this
     # the nightly's spec-coverage job, which installs no cbmc, died in a
@@ -217,11 +217,11 @@ def main():
               f"proof passes without entering what it names")
     for name, got, floor in reach_fell:
         # got is a percentage, or the words for why there is none: a run
-        # that returned no number is a failed gate too, and saying "0.0%"
+        # that returned no number is a failed check too, and saying "0.0%"
         # for it sent a reader after the bound instead of the runner.
         if isinstance(got, str):
             print(f"proof-coverage: {name} {got}, so its recorded {floor}% "
-                  f"floor was not measured; the gate fails until it is")
+                  f"floor was not measured; the check fails until it is")
             continue
         print(f"proof-coverage: {name} reaches {got}% of its locations, under "
               f"its recorded {floor}% floor; the bound no longer enters what "
@@ -249,9 +249,9 @@ def reach_floors():
 
 
 def reach_not_gated():
-    """The harnesses reach-floors.txt lists as not gated: cover does not
-    converge on them, so the nightly does not run them. The list is the
-    indented comment block under the file's "Not gated" heading."""
+    """The harnesses reach-floors.txt lists as carrying no floor: cover
+    does not converge on them, so the nightly does not run them. The list
+    is the indented comment block under the file's "No floor" heading."""
     path = ROOT / "proof" / "reach-floors.txt"
     names = set()
     if not path.exists():
@@ -294,7 +294,7 @@ REACH_BUDGET_S = 1800
 # the 2026-09-02 runner death: under it cbmc printed "Solver ran out of
 # memory" and then "0 of 182 covered" with exit 0 for hello_build, a
 # harness that reaches 76.9% given the memory -- a false verdict, not a
-# contained failure. What protects the runner is the not-gated list
+# contained failure. What protects the runner is the no-floor list
 # above: the formulas that outgrew it are skipped, and a run that still
 # runs out of memory is reported as such below.
 
@@ -328,7 +328,8 @@ def reach_table(runs, only=frozenset()):
     """Per harness, the share of its goto locations CBMC can reach at
     the configured bound. A low number means the bound stops the proof
     short of the code it claims to cover. A non-empty `only` restricts
-    the run to those harnesses and lets a not-gated one run."""
+    the run to those harnesses and lets one the floors file lists
+    as carrying no floor run."""
     dead = []
     fell = []
     stale = []
@@ -345,13 +346,14 @@ def reach_table(runs, only=frozenset()):
         if not harness.exists() or (only and name not in only):
             continue
         if name in not_gated and name not in only:
-            out.append(f"| `{name}` | not gated: cover does not converge "
+            out.append(f"| `{name}` | no floor: cover does not converge "
                        "(proof/reach-floors.txt) |")
-            print(f"proof-reach: {name} not gated, skipped", flush=True)
+            print(f"proof-reach: {name} carries no floor, skipped", flush=True)
             continue
         cmd = reach_command(name, runs, shared_defines)
         # The log carries the exact command, so a floor can be re-measured
-        # by hand under the flags the gate used and not a reconstruction.
+        # by hand under the flags the cover command used and not a
+        # reconstruction.
         print(f"proof-reach: {name} command: {shlex.join(cmd)}", flush=True)
         try:
             res = subprocess.run(cmd, capture_output=True, text=True,
@@ -360,7 +362,7 @@ def reach_table(runs, only=frozenset()):
             out.append(f"| `{name}` | timed out at {REACH_BUDGET_S} s |")
             print(f"proof-reach: {name} timed out at {REACH_BUDGET_S} s", flush=True)
             # The same rule as the no-number branch below: a floored
-            # harness that returns no number fails the gate. Before this
+            # harness that returns no number fails the check. Before this
             # a timeout skipped the floor check and the run stayed green.
             if name in floors:
                 fell.append((name, "timed out", floors[name]))
@@ -384,7 +386,7 @@ def reach_table(runs, only=frozenset()):
             out.append(f"| `{name}` | {why} |")
             print(f"proof-reach: {name} {why}", flush=True)
             # A harness with a floor that returns no number is a failed
-            # gate, not a blank: the floor exists to notice regressions,
+            # check, not a blank: the floor exists to notice regressions,
             # and a silent blank is how one went unnoticed.
             if name in floors:
                 fell.append((name, why, floors[name]))

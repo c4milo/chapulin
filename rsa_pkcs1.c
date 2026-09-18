@@ -15,7 +15,7 @@
 #include "sha256.h"
 #include "sha512.h"
 
-// The modulus size gate, byte for byte the one rsa_pss_verify applies:
+// The modulus size check, byte for byte the one rsa_pss_verify applies:
 // RSA-2048 up to CH_RSA_MODULUS_MAX (rsa.h) in 8-byte steps. The bound
 // is rsa.h's, so the two verifiers and rsa_mont.c's limb arrays move
 // together.
@@ -47,7 +47,7 @@ static const uint8_t digest_info_sha384[DIGEST_INFO_LEN] = {
 // The smallest modulus still leaves PS at least PS_MIN bytes under the
 // longest T, so the encoder below never computes a negative PS length.
 _Static_assert(MODULUS_MIN >= EM_OVERHEAD + PS_MIN + DIGEST_INFO_LEN + SHA384_LEN,
-               "the modulus gate must leave room for the minimum PS");
+               "the modulus size check must leave room for the minimum PS");
 
 // The DigestInfo for a digest of digest_len bytes, or NULL when no
 // supported hash produces that length.

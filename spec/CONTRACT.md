@@ -469,7 +469,7 @@ step, and the module is written for it: both functions are short, and
 `check` and `commit` sit next to the C names they model.
 
 The model also drops three things the C does, each named in the
-module's own doc comment: the `cfg.epoch_load == NULL` gate that turns
+module's own doc comment: the `cfg.epoch_load == NULL` check that turns
 the feature off, the `epoch_status`/`epoch_seen` reporting, and the
 rule that a commit may run only after the server Finished — that last
 one is message order, which `CH_ASSERT(h->server_finished_ok)` enforces
@@ -666,7 +666,7 @@ Spec.WebpkiName.matchSan_sound
 Spec.WebpkiSpki.readSpki?_rsa_key
                              an accepted RSA key is 256..512 bytes in multiples of 8,
                              -- 2^(8·size − 1) ≤ its value, and its value is odd: the byte
-                             -- form of the gate rsa_pkcs1_verify applies
+                             -- form of the check rsa_pkcs1_verify applies
 Spec.WebpkiSpki.readSpki?_p256_size   an accepted P-256 key is 64 bytes
 Spec.WebpkiSpki.readSpki?_p384_size   an accepted P-384 key is 96 bytes
 Spec.WebpkiSigalg.readSigalg?_iff
@@ -740,7 +740,7 @@ Spec.Handshake, over every accepting trace (both modes unless noted):
   no_post_handshake_before_finished
                                   every prefix holding a NewSessionTicket, KeyUpdate or
                                   application data already holds the Finished — the
-                                  handshake gates traffic (§4.7.1, §4.7.3, §5.1)
+                                  handshake precedes traffic (§4.7.1, §4.7.3, §5.1)
   closeNotify_at_most_one         at most one close_notify (§6.1)
   closeNotify_last                nothing follows a close_notify (§6.1)
   connected_stable                a run of post-handshake messages from `connected` stays

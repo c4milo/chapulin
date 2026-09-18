@@ -11,10 +11,10 @@
 // quotes every openssl command. test/gen_rsa_wide_vectors.py produced
 // test/rsa_wide_vectors.h and test/rsa_pkcs1_wide_vectors.h the same
 // way: an RSA-4096 and an RSA-4032 key, the top of the webpki build's
-// modulus gate and one 8-byte step below it. This binary builds with
+// modulus range and one 8-byte step below it. This binary builds with
 // -DCH_RSA_MODULUS_MAX=512, the webpki build's bound, so those
 // verify; at the device bound of 384 the same test expects the size
-// gate to refuse them.
+// check to refuse them.
 #include <stdio.h>
 #include <string.h>
 
@@ -34,7 +34,7 @@ static int failures = 0;
         }                                                                                          \
     } while (0)
 
-// The modulus size gate as rsa.h defines it: 256 bytes is the smallest
+// The modulus size check as rsa.h defines it: 256 bytes is the smallest
 // accepted, CH_RSA_MODULUS_MAX the largest — 512 in this binary, 384 at
 // the device bound — and the step is 8. The vectors run to 512 bytes
 // whichever the bound, so every buffer is VECTOR_N_MAX wide and the
@@ -155,13 +155,13 @@ static void test_tampered(const vector *v) {
     CHECK(rsa_pkcs1_verify(v->n, v->n_len, v->digest, v->digest_len, v->n, v->n_len) == 0);
 }
 
-// The modulus gate, at its exact boundaries: 255 bytes is refused and
+// The modulus size check, at its exact boundaries: 255 bytes is refused and
 // 256 accepted (the RSA-2048 vectors); the vector at CH_RSA_MODULUS_MAX
 // is accepted (RSA-4096 at 512, RSA-3072 at 384) and the same bytes
 // padded to one step past the bound are refused; RSA-4032, one step
 // below 512, is accepted exactly when the bound is 512; and a length
 // between steps is refused. The refused sizes pass a wide buffer whose
-// first bytes are the real modulus and signature, so the gate alone
+// first bytes are the real modulus and signature, so the size check alone
 // decides.
 static void test_modulus_gate(void) {
     const vector *v = &vectors[0]; // n2048, SHA-256
@@ -177,7 +177,7 @@ static void test_modulus_gate(void) {
     uint8_t wide_sig[OVER_MAX_LEN] = {0};
     memcpy(wide_n, w->n, w->n_len);
     memcpy(wide_sig, w->sig, w->sig_len);
-    wide_n[OVER_MAX_LEN - 1] = 0x01; // odd, so only the size gate refuses it
+    wide_n[OVER_MAX_LEN - 1] = 0x01; // odd, so only the size check refuses it
     CHECK(rsa_pkcs1_verify(wide_n, OVER_MAX_LEN, w->digest, w->digest_len, wide_sig,
                            OVER_MAX_LEN) == 0);
     wide_n[NOT_A_STEP_LEN - 1] = 0x01;

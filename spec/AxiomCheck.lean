@@ -1,12 +1,12 @@
 -- Run by make lint-spec, never part of the library build: prints the
--- axioms each theorem depends on, and the gate asserts nothing appears
+-- axioms each theorem depends on, and lint-spec asserts nothing appears
 -- beyond Lean's three standard ones (propext, Classical.choice,
 -- Quot.sound). A stray axiom in a proof is exactly what this catches;
 -- the hygiene grep catches the declaration itself.
 --
 -- The theorems come from the environment, not from a list in this file. A
 -- hand-written list of `#print axioms` lines fell behind the proofs it
--- gated, and nothing reported the omissions: a theorem the list leaves out
+-- checked, and nothing reported the omissions: a theorem the list leaves out
 -- is a theorem nobody checks. Reading the environment cannot fall behind,
 -- because the import that compiles a theorem also puts it in the
 -- environment, and it reaches the private theorems, whose stored names a
@@ -75,7 +75,7 @@ run_cmd do
       throwError "{module} exists but spec/Spec.lean does not import it, so \
         its theorems go unchecked"
   let theorems := AxiomCheck.specTheorems env
-  -- An empty run would print no axiom lines at all, and the Makefile gate
+  -- An empty run would print no axiom lines at all, and the Makefile check
   -- reads no lines as nothing to report. Fail instead of passing silently.
   if theorems.isEmpty then
     throwError "the Spec modules declare no theorems, so this check would \
@@ -83,8 +83,8 @@ run_cmd do
   for name in theorems do
     let axioms ← collectAxioms name
     let listed := ", ".intercalate (axioms.qsort Name.lt |>.toList.map toString)
-    -- The shape `#print axioms` emits, which the Makefile gate greps for. A
-    -- theorem that rests on no axiom prints an empty list, and the gate
+    -- The shape `#print axioms` emits, which the Makefile check greps for. A
+    -- theorem that rests on no axiom prints an empty list, and the check
     -- reads that as nothing to report.
     logInfo s!"'{name}' depends on axioms: [{listed}]"
   logInfo s!"AxiomCheck: {theorems.size} theorems checked"

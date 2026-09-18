@@ -25,7 +25,7 @@ permissions:
   contents: read
 jobs:
   # Fast signal while the proof tiers grind: line coverage over the
-  # library sources, five host binaries x two PIN builds, gated on the
+  # library sources, five host binaries x two PIN builds, held to the
   # Makefile's COVERAGE_FLOOR. No proofs, no e2e, minutes not hours.
   coverage:
     runs-on: ubuntu-24.04
@@ -203,7 +203,7 @@ jobs:
     # riscv32 cross compiler with a libc, so the toolchain is Bootlin's,
     # pinned in tools/toolchain.env by the publisher's sha256 and cached
     # by version. Its libc is ilp32d, so the lane runs the toolchain's
-    # own ABI; rv32imac codegen is gated separately by lint-wide-multiply
+    # own ABI; rv32imac codegen is checked separately by lint-wide-multiply
     # under clang in the check job and under this gcc in the step below,
     # which also measures rv32ic, the core with no multiplier.
     runs-on: ubuntu-24.04
@@ -530,7 +530,7 @@ jobs:
       - run: make hooks
 
       - name: Install the Arm GNU toolchain (pinned)
-        # check-slow's test-invariants-fast runs the gcc codegen gate
+        # check-slow's test-invariants-fast runs the gcc codegen check
         # (test/lint-wide-multiply-gcc.sh), which needs the Arm GNU gcc
         # the m3 lane pins.
         uses: ./.github/actions/install-arm-gnu
@@ -539,10 +539,10 @@ jobs:
           sha256: ${{ env.ARM_GNU_LINUX_SHA256 }}
       - name: Put the Arm GNU gcc on PATH
         # test/violations.py runs test/lint-wide-multiply-gcc.sh with no
-        # arguments, and the Makefile resolves that gate's gcc through
+        # arguments, and the Makefile resolves that check's gcc through
         # M3_CC's PATH lookup, so the toolchain goes on PATH rather than
         # being passed as a make variable. The inv16-widemul-mid-widened
-        # violation is the one only that gate catches
+        # violation is the one only that check catches
         # (https://github.com/c4milo/chapulin/issues/106).
         run: echo "$HOME/armtc/bin" >> "$GITHUB_PATH"
 
@@ -564,7 +564,7 @@ jobs:
         run: cat bin/proof-coverage.md >> "$GITHUB_STEP_SUMMARY" 2>/dev/null || true
 
       # The slow-tier proofs run in the nightly workflow; this job
-      # gates pushes and PRs in minutes with the fast tier.
+      # checks pushes and PRs in minutes with the fast tier.
 
       # Save even on failure or timeout (always() runs on cancelled jobs):
       # every verified harness has already recorded its key, so the next

@@ -70,7 +70,7 @@ Domain vocabulary keeps the RFCs' own spelling: `pt`, `aad`, `iv`,
   packages commitlint needs. Nothing there is built into the library.
 - The lint tools are required, not optional. clang-tidy, clang-format,
   cppcheck, semgrep, shellcheck, commitlint and lake each fail `make lint`
-  when missing, on every machine. A lint gate that skipped would let
+  when missing, on every machine. A linter that skipped would let
   `make check` exit 0 with a finding still waiting on CI. Install them
   at the versions `tools/toolchain.env` pins, which the workflows load
   through `.github/actions/load-pins`.

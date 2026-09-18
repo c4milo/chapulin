@@ -57,7 +57,7 @@ DER`, and `openssl pkey -pubin` must refuse to load each key.
 
 The negative SPKIs are the openssl ones with one field rewritten here,
 each named for the one rule it breaks: an exponent of 3, an even
-modulus, a 4104-bit modulus (one byte over the 512-byte gate), a missing
+modulus, a 4104-bit modulus (one byte over the 512-byte limit), a missing
 and an unneeded pad octet, a compressed point, and each curve's point
 under the other curve's identifier. The RSA-1024 SPKI is openssl's own
 over the corpus key below the modulus floor.
@@ -233,7 +233,7 @@ def negative_spkis(spki):
     if len(wide_modulus) != 513:
         sys.exit("rsa4096 SPKI shape unexpected")
     even = modulus[:-1] + bytes([modulus[-1] & 0xFE])
-    # One value byte above the top of the 512-byte gate: prefix a byte
+    # One value byte above the 512-byte limit: prefix a byte
     # with its top bit set, so the pad stays needed and the value odd.
     wide = b"\x00\xc5" + wide_modulus[1:]
     p256_point = ec_point(spki["p256"])

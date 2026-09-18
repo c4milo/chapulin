@@ -5,7 +5,7 @@
 // RSAVP1 runs over the attacker's n and sig, both directions — driven
 // concretely at k = LIMBS_MAX (96 for RSA-3072; 128 for RSA-4096 in the
 // rsa_mul_webpki variant, which sets CH_TRUST_WEBPKI), the bound
-// rsa_pss_verify's n_len gate enforces before rsa_vp1 runs, over nondet
+// rsa_pss_verify's n_len check enforces before rsa_vp1 runs, over nondet
 // bytes and limbs. The maximal k is the binding case for every index;
 // smaller k only shrinks the loop counts.
 //

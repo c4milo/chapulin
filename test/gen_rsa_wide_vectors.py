@@ -4,7 +4,7 @@
 Usage: python3 test/gen_rsa_wide_vectors.py
 
 The script mints two fresh RSA keys with OpenSSL 3 at the top of the
-TRUST=webpki modulus gate and one step below it: RSA-4096, whose modulus
+TRUST=webpki modulus range and one step below it: RSA-4096, whose modulus
 is the 512 bytes CH_RSA_MODULUS_MAX names under CH_TRUST_WEBPKI (rsa.h),
 and RSA-4032, 504 bytes, one 8-byte step down. It signs one message per
 key three ways: RSASSA-PSS over SHA-256, the CertificateVerify scheme

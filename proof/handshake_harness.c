@@ -162,7 +162,7 @@ size_t hs_build_client_hello(uint8_t *out, size_t cap, const ch_cfg *cfg, const 
     // ASSUMED, not proven: a successful build returns at least the
     // binders tail plus the handshake header. handshake_message.c has no harness
     // (the README names it), so this contract rests on the unit tests
-    // until one exists; the binder patching below is what leans on it.
+    // until one exists; the binder patching below is what depends on it.
     __CPROVER_assume(n >= CH_BINDERS_TAIL + 4 && n <= cap);
     // All cap bytes havoc, not n of them. The builder may write anywhere
     // inside the caller's cap -- hello_build proves it writes nothing

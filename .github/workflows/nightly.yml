@@ -1,7 +1,7 @@
 name: nightly
 
-# The slow lane. The check workflow gates every push and PR in
-# minutes; everything here runs on a schedule (or on demand) because
+# The slow lane. The check workflow runs on every push and PR and
+# finishes in minutes; everything here runs on a schedule (or on demand) because
 # it costs hours or exists to catch drift, not regressions in the
 # diff at hand. Policy: a red nightly opens an issue via the report
 # job below and blocks the next release; it does not block in-flight
@@ -201,7 +201,7 @@ jobs:
         with:
           go-version: ${{ env.GO_VERSION }}
       - name: Install the Arm GNU toolchain (pinned)
-        # The gcc codegen gate (test/lint-wide-multiply-gcc.sh) is a
+        # The gcc codegen check (test/lint-wide-multiply-gcc.sh) is a
         # violation target and needs the Arm GNU gcc the m3 lane pins.
         uses: ./.github/actions/install-arm-gnu
         with:
@@ -218,10 +218,10 @@ jobs:
           llvm: "true"
       - name: Put the Arm GNU gcc on PATH
         # test/violations.py runs test/lint-wide-multiply-gcc.sh with no
-        # arguments, and the Makefile resolves that gate's gcc through
+        # arguments, and the Makefile resolves that check's gcc through
         # M3_CC's PATH lookup, so the toolchain goes on PATH rather than
         # being passed as a make variable. The inv16-widemul-mid-widened
-        # violation is the one only that gate catches
+        # violation is the one only that check catches
         # (https://github.com/c4milo/chapulin/issues/106).
         run: echo "$HOME/armtc/bin" >> "$GITHUB_PATH"
 
@@ -489,7 +489,7 @@ jobs:
   # meet the undefined-behavior checks. Trap mode, because Ubuntu's
   # MIPS cross toolchain ships no UBSan runtime: a UB hit dies as
   # SIGILL in a named test instead of printing, which is enough for
-  # a gate. ASan stays off here — its shadow memory does not map
+  # a check. ASan stays off here — its shadow memory does not map
   # cleanly under qemu-user.
   mips-ubsan:
     runs-on: ubuntu-24.04

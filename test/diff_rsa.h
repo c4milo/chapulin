@@ -83,7 +83,7 @@ static const char *const diff_rsa_d3072 =
     "11f97ddf33f1e701fad583c11eb8fbbf75c5a4929f78a706676408c4a4dfde81";
 
 // 4096-bit test key: modulus and private exponent, big-endian hex. The
-// modulus is DIFF_RSA_N_MAX bytes, the top of the webpki build's gate.
+// modulus is DIFF_RSA_N_MAX bytes, the top of the webpki build's range.
 static const char *const diff_rsa_n4096 =
     "bd6084cdd3a650bf010d72921a82bca1f919505356fc875a21d7b504fe1cf599"
     "adcaeaf7ef4ef24953bd54f6b871c0db35e489e2ecb482205048ed9be07f6659"
@@ -136,7 +136,7 @@ static void diff_rsa_check_c(const char *n_hex, size_t n_len, const uint8_t *has
         die("rsa: malformed key or signature");
     }
     // A build whose bound is below the sampled modulus would refuse the
-    // row at the size gate and report a divergence the spec cannot see;
+    // row at the size check and report a divergence the spec cannot see;
     // the domains must agree before a verdict means anything. A runtime
     // check rather than a static one, because lint-tidy compiles this
     // driver without the define.
@@ -157,7 +157,7 @@ static void diff_rsa_check_c(const char *n_hex, size_t n_len, const uint8_t *has
     // A one-byte signature flip must be rejected too. The mutated
     // hash above only exercises the final compare; a signature flip
     // scrambles the whole recovered EM through RSAVP1, so these
-    // exercise the earlier reject branches (the s >= n gate, the
+    // exercise the earlier reject branches (the s >= n check, the
     // trailer, the top bits, the padding walk) instead. Flip at the
     // trailer position (last byte), inside the padding region (EM
     // is PS || 0x01 || salt || H || 0xbc, so PS spans the low

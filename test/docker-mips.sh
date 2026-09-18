@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Runs the mips CI lane locally: the codegen gate under Ubuntu's
+# Runs the mips CI lane locally: lint-wide-multiply-gcc under Ubuntu's
 # gcc-mips-linux-gnu, then the cross-check roster built with it and run
 # under qemu-mips user mode, inside an x86_64 ubuntu container. Mirrors
 # the mips job in .github/workflows/check.yml; tools/toolchain.env pins
@@ -26,8 +26,8 @@ export DEBIAN_FRONTEND=noninteractive
 apt-get update -q >/dev/null
 apt-get install -y -q make python3 git gcc-mips-linux-gnu qemu-user >/dev/null
 
-# The same two steps the CI job runs, in its order: the codegen gate under
-# this gcc -- both mips32r2 specs match its -dumpmachine, and the -O2 one
+# The same two steps the CI job runs, in its order: lint-wide-multiply-gcc
+# under this gcc -- both mips32r2 specs match its -dumpmachine, and the -O2 one
 # holds poly1305.c at the two madd it records
 # (https://github.com/c4milo/chapulin/issues/122) -- then the suites.
 # test/violations/inv16-widemul-compare-carries.violation names this

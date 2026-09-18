@@ -88,7 +88,7 @@ magnitude above kB-class.
 ## Verified TLS/crypto
 
 - **HACL*/EverCrypt**: verified primitives, extracted C usable
-  standalone; no embedded footprint figures; portable Curve25519 leans on
+  standalone; no embedded footprint figures; portable Curve25519 depends on
   emulated 128-bit arithmetic (slow on M0/M3).
 - **miTLS / Project Everest**: archived; handshake proof left incomplete
   ([retrospective](https://dl.acm.org/doi/10.1145/3805702)).

@@ -156,7 +156,7 @@ def main():
         lines.append("")
 
     lines += ["### C reached by the differential alone", "",
-              "The rest of the gate covers these files too; this column is",
+              "The rest of the test suite covers these files too; this column is",
               "only what the spec checks. A zero means the spec does not",
               "model that module at all.", "",
               "| file | lines | reached by the spec |", "| --- | --- | --- |"]

@@ -164,8 +164,8 @@ int quic_initial_keys(aes_public_key *rx, aes_public_key *tx, const uint8_t *dci
 // only reads of pn_len that decide a branch, they run before any byte is
 // sealed, and they reveal only a length the caller passed. Every step
 // after them — the nonce, the seal and the mask — takes no branch and no
-// memory index on pn or pn_len. No codegen gate measures that here,
-// because quic_initial.c sits in WIDEMUL_PUBLIC, and what the gate would
+// memory index on pn or pn_len. No codegen check measures that here,
+// because quic_initial.c sits in WIDEMUL_PUBLIC, and what the check would
 // measure leaks nothing: anyone can compute the Initial keys and read
 // the packet number this rule protects (rfc9001.txt:999-1001). The rule
 // still binds the code.

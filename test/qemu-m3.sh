@@ -5,7 +5,7 @@
 # FIPS 180-4 "abc" vector so host and target cannot both be wrong the
 # same way. The target build is the shipped shape -- freestanding, no
 # libc, the 16x16 multiply decomposition -- on QEMU's MPS2-AN385, the
-# same Cortex-M3 lint-wide-multiply gates by disassembly.
+# same Cortex-M3 lint-wide-multiply checks by disassembly.
 #
 # Needs qemu-system-arm and a clang with the Arm backend. Skips, with
 # the reason, when either is missing.

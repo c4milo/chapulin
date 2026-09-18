@@ -30,7 +30,7 @@ SRCS = sorted(ROOT.glob("*.c"))
 # STACK_CFLAGS: extra compile flags (e.g. -DCH_PIN_ECDSA to walk that
 # build). STACK_PRUNE: comma-separated functions removed from the graph,
 # for paths a mode provably never enters — PSK mode never reaches
-# server_auth (the cfg.psk gate in run()), so pruning it measures the
+# server_auth (the cfg.psk check in run()), so pruning it measures the
 # PSK-mode peak from the same objects.
 # cfg.h refuses a build that declares no entropy pattern. This walks the
 # call graph, never links a generator, so it measures the extern shape.

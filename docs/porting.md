@@ -7,8 +7,8 @@ further; the fourth, entropy, has no default and cannot have one.
 This document covers what you decide and, more usefully, what you can check.
 Every claim below is something you can reproduce on your own target rather than
 take on trust. Writing it turned up a case where the mitigation was defeated by
-an optimiser on a target nothing gated, which is the reason the checking section
-exists.
+an optimiser on a target no lint covered, which is the reason the checking
+section exists.
 
 ## 1. The widening multiply
 
@@ -35,7 +35,7 @@ arithmetic-shifted back down, a form gcc keeps at `-O1`, `-O2`, `-O3` and
 `-Os`, and the rv32ic spec of `lint-wide-multiply-gcc` (below) counts the
 calls to `__muldi3` per file under that gcc and holds `softmul.c` at zero.
 `lint-runtime-symbols` measures clang, which keeps either mask form. If you
-ship a compiler neither gate measures, run the gate with it, or read
+ship a compiler neither lint measures, run the lint with it, or read
 `softmul.o`'s disassembly for a call to its own name before you trust it.
 
 **Your core has a multiplier whose timing you cannot document.** This is the
@@ -83,7 +83,7 @@ are instruction-for-instruction unchanged, because their operands are wide by
 construction and nothing in them is provably zero. A blanket barrier inside
 `ct_widemul` would have cost 45% of poly1305's block on a Cortex-M3.
 
-`make lint-wide-multiply` gates Cortex-M3, mips32r2 and rv32imac under the
+`make lint-wide-multiply` covers Cortex-M3, mips32r2 and rv32imac under the
 pinned clang, over every source a secret passes through (`CODEGEN_SRCS` in the
 Makefile: the chain from `ct.c` to `tls.c`, plus `drbg.c` and `softmul.c`),
 and counts per file the widening multiplies, the divisions and the calls into
@@ -114,14 +114,14 @@ select your core; the comma-separated tokens that count as a wide multiply or
 a division on your ISA; and the comma-separated conditional-branch mnemonics
 of your ISA. The Makefile holds one list of each per ISA (`WIDEMUL_OPS_ARM`
 and `BRANCH_OPS_ARM`, and the mips and rv32 pairs), and a make variable
-named inside the single quotes expands when the gate reads the spec. A
+named inside the single quotes expands when the lint reads the spec. A
 token counts every instruction whose mnemonic begins with it, so a
 condition-code or width suffix (`umullne`, `udiveq`, `umull.w`) cannot slip
 past it, and a token that begins with `__` counts every call to a runtime
 routine whose name begins with it, which is where a 64-bit division goes. Both
 can only over-count, and an over-count fails loudly. Run it with the compiler
 and flags you actually ship, since this is a property of codegen and not of
-the source; the gate passes `-Os` before the flags, so a level in the flags
+the source; the lint passes `-Os` before the flags, so a level in the flags
 field wins, which is how the mips gcc spec below runs a second time at `-O2`.
 A new spec starts from the default multiply ceilings and no branch ceilings,
 so the first things it reports are how your compiler lowers sha3's public
@@ -135,7 +135,7 @@ the branches and found each to be loop control.
 ### What each compiler emits today
 
 Counts per file at `-Os`, and for the mips gcc at `-O2` as well, read from
-the gate. Every source not listed is at zero under every compiler.
+the lint. Every source not listed is at zero under every compiler.
 
 | compiler | poly1305.c | x25519.c | mlkem_poly.c | sha3.c (public `% 5`) |
 | --- | --- | --- | --- | --- |
@@ -158,15 +158,15 @@ secret. The three gcc rows were not always zero. gcc rewrites
 one widening multiply-accumulate, and `x & (0 - bit)` into `x * bit`, a
 widening multiply by a secret bit: two `umlal` in poly1305 and in mlkem_poly
 and two `umull` and two `umlal` in x25519 under the Arm gcc, one `mulhu` in
-x25519 under the riscv32 gcc. The gate recorded those counts as ceilings until
+x25519 under the riscv32 gcc. The lint recorded those counts as ceilings until
 `ct_widemul` moved to a recombination that never widens a product,
 `ct_widemul_s` and x25519's `cswap` moved their masks to an arithmetic shift of
 the sign bit, and every row went to zero
 ([#106](https://github.com/c4milo/chapulin/issues/106)). The violation
 `test/violations/inv16-widemul-mid-widened.violation` puts the old sum back
-and requires the gcc gate to fail.
+and requires `lint-wide-multiply-gcc` to fail.
 
-The gate compiles at `-Os`, and the mips gcc spec runs once more at `-O2`,
+The lint compiles at `-Os`, and the mips gcc spec runs once more at `-O2`,
 the one compiler and level where a secret-bearing file is not at zero. Its
 count of two is a record, not an allowance, and this is what it records
 ([#122](https://github.com/c4milo/chapulin/issues/122)).
@@ -213,7 +213,7 @@ four compare-with-zero forms on mips; the six base branches and `c.beqz` and
 `c.bnez` on rv32 — in the twelve arithmetic files under the record layer
 (`BRANCH_SRCS` in the Makefile), and holds each at the ceiling
 `BRANCH_CEILING` records for that compiler
-([#141](https://github.com/c4milo/chapulin/issues/141)). Read from the gate:
+([#141](https://github.com/c4milo/chapulin/issues/141)). Read from the lint:
 
 | compiler | ct | sha256 | sha3 | hkdf | chacha20 | poly1305 | aead | x25519 | mlkem | mlkem_poly | drbg | softmul |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -226,7 +226,7 @@ four compare-with-zero forms on mips; the six base branches and `c.beqz` and
 | Bootlin gcc 14.3, rv32imac | 2 | 15 | 26 | 15 | 10 | 15 | 4 | 23 | 20 | 39 | 9 | 0 |
 | Bootlin gcc 14.3, rv32ic | 2 | 15 | 26 | 15 | 10 | 15 | 4 | 23 | 20 | 39 | 9 | 2 |
 
-None of these is zero, and the gate does not claim they branch on public
+None of these is zero, and the lint does not claim they branch on public
 data: it cannot tell a loop counter from a limb. They are what each compiler
 emits for `ct_memeq`'s and `ct_wipe`'s loops, the block loops, x25519's
 255-step ladder, Keccak's round and lane counters, `hkdf`'s length checks and
@@ -238,7 +238,7 @@ condition holds, so an IT block is no timing leak there; the count holds them
 because an IT block is the form clang gives an `if` on a limb, and a count of
 `b<cond>` alone would pass that form through.
 
-What the gate holds is that no count grows. What the ceilings record is a
+What the lint holds is that no count grows. What the ceilings record is a
 choice each compiler made: the compare-carries `ct_widemul_opaque` takes,
 `mid < lh` and `lo < ll`, and the sign masks in `ct_widemul_s`, x25519's
 `cswap` and `poly1305_final` are branch-free in C, and every compiler in the
@@ -252,7 +252,7 @@ the last limb, and poly1305's count rises by one under all eight specs.
 `ct_widemul_s`'s two sign corrections as `if`s: clang lowers both back to
 the mask and its count does not move, and every gcc emits two branches on
 the operands' signs where x25519 inlines the routine — two IT blocks on the
-Cortex-M3, two `bgez` on mips32r2, two `bge` on rv32 — so only the gcc gate
+Cortex-M3, two `bgez` on mips32r2, two `bge` on rv32 — so only the gcc lint
 objects. That is the split the multiply count found first
 ([#106](https://github.com/c4milo/chapulin/issues/106)), and why both
 compiler families are measured.
@@ -314,7 +314,7 @@ epoch. Neither has a default that is right for every deployment.
   the question.** `lint-wide-multiply` holds each arithmetic file's
   conditional-branch count at a ceiling measured per compiler, and those
   ceilings are public loop control, not zero. A compiler the table does not
-  carry may lower a select to a branch, and the gate sees that only when you
+  carry may lower a select to a branch, and the lint sees that only when you
   run it with that compiler: add the spec, read and record its twelve
   counts, and read the histogram it prints when one grows.
 - **The memory numbers are measured on arm64.** A 32-bit target shrinks the

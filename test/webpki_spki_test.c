@@ -1,7 +1,7 @@
 // webpki_read_spki against openssl's SubjectPublicKeyInfo encodings of
 // the corpus keys, the negatives test/gen_webpki_sigalg_vectors.py
 // derives from them, and the exact boundaries webpki.h states: the
-// modulus length gate and its step, the pad octet, the oddness, the
+// modulus length check and its step, the pad octet, the oddness, the
 // exponent, the point form and length, and no byte after the last
 // field of each container. Its own binary, out of the raw and ca
 // objects, the way sha512_test and p384_test are.
@@ -219,7 +219,7 @@ static void test_refused_keys(void) {
     }
 }
 
-// The modulus gate at its edges: 256 bytes is the first accepted,
+// The modulus size check at its edges: 256 bytes is the first accepted,
 // CH_RSA_MODULUS_MAX the last, and every length between that is not a
 // multiple of 8 is refused.
 static void test_modulus_boundaries(void) {
@@ -345,7 +345,7 @@ static void test_point_boundaries(void) {
 
 // One bit flipped at pos in der, whose unflipped read gave base. A flip
 // inside the key bytes is accepted with the same algorithm and key
-// position, except the two modulus bits the gate reads: the top bit of
+// position, except the two modulus bits webpki_read_spki reads: the top bit of
 // the first value byte (the pad would be unneeded) and the low bit of
 // the last (the modulus would be even). A flip anywhere else is refused.
 static void check_bit_flip(const uint8_t *der, size_t len, const webpki_spki *base, size_t pos,

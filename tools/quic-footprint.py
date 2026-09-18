@@ -19,9 +19,9 @@ Six questions, six sections, every answer read from the tree:
 
   Files                    every quic file with its line count, plus the
                            shared pair, plus a total
-  Mode-only text elsewhere the lines each file outside the prefix gates
-                           on CH_TRANSPORT_QUIC, which the Files table
-                           does not hold
+  Mode-only text elsewhere the lines each file outside the prefix
+                           compiles only under CH_TRANSPORT_QUIC, which
+                           the Files table does not hold
   Share of the library     those lines against every root .c and .h
                            line, and against the .c lines one build
                            compiles, so the footprint is a number and
@@ -50,7 +50,7 @@ on either mismatch: `quic.h` against docs/quic.md's interface table, and
 the stub set against the function names test/quic_stub_test.c calls. The
 second is what keeps the safety rule mechanical -- a stub the test never
 calls is a stub whose refusal nothing measures, and a lane that adds one
-would otherwise leave every gate green. `make lint-quic-surface` runs
+would otherwise leave every check green. `make lint-quic-surface` runs
 both, and `lint` runs it. The report reaches no verdict of its own, so it exits 0
 on every count it prints; it stops with a message only when something it
 reads is not there, such as a missing anchor.
@@ -211,7 +211,7 @@ def role_of(path):
 
 
 def conditional_rows(quic):
-    """Every root file outside the prefix that gates lines on
+    """Every root file outside the prefix that compiles lines only under
     CH_TRANSPORT_QUIC, with how many blocks and how many lines. These
     are the mode's text under names `git ls-files 'quic*'` does not
     print, so a reader who takes the Files table for the whole mode
@@ -254,7 +254,8 @@ def report_conditional(conditional):
     """The mode's text in files the prefix does not name."""
     print("Mode-only text elsewhere")
     if not conditional:
-        print(f"  No file outside the prefix gates a line on {TRANSPORT}.")
+        print(f"  No file outside the prefix compiles a line only under "
+              f"{TRANSPORT}.")
         print()
         return
     width = max(len(r[0]) for r in conditional)

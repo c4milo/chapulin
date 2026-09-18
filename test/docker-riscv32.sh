@@ -39,8 +39,8 @@ if [ ! -x "$tc/$name/bin/riscv32-linux-gcc" ]; then
     tar -xJf /tmp/rv32tc.tar.xz -C "$tc"
 fi
 
-# The same two steps the CI job runs, in its order: the codegen gate under
-# this gcc -- both the rv32imac and the rv32ic spec match its
+# The same two steps the CI job runs, in its order: lint-wide-multiply-gcc
+# under this gcc -- both the rv32imac and the rv32ic spec match its
 # -dumpmachine, and the rv32ic one holds softmul.c at zero calls to
 # __muldi3 (https://github.com/c4milo/chapulin/issues/107) -- then the
 # suites. test/violations/inv16-softmul-mask-as-negate.violation names
