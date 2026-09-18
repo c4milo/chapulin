@@ -24,11 +24,17 @@ would pass, which is the likeliest way the partition breaks.
 
 Three flags make the comparison answer for the file in hand.
 
-`-fdirectives-only` handles directives and expands includes but leaves
-macro invocations in the text alone. Expanding them makes files that
-carry no QUIC arm read as conditional: `handshake.c` writes
-`REC_HANDSHAKE`, `record.h` defines that macro in a TLS build alone, and
-under full expansion `handshake.c`, `session.c` and `tls.c` all changed.
+Plain `-E` expands macros, which once made three files that carry no
+QUIC arm read as conditional: `handshake.c` writes `REC_HANDSHAKE`,
+`record.h` defines that macro in a TLS build alone, and `handshake.c`,
+`session.c` and `tls.c` all changed under the define. `-fdirectives-only`
+suppressed that expansion and was the first answer. It was the wrong one:
+clang and gcc disagree about what the flag means, clang evaluating `#if`
+and `#ifdef` and gcc keeping every arm's text, so the lint passed on a
+development machine and failed on CI. The three files are instead the
+three the QUIC object does not compile, so this lint skips
+`QUIC_REPLACED` and `QUIC_PENDING` and reads plain `-E`, which both
+compilers agree on.
 
 The line markers say which file each line came from, and only the lines
 the file itself wrote are compared. Counting the lines its includes
@@ -66,8 +72,13 @@ from impact_read import make_db
 ROOT = Path(__file__).resolve().parent.parent
 
 CC = os.environ.get("CC") or "cc"
-FLAGS = ["-E", "-fdirectives-only", "-x", "c", "-std=c11", "-DCH_RAND_EXTERN",
-         "-I."]
+# Plain -E, not -E -fdirectives-only. The two compilers do not agree on
+# what -fdirectives-only means: clang evaluates #if and #ifdef and drops
+# the arm it does not take, gcc keeps the directives and every arm's text.
+# Reading a gcc run as a clang run says every quic* file declares its body
+# without the define, which is how this lint passed here and failed on CI
+# until 2026-09-18. Plain -E evaluates conditionals on both.
+FLAGS = ["-E", "-x", "c", "-std=c11", "-DCH_RAND_EXTERN", "-I."]
 DEFINE = "-DCH_TRANSPORT_QUIC"
 
 # A conditional and the identifiers it tests. `defined` is the operator,
@@ -151,12 +162,14 @@ def unresolved_macros(path):
 
 
 def lists():
-    """The four Makefile variables this lint reads, expanded by make
-    rather than parsed here: the two exemption lists and the two file
-    lists the formatter and clang-tidy read."""
+    """The six Makefile variables this lint reads, expanded by make
+    rather than parsed here: the two exemption lists, the two file lists
+    the formatter and clang-tidy read, and the two lists of sources a
+    QUIC object does not compile."""
     variables, _ = make_db()
     return {name: variables.get(name, "").split()
-            for name in ("QUIC_SHARED", "QUIC_CONDITIONAL", "HDRS", "LINT_C")}
+            for name in ("QUIC_SHARED", "QUIC_CONDITIONAL", "HDRS", "LINT_C",
+                         "QUIC_REPLACED", "QUIC_PENDING")}
 
 
 def judge(path, quic, shared, conditional):
@@ -272,6 +285,14 @@ def main(argv):
     shared = [f for f in names["QUIC_SHARED"] if (ROOT / f).exists()]
     quic = [p for p in run("git", "ls-files", "quic*") if "/" not in p]
     roots = [p for p in run("git", "ls-files", "*.c", "*.h") if "/" not in p]
+    # A QUIC object compiles neither list: QUIC_REPLACED names the five
+    # sources the mode replaces outright, QUIC_PENDING the four that owe an
+    # arm they do not have yet. Asking what those contribute under the
+    # define reads text no build compiles -- three of them do not even
+    # preprocess to the same macros, because the define closes the include
+    # that defines them. A file leaving either list is judged again.
+    skipped = sorted(set(names["QUIC_REPLACED"]) | set(names["QUIC_PENDING"]))
+    roots = [p for p in roots if p not in skipped]
 
     problems, counts, conditional = [], {}, []
     if not quic:
@@ -306,7 +327,9 @@ def main(argv):
             print(f"lint-quic-partition: {problem}")
         return 1
     print(f"lint-quic-partition: {counts.get('quic', 0)} of {len(roots)} root "
-          f"files are QUIC-only and every one is named quic*; QUIC_SHARED "
+          f"files are QUIC-only and every one is named quic*; "
+          f"{len(skipped)} the QUIC object does not compile went unjudged; "
+          f"QUIC_SHARED "
           f"holds {len(shared)} that both transports compile and "
           f"QUIC_CONDITIONAL {counts.get('conditional', 0)} that carry a "
           f"transport arm")
