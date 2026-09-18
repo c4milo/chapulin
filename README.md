@@ -839,6 +839,10 @@ supplies, and [`docs/webpki.md`](docs/webpki.md) lists what it does not
 check. [`docs/decisions.md`](docs/decisions.md) records every trade and why.
 QUIC is not implemented either; [`docs/quic.md`](docs/quic.md) records
 the design of the `TRANSPORT=quic` mode, decided and not yet built.
+The server role is in the same state: [`docs/server.md`](docs/server.md)
+records the design of the `ROLE=server` build, decided on paper, with no
+header written and sixteen questions open, three of which block the first
+line of code.
 
 Two caveats worth knowing before you adopt it.
 
