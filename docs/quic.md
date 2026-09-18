@@ -34,12 +34,15 @@ QUIC build is still `TRUST=raw`, `TRUST=ca` or `TRUST=webpki`.
 
 ## Status
 
-Decided, and the interface is written. The design has chapulin owning packet
-protection at every level, with the AES exception below. The nine headers this
-document names exist and no `.c` file does, so no build compiles the mode and
-the Makefile has no `TRANSPORT` axis yet. `make quic-footprint` prints what
-exists, read from the tree, and `make lint-quic-partition` holds the mode to
-the files named `quic*`.
+Decided, the interface is written, and the build axis carries it. The design
+has chapulin owning packet protection at every level, with the AES exception
+below. The nine headers this document names exist, eight `.c` files exist and
+every function in them is a stub, and the Makefile's `TRANSPORT` axis packages
+them: `make lib TRANSPORT=quic` links an object that exports the fifteen
+`ch_quic_` calls and refuses every one of them. `make quic-footprint` prints
+what exists, read from the tree, including how many functions are stubbed
+against how many are implemented, and `make lint-quic-partition` holds the mode
+to the files named `quic*`. The next section states the stub rule.
 
 Every claim about chapulin names the file and line it came from, read at
 commit `3432a5d`. The citations into `docs/invariants.md` are read after the
@@ -59,6 +62,68 @@ datagrams are RFC 9221.
 
 The programs quoted below ran outside the repository. They are evidence, not
 code to land.
+
+## The stubs and the marker
+
+The build axis lands with the first line of code and not after it, so every
+later lane has a target that compiles and every gate already runs on the new
+axis. That means the mode's eight `.c` files exist before the mode does. Each
+one defines every function its header declares and implements none. The mode
+links and does nothing.
+
+Three rules hold that state, and each is checked rather than stated.
+
+1. **Every stub fails closed.** A stub returns a refusal its header documents
+   and writes nothing through its out-parameters. `CH_EINVAL` from the calls
+   that take a session, `CH_QUIC_DISCARD` from the three that open a packet, 0
+   from `quic_retry_ok` and `gcm_open`, which answer 1 for a matching tag and 0
+   otherwise, and 1 from the two §6.6 limit questions, which is the answer that
+   refuses. `ch_quic_state` answers `CH_ST_FAILED`, because no call here
+   completes a handshake. No stub returns `CH_OK`. A stub that could would hand
+   a caller an unprotected packet the day it linked.
+2. **Every stub is greppable and counted.** A stub body carries one line, in
+   one fixed form: `// CH_QUIC_STUB: not implemented yet; this call fails
+   closed and writes nothing.` `make quic-footprint` counts that line per
+   function and reports "43 declared, 43 stubbed, 0 implemented" rather than a
+   count of definitions, which would read as a finished mode. The Makefile's
+   `QUIC_STUB_SRCS` greps the same line, and the two gates that carry a stub
+   exception read that list: `lint-tidy`'s stub pass, which turns
+   `readability-non-const-parameter` off because a stub never writes through
+   the out-parameters its header declares writable, and `lib-check`'s
+   `RAND=extern` import check, because `handshake.c` is the only library source
+   that calls `ch_rand_bytes` and a QUIC object compiles none of it. Each
+   exception retires per file, when that file stops matching the marker.
+3. **A test proves rule 1.** `bin/quic_stub_test`, over
+   `test/quic_stub_test.c`, calls all 43 functions, requires each refusal, and
+   fills every buffer and struct it passes with `0xa5` before the call and
+   compares it after, so "writes nothing" is measured. `make check` builds and
+   runs it on both transports.
+   `test/violations/inv28-quic-stub-returns-ok.violation` makes
+   `quic_packet_seal` return `CH_OK` and requires that binary to fail.
+
+INV-28 in `docs/invariants.md` carries the claim, and it says what retires it:
+when `make quic-footprint` reports 0 stubbed, the marker, the two exceptions,
+the entry and the mutant all go in that commit.
+
+Two things the axis does that this document did not plan, both named in the
+Makefile beside the list they change. `QUIC_PENDING` holds the four sources
+that keep their TLS text, owe a QUIC arm, and cannot be compiled into the
+object until they have one — `handshake_parser.c`, `handshake_record.c`,
+`handshake_auth.c` and `handshake_post.c`. Three of the four do not compile
+under `-DCH_TRANSPORT_QUIC` at all, because the headers already fork ahead of
+them: `handshake_parser.c` gets conflicting types for
+`hsp_parse_encrypted_exts`, and `handshake_record.c` and `handshake_post.c`
+read fields the QUIC arms of `handshake_record.h` and `session.h` drop.
+`handshake_auth.c` compiles clean, and it calls the `hsp_` and `hsr_`
+functions the other three define, so an object carrying it alone would not
+link. So the object leaves all four out and no QUIC source reaches a handshake
+message. A name leaves that list in the commit that lands its arm.
+
+`handshake_message.c` is not on that list. It compiles clean under
+`-DCH_TRANSPORT_QUIC` and imports only the `wb_` writer from `buf.c`, which the
+object already packages, so the mode compiles it today and `quic.c` includes
+its header. And `LIB_VARIANT` gains `$(TRANSPORT)` as its fifth term, so the
+two transports never write an object of the same name to the same path.
 
 ## What QUIC asks of a TLS stack
 
@@ -1981,11 +2046,16 @@ coverage` (`Makefile:1016-1095`), whose object sets are written by hand per
 mode: the mode adds a `TRANSPORT=quic` leg beside the `TRUST=webpki` one at
 `Makefile:1046`, over `bin/quic_test` and `bin/quic_driver_test`, and
 `COVERAGE_FLOOR` (`Makefile:964`) moves in the same diff by the ratchet rule
-stated there. `test/spec_coverage.py`'s `SRCS` list (`:38-41`) gains the nine
-new sources and its `DRIVERS` list (`:49`) gains `test/quic_driver_test.c`, so
-an unmodelled QUIC source reads as a row at zero rather than as no row. Every
+stated there. That leg is the one gate here that waits: a leg over eight stub
+bodies would ratchet the floor on code the next lane deletes, so "What is still
+open" carries it and the comment above `COVERAGE_FLOOR` names the commit that
+adds it. `test/spec_coverage.py`'s `SRCS` list already holds the eight
+sources, which read as rows saying "not built" while the differential has no
+QUIC leg; its `DRIVERS` list gains `test/quic_driver_test.c` in the commit that
+adds that binary, and the rows move to a percentage there. Every
 one of those needs a row or a leg for the new axis, which is work that is done
-with the first line of code and not after it. `test/e2e.sh` is the exception:
+with the first line of code and not after it, and a gate that waits says so in
+"What is still open" rather than staying silent. `test/e2e.sh` is the exception:
 it stays a TLS leg, for the reason "What the mode does not check or provide"
 gives, and "What is still open" holds the choice. The `FAST_TARGETS` pair is
 the one whose absence is silent: a `catches` value outside that set runs in the
@@ -2016,6 +2086,18 @@ lands `quic.[ch]` applies it.
 
 The mode, its owner split and the AES exception are decided. These are not:
 
+- the `BRANCH_CEILING` entries for `quic_keys.c` and `quic_packet.c`. The
+  table above owes 16, across 8 compiler and architecture specs, and neither
+  file joins `BRANCH_SRCS` while it is a stub: a count measured against an
+  empty body records nothing and falls the day the code lands. Both join that
+  list, with their numbers measured under each spec, in the commit that
+  implements them. `WIDEMUL_CEILING` already holds both at 0, and
+  `WIDEMUL_DEFINES` gives them the transport define the shared gate lines do
+  not pass;
+- the CBMC harnesses the mode owes. `make proof-coverage` names all eight
+  sources as having none, which is the honest reading of a tree whose mode is
+  stubbed; each pair's own commit writes its harness, by the table above;
+
 - `CH_QUIC_MIN_RXBUF`: its formula, measured against the largest single
   handshake message of each term — the trust term's Certificate, the
   key-exchange term's hybrid ServerHello (`cfg.h:110`) and the server's
@@ -2034,6 +2116,15 @@ The mode, its owner split and the AES exception are decided. These are not:
   colibri's packet number reconstruction needs is open;
 - the `handshake_psk` and `handshake_pin` cost after the driver becomes
   resumable, which only a run can answer;
+- the `make coverage` leg. The recipe builds its object sets by hand, one per
+  PIN over `$(SRCS)` and one over the webpki sources, and neither names a QUIC
+  source, so the eight contribute nothing to `COVERAGE_FLOOR`. Adding a leg
+  today would ratchet that floor on bodies the next lane deletes: every one of
+  the eight is a stub `bin/quic_stub_test` calls once. The leg lands in the
+  shape of the webpki leg, with `bin/quic_test` and `bin/quic_driver_test` in
+  its run list, in the commit that adds those two binaries, and that commit
+  moves the floor to CI's re-measured reading. The comment above
+  `COVERAGE_FLOOR` carries the same debt;
 - the end-to-end leg. `test/e2e.sh` runs against `openssl s_server`, which
   speaks no QUIC, so the mode has no interop evidence at all until a QUIC
   server joins the suite. The three candidates are an OpenSSL 3.5 QUIC

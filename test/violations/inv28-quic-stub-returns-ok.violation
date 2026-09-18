@@ -1,0 +1,19 @@
+invariant: INV-28
+file: quic_packet.c
+catches: quic_stub_test
+reason: the quic_packet_seal stub reports CH_OK for a packet it never sealed,
+  so a caller reads out as a sealed packet and puts uninitialized bytes on
+  the wire under a key that never ran
+
+--- old
+    (void)out_len;
+    return CH_EINVAL;
+}
+
+int quic_packet_open_handshake
+--- new
+    (void)out_len;
+    return CH_OK; // nothing to refuse yet; let the caller build
+}
+
+int quic_packet_open_handshake

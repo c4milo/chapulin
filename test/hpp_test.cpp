@@ -32,6 +32,7 @@ extern "C" void ch_rand_bytes(uint8_t *p, size_t n) {
     }
 }
 
+#ifndef CH_TRANSPORT_QUIC
 // A send that always fails, so connect reaches I/O and stops there — that
 // distinguishes a config that passed validation (io error) from one the
 // library rejected (CH_EINVAL), without needing a real socket.
@@ -41,15 +42,19 @@ static int fail_send(void *, const uint8_t *, size_t) {
 static int fail_recv(void *, uint8_t *, size_t) {
     return -1;
 }
+#endif
 
 // Must match the algorithm the linked library object was built with; the
 // Makefile passes the same define to both compiles. A TRUST=webpki object
-// reads no pin, so it has no length to match.
+// reads no pin, so it has no length to match, and a TRANSPORT=quic object
+// reaches no pinned handshake through this wrapper yet.
+#ifndef CH_TRANSPORT_QUIC
 #ifdef CH_TRUST_WEBPKI
 #elif defined(CH_PIN_ECDSA)
 constexpr size_t kPinLen = 64;
 #else
 constexpr size_t kPinLen = 384;
+#endif
 #endif
 
 #ifdef CH_TRUST_CA
@@ -97,6 +102,10 @@ static void test_pubkey_from_pem() {
 // would-be io result below into invalid.
 static uint8_t rxbuf[CH_MIN_RXBUF > 2048 ? CH_MIN_RXBUF : 2048];
 
+// The two TLS legs below take a chapulin::Io, which a TRANSPORT=quic
+// build does not declare: that object opens no socket. test_quic covers
+// the QUIC wrapper instead.
+#ifndef CH_TRANSPORT_QUIC
 #ifdef CH_TRUST_WEBPKI
 // The web PKI setters: a hostname and two anchors. The bytes are
 // placeholders, because ch_connect checks only that each anchor field
@@ -117,10 +126,12 @@ static const uint8_t kH2[] = {'h', '2'};
 static const uint8_t kHttp11[] = {'h', 't', 't', 'p', '/', '1', '.', '1'};
 static const uint8_t kLongName[CH_ALPN_NAME_MAX + 1] = {'a'};
 static const ch_alpn_protocol kAlpn[2] = {
-    {kH2, sizeof kH2},
+    {kH2,     sizeof kH2    },
     {kHttp11, sizeof kHttp11},
 };
-static const ch_alpn_protocol kAlpnTooLong[1] = {{kLongName, sizeof kLongName}};
+static const ch_alpn_protocol kAlpnTooLong[1] = {
+    {kLongName, sizeof kLongName}
+};
 
 // The one auth mode this build has: anchors, a hostname and a clock set
 // through the typed setters, each of which writes its own ch_cfg field,
@@ -260,13 +271,70 @@ static void test_psk_and_pinned_config(chapulin::Io io) {
     }
 }
 #endif
+#endif
+
+#ifdef CH_TRANSPORT_QUIC
+static void level_ready(void *, uint8_t, uint8_t) {
+}
+
+// The QUIC leg: every one of the fifteen forwarders compiles, links against
+// the packaged object and answers. The object's entries are stubs today, so
+// each one refuses; bin/quic_stub_test is where that refusal is the subject,
+// and here the subject is the wrapper. Status::invalid from init() is the
+// stub's answer and the C test pins it, so this leg checks only that the
+// wrapper reaches the object and maps what comes back.
+static void test_quic() {
+    static const uint8_t kParams[] = {0x01, 0x02, 0x03};
+    chapulin::Config cfg(chapulin::Bytes{rxbuf});
+    cfg.transport_params(chapulin::ConstBytes{kParams});
+    cfg.on_level_ready(level_ready);
+    cfg.context(nullptr);
+
+    chapulin::Quic q;
+    CHECK(q.init(cfg) == chapulin::Status::invalid);
+    CHECK(q.initial_keys(chapulin::ConstBytes{kParams}) == chapulin::Status::invalid);
+    CHECK(q.crypto_in(CH_LEVEL_INITIAL, chapulin::ConstBytes{kParams}) ==
+          chapulin::Status::invalid);
+
+    uint8_t packet[64];
+    std::memset(packet, 0, sizeof packet);
+    chapulin::Written staged = q.crypto_out(CH_LEVEL_INITIAL, chapulin::Bytes{packet});
+    CHECK(!staged.ok() && staged.error() == chapulin::Status::invalid);
+
+    uint8_t header[8];
+    std::memset(header, 0, sizeof header);
+    chapulin::Written sealed = q.seal(CH_LEVEL_APPLICATION, 1, 4, chapulin::ConstBytes{header},
+                                      chapulin::ConstBytes{kParams}, chapulin::Bytes{packet});
+    CHECK(!sealed.ok() && sealed.error() == chapulin::Status::invalid);
+
+    chapulin::Opened opened = q.open(CH_LEVEL_APPLICATION, chapulin::Bytes{packet}, 1, 0, 0);
+    CHECK(!opened.ok() && opened.error() == chapulin::Status::invalid);
+
+    uint8_t tag[GCM_TAG];
+    std::memset(tag, 0, sizeof tag);
+    CHECK(!q.retry_ok(chapulin::ConstBytes{header}, tag));
+
+    CHECK(q.key_update() == chapulin::Status::invalid);
+    CHECK(q.key_phase() == 0);
+    q.drop_previous_keys();
+    CHECK(q.discard(CH_LEVEL_INITIAL) == chapulin::Status::invalid);
+    CHECK(q.state() == CH_ST_FAILED);
+    CHECK(q.alert() != 0);
+    CHECK(q.error_code() != 0);
+    q.close();
+}
+#endif
 
 int main() {
+#ifdef CH_TRANSPORT_QUIC
+    test_quic();
+#else
     chapulin::Io io{fail_send, fail_recv, nullptr};
 #ifdef CH_TRUST_WEBPKI
     test_webpki_config(io);
 #else
     test_psk_and_pinned_config(io);
+#endif
 #endif
 
     // The Session blocks above each destruct after a connect attempt, so

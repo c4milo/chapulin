@@ -51,6 +51,14 @@ GATE_COMMAND = {
 NEEDS_VARIABLE = {
     "prove-one": [],
     "cross-check": ["test/docker-mips.sh", "test/docker-riscv32.sh"],
+    # RAND has no default, so a bare `make lib-check` stops at cfg.h's
+    # #error. The target reaches this selector at all only when the
+    # impact tool itself runs under TRANSPORT=quic: there the lib-check
+    # recipe writes quic.c's name in the message that says why the
+    # RAND=extern import check stands down, and a recipe that names a
+    # source is what select_recipe_gates looks for.
+    "lib-check": ["make lib-check RAND=drbg",
+                  "make lib-check cxx-check RAND=extern"],
 }
 
 # Targets no single change selects on its own. Each is an aggregate
@@ -89,6 +97,15 @@ LIB_LEGS = [
          "the TRUST=webpki object compiles {path} under -DCH_TRUST_WEBPKI, "
          "against that build's own frame budget",
          ["test/lint-stack-webpki.sh"]),
+    ]),
+    ("TRANSPORT=quic", [
+        ("make lib-check cxx-check RAND=extern TRANSPORT=quic",
+         "the TRANSPORT=quic object packages {path} and exports the fifteen "
+         "ch_quic_ calls in place of the four TLS ones", []),
+        ("make lint-stack TRANSPORT=quic",
+         "the TRANSPORT=quic object compiles {path} under "
+         "-DCH_TRANSPORT_QUIC, against that build's own frame budget",
+         ["test/lint-stack-quic.sh"]),
     ]),
 ]
 
@@ -377,6 +394,22 @@ def select_lints(out, changed, csources, lib):
                     f"every reader in one",
                     ["test/lint-exact-fill.sh"])
             break
+    # The two gates that read the mode's own files. lint-quic-partition
+    # compiles each quic file and checks which build keeps it;
+    # lint-quic-surface compares quic.h against docs/quic.md's interface
+    # table and against the stubs test/quic_stub_test.c calls. Both read
+    # the .c files as well as the headers, so a root quic path selects
+    # them whichever suffix it carries.
+    quic_root = [p for p in csources if "/" not in p and p.startswith("quic")]
+    if quic_root:
+        out.add("lint", "make lint-quic-partition",
+                "a root quic source changed, and this gate holds each quic "
+                "file to the build that compiles it",
+                ["test/lint-quic-partition.sh"])
+    if quic_root or "test/quic_stub_test.c" in changed or "docs/quic.md" in changed:
+        out.add("lint", "make lint-quic-surface",
+                "quic.h, docs/quic.md and test/quic_stub_test.c must name one "
+                "public surface and one stub set")
     if any(p.endswith(".sh") or p.startswith(".githooks/") for p in changed):
         out.add("lint", "make lint-shellcheck",
                 "shellcheck reads every tracked script")

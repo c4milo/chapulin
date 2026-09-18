@@ -334,6 +334,39 @@ which convention holds them.
   `git ls-files 'quic*'` stops naming every file the mode owns.
 - See [decisions: Engineering](decisions.md#engineering).
 
+### INV-28 — a stub never reports success
+
+- **Claim.** Every function of the `TRANSPORT=quic` mode that is a stub
+  returns a refusal the header documents and writes nothing through its
+  out-parameters. No stub returns `CH_OK`, and none reports a matching
+  tag, an opened packet or a completed handshake. A caller that links
+  the object today gets refusals, never an unprotected packet.
+- **Mechanism.** The Makefile's `TRANSPORT` axis packages the mode
+  before the mode is written, so the object exists and every call in it
+  is a stub. A stub body carries one `// CH_QUIC_STUB: ` line and
+  returns the header's refusal. `make quic-footprint` counts the marker
+  and prints how many of the mode's functions are stubbed and how many
+  are implemented, so the tree states what it does rather than looking
+  finished; `QUIC_STUB_SRCS` reads the same marker, and the two gates
+  that carry a stub exception read that list.
+- **Check.** A running test, `bin/quic_stub_test`, which `make check`
+  builds and runs. It calls each stub, requires the documented refusal
+  from it, and fills every buffer and every struct it passes with `0xa5`
+  before the call and compares it after, so "writes nothing" is
+  measured. `make lint-quic-surface` holds the test to the whole stub
+  set: it reads the stub names from the marker and the names the test
+  calls from the test, and fails on a stub the test never calls, so a
+  stub added later cannot stay unmeasured. The mutant
+  `test/violations/inv28-quic-stub-returns-ok.violation` makes one stub
+  return `CH_OK` and requires that binary to fail.
+- **Violation.** A PR makes a stub answer `CH_OK` to get a caller
+  building, so `ch_quic_seal` reports a sealed packet it never sealed
+  and the caller puts plaintext on the wire.
+- Retirement. This entry lasts as long as a stub does. When
+  `make quic-footprint` reports 0 stubbed, the marker, the exceptions
+  that read it, this entry and its mutant all go in that commit.
+- See [quic](quic.md).
+
 ### INV-7 — no negotiation
 
 - **Claim.** One cipher suite, one group, one version, one signature

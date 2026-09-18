@@ -7,6 +7,14 @@
 // The caller still owns the lifetimes the C API owns — the receive
 // buffer, the PSK or pin bytes, and the I/O context must outlive the
 // Session, exactly as with ch_cfg.
+//
+// The wrapper forks with the object it forwards to. A TRANSPORT=tls
+// object exports ch_connect, ch_read, ch_write and ch_close, and Session
+// forwards them. A TRANSPORT=quic object exports none of the four and
+// fifteen ch_quic_ entries instead, so Quic forwards those, and Config
+// takes no Io and gains the transport parameters and the two QUIC
+// callbacks. One transport compiles per build, so one of the two classes
+// exists at a time.
 #ifndef CHAPULIN_HPP
 #define CHAPULIN_HPP
 
@@ -14,7 +22,11 @@
 #include <cstdint>
 
 extern "C" {
+#ifdef CH_TRANSPORT_QUIC
+#include "quic.h"
+#else
 #include "tls.h"
+#endif
 #ifdef CH_TRUST_CA
 #include "x509_ca.h"
 #endif
@@ -30,6 +42,15 @@ enum class Status : int {
     cap = CH_ECAP,
     closed = CH_ECLOSED,
     invalid = CH_EINVAL,
+#ifdef CH_TRANSPORT_QUIC
+    // The two codes a TRANSPORT=quic object adds (cfg.h). discard is the
+    // one error in this library that leaves the session live: RFC 9001
+    // §5.5 says a packet that fails to unprotect is not necessarily an
+    // attack. aead_limit is RFC 9001 §6.6's integrity limit, which ends
+    // the session.
+    discard = CH_QUIC_DISCARD,
+    aead_limit = CH_QUIC_AEAD_LIMIT,
+#endif
 };
 
 // The key-exchange group ch_tls.group reports: none until the
@@ -75,15 +96,55 @@ struct ConstBytes {
     }
 };
 
+#ifndef CH_TRANSPORT_QUIC
 // Blocking I/O plus the random source, matching the C callback contract:
 // send moves all n bytes and returns 0, anything else is failure; recv
 // returns 1..n bytes or -1. Pass captureless functions (or lambdas that
-// decay to function pointers) and one context.
+// decay to function pointers) and one context. A TRANSPORT=quic object
+// opens no socket and calls neither callback, so this type exists only
+// here.
 struct Io {
     int (*send)(void *ctx, const uint8_t *p, size_t n) = nullptr;
     int (*recv)(void *ctx, uint8_t *p, size_t n) = nullptr;
     void *ctx = nullptr;
 };
+#endif
+
+#ifdef CH_TRANSPORT_QUIC
+// Result of a TRANSPORT=quic call that writes bytes into the caller's
+// buffer: Quic::crypto_out and Quic::seal. size counts the bytes written
+// and is meaningful only when ok(). A Status::cap result means the buffer
+// was short, nothing was written and the same call may run again with a
+// larger one.
+struct Written {
+    int value = 0;
+    size_t size = 0;
+    bool ok() const {
+        return value == CH_OK;
+    }
+    Status error() const {
+        return static_cast<Status>(value);
+    }
+};
+
+// Result of Quic::open: the recovered packet number, the plaintext length
+// and which receive key set opened the packet (CH_QUIC_KEY_PREVIOUS,
+// CH_QUIC_KEY_CURRENT or CH_QUIC_KEY_NEXT). All three are meaningful only
+// when ok(); a Status::discard result means the caller drops the packet
+// and keeps the session.
+struct Opened {
+    int value = 0;
+    uint64_t packet_number = 0;
+    size_t plaintext_len = 0;
+    uint8_t key_set = 0;
+    bool ok() const {
+        return value == CH_OK;
+    }
+    Status error() const {
+        return static_cast<Status>(value);
+    }
+};
+#endif
 
 // Result of a read: >0 bytes, 0 on a clean peer close, <0 on error.
 struct Read {
@@ -107,6 +168,45 @@ struct Read {
 // build calls anchors(), hostname() and now_seconds() instead.
 class Config {
   public:
+#ifdef CH_TRANSPORT_QUIC
+    // A TRANSPORT=quic object opens no socket, so the buffer is the whole
+    // constructor. It holds one encryption level's reassembled CRYPTO
+    // bytes rather than records (docs/quic.md).
+    explicit Config(Bytes recv_buffer) {
+        cfg_.buf = recv_buffer.data;
+        cfg_.buf_len = recv_buffer.size;
+    }
+
+    // The caller's own encoded QUIC transport parameters, copied unread
+    // into the ClientHello (RFC 9001 §8.2). ch_quic_init requires them.
+    Config &transport_params(ConstBytes body) {
+        cfg_.transport_params = body.data;
+        cfg_.transport_params_len = body.size;
+        return *this;
+    }
+
+    // Reports that one direction at one encryption level can protect or
+    // unprotect packets. Required: ch_quic_init refuses a config without
+    // it, because a caller that never learns a level protects no packet.
+    Config &on_level_ready(void (*callback)(void *ctx, uint8_t level, uint8_t direction)) {
+        cfg_.on_level_ready = callback;
+        return *this;
+    }
+
+    // Hands the server's transport parameters body to the caller.
+    // Optional: with no callback the body is dropped and a missing
+    // extension still fails the handshake.
+    Config &on_transport_params(void (*callback)(void *ctx, const uint8_t *body, size_t n)) {
+        cfg_.on_transport_params = callback;
+        return *this;
+    }
+
+    // The context both callbacks above are handed (ch_cfg.io).
+    Config &context(void *ctx) {
+        cfg_.io = ctx;
+        return *this;
+    }
+#else
     Config(Bytes recv_buffer, Io io) {
         cfg_.buf = recv_buffer.data;
         cfg_.buf_len = recv_buffer.size;
@@ -114,6 +214,7 @@ class Config {
         cfg_.recv = io.recv;
         cfg_.io = io.ctx;
     }
+#endif
 
     // External pre-shared key with its identity. Setting both a PSK and a
     // pin leaves both fields set, which ch_connect rejects — the mistake
@@ -274,6 +375,7 @@ inline Pubkey pubkey_from_pem(ConstBytes pem, uint8_t (&der_scratch)[CH_X509_MAX
 }
 #endif
 
+#ifndef CH_TRANSPORT_QUIC
 // A session owns its ch_tls and closes it — wiping every key — when it is
 // destroyed. Non-copyable and non-movable: allocate it where it lives
 // (a static for firmware, a scope for tests), like the C ch_tls.
@@ -353,6 +455,127 @@ class Session {
   private:
     ch_tls tls_{};
 };
+#else
+// A QUIC session owns its ch_quic and closes it — wiping every key set —
+// when it is destroyed. It forwards the fifteen ch_quic_ entries and adds
+// nothing else: chapulin owns every key and the caller owns packet
+// numbers, acknowledgments, loss recovery and streams (docs/quic.md).
+// Non-copyable and non-movable, like Session and like the C ch_quic,
+// whose hs.t points at its own t.
+class Quic {
+  public:
+    Quic() = default;
+    Quic(const Quic &) = delete;
+    Quic &operator=(const Quic &) = delete;
+    ~Quic() {
+        ch_quic_close(&quic_);
+    }
+
+    // Validates the config and stages the ClientHello; crypto_out hands
+    // those bytes out.
+    Status init(const Config &cfg) {
+        return static_cast<Status>(ch_quic_init(&quic_, &cfg.raw()));
+    }
+
+    // Installs the Initial keys from the Destination Connection ID. Call
+    // it again after a Retry, with the server's Source Connection ID.
+    Status initial_keys(ConstBytes dcid) {
+        return static_cast<Status>(ch_quic_initial_keys(&quic_, dcid.data, dcid.size));
+    }
+
+    // Delivers one level's CRYPTO bytes in order and runs the state
+    // machine until it needs more.
+    Status crypto_in(uint8_t level, ConstBytes bytes) {
+        return static_cast<Status>(ch_quic_crypto_in(&quic_, level, bytes.data, bytes.size));
+    }
+
+    // Takes the one handshake message owed at that level, whole or not at
+    // all. An ok() result with size 0 means nothing is owed there.
+    Written crypto_out(uint8_t level, Bytes into) {
+        Written result;
+        result.value = ch_quic_crypto_out(&quic_, level, into.data, into.size, &result.size);
+        return result;
+    }
+
+    // Protects one packet into into: hdr carries the packet number field
+    // the caller encoded, pn_len says how many of its last bytes those
+    // are, and pn is that same number.
+    Written seal(uint8_t level, uint64_t pn, size_t pn_len, ConstBytes hdr, ConstBytes pt,
+                 Bytes into) {
+        Written result;
+        result.value = ch_quic_seal(&quic_, level, pn, pn_len, hdr.data, hdr.size, pt.data, pt.size,
+                                    into.data, into.size, &result.size);
+        return result;
+    }
+
+    // Removes header protection, recovers the packet number and removes
+    // packet protection, in place in packet. On ok() the unprotected
+    // header sits at the front and the plaintext follows it.
+    Opened open(uint8_t level, Bytes packet, size_t pn_off, uint64_t largest_pn,
+                uint64_t current_phase_lowest_pn) {
+        Opened result;
+        result.value = ch_quic_open(&quic_, level, packet.data, packet.size, pn_off, largest_pn,
+                                    current_phase_lowest_pn, &result.key_set, &result.packet_number,
+                                    &result.plaintext_len);
+        return result;
+    }
+
+    // Whether a Retry packet's integrity tag validates. False means the
+    // caller discards the packet; it is not a session error.
+    bool retry_ok(ConstBytes pseudo, const uint8_t (&tag)[GCM_TAG]) const {
+        return ch_quic_retry_ok(&quic_, pseudo.data, pseudo.size, tag) != 0;
+    }
+
+    // Advances the 1-RTT keys one phase and toggles the Key Phase bit.
+    Status key_update() {
+        return static_cast<Status>(ch_quic_key_update(&quic_));
+    }
+
+    // The Key Phase bit the current 1-RTT send set carries, 0 or 1. The
+    // caller writes it into byte 0 before every short header it seals.
+    uint8_t key_phase() const {
+        return ch_quic_key_phase(&quic_);
+    }
+
+    // Wipes the previous 1-RTT receive key set, after which a packet from
+    // the old key phase is a discard.
+    void drop_previous_keys() {
+        ch_quic_drop_previous_keys(&quic_);
+    }
+
+    // Wipes one encryption level's key sets in both directions.
+    Status discard(uint8_t level) {
+        return static_cast<Status>(ch_quic_discard(&quic_, level));
+    }
+
+    // CH_ST_START, CH_ST_CONNECTED, CH_ST_CLOSED or CH_ST_FAILED. It
+    // reports the handshake complete, never confirmed: the caller sees
+    // the HANDSHAKE_DONE frame, not chapulin.
+    uint8_t state() const {
+        return ch_quic_state(&quic_);
+    }
+
+    // The TLS alert description behind a failure, for a log or a test.
+    uint8_t alert() const {
+        return ch_quic_alert(&quic_);
+    }
+
+    // The transport error code the caller puts in CONNECTION_CLOSE. Read
+    // it before close(), which replaces CH_ST_FAILED with CH_ST_CLOSED.
+    uint64_t error_code() const {
+        return ch_quic_error_code(&quic_);
+    }
+
+    // Wipes every secret a discard has not wiped yet; the destructor
+    // calls it too, and calling it twice is safe.
+    void close() {
+        ch_quic_close(&quic_);
+    }
+
+  private:
+    ch_quic quic_{};
+};
+#endif
 
 } // namespace chapulin
 

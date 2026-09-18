@@ -52,10 +52,10 @@ For each changed path the plan carries:
   more define, and the Makefile names the rows that meet real C in one
   arm alone.
 - **Packaged-object legs.** One leg per axis value `make check` builds —
-  the default object, `TRUST=ca` and `TRUST=webpki`. A source selects
-  every leg that packages it, so a file the default object filters out
-  still selects the leg that compiles it, and so does an `#ifdef` body
-  only one leg's defines keep.
+  the default object, `TRUST=ca`, `TRUST=webpki` and `TRANSPORT=quic`. A
+  source selects every leg that packages it, so a file the default object
+  filters out still selects the leg that compiles it, and so does an
+  `#ifdef` body only one leg's defines keep.
 - **Codegen gates.** A source in `CODEGEN_SRCS` selects the wide-multiply
   and runtime-symbol gates, which read what the compiler emits per file.
 - **Violations.** Every `test/violations/*.violation` that edits the file.

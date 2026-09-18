@@ -127,6 +127,28 @@ HDRS := ct.h sha256.h hkdf.h chacha20.h poly1305.h aead.h x25519.h p256.h rsa.h 
         pem.h x509.h x509_der.h x509_ca.h webpki.h buf.h record.h keysched.h io.h handshake_message.h handshake_parser.h handshake_record.h cfg.h session.h handshake_auth.h handshake.h handshake_post.h \
         tls.h rand.h drbg.h sha3.h sha512.h sha512_compress.h p384.h p384_field.h rsa_pkcs1.h mlkem.h mlkem_poly.h \
         handshake_flight.h quic.h quic_aes.h quic_gcm.h quic_initial.h quic_keys.h quic_packet.h quic_retry.h quic_step.h
+
+# The TRANSPORT=quic mode's own sources, named here rather than matched
+# by a pattern, for the reason WEBPKI_SRCS is named: an auditor reads
+# the object's contents off this line, and an untracked scratch file
+# never enters the object. They sit outside SRCS because only one
+# transport compiles them; the TRANSPORT axis below names them as its
+# add, the way TRUST=webpki names WEBPKI_SRCS.
+#
+# Every one of them is a stub today: it defines each function its header
+# declares and implements none, so a TRANSPORT=quic object links and
+# every call refuses. `make quic-footprint` prints how many of the
+# mode's functions are stubbed and how many are implemented, and
+# bin/quic_stub_test calls each public entry and requires the refusal.
+QUIC_SRCS := quic_aes.c quic_gcm.c quic_keys.c quic_packet.c quic_initial.c quic_retry.c \
+             quic_step.c quic.c
+# Which of them are still stubs, read from the marker rather than from a
+# list kept by hand: every stub body holds one `// CH_QUIC_STUB: ` line
+# and an implemented body holds none. Two gates carry an exception this
+# list bounds, and each retires its own the moment the file it names
+# stops matching -- lint-tidy's stub pass, and lib-check's RAND=extern
+# import check.
+QUIC_STUB_SRCS := $(shell grep -l '^[[:space:]]*// CH_QUIC_STUB: ' $(QUIC_SRCS) 2>/dev/null)
 # softmul.c is excluded on purpose. It has to define __mulsi3 and
 # __muldi3 -- the names the compiler emits, so they replace the runtime
 # library's -- and clang-tidy rejects those as reserved identifiers that
@@ -140,7 +162,7 @@ LINT_C := $(filter-out softmul.c,$(SRCS)) drbg.c sha3.c sha512.c sha512_compress
           test/webpki_time_test.c test/webpki_name_test.c test/webpki_spki_test.c test/webpki_sigalg_test.c test/webpki_session_test.c test/webpki_cert_test.c test/webpki_chain_test.c \
           test/webpki_auth_test.c \
           test/mlkem_test.c test/handshake_strict_test.c test/handshake_sequence_test.c \
-          test/x509_strict_test.c $(wildcard examples/*.c)
+          test/x509_strict_test.c $(QUIC_SRCS) test/quic_stub_test.c $(wildcard examples/*.c)
 
 # Test-local headers: prerequisites for every binary that includes them,
 # so a header edit rebuilds the binaries it changes.
@@ -230,10 +252,66 @@ PIN_FILTER :=
 else
 $(error TRUST=$(TRUST) is not a trust mode; use TRUST=raw, TRUST=ca or TRUST=webpki)
 endif
-LIB_DEF := $(strip $(PIN_DEF) $(TRUST_DEF))
+# Transport: TRANSPORT=tls (default) runs the client over TLS records and
+# a socket the caller's I/O callbacks drive; TRANSPORT=quic runs the same
+# TLS 1.3 handshake over QUIC's CRYPTO frames and protects QUIC packets
+# with the keys it produces (docs/quic.md). One transport per packaged
+# object, like PIN and TRUST: the two export different public calls, so
+# an object cannot carry both.
+#
+# The five sources a QUIC object replaces: it compiles none of them
+# (docs/quic.md, "What is reused, and what changes").
+QUIC_REPLACED := io.c record.c session.c handshake.c tls.c
+# The four sources that keep their TLS text and owe a QUIC arm under an
+# #ifdef, and that a QUIC object cannot compile until they have one.
+# Three of the four do not compile under -DCH_TRANSPORT_QUIC at all,
+# because the headers already fork ahead of them: handshake_parser.c
+# gets conflicting types for hsp_parse_encrypted_exts, and
+# handshake_record.c and handshake_post.c read fields the QUIC arms of
+# handshake_record.h and session.h drop. handshake_auth.c compiles
+# clean, and it calls hsp_ and hsr_ functions the other three define, so
+# a QUIC object that carried it alone would not link. So the object
+# leaves all four out for now and no QUIC source reaches a handshake
+# message. A name leaves this list in the commit that lands its arm, and
+# the list is empty when the mode is whole.
+#
+# handshake_message.c is not on this list. It compiles clean under
+# -DCH_TRANSPORT_QUIC and imports only the wb_ writer from buf.c, which
+# this object already packages, so the mode compiles it today and
+# quic.c includes its header.
+QUIC_PENDING := handshake_parser.c handshake_record.c handshake_auth.c handshake_post.c
+TRANSPORT ?= tls
+ifeq ($(TRANSPORT),quic)
+TRANSPORT_DEF := -DCH_TRANSPORT_QUIC
+TRANSPORT_FILTER := $(QUIC_REPLACED) $(QUIC_PENDING)
+TRANSPORT_ADD := $(QUIC_SRCS)
+PUBLIC_TRANSPORT := ch_quic_init ch_quic_initial_keys ch_quic_crypto_in ch_quic_crypto_out \
+                    ch_quic_seal ch_quic_open ch_quic_retry_ok ch_quic_key_update \
+                    ch_quic_key_phase ch_quic_drop_previous_keys ch_quic_discard \
+                    ch_quic_state ch_quic_alert ch_quic_error_code ch_quic_close
+else ifeq ($(TRANSPORT),tls)
+TRANSPORT_DEF :=
+TRANSPORT_FILTER :=
+TRANSPORT_ADD :=
+PUBLIC_TRANSPORT := ch_connect ch_read ch_write ch_close
+else
+$(error TRANSPORT=$(TRANSPORT) is not a transport; use TRANSPORT=tls or TRANSPORT=quic)
+endif
+# Set while this build's object holds no code that draws randomness:
+# handshake.c is the only library source that calls ch_rand_bytes, a
+# TRANSPORT=quic object compiles none of it, and the QUIC driver that
+# will draw is quic.c, still a stub. lib-check reads it, and asserts the
+# object imports nothing rather than announcing that it cannot check:
+# this variable is file-granular, because QUIC_STUB_SRCS greps whole
+# files, while a marker is per function, so a quic.c whose ch_quic_init
+# draws randomness while another function stays a stub would still set
+# it. The assertion catches that build and names the line to delete.
+QUIC_STUB_RAND := $(if $(filter quic,$(TRANSPORT)),$(filter quic.c,$(QUIC_STUB_SRCS)))
+LIB_DEF := $(strip $(PIN_DEF) $(TRUST_DEF) $(TRANSPORT_DEF))
 # The one assignment. Every axis above filters or names the sources
 # only its value adds; nothing below rewrites.
-LIB_SRCS := $(filter-out $(PIN_FILTER) $(TRUST_FILTER),$(SRCS)) $(TRUST_ADD)
+LIB_SRCS := $(filter-out $(PIN_FILTER) $(TRUST_FILTER) $(TRANSPORT_FILTER),$(SRCS)) \
+            $(TRUST_ADD) $(TRANSPORT_ADD)
 # Key exchange: KEX=x25519 (default) or KEX=pq (-DCH_KEX_PQ), the
 # X25519MLKEM768 hybrid — the ML-KEM and SHA-3 modules join the
 # packaged object only there. One mode per object, like PIN and TRUST.
@@ -279,13 +357,19 @@ BENCH_C := $(wildcard bench/*.c bench/*.h)
 QEMU_SMOKE_C := $(wildcard test/qemu/*.c test/qemu/*.h test/freertos/*.c test/freertos/*.h)
 
 # Firmware links bin/chapulin.o: one relocatable object exposing exactly
-# the four public calls. Partial linking merges the modules; nmedit
+# the calls PUBLIC names, four under TRANSPORT=tls and fifteen under
+# TRANSPORT=quic. Partial linking merges the modules; nmedit
 # (macOS) or objcopy (everything else) localizes every other symbol, so
 # the library cannot collide with application names. lib-check enforces
 # the export list as part of check. Objects live under the variant that
-# built them, so switching PIN, TRUST, KEX or RAND never reuses a stale
-# object.
-LIB_VARIANT := $(PIN)-$(TRUST)-$(KEX)-$(RAND)
+# built them, so switching PIN, TRUST, KEX, RAND or TRANSPORT never
+# reuses a stale object. TRANSPORT belongs here for a reason the other
+# four share and it sharpens: the two transports link different object
+# lists into chapulin.o, so without it a TRANSPORT=tls chapulin.o and a
+# TRANSPORT=quic one write to the same path, make 3.81 compares mtimes
+# to the second, and the second link reuses the first object -- the
+# failure the paragraph below records for RAND.
+LIB_VARIANT := $(PIN)-$(TRUST)-$(KEX)-$(RAND)-$(TRANSPORT)
 LIB_OBJS := $(LIB_SRCS:%.c=bin/obj/$(LIB_VARIANT)/%.o)
 
 # bench/device-ram.sh sizes the same modules the build packages. It asks
@@ -314,6 +398,13 @@ print-lib-def:
 # output would otherwise start with an "Entering directory" line and
 # the last name on a list would sit before a newline, not the space the
 # match below wants. `make -w lint-trust-separation` reproduces that.
+#
+# The transport rows read their file list the same way, from git's
+# quic*.c at the root, so a QUIC_SRCS that loses a file fails here
+# instead of leaving that file out of the object. They name TRANSPORT
+# explicitly on both sides, because a `make check TRANSPORT=quic` hands
+# its value to every recursion below, and the TRANSPORT=tls row must
+# read the transport it names.
 #
 # The webpki rows read their file lists from nowhere the build reads
 # them: the chain verifiers are written out, and the webpki*.c files are
@@ -350,6 +441,10 @@ lint-trust-separation:
 	check "TRUST=raw PIN=ecdsa" "p256.c" "rsa.c rsa_mont.c" "-DCH_PIN_ECDSA" ""; \
 	check "TRUST=raw KEX=x25519" "x25519.c" "sha3.c mlkem.c mlkem_poly.c" "" "-DCH_KEX_PQ"; \
 	check "TRUST=raw KEX=pq" "x25519.c sha3.c mlkem.c mlkem_poly.c" "" "-DCH_KEX_PQ" ""; \
+	quic_files=$$(git ls-files 'quic*.c' | grep -v / | tr '\n' ' '); \
+	[ -n "$$quic_files" ] || { echo "lint-trust-separation: git tracks no quic*.c file at the root, so the transport rows would check nothing"; rc=1; }; \
+	check "TRANSPORT=tls" "io.c record.c session.c handshake.c tls.c" "$$quic_files" "" "-DCH_TRANSPORT_QUIC"; \
+	check "TRANSPORT=quic" "$$quic_files" "io.c record.c session.c handshake.c tls.c" "-DCH_TRANSPORT_QUIC" ""; \
 	[ $$rc = 0 ] && echo "lint-trust-separation: every axis value packages exactly its own sources and defines"; \
 	exit $$rc
 # bench/device-ram.sh builds with CLANG_RV, the clang the codegen lints
@@ -360,8 +455,12 @@ lint-trust-separation:
 print-clang-rv:
 	@echo $(CLANG_RV)
 # RAND=drbg packages the generator, so ch_drbg_seed becomes part of the
-# API the image calls and lib-check covers it like the other four.
-PUBLIC := ch_connect ch_read ch_write ch_close $(PUBLIC_RAND) $(PUBLIC_CA)
+# API the image calls and lib-check covers it like the transport's own
+# calls. PUBLIC_TRANSPORT is the transport's set and replaces the other
+# transport's rather than adding to it: lib-check diffs the object's
+# exports against this list for exact equality, so a term carrying both
+# sets fails every build (docs/decisions.md 28).
+PUBLIC := $(PUBLIC_TRANSPORT) $(PUBLIC_RAND) $(PUBLIC_CA)
 
 bin/obj/$(LIB_VARIANT)/%.o: %.c $(HDRS)
 	@mkdir -p bin/obj/$(LIB_VARIANT)
@@ -431,6 +530,10 @@ ifeq ($(RAND),drbg)
 	@if nm -u $(LIB_OBJ) | awk '{print $$NF}' | sed 's/^_//' | grep -qx ch_rand_bytes; then \
 	  echo "lib-check: RAND=drbg packages the generator, so ch_rand_bytes must be defined here, not imported"; exit 1; fi
 	@echo "lib-check: ch_rand_bytes is defined in the object; the image seeds it with ch_drbg_seed at boot"
+else ifneq ($(QUIC_STUB_RAND),)
+	@if nm -u $(LIB_OBJ) | awk '{print $$NF}' | sed 's/^_//' | grep -qx ch_rand_bytes; then \
+	  echo "lib-check: quic.c still carries a CH_QUIC_STUB marker and this object already imports ch_rand_bytes; drop QUIC_STUB_RAND and let the RAND=extern check run"; exit 1; fi
+	@echo "lib-check: quic.c is still a stub, so no source in this object calls ch_rand_bytes and there is no import to check; the RAND=extern check returns with quic.c's implementation"
 else
 	@if ! nm -u $(LIB_OBJ) | awk '{print $$NF}' | sed 's/^_//' | grep -qx ch_rand_bytes; then \
 	  echo "lib-check: RAND=extern must leave ch_rand_bytes undefined, so an image that forgets the hook fails to link"; exit 1; fi
@@ -499,6 +602,14 @@ bin/sha3_test: test/sha3_test.c sha3.c ct.c $(HDRS) $(TESTH)
 bin/mlkem_test: test/mlkem_test.c mlkem.c mlkem_poly.c sha3.c ct.c $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) -I. -o $@ test/mlkem_test.c mlkem.c mlkem_poly.c sha3.c ct.c
+# Every function of the TRANSPORT=quic mode refuses and writes nothing while
+# it is a stub. Its own binary over the mode's sources under
+# -DCH_TRANSPORT_QUIC, the shape bin/sha3_test uses for a mode's own
+# sources: bin/unit compiles no QUIC source, because it includes tls.h and
+# calls rec_seal, which a -DCH_TRANSPORT_QUIC build does not compile.
+bin/quic_stub_test: test/quic_stub_test.c $(QUIC_SRCS) $(HDRS) $(TESTH)
+	@mkdir -p bin
+	$(CC) $(CFLAGS) -DCH_TRANSPORT_QUIC -I. -o $@ test/quic_stub_test.c $(QUIC_SRCS)
 # SHA-512 and SHA-384 vectors and the streaming contract. Its own binary,
 # out of the packaged object like sha3: only TRUST=webpki links sha512.c.
 bin/sha512_test: test/sha512_test.c sha512.c sha512_compress.c $(HDRS) $(TESTH)
@@ -738,7 +849,7 @@ run-%: bin/%
 # and the invariant violation builds. The nightly runs it. Splitting on
 # duration rather than on importance is deliberate -- nothing here is
 # optional, and a change is not finished until check-slow passes too.
-check: bin/unit bin/unit_ca bin/unit_pq bin/tlsclient bin/tlsclient_ecdsa bin/tlsclient_ca bin/tlsclient_ca_ecdsa bin/tlsclient_webpki bin/tlsclient_pq bin/drbg_test bin/softmul_test bin/rsa_test bin/sha3_test bin/sha512_test bin/p384_test bin/rsa_pkcs1_test bin/webpki_time_test bin/webpki_name_test bin/webpki_spki_test bin/webpki_sigalg_test bin/webpki_cert_test bin/webpki_chain_test bin/webpki_auth_test bin/mlkem_test bin/handshake_strict_test bin/handshake_strict_pq bin/handshake_strict_webpki bin/webpki_session_test bin/webpki_session_pq bin/x509strict bin/x509strict_ecdsa lint rand-check
+check: bin/unit bin/unit_ca bin/unit_pq bin/tlsclient bin/tlsclient_ecdsa bin/tlsclient_ca bin/tlsclient_ca_ecdsa bin/tlsclient_webpki bin/tlsclient_pq bin/drbg_test bin/softmul_test bin/rsa_test bin/sha3_test bin/sha512_test bin/p384_test bin/rsa_pkcs1_test bin/webpki_time_test bin/webpki_name_test bin/webpki_spki_test bin/webpki_sigalg_test bin/webpki_cert_test bin/webpki_chain_test bin/webpki_auth_test bin/mlkem_test bin/handshake_strict_test bin/handshake_strict_pq bin/handshake_strict_webpki bin/webpki_session_test bin/webpki_session_pq bin/x509strict bin/x509strict_ecdsa bin/quic_stub_test lint rand-check
 	# The packaged object is built once per entropy pattern, because
 	# lib-check reads a different export list and a different import
 	# list in each. Only the object is built twice: the examples and
@@ -752,13 +863,16 @@ check: bin/unit bin/unit_ca bin/unit_pq bin/tlsclient bin/tlsclient_ecdsa bin/tl
 	# every invocation.
 	$(MAKE) lib-check RAND=drbg
 	$(MAKE) lib-check cxx-check RAND=extern
-	# The examples are pinned to TRUST=raw, whatever TRUST this check was
-	# given. psk_client and pinned_client are raw-mode programs, and the
-	# fixed paths bin/example_psk and bin/example_pinned are what
-	# test/e2e.sh runs: `make check TRUST=webpki` used to leave the
-	# webpki-variant copies there, and the next e2e run started a PSK
-	# server against a client built for a mode that refuses a PSK.
-	$(MAKE) examples-check RAND=extern TRUST=raw
+	# The examples are pinned to TRUST=raw and TRANSPORT=tls, whatever
+	# this check was given. psk_client and pinned_client are raw-mode TLS
+	# programs: they call ch_connect, ch_write and ch_read, which a
+	# TRANSPORT=quic object does not export, and each drives a socket
+	# through the I/O callbacks that object has no use for. The fixed
+	# paths bin/example_psk and bin/example_pinned are what test/e2e.sh
+	# runs: `make check TRUST=webpki` used to leave the webpki-variant
+	# copies there, and the next e2e run started a PSK server against a
+	# client built for a mode that refuses a PSK.
+	$(MAKE) examples-check RAND=extern TRUST=raw TRANSPORT=tls
 	# The CA arm packages the provisioning reader and its fifth export;
 	# without this leg neither the export list nor the C++ forwarder is
 	# checked by anything.
@@ -766,12 +880,23 @@ check: bin/unit bin/unit_ca bin/unit_pq bin/tlsclient bin/tlsclient_ecdsa bin/tl
 	# The webpki arm exports the four calls and no provisioning call, and
 	# its C++ forwarders are the anchors, hostname and clock setters.
 	$(MAKE) lib-check cxx-check RAND=extern TRUST=webpki
+	# The QUIC arm exports the fifteen ch_quic_ calls and none of the four
+	# TLS ones, so it is the leg that holds PUBLIC_TRANSPORT to a
+	# replacement rather than an addition, and the one that compiles
+	# chapulin.hpp's Quic class against the object it forwards to.
+	$(MAKE) lib-check cxx-check RAND=extern TRANSPORT=quic
 	# lint above holds lint-stack at the budget of the build check was
 	# given, 2,560 B for a plain `make check`, the target `make ci` runs.
 	# This leg compiles the TRUST=webpki object's sources under their own
 	# defines against that build's 4,096 B budget (INV-19), which nothing
 	# else in check measures. It took 2.0 to 3.1 s in three timed runs.
 	$(MAKE) lint-stack TRUST=webpki
+	# The QUIC arm compiles the eight QUIC_SRCS, which no other leg
+	# compiles at all, against the 2,560 B device budget (INV-19). Every
+	# body is a stub today, so the leg costs seconds; it is here so the
+	# first real frame the mode lands is measured on the commit that
+	# lands it.
+	$(MAKE) lint-stack TRANSPORT=quic
 	./bin/unit
 	./bin/unit_ca
 	./bin/unit_pq
@@ -790,6 +915,7 @@ check: bin/unit bin/unit_ca bin/unit_pq bin/tlsclient bin/tlsclient_ecdsa bin/tl
 	./bin/webpki_chain_test
 	./bin/webpki_auth_test
 	./bin/mlkem_test
+	./bin/quic_stub_test
 	./bin/handshake_strict_test
 	./bin/handshake_strict_pq
 	./bin/handshake_strict_webpki
@@ -962,6 +1088,18 @@ endif
 # llvm-cov), and it moves up in the same diff that adds the tests. A PR
 # that lowers the number must either add tests or move the floor down
 # in the same diff, with the reason in the commit message.
+#
+# The recipe below builds two object sets by hand, one per PIN over
+# $(SRCS) and one over the webpki sources. Neither names a QUIC source,
+# so the eight QUIC_SRCS contribute nothing to this number. That is a
+# deferral, not an oversight: every one of the eight is a stub that
+# bin/quic_stub_test calls once, so a leg added today would ratchet the
+# floor on bodies the next lane deletes. The leg lands in the shape of
+# the webpki leg below, with bin/quic_test and bin/quic_driver_test in
+# its run list, in the commit that adds those two binaries; that commit
+# moves this floor to CI's re-measured reading, the way 3432a5d moved
+# it for the webpki leg. docs/quic.md, "What is still open", carries
+# the same debt.
 COVERAGE_FLOOR := 93
 GCOVR ?= $(shell command -v gcovr)
 GCOV_TOOL := $(shell $(CC) --version 2>/dev/null | grep -qi clang \
@@ -1505,7 +1643,11 @@ else
 	# webpki.c, the three webpki test mains and the webpki example read
 	# ch_cfg fields that exist only under -DCH_TRUST_WEBPKI, so this
 	# pass, which defines no trust mode, leaves them to the next one.
-	$(CLANG_TIDY) --quiet $(filter-out webpki.c test/webpki_session_test.c test/webpki_chain_test.c test/webpki_auth_test.c examples/webpki_client.c,$(LINT_C)) -- \
+	# The QUIC sources and their test main are left out for the same
+	# reason: every declaration they hold sits behind
+	# -DCH_TRANSPORT_QUIC, which this pass does not define, so it would
+	# read eight empty translation units. The two passes below read them.
+	$(CLANG_TIDY) --quiet $(filter-out webpki.c test/webpki_session_test.c test/webpki_chain_test.c test/webpki_auth_test.c examples/webpki_client.c $(QUIC_SRCS) test/quic_stub_test.c,$(LINT_C)) -- \
 	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -I.
 	# The pass above defines no trust mode, so it reads none of the
 	# TRUST=webpki arms. This pass parses the sources that carry them or
@@ -1521,6 +1663,25 @@ else
 	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_TRUST_WEBPKI -I.
 	$(CLANG_TIDY) --quiet test/webpki_session_test.c -- \
 	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_TRUST_WEBPKI -DCH_KEX_PQ -I.
+	# The QUIC mode, in two passes split by QUIC_STUB_SRCS. This first
+	# one reads the sources that are implemented, plus the test main,
+	# under every check.
+	@set -e; done="$(filter-out $(QUIC_STUB_SRCS),$(QUIC_SRCS))"; \
+	 [ -z "$$done" ] || $(CLANG_TIDY) --quiet $$done -- \
+	   -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_TRANSPORT_QUIC -I.
+	$(CLANG_TIDY) --quiet test/quic_stub_test.c -- \
+	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_TRANSPORT_QUIC -I.
+	# The second reads the sources that are still stubs, with
+	# readability-non-const-parameter off. A stub writes nothing through
+	# the out-parameters its header declares writable, so that check
+	# reads every one of them as a pointer that could be const -- an
+	# answer the header forbids, since making it const would conflict
+	# with the declaration. The exception is bounded by QUIC_STUB_SRCS
+	# and retires per file: an implemented source drops out of that list
+	# and joins the pass above, where the check is on again.
+	@set -e; [ -z "$(QUIC_STUB_SRCS)" ] || $(CLANG_TIDY) --quiet \
+	   --checks='-readability-non-const-parameter' $(QUIC_STUB_SRCS) -- \
+	   -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_TRANSPORT_QUIC -I.
 	# The M3 smoke runtimes and the KAT program lint with the target's
 	# own flags. Three checks are off, each with its reason:
 	# bugprone-reserved-identifier and its two cert aliases, because the
@@ -1825,6 +1986,19 @@ lint-impact:
 #     Names, dates and depths. A public chain is public: every byte it
 #     reads is from the wire or from the caller's anchor table, and it
 #     never sees a key, a shared secret or record plaintext.
+#   quic_aes.c, quic_gcm.c: the AES-128 forward cipher and AES-128-GCM
+#     under TRANSPORT=quic. INV-26 admits exactly three key sources
+#     here, and RFC 9001 says every one of them is public: the Initial
+#     packet key and header protection key, both expanded from
+#     HKDF-Extract over the printed salt and the Destination Connection
+#     ID a long header carries in the clear (§5.2), and the 16-byte
+#     Retry key the RFC prints (§5.8). No traffic secret keysched.c
+#     derives reaches either file.
+#   quic_initial.c, quic_retry.c: the Initial packet path and the Retry
+#     tag check, the only two library sources INV-26 lets call those
+#     entries. They see the same three keys and the packet bytes that
+#     travel under them, which RFC 9001 §5 says have neither
+#     confidentiality nor integrity protection.
 # A secret arriving in any of these is a design change, and this list is
 # where it lands. Until https://github.com/c4milo/chapulin/issues/85 the
 # gate read four files and the rest went unmeasured.
@@ -1844,11 +2018,23 @@ lint-impact:
 WIDEMUL_CEILING := ct.c:0 sha256.c:0 sha3.c:1 hkdf.c:0 chacha20.c:0 poly1305.c:0 aead.c:0 \
                    x25519.c:0 mlkem.c:0 mlkem_poly.c:0 buf.c:0 record.c:0 keysched.c:0 io.c:0 \
                    session.c:0 handshake_message.c:0 handshake_parser.c:0 handshake_record.c:0 \
-                   handshake_auth.c:0 handshake.c:0 handshake_post.c:0 tls.c:0 drbg.c:0 softmul.c:0
+                   handshake_auth.c:0 handshake.c:0 handshake_post.c:0 tls.c:0 drbg.c:0 softmul.c:0 \
+                   quic_keys.c:0 quic_packet.c:0 quic_step.c:0 quic.c:0
 CODEGEN_SRCS := $(foreach e,$(WIDEMUL_CEILING),$(firstword $(subst :, ,$(e))))
+# Per-file defines both gates below add for one file alone, file:defines,
+# in the shape WIDEMUL_CEILING_SPEC uses for per-spec ceilings. Each gate
+# compiles every CODEGEN_SRCS file under one fixed flag set that names no
+# transport, and the four QUIC entries above do not compile without
+# -DCH_TRANSPORT_QUIC: CH_LEVEL_*, the ch_quic struct and the new ch_cfg
+# fields all sit behind it. Adding the define to the shared line instead
+# would break record.c, io.c, session.c, handshake.c and tls.c, which are
+# on the same list and compile only without it.
+WIDEMUL_DEFINES := quic_keys.c:-DCH_TRANSPORT_QUIC quic_packet.c:-DCH_TRANSPORT_QUIC \
+                   quic_step.c:-DCH_TRANSPORT_QUIC quic.c:-DCH_TRANSPORT_QUIC
 WIDEMUL_PUBLIC := p256.c rsa.c rsa_mont.c pem.c x509.c x509_der.c x509_ca.c sha512.c sha512_compress.c \
                   p384.c p384_field.c rsa_pkcs1.c webpki_time.c webpki_name.c webpki_spki.c webpki_sigalg.c \
-                  webpki_ext.c webpki_cert.c webpki.c
+                  webpki_ext.c webpki_cert.c webpki.c \
+                  quic_aes.c quic_gcm.c quic_initial.c quic_retry.c
 
 # The library sources are $(SRCS), drbg.c, and every .c file git tracks
 # at the repository root. The KEX=pq sources join LIB_SRCS by += rather
@@ -2128,8 +2314,10 @@ lint-wide-multiply:
 	   for e in $(WIDEMUL_CEILING); do \
 	     f=$${e%%:*}; cap=$${e##*:}; \
 	     for o in $(WIDEMUL_CEILING_SPEC); do [ "$${o%%:*}" = "$$arch/$$f" ] && cap=$${o##*:}; done; \
+	     extra=""; \
+	     for o in $(WIDEMUL_DEFINES); do [ "$${o%%:*}" = "$$f" ] && extra=$$(echo "$${o#*:}" | tr ',' ' '); done; \
 	     err=$$(mktemp); \
-	     asm=$$($$cc -Os $$flags -std=c11 -ffreestanding -D_DEFAULT_SOURCE -DCH_RAND_EXTERN -DCH_KEX_PQ -I. -S $$f -o - 2>"$$err") || { \
+	     asm=$$($$cc -Os $$flags -std=c11 -ffreestanding -D_DEFAULT_SOURCE -DCH_RAND_EXTERN -DCH_KEX_PQ $$extra -I. -S $$f -o - 2>"$$err") || { \
 	       echo "lint-wide-multiply: $$f does not build for $$arch — a count of zero from a failed compile is not a measurement"; \
 	       sed -n '1p' "$$err" | sed 's/^/lint-wide-multiply:   /'; \
 	       rm -f "$$err"; rc=1; continue; }; \
@@ -2192,6 +2380,15 @@ lint-wide-multiply-gcc:
 # (https://github.com/c4milo/chapulin/issues/85). Now a symbol is judged in
 # the file that pulls it. sha3's __udivsi3 is Keccak's `% 5` over public
 # loop counters, a performance matter rather than a leak.
+#
+# The four TRANSPORT=quic entries WIDEMUL_CEILING carries -- quic.c,
+# quic_keys.c, quic_packet.c and quic_step.c -- get no row: measured
+# under the pinned clang for rv32ic with their WIDEMUL_DEFINES entry,
+# each pulls nothing. A row for a file that pulls nothing is not free,
+# because the loop below prints "no longer pulls" for it on every run.
+# The decision is recorded here rather than left to a reader of the
+# list's absence, and it is re-measured when these files stop being
+# stubs.
 RV_ALLOWED := poly1305.c:__mulsi3 x25519.c:__mulsi3 mlkem_poly.c:__mulsi3 sha3.c:__udivsi3
 # What softmul.c must define. The __mul* names RV_ALLOWED admits are
 # constant-time only because this file supplies them; if it stopped, the
@@ -2207,8 +2404,10 @@ else ifeq ($(LLVM_NM),)
 else
 	@d=$$(mktemp -d); rc=0; seen=0; \
 	 for f in $(CODEGEN_SRCS); do \
+	   extra=""; \
+	   for o in $(WIDEMUL_DEFINES); do [ "$${o%%:*}" = "$$f" ] && extra=$$(echo "$${o#*:}" | tr ',' ' '); done; \
 	   $(CLANG_RV) -target riscv32-unknown-elf -march=rv32ic -mabi=ilp32 -Os -std=c11 -ffreestanding \
-	     -nostdlibinc -Itools/freestanding -D_DEFAULT_SOURCE -DCH_RAND_EXTERN -DCH_KEX_PQ -I. \
+	     -nostdlibinc -Itools/freestanding -D_DEFAULT_SOURCE -DCH_RAND_EXTERN -DCH_KEX_PQ $$extra -I. \
 	     -c $$f -o $$d/$${f%.c}.o 2>/dev/null \
 	     || { echo "lint-runtime-symbols: $$f does not build for rv32ic"; rc=1; continue; }; \
 	   allowed=""; \

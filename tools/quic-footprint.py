@@ -26,8 +26,10 @@ Six questions, six sections, every answer read from the tree:
                            line, and against the .c lines one build
                            compiles, so the footprint is a number and
                            each number says what it counts
-  Declared against defined how many functions each header declares and
-                           how many the matching .c file defines
+  Declared against defined how many functions each header declares, how
+                           many the matching .c file defines, and how
+                           many of those are stubs rather than
+                           implementations
   Public surface           the `ch_quic_` entries `quic.h` declares
                            against the names docs/quic.md's interface
                            table lists
@@ -43,19 +45,26 @@ rather than reading the document as listing nothing. Every other value
 is read -- the file list from git, the shared pair from the Makefile's
 QUIC_SHARED, the line counts and the names from the files themselves.
 
-`--check-surface` prints nothing, compares `quic.h` against docs/quic.md
-alone and exits 1 on a mismatch. `make lint-quic-surface` runs that, and
-`lint` runs it. The report reaches no verdict of its own, so it exits 0
+`--check-surface` prints nothing while both comparisons agree and exits 1
+on either mismatch: `quic.h` against docs/quic.md's interface table, and
+the stub set against the function names test/quic_stub_test.c calls. The
+second is what keeps the safety rule mechanical -- a stub the test never
+calls is a stub whose refusal nothing measures, and a lane that adds one
+would otherwise leave every gate green. `make lint-quic-surface` runs
+both, and `lint` runs it. The report reaches no verdict of its own, so it exits 0
 on every count it prints; it stops with a message only when something it
 reads is not there, such as a missing anchor.
 
-The report states what does not exist. No `quic*.c` file exists yet, so
-today every header declares functions that nothing defines. "0 of 43
-declared functions have a definition" is the honest reading of that tree,
-and the section prints that sentence rather than an empty table a reader
-would take for a bug. The same section keeps answering as the .c files
-land: a header with a .c file gets its defined count, and one without
-says so on its own line.
+The report states what does not exist, and it separates a definition
+from an implementation. Every `quic*.c` file is a stub today: it defines
+each function its header declares, returns the refusal the header
+documents and writes nothing. "N declared, N stubbed, 0 implemented" is
+the honest reading of that tree, and "N of N have a definition" would
+not be. A body carrying the `// CH_QUIC_STUB: ` marker is a stub,
+and the marker is the one form every stub takes, so the count is read
+rather than kept by hand. The same section keeps answering as the code
+lands: an implemented function drops the marker and moves to the
+implemented count, and a header with no .c file says so on its own line.
 
 How a citation gets its standard. A header names the standard once and
 writes `SS5.4.3` for the rest of the paragraph, so most section marks
@@ -73,8 +82,9 @@ import sys
 from pathlib import Path
 
 from impact_read import make_db
-from quic_source import (conditional_spans, declared, defined, marks_in,
-                         resolve, section_key)
+from quic_source import (DECLARATOR, conditional_spans, declared, defined,
+                         marks_in, resolve, section_key, strip_comments,
+                         stubbed)
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -323,29 +333,48 @@ def report_share(quic_total, shared_total, count, conditional_total):
 
 
 def report_progress(quic):
+    """How much of each header exists, in three counts rather than two.
+
+    A definition is not an implementation. Every .c file of this mode is
+    a stub today: it defines each function its header declares, returns
+    the refusal the header documents and writes nothing. Counting
+    definitions alone would read "43 of 43 declared functions have a
+    definition", which a reader takes for a finished mode. So a defined
+    function is counted as stubbed when its body carries the marker and
+    as implemented when it does not, and the summary prints all three."""
     print("Declared against defined")
     headers = [p for p in quic if p.endswith(".h")]
-    rows, total_declared, total_defined, missing = [], 0, 0, []
+    rows, missing = [], []
+    declared_n, defined_n, stub_n = 0, 0, 0
     for header in headers:
         source = header[:-2] + ".c"
         names = declared(ROOT / header)
         bodies = defined(ROOT / source)
-        total_declared += len(names)
+        declared_n += len(names)
         if bodies is None:
             missing.append(source)
-            rows.append((header, len(names), "-", f"no {source} yet"))
+            rows.append((header, len(names), "-", "-", f"no {source} yet"))
             continue
         here = [n for n in names if n in bodies]
-        total_defined += len(here)
+        stubs = [n for n in here if n in (stubbed(ROOT / source) or [])]
+        defined_n += len(here)
+        stub_n += len(stubs)
         note = "" if len(here) == len(names) else (
             f"{', '.join(n for n in names if n not in bodies)} undefined")
-        rows.append((header, len(names), str(len(here)), note))
+        rows.append((header, len(names), str(len(here)), str(len(stubs)),
+                     note))
     width = max(len(r[0]) for r in rows)
-    print(f"  {'header'.ljust(width)}  decl  def  note")
-    for header, count, done, note in rows:
-        print(f"  {header.ljust(width)}  {count:4d}  {done:>3}  {note}")
-    print(f"  {total_defined} of {total_declared} declared functions have a "
-          f"definition.")
+    print(f"  {'header'.ljust(width)}  decl  def  stub  note")
+    for header, count, done, stubs, note in rows:
+        print(f"  {header.ljust(width)}  {count:4d}  {done:>3}  {stubs:>4}  "
+              f"{note}")
+    print(f"  {declared_n} declared, {stub_n} stubbed, "
+          f"{defined_n - stub_n} implemented.")
+    print(f"  Stubbed means the body carries the CH_QUIC_STUB marker: it "
+          f"returns the refusal")
+    print(f"  the header documents and writes nothing. "
+          f"{declared_n - defined_n} declared functions have no")
+    print(f"  definition at all.")
     if len(missing) == len(rows):
         print(f"  No quic .c file exists, so the mode is {len(rows)} headers "
               f"and nothing else today.")
@@ -370,17 +399,63 @@ def surface():
     return header, documented, apart
 
 
+STUB_TEST = Path("test/quic_stub_test.c")
+
+
+def stub_calls():
+    """Every function name test/quic_stub_test.c calls.
+
+    The same DECLARATOR quic_source.py reads a declaration's name with:
+    an identifier that opens a paren. Over a .c file that answers every
+    call the file makes, plus the functions it defines itself and the
+    macros it invokes. Nothing here narrows that, because the one
+    question asked of it is whether a given stub's name is in the set."""
+    path = ROOT / STUB_TEST
+    if not path.exists():
+        sys.exit(f"quic-footprint: {STUB_TEST} is missing, so no stub's "
+                 f"refusal is measured")
+    code, _ = strip_comments(path.read_text())
+    return set(DECLARATOR.findall(code))
+
+
+def stubs_untested():
+    """Every stub test/quic_stub_test.c does not call, each with its file.
+
+    A stub that no call reaches is a stub whose refusal nothing measures.
+    The test holds two rules -- no stub reports success, no stub writes
+    through an out-parameter -- and it can only hold them for a function
+    it calls. So the stub set and the called set are compared here rather
+    than by a number a reader keeps in step by hand."""
+    found = []
+    for source in makefile("QUIC_SRCS"):
+        path = ROOT / source
+        if not path.exists():
+            continue
+        for name in stubbed(path) or []:
+            found.append((source, name))
+    called = stub_calls()
+    return [(s, n) for s, n in found if n not in called]
+
+
 def check_surface():
-    """The one comparison in this file that is a verdict. `make
-    lint-quic-surface` runs it, and `lint` runs that."""
+    """The two comparisons in this file that are a verdict: quic.h
+    against docs/quic.md, and the stub set against the calls
+    test/quic_stub_test.c makes. `make lint-quic-surface` runs both, and
+    `lint` runs that."""
     _, _, apart = surface()
     for line in apart:
         print(f"lint-quic-surface: {line}")
+    untested = stubs_untested()
+    for source, name in untested:
+        print(f"lint-quic-surface: {source} stubs {name}, which "
+              f"{STUB_TEST} never calls, so nothing measures its refusal")
     if apart:
         print("lint-quic-surface: quic.h and its design record disagree "
               "about the public surface")
-        return 1
-    return 0
+    if untested:
+        print(f"lint-quic-surface: {STUB_TEST} must call every stub; add "
+              f"each name above with its POISON check")
+    return 1 if apart or untested else 0
 
 
 def report_surface():
@@ -398,6 +473,15 @@ def report_surface():
               "public surface, which `make lint-quic-surface` fails on")
     else:
         print("  the header and its design record name the same entries")
+    untested = stubs_untested()
+    for source, name in untested:
+        print(f"  {source} stubs {name}, which {STUB_TEST} never calls")
+    if untested:
+        print(f"  a stub the test never calls has no measured refusal, "
+              f"which `make lint-quic-surface` fails on")
+    else:
+        print(f"  {STUB_TEST} calls every stub, so every refusal is "
+              f"measured")
     print()
 
 

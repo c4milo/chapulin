@@ -92,13 +92,18 @@ def strip_comments(text):
 
 def without_directives(code):
     """Blank every preprocessor line, continuations included. A macro
-    that takes arguments otherwise reads as a declaration."""
+    that takes arguments otherwise reads as a declaration.
+
+    A blanked line keeps its length, so every byte of the result sits at
+    the offset it sits at in the file. strip_comments keeps offsets too,
+    so stubbed() below can read a body's comments out of the original
+    text at the offsets it found the body at."""
     out, keep = [], True
     for line in code.split("\n"):
         stripped = line.strip()
         if keep and stripped.startswith("#"):
             keep = False
-        out.append("" if not keep else line)
+        out.append(" " * len(line) if not keep else line)
         if not keep and not stripped.endswith("\\"):
             keep = True
     return "\n".join(out)
@@ -163,6 +168,46 @@ def defined(path):
         elif char == "}":
             depth -= 1
             if depth == 0:
+                anchor = i + 1
+        elif char == ";" and depth == 0:
+            anchor = i + 1
+    return names
+
+
+# The one form a stub body's marker takes, and the same pattern the
+# Makefile's QUIC_STUB_SRCS greps for. A stub is a function that carries
+# the header's name and none of its behaviour: it returns the refusal the
+# header documents and writes nothing. docs/quic.md, "The stubs and the
+# marker", states the rules; the marker is what makes them countable.
+STUB_MARKER = re.compile(r"(?m)^[ \t]*// CH_QUIC_STUB: ")
+
+
+def stubbed(path):
+    """Every function one .c file defines whose body carries the stub
+    marker, in the order written. None when the file does not exist.
+
+    It walks the same braces defined() walks, and reads each body's
+    comments out of the file's own text at the offsets the walk found,
+    which strip_comments and without_directives both preserve. A
+    function whose body holds no marker is implemented as far as this
+    reader can tell, and the test binary is what holds the refusal."""
+    if not path.exists():
+        return None
+    text = path.read_text()
+    code = without_directives(strip_comments(text)[0])
+    names, depth, anchor, name, start = [], 0, 0, None, 0
+    for i, char in enumerate(code):
+        if char == "{":
+            if depth == 0:
+                found = [f for f in DECLARATOR.findall(code[anchor:i]) if f not in KEYWORDS]
+                name = found[0] if found else None
+                start = i
+            depth += 1
+        elif char == "}":
+            depth -= 1
+            if depth == 0:
+                if name is not None and STUB_MARKER.search(text[start:i]):
+                    names.append(name)
                 anchor = i + 1
         elif char == ";" and depth == 0:
             anchor = i + 1
