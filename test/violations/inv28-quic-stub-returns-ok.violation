@@ -1,19 +1,24 @@
 invariant: INV-28
-file: quic_packet.c
+file: quic_step.c
 catches: quic_stub_test
-reason: the quic_packet_seal stub reports CH_OK for a packet it never sealed,
-  so a caller reads out as a sealed packet and puts uninitialized bytes on
-  the wire under a key that never ran
+reason: the hsq_advance stub reports CH_OK for a step it never ran, so the
+  driver above it reads the handshake as advanced and a caller collects a
+  flight that no state machine produced. INV-28's claim is that no stub
+  reports success, and quic_stub_test is what reads every stub's answer.
+  This mutant sat on quic_packet.c until that file was implemented; it
+  moves rather than retires, because quic_step.c and quic.c are the two
+  stubs left. When the last one is implemented INV-28 has no subject and
+  this file goes with it.
 
 --- old
-    (void)out_len;
+int hsq_advance(ch_quic *q) {
+    // CH_QUIC_STUB: not implemented yet; this call fails closed and writes nothing.
+    (void)q;
     return CH_EINVAL;
 }
-
-int quic_packet_open_handshake
 --- new
-    (void)out_len;
-    return CH_OK; // nothing to refuse yet; let the caller build
+int hsq_advance(ch_quic *q) {
+    // CH_QUIC_STUB: not implemented yet; this call fails closed and writes nothing.
+    (void)q;
+    return CH_OK; // nothing to refuse yet; let the driver proceed
 }
-
-int quic_packet_open_handshake

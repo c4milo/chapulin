@@ -14,12 +14,9 @@ reason: the 1-RTT open path never calls an aes_ entry by name. It stores
   include; the rule matches the name either way.
 
 --- old
-                                 uint8_t *key_set, uint64_t *pn, size_t *pt_len) {
-    // CH_QUIC_STUB: not implemented yet; this call fails closed and writes nothing.
-    (void)sets;
+void quic_hp_mask(const quic_hp_key *h, const uint8_t sample[QUIC_HP_SAMPLE_LEN],
+                  uint8_t mask[QUIC_HP_MASK_LEN]) {
 --- new
-                                 uint8_t *key_set, uint64_t *pn, size_t *pt_len) {
-    // CH_QUIC_STUB: not implemented yet; this call fails closed and writes nothing.
+void quic_hp_mask(const quic_hp_key *h, const uint8_t sample[QUIC_HP_SAMPLE_LEN],
+                  uint8_t mask[QUIC_HP_MASK_LEN]) {
     void (*mask_block)(const void *, const uint8_t *, uint8_t *) = &aes_encrypt_block_hp;
-    mask_block(h, pkt, pkt);
-    (void)sets;

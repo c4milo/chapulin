@@ -10,15 +10,9 @@ reason: quic_hp_mask writes the header protection mask with the AES
   is not one of the two files the rule excludes.
 
 --- old
-    // CH_QUIC_STUB: not implemented yet; this call fails closed and writes nothing.
-    (void)h;
-    (void)sample;
-    (void)mask;
-}
+void quic_hp_mask(const quic_hp_key *h, const uint8_t sample[QUIC_HP_SAMPLE_LEN],
+                  uint8_t mask[QUIC_HP_MASK_LEN]) {
 --- new
-    uint8_t block[AES_BLOCK];
-    aes_encrypt_block((const aes_public_key *)h, sample, block);
-    for (size_t i = 0; i < QUIC_HP_MASK_LEN; i++) {
-        mask[i] = block[i];
-    }
-}
+void quic_hp_mask(const quic_hp_key *h, const uint8_t sample[QUIC_HP_SAMPLE_LEN],
+                  uint8_t mask[QUIC_HP_MASK_LEN]) {
+    aes_encrypt_block((const aes_public_key *)h, sample, mask);
