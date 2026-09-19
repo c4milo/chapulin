@@ -11,7 +11,15 @@
 
 // Runs the full handshake. On CH_OK the session is ready for read/write.
 // Any error wipes all key material and leaves the session dead.
+//
+// A ROLE=server build declares it nowhere: that object exports
+// ch_srv_accept in its place (srv.h), so a server firmware that calls
+// ch_connect fails to compile rather than to link. The three calls
+// below keep their contracts in both roles, because record.[ch] names
+// no side.
+#ifndef CH_ROLE_SERVER
 int ch_connect(ch_tls *t, const ch_cfg *cfg);
+#endif
 
 // Sends n bytes as one or more records. Returns CH_OK or an error.
 int ch_write(ch_tls *t, const uint8_t *p, size_t n);

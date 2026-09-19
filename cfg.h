@@ -2,10 +2,8 @@
 // include graph so transport (io) and message building (handshake_message) can see
 // them without needing the session or the public API.
 //
-// Everything here configures the CLIENT. chapulin has no server role, so nothing in this
-// file describes a server: server_pubkey is the key this client pins FOR a server, not a
-// key a server holds. Configure the server in whatever software terminates TLS there —
-// OpenSSL, Go, or another stack — as docs/ca.md describes.
+// A ROLE=server build adds what srv_cfg.h declares; every other field here configures the
+// client, so server_pubkey is the key this client pins for a server, never a server's own.
 #ifndef CH_CFG_H
 #define CH_CFG_H
 
@@ -13,6 +11,7 @@
 #include <stdint.h>
 
 #include "sha256.h"
+#include "srv_cfg.h"
 
 // The entropy pattern is a declared build choice with no default. An image either supplies
 // its own ch_rand_bytes (-DCH_RAND_EXTERN) or links the reference generator in drbg.[ch]
@@ -225,13 +224,12 @@ typedef struct {
 #define CH_WEBPKI_ANCHOR_MAX 12
 #endif
 
-// The ALPN declarations below serve two builds: a TRUST=webpki build offers a protocol list
-// over TCP (docs/decisions.md 37), and RFC 9001 §8.1 requires ALPN of every QUIC client
-// (rfc9001.txt:1891-1895), so a TRANSPORT=quic build offers one in every trust mode and
-// closes with no_application_protocol when none is negotiated (rfc9001.txt:1896-1902),
-// where a TCP client keeps CH_ALPN_NONE and completes. Only this guard widens; no
-// declaration moves.
-#if defined(CH_TRUST_WEBPKI) || defined(CH_TRANSPORT_QUIC)
+// The ALPN declarations below serve three builds: a TRUST=webpki build offers a protocol
+// list over TCP (docs/decisions.md 37), a TRANSPORT=quic build offers one in every trust
+// mode because RFC 9001 §8.1 requires ALPN of every QUIC client (rfc9001.txt:1891-1895)
+// and closes with no_application_protocol when none is negotiated (rfc9001.txt:1896-1902)
+// where a TCP client keeps CH_ALPN_NONE, and a ROLE=server build selects from the list.
+#if defined(CH_TRUST_WEBPKI) || defined(CH_TRANSPORT_QUIC) || defined(CH_ROLE_SERVER)
 
 // One application protocol name the caller offers through ALPN (RFC 7301 §3.1), shaped
 // like ch_trust_anchor: the caller owns the bytes and they must outlive the session. "h2"
@@ -442,10 +440,9 @@ typedef struct {
     uint64_t now_seconds;
 #endif
 
-// The same two fields serve both builds. Two rules differ under TRANSPORT=quic, where the
-// paragraph below states the TCP ones: ch_quic_init applies the checks in place of
-// ch_connect, and it refuses an offer of no protocols (rfc9001.txt:1891-1895).
-#if defined(CH_TRUST_WEBPKI) || defined(CH_TRANSPORT_QUIC)
+// The same two fields serve all three builds; ch_connect, ch_quic_init or ch_srv_accept
+// checks them, and ch_quic_init alone refuses an offer of none (rfc9001.txt:1891-1895).
+#if defined(CH_TRUST_WEBPKI) || defined(CH_TRANSPORT_QUIC) || defined(CH_ROLE_SERVER)
     // Application protocols to offer through ALPN (RFC 7301), in the order the caller
     // prefers them: alpn_count entries, 0 to CH_ALPN_MAX. Offering none — alpn_protocols
     // NULL and alpn_count 0 — is legal and sends no extension. Every offered entry needs a
@@ -494,6 +491,9 @@ typedef struct {
     // the parser enforces that whether or not this callback is set. Re-entrancy:
     // on_level_ready's rule, for the same reason.
     void (*on_transport_params)(void *io, const uint8_t *body, size_t n);
+#endif
+#ifdef CH_ROLE_SERVER
+    ch_srv_cfg srv; // this endpoint's identities, cookie key and SNI buffer (srv_cfg.h)
 #endif
 } ch_cfg;
 

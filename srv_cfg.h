@@ -1,0 +1,131 @@
+// What a ROLE=server build adds to the caller's configuration: the
+// certificate chains and private keys this endpoint proves itself with,
+// the key its HelloRetryRequest cookie is minted under, and where to
+// put the server_name a client sent. cfg.h includes this header and
+// ch_cfg carries one ch_srv_cfg member, so a ROLE=client build declares
+// none of it and keeps the ch_cfg layout it had.
+//
+// It sits beside cfg.h rather than inside it for one measured reason:
+// cfg.h is 498 lines against the 500-line cap CLAUDE.md sets and
+// make lint-size holds, so every declaration below would have broken
+// that gate. docs/server.md sketches these fields flat inside ch_cfg;
+// they are one member deep instead, and a caller writes
+// cfg.srv.cookie_key where that sketch writes cfg.cookie_key.
+//
+// Nothing here answers "do I trust this peer". A server that requests
+// no client certificate never asks, so ch_cfg's pin fields, its PSK
+// offer fields and its epoch callbacks are the client's alone, and
+// ch_srv_accept returns CH_EINVAL for a configuration that sets one.
+//
+// Every pointer here is the caller's and must outlive the session.
+// chapulin copies none of them: a private key stays a pointer and is
+// never copied into ch_tls, because a second copy of a
+// deployment-lifetime secret in SRAM buys nothing when the original
+// outlives every wipe.
+#ifndef CH_SRV_CFG_H
+#define CH_SRV_CFG_H
+
+// The two build combinations a server has no meaning in. They stop here
+// as well as in the Makefile's ROLE axis, so a firmware tree compiling
+// these sources with its own build system meets the same refusal.
+//
+// A trust mode says how this endpoint judges a peer's key, of which a
+// server that requests no client certificate has none, so CH_TRUST_CA
+// and CH_TRUST_WEBPKI would compile a certificate parser no session
+// reaches.
+//
+// A QUIC server is not in scope yet: RFC 9001 §4.1.3 removes the record
+// layer (rfc9001.txt:462-464), and the dummy change_cipher_spec,
+// record_size_limit and the early-data discard all disappear with it.
+// Nothing forbids it later and nobody has measured what the two axes
+// share (docs/server.md, open question ten).
+#if defined(CH_ROLE_SERVER) && (defined(CH_TRUST_CA) || defined(CH_TRUST_WEBPKI))
+#error "CH_ROLE_SERVER judges no peer certificate, so it has no trust mode: drop CH_TRUST_*"
+#endif
+#if defined(CH_ROLE_SERVER) && defined(CH_TRANSPORT_QUIC)
+#error "CH_ROLE_SERVER runs over TLS records only: drop CH_TRANSPORT_QUIC (docs/server.md)"
+#endif
+
+#ifdef CH_ROLE_SERVER
+
+#include <stddef.h>
+#include <stdint.h>
+
+// One certificate, as the DER bytes the caller holds in flash. chapulin
+// writes them out unread: a ROLE=server object links no X.509 reader at
+// all, so nothing here is parsed, and a malformed certificate is the
+// client's to report (docs/server.md, "What the mode does not check,
+// and why that is safe").
+typedef struct {
+    const uint8_t *der;
+    size_t len;
+} ch_cert;
+
+// One signing identity: a certificate chain and the key pair that
+// proves it. A server provisions one per signature scheme it offers,
+// and RFC 9846 §9.1 names two for CertificateVerify —
+// ecdsa_secp256r1_sha256 and rsa_pss_rsae_sha256
+// (rfc9846.txt:4545-4547) — so a deployment that provisions one makes
+// this server decline the other, and a client that offers only the
+// declined scheme gets handshake_failure.
+//
+// The chain lists the end-entity certificate first (RFC 9846 §4.4.2,
+// rfc9846.txt:2850-2851) and is never empty (rfc9846.txt:2876). A slot
+// whose chain_count is 0 is not provisioned, the server never selects
+// the scheme it signs, and ch_srv_check refuses a configuration with no
+// identity at all.
+//
+// priv holds the private key, read by the signer the scheme names and
+// by nothing else, and pub holds the matching public key, read by
+// ch_srv_check and by nothing else. The encoding of each is the signing
+// module's to state, and the two signing modules, p256_sign.c and
+// rsa_sign.c, are not in this tree yet: no code reads these two fields
+// today and this header invents no format for them.
+typedef struct {
+    const ch_cert *chain;
+    uint8_t chain_count;
+    const uint8_t *priv;
+    size_t priv_len;
+    const uint8_t *pub;
+    size_t pub_len;
+} ch_identity;
+
+// The server's own configuration, which ch_cfg carries as one member.
+typedef struct {
+    // The two signing identities this server may offer, one per
+    // signature scheme. The scheme the client and this build agree on
+    // picks which one signs the CertificateVerify.
+    ch_identity ecdsa_p256; // signs ecdsa_secp256r1_sha256
+    ch_identity rsa_pss;    // signs rsa_pss_rsae_sha256
+
+    // The HMAC-SHA-256 key that protects the HelloRetryRequest cookie
+    // (RFC 9846 §4.2.2, rfc9846.txt:1779-1783): 32 bytes, the
+    // SRV_COOKIE_KEY_LEN srv_cookie.h states. One key per deployment,
+    // so a second ClientHello that lands on a different session, or on
+    // a different device behind a load balancer, still verifies.
+    // ch_srv_accept returns CH_EINVAL when it is NULL, because RFC 9846
+    // §9.2 makes the cookie extension mandatory to implement and a
+    // stateless retry cannot be minted without it.
+    const uint8_t *cookie_key;
+
+    // Where to put the server_name a ClientHello carried (RFC 6066 §3),
+    // and how many bytes fit. The handshake continues whether or not a
+    // name arrived, and the server binds nothing to it: it holds no
+    // certificate index and selects no identity by name. A name longer
+    // than sni_cap is not copied, and the caller sees the result it
+    // sees for a hello that carried none. Leave sni_buf NULL and
+    // sni_cap 0 to drop every name; ch_tls.sni_len reports how many
+    // bytes arrived.
+    uint8_t *sni_buf;
+    size_t sni_cap;
+
+    // Refuse a ClientHello that carried no server_name, which RFC 9846
+    // §9.2 permits a server to do (rfc9846.txt:4609-4612). It needs
+    // sni_buf, because a server that required a name it cannot report
+    // would refuse clients silently, and ch_srv_accept returns
+    // CH_EINVAL for that pair.
+    uint8_t require_server_name;
+} ch_srv_cfg;
+
+#endif // CH_ROLE_SERVER
+#endif

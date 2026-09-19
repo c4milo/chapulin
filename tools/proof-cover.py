@@ -10,7 +10,7 @@ one, or one of the hand-audited files gains a signed operand.
 
 This fails when a shipped source is neither compiled by a harness running the
 `full` set, nor listed in AUDITED below, nor still a stub carrying the
-CH_QUIC_STUB marker. Growing AUDITED is deliberate: it means someone read the
+CH_QUIC_STUB or CH_SRV_STUB marker. Growing AUDITED is deliberate: it means someone read the
 file and wrote down what they found. The stub exemption is not a third way to
 grow: it holds only while a file has no implementation at all, and it ends on
 the commit that deletes that file's last marker.
@@ -37,19 +37,20 @@ AUDITED = {
 }
 
 
-# The one form a stub body's marker takes, and the same pattern the
-# Makefile's QUIC_STUB_SRCS greps for. A file that still carries it
-# holds no implementation to prove, so STUBBED below exempts it and the
-# exemption ends on the commit that deletes the last marker in that
-# file. AUDITED would not retire that way: an entry there is checked
-# only for presence, so it would outlive its reason.
-STUB_MARKER = re.compile(r"(?m)^[ \t]*// CH_QUIC_STUB: ")
+# The two forms a stub body's marker takes, and the same patterns the
+# Makefile's QUIC_STUB_SRCS and SRV_STUB_SRCS grep for. A file that still
+# carries one holds no implementation to prove, so STUBBED below exempts
+# it and the exemption ends on the commit that deletes the last marker in
+# that file. The two build axes stub independently, which is why there
+# are two names and not one. AUDITED would not retire that way: an entry
+# there is checked only for presence, so it would outlive its reason.
+STUB_MARKER = re.compile(r"(?m)^[ \t]*// CH_(QUIC|SRV)_STUB: ")
 
 
 def shipped_sources():
     mk = (ROOT / "Makefile").read_text()
     out = set()
-    for var in ("SRCS", "LIB_SRCS", "QUIC_SRCS"):
+    for var in ("SRCS", "LIB_SRCS", "QUIC_SRCS", "SRV_SRCS"):
         m = re.search(rf"^{var} :?=(.*?)(?=\n\S)", mk, re.S | re.M)
         if m:
             out |= {t for t in re.split(r"[\s\\]+", m.group(1)) if t.endswith(".c")}
@@ -69,7 +70,7 @@ def stubbed_sources(sources):
     so it holds no arithmetic to prove absence of overflow over. The
     commit that implements the file deletes its last marker, and this
     set shrinks by itself on that commit, which is the retirement
-    docs/quic.md states for the marker."""
+    docs/quic.md and docs/server.md state for the markers."""
     return {s for s in sources
             if STUB_MARKER.search((ROOT / s).read_text())}
 
@@ -131,8 +132,8 @@ def main():
             f"sources proven with the signed-overflow class on, "
             f"{len(AUDITED)} audited by hand")
     if stubs:
-        line += (f", {len(stubs)} still stubs that carry the CH_QUIC_STUB "
-                 f"marker and hold no code to prove")
+        line += (f", {len(stubs)} still stubs that carry a stub marker "
+                 f"and hold no code to prove")
     print(line)
     return 0
 

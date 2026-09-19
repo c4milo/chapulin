@@ -135,7 +135,33 @@ typedef struct {
     // exchange protected the session, and cfg.require_pq fails the
     // handshake when it is not the hybrid.
     uint16_t group;
-#if defined(CH_TRUST_WEBPKI) || defined(CH_TRANSPORT_QUIC)
+#ifdef CH_ROLE_SERVER
+    // What a ROLE=server build selected and must keep past the message that decided it.
+    // A client needs none of these: it offers exactly one of everything, so its suite is
+    // a compile-time literal (handshake_message.c) and its session id is empty. Every
+    // value here is public: each one went out in the clear in the ServerHello or came in
+    // in the clear in the ClientHello.
+    //
+    // session_id is the client's legacy_session_id, which the server echoes in
+    // legacy_session_id_echo (RFC 9846 §4.1.3, rfc9846.txt:1365-1368) and which must
+    // survive a HelloRetryRequest round trip (rfc9846.txt:1451), so it is copied rather
+    // than pointed at. suite is the selected cipher suite and hash_len is the transcript
+    // hash length that suite fixes (rfc9846.txt:4055-4056). sigalg is the scheme the
+    // CertificateVerify carries. hrr_sent records that the one HelloRetryRequest this
+    // flight allows has gone out. compat_ccs records that the client sent a non-empty
+    // session id, so one dummy change_cipher_spec record is owed
+    // (rfc9846.txt:6401-6403). sni_len is how many bytes of server_name the handshake
+    // copied into cfg.sni_buf, and 0 when the client sent none or the name did not fit.
+    uint8_t session_id[32];
+    uint8_t session_id_len;
+    uint16_t suite;
+    uint8_t hash_len;
+    uint16_t sigalg;
+    uint8_t hrr_sent;
+    uint8_t compat_ccs;
+    size_t sni_len;
+#endif
+#if defined(CH_TRUST_WEBPKI) || defined(CH_TRANSPORT_QUIC) || defined(CH_ROLE_SERVER)
     // Which protocol the server selected through ALPN (RFC 7301 §3.2):
     // the index in ch_cfg.alpn_protocols of the name the
     // EncryptedExtensions carried, or CH_ALPN_NONE (cfg.h) when the
@@ -147,8 +173,12 @@ typedef struct {
     // a TRANSPORT=quic build in every trust mode, because RFC 9001 §8.1
     // requires ALPN there (rfc9001.txt:1891-1895) and ch_quic_init
     // seeds the field where ch_handshake seeds it over TCP. A
-    // TRANSPORT=tls raw or ca object declares neither and keeps the
-    // ch_tls layout it had.
+    // ROLE=server build declares it in every trust mode as well, and
+    // writes it from the other side: the index is the protocol this
+    // server selected out of cfg.alpn_protocols, and CH_ALPN_NONE when
+    // the caller offered none, the client sent no ALPN extension, or
+    // the two lists did not intersect. A TRANSPORT=tls raw or ca client
+    // object declares none of this and keeps the ch_tls layout it had.
     uint8_t alpn_selected;
 #endif
     // Highest epoch accepted: loaded at ch_connect, raised once a verified

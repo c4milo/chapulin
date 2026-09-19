@@ -126,7 +126,8 @@ SRCS := ct.c sha256.c hkdf.c chacha20.c poly1305.c aead.c x25519.c p256.c rsa.c 
 HDRS := ct.h sha256.h hkdf.h chacha20.h poly1305.h aead.h x25519.h p256.h rsa.h ch_assert.h \
         pem.h x509.h x509_der.h x509_ca.h webpki.h buf.h record.h keysched.h io.h handshake_message.h handshake_parser.h handshake_record.h cfg.h session.h handshake_auth.h handshake.h handshake_post.h \
         tls.h rand.h drbg.h sha3.h sha512.h sha512_compress.h p384.h p384_field.h rsa_pkcs1.h mlkem.h mlkem_poly.h \
-        handshake_flight.h quic.h quic_aes.h quic_aes_block.h quic_aes_key.h quic_gcm.h quic_initial.h quic_keys.h quic_packet.h quic_retry.h quic_step.h
+        handshake_flight.h quic.h quic_aes.h quic_aes_block.h quic_aes_key.h quic_gcm.h quic_initial.h quic_keys.h quic_packet.h quic_retry.h quic_step.h \
+        srv_cfg.h srv.h srv_parser.h srv_message.h srv_cookie.h srv_auth.h srv_flight.h srv_handshake.h
 
 # The TRANSPORT=quic mode's own sources, named here rather than matched
 # by a pattern, for the reason WEBPKI_SRCS is named: an auditor reads
@@ -215,6 +216,42 @@ QUIC_UNPROBED := $(if $(AES_HW_PROBE),,quic_aes_hw.c)
 # stops matching -- lint-tidy's stub pass, and lib-check's RAND=extern
 # import check.
 QUIC_STUB_SRCS := $(shell grep -l '^[[:space:]]*// CH_QUIC_STUB: ' $(QUIC_SRCS) 2>/dev/null)
+
+# The ROLE=server mode's own sources, named here for the reason
+# QUIC_SRCS and WEBPKI_SRCS are named: an auditor reads the object's
+# contents off this line, and an untracked scratch file never enters the
+# object. They sit outside SRCS because only one role compiles them; the
+# ROLE axis below names them as its add.
+#
+# One concern per pair, dependencies pointing down: srv_parser (the
+# ClientHello parser) below srv_message (the messages a server writes)
+# below srv_cookie (the HelloRetryRequest cookie) below srv_auth (which
+# identity signs, and what the CertificateVerify covers) below
+# srv_flight (the flight handlers) below srv_handshake (the state
+# machine) below srv (the public calls).
+#
+# Every one of them is a stub today: it defines each function its header
+# declares and implements none, so a ROLE=server object links and every
+# call refuses. docs/server.md, "Stubs first", states the rule.
+SRV_SRCS := srv_parser.c srv_message.c srv_cookie.c srv_auth.c \
+            srv_flight.c srv_handshake.c srv.c
+# Which of them are still stubs, read from the marker rather than from a
+# hand-kept list, exactly as QUIC_STUB_SRCS reads CH_QUIC_STUB. The two
+# axes stub independently, so the marker is a second name and not a
+# second mechanism; lint-tidy's stub pass is what reads this one.
+SRV_STUB_SRCS := $(shell grep -l '^[[:space:]]*// CH_SRV_STUB: ' $(SRV_SRCS) 2>/dev/null)
+# The client driver sources a ROLE=server object does not compile: the
+# state machine, the peer-certificate flight, the parsers for the
+# messages a server sends, and the ClientHello builder. Their server
+# counterparts are in SRV_SRCS.
+#
+# tls.c is deliberately absent. It defines ch_read, ch_write and
+# ch_close, which both roles export, so a server object compiles it and
+# the split runs inside the file under #ifndef CH_ROLE_SERVER.
+# handshake_flight.c is named although no such file exists yet: the QUIC
+# lane lands it, and filter-out passes over a name that matches nothing.
+CLIENT_REPLACED := handshake.c handshake_auth.c handshake_parser.c \
+                   handshake_message.c handshake_flight.c
 # softmul.c is excluded on purpose. It has to define __mulsi3 and
 # __muldi3 -- the names the compiler emits, so they replace the runtime
 # library's -- and clang-tidy rejects those as reserved identifiers that
@@ -229,6 +266,7 @@ LINT_C := $(filter-out softmul.c,$(SRCS)) drbg.c sha3.c sha512.c sha512_compress
           test/webpki_auth_test.c \
           test/mlkem_test.c test/handshake_strict_test.c test/handshake_sequence_test.c \
           test/x509_strict_test.c $(QUIC_SRCS) $(filter-out $(AES_IMPL),$(AES_IMPL_SRCS)) \
+          $(SRV_SRCS) test/srv_stub_test.c \
           test/quic_stub_test.c test/quic_vectors.c test/diff_quic_test.c \
           test/aes_equiv_test.c test/aes_equiv_soft.c test/aes_equiv_hw.c $(wildcard examples/*.c)
 
@@ -375,11 +413,92 @@ endif
 # draws randomness while another function stays a stub would still set
 # it. The assertion catches that build and names the line to delete.
 QUIC_STUB_RAND := $(if $(filter quic,$(TRANSPORT)),$(filter quic.c,$(QUIC_STUB_SRCS)))
-LIB_DEF := $(strip $(PIN_DEF) $(TRUST_DEF) $(TRANSPORT_DEF) $(AES_DEF))
+# The same variable for the other axis, and the same reasoning. A
+# ROLE=server object draws randomness in srv_flight.c -- srv_begin draws
+# the ephemeral key exchange secret and srv_send_server_hello draws the
+# 32 ServerHello random bytes -- and that file is a stub, so the object
+# calls ch_rand_bytes nowhere and has no import for lib-check to assert.
+# The assertion returns with srv_flight.c's implementation, and the
+# filter names that one file so a half-implemented srv_flight.c does not
+# keep it switched off.
+SRV_STUB_RAND := $(if $(filter server,$(ROLE)),$(filter srv_flight.c,$(SRV_STUB_SRCS)))
+# Role: ROLE=client (default) builds the TLS 1.3 client this tree has
+# always built; ROLE=server builds a TLS 1.3 server from the same
+# primitives, the same record layer and the same key schedule
+# (docs/server.md). One role per packaged object, like PIN, TRUST and
+# TRANSPORT: the two export different public calls, so an object cannot
+# carry both. A device carries one role for the life of the deployment,
+# so a runtime flag would double the flash a firmware links for no gain.
+#
+# This block sits here and not higher because every assignment in it is
+# immediate: ROLE_FILTER reads CLIENT_REPLACED, the client arm reads
+# PUBLIC_TRANSPORT from the TRANSPORT block above, the server arm
+# rewrites the PIN variables the PIN block above set, and LIB_DEF and
+# LIB_SRCS below read the result.
+ROLE ?= client
+ifeq ($(ROLE),server)
+# A server proves its own identity and never judges a peer's
+# certificate, so TRUST has no meaning here, and the values that would
+# add a certificate parser are refused rather than ignored.
+ifneq ($(TRUST),raw)
+$(error ROLE=server judges no peer certificate, so it has no trust mode to choose; use TRUST=raw)
+endif
+# PIN names the algorithm of a pinned peer key, of which a server has
+# none. The object still needs both verifiers, because ch_srv_check
+# verifies both provisioned identities at boot, so PIN selects nothing
+# here and a value that asks for one verifier is refused.
+#
+# The test is the value and not $(origin PIN), which would also refuse
+# an explicit PIN=rsa. lint-trust-separation's recursions inherit every
+# command-line variable through MAKEFLAGS, so an origin test would make
+# `make check PIN=ecdsa` die inside the ROLE row rather than in a build
+# anyone asked for. The value test still refuses ROLE=server PIN=ecdsa,
+# which is the build that would silently get two verifiers after asking
+# for one; an explicit PIN=rsa produces the same object as no PIN at
+# all, so accepting it costs nothing.
+ifneq ($(PIN),rsa)
+$(error ROLE=server carries both verifiers for ch_srv_check, so PIN selects nothing in it; drop PIN=$(PIN))
+endif
+# RFC 9001 §4.1.3 removes the record layer, and the dummy
+# change_cipher_spec, record_size_limit and the early-data discard
+# disappear with it, so a QUIC server is its own design
+# (docs/server.md, open question ten).
+ifneq ($(TRANSPORT),tls)
+$(error ROLE=server runs over TLS records only; use TRANSPORT=tls)
+endif
+ROLE_DEF    := -DCH_ROLE_SERVER
+ROLE_FILTER := $(CLIENT_REPLACED)
+# The server's own sources, and nothing else yet. docs/server.md's
+# ROLE_ADD also names p256_field.c, p256_ecdh.c, p256_sign.c,
+# rsa_sign.c, aes.c and gcm.c; none of those six files exists, so this
+# object holds no signer and no AES, ch_srv_check and the
+# CertificateVerify refuse, and the build offers
+# TLS_CHACHA20_POLY1305_SHA256 alone. Each lane adds its own name here
+# when it lands.
+ROLE_ADD    := $(SRV_SRCS)
+PUBLIC_ROLE := ch_srv_accept ch_srv_check ch_read ch_write ch_close
+# An empty PIN_FILTER keeps every verifier, because LIB_SRCS filters out
+# what the filter names. This object wants exactly that: it holds two
+# signing identities and ch_srv_check verifies both at boot, so it needs
+# p256_ecdsa_verify and rsa_pss_verify in one object. rsa_pkcs1.c is the
+# one verifier a server never needs, and no filter has to name it: it
+# reaches a build only through TRUST_ADD, which the TRUST=raw this block
+# requires never sets.
+PIN_DEF     :=
+PIN_FILTER  :=
+else ifeq ($(ROLE),client)
+ROLE_DEF    :=
+ROLE_FILTER :=
+ROLE_ADD    :=
+PUBLIC_ROLE := $(PUBLIC_TRANSPORT)
+else
+$(error ROLE=$(ROLE) is not a role; use ROLE=client or ROLE=server)
+endif
+LIB_DEF := $(strip $(PIN_DEF) $(TRUST_DEF) $(TRANSPORT_DEF) $(AES_DEF) $(ROLE_DEF))
 # The one assignment. Every axis above filters or names the sources
 # only its value adds; nothing below rewrites.
-LIB_SRCS := $(filter-out $(PIN_FILTER) $(TRUST_FILTER) $(TRANSPORT_FILTER),$(SRCS)) \
-            $(TRUST_ADD) $(TRANSPORT_ADD)
+LIB_SRCS := $(filter-out $(PIN_FILTER) $(TRUST_FILTER) $(TRANSPORT_FILTER) $(ROLE_FILTER),$(SRCS)) \
+            $(TRUST_ADD) $(TRANSPORT_ADD) $(ROLE_ADD)
 # Key exchange: KEX=x25519 (default) or KEX=pq (-DCH_KEX_PQ), the
 # X25519MLKEM768 hybrid — the ML-KEM and SHA-3 modules join the
 # packaged object only there. One mode per object, like PIN and TRUST.
@@ -425,19 +544,19 @@ BENCH_C := $(wildcard bench/*.c bench/*.h)
 QEMU_SMOKE_C := $(wildcard test/qemu/*.c test/qemu/*.h test/freertos/*.c test/freertos/*.h)
 
 # Firmware links bin/chapulin.o: one relocatable object exposing exactly
-# the calls PUBLIC names, four under TRANSPORT=tls and fifteen under
-# TRANSPORT=quic. Partial linking merges the modules; nmedit
+# the calls PUBLIC names, four under TRANSPORT=tls, fifteen under
+# TRANSPORT=quic and five under ROLE=server. Partial linking merges the modules; nmedit
 # (macOS) or objcopy (everything else) localizes every other symbol, so
 # the library cannot collide with application names. lib-check enforces
 # the export list as part of check. Objects live under the variant that
-# built them, so switching PIN, TRUST, KEX, RAND or TRANSPORT never
-# reuses a stale object. TRANSPORT belongs here for a reason the other
+# built them, so switching PIN, TRUST, KEX, RAND, TRANSPORT or ROLE
+# never reuses a stale object. TRANSPORT belongs here for a reason the other
 # four share and it sharpens: the two transports link different object
 # lists into chapulin.o, so without it a TRANSPORT=tls chapulin.o and a
 # TRANSPORT=quic one write to the same path, make 3.81 compares mtimes
 # to the second, and the second link reuses the first object -- the
 # failure the paragraph below records for RAND.
-LIB_VARIANT := $(PIN)-$(TRUST)-$(KEX)-$(RAND)-$(TRANSPORT)-$(AES)
+LIB_VARIANT := $(PIN)-$(TRUST)-$(KEX)-$(RAND)-$(TRANSPORT)-$(AES)-$(ROLE)
 LIB_OBJS := $(LIB_SRCS:%.c=bin/obj/$(LIB_VARIANT)/%.o)
 
 # bench/device-ram.sh sizes the same modules the build packages. It asks
@@ -478,6 +597,16 @@ print-lib-def:
 # explicitly on both sides, because a `make check TRANSPORT=quic` hands
 # its value to every recursion below, and the TRANSPORT=tls row must
 # read the transport it names.
+#
+# The role rows read their file list the same way, from git's srv*.c at
+# the root, and they name TRUST, TRANSPORT and PIN on both sides because
+# the ROLE=server arm stops the build on any other value of the three,
+# and a recursion inherits whatever the outer make was given: without
+# PIN=rsa here, `make check PIN=ecdsa` would reach that error arm. This is
+# the check that fails on an axis whose ROLE_FILTER, ROLE_ADD or
+# ROLE_DEF never reached LIB_SRCS or LIB_DEF; a partition tool that
+# preprocessed the sources could not do it, because a source list is not
+# text in a file.
 #
 # The webpki rows read their file lists from nowhere the build reads
 # them: the chain verifiers are written out, and the webpki*.c files are
@@ -522,6 +651,11 @@ lint-trust-separation:
 	check "TRANSPORT=quic AES=soft" "quic_aes_soft.c" "quic_aes_hw.c quic_aes_extern.c" "" "-DCH_AES_HW -DCH_AES_EXTERN"; \
 	check "TRANSPORT=quic AES=hw" "quic_aes_hw.c" "quic_aes_soft.c quic_aes_extern.c" "-DCH_AES_HW" "-DCH_AES_EXTERN"; \
 	check "TRANSPORT=quic AES=extern" "quic_aes_extern.c" "quic_aes_soft.c quic_aes_hw.c" "-DCH_AES_EXTERN" "-DCH_AES_HW"; \
+	srv_files=$$(git ls-files 'srv*.c' | grep -v / | tr '\n' ' '); \
+	[ -n "$$srv_files" ] || { echo "lint-trust-separation: git tracks no srv*.c file at the root, so the role rows would check nothing"; rc=1; }; \
+	client_only="handshake.c handshake_auth.c handshake_parser.c handshake_message.c"; \
+	check "ROLE=client TRUST=raw TRANSPORT=tls PIN=rsa" "$$client_only tls.c" "$$srv_files" "" "-DCH_ROLE_SERVER"; \
+	check "ROLE=server TRUST=raw TRANSPORT=tls PIN=rsa" "$$srv_files tls.c rsa.c rsa_mont.c p256.c" "$$client_only" "-DCH_ROLE_SERVER" "-DCH_PIN_ECDSA"; \
 	[ $$rc = 0 ] && echo "lint-trust-separation: every axis value packages exactly its own sources and defines"; \
 	exit $$rc
 # bench/device-ram.sh builds with CLANG_RV, the clang the codegen lints
@@ -532,12 +666,14 @@ lint-trust-separation:
 print-clang-rv:
 	@echo $(CLANG_RV)
 # RAND=drbg packages the generator, so ch_drbg_seed becomes part of the
-# API the image calls and lib-check covers it like the transport's own
-# calls. PUBLIC_TRANSPORT is the transport's set and replaces the other
-# transport's rather than adding to it: lib-check diffs the object's
-# exports against this list for exact equality, so a term carrying both
-# sets fails every build (docs/decisions.md 28).
-PUBLIC := $(PUBLIC_TRANSPORT) $(PUBLIC_RAND) $(PUBLIC_CA)
+# API the image calls and lib-check covers it like the role's own calls.
+# PUBLIC_ROLE is one role's set and replaces the other role's rather
+# than adding to it: lib-check diffs the object's exports against this
+# list for exact equality, so a term carrying both sets fails every
+# build (docs/decisions.md 28). A ROLE=client build sets it from
+# PUBLIC_TRANSPORT, so the two transports' lists still reach here
+# unchanged.
+PUBLIC := $(PUBLIC_ROLE) $(PUBLIC_RAND) $(PUBLIC_CA)
 
 bin/obj/$(LIB_VARIANT)/%.o: %.c $(HDRS)
 	@mkdir -p bin/obj/$(LIB_VARIANT)
@@ -545,7 +681,7 @@ bin/obj/$(LIB_VARIANT)/%.o: %.c $(HDRS)
 
 # The packaged object is variant-specific but lands at one path, so
 # mtimes alone cannot tell which variant built it; the stamp rewrites
-# (and so triggers a relink) only when PIN, TRUST, KEX or RAND changed
+# (and so triggers a relink) only when a build variable LIB_VARIANT names changed
 # since the last build. RAND belongs here because it changes the link
 # and the export list even when no object's contents move.
 
@@ -611,6 +747,10 @@ else ifneq ($(QUIC_STUB_RAND),)
 	@if nm -u $(LIB_OBJ) | awk '{print $$NF}' | sed 's/^_//' | grep -qx ch_rand_bytes; then \
 	  echo "lib-check: quic.c still carries a CH_QUIC_STUB marker and this object already imports ch_rand_bytes; drop QUIC_STUB_RAND and let the RAND=extern check run"; exit 1; fi
 	@echo "lib-check: quic.c is still a stub, so no source in this object calls ch_rand_bytes and there is no import to check; the RAND=extern check returns with quic.c's implementation"
+else ifneq ($(SRV_STUB_RAND),)
+	@if nm -u $(LIB_OBJ) | awk '{print $$NF}' | sed 's/^_//' | grep -qx ch_rand_bytes; then \
+	  echo "lib-check: srv_flight.c still carries a CH_SRV_STUB marker and this object already imports ch_rand_bytes; drop SRV_STUB_RAND and let the RAND=extern check run"; exit 1; fi
+	@echo "lib-check: srv_flight.c is still a stub, so no source in this object calls ch_rand_bytes and there is no import to check; the RAND=extern check returns with srv_flight.c's implementation"
 else
 	@if ! nm -u $(LIB_OBJ) | awk '{print $$NF}' | sed 's/^_//' | grep -qx ch_rand_bytes; then \
 	  echo "lib-check: RAND=extern must leave ch_rand_bytes undefined, so an image that forgets the hook fails to link"; exit 1; fi
@@ -728,6 +868,13 @@ bin/quic_test_hw: test/quic_vectors.c quic_aes.c quic_aes_hw.c quic_gcm.c quic_k
 bin/aes_equiv_test: test/aes_equiv_test.c test/aes_equiv_soft.c test/aes_equiv_hw.c quic_aes_soft.c quic_aes_hw.c $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) $(AES_HW_CFLAGS) -DCH_TRANSPORT_QUIC -I. -o $@ test/aes_equiv_test.c test/aes_equiv_soft.c test/aes_equiv_hw.c
+# The same two rules for the ROLE=server mode, over the role's sources under
+# -DCH_ROLE_SERVER. It links the seven srv sources and nothing else: every one
+# of them is a stub, so none calls into the record layer, the key schedule or
+# the I/O shim.
+bin/srv_stub_test: test/srv_stub_test.c $(SRV_SRCS) $(HDRS) $(TESTH)
+	@mkdir -p bin
+	$(CC) $(CFLAGS) -DCH_ROLE_SERVER -I. -o $@ test/srv_stub_test.c $(SRV_SRCS)
 # SHA-512 and SHA-384 vectors and the streaming contract. Its own binary,
 # out of the packaged object like sha3: only TRUST=webpki links sha512.c.
 bin/sha512_test: test/sha512_test.c sha512.c sha512_compress.c $(HDRS) $(TESTH)
@@ -967,7 +1114,7 @@ run-%: bin/%
 # and the invariant violation builds. The nightly runs it. Splitting on
 # duration rather than on importance is deliberate -- nothing here is
 # optional, and a change is not finished until check-slow passes too.
-check: bin/unit bin/unit_ca bin/unit_pq bin/tlsclient bin/tlsclient_ecdsa bin/tlsclient_ca bin/tlsclient_ca_ecdsa bin/tlsclient_webpki bin/tlsclient_pq bin/drbg_test bin/softmul_test bin/rsa_test bin/sha3_test bin/sha512_test bin/p384_test bin/rsa_pkcs1_test bin/webpki_time_test bin/webpki_name_test bin/webpki_spki_test bin/webpki_sigalg_test bin/webpki_cert_test bin/webpki_chain_test bin/webpki_auth_test bin/mlkem_test bin/handshake_strict_test bin/handshake_strict_pq bin/handshake_strict_webpki bin/webpki_session_test bin/webpki_session_pq bin/x509strict bin/x509strict_ecdsa bin/quic_stub_test bin/quic_test $(AES_HW_BINS) lint rand-check
+check: bin/unit bin/unit_ca bin/unit_pq bin/tlsclient bin/tlsclient_ecdsa bin/tlsclient_ca bin/tlsclient_ca_ecdsa bin/tlsclient_webpki bin/tlsclient_pq bin/drbg_test bin/softmul_test bin/rsa_test bin/sha3_test bin/sha512_test bin/p384_test bin/rsa_pkcs1_test bin/webpki_time_test bin/webpki_name_test bin/webpki_spki_test bin/webpki_sigalg_test bin/webpki_cert_test bin/webpki_chain_test bin/webpki_auth_test bin/mlkem_test bin/handshake_strict_test bin/handshake_strict_pq bin/handshake_strict_webpki bin/webpki_session_test bin/webpki_session_pq bin/x509strict bin/x509strict_ecdsa bin/quic_stub_test bin/quic_test $(AES_HW_BINS) lint rand-check bin/srv_stub_test
 	# The packaged object is built once per entropy pattern, because
 	# lib-check reads a different export list and a different import
 	# list in each. Only the object is built twice: the examples and
@@ -1003,6 +1150,14 @@ check: bin/unit bin/unit_ca bin/unit_pq bin/tlsclient bin/tlsclient_ecdsa bin/tl
 	# replacement rather than an addition, and the one that compiles
 	# chapulin.hpp's Quic class against the object it forwards to.
 	$(MAKE) lib-check cxx-check RAND=extern TRANSPORT=quic
+	# The server arm exports ch_srv_accept and ch_srv_check beside
+	# ch_read, ch_write and ch_close, and no ch_connect, so it is the leg
+	# that holds PUBLIC_ROLE to a replacement rather than an addition. It
+	# is lib-check alone: chapulin.hpp has no Server type yet, so
+	# cxx-check joins this line on the commit that adds one
+	# (docs/server.md). Every srv source is a stub today, so the leg
+	# costs seconds.
+	$(MAKE) lib-check RAND=extern ROLE=server
 	# lint above holds lint-stack at the budget of the build check was
 	# given, 2,560 B for a plain `make check`, the target `make ci` runs.
 	# This leg compiles the TRUST=webpki object's sources under their own
@@ -1045,6 +1200,7 @@ check: bin/unit bin/unit_ca bin/unit_pq bin/tlsclient bin/tlsclient_ecdsa bin/tl
 	else \
 	  echo "SKIP AES=hw: $(CC) has no AES instructions and no flag turns them on"; \
 	fi
+	./bin/srv_stub_test
 	./bin/handshake_strict_test
 	./bin/handshake_strict_pq
 	./bin/handshake_strict_webpki
@@ -1804,7 +1960,7 @@ else
 	# reason: every declaration they hold sits behind
 	# -DCH_TRANSPORT_QUIC, which this pass does not define, so it would
 	# read eight empty translation units. The two passes below read them.
-	$(CLANG_TIDY) --quiet $(filter-out webpki.c test/webpki_session_test.c test/webpki_chain_test.c test/webpki_auth_test.c examples/webpki_client.c $(QUIC_SRCS) $(AES_IMPL_SRCS) test/quic_stub_test.c test/quic_vectors.c test/diff_quic_test.c test/aes_equiv_test.c test/aes_equiv_soft.c test/aes_equiv_hw.c,$(LINT_C)) -- \
+	$(CLANG_TIDY) --quiet $(filter-out webpki.c test/webpki_session_test.c test/webpki_chain_test.c test/webpki_auth_test.c examples/webpki_client.c $(QUIC_SRCS) $(AES_IMPL_SRCS) test/quic_stub_test.c test/quic_vectors.c test/diff_quic_test.c test/aes_equiv_test.c test/aes_equiv_soft.c test/aes_equiv_hw.c $(SRV_SRCS) test/srv_stub_test.c,$(LINT_C)) -- \
 	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -I.
 	# The pass above defines no trust mode, so it reads none of the
 	# TRUST=webpki arms. This pass parses the sources that carry them or
@@ -1855,6 +2011,23 @@ else
 	@set -e; [ -z "$(QUIC_STUB_SRCS)" ] || $(CLANG_TIDY) --quiet \
 	   --checks='-readability-non-const-parameter' $(QUIC_STUB_SRCS) -- \
 	   -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_TRANSPORT_QUIC -I.
+	# The server role, split the same way by SRV_STUB_SRCS and for the
+	# same two reasons: every declaration these files hold sits behind
+	# -DCH_ROLE_SERVER, so the pass above would read seven empty
+	# translation units, and a stub writes nothing through the
+	# out-parameters its header declares writable, which
+	# readability-non-const-parameter reads as a pointer that could be
+	# const. The exception retires per file: an implemented source drops
+	# out of SRV_STUB_SRCS and joins the first pass, where the check is
+	# on again.
+	@set -e; done="$(filter-out $(SRV_STUB_SRCS),$(SRV_SRCS))"; \
+	 [ -z "$$done" ] || $(CLANG_TIDY) --quiet $$done -- \
+	   -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_ROLE_SERVER -I.
+	$(CLANG_TIDY) --quiet test/srv_stub_test.c -- \
+	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_ROLE_SERVER -I.
+	@set -e; [ -z "$(SRV_STUB_SRCS)" ] || $(CLANG_TIDY) --quiet \
+	   --checks='-readability-non-const-parameter' $(SRV_STUB_SRCS) -- \
+	   -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_ROLE_SERVER -I.
 	# The M3 smoke runtimes and the KAT program lint with the target's
 	# own flags. Three checks are off, each with its reason:
 	# bugprone-reserved-identifier and its two cert aliases, because the
@@ -2167,6 +2340,13 @@ lint-impact:
 #     ID a long header carries in the clear (§5.2), and the 16-byte
 #     Retry key the RFC prints (§5.8). No traffic secret keysched.c
 #     derives reaches either file.
+#   srv_parser.c, srv_message.c, srv_cookie.c, srv_auth.c, srv_flight.c,
+#     srv_handshake.c, srv.c: the ROLE=server protocol files. They are
+#     parsers and builders, and the transcript hash, the verify_data and
+#     the cookie MAC pass through them, so they take a ceiling here.
+#     They take no conditional-branch count, for the reason BRANCH_SRCS
+#     gives below: they branch on lengths, types and states the peer
+#     sent in the clear.
 #   quic_initial.c, quic_retry.c: the Initial packet path and the Retry
 #     tag check, the only two library sources INV-26 lets call those
 #     entries. They see the same three keys and the packet bytes that
@@ -2192,18 +2372,27 @@ WIDEMUL_CEILING := ct.c:0 sha256.c:0 sha3.c:1 hkdf.c:0 chacha20.c:0 poly1305.c:0
                    x25519.c:0 mlkem.c:0 mlkem_poly.c:0 buf.c:0 record.c:0 keysched.c:0 io.c:0 \
                    session.c:0 handshake_message.c:0 handshake_parser.c:0 handshake_record.c:0 \
                    handshake_auth.c:0 handshake.c:0 handshake_post.c:0 tls.c:0 drbg.c:0 softmul.c:0 \
-                   quic_keys.c:0 quic_packet.c:0 quic_step.c:0 quic.c:0
+                   quic_keys.c:0 quic_packet.c:0 quic_step.c:0 quic.c:0 \
+                   srv_parser.c:0 srv_message.c:0 srv_cookie.c:0 srv_auth.c:0 srv_flight.c:0 \
+                   srv_handshake.c:0 srv.c:0
 CODEGEN_SRCS := $(foreach e,$(WIDEMUL_CEILING),$(firstword $(subst :, ,$(e))))
 # Per-file defines both gates below add for one file alone, file:defines,
 # in the shape WIDEMUL_CEILING_SPEC uses for per-spec ceilings. Each gate
 # compiles every CODEGEN_SRCS file under one fixed flag set that names no
-# transport, and the four QUIC entries above do not compile without
-# -DCH_TRANSPORT_QUIC: CH_LEVEL_*, the ch_quic struct and the new ch_cfg
-# fields all sit behind it. Adding the define to the shared line instead
-# would break record.c, io.c, session.c, handshake.c and tls.c, which are
-# on the same list and compile only without it.
+# transport and no role, and two groups of entries above hold nothing
+# without their own define. The four QUIC entries need
+# -DCH_TRANSPORT_QUIC: CH_LEVEL_*, the ch_quic struct and the QUIC
+# ch_cfg fields all sit behind it. The seven server entries need
+# -DCH_ROLE_SERVER for the same reason, and preprocess to an empty file
+# without it. Adding either define to the shared line would break
+# record.c, io.c, session.c, handshake.c and tls.c, which are on the same
+# list and compile only without them.
 WIDEMUL_DEFINES := quic_keys.c:-DCH_TRANSPORT_QUIC quic_packet.c:-DCH_TRANSPORT_QUIC \
-                   quic_step.c:-DCH_TRANSPORT_QUIC quic.c:-DCH_TRANSPORT_QUIC
+                   quic_step.c:-DCH_TRANSPORT_QUIC quic.c:-DCH_TRANSPORT_QUIC \
+                   srv_parser.c:-DCH_ROLE_SERVER srv_message.c:-DCH_ROLE_SERVER \
+                   srv_cookie.c:-DCH_ROLE_SERVER srv_auth.c:-DCH_ROLE_SERVER \
+                   srv_flight.c:-DCH_ROLE_SERVER srv_handshake.c:-DCH_ROLE_SERVER \
+                   srv.c:-DCH_ROLE_SERVER
 WIDEMUL_PUBLIC := p256.c rsa.c rsa_mont.c pem.c x509.c x509_der.c x509_ca.c sha512.c sha512_compress.c \
                   p384.c p384_field.c rsa_pkcs1.c webpki_time.c webpki_name.c webpki_spki.c webpki_sigalg.c \
                   webpki_ext.c webpki_cert.c webpki.c \
