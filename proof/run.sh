@@ -839,6 +839,22 @@ launch slow:3 full quic_gcm_safety 130 "fill_nondet.0:177,hash_data.1:3,counter_
 launch slow:1 full quic_gcm_refusal 130 "fill_nondet.0:177,hash_data.1:3,counter_mode.1:3" --object-bits 11 ct.c -DCH_TRANSPORT_QUIC -DCH_GCM_PT_MAX=32 -DCH_GCM_AAD_MAX=32
 launch slow:2 full quic_ghash 130 "fill_nondet.0:257,hash_data.1:17" ct.c -DCH_TRANSPORT_QUIC
 launch fast full poly1305 85 "blocks.0:8" ct.c
+# The ROLE=server authentication flight: the two slot predicates over
+# every SignatureScheme code point, the CertificateVerify signed content
+# of RFC 9846 section 4.4.3 at every transcript length the contract
+# admits, and both refusals srv_sign_certificate_verify documents.
+# SHA-256 is a contract stub, so this formula holds the assembly and the
+# selection and not the compression function; no signer exists in this
+# tree, so the harness states what stays out of reach. ct.c is compiled
+# in because three paths wipe. The global unwind covers fill_nondet over
+# the 384-byte signature buffer, which is the longest loop here.
+# Measured on an idle development machine (arm64 macOS, cbmc 6.11.0,
+# kissat, PROVE_NO_CACHE=1 /usr/bin/time -l through this script): 223
+# properties, 3 s, 0.16 GB peak, two runs. The same formula with an
+# assert of 0 at each of its four tails -- the assembly's wipe, the cap
+# refusal, the signing refusal and the provisioned arm of the boot
+# check -- fails all four, so every tail is reached.
+launch fast full srv_auth 385 "" ct.c -DCH_ROLE_SERVER
 # quic_gcm and quic_gcm_forge have no launch line, for the reason
 # aead_inplace has none: neither formula returned a verdict, and an
 # unconverged launch line proves nothing (docs/proofs.md). Measured with
@@ -851,6 +867,21 @@ launch fast full poly1305 85 "blocks.0:8" ct.c
 # reviewed, so adding the lines is the whole job once the formulas
 # converge -- the likely next step is the split aead needed, one property
 # per formula, and a bound below one block.
+# The ROLE=server message builders and the HelloRetryRequest cookie. Both
+# compile under -DCH_ROLE_SERVER, which is what declares anything in either
+# source. buf.c is real in both, because refusing to overflow is the writer's
+# contract and the point is that the callers use it correctly; ct.c and hkdf.c
+# are real in the cookie, and SHA-256 alone is the contract stub in
+# harness.h, which the harness comment prices. The unwindsets name
+# fill_nondet over the longest buffer each harness havocs: the cookie at
+# SRV_COOKIE_MAX in the builders, and one byte past it in the cookie's own
+# open case. Measured on a development machine (arm64 macOS, cbmc 6.11.0,
+# kissat, PROVE_NO_CACHE=1 /usr/bin/time -l over this script): srv_message 538
+# properties, 4 s, 0.11 GB peak; srv_cookie 797 properties, 3 s, 0.07 GB. The
+# same srv_message formula with its ServerHello assertion tightened to n < cap
+# fails, so the formula reaches the builder rather than passing vacuously.
+launch fast full srv_message 130 "fill_nondet.0:118" buf.c -DCH_ROLE_SERVER
+launch fast full srv_cookie 130 "fill_nondet.0:119" buf.c ct.c hkdf.c -DCH_ROLE_SERVER
 launch fast full buf 100 ""
 # handshake_record on its own, so the two drivers can stub it
 # (https://github.com/c4milo/chapulin/issues/37). Before this harness,
@@ -888,6 +919,31 @@ launch fast:4 full handshake_record 65 "hsr_fetch_record.0:6,hsr_next_msg.0:11,f
 launch fast:4 full quic_driver 5 "fill_nondet.0:257,ct_wipe.0:441,drive.0:8,assert_dead.0:33" -DCH_TRANSPORT_QUIC -DCH_PROOF_RXBUF=12 handshake_record.c quic_config.c ct.c
 launch fast full quic_step 5 "fill_nondet.0:37,ct_wipe.0:441" -DCH_TRANSPORT_QUIC -DCH_PROOF_RXBUF=12 ct.c
 launch fast full quic_step_ca 5 "fill_nondet.0:37,ct_wipe.0:849" -DCH_TRANSPORT_QUIC -DCH_TRUST_CA -DCH_PROOF_RXBUF=12 ct.c
+# The ROLE=server public calls and the flight driver above them. The
+# fourteen srv_flight.h handlers are contract stubs the harness defines,
+# because a handler and the driver that calls it are separate formulas;
+# srv_auth.c's two entries are stubs for a second reason the harness
+# states, that the srv_auth.c in the tree answers "no identity" for every
+# configuration and would leave this formula proving one branch.
+#
+# Three unwindset entries are what make this formula converge, and each
+# one was measured rather than guessed. alpn_ok.0 and
+# alpn_name_repeats.0 are 9 because the ALPN walk runs at most
+# CH_ALPN_MAX times: alpn_ok refuses a count above it before the loop, so
+# the global unwind of 100 was unrolling a nest that can only reach 8 by
+# 8, each iteration carrying a 33-deep ct_memeq, and the run had no
+# verdict after 13 minutes. fill_names carries the 256-byte ALPN bound on
+# a loop of its own, because an unwindset entry bounds a loop and not a
+# call site: the same bound on fill_nondet unrolls that loop 256 times at
+# the four 32-byte call sites the flight stubs make as well. ct_wipe.0 is
+# 449 for the reason the two client drivers give, that the driver wipes
+# the whole handshake_state on the way out.
+#
+# Measured under this script's flags (arm64 macOS, the pinned cbmc,
+# kissat, /usr/bin/time -l, on a development machine running another
+# lane's proof): 821 properties, 32.8 s, 2.23 GB peak. The weight is 3
+# because that peak is over the fast tier's 2 GB default.
+launch fast:3 full srv_accept 100 "alpn_ok.0:9,alpn_name_repeats.0:9,ct_wipe.0:449,ct_memeq.0:33,fill_names.0:257,fill_nondet.0:33" -DCH_ROLE_SERVER srv.c srv_handshake.c ct.c session.c
 launch fast full ct 65 ""
 # The 16x16 decomposition, which is what every other proof rests on. Those
 # formulas verify the single-multiply form, because the launch line above

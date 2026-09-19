@@ -262,7 +262,7 @@ LINT_C := $(filter-out softmul.c,$(SRCS)) drbg.c sha3.c sha512.c sha512_compress
           test/webpki_auth_test.c \
           test/mlkem_test.c test/handshake_strict_test.c test/handshake_sequence_test.c \
           test/x509_strict_test.c $(QUIC_SRCS) $(filter-out $(AES_IMPL),$(AES_IMPL_SRCS)) \
-          $(SRV_SRCS) test/srv_stub_test.c \
+          $(SRV_SRCS) test/srv_stub_test.c test/srv_test.c \
           test/quic_driver_test.c test/quic_vectors.c test/diff_quic_test.c \
           test/aes_equiv_test.c test/aes_equiv_soft.c test/aes_equiv_hw.c $(wildcard examples/*.c)
 
@@ -283,7 +283,8 @@ TESTH := test/test_random.h test/pem_armor.h test/pem_tests.h test/x509_ca_tests
          test/diff_webpki_sigalg.h test/hello_exts.h test/webpki_session_cases.h \
          test/handshake_strict_alpn.h \
          test/webpki_cert_mutants.h test/webpki_ext_mutants.h test/diff_webpki_cert.h \
-         test/webpki_auth_vectors.h test/rxbuf_floor_tests.h
+         test/webpki_auth_vectors.h test/rxbuf_floor_tests.h \
+         test/srv_message_tests.h test/srv_cookie_tests.h
 
 # Each axis names its value or stops the build. RAND has done this since
 # https://github.com/c4milo/chapulin/issues/41; PIN, TRUST and KEX each
@@ -843,12 +844,27 @@ bin/aes_equiv_test: test/aes_equiv_test.c test/aes_equiv_soft.c test/aes_equiv_h
 	@mkdir -p bin
 	$(CC) $(CFLAGS) $(AES_HW_CFLAGS) -DCH_TRANSPORT_QUIC -I. -o $@ test/aes_equiv_test.c test/aes_equiv_soft.c test/aes_equiv_hw.c
 # The same two rules for the ROLE=server mode, over the role's sources under
-# -DCH_ROLE_SERVER. It links the seven srv sources and nothing else: every one
-# of them is a stub, so none calls into the record layer, the key schedule or
-# the I/O shim.
-bin/srv_stub_test: test/srv_stub_test.c $(SRV_SRCS) $(HDRS) $(TESTH)
+# -DCH_ROLE_SERVER. Beside the seven srv sources it links what the implemented
+# ones call, which is SRV_BELOW: srv_message.c and srv_cookie.c read and write
+# through buf.c, srv_cookie.c calls hkdf.c for the cookie MAC and ct.c for the
+# comparison and the wipe, srv_auth.c calls sha256.c for the CertificateVerify
+# signed content and ct.c for the wipes after it, srv.c compares ALPN names
+# with ct_memeq, srv_handshake.c wipes its handshake_state and fails the
+# session through tlsi_fail, and session.c's alert path pulls the record
+# layer, the I/O shim and the key derivation record.c runs with it. The two
+# stubs still call none of it.
+SRV_BELOW := buf.c ct.c session.c io.c record.c aead.c chacha20.c poly1305.c hkdf.c sha256.c
+bin/srv_stub_test: test/srv_stub_test.c $(SRV_SRCS) $(SRV_BELOW) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -DCH_ROLE_SERVER -I. -o $@ test/srv_stub_test.c $(SRV_SRCS)
+	$(CC) $(CFLAGS) -DCH_ROLE_SERVER -I. -o $@ test/srv_stub_test.c $(SRV_SRCS) $(SRV_BELOW)
+# The role's unit vectors: the messages srv_message.c writes and the cookie
+# srv_cookie.c mints and opens. It links those two sources and their
+# dependencies alone, not the whole role, because the builders and the cookie
+# are pure functions over caller buffers and touch no session.
+SRV_DEPS := buf.c ct.c sha256.c hkdf.c
+bin/srv_test: test/srv_test.c srv_message.c srv_cookie.c $(SRV_DEPS) $(HDRS) $(TESTH)
+	@mkdir -p bin
+	$(CC) $(CFLAGS) -DCH_ROLE_SERVER -I. -o $@ test/srv_test.c srv_message.c srv_cookie.c $(SRV_DEPS)
 # SHA-512 and SHA-384 vectors and the streaming contract. Its own binary,
 # out of the packaged object like sha3: only TRUST=webpki links sha512.c.
 bin/sha512_test: test/sha512_test.c sha512.c sha512_compress.c $(HDRS) $(TESTH)
@@ -1088,7 +1104,7 @@ run-%: bin/%
 # and the invariant violation builds. The nightly runs it. Splitting on
 # duration rather than on importance is deliberate -- nothing here is
 # optional, and a change is not finished until check-slow passes too.
-check: bin/unit bin/unit_ca bin/unit_pq bin/tlsclient bin/tlsclient_ecdsa bin/tlsclient_ca bin/tlsclient_ca_ecdsa bin/tlsclient_webpki bin/tlsclient_pq bin/drbg_test bin/softmul_test bin/rsa_test bin/sha3_test bin/sha512_test bin/p384_test bin/rsa_pkcs1_test bin/webpki_time_test bin/webpki_name_test bin/webpki_spki_test bin/webpki_sigalg_test bin/webpki_cert_test bin/webpki_chain_test bin/webpki_auth_test bin/mlkem_test bin/handshake_strict_test bin/handshake_strict_pq bin/handshake_strict_webpki bin/webpki_session_test bin/webpki_session_pq bin/x509strict bin/x509strict_ecdsa bin/quic_driver_test bin/quic_test $(AES_HW_BINS) lint rand-check bin/srv_stub_test
+check: bin/unit bin/unit_ca bin/unit_pq bin/tlsclient bin/tlsclient_ecdsa bin/tlsclient_ca bin/tlsclient_ca_ecdsa bin/tlsclient_webpki bin/tlsclient_pq bin/drbg_test bin/softmul_test bin/rsa_test bin/sha3_test bin/sha512_test bin/p384_test bin/rsa_pkcs1_test bin/webpki_time_test bin/webpki_name_test bin/webpki_spki_test bin/webpki_sigalg_test bin/webpki_cert_test bin/webpki_chain_test bin/webpki_auth_test bin/mlkem_test bin/handshake_strict_test bin/handshake_strict_pq bin/handshake_strict_webpki bin/webpki_session_test bin/webpki_session_pq bin/x509strict bin/x509strict_ecdsa bin/quic_driver_test bin/quic_test $(AES_HW_BINS) lint rand-check bin/srv_stub_test bin/srv_test
 	# The packaged object is built once per entropy pattern, because
 	# lib-check reads a different export list and a different import
 	# list in each. Only the object is built twice: the examples and
@@ -1172,6 +1188,7 @@ check: bin/unit bin/unit_ca bin/unit_pq bin/tlsclient bin/tlsclient_ecdsa bin/tl
 	  echo "SKIP AES=hw: $(CC) has no AES instructions and no flag turns them on"; \
 	fi
 	./bin/srv_stub_test
+	./bin/srv_test
 	./bin/handshake_strict_test
 	./bin/handshake_strict_pq
 	./bin/handshake_strict_webpki
@@ -1931,7 +1948,7 @@ else
 	# reason: every declaration they hold sits behind
 	# -DCH_TRANSPORT_QUIC, which this pass does not define, so it would
 	# read eight empty translation units. The two passes below read them.
-	$(CLANG_TIDY) --quiet $(filter-out webpki.c test/webpki_session_test.c test/webpki_chain_test.c test/webpki_auth_test.c examples/webpki_client.c $(QUIC_SRCS) $(AES_IMPL_SRCS) test/quic_driver_test.c test/quic_vectors.c test/diff_quic_test.c test/aes_equiv_test.c test/aes_equiv_soft.c test/aes_equiv_hw.c $(SRV_SRCS) test/srv_stub_test.c,$(LINT_C)) -- \
+	$(CLANG_TIDY) --quiet $(filter-out webpki.c test/webpki_session_test.c test/webpki_chain_test.c test/webpki_auth_test.c examples/webpki_client.c $(QUIC_SRCS) $(AES_IMPL_SRCS) test/quic_driver_test.c test/quic_vectors.c test/diff_quic_test.c test/aes_equiv_test.c test/aes_equiv_soft.c test/aes_equiv_hw.c $(SRV_SRCS) test/srv_stub_test.c test/srv_test.c,$(LINT_C)) -- \
 	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -I.
 	# The pass above defines no trust mode, so it reads none of the
 	# TRUST=webpki arms. This pass parses the sources that carry them or
@@ -1982,7 +1999,7 @@ else
 	@set -e; done="$(filter-out $(SRV_STUB_SRCS),$(SRV_SRCS))"; \
 	 [ -z "$$done" ] || $(CLANG_TIDY) --quiet $$done -- \
 	   -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_ROLE_SERVER -I.
-	$(CLANG_TIDY) --quiet test/srv_stub_test.c -- \
+	$(CLANG_TIDY) --quiet test/srv_stub_test.c test/srv_test.c -- \
 	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_ROLE_SERVER -I.
 	@set -e; [ -z "$(SRV_STUB_SRCS)" ] || $(CLANG_TIDY) --quiet \
 	   --checks='-readability-non-const-parameter' $(SRV_STUB_SRCS) -- \

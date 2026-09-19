@@ -1,0 +1,16 @@
+invariant: INV-16
+file: srv_cookie.c
+catches: test/lint-invariants.sh
+reason: the HelloRetryRequest cookie's MAC is compared with memcmp instead
+  of ct_memeq. memcmp returns at the first differing byte, so a client that
+  can retry learns one MAC byte per round trip and forges a cookie in 32 *
+  256 tries rather than 2^256. srv_cookie.h states that the comparison runs
+  over all SHA256_LEN bytes for exactly that reason, and docs/server.md
+  names this mutant. The cookie itself is public, so only the comparison is
+  secret-dependent here, which is why the rule and not the reader is what
+  catches it.
+
+--- old
+    uint32_t equal = ct_memeq(mac, want_mac, SHA256_LEN);
+--- new
+    uint32_t equal = (uint32_t)(memcmp(mac, want_mac, SHA256_LEN) == 0);
