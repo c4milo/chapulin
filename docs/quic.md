@@ -589,7 +589,23 @@ files that already exist. Reassembling one level's ordered CRYPTO bytes into
 whole handshake messages, with the `cfg.buf_len` bound and the §4.1.3 refusals,
 is the QUIC arm of `handshake_record.[ch]`, beside the record arm a TLS build
 compiles. colibri orders the bytes by CRYPTO frame offset before it calls, so
-chapulin never reads an offset. NewSessionTicket stays in
+chapulin never reads an offset. That leaves one bound on colibri's side of the
+call, and it is worth stating because the obvious way to size it is wrong.
+RFC 9000 §7.5 makes an endpoint buffer at least 4096 bytes of out-of-order
+CRYPTO frames and close with `CRYPTO_BUFFER_EXCEEDED` rather than fail the
+handshake. That is not `cfg.buf_len`: `cfg.buf_len` bounds one whole handshake
+message, and under `TRUST=raw` `CH_QUIC_MIN_RXBUF` is 490, below the 4096 floor
+and correctly so, because a 490-byte message and 4096 bytes of out-of-order
+frames measure different things. A caller that sized its reassembly buffer from
+`cfg.buf_len` would fail a handshake whose frames arrived out of order. §7.5
+adds that a larger limit during the handshake is what admits larger keys, which
+is the `KEX=pq` case: the hybrid ServerHello alone is 1,184 bytes.
+
+chapulin holds the other half of the bound, and holds it in code rather than in
+this paragraph. A message header naming a body past `cfg.buf_len` returns
+`CH_ECAP` from `ch_quic_crypto_in` and kills the session, so no delivery grows
+the object past the buffer the caller supplied, whatever the caller's own
+reassembly did. NewSessionTicket stays in
 `handshake_post.[ch]`, where `handle_ticket` (`handshake_post.c:31-57`) keeps
 its `static` linkage and a QUIC-only wrapper reaches it. "Suspending the
 driver" states both arms.
