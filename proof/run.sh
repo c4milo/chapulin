@@ -986,6 +986,14 @@ launch fast full rsa_mul 20 "fill_nondet.0:385,from_bytes.0:97,main.0:97,to_byte
 # Measured (cbmc 6.11.0, kissat, /usr/bin/time -l): 331 properties,
 # 2.1 s, 73 MB.
 launch fast full rsa_mul_webpki 20 "fill_nondet.0:513,from_bytes.0:129,main.0:129,to_bytes.0:129"
+# The signer: the marshalling and every limb helper at 96 limbs, the mask,
+# the exponent index and the PSS encoder whole over a stubbed SHA-256,
+# plus the CIOS carry lemma. One global unwind of 385 covers all of it --
+# the longest loop is fill_nondet over the 384-byte encoded message -- so
+# the line carries no unwindset. Measured (cbmc 6.11.0, kissat,
+# /usr/bin/time -l, with other jobs on the machine): 759 properties,
+# 7 s, 194 MB.
+launch fast full rsa_sign 385 "" ct.c
 
 FAIL=0
 i=0

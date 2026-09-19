@@ -76,10 +76,14 @@ which convention holds them.
 ### INV-4 — randomness only through the hook
 
 - **Claim.** All randomness flows through `ch_rand_bytes`, consumed
-  at exactly three audited sites, all in `handshake.c`: the
+  at exactly four audited sites. Three are in `handshake.c`: the
   key-share scalar, the ClientHello random, and the ML-KEM (d, z)
-  seed, which only the `KEX=pq` build draws. Every draw carries the
-  same all-zero check against a hook that writes nothing.
+  seed, which only the `KEX=pq` build draws. The fourth is the PSS
+  salt in `rsa_sign.c`, which no library object compiles today —
+  `ROLE=server` is a design record (docs/server.md), so only the test
+  binaries, the Wycheproof suite and its CBMC harness compile the
+  signer. Every draw carries the same all-zero check against a hook
+  that writes nothing.
 - **Mechanism.** The hook is the only randomness path into the library,
   and which side defines it is a declared build choice with no default.
   `RAND=extern` leaves it an undefined import, so an image that never
@@ -87,7 +91,7 @@ which convention holds them.
   reference generator in `drbg.c`, which faults on an unseeded draw.
   Neither build carries a fallback that quietly produces bytes.
 - **Check.** Semgrep-structural (`inv-4-randomness-sites`): no `ch_rand_bytes` call
-  outside `handshake.c`.
+  outside `handshake.c` and `rsa_sign.c`.
 - **Violation.** A PR conjures a nonce or padding bytes from a new
   call site nobody audits for seeding requirements.
 - See [docs/entropy.md](entropy.md).

@@ -350,6 +350,81 @@ def gen_rsa_pkcs1(files, out):
     return len(rows)
 
 
+# How many rows each signing key size contributes. The private
+# exponentiation is the most expensive call this binary makes -- one
+# RSA-4096 signature is 8,192 Montgomery multiplications of 128 limbs --
+# and the same binary runs under qemu on the Cortex-M3 lane, so the suite
+# takes a few rows per size rather than every row in the file. The rows
+# cover the three sizes rsa_sign.c admits; the cases that vary the
+# padding are the verify suites' business, because RSASP1 does not see
+# the padding.
+RSA_SIGN_ROWS = {2048: 2, 3072: 1, 4096: 1}
+
+
+# The private exponentiation against third-party vectors.
+#
+# Wycheproof has no RSA-PSS signing suite, and cannot have one: PSS draws
+# a fresh salt, so a signature is not a function of the message alone.
+# The RSASSA-PKCS1-v1_5 generation suites carry what rsa_sp1 needs
+# anyway -- a private key and a signature that key produced -- because
+# RSASP1 is the same primitive under both paddings. The encoded message
+# is recovered here as em = sig^e mod n, which is the public
+# verification exponentiation over published values, and the row then
+# asserts that rsa_sp1 turns that em back into that sig.
+#
+# Anything rsa_sign.c would refuse is refused here instead, so a skipped
+# row is never handed to the C as a silently passing case: a public exponent
+# other than 65537, a modulus outside 256..512 bytes or not a multiple
+# of 8, a modulus with its top bit clear or its low bit clear, and a
+# signature that is not n_len bytes.
+def gen_rsa_sign(files, out):
+    blob = Blob()
+    rows = []
+    skipped = 0
+    for path in files:
+        d = json.load(open(path))
+        taken = 0
+        want = RSA_SIGN_ROWS[d["testGroups"][0]["keySize"]]
+        for g in d["testGroups"]:
+            pk = g["privateKey"]
+            n = bytes_of(pk["modulus"]).lstrip(b"\x00")
+            e = int(pk["publicExponent"], 16)
+            priv = bytes_of(pk["privateExponent"]).lstrip(b"\x00")
+            if (e != 65537 or len(n) < 256 or len(n) > 512 or len(n) % 8 != 0
+                    or not n[0] & 0x80 or not n[-1] & 1 or len(priv) > len(n)):
+                skipped += len(g["tests"])
+                continue
+            n_int = int.from_bytes(n, "big")
+            for t in g["tests"]:
+                if taken >= want:
+                    skipped += 1
+                    continue
+                sig = bytes_of(t["sig"])
+                if len(sig) != len(n) or int.from_bytes(sig, "big") >= n_int:
+                    skipped += 1
+                    continue
+                em = pow(int.from_bytes(sig, "big"), e, n_int).to_bytes(len(n), "big")
+                off = blob.add(n + priv.rjust(len(n), b"\x00") + em + sig)
+                rows.append((uint_of(t["tcId"], 0xffffffff, "rsa sign tcId"), off,
+                             uint_of(len(n), 0xffff, "rsa sign n_len")))
+                taken += 1
+    emit_blob(out, "wp_rsa_sign_data", blob)
+    # Four values of n_len bytes each at off: the modulus, the private
+    # exponent left-padded to that length, the encoded message and the
+    # signature it must produce.
+    out.append(
+        "static const struct { uint32_t tc; uint32_t off; uint16_t n_len; } wp_rsa_sign[] = {"
+    )
+    for row in rows:
+        out.append("    {" + ", ".join(str(v) for v in row) + "},")
+    out.append("};")
+    out.append("")
+    out.append(f"#define WP_RSA_SIGN_SKIPPED {skipped}"
+               " // rows past the per-size cap, and keys rsa_sign.c refuses")
+    out.append("")
+    return len(rows)
+
+
 def gen_mlkem_keygen(d, out):
     blob = Blob()
     rows = []
@@ -472,13 +547,21 @@ def main():
          v1 / "rsa_signature_4096_sha384_test.json"],
         out,
     )
+    # The signing suite reads the v1.5 *generation* files, the only ones
+    # that carry a private key; gen_rsa_sign says why the padding does
+    # not matter and why it caps the rows.
+    n_rs = gen_rsa_sign(
+        [v1 / "rsa_pkcs1_2048_sig_gen_test.json", v1 / "rsa_pkcs1_3072_sig_gen_test.json",
+         v1 / "rsa_pkcs1_4096_sig_gen_test.json"],
+        out,
+    )
     n_kk = gen_mlkem_keygen(json.load(open(v1 / "mlkem_768_keygen_seed_test.json")), out)
     n_ke = gen_mlkem_encaps(json.load(open(v1 / "mlkem_768_encaps_test.json")), out)
     n_kf = gen_mlkem_full(json.load(open(v1 / "mlkem_768_test.json")), out)
     dst.write_text("\n".join(out) + "\n")
     print(f"wycheproof vectors: x25519 {n_x}, aead {n_a}, hkdf {n_h}, aes-gcm {n_g},"
           f" ecdsa p256-sha256 {n_e} p384-sha384 {n_e384} p384-sha256 {n_e384_256}"
-          f" p256-sha512 {n_e256_512}, rsa-pss {n_r}, rsa-pkcs1 {n_rp},"
+          f" p256-sha512 {n_e256_512}, rsa-pss {n_r}, rsa-pkcs1 {n_rp}, rsa-sign {n_rs},"
           f" mlkem keygen {n_kk} encaps {n_ke} full {n_kf} (commit {commit[:12]})")
 
 

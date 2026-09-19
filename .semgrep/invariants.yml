@@ -88,12 +88,13 @@ rules:
     languages: [c]
     severity: ERROR
     message: >-
-      INV-4: randomness is consumed at three audited sites in
-      handshake.c (the third only in the KEX=pq build). A new call site needs its own seeding audit —
+      INV-4: randomness is consumed at four audited sites: three in
+      handshake.c (the third only in the KEX=pq build) and the PSS salt in rsa_sign.c. A new call
+      site needs its own seeding audit —
       amend docs/invariants.md in the same PR. drbg.c is excluded
       because it defines the hook, not because it may call it.
     paths:
-      exclude: [test, proof, fuzz, spec, bench, bin, examples, handshake.c, drbg.c]
+      exclude: [test, proof, fuzz, spec, bench, bin, examples, handshake.c, drbg.c, rsa_sign.c]
     pattern: ch_rand_bytes(...)
 
   - id: inv-1-seal-only-in-record

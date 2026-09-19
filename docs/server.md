@@ -1406,8 +1406,26 @@ at `rsa_mont.c:145`:
 A 3072-bit private exponent needs roughly 3,072 squarings plus multiplies, in a
 ladder whose operand selection is branchless and whose table reads, if it uses
 a window, are constant-time scans. `README.md:135` records a 5,056-byte peak
-stack for an RSA-3072 *verify*; the signing frame is **unmeasured** on every
-target and `make lint-stack` will turn a miss into a compile failure.
+stack for an RSA-3072 *verify*.
+
+`rsa_sign.[ch]` is written, and this paragraph is what it changed about the
+lines above. It uses no window and no table at all: a Montgomery ladder runs
+one multiplication and one squaring per exponent bit, over every one of the
+8 * n_len bit positions, which costs about 1.6 times a 4-bit window and saves
+the window's 16 * n_len bytes of stack. A ladder step selects with mask
+arithmetic, so no table read has to be a scan.
+
+The signing frame is *measured* now, by the method `make lint-stack` uses,
+which is `-Wframe-larger-than` per function; the three frames below sit on one
+call chain, so the peak is their sum. At the device bound of RSA-3072, under
+the Arm GNU gcc 16.2.0 the m3 lane uses, at -Os: `rsa_pss_sign` 1,072 bytes,
+`rsa_sp1` 1,536 and `mont_mul` 440, so 3,048 bytes. Under clang 23 at -O2 on
+arm64, the same three are 1,216, 1,696 and 496, so 3,408, and at the
+TRUST=webpki bound of RSA-4096 they are 1,472, 2,208 and 624, so 4,304. All
+three peaks are above `STACK_BUDGET`, which is 2,560 bytes for a device build,
+so a `ROLE=server` build that puts `rsa_sign.c` in `LIB_SRCS` must raise that
+budget with a line saying which frame set it, the way the TRUST=webpki and
+TRANSPORT=quic arms already raise it to 4,096 and 6,144.
 
 ```c
 // rsa_sign.h — the second of the two files that read a long-term private key.
@@ -2426,7 +2444,7 @@ aliasing shapes real callers use, and measure each launch line with
 | `srv_flight_harness.c` | every non-`CH_OK` return from a handler writes an alert first | small |
 | `p256_ecdh_harness.c` | point validation, the field arithmetic and the ladder | **expect no verdict without stub contracts.** `proof/p256_harness.c:11-20` already refuses to unwind `point_mul` and `mod_inv` ("25k+ Montgomery multiplies never leave symex"), and `README.md:380-389` records x25519's ladder returning "no verdict past 14 GB" until `proof/x25519_stubs.h` replaced the widening multiply with a contract |
 | `p256_sign_harness.c` | the RFC 6979 generator over a stubbed HMAC, and the DER writer's bounds | the `hkdf_expand_harness` shape. The generator's retry loop has no fixed trip count, so the unwind bound needs its own argument |
-| `rsa_sign_harness.c` | the private exponentiation's bounds and the PSS encoder | the `rsa_mul_harness` shape at 96 or 128 limbs; **unmeasured** |
+| `rsa_sign_harness.c` | the private exponentiation's bounds and the PSS encoder | written and launched: the marshalling and every limb helper at 96 limbs, the mask, the exponent index, the encoder whole over a stubbed SHA-256, and the `rsa_mul_harness` carry lemma. *Measured* (cbmc 6.11.0, kissat, `/usr/bin/time -l`): 759 properties, 7 s, 194 MB |
 | `aes_harness.c` | the constant-time AES against its spec, at both key sizes | the table version converges at 377 properties, 23 s, 0.67 GB (`gcm.patch:910`); the constant-time version is **unmeasured** |
 | `gcm_harness.c`, `gcm_forge_harness.c` | GCM seal and open, and that a forged tag opens nothing | **measured as failing today**: 2,144 s under kissat with no verdict, and the forge harness at 2.6 GB and climbing (`gcm.patch:917-918`). The split is unattempted and is on this design's critical path |
 

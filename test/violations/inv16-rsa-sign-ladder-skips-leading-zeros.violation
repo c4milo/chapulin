@@ -1,0 +1,22 @@
+invariant: INV-16
+file: rsa_sign.c
+catches: test/lint-wide-multiply.sh
+reason: the ladder starts at the highest set bit of d instead of at bit
+  8 * n_len - 1, so the number of Montgomery multiplications a signature
+  runs is the bit length of the private exponent. Every signature is still
+  correct, and every vector still passes, because the skipped bits are
+  zeros that multiply by one -- the whole cost is a timing channel. The
+  scan that finds that bit reads d in a loop whose trip count is the
+  secret, and the branch count rises on every clang spec
+  (https://github.com/c4milo/chapulin/issues/141).
+
+--- old
+    for (size_t i = 8 * k->n_len; i-- > 0;) {
+        uint32_t bit = ((uint32_t)k->d[k->n_len - 1 - (i >> 3)] >> (i & 7)) & 1;
+--- new
+    size_t top = 8 * k->n_len;
+    while (top > 0 && ((k->d[k->n_len - 1 - ((top - 1) >> 3)] >> ((top - 1) & 7)) & 1) == 0) {
+        top--;
+    }
+    for (size_t i = top; i-- > 0;) {
+        uint32_t bit = ((uint32_t)k->d[k->n_len - 1 - (i >> 3)] >> (i & 7)) & 1;

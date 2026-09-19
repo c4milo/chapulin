@@ -54,9 +54,16 @@ noreturn void ch_assert_fail(const char *cond, const char *file, int line) {
 #include "p384.h"
 #include "rsa.h"
 #include "rsa_pkcs1.h"
+#include "rsa_sign.h"
 #include "sha256.h"
 #include "sha512.h"
 #include "x25519.h"
+
+// rsa_sign.c reads the entropy hook for its salt. This binary never
+// calls the encoder -- run_rsa_sign drives the exponentiation alone --
+// but the object carries the reference, so the host hook comes in here
+// as it does in every other test main.
+#include "test_random.h"
 
 #include "wycheproof_vectors.h"
 
@@ -335,6 +342,35 @@ static void run_rsa_pkcs1(void) {
            COUNT(wp_rsa_pkcs1), WP_RSA_PKCS1_SKIPPED);
 }
 
+// The private exponentiation, the one arm here that signs rather than
+// verifies. Wycheproof publishes no RSA-PSS generation vectors -- a PSS
+// signature depends on a fresh salt, so there is no known answer -- so
+// the generator reads the RSASSA-PKCS1-v1_5 generation suites, recovers
+// each encoded message with the public exponent, and hands this loop the
+// pair. RSASP1 is the same primitive under either padding: rsa_sp1 must
+// turn that encoded message back into that signature, byte for byte.
+//
+// The key and the output are static: ch_rsa_priv is a kilobyte at this
+// build's modulus bound, and the Cortex-M3 lane runs this binary.
+static void run_rsa_sign(void) {
+    static ch_rsa_priv key;
+    static uint8_t sig[CH_RSA_MODULUS_MAX];
+    for (size_t i = 0; i < COUNT(wp_rsa_sign); i++) {
+        const uint8_t *p = wp_rsa_sign_data + wp_rsa_sign[i].off;
+        size_t n_len = wp_rsa_sign[i].n_len;
+        memcpy(key.n, p, n_len);
+        memcpy(key.d, p + n_len, n_len);
+        key.n_len = n_len;
+        rsa_sp1(&key, p + 2 * n_len, sig);
+        if (memcmp(sig, p + 3 * n_len, n_len) != 0) {
+            fail("rsa-sign", wp_rsa_sign[i].tc, "signature differs from the vector");
+        }
+    }
+    printf("wycheproof rsa-sign: %zu cases, %d skipped (past the per-size cap, or a key"
+           " rsa_sign.c refuses)\n",
+           COUNT(wp_rsa_sign), WP_RSA_SIGN_SKIPPED);
+}
+
 static void run_mlkem_keygen(void) {
     for (size_t i = 0; i < COUNT(wp_mlkem_keygen); i++) {
         const uint8_t *p = wp_mlkem_keygen_data + wp_mlkem_keygen[i].off;
@@ -426,6 +462,7 @@ int main(void) {
     run_ecdsa_p256_sha512();
     run_rsa();
     run_rsa_pkcs1();
+    run_rsa_sign();
     run_mlkem_keygen();
     run_mlkem_encaps();
     run_mlkem_full();

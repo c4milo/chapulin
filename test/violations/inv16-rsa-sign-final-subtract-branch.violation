@@ -1,0 +1,18 @@
+invariant: INV-16
+file: rsa_sign.c
+catches: test/lint-wide-multiply.sh
+reason: mont_mul picks t or t - m with an if instead of a mask, so whether
+  a Montgomery product needed its final subtract -- a fact about a secret
+  intermediate of the private exponentiation -- decides which path runs.
+  The multiply tokens see nothing. The branch count does: every clang spec
+  emits more conditional branches in rsa_sign.c than its ceiling records
+  (https://github.com/c4milo/chapulin/issues/141).
+
+--- old
+    memcpy(o, t, k * sizeof(uint32_t));
+    sub_masked(o, m, k, ~mask_of_bit(below(t, m, k, t[k])));
+--- new
+    memcpy(o, t, k * sizeof(uint32_t));
+    if (below(t, m, k, t[k]) == 0) {
+        sub_masked(o, m, k, UINT32_MAX);
+    }
