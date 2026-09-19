@@ -52,6 +52,8 @@ def selftestAll : String :=
     ("hkdf", Spec.Hkdf.selftest),
     ("chacha", Spec.ChaCha.selftest),
     ("poly", Spec.Poly.selftest),
+    ("aes", Spec.Aes.selftest),
+    ("gcm", Spec.Gcm.selftest),
     ("aead", Spec.Aead.selftest),
     ("record", Spec.Record.selftest),
     ("x25519", Spec.X25519.selftest),
@@ -150,6 +152,46 @@ def dispatch : List String → Option String
     -- UInt32.ofNat would alias 2^32 back onto 0; reject, never wrap.
     if ctr > 0xffffffff then return "ERR chacha20 counter over 32 bits"
     return emit (Spec.ChaCha.xor k n (UInt32.ofNat ctr) (← hexArg? data))
+  | ["aes128", key, block] => do
+    let k ← hexArg? key
+    let b ← hexArg? block
+    -- FIPS 197 fixes both at 128 bits, and this tree models no other
+    -- key size and no other block size.
+    guard (k.size == 16 && b.size == 16)
+    return emit (Spec.Aes.encryptBlock k b)
+  | ["aes128gcm_seal", key, iv, aad, pt] => do
+    let k ← hexArg? key
+    let n ← hexArg? iv
+    -- AEAD_AES_128_GCM fixes the key at 128 bits, and quic_gcm.h admits
+    -- the 96-bit IV alone, so nothing else is in the shared domain.
+    guard (k.size == 16 && n.size == 12)
+    let (ct, tag) := Spec.Gcm.encrypt k n (← hexArg? aad) (← hexArg? pt)
+    return s!"{emit ct} {emit tag}"
+  | ["aes128gcm_open", key, iv, aad, ct, tag] => do
+    let k ← hexArg? key
+    let n ← hexArg? iv
+    let t ← hexArg? tag
+    guard (k.size == 16 && n.size == 12 && t.size == 16)
+    -- A tag that does not match is FAIL in SP 800-38D §7.2, and the C
+    -- answers 0 there, so the oracle says so rather than emitting bytes.
+    match Spec.Gcm.decrypt? k n (← hexArg? aad) (← hexArg? ct) t with
+    | some pt => return emit pt
+    | none => return "fail"
+  | ["ghash", key, aad, ct] => do
+    let k ← hexArg? key
+    guard (k.size == 16)
+    return emit (Spec.Gcm.ghash k (← hexArg? aad) (← hexArg? ct))
+  | ["quic_initial_keys", dcid, direction] => do
+    let d ← hexArg? dcid
+    -- RFC 9000 §17.2 caps a version 1 connection ID at 20 bytes, and
+    -- aes_public_key_initial refuses a longer one rather than truncating.
+    if d.size > 20 then return "ERR quic_initial_keys dcid over 20 bytes"
+    let client ← match direction with
+      | "client" => some true
+      | "server" => some false
+      | _ => none
+    let (key, iv, hp) := Spec.Aes.initialKeys d client
+    return s!"{emit key} {emit iv} {emit hp}"
   | ["poly1305", key, msg] => do
     let k ← hexArg? key
     guard (k.size == 32)

@@ -1,0 +1,23 @@
+invariant: INV-26
+file: quic_aes.h
+catches: test/lint-quic-surface.sh
+reason: quic_aes.h gains a second forward-cipher entry named
+  quic_encrypt_block rather than aes_encrypt_block. Both branches of
+  inv-26-aes-public-keys-only match a name beginning aes_ or gcm_, so
+  from the day that name exists any file may call it and the Semgrep
+  rule reports nothing. The rule's own comment used to assume the
+  prefix family covers every name these two headers declare; the
+  comparison in tools/quic-footprint.py is what checks it, and
+  `make lint-quic-surface` is where it runs.
+
+--- old
+#endif // CH_TRANSPORT_QUIC
+#endif
+--- new
+// One forward-cipher block under the packet protection key, under a
+// name outside the aes_ and gcm_ family.
+void quic_encrypt_block(const aes_public_key *k, const uint8_t in[AES_BLOCK],
+                        uint8_t out[AES_BLOCK]);
+
+#endif // CH_TRANSPORT_QUIC
+#endif

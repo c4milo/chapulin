@@ -2,10 +2,11 @@
 """Read C source the way tools/quic-footprint.py needs it read.
 
 One concern: what a file says, not what the report makes of it. The
-functions here answer five questions about one .c or .h file -- what its
-comments say, what it declares, what it defines, which standards it
-cites, and which of its lines one macro controls -- and resolve() answers
-the sixth across the whole mode.
+functions here answer seven questions about one .c or .h file -- what
+its comments say, what functions it declares, what types it declares,
+what function-like macros it defines, what it defines, which standards
+it cites, and which of its lines one macro controls -- and resolve()
+answers the eighth across the whole mode.
 
 Nothing here knows about QUIC. tools/quic-footprint.py holds the file
 list, the counts and the printing, and docs/quic.md states the mode.
@@ -142,6 +143,109 @@ def declared(path):
                 start = i + 1
         elif char == ";" and depth == 0:
             name = name_of(code[start:i])
+            if name is not None and name not in names:
+                names.append(name)
+            start = i + 1
+    return names
+
+
+# A function-like macro: a #define whose name opens a paren. An
+# object-like macro cannot stand in for a call, so it is not one of
+# these.
+FUNCTION_MACRO = re.compile(r"(?m)^[ \t]*#[ \t]*define[ \t]+(\w+)\(")
+
+# The name inside the parentheses of a function-pointer typedef, and an
+# array bound, which typedef_name drops before it reads the last word.
+POINTER_NAME = re.compile(r"\(\s*\*\s*(\w+)\s*\)")
+ARRAY_BOUND = re.compile(r"\[[^\]]*\]")
+
+
+def function_macros(path):
+    """Every function-like macro one file defines, each name once. The
+    comments are blanked first, so a #define written inside one counts
+    for nothing."""
+    code, _ = strip_comments(path.read_text())
+    names = []
+    for name in FUNCTION_MACRO.findall(code):
+        if name not in names:
+            names.append(name)
+    return names
+
+
+def typedef_name(statement):
+    """The type name one statement declares, or None when the statement
+    is not a typedef. A function-pointer typedef writes its name inside
+    parentheses; every other form writes it last, so the last word of
+    the statement is the name once any array bound is gone."""
+    if not statement.lstrip().startswith("typedef"):
+        return None
+    found = POINTER_NAME.search(statement)
+    if found is not None:
+        return found.group(1)
+    words = re.findall(r"\w+", ARRAY_BOUND.sub(" ", statement))
+    return words[-1] if words else None
+
+
+# The opening brace of a struct or union body, with the tag before it
+# when the definition carries one. A header that writes one of these
+# completes a type, and a file that includes that header can then
+# declare one, size one and write a field of one.
+STRUCT_BODY = re.compile(r"\b(?:struct|union)\s+(\w+)\s*\{")
+
+
+def complete_types(path):
+    """Every type one file defines a body for, in the order written.
+
+    quic_aes.h declares `typedef struct aes_public_key aes_public_key;`
+    and stops, so this reads no name there; quic_aes_key.h writes
+    `struct aes_public_key { ... };`, so this reads one. INV-26 rests on
+    that difference, and tools/quic-footprint.py checks it.
+
+    The same split typedefs() walks: a semicolon at brace depth zero
+    ends a statement. A statement holding a brace defines a body, and
+    its name is the typedef's name when the statement is a typedef and
+    the struct tag otherwise."""
+    code, _ = strip_comments(path.read_text())
+    code = without_directives(code)
+    names, depth, start = [], 0, 0
+    for i, char in enumerate(code):
+        if char == "{":
+            depth += 1
+        elif char == "}":
+            depth -= 1
+        elif char == ";" and depth == 0:
+            statement = code[start:i]
+            start = i + 1
+            if "{" not in statement:
+                continue
+            name = typedef_name(statement)
+            if name is None:
+                found = STRUCT_BODY.search(statement)
+                name = found.group(1) if found is not None else None
+            if name is not None and name not in names:
+                names.append(name)
+    return names
+
+
+def typedefs(path):
+    """Every type name one header's typedefs declare, in the order
+    written and each name once.
+
+    The walk splits on a semicolon at brace depth zero and nowhere
+    else, so `typedef struct { ... } aes_public_key;` stays one
+    statement. Read a .c file with this and a function body's closing
+    brace leaves the next statement joined to the last one, which is
+    why headers are what it is written for."""
+    code, _ = strip_comments(path.read_text())
+    code = without_directives(code)
+    names, depth, start = [], 0, 0
+    for i, char in enumerate(code):
+        if char == "{":
+            depth += 1
+        elif char == "}":
+            depth -= 1
+        elif char == ";" and depth == 0:
+            name = typedef_name(code[start:i])
             if name is not None and name not in names:
                 names.append(name)
             start = i + 1

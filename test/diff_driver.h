@@ -136,7 +136,9 @@ static void spawn_spec(const char *path) {
 // Sends one request line, hands back the raw response line. For answers
 // the driver cannot predict (e.g. spec-minted signatures); ERR and FAIL
 // are fatal here, so callers only ever see well-formed payloads.
-static void query(const char *cmd, char *out, size_t out_len) {
+// inline like the rest of this header: test/diff_quic_test.c reads no
+// reply it has to parse, and a plain static would warn there as unused.
+static inline void query(const char *cmd, char *out, size_t out_len) {
     (void)fputs(cmd, to_spec);
     (void)fputc('\n', to_spec);
     (void)fflush(to_spec);

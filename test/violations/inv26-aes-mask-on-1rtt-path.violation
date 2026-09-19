@@ -1,0 +1,24 @@
+invariant: INV-26
+file: quic_packet.c
+catches: test/lint-invariants.sh
+reason: quic_hp_mask writes the header protection mask with the AES
+  form of RFC 9001 §5.4.3 instead of the ChaCha20 form of §5.4.4, so
+  aes_encrypt_block reads a header protection key quic_hp_key_init
+  derived from a TLS traffic secret. That is the one thing INV-26
+  forbids: a secret key reaching a table-driven cipher.
+  inv-26-aes-public-keys-only matches the call, because quic_packet.c
+  is not one of the two files the rule excludes.
+
+--- old
+    // CH_QUIC_STUB: not implemented yet; this call fails closed and writes nothing.
+    (void)h;
+    (void)sample;
+    (void)mask;
+}
+--- new
+    uint8_t block[AES_BLOCK];
+    aes_encrypt_block((const aes_public_key *)h, sample, block);
+    for (size_t i = 0; i < QUIC_HP_MASK_LEN; i++) {
+        mask[i] = block[i];
+    }
+}

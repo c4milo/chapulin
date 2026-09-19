@@ -1,0 +1,17 @@
+invariant: INV-26
+file: quic_packet.c
+catches: test/lint-quic-surface.sh
+reason: quic_packet.c includes quic_aes_key.h, which gives it the body of
+  aes_public_key and with it the ability to declare a key and write a
+  traffic secret into a field of one. The compiler refuses that edit in
+  every source that does not include the header, so the include is the
+  one line that undoes INV-26's structural check. It compiles, so
+  nothing else in the build objects; tools/quic-footprint.py's
+  key_holders() is what reads the include list, and
+  `make lint-quic-surface` is where it runs.
+
+--- old
+#include "quic_packet.h"
+--- new
+#include "quic_packet.h"
+#include "quic_aes_key.h"

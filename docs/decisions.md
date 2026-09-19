@@ -35,11 +35,15 @@ does nothing more.
 
 ## Cryptography
 
-6. **ChaCha20-Poly1305 only; AES never enters the codebase.** Cost: the
-   IoT profile's mandatory AES-CCM suite and AES-only servers. Gain:
-   constant time by construction on any core — no lookup tables, no
-   timing story to defend. An AES-CCM build flag is the most likely
-   future concession.
+6. **ChaCha20-Poly1305 only as a cipher suite; AES exists for QUIC's
+   public-key packets alone.** Cost: the IoT profile's mandatory AES-CCM
+   suite and AES-only servers. Gain: constant time by construction on any
+   core for every secret this tree holds — no lookup table is ever indexed
+   with a key from the TLS key schedule, so there is no timing story to
+   defend. The one AES in the tree protects QUIC Initial packets and checks
+   the Retry tag, where RFC 9001 §5 states the keys are public, and entry
+   38 and INV-26 state how the build keeps it there. An AES-CCM build flag
+   is the most likely future concession, and it would not reuse that AES.
 7. **x25519 in 16-bit limbs (the TweetNaCl scheme).** Cost: about 57 ms
    per scalar multiplication on the mips32r2 reference target, where
    wider limbs would be faster. Gain: a machine-checked overflow lemma
@@ -466,16 +470,18 @@ does nothing more.
     where the key is public — Initial packet protection (§5.2), Initial
     header protection (§5.4.3) and the Retry integrity tag (§5.8) — and
     never under a key from the TLS key schedule. A key type,
-    `aes_public_key`, that only `quic_initial.c` and `quic_retry.c`
-    construct is the first guard, and it is one a maintainer can write
-    around, because `quic.h` holds the type to store the Initial keys
-    and every file that sees the struct can write its initializer.
-    So the new invariant is Semgrep-tripwire, the grade this tree gives
-    an identifier ban: it permits exactly two callers and exactly three
-    key sources, and no other source may call a symbol whose name
-    begins `aes_` or `gcm_`, or construct the type. A reintroduction
-    under another name is what a tripwire does not catch, and the
-    reviewer reading the diff is what does. A Semgrep rule beside the
+    `aes_public_key`, that only `quic_aes.c`, `quic_initial.c` and
+    `quic_retry.c` can build is the first guard, and the compiler runs
+    it: `quic.h` stores no key, only the Destination Connection ID the
+    keys come from, so the type is incomplete everywhere but the three
+    sources that include `quic_aes_key.h`, and a fourth file that
+    declares one gets an error. The calls are the part a rule reads, so
+    the new invariant is Semgrep-tripwire there, the grade this tree
+    gives an identifier ban: it permits exactly two callers and exactly
+    three key sources, and no other source may call a symbol whose name
+    begins `aes_` or `gcm_`. A reintroduction under another name is what
+    a tripwire does not catch, and the reviewer reading the diff is what
+    does. A Semgrep rule beside the
     thirteen in `.semgrep/invariants.yml` fails the build on a third
     caller,
     `lint-codegen-partition` holds both files in `WIDEMUL_PUBLIC` where

@@ -743,6 +743,178 @@ which convention holds them.
   the linker size looked better.
 - See [decisions: Cryptography](decisions.md#cryptography).
 
+### INV-26 — AES sees three public keys and no others
+
+- **Claim.** Under `TRANSPORT=quic` this tree carries a table-driven
+  AES-128, in `quic_aes.c` and `quic_gcm.c`, and every key it is given
+  is public. There are three: the packet protection key and the header
+  protection key, both expanded from `HKDF-Extract` over RFC 9001
+  §5.2's printed salt and the Destination Connection ID the caller
+  supplied, and the 16-byte constant RFC 9001 §5.8 prints for the Retry
+  integrity tag. RFC 9001 §5 draws the conclusion for the first two
+  itself: anyone can compute them, so Initial packets have no
+  confidentiality or integrity protection. No traffic secret
+  `keysched.c` derives is passed to AES, and AES is never a cipher
+  suite. No field of `ch_quic` holds an AES key, and no AES key outlives
+  the call that built it.
+- **Mechanism.** No stored key is the first part, and the compiler is
+  the second.
+
+  `ch_quic` stores the Destination Connection ID, in `initial_dcid` and
+  `initial_dcid_len`, and no Initial key. `quic_initial.c` and
+  `quic_retry.c` build the one key each call needs on their own stack
+  and let it die with the frame. So there is no long-lived key object to
+  overwrite, which is what the earlier design left open: `ch_quic` held
+  `initial_rx` and `initial_tx`, any file that saw the session struct
+  could write `q->initial_tx.key.round_keys`, and `quic_initial.c` then
+  passed that struct to `aes_encrypt_block` as a permitted caller.
+  `test/violations/inv26-secret-into-stored-key.violation` is that
+  exact edit and requires `test/quic-builds.sh` to fail.
+
+  The type is now opaque outside three sources. `quic_aes.h` declares
+  `typedef struct aes_public_key aes_public_key;` and stops;
+  `quic_aes_key.h` holds the body, and `quic_aes.c`, `quic_initial.c`
+  and `quic_retry.c` are the only sources that include it. Every other
+  file sees an incomplete type, so `aes_public_key k;`,
+  `aes_public_key k[1];`, `*dst = *src;` and any write to a field are
+  each a compiler error rather than a pattern someone has to match.
+  Zero heap does not forbid this, because nothing stores a key by value
+  any more: the three sources that need the body are the three that
+  build a key on a stack frame, and they include the header that has
+  it.
+
+  The memory cost is measured and the time cost is not.
+  `sizeof(ch_quic)` falls from 2,688 to 1,976 bytes, because two
+  364-byte `aes_public_key` values become 21 bytes of connection ID.
+  Deriving per use costs one HKDF-Extract, three HKDF-Expand-Label calls
+  and two key expansions per packet per direction, and no bench in this
+  tree times them. Every QUIC body is still a stub, so `lint-stack` has
+  no frame that builds a key to measure; one `aes_public_key` is 364
+  bytes against a 2,560-byte budget, and
+  `make lint-stack TRANSPORT=quic` measures the first real frame on the
+  commit that lands it.
+
+  **What the change does not do.** A covered file can write a traffic
+  secret into `q->initial_dcid` instead, and the constructor will derive
+  an AES key from it. That is safer than the shape it replaces, and the
+  reason is what sits between the two. In the old shape the bytes
+  written landed in `round_keys`, `add_round_key` exclusive-ored round
+  key 0 into a counter block the attacker knows, and `sub_bytes` indexed
+  the 256-byte S-box with `counter ^ key`; cache-line timing on that
+  index returns the high bits of the key bytes, which are the secret's
+  own bytes. In the new shape the bytes written are the input to
+  `hkdf_extract`, then to three `hkdf_expand_label` calls, before
+  `expand_key` runs. `hkdf.c` is HMAC-SHA-256 throughout: the one branch in
+  `hmac_sha256` reads `key_len`, the loops run counts the caller chose,
+  and the only table `sha256.c` holds, `K[64]`, is indexed by the round
+  number. Two checks hold that rather than leaving it argued.
+  `WIDEMUL_CEILING` carries `hkdf.c:0` and `sha256.c:0`, so neither file
+  may emit a wide multiply at all, and `lint-wide-multiply` records each
+  file's conditional-branch count per compiler and target — 13 and 17 on
+  m3 with the pinned clang — and fails when one grows, which is how a
+  branch a compiler puts on secret bytes shows. So the value the S-box is
+  indexed with is
+  an HKDF output, and an attacker who recovers it holds the Initial
+  packet protection key — which RFC 9001 §5 says anyone can compute
+  anyway — and would have to invert HMAC-SHA-256 to get back to what
+  was written. The write is still wrong and still breaks the
+  connection; it no longer leaks the secret through the table.
+
+  Three more checks hold the rule from other directions.
+  `lint-quic-surface` reads the premise the Semgrep rule rests on.
+  `lint-codegen-partition` keeps `quic_aes.c` and `quic_gcm.c` in
+  `WIDEMUL_PUBLIC`, the list whose own comment says a secret arriving in
+  any of these is a design change, so moving either file to
+  `WIDEMUL_CEILING` is a diff a reviewer looks for. `lib-check` diffs
+  the packaged object's exports against `PUBLIC`, which holds no `aes_`
+  or `gcm_` symbol, so no caller outside this tree reuses the cipher on
+  something else.
+- **Check.** The compiler, `make lint-quic-surface`, and a
+  Semgrep tripwire (`inv-26-aes-public-keys-only`) over every library
+  source but `quic_initial.c` and `quic_retry.c`, the two permitted
+  callers, with `quic_aes.c` and `quic_gcm.c` excluded as the definition
+  sites.
+
+  What the compiler refuses, in any source that does not include
+  `quic_aes_key.h`: declaring an `aes_public_key`, declaring an array of
+  them, assigning one, and writing a field of one. `quic.h` declares no
+  member of that type, so `q->initial_tx.key.round_keys` names nothing.
+
+  What the Semgrep rule reads, in two branches:
+  - *A call* to a name beginning `aes_` or `gcm_`.
+    `test/violations/inv26-aes-on-traffic-key.violation` seals a 1-RTT
+    packet with `aes_encrypt_block` over a `quic_keys` set,
+    `inv26-gcm-on-traffic-key.violation` opens one with `gcm_open`, and
+    `inv26-aes-mask-on-1rtt-path.violation` writes `quic_hp_mask` with
+    the §5.4.3 AES form over a key `quic_hp_key_init` derived from a
+    traffic secret. Each requires `test/lint-invariants.sh` to fail.
+  - *The same name as a value*: `&aes_encrypt_block`, a function pointer
+    initialized or assigned from the name, the name passed as an
+    argument. The call branch reads none of these, because the later
+    call through the pointer names no `aes_` symbol at all, so taking
+    the address alone used to defeat the rule.
+    `inv26-aes-entry-taken-as-value.violation` is that edit and requires
+    `test/lint-invariants.sh` to fail.
+
+  The rule carried two initializer patterns, `aes_public_key $K = ...;`
+  and `aes_key_schedule $K = ...;`, and they are gone. An initializer
+  needs the type's body, and outside the three sources there is no body,
+  so the branch had nothing left to catch that the compiler does not
+  catch first.
+
+  What `make lint-quic-surface` reads, so the rule's own premise is
+  checked rather than assumed. It fails when `quic_aes.h` or
+  `quic_gcm.h` declares a function or a function-like macro outside the
+  `aes_` and `gcm_` family, because the rule matches names;
+  `inv26-cipher-entry-off-prefix.violation` adds a `quic_encrypt_block`
+  entry and requires `test/lint-quic-surface.sh` to fail. It fails when
+  either header gives a type a body, because that would put a key back
+  within reach of every file that includes them. And it fails when any
+  root source outside `quic_aes.c`, `quic_initial.c` and `quic_retry.c`
+  includes `quic_aes_key.h`, which is the one line that undoes the
+  opacity; `inv26-key-header-fourth-reader.violation` adds that include
+  to `quic_packet.c` and requires `test/lint-quic-surface.sh` to fail.
+  `tools/quic-footprint.py` holds all three comparisons and prints their
+  counts.
+
+  One check holds the admitted code rather than its callers:
+  `proof/quic_aes_harness.c` proves the key expansion memory-safe at its
+  real bound, and `inv26-aes-schedule-past-round-keys.violation` runs
+  the schedule one word past `round_keys` and requires
+  `proof/prove-one.sh quic_aes` to fail.
+
+  **What review still owes.** Three shapes, and no check in this tree
+  reads any of them.
+  - *A function-like macro whose body holds the call.* A source that is
+    not one of the two permitted callers writes
+    `#define MASK(k, s, o) aes_encrypt_block_hp(k, s, o)` and calls
+    `MASK`. Semgrep parses C expressions, not macro bodies, so neither
+    branch fires. `lint-quic-surface` reads the macros `quic_aes.h` and
+    `quic_gcm.h` declare, not the macros other files define.
+  - *Token pasting.* `#define CIPHER(stem) aes_##stem`, called as
+    `CIPHER(encrypt_block)(...)`, puts no `aes_` identifier in the file
+    at all, so there is no name for the rule to read.
+  - *A traffic secret written into `initial_dcid`.* The field is public
+    by design and the derivation is constant time, so the leak the
+    invariant exists to prevent does not follow, but the write is still
+    a key the TLS key schedule derived being fed to this path. A diff
+    that writes `initial_dcid` from anything but a connection ID the
+    caller passed is the shape to stop.
+
+  Tripwire grade, for the reason INV-5 states: the Semgrep rule matches
+  names, so it catches honest drift, not a reintroduction under another
+  name. The compiler's half of this invariant is not a tripwire — an
+  incomplete type refuses every spelling of the same edit — but the
+  allowlist that keeps it incomplete is one, and a fourth name added to
+  `KEY_HOLDERS` in `tools/quic-footprint.py` is a diff a reviewer looks
+  for.
+- **Violation.** A PR reuses `aes_encrypt_block` for the 1-RTT header
+  protection mask, or seals a Handshake packet with `gcm_seal`, so a key
+  `keysched.c` derived indexes a lookup table and the gain
+  `docs/decisions.md` entry 6 states is gone.
+- See [decisions: Cryptography](decisions.md#cryptography) and
+  [quic](quic.md).
+
 ### INV-23 — no division in the ML-KEM module
 
 - **Claim.** The ML-KEM sources contain no `/` and no `%` operator.

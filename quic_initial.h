@@ -24,10 +24,14 @@
 // quic_header_protect and quic_header_unprotect, so no third file writes
 // a masked byte.
 //
-// Layering. Nothing here sees ch_quic. quic.c holds the two Initial keys
-// as initial_rx and initial_tx and passes them in, so the public entries
-// ch_quic_initial_keys, ch_quic_seal and ch_quic_open reach the AES
-// through this file and call no aes_ or gcm_ symbol themselves.
+// Layering. Nothing here sees ch_quic. quic.c holds the Destination
+// Connection ID as initial_dcid and passes it in, and each call below
+// derives the one direction's key it needs on its own stack. So the
+// public entries ch_quic_seal and ch_quic_open reach the AES through
+// this file, name no aes_ or gcm_ symbol themselves, and never hold a
+// key: quic.c cannot declare an aes_public_key at all, because
+// quic_aes.h leaves that type incomplete and quic.c does not include
+// quic_aes_key.h.
 #ifndef CH_QUIC_INITIAL_H
 #define CH_QUIC_INITIAL_H
 #ifdef CH_TRANSPORT_QUIC
@@ -64,49 +68,45 @@ _Static_assert(AES_BLOCK == QUIC_HP_SAMPLE_LEN,
                "AES-ECB header protection reads one block as the sample");
 #endif
 
-// Derives both directions of the Initial keys from one Destination
-// Connection ID and writes rx and tx whole: the AEAD_AES_128_GCM packet
-// protection key, the packet protection IV and the AES-128-ECB header
-// protection key of each direction. rx opens what the server sent and
-// takes RFC 9001 §5.2's label "server in"; tx protects what this client
-// sends and takes "client in" (rfc9001.txt:1057-1061). The derivation
-// under each label is aes_public_key_initial's, and this call is the two
-// calls to it: the shared secret is HKDF-Extract over the printed salt
+// Both calls below take the Destination Connection ID rather than a
+// key, and each derives the one direction's key it needs on its own
+// stack. aes_public_key_initial does that derivation: the shared secret
+// is HKDF-Extract over the printed salt
 // 0x38762cf7f55934b34d179ae6a4c80cadccbb7f0a and dcid
-// (rfc9001.txt:1051-1055, rfc9001.txt:1066). RFC 9001 Appendix A.1 is
-// the vector for both directions (rfc9001.txt:2352-2369).
+// (rfc9001.txt:1051-1055, rfc9001.txt:1066), then the label "server in"
+// for what this client reads and "client in" for what it sends
+// (rfc9001.txt:1057-1061). RFC 9001 Appendix A.1 is the vector for both
+// directions (rfc9001.txt:2352-2369).
 //
-// Requires: rx and tx are not NULL and are different objects; dcid
-// points at dcid_len readable bytes, and dcid is read only when dcid_len
-// is above 0.
+// Deriving per packet rather than once is INV-26's structural check. A
+// key that lives only inside one call is a key no other line can write
+// a traffic secret into, and this file is the only one besides
+// quic_retry.c that may hold an aes_public_key at all. The cost per
+// packet is one HKDF-Extract, three HKDF-Expand-Label calls and two key
+// expansions; no bench in this tree times them yet.
 //
 // dcid is the Destination Connection ID of the client's first Initial
 // packet, which the caller chose, and after a Retry it is the Source
 // Connection ID the server sent, which RFC 9000 §17.2.5.2 makes the
-// client's new Destination Connection ID (rfc9000.txt:5417-5420). The
-// caller calls this again at that point, because §5.2 changes the
-// secrets when a Retry arrives (rfc9001.txt:1092-1094). That rewrites
-// both keys whole and is not a key update: no Initial key is ever
-// updated. A zero-length dcid is legal, because §5.2 allows a
-// zero-length Source Connection ID in a Retry (rfc9001.txt:1098-1100).
+// client's new Destination Connection ID (rfc9000.txt:5417-5420). §5.2
+// changes the secrets when a Retry arrives (rfc9001.txt:1092-1094), and
+// the caller passes the new connection ID from then on; no key is ever
+// updated, because none is kept. A zero-length dcid is legal, because
+// §5.2 allows a zero-length Source Connection ID in a Retry
+// (rfc9001.txt:1098-1100). ch_quic holds these bytes in initial_dcid
+// and initial_dcid_len, and ch_quic_initial_keys bounds the length
+// before it stores them.
 //
-// Returns CH_OK and writes rx and tx whole. Returns CH_EINVAL and writes
-// neither when dcid_len is above AES_DCID_MAX, the RFC 9000 §17.2 cap on
-// a version 1 connection ID; it checks dcid_len before it writes either,
-// so a refusal leaves both keys as they were. No other code can be
-// returned: the derivation itself cannot fail.
-//
-// The caller's own §6.6 counters are untouched. ch_quic_seal counts what
-// it seals at this level in ch_quic's initial_sealed field, and a Retry
-// does not reset that count, so one running count covers both sets of
-// Initial keys (docs/quic.md, "What the mode does not do").
-int quic_initial_keys(aes_public_key *rx, aes_public_key *tx, const uint8_t *dcid, size_t dcid_len);
+// Both calls return CH_EINVAL and write nothing when dcid_len is above
+// CH_QUIC_DCID_MAX, the RFC 9000 §17.2 cap on a version 1 connection
+// ID, and both check it before they derive or write anything.
 
 // Protects one Initial packet under the send key and writes the whole
 // packet into out: the header copied from hdr, the sealed payload after
 // it, the GCM_TAG tag after that, and the §5.4 header protection mask
-// applied to the copy in out. It modifies neither hdr nor pt. ch_quic's
-// initial_tx is the key a client passes.
+// applied to the copy in out. It modifies neither hdr nor pt. It derives
+// the send key from dcid under the label "client in" on its own stack
+// and lets it die with the frame.
 //
 // Packet protection runs before header protection, the order RFC 9001
 // §5.3 states (rfc9001.txt:1129-1132). The nonce is the packet
@@ -124,8 +124,8 @@ int quic_initial_keys(aes_public_key *rx, aes_public_key *tx, const uint8_t *dci
 // number bytes, and the mask bytes a shorter packet number leaves over
 // stay unused (rfc9001.txt:1164-1166, rfc9001.txt:1202-1211).
 //
-// Requires: k was written by quic_initial_keys or by
-// aes_public_key_initial for CH_KEY_WRITE. hdr points at hdr_len
+// Requires: dcid points at dcid_len readable bytes, and dcid is read
+// only when dcid_len is above 0. hdr points at hdr_len
 // readable bytes and holds one whole unprotected Initial header,
 // including the packet number field the caller encoded, with the Length
 // field already covering pn_len + pt_len + GCM_TAG bytes; chapulin
@@ -143,9 +143,10 @@ int quic_initial_keys(aes_public_key *rx, aes_public_key *tx, const uint8_t *dci
 // hdr_len + pt_len + GCM_TAG. *out_len is not written either, so the
 // caller sizes its own buffer from that sum and calls again.
 //
-// Returns CH_EINVAL and writes nothing when pn_len is 0 or above
-// QUIC_PN_MAX_LEN, when hdr_len is below pn_len, or when
-// pn_len + pt_len is below QUIC_PN_MAX_LEN. The last refusal keeps the
+// Returns CH_EINVAL and writes nothing when dcid_len is above
+// CH_QUIC_DCID_MAX, when pn_len is 0 or above QUIC_PN_MAX_LEN, when
+// hdr_len is below pn_len, or when pn_len + pt_len is below
+// QUIC_PN_MAX_LEN. The last refusal keeps the
 // sample inside out: the sample starts QUIC_PN_MAX_LEN bytes past the
 // packet number offset and runs QUIC_HP_SAMPLE_LEN bytes, and out holds
 // pn_len + pt_len + GCM_TAG bytes from that offset on. RFC 9001 §5.4.2
@@ -174,17 +175,18 @@ int quic_initial_keys(aes_public_key *rx, aes_public_key *tx, const uint8_t *dci
 // encrypted packets under one key (rfc9001.txt:1812-1813), and ch_quic
 // counts what it seals at this level in initial_sealed and refuses the
 // 2^23rd before it calls here.
-int quic_initial_seal(const aes_public_key *k, uint64_t pn, size_t pn_len, const uint8_t *hdr,
-                      size_t hdr_len, const uint8_t *pt, size_t pt_len, uint8_t *out, size_t cap,
-                      size_t *out_len);
+int quic_initial_seal(const uint8_t *dcid, size_t dcid_len, uint64_t pn, size_t pn_len,
+                      const uint8_t *hdr, size_t hdr_len, const uint8_t *pt, size_t pt_len,
+                      uint8_t *out, size_t cap, size_t *out_len);
 
 // Removes header protection, recovers the packet number and removes
 // packet protection from one Initial packet, in place in pkt. The three
 // run in one call because RFC 9001 §9.5 requires header protection
 // removal, packet number recovery and packet protection removal to be
 // applied together without timing and other side channels
-// (rfc9001.txt:2110-2112). ch_quic's initial_rx is the key a client
-// passes.
+// (rfc9001.txt:2110-2112). It derives the receive key from dcid under
+// the label "server in" on its own stack and lets it die with the
+// frame.
 //
 // The steps are §5.4.1's in reverse, then §5.3's. The
 // QUIC_HP_SAMPLE_LEN sample starts QUIC_PN_MAX_LEN bytes after pn_off;
@@ -200,8 +202,8 @@ int quic_initial_seal(const aes_public_key *k, uint64_t pn, size_t pn_len, const
 // (rfc9000.txt:8343-8351). The nonce and the associated data are then
 // §5.3's, the same two values quic_initial_seal builds.
 //
-// Requires: k was written by quic_initial_keys or by
-// aes_public_key_initial for CH_KEY_READ. pkt points at pkt_len readable
+// Requires: dcid points at dcid_len readable bytes, and dcid is read
+// only when dcid_len is above 0. pkt points at pkt_len readable
 // and writable bytes and holds one whole Initial packet, which the
 // caller owns and which the caller has already separated from any other
 // packet in the datagram (rfc9001.txt:1320-1321). pn_off is the offset
@@ -218,6 +220,9 @@ int quic_initial_seal(const aes_public_key *k, uint64_t pn, size_t pn_len, const
 // that plaintext's length in bytes and *pn is the recovered packet
 // number. The caller reads byte 0 of pkt for the packet number length
 // and the reserved bits, and feeds *pn to the next call's largest_pn.
+//
+// Returns CH_EINVAL and writes nothing when dcid_len is above
+// CH_QUIC_DCID_MAX, which it checks before it reads a byte of pkt.
 //
 // Returns CH_QUIC_DISCARD (cfg.h) in two cases, writes neither output
 // and leaves the session alive. The two cases differ in what the caller
@@ -246,8 +251,8 @@ int quic_initial_seal(const aes_public_key *k, uint64_t pn, size_t pn_len, const
 // No other return code exists for this call. It raises no counter
 // itself: the §6.6 counts are per connection and live in ch_quic
 // (docs/quic.md, "What the mode does not do").
-int quic_initial_open(const aes_public_key *k, uint8_t *pkt, size_t pkt_len, size_t pn_off,
-                      uint64_t largest_pn, uint64_t *pn, size_t *pt_len);
+int quic_initial_open(const uint8_t *dcid, size_t dcid_len, uint8_t *pkt, size_t pkt_len,
+                      size_t pn_off, uint64_t largest_pn, uint64_t *pn, size_t *pt_len);
 
 #endif // CH_TRANSPORT_QUIC
 #endif

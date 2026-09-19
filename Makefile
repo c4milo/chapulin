@@ -126,7 +126,7 @@ SRCS := ct.c sha256.c hkdf.c chacha20.c poly1305.c aead.c x25519.c p256.c rsa.c 
 HDRS := ct.h sha256.h hkdf.h chacha20.h poly1305.h aead.h x25519.h p256.h rsa.h ch_assert.h \
         pem.h x509.h x509_der.h x509_ca.h webpki.h buf.h record.h keysched.h io.h handshake_message.h handshake_parser.h handshake_record.h cfg.h session.h handshake_auth.h handshake.h handshake_post.h \
         tls.h rand.h drbg.h sha3.h sha512.h sha512_compress.h p384.h p384_field.h rsa_pkcs1.h mlkem.h mlkem_poly.h \
-        handshake_flight.h quic.h quic_aes.h quic_gcm.h quic_initial.h quic_keys.h quic_packet.h quic_retry.h quic_step.h
+        handshake_flight.h quic.h quic_aes.h quic_aes_key.h quic_gcm.h quic_initial.h quic_keys.h quic_packet.h quic_retry.h quic_step.h
 
 # The TRANSPORT=quic mode's own sources, named here rather than matched
 # by a pattern, for the reason WEBPKI_SRCS is named: an auditor reads
@@ -162,12 +162,12 @@ LINT_C := $(filter-out softmul.c,$(SRCS)) drbg.c sha3.c sha512.c sha512_compress
           test/webpki_time_test.c test/webpki_name_test.c test/webpki_spki_test.c test/webpki_sigalg_test.c test/webpki_session_test.c test/webpki_cert_test.c test/webpki_chain_test.c \
           test/webpki_auth_test.c \
           test/mlkem_test.c test/handshake_strict_test.c test/handshake_sequence_test.c \
-          test/x509_strict_test.c $(QUIC_SRCS) test/quic_stub_test.c $(wildcard examples/*.c)
+          test/x509_strict_test.c $(QUIC_SRCS) test/quic_stub_test.c test/quic_vectors.c test/diff_quic_test.c $(wildcard examples/*.c)
 
 # Test-local headers: prerequisites for every binary that includes them,
 # so a header edit rebuilds the binaries it changes.
 TESTH := test/test_random.h test/pem_armor.h test/pem_tests.h test/x509_ca_tests.h test/session_tests.h test/session_post_tests.h \
-         test/session_cfg_tests.h test/p256_tests.h test/diff_driver.h test/diff_hash.h \
+         test/session_cfg_tests.h test/quic_gcm_tests.h test/p256_tests.h test/diff_driver.h test/diff_aes.h test/diff_gcm.h test/diff_hash.h \
          test/diff_handshake_parser.h test/diff_handshake_certificate.h test/diff_p256.h test/diff_pem.h test/diff_record.h test/diff_rsa.h \
          test/diff_x25519.h test/handshake_sequence_server.h test/rfc8448_vectors.h \
          test/rfc8448_tests.h \
@@ -607,9 +607,24 @@ bin/mlkem_test: test/mlkem_test.c mlkem.c mlkem_poly.c sha3.c ct.c $(HDRS) $(TES
 # -DCH_TRANSPORT_QUIC, the shape bin/sha3_test uses for a mode's own
 # sources: bin/unit compiles no QUIC source, because it includes tls.h and
 # calls rec_seal, which a -DCH_TRANSPORT_QUIC build does not compile.
-bin/quic_stub_test: test/quic_stub_test.c $(QUIC_SRCS) $(HDRS) $(TESTH)
+# hkdf.c, sha256.c and ct.c join the line because quic_aes.c derives the
+# Initial keys through HKDF now that it is implemented. A stub called
+# nothing below itself.
+bin/quic_stub_test: test/quic_stub_test.c $(QUIC_SRCS) hkdf.c sha256.c ct.c $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -DCH_TRANSPORT_QUIC -I. -o $@ test/quic_stub_test.c $(QUIC_SRCS)
+	$(CC) $(CFLAGS) -DCH_TRANSPORT_QUIC -I. -o $@ test/quic_stub_test.c $(QUIC_SRCS) hkdf.c sha256.c ct.c
+# The mode against its published vectors: FIPS 197 for the AES-128 forward
+# cipher and RFC 9001 Appendix A for the Initial keys, the header
+# protection masks and the Retry key. Same shape and same reason as
+# bin/quic_stub_test above, and docs/quic.md, "Verification owed", names
+# both the file and this binary. test/quic_vectors.c compiles quic_aes.c
+# rather than linking it, because FIPS 197's vectors fix the key and
+# INV-26 keeps the two constructors the only public way to write one, so
+# quic_aes.c is not on the line below. A later lane that adds a vector
+# section for another quic source links that source here.
+bin/quic_test: test/quic_vectors.c quic_gcm.c hkdf.c sha256.c ct.c $(HDRS) $(TESTH)
+	@mkdir -p bin
+	$(CC) $(CFLAGS) -DCH_TRANSPORT_QUIC -I. -o $@ test/quic_vectors.c quic_gcm.c hkdf.c sha256.c ct.c
 # SHA-512 and SHA-384 vectors and the streaming contract. Its own binary,
 # out of the packaged object like sha3: only TRUST=webpki links sha512.c.
 bin/sha512_test: test/sha512_test.c sha512.c sha512_compress.c $(HDRS) $(TESTH)
@@ -849,7 +864,7 @@ run-%: bin/%
 # and the invariant violation builds. The nightly runs it. Splitting on
 # duration rather than on importance is deliberate -- nothing here is
 # optional, and a change is not finished until check-slow passes too.
-check: bin/unit bin/unit_ca bin/unit_pq bin/tlsclient bin/tlsclient_ecdsa bin/tlsclient_ca bin/tlsclient_ca_ecdsa bin/tlsclient_webpki bin/tlsclient_pq bin/drbg_test bin/softmul_test bin/rsa_test bin/sha3_test bin/sha512_test bin/p384_test bin/rsa_pkcs1_test bin/webpki_time_test bin/webpki_name_test bin/webpki_spki_test bin/webpki_sigalg_test bin/webpki_cert_test bin/webpki_chain_test bin/webpki_auth_test bin/mlkem_test bin/handshake_strict_test bin/handshake_strict_pq bin/handshake_strict_webpki bin/webpki_session_test bin/webpki_session_pq bin/x509strict bin/x509strict_ecdsa bin/quic_stub_test lint rand-check
+check: bin/unit bin/unit_ca bin/unit_pq bin/tlsclient bin/tlsclient_ecdsa bin/tlsclient_ca bin/tlsclient_ca_ecdsa bin/tlsclient_webpki bin/tlsclient_pq bin/drbg_test bin/softmul_test bin/rsa_test bin/sha3_test bin/sha512_test bin/p384_test bin/rsa_pkcs1_test bin/webpki_time_test bin/webpki_name_test bin/webpki_spki_test bin/webpki_sigalg_test bin/webpki_cert_test bin/webpki_chain_test bin/webpki_auth_test bin/mlkem_test bin/handshake_strict_test bin/handshake_strict_pq bin/handshake_strict_webpki bin/webpki_session_test bin/webpki_session_pq bin/x509strict bin/x509strict_ecdsa bin/quic_stub_test bin/quic_test lint rand-check
 	# The packaged object is built once per entropy pattern, because
 	# lib-check reads a different export list and a different import
 	# list in each. Only the object is built twice: the examples and
@@ -916,6 +931,7 @@ check: bin/unit bin/unit_ca bin/unit_pq bin/tlsclient bin/tlsclient_ecdsa bin/tl
 	./bin/webpki_auth_test
 	./bin/mlkem_test
 	./bin/quic_stub_test
+	./bin/quic_test
 	./bin/handshake_strict_test
 	./bin/handshake_strict_pq
 	./bin/handshake_strict_webpki
@@ -1048,7 +1064,18 @@ else
 	cd spec && $(LAKE) build
 	$(MAKE) bin/diff
 	./bin/diff
+	$(MAKE) bin/diff_quic
+	./bin/diff_quic
 endif
+
+# The TRANSPORT=quic arm of the differential. Its own main, because
+# test/diff_test.c calls rec_seal and reads the TLS layout of ch_cfg, and
+# a -DCH_TRANSPORT_QUIC build compiles neither; test/diff_driver.h holds
+# the plumbing both mains share. test/diff_aes.h compiles quic_aes.c, so
+# that source is not on the line, for the reason bin/quic_test states.
+bin/diff_quic: test/diff_quic_test.c quic_gcm.c hkdf.c sha256.c ct.c $(HDRS) $(TESTH)
+	@mkdir -p bin
+	$(CC) $(CFLAGS) -DCH_TRANSPORT_QUIC -I. -o $@ test/diff_quic_test.c quic_gcm.c hkdf.c sha256.c ct.c
 
 # The sequence enumerations compare against spec/.lake/build/bin/diffspec,
 # and handshake_sequence_test skips the comparison when that binary is
@@ -1267,8 +1294,8 @@ endef
 wycheproof:
 	@$(call wycheproof_fetch,wycheproof); \
 	python3 test/gen_wycheproof.py $(WYCHEPROOF_DIR) bin/wycheproof_vectors.h && \
-	$(CC) $(CFLAGS) $(RSA_WIDE_DEF) -I. -Ibin -o bin/wycheproof_test test/wycheproof_test.c \
-	  x25519.c chacha20.c poly1305.c aead.c hkdf.c sha256.c p256.c rsa.c rsa_mont.c mlkem.c mlkem_poly.c sha3.c buf.c ct.c sha512.c sha512_compress.c p384.c p384_field.c rsa_pkcs1.c && \
+	$(CC) $(CFLAGS) $(RSA_WIDE_DEF) -DCH_TRANSPORT_QUIC -I. -Ibin -o bin/wycheproof_test test/wycheproof_test.c \
+	  x25519.c chacha20.c poly1305.c aead.c hkdf.c sha256.c p256.c rsa.c rsa_mont.c mlkem.c mlkem_poly.c sha3.c buf.c ct.c sha512.c sha512_compress.c p384.c p384_field.c rsa_pkcs1.c quic_gcm.c && \
 	./bin/wycheproof_test
 
 # The web PKI chain fixtures, test/webpki_corpus.h, live in the tree like
@@ -1296,8 +1323,8 @@ webpki-auth-vectors:
 wycheproof-ct-widemul:
 	@$(call wycheproof_fetch,wycheproof-ct-widemul); \
 	python3 test/gen_wycheproof.py $(WYCHEPROOF_DIR) bin/wycheproof_vectors.h && \
-	$(CC) $(CT_WIDEMUL_CFLAGS) $(RSA_WIDE_DEF) -I. -Ibin -o bin/wycheproof_test_ct_widemul test/wycheproof_test.c \
-	  x25519.c chacha20.c poly1305.c aead.c hkdf.c sha256.c p256.c rsa.c rsa_mont.c mlkem.c mlkem_poly.c sha3.c buf.c ct.c sha512.c sha512_compress.c p384.c p384_field.c rsa_pkcs1.c && \
+	$(CC) $(CT_WIDEMUL_CFLAGS) $(RSA_WIDE_DEF) -DCH_TRANSPORT_QUIC -I. -Ibin -o bin/wycheproof_test_ct_widemul test/wycheproof_test.c \
+	  x25519.c chacha20.c poly1305.c aead.c hkdf.c sha256.c p256.c rsa.c rsa_mont.c mlkem.c mlkem_poly.c sha3.c buf.c ct.c sha512.c sha512_compress.c p384.c p384_field.c rsa_pkcs1.c quic_gcm.c && \
 	./bin/wycheproof_test_ct_widemul
 
 # Sanitizer lane: the deterministic suites under ASan + UBSan, test
@@ -1347,8 +1374,8 @@ san-check:
 	  echo "== $$b (SAN -O$(O))"; ENUM_DEPTH=4 ./bin/san/$$b; done
 	@$(call wycheproof_fetch,san wycheproof); \
 	python3 test/gen_wycheproof.py $(WYCHEPROOF_DIR) bin/wycheproof_vectors.h && \
-	$(CC) $(SAN_CFLAGS) $(RSA_WIDE_DEF) -I. -Ibin -o bin/san/wycheproof_test test/wycheproof_test.c \
-	  x25519.c chacha20.c poly1305.c aead.c hkdf.c sha256.c p256.c rsa.c rsa_mont.c mlkem.c mlkem_poly.c sha3.c buf.c ct.c sha512.c sha512_compress.c p384.c p384_field.c rsa_pkcs1.c && \
+	$(CC) $(SAN_CFLAGS) $(RSA_WIDE_DEF) -DCH_TRANSPORT_QUIC -I. -Ibin -o bin/san/wycheproof_test test/wycheproof_test.c \
+	  x25519.c chacha20.c poly1305.c aead.c hkdf.c sha256.c p256.c rsa.c rsa_mont.c mlkem.c mlkem_poly.c sha3.c buf.c ct.c sha512.c sha512_compress.c p384.c p384_field.c rsa_pkcs1.c quic_gcm.c && \
 	echo "== wycheproof_test (SAN -O$(O))" && ./bin/san/wycheproof_test
 	$(MAKE) san-selftest
 
@@ -1406,8 +1433,8 @@ cross-check:
 	@if [ -d $(WYCHEPROOF_DIR)/.git ] \
 	  || git clone --quiet --depth 1 https://github.com/C2SP/wycheproof $(WYCHEPROOF_DIR) 2>/dev/null; then \
 	  python3 test/gen_wycheproof.py $(WYCHEPROOF_DIR) bin/wycheproof_vectors.h && \
-	  $(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) $(RSA_WIDE_DEF) -static -I. -Ibin -o bin/cross/wycheproof_test test/wycheproof_test.c \
-	    x25519.c chacha20.c poly1305.c aead.c hkdf.c sha256.c p256.c rsa.c rsa_mont.c mlkem.c mlkem_poly.c sha3.c buf.c ct.c sha512.c sha512_compress.c p384.c p384_field.c rsa_pkcs1.c; \
+	  $(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) $(RSA_WIDE_DEF) -DCH_TRANSPORT_QUIC -static -I. -Ibin -o bin/cross/wycheproof_test test/wycheproof_test.c \
+	    x25519.c chacha20.c poly1305.c aead.c hkdf.c sha256.c p256.c rsa.c rsa_mont.c mlkem.c mlkem_poly.c sha3.c buf.c ct.c sha512.c sha512_compress.c p384.c p384_field.c rsa_pkcs1.c quic_gcm.c; \
 	else \
 	  [ -n "$$CI" ] && { echo "wycheproof: clone failed and CI must not skip a gate"; exit 1; }; \
 	  echo "SKIP cross wycheproof: no checkout and no network"; \
@@ -1647,7 +1674,7 @@ else
 	# reason: every declaration they hold sits behind
 	# -DCH_TRANSPORT_QUIC, which this pass does not define, so it would
 	# read eight empty translation units. The two passes below read them.
-	$(CLANG_TIDY) --quiet $(filter-out webpki.c test/webpki_session_test.c test/webpki_chain_test.c test/webpki_auth_test.c examples/webpki_client.c $(QUIC_SRCS) test/quic_stub_test.c,$(LINT_C)) -- \
+	$(CLANG_TIDY) --quiet $(filter-out webpki.c test/webpki_session_test.c test/webpki_chain_test.c test/webpki_auth_test.c examples/webpki_client.c $(QUIC_SRCS) test/quic_stub_test.c test/quic_vectors.c test/diff_quic_test.c,$(LINT_C)) -- \
 	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -I.
 	# The pass above defines no trust mode, so it reads none of the
 	# TRUST=webpki arms. This pass parses the sources that carry them or
@@ -1664,12 +1691,12 @@ else
 	$(CLANG_TIDY) --quiet test/webpki_session_test.c -- \
 	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_TRUST_WEBPKI -DCH_KEX_PQ -I.
 	# The QUIC mode, in two passes split by QUIC_STUB_SRCS. This first
-	# one reads the sources that are implemented, plus the test main,
-	# under every check.
+	# one reads the sources that are implemented, plus the two test
+	# mains, under every check.
 	@set -e; done="$(filter-out $(QUIC_STUB_SRCS),$(QUIC_SRCS))"; \
 	 [ -z "$$done" ] || $(CLANG_TIDY) --quiet $$done -- \
 	   -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_TRANSPORT_QUIC -I.
-	$(CLANG_TIDY) --quiet test/quic_stub_test.c -- \
+	$(CLANG_TIDY) --quiet test/quic_stub_test.c test/quic_vectors.c test/diff_quic_test.c -- \
 	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_TRANSPORT_QUIC -I.
 	# The second reads the sources that are still stubs, with
 	# readability-non-const-parameter off. A stub writes nothing through

@@ -15,7 +15,7 @@ notice its absence. The mode also writes text inside the
 prefix does not name those, so the report counts them in their own
 section.
 
-Six questions, six sections, every answer read from the tree:
+Seven questions, seven sections, every answer read from the tree:
 
   Files                    every quic file with its line count, plus the
                            shared pair, plus a total
@@ -33,6 +33,11 @@ Six questions, six sections, every answer read from the tree:
   Public surface           the `ch_quic_` entries `quic.h` declares
                            against the names docs/quic.md's interface
                            table lists
+  Cipher names             the functions, function-like macros and types
+                           `quic_aes.h` and `quic_gcm.h` declare against
+                           what INV-26's Semgrep rule matches, and which
+                           sources may include the one header that gives
+                           `aes_public_key` a body
   Sections cited           the sections the headers cite, per standard,
                            so coverage against RFC 9001 is read rather
                            than guessed
@@ -45,13 +50,23 @@ rather than reading the document as listing nothing. Every other value
 is read -- the file list from git, the shared pair from the Makefile's
 QUIC_SHARED, the line counts and the names from the files themselves.
 
-`--check-surface` prints nothing while both comparisons agree and exits 1
-on either mismatch: `quic.h` against docs/quic.md's interface table, and
-the stub set against the function names test/quic_stub_test.c calls. The
-second is what keeps the safety rule mechanical -- a stub the test never
-calls is a stub whose refusal nothing measures, and a lane that adds one
-would otherwise leave every check green. `make lint-quic-surface` runs
-both, and `lint` runs it. The report reaches no verdict of its own, so it exits 0
+`--check-surface` prints nothing while all three comparisons agree and
+exits 1 on any mismatch: `quic.h` against docs/quic.md's interface
+table, the stub set against the function names test/quic_stub_test.c
+calls, and the names `quic_aes.h` and `quic_gcm.h` declare against what
+`inv-26-aes-public-keys-only` matches. The second is what keeps the
+safety rule mechanical -- a stub the test never calls is a stub whose
+refusal nothing measures, and a lane that adds one would otherwise leave
+every check green. The third holds INV-26's premise. That Semgrep rule
+matches a name, so a function in either header named outside the `aes_`
+and `gcm_` family is a use of AES the rule never sees. The compiler
+holds the rest: `aes_public_key` has no body in either header, so no
+file that includes them can declare a key, size one or write a field of
+one, and only `quic_aes.c`, `quic_initial.c` and `quic_retry.c` may
+include the header that does carry the body. docs/invariants.md INV-26
+states what that closes and what it does not.
+`make lint-quic-surface` runs all
+three, and `lint` runs it. The report reaches no verdict of its own, so it exits 0
 on every count it prints; it stops with a message only when something it
 reads is not there, such as a missing anchor.
 
@@ -82,9 +97,10 @@ import sys
 from pathlib import Path
 
 from impact_read import make_db
-from quic_source import (DECLARATOR, conditional_spans, declared, defined,
-                         marks_in, resolve, section_key, strip_comments,
-                         stubbed)
+from quic_source import (DECLARATOR, complete_types, conditional_spans,
+                         declared, defined, function_macros, marks_in,
+                         resolve, section_key, strip_comments, stubbed,
+                         typedefs)
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -103,6 +119,26 @@ HELD = {}
 DOC = Path("docs/quic.md")
 DOC_HEADING = "## The interface it exposes"
 DOC_TABLE_HEAD = "| call | what it does |"
+
+# The two headers INV-26's Semgrep rule matches by name, the prefixes
+# that rule matches a call and a value by, and the file the rule lives
+# in. The rule reads a name, so it holds only while every name in these
+# two headers is one it reads: a function named something else is a
+# function it never matches, and a key type it writes no initializer
+# pattern for is a key it never matches. cipher_surface() below is what
+# checks that, so the rule's coverage is read rather than assumed.
+CIPHER_HEADERS = ("quic_aes.h", "quic_gcm.h")
+CIPHER_PREFIXES = ("aes_", "gcm_")
+RULES = Path(".semgrep/invariants.yml")
+RULE_ID = "inv-26-aes-public-keys-only"
+
+# The one header that gives aes_public_key a body, and the three sources
+# INV-26 lets include it: quic_aes.c writes the two constructors, and
+# quic_initial.c and quic_retry.c build one key per use on their own
+# stack. Every other root source sees the incomplete type quic_aes.h
+# declares, so the compiler refuses a key there. key_holders() checks it.
+KEY_HEADER = "quic_aes_key.h"
+KEY_HOLDERS = ("quic_aes.c", "quic_initial.c", "quic_retry.c")
 
 
 def run(*args):
@@ -400,6 +436,93 @@ def surface():
     return header, documented, apart
 
 
+def rule_exists():
+    """Stop unless .semgrep/invariants.yml still holds the rule INV-26
+    names. Reading a missing rule as matching nothing would report every
+    name in the two headers as uncovered, which is many false sentences
+    in place of one true one."""
+    path = ROOT / RULES
+    if not path.exists():
+        sys.exit(f"quic-footprint: {RULES} is missing, so the cipher "
+                 f"headers have no rule to be checked against")
+    for line in path.read_text().split("\n"):
+        if line.strip() == f"- id: {RULE_ID}":
+            return
+    sys.exit(f"quic-footprint: {RULES} holds no rule {RULE_ID}, so the "
+             f"cipher headers have nothing to be checked against")
+
+
+def key_holders():
+    """Every root source that includes quic_aes_key.h and is not one of
+    the three INV-26 admits, as the sentence each one deserves.
+
+    quic_aes_key.h is the one file that gives aes_public_key a body, so
+    including it is the one way a source can declare a key, size a key
+    or write a field of a key. Every other source sees the incomplete
+    type quic_aes.h declares and gets a compiler error for all three.
+    The allowlist is read here rather than from the build, the way
+    inv-26-aes-public-keys-only's exclude list is: it is a tripwire, and
+    a fourth name added to it is a diff a reviewer looks for."""
+    apart = []
+    for path in run("git", "ls-files", "*.c", "*.h"):
+        if "/" in path or path in (KEY_HEADER, *KEY_HOLDERS):
+            continue
+        text = (ROOT / path).read_text()
+        # The header's name anywhere in an include line, however it is
+        # spelled. An exact match on the quoted form read past
+        # <quic_aes_key.h>, "./quic_aes_key.h", and a macro expanded
+        # into the directive, each of which reaches the same body.
+        if re.search(rf"#\s*include\s+.*{re.escape(KEY_HEADER)}", text) or \
+           re.search(rf"#\s*define\s+\w+\s+.*{re.escape(KEY_HEADER)}", text):
+            apart.append(f"{path} includes {KEY_HEADER}, so it can declare "
+                         f"an aes_public_key and write a traffic secret "
+                         f"into one; only {', '.join(KEY_HOLDERS)} may")
+            continue
+        # A file that spells the body itself needs no include at all. C
+        # diagnoses no mismatched struct definition across translation
+        # units, so this shape compiles clean and hands the writer a
+        # full key object; only this check refuses it.
+        body = re.search(r"struct\s+(aes_public_key|aes_key_schedule)\s*\{", text)
+        if body:
+            apart.append(f"{path} gives struct {body.group(1)} a body of its "
+                         f"own, so it can declare a key and write a traffic "
+                         f"secret into one with no include and no compiler "
+                         f"error; the body belongs in {KEY_HEADER} alone")
+    return apart
+
+
+def cipher_surface():
+    """Every name in quic_aes.h and quic_gcm.h that INV-26 does not
+    hold, as the sentence each one deserves.
+
+    Three comparisons. Every function and every function-like macro must
+    begin `aes_` or `gcm_`, because those prefixes are what
+    inv-26-aes-public-keys-only's call and value branches match. No type
+    either header declares may have a body there, because a body is what
+    lets a caller build a key without calling a constructor, and the
+    compiler is what refuses that once the type is incomplete. And only
+    the three sources INV-26 admits may include the header that does
+    carry the body. All three are INV-26's premise, which its comment
+    used to state and nothing checked."""
+    rule_exists()
+    apart = []
+    for header in CIPHER_HEADERS:
+        path = ROOT / header
+        if not path.exists():
+            sys.exit(f"quic-footprint: {header} is missing, so the names "
+                     f"{RULE_ID} matches cannot be read")
+        for name in declared(path) + function_macros(path):
+            if not name.startswith(CIPHER_PREFIXES):
+                apart.append(f"{header} declares {name}, which begins "
+                             f"neither aes_ nor gcm_, so {RULE_ID} matches "
+                             f"no call to it and no use of it as a value")
+        for name in complete_types(path):
+            apart.append(f"{header} gives {name} a body, so any file that "
+                         f"includes it can declare one and write a traffic "
+                         f"secret into it; the body belongs in {KEY_HEADER}")
+    return apart + key_holders()
+
+
 STUB_TEST = Path("test/quic_stub_test.c")
 
 
@@ -439,10 +562,11 @@ def stubs_untested():
 
 
 def check_surface():
-    """The two comparisons in this file that are a verdict: quic.h
-    against docs/quic.md, and the stub set against the calls
-    test/quic_stub_test.c makes. `make lint-quic-surface` runs both, and
-    `lint` runs that."""
+    """The three comparisons in this file that are a verdict: quic.h
+    against docs/quic.md, the stub set against the calls
+    test/quic_stub_test.c makes, and the cipher headers' names against
+    what inv-26-aes-public-keys-only matches. `make lint-quic-surface`
+    runs all three, and `lint` runs that."""
     _, _, apart = surface()
     for line in apart:
         print(f"lint-quic-surface: {line}")
@@ -450,13 +574,22 @@ def check_surface():
     for source, name in untested:
         print(f"lint-quic-surface: {source} stubs {name}, which "
               f"{STUB_TEST} never calls, so nothing measures its refusal")
+    unmatched = cipher_surface()
+    for line in unmatched:
+        print(f"lint-quic-surface: {line}")
     if apart:
         print("lint-quic-surface: quic.h and its design record disagree "
               "about the public surface")
     if untested:
         print(f"lint-quic-surface: {STUB_TEST} must call every stub; add "
               f"each name above with its POISON check")
-    return 1 if apart or untested else 0
+    if unmatched:
+        print(f"lint-quic-surface: rename the name above into the aes_ or "
+              f"gcm_ family, move the type body into {KEY_HEADER}, or drop "
+              f"the include; INV-26 rests on {RULE_ID} matching every name "
+              f"these headers declare, and on the compiler refusing every "
+              f"key object outside {', '.join(KEY_HOLDERS)}")
+    return 1 if apart or untested or unmatched else 0
 
 
 def report_surface():
@@ -483,6 +616,39 @@ def report_surface():
     else:
         print(f"  {STUB_TEST} calls every stub, so every refusal is "
               f"measured")
+    print()
+
+
+def report_cipher_names():
+    """What inv-26-aes-public-keys-only can match in the two cipher
+    headers, counted rather than assumed. INV-26 in docs/invariants.md
+    rests on the rule matching every name they declare."""
+    print("Cipher names INV-26's rule matches")
+    functions, macros, types = [], [], []
+    for header in CIPHER_HEADERS:
+        path = ROOT / header
+        functions += declared(path)
+        macros += function_macros(path)
+        types += typedefs(path)
+    print(f"  {plural(len(functions), 'function')} and "
+          f"{plural(len(macros), 'function-like macro')} declared in "
+          f"{' and '.join(CIPHER_HEADERS)}")
+    complete = []
+    for header in CIPHER_HEADERS:
+        complete += complete_types(ROOT / header)
+    print(f"  {plural(len(types), 'type')} declared and "
+          f"{len(complete)} given a body, so the compiler refuses a key "
+          f"outside {KEY_HEADER}'s {plural(len(KEY_HOLDERS), 'reader')}")
+    unmatched = cipher_surface()
+    for line in unmatched:
+        print(f"  {line}")
+    if unmatched:
+        print(f"  a name the rule does not match is a call INV-26 does not "
+              f"hold, which `make lint-quic-surface` fails on")
+    else:
+        print(f"  every function and macro begins aes_ or gcm_, no type "
+              f"has a body here, and no source outside "
+              f"{', '.join(KEY_HOLDERS)} includes {KEY_HEADER}")
     print()
 
 
@@ -538,6 +704,7 @@ def main(argv):
                  sum(r[2] for r in conditional))
     report_progress(quic)
     report_surface()
+    report_cipher_names()
     report_sections(quic, shared)
     return 0
 

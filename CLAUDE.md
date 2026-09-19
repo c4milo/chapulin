@@ -56,8 +56,12 @@ Home: github.com/c4milo.
   TRUST=webpki build packages them, other builds keep them test-only) ←
   `mlkem.[ch]`/`mlkem_poly.[ch]` (ML-KEM-768; the KEX=pq build packages
   them with `sha3.[ch]`, other builds keep them test-only) ← `hkdf.[ch]`
-  (HMAC + HKDF + TLS labels) ← `chacha20.[ch]` + `poly1305.[ch]` ←
-  `aead.[ch]` (RFC 8439 seal/open) ← `x25519.[ch]` + `p256.[ch]` +
+  (HMAC + HKDF + TLS labels) ← `chacha20.[ch]` + `poly1305.[ch]` +
+  `quic_aes.[ch]` with `quic_aes_key.h` (the AES-128 forward cipher of
+  FIPS 197 and the `aes_public_key` type, whose body sits in the second
+  header alone, TRANSPORT=quic; INV-26 names the three keys it may see)
+  ← `aead.[ch]` (RFC 8439 seal/open) + `quic_gcm.[ch]`
+  (AEAD_AES_128_GCM and GHASH, TRANSPORT=quic) ← `x25519.[ch]` + `p256.[ch]` +
   `rsa.[ch]`/`rsa_mont.c` (pinned-mode verify) + `p384.[ch]`/
   `p384_field.[ch]` + `rsa_pkcs1.[ch]` (the chain signatures a public
   CA writes, TRUST=webpki) ←
@@ -101,7 +105,50 @@ Home: github.com/c4milo.
   every arithmetic file, so a branch a compiler emits for a select
   shows as a count that grows.
   ChaCha20/Poly1305/x25519 are constant time by construction — keep them
-  that way; AES never enters this codebase precisely to avoid tables.
+  that way. AES is admitted for one purpose: the keys RFC 9001 fixes for
+  QUIC Initial packets (§5.2), their header protection (§5.4.3) and the
+  Retry integrity tag (§5.8). Every key those three use is public — it
+  comes from a salt the RFC prints and a connection ID that travels in
+  the clear, or the RFC prints the key itself — so a table lookup indexed
+  by one leaks nothing an observer does not already hold. That is the
+  whole reason the table is allowed today, and while the only AES here is
+  a software S-box it is the only reason: the public-key argument is what
+  carries it, never a claim that the lookup is constant time. No key from
+  the TLS key schedule is ever passed to AES, and AES is never a cipher
+  suite here.
+  What holds that: `quic_aes.[ch]` and `quic_gcm.[ch]` take a key type,
+  `aes_public_key`, whose body lives in `quic_aes_key.h` alone, so only
+  `quic_aes.c`, `quic_initial.c` and `quic_retry.c` can build one. A file
+  that names the incomplete type gets a compiler error; a file that
+  spells the body itself gets none, because C diagnoses no mismatched
+  struct definition across translation units, so `make lint-quic-surface`
+  is what refuses that shape and the include that reaches the body
+  however it is spelled. `ch_quic` stores no key: it keeps the
+  Destination Connection ID and each packet call derives what it needs on
+  its own stack. INV-26 states the rule and what review still owes, the
+  Semgrep rule holds the calls, `.violation` mutants prove each check
+  fires, and both files sit in `WIDEMUL_PUBLIC`.
+  A hardware AES path is planned and is the way the public-key limit
+  changes. An AES instruction is constant time, so a build that has one
+  may carry secret keys, which is what TLS_AES_128_GCM_SHA256 needs — and
+  strict RFC 9846 §9.1 server conformance needs that suite. The Makefile
+  AES variable will choose the implementation the way PIN chooses the
+  pinned algorithm: `soft` is this S-box, an instruction build uses the
+  compiler's own intrinsics under `__ARM_FEATURE_AES` or `__AES__`, and
+  `extern` takes a caller-supplied block function, the way
+  `ch_rand_bytes` takes entropy, so a vendor AES peripheral needs no code
+  here. Those two macros are the whole detection, and the choice is the
+  compiler's at build time: nothing here probes a CPU at runtime. An
+  arm64 core cannot answer the question itself — reading
+  ID_AA64ISAR0_EL1 from EL0 takes SIGILL — so runtime detection means
+  asking the operating system, which is per-OS code this tree cannot
+  carry and which the bare-metal m3 and freertos lanes have nobody to
+  ask. A consumer compiles chapulin into its own build, so it already
+  chooses `-march=armv8-a+crypto` or `-maes`; a build without the flag
+  takes the software path and stays correct. CBMC cannot read an
+  intrinsic, so the proofs stay on the software path and an instruction
+  build is held to it by differential equivalence and by the Wycheproof
+  suite running on that leg.
 - Proofs are mandatory, not optional, but they run in `check-slow`
   rather than `check`: `check` holds a one-minute budget so it stays
   usable as the inner loop, and the fast proof tier alone costs

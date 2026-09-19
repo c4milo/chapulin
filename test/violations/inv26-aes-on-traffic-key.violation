@@ -1,0 +1,24 @@
+invariant: INV-26
+file: quic_packet.c
+catches: test/lint-invariants.sh
+reason: the 1-RTT seal path calls aes_encrypt_block on a key set the TLS
+  key schedule derived, which is the day INV-26 exists to prevent: a
+  lookup-table cipher indexed with a secret, and docs/decisions.md entry
+  6's stated gain gone. quic_packet.c is not one of the two callers the
+  rule admits, so inv-26-aes-public-keys-only must fire on the call.
+  Semgrep reads source text, so the edit needs no cast that compiles and
+  no include; the rule matches the call by name either way.
+
+--- old
+int quic_packet_seal(const quic_keys *k, const quic_hp_key *h, uint8_t level, uint64_t pn,
+                     size_t pn_len, const uint8_t *hdr, size_t hdr_len, const uint8_t *pt,
+                     size_t pt_len, uint8_t *out, size_t cap, size_t *out_len) {
+    // CH_QUIC_STUB: not implemented yet; this call fails closed and writes nothing.
+    (void)k;
+--- new
+int quic_packet_seal(const quic_keys *k, const quic_hp_key *h, uint8_t level, uint64_t pn,
+                     size_t pn_len, const uint8_t *hdr, size_t hdr_len, const uint8_t *pt,
+                     size_t pt_len, uint8_t *out, size_t cap, size_t *out_len) {
+    // CH_QUIC_STUB: not implemented yet; this call fails closed and writes nothing.
+    aes_encrypt_block(k, hdr, out);
+    (void)k;

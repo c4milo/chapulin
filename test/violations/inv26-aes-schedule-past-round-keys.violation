@@ -1,0 +1,17 @@
+invariant: INV-26
+file: quic_aes.c
+catches: proof/prove-one.sh quic_aes
+reason: the key expansion's loop runs one word past round_keys, so the
+  last four stores land outside the aes_key_schedule and inside whatever
+  the caller placed after it, which under TRANSPORT=quic is the rest of
+  ch_quic. INV-26 is what admits a table-driven AES into this tree, and
+  quic_aes_harness is what holds the admitted code to memory safety at
+  its real bound, so this is the bug that harness exists to catch.
+  docs/proofs.md requires planting it once and landing it. Each run is a
+  proof of seconds, but the catch line names proof/prove-one.sh, so this
+  belongs to the nightly's test-invariants-proof-backed job.
+
+--- old
+    for (size_t i = AES_128_KEY; i < sizeof schedule->round_keys; i += 4) {
+--- new
+    for (size_t i = AES_128_KEY; i <= sizeof schedule->round_keys; i += 4) {

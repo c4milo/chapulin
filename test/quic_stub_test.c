@@ -17,12 +17,22 @@
 // leaves this file when it is implemented, in the commit that implements it, and
 // `make quic-footprint` prints how many are left.
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
+#include "ch_assert.h"
 #include "quic.h"
 #include "quic_initial.h"
 #include "quic_packet.h"
 #include "quic_retry.h"
+
+// hkdf.c reaches this on a contract breach, and quic_aes.c calls hkdf.c
+// now that it is implemented, so this binary links the handler every
+// other test main defines.
+noreturn void ch_assert_fail(const char *cond, const char *file, int line) {
+    (void)fprintf(stderr, "ASSERT %s:%d: %s\n", file, line, cond);
+    abort();
+}
 
 static int failures = 0;
 #define CHECK(cond)                                                                                \
@@ -65,52 +75,16 @@ static int out_untouched(void) {
     return untouched(out, sizeof out) && untouched(&out_len, sizeof out_len);
 }
 
-static void test_aes(void) {
-    aes_public_key k;
-    uint8_t in[AES_BLOCK];
-    uint8_t dcid[AES_DCID_MAX];
-    memset(&k, POISON, sizeof k);
-    memset(in, POISON, sizeof in);
-    memset(dcid, POISON, sizeof dcid);
+// quic_aes.c carries no section here. Its four entries are implemented,
+// so each one writes and none of them refuses, which is the opposite of
+// what this binary measures. bin/quic_test checks them against FIPS 197
+// and RFC 9001 Appendix A instead.
 
-    CHECK(aes_public_key_initial(&k, dcid, sizeof dcid, CH_KEY_READ) == CH_EINVAL);
-    CHECK(untouched(&k, sizeof k));
-    aes_public_key_retry(&k);
-    CHECK(untouched(&k, sizeof k));
-
-    fill_out();
-    aes_encrypt_block(&k, in, out);
-    CHECK(out_untouched());
-    fill_out();
-    aes_encrypt_block_hp(&k, in, out);
-    CHECK(out_untouched());
-}
-
-static void test_gcm(void) {
-    aes_public_key k;
-    uint8_t nonce[AES_IV];
-    uint8_t tag[GCM_TAG];
-    uint8_t body[SCRATCH];
-    memset(&k, POISON, sizeof k);
-    memset(nonce, POISON, sizeof nonce);
-    memset(tag, POISON, sizeof tag);
-    memset(body, POISON, sizeof body);
-
-    fill_out();
-    uint8_t seal_tag[GCM_TAG];
-    memset(seal_tag, POISON, sizeof seal_tag);
-    gcm_seal(&k, nonce, body, 4, body, 8, out, seal_tag);
-    CHECK(untouched(out, sizeof out));
-    CHECK(untouched(seal_tag, sizeof seal_tag));
-
-    fill_out();
-    CHECK(gcm_open(&k, nonce, body, 4, body, 8, tag, out) == 0);
-    CHECK(untouched(out, sizeof out));
-
-    fill_out();
-    gcm_ghash(&k, body, 4, body, 8, out);
-    CHECK(untouched(out, sizeof out));
-}
+// quic_gcm.c carries no section here either. Its three entries are
+// implemented, so gcm_seal and gcm_ghash write and gcm_open answers 1 on a
+// tag that matches, which is the opposite of what this binary measures.
+// bin/quic_test checks them against SP 800-38D and RFC 9001 Appendix A
+// instead, and test/quic_gcm_tests.h holds those vectors.
 
 static void test_keys(void) {
     quic_keys keys;
@@ -213,36 +187,34 @@ static void test_packet_calls(void) {
     CHECK(quic_confidentiality_limit_reached(0) == 1);
 }
 
+// This function names no AES type and holds no key, and that is INV-26
+// working rather than an omission. quic_aes.h leaves aes_public_key
+// incomplete, and this file does not include quic_aes_key.h, so
+// `aes_public_key k;` here would not compile. The Initial entries take
+// the Destination Connection ID and derive what they need on their own
+// stack.
 static void test_initial_and_retry(void) {
-    aes_public_key rx;
-    aes_public_key tx;
-    aes_public_key k;
-    uint8_t dcid[AES_DCID_MAX];
+    uint8_t dcid[CH_QUIC_DCID_MAX];
     uint8_t hdr[8];
     uint8_t pt[8];
     uint8_t tag[GCM_TAG];
     uint64_t pn;
     size_t pt_len;
-    memset(&rx, POISON, sizeof rx);
-    memset(&tx, POISON, sizeof tx);
-    memset(&k, POISON, sizeof k);
     memset(dcid, POISON, sizeof dcid);
     memset(hdr, POISON, sizeof hdr);
     memset(pt, POISON, sizeof pt);
     memset(tag, POISON, sizeof tag);
 
-    CHECK(quic_initial_keys(&rx, &tx, dcid, sizeof dcid) == CH_EINVAL);
-    CHECK(untouched(&rx, sizeof rx) && untouched(&tx, sizeof tx));
-
     fill_out();
-    CHECK(quic_initial_seal(&k, 1, QUIC_PN_MAX_LEN, hdr, sizeof hdr, pt, sizeof pt, out, sizeof out,
-                            &out_len) == CH_EINVAL);
+    CHECK(quic_initial_seal(dcid, sizeof dcid, 1, QUIC_PN_MAX_LEN, hdr, sizeof hdr, pt, sizeof pt,
+                            out, sizeof out, &out_len) == CH_EINVAL);
     CHECK(out_untouched());
 
     fill_out();
     memset(&pn, POISON, sizeof pn);
     memset(&pt_len, POISON, sizeof pt_len);
-    CHECK(quic_initial_open(&k, out, sizeof out, 1, 0, &pn, &pt_len) == CH_QUIC_DISCARD);
+    CHECK(quic_initial_open(dcid, sizeof dcid, out, sizeof out, 1, 0, &pn, &pt_len) ==
+          CH_QUIC_DISCARD);
     CHECK(untouched(out, sizeof out) && untouched(&pn, sizeof pn) &&
           untouched(&pt_len, sizeof pt_len));
 
@@ -311,8 +283,6 @@ static void test_public_bytes(void) {
 }
 
 int main(void) {
-    test_aes();
-    test_gcm();
     test_keys();
     test_packet_pieces();
     test_packet_calls();

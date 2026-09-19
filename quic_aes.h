@@ -26,23 +26,6 @@
 #define AES_ROUND_KEYS 11 // Nr + 1 round keys, AES_BLOCK bytes each
 #define AES_IV 12         // the 12-byte packet protection IV of §5.1
 
-// Largest Destination Connection ID aes_public_key_initial accepts. RFC
-// 9000 §17.2 caps a QUIC version 1 connection ID at 20 bytes
-// (rfc9000.txt:4991-4998). There is no lower bound to check. A client's
-// own first Destination Connection ID is at least 8 bytes (RFC 9000
-// §7.2, rfc9000.txt:1856), but after a Retry the client derives from
-// the server's Source Connection ID, and RFC 9001 §5.2 states that this
-// field can be any length up to 20 bytes, zero included
-// (rfc9001.txt:1098-1100).
-#define AES_DCID_MAX 20
-
-// One AES-128 key expanded into its round keys (FIPS 197 §5.2, Key
-// Expansion). Bytes rather than words, so no step of the schedule or
-// the cipher assumes host endianness.
-typedef struct {
-    uint8_t round_keys[AES_ROUND_KEYS * AES_BLOCK];
-} aes_key_schedule;
-
 // One direction of one QUIC encryption level whose AEAD is
 // AEAD_AES_128_GCM: the packet protection key expanded into its round
 // keys, the packet protection IV, and the header protection key
@@ -51,6 +34,15 @@ typedef struct {
 // gcm_ entry takes this type and nothing else, so a call that hands one
 // of them a rec_dir key, a quic_keys key or a bare byte array does not
 // compile.
+//
+// The type is incomplete here, and quic_aes_key.h holds the definition.
+// A file that includes only this header can take a pointer to a key and
+// pass it on; it cannot declare one, size one, or write a field of one,
+// because the compiler does not know what is inside. That is INV-26's
+// first check, and the compiler is what runs it. Three sources include
+// quic_aes_key.h: quic_aes.c, which writes the two constructors, and
+// quic_initial.c and quic_retry.c, which build a key on their own stack
+// at each use. `make lint-quic-surface` fails on a fourth.
 //
 // Every key this type ever holds is public, and that is the whole
 // reason a table-driven cipher is allowed in this tree. The Initial
@@ -64,25 +56,27 @@ typedef struct {
 // Filling this struct with anything else is what INV-26 forbids, and a
 // traffic secret from keysched.c is the case it names: the day one
 // reaches a lookup-table cipher, this tree has a timing story to defend
-// and docs/decisions.md entry 6's stated gain is gone. The two
-// constructors below are the first check: nothing else may write these
-// fields. The struct is visible because ch_quic stores two of these
-// values and this tree allocates nothing, not because a caller may
-// build one. Three build gates check the rest. The Semgrep rule
-// inv-26-aes-public-keys-only fails any call to an aes_ or gcm_ symbol,
-// and any aes_public_key initializer, outside quic_initial.c,
-// quic_retry.c, quic_aes.c and quic_gcm.c; a .violation mutant proves
-// that rule fires; lint-codegen-partition holds quic_aes.c and
-// quic_gcm.c in WIDEMUL_PUBLIC,
-// the list whose comment says a secret arriving in any of these is a
-// design change; and lib-check keeps every aes_ and gcm_ symbol out of
-// the packaged object's exports, so no caller reuses this cipher on
-// something else.
-typedef struct {
-    aes_key_schedule key;
-    uint8_t iv[AES_IV];
-    aes_key_schedule hp;
-} aes_public_key;
+// and docs/decisions.md entry 6's stated gain is gone. Nothing stores a
+// key between calls. ch_quic keeps the Destination Connection ID the
+// derivation reads, not the key it produces, so no long-lived key
+// object exists for a later line to overwrite. The two constructors
+// below are the only way a key is written at all.
+//
+// Four checks in the build hold the rest. The Semgrep rule
+// inv-26-aes-public-keys-only fails any use of an aes_ or gcm_ name, as
+// a call or as a value, outside quic_initial.c, quic_retry.c,
+// quic_aes.c and quic_gcm.c. lint-quic-surface fails a function, a
+// function-like macro or a type in this header or quic_gcm.h that the
+// rule does not match, fails a type this header completes, and fails a
+// source outside the three that includes quic_aes_key.h, so the rule's
+// own premise is read rather than assumed. lint-codegen-partition holds
+// quic_aes.c and quic_gcm.c in WIDEMUL_PUBLIC, the list whose comment
+// says a secret arriving in any of these is a design change. lib-check
+// keeps every aes_ and gcm_ symbol out of the packaged object's
+// exports, so no caller reuses this cipher on something else. INV-26 in
+// docs/invariants.md states what each one reads and what review still
+// owes.
+typedef struct aes_public_key aes_public_key;
 
 // Derives one direction of the Initial-level keys from the client's
 // Destination Connection ID and writes all three fields of k: the
@@ -97,15 +91,17 @@ typedef struct {
 // (rfc9001.txt:1017-1021, rfc9001.txt:1029-1032). RFC 9001 Appendix A.1
 // is the vector.
 //
-// Requires: k is not NULL; dcid points at dcid_len readable bytes, and
-// dcid is read only when dcid_len is above 0; direction is CH_KEY_READ
-// or CH_KEY_WRITE. The caller calls it again after a Retry, because the
-// Destination Connection ID changes there and so do the keys
-// (rfc9001.txt:1092-1094); that rewrites k whole and is not a key
-// update.
+// Requires: k is not NULL and points at one whole aes_public_key, so
+// the caller includes quic_aes_key.h; dcid points at dcid_len readable
+// bytes, and dcid is read only when dcid_len is above 0; direction is
+// CH_KEY_READ or CH_KEY_WRITE. Every caller calls it per use on its own
+// stack and lets the key die with the frame, because no field stores
+// one. After a Retry the Destination Connection ID changes and so do
+// the keys (rfc9001.txt:1092-1094); the caller passes the new one and
+// this call reads nothing it kept.
 //
 // Returns CH_OK and writes k whole. Returns CH_EINVAL and writes
-// nothing when dcid_len is above AES_DCID_MAX, or when direction is
+// nothing when dcid_len is above CH_QUIC_DCID_MAX, or when direction is
 // neither CH_KEY_READ nor CH_KEY_WRITE; k keeps whatever it held. No
 // other code can be returned: the derivation itself cannot fail.
 int aes_public_key_initial(aes_public_key *k, const uint8_t *dcid, size_t dcid_len,
@@ -116,10 +112,12 @@ int aes_public_key_initial(aes_public_key *k, const uint8_t *dcid, size_t dcid_l
 // (rfc9001.txt:1499-1500), expanded into its round keys. It leaves
 // k->iv and k->hp zero, because §5.8 prints the nonce the caller passes
 // to gcm_seal (rfc9001.txt:1502) and a Retry packet carries no header
-// protection. quic_retry.c is the only caller.
+// protection. quic_retry.c is the only caller, and it builds k on its
+// own stack.
 //
-// Requires: k is not NULL. Writes k whole and cannot fail, so it
-// returns nothing.
+// Requires: k is not NULL and points at one whole aes_public_key, so
+// the caller includes quic_aes_key.h. Writes k whole and cannot fail,
+// so it returns nothing.
 void aes_public_key_retry(aes_public_key *k);
 
 // One forward-cipher block under the packet protection key, k->key:

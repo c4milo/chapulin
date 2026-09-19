@@ -256,9 +256,11 @@ void tlsi_wipe(ch_tls *t);
 //
 // What quic_fail wipes, in the names the code uses, so INV-17's claim
 // that every failure path wipes can be checked against a list: hs,
-// every key field ch_quic holds (initial_rx, initial_tx, handshake_rx,
-// handshake_tx, handshake_hp_rx, handshake_hp_tx, app_tx, all
-// CH_QUIC_KEY_SETS slots of app_rx, app_hp_rx and app_hp_tx),
+// every key field ch_quic holds (handshake_rx, handshake_tx,
+// handshake_hp_rx, handshake_hp_tx, app_tx, all CH_QUIC_KEY_SETS slots
+// of app_rx, app_hp_rx and app_hp_tx), initial_dcid and
+// initial_dcid_len, which hold no key and are zeroed with the rest
+// rather than left naming a dead connection,
 // t.rd_secret, t.wr_secret, t.res_master, tx_len, t.pt_off and
 // t.pt_len. It clears levels_ready with them, so no later call seals or
 // opens a packet. It wipes no rec_dir, because a TRANSPORT=quic build

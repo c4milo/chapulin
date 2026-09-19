@@ -363,18 +363,22 @@ def select_violations(out, changed):
 
 # Lints that read every tracked .c and .h, so any source change selects
 # them. The one that reads the library sources alone is below.
+# The third element, where one is present, names the wrapper script a
+# test/violations entry can put on its catches line for that same gate,
+# so the violation the lint catches counts as covered by this command.
 SOURCE_LINTS = [
-    ("make lint-size", "every tracked .c and .h stays under 500 lines"),
-    ("make lint-format", "clang-format covers every source"),
-    ("make lint-tidy", "clang-tidy reads $(LINT_C) and $(HDRS)"),
-    ("make lint-cppcheck", "cppcheck reads $(LINT_C)"),
-    ("make lint-invariants", "semgrep scans every tracked .c and .h"),
+    ("make lint-size", "every tracked .c and .h stays under 500 lines", ()),
+    ("make lint-format", "clang-format covers every source", ()),
+    ("make lint-tidy", "clang-tidy reads $(LINT_C) and $(HDRS)", ()),
+    ("make lint-cppcheck", "cppcheck reads $(LINT_C)", ()),
+    ("make lint-invariants", "semgrep scans every tracked .c and .h",
+     ("test/lint-invariants.sh",)),
 ]
 
 
 def select_lints(out, changed, csources, lib):
-    for command, reason in SOURCE_LINTS if csources else []:
-        out.add("lint", command, reason)
+    for command, reason, gates in SOURCE_LINTS if csources else []:
+        out.add("lint", command, reason, list(gates))
     # lint-proof-cover asks which shipped source a harness proves, so a
     # library source selects it and a test main does not. The frame budget
     # is per packaged object, so select_modes above runs one leg per
@@ -394,22 +398,32 @@ def select_lints(out, changed, csources, lib):
                     f"every reader in one",
                     ["test/lint-exact-fill.sh"])
             break
-    # The two gates that read the mode's own files. lint-quic-partition
+    # The three gates that read the mode's own files. lint-quic-partition
     # compiles each quic file and checks which build keeps it;
     # lint-quic-surface compares quic.h against docs/quic.md's interface
-    # table and against the stubs test/quic_stub_test.c calls. Both read
-    # the .c files as well as the headers, so a root quic path selects
-    # them whichever suffix it carries.
+    # table, against the stubs test/quic_stub_test.c calls, and against
+    # the sources that may include quic_aes_key.h; bin/quic_stub_test is
+    # the build itself, which INV-26 turns into a check of its own, since
+    # ch_quic holds no key and the key type is incomplete outside three
+    # sources, so a write to a key field elsewhere does not compile. All
+    # three read the .c files as well as the headers, so a root quic path
+    # selects them whichever suffix it carries.
     quic_root = [p for p in csources if "/" not in p and p.startswith("quic")]
     if quic_root:
         out.add("lint", "make lint-quic-partition",
                 "a root quic source changed, and this gate holds each quic "
                 "file to the build that compiles it",
                 ["test/lint-quic-partition.sh"])
+        out.add("unit", "make bin/quic_stub_test",
+                "the compiler is half of INV-26: a key field the session no "
+                "longer holds names nothing",
+                ["test/quic-builds.sh"])
     if quic_root or "test/quic_stub_test.c" in changed or "docs/quic.md" in changed:
         out.add("lint", "make lint-quic-surface",
                 "quic.h, docs/quic.md and test/quic_stub_test.c must name one "
-                "public surface and one stub set")
+                "public surface and one stub set, and only three sources may "
+                "include quic_aes_key.h",
+                ["test/lint-quic-surface.sh"])
     if any(p.endswith(".sh") or p.startswith(".githooks/") for p in changed):
         out.add("lint", "make lint-shellcheck",
                 "shellcheck reads every tracked script")

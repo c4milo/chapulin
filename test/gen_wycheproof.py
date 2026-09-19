@@ -132,6 +132,57 @@ def gen_aead(d, out):
     return len(rows)
 
 
+# The AES-GCM suite, for quic_gcm.c. Only a -DCH_TRANSPORT_QUIC build
+# compiles that file, so the rows below are emitted inside the same guard
+# and the other legs of wycheproof_test.c read a header that declares
+# nothing for them. INV-26 admits this key in a test: the rule bounds
+# which keys a library source may pass to the AEAD, and `test` is
+# excluded from the Semgrep rule that holds it.
+#
+# AEAD_AES_128_GCM is the one profile RFC 9001 fixes, so a group with any
+# other key, nonce or tag size is counted and skipped rather than
+# squeezed into an API that cannot express it.
+def gen_aes_gcm(d, out):
+    blob = Blob()
+    rows = []
+    skipped = 0
+    oversize = 0
+    for g in d["testGroups"]:
+        if g["keySize"] != 128 or g["ivSize"] != 96 or g["tagSize"] != 128:
+            skipped += len(g["tests"])  # key, nonce, or tag size the fixed API cannot express
+            continue
+        for t in g["tests"]:
+            key = bytes_of(t["key"], 16, f"aes_gcm tc{t['tcId']} key")
+            iv = bytes_of(t["iv"], 12, f"aes_gcm tc{t['tcId']} iv")
+            tag = bytes_of(t["tag"], 16, f"aes_gcm tc{t['tcId']} tag")
+            aad = bytes_of(t["aad"])
+            msg = bytes_of(t["msg"])
+            ct = bytes_of(t["ct"])
+            if len(ct) != len(msg):
+                raise SystemExit(f"aes_gcm tc{t['tcId']}: ct/msg length mismatch")
+            if len(msg) > WP_AEAD_MSG_MAX or len(aad) > WP_AEAD_MSG_MAX:
+                oversize += 1  # larger than the test's fixed buffers
+                continue
+            off = blob.add(key + iv + tag + aad + msg + ct)
+            rows.append((uint_of(t["tcId"], 0xffffffff, "aes_gcm tcId"), off, len(aad), len(msg),
+                         1 if t["result"] == "valid" else 0))
+    out.append("#ifdef CH_TRANSPORT_QUIC")
+    emit_blob(out, "wp_aes_gcm_data", blob)
+    out.append(
+        "static const struct { uint32_t tc; uint32_t off; uint16_t aad_len;"
+        " uint16_t msg_len; uint8_t valid; } wp_aes_gcm[] = {"
+    )
+    for tc, off, alen, mlen, valid in rows:
+        out.append(f"    {{{tc}, {off}, {alen}, {mlen}, {valid}}},")
+    out.append("};")
+    out.append("")
+    out.append(f"#define WP_AES_GCM_SKIPPED {skipped} // key/nonce/tag sizes the fixed API cannot express")
+    out.append(f"#define WP_AES_GCM_OVERSIZE {oversize} // messages larger than the test's 1 KB buffers")
+    out.append("#endif // CH_TRANSPORT_QUIC")
+    out.append("")
+    return len(rows)
+
+
 def gen_hkdf(d, out):
     blob = Blob()
     rows = []
@@ -395,6 +446,7 @@ def main():
     n_x = gen_x25519(json.load(open(v1 / "x25519_test.json")), out)
     n_a = gen_aead(json.load(open(v1 / "chacha20_poly1305_test.json")), out)
     n_h = gen_hkdf(json.load(open(v1 / "hkdf_sha256_test.json")), out)
+    n_g = gen_aes_gcm(json.load(open(v1 / "aes_gcm_test.json")), out)
     # The four ECDSA arms: the two matched pairs a chain signs with, and
     # the two mismatched digest lengths that exercise the FIPS 186-4
     # section 6.4 rule the runner applies (a short digest is used whole,
@@ -424,7 +476,7 @@ def main():
     n_ke = gen_mlkem_encaps(json.load(open(v1 / "mlkem_768_encaps_test.json")), out)
     n_kf = gen_mlkem_full(json.load(open(v1 / "mlkem_768_test.json")), out)
     dst.write_text("\n".join(out) + "\n")
-    print(f"wycheproof vectors: x25519 {n_x}, aead {n_a}, hkdf {n_h},"
+    print(f"wycheproof vectors: x25519 {n_x}, aead {n_a}, hkdf {n_h}, aes-gcm {n_g},"
           f" ecdsa p256-sha256 {n_e} p384-sha384 {n_e384} p384-sha256 {n_e384_256}"
           f" p256-sha512 {n_e256_512}, rsa-pss {n_r}, rsa-pkcs1 {n_rp},"
           f" mlkem keygen {n_kk} encaps {n_ke} full {n_kf} (commit {commit[:12]})")

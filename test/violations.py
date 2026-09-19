@@ -259,9 +259,12 @@ FAST_TARGETS = {"unit", "unit_ca", "x509strict", "x509strict_ecdsa",
                 "webpki_time_test", "p384_test",
                 "test/lint-wide-multiply.sh", "test/lint-wide-multiply-gcc.sh",
                 "test/lint-runtime-symbols.sh", "test/lint-trust-separation.sh",
-                "test/lint-exact-fill.sh", "test/lint-stack-webpki.sh",
+                "test/lint-exact-fill.sh", "test/lint-invariants.sh",
+                "test/lint-stack-webpki.sh",
                 "test/lint-stack-quic.sh",
-                "test/lint-quic-partition.sh", "quic_stub_test"}
+                "test/lint-quic-partition.sh", "test/lint-quic-surface.sh",
+                "test/quic-builds.sh",
+                "quic_stub_test"}
 
 
 def catches_of(name):

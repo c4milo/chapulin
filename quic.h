@@ -31,7 +31,6 @@
 
 #include "cfg.h"
 #include "handshake_record.h"
-#include "quic_aes.h"
 #include "quic_gcm.h"
 #include "quic_keys.h"
 #include "quic_step.h"
@@ -93,11 +92,12 @@ typedef struct ch_quic {
     // docs/quic.md's state table lists neither this field nor error_code; the commit that
     // lands quic.c adds both rows.
     uint8_t levels_ready;
-    // The Initial level, both directions. RFC 9001 §5.2 fixes AEAD_AES_128_GCM there and
-    // §5.4.3 fixes AES-ECB header protection, so one aes_public_key holds that direction's
-    // packet protection key, packet protection IV and header protection key at once.
-    // ch_quic_initial_keys writes both, again after a Retry.
-    aes_public_key initial_rx, initial_tx;
+    // The Initial level: the Destination Connection ID RFC 9001 §5.2 derives every Initial
+    // key from, and no key. quic_initial.c builds the key each packet needs on its own
+    // stack, so none outlives a call, which is INV-26. Every long header carries these
+    // bytes in the clear. ch_quic_initial_keys writes both, again after a Retry.
+    uint8_t initial_dcid[CH_QUIC_DCID_MAX];
+    uint8_t initial_dcid_len;
     // The Handshake level. The packet protection key and IV are one value per direction;
     // the header protection key is its own, because §5.4 keeps it for the whole
     // connection (rfc9001.txt:1172-1174).
@@ -148,29 +148,29 @@ typedef struct ch_quic {
 // was drawn that a caller must wipe.
 int ch_quic_init(ch_quic *q, const ch_cfg *cfg);
 
-// Derives the Initial secrets from the caller's Destination Connection ID and RFC 9001
-// §5.2's printed salt, and installs the AEAD_AES_128_GCM packet protection key, the
-// packet protection IV and the AES-ECB header protection key of both directions
-// (rfc9001.txt:1051-1066). Appendix A.1 is the vector.
+// Stores the Destination Connection ID that RFC 9001 §5.2 derives the Initial secrets
+// from, beside its printed salt (rfc9001.txt:1051-1066), and marks both directions of the
+// Initial level ready. Appendix A.1 is the vector for what the packet calls then derive.
 //
 // The caller calls it once before it sends its first Initial packet, and again after a
 // Retry, because §5.2 changes the secrets then (rfc9001.txt:1092-1094): dcid is then the
 // Source Connection ID the server sent, which RFC 9000 §17.2.5.2 makes the new Destination
-// Connection ID. Rewriting both keys whole is not a key update, and it does not reset
+// Connection ID. Replacing the connection ID is not a key update, and it does not reset
 // q->initial_sealed, so one §6.6 count covers both key sets.
 //
 // Requires: q is initialized and its session is live; dcid points at dcid_len readable
-// bytes. A zero-length dcid is legal: §5.2 allows a zero-length Source Connection ID in a
-// Retry (rfc9001.txt:1098-1100).
+// bytes, read only when dcid_len is above 0. A zero-length dcid is legal: §5.2 allows a
+// zero-length Source Connection ID in a Retry (rfc9001.txt:1098-1100).
 //
-// Returns CH_OK, writes q->initial_rx and q->initial_tx whole, and sets both
-// CH_LEVEL_INITIAL bits in q->levels_ready. A call after ch_quic_discard at that level
-// sets them again, which is how a Retry reinstalls keys the caller had dropped.
+// Returns CH_OK, writes q->initial_dcid and q->initial_dcid_len, and sets both
+// CH_LEVEL_INITIAL bits in q->levels_ready. It derives and stores no key: ch_quic_seal and
+// ch_quic_open derive the one direction's key they need from these bytes at each packet,
+// which is INV-26. A call after ch_quic_discard at that level sets the bits again, which is
+// how a Retry reinstalls keys the caller had dropped.
 //
-// Returns CH_EINVAL and writes neither key when dcid_len is above AES_DCID_MAX, RFC 9000
-// §17.2's cap on a version 1 connection ID, or when the session is dead. The check runs
-// before either key is written, so a refusal leaves both as they were, the bits clear and
-// the session live.
+// Returns CH_EINVAL and writes neither field when dcid_len is above CH_QUIC_DCID_MAX, RFC
+// 9000 §17.2's cap on a version 1 connection ID, or when the session is dead. The check
+// runs first, so a refusal leaves both fields as they were and the session live.
 int ch_quic_initial_keys(ch_quic *q, const uint8_t *dcid, size_t dcid_len);
 
 // Delivers the n bytes that CRYPTO frames carried at one encryption level and runs the

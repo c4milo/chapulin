@@ -294,16 +294,18 @@ typedef struct {
 #define CH_LEVEL_HANDSHAKE 1
 #define CH_LEVEL_APPLICATION 2
 
-// The direction on_level_ready reports and aes_public_key_initial derives for: CH_KEY_READ
-// opens what the server sent, CH_KEY_WRITE protects what this client sends. RFC 9001 §5.1
-// gives each level separate secrets per direction (rfc9001.txt:1010-1012).
+// The two inputs the Initial derivation takes. CH_KEY_READ and CH_KEY_WRITE are the
+// direction on_level_ready reports and aes_public_key_initial derives for: read opens what
+// the server sent, write protects what this client sends, and RFC 9001 §5.1 gives each
+// level separate secrets per direction (rfc9001.txt:1010-1012). CH_QUIC_DCID_MAX caps
+// §5.2's other input and sizes ch_quic's initial_dcid: a version 1 connection ID is at most
+// 20 bytes and may be empty (rfc9000.txt:4991-4998, rfc9001.txt:1098-1100).
 #define CH_KEY_READ 0
 #define CH_KEY_WRITE 1
+#define CH_QUIC_DCID_MAX 20
 
-// The 1-RTT receive key set names are CH_QUIC_KEY_PREVIOUS, CH_QUIC_KEY_CURRENT and
-// CH_QUIC_KEY_NEXT, and they sit in quic_keys.h beside CH_QUIC_KEY_SETS, the count they
-// must agree with. quic.h includes that header, so a caller reading ch_quic_open's key_set
-// output sees all four.
+// quic_keys.h holds the three 1-RTT receive key set names and their count
+// CH_QUIC_KEY_SETS, and quic.h includes it, so ch_quic_open's key_set output has a name.
 
 // Largest encoded transport-parameters body ch_quic_init accepts. The ClientHello copies
 // those bytes unread into extension 0x39 (RFC 9001 §8.2, rfc9001.txt:1922-1924), so the cap

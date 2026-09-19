@@ -15,6 +15,26 @@ typedef struct {
     uint64_t seq;
 } fake_dir;
 
+// The key type quic_aes.h declares. This fixture gives it a body,
+// which the tree's own headers no longer do: quic_aes.h declares it
+// incomplete and quic_aes_key.h holds the body, so a library source
+// that does not include that header cannot declare one at all. The body
+// is here because the lines below take a pointer to one and write a
+// field of one, and semgrep --test needs a file it can parse.
+typedef struct {
+    uint8_t round_keys[176];
+} fake_round_keys;
+
+typedef struct {
+    fake_round_keys key;
+} aes_public_key;
+
+// A function pointer of the shape aes_encrypt_block has. The value
+// branch of inv-26-aes-public-keys-only exists for this: a pointer
+// that holds an aes_ entry, and a later call through the pointer that
+// names no aes_ symbol at all.
+typedef void (*block_fn)(const aes_public_key *k, const uint8_t *in, uint8_t *out);
+
 // ok: inv-18-no-global-mutable-state
 static const uint8_t table[4] = {1, 2, 3, 4};
 // ruleid: inv-18-no-global-mutable-state
@@ -38,6 +58,10 @@ int x509_verify_leaf(const uint8_t *list, size_t list_len, const uint8_t *ca_key
 long time(long *t);
 void *malloc(size_t n);
 void free(void *p);
+void aes_encrypt_block(const aes_public_key *k, const uint8_t *in, uint8_t *out);
+void gcm_seal(const aes_public_key *k, const uint8_t *nonce, const uint8_t *pt, size_t pt_len,
+              uint8_t *out, uint8_t *tag);
+void take_block_fn(block_fn f);
 
 static int helper(int x) {
     fake_dir d;
@@ -78,6 +102,39 @@ int use_everything(void) {
     x509_verify_leaf(buf, sizeof buf, buf, sizeof buf, buf, sizeof buf, 0, buf);
     // ruleid: inv-20-no-time-calls
     time(0);
+
+    // Two ways to make a key without calling anything. The rule reads
+    // neither, and it no longer needs to: in the tree this type is
+    // incomplete outside quic_aes_key.h's three readers, so both lines
+    // are a compiler error there rather than a pattern to match.
+    // ok: inv-26-aes-public-keys-only
+    aes_public_key uninitialized;
+    // ok: inv-26-aes-public-keys-only
+    aes_public_key k = {{{0}}};
+    // ruleid: inv-26-aes-public-keys-only
+    aes_encrypt_block(&k, buf, buf);
+    // ruleid: inv-26-aes-public-keys-only
+    gcm_seal(&uninitialized, buf, buf, 0, buf, buf);
+
+    // The name used as a value rather than called. Each of these three
+    // leaves the call branch nothing to match, so the value branch is
+    // what fires.
+    // ruleid: inv-26-aes-public-keys-only
+    block_fn fp = aes_encrypt_block;
+    // ruleid: inv-26-aes-public-keys-only
+    take_block_fn(&aes_encrypt_block);
+    // ruleid: inv-26-aes-public-keys-only
+    take_block_fn(aes_encrypt_block);
+    // The call through the pointer names no aes_ symbol, so no branch
+    // matches it. The line above is where the rule fires instead.
+    // ok: inv-26-aes-public-keys-only
+    fp(&k, buf, buf);
+    // A write to a field of a key the file already holds. No branch
+    // matches this either. In the tree it is a compiler error outside
+    // quic_aes_key.h's three readers, and inside them it is the shape
+    // docs/invariants.md INV-26 states as the review obligation.
+    // ok: inv-26-aes-public-keys-only
+    k.key.round_keys[0] = buf[0];
 
     // ruleid: inv-6-no-pkcs1
     return pkcs1_verify(0, 0) + helper(1);

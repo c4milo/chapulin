@@ -138,6 +138,52 @@ rules:
           patterns:
             - pattern-not: x509_verify_leaf
 
+  - id: inv-26-aes-public-keys-only
+    languages: [c]
+    severity: ERROR
+    message: >-
+      INV-26: AES exists for QUIC's public keys and nothing else. RFC
+      9001 fixes AES-128-GCM for Initial packets (§5.2), AES-128-ECB
+      for their header protection (§5.4.3) and AES-128-GCM under a
+      printed key for the Retry tag (§5.8), and every key those three
+      use is public. So quic_initial.c and quic_retry.c are the only
+      library sources that may name an aes_ or gcm_ entry; quic_aes.c
+      and quic_gcm.c are excluded as the definition sites. A use
+      anywhere else is a key from the TLS key schedule arriving at a
+      lookup-table cipher, and this tree then has a timing story to
+      defend (docs/decisions.md entry 6). Tripwire grade: this catches
+      honest drift by name, not a reintroduction under another name.
+      This rule reads calls and values alone. Building a key is the
+      compiler's to refuse: quic_aes.h declares aes_public_key
+      incomplete, quic_aes_key.h holds the body, and the three sources
+      above are the only ones that include it, which
+      `make lint-quic-surface` checks. docs/invariants.md INV-26 states
+      what that closes and what review still owes.
+    paths:
+      exclude: [test, proof, fuzz, spec, bench, bin, examples, quic_initial.c,
+                quic_retry.c, quic_aes.c, quic_gcm.c]
+    pattern-either:
+      # A call. `make lint-quic-surface` fails when a function, a
+      # function-like macro or a typedef in quic_aes.h or quic_gcm.h is
+      # named anything but aes_ or gcm_, so this prefix family matches
+      # a symbol either header gains tomorrow rather than assuming it.
+      - patterns:
+          - pattern: $F(...)
+          - metavariable-regex:
+              metavariable: $F
+              regex: ^(aes|gcm)_
+      # The name as a value rather than a call: &aes_encrypt_block, a
+      # function pointer initialized or assigned from the name, the
+      # name passed as an argument. The branch above misses all three,
+      # because the later call through that pointer binds $F to the
+      # pointer's own name. A direct call matches this branch as well,
+      # so semgrep reports one call twice.
+      - patterns:
+          - pattern: $F
+          - metavariable-regex:
+              metavariable: $F
+              regex: ^(aes|gcm)_
+
   - id: inv-6-no-pkcs1
     languages: [c]
     severity: ERROR

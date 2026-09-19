@@ -949,11 +949,11 @@ changes no GCM arithmetic.
 
 **The file work is wider than the algorithm work, and the first draft of this
 record said only the narrow half.** The rename splits the type, and that split
-changes `gcm.c`. `quic_aes.h:81-85` bundles a round-key schedule, a 12-byte IV
+changes `gcm.c`. `quic_aes_key.h:43-48` bundles a round-key schedule, a 12-byte IV
 and a second schedule for QUIC header protection into `aes_public_key`, and
 every GCM entry point takes it:
 
-    quic_aes.h:132    void aes_encrypt_block(const aes_public_key *k, const uint8_t in[AES_BLOCK],
+    quic_aes.h:130    void aes_encrypt_block(const aes_public_key *k, const uint8_t in[AES_BLOCK],
     quic_gcm.h:52     void gcm_seal(const aes_public_key *k, const uint8_t nonce[AES_IV], const uint8_t *aad,
     quic_gcm.h:70     int gcm_open(const aes_public_key *k, const uint8_t nonce[AES_IV], const uint8_t *aad,
 
@@ -993,8 +993,8 @@ without assuming host order.
 So the rename costs three declaration changes in `gcm.h` (`gcm_seal`,
 `gcm_open`, `gcm_ghash` each take `const aes_key *`), three call sites inside
 `gcm.c`, one change at every QUIC caller, which passes `&bundle->key`, **and
-the QUIC bundle's own two fields**. `quic_aes.h:44` closes the typedef
-`aes_key_schedule`, and `quic_aes.h:82` and `:84` declare
+the QUIC bundle's own two fields**. `quic_aes_key.h:40` closes the typedef
+`aes_key_schedule`, and `quic_aes_key.h:45` and `:47` declare
 `aes_key_schedule key;` and `aes_key_schedule hp;` inside `aes_public_key`. The
 typedef is renamed `aes_key`, moves to `aes.h`, and both fields take the new
 name. The patch's own body calls `aes_encrypt_block(k, ...)` with the bundle
@@ -1002,17 +1002,21 @@ type at `scratchpad/server/quic_gcm_new.c:98`, `:150` and `:168`, so those three
 lines move with it. The landing order below assumes this is a type change rather
 than a rename, because it is one.
 
-**A `TRANSPORT=quic` session pays for round keys AES-128 never fills, and the
-cost is measured.** `AES_ROUND_KEYS` goes from 11 to 15, and `ch_quic` stores
-two `aes_public_key` values: `quic.h:100` declares
-`aes_public_key initial_rx, initial_tx;`. On the host, at the tree's
-`CFLAGS`: one schedule goes 176 to 241 bytes, one bundle goes 364 to 494, and
-two bundles go **728 to 988** — **260 bytes** of SRAM per QUIC session, against
-a measured client `ch_tls` of 1,144. In the word form it is 272. Two ways out,
-both **unmeasured**: give `aes_key` a `CH_AES_ROUND_KEYS` that a
-`TRANSPORT=quic` build without `ROLE=server` sets to 11, or keep the QUIC bundle
-on its own 11-round type. Open question fifteen asks which, and "Bounds that
-need measuring" carries the row.
+**A `TRANSPORT=quic` build pays for round keys AES-128 never fills, and the
+cost is measured — but it is now stack, not SRAM.** `AES_ROUND_KEYS` goes from
+11 to 15. On the host, at the tree's `CFLAGS`: one schedule goes 176 to 241
+bytes and one bundle goes 364 to 494. The paragraphs below were written when
+`ch_quic` stored two bundles and the cost was **728 to 988** bytes of session
+SRAM, **260 bytes** per QUIC session against a measured client `ch_tls` of
+1,144. INV-26 removed that storage: `ch_quic` now declares `initial_dcid` and
+`initial_dcid_len` and no key, and each packet call builds one bundle on its
+own stack. So the 130 extra bytes land in a frame rather than in the session,
+against `lint-stack`'s 2,560-byte budget, and the SRAM row is gone.
+The two ways out are **unmeasured** and still available if a frame ever needs
+them: give `aes_key` a `CH_AES_ROUND_KEYS` that a `TRANSPORT=quic` build
+without `ROLE=server` sets to 11, or keep the QUIC bundle on its own 11-round
+type. Open question fifteen asks which, and "Bounds that need measuring"
+carries the row.
 
 The rename satisfies both halves of INV-27 (`docs/invariants.md:279`), which
 claims that every root file only a `TRANSPORT=quic` build compiles is named
@@ -2334,7 +2338,7 @@ lands. None of them exists today.
 | The stack frame of `srv_handshake`'s equivalent of `ch_handshake` | the same | `ch_handshake` measures 688 today and 784 hash-agile against a 2560-byte budget. A server holds a `client_hello` and a `selection` in the same frame, and neither struct exists yet. |
 | Code size and speed of a constant-time AES, bitsliced and masked, at both key sizes, on rv32 | `bench/insn_driver.c` and `bench/sram.sh` | It decides which one to write, and whether a server fits the target at all. |
 | The per-record cost of AES key expansion against stored round keys | the same | One AES-256 round-key array is 15 x 16 = 240 bytes and the struct that holds it measures 241; two of them are 482, against a measured client `ch_tls` of 1,144. v1 stores the key and expands per record, because SRAM is the scarce resource; `CH_AES_KEY_SCHEDULE_CACHED` trades those bytes back. Which default is right is **unmeasured**. |
-| Whether a `TRANSPORT=quic` build without `ROLE=server` carries the 15-round schedule | `bench/sram.sh` with a QUIC row | Measured: two `aes_public_key` bundles go 728 to 988 bytes, so a QUIC session pays 260 bytes for round keys AES-128 never fills. The two ways out are a build-conditional `CH_AES_ROUND_KEYS` and a separate 11-round QUIC type, and neither is measured. |
+| Whether a `TRANSPORT=quic` build without `ROLE=server` carries the 15-round schedule | `make lint-stack TRANSPORT=quic` | Measured: one `aes_public_key` bundle goes 364 to 494 bytes. Since INV-26 `ch_quic` stores no bundle, so the cost is 130 bytes of stack in each call that builds a key, against a 2,560-byte budget, and no SRAM. The two ways out are a build-conditional `CH_AES_ROUND_KEYS` and a separate 11-round QUIC type, and neither is measured. |
 | Every new and every re-aimed CBMC launch line, including the eight the hash change touches | `/usr/bin/time -v` under `proof/run.sh`'s exact flags | `docs/proofs.md` requires the measurement before a launch line may be committed. `record` already stands at 830 s and 3.0 GB (`proof/run.sh:503`) against the fast pool's slowest harness at 1,034 s (`proof/run.sh:505`). |
 | The CI matrix cost of a sixth axis | a CI run | **Unmeasured.** |
 
@@ -2702,18 +2706,20 @@ already settled, so they are in "Bounds that need measuring" rather than here.
 
 **Fourteen: are `aes_key`'s round keys bytes or `uint32_t` words?** The byte
 form measures `sizeof` 241 and `_Alignof` 1, matches the existing
-`aes_key_schedule` (`quic_aes.h:40-44`) and keeps `CLAUDE.md:142-143`'s
+`aes_key_schedule` (`quic_aes_key.h:36-40`) and keeps `CLAUDE.md:142-143`'s
 no-host-endianness rule without a sentence. The word form measures 244 and 4,
 three bytes more per schedule, and is faster on a 32-bit core; taking it means
 the record must state how `aes.c` fills those words byte by byte. The record
 takes bytes.
 
 **Fifteen: does a `TRANSPORT=quic` build without `ROLE=server` carry the
-15-round AES-256 schedule?** Measured: two `aes_public_key` bundles go from 728
-to 988 bytes, so a QUIC session pays **260 bytes** of SRAM for round keys
-AES-128 never fills, against a measured client `ch_tls` of 1,144. The two ways
-out are a build-conditional `CH_AES_ROUND_KEYS` set to 11 for that build, and a
-separate 11-round type for the QUIC bundle. Both are **unmeasured**.
+15-round AES-256 schedule?** Measured: one `aes_public_key` bundle goes from
+364 to 494 bytes. The question used to cost SRAM, because `ch_quic` stored two
+bundles; INV-26 removed that storage, so a QUIC build now pays **130 bytes** of
+stack in each call that builds a key, against `lint-stack`'s 2,560-byte
+budget. The two ways out are a build-conditional
+`CH_AES_ROUND_KEYS` set to 11 for that build, and a separate 11-round type for
+the QUIC bundle. Both are **unmeasured**.
 
 **Sixteen: does `ch_srv_accept` call `epoch_init` to refuse a configuration
 that sets `epoch_load` or `epoch_store`?** `epoch_init` (`tls.c:17`) is the one

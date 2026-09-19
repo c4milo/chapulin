@@ -3,9 +3,11 @@
 // RFC 9001 prints or derives from public bytes: Initial packets (§5.2)
 // and the Retry integrity tag (§5.8). Only a TRANSPORT=quic build
 // compiles it, and the calls take an aes_public_key and nothing else,
-// so no key from the TLS key schedule reaches this AEAD. INV-26 in
-// docs/invariants.md states that rule and names the checks; quic_aes.h
-// states it at the key type.
+// so no key from the TLS key schedule reaches this AEAD. The type is
+// incomplete here: every call below takes a pointer, so this header
+// needs no body, and a file that includes it cannot build a key at all.
+// INV-26 in docs/invariants.md states that rule and names the checks;
+// quic_aes.h states it at the key type.
 //
 // Every QUIC level above Initial runs ChaCha20-Poly1305 through
 // aead.[ch] instead, because that is the cipher suite this client

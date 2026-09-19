@@ -771,7 +771,39 @@ launch fast:3 full x509der_ecdsa 452 "fill_nondet.0:449,ct_memeq.0:68" buf.c ct.
 launch fast:4 full x509parse_ecdsa 260 "fill_nondet.0:257,ct_memeq.0:68" buf.c ct.c
 launch slow:8 full x509parse 844 "fill_nondet.0:841,ct_memeq.0:68" buf.c ct.c
 launch fast full chacha20 165 "chacha20_xor.1:5"
+# The AES-128 forward cipher and the two aes_public_key constructors,
+# TRANSPORT=quic. HKDF is a contract stub (proof/quic_aes_stubs.h), so
+# this formula holds the key schedule and the cipher and not five HMAC
+# derivations; that header states what the composition gives up.
+# Measured, these flags: 377 properties, 23 s, 0.67 GB peak.
+launch fast full quic_aes 45 "fill_nondet.0:177" -DCH_TRANSPORT_QUIC
+# AEAD_AES_128_GCM's memory safety, its all-or-nothing refusal, and
+# GHASH on its own. The forward cipher is a contract stub
+# (proof/quic_gcm_stubs.h); the unwindset names hash_data and
+# counter_mode because both loop on a symbolic count, and without them
+# each unwinds to the global 130 and carries 130 copies of SP
+# 800-38D's 128-step multiply. Measured on an idle development machine
+# (arm64 macOS, the pinned cbmc, PROVE_NO_CACHE=1 /usr/bin/time -l):
+# quic_gcm_safety 388 properties, 269 s, 2.3 GB peak; quic_gcm_refusal
+# 393 properties, 48 s, 1.0 GB; quic_ghash 386 properties, 260 s,
+# 1.7 GB. Neither proves a functional or authenticity property; the two
+# harnesses that state those carry no launch line, below.
+launch slow:3 full quic_gcm_safety 130 "fill_nondet.0:177,hash_data.1:3,counter_mode.1:3" --object-bits 11 ct.c -DCH_TRANSPORT_QUIC -DCH_GCM_PT_MAX=32 -DCH_GCM_AAD_MAX=32
+launch slow:1 full quic_gcm_refusal 130 "fill_nondet.0:177,hash_data.1:3,counter_mode.1:3" --object-bits 11 ct.c -DCH_TRANSPORT_QUIC -DCH_GCM_PT_MAX=32 -DCH_GCM_AAD_MAX=32
+launch slow:2 full quic_ghash 130 "fill_nondet.0:257,hash_data.1:17" ct.c -DCH_TRANSPORT_QUIC
 launch fast full poly1305 85 "blocks.0:8" ct.c
+# quic_gcm and quic_gcm_forge have no launch line, for the reason
+# aead_inplace has none: neither formula returned a verdict, and an
+# unconverged launch line proves nothing (docs/proofs.md). Measured with
+# the flags above, at --unwind 130 and "fill_nondet.0:177": quic_gcm ran
+# 2,144 s under kissat with no verdict, and quic_gcm_forge passed ten
+# minutes at 2.6 GB resident and climbing. The unwind is what costs: SP
+# 800-38D §6.3's multiply is 128 steps per block, gcm_seal and gcm_open
+# each run it once per block plus twice more, and both harnesses run the
+# whole pipeline twice over symbolic data. Both harnesses are written and
+# reviewed, so adding the lines is the whole job once the formulas
+# converge -- the likely next step is the split aead needed, one property
+# per formula, and a bound below one block.
 launch fast full buf 100 ""
 # handshake_record on its own, so the two drivers can stub it
 # (https://github.com/c4milo/chapulin/issues/37). Before this harness,

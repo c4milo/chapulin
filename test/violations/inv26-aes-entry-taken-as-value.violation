@@ -1,0 +1,25 @@
+invariant: INV-26
+file: quic_packet.c
+catches: test/lint-invariants.sh
+reason: the 1-RTT open path never calls an aes_ entry by name. It stores
+  the address of aes_encrypt_block_hp in a function pointer and calls
+  through the pointer, so the call branch of
+  inv-26-aes-public-keys-only binds its metavariable to mask_block and
+  matches nothing. The value branch is what fires, on
+  &aes_encrypt_block_hp. Without that branch the header protection key
+  of a 1-RTT packet, which quic_hp_key_init derives from a TLS traffic
+  secret, arrives at a lookup-table cipher and every check stays green.
+  quic_packet.c is not one of the two callers the rule admits. Semgrep
+  reads source text, so the edit needs no cast that compiles and no
+  include; the rule matches the name either way.
+
+--- old
+                                 uint8_t *key_set, uint64_t *pn, size_t *pt_len) {
+    // CH_QUIC_STUB: not implemented yet; this call fails closed and writes nothing.
+    (void)sets;
+--- new
+                                 uint8_t *key_set, uint64_t *pn, size_t *pt_len) {
+    // CH_QUIC_STUB: not implemented yet; this call fails closed and writes nothing.
+    void (*mask_block)(const void *, const uint8_t *, uint8_t *) = &aes_encrypt_block_hp;
+    mask_block(h, pkt, pkt);
+    (void)sets;

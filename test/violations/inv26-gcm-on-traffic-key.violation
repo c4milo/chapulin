@@ -1,0 +1,26 @@
+invariant: INV-26
+file: quic_packet.c
+catches: test/lint-invariants.sh
+reason: the 1-RTT open path calls gcm_open on a key set the TLS key
+  schedule derived. INV-26 names two symbol prefixes, aes_ and gcm_, and
+  the mutants beside this one cover the aes_ half; this covers the gcm_
+  half, so both branches of inv-26-aes-public-keys-only are known to
+  fire. quic_packet.c is not one of the two callers the rule admits, and
+  a quic_keys set is exactly the traffic key the invariant exists to keep
+  away from a lookup-table cipher. Semgrep reads source text, so the edit
+  needs no cast that compiles and no include; the rule matches the call
+  by name either way.
+
+--- old
+int quic_packet_open_handshake(const quic_keys *k, const quic_hp_key *h, uint8_t *pkt,
+                               size_t pkt_len, size_t pn_off, uint64_t largest_pn, uint64_t *pn,
+                               size_t *pt_len) {
+    // CH_QUIC_STUB: not implemented yet; this call fails closed and writes nothing.
+    (void)k;
+--- new
+int quic_packet_open_handshake(const quic_keys *k, const quic_hp_key *h, uint8_t *pkt,
+                               size_t pkt_len, size_t pn_off, uint64_t largest_pn, uint64_t *pn,
+                               size_t *pt_len) {
+    // CH_QUIC_STUB: not implemented yet; this call fails closed and writes nothing.
+    gcm_open(k, pkt, pkt, pn_off, pkt, pkt_len, pkt, pkt);
+    (void)k;

@@ -3,6 +3,8 @@ import Spec.Sha256
 import Spec.Hkdf
 import Spec.ChaCha
 import Spec.Poly
+import Spec.Aes
+import Spec.Gcm
 import Spec.Aead
 import Spec.Record
 import Spec.X25519
