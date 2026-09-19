@@ -22,6 +22,7 @@
 
 #include "ch_assert.h"
 #include "quic_aes.c"
+#include "quic_keys.h"
 
 noreturn void ch_assert_fail(const char *cond, const char *file, int line) {
     (void)fprintf(stderr, "ASSERT %s:%d: %s\n", file, line, cond);
@@ -227,9 +228,64 @@ static void test_dcid_bounds(void) {
     CHECK(memcmp(&read_side, &write_side, sizeof read_side) != 0);
 }
 
+// RFC 9001 Appendix A.5 (rfc9001.txt:2591-2610): the four values a
+// server derives from one application write secret under the
+// TLS_CHACHA20_POLY1305_SHA256 suite, which is the suite this client
+// offers at every level above Initial. The RFC prints the secret and
+// all four outputs, so this checks quic_keys.c's three calls end to
+// end rather than against each other.
+static void test_appendix_a5_keys(void) {
+    static const uint8_t secret_in[SHA256_LEN] = {0x9a, 0xc3, 0x12, 0xa7, 0xf8, 0x77, 0x46, 0x8e,
+                                                  0xbe, 0x69, 0x42, 0x27, 0x48, 0xad, 0x00, 0xa1,
+                                                  0x54, 0x43, 0xf1, 0x82, 0x03, 0xa0, 0x7d, 0x60,
+                                                  0x60, 0xf6, 0x88, 0xf3, 0x0f, 0x21, 0x63, 0x2b};
+    static const uint8_t want_key[AEAD_KEY] = {0xc6, 0xd9, 0x8f, 0xf3, 0x44, 0x1c, 0x3f, 0xe1,
+                                               0xb2, 0x18, 0x20, 0x94, 0xf6, 0x9c, 0xaa, 0x2e,
+                                               0xd4, 0xb7, 0x16, 0xb6, 0x54, 0x88, 0x96, 0x0a,
+                                               0x7a, 0x98, 0x49, 0x79, 0xfb, 0x23, 0xe1, 0xc8};
+    static const uint8_t want_iv[AEAD_NONCE] = {0xe0, 0x45, 0x9b, 0x34, 0x74, 0xbd,
+                                                0xd0, 0xe4, 0x4a, 0x41, 0xc1, 0x44};
+    static const uint8_t want_hp[CHACHA20_KEY] = {0x25, 0xa2, 0x82, 0xb9, 0xe8, 0x2f, 0x06, 0xf2,
+                                                  0x1f, 0x48, 0x89, 0x17, 0xa4, 0xfc, 0x8f, 0x1b,
+                                                  0x73, 0x57, 0x36, 0x85, 0x60, 0x85, 0x97, 0xd0,
+                                                  0xef, 0xcb, 0x07, 0x6b, 0x0a, 0xb7, 0xa7, 0xa4};
+    static const uint8_t want_ku[SHA256_LEN] = {0x12, 0x23, 0x50, 0x47, 0x55, 0x03, 0x6d, 0x55,
+                                                0x63, 0x42, 0xee, 0x93, 0x61, 0xd2, 0x53, 0x42,
+                                                0x1a, 0x82, 0x6c, 0x9e, 0xcd, 0xf3, 0xc7, 0x14,
+                                                0x86, 0x84, 0xb3, 0x6b, 0x71, 0x48, 0x81, 0xf9};
+    uint8_t secret[SHA256_LEN];
+    quic_keys k;
+    quic_hp_key h;
+
+    memcpy(secret, secret_in, sizeof secret);
+    quic_keys_init(&k, secret);
+    CHECK(memcmp(k.key, want_key, sizeof want_key) == 0);
+    CHECK(memcmp(k.iv, want_iv, sizeof want_iv) == 0);
+
+    quic_hp_key_init(&h, secret);
+    CHECK(memcmp(h.key, want_hp, sizeof want_hp) == 0);
+
+    // The update writes the new secret back over its argument and
+    // re-derives the key set from it, so both are checked: the secret
+    // against the RFC's ku, and the key set against a fresh derivation
+    // from that ku. A build that re-derived from the old secret would
+    // pass the first check and fail the second.
+    quic_keys_update(secret, &k);
+    CHECK(memcmp(secret, want_ku, sizeof want_ku) == 0);
+    quic_keys expect;
+    quic_keys_init(&expect, want_ku);
+    CHECK(memcmp(k.key, expect.key, sizeof expect.key) == 0);
+    CHECK(memcmp(k.iv, expect.iv, sizeof expect.iv) == 0);
+
+    // §6.1 does not update the header protection key, so the value the
+    // connection started with is still the one to use.
+    CHECK(memcmp(h.key, want_hp, sizeof want_hp) == 0);
+}
+
 int main(void) {
     test_fips197_blocks();
     test_appendix_a1_keys();
+    test_appendix_a5_keys();
     test_appendix_header_masks();
     test_retry_key();
     test_dcid_bounds();

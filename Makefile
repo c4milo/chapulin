@@ -622,9 +622,9 @@ bin/quic_stub_test: test/quic_stub_test.c $(QUIC_SRCS) hkdf.c sha256.c ct.c $(HD
 # INV-26 keeps the two constructors the only public way to write one, so
 # quic_aes.c is not on the line below. A later lane that adds a vector
 # section for another quic source links that source here.
-bin/quic_test: test/quic_vectors.c quic_gcm.c hkdf.c sha256.c ct.c $(HDRS) $(TESTH)
+bin/quic_test: test/quic_vectors.c quic_gcm.c quic_keys.c hkdf.c sha256.c ct.c $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -DCH_TRANSPORT_QUIC -I. -o $@ test/quic_vectors.c quic_gcm.c hkdf.c sha256.c ct.c
+	$(CC) $(CFLAGS) -DCH_TRANSPORT_QUIC -I. -o $@ test/quic_vectors.c quic_gcm.c quic_keys.c hkdf.c sha256.c ct.c
 # SHA-512 and SHA-384 vectors and the streaming contract. Its own binary,
 # out of the packaged object like sha3: only TRUST=webpki links sha512.c.
 bin/sha512_test: test/sha512_test.c sha512.c sha512_compress.c $(HDRS) $(TESTH)

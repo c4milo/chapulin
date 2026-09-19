@@ -86,22 +86,11 @@ static int out_untouched(void) {
 // bin/quic_test checks them against SP 800-38D and RFC 9001 Appendix A
 // instead, and test/quic_gcm_tests.h holds those vectors.
 
-static void test_keys(void) {
-    quic_keys keys;
-    quic_hp_key hp;
-    uint8_t secret[SHA256_LEN];
-    memset(&keys, POISON, sizeof keys);
-    memset(&hp, POISON, sizeof hp);
-    memset(secret, POISON, sizeof secret);
-
-    quic_keys_init(&keys, secret);
-    CHECK(untouched(&keys, sizeof keys));
-    quic_hp_key_init(&hp, secret);
-    CHECK(untouched(&hp, sizeof hp));
-    quic_keys_update(secret, &keys);
-    CHECK(untouched(secret, sizeof secret));
-    CHECK(untouched(&keys, sizeof keys));
-}
+// quic_keys.c carries no section here now. Its three entries are
+// implemented, so quic_keys_init and quic_hp_key_init write their whole
+// object and quic_keys_update rewrites the secret it is given, which is
+// the opposite of what this binary measures. bin/quic_test checks them
+// against RFC 9001 Appendix A.5's four printed values instead.
 
 // The packet-protection calls that write bytes or report a length.
 static void test_packet_pieces(void) {
@@ -283,7 +272,6 @@ static void test_public_bytes(void) {
 }
 
 int main(void) {
-    test_keys();
     test_packet_pieces();
     test_packet_calls();
     test_initial_and_retry();

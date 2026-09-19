@@ -777,6 +777,12 @@ launch fast full chacha20 165 "chacha20_xor.1:5"
 # derivations; that header states what the composition gives up.
 # Measured, these flags: 377 properties, 23 s, 0.67 GB peak.
 launch fast full quic_aes 45 "fill_nondet.0:177" -DCH_TRANSPORT_QUIC
+# The three RFC 9001 §5.1 derivations and the §6.1 key update. HKDF is
+# the same contract stub quic_aes uses, so this formula holds the
+# framing of the three calls and not four HMAC derivations; ct.c is
+# compiled in because quic_keys_update wipes its own copy of the new
+# secret. Measured, these flags: 79 properties, 0.24 s, 0.02 GB peak.
+launch fast full quic_keys 45 "fill_nondet.0:177" ct.c -DCH_TRANSPORT_QUIC
 # AEAD_AES_128_GCM's memory safety, its all-or-nothing refusal, and
 # GHASH on its own. The forward cipher is a contract stub
 # (proof/quic_gcm_stubs.h); the unwindset names hash_data and
