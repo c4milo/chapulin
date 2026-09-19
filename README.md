@@ -473,14 +473,17 @@ secrets and MACs and never opens a record.
   The same pass counts the conditional branches each compiler emits
   — `b<cond>`, `cbz`, `cbnz` and IT blocks on arm, `beq`, `bne` and
   the compare-with-zero forms on mips, the six base branches and the
-  compressed pair on rv32 — in the twelve arithmetic files under the
-  record layer, and holds each file at a ceiling measured per
-  compiler. Those ceilings are public loop control, not zero: the
-  block loops, x25519's ladder, Keccak's counters and softmul's fixed
-  iterations. So the gate holds that no count grows, not that no
+  compressed pair on rv32 — in the sixteen arithmetic files under the
+  record layer, the twelve on the TLS path and the four AES and GCM
+  sources a `TRANSPORT=quic` build compiles, and holds each file at a
+  ceiling measured per compiler. Those ceilings are public loop
+  control, not zero: the block loops, x25519's ladder, Keccak's
+  counters and softmul's fixed iterations. So the gate holds that no
+  count grows, not that no
   branch exists, and what the ceilings record is that the
-  compare-carries in `ct_widemul_opaque` and the sign masks in
-  `ct_widemul_s` and `poly1305_final` compile to a predicated
+  compare-carries in `ct_widemul_opaque`, the sign masks in
+  `ct_widemul_s` and `poly1305_final`, and the two select masks in
+  `quic_gcm.c`'s `multiply_by_subkey` compile to a predicated
   instruction, `sltu` or a shift under every compiler measured --
   each compiler's choice, with no check on it until the count
   ([#141](https://github.com/c4milo/chapulin/issues/141)).
@@ -488,7 +491,10 @@ secrets and MACs and never opens a record.
   the final select as an `if` on the last limb's sign and every spec's
   count rises by one; `inv16-widemul-s-sign-branch` does the same to
   `ct_widemul_s`, and clang lowers it back to the mask while every gcc
-  emits two branches in x25519, so only the gcc gate objects. What is
+  emits two branches in x25519, so only the gcc gate objects;
+  `inv16-ghash-subkey-select-branch` writes `multiply_by_subkey`'s
+  first mask as an `if` on the accumulator bit, and every clang
+  spec's count for `quic_gcm.c` rises. What is
   left is the 32-to-32 multiply, which ARM documents as single-cycle
   on the M3. mips32r2 does not document its own, so on that core the
   decomposition narrows the exposure rather than closing it; `ct.h`

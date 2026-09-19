@@ -1,0 +1,21 @@
+invariant: INV-26
+file: ct.h
+catches: test/quic-builds.sh
+reason: the AES-GCM suite build stops needing CH_NATIVE_AES, so
+  __ARM_FEATURE_AES or __AES__ alone decides that a traffic key may go to
+  the AES instructions. Those macros say the instructions exist. Neither
+  says their latency is independent of their operands, and the
+  architectures do not promise it either, which is why Arm publishes
+  FEAT_DIT and Intel publishes DOITM. ct.h refuses the same inference for
+  the widening multiply and asks the build for CH_NATIVE_WIDEMUL
+  (https://github.com/c4milo/chapulin/issues/53); this edit drops the
+  matching rule for AES, and nothing else in the tree asks anyone to
+  state the timing.
+
+--- old
+#ifndef CH_NATIVE_AES
+#error "CH_SUITE_AES_GCM needs -DCH_NATIVE_AES: the build asserts the timing (quic_aes_hw.c)"
+#endif
+#endif
+--- new
+#endif

@@ -519,11 +519,31 @@ checked on the architecture the runner has: a run on an ARMv8 host exercises
 the `vaeseq_u8` arm and leaves the AES-NI arm compiled but unrun, and the
 reverse on x86-64. Both arms are exercised only across both CI legs.
 
+None of the three rows is a timing measurement. Every entry above compares
+bytes, and no check in this tree times an AES instruction or a table lookup.
+What the rows do carry is a branch count: `quic_aes.c`, `quic_aes_soft.c`,
+`quic_aes_extern.c` and `quic_gcm.c` are in `BRANCH_SRCS`, so a compiler that
+lowers one of their masked selects to a conditional branch fails
+`lint-wide-multiply`. `quic_aes_hw.c` is not and cannot be: every spec targets
+a core without the AES instructions, where that file is its own `#error`.
+
+So whether an AES instruction runs in constant time is a claim this tree never
+checks. It asks the build to make it instead. `-DCH_SUITE_AES_GCM` is how a
+build says it carries a TLS cipher suite whose AEAD is AES-GCM, and therefore
+hands AES a traffic key; `ct.h` refuses that build unless it also takes
+`AES=hw` and defines `CH_NATIVE_AES`, the build's own assertion about the part.
+`__ARM_FEATURE_AES` and `__AES__` do not carry it -- they say the instructions
+exist -- and `ct.h` refuses the same inference for the widening multiply
+([#53](https://github.com/c4milo/chapulin/issues/53)). INV-26 in
+docs/invariants.md states what that build would owe and what is already in
+place for it.
+
 **What the axis does not change.** INV-26 still bounds which keys reach this
-cipher, under every `AES` value. An AES instruction is constant time — it takes
-no table and its latency does not depend on its operands — so an `AES=hw` build
-carries no timing trade where `AES=soft` does, and that is the property
-`docs/decisions.md` entry 6 says a secret-key AES suite would need. But no key
+cipher, under every `AES` value. An AES instruction takes no table, so an
+`AES=hw` build carries no S-box lookup where `AES=soft` does; whether its
+latency depends on its operands is the claim `CH_NATIVE_AES` asserts above, and
+that property is what `docs/decisions.md` entry 6 says a secret-key AES suite
+would need. But no key
 from the TLS key schedule reaches `quic_aes.c` today whatever the build, and
 lifting that bound is a separate change with its own gates, not a consequence
 of this one. An `AES=extern` build cannot even state its timing: what

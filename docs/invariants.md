@@ -769,6 +769,18 @@ which convention holds them.
   `keysched.c` derives is passed to AES, and AES is never a cipher
   suite. No field of `ch_quic` holds an AES key, and no AES key outlives
   the call that built it.
+
+  One build would break that claim, and it does not compile. A TLS cipher
+  suite whose AEAD is AES-GCM encrypts application data under
+  `hkdf_expand_label(secret, "key", ...)` over a traffic secret, which is
+  the one thing this invariant says AES never sees.
+  `-DCH_SUITE_AES_GCM` is how a build would declare such a suite, and
+  `ct.h` refuses it unless the build also takes `AES=hw` and asserts
+  `CH_NATIVE_AES`. So the claim above holds for every build that compiles
+  today, and the rest of this entry says what the refused build would owe
+  and what is already in place for it. `docs/server.md`, "AES-GCM becomes a
+  cipher suite carrying user data, in two key sizes", is the design
+  record.
 - **Mechanism.** No stored key is the first part, and the compiler is
   the second.
 
@@ -853,12 +865,89 @@ which convention holds them.
   expansion and requires `bin/aes_equiv_test` to fail, which is what
   holds the path no proof reaches (docs/quic.md, "What the AES axis
   proves").
+
+  **What a secret AES key would need, and what is in place.** The entry
+  above used to say only that moving these files out of `WIDEMUL_PUBLIC`
+  was a diff a reviewer looks for. Four of the five have moved, and the
+  rest of the list is here so the refused build's bill is written down
+  rather than rediscovered.
+
+  *One implementation, not three.* `AES=soft` reads a 256-byte S-box at an
+  index computed from the key. `aes_expand_round_keys` substitutes the
+  key's own bytes before a block runs, so the leak is there before any
+  plaintext exists, and `sub_bytes` substitutes `counter ^ round_key` once
+  per round. `gcm_ghash` inherits it: the hash subkey H is
+  `aes_encrypt_block` of a zero block, so an `AES=soft` build leaks H
+  through the same table even though `multiply_by_subkey` is branchless
+  and index-free. `AES=extern` cannot state its timing at all, because
+  what `ch_aes_block` costs belongs to the peripheral. So `AES=hw` is the
+  only value a secret key may take, and `ct.h` is where that is written:
+  `-DCH_SUITE_AES_GCM` without `CH_AES_HW` is a compile error, not a
+  silent fall back to the default.
+
+  *The instruction's timing is asserted, not detected.* `__ARM_FEATURE_AES`
+  and `__AES__` say the AES instructions exist. Neither says their latency
+  is independent of their operands, and the architectures do not promise
+  it either -- Arm publishes FEAT_DIT and Intel publishes DOITM because
+  the base architectures leave it to the implementation. `ct.h` already
+  refuses that inference for the widening multiply and asks the build for
+  `CH_NATIVE_WIDEMUL` instead
+  ([#53](https://github.com/c4milo/chapulin/issues/53)). The AES path
+  follows it: `CH_NATIVE_AES` is the build's assertion, firmware defines
+  it only with a vendor statement, and `ct.h` refuses
+  `-DCH_SUITE_AES_GCM` without it. This is an assertion and not a check,
+  and it is the weakest link in the list; what it buys is that the claim
+  is written in the image's build files by someone who can answer for it,
+  rather than inferred from a macro that does not carry it.
+
+  *The codegen gates now measure these files.* `quic_aes.c`,
+  `quic_aes_soft.c`, `quic_aes_extern.c` and `quic_gcm.c` moved from
+  `WIDEMUL_PUBLIC` into `WIDEMUL_CEILING` at 0, and into `BRANCH_SRCS`
+  with a measured branch count per spec in `BRANCH_CEILING`. Before that
+  no gate compiled them, so nothing held `multiply_by_subkey`'s two masks
+  to a branchless lowering -- the same select `lint-wide-multiply` holds
+  for `poly1305_final` and `cswap`. `quic_aes_hw.c` stays in
+  `WIDEMUL_PUBLIC` because it cannot join: every spec targets a core
+  without the AES instructions, where the file is its own `#error`.
+  `test/aes_equiv_test.c`, the published vectors in `bin/quic_test_hw` and
+  the Wycheproof AES-GCM suite on that leg are what hold it, and none of
+  them is a timing measurement.
+
+  *Key material is wiped where a secret could sit.* `quic_gcm.c` wipes the
+  hash subkey, the running multiple in the GF(2^128) multiply, the
+  keystream block, the tag mask and the tag it computed for comparison;
+  `quic_aes_hw.c` wipes its key-schedule word and its cipher state. Two
+  places deliberately hold no wipe. `quic_aes_soft.c` holds none because
+  `ct.h` keeps every secret key away from it, so the stores would cost a
+  device something for nothing. `aes_public_key_initial` holds none
+  because it derives the Initial keys and nothing else, and those are
+  public under every build. Nothing in this tree checks that a wipe is
+  present; review does.
+
+  *The round keys themselves are still the caller's.* The round keys live
+  in an `aes_public_key` on a `quic_initial.c` or `quic_retry.c` stack
+  frame, and both files are stubs today, so there is no frame to wipe and
+  no entry that wipes one. The commit that implements them owes that call.
 - **Check.** The compiler, `make lint-quic-surface`,
-  `make lint-trust-separation`, and a
+  `make lint-trust-separation`, `make lint-wide-multiply`, and a
   Semgrep tripwire (`inv-26-aes-public-keys-only`) over every library
   source but `quic_initial.c` and `quic_retry.c`, the two permitted
   callers, with `quic_aes.c`, `quic_gcm.c` and the three AES
   implementations excluded as the definition sites.
+
+  What `ct.h` refuses, and `test/quic-builds.sh` is the catch target for
+  all three lines: `-DCH_SUITE_AES_GCM` without `CH_AES_HW`, and
+  `-DCH_SUITE_AES_GCM` without `CH_NATIVE_AES`. The script compiles one
+  translation unit that reads `ct.h` and nothing else, four times -- the
+  build that states both must compile, and each refusal is checked on its
+  own so a build that dropped one cannot hide behind the other.
+  `inv26-aes-suite-without-hardware.violation` deletes the first `#error`
+  and `inv26-aes-suite-without-vendor-statement.violation` the second, and
+  each requires that script to fail.
+  `inv16-ghash-subkey-select-branch.violation` writes
+  `multiply_by_subkey`'s mask as an `if` on the accumulator bit and
+  requires `test/lint-wide-multiply.sh` to fail, which is what the new
+  `BRANCH_SRCS` entries buy.
 
   What the compiler refuses, in any source that does not include
   `quic_aes_key.h`: declaring an `aes_public_key`, declaring an array of

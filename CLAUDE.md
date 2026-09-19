@@ -131,8 +131,12 @@ Home: github.com/c4milo.
   however it is spelled. `ch_quic` stores no key: it keeps the
   Destination Connection ID and each packet call derives what it needs on
   its own stack. INV-26 states the rule and what review still owes, the
-  Semgrep rule holds the calls, `.violation` mutants prove each check
-  fires, and both files sit in `WIDEMUL_PUBLIC`.
+  Semgrep rule holds the calls, and `.violation` mutants prove each check
+  fires. `quic_aes.c`, `quic_aes_soft.c`, `quic_aes_extern.c` and
+  `quic_gcm.c` sit in `WIDEMUL_CEILING` and `BRANCH_SRCS`, so a compiler
+  that lowers one of their masked selects to a branch shows as a count
+  that grows; `quic_aes_hw.c` cannot join, because every spec targets a
+  core with no AES instructions.
   The Makefile AES variable chooses the implementation the way PIN
   chooses the pinned algorithm, and never two in one object: `soft` is
   this S-box, `hw` uses the compiler's own intrinsics under
@@ -153,11 +157,20 @@ Home: github.com/c4milo.
   and by the Wycheproof AES-GCM suite on that leg. docs/quic.md, "What
   the AES axis proves", states what each value rests on and what none of
   it proves.
-  An AES instruction being constant time is what a secret-key AES suite
-  would need — TLS_AES_128_GCM_SHA256, which strict RFC 9846 §9.1 server
-  conformance asks for. That suite is not enabled by this axis: INV-26
-  still admits only the three public keys, under every AES value, and
-  lifting it is a separate change with its own gates.
+  A secret-key AES suite needs the instructions and needs somebody to
+  say they are constant time — TLS_AES_128_GCM_SHA256, which strict RFC
+  9846 §9.1 server conformance asks for. No suite here declares one, and
+  the axis does not enable it: INV-26 still admits only the three public
+  keys, under every AES value. `ct.h` is where the terms are written,
+  beside the same rule for the widening multiply.
+  A build says it carries such a suite with `-DCH_SUITE_AES_GCM`, and
+  that build is a compile error unless it also takes AES=hw and defines
+  `CH_NATIVE_AES`. The second is the build's assertion that this part's
+  AES instructions run in constant time, the way `CH_NATIVE_WIDEMUL`
+  asserts the multiply: `__ARM_FEATURE_AES` and `__AES__` say the
+  instructions exist and say nothing about their latency, so firmware
+  defines it only with a vendor statement. Writing the terms is not
+  landing the suite; the rest is a separate change with its own gates.
 - Proofs are mandatory, not optional, but they run in `check-slow`
   rather than `check`: `check` holds a one-minute budget so it stays
   usable as the inner loop, and the fast proof tier alone costs

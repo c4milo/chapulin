@@ -1,0 +1,20 @@
+invariant: INV-26
+file: ct.h
+catches: test/quic-builds.sh
+reason: a build declares a TLS cipher suite whose AEAD is AES-GCM and
+  ct.h stops refusing it without CH_AES_HW, so the suite takes the
+  Makefile default, AES=soft. That build hands a traffic key to a cipher
+  whose 256-byte S-box is indexed with the key: aes_expand_round_keys
+  substitutes the key's own bytes before a block runs, sub_bytes
+  substitutes counter ^ round_key once per round, and gcm_ghash inherits
+  it because the hash subkey is aes_encrypt_block of a zero block. The
+  fall back is silent -- every source compiles and every vector passes --
+  so the compiler's refusal is the only check, and this edit removes it.
+
+--- old
+#ifdef CH_SUITE_AES_GCM
+#ifndef CH_AES_HW
+#error "CH_SUITE_AES_GCM needs AES=hw: the AES=soft S-box is indexed with the key"
+#endif
+--- new
+#ifdef CH_SUITE_AES_GCM

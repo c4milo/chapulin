@@ -855,9 +855,12 @@ bin/quic_test_hw: test/quic_vectors.c quic_aes.c quic_aes_hw.c quic_gcm.c quic_k
 # may, the way the test binaries compile both PIN algorithms.
 # test/aes_equiv_soft.c and test/aes_equiv_hw.c compile the two sources in
 # under those names, so neither is on the line twice.
-bin/aes_equiv_test: test/aes_equiv_test.c test/aes_equiv_soft.c test/aes_equiv_hw.c quic_aes_soft.c quic_aes_hw.c $(HDRS) $(TESTH)
+# ct.c is on the line because quic_aes_hw.c wipes its key-schedule word
+# and its cipher state through ct_wipe; quic_aes_soft.c wipes nothing and
+# links nothing, for the reason its file comment gives.
+bin/aes_equiv_test: test/aes_equiv_test.c test/aes_equiv_soft.c test/aes_equiv_hw.c quic_aes_soft.c quic_aes_hw.c ct.c $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) $(AES_HW_CFLAGS) -DCH_TRANSPORT_QUIC -I. -o $@ test/aes_equiv_test.c test/aes_equiv_soft.c test/aes_equiv_hw.c
+	$(CC) $(CFLAGS) $(AES_HW_CFLAGS) -DCH_TRANSPORT_QUIC -I. -o $@ test/aes_equiv_test.c test/aes_equiv_soft.c test/aes_equiv_hw.c ct.c
 # The same two rules for the ROLE=server mode, over the role's sources under
 # -DCH_ROLE_SERVER. Beside the seven srv sources it links what the implemented
 # ones call, which is SRV_BELOW: srv_message.c and srv_cookie.c read and write
@@ -2284,7 +2287,11 @@ lint-impact:
 # firmware that picks RAND=drbg compiles it) and softmul.c (the multiply
 # itself, on a core with none). buf.c is in because the binder and the
 # Finished bytes pass through wbuf; its only arithmetic is on lengths, so
-# its ceiling is zero like the rest.
+# its ceiling is zero like the rest. quic_aes.c, quic_aes_soft.c,
+# quic_aes_extern.c and quic_gcm.c are in for a build that does not
+# compile yet: -DCH_SUITE_AES_GCM would pass them a traffic key, and ct.h
+# refuses it, so their ceilings are written down before that build exists
+# (INV-26 in docs/invariants.md).
 #
 # WIDEMUL_PUBLIC is every other library source, each with the reason it
 # may multiply or divide: its operands are bytes the peer sent in the
@@ -2325,14 +2332,20 @@ lint-impact:
 #     Names, dates and depths. A public chain is public: every byte it
 #     reads is from the wire or from the caller's anchor table, and it
 #     never sees a key, a shared secret or record plaintext.
-#   quic_aes.c, quic_gcm.c: the AES-128 forward cipher and AES-128-GCM
-#     under TRANSPORT=quic. INV-26 admits exactly three key sources
-#     here, and RFC 9001 says every one of them is public: the Initial
-#     packet key and header protection key, both expanded from
-#     HKDF-Extract over the printed salt and the Destination Connection
-#     ID a long header carries in the clear (§5.2), and the 16-byte
-#     Retry key the RFC prints (§5.8). No traffic secret keysched.c
-#     derives reaches either file.
+#   quic_aes_hw.c: the AES-128 forward cipher on the AES instructions,
+#     under TRANSPORT=quic AES=hw. It is the one AES source left on this
+#     list: quic_aes.c, quic_aes_soft.c, quic_aes_extern.c and quic_gcm.c
+#     take a ceiling above, and this file cannot, because every spec
+#     below targets a core without the AES instructions, where the file
+#     is its own #error. INV-26 admits exactly three key sources to it,
+#     and RFC 9001 says every one of them is public: the Initial packet
+#     key and header protection key, both expanded from HKDF-Extract
+#     over the printed salt and the Destination Connection ID a long
+#     header carries in the clear (§5.2), and the 16-byte Retry key the
+#     RFC prints (§5.8). No traffic secret keysched.c derives is passed
+#     to it. test/aes_equiv_test.c and the Wycheproof AES-GCM suite on
+#     that leg check it instead, and neither measures timing
+#     (docs/quic.md, "What the AES axis proves").
 #   srv_parser.c, srv_message.c, srv_cookie.c, srv_auth.c, srv_flight.c,
 #     srv_handshake.c, srv.c: the ROLE=server protocol files. They are
 #     parsers and builders, and the transcript hash, the verify_data and
@@ -2367,6 +2380,7 @@ WIDEMUL_CEILING := ct.c:0 sha256.c:0 sha3.c:1 hkdf.c:0 chacha20.c:0 poly1305.c:0
                    handshake_auth.c:0 handshake_flight.c:0 handshake.c:0 handshake_post.c:0 \
                    tls.c:0 drbg.c:0 softmul.c:0 \
                    quic_keys.c:0 quic_packet.c:0 quic_config.c:0 quic_step.c:0 quic.c:0 \
+                   quic_aes.c:0 quic_aes_soft.c:0 quic_aes_extern.c:0 quic_gcm.c:0 \
                    srv_parser.c:0 srv_message.c:0 srv_cookie.c:0 srv_auth.c:0 srv_flight.c:0 \
                    srv_handshake.c:0 srv.c:0 rsa_sign.c:0
 CODEGEN_SRCS := $(foreach e,$(WIDEMUL_CEILING),$(firstword $(subst :, ,$(e))))
@@ -2374,16 +2388,24 @@ CODEGEN_SRCS := $(foreach e,$(WIDEMUL_CEILING),$(firstword $(subst :, ,$(e))))
 # in the shape WIDEMUL_CEILING_SPEC uses for per-spec ceilings. Each gate
 # compiles every CODEGEN_SRCS file under one fixed flag set that names no
 # transport and no role, and two groups of entries above hold nothing
-# without their own define. The five QUIC entries need
+# without their own define. The nine QUIC entries need
 # -DCH_TRANSPORT_QUIC: CH_LEVEL_*, the ch_quic struct and the QUIC
-# ch_cfg fields all sit behind it. The seven server entries need
-# -DCH_ROLE_SERVER for the same reason, and preprocess to an empty file
-# without it. Adding either define to the shared line would break
-# record.c, io.c, session.c, handshake.c and tls.c, which are on the same
-# list and compile only without them.
+# ch_cfg fields all sit behind it, and the four AES entries guard their
+# whole body on it. quic_aes_extern.c also needs -DCH_AES_EXTERN, the
+# AES=extern define its body sits behind, so the count reads that body
+# and not an empty file. The seven server entries need -DCH_ROLE_SERVER
+# for the same reason, and preprocess to an empty file without it.
+# Adding any of the three to the shared line would break record.c, io.c,
+# session.c, handshake.c and tls.c, which are on the same list and
+# compile only without the transport and role defines, and
+# quic_aes_soft.c, which preprocesses to an empty file under
+# -DCH_AES_EXTERN.
 WIDEMUL_DEFINES := quic_keys.c:-DCH_TRANSPORT_QUIC quic_packet.c:-DCH_TRANSPORT_QUIC \
                    quic_config.c:-DCH_TRANSPORT_QUIC quic_step.c:-DCH_TRANSPORT_QUIC \
                    quic.c:-DCH_TRANSPORT_QUIC \
+                   quic_aes.c:-DCH_TRANSPORT_QUIC quic_aes_soft.c:-DCH_TRANSPORT_QUIC \
+                   quic_aes_extern.c:-DCH_TRANSPORT_QUIC$(COMMA)-DCH_AES_EXTERN \
+                   quic_gcm.c:-DCH_TRANSPORT_QUIC \
                    srv_parser.c:-DCH_ROLE_SERVER srv_message.c:-DCH_ROLE_SERVER \
                    srv_cookie.c:-DCH_ROLE_SERVER srv_auth.c:-DCH_ROLE_SERVER \
                    srv_flight.c:-DCH_ROLE_SERVER srv_handshake.c:-DCH_ROLE_SERVER \
@@ -2391,8 +2413,7 @@ WIDEMUL_DEFINES := quic_keys.c:-DCH_TRANSPORT_QUIC quic_packet.c:-DCH_TRANSPORT_
 WIDEMUL_PUBLIC := p256.c rsa.c rsa_mont.c pem.c x509.c x509_der.c x509_ca.c sha512.c sha512_compress.c \
                   p384.c p384_field.c rsa_pkcs1.c webpki_time.c webpki_name.c webpki_spki.c webpki_sigalg.c \
                   webpki_ext.c webpki_cert.c webpki.c \
-                  quic_aes.c quic_aes_soft.c quic_aes_hw.c quic_aes_extern.c quic_gcm.c \
-                  quic_initial.c quic_retry.c
+                  quic_aes_hw.c quic_initial.c quic_retry.c
 
 # The library sources are $(SRCS), drbg.c, and every .c file git tracks
 # at the repository root. The KEX=pq sources join LIB_SRCS by += rather
@@ -2598,16 +2619,34 @@ WIDEMUL_SPECS := \
 WIDEMUL_CEILING_SPEC := m3-gcc/sha3.c:5 mips32r2-gcc/sha3.c:5 mips32r2-gcc-O2/sha3.c:5 \
                         mips32r2-gcc-O2/poly1305.c:2 rv32imac-gcc/sha3.c:5 rv32ic-gcc/sha3.c:5
 # The files the branch count covers: the arithmetic under the record
-# layer, whose every input is a key, a limb or a block, and whose only
-# branches are loop control on public counts. The other CODEGEN_SRCS
+# layer, whose every input is a key, a limb or a block. Almost every
+# branch they hold is loop control on a public count; the two exceptions
+# are aead_open's and gcm_open's `if (!ok)` on the tag comparison, where
+# ct_memeq has already run in constant time and whether the packet
+# authenticates is what the caller is told anyway. The other CODEGEN_SRCS
 # files -- buf.c, record.c, keysched.c, io.c, session.c, the handshake
 # files and tls.c -- branch on lengths, types and states the peer sent in
 # the clear, several dozen each, so a count there would record the parser
 # and move with every feature. The multiply count still covers them; a
 # secret reaching their control paths is a design change, not a codegen
 # choice, and review holds that line.
+#
+# quic_aes.c, quic_aes_soft.c, quic_aes_extern.c and quic_gcm.c joined the
+# list on the commit that wrote the -DCH_SUITE_AES_GCM rules into ct.h,
+# for the build whose AES key is a traffic secret. INV-26 said what that
+# build would owe -- these files sat in WIDEMUL_PUBLIC, so no codegen
+# gate compiled them and no count held their masked selects to a
+# branchless lowering. quic_gcm.c's multiply_by_subkey is the select that
+# matters: under a secret key the accumulator bit and the shifted-out bit
+# are both derived from the hash subkey, and the two 0xff masks are what
+# keep them off a branch, exactly as poly1305_final's are. quic_aes_hw.c
+# is not here and cannot be: it is an #error under every spec below,
+# because no spec's target has the AES instructions.
+# test/aes_equiv_test.c and the Wycheproof AES-GCM suite on that leg
+# check it instead (docs/quic.md, "What the AES axis proves").
 BRANCH_SRCS := ct.c sha256.c sha3.c hkdf.c chacha20.c poly1305.c aead.c x25519.c mlkem.c \
-               mlkem_poly.c drbg.c softmul.c rsa_sign.c
+               mlkem_poly.c drbg.c softmul.c rsa_sign.c quic_aes.c quic_aes_soft.c quic_aes_extern.c \
+               quic_gcm.c
 # Per-spec branch ceilings, spec/file:count, one for every BRANCH_SRCS
 # file under every spec. A spec that lacks one fails, and the gate's own
 # output is where a new spec reads its numbers. Every number is measured
@@ -2620,32 +2659,45 @@ BRANCH_SRCS := ct.c sha256.c sha3.c hkdf.c chacha20.c poly1305.c aead.c x25519.c
 # for it.
 BRANCH_CEILING := \
   m3/ct.c:4 m3/sha256.c:17 m3/sha3.c:50 m3/hkdf.c:13 m3/chacha20.c:9 m3/poly1305.c:19 \
-  m3/aead.c:4 m3/x25519.c:34 m3/mlkem.c:14 m3/mlkem_poly.c:43 m3/drbg.c:9 m3/softmul.c:0 m3/rsa_sign.c:29 \
-  mips32r2/ct.c:4 mips32r2/sha256.c:16 mips32r2/sha3.c:29 mips32r2/hkdf.c:10 \
-  mips32r2/chacha20.c:7 mips32r2/poly1305.c:18 mips32r2/aead.c:2 mips32r2/x25519.c:31 \
-  mips32r2/mlkem.c:13 mips32r2/mlkem_poly.c:36 mips32r2/drbg.c:8 mips32r2/softmul.c:0 mips32r2/rsa_sign.c:27 \
-  rv32imac/ct.c:4 rv32imac/sha256.c:17 rv32imac/sha3.c:38 rv32imac/hkdf.c:14 \
-  rv32imac/chacha20.c:8 rv32imac/poly1305.c:18 rv32imac/aead.c:2 rv32imac/x25519.c:31 \
-  rv32imac/mlkem.c:14 rv32imac/mlkem_poly.c:36 rv32imac/drbg.c:9 rv32imac/softmul.c:0 rv32imac/rsa_sign.c:27 \
-  m3-gcc/ct.c:2 m3-gcc/sha256.c:12 m3-gcc/sha3.c:24 m3-gcc/hkdf.c:12 m3-gcc/chacha20.c:7 \
-  m3-gcc/poly1305.c:14 m3-gcc/aead.c:2 m3-gcc/x25519.c:23 m3-gcc/mlkem.c:14 \
-  m3-gcc/mlkem_poly.c:37 m3-gcc/drbg.c:8 m3-gcc/softmul.c:0 m3-gcc/rsa_sign.c:26 \
-  mips32r2-gcc/ct.c:2 mips32r2-gcc/sha256.c:12 mips32r2-gcc/sha3.c:21 mips32r2-gcc/hkdf.c:11 \
-  mips32r2-gcc/chacha20.c:6 mips32r2-gcc/poly1305.c:14 mips32r2-gcc/aead.c:2 \
-  mips32r2-gcc/x25519.c:20 mips32r2-gcc/mlkem.c:14 mips32r2-gcc/mlkem_poly.c:41 \
-  mips32r2-gcc/drbg.c:7 mips32r2-gcc/softmul.c:0 mips32r2-gcc/rsa_sign.c:23 \
+  m3/aead.c:4 m3/x25519.c:34 m3/mlkem.c:14 m3/mlkem_poly.c:43 m3/drbg.c:9 m3/softmul.c:0 \
+  m3/quic_aes.c:3 m3/quic_aes_soft.c:12 m3/quic_aes_extern.c:0 m3/quic_gcm.c:22 \
+  m3/rsa_sign.c:29 mips32r2/ct.c:4 mips32r2/sha256.c:16 mips32r2/sha3.c:29 \
+  mips32r2/hkdf.c:10 mips32r2/chacha20.c:7 mips32r2/poly1305.c:18 mips32r2/aead.c:2 \
+  mips32r2/x25519.c:31 mips32r2/mlkem.c:13 mips32r2/mlkem_poly.c:36 mips32r2/drbg.c:8 \
+  mips32r2/softmul.c:0 mips32r2/quic_aes.c:2 mips32r2/quic_aes_soft.c:12 \
+  mips32r2/quic_aes_extern.c:0 mips32r2/quic_gcm.c:16 mips32r2/rsa_sign.c:27 rv32imac/ct.c:4 \
+  rv32imac/sha256.c:17 rv32imac/sha3.c:38 rv32imac/hkdf.c:14 rv32imac/chacha20.c:8 \
+  rv32imac/poly1305.c:18 rv32imac/aead.c:2 rv32imac/x25519.c:31 rv32imac/mlkem.c:14 \
+  rv32imac/mlkem_poly.c:36 rv32imac/drbg.c:9 rv32imac/softmul.c:0 rv32imac/quic_aes.c:3 \
+  rv32imac/quic_aes_soft.c:12 rv32imac/quic_aes_extern.c:0 rv32imac/quic_gcm.c:20 \
+  rv32imac/rsa_sign.c:27 m3-gcc/ct.c:2 m3-gcc/sha256.c:12 m3-gcc/sha3.c:24 m3-gcc/hkdf.c:12 \
+  m3-gcc/chacha20.c:7 m3-gcc/poly1305.c:14 m3-gcc/aead.c:2 m3-gcc/x25519.c:23 \
+  m3-gcc/mlkem.c:14 m3-gcc/mlkem_poly.c:37 m3-gcc/drbg.c:8 m3-gcc/softmul.c:0 \
+  m3-gcc/quic_aes.c:3 m3-gcc/quic_aes_soft.c:9 m3-gcc/quic_aes_extern.c:0 \
+  m3-gcc/quic_gcm.c:15 m3-gcc/rsa_sign.c:26 mips32r2-gcc/ct.c:2 mips32r2-gcc/sha256.c:12 \
+  mips32r2-gcc/sha3.c:21 mips32r2-gcc/hkdf.c:11 mips32r2-gcc/chacha20.c:6 \
+  mips32r2-gcc/poly1305.c:14 mips32r2-gcc/aead.c:2 mips32r2-gcc/x25519.c:20 \
+  mips32r2-gcc/mlkem.c:14 mips32r2-gcc/mlkem_poly.c:41 mips32r2-gcc/drbg.c:7 \
+  mips32r2-gcc/softmul.c:0 mips32r2-gcc/quic_aes.c:3 mips32r2-gcc/quic_aes_soft.c:9 \
+  mips32r2-gcc/quic_aes_extern.c:0 mips32r2-gcc/quic_gcm.c:13 mips32r2-gcc/rsa_sign.c:23 \
   mips32r2-gcc-O2/ct.c:4 mips32r2-gcc-O2/sha256.c:23 mips32r2-gcc-O2/sha3.c:31 \
   mips32r2-gcc-O2/hkdf.c:11 mips32r2-gcc-O2/chacha20.c:7 mips32r2-gcc-O2/poly1305.c:21 \
   mips32r2-gcc-O2/aead.c:2 mips32r2-gcc-O2/x25519.c:28 mips32r2-gcc-O2/mlkem.c:18 \
-  mips32r2-gcc-O2/mlkem_poly.c:38 mips32r2-gcc-O2/drbg.c:8 mips32r2-gcc-O2/softmul.c:0 mips32r2-gcc-O2/rsa_sign.c:26 \
-  rv32imac-gcc/ct.c:2 rv32imac-gcc/sha256.c:15 rv32imac-gcc/sha3.c:26 rv32imac-gcc/hkdf.c:15 \
-  rv32imac-gcc/chacha20.c:10 rv32imac-gcc/poly1305.c:15 rv32imac-gcc/aead.c:4 \
-  rv32imac-gcc/x25519.c:23 rv32imac-gcc/mlkem.c:20 rv32imac-gcc/mlkem_poly.c:39 \
-  rv32imac-gcc/drbg.c:9 rv32imac-gcc/softmul.c:0 rv32imac-gcc/rsa_sign.c:27 \
+  mips32r2-gcc-O2/mlkem_poly.c:38 mips32r2-gcc-O2/drbg.c:8 mips32r2-gcc-O2/softmul.c:0 \
+  mips32r2-gcc-O2/quic_aes.c:3 mips32r2-gcc-O2/quic_aes_soft.c:12 \
+  mips32r2-gcc-O2/quic_aes_extern.c:0 mips32r2-gcc-O2/quic_gcm.c:16 \
+  mips32r2-gcc-O2/rsa_sign.c:26 rv32imac-gcc/ct.c:2 rv32imac-gcc/sha256.c:15 \
+  rv32imac-gcc/sha3.c:26 rv32imac-gcc/hkdf.c:15 rv32imac-gcc/chacha20.c:10 \
+  rv32imac-gcc/poly1305.c:15 rv32imac-gcc/aead.c:4 rv32imac-gcc/x25519.c:23 \
+  rv32imac-gcc/mlkem.c:20 rv32imac-gcc/mlkem_poly.c:39 rv32imac-gcc/drbg.c:9 \
+  rv32imac-gcc/softmul.c:0 rv32imac-gcc/quic_aes.c:4 rv32imac-gcc/quic_aes_soft.c:12 \
+  rv32imac-gcc/quic_aes_extern.c:0 rv32imac-gcc/quic_gcm.c:22 rv32imac-gcc/rsa_sign.c:27 \
   rv32ic-gcc/ct.c:2 rv32ic-gcc/sha256.c:15 rv32ic-gcc/sha3.c:26 rv32ic-gcc/hkdf.c:15 \
   rv32ic-gcc/chacha20.c:10 rv32ic-gcc/poly1305.c:15 rv32ic-gcc/aead.c:4 \
   rv32ic-gcc/x25519.c:23 rv32ic-gcc/mlkem.c:20 rv32ic-gcc/mlkem_poly.c:39 \
-  rv32ic-gcc/drbg.c:9 rv32ic-gcc/softmul.c:2 rv32ic-gcc/rsa_sign.c:27
+  rv32ic-gcc/drbg.c:9 rv32ic-gcc/softmul.c:2 rv32ic-gcc/quic_aes.c:4 \
+  rv32ic-gcc/quic_aes_soft.c:12 rv32ic-gcc/quic_aes_extern.c:0 rv32ic-gcc/quic_gcm.c:22 \
+  rv32ic-gcc/rsa_sign.c:27
 WIDEMUL_RUN ?= clang
 WIDEMUL_GCC ?= $(M3_CC)
 .PHONY: lint-wide-multiply lint-wide-multiply-gcc
@@ -2749,14 +2801,15 @@ lint-wide-multiply-gcc:
 # the file that pulls it. sha3's __udivsi3 is Keccak's `% 5` over public
 # loop counters, a performance matter rather than a leak.
 #
-# The four TRANSPORT=quic entries WIDEMUL_CEILING carries -- quic.c,
-# quic_keys.c, quic_packet.c and quic_step.c -- get no row: measured
-# under the pinned clang for rv32ic with their WIDEMUL_DEFINES entry,
-# each pulls nothing. A row for a file that pulls nothing is not free,
+# The eight TRANSPORT=quic entries WIDEMUL_CEILING carries -- quic.c,
+# quic_keys.c, quic_packet.c, quic_step.c, quic_aes.c, quic_aes_soft.c,
+# quic_aes_extern.c and quic_gcm.c -- get no row: measured under the
+# pinned clang for rv32ic with their WIDEMUL_DEFINES entry, each pulls
+# nothing. A row for a file that pulls nothing is not free,
 # because the loop below prints "no longer pulls" for it on every run.
 # The decision is recorded here rather than left to a reader of the
-# list's absence, and it is re-measured when these files stop being
-# stubs.
+# list's absence, and it is re-measured when the stubs among these
+# files are implemented.
 RV_ALLOWED := poly1305.c:__mulsi3 x25519.c:__mulsi3 mlkem_poly.c:__mulsi3 sha3.c:__udivsi3 \
               rsa_sign.c:__mulsi3
 # What softmul.c must define. The __mul* names RV_ALLOWED admits are

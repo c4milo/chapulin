@@ -2,10 +2,18 @@
 // states every contract; this file implements them and nothing else.
 //
 // The forward cipher comes from quic_aes.c, and INV-26 in
-// docs/invariants.md bounds which keys reach it: the Initial keys, which
-// anyone who sees a Destination Connection ID can derive (RFC 9001
-// §5.2), and the Retry key the RFC prints (§5.8). No key from the TLS
-// key schedule reaches this file, so nothing here holds a secret byte.
+// docs/invariants.md bounds which keys it is given today: the Initial keys,
+// which anyone who sees a Destination Connection ID can derive (RFC 9001
+// §5.2), and the Retry key the RFC prints (§5.8). No key from the TLS key
+// schedule is passed to this file today.
+//
+// Every local computed from the key is wiped anyway: the hash subkey, the
+// running multiple in the GF(2^128) multiply, the keystream, the tag mask
+// and the tag this call expected. The reason is the build that does not
+// exist yet. A build that declares -DCH_SUITE_AES_GCM runs these same
+// bodies under a traffic key, and a wipe that only that build needs would
+// be absent on the day it arrives. ct.h refuses that build unless it also
+// takes AES=hw, so no table sits underneath it.
 //
 // Only the 96-bit IV exists here. SP 800-38D §7.1 takes the first
 // counter block straight from a 96-bit IV, and hashes any other IV
@@ -34,9 +42,10 @@ static const uint8_t ZERO_BLOCK[AES_BLOCK] = {0};
 // the field polynomial adds R = 0xe1 || 0^120 back exactly when the bit
 // that moved out was set.
 //
-// The two masks are arithmetic rather than branches because that is
-// shorter to read, not because these bytes are secret. Every byte this
-// file touches is public, for the reason the file comment gives.
+// The two masks are arithmetic rather than branches. Under a public key
+// that is only shorter to read; under -DCH_SUITE_AES_GCM the accumulator
+// bit and the shifted-out bit are both computed from the hash subkey, and
+// then the mask is what keeps them off a branch.
 static void multiply_by_subkey(uint8_t acc[AES_BLOCK], const uint8_t subkey[AES_BLOCK]) {
     uint8_t product[AES_BLOCK] = {0};
     uint8_t multiple[AES_BLOCK];
@@ -55,6 +64,11 @@ static void multiply_by_subkey(uint8_t acc[AES_BLOCK], const uint8_t subkey[AES_
         multiple[0] = (uint8_t)(multiple[0] ^ (0xe1U & reduce));
     }
     memcpy(acc, product, AES_BLOCK);
+    // multiple ends as the hash subkey shifted GCM_BLOCK_BITS times, which
+    // is an invertible function of it, so the frame would hand a later
+    // caller the subkey itself. product is already in acc and needs no
+    // wipe of its own.
+    ct_wipe(multiple, sizeof multiple);
 }
 
 // SP 800-38D §6.4: add each block of data to the accumulator and
@@ -108,6 +122,7 @@ void gcm_ghash(const aes_public_key *k, const uint8_t *aad, size_t aad_len, cons
         out[i] = (uint8_t)(out[i] ^ lengths[i]);
     }
     multiply_by_subkey(out, subkey);
+    ct_wipe(subkey, sizeof subkey);
 }
 
 // SP 800-38D §7.1 step 2: for a 96-bit IV the first counter block is the
@@ -144,9 +159,13 @@ static void increment_counter(uint8_t counter[AES_BLOCK]) {
 static void counter_mode(const aes_public_key *k, uint8_t counter[AES_BLOCK], const uint8_t *in,
                          size_t n, uint8_t *out) {
     size_t off = 0;
+    // One buffer for every block, wiped once at the end rather than once
+    // per block: the last block's keystream is the only one still in the
+    // frame when this returns, and a wipe inside the loop would run per
+    // block for no further gain.
+    uint8_t keystream[AES_BLOCK];
     while (off < n) {
         increment_counter(counter);
-        uint8_t keystream[AES_BLOCK];
         aes_encrypt_block(k, counter, keystream);
         size_t take = n - off < AES_BLOCK ? n - off : AES_BLOCK;
         for (size_t i = 0; i < take; i++) {
@@ -154,6 +173,7 @@ static void counter_mode(const aes_public_key *k, uint8_t counter[AES_BLOCK], co
         }
         off += take;
     }
+    ct_wipe(keystream, sizeof keystream);
 }
 
 // SP 800-38D §7.1 step 6: the tag is GHASH over the associated data and
@@ -169,6 +189,8 @@ static void compute_tag(const aes_public_key *k, const uint8_t first_counter[AES
     for (size_t i = 0; i < GCM_TAG; i++) {
         tag[i] = (uint8_t)(hashed[i] ^ mask[i]);
     }
+    ct_wipe(hashed, sizeof hashed);
+    ct_wipe(mask, sizeof mask);
 }
 
 void gcm_seal(const aes_public_key *k, const uint8_t nonce[AES_IV], const uint8_t *aad,
@@ -193,12 +215,10 @@ int gcm_open(const aes_public_key *k, const uint8_t nonce[AES_IV], const uint8_t
     uint8_t want[GCM_TAG];
     compute_tag(k, first_counter, aad, aad_len, ct, n, want);
     uint32_t ok = ct_memeq(want, tag, GCM_TAG);
+    ct_wipe(want, sizeof want);
     if (!ok) {
         return 0;
     }
-    // No wipe of want, for the reason aes_public_key_initial gives: every
-    // byte this file computes is public, and ct_wipe would tell a reader
-    // these bytes are secret.
     uint8_t counter[AES_BLOCK];
     memcpy(counter, first_counter, AES_BLOCK);
     counter_mode(k, counter, ct, n, pt);

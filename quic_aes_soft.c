@@ -4,13 +4,21 @@
 // nothing else.
 //
 // The table is indexed with cipher state, so this code does not run in
-// constant time against its key. That is the trade INV-26 in
+// constant time against its key. aes_expand_round_keys substitutes the
+// key's own bytes before a single block runs, and sub_bytes substitutes
+// the state once per round. That is the trade INV-26 in
 // docs/invariants.md states and bounds: the only keys that reach it are
 // the ones RFC 9001 fixes for QUIC Initial packets (§5.2), their header
 // protection (§5.1, §5.4.3) and the Retry integrity tag (§5.8), and
 // every one of those is public. No key from the TLS key schedule reaches
 // it. An AES=hw build has no table and no such trade, which is what
 // docs/decisions.md entry 6 says a secret-key AES suite would need.
+//
+// This file holds no wipe, where quic_aes_hw.c wipes its round-key word
+// and its cipher state. The bound above is why: a -DCH_SUITE_AES_GCM
+// build is the only one whose key is secret, ct.h refuses that build
+// unless it also takes AES=hw, so no key this file expands is ever worth
+// wiping and the stores would cost a device something for nothing.
 #include "quic_aes_block.h"
 
 #ifdef CH_TRANSPORT_QUIC

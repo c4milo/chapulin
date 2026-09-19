@@ -25,10 +25,33 @@
 // The intrinsic headers are the compiler's own, so they are not third-
 // party code. A third-party AES library would be.
 //
-// An AES instruction is constant time: it takes no table and its
-// latency does not depend on its operands. That is the property
-// docs/decisions.md entry 6 says a secret-key AES suite would need, and
-// it is why this path, unlike quic_aes_soft.c, carries no timing trade.
+// This file reads no table, which is the one timing property it can state
+// for itself: quic_aes_soft.c indexes a 256-byte S-box with cipher state,
+// and no line here indexes anything with an operand.
+//
+// It cannot state the rest. __ARM_FEATURE_AES and __AES__ say the AES
+// instructions exist. Neither says the instructions take the same number of
+// cycles whatever their operands are, and the architectures do not promise
+// it either: Arm publishes FEAT_DIT and Intel publishes DOITM precisely
+// because the base architectures leave instruction timing to the
+// implementation. ct.h refuses the same inference for the widening
+// multiply, in the same words, and asks the build to assert what the
+// preprocessor cannot read (https://github.com/c4milo/chapulin/issues/53).
+//
+// So one macro carries that claim here, and it is the build's to make:
+//
+//   CH_NATIVE_AES  the build asserts that this part's AES instructions
+//                  run in constant time. Firmware defines it only with a
+//                  vendor statement, the way it defines CH_NATIVE_WIDEMUL.
+//                  Nothing in this file reads it.
+//
+// Nothing reads it because nothing here needs it: INV-26 admits only the
+// three public keys RFC 9001 fixes, and their timing leaks nothing an
+// observer does not already hold. ct.h is what reads it, and only in a
+// build that declares -DCH_SUITE_AES_GCM: a cipher suite hands this file a
+// traffic key, and that build without CH_NATIVE_AES is a compile error
+// rather than an object whose timing nobody stated.
+//
 // CBMC cannot read an intrinsic, so the proofs stay on the software path
 // and this file is held to it by test/aes_equiv_test.c, which runs both
 // implementations over the same inputs and compares byte for byte.
@@ -39,6 +62,8 @@
 
 #include <stddef.h>
 #include <string.h>
+
+#include "ct.h"
 
 #ifdef __ARM_FEATURE_AES
 #include <arm_neon.h>
@@ -113,11 +138,11 @@ void aes_expand_round_keys(const uint8_t key[AES_128_KEY],
     // two files agree byte for byte, which test/aes_equiv_test.c checks.
     uint8_t round_constant = 0x01;
     memcpy(round_keys, key, AES_128_KEY);
+    uint8_t word[4];
+    uint8_t substituted[4] = {0};
     for (size_t i = AES_128_KEY; i < (size_t)AES_ROUND_KEYS * AES_BLOCK; i += 4) {
-        uint8_t word[4];
         memcpy(word, &round_keys[i - 4], sizeof word);
         if (i % AES_128_KEY == 0) {
-            uint8_t substituted[4];
             sub_word(word, substituted);
             // RotWord, then the round constant on the first byte.
             word[0] = (uint8_t)(substituted[1] ^ round_constant);
@@ -130,6 +155,13 @@ void aes_expand_round_keys(const uint8_t key[AES_128_KEY],
             round_keys[i + j] = (uint8_t)(round_keys[i - AES_128_KEY + j] ^ word[j]);
         }
     }
+    // Both temporaries hold bytes of the last round key. Under
+    // -DCH_SUITE_AES_GCM that is a traffic key, and this is the one
+    // implementation that build may take, so the wipe runs here and not in
+    // quic_aes_soft.c. Two calls and two fixed sizes, so the wipe itself
+    // reads nothing it was given.
+    ct_wipe(word, sizeof word);
+    ct_wipe(substituted, sizeof substituted);
 }
 
 #ifdef __ARM_FEATURE_AES
@@ -148,6 +180,10 @@ void aes_cipher_block(const uint8_t round_keys[AES_ROUND_KEYS * AES_BLOCK],
     state = vaeseq_u8(state, load_block(&round_keys[(size_t)(AES_128_ROUNDS - 1) * AES_BLOCK]));
     state = veorq_u8(state, load_block(&round_keys[(size_t)AES_128_ROUNDS * AES_BLOCK]));
     store_block(out, state);
+    // state holds the block this call produced, which under
+    // AEAD_AES_128_GCM is one block of keystream. out already holds it, so
+    // the wipe removes the copy this frame would leave behind.
+    ct_wipe(&state, sizeof state);
 }
 #else
 void aes_cipher_block(const uint8_t round_keys[AES_ROUND_KEYS * AES_BLOCK],
@@ -164,6 +200,8 @@ void aes_cipher_block(const uint8_t round_keys[AES_ROUND_KEYS * AES_BLOCK],
     state =
         _mm_aesenclast_si128(state, load_block(&round_keys[(size_t)AES_128_ROUNDS * AES_BLOCK]));
     store_block(out, state);
+    // The arm above states why.
+    ct_wipe(&state, sizeof state);
 }
 #endif
 

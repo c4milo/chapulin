@@ -786,7 +786,10 @@ launch fast full chacha20 165 "chacha20_xor.1:5"
 # TRANSPORT=quic. HKDF is a contract stub (proof/quic_aes_stubs.h), so
 # this formula holds the key schedule and the cipher and not five HMAC
 # derivations; that header states what the composition gives up.
-# Measured, these flags: 377 properties, 23 s, 0.67 GB peak.
+# Re-measured on the commit that moved this file under the codegen gates
+# (arm64 macOS, the pinned cbmc, PROVE_NO_CACHE=1 /usr/bin/time -l): 434
+# properties, 26 s, 0.67 GB peak. The 377 recorded before predates the
+# split of the cipher into quic_aes_soft.c.
 launch fast full quic_aes 45 "fill_nondet.0:177" -DCH_TRANSPORT_QUIC
 # The three RFC 9001 §5.1 derivations and the §6.1 key update. HKDF is
 # the same contract stub quic_aes uses, so this formula holds the
@@ -831,10 +834,15 @@ launch fast full quic_packet 65 "fill_nondet.0:133" buf.c ct.c -DCH_TRANSPORT_QU
 # each unwinds to the global 130 and carries 130 copies of SP
 # 800-38D's 128-step multiply. Measured on an idle development machine
 # (arm64 macOS, the pinned cbmc, PROVE_NO_CACHE=1 /usr/bin/time -l):
-# quic_gcm_safety 388 properties, 269 s, 2.3 GB peak; quic_gcm_refusal
-# 393 properties, 48 s, 1.0 GB; quic_ghash 386 properties, 260 s,
-# 1.7 GB. Neither proves a functional or authenticity property; the two
-# harnesses that state those carry no launch line, below.
+# quic_gcm_safety 388 properties, 582 s, 2.3 GB peak; quic_gcm_refusal
+# 393 properties, 64 s, 1.0 GB; quic_ghash 386 properties, 318 s,
+# 1.7 GB. Two of the three cost more than the 269 s and 260 s recorded
+# before the ct_wipe calls went in: the wipe of the running multiple sits
+# inside multiply_by_subkey, so the solver carries one 16-byte volatile
+# loop per call and hash_data unwinds to 3 of them. The peaks did not
+# move and the weights below stand. Neither proves a functional or
+# authenticity property; the two harnesses that state those carry no
+# launch line, below.
 launch slow:3 full quic_gcm_safety 130 "fill_nondet.0:177,hash_data.1:3,counter_mode.1:3" --object-bits 11 ct.c -DCH_TRANSPORT_QUIC -DCH_GCM_PT_MAX=32 -DCH_GCM_AAD_MAX=32
 launch slow:1 full quic_gcm_refusal 130 "fill_nondet.0:177,hash_data.1:3,counter_mode.1:3" --object-bits 11 ct.c -DCH_TRANSPORT_QUIC -DCH_GCM_PT_MAX=32 -DCH_GCM_AAD_MAX=32
 launch slow:2 full quic_ghash 130 "fill_nondet.0:257,hash_data.1:17" ct.c -DCH_TRANSPORT_QUIC

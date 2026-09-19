@@ -63,10 +63,14 @@ int aes_public_key_initial(aes_public_key *k, const uint8_t *dcid, size_t dcid_l
     hkdf_expand_label(direction_secret, "quic iv", NULL, 0, k->iv, sizeof k->iv);
     hkdf_expand_label(direction_secret, "quic hp", NULL, 0, key, sizeof key);
     aes_expand_round_keys(key, k->hp.round_keys);
-    // No wipe: every byte above is public. RFC 9001 §5 says so of the
-    // Initial keys themselves (rfc9001.txt:999-1001), and INV-26 admits
-    // no other key here. ct_wipe would tell a reader these bytes are
-    // secret, which is the one thing this file may never imply.
+    // No wipe of initial_secret, direction_secret or key. Every byte of
+    // the three is public: RFC 9001 §5 says so of the Initial keys
+    // (rfc9001.txt:999-1001), and this constructor derives nothing else.
+    // It is the one AES entry never passed a secret key, because a
+    // -DCH_SUITE_AES_GCM build takes its key from keysched.c and not from
+    // here, so the wipes quic_gcm.c and the block implementations carry
+    // would say something false in this frame. INV-26 states which entry
+    // holds which rule.
     return CH_OK;
 }
 

@@ -1,0 +1,25 @@
+invariant: INV-16
+file: quic_gcm.c
+catches: test/lint-wide-multiply.sh
+reason: multiply_by_subkey adds the running multiple into the product
+  when the accumulator bit is set, through a 0xff mask. Written as an if
+  on that bit, the bit decides which path runs -- and under a
+  -DCH_SUITE_AES_GCM build the accumulator is derived from the hash
+  subkey, so the branch is on the key. This is the select poly1305_final
+  and cswap already carry, in the one file no codegen gate compiled until
+  quic_gcm.c joined BRANCH_SRCS. The branch count is what reads it: the
+  multiply tokens see nothing here, and every clang spec emits more
+  conditional branches in quic_gcm.c than its ceiling records
+  (https://github.com/c4milo/chapulin/issues/141).
+
+--- old
+        uint8_t selected = (uint8_t)(0U - selected_bit); // 0xff when the bit is set, else 0
+        for (size_t i = 0; i < AES_BLOCK; i++) {
+            product[i] = (uint8_t)(product[i] ^ (multiple[i] & selected));
+        }
+--- new
+        if (selected_bit != 0) {
+            for (size_t i = 0; i < AES_BLOCK; i++) {
+                product[i] = (uint8_t)(product[i] ^ multiple[i]);
+            }
+        }

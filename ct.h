@@ -59,6 +59,40 @@ void ct_wipe(void *p, size_t n);
 #define CH_WIDEMUL_NATIVE 1
 #endif
 
+// Whether an AES instruction runs in constant time is a claim of the same
+// kind, and the build makes it the same way. -DCH_SUITE_AES_GCM is how a build
+// says it carries a TLS cipher suite whose AEAD is AES-GCM, so its AES key is
+// what hkdf_expand_label derives from a traffic secret. No suite in this tree
+// declares it today; the two rules are written first so that the build that
+// adds one stops the compiler instead of taking whatever the Makefile AES
+// variable defaulted to. The rules sit here rather than in cfg.h, beside
+// CH_NATIVE_WIDEMUL rather than beside the trust modes, because both are one
+// claim about what a part does with secret operands.
+//
+//   CH_AES_HW      AES=soft is the default and reads a 256-byte S-box at an
+//                  index computed from the key, so a secret key needs the
+//                  implementation with no table. AES=extern cannot state its
+//                  timing either, because what ch_aes_block costs belongs to
+//                  the peripheral.
+//   CH_NATIVE_AES  the build asserts that this part's AES instructions run in
+//                  constant time. __ARM_FEATURE_AES and __AES__ say only that
+//                  the instructions exist, which is the inference this header
+//                  refuses above for the multiply; Arm publishes FEAT_DIT and
+//                  Intel publishes DOITM because the architectures leave the
+//                  timing to the implementation. Firmware defines it with a
+//                  vendor statement, and quic_aes_hw.c states what it covers.
+//
+// INV-26 in docs/invariants.md states the bound these two keep and what the
+// refused build would still owe. test/quic-builds.sh is the catch target.
+#ifdef CH_SUITE_AES_GCM
+#ifndef CH_AES_HW
+#error "CH_SUITE_AES_GCM needs AES=hw: the AES=soft S-box is indexed with the key"
+#endif
+#ifndef CH_NATIVE_AES
+#error "CH_SUITE_AES_GCM needs -DCH_NATIVE_AES: the build asserts the timing (quic_aes_hw.c)"
+#endif
+#endif
+
 // a * b, widened, using only 32-to-32 multiplies.
 //
 // A 32-to-64 multiply is variable-time on some cores -- the Cortex-M3's umull

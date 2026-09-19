@@ -12,12 +12,10 @@ reason: gcm_open writes the plaintext before it compares the tag, so a
 
 --- old
     uint32_t ok = ct_memeq(want, tag, GCM_TAG);
+    ct_wipe(want, sizeof want);
     if (!ok) {
         return 0;
     }
-    // No wipe of want, for the reason aes_public_key_initial gives: every
-    // byte this file computes is public, and ct_wipe would tell a reader
-    // these bytes are secret.
     uint8_t counter[AES_BLOCK];
     memcpy(counter, first_counter, AES_BLOCK);
     counter_mode(k, counter, ct, n, pt);
@@ -27,6 +25,7 @@ reason: gcm_open writes the plaintext before it compares the tag, so a
     memcpy(counter, first_counter, AES_BLOCK);
     counter_mode(k, counter, ct, n, pt);
     uint32_t ok = ct_memeq(want, tag, GCM_TAG);
+    ct_wipe(want, sizeof want);
     if (!ok) {
         return 0;
     }
