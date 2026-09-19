@@ -29,14 +29,16 @@
 
 #include "ch_assert.h"
 
-// The AES-GCM arm only. quic_aes.c is compiled in rather than linked,
-// for the reason test/quic_vectors.c gives: expand_key is static there,
-// and INV-26 keeps the two constructors the only public way to write an
-// aes_public_key, so a suite that fixes its own key reaches the schedule
-// no other way. quic_gcm.c is linked, because its three entries are not
-// static.
+// The AES-GCM arm only. A published suite fixes its own key, and INV-26
+// keeps the two constructors in quic_aes.h the only public way to write
+// an aes_public_key, so the suite reaches the cipher through
+// quic_aes_block.h's two entries, which take plain bytes.
+// quic_aes_key.h gives the type a body here, which INV-26 admits in a
+// test. quic_aes.c, quic_gcm.c and the AES implementation the build
+// picked are all linked.
 #ifdef CH_TRANSPORT_QUIC
-#include "quic_aes.c"
+#include "quic_aes_block.h"
+#include "quic_aes_key.h"
 #include "quic_gcm.h"
 #endif
 
@@ -176,7 +178,7 @@ static void run_aes_gcm(void) {
         }
         aes_public_key k;
         memset(&k, 0, sizeof k);
-        expand_key(key, &k.key);
+        aes_expand_round_keys(key, k.key.round_keys);
         uint8_t got_ct[1024];
         uint8_t got_tag[16];
         uint8_t got_pt[1024];

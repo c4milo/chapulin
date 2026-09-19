@@ -127,8 +127,13 @@ DOC_TABLE_HEAD = "| call | what it does |"
 # function it never matches, and a key type it writes no initializer
 # pattern for is a key it never matches. cipher_surface() below is what
 # checks that, so the rule's coverage is read rather than assumed.
-CIPHER_HEADERS = ("quic_aes.h", "quic_gcm.h")
-CIPHER_PREFIXES = ("aes_", "gcm_")
+# quic_aes_block.h joins the two public cipher headers because it
+# declares the key expansion and the block cipher the AES axis picks an
+# implementation for, plus the AES=extern hook. Every name all three
+# declare must be one inv-26-aes-public-keys-only matches, which is
+# what cipher_surface() compares.
+CIPHER_HEADERS = ("quic_aes.h", "quic_aes_block.h", "quic_gcm.h")
+CIPHER_PREFIXES = ("aes_", "gcm_", "ch_aes_")
 RULES = Path(".semgrep/invariants.yml")
 RULE_ID = "inv-26-aes-public-keys-only"
 

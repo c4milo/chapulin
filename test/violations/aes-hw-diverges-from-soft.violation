@@ -1,0 +1,19 @@
+invariant: INV-26
+file: quic_aes_hw.c
+catches: aes_equiv_test
+reason: the AES=hw key expansion starts from the wrong round constant, so
+  it computes a different key schedule from AES=soft and a different
+  block from it. CBMC cannot read an intrinsic, so no proof covers this
+  file and bin/aes_equiv_test is the whole of what holds it: it runs both
+  implementations over the same keys and blocks and compares the round
+  keys and the cipher output byte for byte. The edit lands in
+  aes_expand_round_keys, which sits outside the two architecture arms, so
+  it is compiled on an ARMv8 host and an x86-64 one alike and the catch
+  does not depend on which instruction set the runner has. Without the
+  equivalence test this divergence reaches a build that reads every QUIC
+  Initial packet wrong and no gate says so.
+
+--- old
+    uint8_t round_constant = 0x01;
+--- new
+    uint8_t round_constant = 0x02;

@@ -12,9 +12,11 @@
 
 // The block cipher takes a key the caller chose, and INV-26 keeps the
 // two constructors the only public way to write an aes_public_key, so
-// this file reaches the cipher the way test/quic_vectors.c does: it
-// compiles quic_aes.c rather than linking it.
-#include "quic_aes.c"
+// this file reaches the cipher through quic_aes_block.h's two entries,
+// which take plain bytes. quic_aes_key.h gives aes_public_key a body for
+// the derivation rows below.
+#include "quic_aes_block.h"
+#include "quic_aes_key.h"
 
 // FIPS 197 fixes the key and the block at 128 bits, so the only domain
 // to sample is their contents.
@@ -26,9 +28,9 @@ static void diff_aes128(void) {
         rng_fill(block, sizeof block);
 
         aes_key_schedule schedule;
-        expand_key(key, &schedule);
+        aes_expand_round_keys(key, schedule.round_keys);
         uint8_t out[AES_BLOCK];
-        cipher(&schedule, block, out);
+        aes_cipher_block(schedule.round_keys, block, out);
 
         char key_hex[2 * AES_128_KEY + 1];
         (void)hex_encode(key_hex, key, sizeof key);

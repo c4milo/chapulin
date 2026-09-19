@@ -8,20 +8,24 @@
 // docs/quic.md, "Verification owed", names this file and the binary it
 // builds.
 //
-// It compiles quic_aes.c rather than linking it. FIPS 197's vectors fix
-// the key, INV-26 makes the two constructors the only public way to write
-// an aes_public_key, and neither constructor takes a key the caller chose.
-// So the block cipher and the key schedule are reached the way
-// test/softmul_test.c reaches softmul.c: the source is compiled in.
-// bin/quic_test therefore does not link quic_aes.c a second time. It does
-// link quic_gcm.c, whose three entries are not static and take the key
-// type that quic_aes.c builds.
+// FIPS 197's vectors fix the key, and INV-26 makes the two constructors
+// in quic_aes.h the only public way to write an aes_public_key, so a
+// vector whose key the standard chose reaches the cipher through
+// quic_aes_block.h's two entries instead. Those take plain bytes and are
+// not static, so this file links quic_aes.c and the AES implementation
+// the build picked rather than compiling either in. quic_aes_key.h gives
+// aes_public_key a body here, which INV-26 admits in a test and the
+// Semgrep rule excludes `test` for.
+//
+// bin/quic_test runs AES=soft and bin/quic_test_hw runs the same vectors
+// on AES=hw, so every standard below is answered by both implementations.
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
 #include "ch_assert.h"
-#include "quic_aes.c"
+#include "quic_aes_block.h"
+#include "quic_aes_key.h"
 #include "quic_initial.h"
 #include "quic_keys.h"
 #include "quic_packet.h"
@@ -71,7 +75,7 @@ static const uint8_t APPENDIX_DCID[8] = {0x83, 0x94, 0xc8, 0xf0, 0x3e, 0x51, 0x5
 
 // The GCM vectors, in their own header because the RFC 9001 Appendix A.2
 // packet is long. They read APPENDIX_DCID, unhex, eq_hex and CHECK above,
-// and expand_key from the quic_aes.c included with them.
+// and aes_expand_round_keys from quic_aes_block.h.
 #include "quic_gcm_tests.h"
 
 // The packet protection and header protection vectors, in their own
@@ -106,21 +110,21 @@ static void test_fips197_blocks(void) {
     aes_key_schedule schedule;
     uint8_t out[AES_BLOCK];
 
-    expand_key(appendix_b_key, &schedule);
+    aes_expand_round_keys(appendix_b_key, schedule.round_keys);
     // FIPS 197 §5.2: the key itself is the first round key.
     CHECK(memcmp(schedule.round_keys, appendix_b_key, AES_128_KEY) == 0);
-    cipher(&schedule, appendix_b_in, out);
+    aes_cipher_block(schedule.round_keys, appendix_b_in, out);
     CHECK(memcmp(out, appendix_b_out, sizeof out) == 0);
 
-    expand_key(appendix_c_key, &schedule);
-    cipher(&schedule, appendix_c_in, out);
+    aes_expand_round_keys(appendix_c_key, schedule.round_keys);
+    aes_cipher_block(schedule.round_keys, appendix_c_in, out);
     CHECK(memcmp(out, appendix_c_out, sizeof out) == 0);
 
     // The headers allow in == out, so the same vector must come back
     // when the caller passes one buffer twice.
     uint8_t both[AES_BLOCK];
     memcpy(both, appendix_c_in, sizeof both);
-    cipher(&schedule, both, both);
+    aes_cipher_block(schedule.round_keys, both, both);
     CHECK(memcmp(both, appendix_c_out, sizeof both) == 0);
 }
 

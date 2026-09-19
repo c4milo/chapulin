@@ -5,7 +5,7 @@
 // representation checked against the other.
 //
 // Included by test/diff_quic_test.c only, after test/diff_aes.h, which
-// compiles quic_aes.c and puts expand_key in scope.
+// puts aes_expand_round_keys in scope through quic_aes_block.h.
 #ifndef CH_DIFF_GCM_H
 #define CH_DIFF_GCM_H
 
@@ -26,7 +26,7 @@
 // test/quic_gcm_tests.h does.
 static void diff_gcm_key(aes_public_key *k, const uint8_t key[AES_128_KEY]) {
     memset(k, 0, sizeof *k);
-    expand_key(key, &k->key);
+    aes_expand_round_keys(key, k->key.round_keys);
 }
 
 // gcm_seal over every length pair the cap admits, each with fresh key,

@@ -749,9 +749,14 @@ which convention holds them.
 
 ### INV-26 — AES sees three public keys and no others
 
-- **Claim.** Under `TRANSPORT=quic` this tree carries a table-driven
-  AES-128, in `quic_aes.c` and `quic_gcm.c`, and every key it is given
-  is public. There are three: the packet protection key and the header
+- **Claim.** Under `TRANSPORT=quic` this tree carries an AES-128, and
+  every key it is given is public. `quic_aes.c` derives the keys and
+  `quic_gcm.c` builds the AEAD on them; the key expansion and the block
+  cipher sit in whichever of `quic_aes_soft.c`, `quic_aes_hw.c` and
+  `quic_aes_extern.c` the Makefile `AES` variable picked, behind the
+  contract `quic_aes_block.h` states. Only `AES=soft` is table-driven,
+  and the claim below is what lets that one exist; it binds all three
+  the same way, because `AES=extern` cannot state its timing either. There are three: the packet protection key and the header
   protection key, both expanded from `HKDF-Extract` over RFC 9001
   §5.2's printed salt and the Destination Connection ID the caller
   supplied, and the 16-byte constant RFC 9001 §5.8 prints for the Retry
@@ -808,7 +813,7 @@ which convention holds them.
   index returns the high bits of the key bytes, which are the secret's
   own bytes. In the new shape the bytes written are the input to
   `hkdf_extract`, then to three `hkdf_expand_label` calls, before
-  `expand_key` runs. `hkdf.c` is HMAC-SHA-256 throughout: the one branch in
+  `aes_expand_round_keys` runs. `hkdf.c` is HMAC-SHA-256 throughout: the one branch in
   `hmac_sha256` reads `key_len`, the loops run counts the caller chose,
   and the only table `sha256.c` holds, `K[64]`, is indexed by the round
   number. Two checks hold that rather than leaving it argued.
@@ -826,26 +831,46 @@ which convention holds them.
 
   Three more checks hold the rule from other directions.
   `lint-quic-surface` reads the premise the Semgrep rule rests on.
-  `lint-codegen-partition` keeps `quic_aes.c` and `quic_gcm.c` in
-  `WIDEMUL_PUBLIC`, the list whose own comment says a secret arriving in
-  any of these is a design change, so moving either file to
-  `WIDEMUL_CEILING` is a diff a reviewer looks for. `lib-check` diffs
+  `lint-codegen-partition` keeps `quic_aes.c`, `quic_gcm.c` and the
+  three AES implementations in `WIDEMUL_PUBLIC`, the list whose own
+  comment says a secret arriving in any of these is a design change, so
+  moving one of them to `WIDEMUL_CEILING` is a diff a reviewer looks
+  for. That also says what these five files do not get: no codegen gate
+  compiles them, so `lint-wide-multiply` counts no branch of theirs. A
+  change that gave AES a secret key would owe those entries. `lib-check` diffs
   the packaged object's exports against `PUBLIC`, which holds no `aes_`
   or `gcm_` symbol, so no caller outside this tree reuses the cipher on
   something else.
-- **Check.** The compiler, `make lint-quic-surface`, and a
+  `lint-trust-separation` holds the `AES` axis to one implementation per
+  object. All three define the same two entries, so a second one would
+  not link, but a linker says nothing about which implementation an
+  object ended up with; the lint reads the packaged source list per axis
+  value instead.
+  `test/violations/aes-two-implementations-in-one-object.violation` is
+  the mutant that proves it fires, and
+  `aes-hw-diverges-from-soft.violation` breaks the `AES=hw` key
+  expansion and requires `bin/aes_equiv_test` to fail, which is what
+  holds the path no proof reaches (docs/quic.md, "What the AES axis
+  proves").
+- **Check.** The compiler, `make lint-quic-surface`,
+  `make lint-trust-separation`, and a
   Semgrep tripwire (`inv-26-aes-public-keys-only`) over every library
   source but `quic_initial.c` and `quic_retry.c`, the two permitted
-  callers, with `quic_aes.c` and `quic_gcm.c` excluded as the definition
-  sites.
+  callers, with `quic_aes.c`, `quic_gcm.c` and the three AES
+  implementations excluded as the definition sites.
 
   What the compiler refuses, in any source that does not include
   `quic_aes_key.h`: declaring an `aes_public_key`, declaring an array of
   them, assigning one, and writing a field of one. `quic.h` declares no
   member of that type, so `q->initial_tx.key.round_keys` names nothing.
 
-  What the Semgrep rule reads, in two branches:
-  - *A call* to a name beginning `aes_` or `gcm_`.
+  What the Semgrep rule reads, in two branches. The family is `aes_`,
+  `gcm_` and `ch_aes_`; the third is there because an `AES=extern`
+  build leaves `ch_aes_block` to the image, and a library source calling
+  it would run AES on a key of its choosing exactly as a call to `aes_`
+  would. The three implementation sources join `quic_aes.c` and
+  `quic_gcm.c` on the exclude list, as definition sites.
+  - *A call* to a name beginning `aes_`, `gcm_` or `ch_aes_`.
     `test/violations/inv26-aes-on-traffic-key.violation` seals a 1-RTT
     packet with `aes_encrypt_block` over a `quic_keys` set,
     `inv26-gcm-on-traffic-key.violation` opens one with `gcm_open`, and
@@ -867,9 +892,10 @@ which convention holds them.
   catch first.
 
   What `make lint-quic-surface` reads, so the rule's own premise is
-  checked rather than assumed. It fails when `quic_aes.h` or
-  `quic_gcm.h` declares a function or a function-like macro outside the
-  `aes_` and `gcm_` family, because the rule matches names;
+  checked rather than assumed. It fails when `quic_aes.h`,
+  `quic_aes_block.h` or `quic_gcm.h` declares a function or a
+  function-like macro outside the `aes_`, `gcm_` and `ch_aes_` family,
+  because the rule matches names;
   `inv26-cipher-entry-off-prefix.violation` adds a `quic_encrypt_block`
   entry and requires `test/lint-quic-surface.sh` to fail. It fails when
   either header gives a type a body, because that would put a key back

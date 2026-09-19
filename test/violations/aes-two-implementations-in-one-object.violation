@@ -1,0 +1,17 @@
+invariant: INV-26
+file: Makefile
+catches: test/lint-trust-separation.sh
+reason: AES=soft stops being one implementation and adds the hardware one
+  beside it, so a TRANSPORT=quic AES=soft object carries two definitions
+  of aes_expand_round_keys and aes_cipher_block. The rule is the one PIN
+  keeps: one implementation per object, chosen by a build variable, never
+  two. The linker would refuse this particular pair, but a linker is not
+  the gate — it says nothing about which implementation an object ended
+  up with, and an object that quietly carried the table cipher while its
+  build line said AES=hw would still link. The lint reads the packaged
+  source list per axis value, so it names the file that does not belong.
+
+--- old
+AES_IMPL := quic_aes_soft.c
+--- new
+AES_IMPL := quic_aes_soft.c quic_aes_hw.c

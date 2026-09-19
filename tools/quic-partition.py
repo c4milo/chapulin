@@ -98,14 +98,21 @@ def run(*args):
     return [line for line in r.stdout.split("\n") if line]
 
 
-def preprocess(path, define):
+def preprocess(path, define, extra=()):
     """One preprocessor run over one file, as (whole, own).
 
     `whole` is every line the run emitted, `own` only the lines the file
     itself wrote, read from the line markers. Both drop blank lines.
     None means the run failed or emitted no marker for the file, and the
-    caller reports that as a file it cannot judge."""
-    args = [CC] + FLAGS + ([DEFINE] if define else []) + [path]
+    caller reports that as a file it cannot judge.
+
+    `extra` is the file's own build choice, from QUIC_EXTRA_DEFINES. The
+    three AES implementations each guard their body on a second macro, so
+    without it the file preprocesses to nothing and this lint would read
+    that as a file contributing nothing to either transport. It goes on
+    both runs, because the AES choice is orthogonal to the transport: the
+    question here is still what CH_TRANSPORT_QUIC alone changes."""
+    args = [CC] + FLAGS + list(extra) + ([DEFINE] if define else []) + [path]
     r = subprocess.run(args, cwd=ROOT, capture_output=True, text=True)
     if r.returncode != 0:
         return None
@@ -169,20 +176,40 @@ def lists():
     variables, _ = make_db()
     return {name: variables.get(name, "").split()
             for name in ("QUIC_SHARED", "QUIC_CONDITIONAL", "HDRS", "LINT_C",
-                         "QUIC_REPLACED", "QUIC_PENDING")}
+                         "QUIC_REPLACED", "QUIC_PENDING",
+                         "QUIC_EXTRA_DEFINES", "QUIC_UNPROBED")}
 
 
-def judge(path, quic, shared, conditional):
+def extra_defines(entries):
+    """QUIC_EXTRA_DEFINES as a dict from file to its flags.
+
+    Each entry is `name:flag` and a name may carry several flags,
+    separated by commas, because an AES=hw run needs the define and the
+    flag that turns the instructions on. The shape is WIDEMUL_DEFINES's,
+    for the reason that variable gives: the build already knows which
+    file needs which macro, so this lint reads it rather than keeping a
+    second copy."""
+    found = {}
+    for entry in entries:
+        name, _, flags = entry.partition(":")
+        if not flags:
+            sys.exit(f"quic-partition: QUIC_EXTRA_DEFINES entry {entry!r} "
+                     f"names no flag; write it as name:-DMACRO")
+        found[name] = [f for f in flags.split(",") if f]
+    return found
+
+
+def judge(path, quic, shared, conditional, extra=()):
     """What one root file is, and every complaint about it.
 
     Returns the verdict -- "quic", "conditional", "shared" or "silent"
     -- and the messages. A file is QUIC-only when it writes no
     declaration without the define and gains something with it."""
-    off = preprocess(path, False)
+    off = preprocess(path, False, extra)
     if off is None:
         return None, [f"{path} does not preprocess without {DEFINE}, so this "
                       f"lint cannot judge it"]
-    on = preprocess(path, True)
+    on = preprocess(path, True, extra)
     if on is None:
         return None, [f"{path} does not preprocess with {DEFINE}, so this "
                       f"lint cannot judge it"]
@@ -293,6 +320,14 @@ def main(argv):
     # that defines them. A file leaving either list is judged again.
     skipped = sorted(set(names["QUIC_REPLACED"]) | set(names["QUIC_PENDING"]))
     roots = [p for p in roots if p not in skipped]
+    extra = extra_defines(names["QUIC_EXTRA_DEFINES"])
+    # A file this compiler cannot preprocess at all, because the build
+    # choice it needs is one this compiler does not offer: quic_aes_hw.c
+    # on a compiler with no AES instructions is its own #error, by
+    # design. The Makefile puts it here only in that case, so a compiler
+    # that has them judges it like any other file.
+    unprobed = [p for p in names["QUIC_UNPROBED"] if (ROOT / p).exists()]
+    roots = [p for p in roots if p not in unprobed]
 
     problems, counts, conditional = [], {}, []
     if not quic:
@@ -307,7 +342,8 @@ def main(argv):
     with ThreadPoolExecutor() as pool:
         verdicts = list(pool.map(
             lambda path: judge(path, quic, names["QUIC_SHARED"],
-                               names["QUIC_CONDITIONAL"]), roots))
+                               names["QUIC_CONDITIONAL"],
+                               extra.get(path, ())), roots))
     for path, (verdict, found) in zip(roots, verdicts):
         problems += found
         counts[verdict] = counts.get(verdict, 0) + 1
@@ -329,6 +365,7 @@ def main(argv):
     print(f"lint-quic-partition: {counts.get('quic', 0)} of {len(roots)} root "
           f"files are QUIC-only and every one is named quic*; "
           f"{len(skipped)} the QUIC object does not compile went unjudged; "
+          f"{len(unprobed)} this compiler cannot build went unjudged; "
           f"QUIC_SHARED "
           f"holds {len(shared)} that both transports compile and "
           f"QUIC_CONDITIONAL {counts.get('conditional', 0)} that carry a "

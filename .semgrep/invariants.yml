@@ -155,8 +155,12 @@ rules:
       for their header protection (§5.4.3) and AES-128-GCM under a
       printed key for the Retry tag (§5.8), and every key those three
       use is public. So quic_initial.c and quic_retry.c are the only
-      library sources that may name an aes_ or gcm_ entry; quic_aes.c
-      and quic_gcm.c are excluded as the definition sites. A use
+      library sources that may name an aes_ or gcm_ entry; quic_aes.c,
+      quic_gcm.c and the three AES implementations the Makefile AES
+      variable chooses among are excluded as the definition sites.
+      ch_aes_block joins the family because an AES=extern build leaves
+      that hook to the image, and a library source calling it would run
+      AES on a key of its choosing exactly as a call to aes_ would. A use
       anywhere else is a key from the TLS key schedule arriving at a
       lookup-table cipher, and this tree then has a timing story to
       defend (docs/decisions.md entry 6). Tripwire grade: this catches
@@ -169,7 +173,8 @@ rules:
       what that closes and what review still owes.
     paths:
       exclude: [test, proof, fuzz, spec, bench, bin, examples, quic_initial.c,
-                quic_retry.c, quic_aes.c, quic_gcm.c]
+                quic_retry.c, quic_aes.c, quic_gcm.c, quic_aes_soft.c,
+                quic_aes_hw.c, quic_aes_extern.c]
     pattern-either:
       # A call. `make lint-quic-surface` fails when a function, a
       # function-like macro or a typedef in quic_aes.h or quic_gcm.h is
@@ -179,7 +184,7 @@ rules:
           - pattern: $F(...)
           - metavariable-regex:
               metavariable: $F
-              regex: ^(aes|gcm)_
+              regex: ^(aes|gcm|ch_aes)_
       # The name as a value rather than a call: &aes_encrypt_block, a
       # function pointer initialized or assigned from the name, the
       # name passed as an argument. The branch above misses all three,
@@ -190,7 +195,7 @@ rules:
           - pattern: $F
           - metavariable-regex:
               metavariable: $F
-              regex: ^(aes|gcm)_
+              regex: ^(aes|gcm|ch_aes)_
 
   - id: inv-6-no-pkcs1
     languages: [c]

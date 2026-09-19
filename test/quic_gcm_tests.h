@@ -7,7 +7,7 @@
 // -DCH_TRANSPORT_QUIC build compiles. It sits in its own header for the
 // reason test/pem_tests.h and test/session_tests.h do: the arrays are
 // long, and the main stays readable beside them. That main compiles
-// quic_aes.c, so expand_key is in scope here and a test can build an
+// quic_aes_block.h, so aes_expand_round_keys is in scope here and a test can build an
 // aes_public_key over a key SP 800-38D chose. INV-26 bans that shape in
 // a library source and admits it in a test, which is why the Semgrep
 // rule excludes `test`.
@@ -57,7 +57,7 @@ static void gcm_test_key(aes_public_key *k, const char *key_hex) {
     uint8_t key[AES_128_KEY];
     CHECK(unhex(key_hex, key) == sizeof key);
     memset(k, 0, sizeof *k);
-    expand_key(key, &k->key);
+    aes_expand_round_keys(key, k->key.round_keys);
 }
 
 // Every SP 800-38D case, four questions each: the ciphertext and the tag

@@ -15,11 +15,20 @@
 //
 // HKDF is a contract stub (proof/quic_aes_stubs.h), which states what
 // the composition gives up and where the real functions are proven.
+//
+// AES=soft is the implementation proven, and it is the only one CBMC can
+// read: an AES instruction has no C body to unwind, so quic_aes_hw.c
+// reaches no property here, and quic_aes_extern.c calls a function this
+// tree does not contain. Both are held to this one by
+// test/aes_equiv_test.c, which runs them over the same inputs and
+// compares byte for byte. docs/quic.md, "What the AES axis proves",
+// states the split.
 #include "harness.h"
 
 #include "quic_aes_stubs.h"
 
 #include "quic_aes.c"
+#include "quic_aes_soft.c"
 
 int main(void) {
     aes_public_key k;

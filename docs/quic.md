@@ -462,6 +462,89 @@ the compiler's refusal becomes the script's own exit status.
 that script to fail. That is the original bypass, and it now names a member
 that does not exist.
 
+### The AES axis, and what each value means
+
+The Makefile `AES` variable picks which implementation of the AES-128 key
+expansion and forward cipher an object carries. `quic_aes_block.h` states the
+contract all three meet, and `quic_aes.c` calls it: that file owns the
+`aes_public_key`, derives the RFC 9001 keys into it, and hands round keys down
+as plain bytes.
+
+| value | source | what it is |
+| --- | --- | --- |
+| `soft` (default) | `quic_aes_soft.c` | FIPS 197 in C, with the S-box as a 256-byte table |
+| `hw` | `quic_aes_hw.c` | the compiler's AES intrinsics, ARMv8 or x86-64 |
+| `extern` | `quic_aes_extern.c` | forwards to `ch_aes_block`, which the image defines |
+
+One implementation per object, the way `PIN` puts one pinned algorithm in one
+object. All three define the same two entries, so a second one would not link;
+`lint-trust-separation` checks the packaged source list per `AES` value, and
+`test/violations/aes-two-implementations-in-one-object.violation` is the mutant
+that proves it fires.
+
+The entries take plain byte arrays rather than an `aes_key_schedule`. That is
+INV-26's first check holding: `quic_aes_key.h` is the one file that gives
+`aes_public_key` a body, exactly three sources include it, and an
+implementation that took the struct would have to become a fourth. Taking
+bytes keeps the count at three, so none of the three implementations can build
+a key object at all.
+
+**Detection is the compiler's, at build time.** `quic_aes_hw.c` guards on
+`__ARM_FEATURE_AES` (ARMv8 crypto extensions, `<arm_neon.h>`, `vaeseq_u8` and
+`vaesmcq_u8`) and `__AES__` (x86-64 AES-NI, `<wmmintrin.h>`, `_mm_aesenc_si128`,
+`_mm_aesenclast_si128` and `_mm_aeskeygenassist_si128`). Nothing probes a CPU
+and nothing asks an operating system. An arm64 core cannot answer the question
+itself — reading `ID_AA64ISAR0_EL1` from EL0 takes SIGILL — so runtime
+detection means per-OS code, which the C11-and-libc rule forbids and which the
+bare-metal m3 and freertos lanes have nobody to ask. A consumer compiles
+chapulin into its own build, so it already chooses `-march=armv8-a+crypto` or
+`-maes`. A build without the flag takes `AES=soft` and stays correct;
+`AES=hw` without the instructions is a hard `#error`, not a silent fall back,
+because `AES=hw` is a statement about what the object contains. The intrinsic
+headers are the compiler's own, so they are not third-party code.
+
+### What the AES axis proves
+
+CBMC cannot read an intrinsic. An AES instruction has no C body to unwind, and
+`ch_aes_block` is a function this tree does not contain, so the proofs cover
+`quic_aes_soft.c` alone and the other two are held to it by test. This is what
+each one rests on, and nothing more:
+
+| path | proved | tested |
+| --- | --- | --- |
+| `soft` | `proof/quic_aes_harness.c`: memory safety and absence of UB over unconstrained inputs at the module's real bound. `spec/Spec/Aes.lean` through `test/diff_aes.h`: the cipher against FIPS 197 as the spec states it | FIPS 197 §B and §C.1, RFC 9001 Appendix A, SP 800-38D and Wycheproof AES-GCM, in `bin/quic_test` |
+| `hw` | nothing | `bin/aes_equiv_test`: the round keys and the cipher block against `soft`, byte for byte, over fixed edge cases, every single-bit key and block, and 200,000 random pairs. `bin/quic_test_hw`: the same published vectors `bin/quic_test` runs. `bin/wycheproof_test_aes_hw`: the AES-GCM suite |
+| `extern` | nothing | nothing here can: the block function is the image's |
+
+`bin/aes_equiv_test` compares two things rather than one. The round keys are
+compared whole, so a key schedule that diverges is named at the schedule rather
+than three rounds later inside a block, and the cipher output is compared,
+which is the answer callers depend on. It also runs both implementations with
+`in == out`, the aliasing `quic_gcm.c` uses for its counter block.
+`test/violations/aes-hw-diverges-from-soft.violation` starts the hardware key
+expansion from the wrong round constant and requires that binary to fail, so
+the equivalence check is itself checked. That mutant edits
+`aes_expand_round_keys`, which sits outside the two architecture arms, so it
+lands on an ARMv8 runner and an x86-64 one alike.
+
+**What none of this proves.** An `AES=extern` build is unverified by this tree
+beyond the contract `quic_aes_block.h` states; the integrator owns
+`ch_aes_block` the way it owns `ch_rand_bytes`. And an `AES=hw` object is
+checked on the architecture the runner has: a run on an ARMv8 host exercises
+the `vaeseq_u8` arm and leaves the AES-NI arm compiled but unrun, and the
+reverse on x86-64. Both arms are exercised only across both CI legs.
+
+**What the axis does not change.** INV-26 still bounds which keys reach this
+cipher, under every `AES` value. An AES instruction is constant time — it takes
+no table and its latency does not depend on its operands — so an `AES=hw` build
+carries no timing trade where `AES=soft` does, and that is the property
+`docs/decisions.md` entry 6 says a secret-key AES suite would need. But no key
+from the TLS key schedule reaches `quic_aes.c` today whatever the build, and
+lifting that bound is a separate change with its own gates, not a consequence
+of this one. An `AES=extern` build cannot even state its timing: what
+`ch_aes_block` costs is the peripheral's.
+
+
 ### What the AES exception costs, against today's counts
 
 Every count in the *today* column is *measured* at `3432a5d` with the command

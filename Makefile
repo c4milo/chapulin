@@ -126,7 +126,7 @@ SRCS := ct.c sha256.c hkdf.c chacha20.c poly1305.c aead.c x25519.c p256.c rsa.c 
 HDRS := ct.h sha256.h hkdf.h chacha20.h poly1305.h aead.h x25519.h p256.h rsa.h ch_assert.h \
         pem.h x509.h x509_der.h x509_ca.h webpki.h buf.h record.h keysched.h io.h handshake_message.h handshake_parser.h handshake_record.h cfg.h session.h handshake_auth.h handshake.h handshake_post.h \
         tls.h rand.h drbg.h sha3.h sha512.h sha512_compress.h p384.h p384_field.h rsa_pkcs1.h mlkem.h mlkem_poly.h \
-        handshake_flight.h quic.h quic_aes.h quic_aes_key.h quic_gcm.h quic_initial.h quic_keys.h quic_packet.h quic_retry.h quic_step.h
+        handshake_flight.h quic.h quic_aes.h quic_aes_block.h quic_aes_key.h quic_gcm.h quic_initial.h quic_keys.h quic_packet.h quic_retry.h quic_step.h
 
 # The TRANSPORT=quic mode's own sources, named here rather than matched
 # by a pattern, for the reason WEBPKI_SRCS is named: an auditor reads
@@ -140,8 +140,74 @@ HDRS := ct.h sha256.h hkdf.h chacha20.h poly1305.h aead.h x25519.h p256.h rsa.h 
 # every call refuses. `make quic-footprint` prints how many of the
 # mode's functions are stubbed and how many are implemented, and
 # bin/quic_stub_test calls each public entry and requires the refusal.
-QUIC_SRCS := quic_aes.c quic_gcm.c quic_keys.c quic_packet.c quic_initial.c quic_retry.c \
-             quic_step.c quic.c
+#
+# AES implementation: AES=soft (default) is the FIPS 197 cipher in C with
+# a 256-byte S-box table, AES=hw is the compiler's AES intrinsics, and
+# AES=extern leaves ch_aes_block to the image the way RAND=extern leaves
+# ch_rand_bytes. One implementation per object, the way PIN puts one
+# pinned algorithm in one object: all three define the same two entries,
+# so two of them in one object would not link, and AES_IMPL names the one
+# that joins QUIC_SRCS below.
+#
+# Only a TRANSPORT=quic object compiles any of them, because AES exists
+# here for QUIC Initial packets and the Retry tag and for nothing else
+# (INV-26). A TRANSPORT=tls build accepts the variable and compiles no
+# AES either way, which is why the define below is not conditioned on the
+# transport: LIB_VARIANT carries AES so the two objects never share a
+# path, and cfg.h refuses both defines at once.
+#
+# Detection is the compiler's, at build time. quic_aes_hw.c states why
+# nothing probes a CPU and nothing asks an operating system, and it is a
+# hard #error, not a fall back to the table, when AES=hw is built without
+# the AES instructions.
+AES ?= soft
+ifeq ($(AES),soft)
+AES_DEF :=
+AES_IMPL := quic_aes_soft.c
+else ifeq ($(AES),hw)
+AES_DEF := -DCH_AES_HW
+AES_IMPL := quic_aes_hw.c
+else ifeq ($(AES),extern)
+AES_DEF := -DCH_AES_EXTERN
+AES_IMPL := quic_aes_extern.c
+else
+$(error AES=$(AES) is not an AES implementation; use AES=soft, AES=hw or AES=extern)
+endif
+QUIC_SRCS := quic_aes.c $(AES_IMPL) quic_gcm.c quic_keys.c quic_packet.c quic_initial.c \
+             quic_retry.c quic_step.c quic.c
+# The three implementation sources, named whichever one this build picks,
+# so a check that reads every AES choice does not re-derive the list.
+AES_IMPL_SRCS := quic_aes_soft.c quic_aes_hw.c quic_aes_extern.c
+# Whether this compiler can build AES=hw, and with which flag, probed
+# rather than assumed. clang on Apple silicon predefines
+# __ARM_FEATURE_AES with no flag; an x86-64 build needs -maes; a cross
+# compiler for a core without the instructions can do neither, and the
+# targets that read this skip rather than fail the whole check. `none`
+# means the macros are already there, so the flag added is empty.
+AES_HW_PROBE := $(shell \
+  if $(CC) -dM -E -x c /dev/null 2>/dev/null | grep -qE '__ARM_FEATURE_AES|__AES__'; then echo none; \
+  elif $(CC) -maes -dM -E -x c /dev/null 2>/dev/null | grep -q '__AES__'; then echo -maes; \
+  elif $(CC) -march=armv8-a+crypto -dM -E -x c /dev/null 2>/dev/null | grep -q '__ARM_FEATURE_AES'; then echo -march=armv8-a+crypto; \
+  fi)
+AES_HW_CFLAGS := $(filter-out none,$(AES_HW_PROBE))
+# The two binaries that need those instructions, named only when the
+# probe found them, so `check` builds and runs them where they work and
+# says it skipped them where they do not exist.
+AES_HW_BINS := $(if $(AES_HW_PROBE),bin/quic_test_hw bin/aes_equiv_test)
+# What lint-quic-partition needs to preprocess each AES implementation.
+# Each one guards its body on a second macro, so with CH_TRANSPORT_QUIC
+# alone it preprocesses to nothing and that lint would read it as a file
+# contributing to neither transport. Same shape as WIDEMUL_DEFINES, with
+# commas between a file's flags. quic_aes_soft.c needs no entry: its body
+# is what a build with neither macro compiles.
+COMMA := ,
+QUIC_EXTRA_DEFINES := quic_aes_extern.c:-DCH_AES_EXTERN \
+                      quic_aes_hw.c:-DCH_AES_HW$(patsubst %,$(COMMA)%,$(AES_HW_CFLAGS))
+# The files this compiler cannot preprocess at all, because the build
+# choice they need is one it does not offer. quic_aes_hw.c without the
+# AES instructions is its own #error, by design, so lint-quic-partition
+# skips it there and judges it everywhere else.
+QUIC_UNPROBED := $(if $(AES_HW_PROBE),,quic_aes_hw.c)
 # Which of them are still stubs, read from the marker rather than from a
 # list kept by hand: every stub body holds one `// CH_QUIC_STUB: ` line
 # and an implemented body holds none. Two gates carry an exception this
@@ -162,7 +228,9 @@ LINT_C := $(filter-out softmul.c,$(SRCS)) drbg.c sha3.c sha512.c sha512_compress
           test/webpki_time_test.c test/webpki_name_test.c test/webpki_spki_test.c test/webpki_sigalg_test.c test/webpki_session_test.c test/webpki_cert_test.c test/webpki_chain_test.c \
           test/webpki_auth_test.c \
           test/mlkem_test.c test/handshake_strict_test.c test/handshake_sequence_test.c \
-          test/x509_strict_test.c $(QUIC_SRCS) test/quic_stub_test.c test/quic_vectors.c test/diff_quic_test.c $(wildcard examples/*.c)
+          test/x509_strict_test.c $(QUIC_SRCS) $(filter-out $(AES_IMPL),$(AES_IMPL_SRCS)) \
+          test/quic_stub_test.c test/quic_vectors.c test/diff_quic_test.c \
+          test/aes_equiv_test.c test/aes_equiv_soft.c test/aes_equiv_hw.c $(wildcard examples/*.c)
 
 # Test-local headers: prerequisites for every binary that includes them,
 # so a header edit rebuilds the binaries it changes.
@@ -307,7 +375,7 @@ endif
 # draws randomness while another function stays a stub would still set
 # it. The assertion catches that build and names the line to delete.
 QUIC_STUB_RAND := $(if $(filter quic,$(TRANSPORT)),$(filter quic.c,$(QUIC_STUB_SRCS)))
-LIB_DEF := $(strip $(PIN_DEF) $(TRUST_DEF) $(TRANSPORT_DEF))
+LIB_DEF := $(strip $(PIN_DEF) $(TRUST_DEF) $(TRANSPORT_DEF) $(AES_DEF))
 # The one assignment. Every axis above filters or names the sources
 # only its value adds; nothing below rewrites.
 LIB_SRCS := $(filter-out $(PIN_FILTER) $(TRUST_FILTER) $(TRANSPORT_FILTER),$(SRCS)) \
@@ -369,7 +437,7 @@ QEMU_SMOKE_C := $(wildcard test/qemu/*.c test/qemu/*.h test/freertos/*.c test/fr
 # TRANSPORT=quic one write to the same path, make 3.81 compares mtimes
 # to the second, and the second link reuses the first object -- the
 # failure the paragraph below records for RAND.
-LIB_VARIANT := $(PIN)-$(TRUST)-$(KEX)-$(RAND)-$(TRANSPORT)
+LIB_VARIANT := $(PIN)-$(TRUST)-$(KEX)-$(RAND)-$(TRANSPORT)-$(AES)
 LIB_OBJS := $(LIB_SRCS:%.c=bin/obj/$(LIB_VARIANT)/%.o)
 
 # bench/device-ram.sh sizes the same modules the build packages. It asks
@@ -401,7 +469,12 @@ print-lib-def:
 #
 # The transport rows read their file list the same way, from git's
 # quic*.c at the root, so a QUIC_SRCS that loses a file fails here
-# instead of leaving that file out of the object. They name TRANSPORT
+# instead of leaving that file out of the object. The three AES
+# implementations come out of that list and get rows of their own,
+# because exactly one of them belongs in an object: they define the
+# same two entries, so a second one would not link. Those rows hold
+# the AES axis to one implementation, the way the PIN rows hold the
+# pinned algorithm to one. They name TRANSPORT
 # explicitly on both sides, because a `make check TRANSPORT=quic` hands
 # its value to every recursion below, and the TRANSPORT=tls row must
 # read the transport it names.
@@ -443,8 +516,12 @@ lint-trust-separation:
 	check "TRUST=raw KEX=pq" "x25519.c sha3.c mlkem.c mlkem_poly.c" "" "-DCH_KEX_PQ" ""; \
 	quic_files=$$(git ls-files 'quic*.c' | grep -v / | tr '\n' ' '); \
 	[ -n "$$quic_files" ] || { echo "lint-trust-separation: git tracks no quic*.c file at the root, so the transport rows would check nothing"; rc=1; }; \
+	quic_always=$$(printf '%s\n' $$quic_files | grep -vxF -e quic_aes_soft.c -e quic_aes_hw.c -e quic_aes_extern.c | tr '\n' ' '); \
 	check "TRANSPORT=tls" "io.c record.c session.c handshake.c tls.c" "$$quic_files" "" "-DCH_TRANSPORT_QUIC"; \
-	check "TRANSPORT=quic" "$$quic_files" "io.c record.c session.c handshake.c tls.c" "-DCH_TRANSPORT_QUIC" ""; \
+	check "TRANSPORT=quic" "$$quic_always quic_aes_soft.c" "io.c record.c session.c handshake.c tls.c quic_aes_hw.c quic_aes_extern.c" "-DCH_TRANSPORT_QUIC" "-DCH_AES_HW -DCH_AES_EXTERN"; \
+	check "TRANSPORT=quic AES=soft" "quic_aes_soft.c" "quic_aes_hw.c quic_aes_extern.c" "" "-DCH_AES_HW -DCH_AES_EXTERN"; \
+	check "TRANSPORT=quic AES=hw" "quic_aes_hw.c" "quic_aes_soft.c quic_aes_extern.c" "-DCH_AES_HW" "-DCH_AES_EXTERN"; \
+	check "TRANSPORT=quic AES=extern" "quic_aes_extern.c" "quic_aes_soft.c quic_aes_hw.c" "-DCH_AES_EXTERN" "-DCH_AES_HW"; \
 	[ $$rc = 0 ] && echo "lint-trust-separation: every axis value packages exactly its own sources and defines"; \
 	exit $$rc
 # bench/device-ram.sh builds with CLANG_RV, the clang the codegen lints
@@ -619,17 +696,38 @@ bin/quic_stub_test: test/quic_stub_test.c $(QUIC_SRCS) hkdf.c sha256.c chacha20.
 # cipher and RFC 9001 Appendix A for the Initial keys, the header
 # protection masks and the Retry key. Same shape and same reason as
 # bin/quic_stub_test above, and docs/quic.md, "Verification owed", names
-# both the file and this binary. test/quic_vectors.c compiles quic_aes.c
-# rather than linking it, because FIPS 197's vectors fix the key and
-# INV-26 keeps the two constructors the only public way to write one, so
-# quic_aes.c is not on the line below. A later lane that adds a vector
-# section for another quic source links that source here.
-bin/quic_test: test/quic_vectors.c quic_gcm.c quic_keys.c quic_retry.c quic_initial.c \
-               quic_packet.c hkdf.c sha256.c chacha20.c poly1305.c aead.c buf.c ct.c \
-               $(HDRS) $(TESTH)
+# both the file and this binary. quic_aes.c and the AES implementation this
+# build picked are both on the line: the cipher moved out of quic_aes.c into
+# the three sources the AES axis chooses among, and test/quic_vectors.c reaches
+# it through quic_aes_block.h's two entries, which take plain bytes rather than
+# a key object. A later lane that adds a vector section for another quic source
+# links that source here.
+bin/quic_test: test/quic_vectors.c quic_aes.c $(AES_IMPL) quic_gcm.c quic_keys.c quic_retry.c quic_initial.c quic_packet.c \
+               hkdf.c sha256.c chacha20.c poly1305.c aead.c buf.c ct.c $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -DCH_TRANSPORT_QUIC -I. -o $@ test/quic_vectors.c quic_gcm.c quic_keys.c \
-	  quic_retry.c quic_initial.c quic_packet.c hkdf.c sha256.c chacha20.c poly1305.c aead.c buf.c ct.c
+	$(CC) $(CFLAGS) -DCH_TRANSPORT_QUIC $(AES_DEF) -I. -o $@ test/quic_vectors.c quic_aes.c \
+	  $(AES_IMPL) quic_gcm.c quic_keys.c quic_retry.c quic_initial.c quic_packet.c hkdf.c sha256.c chacha20.c poly1305.c aead.c buf.c ct.c
+# The same vectors on AES=hw. CBMC cannot read an intrinsic, so the published
+# standards are how the instruction path answers for itself: FIPS 197 for the
+# cipher, RFC 9001 Appendix A for the Initial keys and the header protection
+# masks, SP 800-38D for the AEAD. bin/aes_equiv_test is the other half,
+# comparing the two implementations directly. quic_aes_hw.c is named rather
+# than $(AES_IMPL) because this binary is the hardware leg whatever the build's
+# AES value is.
+bin/quic_test_hw: test/quic_vectors.c quic_aes.c quic_aes_hw.c quic_gcm.c quic_keys.c quic_retry.c quic_initial.c quic_packet.c \
+                  hkdf.c sha256.c chacha20.c poly1305.c aead.c buf.c ct.c $(HDRS) $(TESTH)
+	@mkdir -p bin
+	$(CC) $(CFLAGS) $(AES_HW_CFLAGS) -DCH_TRANSPORT_QUIC -DCH_AES_HW -I. -o $@ \
+	  test/quic_vectors.c quic_aes.c quic_aes_hw.c quic_gcm.c quic_keys.c quic_retry.c quic_initial.c quic_packet.c hkdf.c sha256.c chacha20.c poly1305.c aead.c buf.c ct.c
+# AES=hw against AES=soft over the same inputs, the check that holds the
+# instruction path where a proof cannot reach. Both implementations are in one
+# binary under two names, which a library object may never do and a test binary
+# may, the way the test binaries compile both PIN algorithms.
+# test/aes_equiv_soft.c and test/aes_equiv_hw.c compile the two sources in
+# under those names, so neither is on the line twice.
+bin/aes_equiv_test: test/aes_equiv_test.c test/aes_equiv_soft.c test/aes_equiv_hw.c quic_aes_soft.c quic_aes_hw.c $(HDRS) $(TESTH)
+	@mkdir -p bin
+	$(CC) $(CFLAGS) $(AES_HW_CFLAGS) -DCH_TRANSPORT_QUIC -I. -o $@ test/aes_equiv_test.c test/aes_equiv_soft.c test/aes_equiv_hw.c
 # SHA-512 and SHA-384 vectors and the streaming contract. Its own binary,
 # out of the packaged object like sha3: only TRUST=webpki links sha512.c.
 bin/sha512_test: test/sha512_test.c sha512.c sha512_compress.c $(HDRS) $(TESTH)
@@ -869,7 +967,7 @@ run-%: bin/%
 # and the invariant violation builds. The nightly runs it. Splitting on
 # duration rather than on importance is deliberate -- nothing here is
 # optional, and a change is not finished until check-slow passes too.
-check: bin/unit bin/unit_ca bin/unit_pq bin/tlsclient bin/tlsclient_ecdsa bin/tlsclient_ca bin/tlsclient_ca_ecdsa bin/tlsclient_webpki bin/tlsclient_pq bin/drbg_test bin/softmul_test bin/rsa_test bin/sha3_test bin/sha512_test bin/p384_test bin/rsa_pkcs1_test bin/webpki_time_test bin/webpki_name_test bin/webpki_spki_test bin/webpki_sigalg_test bin/webpki_cert_test bin/webpki_chain_test bin/webpki_auth_test bin/mlkem_test bin/handshake_strict_test bin/handshake_strict_pq bin/handshake_strict_webpki bin/webpki_session_test bin/webpki_session_pq bin/x509strict bin/x509strict_ecdsa bin/quic_stub_test bin/quic_test lint rand-check
+check: bin/unit bin/unit_ca bin/unit_pq bin/tlsclient bin/tlsclient_ecdsa bin/tlsclient_ca bin/tlsclient_ca_ecdsa bin/tlsclient_webpki bin/tlsclient_pq bin/drbg_test bin/softmul_test bin/rsa_test bin/sha3_test bin/sha512_test bin/p384_test bin/rsa_pkcs1_test bin/webpki_time_test bin/webpki_name_test bin/webpki_spki_test bin/webpki_sigalg_test bin/webpki_cert_test bin/webpki_chain_test bin/webpki_auth_test bin/mlkem_test bin/handshake_strict_test bin/handshake_strict_pq bin/handshake_strict_webpki bin/webpki_session_test bin/webpki_session_pq bin/x509strict bin/x509strict_ecdsa bin/quic_stub_test bin/quic_test $(AES_HW_BINS) lint rand-check
 	# The packaged object is built once per entropy pattern, because
 	# lib-check reads a different export list and a different import
 	# list in each. Only the object is built twice: the examples and
@@ -937,6 +1035,16 @@ check: bin/unit bin/unit_ca bin/unit_pq bin/tlsclient bin/tlsclient_ecdsa bin/tl
 	./bin/mlkem_test
 	./bin/quic_stub_test
 	./bin/quic_test
+	# The AES=hw leg: the published vectors on the instructions, and the
+	# instruction path against the software one over the same inputs.
+	# CBMC cannot read an intrinsic, so these two are what hold that path
+	# (docs/quic.md, "What the AES axis proves"). A compiler without the
+	# AES instructions builds neither, which AES_HW_BINS reports above.
+	@set -e; if [ -n "$(AES_HW_BINS)" ]; then \
+	  ./bin/quic_test_hw; ./bin/aes_equiv_test; \
+	else \
+	  echo "SKIP AES=hw: $(CC) has no AES instructions and no flag turns them on"; \
+	fi
 	./bin/handshake_strict_test
 	./bin/handshake_strict_pq
 	./bin/handshake_strict_webpki
@@ -1076,11 +1184,11 @@ endif
 # The TRANSPORT=quic arm of the differential. Its own main, because
 # test/diff_test.c calls rec_seal and reads the TLS layout of ch_cfg, and
 # a -DCH_TRANSPORT_QUIC build compiles neither; test/diff_driver.h holds
-# the plumbing both mains share. test/diff_aes.h compiles quic_aes.c, so
-# that source is not on the line, for the reason bin/quic_test states.
-bin/diff_quic: test/diff_quic_test.c quic_gcm.c hkdf.c sha256.c ct.c $(HDRS) $(TESTH)
+# the plumbing both mains share. quic_aes.c and the AES implementation are
+# on the line for the reason bin/quic_test states.
+bin/diff_quic: test/diff_quic_test.c quic_aes.c $(AES_IMPL) quic_gcm.c hkdf.c sha256.c ct.c $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -DCH_TRANSPORT_QUIC -I. -o $@ test/diff_quic_test.c quic_gcm.c hkdf.c sha256.c ct.c
+	$(CC) $(CFLAGS) -DCH_TRANSPORT_QUIC $(AES_DEF) -I. -o $@ test/diff_quic_test.c quic_aes.c $(AES_IMPL) quic_gcm.c hkdf.c sha256.c ct.c
 
 # The sequence enumerations compare against spec/.lake/build/bin/diffspec,
 # and handshake_sequence_test skips the comparison when that binary is
@@ -1299,9 +1407,26 @@ endef
 wycheproof:
 	@$(call wycheproof_fetch,wycheproof); \
 	python3 test/gen_wycheproof.py $(WYCHEPROOF_DIR) bin/wycheproof_vectors.h && \
-	$(CC) $(CFLAGS) $(RSA_WIDE_DEF) -DCH_TRANSPORT_QUIC -I. -Ibin -o bin/wycheproof_test test/wycheproof_test.c \
-	  x25519.c chacha20.c poly1305.c aead.c hkdf.c sha256.c p256.c rsa.c rsa_mont.c mlkem.c mlkem_poly.c sha3.c buf.c ct.c sha512.c sha512_compress.c p384.c p384_field.c rsa_pkcs1.c quic_gcm.c && \
+	$(CC) $(CFLAGS) $(RSA_WIDE_DEF) -DCH_TRANSPORT_QUIC $(AES_DEF) -I. -Ibin -o bin/wycheproof_test test/wycheproof_test.c \
+	  x25519.c chacha20.c poly1305.c aead.c hkdf.c sha256.c p256.c rsa.c rsa_mont.c mlkem.c mlkem_poly.c sha3.c buf.c ct.c sha512.c sha512_compress.c p384.c p384_field.c rsa_pkcs1.c quic_aes.c $(AES_IMPL) quic_gcm.c && \
 	./bin/wycheproof_test
+	# The AES=hw leg. New crypto gets its Wycheproof suite on every leg
+	# that builds test/wycheproof_test.c, and the instruction path is a
+	# second AES-128 in this tree, so the AES-GCM suite answers for it
+	# too. Only the AES-GCM rows differ between this binary and the one
+	# above -- every other suite runs the same code twice -- and running
+	# the whole file is still what the rule asks for and what keeps this
+	# leg from rotting when a suite is added. A compiler without the AES
+	# instructions skips, the way the fetch above skips offline.
+	@set -e; if [ -z "$(AES_HW_BINS)" ]; then \
+	  $(call REQUIRE_ON_CI,wycheproof-aes-hw); \
+	  echo "SKIP wycheproof AES=hw: $(CC) has no AES instructions and no flag turns them on"; \
+	else \
+	  $(CC) $(CFLAGS) $(AES_HW_CFLAGS) $(RSA_WIDE_DEF) -DCH_TRANSPORT_QUIC -DCH_AES_HW -I. -Ibin \
+	    -o bin/wycheproof_test_aes_hw test/wycheproof_test.c \
+	    x25519.c chacha20.c poly1305.c aead.c hkdf.c sha256.c p256.c rsa.c rsa_mont.c mlkem.c mlkem_poly.c sha3.c buf.c ct.c sha512.c sha512_compress.c p384.c p384_field.c rsa_pkcs1.c quic_aes.c quic_aes_hw.c quic_gcm.c; \
+	  ./bin/wycheproof_test_aes_hw; \
+	fi
 
 # The web PKI chain fixtures, test/webpki_corpus.h, live in the tree like
 # test/rsa_pkcs1_vectors.h; regenerate them by hand. The keys under
@@ -1328,8 +1453,8 @@ webpki-auth-vectors:
 wycheproof-ct-widemul:
 	@$(call wycheproof_fetch,wycheproof-ct-widemul); \
 	python3 test/gen_wycheproof.py $(WYCHEPROOF_DIR) bin/wycheproof_vectors.h && \
-	$(CC) $(CT_WIDEMUL_CFLAGS) $(RSA_WIDE_DEF) -DCH_TRANSPORT_QUIC -I. -Ibin -o bin/wycheproof_test_ct_widemul test/wycheproof_test.c \
-	  x25519.c chacha20.c poly1305.c aead.c hkdf.c sha256.c p256.c rsa.c rsa_mont.c mlkem.c mlkem_poly.c sha3.c buf.c ct.c sha512.c sha512_compress.c p384.c p384_field.c rsa_pkcs1.c quic_gcm.c && \
+	$(CC) $(CT_WIDEMUL_CFLAGS) $(RSA_WIDE_DEF) -DCH_TRANSPORT_QUIC $(AES_DEF) -I. -Ibin -o bin/wycheproof_test_ct_widemul test/wycheproof_test.c \
+	  x25519.c chacha20.c poly1305.c aead.c hkdf.c sha256.c p256.c rsa.c rsa_mont.c mlkem.c mlkem_poly.c sha3.c buf.c ct.c sha512.c sha512_compress.c p384.c p384_field.c rsa_pkcs1.c quic_aes.c $(AES_IMPL) quic_gcm.c && \
 	./bin/wycheproof_test_ct_widemul
 
 # Sanitizer lane: the deterministic suites under ASan + UBSan, test
@@ -1379,8 +1504,8 @@ san-check:
 	  echo "== $$b (SAN -O$(O))"; ENUM_DEPTH=4 ./bin/san/$$b; done
 	@$(call wycheproof_fetch,san wycheproof); \
 	python3 test/gen_wycheproof.py $(WYCHEPROOF_DIR) bin/wycheproof_vectors.h && \
-	$(CC) $(SAN_CFLAGS) $(RSA_WIDE_DEF) -DCH_TRANSPORT_QUIC -I. -Ibin -o bin/san/wycheproof_test test/wycheproof_test.c \
-	  x25519.c chacha20.c poly1305.c aead.c hkdf.c sha256.c p256.c rsa.c rsa_mont.c mlkem.c mlkem_poly.c sha3.c buf.c ct.c sha512.c sha512_compress.c p384.c p384_field.c rsa_pkcs1.c quic_gcm.c && \
+	$(CC) $(SAN_CFLAGS) $(RSA_WIDE_DEF) -DCH_TRANSPORT_QUIC $(AES_DEF) -I. -Ibin -o bin/san/wycheproof_test test/wycheproof_test.c \
+	  x25519.c chacha20.c poly1305.c aead.c hkdf.c sha256.c p256.c rsa.c rsa_mont.c mlkem.c mlkem_poly.c sha3.c buf.c ct.c sha512.c sha512_compress.c p384.c p384_field.c rsa_pkcs1.c quic_aes.c $(AES_IMPL) quic_gcm.c && \
 	echo "== wycheproof_test (SAN -O$(O))" && ./bin/san/wycheproof_test
 	$(MAKE) san-selftest
 
@@ -1438,8 +1563,8 @@ cross-check:
 	@if [ -d $(WYCHEPROOF_DIR)/.git ] \
 	  || git clone --quiet --depth 1 https://github.com/C2SP/wycheproof $(WYCHEPROOF_DIR) 2>/dev/null; then \
 	  python3 test/gen_wycheproof.py $(WYCHEPROOF_DIR) bin/wycheproof_vectors.h && \
-	  $(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) $(RSA_WIDE_DEF) -DCH_TRANSPORT_QUIC -static -I. -Ibin -o bin/cross/wycheproof_test test/wycheproof_test.c \
-	    x25519.c chacha20.c poly1305.c aead.c hkdf.c sha256.c p256.c rsa.c rsa_mont.c mlkem.c mlkem_poly.c sha3.c buf.c ct.c sha512.c sha512_compress.c p384.c p384_field.c rsa_pkcs1.c quic_gcm.c; \
+	  $(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) $(RSA_WIDE_DEF) -DCH_TRANSPORT_QUIC $(AES_DEF) -static -I. -Ibin -o bin/cross/wycheproof_test test/wycheproof_test.c \
+	    x25519.c chacha20.c poly1305.c aead.c hkdf.c sha256.c p256.c rsa.c rsa_mont.c mlkem.c mlkem_poly.c sha3.c buf.c ct.c sha512.c sha512_compress.c p384.c p384_field.c rsa_pkcs1.c quic_aes.c $(AES_IMPL) quic_gcm.c; \
 	else \
 	  [ -n "$$CI" ] && { echo "wycheproof: clone failed and CI must not skip a gate"; exit 1; }; \
 	  echo "SKIP cross wycheproof: no checkout and no network"; \
@@ -1679,7 +1804,7 @@ else
 	# reason: every declaration they hold sits behind
 	# -DCH_TRANSPORT_QUIC, which this pass does not define, so it would
 	# read eight empty translation units. The two passes below read them.
-	$(CLANG_TIDY) --quiet $(filter-out webpki.c test/webpki_session_test.c test/webpki_chain_test.c test/webpki_auth_test.c examples/webpki_client.c $(QUIC_SRCS) test/quic_stub_test.c test/quic_vectors.c test/diff_quic_test.c,$(LINT_C)) -- \
+	$(CLANG_TIDY) --quiet $(filter-out webpki.c test/webpki_session_test.c test/webpki_chain_test.c test/webpki_auth_test.c examples/webpki_client.c $(QUIC_SRCS) $(AES_IMPL_SRCS) test/quic_stub_test.c test/quic_vectors.c test/diff_quic_test.c test/aes_equiv_test.c test/aes_equiv_soft.c test/aes_equiv_hw.c,$(LINT_C)) -- \
 	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -I.
 	# The pass above defines no trust mode, so it reads none of the
 	# TRUST=webpki arms. This pass parses the sources that carry them or
@@ -1702,6 +1827,22 @@ else
 	 [ -z "$$done" ] || $(CLANG_TIDY) --quiet $$done -- \
 	   -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_TRANSPORT_QUIC -I.
 	$(CLANG_TIDY) --quiet test/quic_stub_test.c test/quic_vectors.c test/diff_quic_test.c -- \
+	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_TRANSPORT_QUIC -I.
+	# The two AES implementations this build did not pick. Each needs its
+	# own define, because each guards its body on one, and quic_aes_hw.c
+	# needs whatever flag turns the instructions on -- without it the
+	# file is its own #error rather than an empty translation unit. The
+	# pass above already read the one $(AES_IMPL) names.
+	$(CLANG_TIDY) --quiet $(filter-out $(AES_IMPL),quic_aes_extern.c) -- \
+	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_TRANSPORT_QUIC -DCH_AES_EXTERN -I.
+	@set -e; [ -z "$(AES_HW_BINS)" ] || [ -z "$(filter-out $(AES_IMPL),quic_aes_hw.c)" ] || \
+	  $(CLANG_TIDY) --quiet quic_aes_hw.c -- \
+	    -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) $(AES_HW_CFLAGS) -DCH_TRANSPORT_QUIC -DCH_AES_HW -I.
+	# test/aes_equiv_test.c alone: the two wrappers beside it compile a
+	# library source in under a renamed symbol, so linting them would
+	# report that source's findings a second time under a name no file
+	# on disk carries.
+	$(CLANG_TIDY) --quiet test/aes_equiv_test.c -- \
 	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_TRANSPORT_QUIC -I.
 	# The second reads the sources that are still stubs, with
 	# readability-non-const-parameter off. A stub writes nothing through
@@ -2066,7 +2207,8 @@ WIDEMUL_DEFINES := quic_keys.c:-DCH_TRANSPORT_QUIC quic_packet.c:-DCH_TRANSPORT_
 WIDEMUL_PUBLIC := p256.c rsa.c rsa_mont.c pem.c x509.c x509_der.c x509_ca.c sha512.c sha512_compress.c \
                   p384.c p384_field.c rsa_pkcs1.c webpki_time.c webpki_name.c webpki_spki.c webpki_sigalg.c \
                   webpki_ext.c webpki_cert.c webpki.c \
-                  quic_aes.c quic_gcm.c quic_initial.c quic_retry.c
+                  quic_aes.c quic_aes_soft.c quic_aes_hw.c quic_aes_extern.c quic_gcm.c \
+                  quic_initial.c quic_retry.c
 
 # The library sources are $(SRCS), drbg.c, and every .c file git tracks
 # at the repository root. The KEX=pq sources join LIB_SRCS by += rather

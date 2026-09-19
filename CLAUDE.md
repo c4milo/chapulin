@@ -57,9 +57,12 @@ Home: github.com/c4milo.
   `mlkem.[ch]`/`mlkem_poly.[ch]` (ML-KEM-768; the KEX=pq build packages
   them with `sha3.[ch]`, other builds keep them test-only) ← `hkdf.[ch]`
   (HMAC + HKDF + TLS labels) ← `chacha20.[ch]` + `poly1305.[ch]` +
-  `quic_aes.[ch]` with `quic_aes_key.h` (the AES-128 forward cipher of
-  FIPS 197 and the `aes_public_key` type, whose body sits in the second
-  header alone, TRANSPORT=quic; INV-26 names the three keys it may see)
+  `quic_aes.[ch]` with `quic_aes_key.h` (the `aes_public_key` type, whose
+  body sits in the second header alone, and the two constructors that
+  write one, TRANSPORT=quic; INV-26 names the three keys it may see) +
+  `quic_aes_block.h` with one of `quic_aes_soft.c`, `quic_aes_hw.c` or
+  `quic_aes_extern.c` (the AES-128 key expansion and forward cipher of
+  FIPS 197, over plain bytes; the Makefile AES variable picks one)
   ← `aead.[ch]` (RFC 8439 seal/open) + `quic_gcm.[ch]`
   (AEAD_AES_128_GCM and GHASH, TRANSPORT=quic) ← `x25519.[ch]` + `p256.[ch]` +
   `rsa.[ch]`/`rsa_mont.c` (pinned-mode verify) + `p384.[ch]`/
@@ -111,9 +114,11 @@ Home: github.com/c4milo.
   comes from a salt the RFC prints and a connection ID that travels in
   the clear, or the RFC prints the key itself — so a table lookup indexed
   by one leaks nothing an observer does not already hold. That is the
-  whole reason the table is allowed today, and while the only AES here is
-  a software S-box it is the only reason: the public-key argument is what
-  carries it, never a claim that the lookup is constant time. No key from
+  whole reason the table is allowed at all: the public-key argument is
+  what carries it, never a claim that the lookup is constant time. An
+  AES=hw build has no table and no such trade, and an AES=extern build
+  cannot state its timing at all, so the public-key argument is what
+  carries every AES value and INV-26 bounds all three the same way. No key from
   the TLS key schedule is ever passed to AES, and AES is never a cipher
   suite here.
   What holds that: `quic_aes.[ch]` and `quic_gcm.[ch]` take a key type,
@@ -128,27 +133,31 @@ Home: github.com/c4milo.
   its own stack. INV-26 states the rule and what review still owes, the
   Semgrep rule holds the calls, `.violation` mutants prove each check
   fires, and both files sit in `WIDEMUL_PUBLIC`.
-  A hardware AES path is planned and is the way the public-key limit
-  changes. An AES instruction is constant time, so a build that has one
-  may carry secret keys, which is what TLS_AES_128_GCM_SHA256 needs — and
-  strict RFC 9846 §9.1 server conformance needs that suite. The Makefile
-  AES variable will choose the implementation the way PIN chooses the
-  pinned algorithm: `soft` is this S-box, an instruction build uses the
-  compiler's own intrinsics under `__ARM_FEATURE_AES` or `__AES__`, and
-  `extern` takes a caller-supplied block function, the way
-  `ch_rand_bytes` takes entropy, so a vendor AES peripheral needs no code
-  here. Those two macros are the whole detection, and the choice is the
-  compiler's at build time: nothing here probes a CPU at runtime. An
-  arm64 core cannot answer the question itself — reading
-  ID_AA64ISAR0_EL1 from EL0 takes SIGILL — so runtime detection means
-  asking the operating system, which is per-OS code this tree cannot
-  carry and which the bare-metal m3 and freertos lanes have nobody to
-  ask. A consumer compiles chapulin into its own build, so it already
-  chooses `-march=armv8-a+crypto` or `-maes`; a build without the flag
-  takes the software path and stays correct. CBMC cannot read an
-  intrinsic, so the proofs stay on the software path and an instruction
-  build is held to it by differential equivalence and by the Wycheproof
-  suite running on that leg.
+  The Makefile AES variable chooses the implementation the way PIN
+  chooses the pinned algorithm, and never two in one object: `soft` is
+  this S-box, `hw` uses the compiler's own intrinsics under
+  `__ARM_FEATURE_AES` or `__AES__`, and `extern` takes a caller-supplied
+  `ch_aes_block`, the way `ch_rand_bytes` takes entropy, so a vendor AES
+  peripheral needs no code here. Those two macros are the whole
+  detection, and the choice is the compiler's at build time: nothing here
+  probes a CPU and nothing asks an operating system. An arm64 core cannot
+  answer the question itself — reading ID_AA64ISAR0_EL1 from EL0 takes
+  SIGILL — so runtime detection means per-OS code this tree cannot carry
+  and which the bare-metal m3 and freertos lanes have nobody to ask. A
+  consumer compiles chapulin into its own build, so it already chooses
+  `-march=armv8-a+crypto` or `-maes`; a build without the flag takes
+  AES=soft and stays correct, and AES=hw without the instructions is an
+  #error rather than a silent fall back. CBMC cannot read an intrinsic,
+  so the proofs stay on the software path and AES=hw is held to it by
+  `test/aes_equiv_test.c`, by the published vectors in `bin/quic_test_hw`
+  and by the Wycheproof AES-GCM suite on that leg. docs/quic.md, "What
+  the AES axis proves", states what each value rests on and what none of
+  it proves.
+  An AES instruction being constant time is what a secret-key AES suite
+  would need — TLS_AES_128_GCM_SHA256, which strict RFC 9846 §9.1 server
+  conformance asks for. That suite is not enabled by this axis: INV-26
+  still admits only the three public keys, under every AES value, and
+  lifting it is a separate change with its own gates.
 - Proofs are mandatory, not optional, but they run in `check-slow`
   rather than `check`: `check` holds a one-minute budget so it stays
   usable as the inner loop, and the fast proof tier alone costs
