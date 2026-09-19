@@ -35,6 +35,12 @@
 #define EXT_COOKIE 44
 #define EXT_PSK_MODES 45
 #define EXT_KEY_SHARE 51
+// quic_transport_parameters (RFC 9001 §8.2, rfc9001.txt:1921-1923).
+// Declared in every build, as the two alert descriptions below are, so
+// a TRANSPORT=tls build can answer unsupported_extension for an
+// extension it understands on a transport that is not QUIC
+// (rfc9001.txt:1945-1949).
+#define EXT_QUIC_TRANSPORT_PARAMS 0x39
 
 #define TLS13 0x0304
 #define SUITE_CHACHA20_POLY1305_SHA256 0x1303
@@ -90,15 +96,36 @@
 // extension the other arm carries. So the largest hello is still the
 // pre_shared_key arm, now with both extensions: 1149 classic, 2333 for
 // pq, measured by test/webpki_session_test.c.
+// A TRANSPORT=quic build adds two more terms. It drops the 6-byte
+// record_size_limit extension, because RFC 9001 §4.1.3 removes the
+// record layer that extension sizes (rfc9001.txt:462-464), and it sends
+// quic_transport_parameters in its place: type and length words (4) and
+// a body of at most CH_TRANSPORT_PARAMS_MAX bytes. It also sends the
+// ALPN extension in every trust mode, because §8.1 makes ALPN mandatory
+// there (rfc9001.txt:1891-1895), so the ALPN term is no longer the
+// webpki build's alone.
+//
+// Each term is 0 in a build that sends nothing for it, so one sum
+// serves every combination and a TRANSPORT=tls build keeps the value it
+// had: 617 raw classic, 1149 webpki classic.
+#if defined(CH_TRUST_WEBPKI) || defined(CH_TRANSPORT_QUIC)
+#define CH_HELLO_ALPN_MAX (4 + 2 + CH_ALPN_MAX * (1 + CH_ALPN_NAME_MAX))
+#else
+#define CH_HELLO_ALPN_MAX 0
+#endif
 #ifdef CH_TRUST_WEBPKI
 #define CH_HELLO_SERVER_NAME_MAX (4 + 2 + 1 + 2 + CH_HOSTNAME_MAX)
-#define CH_HELLO_ALPN_MAX (4 + 2 + CH_ALPN_MAX * (1 + CH_ALPN_NAME_MAX))
-#define CH_HELLO_MAX                                                                               \
-    (137 + CH_HELLO_SERVER_NAME_MAX + CH_HELLO_ALPN_MAX + CH_TICKET_ID_MAX + HSP_COOKIE_MAX +      \
-     CH_KEX_CLIENT_SHARE)
 #else
-#define CH_HELLO_MAX (137 + CH_TICKET_ID_MAX + HSP_COOKIE_MAX + CH_KEX_CLIENT_SHARE)
+#define CH_HELLO_SERVER_NAME_MAX 0
 #endif
+#ifdef CH_TRANSPORT_QUIC
+#define CH_HELLO_TRANSPORT_MAX (4 + CH_TRANSPORT_PARAMS_MAX - 6)
+#else
+#define CH_HELLO_TRANSPORT_MAX 0
+#endif
+#define CH_HELLO_MAX                                                                               \
+    (137 + CH_HELLO_SERVER_NAME_MAX + CH_HELLO_ALPN_MAX + CH_HELLO_TRANSPORT_MAX +                 \
+     CH_TICKET_ID_MAX + HSP_COOKIE_MAX + CH_KEX_CLIENT_SHARE)
 
 // Pinned mode verifies exactly one signature algorithm per build: RSA-PSS
 // by default (what stock cert-based endpoints hold), ECDSA P-256 with

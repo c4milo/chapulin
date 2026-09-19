@@ -121,12 +121,12 @@ SH_SRCS := $(shell git ls-files '*.sh' '.githooks/*')
 
 SRCS := ct.c sha256.c hkdf.c chacha20.c poly1305.c aead.c x25519.c p256.c rsa.c rsa_mont.c \
         pem.c x509.c x509_der.c x509_ca.c webpki_time.c webpki_name.c webpki_spki.c webpki_ext.c buf.c record.c keysched.c io.c handshake_message.c handshake_parser.c handshake_record.c session.c \
-        handshake_auth.c handshake.c handshake_post.c tls.c softmul.c
+        handshake_auth.c handshake_flight.c handshake.c handshake_post.c tls.c softmul.c
 
 HDRS := ct.h sha256.h hkdf.h chacha20.h poly1305.h aead.h x25519.h p256.h rsa.h ch_assert.h \
         pem.h x509.h x509_der.h x509_ca.h webpki.h buf.h record.h keysched.h io.h handshake_message.h handshake_parser.h handshake_record.h cfg.h session.h handshake_auth.h handshake.h handshake_post.h \
         tls.h rand.h drbg.h sha3.h sha512.h sha512_compress.h p384.h p384_field.h rsa_pkcs1.h mlkem.h mlkem_poly.h \
-        handshake_flight.h quic.h quic_aes.h quic_aes_block.h quic_aes_key.h quic_gcm.h quic_initial.h quic_keys.h quic_packet.h quic_retry.h quic_step.h \
+        handshake_flight.h quic.h quic_aes.h quic_aes_block.h quic_aes_key.h quic_config.h quic_gcm.h quic_initial.h quic_keys.h quic_packet.h quic_retry.h quic_step.h \
         srv_cfg.h srv.h srv_parser.h srv_message.h srv_cookie.h srv_auth.h srv_flight.h srv_handshake.h
 
 # The TRANSPORT=quic mode's own sources, named here rather than matched
@@ -136,11 +136,11 @@ HDRS := ct.h sha256.h hkdf.h chacha20.h poly1305.h aead.h x25519.h p256.h rsa.h 
 # transport compiles them; the TRANSPORT axis below names them as its
 # add, the way TRUST=webpki names WEBPKI_SRCS.
 #
-# Every one of them is a stub today: it defines each function its header
-# declares and implements none, so a TRANSPORT=quic object links and
-# every call refuses. `make quic-footprint` prints how many of the
-# mode's functions are stubbed and how many are implemented, and
-# bin/quic_stub_test calls each public entry and requires the refusal.
+# Every one of them is implemented. `make quic-footprint` reads the tree
+# and prints what each file declares and defines, and counts the
+# CH_QUIC_STUB marker, which matches nothing now: the two build checks
+# that read that marker retired with the last stub (docs/quic.md, "The
+# stubs and the marker").
 #
 # AES implementation: AES=soft (default) is the FIPS 197 cipher in C with
 # a 256-byte S-box table, AES=hw is the compiler's AES intrinsics, and
@@ -175,7 +175,7 @@ else
 $(error AES=$(AES) is not an AES implementation; use AES=soft, AES=hw or AES=extern)
 endif
 QUIC_SRCS := quic_aes.c $(AES_IMPL) quic_gcm.c quic_keys.c quic_packet.c quic_initial.c \
-             quic_retry.c quic_step.c quic.c
+             quic_retry.c quic_config.c quic_step.c quic.c
 # The three implementation sources, named whichever one this build picks,
 # so a check that reads every AES choice does not re-derive the list.
 AES_IMPL_SRCS := quic_aes_soft.c quic_aes_hw.c quic_aes_extern.c
@@ -209,13 +209,6 @@ QUIC_EXTRA_DEFINES := quic_aes_extern.c:-DCH_AES_EXTERN \
 # AES instructions is its own #error, by design, so lint-quic-partition
 # skips it there and judges it everywhere else.
 QUIC_UNPROBED := $(if $(AES_HW_PROBE),,quic_aes_hw.c)
-# Which of them are still stubs, read from the marker rather than from a
-# list kept by hand: every stub body holds one `// CH_QUIC_STUB: ` line
-# and an implemented body holds none. Two gates carry an exception this
-# list bounds, and each retires its own the moment the file it names
-# stops matching -- lint-tidy's stub pass, and lib-check's RAND=extern
-# import check.
-QUIC_STUB_SRCS := $(shell grep -l '^[[:space:]]*// CH_QUIC_STUB: ' $(QUIC_SRCS) 2>/dev/null)
 
 # The ROLE=server mode's own sources, named here for the reason
 # QUIC_SRCS and WEBPKI_SRCS are named: an auditor reads the object's
@@ -236,9 +229,12 @@ QUIC_STUB_SRCS := $(shell grep -l '^[[:space:]]*// CH_QUIC_STUB: ' $(QUIC_SRCS) 
 SRV_SRCS := srv_parser.c srv_message.c srv_cookie.c srv_auth.c \
             srv_flight.c srv_handshake.c srv.c
 # Which of them are still stubs, read from the marker rather than from a
-# hand-kept list, exactly as QUIC_STUB_SRCS reads CH_QUIC_STUB. The two
-# axes stub independently, so the marker is a second name and not a
-# second mechanism; lint-tidy's stub pass is what reads this one.
+# hand-kept list: every stub body holds one `// CH_SRV_STUB: ` line and
+# an implemented body holds none. Two checks carry an exception this
+# list bounds, and each retires its own the moment the file it names
+# stops matching -- lint-tidy's stub pass, and lib-check's RAND=extern
+# import check. The TRANSPORT=quic axis carried the same list under
+# CH_QUIC_STUB until its last stub was implemented.
 SRV_STUB_SRCS := $(shell grep -l '^[[:space:]]*// CH_SRV_STUB: ' $(SRV_SRCS) 2>/dev/null)
 # The client driver sources a ROLE=server object does not compile: the
 # state machine, the peer-certificate flight, the parsers for the
@@ -248,8 +244,8 @@ SRV_STUB_SRCS := $(shell grep -l '^[[:space:]]*// CH_SRV_STUB: ' $(SRV_SRCS) 2>/
 # tls.c is deliberately absent. It defines ch_read, ch_write and
 # ch_close, which both roles export, so a server object compiles it and
 # the split runs inside the file under #ifndef CH_ROLE_SERVER.
-# handshake_flight.c is named although no such file exists yet: the QUIC
-# lane lands it, and filter-out passes over a name that matches nothing.
+# handshake_flight.c holds the client's flight handlers, which both
+# transports compile and a server does not.
 CLIENT_REPLACED := handshake.c handshake_auth.c handshake_parser.c \
                    handshake_message.c handshake_flight.c
 # softmul.c is excluded on purpose. It has to define __mulsi3 and
@@ -267,7 +263,7 @@ LINT_C := $(filter-out softmul.c,$(SRCS)) drbg.c sha3.c sha512.c sha512_compress
           test/mlkem_test.c test/handshake_strict_test.c test/handshake_sequence_test.c \
           test/x509_strict_test.c $(QUIC_SRCS) $(filter-out $(AES_IMPL),$(AES_IMPL_SRCS)) \
           $(SRV_SRCS) test/srv_stub_test.c \
-          test/quic_stub_test.c test/quic_vectors.c test/diff_quic_test.c \
+          test/quic_driver_test.c test/quic_vectors.c test/diff_quic_test.c \
           test/aes_equiv_test.c test/aes_equiv_soft.c test/aes_equiv_hw.c $(wildcard examples/*.c)
 
 # Test-local headers: prerequisites for every binary that includes them,
@@ -368,24 +364,14 @@ endif
 # The five sources a QUIC object replaces: it compiles none of them
 # (docs/quic.md, "What is reused, and what changes").
 QUIC_REPLACED := io.c record.c session.c handshake.c tls.c
-# The four sources that keep their TLS text and owe a QUIC arm under an
-# #ifdef, and that a QUIC object cannot compile until they have one.
-# Three of the four do not compile under -DCH_TRANSPORT_QUIC at all,
-# because the headers already fork ahead of them: handshake_parser.c
-# gets conflicting types for hsp_parse_encrypted_exts, and
-# handshake_record.c and handshake_post.c read fields the QUIC arms of
-# handshake_record.h and session.h drop. handshake_auth.c compiles
-# clean, and it calls hsp_ and hsr_ functions the other three define, so
-# a QUIC object that carried it alone would not link. So the object
-# leaves all four out for now and no QUIC source reaches a handshake
-# message. A name leaves this list in the commit that lands its arm, and
-# the list is empty when the mode is whole.
-#
-# handshake_message.c is not on this list. It compiles clean under
-# -DCH_TRANSPORT_QUIC and imports only the wb_ writer from buf.c, which
-# this object already packages, so the mode compiles it today and
-# quic.c includes its header.
-QUIC_PENDING := handshake_parser.c handshake_record.c handshake_auth.c handshake_post.c
+# The sources that keep their TLS text, carry a QUIC arm under #ifdef
+# CH_TRANSPORT_QUIC, and cannot be compiled into the object until they
+# have one. Every arm landed with the driver, so the list is empty and
+# the object compiles all of handshake_parser.c, handshake_record.c,
+# handshake_auth.c, handshake_post.c and handshake_message.c. The name
+# stays because TRANSPORT_FILTER and tools/quic-partition.py read it: a
+# source that loses its arm goes back on this list.
+QUIC_PENDING :=
 TRANSPORT ?= tls
 ifeq ($(TRANSPORT),quic)
 TRANSPORT_DEF := -DCH_TRANSPORT_QUIC
@@ -403,17 +389,7 @@ PUBLIC_TRANSPORT := ch_connect ch_read ch_write ch_close
 else
 $(error TRANSPORT=$(TRANSPORT) is not a transport; use TRANSPORT=tls or TRANSPORT=quic)
 endif
-# Set while this build's object holds no code that draws randomness:
-# handshake.c is the only library source that calls ch_rand_bytes, a
-# TRANSPORT=quic object compiles none of it, and the QUIC driver that
-# will draw is quic.c, still a stub. lib-check reads it, and asserts the
-# object imports nothing rather than announcing that it cannot check:
-# this variable is file-granular, because QUIC_STUB_SRCS greps whole
-# files, while a marker is per function, so a quic.c whose ch_quic_init
-# draws randomness while another function stays a stub would still set
-# it. The assertion catches that build and names the line to delete.
-QUIC_STUB_RAND := $(if $(filter quic,$(TRANSPORT)),$(filter quic.c,$(QUIC_STUB_SRCS)))
-# The same variable for the other axis, and the same reasoning. A
+# Set while this build's object holds no code that draws randomness. A
 # ROLE=server object draws randomness in srv_flight.c -- srv_begin draws
 # the ephemeral key exchange secret and srv_send_server_hello draws the
 # 32 ServerHello random bytes -- and that file is a stub, so the object
@@ -743,10 +719,6 @@ ifeq ($(RAND),drbg)
 	@if nm -u $(LIB_OBJ) | awk '{print $$NF}' | sed 's/^_//' | grep -qx ch_rand_bytes; then \
 	  echo "lib-check: RAND=drbg packages the generator, so ch_rand_bytes must be defined here, not imported"; exit 1; fi
 	@echo "lib-check: ch_rand_bytes is defined in the object; the image seeds it with ch_drbg_seed at boot"
-else ifneq ($(QUIC_STUB_RAND),)
-	@if nm -u $(LIB_OBJ) | awk '{print $$NF}' | sed 's/^_//' | grep -qx ch_rand_bytes; then \
-	  echo "lib-check: quic.c still carries a CH_QUIC_STUB marker and this object already imports ch_rand_bytes; drop QUIC_STUB_RAND and let the RAND=extern check run"; exit 1; fi
-	@echo "lib-check: quic.c is still a stub, so no source in this object calls ch_rand_bytes and there is no import to check; the RAND=extern check returns with quic.c's implementation"
 else ifneq ($(SRV_STUB_RAND),)
 	@if nm -u $(LIB_OBJ) | awk '{print $$NF}' | sed 's/^_//' | grep -qx ch_rand_bytes; then \
 	  echo "lib-check: srv_flight.c still carries a CH_SRV_STUB marker and this object already imports ch_rand_bytes; drop SRV_STUB_RAND and let the RAND=extern check run"; exit 1; fi
@@ -819,23 +791,25 @@ bin/sha3_test: test/sha3_test.c sha3.c ct.c $(HDRS) $(TESTH)
 bin/mlkem_test: test/mlkem_test.c mlkem.c mlkem_poly.c sha3.c ct.c $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) -I. -o $@ test/mlkem_test.c mlkem.c mlkem_poly.c sha3.c ct.c
-# Every function of the TRANSPORT=quic mode refuses and writes nothing while
-# it is a stub. Its own binary over the mode's sources under
-# -DCH_TRANSPORT_QUIC, the shape bin/sha3_test uses for a mode's own
-# sources: bin/unit compiles no QUIC source, because it includes tls.h and
-# calls rec_seal, which a -DCH_TRANSPORT_QUIC build does not compile.
-# hkdf.c, sha256.c and ct.c join the line because quic_aes.c derives the
-# Initial keys through HKDF now that it is implemented. A stub called
-# nothing below itself.
-bin/quic_stub_test: test/quic_stub_test.c $(QUIC_SRCS) hkdf.c sha256.c chacha20.c poly1305.c \
-                    aead.c buf.c ct.c $(HDRS) $(TESTH)
+# The TRANSPORT=quic driver through its fifteen public entries: the
+# configuration rules, the staged ClientHello, a ServerHello delivered
+# over CRYPTO bytes, and the level rules RFC 9001 §4.1.3 states. Its own
+# binary over the whole QUIC object's sources under -DCH_TRANSPORT_QUIC,
+# the shape bin/sha3_test uses for a mode's own sources: bin/unit
+# compiles no QUIC source, because it includes tls.h and calls rec_seal,
+# which a -DCH_TRANSPORT_QUIC build does not compile. It is also the
+# build that compiles quic.c for test/quic-builds.sh, the catch target
+# of the INV-26 mutants the compiler refuses.
+QUIC_DRIVER_SRCS := $(QUIC_SRCS) handshake_message.c handshake_parser.c handshake_record.c \
+                    handshake_auth.c handshake_post.c handshake_flight.c keysched.c x25519.c \
+                    rsa.c rsa_mont.c hkdf.c sha256.c chacha20.c poly1305.c aead.c buf.c ct.c
+bin/quic_driver_test: test/quic_driver_test.c $(QUIC_DRIVER_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -DCH_TRANSPORT_QUIC -I. -o $@ test/quic_stub_test.c $(QUIC_SRCS) hkdf.c sha256.c \
-	  chacha20.c poly1305.c aead.c buf.c ct.c
+	$(CC) $(CFLAGS) -DCH_TRANSPORT_QUIC -I. -o $@ test/quic_driver_test.c $(QUIC_DRIVER_SRCS)
 # The mode against its published vectors: FIPS 197 for the AES-128 forward
 # cipher and RFC 9001 Appendix A for the Initial keys, the header
 # protection masks and the Retry key. Same shape and same reason as
-# bin/quic_stub_test above, and docs/quic.md, "Verification owed", names
+# bin/quic_driver_test above, and docs/quic.md, "Verification owed", names
 # both the file and this binary. quic_aes.c and the AES implementation this
 # build picked are both on the line: the cipher moved out of quic_aes.c into
 # the three sources the AES axis chooses among, and test/quic_vectors.c reaches
@@ -1114,7 +1088,7 @@ run-%: bin/%
 # and the invariant violation builds. The nightly runs it. Splitting on
 # duration rather than on importance is deliberate -- nothing here is
 # optional, and a change is not finished until check-slow passes too.
-check: bin/unit bin/unit_ca bin/unit_pq bin/tlsclient bin/tlsclient_ecdsa bin/tlsclient_ca bin/tlsclient_ca_ecdsa bin/tlsclient_webpki bin/tlsclient_pq bin/drbg_test bin/softmul_test bin/rsa_test bin/sha3_test bin/sha512_test bin/p384_test bin/rsa_pkcs1_test bin/webpki_time_test bin/webpki_name_test bin/webpki_spki_test bin/webpki_sigalg_test bin/webpki_cert_test bin/webpki_chain_test bin/webpki_auth_test bin/mlkem_test bin/handshake_strict_test bin/handshake_strict_pq bin/handshake_strict_webpki bin/webpki_session_test bin/webpki_session_pq bin/x509strict bin/x509strict_ecdsa bin/quic_stub_test bin/quic_test $(AES_HW_BINS) lint rand-check bin/srv_stub_test
+check: bin/unit bin/unit_ca bin/unit_pq bin/tlsclient bin/tlsclient_ecdsa bin/tlsclient_ca bin/tlsclient_ca_ecdsa bin/tlsclient_webpki bin/tlsclient_pq bin/drbg_test bin/softmul_test bin/rsa_test bin/sha3_test bin/sha512_test bin/p384_test bin/rsa_pkcs1_test bin/webpki_time_test bin/webpki_name_test bin/webpki_spki_test bin/webpki_sigalg_test bin/webpki_cert_test bin/webpki_chain_test bin/webpki_auth_test bin/mlkem_test bin/handshake_strict_test bin/handshake_strict_pq bin/handshake_strict_webpki bin/webpki_session_test bin/webpki_session_pq bin/x509strict bin/x509strict_ecdsa bin/quic_driver_test bin/quic_test $(AES_HW_BINS) lint rand-check bin/srv_stub_test
 	# The packaged object is built once per entropy pattern, because
 	# lib-check reads a different export list and a different import
 	# list in each. Only the object is built twice: the examples and
@@ -1164,11 +1138,8 @@ check: bin/unit bin/unit_ca bin/unit_pq bin/tlsclient bin/tlsclient_ecdsa bin/tl
 	# defines against that build's 4,096 B budget (INV-19), which nothing
 	# else in check measures. It took 2.0 to 3.1 s in three timed runs.
 	$(MAKE) lint-stack TRUST=webpki
-	# The QUIC arm compiles the eight QUIC_SRCS, which no other leg
-	# compiles at all, against the 2,560 B device budget (INV-19). Every
-	# body is a stub today, so the leg costs seconds; it is here so the
-	# first real frame the mode lands is measured on the commit that
-	# lands it.
+	# The QUIC arm compiles the QUIC_SRCS, which no other leg compiles
+	# at all, against the 2,560 B device budget (INV-19).
 	$(MAKE) lint-stack TRANSPORT=quic
 	./bin/unit
 	./bin/unit_ca
@@ -1188,7 +1159,7 @@ check: bin/unit bin/unit_ca bin/unit_pq bin/tlsclient bin/tlsclient_ecdsa bin/tl
 	./bin/webpki_chain_test
 	./bin/webpki_auth_test
 	./bin/mlkem_test
-	./bin/quic_stub_test
+	./bin/quic_driver_test
 	./bin/quic_test
 	# The AES=hw leg: the published vectors on the instructions, and the
 	# instruction path against the software one over the same inputs.
@@ -1387,13 +1358,11 @@ endif
 #
 # The recipe below builds two object sets by hand, one per PIN over
 # $(SRCS) and one over the webpki sources. Neither names a QUIC source,
-# so the eight QUIC_SRCS contribute nothing to this number. That is a
-# deferral, not an oversight: every one of the eight is a stub that
-# bin/quic_stub_test calls once, so a leg added today would ratchet the
-# floor on bodies the next lane deletes. The leg lands in the shape of
-# the webpki leg below, with bin/quic_test and bin/quic_driver_test in
-# its run list, in the commit that adds those two binaries; that commit
-# moves this floor to CI's re-measured reading, the way 3432a5d moved
+# so the QUIC_SRCS contribute nothing to this number. That is a
+# deferral, not an oversight: the leg lands in the shape of the webpki
+# leg below, with bin/quic_test and bin/quic_driver_test in its run
+# list, and that commit moves this floor to CI's re-measured reading,
+# the way 3432a5d moved
 # it for the webpki leg. docs/quic.md, "What is still open", carries
 # the same debt.
 COVERAGE_FLOOR := 93
@@ -1934,7 +1903,9 @@ QUIC_SHARED := handshake_flight.c handshake_flight.h
 # carrying one fails it too, so the list never sends a reader to a file
 # that holds nothing.
 QUIC_CONDITIONAL := cfg.h session.h handshake_record.h handshake_post.h \
-                    handshake_auth.h handshake_parser.h
+                    handshake_auth.h handshake_parser.h handshake_message.c \
+                    handshake_parser.c handshake_record.c handshake_auth.c \
+                    handshake_post.c
 .PHONY: lint-quic-partition
 lint-quic-partition:
 	@CC='$(CC)' python3 tools/quic-partition.py
@@ -1960,7 +1931,7 @@ else
 	# reason: every declaration they hold sits behind
 	# -DCH_TRANSPORT_QUIC, which this pass does not define, so it would
 	# read eight empty translation units. The two passes below read them.
-	$(CLANG_TIDY) --quiet $(filter-out webpki.c test/webpki_session_test.c test/webpki_chain_test.c test/webpki_auth_test.c examples/webpki_client.c $(QUIC_SRCS) $(AES_IMPL_SRCS) test/quic_stub_test.c test/quic_vectors.c test/diff_quic_test.c test/aes_equiv_test.c test/aes_equiv_soft.c test/aes_equiv_hw.c $(SRV_SRCS) test/srv_stub_test.c,$(LINT_C)) -- \
+	$(CLANG_TIDY) --quiet $(filter-out webpki.c test/webpki_session_test.c test/webpki_chain_test.c test/webpki_auth_test.c examples/webpki_client.c $(QUIC_SRCS) $(AES_IMPL_SRCS) test/quic_driver_test.c test/quic_vectors.c test/diff_quic_test.c test/aes_equiv_test.c test/aes_equiv_soft.c test/aes_equiv_hw.c $(SRV_SRCS) test/srv_stub_test.c,$(LINT_C)) -- \
 	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -I.
 	# The pass above defines no trust mode, so it reads none of the
 	# TRUST=webpki arms. This pass parses the sources that carry them or
@@ -1976,13 +1947,11 @@ else
 	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_TRUST_WEBPKI -I.
 	$(CLANG_TIDY) --quiet test/webpki_session_test.c -- \
 	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_TRUST_WEBPKI -DCH_KEX_PQ -I.
-	# The QUIC mode, in two passes split by QUIC_STUB_SRCS. This first
-	# one reads the sources that are implemented, plus the two test
-	# mains, under every check.
-	@set -e; done="$(filter-out $(QUIC_STUB_SRCS),$(QUIC_SRCS))"; \
-	 [ -z "$$done" ] || $(CLANG_TIDY) --quiet $$done -- \
-	   -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_TRANSPORT_QUIC -I.
-	$(CLANG_TIDY) --quiet test/quic_stub_test.c test/quic_vectors.c test/diff_quic_test.c -- \
+	# The QUIC mode: its sources and its three test mains, under every
+	# check.
+	$(CLANG_TIDY) --quiet $(QUIC_SRCS) -- \
+	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_TRANSPORT_QUIC -I.
+	$(CLANG_TIDY) --quiet test/quic_driver_test.c test/quic_vectors.c test/diff_quic_test.c -- \
 	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_TRANSPORT_QUIC -I.
 	# The two AES implementations this build did not pick. Each needs its
 	# own define, because each guards its body on one, and quic_aes_hw.c
@@ -2000,26 +1969,16 @@ else
 	# on disk carries.
 	$(CLANG_TIDY) --quiet test/aes_equiv_test.c -- \
 	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_TRANSPORT_QUIC -I.
-	# The second reads the sources that are still stubs, with
-	# readability-non-const-parameter off. A stub writes nothing through
-	# the out-parameters its header declares writable, so that check
-	# reads every one of them as a pointer that could be const -- an
-	# answer the header forbids, since making it const would conflict
-	# with the declaration. The exception is bounded by QUIC_STUB_SRCS
-	# and retires per file: an implemented source drops out of that list
-	# and joins the pass above, where the check is on again.
-	@set -e; [ -z "$(QUIC_STUB_SRCS)" ] || $(CLANG_TIDY) --quiet \
-	   --checks='-readability-non-const-parameter' $(QUIC_STUB_SRCS) -- \
-	   -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_TRANSPORT_QUIC -I.
-	# The server role, split the same way by SRV_STUB_SRCS and for the
-	# same two reasons: every declaration these files hold sits behind
+	# The server role, in two passes split by SRV_STUB_SRCS, for two
+	# reasons: every declaration these files hold sits behind
 	# -DCH_ROLE_SERVER, so the pass above would read seven empty
 	# translation units, and a stub writes nothing through the
 	# out-parameters its header declares writable, which
 	# readability-non-const-parameter reads as a pointer that could be
-	# const. The exception retires per file: an implemented source drops
-	# out of SRV_STUB_SRCS and joins the first pass, where the check is
-	# on again.
+	# const -- an answer the header forbids, since making it const would
+	# conflict with the declaration. The exception retires per file: an
+	# implemented source drops out of SRV_STUB_SRCS and joins the first
+	# pass, where the check is on again.
 	@set -e; done="$(filter-out $(SRV_STUB_SRCS),$(SRV_SRCS))"; \
 	 [ -z "$$done" ] || $(CLANG_TIDY) --quiet $$done -- \
 	   -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_ROLE_SERVER -I.
@@ -2371,8 +2330,9 @@ lint-impact:
 WIDEMUL_CEILING := ct.c:0 sha256.c:0 sha3.c:1 hkdf.c:0 chacha20.c:0 poly1305.c:0 aead.c:0 \
                    x25519.c:0 mlkem.c:0 mlkem_poly.c:0 buf.c:0 record.c:0 keysched.c:0 io.c:0 \
                    session.c:0 handshake_message.c:0 handshake_parser.c:0 handshake_record.c:0 \
-                   handshake_auth.c:0 handshake.c:0 handshake_post.c:0 tls.c:0 drbg.c:0 softmul.c:0 \
-                   quic_keys.c:0 quic_packet.c:0 quic_step.c:0 quic.c:0 \
+                   handshake_auth.c:0 handshake_flight.c:0 handshake.c:0 handshake_post.c:0 \
+                   tls.c:0 drbg.c:0 softmul.c:0 \
+                   quic_keys.c:0 quic_packet.c:0 quic_config.c:0 quic_step.c:0 quic.c:0 \
                    srv_parser.c:0 srv_message.c:0 srv_cookie.c:0 srv_auth.c:0 srv_flight.c:0 \
                    srv_handshake.c:0 srv.c:0
 CODEGEN_SRCS := $(foreach e,$(WIDEMUL_CEILING),$(firstword $(subst :, ,$(e))))
@@ -2380,7 +2340,7 @@ CODEGEN_SRCS := $(foreach e,$(WIDEMUL_CEILING),$(firstword $(subst :, ,$(e))))
 # in the shape WIDEMUL_CEILING_SPEC uses for per-spec ceilings. Each gate
 # compiles every CODEGEN_SRCS file under one fixed flag set that names no
 # transport and no role, and two groups of entries above hold nothing
-# without their own define. The four QUIC entries need
+# without their own define. The five QUIC entries need
 # -DCH_TRANSPORT_QUIC: CH_LEVEL_*, the ch_quic struct and the QUIC
 # ch_cfg fields all sit behind it. The seven server entries need
 # -DCH_ROLE_SERVER for the same reason, and preprocess to an empty file
@@ -2388,7 +2348,8 @@ CODEGEN_SRCS := $(foreach e,$(WIDEMUL_CEILING),$(firstword $(subst :, ,$(e))))
 # record.c, io.c, session.c, handshake.c and tls.c, which are on the same
 # list and compile only without them.
 WIDEMUL_DEFINES := quic_keys.c:-DCH_TRANSPORT_QUIC quic_packet.c:-DCH_TRANSPORT_QUIC \
-                   quic_step.c:-DCH_TRANSPORT_QUIC quic.c:-DCH_TRANSPORT_QUIC \
+                   quic_config.c:-DCH_TRANSPORT_QUIC quic_step.c:-DCH_TRANSPORT_QUIC \
+                   quic.c:-DCH_TRANSPORT_QUIC \
                    srv_parser.c:-DCH_ROLE_SERVER srv_message.c:-DCH_ROLE_SERVER \
                    srv_cookie.c:-DCH_ROLE_SERVER srv_auth.c:-DCH_ROLE_SERVER \
                    srv_flight.c:-DCH_ROLE_SERVER srv_handshake.c:-DCH_ROLE_SERVER \

@@ -49,7 +49,27 @@
 // both constants are visible, so a stale literal fails the build
 // rather than shipping.
 #ifndef CH_TX_STAGE
+#ifdef CH_TRANSPORT_QUIC
+// A QUIC hello differs from the TLS one by three extensions. It drops
+// the 6-byte record_size_limit, because RFC 9001 §4.1.3 removes the
+// record layer that extension sizes (rfc9001.txt:462-464). It adds
+// quic_transport_parameters, 4 framing bytes over a body of at most
+// CH_TRANSPORT_PARAMS_MAX (§8.2). And it adds the 270-byte ALPN offer
+// in every trust mode, because §8.1 makes ALPN mandatory there
+// (rfc9001.txt:1891-1895), where a TLS device build sends none. So each
+// value is the TLS one plus 254, and plus 270 again in the two device
+// modes. These are CH_HELLO_MAX's QUIC values, repeated as literals for
+// the reason the TLS ones are, and quic.c asserts the two agree.
 #if defined(CH_TRUST_WEBPKI) && defined(CH_KEX_PQ)
+#define CH_TX_STAGE 2587
+#elif defined(CH_TRUST_WEBPKI)
+#define CH_TX_STAGE 1403
+#elif defined(CH_KEX_PQ)
+#define CH_TX_STAGE 2325
+#else
+#define CH_TX_STAGE 1141
+#endif
+#elif defined(CH_TRUST_WEBPKI) && defined(CH_KEX_PQ)
 // The pq sum below plus the two extensions a TRUST=webpki hello adds:
 // the 262-byte server_name at the longest hostname (4 type and length,
 // 2 list length, 1 name_type, 2 name length, 253 name) and the 270-byte
@@ -211,11 +231,11 @@ typedef struct {
     // tx_len counts the bytes staged here and its tx_level names the
     // encryption level they go out at.
     //
-    // open: CH_TX_STAGE's QUIC value. The QUIC hello drops the 6-byte
-    // record_size_limit extension, adds quic_transport_parameters and
-    // adds ALPN in the device builds, so the constant is re-measured
-    // the way test/webpki_session_test.c measured the current values
-    // (docs/quic.md, "Bounds that need measuring").
+    // CH_TX_STAGE's QUIC values are above, and each one is the length
+    // hs_build_client_hello emits for the largest hello its build can
+    // write: 1141 raw and ca classic, 2325 under KEX=pq, 1403 under
+    // TRUST=webpki and 2587 under both. quic.c asserts CH_HELLO_MAX
+    // against this constant, where both are visible.
     uint8_t tx[CH_TX_STAGE];
 #else
     uint8_t tx[REC_HDR + CH_TX_STAGE];

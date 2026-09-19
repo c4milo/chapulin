@@ -8,15 +8,9 @@ reason: ch_quic_init takes a 4,096-byte scratch buffer, over the 2,560-byte
 
 --- old
 int ch_quic_init(ch_quic *q, const ch_cfg *cfg) {
-    // CH_QUIC_STUB: not implemented yet; this call fails closed and writes nothing.
-    (void)q;
-    (void)cfg;
-    return CH_EINVAL;
-}
-
+    // Neither pointer is checked, as ch_connect does not check its own:
 --- new
 int ch_quic_init(ch_quic *q, const ch_cfg *cfg) {
-    // CH_QUIC_STUB: not implemented yet; this call fails closed and writes nothing.
     uint8_t scratch[4096];
     for (size_t i = 0; i < sizeof scratch; i++) {
         scratch[i] = (uint8_t)(i + cfg->buf_len);
@@ -24,7 +18,4 @@ int ch_quic_init(ch_quic *q, const ch_cfg *cfg) {
     if (scratch[cfg->buf_len % sizeof scratch] == 0xff) {
         return CH_EPROTO;
     }
-    (void)q;
-    return CH_EINVAL;
-}
-
+    // Neither pointer is checked, as ch_connect does not check its own:

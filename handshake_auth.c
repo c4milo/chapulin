@@ -292,7 +292,25 @@ int hsa_server_auth(handshake_state *h) {
 #endif
     sha256_update(&h->t->transcript, raw, raw_len);
 
+#ifdef CH_TRANSPORT_QUIC
+    // One whole message per call: the QUIC driver returns to its caller
+    // here, and hsa_read_certificate_verify reads the next message in
+    // the next step. The peer is not authenticated yet.
+    return CH_OK;
+}
+
+int hsa_read_certificate_verify(handshake_state *h) {
+    uint8_t hash[SHA256_LEN];
+    // Recomputed rather than carried from hsa_server_auth. That is
+    // correct only while nothing writes h->t->transcript between the
+    // two calls, which the step table holds by running them back to
+    // back.
+    (void)hsr_transcript_hash(h, hash);
+    return check_certificate_verify(h, hash);
+}
+#else
     uint8_t hash[SHA256_LEN];
     (void)hsr_transcript_hash(h, hash);
     return check_certificate_verify(h, hash);
 }
+#endif

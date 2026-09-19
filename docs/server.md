@@ -1778,10 +1778,11 @@ implementing none, each body carrying one line:
 two new ones refuse and the three shared ones fail on a session no handshake
 ever brought up. No stub returns `CH_OK`. `test/srv_stub_test.c` calls every
 function, requires each refusal, and fills every buffer with `0xa5` before the
-call and compares after, so "writes nothing" is measured — the same test
-`test/quic_stub_test.c` already runs for the other axis. INV-28 already carries
-this claim for one marker (`docs/invariants.md:337`, "a stub never reports
-success") and gains one sentence naming `CH_SRV_STUB` beside `CH_QUIC_STUB`.
+call and compares after, so "writes nothing" is measured — the shape
+`test/quic_stub_test.c` ran for the other axis until that mode was implemented.
+INV-28 carries this claim (`docs/invariants.md`, "a stub never reports
+success"); the QUIC stubs were its first subject and the server stubs are now
+its only one.
 
 ## The interface it exposes
 
@@ -2899,8 +2900,8 @@ Amended entries:
 - **INV-27**, the QUIC partition. Its claim survives once `aes.c` and `gcm.c`
   lose the `quic_` prefix, because they stop being files only a
   `TRANSPORT=quic` build compiles.
-- **INV-28**, stubs never report success. It gains one sentence naming
-  `CH_SRV_STUB` beside `CH_QUIC_STUB`.
+- **INV-28**, stubs never report success. Its subject is `CH_SRV_STUB`
+  alone now: the QUIC stubs it first covered are implemented.
 
 ## What changes in `docs/decisions.md`
 

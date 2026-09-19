@@ -40,7 +40,7 @@
 // a CH_LEVEL_ value and direction is CH_KEY_READ or CH_KEY_WRITE (cfg.h), so the six bits
 // of the three levels sit in the low six bits of one byte. Both arguments are the
 // caller's own public values, never a secret, so the shift is an ordinary index.
-#define CH_QUIC_LEVEL_BIT(level, direction) ((uint8_t)(1u << ((level) * 2 + (direction))))
+#define CH_QUIC_LEVEL_BIT(level, direction) ((uint8_t)(1U << ((level) * 2 + (direction))))
 
 // One QUIC session. It holds everything that survives a return, because the driver returns
 // to its caller between handshake messages: the ch_tls a TLS build holds alone, the
@@ -65,7 +65,7 @@ typedef struct ch_quic {
     // earlier than the TLS driver wipes its frame, which is INV-17's rule that handshake
     // secrets die at CONNECTED.
     handshake_state hs;
-    uint8_t step;     // HSQ_STEP_*, handshake_step.h
+    uint8_t step;     // HSQ_STEP_*, quic_step.h
     uint8_t rx_level; // the one level whose CRYPTO bytes cfg.buf holds
     uint8_t tx_level; // the level the staged message goes out at
     uint8_t alert;    // what ch_quic_alert reports after a failure
@@ -89,8 +89,7 @@ typedef struct ch_quic {
     // CH_LEVEL_APPLICATION bits, ch_quic_discard clears both bits of one level, and
     // ch_quic_close clears every bit. Each set happens in the call that fires
     // cfg.on_level_ready for that level, so the caller's view and this field agree.
-    // docs/quic.md's state table lists neither this field nor error_code; the commit that
-    // lands quic.c adds both rows.
+    // docs/quic.md's state table carries a row for this field and one for error_code.
     uint8_t levels_ready;
     // The Initial level: the Destination Connection ID RFC 9001 §5.2 derives every Initial
     // key from, and no key. quic_initial.c builds the key each packet needs on its own
@@ -265,11 +264,11 @@ int ch_quic_crypto_out(ch_quic *q, uint8_t level, uint8_t *out, size_t cap, size
 // 2^23rd packet, §6.6's confidentiality limit for AEAD_AES_128_GCM
 // (rfc9001.txt:1800-1813), one packet stricter than the RFC.
 //
-// open: the code that refusal returns. docs/quic.md states the refusal, names no code,
-// and makes CH_QUIC_DISCARD and CH_QUIC_AEAD_LIMIT ch_quic_open's alone, which leaves
-// CH_EINVAL — and CH_EINVAL invites another call, where §6.6 says the endpoint must stop
-// using those keys. The commit that lands quic_initial.c decides between CH_EINVAL and a
-// code that leaves the session dead.
+// That refusal returns CH_EINVAL. docs/quic.md states the refusal, names no code, and
+// makes CH_QUIC_DISCARD and CH_QUIC_AEAD_LIMIT ch_quic_open's alone, which leaves this
+// one. It invites another call, which §6.6 answers by refusing that one too: the count
+// only rises, so every later seal at this level returns CH_EINVAL and no packet goes out
+// under those keys.
 int ch_quic_seal(ch_quic *q, uint8_t level, uint64_t pn, size_t pn_len, const uint8_t *hdr,
                  size_t hdr_len, const uint8_t *pt, size_t pt_len, uint8_t *out, size_t cap,
                  size_t *out_len);
@@ -376,7 +375,7 @@ uint8_t ch_quic_retry_ok(const ch_quic *q, const uint8_t *pseudo, size_t n,
 // ch_quic comment above states: quic_keys_update(q->t.wr_secret, &q->app_tx) for the send
 // side, and, after the two moves, quic_keys_update(q->t.rd_secret,
 // &q->app_rx[CH_QUIC_KEY_NEXT]), which leaves t.rd_secret naming the new next set again.
-// The HSQ_STEP_AWAIT_FINISHED step runs that same receive call once (handshake_step.h),
+// The HSQ_STEP_AWAIT_FINISHED step runs that same receive call once (quic_step.h),
 // which makes the invariant true from the first 1-RTT packet on. The moves copy key sets
 // and derive nothing.
 //

@@ -8,9 +8,69 @@
 #include "buf.h"
 #include "ct.h"
 #include "handshake_message.h"
-#include "io.h"
 #include "keysched.h"
+#ifndef CH_TRANSPORT_QUIC
+#include "io.h"
 #include "record.h"
+#endif
+
+#ifdef CH_TRANSPORT_QUIC
+// early_data in a NewSessionTicket (RFC 9846 §4.6.1). It is the one
+// extension defined there, and RFC 9001 §4.6.1 gives its
+// max_early_data_size a single legal value on this transport.
+#define TICKET_EXT_EARLY_DATA 42
+
+// Reads the ticket's extension block rather than skipping it. RFC 9001
+// §4.6.1 repurposes early_data's max_early_data_size as the sentinel
+// 0xffffffff, which says the server accepts QUIC 0-RTT, and a server
+// that does not accept it omits the extension (rfc9001.txt:799-802).
+// This client offers no 0-RTT, so both shapes are accepted and neither
+// changes what it sends.
+//
+// Returns CH_OK for a block that parses and carries no other
+// max_early_data_size. Returns CH_EPROTO with ALERT_ILLEGAL_PARAMETER
+// and 0x0a, PROTOCOL_VIOLATION, for any other value, which §4.6.1 makes
+// an unconditional client MUST (rfc9001.txt:808-809), and CH_EPROTO
+// with ALERT_DECODE_ERROR for a block that does not parse.
+static int read_ticket_extensions(const uint8_t *block, size_t n, uint8_t *alert,
+                                  uint64_t *error_code) {
+    rbuf e;
+    rb_init(&e, block, n);
+    while (rb_left(&e) > 0) {
+        uint16_t ext = rb_u16(&e);
+        size_t ext_len = rb_u16(&e);
+        const uint8_t *data = rb_bytes(&e, ext_len);
+        if (data == NULL) {
+            *alert = ALERT_DECODE_ERROR;
+            return CH_EPROTO;
+        }
+        if (ext != TICKET_EXT_EARLY_DATA) {
+            continue;
+        }
+        rbuf d;
+        rb_init(&d, data, ext_len);
+        uint32_t hi = rb_u24(&d); // u32 read as u24+u8 to keep the reads sequenced
+        uint32_t max_early_data_size = (hi << 8) | rb_u8(&d);
+        if (d.err || rb_left(&d) != 0) {
+            *alert = ALERT_DECODE_ERROR;
+            return CH_EPROTO;
+        }
+        if (max_early_data_size != 0xffffffffU) {
+            *alert = ALERT_ILLEGAL_PARAMETER;
+            *error_code = 0x0a;
+            return CH_EPROTO;
+        }
+    }
+    // The block's own framing must fill it exactly. A trailing byte that
+    // is not a whole extension is a decode error rather than padding,
+    // and a header the reader could not finish sets e.err instead.
+    if (e.err || rb_left(&e) != 0) {
+        *alert = ALERT_DECODE_ERROR;
+        return CH_EPROTO;
+    }
+    return CH_OK;
+}
+#endif
 
 // One NewSessionTicket: derive the resumption PSK and hand the ticket to
 // the application. Tickets we could never present again — nonce too long
@@ -28,7 +88,12 @@
 // there is early_data, and chapulin sends no 0-RTT. Skipping by that
 // length is what leaves rb_left below at zero for a whole message and
 // above zero for a message that carries anything else.
-static int handle_ticket(ch_tls *t, const uint8_t *body, size_t n) {
+static int handle_ticket(ch_tls *t, const uint8_t *body, size_t n
+#ifdef CH_TRANSPORT_QUIC
+                         ,
+                         uint8_t *alert, uint64_t *error_code
+#endif
+) {
     rbuf r;
     rb_init(&r, body, n);
     ch_ticket ticket;
@@ -41,8 +106,21 @@ static int handle_ticket(ch_tls *t, const uint8_t *body, size_t n) {
     ticket.identity_len = rb_u16(&r);
     ticket.identity = rb_bytes(&r, ticket.identity_len);
     size_t ext_len = rb_u16(&r);
+#ifdef CH_TRANSPORT_QUIC
+    const uint8_t *exts = rb_bytes(&r, ext_len);
+    if (exts != NULL) {
+        int rc = read_ticket_extensions(exts, ext_len, alert, error_code);
+        if (rc != CH_OK) {
+            return rc;
+        }
+    }
+#else
     rb_skip(&r, ext_len);
+#endif
     if (r.err || rb_left(&r) != 0) {
+#ifdef CH_TRANSPORT_QUIC
+        *alert = ALERT_DECODE_ERROR;
+#endif
         return CH_EPROTO;
     }
     if (t->cfg.on_ticket == NULL || nonce_len > SHA256_LEN ||
@@ -56,6 +134,14 @@ static int handle_ticket(ch_tls *t, const uint8_t *body, size_t n) {
     return CH_OK;
 }
 
+#ifdef CH_TRANSPORT_QUIC
+int hspost_take_ticket(ch_tls *t, const uint8_t *body, size_t n, uint8_t *alert,
+                       uint64_t *error_code) {
+    return handle_ticket(t, body, n, alert, error_code);
+}
+#endif
+
+#ifndef CH_TRANSPORT_QUIC
 // One KeyUpdate: the read direction always rekeys — receivers are
 // forbidden from enforcing the peer's epoch cap (RFC 9846 §4.7.3) — and
 // a reply goes out only when requested and while our own epoch count is
@@ -151,3 +237,4 @@ int hspost_read(ch_tls *t, size_t pt_len) {
     }
     return CH_EPROTO;
 }
+#endif // CH_TRANSPORT_QUIC

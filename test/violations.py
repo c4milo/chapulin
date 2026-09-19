@@ -264,7 +264,7 @@ FAST_TARGETS = {"unit", "unit_ca", "x509strict", "x509strict_ecdsa",
                 "test/lint-stack-quic.sh",
                 "test/lint-quic-partition.sh", "test/lint-quic-surface.sh",
                 "test/quic-builds.sh",
-                "quic_stub_test"}
+                "quic_driver_test", "srv_stub_test"}
 
 
 def catches_of(name):

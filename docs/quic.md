@@ -34,17 +34,22 @@ QUIC build is still `TRUST=raw`, `TRUST=ca` or `TRUST=webpki`.
 
 ## Status
 
-Decided, the interface is written, and the build axis carries it. The design
-has chapulin owning packet protection at every level, with the AES exception
-below. The ten headers this document names exist, eight `.c` files exist, and
-the first of them is implemented: `quic_aes.c` carries the AES-128 forward
-cipher and both `aes_public_key` constructors, and every other function is
-still a stub. The Makefile's `TRANSPORT` axis packages them: `make lib
-TRANSPORT=quic` links an object that exports the fifteen `ch_quic_` calls and
-refuses every one of them. `make quic-footprint` prints
-what exists, read from the tree, including how many functions are stubbed
-against how many are implemented, and `make lint-quic-partition` holds the mode
-to the files named `quic*`. The next section states the stub rule.
+Decided, the interface is written, the build axis carries it, and the mode
+is implemented. The design has chapulin owning packet protection at every
+level, with the AES exception below. `quic.c`, `quic_config.c` and
+`quic_step.c` run the handshake over CRYPTO frames, and the six
+packet-protection sources under them protect the packets. The Makefile's
+`TRANSPORT` axis packages all of it: `make lib TRANSPORT=quic` links an
+object that exports the fifteen `ch_quic_` calls. `make quic-footprint`
+prints what exists, read from the tree, and `make lint-quic-partition` holds
+the mode to the files named `quic*`. The next section states the stub rule
+the mode was built under, which has no subject left here.
+
+`quic_config.[ch]` is not in the file list below. It holds the configuration
+rules `ch_quic_init` applies and the stored revocation epoch it loads, which
+are `tls.c`'s and which a `TRANSPORT=quic` object does not compile. They sit
+in their own pair because `CLAUDE.md` caps a hand-written file at 500 lines
+and `quic.c` was at it.
 
 Every claim about chapulin names the file and line it came from, read at
 commit `3432a5d`. The citations into `docs/invariants.md` are read after the
@@ -67,69 +72,49 @@ code to land.
 
 ## The stubs and the marker
 
-The build axis lands with the first line of code and not after it, so every
-later lane has a target that compiles and every gate already runs on the new
-axis. That means the mode's eight `.c` files exist before the mode does. Each
-one defines every function its header declares and implements none. The mode
-links and does nothing.
+The build axis landed with the first line of code and not after it, so every
+later lane had a target that compiled and every check already ran on the new
+axis. That meant the mode's `.c` files existed before the mode did: each one
+defined every function its header declares and implemented none, and the mode
+linked and did nothing. Three rules held that state, and each was checked
+rather than stated.
 
-Three rules hold that state, and each is checked rather than stated.
-
-1. **Every stub fails closed.** A stub returns a refusal its header documents
-   and writes nothing through its out-parameters. `CH_EINVAL` from the calls
-   that take a session, `CH_QUIC_DISCARD` from the three that open a packet, 0
-   from `quic_retry_ok` and `gcm_open`, which answer 1 for a matching tag and 0
-   otherwise, and 1 from the two §6.6 limit questions, which is the answer that
-   refuses. `ch_quic_state` answers `CH_ST_FAILED`, because no call here
-   completes a handshake. No stub returns `CH_OK`. A stub that could would hand
-   a caller an unprotected packet the day it linked.
-2. **Every stub is greppable and counted.** A stub body carries one line, in
+1. **Every stub fails closed.** A stub returned a refusal its header
+   documents and wrote nothing through its out-parameters. No stub returned
+   `CH_OK`. A stub that could would have handed a caller an unprotected packet
+   the day it linked.
+2. **Every stub is greppable and counted.** A stub body carried one line, in
    one fixed form: `// CH_QUIC_STUB: not implemented yet; this call fails
    closed and writes nothing.` `make quic-footprint` counts that line per
-   function and reports "43 declared, 39 stubbed, 4 implemented" rather than a
-   count of definitions, which would read as a finished mode. The four are
-   `quic_aes.c`'s, and they left the marker in the commit that implemented
-   them. The Makefile's
-   `QUIC_STUB_SRCS` greps the same line, and the two gates that carry a stub
-   exception read that list: `lint-tidy`'s stub pass, which turns
-   `readability-non-const-parameter` off because a stub never writes through
-   the out-parameters its header declares writable, and `lib-check`'s
-   `RAND=extern` import check, because `handshake.c` is the only library source
-   that calls `ch_rand_bytes` and a QUIC object compiles none of it. Each
-   exception retires per file, when that file stops matching the marker.
-3. **A test proves rule 1.** `bin/quic_stub_test`, over
-   `test/quic_stub_test.c`, calls every function that is still a stub, requires
-   each refusal, and fills every buffer and struct it passes with `0xa5` before
-   the call and compares it after, so "writes nothing" is measured. A function
-   leaves that file in the commit that implements it, and
-   `make lint-quic-surface` fails on a stub the file never calls. `make check` builds and
-   runs it on both transports.
-   `test/violations/inv28-quic-stub-returns-ok.violation` makes
-   `quic_packet_seal` return `CH_OK` and requires that binary to fail.
+   function, so the report read "43 declared, 39 stubbed, 4 implemented"
+   rather than a count of definitions. The Makefile's `QUIC_STUB_SRCS` grepped
+   the same line, and two checks carried an exception bounded by that list:
+   `lint-tidy`'s stub pass, with `readability-non-const-parameter` off, and
+   `lib-check`'s `RAND=extern` import check.
+3. **A test proves rule 1.** `bin/quic_stub_test` called every function that
+   was still a stub, required each refusal, and filled every buffer it passed
+   with `0xa5` before the call and compared it after, so "writes nothing" was
+   measured. `make lint-quic-surface` failed on a stub the file never called.
 
-INV-28 in `docs/invariants.md` carries the claim, and it says what retires it:
-when `make quic-footprint` reports 0 stubbed, the marker, the two exceptions,
-the entry and the mutant all go in that commit.
+Every function is implemented now, so the marker matches nothing and the
+three rules have no subject. `QUIC_STUB_SRCS`, the two exceptions,
+`bin/quic_stub_test` and the mutant on `quic_step.c` went in the commit that
+implemented the last stub, as INV-28 said they would. `make quic-footprint`
+still counts the marker and reports 0 stubbed, and `make lint-quic-surface`
+still holds `quic.h` to the interface table below. INV-28 in
+`docs/invariants.md` keeps the claim for the `ROLE=server` role, whose stubs
+carry `CH_SRV_STUB` under the same three rules.
 
-Two things the axis does that this document did not plan, both named in the
-Makefile beside the list they change. `QUIC_PENDING` holds the four sources
-that keep their TLS text, owe a QUIC arm, and cannot be compiled into the
-object until they have one — `handshake_parser.c`, `handshake_record.c`,
-`handshake_auth.c` and `handshake_post.c`. Three of the four do not compile
-under `-DCH_TRANSPORT_QUIC` at all, because the headers already fork ahead of
-them: `handshake_parser.c` gets conflicting types for
-`hsp_parse_encrypted_exts`, and `handshake_record.c` and `handshake_post.c`
-read fields the QUIC arms of `handshake_record.h` and `session.h` drop.
-`handshake_auth.c` compiles clean, and it calls the `hsp_` and `hsr_`
-functions the other three define, so an object carrying it alone would not
-link. So the object leaves all four out and no QUIC source reaches a handshake
-message. A name leaves that list in the commit that lands its arm.
-
-`handshake_message.c` is not on that list. It compiles clean under
-`-DCH_TRANSPORT_QUIC` and imports only the `wb_` writer from `buf.c`, which the
-object already packages, so the mode compiles it today and `quic.c` includes
-its header. And `LIB_VARIANT` gains `$(TRANSPORT)` as its fifth term, so the
-two transports never write an object of the same name to the same path.
+Two things the axis did that this document did not plan, both named in the
+Makefile beside the list they change. `QUIC_PENDING` held the four sources
+that keep their TLS text and owe a QUIC arm — `handshake_parser.c`,
+`handshake_record.c`, `handshake_auth.c` and `handshake_post.c` — for as long
+as the object could not compile them. Every arm landed with the driver, so
+the list is empty and the object compiles all four beside
+`handshake_message.c`; the name stays because `TRANSPORT_FILTER` and
+`tools/quic-partition.py` read it. And `LIB_VARIANT` gained `$(TRANSPORT)` as
+a term, so the two transports never write an object of the same name to the
+same path.
 
 ## What QUIC asks of a TLS stack
 
@@ -456,8 +441,8 @@ target that compiles, and `test/violations.py` counts a build failure under a
 not compile proves nothing about the tests
 (`test/violations.py:203-208`). A script target builds nothing of its own, so
 the compiler's refusal becomes the script's own exit status.
-`test/quic-builds.sh` runs `make bin/quic_stub_test`, which compiles all eight
-`QUIC_SRCS`, and `inv26-secret-into-stored-key.violation` writes a byte of
+`test/quic-builds.sh` runs `make bin/quic_driver_test`, which compiles every
+`QUIC_SRCS` file, and `inv26-secret-into-stored-key.violation` writes a byte of
 `q->t.wr_secret` into `q->initial_tx.key.round_keys` in `quic.c` and requires
 that script to fail. That is the original bypass, and it now names a member
 that does not exist.
@@ -1362,6 +1347,8 @@ and `pt_len`.
 | `t.pt_off`, `t.pt_len` | `size_t` each | `pt_off <= pt_len <= cfg.buf_len` | the unread CRYPTO bytes of `rx_level` |
 | `handshake_rx`, `handshake_tx`, `handshake_hp_rx`, `handshake_hp_tx`, `app_tx`, `app_rx`, `app_hp_rx`, `app_hp_tx`, `key_phase`, and `ch_tls`'s own `rd_secret` and `wr_secret` | `quic_keys`, `quic_keys[CH_QUIC_KEY_SETS]`, `quic_hp_key`, `uint8_t`, `uint8_t[32]` | `app_rx`'s three slots are the named indices, never a computed one | written into the fields of one named level; read by the packet calls and by `quic ku`. Each `quic_hp_key` is written once and never rewritten, which is the §6.1 rule (`rfc9001.txt:1607`) |
 | `initial_dcid`, `initial_dcid_len` | `uint8_t[CH_QUIC_DCID_MAX]`, `uint8_t` | `initial_dcid_len <= CH_QUIC_DCID_MAX`, RFC 9000 §17.2's cap (`rfc9000.txt:4991-4998`) | the Destination Connection ID the Initial keys are derived from, written by `ch_quic_initial_keys` and read by the two Initial packet calls, which build the key they need on their own stack. It holds no key, which is INV-26 |
+| `levels_ready` | `uint8_t` | six bits, one per level per direction at `CH_QUIC_LEVEL_BIT` | the only answer to "installed and not discarded", which `ch_quic_seal` and `ch_quic_open` read on every call. A key set of all-zero bytes is a legitimate derivation, so no call decides that question by comparing key bytes |
+| `error_code` | `uint64_t` | 0, or a QUIC transport error code | the code `ch_quic_error_code` reports for the four refusals RFC 9001 makes a connection error of type PROTOCOL_VIOLATION. `quic_fail_level` and those four steps are its only writers, and the caller reads it after the call that failed |
 | `open_failures`, `initial_sealed` | `uint64_t` each | `open_failures` stops the session at RFC 9001 §6.6's integrity limit, `initial_sealed` at its confidentiality limit | the §6.6 counts are per connection, so every call adds to the count the last call left |
 
 Five things are never saved: a pointer into `cfg.buf` past the step that took
@@ -1930,7 +1917,7 @@ its caps.
 | the §6.6 integrity limit | RFC 9001 §6.6: the endpoint closes once the count of received packets that fail authentication exceeds the limit of the AEAD in use, which is 2^36 invalid packets for AEAD_CHACHA20_POLY1305 (`rfc9001.txt:1830-1831`) | fixed by the RFC, not measured: the boundary test is that the 2^36th failed open returns `CH_QUIC_DISCARD` and the 2^36+1st returns `CH_QUIC_AEAD_LIMIT` |
 | the out-of-order CRYPTO buffer | RFC 9000 §7.5 makes an endpoint support at least 4096 bytes of out-of-order CRYPTO data, or close with CRYPTO_BUFFER_EXCEEDED | the caller's, under the interface above: chapulin takes ordered bytes. It belongs in colibri's bounds |
 | the largest handshake message | `hsr_next_msg` refuses `msg_len > 0x4000` (`handshake_record.c:119`), which is this client's own choice | unchanged. RFC 9000 and RFC 9001 state no per-message limit; the buffer rule of RFC 9000 §7.5 (`rfc9000.txt:2154-2157`) is the only bound they give, and `CH_QUIC_MIN_RXBUF` above is the real bound here |
-| `CH_HELLO_MAX` and `CH_TX_STAGE` | the QUIC hello drops 6 bytes of `record_size_limit` (`handshake_message.c:93-95`) and adds `quic_transport_parameters`, plus ALPN in the device builds, which do not send it today | re-measure the way the current values were measured: 1149 classic and 2333 under `KEX=pq` for a webpki build (`session.h:45`, `session.h:42`), measured by `test/webpki_session_test.c`. `handshake.c:33` asserts the constant against `CH_TX_STAGE`, so a stale value fails the build |
+| `CH_HELLO_MAX` and `CH_TX_STAGE` | the QUIC hello drops 6 bytes of `record_size_limit` and adds `quic_transport_parameters`, plus ALPN in the device builds, which do not send it over TLS | measured: `session.h` holds 1141 for raw and ca classic, 2325 under `KEX=pq`, 1403 under `TRUST=webpki` and 2587 under both, each the TLS value plus 254 and, in the two device modes, plus 270 again. `quic.c` asserts `CH_HELLO_MAX` against `CH_TX_STAGE`, so a stale value fails the build |
 | the session struct | `ch_quic` holds a `ch_tls`, the `handshake_state` that lives on a stack frame today, the driver's own fields, the two Initial keys, the two Handshake key sets, the 1-RTT send set, the three 1-RTT receive sets and the four `quic_hp_key` values; the components are measured under "Suspending the driver" | `bench/sram.sh`, with a `-DCH_TRANSPORT_QUIC` probe beside its `-DCH_KEX_PQ` and `-DCH_TRUST_WEBPKI` ones (`bench/sram.sh:28-45`), over the real header. No arithmetic over the components in that section is the answer |
 | the 1-RTT key sets | RFC 9001 §6.3 makes two receive sets a floor, current and next (`rfc9001.txt:1711-1712`); the previous set is this record's policy choice, for the delayed packets §6.5 opens | `CH_QUIC_KEY_SETS` is 3, so the count is fixed and only `sizeof(quic_keys)` and `sizeof(quic_hp_key)` are left to measure; measure the struct again after them |
 | the transport-parameters body, both directions | the client's body is the caller's; the server's arrives in EncryptedExtensions | capture real server bodies, as `docs/webpki.md` captured real chains. This tree holds no QUIC bytes today |
@@ -2141,15 +2128,15 @@ Against 83 launch lines and 86 harness files today:
 
 - New: one per new source, by the names in "The new sources, by name":
   `quic_keys.c`, `quic_packet.c`, `quic_initial.c`, `quic_retry.c`,
-  `quic_step.c` and `quic.c`, plus `quic_aes.c` and `quic_gcm.c`.
-  `handshake_flight.c` is the exception and needs no harness of its own:
-  `handshake_psk`, `handshake_pin` and the step legs compile it, which is
-  what `tools/proof-cover.py` asks for. The QUIC arm of
-  `handshake_record.c` gets one new leg, `handshake_crypto`. The transport
-  parameters add no source: `handshake_message.c` writes them and
-  `handshake_parser.c` reads them. `quic_packet` and `gcm` likely split
-  further, the way `aead` did — four harness files, three launch lines,
-  because the fourth returned no verdict in an hour (`proof/run.sh:354-355`).
+  `quic_step.c` and `quic.c`, plus `quic_aes.c` and `quic_gcm.c`, all
+  landed. `handshake_flight.c` is the exception and needs no harness of its
+  own: `handshake_psk`, `handshake_pin` and `hybrid_secret` compile it, which
+  is what `tools/proof-cover.py` asks for. The QUIC arm of
+  `handshake_record.c` and all of `quic_config.c` are compiled into
+  `quic_driver` rather than a leg of their own. The transport parameters add
+  no source: `handshake_message.c` writes them and `handshake_parser.c` reads
+  them. `quic_gcm` split the way `aead` did — five harness files, three
+  launch lines, because two formulas returned no verdict.
 - Moved: `aead`, `aead_overlap` and `aead_forge` (`proof/run.sh:351-353`) for
   the AAD bound; `eeparse`, `eeparse_webpki` and `eeparse_alpn`
   (`proof/run.sh:419`, `:440`, `:455`) for the parser's alert contract and
@@ -2228,13 +2215,14 @@ coverage` (`Makefile:1016-1095`), whose object sets are written by hand per
 mode: the mode adds a `TRANSPORT=quic` leg beside the `TRUST=webpki` one at
 `Makefile:1046`, over `bin/quic_test` and `bin/quic_driver_test`, and
 `COVERAGE_FLOOR` (`Makefile:964`) moves in the same diff by the ratchet rule
-stated there. That leg is the one gate here that waits: a leg over eight stub
-bodies would ratchet the floor on code the next lane deletes, so "What is still
-open" carries it and the comment above `COVERAGE_FLOOR` names the commit that
-adds it. `test/spec_coverage.py`'s `SRCS` list already holds the eight
-sources, which read as rows saying "not built" while the differential has no
-QUIC leg; its `DRIVERS` list gains `test/quic_driver_test.c` in the commit that
-adds that binary, and the rows move to a percentage there. Every
+stated there. That leg is the one check here that still waits: the mode is
+implemented and `bin/quic_driver_test` runs in `check`, so "What is still
+open" carries it and the comment above `COVERAGE_FLOOR` names what the
+commit that adds it does. `test/spec_coverage.py`'s `SRCS` list holds the
+quic sources, which read as rows saying "not built" while the differential
+has no QUIC leg; `bin/quic_driver_test` is a unit test and not a
+differential driver, so its `DRIVERS` list waits for the leg that compares
+the mode against `spec/`. Every
 one of those needs a row or a leg for the new axis, which is work that is done
 with the first line of code and not after it, and a gate that waits says so in
 "What is still open" rather than staying silent. `test/e2e.sh` is the exception:
@@ -2276,9 +2264,10 @@ The mode, its owner split and the AES exception are decided. These are not:
   implements them. `WIDEMUL_CEILING` already holds both at 0, and
   `WIDEMUL_DEFINES` gives them the transport define the shared gate lines do
   not pass;
-- the CBMC harnesses the mode owes. `make proof-coverage` names all eight
-  sources as having none, which is the honest reading of a tree whose mode is
-  stubbed; each pair's own commit writes its harness, by the table above;
+- the CBMC harnesses the mode owes: every source has one now, by the table
+  above, and `proof/run.sh` names what each launch line costs. `quic_gcm` and
+  `quic_gcm_forge` still carry no launch line, because neither formula has
+  returned a verdict;
 
 - `CH_QUIC_MIN_RXBUF`: its formula, measured against the largest single
   handshake message of each term — the trust term's Certificate, the
@@ -2300,20 +2289,21 @@ The mode, its owner split and the AES exception are decided. These are not:
   resumable, which only a run can answer;
 - the `make coverage` leg. The recipe builds its object sets by hand, one per
   PIN over `$(SRCS)` and one over the webpki sources, and neither names a QUIC
-  source, so the eight contribute nothing to `COVERAGE_FLOOR`. Adding a leg
-  today would ratchet that floor on bodies the next lane deletes: every one of
-  the eight is a stub `bin/quic_stub_test` calls once. The leg lands in the
-  shape of the webpki leg, with `bin/quic_test` and `bin/quic_driver_test` in
-  its run list, in the commit that adds those two binaries, and that commit
-  moves the floor to CI's re-measured reading. The comment above
-  `COVERAGE_FLOOR` carries the same debt;
+  source, so the QUIC sources contribute nothing to `COVERAGE_FLOOR`. The leg
+  lands in the shape of the webpki leg, with `bin/quic_test` and
+  `bin/quic_driver_test` in its run list, and that commit moves the floor to
+  CI's re-measured reading. The comment above `COVERAGE_FLOOR` carries the
+  same debt;
 - the end-to-end leg. `test/e2e.sh` runs against `openssl s_server`, which
   speaks no QUIC, so the mode has no interop evidence at all until a QUIC
   server joins the suite. The three candidates are an OpenSSL 3.5 QUIC
   server, a Go `quic-go` echo server beside the Go echo server the suite
   already starts, and no leg at all, which leaves `make check-slow` green on
-  a transport nothing has ever spoken to. Naming one is work for the commit
-  that lands `quic.[ch]`, and until then the record claims no interop.
+  a transport nothing has ever spoken to. The commit that landed `quic.[ch]`
+  named none: `bin/quic_driver_test` drives the driver to the Handshake level
+  with a ServerHello the test builds itself, and every message after that
+  one is encrypted under keys only a server holds, so the record still
+  claims no interop.
 
 ## What changes in `CLAUDE.md`
 

@@ -278,11 +278,11 @@ static void level_ready(void *, uint8_t, uint8_t) {
 }
 
 // The QUIC leg: every one of the fifteen forwarders compiles, links against
-// the packaged object and answers. The object's entries are stubs today, so
-// each one refuses; bin/quic_stub_test is where that refusal is the subject,
-// and here the subject is the wrapper. Status::invalid from init() is the
-// stub's answer and the C test pins it, so this leg checks only that the
-// wrapper reaches the object and maps what comes back.
+// the packaged object and answers. The subject is the wrapper, not the
+// answers, so this configuration is one the object refuses: it names no ALPN
+// protocol, which RFC 9001 §8.1 makes mandatory, and no pin or PSK. Each call
+// below then meets a dead session, and the expectation is what quic.h states
+// that session answers.
 static void test_quic() {
     static const uint8_t kParams[] = {0x01, 0x02, 0x03};
     chapulin::Config cfg(chapulin::Bytes{rxbuf});
@@ -293,8 +293,8 @@ static void test_quic() {
     chapulin::Quic q;
     CHECK(q.init(cfg) == chapulin::Status::invalid);
     CHECK(q.initial_keys(chapulin::ConstBytes{kParams}) == chapulin::Status::invalid);
-    CHECK(q.crypto_in(CH_LEVEL_INITIAL, chapulin::ConstBytes{kParams}) ==
-          chapulin::Status::invalid);
+    // A dead session answers CRYPTO bytes with CH_EPROTO, not CH_EINVAL.
+    CHECK(q.crypto_in(CH_LEVEL_INITIAL, chapulin::ConstBytes{kParams}) == chapulin::Status::proto);
 
     uint8_t packet[64];
     std::memset(packet, 0, sizeof packet);
@@ -317,9 +317,13 @@ static void test_quic() {
     CHECK(q.key_update() == chapulin::Status::invalid);
     CHECK(q.key_phase() == 0);
     q.drop_previous_keys();
-    CHECK(q.discard(CH_LEVEL_INITIAL) == chapulin::Status::invalid);
+    // Discarding a level whose keys were never installed is harmless, and
+    // quic.h gives that call no state check at all.
+    CHECK(q.discard(CH_LEVEL_INITIAL) == chapulin::Status::ok);
     CHECK(q.state() == CH_ST_FAILED);
-    CHECK(q.alert() != 0);
+    // No handshake failed, so no alert description was written. quic.h says
+    // 0 there is close_notify and never a failure's description.
+    CHECK(q.alert() == 0);
     CHECK(q.error_code() != 0);
     q.close();
 }

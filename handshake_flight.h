@@ -1,7 +1,7 @@
 // The client's flight handlers, one function per handshake message, over
 // the handshake_state and the ch_tls it points at. Both transports
 // compile this file: the TLS driver in handshake.c calls these in one
-// straight line, and the QUIC driver in handshake_step.c calls the same
+// straight line, and the QUIC driver in quic_step.c calls the same
 // functions one per step, so no protocol rule exists twice
 // (docs/quic.md, "The design: one whole message per step").
 //

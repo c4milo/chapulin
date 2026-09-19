@@ -340,36 +340,35 @@ which convention holds them.
 
 ### INV-28 — a stub never reports success
 
-- **Claim.** Every function of the `TRANSPORT=quic` mode that is a stub
+- **Claim.** Every function of the `ROLE=server` role that is a stub
   returns a refusal the header documents and writes nothing through its
-  out-parameters. No stub returns `CH_OK`, and none reports a matching
-  tag, an opened packet or a completed handshake. A caller that links
-  the object today gets refusals, never an unprotected packet.
-- **Mechanism.** The Makefile's `TRANSPORT` axis packages the mode
-  before the mode is written, so the object exists and every call in it
-  is a stub. A stub body carries one `// CH_QUIC_STUB: ` line and
-  returns the header's refusal. `make quic-footprint` counts the marker
-  and prints how many of the mode's functions are stubbed and how many
-  are implemented, so the tree states what it does rather than looking
-  finished; `QUIC_STUB_SRCS` reads the same marker, and the two gates
-  that carry a stub exception read that list.
-- **Check.** A running test, `bin/quic_stub_test`, which `make check`
+  out-parameters. No stub returns `CH_OK`, and none reports a completed
+  handshake or a verified identity. A caller that links the object today
+  gets refusals, never a session no handshake brought up.
+- **Mechanism.** The Makefile's `ROLE` axis packages the role before the
+  role is written, so the object exists and every call in it is a stub.
+  A stub body carries one `// CH_SRV_STUB: ` line and returns the
+  header's refusal. `SRV_STUB_SRCS` reads that marker, and the two checks
+  that carry a stub exception read that list: `lint-tidy`'s stub pass
+  and `lib-check`'s `RAND=extern` import check.
+- **Check.** A running test, `bin/srv_stub_test`, which `make check`
   builds and runs. It calls each stub, requires the documented refusal
   from it, and fills every buffer and every struct it passes with `0xa5`
   before the call and compares it after, so "writes nothing" is
-  measured. `make lint-quic-surface` holds the test to the whole stub
-  set: it reads the stub names from the marker and the names the test
-  calls from the test, and fails on a stub the test never calls, so a
-  stub added later cannot stay unmeasured. The mutant
-  `test/violations/inv28-quic-stub-returns-ok.violation` makes one stub
+  measured. The mutant
+  `test/violations/inv28-srv-stub-returns-ok.violation` makes one stub
   return `CH_OK` and requires that binary to fail.
 - **Violation.** A PR makes a stub answer `CH_OK` to get a caller
-  building, so `ch_quic_seal` reports a sealed packet it never sealed
-  and the caller puts plaintext on the wire.
-- Retirement. This entry lasts as long as a stub does. When
-  `make quic-footprint` reports 0 stubbed, the marker, the exceptions
-  that read it, this entry and its mutant all go in that commit.
-- See [quic](quic.md).
+  building, so `ch_srv_accept` reports a session it never negotiated and
+  the caller reads plaintext off keys nothing derived.
+- Retirement. This entry lasts as long as a stub does. The
+  `TRANSPORT=quic` mode was its first subject: `bin/quic_stub_test`,
+  `QUIC_STUB_SRCS`, the two exceptions that read it and the mutant on
+  `quic_step.c` all went in the commit that implemented the mode's last
+  stub, as this entry said they would, and `make quic-footprint` reports
+  0 stubbed there. When `SRV_STUB_SRCS` is empty, the marker, the
+  exceptions that read it, this entry and its mutant go the same way.
+- See [server](server.md) and [quic](quic.md).
 
 ### INV-7 — no negotiation
 
@@ -797,11 +796,9 @@ which convention holds them.
   364-byte `aes_public_key` values become 21 bytes of connection ID.
   Deriving per use costs one HKDF-Extract, three HKDF-Expand-Label calls
   and two key expansions per packet per direction, and no bench in this
-  tree times them. Every QUIC body is still a stub, so `lint-stack` has
-  no frame that builds a key to measure; one `aes_public_key` is 364
-  bytes against a 2,560-byte budget, and
-  `make lint-stack TRANSPORT=quic` measures the first real frame on the
-  commit that lands it.
+  tree times them. One `aes_public_key` is 364 bytes against a
+  2,560-byte budget, and `make lint-stack TRANSPORT=quic` measures every
+  frame that builds one in each `make check`.
 
   **What the change does not do.** A covered file can write a traffic
   secret into `q->initial_dcid` instead, and the constructor will derive

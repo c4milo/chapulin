@@ -1,0 +1,26 @@
+invariant: INV-28
+file: srv.c
+catches: srv_stub_test
+reason: the ch_srv_accept stub reports CH_OK for a handshake it never ran,
+  so a firmware that links the ROLE=server object reads the session as up
+  and calls ch_read over keys no handshake derived. INV-28's claim is that
+  no stub reports success, and srv_stub_test is what reads every stub's
+  answer. This mutant sat on quic_step.c until the TRANSPORT=quic mode
+  was implemented; it moves rather than retires, because the server role
+  is still stubbed. When its last stub is implemented INV-28 has no
+  subject and this file goes with it.
+
+--- old
+int ch_srv_accept(ch_tls *t, const ch_cfg *cfg) {
+    // CH_SRV_STUB: not implemented yet; this call fails closed and writes nothing.
+    (void)t;
+    (void)cfg;
+    return CH_EINVAL;
+}
+--- new
+int ch_srv_accept(ch_tls *t, const ch_cfg *cfg) {
+    // CH_SRV_STUB: not implemented yet; this call fails closed and writes nothing.
+    (void)t;
+    (void)cfg;
+    return CH_OK; // nothing to refuse yet; let the caller proceed
+}

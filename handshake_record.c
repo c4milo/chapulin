@@ -11,9 +11,12 @@
 #include "buf.h"
 #include "cfg.h"
 #include "handshake_message.h"
+#ifndef CH_TRANSPORT_QUIC
 #include "io.h"
 #include "record.h"
+#endif
 
+#ifndef CH_TRANSPORT_QUIC
 // Appends one record's handshake bytes at buf[part..]. Plaintext records
 // shed their header in place; protected ones decrypt in place.
 static int accept_record(handshake_state *h, size_t part, uint8_t outer, size_t record_len) {
@@ -133,6 +136,78 @@ int hsr_next_msg(handshake_state *h, uint8_t *type, const uint8_t **raw, size_t 
         }
     }
 }
+
+#endif // CH_TRANSPORT_QUIC
+
+#ifdef CH_TRANSPORT_QUIC
+size_t hsr_feed(handshake_state *h, const uint8_t *p, size_t n) {
+    ch_tls *t = h->t;
+    // Compact first, the way the TLS reader compacts before it reads a
+    // record, so the unread bytes start at cfg.buf and the room is one
+    // subtraction.
+    if (t->pt_off > 0) {
+        memmove(t->cfg.buf, t->cfg.buf + t->pt_off, t->pt_len - t->pt_off);
+        t->pt_len -= t->pt_off;
+        t->pt_off = 0;
+    }
+    size_t room = t->cfg.buf_len - t->pt_len;
+    size_t take = n < room ? n : room;
+    memcpy(t->cfg.buf + t->pt_len, p, take);
+    t->pt_len += take;
+    return take;
+}
+
+int hsr_peek_message(const handshake_state *h, size_t *raw_len, uint8_t *alert) {
+    const ch_tls *t = h->t;
+    size_t avail = t->pt_len - t->pt_off;
+    if (avail < 4) {
+        return HSR_INCOMPLETE;
+    }
+    const uint8_t *p = t->cfg.buf + t->pt_off;
+    size_t msg_len = ((size_t)p[1] << 16) | ((size_t)p[2] << 8) | p[3];
+    if (msg_len > 0x4000) {
+        *alert = ALERT_DECODE_ERROR; // nothing we accept is this large
+        return CH_EPROTO;
+    }
+    if (4 + msg_len > t->cfg.buf_len) {
+        // A QUIC client sends no record_size_limit, so cfg.buf_len is
+        // the only bound a peer meets and a message that could never
+        // fit is refused at the header rather than waited for.
+        *alert = ALERT_INTERNAL_ERROR;
+        return CH_ECAP;
+    }
+    if (avail < 4 + msg_len) {
+        return HSR_INCOMPLETE;
+    }
+    *raw_len = 4 + msg_len;
+    return CH_OK;
+}
+
+// Yields the message hsr_peek_message has already found whole. It waits
+// for nothing: the caller owns the transport and feeds CRYPTO bytes in
+// through hsr_feed. The driver peeks before every step, so the CH_ECAP
+// hsr_peek_message can answer is never returned to a caller here; this call
+// passes it on rather than hiding it.
+int hsr_next_msg(handshake_state *h, uint8_t *type, const uint8_t **raw, size_t *raw_len) {
+    ch_tls *t = h->t;
+    size_t whole = 0;
+    uint8_t alert = 0;
+    int rc = hsr_peek_message(h, &whole, &alert);
+    if (rc == HSR_INCOMPLETE) {
+        return CH_EINVAL; // the driver called without a whole message
+    }
+    if (rc != CH_OK) {
+        h->alert = alert;
+        return rc;
+    }
+    const uint8_t *p = t->cfg.buf + t->pt_off;
+    *type = p[0];
+    *raw = p;
+    *raw_len = whole;
+    t->pt_off += whole;
+    return CH_OK;
+}
+#endif // CH_TRANSPORT_QUIC
 
 int hsr_transcript_hash(handshake_state *h, uint8_t out[SHA256_LEN]) {
     sha256 transcript = h->t->transcript;

@@ -2,7 +2,7 @@
 
 #include "buf.h"
 
-#ifdef CH_TRUST_WEBPKI
+#if defined(CH_TRUST_WEBPKI) || defined(CH_TRANSPORT_QUIC)
 // application_layer_protocol_negotiation (RFC 7301 §3.1): a
 // ProtocolNameList of one or more ProtocolName, each an opaque vector
 // with a one-byte length, in the order the caller listed them. A caller
@@ -60,6 +60,12 @@ size_t hs_build_client_hello(uint8_t *out, size_t cap, const ch_cfg *cfg,
     wb_bytes(&w, cfg->hostname, cfg->hostname_len);
 
     write_alpn(&w, cfg);
+#elif defined(CH_TRANSPORT_QUIC)
+    // RFC 9001 §8.1 makes ALPN mandatory for a QUIC client
+    // (rfc9001.txt:1891-1895), and ch_quic_init refuses a configuration
+    // that offers no protocol, so this writes the extension in every
+    // trust mode.
+    write_alpn(&w, cfg);
 #endif
 
     wb_u16(&w, EXT_SUPPORTED_VERSIONS);
@@ -90,9 +96,21 @@ size_t hs_build_client_hello(uint8_t *out, size_t cap, const ch_cfg *cfg,
     wb_u8(&w, 1);
     wb_u8(&w, 1); // psk_dhe_ke only
 
+#ifndef CH_TRANSPORT_QUIC
     wb_u16(&w, EXT_RECORD_SIZE_LIMIT);
     wb_u16(&w, 2);
     wb_u16(&w, record_size_limit);
+#else
+    // RFC 9001 §4.1.3 removes the record layer record_size_limit sizes
+    // (rfc9001.txt:462-464), so a QUIC hello sends none and writes the
+    // caller's encoded transport parameters in its place, unread (§8.2,
+    // rfc9001.txt:1922-1924). ch_quic_init has already held the length
+    // to CH_TRANSPORT_PARAMS_MAX, so the cast is in range.
+    (void)record_size_limit;
+    wb_u16(&w, EXT_QUIC_TRANSPORT_PARAMS);
+    wb_u16(&w, (uint16_t)cfg->transport_params_len);
+    wb_bytes(&w, cfg->transport_params, cfg->transport_params_len);
+#endif
 
     if (cookie != NULL) {
         wb_u16(&w, EXT_COOKIE);

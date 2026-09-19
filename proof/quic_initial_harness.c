@@ -44,7 +44,7 @@
 
 #define PROOF_OUT_MAX (CH_PROOF_HDR_MAX + CH_PROOF_PT_MAX + GCM_TAG)
 
-// The byte a refusal may not replace, the one test/quic_stub_test.c
+// The byte a refusal may not replace, the one test/srv_stub_test.c
 // uses for the same question.
 #define PROOF_POISON 0xa5
 

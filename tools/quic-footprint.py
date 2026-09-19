@@ -71,7 +71,7 @@ on every count it prints; it stops with a message only when something it
 reads is not there, such as a missing anchor.
 
 The report states what does not exist, and it separates a definition
-from an implementation. Every `quic*.c` file is a stub today: it defines
+from an implementation. Every `quic*.c` file was a stub once: it defined
 each function its header declares, returns the refusal the header
 documents and writes nothing. "N declared, N stubbed, 0 implemented" is
 the honest reading of that tree, and "N of N have a definition" would
@@ -562,6 +562,11 @@ def stubs_untested():
             continue
         for name in stubbed(path) or []:
             found.append((source, name))
+    if not found:
+        # Every function is implemented, so there is no refusal to
+        # measure and the test that measured them is gone with the
+        # last stub (docs/quic.md, "The stubs and the marker").
+        return []
     called = stub_calls()
     return [(s, n) for s, n in found if n not in called]
 

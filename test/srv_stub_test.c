@@ -6,8 +6,8 @@
 // can link before one line of the role is implemented. A stub that answered CH_OK would
 // hand that caller a session no handshake ever brought up. So each stub returns the
 // refusal its header documents, and this binary calls every one of them and requires it.
-// docs/server.md, "Stubs first", states the rules; it is the same shape
-// test/quic_stub_test.c already runs for the other axis.
+// docs/server.md, "Stubs first", states the rules; it is the shape
+// test/quic_stub_test.c ran for the TRANSPORT=quic axis until that mode was implemented.
 //
 // Every buffer and every struct below is filled with POISON before the call and compared
 // against POISON after it, so "writes nothing" is measured rather than assumed. A function

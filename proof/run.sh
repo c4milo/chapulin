@@ -393,8 +393,17 @@ launch slow:5 noovf x25519_sqr 65 ""
 # the runner measured 10 GB of cbmc alone. kissat's peak on this one formula
 # has been 3.7, 5.7 and 7.8 GB across three solves, so the tier's 12 GB default
 # weight stays.
-launch slow full handshake_psk 100 "fill_nondet.0:618,fill_buf_nondet.0:97,ct_wipe.0:449" handshake_auth.c buf.c ct.c
-launch slow full handshake_pin 100 "fill_nondet.0:618,fill_buf_nondet.0:97,ct_wipe.0:449" handshake_auth.c buf.c ct.c
+# handshake_flight.c joins both lines because the flight handlers moved
+# there out of handshake.c, which these harnesses still include whole.
+# Re-measured under this script's flags with the handlers external
+# (kissat, PROVE_NO_CACHE=1 /usr/bin/time -l, 10-core M1 Pro, one formula
+# at a time): psk 1784 properties in 195 s at 3.78 GB resident, pin 1786
+# in 48 s at 1.73 GB, where the numbers above read 1683 in 231 s and 1685
+# in 55 s.
+# The property counts move because the six wipes hsf_derive_handshake_secrets
+# gained are six more objects to check.
+launch slow full handshake_psk 100 "fill_nondet.0:618,fill_buf_nondet.0:97,ct_wipe.0:449" handshake_auth.c handshake_flight.c buf.c ct.c
+launch slow full handshake_pin 100 "fill_nondet.0:618,fill_buf_nondet.0:97,ct_wipe.0:449" handshake_auth.c handshake_flight.c buf.c ct.c
 # ML-KEM's chained-product functions, one formula each; the inverse
 # NTT is two half formulas, because the whole transform returns no
 # verdict in 900 s (the mlkem comment below states the split and the
@@ -586,9 +595,11 @@ launch fast:3 full handshake_post 132 "handle_post_handshake.0:33,fill_nondet.0:
 # any server ciphertext and any server share, with mlkem and x25519 stubbed to
 # their headers' contracts — their own harnesses prove the arithmetic, and
 # driving a 2400-byte expansion and 256 symbolic multiplies here would be the
-# shape docs/proofs.md says not to build. Measured: 508 properties, 3 s, 78 MB
-# (kissat). The hybrid ServerHello parser stays unproven: the 256-byte
-# handshake_parser bound cannot hold a 1,128-byte key share.
+# shape docs/proofs.md says not to build. Re-measured with handshake_flight.c
+# beside handshake.c: 639 properties, 2.9 s, 74 MB (kissat), where it read 508
+# in 3 s and 78 MB before the handlers moved out of the driver. The hybrid ServerHello
+# parser stays unproven: the 256-byte handshake_parser bound cannot hold a
+# 1,128-byte key share.
 launch fast full hybrid_secret 65 "fill_nondet.0:2401,ct_wipe.0:2401" -DCH_KEX_PQ ct.c
 # The parser half of the hybrid build
 # (https://github.com/c4milo/chapulin/issues/47). parse_key_share is driven
@@ -854,6 +865,29 @@ launch fast full buf 100 ""
 # byte on entry rather than walking records to get there. Measured under this
 # script's flags: 567 properties, 457 s, 0.99 GB.
 launch fast:4 full handshake_record 65 "hsr_fetch_record.0:6,hsr_next_msg.0:11,fill_nondet.0:33,fill_buf_nondet.0:13" --object-bits 11 -DCH_QUIET_CAP=1 -DCH_PROOF_RXBUF=12
+# The TRANSPORT=quic driver and its step table, one formula each, with
+# the contract between them written twice: quic_driver stubs
+# hsq_advance to what quic_step.h states, and quic_step proves the
+# table against that same statement, so a reader checks the pair rather
+# than one side. quic_driver compiles the QUIC arm of
+# handshake_record.c and all of quic_config.c real, which is what makes
+# it the leg proof-cover credits for those two. Each harness says what
+# it does not carry.
+#
+# Measured under this script's flags (kissat, PROVE_NO_CACHE=1
+# /usr/bin/time -l, 10-core M1 Pro, one formula at a time on an otherwise
+# idle machine): quic_driver 1455 properties, 72 s, 0.84 GB resident;
+# quic_step 546 properties, 4.0 s, 42 MB; quic_step_ca 553 properties,
+# 4.8 s, 45 MB.
+# quic_driver carries fast:4 rather than the tier default of 2: the tier
+# default caps its address space at 6 GB, and cbmc's virtual footprint on
+# this formula runs past that and dies mid-solve at about 70 s, where
+# resident size stays under a gigabyte. The CA leg exists because
+# hsa_epoch_commit sits behind CH_TRUST_CA and its wipe bound is the
+# larger handshake_state that mode carries.
+launch fast:4 full quic_driver 5 "fill_nondet.0:257,ct_wipe.0:441,drive.0:8,assert_dead.0:33" -DCH_TRANSPORT_QUIC -DCH_PROOF_RXBUF=12 handshake_record.c quic_config.c ct.c
+launch fast full quic_step 5 "fill_nondet.0:37,ct_wipe.0:441" -DCH_TRANSPORT_QUIC -DCH_PROOF_RXBUF=12 ct.c
+launch fast full quic_step_ca 5 "fill_nondet.0:37,ct_wipe.0:849" -DCH_TRANSPORT_QUIC -DCH_TRUST_CA -DCH_PROOF_RXBUF=12 ct.c
 launch fast full ct 65 ""
 # The 16x16 decomposition, which is what every other proof rests on. Those
 # formulas verify the single-multiply form, because the launch line above

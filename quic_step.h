@@ -15,7 +15,7 @@
 // handlers both transports compile, handshake_auth.[ch] the server
 // authentication flight, and handshake_post.[ch] the messages that
 // arrive after the handshake. The step functions are static in
-// handshake_step.c, where each one calls those handlers; hsq_advance is
+// quic_step.c, where each one calls those handlers; hsq_advance is
 // the only entry point, so the driver's harness can stub it and a step
 // harness can reach the static functions by #include.
 //
@@ -29,7 +29,7 @@
 
 // quic.h completes this type. The declaration is repeated here rather
 // than included so the dependency keeps pointing down: quic.[ch] sits
-// above this pair in the chain CLAUDE.md states, handshake_step.c
+// above this pair in the chain CLAUDE.md states, quic_step.c
 // includes quic.h, and quic.h includes this file for the step numbers.
 // C11 allows a typedef name to be declared twice for the same type.
 typedef struct ch_quic ch_quic;

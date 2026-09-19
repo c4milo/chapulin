@@ -9,9 +9,11 @@ reason: a TRUST=webpki server_name acknowledgement that carries data
   bin/handshake_strict_webpki's server_name alert rows object.
 
 --- old
+#ifdef CH_TRUST_WEBPKI
     if (ext == EXT_SERVER_NAME) {
         return ALERT_DECODE_ERROR;
     }
+#endif
     return ext == EXT_ALPN ? alpn_alert : ALERT_UNSUPPORTED_EXTENSION;
 --- new
     return ext == EXT_ALPN ? alpn_alert : ALERT_UNSUPPORTED_EXTENSION;

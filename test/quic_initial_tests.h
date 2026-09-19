@@ -34,7 +34,7 @@ static void test_appendix_a2_seal(void) {
     CHECK(eq_hex(&out[A2_HDR_LEN + A2_PAYLOAD], "e221af44860018ab0856972e194cd934"));
 }
 
-// The byte a refusal may not replace, the one test/quic_stub_test.c
+// The byte a refusal may not replace, the one test/srv_stub_test.c
 // uses: 0xa5 is neither 0 nor 0xff, so a wipe and a fill both show.
 #define INITIAL_POISON 0xa5
 
