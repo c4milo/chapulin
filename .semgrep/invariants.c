@@ -62,6 +62,8 @@ void aes_encrypt_block(const aes_public_key *k, const uint8_t *in, uint8_t *out)
 void gcm_seal(const aes_public_key *k, const uint8_t *nonce, const uint8_t *pt, size_t pt_len,
               uint8_t *out, uint8_t *tag);
 void take_block_fn(block_fn f);
+void quic_header_protect(uint8_t *pkt, size_t pn_off, size_t pn_len, uint8_t level,
+                         const uint8_t *mask);
 
 static int helper(int x) {
     fake_dir d;
@@ -98,6 +100,12 @@ int use_everything(void) {
     asn1_get_tag(buf, sizeof buf);
     // ruleid: inv-5-profiled-cert-parser
     der_parse(buf, sizeof buf, buf, buf);
+    // The RFC 9001 §5.4.1 header protection call quic_initial.c and
+    // quic_packet.c make. "header" ends in the letters the DER prefix
+    // spells, and the rule reads a name component rather than a
+    // substring, so this call is not a parser.
+    // ok: inv-5-profiled-cert-parser
+    quic_header_protect(buf, 1, 4, 0, buf);
     // ruleid: inv-20-cert-entry-point
     x509_verify_leaf(buf, sizeof buf, buf, sizeof buf, buf, sizeof buf, 0, buf);
     // ruleid: inv-20-no-time-calls

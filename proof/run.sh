@@ -783,6 +783,36 @@ launch fast full quic_aes 45 "fill_nondet.0:177" -DCH_TRANSPORT_QUIC
 # compiled in because quic_keys_update wipes its own copy of the new
 # secret. Measured, these flags: 79 properties, 0.24 s, 0.02 GB peak.
 launch fast full quic_keys 45 "fill_nondet.0:177" ct.c -DCH_TRANSPORT_QUIC
+# The RFC 9001 §5.8 Retry tag check. gcm_seal and aes_public_key_retry
+# are contract stubs the harness defines, so this formula holds the one
+# call's framing and its verdict and not AES-128-GCM; the harness states
+# what those stubs assert. ct.c is compiled in because the verdict is
+# ct_memeq's. Measured on an idle development machine (arm64 macOS, the
+# pinned cbmc, kissat, PROVE_NO_CACHE=1 /usr/bin/time -l over this
+# script): 160 properties, 3.5 s, 0.10 GB peak.
+launch fast full quic_retry 70 "fill_nondet.0:177" ct.c -DCH_TRANSPORT_QUIC
+# The Initial packet path: both entries over unconstrained lengths, with
+# the eight calls they make stubbed to their contracts
+# (proof/quic_initial_stubs.h). The cipher, the AEAD and the header
+# protection pair are proven by their own harnesses, so this formula
+# holds the length refusals and the offsets alone. The unwindset is the
+# one the other quic lines carry, because the key schedule an
+# aes_public_key holds is what fill_nondet writes most of. Measured on a
+# development machine (arm64 macOS, the pinned cbmc, kissat,
+# /usr/bin/time -l): 285 properties, 10 s, 0.23 GB peak.
+launch fast full quic_initial 40 "fill_nondet.0:177" -DCH_TRANSPORT_QUIC
+# RFC 9001 §5.3 packet protection, §5.4 header protection, the §6.5 key
+# set selection and the §6.6 limits, over a 40-byte packet with a
+# symbolic length and a symbolic packet number offset. ChaCha20 and the
+# AEAD are contract stubs inside the harness, which states what that
+# gives up; buf.c is compiled in because the header copy is a wb_bytes,
+# and ct.c because every path wipes. The unwindset is fill_nondet over
+# the three key sets, 132 bytes, which is the only loop past the global
+# bound. Measured (cbmc 6.11.0, kissat, /usr/bin/time -l, these flags):
+# 923 properties, 9.7 s, 0.23 GB peak. The same formula with an assert
+# of 0 at each of its three CH_OK tails fails all three (3 of 926, 4
+# iterations), so every tail is reached.
+launch fast full quic_packet 65 "fill_nondet.0:133" buf.c ct.c -DCH_TRANSPORT_QUIC
 # AEAD_AES_128_GCM's memory safety, its all-or-nothing refusal, and
 # GHASH on its own. The forward cipher is a contract stub
 # (proof/quic_gcm_stubs.h); the unwindset names hash_data and

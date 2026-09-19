@@ -79,6 +79,17 @@ p384_mul 86.7  # local reading, cbmc 6.11.0 on arm64 macOS; replace with the nig
 pem 74.6
 pem_ecdsa 74.6
 poly1305 94.3
+# quic_initial carries a floor where the other four TRANSPORT=quic
+# harnesses carry none: its cover command converges in seconds, because
+# every call it makes is a stub and the formula holds length checks
+# alone.
+quic_initial 98.7  # local reading, cbmc 6.11.0 on arm64 macOS; replace with the nightly table's number
+# quic_packet is the one TRANSPORT=quic harness whose cover command
+# converges: 34 s and 0.75 GB against the 1800 s budget, where quic_aes
+# returned no number in 21 minutes. Its proof is cheap for the same
+# reason -- ChaCha20 and the AEAD are stubs, so the formula holds
+# framing rather than a keystream.
+quic_packet 75.8  # local reading, cbmc 6.11.0 on arm64 macOS; replace with the nightly table's number
 record 95.0
 rsa_mul 32.3
 rsa_mul_webpki 32.3  # local reading, cbmc 6.11.0 on arm64 macOS; replace with the nightly table's number

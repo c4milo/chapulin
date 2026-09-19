@@ -100,11 +100,15 @@ rules:
     languages: [c]
     severity: ERROR
     message: >-
-      INV-1: record protection is the only sealing path. Direct AEAD
-      use bypasses sequence-number and length discipline. aead.c is
+      INV-1: record protection is the only sealing path on the TLS
+      transport, and quic_packet.c is the only one on the QUIC
+      transport, where RFC 9001 §5.3 protects a packet and there is no
+      record layer (docs/quic.md). Direct AEAD use anywhere else
+      bypasses sequence-number and length discipline. aead.c is
       excluded as the definition site.
     paths:
-      exclude: [test, proof, fuzz, spec, bench, bin, examples, record.c, aead.c]
+      exclude: [test, proof, fuzz, spec, bench, bin, examples, record.c, aead.c,
+                quic_packet.c]
     pattern-either:
       - pattern: aead_seal(...)
       - pattern: aead_open(...)
@@ -128,9 +132,13 @@ rules:
                 webpki_spki.c, webpki_sigalg.c, webpki_ext.c, webpki_cert.c]
     patterns:
       - pattern: $F(...)
+      # The prefix has to start a name component: the whole identifier,
+      # or the part right after an underscore. A substring match read
+      # `quic_header_protect` as a DER reader, because "header" ends in
+      # the letters "der".
       - metavariable-regex:
           metavariable: $F
-          regex: .*(x509_|asn1_|der_).*
+          regex: ^(.*_)?(x509_|asn1_|der_).*
       # The one public entry point is not a second parser; its own
       # call-site rule is inv-20-cert-entry-point.
       - metavariable-pattern:

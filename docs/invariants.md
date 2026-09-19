@@ -140,10 +140,14 @@ which convention holds them.
   in `p256.c` and the one in `p384.c`) each read exactly one
   ECDSA-Sig-Value and parse nothing else.
 - **Check.** Semgrep-tripwire (`inv-5-profiled-cert-parser`): calls
-  to identifiers matching `x509_`, `asn1_`, or `der_` outside
+  to identifiers that begin with `x509_`, `asn1_` or `der_`, or carry
+  one of the three right after an underscore, outside
   p256.c, p384.c, x509.c, x509_der.c, x509_ca.c, webpki.h,
   webpki_time.c, webpki_name.c, webpki_spki.c, webpki_sigalg.c,
-  webpki_ext.c and webpki_cert.c.
+  webpki_ext.c and webpki_cert.c. The rule reads a name component
+  rather than a substring, because `quic_header_protect` ends "header"
+  in the letters the DER prefix spells and is no parser;
+  .semgrep/invariants.c holds that case as an `ok:` line.
   Semgrep-structural
   (`inv-20-provisioning-entry`) holds the containment half. Grammar
   widening inside those files is held by the boundary-pair tests in

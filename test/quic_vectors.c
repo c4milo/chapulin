@@ -22,7 +22,10 @@
 
 #include "ch_assert.h"
 #include "quic_aes.c"
+#include "quic_initial.h"
 #include "quic_keys.h"
+#include "quic_packet.h"
+#include "quic_retry.h"
 
 noreturn void ch_assert_fail(const char *cond, const char *file, int line) {
     (void)fprintf(stderr, "ASSERT %s:%d: %s\n", file, line, cond);
@@ -70,6 +73,12 @@ static const uint8_t APPENDIX_DCID[8] = {0x83, 0x94, 0xc8, 0xf0, 0x3e, 0x51, 0x5
 // packet is long. They read APPENDIX_DCID, unhex, eq_hex and CHECK above,
 // and expand_key from the quic_aes.c included with them.
 #include "quic_gcm_tests.h"
+
+// The packet protection and header protection vectors, in their own
+// header for the same reason: RFC 9001 Appendix A.2's and A.3's headers
+// are long. They read unhex, eq_hex and CHECK above.
+#include "quic_initial_tests.h"
+#include "quic_packet_tests.h"
 
 // FIPS 197's own example values for AES-128. Appendix B works one
 // encryption through every round; Appendix C.1 is the full block vector
@@ -193,6 +202,43 @@ static void test_retry_key(void) {
     CHECK(memcmp(&k.hp, &zero_schedule, sizeof zero_schedule) == 0);
 }
 
+// RFC 9001 Appendix A.4 (rfc9001.txt:2490-2498) through the call a
+// client makes. test_appendix_a4_retry above builds the key, the nonce
+// and the empty plaintext itself and drives gcm_seal and gcm_open;
+// quic_retry_ok holds all three, so this checks what a client gets
+// rather than what a caller could assemble.
+static void test_retry_call(void) {
+    uint8_t pseudo[1 + sizeof APPENDIX_DCID + sizeof A4_RETRY_PACKET];
+    size_t pseudo_len = 0;
+    pseudo[pseudo_len++] = (uint8_t)sizeof APPENDIX_DCID;
+    memcpy(&pseudo[pseudo_len], APPENDIX_DCID, sizeof APPENDIX_DCID);
+    pseudo_len += sizeof APPENDIX_DCID;
+    size_t retry_body = sizeof A4_RETRY_PACKET - GCM_TAG;
+    memcpy(&pseudo[pseudo_len], A4_RETRY_PACKET, retry_body);
+    pseudo_len += retry_body;
+    const uint8_t *want_tag = &A4_RETRY_PACKET[retry_body];
+
+    CHECK(quic_retry_ok(pseudo, pseudo_len, want_tag) == 1);
+
+    // The two ways a forged Retry packet differs from this one, and RFC
+    // 9000 §17.2.5.2 makes the client discard both: a changed
+    // pseudo-packet byte and a changed tag byte.
+    pseudo[0] = (uint8_t)(pseudo[0] ^ 1);
+    CHECK(quic_retry_ok(pseudo, pseudo_len, want_tag) == 0);
+    pseudo[0] = (uint8_t)(pseudo[0] ^ 1);
+
+    uint8_t wrong_tag[GCM_TAG];
+    memcpy(wrong_tag, want_tag, sizeof wrong_tag);
+    wrong_tag[GCM_TAG - 1] = (uint8_t)(wrong_tag[GCM_TAG - 1] ^ 1);
+    CHECK(quic_retry_ok(pseudo, pseudo_len, wrong_tag) == 0);
+
+    // The Original Destination Connection ID is what ties the tag to the
+    // Initial packet this Retry answers, so a client that kept the wrong
+    // one gets a 0 (rfc9001.txt:1531-1544).
+    pseudo[1] = (uint8_t)(pseudo[1] ^ 1);
+    CHECK(quic_retry_ok(pseudo, pseudo_len, want_tag) == 0);
+}
+
 // The bound aes_public_key_initial states, both sides of it, and the
 // direction check beside it. RFC 9000 §17.2 caps a connection ID at 20
 // bytes and RFC 9001 §5.2 admits a zero-length one, so both ends of the
@@ -282,6 +328,21 @@ static void test_appendix_a5_keys(void) {
     CHECK(memcmp(h.key, want_hp, sizeof want_hp) == 0);
 }
 
+// RFC 9001 Appendix A.2's client Initial packet through
+// quic_initial_seal, and the refusals quic_initial.h documents.
+//
+// What these three sections read, and what they leave alone.
+// quic_initial_seal runs three steps: the §5.2 derivation, the §5.3
+// seal and the §5.4 mask. The mask reaches the packet through
+// quic_packet.c's quic_header_protect, which is still a stub that
+// writes nothing, so the header bytes in out are the unprotected ones
+// this call copied rather than the protected header the RFC prints, and
+// nothing below reads them. The payload and the tag are what the seal
+// section compares, and header protection changes neither: §5.4.1 masks
+// byte 0 and the packet number field alone. The lane that implements
+// quic_packet.c adds the protected header, the A.3 packet and the round
+// trip here.
+
 int main(void) {
     test_fips197_blocks();
     test_appendix_a1_keys();
@@ -294,8 +355,22 @@ int main(void) {
     test_ghash_empty();
     test_appendix_a2_initial();
     test_appendix_a4_retry();
+    test_retry_call();
     test_block_boundaries();
     test_in_place();
+    test_appendix_a2_seal();
+    test_initial_seal_refusals();
+    test_initial_open_refusals();
+    test_appendix_a5_packet();
+    test_appendix_header_protection();
+    test_header_protection_edges();
+    test_pn_read();
+    test_pn_decode();
+    test_key_set_rule();
+    test_seal_refusals();
+    test_open_discards();
+    test_handshake_open();
+    test_aead_limits();
     if (failures == 0) {
         (void)printf("quic vectors: FIPS 197, SP 800-38D and RFC 9001 Appendix A agree\n");
     }

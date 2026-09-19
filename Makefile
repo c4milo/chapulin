@@ -167,7 +167,7 @@ LINT_C := $(filter-out softmul.c,$(SRCS)) drbg.c sha3.c sha512.c sha512_compress
 # Test-local headers: prerequisites for every binary that includes them,
 # so a header edit rebuilds the binaries it changes.
 TESTH := test/test_random.h test/pem_armor.h test/pem_tests.h test/x509_ca_tests.h test/session_tests.h test/session_post_tests.h \
-         test/session_cfg_tests.h test/quic_gcm_tests.h test/p256_tests.h test/diff_driver.h test/diff_aes.h test/diff_gcm.h test/diff_hash.h \
+         test/session_cfg_tests.h test/quic_gcm_tests.h test/quic_initial_tests.h test/quic_packet_tests.h test/p256_tests.h test/diff_driver.h test/diff_aes.h test/diff_gcm.h test/diff_hash.h \
          test/diff_handshake_parser.h test/diff_handshake_certificate.h test/diff_p256.h test/diff_pem.h test/diff_record.h test/diff_rsa.h \
          test/diff_x25519.h test/handshake_sequence_server.h test/rfc8448_vectors.h \
          test/rfc8448_tests.h \
@@ -610,9 +610,11 @@ bin/mlkem_test: test/mlkem_test.c mlkem.c mlkem_poly.c sha3.c ct.c $(HDRS) $(TES
 # hkdf.c, sha256.c and ct.c join the line because quic_aes.c derives the
 # Initial keys through HKDF now that it is implemented. A stub called
 # nothing below itself.
-bin/quic_stub_test: test/quic_stub_test.c $(QUIC_SRCS) hkdf.c sha256.c ct.c $(HDRS) $(TESTH)
+bin/quic_stub_test: test/quic_stub_test.c $(QUIC_SRCS) hkdf.c sha256.c chacha20.c poly1305.c \
+                    aead.c buf.c ct.c $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -DCH_TRANSPORT_QUIC -I. -o $@ test/quic_stub_test.c $(QUIC_SRCS) hkdf.c sha256.c ct.c
+	$(CC) $(CFLAGS) -DCH_TRANSPORT_QUIC -I. -o $@ test/quic_stub_test.c $(QUIC_SRCS) hkdf.c sha256.c \
+	  chacha20.c poly1305.c aead.c buf.c ct.c
 # The mode against its published vectors: FIPS 197 for the AES-128 forward
 # cipher and RFC 9001 Appendix A for the Initial keys, the header
 # protection masks and the Retry key. Same shape and same reason as
@@ -622,9 +624,12 @@ bin/quic_stub_test: test/quic_stub_test.c $(QUIC_SRCS) hkdf.c sha256.c ct.c $(HD
 # INV-26 keeps the two constructors the only public way to write one, so
 # quic_aes.c is not on the line below. A later lane that adds a vector
 # section for another quic source links that source here.
-bin/quic_test: test/quic_vectors.c quic_gcm.c quic_keys.c hkdf.c sha256.c ct.c $(HDRS) $(TESTH)
+bin/quic_test: test/quic_vectors.c quic_gcm.c quic_keys.c quic_retry.c quic_initial.c \
+               quic_packet.c hkdf.c sha256.c chacha20.c poly1305.c aead.c buf.c ct.c \
+               $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -DCH_TRANSPORT_QUIC -I. -o $@ test/quic_vectors.c quic_gcm.c quic_keys.c hkdf.c sha256.c ct.c
+	$(CC) $(CFLAGS) -DCH_TRANSPORT_QUIC -I. -o $@ test/quic_vectors.c quic_gcm.c quic_keys.c \
+	  quic_retry.c quic_initial.c quic_packet.c hkdf.c sha256.c chacha20.c poly1305.c aead.c buf.c ct.c
 # SHA-512 and SHA-384 vectors and the streaming contract. Its own binary,
 # out of the packaged object like sha3: only TRUST=webpki links sha512.c.
 bin/sha512_test: test/sha512_test.c sha512.c sha512_compress.c $(HDRS) $(TESTH)

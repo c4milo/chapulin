@@ -24,7 +24,6 @@
 #include "quic.h"
 #include "quic_initial.h"
 #include "quic_packet.h"
-#include "quic_retry.h"
 
 // hkdf.c reaches this on a contract breach, and quic_aes.c calls hkdf.c
 // now that it is implemented, so this binary links the handler every
@@ -92,123 +91,30 @@ static int out_untouched(void) {
 // the opposite of what this binary measures. bin/quic_test checks them
 // against RFC 9001 Appendix A.5's four printed values instead.
 
-// The packet-protection calls that write bytes or report a length.
-static void test_packet_pieces(void) {
-    quic_hp_key hp;
-    quic_keys keys;
-    uint8_t sample[QUIC_HP_SAMPLE_LEN];
-    uint8_t iv[AEAD_NONCE];
-    uint8_t mask[QUIC_HP_MASK_LEN];
-    memset(&hp, POISON, sizeof hp);
-    memset(&keys, POISON, sizeof keys);
-    memset(sample, POISON, sizeof sample);
-    memset(iv, POISON, sizeof iv);
-    memset(mask, POISON, sizeof mask);
+// quic_packet.c carries no section here now. Its thirteen entries are
+// implemented, so the mask, nonce and key-set calls write their whole
+// output and the seal and open calls answer CH_OK on a packet they can
+// protect, which is the opposite of what this binary measures.
+// bin/quic_test checks them against RFC 9001 Appendix A.2 and A.5 and
+// RFC 9000 Appendix A.3 instead.
 
-    fill_out();
-    quic_hp_mask(&hp, sample, out);
-    CHECK(untouched(out, sizeof out));
-
-    fill_out();
-    quic_header_protect(out, 1, QUIC_PN_MAX_LEN, CH_LEVEL_APPLICATION, mask);
-    CHECK(untouched(out, sizeof out));
-
-    fill_out();
-    CHECK(quic_header_unprotect(out, 1, CH_LEVEL_APPLICATION, mask) == 0);
-    CHECK(untouched(out, sizeof out));
-
-    CHECK(quic_pn_read(sample, 1, QUIC_PN_MAX_LEN) == 0);
-    CHECK(quic_pn_decode(100, 7, QUIC_PN_MAX_LEN) == 0);
-
-    fill_out();
-    quic_nonce(iv, 7, out);
-    CHECK(untouched(out, sizeof out));
-
-    CHECK(quic_key_set_select(1, 0, 9, 4) == CH_QUIC_KEY_PREVIOUS);
-
-    quic_keys sets[CH_QUIC_KEY_SETS];
-    memset(sets, POISON, sizeof sets);
-    quic_keys selected;
-    memset(&selected, POISON, sizeof selected);
-    quic_keys_select(sets, CH_QUIC_KEY_CURRENT, &selected);
-    CHECK(untouched(&selected, sizeof selected));
-}
-
-// The three packet-protection entries that seal or open, and the two §6.6 limit questions.
-static void test_packet_calls(void) {
-    quic_hp_key hp;
-    quic_keys keys;
-    quic_keys sets[CH_QUIC_KEY_SETS];
-    uint8_t hdr[8];
-    uint8_t pt[8];
-    uint64_t pn;
-    size_t pt_len;
-    uint8_t key_set;
-    memset(&hp, POISON, sizeof hp);
-    memset(&keys, POISON, sizeof keys);
-    memset(sets, POISON, sizeof sets);
-    memset(hdr, POISON, sizeof hdr);
-    memset(pt, POISON, sizeof pt);
-
-    fill_out();
-    CHECK(quic_packet_seal(&keys, &hp, CH_LEVEL_HANDSHAKE, 1, QUIC_PN_MAX_LEN, hdr, sizeof hdr, pt,
-                           sizeof pt, out, sizeof out, &out_len) == CH_EINVAL);
-    CHECK(out_untouched());
-
-    fill_out();
-    memset(&pn, POISON, sizeof pn);
-    memset(&pt_len, POISON, sizeof pt_len);
-    CHECK(quic_packet_open_handshake(&keys, &hp, out, sizeof out, 1, 0, &pn, &pt_len) ==
-          CH_QUIC_DISCARD);
-    CHECK(untouched(out, sizeof out) && untouched(&pn, sizeof pn) &&
-          untouched(&pt_len, sizeof pt_len));
-
-    fill_out();
-    memset(&pn, POISON, sizeof pn);
-    memset(&pt_len, POISON, sizeof pt_len);
-    memset(&key_set, POISON, sizeof key_set);
-    CHECK(quic_packet_open_application(sets, &hp, 0, out, sizeof out, 1, 0, 0, &key_set, &pn,
-                                       &pt_len) == CH_QUIC_DISCARD);
-    CHECK(untouched(out, sizeof out) && untouched(&key_set, sizeof key_set) &&
-          untouched(&pn, sizeof pn) && untouched(&pt_len, sizeof pt_len));
-
-    CHECK(quic_integrity_limit_exceeded(0) == 1);
-    CHECK(quic_confidentiality_limit_reached(0) == 1);
-}
-
-// This function names no AES type and holds no key, and that is INV-26
+// quic_initial.c carries no section here now. Its two entries are
+// implemented, so a call with a packet they can seal or open writes the
+// packet and reports CH_OK, which is the opposite of what this binary
+// measures. bin/quic_test checks them against RFC 9001 Appendix A.2's
+// client Initial packet and the refusals their header documents
+// instead.
+//
+// Neither file names an AES type or holds a key here, and that is INV-26
 // working rather than an omission. quic_aes.h leaves aes_public_key
-// incomplete, and this file does not include quic_aes_key.h, so
-// `aes_public_key k;` here would not compile. The Initial entries take
+// incomplete and this file does not include quic_aes_key.h, so
+// `aes_public_key k;` would not compile in it. The Initial entries take
 // the Destination Connection ID and derive what they need on their own
 // stack.
-static void test_initial_and_retry(void) {
-    uint8_t dcid[CH_QUIC_DCID_MAX];
-    uint8_t hdr[8];
-    uint8_t pt[8];
-    uint8_t tag[GCM_TAG];
-    uint64_t pn;
-    size_t pt_len;
-    memset(dcid, POISON, sizeof dcid);
-    memset(hdr, POISON, sizeof hdr);
-    memset(pt, POISON, sizeof pt);
-    memset(tag, POISON, sizeof tag);
-
-    fill_out();
-    CHECK(quic_initial_seal(dcid, sizeof dcid, 1, QUIC_PN_MAX_LEN, hdr, sizeof hdr, pt, sizeof pt,
-                            out, sizeof out, &out_len) == CH_EINVAL);
-    CHECK(out_untouched());
-
-    fill_out();
-    memset(&pn, POISON, sizeof pn);
-    memset(&pt_len, POISON, sizeof pt_len);
-    CHECK(quic_initial_open(dcid, sizeof dcid, out, sizeof out, 1, 0, &pn, &pt_len) ==
-          CH_QUIC_DISCARD);
-    CHECK(untouched(out, sizeof out) && untouched(&pn, sizeof pn) &&
-          untouched(&pt_len, sizeof pt_len));
-
-    CHECK(quic_retry_ok(hdr, sizeof hdr, tag) == 0);
-}
+// quic_retry.c carries no section here now. Its one entry is
+// implemented, so quic_retry_ok answers 1 on a Retry packet whose tag
+// matches, which is the opposite of what this binary measures.
+// bin/quic_test checks it against RFC 9001 Appendix A.4 instead.
 
 // The driver, and the public entries that take or report session state.
 static ch_quic q;
@@ -272,9 +178,6 @@ static void test_public_bytes(void) {
 }
 
 int main(void) {
-    test_packet_pieces();
-    test_packet_calls();
-    test_initial_and_retry();
     test_session_entries();
     test_public_bytes();
     if (failures == 0) {
