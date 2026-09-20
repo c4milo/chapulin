@@ -319,6 +319,16 @@ endif
 # TRUST=webpki verifies a public chain against the caller's anchors
 # (docs/webpki.md). One mode per packaged object, like PIN.
 #
+# One consequence of that choice is invisible from the outside and worth
+# reading before picking a mode: only TRUST=webpki gives a client the ALPN
+# fields, so a raw or ca client offers no application protocol at all and
+# cannot speak anything that selects itself by ALPN, HTTP/2 over TLS among
+# them (RFC 9113 section 3.1). That is deliberate. Those modes talk to an
+# endpoint whose key the device already pins, so the protocol is settled
+# when the key is provisioned, and carrying the fields would cost every
+# such hello the 270 bytes cfg.h prices at CH_ALPN_MAX. A device that must
+# negotiate a protocol takes TRUST=webpki.
+#
 # The webpki sources are the TRUST=webpki object's alone. They are
 # listed by name, not matched by a pattern, for two reasons: an auditor
 # reads the object's contents off this line, and an untracked scratch
