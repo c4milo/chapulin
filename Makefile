@@ -2819,8 +2819,8 @@ WIDEMUL_SPECS := \
 # WIDEMUL_CEILING entry. Every number is measured with the spec's compiler
 # at its flags, at -Os unless the flags carry another level. The entries
 # are sha3.c under each gcc, the public `% 5`, five hardware divisions
-# where clang's one multiply-high stood, and poly1305.c under the mips
-# gcc at -O2, two madd.
+# where clang's one multiply-high stood, and poly1305.c and
+# p256_scalar.c under the mips gcc at -O2, two madd each.
 #
 # That two is a record, not an allowance. At -O2 the mips gcc inlines
 # ct_widemul into poly1305's block, and for two of the 75 `product + x`
@@ -2847,12 +2847,25 @@ WIDEMUL_SPECS := \
 # file is at zero under every -Os spec, and the
 # inv16-widemul-mid-widened violation keeps the first form caught.
 #
+# p256_scalar.c reads two madd under that same spec, and unlike
+# poly1305's its operands are readable straight from the assembly. Both
+# come from one call, mont_mul's `ct_widemul(t[0], N0_INV)`, and both are
+# the ladder's middle products: `madd $3,$13` multiplies `srl
+# $3,$19,16`, a limb's high half, by `li $13,0xbc4f`, N0_INV's low
+# half, and `madd $31,$24` multiplies `andi $31,$19,0xffff` by `li
+# $24,0xee00`, N0_INV's high half. gcc holds both halves of the constant,
+# so it puts `hl + (ll >> 16)` and `(t & 0xFFFF) + lh` in the
+# multiplier's accumulator instead of mul and addu. Every operand is 16
+# bits, the file's other 13 products stay on mul, and the
+# p256-scalar-widemul-native violation is the edit this entry catches.
+#
 # rv32ic-gcc counts runtime names, since rv32ic has no multiply or divide
 # instruction: the `% 5` is five calls to __modsi3. softmul.c is at zero
 # calls to __muldi3 there, which is the point of the spec
 # (https://github.com/c4milo/chapulin/issues/107).
 WIDEMUL_CEILING_SPEC := m3-gcc/sha3.c:5 mips32r2-gcc/sha3.c:5 mips32r2-gcc-O2/sha3.c:5 \
-                        mips32r2-gcc-O2/poly1305.c:2 rv32imac-gcc/sha3.c:5 rv32ic-gcc/sha3.c:5
+                        mips32r2-gcc-O2/poly1305.c:2 mips32r2-gcc-O2/p256_scalar.c:2 \
+                        rv32imac-gcc/sha3.c:5 rv32ic-gcc/sha3.c:5
 # The files the branch count covers: the arithmetic under the record
 # layer, whose every input is a key, a limb or a block. Almost every
 # branch they hold is loop control on a public count; the two exceptions

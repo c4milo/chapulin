@@ -1,0 +1,20 @@
+invariant: INV-16
+file: p256_scalar.c
+catches: test/docker-mips.sh
+reason: mont_mul's inner product is the one place a secret scalar limb
+  meets another, and ct_widemul is what keeps it four 16x16 pieces. This
+  edit hands gcc the 32x32 product instead, so mips32r2 multiplies two
+  whole limbs and the mips32r2-gcc-O2 spec reads far more than the two
+  madd it records for this file
+  (https://github.com/c4milo/chapulin/issues/122). The recorded two come
+  from one constant-operand call and are 16 bits wide; this one is not,
+  which is the difference the entry exists to hold. Only Ubuntu's mips
+  gcc runs that spec, and the mips lane's container is where it runs
+  locally. Its first step is lint-wide-multiply-gcc.
+  The lane skips without docker, and this then reports unguarded rather
+  than caught.
+
+--- old
+            uint64_t v = ct_widemul(a[i], b[j]) + t[j] + carry;
+--- new
+            uint64_t v = (uint64_t)a[i] * b[j] + t[j] + carry;
