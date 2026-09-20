@@ -108,11 +108,31 @@ static int alpn_mismatch(const ch_cfg *cfg, const client_hello *ch) {
 int srv_select(handshake_state *h, const client_hello *ch, selection *sel) {
     memset(sel, 0, sizeof *sel);
     h->alert = ALERT_HANDSHAKE_FAILURE;
+#ifdef CH_SUITE_AES_GCM
+    // ChaCha20-Poly1305 first, and AES-GCM only when the client offers no
+    // ChaCha20. Both meet the profile, and the order is not about speed:
+    // ChaCha20 is constant time by construction here, while AES is
+    // constant time because the build asserted that this part's
+    // instructions are (ct.h, INV-26). Preferring the one that needs no
+    // assertion costs a client that offers both nothing it asked for.
+    if ((ch->suites & SRV_SUITE_CHACHA20_POLY1305) != 0) {
+        sel->suite = SUITE_CHACHA20_POLY1305_SHA256;
+    } else if ((ch->suites & SRV_SUITE_AES_128_GCM) != 0) {
+        sel->suite = SUITE_AES_128_GCM_SHA256;
+    } else {
+        return CH_EPROTO;
+    }
+    // Both suites hash with SHA-256, so the key schedule needs no hash
+    // agility. TLS_AES_256_GCM_SHA384 would need it, which is one reason
+    // this build does not offer it.
+    sel->hash_len = SHA256_LEN;
+#else
     if ((ch->suites & SRV_SUITE_CHACHA20_POLY1305) == 0) {
         return CH_EPROTO;
     }
     sel->suite = SUITE_CHACHA20_POLY1305_SHA256;
     sel->hash_len = SHA256_LEN;
+#endif
     if ((ch->groups & SRV_GROUP_KEX) == 0) {
         return CH_EPROTO;
     }

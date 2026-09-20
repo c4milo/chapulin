@@ -59,17 +59,24 @@
 // One bit is defined today. RFC 9846 §9.1 names three suites
 // (rfc9846.txt:4540-4543) and this build offers the first of them,
 // TLS_CHACHA20_POLY1305_SHA256, alone. The other two are AEAD_AES_128_GCM
-// and AEAD_AES_256_GCM, and this tree holds no AES a traffic key may
-// reach: the only AES here is the software S-box table in quic_aes.c,
-// admitted because QUIC Initial keys are public, and a TLS traffic key
-// is secret, so that table would leak it through cache timing. Until a
-// constant-time AES exists, this server does not meet §9.1 and no
-// comment in this file claims it does. The two suites drop in as
-// SRV_SUITE_AES_128_GCM and SRV_SUITE_AES_256_GCM beside this bit, with
-// no other declaration in this header changing: selection.suite already
-// carries the code point and selection.hash_len already carries the
-// length the suite fixes (rfc9846.txt:4055-4056).
+// and AEAD_AES_256_GCM. A -DCH_SUITE_AES_GCM build offers the first of
+// those two as well, and selects it only when the client offers no
+// ChaCha20 (srv_flight.c), so a build that meets section 9.1 still
+// prefers the cipher that is constant time by construction rather than
+// by a statement about the part it runs on. A build without that define
+// offers one suite and does not meet section 9.1, and no comment here
+// claims it does. AEAD_AES_256_GCM needs a second hash length and is not
+// offered at all.
 #define SRV_SUITE_CHACHA20_POLY1305 0x01
+
+#ifdef CH_SUITE_AES_GCM
+// TLS_AES_128_GCM_SHA256, the suite section 9.1 makes mandatory to
+// implement. Only a -DCH_SUITE_AES_GCM build reads this bit, and ct.h
+// refuses that define unless the build has hardware AES and states that
+// those instructions are constant time, because the AES=soft S-box is
+// indexed with the key and a traffic key is secret (INV-26).
+#define SRV_SUITE_AES_128_GCM 0x02
+#endif
 
 // The key exchange groups this build can select, one bit each, read
 // from the client's supported_groups and from its key_share. One bit is

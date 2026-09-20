@@ -56,11 +56,15 @@ _Static_assert(CH_KEX_SERVER_SHARE == 32, "the vectors here spell a 32-byte serv
 _Static_assert(CH_KEX_CLIENT_SHARE == 32, "the vectors here spell a 32-byte client share");
 
 #include "srv_flight_keys_tests.h"
+#include "srv_flight_suite_tests.h"
 #include "srv_flight_tests.h"
 
 int main(void) {
     test_flight_begin();
     test_flight_select();
+#ifdef CH_SUITE_AES_GCM
+    test_flight_select_suite();
+#endif
     test_flight_alpn();
     test_flight_read_hello();
     test_flight_server_name();

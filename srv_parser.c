@@ -112,6 +112,11 @@ static int parse_head(rbuf *r, const uint8_t *body, hello_parse *p) {
     if (srv_list_has(r, suites_len, SUITE_CHACHA20_POLY1305_SHA256)) {
         ch->suites |= SRV_SUITE_CHACHA20_POLY1305;
     }
+#ifdef CH_SUITE_AES_GCM
+    if (srv_list_has(r, suites_len, SUITE_AES_128_GCM_SHA256)) {
+        ch->suites |= SRV_SUITE_AES_128_GCM;
+    }
+#endif
     // legacy_compression_methods: exactly one zero byte, or
     // illegal_parameter (rfc9846.txt:1284-1288).
     size_t compression_len = rb_u8(r);

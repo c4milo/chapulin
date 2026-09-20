@@ -167,6 +167,24 @@ HDRS := ct.h sha256.h hkdf.h chacha20.h poly1305.h aead.h x25519.h p256.h rsa.h 
 # nothing probes a CPU and nothing asks an operating system, and it is a
 # hard #error, not a fall back to the table, when AES=hw is built without
 # the AES instructions.
+# Cipher suite: SUITE=chacha (default) offers TLS_CHACHA20_POLY1305_SHA256
+# alone, SUITE=aesgcm offers TLS_AES_128_GCM_SHA256 beside it and meets
+# RFC 9846 section 9.1. The second one is a compile error unless the build
+# also takes AES=hw and defines CH_NATIVE_AES, which ct.h checks and
+# INV-26 explains: the AES=soft S-box is indexed with the key, and
+# CH_NATIVE_AES is the build's own statement that this part's AES
+# instructions run in constant time. The Makefile does not define it,
+# because it is a claim about hardware that only the firmware author can
+# make.
+SUITE ?= chacha
+ifeq ($(SUITE),aesgcm)
+SUITE_DEF := -DCH_SUITE_AES_GCM
+else ifeq ($(SUITE),chacha)
+SUITE_DEF :=
+else
+$(error SUITE=$(SUITE) is not a cipher suite; use SUITE=chacha or SUITE=aesgcm)
+endif
+
 AES ?= soft
 ifeq ($(AES),soft)
 AES_DEF :=
@@ -200,7 +218,7 @@ AES_HW_CFLAGS := $(filter-out none,$(AES_HW_PROBE))
 # The two binaries that need those instructions, named only when the
 # probe found them, so `check` builds and runs them where they work and
 # says it skipped them where they do not exist.
-AES_HW_BINS := $(if $(AES_HW_PROBE),bin/quic_test_hw bin/aes_equiv_test bin/aes_suite_test)
+AES_HW_BINS := $(if $(AES_HW_PROBE),bin/quic_test_hw bin/aes_equiv_test bin/aes_suite_test bin/srv_flight_test_aes)
 # What lint-quic-partition needs to preprocess each AES implementation.
 # Each one guards its body on a second macro, so with CH_TRANSPORT_QUIC
 # alone it preprocesses to nothing and that lint would read it as a file
@@ -299,7 +317,7 @@ TESTH := test/test_random.h test/pem_armor.h test/pem_tests.h test/x509_ca_tests
          test/handshake_strict_alpn.h \
          test/webpki_cert_mutants.h test/webpki_ext_mutants.h test/diff_webpki_cert.h \
          test/webpki_auth_vectors.h test/rxbuf_floor_tests.h \
-         test/srv_message_tests.h test/srv_cookie_tests.h test/srv_flight_tests.h \
+         test/srv_message_tests.h test/srv_cookie_tests.h test/srv_flight_tests.h test/srv_flight_suite_tests.h \
          test/srv_flight_keys_tests.h test/srv_parser_hello.h test/srv_parser_tests.h test/srv_parser_reader_tests.h
 
 # Each axis names its value or stops the build. RAND has done this since
@@ -528,7 +546,7 @@ PUBLIC_ROLE := $(PUBLIC_TRANSPORT)
 else
 $(error ROLE=$(ROLE) is not a role; use ROLE=client or ROLE=server)
 endif
-LIB_DEF := $(strip $(PIN_DEF) $(TRUST_DEF) $(TRANSPORT_DEF) $(AES_DEF) $(ROLE_DEF))
+LIB_DEF := $(strip $(PIN_DEF) $(TRUST_DEF) $(TRANSPORT_DEF) $(AES_DEF) $(SUITE_DEF) $(ROLE_DEF))
 # The one assignment. Every axis above filters or names the sources
 # only its value adds; nothing below rewrites.
 LIB_SRCS := $(filter-out $(PIN_FILTER) $(TRUST_FILTER) $(TRANSPORT_FILTER) $(ROLE_FILTER),$(SRCS)) \
@@ -923,6 +941,17 @@ bin/quic_test: test/quic_vectors.c quic_aes.c $(AES_IMPL) quic_gcm.c quic_keys.c
 # record. It needs the suite define, which ct.h refuses without hardware
 # AES and the build's own statement that those instructions are constant
 # time, so it builds only where AES_HW_PROBE found the flags.
+# The server's suite selection, in a build that has two suites to choose
+# between. Same cases as bin/srv_flight_test plus the four the second
+# suite adds, so one source covers both builds.
+bin/srv_flight_test_aes: test/srv_flight_test.c srv_flight.c srv_out.c srv_message.c srv_cookie.c \
+                         srv_auth.c $(SRV_FLIGHT_DEPS) $(SRV_SIGNERS) quic_gcm.c quic_aes.c \
+                         quic_aes_hw.c $(HDRS) $(TESTH)
+	@mkdir -p bin
+	$(CC) $(CFLAGS) $(AES_HW_CFLAGS) -DCH_ROLE_SERVER -DCH_SUITE_AES_GCM -DCH_AES_HW \
+	  -DCH_NATIVE_AES -I. -o $@ test/srv_flight_test.c srv_flight.c srv_out.c srv_message.c \
+	  srv_cookie.c srv_auth.c $(SRV_FLIGHT_DEPS) $(SRV_SIGNERS) quic_gcm.c quic_aes.c quic_aes_hw.c
+
 bin/aes_suite_test: test/aes_suite_test.c record.c quic_gcm.c quic_aes.c quic_aes_hw.c \
                     aead.c chacha20.c poly1305.c hkdf.c sha256.c ct.c buf.c $(HDRS) $(TESTH)
 	@mkdir -p bin
@@ -1380,7 +1409,7 @@ check: bin/unit bin/unit_ca bin/unit_pq bin/tlsclient bin/tlsclient_ecdsa bin/tl
 	# (docs/quic.md, "What the AES axis proves"). A compiler without the
 	# AES instructions builds neither, which AES_HW_BINS reports above.
 	@set -e; if [ -n "$(AES_HW_BINS)" ]; then \
-	  ./bin/quic_test_hw; ./bin/aes_equiv_test; ./bin/aes_suite_test; \
+	  ./bin/quic_test_hw; ./bin/aes_equiv_test; ./bin/aes_suite_test; ./bin/srv_flight_test_aes; \
 	else \
 	  echo "SKIP AES=hw: $(CC) has no AES instructions and no flag turns them on"; \
 	fi
