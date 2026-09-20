@@ -312,5 +312,15 @@ int main(void) {
         __CPROVER_assert(t.state == CH_ST_FAILED, "a failed handshake leaves a dead session");
         __CPROVER_assert(t.keys == 0, "a failed handshake wipes the record keys");
     }
+    // store_selection lowers t.peer_limit to the client's
+    // record_size_limit and never raises it, so this build's own
+    // CH_TX_PT stands whatever the client asked for. fill_client_hello
+    // havocs record_size_limit over the whole uint16_t, so this covers
+    // both sides of the boundary: CH_TX_PT and below is adopted, and
+    // every larger value leaves CH_TX_PT. It is the one reachable check
+    // on that rule until srv_parser.c and srv_flight.c stop being stubs
+    // and a unit test can drive a real ClientHello through the flight.
+    __CPROVER_assert(t.peer_limit <= CH_TX_PT,
+                     "the client's record_size_limit never raises the send cap");
     return 0;
 }

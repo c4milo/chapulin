@@ -33,8 +33,11 @@ static void store_selection(ch_tls *t, const client_hello *ch, const selection *
     // The client's record_size_limit (RFC 8449) bounds every record this
     // server seals from the EncryptedExtensions on. 0 is the absent
     // extension, which leaves the 2^14 default, and srv_handshake seeded
-    // CH_TX_PT, this build's own cap on one record's plaintext.
-    if (ch->record_size_limit != 0) {
+    // CH_TX_PT, this build's own cap on one record's plaintext. Only a
+    // smaller limit is stored, so t->peer_limit is the whole send cap and
+    // a send site needs no second comparison against CH_TX_PT. The client
+    // lowers its own the same way (handshake_parser.c:233).
+    if (ch->record_size_limit != 0 && ch->record_size_limit < t->peer_limit) {
         t->peer_limit = ch->record_size_limit;
     }
 }
@@ -168,8 +171,9 @@ int srv_handshake(ch_tls *t) {
     h.alert = ALERT_DECODE_ERROR;
     // This server's own record_size_limit, sized to the caller's buffer,
     // which srv_send_encrypted_extensions puts in the
-    // EncryptedExtensions. store_selection replaces t->peer_limit with
-    // the client's own limit once the hello has been read.
+    // EncryptedExtensions. store_selection lowers t->peer_limit to the
+    // client's own limit once the hello has been read, when the client
+    // asks for less than this build sends.
     size_t room = t->cfg.buf_len - REC_HDR - AEAD_TAG;
     h.record_size_limit = room > 0x4001 ? 0x4001 : (uint16_t)room;
     t->peer_limit = CH_TX_PT;
