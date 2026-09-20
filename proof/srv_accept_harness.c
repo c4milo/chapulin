@@ -18,10 +18,13 @@
 // handshake_post's harness stubs them: record protection is proven in
 // record.c's own harness.
 //
-// srv_identity_live and srv_identity_check are stubbed too. srv_auth.c
-// is a stub in the tree today and its srv_identity_live answers 0 for
-// every configuration, which would refuse every ch_cfg before the ALPN
-// rules ran and leave this formula proving one branch.
+// srv_identity_live and srv_identity_check are stubbed too, for two
+// reasons. The real srv_identity_check signs and verifies, so the
+// signers' arithmetic would join this formula, and each signer has its
+// own. And the ch_cfg here is havocked rather than provisioned, so the
+// real srv_identity_live would answer 0 for it, refusing every
+// configuration before the ALPN rules ran and leaving this formula
+// proving one branch.
 #include "harness.h"
 
 #include <string.h>

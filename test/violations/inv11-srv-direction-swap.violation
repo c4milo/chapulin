@@ -2,7 +2,7 @@ invariant: INV-11
 file: srv_flight.c
 catches: srv_flight_test
 reason: the server binds each direction to the opposite handshake secret
-  from the client, and this restores handshake.c:309-310's client
+  from the client, and this restores handshake.c:94-95's client
   assignment inside the server. Nothing else in the tree says which side
   takes which: ks_handshake writes the client secret before the server one
   and names no endpoint, so a swapped pair compiles, derives both secrets

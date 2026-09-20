@@ -28,15 +28,27 @@ does not check".
 
 ## Status
 
-Decided on paper. Nothing is implemented, and no header exists. Four surveys
-and three competing architectures preceded this record; the architecture below
-is the build-axis one, and the section "Considered and rejected" names what it
-took from the other two and what it refused.
+Implemented. `SRV_SRCS` names eight sources — `srv_parser.c`,
+`srv_parser_ext.c`, `srv_message.c`, `srv_cookie.c`, `srv_auth.c`,
+`srv_flight.c`, `srv_handshake.c` and `srv.c` — and every one of them has a
+body. No `CH_SRV_STUB` marker is left in the tree, `make lib-check
+ROLE=server` links the object, and `make check` runs `bin/srv_auth_test`,
+`bin/srv_test` and `bin/srv_flight_test` over it. Four surveys and three
+competing architectures preceded this record; the architecture below is the
+build-axis one, and the section "Considered and rejected" names what it took
+from the other two and what it refused.
 
-Three items block the first line of code, and all three are in "What is still
-open": whether the key schedule goes hash-agile in the shared files or in a
-role arm, whether a split CBMC harness for AES-GCM converges, and how many
-signing identities a deployment provisions.
+Two pieces of the plan have not landed. `test/e2e.sh` drives no real TLS 1.3
+client against a chapulin server, so nothing here has completed a handshake
+with another stack. `chapulin.hpp` declares no `Server` type, so the
+`ROLE=server` leg of `lib-check` runs without `cxx-check`.
+
+Three items were stated as blocking the first line of code, and all three are
+in "What is still open": whether the key schedule goes hash-agile in the
+shared files or in a role arm, whether a split CBMC harness for AES-GCM
+converges, and how many signing identities a deployment provisions. The code
+landed without this record recording an answer to any of the three, so read
+the sources, not this section, for what they chose.
 
 This is the fourth round of this record. An adversarial review of the second
 round raised thirteen blockers, three analysts resolved them against the tree,
@@ -57,17 +69,13 @@ re-measuring `hkdf.c`, which the change pushes over its recorded ceiling; the
 and `test/lint-invariants.sh`, which `gcm.patch` also creates, is now stated as
 one file whose order open question nine decides.
 
-One dependency on somebody else's unlanded work is stated here rather than
-buried. The appendix's replacement file-pair chain names `handshake_flight.[ch]`
-as the client's flight handlers. That pair is half-landed: `ls handshake_flight.*`
-returns `handshake_flight.h` alone, `git ls-files` agrees, and
-`grep -n '^\(void\|int\|size_t\) hsf_' *.c` returns nothing, while the header
-declares eight `hsf_` entry points. `Makefile:1615` already lists
-`QUIC_SHARED := handshake_flight.c handshake_flight.h` for a `.c` that is not
-there. So `docs/quic.md`'s lane lands that file, the ROLE work does not begin
-until it exists, and the partition below puts `handshake_flight.c` in
-`CLIENT_REPLACED` now so a server object does not compile the client's flight
-handlers on the day it appears.
+One dependency on somebody else's work is stated here rather than buried. The
+appendix's replacement file-pair chain names `handshake_flight.[ch]` as the
+client's flight handlers. That pair is whole: `docs/quic.md`'s lane landed
+`handshake_flight.c` in `33978f6`, moving the `hsf_` handlers out of
+`handshake.c`. The partition below puts `handshake_flight.c` in
+`CLIENT_REPLACED`, so a server object does not compile the client's flight
+handlers.
 
 ## Method
 
@@ -1421,11 +1429,15 @@ call chain, so the peak is their sum. At the device bound of RSA-3072, under
 the Arm GNU gcc 16.2.0 the m3 lane uses, at -Os: `rsa_pss_sign` 1,072 bytes,
 `rsa_sp1` 1,536 and `mont_mul` 440, so 3,048 bytes. Under clang 23 at -O2 on
 arm64, the same three are 1,216, 1,696 and 496, so 3,408, and at the
-TRUST=webpki bound of RSA-4096 they are 1,472, 2,208 and 624, so 4,304. All
-three peaks are above `STACK_BUDGET`, which is 2,560 bytes for a device build,
-so a `ROLE=server` build that puts `rsa_sign.c` in `LIB_SRCS` must raise that
-budget with a line saying which frame set it, the way the TRUST=webpki and
-TRANSPORT=quic arms already raise it to 4,096 and 6,144.
+TRUST=webpki bound of RSA-4096 they are 1,472, 2,208 and 624, so 4,304.
+
+Two of those three peaks are above `STACK_BUDGET`, which is 2,560 bytes for a
+device build, and the `ROLE=server` object packages `rsa_sign.c` now. The
+budget stayed at 2,560 and `make lint-stack ROLE=server` passes, because that
+gate compiles with `-Wframe-larger-than` and so measures one frame at a time:
+the largest single frame here is `rsa_sp1`'s, under 2,560 on both compilers
+above. The sums are what a device's stack actually has to hold, so a server
+deployment sizes its stack from them and not from the gate.
 
 ```c
 // rsa_sign.h — the second of the two files that read a long-term private key.
@@ -1798,9 +1810,10 @@ ever brought up. No stub returns `CH_OK`. `test/srv_stub_test.c` calls every
 function, requires each refusal, and fills every buffer with `0xa5` before the
 call and compares after, so "writes nothing" is measured — the shape
 `test/quic_stub_test.c` ran for the other axis until that mode was implemented.
-INV-28 carries this claim (`docs/invariants.md`, "a stub never reports
-success"); the QUIC stubs were its first subject and the server stubs are now
-its only one.
+INV-28 carried this claim (`docs/invariants.md`, "a stub never reports
+success"); the QUIC stubs were its first subject and the server stubs its
+last. Every `SRV_SRCS` file is implemented now, so the marker matches nothing,
+`test/srv_stub_test.c` became `test/srv_auth_test.c`, and INV-28 retired.
 
 ## The interface it exposes
 
@@ -1868,11 +1881,19 @@ typedef struct { const uint8_t *der; size_t len; } ch_cert;
 typedef struct {
     const ch_cert *chain;
     uint8_t        chain_count;
-    const uint8_t *priv;      // read by p256_sign.c or rsa_sign.c and nowhere else
-    size_t         priv_len;
-    const uint8_t *pub;       // read by ch_srv_check and nothing else
+    const void    *priv;      // read by p256_sign.c or rsa_sign.c and nowhere else
+    size_t         priv_len;  // sizeof the type that signer reads
+    const uint8_t *pub;       // read by ch_srv_check and by the RSA cap test
     size_t         pub_len;
 } ch_identity;
+
+`priv` is `void` because the two signers read different types: 32 big-endian
+bytes for `p256_sign`, one `ch_rsa_priv` for `rsa_pss_sign`. `srv_cfg.h` states
+both, and `srv_auth.c` tests `priv_len` against the size of the type the
+selected scheme's signer reads before it passes the pointer on, so no line
+outside a signer reads a private key. The RSA signature is exactly as long as
+the modulus, so `pub_len` is also the length `srv_sign_certificate_verify`
+tests the caller's buffer against.
 
 ch_identity ecdsa_p256;       // signs ecdsa_secp256r1_sha256
 ch_identity rsa_pss;          // signs rsa_pss_rsae_sha256
@@ -2790,11 +2811,10 @@ that applies it; nothing changes before that commit.
 
 ## What changes in `docs/invariants.md`
 
-`grep -n '^### INV-' docs/invariants.md` runs INV-1 to INV-28 with **26
-absent**, while 22 places in the tree cite INV-26 by name. The number is not
-reused for a server rule: a reader who greps it finds the QUIC citations.
-INV-26 lands once, in the replacement form below, and that landing is a first
-write rather than an amendment. New server entries start at 29.
+`grep -n '^### INV-' docs/invariants.md` runs INV-1 to INV-27 with none
+absent. INV-26, the AES exception, landed with the QUIC mode, and INV-28
+retired with the last `ROLE=server` stub; neither number is reused for a
+server rule. New server entries start at 29.
 
 New entries:
 
@@ -2926,8 +2946,9 @@ Amended entries:
 - **INV-27**, the QUIC partition. Its claim survives once `aes.c` and `gcm.c`
   lose the `quic_` prefix, because they stop being files only a
   `TRANSPORT=quic` build compiles.
-- **INV-28**, stubs never report success. Its subject is `CH_SRV_STUB`
-  alone now: the QUIC stubs it first covered are implemented.
+- **INV-28**, stubs never report success. It ran out of subjects: the QUIC
+  stubs it first covered and the `CH_SRV_STUB` bodies it covered after them
+  are all implemented, so the entry retired rather than changed.
 
 ## What changes in `docs/decisions.md`
 

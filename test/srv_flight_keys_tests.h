@@ -83,8 +83,10 @@ static void test_flight_auth(void) {
     CHECK(srv_send_certificate(&hs, &sel) == CH_EINVAL);
     CHECK(hs.alert == ALERT_INTERNAL_ERROR);
 
-    // srv_auth.c's signer refuses until a signing lane wires one in, so
+    // This configuration sets both key pointers and neither key length,
+    // so srv_auth.c refuses the slot before it reaches a signer, and
     // the CertificateVerify carries that refusal out unchanged.
+    // bin/srv_auth_test signs with real key pairs.
     auth_flight(&sel, &rd);
     CHECK(srv_send_certificate_verify(&hs, &sel) == CH_EINVAL);
     CHECK(hs.alert == ALERT_INTERNAL_ERROR);

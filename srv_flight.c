@@ -10,16 +10,6 @@
 
 #ifdef CH_ROLE_SERVER
 
-// The hybrid key exchange has no server half here, for two structural
-// reasons. handshake_state gives the server's share h->pub, which is
-// X25519_LEN bytes against CH_KEX_SERVER_SHARE's 1120 under KEX=pq. And
-// that share's ML-KEM half is a ciphertext under the client's
-// encapsulation key, which srv_begin has not read where srv_flight.h
-// draws the server's secrets. Open question ten leaves the pair open.
-#ifdef CH_KEX_PQ
-#error "ROLE=server has no KEX=pq half yet (docs/server.md, open question ten); use KEX=x25519"
-#endif
-
 #include <string.h>
 
 #include "ch_assert.h"
@@ -195,6 +185,12 @@ static uint16_t select_sigalg(const ch_cfg *cfg, uint8_t offered) {
     return 0;
 }
 
+// Whether RFC 7301 §3.2's fatal case holds, term by term in srv_flight.h.
+static int alpn_mismatch(const ch_cfg *cfg, const client_hello *ch) {
+    return cfg->alpn_count != 0 && (ch->seen & SRV_EXT_ALPN) != 0 &&
+           ch->alpn_selected == CH_ALPN_NONE;
+}
+
 int srv_select(handshake_state *h, const client_hello *ch, selection *sel) {
     memset(sel, 0, sizeof *sel);
     h->alert = ALERT_HANDSHAKE_FAILURE;
@@ -209,6 +205,10 @@ int srv_select(handshake_state *h, const client_hello *ch, selection *sel) {
     sel->group = CH_KEX_GROUP;
     sel->sigalg = select_sigalg(&h->t->cfg, ch->sigalgs);
     if (sel->sigalg == 0) {
+        return CH_EPROTO;
+    }
+    if (alpn_mismatch(&h->t->cfg, ch)) {
+        h->alert = ALERT_NO_APPLICATION_PROTOCOL;
         return CH_EPROTO;
     }
     // Both halves of §4.1.1's retry condition: the group is one this
@@ -351,7 +351,7 @@ int srv_derive_handshake_secrets(handshake_state *h, const client_hello *ch, con
     ct_wipe(ecdhe, sizeof ecdhe);
     ct_wipe(h->early, sizeof h->early);
     // The client secret protects what this endpoint reads and the server
-    // secret what it writes, the reverse of handshake.c:309-310 and the
+    // secret what it writes, the reverse of handshake.c:94-95 and the
     // whole of the asymmetry.
     rec_dir_init(&t->rd, h->c_hs);
     rec_dir_init(&t->wr, h->s_hs);
@@ -418,9 +418,8 @@ int srv_send_certificate_verify(handshake_state *h, const selection *sel) {
     (void)hsr_transcript_hash(h, hash);
     uint8_t sig[SRV_SIG_MAX];
     size_t sig_len = 0;
-    // srv_auth.h has the signer write the alert on both refusals. Nothing
-    // wires p256_sign.c or rsa_sign.c into srv_auth.c yet, so every
-    // certificate handshake this build runs ends here.
+    // srv_auth.h has the signer write the alert on each refusal, so this
+    // handler carries the return code out and sets no alert of its own.
     int rc = srv_sign_certificate_verify(&h->t->cfg, sel->sigalg, hash, sel->hash_len, sig,
                                          sizeof sig, &sig_len, &h->alert);
     if (rc != CH_OK) {

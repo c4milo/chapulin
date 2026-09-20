@@ -61,6 +61,7 @@ _Static_assert(CH_KEX_CLIENT_SHARE == 32, "the vectors here spell a 32-byte clie
 int main(void) {
     test_flight_begin();
     test_flight_select();
+    test_flight_alpn();
     test_flight_read_hello();
     test_flight_server_name();
     test_flight_retry();

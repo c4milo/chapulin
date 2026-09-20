@@ -75,16 +75,32 @@ typedef struct {
 // the scheme it signs, and ch_srv_check refuses a configuration with no
 // identity at all.
 //
-// priv holds the private key, read by the signer the scheme names and
-// by nothing else, and pub holds the matching public key, read by
-// ch_srv_check and by nothing else. The encoding of each is the signing
-// module's to state, and the two signing modules, p256_sign.c and
-// rsa_sign.c, are not in this tree yet: no code reads these two fields
-// today and this header invents no format for them.
+// priv points at the private key and pub at the matching public key.
+// Each signing module states the type it reads, and priv is void
+// because the two types differ; priv_len is sizeof that type, which is
+// what srv_auth.c tests before it hands the pointer on.
+//
+// ecdsa_p256: priv points at 32 big-endian bytes, the private scalar
+// p256_sign.h calls P256_PRIV_LEN, and pub at the 64-byte uncompressed
+// point X||Y that p256_ecdsa_verify reads (p256.h). So priv_len is 32
+// and pub_len is 64.
+//
+// rsa_pss: priv points at one ch_rsa_priv (rsa_sign.h), which holds the
+// modulus, the private exponent and their length, so priv_len is
+// sizeof(ch_rsa_priv). pub points at the modulus alone, big-endian, and
+// pub_len is its length, the n_len rsa_pss_verify admits: 256 to
+// CH_RSA_MODULUS_MAX and a multiple of 8. An RSA-PSS signature is
+// exactly pub_len bytes, which is the length srv_sign_certificate_verify
+// tests the caller's buffer against.
+//
+// Three calls read the bytes behind these pointers and no other line
+// does: p256_sign and rsa_pss_sign read priv, and ch_srv_check's
+// boot-time self-test reads pub through the matching verifier.
+// srv_auth.c reads the two lengths and passes the pointers on.
 typedef struct {
     const ch_cert *chain;
     uint8_t chain_count;
-    const uint8_t *priv;
+    const void *priv;
     size_t priv_len;
     const uint8_t *pub;
     size_t pub_len;

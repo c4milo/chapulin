@@ -27,7 +27,7 @@
 // It zeroes a handshake_state on its own frame, runs the flight, takes
 // h->alert on the way out, wipes the state with ct_wipe and fails the
 // session on any error, which is how ch_handshake wraps the client's
-// (handshake.c:372-395).
+// (handshake.c:133-156).
 //
 // Requires a session whose cfg ch_srv_accept has already checked, and
 // a connection the caller has already accepted. It opens no socket:

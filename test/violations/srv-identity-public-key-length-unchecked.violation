@@ -1,0 +1,14 @@
+invariant: INV-14
+file: srv_auth.c
+catches: srv_auth_test
+reason: the ECDSA slot passes its public key to p256_ecdsa_verify without
+  testing pub_len, and that verifier reads 64 bytes whatever the slot
+  claims, so a shorter object is read past its end. srv_cfg.h states the
+  64, and this length test is the only line that holds a caller to it.
+  test/srv_auth_test.c sets pub_len one byte short and requires
+  CH_EINVAL.
+
+--- old
+        return id->priv_len == P256_PRIV_LEN && id->pub_len == SRV_P256_PUB_LEN;
+--- new
+        return id->priv_len == P256_PRIV_LEN;

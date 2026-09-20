@@ -1031,8 +1031,9 @@ launch fast full quic_step_ca 5 "fill_nondet.0:37,ct_wipe.0:849" -DCH_TRANSPORT_
 # fourteen srv_flight.h handlers are contract stubs the harness defines,
 # because a handler and the driver that calls it are separate formulas;
 # srv_auth.c's two entries are stubs for a second reason the harness
-# states, that the srv_auth.c in the tree answers "no identity" for every
-# configuration and would leave this formula proving one branch.
+# states, that the real pair signs and verifies with a havocked ch_cfg
+# that names no provisioned identity, which would leave this formula
+# proving one branch.
 #
 # Three unwindset entries are what make this formula converge, and each
 # one was measured rather than guessed. alpn_ok.0 and

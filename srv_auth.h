@@ -130,12 +130,13 @@ void srv_hash_signed_content(uint16_t sigalg, const uint8_t *transcript_hash, si
 // the selected scheme names.
 //
 // The two signers are p256_sign.c for SIGALG_ECDSA_P256_SHA256 and
-// rsa_sign.c for SIGALG_RSA_PSS_RSAE_SHA256. Neither file exists in
-// this tree yet, so every call here refuses today, and the encoding
-// each one expects in ch_identity.priv is the signing lane's to state:
-// this header takes those bytes as opaque and invents no format for
-// them. docs/server.md prices both lanes under "Where the cryptography
-// lives".
+// rsa_sign.c for SIGALG_RSA_PSS_RSAE_SHA256, and srv_cfg.h states the
+// type each one reads through ch_identity.priv. This call tests
+// priv_len against the size of that type and passes the pointer on, so
+// it reads no byte of a private key itself. An RSA-PSS signature draws
+// its 32-byte salt from ch_rand_bytes, so a server signing with the RSA
+// identity needs entropy per handshake; the ECDSA nonce is derived and
+// draws none.
 //
 // Two obligations belong to the signer and are stated here because the
 // caller cannot check them. Every routine that touches the private
@@ -157,13 +158,23 @@ void srv_hash_signed_content(uint16_t sigalg, const uint8_t *transcript_hash, si
 // *sig_len.
 //
 // Returns CH_EINVAL and writes neither output when the identity is not
-// provisioned, and CH_ECAP and writes neither when cap is below the
-// signature the identity produces. It writes ALERT_INTERNAL_ERROR into
-// *alert on both, because a server that cannot sign with a key it
-// selected has a local fault and not a peer one, and RFC 9846 §6.2
-// describes internal_error as an error unrelated to the correctness of
-// the protocol (rfc9846.txt:3979-3981). It never returns CH_OK with a
-// zero-length signature.
+// provisioned or its key lengths are not the ones srv_cfg.h states, and
+// CH_ECAP and writes neither when cap is below the signature the
+// identity produces. That length is exact for the RSA identity, whose
+// signature is as long as the modulus in ch_identity.pub_len, and is
+// the 72-byte longest DER ECDSA-Sig-Value for the ECDSA one, whose
+// three possible lengths the signature values choose between.
+//
+// Returns CH_EINVAL and writes a zero *sig_len when the signer itself
+// refused, after wiping cap bytes at sig, because a refusing signer may
+// have written part of a signature first.
+//
+// It writes ALERT_INTERNAL_ERROR into *alert on all three, because a
+// server that cannot sign with a key it selected has a local fault and
+// not a peer one, and RFC 9846 §6.2 describes internal_error as an
+// error unrelated to the correctness of the protocol
+// (rfc9846.txt:3979-3981). It never returns CH_OK with a zero-length
+// signature.
 int srv_sign_certificate_verify(const ch_cfg *cfg, uint16_t sigalg, const uint8_t *transcript_hash,
                                 size_t hash_len, uint8_t *sig, size_t cap, size_t *sig_len,
                                 uint8_t *alert);
@@ -184,12 +195,19 @@ int srv_sign_certificate_verify(const ch_cfg *cfg, uint16_t sigalg, const uint8_
 // signed with the SHA-1 RFC 9846 §4.4.2 forbids (rfc9846.txt:2958-2960),
 // because it reads no chain bytes.
 //
+// The fixed message is the CertificateVerify content of a transcript
+// hash of SHA256_LEN zero bytes, so the check signs the content a
+// handshake signs and a pass here is evidence about the handshake.
+//
 // Requires a cfg the caller owns and a sigalg srv_identity_for
-// accepts. Runs no I/O and touches no session.
+// accepts. Runs no I/O and touches no session. It draws entropy for the
+// RSA identity, because rsa_pss_sign salts every signature, so a device
+// seeds its generator before it calls this.
 //
 // Returns CH_OK when the signature verified. Returns CH_EINVAL when
-// the slot is not provisioned, when the signer refused, or when the
-// verifier rejected what the signer produced.
+// the slot is not provisioned, when its key lengths are not the ones
+// srv_cfg.h states, when the signer refused, or when the verifier
+// rejected what the signer produced.
 int srv_identity_check(const ch_cfg *cfg, uint16_t sigalg);
 
 #endif // CH_ROLE_SERVER

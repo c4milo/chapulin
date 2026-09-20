@@ -1,0 +1,20 @@
+invariant: INV-14
+file: srv_flight.c
+catches: srv_flight_test
+reason: srv_select stops refusing a client whose ALPN list holds no name the
+  caller offers, so the handshake completes with alpn_selected at
+  CH_ALPN_NONE and EncryptedExtensions carries no ALPN extension. RFC 7301
+  section 3.2 requires a fatal no_application_protocol alert there. The
+  parser cannot catch this: srv_parser_ext.c reports the offer and reaches
+  no verdict on it, and this function is the only place that reads the
+  caller's list and the client's together. test/srv_flight_tests.h,
+  test_flight_alpn, offers two protocols against a hello whose list missed
+  both and requires alert 120.
+
+--- old
+    if (alpn_mismatch(&h->t->cfg, ch)) {
+        h->alert = ALERT_NO_APPLICATION_PROTOCOL;
+        return CH_EPROTO;
+    }
+--- new
+    (void)alpn_mismatch(&h->t->cfg, ch);

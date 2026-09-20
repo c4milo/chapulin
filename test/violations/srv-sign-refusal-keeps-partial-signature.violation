@@ -1,0 +1,16 @@
+invariant: INV-14
+file: srv_auth.c
+catches: srv_auth_test
+reason: a signer that refused may have written part of a signature into
+  the caller's buffer, and this drops the wipe that clears it. The length
+  still reports zero, so a caller that read the buffer without reading
+  the return code would put those bytes in a CertificateVerify.
+  test/srv_auth_test.c signs with a scalar above the group order, which
+  p256_sign refuses, and requires every byte of the buffer to be zero
+  afterwards.
+
+--- old
+        ct_wipe(sig, cap);
+        *sig_len = 0;
+--- new
+        *sig_len = 0;

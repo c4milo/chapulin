@@ -271,16 +271,23 @@ would change that trade.
 
 Four layers cover four different failure classes.
 
-**Proofs cover memory safety.** Forty-two of the forty-three C
-sources are compiled into a [CBMC](https://www.cprover.org/cbmc/) harness, which proves them free of
-out-of-bounds access, invalid pointers, bad shifts, and division by
-zero, for every input within the harness's bound. Signed overflow is
-checked too, except in the three x25519 mul harnesses that turn it off
-(see the x25519 row). `tls.c` is the one source with no harness: the
-post-handshake parser moved to its own file and took the harness with
-it, leaving the four public calls unproven.
-`make check` regenerates the source-by-source table in
-`bin/proof-coverage.md`. Where a bound equals the module's real
+**Proofs cover memory safety.** Sixty-six of the seventy C sources in
+the tree root are compiled into a [CBMC](https://www.cprover.org/cbmc/) harness that a launch line runs,
+which proves them free of out-of-bounds access, invalid pointers, bad
+shifts, and division by zero, for every input within the harness's
+bound. Signed overflow is checked too, except in the three x25519 mul
+harnesses that turn it off (see the x25519 row). Four sources are in
+no such harness. `tls.c` has none at all: the post-handshake parser
+moved to its own file and took the harness with it, leaving the four
+public calls unproven.
+`srv_parser.c` has one whose formula returns no verdict, which the
+`srv_parser (the walk)` row below states. `quic_aes_hw.c` calls the
+compiler's AES intrinsics, which CBMC cannot unwind, and
+`bin/aes_equiv_test` holds it to `quic_aes_soft.c` instead;
+`quic_aes_extern.c` forwards to a `ch_aes_block` the caller writes, so
+there is no body here to prove.
+`make check` counts all four and regenerates the source-by-source
+table in `bin/proof-coverage.md`. Where a bound equals the module's real
 maximum, the proof covers all inputs.
 
 The proofs run in two tiers. `make check-slow` runs the fast tier

@@ -223,20 +223,21 @@ QUIC_UNPROBED := $(if $(AES_HW_PROBE),,quic_aes_hw.c)
 # srv_flight (the flight handlers) below srv_handshake (the state
 # machine) below srv (the public calls).
 #
-# srv_flight.c is the one still a stub: it defines each function its
-# header declares and implements none, so a ROLE=server object links and
-# no handshake runs. docs/server.md, "Stubs first", states the rule.
+# None of them is a stub any more. docs/server.md, "Stubs first",
+# states the rule they were written under: each file defined every
+# function its header declares from its first commit, so a ROLE=server
+# object linked before any handler was implemented.
 SRV_SRCS := srv_parser.c srv_parser_ext.c srv_message.c srv_cookie.c srv_auth.c \
             srv_flight.c srv_handshake.c srv.c
-# Which of them are still stubs, read from the marker rather than from a
-# hand-kept list: every stub body holds one `// CH_SRV_STUB: ` line and
-# an implemented body holds none. One check carries an exception this
-# list bounds and retires it the moment the file it names stops
-# matching: lint-tidy's stub pass. lib-check's RAND=extern check carried
-# a second one, for the object that drew no randomness while
-# srv_flight.c was a stub, and that exception went with the commit that
-# implemented the file. The TRANSPORT=quic axis carried the same list
-# under CH_QUIC_STUB until its last stub was implemented.
+# Which of them were still stubs was read from a marker rather than from
+# a hand-kept list: every stub body held one `// CH_SRV_STUB: ` line and
+# an implemented body held none. SRV_STUB_SRCS read that marker, and two
+# checks carried an exception that list bounded: lint-tidy's stub pass,
+# and lib-check's RAND=extern import check, for the object that drew no
+# randomness while srv_flight.c was a stub. The marker matches nothing
+# now, and the list and both exceptions went with the commit that
+# implemented the last stub. The TRANSPORT=quic axis retired the same
+# machinery under CH_QUIC_STUB.
 # The client driver sources a ROLE=server object does not compile: the
 # state machine, the peer-certificate flight, the parsers for the
 # messages a server sends, and the ClientHello builder. Their server
@@ -439,17 +440,21 @@ $(error ROLE=server runs over TLS records only; use TRANSPORT=tls)
 endif
 ROLE_DEF    := -DCH_ROLE_SERVER
 ROLE_FILTER := $(CLIENT_REPLACED)
-# The server's own sources, and nothing else yet. docs/server.md's
-# ROLE_ADD also names p256_field.c, p256_ecdh.c, p256_sign.c,
-# rsa_sign.c, aes.c and gcm.c. rsa_sign.c exists and is deliberately
-# not here: no library object compiles it until the server's
-# CertificateVerify calls rsa_pss_sign, so bin/rsa_sign_test, the
-# Wycheproof suite and proof/rsa_sign_harness.c are what compile it.
-# The other five files do not exist. So this object holds no signer
-# and no AES, ch_srv_check and the CertificateVerify refuse, and the
-# build offers TLS_CHACHA20_POLY1305_SHA256 alone. Each lane adds its
-# own name here when it lands.
-ROLE_ADD    := $(SRV_SRCS)
+# The server's own sources and the two signers srv_auth.c calls:
+# rsa_sign.c for rsa_pss_rsae_sha256 and p256_sign.c for
+# ecdsa_secp256r1_sha256, with the constant-time arithmetic p256_sign.c
+# computes over and p256.c does not carry. docs/server.md's ROLE_ADD
+# also names p256_ecdh.c, aes.c and gcm.c; those three do not exist, so
+# this object has no AES and the build offers
+# TLS_CHACHA20_POLY1305_SHA256 alone. Each lane adds its own name here
+# when it lands.
+#
+# rsa_sign.c brings the deepest call chain in the object: rsa_pss_sign
+# calls rsa_sp1 calls mont_mul, and a device's stack holds all three at
+# once. lint-stack passes at the 2,560-byte budget because
+# -Wframe-larger-than measures one frame at a time, and docs/server.md
+# measures the sum a deployment has to size its stack from.
+ROLE_ADD    := $(SRV_SRCS) rsa_sign.c p256_sign.c p256_scalar.c p256_point.c p256_field.c
 PUBLIC_ROLE := ch_srv_accept ch_srv_check ch_read ch_write ch_close
 # An empty PIN_FILTER keeps every verifier, because LIB_SRCS filters out
 # what the filter names. This object wants exactly that: it holds two
@@ -628,8 +633,9 @@ lint-trust-separation:
 	srv_files=$$(git ls-files 'srv*.c' | grep -v / | tr '\n' ' '); \
 	[ -n "$$srv_files" ] || { echo "lint-trust-separation: git tracks no srv*.c file at the root, so the role rows would check nothing"; rc=1; }; \
 	client_only="handshake.c handshake_auth.c handshake_parser.c handshake_message.c"; \
-	check "ROLE=client TRUST=raw TRANSPORT=tls PIN=rsa" "$$client_only tls.c" "$$srv_files" "" "-DCH_ROLE_SERVER"; \
-	check "ROLE=server TRUST=raw TRANSPORT=tls PIN=rsa" "$$srv_files tls.c rsa.c rsa_mont.c p256.c" "$$client_only" "-DCH_ROLE_SERVER" "-DCH_PIN_ECDSA"; \
+	signers="rsa_sign.c p256_sign.c p256_scalar.c p256_point.c p256_field.c"; \
+	check "ROLE=client TRUST=raw TRANSPORT=tls PIN=rsa" "$$client_only tls.c" "$$srv_files $$signers" "" "-DCH_ROLE_SERVER"; \
+	check "ROLE=server TRUST=raw TRANSPORT=tls PIN=rsa" "$$srv_files $$signers tls.c rsa.c rsa_mont.c p256.c" "$$client_only" "-DCH_ROLE_SERVER" "-DCH_PIN_ECDSA"; \
 	[ $$rc = 0 ] && echo "lint-trust-separation: every axis value packages exactly its own sources and defines"; \
 	exit $$rc
 # bench/device-ram.sh builds with CLANG_RV, the clang the codegen lints
@@ -774,10 +780,9 @@ bin/rsa_test: test/rsa_test.c rsa.c rsa_mont.c sha256.c ct.c $(HDRS) $(TESTH)
 
 # RSA-PSS signing: the known answers, the round trip through the verifier
 # and the refusals. Its own binary like bin/rsa_test, at the same
-# 512-byte bound so the RSA-4096 vector signs. rsa_sign.c is in no
-# library object: ROLE=server does not exist yet (docs/server.md), so
-# this binary, the Wycheproof suite and the CBMC harness are what
-# compile it. It links rsa.c for the verifier the round trip checks
+# 512-byte bound so the RSA-4096 vector signs, which is wider than the
+# 384-byte bound the ROLE=server object that now packages rsa_sign.c
+# builds it at. It links rsa.c for the verifier the round trip checks
 # against, which is the same pairing bin/rsa_pkcs1_test uses.
 bin/rsa_sign_test: test/rsa_sign_test.c rsa_sign.c rsa.c rsa_mont.c sha256.c ct.c $(HDRS) $(TESTH)
 	@mkdir -p bin
@@ -865,9 +870,16 @@ bin/aes_equiv_test: test/aes_equiv_test.c test/aes_equiv_soft.c test/aes_equiv_h
 # handshake_record.c for the messages it reads. No stub is left in the role.
 SRV_BELOW := buf.c ct.c session.c io.c record.c aead.c chacha20.c poly1305.c hkdf.c sha256.c \
              keysched.c x25519.c handshake_record.c
-bin/srv_auth_test: test/srv_auth_test.c $(SRV_SRCS) $(SRV_BELOW) $(HDRS) $(TESTH)
+# The two signers srv_auth.c calls, each with the arithmetic it computes
+# over, and the two verifiers its boot-time check calls. Every binary
+# that links srv_auth.c links these, and so does the ROLE=server object
+# through ROLE_ADD.
+SRV_SIGNERS := rsa_sign.c rsa.c rsa_mont.c p256_sign.c p256_scalar.c p256_point.c \
+               p256_field.c p256.c
+bin/srv_auth_test: test/srv_auth_test.c $(SRV_SRCS) $(SRV_BELOW) $(SRV_SIGNERS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -DCH_ROLE_SERVER -I. -o $@ test/srv_auth_test.c $(SRV_SRCS) $(SRV_BELOW)
+	$(CC) $(CFLAGS) -DCH_ROLE_SERVER -I. -Itest -o $@ test/srv_auth_test.c $(SRV_SRCS) \
+	  $(SRV_BELOW) $(SRV_SIGNERS)
 # The role's unit vectors: the messages srv_message.c writes, the cookie
 # srv_cookie.c mints and opens, and the ClientHello srv_parser.c reads. It
 # links those sources and their dependencies alone, not the whole role,
@@ -886,10 +898,10 @@ bin/srv_test: test/srv_test.c srv_message.c srv_cookie.c srv_parser.c srv_parser
 SRV_FLIGHT_DEPS := buf.c ct.c sha256.c hkdf.c keysched.c x25519.c handshake_record.c io.c \
                    record.c aead.c chacha20.c poly1305.c
 bin/srv_flight_test: test/srv_flight_test.c srv_flight.c srv_message.c srv_cookie.c \
-                     srv_auth.c $(SRV_FLIGHT_DEPS) $(HDRS) $(TESTH)
+                     srv_auth.c $(SRV_FLIGHT_DEPS) $(SRV_SIGNERS) $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) -DCH_ROLE_SERVER -I. -o $@ test/srv_flight_test.c srv_flight.c \
-	  srv_message.c srv_cookie.c srv_auth.c $(SRV_FLIGHT_DEPS)
+	  srv_message.c srv_cookie.c srv_auth.c $(SRV_FLIGHT_DEPS) $(SRV_SIGNERS)
 # SHA-512 and SHA-384 vectors and the streaming contract. Its own binary,
 # out of the packaged object like sha3: only TRUST=webpki links sha512.c.
 bin/sha512_test: test/sha512_test.c sha512.c sha512_compress.c $(HDRS) $(TESTH)
@@ -1212,8 +1224,8 @@ check: bin/unit bin/unit_ca bin/unit_pq bin/tlsclient bin/tlsclient_ecdsa bin/tl
 	# that holds PUBLIC_ROLE to a replacement rather than an addition. It
 	# is lib-check alone: chapulin.hpp has no Server type yet, so
 	# cxx-check joins this line on the commit that adds one
-	# (docs/server.md). Every srv source is a stub today, so the leg
-	# costs seconds.
+	# (docs/server.md). It is also the only leg that packages the two
+	# signers, so it is where a link error in them shows.
 	$(MAKE) lib-check RAND=extern ROLE=server
 	# lint above holds lint-stack at the budget of the build check was
 	# given, 2,560 B for a plain `make check`, the target `make ci` runs.
@@ -2469,10 +2481,11 @@ CODEGEN_SRCS := $(foreach e,$(WIDEMUL_CEILING),$(firstword $(subst :, ,$(e))))
 # compile only without the transport and role defines, and
 # quic_aes_soft.c, which preprocesses to an empty file under
 # -DCH_AES_EXTERN.
-# srv_flight.c carries -UCH_KEX_PQ because the codegen legs compile every
-# source with -DCH_KEX_PQ and that file is an #error under ROLE=server with
-# it: the server has no KEX=pq half (docs/server.md, open question ten). The
-# leg measures the build that exists, which is KEX=x25519.
+# srv_flight.c and srv_handshake.c carry -UCH_KEX_PQ because the codegen legs
+# compile every source with -DCH_KEX_PQ and both include srv_flight.h, which is
+# an #error under ROLE=server with it: the server has no KEX=pq half
+# (docs/server.md, open question ten). The leg measures the build that exists,
+# which is KEX=x25519.
 WIDEMUL_DEFINES := quic_keys.c:-DCH_TRANSPORT_QUIC quic_packet.c:-DCH_TRANSPORT_QUIC \
                    quic_config.c:-DCH_TRANSPORT_QUIC quic_step.c:-DCH_TRANSPORT_QUIC \
                    quic.c:-DCH_TRANSPORT_QUIC \
@@ -2482,7 +2495,8 @@ WIDEMUL_DEFINES := quic_keys.c:-DCH_TRANSPORT_QUIC quic_packet.c:-DCH_TRANSPORT_
                    srv_parser.c:-DCH_ROLE_SERVER srv_parser_ext.c:-DCH_ROLE_SERVER \
                    srv_message.c:-DCH_ROLE_SERVER \
                    srv_cookie.c:-DCH_ROLE_SERVER srv_auth.c:-DCH_ROLE_SERVER \
-                   srv_flight.c:-DCH_ROLE_SERVER$(COMMA)-UCH_KEX_PQ srv_handshake.c:-DCH_ROLE_SERVER \
+                   srv_flight.c:-DCH_ROLE_SERVER$(COMMA)-UCH_KEX_PQ \
+                   srv_handshake.c:-DCH_ROLE_SERVER$(COMMA)-UCH_KEX_PQ \
                    srv.c:-DCH_ROLE_SERVER
 WIDEMUL_PUBLIC := p256.c rsa.c rsa_mont.c pem.c x509.c x509_der.c x509_ca.c sha512.c sha512_compress.c \
                   p384.c p384_field.c rsa_pkcs1.c webpki_time.c webpki_name.c webpki_spki.c webpki_sigalg.c \

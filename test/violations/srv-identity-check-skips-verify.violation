@@ -1,0 +1,17 @@
+invariant: INV-14
+file: srv_auth.c
+catches: srv_auth_test
+reason: ch_srv_check signs with the private key and then ignores the
+  verifier's verdict, so a slot whose public key belongs to another key
+  pair boots. The check exists to catch exactly that pairing, which no
+  later call can: a server reads no byte of its own chain, so the first
+  report of a mismatched identity would otherwise be a client rejecting
+  every CertificateVerify. test/srv_auth_test.c gives the ECDSA slot the
+  point of a different key pair and requires CH_EINVAL.
+
+--- old
+    if (!verify_digest(id, sigalg, digest, sig, sig_len)) {
+        return CH_EINVAL;
+    }
+--- new
+    (void)verify_digest(id, sigalg, digest, sig, sig_len);

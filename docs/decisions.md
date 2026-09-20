@@ -511,8 +511,9 @@ does nothing more.
     QUIC. Entry 12 stands in a QUIC build: one key-exchange group per
     build, on the same PIN, TRUST, KEX and RAND axes.
 
-    Nothing is implemented yet. docs/quic.md states the interface by
-    the names the header will use, the suspendable driver step by step
-    with the state each step leaves behind, the measured reuse per
-    build, the bounds that need measuring, and the verification owed
-    against today's counts.
+    The driver landed in `33978f6`, which moved the client's flight
+    handlers into `handshake_flight.c` and put `quic_step.c` on top of
+    them. docs/quic.md states the interface, the suspendable driver
+    step by step with the state each step leaves behind, the measured
+    reuse per build, the bounds that still need measuring, and the
+    verification owed.

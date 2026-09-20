@@ -98,6 +98,16 @@ static const ch_cert flight_chain[1] = {
 };
 static uint8_t sni_buf[8];
 
+// The two protocols a case has the caller offer, in the caller's
+// preference order, so a selection reads as an index into this array.
+// flight_reset offers none; a case that is about ALPN sets both fields.
+static const uint8_t alpn_h2[2] = {'h', '2'};
+static const uint8_t alpn_http11[8] = {'h', 't', 't', 'p', '/', '1', '.', '1'};
+static const ch_alpn_protocol flight_alpn[2] = {
+    {alpn_h2,     sizeof alpn_h2    },
+    {alpn_http11, sizeof alpn_http11}
+};
+
 // The cookie a second hello echoes and the low-order share one case
 // offers. Both sit here rather than on a case's frame, because
 // flight_hello points at them and outlives the case.
@@ -236,6 +246,46 @@ static void test_flight_select(void) {
     // it, which is the one condition that owes a HelloRetryRequest.
     flight_hello.shares = 0;
     CHECK(srv_select(&hs, &flight_hello, &sel) == CH_OK && sel.need_retry == 1);
+}
+
+// RFC 7301 section 3.2's verdict, which srv_select reaches and the
+// parser does not. Each case moves one of srv_flight.h's three terms,
+// and the parser's two outputs stand in for a real ALPN extension:
+// SRV_EXT_ALPN in seen says the client sent one, and alpn_selected says
+// whether a name was on both lists.
+static void test_flight_alpn(void) {
+    selection sel;
+
+    // The caller offers two protocols and the client sent no extension.
+    // Nothing was asked for, so nothing failed.
+    flight_reset();
+    offer_everything();
+    sess.cfg.alpn_protocols = flight_alpn;
+    sess.cfg.alpn_count = 2;
+    CHECK((flight_hello.seen & SRV_EXT_ALPN) == 0);
+    CHECK(srv_select(&hs, &flight_hello, &sel) == CH_OK);
+
+    // The lists intersect: the client sent a list and the parser found
+    // the caller's second name in it.
+    offer_everything();
+    flight_hello.seen = SRV_EXT_ALPN;
+    flight_hello.alpn_selected = 1;
+    CHECK(srv_select(&hs, &flight_hello, &sel) == CH_OK);
+
+    // The lists are disjoint: the client sent a list and no offered name
+    // was in it. This is the case section 3.2 makes fatal.
+    offer_everything();
+    flight_hello.seen = SRV_EXT_ALPN;
+    CHECK(flight_hello.alpn_selected == CH_ALPN_NONE);
+    CHECK(srv_select(&hs, &flight_hello, &sel) == CH_EPROTO);
+    CHECK(hs.alert == ALERT_NO_APPLICATION_PROTOCOL);
+
+    // That same hello against a caller that offers no protocol. This
+    // server negotiates no ALPN at all, which section 3.2 permits, so
+    // the disjoint lists are not a failed negotiation.
+    sess.cfg.alpn_protocols = NULL;
+    sess.cfg.alpn_count = 0;
+    CHECK(srv_select(&hs, &flight_hello, &sel) == CH_OK);
 }
 
 static void test_flight_read_hello(void) {

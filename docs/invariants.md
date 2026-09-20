@@ -31,6 +31,12 @@ this scale, strongest first:
 smell. Machine-enforced entries name their rule id; the rest say
 which convention holds them.
 
+An entry that names a temporary state goes when that state does, and its
+number is never reused. INV-28, "a stub never reports success", was the
+one such entry. It held the `TRANSPORT=quic` and then the `ROLE=server`
+stubs to refusals, and it retired with the commit that implemented the
+last `ROLE=server` stub, as the entry said it would.
+
 ## Unrepresentable by API shape
 
 ### INV-1 — one sealing path
@@ -345,40 +351,6 @@ which convention holds them.
   build compiles, under a name without the prefix, and
   `git ls-files 'quic*'` stops naming every file the mode owns.
 - See [decisions: Engineering](decisions.md#engineering).
-
-### INV-28 — a stub never reports success
-
-- **Claim.** Every function of the `ROLE=server` role that is a stub
-  returns a refusal the header documents and writes nothing through its
-  out-parameters. No stub returns `CH_OK`, and none reports a completed
-  handshake or a verified identity. A caller that links the object today
-  gets refusals, never a session no handshake brought up.
-- **Mechanism.** The Makefile's `ROLE` axis packages the role before the
-  role is written, so the object exists and every call in it is a stub.
-  A stub body carries one `// CH_SRV_STUB: ` line and returns the
-  header's refusal. `SRV_STUB_SRCS` reads that marker, and `lint-tidy`'s
-  stub pass reads that list. `lib-check`'s `RAND=extern` import check
-  carried a second exception, for the object that drew no randomness
-  while `srv_flight.c` was a stub; it retired when that file was
-  implemented, and the check now asserts the import in every build.
-- **Check.** A running test, `bin/srv_stub_test`, which `make check`
-  builds and runs. It calls each stub, requires the documented refusal
-  from it, and fills every buffer and every struct it passes with `0xa5`
-  before the call and compares it after, so "writes nothing" is
-  measured. The mutant
-  `test/violations/inv28-srv-stub-returns-ok.violation` makes one stub
-  return `CH_OK` and requires that binary to fail.
-- **Violation.** A PR makes a stub answer `CH_OK` to get a caller
-  building, so `ch_srv_accept` reports a session it never negotiated and
-  the caller reads plaintext off keys nothing derived.
-- Retirement. This entry lasts as long as a stub does. The
-  `TRANSPORT=quic` mode was its first subject: `bin/quic_stub_test`,
-  `QUIC_STUB_SRCS`, the two exceptions that read it and the mutant on
-  `quic_step.c` all went in the commit that implemented the mode's last
-  stub, as this entry said they would, and `make quic-footprint` reports
-  0 stubbed there. When `SRV_STUB_SRCS` is empty, the marker, the
-  exceptions that read it, this entry and its mutant go the same way.
-- See [server](server.md) and [quic](quic.md).
 
 ### INV-7 — no negotiation
 

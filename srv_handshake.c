@@ -34,9 +34,11 @@ static void store_selection(ch_tls *t, const client_hello *ch, const selection *
     // server seals from the EncryptedExtensions on. 0 is the absent
     // extension, which leaves the 2^14 default, and srv_handshake seeded
     // CH_TX_PT, this build's own cap on one record's plaintext. Only a
-    // smaller limit is stored, so t->peer_limit is the whole send cap and
-    // a send site needs no second comparison against CH_TX_PT. The client
-    // lowers its own the same way (handshake_parser.c:233).
+    // smaller limit is stored, so t->peer_limit never rises above
+    // CH_TX_PT. Each send site compares against CH_TX_PT again anyway:
+    // srv_flight.c's send_limit and tls.c's ch_write both take the
+    // smaller of the two, which is the contract srv_flight.h states.
+    // The client lowers its own the same way (handshake_parser.c:233).
     if (ch->record_size_limit != 0 && ch->record_size_limit < t->peer_limit) {
         t->peer_limit = ch->record_size_limit;
     }
@@ -167,7 +169,7 @@ int srv_handshake(ch_tls *t) {
     h.t = t;
     // The description a failure carries when no handler chose a more
     // specific one, seeded the way ch_handshake seeds it
-    // (handshake.c:372-395).
+    // (handshake.c:133-156).
     h.alert = ALERT_DECODE_ERROR;
     // This server's own record_size_limit, sized to the caller's buffer,
     // which srv_send_encrypted_extensions puts in the

@@ -40,6 +40,19 @@
 #include "handshake_record.h"
 #include "srv_auth.h"
 
+// The hybrid key exchange has no server half here, for two structural
+// reasons. handshake_state gives the server's share h->pub, which is
+// X25519_LEN bytes against CH_KEX_SERVER_SHARE's 1120 under KEX=pq. And
+// that share's ML-KEM half is a ciphertext under the client's
+// encapsulation key, which srv_begin has not read where this header
+// draws the server's secrets. Open question ten leaves the pair open.
+// The guard sits in the header every server source includes, so a
+// KEX=pq build stops at the first of them rather than at srv_flight.c
+// alone.
+#ifdef CH_KEX_PQ
+#error "ROLE=server has no KEX=pq half yet (docs/server.md, open question ten); use KEX=x25519"
+#endif
+
 // The cookie fits the field the handshake state already carries, so the
 // retry costs the session no new bytes. Both constants are visible
 // here and nowhere lower, which is why the assertion sits in this
@@ -139,6 +152,30 @@ int srv_read_client_hello(handshake_state *h, client_hello *ch);
 // parameters exists (rfc9846.txt:1145-1148, rfc9846.txt:1181-1184).
 // Failing on a group named in supported_groups is not that case, and
 // is the retry above.
+//
+// Returns CH_EPROTO with ALERT_NO_APPLICATION_PROTOCOL when all three
+// of RFC 7301 §3.2's terms hold. §3.2 says a server that supports none
+// of the protocols the client advertises "SHALL respond with a fatal
+// no_application_protocol alert", and each term below is a term of that
+// sentence:
+//
+//   1. The caller offers protocols, so cfg.alpn_count is not 0. A
+//      caller that offers none negotiates no ALPN at all, which §3.2
+//      permits: srv_send_encrypted_extensions then writes no ALPN
+//      extension and the connection runs without one.
+//   2. The client sent an application_layer_protocol_negotiation
+//      extension, so SRV_EXT_ALPN is set in ch->seen. A client that
+//      sent none asked for nothing and cannot fail to get it. The bit
+//      is what tells those two hellos apart, because alpn_selected is
+//      CH_ALPN_NONE for both (srv_parser.h).
+//   3. No name is on both lists, so alpn_selected stayed CH_ALPN_NONE
+//      after a list the parser read. That is the empty intersection
+//      §3.2 names.
+//
+// The check runs before need_retry above, so a mismatch ends the
+// handshake on the first ClientHello. A HelloRetryRequest would not
+// change the answer: §4.1.2 forbids the second ClientHello to change
+// the ALPN extension (rfc9846.txt:1191-1213), and ch->frozen covers it.
 int srv_select(handshake_state *h, const client_hello *ch, selection *sel);
 
 // Builds and sends one HelloRetryRequest, and replaces the transcript
@@ -240,7 +277,7 @@ int srv_send_server_hello(handshake_state *h, const client_hello *ch, const sele
 // The two secrets bind to the opposite directions from the client's,
 // and that is the whole of the asymmetry: this call passes h->c_hs to
 // the read direction and h->s_hs to the write direction, where
-// handshake.c:309-310 does the reverse. Nothing in INV-10 says which
+// handshake.c:94-95 does the reverse. Nothing in INV-10 says which
 // assignment is correct, so a server that swapped them would pass every
 // check in the tree; docs/server.md lands a violation mutant for
 // exactly that.

@@ -1,0 +1,18 @@
+invariant: INV-14
+file: srv_flight.c
+catches: srv_flight_test
+reason: srv_select drops the term that reads SRV_EXT_ALPN, so it refuses a
+  ClientHello that sent no application_layer_protocol_negotiation extension
+  at all. alpn_selected is CH_ALPN_NONE for that hello and for one whose
+  list missed, and the seen bit is the only thing that tells them apart, so
+  the edit turns every non-ALPN client into a no_application_protocol alert
+  against a caller that offers protocols. RFC 7301 section 3.2 makes the
+  alert an answer to a list the client sent, not to silence.
+  test/srv_flight_tests.h, test_flight_alpn, requires that hello to
+  negotiate.
+
+--- old
+    return cfg->alpn_count != 0 && (ch->seen & SRV_EXT_ALPN) != 0 &&
+           ch->alpn_selected == CH_ALPN_NONE;
+--- new
+    return cfg->alpn_count != 0 && ch->alpn_selected == CH_ALPN_NONE;

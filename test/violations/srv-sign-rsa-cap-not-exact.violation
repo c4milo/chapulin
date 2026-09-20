@@ -1,0 +1,17 @@
+invariant: INV-14
+file: srv_auth.c
+catches: srv_auth_test
+reason: the RSA cap test asks for CH_RSA_MODULUS_MAX instead of the
+  modulus length in pub_len, so a server whose key is smaller than the
+  build's ceiling refuses a buffer its own signature fits in. An RSA-PSS
+  signature is exactly as long as the modulus, which is what makes the
+  exact test possible at all. test/srv_auth_test.c signs with an
+  RSA-2048 key into a buffer of exactly 256 bytes and requires CH_OK.
+  The cast keeps the mutant compiling: with the ceiling in place the
+  identity is the one thing this function stops reading.
+
+--- old
+    return id->pub_len;
+--- new
+    (void)id;
+    return SRV_SIG_MAX;

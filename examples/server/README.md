@@ -1,7 +1,10 @@
 # Serving chapulin clients
 
-chapulin is a client. It has no server role, so this directory holds
-configuration for servers other people wrote, not code.
+This directory holds configuration for servers other people wrote, not
+code. A `ROLE=server` build of chapulin serves TLS 1.3 itself
+([`docs/server.md`](../../docs/server.md)), but it has completed no
+handshake against another stack yet, so the two stacks below are what
+`test/e2e.sh` drives a chapulin client against.
 
 Two stacks are covered: OpenSSL 3 and Go's `crypto/tls`. Every command
 here comes from [`test/e2e.sh`](../../test/e2e.sh), which runs real
