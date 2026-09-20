@@ -460,6 +460,14 @@ endif
 ifneq ($(PIN),rsa)
 $(error ROLE=server carries both verifiers for ch_srv_check, so PIN selects nothing in it; drop PIN=$(PIN))
 endif
+# A server has no record-mode driver yet. srv_quic.c gives ROLE=server its
+# non-blocking shape over QUIC; the record transport has only the blocking
+# ch_srv_accept, so this pair would compile srv_handshake.c and rec.c into
+# one object -- a blocking server driver beside a client's record driver.
+# The refusal goes when a server record driver lands, and not before.
+ifeq ($(TRANSPORT),record)
+$(error ROLE=server has no record-mode driver yet; use TRANSPORT=tls or TRANSPORT=quic)
+endif
 ROLE_DEF    := -DCH_ROLE_SERVER
 ROLE_FILTER := $(CLIENT_REPLACED)
 # The server's own sources and the two signers srv_auth.c calls:
