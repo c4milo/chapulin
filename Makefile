@@ -1240,7 +1240,7 @@ bin/diff: test/diff_test.c $(SRCS) sha3.c sha512.c sha512_compress.c p384.c p384
 run-%: bin/%
 	./bin/$*
 
-.PHONY: check check-slow ci lint lint-tidy lint-format lint-cppcheck lint-docs lint-conflict-markers lint-invariants lint-violation-builds lint-impact lint-fuzz-budget lint-codegen-partition lint-runtime-symbols lint-wide-multiply lint-commit-citations lint-issue-links lint-shellcheck lint-bench-numbers lint-spec prove diff fmt clean
+.PHONY: check check-slow ci lint lint-tidy lint-format lint-cppcheck lint-docs lint-conflict-markers lint-invariants lint-violation-builds lint-impact lint-fuzz-budget lint-codegen-partition lint-runtime-symbols lint-wide-multiply lint-commit-citations lint-issue-links lint-rfcs lint-shellcheck lint-bench-numbers lint-spec prove diff fmt clean
 # check is the inner loop and holds a one-minute budget, so it runs what
 # answers "did I break the build or a contract": the linters, every unit
 # and strict-parser binary, the packaged-object export check, and the
@@ -3042,6 +3042,29 @@ else
 	@$(SHELLCHECK) -x -f gcc $(SH_SRCS) \
 	  && echo "lint-shellcheck: every shell script clean"
 endif
+
+# Every RFC this tree cites by line number, carried in docs/rfcs/ so a
+# reader can check a citation without leaving the repository. Line numbers
+# are only meaningful against exact bytes, so SHA256SUMS records them and
+# this target refuses a file that drifted from the hash.
+#
+# The second half is what makes vendoring worth its megabyte: a citation
+# to an RFC the tree does not carry fails here, so a new citation brings
+# its document with it instead of pointing at a file only its author had.
+.PHONY: lint-rfcs
+lint-rfcs:
+	@command -v shasum >/dev/null || { echo "lint-rfcs: shasum is missing"; exit 1; }
+	@cd docs/rfcs && shasum -a 256 -c SHA256SUMS >/dev/null \
+	  || { echo "lint-rfcs: a vendored RFC does not match SHA256SUMS; line citations are measured against those bytes"; exit 1; }
+	@rc=0; \
+	cited=$$(grep -rhoE 'rfc[0-9]{3,5}\.txt' --include='*.c' --include='*.h' --include='*.md' --include='*.sh' . \
+	  | sort -u); \
+	[ -n "$$cited" ] || { echo "lint-rfcs: no citation found at all, so this target would check nothing"; exit 1; }; \
+	for f in $$cited; do \
+	  [ -f "docs/rfcs/$$f" ] || { echo "lint-rfcs: the tree cites $$f by line number and docs/rfcs/ does not carry it"; rc=1; }; \
+	done; \
+	[ $$rc -eq 0 ] || exit $$rc; \
+	echo "lint-rfcs: $$(printf '%s\n' $$cited | wc -l | tr -d ' ') cited RFCs, all vendored and matching their hashes"
 
 .PHONY: lint-issue-links
 lint-issue-links:

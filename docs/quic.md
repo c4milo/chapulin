@@ -61,7 +61,12 @@ this file substitutes for `bench/sram.sh`.
 
 Every RFC line number cites the plain-text file rfc-editor.org publishes:
 `rfc9001.txt`, `rfc9000.txt`, `rfc8999.txt`, `rfc9221.txt`, `rfc7301.txt` and
-`rfc9846.txt`. This tree does not carry those files. TLS 1.3 is cited as RFC
+`rfc9846.txt`. This tree carries them, in `docs/rfcs/`, with their SHA-256
+sums beside them. A line number means nothing against a different printing of
+the same document, so `make lint-rfcs` holds each file to its recorded hash
+and refuses a citation to an RFC the tree does not carry. The megabyte buys
+an auditor the ability to check a citation without leaving the repository,
+which is the whole reason the citations carry line numbers at all. TLS 1.3 is cited as RFC
 9846, as the rest of the tree cites it (`docs/decisions.md` entry 4). QUIC is
 RFC 9000, QUIC-TLS is RFC 9001, loss recovery is RFC 9002, the
 version-independent header shape is RFC 8999, ALPN is RFC 7301, and unreliable
