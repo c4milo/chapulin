@@ -878,12 +878,21 @@ agility, the server role, or any insecure fallback. The device modes,
 host-side `TRUST=webpki` mode does, against anchors the caller
 supplies, and [`docs/webpki.md`](docs/webpki.md) lists what it does not
 check. [`docs/decisions.md`](docs/decisions.md) records every trade and why.
-QUIC is not implemented either; [`docs/quic.md`](docs/quic.md) records
-the design of the `TRANSPORT=quic` mode, decided and not yet built.
-The server role is in the same state: [`docs/server.md`](docs/server.md)
-records the design of the `ROLE=server` build, decided on paper, with no
-header written and sixteen questions open, three of which block the first
-line of code.
+The `TRANSPORT=quic` client is implemented and checked against RFC 9001's
+Appendix A vectors; [`docs/quic.md`](docs/quic.md) records its design and
+the interop it still owes, because no chapulin build has yet spoken to a
+live QUIC peer. A QUIC *server* is not implemented:
+[`docs/quic_server.md`](docs/quic_server.md) scopes what chapulin would owe
+one, which is the keys and the packet protection and nothing above them.
+Its smaller pieces are in — Initial keys derive in either direction and
+`quic_retry_tag` mints the tag `quic_retry_ok` checks — and the driver is
+not.
+
+The `ROLE=server` build is implemented and completes a handshake;
+[`docs/server.md`](docs/server.md) records its design. It offers one cipher
+suite, so it does not yet meet RFC 9846 section 9.1, which makes
+`TLS_AES_128_GCM_SHA256` mandatory to implement:
+[`docs/aes_suite.md`](docs/aes_suite.md) scopes that.
 
 Two caveats worth knowing before you adopt it.
 
