@@ -64,6 +64,22 @@ client's body and handing it to the caller: `cfg.on_transport_params` exists
 only under `CH_TRANSPORT_QUIC`, which `srv_cfg.h` refuses together with
 `ROLE=server`.
 
+**The client's transport parameters (rest of item 3).** `srv_parser_ext.c`
+keeps the body instead of refusing the extension, and the driver hands it to
+`cfg.on_transport_params` and closes with `missing_extension` when a hello
+carries none, which RFC 9001 section 8.2 requires.
+
+**The driver (was item 4).** `srv_quic.[ch]` runs the flight over CRYPTO
+frames, and `quic_fail.[ch]` holds the wipe both drivers share.
+`bin/srv_quic_test` feeds this tree's own ClientHello to it and watches the
+flight come back: the ServerHello at the Initial level and
+EncryptedExtensions, Certificate, CertificateVerify and Finished at the
+Handshake level. What no test covers yet is the client Finished, which needs
+a real client's transcript, and interop, which needs an outside peer.
+
+**The Makefile refusal (was item 5), gone.** `ROLE=server` with
+`TRANSPORT=quic` builds, links and exports sixteen calls.
+
 `CH_QUIC_PARAMS_MIN_RXBUF` is still 0, and a chapulin server cannot close
 it: it would measure the bodies clients send, which is the other direction.
 
@@ -150,10 +166,10 @@ did.
 
 ### 5. The Makefile refusal
 
-`Makefile:445` goes when the driver lands, and not before. Items 1 to 3
-above are in and it still stands, because a build that cannot run a
-handshake has no business claiming the axis. Until then the
-error is correct and should stay.
+Gone, and the standard it was held to was met first: the axis was not
+claimed until `bin/srv_quic_test` showed a whole flight leaving the driver.
+What the axis still does not claim is a finished handshake against another
+implementation, which is the interop item below.
 
 ## Verification owed
 

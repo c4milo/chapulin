@@ -881,12 +881,11 @@ check. [`docs/decisions.md`](docs/decisions.md) records every trade and why.
 The `TRANSPORT=quic` client is implemented and checked against RFC 9001's
 Appendix A vectors; [`docs/quic.md`](docs/quic.md) records its design and
 the interop it still owes, because no chapulin build has yet spoken to a
-live QUIC peer. A QUIC *server* is not implemented:
-[`docs/quic_server.md`](docs/quic_server.md) scopes what chapulin would owe
-one, which is the keys and the packet protection and nothing above them.
-Its smaller pieces are in — Initial keys derive in either direction and
-`quic_retry_tag` mints the tag `quic_retry_ok` checks — and the driver is
-not.
+live QUIC peer. A QUIC *server* now builds too: `ROLE=server` with `TRANSPORT=quic` runs
+the TLS 1.3 server handshake over CRYPTO frames and exports sixteen calls.
+[`docs/quic_server.md`](docs/quic_server.md) states what chapulin owes one,
+which is the keys and the packet protection and nothing above them. It has
+never spoken to another implementation, and neither role has.
 
 The `ROLE=server` build is implemented and completes a handshake;
 [`docs/server.md`](docs/server.md) records its design. It offers one cipher

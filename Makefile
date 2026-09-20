@@ -940,6 +940,20 @@ bin/srv_auth_test: test/srv_auth_test.c $(SRV_SRCS) $(SRV_BELOW) $(SRV_SIGNERS) 
 # because the builders, the cookie and the parser are pure functions over
 # caller buffers and touch no session.
 SRV_DEPS := buf.c ct.c sha256.c hkdf.c
+# The QUIC server driver end to end: this tree's own ClientHello, built by
+# handshake_message.c, through srv_quic.c and out as the flight it pushes.
+# It links both sides of the connection on purpose, which no packaged
+# object does, so the builder and the parser check each other.
+SRV_QUIC_SRCS := srv_quic.c srv_flight.c srv_out.c srv_message.c srv_cookie.c srv_auth.c \
+                 srv_parser.c srv_parser_ext.c srv.c handshake_message.c handshake_record.c \
+                 quic_fail.c quic.c quic_keys.c quic_packet.c quic_initial.c quic_retry.c \
+                 quic_aes.c quic_aes_soft.c quic_gcm.c quic_config.c buf.c ct.c sha256.c \
+                 hkdf.c keysched.c x25519.c chacha20.c poly1305.c aead.c rsa_sign.c \
+                 p256_sign.c p256_scalar.c p256_point.c p256_field.c p256.c rsa.c rsa_mont.c
+bin/srv_quic_test: test/srv_quic_test.c $(SRV_QUIC_SRCS) $(HDRS) $(TESTH)
+	@mkdir -p bin
+	$(CC) $(CFLAGS) -DCH_ROLE_SERVER -DCH_TRANSPORT_QUIC -I. -o $@ test/srv_quic_test.c \
+	  $(SRV_QUIC_SRCS)
 bin/srv_test: test/srv_test.c srv_message.c srv_cookie.c srv_parser.c srv_parser_ext.c \
               $(SRV_DEPS) $(HDRS) $(TESTH)
 	@mkdir -p bin
@@ -1237,7 +1251,7 @@ run-%: bin/%
 # and the invariant violation builds. The nightly runs it. Splitting on
 # duration rather than on importance is deliberate -- nothing here is
 # optional, and a change is not finished until check-slow passes too.
-check: bin/unit bin/unit_ca bin/unit_pq bin/tlsclient bin/tlsclient_ecdsa bin/tlsclient_ca bin/tlsclient_ca_ecdsa bin/tlsclient_webpki bin/tlsclient_pq bin/drbg_test bin/softmul_test bin/rsa_test bin/sha3_test bin/sha512_test bin/p384_test bin/rsa_pkcs1_test bin/webpki_time_test bin/webpki_name_test bin/webpki_spki_test bin/webpki_sigalg_test bin/webpki_cert_test bin/webpki_chain_test bin/webpki_auth_test bin/mlkem_test bin/handshake_strict_test bin/handshake_strict_pq bin/handshake_strict_webpki bin/webpki_session_test bin/webpki_session_pq bin/x509strict bin/x509strict_ecdsa bin/quic_driver_test bin/quic_test $(AES_HW_BINS) lint rand-check bin/srv_auth_test bin/srv_test bin/rsa_sign_test bin/p256_field_test bin/p256_ecdh_test bin/p256_sign_test
+check: bin/unit bin/unit_ca bin/unit_pq bin/tlsclient bin/tlsclient_ecdsa bin/tlsclient_ca bin/tlsclient_ca_ecdsa bin/tlsclient_webpki bin/tlsclient_pq bin/drbg_test bin/softmul_test bin/rsa_test bin/sha3_test bin/sha512_test bin/p384_test bin/rsa_pkcs1_test bin/webpki_time_test bin/webpki_name_test bin/webpki_spki_test bin/webpki_sigalg_test bin/webpki_cert_test bin/webpki_chain_test bin/webpki_auth_test bin/mlkem_test bin/handshake_strict_test bin/handshake_strict_pq bin/handshake_strict_webpki bin/webpki_session_test bin/webpki_session_pq bin/x509strict bin/x509strict_ecdsa bin/quic_driver_test bin/quic_test $(AES_HW_BINS) lint rand-check bin/srv_auth_test bin/srv_test bin/srv_quic_test bin/rsa_sign_test bin/p256_field_test bin/p256_ecdh_test bin/p256_sign_test
 	# The packaged object is built once per entropy pattern, because
 	# lib-check reads a different export list and a different import
 	# list in each. Only the object is built twice: the examples and
@@ -1326,6 +1340,7 @@ check: bin/unit bin/unit_ca bin/unit_pq bin/tlsclient bin/tlsclient_ecdsa bin/tl
 	fi
 	./bin/srv_auth_test
 	./bin/srv_test
+	./bin/srv_quic_test
 	./bin/srv_flight_test
 	./bin/handshake_strict_test
 	./bin/handshake_strict_pq

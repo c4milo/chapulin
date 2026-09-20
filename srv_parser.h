@@ -260,6 +260,17 @@ typedef struct {
     // second hello adds, the pre_shared_key extension, and the padding
     // extension's length.
     uint8_t frozen[SHA256_LEN];
+
+#ifdef CH_TRANSPORT_QUIC
+    // The client's quic_transport_parameters body, as extension 0x39
+    // carried it (RFC 9001 section 8.2, rfc9001.txt:1922-1924). It points
+    // into cfg.buf, so it is valid until the next message overwrites that
+    // buffer, and the driver hands it to the caller inside the same call.
+    // chapulin reads none of it: its content belongs to the QUIC version
+    // in use (rfc9001.txt:1926-1928).
+    const uint8_t *transport_params;
+    size_t transport_params_len;
+#endif
 } client_hello;
 
 // Whether this build's extension loop recognizes a ClientHello

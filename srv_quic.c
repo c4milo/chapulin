@@ -81,14 +81,34 @@ static void store_selection(ch_tls *t, const client_hello *ch, const selection *
     t->alpn_selected = ch->alpn_selected;
 }
 
+// RFC 9001 section 8.2 requires the quic_transport_parameters extension in
+// every ClientHello and makes its absence an error of type 0x016d, which
+// is a fatal missing_extension alert (rfc9001.txt:1929-1936). The body is
+// handed to the caller unread; it points into cfg.buf, so the callback
+// sees it before the next message overwrites that buffer.
+static int take_transport_params(ch_quic *q, const client_hello *ch) {
+    if (ch->transport_params == NULL) {
+        q->hs.alert = ALERT_MISSING_EXTENSION;
+        return CH_EPROTO;
+    }
+    if (q->t.cfg.on_transport_params != NULL) {
+        q->t.cfg.on_transport_params(q->t.cfg.io, ch->transport_params, ch->transport_params_len);
+    }
+    return CH_OK;
+}
+
 // Everything the server owes once a hello is accepted, whether it was the
 // first or the one that answered a HelloRetryRequest. The ServerHello
 // goes out at the Initial level and the rest at the Handshake level,
 // which is why h->level is written twice.
 static int server_flight(ch_quic *q, const client_hello *ch, const selection *sel) {
     handshake_state *h = &q->hs;
+    int rc = take_transport_params(q, ch);
+    if (rc != CH_OK) {
+        return rc;
+    }
     h->level = CH_LEVEL_INITIAL;
-    int rc = srv_send_server_hello(h, ch, sel);
+    rc = srv_send_server_hello(h, ch, sel);
     if (rc != CH_OK) {
         return rc;
     }
