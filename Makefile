@@ -117,7 +117,13 @@ SHELLCHECK ?= shellcheck
 # Every shell script the repo ships, asked of git rather than listed here:
 # a hand-kept list is what let bench/device-ram.sh fall four modules behind
 # the build.
-SH_SRCS := $(shell git ls-files '*.sh' '.githooks/*')
+# Quiet on stderr because this runs on every make invocation, a build
+# included, and a tree exported without .git -- a release tarball -- would
+# otherwise print git's "not a repository" before any compile. An empty
+# result is not treated as "nothing to check": lint-shellcheck refuses it,
+# so a checker that cannot see its inputs reports no verdict rather than
+# success.
+SH_SRCS := $(shell git ls-files '*.sh' '.githooks/*' 2>/dev/null)
 
 SRCS := ct.c sha256.c hkdf.c chacha20.c poly1305.c aead.c x25519.c p256.c rsa.c rsa_mont.c \
         pem.c x509.c x509_der.c x509_ca.c webpki_time.c webpki_name.c webpki_spki.c webpki_ext.c buf.c record.c keysched.c io.c handshake_message.c handshake_parser.c handshake_record.c session.c \
@@ -2997,6 +3003,9 @@ lint-shellcheck:
 ifeq ($(shell command -v $(SHELLCHECK) 2>/dev/null),)
 	$(call REQUIRE,shellcheck,brew install shellcheck — see the SHELLCHECK_VERSION pin in tools/toolchain.env)
 else
+	@[ -n "$(SH_SRCS)" ] || { \
+	  echo "lint-shellcheck: no scripts to check; git ls-files found none, so this is an export without .git rather than a clean tree"; \
+	  exit 1; }
 	@$(SHELLCHECK) -x -f gcc $(SH_SRCS) \
 	  && echo "lint-shellcheck: every shell script clean"
 endif
