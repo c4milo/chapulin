@@ -141,7 +141,12 @@ size_t srv_build_compat_ccs(uint8_t *out, size_t cap) {
 }
 
 size_t srv_build_encrypted_extensions(uint8_t *out, size_t cap, uint16_t record_size_limit,
-                                      const ch_alpn_protocol *selected) {
+                                      const ch_alpn_protocol *selected,
+                                      const uint8_t *transport_params,
+                                      size_t transport_params_len) {
+    if (transport_params_len > CH_TRANSPORT_PARAMS_MAX) {
+        return 0;
+    }
     wbuf w;
     wb_init(&w, out, cap);
 
@@ -168,6 +173,21 @@ size_t srv_build_encrypted_extensions(uint8_t *out, size_t cap, uint16_t record_
         wb_u16(&w, (uint16_t)(1 + selected->name_len));
         wb_u8(&w, (uint8_t)selected->name_len);
         wb_bytes(&w, selected->name, selected->name_len);
+    }
+
+    // quic_transport_parameters (RFC 9001 §8.2, rfc9001.txt:1922-1924):
+    // the caller's encoded body, written unread, because its content
+    // belongs to the QUIC version in use (rfc9001.txt:1926-1928). The
+    // length check above holds it to CH_TRANSPORT_PARAMS_MAX, which is
+    // 256, so the cast is in range. A caller that passes NULL sends no
+    // extension, which is what every build in this tree does: §8.2
+    // forbids the extension on a transport that is not QUIC
+    // (rfc9001.txt:1945-1949) and srv_cfg.h refuses ROLE=server with
+    // CH_TRANSPORT_QUIC, so no ch_cfg here carries a body to pass.
+    if (transport_params != NULL) {
+        wb_u16(&w, EXT_QUIC_TRANSPORT_PARAMS);
+        wb_u16(&w, (uint16_t)transport_params_len);
+        wb_bytes(&w, transport_params, transport_params_len);
     }
 
     wb_patch16(&w, exts);

@@ -73,10 +73,13 @@ static const uint8_t ext_key_share[] = {
 #define KEY_SHARE_KEY_AT 10
 // RFC 7685: four zero bytes.
 static const uint8_t ext_padding[] = {0x00, 0x15, 0x00, 0x04, 0x00, 0x00, 0x00, 0x00};
-// The three extensions the golden hello does not carry. §4.2.10's
+// The four extensions the golden hello does not carry. §4.2.10's
 // early_data is empty; §4.2.2's cookie echoes four bytes; §4.2.11's
 // pre_shared_key offers one one-byte identity and one 32-byte binder,
-// the smallest OfferedPsks the vector bounds admit.
+// the smallest OfferedPsks the vector bounds admit; RFC 9001 §8.2's
+// quic_transport_parameters carries three bytes, which stand for a body
+// no build here reads.
+static const uint8_t ext_quic_transport_params[] = {0x00, 0x39, 0x00, 0x03, 0xc0, 0xc1, 0xc2};
 static const uint8_t ext_early_data[] = {0x00, 0x2a, 0x00, 0x00};
 static const uint8_t ext_cookie[] = {0x00, 0x2c, 0x00, 0x06, 0x00, 0x04, 0xde, 0xad, 0xbe, 0xef};
 static const uint8_t ext_psk[] = {

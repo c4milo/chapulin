@@ -124,17 +124,50 @@ static void test_frozen_digest(void) {
     CHECK(parse(buf, n) == CH_OK && memcmp(parsed.frozen, want, SHA256_LEN) != 0);
 }
 
+// quic_transport_parameters, the one extension this parser recognizes in
+// order to refuse. RFC 9001 §8.2 requires a fatal unsupported_extension
+// from an implementation that understands it when the transport is not
+// QUIC (rfc9001.txt:1945-1949), and every build here runs over TLS
+// records. The hello is the golden one with the extension appended, so
+// the refusal is that extension's and no other field's.
+static void test_quic_transport_params(void) {
+    uint8_t buf[HELLO_CAP];
+    size_t n = appended(buf, ext_quic_transport_params, sizeof ext_quic_transport_params);
+    CHECK(refused(buf, n, ALERT_UNSUPPORTED_EXTENSION));
+    // An empty body is refused the same way: the answer is about the
+    // type and never about what the body holds.
+    static const uint8_t empty_body[] = {0x00, 0x39, 0x00, 0x00};
+    n = appended(buf, empty_body, sizeof empty_body);
+    CHECK(refused(buf, n, ALERT_UNSUPPORTED_EXTENSION));
+    // Recognition is what reaches that refusal. Without the bit, §4.2.2
+    // would skip the extension by its length and the hello would parse,
+    // which is what the golden hello's GREASE extension does.
+    CHECK(srv_ext_known(EXT_QUIC_TRANSPORT_PARAMS) == 1);
+    n = golden(buf);
+    CHECK(parse(buf, n) == CH_OK);
+}
+
 // The two predicates srv_parser.h exports beside the parser.
 static void test_predicates(void) {
-    static const uint16_t known[] = {
-        EXT_SERVER_NAME,       EXT_SUPPORTED_GROUPS, EXT_SIGNATURE_ALGORITHMS, EXT_ALPN,
-        EXT_RECORD_SIZE_LIMIT, EXT_PRE_SHARED_KEY,   EXT_SUPPORTED_VERSIONS,   EXT_COOKIE,
-        EXT_PSK_MODES,         EXT_KEY_SHARE,        EXT_EARLY_DATA,           EXT_PADDING};
+    static const uint16_t known[] = {EXT_SERVER_NAME,
+                                     EXT_SUPPORTED_GROUPS,
+                                     EXT_SIGNATURE_ALGORITHMS,
+                                     EXT_ALPN,
+                                     EXT_RECORD_SIZE_LIMIT,
+                                     EXT_PRE_SHARED_KEY,
+                                     EXT_SUPPORTED_VERSIONS,
+                                     EXT_COOKIE,
+                                     EXT_PSK_MODES,
+                                     EXT_KEY_SHARE,
+                                     EXT_EARLY_DATA,
+                                     EXT_PADDING,
+                                     EXT_QUIC_TRANSPORT_PARAMS};
     for (size_t i = 0; i < sizeof known / sizeof known[0]; i++) {
         CHECK(srv_ext_known(known[i]) == 1);
     }
-    // GREASE, status_request, post_handshake_auth, quic_transport_parameters.
-    static const uint16_t unknown[] = {0x1a1a, 5, 49, EXT_QUIC_TRANSPORT_PARAMS, 0xffff};
+    // GREASE, status_request, post_handshake_auth. quic_transport_parameters
+    // left this list when the parser gained the bit it refuses on.
+    static const uint16_t unknown[] = {0x1a1a, 5, 49, 0xffff};
     for (size_t i = 0; i < sizeof unknown / sizeof unknown[0]; i++) {
         CHECK(srv_ext_known(unknown[i]) == 0);
     }

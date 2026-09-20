@@ -98,6 +98,7 @@ int main(void) {
     test_alpn();
     test_readers();
     test_frozen_digest();
+    test_quic_transport_params();
     test_predicates();
     if (failures == 0) {
         (void)printf("srv: message vectors, cookie round trip and ClientHello parse\n");

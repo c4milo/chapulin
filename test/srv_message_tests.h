@@ -95,15 +95,21 @@ static const uint8_t want_compat_ccs[] = {0x14, 0x03, 0x03, 0x00, 0x01, 0x01};
 // RFC 9846 §4.3.1 with no extension at all, which is legal and is 6 bytes.
 static const uint8_t want_encrypted_extensions_empty[] = {0x08, 0x00, 0x00, 0x02, 0x00, 0x00};
 
-// The same message carrying both extensions this server ever sends:
-// record_size_limit (RFC 8449 §4) at 512, then one ALPN protocol (RFC 7301
-// §3.2) naming "h2".
+// The same message carrying all three extensions this server ever sends:
+// record_size_limit (RFC 8449 §4) at 512, one ALPN protocol (RFC 7301
+// §3.2) naming "h2", and a three-byte quic_transport_parameters body
+// (RFC 9001 §8.2) at code point 0x39. The body's bytes are not a real
+// encoding: §8.2 makes the content the QUIC version's, so the builder
+// copies whatever it is given and this vector holds it to that.
 static const uint8_t want_encrypted_extensions_full[] = {
-    0x08, 0x00, 0x00, 0x11,             // EncryptedExtensions, 17 body bytes
-    0x00, 0x0f,                         // extensions, 15 bytes
+    0x08, 0x00, 0x00, 0x18,             // EncryptedExtensions, 24 body bytes
+    0x00, 0x16,                         // extensions, 22 bytes
     0x00, 0x1c, 0x00, 0x02, 0x02, 0x00, // record_size_limit 512
     0x00, 0x10, 0x00, 0x05,             // ALPN, 5 bytes
-    0x00, 0x03, 0x02, 0x68, 0x32};      // one name of 2 bytes: "h2"
+    0x00, 0x03, 0x02, 0x68, 0x32,       // one name of 2 bytes: "h2"
+    0x00, 0x39, 0x00, 0x03,             // quic_transport_parameters, 3 bytes
+    0xc0, 0xc1, 0xc2};                  // the caller's body, copied unread
+static const uint8_t vec_transport_params[] = {0xc0, 0xc1, 0xc2};
 
 static void test_server_hello(void) {
     selection sel = vec_selection();
@@ -137,20 +143,44 @@ static void test_compat_ccs(void) {
 }
 
 static void test_encrypted_extensions(void) {
-    size_t n = srv_build_encrypted_extensions(out, sizeof out, 0, NULL);
+    size_t n = srv_build_encrypted_extensions(out, sizeof out, 0, NULL, NULL, 0);
     CHECK(built(n, want_encrypted_extensions_empty, sizeof want_encrypted_extensions_empty));
 
     static const uint8_t h2[] = {0x68, 0x32};
     ch_alpn_protocol selected = {h2, sizeof h2};
-    n = srv_build_encrypted_extensions(out, sizeof out, 512, &selected);
+    n = srv_build_encrypted_extensions(out, sizeof out, 512, &selected, vec_transport_params,
+                                       sizeof vec_transport_params);
     CHECK(built(n, want_encrypted_extensions_full, sizeof want_encrypted_extensions_full));
 
-    // Each extension is independent of the other: a limit of 0 drops only
-    // record_size_limit, and a NULL selection drops only ALPN.
-    n = srv_build_encrypted_extensions(out, sizeof out, 0, &selected);
+    // Each extension is independent of the others: a limit of 0 drops only
+    // record_size_limit, a NULL selection drops only ALPN, and a NULL body
+    // drops only quic_transport_parameters.
+    n = srv_build_encrypted_extensions(out, sizeof out, 0, &selected, NULL, 0);
     CHECK(n == sizeof want_encrypted_extensions_empty + 9);
-    n = srv_build_encrypted_extensions(out, sizeof out, 512, NULL);
+    n = srv_build_encrypted_extensions(out, sizeof out, 512, NULL, NULL, 0);
     CHECK(n == sizeof want_encrypted_extensions_empty + 6);
+    n = srv_build_encrypted_extensions(out, sizeof out, 0, NULL, vec_transport_params,
+                                       sizeof vec_transport_params);
+    CHECK(n == sizeof want_encrypted_extensions_empty + 4 + sizeof vec_transport_params);
+    // A length of 0 with a body that is not NULL writes the extension with
+    // an empty body, which RFC 9001 §8.2 does not forbid: the parameters
+    // are the QUIC version's and TLS counts no minimum. Only the pointer
+    // decides whether the extension is written.
+    n = srv_build_encrypted_extensions(out, sizeof out, 0, NULL, vec_transport_params, 0);
+    CHECK(n == sizeof want_encrypted_extensions_empty + 4);
+
+    // CH_TRANSPORT_PARAMS_MAX's exact boundary: the last body the builder
+    // writes, and the first it refuses. The buffer holds one byte more than
+    // the larger message needs, so the refusal cannot come from a short
+    // buffer: a builder without the cap check would write all 267 bytes
+    // here and the second case would report them.
+    static uint8_t body[CH_TRANSPORT_PARAMS_MAX + 1];
+    memset(body, 0x5a, sizeof body);
+    uint8_t big[6 + 4 + CH_TRANSPORT_PARAMS_MAX + 1];
+    n = srv_build_encrypted_extensions(big, sizeof big, 0, NULL, body, CH_TRANSPORT_PARAMS_MAX);
+    CHECK(n == sizeof big - 1);
+    n = srv_build_encrypted_extensions(big, sizeof big, 0, NULL, body, CH_TRANSPORT_PARAMS_MAX + 1);
+    CHECK(n == 0);
 }
 
 // RFC 9846 §4.4.2 over a two-certificate chain: the handshake header, an
@@ -257,8 +287,10 @@ static void test_builder_capacity(void) {
     CHECK(srv_build_compat_ccs(out, SRV_CCS_RECORD_LEN) == SRV_CCS_RECORD_LEN);
     CHECK(srv_build_compat_ccs(out, SRV_CCS_RECORD_LEN - 1) == 0);
 
-    CHECK(srv_build_encrypted_extensions(out, 6, 0, NULL) == 6);
-    CHECK(srv_build_encrypted_extensions(out, 5, 0, NULL) == 0);
+    CHECK(srv_build_encrypted_extensions(out, 6, 0, NULL, NULL, 0) == 6);
+    CHECK(srv_build_encrypted_extensions(out, 5, 0, NULL, NULL, 0) == 0);
+    CHECK(srv_build_encrypted_extensions(out, 13, 0, NULL, vec_transport_params, 3) == 13);
+    CHECK(srv_build_encrypted_extensions(out, 12, 0, NULL, vec_transport_params, 3) == 0);
 
     static const uint8_t sig[] = {0x01, 0x02, 0x03};
     CHECK(srv_build_certificate_verify(out, 11, SIGALG_ECDSA_P256_SHA256, sig, sizeof sig) == 11);

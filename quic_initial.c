@@ -4,8 +4,9 @@
 // AES-ECB mask. quic_initial.h states every contract; this file
 // implements them and nothing else.
 //
-// Each call derives the one direction's key it needs on its own stack
-// and lets it die with the frame. That is INV-26's structural check:
+// Each call takes the endpoint its caller is, derives the one
+// direction's key it needs on its own stack, and lets it die with the
+// frame. That is INV-26's structural check:
 // this file, quic_retry.c and quic_aes.c are the only sources that
 // include quic_aes_key.h, so they are the only ones that can hold an
 // aes_public_key, and no line anywhere keeps one between calls.
@@ -14,6 +15,22 @@
 #ifdef CH_TRANSPORT_QUIC
 
 #include "quic_aes_key.h"
+
+// The endpoint that wrote what this caller opens: the one the caller is
+// not. RFC 9001 §5.2 derives one Initial secret per endpoint and each
+// endpoint reads what the other wrote (rfc9001.txt:1057-1061), so this
+// function and the endpoint each entry is handed are the whole of the
+// role in the Initial path. A value that is neither name is returned
+// unchanged, and aes_public_key_initial then refuses it.
+static uint8_t peer_endpoint(uint8_t endpoint) {
+    if (endpoint == CH_QUIC_ENDPOINT_CLIENT) {
+        return CH_QUIC_ENDPOINT_SERVER;
+    }
+    if (endpoint == CH_QUIC_ENDPOINT_SERVER) {
+        return CH_QUIC_ENDPOINT_CLIENT;
+    }
+    return endpoint;
+}
 
 // RFC 9001 §5.3's nonce: the packet number in network byte order,
 // left-padded with zeros to the length of the packet protection IV and
@@ -51,15 +68,16 @@ static void sample_mask(const aes_public_key *k, const uint8_t *pkt, size_t pn_o
     aes_encrypt_block_hp(k, &pkt[pn_off + QUIC_PN_MAX_LEN], mask);
 }
 
-int quic_initial_seal(const uint8_t *dcid, size_t dcid_len, uint64_t pn, size_t pn_len,
-                      const uint8_t *hdr, size_t hdr_len, const uint8_t *pt, size_t pt_len,
-                      uint8_t *out, size_t cap, size_t *out_len) {
-    // The send key of RFC 9001 §5.2, under the label "client in".
+int quic_initial_seal(uint8_t endpoint, const uint8_t *dcid, size_t dcid_len, uint64_t pn,
+                      size_t pn_len, const uint8_t *hdr, size_t hdr_len, const uint8_t *pt,
+                      size_t pt_len, uint8_t *out, size_t cap, size_t *out_len) {
+    // The send key of RFC 9001 §5.2, under the caller's own endpoint.
     // aes_public_key_initial returns CH_EINVAL for a dcid_len above
-    // CH_QUIC_DCID_MAX, which is the refusal this entry documents, so
-    // that bound is checked in one place. It writes nothing outside k.
+    // CH_QUIC_DCID_MAX and for an endpoint that is neither of the two,
+    // which are the refusals this entry documents, so both bounds are
+    // checked in one place. It writes nothing outside k.
     aes_public_key k;
-    int rc = aes_public_key_initial(&k, dcid, dcid_len, CH_KEY_WRITE);
+    int rc = aes_public_key_initial(&k, dcid, dcid_len, endpoint);
     if (rc != CH_OK) {
         return rc;
     }
@@ -109,14 +127,15 @@ int quic_initial_seal(const uint8_t *dcid, size_t dcid_len, uint64_t pn, size_t 
     return CH_OK;
 }
 
-int quic_initial_open(const uint8_t *dcid, size_t dcid_len, uint8_t *pkt, size_t pkt_len,
-                      size_t pn_off, uint64_t largest_pn, uint64_t *pn, size_t *pt_len) {
-    // The receive key of RFC 9001 §5.2, under the label "server in",
-    // built on this frame the way the send key is. It runs before this
-    // call reads a byte of pkt, so the CH_QUIC_DCID_MAX refusal below
-    // touches no packet byte.
+int quic_initial_open(uint8_t endpoint, const uint8_t *dcid, size_t dcid_len, uint8_t *pkt,
+                      size_t pkt_len, size_t pn_off, uint64_t largest_pn, uint64_t *pn,
+                      size_t *pt_len) {
+    // The receive key of RFC 9001 §5.2, under the endpoint the caller is
+    // not, built on this frame the way the send key is. It runs before
+    // this call reads a byte of pkt, so both refusals below touch no
+    // packet byte.
     aes_public_key k;
-    int rc = aes_public_key_initial(&k, dcid, dcid_len, CH_KEY_READ);
+    int rc = aes_public_key_initial(&k, dcid, dcid_len, peer_endpoint(endpoint));
     if (rc != CH_OK) {
         return rc;
     }

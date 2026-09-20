@@ -57,6 +57,8 @@ static uint16_t ext_bit(uint16_t type) {
         return SRV_EXT_EARLY_DATA;
     case EXT_PADDING:
         return SRV_EXT_PADDING;
+    case EXT_QUIC_TRANSPORT_PARAMS:
+        return SRV_EXT_QUIC_TRANSPORT_PARAMS;
     default:
         return 0;
     }

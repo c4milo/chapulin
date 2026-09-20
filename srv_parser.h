@@ -119,6 +119,29 @@
 #define SRV_EXT_KEY_SHARE 0x0200
 #define SRV_EXT_EARLY_DATA 0x0400
 #define SRV_EXT_PADDING 0x0800
+#define SRV_EXT_QUIC_TRANSPORT_PARAMS 0x1000
+
+// One of those bits is recognized in order to be refused, and it is the
+// one place this parser answers for a transport rather than for a
+// message. quic_transport_parameters carries the endpoint's encoded QUIC
+// transport parameters (RFC 9001 §8.2, rfc9001.txt:1921-1923), and §8.2
+// requires a fatal unsupported_extension from an implementation that
+// understands the extension when the transport is not QUIC
+// (rfc9001.txt:1945-1949). Every build in this tree is such a transport:
+// srv_cfg.h refuses CH_ROLE_SERVER together with CH_TRANSPORT_QUIC. The
+// extension needs its own bit to reach that answer, because §4.2.2's
+// ignore rule would otherwise skip it and negotiate
+// (rfc9846.txt:1299). handshake_parser.h states the client's matching
+// answer, which its unadmitted arm reaches.
+//
+// A QUIC server replaces that refusal with two rules. Its reader stores
+// the body and its length in two members this struct does not carry
+// yet, and srv_flight.c hands them to cfg.on_transport_params (cfg.h),
+// the mirror of what the client does with the server's body.
+// check_required then answers a hello with this bit clear with
+// missing_extension, which §8.2 makes an error of type 0x016d
+// (rfc9001.txt:1930-1936). Neither rule is written here today, because
+// no build could compile it and no test could reach it.
 
 // The two extension code points handshake_message.h does not declare,
 // because no client this tree builds sends either one. early_data is
@@ -248,9 +271,11 @@ typedef struct {
 // so a ClientHello carrying GREASE code points still negotiates.
 //
 // It is a predicate and changes nothing. Returns 1 for a type this
-// build parses and 0 for every other value, including a type this
-// document defines and this build declines, such as post_handshake_auth
-// and status_request (docs/server.md, "What the server declines,
+// build recognizes, which is every type it parses plus
+// quic_transport_parameters, the one it recognizes in order to refuse.
+// Returns 0 for every other value, including a type this document
+// defines and this build declines, such as post_handshake_auth and
+// status_request (docs/server.md, "What the server declines,
 // conformantly").
 int srv_ext_known(uint16_t type);
 
@@ -290,6 +315,9 @@ int srv_ext_duplicate(const uint8_t *exts, size_t n);
 // second extension of one type is illegal_parameter
 // (rfc9846.txt:1673-1674). Bytes left over inside a recognized
 // extension's body are decode_error (rfc9846.txt:1561-1565).
+// A quic_transport_parameters extension is unsupported_extension,
+// because this transport is not QUIC (RFC 9001 §8.2,
+// rfc9001.txt:1945-1949); the bit block above states the rule in full.
 // pre_shared_key, when present, must be the last extension, or
 // illegal_parameter (rfc9846.txt:2564-2567), and must come with
 // psk_key_exchange_modes (rfc9846.txt:2306-2307). With no

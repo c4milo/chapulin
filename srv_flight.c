@@ -21,17 +21,6 @@
 #include "srv_message.h"
 #include "x25519.h"
 
-// The lengths srv_message.h fixes and this file stages against: a 4-byte
-// header over the scheme, the signature length and a signature of at
-// most SRV_SIG_MAX bytes; the header over one verify_data; a header, an
-// empty extension block, record_size_limit and ALPN at this API's
-// longest name; and a Certificate's head and one entry's suffix.
-#define SRV_CERT_VERIFY_MAX (4 + 2 + 2 + SRV_SIG_MAX)
-#define SRV_FINISHED_MAX (4 + SHA256_LEN)
-#define SRV_ENCRYPTED_EXTENSIONS_MAX (6 + 6 + 7 + CH_ALPN_NAME_MAX)
-#define SRV_CERT_HEAD_LEN 8
-#define SRV_CERT_SUFFIX_LEN 2
-
 // The largest plaintext one record carries: this build's cap, lowered to
 // the client's record_size_limit.
 static size_t send_limit(const ch_tls *t) {
@@ -370,7 +359,13 @@ int srv_send_encrypted_extensions(handshake_state *h, const selection *sel) {
         selected = &t->cfg.alpn_protocols[t->alpn_selected];
     }
     uint8_t msg[SRV_ENCRYPTED_EXTENSIONS_MAX];
-    size_t n = srv_build_encrypted_extensions(msg, sizeof msg, h->record_size_limit, selected);
+    // No quic_transport_parameters body. RFC 9001 §8.2 forbids the
+    // extension on a transport that is not QUIC (rfc9001.txt:1945-1949),
+    // and srv_cfg.h refuses ROLE=server together with CH_TRANSPORT_QUIC,
+    // so no ch_cfg this handler sees carries one. srv_message.h states
+    // what a QUIC server passes instead.
+    size_t n =
+        srv_build_encrypted_extensions(msg, sizeof msg, h->record_size_limit, selected, NULL, 0);
     if (n == 0) {
         h->alert = ALERT_INTERNAL_ERROR;
         return CH_ECAP;

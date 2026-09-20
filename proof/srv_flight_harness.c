@@ -270,11 +270,13 @@ size_t srv_build_compat_ccs(uint8_t *out, size_t cap) {
 }
 
 size_t srv_build_encrypted_extensions(uint8_t *out, size_t cap, uint16_t record_size_limit,
-                                      const ch_alpn_protocol *selected) {
+                                      const ch_alpn_protocol *selected,
+                                      const uint8_t *transport_params,
+                                      size_t transport_params_len) {
     (void)record_size_limit;
-    if (selected != NULL) {
-        __CPROVER_assert(__CPROVER_r_ok(selected, sizeof *selected), "ee: protocol readable");
-    }
+    __CPROVER_assert(selected == NULL || __CPROVER_r_ok(selected, sizeof *selected),
+                     "ee: protocol readable");
+    __CPROVER_assert(transport_params == NULL && transport_params_len == 0, "ee: no QUIC body");
     return nondet_built(out, cap);
 }
 
@@ -286,10 +288,8 @@ size_t srv_build_certificate_header(uint8_t *out, size_t cap, const ch_identity 
 
 size_t srv_build_certificate_entry_prefix(uint8_t *out, size_t cap, size_t cert_len) {
     __CPROVER_assert(__CPROVER_w_ok(out, cap), "certificate entry: output writable");
-    if (cert_len > 0xFFFFFFu || cap < 3) {
-        return 0;
-    }
-    return 3;
+    // srv_message.h: three fixed bytes, and 0 past the cert_data field.
+    return (cert_len > 0xFFFFFFu || cap < 3) ? (size_t)0 : (size_t)3;
 }
 
 size_t srv_build_certificate_entry_suffix(uint8_t *out, size_t cap) {

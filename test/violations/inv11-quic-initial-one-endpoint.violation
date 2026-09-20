@@ -1,0 +1,27 @@
+invariant: INV-11
+file: quic_initial.c
+catches: quic_test
+reason: quic_initial_open derives the caller's own endpoint's Initial
+  secret instead of the peer's, so a client reads under "client in" and a
+  server under "server in" and each endpoint opens only what it wrote
+  itself. RFC 9001 §5.2 gives each endpoint its own secret
+  (rfc9001.txt:1057-1061), and nothing else in the tree says which of the
+  two a direction takes: aes_public_key_initial derives whichever endpoint
+  it is handed and returns CH_OK for both, so this edit compiles, derives
+  a real key and fails only against a real peer. The seal side is
+  untouched, so every A.2 and A.3 packet is still written correctly and a
+  test that checked sealing alone stays green.
+  RFC 9001 Appendix A is what catches it: test_initial_endpoint_reads
+  opens Appendix A.3's server packet as a client and Appendix A.2's client
+  packet as a server, and each also refuses the packet it wrote itself.
+
+--- old
+    if (endpoint == CH_QUIC_ENDPOINT_CLIENT) {
+        return CH_QUIC_ENDPOINT_SERVER;
+    }
+    if (endpoint == CH_QUIC_ENDPOINT_SERVER) {
+        return CH_QUIC_ENDPOINT_CLIENT;
+    }
+    return endpoint;
+--- new
+    return endpoint;

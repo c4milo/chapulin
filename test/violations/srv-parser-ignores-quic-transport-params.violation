@@ -1,0 +1,18 @@
+invariant: INV-14
+file: srv_parser.c
+catches: srv_test
+reason: RFC 9001 §8.2 requires a fatal unsupported_extension from an
+  implementation that understands quic_transport_parameters when the
+  transport is not QUIC (rfc9001.txt:1945-1949), and every build in this
+  tree runs over TLS records. Dropping this case leaves srv_ext_known
+  answering 0 for the type, so §4.2.2's ignore rule skips the extension
+  by its length and the handshake continues. The mistake looks like the
+  server's own habit: §4.2.2 tells a server to ignore what it does not
+  recognize, and this is the one extension it recognizes in order to
+  refuse.
+
+--- old
+    case EXT_QUIC_TRANSPORT_PARAMS:
+        return SRV_EXT_QUIC_TRANSPORT_PARAMS;
+--- new
+    // RFC 9846 §4.2.2 has a server ignore what it does not recognize.

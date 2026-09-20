@@ -246,8 +246,11 @@ int ch_quic_seal(ch_quic *q, uint8_t level, uint64_t pn, size_t pn_len, const ui
     if (quic_confidentiality_limit_reached(q->initial_sealed)) {
         return CH_EINVAL;
     }
-    int rc = quic_initial_seal(q->initial_dcid, q->initial_dcid_len, pn, pn_len, hdr, hdr_len, pt,
-                               pt_len, out, cap, out_len);
+    // This driver is the client, so it names that endpoint at both
+    // Initial calls: quic_initial.c derives "client in" here and
+    // "server in" in the open below (rfc9001.txt:1057-1061).
+    int rc = quic_initial_seal(CH_QUIC_ENDPOINT_CLIENT, q->initial_dcid, q->initial_dcid_len, pn,
+                               pn_len, hdr, hdr_len, pt, pt_len, out, cap, out_len);
     if (rc == CH_OK) {
         q->initial_sealed++;
     }
@@ -272,8 +275,8 @@ static int open_at_level(ch_quic *q, uint8_t level, uint8_t *pkt, size_t pkt_len
         return quic_packet_open_handshake(&q->handshake_rx, &q->handshake_hp_rx, pkt, pkt_len,
                                           pn_off, largest_pn, pn, pt_len);
     }
-    return quic_initial_open(q->initial_dcid, q->initial_dcid_len, pkt, pkt_len, pn_off, largest_pn,
-                             pn, pt_len);
+    return quic_initial_open(CH_QUIC_ENDPOINT_CLIENT, q->initial_dcid, q->initial_dcid_len, pkt,
+                             pkt_len, pn_off, largest_pn, pn, pt_len);
 }
 
 int ch_quic_open(ch_quic *q, uint8_t level, uint8_t *pkt, size_t pkt_len, size_t pn_off,

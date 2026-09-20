@@ -108,15 +108,15 @@
 // QUIC build takes. CH_QUIC_KEX_MIN_RXBUF is the key-exchange term without its 5
 // record-header bytes; under KEX=pq the 1184 bytes left are the hybrid ServerHello message
 // itself, and dropping the term would floor a TRANSPORT=quic KEX=pq TRUST=raw build at 490
-// against that message. CH_QUIC_PARAMS_MIN_RXBUF is the server's transport-parameters
-// body, which arrives inside the EncryptedExtensions this buffer holds whole (§8.2,
-// rfc9001.txt:1926-1928).
+// against that message. CH_QUIC_PARAMS_MIN_RXBUF is the whole EncryptedExtensions message
+// carrying the server's transport parameters, header included (§8.2, rfc9001.txt:1926-1928).
 //
-// open: that third number, and 0 is not one. No server body has been measured, in either
-// direction (docs/quic.md, "Bounds that need measuring"), so the term raises no floor at
-// this commit and 0 says that rather than claiming an empty body. The commit that lands
-// quic.c measures a real EncryptedExtensions and writes the number here, beside the
-// re-measured CH_TX_STAGE; a caller that already knows its server's body raises it sooner.
+// open: that third number, and 0 is not one. Measure one real server's whole
+// EncryptedExtensions, take the largest seen, and write it here, the one place it enters;
+// ch_quic_init then checks cfg.buf_len against the maximum below. Only an outside QUIC
+// server can answer it and this tree holds none, so until then size cfg.buf_len to the
+// message your own server sends: one that does not fit returns CH_ECAP from
+// ch_quic_crypto_in and leaves the session dead. docs/quic.md states the rest.
 #define CH_QUIC_TRUST_MIN_RXBUF (CH_TRUST_MIN_RXBUF - 22)
 #define CH_QUIC_KEX_MIN_RXBUF (CH_KEX_MIN_RXBUF - 5)
 #ifndef CH_QUIC_PARAMS_MIN_RXBUF
@@ -292,12 +292,12 @@ typedef struct {
 #define CH_LEVEL_HANDSHAKE 1
 #define CH_LEVEL_APPLICATION 2
 
-// The two inputs the Initial derivation takes. CH_KEY_READ and CH_KEY_WRITE are the
-// direction on_level_ready reports and aes_public_key_initial derives for: read opens what
-// the server sent, write protects what this client sends, and RFC 9001 §5.1 gives each
-// level separate secrets per direction (rfc9001.txt:1010-1012). CH_QUIC_DCID_MAX caps
-// §5.2's other input and sizes ch_quic's initial_dcid: a version 1 connection ID is at most
-// 20 bytes and may be empty (rfc9000.txt:4991-4998, rfc9001.txt:1098-1100).
+// The direction on_level_ready reports: read opens what the peer sent, write protects what
+// this caller sends, and RFC 9001 §5.1 gives each level separate secrets per direction
+// (rfc9001.txt:1010-1012). A direction is not an endpoint, and quic_aes.h holds the two
+// endpoint names beside the derivation that reads them. CH_QUIC_DCID_MAX caps §5.2's other
+// input and sizes ch_quic's initial_dcid: a version 1 connection ID is at most 20 bytes and
+// may be empty (rfc9000.txt:4991-4998, rfc9001.txt:1098-1100).
 #define CH_KEY_READ 0
 #define CH_KEY_WRITE 1
 #define CH_QUIC_DCID_MAX 20
@@ -305,9 +305,10 @@ typedef struct {
 // quic_keys.h holds the three 1-RTT receive key set names and their count
 // CH_QUIC_KEY_SETS, and quic.h includes it, so ch_quic_open's key_set output has a name.
 
-// Largest encoded transport-parameters body ch_quic_init accepts. The ClientHello copies
-// those bytes unread into extension 0x39 (RFC 9001 §8.2, rfc9001.txt:1922-1924), so the cap
-// is a ClientHello budget like CH_ALPN_MAX's.
+#endif
+// Largest encoded transport-parameters body this tree writes into extension 0x39 (RFC 9001
+// §8.2, rfc9001.txt:1922-1924), in either direction, and declared outside the QUIC guard
+// because srv_build_encrypted_extensions (srv_message.h) writes that extension too.
 //
 // open: the number. No body has been measured, in either direction (docs/quic.md, "Bounds
 // that need measuring"). 256 is a policy cap, not a measurement: it holds the RFC 9000
@@ -317,7 +318,6 @@ typedef struct {
 // build that needs more raises it here.
 #ifndef CH_TRANSPORT_PARAMS_MAX
 #define CH_TRANSPORT_PARAMS_MAX 256
-#endif
 #endif
 
 typedef struct {

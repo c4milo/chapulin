@@ -203,7 +203,8 @@ static const uint8_t A2_CRYPTO_FRAME[245] = {
 // compared directly rather than only the tag.
 static void test_appendix_a2_initial(void) {
     aes_public_key k;
-    CHECK(aes_public_key_initial(&k, APPENDIX_DCID, sizeof APPENDIX_DCID, CH_KEY_WRITE) == CH_OK);
+    CHECK(aes_public_key_initial(&k, APPENDIX_DCID, sizeof APPENDIX_DCID,
+                                 CH_QUIC_ENDPOINT_CLIENT) == CH_OK);
 
     uint8_t aad[GCM_TEST_MAX];
     size_t aad_len = unhex("c300000001088394c8f03e5157080000449e00000002", aad);

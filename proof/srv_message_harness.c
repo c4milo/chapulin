@@ -5,9 +5,10 @@
 // Three properties, over unconstrained inputs at each builder's real bound.
 // Memory safety and absence of UB, which is what the automatic checks
 // discharge. The return contract srv_message.h states once for all of them:
-// zero, or a length that fits cap. And the two refusals a builder makes on
-// something other than cap -- a cert_data length past the three-byte field,
-// and a request_update that is neither of its two legal values.
+// zero, or a length that fits cap. And the three refusals a builder makes on
+// something other than cap -- a cert_data length past the three-byte field, a
+// request_update that is neither of its two legal values, and a
+// transport-parameters body past CH_TRANSPORT_PARAMS_MAX.
 //
 // The wbuf writer is real, not stubbed: refusing to overflow is its contract,
 // and the point here is that each builder uses it correctly. Every operand is
@@ -38,6 +39,13 @@ uint16_t nondet_u16(void);
 // refusal, which returns before it reads a byte.
 #define SIG_MAX 64
 
+// The longest quic_transport_parameters body this harness hands the
+// EncryptedExtensions builder, for the reason SIG_MAX is short: the one
+// length-dependent step is the wb_bytes that copies it. The real cap is
+// CH_TRANSPORT_PARAMS_MAX (cfg.h), which the second call below draws past to
+// reach the refusal, and that arm returns before it reads a byte.
+#define PARAMS_MAX 16
+
 // The chain length the certificate cases run at. srv_certificate_message_len
 // is the only call that walks it, one addition per entry.
 #define CHAIN_MAX 2
@@ -63,6 +71,7 @@ static uint8_t share[CH_KEX_SERVER_SHARE];
 static uint8_t cookie[SRV_COOKIE_MAX];
 static uint8_t sig[SIG_MAX];
 static uint8_t der[16];
+static uint8_t params[PARAMS_MAX];
 
 // Any capacity the buffer can hold, drawn fresh for every call.
 static size_t nondet_cap(void) {
@@ -124,11 +133,25 @@ static void prove_encrypted_extensions(void) {
     selected.name = sig;
     selected.name_len = nondet_size_t();
     __CPROVER_assume(selected.name_len <= CH_ALPN_NAME_MAX);
-    // Both arms: a NULL selection sends no ALPN extension, and a limit of 0
-    // sends no record_size_limit.
+    fill_nondet(params, sizeof params);
+    // Three arms, each drawn on its own: a NULL selection sends no ALPN
+    // extension, a limit of 0 sends no record_size_limit, and a NULL body
+    // sends no quic_transport_parameters.
     const ch_alpn_protocol *arm = (nondet_u8() & 1) ? &selected : NULL;
-    size_t n = srv_build_encrypted_extensions(out, cap, nondet_u16(), arm);
+    const uint8_t *body = (nondet_u8() & 1) ? params : NULL;
+    size_t body_len = nondet_size_t();
+    __CPROVER_assume(body_len <= sizeof params);
+    size_t n = srv_build_encrypted_extensions(out, cap, nondet_u16(), arm, body, body_len);
     __CPROVER_assert(n <= cap, "a built EncryptedExtensions fits the buffer it was given");
+
+    // The refusal above CH_TRANSPORT_PARAMS_MAX. The builder returns before
+    // it reads a byte of the body, so params goes in at a length it does not
+    // hold and the call must still read none of it.
+    cap = nondet_cap();
+    body_len = nondet_size_t();
+    __CPROVER_assume(body_len > CH_TRANSPORT_PARAMS_MAX);
+    n = srv_build_encrypted_extensions(out, cap, nondet_u16(), NULL, params, body_len);
+    __CPROVER_assert(n == 0, "a transport-parameters body past its cap is refused");
 }
 
 static void prove_certificate(void) {

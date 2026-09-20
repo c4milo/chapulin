@@ -57,6 +57,29 @@ extern const uint8_t srv_hrr_random[SRV_RANDOM];
 // not one.
 #define SRV_CCS_RECORD_LEN 6
 
+// The stack frames srv_flight.c stages a protected message in, each the
+// longest message its builder here can write. They sit beside the
+// formats that fix them rather than beside the handler that declares
+// the array, so a format that grows and a frame that did not are one
+// diff and not two.
+//
+// SRV_CERT_VERIFY_MAX is a 4-byte handshake header, the 2-byte scheme,
+// the 2-byte signature length and a signature of at most SRV_SIG_MAX
+// bytes. SRV_FINISHED_MAX is a header over one verify_data.
+// SRV_ENCRYPTED_EXTENSIONS_MAX is a header and an empty extension block
+// (6), record_size_limit (6), and ALPN at this API's longest name
+// (7 + CH_ALPN_NAME_MAX). It holds no quic_transport_parameters body: a
+// build here passes none, and a QUIC server raises this by
+// 4 + CH_TRANSPORT_PARAMS_MAX (cfg.h) when it passes one.
+// SRV_CERT_HEAD_LEN and SRV_CERT_SUFFIX_LEN are a Certificate's head and
+// one entry's suffix, which srv_certificate_message_len counts as
+// SRV_CERT_HEAD and the 2 bytes of SRV_CERT_ENTRY_FRAME.
+#define SRV_CERT_VERIFY_MAX (4 + 2 + 2 + SRV_SIG_MAX)
+#define SRV_FINISHED_MAX (4 + SHA256_LEN)
+#define SRV_ENCRYPTED_EXTENSIONS_MAX (6 + 6 + 7 + CH_ALPN_NAME_MAX)
+#define SRV_CERT_HEAD_LEN 8
+#define SRV_CERT_SUFFIX_LEN 2
+
 // What the server selected for one connection, written by srv_select
 // (srv_flight.h) and read by the builders here, by srv_cookie.c and by
 // srv_auth.c. Every member holds a value the peer will see in the
@@ -171,9 +194,10 @@ size_t srv_build_compat_ccs(uint8_t *out, size_t cap);
 // Builds one EncryptedExtensions, handshake header included (RFC 9846
 // §4.3.1). It carries the extensions that apply to the connection and
 // are not needed to establish the keys, and this server sends at most
-// two of them: record_size_limit (RFC 8449) when record_size_limit is
-// not 0, and application_layer_protocol_negotiation (RFC 7301 §3.2)
-// when selected is not NULL.
+// three of them: record_size_limit (RFC 8449) when record_size_limit is
+// not 0, application_layer_protocol_negotiation (RFC 7301 §3.2) when
+// selected is not NULL, and quic_transport_parameters (RFC 9001 §8.2,
+// rfc9001.txt:1922-1924) when transport_params is not NULL.
 //
 // It sends no early_data extension, whatever the ClientHello offered,
 // and that absence is what rejects 0-RTT (rfc9846.txt:2426-2428). It
@@ -182,17 +206,35 @@ size_t srv_build_compat_ccs(uint8_t *out, size_t cap);
 // server_name: the caller reads the name the client sent and the
 // server binds nothing to it.
 //
+// The transport-parameters body is the caller's own encoded bytes and
+// this builder reads none of them: RFC 9001 §8.2 makes their content
+// the QUIC version's, not TLS's (rfc9001.txt:1926-1928). It is the
+// server's half of what ch_cfg.transport_params is for the client, so
+// the two directions share one field name and one cap. Every build in
+// this tree passes NULL here, because §8.2 forbids the extension on a
+// transport that is not QUIC (rfc9001.txt:1945-1949) and srv_cfg.h
+// refuses ROLE=server together with CH_TRANSPORT_QUIC. A QUIC server
+// passes cfg.transport_params and its length, and this function needs
+// no other change for it.
+//
 // Requires cap bytes at out; record_size_limit holding the largest
 // plaintext this server accepts in one record, sized to cfg.buf_len,
 // or 0 to send no extension; selected pointing at the one
 // ch_alpn_protocol the server chose out of cfg.alpn_protocols, or NULL
-// when no protocol was negotiated.
+// when no protocol was negotiated; transport_params pointing at
+// transport_params_len readable bytes, or NULL to send no extension,
+// with the length read only when the pointer is not NULL.
 //
 // Returns the message length in bytes, or 0 when cap is short. A
 // message with no extensions at all is legal and is 6 bytes: the
-// 4-byte handshake header and a 2-byte empty extension block.
+// 4-byte handshake header and a 2-byte empty extension block. It also
+// returns 0, and writes nothing, for a transport_params_len above
+// CH_TRANSPORT_PARAMS_MAX (cfg.h), which is caller error rather than a
+// short buffer; srv_build_certificate_entry_prefix reports its own
+// length refusal the same way.
 size_t srv_build_encrypted_extensions(uint8_t *out, size_t cap, uint16_t record_size_limit,
-                                      const ch_alpn_protocol *selected);
+                                      const ch_alpn_protocol *selected,
+                                      const uint8_t *transport_params, size_t transport_params_len);
 
 // The byte count the whole Certificate message occupies, header
 // included, for one identity's chain (RFC 9846 §4.4.2). It is 4 bytes

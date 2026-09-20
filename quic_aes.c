@@ -37,22 +37,22 @@ static const uint8_t RETRY_KEY[AES_128_KEY] = {0xbe, 0x0c, 0x69, 0x0b, 0x9f, 0x6
                                                0x1d, 0x76, 0x6b, 0x54, 0xe3, 0x68, 0xc8, 0x4e};
 
 int aes_public_key_initial(aes_public_key *k, const uint8_t *dcid, size_t dcid_len,
-                           uint8_t direction) {
+                           uint8_t endpoint) {
     if (dcid_len > CH_QUIC_DCID_MAX) {
         return CH_EINVAL;
     }
-    if (direction != CH_KEY_READ && direction != CH_KEY_WRITE) {
+    if (endpoint != CH_QUIC_ENDPOINT_CLIENT && endpoint != CH_QUIC_ENDPOINT_SERVER) {
         return CH_EINVAL;
     }
     // RFC 9001 §5.2: the salt and the Destination Connection ID extract
-    // one secret, and one label per direction expands it
-    // (rfc9001.txt:1057-1061). This client writes what "client in"
-    // protects and reads what "server in" protects.
+    // one secret, and one label per endpoint expands it
+    // (rfc9001.txt:1057-1061). Which endpoint a caller asks for is the
+    // caller's; this file reads no role and derives what it is given.
     uint8_t initial_secret[SHA256_LEN];
     hkdf_extract(INITIAL_SALT, sizeof INITIAL_SALT, dcid, dcid_len, initial_secret);
-    const char *label = direction == CH_KEY_WRITE ? "client in" : "server in";
+    const char *label = endpoint == CH_QUIC_ENDPOINT_CLIENT ? "client in" : "server in";
     // RFC 9001 §5.2 names this one client_initial_secret or
-    // server_initial_secret, one per direction.
+    // server_initial_secret, one per endpoint.
     uint8_t direction_secret[SHA256_LEN];
     hkdf_expand_label(initial_secret, label, NULL, 0, direction_secret, sizeof direction_secret);
     // RFC 9001 §5.1: three labels over that secret, each with a

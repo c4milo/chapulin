@@ -78,34 +78,59 @@
 // owes.
 typedef struct aes_public_key aes_public_key;
 
-// Derives one direction of the Initial-level keys from the client's
+// The two endpoints of a QUIC connection. RFC 9001 §5.2 derives one
+// Initial secret per endpoint, under the labels "client in" and "server
+// in" (rfc9001.txt:1057-1061), and names the results
+// client_initial_secret and server_initial_secret
+// (rfc9001.txt:2352-2353, rfc9001.txt:2368-2369).
+//
+// These name an endpoint, and cfg.h's CH_KEY_READ and CH_KEY_WRITE name
+// a direction, which is a different question: each endpoint writes under
+// its own secret and reads under the other's, so one endpoint's two
+// directions use both secrets. quic_initial.h's two calls take one of
+// these to say which endpoint the caller is. A client passes
+// CH_QUIC_ENDPOINT_CLIENT at every call and a server passes
+// CH_QUIC_ENDPOINT_SERVER at every call; neither value is negotiated and
+// neither travels on the wire.
+//
+// They carry the CH_QUIC_ prefix rather than this header's AES_ one
+// because they name a QUIC endpoint and not a cipher input, and a caller
+// that holds no key still passes one: quic.c names
+// CH_QUIC_ENDPOINT_CLIENT at both Initial calls. quic_keys.h owns its
+// CH_QUIC_KEY_ names the same way, and cfg.h points at both.
+#define CH_QUIC_ENDPOINT_CLIENT 0
+#define CH_QUIC_ENDPOINT_SERVER 1
+
+// Derives one endpoint's Initial-level keys from the client's
 // Destination Connection ID and writes all three fields of k: the
 // 16-byte AEAD_AES_128_GCM packet protection key, the 12-byte packet
 // protection IV and the 16-byte AES-128-ECB header protection key,
 // expanding both keys into their round keys. The derivation is RFC 9001
 // §5.2: initial_secret = HKDF-Extract(0x38762cf7f55934b34d179ae6a4c80cad
 // ccbb7f0a, dcid) (rfc9001.txt:1051-1055, rfc9001.txt:1066), then the
-// label "client in" for CH_KEY_WRITE and "server in" for CH_KEY_READ
-// (rfc9001.txt:1057-1061), then §5.1's "quic key", "quic iv" and "quic
-// hp" over that secret with a zero-length context
-// (rfc9001.txt:1017-1021, rfc9001.txt:1029-1032). RFC 9001 Appendix A.1
-// is the vector.
+// label "client in" for CH_QUIC_ENDPOINT_CLIENT and "server in" for
+// CH_QUIC_ENDPOINT_SERVER (rfc9001.txt:1057-1061), then §5.1's "quic
+// key", "quic iv" and "quic hp" over that secret with a zero-length
+// context (rfc9001.txt:1017-1021, rfc9001.txt:1029-1032). RFC 9001
+// Appendix A.1 is the vector for both endpoints (rfc9001.txt:2352-2377).
 //
 // Requires: k is not NULL and points at one whole aes_public_key, so
 // the caller includes quic_aes_key.h; dcid points at dcid_len readable
-// bytes, and dcid is read only when dcid_len is above 0; direction is
-// CH_KEY_READ or CH_KEY_WRITE. Every caller calls it per use on its own
-// stack and lets the key die with the frame, because no field stores
-// one. After a Retry the Destination Connection ID changes and so do
-// the keys (rfc9001.txt:1092-1094); the caller passes the new one and
-// this call reads nothing it kept.
+// bytes, and dcid is read only when dcid_len is above 0; endpoint is
+// CH_QUIC_ENDPOINT_CLIENT or CH_QUIC_ENDPOINT_SERVER. This file derives
+// whichever one it is handed and reads no role: which endpoint each of
+// a caller's two directions needs is quic_initial.c's. Every caller
+// calls it per use on its own stack and lets the key die with the
+// frame, because no field stores one. After a Retry the Destination
+// Connection ID changes and so do the keys (rfc9001.txt:1092-1094); the
+// caller passes the new one and this call reads nothing it kept.
 //
 // Returns CH_OK and writes k whole. Returns CH_EINVAL and writes
-// nothing when dcid_len is above CH_QUIC_DCID_MAX, or when direction is
-// neither CH_KEY_READ nor CH_KEY_WRITE; k keeps whatever it held. No
-// other code can be returned: the derivation itself cannot fail.
+// nothing when dcid_len is above CH_QUIC_DCID_MAX, or when endpoint is
+// neither of the two names above; k keeps whatever it held. No other
+// code can be returned: the derivation itself cannot fail.
 int aes_public_key_initial(aes_public_key *k, const uint8_t *dcid, size_t dcid_len,
-                           uint8_t direction);
+                           uint8_t endpoint);
 
 // Writes the Retry integrity tag key of RFC 9001 §5.8 into k: the
 // 128-bit constant 0xbe0c690b9f66575a1d766b54e368c84e

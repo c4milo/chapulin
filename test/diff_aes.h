@@ -45,7 +45,7 @@ static void diff_aes128(void) {
 }
 
 // Every Destination Connection ID length RFC 9001 §5.2 admits, from zero
-// to CH_QUIC_DCID_MAX, in both directions. The domain stops at the cap on
+// to CH_QUIC_DCID_MAX, for both endpoints. The domain stops at the cap on
 // purpose: one byte past it the C refuses and the spec answers ERR, so
 // the two agree about the refusal and not about a key. test_dcid_bounds
 // in test/quic_vectors.c holds that boundary.
@@ -55,8 +55,8 @@ static void diff_quic_initial_keys(void) {
             uint8_t dcid[CH_QUIC_DCID_MAX];
             rng_fill(dcid, dcid_len);
             aes_public_key k;
-            uint8_t direction = client ? CH_KEY_WRITE : CH_KEY_READ;
-            if (aes_public_key_initial(&k, dcid, dcid_len, direction) != CH_OK) {
+            uint8_t endpoint = client ? CH_QUIC_ENDPOINT_CLIENT : CH_QUIC_ENDPOINT_SERVER;
+            if (aes_public_key_initial(&k, dcid, dcid_len, endpoint) != CH_OK) {
                 (void)fprintf(stderr, "diff: aes_public_key_initial refused %zu bytes\n", dcid_len);
                 exit(1);
             }

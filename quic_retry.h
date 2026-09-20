@@ -1,7 +1,8 @@
 // The Retry Integrity Tag of RFC 9001 §5.8: AEAD_AES_128_GCM over the
 // Retry Pseudo-Packet, under the 128-bit key and the 96-bit nonce the
-// RFC prints, compared against the tag the packet carried. Only a
-// TRANSPORT=quic build compiles it.
+// RFC prints, either written for a Retry packet a server sends or
+// compared against the tag a packet carried. Only a TRANSPORT=quic
+// build compiles it.
 //
 // This file and quic_initial.[ch] are the only sources that may call a
 // symbol quic_aes.h or quic_gcm.h declares. That rule is INV-26 in
@@ -18,7 +19,10 @@
 // A Retry packet carries no protected payload and no protected header
 // field, so §5.4's header protection does not apply to it
 // (rfc9001.txt:1177-1179) and nothing here computes a mask. This file
-// holds one call.
+// holds two calls: quic_retry_tag, which a server calls to mint the tag
+// it sends, and quic_retry_ok, which a client calls to check the tag it
+// received. quic_retry_ok calls quic_retry_tag, so one gcm_seal serves
+// both and no second copy of §5.8 can drift from the first.
 #ifndef CH_QUIC_RETRY_H
 #define CH_QUIC_RETRY_H
 #ifdef CH_TRANSPORT_QUIC
@@ -91,6 +95,42 @@
 // frame is not wiped: every byte of that key is printed in the RFC, so
 // there is no secret to wipe.
 uint8_t quic_retry_ok(const uint8_t *pseudo, size_t n, const uint8_t tag[GCM_TAG]);
+
+// Computes the Retry Integrity Tag over the caller's Retry
+// Pseudo-Packet and writes it to tag. A server sends what this writes.
+// It is quic_retry_ok without the comparison: RFC 9001 §5.8 fixes the
+// same key, the same nonce, the same empty plaintext and the same
+// associated data for both endpoints (rfc9001.txt:1496-1507), so the
+// two entries run one gcm_seal and quic_retry_ok calls this one.
+//
+// Requires: pseudo points at n readable bytes and tag at GCM_TAG
+// writable bytes. pseudo is the Retry Pseudo-Packet of RFC 9001 Figure
+// 8, which the server builds the same way the paragraph above describes
+// for a client: one byte holding the length of the Original Destination
+// Connection ID, that connection ID, then the Retry packet it is about
+// to send without its tag (rfc9001.txt:1514-1544). The Original
+// Destination Connection ID is the one the client put in the Initial
+// packet this Retry answers. chapulin reads no field of it and checks
+// none, so a caller that builds the pseudo-packet wrongly gets a tag no
+// client accepts and no diagnosis. RFC 9001 Appendix A.4 is the vector
+// (rfc9001.txt:2490-2498).
+//
+// Writes GCM_TAG bytes and cannot fail, so it returns nothing.
+//
+// It decides nothing about the Retry packet it tags. Whether to send a
+// Retry at all is the caller's address validation policy, which RFC
+// 9000 §8.1.2 leaves to the server (rfc9000.txt:2270-2274), and what
+// the Retry Token holds and how a later Initial packet's token is
+// checked are the caller's too. colibri and rotor own that, the way
+// they own every other transport decision; quic.h's opening comment
+// draws the same line for the client's packet calls.
+//
+// The time this call takes depends on n alone. Like quic_retry_ok it
+// expands the printed key into one aes_public_key on its own stack
+// frame and stores nothing, and lint-stack measures that frame against
+// STACK_BUDGET. The frame is not wiped: every byte of that key is
+// printed in the RFC, so there is no secret to wipe.
+void quic_retry_tag(const uint8_t *pseudo, size_t n, uint8_t tag[GCM_TAG]);
 
 #endif // CH_TRANSPORT_QUIC
 #endif

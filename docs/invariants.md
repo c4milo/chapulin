@@ -535,11 +535,18 @@ last `ROLE=server` stub, as the entry said it would.
   is not one zero byte, and a `supported_versions` without 0x0304 — and
   it ignores every suite, group, scheme, version, mode and extension it
   does not know (`rfc9846.txt:1299`, `rfc9846.txt:4636-4637`), so a
-  hello carrying GREASE code points still negotiates.
+  hello carrying GREASE code points still negotiates. One extension is
+  the exception, and it comes from another document: RFC 9001 §8.2
+  requires a fatal `unsupported_extension` from an implementation that
+  understands `quic_transport_parameters` when the transport is not QUIC
+  (`rfc9001.txt:1945-1949`), and every build here runs over TLS records,
+  because `srv_cfg.h` refuses `CH_ROLE_SERVER` together with
+  `CH_TRANSPORT_QUIC`. So the parser recognizes that one type in order
+  to refuse it, rather than ignoring it.
   test/srv_parser_tests.h holds one case per refusal, the boundary pair
-  of every length rule, and the ignore rule. Nineteen `srv-parser-`
+  of every length rule, and the ignore rule. Twenty `srv-parser-`
   violations require bin/srv_test to object when one of those rules is
-  relaxed, the ignore rule included: fifteen carry this invariant, three
+  relaxed, the ignore rule included: sixteen carry this invariant, three
   carry INV-25 because they are the exact-fill rules, and one carries
   INV-8 because it is the 1.3-only rule.
 - **Violation.** A PR relaxes one refusal for interop with a broken

@@ -352,6 +352,16 @@ int srv_read_extension(rbuf *e, uint16_t type, size_t data_off, hello_parse *p) 
         // An empty body, which the exact-fill check after this call
         // holds it to, and no other effect (rfc9846.txt:2385-2401).
         return CH_OK;
+    case EXT_QUIC_TRANSPORT_PARAMS:
+        // Refused, and the one extension here that is recognized in
+        // order to be refused. RFC 9001 §8.2 requires a fatal
+        // unsupported_extension from an implementation that understands
+        // the extension when the transport is not QUIC
+        // (rfc9001.txt:1945-1949), and every build in this tree runs
+        // over TLS records. The body goes unread either way: its content
+        // belongs to the QUIC version in use (rfc9001.txt:1926-1928).
+        // srv_parser.h states what a QUIC server does here instead.
+        return srv_refuse(p->alert, ALERT_UNSUPPORTED_EXTENSION);
     default:
         // Unreachable: the caller asked srv_ext_known first, and every
         // type that answers 1 has a case above. It refuses anyway

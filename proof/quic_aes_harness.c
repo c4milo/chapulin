@@ -36,20 +36,20 @@ int main(void) {
     uint8_t in[AES_BLOCK];
     uint8_t out[AES_BLOCK];
 
-    // A connection ID of any admitted length, and a direction byte of
+    // A connection ID of any admitted length, and an endpoint byte of
     // any value at all.
     fill_nondet(dcid, sizeof dcid);
     size_t dcid_len = nondet_size_t();
     __CPROVER_assume(dcid_len <= sizeof dcid);
-    uint8_t direction = nondet_u8();
-    int rc = aes_public_key_initial(&k, dcid, dcid_len, direction);
+    uint8_t endpoint = nondet_u8();
+    int rc = aes_public_key_initial(&k, dcid, dcid_len, endpoint);
     __CPROVER_assert(rc == CH_OK || rc == CH_EINVAL, "initial: one of the two documented codes");
 
     // The first length past the cap. The header says the call reads no
     // connection ID there, so the pointer is NULL and any read is a
     // proof failure.
-    __CPROVER_assert(aes_public_key_initial(&k, NULL, CH_QUIC_DCID_MAX + 1, CH_KEY_WRITE) ==
-                         CH_EINVAL,
+    __CPROVER_assert(aes_public_key_initial(&k, NULL, CH_QUIC_DCID_MAX + 1,
+                                            CH_QUIC_ENDPOINT_CLIENT) == CH_EINVAL,
                      "initial: one past the cap refuses");
 
     // A key set the constructors did not write is still a key the block

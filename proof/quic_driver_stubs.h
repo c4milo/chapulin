@@ -88,9 +88,9 @@ static int seal_result(const uint8_t *hdr, size_t hdr_len, const uint8_t *pt, si
     return CH_OK;
 }
 
-int quic_initial_seal(const uint8_t *dcid, size_t dcid_len, uint64_t pn, size_t pn_len,
-                      const uint8_t *hdr, size_t hdr_len, const uint8_t *pt, size_t pt_len,
-                      uint8_t *out, size_t cap, size_t *out_len) {
+int quic_initial_seal(uint8_t endpoint, const uint8_t *dcid, size_t dcid_len, uint64_t pn,
+                      size_t pn_len, const uint8_t *hdr, size_t hdr_len, const uint8_t *pt,
+                      size_t pt_len, uint8_t *out, size_t cap, size_t *out_len) {
     if (!dcid_ok(dcid, dcid_len)) {
         return CH_EINVAL;
     }
@@ -128,8 +128,9 @@ static int open_result(uint8_t *pkt, size_t pkt_len, size_t pn_off, uint64_t *pn
     return CH_OK;
 }
 
-int quic_initial_open(const uint8_t *dcid, size_t dcid_len, uint8_t *pkt, size_t pkt_len,
-                      size_t pn_off, uint64_t largest_pn, uint64_t *pn, size_t *pt_len) {
+int quic_initial_open(uint8_t endpoint, const uint8_t *dcid, size_t dcid_len, uint8_t *pkt,
+                      size_t pkt_len, size_t pn_off, uint64_t largest_pn, uint64_t *pn,
+                      size_t *pt_len) {
     if (!dcid_ok(dcid, dcid_len)) {
         return CH_EINVAL;
     }

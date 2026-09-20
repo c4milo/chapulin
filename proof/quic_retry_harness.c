@@ -1,11 +1,16 @@
-// Proves: quic_retry_ok reads only inside the pseudo-packet and the tag
-// it is handed, commits no undefined behavior, answers 1 for the tag
-// gcm_seal computes over that pseudo-packet, and answers 0 for a tag
-// that differs from it in one byte. It runs over any pseudo-packet up
-// to RETRY_PSEUDO_MAX bytes, any length up to that bound, and a
-// difference at any tag position by any nonzero amount. A tag differing
-// in two bytes or more is not proved here; ct_harness proves ct_memeq
-// over its whole domain.
+// Proves: quic_retry_tag and quic_retry_ok read only inside the
+// pseudo-packet and the tag they are handed, commit no undefined
+// behavior, agree on the tag gcm_seal computes over that pseudo-packet,
+// and answer 0 for a tag that differs from it in one byte. It runs over
+// any pseudo-packet up to RETRY_PSEUDO_MAX bytes, any length up to that
+// bound, and a difference at any tag position by any nonzero amount. A
+// tag differing in two bytes or more is not proved here; ct_harness
+// proves ct_memeq over its whole domain.
+//
+// The two entries are the server's and the client's halves of RFC 9001
+// §5.8, so the harness drives both: main() mints a tag and hands it
+// straight to the check, which is what a chapulin server and a chapulin
+// client do across a connection.
 //
 // The two calls quic_retry_ok makes are contract stubs below, so this
 // formula holds the Retry step's own framing rather than AES-128-GCM.
@@ -128,6 +133,17 @@ int main(void) {
     uint8_t want[GCM_TAG];
     stub_tag_of(pseudo, n, want);
     __CPROVER_assert(quic_retry_ok(pseudo, n, want) == 1, "a genuine Retry tag validates");
+
+    // The server's half: the tag it mints over the same pseudo-packet.
+    // Both assertions matter. The first holds the minted bytes to the
+    // model of §5.8 rather than to whatever the check recomputes, and the
+    // second is the round trip a real connection runs.
+    uint8_t minted[GCM_TAG];
+    quic_retry_tag(pseudo, n, minted);
+    for (size_t i = 0; i < GCM_TAG; i++) {
+        __CPROVER_assert(minted[i] == want[i], "the minted tag is the tag §5.8 fixes");
+    }
+    __CPROVER_assert(quic_retry_ok(pseudo, n, minted) == 1, "a minted Retry tag validates");
 
     // One tag byte different, at any position and by any nonzero amount.
     // RFC 9000 §17.2.5.2 makes the client discard that Retry packet.

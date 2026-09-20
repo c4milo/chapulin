@@ -857,6 +857,17 @@ reviewer who reads one line of this parser will read that one.
   The server parses the name and hands it to the caller; the caller decides.
 - **Sending `supported_groups` to the client.** `rfc9846.txt:2122-2127` makes it
   a SHOULD.
+- **`quic_transport_parameters`, which is refused rather than declined.** It is
+  the one ClientHello extension the parser recognizes in order to refuse. RFC
+  9001 §8.2 requires a fatal `unsupported_extension` from an implementation
+  that understands the extension when the transport is not QUIC
+  (`rfc9001.txt:1945-1949`), and every build here runs over TLS records,
+  because `srv_cfg.h` refuses `CH_ROLE_SERVER` together with
+  `CH_TRANSPORT_QUIC`. The skip-unknown arm cannot give that answer, so the
+  type carries a `SRV_EXT_` bit of its own. `srv_build_encrypted_extensions`
+  writes the same extension from a body its caller supplies, which is the
+  server's half of `ch_cfg.transport_params`; every build here passes NULL and
+  sends none. Open question ten covers the driver that would pass one.
 
 ## Where the cryptography lives
 

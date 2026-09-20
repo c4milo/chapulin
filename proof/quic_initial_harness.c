@@ -17,11 +17,15 @@
 // packet leaves room either side of that bound. The seal's output buffer
 // holds a whole packet of the header and payload below.
 //
-// Two properties beside memory safety. First, a refusal writes neither
+// Three properties beside memory safety. First, a refusal writes neither
 // output: the harness poisons the output buffer, calls, and compares.
 // That is the promise both entries make, and the reason every length
 // check runs before the first write. Second, a successful open reports a
-// plaintext length inside the packet it was handed.
+// plaintext length inside the packet it was handed. Third, the seal and
+// the open ask aes_public_key_initial for different endpoints, which the
+// stub records and main() compares. The endpoint the harness passes is
+// unconstrained, so that third property runs for a client, for a server
+// and for the values aes_public_key_initial refuses.
 //
 // The eight calls quic_initial.c makes are contract stubs
 // (proof/quic_initial_stubs.h), which states what the composition gives
@@ -64,6 +68,9 @@ int main(void) {
     size_t dcid_len = nondet_size_t();
     size_t pn_len = nondet_size_t();
     uint64_t pn = nondet_u64();
+    // Unconstrained too: a client, a server, or a value neither name
+    // covers, which both entries refuse.
+    uint8_t endpoint = nondet_u8();
 
     size_t hdr_len = nondet_size_t();
     size_t pt_len = nondet_size_t();
@@ -76,8 +83,10 @@ int main(void) {
         out[i] = PROOF_POISON;
     }
     size_t out_len = PROOF_POISON;
-    int rc =
-        quic_initial_seal(dcid, dcid_len, pn, pn_len, hdr, hdr_len, pt, pt_len, out, cap, &out_len);
+    int rc = quic_initial_seal(endpoint, dcid, dcid_len, pn, pn_len, hdr, hdr_len, pt, pt_len, out,
+                               cap, &out_len);
+    uint8_t seal_endpoint = stub_last_endpoint;
+    __CPROVER_assert(seal_endpoint == endpoint, "seal: the caller's own endpoint, unchanged");
     __CPROVER_assert(rc == CH_OK || rc == CH_ECAP || rc == CH_EINVAL,
                      "seal: one of the three documented codes");
     if (rc != CH_OK) {
@@ -108,7 +117,17 @@ int main(void) {
     uint64_t got_pn = PROOF_POISON;
     size_t got_pt_len = PROOF_POISON;
     dcid_len = nondet_size_t();
-    rc = quic_initial_open(dcid, dcid_len, pkt, pkt_len, pn_off, largest_pn, &got_pn, &got_pt_len);
+    rc = quic_initial_open(endpoint, dcid, dcid_len, pkt, pkt_len, pn_off, largest_pn, &got_pn,
+                           &got_pt_len);
+    // RFC 9001 §5.2 gives each endpoint its own Initial secret, so the
+    // endpoint a caller seals under is never the one it opens under. It
+    // holds for either role, because endpoint is unconstrained; for a
+    // value neither name covers, peer_endpoint returns it unchanged and
+    // this assertion is the one case where the two agree.
+    if (endpoint == CH_QUIC_ENDPOINT_CLIENT || endpoint == CH_QUIC_ENDPOINT_SERVER) {
+        __CPROVER_assert(seal_endpoint != stub_last_endpoint,
+                         "the two directions derive different endpoints' keys");
+    }
     __CPROVER_assert(rc == CH_OK || rc == CH_QUIC_DISCARD || rc == CH_EINVAL,
                      "open: one of the three documented codes");
     if (rc == CH_OK) {

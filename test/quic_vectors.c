@@ -1,7 +1,8 @@
 // The TRANSPORT=quic mode against its published vectors: FIPS 197 for the
 // AES-128 forward cipher, NIST SP 800-38D for AEAD_AES_128_GCM and GHASH,
 // and RFC 9001 Appendix A for the Initial keys, the header protection
-// masks, the client Initial packet and the Retry integrity tag. Its own
+// masks, the client and server Initial packets and the Retry integrity
+// tag. Its own
 // binary because bin/unit includes tls.h and calls rec_seal, which a
 // -DCH_TRANSPORT_QUIC build does not compile; bin/sha3_test and
 // bin/mlkem_test have the same shape for a mode's own sources.
@@ -129,9 +130,13 @@ static void test_fips197_blocks(void) {
 }
 
 // RFC 9001 Appendix A.1: the client and server Initial keys for the
-// Destination Connection ID above (rfc9001.txt:2355-2377). The first 16
+// Destination Connection ID above (rfc9001.txt:2352-2377). The first 16
 // bytes of a schedule are the key that built it, so comparing them
 // checks the derivation and the expansion at once.
+//
+// aes_public_key_initial takes the endpoint whose secret to derive, not
+// a direction. Which endpoint each of a caller's two directions needs is
+// quic_initial.c's, and test_initial_endpoint_reads checks that.
 static void test_appendix_a1_keys(void) {
     static const uint8_t client_key[AES_128_KEY] = {0x1f, 0x36, 0x96, 0x13, 0xdd, 0x76, 0xd5, 0x46,
                                                     0x77, 0x30, 0xef, 0xcb, 0xe3, 0xb1, 0xa2, 0x2d};
@@ -147,12 +152,14 @@ static void test_appendix_a1_keys(void) {
                                                    0x44, 0x43, 0x0b, 0x49, 0x0e, 0xea, 0xa3, 0x14};
     aes_public_key k;
 
-    CHECK(aes_public_key_initial(&k, APPENDIX_DCID, sizeof APPENDIX_DCID, CH_KEY_WRITE) == CH_OK);
+    CHECK(aes_public_key_initial(&k, APPENDIX_DCID, sizeof APPENDIX_DCID,
+                                 CH_QUIC_ENDPOINT_CLIENT) == CH_OK);
     CHECK(memcmp(k.key.round_keys, client_key, sizeof client_key) == 0);
     CHECK(memcmp(k.iv, client_iv, sizeof client_iv) == 0);
     CHECK(memcmp(k.hp.round_keys, client_hp, sizeof client_hp) == 0);
 
-    CHECK(aes_public_key_initial(&k, APPENDIX_DCID, sizeof APPENDIX_DCID, CH_KEY_READ) == CH_OK);
+    CHECK(aes_public_key_initial(&k, APPENDIX_DCID, sizeof APPENDIX_DCID,
+                                 CH_QUIC_ENDPOINT_SERVER) == CH_OK);
     CHECK(memcmp(k.key.round_keys, server_key, sizeof server_key) == 0);
     CHECK(memcmp(k.iv, server_iv, sizeof server_iv) == 0);
     CHECK(memcmp(k.hp.round_keys, server_hp, sizeof server_hp) == 0);
@@ -174,11 +181,13 @@ static void test_appendix_header_masks(void) {
     aes_public_key k;
     uint8_t mask[AES_BLOCK];
 
-    CHECK(aes_public_key_initial(&k, APPENDIX_DCID, sizeof APPENDIX_DCID, CH_KEY_WRITE) == CH_OK);
+    CHECK(aes_public_key_initial(&k, APPENDIX_DCID, sizeof APPENDIX_DCID,
+                                 CH_QUIC_ENDPOINT_CLIENT) == CH_OK);
     aes_encrypt_block_hp(&k, client_sample, mask);
     CHECK(memcmp(mask, client_mask, sizeof client_mask) == 0);
 
-    CHECK(aes_public_key_initial(&k, APPENDIX_DCID, sizeof APPENDIX_DCID, CH_KEY_READ) == CH_OK);
+    CHECK(aes_public_key_initial(&k, APPENDIX_DCID, sizeof APPENDIX_DCID,
+                                 CH_QUIC_ENDPOINT_SERVER) == CH_OK);
     aes_encrypt_block_hp(&k, server_sample, mask);
     CHECK(memcmp(mask, server_mask, sizeof server_mask) == 0);
 
@@ -206,11 +215,12 @@ static void test_retry_key(void) {
     CHECK(memcmp(&k.hp, &zero_schedule, sizeof zero_schedule) == 0);
 }
 
-// RFC 9001 Appendix A.4 (rfc9001.txt:2490-2498) through the call a
-// client makes. test_appendix_a4_retry above builds the key, the nonce
-// and the empty plaintext itself and drives gcm_seal and gcm_open;
-// quic_retry_ok holds all three, so this checks what a client gets
-// rather than what a caller could assemble.
+// RFC 9001 Appendix A.4 (rfc9001.txt:2490-2498) through the two calls
+// quic_retry.h declares. test_appendix_a4_retry above builds the key,
+// the nonce and the empty plaintext itself and drives gcm_seal and
+// gcm_open; quic_retry_tag and quic_retry_ok hold all three, so this
+// checks what a server sends and what a client gets rather than what a
+// caller could assemble.
 static void test_retry_call(void) {
     uint8_t pseudo[1 + sizeof APPENDIX_DCID + sizeof A4_RETRY_PACKET];
     size_t pseudo_len = 0;
@@ -221,6 +231,16 @@ static void test_retry_call(void) {
     memcpy(&pseudo[pseudo_len], A4_RETRY_PACKET, retry_body);
     pseudo_len += retry_body;
     const uint8_t *want_tag = &A4_RETRY_PACKET[retry_body];
+
+    // The server's half of §5.8: the tag minted over that pseudo-packet,
+    // against the bytes Appendix A.4 prints (rfc9001.txt:2497-2498), and
+    // then through the check a client runs on it. Minting and checking
+    // are one gcm_seal in quic_retry.c, and this is what holds them to
+    // the RFC's answer rather than to each other.
+    uint8_t minted[GCM_TAG];
+    quic_retry_tag(pseudo, pseudo_len, minted);
+    CHECK(memcmp(minted, want_tag, sizeof minted) == 0);
+    CHECK(quic_retry_ok(pseudo, pseudo_len, minted) == 1);
 
     CHECK(quic_retry_ok(pseudo, pseudo_len, want_tag) == 1);
 
@@ -244,7 +264,7 @@ static void test_retry_call(void) {
 }
 
 // The bound aes_public_key_initial states, both sides of it, and the
-// direction check beside it. RFC 9000 §17.2 caps a connection ID at 20
+// endpoint check beside it. RFC 9000 §17.2 caps a connection ID at 20
 // bytes and RFC 9001 §5.2 admits a zero-length one, so both ends of the
 // admitted range derive keys and the first value past the top does not.
 static void test_dcid_bounds(void) {
@@ -253,29 +273,30 @@ static void test_dcid_bounds(void) {
     aes_public_key k;
     aes_public_key before;
 
-    CHECK(aes_public_key_initial(&k, dcid, CH_QUIC_DCID_MAX, CH_KEY_WRITE) == CH_OK);
+    CHECK(aes_public_key_initial(&k, dcid, CH_QUIC_DCID_MAX, CH_QUIC_ENDPOINT_CLIENT) == CH_OK);
     memcpy(&before, &k, sizeof before);
-    CHECK(aes_public_key_initial(&k, dcid, CH_QUIC_DCID_MAX + 1, CH_KEY_WRITE) == CH_EINVAL);
+    CHECK(aes_public_key_initial(&k, dcid, CH_QUIC_DCID_MAX + 1, CH_QUIC_ENDPOINT_CLIENT) ==
+          CH_EINVAL);
     CHECK(memcmp(&k, &before, sizeof before) == 0);
 
     // A zero-length Destination Connection ID is the other end of the
     // range, and the salt alone keys the extract there.
-    CHECK(aes_public_key_initial(&k, NULL, 0, CH_KEY_WRITE) == CH_OK);
+    CHECK(aes_public_key_initial(&k, NULL, 0, CH_QUIC_ENDPOINT_CLIENT) == CH_OK);
     CHECK(memcmp(&k, &before, sizeof before) != 0);
 
-    // CH_KEY_READ and CH_KEY_WRITE are the only directions; the first
-    // value past them refuses and writes nothing.
+    // CH_QUIC_ENDPOINT_CLIENT and CH_QUIC_ENDPOINT_SERVER are the only endpoints;
+    // the first value past them refuses and writes nothing.
     memcpy(&before, &k, sizeof before);
-    CHECK(aes_public_key_initial(&k, dcid, 8, CH_KEY_WRITE + 1) == CH_EINVAL);
+    CHECK(aes_public_key_initial(&k, dcid, 8, CH_QUIC_ENDPOINT_SERVER + 1) == CH_EINVAL);
     CHECK(memcmp(&k, &before, sizeof before) == 0);
 
-    // The two directions derive different keys from one connection ID,
+    // The two endpoints derive different keys from one connection ID,
     // which is what the two labels of §5.2 are for.
-    aes_public_key read_side;
-    aes_public_key write_side;
-    CHECK(aes_public_key_initial(&read_side, dcid, 8, CH_KEY_READ) == CH_OK);
-    CHECK(aes_public_key_initial(&write_side, dcid, 8, CH_KEY_WRITE) == CH_OK);
-    CHECK(memcmp(&read_side, &write_side, sizeof read_side) != 0);
+    aes_public_key client_side;
+    aes_public_key server_side;
+    CHECK(aes_public_key_initial(&client_side, dcid, 8, CH_QUIC_ENDPOINT_CLIENT) == CH_OK);
+    CHECK(aes_public_key_initial(&server_side, dcid, 8, CH_QUIC_ENDPOINT_SERVER) == CH_OK);
+    CHECK(memcmp(&client_side, &server_side, sizeof client_side) != 0);
 }
 
 // RFC 9001 Appendix A.5 (rfc9001.txt:2591-2610): the four values a
@@ -365,6 +386,9 @@ int main(void) {
     test_appendix_a2_seal();
     test_initial_seal_refusals();
     test_initial_open_refusals();
+    test_appendix_a3_seal();
+    test_initial_endpoint_reads();
+    test_initial_endpoint_refusals();
     test_appendix_a5_packet();
     test_appendix_header_protection();
     test_header_protection_edges();

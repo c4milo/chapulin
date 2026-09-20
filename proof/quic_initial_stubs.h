@@ -14,7 +14,11 @@
 //
 //   aes_public_key_initial   CH_EINVAL above CH_QUIC_DCID_MAX, without
 //                            reading the connection ID, and otherwise a
-//                            whole key of unconstrained bytes.
+//                            whole key of unconstrained bytes. It also
+//                            asserts that the endpoint is one of the two
+//                            quic_aes.h names, and records which one, so
+//                            main() can compare the seal's against the
+//                            open's.
 //   aes_encrypt_block_hp     AES_BLOCK unconstrained bytes.
 //   gcm_seal                 n ciphertext bytes and GCM_TAG tag bytes.
 //   gcm_open                 1 or 0, with the n plaintext bytes written
@@ -47,11 +51,19 @@
 
 uint64_t nondet_u64(void);
 
+// The endpoint the last call asked for. main() reads it after the seal
+// and again after the open and compares the two, so a build whose two
+// directions derived one endpoint's key fails the harness rather than
+// only the vector test. The stub writes it before it checks any length,
+// so a refusing call records it too.
+uint8_t stub_last_endpoint;
+
 int aes_public_key_initial(aes_public_key *k, const uint8_t *dcid, size_t dcid_len,
-                           uint8_t direction) {
+                           uint8_t endpoint) {
+    stub_last_endpoint = endpoint;
     __CPROVER_assert(__CPROVER_w_ok(k, sizeof *k), "aes_public_key_initial: key writable");
-    __CPROVER_assert(direction == CH_KEY_READ || direction == CH_KEY_WRITE,
-                     "aes_public_key_initial: direction is one of the two");
+    __CPROVER_assert(endpoint == CH_QUIC_ENDPOINT_CLIENT || endpoint == CH_QUIC_ENDPOINT_SERVER,
+                     "aes_public_key_initial: endpoint is one of the two");
     if (dcid_len > CH_QUIC_DCID_MAX) {
         // The header promises this refusal reads no connection ID byte,
         // so the assert below sits after it rather than before it.

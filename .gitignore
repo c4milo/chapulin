@@ -10,3 +10,8 @@ bin/hpp_test.o
 __pycache__/
 .claude/
 .vscode/
+
+# The setup symlinks agent worktrees create; node_modules/ with a slash
+# does not match a symlink of that name.
+tools/node_modules
+spec/.lake
