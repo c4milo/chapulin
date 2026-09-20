@@ -962,12 +962,34 @@ launch fast full srv_auth 385 "" ct.c -DCH_ROLE_SERVER
 # fails, so the formula reaches the builder rather than passing vacuously.
 launch fast full srv_message 130 "fill_nondet.0:118" buf.c -DCH_ROLE_SERVER
 launch fast full srv_cookie 130 "fill_nondet.0:119" buf.c ct.c hkdf.c -DCH_ROLE_SERVER
-# The ROLE=server ClientHello parser, both halves, over any body of up
-# to 256 bytes with no ALPN offer; the harness states the contract it
-# asserts. buf.c and ct.c are real, and SHA-256 is the contract stub in
-# harness.h, so the formula holds the walk and the checks and not the
-# compression function. MEASUREMENT PENDING.
-launch fast full srv_parser 260 "" buf.c ct.c -DCH_ROLE_SERVER
+# The ROLE=server ClientHello parser, split in two at srv_read_extension,
+# the one entry between its files. This line is the readers half: every
+# reader in srv_parser_ext.c over an unconstrained extension body, any
+# type and any offset, with buf.c and ct.c real and SHA-256 the contract
+# stub in harness.h. Measured (arm64 macOS, cbmc 6.11.0, kissat,
+# /usr/bin/time -l, idle machine): 927 properties, 34 s, 985 MB.
+launch fast:2 full srv_parser_ext 26 "fill_nondet.0:129,ct_memeq.0:33" buf.c ct.c -DCH_ROLE_SERVER
+# The walk half, proof/srv_parser_walk_harness.c, has no launch line. Its
+# formula converges in 0.32 s at 818 properties when fill_nondet is bounded
+# at 97, and that bound is too small: the SHA-256 contract stub havocs a
+# 112-byte context, so the unwinding assertion fails there and the verdict
+# does not count. At 113, the smallest bound that covers the context, it
+# returned no verdict in 200 s, and the same holds whether the message is
+# filled by fill_nondet or by a loop of its own. The cliff is the stub's
+# symbolic context, not the message size. The harness is kept; what it
+# needs is a SHA-256 stub whose context this formula does not carry.
+# Until then the walk is tested and not proved, and README says so.
+# The line this replaced was the old one-formula parser harness,
+# which parsed any body of up to 256 bytes, and the
+# parser walks it with ten loops that nest: the extension walk in
+# srv_parser.c calls a reader in srv_parser_ext.c that loops again. One
+# formula over all of it returned no verdict in 33 minutes at --unwind 260,
+# nor in 5 minutes at --unwind 65 with fill_nondet and ct_memeq bounded, nor
+# at a 112-byte body. The harness is kept because the split it needs is
+# layered, not smaller: one formula for the walk with the readers stubbed to
+# their contracts, one per reader over its own bytes, which is what
+# proof/p256_ecdh_harness.c and proof/srv_accept_harness.c do. Until that
+# lands the parser is tested and not proved, and README says so.
 launch fast full buf 100 ""
 # handshake_record on its own, so the two drivers can stub it
 # (https://github.com/c4milo/chapulin/issues/37). Before this harness,

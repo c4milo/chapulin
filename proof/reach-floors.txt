@@ -111,6 +111,9 @@ webpki_spki 41.1  # local reading, cbmc 6.11.0 on arm64 macOS; replace with the 
 webpki_time 33.3  # local reading, cbmc 6.11.0 on arm64 macOS; replace with the nightly table's number
 x25519_tail 52.7
 
+# srv_parser has no proof at all, not merely no cover floor: its own
+# formula does not converge either, so nothing to measure exists yet.
+# proof/run.sh states the split that would give it one.
 # No floor, because `cbmc --cover location` does not converge on them.
 # This is a limit of the measurement, not a gap someone forgot: the
 # same solver cost that makes the proof slow makes counting its
