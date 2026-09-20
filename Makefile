@@ -490,10 +490,17 @@ endif
 # Role: ROLE=client (default) builds the TLS 1.3 client this tree has
 # always built; ROLE=server builds a TLS 1.3 server from the same
 # primitives, the same record layer and the same key schedule
-# (docs/server.md). One role per packaged object, like PIN, TRUST and
-# TRANSPORT: the two export different public calls, so an object cannot
-# carry both. A device carries one role for the life of the deployment,
-# so a runtime flag would double the flash a firmware links for no gain.
+# (docs/server.md). ROLE=client and ROLE=server each carry one role, and
+# a device wants that: it carries one role for the life of the
+# deployment, so the flash the other one costs buys it nothing.
+#
+# ROLE=both is the host-side value and carries the two together. The
+# firmware argument does not reach a host library, and two objects are
+# not a substitute: each holds the shared half, so linking them into one
+# program makes ld report ch_read, ch_write, ch_close and ch_drbg_seed
+# defined twice. The roles share ch_tls and every post-handshake call
+# (srv.h), so the combined object needs no dispatch and no second name --
+# it exports ch_connect and ch_srv_accept beside the calls they share.
 #
 # This block sits here and not higher because every assignment in it is
 # immediate: ROLE_FILTER reads CLIENT_REPLACED, the client arm reads
@@ -574,6 +581,40 @@ endif
 # in one object. rsa_pkcs1.c is the one verifier a server never needs,
 # and no filter has to name it: it reaches a build only through
 # TRUST_ADD, which TRUST=none never sets.
+else ifeq ($(ROLE),both)
+# One object that answers and dials. A host-side consumer is often both
+# -- colibri serves HTTP/2 and HTTP/3 and also fetches over them -- and
+# two objects cannot be linked into one program: each carries the shared
+# half, so ld reports ch_read, ch_write, ch_close and ch_drbg_seed
+# defined twice. This arm is the client arm plus the server's sources,
+# and it is not for a device: CLAUDE.md's one-role-per-object rule is a
+# firmware argument (a device carries one role for the life of the
+# deployment), and it stands for ROLE=client and ROLE=server.
+#
+# The client half needs a trust mode, so TRUST=none is refused here and
+# every other value is allowed. srv_cfg.h admits CH_TRUST_* under
+# CH_ROLE_BOTH for the same reason.
+ifeq ($(TRUST),none)
+$(error ROLE=both carries a client, which judges a peer certificate; TRUST=none is ROLE=server only, so use TRUST=raw-rsa, TRUST=raw-ecdsa, TRUST=ca-rsa, TRUST=ca-ecdsa or TRUST=webpki)
+endif
+# CH_ROLE_SERVER compiles the srv_*.c files and the server arms inside the
+# shared sources; CH_ROLE_BOTH keeps the four guards that would otherwise
+# drop the client half with it (tls.h, tls.c and quic.c twice).
+ROLE_DEF    := -DCH_ROLE_SERVER -DCH_ROLE_BOTH
+# Nothing is replaced: ROLE=server filters $(CLIENT_REPLACED) because its
+# srv_*.c files stand in for those drivers, and here both sets compile.
+ROLE_FILTER :=
+ROLE_ADD    := $(SRV_SRCS) rsa_sign.c p256_sign.c p256_scalar.c p256_point.c p256_field.c
+ifeq ($(TRANSPORT),quic)
+ROLE_ADD    := $(filter-out srv_handshake.c,$(ROLE_ADD)) srv_quic.c
+PUBLIC_ROLE := $(PUBLIC_TRANSPORT) ch_srv_quic_init ch_srv_quic_crypto_in \
+               ch_srv_quic_retry_tag ch_srv_check
+else
+PUBLIC_ROLE := $(PUBLIC_TRANSPORT) ch_srv_accept ch_srv_check
+endif
+# Both verifiers, as ROLE=server has: ch_srv_check verifies both
+# provisioned identities at boot whatever the client half pins.
+PIN_FILTER  :=
 else ifeq ($(ROLE),client)
 # TRUST=none says "judges no peer certificate", which is the one thing a
 # client must do.
@@ -585,7 +626,7 @@ ROLE_FILTER :=
 ROLE_ADD    :=
 PUBLIC_ROLE := $(PUBLIC_TRANSPORT)
 else
-$(error ROLE=$(ROLE) is not a role; use ROLE=client or ROLE=server)
+$(error ROLE=$(ROLE) is not a role; use ROLE=client, ROLE=server or ROLE=both)
 endif
 LIB_DEF := $(strip $(PIN_DEF) $(TRUST_DEF) $(TRANSPORT_DEF) $(AES_DEF) $(SUITE_DEF) $(ROLE_DEF))
 # The one assignment. Every axis above filters or names the sources
@@ -751,6 +792,7 @@ lint-trust-separation:
 	srv_tls=$$(printf '%s\n' $$srv_files | grep -vxF -e srv_quic.c | tr '\n' ' '); \
 	srv_quic=$$(printf '%s\n' $$srv_files | grep -vxF -e srv_handshake.c | tr '\n' ' '); \
 	check "ROLE=client TRUST=raw-rsa TRANSPORT=tls" "$$client_only tls.c" "$$srv_files $$signers" "" "-DCH_ROLE_SERVER"; \
+	check "ROLE=both TRUST=webpki TRANSPORT=tls" "$$srv_tls $$signers tls.c handshake.c" "" "-DCH_ROLE_SERVER -DCH_ROLE_BOTH" ""; \
 	check "ROLE=server TRUST=none TRANSPORT=tls" "$$srv_tls $$signers tls.c rsa.c rsa_mont.c p256.c" "$$client_only srv_quic.c" "-DCH_ROLE_SERVER" "-DCH_PIN_ECDSA"; \
 	quic_srv=$$(printf '%s\n' $$quic_always | grep -vxF -e quic_step.c | tr '\n' ' '); \
 	check "ROLE=server TRUST=none TRANSPORT=quic" "$$srv_quic $$signers $$quic_srv" "$$client_only srv_handshake.c quic_step.c record.c" "-DCH_ROLE_SERVER -DCH_TRANSPORT_QUIC" "-DCH_PIN_ECDSA"; \

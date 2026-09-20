@@ -16,7 +16,7 @@
 // undefined and the packaged object cannot go into an executable at all.
 // epoch_init is inside the guard because ch_connect is its only caller in
 // either trust mode. lib-check's import check holds the rule for every axis.
-#ifndef CH_ROLE_SERVER
+#if !defined(CH_ROLE_SERVER) || defined(CH_ROLE_BOTH)
 
 // Loads the stored epoch and checks a resuming ticket against it
 // (docs/ca.md). Storage that fails or answers out of range stops

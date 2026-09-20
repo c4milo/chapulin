@@ -52,7 +52,7 @@ static int session_dead(const ch_quic *q) {
 // declarations, because a compiled ch_quic_init would reference the
 // ClientHello builder a server object does not carry, and the object would
 // build with a dangling import the way tls.c's ch_connect once did.
-#ifndef CH_ROLE_SERVER
+#if !defined(CH_ROLE_SERVER) || defined(CH_ROLE_BOTH)
 int ch_quic_init(ch_quic *q, const ch_cfg *cfg) {
     // Neither pointer is checked, as ch_connect does not check its own:
     // quic.h makes "q and cfg are not NULL" a caller requirement, and a
@@ -108,7 +108,7 @@ int ch_quic_initial_keys(ch_quic *q, const uint8_t *dcid, size_t dcid_len) {
     return CH_OK;
 }
 
-#ifndef CH_ROLE_SERVER
+#if !defined(CH_ROLE_SERVER) || defined(CH_ROLE_BOTH)
 // The input loop. It copies what fits, asks whether a whole message is
 // present, runs one step if it is, and returns when it is not.
 //

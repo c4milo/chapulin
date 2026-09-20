@@ -17,7 +17,7 @@
 // ch_connect fails to compile rather than to link. The three calls
 // below keep their contracts in both roles, because record.[ch] names
 // no side.
-#ifndef CH_ROLE_SERVER
+#if !defined(CH_ROLE_SERVER) || defined(CH_ROLE_BOTH)
 int ch_connect(ch_tls *t, const ch_cfg *cfg);
 #endif
 

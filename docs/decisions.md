@@ -593,3 +593,27 @@ does nothing more.
     rather than ignored, because ignoring it would hand back an object
     built around the other verifier. `TRUST=raw` and `TRUST=ca` are
     refused the same way, each naming the two values that replaced it.
+
+41. **`ROLE=both` is a host-side value, and one-role-per-object stays for
+    devices.** `ROLE=client` and `ROLE=server` each carry one role
+    because a device carries one for the life of the deployment, so the
+    flash the other costs buys it nothing. That is a firmware argument,
+    and it does not reach a host library: colibri serves HTTP/2 and
+    HTTP/3 and also fetches over them, and stompy will do both in one
+    process.
+
+    Two objects are not a substitute, which is the fact that decided
+    this. Each carries the shared half, so linking a client object and a
+    server object into one program makes `ld` report `ch_read`,
+    `ch_write`, `ch_close` and `ch_drbg_seed` defined twice — measured,
+    four duplicate symbols. colibri avoids it today only by attaching one
+    object per module, so the two never meet in one binary.
+
+    The combined object needs no dispatch and no second name. `srv.h`
+    already states why: `ch_read`, `ch_write` and `ch_close` are the same
+    functions over the same `ch_tls`, "because record.[ch] names no
+    side". So the roles differ in one call each way, and `ROLE=both`
+    exports seven where the halves export five and six. It is also
+    smaller than what it replaces: 132,960 bytes against 183,980 for the
+    two TLS objects, and 148,520 against 213,804 for the two QUIC ones.
+    `TRUST=none` is refused here, because the client half judges a peer.

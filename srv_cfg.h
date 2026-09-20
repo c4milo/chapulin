@@ -39,8 +39,10 @@
 // record_size_limit and the early-data discard all disappear with it.
 // Nothing forbids it later and nobody has measured what the two axes
 // share (docs/server.md, open question ten).
-#if defined(CH_ROLE_SERVER) && (defined(CH_TRUST_CA) || defined(CH_TRUST_WEBPKI))
-#error "CH_ROLE_SERVER judges no peer certificate, so it has no trust mode: drop CH_TRUST_*"
+#if defined(CH_ROLE_SERVER) && !defined(CH_ROLE_BOTH)
+#if defined(CH_TRUST_CA) || defined(CH_TRUST_WEBPKI)
+#error "a server-only object has no trust mode: drop CH_TRUST_*, or build ROLE=both"
+#endif
 #endif
 // A QUIC server compiles this header and srv_flight.c's QUIC arm. What it
 // still lacks is the driver, so the Makefile refuses the combination and
