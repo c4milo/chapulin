@@ -30,10 +30,10 @@
 // srv_parser.h gives at SRV_GROUP_KEX.
 //
 // What it declines conformantly, each with the permission it takes: no
-// client certificates (§4.3.2 makes the request a MAY), no 0-RTT (it
-// takes the first behavior §4.2.10 permits and answers 1-RTT), no
-// NewSessionTicket (§4.6.1 makes issuing one a MAY), no
-// post-handshake authentication (§4.6.2 makes it a MAY), and no
+// client certificates (§4.4.2 makes the request a MAY), no 0-RTT (it
+// takes the first behavior §4.3.10 permits and answers 1-RTT), no
+// NewSessionTicket (§4.7.1 makes issuing one a MAY), no
+// post-handshake authentication (§4.7.2 makes it a MAY), and no
 // requirement that the client send server_name (§9.2 makes requiring
 // it a MAY). docs/server.md lists every one with its RFC line.
 #ifndef CH_SRV_H
