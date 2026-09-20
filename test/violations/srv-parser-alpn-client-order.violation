@@ -1,0 +1,13 @@
+invariant: INV-14
+file: srv_parser_ext.c
+catches: srv_test
+reason: alpn_offered keeps the first name the client listed instead of the
+  lowest index in the caller's offer, so the client's preference decides
+  where RFC 7301 §3.2 has the server's decide. test/srv_parser_tests.h
+  offers http/1.1 before h2 against a hello that lists h2 first and
+  requires index 0.
+
+--- old
+            if (p->ch->alpn_selected == CH_ALPN_NONE || j < p->ch->alpn_selected) {
+--- new
+            if (p->ch->alpn_selected == CH_ALPN_NONE) {

@@ -1,0 +1,14 @@
+invariant: INV-14
+file: srv_parser_ext.c
+catches: srv_test
+reason: take_share holds a key_exchange to at least CH_KEX_CLIENT_SHARE bytes
+  rather than exactly that many, so a 33-byte x25519 share is handed to
+  the key exchange, which reads 32 of them and agrees on a key the
+  client computed from different bytes. srv_parser.h fixes the length,
+  and test/srv_parser_tests.h requires illegal_parameter one byte over
+  it as well as one byte under.
+
+--- old
+    if (share_len != CH_KEX_CLIENT_SHARE) {
+--- new
+    if (share_len < CH_KEX_CLIENT_SHARE) {

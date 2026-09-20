@@ -1,0 +1,18 @@
+invariant: INV-11
+file: srv_flight.c
+catches: srv_flight_test
+reason: the server binds each direction to the opposite handshake secret
+  from the client, and this restores handshake.c:309-310's client
+  assignment inside the server. Nothing else in the tree says which side
+  takes which: ks_handshake writes the client secret before the server one
+  and names no endpoint, so a swapped pair compiles, derives both secrets
+  correctly and fails every real client at the first protected record.
+  docs/server.md, "The direction swap, in three lines", names this mutant
+  and says it would otherwise pass every check here.
+
+--- old
+    rec_dir_init(&t->rd, h->c_hs);
+    rec_dir_init(&t->wr, h->s_hs);
+--- new
+    rec_dir_init(&t->rd, h->s_hs);
+    rec_dir_init(&t->wr, h->c_hs);

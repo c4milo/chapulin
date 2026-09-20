@@ -962,6 +962,12 @@ launch fast full srv_auth 385 "" ct.c -DCH_ROLE_SERVER
 # fails, so the formula reaches the builder rather than passing vacuously.
 launch fast full srv_message 130 "fill_nondet.0:118" buf.c -DCH_ROLE_SERVER
 launch fast full srv_cookie 130 "fill_nondet.0:119" buf.c ct.c hkdf.c -DCH_ROLE_SERVER
+# The ROLE=server ClientHello parser, both halves, over any body of up
+# to 256 bytes with no ALPN offer; the harness states the contract it
+# asserts. buf.c and ct.c are real, and SHA-256 is the contract stub in
+# harness.h, so the formula holds the walk and the checks and not the
+# compression function. MEASUREMENT PENDING.
+launch fast full srv_parser 260 "" buf.c ct.c -DCH_ROLE_SERVER
 launch fast full buf 100 ""
 # handshake_record on its own, so the two drivers can stub it
 # (https://github.com/c4milo/chapulin/issues/37). Before this harness,
@@ -1024,6 +1030,20 @@ launch fast full quic_step_ca 5 "fill_nondet.0:37,ct_wipe.0:849" -DCH_TRANSPORT_
 # lane's proof): 821 properties, 32.8 s, 2.23 GB peak. The weight is 3
 # because that peak is over the fast tier's 2 GB default.
 launch fast:3 full srv_accept 100 "alpn_ok.0:9,alpn_name_repeats.0:9,ct_wipe.0:449,ct_memeq.0:33,fill_names.0:257,fill_nondet.0:33" -DCH_ROLE_SERVER srv.c srv_handshake.c ct.c session.c
+# The ROLE=server flight handlers, with srv_accept's layering turned
+# around: the fifteen handlers are real here and everything they call is
+# a contract stub, so the two formulas together cover the driver and the
+# handlers without either resting on the other's code. ct.c is real,
+# because the wipes and the two constant-time comparisons are the
+# handlers' own steps. The harness states which three bounds are the
+# harness's and not the build's.
+#
+# The unwindset entries are the loops a global bound would unroll to no
+# purpose: ct_wipe and ct_memeq run over 32-byte secrets, fill_nondet's
+# longest call is the 117-byte cookie the mint stub writes, and the two
+# fragment loops are bounded by the harness's record limit against the
+# longest message its builder stubs report.
+launch fast full srv_flight 40 "ct_wipe.0:33,ct_memeq.0:33,fill_nondet.0:118" -DCH_ROLE_SERVER ct.c
 launch fast full ct 65 ""
 # The 16x16 decomposition, which is what every other proof rests on. Those
 # formulas verify the single-multiply form, because the launch line above

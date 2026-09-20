@@ -1,0 +1,14 @@
+invariant: INV-14
+file: srv_parser_ext.c
+catches: srv_test
+reason: read_psk_identities admits an identities list under 7 bytes, which
+  RFC 9846 §4.2.11 bounds at <7..2^16-1> because one PskIdentity costs a
+  two-byte length, at least one identity byte and a four-byte
+  obfuscated_ticket_age. An empty list runs no walk and leaves
+  truncated_len counting over no identity at all.
+  test/srv_parser_tests.h sends that empty list.
+
+--- old
+    if (e->err || *identities_len < PSK_IDENTITIES_MIN || *identities_len > rb_left(e)) {
+--- new
+    if (e->err || *identities_len > rb_left(e)) {

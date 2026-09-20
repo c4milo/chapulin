@@ -1,0 +1,14 @@
+invariant: INV-25
+file: srv_parser_ext.c
+catches: srv_test
+reason: read_supported_versions stops holding versions<2..254> to an even
+  byte count, so a list whose last version is one byte short is read as a
+  whole one: rb_u16 supplies a zero for the byte that is not there, and two
+  encodings name one version list. RFC 9846 §4.2.1 makes every entry two
+  bytes. test/srv_parser_tests.h sends an odd list whose versions fill the
+  extension, which the exact-fill check cannot refuse first.
+
+--- old
+    if (e->err || list_len < 2 || (list_len & 1) != 0 || list_len > rb_left(e)) {
+--- new
+    if (e->err || list_len < 2 || list_len > rb_left(e)) {

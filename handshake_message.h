@@ -152,6 +152,13 @@
 #define ALERT_UNKNOWN_CA 48
 #define ALERT_DECODE_ERROR 50
 #define ALERT_DECRYPT_ERROR 51
+// protocol_version, RFC 9846 §6 (rfc9846.txt:3972-3973). A ROLE=server
+// build writes it for a ClientHello whose supported_versions does not
+// list 0x0304 and for one that carries no supported_versions at all
+// (srv_parser.c). A client never sends it: the one version it offers is
+// the one it checks the ServerHello for, so a mismatch there is
+// illegal_parameter.
+#define ALERT_PROTOCOL_VERSION 70
 #define ALERT_INTERNAL_ERROR 80
 // missing_extension, RFC 9846 §6 (rfc9846.txt:3816). A TRANSPORT=quic
 // build writes it for an EncryptedExtensions that carries no

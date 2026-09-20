@@ -1,0 +1,14 @@
+invariant: INV-14
+file: srv_parser.c
+catches: srv_test
+reason: check_required stops requiring signature_algorithms of a hello that
+  offers no PSK, so the server would go on to sign a CertificateVerify
+  with a scheme the client never said it could verify. RFC 9846 §9.2
+  makes the extension mandatory there and names missing_extension
+  (rfc9846.txt:4595-4605). test/srv_parser_tests.h drops it from the
+  golden hello and requires that alert.
+
+--- old
+    uint16_t auth = SRV_EXT_SIGNATURE_ALGORITHMS | SRV_EXT_SUPPORTED_GROUPS;
+--- new
+    uint16_t auth = SRV_EXT_SUPPORTED_GROUPS;

@@ -1,28 +1,19 @@
-// The ROLE=server functions that are still stubs, and the two rules that make a stubbed
-// role safe to link: no call reports success, and no call writes through an out-parameter.
+// The ROLE=server value vectors that are not message bytes: the fixed
+// HelloRetryRequest random of RFC 9846 §4.1.3, the CertificateVerify
+// signed content srv_auth.c hashes, and the identity slots it selects
+// from. docs/server.md names this binary bin/srv_auth_test.
 //
-// Why it exists. The Makefile's ROLE axis packages these sources into an object a caller
-// can link before one line of the role is implemented. A stub that answered CH_OK would
-// hand that caller a session no handshake ever brought up. So each stub returns the
-// refusal its header documents, and this binary calls every one of them and requires it.
-// docs/server.md, "Stubs first", states the rules; it is the shape
-// test/quic_stub_test.c ran for the TRANSPORT=quic axis until that mode was implemented.
-//
-// Every buffer and every struct below is filled with POISON before the call and compared
-// against POISON after it, so "writes nothing" is measured rather than assumed. A function
-// leaves this file when it is implemented, in the commit that implements it.
-//
-// Some definitions here are not stubs, so this file checks what they answer instead of
-// their refusal. srv_hrr_random holds the 32 bytes RFC 9846 §4.1.3 fixes for a
-// HelloRetryRequest, and the vector below is a second transcription of them. srv_auth.c is
-// implemented, so test_signed_content pins the CertificateVerify signed content of §4.4.3
-// and test_identity pins the slot predicates; its two signers are still absent, so the two
-// calls that need one still refuse and this file requires that too.
+// It was test/srv_stub_test.c while the role was stubbed, and held the
+// two rules that made a stubbed role safe to link: no call reported
+// success and no call wrote through an out-parameter. Every srv source is
+// implemented now, so those rules have no subject and INV-28 retired with
+// them; the value cases that were beside them stayed here.
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
 #include "ch_assert.h"
+#include "rand.h"
 #include "srv.h"
 #include "srv_flight.h"
 #include "srv_handshake.h"
@@ -33,6 +24,13 @@
 noreturn void ch_assert_fail(const char *cond, const char *file, int line) {
     (void)fprintf(stderr, "ASSERT %s:%d: %s\n", file, line, cond);
     abort();
+}
+
+// srv_flight.c draws through this hook, and this binary links that source
+// because srv_handshake.c calls it. No case here reaches a draw, so the
+// bytes never matter; the definition exists so the image links.
+void ch_rand_bytes(uint8_t *p, size_t n) {
+    memset(p, 1, n);
 }
 
 static int failures = 0;
@@ -59,20 +57,6 @@ static int untouched(const void *p, size_t n) {
         }
     }
     return 1;
-}
-
-// The session and the handshake state, out of the frame because a ch_tls is over a
-// kilobyte. Both are refilled before every call that takes one.
-static ch_tls session;
-static handshake_state hs;
-
-static void fill_state(void) {
-    memset(&session, POISON, sizeof session);
-    memset(&hs, POISON, sizeof hs);
-}
-
-static int state_untouched(void) {
-    return untouched(&session, sizeof session) && untouched(&hs, sizeof hs);
 }
 
 static void test_hrr_random(void) {
@@ -195,67 +179,13 @@ static void test_identity(void) {
     CHECK(srv_identity_check(&live, SIGALG_ECDSA_P256_SHA256) == CH_EINVAL);
 }
 
-static void test_parser(void) {
-    client_hello ch;
-    uint8_t alert;
-    uint8_t body[SCRATCH];
-
-    memset(body, POISON, sizeof body);
-    CHECK(srv_ext_known(EXT_SUPPORTED_VERSIONS) == 0);
-    CHECK(srv_ext_known(0x0a0a) == 0);
-    CHECK(srv_ext_duplicate(body, sizeof body) == 0);
-
-    memset(&ch, POISON, sizeof ch);
-    memset(&alert, POISON, sizeof alert);
-    CHECK(srv_parse_client_hello(body, sizeof body, &ch, NULL, 0, &alert) == CH_EPROTO);
-    CHECK(untouched(&ch, sizeof ch) && untouched(&alert, sizeof alert));
-}
-
-static void test_flight(void) {
-    client_hello ch;
-    selection sel;
-
-    memset(&ch, POISON, sizeof ch);
-    memset(&sel, POISON, sizeof sel);
-
-    fill_state();
-    srv_begin(&hs);
-    CHECK(state_untouched());
-
-    fill_state();
-    CHECK(srv_read_client_hello(&hs, &ch) == CH_EPROTO);
-    CHECK(state_untouched() && untouched(&ch, sizeof ch));
-
-    fill_state();
-    CHECK(srv_select(&hs, &ch, &sel) == CH_EPROTO);
-    CHECK(state_untouched() && untouched(&sel, sizeof sel));
-
-    fill_state();
-    CHECK(srv_send_hello_retry_request(&hs, &ch, &sel) == CH_EPROTO);
-    CHECK(srv_send_compat_ccs(&hs, &ch) == CH_EPROTO);
-    CHECK(srv_check_retry_hello(&hs, &ch, &sel) == CH_EPROTO);
-    CHECK(srv_send_server_hello(&hs, &ch, &sel) == CH_EPROTO);
-    CHECK(srv_derive_handshake_secrets(&hs, &ch, &sel) == CH_EPROTO);
-    CHECK(state_untouched() && untouched(&sel, sizeof sel) && untouched(&ch, sizeof ch));
-
-    fill_state();
-    CHECK(srv_send_encrypted_extensions(&hs, &sel) == CH_EPROTO);
-    CHECK(srv_send_certificate(&hs, &sel) == CH_EPROTO);
-    CHECK(srv_send_certificate_verify(&hs, &sel) == CH_EPROTO);
-    CHECK(srv_send_finished(&hs) == CH_EPROTO);
-    CHECK(srv_read_client_finished(&hs) == CH_EPROTO);
-    srv_complete(&hs);
-    CHECK(state_untouched() && untouched(&sel, sizeof sel));
-}
-
 int main(void) {
     test_hrr_random();
     test_signed_content();
     test_identity();
-    test_parser();
-    test_flight();
     if (failures == 0) {
-        (void)printf("srv_stub: every stub refuses and writes nothing\n");
+        (void)printf(
+            "srv_auth: the HelloRetryRequest random, the signed content and the identity slots\n");
     }
     return failures != 0;
 }

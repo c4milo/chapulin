@@ -1,0 +1,24 @@
+invariant: INV-11
+file: srv_flight.c
+catches: srv_flight_test
+reason: the HelloRetryRequest keeps the first ClientHello in the transcript
+  instead of replacing it with RFC 9846 section 4.4.1's synthetic
+  message_hash construction (rfc9846.txt:1084-1087). Every later secret
+  binds to that transcript, so a retried handshake derives keys no client
+  agrees with, and the failure surfaces only at the client Finished, one
+  round trip and two key schedules after the mistake. The cookie carries
+  Hash(ClientHello1) precisely so the construction can be built, which is
+  what this edit throws away.
+
+--- old
+    sha256 *transcript = &h->t->transcript;
+    uint8_t ch1[SHA256_LEN];
+    sha256_final(transcript, ch1);
+    sha256_init(transcript);
+    const uint8_t synth[4] = {HS_MESSAGE_HASH, 0, 0, SHA256_LEN};
+    sha256_update(transcript, synth, sizeof synth);
+    sha256_update(transcript, ch1, sizeof ch1);
+    sha256_update(transcript, raw, raw_len);
+--- new
+    sha256 *transcript = &h->t->transcript;
+    sha256_update(transcript, raw, raw_len);

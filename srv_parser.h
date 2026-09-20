@@ -33,6 +33,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "buf.h"
 #include "cfg.h"
 #include "handshake_message.h"
 #include "sha256.h"
@@ -191,6 +192,13 @@ typedef struct {
     // The peer's record_size_limit (RFC 8449), or 0 when the extension
     // was absent. It is the largest plaintext the server may put in one
     // record, and 0 means the 2^14 default applies.
+    //
+    // The parser subtracts the inner content-type byte the wire value
+    // counts (RFC 8449 §4), so a client advertising 0x4000 leaves 16383
+    // here. handshake_parser.c:232 is the client's matching step. A
+    // value below 64 is refused with illegal_parameter before it lands
+    // here, which §4 requires; the parser checks no upper bound, because
+    // §4 forbids a server to enforce the protocol's maximum.
     uint16_t record_size_limit;
 
     // Which psk_key_exchange_modes values the client listed, as the
@@ -268,26 +276,39 @@ int srv_ext_duplicate(const uint8_t *exts, size_t n);
 // writes the alert a refusal owes into *alert.
 //
 // The checks it makes, each with the obligation behind it, in the order
-// the message presents them. legacy_version must be 0x0303, or
-// protocol_version (rfc9846.txt:1253-1254). legacy_session_id is 0 to
-// 32 bytes, or decode_error. cipher_suites is a non-empty even-length
-// list, and every code point outside this build's suites is ignored
-// (rfc9846.txt:4636-4637). legacy_compression_methods must be exactly
-// one zero byte, or illegal_parameter (rfc9846.txt:1284-1288). The
-// extension block must be present and must carry supported_versions
-// listing 0x0304, or protocol_version (rfc9846.txt:1306-1313,
-// rfc9846.txt:1742-1744). A second extension of one type is
-// illegal_parameter (rfc9846.txt:1673-1674). Bytes left over inside a
-// recognized extension's body are decode_error
-// (rfc9846.txt:1561-1565). pre_shared_key, when present, must be the
-// last extension, or illegal_parameter (rfc9846.txt:2564-2567), and
-// must come with psk_key_exchange_modes (rfc9846.txt:2306-2307). With
-// no pre_shared_key, both signature_algorithms and supported_groups
-// must be present, or missing_extension (rfc9846.txt:4595-4605), and
+// the message presents them. legacy_version is read and not judged:
+// §4.2.1 has a server that sees supported_versions ignore it
+// (rfc9846.txt:1306-1313), and a hello without supported_versions is
+// refused for that absence below, so no value there changes a verdict.
+// legacy_session_id is 0 to 32 bytes, or decode_error. cipher_suites
+// is a non-empty even-length list, and every code point outside this
+// build's suites is ignored (rfc9846.txt:4636-4637).
+// legacy_compression_methods must be exactly one zero byte, or
+// illegal_parameter (rfc9846.txt:1284-1288). The extension block must
+// be present and must carry supported_versions listing 0x0304, or
+// protocol_version (rfc9846.txt:1306-1313, rfc9846.txt:1742-1744). A
+// second extension of one type is illegal_parameter
+// (rfc9846.txt:1673-1674). Bytes left over inside a recognized
+// extension's body are decode_error (rfc9846.txt:1561-1565).
+// pre_shared_key, when present, must be the last extension, or
+// illegal_parameter (rfc9846.txt:2564-2567), and must come with
+// psk_key_exchange_modes (rfc9846.txt:2306-2307). With no
+// pre_shared_key, both signature_algorithms and supported_groups must
+// be present, or missing_extension (rfc9846.txt:4595-4605), and
 // supported_groups without key_share or the reverse is
 // missing_extension too (rfc9846.txt:4599-4605). A key_share entry for
 // this build's group whose length is not CH_KEX_CLIENT_SHARE is
-// illegal_parameter.
+// illegal_parameter, and so is one for a group supported_groups did
+// not list, which §4.2.8 forbids the client to send. Every list of
+// code points, names, shares, identities or binders must fill the
+// length that frames it, and every length must sit inside the vector
+// bounds RFC 9846 prints for it, or decode_error; the one bound not
+// judged is the extension block's own lower bound of 8 bytes, because a
+// shorter block is TLS 1.2 syntax and the missing supported_versions
+// answers it with protocol_version. Nothing else is refused: a suite,
+// group, scheme, version, mode or extension this build does not know
+// is read and ignored, and so is a KeyShareEntry for a group this build
+// does not hold, whatever supported_groups says about that group.
 //
 // One reading the missing-extension checks must not invite: an empty
 // KeyShare.client_shares list is a present extension, not an absent
@@ -316,6 +337,76 @@ int srv_ext_duplicate(const uint8_t *exts, size_t n);
 // no caller reads it.
 int srv_parse_client_hello(const uint8_t *body, size_t n, client_hello *ch,
                            const ch_alpn_protocol *offered, size_t offered_count, uint8_t *alert);
+
+// What the parser's two files share, and nothing outside them uses. The
+// parser is one concern in two files because one file of it ran past the
+// 500-line limit, not because there are two concerns; webpki.h holds its
+// seven files the same way and says the same thing about them. Treat
+// everything below as a module internal: no lint stops a third file from
+// calling srv_read_extension, and nothing else should.
+
+// Everything one parse carries between the readers: the body's length,
+// which truncated_len counts from, the output, the caller's ALPN offer,
+// the alert slot and the running frozen digest.
+typedef struct {
+    size_t n;
+    client_hello *ch;
+    const ch_alpn_protocol *offered;
+    size_t offered_count;
+    uint8_t *alert;
+    sha256 frozen;
+} hello_parse;
+
+// Writes the description a refusal owes and returns the refusal, so
+// every refusal in either file is one line that names its alert.
+static inline int srv_refuse(uint8_t *alert, uint8_t description) {
+    *alert = description;
+    return CH_EPROTO;
+}
+
+// Reads the two-byte length of a list of two-byte code points and holds
+// it to the list's syntax: at least one code point, an even byte count,
+// and no more bytes than the reader has left. The last term keeps the
+// walks that follow at the list's own length on a message that lies
+// about it. Returns 1 with *list_len written, or 0 for a length outside
+// the syntax, which the caller answers with decode_error.
+//
+// That last term carries no verdict of its own, and no test guards it,
+// because deleting it changes no answer its callers give. A list longer
+// than the bytes left makes srv_list_has read past the end, which sets
+// the reader's sticky error, and every caller then refuses with
+// decode_error: parse_extension on rb_left, and parse_head on the
+// compression bytes it reads next. The term makes that refusal happen
+// here instead of two reads later, and nothing else, so a mutant that
+// removes it is not a coverage hole and test/violations/ holds none.
+static inline int srv_open_code_point_list(rbuf *r, size_t *list_len) {
+    *list_len = rb_u16(r);
+    return !r->err && *list_len >= 2 && (*list_len & 1) == 0 && *list_len <= rb_left(r);
+}
+
+// Whether the next list_len bytes of r, a list srv_open_code_point_list
+// admitted, hold code. It reads the whole list either way, so r ends at
+// the list's end, and a code point outside this build's tables is read
+// and ignored (rfc9846.txt:4636-4637).
+static inline int srv_list_has(rbuf *r, size_t list_len, uint16_t code) {
+    int found = 0;
+    for (size_t i = 0; i < list_len; i += 2) {
+        if (rb_u16(r) == code) {
+            found = 1;
+        }
+    }
+    return found;
+}
+
+// Reads one recognized extension's body. e is bounded by the length the
+// message gave that extension, so no reader walks past it; type is a
+// value srv_ext_known answers 1 for; data_off is where the body starts,
+// counted from the start of the ClientHello body, and only
+// pre_shared_key reads it. Returns CH_OK, or CH_EPROTO with p->alert
+// written. The caller holds the body to being read exactly, so a reader
+// that leaves bytes behind is refused without checking for itself.
+// Defined in srv_parser_ext.c.
+int srv_read_extension(rbuf *e, uint16_t type, size_t data_off, hello_parse *p);
 
 #endif // CH_ROLE_SERVER
 #endif

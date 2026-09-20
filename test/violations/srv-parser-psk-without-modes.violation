@@ -1,0 +1,15 @@
+invariant: INV-14
+file: srv_parser.c
+catches: srv_test
+reason: check_required stops requiring psk_key_exchange_modes beside
+  pre_shared_key, which RFC 9846 §4.2.9 makes the server abort on
+  (rfc9846.txt:2306-2307). test/srv_parser_tests.h drops the modes
+  extension from a hello that offers a PSK and requires
+  illegal_parameter.
+
+--- old
+    if ((seen & SRV_EXT_PRE_SHARED_KEY) != 0 && (seen & SRV_EXT_PSK_MODES) == 0) {
+        return srv_refuse(alert, ALERT_ILLEGAL_PARAMETER);
+    }
+--- new
+    // A PSK offer with no modes is srv_select's to decline.

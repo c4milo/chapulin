@@ -694,7 +694,7 @@ is `illegal_parameter` (`rfc9846.txt:3789-3791`, with the description at
 
 | Condition | Alert | Obligation | Alert source |
 |---|---|---|---|
-| `legacy_version` is not 0x0303 | `protocol_version` (70) | 1253-1254 | 1253-1254 |
+| `legacy_version` is not 0x0303 | none: the field is read and not judged. §4.2.1 tells a server that sees `supported_versions` to ignore it (1306-1313), and a hello without `supported_versions` takes the row below | 1306-1313 | — |
 | `legacy_compression_methods` is not exactly one zero byte | `illegal_parameter` (47) | 1284-1288 | 1284-1288 |
 | No bytes after the compression list, or no `supported_versions` carrying 0x0304 | `protocol_version` (70) | 1306-1313, 1742-1744 | design's choice; 3972-3973 |
 | No `pre_shared_key`, and `signature_algorithms` or `supported_groups` missing | `missing_extension` (109) | 4595-4605 | 4595-4605 |
@@ -1599,7 +1599,7 @@ file is, except what two named lists carry with their reasons.
 
 ```make
 # The server's protocol files. One concern per pair, dependencies down.
-SRV_SRCS := srv_parser.c srv_message.c srv_cookie.c srv_auth.c \
+SRV_SRCS := srv_parser.c srv_parser_ext.c srv_message.c srv_cookie.c srv_auth.c \
             srv_flight.c srv_handshake.c srv.c
 # Named for the algorithm rather than the role, because they are primitives.
 # aes.c and gcm.c are also compiled by a TRANSPORT=quic build. Test binaries
@@ -2117,6 +2117,14 @@ walks the selected identity's `chain`, writes the message header and the
 each fragment as its own record through `rec_seal`. `rfc9846.txt:3460-3462`
 permits the fragmentation and forbids interleaving another record type, which a
 straight-line writer cannot do.
+
+`store_selection` (`srv_handshake.c`) writes the client's `record_size_limit`
+into `peer_limit` only when it is smaller than the `CH_TX_PT` the driver
+seeded, so `peer_limit` is already at or below this build's own cap and the
+`min` above restates that bound rather than establishing it. The client lowers
+its own the same way (`handshake_parser.c:233`). A send site that reads
+`peer_limit` alone is therefore correct, which is what keeps the staging array
+below the size derived next.
 
 So a server's staging array is one sealed record: `CH_TX_PT + 1 + AEAD_TAG` =
 512 + 1 + 16 = **529 bytes** (derived from the measured constants above),

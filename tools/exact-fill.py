@@ -80,6 +80,22 @@ WALKED = {
         "certificate bytes inside a trailing entry stay unparsed on purpose "
         "(docs/webpki.md, \"The chain walk\")"
     ),
+    ("srv_parser.c", "srv_ext_duplicate", "r"): (
+        "the loop runs while rb_left(&r) > 0 and every framing failure "
+        "returns 0. It has no length of its own to compare: the block's "
+        "exact fill is checked by its caller, srv_parse_client_hello, with "
+        "exts_len != rb_left(&r) before this predicate runs. A duplicate "
+        "returns 1 from inside the loop on purpose, because the duplicate "
+        "is the whole answer and srv_parser.h says this predicate reaches "
+        "no verdict about framing"
+    ),
+    ("srv_parser.c", "type_before", "r"): (
+        "the loop runs while rb_left(&r) > 0 and every framing failure "
+        "returns 0. Its container is a prefix of the extension block that "
+        "srv_ext_duplicate cut on an extension boundary, so there is no "
+        "length of its own to compare, and the block's exact fill was "
+        "checked by srv_parse_client_hello before either ran"
+    ),
 }
 
 READER = re.compile(r"\brb_init\(&(\w+)\s*,")

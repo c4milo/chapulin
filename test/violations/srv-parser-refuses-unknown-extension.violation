@@ -1,0 +1,19 @@
+invariant: INV-14
+file: srv_parser.c
+catches: srv_test
+reason: the extension loop's default arm refuses an extension it does not
+  recognize, the client's habit, where RFC 9846 §4.2.2 makes a server
+  ignore it (rfc9846.txt:1299) and §9.3 restates that as a protocol
+  invariant (rfc9846.txt:4636-4637). A hello carrying a GREASE extension
+  would then never negotiate, and every browser sends one. The golden
+  hello in test/srv_parser_tests.h carries an unknown type and must
+  parse.
+
+--- old
+    if (!srv_ext_known(type)) {
+        return CH_OK;
+    }
+--- new
+    if (!srv_ext_known(type)) {
+        return srv_refuse(p->alert, ALERT_UNSUPPORTED_EXTENSION);
+    }

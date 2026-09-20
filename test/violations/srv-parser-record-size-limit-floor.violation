@@ -1,0 +1,12 @@
+invariant: INV-14
+file: srv_parser_ext.c
+catches: srv_test
+reason: read_record_size_limit admits 63, one below the smallest limit RFC
+  8449 §4 lets a peer send, which the section makes a fatal
+  illegal_parameter. The boundary pair in test/srv_parser_tests.h
+  requires 64 to parse and 63 to be refused.
+
+--- old
+    if (limit < RECORD_SIZE_LIMIT_MIN) {
+--- new
+    if (limit < RECORD_SIZE_LIMIT_MIN - 1) {

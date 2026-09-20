@@ -1,0 +1,19 @@
+invariant: INV-25
+file: srv_parser_ext.c
+catches: srv_test
+reason: the wire record_size_limit counts the inner content-type byte
+  (RFC 8449 §4), so a parser that stores it unchanged reports one byte
+  more plaintext than the client accepts. srv_handshake.c takes the
+  smaller of that value and CH_TX_PT into t->peer_limit, which session.h
+  defines as the largest plaintext the peer accepts, so the error lands
+  on the send path and shows only against a client that advertises, and
+  only at the boundary. The first implementation of this file stored the
+  wire value and its own test asserted the wire value back, so the two
+  agreed and both were wrong; this mutant is what stops that pair
+  returning.
+
+--- old
+    p->ch->record_size_limit = (uint16_t)(limit - 1);
+--- new
+    // The value is a record size limit, so store what the client sent.
+    p->ch->record_size_limit = limit;

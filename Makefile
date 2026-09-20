@@ -223,19 +223,20 @@ QUIC_UNPROBED := $(if $(AES_HW_PROBE),,quic_aes_hw.c)
 # srv_flight (the flight handlers) below srv_handshake (the state
 # machine) below srv (the public calls).
 #
-# Every one of them is a stub today: it defines each function its header
-# declares and implements none, so a ROLE=server object links and every
-# call refuses. docs/server.md, "Stubs first", states the rule.
-SRV_SRCS := srv_parser.c srv_message.c srv_cookie.c srv_auth.c \
+# srv_flight.c is the one still a stub: it defines each function its
+# header declares and implements none, so a ROLE=server object links and
+# no handshake runs. docs/server.md, "Stubs first", states the rule.
+SRV_SRCS := srv_parser.c srv_parser_ext.c srv_message.c srv_cookie.c srv_auth.c \
             srv_flight.c srv_handshake.c srv.c
 # Which of them are still stubs, read from the marker rather than from a
 # hand-kept list: every stub body holds one `// CH_SRV_STUB: ` line and
-# an implemented body holds none. Two checks carry an exception this
-# list bounds, and each retires its own the moment the file it names
-# stops matching -- lint-tidy's stub pass, and lib-check's RAND=extern
-# import check. The TRANSPORT=quic axis carried the same list under
-# CH_QUIC_STUB until its last stub was implemented.
-SRV_STUB_SRCS := $(shell grep -l '^[[:space:]]*// CH_SRV_STUB: ' $(SRV_SRCS) 2>/dev/null)
+# an implemented body holds none. One check carries an exception this
+# list bounds and retires it the moment the file it names stops
+# matching: lint-tidy's stub pass. lib-check's RAND=extern check carried
+# a second one, for the object that drew no randomness while
+# srv_flight.c was a stub, and that exception went with the commit that
+# implemented the file. The TRANSPORT=quic axis carried the same list
+# under CH_QUIC_STUB until its last stub was implemented.
 # The client driver sources a ROLE=server object does not compile: the
 # state machine, the peer-certificate flight, the parsers for the
 # messages a server sends, and the ClientHello builder. Their server
@@ -262,7 +263,7 @@ LINT_C := $(filter-out softmul.c,$(SRCS)) drbg.c sha3.c sha512.c sha512_compress
           test/webpki_auth_test.c \
           test/mlkem_test.c test/handshake_strict_test.c test/handshake_sequence_test.c \
           test/x509_strict_test.c $(QUIC_SRCS) $(filter-out $(AES_IMPL),$(AES_IMPL_SRCS)) \
-          $(SRV_SRCS) test/srv_stub_test.c test/srv_test.c \
+          $(SRV_SRCS) test/srv_auth_test.c test/srv_test.c test/srv_flight_test.c \
           test/quic_driver_test.c test/quic_vectors.c test/diff_quic_test.c \
           test/aes_equiv_test.c test/aes_equiv_soft.c test/aes_equiv_hw.c $(wildcard examples/*.c)
 
@@ -285,7 +286,8 @@ TESTH := test/test_random.h test/pem_armor.h test/pem_tests.h test/x509_ca_tests
          test/handshake_strict_alpn.h \
          test/webpki_cert_mutants.h test/webpki_ext_mutants.h test/diff_webpki_cert.h \
          test/webpki_auth_vectors.h test/rxbuf_floor_tests.h \
-         test/srv_message_tests.h test/srv_cookie_tests.h
+         test/srv_message_tests.h test/srv_cookie_tests.h test/srv_flight_tests.h \
+         test/srv_flight_keys_tests.h test/srv_parser_hello.h test/srv_parser_tests.h test/srv_parser_reader_tests.h
 
 # Each axis names its value or stops the build. RAND has done this since
 # https://github.com/c4milo/chapulin/issues/41; PIN, TRUST and KEX each
@@ -391,15 +393,6 @@ PUBLIC_TRANSPORT := ch_connect ch_read ch_write ch_close
 else
 $(error TRANSPORT=$(TRANSPORT) is not a transport; use TRANSPORT=tls or TRANSPORT=quic)
 endif
-# Set while this build's object holds no code that draws randomness. A
-# ROLE=server object draws randomness in srv_flight.c -- srv_begin draws
-# the ephemeral key exchange secret and srv_send_server_hello draws the
-# 32 ServerHello random bytes -- and that file is a stub, so the object
-# calls ch_rand_bytes nowhere and has no import for lib-check to assert.
-# The assertion returns with srv_flight.c's implementation, and the
-# filter names that one file so a half-implemented srv_flight.c does not
-# keep it switched off.
-SRV_STUB_RAND := $(if $(filter server,$(ROLE)),$(filter srv_flight.c,$(SRV_STUB_SRCS)))
 # Role: ROLE=client (default) builds the TLS 1.3 client this tree has
 # always built; ROLE=server builds a TLS 1.3 server from the same
 # primitives, the same record layer and the same key schedule
@@ -700,7 +693,7 @@ lib: $(LIB_OBJ)
 # -fno-rtti and links against the packaged library object, the way a
 # firmware C++ consumer would use it.
 CXXFLAGS ?= -std=c++17 -fno-exceptions -fno-rtti -Wall -Wextra -Wpedantic -Werror
-cxx-check: $(LIB_OBJ) chapulin.hpp test/hpp_test.cpp
+cxx-check: $(LIB_OBJ) chapulin.hpp test/hpp_test.cpp bin/srv_flight_test
 	@command -v $(CXX) >/dev/null || { \
 	  [ -n "$$CI" ] && { echo "$(CXX): missing on CI; the gate must not skip"; exit 1; }; \
 	  echo "SKIP cxx-check: no C++ compiler"; exit 0; }
@@ -724,10 +717,6 @@ ifeq ($(RAND),drbg)
 	@if nm -u $(LIB_OBJ) | awk '{print $$NF}' | sed 's/^_//' | grep -qx ch_rand_bytes; then \
 	  echo "lib-check: RAND=drbg packages the generator, so ch_rand_bytes must be defined here, not imported"; exit 1; fi
 	@echo "lib-check: ch_rand_bytes is defined in the object; the image seeds it with ch_drbg_seed at boot"
-else ifneq ($(SRV_STUB_RAND),)
-	@if nm -u $(LIB_OBJ) | awk '{print $$NF}' | sed 's/^_//' | grep -qx ch_rand_bytes; then \
-	  echo "lib-check: srv_flight.c still carries a CH_SRV_STUB marker and this object already imports ch_rand_bytes; drop SRV_STUB_RAND and let the RAND=extern check run"; exit 1; fi
-	@echo "lib-check: srv_flight.c is still a stub, so no source in this object calls ch_rand_bytes and there is no import to check; the RAND=extern check returns with srv_flight.c's implementation"
 else
 	@if ! nm -u $(LIB_OBJ) | awk '{print $$NF}' | sed 's/^_//' | grep -qx ch_rand_bytes; then \
 	  echo "lib-check: RAND=extern must leave ch_rand_bytes undefined, so an image that forgets the hook fails to link"; exit 1; fi
@@ -869,20 +858,38 @@ bin/aes_equiv_test: test/aes_equiv_test.c test/aes_equiv_soft.c test/aes_equiv_h
 # signed content and ct.c for the wipes after it, srv.c compares ALPN names
 # with ct_memeq, srv_handshake.c wipes its handshake_state and fails the
 # session through tlsi_fail, and session.c's alert path pulls the record
-# layer, the I/O shim and the key derivation record.c runs with it. The two
-# stubs still call none of it.
-SRV_BELOW := buf.c ct.c session.c io.c record.c aead.c chacha20.c poly1305.c hkdf.c sha256.c
-bin/srv_stub_test: test/srv_stub_test.c $(SRV_SRCS) $(SRV_BELOW) $(HDRS) $(TESTH)
+# layer, the I/O shim and the key derivation record.c runs with it.
+# srv_parser.c reads through buf.c, hashes the frozen fields through sha256.c
+# and compares ALPN names with ct_memeq. srv_flight.c adds the last three:
+# keysched.c for the key schedule, x25519.c for the key exchange, and
+# handshake_record.c for the messages it reads. No stub is left in the role.
+SRV_BELOW := buf.c ct.c session.c io.c record.c aead.c chacha20.c poly1305.c hkdf.c sha256.c \
+             keysched.c x25519.c handshake_record.c
+bin/srv_auth_test: test/srv_auth_test.c $(SRV_SRCS) $(SRV_BELOW) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -DCH_ROLE_SERVER -I. -o $@ test/srv_stub_test.c $(SRV_SRCS) $(SRV_BELOW)
-# The role's unit vectors: the messages srv_message.c writes and the cookie
-# srv_cookie.c mints and opens. It links those two sources and their
-# dependencies alone, not the whole role, because the builders and the cookie
-# are pure functions over caller buffers and touch no session.
+	$(CC) $(CFLAGS) -DCH_ROLE_SERVER -I. -o $@ test/srv_auth_test.c $(SRV_SRCS) $(SRV_BELOW)
+# The role's unit vectors: the messages srv_message.c writes, the cookie
+# srv_cookie.c mints and opens, and the ClientHello srv_parser.c reads. It
+# links those sources and their dependencies alone, not the whole role,
+# because the builders, the cookie and the parser are pure functions over
+# caller buffers and touch no session.
 SRV_DEPS := buf.c ct.c sha256.c hkdf.c
-bin/srv_test: test/srv_test.c srv_message.c srv_cookie.c $(SRV_DEPS) $(HDRS) $(TESTH)
+bin/srv_test: test/srv_test.c srv_message.c srv_cookie.c srv_parser.c srv_parser_ext.c \
+              $(SRV_DEPS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -DCH_ROLE_SERVER -I. -o $@ test/srv_test.c srv_message.c srv_cookie.c $(SRV_DEPS)
+	$(CC) $(CFLAGS) -DCH_ROLE_SERVER -I. -o $@ test/srv_test.c srv_message.c srv_cookie.c \
+	  srv_parser.c srv_parser_ext.c $(SRV_DEPS)
+# The flight handlers, in their own binary. test/srv_flight_tests.h defines
+# srv_parse_client_hello itself, so the flight cases drive every answer the
+# parser's contract admits rather than only the ones a real hello produces;
+# that definition and srv_parser.c cannot link into one object.
+SRV_FLIGHT_DEPS := buf.c ct.c sha256.c hkdf.c keysched.c x25519.c handshake_record.c io.c \
+                   record.c aead.c chacha20.c poly1305.c
+bin/srv_flight_test: test/srv_flight_test.c srv_flight.c srv_message.c srv_cookie.c \
+                     srv_auth.c $(SRV_FLIGHT_DEPS) $(HDRS) $(TESTH)
+	@mkdir -p bin
+	$(CC) $(CFLAGS) -DCH_ROLE_SERVER -I. -o $@ test/srv_flight_test.c srv_flight.c \
+	  srv_message.c srv_cookie.c srv_auth.c $(SRV_FLIGHT_DEPS)
 # SHA-512 and SHA-384 vectors and the streaming contract. Its own binary,
 # out of the packaged object like sha3: only TRUST=webpki links sha512.c.
 bin/sha512_test: test/sha512_test.c sha512.c sha512_compress.c $(HDRS) $(TESTH)
@@ -1164,7 +1171,7 @@ run-%: bin/%
 # and the invariant violation builds. The nightly runs it. Splitting on
 # duration rather than on importance is deliberate -- nothing here is
 # optional, and a change is not finished until check-slow passes too.
-check: bin/unit bin/unit_ca bin/unit_pq bin/tlsclient bin/tlsclient_ecdsa bin/tlsclient_ca bin/tlsclient_ca_ecdsa bin/tlsclient_webpki bin/tlsclient_pq bin/drbg_test bin/softmul_test bin/rsa_test bin/sha3_test bin/sha512_test bin/p384_test bin/rsa_pkcs1_test bin/webpki_time_test bin/webpki_name_test bin/webpki_spki_test bin/webpki_sigalg_test bin/webpki_cert_test bin/webpki_chain_test bin/webpki_auth_test bin/mlkem_test bin/handshake_strict_test bin/handshake_strict_pq bin/handshake_strict_webpki bin/webpki_session_test bin/webpki_session_pq bin/x509strict bin/x509strict_ecdsa bin/quic_driver_test bin/quic_test $(AES_HW_BINS) lint rand-check bin/srv_stub_test bin/srv_test bin/rsa_sign_test bin/p256_field_test bin/p256_ecdh_test bin/p256_sign_test
+check: bin/unit bin/unit_ca bin/unit_pq bin/tlsclient bin/tlsclient_ecdsa bin/tlsclient_ca bin/tlsclient_ca_ecdsa bin/tlsclient_webpki bin/tlsclient_pq bin/drbg_test bin/softmul_test bin/rsa_test bin/sha3_test bin/sha512_test bin/p384_test bin/rsa_pkcs1_test bin/webpki_time_test bin/webpki_name_test bin/webpki_spki_test bin/webpki_sigalg_test bin/webpki_cert_test bin/webpki_chain_test bin/webpki_auth_test bin/mlkem_test bin/handshake_strict_test bin/handshake_strict_pq bin/handshake_strict_webpki bin/webpki_session_test bin/webpki_session_pq bin/x509strict bin/x509strict_ecdsa bin/quic_driver_test bin/quic_test $(AES_HW_BINS) lint rand-check bin/srv_auth_test bin/srv_test bin/rsa_sign_test bin/p256_field_test bin/p256_ecdh_test bin/p256_sign_test
 	# The packaged object is built once per entropy pattern, because
 	# lib-check reads a different export list and a different import
 	# list in each. Only the object is built twice: the examples and
@@ -1251,8 +1258,9 @@ check: bin/unit bin/unit_ca bin/unit_pq bin/tlsclient bin/tlsclient_ecdsa bin/tl
 	else \
 	  echo "SKIP AES=hw: $(CC) has no AES instructions and no flag turns them on"; \
 	fi
-	./bin/srv_stub_test
+	./bin/srv_auth_test
 	./bin/srv_test
+	./bin/srv_flight_test
 	./bin/handshake_strict_test
 	./bin/handshake_strict_pq
 	./bin/handshake_strict_webpki
@@ -2036,7 +2044,7 @@ else
 	# reason: every declaration they hold sits behind
 	# -DCH_TRANSPORT_QUIC, which this pass does not define, so it would
 	# read eight empty translation units. The two passes below read them.
-	$(CLANG_TIDY) --quiet $(filter-out webpki.c test/webpki_session_test.c test/webpki_chain_test.c test/webpki_auth_test.c examples/webpki_client.c $(QUIC_SRCS) $(AES_IMPL_SRCS) test/quic_driver_test.c test/quic_vectors.c test/diff_quic_test.c test/aes_equiv_test.c test/aes_equiv_soft.c test/aes_equiv_hw.c $(SRV_SRCS) test/srv_stub_test.c test/srv_test.c,$(LINT_C)) -- \
+	$(CLANG_TIDY) --quiet $(filter-out webpki.c test/webpki_session_test.c test/webpki_chain_test.c test/webpki_auth_test.c examples/webpki_client.c $(QUIC_SRCS) $(AES_IMPL_SRCS) test/quic_driver_test.c test/quic_vectors.c test/diff_quic_test.c test/aes_equiv_test.c test/aes_equiv_soft.c test/aes_equiv_hw.c $(SRV_SRCS) test/srv_auth_test.c test/srv_test.c test/srv_flight_test.c,$(LINT_C)) -- \
 	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -I.
 	# The pass above defines no trust mode, so it reads none of the
 	# TRUST=webpki arms. This pass parses the sources that carry them or
@@ -2074,24 +2082,12 @@ else
 	# on disk carries.
 	$(CLANG_TIDY) --quiet test/aes_equiv_test.c -- \
 	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_TRANSPORT_QUIC -I.
-	# The server role, in two passes split by SRV_STUB_SRCS, for two
-	# reasons: every declaration these files hold sits behind
-	# -DCH_ROLE_SERVER, so the pass above would read seven empty
-	# translation units, and a stub writes nothing through the
-	# out-parameters its header declares writable, which
-	# readability-non-const-parameter reads as a pointer that could be
-	# const -- an answer the header forbids, since making it const would
-	# conflict with the declaration. The exception retires per file: an
-	# implemented source drops out of SRV_STUB_SRCS and joins the first
-	# pass, where the check is on again.
-	@set -e; done="$(filter-out $(SRV_STUB_SRCS),$(SRV_SRCS))"; \
-	 [ -z "$$done" ] || $(CLANG_TIDY) --quiet $$done -- \
-	   -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_ROLE_SERVER -I.
-	$(CLANG_TIDY) --quiet test/srv_stub_test.c test/srv_test.c -- \
+	# The server role gets its own pass: every declaration these files
+	# hold sits behind -DCH_ROLE_SERVER, so the pass above would read
+	# seven empty translation units.
+	$(CLANG_TIDY) --quiet $(SRV_SRCS) test/srv_auth_test.c test/srv_test.c \
+	  test/srv_flight_test.c -- \
 	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_ROLE_SERVER -I.
-	@set -e; [ -z "$(SRV_STUB_SRCS)" ] || $(CLANG_TIDY) --quiet \
-	   --checks='-readability-non-const-parameter' $(SRV_STUB_SRCS) -- \
-	   -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_ROLE_SERVER -I.
 	# The M3 smoke runtimes and the KAT program lint with the target's
 	# own flags. Three checks are off, each with its reason:
 	# bugprone-reserved-identifier and its two cert aliases, because the
@@ -2417,10 +2413,11 @@ lint-impact:
 #     to it. test/aes_equiv_test.c and the Wycheproof AES-GCM suite on
 #     that leg check it instead, and neither measures timing
 #     (docs/quic.md, "What the AES axis proves").
-#   srv_parser.c, srv_message.c, srv_cookie.c, srv_auth.c, srv_flight.c,
-#     srv_handshake.c, srv.c: the ROLE=server protocol files. They are
-#     parsers and builders, and the transcript hash, the verify_data and
-#     the cookie MAC pass through them, so they take a ceiling here.
+#   srv_parser.c, srv_parser_ext.c, srv_message.c, srv_cookie.c,
+#     srv_auth.c, srv_flight.c, srv_handshake.c, srv.c: the ROLE=server
+#     protocol files. They are parsers and builders, and the transcript
+#     hash, the verify_data and the cookie MAC pass through them, so
+#     they take a ceiling here.
 #     They take no conditional-branch count, for the reason BRANCH_SRCS
 #     gives below: they branch on lengths, types and states the peer
 #     sent in the clear.
@@ -2452,8 +2449,8 @@ WIDEMUL_CEILING := ct.c:0 sha256.c:0 sha3.c:1 hkdf.c:0 chacha20.c:0 poly1305.c:0
                    tls.c:0 drbg.c:0 softmul.c:0 \
                    quic_keys.c:0 quic_packet.c:0 quic_config.c:0 quic_step.c:0 quic.c:0 \
                    quic_aes.c:0 quic_aes_soft.c:0 quic_aes_extern.c:0 quic_gcm.c:0 \
-                   srv_parser.c:0 srv_message.c:0 srv_cookie.c:0 srv_auth.c:0 srv_flight.c:0 \
-                   srv_handshake.c:0 srv.c:0 rsa_sign.c:0 \
+                   srv_parser.c:0 srv_parser_ext.c:0 srv_message.c:0 srv_cookie.c:0 \
+                   srv_auth.c:0 srv_flight.c:0 srv_handshake.c:0 srv.c:0 rsa_sign.c:0 \
                    p256_scalar.c:0 p256_point.c:0 p256_sign.c:0 p256_ecdh.c:0
 CODEGEN_SRCS := $(foreach e,$(WIDEMUL_CEILING),$(firstword $(subst :, ,$(e))))
 # Per-file defines both gates below add for one file alone, file:defines,
@@ -2472,15 +2469,20 @@ CODEGEN_SRCS := $(foreach e,$(WIDEMUL_CEILING),$(firstword $(subst :, ,$(e))))
 # compile only without the transport and role defines, and
 # quic_aes_soft.c, which preprocesses to an empty file under
 # -DCH_AES_EXTERN.
+# srv_flight.c carries -UCH_KEX_PQ because the codegen legs compile every
+# source with -DCH_KEX_PQ and that file is an #error under ROLE=server with
+# it: the server has no KEX=pq half (docs/server.md, open question ten). The
+# leg measures the build that exists, which is KEX=x25519.
 WIDEMUL_DEFINES := quic_keys.c:-DCH_TRANSPORT_QUIC quic_packet.c:-DCH_TRANSPORT_QUIC \
                    quic_config.c:-DCH_TRANSPORT_QUIC quic_step.c:-DCH_TRANSPORT_QUIC \
                    quic.c:-DCH_TRANSPORT_QUIC \
                    quic_aes.c:-DCH_TRANSPORT_QUIC quic_aes_soft.c:-DCH_TRANSPORT_QUIC \
                    quic_aes_extern.c:-DCH_TRANSPORT_QUIC$(COMMA)-DCH_AES_EXTERN \
                    quic_gcm.c:-DCH_TRANSPORT_QUIC \
-                   srv_parser.c:-DCH_ROLE_SERVER srv_message.c:-DCH_ROLE_SERVER \
+                   srv_parser.c:-DCH_ROLE_SERVER srv_parser_ext.c:-DCH_ROLE_SERVER \
+                   srv_message.c:-DCH_ROLE_SERVER \
                    srv_cookie.c:-DCH_ROLE_SERVER srv_auth.c:-DCH_ROLE_SERVER \
-                   srv_flight.c:-DCH_ROLE_SERVER srv_handshake.c:-DCH_ROLE_SERVER \
+                   srv_flight.c:-DCH_ROLE_SERVER$(COMMA)-UCH_KEX_PQ srv_handshake.c:-DCH_ROLE_SERVER \
                    srv.c:-DCH_ROLE_SERVER
 WIDEMUL_PUBLIC := p256.c rsa.c rsa_mont.c pem.c x509.c x509_der.c x509_ca.c sha512.c sha512_compress.c \
                   p384.c p384_field.c rsa_pkcs1.c webpki_time.c webpki_name.c webpki_spki.c webpki_sigalg.c \

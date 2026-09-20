@@ -76,13 +76,17 @@ which convention holds them.
 ### INV-4 — randomness only through the hook
 
 - **Claim.** All randomness flows through `ch_rand_bytes`, consumed
-  at exactly four audited sites. Three are in `handshake.c`: the
+  at exactly six audited sites. Three are in `handshake.c`: the
   key-share scalar, the ClientHello random, and the ML-KEM (d, z)
-  seed, which only the `KEX=pq` build draws. The fourth is the PSS
-  salt in `rsa_sign.c`, which no library object compiles today —
-  `ROLE=server` is a design record (docs/server.md), so only the test
-  binaries, the Wycheproof suite and its CBMC harness compile the
-  signer. Every draw carries the same all-zero check against a hook
+  seed, which only the `KEX=pq` build draws. Two are the server's
+  mirror of the first two, in `srv_flight.c`: the key-share scalar it
+  answers with, and the ServerHello random. A client and a server draw
+  the same two values for the same reasons, so the audit is the same
+  audit; the server draws no third, because `KEX=pq` is a client build.
+  The sixth is the PSS salt in `rsa_sign.c`, which no library object
+  compiles today — nothing wires a signer into `srv_auth.c` yet, so
+  only the test binaries, the Wycheproof suite and its CBMC harness
+  compile it. Every draw carries the same all-zero check against a hook
   that writes nothing.
 - **Mechanism.** The hook is the only randomness path into the library,
   and which side defines it is a declared build choice with no default.
@@ -91,7 +95,7 @@ which convention holds them.
   reference generator in `drbg.c`, which faults on an unseeded draw.
   Neither build carries a fallback that quietly produces bytes.
 - **Check.** Semgrep-structural (`inv-4-randomness-sites`): no `ch_rand_bytes` call
-  outside `handshake.c` and `rsa_sign.c`.
+  outside `handshake.c`, `srv_flight.c` and `rsa_sign.c`.
 - **Violation.** A PR conjures a nonce or padding bytes from a new
   call site nobody audits for seeding requirements.
 - See [docs/entropy.md](entropy.md).
@@ -352,9 +356,11 @@ which convention holds them.
 - **Mechanism.** The Makefile's `ROLE` axis packages the role before the
   role is written, so the object exists and every call in it is a stub.
   A stub body carries one `// CH_SRV_STUB: ` line and returns the
-  header's refusal. `SRV_STUB_SRCS` reads that marker, and the two checks
-  that carry a stub exception read that list: `lint-tidy`'s stub pass
-  and `lib-check`'s `RAND=extern` import check.
+  header's refusal. `SRV_STUB_SRCS` reads that marker, and `lint-tidy`'s
+  stub pass reads that list. `lib-check`'s `RAND=extern` import check
+  carried a second exception, for the object that drew no randomness
+  while `srv_flight.c` was a stub; it retired when that file was
+  implemented, and the check now asserts the import in every build.
 - **Check.** A running test, `bin/srv_stub_test`, which `make check`
   builds and runs. It calls each stub, requires the documented refusal
   from it, and fills every buffer and every struct it passes with `0xa5`
@@ -547,8 +553,26 @@ which convention holds them.
   inv14-alpn-extension-trailing, inv14-alpn-without-offer,
   inv14-alpn-duplicate-name, inv14-alpn-name-length,
   inv14-alpn-count-cap and inv14-alpn-selection-unseeded.
+  A `ROLE=server` build's ClientHello parser (`srv_parser.c` and
+  `srv_parser_ext.c`) has the same shape with the sides swapped. It
+  refuses only what RFC 9846 makes a server abort on — malformed
+  framing, a second extension of one type, a missing required
+  extension, `pre_shared_key` out of last position or without
+  `psk_key_exchange_modes`, a share of the wrong length or for a group
+  `supported_groups` did not list, a `legacy_compression_methods` that
+  is not one zero byte, and a `supported_versions` without 0x0304 — and
+  it ignores every suite, group, scheme, version, mode and extension it
+  does not know (`rfc9846.txt:1299`, `rfc9846.txt:4636-4637`), so a
+  hello carrying GREASE code points still negotiates.
+  test/srv_parser_tests.h holds one case per refusal, the boundary pair
+  of every length rule, and the ignore rule. Nineteen `srv-parser-`
+  violations require bin/srv_test to object when one of those rules is
+  relaxed, the ignore rule included: fifteen carry this invariant, three
+  carry INV-25 because they are the exact-fill rules, and one carries
+  INV-8 because it is the 1.3-only rule.
 - **Violation.** A PR relaxes one refusal for interop with a broken
-  server.
+  server, or makes the server refuse a ClientHello for carrying
+  something it does not know.
 - See [decisions: Protocol surface](decisions.md#protocol-surface).
 
 ### INV-15 — CH_ASSERT survives release

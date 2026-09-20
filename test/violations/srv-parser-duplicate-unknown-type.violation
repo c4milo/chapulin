@@ -1,0 +1,15 @@
+invariant: INV-14
+file: srv_parser.c
+catches: srv_test
+reason: srv_ext_duplicate compares only the types this build recognizes, so a
+  block carrying two extensions of one unknown type passes, and RFC 9846
+  §4.2 forbids more than one extension of any type in a block
+  (rfc9846.txt:1673-1674). srv_parser.h states that the predicate
+  answers for every type, which is why it walks the block rather than
+  reading the seen mask. test/srv_parser_tests.h appends a second GREASE
+  extension and requires illegal_parameter.
+
+--- old
+        if (type_before(exts, before, type)) {
+--- new
+        if (srv_ext_known(type) && type_before(exts, before, type)) {

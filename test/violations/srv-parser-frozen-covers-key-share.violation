@@ -1,0 +1,14 @@
+invariant: INV-14
+file: srv_parser.c
+catches: srv_test
+reason: frozen_covers puts key_share into the digest a HelloRetryRequest
+  cookie carries, so the second ClientHello, whose share is the one the
+  retry asked for (rfc9846.txt:1191-1213), computes a different digest
+  and srv_check_retry_hello refuses every retried hello. The digest test
+  in test/srv_parser_tests.h replaces the share and requires the same
+  digest.
+
+--- old
+    return type != EXT_KEY_SHARE && type != EXT_EARLY_DATA && type != EXT_COOKIE &&
+--- new
+    return type != EXT_EARLY_DATA && type != EXT_COOKIE &&

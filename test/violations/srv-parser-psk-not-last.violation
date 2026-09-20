@@ -1,0 +1,15 @@
+invariant: INV-14
+file: srv_parser.c
+catches: srv_test
+reason: the parser stops holding pre_shared_key to the last position, which
+  RFC 9846 §4.2.11 requires (rfc9846.txt:2564-2567) because the binder
+  covers every byte before the binders list and an extension after it
+  would sit outside the binder. test/srv_parser_tests.h puts a padding
+  extension after pre_shared_key and requires illegal_parameter.
+
+--- old
+    if ((ch->seen & SRV_EXT_PRE_SHARED_KEY) != 0) {
+        return srv_refuse(p->alert, ALERT_ILLEGAL_PARAMETER);
+    }
+--- new
+    // pre_shared_key may sit anywhere; nothing reads what follows it.
