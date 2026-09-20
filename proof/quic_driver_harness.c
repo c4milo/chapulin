@@ -95,7 +95,11 @@ int hsq_advance(ch_quic *q) {
 
 #include "quic_driver_stubs.h"
 
+// quic_fail.c holds the wipe and the two failure entries that used to sit
+// in quic.c. They are the same code in the same formula, so this harness
+// still proves what it did: one translation unit, both files.
 #include "quic.c"
+#include "quic_fail.c"
 
 static uint8_t buf[CH_PROOF_RXBUF];
 static ch_quic q;

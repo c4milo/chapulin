@@ -132,8 +132,8 @@ SRCS := ct.c sha256.c hkdf.c chacha20.c poly1305.c aead.c x25519.c p256.c rsa.c 
 HDRS := ct.h sha256.h hkdf.h chacha20.h poly1305.h aead.h x25519.h p256.h rsa.h ch_assert.h \
         pem.h x509.h x509_der.h x509_ca.h webpki.h buf.h record.h keysched.h io.h handshake_message.h handshake_parser.h handshake_record.h cfg.h session.h handshake_auth.h handshake.h handshake_post.h \
         tls.h rand.h drbg.h sha3.h sha512.h sha512_compress.h p384.h p384_field.h p256_field.h p256_scalar.h p256_point.h p256_sign.h p256_ecdh.h rsa_pkcs1.h rsa_sign.h mlkem.h mlkem_poly.h \
-        handshake_flight.h quic.h quic_aes.h quic_aes_block.h quic_aes_key.h quic_config.h quic_gcm.h quic_initial.h quic_keys.h quic_packet.h quic_retry.h quic_step.h \
-        srv_cfg.h srv.h srv_parser.h srv_message.h srv_cookie.h srv_auth.h srv_flight.h srv_handshake.h
+        handshake_flight.h quic.h quic_aes.h quic_aes_block.h quic_aes_key.h quic_config.h quic_gcm.h quic_initial.h quic_keys.h quic_packet.h quic_retry.h quic_step.h quic_fail.h \
+        srv_cfg.h srv.h srv_parser.h srv_message.h srv_cookie.h srv_auth.h srv_out.h srv_flight.h srv_handshake.h srv_quic.h
 
 # The TRANSPORT=quic mode's own sources, named here rather than matched
 # by a pattern, for the reason WEBPKI_SRCS is named: an auditor reads
@@ -181,7 +181,7 @@ else
 $(error AES=$(AES) is not an AES implementation; use AES=soft, AES=hw or AES=extern)
 endif
 QUIC_SRCS := quic_aes.c $(AES_IMPL) quic_gcm.c quic_keys.c quic_packet.c quic_initial.c \
-             quic_retry.c quic_config.c quic_step.c quic.c
+             quic_retry.c quic_config.c quic_fail.c quic_step.c quic.c
 # The three implementation sources, named whichever one this build picks,
 # so a check that reads every AES choice does not re-derive the list.
 AES_IMPL_SRCS := quic_aes_soft.c quic_aes_hw.c quic_aes_extern.c
@@ -447,13 +447,6 @@ endif
 ifneq ($(PIN),rsa)
 $(error ROLE=server carries both verifiers for ch_srv_check, so PIN selects nothing in it; drop PIN=$(PIN))
 endif
-# RFC 9001 §4.1.3 removes the record layer, and the dummy
-# change_cipher_spec, record_size_limit and the early-data discard
-# disappear with it, so a QUIC server is its own design
-# (docs/server.md, open question ten).
-ifneq ($(TRANSPORT),tls)
-$(error ROLE=server runs over TLS records only; use TRANSPORT=tls)
-endif
 ROLE_DEF    := -DCH_ROLE_SERVER
 ROLE_FILTER := $(CLIENT_REPLACED)
 # The server's own sources and the two signers srv_auth.c calls:
@@ -471,7 +464,26 @@ ROLE_FILTER := $(CLIENT_REPLACED)
 # -Wframe-larger-than measures one frame at a time, and docs/server.md
 # measures the sum a deployment has to size its stack from.
 ROLE_ADD    := $(SRV_SRCS) rsa_sign.c p256_sign.c p256_scalar.c p256_point.c p256_field.c
+ifeq ($(TRANSPORT),quic)
+# The server's driver replaces the client's, source for source:
+# srv_quic.c is the step table quic_step.c is for a client, and
+# srv_handshake.c drives the TLS records this transport does not have.
+# quic.c stays, because the packet calls in it read no side and a server
+# needs every one; its own client driver is guarded out there.
+TRANSPORT_ADD := $(filter-out quic_step.c,$(TRANSPORT_ADD))
+ROLE_ADD    := $(filter-out srv_handshake.c,$(ROLE_ADD)) srv_quic.c
+# What this object exports: the server's three calls, the boot check, and
+# the packet calls quic.h declares for either role. Not ch_quic_init,
+# ch_quic_crypto_in or ch_quic_crypto_out, which are the client's driver;
+# not ch_read, ch_write or ch_close, which are record-layer calls RFC 9001
+# section 4.1.3 removes with the record layer.
+PUBLIC_ROLE := ch_srv_quic_init ch_srv_quic_crypto_in ch_srv_quic_retry_tag ch_srv_check \
+               ch_quic_initial_keys ch_quic_seal ch_quic_open ch_quic_retry_ok \
+               ch_quic_key_update ch_quic_key_phase ch_quic_drop_previous_keys \
+               ch_quic_discard ch_quic_state ch_quic_alert ch_quic_error_code ch_quic_close
+else
 PUBLIC_ROLE := ch_srv_accept ch_srv_check ch_read ch_write ch_close
+endif
 # An empty PIN_FILTER keeps every verifier, because LIB_SRCS filters out
 # what the filter names. This object wants exactly that: it holds two
 # signing identities and ch_srv_check verifies both at boot, so it needs
@@ -650,8 +662,12 @@ lint-trust-separation:
 	[ -n "$$srv_files" ] || { echo "lint-trust-separation: git tracks no srv*.c file at the root, so the role rows would check nothing"; rc=1; }; \
 	client_only="handshake.c handshake_auth.c handshake_parser.c handshake_message.c"; \
 	signers="rsa_sign.c p256_sign.c p256_scalar.c p256_point.c p256_field.c"; \
+	srv_tls=$$(printf '%s\n' $$srv_files | grep -vxF -e srv_quic.c | tr '\n' ' '); \
+	srv_quic=$$(printf '%s\n' $$srv_files | grep -vxF -e srv_handshake.c | tr '\n' ' '); \
 	check "ROLE=client TRUST=raw TRANSPORT=tls PIN=rsa" "$$client_only tls.c" "$$srv_files $$signers" "" "-DCH_ROLE_SERVER"; \
-	check "ROLE=server TRUST=raw TRANSPORT=tls PIN=rsa" "$$srv_files $$signers tls.c rsa.c rsa_mont.c p256.c" "$$client_only" "-DCH_ROLE_SERVER" "-DCH_PIN_ECDSA"; \
+	check "ROLE=server TRUST=raw TRANSPORT=tls PIN=rsa" "$$srv_tls $$signers tls.c rsa.c rsa_mont.c p256.c" "$$client_only srv_quic.c" "-DCH_ROLE_SERVER" "-DCH_PIN_ECDSA"; \
+	quic_srv=$$(printf '%s\n' $$quic_always | grep -vxF -e quic_step.c | tr '\n' ' '); \
+	check "ROLE=server TRUST=raw TRANSPORT=quic PIN=rsa" "$$srv_quic $$signers $$quic_srv" "$$client_only srv_handshake.c quic_step.c record.c" "-DCH_ROLE_SERVER -DCH_TRANSPORT_QUIC" "-DCH_PIN_ECDSA"; \
 	[ $$rc = 0 ] && echo "lint-trust-separation: every axis value packages exactly its own sources and defines"; \
 	exit $$rc
 # bench/device-ram.sh builds with CLANG_RV, the clang the codegen lints
@@ -2498,6 +2514,7 @@ WIDEMUL_CEILING := ct.c:0 sha256.c:0 sha3.c:1 hkdf.c:0 chacha20.c:0 poly1305.c:0
                    handshake_auth.c:0 handshake_flight.c:0 handshake.c:0 handshake_post.c:0 \
                    tls.c:0 drbg.c:0 softmul.c:0 \
                    quic_keys.c:0 quic_packet.c:0 quic_config.c:0 quic_step.c:0 quic.c:0 \
+                   quic_fail.c:0 srv_quic.c:0 \
                    quic_aes.c:0 quic_aes_soft.c:0 quic_aes_extern.c:0 quic_gcm.c:0 \
                    srv_parser.c:0 srv_parser_ext.c:0 srv_message.c:0 srv_cookie.c:0 \
                    srv_auth.c:0 srv_out.c:0 srv_flight.c:0 srv_handshake.c:0 srv.c:0 rsa_sign.c:0 \
@@ -2526,7 +2543,8 @@ CODEGEN_SRCS := $(foreach e,$(WIDEMUL_CEILING),$(firstword $(subst :, ,$(e))))
 # which is KEX=x25519.
 WIDEMUL_DEFINES := quic_keys.c:-DCH_TRANSPORT_QUIC quic_packet.c:-DCH_TRANSPORT_QUIC \
                    quic_config.c:-DCH_TRANSPORT_QUIC quic_step.c:-DCH_TRANSPORT_QUIC \
-                   quic.c:-DCH_TRANSPORT_QUIC \
+                   quic.c:-DCH_TRANSPORT_QUIC quic_fail.c:-DCH_TRANSPORT_QUIC \
+                   srv_quic.c:-DCH_ROLE_SERVER$(COMMA)-DCH_TRANSPORT_QUIC$(COMMA)-UCH_KEX_PQ \
                    quic_aes.c:-DCH_TRANSPORT_QUIC quic_aes_soft.c:-DCH_TRANSPORT_QUIC \
                    quic_aes_extern.c:-DCH_TRANSPORT_QUIC$(COMMA)-DCH_AES_EXTERN \
                    quic_gcm.c:-DCH_TRANSPORT_QUIC \

@@ -99,19 +99,42 @@ static int srv_fields_ok(const ch_cfg *cfg) {
 // declares; srv.h says the role's own floor waits on a bench/sram.sh
 // measurement, and this file states no number of its own before then.
 static int transport_ok(const ch_cfg *cfg) {
+#ifdef CH_TRANSPORT_QUIC
+    // A QUIC server drives no socket: the caller owns UDP and hands this
+    // stack CRYPTO bytes, so send and recv are unset here rather than
+    // required, and the sink those bytes leave through takes their place
+    // (srv_cfg.h, on_crypto_out).
+    return cfg->buf != NULL && cfg->buf_len >= CH_MIN_RXBUF && cfg->send == NULL &&
+           cfg->recv == NULL && cfg->srv.on_crypto_out != NULL && cfg->on_level_ready != NULL;
+#else
     return cfg->buf != NULL && cfg->send != NULL && cfg->recv != NULL &&
            cfg->buf_len >= CH_MIN_RXBUF;
+#endif
 }
 
+// A TLS build has one caller, ch_srv_accept below, so the linkage is
+// internal there and clang-tidy's misc-use-internal-linkage is right to
+// ask for it. A QUIC build has a second caller in srv_quic.c, which is
+// why srv_flight.h declares it at all.
+#ifdef CH_TRANSPORT_QUIC
+int srv_config_ok(const ch_cfg *cfg) {
+#else
+static int srv_config_ok(const ch_cfg *cfg) {
+#endif
+    return srv_fields_ok(cfg) && client_fields_unset(cfg) && alpn_ok(cfg) && transport_ok(cfg);
+}
+
+#ifndef CH_TRANSPORT_QUIC
 int ch_srv_accept(ch_tls *t, const ch_cfg *cfg) {
     memset(t, 0, sizeof *t);
     t->cfg = *cfg;
-    if (!srv_fields_ok(cfg) || !client_fields_unset(cfg) || !alpn_ok(cfg) || !transport_ok(cfg)) {
+    if (!srv_config_ok(cfg)) {
         t->state = CH_ST_FAILED;
         return CH_EINVAL;
     }
     return srv_handshake(t);
 }
+#endif
 
 int ch_srv_check(const ch_cfg *cfg) {
     uint8_t live = srv_identity_live(cfg);

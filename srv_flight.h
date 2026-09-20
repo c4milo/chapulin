@@ -78,6 +78,15 @@ _Static_assert(SRV_COOKIE_MAX <= HSP_COOKIE_MAX,
 // integrator's ch_rand_bytes to rand.h's contract with CH_ASSERT, as
 // hsf_begin does: an all-zero draw is a hook that returned without
 // writing, which is programmer error and not peer input.
+// Whether this configuration can serve: every rule srv.h states, with the
+// transport's own arm. srv.c holds the predicates and both drivers ask it,
+// because a QUIC server needs the same answer ch_srv_accept needs and
+// gets it through a different entry. Declared for that second caller
+// alone, so a TLS build keeps it internal to srv.c.
+#ifdef CH_TRANSPORT_QUIC
+int srv_config_ok(const ch_cfg *cfg);
+#endif
+
 void srv_begin(handshake_state *h);
 
 // Reads one ClientHello, parses it into ch, and adds the raw message to
