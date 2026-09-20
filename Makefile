@@ -477,7 +477,7 @@ else ifeq ($(TRANSPORT),record)
 TRANSPORT_DEF := -DCH_TRANSPORT_RECORD
 TRANSPORT_FILTER := handshake.c
 TRANSPORT_ADD := rec.c rec_step.c
-PUBLIC_TRANSPORT := ch_rec_init ch_rec_in ch_rec_out ch_rec_state ch_rec_alert ch_rec_close \
+PUBLIC_TRANSPORT := ch_record_init ch_record_in ch_record_out ch_record_state ch_record_alert ch_record_close \
                     ch_read ch_write ch_close
 else ifeq ($(TRANSPORT),tls)
 TRANSPORT_DEF :=

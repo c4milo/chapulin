@@ -1,4 +1,4 @@
-// The record-mode driver's step table: the step numbers ch_rec.step
+// The record-mode driver's step table: the step numbers ch_record.step
 // stores and the one function that runs a step.
 //
 // It is quic_step.h's table for the other transport, and the steps are
@@ -25,7 +25,7 @@
 // than included so the dependency keeps pointing down, the way
 // quic_step.h repeats ch_quic. C11 allows a typedef name to be declared
 // twice for the same type.
-typedef struct ch_rec ch_rec;
+typedef struct ch_record ch_record;
 
 // The step numbers, mirroring quic_step.h's constructor for constructor
 // so one Lean oracle judges every transport. Consecutive from 0, with
@@ -46,13 +46,13 @@ typedef struct ch_rec ch_rec;
 //
 // Requires: r is not NULL and r->hs.t is &r->t, which every public entry
 // writes before it calls.
-int hsr_advance(ch_rec *r);
+int hsr_advance(ch_record *r);
 
 // Stages one handshake message as a plaintext record, the shape a
 // ClientHello goes out in. The message is already at t->tx + REC_HDR,
-// where the builder wrote it. ch_rec_init stages the first hello and a
+// where the builder wrote it. ch_record_init stages the first hello and a
 // HelloRetryRequest step stages the second.
-void rec_stage_plain(ch_rec *r, size_t n);
+void rec_stage_plain(ch_record *r, size_t n);
 
 #endif // CH_TRANSPORT_RECORD
 #endif

@@ -256,7 +256,7 @@ void tlsi_fail(ch_tls *t, uint8_t description);
 
 // Whether a client configuration keeps every rule that does not depend on
 // which driver runs it. tls.c holds the predicates; ch_connect and
-// ch_rec_init both ask, and each checks the I/O callbacks itself.
+// ch_record_init both ask, and each checks the I/O callbacks itself.
 int tlsi_config_ok(const ch_cfg *cfg);
 
 // Loads the stored epoch and checks a resuming ticket against it, the

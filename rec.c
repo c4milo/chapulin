@@ -20,7 +20,7 @@
 // staged or unread. session.h lists the same names beside the invariant
 // they serve, so INV-17's claim that every failure path wipes can be
 // checked against that list.
-static void rec_wipe(ch_rec *r) {
+static void rec_wipe(ch_record *r) {
     ct_wipe(&r->hs, sizeof r->hs);
     ct_wipe(&r->t.rd, sizeof r->t.rd);
     ct_wipe(&r->t.wr, sizeof r->t.wr);
@@ -38,18 +38,18 @@ static void rec_wipe(ch_rec *r) {
 // What tlsi_fail is on the blocking transport, minus the alert record:
 // this mode sends nothing itself, so the alert goes to r->alert and the
 // caller sends it. Every secret is wiped and the session is dead.
-static int rec_fail(ch_rec *r, int rc) {
+static int rec_fail(ch_record *r, int rc) {
     r->alert = r->hs.alert;
     rec_wipe(r);
     r->t.state = CH_ST_FAILED;
     return rc;
 }
 
-static int session_dead(const ch_rec *r) {
+static int session_dead(const ch_record *r) {
     return r->t.state == CH_ST_CLOSED || r->t.state == CH_ST_FAILED;
 }
 
-int ch_rec_init(ch_rec *r, const ch_cfg *cfg) {
+int ch_record_init(ch_record *r, const ch_cfg *cfg) {
     // Neither pointer is checked, as ch_connect does not check its own:
     // rec.h makes "r and cfg are not NULL" a caller requirement.
     memset(r, 0, sizeof *r);
@@ -97,7 +97,7 @@ int ch_rec_init(ch_rec *r, const ch_cfg *cfg) {
 // quic.c's drive loop without the level checks, and it terminates for the
 // same reason: a copy that leaves bytes over means the buffer is full,
 // and a full buffer always holds hsr_peek_message's 4-byte header.
-static int drive(ch_rec *r) {
+static int drive(ch_record *r) {
     for (;;) {
         size_t raw_len = 0;
         int rc = hsr_peek_message(&r->hs, &raw_len, &r->hs.alert);
@@ -122,7 +122,7 @@ static int drive(ch_rec *r) {
 // Takes one record's plaintext into the handshake buffer. A record that
 // arrives before the handshake keys is already plaintext; one after them
 // is unprotected in place, which rec_open supports through pt == rec.
-static int take_record(ch_rec *r, uint8_t *rec, size_t body_len, uint8_t outer) {
+static int take_record(ch_record *r, uint8_t *rec, size_t body_len, uint8_t outer) {
     const uint8_t *pt = rec + REC_HDR;
     size_t pt_len = body_len;
     if (outer == REC_CCS) {
@@ -162,7 +162,7 @@ static int take_record(ch_rec *r, uint8_t *rec, size_t body_len, uint8_t outer) 
     return CH_OK;
 }
 
-int ch_rec_in(ch_rec *r, uint8_t *p, size_t n, size_t *consumed) {
+int ch_record_in(ch_record *r, uint8_t *p, size_t n, size_t *consumed) {
     CH_ASSERT(r->t.state <= CH_ST_FAILED);
     r->hs.t = &r->t;
     *consumed = 0;
@@ -206,7 +206,7 @@ int ch_rec_in(ch_rec *r, uint8_t *p, size_t n, size_t *consumed) {
     }
 }
 
-int ch_rec_out(ch_rec *r, uint8_t *out, size_t cap, size_t *out_len) {
+int ch_record_out(ch_record *r, uint8_t *out, size_t cap, size_t *out_len) {
     if (session_dead(r)) {
         return CH_EINVAL;
     }
@@ -235,15 +235,15 @@ int ch_rec_out(ch_rec *r, uint8_t *out, size_t cap, size_t *out_len) {
     return CH_OK;
 }
 
-uint8_t ch_rec_state(const ch_rec *r) {
+uint8_t ch_record_state(const ch_record *r) {
     return r->t.state;
 }
 
-uint8_t ch_rec_alert(const ch_rec *r) {
+uint8_t ch_record_alert(const ch_record *r) {
     return r->alert;
 }
 
-void ch_rec_close(ch_rec *r) {
+void ch_record_close(ch_record *r) {
     rec_wipe(r);
     r->t.state = CH_ST_CLOSED;
 }

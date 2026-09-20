@@ -94,15 +94,15 @@ static int from_hex(const char *hex, uint8_t *out, size_t cap, size_t *len) {
 // Drives the handshake to connected. Everything chapulin wants to say
 // leaves through out_buf, and everything the peer says arrives through
 // in_buf; leftover_len holds the bytes of a record that has not all
-// arrived, which ch_rec_in leaves for the next call.
-static int run_handshake(ch_rec *r, int fd) {
+// arrived, which ch_record_in leaves for the next call.
+static int run_handshake(ch_record *r, int fd) {
     uint8_t out_buf[4096];
     uint8_t in_buf[16384];
     size_t leftover = 0;
     for (;;) {
         for (;;) {
             size_t n = 0;
-            if (ch_rec_out(r, out_buf, sizeof out_buf, &n) != CH_OK) {
+            if (ch_record_out(r, out_buf, sizeof out_buf, &n) != CH_OK) {
                 return 1;
             }
             if (n == 0) {
@@ -112,7 +112,7 @@ static int run_handshake(ch_rec *r, int fd) {
                 return 1;
             }
         }
-        if (ch_rec_state(r) == CH_ST_CONNECTED) {
+        if (ch_record_state(r) == CH_ST_CONNECTED) {
             return 0;
         }
         ssize_t got = recv(fd, in_buf + leftover, sizeof in_buf - leftover, 0);
@@ -122,9 +122,9 @@ static int run_handshake(ch_rec *r, int fd) {
         }
         size_t have = leftover + (size_t)got;
         size_t used = 0;
-        int rc = ch_rec_in(r, in_buf, have, &used);
+        int rc = ch_record_in(r, in_buf, have, &used);
         if (rc != CH_OK) {
-            (void)fprintf(stderr, "rec_in: %d alert=%u\n", rc, ch_rec_alert(r));
+            (void)fprintf(stderr, "rec_in: %d alert=%u\n", rc, ch_record_alert(r));
             return 1;
         }
         leftover = have - used;
@@ -161,8 +161,8 @@ int main(int argc, char **argv) {
     cfg.recv = sock_recv;
     cfg.io = &fd;
 
-    static ch_rec r;
-    int rc = ch_rec_init(&r, &cfg);
+    static ch_record r;
+    int rc = ch_record_init(&r, &cfg);
     if (rc != CH_OK) {
         (void)fprintf(stderr, "rec_init: %d\n", rc);
         return 1;
