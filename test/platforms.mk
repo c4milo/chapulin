@@ -16,6 +16,13 @@ M3_FLAGS = -mcpu=cortex-m3 -mthumb --specs=rdimon.specs $(CFLAGS) \
 M3_RUN = $(M3_QEMU) -M mps2-an385 -cpu cortex-m3 -nographic -semihosting -kernel
 FREERTOS_KERNEL_DIR ?= bin/freertos-kernel
 FREERTOS_TCP_DIR ?= bin/freertos-plus-tcp
+# The sources this device build links: every source in SRCS except the
+# webpki chain verifier, which reads a clock and a hostname the device
+# does not have. Derived from SRCS rather than retyped, because a copy
+# drifts: this list was written out by hand and never gained
+# handshake_flight.c when that file was split out of handshake.c, so the
+# link failed on eight hsf_ symbols until the count was compared.
+FREERTOS_SRCS = $(filter-out webpki_%.c,$(SRCS))
 
 # Every deterministic suite, built and run natively — the tests-only
 # half of check, for platform-parity jobs (linux arm64 today) where
@@ -157,8 +164,6 @@ freertos-check:
 	    FreeRTOS_Routing.c portable/BufferManagement/BufferAllocation_2.c \
 	    portable/NetworkInterface/MPS2_AN385/NetworkInterface.c \
 	    portable/NetworkInterface/MPS2_AN385/ether_lan9118/smsc9220_eth_drv.c) \
-	  ct.c sha256.c hkdf.c chacha20.c poly1305.c aead.c x25519.c pem.c x509.c x509_der.c x509_ca.c \
-	  buf.c record.c keysched.c io.c handshake_message.c handshake_parser.c handshake_record.c \
-	  session.c handshake_auth.c handshake.c handshake_post.c tls.c softmul.c rsa.c rsa_mont.c p256.c
+	  $(FREERTOS_SRCS)
 	QEMU="$(M3_QEMU)" ./test/qemu-freertos-tls.sh bin/freertos/tls_test
 
