@@ -143,7 +143,17 @@ RULE_ID = "inv-26-aes-public-keys-only"
 # stack. Every other root source sees the incomplete type quic_aes.h
 # declares, so the compiler refuses a key there. key_holders() checks it.
 KEY_HEADER = "quic_aes_key.h"
-KEY_HOLDERS = ("quic_aes.c", "quic_initial.c", "quic_retry.c")
+KEY_HOLDERS = ("quic_aes.c", "quic_initial.c", "quic_retry.c",
+               # TLS_AES_128_GCM_SHA256 adds two. aes_traffic_key.h gives
+               # the one key that is not public its body and needs the
+               # schedule that body contains; quic_gcm.c reads the round
+               # keys out of either key type to run the AEAD. Both are
+               # deliberate and both are why INV-26 now states two claims
+               # rather than one: every key AES sees is public, except the
+               # traffic key a -DCH_SUITE_AES_GCM build hands it, which
+               # ct.h refuses unless the build has hardware AES and
+               # asserts its timing.
+               "aes_traffic_key.h", "quic_gcm.c")
 
 
 def run(*args):

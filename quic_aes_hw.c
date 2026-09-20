@@ -57,7 +57,7 @@
 // implementations over the same inputs and compares byte for byte.
 #include "quic_aes_block.h"
 
-#ifdef CH_TRANSPORT_QUIC
+#if defined(CH_TRANSPORT_QUIC) || defined(CH_SUITE_AES_GCM)
 #ifdef CH_AES_HW
 
 #include <stddef.h>
@@ -206,4 +206,4 @@ void aes_cipher_block(const uint8_t round_keys[AES_ROUND_KEYS * AES_BLOCK],
 #endif
 
 #endif // CH_AES_HW
-#endif // CH_TRANSPORT_QUIC
+#endif // CH_TRANSPORT_QUIC || CH_SUITE_AES_GCM

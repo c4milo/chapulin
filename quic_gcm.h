@@ -14,7 +14,7 @@
 // offers. This file never becomes one.
 #ifndef CH_QUIC_GCM_H
 #define CH_QUIC_GCM_H
-#ifdef CH_TRANSPORT_QUIC
+#if defined(CH_TRANSPORT_QUIC) || defined(CH_SUITE_AES_GCM)
 
 #include <stddef.h>
 #include <stdint.h>
@@ -88,5 +88,19 @@ int gcm_open(const aes_public_key *k, const uint8_t nonce[AES_IV], const uint8_t
 void gcm_ghash(const aes_public_key *k, const uint8_t *aad, size_t aad_len, const uint8_t *ct,
                size_t n, uint8_t out[AES_BLOCK]);
 
-#endif // CH_TRANSPORT_QUIC
+#ifdef CH_SUITE_AES_GCM
+// The same AEAD over a TLS traffic key, for TLS_AES_128_GCM_SHA256. Two
+// entries rather than one taking both types, because the type is the
+// whole mechanism: a public key cannot reach the record layer and a
+// traffic key cannot reach the three QUIC call sites INV-26 admits.
+void gcm_seal_traffic(const aes_traffic_key *k, const uint8_t nonce[AES_IV], const uint8_t *aad,
+                      size_t aad_len, const uint8_t *pt, size_t n, uint8_t *ct,
+                      uint8_t tag[GCM_TAG]);
+
+int gcm_open_traffic(const aes_traffic_key *k, const uint8_t nonce[AES_IV], const uint8_t *aad,
+                     size_t aad_len, const uint8_t *ct, size_t n, const uint8_t tag[GCM_TAG],
+                     uint8_t *pt);
+#endif
+
+#endif // CH_TRANSPORT_QUIC || CH_SUITE_AES_GCM
 #endif

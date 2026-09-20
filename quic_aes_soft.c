@@ -21,7 +21,7 @@
 // wiping and the stores would cost a device something for nothing.
 #include "quic_aes_block.h"
 
-#ifdef CH_TRANSPORT_QUIC
+#if defined(CH_TRANSPORT_QUIC) || defined(CH_SUITE_AES_GCM)
 #ifndef CH_AES_HW
 #ifndef CH_AES_EXTERN
 
@@ -151,4 +151,4 @@ void aes_cipher_block(const uint8_t round_keys[AES_ROUND_KEYS * AES_BLOCK],
 
 #endif // CH_AES_EXTERN
 #endif // CH_AES_HW
-#endif // CH_TRANSPORT_QUIC
+#endif // CH_TRANSPORT_QUIC || CH_SUITE_AES_GCM

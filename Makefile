@@ -132,7 +132,7 @@ SRCS := ct.c sha256.c hkdf.c chacha20.c poly1305.c aead.c x25519.c p256.c rsa.c 
 HDRS := ct.h sha256.h hkdf.h chacha20.h poly1305.h aead.h x25519.h p256.h rsa.h ch_assert.h \
         pem.h x509.h x509_der.h x509_ca.h webpki.h buf.h record.h keysched.h io.h handshake_message.h handshake_parser.h handshake_record.h cfg.h session.h handshake_auth.h handshake.h handshake_post.h \
         tls.h rand.h drbg.h sha3.h sha512.h sha512_compress.h p384.h p384_field.h p256_field.h p256_scalar.h p256_point.h p256_sign.h p256_ecdh.h rsa_pkcs1.h rsa_sign.h mlkem.h mlkem_poly.h \
-        handshake_flight.h quic.h quic_aes.h quic_aes_block.h quic_aes_key.h quic_config.h quic_gcm.h quic_initial.h quic_keys.h quic_packet.h quic_retry.h quic_step.h quic_fail.h \
+        handshake_flight.h quic.h quic_aes.h quic_aes_block.h quic_aes_key.h quic_config.h quic_gcm.h quic_initial.h quic_keys.h quic_packet.h quic_retry.h quic_step.h quic_fail.h aes_traffic_key.h \
         srv_cfg.h srv.h srv_parser.h srv_message.h srv_cookie.h srv_auth.h srv_out.h srv_flight.h srv_handshake.h srv_quic.h
 
 # The TRANSPORT=quic mode's own sources, named here rather than matched
@@ -200,7 +200,7 @@ AES_HW_CFLAGS := $(filter-out none,$(AES_HW_PROBE))
 # The two binaries that need those instructions, named only when the
 # probe found them, so `check` builds and runs them where they work and
 # says it skipped them where they do not exist.
-AES_HW_BINS := $(if $(AES_HW_PROBE),bin/quic_test_hw bin/aes_equiv_test)
+AES_HW_BINS := $(if $(AES_HW_PROBE),bin/quic_test_hw bin/aes_equiv_test bin/aes_suite_test)
 # What lint-quic-partition needs to preprocess each AES implementation.
 # Each one guards its body on a second macro, so with CH_TRANSPORT_QUIC
 # alone it preprocesses to nothing and that lint would read it as a file
@@ -208,7 +208,13 @@ AES_HW_BINS := $(if $(AES_HW_PROBE),bin/quic_test_hw bin/aes_equiv_test)
 # commas between a file's flags. quic_aes_soft.c needs no entry: its body
 # is what a build with neither macro compiles.
 COMMA := ,
+# aes_schedule.h and aes_traffic_key.h carry no quic prefix because they
+# are not the mode's: they hold the shape TLS_AES_128_GCM_SHA256 shares
+# with QUIC's packet protection. Judged with the suite define, both runs
+# see the same text and the file reads as shared rather than QUIC-only,
+# which is what it is.
 QUIC_EXTRA_DEFINES := quic_aes_extern.c:-DCH_AES_EXTERN \
+                      aes_traffic_key.h:-DCH_SUITE_AES_GCM \
                       quic_aes_hw.c:-DCH_AES_HW$(patsubst %,$(COMMA)%,$(AES_HW_CFLAGS))
 # The files this compiler cannot preprocess at all, because the build
 # choice they need is one it does not offer. quic_aes_hw.c without the
@@ -913,6 +919,17 @@ bin/quic_test: test/quic_vectors.c quic_aes.c $(AES_IMPL) quic_gcm.c quic_keys.c
 # comparing the two implementations directly. quic_aes_hw.c is named rather
 # than $(AES_IMPL) because this binary is the hardware leg whatever the build's
 # AES value is.
+# TLS_AES_128_GCM_SHA256 in the record layer, against RFC 8448's printed
+# record. It needs the suite define, which ct.h refuses without hardware
+# AES and the build's own statement that those instructions are constant
+# time, so it builds only where AES_HW_PROBE found the flags.
+bin/aes_suite_test: test/aes_suite_test.c record.c quic_gcm.c quic_aes.c quic_aes_hw.c \
+                    aead.c chacha20.c poly1305.c hkdf.c sha256.c ct.c buf.c $(HDRS) $(TESTH)
+	@mkdir -p bin
+	$(CC) $(CFLAGS) $(AES_HW_CFLAGS) -DCH_SUITE_AES_GCM -DCH_AES_HW -DCH_NATIVE_AES -I. -o $@ \
+	  test/aes_suite_test.c record.c quic_gcm.c quic_aes.c quic_aes_hw.c aead.c chacha20.c \
+	  poly1305.c hkdf.c sha256.c ct.c buf.c
+
 bin/quic_test_hw: test/quic_vectors.c quic_aes.c quic_aes_hw.c quic_gcm.c quic_keys.c quic_retry.c quic_initial.c quic_packet.c \
                   hkdf.c sha256.c chacha20.c poly1305.c aead.c buf.c ct.c $(HDRS) $(TESTH)
 	@mkdir -p bin
@@ -1363,7 +1380,7 @@ check: bin/unit bin/unit_ca bin/unit_pq bin/tlsclient bin/tlsclient_ecdsa bin/tl
 	# (docs/quic.md, "What the AES axis proves"). A compiler without the
 	# AES instructions builds neither, which AES_HW_BINS reports above.
 	@set -e; if [ -n "$(AES_HW_BINS)" ]; then \
-	  ./bin/quic_test_hw; ./bin/aes_equiv_test; \
+	  ./bin/quic_test_hw; ./bin/aes_equiv_test; ./bin/aes_suite_test; \
 	else \
 	  echo "SKIP AES=hw: $(CC) has no AES instructions and no flag turns them on"; \
 	fi

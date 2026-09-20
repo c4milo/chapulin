@@ -17,7 +17,7 @@
 // implementation's S-box is a table indexed with cipher state.
 #include "quic_aes.h"
 
-#ifdef CH_TRANSPORT_QUIC
+#if defined(CH_TRANSPORT_QUIC) || defined(CH_SUITE_AES_GCM)
 
 #include <string.h>
 
@@ -27,6 +27,7 @@
 
 // RFC 9001 §5.2's printed salt, the input every Initial secret starts
 // from (rfc9001.txt:1051-1055, rfc9001.txt:1066).
+#ifdef CH_TRANSPORT_QUIC
 static const uint8_t INITIAL_SALT[20] = {0x38, 0x76, 0x2c, 0xf7, 0xf5, 0x59, 0x34,
                                          0xb3, 0x4d, 0x17, 0x9a, 0xe6, 0xa4, 0xc8,
                                          0x0c, 0xad, 0xcc, 0xbb, 0x7f, 0x0a};
@@ -35,7 +36,13 @@ static const uint8_t INITIAL_SALT[20] = {0x38, 0x76, 0x2c, 0xf7, 0xf5, 0x59, 0x3
 // (rfc9001.txt:1499-1500).
 static const uint8_t RETRY_KEY[AES_128_KEY] = {0xbe, 0x0c, 0x69, 0x0b, 0x9f, 0x66, 0x57, 0x5a,
                                                0x1d, 0x76, 0x6b, 0x54, 0xe3, 0x68, 0xc8, 0x4e};
+#endif // CH_TRANSPORT_QUIC
 
+#ifdef CH_TRANSPORT_QUIC
+// The three entries below are QUIC's alone: two build a key from what RFC
+// 9001 fixes for Initial and Retry packets, and the third is header
+// protection, which a TLS record does not have. A suite build compiles
+// the cipher above and none of this.
 int aes_public_key_initial(aes_public_key *k, const uint8_t *dcid, size_t dcid_len,
                            uint8_t endpoint) {
     if (dcid_len > CH_QUIC_DCID_MAX) {
@@ -82,15 +89,24 @@ void aes_public_key_retry(aes_public_key *k) {
     memset(k->iv, 0, sizeof k->iv);
     memset(&k->hp, 0, sizeof k->hp);
 }
+#endif // CH_TRANSPORT_QUIC
+
+void aes_encrypt_schedule(const aes_key_schedule *s, const uint8_t in[AES_BLOCK],
+                          uint8_t out[AES_BLOCK]) {
+    aes_cipher_block(s->round_keys, in, out);
+}
 
 void aes_encrypt_block(const aes_public_key *k, const uint8_t in[AES_BLOCK],
                        uint8_t out[AES_BLOCK]) {
-    aes_cipher_block(k->key.round_keys, in, out);
+    aes_encrypt_schedule(&k->key, in, out);
 }
 
+#ifdef CH_TRANSPORT_QUIC
 void aes_encrypt_block_hp(const aes_public_key *k, const uint8_t sample[AES_BLOCK],
                           uint8_t out[AES_BLOCK]) {
     aes_cipher_block(k->hp.round_keys, sample, out);
 }
 
 #endif // CH_TRANSPORT_QUIC
+
+#endif // CH_TRANSPORT_QUIC || CH_SUITE_AES_GCM

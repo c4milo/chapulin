@@ -33,7 +33,7 @@
 #error "CH_AES_HW and CH_AES_EXTERN are exclusive: declare at most one (docs/quic.md)"
 #endif
 
-#ifdef CH_TRANSPORT_QUIC
+#if defined(CH_TRANSPORT_QUIC) || defined(CH_SUITE_AES_GCM)
 
 #include <stdint.h>
 
@@ -88,5 +88,5 @@ void ch_aes_block(const uint8_t key[AES_128_KEY], const uint8_t in[AES_BLOCK],
                   uint8_t out[AES_BLOCK]);
 #endif
 
-#endif // CH_TRANSPORT_QUIC
+#endif // CH_TRANSPORT_QUIC || CH_SUITE_AES_GCM
 #endif

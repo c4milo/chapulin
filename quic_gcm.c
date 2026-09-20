@@ -21,7 +21,12 @@
 // arm has no caller and no code.
 #include "quic_gcm.h"
 
-#ifdef CH_TRANSPORT_QUIC
+#include "quic_aes_key.h"
+#ifdef CH_SUITE_AES_GCM
+#include "aes_traffic_key.h"
+#endif
+
+#if defined(CH_TRANSPORT_QUIC) || defined(CH_SUITE_AES_GCM)
 
 #include <string.h>
 
@@ -104,12 +109,12 @@ static void write_length_bits(uint8_t out[8], size_t len) {
     }
 }
 
-void gcm_ghash(const aes_public_key *k, const uint8_t *aad, size_t aad_len, const uint8_t *ct,
-               size_t n, uint8_t out[AES_BLOCK]) {
+static void ghash_schedule(const aes_key_schedule *k, const uint8_t *aad, size_t aad_len,
+                           const uint8_t *ct, size_t n, uint8_t out[AES_BLOCK]) {
     // SP 800-38D §7.1 step 1: the hash subkey H is the forward cipher of
     // a block of zeros.
     uint8_t subkey[AES_BLOCK];
-    aes_encrypt_block(k, ZERO_BLOCK, subkey);
+    aes_encrypt_schedule(k, ZERO_BLOCK, subkey);
 
     memset(out, 0, AES_BLOCK);
     hash_data(out, subkey, aad, aad_len);
@@ -156,7 +161,7 @@ static void increment_counter(uint8_t counter[AES_BLOCK]) {
 //
 // One byte of out is written after the byte of in at the same index is
 // read, so in == out works and so does out below in.
-static void counter_mode(const aes_public_key *k, uint8_t counter[AES_BLOCK], const uint8_t *in,
+static void counter_mode(const aes_key_schedule *k, uint8_t counter[AES_BLOCK], const uint8_t *in,
                          size_t n, uint8_t *out) {
     size_t off = 0;
     // One buffer for every block, wiped once at the end rather than once
@@ -166,7 +171,7 @@ static void counter_mode(const aes_public_key *k, uint8_t counter[AES_BLOCK], co
     uint8_t keystream[AES_BLOCK];
     while (off < n) {
         increment_counter(counter);
-        aes_encrypt_block(k, counter, keystream);
+        aes_encrypt_schedule(k, counter, keystream);
         size_t take = n - off < AES_BLOCK ? n - off : AES_BLOCK;
         for (size_t i = 0; i < take; i++) {
             out[off + i] = (uint8_t)(in[off + i] ^ keystream[i]);
@@ -179,13 +184,13 @@ static void counter_mode(const aes_public_key *k, uint8_t counter[AES_BLOCK], co
 // SP 800-38D §7.1 step 6: the tag is GHASH over the associated data and
 // the ciphertext, exclusive-ored with the forward cipher of the first
 // counter block.
-static void compute_tag(const aes_public_key *k, const uint8_t first_counter[AES_BLOCK],
+static void compute_tag(const aes_key_schedule *k, const uint8_t first_counter[AES_BLOCK],
                         const uint8_t *aad, size_t aad_len, const uint8_t *ct, size_t n,
                         uint8_t tag[GCM_TAG]) {
     uint8_t hashed[AES_BLOCK];
-    gcm_ghash(k, aad, aad_len, ct, n, hashed);
+    ghash_schedule(k, aad, aad_len, ct, n, hashed);
     uint8_t mask[AES_BLOCK];
-    aes_encrypt_block(k, first_counter, mask);
+    aes_encrypt_schedule(k, first_counter, mask);
     for (size_t i = 0; i < GCM_TAG; i++) {
         tag[i] = (uint8_t)(hashed[i] ^ mask[i]);
     }
@@ -193,8 +198,17 @@ static void compute_tag(const aes_public_key *k, const uint8_t first_counter[AES
     ct_wipe(mask, sizeof mask);
 }
 
-void gcm_seal(const aes_public_key *k, const uint8_t nonce[AES_IV], const uint8_t *aad,
-              size_t aad_len, const uint8_t *pt, size_t n, uint8_t *ct, uint8_t tag[GCM_TAG]) {
+void gcm_ghash(const aes_public_key *k, const uint8_t *aad, size_t aad_len, const uint8_t *ct,
+               size_t n, uint8_t out[GCM_TAG]) {
+    ghash_schedule(&k->key, aad, aad_len, ct, n, out);
+}
+
+// The AEAD over an expanded key. The typed entries below unwrap their key
+// and call these, so seal and open are written once and the compiler
+// still decides which call sites may hold which key (INV-26).
+static void seal_schedule(const aes_key_schedule *k, const uint8_t nonce[AES_IV],
+                          const uint8_t *aad, size_t aad_len, const uint8_t *pt, size_t n,
+                          uint8_t *ct, uint8_t tag[GCM_TAG]) {
     uint8_t first_counter[AES_BLOCK];
     first_counter_block(first_counter, nonce);
     // counter_mode advances the block it is given, so it gets a copy and
@@ -205,8 +219,9 @@ void gcm_seal(const aes_public_key *k, const uint8_t nonce[AES_IV], const uint8_
     compute_tag(k, first_counter, aad, aad_len, ct, n, tag);
 }
 
-int gcm_open(const aes_public_key *k, const uint8_t nonce[AES_IV], const uint8_t *aad,
-             size_t aad_len, const uint8_t *ct, size_t n, const uint8_t tag[GCM_TAG], uint8_t *pt) {
+static int open_schedule(const aes_key_schedule *k, const uint8_t nonce[AES_IV], const uint8_t *aad,
+                         size_t aad_len, const uint8_t *ct, size_t n, const uint8_t tag[GCM_TAG],
+                         uint8_t *pt) {
     uint8_t first_counter[AES_BLOCK];
     first_counter_block(first_counter, nonce);
     // The tag is computed over the ciphertext and compared before any
@@ -225,4 +240,31 @@ int gcm_open(const aes_public_key *k, const uint8_t nonce[AES_IV], const uint8_t
     return 1;
 }
 
-#endif // CH_TRANSPORT_QUIC
+void gcm_seal(const aes_public_key *k, const uint8_t nonce[AES_IV], const uint8_t *aad,
+              size_t aad_len, const uint8_t *pt, size_t n, uint8_t *ct, uint8_t tag[GCM_TAG]) {
+    seal_schedule(&k->key, nonce, aad, aad_len, pt, n, ct, tag);
+}
+
+int gcm_open(const aes_public_key *k, const uint8_t nonce[AES_IV], const uint8_t *aad,
+             size_t aad_len, const uint8_t *ct, size_t n, const uint8_t tag[GCM_TAG], uint8_t *pt) {
+    return open_schedule(&k->key, nonce, aad, aad_len, ct, n, tag, pt);
+}
+
+#ifdef CH_SUITE_AES_GCM
+// The same AEAD over a TLS traffic key. Its own entry rather than a cast,
+// because the type is what keeps a traffic key out of the three public
+// call sites and a public key out of the record layer (INV-26).
+void gcm_seal_traffic(const aes_traffic_key *k, const uint8_t nonce[AES_IV], const uint8_t *aad,
+                      size_t aad_len, const uint8_t *pt, size_t n, uint8_t *ct,
+                      uint8_t tag[GCM_TAG]) {
+    seal_schedule(&k->key, nonce, aad, aad_len, pt, n, ct, tag);
+}
+
+int gcm_open_traffic(const aes_traffic_key *k, const uint8_t nonce[AES_IV], const uint8_t *aad,
+                     size_t aad_len, const uint8_t *ct, size_t n, const uint8_t tag[GCM_TAG],
+                     uint8_t *pt) {
+    return open_schedule(&k->key, nonce, aad, aad_len, ct, n, tag, pt);
+}
+#endif // CH_SUITE_AES_GCM
+
+#endif // CH_TRANSPORT_QUIC || CH_SUITE_AES_GCM

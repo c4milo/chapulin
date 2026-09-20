@@ -13,7 +13,7 @@
 // cipher and no decryption round keys exist here.
 #ifndef CH_QUIC_AES_H
 #define CH_QUIC_AES_H
-#ifdef CH_TRANSPORT_QUIC
+#if defined(CH_TRANSPORT_QUIC) || defined(CH_SUITE_AES_GCM)
 
 #include <stddef.h>
 #include <stdint.h>
@@ -76,7 +76,21 @@
 // exports, so no caller reuses this cipher on something else. INV-26 in
 // docs/invariants.md states what each one reads and what review still
 // owes.
+// The expanded round keys, forward-declared so the entries below can name
+// one without the body. quic_aes_key.h completes it, and only the files
+// tools/quic-footprint.py admits may include that.
+typedef struct aes_key_schedule aes_key_schedule;
+
 typedef struct aes_public_key aes_public_key;
+
+#ifdef CH_SUITE_AES_GCM
+// The other key AES may see, and the only one that is not public: one
+// direction's TLS traffic key under TLS_AES_128_GCM_SHA256. Its body
+// lives in aes_traffic_key.h alone, so only the two files that
+// header names can build one or read one, and every other file sees this
+// incomplete type. INV-26 states both halves and what each rests on.
+typedef struct aes_traffic_key aes_traffic_key;
+#endif
 
 // The two endpoints of a QUIC connection. RFC 9001 §5.2 derives one
 // Initial secret per endpoint, under the labels "client in" and "server
@@ -129,6 +143,7 @@ typedef struct aes_public_key aes_public_key;
 // nothing when dcid_len is above CH_QUIC_DCID_MAX, or when endpoint is
 // neither of the two names above; k keeps whatever it held. No other
 // code can be returned: the derivation itself cannot fail.
+#ifdef CH_TRANSPORT_QUIC
 int aes_public_key_initial(aes_public_key *k, const uint8_t *dcid, size_t dcid_len,
                            uint8_t endpoint);
 
@@ -144,6 +159,7 @@ int aes_public_key_initial(aes_public_key *k, const uint8_t *dcid, size_t dcid_l
 // the caller includes quic_aes_key.h. Writes k whole and cannot fail,
 // so it returns nothing.
 void aes_public_key_retry(aes_public_key *k);
+#endif // CH_TRANSPORT_QUIC
 
 // One forward-cipher block under the packet protection key, k->key:
 // out = CIPH_K(in), FIPS 197 §5.1. quic_gcm.c calls it for the counter
@@ -152,6 +168,13 @@ void aes_public_key_retry(aes_public_key *k);
 // Requires: k was written by a constructor above; in and out point at
 // AES_BLOCK readable and writable bytes. in == out is allowed. Writes
 // AES_BLOCK bytes and cannot fail.
+// The forward cipher over an expanded key, whichever key type holds it.
+// The two entries below unwrap their typed key and call this, so the
+// cipher is written once and the type system still decides which call
+// sites may hold which key (INV-26).
+void aes_encrypt_schedule(const aes_key_schedule *s, const uint8_t in[AES_BLOCK],
+                          uint8_t out[AES_BLOCK]);
+
 void aes_encrypt_block(const aes_public_key *k, const uint8_t in[AES_BLOCK],
                        uint8_t out[AES_BLOCK]);
 
@@ -169,8 +192,11 @@ void aes_encrypt_block(const aes_public_key *k, const uint8_t in[AES_BLOCK],
 // readable bytes, taken from the packet the way §5.4.2 says; out points
 // at AES_BLOCK writable bytes. sample == out is allowed. Writes
 // AES_BLOCK bytes and cannot fail.
+#ifdef CH_TRANSPORT_QUIC
 void aes_encrypt_block_hp(const aes_public_key *k, const uint8_t sample[AES_BLOCK],
                           uint8_t out[AES_BLOCK]);
 
 #endif // CH_TRANSPORT_QUIC
+
+#endif // CH_TRANSPORT_QUIC || CH_SUITE_AES_GCM
 #endif

@@ -1,12 +1,39 @@
 #include "record.h"
 
 #include "ct.h"
+#include "handshake_message.h"
 #include "hkdf.h"
+#ifdef CH_SUITE_AES_GCM
+#include "aes_traffic_key.h"
+#include "quic_aes_block.h"
+#include "quic_gcm.h"
+
+// The key each suite fixes. TLS_AES_128_GCM_SHA256 takes 16 and
+// TLS_CHACHA20_POLY1305_SHA256 takes 32; both take the same 12-byte IV
+// and write the same 16-byte tag, so only the key length varies.
+static size_t suite_key_len(uint16_t suite) {
+    return suite == SUITE_AES_128_GCM_SHA256 ? AES_128_KEY : AEAD_KEY;
+}
+
+void rec_dir_init_suite(rec_dir *d, const uint8_t secret[SHA256_LEN], uint16_t suite) {
+    // The whole array is written before the shorter derive, so an AES key
+    // leaves no bytes of the previous key behind it.
+    ct_wipe(d->key, sizeof d->key);
+    d->suite = suite;
+    hkdf_expand_label(secret, "key", NULL, 0, d->key, suite_key_len(suite));
+    hkdf_expand_label(secret, "iv", NULL, 0, d->iv, AEAD_NONCE);
+    d->seq = 0;
+}
+#endif
 
 void rec_dir_init(rec_dir *d, const uint8_t secret[SHA256_LEN]) {
+#ifdef CH_SUITE_AES_GCM
+    rec_dir_init_suite(d, secret, SUITE_CHACHA20_POLY1305_SHA256);
+#else
     hkdf_expand_label(secret, "key", NULL, 0, d->key, AEAD_KEY);
     hkdf_expand_label(secret, "iv", NULL, 0, d->iv, AEAD_NONCE);
     d->seq = 0;
+#endif
 }
 
 void rec_dir_update(uint8_t secret[SHA256_LEN], rec_dir *d) {
@@ -53,7 +80,18 @@ int rec_seal(rec_dir *d, uint8_t type, const uint8_t *pt, size_t n, uint8_t *out
 
     uint8_t nonce[AEAD_NONCE];
     nonce_of(d, nonce);
-    aead_seal(d->key, nonce, out, REC_HDR, inner, n + 1, inner, inner + n + 1);
+#ifdef CH_SUITE_AES_GCM
+    if (d->suite == SUITE_AES_128_GCM_SHA256) {
+        // The round keys live on this frame and die with it: rec_dir
+        // keeps the 16 key bytes and nothing expanded, so no schedule
+        // outlives the record it protected.
+        aes_traffic_key k;
+        aes_expand_round_keys(d->key, k.key.round_keys);
+        gcm_seal_traffic(&k, nonce, out, REC_HDR, inner, n + 1, inner, inner + n + 1);
+        ct_wipe(&k, sizeof k);
+    } else
+#endif
+        aead_seal(d->key, nonce, out, REC_HDR, inner, n + 1, inner, inner + n + 1);
     d->seq++;
     *out_len = REC_HDR + body;
     return 0;
@@ -79,8 +117,20 @@ int rec_open(rec_dir *d, const uint8_t *rec, size_t n, uint8_t *pt, size_t cap, 
     }
     uint8_t nonce[AEAD_NONCE];
     nonce_of(d, nonce);
-    if (!aead_open(d->key, nonce, rec, REC_HDR, rec + REC_HDR, inner_len, rec + REC_HDR + inner_len,
-                   pt)) {
+#ifdef CH_SUITE_AES_GCM
+    if (d->suite == SUITE_AES_128_GCM_SHA256) {
+        aes_traffic_key k;
+        aes_expand_round_keys(d->key, k.key.round_keys);
+        int ok = gcm_open_traffic(&k, nonce, rec, REC_HDR, rec + REC_HDR, inner_len,
+                                  rec + REC_HDR + inner_len, pt);
+        ct_wipe(&k, sizeof k);
+        if (!ok) {
+            return -1;
+        }
+    } else
+#endif
+        if (!aead_open(d->key, nonce, rec, REC_HDR, rec + REC_HDR, inner_len,
+                       rec + REC_HDR + inner_len, pt)) {
         return -1;
     }
     d->seq++;

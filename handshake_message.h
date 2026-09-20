@@ -44,6 +44,11 @@
 
 #define TLS13 0x0304
 #define SUITE_CHACHA20_POLY1305_SHA256 0x1303
+// TLS_AES_128_GCM_SHA256, which RFC 9846 section 9.1 makes mandatory to
+// implement (rfc9846.txt:4540-4543). Only a -DCH_SUITE_AES_GCM build
+// offers or selects it, and ct.h refuses that define unless the build has
+// hardware AES and asserts its timing.
+#define SUITE_AES_128_GCM_SHA256 0x1301
 
 // The one group this build offers (its code point is one of cfg.h's
 // two CH_GROUP_* values), and its share size on each side. The hybrid

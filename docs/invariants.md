@@ -753,7 +753,7 @@ last `ROLE=server` stub, as the entry said it would.
   the linker size looked better.
 - See [decisions: Cryptography](decisions.md#cryptography).
 
-### INV-26 — AES sees three public keys and no others
+### INV-26 — AES sees three public keys, and one traffic key only under a suite build
 
 - **Claim.** Under `TRANSPORT=quic` this tree carries an AES-128, and
   every key it is given is public. `quic_aes.c` derives the keys and
@@ -772,6 +772,29 @@ last `ROLE=server` stub, as the entry said it would.
   `keysched.c` derives is passed to AES, and AES is never a cipher
   suite. No field of `ch_quic` holds an AES key, and no AES key outlives
   the call that built it.
+
+  A `-DCH_SUITE_AES_GCM` build adds the second claim, and one key. That
+  build offers `TLS_AES_128_GCM_SHA256`, so `record.c` hands AES a TLS
+  traffic key, which is secret. Three things bound it. `ct.h` refuses the
+  define unless the build takes `AES=hw` and also defines
+  `CH_NATIVE_AES`, which is the build asserting that this part's AES
+  instructions run in constant time — so the table-driven `AES=soft`
+  S-box never sees a secret key, and neither does `AES=extern`, which
+  cannot state its timing. The key has its own type, `aes_traffic_key`,
+  whose body lives in `aes_traffic_key.h` alone, so it cannot be passed
+  where an `aes_public_key` is expected or the reverse. And `record.c`
+  expands it on its own frame at each use and wipes it there, so no
+  schedule outlives the record it protected and no `rec_dir` holds one.
+
+  The mechanism grew with the claim, and the growth is the cost. The
+  files `tools/quic-footprint.py` admits to a key body are now five, not
+  three: `aes_traffic_key.h` needs the schedule its own body contains,
+  and `quic_gcm.c` reads the round keys out of either key type to run the
+  AEAD. Both can therefore declare an `aes_public_key`, which the three
+  original holders could already do. What still holds is the part that
+  matters: no file outside those five can build a key of either kind, and
+  `inv-26-aes-public-keys-only` still matches every call into the `aes_`
+  and `gcm_` families.
 
   One build would break that claim, and it does not compile. A TLS cipher
   suite whose AEAD is AES-GCM encrypts application data under

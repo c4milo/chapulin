@@ -26,27 +26,27 @@
 // Only a TRANSPORT=quic build compiles it.
 #ifndef CH_QUIC_AES_KEY_H
 #define CH_QUIC_AES_KEY_H
-#ifdef CH_TRANSPORT_QUIC
+#if defined(CH_TRANSPORT_QUIC) || defined(CH_SUITE_AES_GCM)
 
 #include <stdint.h>
 
 #include "quic_aes.h"
 
+// One direction of one QUIC encryption level whose AEAD is
+// AEAD_AES_128_GCM. quic_aes.h states the three fields, what writes
+// them and why every key they ever hold is public.
 // One AES-128 key expanded into its round keys (FIPS 197 §5.2, Key
-// Expansion). Bytes rather than words, so no step of the schedule or
-// the cipher assumes host endianness.
+// Expansion). Bytes rather than words, so no step of the schedule or the
+// cipher assumes host endianness.
 typedef struct aes_key_schedule {
     uint8_t round_keys[AES_ROUND_KEYS * AES_BLOCK];
 } aes_key_schedule;
 
-// One direction of one QUIC encryption level whose AEAD is
-// AEAD_AES_128_GCM. quic_aes.h states the three fields, what writes
-// them and why every key they ever hold is public.
 struct aes_public_key {
     aes_key_schedule key;
     uint8_t iv[AES_IV];
     aes_key_schedule hp;
 };
 
-#endif // CH_TRANSPORT_QUIC
+#endif // CH_TRANSPORT_QUIC || CH_SUITE_AES_GCM
 #endif
