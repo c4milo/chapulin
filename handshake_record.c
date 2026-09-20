@@ -11,12 +11,12 @@
 #include "buf.h"
 #include "cfg.h"
 #include "handshake_message.h"
-#ifndef CH_TRANSPORT_QUIC
+#if !defined(CH_TRANSPORT_QUIC) && !defined(CH_TRANSPORT_RECORD)
 #include "io.h"
 #include "record.h"
 #endif
 
-#ifndef CH_TRANSPORT_QUIC
+#if !defined(CH_TRANSPORT_QUIC) && !defined(CH_TRANSPORT_RECORD)
 // Appends one record's handshake bytes at buf[part..]. Plaintext records
 // shed their header in place; protected ones decrypt in place.
 static int accept_record(handshake_state *h, size_t part, uint8_t outer, size_t record_len) {
@@ -137,9 +137,9 @@ int hsr_next_msg(handshake_state *h, uint8_t *type, const uint8_t **raw, size_t 
     }
 }
 
-#endif // CH_TRANSPORT_QUIC
+#endif // CH_TRANSPORT_QUIC || CH_TRANSPORT_RECORD
 
-#ifdef CH_TRANSPORT_QUIC
+#if defined(CH_TRANSPORT_QUIC) || defined(CH_TRANSPORT_RECORD)
 size_t hsr_feed(handshake_state *h, const uint8_t *p, size_t n) {
     ch_tls *t = h->t;
     // Compact first, the way the TLS reader compacts before it reads a
@@ -207,7 +207,7 @@ int hsr_next_msg(handshake_state *h, uint8_t *type, const uint8_t **raw, size_t 
     t->pt_off += whole;
     return CH_OK;
 }
-#endif // CH_TRANSPORT_QUIC
+#endif // CH_TRANSPORT_QUIC || CH_TRANSPORT_RECORD
 
 int hsr_transcript_hash(handshake_state *h, uint8_t out[SHA256_LEN]) {
     sha256 transcript = h->t->transcript;

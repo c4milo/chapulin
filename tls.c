@@ -23,7 +23,7 @@
 // the connection at config time, not mid-handshake, so revocation
 // state stays out of any path a peer can influence. Returns CH_OK
 // when no epoch is configured.
-static int epoch_init(ch_tls *t, const ch_cfg *cfg, int psk_ok) {
+int tlsi_epoch_init(ch_tls *t, const ch_cfg *cfg, int psk_ok) {
 #ifdef CH_TRUST_CA
     // The callbacks come as a pair; one alone is a provisioning
     // mistake, and store is the only way to write the epoch back.
@@ -78,59 +78,70 @@ static int pin_len_ok(size_t len) {
 #endif
 }
 
-int ch_connect(ch_tls *t, const ch_cfg *cfg) {
-    memset(t, 0, sizeof *t);
-    t->cfg = *cfg;
+// Whether a PSK is the configured auth mode. Both callers below ask, and
+// epoch_init takes the answer.
+static int psk_configured(const ch_cfg *cfg) {
+    return cfg->psk != NULL && cfg->psk_len > 0 && cfg->psk_id != NULL &&
+           cfg->server_pubkey == NULL;
+}
+
+// Every rule a client configuration must keep whatever drives it. The I/O
+// callbacks are not among them: the blocking driver requires both and
+// TRANSPORT=record refuses both, so each caller checks that itself.
+int tlsi_config_ok(const ch_cfg *cfg) {
     // Exactly one auth mode: a config carrying both a PSK and a pin is a
     // provisioning mistake and gets rejected, not silently resolved.
-    int psk_ok =
-        cfg->psk != NULL && cfg->psk_len > 0 && cfg->psk_id != NULL && cfg->server_pubkey == NULL;
+    int psk_ok = psk_configured(cfg);
     int pin_ok =
         cfg->psk == NULL && cfg->server_pubkey != NULL && pin_len_ok(cfg->server_pubkey_len);
     // The optional second pin (key rotation) obeys every slot-A rule and
     // never stands alone: pinned mode still requires server_pubkey.
     if (cfg->server_pubkey2 != NULL && (!pin_ok || !pin_len_ok(cfg->server_pubkey2_len))) {
-        t->state = CH_ST_FAILED;
-        return CH_EINVAL;
+        return 0;
     }
-    if ((!psk_ok && !pin_ok) || cfg->buf == NULL || cfg->send == NULL || cfg->recv == NULL ||
-        cfg->buf_len < CH_MIN_RXBUF) {
-        t->state = CH_ST_FAILED;
-        return CH_EINVAL;
+    if ((!psk_ok && !pin_ok) || cfg->buf == NULL || cfg->buf_len < CH_MIN_RXBUF) {
+        return 0;
     }
 #ifndef CH_KEX_PQ
-    // require_pq asks that the key exchange be post-quantum. A KEX=pq
-    // build offers X25519MLKEM768 alone and compares ch_tls.group
-    // against it once parse_key_share accepts the ServerHello's
-    // key_share (handshake.c). This build offers x25519 alone, so no
-    // handshake it runs can satisfy the flag: ch_connect refuses the
-    // config before it sends a byte, as it refuses an epoch callback
-    // outside a CA build — a request the build cannot enforce is a
-    // provisioning mistake, not a no-op.
+    // require_pq asks that the key exchange be post-quantum, and this
+    // build offers x25519 alone, so no handshake it runs can satisfy the
+    // flag. A request the build cannot enforce is a provisioning mistake,
+    // not a no-op.
     if (cfg->require_pq) {
-        t->state = CH_ST_FAILED;
-        return CH_EINVAL;
+        return 0;
     }
 #endif
 #ifndef CH_PIN_ECDSA
     // Every real modulus is odd (a product of odd primes); an even pin in
     // either slot is provisioning corruption. Rejected here so the failure
-    // points at the config — inside the handshake it would surface as
+    // points at the config -- inside the handshake it would surface as
     // CH_EAUTH and read like an attack.
     if ((pin_ok && (cfg->server_pubkey[cfg->server_pubkey_len - 1] & 1) == 0) ||
         (cfg->server_pubkey2 != NULL &&
          (cfg->server_pubkey2[cfg->server_pubkey2_len - 1] & 1) == 0)) {
+        return 0;
+    }
+#endif
+    return 1;
+}
+
+#ifndef CH_TRANSPORT_RECORD
+int ch_connect(ch_tls *t, const ch_cfg *cfg) {
+    memset(t, 0, sizeof *t);
+    t->cfg = *cfg;
+    int psk_ok = psk_configured(cfg);
+    if (!tlsi_config_ok(cfg) || cfg->send == NULL || cfg->recv == NULL) {
         t->state = CH_ST_FAILED;
         return CH_EINVAL;
     }
-#endif
-    int rc = epoch_init(t, cfg, psk_ok);
+    int rc = tlsi_epoch_init(t, cfg, psk_ok);
     if (rc != CH_OK) {
         t->state = CH_ST_FAILED;
         return rc;
     }
     return ch_handshake(t);
 }
+#endif // CH_TRANSPORT_RECORD
 #endif
 #endif // CH_ROLE_SERVER
 // Reads and dispatches one record: application data lands in the buffer,
@@ -404,7 +415,7 @@ int ch_connect(ch_tls *t, const ch_cfg *cfg) {
 #endif
     // No PSK is set, so psk_ok is 0; epoch_init refuses the epoch
     // callbacks, as it does in every build but TRUST=ca.
-    int rc = epoch_init(t, cfg, 0);
+    int rc = tlsi_epoch_init(t, cfg, 0);
     if (rc != CH_OK) {
         t->state = CH_ST_FAILED;
         return rc;

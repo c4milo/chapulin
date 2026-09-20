@@ -27,7 +27,7 @@
 // (docs/quic.md, "Entry points and their contracts").
 int hsa_server_auth(handshake_state *h);
 
-#ifdef CH_TRANSPORT_QUIC
+#if defined(CH_TRANSPORT_QUIC) || defined(CH_TRANSPORT_RECORD)
 // Reads the server's CertificateVerify and verifies its signature over
 // the handshake transcript, which authenticates the peer (RFC 9846
 // §4.5.2). It takes the transcript hash as it stands, rebuilds §4.5.2's

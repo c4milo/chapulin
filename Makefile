@@ -402,13 +402,26 @@ PUBLIC_TRANSPORT := ch_quic_init ch_quic_initial_keys ch_quic_crypto_in ch_quic_
                     ch_quic_seal ch_quic_open ch_quic_retry_ok ch_quic_key_update \
                     ch_quic_key_phase ch_quic_drop_previous_keys ch_quic_discard \
                     ch_quic_state ch_quic_alert ch_quic_error_code ch_quic_close
+else ifeq ($(TRANSPORT),record)
+# The same TLS records, driven by a caller that owns the socket. It
+# replaces handshake.c, the blocking driver, and keeps everything under
+# it: the flight handlers, the record layer and the post-handshake
+# messages are the ones TRANSPORT=tls compiles. ch_connect goes with
+# handshake.c, and ch_read, ch_write and ch_close stay, because a caller
+# that has finished the handshake holds its bytes and its callbacks no
+# longer block (rec.h).
+TRANSPORT_DEF := -DCH_TRANSPORT_RECORD
+TRANSPORT_FILTER := handshake.c
+TRANSPORT_ADD := rec.c rec_step.c
+PUBLIC_TRANSPORT := ch_rec_init ch_rec_in ch_rec_out ch_rec_state ch_rec_alert ch_rec_close \
+                    ch_read ch_write ch_close
 else ifeq ($(TRANSPORT),tls)
 TRANSPORT_DEF :=
 TRANSPORT_FILTER :=
 TRANSPORT_ADD :=
 PUBLIC_TRANSPORT := ch_connect ch_read ch_write ch_close
 else
-$(error TRANSPORT=$(TRANSPORT) is not a transport; use TRANSPORT=tls or TRANSPORT=quic)
+$(error TRANSPORT=$(TRANSPORT) is not a transport; use TRANSPORT=tls, TRANSPORT=record or TRANSPORT=quic)
 endif
 # Role: ROLE=client (default) builds the TLS 1.3 client this tree has
 # always built; ROLE=server builds a TLS 1.3 server from the same
@@ -1190,6 +1203,14 @@ ct-widemul-check: bin/unit_ct_widemul bin/mlkem_test_ct_widemul bin/p256_field_t
 	./bin/p256_sign_test_ct_widemul
 	$(MAKE) wycheproof-ct-widemul
 
+# The TRANSPORT=record client, which owns its socket and lets chapulin
+# touch none of it. test/e2e.sh runs it against the same PSK server
+# bin/tlsclient uses, so the two drivers are compared over one wire.
+REC_SRCS := $(filter-out handshake.c,$(SRCS)) rec.c rec_step.c
+bin/recclient: test/rec_client.c $(REC_SRCS) $(HDRS) $(TESTH)
+	@mkdir -p bin
+	$(CC) $(CFLAGS) -DCH_TRANSPORT_RECORD -I. -o $@ test/rec_client.c $(REC_SRCS)
+
 bin/tlsclient: test/tls_client.c $(SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) -I. -o $@ test/tls_client.c $(SRCS)
@@ -1251,7 +1272,7 @@ run-%: bin/%
 # and the invariant violation builds. The nightly runs it. Splitting on
 # duration rather than on importance is deliberate -- nothing here is
 # optional, and a change is not finished until check-slow passes too.
-check: bin/unit bin/unit_ca bin/unit_pq bin/tlsclient bin/tlsclient_ecdsa bin/tlsclient_ca bin/tlsclient_ca_ecdsa bin/tlsclient_webpki bin/tlsclient_pq bin/drbg_test bin/softmul_test bin/rsa_test bin/sha3_test bin/sha512_test bin/p384_test bin/rsa_pkcs1_test bin/webpki_time_test bin/webpki_name_test bin/webpki_spki_test bin/webpki_sigalg_test bin/webpki_cert_test bin/webpki_chain_test bin/webpki_auth_test bin/mlkem_test bin/handshake_strict_test bin/handshake_strict_pq bin/handshake_strict_webpki bin/webpki_session_test bin/webpki_session_pq bin/x509strict bin/x509strict_ecdsa bin/quic_driver_test bin/quic_test $(AES_HW_BINS) lint rand-check bin/srv_auth_test bin/srv_test bin/srv_quic_test bin/rsa_sign_test bin/p256_field_test bin/p256_ecdh_test bin/p256_sign_test
+check: bin/unit bin/unit_ca bin/unit_pq bin/tlsclient bin/tlsclient_ecdsa bin/tlsclient_ca bin/tlsclient_ca_ecdsa bin/tlsclient_webpki bin/tlsclient_pq bin/drbg_test bin/softmul_test bin/rsa_test bin/sha3_test bin/sha512_test bin/p384_test bin/rsa_pkcs1_test bin/webpki_time_test bin/webpki_name_test bin/webpki_spki_test bin/webpki_sigalg_test bin/webpki_cert_test bin/webpki_chain_test bin/webpki_auth_test bin/mlkem_test bin/handshake_strict_test bin/handshake_strict_pq bin/handshake_strict_webpki bin/webpki_session_test bin/webpki_session_pq bin/x509strict bin/x509strict_ecdsa bin/quic_driver_test bin/quic_test bin/recclient $(AES_HW_BINS) lint rand-check bin/srv_auth_test bin/srv_test bin/srv_quic_test bin/rsa_sign_test bin/p256_field_test bin/p256_ecdh_test bin/p256_sign_test
 	# The packaged object is built once per entropy pattern, because
 	# lib-check reads a different export list and a different import
 	# list in each. Only the object is built twice: the examples and
@@ -2527,7 +2548,7 @@ WIDEMUL_CEILING := ct.c:0 sha256.c:0 sha3.c:1 hkdf.c:0 chacha20.c:0 poly1305.c:0
                    x25519.c:0 p256_field.c:0 mlkem.c:0 mlkem_poly.c:0 buf.c:0 record.c:0 keysched.c:0 io.c:0 \
                    session.c:0 handshake_message.c:0 handshake_parser.c:0 handshake_record.c:0 \
                    handshake_auth.c:0 handshake_flight.c:0 handshake.c:0 handshake_post.c:0 \
-                   tls.c:0 drbg.c:0 softmul.c:0 \
+                   tls.c:0 drbg.c:0 softmul.c:0 rec.c:0 rec_step.c:0 \
                    quic_keys.c:0 quic_packet.c:0 quic_config.c:0 quic_step.c:0 quic.c:0 \
                    quic_fail.c:0 srv_quic.c:0 \
                    quic_aes.c:0 quic_aes_soft.c:0 quic_aes_extern.c:0 quic_gcm.c:0 \

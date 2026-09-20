@@ -254,6 +254,16 @@ int tlsi_send_alert(ch_tls *t, uint8_t level, uint8_t description);
 // Alert (best effort), wipe all key material, mark the session failed.
 void tlsi_fail(ch_tls *t, uint8_t description);
 
+// Whether a client configuration keeps every rule that does not depend on
+// which driver runs it. tls.c holds the predicates; ch_connect and
+// ch_rec_init both ask, and each checks the I/O callbacks itself.
+int tlsi_config_ok(const ch_cfg *cfg);
+
+// Loads the stored epoch and checks a resuming ticket against it, the
+// step a CA build owes before its first handshake message. Returns CH_OK
+// when no epoch is configured. Both client drivers call it.
+int tlsi_epoch_init(ch_tls *t, const ch_cfg *cfg, int psk_ok);
+
 // Wipe all key material and buffered plaintext; keys go dead.
 void tlsi_wipe(ch_tls *t);
 #endif

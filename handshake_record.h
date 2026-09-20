@@ -90,13 +90,13 @@ typedef struct {
 #endif
 } handshake_state;
 
-#ifndef CH_TRANSPORT_QUIC
+#if !defined(CH_TRANSPORT_QUIC) && !defined(CH_TRANSPORT_RECORD)
 // Reads records until one carrying handshake bytes lands; appends its
 // plaintext to the unconsumed bytes in cfg.buf.
 int hsr_fetch_record(handshake_state *h);
 #endif
 
-#ifdef CH_TRANSPORT_QUIC
+#if defined(CH_TRANSPORT_QUIC) || defined(CH_TRANSPORT_RECORD)
 // hsr_peek_message's answer when the bytes in cfg.buf stop short of a
 // whole message. The value is positive, so it collides with no ch_err
 // code: CH_OK is 0 and every error is negative, so a caller that tests

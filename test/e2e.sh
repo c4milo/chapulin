@@ -148,6 +148,14 @@ p256_pub() {
         | awk '/^pub:/{f=1;next} f&&/^[^ ]/{f=0} f{gsub(/[ :]/,"");printf "%s",$0}' | cut -c3-130
 }
 
+# --- TRANSPORT=record: the same PSK handshake, driven by a caller that
+# owns the socket. The point of the leg is the comparison: bin/recclient
+# and bin/tlsclient reach the same connected session against the same
+# server, one with chapulin touching the descriptor and one without.
+start_server -tls1_3 -ciphersuites TLS_CHACHA20_POLY1305_SHA256 -psk "$PSK" -psk_identity "$ID" -nocert -rev
+MSG='hola sapo'
+expect record "opas aloh" "$DIR/err_rec" ./bin/recclient 127.0.0.1 "$SRV_PORT" "$PSK" "$ID"
+
 # --- PSK: external key, then resume with the issued ticket ---
 start_server -tls1_3 -ciphersuites TLS_CHACHA20_POLY1305_SHA256 -psk "$PSK" -psk_identity "$ID" -nocert -rev
 PORT=$SRV_PORT
@@ -859,4 +867,4 @@ else
     echo "SKIP openssl pq leg: $("$OPENSSL" version) does not list X25519MLKEM768 (needs 3.5)"
 fi
 
-echo "e2e: psk + tickets + resumption + pinned ecdsa + pinned rsa + require-pq refused + rotation + ca rsa x2 + ca ecdsa x2 + ca rotation + ca negatives x3${EPOCH_LEG} + webpki rsa + webpki ecdsa x2 + webpki negatives x4 + webpki alpn x3${GO_LEG}${OPENSSL_PQ_LEG} + examples x4 OK"
+echo "e2e: record + psk + tickets + resumption + pinned ecdsa + pinned rsa + require-pq refused + rotation + ca rsa x2 + ca ecdsa x2 + ca rotation + ca negatives x3${EPOCH_LEG} + webpki rsa + webpki ecdsa x2 + webpki negatives x4 + webpki alpn x3${GO_LEG}${OPENSSL_PQ_LEG} + examples x4 OK"
