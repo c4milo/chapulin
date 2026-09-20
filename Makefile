@@ -815,7 +815,24 @@ print-clang-rv:
 # unchanged.
 PUBLIC := $(PUBLIC_ROLE) $(PUBLIC_RAND) $(PUBLIC_CA)
 
-bin/obj/$(LIB_VARIANT)/%.o: %.c $(HDRS)
+# LIB_VARIANT names the build variables that pick the sources and the
+# defines, and the compiler is not one of them. So `make CC=<cross> lib`
+# writes its objects into the directory the host build uses; a later host
+# build finds them newer than their sources, reuses them, and ld -r fails
+# with "unknown file type" on an object of the wrong architecture. The
+# stamp holds the compile command, so a different one rebuilds the objects
+# instead of leaving two architectures in one directory.
+#
+# It sits under the variant rather than beside PIN_STAMP because check
+# builds several variants one after another, and a single shared stamp
+# would differ at every switch and rebuild all of them each time.
+CC_STAMP := bin/obj/$(LIB_VARIANT)/cc-stamp
+$(CC_STAMP): FORCE
+	@mkdir -p bin/obj/$(LIB_VARIANT)
+	@[ "$$(cat $@ 2>/dev/null)" = "$(CC) $(LIB_CFLAGS) $(LIB_DEF)" ] \
+	  || echo "$(CC) $(LIB_CFLAGS) $(LIB_DEF)" > $@
+
+bin/obj/$(LIB_VARIANT)/%.o: %.c $(HDRS) $(CC_STAMP)
 	@mkdir -p bin/obj/$(LIB_VARIANT)
 	$(CC) $(LIB_CFLAGS) $(LIB_DEF) -I. -c $< -o $@
 
