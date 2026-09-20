@@ -2,10 +2,11 @@
 // srv_flight.h states every contract, every alert and the RFC line
 // behind each one, so the comments here say what the header does not:
 // how a message is staged and why a step sits where it does. A message
-// sent in the clear is staged at t->tx + REC_HDR and goes out through
-// send_plain_record; a protected one is staged on the handler's own
-// frame and goes out through send_sealed; the Certificate is the one
-// message no frame holds, so frag_writer streams it.
+// sent in the clear is staged at t->tx + SRV_OUT_STAGE and goes out through
+// srv_out_plain; a protected one is staged on the handler's own
+// frame and goes out through srv_out_sealed; the Certificate is the one
+// message no frame holds, so srv_frag streams it. srv_out.[ch] owns all
+// three and is where the two transports differ.
 #include "srv_flight.h"
 
 #ifdef CH_ROLE_SERVER
@@ -17,85 +18,9 @@
 #include "io.h"
 #include "keysched.h"
 #include "rand.h"
-#include "record.h"
 #include "srv_message.h"
+#include "srv_out.h"
 #include "x25519.h"
-
-// The largest plaintext one record carries: this build's cap, lowered to
-// the client's record_size_limit.
-static size_t send_limit(const ch_tls *t) {
-    return t->peer_limit < CH_TX_PT ? t->peer_limit : CH_TX_PT;
-}
-
-// Sends the n bytes staged at t->tx + REC_HDR as one plaintext handshake
-// record. RFC 9846 §5.1 fixes legacy_record_version at 0x0303 here.
-static int send_plain_record(handshake_state *h, size_t n) {
-    ch_tls *t = h->t;
-    t->tx[0] = REC_HANDSHAKE;
-    t->tx[1] = 0x03;
-    t->tx[2] = 0x03;
-    t->tx[3] = (uint8_t)(n >> 8);
-    t->tx[4] = (uint8_t)n;
-    return io_send_all(&t->cfg, t->tx, REC_HDR + n);
-}
-
-// Seals pt as one or more handshake records, each carrying at most
-// send_limit bytes. RFC 9846 §5.1 permits a message to span records and
-// forbids interleaving another type (rfc9846.txt:3460-3462), which a
-// straight-line writer cannot do. pt lies outside t->tx, where rec_seal
-// writes.
-static int send_sealed(handshake_state *h, const uint8_t *pt, size_t n) {
-    ch_tls *t = h->t;
-    size_t limit = send_limit(t);
-    while (n > 0) {
-        size_t take = n < limit ? n : limit;
-        size_t out_len = 0;
-        if (rec_seal(&t->wr, REC_HANDSHAKE, pt, take, t->tx, sizeof t->tx, &out_len) != 0) {
-            h->alert = ALERT_INTERNAL_ERROR;
-            return CH_ECAP;
-        }
-        int rc = io_send_all(&t->cfg, t->tx, out_len);
-        if (rc != CH_OK) {
-            return rc;
-        }
-        pt += take;
-        n -= take;
-    }
-    return CH_OK;
-}
-
-// A message written in pieces, hashed and sealed a fragment at a time.
-// rc is sticky the way wbuf's err is, so the caller reads one code.
-typedef struct {
-    handshake_state *h;
-    size_t len;
-    int rc;
-    uint8_t buf[CH_TX_PT];
-} frag_writer;
-
-// Hashes what the writer holds and sends it as one sealed record.
-static void frag_flush(frag_writer *f) {
-    if (f->rc != CH_OK || f->len == 0) {
-        return;
-    }
-    sha256_update(&f->h->t->transcript, f->buf, f->len);
-    f->rc = send_sealed(f->h, f->buf, f->len);
-    f->len = 0;
-}
-
-static void frag_bytes(frag_writer *f, const uint8_t *p, size_t n) {
-    size_t limit = send_limit(f->h->t);
-    while (n > 0 && f->rc == CH_OK) {
-        size_t take = n < limit - f->len ? n : limit - f->len;
-        memcpy(f->buf + f->len, p, take);
-        f->len += take;
-        p += take;
-        n -= take;
-        if (f->len == limit) {
-            frag_flush(f);
-        }
-    }
-}
 
 // Holds ch_rand_bytes to rand.h's contract: the caller zeroed what this
 // fills, so an all-zero draw is a hook that returned without writing.
@@ -235,8 +160,8 @@ int srv_send_hello_retry_request(handshake_state *h, const client_hello *ch, con
         return CH_ECAP;
     }
     h->cookie_len = cookie_len;
-    uint8_t *msg = t->tx + REC_HDR;
-    size_t n = srv_build_hello_retry_request(msg, sizeof t->tx - REC_HDR, sel, ch->session_id,
+    uint8_t *msg = t->tx + SRV_OUT_STAGE;
+    size_t n = srv_build_hello_retry_request(msg, sizeof t->tx - SRV_OUT_STAGE, sel, ch->session_id,
                                              ch->session_id_len, h->cookie, cookie_len);
     if (n == 0) {
         h->alert = ALERT_INTERNAL_ERROR;
@@ -244,10 +169,20 @@ int srv_send_hello_retry_request(handshake_state *h, const client_hello *ch, con
     }
     hrr_transcript(h, msg, n);
     t->hrr_sent = 1;
-    return send_plain_record(h, n);
+    return srv_out_plain(h, n);
 }
 
 int srv_send_compat_ccs(handshake_state *h, const client_hello *ch) {
+#ifdef CH_TRANSPORT_QUIC
+    // RFC 9001 section 8.4 forbids a QUIC client from requesting
+    // compatibility mode and makes a ChangeCipherSpec a connection error
+    // (rfc9001.txt:1976-1979), so a QUIC server sends none. The call stays
+    // in the flight rather than disappearing from it, because the two
+    // drivers otherwise read differently for a message neither sends.
+    (void)h;
+    (void)ch;
+    return CH_OK;
+#else
     if (ch->session_id_len == 0) {
         return CH_OK;
     }
@@ -256,6 +191,7 @@ int srv_send_compat_ccs(handshake_state *h, const client_hello *ch) {
     CH_ASSERT(n == SRV_CCS_RECORD_LEN);
     h->t->compat_ccs = 1;
     return io_send_all(&h->t->cfg, rec, n);
+#endif
 }
 
 int srv_check_retry_hello(handshake_state *h, const client_hello *ch, selection *sel) {
@@ -300,15 +236,15 @@ int srv_send_server_hello(handshake_state *h, const client_hello *ch, const sele
     uint8_t random32[SRV_RANDOM];
     ch_rand_bytes(random32, sizeof random32);
     assert_drawn(random32, sizeof random32);
-    uint8_t *msg = t->tx + REC_HDR;
-    size_t n = srv_build_server_hello(msg, sizeof t->tx - REC_HDR, sel, random32, ch->session_id,
-                                      ch->session_id_len, h->pub, sizeof h->pub);
+    uint8_t *msg = t->tx + SRV_OUT_STAGE;
+    size_t n = srv_build_server_hello(msg, sizeof t->tx - SRV_OUT_STAGE, sel, random32,
+                                      ch->session_id, ch->session_id_len, h->pub, sizeof h->pub);
     if (n == 0) {
         h->alert = ALERT_INTERNAL_ERROR;
         return CH_ECAP;
     }
     sha256_update(&t->transcript, msg, n);
-    return send_plain_record(h, n);
+    return srv_out_plain(h, n);
 }
 
 int srv_derive_handshake_secrets(handshake_state *h, const client_hello *ch, const selection *sel) {
@@ -342,10 +278,18 @@ int srv_derive_handshake_secrets(handshake_state *h, const client_hello *ch, con
     // The client secret protects what this endpoint reads and the server
     // secret what it writes, the reverse of handshake.c:94-95 and the
     // whole of the asymmetry.
+#ifdef CH_TRANSPORT_QUIC
+    // No record layer to key. The two secrets stay in h->c_hs and h->s_hs
+    // and the driver turns them into the Handshake level's packet and
+    // header protection keys, which is where quic_step.c's client puts the
+    // same step (RFC 9001 section 5.4, rfc9001.txt:1172-1174).
+    (void)t;
+#else
     rec_dir_init(&t->rd, h->c_hs);
     rec_dir_init(&t->wr, h->s_hs);
     h->encrypted = 1;
     t->keys = 1; // alerts encrypt from here on
+#endif
     return CH_OK;
 }
 
@@ -364,14 +308,23 @@ int srv_send_encrypted_extensions(handshake_state *h, const selection *sel) {
     // and srv_cfg.h refuses ROLE=server together with CH_TRANSPORT_QUIC,
     // so no ch_cfg this handler sees carries one. srv_message.h states
     // what a QUIC server passes instead.
+#ifdef CH_TRANSPORT_QUIC
+    // RFC 9001 section 4.1.3 removes the record layer record_size_limit
+    // sizes, and section 8.2 requires the transport parameters extension
+    // in its place (rfc9001.txt:1922-1924). The body is the caller's and
+    // travels unread.
+    size_t n = srv_build_encrypted_extensions(msg, sizeof msg, 0, selected, t->cfg.transport_params,
+                                              t->cfg.transport_params_len);
+#else
     size_t n =
         srv_build_encrypted_extensions(msg, sizeof msg, h->record_size_limit, selected, NULL, 0);
+#endif
     if (n == 0) {
         h->alert = ALERT_INTERNAL_ERROR;
         return CH_ECAP;
     }
     sha256_update(&t->transcript, msg, n);
-    return send_sealed(h, msg, n);
+    return srv_out_sealed(h, msg, n);
 }
 
 int srv_send_certificate(handshake_state *h, const selection *sel) {
@@ -383,13 +336,13 @@ int srv_send_certificate(handshake_state *h, const selection *sel) {
     // One buffer for all three fixed pieces: each is streamed before the
     // next is written, and the head is the longest.
     uint8_t frame[SRV_CERT_HEAD_LEN];
-    frag_writer f;
+    srv_frag f;
     f.h = h;
     f.len = 0;
     f.rc = CH_OK;
     size_t n = srv_build_certificate_header(frame, sizeof frame, id);
     CH_ASSERT(n == SRV_CERT_HEAD_LEN);
-    frag_bytes(&f, frame, n);
+    srv_frag_bytes(&f, frame, n);
     for (uint8_t i = 0; i < id->chain_count; i++) {
         n = srv_build_certificate_entry_prefix(frame, sizeof frame, id->chain[i].len);
         if (n == 0) {
@@ -398,13 +351,13 @@ int srv_send_certificate(handshake_state *h, const selection *sel) {
             h->alert = ALERT_INTERNAL_ERROR;
             return CH_EINVAL;
         }
-        frag_bytes(&f, frame, n);
-        frag_bytes(&f, id->chain[i].der, id->chain[i].len);
+        srv_frag_bytes(&f, frame, n);
+        srv_frag_bytes(&f, id->chain[i].der, id->chain[i].len);
         n = srv_build_certificate_entry_suffix(frame, sizeof frame);
         CH_ASSERT(n == SRV_CERT_SUFFIX_LEN);
-        frag_bytes(&f, frame, n);
+        srv_frag_bytes(&f, frame, n);
     }
-    frag_flush(&f);
+    srv_frag_flush(&f);
     return f.rc;
 }
 
@@ -427,7 +380,7 @@ int srv_send_certificate_verify(handshake_state *h, const selection *sel) {
         return CH_ECAP;
     }
     sha256_update(&h->t->transcript, msg, n);
-    return send_sealed(h, msg, n);
+    return srv_out_sealed(h, msg, n);
 }
 
 int srv_send_finished(handshake_state *h) {
@@ -440,7 +393,7 @@ int srv_send_finished(handshake_state *h) {
     size_t n = srv_build_finished(msg, sizeof msg, verify_data, sizeof verify_data);
     CH_ASSERT(n == sizeof msg);
     sha256_update(&t->transcript, msg, n);
-    int rc = send_sealed(h, msg, n);
+    int rc = srv_out_sealed(h, msg, n);
     if (rc != CH_OK) {
         return rc;
     }
@@ -449,7 +402,9 @@ int srv_send_finished(handshake_state *h) {
     // Finished still arrives under the handshake key.
     (void)hsr_transcript_hash(h, hash);
     ks_master(h->handshake_secret, hash, h->master, t->rd_secret, t->wr_secret);
+#ifndef CH_TRANSPORT_QUIC
     rec_dir_init(&t->wr, t->wr_secret);
+#endif
     return CH_OK;
 }
 
@@ -484,7 +439,11 @@ int srv_read_client_finished(handshake_state *h) {
 
 void srv_complete(handshake_state *h) {
     ch_tls *t = h->t;
+#ifndef CH_TRANSPORT_QUIC
+    // Over QUIC the read direction becomes a 1-RTT packet key set, which
+    // the driver installs from t->rd_secret with the other three.
     rec_dir_init(&t->rd, t->rd_secret);
+#endif
     t->pt_off = 0;
     t->pt_len = 0;
     t->state = CH_ST_CONNECTED;

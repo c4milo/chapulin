@@ -42,9 +42,10 @@
 #if defined(CH_ROLE_SERVER) && (defined(CH_TRUST_CA) || defined(CH_TRUST_WEBPKI))
 #error "CH_ROLE_SERVER judges no peer certificate, so it has no trust mode: drop CH_TRUST_*"
 #endif
-#if defined(CH_ROLE_SERVER) && defined(CH_TRANSPORT_QUIC)
-#error "CH_ROLE_SERVER runs over TLS records only: drop CH_TRANSPORT_QUIC (docs/server.md)"
-#endif
+// A QUIC server compiles this header and srv_flight.c's QUIC arm. What it
+// still lacks is the driver, so the Makefile refuses the combination and
+// this header no longer does: the pieces below have to compile before the
+// driver that drives them can be written (docs/quic_server.md, item 4).
 
 #ifdef CH_ROLE_SERVER
 
@@ -141,6 +142,28 @@ typedef struct {
     // would refuse clients silently, and ch_srv_accept returns
     // CH_EINVAL for that pair.
     uint8_t require_server_name;
+
+#ifdef CH_TRANSPORT_QUIC
+    // Takes the server's handshake bytes as they are produced: level is a
+    // CH_LEVEL_ value and the n bytes at p are CRYPTO frame content for it
+    // (RFC 9001 section 4.1.3, rfc9001.txt:462-464). Returns 0 to accept
+    // them and any other value to fail the handshake.
+    //
+    // A push, where the client's ch_quic_crypto_out is a pull, and the
+    // certificate chain is what forces the difference: one Certificate
+    // message is larger than ch_tls.tx, so there is no staging buffer to
+    // pull from. One message can arrive as several calls and one call
+    // never spans two messages. Both levels fire inside one
+    // ch_quic_crypto_in, because one ClientHello produces the ServerHello
+    // at CH_LEVEL_INITIAL and the rest of the flight at
+    // CH_LEVEL_HANDSHAKE, so a caller needs a buffer per level rather than
+    // one shared. docs/quic_server.md item 4 states the whole decision.
+    //
+    // Required for a QUIC server: a server whose flight reaches nobody
+    // completes no handshake. Re-entrancy: cfg.h's rule for
+    // on_level_ready, for the same reason.
+    int (*on_crypto_out)(void *io, uint8_t level, const uint8_t *p, size_t n);
+#endif
 } ch_srv_cfg;
 
 #endif // CH_ROLE_SERVER

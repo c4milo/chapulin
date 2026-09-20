@@ -66,6 +66,15 @@ typedef struct {
     uint8_t ccs_seen; // compat-mode CCS records tolerated so far
     uint8_t quiet;    // records that added no handshake bytes
 #endif
+#ifdef CH_TRANSPORT_QUIC
+    // The encryption level the bytes this handler produces belong to, a
+    // CH_LEVEL_ value. The driver writes it before each step and
+    // srv_flight.c passes it to ch_srv_cfg.on_crypto_out, because a
+    // handler knows which message it is writing and not which level the
+    // driver has reached. A client build needs no such field: it stages
+    // one message and ch_quic.tx_level names the level.
+    uint8_t level;
+#endif
     uint8_t alert; // what to tell the peer if we abort
     // Set by hsf_read_finished once the server Finished MAC compared
     // equal. hsa_epoch_commit asserts on it, so a commit moved earlier

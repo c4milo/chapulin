@@ -28,13 +28,24 @@ ROOT = Path(__file__).resolve().parent.parent
 # the reader established. Re-audit an entry when its file changes shape, and
 # delete it once the file gains a harness.
 AUDITED = {
+    "srv_out.c": (
+        "the server's handshake output, one arm per transport. One bitwise "
+        "operator in the file: the shift `(uint8_t)(n >> 8)` at :70, which "
+        "splits a record length into two header bytes by shifting a size_t "
+        "right. Its left operand is unsigned, so the shift is defined and "
+        "bugprone-signed-bitwise has nothing to say about it. These lines "
+        "moved out of srv_flight.c, whose entry carried this same shift "
+        "before the split. No harness runs this file: "
+        "proof/srv_flight_harness.c covers the handlers that call it and "
+        "returns no verdict, which proof/run.sh records. Delete this entry "
+        "when srv_out.c gets a harness of its own."
+    ),
     "srv_flight.c": (
         "the fifteen flight handlers. Every bitwise operator takes unsigned "
         "operands: `ch->suites`, `ch->groups` and `ch->shares` are uint8_t "
-        "bitmasks (srv_parser.h:156-158) tested against uint8_t constants at "
-        ":201, :206, :216 and :294, and the one shift, `(uint8_t)(n >> 8)` at "
-        ":58, shifts a size_t right to split a record length into two bytes. "
-        "No operand is signed and no shift has a signed left operand. "
+        "bitmasks (srv_parser.h:156-158) tested against uint8_t constants. "
+        "The file now holds no shift at all: the one it had went to "
+        "srv_out.c with the record writer. No operand is signed. "
         "proof/srv_flight_harness.c covers this file and returns no verdict "
         "with all fifteen handlers in one formula -- no answer in 55 minutes "
         "at --unwind 40, none at 20 or 18 -- which proof/run.sh records along "

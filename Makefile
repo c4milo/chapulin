@@ -228,7 +228,7 @@ QUIC_UNPROBED := $(if $(AES_HW_PROBE),,quic_aes_hw.c)
 # function its header declares from its first commit, so a ROLE=server
 # object linked before any handler was implemented.
 SRV_SRCS := srv_parser.c srv_parser_ext.c srv_message.c srv_cookie.c srv_auth.c \
-            srv_flight.c srv_handshake.c srv.c
+            srv_out.c srv_flight.c srv_handshake.c srv.c
 # Which of them were still stubs was read from a marker rather than from
 # a hand-kept list: every stub body held one `// CH_SRV_STUB: ` line and
 # an implemented body held none. SRV_STUB_SRCS read that marker, and two
@@ -929,10 +929,10 @@ bin/srv_test: test/srv_test.c srv_message.c srv_cookie.c srv_parser.c srv_parser
 # that definition and srv_parser.c cannot link into one object.
 SRV_FLIGHT_DEPS := buf.c ct.c sha256.c hkdf.c keysched.c x25519.c handshake_record.c io.c \
                    record.c aead.c chacha20.c poly1305.c
-bin/srv_flight_test: test/srv_flight_test.c srv_flight.c srv_message.c srv_cookie.c \
+bin/srv_flight_test: test/srv_flight_test.c srv_flight.c srv_out.c srv_message.c srv_cookie.c \
                      srv_auth.c $(SRV_FLIGHT_DEPS) $(SRV_SIGNERS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -DCH_ROLE_SERVER -I. -o $@ test/srv_flight_test.c srv_flight.c \
+	$(CC) $(CFLAGS) -DCH_ROLE_SERVER -I. -o $@ test/srv_flight_test.c srv_flight.c srv_out.c \
 	  srv_message.c srv_cookie.c srv_auth.c $(SRV_FLIGHT_DEPS) $(SRV_SIGNERS)
 # SHA-512 and SHA-384 vectors and the streaming contract. Its own binary,
 # out of the packaged object like sha3: only TRUST=webpki links sha512.c.
@@ -2494,7 +2494,7 @@ WIDEMUL_CEILING := ct.c:0 sha256.c:0 sha3.c:1 hkdf.c:0 chacha20.c:0 poly1305.c:0
                    quic_keys.c:0 quic_packet.c:0 quic_config.c:0 quic_step.c:0 quic.c:0 \
                    quic_aes.c:0 quic_aes_soft.c:0 quic_aes_extern.c:0 quic_gcm.c:0 \
                    srv_parser.c:0 srv_parser_ext.c:0 srv_message.c:0 srv_cookie.c:0 \
-                   srv_auth.c:0 srv_flight.c:0 srv_handshake.c:0 srv.c:0 rsa_sign.c:0 \
+                   srv_auth.c:0 srv_out.c:0 srv_flight.c:0 srv_handshake.c:0 srv.c:0 rsa_sign.c:0 \
                    p256_scalar.c:0 p256_point.c:0 p256_sign.c:0 p256_ecdh.c:0
 CODEGEN_SRCS := $(foreach e,$(WIDEMUL_CEILING),$(firstword $(subst :, ,$(e))))
 # Per-file defines both gates below add for one file alone, file:defines,
@@ -2527,6 +2527,7 @@ WIDEMUL_DEFINES := quic_keys.c:-DCH_TRANSPORT_QUIC quic_packet.c:-DCH_TRANSPORT_
                    srv_parser.c:-DCH_ROLE_SERVER srv_parser_ext.c:-DCH_ROLE_SERVER \
                    srv_message.c:-DCH_ROLE_SERVER \
                    srv_cookie.c:-DCH_ROLE_SERVER srv_auth.c:-DCH_ROLE_SERVER \
+                   srv_out.c:-DCH_ROLE_SERVER$(COMMA)-UCH_KEX_PQ \
                    srv_flight.c:-DCH_ROLE_SERVER$(COMMA)-UCH_KEX_PQ \
                    srv_handshake.c:-DCH_ROLE_SERVER$(COMMA)-UCH_KEX_PQ \
                    srv.c:-DCH_ROLE_SERVER
