@@ -13,12 +13,12 @@
 // WHAT THESE MODEL, and therefore what the harness still proves:
 //
 //   aes_public_key_initial   CH_EINVAL above CH_QUIC_DCID_MAX, without
-//                            reading the connection ID, and otherwise a
-//                            whole key of unconstrained bytes. It also
-//                            asserts that the endpoint is one of the two
-//                            quic_aes.h names, and records which one, so
-//                            main() can compare the seal's against the
-//                            open's.
+//                            reading the connection ID, CH_EINVAL for an
+//                            endpoint that is neither name quic_aes.h
+//                            gives, and otherwise a whole key of
+//                            unconstrained bytes. It records the endpoint
+//                            it was handed, refusal included, so main()
+//                            can compare the seal's against the open's.
 //   aes_encrypt_block_hp     AES_BLOCK unconstrained bytes.
 //   gcm_seal                 n ciphertext bytes and GCM_TAG tag bytes.
 //   gcm_open                 1 or 0, with the n plaintext bytes written
@@ -62,11 +62,18 @@ int aes_public_key_initial(aes_public_key *k, const uint8_t *dcid, size_t dcid_l
                            uint8_t endpoint) {
     stub_last_endpoint = endpoint;
     __CPROVER_assert(__CPROVER_w_ok(k, sizeof *k), "aes_public_key_initial: key writable");
-    __CPROVER_assert(endpoint == CH_QUIC_ENDPOINT_CLIENT || endpoint == CH_QUIC_ENDPOINT_SERVER,
-                     "aes_public_key_initial: endpoint is one of the two");
     if (dcid_len > CH_QUIC_DCID_MAX) {
         // The header promises this refusal reads no connection ID byte,
         // so the assert below sits after it rather than before it.
+        return CH_EINVAL;
+    }
+    // A third endpoint is a refusal, not a precondition. quic_aes.c
+    // returns CH_EINVAL for one, and quic_initial.c's peer_endpoint hands
+    // an unnamed value straight through rather than mapping it, so the
+    // harness reaches this arm with an endpoint that is neither name. A
+    // stub that asserted the value away would prove the seal and the open
+    // only for the two callers that never need checking.
+    if (endpoint != CH_QUIC_ENDPOINT_CLIENT && endpoint != CH_QUIC_ENDPOINT_SERVER) {
         return CH_EINVAL;
     }
     __CPROVER_assert(dcid_len == 0 || __CPROVER_r_ok(dcid, dcid_len),
