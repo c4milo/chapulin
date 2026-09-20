@@ -28,6 +28,19 @@ ROOT = Path(__file__).resolve().parent.parent
 # the reader established. Re-audit an entry when its file changes shape, and
 # delete it once the file gains a harness.
 AUDITED = {
+    "srv_flight.c": (
+        "the fifteen flight handlers. Every bitwise operator takes unsigned "
+        "operands: `ch->suites`, `ch->groups` and `ch->shares` are uint8_t "
+        "bitmasks (srv_parser.h:156-158) tested against uint8_t constants at "
+        ":201, :206, :216 and :294, and the one shift, `(uint8_t)(n >> 8)` at "
+        ":58, shifts a size_t right to split a record length into two bytes. "
+        "No operand is signed and no shift has a signed left operand. "
+        "proof/srv_flight_harness.c covers this file and returns no verdict "
+        "with all fifteen handlers in one formula -- no answer in 55 minutes "
+        "at --unwind 40, none at 20 or 18 -- which proof/run.sh records along "
+        "with the layered split it needs. Delete this entry when that split "
+        "gives it a launch line."
+    ),
     "srv_parser.c": (
         "the extension walk. Every bitwise operator here takes unsigned "
         "operands: `ch->suites |=` and `ch->seen |=` write a uint8_t and a "

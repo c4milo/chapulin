@@ -1065,7 +1065,18 @@ launch fast:3 full srv_accept 100 "alpn_ok.0:9,alpn_name_repeats.0:9,ct_wipe.0:4
 # longest call is the 117-byte cookie the mint stub writes, and the two
 # fragment loops are bounded by the harness's record limit against the
 # longest message its builder stubs report.
-launch fast full srv_flight 40 "ct_wipe.0:33,ct_memeq.0:33,fill_nondet.0:118" -DCH_ROLE_SERVER ct.c
+# No launch line: this formula has never been seen to converge. All
+# fifteen handlers are real in one formula, and it returned no verdict
+# in 55 minutes at --unwind 40 (1.7 GB), nor in 4 minutes at 20 or 18,
+# with the bounds above. The harness is kept because the split it needs
+# is layered rather than smaller, the way proof/srv_parser_ext_harness.c
+# and proof/p256_ecdh_harness.c divide theirs: one formula per handler,
+# or per flight, over the callees stubbed to their contracts. The line
+# that stood here was committed in 657da14 without a measurement, which
+# is the mistake CLAUDE.md names -- a launch line whose formula has not
+# been seen to converge proves nothing -- and it hung the proof tier.
+# Until the split lands the handlers are tested by bin/srv_flight_test
+# and guarded by four .violation mutants, and README says so.
 launch fast full ct 65 ""
 # The 16x16 decomposition, which is what every other proof rests on. Those
 # formulas verify the single-multiply form, because the launch line above
