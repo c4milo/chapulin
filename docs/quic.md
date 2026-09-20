@@ -30,7 +30,7 @@ invariants the mode amends and the two it adds, and "What changes in
 
 `docs/decisions.md` entry 38 records the trade. `docs/webpki.md` is the model
 for this document's shape, and the trust mode it describes is unaffected: a
-QUIC build is still `TRUST=raw`, `TRUST=ca` or `TRUST=webpki`.
+QUIC build is still a raw mode, a CA mode or `TRUST=webpki`.
 
 ## Status
 
@@ -688,7 +688,7 @@ call, and it is worth stating because the obvious way to size it is wrong.
 RFC 9000 §7.5 makes an endpoint buffer at least 4096 bytes of out-of-order
 CRYPTO frames and close with `CRYPTO_BUFFER_EXCEEDED` rather than fail the
 handshake. That is not `cfg.buf_len`: `cfg.buf_len` bounds one whole handshake
-message, and under `TRUST=raw` `CH_QUIC_MIN_RXBUF` is 490, below the 4096 floor
+message, and under a raw mode `CH_QUIC_MIN_RXBUF` is 490, below the 4096 floor
 and correctly so, because a 490-byte message and 4096 bytes of out-of-order
 frames measure different things. A caller that sized its reassembly buffer from
 `cfg.buf_len` would fail a handshake whose frames arrived out of order. §7.5
@@ -757,9 +757,9 @@ Cost, and most of it is this tree's.
   is the four TLS names under `TRANSPORT=tls` and the fifteen `ch_quic_` names
   under `TRANSPORT=quic`, selected the way `PUBLIC_CA` is selected on `TRUST`
   (`Makefile:211-221`). The other two terms keep their meaning:
-  `ch_pubkey_from_pem` under `TRUST=ca` (`Makefile:211`) and `ch_drbg_seed`
+  `ch_pubkey_from_pem` under a CA mode (`Makefile:211`) and `ch_drbg_seed`
   under `RAND=drbg` (`Makefile:258`). So a QUIC object exports fifteen symbols
-  under `TRUST=raw RAND=extern`, sixteen under `TRUST=ca` or `RAND=drbg`, and
+  under `TRUST=raw-rsa RAND=extern`, sixteen under a CA mode or `RAND=drbg`, and
   seventeen under both. It cannot be a second term added to the first, because
   `lib-check` diffs the object's exported symbols against `PUBLIC` for exact
   equality (`Makefile:419-422`), so a `PUBLIC_TRANSPORT` carrying both sets
@@ -900,7 +900,7 @@ object exports a different set: `PUBLIC` becomes
 fifteen under `TRANSPORT=quic`, selected the way `PUBLIC_CA` is selected on
 `TRUST` (`Makefile:211-221`). `PUBLIC_RAND` and `PUBLIC_CA` are unchanged on
 both transports, so `lib-check`'s list is these fifteen plus
-`ch_pubkey_from_pem` under `TRUST=ca` and `ch_drbg_seed` under `RAND=drbg`.
+`ch_pubkey_from_pem` under a CA mode and `ch_drbg_seed` under `RAND=drbg`.
 These are the names the header will use.
 
 | call | what it does |
@@ -961,15 +961,15 @@ under `TRANSPORT=tls`). The shape of the formula is the tree's, not the mode's:
 takes the maximum over the QUIC terms.
 
 Each term loses the record bytes a CRYPTO stream does not pay, and no term is
-dropped. The trust term is `2 * (CH_X509_MAX + 5) + 8 + 22` under `TRUST=ca`
+dropped. The trust term is `2 * (CH_X509_MAX + 5) + 8 + 22` under a CA mode
 (`cfg.h:98`), `4 * (3072 + 5) + 8 + 22`, 12,338 bytes, under `TRUST=webpki`
-(`cfg.h:105`) and 512 under `TRUST=raw` (`cfg.h:107`); the 22 bytes pay for
+(`cfg.h:105`) and 512 under a raw mode (`cfg.h:107`); the 22 bytes pay for
 the record that completes a message (`cfg.h:82-87`), and a CRYPTO stream has
 no such record. The key-exchange term is `5 + 4 + 40 + 6 + 1128 + 6` under
 `KEX=pq` (`cfg.h:110`), 1,189 bytes, of which the leading 5 are the record
 header (`cfg.h:88-91`); the 1,184 bytes left are the hybrid ServerHello
 message itself, which a QUIC build must hold whole like any other message.
-Dropping that term would floor a `TRANSPORT=quic KEX=pq TRUST=raw` build at
+Dropping that term would floor a `TRANSPORT=quic KEX=pq TRUST=raw-rsa` build at
 the trust term alone, 512 at most, against that 1,184-byte message. The third
 term is the server's transport-parameters body, which has no measurement in
 this tree. `CH_QUIC_MIN_RXBUF` is the maximum of the three, and each term is
@@ -1253,7 +1253,7 @@ design keeps one step for both so the step table has one shape.
 | `HSQ_STEP_AWAIT_ENCRYPTED_EXTENSIONS` | `hsf_read_encrypted_extensions` (`handshake_flight.c:238-297`), whose QUIC arm hands the `quic_transport_parameters` body to `on_transport_params` | `HSQ_STEP_AWAIT_FINISHED` under psk, `HSQ_STEP_AWAIT_CERTIFICATE` under pin |
 | `HSQ_STEP_AWAIT_CERTIFICATE` | `hsa_server_auth`, whose QUIC arm returns right after it hashes the Certificate (`handshake_auth.c:293`), with `hs.leaf`, `t.pin_slot` and the epoch status written | `HSQ_STEP_AWAIT_CERTIFICATE_VERIFY` |
 | `HSQ_STEP_AWAIT_CERTIFICATE_VERIFY` | `hsa_read_certificate_verify`, QUIC only, which is `handshake_auth.c:295-297`: take the transcript hash, then `check_certificate_verify` unchanged | `HSQ_STEP_AWAIT_FINISHED` |
-| `HSQ_STEP_AWAIT_FINISHED` | `hsf_read_finished` (`handshake_flight.c:299-328`), `hsa_epoch_commit` under `TRUST=ca` (`handshake.c:113-115`), then `hsf_complete`: `ks_master`, the client Finished built and hashed, `ks_res_master`. The Finished goes into `t.tx` at the Handshake level; the application secrets become the 1-RTT send set `app_tx` and two 1-RTT receive sets: `app_rx[CH_QUIC_KEY_CURRENT]` from the server application traffic secret and `app_rx[CH_QUIC_KEY_NEXT]` from that secret advanced once with `quic ku`, so the next set exists before any packet arrives under it. `app_rx[CH_QUIC_KEY_PREVIOUS]` stays zero until the first `ch_quic_key_update`. Then two `on_level_ready` calls | `HSQ_STEP_COMPLETE`, and `hs` is wiped here |
+| `HSQ_STEP_AWAIT_FINISHED` | `hsf_read_finished` (`handshake_flight.c:299-328`), `hsa_epoch_commit` under a CA mode (`handshake.c:113-115`), then `hsf_complete`: `ks_master`, the client Finished built and hashed, `ks_res_master`. The Finished goes into `t.tx` at the Handshake level; the application secrets become the 1-RTT send set `app_tx` and two 1-RTT receive sets: `app_rx[CH_QUIC_KEY_CURRENT]` from the server application traffic secret and `app_rx[CH_QUIC_KEY_NEXT]` from that secret advanced once with `quic ku`, so the next set exists before any packet arrives under it. `app_rx[CH_QUIC_KEY_PREVIOUS]` stays zero until the first `ch_quic_key_update`. Then two `on_level_ready` calls | `HSQ_STEP_COMPLETE`, and `hs` is wiped here |
 | `HSQ_STEP_COMPLETE` | the message is a NewSessionTicket or the session dies. `hspost_take_ticket` reaches `handle_ticket` (`handshake_post.c:31-57`); every other type is `unexpected_message` and `CH_EPROTO`, and the step records the message type it refused, because two of them take different codes on the wire: a CertificateRequest is PROTOCOL_VIOLATION, 0x0a (RFC 9001 §4.4, `rfc9001.txt:736-738`), and a KeyUpdate is 0x010a, which is 0x0100 plus unexpected_message (RFC 9001 §6, `rfc9001.txt:1566-1568`). `ch_quic_error_code` reads that record. The QUIC arm of `handle_ticket` reads the ticket's extension block: an absent `early_data` and an `early_data` whose `max_early_data_size` is 0xffffffff are accepted, and any other value fails the session with `CH_EPROTO` and makes `ch_quic_error_code` report 0x0a, because RFC 9001 §4.6.1 puts an unconditional client MUST on it (`rfc9001.txt:808-809`) | `HSQ_STEP_COMPLETE` |
 
 Two details in that table are load-bearing. The wipe of `hs` at
@@ -1314,18 +1314,18 @@ Everything between calls lives in the one `ch_quic`. *Measured* 2026-09-16,
 compiling the tree's unmodified headers at `3432a5d` against a program outside
 the tree with `cc -std=c11 -DCH_RAND_EXTERN -I.` and the mode's own defines:
 
-    sizeof(handshake_state) = 448   TRUST=raw            sizeof(ch_tls) = 1144
-    sizeof(handshake_state) = 856   TRUST=ca PIN=rsa     sizeof(ch_tls) = 1144
-    sizeof(handshake_state) = 536   TRUST=ca PIN=ecdsa   sizeof(ch_tls) = 1144
+    sizeof(handshake_state) = 448   TRUST=raw-rsa        sizeof(ch_tls) = 1144
+    sizeof(handshake_state) = 856   TRUST=ca-rsa     sizeof(ch_tls) = 1144
+    sizeof(handshake_state) = 536   TRUST=ca-ecdsa   sizeof(ch_tls) = 1144
     sizeof(handshake_state) = 976   TRUST=webpki         sizeof(ch_tls) = 1744
     sizeof(handshake_state) = 512   KEX=pq               sizeof(ch_tls) = 2328
     sizeof(rec_dir)         = 56    all five
 
-The two CA rows are the largest device numbers, and a `TRUST=ca` QUIC build is
+The two CA rows are the largest device numbers, and a CA-mode QUIC build is
 a device build this mode keeps. `handshake_record.h:52-54` holds
 `x509_leaf_info leaf;` under `#ifdef CH_TRUST_CA`, the field the raw rows do
 not carry, and `leaf.key` is `CH_X509_KEY_MAX` bytes: 384 under the default
-PIN=rsa and 64 under `PIN=ecdsa` (`x509.h:35-39`). Those 320 bytes are the
+an rsa mode and 64 under an ecdsa mode (`x509.h:35-39`). Those 320 bytes are the
 whole difference between 856 and 536.
 
 The 448 cross-checks against the tree itself: `proof/run.sh:396-397` unwinds
@@ -1361,7 +1361,7 @@ and `pt_len`.
 | `hs.cookie`, `hs.cookie_len` | `uint8_t[HSP_COOKIE_MAX]`, `size_t` | `cookie_len <= HSP_COOKIE_MAX` (`handshake_parser.h:19`) | the retry echo (`handshake_flight.c:75-76`, `:171-172`) |
 | `hs.alert` | `uint8_t` | any | each step seeds it before it parses (`handshake_flight.c:263`, `handshake_auth.c:110`, `:259`, `:269`, `:280`); a later step's failure reports it |
 | `hs.server_finished_ok` | `uint8_t` | any | `hsf_read_finished` sets it (`handshake_flight.c:326`) and `hsa_epoch_commit` asserts it (`handshake_auth.c:232`), both inside the Finished step |
-| `hs.leaf` | `x509_leaf_info` under `TRUST=ca`, `webpki_leaf_info` under `TRUST=webpki` | `key_len <= CH_X509_KEY_MAX` (`x509.h:35-39`) or `<= CH_WEBPKI_KEY_MAX` (`webpki.h:38`) | written at the Certificate step, read at the CertificateVerify step. This is the reason `hsa_server_auth` becomes two entry points |
+| `hs.leaf` | `x509_leaf_info` under a CA mode, `webpki_leaf_info` under `TRUST=webpki` | `key_len <= CH_X509_KEY_MAX` (`x509.h:35-39`) or `<= CH_WEBPKI_KEY_MAX` (`webpki.h:38`) | written at the Certificate step, read at the CertificateVerify step. This is the reason `hsa_server_auth` becomes two entry points |
 | fenced out under QUIC: `hs.record_size_limit`, `hs.encrypted`, `hs.ccs_seen`, `hs.quiet` (`handshake_record.h:43-46`) | — | — | only the TLS builder (`handshake_flight.c:69`) and the TLS record reader (`handshake_record.c:22`, `:57-58`, `:68-69`) read them |
 | `step` | `uint8_t` | the full byte range; the default arm refuses every value above 6 | names the message the driver waits for |
 | `rx_level` | `uint8_t` | the full range; compared, never an index | the one level whose CRYPTO bytes `cfg.buf` holds |
@@ -1459,8 +1459,8 @@ selection on one term, not an addition: `lib-check` diffs the object's
 exported symbols against `PUBLIC` for exact equality (`Makefile:419-422`), so
 a `PUBLIC_TRANSPORT` carrying both sets fails a TLS build by the fifteen
 `ch_quic_` names and a QUIC build by the four TLS ones. `ch_pubkey_from_pem`
-and `ch_drbg_seed` are unchanged on both transports, so a `TRUST=ca` QUIC
-object exports sixteen symbols and a `TRUST=ca RAND=drbg` one seventeen. The
+and `ch_drbg_seed` are unchanged on both transports, so a CA-mode QUIC
+object exports sixteen symbols and a `TRUST=ca-rsa RAND=drbg` one seventeen. The
 ALPN configuration rules `tls.c:329-371` holds today are needed here in every
 trust mode.
 
@@ -1728,7 +1728,7 @@ The suspendable driver moves 233 of `handshake.c`'s 395 lines into
 and `quic.c`; splits `hsa_server_auth` into two entry points; adds the
 reader that takes bytes at `t.pt_off` beside the record reader in
 `handshake_record.c`;
-moves 448 bytes of handshake state, 856 under `TRUST=ca PIN=rsa`, 976 under
+moves 448 bytes of handshake state, 856 under `TRUST=ca-rsa`, 976 under
 `TRUST=webpki` and 512 under `KEX=pq`, from a stack frame into the session;
 changes `handshake.o` in every
 TLS build; and owes ten or so new launch lines plus three re-measured ones.
@@ -1749,9 +1749,9 @@ given per build.
 
 | build | files | lines | unchanged | changed | replaced | reuse |
 | --- | --- | --- | --- | --- | --- | --- |
-| device, `TRUST=raw PIN=rsa KEX=x25519` | 22 | 3460 | 12 files, 1335 | 5 files, 1135 | 5 files, 990 | 1335 / 3460 = 38.6% |
-| device, `TRUST=raw KEX=pq` | 25 | 4242 | 15 files, 2117 | 1135 | 990 | 2117 / 4242 = 49.9% |
-| device, `TRUST=ca` | 26 | 4676 | 16 files, 2551 | 1135 | 990 | 2551 / 4676 = 54.6% |
+| device, `TRUST=raw-rsa KEX=x25519` | 22 | 3460 | 12 files, 1335 | 5 files, 1135 | 5 files, 990 | 1335 / 3460 = 38.6% |
+| device, `TRUST=raw-rsa KEX=pq` | 25 | 4242 | 15 files, 2117 | 1135 | 990 | 2117 / 4242 = 49.9% |
+| device, `TRUST=ca-rsa` | 26 | 4676 | 16 files, 2551 | 1135 | 990 | 2551 / 4676 = 54.6% |
 | host, `TRUST=webpki` | 36 | 6517 | 26 files, 4392 | 1135 | 990 | 4392 / 6517 = 67.4% |
 
 The two rows the mode is about are the first and the last. The changed and
@@ -2130,7 +2130,7 @@ Read this as part of the profile, not as a list of future work.
   rule is a client MUST and does not sit here: the `HSQ_STEP_COMPLETE` row
   in "Suspending the driver" states where the QUIC arm of `handle_ticket`
   enforces it.
-- **No change to the trust mode.** A QUIC build is still `TRUST=raw`, `ca` or
+- **No change to the trust mode.** A QUIC build is still a raw mode, a CA mode or
   `webpki`, and `docs/webpki.md`'s own "What the mode does not check" list —
   no revocation, no Certificate Transparency, no name constraints — applies
   unchanged.
@@ -2368,7 +2368,7 @@ refusals to the first and holds its state in `ch_quic`, so the commit that lands
 | INV-1, "one sealing path" (`docs/invariants.md:36-46`). Its claim is "Record protection is the only path that seals or opens bytes", its mechanism "only `record.c` calls them", and `inv-1-seal-only-in-record` implements it with `paths: exclude: [test, proof, fuzz, spec, bench, bin, examples, record.c, aead.c]` (`.semgrep/invariants.yml:99-110`). A QUIC build calls `aead_seal` and `aead_open` from `quic_packet.c`, so the claim is false and the rule fails on the first line of code | the claim becomes "Record protection is the only path that seals or opens bytes under `TRANSPORT=tls`, and packet protection is the only one under `TRANSPORT=quic`"; the mechanism names `record.c` as the TLS caller and `quic_packet.c` as the QUIC one, and adds that `quic_initial.c` and `quic_retry.c` seal and open with `gcm_seal` and `gcm_open`, which INV-26 governs and this rule does not match; the check names the amended `inv-1-seal-only-in-record`, whose exclude list becomes `[test, proof, fuzz, spec, bench, bin, examples, record.c, aead.c, quic_packet.c]` | `quic_packet.[ch]` |
 | INV-13, "no resumable errors" (`docs/invariants.md:448-458`). Its claim is "Every error kills the session: alert, wipe, dead. There is no error a caller can retry past", its mechanism "`tlsi_fail` is the single funnel", and its check the 466k-sequence run | the claim gains "under `TRANSPORT=quic` two errors leave the session live and nothing else does: `ch_quic_open`'s discard of a packet it cannot authenticate (RFC 9001 §5.5), which raises the §6.6 count and changes no key set, because `ch_quic_open` never installs an update and writes `key_set` only on a successful open, and `CH_EINVAL` from a `ch_quic_` entry, which changed nothing and may be called again"; the mechanism names `quic_fail` as the QUIC funnel beside `tlsi_fail`; the check names the QUIC sequence differential in `bin/quic_driver_test`, which asserts that no other return code leaves the session live | `quic.[ch]` for the `CH_EINVAL` half, `quic_packet.[ch]` for the discard |
 | INV-17, "secrets die at phase boundaries" (`docs/invariants.md:770-780`). Its claim is "every failure path wipes through `tlsi_wipe`" (`:772-773`) and its check "the wipe sits in the single `tlsi_fail` funnel" (`:777`). A QUIC object compiles no `session.c`, so neither function exists in it | the claim and the check name `quic_fail` under `TRANSPORT=quic` beside `tlsi_fail` under `TRANSPORT=tls`, and the claim adds that the QUIC driver wipes `hs` at `HSQ_STEP_COMPLETE`, one round trip before the TLS driver reaches the same wipe at `handshake.c:151` | `quic.[ch]` |
-| INV-22, "the server's flight arrives in one order" (`docs/invariants.md:732-766`). Its mechanism is "There is no state variable to desynchronize; the order is the call order" (`:746-747`), and its check is `handshake_sequence_test` (`:755`), which links TRUST=raw over the TLS driver (`:758`). A QUIC build stores `ch_quic.step`, so the mechanism is false there and the check covers no QUIC trace | the mechanism gains: under `TRANSPORT=quic` the order is the stored `ch_quic.step`, `hsq_advance`'s default arm, which answers `unexpected_message` for every value above `HSQ_STEP_COMPLETE`, and the step numbers that copy Lean's `State` constructor for constructor; the check names the QUIC sequence differential in `bin/quic_driver_test` against the same oracle under the transport `quic` | `quic_step.[ch]` |
+| INV-22, "the server's flight arrives in one order" (`docs/invariants.md:732-766`). Its mechanism is "There is no state variable to desynchronize; the order is the call order" (`:746-747`), and its check is `handshake_sequence_test` (`:755`), which links a raw-mode client over the TLS driver (`:758`). A QUIC build stores `ch_quic.step`, so the mechanism is false there and the check covers no QUIC trace | the mechanism gains: under `TRANSPORT=quic` the order is the stored `ch_quic.step`, `hsq_advance`'s default arm, which answers `unexpected_message` for every value above `HSQ_STEP_COMPLETE`, and the step numbers that copy Lean's `State` constructor for constructor; the check names the QUIC sequence differential in `bin/quic_driver_test` against the same oracle under the transport `quic` | `quic_step.[ch]` |
 | INV-26, new: the AES exception. "The AES exception, stated as an invariant" above holds its claim, its mechanism, its check `inv-26-aes-public-keys-only` and its violation | the whole entry, written in the shape INV-20 uses, with its **Check** field reading "Semgrep-tripwire (`inv-26-aes-public-keys-only`)" and its claim naming the `aes_` and `gcm_` prefixes the rule matches, so the claim and the check say the same thing | the first AES source, `quic_aes.[ch]` |
 | INV-27, new, and the one row here that has landed: the partition. Every root file only a `TRANSPORT=quic` build compiles is named `quic*`, and the Makefile's `QUIC_SHARED` and `QUIC_CONDITIONAL` name the mode's text that is not | the whole entry, written in the shape INV-20 uses, with its **Check** field reading "Semgrep-tripwire grade (`make lint-quic-partition`, `tools/quic-partition.py`)" and three mutants in `test/violations/` measuring it | the interface headers, which landed it |
 
@@ -2446,7 +2446,7 @@ pair sits at the place "The new sources, by name" gives it, and the pairs a
 >   public CA writes, TRUST=webpki) ←
 >   `pem.[ch]` (RFC 7468 armour and RFC 4648 base64, decode only) +
 >   `x509_der.[ch]` (canonical DER, read by both certificate verifiers) +
->   `x509.[ch]` (profiled certificate verify, TRUST=ca) +
+>   `x509.[ch]` (profiled certificate verify, the CA modes) +
 >   `webpki.[ch]` with `webpki_cert.c`, `webpki_ext.c`, `webpki_name.c`,
 >   `webpki_sigalg.c`, `webpki_spki.c` and `webpki_time.c` (chain verify
 >   against caller-supplied anchors, TRUST=webpki) ←

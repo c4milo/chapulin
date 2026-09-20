@@ -71,11 +71,11 @@ int memcmp(const void *, const void *, size_t);
 size_t strlen(const char *);
 EOF
 
-# The sources the Makefile links into the default (PIN=rsa) bin/chapulin.o;
-# p256 is measured too so the PIN=ecdsa column stays known, but the totals
+# The sources the Makefile links into the default (TRUST=raw-rsa) bin/chapulin.o;
+# p256 is measured too so the TRUST=raw-ecdsa column stays known, but the totals
 # below count the default build only.
 # The module list comes from the Makefile, so it cannot drift from what
-# the build packages. LIB_SRCS for the default profile (PIN=rsa,
+# the build packages. LIB_SRCS for the default profile (TRUST=raw-rsa,
 # TRUST=pinned, KEX=x25519); RAND=extern keeps the generator out, since
 # the caller supplies entropy.
 SRCS=$(make -s --no-print-directory -C "$ROOT" print-lib-srcs RAND=extern \
@@ -224,10 +224,10 @@ emit_total dev host total
 # the two total rows' mips_flash_B.
 emit_total dev-native host-native "total (CH_NATIVE_WIDEMUL)"
 
-# Out-of-build modules, sized but outside the totals: what a PIN=ecdsa
+# Out-of-build modules, sized but outside the totals: what a TRUST=raw-ecdsa
 # build swaps in for rsa + rsa_mont.
 for src in $EXTRA_SRCS; do
-    emit_row "$src" "$src (PIN=ecdsa)"
+    emit_row "$src" "$src (TRUST=raw-ecdsa)"
 done
 
 echo "device flash and stack model ($CLANG_VERSION; $TRIPLE -Os; host = $HOST_TRIPLE -Os)"

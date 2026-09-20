@@ -82,10 +82,10 @@ GATE_ROOTS = ["check-slow", "diff-ecdsa", "diff-pq", "diff-webpki",
 
 # The axis values print-lib-srcs is asked about. The first four are the
 # packaged-object legs `make check` builds; the fifth adds the sources
-# only PIN=ecdsa and KEX=pq package, so the five together are every
+# only an ecdsa mode and KEX=pq package, so the five together are every
 # source some object carries.
-LIB_AXES = ["", "TRUST=ca", "TRUST=webpki", "TRANSPORT=quic",
-            "PIN=ecdsa KEX=pq"]
+LIB_AXES = ["", "TRUST=ca-rsa", "TRUST=webpki", "TRANSPORT=quic",
+            "TRUST=raw-ecdsa KEX=pq"]
 
 
 # ---------------------------------------------------------------------------
@@ -209,7 +209,7 @@ class Mapping:
         builds a plan for every violation's file.
 
         The first four axis values are the packaged-object legs `make
-        check` builds. The fifth adds the sources only PIN=ecdsa and
+        check` builds. The fifth adds the sources only an ecdsa mode and
         KEX=pq package, so lib_sources() below is every source some
         object carries. bench/device-ram.sh and lint-trust-separation ask
         the same way, and a list kept here is what fell four modules

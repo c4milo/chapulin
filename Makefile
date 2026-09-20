@@ -324,30 +324,37 @@ TESTH := test/test_random.h test/pem_armor.h test/pem_tests.h test/x509_ca_tests
 # https://github.com/c4milo/chapulin/issues/41; PIN, TRUST and KEX each
 # had a bare else, so a misspelled or not-yet-implemented value resolved
 # to the default and every gate passed against a build nobody asked for.
-# `make check TRUST=webpki` built and passed as TRUST=raw.
+# `make check TRUST=webpki` built and passed as the default mode.
 #
 # Each axis contributes a filter rather than rewriting LIB_SRCS, and one
 # assignment below applies them together. Sequential rewrites made the
 # packaged source list depend on the order the axes appear in this file.
 
-# Pinned mode verifies one signature algorithm per build: PIN=rsa
-# (default, RSA-PSS up to 3072 bits) or PIN=ecdsa (P-256, -DCH_PIN_ECDSA).
-# Test binaries compile both modules so both stay tested either way; the
-# packaged library object carries only the selected one.
-PIN ?= rsa
-ifeq ($(PIN),ecdsa)
-PIN_DEF := -DCH_PIN_ECDSA
-PIN_FILTER := rsa.c rsa_mont.c
-else ifeq ($(PIN),rsa)
-PIN_DEF :=
-PIN_FILTER := p256.c
-else
-$(error PIN=$(PIN) is not a pinned algorithm; use PIN=rsa or PIN=ecdsa)
+# PIN was an axis until the pinned algorithm became half of a TRUST
+# value. A build line that still carries one asked for a specific
+# verifier, and ignoring it would hand back an object built around
+# another, so it is refused by name.
+ifdef PIN
+$(error PIN is no longer an axis; the pinned algorithm is half of TRUST: use TRUST=raw-rsa, TRUST=raw-ecdsa, TRUST=ca-rsa or TRUST=ca-ecdsa)
 endif
-# Trust mode: TRUST=raw (default) pins server keys and ships no
-# certificate parser; TRUST=ca pins a CA key and includes it;
+# Trust mode, which also names the pinned key's algorithm: TRUST=raw-rsa
+# (default) and TRUST=raw-ecdsa pin server keys and ship no certificate
+# parser; TRUST=ca-rsa and TRUST=ca-ecdsa pin a CA key and include it;
 # TRUST=webpki verifies a public chain against the caller's anchors
-# (docs/webpki.md). One mode per packaged object, like PIN.
+# (docs/webpki.md). One mode per packaged object.
+#
+# One value names both halves because the algorithm is a choice only
+# where a key is pinned. A public chain's links are signed by different
+# algorithm families, so a webpki object carries every verifier and has
+# no algorithm to name, and a server object carries both for the same
+# reason. An axis that selects nothing in two of the builds that read it
+# is a suffix, not an axis, and writing it as one means the build that
+# asks for a verifier it will not get cannot be spelled.
+#
+# The rsa suffix is RSA-PSS up to 3072 bits (rsa.[ch]); the ecdsa suffix
+# is P-256 (p256.[ch], -DCH_PIN_ECDSA). Test binaries compile both
+# modules so both stay tested either way; the packaged library object
+# carries only the named one.
 #
 # One consequence of that choice is invisible from the outside and worth
 # reading before picking a mode: only TRUST=webpki gives a client the ALPN
@@ -374,30 +381,63 @@ WEBPKI_SRCS := webpki_time.c webpki_name.c webpki_spki.c webpki_sigalg.c webpki_
 # x509_der.c, rsa.c, rsa_mont.c and p256.c already; these five it does
 # not, because the device objects never package them.
 WEBPKI_CHAIN_SRCS := sha512.c sha512_compress.c p384.c p384_field.c rsa_pkcs1.c
-TRUST ?= raw
-ifeq ($(TRUST),ca)
-TRUST_DEF := -DCH_TRUST_CA
-# Provisioning is a public call only where its parser is linked.
-PUBLIC_CA := ch_pubkey_from_pem
-TRUST_FILTER := $(WEBPKI_SRCS)
-TRUST_ADD :=
-else ifeq ($(TRUST),raw)
+TRUST ?= raw-rsa
+# Provisioning is a public call only where its parser is linked, so
+# PUBLIC_CA is set by the two ca arms alone.
+ifeq ($(TRUST),raw-rsa)
 TRUST_DEF :=
+PIN_DEF :=
 PUBLIC_CA :=
 TRUST_FILTER := pem.c x509.c x509_der.c x509_ca.c $(WEBPKI_SRCS)
+PIN_FILTER := p256.c
+TRUST_ADD :=
+else ifeq ($(TRUST),raw-ecdsa)
+TRUST_DEF :=
+PIN_DEF := -DCH_PIN_ECDSA
+PUBLIC_CA :=
+TRUST_FILTER := pem.c x509.c x509_der.c x509_ca.c $(WEBPKI_SRCS)
+PIN_FILTER := rsa.c rsa_mont.c
+TRUST_ADD :=
+else ifeq ($(TRUST),ca-rsa)
+TRUST_DEF := -DCH_TRUST_CA
+PIN_DEF :=
+PUBLIC_CA := ch_pubkey_from_pem
+TRUST_FILTER := $(WEBPKI_SRCS)
+PIN_FILTER := p256.c
+TRUST_ADD :=
+else ifeq ($(TRUST),ca-ecdsa)
+TRUST_DEF := -DCH_TRUST_CA
+PIN_DEF := -DCH_PIN_ECDSA
+PUBLIC_CA := ch_pubkey_from_pem
+TRUST_FILTER := $(WEBPKI_SRCS)
+PIN_FILTER := rsa.c rsa_mont.c
+TRUST_ADD :=
+else ifeq ($(TRUST),none)
+# The server's value. A server proves its own identity and judges no
+# peer certificate, so it reads no certificate parser and names no
+# algorithm: ch_srv_check verifies both provisioned identities at boot,
+# so the object holds both verifiers and PIN_FILTER stays empty. It
+# exists rather than letting a server take the default because a server
+# built under raw-rsa is described by a value naming one algorithm the
+# object does not honour, and because a recursion that does not name its
+# trust value silently inherits one.
+TRUST_DEF :=
+PIN_DEF :=
+PUBLIC_CA :=
+TRUST_FILTER := pem.c x509.c x509_der.c x509_ca.c $(WEBPKI_SRCS)
+PIN_FILTER :=
 TRUST_ADD :=
 else ifeq ($(TRUST),webpki)
 TRUST_DEF := -DCH_TRUST_WEBPKI
+# This object carries every verifier, so it names no algorithm and
+# filters none out.
+PIN_DEF :=
 PUBLIC_CA :=
 TRUST_FILTER := pem.c x509.c x509_ca.c
-TRUST_ADD := $(WEBPKI_CHAIN_SRCS) $(filter-out $(SRCS),$(WEBPKI_SRCS))
-# A public chain's links are signed by different algorithm families, so
-# this object carries every verifier and PIN selects nothing in it: its
-# filter and its define both drop out (CLAUDE.md).
-PIN_DEF :=
 PIN_FILTER :=
+TRUST_ADD := $(WEBPKI_CHAIN_SRCS) $(filter-out $(SRCS),$(WEBPKI_SRCS))
 else
-$(error TRUST=$(TRUST) is not a trust mode; use TRUST=raw, TRUST=ca or TRUST=webpki)
+$(error TRUST=$(TRUST) is not a trust mode; use TRUST=raw-rsa, TRUST=raw-ecdsa, TRUST=ca-rsa, TRUST=ca-ecdsa, TRUST=webpki, or TRUST=none for ROLE=server)
 endif
 # Transport: TRANSPORT=tls (default) runs the client over TLS records and
 # a socket the caller's I/O callbacks drive; TRANSPORT=quic runs the same
@@ -462,27 +502,24 @@ endif
 # LIB_SRCS below read the result.
 ROLE ?= client
 ifeq ($(ROLE),server)
-# A server proves its own identity and never judges a peer's
-# certificate, so TRUST has no meaning here, and the values that would
-# add a certificate parser are refused rather than ignored.
-ifneq ($(TRUST),raw)
-$(error ROLE=server judges no peer certificate, so it has no trust mode to choose; use TRUST=raw)
-endif
-# PIN names the algorithm of a pinned peer key, of which a server has
-# none. The object still needs both verifiers, because ch_srv_check
-# verifies both provisioned identities at boot, so PIN selects nothing
-# here and a value that asks for one verifier is refused.
+# A server proves its own identity, never judges a peer's certificate,
+# and carries both verifiers because ch_srv_check verifies both
+# provisioned identities at boot. So TRUST names nothing here: neither a
+# parser to add nor an algorithm to keep, and every value but the
+# default is refused rather than ignored.
 #
-# The test is the value and not $(origin PIN), which would also refuse
-# an explicit PIN=rsa. lint-trust-separation's recursions inherit every
-# command-line variable through MAKEFLAGS, so an origin test would make
-# `make check PIN=ecdsa` die inside the ROLE row rather than in a build
-# anyone asked for. The value test still refuses ROLE=server PIN=ecdsa,
-# which is the build that would silently get two verifiers after asking
-# for one; an explicit PIN=rsa produces the same object as no PIN at
-# all, so accepting it costs nothing.
-ifneq ($(PIN),rsa)
-$(error ROLE=server carries both verifiers for ch_srv_check, so PIN selects nothing in it; drop PIN=$(PIN))
+# A server names TRUST=none and nothing else. Taking the client default
+# instead would describe this object with a value naming one algorithm,
+# where it holds both; it would also let a recursion that forgets to
+# name its trust value inherit one and either build the wrong object or
+# stop here, which is what `make check TRUST=raw-ecdsa` did.
+#
+# The test is the value and not $(origin TRUST): lint-trust-separation's
+# recursions inherit every command-line variable through MAKEFLAGS, so an
+# origin test would make `make check TRUST=webpki` die in a row that
+# names its own value rather than in a build anyone asked for.
+ifneq ($(TRUST),none)
+$(error ROLE=server judges no peer certificate, so it has no trust mode to choose; use TRUST=none)
 endif
 # A server has no record-mode driver yet. srv_quic.c gives ROLE=server its
 # non-blocking shape over QUIC; the record transport has only the blocking
@@ -529,16 +566,20 @@ PUBLIC_ROLE := ch_srv_quic_init ch_srv_quic_crypto_in ch_srv_quic_retry_tag ch_s
 else
 PUBLIC_ROLE := ch_srv_accept ch_srv_check ch_read ch_write ch_close
 endif
-# An empty PIN_FILTER keeps every verifier, because LIB_SRCS filters out
-# what the filter names. This object wants exactly that: it holds two
-# signing identities and ch_srv_check verifies both at boot, so it needs
-# p256_ecdsa_verify and rsa_pss_verify in one object. rsa_pkcs1.c is the
-# one verifier a server never needs, and no filter has to name it: it
-# reaches a build only through TRUST_ADD, which the TRUST=raw this block
-# requires never sets.
-PIN_DEF     :=
-PIN_FILTER  :=
+# PIN_DEF and PIN_FILTER are already empty: the TRUST=none arm this
+# block requires sets them, and an empty PIN_FILTER keeps every verifier
+# because LIB_SRCS filters out what the filter names. This object wants
+# exactly that -- it holds two signing identities and ch_srv_check
+# verifies both at boot, so it needs p256_ecdsa_verify and rsa_pss_verify
+# in one object. rsa_pkcs1.c is the one verifier a server never needs,
+# and no filter has to name it: it reaches a build only through
+# TRUST_ADD, which TRUST=none never sets.
 else ifeq ($(ROLE),client)
+# TRUST=none says "judges no peer certificate", which is the one thing a
+# client must do.
+ifeq ($(TRUST),none)
+$(error TRUST=none is the ROLE=server value; a client judges a peer certificate, so use TRUST=raw-rsa, TRUST=raw-ecdsa, TRUST=ca-rsa, TRUST=ca-ecdsa or TRUST=webpki)
+endif
 ROLE_DEF    :=
 ROLE_FILTER :=
 ROLE_ADD    :=
@@ -608,7 +649,7 @@ QEMU_SMOKE_C := $(wildcard test/qemu/*.c test/qemu/*.h test/freertos/*.c test/fr
 # TRANSPORT=quic one write to the same path, make 3.81 compares mtimes
 # to the second, and the second link reuses the first object -- the
 # failure the paragraph below records for RAND.
-LIB_VARIANT := $(PIN)-$(TRUST)-$(KEX)-$(RAND)-$(TRANSPORT)-$(AES)-$(ROLE)
+LIB_VARIANT := $(TRUST)-$(KEX)-$(RAND)-$(TRANSPORT)-$(AES)-$(ROLE)
 LIB_OBJS := $(LIB_SRCS:%.c=bin/obj/$(LIB_VARIANT)/%.o)
 
 # bench/device-ram.sh sizes the same modules the build packages. It asks
@@ -629,9 +670,9 @@ print-lib-def:
 # consumer's link. The check reads print-lib-srcs and print-lib-def
 # through a recursive make per axis value, so it costs no build; the
 # command-line value overrides whatever the outer make was given. The
-# PIN and KEX rows name TRUST=raw as well, because PIN selects nothing
-# under TRUST=webpki, and `make check TRUST=webpki` would otherwise hand
-# that value to their recursions.
+# The KEX rows name TRUST as well, because `make check TRUST=webpki`
+# would otherwise hand that value to their recursions and measure a
+# different object than the row names.
 # The recursions pass --no-print-directory: GNU make 4 turns on -w for
 # a sub-make, and `make ci` runs this lint from one, so its captured
 # output would otherwise start with an "Entering directory" line and
@@ -651,10 +692,11 @@ print-lib-def:
 # read the transport it names.
 #
 # The role rows read their file list the same way, from git's srv*.c at
-# the root, and they name TRUST, TRANSPORT and PIN on both sides because
-# the ROLE=server arm stops the build on any other value of the three,
-# and a recursion inherits whatever the outer make was given: without
-# PIN=rsa here, `make check PIN=ecdsa` would reach that error arm. This is
+# the root, and they name TRUST and TRANSPORT on both sides because the
+# ROLE=server arm stops the build on any other value of the two, and a
+# recursion inherits whatever the outer make was given: without
+# TRUST=raw-rsa here, `make check TRUST=webpki` would reach that error
+# arm. This is
 # the check that fails on an axis whose ROLE_FILTER, ROLE_ADD or
 # ROLE_DEF never reached LIB_SRCS or LIB_DEF; a partition tool that
 # preprocessed the sources could not do it, because a source list is not
@@ -669,7 +711,7 @@ print-lib-def:
 # instead of being left out of the object. The lint also fails when git
 # names no webpki file at all.
 # test/violations/inv05-webpki-source-in-raw.violation drops the webpki
-# files from TRUST=raw's filter, and
+# files from TRUST=raw-rsa's filter, and
 # test/violations/inv05-webpki-source-unlisted.violation drops one file
 # from WEBPKI_SRCS; each requires this lint to fail.
 .PHONY: lint-trust-separation
@@ -687,14 +729,13 @@ lint-trust-separation:
 	webpki_files=$$(git ls-files 'webpki*.c' | grep -v / | tr '\n' ' '); \
 	[ -n "$$webpki_files" ] || { echo "lint-trust-separation: git tracks no webpki*.c file at the root, so the webpki rows would check nothing"; rc=1; }; \
 	webpki_only="sha512.c sha512_compress.c p384.c p384_field.c rsa_pkcs1.c $$webpki_files"; \
-	check "TRUST=raw" "" "pem.c x509.c x509_der.c x509_ca.c $$webpki_only" "" "-DCH_TRUST_CA -DCH_TRUST_WEBPKI"; \
-	check "TRUST=ca" "pem.c x509.c x509_der.c x509_ca.c" "$$webpki_only" "-DCH_TRUST_CA" "-DCH_TRUST_WEBPKI"; \
+	check "TRUST=raw-rsa" "rsa.c rsa_mont.c" "p256.c pem.c x509.c x509_der.c x509_ca.c $$webpki_only" "" "-DCH_TRUST_CA -DCH_TRUST_WEBPKI -DCH_PIN_ECDSA"; \
+	check "TRUST=raw-ecdsa" "p256.c" "rsa.c rsa_mont.c pem.c x509.c x509_der.c x509_ca.c $$webpki_only" "-DCH_PIN_ECDSA" "-DCH_TRUST_CA -DCH_TRUST_WEBPKI"; \
+	check "TRUST=ca-rsa" "pem.c x509.c x509_der.c x509_ca.c rsa.c rsa_mont.c" "p256.c $$webpki_only" "-DCH_TRUST_CA" "-DCH_TRUST_WEBPKI -DCH_PIN_ECDSA"; \
+	check "TRUST=ca-ecdsa" "pem.c x509.c x509_der.c x509_ca.c p256.c" "rsa.c rsa_mont.c $$webpki_only" "-DCH_TRUST_CA -DCH_PIN_ECDSA" "-DCH_TRUST_WEBPKI"; \
 	check "TRUST=webpki" "x509_der.c rsa.c rsa_mont.c p256.c $$webpki_only" "pem.c x509.c x509_ca.c" "-DCH_TRUST_WEBPKI" "-DCH_TRUST_CA -DCH_PIN_ECDSA"; \
-	check "TRUST=webpki PIN=ecdsa" "x509_der.c rsa.c rsa_mont.c p256.c $$webpki_only" "pem.c x509.c x509_ca.c" "-DCH_TRUST_WEBPKI" "-DCH_TRUST_CA -DCH_PIN_ECDSA"; \
-	check "TRUST=raw PIN=rsa" "rsa.c rsa_mont.c" "p256.c" "" "-DCH_PIN_ECDSA"; \
-	check "TRUST=raw PIN=ecdsa" "p256.c" "rsa.c rsa_mont.c" "-DCH_PIN_ECDSA" ""; \
-	check "TRUST=raw KEX=x25519" "x25519.c" "sha3.c mlkem.c mlkem_poly.c" "" "-DCH_KEX_PQ"; \
-	check "TRUST=raw KEX=pq" "x25519.c sha3.c mlkem.c mlkem_poly.c" "" "-DCH_KEX_PQ" ""; \
+	check "TRUST=raw-rsa KEX=x25519" "x25519.c" "sha3.c mlkem.c mlkem_poly.c" "" "-DCH_KEX_PQ"; \
+	check "TRUST=raw-rsa KEX=pq" "x25519.c sha3.c mlkem.c mlkem_poly.c" "" "-DCH_KEX_PQ" ""; \
 	quic_files=$$(git ls-files 'quic*.c' | grep -v / | tr '\n' ' '); \
 	[ -n "$$quic_files" ] || { echo "lint-trust-separation: git tracks no quic*.c file at the root, so the transport rows would check nothing"; rc=1; }; \
 	quic_always=$$(printf '%s\n' $$quic_files | grep -vxF -e quic_aes_soft.c -e quic_aes_hw.c -e quic_aes_extern.c | tr '\n' ' '); \
@@ -709,10 +750,10 @@ lint-trust-separation:
 	signers="rsa_sign.c p256_sign.c p256_scalar.c p256_point.c p256_field.c"; \
 	srv_tls=$$(printf '%s\n' $$srv_files | grep -vxF -e srv_quic.c | tr '\n' ' '); \
 	srv_quic=$$(printf '%s\n' $$srv_files | grep -vxF -e srv_handshake.c | tr '\n' ' '); \
-	check "ROLE=client TRUST=raw TRANSPORT=tls PIN=rsa" "$$client_only tls.c" "$$srv_files $$signers" "" "-DCH_ROLE_SERVER"; \
-	check "ROLE=server TRUST=raw TRANSPORT=tls PIN=rsa" "$$srv_tls $$signers tls.c rsa.c rsa_mont.c p256.c" "$$client_only srv_quic.c" "-DCH_ROLE_SERVER" "-DCH_PIN_ECDSA"; \
+	check "ROLE=client TRUST=raw-rsa TRANSPORT=tls" "$$client_only tls.c" "$$srv_files $$signers" "" "-DCH_ROLE_SERVER"; \
+	check "ROLE=server TRUST=none TRANSPORT=tls" "$$srv_tls $$signers tls.c rsa.c rsa_mont.c p256.c" "$$client_only srv_quic.c" "-DCH_ROLE_SERVER" "-DCH_PIN_ECDSA"; \
 	quic_srv=$$(printf '%s\n' $$quic_always | grep -vxF -e quic_step.c | tr '\n' ' '); \
-	check "ROLE=server TRUST=raw TRANSPORT=quic PIN=rsa" "$$srv_quic $$signers $$quic_srv" "$$client_only srv_handshake.c quic_step.c record.c" "-DCH_ROLE_SERVER -DCH_TRANSPORT_QUIC" "-DCH_PIN_ECDSA"; \
+	check "ROLE=server TRUST=none TRANSPORT=quic" "$$srv_quic $$signers $$quic_srv" "$$client_only srv_handshake.c quic_step.c record.c" "-DCH_ROLE_SERVER -DCH_TRANSPORT_QUIC" "-DCH_PIN_ECDSA"; \
 	[ $$rc = 0 ] && echo "lint-trust-separation: every axis value packages exactly its own sources and defines"; \
 	exit $$rc
 # bench/device-ram.sh builds with CLANG_RV, the clang the codegen lints
@@ -1340,7 +1381,7 @@ check: bin/unit bin/unit_ca bin/unit_pq bin/tlsclient bin/tlsclient_ecdsa bin/tl
 	# every invocation.
 	$(MAKE) lib-check RAND=drbg
 	$(MAKE) lib-check cxx-check RAND=extern
-	# The examples are pinned to TRUST=raw and TRANSPORT=tls, whatever
+	# The examples are pinned to TRUST=raw-rsa and TRANSPORT=tls, whatever
 	# this check was given. psk_client and pinned_client are raw-mode TLS
 	# programs: they call ch_connect, ch_write and ch_read, which a
 	# TRANSPORT=quic object does not export, and each drives a socket
@@ -1349,11 +1390,16 @@ check: bin/unit bin/unit_ca bin/unit_pq bin/tlsclient bin/tlsclient_ecdsa bin/tl
 	# runs: `make check TRUST=webpki` used to leave the webpki-variant
 	# copies there, and the next e2e run started a PSK server against a
 	# client built for a mode that refuses a PSK.
-	$(MAKE) examples-check RAND=extern TRUST=raw TRANSPORT=tls
+	$(MAKE) examples-check RAND=extern TRUST=raw-rsa TRANSPORT=tls
 	# The CA arm packages the provisioning reader and its fifth export;
 	# without this leg neither the export list nor the C++ forwarder is
-	# checked by anything.
-	$(MAKE) lib-check cxx-check RAND=extern TRUST=ca
+	# checked by anything. Both pinned algorithms run, because the
+	# forwarder reads a certificate and the verifier that reads it is
+	# what the algorithm half names: with only the rsa leg,
+	# test/hpp_test.cpp asserted an RSA modulus that a P-256 verifier
+	# refuses, and no build here noticed.
+	$(MAKE) lib-check cxx-check RAND=extern TRUST=ca-rsa
+	$(MAKE) lib-check cxx-check RAND=extern TRUST=ca-ecdsa
 	# The webpki arm exports the four calls and no provisioning call, and
 	# its C++ forwarders are the anchors, hostname and clock setters.
 	$(MAKE) lib-check cxx-check RAND=extern TRUST=webpki
@@ -1369,7 +1415,11 @@ check: bin/unit bin/unit_ca bin/unit_pq bin/tlsclient bin/tlsclient_ecdsa bin/tl
 	# cxx-check joins this line on the commit that adds one
 	# (docs/server.md). It is also the only leg that packages the two
 	# signers, so it is where a link error in them shows.
-	$(MAKE) lib-check RAND=extern ROLE=server
+	# Names TRUST as well as ROLE: the server arm admits one value, and a
+	# recursion inherits whatever the outer make was given, so without it
+	# `make check TRUST=raw-ecdsa` dies in this row rather than in a build
+	# anyone asked for.
+	$(MAKE) lib-check RAND=extern ROLE=server TRUST=none
 	# lint above holds lint-stack at the budget of the build check was
 	# given, 2,560 B for a plain `make check`, the target `make ci` runs.
 	# This leg compiles the TRUST=webpki object's sources under their own

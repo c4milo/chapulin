@@ -223,7 +223,7 @@ last `ROLE=server` stub, as the entry said it would.
 ### INV-20 — the certificate parser stays contained
 
 - **Claim.** `x509_verify_leaf` is the one entry the handshake
-  reaches, called only from `handshake_auth.c`. A `TRUST=ca` build
+  reaches, called only from `handshake_auth.c`. A CA-mode build
   exports a second entry, `ch_pubkey_from_pem`, which firmware calls
   while provisioning and no library source calls at all. Either way
   the library never reads a clock: certificate validity is CA
@@ -1090,7 +1090,7 @@ last `ROLE=server` stub, as the entry said it would.
   opening message, no ticket, key update, or application data before
   the Finished, and nothing after a close_notify. The order is the
   same whether the certificate is checked against a pinned server key
-  (TRUST=raw) or a pinned CA (TRUST=ca).
+  (a raw mode) or a pinned CA (a CA mode).
 - **Mechanism.** `handshake.c` reads the flight as a straight line —
   `hello_exchange`, then `hsa_server_auth`, then `expect_finished` — and
   each step compares the message type against the one it expects,
@@ -1106,7 +1106,7 @@ last `ROLE=server` stub, as the entry said it would.
   `handshake_sequence_test`, exhaustive over 466,286 sequences — all eleven letters
   to depth 5, and the six handshake letters to depth 6 so the longest
   flight the model admits is reached — in both auth modes, comparing
-  the real client's verdict against that model. It links TRUST=raw
+  the real client's verdict against that model. It links a raw-mode
   only, so the CA build's order rests on the shared lines named above
   plus the e2e run, not on the oracle; CBMC (`handshake` harness) for
   memory safety only, not for order.
@@ -1185,7 +1185,7 @@ last `ROLE=server` stub, as the entry said it would.
 - **Violation.** A PR sizes a scratch buffer from a length field, or
   adds a frame that silently outgrows the smallest supported SRAM.
   `test/violations/inv19-webpki-object-frame.violation` is that mutant:
-  a 5,000-byte buffer in `p256_ecdsa_verify`, which `PIN=rsa` filters
+  a 5,000-byte buffer in `p256_ecdsa_verify`, which an rsa mode filters
   out of every other object, so only the `TRUST=webpki` leg compiles the
   file and objects.
 - See [decisions: Memory and runtime](decisions.md#memory-and-runtime).

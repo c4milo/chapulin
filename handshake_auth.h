@@ -12,14 +12,14 @@
 
 // Reads the server's Certificate and CertificateVerify and authenticates
 // the peer: against the pinned key in a raw-pin build, or against a
-// chain up to the pinned CA key in a TRUST=ca build. Returns CH_OK, or
+// chain up to the pinned CA key in a CA-mode build. Returns CH_OK, or
 // an error with h->alert set.
 //
 // Under CH_TRANSPORT_QUIC it stops one message earlier. It reads the
 // Certificate, verifies the chain the trust mode asks for, adds the raw
 // message to the transcript and returns CH_OK there, with h->leaf
-// written under TRUST=ca and TRUST=webpki, h->t->pin_slot written under
-// TRUST=ca and h->t->epoch_status written under TRUST=ca. It has not
+// written under a CA mode and TRUST=webpki, h->t->pin_slot written under
+// a CA mode and h->t->epoch_status written under a CA mode. It has not
 // read the CertificateVerify, and the peer is not authenticated yet:
 // hsa_read_certificate_verify does that in the next step. The split
 // exists because the QUIC driver returns to its caller between
@@ -32,9 +32,9 @@ int hsa_server_auth(handshake_state *h);
 // the handshake transcript, which authenticates the peer (RFC 9846
 // §4.5.2). It takes the transcript hash as it stands, rebuilds §4.5.2's
 // signed content from it, and verifies: against h->leaf.key under
-// TRUST=ca and TRUST=webpki, the leaf key hsa_server_auth copied out,
+// a CA mode and TRUST=webpki, the leaf key hsa_server_auth copied out,
 // and against cfg.server_pubkey and then cfg.server_pubkey2 under
-// TRUST=raw. On success it adds the raw message to the transcript.
+// a raw mode. On success it adds the raw message to the transcript.
 //
 // Requires an hsa_server_auth that returned CH_OK in the same session,
 // and no write to h->t->transcript between the two calls: this call
@@ -44,7 +44,7 @@ int hsa_server_auth(handshake_state *h);
 // hsr_peek_message before it runs the step.
 //
 // Returns CH_OK, with the peer authenticated and h->t->pin_slot set to
-// 1 or 2 under TRUST=raw, naming the pin that verified the signature.
+// 1 or 2 under a raw mode, naming the pin that verified the signature.
 //
 // Returns CH_EAUTH with ALERT_DECRYPT_ERROR when no key verified the
 // signature, which RFC 9846 §4.5.2 requires (rfc9846.txt:3106-3107).

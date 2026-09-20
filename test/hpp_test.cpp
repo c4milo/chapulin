@@ -59,9 +59,15 @@ constexpr size_t kPinLen = 384;
 
 #ifdef CH_TRUST_CA
 // The provisioning forwarder, against the build's own generated
-// vectors: the CA-shaped intermediate yields its 384-byte modulus, and
-// the leaf -- the file an operator pushes by mistake -- is refused with
-// the key wiped. The armour comes from the helper the C tests use.
+// vectors: the CA-shaped intermediate yields its public key, and the
+// leaf -- the file an operator pushes by mistake -- is refused with the
+// key wiped. The armour comes from the helper the C tests use.
+//
+// The vectors follow the build's pinned algorithm, the way
+// x509_strict_test.c picks its own. An RSA certificate handed to a
+// P-256 verifier is refused, so naming one here made this test pass
+// only under an rsa mode, and no cxx-check leg built a ca-ecdsa object
+// to notice.
 extern "C" {
 #include "pem.h"
 }
@@ -69,18 +75,32 @@ extern "C" {
 
 #include "pem_armor.h"
 
+#ifdef CH_PIN_ECDSA
+static const uint8_t *const prov_ca = certv_int_p256;
+static const size_t prov_ca_len = sizeof certv_int_p256;
+static const size_t prov_key_len = 64;
+static const uint8_t *const prov_leaf = certv_leaf_p256;
+static const size_t prov_leaf_len = sizeof certv_leaf_p256;
+#else
+static const uint8_t *const prov_ca = certv_int_rsa;
+static const size_t prov_ca_len = sizeof certv_int_rsa;
+static const size_t prov_key_len = 384;
+static const uint8_t *const prov_leaf = certv_leaf_rsa;
+static const size_t prov_leaf_len = sizeof certv_leaf_rsa;
+#endif
+
 static void test_pubkey_from_pem() {
     static uint8_t pem[CH_PEM_MAX + 64];
     static uint8_t der[CH_X509_MAX];
     static uint8_t key[CH_X509_KEY_MAX];
 
-    size_t n = pem_armor(certv_int_rsa, sizeof certv_int_rsa, 64, "\n", pem);
+    size_t n = pem_armor(prov_ca, prov_ca_len, 64, "\n", pem);
     chapulin::Pubkey got = chapulin::pubkey_from_pem({pem, n}, der, key);
     CHECK(got.ok());
-    CHECK(got.size == 384);
+    CHECK(got.size == prov_key_len);
 
     std::memset(key, 0xAB, sizeof key);
-    n = pem_armor(certv_leaf_rsa, sizeof certv_leaf_rsa, 64, "\n", pem);
+    n = pem_armor(prov_leaf, prov_leaf_len, 64, "\n", pem);
     got = chapulin::pubkey_from_pem({pem, n}, der, key);
     CHECK(!got.ok());
     CHECK(got.error() == chapulin::Status::invalid);
@@ -95,7 +115,7 @@ static void test_pubkey_from_pem() {
 }
 #endif
 
-// Sized for whichever build floor is larger: a TRUST=ca build demands
+// Sized for whichever build floor is larger: a CA-mode build demands
 // room for the whole Certificate flight (CH_TRUST_MIN_RXBUF is 3,098
 // under the RSA defaults), a TRUST=webpki build room for four
 // certificates (12,324), and a 2048-byte buffer there turns every

@@ -131,7 +131,7 @@ static int trust_config_ok(const ch_cfg *cfg) {
 
 // Loads the stored revocation epoch and checks a resuming ticket
 // against it, the rule tls.c's epoch_init states (docs/ca.md, INV-21).
-// Outside a TRUST=ca build nothing enforces an epoch, so a config that
+// Outside a CA-mode build nothing enforces an epoch, so a config that
 // sets the callbacks is refused rather than silently ignored.
 static int epoch_init(ch_tls *t, const ch_cfg *cfg) {
 #ifdef CH_TRUST_CA

@@ -1,5 +1,5 @@
 /*
- * A chapulin client for the TRUST=ca build: the device pins the public
+ * A chapulin client for the CA-mode build: the device pins the public
  * key of a CA you run, and each server presents its own certificate
  * chain.
  *
@@ -36,8 +36,8 @@
  *
  * Build the library, then this file against it:
  *
- *   make TRUST=ca RAND=extern lib             # RSA-PSS chains, the default PIN
- *   make TRUST=ca PIN=ecdsa RAND=extern lib   # P-256 chains instead
+ *   make TRUST=ca-rsa RAND=extern lib     # RSA-PSS chains, the default
+ *   make TRUST=ca-ecdsa RAND=extern lib   # P-256 chains instead
  *   cc -Wall -Wextra -Wpedantic -Werror -std=c11 -D_DEFAULT_SOURCE \
  *      -DCH_TRUST_CA -DCH_RAND_EXTERN -I. \
  *      -o ca_client examples/ca_client.c bin/chapulin.o
@@ -69,7 +69,7 @@
 //
 // One build verifies one signature algorithm, everywhere in the chain.
 // The default build pins an RSA modulus: 256 to 384 bytes, big-endian,
-// exponent fixed at 65537, RSA-PSS signatures. A PIN=ecdsa build pins
+// exponent fixed at 65537, RSA-PSS signatures. A TRUST=ca-ecdsa build pins
 // the CA's P-256 public point as 64 bytes, X then Y.
 //
 // Take the bytes from the CA key you already hold:
@@ -447,7 +447,7 @@ int main(int argc, char **argv) {
     // and the message header, beside the header, inner content type
     // and AEAD tag of the record that completes the message. That is
     // 3112 bytes in the RSA build and
-    // 1576 under PIN=ecdsa, against 512 in a raw-pin build, where the
+    // 1576 under TRUST=ca-ecdsa, against 512 in a raw-pin build, where the
     // integrator sizes up for the server's certificate by hand. Sizing
     // from the constant means changing PIN or TRUST resizes the buffer,
     // and a buffer below the floor fails at setup with CH_EINVAL rather

@@ -44,7 +44,7 @@ does not remove the recovery path.
 
 ## CA mode: the slots hold the CA key
 
-A `TRUST=ca` build reads the same two slots as CA keys: slot A holds
+A CA-mode build reads the same two slots as CA keys: slot A holds
 the live CA key, slot B the staged next one. `pin_slot` reports which
 CA key verified the presented chain.
 

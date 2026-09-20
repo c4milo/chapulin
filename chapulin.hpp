@@ -360,7 +360,7 @@ struct Pubkey {
 };
 
 // Forwards ch_pubkey_from_pem: one PEM CERTIFICATE block to the key
-// bytes Config::pinned() takes. TRUST=ca builds only, because only they
+// bytes Config::pinned() takes. CA-mode builds only, because only they
 // link the certificate reader. Decoding is not authenticating — the
 // block's signature, names and dates go unread, and the key is
 // trustworthy because an operator pushed it, exactly as a raw pin is

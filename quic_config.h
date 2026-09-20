@@ -14,7 +14,7 @@
 #include "cfg.h"
 #include "session.h"
 
-// Judges cfg and, under TRUST=ca, loads the stored revocation epoch
+// Judges cfg and, under a CA mode, loads the stored revocation epoch
 // into t. ch_quic_init calls it once, before it draws a secret or
 // builds a message, so a refusal leaves nothing to wipe.
 //
@@ -27,7 +27,7 @@
 // ch_quic_init turns every one of them into CH_EINVAL, because quic.h
 // gives that call one refusal code.
 //
-// It writes t->epoch, t->epoch_seen and t->epoch_status under TRUST=ca
+// It writes t->epoch, t->epoch_seen and t->epoch_status under a CA mode
 // and nothing outside t in any build.
 int quic_config_ok(ch_tls *t, const ch_cfg *cfg);
 

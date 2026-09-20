@@ -387,7 +387,7 @@ Spec.Handshake.step   : (mode : Mode) → State → Msg → Option State      --
                         -- server-to-client messages after the ClientHello; none = fatal
                         -- (unexpected_message). Msg has one constructor per line-protocol
                         -- letter (S H E C R V F N K A L); Mode is psk or pinned. `pinned`
-                        -- models the raw-pin build (TRUST=raw); CA builds share the
+                        -- models the raw-pin build; CA builds share the
                         -- message order but no sequence oracle covers them — the e2e
                         -- run does.
 Spec.Handshake.accepts : (mode : Mode) → (msgs : List Msg) → Bool       -- fold step from start;
@@ -494,7 +494,7 @@ boundary rather than weakening the model to match the split:
 | ServerHello that ignores the offered PSK | `hello_exchange`, on `psk_ok` | nothing — both parsers accept it; whether resumption was required sits above them |
 
 Each ends the handshake on both sides, except the last: the unoffered
-CertificateEntry extension is refused only in the `TRUST=ca` build,
+CertificateEntry extension is refused only in a CA-mode build,
 where `x509_verify_leaf` requires empty per-entry extensions. A pinned
 build never reads the entries — it hashes the certificate into the
 transcript and authenticates by the signature — so §4.5.1's MUST-abort

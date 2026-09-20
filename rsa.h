@@ -12,7 +12,7 @@
 
 // The largest modulus rsa_pss_verify and rsa_pkcs1_verify admit, in
 // bytes; the smallest is 256 (RSA-2048) and the step is 8. The device
-// modes, TRUST=raw and TRUST=ca, stop at 384 (RSA-3072). A TRUST=webpki
+// modes, raw and CA, stop at 384 (RSA-3072). A TRUST=webpki
 // build (-DCH_TRUST_WEBPKI) admits 512 (RSA-4096), because a public
 // chain ends at a root that size: GTS Root R1 is RSA-4096, measured in
 // docs/webpki.md under "Bounds". rsa_mont.c sizes its limb arrays from

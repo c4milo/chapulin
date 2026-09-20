@@ -1,4 +1,4 @@
-// The TRUST=ca build variant of the handshake proof: the same driver,
+// The CA-mode variant of the handshake proof: the same driver,
 // with server_auth routing the Certificate message through
 // x509_verify_leaf and CertificateVerify checking the extracted leaf
 // key. A proof name is one launch line, so the variant gets its own

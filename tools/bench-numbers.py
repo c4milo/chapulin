@@ -28,7 +28,7 @@ OPS = {
     "sha256_1kib": "SHA-256, per 1 KB",
     "x25519_scalarmult": "x25519 scalar multiply",
     "rsa_pss_verify_3072": "RSA-3072 PSS verify (default)",
-    "p256_ecdsa_verify": "P-256 verify (`PIN=ecdsa`)",
+    "p256_ecdsa_verify": "P-256 verify (`TRUST=raw-ecdsa`)",
     "handshake_crypto": "full pinned handshake crypto (default)",
     "mlkem_keygen": "ML-KEM-768 keygen (`KEX=pq`)",
     "mlkem_decaps": "ML-KEM-768 decapsulate (`KEX=pq`)",
@@ -75,9 +75,9 @@ MEMORY = [
     ("**total static working set, `TRUST=webpki`** (12338 buffer, its floor)",
      [["static_working_set_webpki_arm64"], ["static_working_set_webpki_rv32"]]),
     ("peak stack, `ch_connect` (RSA-3072 verify)", [["stack_connect_rsa"]]),
-    ("peak stack, `ch_connect` (`PIN=ecdsa`)", [["stack_connect_ecdsa"]]),
+    ("peak stack, `ch_connect` (`TRUST=raw-ecdsa`)", [["stack_connect_ecdsa"]]),
     ("peak stack, `ch_connect` (PSK)", [["stack_connect_psk"]]),
-    ("peak stack, `ch_connect` (`TRUST=ca`, RSA / ECDSA)",
+    ("peak stack, `ch_connect` (`TRUST=ca-rsa` / `TRUST=ca-ecdsa`)",
      [["stack_connect_ca_rsa", "stack_connect_ca_ecdsa"]]),
     ("peak stack, `ch_read` (worst case: KeyUpdate rekey)", [["stack_read"]]),
     ("peak stack, `ch_connect` (`KEX=pq`)", [["stack_connect_pq"]]),
@@ -351,18 +351,18 @@ def check_floor(readme):
 
 
 def check_flash_ecdsa(readme):
-    """The PIN=ecdsa trade: RSA out, P-256 in, and the total that leaves."""
+    """The ecdsa trade: RSA out, P-256 in, and the total that leaves."""
     flash = read_csv("bench/results-device.csv", "mips_flash_B")
     rsa = flash["rsa"] + flash["rsa_mont"]
-    p256 = flash["p256 (PIN=ecdsa)"]
+    p256 = flash["p256 (TRUST=raw-ecdsa)"]
     want = tuple("%.1f kB" % (b / 1024) for b in (rsa, p256, flash["total"] - rsa + p256))
     m = re.search(r"trades ([0-9.]+ kB) of RSA for ([0-9.]+ kB) of P-256 and totals "
                   r"([0-9.]+ kB)", prose(readme))
     if not m:
-        print("lint-bench-numbers: README does not state the PIN=ecdsa flash trade")
+        print("lint-bench-numbers: README does not state the ecdsa flash trade")
         return 1
     if m.groups() != want:
-        print("lint-bench-numbers: README says PIN=ecdsa trades %s of RSA for %s of P-256 "
+        print("lint-bench-numbers: README says the ecdsa mode trades %s of RSA for %s of P-256 "
               "and totals %s; the device model says %s, %s and %s" % (m.groups() + want))
         return 1
     return 0

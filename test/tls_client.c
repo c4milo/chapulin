@@ -325,7 +325,7 @@ static void report_alpn(const ch_cfg *cfg, const ch_tls *tls) {
 
 // Fills the auth part of cfg: one branch per argv form — "pin:..." for
 // pinned-key mode, "@file" for a saved ticket, or an external psk-hex +
-// identity pair. The TRUST=ca build adds its "ca:" form as one more
+// identity pair. The CA-mode build adds its "ca:" form as one more
 // branch here.
 static int setup_psk(char **argv, ch_cfg *cfg, uint8_t *psk, size_t psk_cap, uint8_t *id) {
     if (strncmp(argv[3], "pin:", 4) == 0) {

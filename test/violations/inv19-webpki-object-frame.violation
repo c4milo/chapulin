@@ -2,7 +2,7 @@ invariant: INV-19
 file: p256.c
 catches: test/lint-stack-webpki.sh
 reason: p256_ecdsa_verify takes a 5,000-byte scratch buffer, over the
-  4,096-byte budget the TRUST=webpki object holds. PIN=rsa filters
+  4,096-byte budget the TRUST=webpki object holds. An rsa mode filters
   p256.c out of every other packaged object, so the plain `make
   lint-stack` compiles this file nowhere and passes; only the
   TRUST=webpki leg objects.

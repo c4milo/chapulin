@@ -13,7 +13,7 @@
 //
 // Domain: this oracle models raw-pin mode. The client here links
 // without CH_TRUST_CA, and the spec's `pinned` Mode means a pinned
-// server key. TRUST=ca builds run the same message-order state machine
+// server key. CA-mode builds run the same message-order state machine
 // but replace the server_auth check with certificate verification, and
 // no sequence oracle covers that arm — only the e2e run exercises
 // CA-mode sequencing. This is an accepted, recorded limitation.

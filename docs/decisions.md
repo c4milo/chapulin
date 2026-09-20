@@ -50,7 +50,7 @@ does nothing more.
    and citable prior formal work on the same scheme. Provability over
    speed; revisit if the workload becomes many short connections.
 8. **One pinned signature algorithm per build**: RSA-PSS by default,
-   P-256 behind `make PIN=ecdsa`, never both. Cost: switching means
+   P-256 behind `make TRUST=raw-ecdsa`, never both. Cost: switching means
    rebuilding. Gain: no signature-algorithm negotiation surface and a
    smaller binary. RSA won the default on measurement — its verify is
    4x faster and 3.5 kB smaller in flash than P-256's — and RSA is what
@@ -59,7 +59,7 @@ does nothing more.
    384 bytes, the pin is the raw modulus, no PKCS#1 v1.5, deliberately
    variable time. Cost: exotic keys are unsupported. Gain: a tiny
    fixed-shape verifier with no ASN.1 in it. DER handling lives in
-   `x509_der.c` alone, and only `TRUST=ca` builds package that file;
+   `x509_der.c` alone, and only CA-mode builds package that file;
    `rsa.c` stays ASN.1-free in every build. Variable time is safe
    because every input to verification is public.
 10. **No Ed25519.** Cost: none today — no real server-certificate
@@ -132,7 +132,7 @@ does nothing more.
     objections: it readmits the parser class, needs a trusted clock
     for validity, and a pinned CA without name checking turns every
     certificate that CA ever issued into a skeleton key. The
-    `TRUST=ca` build (entry 16) later answered each objection on its
+    CA-mode build (entry 16) later answered each objection on its
     own terms. The profile removes the clock objection by design: the
     device reads no validity values, and freshness moves to
     reissuance policy. It contains the parser objection by proof: a
@@ -155,7 +155,7 @@ does nothing more.
     lifetime; the recurring cost of any handshake is the key exchange
     alone — two x25519 operations, plus the ML-KEM keygen and decaps
     in a `KEX=pq` build (entry 12).
-16. **CA trust is a build, not a negotiation.** `make TRUST=ca` pins a
+16. **CA trust is a build, not a negotiation.** `make TRUST=ca-rsa` pins a
     CA public key in the pin slots and verifies the server's chain — a
     server certificate alone, or that plus one intermediate — against
     it with a
@@ -387,7 +387,7 @@ does nothing more.
     holds the partition. docs/webpki.md states the profile, the
     measured bounds, and what the mode does not check.
 
-    Extending TRUST=ca with optional dates and names was considered and
+    Extending the CA modes with optional dates and names was considered and
     rejected: it would put clock and name logic inside the object a
     device links. Verifying the chain in the caller instead of here was
     considered and rejected: it duplicates a certificate parser in a
@@ -430,7 +430,7 @@ does nothing more.
     first term the axis selects —
     `$(PUBLIC_TRANSPORT) $(PUBLIC_RAND) $(PUBLIC_CA)`, where
     `PUBLIC_TRANSPORT` drops the four TLS names rather than adding to
-    them and the other two terms keep their meaning, so a TRUST=ca or
+    them and the other two terms keep their meaning, so a CA-mode or
     RAND=drbg QUIC object exports sixteen and one with both exports
     seventeen; five library files replaced — `record.c`, `io.c`, `session.c`, `handshake.c` and
     `tls.c`, 990 lines — and five more given a second arm under
@@ -446,7 +446,7 @@ does nothing more.
     driver blocks on the wire at five `hsr_next_msg` call sites, two of
     them in `handshake_auth.c`, so the caller-driven interface runs one
     step per whole handshake message, moves the handshake frame — 448
-    bytes raw, 856 under TRUST=ca PIN=rsa, 976 under TRUST=webpki, 512
+    bytes raw, 856 under TRUST=ca-rsa, 976 under TRUST=webpki, 512
     under KEX=pq — into the session, moves 233 of `handshake.c`'s 395
     lines into a `handshake_flight.c` both transports compile, and
     changes `handshake.o` in every TLS build. `handshake_psk` and
@@ -461,7 +461,7 @@ does nothing more.
     from public keys on the Initial one, instead of re-argued in a second
     repository. Measured at `3432a5d`: the driver touches the record
     layer at 15 call sites in three files and the key schedule at none,
-    and unchanged lines are 1,335 of 3,460 in a TRUST=raw object and
+    and unchanged lines are 1,335 of 3,460 in a raw-mode object and
     4,392 of 6,517 in a TRUST=webpki one.
 
     Entry 6 does not fall; it gains one exception with a checkable
@@ -528,7 +528,7 @@ does nothing more.
     schemes (entry 36) and the application protocols (entry 37), and it
     has the same cause: a host-side client cannot know what the endpoint
     it dialled supports. Entry 12's one-group-per-build rule stands
-    unchanged for `TRUST=raw` and `TRUST=ca`, where the device already
+    unchanged for the raw and CA modes, where the device already
     pins the key of the endpoint it will talk to and therefore knows what
     that endpoint speaks.
 
@@ -558,3 +558,38 @@ does nothing more.
     already refuses a handshake whose selected group is not the hybrid,
     so the property becomes the caller's to ask for rather than the
     build's to enforce.
+
+40. **The pinned algorithm is half of a `TRUST` value, not an axis.**
+    `PIN` chose RSA-PSS or P-256 for the key a raw or ca build pins. It
+    selected nothing in the other two builds: a `TRUST=webpki` object
+    carries every verifier because a public chain's links are signed by
+    different algorithm families, and a `ROLE=server` object carries both
+    because `ch_srv_check` verifies both provisioned identities at boot.
+    An axis that names nothing in two of the builds that read it is a
+    suffix. `TRUST` now spells it: `raw-rsa` (the default), `raw-ecdsa`,
+    `ca-rsa`, `ca-ecdsa` and `webpki`.
+
+    What this buys is not one fewer flag. It is that `make TRUST=webpki
+    PIN=ecdsa` asked for one verifier and got every one, and the Makefile
+    answered by quietly emptying `PIN_FILTER` behind the caller's back;
+    that build can no longer be written. The `ROLE=server` block carried
+    two refusals for the same reason and now carries one, and
+    `TRUST=ca-ecdsa` gained a `lint-trust-separation` row, which it never
+    had while it was a combination rather than a value.
+
+    A server names `TRUST=none`, a sixth value, and is refused without
+    it. Letting it take the client default described the object with a
+    value naming one algorithm where it holds both, and left the trust
+    value unwritten at every server call site: `make check
+    TRUST=raw-ecdsa` died because one recursion had not named one and
+    inherited it. `TRUST=none` is refused for a client, whose whole job
+    is to judge a peer certificate, so neither role can build under the
+    other's value. The object it produces is the same 34 sources as
+    before.
+
+    The C stays as it was: `CH_PIN_ECDSA` and `CH_TRUST_CA` are
+    unchanged, so firmware that compiles the sources directly sees
+    nothing move. A stale `PIN=` on a build line is refused by name
+    rather than ignored, because ignoring it would hand back an object
+    built around the other verifier. `TRUST=raw` and `TRUST=ca` are
+    refused the same way, each naming the two values that replaced it.

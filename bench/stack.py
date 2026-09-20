@@ -16,7 +16,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 # The public calls, per build. ch_pubkey_from_pem exists only under
-# TRUST=ca, so it is measured only when the object defines it -- but an
+# a CA mode, so it is measured only when the object defines it -- but an
 # entry that is listed and absent is a script bug, not a build variant,
 # so main() names the difference instead of printing a silent 0.
 ENTRIES = ["_ch_connect", "_ch_read", "_ch_write", "_ch_close"]

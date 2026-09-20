@@ -30,12 +30,12 @@ static uint8_t msg[CH_HYBRID_LEN];
 static volatile uint32_t sink;
 
 #ifdef OP_HANDSHAKE
-// The crypto of one default-build (PIN=rsa, raw-pin trust) handshake in
+// The crypto of one default-build (TRUST=raw-rsa) handshake in
 // handshake.c run() order: x25519 keygen and shared secret, the full key
 // schedule with both Finished MACs and all four traffic-key derivations,
 // one RSA-3072-PSS CertificateVerify check, and 2244 bytes of transcript.
 // Message parsing and record protection stay out; the aead row covers the
-// latter. A PIN=ecdsa handshake swaps the rsa row's cost for the p256
+// latter. A TRUST=raw-ecdsa handshake swaps the rsa row's cost for the p256
 // row's. Returns a fold of the outputs, or all-ones on a failed check.
 static uint32_t hs_once(void) {
     static const uint8_t nopsk[SHA256_LEN] = {0};

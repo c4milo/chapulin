@@ -71,7 +71,7 @@ client never parses the server's certificate — no ASN.1, no names, no
 expiry. This works against stock servers such as OpenSSL and Go's
 `crypto/tls`.
 
-**Pinned CA** (`make TRUST=ca`). The pin holds the key of a CA you run.
+**Pinned CA** (`make TRUST=ca-rsa`). The pin holds the key of a CA you run.
 The server sends its certificate, or that plus one intermediate, and
 the client checks the chain up to the pin with a small profiled parser.
 The check covers signatures and certificate shape only. There is still
@@ -94,7 +94,7 @@ handshake.
 
 One signature algorithm per build. The default verifies RSA-PSS and
 pins the raw modulus, 256 to 384 bytes, covering RSA-2048 through
-RSA-3072. `make PIN=ecdsa` verifies P-256 and pins 64 bytes instead.
+RSA-3072. `make TRUST=raw-ecdsa` verifies P-256 and pins 64 bytes instead.
 [RFC 9846](https://www.rfc-editor.org/rfc/rfc9846) requires both algorithms, so between them a chapulin build
 can pin any compliant server. Neither build carries the other's
 verifier.
@@ -103,7 +103,7 @@ All modes accept session tickets, so reconnects resume over PSK. In
 pinned mode the client verifies a signature once per ticket lifetime,
 not once per connection.
 
-**Revoking without a clock.** `TRUST=ca` offers an opt-in counter. The
+**Revoking without a clock.** The ca modes offer an opt-in counter. The
 CA writes each certificate's `notBefore` as a counter it advances, and
 a device rejects any certificate below the highest counter it has seen
 from an authenticated server. To retire a stolen key, reissue that
@@ -133,9 +133,9 @@ so an rv32 peak needs tooling that does not exist yet.
 | `ch_tls` under `TRUST=webpki` (includes 1154 B TX staging) | 1744 | 1648 |
 | **total static working set, `TRUST=webpki`** (12338 buffer, its floor) | **14082** | **13986** |
 | peak stack, `ch_connect` (RSA-3072 verify) | 5056 |
-| peak stack, `ch_connect` (`PIN=ecdsa`) | 3888 |
+| peak stack, `ch_connect` (`TRUST=raw-ecdsa`) | 3888 |
 | peak stack, `ch_connect` (PSK) | 2432 |
-| peak stack, `ch_connect` (`TRUST=ca`, RSA / ECDSA) | 5504 / 4016 |
+| peak stack, `ch_connect` (`TRUST=ca-rsa` / `TRUST=ca-ecdsa`) | 5504 / 4016 |
 | peak stack, `ch_connect` (`TRUST=webpki`, RSA-4096 verify) | 7200 |
 | peak stack, `ch_read` (worst case: KeyUpdate rekey) | 1712 |
 | peak stack, `ch_connect` (`KEX=pq`) | 15808 |
@@ -157,7 +157,7 @@ You size the receive buffer, and the client advertises that size as its
 buffer cannot hold. One extra rule in pinned mode: the server's
 Certificate message must also fit. A self-signed P-256 certificate
 needs about 600 bytes and an RSA-3072 one about 1.2 kB, so the 2 kB
-buffer above covers both. A `TRUST=ca` build knows its own worst case
+buffer above covers both. A ca-mode build knows its own worst case
 and derives the floor for you: `CH_MIN_RXBUF` becomes 3,112 bytes
 (RSA) or 1,576 (ECDSA), the largest Certificate message plus the record
 that completes it, so a buffer too small for the largest chain fails at
@@ -224,7 +224,7 @@ prose and the CSVs disagree, as it does for every cell of the table.
 | SHA-256, per 1 KB | 68 k | 0.14 | 57 k | 90 k |
 | x25519 scalar multiply | 38.9 M | 78 | 27.4 M | 51.4 M |
 | RSA-3072 PSS verify (default) | 11.6 M | 23 | 8.4 M | 13.2 M |
-| P-256 verify (`PIN=ecdsa`) | 46.0 M | 92 | 26.7 M | 42.6 M |
+| P-256 verify (`TRUST=raw-ecdsa`) | 46.0 M | 92 | 26.7 M | 42.6 M |
 | full pinned handshake crypto (default) | 90.2 M | 180 | 63.8 M | 117.0 M |
 | ML-KEM-768 keygen (`KEX=pq`) | 3.2 M | 6 | 2.7 M | 3.6 M |
 | ML-KEM-768 decapsulate (`KEX=pq`) | 3.6 M | 7 | 3.0 M | 4.1 M |
@@ -245,7 +245,7 @@ Flash is 28.0 kB for the default build (`.text` + `.rodata`, `-Os`),
 of which the multiply decomposition is 2.3 kB, nearly all of it
 poly1305's unrolled block: the `total (CH_NATIVE_WIDEMUL)` row of
 [`bench/results-device.csv`](bench/results-device.csv) sizes the same
-modules over the native multiply. The `PIN=ecdsa` build trades 2.2 kB
+modules over the native multiply. The `TRUST=raw-ecdsa` build trades 2.2 kB
 of RSA for 5.8 kB of P-256 and totals 31.5 kB.
 
 The hybrid key exchange costs less than its wire size suggests. `KEX=pq`
@@ -315,7 +315,7 @@ apart from one that passed — so for the slow rows, read the nightly.
 | sha3 (two harnesses) | every mode is safe for a one-call message and XOF output from a fresh context; the SHAKE streaming calls are safe from any context state — arbitrary lanes, either rate, every position — for split absorbs and squeezes | one-call: messages ≤ 200 B, output ≤ 400 B; streaming: chunks ≤ 32 B |
 | mlkem (six harnesses) | keygen, encaps, and decaps are safe for every seed, message, and hostile key or ciphertext, with the polynomial layer stubbed to its contracts; the polynomial layer is safe over full-range int16 coefficients — a superset of anything the KEM layer passes it, so no coefficient value can overflow the reduction arithmetic. Sampling, reductions, and coding prove in the fast tier; the NTT, the two halves of its inverse, and the base multiplication, whose chained-product overflow proofs are the SAT-hard part, each prove in their own slow-tier formula | the full domain: every input is a fixed-size array, and the sampling read stops at its 1536-byte cap |
 | hkdf (two harnesses) | hmac/extract and expand/expand-label safe over the proven sha256 contract | keys ≤ 96 B, hmac/extract messages ≤ 48 B; expand/expand-label output ≤ 96 B and info ≤ 64 B (the contract bound), expand: slow tier |
-| handshake | the driver stays safe on any record stream: HRR restart, the state machine, and the flight's own arithmetic, in PSK and pinned-key mode. Record reading and message reassembly are stubbed here to the contract the `handshake_record` leg proves — compiling them multiplies this formula by the product of their loop bounds, past any runner. The `TRUST=ca` driver has a harness but no launch line, so it is unproven | 96 B receive buffer, slow tier |
+| handshake | the driver stays safe on any record stream: HRR restart, the state machine, and the flight's own arithmetic, in PSK and pinned-key mode. Record reading and message reassembly are stubbed here to the contract the `handshake_record` leg proves — compiling them multiplies this formula by the product of their loop bounds, past any runner. The ca-mode driver has a harness but no launch line, so it is unproven | 96 B receive buffer, slow tier |
 | hybrid_secret | the `KEX=pq` shared-secret derivation is safe for any stored seed, any server ciphertext and any server share, and a refused key exchange wipes all 64 bytes rather than leaving half a secret on the stack (INV-3). ML-KEM and x25519 are stubbed to their contracts, which their own harnesses prove. This is the only leg that builds `-DCH_KEX_PQ`: the rest of the hybrid driver carries the differential, the sequence enumeration and the e2e legs, not a proof | the full domain, fast tier |
 | key_share | the `KEX=pq` arm of the ServerHello key_share parser is safe on any extension bytes, and on acceptance it records the one group this build offers (`info.group == CH_KEX_GROUP`, the value `ch_tls.group` reports and `ch_cfg.require_pq` compares) and returns a whole readable ML-KEM ciphertext inside the bytes it consumed — the contract `hybrid_secret` assumes, so this proof discharges that assumption | extension ≤ 1,132 B, the full hybrid share, fast tier |
 | hello_build (two harnesses) | the ClientHello builder writes nothing outside the caller's buffer at any capacity, for every cookie and PSK identity a caller may pass, and returns either zero or a length that fits. It also checks the bound itself: at `CH_HELLO_MAX` the build always succeeds, so the constant `handshake.c` asserts `CH_TX_STAGE` against is sufficient, not merely plausible. `hello_build_webpki` is the same harness under `-DCH_TRUST_WEBPKI`, with the server_name extension over any hostname, the ALPN extension over any offer, and the five signature schemes, against that build's `CH_HELLO_MAX` of 1,149; there the bound is tight, because the assertion moved to `CH_HELLO_MAX - 1` fails | capacity ≤ `CH_HELLO_MAX`, identity ≤ 320 B, cookie ≤ 128 B, hostname ≤ 253 B, 8 ALPN names ≤ 32 B each |
@@ -326,7 +326,7 @@ apart from one that passed — so for the slow rows, read the nightly.
 | quic_retry | `quic_retry_ok` reads only inside the pseudo-packet and the tag it is handed and commits no undefined behavior; it answers 1 for the tag `gcm_seal` computed over that pseudo-packet, and 0 for a tag that differs in one byte, at any position and by any nonzero amount. `gcm_seal` and `aes_public_key_retry` are contract stubs the harness defines, and the `gcm_seal` stub asserts what RFC 9001 §5.8 fixes at this one call site: the key `aes_public_key_retry` wrote, the nonce §5.8 prints, the caller's whole pseudo-packet as associated data, and an empty plaintext. That the AEAD meets that contract is what the `quic_gcm` harnesses and RFC 9001 Appendix A.4 carry, not this one; `TRANSPORT=quic` only | pseudo-packets ≤ 64 B, fast tier |
 | quic_initial | `quic_initial_seal` and `quic_initial_open` read and write only inside their buffers, commit no undefined behavior, and answer one of the codes their header documents, over unconstrained connection-ID, packet-number, header, payload, capacity and packet lengths. Two properties beside safety: a refusal writes neither output, and a successful open reports a plaintext length inside the packet it was handed. The eight calls the two entries make are stubbed to their contracts (`proof/quic_initial_stubs.h`) — `quic_aes` and the three `quic_gcm` harnesses prove four of them, and `quic_packet.c`'s own harness proves the header protection pair and the packet number pair. What the derivation, the seal and the mask compute is checked against RFC 9001 Appendix A.2's client Initial packet in `test/quic_vectors.c` instead; `TRANSPORT=quic` only | headers ≤ 6 B, payloads ≤ 6 B, packets ≤ 28 B — two bytes either side of §5.4.2's sample bound — connection IDs ≤ `CH_QUIC_DCID_MAX` (20 B), fast tier |
 | quic_driver | `quic.c`'s fifteen public entries and its input loop are safe and free of undefined behavior over any saved state and any caller argument: the unread window stays inside `cfg.buf`, `CH_EINVAL` changes nothing and names one of the three refusals `quic.h` lists, every other error leaves the session dead with no secret, nothing staged and nothing unread, and a level delivered out of order reports RFC 9001 §4.1.3's PROTOCOL_VIOLATION. The QUIC arm of `handshake_record.c` and all of `quic_config.c` are compiled in; `hsq_advance`, the two flight handlers `ch_quic_init` calls and the packet calls are contract stubs (`proof/quic_driver_stubs.h`), and `quic_step` proves the table against the same `hsq_advance` contract, so the two read as a pair; `TRANSPORT=quic` only | 12 B receive buffer, 32 B staged message, fast tier |
-| quic_step (two harnesses) | `hsq_advance` is safe over any saved state, a step number no step wrote included: it consumes its message, raises the step or waits for the retry hello, never raises `t.state`, touches no packet counter, stages nothing on an error, and at the Finished step stages the client Finished at the Handshake level, moves to 1-RTT, reports that level in both directions and writes the back pointer again after the wipe. Every flight handler and the three `quic_keys.c` derivations are contract stubs; `quic_step_ca` is the same harness under `TRUST=ca`, where `hsa_epoch_commit` runs and the wipe bound is that build's larger `handshake_state`; `TRANSPORT=quic` only | 12 B receive buffer, fast tier |
+| quic_step (two harnesses) | `hsq_advance` is safe over any saved state, a step number no step wrote included: it consumes its message, raises the step or waits for the retry hello, never raises `t.state`, touches no packet counter, stages nothing on an error, and at the Finished step stages the client Finished at the Handshake level, moves to 1-RTT, reports that level in both directions and writes the back pointer again after the wipe. Every flight handler and the three `quic_keys.c` derivations are contract stubs; `quic_step_ca` is the same harness under a ca mode, where `hsa_epoch_commit` runs and the wipe bound is that build's larger `handshake_state`; `TRANSPORT=quic` only | 12 B receive buffer, fast tier |
 | quic_gcm (five harnesses) | Three carry a launch line and two do not. `quic_gcm_safety` proves that `gcm_seal`, `gcm_open` and `gcm_ghash` read and write only inside their buffers and commit no undefined behavior, for any key schedule, any nonce, and both aliasing shapes the header admits: separate buffers, and `pt == ct`, which is how `quic_initial.c` decrypts a payload in place. `quic_gcm_refusal` proves that `gcm_open` is all-or-nothing: for any tag at all, a call that returns 0 writes no plaintext byte. The same harness runs twice more, once per arm, with a define that asserts that arm is unreachable; both runs must fail. `quic_ghash` proves the same safety for GHASH alone, at sixteen blocks per argument, where the whole-module formula gets two. Two properties are not proved: that a genuine seal opens back to the plaintext it sealed, and that a forged tag is refused. `proof/quic_gcm_harness.c` and `proof/quic_gcm_forge_harness.c` state them, but neither formula returns a verdict, so neither carries a launch line, and `proof/run.sh` records both measurements. Those two rest on tests instead: SP 800-38D's four AES-128 cases, RFC 9001 Appendix A.2's client Initial packet and A.4's Retry tag, 67 Wycheproof cases on all four build legs, and the Lean differential | plaintext and associated data ≤ 32 B each for safety and refusal — two blocks, every length either side of the block boundary, on both arguments; ≤ 256 B each for `quic_ghash` |
 | x25519 (ten harnesses) | carry, add, sub, pack, cswap, and unpack are safe with every check on, add and sub in the ladder's aliased shape too, and the ladder's scalar bit index stays in bounds (fast tier); mul's index walk is safe in every caller aliasing shape — distinct, output aliasing either input, and sqr's all-one-object — with the signed-overflow class off (slow tier, one shape set per formula), and a separate lemma proves mul's int64 accumulation and fold cannot overflow (fast tier). Every one of these holds only inside the limb range in the next column, and `x25519_step` and `x25519_tail` prove the ladder keeps its limbs there: one loop step, on the shipped `step()`, takes any state with every limb in (-2^17, 2^17) back into that bound and hands mul only operands under 2^18; mul's output, one `invert` round, and the final multiply and pack do the same. The 255 steps and 254 rounds follow by induction from a base case read off `ladder()`'s prologue. Both harnesses replace mul's multiply with a magnitude contract (`proof/x25519_stubs.h`) that `x25519_mul` discharges on the native multiply and `x25519_mul_ct` on the shipped decomposition — see the note below | limbs ≤ 2^24; into carry, ≤ 2^58; between the ladder's operations, < 2^17 |
 | p256 | the DER parser and limb marshalling stay safe on hostile signatures; a carry lemma covers the Montgomery multiply | signatures ≤ 80 B |
@@ -670,7 +670,7 @@ misreading cannot make both sides agree.
 `make diff` builds the spec, runs its selftests, then drives 19,668
 random-input comparisons between the C and the spec over a pipe,
 from a fixed seed. `make diff-ecdsa`, `make diff-pq` and `make
-diff-webpki` rebuild the same driver under `PIN=ecdsa`, `KEX=pq` and
+diff-webpki` rebuild the same driver under `TRUST=raw-ecdsa`, `KEX=pq` and
 `TRUST=webpki`, whose parsers take other arms, and the nightly runs
 them. The spec depends on Mathlib, so run `lake exe cache
 get` inside `spec/` once after clone to download Mathlib's compiled
@@ -706,8 +706,8 @@ the SMACK/FREAK class. Memory-safety proofs and golden-path end-to-end
 tests both miss them.
 
 [`test/e2e.sh`](test/e2e.sh) runs the real thing against real peers: PSK, ticket
-resumption, and pinned handshakes on both PIN builds, against OpenSSL 3
-and Go, moving application data both ways. `TRUST=ca` clients run chain
+resumption, and pinned handshakes on both pinned algorithms, against OpenSSL 3
+and Go, moving application data both ways. The ca-mode clients run chain
 handshakes against OpenSSL, including CA slot rotation.
 
 ## Using it
@@ -724,7 +724,7 @@ ch_cfg cfg = {
 };
 // …or pinned-key mode: no shared secret, just the server's public key.
 // Default build: the RSA modulus (openssl rsa -noout -modulus).
-// PIN=ecdsa build: 64 P-256 bytes (X||Y).
+// TRUST=raw-ecdsa build: 64 P-256 bytes (X||Y).
 // ch_cfg cfg = { .server_pubkey = modulus, .server_pubkey_len = 384,
 //                .buf = rxbuf, ... };
 static ch_tls tls;
@@ -846,10 +846,10 @@ Other targets:
   internal symbol is localized, and `lib-check` fails if the export
   list ever changes. The list is per build on two axes: `RAND=drbg`
   packages the reference generator and exports `ch_drbg_seed`, and
-  `TRUST=ca` exports `ch_pubkey_from_pem` for provisioning, so a
-  `TRUST=ca RAND=drbg` object exports six. `TRUST=webpki` exports the
+  A ca mode exports `ch_pubkey_from_pem` for provisioning, so a
+  `TRUST=ca-rsa RAND=drbg` object exports six. `TRUST=webpki` exports the
   four calls and no provisioning call. `RAND` is the one build
-  variable with no default. Compose with `PIN=ecdsa`, `TRUST=ca` or
+  variable with no default. Compose with `TRUST=raw-ecdsa`, `TRUST=ca-rsa` or
   `TRUST=webpki`, and `KEX=pq`; `PIN` selects nothing under
   `TRUST=webpki`, whose object carries every verifier.
 - `make prove-slow` runs the slow-tier proofs, one per nightly job. The runner caches by
@@ -874,7 +874,7 @@ See [`CLAUDE.md`](CLAUDE.md) for the house rules.
 chapulin does not implement 0-RTT, DTLS, general X.509 path building,
 CA bundles, CRL or OCSP revocation, client certificates, cipher
 agility, the server role, or any insecure fallback. The device modes,
-`TRUST=raw` and `TRUST=ca`, do not implement public-CA trust; the
+the raw and ca modes, do not implement public-CA trust; the
 host-side `TRUST=webpki` mode does, against anchors the caller
 supplies, and [`docs/webpki.md`](docs/webpki.md) lists what it does not
 check. [`docs/decisions.md`](docs/decisions.md) records every trade and why.
@@ -903,7 +903,7 @@ likeliest v2 addition.
 
 Pin the key of a server whose key is stable. Automatic rotation, such
 as Let's Encrypt defaults, breaks pins. [`docs/rotation.md`](docs/rotation.md) shows how
-the two-slot pin makes a planned rotation safe, and `TRUST=ca` absorbs
+the two-slot pin makes a planned rotation safe, and a ca mode absorbs
 routine key churn entirely.
 
 ## Contributing and security

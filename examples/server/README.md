@@ -260,7 +260,7 @@ an echo loop around it. The e2e suite runs it against both PIN builds.
 - `MinVersion` is not optional. Go's default minimum is TLS 1.2, which
   this client never speaks but other traffic to the same port might.
 
-## CA mode (`make TRUST=ca`)
+## CA mode (`make TRUST=ca-rsa`)
 
 The device pins the public key of a CA you run instead of a server key.
 The server sends its own certificate, or that plus the one intermediate
@@ -369,7 +369,7 @@ handshake fails.
 
 ### Buffer size in CA mode
 
-A `TRUST=ca` build raises `CH_MIN_RXBUF` to hold the largest chain it
+A CA-mode build raises `CH_MIN_RXBUF` to hold the largest chain it
 admits and the record that completes it: 3,112 bytes in the RSA build,
 1,576 in the ECDSA build. A
 device whose buffer is smaller fails at `ch_connect` with `CH_EINVAL`
@@ -449,8 +449,8 @@ to stderr.
 ```sh
 make bin/tlsclient          # default build, RSA pin
 make bin/tlsclient_ecdsa    # PIN=ecdsa
-make bin/tlsclient_ca       # TRUST=ca, RSA
-make bin/tlsclient_ca_ecdsa # TRUST=ca, PIN=ecdsa
+make bin/tlsclient_ca       # TRUST=ca-rsa
+make bin/tlsclient_ca_ecdsa # TRUST=ca-ecdsa
 
 echo hola | ./bin/tlsclient 127.0.0.1 4433 "$PSK_HEX" device-42
 echo hola | ./bin/tlsclient 127.0.0.1 4433 "pin:$MODULUS_HEX" -

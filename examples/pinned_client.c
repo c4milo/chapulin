@@ -28,7 +28,7 @@
  *      -DCH_RAND_EXTERN -I. \
  *      -o pinned_client examples/pinned_client.c bin/chapulin.o
  *
- * For P-256 pins, build the library with `make lib PIN=ecdsa RAND=extern`
+ * For P-256 pins, build the library with `make lib TRUST=raw-ecdsa RAND=extern`
  * and add -DCH_PIN_ECDSA to that cc line. RAND=extern and -DCH_RAND_EXTERN
  * declare that this file supplies ch_rand_bytes, which it does below;
  * cfg.h refuses to compile without a declared entropy pattern
@@ -60,7 +60,7 @@
  * wrapper, no certificate. Each build pins one algorithm, and the
  * Makefile's PIN variable picks which.
  *
- * Default build (PIN=rsa): the RSA modulus, big-endian, 256 to 384 bytes
+ * Default build (TRUST=raw-rsa): the RSA modulus, big-endian, 256 to 384 bytes
  * in multiples of 8, which covers RSA-2048 through RSA-3072. chapulin
  * fixes the public exponent at 65537 and verifies RSA-PSS, so the
  * modulus is the whole pin.
@@ -71,7 +71,7 @@
  * Swap `rsa -in server.key` for `x509 -in server.crt` when the
  * certificate is all you hold; both print the same modulus.
  *
- * PIN=ecdsa build: the P-256 public point as X||Y, exactly 64 bytes,
+ * TRUST=raw-ecdsa build: the P-256 public point as X||Y, exactly 64 bytes,
  * without the 0x04 uncompressed-point prefix. The last 64 bytes of the
  * DER SubjectPublicKeyInfo are exactly that.
  *
@@ -88,7 +88,7 @@
  * that would read like an attack.
  *
  * One algorithm per build, and neither build carries the other's
- * verifier. An RSA pin handed to a PIN=ecdsa build is the wrong length,
+ * verifier. An RSA pin handed to a TRUST=raw-ecdsa build is the wrong length,
  * and ch_connect answers CH_EINVAL.
  */
 
@@ -113,7 +113,7 @@ static uint8_t g_pin_b[PIN_LEN];
 //
 // It never parses the certificate. The default build compiles no DER
 // parser at all: the Makefile leaves x509.c and x509_der.c out of the
-// library object, and only TRUST=ca puts them back. chapulin hashes
+// library object, and only a CA mode puts them back. chapulin hashes
 // the Certificate message into the handshake transcript and reads
 // nothing out of it.
 //
@@ -130,7 +130,7 @@ static uint8_t g_pin_b[PIN_LEN];
 //     map it to a key.
 //   - Nothing expires, so nothing forces rotation on a schedule. You
 //     rotate deliberately through the two slots below, or you build
-//     TRUST=ca and let a CA you run reissue server certificates
+//     a CA mode and let a CA you run reissue server certificates
 //     (docs/ca.md).
 
 // --- Sizing the receive buffer ---------------------------------------
@@ -351,7 +351,7 @@ static const char *error_text(int rc) {
 // out-of-band re-provisioning.
 //
 // Slot B follows every slot-A rule — same length, same build, same
-// odd-modulus check under PIN=rsa — and never stands alone: a config
+// odd-modulus check under an rsa mode — and never stands alone: a config
 // with only slot B fails with CH_EINVAL. Verification tries slot A
 // first, so during the rotation window a connect to an already-switched
 // server pays one failed verify before slot B matches. Promote promptly.
@@ -361,7 +361,7 @@ static const char *error_text(int rc) {
 // What stays zero is deliberate. psk and psk_id stay NULL because a
 // config carrying both a PSK and a pin is a provisioning mistake, not
 // something to resolve silently. The epoch callbacks stay NULL because
-// only a TRUST=ca build enforces them, and a pinned build rejects them
+// only a CA-mode build enforces them, and a pinned build rejects them
 // rather than accept revocation state it would ignore.
 static void configure(ch_cfg *cfg, int *fd, int staged_pin) {
     cfg->server_pubkey = g_pin_a; // slot A

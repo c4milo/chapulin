@@ -98,19 +98,19 @@ peak() { # $1 = report name, $2 = entry point -> its peak stack in bytes
     awk -v entry="$2" '$1 == entry { print $2 }' "$TMP/$1.stack"
 }
 
-echo "-- default build (PIN=rsa); ch_connect peak = pinned RSA verify --"
+echo "-- default build (TRUST=raw-rsa); ch_connect peak = pinned RSA verify --"
 stack_report default
 cat "$TMP/default.stack"
-echo "-- PIN=ecdsa build; ch_connect peak = pinned P-256 verify --"
+echo "-- TRUST=raw-ecdsa build; ch_connect peak = pinned P-256 verify --"
 stack_report ecdsa STACK_CFLAGS=-DCH_PIN_ECDSA
 head -1 "$TMP/ecdsa.stack"
 echo "-- PSK-mode ch_connect (server_auth pruned: PSK never enters it) --"
 stack_report psk STACK_PRUNE=hsa_server_auth
 head -1 "$TMP/psk.stack"
-echo "-- TRUST=ca PIN=rsa; ch_connect peak = chain verify + leaf frame --"
+echo "-- TRUST=ca-rsa; ch_connect peak = chain verify + leaf frame --"
 stack_report ca_rsa STACK_CFLAGS=-DCH_TRUST_CA
 head -1 "$TMP/ca_rsa.stack"
-echo "-- TRUST=ca PIN=ecdsa --"
+echo "-- TRUST=ca-ecdsa --"
 stack_report ca_ecdsa "STACK_CFLAGS=-DCH_TRUST_CA -DCH_PIN_ECDSA"
 head -1 "$TMP/ca_ecdsa.stack"
 echo "-- TRUST=webpki; ch_connect peak = chain walk + RSA-4096 verify --"

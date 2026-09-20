@@ -85,9 +85,9 @@ LIB_LEGS = [
          "the default object compiles {path}, whose frame stays under the "
          "device budget", []),
     ]),
-    ("TRUST=ca", [
-        ("make lib-check cxx-check RAND=extern TRUST=ca",
-         "the TRUST=ca object packages {path}, and it exports the "
+    ("TRUST=ca-rsa", [
+        ("make lib-check cxx-check RAND=extern TRUST=ca-rsa",
+         "the CA-mode object packages {path}, and it exports the "
          "provisioning call the other objects do not", []),
     ]),
     ("TRUST=webpki", [
@@ -118,7 +118,7 @@ FULL_COMMANDS = [
                             "binary, the packaged-object export list"),
     ("slow", "make check-slow", "proofs, e2e, the differential, the sequence "
                                 "enumeration, the fast violation tier"),
-    ("nightly", "make diff-ecdsa", "the PIN=ecdsa differential arm"),
+    ("nightly", "make diff-ecdsa", "the ecdsa differential arm"),
     ("nightly", "make diff-pq", "the KEX=pq differential arm"),
     ("nightly", "make diff-webpki", "the TRUST=webpki differential arm"),
     ("nightly", "make handshake-sequence-pq", "the KEX=pq sequence enumeration"),
@@ -157,7 +157,7 @@ def full_plan(mapping, why):
 # three CertificateVerify schemes at diff-webpki. So a change bin/diff
 # compiles can break an arm and leave `make diff` green.
 DIFF_ARMS = [
-    ("make diff-ecdsa", "the PIN=ecdsa arm compiles the same driver, and the "
+    ("make diff-ecdsa", "the ecdsa arm compiles the same driver, and the "
                         "P-256 certificate rows run only there"),
     ("make diff-pq", "the KEX=pq arm compiles the same driver, and the "
                      "1120-byte hybrid share runs only there"),
@@ -246,7 +246,7 @@ def select_proofs(out, csources):
 # one binary run per arm, so there is nothing finer to select.
 SPEC_GATES = [
     ("make diff", "the spec is the differential's oracle", ["diff"]),
-    ("make diff-ecdsa", "the PIN=ecdsa arm reads the same oracle", []),
+    ("make diff-ecdsa", "the ecdsa arm reads the same oracle", []),
     ("make diff-pq", "the KEX=pq arm reads the same oracle", []),
     ("make diff-webpki", "the TRUST=webpki arm reads the same oracle", []),
     ("make handshake-sequence",

@@ -1,7 +1,7 @@
 invariant: INV-5
 file: Makefile
 catches: test/lint-trust-separation.sh
-reason: TRUST=raw's filter stops removing the webpki*.c files, so the
+reason: TRUST=raw-rsa's filter stops removing the webpki*.c files, so the
   raw object packages the web PKI hostname and date readers that INV-5
   says only the TRUST=webpki object carries. The lint reads the webpki
   file list from git rather than from the filter, so it objects.

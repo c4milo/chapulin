@@ -292,8 +292,8 @@ about 600 bytes for P-256, about 1.2 kB for RSA-3072.
 
 ## 4. Authentication
 
-One mode per build. A pinned key (`PIN=rsa` or `PIN=ecdsa`) or a CA
-(`TRUST=ca`), and `docs/ca.md` covers the CA path including the revocation
+One mode per build. A pinned key (`TRUST=raw-rsa` or `TRUST=raw-ecdsa`) or a
+CA (`TRUST=ca-rsa`), and `docs/ca.md` covers the CA path including the revocation
 epoch. Neither has a default that is right for every deployment.
 
 ## What our verification does and does not tell you about your build

@@ -6,8 +6,8 @@ supplies, and checks the server's hostname against the leaf's
 subjectAltName. It exists so a host-side client can reach a public endpoint —
 an S3-compatible object store is the case it was built for.
 
-It is the third trust mode, beside `TRUST=raw`, which pins the server's own
-key, and `TRUST=ca`, which pins a CA key the chain must reach. Those two are
+It is the third trust mode, beside the raw modes, which pin the server's own
+key, and the CA modes, which pin a CA key the chain must reach. Those two are
 the device modes: they read no clock and no names, and this mode does not
 change them. A `webpki` object needs a clock, a hostname and a receive buffer
 far larger than a device carries, so it is not for a device.

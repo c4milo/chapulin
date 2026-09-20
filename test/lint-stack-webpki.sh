@@ -7,7 +7,7 @@
 # the lint objecting.
 #
 # The TRUST=webpki object packages sources the default object filters
-# out -- p256.c under PIN=rsa, and the five chain verifiers -- so this
+# out -- p256.c under an rsa mode, and the five chain verifiers -- so this
 # leg is the only one that compiles them at all. tools/impact.py emits
 # the same command for a source that object packages; the two have to
 # stay the same command, and test/impact_test.py compares them.

@@ -24,7 +24,7 @@ New code lands with its assurance attached. By change type:
 | New crypto primitive | Lean spec module (styleguide: [spec/CONTRACT.md](spec/CONTRACT.md)), RFC/selftest vectors in `test/unit_test.c`, differential entries in `test/diff_test.c`, CBMC harness |
 | Behavior change | The RFC section cited at the code, and the same-commit three-surface update: code, Lean spec, tests |
 | Boundary change | An exact boundary test: the last valid value works, the first invalid one fails |
-| Any change | `make check` green on both PIN builds (`make check` and `make check PIN=ecdsa`), then `make check-slow` |
+| Any change | `make check` green on both pinned algorithms (`make check` and `make check TRUST=raw-ecdsa`), then `make check-slow` |
 
 A PR must not break an invariant in
 [docs/invariants.md](docs/invariants.md) without amending that
@@ -79,7 +79,8 @@ Domain vocabulary keeps the RFCs' own spelling: `pt`, `aad`, `iv`,
   the spec coverage report. Skipping those costs coverage the pushed
   branch still gets; skipping a linter hides a verdict already at hand.
 - The PIN variable splits the pinned-key build: RSA-PSS by default,
-  `PIN=ecdsa` for P-256. One algorithm per library object; test both.
+  the ecdsa half of a TRUST value for P-256. One algorithm per library
+  object; test both.
 - The RAND variable declares the entropy pattern and is the one build
   variable with no default: `RAND=extern` when the image supplies
   `ch_rand_bytes`, `RAND=drbg` to package the reference generator and

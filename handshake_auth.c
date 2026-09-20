@@ -91,7 +91,7 @@ static int verify_leaf_signature(const webpki_leaf_info *leaf, const uint8_t *si
 #endif
 
 // CertificateVerify: parse, rebuild the §4.5.2 signed content, and
-// verify against pin slot A then B. The TRUST=ca and TRUST=webpki
+// verify against pin slot A then B. The CA and webpki
 // builds swap in the chain's leaf key here.
 static int check_certificate_verify(handshake_state *h, const uint8_t hash[SHA256_LEN]) {
     uint8_t type = 0;

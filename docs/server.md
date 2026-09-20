@@ -32,7 +32,7 @@ Implemented. `SRV_SRCS` names eight sources — `srv_parser.c`,
 `srv_parser_ext.c`, `srv_message.c`, `srv_cookie.c`, `srv_auth.c`,
 `srv_flight.c`, `srv_handshake.c` and `srv.c` — and every one of them has a
 body. No `CH_SRV_STUB` marker is left in the tree, `make lib-check
-ROLE=server` links the object, and `make check` runs `bin/srv_auth_test`,
+ROLE=server TRUST=none` links the object, and `make check` runs `bin/srv_auth_test`,
 `bin/srv_test` and `bin/srv_flight_test` over it. Four surveys and three
 competing architectures preceded this record; the architecture below is the
 build-axis one, and the section "Considered and rejected" names what it took
@@ -322,7 +322,7 @@ declarations widened to `CH_SECRET_MAX` and nothing else changed,
 rv32, and `ch_handshake`'s own frame goes **688 to 784** (arm64, Apple clang
 21.0.0, `-O2`, `-fstack-usage`), 608 to 704 (rv32, Homebrew clang 23.1.1) and
 712 to 808 (Cortex-M3, arm-none-eabi-gcc 16.2.0). The same +96 on all three
-compilers. The other builds move by the same 96: `TRUST=ca` 1088 to 1184,
+compilers. The other builds move by the same 96: a CA mode 1088 to 1184,
 `TRUST=webpki` 1216 to 1312, `KEX=pq` 3152 to 3248.
 
 `make lint-stack` still passes everywhere, and saying so is part of the
@@ -1481,9 +1481,19 @@ a `SIGN=` axis removes one, and adding that axis reintroduces exactly the
 
 ### The axis
 
-`ROLE` is a sixth Makefile axis beside `PIN`, `TRUST`, `KEX`, `RAND` and
-`TRANSPORT`. `ROLE=client` is the default and builds what the tree builds
-today.
+This section records the design as it was written, and the Makefile has moved
+under it since: `PIN` is no longer an axis. The pinned algorithm became half of
+a `TRUST` value (`TRUST=raw-rsa`, `TRUST=raw-ecdsa`, `TRUST=ca-rsa`,
+`TRUST=ca-ecdsa`, `TRUST=webpki`), so the two refusals below are one, the
+quoted block's `$(origin PIN)` test is gone, and every `Makefile:NNN` here
+points into the older file. A server also names its trust mode now,
+`TRUST=none`, rather than taking the client default: the default named one
+algorithm where this object holds both verifiers, and a recursion that did not
+name a trust value inherited one. The reasoning stands; only the spelling
+moved.
+
+`ROLE` is a Makefile axis beside `TRUST`, `KEX`, `RAND` and `TRANSPORT`.
+`ROLE=client` is the default and builds what the tree builds today.
 
 ```make
 ROLE ?= client

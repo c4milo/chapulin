@@ -104,10 +104,10 @@
 // has no record layer (RFC 9001 §4.1.3, rfc9001.txt:462-464), so cfg.buf_len is the only
 // bound a peer meets and it bounds one whole handshake message at one encryption level.
 // CH_QUIC_TRUST_MIN_RXBUF is the trust term without the 22 bytes that pay for the record
-// completing a message; under TRUST=raw that is 512 - 22, or 490, the smallest term any
+// completing a message; under a raw mode that is 512 - 22, or 490, the smallest term any
 // QUIC build takes. CH_QUIC_KEX_MIN_RXBUF is the key-exchange term without its 5
 // record-header bytes; under KEX=pq the 1184 bytes left are the hybrid ServerHello message
-// itself, and dropping the term would floor a TRANSPORT=quic KEX=pq TRUST=raw build at 490
+// itself, and dropping the term would floor a TRANSPORT=quic KEX=pq raw-mode build at 490
 // against that message. CH_QUIC_PARAMS_MIN_RXBUF is the whole EncryptedExtensions message
 // carrying the server's transport parameters, header included (§8.2, rfc9001.txt:1926-1928).
 //

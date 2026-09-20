@@ -52,7 +52,7 @@ For each changed path the plan carries:
   more define, and the Makefile names the rows that meet real C in one
   arm alone.
 - **Packaged-object legs.** One leg per axis value `make check` builds —
-  the default object, `TRUST=ca`, `TRUST=webpki` and `TRANSPORT=quic`. A
+  the default object, `TRUST=ca-rsa`, `TRUST=webpki` and `TRANSPORT=quic`. A
   source selects every leg that packages it, so a file the default object
   filters out still selects the leg that compiles it, and so does an
   `#ifdef` body only one leg's defines keep.
@@ -167,7 +167,7 @@ asserts that the plan for that file selects that target. A miss is a bug
 in the mapping, never in the check: teach the mapping where the gate
 reads its sources, never drop the violation from the comparison.
 `test/violations/inv19-webpki-object-frame.violation` is the sharpest
-case: it takes a 5,000-byte frame in `p256.c`, and `PIN=rsa` keeps that
+case: it takes a 5,000-byte frame in `p256.c`, and an rsa mode keeps that
 file out of every object but the `TRUST=webpki` one, so the check fails
 unless the plan for `p256.c` selects `make lint-stack TRUST=webpki`.
 

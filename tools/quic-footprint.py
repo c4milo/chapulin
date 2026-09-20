@@ -339,7 +339,7 @@ def build_sources():
     """The .c files one build compiles: the Makefile's own LIB_SRCS,
     which `make -s print-lib-srcs` prints and
     test/lint-trust-separation.sh reads the same way. The axis values
-    default to TRUST=raw PIN=rsa KEX=x25519, so this is the smallest
+    default to TRUST=raw-rsa KEX=x25519, so this is the smallest
     build the tree has."""
     return [s for s in makefile("LIB_SRCS") if (ROOT / s).exists()]
 

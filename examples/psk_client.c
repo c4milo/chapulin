@@ -168,7 +168,7 @@ static const char g_request[] = "hola sapo\n";
 //     record_size_limit (RFC 8449). A peer record whose plaintext would
 //     not fit is then a protocol error, not a resize.
 //   - CH_MIN_RXBUF is the floor ch_connect accepts. It is 512 bytes,
-//     which holds this profile's handshake flights, and a TRUST=ca
+//     which holds this profile's handshake flights, and a CA-mode
 //     build raises it to hold a certificate chain. Sizing from the
 //     constant keeps this array correct in either build; PSK mode
 //     itself receives no certificate.
@@ -189,7 +189,7 @@ static uint8_t g_rxbuf[CH_MIN_RXBUF + 512];
 // A resumed handshake here costs what a provisioned one costs, because
 // both run x25519. It does rotate the key: each reconnect uses a key
 // derived from the last session, so the provisioned PSK protects fewer
-// connections. A pinned-key or TRUST=ca build saves more, since a
+// connections. A pinned-key or CA-mode build saves more, since a
 // resumed handshake verifies no signature.
 //
 // Storing tickets is optional. Leave cfg.on_ticket NULL and every

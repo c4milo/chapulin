@@ -414,7 +414,7 @@ int ch_connect(ch_tls *t, const ch_cfg *cfg) {
     }
 #endif
     // No PSK is set, so psk_ok is 0; epoch_init refuses the epoch
-    // callbacks, as it does in every build but TRUST=ca.
+    // callbacks, as it does in every build but a CA mode.
     int rc = tlsi_epoch_init(t, cfg, 0);
     if (rc != CH_OK) {
         t->state = CH_ST_FAILED;

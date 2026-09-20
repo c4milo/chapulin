@@ -14,29 +14,33 @@ Home: github.com/c4milo.
 - One profile, no negotiation surface: TLS 1.3, TLS_CHACHA20_POLY1305_SHA256,
   one key-exchange group, and one of two auth modes — ECDHE-PSK
   (psk_dhe_ke) or a server key checked against CertificateVerify. The
-  Makefile TRUST variable chooses how that server key is trusted:
-  TRUST=raw pins the key itself, TRUST=ca pins a CA key the chain must
-  reach, and TRUST=webpki verifies a public chain against caller-supplied
-  anchors. raw and ca are the device modes and read no clock and no
+  Makefile TRUST variable chooses how that server key is trusted, and
+  where a key is pinned the same value names the algorithm that verifies
+  it: TRUST=raw-rsa (default) and TRUST=raw-ecdsa pin the key itself,
+  TRUST=ca-rsa and TRUST=ca-ecdsa pin a CA key the chain must reach, and
+  TRUST=webpki verifies a public chain against caller-supplied anchors.
+  The raw and ca modes are the device modes and read no clock and no
   names; webpki is the host-side mode, and it needs a clock, a hostname
   and a receive buffer far larger than a device carries. docs/webpki.md
   states its profile and what it does not check.
-  The pinned key is one
-  algorithm per build, chosen by the Makefile PIN variable: RSA-PSS up to
-  3072 bits (default, `rsa.[ch]`) or ECDSA P-256 (PIN=ecdsa, -DCH_PIN_ECDSA,
-  `p256.[ch]`) — never both in one raw or ca library object, though test
-  binaries compile both so both stay tested. A TRUST=webpki object is the
-  one exception, and a public chain forces it: the links of one chain are
-  signed by different algorithm families, so that object carries
-  `rsa.[ch]`, `rsa_pkcs1.[ch]`, `p256.[ch]` and `p384.[ch]` at once and
-  PIN selects nothing in it. The key exchange is one group per
+  The rsa half is RSA-PSS up to 3072 bits (`rsa.[ch]`) and the ecdsa half
+  is ECDSA P-256 (-DCH_PIN_ECDSA, `p256.[ch]`) — never both in one raw or
+  ca library object, though test binaries compile both so both stay
+  tested. TRUST=webpki names no algorithm, and a public chain is why: the
+  links of one chain are signed by different algorithm families, so that
+  object carries `rsa.[ch]`, `rsa_pkcs1.[ch]`, `p256.[ch]` and
+  `p384.[ch]` at once. A server object names none either, because
+  ch_srv_check verifies both provisioned identities at boot. The
+  algorithm is half of a TRUST value rather than an axis of its own
+  precisely because it selects nothing in those two builds, and a
+  separate axis let a build ask for a verifier it would not get. The key exchange is one group per
   build, chosen by the Makefile KEX variable: x25519 (default) or the
   X25519MLKEM768 hybrid (KEX=pq, -DCH_KEX_PQ, `mlkem.[ch]`) — never both
   in one ClientHello, so a pq client and a classic-only server fail
   closed against each other. No X.509 parsing outside the certificate
   files: the canonical DER reader in x509_der.[ch], the profile verifier
   in x509.[ch] and the provisioning reader in x509_ca.[ch] under
-  TRUST=ca, and the chain verifier in webpki.[ch] with its pieces under
+  the ca modes, and the chain verifier in webpki.[ch] with its pieces under
   TRUST=webpki. x509_ca.[ch] reaches no verdict and no session reaches
   it (pinned mode hashes
   the certificate into the transcript, never reads it), no RFC 7250
@@ -70,7 +74,7 @@ Home: github.com/c4milo.
   CA writes, TRUST=webpki) ←
   `pem.[ch]` (RFC 7468 armour and RFC 4648 base64, decode only) +
   `x509_der.[ch]` (canonical DER, read by both certificate verifiers) +
-  `x509.[ch]` (profiled certificate verify, TRUST=ca) +
+  `x509.[ch]` (profiled certificate verify, the ca modes) +
   `webpki.[ch]` with `webpki_cert.c`, `webpki_ext.c`, `webpki_name.c`,
   `webpki_sigalg.c`, `webpki_spki.c` and `webpki_time.c` (chain verify
   against caller-supplied anchors, TRUST=webpki) ←
@@ -137,7 +141,7 @@ Home: github.com/c4milo.
   that lowers one of their masked selects to a branch shows as a count
   that grows; `quic_aes_hw.c` cannot join, because every spec targets a
   core with no AES instructions.
-  The Makefile AES variable chooses the implementation the way PIN
+  The Makefile AES variable chooses the implementation the way TRUST
   chooses the pinned algorithm, and never two in one object: `soft` is
   this S-box, `hw` uses the compiler's own intrinsics under
   `__ARM_FEATURE_AES` or `__AES__`, and `extern` takes a caller-supplied

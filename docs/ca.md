@@ -1,6 +1,6 @@
 # Operating a CA for chapulin devices
 
-Status: the parser, its proofs, and the `TRUST=ca` build that uses
+Status: the parser, its proofs, and the CA-mode build that uses
 them are in the tree. This document is the operational contract that
 build depends on. Read it before issuing anything.
 
@@ -170,7 +170,7 @@ Convert before the material leaves your tooling, even when it travels
 to devices over the air: the converted bytes cost one command there
 and nothing on the device. That stays the default.
 
-A `TRUST=ca` build also exports `ch_pubkey_from_pem`, which reads one
+A CA-mode build also exports `ch_pubkey_from_pem`, which reads one
 PEM CERTIFICATE block and copies out the same key bytes on the device
 (`x509_ca.h`). It earns its place in one case: a fleet server that
 relays an operator-signed blob it cannot itself reshape. Converting at
