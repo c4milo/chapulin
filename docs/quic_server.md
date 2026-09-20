@@ -97,7 +97,7 @@ can measure one.
 
 ### 4. The driver
 
-`quic.c` (397 lines), `quic_step.c` (206) and `quic_config.c` (186) drive
+`quic.c` (400 lines), `quic_step.c` (206) and `quic_config.c` (186) drive
 the client state machine by encryption level, with 858 lines of harness
 under them. A server needs the equivalent over `srv_flight.c`'s handlers.
 
@@ -105,6 +105,45 @@ What makes this a driver rather than a rewrite: `srv_flight.h` is one
 function per handshake message, not per record. That is the same property
 that let `handshake_flight.c` serve both transports for the client, and it
 was fixed when `srv_flight.h` landed, before this document existed.
+
+Two decisions the client's driver does not force. `docs/server.md` open
+question ten left both open; the sizes below decide them.
+
+**The server pushes its flight through a callback; it does not stage it.**
+The client stages one whole message in `ch_tls.tx` and the caller pulls it
+with `ch_quic_crypto_out`. A server cannot: `CH_TX_STAGE` is between 617
+and 2587 bytes depending on the build, and one Certificate message carries
+a chain larger than that. `srv_flight.c` already streams that chain a
+fragment at a time through `send_sealed`, because it never fits one record
+either.
+
+So a QUIC server build gives `ch_cfg` a `on_crypto_out(io, level, bytes,
+n)` sink, and `send_sealed` and `send_plain_record` call it instead of
+`io_send_all`. RFC 9001 §4.1.3 takes the unprotected content of handshake
+records as the content of CRYPTO frames, and a CRYPTO frame is a byte
+stream, so a message split across calls is what the transport already
+expects. The sink takes the same re-entrancy rule `cfg.h` states for
+`on_level_ready` and `on_transport_params`, and for the same reason.
+
+The cost is that the two roles read differently: the client pulls, the
+server pushes. The certificate chain is what forces it, and a reader who
+asks why should find that here rather than infer it.
+
+**The server reuses the `ch_quic_` names.** `ROLE` and `TRANSPORT` are one
+value per build, so a server build compiles one driver and a client build
+the other; `tls.h` already shares `ch_read`, `ch_write` and `ch_close`
+across the roles and declares `ch_connect` and `ch_srv_accept` only in the
+build that has one. The server driver lands as `srv_quic.c` beside
+`quic.c` with its own step table in `srv_quic_step.[ch]`, and the public
+names stay as `quic.h` spells them. A server adds one call the client has
+no use for, `ch_quic_retry_tag`, which mints what `ch_quic_retry_ok`
+checks.
+
+The step table is shorter than the client's, because a server reads three
+messages and writes the rest: `SQ_STEP_AWAIT_CLIENT_HELLO`,
+`SQ_STEP_AWAIT_RETRY_HELLO`, `SQ_STEP_AWAIT_CLIENT_FINISHED` and
+`SQ_STEP_COMPLETE`. Each send happens inside the step that read the
+message it answers.
 
 Expect the server's driver and harnesses to cost about what the client's
 did.
