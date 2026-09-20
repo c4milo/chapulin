@@ -90,6 +90,10 @@ does nothing more.
     fails the handshake closed. Gain: no group negotiation, the same
     rule the rest of the profile follows (entry 1).
 
+    Entry 39 narrows this to the device modes. `TRUST=webpki` offers both
+    groups, for the reason that mode already offers several signature
+    schemes and several application protocols.
+
     Offering both groups and taking whichever the server picks was
     considered and rejected. It fails where it would matter most: the
     threat is harvest-now-decrypt-later, so a client that offers both
@@ -517,3 +521,40 @@ does nothing more.
     step by step with the state each step leaves behind, the measured
     reuse per build, the bounds that still need measuring, and the
     verification owed.
+
+39. **A `TRUST=webpki` caller offers both key exchange groups and the
+    server picks one.** This is the mode's third exception to the rule
+    that the client offers exactly one of everything, after the signature
+    schemes (entry 36) and the application protocols (entry 37), and it
+    has the same cause: a host-side client cannot know what the endpoint
+    it dialled supports. Entry 12's one-group-per-build rule stands
+    unchanged for `TRUST=raw` and `TRUST=ca`, where the device already
+    pins the key of the endpoint it will talk to and therefore knows what
+    that endpoint speaks.
+
+    The ClientHello lists X25519MLKEM768 and x25519 in `supported_groups`
+    and carries the X25519MLKEM768 `key_share`. A server that wants
+    x25519 answers with a HelloRetryRequest naming it, which this client
+    already handles and already tests, and the second hello carries the
+    x25519 share. Cost: one extra round trip against a classic-only
+    server. Gain: no round trip on the post-quantum path, which is the
+    path worth making fast, and one ML-KEM key generation per handshake
+    rather than one for every hello whether or not it is used.
+
+    Carrying both shares was considered and rejected. It never costs a
+    round trip, but it puts an ML-KEM-768 share — 1216 octets — in every
+    hello a webpki client sends, generates a key pair that most
+    handshakes discard, and grows `CH_HELLO_MAX` for a build that already
+    carries the largest hello in the tree. HelloRetryRequest is an RFC
+    9846 MUST this client implements and proves, so the fallback costs a
+    round trip on a path that is becoming rare rather than bytes on every
+    path.
+
+    The consequence worth stating plainly: entry 12's fail-closed
+    property does not survive negotiation. A webpki client that offers
+    both groups will complete a handshake with a classic-only server
+    rather than refusing one, which is the point of offering both. A
+    caller that wants the old guarantee sets `ch_cfg.require_pq`, which
+    already refuses a handshake whose selected group is not the hybrid,
+    so the property becomes the caller's to ask for rather than the
+    build's to enforce.
