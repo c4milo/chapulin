@@ -728,6 +728,28 @@ else
 	  echo "lib-check: RAND=extern must leave ch_rand_bytes undefined, so an image that forgets the hook fails to link"; exit 1; fi
 	@echo "lib-check: ch_rand_bytes is undefined in the object; a forgotten hook is a link error"
 endif
+# The export list above says what an image may call. This says what the
+# object still asks the image for. An undefined symbol that some source in
+# this tree defines is not a hook: it is a module this variant left out
+# while keeping a caller of it, so the object builds, lib-check passed, and
+# the image fails to link. ROLE=server did exactly that, compiling
+# ch_connect with no handshake.c under it, and nothing here noticed until a
+# consumer tried the link.
+#
+# ch_rand_bytes is the one hook this tree also defines, in drbg.c, so a
+# RAND=extern object imports it on purpose and it is named below.
+# ch_assert_fail and ch_aes_block need no entry: no source here defines
+# either, so the rule passes them without being told.
+	@set -e; \
+	allow=""; \
+	[ "$(RAND)" = "drbg" ] || allow="ch_rand_bytes"; \
+	bad=""; \
+	for s in $$(nm -u $(LIB_OBJ) | awk '{print $$NF}' | sed 's/^_//' | sort -u); do \
+	  case " $$allow " in *" $$s "*) continue;; esac; \
+	  if grep -qE "^[A-Za-z_][A-Za-z0-9_ ]*\**$$s\(" *.c 2>/dev/null; then bad="$$bad $$s"; fi; \
+	done; \
+	[ -z "$$bad" ] || { echo "lib-check: the object imports$$bad, which this tree defines in a source this variant does not compile"; exit 1; }
+	@echo "lib-check: every undefined symbol is a libc call or a caller-supplied hook"
 
 # The declaration in cfg.h is the whole feature, so check that it fires.
 # tls.c is enough to drive it: it includes cfg.h, where the guard lives.

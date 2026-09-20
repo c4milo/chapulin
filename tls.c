@@ -9,6 +9,15 @@
 #include "handshake_post.h"
 #include "io.h"
 
+// A ROLE=server build compiles nothing from here to the end of
+// ch_connect. tls.h declares ch_connect only when CH_ROLE_SERVER is unset,
+// and the definition has to follow the declaration: a server build
+// compiles no handshake.c, so a compiled ch_connect leaves ch_handshake
+// undefined and the packaged object cannot go into an executable at all.
+// epoch_init is inside the guard because ch_connect is its only caller in
+// either trust mode. lib-check's import check holds the rule for every axis.
+#ifndef CH_ROLE_SERVER
+
 // Loads the stored epoch and checks a resuming ticket against it
 // (docs/ca.md). Storage that fails or answers out of range stops
 // the connection at config time, not mid-handshake, so revocation
@@ -123,6 +132,7 @@ int ch_connect(ch_tls *t, const ch_cfg *cfg) {
     return ch_handshake(t);
 }
 #endif
+#endif // CH_ROLE_SERVER
 // Reads and dispatches one record: application data lands in the buffer,
 // post-handshake messages are handled, close_notify returns CH_ECLOSED.
 static int dispatch_one_record(ch_tls *t) {
