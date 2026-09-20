@@ -180,10 +180,10 @@ size_t srv_build_encrypted_extensions(uint8_t *out, size_t cap, uint16_t record_
     // belongs to the QUIC version in use (rfc9001.txt:1926-1928). The
     // length check above holds it to CH_TRANSPORT_PARAMS_MAX, which is
     // 256, so the cast is in range. A caller that passes NULL sends no
-    // extension, which is what every build in this tree does: §8.2
-    // forbids the extension on a transport that is not QUIC
-    // (rfc9001.txt:1945-1949) and srv_cfg.h refuses ROLE=server with
-    // CH_TRANSPORT_QUIC, so no ch_cfg here carries a body to pass.
+    // extension, which is what a TRANSPORT=tls build does: §8.2 forbids
+    // the extension on a transport that is not QUIC
+    // (rfc9001.txt:1945-1949). A TRANSPORT=quic server passes its
+    // caller's body and reads none of it.
     if (transport_params != NULL) {
         wb_u16(&w, EXT_QUIC_TRANSPORT_PARAMS);
         wb_u16(&w, (uint16_t)transport_params_len);

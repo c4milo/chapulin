@@ -303,11 +303,10 @@ int srv_send_encrypted_extensions(handshake_state *h, const selection *sel) {
         selected = &t->cfg.alpn_protocols[t->alpn_selected];
     }
     uint8_t msg[SRV_ENCRYPTED_EXTENSIONS_MAX];
-    // No quic_transport_parameters body. RFC 9001 §8.2 forbids the
-    // extension on a transport that is not QUIC (rfc9001.txt:1945-1949),
-    // and srv_cfg.h refuses ROLE=server together with CH_TRANSPORT_QUIC,
-    // so no ch_cfg this handler sees carries one. srv_message.h states
-    // what a QUIC server passes instead.
+    // No quic_transport_parameters body on this arm. RFC 9001 §8.2
+    // forbids the extension on a transport that is not QUIC
+    // (rfc9001.txt:1945-1949), and this arm is the record transport. The
+    // QUIC arm below passes the caller's body.
 #ifdef CH_TRANSPORT_QUIC
     // RFC 9001 section 4.1.3 removes the record layer record_size_limit
     // sizes, and section 8.2 requires the transport parameters extension

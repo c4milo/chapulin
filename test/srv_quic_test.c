@@ -103,6 +103,69 @@ static const ch_alpn_protocol alpn[1] = {
 
 static uint8_t srv_buf[CH_MIN_RXBUF];
 
+// RFC 9001 Appendix A's Destination Connection ID and Appendix A.3's
+// server Initial packet: the header, the payload and the protected packet
+// the RFC prints (rfc9001.txt:2462-2488).
+//
+// test/quic_initial_tests.h already holds quic_initial_seal to these same
+// bytes. What this binary adds is the layer above it: whether the driver
+// hands that call the right endpoint in a ROLE=server build. It did not,
+// and nothing caught it, because no server test reached ch_quic_seal at
+// all -- a client-labelled server would have failed its first Initial
+// packet in both directions.
+static const uint8_t APPENDIX_DCID[8] = {0x83, 0x94, 0xc8, 0xf0, 0x3e, 0x51, 0x57, 0x08};
+#define A3_HDR_LEN 20
+#define A3_PN_LEN 2
+#define A3_PN 1
+#define A3_PAYLOAD 99
+#define A3_PACKET (A3_HDR_LEN + A3_PAYLOAD + GCM_TAG)
+#define A3_HDR_HEX "c1000000010008f067a5502a4262b50040750001"
+#define A3_PAYLOAD_HEX                                                                             \
+    "02000000000600405a020000560303eefce7f7b37ba1d1632e96677825ddf739"                             \
+    "88cfc79825df566dc5430b9a045a1200130100002e00330024001d00209d3c94"                             \
+    "0d89690b84d08a60993c144eca684d1081287c834d5311bcf32bb9da1a002b00"                             \
+    "020304"
+#define A3_PACKET_HEX                                                                              \
+    "cf000000010008f067a5502a4262b5004075c0d95a482cd0991cd25b0aac406a"                             \
+    "5816b6394100f37a1c69797554780bb38cc5a99f5ede4cf73c3ec2493a1839b3"                             \
+    "dbcba3f6ea46c5b7684df3548e7ddeb9c3bf9c73cc3f3bded74b562bfb19fb84"                             \
+    "022f8ef4cdd93795d77d06edbb7aaf2f58891850abbdca3d20398c276456cbc4"                             \
+    "2158407dd074ee"
+
+static size_t unhex(const char *hex, uint8_t *out) {
+    size_t n = strlen(hex) / 2;
+    for (size_t i = 0; i < n; i++) {
+        unsigned v = 0;
+        (void)sscanf(hex + 2 * i, "%2x", &v);
+        out[i] = (uint8_t)v;
+    }
+    return n;
+}
+
+// The driver seals an Initial packet under this endpoint's own labels.
+// A server writes under "server in", so the bytes must be Appendix A.3's
+// server packet and not the client's.
+static void test_initial_seal_uses_the_server_labels(void) {
+    uint8_t hdr[A3_HDR_LEN];
+    static uint8_t pt[A3_PAYLOAD];
+    static uint8_t want[A3_PACKET];
+    CHECK(unhex(A3_HDR_HEX, hdr) == sizeof hdr);
+    CHECK(unhex(A3_PAYLOAD_HEX, pt) == sizeof pt);
+    CHECK(unhex(A3_PACKET_HEX, want) == sizeof want);
+
+    ch_quic q;
+    memset(&q, 0, sizeof q);
+    q.t.state = CH_ST_START;
+    CHECK(ch_quic_initial_keys(&q, APPENDIX_DCID, sizeof APPENDIX_DCID) == CH_OK);
+
+    static uint8_t out[A3_PACKET];
+    size_t out_len = 0;
+    CHECK(ch_quic_seal(&q, CH_LEVEL_INITIAL, A3_PN, A3_PN_LEN, hdr, sizeof hdr, pt, sizeof pt, out,
+                       sizeof out, &out_len) == CH_OK);
+    CHECK(out_len == sizeof out);
+    CHECK(memcmp(out, want, sizeof want) == 0);
+}
+
 // Both identities, because the hello this tree's client builds offers the
 // signature scheme its PIN chose and the server has to hold the matching
 // key. Provisioning both keeps the test independent of that axis.
@@ -193,6 +256,8 @@ int main(void) {
     CHECK(seen.ready[CH_LEVEL_HANDSHAKE][CH_KEY_WRITE] == 1);
     CHECK(seen.ready[CH_LEVEL_APPLICATION][CH_KEY_WRITE] == 1);
     CHECK(seen.ready[CH_LEVEL_APPLICATION][CH_KEY_READ] == 0);
+
+    test_initial_seal_uses_the_server_labels();
 
     if (failures == 0) {
         (void)printf("srv_quic: a ClientHello in, %zu fragments out (%zu initial, %zu handshake)\n",

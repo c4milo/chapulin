@@ -127,8 +127,9 @@
 // transport parameters (RFC 9001 §8.2, rfc9001.txt:1921-1923), and §8.2
 // requires a fatal unsupported_extension from an implementation that
 // understands the extension when the transport is not QUIC
-// (rfc9001.txt:1945-1949). Every build in this tree is such a transport:
-// srv_cfg.h refuses CH_ROLE_SERVER together with CH_TRANSPORT_QUIC. The
+// (rfc9001.txt:1945-1949). A TRANSPORT=tls build is such a transport and
+// refuses it; a TRANSPORT=quic server keeps the body and hands it to its
+// caller, which srv_parser_ext.c's two arms carry. The
 // extension needs its own bit to reach that answer, because §4.2.2's
 // ignore rule would otherwise skip it and negotiate
 // (rfc9846.txt:1299). handshake_parser.h states the client's matching

@@ -2011,7 +2011,9 @@ rest is colibri's.
   builds the CONNECTION_CLOSE frame (RFC 9001 §4.8).
 - **No second transport in one object.** `TRANSPORT` is a build axis, so a QUIC
   object holds no record layer and a TLS object holds no QUIC code.
-- **No server role.** Unchanged from the README's non-goals.
+- **A server role, since 2026-09-20.** `ROLE=server` with `TRANSPORT=quic`
+  builds and runs the handshake; `docs/quic_server.md` states what it owes and
+  what it has never done, which includes speaking to another implementation.
 
 ## What the mode does not check or provide
 

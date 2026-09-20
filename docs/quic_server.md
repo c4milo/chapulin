@@ -1,11 +1,13 @@
 # The QUIC server role
 
-This document scopes `ROLE=server` with `TRANSPORT=quic`. Nothing in it is
-implemented, and `Makefile:445` refuses the combination today:
+This document scoped `ROLE=server` with `TRANSPORT=quic` before it existed, and
+records what it owes now that it does. The Makefile refused the combination when
+this was written and no longer does.
 
-```
-$(error ROLE=server runs over TLS records only; use TRANSPORT=tls)
-```
+**Read "What has since landed" first.** The sections under "What is missing"
+below are the original scope, kept because the reasoning in them is still the
+reasoning; every item they describe except interop has since been built, and
+that section says which.
 
 `docs/quic.md` is the client's record and `docs/server.md` the role's. This
 one covers only what the two together do not.
