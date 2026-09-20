@@ -225,6 +225,16 @@ jobs:
         # (https://github.com/c4milo/chapulin/issues/106).
         run: echo "$HOME/armtc/bin" >> "$GITHUB_PATH"
 
+      - name: Install semgrep (hash-pinned)
+        # Five violations name test/lint-invariants.sh as their catch
+        # target: the four INV-26 mutants that move a secret key into AES
+        # or GCM, and srv-cookie-memcmp. Without semgrep the Makefile's
+        # REQUIRE fires, the script exits 2 on unedited source, and
+        # violations.py reports ERROR rather than a verdict, which is the
+        # right answer to a checker that cannot run and no answer at all
+        # about the rule. The check job installs it the same way.
+        run: pip install --require-hashes -r .semgrep/requirements.txt
+
       - name: Break every invariant but the proof-backed ones and see what objects
         run: |
           set -o pipefail
