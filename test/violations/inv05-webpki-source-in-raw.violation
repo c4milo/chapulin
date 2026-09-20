@@ -5,8 +5,19 @@ reason: TRUST=raw-rsa's filter stops removing the webpki*.c files, so the
   raw object packages the web PKI hostname and date readers that INV-5
   says only the TRUST=webpki object carries. The lint reads the webpki
   file list from git rather than from the filter, so it objects.
+  The edit carries the arm's ifeq line because three arms now write that
+  same filter -- raw-rsa, raw-ecdsa and none -- and an edit that matches
+  more than once is refused as ambiguous rather than applied.
 
 --- old
+ifeq ($(TRUST),raw-rsa)
+TRUST_DEF :=
+PIN_DEF :=
+PUBLIC_CA :=
 TRUST_FILTER := pem.c x509.c x509_der.c x509_ca.c $(WEBPKI_SRCS)
 --- new
+ifeq ($(TRUST),raw-rsa)
+TRUST_DEF :=
+PIN_DEF :=
+PUBLIC_CA :=
 TRUST_FILTER := pem.c x509.c x509_der.c x509_ca.c

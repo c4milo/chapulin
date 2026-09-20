@@ -8,6 +8,8 @@ reason: WEBPKI_SRCS stops listing webpki_sigalg.c, a file git tracks, so
   every root webpki*.c file git tracks, so it objects.
 
 --- old
-WEBPKI_SRCS := webpki_time.c webpki_name.c webpki_spki.c webpki_sigalg.c
+WEBPKI_SRCS := webpki_time.c webpki_name.c webpki_spki.c webpki_sigalg.c webpki_ext.c \
+                webpki_cert.c webpki.c
 --- new
-WEBPKI_SRCS := webpki_time.c webpki_name.c webpki_spki.c
+WEBPKI_SRCS := webpki_time.c webpki_name.c webpki_spki.c webpki_sigalg.c webpki_ext.c \
+                webpki.c

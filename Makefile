@@ -1398,7 +1398,7 @@ bin/diff: test/diff_test.c $(SRCS) sha3.c sha512.c sha512_compress.c p384.c p384
 run-%: bin/%
 	./bin/$*
 
-.PHONY: check check-slow ci lint lint-tidy lint-format lint-cppcheck lint-docs lint-conflict-markers lint-invariants lint-violation-builds lint-impact lint-fuzz-budget lint-codegen-partition lint-runtime-symbols lint-wide-multiply lint-commit-citations lint-issue-links lint-rfcs lint-shellcheck lint-bench-numbers lint-spec prove diff fmt clean
+.PHONY: check check-slow ci lint lint-tidy lint-format lint-cppcheck lint-docs lint-conflict-markers lint-invariants lint-violation-builds lint-violation-anchors lint-impact lint-fuzz-budget lint-codegen-partition lint-runtime-symbols lint-wide-multiply lint-commit-citations lint-issue-links lint-rfcs lint-shellcheck lint-bench-numbers lint-spec prove diff fmt clean
 # check is the inner loop and holds a one-minute budget, so it runs what
 # answers "did I break the build or a contract": the linters, every unit
 # and strict-parser binary, the packaged-object export check, and the
@@ -2098,7 +2098,7 @@ endif
 
 # Checks and thresholds live in .clang-tidy; every disable carries a reason
 # there (fix-or-drop, never NOLINT in code).
-lint: lint-toolchain lint-pins lint-proof-cover lint-exact-fill lint-tidy lint-format lint-cppcheck lint-commits lint-docs lint-conflict-markers lint-invariants lint-stack lint-size lint-tracked-ignored lint-matrix lint-nightly-report lint-violation-builds lint-impact lint-fuzz-budget lint-codegen-partition lint-runtime-symbols lint-wide-multiply lint-commit-citations lint-issue-links lint-shellcheck lint-bench-numbers lint-spec lint-trust-separation lint-quic-partition lint-quic-surface
+lint: lint-toolchain lint-pins lint-proof-cover lint-exact-fill lint-tidy lint-format lint-cppcheck lint-commits lint-docs lint-conflict-markers lint-invariants lint-stack lint-size lint-tracked-ignored lint-matrix lint-nightly-report lint-violation-builds lint-violation-anchors lint-impact lint-fuzz-budget lint-codegen-partition lint-runtime-symbols lint-wide-multiply lint-commit-citations lint-issue-links lint-shellcheck lint-bench-numbers lint-spec lint-trust-separation lint-quic-partition lint-quic-surface
 
 # INV-19: bounded stack. The budget is the measured worst library
 # frame (rsa_vp1's RSA-3072 limb temporaries, 2,400 bytes) rounded up;
@@ -2567,6 +2567,17 @@ lint-nightly-report:
 .PHONY: lint-violation-builds
 lint-violation-builds:
 	@python3 test/violations.py --lint-builds
+
+# Every violation's edit still matches its file exactly once. The runner
+# reports a stale edit too, but only after building that edit's target,
+# which is minutes away and lives in check-slow; matching the text costs
+# no build, so it belongs here. Three edits went stale in one day without
+# this: two when a header's guard gained a condition, and one when five
+# TRUST arms came to write the same filter line and an edit naming that
+# line alone matched three of them.
+.PHONY: lint-violation-anchors
+lint-violation-anchors:
+	@python3 test/violations.py --lint-anchors
 
 # The impact selection, checked against test/violations/ as its ground
 # truth: every violation names a file and the target that objects when

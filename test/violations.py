@@ -8,6 +8,7 @@ Run from the repository root: python3 test/violations.py [name ...]
     --proof-backed       only the violations proof/prove-one.sh catches
     --not-proof-backed   every other violation
     --list               print the selected names, one per line; run nothing
+    --lint-anchors       check every edit still matches its file exactly once
 
 The selectors intersect. A selection that matches nothing is an error.
 
@@ -276,6 +277,35 @@ def binaries_run_by(script):
     return set(re.findall(r"\./(bin/[a-z0-9_]+)", script.read_text()))
 
 
+def lint_anchors():
+    """An edit whose old text no longer matches is reported stale, but only
+    once the runner has built its target, which is minutes away and in
+    check-slow. Matching the text costs no build at all, so this runs in
+    check and says which file moved under which edit.
+
+    It counts rather than tests presence: three TRUST arms write the same
+    filter line, so an edit that named that line alone matched all three
+    and was refused as ambiguous. Both failures read the same here."""
+    bad = 0
+    for path in sorted(VIOLATIONS.glob("*.violation")):
+        head, old, _ = parse(path)
+        target = pathlib.Path(head["file"])
+        if not target.exists():
+            print(f"lint-violation-anchors: {path.name} edits {target}, which is missing")
+            bad = 1
+            continue
+        n = target.read_text().count(old)
+        if n != 1:
+            found = "no longer appears in" if n == 0 else f"appears {n} times in"
+            print(f"lint-violation-anchors: {path.name}'s old text {found} {target}")
+            bad = 1
+    if bad:
+        print("lint-violation-anchors: re-anchor each edit on the text that is there now")
+        return 1
+    print("lint-violation-anchors: every edit matches its file exactly once")
+    return 0
+
+
 def lint_builds():
     """A script target runs no make, so its 'builds' line is the only thing
     that puts binaries on disk. A name missing there fails quietly: the
@@ -344,7 +374,8 @@ def select(argv):
     return names
 
 
-OPTIONS = {"--lint-builds", "--list", "--proof-backed", "--not-proof-backed"}
+OPTIONS = {"--lint-builds", "--lint-anchors", "--list", "--proof-backed",
+           "--not-proof-backed"}
 
 
 def main():
@@ -355,6 +386,8 @@ def main():
             sys.exit(f"test-invariants: unknown option {flag}")
     if "--lint-builds" in sys.argv[1:]:
         sys.exit(lint_builds())
+    if "--lint-anchors" in sys.argv[1:]:
+        sys.exit(lint_anchors())
     names = select(sys.argv[1:])
     if "--list" in sys.argv[1:]:
         print("\n".join(names))

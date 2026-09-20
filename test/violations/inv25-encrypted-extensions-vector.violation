@@ -12,11 +12,11 @@ reason: hsp_parse_encrypted_exts walks the message body instead of the
     if (r.err || exts_len != rb_left(&r)) {
         return CH_EPROTO;
     }
-    // bit 0 record_size_limit
+    // bit 0 record_size_limit, bit 1 supported_groups, bit 2 server_name,
 --- new
     size_t exts_len = rb_u16(&r);
     (void)exts_len;
     if (r.err) {
         return CH_EPROTO;
     }
-    // bit 0 record_size_limit
+    // bit 0 record_size_limit, bit 1 supported_groups, bit 2 server_name,
