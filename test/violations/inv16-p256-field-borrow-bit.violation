@@ -1,0 +1,14 @@
+invariant: INV-16
+file: p256_field.c
+catches: proof/prove-one.sh p256_field
+reason: returning the borrow as a bit rather than as a whole mask leaves
+  every select keeping bit 0 of one side and the other 31 bits of the
+  other. p256_field_harness.c states sub_limbs's contract as a mask and
+  fails on this for any limbs at all, where a vector fails only for the
+  operands it carries. Each run is a proof, so this belongs to the
+  nightly's test-invariants-proof-backed job, never the fast tier.
+
+--- old
+    return (uint32_t)(diff >> 32);
+--- new
+    return (uint32_t)((diff >> 32) & 1u);

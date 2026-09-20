@@ -33,7 +33,8 @@
 
 void hkdf_extract(const uint8_t *salt, size_t salt_len, const uint8_t *ikm, size_t ikm_len,
                   uint8_t prk[SHA256_LEN]) {
-    __CPROVER_assert(salt_len == 0 || __CPROVER_r_ok(salt, salt_len), "hkdf_extract: salt readable");
+    __CPROVER_assert(salt_len == 0 || __CPROVER_r_ok(salt, salt_len),
+                     "hkdf_extract: salt readable");
     __CPROVER_assert(ikm_len == 0 || __CPROVER_r_ok(ikm, ikm_len), "hkdf_extract: ikm readable");
     __CPROVER_assert(__CPROVER_w_ok(prk, SHA256_LEN), "hkdf_extract: prk writable");
     fill_nondet(prk, SHA256_LEN);

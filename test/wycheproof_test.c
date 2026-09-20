@@ -51,6 +51,8 @@ noreturn void ch_assert_fail(const char *cond, const char *file, int line) {
 #include "hkdf.h"
 #include "mlkem.h"
 #include "p256.h"
+#include "p256_ecdh.h"
+#include "p256_sign.h"
 #include "p384.h"
 #include "rsa.h"
 #include "rsa_pkcs1.h"
@@ -241,19 +243,7 @@ static void check_verdict(const char *suite, uint32_t tc, int ok, int valid) {
     }
 }
 
-static void run_ecdsa_p256_sha256(void) {
-    for (size_t i = 0; i < COUNT(wp_ecdsa_p256_sha256); i++) {
-        const uint8_t *pub = wp_ecdsa_p256_sha256_data + wp_ecdsa_p256_sha256[i].pub_off;
-        const uint8_t *p = wp_ecdsa_p256_sha256_data + wp_ecdsa_p256_sha256[i].off;
-        uint8_t hash[SHA256_LEN];
-        sha256_of(p, wp_ecdsa_p256_sha256[i].msg_len, hash);
-        int ok = p256_ecdsa_verify(pub, hash, p + wp_ecdsa_p256_sha256[i].msg_len,
-                                   wp_ecdsa_p256_sha256[i].sig_len);
-        check_verdict("ecdsa-p256-sha256", wp_ecdsa_p256_sha256[i].tc, ok,
-                      wp_ecdsa_p256_sha256[i].valid);
-    }
-    printf("wycheproof ecdsa-p256-sha256: %zu cases\n", COUNT(wp_ecdsa_p256_sha256));
-}
+#include "wycheproof_p256.h"
 
 static void run_ecdsa_p384_sha384(void) {
     for (size_t i = 0; i < COUNT(wp_ecdsa_p384_sha384); i++) {
@@ -285,23 +275,6 @@ static void run_ecdsa_p384_sha256(void) {
                       wp_ecdsa_p384_sha256[i].valid);
     }
     printf("wycheproof ecdsa-p384-sha256: %zu cases\n", COUNT(wp_ecdsa_p384_sha256));
-}
-
-// A 64-byte digest under a P-256 key. FIPS 186-4 section 6.4 keeps the
-// leftmost 256 bits of a digest longer than the order, so the verifier
-// reads the first 32 bytes of the SHA-512 output and the rest is unused.
-static void run_ecdsa_p256_sha512(void) {
-    for (size_t i = 0; i < COUNT(wp_ecdsa_p256_sha512); i++) {
-        const uint8_t *pub = wp_ecdsa_p256_sha512_data + wp_ecdsa_p256_sha512[i].pub_off;
-        const uint8_t *p = wp_ecdsa_p256_sha512_data + wp_ecdsa_p256_sha512[i].off;
-        uint8_t hash[SHA512_LEN];
-        sha512_of(p, wp_ecdsa_p256_sha512[i].msg_len, hash);
-        int ok = p256_ecdsa_verify(pub, hash, p + wp_ecdsa_p256_sha512[i].msg_len,
-                                   wp_ecdsa_p256_sha512[i].sig_len);
-        check_verdict("ecdsa-p256-sha512", wp_ecdsa_p256_sha512[i].tc, ok,
-                      wp_ecdsa_p256_sha512[i].valid);
-    }
-    printf("wycheproof ecdsa-p256-sha512: %zu cases\n", COUNT(wp_ecdsa_p256_sha512));
 }
 
 static void run_rsa(void) {
@@ -451,12 +424,14 @@ static void run_mlkem_full(void) {
 int main(void) {
     printf("wycheproof vectors at commit %s\n", WYCHEPROOF_COMMIT);
     run_x25519();
+    run_ecdh_p256();
     run_aead();
 #ifdef CH_TRANSPORT_QUIC
     run_aes_gcm();
 #endif
     run_hkdf();
     run_ecdsa_p256_sha256();
+    run_ecdsa_p256_sign();
     run_ecdsa_p384_sha384();
     run_ecdsa_p384_sha256();
     run_ecdsa_p256_sha512();

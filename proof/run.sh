@@ -547,6 +547,78 @@ launch fast full rsa_pkcs1 385 "fill_nondet.0:385,ct_memeq.0:385,ct_wipe.0:385,g
 # properties, 17 s, 154 MB for cbmc and 84 MB for kissat.
 launch fast full rsa_pkcs1_webpki 513 "fill_nondet.0:513,ct_memeq.0:513,ct_wipe.0:513,greater_or_equal.0:513" --object-bits 11 --max-field-sensitivity-array-size 513 ct.c
 launch fast full p256 85 "" buf.c
+# p256_field is the constant-time twin, and it proves more than p256 does
+# because the arithmetic is written as masks: every masked choice against
+# a reference that branches, the field contract on add, subtract and
+# negate, the three predicates, the byte round trip, and memory safety
+# over full-range limbs in every aliasing shape a point routine uses. The
+# Montgomery product is memory-safe here and nothing asserts its value --
+# equality of multipliers is the hard SAT instance (docs/proofs.md) -- so
+# its value rests on test/p256_field_test.c and its carry chain on the
+# p256_mul lemma below. Measured (cbmc 6.11.0, kissat, /usr/bin/time -l):
+# 524 properties, 4.7 s, and 64 MB of cbmc, the higher of two runs.
+launch fast full p256_field 34 ""
+# p256_scalar is the signer's arithmetic mod the group order, and it
+# proves what p256_field's twin proves one modulus over: every masked
+# choice against a reference that branches, the two predicates, the byte
+# round trip, and the two contracts p256_sign.c rests on -- that
+# p256_scalar_reduce lands ANY 256-bit value below n, which is what makes
+# a message hash a valid z and an x coordinate a valid r, and that
+# p256_scalar_add leaves a scalar. The Montgomery product is memory-safe
+# here and nothing asserts its value: equality of multipliers is the hard
+# SAT instance (docs/proofs.md), so its value rests on
+# test/p256_sign_test.c. p256_scalar_inverse is not called -- 512
+# Montgomery products in one formula return no verdict -- and only its
+# exponent index expressions are proven in bounds, which is what the
+# unwindset below bounds at 257. Measured (cbmc 6.11.0, kissat,
+# /usr/bin/time -l): 483 properties, 4.6 s, and 60 MB of cbmc, the higher
+# of two runs.
+launch fast full p256_scalar 34 "prove_exponent_index_bounds.0:257"
+# p256_point is the complete addition and the affine reader over the
+# field stubs in proof/p256_field_stubs.h, the layering hkdf_harness.c
+# uses: one addition runs 14 Montgomery products and a formula that
+# unrolled them would return no verdict. It covers all four aliasing
+# shapes, including both inputs the same object, which is the doubling
+# the ladder performs and the shape a formula that wrote a coordinate
+# before its last read would get wrong. ct.c is on the line because
+# p256_point_affine wipes its inverse. Measured (cbmc 6.11.0, kissat,
+# /usr/bin/time -l): 176 properties, 2.2 s, and 40 MB of cbmc.
+launch fast full p256_point 34 "" ct.c
+# p256_point_ladder is one round of p256_point_mul over the same field
+# stubs, on the shipped ladder_round rather than a copy, for any scalar,
+# any three points and any bit index in [0, 255]: the index and the shift
+# the round reads the scalar with are proven in bounds, and the mask the
+# round builds is 0 or all ones at every cswap, which is the ladder's
+# whole constant-time claim. The loop in p256_point_mul calls nothing but
+# this round, 256 times, and carries the proof the way ladder() carries
+# x25519's step(). The 256 rounds unrolled in one formula returned no
+# verdict in 42 minutes. Measured (cbmc 6.11.0, kissat, /usr/bin/time -l):
+# 152 properties, 0.4 s, and 26 MB of cbmc.
+launch fast full p256_point_ladder 34 ""
+# p256_sign is the RFC 6979 generator and the DER writer with the
+# arithmetic stubbed by proof/p256_scalar_stubs.h and
+# proof/p256_point_stubs.h, the layering hkdf_harness.c uses: the real
+# p256_sign runs 512 complete point additions and a formula that unrolled
+# them would return no verdict. The stubs havoc every candidate nonce, so
+# the proof covers every acceptance pattern the four candidates can have,
+# including none of them. Two claims beyond memory safety: the generator
+# spends the same number of HMAC calls whatever those candidates were,
+# which is the constant-time claim p256_sign.h makes about the retry, and
+# the DER writer stays inside P256_SIG_MAX and writes a minimal INTEGER
+# for every pair of 32-byte scalars. Measured (cbmc 6.11.0, kissat,
+# /usr/bin/time -l): 791 properties, 36 s, and 1.2 GB of cbmc.
+launch fast:3 full p256_sign 100 "" buf.c ct.c
+# p256_ecdh is the three public entries over the scalar and point layers
+# stubbed to their contracts, proof/p256_scalar_stubs.h and
+# proof/p256_point_stubs.h, which p256_sign shares: memory safety over any
+# 65 peer bytes and any 32 scalar bytes, that each entry answers 0 or 1,
+# and that a refusal leaves no private key, no public key and no shared
+# secret behind, for every verdict the stubbed arithmetic can give. The
+# ladder and the point decode are p256_point's, so nothing here unrolls
+# them; a harness that did returned no verdict in 854 s. Measured (cbmc
+# 6.11.0, kissat, /usr/bin/time -l): 284 properties, 1.4 s, and 27 MB of
+# cbmc.
+launch fast full p256_ecdh 100 "" ct.c
 # webpki_spki: webpki_read_spki over any bytes up to CH_WEBPKI_CERT_MAX,
 # with the real DER primitives, rbuf and ct_memeq, at the webpki
 # CH_RSA_MODULUS_MAX of 512. x509_der.c is its own translation unit on

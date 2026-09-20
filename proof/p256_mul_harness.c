@@ -3,10 +3,16 @@
 // one 32-bit limb — for ANY uint32 operands, re-establishing c <= 2^32-1
 // step by step — and each pass's tail fold t[N] + c carries out at most
 // one bit, so the overflow word t[LIMBS+1] only ever holds 0 or 1.
-// mont_mul's memory safety (concrete index walk) is p256_harness.c. The
-// final single conditional subtract (t < 2m at loop exit) is a functional
-// CIOS invariant resting on the RFC 6979 vectors in test/unit_test.c, not
-// on a proof.
+// The lemma is about the loop shape, not about one function's text, and
+// this tree has two eight-limb CIOS multiplies with that shape: p256.c's
+// mont_mul and p256_field.c's, which reads its operands through
+// ct_widemul and accumulates them in uint64 the same way. The lemma
+// covers both. Each one's memory safety is its own harness's:
+// p256_harness.c and p256_field_harness.c. The
+// final single conditional subtract rests on t < 2m at loop exit, a
+// functional CIOS invariant that no proof here carries: it rests on the
+// RFC 6979 vectors in test/unit_test.c and, for p256_field.c, on
+// test/p256_field_test.c.
 #include "harness.h"
 
 #include <stdint.h>

@@ -1,0 +1,18 @@
+invariant: INV-3
+file: p256_ecdh.c
+catches: p256_ecdh_test
+reason: a scalar at or above n is the same scalar reduced mod n, so a draw
+  of n itself is the scalar 0 and its public key is the point at infinity;
+  dropping the upper end of the range check publishes that key and derives
+  a shared secret from a product the peer can predict
+
+--- old
+static uint32_t scalar_in_range_mask(const p256_scalar *k) {
+    return p256_scalar_reduced_mask(k) & ~p256_scalar_zero_mask(k);
+}
+--- new
+static uint32_t scalar_in_range_mask(const p256_scalar *k) {
+    // A drawn scalar is 32 random bytes, which is below n with
+    // probability 1 - 2^-32.
+    return ~p256_scalar_zero_mask(k);
+}

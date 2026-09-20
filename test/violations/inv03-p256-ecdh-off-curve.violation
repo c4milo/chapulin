@@ -1,0 +1,18 @@
+invariant: INV-3
+file: p256_point.c
+catches: p256_ecdh_test
+reason: the P-256 counterpart of the x25519 zero check — a peer point that
+  does not satisfy the curve equation lies on a different curve whose order
+  the peer chose, so a scalar multiplied into it leaks the private key a few
+  bits at a time (the invalid-curve attack Wycheproof's sixteen off-curve
+  cases carry)
+
+--- old
+    p256_fe_add(&rhs, &rhs, &B_MONT);
+    return p256_fe_equal_mask(&lhs, &rhs);
+--- new
+    p256_fe_add(&rhs, &rhs, &B_MONT);
+    // Both coordinates are below p and the form byte is 0x04, so the
+    // point is well formed.
+    (void)p256_fe_equal_mask(&lhs, &rhs);
+    return 0xffffffffU;

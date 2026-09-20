@@ -217,6 +217,54 @@ def gen_hkdf(d, out):
     return len(rows)
 
 
+# The P-256 ECDH suite in the "ecpoint" encoding: the peer's public key
+# is the SEC 1 point the wire carries, which is what p256_ecdh reads.
+# The other secp256r1 ECDH files wrap that point in a SubjectPublicKeyInfo
+# or a PEM, and no part of chapulin parses either for a key share.
+#
+# The private key arrives as a big-endian integer of whatever length it
+# needs, so it is left-padded to the fixed 32 bytes the API takes; a
+# value that does not fit stops the run. The public key keeps its own
+# length, because the compressed and empty encodings are cases the
+# 65-byte API refuses by length and the runner counts that way.
+def gen_ecdh_p256(d, out):
+    n = 0xFFFFFFFF00000000FFFFFFFFFFFFFFFFBCE6FAADA7179E84F3B9CAC2FC632551
+    blob = Blob()
+    rows = []
+    for g in d["testGroups"]:
+        if g["curve"] != "secp256r1" or g["encoding"] != "ecpoint":
+            raise SystemExit(f"ecdh_p256: group is {g['curve']}/{g['encoding']},"
+                             " expected secp256r1/ecpoint")
+        for t in g["tests"]:
+            priv = bytes.fromhex(t["private"]).lstrip(b"\x00")
+            if len(priv) > 32:
+                raise SystemExit(f"ecdh_p256 tc{t['tcId']}: private key over 32 bytes")
+            if not 1 <= int.from_bytes(priv, "big") < n:
+                raise SystemExit(f"ecdh_p256 tc{t['tcId']}: private key outside [1, n-1]")
+            priv = priv.rjust(32, b"\x00")
+            pub = bytes.fromhex(t["public"])
+            shared = bytes_of(t["shared"], None, f"ecdh_p256 tc{t['tcId']} shared")
+            if t["result"] == "valid":
+                kind = 0  # must accept and match
+            elif t["result"] == "invalid":
+                kind = 1  # must reject
+            else:
+                kind = 2  # acceptable: either verdict, but a match if accepted
+            if kind != 1 and len(shared) != 32:
+                raise SystemExit(f"ecdh_p256 tc{t['tcId']}: shared secret is not 32 bytes")
+            off = blob.add(priv + shared.ljust(32, b"\x00") + pub)
+            rows.append((uint_of(t["tcId"], 0xffffffff, "ecdh_p256 tcId"), off,
+                         uint_of(len(pub), 0xffff, "ecdh_p256 public length"), kind))
+    emit_blob(out, "wp_ecdh_p256_data", blob)
+    out.append("static const struct { uint32_t tc; uint32_t off; uint16_t pub_len;"
+               " uint8_t kind; } wp_ecdh_p256[] = {")
+    for row in rows:
+        out.append("    {" + ", ".join(str(v) for v in row) + "},")
+    out.append("};")
+    out.append("")
+    return len(rows)
+
+
 # One ECDSA verify suite. name is the C symbol stem (wp_<name>_data and
 # wp_<name>); curve and sha are the values every group must declare, so
 # a suite file that changes shape upstream stops the run instead of
@@ -519,6 +567,7 @@ def main():
         "",
     ]
     n_x = gen_x25519(json.load(open(v1 / "x25519_test.json")), out)
+    n_d = gen_ecdh_p256(json.load(open(v1 / "ecdh_secp256r1_ecpoint_test.json")), out)
     n_a = gen_aead(json.load(open(v1 / "chacha20_poly1305_test.json")), out)
     n_h = gen_hkdf(json.load(open(v1 / "hkdf_sha256_test.json")), out)
     n_g = gen_aes_gcm(json.load(open(v1 / "aes_gcm_test.json")), out)
@@ -559,7 +608,7 @@ def main():
     n_ke = gen_mlkem_encaps(json.load(open(v1 / "mlkem_768_encaps_test.json")), out)
     n_kf = gen_mlkem_full(json.load(open(v1 / "mlkem_768_test.json")), out)
     dst.write_text("\n".join(out) + "\n")
-    print(f"wycheproof vectors: x25519 {n_x}, aead {n_a}, hkdf {n_h}, aes-gcm {n_g},"
+    print(f"wycheproof vectors: x25519 {n_x}, ecdh-p256 {n_d}, aead {n_a}, hkdf {n_h}, aes-gcm {n_g},"
           f" ecdsa p256-sha256 {n_e} p384-sha384 {n_e384} p384-sha256 {n_e384_256}"
           f" p256-sha512 {n_e256_512}, rsa-pss {n_r}, rsa-pkcs1 {n_rp}, rsa-sign {n_rs},"
           f" mlkem keygen {n_kk} encaps {n_ke} full {n_kf} (commit {commit[:12]})")

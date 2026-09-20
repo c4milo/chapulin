@@ -13,6 +13,7 @@
 
 size_t nondet_size_t(void);
 uint8_t nondet_u8(void);
+uint32_t nondet_u32(void);
 int64_t nondet_i64(void);
 
 // An CH_ASSERT firing is a proof failure, and execution stops there.
@@ -28,6 +29,17 @@ static void fill_nondet(uint8_t *p, size_t n) {
     for (size_t i = 0; i < n; i++) {
         p[i] = nondet_u8();
     }
+}
+
+// An unconstrained mask, in the convention the arithmetic headers state:
+// 0 for false and UINT32_MAX for true, never a 0-or-1 value. A stubbed
+// predicate returns one of these, which is what makes a proof cover
+// every answer the real predicate could give while holding its callers
+// to selecting with mask arithmetic.
+static uint32_t nondet_mask(void) {
+    uint32_t m = nondet_u32();
+    __CPROVER_assume(m == 0 || m == UINT32_MAX);
+    return m;
 }
 
 // The SHA-256 stub five harnesses share. A harness that does not prove

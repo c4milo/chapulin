@@ -1,0 +1,14 @@
+invariant: INV-16
+file: p256_field.c
+catches: p256_field_test
+reason: dropping the complement inverts the conditional subtraction: the
+  value is reduced exactly when it is already below p and left alone when
+  it is not, so every sum and every Montgomery product leaves the field.
+  The mask is the one thing in this file that a reader cannot check by
+  eye, and it is what constant time costs here, so the vectors have to
+  fail on it.
+
+--- old
+    select_limbs(o, reduced, t, ~(uint32_t)(below >> 32));
+--- new
+    select_limbs(o, reduced, t, (uint32_t)(below >> 32));
