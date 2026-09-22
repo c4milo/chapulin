@@ -187,6 +187,12 @@ typedef struct {
     // the order they come. Each call carries one record, so a caller that
     // writes them separately still sends a legal stream.
     //
+    // The sink takes one whole record or fails the handshake, and cannot
+    // report a short write. A caller whose socket accepts part of a
+    // record buffers the remainder itself: reporting the short write back
+    // would need the resume point the paragraph above rules out
+    // (https://github.com/c4milo/chapulin/issues/170).
+    //
     // Required for a record-mode server: a server whose flight reaches
     // nobody completes no handshake. Re-entrancy: cfg.h's rule for
     // on_level_ready, for the same reason.
