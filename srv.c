@@ -106,17 +106,26 @@ static int transport_ok(const ch_cfg *cfg) {
     // (srv_cfg.h, on_crypto_out).
     return cfg->buf != NULL && cfg->buf_len >= CH_MIN_RXBUF && cfg->send == NULL &&
            cfg->recv == NULL && cfg->srv.on_crypto_out != NULL && cfg->on_level_ready != NULL;
+#elif defined(CH_TRANSPORT_RECORD)
+    // A record-mode server drives no socket while the handshake runs:
+    // the caller owns it, and the flight leaves through on_record_out
+    // (srv_cfg.h). send and recv stay required all the same, because
+    // ch_read and ch_write call them once the session is connected, and
+    // by then the caller holds the bytes and they never block (rec.h).
+    return cfg->buf != NULL && cfg->send != NULL && cfg->recv != NULL &&
+           cfg->buf_len >= CH_MIN_RXBUF && cfg->srv.on_record_out != NULL;
 #else
     return cfg->buf != NULL && cfg->send != NULL && cfg->recv != NULL &&
            cfg->buf_len >= CH_MIN_RXBUF;
 #endif
 }
 
-// A TLS build has one caller, ch_srv_accept below, so the linkage is
-// internal there and clang-tidy's misc-use-internal-linkage is right to
-// ask for it. A QUIC build has a second caller in srv_quic.c, which is
-// why srv_flight.h declares it at all.
-#ifdef CH_TRANSPORT_QUIC
+// A blocking build has one caller, ch_srv_accept below, so the linkage
+// is internal there and clang-tidy's misc-use-internal-linkage is right
+// to ask for it. The two non-blocking builds have their caller in
+// another file -- srv_quic.c and srv_rec.c -- which is why srv_flight.h
+// declares it at all.
+#if defined(CH_TRANSPORT_QUIC) || defined(CH_TRANSPORT_RECORD)
 int srv_config_ok(const ch_cfg *cfg) {
 #else
 static int srv_config_ok(const ch_cfg *cfg) {
@@ -124,7 +133,10 @@ static int srv_config_ok(const ch_cfg *cfg) {
     return srv_fields_ok(cfg) && client_fields_unset(cfg) && alpn_ok(cfg) && transport_ok(cfg);
 }
 
-#ifndef CH_TRANSPORT_QUIC
+// Only the blocking transport has an accept call: the other two return
+// to their caller between messages, and srv_handshake.c is not in either
+// object for this to call.
+#if !defined(CH_TRANSPORT_QUIC) && !defined(CH_TRANSPORT_RECORD)
 int ch_srv_accept(ch_tls *t, const ch_cfg *cfg) {
     memset(t, 0, sizeof *t);
     t->cfg = *cfg;

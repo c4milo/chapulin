@@ -1884,6 +1884,105 @@ the C core lacks, and a server session is the same RAII shape over one
 different name, so the fork is one forwarding function under
 `#ifdef CH_ROLE_SERVER`. `make cxx-check` runs on both roles.
 
+### The record transport: a server that does not block
+
+`ch_srv_accept` runs the whole handshake behind `cfg.send` and `cfg.recv`, and
+both block. That is the right shape for the firmware this tree targets, where a
+blocking socket is all there is. It is the wrong shape for a host whose I/O is a
+completion-based event loop: a callback that blocks inside the loop's own thread
+stalls every other connection the loop holds, and there is no thread to park it
+on. `TRANSPORT=record ROLE=server` is the same server handshake with the socket
+given back to the caller.
+
+```c
+// srv_rec.h — the same TLS 1.3 server, driven by a caller that owns the socket.
+
+// Prepares a server session. It reads the configuration and waits: unlike
+// ch_record_init it stages no message, because a server speaks second.
+int ch_srv_record_init(ch_record *r, const ch_cfg *cfg);
+
+// Delivers n bytes the caller read from its socket and reports how many it
+// consumed. The server's own records leave through cfg.srv.on_record_out
+// during this call.
+int ch_srv_record_in(ch_record *r, uint8_t *p, size_t n, size_t *consumed);
+```
+
+`ch_record_state`, `ch_record_alert` and `ch_record_close` are `rec.h`'s and are
+not repeated: they read no side, so `rec.c` compiles them in either role and the
+client driver above them is what a `ROLE=server` object guards out
+(`rec.c:25`). `ch_read`, `ch_write` and `ch_close` are the same record-layer
+calls a client uses, for the reason this section already gives.
+
+**Output is a push, not a pull.** There is no `ch_srv_record_out`, and the
+certificate chain is why. `srv_flight.c` stages a protected message on the
+handler's own stack frame and streams the Certificate straight out of
+`cfg.srv.identity` through `srv_frag` (`srv_flight.c:6-8`), because one
+Certificate message is larger than `ch_tls.tx`, which is `CH_TX_STAGE` bytes
+(`session.h:64`). So there is no buffer for a caller to collect from. A pull
+would need a resume point inside `srv_out_sealed`'s record loop, which is the
+one thing the record mode's design rules out: `rec_step.h:12` states that a step
+runs only when a whole message is already present, consumes that one message,
+and waits nowhere inside it. `srv_quic.h:18` reached the same conclusion for the
+same reason on the other transport, and `ch_srv_cfg.on_record_out` is
+`on_crypto_out` without the encryption level.
+
+That still answers the problem the mode exists for. The callback copies each
+record into a buffer the caller owns and returns; it never waits on a socket, so
+nothing blocks the loop.
+
+The whole flight leaves inside one `ch_srv_record_in`, because every send sits
+in the step that read the message it answers. `bin/srv_rec_test` measures it:
+one ClientHello in, five records out — the ServerHello in the clear, then the
+EncryptedExtensions, the Certificate, the CertificateVerify and the Finished,
+each protected. The test's `send` and `recv` fail the run if the driver ever
+calls them, which is how the mode's claim is checked rather than argued.
+
+#### The file partition
+
+| file | what it holds |
+| --- | --- |
+| `srv_rec.[ch]` | the driver: the three steps and the two entry points. `srv_quic.[ch]`'s mirror on the transport that keeps its records. |
+| `rec_frame.[ch]` | taking one inbound record, and dying. Both drivers call it, so INV-17's wipe list has one copy to check, the way `quic_fail.[ch]` holds QUIC's. |
+
+`srv_rec.c` installs no keys. Every `rec_dir_init` a server makes already sits
+inside the handler that derived the secret it takes — the handshake keys in
+`srv_derive_handshake_secrets` (`srv_flight.c:308`), the application write key
+in `srv_send_finished` (`srv_flight.c:425`) and the application read key in
+`srv_complete` (`srv_flight.c:464`) — because the blocking driver needs them
+there too. The step table decides only which handler runs next.
+
+`srv_out.c` gains a third arm. It had two: a QUIC arm that pushes to
+`on_crypto_out`, and a blocking arm that calls `io_send_all`. The record arm is
+the blocking one with `emit` in place of that call, so the framing, the
+`record_size_limit` and the fragmentation are the same lines.
+
+#### The build line
+
+```sh
+make RAND=drbg TRUST=none TRANSPORT=record ROLE=server lib
+```
+
+`TRUST=none` is required, as it is for any `ROLE=server` build: a server judges
+no peer certificate. `ROLE=both` takes the record transport too, with a real
+`TRUST` value, and carries both drivers in one object — `ch_record_init` and
+`ch_srv_record_init` are different names for that reason.
+
+`make lint-trust-separation` carries a row for this build: it requires
+`srv_rec.c`, `rec.c` and `rec_frame.c`, and refuses `srv_handshake.c`,
+`srv_quic.c` and `rec_step.c`. Each role row names the one driver its transport
+wants. The rows read git's root `srv*.c` list and subtracted a single driver
+name from it until `srv_rec.c` became the third, which no subtraction tells
+apart.
+
+Known hole: `TRUST=webpki TRANSPORT=record` does not link. `tls.c:400`'s webpki
+`ch_connect` is not guarded by `#ifndef CH_TRANSPORT_RECORD` the way the pinned
+one at `tls.c:128` is, so it compiles and calls the `ch_handshake` the record
+transport filters out, and that arm defines `chain_config_ok` where
+`ch_record_init` calls `tlsi_config_ok`. Both come out as undefined imports.
+`check` builds no `TRANSPORT=record` library variant, only `bin/recclient`,
+which pins, so nothing has caught it. It predates the server driver and it is
+the combination a public-PKI host client wants.
+
 ### What `ch_cfg` gains and drops
 
 `cfg.h` forks under `#ifdef CH_ROLE_SERVER`, the way it already forks under

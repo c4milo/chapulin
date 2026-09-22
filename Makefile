@@ -133,7 +133,8 @@ HDRS := ct.h sha256.h hkdf.h chacha20.h poly1305.h aead.h x25519.h p256.h rsa.h 
         pem.h x509.h x509_der.h x509_ca.h webpki.h buf.h record.h keysched.h io.h handshake_message.h handshake_parser.h handshake_record.h cfg.h session.h handshake_auth.h handshake.h handshake_post.h \
         tls.h rand.h drbg.h sha3.h sha512.h sha512_compress.h p384.h p384_field.h p256_field.h p256_scalar.h p256_point.h p256_sign.h p256_ecdh.h rsa_pkcs1.h rsa_sign.h mlkem.h mlkem_poly.h \
         handshake_flight.h quic.h quic_aes.h quic_aes_block.h quic_aes_key.h quic_config.h quic_gcm.h quic_initial.h quic_keys.h quic_packet.h quic_retry.h quic_step.h quic_fail.h aes_traffic_key.h \
-        srv_cfg.h srv.h srv_parser.h srv_message.h srv_cookie.h srv_auth.h srv_out.h srv_flight.h srv_handshake.h srv_quic.h
+        srv_cfg.h srv.h srv_parser.h srv_message.h srv_cookie.h srv_auth.h srv_out.h srv_flight.h srv_handshake.h srv_quic.h srv_rec.h \
+        rec.h rec_frame.h rec_step.h
 
 # The TRANSPORT=quic mode's own sources, named here rather than matched
 # by a pattern, for the reason WEBPKI_SRCS is named: an auditor reads
@@ -295,6 +296,7 @@ LINT_C := $(filter-out softmul.c,$(SRCS)) drbg.c sha3.c sha512.c sha512_compress
           test/mlkem_test.c test/handshake_strict_test.c test/handshake_sequence_test.c \
           test/x509_strict_test.c $(QUIC_SRCS) $(filter-out $(AES_IMPL),$(AES_IMPL_SRCS)) \
           $(SRV_SRCS) test/srv_auth_test.c test/srv_test.c test/srv_flight_test.c \
+          srv_quic.c srv_rec.c test/srv_rec_test.c rec.c rec_frame.c rec_step.c \
           test/quic_driver_test.c test/quic_vectors.c test/diff_quic_test.c \
           test/aes_equiv_test.c test/aes_equiv_soft.c test/aes_equiv_hw.c $(wildcard examples/*.c)
 
@@ -476,7 +478,7 @@ else ifeq ($(TRANSPORT),record)
 # longer block (rec.h).
 TRANSPORT_DEF := -DCH_TRANSPORT_RECORD
 TRANSPORT_FILTER := handshake.c
-TRANSPORT_ADD := rec.c rec_step.c
+TRANSPORT_ADD := rec.c rec_frame.c rec_step.c
 PUBLIC_TRANSPORT := ch_record_init ch_record_in ch_record_out ch_record_state ch_record_alert ch_record_close \
                     ch_read ch_write ch_close
 else ifeq ($(TRANSPORT),tls)
@@ -528,14 +530,6 @@ ifeq ($(ROLE),server)
 ifneq ($(TRUST),none)
 $(error ROLE=server judges no peer certificate, so it has no trust mode to choose; use TRUST=none)
 endif
-# A server has no record-mode driver yet. srv_quic.c gives ROLE=server its
-# non-blocking shape over QUIC; the record transport has only the blocking
-# ch_srv_accept, so this pair would compile srv_handshake.c and rec.c into
-# one object -- a blocking server driver beside a client's record driver.
-# The refusal goes when a server record driver lands, and not before.
-ifeq ($(TRANSPORT),record)
-$(error ROLE=server has no record-mode driver yet; use TRANSPORT=tls or TRANSPORT=quic)
-endif
 ROLE_DEF    := -DCH_ROLE_SERVER
 ROLE_FILTER := $(CLIENT_REPLACED)
 # The server's own sources and the two signers srv_auth.c calls:
@@ -570,6 +564,23 @@ PUBLIC_ROLE := ch_srv_quic_init ch_srv_quic_crypto_in ch_srv_quic_retry_tag ch_s
                ch_quic_initial_keys ch_quic_seal ch_quic_open ch_quic_retry_ok \
                ch_quic_key_update ch_quic_key_phase ch_quic_drop_previous_keys \
                ch_quic_discard ch_quic_state ch_quic_alert ch_quic_error_code ch_quic_close
+else ifeq ($(TRANSPORT),record)
+# The server's driver replaces the client's, source for source: srv_rec.c
+# is the step table rec_step.c is for a client, and srv_handshake.c is the
+# blocking driver this transport exists to avoid. rec.c stays, because
+# ch_record_state, ch_record_alert and ch_record_close read no side; its
+# own client driver is guarded out there. rec_frame.c stays for the same
+# reason: one inbound record reads the same from either side.
+TRANSPORT_ADD := $(filter-out rec_step.c,$(TRANSPORT_ADD))
+ROLE_ADD    := $(filter-out srv_handshake.c,$(ROLE_ADD)) srv_rec.c
+# What this object exports: the server's two driver calls, the boot check,
+# the three session calls either role uses, and the record-layer calls a
+# connected session needs. Not ch_record_init, ch_record_in or
+# ch_record_out, which are the client's driver, and not ch_srv_accept,
+# which is the blocking one.
+PUBLIC_ROLE := ch_srv_record_init ch_srv_record_in ch_srv_check \
+               ch_record_state ch_record_alert ch_record_close \
+               ch_read ch_write ch_close
 else
 PUBLIC_ROLE := ch_srv_accept ch_srv_check ch_read ch_write ch_close
 endif
@@ -609,6 +620,13 @@ ifeq ($(TRANSPORT),quic)
 ROLE_ADD    := $(filter-out srv_handshake.c,$(ROLE_ADD)) srv_quic.c
 PUBLIC_ROLE := $(PUBLIC_TRANSPORT) ch_srv_quic_init ch_srv_quic_crypto_in \
                ch_srv_quic_retry_tag ch_srv_check
+else ifeq ($(TRANSPORT),record)
+# The server's blocking driver goes and its record driver takes the
+# place, the same swap the quic arm above makes. rec_step.c stays, unlike
+# the ROLE=server arm: this object keeps the client half, so both step
+# tables compile and each driver calls its own.
+ROLE_ADD    := $(filter-out srv_handshake.c,$(ROLE_ADD)) srv_rec.c
+PUBLIC_ROLE := $(PUBLIC_TRANSPORT) ch_srv_record_init ch_srv_record_in ch_srv_check
 else
 PUBLIC_ROLE := $(PUBLIC_TRANSPORT) ch_srv_accept ch_srv_check
 endif
@@ -743,6 +761,18 @@ print-lib-def:
 # preprocessed the sources could not do it, because a source list is not
 # text in a file.
 #
+# Three of git's srv*.c files are drivers, one per transport:
+# srv_handshake.c for TRANSPORT=tls, srv_quic.c for TRANSPORT=quic and
+# srv_rec.c for TRANSPORT=record. A server object carries exactly one of
+# the three, so each role row names its own and bans the other two, and
+# srv_shared holds what every server object carries whatever the
+# transport. The rows subtracted one driver name from the whole git list
+# instead until srv_rec.c landed and made the third: subtraction says
+# which driver a row skips, and a row has to say which one it wants.
+# srv_shared keeps the property that shape had -- a new srv*.c file that
+# is not a driver lands there, so every role row requires it and an arm
+# that forgot to add it fails here.
+#
 # The webpki rows read their file lists from nowhere the build reads
 # them: the chain verifiers are written out, and the webpki*.c files are
 # the ones git tracks at the root. A filter that loses a webpki file
@@ -789,13 +819,13 @@ lint-trust-separation:
 	[ -n "$$srv_files" ] || { echo "lint-trust-separation: git tracks no srv*.c file at the root, so the role rows would check nothing"; rc=1; }; \
 	client_only="handshake.c handshake_auth.c handshake_parser.c handshake_message.c"; \
 	signers="rsa_sign.c p256_sign.c p256_scalar.c p256_point.c p256_field.c"; \
-	srv_tls=$$(printf '%s\n' $$srv_files | grep -vxF -e srv_quic.c | tr '\n' ' '); \
-	srv_quic=$$(printf '%s\n' $$srv_files | grep -vxF -e srv_handshake.c | tr '\n' ' '); \
+	srv_shared=$$(printf '%s\n' $$srv_files | grep -vxF -e srv_handshake.c -e srv_quic.c -e srv_rec.c | tr '\n' ' '); \
 	check "ROLE=client TRUST=raw-rsa TRANSPORT=tls" "$$client_only tls.c" "$$srv_files $$signers" "" "-DCH_ROLE_SERVER"; \
-	check "ROLE=both TRUST=webpki TRANSPORT=tls" "$$srv_tls $$signers tls.c handshake.c" "" "-DCH_ROLE_SERVER -DCH_ROLE_BOTH" ""; \
-	check "ROLE=server TRUST=none TRANSPORT=tls" "$$srv_tls $$signers tls.c rsa.c rsa_mont.c p256.c" "$$client_only srv_quic.c" "-DCH_ROLE_SERVER" "-DCH_PIN_ECDSA"; \
+	check "ROLE=both TRUST=webpki TRANSPORT=tls" "$$srv_shared srv_handshake.c $$signers tls.c handshake.c" "srv_quic.c srv_rec.c" "-DCH_ROLE_SERVER -DCH_ROLE_BOTH" ""; \
+	check "ROLE=server TRUST=none TRANSPORT=tls" "$$srv_shared srv_handshake.c $$signers tls.c rsa.c rsa_mont.c p256.c" "$$client_only srv_quic.c srv_rec.c" "-DCH_ROLE_SERVER" "-DCH_PIN_ECDSA"; \
 	quic_srv=$$(printf '%s\n' $$quic_always | grep -vxF -e quic_step.c | tr '\n' ' '); \
-	check "ROLE=server TRUST=none TRANSPORT=quic" "$$srv_quic $$signers $$quic_srv" "$$client_only srv_handshake.c quic_step.c record.c" "-DCH_ROLE_SERVER -DCH_TRANSPORT_QUIC" "-DCH_PIN_ECDSA"; \
+	check "ROLE=server TRUST=none TRANSPORT=quic" "$$srv_shared srv_quic.c $$signers $$quic_srv" "$$client_only srv_handshake.c srv_rec.c quic_step.c record.c" "-DCH_ROLE_SERVER -DCH_TRANSPORT_QUIC" "-DCH_PIN_ECDSA"; \
+	check "ROLE=server TRUST=none TRANSPORT=record" "$$srv_shared srv_rec.c $$signers rec.c rec_frame.c record.c" "$$client_only srv_handshake.c srv_quic.c rec_step.c" "-DCH_ROLE_SERVER -DCH_TRANSPORT_RECORD" "-DCH_PIN_ECDSA -DCH_TRANSPORT_QUIC"; \
 	[ $$rc = 0 ] && echo "lint-trust-separation: every axis value packages exactly its own sources and defines"; \
 	exit $$rc
 # bench/device-ram.sh builds with CLANG_RV, the clang the codegen lints
@@ -1121,6 +1151,18 @@ bin/srv_quic_test: test/srv_quic_test.c $(SRV_QUIC_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) -DCH_ROLE_SERVER -DCH_TRANSPORT_QUIC -I. -o $@ test/srv_quic_test.c \
 	  $(SRV_QUIC_SRCS)
+
+# The record-mode server driver, over the same flight sources the blocking
+# server builds: srv_rec.c replaces srv_handshake.c and rec_frame.c comes
+# with the transport, and no rec_step.c, which is the client's table.
+SRV_REC_SRCS := $(filter-out srv_handshake.c,$(SRV_SRCS)) srv_rec.c rec.c rec_frame.c \
+                handshake_message.c handshake_record.c record.c session.c buf.c ct.c sha256.c hkdf.c keysched.c \
+                x25519.c chacha20.c poly1305.c aead.c io.c rsa_sign.c p256_sign.c \
+                p256_scalar.c p256_point.c p256_field.c p256.c rsa.c rsa_mont.c
+bin/srv_rec_test: test/srv_rec_test.c $(SRV_REC_SRCS) $(HDRS) $(TESTH)
+	@mkdir -p bin
+	$(CC) $(CFLAGS) -DCH_ROLE_SERVER -DCH_TRANSPORT_RECORD -I. -o $@ test/srv_rec_test.c \
+	  $(SRV_REC_SRCS)
 bin/srv_test: test/srv_test.c srv_message.c srv_cookie.c srv_parser.c srv_parser_ext.c \
               $(SRV_DEPS) $(HDRS) $(TESTH)
 	@mkdir -p bin
@@ -1360,7 +1402,7 @@ ct-widemul-check: bin/unit_ct_widemul bin/mlkem_test_ct_widemul bin/p256_field_t
 # The TRANSPORT=record client, which owns its socket and lets chapulin
 # touch none of it. test/e2e.sh runs it against the same PSK server
 # bin/tlsclient uses, so the two drivers are compared over one wire.
-REC_SRCS := $(filter-out handshake.c,$(SRCS)) rec.c rec_step.c
+REC_SRCS := $(filter-out handshake.c,$(SRCS)) rec.c rec_frame.c rec_step.c
 bin/recclient: test/rec_client.c $(REC_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) -DCH_TRANSPORT_RECORD -I. -o $@ test/rec_client.c $(REC_SRCS)
@@ -1426,7 +1468,7 @@ run-%: bin/%
 # and the invariant violation builds. The nightly runs it. Splitting on
 # duration rather than on importance is deliberate -- nothing here is
 # optional, and a change is not finished until check-slow passes too.
-check: bin/unit bin/unit_ca bin/unit_pq bin/tlsclient bin/tlsclient_ecdsa bin/tlsclient_ca bin/tlsclient_ca_ecdsa bin/tlsclient_webpki bin/tlsclient_pq bin/drbg_test bin/softmul_test bin/rsa_test bin/sha3_test bin/sha512_test bin/p384_test bin/rsa_pkcs1_test bin/webpki_time_test bin/webpki_name_test bin/webpki_spki_test bin/webpki_sigalg_test bin/webpki_cert_test bin/webpki_chain_test bin/webpki_auth_test bin/mlkem_test bin/handshake_strict_test bin/handshake_strict_pq bin/handshake_strict_webpki bin/webpki_session_test bin/webpki_session_pq bin/x509strict bin/x509strict_ecdsa bin/quic_driver_test bin/quic_test bin/recclient $(AES_HW_BINS) lint rand-check bin/srv_auth_test bin/srv_test bin/srv_quic_test bin/rsa_sign_test bin/p256_field_test bin/p256_ecdh_test bin/p256_sign_test
+check: bin/unit bin/unit_ca bin/unit_pq bin/tlsclient bin/tlsclient_ecdsa bin/tlsclient_ca bin/tlsclient_ca_ecdsa bin/tlsclient_webpki bin/tlsclient_pq bin/drbg_test bin/softmul_test bin/rsa_test bin/sha3_test bin/sha512_test bin/p384_test bin/rsa_pkcs1_test bin/webpki_time_test bin/webpki_name_test bin/webpki_spki_test bin/webpki_sigalg_test bin/webpki_cert_test bin/webpki_chain_test bin/webpki_auth_test bin/mlkem_test bin/handshake_strict_test bin/handshake_strict_pq bin/handshake_strict_webpki bin/webpki_session_test bin/webpki_session_pq bin/x509strict bin/x509strict_ecdsa bin/quic_driver_test bin/quic_test bin/recclient $(AES_HW_BINS) lint rand-check bin/srv_auth_test bin/srv_test bin/srv_quic_test bin/srv_rec_test bin/rsa_sign_test bin/p256_field_test bin/p256_ecdh_test bin/p256_sign_test
 	# The packaged object is built once per entropy pattern, because
 	# lib-check reads a different export list and a different import
 	# list in each. Only the object is built twice: the examples and
@@ -1479,6 +1521,14 @@ check: bin/unit bin/unit_ca bin/unit_pq bin/tlsclient bin/tlsclient_ecdsa bin/tl
 	# `make check TRUST=raw-ecdsa` dies in this row rather than in a build
 	# anyone asked for.
 	$(MAKE) lib-check RAND=extern ROLE=server TRUST=none
+	# The server's record transport: srv_rec.c in place of
+	# srv_handshake.c, rec.c and rec_frame.c under it, and nine exports
+	# rather than five. lint-trust-separation reads that source list and
+	# this leg links it. A variant that keeps a caller and drops the
+	# module under it builds and passes the export list, which is the
+	# failure this target's own comment records for ROLE=server. It took
+	# 2.7 s cold.
+	$(MAKE) lib-check RAND=extern ROLE=server TRUST=none TRANSPORT=record
 	# lint above holds lint-stack at the budget of the build check was
 	# given, 2,560 B for a plain `make check`, the target `make ci` runs.
 	# This leg compiles the TRUST=webpki object's sources under their own
@@ -1525,6 +1575,7 @@ check: bin/unit bin/unit_ca bin/unit_pq bin/tlsclient bin/tlsclient_ecdsa bin/tl
 	./bin/srv_auth_test
 	./bin/srv_test
 	./bin/srv_quic_test
+	./bin/srv_rec_test
 	./bin/srv_flight_test
 	./bin/handshake_strict_test
 	./bin/handshake_strict_pq
@@ -2309,7 +2360,7 @@ else
 	# reason: every declaration they hold sits behind
 	# -DCH_TRANSPORT_QUIC, which this pass does not define, so it would
 	# read eight empty translation units. The two passes below read them.
-	$(CLANG_TIDY) --quiet $(filter-out webpki.c test/webpki_session_test.c test/webpki_chain_test.c test/webpki_auth_test.c examples/webpki_client.c $(QUIC_SRCS) $(AES_IMPL_SRCS) test/quic_driver_test.c test/quic_vectors.c test/diff_quic_test.c test/aes_equiv_test.c test/aes_equiv_soft.c test/aes_equiv_hw.c $(SRV_SRCS) test/srv_auth_test.c test/srv_test.c test/srv_flight_test.c,$(LINT_C)) -- \
+	$(CLANG_TIDY) --quiet $(filter-out webpki.c test/webpki_session_test.c test/webpki_chain_test.c test/webpki_auth_test.c examples/webpki_client.c $(QUIC_SRCS) $(AES_IMPL_SRCS) test/quic_driver_test.c test/quic_vectors.c test/diff_quic_test.c test/aes_equiv_test.c test/aes_equiv_soft.c test/aes_equiv_hw.c $(SRV_SRCS) test/srv_auth_test.c test/srv_test.c test/srv_flight_test.c srv_quic.c srv_rec.c test/srv_rec_test.c rec.c rec_frame.c rec_step.c,$(LINT_C)) -- \
 	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -I.
 	# The pass above defines no trust mode, so it reads none of the
 	# TRUST=webpki arms. This pass parses the sources that carry them or
@@ -2353,6 +2404,16 @@ else
 	$(CLANG_TIDY) --quiet $(SRV_SRCS) test/srv_auth_test.c test/srv_test.c \
 	  test/srv_flight_test.c -- \
 	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_ROLE_SERVER -I.
+	# The record transport's client driver, behind -DCH_TRANSPORT_RECORD.
+	$(CLANG_TIDY) --quiet rec.c rec_frame.c rec_step.c -- \
+	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_TRANSPORT_RECORD -I.
+	# Each server driver with the transport it is written for. Neither
+	# reads a declaration the role pass above sets, because both sit
+	# behind a transport define as well as the role.
+	$(CLANG_TIDY) --quiet srv_quic.c -- \
+	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_ROLE_SERVER -DCH_TRANSPORT_QUIC -I.
+	$(CLANG_TIDY) --quiet srv_rec.c test/srv_rec_test.c -- \
+	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_ROLE_SERVER -DCH_TRANSPORT_RECORD -I.
 	# The M3 smoke runtimes and the KAT program lint with the target's
 	# own flags. Three checks are off, each with its reason:
 	# bugprone-reserved-identifier and its two cert aliases, because the
@@ -2722,9 +2783,9 @@ WIDEMUL_CEILING := ct.c:0 sha256.c:0 sha3.c:1 hkdf.c:0 chacha20.c:0 poly1305.c:0
                    x25519.c:0 p256_field.c:0 mlkem.c:0 mlkem_poly.c:0 buf.c:0 record.c:0 keysched.c:0 io.c:0 \
                    session.c:0 handshake_message.c:0 handshake_parser.c:0 handshake_record.c:0 \
                    handshake_auth.c:0 handshake_flight.c:0 handshake.c:0 handshake_post.c:0 \
-                   tls.c:0 drbg.c:0 softmul.c:0 rec.c:0 rec_step.c:0 \
+                   tls.c:0 drbg.c:0 softmul.c:0 rec.c:0 rec_frame.c:0 rec_step.c:0 \
                    quic_keys.c:0 quic_packet.c:0 quic_config.c:0 quic_step.c:0 quic.c:0 \
-                   quic_fail.c:0 srv_quic.c:0 \
+                   quic_fail.c:0 srv_quic.c:0 srv_rec.c:0 \
                    quic_aes.c:0 quic_aes_soft.c:0 quic_aes_extern.c:0 quic_gcm.c:0 \
                    srv_parser.c:0 srv_parser_ext.c:0 srv_message.c:0 srv_cookie.c:0 \
                    srv_auth.c:0 srv_out.c:0 srv_flight.c:0 srv_handshake.c:0 srv.c:0 rsa_sign.c:0 \

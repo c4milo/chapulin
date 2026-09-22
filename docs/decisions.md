@@ -617,3 +617,27 @@ does nothing more.
     smaller than what it replaces: 132,960 bytes against 183,980 for the
     two TLS objects, and 148,520 against 213,804 for the two QUIC ones.
     `TRUST=none` is refused here, because the client half judges a peer.
+
+42. **A record-mode server pushes its flight; only the client pulls.**
+    `TRANSPORT=record` exists because a blocking callback cannot sit
+    under a completion-based event loop: colibri drives rotor, whose loop
+    is single-threaded with no fibers, so a `cfg.recv` that waits stalls
+    every connection the loop holds. `ch_srv_accept` blocks by contract
+    (`cfg.h:371`), which is why `ROLE=server TRANSPORT=record` was
+    refused until the driver existed.
+
+    The client's shape does not carry over. `ch_record_out` hands a
+    staged record to the caller, and that works because a client's
+    messages fit `ch_tls.tx`. A server's do not: one Certificate message
+    is larger than `CH_TX_STAGE`, and `srv_flight.c` stages a protected
+    message on the handler's own stack frame and streams the chain
+    through `srv_frag`. There is nothing to pull from. A pull would need
+    a resume point inside `srv_out_sealed`'s record loop, and `rec_step.h`
+    rules that out: a step runs on a whole message and waits nowhere
+    inside it. `srv_quic.h` reached the same place for the same reason,
+    so `ch_srv_cfg.on_record_out` is `on_crypto_out` without the level.
+
+    That still solves the problem: the callback copies each record into a
+    buffer the caller owns and returns, so nothing waits on a socket.
+    INV-28 states the claim and `bin/srv_rec_test` measures it with a
+    `send` and a `recv` that fail the run if the driver calls them.

@@ -352,6 +352,34 @@ last `ROLE=server` stub, as the entry said it would.
   `git ls-files 'quic*'` stops naming every file the mode owns.
 - See [decisions: Engineering](decisions.md#engineering).
 
+### INV-28 — the record transport calls no I/O callback during the handshake
+
+- **Claim.** A `TRANSPORT=record` build runs its whole handshake without
+  calling `ch_cfg.send` or `ch_cfg.recv`. The caller feeds bytes in and
+  takes bytes out: a client through `ch_record_in` and `ch_record_out`,
+  a server through `ch_srv_record_in` and `ch_srv_cfg.on_record_out`.
+  Both callbacks are still required at configuration time, because
+  `ch_read` and `ch_write` call them once the session is connected, and
+  by then the caller holds the bytes.
+- **Mechanism.** The blocking driver is not in the object. `handshake.c`
+  is filtered out by `TRANSPORT_FILTER`, `srv_handshake.c` by the server
+  arm, and `tls.c` and `srv.c` guard their accept and connect calls out.
+  What remains reaches the socket only through `srv_out.c`'s `emit`,
+  whose record arm calls the caller's sink. This is the invariant the
+  mode exists for: a callback that blocks inside a completion-based
+  event loop stalls every connection that loop holds, and there is no
+  thread to park it on.
+- **Check.** `bin/srv_rec_test` supplies a `send` and a `recv` that fail
+  the run if the driver ever calls them, so the claim is measured rather
+  than argued. `test/violations/srv-rec-out-blocks-the-caller.violation`
+  makes `emit` send instead of pushing and requires that binary to fail.
+  The client half has no such test yet: `bin/recclient` needs a live
+  server and runs in `check-slow`.
+- **Violation.** A PR adds a `recv` call to a record-mode step so the
+  driver can wait for the rest of a message, or routes one message of
+  the server's flight through `io_send_all` because it is small.
+- See [decisions: Engineering](decisions.md#engineering).
+
 ### INV-7 — no negotiation
 
 - **Claim.** One cipher suite, one group, one version, one signature

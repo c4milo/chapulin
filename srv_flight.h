@@ -83,7 +83,7 @@ _Static_assert(SRV_COOKIE_MAX <= HSP_COOKIE_MAX,
 // because a QUIC server needs the same answer ch_srv_accept needs and
 // gets it through a different entry. Declared for that second caller
 // alone, so a TLS build keeps it internal to srv.c.
-#ifdef CH_TRANSPORT_QUIC
+#if defined(CH_TRANSPORT_QUIC) || defined(CH_TRANSPORT_RECORD)
 int srv_config_ok(const ch_cfg *cfg);
 #endif
 

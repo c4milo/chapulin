@@ -166,6 +166,32 @@ typedef struct {
     // on_level_ready, for the same reason.
     int (*on_crypto_out)(void *io, uint8_t level, const uint8_t *p, size_t n);
 #endif
+
+#ifdef CH_TRANSPORT_RECORD
+    // Takes the server's handshake records as they are produced: the n
+    // bytes at p are one whole TLS record, header and all, ready for the
+    // caller to write to its socket. Returns 0 to accept them and any
+    // other value to fail the handshake.
+    //
+    // A push, where the client's ch_record_out is a pull, and the same
+    // certificate chain forces the difference here that forces it over
+    // QUIC. srv_flight.c stages a protected message on the handler's own
+    // frame and streams the Certificate straight from cfg.srv.identity,
+    // so there is no buffer for a caller to collect from and no point in
+    // the flight where a stack frame may be abandoned. A pull would need
+    // a resume point inside srv_out_sealed's record loop, which is the
+    // one thing rec_step.h's "nothing inside it waits" rules out.
+    //
+    // Several calls arrive inside one ch_srv_record_in, because one
+    // ClientHello produces the whole flight; the caller writes them in
+    // the order they come. Each call carries one record, so a caller that
+    // writes them separately still sends a legal stream.
+    //
+    // Required for a record-mode server: a server whose flight reaches
+    // nobody completes no handshake. Re-entrancy: cfg.h's rule for
+    // on_level_ready, for the same reason.
+    int (*on_record_out)(void *io, const uint8_t *p, size_t n);
+#endif
 } ch_srv_cfg;
 
 #endif // CH_ROLE_SERVER
