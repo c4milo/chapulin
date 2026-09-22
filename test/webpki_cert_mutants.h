@@ -205,10 +205,15 @@ static void test_alert_exception(void) {
     static uint8_t spki[256];
     size_t spki_off = tbs_field(base_leaf, base_leaf_len, 6);
     size_t spki_len = tlv_total(base_leaf, base_leaf_len, spki_off);
+    // CHECK counts a failure and returns, so it cannot stand between a
+    // length and the copy that trusts it: the copy would run anyway. The
+    // guard is the if, and CHECK reports why the case was skipped.
     CHECK(spki_len <= sizeof spki);
-    memcpy(spki, base_leaf + spki_off, spki_len);
-    spki[0] = 0x31; // SET, where SubjectPublicKeyInfo is a SEQUENCE
-    EXPECT_UNSUPPORTED(mutant, with_tbs_field(base_leaf, base_leaf_len, 6, spki, spki_len), 0);
+    if (spki_len <= sizeof spki) {
+        memcpy(spki, base_leaf + spki_off, spki_len);
+        spki[0] = 0x31; // SET, where SubjectPublicKeyInfo is a SEQUENCE
+        EXPECT_UNSUPPORTED(mutant, with_tbs_field(base_leaf, base_leaf_len, 6, spki, spki_len), 0);
+    }
     // An outer signatureAlgorithm that is not a well-formed
     // AlgorithmIdentifier: an OBJECT IDENTIFIER with no content octets.
     static const uint8_t malformed_sigalg[] = {0x30, 0x02, 0x06, 0x00};
