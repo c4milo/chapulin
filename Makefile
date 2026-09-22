@@ -2209,23 +2209,40 @@ endif
 # not recognise is a stop, not a warning: CLAUDE.md forbids adapting code or
 # suppressions to an older checker, and the same rule makes a silent newer
 # one just as wrong.
+#
+# cppcheck is here for the same reason and arrived later. CPPCHECK above
+# resolves whatever is on PATH, with no versioned candidate to prefer, so a
+# development machine runs whatever its package manager last installed.
+# Homebrew moved to 2.22.0 while the pin read 2.21.1, and 2.22.0 reports a
+# memcpy in test/webpki_cert_mutants.h that 2.21.1 accepted. lint-cppcheck
+# failed naming neither cppcheck nor a version, so an unpinned checker read
+# as a defect in that file.
+#
+# Each row is name:binary:version pattern:pin, so a failing row names the pin
+# to install instead of one pin for all five. The pattern is an ERE, which
+# reads a dot as any character, so the dots in a dotted version are escaped
+# below. CI asserts the same version with grep -F, which needs no escaping
+# (.github/workflows/check.yml).
+CPPCHECK_VERSION_RE := $(subst .,\\.,$(CPPCHECK_VERSION))
 .PHONY: lint-toolchain
 lint-toolchain:
 	@rc=0; \
-	 for spec in "clang-tidy:$(CLANG_TIDY):version $(LLVM_MAJOR)\\." \
-	             "clang-format:$(CLANG_FORMAT):version $(LLVM_MAJOR)\\." \
-	             "clang:$(CLANG_RV):version $(LLVM_MAJOR)\\." \
-	             "llvm-nm:$(LLVM_NM):$(LLVM_MAJOR)\\."; do \
-	   name=$${spec%%:*}; rest=$${spec#*:}; bin=$${rest%%:*}; want=$${rest#*:}; \
+	 for spec in "clang-tidy:$(CLANG_TIDY):version $(LLVM_MAJOR)\\.:LLVM $(LLVM_MAJOR)" \
+	             "clang-format:$(CLANG_FORMAT):version $(LLVM_MAJOR)\\.:LLVM $(LLVM_MAJOR)" \
+	             "clang:$(CLANG_RV):version $(LLVM_MAJOR)\\.:LLVM $(LLVM_MAJOR)" \
+	             "llvm-nm:$(LLVM_NM):$(LLVM_MAJOR)\\.:LLVM $(LLVM_MAJOR)" \
+	             "cppcheck:$(CPPCHECK):Cppcheck $(CPPCHECK_VERSION_RE):cppcheck $(CPPCHECK_VERSION)"; do \
+	   name=$${spec%%:*}; rest=$${spec#*:}; bin=$${rest%%:*}; rest=$${rest#*:}; \
+	   want=$${rest%%:*}; pin=$${rest#*:}; \
 	   if [ -z "$$bin" ]; then \
-	     echo "lint-toolchain: $$name is missing; the pin is LLVM $(LLVM_MAJOR) (tools/toolchain.env)"; rc=1; \
+	     echo "lint-toolchain: $$name is missing; the pin is $$pin (tools/toolchain.env)"; rc=1; \
 	   elif ! "$$bin" --version 2>/dev/null | grep -qE "$$want"; then \
 	     echo "lint-toolchain: $$bin is $$("$$bin" --version 2>/dev/null | head -1)"; \
-	     echo "lint-toolchain: the pin is LLVM $(LLVM_MAJOR) (tools/toolchain.env). Install it, or bump the pin"; \
+	     echo "lint-toolchain: the pin is $$pin (tools/toolchain.env). Install it, or bump the pin"; \
 	     echo "lint-toolchain: and take the new diagnostics as work -- never adapt the code to an older checker."; rc=1; \
 	   fi; \
 	 done; \
-	 [ $$rc -eq 0 ] && echo "lint-toolchain: every checker is the pinned LLVM $(LLVM_MAJOR)"; exit $$rc
+	 [ $$rc -eq 0 ] && echo "lint-toolchain: every checker is pinned -- LLVM $(LLVM_MAJOR), cppcheck $(CPPCHECK_VERSION)"; exit $$rc
 
 # tools/toolchain.env is the only place a tool version is written, and every
 # job that reads one loads it. tools/toolchain-pins.py carries the reasoning
@@ -2380,7 +2397,7 @@ endif
 
 lint-cppcheck:
 ifeq ($(CPPCHECK),)
-	$(call REQUIRE,cppcheck,build it at the CPPCHECK_VERSION pinned in .github/workflows/check.yml)
+	$(call REQUIRE,cppcheck,build it at the CPPCHECK_VERSION pinned in tools/toolchain.env)
 else
 	# constParameterCallback: I/O callback signatures are fixed by the
 	# ch_cfg contract in tls.h; const-ing an implementation's void *io
