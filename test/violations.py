@@ -202,14 +202,22 @@ def run(name):
             return "unguarded"
     finally:
         target.write_text(original)
-        target.touch()
-        # The mutation build future-dated the source, so the binaries it
-        # produced sit AHEAD of the restored source's mtime and make
-        # would keep them forever — a later `make check` then runs a
-        # binary built from the violation. Delete them so the next build
-        # starts from the restored source. (This is how a poisoned
-        # bin/rsa_test once failed a full check an hour after the
-        # violation run that made it.)
+        # Two seconds ahead rather than now: make 3.81 compares mtimes
+        # to the second, and the mutation build wrote its objects in the
+        # second this restore lands in, so a source touched here does
+        # not read as newer and make keeps them — a later `make check`
+        # then reads an object built from the violation. Dating the
+        # restored source ahead makes every object and binary the edit
+        # produced older, so the next build compiles this file again. A
+        # script target is why it matters: it builds what it runs, and
+        # the deletion below cannot name the objects it left. A
+        # record-mode tls.o survived a violation this way and failed its
+        # own leg afterwards, on restored source.
+        restored = time.time() + 2
+        os.utime(target, (restored, restored))
+        # The binaries go as well, so no run takes one the violation
+        # built. A poisoned bin/rsa_test once failed a full check an
+        # hour after the violation run that made it.
         for b in builds:
             if b.startswith("bin/"):
                 (ROOT / b).unlink(missing_ok=True)
@@ -239,11 +247,12 @@ def run(name):
 # with the pinned clang and with the Arm GNU gcc the m3 lane pins and
 # answer in seconds, the trust-separation lint script, which reads
 # the Makefile in three, the TRUST=webpki frame-budget script, which
-# compiles that object's sources in two, and the QUIC partition lint
-# script, which preprocesses the root sources in three. Left
-# out are the ones whose single run is expensive — the exhaustive
-# handshake enumeration (minutes), the end-to-end suite (needs live
-# servers), and the differential (each run drives ~6000 oracle
+# compiles that object's sources in two, the QUIC partition lint
+# script, which preprocesses the root sources in three, and the
+# record-transport webpki link script, which links that object in two
+# and a half. Left out are the ones whose single run is expensive — the
+# exhaustive handshake enumeration (minutes), the end-to-end suite
+# (needs live servers), and the differential (each run drives ~6000 oracle
 # comparisons, so a baseline and a mutation pass together are ~30s per
 # violation). The tier follows the target, so no per-violation field
 # drifts from what the check runs. The set holds whole catches lines, so
@@ -263,6 +272,7 @@ FAST_TARGETS = {"unit", "unit_ca", "x509strict", "x509strict_ecdsa",
                 "test/lint-exact-fill.sh", "test/lint-invariants.sh",
                 "test/lint-stack-webpki.sh",
                 "test/lint-stack-quic.sh",
+                "test/lib-check-webpki-record.sh",
                 "test/lint-quic-partition.sh", "test/lint-quic-surface.sh",
                 "test/quic-builds.sh",
                 "quic_driver_test", "srv_stub_test"}

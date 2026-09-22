@@ -374,7 +374,14 @@ last `ROLE=server` stub, as the entry said it would.
   than argued. `test/violations/srv-rec-out-blocks-the-caller.violation`
   makes `emit` send instead of pushing and requires that binary to fail.
   The client half has no such test yet: `bin/recclient` needs a live
-  server and runs in `check-slow`.
+  server and runs in `check-slow`. Its mechanism half is held instead:
+  `inv28-webpki-connect-unguarded` deletes the `#ifndef
+  CH_TRANSPORT_RECORD` around the webpki `ch_connect` and requires
+  `test/lib-check-webpki-record.sh` to fail, because the compiled call
+  imports the `ch_handshake` this variant does not compile
+  ([171](https://github.com/c4milo/chapulin/issues/171)). That leg is
+  the only client object with `ch_record_init` and no `ch_connect`, so
+  no other build reports it.
 - **Violation.** A PR adds a `recv` call to a record-mode step so the
   driver can wait for the rest of a message, or routes one message of
   the server's flight through `io_send_all` because it is small.

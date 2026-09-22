@@ -67,7 +67,7 @@ NEEDS_VARIABLE = {
 AGGREGATES = {"ci", "lint", "prove-all", "impact", "impact-run", "fmt",
               "clean", "check"}
 
-# The three packaged-object legs `make check` builds, keyed by the axis
+# The packaged-object legs `make check` builds, keyed by the axis
 # value impact_map.LIB_AXES asks print-lib-srcs about: what check runs
 # for each leg, the reason each command is in a plan, and the gates it
 # covers. A leg's object is built from its own source set under its own
@@ -97,6 +97,12 @@ LIB_LEGS = [
          "the TRUST=webpki object compiles {path} under -DCH_TRUST_WEBPKI, "
          "against that build's own frame budget",
          ["test/lint-stack-webpki.sh"]),
+    ]),
+    ("TRUST=webpki TRANSPORT=record", [
+        ("make lib-check RAND=extern TRUST=webpki TRANSPORT=record",
+         "the record-transport webpki object packages {path}, and it is the "
+         "one client object that compiles ch_record_init and no ch_connect",
+         ["test/lib-check-webpki-record.sh"]),
     ]),
     ("TRANSPORT=quic", [
         ("make lib-check cxx-check RAND=extern TRANSPORT=quic",

@@ -1,0 +1,51 @@
+invariant: INV-28
+file: tls.c
+catches: test/lib-check-webpki-record.sh
+reason: the webpki ch_connect loses the #ifndef CH_TRANSPORT_RECORD guard
+  the pinned one carries, so a record-mode object compiles the blocking
+  connect call and imports the ch_handshake that handshake.c defines and
+  this variant does not compile. INV-28 rests on that driver staying out
+  of the object. The object still links and its export list does not
+  move, because PUBLIC does not name ch_connect here and the link
+  localizes it, so only a leg that links this variant objects
+  (https://github.com/c4milo/chapulin/issues/171).
+
+--- old
+// Guarded as the raw and ca ch_connect above is: this transport filters
+// handshake.c out, so a compiled ch_connect leaves ch_handshake
+// undefined.
+#ifndef CH_TRANSPORT_RECORD
+int ch_connect(ch_tls *t, const ch_cfg *cfg) {
+    memset(t, 0, sizeof *t);
+    t->cfg = *cfg;
+    if (!tlsi_config_ok(cfg) || cfg->send == NULL || cfg->recv == NULL) {
+        t->state = CH_ST_FAILED;
+        return CH_EINVAL;
+    }
+    // No PSK is set, so psk_ok is 0; epoch_init refuses the epoch
+    // callbacks, as it does in every build but a CA mode.
+    int rc = tlsi_epoch_init(t, cfg, 0);
+    if (rc != CH_OK) {
+        t->state = CH_ST_FAILED;
+        return rc;
+    }
+    return ch_handshake(t);
+}
+#endif // CH_TRANSPORT_RECORD
+--- new
+int ch_connect(ch_tls *t, const ch_cfg *cfg) {
+    memset(t, 0, sizeof *t);
+    t->cfg = *cfg;
+    if (!tlsi_config_ok(cfg) || cfg->send == NULL || cfg->recv == NULL) {
+        t->state = CH_ST_FAILED;
+        return CH_EINVAL;
+    }
+    // No PSK is set, so psk_ok is 0; epoch_init refuses the epoch
+    // callbacks, as it does in every build but a CA mode.
+    int rc = tlsi_epoch_init(t, cfg, 0);
+    if (rc != CH_OK) {
+        t->state = CH_ST_FAILED;
+        return rc;
+    }
+    return ch_handshake(t);
+}
