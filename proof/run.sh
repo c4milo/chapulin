@@ -1053,6 +1053,31 @@ launch fast full quic_step_ca 5 "fill_nondet.0:37,ct_wipe.0:849" -DCH_TRANSPORT_
 # lane's proof): 821 properties, 32.8 s, 2.23 GB peak. The weight is 3
 # because that peak is over the fast tier's 2 GB default.
 launch fast:3 full srv_accept 100 "alpn_ok.0:9,alpn_name_repeats.0:9,ct_wipe.0:449,ct_memeq.0:33,fill_names.0:257,fill_nondet.0:33" -DCH_ROLE_SERVER srv.c srv_handshake.c ct.c session.c
+# The ROLE=server record driver and the inbound framing under it, with
+# srv_accept's layering: srv_rec.c and rec_frame.c real, the fifteen
+# handlers contract stubs. It would cover the step table, the record
+# loop and the wipe without resting on a handler.
+#
+# No launch line: this formula has never been seen to converge either.
+# Two loops nest here -- the record loop runs the message loop, which
+# runs the step table -- so CBMC unrolls the global unwind squared, and
+# step_client_hello's arm calls eight stubbed handlers in a row, each
+# answering one of six codes. Measured on an arm64 development machine
+# under this script's flags: no verdict in 11 minutes at 1.36 GB with
+# 12-byte buffers and --unwind 8, and none in 9 minutes 52 seconds at
+# 6.2 GB with 8-byte buffers and --unwind 4, where the second run was
+# still growing when it was stopped. A line here would hang the fast
+# tier the way the one committed in 657da14 did, which is the mistake
+# CLAUDE.md names: a launch line whose formula has not been seen to
+# converge proves nothing.
+#
+# The split it needs is srv_flight's, layered rather than smaller: one
+# formula for the step table entered through advance, where no record
+# loop wraps it, and one for ch_srv_record_in's framing with the step
+# held at a single cheap handler. Neither has been measured, so neither
+# is here. Until one lands, srv_rec.c is covered by bin/srv_rec_test and
+# bin/rec_loop_test and guarded by two .violation mutants, and README
+# says so.
 # The ROLE=server flight handlers, with srv_accept's layering turned
 # around: the fifteen handlers are real here and everything they call is
 # a contract stub, so the two formulas together cover the driver and the
