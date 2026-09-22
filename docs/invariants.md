@@ -373,8 +373,22 @@ last `ROLE=server` stub, as the entry said it would.
   the run if the driver ever calls them, so the claim is measured rather
   than argued. `test/violations/srv-rec-out-blocks-the-caller.violation`
   makes `emit` send instead of pushing and requires that binary to fail.
-  The client half has no such test yet: `bin/recclient` needs a live
-  server and runs in `check-slow`. Its mechanism half is held instead:
+  `bin/rec_loop_test` measures both drivers at once: it runs this tree's
+  client driver against this tree's server driver in one process, over
+  the pinned auth mode, and counts the socket calls of both. A whole
+  handshake completes in two rounds with none. That is also the only
+  place the two drivers meet -- `bin/srv_rec_test` reads the server's
+  records and never hands them to a client -- so a server flight the
+  client refuses fails in `check` rather than in an interop run.
+  `test/violations/rec-in-waits-for-the-rest.violation` is the client's
+  mirror of the server mutant above: it makes `ch_record_in` call
+  `cfg.recv` to wait for the rest of a message, which still completes
+  the handshake, and requires that binary to fail. `bin/recclient`
+  still covers the client against a real server in `check-slow`.
+
+  That is the behavioral half, that neither driver calls a callback. The
+  mechanism half, that a record-mode object holds no blocking driver to
+  call one with, carries its own mutant:
   `inv28-webpki-connect-unguarded` deletes the `#ifndef
   CH_TRANSPORT_RECORD` around the webpki `ch_connect` and requires
   `test/lib-check-webpki-record.sh` to fail, because the compiled call

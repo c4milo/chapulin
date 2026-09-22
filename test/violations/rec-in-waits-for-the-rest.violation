@@ -1,0 +1,19 @@
+invariant: INV-28
+file: rec.c
+catches: rec_loop_test
+reason: the client's record driver reaches for the socket to wait for the
+  rest of a message instead of returning and letting the caller bring
+  more bytes. That is the one thing the mode exists to avoid: the
+  callback runs inside an event loop with no thread to park. It is
+  srv-rec-out-blocks-the-caller on the other side of the connection, and
+  the handshake still completes, so only a test whose recv fails the run
+  catches it.
+
+--- old
+    size_t off = 0;
+    for (;;) {
+--- new
+    size_t off = 0;
+    uint8_t probe[1];
+    (void)r->t.cfg.recv(r->t.cfg.io, probe, sizeof probe);
+    for (;;) {

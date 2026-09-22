@@ -296,7 +296,7 @@ LINT_C := $(filter-out softmul.c,$(SRCS)) drbg.c sha3.c sha512.c sha512_compress
           test/mlkem_test.c test/handshake_strict_test.c test/handshake_sequence_test.c \
           test/x509_strict_test.c $(QUIC_SRCS) $(filter-out $(AES_IMPL),$(AES_IMPL_SRCS)) \
           $(SRV_SRCS) test/srv_auth_test.c test/srv_test.c test/srv_flight_test.c \
-          srv_quic.c srv_rec.c test/srv_rec_test.c rec.c rec_frame.c rec_step.c \
+          srv_quic.c srv_rec.c test/srv_rec_test.c test/rec_loop_test.c rec.c rec_frame.c rec_step.c \
           test/quic_driver_test.c test/quic_vectors.c test/diff_quic_test.c \
           test/aes_equiv_test.c test/aes_equiv_soft.c test/aes_equiv_hw.c $(wildcard examples/*.c)
 
@@ -1163,6 +1163,22 @@ bin/srv_rec_test: test/srv_rec_test.c $(SRV_REC_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) -DCH_ROLE_SERVER -DCH_TRANSPORT_RECORD -I. -o $@ test/srv_rec_test.c \
 	  $(SRV_REC_SRCS)
+
+# Both record drivers against each other in one process, under the
+# defines of the one object that carries both: ROLE=both TRANSPORT=record.
+# It is the client half's INV-28 test -- bin/recclient needs a live
+# server and runs in check-slow, so that side's claim was checked once a
+# night. The two filters are the ones that arm applies, written the same
+# way here. The list is otherwise $(SRCS) whole, like every other test
+# binary, so it also links the certificate parsers a raw-rsa object
+# filters out and this program never reaches.
+REC_LOOP_SRCS := $(filter-out handshake.c,$(SRCS)) rec.c rec_frame.c rec_step.c \
+                 $(filter-out srv_handshake.c,$(SRV_SRCS)) srv_rec.c \
+                 rsa_sign.c p256_sign.c p256_scalar.c p256_point.c p256_field.c
+bin/rec_loop_test: test/rec_loop_test.c $(REC_LOOP_SRCS) $(HDRS) $(TESTH)
+	@mkdir -p bin
+	$(CC) $(CFLAGS) -DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_TRANSPORT_RECORD -I. -o $@ \
+	  test/rec_loop_test.c $(REC_LOOP_SRCS)
 bin/srv_test: test/srv_test.c srv_message.c srv_cookie.c srv_parser.c srv_parser_ext.c \
               $(SRV_DEPS) $(HDRS) $(TESTH)
 	@mkdir -p bin
@@ -1468,7 +1484,7 @@ run-%: bin/%
 # and the invariant violation builds. The nightly runs it. Splitting on
 # duration rather than on importance is deliberate -- nothing here is
 # optional, and a change is not finished until check-slow passes too.
-check: bin/unit bin/unit_ca bin/unit_pq bin/tlsclient bin/tlsclient_ecdsa bin/tlsclient_ca bin/tlsclient_ca_ecdsa bin/tlsclient_webpki bin/tlsclient_pq bin/drbg_test bin/softmul_test bin/rsa_test bin/sha3_test bin/sha512_test bin/p384_test bin/rsa_pkcs1_test bin/webpki_time_test bin/webpki_name_test bin/webpki_spki_test bin/webpki_sigalg_test bin/webpki_cert_test bin/webpki_chain_test bin/webpki_auth_test bin/mlkem_test bin/handshake_strict_test bin/handshake_strict_pq bin/handshake_strict_webpki bin/webpki_session_test bin/webpki_session_pq bin/x509strict bin/x509strict_ecdsa bin/quic_driver_test bin/quic_test bin/recclient $(AES_HW_BINS) lint rand-check bin/srv_auth_test bin/srv_test bin/srv_quic_test bin/srv_rec_test bin/rsa_sign_test bin/p256_field_test bin/p256_ecdh_test bin/p256_sign_test
+check: bin/unit bin/unit_ca bin/unit_pq bin/tlsclient bin/tlsclient_ecdsa bin/tlsclient_ca bin/tlsclient_ca_ecdsa bin/tlsclient_webpki bin/tlsclient_pq bin/drbg_test bin/softmul_test bin/rsa_test bin/sha3_test bin/sha512_test bin/p384_test bin/rsa_pkcs1_test bin/webpki_time_test bin/webpki_name_test bin/webpki_spki_test bin/webpki_sigalg_test bin/webpki_cert_test bin/webpki_chain_test bin/webpki_auth_test bin/mlkem_test bin/handshake_strict_test bin/handshake_strict_pq bin/handshake_strict_webpki bin/webpki_session_test bin/webpki_session_pq bin/x509strict bin/x509strict_ecdsa bin/quic_driver_test bin/quic_test bin/recclient $(AES_HW_BINS) lint rand-check bin/srv_auth_test bin/srv_test bin/srv_quic_test bin/srv_rec_test bin/rec_loop_test bin/rsa_sign_test bin/p256_field_test bin/p256_ecdh_test bin/p256_sign_test
 	# The packaged object is built once per entropy pattern, because
 	# lib-check reads a different export list and a different import
 	# list in each. Only the object is built twice: the examples and
@@ -1584,6 +1600,7 @@ check: bin/unit bin/unit_ca bin/unit_pq bin/tlsclient bin/tlsclient_ecdsa bin/tl
 	./bin/srv_test
 	./bin/srv_quic_test
 	./bin/srv_rec_test
+	./bin/rec_loop_test
 	./bin/srv_flight_test
 	./bin/handshake_strict_test
 	./bin/handshake_strict_pq
@@ -2368,7 +2385,7 @@ else
 	# reason: every declaration they hold sits behind
 	# -DCH_TRANSPORT_QUIC, which this pass does not define, so it would
 	# read eight empty translation units. The two passes below read them.
-	$(CLANG_TIDY) --quiet $(filter-out webpki.c test/webpki_session_test.c test/webpki_chain_test.c test/webpki_auth_test.c examples/webpki_client.c $(QUIC_SRCS) $(AES_IMPL_SRCS) test/quic_driver_test.c test/quic_vectors.c test/diff_quic_test.c test/aes_equiv_test.c test/aes_equiv_soft.c test/aes_equiv_hw.c $(SRV_SRCS) test/srv_auth_test.c test/srv_test.c test/srv_flight_test.c srv_quic.c srv_rec.c test/srv_rec_test.c rec.c rec_frame.c rec_step.c,$(LINT_C)) -- \
+	$(CLANG_TIDY) --quiet $(filter-out webpki.c test/webpki_session_test.c test/webpki_chain_test.c test/webpki_auth_test.c examples/webpki_client.c $(QUIC_SRCS) $(AES_IMPL_SRCS) test/quic_driver_test.c test/quic_vectors.c test/diff_quic_test.c test/aes_equiv_test.c test/aes_equiv_soft.c test/aes_equiv_hw.c $(SRV_SRCS) test/srv_auth_test.c test/srv_test.c test/srv_flight_test.c srv_quic.c srv_rec.c test/srv_rec_test.c test/rec_loop_test.c rec.c rec_frame.c rec_step.c,$(LINT_C)) -- \
 	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -I.
 	# The pass above defines no trust mode, so it reads none of the
 	# TRUST=webpki arms. This pass parses the sources that carry them or
@@ -2422,6 +2439,12 @@ else
 	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_ROLE_SERVER -DCH_TRANSPORT_QUIC -I.
 	$(CLANG_TIDY) --quiet srv_rec.c test/srv_rec_test.c -- \
 	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_ROLE_SERVER -DCH_TRANSPORT_RECORD -I.
+	# The loopback drives both drivers, so it is the one source that needs
+	# CH_ROLE_BOTH as well: srv_cfg.h and tls.h keep the client half only
+	# under that define.
+	$(CLANG_TIDY) --quiet test/rec_loop_test.c -- \
+	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_ROLE_SERVER -DCH_ROLE_BOTH \
+	  -DCH_TRANSPORT_RECORD -I.
 	# The M3 smoke runtimes and the KAT program lint with the target's
 	# own flags. Three checks are off, each with its reason:
 	# bugprone-reserved-identifier and its two cert aliases, because the
