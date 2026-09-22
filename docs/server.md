@@ -1974,14 +1974,21 @@ wants. The rows read git's root `srv*.c` list and subtracted a single driver
 name from it until `srv_rec.c` became the third, which no subtraction tells
 apart.
 
-Known hole: `TRUST=webpki TRANSPORT=record` does not link. `tls.c:400`'s webpki
-`ch_connect` is not guarded by `#ifndef CH_TRANSPORT_RECORD` the way the pinned
-one at `tls.c:128` is, so it compiles and calls the `ch_handshake` the record
-transport filters out, and that arm defines `chain_config_ok` where
-`ch_record_init` calls `tlsi_config_ok`. Both come out as undefined imports.
-`check` builds no `TRANSPORT=record` library variant, only `bin/recclient`,
-which pins, so nothing has caught it. It predates the server driver and it is
-the combination a public-PKI host client wants.
+`TRUST=webpki TRANSPORT=record` links too, which is the combination a
+public-PKI host client wants. It did not until the webpki `ch_connect` gained
+the `#ifndef CH_TRANSPORT_RECORD` guard the pinned one always had, and until
+that mode defined the `tlsi_config_ok` `session.h` declares for every trust
+mode: the webpki arm checked the receive floor and `require_pq` inside
+`ch_connect` and left the call undefined, so an object with `ch_record_init`
+and no `ch_connect` imported both it and `ch_handshake`. Folding those two
+checks into `tlsi_config_ok` is what gives `ch_record_init` the webpki floor
+and the `require_pq` refusal, which it did not have in this mode
+([171](https://github.com/c4milo/chapulin/issues/171)).
+
+Nothing caught it because `check` linked no `TRANSPORT=record` library variant
+at all — only `bin/recclient`, which pins. Two `lib-check` legs now link one
+per side: `TRUST=none ROLE=server` and `TRUST=webpki`, both over this
+transport.
 
 ### What `ch_cfg` gains and drops
 

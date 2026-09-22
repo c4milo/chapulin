@@ -397,22 +397,39 @@ static int chain_config_ok(const ch_cfg *cfg) {
            pins_unset(cfg) && alpn_ok(cfg);
 }
 
+// session.h declares this call for every trust mode and says both client
+// drivers ask it. This build defined the chain rules alone and checked
+// the rest inside ch_connect, so a TRANSPORT=record object, which
+// compiles ch_record_init and no ch_connect, imported a tlsi_config_ok
+// nothing defined (https://github.com/c4milo/chapulin/issues/171). The
+// terms below are the ones the raw and ca definition above covers, so
+// ch_record_init now reads the receive floor and refuses require_pq in
+// this mode too.
+int tlsi_config_ok(const ch_cfg *cfg) {
+    if (!chain_config_ok(cfg) || cfg->buf == NULL || cfg->buf_len < CH_MIN_RXBUF) {
+        return 0;
+    }
+#ifndef CH_KEX_PQ
+    // require_pq in a classic build: the raw and ca tlsi_config_ok above
+    // says why no handshake this build runs can satisfy it.
+    if (cfg->require_pq) {
+        return 0;
+    }
+#endif
+    return 1;
+}
+
+// Guarded as the raw and ca ch_connect above is: this transport filters
+// handshake.c out, so a compiled ch_connect leaves ch_handshake
+// undefined.
+#ifndef CH_TRANSPORT_RECORD
 int ch_connect(ch_tls *t, const ch_cfg *cfg) {
     memset(t, 0, sizeof *t);
     t->cfg = *cfg;
-    if (!chain_config_ok(cfg) || cfg->buf == NULL || cfg->send == NULL || cfg->recv == NULL ||
-        cfg->buf_len < CH_MIN_RXBUF) {
+    if (!tlsi_config_ok(cfg) || cfg->send == NULL || cfg->recv == NULL) {
         t->state = CH_ST_FAILED;
         return CH_EINVAL;
     }
-#ifndef CH_KEX_PQ
-    // require_pq in a classic build: the raw and ca ch_connect above
-    // says why no handshake this build runs can satisfy it.
-    if (cfg->require_pq) {
-        t->state = CH_ST_FAILED;
-        return CH_EINVAL;
-    }
-#endif
     // No PSK is set, so psk_ok is 0; epoch_init refuses the epoch
     // callbacks, as it does in every build but a CA mode.
     int rc = tlsi_epoch_init(t, cfg, 0);
@@ -422,6 +439,7 @@ int ch_connect(ch_tls *t, const ch_cfg *cfg) {
     }
     return ch_handshake(t);
 }
+#endif // CH_TRANSPORT_RECORD
 #endif
 
 #ifdef CH_TRUST_CA

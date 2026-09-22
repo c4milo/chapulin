@@ -1504,6 +1504,14 @@ check: bin/unit bin/unit_ca bin/unit_pq bin/tlsclient bin/tlsclient_ecdsa bin/tl
 	# The webpki arm exports the four calls and no provisioning call, and
 	# its C++ forwarders are the anchors, hostname and clock setters.
 	$(MAKE) lib-check cxx-check RAND=extern TRUST=webpki
+	# The same mode over the record transport, which is what a public-PKI
+	# host client on an event loop builds. It is the leg that checks the
+	# record export list on the client side at all, and the one that
+	# catches an unguarded ch_connect: this transport compiles
+	# ch_record_init and no ch_connect, so a trust mode whose ch_connect
+	# is not guarded imports the ch_handshake nothing compiled
+	# (https://github.com/c4milo/chapulin/issues/171). It took 2.4 s cold.
+	$(MAKE) lib-check RAND=extern TRUST=webpki TRANSPORT=record
 	# The QUIC arm exports the fifteen ch_quic_ calls and none of the four
 	# TLS ones, so it is the leg that holds PUBLIC_TRANSPORT to a
 	# replacement rather than an addition, and the one that compiles
