@@ -1419,7 +1419,10 @@ run-%: bin/%
 # check is the inner loop and holds a one-minute budget, so it runs what
 # answers "did I break the build or a contract": the linters, every unit
 # and strict-parser binary, the packaged-object export check, and the
-# Wycheproof vectors. Measured at about 47 s.
+# Wycheproof vectors. Measured at 167, 180 and 193 s over three warm
+# serial runs on an Apple M-series Mac, so the budget above is the intent
+# and not the current cost. The linters are most of it: lint-cppcheck at
+# 40 s and lint-tidy at 28 s are the two largest.
 #
 # check-slow holds everything whose cost is minutes: the proofs, e2e
 # against a real server, the spec differential, the sequence enumerations,
@@ -2334,7 +2337,7 @@ else
 	# the four tests built under the define, with -DCH_TRUST_WEBPKI, so
 	# the cognitive-complexity threshold holds in that build too. The
 	# second pass adds -DCH_KEX_PQ for webpki_session_test.c's hybrid arm.
-	# Measured with clang-tidy 23.1.1: 2.9 s and 0.2 s.
+	# Measured with clang-tidy 23.1.1: 6.1 s and 0.5 s.
 	$(CLANG_TIDY) --quiet tls.c handshake_parser.c handshake_message.c handshake_auth.c \
 	  handshake.c handshake_record.c webpki.c \
 	  test/webpki_session_test.c test/webpki_chain_test.c test/webpki_auth_test.c \
@@ -2415,7 +2418,8 @@ else
 	# get past the preprocessor. Passing -D alone would limit it to that
 	# single configuration; --force keeps it exploring CH_PIN_ECDSA,
 	# CH_TRUST_CA and CH_KEX_PQ the way it did before the declaration
-	# existed. Measured at 3.1 s without and 10.4 s with, over 42 files.
+	# existed. Measured at 9.8 s without and 40 s with, over the 111 files
+	# LINT_C names, with cppcheck 2.21.1 on an Apple M-series Mac.
 	$(CPPCHECK) --std=c11 --enable=warning,style,performance,portability \
 	  --inline-suppr --suppress=missingIncludeSystem \
 	  --suppress=constParameterCallback --suppress=shiftTooManyBitsSigned \
