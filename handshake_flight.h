@@ -93,8 +93,10 @@ size_t hsf_build_client_hello(handshake_state *h, uint8_t *out, size_t cap);
 // RFC 9846 §4.1 prescribes (rfc9846.txt:1076-1082) and copies the
 // cookie into h->cookie and h->cookie_len, so the retry hello can echo
 // it. Under CH_KEX_TWO_GROUPS a HelloRetryRequest that names x25519
-// also moves h->share_group to x25519, and its cookie may be absent. On
-// a ServerHello it hashes the raw message.
+// also moves h->share_group to x25519, and its cookie may be absent.
+// Under CH_SUITE_AES_GCM it writes h->suite from the message, after
+// checking that a ServerHello repeats a retry's suite. On a ServerHello
+// it hashes the raw message.
 //
 // Requires a whole message to be readable; see the transport note at
 // the top. info need not be zeroed: this function zeroes it.
@@ -114,7 +116,9 @@ size_t hsf_build_client_hello(handshake_state *h, uint8_t *out, size_t cap);
 // the cookie refusal applies only to a retry that names no group; the
 // same alert answers a retry naming x25519 when cfg.require_pq kept it
 // off the hello, and a ServerHello whose group is not h->share_group
-// (RFC 9846 §4.3.8, rfc9846.txt:2205-2237). It also returns
+// (RFC 9846 §4.3.8, rfc9846.txt:2205-2237), and under CH_SUITE_AES_GCM a
+// ServerHello whose suite is not the retry's (§4.2.4,
+// rfc9846.txt:1489-1491). It also returns
 // what hsr_next_msg returns: CH_EIO, CH_EPROTO, CH_EAUTH or CH_ECAP
 // under TRANSPORT=tls, and CH_EPROTO or CH_EINVAL under
 // CH_TRANSPORT_QUIC. On every failure the transcript may already hold
@@ -123,8 +127,8 @@ int hsf_read_server_hello(handshake_state *h, server_hello_info *info);
 
 // Judges an accepted ServerHello: the one this client can continue
 // from. Writes t->group from the group the parser read off the wire,
-// whether or not the rest passes, because the session reports the group
-// either way.
+// and under CH_SUITE_AES_GCM t->suite from the suite, whether or not the
+// rest passes, because the session reports both either way.
 //
 // Requires an info that hsf_read_server_hello filled and whose hrr is
 // 0. Reads info and does not write it.

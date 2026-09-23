@@ -85,10 +85,11 @@ extern const uint8_t srv_hrr_random[SRV_RANDOM];
 // srv_auth.c. Every member holds a value the peer will see in the
 // clear, so no member is secret and every branch on one is public.
 typedef struct {
-    // The cipher suite, as a code point on the wire. Today the only
-    // value srv_select writes is SUITE_CHACHA20_POLY1305_SHA256
-    // (handshake_message.h); the AES-GCM suites of RFC 9846 §9.1 join
-    // it as further values and change no declaration here.
+    // The cipher suite, as a code point on the wire:
+    // SUITE_CHACHA20_POLY1305_SHA256 (handshake_message.h), or under
+    // -DCH_SUITE_AES_GCM SUITE_AES_128_GCM_SHA256 from a client that
+    // offers no ChaCha20 (srv_select). Every record direction the server
+    // keys runs it.
     uint16_t suite;
 
     // The transcript hash length the suite fixes

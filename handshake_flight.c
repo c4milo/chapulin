@@ -183,6 +183,21 @@ static int take_retry(handshake_state *h, const server_hello_info *info) {
 }
 #endif
 
+#ifdef CH_SUITE_AES_GCM
+// Stores the suite a HelloRetryRequest or ServerHello named. The parser
+// accepted it as one this client offered; what is left is RFC 9846
+// §4.2.4's rule that the ServerHello repeat the retry's suite
+// (rfc9846.txt:1489-1491). Returns CH_EPROTO when it does not, an
+// illegal_parameter the caller writes.
+static int take_suite(handshake_state *h, const server_hello_info *info) {
+    if (!info->hrr && h->suite != 0 && info->suite != h->suite) {
+        return CH_EPROTO;
+    }
+    h->suite = info->suite;
+    return CH_OK;
+}
+#endif
+
 int hsf_read_server_hello(handshake_state *h, server_hello_info *info) {
     uint8_t type = 0;
     const uint8_t *raw = NULL;
@@ -197,6 +212,11 @@ int hsf_read_server_hello(handshake_state *h, server_hello_info *info) {
     }
     memset(info, 0, sizeof *info);
     rc = hsp_parse_server_hello(raw + 4, raw_len - 4, info, h->t->cfg.psk != NULL);
+#ifdef CH_SUITE_AES_GCM
+    if (rc == CH_OK) {
+        rc = take_suite(h, info);
+    }
+#endif
     if (rc != CH_OK) {
         h->alert = ALERT_ILLEGAL_PARAMETER;
         return rc;
@@ -237,6 +257,9 @@ int hsf_accept_server_hello(handshake_state *h, const server_hello_info *info) {
     // The group of the one key_share the parser accepted, or 0 when the
     // ServerHello carried none: the session reports it either way.
     h->t->group = info->group;
+#ifdef CH_SUITE_AES_GCM
+    h->t->suite = info->suite;
+#endif
     if (!info->have_share || (h->t->cfg.psk != NULL && !info->psk_ok)) {
         // No ECDHE share, or a PSK server that ignored our identity and
         // would want certificates we did not pin.

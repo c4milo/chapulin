@@ -226,7 +226,8 @@ AES_HW_CFLAGS := $(filter-out none,$(AES_HW_PROBE))
 # The two binaries that need those instructions, named only when the
 # probe found them, so `check` builds and runs them where they work and
 # says it skipped them where they do not exist.
-AES_HW_BINS := $(if $(AES_HW_PROBE),bin/quic_test_hw bin/aes_equiv_test bin/aes_suite_test bin/srv_flight_test_aes)
+AES_HW_BINS := $(if $(AES_HW_PROBE),bin/quic_test_hw bin/aes_equiv_test bin/aes_suite_test bin/srv_flight_test_aes \
+                                     bin/webpki_session_aes)
 # What lint-quic-partition needs to preprocess each AES implementation.
 # Each one guards its body on a second macro, so with CH_TRANSPORT_QUIC
 # alone it preprocesses to nothing and that lint would read it as a file
@@ -322,7 +323,7 @@ TESTH := test/test_random.h test/pem_armor.h test/pem_tests.h test/x509_ca_tests
          test/rsa_pkcs1_vectors.h test/rsa_wide_vectors.h test/rsa_pkcs1_wide_vectors.h \
          test/rsa_sign_vectors.h \
          test/diff_webpki.h test/diff_mlkem.h test/mlkem_vectors.h test/webpki_corpus.h test/webpki_sigalg_vectors.h \
-         test/diff_webpki_sigalg.h test/hello_exts.h test/webpki_session_cases.h test/webpki_groups_cases.h \
+         test/diff_webpki_sigalg.h test/hello_exts.h test/webpki_session_cases.h test/webpki_groups_cases.h test/webpki_suite_cases.h \
          test/handshake_strict_alpn.h \
          test/webpki_cert_mutants.h test/webpki_ext_mutants.h test/diff_webpki_cert.h \
          test/webpki_auth_vectors.h test/rxbuf_floor_tests.h \
@@ -730,6 +731,17 @@ endif
 LIB_DEF += -DCH_KEYLOG
 else ifneq ($(KEYLOG),off)
 $(error KEYLOG=$(KEYLOG) is not a setting; use KEYLOG=on or KEYLOG=off)
+endif
+# SUITE=aesgcm, refused the same way for a device client. A raw or ca
+# client pins the endpoint it talks to and offers ChaCha20 alone, so the
+# AES suite would sit in its object unused (docs/decisions.md entry 45).
+# A TRUST=webpki client offers both suites, and a server role selects AES
+# from a client that offers nothing else. handshake_message.c refuses
+# the define for a tree with its own build system.
+ifeq ($(SUITE)-$(ROLE),aesgcm-client)
+ifneq ($(TRUST),webpki)
+$(error SUITE=aesgcm is refused for a device client: use TRUST=webpki, ROLE=server or ROLE=both)
+endif
 endif
 # Entropy pattern, and the one build variable with no default: RAND=extern
 # leaves ch_rand_bytes undefined for the image to supply, RAND=drbg packages
@@ -1393,6 +1405,17 @@ bin/webpki_session_pq: test/webpki_session_test.c $(WEBPKI_TEST_SRCS) sha3.c mlk
 	$(CC) $(CFLAGS) -DCH_TRUST_WEBPKI -DCH_KEX_PQ -I. -o $@ test/webpki_session_test.c \
 	  $(WEBPKI_TEST_SRCS) sha3.c mlkem.c mlkem_poly.c
 
+# The same main in the client that offers both cipher suites
+# (docs/decisions.md entry 45), so the mock can select AES-128-GCM. The
+# suite define needs the AES instructions and the build's statement that
+# they run in constant time, so this binary builds only where
+# AES_HW_PROBE found them, like bin/aes_suite_test.
+bin/webpki_session_aes: test/webpki_session_test.c $(WEBPKI_TEST_SRCS) quic_aes.c quic_aes_hw.c quic_gcm.c \
+                        $(HDRS) $(TESTH)
+	@mkdir -p bin
+	$(CC) $(CFLAGS) $(AES_HW_CFLAGS) -DCH_TRUST_WEBPKI -DCH_SUITE_AES_GCM -DCH_AES_HW -DCH_NATIVE_AES \
+	  -I. -o $@ test/webpki_session_test.c $(WEBPKI_TEST_SRCS) quic_aes.c quic_aes_hw.c quic_gcm.c
+
 # Certificate grammar strictness: one binary per PIN, because the
 # profile's grammar is the build's grammar.
 X509STRICT_SRC := test/x509_strict_test.c pem.c x509.c x509_der.c x509_ca.c buf.c sha256.c ct.c
@@ -1546,6 +1569,16 @@ bin/tlsclient_pq: test/tls_client.c $(SRCS) sha3.c mlkem.c mlkem_poly.c $(HDRS) 
 # (docs/decisions.md entry 39). e2e runs it against a server that picks
 # the hybrid and against one that asks for x25519 through a
 # HelloRetryRequest.
+# The web PKI client that offers both cipher suites (docs/decisions.md
+# entry 45). It needs the AES instructions and the build's statement that
+# they run in constant time, so check builds it only where AES_HW_PROBE
+# found them, and e2e skips its legs, saying so, where it is absent.
+bin/tlsclient_webpki_aes: test/tls_client.c $(WEBPKI_TEST_SRCS) quic_aes.c quic_aes_hw.c quic_gcm.c \
+                          $(HDRS) $(TESTH)
+	@mkdir -p bin
+	$(CC) $(CFLAGS) $(AES_HW_CFLAGS) -DCH_TRUST_WEBPKI -DCH_SUITE_AES_GCM -DCH_AES_HW -DCH_NATIVE_AES \
+	  -I. -o $@ test/tls_client.c $(WEBPKI_TEST_SRCS) quic_aes.c quic_aes_hw.c quic_gcm.c
+
 bin/tlsclient_webpki_pq: test/tls_client.c $(WEBPKI_TEST_SRCS) sha3.c mlkem.c mlkem_poly.c $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) -DCH_TRUST_WEBPKI -DCH_KEX_PQ -I. -o $@ test/tls_client.c $(WEBPKI_TEST_SRCS) \
@@ -1578,7 +1611,7 @@ run-%: bin/%
 # and the invariant violation builds. The nightly runs it. Splitting on
 # duration rather than on importance is deliberate -- nothing here is
 # optional, and a change is not finished until check-slow passes too.
-check: bin/unit bin/unit_ca bin/unit_pq bin/tlsclient bin/tlsclient_ecdsa bin/tlsclient_ca bin/tlsclient_ca_ecdsa bin/tlsclient_webpki bin/tlsclient_webpki_pq bin/tlsclient_pq bin/drbg_test bin/softmul_test bin/rsa_test bin/sha3_test bin/sha512_test bin/p384_test bin/rsa_pkcs1_test bin/webpki_time_test bin/webpki_name_test bin/webpki_spki_test bin/webpki_sigalg_test bin/webpki_cert_test bin/webpki_chain_test bin/webpki_auth_test bin/mlkem_test bin/handshake_strict_test bin/handshake_strict_pq bin/handshake_strict_webpki bin/webpki_session_test bin/webpki_session_pq bin/x509strict bin/x509strict_ecdsa bin/quic_driver_test bin/quic_test bin/recclient $(AES_HW_BINS) lint rand-check bin/srv_auth_test bin/srv_test bin/srv_quic_test bin/srv_rec_test bin/rec_loop_test bin/exporter_test bin/rsa_sign_test bin/p256_field_test bin/p256_ecdh_test bin/p256_sign_test
+check: bin/unit bin/unit_ca bin/unit_pq bin/tlsclient bin/tlsclient_ecdsa bin/tlsclient_ca bin/tlsclient_ca_ecdsa bin/tlsclient_webpki bin/tlsclient_webpki_pq $(if $(AES_HW_PROBE),bin/tlsclient_webpki_aes) bin/tlsclient_pq bin/drbg_test bin/softmul_test bin/rsa_test bin/sha3_test bin/sha512_test bin/p384_test bin/rsa_pkcs1_test bin/webpki_time_test bin/webpki_name_test bin/webpki_spki_test bin/webpki_sigalg_test bin/webpki_cert_test bin/webpki_chain_test bin/webpki_auth_test bin/mlkem_test bin/handshake_strict_test bin/handshake_strict_pq bin/handshake_strict_webpki bin/webpki_session_test bin/webpki_session_pq bin/x509strict bin/x509strict_ecdsa bin/quic_driver_test bin/quic_test bin/recclient $(AES_HW_BINS) lint rand-check bin/srv_auth_test bin/srv_test bin/srv_quic_test bin/srv_rec_test bin/rec_loop_test bin/exporter_test bin/rsa_sign_test bin/p256_field_test bin/p256_ecdh_test bin/p256_sign_test
 	# The packaged object is built once per entropy pattern, because
 	# lib-check reads a different export list and a different import
 	# list in each. Only the object is built twice: the examples and
@@ -1707,6 +1740,7 @@ check: bin/unit bin/unit_ca bin/unit_pq bin/tlsclient bin/tlsclient_ecdsa bin/tl
 	# AES instructions builds neither, which AES_HW_BINS reports above.
 	@set -e; if [ -n "$(AES_HW_BINS)" ]; then \
 	  ./bin/quic_test_hw; ./bin/aes_equiv_test; ./bin/aes_suite_test; ./bin/srv_flight_test_aes; \
+	  ./bin/webpki_session_aes; \
 	else \
 	  echo "SKIP AES=hw: $(CC) has no AES instructions and no flag turns them on"; \
 	fi
@@ -1825,7 +1859,9 @@ endif
 # diff-pq. It builds a second binary under -DCH_KEX_PQ, the build that
 # lists two groups (docs/decisions.md entry 39), so a retry naming
 # x25519 and a ServerHello selecting it meet the model's two-groups
-# token here and nowhere else.
+# token here and nowhere else, and a third under -DCH_SUITE_AES_GCM,
+# the client that offers two suites (entry 45), where the AES
+# instructions exist.
 # The build links pem.c, x509.c and x509_ca.c too, which the webpki
 # object does not package, because test/diff_x509.h drives them.
 .PHONY: diff-webpki
@@ -1841,6 +1877,12 @@ else
 	./bin/diff_webpki
 	$(CC) $(CFLAGS) $(RSA_WIDE_DEF) -DCH_TRUST_WEBPKI -DCH_KEX_PQ -I. -o bin/diff_webpki_pq test/diff_test.c $(SRCS) sha3.c sha512.c sha512_compress.c p384.c p384_field.c rsa_pkcs1.c webpki_sigalg.c webpki_cert.c webpki.c mlkem.c mlkem_poly.c
 	./bin/diff_webpki_pq
+ifneq ($(AES_HW_PROBE),)
+	$(CC) $(CFLAGS) $(AES_HW_CFLAGS) $(RSA_WIDE_DEF) -DCH_TRUST_WEBPKI -DCH_SUITE_AES_GCM -DCH_AES_HW -DCH_NATIVE_AES -I. -o bin/diff_webpki_aes test/diff_test.c $(SRCS) sha3.c sha512.c sha512_compress.c p384.c p384_field.c rsa_pkcs1.c webpki_sigalg.c webpki_cert.c webpki.c mlkem.c mlkem_poly.c quic_aes.c quic_aes_hw.c quic_gcm.c
+	./bin/diff_webpki_aes
+else
+	@echo "SKIP diff-webpki's SUITE=aesgcm binary: $(CC) has no AES instructions"
+endif
 endif
 
 # Differential oracle: the Lean spec in spec/ answers over a pipe and

@@ -1,0 +1,15 @@
+invariant: INV-7
+file: handshake_parser.c
+catches: webpki_session_aes
+builds: bin/webpki_session_aes
+reason: the two-suite client accepts TLS_AES_256_GCM_SHA384 in a ServerHello
+  although its ClientHello listed ChaCha20 and AES-128-GCM alone, which RFC
+  9846 section 4.2.3 makes an illegal_parameter. The client would key a
+  suite it never agreed to run, with a 16-byte key where that suite
+  derives 32.
+
+--- old
+    return suite == SUITE_CHACHA20_POLY1305_SHA256 || suite == SUITE_AES_128_GCM_SHA256;
+--- new
+    return suite == SUITE_CHACHA20_POLY1305_SHA256 || suite == SUITE_AES_128_GCM_SHA256 ||
+           suite == 0x1302;

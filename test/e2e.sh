@@ -902,4 +902,39 @@ else
     echo "SKIP openssl pq leg: $("$OPENSSL" version) does not list X25519MLKEM768 (needs 3.5)"
 fi
 
-echo "e2e: record + psk + tickets + resumption + pinned ecdsa + pinned rsa + require-pq refused + rotation + ca rsa x2 + ca ecdsa x2 + ca rotation + ca negatives x3${EPOCH_LEG} + webpki rsa + webpki ecdsa x2 + webpki negatives x4 + webpki alpn x3${GO_LEG}${OPENSSL_PQ_LEG} + examples x4 OK"
+# --- The web PKI client that offers both cipher suites (docs/decisions.md
+# entry 45). A server that accepts TLS_AES_128_GCM_SHA256 alone selects
+# it, and the client keys every record with it. The ChaCha20 chain server
+# selects ChaCha20, the first suite the client lists. The client needs the
+# AES instructions, so check builds it only where the compiler has them,
+# and this leg says so when it is absent.
+if [ -x ./bin/tlsclient_webpki_aes ]; then
+    start_server -tls1_3 -ciphersuites TLS_AES_128_GCM_SHA256 -cert "$DIR/wpleaf.pem" -key "$DIR/wpleaf.key" -cert_chain "$DIR/wpint.pem" -rev
+    PORT_WEBPKI_AES=$SRV_PORT
+    MSG='dos suites'
+    WEBPKI_HOST=$WEBPKI_HOSTNAME WEBPKI_NOW=$NOW \
+        expect webpki-aes "setius sod" "$DIR/err_wp_aes" \
+        ./bin/tlsclient_webpki_aes 127.0.0.1 "$PORT_WEBPKI_AES" "$WEBPKI_ANCHOR" -
+    grep -q "^suite 0x1301$" "$DIR/err_wp_aes" || {
+        echo "FAIL e2e webpki-aes: client did not report TLS_AES_128_GCM_SHA256"
+        cat "$DIR/err_wp_aes"
+        exit 1
+    }
+    start_server -tls1_3 -ciphersuites TLS_CHACHA20_POLY1305_SHA256 -cert "$DIR/wpleaf.pem" -key "$DIR/wpleaf.key" -cert_chain "$DIR/wpint.pem" -rev
+    PORT_WEBPKI_CHACHA=$SRV_PORT
+    MSG='primero chacha'
+    WEBPKI_HOST=$WEBPKI_HOSTNAME WEBPKI_NOW=$NOW \
+        expect webpki-aes-chacha "ahcahc oremirp" "$DIR/err_wp_chacha" \
+        ./bin/tlsclient_webpki_aes 127.0.0.1 "$PORT_WEBPKI_CHACHA" "$WEBPKI_ANCHOR" -
+    grep -q "^suite 0x1303$" "$DIR/err_wp_chacha" || {
+        echo "FAIL e2e webpki-aes-chacha: client did not report TLS_CHACHA20_POLY1305_SHA256"
+        cat "$DIR/err_wp_chacha"
+        exit 1
+    }
+    AES_SUITE_LEG=" + webpki-aes x2"
+else
+    AES_SUITE_LEG=""
+    echo "SKIP webpki-aes legs: bin/tlsclient_webpki_aes is absent (no AES instructions)"
+fi
+
+echo "e2e: record + psk + tickets + resumption + pinned ecdsa + pinned rsa + require-pq refused + rotation + ca rsa x2 + ca ecdsa x2 + ca rotation + ca negatives x3${EPOCH_LEG} + webpki rsa + webpki ecdsa x2 + webpki negatives x4 + webpki alpn x3${GO_LEG}${OPENSSL_PQ_LEG}${AES_SUITE_LEG} + examples x4 OK"

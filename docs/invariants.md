@@ -437,16 +437,21 @@ last `ROLE=server` stub, as the entry said it would.
   and ca modes one group and one signature algorithm. The client offers
   exactly one of everything; the server takes it or the handshake fails
   closed. The host-side `TRUST=webpki` mode offers several signature
-  schemes (decisions.md 36), several application protocols (37) and,
-  under `KEX=pq`, two groups (39). There a ServerHello selects the group
-  whose share the hello it answers carried: the hybrid, or x25519 after
-  a HelloRetryRequest that named x25519, and nothing else.
+  schemes (decisions.md 36), several application protocols (37), under
+  `KEX=pq` two groups (39), and under `SUITE=aesgcm` two cipher suites
+  (45). There a ServerHello selects the group whose share the hello it
+  answers carried: the hybrid, or x25519 after a HelloRetryRequest that
+  named x25519, and nothing else. It carries ChaCha20 or AES-128-GCM,
+  and the same one as a retry before it.
 - **Mechanism.** Absence of selection code; the PIN build flag picks
   the sigalg at compile time, never at runtime. The two-group offer is
   the `CH_KEX_TWO_GROUPS` arms of `handshake_message.c`,
   `handshake_parser.c` and `handshake_flight.c`, and
   `handshake_state.share_group` records the group the latest hello
-  carried a share for.
+  carried a share for. The two-suite offer is the `CH_CLIENT_TWO_SUITES`
+  arms of `handshake_message.c` and `handshake_parser.c`, and
+  `handshake_state.suite` records the suite a retry or ServerHello
+  named.
 - **Check.** The differential (`inv07-second-cipher-suite.violation`)
   and handshake_sequence assert the reject on any ServerHello that picks
   another suite or group. `bin/webpki_session_pq` drives the two-group
@@ -455,6 +460,11 @@ last `ROLE=server` stub, as the entry said it would.
   keeping x25519 in the hello or taking a retry that names it, and a
   cookieless retry hello sent under the initial record version
   (INV-8). `key_share_webpki` proves the parser's two new shapes.
+  `bin/webpki_session_aes` drives the two-suite offer, and two mutants
+  require it to fail: a parser that takes `TLS_AES_256_GCM_SHA384`, and
+  a ServerHello whose suite differs from the retry's.
+  `handshake_parser_suite` proves an accepted message carries an
+  offered suite.
 - **Violation.** A PR accepts a second cipher suite value in
   ServerHello and downgrade surface exists again.
 - See [decisions: Protocol surface](decisions.md#protocol-surface).

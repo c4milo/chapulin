@@ -44,6 +44,14 @@ typedef struct {
     // identical by construction and no 2400-byte key lives in state.
     uint8_t dz[64];
 #endif
+#ifdef CH_SUITE_AES_GCM
+    // The cipher suite the server named, 0 until a HelloRetryRequest or
+    // the ServerHello names one. A ServerHello after a retry must repeat
+    // the retry's suite (RFC 9846 §4.2.4, rfc9846.txt:1489-1491), and
+    // every record direction the handshake keys runs it
+    // (REC_DIR_INIT_SUITE).
+    uint16_t suite;
+#endif
 #ifdef CH_KEX_TWO_GROUPS
     // The group the latest ClientHello carried a key share for:
     // CH_KEX_GROUP from hsf_begin, and CH_GROUP_X25519 once a

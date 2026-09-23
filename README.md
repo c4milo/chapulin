@@ -13,7 +13,9 @@ instead when you build `make KEX=pq`. A device build offers one group,
 never both in one ClientHello, and the server takes it or the handshake
 fails. The host-side `TRUST=webpki` mode under `KEX=pq` lists both and
 falls back to x25519 through a HelloRetryRequest
-([`docs/decisions.md`](docs/decisions.md) entry 39). There is no 0-RTT.
+([`docs/decisions.md`](docs/decisions.md) entry 39), and under
+`SUITE=aesgcm` it also offers `TLS_AES_128_GCM_SHA256` on a host whose AES
+instructions the build vouches for (entry 45). There is no 0-RTT.
 
 It uses C11 and libc only, and never calls `malloc`. The working set is
 one session struct plus one receive buffer you provide.
@@ -342,7 +344,7 @@ apart from one that passed — so for the slow rows, read the nightly.
 | rsa_sign | the signer's limb marshalling and every limb helper — the borrow, the masked subtract, the comparison and the conditional swap — stay safe over fully nondet limbs at 96 limbs; `mask_of_bit` returns all ones or all zeros and nothing else, and `below` answers the one bit that mask admits; the ladder's exponent byte index stays inside `d` for every bit position the loop reads; the PSS encoder writes inside the encoded message at the largest one it builds, with SHA-256 stubbed to its contract; and a carry lemma covers the CIOS accumulation for any uint32 operands. `mont_mul` whole, `mont_r2` and `rsa_sp1` above them are **not driven**: a symbolic modexp does not leave symbolic execution and `mont_r2`'s shift loop runs 6,144 times, so their arithmetic rests on that lemma, on the Wycheproof signing vectors and on `test/rsa_sign_test.c`. Nothing here proves the timing claim `rsa_sign.h` makes; `make lint-wide-multiply` holds that, by counting the wide multiplies and the conditional branches the file compiles to | 384 B modulus (96 limbs), full-range limbs, exponent bit positions 0..8*n_len-1, encoded message at `CH_RSA_MODULUS_MAX` |
 | record | seal works across its contract and returns, not traps, over the whole direction state — any key, IV, and sequence number, the saturation refusal included — and any claimed buffer size; rec_open stays safe on fully hostile bytes, into a separate buffer and in place, the shape both shipped callers use | records ≤ 160 B |
 | handshake_record | the record reader stays safe on any stream a peer can send — compaction, CCS tolerance, the quiet cap, in-place decryption, and reassembly across records — and a message it yields lies wholly inside `cfg.buf` with a length that agrees with its own 3-byte header. `hsr_transcript_hash` leaves the running transcript byte for byte as it found it. io_read_record and rec_open are stubbed to the contracts the `io` and `record` legs prove | 12 B receive buffer, `CH_QUIET_CAP` 1 |
-| handshake_parser, eeparse, certparse, eeparse_webpki, eeparse_alpn, certparse_webpki | the ServerHello, EncryptedExtensions, Certificate, and CertificateVerify parsers stay safe on hostile bytes, and the certificate list and signature slices they hand back lie inside the message. The `_webpki` harnesses prove the `TRUST=webpki` arms, the empty server_name acknowledgement and the three CertificateVerify schemes, and `certparse_webpki` also proves that an accepted scheme is one of those three. The three `eeparse` harnesses also prove the EncryptedExtensions alert contract: the parser keeps the caller's seeded alert or writes unsupported_extension, a `TRUST=webpki` arm may also write decode_error, and with an ALPN offer it may also write illegal_parameter. The parser writes no other alert. `eeparse_alpn` proves the ALPN arm where it lives, over one extension body rather than a whole message: against an offer of up to 8 protocol names of up to 32 bytes, every byte and every length symbolic, an accepted body names a protocol the offer holds, a refused one leaves the caller's `CH_ALPN_NONE`, and the alert is the caller's seed or one of the arm's two. Driving that offer through the whole extension loop multiplies the two bounds and returned no verdict in 21 minutes, so the loop around the arm is `eeparse_webpki`'s, at its 256-byte message with an empty offer. The 256-byte bound cannot hold a hybrid key_share, so the `KEX=pq` arm is driven by its own `key_share` leg instead | messages ≤ 256 B; the ALPN arm one extension body ≤ 40 B against 8 names ≤ 32 B each |
+| handshake_parser, handshake_parser_suite, eeparse, certparse, eeparse_webpki, eeparse_alpn, certparse_webpki | the ServerHello, EncryptedExtensions, Certificate, and CertificateVerify parsers stay safe on hostile bytes, and the certificate list and signature slices they hand back lie inside the message. The `_webpki` harnesses prove the `TRUST=webpki` arms, the empty server_name acknowledgement and the three CertificateVerify schemes, and `certparse_webpki` also proves that an accepted scheme is one of those three. The three `eeparse` harnesses also prove the EncryptedExtensions alert contract: the parser keeps the caller's seeded alert or writes unsupported_extension, a `TRUST=webpki` arm may also write decode_error, and with an ALPN offer it may also write illegal_parameter. The parser writes no other alert. `eeparse_alpn` proves the ALPN arm where it lives, over one extension body rather than a whole message: against an offer of up to 8 protocol names of up to 32 bytes, every byte and every length symbolic, an accepted body names a protocol the offer holds, a refused one leaves the caller's `CH_ALPN_NONE`, and the alert is the caller's seed or one of the arm's two. Driving that offer through the whole extension loop multiplies the two bounds and returned no verdict in 21 minutes, so the loop around the arm is `eeparse_webpki`'s, at its 256-byte message with an empty offer. The 256-byte bound cannot hold a hybrid key_share, so the `KEX=pq` arm is driven by its own `key_share` leg instead. `handshake_parser_suite` is `handshake_parser` in the `SUITE=aesgcm TRUST=webpki` client, and also proves that an accepted ServerHello or retry carries ChaCha20 or AES-128-GCM, the two suites that client offers | messages ≤ 256 B; the ALPN arm one extension body ≤ 40 B against 8 names ≤ 32 B each |
 | handshake_post | the post-handshake parser stays safe on hostile decrypted bytes and consumes no more than its input | messages ≤ 128 B |
 | srv_accept | `ch_srv_accept` and `ch_srv_check` stay safe over an unconstrained `ch_cfg` — every pointer NULL or live, every length any `size_t`, an ALPN offer at `CH_ALPN_MAX` names of `CH_ALPN_NAME_MAX` bytes — and `srv_handshake` drives the flight in one order: a configuration it refuses reaches no handler and leaves a dead session, a handshake that fails after a handler ran wipes the record keys and leaves a dead session, and only a flight that reached `srv_complete` answers `CH_OK`. The fourteen `srv_flight.h` handlers, `srv_auth.h`'s two entry points, `rec_seal` and `io_send_all` are contract stubs the harness defines, so **no message this server writes is proved here**; the `srv_flight` leg below is where those handlers are real; `ROLE=server` only | ALPN offers ≤ 8 names of ≤ 32 B |
 | srv_rec | **not proved.** `proof/srv_rec_harness.c` exists and its formula returns no verdict with the record loop, the message loop and the step table in one solve: none in 11 minutes at `--unwind 8` over 12-byte buffers, none in 9 min 52 s at 6.2 GB at `--unwind 4` over 8-byte buffers. `proof/run.sh` records what was tried and the layered split it needs. `srv_rec.c` and `rec_frame.c` are covered by `bin/srv_rec_test` and `bin/rec_loop_test` and two `.violation` mutants instead | — |
@@ -371,8 +373,9 @@ tolerate it. The code multiplies instead now.
 message by message: the shared secret, every derived secret at its
 transcript snapshot, both Finished MACs, and the ticket's resumption
 PSK, plus the PSK binder chain and the HelloRetryRequest restart. Those
-traces use AES-128-GCM, which chapulin excludes, so the replay stops at
-secrets and MACs and never opens a record.
+traces use AES-128-GCM, which the default build excludes, so the replay
+stops at secrets and MACs; `bin/aes_suite_test` opens one of their records
+under `SUITE=aesgcm`.
 
 **A Lean spec covers what the code computes.** See below.
 
@@ -904,16 +907,19 @@ which is the keys and the packet protection and nothing above them. It has
 never spoken to another implementation, and neither role has.
 
 The `ROLE=server` build is implemented and completes a handshake;
-[`docs/server.md`](docs/server.md) records its design. It offers one cipher
-suite, so it does not yet meet RFC 9846 section 9.1, which makes
-`TLS_AES_128_GCM_SHA256` mandatory to implement:
-[`docs/aes_suite.md`](docs/aes_suite.md) scopes that.
+[`docs/server.md`](docs/server.md) records its design. Built with
+`SUITE=aesgcm` it also selects `TLS_AES_128_GCM_SHA256`, which RFC 9846
+section 9.1 makes mandatory to implement; the default build selects
+ChaCha20 alone and does not meet that section.
+[`docs/aes_suite.md`](docs/aes_suite.md) states what the suite rests on and
+what it still owes.
 
 Two caveats worth knowing before you adopt it.
 
-The IoT profile's mandatory suite is AES-128-CCM-8, and chapulin is
-ChaCha-only, because ChaCha needs no lookup tables and runs in constant
-time on any core. That works when you control both ends and fails
+The IoT profile's mandatory suite is AES-128-CCM-8, and chapulin's
+device builds are ChaCha-only, because ChaCha needs no lookup tables and
+runs in constant time on any core. `SUITE=aesgcm` adds AES-128-GCM, not
+CCM-8, and only where the core has AES instructions. That works when you control both ends and fails
 against a server that insists on AES. An AES-CCM build flag is the
 likeliest v2 addition.
 

@@ -97,8 +97,8 @@ static int run(handshake_state *h) {
     if (rc != CH_OK) {
         return rc;
     }
-    rec_dir_init(&t->rd, h->s_hs);
-    rec_dir_init(&t->wr, h->c_hs);
+    REC_DIR_INIT_SUITE(&t->rd, h->s_hs, h->suite);
+    REC_DIR_INIT_SUITE(&t->wr, h->c_hs, h->suite);
     h->encrypted = 1;
     t->keys = 1; // alerts encrypt from here on
 
@@ -128,8 +128,8 @@ static int run(handshake_state *h) {
     if (rc != CH_OK) {
         return rc;
     }
-    rec_dir_init(&t->rd, t->rd_secret);
-    rec_dir_init(&t->wr, t->wr_secret);
+    REC_DIR_INIT_SUITE(&t->rd, t->rd_secret, h->suite);
+    REC_DIR_INIT_SUITE(&t->wr, t->wr_secret, h->suite);
     t->pt_off = 0;
     t->pt_len = 0;
     t->state = CH_ST_CONNECTED;

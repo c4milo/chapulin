@@ -87,8 +87,8 @@ static int step_server_hello(ch_record *r) {
     }
     // The server secret protects what this endpoint reads and the client
     // secret what it writes, the same assignment handshake.c makes.
-    rec_dir_init(&t->rd, r->hs.s_hs);
-    rec_dir_init(&t->wr, r->hs.c_hs);
+    REC_DIR_INIT_SUITE(&t->rd, r->hs.s_hs, r->hs.suite);
+    REC_DIR_INIT_SUITE(&t->wr, r->hs.c_hs, r->hs.suite);
     r->hs.encrypted = 1;
     t->keys = 1; // alerts encrypt from here on
     r->step = HSR_STEP_AWAIT_ENCRYPTED_EXTENSIONS;
@@ -150,8 +150,8 @@ static int step_finished(ch_record *r) {
     }
     // Only now, with the Finished already sealed under the handshake
     // key, do both directions move to the application schedule.
-    rec_dir_init(&t->rd, t->rd_secret);
-    rec_dir_init(&t->wr, t->wr_secret);
+    REC_DIR_INIT_SUITE(&t->rd, t->rd_secret, r->hs.suite);
+    REC_DIR_INIT_SUITE(&t->wr, t->wr_secret, r->hs.suite);
     t->pt_off = 0;
     t->pt_len = 0;
     ct_wipe(&r->hs, sizeof r->hs);

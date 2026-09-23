@@ -22,13 +22,15 @@ CertificateVerify), no 0-RTT, no compression, no renegotiation, no RFC
 7250 raw public keys, and `record_size_limit` (RFC 8449) always
 offered. The client offers exactly one of everything, so most of the
 RFC's negotiation choices collapse to a byte compare against a
-constant. The TRUST=webpki build is the one exception, and four
+constant. The TRUST=webpki build is the one exception, and five
 parameters carry it: its ClientHello sends server_name
 (`parseEncryptedExtensions`'s `serverNameSent`), it may offer several
 application protocols (`parseEncryptedExtensions`'s `alpnOffered`), it
-offers five signature schemes instead of one (`SignatureOffer`), and
-under KEX=pq it lists two groups, X25519MLKEM768 then x25519, with a
-key share for X25519MLKEM768 alone (`Kex.twoGroups`).
+offers five signature schemes instead of one (`SignatureOffer`), under
+KEX=pq it lists two groups, X25519MLKEM768 then x25519, with a key
+share for X25519MLKEM768 alone (`Kex.twoGroups`), and under
+SUITE=aesgcm it offers two cipher suites, TLS_CHACHA20_POLY1305_SHA256
+then TLS_AES_128_GCM_SHA256 (`SuiteOffer.chachaAndAes`).
 
 Where the RFC fixes the alert, `Alert` names it. Where the RFC states
 a MUST but names no alert, the verdict is `Alert.unspecified` and the
@@ -123,8 +125,42 @@ def knownExtension (t : Nat) : Bool :=
 /-! ## Profile constants -/
 
 /-- CipherSuite TLS_CHACHA20_POLY1305_SHA256 = `{0x13,0x03}`
-(RFC 9846 appendix B.4). The profile offers this one and no other. -/
-def cipherSuite : Nat := 0x1303
+(RFC 9846 appendix B.4). Every client build offers it, and offers it
+first. -/
+def chacha20Poly1305Sha256 : Nat := 0x1303
+
+/-- CipherSuite TLS_AES_128_GCM_SHA256 = `{0x13,0x01}` (RFC 9846
+appendix B.4). The SUITE=aesgcm TRUST=webpki client offers it second,
+after TLS_CHACHA20_POLY1305_SHA256; no other client build offers it. -/
+def aes128GcmSha256 : Nat := 0x1301
+
+/--
+The cipher suites the build's ClientHello offers in cipher_suites (RFC
+9846 §4.2.2). The Makefile's SUITE and TRUST variables fix them at build
+time, so exactly one of these is live in a library object.
+-/
+inductive SuiteOffer
+  /-- Every client build but the one below: TLS_CHACHA20_POLY1305_SHA256
+  alone. -/
+  | chacha
+  /-- The SUITE=aesgcm TRUST=webpki client: TLS_CHACHA20_POLY1305_SHA256
+  then TLS_AES_128_GCM_SHA256 (docs/decisions.md entry 45). -/
+  | chachaAndAes
+deriving BEq
+
+/-- The CipherSuite code points the build's ClientHello lists in
+cipher_suites (RFC 9846 §4.2.2), in the order it lists them. -/
+def SuiteOffer.cipherSuites : SuiteOffer → List Nat
+  | .chacha => [chacha20Poly1305Sha256]
+  | .chachaAndAes => [chacha20Poly1305Sha256, aes128GcmSha256]
+
+/-- The line protocol's cipher-suite token, spelled as the Makefile's
+SUITE variable spells its values: `chacha` for every client build but
+one, and `aesgcm` for the SUITE=aesgcm TRUST=webpki client. -/
+def suiteOf? : String → Option SuiteOffer
+  | "chacha" => some .chacha
+  | "aesgcm" => some .chachaAndAes
+  | _ => none
 
 /-- NamedGroup x25519(0x001D) (RFC 9846 §4.3.7): the KEX=x25519
 build's one group. `Kex.supportedGroups` below lists each build's
@@ -376,6 +412,8 @@ structure ServerHelloPrefix where
   random : ByteArray
   /-- legacy_session_id_echo<0..32> (§4.2.3). -/
   sessionIdEcho : ByteArray
+  /-- cipher_suite (§4.2.3), one the build offers. -/
+  cipherSuite : Nat
   /-- extensions<6..2^16-1>, already split into typed pairs. -/
   extensions : List (Nat × ByteArray)
 
@@ -384,6 +422,12 @@ structure ServerHello where
   /-- The echoed legacy_session_id, for the caller to compare against
   the one it sent (§4.2.3). -/
   sessionIdEcho : ByteArray
+  /-- The CipherSuite the message carried in cipher_suite (§4.2.3).
+  `serverHelloPrefix` accepts only a suite in `SuiteOffer.cipherSuites`,
+  and `parseServerHello_sound` states the membership. After a
+  HelloRetryRequest the caller compares it with the retry's suite
+  (§4.2.4). -/
+  cipherSuite : Nat
   /-- The NamedGroup the key_share selected (§4.3.8). `readKeyShare`
   accepts only a group in `Kex.supportedGroups`, but the value here is
   read from the message, as the C reads `ch_tls.group` from the wire,
@@ -403,6 +447,10 @@ structure ServerHello where
 structure HelloRetryRequest where
   /-- The echoed legacy_session_id (§4.2.3). -/
   sessionIdEcho : ByteArray
+  /-- The CipherSuite the retry carried in cipher_suite, one the build
+  offers. §4.2.4 requires the ServerHello that follows to carry the
+  same suite, and the caller checks that. -/
+  cipherSuite : Nat
   /-- The cookie the second ClientHello must carry back (§4.3.2), or
   none when the retry carries no cookie extension. -/
   cookie : Option ByteArray
@@ -440,16 +488,22 @@ RFC 9846 §4.2.3, read down the struct:
   ClientHello's is the caller's check — §4.2.3 makes a mismatch an
   illegal_parameter, but this parser sees one message and not the
   ClientHello that preceded it, so the echo travels out in the fields;
-* `cipher_suite`: profile — the client offers
-  TLS_CHACHA20_POLY1305_SHA256 alone, and §4.2.3 makes a suite that
-  was not offered an illegal_parameter;
+* `cipher_suite`: profile — one of `suiteOffer.cipherSuites`, since
+  §4.2.3 makes a suite that was not offered an illegal_parameter, and
+  §4.2.4 repeats the rule for a HelloRetryRequest. Every client build
+  offers TLS_CHACHA20_POLY1305_SHA256, and the SUITE=aesgcm TRUST=webpki
+  client also offers TLS_AES_128_GCM_SHA256. §4.2.4 also requires a
+  ServerHello after a HelloRetryRequest to carry the retry's suite. That
+  turns on whether a retry happened, which one message cannot show, so
+  the suite travels out in the fields and the caller checks it;
 * `legacy_compression_method`: profile — no compression, and §4.2.3
   fixes the value at 0 with an illegal_parameter for anything else;
 * `extensions<6..2^16-1>`: the block ends the message, and a block
   under six octets cannot hold even one extension, so it is out of the
   specified range (§6.2).
 -/
-def serverHelloPrefix (msg : ByteArray) : Except Alert ServerHelloPrefix := do
+def serverHelloPrefix (suiteOffer : SuiteOffer) (msg : ByteArray) :
+    Except Alert ServerHelloPrefix := do
   let body ← messageBody msg serverHelloType
   -- §4.2.3: legacy_version "MUST be set to 0x0303"; a client that sees
   -- any other value MUST abort with illegal_parameter.
@@ -462,19 +516,19 @@ def serverHelloPrefix (msg : ByteArray) : Except Alert ServerHelloPrefix := do
   -- legacy_session_id field", and a client that receives any other
   -- value MUST abort with illegal_parameter. This profile needs no
   -- middlebox compatibility, so handshake_message.c sends the field empty and the
-  -- only echo that can match is the empty one. Like the cipher suite
-  -- and the groups, the offer is a constant, so the check belongs here
-  -- rather than with the caller.
+  -- only echo that can match is the empty one. Like the cipher suites
+  -- and the groups, the offer is fixed when the library is built, so
+  -- the check belongs here rather than with the caller.
   ensure (sessionIdEcho.size = 0) .illegalParameter
-  let suite ← u16At body off
-  ensure (suite = cipherSuite) .illegalParameter
+  let cipherSuite ← u16At body off
+  ensure (cipherSuite ∈ suiteOffer.cipherSuites) .illegalParameter
   let compression ← u8At body (off + 2)
   ensure (compression = 0) .illegalParameter
   let (extBytes, off') ← vec16At body (off + 3)
   ensure (off' = body.size) .decodeError
   ensure (6 ≤ extBytes.size) .decodeError
   let extensions ← extensionList extBytes
-  return { random, sessionIdEcho, extensions }
+  return { random, sessionIdEcho, cipherSuite, extensions }
 
 /--
 RFC 9846 §4.3.1: in a ServerHello or HelloRetryRequest the
@@ -564,7 +618,8 @@ def serverHelloFields (kex : Kex) (pskOffered : Bool) (p : ServerHelloPrefix) :
   ensure (pskOffered || (extensionData? p.extensions extPreSharedKey).isNone) .unsupportedExtension
   let (group, keyExchange) ← readKeyShare kex p.extensions
   let selectedIdentity ← readSelectedIdentity? p.extensions
-  return { sessionIdEcho := p.sessionIdEcho, group, keyExchange, selectedIdentity }
+  return { sessionIdEcho := p.sessionIdEcho, cipherSuite := p.cipherSuite, group, keyExchange,
+           selectedIdentity }
 
 /--
 RFC 9846 §4.3.8: key_share in a HelloRetryRequest is
@@ -621,7 +676,7 @@ def helloRetryRequestFields (kex : Kex) (p : ServerHelloPrefix) :
   let selectedGroup ← readSelectedGroup? kex p.extensions
   let cookie ← readCookie? p.extensions
   ensure (cookie.isSome ∨ selectedGroup.isSome) .illegalParameter
-  return { sessionIdEcho := p.sessionIdEcho, cookie, selectedGroup }
+  return { sessionIdEcho := p.sessionIdEcho, cipherSuite := p.cipherSuite, cookie, selectedGroup }
 
 /--
 RFC 9846 §4.2.3 and §4.2.4: one message type, two meanings. The shared
@@ -635,9 +690,9 @@ that check to "TLS 1.3 clients receiving a ServerHello indicating TLS
 1.2 or below", and `checkSelectedVersion` has already refused every
 such message, so no accepted message can reach the check.
 -/
-def parseServerHello (kex : Kex) (pskOffered : Bool) (msg : ByteArray) :
+def parseServerHello (kex : Kex) (suiteOffer : SuiteOffer) (pskOffered : Bool) (msg : ByteArray) :
     Except Alert ServerHelloKind := do
-  let p ← serverHelloPrefix msg
+  let p ← serverHelloPrefix suiteOffer msg
   checkSelectedVersion p.extensions
   if bytesEq p.random helloRetryRequestRandom then
     return .helloRetryRequest (← helloRetryRequestFields kex p)
@@ -1075,10 +1130,11 @@ def message (msgType : Nat) (body : ByteArray) : ByteArray :=
   ByteArray.mk #[UInt8.ofNat msgType] ++ vec24 body
 
 /-- A ServerHello body around a caller-supplied Random and extension
-block (RFC 9846 §4.2.3), with the profile's cipher suite and no
-compression. -/
+block (RFC 9846 §4.2.3), with TLS_CHACHA20_POLY1305_SHA256, the suite
+every client build offers, and no compression. -/
 def serverHelloBody (random sessionId exts : ByteArray) : ByteArray :=
-  u16 legacyVersion ++ random ++ vec8 sessionId ++ u16 cipherSuite ++ ByteArray.mk #[0] ++ vec16 exts
+  u16 legacyVersion ++ random ++ vec8 sessionId ++ u16 chacha20Poly1305Sha256 ++
+    ByteArray.mk #[0] ++ vec16 exts
 
 /-- One CertificateEntry: cert_data and its extension vector
 (RFC 9846 §4.5.1). -/
@@ -1096,8 +1152,11 @@ literal §4.2.3 prints and against its stated derivation, the SHA-256 of
 values: one accepted message per group a build lists, the cross-group
 refusal each way, the hybrid share length at its boundary, and the
 retry branch under each build — which groups a retry may name, and
-that it must ask for a change. Functional coverage against the C comes
-from the differential run.
+that it must ask for a change. The cipher_suite rows run under both
+`SuiteOffer` values: each offered suite passes in a ServerHello and in
+a retry and comes back in the fields, and suites the build did not
+offer are refused.
+Functional coverage against the C comes from the differential run.
 -/
 def selftest : Bool := Id.run do
   let random := ByteArray.mk (Array.replicate 32 0x5a)
@@ -1117,7 +1176,7 @@ def selftest : Bool := Id.run do
   let good := serverHelloOf (versionExt ++ keyShareExt)
   let acceptsShareUnder (kex : Kex) (msg : ByteArray) (group : Nat) (want : ByteArray)
       (identity : Option Nat) : Bool :=
-    match parseServerHello kex true msg with
+    match parseServerHello kex .chacha true msg with
     | .ok (.serverHello fields) =>
       hex fields.sessionIdEcho == hex sessionId && fields.group == group &&
         hex fields.keyExchange == hex want && fields.selectedIdentity == identity
@@ -1125,16 +1184,16 @@ def selftest : Bool := Id.run do
   let acceptsShare (msg : ByteArray) (identity : Option Nat) : Bool :=
     acceptsShareUnder .x25519 msg x25519Group share identity
   let rejectsUnder (kex : Kex) (msg : ByteArray) : Bool :=
-    (parseServerHello kex true msg).toOption.isNone
+    (parseServerHello kex .chacha true msg).toOption.isNone
   let rejects (msg : ByteArray) : Bool := rejectsUnder .x25519 msg
   let refusesWithUnder (kex : Kex) (msg : ByteArray) (alert : Alert) : Bool :=
-    match parseServerHello kex true msg with
+    match parseServerHello kex .chacha true msg with
     | .error refused => refused == alert
     | .ok _ => false
   let serverHelloOk := acceptsShare good none &&
     -- §4.2.3: legacy_version is frozen at 0x0303.
     rejects (message serverHelloType (ByteArray.mk #[0x03, 0x04] ++ random ++ vec8 sessionId ++
-      u16 cipherSuite ++ ByteArray.mk #[0] ++ vec16 (versionExt ++ keyShareExt))) &&
+      u16 chacha20Poly1305Sha256 ++ ByteArray.mk #[0] ++ vec16 (versionExt ++ keyShareExt))) &&
     -- §4.2.3: any echo but the empty one we offered is illegal_parameter.
     rejects (message serverHelloType (serverHelloBody random
       (ByteArray.mk (Array.replicate 32 0xa5)) (versionExt ++ keyShareExt))) &&
@@ -1164,14 +1223,14 @@ def selftest : Bool := Id.run do
       extension extServerName ByteArray.empty)) &&
     rejects (serverHelloOf (versionExt ++ keyShareExt ++
       extension 0xfeed ByteArray.empty))
-  -- §4.2.3: the profile's cipher suite, no compression, a 32-octet echo.
+  -- §4.2.3: an offered cipher suite, no compression, a 32-octet echo.
   let handBuilt (suite : Nat) (compression : Nat) (sid : ByteArray) : ByteArray :=
     message serverHelloType (u16 0x0303 ++ random ++ vec8 sid ++ u16 suite ++
       ByteArray.mk #[UInt8.ofNat compression] ++ vec16 (versionExt ++ keyShareExt))
-  let profileOk := acceptsShare (handBuilt cipherSuite 0 sessionId) none &&
+  let profileOk := acceptsShare (handBuilt chacha20Poly1305Sha256 0 sessionId) none &&
     rejects (handBuilt 0x1301 0 sessionId) &&
-    rejects (handBuilt cipherSuite 1 sessionId) &&
-    rejects (handBuilt cipherSuite 0 (ByteArray.mk (Array.replicate 33 0xa5)))
+    rejects (handBuilt chacha20Poly1305Sha256 1 sessionId) &&
+    rejects (handBuilt chacha20Poly1305Sha256 0 (ByteArray.mk (Array.replicate 33 0xa5)))
   -- §4.2.4: the same format under the special Random is a retry request.
   let cookie := ascii "retry me"
   let cookieExt := extension extCookie (vec16 cookie)
@@ -1179,7 +1238,7 @@ def selftest : Bool := Id.run do
     message serverHelloType (serverHelloBody helloRetryRequestRandom sessionId exts)
   let retriesUnder (kex : Kex) (msg : ByteArray) (wantCookie : Option ByteArray)
       (wantGroup : Option Nat) : Bool :=
-    match parseServerHello kex true msg with
+    match parseServerHello kex .chacha true msg with
     | .ok (.helloRetryRequest fields) =>
       hex fields.sessionIdEcho == hex sessionId &&
         fields.cookie.map hex == wantCookie.map hex && fields.selectedGroup == wantGroup
@@ -1261,6 +1320,45 @@ def selftest : Bool := Id.run do
       extension extKeyShare (u16 x25519Group ++ ByteArray.mk #[0]))) .decodeError &&
     -- A retry that asks for no change.
     refusesWithUnder .twoGroups (hrrOf versionExt) .illegalParameter
+  -- The SUITE=aesgcm TRUST=webpki client (docs/decisions.md entry 45)
+  -- offers TLS_CHACHA20_POLY1305_SHA256 then TLS_AES_128_GCM_SHA256. A
+  -- ServerHello or a retry may carry either and reports which (§4.2.3,
+  -- §4.2.4); a suite the client did not offer is an illegal_parameter.
+  let withSuite (random : ByteArray) (suite : Nat) (exts : ByteArray) : ByteArray :=
+    message serverHelloType (u16 legacyVersion ++ random ++ vec8 sessionId ++ u16 suite ++
+      ByteArray.mk #[0] ++ vec16 exts)
+  let helloWithSuite (suite : Nat) : ByteArray :=
+    withSuite random suite (versionExt ++ keyShareExt)
+  let retryWithSuite (suite : Nat) : ByteArray :=
+    withSuite helloRetryRequestRandom suite (versionExt ++ cookieExt)
+  let helloSuite (suiteOffer : SuiteOffer) (msg : ByteArray) : Option Nat :=
+    match parseServerHello .x25519 suiteOffer true msg with
+    | .ok (.serverHello fields) => some fields.cipherSuite
+    | _ => none
+  let retrySuite (suiteOffer : SuiteOffer) (msg : ByteArray) : Option Nat :=
+    match parseServerHello .x25519 suiteOffer true msg with
+    | .ok (.helloRetryRequest fields) => some fields.cipherSuite
+    | _ => none
+  let refusesSuite (suiteOffer : SuiteOffer) (msg : ByteArray) : Bool :=
+    match parseServerHello .x25519 suiteOffer true msg with
+    | .error .illegalParameter => true
+    | _ => false
+  let suiteOk :=
+    helloSuite .chacha good == some chacha20Poly1305Sha256 &&
+    helloSuite .chachaAndAes (helloWithSuite aes128GcmSha256) == some aes128GcmSha256 &&
+    helloSuite .chachaAndAes (helloWithSuite chacha20Poly1305Sha256) ==
+      some chacha20Poly1305Sha256 &&
+    -- TLS_AES_256_GCM_SHA384(0x1302) and TLS_AES_128_CCM_SHA256(0x1304):
+    -- RFC 9846 appendix B.4 defines both, and no client build offers
+    -- either.
+    refusesSuite .chachaAndAes (helloWithSuite 0x1302) &&
+    refusesSuite .chachaAndAes (helloWithSuite 0x1304) &&
+    retrySuite .chachaAndAes (retryWithSuite aes128GcmSha256) == some aes128GcmSha256 &&
+    retrySuite .chachaAndAes (retryWithSuite chacha20Poly1305Sha256) ==
+      some chacha20Poly1305Sha256 &&
+    -- The one-suite offer refuses TLS_AES_128_GCM_SHA256 in either message.
+    refusesSuite .chacha (helloWithSuite aes128GcmSha256) &&
+    refusesSuite .chacha (retryWithSuite aes128GcmSha256)
   -- §4.4.1 and RFC 8449 §4.
   let encryptedExtensionsOf (exts : ByteArray) : ByteArray :=
     message encryptedExtensionsType (vec16 exts)
@@ -1415,7 +1513,7 @@ def selftest : Bool := Id.run do
     hex (content.extract 0 64) == hex (ByteArray.mk (Array.replicate 64 0x20)) &&
     hex (content.extract 64 97) == hex (ascii "TLS 1.3, server CertificateVerify") &&
     content[97]! == 0 && hex (content.extract 98 130) == hex transcript
-  return hrrRandomOk && serverHelloOk && profileOk && hrrOk && kexOk && twoGroupsOk &&
+  return hrrRandomOk && serverHelloOk && profileOk && hrrOk && kexOk && twoGroupsOk && suiteOk &&
     encryptedExtensionsOk && alpnOk && certificateOk && certificateVerifyOk && verifyContentOk
 
 /-! ## Soundness -/
@@ -1531,14 +1629,16 @@ theorem parseCertificate_sound (msg : ByteArray) (fields : Certificate)
 
 /--
 The shared ServerHello prefix (RFC 9846 §4.2.3): whatever the message
-turns out to be, its Random is the 32 octets at offset 2 of the body
-and its session id echo is empty — the only echo that can match the
-empty legacy_session_id this profile offers (§4.2.3).
+turns out to be, its Random is the 32 octets at offset 2 of the body,
+its session id echo is empty — the only echo that can match the empty
+legacy_session_id this profile offers (§4.2.3) — and its cipher suite is
+one the build offers.
 -/
-private theorem serverHelloPrefix_sound (msg : ByteArray) (p : ServerHelloPrefix)
-    (h_prefix : serverHelloPrefix msg = .ok p) :
+private theorem serverHelloPrefix_sound (suiteOffer : SuiteOffer) (msg : ByteArray)
+    (p : ServerHelloPrefix) (h_prefix : serverHelloPrefix suiteOffer msg = .ok p) :
     ∃ body, messageBody msg serverHelloType = .ok body ∧
-      p.random = body.extract 2 34 ∧ p.sessionIdEcho.size = 0 := by
+      p.random = body.extract 2 34 ∧ p.sessionIdEcho.size = 0 ∧
+      p.cipherSuite ∈ suiteOffer.cipherSuites := by
   rw [serverHelloPrefix] at h_prefix
   obtain ⟨body, h_framed, h_prefix⟩ := exists_of_bind_eq_ok h_prefix
   obtain ⟨_, -, h_prefix⟩ := exists_of_bind_eq_ok h_prefix
@@ -1548,7 +1648,7 @@ private theorem serverHelloPrefix_sound (msg : ByteArray) (p : ServerHelloPrefix
   obtain ⟨-, h_prefix⟩ := of_ensure_bind h_prefix
   obtain ⟨h_echo_empty, h_prefix⟩ := of_ensure_bind h_prefix
   obtain ⟨_, -, h_prefix⟩ := exists_of_bind_eq_ok h_prefix
-  obtain ⟨-, h_prefix⟩ := of_ensure_bind h_prefix
+  obtain ⟨h_suite_offered, h_prefix⟩ := of_ensure_bind h_prefix
   obtain ⟨_, -, h_prefix⟩ := exists_of_bind_eq_ok h_prefix
   obtain ⟨-, h_prefix⟩ := of_ensure_bind h_prefix
   obtain ⟨⟨_, _⟩, -, h_prefix⟩ := exists_of_bind_eq_ok h_prefix
@@ -1556,19 +1656,20 @@ private theorem serverHelloPrefix_sound (msg : ByteArray) (p : ServerHelloPrefix
   obtain ⟨-, h_prefix⟩ := of_ensure_bind h_prefix
   obtain ⟨_, -, h_prefix⟩ := exists_of_bind_eq_ok h_prefix
   obtain rfl := eq_of_pure_eq_ok h_prefix
-  exact ⟨body, h_framed, bytesAt_eq h_random_read, h_echo_empty⟩
+  exact ⟨body, h_framed, bytesAt_eq h_random_read, h_echo_empty, h_suite_offered⟩
 
 /--
 The ServerHello branch's own fields (RFC 9846 §4.2.3, §4.3.8, §4.3.11):
-the echo is the prefix's, the group is one the build lists in
-supported_groups, the key_exchange is exactly the `serverShareSize`
-octets a share in that group occupies, and a PSK identity, when there
-is one, is the single index the profile's one offered identity puts in
-range.
+the echo and the cipher suite are the prefix's, the group is one the
+build lists in supported_groups, the key_exchange is exactly the
+`serverShareSize` octets a share in that group occupies, and a PSK
+identity, when there is one, is the single index the profile's one
+offered identity puts in range.
 -/
 private theorem serverHelloFields_sound (kex : Kex) (pskOffered : Bool) (p : ServerHelloPrefix)
     (fields : ServerHello) (h_fields : serverHelloFields kex pskOffered p = .ok fields) :
-    fields.sessionIdEcho = p.sessionIdEcho ∧ fields.group ∈ kex.supportedGroups ∧
+    fields.sessionIdEcho = p.sessionIdEcho ∧ fields.cipherSuite = p.cipherSuite ∧
+      fields.group ∈ kex.supportedGroups ∧
       fields.keyExchange.size = serverShareSize fields.group ∧
       ∀ identity, fields.selectedIdentity = some identity → identity = 0 := by
   rw [serverHelloFields] at h_fields
@@ -1585,7 +1686,7 @@ private theorem serverHelloFields_sound (kex : Kex) (pskOffered : Bool) (p : Ser
   obtain ⟨-, h_share⟩ := of_ensure_bind h_share
   obtain ⟨h_key_size, h_share⟩ := of_ensure_bind h_share
   obtain ⟨rfl, rfl⟩ := Prod.mk.inj (eq_of_pure_eq_ok h_share)
-  refine ⟨rfl, h_group, h_key_size, ?_⟩
+  refine ⟨rfl, rfl, h_group, h_key_size, ?_⟩
   · rintro i rfl
     rw [readSelectedIdentity?] at h_identity
     split at h_identity
@@ -1599,51 +1700,60 @@ private theorem serverHelloFields_sound (kex : Kex) (pskOffered : Bool) (p : Ser
 /--
 ServerHello soundness (RFC 9846 §4.2.3, §4.3.8, §4.3.11). An accepted
 ServerHello reports an empty session id echo, the one the profile
-offers; a group the build lists in supported_groups; a key_exchange of
-exactly the `serverShareSize` octets a share in that group occupies —
-32 for x25519, 1120 for the hybrid; and, when the server accepted a
-PSK, the only identity index the profile's single offered identity
-puts in range. The x25519 and pq builds list one group, so there the
+offers; a cipher suite the build offers, which is
+TLS_CHACHA20_POLY1305_SHA256 in every client build but the SUITE=aesgcm
+TRUST=webpki one; a group the build lists in supported_groups; a
+key_exchange of exactly the `serverShareSize` octets a share in that
+group occupies — 32 for x25519, 1120 for the hybrid; and, when the
+server accepted a PSK, the only identity index the profile's single
+offered identity puts in range. The x25519 and pq builds list one group, so there the
 group is that one and the size is fixed: a KEX=pq build accepts no
 group but X25519MLKEM768. The two-group build accepts either of its
 two, and a caller that wants the hybrid alone sets `ch_cfg.require_pq`,
 which the handshake checks above this parser.
 -/
-theorem parseServerHello_sound (kex : Kex) (pskOffered : Bool) (msg : ByteArray)
-    (fields : ServerHello)
-    (h_accepted : parseServerHello kex pskOffered msg = .ok (.serverHello fields)) :
-    fields.sessionIdEcho.size = 0 ∧ fields.group ∈ kex.supportedGroups ∧
+theorem parseServerHello_sound (kex : Kex) (suiteOffer : SuiteOffer) (pskOffered : Bool)
+    (msg : ByteArray) (fields : ServerHello)
+    (h_accepted : parseServerHello kex suiteOffer pskOffered msg = .ok (.serverHello fields)) :
+    fields.sessionIdEcho.size = 0 ∧ fields.cipherSuite ∈ suiteOffer.cipherSuites ∧
+      fields.group ∈ kex.supportedGroups ∧
       fields.keyExchange.size = serverShareSize fields.group ∧
       ∀ identity, fields.selectedIdentity = some identity → identity = 0 := by
   rw [parseServerHello] at h_accepted
   obtain ⟨p, h_prefix, h_accepted⟩ := exists_of_bind_eq_ok h_accepted
   obtain ⟨_, -, h_accepted⟩ := exists_of_bind_eq_ok h_accepted
-  obtain ⟨_, -, -, h_echo_empty⟩ := serverHelloPrefix_sound msg p h_prefix
+  obtain ⟨_, -, -, h_echo_empty, h_suite_offered⟩ :=
+    serverHelloPrefix_sound suiteOffer msg p h_prefix
   split at h_accepted
   · obtain ⟨_, -, h_accepted⟩ := exists_of_bind_eq_ok h_accepted
     exact ServerHelloKind.noConfusion (eq_of_pure_eq_ok h_accepted)
   · obtain ⟨read, h_read, h_accepted⟩ := exists_of_bind_eq_ok h_accepted
     obtain rfl := ServerHelloKind.serverHello.inj (eq_of_pure_eq_ok h_accepted)
-    obtain ⟨h_echo, h_group, h_key_size, h_identity⟩ :=
+    obtain ⟨h_echo, h_suite, h_group, h_key_size, h_identity⟩ :=
       serverHelloFields_sound kex pskOffered p read h_read
-    exact ⟨by rw [h_echo]; exact h_echo_empty, h_group, h_key_size, h_identity⟩
+    exact ⟨h_echo ▸ h_echo_empty, h_suite ▸ h_suite_offered, h_group, h_key_size, h_identity⟩
 
 /--
-HelloRetryRequest soundness (RFC 9846 §4.2.4, §4.3.8). An accepted
-retry asks for a change — it carries a cookie or a selected group —
-and a selected group is one of `kex.retryGroups`: listed in the
-ClientHello's supported_groups and not the group it sent a key share
-for. The x25519 and pq builds have no retry groups, so there an
-accepted retry never selects a group and always carries a cookie.
+HelloRetryRequest soundness (RFC 9846 §4.2.3, §4.2.4, §4.3.8). An
+accepted retry carries a cipher suite the build offers, which is
+TLS_CHACHA20_POLY1305_SHA256 in every client build but the SUITE=aesgcm
+TRUST=webpki one. It asks for a change — it carries a cookie or a
+selected group — and a selected group is one of `kex.retryGroups`:
+listed in the ClientHello's supported_groups and not the group it sent a
+key share for. The x25519 and pq builds have no retry groups, so there
+an accepted retry never selects a group and always carries a cookie.
 -/
-theorem parseServerHello_helloRetryRequest_sound (kex : Kex) (pskOffered : Bool)
-    (msg : ByteArray) (fields : HelloRetryRequest)
-    (h_accepted : parseServerHello kex pskOffered msg = .ok (.helloRetryRequest fields)) :
-    (fields.cookie.isSome ∨ fields.selectedGroup.isSome) ∧
+theorem parseServerHello_helloRetryRequest_sound (kex : Kex) (suiteOffer : SuiteOffer)
+    (pskOffered : Bool) (msg : ByteArray) (fields : HelloRetryRequest)
+    (h_accepted :
+      parseServerHello kex suiteOffer pskOffered msg = .ok (.helloRetryRequest fields)) :
+    fields.cipherSuite ∈ suiteOffer.cipherSuites ∧
+      (fields.cookie.isSome ∨ fields.selectedGroup.isSome) ∧
       ∀ group, fields.selectedGroup = some group → group ∈ kex.retryGroups := by
   rw [parseServerHello] at h_accepted
-  obtain ⟨p, -, h_accepted⟩ := exists_of_bind_eq_ok h_accepted
+  obtain ⟨p, h_prefix, h_accepted⟩ := exists_of_bind_eq_ok h_accepted
   obtain ⟨_, -, h_accepted⟩ := exists_of_bind_eq_ok h_accepted
+  obtain ⟨_, -, -, -, h_suite_offered⟩ := serverHelloPrefix_sound suiteOffer msg p h_prefix
   split at h_accepted
   · obtain ⟨read, h_read, h_accepted⟩ := exists_of_bind_eq_ok h_accepted
     obtain rfl := ServerHelloKind.helloRetryRequest.inj (eq_of_pure_eq_ok h_accepted)
@@ -1653,7 +1763,7 @@ theorem parseServerHello_helloRetryRequest_sound (kex : Kex) (pskOffered : Bool)
     obtain ⟨_, -, h_read⟩ := exists_of_bind_eq_ok h_read
     obtain ⟨h_asks_change, h_read⟩ := of_ensure_bind h_read
     obtain rfl := eq_of_pure_eq_ok h_read
-    refine ⟨h_asks_change, ?_⟩
+    refine ⟨h_suite_offered, h_asks_change, ?_⟩
     rintro group rfl
     rw [readSelectedGroup?] at h_selected
     split at h_selected
@@ -1671,9 +1781,9 @@ HelloRetryRequest exactly when the 32 octets of the message's Random
 field are §4.2.4's fixed value. Nothing else in the message moves the
 verdict from one kind to the other.
 -/
-theorem parseServerHello_random (kex : Kex) (pskOffered : Bool) (msg : ByteArray)
-    (kind : ServerHelloKind)
-    (h_accepted : parseServerHello kex pskOffered msg = .ok kind) :
+theorem parseServerHello_random (kex : Kex) (suiteOffer : SuiteOffer) (pskOffered : Bool)
+    (msg : ByteArray) (kind : ServerHelloKind)
+    (h_accepted : parseServerHello kex suiteOffer pskOffered msg = .ok kind) :
     ∃ body, messageBody msg serverHelloType = .ok body ∧
       (∀ fields, kind = .helloRetryRequest fields →
         body.extract 2 34 = helloRetryRequestRandom) ∧
@@ -1682,7 +1792,7 @@ theorem parseServerHello_random (kex : Kex) (pskOffered : Bool) (msg : ByteArray
   rw [parseServerHello] at h_accepted
   obtain ⟨p, h_prefix, h_accepted⟩ := exists_of_bind_eq_ok h_accepted
   obtain ⟨_, -, h_accepted⟩ := exists_of_bind_eq_ok h_accepted
-  obtain ⟨body, h_framed, h_random_eq, -⟩ := serverHelloPrefix_sound msg p h_prefix
+  obtain ⟨body, h_framed, h_random_eq, -, -⟩ := serverHelloPrefix_sound suiteOffer msg p h_prefix
   refine ⟨body, h_framed, ?_, ?_⟩
   · intro fields h_kind
     split at h_accepted

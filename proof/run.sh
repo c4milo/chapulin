@@ -430,6 +430,17 @@ launch slow:5 full mlkem_basemul 260 ""
 # address-space cap it sizes applies on Linux only, where this formula
 # was not re-measured.
 launch fast:10 full handshake_parser 260 "hsp_parse_server_hello.0:66" handshake_parser.c buf.c
+# The same harness in the client that offers both cipher suites
+# (docs/decisions.md entry 45): cipher_suite may carry AES-128-GCM there,
+# and the harness asserts an accepted message carries one of the two
+# offered suites. -DCH_AES_HW and -DCH_NATIVE_AES answer ct.h's refusal of
+# the suite define; the parser runs no cipher, so no AES source is
+# compiled. Measured (cbmc 6.11.0, kissat, PROVE_NO_CACHE=1 /usr/bin/time -l
+# over this script, a spec build running beside it): 761 properties, 76 s,
+# 4.5 GB peak, the parent's shape. The same formula with an assert that no
+# accepted message carries AES-128-GCM fails it (1 of 762), so that arm is
+# reached.
+launch fast:10 full handshake_parser_suite 260 "hsp_parse_server_hello.0:66" handshake_parser.c buf.c -DCH_SUITE_AES_GCM -DCH_TRUST_WEBPKI -DCH_AES_HW -DCH_NATIVE_AES
 launch fast full eeparse 260 "hsp_parse_encrypted_exts.0:66" handshake_parser.c buf.c
 launch fast full certparse 260 "" handshake_parser.c buf.c
 # The TRUST=webpki arms of the same two parsers, at the same 256-byte

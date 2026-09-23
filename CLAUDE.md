@@ -47,8 +47,8 @@ Home: github.com/c4milo.
   raw-public-key certificate types, no 0-RTT, no compression, no
   renegotiation-era anything. Within a mode the client offers exactly one
   of everything; the server takes it or the handshake fails closed.
-  TRUST=webpki keeps that rule for the cipher suite and breaks it three
-  times. It offers several signature schemes, because it cannot know
+  TRUST=webpki breaks that rule four times. It offers several signature
+  schemes, because it cannot know
   which family signed the chain the server will send, and it offers the
   list of ALPN protocols the caller configured, because it cannot know
   which one the endpoint speaks; the server picks one and
@@ -57,7 +57,11 @@ Home: github.com/c4milo.
   hybrid (CH_KEX_TWO_GROUPS) and sends the hybrid share alone, and a
   HelloRetryRequest naming x25519 moves it there; ch_cfg.require_pq
   drops x25519 from the hello and restores the fail-closed pairing
-  (docs/decisions.md 39).
+  (docs/decisions.md 39). Under SUITE=aesgcm it lists
+  TLS_AES_128_GCM_SHA256 after ChaCha20 (CH_CLIENT_TWO_SUITES), keys
+  every record direction with the suite the ServerHello selected, and
+  ch_tls.suite reports it (docs/decisions.md 45); a raw or ca client
+  refuses SUITE=aesgcm.
 - One concern per file pair, dependencies pointing down only:
   `ct.[ch]` (constant-time bytes) ← `sha256.[ch]` + `sha3.[ch]` +
   `sha512.[ch]`/`sha512_compress.[ch]` (SHA-384 and SHA-512; the
@@ -127,8 +131,8 @@ Home: github.com/c4milo.
   AES=hw build has no table and no such trade, and an AES=extern build
   cannot state its timing at all, so the public-key argument is what
   carries every AES value and INV-26 bounds all three the same way. No key from
-  the TLS key schedule is ever passed to AES, and AES is never a cipher
-  suite here.
+  the TLS key schedule is passed to AES outside a SUITE=aesgcm build, and
+  that build takes AES=hw and states its timing (below).
   What holds that: `quic_aes.[ch]` and `quic_gcm.[ch]` take a key type,
   `aes_public_key`, whose body lives in `quic_aes_key.h` alone, so only
   `quic_aes.c`, `quic_initial.c` and `quic_retry.c` can build one. A file
@@ -167,18 +171,20 @@ Home: github.com/c4milo.
   it proves.
   A secret-key AES suite needs the instructions and needs somebody to
   say they are constant time — TLS_AES_128_GCM_SHA256, which strict RFC
-  9846 §9.1 server conformance asks for. No suite here declares one, and
-  the axis does not enable it: INV-26 still admits only the three public
-  keys, under every AES value. `ct.h` is where the terms are written,
-  beside the same rule for the widening multiply.
+  9846 §9.1 server conformance asks for. The AES axis does not enable
+  it: only a SUITE=aesgcm build carries it, and INV-26 admits its one
+  traffic key there beside the three public keys. `ct.h` is where the
+  terms are written, beside the same rule for the widening multiply.
   A build says it carries such a suite with `-DCH_SUITE_AES_GCM`, and
   that build is a compile error unless it also takes AES=hw and defines
   `CH_NATIVE_AES`. The second is the build's assertion that this part's
   AES instructions run in constant time, the way `CH_NATIVE_WIDEMUL`
   asserts the multiply: `__ARM_FEATURE_AES` and `__AES__` say the
   instructions exist and say nothing about their latency, so firmware
-  defines it only with a vendor statement. Writing the terms is not
-  landing the suite; the rest is a separate change with its own gates.
+  defines it only with a vendor statement. The record layer, the
+  server's selection and the webpki client's offer run it under those
+  terms, and a QUIC build refuses it, because QUIC packet protection
+  here runs ChaCha20 alone.
 - Proofs are mandatory, not optional, but they run in `check-slow`
   rather than `check`: `check` holds a one-minute budget so it stays
   usable as the inner loop, and the fast proof tier alone costs

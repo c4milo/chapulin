@@ -1,0 +1,15 @@
+invariant: INV-11
+file: handshake.c
+catches: webpki_session_aes
+builds: bin/webpki_session_aes
+reason: the client takes AES-128-GCM from the ServerHello and keys its
+  handshake directions with ChaCha20, the client twin of the server bug
+  e591002 fixed. Every parser test passes; the client cannot open the
+  EncryptedExtensions of a server that runs the suite it selected.
+
+--- old
+    REC_DIR_INIT_SUITE(&t->rd, h->s_hs, h->suite);
+    REC_DIR_INIT_SUITE(&t->wr, h->c_hs, h->suite);
+--- new
+    rec_dir_init(&t->rd, h->s_hs);
+    rec_dir_init(&t->wr, h->c_hs);

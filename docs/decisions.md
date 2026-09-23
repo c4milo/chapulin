@@ -730,3 +730,39 @@ does nothing more.
     two ends, so a test comparing secrets alone would have passed.
     `bin/rec_loop_test` compares the random too, and INV-29 records the
     rule with a mutant that restores the bug.
+
+45. **A `SUITE=aesgcm TRUST=webpki` client offers both cipher suites and
+    the server picks one.** This is the mode's fourth exception to the
+    rule that the client offers exactly one of everything, after the
+    signature schemes (entry 36), the application protocols (37) and the
+    key exchange groups (39), and it has their cause: a host-side client
+    cannot know which suites the endpoint it dialled accepts, and RFC 9846
+    §9.1 makes `TLS_AES_128_GCM_SHA256` the one a conformant server must
+    implement. The ClientHello lists `TLS_CHACHA20_POLY1305_SHA256` first
+    and `TLS_AES_128_GCM_SHA256` after it, the order `srv_select` prefers
+    for the reason it states: ChaCha20 is constant time by construction,
+    and AES is constant time because the build asserted it
+    (`CH_NATIVE_AES`). The client keys every record direction with the
+    suite the ServerHello selected, a ServerHello after a retry must repeat
+    the retry's suite, and `ch_tls.suite` reports the one that ran.
+
+    Cost: a negotiation surface, the AES sources in the object, and the
+    build's statement about its hardware. `ct.h` refuses the suite without
+    `AES=hw` and `CH_NATIVE_AES`, so the offer exists only on a host whose
+    AES instructions the builder vouches for, and `quic_packet.c` refuses
+    it over QUIC, where packet protection runs ChaCha20 alone. Gain: the
+    client completes a handshake with a server that accepts AES-128-GCM
+    alone, which the e2e suite checks against OpenSSL.
+
+    A raw or ca client refuses `SUITE=aesgcm`, the way it refuses
+    `KEYLOG=on` (entry 44). It pins the endpoint it talks to, so it knows
+    that endpoint's suite, and it offers ChaCha20 alone; the Makefile and
+    `handshake_message.c` stop the define there. A build with a server
+    role takes it whatever its trust mode, because its server selects AES
+    from a client that offers nothing else, and the client beside it in a
+    raw or ca `ROLE=both` build still offers ChaCha20 alone.
+
+    Offering AES-128-GCM alone under `SUITE=aesgcm` was considered and
+    rejected: the build would then fail against every server that accepts
+    ChaCha20 and not AES, and the reason to offer AES is to reach more
+    servers, not different ones.

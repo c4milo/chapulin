@@ -12,6 +12,9 @@
 
 #include "cfg.h"
 #include "handshake_parser.h"
+#ifdef CH_SUITE_AES_GCM
+#include "handshake_message.h"
+#endif
 
 int main(void) {
     uint8_t msg[256];
@@ -34,5 +37,16 @@ int main(void) {
                          "cookie_len within msg");
         __CPROVER_assert(info.cookie_len <= HSP_COOKIE_MAX, "cookie_len within destination");
     }
+#ifdef CH_SUITE_AES_GCM
+    // The handshake_parser_suite line: the client that offers both
+    // suites accepts a message only when it carries one of them, and the
+    // parser reports which, the value every record direction is keyed
+    // with.
+    if (rc == CH_OK) {
+        __CPROVER_assert(info.suite == SUITE_CHACHA20_POLY1305_SHA256 ||
+                             info.suite == SUITE_AES_128_GCM_SHA256,
+                         "an accepted message carries a suite this client offered");
+    }
+#endif
     return 0;
 }

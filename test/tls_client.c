@@ -453,6 +453,10 @@ int main(int argc, char **argv) {
     (void)fprintf(stderr, "connected\n");
     // e2e asserts on this line: the group the ServerHello selected.
     (void)fprintf(stderr, "group 0x%04x\n", (unsigned)tls.group);
+#ifdef CH_SUITE_AES_GCM
+    // And the cipher suite, in a build that can negotiate one.
+    (void)fprintf(stderr, "suite 0x%04x\n", (unsigned)tls.suite);
+#endif
 #ifdef CH_TRUST_WEBPKI
     report_alpn(&cfg, &tls);
 #endif

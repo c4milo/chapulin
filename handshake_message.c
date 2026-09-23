@@ -1,6 +1,15 @@
 #include "handshake_message.h"
 
 #include "buf.h"
+
+// A raw or ca client is a device image that pins the endpoint it talks
+// to, and it offers ChaCha20 alone (docs/decisions.md entry 45), so it has
+// no use for the AES suite; the Makefile refuses SUITE=aesgcm for it the
+// same way. A build that carries the server role may take the define,
+// because its server selects the suite whatever its client offers.
+#if defined(CH_SUITE_AES_GCM) && !defined(CH_TRUST_WEBPKI) && !defined(CH_ROLE_SERVER)
+#error "CH_SUITE_AES_GCM is refused for a raw or ca client: use TRUST=webpki or a server role"
+#endif
 #ifdef CH_KEX_TWO_GROUPS
 #include "ch_assert.h"
 #endif
@@ -85,9 +94,17 @@ size_t hs_build_client_hello(uint8_t *out, size_t cap, const ch_cfg *cfg,
     size_t msg = wb_mark(&w, 3);
     wb_u16(&w, 0x0303); // legacy_version
     wb_bytes(&w, random32, 32);
-    wb_u8(&w, 0);  // empty legacy_session_id: no middlebox compat needed
+    wb_u8(&w, 0); // empty legacy_session_id: no middlebox compat needed
+#ifdef CH_CLIENT_TWO_SUITES
+    // ChaCha20 first, the order srv_select prefers for the reason it
+    // states, then AES-128-GCM (docs/decisions.md entry 45).
+    wb_u16(&w, 4);
+    wb_u16(&w, SUITE_CHACHA20_POLY1305_SHA256);
+    wb_u16(&w, SUITE_AES_128_GCM_SHA256);
+#else
     wb_u16(&w, 2); // one suite
     wb_u16(&w, SUITE_CHACHA20_POLY1305_SHA256);
+#endif
     wb_u8(&w, 1); // legacy_compression_methods = {null}
     wb_u8(&w, 0);
 

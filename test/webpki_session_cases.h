@@ -391,9 +391,9 @@ static void test_webpki_hello_boundary(void) {
     CHECK(CH_TX_STAGE == CH_HELLO_MAX);
     CHECK(CH_HELLO_ALPN_MAX == 270);
 #ifdef CH_KEX_PQ
-    CHECK(CH_HELLO_MAX == 2335);
+    CHECK(CH_HELLO_MAX == 2335 + CH_HELLO_SECOND_SUITE_MAX);
 #else
-    CHECK(CH_HELLO_MAX == 1149);
+    CHECK(CH_HELLO_MAX == 1149 + CH_HELLO_SECOND_SUITE_MAX);
 #endif
     (void)printf("webpki hello: %zu bytes with pre_shared_key, %zu without, CH_TX_STAGE %d\n",
                  psk_arm, chain_arm, CH_TX_STAGE);

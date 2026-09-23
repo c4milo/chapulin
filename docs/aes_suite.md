@@ -1,9 +1,29 @@
 # TLS_AES_128_GCM_SHA256
 
-This document scopes a second cipher suite. Nothing in it is implemented.
+This document scoped a second cipher suite before any of it existed.
 `docs/quic.md`, "What the AES axis proves", is the record of what the AES
-sources rest on today, and this document says what changes when a traffic
-key is passed to them.
+sources rest on, and this document says what changes when a traffic key is
+passed to them.
+
+## Status
+
+Most of the scope has landed since:
+
+- The record layer runs the suite (234ec4e), keyed at the length it fixes,
+  and a KeyUpdate keeps it (e591002).
+- The server selects it from a client that offers no ChaCha20 (9aa1f65) and
+  keys its records with it (e591002).
+- A `SUITE=aesgcm TRUST=webpki` client offers it beside ChaCha20
+  (`docs/decisions.md` entry 45), the decision "Negotiation" below left
+  open.
+- The build refuses the suite over QUIC and in a raw or ca client.
+
+Still not done, of what this document lists: the rename of `quic_aes.[ch]`
+and `quic_gcm.[ch]`; a CBMC harness over the record layer's suite
+selection; an e2e leg in which a real client negotiates the suite with this
+tree's server; and `bench/sram.sh` re-measured for a suite build. The
+sections below keep the original scoping text, and their file and line
+references are as they were when it was written.
 
 ## Why the tree needs it
 

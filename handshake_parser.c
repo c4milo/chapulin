@@ -63,6 +63,20 @@ static int parse_x25519_share(rbuf *e, server_hello_info *info) {
 }
 #endif
 
+#ifdef CH_SUITE_AES_GCM
+// Whether this client's ClientHello offered suite: ChaCha20 always, and
+// AES-128-GCM from the client that offers both (CH_CLIENT_TWO_SUITES).
+// RFC 9846 §4.2.3 makes any other suite an illegal_parameter abort
+// (rfc9846.txt:1373-1376).
+static int suite_offered(uint16_t suite) {
+#ifdef CH_CLIENT_TWO_SUITES
+    return suite == SUITE_CHACHA20_POLY1305_SHA256 || suite == SUITE_AES_128_GCM_SHA256;
+#else
+    return suite == SUITE_CHACHA20_POLY1305_SHA256;
+#endif
+}
+#endif
+
 // key_share: our one offered group, echoed with the server's public.
 static int parse_key_share(rbuf *e, server_hello_info *info, int hrr) {
     if (hrr) {
@@ -177,9 +191,16 @@ int hsp_parse_server_hello(const uint8_t *body, size_t n, server_hello_info *inf
     if (rb_u8(&r) != 0) {
         return CH_EPROTO; // we sent an empty legacy_session_id; the echo must match
     }
+#ifdef CH_SUITE_AES_GCM
+    info->suite = rb_u16(&r);
+    if (!suite_offered(info->suite) || rb_u8(&r) != 0) {
+        return CH_EPROTO;
+    }
+#else
     if (rb_u16(&r) != SUITE_CHACHA20_POLY1305_SHA256 || rb_u8(&r) != 0) {
         return CH_EPROTO;
     }
+#endif
     size_t exts_len = rb_u16(&r);
     if (r.err || exts_len != rb_left(&r)) {
         return CH_EPROTO;

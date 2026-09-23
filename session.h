@@ -48,6 +48,11 @@
 // cannot be included from it; handshake.c asserts the two agree, where
 // both constants are visible, so a stale literal fails the build
 // rather than shipping.
+#if defined(CH_SUITE_AES_GCM) && defined(CH_TRUST_WEBPKI)
+#define CH_TX_SECOND_SUITE 2
+#else
+#define CH_TX_SECOND_SUITE 0
+#endif
 #ifndef CH_TX_STAGE
 #ifdef CH_TRANSPORT_QUIC
 // A QUIC hello differs from the TLS one by three extensions. It drops
@@ -70,6 +75,9 @@
 #define CH_TX_STAGE 1141
 #endif
 #elif defined(CH_TRUST_WEBPKI) && defined(CH_KEX_PQ)
+// Each TRUST=webpki value below takes CH_TX_SECOND_SUITE on top: 2 bytes
+// for the second cipher suite a SUITE=aesgcm webpki client lists
+// (CH_CLIENT_TWO_SUITES in handshake_message.h), 0 in every other build.
 // The pq sum below plus the two extensions a TRUST=webpki hello adds:
 // the 262-byte server_name at the longest hostname (4 type and length,
 // 2 list length, 1 name_type, 2 name length, 253 name) and the 270-byte
@@ -78,10 +86,10 @@
 // bytes), and the second NamedGroup in supported_groups, x25519, which
 // this build offers beside the hybrid (docs/decisions.md 39):
 // 1801 + 262 + 270 + 2.
-#define CH_TX_STAGE 2335
+#define CH_TX_STAGE (2335 + CH_TX_SECOND_SUITE)
 #elif defined(CH_TRUST_WEBPKI)
 // The classic sum below plus the same two extensions: 617 + 262 + 270.
-#define CH_TX_STAGE 1149
+#define CH_TX_STAGE (1149 + CH_TX_SECOND_SUITE)
 #elif defined(CH_KEX_PQ)
 // 137 fixed + 320 ticket identity + 128 cookie with framing + the
 // 1216-byte hybrid share.
@@ -162,17 +170,24 @@ typedef struct {
     // CH_GROUP_X25519MLKEM768 (cfg.h), one per build except
     // CH_KEX_TWO_GROUPS, where it is whichever the ServerHello
     // selected — and 0 before any ServerHello or when it carried no
-    // key_share. Public
-    // information, like pin_slot: a caller reads it to see which
-    // exchange protected the session, and cfg.require_pq fails the
-    // handshake when it is not the hybrid.
+    // key_share. Public information, like pin_slot: a caller reads it
+    // to see which exchange protected the session, and cfg.require_pq
+    // fails the handshake when it is not the hybrid.
     uint16_t group;
+#if defined(CH_SUITE_AES_GCM) && !defined(CH_ROLE_SERVER)
+    // The cipher suite the ServerHello selected, which a client written
+    // under -DCH_SUITE_AES_GCM writes beside group: ChaCha20, or
+    // AES-128-GCM from a CH_CLIENT_TWO_SUITES client. Public, like group.
+    // A build with a server role declares the field below and a client
+    // in it writes that one.
+    uint16_t suite;
+#endif
 #ifdef CH_ROLE_SERVER
     // What a ROLE=server build selected and must keep past the message that decided it.
-    // A client needs none of these: it offers exactly one of everything, so its suite is
-    // a compile-time literal (handshake_message.c) and its session id is empty. Every
-    // value here is public: each one went out in the clear in the ServerHello or came in
-    // in the clear in the ClientHello.
+    // A client needs none of these but suite, which a SUITE=aesgcm client writes too: its
+    // session id is empty, and the rest describe the server's own choices. Every value
+    // here is public: each one went out in the clear in the ServerHello or came in in the
+    // clear in the ClientHello.
     //
     // session_id is the client's legacy_session_id, which the server echoes in
     // legacy_session_id_echo (RFC 9846 §4.1.3, rfc9846.txt:1365-1368) and which must

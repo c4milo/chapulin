@@ -59,7 +59,24 @@ static const char *const hspd_alpn_names[HSPD_ALPN_MAX] = {"h2", "http/1.1", "x"
 
 #define HSPD_X25519 0x001d
 #define HSPD_X25519MLKEM768 0x11ec
-#define HSPD_SUITE 0x1303 // TLS_CHACHA20_POLY1305_SHA256
+#define HSPD_SUITE 0x1303     // TLS_CHACHA20_POLY1305_SHA256
+#define HSPD_SUITE_AES 0x1301 // TLS_AES_128_GCM_SHA256
+
+// The suites the build's ClientHello offers, as the Makefile's SUITE
+// value spells them: ChaCha20 alone, or ChaCha20 and AES-128-GCM from
+// the SUITE=aesgcm TRUST=webpki client (docs/decisions.md entry 45).
+// mut 2 writes a suite the build did not offer: AES-128-GCM in the
+// one-suite builds, so each run diffs that refusal, and
+// TLS_AES_256_GCM_SHA384, which no build offers, in the two-suite one.
+#ifdef CH_CLIENT_TWO_SUITES
+#define HSPD_SUITE_TOKEN "aesgcm"
+#define HSPD_UNOFFERED_SUITE 0x1302
+#define HSPD_ACCEPTED_SUITE(info) ((info).suite)
+#else
+#define HSPD_SUITE_TOKEN "chacha"
+#define HSPD_UNOFFERED_SUITE HSPD_SUITE_AES
+#define HSPD_ACCEPTED_SUITE(info) HSPD_SUITE
+#endif
 
 // The build offers one group (CH_KEX_GROUP); the model takes the
 // matching Makefile KEX token so both narrow the same way, like the
@@ -126,6 +143,7 @@ typedef struct {
     int retry_x25519;  // a retry names x25519, which only two-groups admits
     int retry_bare;    // that retry carries no cookie
     int sh_x25519;     // a ServerHello selects x25519 with a 32-byte share
+    uint16_t suite;    // the cipher_suite an on-profile row carries
 } hspd_sh_plan;
 
 static void hspd_sh_row(const hspd_sh_plan *plan, const uint8_t *body, size_t n) {
@@ -161,7 +179,8 @@ static void hspd_sh_row(const hspd_sh_plan *plan, const uint8_t *body, size_t n)
         if (HSPD_RETRY_GROUP(info) != 0) {
             (void)snprintf(group, sizeof group, "%u", (unsigned)HSPD_RETRY_GROUP(info));
         }
-        (void)snprintf(want, sizeof want, "hrr %s %s", cookie_hex, group);
+        (void)snprintf(want, sizeof want, "hrr %s %s %u", cookie_hex, group,
+                       (unsigned)HSPD_ACCEPTED_SUITE(info));
     } else {
         // The model reports the selected group and the whole
         // key_exchange value; the C parser stores the group and splits
@@ -178,19 +197,20 @@ static void hspd_sh_row(const hspd_sh_plan *plan, const uint8_t *body, size_t n)
 #else
         (void)hex_encode(share_hex, info.server_pub, X25519_LEN);
 #endif
-        (void)snprintf(want, sizeof want, "sh %u %s %s", (unsigned)info.group, share_hex,
-                       plan->psk_ext ? "0" : "-");
+        (void)snprintf(want, sizeof want, "sh %u %s %s %u", (unsigned)info.group, share_hex,
+                       plan->psk_ext ? "0" : "-", (unsigned)HSPD_ACCEPTED_SUITE(info));
     }
 
     char cmd[2 * (HSPD_BODY_MAX + 4) + 64];
-    char arg[24]; // "nopsk two-groups" and its terminator
-    (void)snprintf(arg, sizeof arg, "%s %s", plan->psk_offered ? "psk" : "nopsk", HSPD_KEX_TOKEN);
+    char arg[32]; // "nopsk two-groups aesgcm" and its terminator
+    (void)snprintf(arg, sizeof arg, "%s %s %s", plan->psk_offered ? "psk" : "nopsk", HSPD_KEX_TOKEN,
+                   HSPD_SUITE_TOKEN);
     hspd_request(cmd, sizeof cmd, "hs_server_hello", arg, HSPD_SERVER_HELLO, body, n);
     expect(cmd, want);
 }
 
 // legacy_version through legacy_compression_method (§4.2.3).
-static void hspd_sh_prefix(wbuf *w, size_t mut, const uint8_t *random) {
+static void hspd_sh_prefix(wbuf *w, size_t mut, const hspd_sh_plan *plan, const uint8_t *random) {
     wb_u16(w, mut == 0 ? 0x0304 : 0x0303);
     wb_bytes(w, random, 32);
     if (mut == 1) { // an echo we never offered
@@ -199,7 +219,7 @@ static void hspd_sh_prefix(wbuf *w, size_t mut, const uint8_t *random) {
     } else {
         wb_u8(w, 0); // handshake_message.c offers an empty legacy_session_id
     }
-    wb_u16(w, mut == 2 ? 0x1301 : HSPD_SUITE);
+    wb_u16(w, mut == 2 ? HSPD_UNOFFERED_SUITE : plan->suite);
     wb_u8(w, mut == 3 ? 1 : 0); // legacy_compression_method
 }
 
@@ -295,14 +315,22 @@ static void hspd_sh_patch_vector(wbuf *w, size_t exts, size_t end) {
     w->p[exts + 1] = (uint8_t)n;
 }
 
-// The shapes only a two-groups build admits, drawn in every build so
-// the others diff their refusal: a retry naming x25519, with and without
-// a cookie, and a ServerHello selecting x25519. The last is drawn only
-// in the two-groups build, because the others refuse it as mut 11
-// already does.
+// The row's on-profile shape. The shapes only a two-groups build admits
+// are drawn in every build, so the others diff their refusal: a retry
+// naming x25519, with and without a cookie. A ServerHello selecting
+// x25519 is drawn only in the two-groups build, because the others
+// refuse it as mut 11 already does. The suite is ChaCha20, or either
+// offered suite in the two-suite build.
 static void hspd_sh_draw_shapes(hspd_sh_plan *plan, int hrr) {
     plan->retry_x25519 = hrr && rng_below(3) == 0;
     plan->retry_bare = plan->retry_x25519 && rng_below(2) == 0;
+    plan->suite = HSPD_SUITE;
+#ifdef CH_CLIENT_TWO_SUITES
+    // Either offered suite, in a retry or a ServerHello alike.
+    if (rng_below(2) == 0) {
+        plan->suite = HSPD_SUITE_AES;
+    }
+#endif
 #ifdef CH_KEX_TWO_GROUPS
     plan->sh_x25519 = !hrr && rng_below(3) == 0;
 #endif
@@ -317,6 +345,7 @@ static void diff_hs_server_hello(void) {
         // and the profile between them make illegal; 18 and up leave
         // the message on profile.
         size_t mut = rng_below(21);
+        hspd_sh_draw_shapes(&plan, hrr);
 
         uint8_t random[32];
         rng_fill(random, sizeof random);
@@ -332,11 +361,10 @@ static void diff_hs_server_hello(void) {
         uint8_t body[HSPD_BODY_MAX];
         wbuf w;
         wb_init(&w, body, sizeof body);
-        hspd_sh_prefix(&w, mut, random);
+        hspd_sh_prefix(&w, mut, &plan, random);
         size_t exts = wb_mark(&w, 2);
         hspd_sh_version_ext(&w, mut);
         size_t after_version = w.len;
-        hspd_sh_draw_shapes(&plan, hrr);
         if (hrr) {
             hspd_sh_retry_exts(&w, mut, &plan, cookie, cookie_len);
         } else {

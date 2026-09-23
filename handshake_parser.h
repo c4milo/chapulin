@@ -54,6 +54,13 @@ typedef struct {
 #endif
     const uint8_t *cookie; // into the caller's message; NULL if absent
     size_t cookie_len;
+#ifdef CH_SUITE_AES_GCM
+    // The cipher_suite the message carried, which the parser accepts
+    // only when this client offered it: TLS_CHACHA20_POLY1305_SHA256,
+    // or TLS_AES_128_GCM_SHA256 from a CH_CLIENT_TWO_SUITES build. A
+    // build with one suite has no field: the parser accepts one value.
+    uint16_t suite;
+#endif
 } server_hello_info;
 
 // Parses a ServerHello body (handshake header stripped) into info, which

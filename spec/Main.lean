@@ -271,7 +271,7 @@ def dispatch : List String → Option String
   -- implementation, so distinct strings would flag a spec-and-C
   -- disagreement about which MUST fired first as a mismatch. The alert
   -- itself lives in the model, where `Spec.HandshakeParser.Alert` names it.
-  | ["hs_server_hello", mode, kex, msg] => do
+  | ["hs_server_hello", mode, kex, suite, msg] => do
     let m ← hexArg? msg
     -- `psk` and `nopsk` are handshake_parser.h's `psk_mode`: whether this
     -- client's ClientHello offered a PSK, which RFC 9846 §4.3 makes
@@ -287,14 +287,21 @@ def dispatch : List String → Option String
     -- ServerHello may select and the groups a HelloRetryRequest may
     -- name; the selected group fixes the share size.
     let k ← Spec.HandshakeParser.kexOf? kex
-    return match Spec.HandshakeParser.parseServerHello k offered m with
+    -- `chacha` and `aesgcm` are the Makefile's SUITE values. `aesgcm` is
+    -- the SUITE=aesgcm TRUST=webpki client, which offers
+    -- TLS_CHACHA20_POLY1305_SHA256 then TLS_AES_128_GCM_SHA256; every
+    -- other client build offers the first alone and takes `chacha`. The
+    -- token fixes the suites a ServerHello or HelloRetryRequest may carry.
+    let s ← Spec.HandshakeParser.suiteOf? suite
+    -- Both accepted replies end with the cipher_suite in decimal.
+    return match Spec.HandshakeParser.parseServerHello k s offered m with
       | .ok (.serverHello f) =>
-        s!"sh {f.group} {emit f.keyExchange} {emitNat? f.selectedIdentity}"
+        s!"sh {f.group} {emit f.keyExchange} {emitNat? f.selectedIdentity} {f.cipherSuite}"
       -- The cookie's hex and the selected group in decimal, `-` for
       -- each one the retry does not carry. An accepted cookie is never
       -- empty, so `-` names only an absent one.
       | .ok (.helloRetryRequest f) =>
-        s!"hrr {(f.cookie.map emit).getD "-"} {emitNat? f.selectedGroup}"
+        s!"hrr {(f.cookie.map emit).getD "-"} {emitNat? f.selectedGroup} {f.cipherSuite}"
       | .error _ => "ERR hs_server_hello reject"
   | ["hs_encrypted_extensions", sni, alpn, msg] => do
     let m ← hexArg? msg
@@ -333,7 +340,7 @@ def dispatch : List String → Option String
   | ["hs_verify_content", hash] => do
     let h ← hexArg? hash
     -- RFC 9846 §4.5.2 signs over the transcript hash, which is
-    -- SHA-256 under this profile's one cipher suite.
+    -- SHA-256 under both cipher suites a client build may offer.
     guard (h.size == 32)
     return emit (Spec.HandshakeParser.verifyContent h)
   | ["p256_pub", d] => do

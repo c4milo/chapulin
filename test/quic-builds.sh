@@ -78,3 +78,19 @@ if "$cc" -std=c11 -I. -fsyntax-only -DCH_RAND_EXTERN -DCH_TRANSPORT_QUIC \
     echo "quic-builds: -DCH_SUITE_AES_GCM with CH_TRANSPORT_QUIC compiled; quic_packet.c must refuse it" >&2
     exit 1
 fi
+
+# The suite in a raw or ca client: handshake_message.c refuses it, because
+# that client offers ChaCha20 alone (docs/decisions.md entry 45). The
+# same flags compile for a TRUST=webpki client, which offers both suites,
+# and for a build with a server role, whose server selects AES.
+suite_flags=(-std=c11 -I. -fsyntax-only -DCH_RAND_EXTERN -DCH_SUITE_AES_GCM -DCH_AES_HW -DCH_NATIVE_AES)
+if "$cc" "${suite_flags[@]}" handshake_message.c 2>/dev/null; then
+    echo "quic-builds: -DCH_SUITE_AES_GCM in a raw client compiled; handshake_message.c must refuse it" >&2
+    exit 1
+fi
+for role in -DCH_TRUST_WEBPKI -DCH_ROLE_SERVER; do
+    if ! "$cc" "${suite_flags[@]}" "$role" handshake_message.c; then
+        echo "quic-builds: handshake_message.c with the suite and $role must compile" >&2
+        exit 1
+    fi
+done

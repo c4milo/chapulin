@@ -425,6 +425,14 @@ def select_lints(out, changed, csources, lib):
                 "the compiler is half of INV-26: a key field the session no "
                 "longer holds names nothing",
                 ["test/quic-builds.sh"])
+    # handshake_message.c holds the refusal of SUITE=aesgcm in a raw or ca
+    # client (docs/decisions.md entry 45), and test/quic-builds.sh compiles
+    # that file on both sides of the refusal, beside ct.h's two.
+    if "handshake_message.c" in csources:
+        out.add("tests", "test/quic-builds.sh",
+                "handshake_message.c refuses the AES suite in a raw or ca "
+                "client, and this script compiles it either side of that",
+                ["test/quic-builds.sh"])
     if quic_root or "docs/quic.md" in changed:
         out.add("lint", "make lint-quic-surface",
                 "quic.h and docs/quic.md must name one public surface, and "

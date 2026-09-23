@@ -1,0 +1,14 @@
+invariant: INV-7
+file: handshake_flight.c
+catches: webpki_session_aes
+builds: bin/webpki_session_aes
+reason: a ServerHello may carry a different suite from the HelloRetryRequest
+  it follows, which RFC 9846 section 4.2.4 makes an illegal_parameter. The
+  retry's transcript and the keys after it would then belong to two
+  suites, and a server could move the suite after the client committed to
+  the retry.
+
+--- old
+    if (!info->hrr && h->suite != 0 && info->suite != h->suite) {
+--- new
+    if (0) {

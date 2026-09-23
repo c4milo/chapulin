@@ -54,6 +54,9 @@ noreturn void ch_assert_fail(const char *cond, const char *file, int line) {
 // with the flight above. sh_group, when not 0, is the group the
 // ServerHello selects whatever the hello it answers carried a share
 // for, which is how a row sends a selection the client must refuse.
+// suite and retry_suite, when not 0, are the cipher suites the
+// ServerHello and the retry carry in place of ChaCha20, and the mock
+// keys its records with the ServerHello's.
 typedef struct {
     uint8_t hello[CH_TX_STAGE];
     size_t hello_len;
@@ -61,6 +64,8 @@ typedef struct {
     uint16_t retry_group;
     int retry_cookie;
     uint16_t sh_group;
+    uint16_t suite;
+    uint16_t retry_suite;
     uint8_t hrr[96];
     size_t hrr_len;
     uint8_t retry_hello[CH_TX_STAGE];
@@ -84,6 +89,12 @@ typedef struct {
 } mock_server;
 
 static const uint8_t server_scalar[X25519_LEN] = {0x07, 0x5e};
+
+// The suite a mock message carries: the row's, or ChaCha20 when the row
+// set none.
+static uint16_t mock_suite(uint16_t suite) {
+    return suite != 0 ? suite : SUITE_CHACHA20_POLY1305_SHA256;
+}
 
 // The ML-KEM shared secret's share of the mock's ecdhe buffer: the
 // hybrid build puts it ahead of the x25519 one, and a classic build has
@@ -202,7 +213,7 @@ static void render_server_hello(mock_server *s, sha256 *transcript, const uint8_
         wb_u8(&w, 0x42);
     }
     wb_u8(&w, 0);
-    wb_u16(&w, SUITE_CHACHA20_POLY1305_SHA256);
+    wb_u16(&w, mock_suite(s->suite));
     wb_u8(&w, 0);
     size_t exts = wb_mark(&w, 2);
     wb_u16(&w, EXT_SUPPORTED_VERSIONS);
@@ -236,8 +247,8 @@ static void render_server_hello(mock_server *s, sha256 *transcript, const uint8_
     ks_early(no_psk, sizeof no_psk, 0, early, binder);
     ks_handshake(early, ecdhe, ecdhe_len, hash, handshake_secret, c_hs, s_hs);
     push_clear(s, msg, w.len);
-    rec_dir_init(&s->wr, s_hs);
-    rec_dir_init(&s->rd, c_hs);
+    REC_DIR_INIT_SUITE(&s->wr, s_hs, mock_suite(s->suite));
+    REC_DIR_INIT_SUITE(&s->rd, c_hs, mock_suite(s->suite));
     s->keys = 1;
 }
 
@@ -282,7 +293,7 @@ static void push_retry(mock_server *s) {
     wb_u16(&w, 0x0303);
     wb_bytes(&w, hsp_hrr_magic, 32);
     wb_u8(&w, 0);
-    wb_u16(&w, SUITE_CHACHA20_POLY1305_SHA256);
+    wb_u16(&w, mock_suite(s->retry_suite));
     wb_u8(&w, 0);
     size_t exts = wb_mark(&w, 2);
     wb_u16(&w, EXT_SUPPORTED_VERSIONS);
@@ -445,6 +456,7 @@ static int sends_client_hello(const ch_cfg *cfg) {
 #include "rxbuf_floor_tests.h"
 #include "webpki_groups_cases.h"
 #include "webpki_session_cases.h"
+#include "webpki_suite_cases.h"
 
 int main(void) {
     test_webpki_cfg_anchors();
@@ -464,6 +476,11 @@ int main(void) {
     test_webpki_groups_hello();
     test_webpki_retry_to_x25519();
     test_webpki_retry_refusals();
+#endif
+#ifdef CH_CLIENT_TWO_SUITES
+    test_webpki_suites_hello();
+    test_webpki_suite_aes();
+    test_webpki_suite_refusals();
 #endif
     if (failures > 0) {
         (void)fprintf(stderr, "%d failure(s)\n", failures);

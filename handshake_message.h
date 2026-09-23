@@ -49,6 +49,15 @@
 // offers or selects it, and ct.h refuses that define unless the build has
 // hardware AES and asserts its timing.
 #define SUITE_AES_128_GCM_SHA256 0x1301
+// A SUITE=aesgcm TRUST=webpki client offers both suites, ChaCha20 first
+// and AES-128-GCM after it, and runs the one the ServerHello selects
+// (docs/decisions.md entry 45). A SUITE=aesgcm server selects AES-128-GCM
+// from a client that offers no ChaCha20 (srv_select). A raw or ca client
+// offers ChaCha20 alone, and handshake_message.c refuses the define for
+// one that carries no server role.
+#if defined(CH_SUITE_AES_GCM) && defined(CH_TRUST_WEBPKI)
+#define CH_CLIENT_TWO_SUITES
+#endif
 
 // The one group this build offers (its code point is one of cfg.h's
 // two CH_GROUP_* values), and its share size on each side. The hybrid
@@ -121,7 +130,8 @@
 // webpki build's alone.
 //
 // A CH_KEX_TWO_GROUPS build adds one more term: the second NamedGroup
-// in supported_groups, 2 bytes.
+// in supported_groups, 2 bytes. A CH_CLIENT_TWO_SUITES build adds the
+// second cipher suite, 2 bytes more.
 //
 // Each term is 0 in a build that sends nothing for it, so one sum
 // serves every combination and a TRANSPORT=tls build keeps the value it
@@ -146,9 +156,15 @@
 #else
 #define CH_HELLO_SECOND_GROUP_MAX 0
 #endif
+#ifdef CH_CLIENT_TWO_SUITES
+#define CH_HELLO_SECOND_SUITE_MAX 2
+#else
+#define CH_HELLO_SECOND_SUITE_MAX 0
+#endif
 #define CH_HELLO_MAX                                                                               \
     (137 + CH_HELLO_SERVER_NAME_MAX + CH_HELLO_ALPN_MAX + CH_HELLO_TRANSPORT_MAX +                 \
-     CH_HELLO_SECOND_GROUP_MAX + CH_TICKET_ID_MAX + HSP_COOKIE_MAX + CH_KEX_CLIENT_SHARE)
+     CH_HELLO_SECOND_GROUP_MAX + CH_HELLO_SECOND_SUITE_MAX + CH_TICKET_ID_MAX + HSP_COOKIE_MAX +   \
+     CH_KEX_CLIENT_SHARE)
 
 // Pinned mode verifies exactly one signature algorithm per build: RSA-PSS
 // by default (what stock cert-based endpoints hold), ECDSA P-256 with

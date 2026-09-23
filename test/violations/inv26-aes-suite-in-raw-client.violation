@@ -1,0 +1,14 @@
+invariant: INV-26
+file: handshake_message.c
+catches: test/quic-builds.sh
+reason: a raw or ca client takes -DCH_SUITE_AES_GCM, so a device image
+  carries the AES suite and a traffic key path it never offers, and
+  INV-26's second claim grows a build it does not describe. The Makefile
+  refuses SUITE=aesgcm there; this #error is what refuses it for a tree
+  with its own build system, and this edit removes it.
+
+--- old
+#if defined(CH_SUITE_AES_GCM) && !defined(CH_TRUST_WEBPKI) && !defined(CH_ROLE_SERVER)
+#error "CH_SUITE_AES_GCM is refused for a raw or ca client: use TRUST=webpki or a server role"
+#endif
+--- new
