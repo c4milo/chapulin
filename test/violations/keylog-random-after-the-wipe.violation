@@ -1,0 +1,14 @@
+invariant: INV-29
+file: handshake_flight.c
+catches: rec_loop_test
+reason: the client files its key log lines under the ClientHello random
+  read after the key exchange wiped it, so every line carries 32 zero
+  bytes while the server's carry the real value. The secrets still match,
+  so a check that compares only secrets passes; a capture tool then finds
+  two logs for two different connections. This is the first key log
+  build's own bug, and rec_loop_test compares the random both ends log.
+
+--- old
+    memcpy(h->client_random, h->random, sizeof h->client_random);
+--- new
+    (void)h->random;

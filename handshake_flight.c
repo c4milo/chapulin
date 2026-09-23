@@ -9,6 +9,7 @@
 #include "ch_assert.h"
 #include "ct.h"
 #include "handshake_message.h"
+#include "keylog.h"
 #include "keysched.h"
 #include "rand.h"
 #include "x25519.h"
@@ -214,6 +215,13 @@ int hsf_derive_handshake_secrets(handshake_state *h, const server_hello_info *in
     // between messages, so that wipe is a round trip away and they die
     // here instead. After this call the retry hello can no longer be
     // built, which is correct: the exchange is over.
+#ifdef CH_KEYLOG
+    // Kept before the wipe below, which is what the first key log build
+    // missed: it logged h->random after this point and filed every line
+    // under 32 zero bytes. bin/rec_loop_test compares the random both
+    // ends log, so that shape now fails a test.
+    memcpy(h->client_random, h->random, sizeof h->client_random);
+#endif
     ct_wipe(h->priv, sizeof h->priv);
     ct_wipe(h->pub, sizeof h->pub);
     ct_wipe(h->random, sizeof h->random);
@@ -232,6 +240,10 @@ int hsf_derive_handshake_secrets(handshake_state *h, const server_hello_info *in
     ct_wipe(ecdhe, sizeof ecdhe);
     ct_wipe(h->early, sizeof h->early);
     ct_wipe(h->binder_key, sizeof h->binder_key);
+#ifdef CH_KEYLOG
+    ch_keylog(h->t->cfg.io, CH_KEYLOG_CLIENT_HANDSHAKE, h->client_random, h->c_hs);
+    ch_keylog(h->t->cfg.io, CH_KEYLOG_SERVER_HANDSHAKE, h->client_random, h->s_hs);
+#endif
     return CH_OK;
 }
 
@@ -350,4 +362,10 @@ void hsf_complete(handshake_state *h, uint8_t finished[HSF_FINISHED_LEN]) {
     sha256_update(&t->transcript, finished, HSF_FINISHED_LEN);
     (void)hsr_transcript_hash(h, hash);
     ks_res_master(h->master, hash, t->res_master);
+#ifdef CH_KEYLOG
+    // After ks_master, which wrote this client's write secret into
+    // wr_secret and the server's into rd_secret.
+    ch_keylog(t->cfg.io, CH_KEYLOG_CLIENT_TRAFFIC, h->client_random, t->wr_secret);
+    ch_keylog(t->cfg.io, CH_KEYLOG_SERVER_TRAFFIC, h->client_random, t->rd_secret);
+#endif
 }

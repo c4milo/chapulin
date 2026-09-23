@@ -401,6 +401,36 @@ last `ROLE=server` stub, as the entry said it would.
   the server's flight through `io_send_all` because it is small.
 - See [decisions: Engineering](decisions.md#engineering).
 
+### INV-29 — the key log is the only way a secret leaves, and it names the right connection
+
+- **Claim.** A `KEYLOG=on` build hands each of the four traffic secrets
+  to `ch_keylog` once per handshake, filed under the ClientHello's
+  random, and both ends of one connection log the same random and the
+  same secret under each label. No other path gives a secret to the
+  caller. A device client cannot be built with it.
+- **Mechanism.** Four calls, one per secret, at the two places
+  `ks_handshake` and `ks_master` run in `handshake_flight.c` and
+  `srv_flight.c`, which every driver reaches, blocking, record and QUIC
+  alike. Each role copies the random into `handshake_state.client_random`
+  before it loses the original: the client before the key exchange
+  wipes `h->random`, the server from the parsed hello. `keylog.h` and
+  the Makefile refuse `CH_KEYLOG` without a server role or
+  `TRUST=webpki`.
+- **Check.** `bin/rec_loop_test` runs both ends in one process and
+  requires eight rows, one per label per end, with one random and one
+  secret per label across the two, and no zero secret. It also requires
+  a client that refused CertificateVerify to have logged its handshake
+  secrets and no application secret.
+  `test/violations/keylog-random-after-the-wipe.violation` restores the
+  first build's bug, logging the random after the wipe, and requires
+  that binary to fail.
+- **Violation.** A PR logs a secret the format has no label for, logs
+  from a driver rather than from the handler that derived the secret, or
+  reads the random at a point where one role has already wiped it.
+- This is not an exception to INV-17. The wipes still run; the key log
+  hands a secret out before its wipe, and only in a build that asked.
+- See [decisions: Engineering](decisions.md#engineering), entry 44.
+
 ### INV-7 — no negotiation
 
 - **Claim.** One cipher suite, one group, one version, one signature

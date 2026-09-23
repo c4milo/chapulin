@@ -33,12 +33,18 @@
 // handshake each side calls ch_export and the two answers must be one.
 // bin/exporter_test checks the arithmetic against fixed vectors; this
 // checks that the sessions derived the secret those vectors assume.
+//
+// It is built with the KEYLOG axis for the same reason. Each end hands
+// every traffic secret to ch_keylog below, and the four labels must
+// carry one client random and one secret apiece on both ends, which is
+// what lets a capture tool decrypt a connection from either side's log.
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
 #include "ch_assert.h"
 #include "handshake_message.h"
+#include "keylog.h"
 #include "rand.h"
 #include "rec.h"
 #include "record.h"
@@ -127,6 +133,73 @@ static int sink(void *io, const uint8_t *p, size_t n) {
     return 0;
 }
 
+// What ch_keylog was handed, one row per call. The two sessions' cfg.io
+// point at these two counters, so a row says which end logged it, and
+// the hook writes through io the way a caller's file handle would: each
+// counter ends at the number of lines its end logged.
+static int client_io;
+static int server_io;
+#define LOG_MAX 16
+static struct {
+    int from_server;
+    const char *label;
+    uint8_t random[CH_KEYLOG_RANDOM_LEN];
+    uint8_t secret[SHA256_LEN];
+} logged[LOG_MAX];
+static size_t logged_count;
+
+void ch_keylog(void *io, const char *label, const uint8_t client_random[CH_KEYLOG_RANDOM_LEN],
+               const uint8_t secret[SHA256_LEN]) {
+    CHECK(io == &client_io || io == &server_io);
+    (*(int *)io)++;
+    CHECK(logged_count < LOG_MAX);
+    if (logged_count >= LOG_MAX) {
+        return;
+    }
+    logged[logged_count].from_server = io == &server_io;
+    logged[logged_count].label = label;
+    memcpy(logged[logged_count].random, client_random, CH_KEYLOG_RANDOM_LEN);
+    memcpy(logged[logged_count].secret, secret, SHA256_LEN);
+    logged_count++;
+}
+
+// The row one end logged under label, or NULL when it logged none. A
+// second row under one label from one end is a failure of its own.
+static const uint8_t *logged_secret(int from_server, const char *label, const uint8_t **random) {
+    const uint8_t *found = NULL;
+    for (size_t i = 0; i < logged_count; i++) {
+        if (logged[i].from_server == from_server && strcmp(logged[i].label, label) == 0) {
+            CHECK(found == NULL);
+            found = logged[i].secret;
+            *random = logged[i].random;
+        }
+    }
+    return found;
+}
+
+// Every label logged once by each end, with one client random and one
+// secret across the two ends, and no secret that is all zero.
+static void check_logs_agree(void) {
+    static const char *const labels[4] = {CH_KEYLOG_CLIENT_HANDSHAKE, CH_KEYLOG_SERVER_HANDSHAKE,
+                                          CH_KEYLOG_CLIENT_TRAFFIC, CH_KEYLOG_SERVER_TRAFFIC};
+    static const uint8_t zero[SHA256_LEN] = {0};
+    CHECK(logged_count == 8);
+    CHECK(client_io == 4 && server_io == 4);
+    for (size_t i = 0; i < 4; i++) {
+        const uint8_t *client_random = NULL;
+        const uint8_t *server_random = NULL;
+        const uint8_t *from_client = logged_secret(0, labels[i], &client_random);
+        const uint8_t *from_server = logged_secret(1, labels[i], &server_random);
+        CHECK(from_client != NULL && from_server != NULL);
+        if (from_client == NULL || from_server == NULL) {
+            continue;
+        }
+        CHECK(memcmp(from_client, from_server, SHA256_LEN) == 0);
+        CHECK(memcmp(client_random, server_random, CH_KEYLOG_RANDOM_LEN) == 0);
+        CHECK(memcmp(from_client, zero, SHA256_LEN) != 0);
+    }
+}
+
 // The rsa_pss identity alone, because the client below pins its modulus
 // and a pinned client offers the one signature scheme its build names.
 // bin/srv_rec_test provisions both; here the pin picks the slot, so the
@@ -140,6 +213,7 @@ static void server_config(ch_cfg *cfg) {
     cfg->recv = never_recv;
     cfg->srv.cookie_key = cookie_key;
     cfg->srv.on_record_out = sink;
+    cfg->io = &server_io;
 
     memset(&rsa_key, 0, sizeof rsa_key);
     rsa_key.n_len = sizeof rsa_sign_2048_n;
@@ -163,6 +237,7 @@ static void client_config(ch_cfg *cfg) {
     // verifies against the key that signed it.
     cfg->server_pubkey = rsa_sign_2048_n;
     cfg->server_pubkey_len = sizeof rsa_sign_2048_n;
+    cfg->io = &client_io;
 }
 
 // Moves everything the client owes into the server, and everything the
@@ -222,6 +297,9 @@ static int server_to_client(ch_record *client) {
 static int run_handshake(ch_record *client, ch_record *server, const ch_cfg *ccfg,
                          const ch_cfg *scfg) {
     to_client.len = 0;
+    logged_count = 0;
+    client_io = 0;
+    server_io = 0;
     CHECK(ch_srv_record_init(server, scfg) == CH_OK);
     CHECK(ch_record_init(client, ccfg) == CH_OK);
     // Four rounds is more than the handshake needs and fewer than a loop
@@ -271,6 +349,8 @@ int main(void) {
     CHECK(memcmp(from_client, from_server, SHA256_LEN) == 0);
     CHECK(ch_export(&server.t, "EXPORTER-Channel-Binding", NULL, 0, other, sizeof other) == CH_OK);
     CHECK(memcmp(from_client, other, SHA256_LEN) != 0);
+    check_logs_agree();
+
     // A secret that is all zero is one that was never derived.
     static const uint8_t zero[SHA256_LEN] = {0};
     CHECK(memcmp(from_client, zero, SHA256_LEN) != 0);
@@ -291,13 +371,21 @@ int main(void) {
     CHECK(ch_record_state(&client) == CH_ST_FAILED);
     CHECK(ch_record_alert(&client) == ALERT_DECRYPT_ERROR);
     CHECK(io_calls == 0);
+    // The client refused CertificateVerify, which comes before the
+    // server Finished, so it derived its handshake secrets and never its
+    // application ones: two rows, both handshake labels.
+    const uint8_t *unused = NULL;
+    CHECK(logged_secret(0, CH_KEYLOG_CLIENT_HANDSHAKE, &unused) != NULL);
+    CHECK(logged_secret(0, CH_KEYLOG_SERVER_HANDSHAKE, &unused) != NULL);
+    CHECK(logged_secret(0, CH_KEYLOG_CLIENT_TRAFFIC, &unused) == NULL);
+    CHECK(logged_secret(0, CH_KEYLOG_SERVER_TRAFFIC, &unused) == NULL);
     // A dead session exports nothing: the secret went with the wipe.
     CHECK(ch_export(&client.t, "EXPORTER-Channel-Binding", NULL, 0, other, sizeof other) ==
           CH_EINVAL);
 
     if (failures == 0) {
         (void)printf("rec_loop: a whole handshake in %d rounds, 0 socket calls;"
-                     " both ends export one secret; a wrong pin refused\n",
+                     " both ends export one secret and log the same four; a wrong pin refused\n",
                      rounds);
         return 0;
     }

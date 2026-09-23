@@ -855,7 +855,10 @@ Other targets:
   the exporter of RFC 9846 §7.5, and 32 bytes to `ch_tls`; it is off
   by default, so the figures above are a build that exports nothing,
   and it refuses `TRANSPORT=quic`, whose object compiles no `tls.c`
-  (decision 43).
+  (decision 43). `KEYLOG=on` hands each traffic secret to a
+  `ch_keylog` hook the image defines, for an NSS key log; it adds no
+  export, it imports the hook, and it is refused for a client in a raw
+  or ca trust mode (decision 44, INV-29).
   `RAND` is the one build variable with no default. Compose with
   `TRUST=raw-ecdsa`, `TRUST=ca-rsa` or `TRUST=webpki`, and `KEX=pq`;
   the `TRUST=webpki` object carries every verifier, which is why that

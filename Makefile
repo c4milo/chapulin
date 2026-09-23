@@ -133,7 +133,7 @@ HDRS := ct.h sha256.h hkdf.h chacha20.h poly1305.h aead.h x25519.h p256.h rsa.h 
         pem.h x509.h x509_der.h x509_ca.h webpki.h buf.h record.h keysched.h io.h handshake_message.h handshake_parser.h handshake_record.h cfg.h session.h handshake_auth.h handshake.h handshake_post.h \
         tls.h rand.h drbg.h sha3.h sha512.h sha512_compress.h p384.h p384_field.h p256_field.h p256_scalar.h p256_point.h p256_sign.h p256_ecdh.h rsa_pkcs1.h rsa_sign.h mlkem.h mlkem_poly.h \
         handshake_flight.h quic.h quic_aes.h quic_aes_block.h quic_aes_key.h quic_config.h quic_gcm.h quic_initial.h quic_keys.h quic_packet.h quic_retry.h quic_step.h quic_fail.h aes_traffic_key.h \
-        srv_cfg.h srv.h srv_parser.h srv_message.h srv_cookie.h srv_auth.h srv_out.h srv_flight.h srv_handshake.h srv_quic.h srv_rec.h \
+        srv_cfg.h srv.h srv_parser.h srv_message.h srv_cookie.h srv_auth.h srv_out.h srv_flight.h srv_handshake.h srv_quic.h srv_rec.h keylog.h \
         rec.h rec_frame.h rec_step.h
 
 # The TRANSPORT=quic mode's own sources, named here rather than matched
@@ -693,6 +693,30 @@ PUBLIC_EXPORT :=
 else
 $(error EXPORTER=$(EXPORTER) is not a setting; use EXPORTER=on or EXPORTER=off)
 endif
+# The key log (keylog.h), off by default. KEYLOG=on hands each traffic
+# secret to a hook the image defines, which is the one path by which a
+# secret leaves chapulin on purpose, so a device client refuses it: a
+# raw or ca trust mode under ROLE=client is a pinned firmware image.
+# TRUST=webpki, the server's TRUST=none and ROLE=both are admitted,
+# because colibri's interop endpoint logs in both roles and over QUIC.
+# keylog.h refuses the same device builds for a tree with its own build
+# system. The object exports nothing new; it imports ch_keylog, which
+# lib-check admits as a hook because no source here defines it.
+#
+# `make check KEYLOG=on` is refused at the default ROLE=client
+# TRUST=raw-rsa by design, the way `make check TRUST=none` is; the axis
+# is checked by its own legs in check instead.
+KEYLOG ?= off
+ifeq ($(KEYLOG),on)
+ifeq ($(ROLE),client)
+ifneq ($(TRUST),webpki)
+$(error KEYLOG=on is refused for a device client: use TRUST=webpki, ROLE=server or ROLE=both)
+endif
+endif
+LIB_DEF += -DCH_KEYLOG
+else ifneq ($(KEYLOG),off)
+$(error KEYLOG=$(KEYLOG) is not a setting; use KEYLOG=on or KEYLOG=off)
+endif
 # Entropy pattern, and the one build variable with no default: RAND=extern
 # leaves ch_rand_bytes undefined for the image to supply, RAND=drbg packages
 # the reference generator and exports ch_drbg_seed so the image seeds it at
@@ -740,7 +764,7 @@ QEMU_SMOKE_C := $(wildcard test/qemu/*.c test/qemu/*.h test/freertos/*.c test/fr
 # TRANSPORT=quic one write to the same path, make 3.81 compares mtimes
 # to the second, and the second link reuses the first object -- the
 # failure the paragraph below records for RAND.
-LIB_VARIANT := $(TRUST)-$(KEX)-$(RAND)-$(TRANSPORT)-$(AES)-$(ROLE)-$(EXPORTER)
+LIB_VARIANT := $(TRUST)-$(KEX)-$(RAND)-$(TRANSPORT)-$(AES)-$(ROLE)-$(EXPORTER)-$(KEYLOG)
 LIB_OBJS := $(LIB_SRCS:%.c=bin/obj/$(LIB_VARIANT)/%.o)
 
 # bench/device-ram.sh sizes the same modules the build packages. It asks
@@ -1213,8 +1237,8 @@ REC_LOOP_SRCS := $(filter-out handshake.c,$(SRCS)) rec.c rec_frame.c rec_step.c 
                  rsa_sign.c p256_sign.c p256_scalar.c p256_point.c p256_field.c
 bin/rec_loop_test: test/rec_loop_test.c $(REC_LOOP_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_TRANSPORT_RECORD $(EXPORTER_DEF) -I. -o $@ \
-	  test/rec_loop_test.c $(REC_LOOP_SRCS)
+	$(CC) $(CFLAGS) -DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_TRANSPORT_RECORD $(EXPORTER_DEF) -DCH_KEYLOG \
+	  -I. -o $@ test/rec_loop_test.c $(REC_LOOP_SRCS)
 bin/srv_test: test/srv_test.c srv_message.c srv_cookie.c srv_parser.c srv_parser_ext.c \
               $(SRV_DEPS) $(HDRS) $(TESTH)
 	@mkdir -p bin
@@ -1602,6 +1626,11 @@ check: bin/unit bin/unit_ca bin/unit_pq bin/tlsclient bin/tlsclient_ecdsa bin/tl
 	# and never reads LIB_SRCS or PUBLIC. It is lib-check alone until
 	# chapulin.hpp forwards ch_export; cxx-check joins it on that commit.
 	$(MAKE) lib-check RAND=extern EXPORTER=on
+	# The key log axis, on the build colibri's interop endpoint links: a
+	# QUIC server. It proves the object still exports its sixteen calls
+	# and imports ch_keylog as a hook. EXPORTER=off is named because that
+	# axis refuses TRANSPORT=quic and a recursion inherits the outer value.
+	$(MAKE) lib-check RAND=extern ROLE=server TRUST=none TRANSPORT=quic EXPORTER=off KEYLOG=on
 	# lint above holds lint-stack at the budget of the build check was
 	# given, 2,560 B for a plain `make check`, the target `make ci` runs.
 	# This leg compiles the TRUST=webpki object's sources under their own
@@ -2497,7 +2526,12 @@ else
 	# under that define.
 	$(CLANG_TIDY) --quiet test/rec_loop_test.c -- \
 	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_ROLE_SERVER -DCH_ROLE_BOTH \
-	  -DCH_TRANSPORT_RECORD $(EXPORTER_DEF) -I.
+	  -DCH_TRANSPORT_RECORD $(EXPORTER_DEF) -DCH_KEYLOG -I.
+	# The four ch_keylog call sites, which no other pass compiles: the
+	# hook exists only under CH_KEYLOG, and keylog.h refuses that define
+	# without a server role, so this pass names ROLE=both's pair.
+	$(CLANG_TIDY) --quiet handshake_flight.c srv_flight.c -- \
+	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_KEYLOG -I.
 	# The exporter, behind its own axis: without these defines tls.h
 	# declares no ch_export and keysched.h no ks_exporter, so this pass
 	# would read a file with nothing in it.

@@ -682,3 +682,41 @@ does nothing more.
     this code and confirmed byte for byte against an implementation written
     from §7.5's text in Python, which catches a misreading of the spec and
     not a shared one. The README says cross-checked, not published.
+
+44. **The key log is an axis, a link-time hook, and refused for a device
+    client.** colibri's interop endpoint must write an NSS key log in both
+    roles and over QUIC (its design §9), and colibri holds no secret to
+    write, so chapulin hands each traffic secret out as it derives it.
+    `KEYLOG=on` compiles four `ch_keylog` calls at the two places
+    `ks_handshake` and `ks_master` run in each role; `KEYLOG=off`, the
+    default, compiles none.
+
+    It is a hook the image defines, the way `ch_rand_bytes` and
+    `ch_aes_block` are, rather than a `ch_cfg` field. A `KEYLOG=on` object
+    imports `ch_keylog`, so an image that turned the axis on and wired
+    nothing fails to link rather than logging into nowhere; a `ch_cfg`
+    field would have needed a function pointer in every session and two
+    lines `cfg.h`, at its 500-line cap, does not have. The hook gets
+    `cfg.io`, so one hook tells connections apart.
+
+    The refusal covers a client in a raw or ca trust mode, which is what
+    a pinned firmware image is, and admits `TRUST=webpki`, the server's
+    `TRUST=none` and `ROLE=both`. The first draft admitted only webpki
+    and `ROLE=both`; that would have refused colibri's own server, which
+    builds `ROLE=server TRUST=none`. A firmware server can therefore carry
+    the axis. The refusal is a guard against building it by accident, not
+    a security boundary: anyone compiling these sources can pass the
+    define.
+
+    Four labels and no more: the two handshake and the two `_0`
+    application secrets. The format has no label for a KeyUpdate's next
+    generation, which a reader derives itself, and none of this build's
+    handshakes has early data. `EXPORTER_SECRET` is left out because no
+    reader in colibri's matrix asks for it.
+
+    The first build logged 32 zero bytes as the client's random. The
+    client wipes `h->random` when the key exchange finishes, before the
+    handshake secrets it logs, and the secrets still matched across the
+    two ends, so a test comparing secrets alone would have passed.
+    `bin/rec_loop_test` compares the random too, and INV-29 records the
+    rule with a mutant that restores the bug.

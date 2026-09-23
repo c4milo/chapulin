@@ -75,6 +75,16 @@ typedef struct {
     // one message and ch_quic.tx_level names the level.
     uint8_t level;
 #endif
+#ifdef CH_KEYLOG
+    // The ClientHello's random, which every key log line is filed under.
+    // Both roles keep a copy, because both lose the original before they
+    // log the application secrets: a client wipes h->random once the key
+    // exchange is done, and a server's parsed hello is out of scope by
+    // srv_send_finished. The value crossed the wire in the clear, so the
+    // copy exposes nothing, and the retry hello still cannot be rebuilt
+    // from it, since that needs h->priv and h->pub as well.
+    uint8_t client_random[32];
+#endif
     uint8_t alert; // what to tell the peer if we abort
     // Set by hsf_read_finished once the server Finished MAC compared
     // equal. hsa_epoch_commit asserts on it, so a commit moved earlier

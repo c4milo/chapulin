@@ -16,6 +16,7 @@
 #include "ch_assert.h"
 #include "ct.h"
 #include "io.h"
+#include "keylog.h"
 #include "keysched.h"
 #include "rand.h"
 #include "srv_message.h"
@@ -295,6 +296,11 @@ int srv_derive_handshake_secrets(handshake_state *h, const client_hello *ch, con
     ks_handshake(h->early, ecdhe, sizeof ecdhe, hash, h->handshake_secret, h->c_hs, h->s_hs);
     ct_wipe(ecdhe, sizeof ecdhe);
     ct_wipe(h->early, sizeof h->early);
+#ifdef CH_KEYLOG
+    memcpy(h->client_random, ch->random, sizeof h->client_random);
+    ch_keylog(h->t->cfg.io, CH_KEYLOG_CLIENT_HANDSHAKE, h->client_random, h->c_hs);
+    ch_keylog(h->t->cfg.io, CH_KEYLOG_SERVER_HANDSHAKE, h->client_random, h->s_hs);
+#endif
     // The client secret protects what this endpoint reads and the server
     // secret what it writes, the reverse of handshake.c:94-95 and the
     // whole of the asymmetry.
@@ -425,6 +431,12 @@ int srv_send_finished(handshake_state *h) {
     // The client's derivation, mirrored: RFC 9846 §7.5 takes the same
     // transcript the traffic secrets above take.
     ks_exp_master(h->master, hash, t->exp_master);
+#endif
+#ifdef CH_KEYLOG
+    // The reverse of the client's pair: here rd_secret holds the client's
+    // application secret and wr_secret this server's.
+    ch_keylog(t->cfg.io, CH_KEYLOG_CLIENT_TRAFFIC, h->client_random, t->rd_secret);
+    ch_keylog(t->cfg.io, CH_KEYLOG_SERVER_TRAFFIC, h->client_random, t->wr_secret);
 #endif
 #ifndef CH_TRANSPORT_QUIC
     rec_dir_init(&t->wr, t->wr_secret);
