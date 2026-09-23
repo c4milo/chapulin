@@ -2,6 +2,7 @@
 
 #include "ct.h"
 #include "hkdf.h"
+#include "sha256.h"
 
 // SHA256("") — the transcript hash of the empty context.
 static const uint8_t empty_hash[SHA256_LEN] = {
@@ -54,3 +55,26 @@ void ks_res_psk(const uint8_t res_master[SHA256_LEN], const uint8_t *nonce, size
                 uint8_t psk[SHA256_LEN]) {
     hkdf_expand_label(res_master, "resumption", nonce, nonce_len, psk, SHA256_LEN);
 }
+
+#ifdef CH_EXPORTER
+void ks_exp_master(const uint8_t master[SHA256_LEN], const uint8_t transcript[SHA256_LEN],
+                   uint8_t exp_master[SHA256_LEN]) {
+    hkdf_derive_secret(master, "exp master", transcript, exp_master);
+}
+
+void ks_exporter(const uint8_t exp_master[SHA256_LEN], const char *label, const uint8_t *context,
+                 size_t context_len, uint8_t *out, size_t out_len) {
+    uint8_t derived[SHA256_LEN];
+    hkdf_derive_secret(exp_master, label, empty_hash, derived);
+    // Hash("") is the constant above, so an empty context needs no call
+    // and raises no question about a NULL pointer with a zero length.
+    uint8_t hashed[SHA256_LEN];
+    const uint8_t *context_hash = empty_hash;
+    if (context_len != 0) {
+        sha256_of(context, context_len, hashed);
+        context_hash = hashed;
+    }
+    hkdf_expand_label(derived, "exporter", context_hash, SHA256_LEN, out, out_len);
+    ct_wipe(derived, sizeof derived);
+}
+#endif

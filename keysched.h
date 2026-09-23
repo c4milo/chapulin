@@ -36,4 +36,46 @@ void ks_res_master(const uint8_t master[SHA256_LEN], const uint8_t transcript[SH
 void ks_res_psk(const uint8_t res_master[SHA256_LEN], const uint8_t *nonce, size_t nonce_len,
                 uint8_t psk[SHA256_LEN]);
 
+#ifdef CH_EXPORTER
+// The exporter is a record-layer call: ch_export sits in tls.c, which a
+// QUIC build does not compile, and quic.h declares no counterpart
+// because RFC 9001 keys QUIC from the handshake secrets and uses no TLS
+// exporter. The Makefile's EXPORTER axis refuses the pair by name; this
+// is the same refusal for a tree that builds these sources its own way,
+// and it sits here rather than in cfg.h because cfg.h is at the
+// 500-line cap and this header is the one every build compiles that
+// also declares the exporter's own calls.
+#ifdef CH_TRANSPORT_QUIC
+#error "CH_EXPORTER has no QUIC entry point: ch_export is a record-layer call"
+#endif
+// The axis is what raises hkdf's label cap, and this is where that is
+// held: a build that defines CH_EXPORTER without the cap would compile
+// ks_exporter against a 12-byte label buffer and refuse RFC 9266's
+// 24-byte label at run time. tls.c asserts the public cap and hkdf's
+// are one number; this asserts the floor the axis needs.
+#if HKDF_LABEL_MAX < 24
+#error "CH_EXPORTER needs HKDF_LABEL_MAX >= 24: RFC 9266's exporter label is 24 bytes"
+#endif
+
+// exporter_master from the CH..server-Finished transcript, which is the
+// transcript ks_master already takes (RFC 9846 §7.5).
+void ks_exp_master(const uint8_t master[SHA256_LEN], const uint8_t transcript[SHA256_LEN],
+                   uint8_t exp_master[SHA256_LEN]);
+
+// TLS-Exporter(label, context, out_len) of RFC 9846 §7.5:
+// Expand-Label(Derive-Secret(exp_master, label, ""), "exporter",
+// Hash(context), out_len).
+//
+// The two steps are why one exporter_master serves every label: the
+// first binds the label and the second the context, so a caller asking
+// for two labels gets two unrelated keys from one stored secret.
+//
+// label is the caller's and is at most HKDF_LABEL_MAX bytes, which this
+// axis raises for the reason hkdf.h states. An empty context hashes to
+// the same value an empty transcript does; RFC 9846 §7.5 gives a caller
+// no way to distinguish an empty context from none, so neither does this.
+void ks_exporter(const uint8_t exp_master[SHA256_LEN], const char *label, const uint8_t *context,
+                 size_t context_len, uint8_t *out, size_t out_len);
+#endif
+
 #endif

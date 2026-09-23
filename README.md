@@ -314,7 +314,9 @@ apart from one that passed — so for the slow rows, read the nightly.
 | webpki_sigalg | `webpki_read_sigalg` over any bytes: a success yields one of the four algorithms and consumes exactly its encoding. `webpki_verify` over any certificate and signer, the key in an anchor buffer or in the certificate buffer, with both hashes and the three verifiers stubbed to their contracts: a TBS over the cap, an unknown algorithm or a key of the other family reaches no hash and no verifier; the hash is the one the algorithm names, over the DER SEQUENCE header for the TBS length, checked against bytes the harness writes itself, and then exactly the TBS; the verifier is the one the key's algorithm names, and it gets the signer's key and the certificate's signature at their own lengths; `p256_ecdsa_verify` gets the digest's first 32 bytes and `p384_ecdsa_verify` the SHA-384 digest or 16 zero bytes then the SHA-256 digest (FIPS 186-4 §6.4); the verdict is the verifier's | inputs ≤ `CH_WEBPKI_CERT_MAX`, TBS lengths to one byte past it |
 | sha3 (two harnesses) | every mode is safe for a one-call message and XOF output from a fresh context; the SHAKE streaming calls are safe from any context state — arbitrary lanes, either rate, every position — for split absorbs and squeezes | one-call: messages ≤ 200 B, output ≤ 400 B; streaming: chunks ≤ 32 B |
 | mlkem (six harnesses) | keygen, encaps, and decaps are safe for every seed, message, and hostile key or ciphertext, with the polynomial layer stubbed to its contracts; the polynomial layer is safe over full-range int16 coefficients — a superset of anything the KEM layer passes it, so no coefficient value can overflow the reduction arithmetic. Sampling, reductions, and coding prove in the fast tier; the NTT, the two halves of its inverse, and the base multiplication, whose chained-product overflow proofs are the SAT-hard part, each prove in their own slow-tier formula | the full domain: every input is a fixed-size array, and the sampling read stops at its 1536-byte cap |
-| hkdf (two harnesses) | hmac/extract and expand/expand-label safe over the proven sha256 contract | keys ≤ 96 B, hmac/extract messages ≤ 48 B; expand/expand-label output ≤ 96 B and info ≤ 64 B (the contract bound), expand: slow tier |
+| hkdf (two harnesses) | hmac/extract and expand/expand-label safe over the proven sha256 contract | keys ≤ 96 B, hmac/extract messages ≤ 48 B; expand/expand-label output ≤ 96 B and info ≤ `HKDF_INFO_MAX`, which is 54 at the default label cap of 12 — the cap this leg is proved at; `EXPORTER=on` raises the cap to 32 and the bound to 74, and no launched leg proves that domain (see `keysched_exporter`), expand: slow tier |
+| keysched | every `ks_*` entry point is memory-safe and UB-free over unconstrained secrets and lengths, with hkdf real and sha256 stubbed to its contract; at the default label cap of 12. Nothing here asserts what the outputs hold | secrets 32 B |
+| keysched_exporter | **not proved.** `proof/keysched_exporter_harness.c` runs the leg above under `EXPORTER=on`, which adds `ks_exp_master` and `ks_exporter` and widens hkdf's label cap to 32, and its formula returns no verdict: none in 10 minutes with the label length free, none in 7 min 50 s with it fixed at 13 and 32. `proof/run.sh` records both. The two calls are covered by `bin/exporter_test` instead, whose four vectors are cross-checked against an independent from-spec implementation rather than published, since RFC 9846 prints none | — |
 | handshake | the driver stays safe on any record stream: HRR restart, the state machine, and the flight's own arithmetic, in PSK and pinned-key mode. Record reading and message reassembly are stubbed here to the contract the `handshake_record` leg proves — compiling them multiplies this formula by the product of their loop bounds, past any runner. The ca-mode driver has a harness but no launch line, so it is unproven | 96 B receive buffer, slow tier |
 | hybrid_secret | the `KEX=pq` shared-secret derivation is safe for any stored seed, any server ciphertext and any server share, and a refused key exchange wipes all 64 bytes rather than leaving half a secret on the stack (INV-3). ML-KEM and x25519 are stubbed to their contracts, which their own harnesses prove. This is the only leg that builds `-DCH_KEX_PQ`: the rest of the hybrid driver carries the differential, the sequence enumeration and the e2e legs, not a proof | the full domain, fast tier |
 | key_share | the `KEX=pq` arm of the ServerHello key_share parser is safe on any extension bytes, and on acceptance it records the one group this build offers (`info.group == CH_KEX_GROUP`, the value `ch_tls.group` reports and `ch_cfg.require_pq` compares) and returns a whole readable ML-KEM ciphertext inside the bytes it consumed — the contract `hybrid_secret` assumes, so this proof discharges that assumption | extension ≤ 1,132 B, the full hybrid share, fast tier |
@@ -845,14 +847,19 @@ Other targets:
 - `make lib RAND=extern` packages the library as one relocatable object
   (`bin/chapulin.o`) exporting exactly the four public calls. Every
   internal symbol is localized, and `lib-check` fails if the export
-  list ever changes. The list is per build on two axes: `RAND=drbg`
+  list ever changes. The list is per build on three axes: `RAND=drbg`
   packages the reference generator and exports `ch_drbg_seed`, and
   A ca mode exports `ch_pubkey_from_pem` for provisioning, so a
   `TRUST=ca-rsa RAND=drbg` object exports six. `TRUST=webpki` exports the
-  four calls and no provisioning call. `RAND` is the one build
-  variable with no default. Compose with `TRUST=raw-ecdsa`, `TRUST=ca-rsa` or
-  `TRUST=webpki`, and `KEX=pq`; `PIN` selects nothing under
-  `TRUST=webpki`, whose object carries every verifier.
+  four calls and no provisioning call. `EXPORTER=on` adds `ch_export`,
+  the exporter of RFC 9846 §7.5, and 32 bytes to `ch_tls`; it is off
+  by default, so the figures above are a build that exports nothing,
+  and it refuses `TRANSPORT=quic`, whose object compiles no `tls.c`
+  (decision 43).
+  `RAND` is the one build variable with no default. Compose with
+  `TRUST=raw-ecdsa`, `TRUST=ca-rsa` or `TRUST=webpki`, and `KEX=pq`;
+  the `TRUST=webpki` object carries every verifier, which is why that
+  value names no algorithm.
 - `make prove-slow` runs the slow-tier proofs, one per nightly job. The runner caches by
   content, so an incremental run re-proves only what changed
   (`PROVE_NO_CACHE=1` forces a full run). It uses [kissat](https://github.com/arminbiere/kissat) when

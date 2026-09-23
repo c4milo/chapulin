@@ -1,6 +1,6 @@
 // Proves: every key-schedule entry point is memory-safe and UB-free over
-// unconstrained secrets and lengths, and each writes every byte of the
-// outputs it promises.
+// unconstrained secrets and lengths. Nothing here asserts what an output
+// holds; the vectors in test/ do that.
 //
 // hkdf is real here rather than stubbed: the schedule is a sequence of
 // Extract and Expand-Label calls, so stubbing them would leave almost
@@ -57,5 +57,39 @@ int main(void) {
     size_t nonce_len = nondet_size_t();
     __CPROVER_assume(nonce_len <= sizeof var);
     ks_res_psk(res_master, var, nonce_len, psk);
+
+#ifdef CH_EXPORTER
+    // The exporter of RFC 9846 §7.5, which the EXPORTER axis compiles.
+    // Its label is the caller's and this axis widens hkdf's cap from 12
+    // to 32, so what is new is the arithmetic at lengths the base leg
+    // never reaches. Two fixed lengths cover it: 13, the first the old
+    // cap refused, and HKDF_LABEL_MAX, the new cap itself. The label's
+    // bytes stay free. A length left free as well ran with no verdict
+    // for ten minutes at 1.4 GB: strlen over free bytes, the copy into
+    // the info buffer and hkdf_expand's loop each fork on it, and the
+    // base leg converges in 13 s with every length it takes fixed.
+    uint8_t exp_master[SHA256_LEN];
+    ks_exp_master(master, transcript, exp_master);
+
+    size_t context_len = nondet_size_t();
+    __CPROVER_assume(context_len <= sizeof var);
+    size_t out_len = nondet_size_t();
+    __CPROVER_assume(out_len >= 1 && out_len <= SHA256_LEN);
+    // A buffer of its own: a caller's context and its output are two
+    // objects, so proving the aliased shape would prove something no
+    // caller asks for (docs/proofs.md).
+    uint8_t exported[SHA256_LEN];
+
+    char label[HKDF_LABEL_MAX + 1];
+    for (size_t i = 0; i < HKDF_LABEL_MAX; i++) {
+        label[i] = (char)nondet_u8();
+        __CPROVER_assume(label[i] != '\0');
+    }
+    label[13] = '\0';
+    ks_exporter(exp_master, label, var, context_len, exported, out_len);
+    label[13] = 'x';
+    label[HKDF_LABEL_MAX] = '\0';
+    ks_exporter(exp_master, label, var, context_len, exported, out_len);
+#endif
     return 0;
 }

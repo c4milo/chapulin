@@ -47,9 +47,9 @@ void hkdf_extract(const uint8_t *salt, size_t salt_len, const uint8_t *ikm, size
 void hkdf_expand(const uint8_t prk[SHA256_LEN], const uint8_t *info, size_t info_len, uint8_t *out,
                  size_t out_len) {
     CH_ASSERT(out_len > 0 && out_len <= (size_t)255 * SHA256_LEN);
-    CH_ASSERT(info_len <= 64);
+    CH_ASSERT(info_len <= HKDF_INFO_MAX);
     // T(n) = HMAC(prk, T(n-1) | info | n); msg buffer sized for the max.
-    uint8_t msg[SHA256_LEN + 64 + 1];
+    uint8_t msg[SHA256_LEN + HKDF_INFO_MAX + 1];
     uint8_t t[SHA256_LEN] = {0}; // T(0) is empty; t_len 0 keeps it out of round 1
     size_t t_len = 0;
     uint8_t n = 0;
@@ -76,7 +76,7 @@ void hkdf_expand_label(const uint8_t secret[SHA256_LEN], const char *label, cons
     CH_ASSERT(ctx_len <= SHA256_LEN);
     CH_ASSERT(out_len <= 0xffff);
     // struct { uint16 length; opaque label<7..255>; opaque context<0..255>; }
-    uint8_t info[2 + 1 + 6 + HKDF_LABEL_MAX + 1 + SHA256_LEN];
+    uint8_t info[HKDF_INFO_MAX];
     size_t p = 0;
     info[p++] = (uint8_t)(out_len >> 8);
     info[p++] = (uint8_t)out_len;

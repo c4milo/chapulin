@@ -75,15 +75,18 @@ static void diff_hkdf_expand(void) {
     for (int i = 0; i < 200; i++) {
         uint8_t prk[SHA256_LEN];
         rng_fill(prk, sizeof prk);
-        uint8_t info[64];
-        size_t info_len = rng_below(65);
+        // Over the whole asserted domain, which is HKDF_INFO_MAX and not
+        // a number beside it: it was a literal 64 while hkdf.c's was, and
+        // hkdf.c's follows the label cap now.
+        uint8_t info[HKDF_INFO_MAX];
+        size_t info_len = rng_below(HKDF_INFO_MAX + 1);
         rng_fill(info, info_len);
         size_t out_len = 1 + rng_below(64);
         uint8_t out[64];
         hkdf_expand(prk, info, info_len, out, out_len);
         char prk_hex[65];
         (void)hex_encode(prk_hex, prk, sizeof prk);
-        char info_hex[129];
+        char info_hex[2 * HKDF_INFO_MAX + 1];
         (void)hex_encode(info_hex, info, info_len);
         char want[129];
         (void)hex_encode(want, out, out_len);

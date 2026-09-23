@@ -124,6 +124,14 @@ typedef struct {
     uint8_t rd_secret[SHA256_LEN]; // current traffic secrets, for KeyUpdate
     uint8_t wr_secret[SHA256_LEN];
     uint8_t res_master[SHA256_LEN];
+#ifdef CH_EXPORTER
+    // exporter_master (RFC 9846 §7.5). It is derived beside the
+    // application traffic secrets and lives as long as the session,
+    // because ch_export is a call a connected caller makes and the wipe
+    // at CONNECTED clears the handshake state rather than this. Every
+    // path that kills a session wipes it with the rest.
+    uint8_t exp_master[SHA256_LEN];
+#endif
     sha256 transcript;
 #ifndef CH_TRANSPORT_QUIC
     // The peer's record_size_limit. A TRANSPORT=quic build declares it

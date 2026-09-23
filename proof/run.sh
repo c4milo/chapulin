@@ -337,9 +337,14 @@ launch() {
 # order decides how much a partial run saves. Re-dispatching the
 # workflow finishes the remainder from the banked cache.
 # hkdf_expand splits one function per formula: widening the domains to
-# the contract bounds (info 64, output 96) stopped the combined formula
-# converging in 1800 s. Measured apart (kissat): expand 745 s / 2.2 GB,
-# expand_label 747 s / 2.2 GB.
+# the contract bounds (info at the CH_ASSERT bound, output 96) stopped
+# the combined formula converging in 1800 s. The info bound was a
+# literal 64 and is HKDF_INFO_MAX now, 54 at the default label cap, so
+# the harness proves the contract rather than a number above it.
+# Measured apart (kissat), first at the old 64 and then at 54 on an
+# arm64 development machine: expand 745 s / 2.2 GB, then 525 s / 2.1 GB
+# over 283 properties; expand_label 747 s / 2.2 GB, then 549 s / 2.16 GB
+# over 299.
 launch slow full hkdf_expand 120 "hkdf_expand.0:5" --object-bits 11 ct.c
 launch slow full hkdf_expand_label 120 "hkdf_expand.0:5" --object-bits 11 ct.c
 # These three prove aead.c's framing against the contract stubs in
@@ -648,6 +653,25 @@ launch fast:4 full io 24 ""
 # over 32-byte secrets; sha256 is harness.h's stub, since the schedule's
 # arithmetic is length handling rather than compression.
 launch fast full keysched 120 "" ct.c
+# The same harness under the EXPORTER axis, which compiles two more ks_
+# calls and widens hkdf's label cap from 12 to 32. It would be a second
+# launch line rather than a define on the one above for quic_step_ca's
+# reason: the two builds serialize different-sized info buffers, and a
+# proof at one size does not carry to the other.
+#
+# No launch line: this formula has not been seen to converge. Measured
+# under this script's flags on an arm64 development machine, with the
+# same -DCH_EXPORTER -DHKDF_LABEL_MAX=32 ct.c the line would carry: no
+# verdict in 10 minutes at 1.4 GB with the label length free over 1..32,
+# and none in 7 minutes 50 seconds at 1.16 GB with it fixed at 13 and
+# 32 and only the label's bytes, the context length and the output
+# length free. The base leg above converges in 13 s, so what costs is
+# specific to the two exporter calls and not yet located: strlen over
+# free bytes and the wider info copy are the suspects, and neither has
+# been measured alone. A line here would hang the fast tier, which is
+# the mistake CLAUDE.md names. Until it converges, ks_exp_master and
+# ks_exporter are covered by bin/exporter_test's cross-checked vectors
+# and refusals, and README says not proved.
 # epoch: 0 s, 27 MB. The CA arm's own rules. handshake_ca drives the whole CA
 # driver and has no launch line: its header records the runs that returned no
 # verdict (https://github.com/c4milo/chapulin/issues/37). handshake_psk and

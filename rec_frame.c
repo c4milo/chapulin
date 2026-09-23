@@ -20,6 +20,9 @@ void rec_wipe(ch_record *r) {
     ct_wipe(r->t.rd_secret, sizeof r->t.rd_secret);
     ct_wipe(r->t.wr_secret, sizeof r->t.wr_secret);
     ct_wipe(r->t.res_master, sizeof r->t.res_master);
+#ifdef CH_EXPORTER
+    ct_wipe(r->t.exp_master, sizeof r->t.exp_master);
+#endif
     ct_wipe(r->t.tx, sizeof r->t.tx);
     r->tx_len = 0;
     r->tx_off = 0;

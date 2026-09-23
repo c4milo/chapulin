@@ -26,6 +26,13 @@
 // the transcript without reading it (docs/server.md, "What the mode does
 // not check"). So the chain below is four bytes of valid DER that no
 // line of either side parses.
+//
+// It is built with the EXPORTER axis, because a connected pair is the
+// only place the exporter's two derivation sites, handshake_flight.c's
+// and srv_flight.c's, both run over one real transcript: after the
+// handshake each side calls ch_export and the two answers must be one.
+// bin/exporter_test checks the arithmetic against fixed vectors; this
+// checks that the sessions derived the secret those vectors assume.
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -38,6 +45,7 @@
 #include "rsa_sign.h"
 #include "rsa_sign_vectors.h"
 #include "srv_rec.h"
+#include "tls.h"
 
 noreturn void ch_assert_fail(const char *cond, const char *file, int line) {
     (void)fprintf(stderr, "ASSERT %s:%d: %s\n", file, line, cond);
@@ -249,6 +257,24 @@ int main(void) {
     // The claim this binary exists for.
     CHECK(io_calls == 0);
 
+    // RFC 9846 section 7.5: both ends derive exporter_master from the
+    // same transcript, so one label and one context give one answer on
+    // each side. A wrong context must not, or the context is not bound.
+    static const uint8_t binding[3] = {'c', 't', 'x'};
+    uint8_t from_client[SHA256_LEN];
+    uint8_t from_server[SHA256_LEN];
+    uint8_t other[SHA256_LEN];
+    CHECK(ch_export(&client.t, "EXPORTER-Channel-Binding", binding, sizeof binding, from_client,
+                    sizeof from_client) == CH_OK);
+    CHECK(ch_export(&server.t, "EXPORTER-Channel-Binding", binding, sizeof binding, from_server,
+                    sizeof from_server) == CH_OK);
+    CHECK(memcmp(from_client, from_server, SHA256_LEN) == 0);
+    CHECK(ch_export(&server.t, "EXPORTER-Channel-Binding", NULL, 0, other, sizeof other) == CH_OK);
+    CHECK(memcmp(from_client, other, SHA256_LEN) != 0);
+    // A secret that is all zero is one that was never derived.
+    static const uint8_t zero[SHA256_LEN] = {0};
+    CHECK(memcmp(from_client, zero, SHA256_LEN) != 0);
+
     // The same run against a pin that is not this server's key. Without
     // it the pass above would hold for a client that verified nothing,
     // which is the reading a loopback invites: both halves are ours, so
@@ -265,10 +291,13 @@ int main(void) {
     CHECK(ch_record_state(&client) == CH_ST_FAILED);
     CHECK(ch_record_alert(&client) == ALERT_DECRYPT_ERROR);
     CHECK(io_calls == 0);
+    // A dead session exports nothing: the secret went with the wipe.
+    CHECK(ch_export(&client.t, "EXPORTER-Channel-Binding", NULL, 0, other, sizeof other) ==
+          CH_EINVAL);
 
     if (failures == 0) {
         (void)printf("rec_loop: a whole handshake in %d rounds, 0 socket calls;"
-                     " a wrong pin refused\n",
+                     " both ends export one secret; a wrong pin refused\n",
                      rounds);
         return 0;
     }

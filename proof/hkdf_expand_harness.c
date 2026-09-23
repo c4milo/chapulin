@@ -1,10 +1,13 @@
 // Proves: hkdf_expand and hkdf_expand_label are memory-safe and UB-free
 // for any output up to 96 bytes (three blocks: the T(1) special case, the
 // chained middle, a partial tail — every structural path), any info up to
-// 64 — the contract's own CH_ASSERT bound, above the 54 expand_label
-// builds — any label 1..12, any context up to 32. One function per
-// formula: each call carries a whole expand body, and both in one
-// returned no verdict in 1800 s once info reached the contract bound.
+// HKDF_INFO_MAX — the contract's own CH_ASSERT bound, 54 at the default
+// label cap and the size expand_label builds — any label 1..HKDF_LABEL_MAX,
+// any context up to 32. The bound was a literal 64 while the cap was
+// fixed; it follows the cap now, so the EXPORTER axis, which raises the
+// cap to 32, widens this domain with it. One function per formula: each
+// call carries a whole expand body, and both in one returned no verdict
+// in 1800 s once info reached the bound of 64.
 // hkdf_expand_label_harness.c defines the selector and includes this
 // file, the handshake variants' pattern. The RFC 5869 255-block
 // maximum only repeats the middle case, and symbolic offsets over an 8 kB
@@ -18,7 +21,7 @@
 #include "hkdf.c"
 
 int main(void) {
-    uint8_t info[64];
+    uint8_t info[HKDF_INFO_MAX];
     uint8_t prk[SHA256_LEN];
     uint8_t out[3 * SHA256_LEN];
     fill_nondet(info, sizeof info);

@@ -336,6 +336,12 @@ void hsf_complete(handshake_state *h, uint8_t finished[HSF_FINISHED_LEN]) {
     uint8_t hash[SHA256_LEN];
     (void)hsr_transcript_hash(h, hash);
     ks_master(h->handshake_secret, hash, h->master, t->wr_secret, t->rd_secret);
+#ifdef CH_EXPORTER
+    // RFC 9846 §7.5 derives the exporter secret from this transcript,
+    // the same one the application traffic secrets take, so it is
+    // derived here rather than at a point of its own.
+    ks_exp_master(h->master, hash, t->exp_master);
+#endif
     finished[0] = HS_FINISHED;
     finished[1] = 0;
     finished[2] = 0;

@@ -641,3 +641,44 @@ does nothing more.
     buffer the caller owns and returns, so nothing waits on a socket.
     INV-28 states the claim and `bin/srv_rec_test` measures it with a
     `send` and a `recv` that fail the run if the driver calls them.
+
+43. **The exporter is a build axis, and it widens one cap rather than adding
+    a second serializer.** `EXPORTER=on` compiles `ch_export` (RFC 9846 §7.5)
+    and adds `exp_master` to `ch_tls`; `EXPORTER=off`, the default, compiles
+    neither. `ch_tls` measures 1144 bytes off and 1176 on, so a device that
+    exports nothing pays nothing and the README's SRAM figures are the
+    default build's, unchanged. colibri asked for the call for h2
+    (`docs/chapulin.md` in that tree), and a host is the only caller.
+
+    The label is the caller's, and RFC 9266's is 24 bytes against the 12
+    TLS 1.3 itself writes, so the axis sets `HKDF_LABEL_MAX` to 32.
+    `hkdf.h` makes that cap a build parameter with a floor of 12 instead of
+    growing a second `hkdf_expand_label` for long labels: the only thing
+    the cap sizes is one stack buffer, and two serializers of one `HkdfLabel`
+    would be two places for its layout to drift. `HKDF_INFO_MAX` is derived
+    from the cap for the same reason; it was a literal 64 while the cap was
+    fixed, and the default build's buffer shrinks by ten bytes as a result.
+    `tls.c` asserts that the public `CH_EXPORT_LABEL_MAX` and hkdf's cap are
+    one number.
+
+    `ch_export` refuses rather than asserts. A label is data a caller may
+    compute, so an over-long one is an operational error and returns
+    `CH_EINVAL`, and `hkdf_expand_label`'s `CH_ASSERT` on the length, which
+    `ks_exporter` reaches, is then unreachable from the public call. It refuses every state but
+    `CH_ST_CONNECTED`, because the secret does not exist until the peer's
+    Finished verifies and a closed session has wiped it with the rest.
+
+    `EXPORTER=on` with `TRANSPORT=quic` is refused by name, in the Makefile
+    and again in `keysched.h` for a tree with its own build system. The
+    call sits in `tls.c`, which `QUIC_REPLACED` drops, so that object would
+    list `ch_export` and never define it — which is what `lib-check` caught
+    when the pair was first tried. RFC 9001 keys QUIC from the handshake
+    secrets and uses no TLS exporter, and the h2 caller runs over records,
+    so a QUIC exporter is a separate change with an entry of its own in
+    `quic.h` if anyone asks for one.
+
+    No published vector exists: RFC 9846 prints none and RFC 8448's trace
+    stops short of it. `bin/exporter_test`'s four vectors were produced by
+    this code and confirmed byte for byte against an implementation written
+    from §7.5's text in Python, which catches a misreading of the spec and
+    not a shared one. The README says cross-checked, not published.

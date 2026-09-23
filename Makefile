@@ -296,7 +296,7 @@ LINT_C := $(filter-out softmul.c,$(SRCS)) drbg.c sha3.c sha512.c sha512_compress
           test/mlkem_test.c test/handshake_strict_test.c test/handshake_sequence_test.c \
           test/x509_strict_test.c $(QUIC_SRCS) $(filter-out $(AES_IMPL),$(AES_IMPL_SRCS)) \
           $(SRV_SRCS) test/srv_auth_test.c test/srv_test.c test/srv_flight_test.c \
-          srv_quic.c srv_rec.c test/srv_rec_test.c test/rec_loop_test.c rec.c rec_frame.c rec_step.c \
+          srv_quic.c srv_rec.c test/srv_rec_test.c test/rec_loop_test.c test/exporter_test.c rec.c rec_frame.c rec_step.c \
           test/quic_driver_test.c test/quic_vectors.c test/diff_quic_test.c \
           test/aes_equiv_test.c test/aes_equiv_soft.c test/aes_equiv_hw.c $(wildcard examples/*.c)
 
@@ -661,6 +661,38 @@ LIB_SRCS += sha3.c mlkem.c mlkem_poly.c
 else ifneq ($(KEX),x25519)
 $(error KEX=$(KEX) is not a key exchange; use KEX=x25519 or KEX=pq)
 endif
+# The exporter of RFC 9846 section 7.5, off by default. EXPORTER=on adds
+# ch_export to the public API and 32 bytes to ch_tls, so a device build
+# that exports nothing pays neither: the README's SRAM numbers are the
+# default build's and this axis leaves them alone.
+#
+# It raises HKDF_LABEL_MAX with it, because the exporter's label is the
+# caller's and RFC 9266's is 24 bytes against the 12 TLS 1.3 itself
+# writes. hkdf.h states why that is a build parameter rather than a
+# second serializer, and tls.c asserts the public cap and hkdf's agree.
+# The two defines a build with the exporter carries. Named once, here,
+# so the axis, the test binaries and the lint passes that read the
+# exporter's sources all pass the same pair.
+EXPORTER_DEF := -DCH_EXPORTER -DHKDF_LABEL_MAX=32
+EXPORTER ?= off
+ifeq ($(EXPORTER),on)
+# ch_export lives in tls.c, which a QUIC object does not compile
+# (QUIC_REPLACED), so that object could list the call and never define
+# it. RFC 9001 keys QUIC from the handshake secrets directly and uses no
+# TLS exporter, and the h2 caller this axis exists for runs over
+# records; a QUIC exporter is a separate change with its own entry in
+# quic.h, not a symbol this axis can promise. keysched.h refuses the
+# same pair for a firmware tree that builds these sources its own way.
+ifeq ($(TRANSPORT),quic)
+$(error EXPORTER=on has no QUIC entry point: ch_export is a record-layer call, so use TRANSPORT=tls or TRANSPORT=record)
+endif
+LIB_DEF += $(EXPORTER_DEF)
+PUBLIC_EXPORT := ch_export
+else ifeq ($(EXPORTER),off)
+PUBLIC_EXPORT :=
+else
+$(error EXPORTER=$(EXPORTER) is not a setting; use EXPORTER=on or EXPORTER=off)
+endif
 # Entropy pattern, and the one build variable with no default: RAND=extern
 # leaves ch_rand_bytes undefined for the image to supply, RAND=drbg packages
 # the reference generator and exports ch_drbg_seed so the image seeds it at
@@ -708,7 +740,7 @@ QEMU_SMOKE_C := $(wildcard test/qemu/*.c test/qemu/*.h test/freertos/*.c test/fr
 # TRANSPORT=quic one write to the same path, make 3.81 compares mtimes
 # to the second, and the second link reuses the first object -- the
 # failure the paragraph below records for RAND.
-LIB_VARIANT := $(TRUST)-$(KEX)-$(RAND)-$(TRANSPORT)-$(AES)-$(ROLE)
+LIB_VARIANT := $(TRUST)-$(KEX)-$(RAND)-$(TRANSPORT)-$(AES)-$(ROLE)-$(EXPORTER)
 LIB_OBJS := $(LIB_SRCS:%.c=bin/obj/$(LIB_VARIANT)/%.o)
 
 # bench/device-ram.sh sizes the same modules the build packages. It asks
@@ -748,7 +780,11 @@ print-lib-def:
 # pinned algorithm to one. They name TRANSPORT
 # explicitly on both sides, because a `make check TRANSPORT=quic` hands
 # its value to every recursion below, and the TRANSPORT=tls row must
-# read the transport it names.
+# read the transport it names. The quic rows name EXPORTER=off for the
+# same reason in the other direction: the EXPORTER axis refuses
+# TRANSPORT=quic by name, so a `make check EXPORTER=on` that handed its
+# value to those recursions would die in a row rather than in a build
+# anyone asked for.
 #
 # The role rows read their file list the same way, from git's srv*.c at
 # the root, and they name TRUST and TRANSPORT on both sides because the
@@ -811,10 +847,10 @@ lint-trust-separation:
 	[ -n "$$quic_files" ] || { echo "lint-trust-separation: git tracks no quic*.c file at the root, so the transport rows would check nothing"; rc=1; }; \
 	quic_always=$$(printf '%s\n' $$quic_files | grep -vxF -e quic_aes_soft.c -e quic_aes_hw.c -e quic_aes_extern.c | tr '\n' ' '); \
 	check "TRANSPORT=tls" "io.c record.c session.c handshake.c tls.c" "$$quic_files" "" "-DCH_TRANSPORT_QUIC"; \
-	check "TRANSPORT=quic" "$$quic_always quic_aes_soft.c" "io.c record.c session.c handshake.c tls.c quic_aes_hw.c quic_aes_extern.c" "-DCH_TRANSPORT_QUIC" "-DCH_AES_HW -DCH_AES_EXTERN"; \
-	check "TRANSPORT=quic AES=soft" "quic_aes_soft.c" "quic_aes_hw.c quic_aes_extern.c" "" "-DCH_AES_HW -DCH_AES_EXTERN"; \
-	check "TRANSPORT=quic AES=hw" "quic_aes_hw.c" "quic_aes_soft.c quic_aes_extern.c" "-DCH_AES_HW" "-DCH_AES_EXTERN"; \
-	check "TRANSPORT=quic AES=extern" "quic_aes_extern.c" "quic_aes_soft.c quic_aes_hw.c" "-DCH_AES_EXTERN" "-DCH_AES_HW"; \
+	check "TRANSPORT=quic EXPORTER=off" "$$quic_always quic_aes_soft.c" "io.c record.c session.c handshake.c tls.c quic_aes_hw.c quic_aes_extern.c" "-DCH_TRANSPORT_QUIC" "-DCH_AES_HW -DCH_AES_EXTERN"; \
+	check "TRANSPORT=quic AES=soft EXPORTER=off" "quic_aes_soft.c" "quic_aes_hw.c quic_aes_extern.c" "" "-DCH_AES_HW -DCH_AES_EXTERN"; \
+	check "TRANSPORT=quic AES=hw EXPORTER=off" "quic_aes_hw.c" "quic_aes_soft.c quic_aes_extern.c" "-DCH_AES_HW" "-DCH_AES_EXTERN"; \
+	check "TRANSPORT=quic AES=extern EXPORTER=off" "quic_aes_extern.c" "quic_aes_soft.c quic_aes_hw.c" "-DCH_AES_EXTERN" "-DCH_AES_HW"; \
 	srv_files=$$(git ls-files 'srv*.c' | grep -v / | tr '\n' ' '); \
 	[ -n "$$srv_files" ] || { echo "lint-trust-separation: git tracks no srv*.c file at the root, so the role rows would check nothing"; rc=1; }; \
 	client_only="handshake.c handshake_auth.c handshake_parser.c handshake_message.c"; \
@@ -824,7 +860,7 @@ lint-trust-separation:
 	check "ROLE=both TRUST=webpki TRANSPORT=tls" "$$srv_shared srv_handshake.c $$signers tls.c handshake.c" "srv_quic.c srv_rec.c" "-DCH_ROLE_SERVER -DCH_ROLE_BOTH" ""; \
 	check "ROLE=server TRUST=none TRANSPORT=tls" "$$srv_shared srv_handshake.c $$signers tls.c rsa.c rsa_mont.c p256.c" "$$client_only srv_quic.c srv_rec.c" "-DCH_ROLE_SERVER" "-DCH_PIN_ECDSA"; \
 	quic_srv=$$(printf '%s\n' $$quic_always | grep -vxF -e quic_step.c | tr '\n' ' '); \
-	check "ROLE=server TRUST=none TRANSPORT=quic" "$$srv_shared srv_quic.c $$signers $$quic_srv" "$$client_only srv_handshake.c srv_rec.c quic_step.c record.c" "-DCH_ROLE_SERVER -DCH_TRANSPORT_QUIC" "-DCH_PIN_ECDSA"; \
+	check "ROLE=server TRUST=none TRANSPORT=quic EXPORTER=off" "$$srv_shared srv_quic.c $$signers $$quic_srv" "$$client_only srv_handshake.c srv_rec.c quic_step.c record.c" "-DCH_ROLE_SERVER -DCH_TRANSPORT_QUIC" "-DCH_PIN_ECDSA"; \
 	check "ROLE=server TRUST=none TRANSPORT=record" "$$srv_shared srv_rec.c $$signers rec.c rec_frame.c record.c" "$$client_only srv_handshake.c srv_quic.c rec_step.c" "-DCH_ROLE_SERVER -DCH_TRANSPORT_RECORD" "-DCH_PIN_ECDSA -DCH_TRANSPORT_QUIC"; \
 	[ $$rc = 0 ] && echo "lint-trust-separation: every axis value packages exactly its own sources and defines"; \
 	exit $$rc
@@ -843,7 +879,7 @@ print-clang-rv:
 # build (docs/decisions.md 28). A ROLE=client build sets it from
 # PUBLIC_TRANSPORT, so the two transports' lists still reach here
 # unchanged.
-PUBLIC := $(PUBLIC_ROLE) $(PUBLIC_RAND) $(PUBLIC_CA)
+PUBLIC := $(PUBLIC_ROLE) $(PUBLIC_RAND) $(PUBLIC_CA) $(PUBLIC_EXPORT)
 
 # LIB_VARIANT names the build variables that pick the sources and the
 # defines, and the compiler is not one of them. So `make CC=<cross> lib`
@@ -1177,7 +1213,7 @@ REC_LOOP_SRCS := $(filter-out handshake.c,$(SRCS)) rec.c rec_frame.c rec_step.c 
                  rsa_sign.c p256_sign.c p256_scalar.c p256_point.c p256_field.c
 bin/rec_loop_test: test/rec_loop_test.c $(REC_LOOP_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_TRANSPORT_RECORD -I. -o $@ \
+	$(CC) $(CFLAGS) -DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_TRANSPORT_RECORD $(EXPORTER_DEF) -I. -o $@ \
 	  test/rec_loop_test.c $(REC_LOOP_SRCS)
 bin/srv_test: test/srv_test.c srv_message.c srv_cookie.c srv_parser.c srv_parser_ext.c \
               $(SRV_DEPS) $(HDRS) $(TESTH)
@@ -1349,6 +1385,14 @@ bin/unit: test/unit_test.c $(SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) -I. -o $@ test/unit_test.c $(SRCS)
 
+# The exporter, which no other binary compiles: EXPORTER=off is the
+# default, so ks_exporter and ch_export exist only under these defines.
+# It links $(SRCS) because ch_export sits in tls.c, and it is the one
+# binary that checks the public call's refusals.
+bin/exporter_test: test/exporter_test.c $(SRCS) $(HDRS) $(TESTH)
+	@mkdir -p bin
+	$(CC) $(CFLAGS) $(EXPORTER_DEF) -I. -o $@ test/exporter_test.c $(SRCS)
+
 # The CA-build unit: the #ifdef CH_TRUST_CA test arms (floor
 # derivation, CA slot validation) only execute here.
 bin/unit_ca: test/unit_test.c $(SRCS) $(HDRS) $(TESTH)
@@ -1484,7 +1528,7 @@ run-%: bin/%
 # and the invariant violation builds. The nightly runs it. Splitting on
 # duration rather than on importance is deliberate -- nothing here is
 # optional, and a change is not finished until check-slow passes too.
-check: bin/unit bin/unit_ca bin/unit_pq bin/tlsclient bin/tlsclient_ecdsa bin/tlsclient_ca bin/tlsclient_ca_ecdsa bin/tlsclient_webpki bin/tlsclient_pq bin/drbg_test bin/softmul_test bin/rsa_test bin/sha3_test bin/sha512_test bin/p384_test bin/rsa_pkcs1_test bin/webpki_time_test bin/webpki_name_test bin/webpki_spki_test bin/webpki_sigalg_test bin/webpki_cert_test bin/webpki_chain_test bin/webpki_auth_test bin/mlkem_test bin/handshake_strict_test bin/handshake_strict_pq bin/handshake_strict_webpki bin/webpki_session_test bin/webpki_session_pq bin/x509strict bin/x509strict_ecdsa bin/quic_driver_test bin/quic_test bin/recclient $(AES_HW_BINS) lint rand-check bin/srv_auth_test bin/srv_test bin/srv_quic_test bin/srv_rec_test bin/rec_loop_test bin/rsa_sign_test bin/p256_field_test bin/p256_ecdh_test bin/p256_sign_test
+check: bin/unit bin/unit_ca bin/unit_pq bin/tlsclient bin/tlsclient_ecdsa bin/tlsclient_ca bin/tlsclient_ca_ecdsa bin/tlsclient_webpki bin/tlsclient_pq bin/drbg_test bin/softmul_test bin/rsa_test bin/sha3_test bin/sha512_test bin/p384_test bin/rsa_pkcs1_test bin/webpki_time_test bin/webpki_name_test bin/webpki_spki_test bin/webpki_sigalg_test bin/webpki_cert_test bin/webpki_chain_test bin/webpki_auth_test bin/mlkem_test bin/handshake_strict_test bin/handshake_strict_pq bin/handshake_strict_webpki bin/webpki_session_test bin/webpki_session_pq bin/x509strict bin/x509strict_ecdsa bin/quic_driver_test bin/quic_test bin/recclient $(AES_HW_BINS) lint rand-check bin/srv_auth_test bin/srv_test bin/srv_quic_test bin/srv_rec_test bin/rec_loop_test bin/exporter_test bin/rsa_sign_test bin/p256_field_test bin/p256_ecdh_test bin/p256_sign_test
 	# The packaged object is built once per entropy pattern, because
 	# lib-check reads a different export list and a different import
 	# list in each. Only the object is built twice: the examples and
@@ -1532,7 +1576,7 @@ check: bin/unit bin/unit_ca bin/unit_pq bin/tlsclient bin/tlsclient_ecdsa bin/tl
 	# TLS ones, so it is the leg that holds PUBLIC_TRANSPORT to a
 	# replacement rather than an addition, and the one that compiles
 	# chapulin.hpp's Quic class against the object it forwards to.
-	$(MAKE) lib-check cxx-check RAND=extern TRANSPORT=quic
+	$(MAKE) lib-check cxx-check RAND=extern TRANSPORT=quic EXPORTER=off
 	# The server arm exports ch_srv_accept and ch_srv_check beside
 	# ch_read, ch_write and ch_close, and no ch_connect, so it is the leg
 	# that holds PUBLIC_ROLE to a replacement rather than an addition. It
@@ -1553,15 +1597,23 @@ check: bin/unit bin/unit_ca bin/unit_pq bin/tlsclient bin/tlsclient_ecdsa bin/tl
 	# failure this target's own comment records for ROLE=server. It took
 	# 2.7 s cold.
 	$(MAKE) lib-check RAND=extern ROLE=server TRUST=none TRANSPORT=record
+	# The exporter axis: the one leg that verifies PUBLIC_EXPORT against
+	# a packaged object, since bin/exporter_test links $(SRCS) directly
+	# and never reads LIB_SRCS or PUBLIC. It is lib-check alone until
+	# chapulin.hpp forwards ch_export; cxx-check joins it on that commit.
+	$(MAKE) lib-check RAND=extern EXPORTER=on
 	# lint above holds lint-stack at the budget of the build check was
 	# given, 2,560 B for a plain `make check`, the target `make ci` runs.
 	# This leg compiles the TRUST=webpki object's sources under their own
 	# defines against that build's 4,096 B budget (INV-19), which nothing
 	# else in check measures. It took 2.0 to 3.1 s in three timed runs.
 	$(MAKE) lint-stack TRUST=webpki
+	# The EXPORTER axis widens hkdf's info buffer by 20 bytes and adds
+	# ks_exporter's frame; this holds both to the default budget.
+	$(MAKE) lint-stack EXPORTER=on
 	# The QUIC arm compiles the QUIC_SRCS, which no other leg compiles
 	# at all, against the 2,560 B device budget (INV-19).
-	$(MAKE) lint-stack TRANSPORT=quic
+	$(MAKE) lint-stack TRANSPORT=quic EXPORTER=off
 	./bin/unit
 	./bin/unit_ca
 	./bin/unit_pq
@@ -1601,6 +1653,7 @@ check: bin/unit bin/unit_ca bin/unit_pq bin/tlsclient bin/tlsclient_ecdsa bin/tl
 	./bin/srv_quic_test
 	./bin/srv_rec_test
 	./bin/rec_loop_test
+	./bin/exporter_test
 	./bin/srv_flight_test
 	./bin/handshake_strict_test
 	./bin/handshake_strict_pq
@@ -2385,7 +2438,7 @@ else
 	# reason: every declaration they hold sits behind
 	# -DCH_TRANSPORT_QUIC, which this pass does not define, so it would
 	# read eight empty translation units. The two passes below read them.
-	$(CLANG_TIDY) --quiet $(filter-out webpki.c test/webpki_session_test.c test/webpki_chain_test.c test/webpki_auth_test.c examples/webpki_client.c $(QUIC_SRCS) $(AES_IMPL_SRCS) test/quic_driver_test.c test/quic_vectors.c test/diff_quic_test.c test/aes_equiv_test.c test/aes_equiv_soft.c test/aes_equiv_hw.c $(SRV_SRCS) test/srv_auth_test.c test/srv_test.c test/srv_flight_test.c srv_quic.c srv_rec.c test/srv_rec_test.c test/rec_loop_test.c rec.c rec_frame.c rec_step.c,$(LINT_C)) -- \
+	$(CLANG_TIDY) --quiet $(filter-out webpki.c test/webpki_session_test.c test/webpki_chain_test.c test/webpki_auth_test.c examples/webpki_client.c $(QUIC_SRCS) $(AES_IMPL_SRCS) test/quic_driver_test.c test/quic_vectors.c test/diff_quic_test.c test/aes_equiv_test.c test/aes_equiv_soft.c test/aes_equiv_hw.c $(SRV_SRCS) test/srv_auth_test.c test/srv_test.c test/srv_flight_test.c srv_quic.c srv_rec.c test/srv_rec_test.c test/rec_loop_test.c test/exporter_test.c rec.c rec_frame.c rec_step.c,$(LINT_C)) -- \
 	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -I.
 	# The pass above defines no trust mode, so it reads none of the
 	# TRUST=webpki arms. This pass parses the sources that carry them or
@@ -2444,7 +2497,14 @@ else
 	# under that define.
 	$(CLANG_TIDY) --quiet test/rec_loop_test.c -- \
 	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_ROLE_SERVER -DCH_ROLE_BOTH \
-	  -DCH_TRANSPORT_RECORD -I.
+	  -DCH_TRANSPORT_RECORD $(EXPORTER_DEF) -I.
+	# The exporter, behind its own axis: without these defines tls.h
+	# declares no ch_export and keysched.h no ks_exporter, so this pass
+	# would read a file with nothing in it.
+	$(CLANG_TIDY) --quiet test/exporter_test.c tls.c keysched.c hkdf.c handshake_flight.c -- \
+	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) $(EXPORTER_DEF) -I.
+	$(CLANG_TIDY) --quiet srv_flight.c -- \
+	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) $(EXPORTER_DEF) -DCH_ROLE_SERVER -I.
 	# The M3 smoke runtimes and the KAT program lint with the target's
 	# own flags. Three checks are off, each with its reason:
 	# bugprone-reserved-identifier and its two cert aliases, because the

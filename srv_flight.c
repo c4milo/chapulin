@@ -421,6 +421,11 @@ int srv_send_finished(handshake_state *h) {
     // Finished still arrives under the handshake key.
     (void)hsr_transcript_hash(h, hash);
     ks_master(h->handshake_secret, hash, h->master, t->rd_secret, t->wr_secret);
+#ifdef CH_EXPORTER
+    // The client's derivation, mirrored: RFC 9846 §7.5 takes the same
+    // transcript the traffic secrets above take.
+    ks_exp_master(h->master, hash, t->exp_master);
+#endif
 #ifndef CH_TRANSPORT_QUIC
     rec_dir_init(&t->wr, t->wr_secret);
 #endif

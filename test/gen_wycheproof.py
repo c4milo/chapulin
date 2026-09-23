@@ -193,9 +193,14 @@ def gen_hkdf(d, out):
             okm = bytes_of(t["okm"], t["size"] if t["result"] == "valid" else None)
             size = t["size"]
             # The library's asserted domain (hkdf.c): 0 < out_len <=
-            # 255*32 and info_len <= 64. Outside it, CH_ASSERT faults on
-            # purpose instead of proceeding; the test reports the count.
-            if size == 0 or size > 255 * 32 or len(info) > 64:
+            # 255*32 and info_len <= HKDF_INFO_MAX, which hkdf.h derives as
+            # 2 + 1 + 6 + HKDF_LABEL_MAX + 1 + 32 and the wycheproof build
+            # compiles at the default cap of 12. Outside it, CH_ASSERT
+            # faults on purpose instead of proceeding; the test reports
+            # the count. Written as the same sum, so a reader can check it
+            # against hkdf.h rather than against a number.
+            hkdf_info_max = 2 + 1 + 6 + 12 + 1 + 32
+            if size == 0 or size > 255 * 32 or len(info) > hkdf_info_max:
                 skipped += 1
                 continue
             off = blob.add(ikm + salt + info + okm)

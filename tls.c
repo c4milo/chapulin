@@ -450,3 +450,43 @@ _Static_assert(
     CH_TRUST_MIN_RXBUF == 2 * (CH_X509_MAX + 5) + 8 + REC_OVERHEAD,
     "cfg.h's ca receive floor is the two-entry flight plus the record that completes it");
 #endif
+
+#ifdef CH_EXPORTER
+// The exporter of RFC 9846 §7.5. This block sits below every CH_ASSERT
+// in the file, so it adds no line above one and the objects of every
+// build without this axis are unchanged (docs/webpki.md, "Bounds").
+//
+// keysched.h and hkdf.h are included here for the same reason: an
+// include at the top of the file would move every assertion under it.
+#include "hkdf.h"
+#include "keysched.h"
+
+_Static_assert(CH_EXPORT_LABEL_MAX == HKDF_LABEL_MAX,
+               "the public label cap and the one hkdf.c serializes must be the same number");
+
+int ch_export(const ch_tls *t, const char *label, const uint8_t *context, size_t context_len,
+              uint8_t *out, size_t out_len) {
+    // Every refusal below is a caller's argument rather than a peer's
+    // input, and each one returns instead of asserting, because a label
+    // is data a caller may compute. hkdf_expand_label's CH_ASSERT on the
+    // label length, which ks_exporter reaches, is therefore unreachable
+    // from here.
+    if (t->state != CH_ST_CONNECTED) {
+        // The secret does not exist until the peer's Finished verified,
+        // and a closed session has wiped it.
+        return CH_EINVAL;
+    }
+    if (label == NULL || out == NULL || out_len == 0 || out_len > CH_EXPORT_MAX) {
+        return CH_EINVAL;
+    }
+    if (context_len != 0 && context == NULL) {
+        return CH_EINVAL;
+    }
+    size_t label_len = strlen(label);
+    if (label_len == 0 || label_len > CH_EXPORT_LABEL_MAX) {
+        return CH_EINVAL;
+    }
+    ks_exporter(t->exp_master, label, context, context_len, out, out_len);
+    return CH_OK;
+}
+#endif

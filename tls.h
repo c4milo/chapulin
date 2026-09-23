@@ -29,6 +29,40 @@ int ch_write(ch_tls *t, const uint8_t *p, size_t n);
 // NewSessionTicket and KeyUpdate internally.
 int ch_read(ch_tls *t, uint8_t *p, size_t n);
 
+#ifdef CH_EXPORTER
+// The longest exporter label this build takes, not counting a
+// terminator. 32 admits RFC 9266's "EXPORTER-Channel-Binding" at 24 and
+// leaves room; the EXPORTER axis sets hkdf.h's own cap to the same
+// number and tls.c asserts the two agree.
+#define CH_EXPORT_LABEL_MAX 32
+
+// The most bytes one call yields. RFC 9846 §7.5 sets no limit and HKDF
+// allows 255 hashes; this is the bound a caller's buffer is checked
+// against, sized for the key material a channel binding or a QUIC-style
+// secret asks for.
+#define CH_EXPORT_MAX 255
+
+// TLS-Exporter (RFC 9846 §7.5): writes out_len bytes bound to label and
+// context, from a secret derived when the handshake completed.
+//
+// label is a NUL-terminated ASCII string the caller chooses, and two
+// labels give two unrelated keys from the one session. context may be
+// NULL with context_len 0; RFC 9846 §7.5 gives no way to tell an empty
+// context from none, so neither does this.
+//
+// Returns CH_EINVAL when the session is not connected, because the
+// secret does not exist until the peer's Finished verifies; when label
+// or out is NULL; when label is empty or longer than
+// CH_EXPORT_LABEL_MAX; when context_len is non-zero and context is
+// NULL; and when out_len is 0 or above CH_EXPORT_MAX. Nothing is
+// written on any of those. Otherwise CH_OK.
+//
+// It reads the session and changes nothing in it, so a caller may call
+// it as often as it likes and in any order against ch_read and ch_write.
+int ch_export(const ch_tls *t, const char *label, const uint8_t *context, size_t context_len,
+              uint8_t *out, size_t out_len);
+#endif
+
 // Sends close_notify (only under live keys) and wipes all key material.
 void ch_close(ch_tls *t);
 

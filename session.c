@@ -28,6 +28,9 @@ void tlsi_wipe(ch_tls *t) {
     ct_wipe(t->rd_secret, sizeof t->rd_secret);
     ct_wipe(t->wr_secret, sizeof t->wr_secret);
     ct_wipe(t->res_master, sizeof t->res_master);
+#ifdef CH_EXPORTER
+    ct_wipe(t->exp_master, sizeof t->exp_master);
+#endif
     t->keys = 0;
     t->pt_off = 0;
     t->pt_len = 0;
