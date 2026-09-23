@@ -68,15 +68,23 @@ extern const uint8_t srv_hrr_random[SRV_RANDOM];
 // bytes. SRV_FINISHED_MAX is a header over one verify_data.
 // SRV_ENCRYPTED_EXTENSIONS_MAX is a header and an empty extension block
 // (6), record_size_limit (6), and ALPN at this API's longest name
-// (7 + CH_ALPN_NAME_MAX). It holds no quic_transport_parameters body: a
-// build here passes none, and a QUIC server raises this by
-// 4 + CH_TRANSPORT_PARAMS_MAX (cfg.h) when it passes one.
+// (7 + CH_ALPN_NAME_MAX). A QUIC server sends no record_size_limit (RFC
+// 9001 §4.1.3) and sends the caller's transport parameters in its place
+// (§8.2): the type and length words (4) and a body of at most
+// CH_TRANSPORT_PARAMS_MAX (cfg.h), which srv_build_encrypted_extensions
+// refuses above. This constant first left the QUIC body out, and every
+// QUIC server whose body passed about 45 bytes failed its
+// EncryptedExtensions with CH_ECAP.
 // SRV_CERT_HEAD_LEN and SRV_CERT_SUFFIX_LEN are a Certificate's head and
 // one entry's suffix, which srv_certificate_message_len counts as
 // SRV_CERT_HEAD and the 2 bytes of SRV_CERT_ENTRY_FRAME.
 #define SRV_CERT_VERIFY_MAX (4 + 2 + 2 + SRV_SIG_MAX)
 #define SRV_FINISHED_MAX (4 + SHA256_LEN)
+#ifdef CH_TRANSPORT_QUIC
+#define SRV_ENCRYPTED_EXTENSIONS_MAX (6 + 7 + CH_ALPN_NAME_MAX + 4 + CH_TRANSPORT_PARAMS_MAX)
+#else
 #define SRV_ENCRYPTED_EXTENSIONS_MAX (6 + 6 + 7 + CH_ALPN_NAME_MAX)
+#endif
 #define SRV_CERT_HEAD_LEN 8
 #define SRV_CERT_SUFFIX_LEN 2
 
@@ -211,12 +219,11 @@ size_t srv_build_compat_ccs(uint8_t *out, size_t cap);
 // this builder reads none of them: RFC 9001 §8.2 makes their content
 // the QUIC version's, not TLS's (rfc9001.txt:1926-1928). It is the
 // server's half of what ch_cfg.transport_params is for the client, so
-// the two directions share one field name and one cap. Every build in
-// this tree passes NULL here, because §8.2 forbids the extension on a
-// transport that is not QUIC (rfc9001.txt:1945-1949) and srv_cfg.h
-// refuses ROLE=server together with CH_TRANSPORT_QUIC. A QUIC server
-// passes cfg.transport_params and its length, and this function needs
-// no other change for it.
+// the two directions share one field name and one cap. A TRANSPORT=tls
+// or TRANSPORT=record server passes NULL here, because §8.2 forbids the
+// extension on a transport that is not QUIC (rfc9001.txt:1945-1949). A
+// QUIC server passes cfg.transport_params and its length, and
+// SRV_ENCRYPTED_EXTENSIONS_MAX holds the largest of them.
 //
 // Requires cap bytes at out; record_size_limit holding the largest
 // plaintext this server accepts in one record, sized to cfg.buf_len,

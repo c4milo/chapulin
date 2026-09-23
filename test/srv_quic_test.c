@@ -96,6 +96,11 @@ static const ch_cert chain[1] = {
 };
 static const uint8_t cookie_key[SHA256_LEN] = {7};
 static const uint8_t client_params[] = {0x01, 0x02, 0x03, 0x04};
+// The server's transport parameters at the largest body the API admits,
+// so the flight below stages the largest EncryptedExtensions a QUIC
+// server can send. SRV_ENCRYPTED_EXTENSIONS_MAX first left this body out,
+// and a server failed that message with CH_ECAP past about 45 bytes.
+static uint8_t server_params[CH_TRANSPORT_PARAMS_MAX];
 static const uint8_t alpn_h3[] = {'h', '3'};
 static const ch_alpn_protocol alpn[1] = {
     {alpn_h3, sizeof alpn_h3}
@@ -153,9 +158,12 @@ static void test_initial_seal_uses_the_server_labels(void) {
     CHECK(unhex(A3_PAYLOAD_HEX, pt) == sizeof pt);
     CHECK(unhex(A3_PACKET_HEX, want) == sizeof want);
 
+    // The side ch_srv_quic_init gives a session, which a ROLE=both build
+    // reads and a ROLE=server build fixes.
     ch_quic q;
     memset(&q, 0, sizeof q);
     q.t.state = CH_ST_START;
+    q.endpoint = CH_QUIC_ENDPOINT_SERVER;
     CHECK(ch_quic_initial_keys(&q, APPENDIX_DCID, sizeof APPENDIX_DCID) == CH_OK);
 
     static uint8_t out[A3_PACKET];
@@ -164,6 +172,20 @@ static void test_initial_seal_uses_the_server_labels(void) {
                        sizeof out, &out_len) == CH_OK);
     CHECK(out_len == sizeof out);
     CHECK(memcmp(out, want, sizeof want) == 0);
+}
+
+// The staging frame holds the largest EncryptedExtensions exactly: the
+// longest ALPN name and the largest transport parameters body build at
+// SRV_ENCRYPTED_EXTENSIONS_MAX, and one byte less refuses them.
+static void test_encrypted_extensions_max(void) {
+    static uint8_t name[CH_ALPN_NAME_MAX];
+    memset(name, 'n', sizeof name);
+    const ch_alpn_protocol longest = {name, sizeof name};
+    static uint8_t msg[SRV_ENCRYPTED_EXTENSIONS_MAX];
+    CHECK(srv_build_encrypted_extensions(msg, sizeof msg, 0, &longest, server_params,
+                                         sizeof server_params) == sizeof msg);
+    CHECK(srv_build_encrypted_extensions(msg, sizeof msg - 1, 0, &longest, server_params,
+                                         sizeof server_params) == 0);
 }
 
 // Both identities, because the hello this tree's client builds offers the
@@ -190,6 +212,61 @@ static void provision(ch_cfg *cfg) {
     cfg->srv.rsa_pss.pub = rsa_sign_2048_n;
     cfg->srv.rsa_pss.pub_len = sizeof rsa_sign_2048_n;
 }
+
+#ifdef CH_ROLE_BOTH
+// A ROLE=both object holds both drivers, and a session takes its side
+// from the init call that made it, not from the build (quic.c's
+// CH_QUIC_SELF). A client session and a server session over one
+// connection ID each open the Initial packet the other sealed, and the
+// server's is RFC 9001 Appendix A.3's packet. The build first gave every
+// session the server's labels, so the server discarded the client's
+// first Initial packet every time.
+static void test_both_roles_take_their_own_labels(const ch_cfg *server_cfg) {
+    uint8_t hdr[A3_HDR_LEN];
+    static uint8_t pt[A3_PAYLOAD];
+    static uint8_t want[A3_PACKET];
+    CHECK(unhex(A3_HDR_HEX, hdr) == sizeof hdr);
+    CHECK(unhex(A3_PAYLOAD_HEX, pt) == sizeof pt);
+    CHECK(unhex(A3_PACKET_HEX, want) == sizeof want);
+
+    static uint8_t client_buf[CH_MIN_RXBUF];
+    ch_cfg client_cfg;
+    memset(&client_cfg, 0, sizeof client_cfg);
+    client_cfg.buf = client_buf;
+    client_cfg.buf_len = sizeof client_buf;
+    client_cfg.alpn_protocols = alpn;
+    client_cfg.alpn_count = 1;
+    client_cfg.transport_params = client_params;
+    client_cfg.transport_params_len = sizeof client_params;
+    client_cfg.on_level_ready = level_ready;
+    client_cfg.server_pubkey = rsa_sign_2048_n;
+    client_cfg.server_pubkey_len = sizeof rsa_sign_2048_n;
+    static ch_quic client;
+    static ch_quic server;
+    CHECK(ch_quic_init(&client, &client_cfg) == CH_OK);
+    CHECK(ch_srv_quic_init(&server, server_cfg) == CH_OK);
+    CHECK(ch_quic_initial_keys(&client, APPENDIX_DCID, sizeof APPENDIX_DCID) == CH_OK);
+    CHECK(ch_quic_initial_keys(&server, APPENDIX_DCID, sizeof APPENDIX_DCID) == CH_OK);
+
+    static uint8_t pkt[A3_PACKET];
+    size_t pkt_len = 0;
+    uint8_t key_set = 0;
+    uint64_t pn = 0;
+    size_t pt_len = 0;
+    CHECK(ch_quic_seal(&server, CH_LEVEL_INITIAL, A3_PN, A3_PN_LEN, hdr, sizeof hdr, pt, sizeof pt,
+                       pkt, sizeof pkt, &pkt_len) == CH_OK);
+    CHECK(pkt_len == sizeof want && memcmp(pkt, want, sizeof want) == 0);
+    CHECK(ch_quic_open(&client, CH_LEVEL_INITIAL, pkt, pkt_len, A3_HDR_LEN - A3_PN_LEN, 0, 0,
+                       &key_set, &pn, &pt_len) == CH_OK);
+    CHECK(pn == A3_PN && pt_len == sizeof pt);
+
+    CHECK(ch_quic_seal(&client, CH_LEVEL_INITIAL, A3_PN, A3_PN_LEN, hdr, sizeof hdr, pt, sizeof pt,
+                       pkt, sizeof pkt, &pkt_len) == CH_OK);
+    CHECK(ch_quic_open(&server, CH_LEVEL_INITIAL, pkt, pkt_len, A3_HDR_LEN - A3_PN_LEN, 0, 0,
+                       &key_set, &pn, &pt_len) == CH_OK);
+    CHECK(pn == A3_PN && pt_len == sizeof pt);
+}
+#endif
 
 int main(void) {
     // The client's side of the wire: one hello, built the way a QUIC
@@ -219,8 +296,9 @@ int main(void) {
     cfg.alpn_count = 1;
     cfg.on_level_ready = level_ready;
     cfg.on_transport_params = got_params;
-    cfg.transport_params = client_params;
-    cfg.transport_params_len = sizeof client_params;
+    memset(server_params, 0x5c, sizeof server_params);
+    cfg.transport_params = server_params;
+    cfg.transport_params_len = sizeof server_params;
     cfg.srv.cookie_key = cookie_key;
     cfg.srv.on_crypto_out = sink;
     provision(&cfg);
@@ -258,6 +336,10 @@ int main(void) {
     CHECK(seen.ready[CH_LEVEL_APPLICATION][CH_KEY_READ] == 0);
 
     test_initial_seal_uses_the_server_labels();
+    test_encrypted_extensions_max();
+#ifdef CH_ROLE_BOTH
+    test_both_roles_take_their_own_labels(&cfg);
+#endif
 
     if (failures == 0) {
         (void)printf("srv_quic: a ClientHello in, %zu fragments out (%zu initial, %zu handshake)\n",

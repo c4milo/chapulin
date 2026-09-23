@@ -1241,6 +1241,16 @@ bin/srv_quic_test: test/srv_quic_test.c $(SRV_QUIC_SRCS) $(HDRS) $(TESTH)
 	$(CC) $(CFLAGS) -DCH_ROLE_SERVER -DCH_TRANSPORT_QUIC -I. -o $@ test/srv_quic_test.c \
 	  $(SRV_QUIC_SRCS)
 
+# The same main over a ROLE=both TRANSPORT=quic object: the server's QUIC
+# sources and the client's, in one binary. A session takes its Initial
+# labels from the init call that made it, and only this build can show a
+# session taking the wrong ones: a one-role object has one side.
+SRV_QUIC_BOTH_SRCS := $(sort $(SRV_QUIC_SRCS) $(QUIC_DRIVER_SRCS))
+bin/srv_quic_both_test: test/srv_quic_test.c $(SRV_QUIC_BOTH_SRCS) $(HDRS) $(TESTH)
+	@mkdir -p bin
+	$(CC) $(CFLAGS) -DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_TRANSPORT_QUIC -I. -o $@ \
+	  test/srv_quic_test.c $(SRV_QUIC_BOTH_SRCS)
+
 # The record-mode server driver, over the same flight sources the blocking
 # server builds: srv_rec.c replaces srv_handshake.c and rec_frame.c comes
 # with the transport, and no rec_step.c, which is the client's table.
@@ -1611,7 +1621,7 @@ run-%: bin/%
 # and the invariant violation builds. The nightly runs it. Splitting on
 # duration rather than on importance is deliberate -- nothing here is
 # optional, and a change is not finished until check-slow passes too.
-check: bin/unit bin/unit_ca bin/unit_pq bin/tlsclient bin/tlsclient_ecdsa bin/tlsclient_ca bin/tlsclient_ca_ecdsa bin/tlsclient_webpki bin/tlsclient_webpki_pq $(if $(AES_HW_PROBE),bin/tlsclient_webpki_aes) bin/tlsclient_pq bin/drbg_test bin/softmul_test bin/rsa_test bin/sha3_test bin/sha512_test bin/p384_test bin/rsa_pkcs1_test bin/webpki_time_test bin/webpki_name_test bin/webpki_spki_test bin/webpki_sigalg_test bin/webpki_cert_test bin/webpki_chain_test bin/webpki_auth_test bin/mlkem_test bin/handshake_strict_test bin/handshake_strict_pq bin/handshake_strict_webpki bin/webpki_session_test bin/webpki_session_pq bin/x509strict bin/x509strict_ecdsa bin/quic_driver_test bin/quic_test bin/recclient $(AES_HW_BINS) lint rand-check bin/srv_auth_test bin/srv_test bin/srv_quic_test bin/srv_rec_test bin/rec_loop_test bin/exporter_test bin/rsa_sign_test bin/p256_field_test bin/p256_ecdh_test bin/p256_sign_test
+check: bin/unit bin/unit_ca bin/unit_pq bin/tlsclient bin/tlsclient_ecdsa bin/tlsclient_ca bin/tlsclient_ca_ecdsa bin/tlsclient_webpki bin/tlsclient_webpki_pq $(if $(AES_HW_PROBE),bin/tlsclient_webpki_aes) bin/tlsclient_pq bin/drbg_test bin/softmul_test bin/rsa_test bin/sha3_test bin/sha512_test bin/p384_test bin/rsa_pkcs1_test bin/webpki_time_test bin/webpki_name_test bin/webpki_spki_test bin/webpki_sigalg_test bin/webpki_cert_test bin/webpki_chain_test bin/webpki_auth_test bin/mlkem_test bin/handshake_strict_test bin/handshake_strict_pq bin/handshake_strict_webpki bin/webpki_session_test bin/webpki_session_pq bin/x509strict bin/x509strict_ecdsa bin/quic_driver_test bin/quic_test bin/recclient $(AES_HW_BINS) lint rand-check bin/srv_auth_test bin/srv_test bin/srv_quic_test bin/srv_quic_both_test bin/srv_rec_test bin/rec_loop_test bin/exporter_test bin/rsa_sign_test bin/p256_field_test bin/p256_ecdh_test bin/p256_sign_test
 	# The packaged object is built once per entropy pattern, because
 	# lib-check reads a different export list and a different import
 	# list in each. Only the object is built twice: the examples and
@@ -1747,6 +1757,7 @@ check: bin/unit bin/unit_ca bin/unit_pq bin/tlsclient bin/tlsclient_ecdsa bin/tl
 	./bin/srv_auth_test
 	./bin/srv_test
 	./bin/srv_quic_test
+	./bin/srv_quic_both_test
 	./bin/srv_rec_test
 	./bin/rec_loop_test
 	./bin/exporter_test

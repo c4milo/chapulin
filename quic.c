@@ -21,16 +21,24 @@
 #include "quic_packet.h"
 #include "quic_retry.h"
 
-// Which endpoint this build is. quic.c holds no other role: every other
+// Which endpoint session q is. quic.c holds no other role: every other
 // call in it takes key sets and bytes and reads no side, which is why a
 // ROLE=server build compiles this file unchanged. The two Initial calls
 // are the exception, because RFC 9001 section 5.2 gives each endpoint its
 // own Initial secret and a server that named the client's would seal
 // under "client in" and open under "server in", inverted both ways.
-#ifdef CH_ROLE_SERVER
-#define CH_QUIC_SELF CH_QUIC_ENDPOINT_SERVER
+//
+// A one-role build is one side, so the build names it. A ROLE=both object
+// holds both drivers and names no side, so each session carries the one
+// its init call gave it (ch_quic.endpoint). That build first took the
+// server's side for every session, because it defines CH_ROLE_SERVER, and
+// a client session sealed and opened under the server's labels.
+#ifdef CH_ROLE_BOTH
+#define CH_QUIC_SELF(q) ((q)->endpoint)
+#elif defined(CH_ROLE_SERVER)
+#define CH_QUIC_SELF(q) CH_QUIC_ENDPOINT_SERVER
 #else
-#define CH_QUIC_SELF CH_QUIC_ENDPOINT_CLIENT
+#define CH_QUIC_SELF(q) CH_QUIC_ENDPOINT_CLIENT
 #endif
 
 // The hello is built whole into t.tx, so that array must hold the
@@ -69,6 +77,7 @@ int ch_quic_init(ch_quic *q, const ch_cfg *cfg) {
     }
     q->hs.t = &q->t;
     q->hs.alert = ALERT_DECODE_ERROR;
+    q->endpoint = CH_QUIC_ENDPOINT_CLIENT;
     // 0 is the first protocol in cfg.alpn_protocols, so the
     // no-selection value has to be written before the parser can report
     // one.
@@ -222,10 +231,10 @@ int ch_quic_seal(ch_quic *q, uint8_t level, uint64_t pn, size_t pn_len, const ui
     // Both Initial calls name this endpoint, never the peer:
     // quic_initial.c derives this endpoint's secret for the seal and the
     // other one's for the open (quic_initial.h, rfc9001.txt:1057-1061).
-    // CH_QUIC_SELF is the build's own role, because these two calls are
+    // CH_QUIC_SELF is this session's role, because these two calls are
     // the one place in this file that does read a side.
-    int rc = quic_initial_seal(CH_QUIC_SELF, q->initial_dcid, q->initial_dcid_len, pn, pn_len, hdr,
-                               hdr_len, pt, pt_len, out, cap, out_len);
+    int rc = quic_initial_seal(CH_QUIC_SELF(q), q->initial_dcid, q->initial_dcid_len, pn, pn_len,
+                               hdr, hdr_len, pt, pt_len, out, cap, out_len);
     if (rc == CH_OK) {
         q->initial_sealed++;
     }
@@ -250,7 +259,7 @@ static int open_at_level(ch_quic *q, uint8_t level, uint8_t *pkt, size_t pkt_len
         return quic_packet_open_handshake(&q->handshake_rx, &q->handshake_hp_rx, pkt, pkt_len,
                                           pn_off, largest_pn, pn, pt_len);
     }
-    return quic_initial_open(CH_QUIC_SELF, q->initial_dcid, q->initial_dcid_len, pkt, pkt_len,
+    return quic_initial_open(CH_QUIC_SELF(q), q->initial_dcid, q->initial_dcid_len, pkt, pkt_len,
                              pn_off, largest_pn, pn, pt_len);
 }
 

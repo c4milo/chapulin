@@ -294,6 +294,7 @@ int ch_srv_quic_init(ch_quic *q, const ch_cfg *cfg) {
     // The description a failure carries when no handler chose a more
     // specific one, seeded the way srv_handshake.c seeds it.
     q->hs.alert = ALERT_DECODE_ERROR;
+    q->endpoint = CH_QUIC_ENDPOINT_SERVER;
     // 0 is the first protocol in ch_cfg.alpn_protocols, so the
     // no-selection value has to be written before the parser can report
     // one.

@@ -1,0 +1,14 @@
+invariant: INV-14
+file: srv_message.h
+catches: srv_quic_test
+reason: a QUIC server stages its EncryptedExtensions in a frame with no room
+  for the transport parameters RFC 9001 section 8.2 makes it send, so
+  srv_build_encrypted_extensions returns 0 and the handshake fails with
+  CH_ECAP after the ServerHello once the body passes about 45 bytes.
+  bin/srv_quic_test runs its flight with the largest body the API admits
+  and builds the largest message at the frame's size exactly.
+
+--- old
+#define SRV_ENCRYPTED_EXTENSIONS_MAX (6 + 7 + CH_ALPN_NAME_MAX + 4 + CH_TRANSPORT_PARAMS_MAX)
+--- new
+#define SRV_ENCRYPTED_EXTENSIONS_MAX (6 + 7 + CH_ALPN_NAME_MAX)

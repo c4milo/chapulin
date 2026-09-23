@@ -69,6 +69,7 @@ typedef struct ch_quic {
     uint8_t rx_level; // the one level whose CRYPTO bytes cfg.buf holds
     uint8_t tx_level; // the level the staged message goes out at
     uint8_t alert;    // what ch_quic_alert reports after a failure
+    uint8_t endpoint; // CH_QUIC_ENDPOINT_*, the side its init call gave it (quic.c's CH_QUIC_SELF)
     size_t tx_len;    // bytes staged in t.tx; 0 when nothing is owed
     // The Key Phase bit the current 1-RTT send set carries, 0 or 1 (RFC 9001 §6.1,
     // rfc9001.txt:1615-1616). ch_quic_key_phase reports it and ch_quic_key_update toggles

@@ -1,0 +1,16 @@
+invariant: INV-11
+file: quic.c
+catches: srv_quic_both_test
+builds: bin/srv_quic_both_test
+reason: a ROLE=both object gives every QUIC session the server's Initial
+  labels, because the build defines CH_ROLE_SERVER, so a session from
+  ch_quic_init seals under "server in" and opens under "client in", the
+  reverse of RFC 9001 section 5.2. A one-role object never shows it, and
+  neither does a client and a server in two processes; colibri found it
+  running both in one. The ROLE=both build of bin/srv_quic_test opens each
+  session's Initial packet with the other.
+
+--- old
+#define CH_QUIC_SELF(q) ((q)->endpoint)
+--- new
+#define CH_QUIC_SELF(q) CH_QUIC_ENDPOINT_SERVER
