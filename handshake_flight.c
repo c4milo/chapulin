@@ -38,6 +38,9 @@ void hsf_begin(handshake_state *h) {
 #endif
     }
     x25519_base(h->pub, h->priv);
+#ifdef CH_KEX_TWO_GROUPS
+    h->share_group = CH_KEX_GROUP;
+#endif
     if (t->cfg.psk != NULL) {
         ks_early(t->cfg.psk, t->cfg.psk_len, t->cfg.resumption, h->early, h->binder_key);
     } else {
@@ -70,6 +73,9 @@ static size_t build_client_hello_ek(handshake_state *h, uint8_t *out, size_t cap
     const uint16_t record_size_limit = h->record_size_limit;
 #endif
     size_t n = hs_build_client_hello(out, cap, &t->cfg,
+#ifdef CH_KEX_TWO_GROUPS
+                                     h->share_group,
+#endif
 #ifdef CH_KEX_PQ
                                      ek,
 #endif
@@ -101,6 +107,13 @@ static size_t build_client_hello_ek(handshake_state *h, uint8_t *out, size_t cap
 // classic build's budget, which is why KEX=pq carries its own
 // (docs/invariants.md INV-19).
 size_t hsf_build_client_hello(handshake_state *h, uint8_t *out, size_t cap) {
+#ifdef CH_KEX_TWO_GROUPS
+    if (h->share_group == CH_GROUP_X25519) {
+        // The retry a HelloRetryRequest naming x25519 asked for carries
+        // the x25519 share alone, so no ML-KEM key is expanded for it.
+        return build_client_hello_ek(h, out, cap, NULL);
+    }
+#endif
     uint8_t dk[MLKEM_DK_LEN];
     mlkem_keygen_dk(dk, h->dz, h->dz + 32);
     size_t n = build_client_hello_ek(h, out, cap, dk + 1152);
@@ -144,6 +157,32 @@ static void hrr_transcript(handshake_state *h, const uint8_t *raw, size_t raw_le
     sha256_update(&h->t->transcript, raw, raw_len);
 }
 
+#ifdef CH_KEX_TWO_GROUPS
+// Stores what a HelloRetryRequest asks the build that offers two groups
+// for: a cookie to echo, a group to move the key share to, or both. A
+// retry must ask for one of them (RFC 9846 §4.2.4,
+// rfc9846.txt:1466-1468). A retry naming x25519 when require_pq kept
+// x25519 off the hello names a group this client did not offer (§4.3.8,
+// rfc9846.txt:2205-2211). Both refusals are illegal_parameter, which the
+// caller writes.
+static int take_retry(handshake_state *h, const server_hello_info *info) {
+    if (info->cookie_len == 0 && info->retry_group == 0) {
+        return CH_EPROTO;
+    }
+    if (info->retry_group != 0 && h->t->cfg.require_pq) {
+        return CH_EPROTO;
+    }
+    if (info->cookie_len > 0) {
+        memcpy(h->cookie, info->cookie, info->cookie_len);
+    }
+    h->cookie_len = info->cookie_len;
+    if (info->retry_group != 0) {
+        h->share_group = info->retry_group;
+    }
+    return CH_OK;
+}
+#endif
+
 int hsf_read_server_hello(handshake_state *h, server_hello_info *info) {
     uint8_t type = 0;
     const uint8_t *raw = NULL;
@@ -164,6 +203,12 @@ int hsf_read_server_hello(handshake_state *h, server_hello_info *info) {
     }
     if (info->hrr) {
         hrr_transcript(h, raw, raw_len);
+#ifdef CH_KEX_TWO_GROUPS
+        if (take_retry(h, info) != CH_OK) {
+            h->alert = ALERT_ILLEGAL_PARAMETER;
+            return CH_EPROTO;
+        }
+#else
         if (info->cookie_len == 0) {
             // An HRR that changes nothing we offered is illegal.
             h->alert = ALERT_ILLEGAL_PARAMETER;
@@ -171,7 +216,18 @@ int hsf_read_server_hello(handshake_state *h, server_hello_info *info) {
         }
         memcpy(h->cookie, info->cookie, info->cookie_len);
         h->cookie_len = info->cookie_len;
+#endif
     } else {
+#ifdef CH_KEX_TWO_GROUPS
+        // The parser accepts either group. The ServerHello must select
+        // the one the hello it answers carried a share for: the hybrid,
+        // or x25519 after a retry that named it (RFC 9846 §4.3.8,
+        // rfc9846.txt:2222-2237).
+        if (info->have_share && info->group != h->share_group) {
+            h->alert = ALERT_ILLEGAL_PARAMETER;
+            return CH_EPROTO;
+        }
+#endif
         sha256_update(&h->t->transcript, raw, raw_len);
     }
     return CH_OK;
@@ -205,9 +261,24 @@ int hsf_accept_server_hello(handshake_state *h, const server_hello_info *info) {
 int hsf_derive_handshake_secrets(handshake_state *h, const server_hello_info *info) {
 #ifdef CH_KEX_PQ
     uint8_t ecdhe[MLKEM_SS_LEN + X25519_LEN];
+    size_t ecdhe_len = sizeof ecdhe;
+#ifdef CH_KEX_TWO_GROUPS
+    // A ServerHello that answers a retry naming x25519 runs the classic
+    // exchange over the x25519 half of the key pair hsf_begin drew, and
+    // the input keying material is its 32 bytes alone.
+    int shared_ok;
+    if (info->group == CH_GROUP_X25519) {
+        ecdhe_len = X25519_LEN;
+        shared_ok = x25519(ecdhe, h->priv, info->server_pub) != 0;
+    } else {
+        shared_ok = hybrid_secret(h, info, ecdhe) == CH_OK;
+    }
+#else
     int shared_ok = hybrid_secret(h, info, ecdhe) == CH_OK;
+#endif
 #else
     uint8_t ecdhe[X25519_LEN];
+    size_t ecdhe_len = sizeof ecdhe;
     int shared_ok = x25519(ecdhe, h->priv, info->server_pub) != 0;
 #endif
     // The six values the exchange consumed. The TLS driver would wipe
@@ -236,7 +307,7 @@ int hsf_derive_handshake_secrets(handshake_state *h, const server_hello_info *in
     }
     uint8_t hash[SHA256_LEN];
     (void)hsr_transcript_hash(h, hash);
-    ks_handshake(h->early, ecdhe, sizeof ecdhe, hash, h->handshake_secret, h->c_hs, h->s_hs);
+    ks_handshake(h->early, ecdhe, ecdhe_len, hash, h->handshake_secret, h->c_hs, h->s_hs);
     ct_wipe(ecdhe, sizeof ecdhe);
     ct_wipe(h->early, sizeof h->early);
     ct_wipe(h->binder_key, sizeof h->binder_key);

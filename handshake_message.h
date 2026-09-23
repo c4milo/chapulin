@@ -64,6 +64,15 @@
 #define CH_KEX_CLIENT_SHARE 32
 #define CH_KEX_SERVER_SHARE 32
 #endif
+// A KEX=pq TRUST=webpki client offers a second group (docs/decisions.md
+// entry 39). supported_groups lists X25519MLKEM768 and then x25519, and
+// the first hello carries a key share for X25519MLKEM768 alone, so a
+// server that lacks the hybrid answers with a HelloRetryRequest naming
+// x25519 and the retry hello carries an x25519 share. ch_cfg.require_pq
+// drops x25519 from the list, so that caller's hello is the one-group
+// hello every other KEX=pq build sends. Every other build offers
+// CH_KEX_GROUP alone. cfg.h defines CH_KEX_TWO_GROUPS, because the
+// session and parser headers that declare its fields sit below this one.
 // SignatureScheme code points (RFC 9846 §4.3.3). A raw or ca build
 // offers the first two, one per build (CH_PIN_SIGALG below). A
 // TRUST=webpki build offers all five, because it cannot know which
@@ -99,8 +108,9 @@
 // psk takes. That arm's 16-byte signature_algorithms extension stays
 // shorter than the 47 + CH_TICKET_ID_MAX bytes of the pre_shared_key
 // extension the other arm carries. So the largest hello is still the
-// pre_shared_key arm, now with both extensions: 1149 classic, 2333 for
-// pq, measured by test/webpki_session_test.c.
+// pre_shared_key arm, now with both extensions: 1149 classic, and 2335
+// for pq, whose supported_groups carries the second group, measured by
+// test/webpki_session_test.c.
 // A TRANSPORT=quic build adds two more terms. It drops the 6-byte
 // record_size_limit extension, because RFC 9001 §4.1.3 removes the
 // record layer that extension sizes (rfc9001.txt:462-464), and it sends
@@ -109,6 +119,9 @@
 // ALPN extension in every trust mode, because §8.1 makes ALPN mandatory
 // there (rfc9001.txt:1891-1895), so the ALPN term is no longer the
 // webpki build's alone.
+//
+// A CH_KEX_TWO_GROUPS build adds one more term: the second NamedGroup
+// in supported_groups, 2 bytes.
 //
 // Each term is 0 in a build that sends nothing for it, so one sum
 // serves every combination and a TRANSPORT=tls build keeps the value it
@@ -128,9 +141,14 @@
 #else
 #define CH_HELLO_TRANSPORT_MAX 0
 #endif
+#ifdef CH_KEX_TWO_GROUPS
+#define CH_HELLO_SECOND_GROUP_MAX 2
+#else
+#define CH_HELLO_SECOND_GROUP_MAX 0
+#endif
 #define CH_HELLO_MAX                                                                               \
     (137 + CH_HELLO_SERVER_NAME_MAX + CH_HELLO_ALPN_MAX + CH_HELLO_TRANSPORT_MAX +                 \
-     CH_TICKET_ID_MAX + HSP_COOKIE_MAX + CH_KEX_CLIENT_SHARE)
+     CH_HELLO_SECOND_GROUP_MAX + CH_TICKET_ID_MAX + HSP_COOKIE_MAX + CH_KEX_CLIENT_SHARE)
 
 // Pinned mode verifies exactly one signature algorithm per build: RSA-PSS
 // by default (what stock cert-based endpoints hold), ECDSA P-256 with
@@ -203,7 +221,17 @@
 // cfg->alpn_protocols in the caller's order (RFC 7301 §3.1).
 // The hybrid build's share carries the ML-KEM encapsulation key ahead
 // of the x25519 public value, so its builder takes both.
+// A CH_KEX_TWO_GROUPS build also takes share_group, the one group its
+// key_share carries: CH_KEX_GROUP for the first hello and for a retry
+// that asked only for a cookie, with ek and pub as the hybrid share, or
+// CH_GROUP_X25519 for the retry a HelloRetryRequest naming x25519 asked
+// for, with pub alone and ek unread. Its supported_groups lists
+// CH_KEX_GROUP and then CH_GROUP_X25519, or CH_KEX_GROUP alone when
+// cfg->require_pq is set.
 size_t hs_build_client_hello(uint8_t *out, size_t cap, const ch_cfg *cfg,
+#ifdef CH_KEX_TWO_GROUPS
+                             uint16_t share_group,
+#endif
 #ifdef CH_KEX_PQ
                              const uint8_t ek[MLKEM_EK_LEN],
 #endif

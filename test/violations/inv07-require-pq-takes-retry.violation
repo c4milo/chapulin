@@ -1,0 +1,13 @@
+invariant: INV-7
+file: handshake_flight.c
+catches: webpki_session_pq
+reason: a retry naming x25519 is taken although require_pq kept x25519 off
+  the hello, so the client sends a classic share to a server it told it
+  would not use one, and refuses only after the ServerHello. RFC 9846
+  section 4.3.8 makes a retry naming a group the hello did not offer an
+  illegal_parameter at the retry itself.
+
+--- old
+    if (info->retry_group != 0 && h->t->cfg.require_pq) {
+--- new
+    if (0) {

@@ -44,7 +44,8 @@
 #define HSF_FINISHED_LEN (4 + SHA256_LEN)
 
 // Draws the ephemeral secrets and starts the transcript. Writes
-// h->priv, h->pub and h->random, writes h->dz under KEX=pq, computes
+// h->priv, h->pub and h->random, writes h->dz under KEX=pq, writes
+// h->share_group = CH_KEX_GROUP under CH_KEX_TWO_GROUPS, computes
 // h->early and h->binder_key from cfg.psk when the caller configured
 // one and from a hash-length zero string when it did not (RFC 9846
 // §7.1, rfc9846.txt:4034), and calls sha256_init on t->transcript.
@@ -67,7 +68,9 @@ void hsf_begin(handshake_state *h);
 // message's last SHA256_LEN bytes (RFC 9846 §4.3.11.2,
 // rfc9846.txt:2586). It echoes h->cookie when h->cookie_len is not 0,
 // which is what makes this the retry hello (RFC 9846 §4.2.4,
-// rfc9846.txt:1444).
+// rfc9846.txt:1444). Under CH_KEX_TWO_GROUPS its key share is for
+// h->share_group: the hybrid, or, once a HelloRetryRequest named
+// x25519, x25519 over h->pub alone, with no ML-KEM key expanded.
 //
 // Requires hsf_begin to have run, and cap bytes at out. The caller
 // passes the staging array its transport wants: a TLS driver passes
@@ -89,7 +92,9 @@ size_t hsf_build_client_hello(handshake_state *h, uint8_t *out, size_t cap);
 // replaces the transcript with the synthetic message_hash construction
 // RFC 9846 §4.1 prescribes (rfc9846.txt:1076-1082) and copies the
 // cookie into h->cookie and h->cookie_len, so the retry hello can echo
-// it. On a ServerHello it hashes the raw message.
+// it. Under CH_KEX_TWO_GROUPS a HelloRetryRequest that names x25519
+// also moves h->share_group to x25519, and its cookie may be absent. On
+// a ServerHello it hashes the raw message.
 //
 // Requires a whole message to be readable; see the transport note at
 // the top. info need not be zeroed: this function zeroes it.
@@ -104,7 +109,12 @@ size_t hsf_build_client_hello(handshake_state *h, uint8_t *out, size_t cap);
 // hsp_parse_server_hello refuses the message, and for a
 // HelloRetryRequest that carries no cookie, which is an HRR that
 // changes nothing this client offered and which RFC 9846 §4.2.4 makes
-// an illegal_parameter abort (rfc9846.txt:1467-1469). It also returns
+// an illegal_parameter abort (rfc9846.txt:1467-1469). Under
+// CH_KEX_TWO_GROUPS a retry that names x25519 changes the key share, so
+// the cookie refusal applies only to a retry that names no group; the
+// same alert answers a retry naming x25519 when cfg.require_pq kept it
+// off the hello, and a ServerHello whose group is not h->share_group
+// (RFC 9846 §4.3.8, rfc9846.txt:2205-2237). It also returns
 // what hsr_next_msg returns: CH_EIO, CH_EPROTO, CH_EAUTH or CH_ECAP
 // under TRANSPORT=tls, and CH_EPROTO or CH_EINVAL under
 // CH_TRANSPORT_QUIC. On every failure the transcript may already hold
@@ -140,7 +150,9 @@ int hsf_accept_server_hello(handshake_state *h, const server_hello_info *info);
 // x25519 over h->priv and info->server_pub, or, under KEX=pq,
 // decapsulates info->server_ct with the key pair h->dz re-expands and
 // puts the ML-KEM shared secret ahead of the x25519 one, which is RFC
-// 10024's order despite the group's name. Then it takes the transcript
+// 10024's order despite the group's name. Under CH_KEX_TWO_GROUPS a
+// ServerHello that selected x25519 runs x25519 alone, over the x25519
+// half of that key pair. Then it takes the transcript
 // hash and calls ks_handshake, writing h->handshake_secret, h->c_hs and
 // h->s_hs (RFC 9846 §7.1, rfc9846.txt:4034).
 //

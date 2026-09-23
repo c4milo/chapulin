@@ -101,26 +101,38 @@ Spec.HandshakeParser.parseServerHello : (kex : Kex) → (pskOffered : Bool) → 
                         -- Takes the whole Handshake structure of §4 (msg_type,
                         -- uint24 length, body); handshake_parser.c's entry points take the
                         -- body, so the driver frames it. kex is the Makefile's
-                        -- KEX variable, as Scheme is its PIN: the build's one
-                        -- offered group, which fixes the key_share group code
-                        -- point (x25519 0x001D, or RFC 10024's X25519MLKEM768
-                        -- 0x11EC) and the server share size (32, or 1120 —
-                        -- the ML-KEM-768 ciphertext then the x25519 value).
+                        -- KEX variable, which TRUST=webpki turns into a third
+                        -- value under KEX=pq. x25519 lists x25519 (0x001D)
+                        -- alone and pq lists RFC 10024's X25519MLKEM768
+                        -- (0x11EC) alone; twoGroups (docs/decisions.md entry
+                        -- 39) lists X25519MLKEM768 then x25519 and sends a key
+                        -- share for X25519MLKEM768 alone. A ServerHello may
+                        -- select any listed group, and that group fixes the
+                        -- server share size (32, or 1120 — the ML-KEM-768
+                        -- ciphertext then the x25519 value). Whether it is the
+                        -- group the last ClientHello sent a share for turns on
+                        -- whether a retry happened, so neither parser checks
+                        -- it. A HelloRetryRequest may name a listed group the
+                        -- hello sent no share for — x25519 in twoGroups, none
+                        -- in the other two — and must ask for a change: a
+                        -- cookie, a selected group, or both (§4.2.4, §4.3.8).
                         -- pskOffered is handshake_parser.h's
                         -- psk_mode: §4.3 makes a pre_shared_key response
-                        -- admissible only if the ClientHello offered one, and
-                        -- that is the one thing the message alone cannot settle.
+                        -- admissible only if the ClientHello offered one, which
+                        -- the message alone cannot settle.
                         -- Everything else the profile fixes is a byte compare
                         -- against a constant: legacy_version 0x0303, the empty
                         -- legacy_session_id_echo handshake_message.c offers, the one cipher
-                        -- suite, the build's group. Line op:
-                        -- `hs_server_hello <psk|nopsk> <x25519|pq> <msg>` →
+                        -- suite, the build's groups. Line op:
+                        -- `hs_server_hello <psk|nopsk> <x25519|pq|two-groups> <msg>` →
                         -- `sh <group> <key_exchange> <selected_identity|->`
-                        -- / `hrr <cookie>` / `ERR hs_server_hello reject`.
+                        -- / `hrr <cookie|-> <selected_group|->`
+                        -- / `ERR hs_server_hello reject`.
                         -- group is the accepted key_share's NamedGroup in
                         -- decimal, read from the message on both sides:
                         -- the C stores it in server_hello_info.group, which
-                        -- the handshake copies to ch_tls.group.
+                        -- the handshake copies to ch_tls.group. selected_group
+                        -- is the retry key_share's NamedGroup in decimal.
 Spec.HandshakeParser.parseEncryptedExtensions : (serverNameSent : Bool) → (msg : ByteArray) →
                         Except Alert EncryptedExtensions               -- RFC 9846 §4.4.1.
                         -- serverNameSent says whether the build's
@@ -481,7 +493,7 @@ Both sides must refuse the same messages, but they need not refuse them
 in the same function. `handshake_parser.c` is a framing parser: it hands what it
 read to `handshake.c`, which decides whether the handshake can go on.
 The model has no layer above it, so it makes those decisions where it
-reads the field. Five checks fall on opposite sides of that line, and
+reads the field. Six checks fall on opposite sides of that line, and
 `test/diff_handshake_parser.h` projects the C answer down to the model's
 boundary rather than weakening the model to match the split:
 
@@ -489,13 +501,14 @@ boundary rather than weakening the model to match the split:
 | --- | --- | --- |
 | ServerHello with no key_share | `hello_exchange`, on `have_share` | `parseServerHello` |
 | selected_identity outside the one offered index | `hello_exchange`, on `psk_ok` | `parseServerHello` |
-| HelloRetryRequest with no cookie | `handshake.c`, on an absent cookie | `parseServerHello` |
+| HelloRetryRequest that asks for no change: no cookie and no selected group | `hsf_read_server_hello` (`handshake_flight.c`), on an absent cookie and no selected group | `parseServerHello` |
 | CertificateEntry carrying an unoffered extension | the trust mode's certificate parser | `parseCertificate` |
 | ServerHello that ignores the offered PSK | `hello_exchange`, on `psk_ok` | nothing — both parsers accept it; whether resumption was required sits above them |
+| two-group ServerHello whose group is not the one the last ClientHello sent a share for | `hsf_read_server_hello` (`handshake_flight.c`), against `handshake_state.share_group` | nothing — both parsers accept either listed group; whether a retry happened sits above them |
 
-Each ends the handshake on both sides, except the last: the unoffered
-CertificateEntry extension is refused only in a CA-mode build,
-where `x509_verify_leaf` requires empty per-entry extensions. A pinned
+The first four end the handshake on both sides, with one exception:
+the unoffered CertificateEntry extension is refused only in a CA-mode
+build, where `x509_verify_leaf` requires empty per-entry extensions. A pinned
 build never reads the entries — it hashes the certificate into the
 transcript and authenticates by the signature — so §4.5.1's MUST-abort
 for that extension is unenforced there. The unread extension changes
@@ -806,7 +819,7 @@ means the module's selftest plus the differential oracle carry it;
 | --- | --- | --- |
 | Bytes | 24 | proof toolkit: fold characterizations, xor involution and left cancellation, hex injectivity, big-endian round trip and injectivity |
 | Drbg | 13 | key advance (the next key is the counter-0 block, independent of the request size), key/output disjointness within one keystream, request-prefix consistency, session key chain |
-| HandshakeParser | 9 | message-grammar soundness, quantified over both `Kex` builds: an accepted ServerHello echoes the empty legacy_session_id the profile offers and a key_exchange of exactly `kex.serverShareSize` octets (32 x25519, 1120 hybrid), and any selected_identity it reports is the single index one offered identity puts in range; a result is a HelloRetryRequest exactly when the Random is §4.2.4's fixed value; an accepted record_size_limit is at least 64 under either `serverNameSent`; an accepted CertificateVerify reports an offered scheme that is never RSASSA-PKCS1-v1_5, so a pinned build's is its own pinned SignatureScheme and the webpki build's is one of rsa_pss_rsae_sha256, ecdsa_secp256r1_sha256 and ecdsa_secp384r1_sha384 |
+| HandshakeParser | 12 | message-grammar soundness, quantified over all three `Kex` builds: an accepted ServerHello echoes the empty legacy_session_id the profile offers, selects a group the build lists in supported_groups and carries a key_exchange of exactly `serverShareSize` octets for that group (32 x25519, 1120 hybrid), and any selected_identity it reports is the single index one offered identity puts in range; an accepted HelloRetryRequest carries a cookie or a selected group, and a selected group is one the build listed and sent no key share for, so a retry in the x25519 and pq builds carries a cookie and never a group; a result is a HelloRetryRequest exactly when the Random is §4.2.4's fixed value; an accepted record_size_limit is at least 64 under either `serverNameSent`; an accepted ALPN selection is an index into the offered protocols; an accepted CertificateVerify reports an offered scheme that is never RSASSA-PKCS1-v1_5, so a pinned build's is its own pinned SignatureScheme and the webpki build's is one of rsa_pss_rsae_sha256, ecdsa_secp256r1_sha256 and ecdsa_secp384r1_sha384 |
 | Handshake | 17 | state-machine safety invariants: exactly one ServerHello, EncryptedExtensions and Finished; no certificate flight under PSK; pinned flight shape and order; HRR bound; no CertificateRequest; no post-handshake message before Finished; close_notify at most once and last |
 | Record | 8 | seal/open round trip at both the AEAD and record layers, record size, nonce size, nonce injectivity (distinct sequence numbers never share a nonce), and that an accepted record never carries content type invalid(0) |
 | ChaCha | 5 | block size, structural lemmas, keystream prefix stability; keystream itself vector-checked |

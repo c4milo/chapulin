@@ -709,6 +709,17 @@ launch fast full hybrid_secret 65 "fill_nondet.0:2401,ct_wipe.0:2401" -DCH_KEX_P
 # cfg.require_pq compares. Measured: 661 properties, 1 s, 207 MB (kissat,
 # /usr/bin/time -l over this script).
 launch fast full key_share 1200 "fill_nondet.0:1133" -DCH_KEX_PQ buf.c
+# The same arm in the build that offers two groups (docs/decisions.md entry
+# 39): -DCH_TRUST_WEBPKI beside -DCH_KEX_PQ turns on CH_KEX_TWO_GROUPS, where
+# a retry may name x25519 and a ServerHello may select it with a 32-byte
+# share. The harness states both shapes' contracts beside the hybrid ones.
+# Which group a ServerHello may select is hsf_read_server_hello's check, and
+# bin/webpki_session_pq tests it; this formula holds the parser alone.
+# Measured (cbmc 6.11.0, kissat, PROVE_NO_CACHE=1 /usr/bin/time -l over
+# this script): 790 properties, 1.7 s, 0.22 GB peak. The same formula with an
+# assert of 0 in each of the two new arms fails both (2 of 792), so the retry
+# shape and the x25519 share are both reached.
+launch fast full key_share_webpki 1200 "fill_nondet.0:1133" -DCH_KEX_PQ -DCH_TRUST_WEBPKI buf.c
 # handshake_message.c was the last library source no harness compiled
 # (https://github.com/c4milo/chapulin/issues/33). Beyond memory safety this
 # checks the constant handshake.c asserts CH_TX_STAGE against: at CH_HELLO_MAX

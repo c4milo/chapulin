@@ -1,0 +1,19 @@
+invariant: INV-7
+file: handshake_parser.c
+catches: webpki_session_pq
+reason: a HelloRetryRequest may name the hybrid, whose share the first hello
+  already carried, which RFC 9846 section 4.3.8 makes an illegal_parameter.
+  The client would resend the same hello, and a server could loop it or
+  treat the retry as a change it never asked for.
+
+--- old
+    if (rb_u16(e) != CH_GROUP_X25519) {
+        return CH_EPROTO;
+    }
+    info->retry_group = CH_GROUP_X25519;
+--- new
+    uint16_t named = rb_u16(e);
+    if (named != CH_GROUP_X25519 && named != CH_GROUP_X25519MLKEM768) {
+        return CH_EPROTO;
+    }
+    info->retry_group = named;

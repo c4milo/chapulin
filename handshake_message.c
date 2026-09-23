@@ -1,6 +1,9 @@
 #include "handshake_message.h"
 
 #include "buf.h"
+#ifdef CH_KEX_TWO_GROUPS
+#include "ch_assert.h"
+#endif
 
 #if defined(CH_TRUST_WEBPKI) || defined(CH_TRANSPORT_QUIC)
 // application_layer_protocol_negotiation (RFC 7301 §3.1): a
@@ -26,7 +29,50 @@ static void write_alpn(wbuf *w, const ch_cfg *cfg) {
 }
 #endif
 
+#ifdef CH_KEX_TWO_GROUPS
+// supported_groups and key_share for the build that offers two groups
+// (docs/decisions.md entry 39). supported_groups lists the hybrid first,
+// the order the key share favours, then x25519 with no share. require_pq
+// leaves x25519 off, so a HelloRetryRequest naming it names a group this
+// hello did not offer.
+//
+// key_share carries one KeyShareEntry, for share_group. The retry a
+// HelloRetryRequest naming x25519 asked for replaces the hybrid entry
+// with an x25519 one (RFC 9846 §4.3.8, rfc9846.txt:2211-2215), over the
+// x25519 half of the key pair the hybrid share already carried.
+static void write_two_groups(wbuf *w, const ch_cfg *cfg, uint16_t share_group,
+                             const uint8_t ek[MLKEM_EK_LEN], const uint8_t pub[32]) {
+    size_t groups_len = cfg->require_pq ? 2 : 4;
+    wb_u16(w, EXT_SUPPORTED_GROUPS);
+    wb_u16(w, (uint16_t)(2 + groups_len));
+    wb_u16(w, (uint16_t)groups_len);
+    wb_u16(w, CH_KEX_GROUP);
+    if (!cfg->require_pq) {
+        wb_u16(w, CH_GROUP_X25519);
+    }
+
+    CH_ASSERT(share_group == CH_KEX_GROUP || share_group == CH_GROUP_X25519);
+    wb_u16(w, EXT_KEY_SHARE);
+    if (share_group == CH_GROUP_X25519) {
+        wb_u16(w, 2 + 2 + 2 + 32);
+        wb_u16(w, 2 + 2 + 32); // client_shares length
+        wb_u16(w, CH_GROUP_X25519);
+        wb_u16(w, 32);
+    } else {
+        wb_u16(w, 2 + 2 + 2 + CH_KEX_CLIENT_SHARE);
+        wb_u16(w, 2 + 2 + CH_KEX_CLIENT_SHARE); // client_shares length
+        wb_u16(w, CH_KEX_GROUP);
+        wb_u16(w, CH_KEX_CLIENT_SHARE);
+        wb_bytes(w, ek, MLKEM_EK_LEN); // ML-KEM first (RFC 10024)
+    }
+    wb_bytes(w, pub, 32);
+}
+#endif
+
 size_t hs_build_client_hello(uint8_t *out, size_t cap, const ch_cfg *cfg,
+#ifdef CH_KEX_TWO_GROUPS
+                             uint16_t share_group,
+#endif
 #ifdef CH_KEX_PQ
                              const uint8_t ek[MLKEM_EK_LEN],
 #endif
@@ -73,6 +119,9 @@ size_t hs_build_client_hello(uint8_t *out, size_t cap, const ch_cfg *cfg,
     wb_u8(&w, 2);
     wb_u16(&w, TLS13);
 
+#ifdef CH_KEX_TWO_GROUPS
+    write_two_groups(&w, cfg, share_group, ek, pub);
+#else
     wb_u16(&w, EXT_SUPPORTED_GROUPS);
     wb_u16(&w, 4);
     wb_u16(&w, 2);
@@ -87,6 +136,7 @@ size_t hs_build_client_hello(uint8_t *out, size_t cap, const ch_cfg *cfg,
     wb_bytes(&w, ek, MLKEM_EK_LEN); // ML-KEM first (RFC 10024)
 #endif
     wb_bytes(&w, pub, 32);
+#endif
 
     // Sent in both modes: without it a server (Go enforces this) will not
     // issue session tickets, and pinned mode relies on tickets to make

@@ -9,9 +9,11 @@ bad guys.
 chapulin speaks one profile and negotiates nothing:
 `TLS_CHACHA20_POLY1305_SHA256` with x25519 key exchange, or the
 X25519MLKEM768 hybrid ([RFC 10024](https://www.rfc-editor.org/rfc/rfc10024))
-instead when you build `make KEX=pq`. One group
-per build, never both in one ClientHello. The server takes it or the
-handshake fails. There is no 0-RTT.
+instead when you build `make KEX=pq`. A device build offers one group,
+never both in one ClientHello, and the server takes it or the handshake
+fails. The host-side `TRUST=webpki` mode under `KEX=pq` lists both and
+falls back to x25519 through a HelloRetryRequest
+([`docs/decisions.md`](docs/decisions.md) entry 39). There is no 0-RTT.
 
 It uses C11 and libc only, and never calls `malloc`. The working set is
 one session struct plus one receive buffer you provide.
@@ -319,7 +321,7 @@ apart from one that passed — so for the slow rows, read the nightly.
 | keysched_exporter | **not proved.** `proof/keysched_exporter_harness.c` runs the leg above under `EXPORTER=on`, which adds `ks_exp_master` and `ks_exporter` and widens hkdf's label cap to 32, and its formula returns no verdict: none in 10 minutes with the label length free, none in 7 min 50 s with it fixed at 13 and 32. `proof/run.sh` records both. The two calls are covered by `bin/exporter_test` instead, whose four vectors are cross-checked against an independent from-spec implementation rather than published, since RFC 9846 prints none | — |
 | handshake | the driver stays safe on any record stream: HRR restart, the state machine, and the flight's own arithmetic, in PSK and pinned-key mode. Record reading and message reassembly are stubbed here to the contract the `handshake_record` leg proves — compiling them multiplies this formula by the product of their loop bounds, past any runner. The ca-mode driver has a harness but no launch line, so it is unproven | 96 B receive buffer, slow tier |
 | hybrid_secret | the `KEX=pq` shared-secret derivation is safe for any stored seed, any server ciphertext and any server share, and a refused key exchange wipes all 64 bytes rather than leaving half a secret on the stack (INV-3). ML-KEM and x25519 are stubbed to their contracts, which their own harnesses prove. This is the only leg that builds `-DCH_KEX_PQ`: the rest of the hybrid driver carries the differential, the sequence enumeration and the e2e legs, not a proof | the full domain, fast tier |
-| key_share | the `KEX=pq` arm of the ServerHello key_share parser is safe on any extension bytes, and on acceptance it records the one group this build offers (`info.group == CH_KEX_GROUP`, the value `ch_tls.group` reports and `ch_cfg.require_pq` compares) and returns a whole readable ML-KEM ciphertext inside the bytes it consumed — the contract `hybrid_secret` assumes, so this proof discharges that assumption | extension ≤ 1,132 B, the full hybrid share, fast tier |
+| key_share (two launch lines) | the `KEX=pq` arm of the ServerHello key_share parser is safe on any extension bytes, and on acceptance it records the one group this build offers (`info.group == CH_KEX_GROUP`, the value `ch_tls.group` reports and `ch_cfg.require_pq` compares) and returns a whole readable ML-KEM ciphertext inside the bytes it consumed — the contract `hybrid_secret` assumes, so this proof discharges that assumption. `key_share_webpki` builds the same harness under `-DCH_TRUST_WEBPKI`, where the arm also accepts a HelloRetryRequest naming x25519 and a ServerHello selecting x25519: a retry is one NamedGroup naming x25519 and no share, and an x25519 share is exactly the group, the length and 32 bytes, with no ciphertext pointer. Which of the two groups a ServerHello may select is `hsf_read_server_hello`'s check, which `bin/webpki_session_pq` tests and no proof covers | extension ≤ 1,132 B, the full hybrid share, fast tier |
 | hello_build (two harnesses) | the ClientHello builder writes nothing outside the caller's buffer at any capacity, for every cookie and PSK identity a caller may pass, and returns either zero or a length that fits. It also checks the bound itself: at `CH_HELLO_MAX` the build always succeeds, so the constant `handshake.c` asserts `CH_TX_STAGE` against is sufficient, not merely plausible. `hello_build_webpki` is the same harness under `-DCH_TRUST_WEBPKI`, with the server_name extension over any hostname, the ALPN extension over any offer, and the five signature schemes, against that build's `CH_HELLO_MAX` of 1,149; there the bound is tight, because the assertion moved to `CH_HELLO_MAX - 1` fails | capacity ≤ `CH_HELLO_MAX`, identity ≤ 320 B, cookie ≤ 128 B, hostname ≤ 253 B, 8 ALPN names ≤ 32 B each |
 | chacha20 | safe at any counter, in place and into a distinct buffer | ≤ 160 B — three blocks, full, full, partial |
 | poly1305 | safe for any three-chunk split; 64-bit products stay in range | messages ≤ 80 B — five blocks, crossing the buffered-block path in every alignment. The five-call shape `aead.c` uses is no longer exercised by a proof: the aead harnesses stub Poly1305, so that shape rests on the unit vectors, Wycheproof and the differential |
@@ -803,12 +805,15 @@ negotiates here and nowhere else.
 `CH_GROUP_X25519` or `CH_GROUP_X25519MLKEM768` (`cfg.h`), and 0 until
 the handshake accepts the ServerHello's key_share. Set
 `ch_cfg.require_pq` and the handshake fails closed when that group is
-not `CH_GROUP_X25519MLKEM768`. Under `KEX=pq` the flag checks at run
-time what the build promises, because that build offers the hybrid
-alone and refuses every other group; a classic build cannot satisfy it,
-so `ch_connect` returns `CH_EINVAL` before it sends a byte.
-[`docs/decisions.md`](docs/decisions.md) entry 12 says why a build
-offers one group and never falls back to the other.
+not `CH_GROUP_X25519MLKEM768`. Under `KEX=pq` in a raw or ca build the
+flag checks at run time what the build promises, because that build
+offers the hybrid alone. `KEX=pq TRUST=webpki` also lists x25519, and
+the flag drops x25519 from its hello, so that hello is the one-group
+hello and a server without the hybrid cannot move it. A classic build
+cannot satisfy the flag, so `ch_connect` returns `CH_EINVAL` before it
+sends a byte. [`docs/decisions.md`](docs/decisions.md) entry 12 says why
+a device build offers one group, and entry 39 why the webpki mode offers
+two.
 
 [`docs/porting.md`](docs/porting.md) is the checklist for a new platform: what
 you decide, what has a safe default, and how to check on your own target that

@@ -44,6 +44,13 @@ typedef struct {
     // identical by construction and no 2400-byte key lives in state.
     uint8_t dz[64];
 #endif
+#ifdef CH_KEX_TWO_GROUPS
+    // The group the latest ClientHello carried a key share for:
+    // CH_KEX_GROUP from hsf_begin, and CH_GROUP_X25519 once a
+    // HelloRetryRequest named x25519. The ServerHello must select it
+    // (RFC 9846 §4.3.8, rfc9846.txt:2222-2237).
+    uint16_t share_group;
+#endif
     uint8_t random[32];
     uint8_t early[SHA256_LEN];
     uint8_t binder_key[SHA256_LEN];

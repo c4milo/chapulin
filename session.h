@@ -61,7 +61,7 @@
 // modes. These are CH_HELLO_MAX's QUIC values, repeated as literals for
 // the reason the TLS ones are, and quic.c asserts the two agree.
 #if defined(CH_TRUST_WEBPKI) && defined(CH_KEX_PQ)
-#define CH_TX_STAGE 2587
+#define CH_TX_STAGE 2589
 #elif defined(CH_TRUST_WEBPKI)
 #define CH_TX_STAGE 1403
 #elif defined(CH_KEX_PQ)
@@ -75,8 +75,10 @@
 // 2 list length, 1 name_type, 2 name length, 253 name) and the 270-byte
 // application_layer_protocol_negotiation at the longest offer (4 type
 // and length, 2 list length, then 8 names of 1 length byte and 32 name
-// bytes): 1801 + 262 + 270.
-#define CH_TX_STAGE 2333
+// bytes), and the second NamedGroup in supported_groups, x25519, which
+// this build offers beside the hybrid (docs/decisions.md 39):
+// 1801 + 262 + 270 + 2.
+#define CH_TX_STAGE 2335
 #elif defined(CH_TRUST_WEBPKI)
 // The classic sum below plus the same two extensions: 617 + 262 + 270.
 #define CH_TX_STAGE 1149
@@ -157,8 +159,10 @@ typedef struct {
     // The NamedGroup of the key exchange that ran. hello_exchange
     // (handshake.c) writes it from the ServerHello: the code point
     // parse_key_share accepted — CH_GROUP_X25519 or
-    // CH_GROUP_X25519MLKEM768 (cfg.h), one per build — and 0 before
-    // any ServerHello or when it carried no key_share. Public
+    // CH_GROUP_X25519MLKEM768 (cfg.h), one per build except
+    // CH_KEX_TWO_GROUPS, where it is whichever the ServerHello
+    // selected — and 0 before any ServerHello or when it carried no
+    // key_share. Public
     // information, like pin_slot: a caller reads it to see which
     // exchange protected the session, and cfg.require_pq fails the
     // handshake when it is not the hybrid.
@@ -242,7 +246,7 @@ typedef struct {
     // CH_TX_STAGE's QUIC values are above, and each one is the length
     // hs_build_client_hello emits for the largest hello its build can
     // write: 1141 raw and ca classic, 2325 under KEX=pq, 1403 under
-    // TRUST=webpki and 2587 under both. quic.c asserts CH_HELLO_MAX
+    // TRUST=webpki and 2589 under both, whose hello also lists x25519. quic.c asserts CH_HELLO_MAX
     // against this constant, where both are visible.
     uint8_t tx[CH_TX_STAGE];
 #else

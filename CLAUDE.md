@@ -36,8 +36,8 @@ Home: github.com/c4milo.
   separate axis let a build ask for a verifier it would not get. The key exchange is one group per
   build, chosen by the Makefile KEX variable: x25519 (default) or the
   X25519MLKEM768 hybrid (KEX=pq, -DCH_KEX_PQ, `mlkem.[ch]`) — never both
-  in one ClientHello, so a pq client and a classic-only server fail
-  closed against each other. No X.509 parsing outside the certificate
+  in one raw or ca ClientHello, so a pq device and a classic-only server
+  fail closed against each other. No X.509 parsing outside the certificate
   files: the canonical DER reader in x509_der.[ch], the profile verifier
   in x509.[ch] and the provisioning reader in x509_ca.[ch] under
   the ca modes, and the chain verifier in webpki.[ch] with its pieces under
@@ -47,13 +47,17 @@ Home: github.com/c4milo.
   raw-public-key certificate types, no 0-RTT, no compression, no
   renegotiation-era anything. Within a mode the client offers exactly one
   of everything; the server takes it or the handshake fails closed.
-  TRUST=webpki keeps that rule for the key exchange and the cipher suite
-  and breaks it twice. It offers several signature schemes, because it
-  cannot know which family signed the chain the server will send, and it
-  offers the list of ALPN protocols the caller configured, because it
-  cannot know which one the endpoint speaks; the server picks one and
+  TRUST=webpki keeps that rule for the cipher suite and breaks it three
+  times. It offers several signature schemes, because it cannot know
+  which family signed the chain the server will send, and it offers the
+  list of ALPN protocols the caller configured, because it cannot know
+  which one the endpoint speaks; the server picks one and
   ch_tls.alpn_selected reports it. docs/decisions.md 37 states what that
-  negotiation surface costs.
+  negotiation surface costs. Under KEX=pq it also lists x25519 after the
+  hybrid (CH_KEX_TWO_GROUPS) and sends the hybrid share alone, and a
+  HelloRetryRequest naming x25519 moves it there; ch_cfg.require_pq
+  drops x25519 from the hello and restores the fail-closed pairing
+  (docs/decisions.md 39).
 - One concern per file pair, dependencies pointing down only:
   `ct.[ch]` (constant-time bytes) ← `sha256.[ch]` + `sha3.[ch]` +
   `sha512.[ch]`/`sha512_compress.[ch]` (SHA-384 and SHA-512; the

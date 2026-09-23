@@ -90,9 +90,10 @@ does nothing more.
     fails the handshake closed. Gain: no group negotiation, the same
     rule the rest of the profile follows (entry 1).
 
-    Entry 39 narrows this to the device modes. `TRUST=webpki` offers both
-    groups, for the reason that mode already offers several signature
-    schemes and several application protocols.
+    Entry 39 narrows this to the device modes. `KEX=pq TRUST=webpki`
+    offers both groups, for the reason that mode already offers several
+    signature schemes and several application protocols. `KEX=x25519
+    TRUST=webpki` still offers x25519 alone and carries no ML-KEM.
 
     Offering both groups and taking whichever the server picks was
     considered and rejected. It fails where it would matter most: the
@@ -119,8 +120,8 @@ does nothing more.
     build-time property at run time: the build offers the hybrid alone,
     so the check reads the field the parser wrote and never the constant
     the build offered. A classic build refuses the flag at `ch_connect`
-    with `CH_EINVAL`. The decision itself does not move: a build still
-    offers one group.
+    with `CH_EINVAL`. The decision itself does not move for the raw and
+    ca builds: each offers one group.
 
 ## Trust model
 
@@ -534,10 +535,15 @@ does nothing more.
 
     The ClientHello lists X25519MLKEM768 and x25519 in `supported_groups`
     and carries the X25519MLKEM768 `key_share`. A server that wants
-    x25519 answers with a HelloRetryRequest naming it, which this client
-    already handles and already tests, and the second hello carries the
-    x25519 share. Cost: one extra round trip against a classic-only
-    server. Gain: no round trip on the post-quantum path, which is the
+    x25519 answers with a HelloRetryRequest naming it, and the second
+    hello carries an x25519 share over the x25519 half of the key pair
+    the hybrid share already held. This entry first said the client
+    already handled that retry; it did not. The retry path it had took a
+    cookie and refused every retry that named a group, and the change
+    that built this offer built that path with it (`CH_KEX_TWO_GROUPS`,
+    `hsf_read_server_hello`). This applies under `KEX=pq`: `KEX=x25519
+    TRUST=webpki` has no hybrid to offer and lists x25519 alone. Cost:
+    one extra round trip against a classic-only server. Gain: no round trip on the post-quantum path, which is the
     path worth making fast, and one ML-KEM key generation per handshake
     rather than one for every hello whether or not it is used.
 
@@ -557,7 +563,11 @@ does nothing more.
     caller that wants the old guarantee sets `ch_cfg.require_pq`, which
     already refuses a handshake whose selected group is not the hybrid,
     so the property becomes the caller's to ask for rather than the
-    build's to enforce.
+    build's to enforce. The flag also drops x25519 from the hello, so
+    that caller sends the one-group hello a raw `KEX=pq` build sends: a
+    server without the hybrid finds no common group and fails the
+    handshake, rather than asking for x25519 and being refused one round
+    trip later.
 
 40. **The pinned algorithm is half of a `TRUST` value, not an axis.**
     `PIN` chose RSA-PSS or P-256 for the key a raw or ca build pins. It

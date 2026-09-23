@@ -862,6 +862,41 @@ if "$OPENSSL" list -tls-groups 2>/dev/null | grep -qi x25519mlkem768; then
         cat "$DIR/err_pq2"
         exit 1
     }
+
+    # The web PKI client that lists both groups (docs/decisions.md entry
+    # 39). A chain server that lists X25519MLKEM768 first selects the
+    # hybrid share the first hello carries, in one round trip. A
+    # server restricted to x25519 answers the hybrid share with a
+    # HelloRetryRequest naming x25519, and the retry hello completes the
+    # handshake under x25519. REQUIRE_PQ keeps x25519 off the hello, so
+    # that server finds no common group and the handshake fails.
+    start_server -tls1_3 -ciphersuites TLS_CHACHA20_POLY1305_SHA256 -groups X25519MLKEM768:X25519 -cert "$DIR/wpleaf.pem" -key "$DIR/wpleaf.key" -cert_chain "$DIR/wpint.pem" -rev
+    PORT_WEBPKI_PQ=$SRV_PORT
+    MSG='dos grupos'
+    WEBPKI_HOST=$WEBPKI_HOSTNAME WEBPKI_NOW=$NOW \
+        expect webpki-pq "sopurg sod" "$DIR/err_wp_pq" \
+        ./bin/tlsclient_webpki_pq 127.0.0.1 "$PORT_WEBPKI_PQ" "$WEBPKI_ANCHOR" -
+    grep -q "^group 0x11ec$" "$DIR/err_wp_pq" || {
+        echo "FAIL e2e webpki-pq: client did not report the X25519MLKEM768 group"
+        cat "$DIR/err_wp_pq"
+        exit 1
+    }
+    start_server -tls1_3 -ciphersuites TLS_CHACHA20_POLY1305_SHA256 -groups X25519 -cert "$DIR/wpleaf.pem" -key "$DIR/wpleaf.key" -cert_chain "$DIR/wpint.pem" -rev
+    PORT_WEBPKI_X25519=$SRV_PORT
+    MSG='reintento clasico'
+    WEBPKI_HOST=$WEBPKI_HOSTNAME WEBPKI_NOW=$NOW \
+        expect webpki-pq-retry "ocisalc otnetnier" "$DIR/err_wp_retry" \
+        ./bin/tlsclient_webpki_pq 127.0.0.1 "$PORT_WEBPKI_X25519" "$WEBPKI_ANCHOR" -
+    grep -q "^group 0x001d$" "$DIR/err_wp_retry" || {
+        echo "FAIL e2e webpki-pq-retry: client did not report the x25519 group"
+        cat "$DIR/err_wp_retry"
+        exit 1
+    }
+    MSG='no debe pasar'
+    WEBPKI_HOST=$WEBPKI_HOSTNAME WEBPKI_NOW=$NOW \
+        expect_fail webpki-pq-require-pq -2 "$DIR/err_wp_require" \
+        env REQUIRE_PQ=1 ./bin/tlsclient_webpki_pq 127.0.0.1 "$PORT_WEBPKI_X25519" "$WEBPKI_ANCHOR" -
+    OPENSSL_PQ_LEG="$OPENSSL_PQ_LEG + webpki-pq x3"
 else
     OPENSSL_PQ_LEG=""
     echo "SKIP openssl pq leg: $("$OPENSSL" version) does not list X25519MLKEM768 (needs 3.5)"

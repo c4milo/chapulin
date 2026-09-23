@@ -123,13 +123,28 @@ a webpki object, the way `sha3.[ch]` is packaged only under `KEX=pq`.
 
 ## Key exchange
 
-The mode does not change the key exchange, and `docs/decisions.md` entry 12
-stands: a build offers one group, never two. Build `KEX=pq TRUST=webpki` and
-every connection uses X25519MLKEM768.
+`KEX=x25519 TRUST=webpki` offers x25519 alone, as every classic build does.
+`KEX=pq TRUST=webpki` offers two groups, which `docs/decisions.md` entry 39
+decides. Its ClientHello lists X25519MLKEM768 and then x25519 in
+`supported_groups`, and carries one key share, for X25519MLKEM768. A server
+that has the hybrid selects it in one round trip. A server that lacks it
+answers with a HelloRetryRequest naming x25519, and the retry hello carries
+an x25519 share over the x25519 half of the key pair the hybrid share held.
+The raw and ca modes keep entry 12's one group per build.
 
-That is not a compromise for this use. Measured 2026-09-09 with an
-ML-KEM-only offer, where a refusal is a `handshake_failure` alert and not a
-silent fallback:
+The four refusals the offer adds, each an `illegal_parameter` abort before
+any key exists (RFC 9846 §4.2.4 and §4.3.8):
+
+- a HelloRetryRequest that names the hybrid, whose share the hello already
+  carried, or any group the hello did not list;
+- a HelloRetryRequest with neither a cookie nor a key_share, which asks for
+  no change;
+- a ServerHello that selects x25519 when the hello it answers carried the
+  hybrid share, or the hybrid after a retry that named x25519;
+- a HelloRetryRequest naming x25519 when `ch_cfg.require_pq` is set.
+
+Measured 2026-09-09 with an ML-KEM-only offer, where a refusal is a
+`handshake_failure` alert and not a silent fallback:
 
 | endpoint | X25519MLKEM768 |
 | --- | --- |
@@ -137,18 +152,16 @@ silent fallback:
 | `storage.googleapis.com`, `r2.cloudflarestorage.com`, `s3.filebase.com`, `play.min.io` | negotiates |
 | Wasabi, Backblaze B2, DigitalOcean Spaces, Storj | refuses; accepts X25519, P-256, P-384 |
 
-So a post-quantum build reaches every AWS region tried, and Google and
-Cloudflare besides. Failing closed against the four that refuse is the
-property entry 12 argues for: the threat is harvest-now-decrypt-later, and a
-client that fell back would complete a classically protected session against
-it. Reaching those four means building `KEX=x25519`, and accepting that.
-
-Entry 12's own argument named one gap: "no part of the API reports which
-exchange ran." Two fields close it. `ch_tls.group` reports the group the
-ServerHello selected, and `ch_cfg.require_pq` fails the handshake when that
-group is not `CH_GROUP_X25519MLKEM768`. Under `KEX=pq` the flag asserts a
-build-time property at run time, which is what makes it worth having:
-checkable rather than assumed.
+So the hybrid runs against every AWS region tried, and Google and Cloudflare
+besides, and the four that refuse it now cost one round trip and complete
+under x25519. That is entry 39's trade: entry 12's fail-closed property does
+not survive the second group. A caller that wants it back sets
+`ch_cfg.require_pq`. The flag drops x25519 from the hello, so a server
+without the hybrid finds no common group and fails the handshake, and
+`ch_tls.group` must be `CH_GROUP_X25519MLKEM768` when the ServerHello is
+accepted. `ch_tls.group` reports the group the ServerHello selected in every
+build, so a caller that does not set the flag can still see which exchange
+ran.
 
 ## The chain walk
 
@@ -415,11 +428,12 @@ in the formula least likely to converge.
 The ClientHello this mode sends carries a `server_name` extension of up
 to 262 bytes, an ALPN extension of up to 270, and five signature
 schemes, so its largest hello, `CH_HELLO_MAX`, is 1,149 bytes, and
-2,333 under `KEX=pq`. The session's TX staging array, `CH_TX_STAGE`,
+2,335 under `KEX=pq`, whose supported_groups also lists x25519. The
+session's TX staging array, `CH_TX_STAGE`,
 grows to match, and `test/webpki_session_cases.h` measures the built
 hello against both numbers. The PSK arm sets that maximum even though
 this mode refuses a PSK, because the builder takes any config; the hello
-`ch_connect` lets this mode send is 798 bytes, or 1,982 under `KEX=pq`.
+`ch_connect` lets this mode send is 798 bytes, or 1,984 under `KEX=pq`.
 
 `CH_ALPN_MAX` and `CH_ALPN_NAME_MAX` are that budget split two ways. The
 extension costs 4 type and length bytes, 2 list-length bytes, and one

@@ -3,8 +3,9 @@
 // ServerHello (including HelloRetryRequest), EncryptedExtensions,
 // Certificate, and CertificateVerify. Every row builds one message,
 // runs the C parser and the Lean spec on it, and compares. This header
-// holds the framing, the build tokens and the first two messages;
-// test/diff_handshake_certificate.h holds the other two.
+// holds the framing, the build tokens and the ServerHello;
+// test/diff_encrypted_exts.h holds EncryptedExtensions and
+// test/diff_handshake_certificate.h the other two.
 // Included by test/diff_test.c after diff_driver.h (single translation unit).
 #ifndef CH_DIFFHANDSHAKE_PARSER_H
 #define CH_DIFFHANDSHAKE_PARSER_H
@@ -66,12 +67,25 @@ static const char *const hspd_alpn_names[HSPD_ALPN_MAX] = {"h2", "http/1.1", "x"
 // other build's group, so each build's run diffs the cross-build
 // refusal: a classic client refuses a hybrid selection and a hybrid
 // client refuses a classic one.
-#ifdef CH_KEX_PQ
+//
+// The KEX=pq TRUST=webpki build lists both groups and sends a share for
+// the hybrid alone (docs/decisions.md entry 39), and the model's
+// two-groups token says so. A retry there may name x25519 and a
+// ServerHello may select it with a 32-byte share; every other build
+// refuses both.
+#ifdef CH_KEX_TWO_GROUPS
+#define HSPD_KEX_TOKEN "two-groups"
+#define HSPD_OTHER_GROUP HSPD_X25519
+#define HSPD_RETRY_GROUP(info) ((info).retry_group)
+#elif defined(CH_KEX_PQ)
 #define HSPD_KEX_TOKEN "pq"
 #define HSPD_OTHER_GROUP HSPD_X25519
 #else
 #define HSPD_KEX_TOKEN "x25519"
 #define HSPD_OTHER_GROUP HSPD_X25519MLKEM768
+#endif
+#ifndef HSPD_RETRY_GROUP
+#define HSPD_RETRY_GROUP(info) 0
 #endif
 
 // Sized for the hybrid build's largest ServerHello body: the 38-byte
@@ -109,6 +123,9 @@ typedef struct {
     int psk_offered;   // hsp_parse_server_hello's psk_mode
     int psk_ext;       // a pre_shared_key response is in the message
     unsigned identity; // the selected_identity it carries
+    int retry_x25519;  // a retry names x25519, which only two-groups admits
+    int retry_bare;    // that retry carries no cookie
+    int sh_x25519;     // a ServerHello selects x25519 with a 32-byte share
 } hspd_sh_plan;
 
 static void hspd_sh_row(const hspd_sh_plan *plan, const uint8_t *body, size_t n) {
@@ -124,8 +141,8 @@ static void hspd_sh_row(const hspd_sh_plan *plan, const uint8_t *body, size_t n)
     // handshake on both sides; only the layer that ends it differs, so
     // project C down to the model's boundary rather than weaken the
     // model to match the split.
-    int deferred =
-        info.hrr ? info.cookie == NULL : !info.have_share || (plan->psk_ext && !info.psk_ok);
+    int deferred = info.hrr ? info.cookie == NULL && HSPD_RETRY_GROUP(info) == 0
+                            : !info.have_share || (plan->psk_ext && !info.psk_ok);
 
     // The want buffer holds the largest accepted reply: "sh ", the
     // share's hex (2240 characters in the hybrid build), and the
@@ -134,9 +151,17 @@ static void hspd_sh_row(const hspd_sh_plan *plan, const uint8_t *body, size_t n)
     if (rc != CH_OK || deferred) {
         (void)snprintf(want, sizeof want, "ERR hs_server_hello reject");
     } else if (info.hrr) {
-        char cookie_hex[2 * HSP_COOKIE_MAX + 1];
-        (void)hex_encode(cookie_hex, info.cookie, info.cookie_len);
-        (void)snprintf(want, sizeof want, "hrr %s", cookie_hex);
+        // The model prints "-" for a retry field the message did not
+        // carry, and the retry's key_share names its group in decimal.
+        char cookie_hex[2 * HSP_COOKIE_MAX + 1] = "-";
+        if (info.cookie != NULL) {
+            (void)hex_encode(cookie_hex, info.cookie, info.cookie_len);
+        }
+        char group[8] = "-";
+        if (HSPD_RETRY_GROUP(info) != 0) {
+            (void)snprintf(group, sizeof group, "%u", (unsigned)HSPD_RETRY_GROUP(info));
+        }
+        (void)snprintf(want, sizeof want, "hrr %s %s", cookie_hex, group);
     } else {
         // The model reports the selected group and the whole
         // key_exchange value; the C parser stores the group and splits
@@ -145,7 +170,10 @@ static void hspd_sh_row(const hspd_sh_plan *plan, const uint8_t *body, size_t n)
         // ML-KEM ciphertext first (RFC 10024).
         char share_hex[2 * CH_KEX_SERVER_SHARE + 1];
 #ifdef CH_KEX_PQ
-        size_t ct_hex_len = hex_encode(share_hex, info.server_ct, MLKEM_CT_LEN);
+        size_t ct_hex_len = 0;
+        if (info.group == HSPD_X25519MLKEM768) {
+            ct_hex_len = hex_encode(share_hex, info.server_ct, MLKEM_CT_LEN);
+        }
         (void)hex_encode(share_hex + ct_hex_len, info.server_pub, X25519_LEN);
 #else
         (void)hex_encode(share_hex, info.server_pub, X25519_LEN);
@@ -155,7 +183,7 @@ static void hspd_sh_row(const hspd_sh_plan *plan, const uint8_t *body, size_t n)
     }
 
     char cmd[2 * (HSPD_BODY_MAX + 4) + 64];
-    char arg[16];
+    char arg[24]; // "nopsk two-groups" and its terminator
     (void)snprintf(arg, sizeof arg, "%s %s", plan->psk_offered ? "psk" : "nopsk", HSPD_KEX_TOKEN);
     hspd_request(cmd, sizeof cmd, "hs_server_hello", arg, HSPD_SERVER_HELLO, body, n);
     expect(cmd, want);
@@ -189,9 +217,17 @@ static void hspd_sh_version_ext(wbuf *w, size_t mut) {
 }
 
 // The retry branch's extensions (§4.2.4): the cookie, and the key_share
-// a retry may not carry.
-static void hspd_sh_retry_exts(wbuf *w, size_t mut, const uint8_t *cookie, size_t cookie_len) {
-    if (mut != 7) {
+// a retry may not carry. A row that names x25519 writes the key_share a
+// two-groups retry may carry, and may leave the cookie off, since the
+// group is then the change the retry asks for.
+static void hspd_sh_retry_exts(wbuf *w, size_t mut, const hspd_sh_plan *plan, const uint8_t *cookie,
+                               size_t cookie_len) {
+    if (plan->retry_x25519 && mut != 9) {
+        wb_u16(w, HSPD_KEY_SHARE);
+        wb_u16(w, 2);
+        wb_u16(w, HSPD_X25519);
+    }
+    if (mut != 7 && !plan->retry_bare) {
         wb_u16(w, HSPD_COOKIE);
         wb_u16(w, (uint16_t)(cookie_len + 2));
         wb_u16(w, (uint16_t)(mut == 8 ? 0 : cookie_len));
@@ -214,13 +250,26 @@ static void hspd_sh_retry_exts(wbuf *w, size_t mut, const uint8_t *cookie, size_
 // offered one (§4.3), which mut 13 defies.
 static void hspd_sh_share_exts(wbuf *w, size_t mut, hspd_sh_plan *plan, const uint8_t *share) {
     if (mut != 10) {
+        // The build's own share, or, when sh_x25519 is set, the 32-byte
+        // x25519 share a two-groups ServerHello answers a retry naming
+        // x25519 with. mut 11 writes the other group over the share, so
+        // each run diffs the cross-build refusal, and mut 12 shortens the
+        // share by one byte.
+        size_t len = CH_KEX_SERVER_SHARE;
+        uint16_t group = CH_KEX_GROUP;
+        uint16_t other = HSPD_OTHER_GROUP;
+#ifdef CH_KEX_TWO_GROUPS
+        if (plan->sh_x25519) {
+            len = X25519_LEN;
+            group = HSPD_X25519;
+            other = HSPD_X25519MLKEM768;
+        }
+#endif
         wb_u16(w, HSPD_KEY_SHARE);
-        wb_u16(w, (uint16_t)(CH_KEX_SERVER_SHARE + 4));
-        // mut 11: the other build's group, so each run diffs the
-        // cross-build refusal.
-        wb_u16(w, mut == 11 ? HSPD_OTHER_GROUP : CH_KEX_GROUP);
-        wb_u16(w, (uint16_t)(mut == 12 ? CH_KEX_SERVER_SHARE - 1 : CH_KEX_SERVER_SHARE));
-        wb_bytes(w, share, CH_KEX_SERVER_SHARE);
+        wb_u16(w, (uint16_t)(len + 4));
+        wb_u16(w, mut == 11 ? other : group);
+        wb_u16(w, (uint16_t)(mut == 12 ? len - 1 : len));
+        wb_bytes(w, share, len);
     }
     if (plan->psk_offered ? rng_below(2) == 0 : mut == 13) {
         plan->psk_ext = 1;
@@ -244,6 +293,19 @@ static void hspd_sh_patch_vector(wbuf *w, size_t exts, size_t end) {
     size_t n = end - exts - 2;
     w->p[exts] = (uint8_t)(n >> 8);
     w->p[exts + 1] = (uint8_t)n;
+}
+
+// The shapes only a two-groups build admits, drawn in every build so
+// the others diff their refusal: a retry naming x25519, with and without
+// a cookie, and a ServerHello selecting x25519. The last is drawn only
+// in the two-groups build, because the others refuse it as mut 11
+// already does.
+static void hspd_sh_draw_shapes(hspd_sh_plan *plan, int hrr) {
+    plan->retry_x25519 = hrr && rng_below(3) == 0;
+    plan->retry_bare = plan->retry_x25519 && rng_below(2) == 0;
+#ifdef CH_KEX_TWO_GROUPS
+    plan->sh_x25519 = !hrr && rng_below(3) == 0;
+#endif
 }
 
 static void diff_hs_server_hello(void) {
@@ -274,8 +336,9 @@ static void diff_hs_server_hello(void) {
         size_t exts = wb_mark(&w, 2);
         hspd_sh_version_ext(&w, mut);
         size_t after_version = w.len;
+        hspd_sh_draw_shapes(&plan, hrr);
         if (hrr) {
-            hspd_sh_retry_exts(&w, mut, cookie, cookie_len);
+            hspd_sh_retry_exts(&w, mut, &plan, cookie, cookie_len);
         } else {
             hspd_sh_share_exts(&w, mut, &plan, share);
         }
@@ -296,202 +359,6 @@ static void diff_hs_server_hello(void) {
             wb_u8(&w, 0); // §4 makes the extension vector's length exact
         }
         hspd_sh_row(&plan, body, w.len);
-    }
-}
-
-// The server_name acknowledgements an EncryptedExtensions row may carry
-// (RFC 6066 §3): mut 5 writes one empty acknowledgement, which only a
-// build that sent server_name admits; mut 7 writes it twice, and mut 6
-// writes one carrying a byte of data, which no build admits.
-static void hspd_ee_server_name(wbuf *w, size_t mut) {
-    size_t empty_acks = 0;
-    if (mut == 5 || mut == 7) {
-        empty_acks = mut == 5 ? 1 : 2;
-    }
-    for (size_t i = 0; i < empty_acks; i++) {
-        wb_u16(w, HSPD_SERVER_NAME);
-        wb_u16(w, 0);
-    }
-    if (mut == 6) {
-        wb_u16(w, HSPD_SERVER_NAME);
-        wb_u16(w, 1);
-        wb_u8(w, 0x78);
-    }
-}
-
-#ifdef CH_TRUST_WEBPKI
-// The ALPN offer a row makes: the first count names of
-// hspd_alpn_names, as the ch_alpn_protocol array the C parser matches
-// against and as the ProtocolNameList hex the model reads them back
-// from (RFC 7301 §3.1). A count of 0 writes the "-" token, the offer a
-// raw or ca hello makes and a webpki caller may make.
-static void hspd_alpn_offer(size_t count, ch_alpn_protocol *offer, char *token, size_t cap) {
-    uint8_t list[3 * (1 + 8)];
-    wbuf w;
-    wb_init(&w, list, sizeof list);
-    for (size_t i = 0; i < count; i++) {
-        const uint8_t *name = (const uint8_t *)hspd_alpn_names[i];
-        size_t name_len = strlen(hspd_alpn_names[i]);
-        offer[i].name = name;
-        offer[i].name_len = name_len;
-        wb_u8(&w, (uint8_t)name_len);
-        wb_bytes(&w, name, name_len);
-    }
-    if (w.err) {
-        die("handshake_parser: ALPN offer buffer too small");
-    }
-    if (count == 0) {
-        (void)snprintf(token, cap, "-");
-        return;
-    }
-    char hex[2 * sizeof list + 1];
-    (void)hex_encode(hex, list, w.len);
-    (void)snprintf(token, cap, "%s", hex);
-}
-#endif
-
-// The ALPN extension a row may carry (RFC 7301 §3.2). mut 9 selects one
-// name of the offer table, which the row's own offer may or may not
-// hold; mut 10 selects a protocol no table lists; mut 11 sends an empty
-// ProtocolName and mut 12 sends two, both bodies §3.2 refuses; mut 13
-// sends the extension twice. Every other row carries none.
-static void hspd_ee_alpn(wbuf *w, size_t mut, size_t pick) {
-    if (mut < 9 || mut > 13) {
-        return;
-    }
-    uint8_t list[2 * (1 + 8)];
-    wbuf l;
-    wb_init(&l, list, sizeof list);
-    if (mut == 11) {
-        wb_u8(&l, 0); // an empty ProtocolName: §3.1 gives it 1..255 bytes
-    } else if (mut == 10) {
-        wb_u8(&l, 2);
-        wb_bytes(&l, (const uint8_t *)"h3", 2);
-    } else {
-        size_t count = mut == 12 ? 2 : 1; // §3.2: exactly one name
-        for (size_t i = 0; i < count; i++) {
-            const char *name = hspd_alpn_names[(pick + i) % HSPD_ALPN_MAX];
-            wb_u8(&l, (uint8_t)strlen(name));
-            wb_bytes(&l, (const uint8_t *)name, strlen(name));
-        }
-    }
-    if (l.err) {
-        die("handshake_parser: ALPN list buffer too small");
-    }
-    size_t copies = mut == 13 ? 2 : 1;
-    for (size_t i = 0; i < copies; i++) {
-        wb_u16(w, HSPD_ALPN);
-        wb_u16(w, (uint16_t)(2 + l.len));
-        wb_u16(w, (uint16_t)l.len);
-        wb_bytes(w, list, l.len);
-    }
-}
-
-// The EncryptedExtensions extension block (§4.4.1), with the row's one
-// deviation written into it.
-static void hspd_ee_build(wbuf *w, size_t mut, size_t pick, int have_limit, uint16_t limit) {
-    size_t exts = wb_mark(w, 2);
-    if (have_limit) {
-        wb_u16(w, HSPD_RECORD_SIZE_LIMIT);
-        wb_u16(w, mut == 0 ? 3 : 2);
-        wb_u16(w, limit);
-        if (mut == 0) {
-            wb_u8(w, 0); // one u16 exactly, per §4.3
-        }
-    }
-    if (mut == 1) { // a server may volunteer supported_groups
-        wb_u16(w, HSPD_SUPPORTED_GROUPS);
-        wb_u16(w, 4);
-        wb_u16(w, 2);
-        wb_u16(w, HSPD_X25519);
-    }
-    if (mut == 2) { // never offered, so §4.3's unsupported_extension
-        wb_u16(w, HSPD_EARLY_DATA);
-        wb_u16(w, 0);
-    }
-    if (mut == 3) { // a key_share belongs in the ServerHello
-        wb_u16(w, HSPD_KEY_SHARE);
-        wb_u16(w, 2);
-        wb_u16(w, HSPD_X25519);
-    }
-    hspd_ee_server_name(w, mut);
-    hspd_ee_alpn(w, mut, pick);
-    wb_patch16(w, exts);
-    if (mut == 4) {
-        wb_u8(w, 0); // trailing octet past the vector
-    }
-    if (mut == 8) {
-        // A whole supported_groups inside the message and outside the
-        // vector. §4.4.1 ends the message at the vector; a parser that
-        // walked the message instead would read it and accept.
-        wb_u16(w, HSPD_SUPPORTED_GROUPS);
-        wb_u16(w, 4);
-        wb_u16(w, 2);
-        wb_u16(w, HSPD_X25519);
-    }
-}
-
-static void diff_hs_encrypted_exts(void) {
-    for (int i = 0; i < 400; i++) {
-        size_t mut = rng_below(14);
-        int have_limit = rng_below(2) == 0;
-        // RFC 8449 §4 floors the limit at 64; straddle it.
-        uint16_t limit = (uint16_t)(60 + rng_below(16330));
-        // How many protocols this row's ClientHello offered, and which
-        // one the ALPN mutations select. A raw or ca build offers none,
-        // so HSPD_ALPN_MAX is 0 there and every ALPN row is a response
-        // the client never requested.
-        size_t offer_count = rng_below(HSPD_ALPN_OFFER_MAX + 1);
-        size_t pick = rng_below(HSPD_ALPN_MAX);
-
-        uint8_t body[HSPD_BODY_MAX];
-        wbuf w;
-        wb_init(&w, body, sizeof body);
-        hspd_ee_build(&w, mut, pick, have_limit, limit);
-        if (w.err) {
-            die("handshake_parser: EncryptedExtensions buffer too small");
-        }
-
-        // The C parser lowers the caller's limit and stores it less the
-        // inner content-type octet the limit covers; the model reports
-        // the extension's own value. Seed high so any accepted limit
-        // lowers it, and undo the -1 here.
-        uint16_t peer_limit = 0xffff;
-        uint8_t alert = 0;
-        char alpn_token[64];
-#ifdef CH_TRUST_WEBPKI
-        ch_alpn_protocol offer[HSPD_ALPN_MAX];
-        hspd_alpn_offer(offer_count, offer, alpn_token, sizeof alpn_token);
-        uint8_t selected = CH_ALPN_NONE;
-        int rc = hsp_parse_encrypted_exts(body, w.len, &peer_limit, offer, offer_count, &selected,
-                                          &alert);
-        char picked[8] = "-";
-        if (selected != CH_ALPN_NONE) {
-            (void)snprintf(picked, sizeof picked, "%u", (unsigned)selected);
-        }
-        const char *selection = picked;
-#else
-        // No build but TRUST=webpki offers a protocol, so no build but
-        // that one can report a selection.
-        (void)offer_count;
-        (void)snprintf(alpn_token, sizeof alpn_token, "-");
-        int rc = hsp_parse_encrypted_exts(body, w.len, &peer_limit, &alert);
-        const char *selection = "-";
-#endif
-        char want[64];
-        if (rc != CH_OK) {
-            (void)snprintf(want, sizeof want, "ERR hs_encrypted_extensions reject");
-        } else if (peer_limit == 0xffff) {
-            (void)snprintf(want, sizeof want, "ok - %s", selection);
-        } else {
-            (void)snprintf(want, sizeof want, "ok %u %s", (unsigned)peer_limit + 1U, selection);
-        }
-        char cmd[2 * (HSPD_BODY_MAX + 4) + 96];
-        char arg[80];
-        (void)snprintf(arg, sizeof arg, "%s %s", HSPD_SNI_TOKEN, alpn_token);
-        hspd_request(cmd, sizeof cmd, "hs_encrypted_extensions", arg, HSPD_ENCRYPTED_EXTENSIONS,
-                     body, w.len);
-        expect(cmd, want);
     }
 }
 

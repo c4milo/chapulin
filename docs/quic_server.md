@@ -130,7 +130,7 @@ question ten left both open; the sizes below decide them.
 **The server pushes its flight through a callback; it does not stage it.**
 The client stages one whole message in `ch_tls.tx` and the caller pulls it
 with `ch_quic_crypto_out`. A server cannot: `CH_TX_STAGE` is between 617
-and 2587 bytes depending on the build, and one Certificate message carries
+and 2589 bytes depending on the build, and one Certificate message carries
 a chain larger than that. `srv_flight.c` already streams that chain a
 fragment at a time through `send_sealed`, because it never fits one record
 either.

@@ -280,13 +280,21 @@ def dispatch : List String → Option String
       | "psk" => some true
       | "nopsk" => some false
       | _ => none
-    -- `x25519` and `pq` are the Makefile's KEX values: the build's one
-    -- offered group, which fixes the key_share group and share size.
+    -- `x25519` and `pq` are the Makefile's KEX values for the builds
+    -- that offer one group. `two-groups` is the KEX=pq TRUST=webpki
+    -- build, which lists X25519MLKEM768 then x25519 and sends a key
+    -- share for X25519MLKEM768 alone. The token fixes the groups a
+    -- ServerHello may select and the groups a HelloRetryRequest may
+    -- name; the selected group fixes the share size.
     let k ← Spec.HandshakeParser.kexOf? kex
     return match Spec.HandshakeParser.parseServerHello k offered m with
       | .ok (.serverHello f) =>
         s!"sh {f.group} {emit f.keyExchange} {emitNat? f.selectedIdentity}"
-      | .ok (.helloRetryRequest f) => s!"hrr {emit f.cookie}"
+      -- The cookie's hex and the selected group in decimal, `-` for
+      -- each one the retry does not carry. An accepted cookie is never
+      -- empty, so `-` names only an absent one.
+      | .ok (.helloRetryRequest f) =>
+        s!"hrr {(f.cookie.map emit).getD "-"} {emitNat? f.selectedGroup}"
       | .error _ => "ERR hs_server_hello reject"
   | ["hs_encrypted_extensions", sni, alpn, msg] => do
     let m ← hexArg? msg

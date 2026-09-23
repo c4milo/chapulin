@@ -33,8 +33,18 @@ typedef struct {
     // writes it beside have_share, and it is 0 until then. The parser
     // accepts the build's one group and no other, so this is
     // CH_KEX_GROUP whenever have_share is set, read from the wire
-    // rather than from that constant.
+    // rather than from that constant. A CH_KEX_TWO_GROUPS build also
+    // accepts CH_GROUP_X25519 with a 32-byte share, and
+    // hsf_read_server_hello decides which of the two the ServerHello
+    // may select: the group the hello it answers carried a share for.
     uint16_t group;
+#ifdef CH_KEX_TWO_GROUPS
+    // The NamedGroup a HelloRetryRequest's key_share names, or 0 when
+    // the retry carries none. The parser accepts CH_GROUP_X25519 alone
+    // there: it is the one group the first hello offered without a
+    // share (RFC 9846 §4.3.8, rfc9846.txt:2205-2211).
+    uint16_t retry_group;
+#endif
     uint8_t server_pub[X25519_LEN];
 #ifdef CH_KEX_PQ
     // The ML-KEM ciphertext, MLKEM_CT_LEN bytes into the caller's

@@ -370,7 +370,11 @@ static void test_webpki_hello_boundary(void) {
     cfg.hostname_len = sizeof name;
     cfg.alpn_protocols = widest;
     cfg.alpn_count = CH_ALPN_MAX;
-#ifdef CH_KEX_PQ
+#ifdef CH_KEX_TWO_GROUPS
+#define BUILD_HELLO(cap)                                                                           \
+    hs_build_client_hello(out, (cap), &cfg, CH_KEX_GROUP, ek, pub, random32, 0xffff, cookie,       \
+                          sizeof cookie)
+#elif defined(CH_KEX_PQ)
 #define BUILD_HELLO(cap)                                                                           \
     hs_build_client_hello(out, (cap), &cfg, ek, pub, random32, 0xffff, cookie, sizeof cookie)
 #else
@@ -387,7 +391,7 @@ static void test_webpki_hello_boundary(void) {
     CHECK(CH_TX_STAGE == CH_HELLO_MAX);
     CHECK(CH_HELLO_ALPN_MAX == 270);
 #ifdef CH_KEX_PQ
-    CHECK(CH_HELLO_MAX == 2333);
+    CHECK(CH_HELLO_MAX == 2335);
 #else
     CHECK(CH_HELLO_MAX == 1149);
 #endif

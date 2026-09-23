@@ -9,6 +9,13 @@
 // one proves the parser establishes it, so neither rests on the
 // assumption alone.
 //
+// Built a second time with -DCH_TRUST_WEBPKI (the key_share_webpki
+// launch line), where CH_KEX_TWO_GROUPS makes the arm accept two more
+// shapes (docs/decisions.md entry 39): a HelloRetryRequest key_share
+// naming x25519, and a ServerHello key_share selecting x25519 with a
+// 32-byte share. The asserts below state each shape's contract, and the
+// one-group build keeps its own.
+//
 // Narrow on purpose. handshake_parser's own harness bounds its message
 // at 256 bytes and a hybrid key_share extension is 1,128, so raising
 // that bound to reach this arm would grow the fast tier's heaviest
@@ -39,6 +46,24 @@ int main(void) {
     int rc = parse_key_share(&e, &info, hrr);
 
     __CPROVER_assert(rc == CH_OK || rc == CH_EPROTO, "key_share returns OK or EPROTO");
+#ifdef CH_KEX_TWO_GROUPS
+    if (rc == CH_OK && hrr) {
+        // A retry names x25519 and nothing else, in the one NamedGroup
+        // the caller then requires to fill the extension exactly.
+        __CPROVER_assert(info.retry_group == CH_GROUP_X25519, "a retry names x25519 alone");
+        __CPROVER_assert(info.have_share == 0, "a retry carries no share");
+        __CPROVER_assert(e.off == 2, "a retry's key_share is one NamedGroup");
+        return 0;
+    }
+    if (rc == CH_OK && info.group == CH_GROUP_X25519) {
+        // The answer to that retry: the group, a 32-byte length and the
+        // x25519 point, and no ciphertext pointer.
+        __CPROVER_assert(info.have_share == 1, "acceptance sets have_share");
+        __CPROVER_assert(info.server_ct == NULL, "an x25519 share carries no ciphertext");
+        __CPROVER_assert(e.off == 4 + X25519_LEN, "the share consumed the group, length and point");
+        return 0;
+    }
+#endif
     if (rc == CH_OK) {
         __CPROVER_assert(hrr == 0, "an HRR key_share is always refused");
         __CPROVER_assert(info.have_share == 1, "acceptance sets have_share");
