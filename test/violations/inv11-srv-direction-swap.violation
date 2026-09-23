@@ -11,8 +11,8 @@ reason: the server binds each direction to the opposite handshake secret
   and says it would otherwise pass every check here.
 
 --- old
-    rec_dir_init(&t->rd, h->c_hs);
-    rec_dir_init(&t->wr, h->s_hs);
+    REC_DIR_INIT_SUITE(&t->rd, h->c_hs, sel->suite);
+    REC_DIR_INIT_SUITE(&t->wr, h->s_hs, sel->suite);
 --- new
-    rec_dir_init(&t->rd, h->s_hs);
-    rec_dir_init(&t->wr, h->c_hs);
+    REC_DIR_INIT_SUITE(&t->rd, h->s_hs, sel->suite);
+    REC_DIR_INIT_SUITE(&t->wr, h->c_hs, sel->suite);

@@ -1,0 +1,17 @@
+invariant: INV-11
+file: srv_flight.c
+catches: srv_flight_test_aes
+reason: the server names TLS_AES_128_GCM_SHA256 in its ServerHello and
+  keys both handshake directions with ChaCha20, which is what 9aa1f65
+  shipped: srv_select chose the suite and no keying site read it. Every
+  test that stops at the selection passes, and a client that took the
+  suite from the ServerHello fails to open the EncryptedExtensions.
+  test_flight_key_suite opens the server's first sealed record under an
+  AES-GCM reader keyed on its own.
+
+--- old
+    REC_DIR_INIT_SUITE(&t->rd, h->c_hs, sel->suite);
+    REC_DIR_INIT_SUITE(&t->wr, h->s_hs, sel->suite);
+--- new
+    rec_dir_init(&t->rd, h->c_hs);
+    rec_dir_init(&t->wr, h->s_hs);

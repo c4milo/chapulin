@@ -43,7 +43,9 @@ void rec_dir_update(uint8_t secret[SHA256_LEN], rec_dir *d) {
         secret[i] = next[i];
     }
     ct_wipe(next, sizeof next);
-    rec_dir_init(d, secret);
+    // KeyUpdate changes the key and never the AEAD. rec_dir_init here
+    // would move an AES-GCM direction to ChaCha20 at its first KeyUpdate.
+    REC_DIR_INIT_SUITE(d, secret, d->suite);
 }
 
 // Per-record nonce: IV XOR the sequence number in the low 8 bytes.

@@ -2246,8 +2246,8 @@ writes `c_ap` then `s_ap` (`keysched.h:29-30`). The client binds them:
     handshake.c:310    rec_dir_init(&t->wr, h->c_hs);
     handshake.c:357    ks_master(h->handshake_secret, hash, h->master, t->wr_secret, t->rd_secret);
 
-The server writes `rec_dir_init(&t->wr, h->s_hs, sel.suite)` and
-`rec_dir_init(&t->rd, h->c_hs, sel.suite)`, and passes `t->rd_secret` where
+The server writes `REC_DIR_INIT_SUITE(&t->wr, h->s_hs, sel->suite)` and
+`REC_DIR_INIT_SUITE(&t->rd, h->c_hs, sel->suite)`, and passes `t->rd_secret` where
 `ks_master` takes `c_ap` and `t->wr_secret` where it takes `s_ap`. The two
 comments at `session.h:101-102` are rewritten in the server arm.
 

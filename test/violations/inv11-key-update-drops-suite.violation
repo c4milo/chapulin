@@ -1,0 +1,14 @@
+invariant: INV-11
+file: record.c
+catches: aes_suite_test
+reason: KeyUpdate rekeys an AES-GCM direction through rec_dir_init, which
+  derives a 32-byte ChaCha20 key, so the first KeyUpdate switches the
+  AEAD the connection runs. Both ends of a chapulin pair rekey the same
+  way and still open what the other seals; a peer that kept AES-GCM
+  fails the next record. test_key_update_keeps_suite keys its reader on
+  its own from the updated secret.
+
+--- old
+    REC_DIR_INIT_SUITE(d, secret, d->suite);
+--- new
+    rec_dir_init(d, secret);

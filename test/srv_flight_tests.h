@@ -444,14 +444,16 @@ static void test_flight_retry(void) {
 }
 
 // Brings the session to the point where the handshake keys are live,
-// with the client's share drawn from client_priv.
+// with the client's share drawn from client_priv and its offer holding
+// the suites named in suites.
 static uint8_t client_priv[X25519_LEN];
 static uint8_t client_share[X25519_LEN];
 
-static void hello_exchange(selection *sel) {
+static void hello_exchange_offering(selection *sel, uint8_t suites) {
     flight_reset();
     srv_begin(&hs);
     offer_everything();
+    parse_result.suites = suites;
     memset(client_priv, 0x5a, sizeof client_priv);
     x25519_base(client_share, client_priv);
     parse_result.share = client_share;
@@ -463,6 +465,10 @@ static void hello_exchange(selection *sel) {
     sess.suite = sel->suite;
     sess.hash_len = sel->hash_len;
     sess.sigalg = sel->sigalg;
+}
+
+static void hello_exchange(selection *sel) {
+    hello_exchange_offering(sel, SRV_SUITE_CHACHA20_POLY1305);
 }
 
 static void test_flight_server_hello(void) {

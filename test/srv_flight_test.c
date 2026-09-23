@@ -64,6 +64,7 @@ int main(void) {
     test_flight_select();
 #ifdef CH_SUITE_AES_GCM
     test_flight_select_suite();
+    test_flight_key_suite();
 #endif
     test_flight_alpn();
     test_flight_read_hello();

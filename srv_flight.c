@@ -270,7 +270,8 @@ int srv_send_server_hello(handshake_state *h, const client_hello *ch, const sele
 
 int srv_derive_handshake_secrets(handshake_state *h, const client_hello *ch, const selection *sel) {
     ch_tls *t = h->t;
-    (void)sel; // the suite fixes the schedule, and this build holds one
+    // Both suites hash with SHA-256, so only the record keys below read sel.
+    (void)sel;
     // srv_parser.h refuses a KeyShareEntry for this group at any other
     // length, and this call is reached only after a hello that carried
     // one, so a missing share is a call-order bug and not peer input.
@@ -311,8 +312,8 @@ int srv_derive_handshake_secrets(handshake_state *h, const client_hello *ch, con
     // same step (RFC 9001 section 5.4, rfc9001.txt:1172-1174).
     (void)t;
 #else
-    rec_dir_init(&t->rd, h->c_hs);
-    rec_dir_init(&t->wr, h->s_hs);
+    REC_DIR_INIT_SUITE(&t->rd, h->c_hs, sel->suite);
+    REC_DIR_INIT_SUITE(&t->wr, h->s_hs, sel->suite);
     h->encrypted = 1;
     t->keys = 1; // alerts encrypt from here on
 #endif
@@ -439,7 +440,7 @@ int srv_send_finished(handshake_state *h) {
     ch_keylog(t->cfg.io, CH_KEYLOG_SERVER_TRAFFIC, h->client_random, t->wr_secret);
 #endif
 #ifndef CH_TRANSPORT_QUIC
-    rec_dir_init(&t->wr, t->wr_secret);
+    REC_DIR_INIT_SUITE(&t->wr, t->wr_secret, t->suite);
 #endif
     return CH_OK;
 }
@@ -478,7 +479,7 @@ void srv_complete(handshake_state *h) {
 #ifndef CH_TRANSPORT_QUIC
     // Over QUIC the read direction becomes a 1-RTT packet key set, which
     // the driver installs from t->rd_secret with the other three.
-    rec_dir_init(&t->rd, t->rd_secret);
+    REC_DIR_INIT_SUITE(&t->rd, t->rd_secret, t->suite);
 #endif
     t->pt_off = 0;
     t->pt_len = 0;

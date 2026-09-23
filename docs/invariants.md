@@ -495,7 +495,14 @@ last `ROLE=server` stub, as the entry said it would.
   returns success; the key-schedule calls sit at fixed places in
   `run()`.
 - **Check.** Structural arithmetic; the RFC 8448 replays pin the
-  resulting secrets byte-for-byte.
+  resulting secrets byte-for-byte. In a `-DCH_SUITE_AES_GCM` build every
+  handshake site that keys a direction passes the suite the ServerHello
+  named, through `REC_DIR_INIT_SUITE`, and `rec_dir_update` keeps the
+  direction's suite. `inv11-srv-keys-chacha-after-aes.violation` keys the
+  server's handshake directions with ChaCha20 after it chose AES-GCM,
+  and `inv11-key-update-drops-suite.violation` rekeys through
+  `rec_dir_init`; `bin/srv_flight_test_aes` and `bin/aes_suite_test`
+  each open the result under a reader keyed on its own.
 - **Violation.** A PR hashes a message before validating it, and a
   rejected message influences derived keys.
 - See [decisions: Assurance](decisions.md#assurance).
@@ -1053,6 +1060,14 @@ last `ROLE=server` stub, as the entry said it would.
   `multiply_by_subkey`'s mask as an `if` on the accumulator bit and
   requires `test/lint-wide-multiply.sh` to fail, which is what the new
   `BRANCH_SRCS` entries buy.
+
+  What `quic_packet.c` refuses, with the same script as its catch
+  target: `-DCH_SUITE_AES_GCM` with `CH_TRANSPORT_QUIC`. RFC 9001 §5.3
+  makes the packet AEAD the suite TLS negotiated, and `quic_packet.c`
+  runs ChaCha20-Poly1305 alone, so that build would name AES-GCM in a
+  ServerHello and protect the packets after it with ChaCha20. The
+  Makefile refuses `SUITE=aesgcm TRANSPORT=quic` the same way.
+  `inv26-aes-suite-over-quic.violation` deletes the `#error`.
 
   What the compiler refuses, in any source that does not include
   `quic_aes_key.h`: declaring an `aes_public_key`, declaring an array of

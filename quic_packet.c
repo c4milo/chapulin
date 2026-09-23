@@ -17,6 +17,16 @@
 
 #ifdef CH_TRANSPORT_QUIC
 
+// RFC 9001 §5.3 protects Handshake and 1-RTT packets with the AEAD of
+// the suite TLS negotiated (rfc9001.txt:1109-1113), and this file runs
+// ChaCha20-Poly1305 alone. A build that also carries the AES suite would
+// name AES-GCM in a ServerHello and protect every packet after it with
+// ChaCha20, and INV-26 admits no traffic key to AES under QUIC, so the
+// pair is refused here, where every QUIC build compiles it.
+#ifdef CH_SUITE_AES_GCM
+#error "CH_SUITE_AES_GCM is refused under CH_TRANSPORT_QUIC: QUIC packets here run ChaCha20 alone"
+#endif
+
 #include "buf.h"
 #include "ch_assert.h"
 #include "ct.h"

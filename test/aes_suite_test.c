@@ -125,12 +125,41 @@ static void test_chacha_still_round_trips(void) {
     CHECK(pt_len == sizeof msg && memcmp(pt, msg, sizeof msg) == 0);
 }
 
+// KeyUpdate keeps the direction's suite. Both ends of a connection rekey
+// through rec_dir_update, so a version that moved a direction to ChaCha20
+// would still open what it sealed; the reader here is keyed on its own,
+// from the updated secret, the way a peer that kept AES-GCM keys it.
+static void test_key_update_keeps_suite(void) {
+    uint8_t secret[SHA256_LEN];
+    CHECK(unhex(C_HS_SECRET_HEX, secret) == sizeof secret);
+    rec_dir w;
+    memset(&w, 0, sizeof w);
+    rec_dir_init_suite(&w, secret, SUITE_AES_128_GCM_SHA256);
+    rec_dir_update(secret, &w);
+    CHECK(w.suite == SUITE_AES_128_GCM_SHA256);
+    rec_dir r;
+    memset(&r, 0, sizeof r);
+    rec_dir_init_suite(&r, secret, SUITE_AES_128_GCM_SHA256);
+
+    static const uint8_t msg[3] = {'k', 'u', '!'};
+    static uint8_t out[64];
+    size_t out_len = 0;
+    CHECK(rec_seal(&w, REC_APPDATA, msg, sizeof msg, out, sizeof out, &out_len) == 0);
+    static uint8_t pt[64];
+    size_t pt_len = 0;
+    uint8_t type = 0;
+    CHECK(rec_open(&r, out, out_len, pt, sizeof pt, &pt_len, &type) == 0);
+    CHECK(pt_len == sizeof msg && memcmp(pt, msg, sizeof msg) == 0);
+}
+
 int main(void) {
     test_rfc8448_client_finished_record();
     test_rfc8448_record_opens();
     test_chacha_still_round_trips();
+    test_key_update_keeps_suite();
     if (failures == 0) {
-        (void)printf("aes_suite: RFC 8448's record seals and opens, chacha20 unchanged\n");
+        (void)printf("aes_suite: RFC 8448's record seals and opens, KeyUpdate keeps AES-GCM, "
+                     "chacha20 unchanged\n");
     }
     return failures != 0;
 }

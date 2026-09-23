@@ -63,3 +63,18 @@ if "$cc" -std=c11 -I. -fsyntax-only \
     echo "quic-builds: -DCH_SUITE_AES_GCM without CH_NATIVE_AES compiled; ct.h must refuse it" >&2
     exit 1
 fi
+
+# The suite over QUIC: quic_packet.c refuses the pair, because it runs
+# ChaCha20-Poly1305 alone and RFC 9001 section 5.3 makes the packet AEAD
+# the suite TLS negotiated. The same file compiles under QUIC without the
+# suite, so what fails is that refusal and not a missing define.
+if ! "$cc" -std=c11 -I. -fsyntax-only -DCH_RAND_EXTERN -DCH_TRANSPORT_QUIC \
+    -DCH_AES_HW -DCH_NATIVE_AES quic_packet.c; then
+    echo "quic-builds: quic_packet.c under QUIC without the suite must compile" >&2
+    exit 1
+fi
+if "$cc" -std=c11 -I. -fsyntax-only -DCH_RAND_EXTERN -DCH_TRANSPORT_QUIC \
+    -DCH_SUITE_AES_GCM -DCH_AES_HW -DCH_NATIVE_AES quic_packet.c 2>/dev/null; then
+    echo "quic-builds: -DCH_SUITE_AES_GCM with CH_TRANSPORT_QUIC compiled; quic_packet.c must refuse it" >&2
+    exit 1
+fi

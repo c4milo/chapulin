@@ -201,6 +201,13 @@ $(error AES=$(AES) is not an AES implementation; use AES=soft, AES=hw or AES=ext
 endif
 QUIC_SRCS := quic_aes.c $(AES_IMPL) quic_gcm.c quic_keys.c quic_packet.c quic_initial.c \
              quic_retry.c quic_config.c quic_fail.c quic_step.c quic.c
+# What SUITE=aesgcm adds to a TRANSPORT=tls or TRANSPORT=record object:
+# the key expansion, the implementation AES picked and the AEAD, which
+# record.c calls under -DCH_SUITE_AES_GCM. A QUIC object compiles them
+# through QUIC_SRCS, and the SUITE-with-QUIC refusal keeps the two lists
+# from meeting. Without this the object imported three functions no
+# source in it defined, and lib-check said so.
+SUITE_ADD := $(if $(SUITE_DEF),quic_aes.c $(AES_IMPL) quic_gcm.c)
 # The three implementation sources, named whichever one this build picks,
 # so a check that reads every AES choice does not re-derive the list.
 AES_IMPL_SRCS := quic_aes_soft.c quic_aes_hw.c quic_aes_extern.c
@@ -489,6 +496,13 @@ PUBLIC_TRANSPORT := ch_connect ch_read ch_write ch_close
 else
 $(error TRANSPORT=$(TRANSPORT) is not a transport; use TRANSPORT=tls, TRANSPORT=record or TRANSPORT=quic)
 endif
+# QUIC protects its Handshake and 1-RTT packets with the suite TLS
+# negotiated, and quic_packet.c runs ChaCha20-Poly1305 alone, so a QUIC
+# object with the AES suite would name AES-GCM and run ChaCha20. cfg.h
+# refuses the pair for a tree with its own build system.
+ifeq ($(SUITE)-$(TRANSPORT),aesgcm-quic)
+$(error SUITE=aesgcm needs TRANSPORT=tls or TRANSPORT=record: QUIC packet protection here runs ChaCha20-Poly1305 alone)
+endif
 # Role: ROLE=client (default) builds the TLS 1.3 client this tree has
 # always built; ROLE=server builds a TLS 1.3 server from the same
 # primitives, the same record layer and the same key schedule
@@ -650,7 +664,7 @@ LIB_DEF := $(strip $(PIN_DEF) $(TRUST_DEF) $(TRANSPORT_DEF) $(AES_DEF) $(SUITE_D
 # The one assignment. Every axis above filters or names the sources
 # only its value adds; nothing below rewrites.
 LIB_SRCS := $(filter-out $(PIN_FILTER) $(TRUST_FILTER) $(TRANSPORT_FILTER) $(ROLE_FILTER),$(SRCS)) \
-            $(TRUST_ADD) $(TRANSPORT_ADD) $(ROLE_ADD)
+            $(TRUST_ADD) $(TRANSPORT_ADD) $(ROLE_ADD) $(SUITE_ADD)
 # Key exchange: KEX=x25519 (default) or KEX=pq (-DCH_KEX_PQ), the
 # X25519MLKEM768 hybrid — the ML-KEM and SHA-3 modules join the
 # packaged object only there. One mode per object, like PIN and TRUST.
@@ -764,7 +778,10 @@ QEMU_SMOKE_C := $(wildcard test/qemu/*.c test/qemu/*.h test/freertos/*.c test/fr
 # TRANSPORT=quic one write to the same path, make 3.81 compares mtimes
 # to the second, and the second link reuses the first object -- the
 # failure the paragraph below records for RAND.
-LIB_VARIANT := $(TRUST)-$(KEX)-$(RAND)-$(TRANSPORT)-$(AES)-$(ROLE)-$(EXPORTER)-$(KEYLOG)
+# SUITE belongs here for the same reason: -DCH_SUITE_AES_GCM changes
+# record.o and adds three objects, so the two suites must not share a
+# directory.
+LIB_VARIANT := $(TRUST)-$(KEX)-$(RAND)-$(TRANSPORT)-$(AES)-$(SUITE)-$(ROLE)-$(EXPORTER)-$(KEYLOG)
 LIB_OBJS := $(LIB_SRCS:%.c=bin/obj/$(LIB_VARIANT)/%.o)
 
 # bench/device-ram.sh sizes the same modules the build packages. It asks
@@ -1631,6 +1648,13 @@ check: bin/unit bin/unit_ca bin/unit_pq bin/tlsclient bin/tlsclient_ecdsa bin/tl
 	# and imports ch_keylog as a hook. EXPORTER=off is named because that
 	# axis refuses TRANSPORT=quic and a recursion inherits the outer value.
 	$(MAKE) lib-check RAND=extern ROLE=server TRUST=none TRANSPORT=quic EXPORTER=off KEYLOG=on
+	# The AES suite, on the server that selects it. ct.h refuses the
+	# define without the build's own CH_NATIVE_AES, which the Makefile
+	# never writes into a library build, so this leg states it the way the
+	# suite's test binaries do. It links only where AES_HW_PROBE found the
+	# instructions.
+	$(if $(AES_HW_PROBE),$(MAKE) lib-check RAND=extern ROLE=server TRUST=none SUITE=aesgcm AES=hw \
+	  CFLAGS='$(CFLAGS) $(AES_HW_CFLAGS) -DCH_NATIVE_AES',@echo "SKIP lib-check SUITE=aesgcm: $(CC) has no AES instructions")
 	# lint above holds lint-stack at the budget of the build check was
 	# given, 2,560 B for a plain `make check`, the target `make ci` runs.
 	# This leg compiles the TRUST=webpki object's sources under their own
