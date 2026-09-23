@@ -29,7 +29,9 @@
 # catch, and it is not hypothetical: 7206f4c and 93e9504 both shipped
 # proofs that passed while proving less than they claimed.
 #
-# One "name percent" line per harness. A harness absent from this file is
+# One "name percent" line per harness, and an optional budget=SECONDS field
+# for a harness whose cover run needs longer than proof/coverage.py's
+# REACH_BUDGET_S. A harness absent from this file is
 # measured and reported but carries no floor; the nightly publishes the
 # table, so adding a line is a matter of copying the number it printed.
 # Lower a floor only with the reason in the commit body.
@@ -85,8 +87,17 @@ key_share 21.9
 keysched 87.3
 p256_mul 86.7
 p384_mul 86.7  # local reading, cbmc 6.11.0 on arm64 macOS; replace with the nightly table's number
-pem 74.6
-pem_ecdsa 74.6
+# pem and pem_ecdsa carry their own budget, 2700 s, where every other
+# cover run gets 1800 s (https://github.com/c4milo/chapulin/issues/163).
+# Their nightly cover runs took 1664 s and 1505 s on 2026-09-21, 1113 s
+# and 986 s on 2026-09-22, and 1667 s and 1505 s on the morning of
+# 2026-09-23, under the same command each night. The scheduled run later
+# that day passed 1800 s on both and failed the check with no number, so
+# the runner's own swing crosses the shared budget. 2700 s is the issue's
+# estimate of what pem needs on a slow runner, and the proof-reach job's
+# 300-minute limit holds two of them beside the rest of the roster.
+pem 74.6 budget=2700
+pem_ecdsa 74.6 budget=2700
 poly1305 94.3
 # quic_initial carries a floor where the other four TRANSPORT=quic
 # harnesses carry none: its cover command converges in seconds, because

@@ -233,19 +233,39 @@ def main():
         return 1
 
 
-def reach_floors():
-    """Harness -> the lowest reach share it is allowed to report."""
+def floor_lines():
+    """(harness, floor, budget) for every line of reach-floors.txt. budget
+    is the cover run's own wall-clock limit in seconds, from an optional
+    budget=SECONDS field, or None when the line carries none and
+    REACH_BUDGET_S applies."""
     path = ROOT / "proof" / "reach-floors.txt"
-    floors = {}
     if not path.exists():
-        return floors
+        return []
+    entries = []
     for line in path.read_text().splitlines():
         line = line.split("#", 1)[0].strip()
         if not line:
             continue
-        name, pct = line.split()
-        floors[name] = float(pct)
-    return floors
+        name, pct, *extra = line.split()
+        budget = None
+        for field in extra:
+            if not field.startswith("budget="):
+                sys.exit(f"proof-coverage: reach-floors.txt gives {name} the field "
+                         f"{field!r}; a line is name, percent and an optional budget=SECONDS")
+            budget = int(field[len("budget="):])
+        entries.append((name, float(pct), budget))
+    return entries
+
+
+def reach_floors():
+    """Harness -> the lowest reach share it is allowed to report."""
+    return {name: pct for name, pct, _ in floor_lines()}
+
+
+def reach_budgets():
+    """Harness -> its cover run's wall-clock limit in seconds, for the
+    harnesses whose line names one."""
+    return {name: budget for name, _, budget in floor_lines() if budget is not None}
 
 
 def reach_not_gated():
@@ -287,7 +307,10 @@ def reach_not_gated():
 # This buys margin; it does not shrink the formula that needs it. A cover
 # run holding 12.2 GB of a 16 GB runner will move like this again, and one
 # budget still cannot serve both a 310 s harness and pem's 1665 s. Both are
-# https://github.com/c4milo/chapulin/issues/163.
+# https://github.com/c4milo/chapulin/issues/163. The second half has its
+# answer: a floor line may carry budget=SECONDS, and that harness's cover
+# run gets that limit instead of this one (reach-floors.txt says which,
+# and why). The first half, the formula's memory, is still open.
 REACH_BUDGET_S = 1800
 
 # No memory cap on a cover run. An address-space limit was tried after
@@ -334,6 +357,7 @@ def reach_table(runs, only=frozenset()):
     fell = []
     stale = []
     floors = reach_floors()
+    budgets = reach_budgets()
     not_gated = reach_not_gated()
     shared_defines = launch_defines()
     out = ["### Reachability at the configured bounds", "",
@@ -355,12 +379,12 @@ def reach_table(runs, only=frozenset()):
         # by hand under the flags the cover command used and not a
         # reconstruction.
         print(f"proof-reach: {name} command: {shlex.join(cmd)}", flush=True)
+        budget = budgets.get(name, REACH_BUDGET_S)
         try:
-            res = subprocess.run(cmd, capture_output=True, text=True,
-                                 timeout=REACH_BUDGET_S)
+            res = subprocess.run(cmd, capture_output=True, text=True, timeout=budget)
         except subprocess.TimeoutExpired:
-            out.append(f"| `{name}` | timed out at {REACH_BUDGET_S} s |")
-            print(f"proof-reach: {name} timed out at {REACH_BUDGET_S} s", flush=True)
+            out.append(f"| `{name}` | timed out at {budget} s |")
+            print(f"proof-reach: {name} timed out at {budget} s", flush=True)
             # The same rule as the no-number branch below: a floored
             # harness that returns no number fails the check. Before this
             # a timeout skipped the floor check and the run stayed green.
