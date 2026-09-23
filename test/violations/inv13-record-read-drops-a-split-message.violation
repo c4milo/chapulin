@@ -1,0 +1,12 @@
+invariant: INV-13
+file: handshake_post.c
+catches: rec_loop_test
+reason: hspost_read returns CH_RECORD_AGAIN for a message split across
+  records without writing post_fill, so the next ch_read reads the
+  second part as a new message, fails to parse it and kills the session.
+
+--- old
+            t->post_fill = fill;
+            return rc;
+--- new
+            return rc;

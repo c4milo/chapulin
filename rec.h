@@ -17,6 +17,17 @@
 // The record protection after the handshake is the same record.[ch] a
 // TRANSPORT=tls build uses, keyed the same way.
 //
+// After the handshake the caller's recv hands over whole records, and it
+// returns 0 when it holds no record: ch_read then returns CH_RECORD_AGAIN
+// (cfg.h) and the session stays connected. A record that carries no
+// application data, a NewSessionTicket or a KeyUpdate, is handled before
+// that answer, so a caller learns of it by its effect and calls ch_read
+// again when the next record arrives. A post-handshake message split
+// across records waits the same way, its first part kept in cfg.buf. A
+// recv that returns 0 inside a record, after a record's first byte, breaks
+// the whole-record promise and leaves the session dead with CH_EIO, as a
+// short read does in TRANSPORT=tls.
+//
 // Result codes match quic.h's meanings. CH_OK means the call did what it
 // says. CH_EINVAL means the caller called out of order and nothing
 // changed. CH_ECAP from ch_record_out means the caller's buffer was short,

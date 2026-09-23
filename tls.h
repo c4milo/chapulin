@@ -27,6 +27,13 @@ int ch_write(ch_tls *t, const uint8_t *p, size_t n);
 // Receives into p (n >= 1), returning the byte count (>0), 0 on clean
 // peer close (and on any read after), or an error. Handles
 // NewSessionTicket and KeyUpdate internally.
+//
+// A TRANSPORT=record build may also return CH_RECORD_AGAIN (cfg.h): the
+// caller's recv returned 0 at a record boundary, so no record has arrived
+// yet. The session stays connected and every record already read has
+// been handled, a ticket or a KeyUpdate among them; the caller calls
+// ch_read again once it holds the next whole record. rec.h states the
+// recv contract that goes with it.
 int ch_read(ch_tls *t, uint8_t *p, size_t n);
 
 #ifdef CH_EXPORTER

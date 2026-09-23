@@ -42,6 +42,8 @@
 #define CH_ECAP (-4)    // caller buffer too small for the peer's message
 #define CH_ECLOSED (-5) // clean close_notify from the peer
 #define CH_EINVAL (-6)  // invalid configuration or call; nothing was sent
+// TRANSPORT=record's ch_read found no record yet; the session stays live (rec.h, INV-13).
+#define CH_RECORD_AGAIN (-9)
 
 // Outgoing records are staged in the session struct so writes never
 // disturb buffered incoming data; 512 bytes of plaintext per record.
@@ -132,8 +134,7 @@
 #elif defined(CH_TRUST_CA) || defined(CH_TRUST_WEBPKI) || defined(CH_KEX_PQ)
 #define CH_MIN_RXBUF (CH_TRUST_MIN_RXBUF > CH_KEX_MIN_RXBUF ? CH_TRUST_MIN_RXBUF : CH_KEX_MIN_RXBUF)
 #else
-// Neither feature raises the floor, so the base profile's 512 stands on
-// its own rather than as a comparison of two equal terms.
+// Neither feature raises the floor, so the base profile's 512 stands on its own.
 #define CH_MIN_RXBUF 512
 #endif
 #endif
@@ -149,8 +150,7 @@ _Static_assert(CH_MIN_RXBUF >= 512, "the floor only rises; the base profile need
 #endif
 #endif
 
-// Ticket identities beyond this cannot fit a future ClientHello, so larger tickets are
-// silently dropped rather than surfaced.
+// Ticket identities beyond this cannot fit a future ClientHello; larger tickets are dropped.
 #define CH_TICKET_ID_MAX 320
 
 // The NamedGroup code points (Makefile KEX): x25519 (RFC 9846 §4.3.7), or the X25519MLKEM768
@@ -273,8 +273,8 @@ typedef struct {
 // two result codes below sit beside CH_EINVAL above, both int. The CH_QUIC_ prefix says
 // neither has a meaning on the TLS transport, and ch_quic_open alone returns either.
 //
-// CH_QUIC_DISCARD is the one operational error in this library that leaves the session
-// live, for a packet the caller drops: one that failed to authenticate, which RFC 9001 §5.5
+// CH_QUIC_DISCARD leaves the session live, as CH_RECORD_AGAIN above does, for a packet the
+// caller drops: one that failed to authenticate, which RFC 9001 §5.5
 // says does not necessarily indicate a protocol error or an attack (rfc9001.txt:1373-1376),
 // or one too short to hold a header protection sample, which §5.4.2 discards
 // (rfc9001.txt:1280-1281). Only the first raises ch_quic's open_failures, and quic.h states

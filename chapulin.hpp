@@ -42,12 +42,16 @@ enum class Status : int {
     cap = CH_ECAP,
     closed = CH_ECLOSED,
     invalid = CH_EINVAL,
+#ifdef CH_TRANSPORT_RECORD
+    // The code a TRANSPORT=record read adds (cfg.h): no record has arrived
+    // yet, and the session stays connected (rec.h, INV-13).
+    again = CH_RECORD_AGAIN,
+#endif
 #ifdef CH_TRANSPORT_QUIC
-    // The two codes a TRANSPORT=quic object adds (cfg.h). discard is the
-    // one error in this library that leaves the session live: RFC 9001
-    // §5.5 says a packet that fails to unprotect is not necessarily an
-    // attack. aead_limit is RFC 9001 §6.6's integrity limit, which ends
-    // the session.
+    // The two codes a TRANSPORT=quic object adds (cfg.h). discard leaves
+    // the session live: RFC 9001 §5.5 says a packet that fails to
+    // unprotect is not necessarily an attack. aead_limit is RFC 9001
+    // §6.6's integrity limit, which ends the session.
     discard = CH_QUIC_DISCARD,
     aead_limit = CH_QUIC_AEAD_LIMIT,
 #endif

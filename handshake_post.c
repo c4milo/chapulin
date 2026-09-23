@@ -218,6 +218,15 @@ int hspost_read(ch_tls *t, size_t pt_len) {
         uint8_t outer = 0;
         size_t record_len = 0;
         rc = io_read_record(&t->cfg, buf + fill, t->cfg.buf_len - fill, &outer, &record_len);
+#ifdef CH_TRANSPORT_RECORD
+        if (rc == CH_RECORD_AGAIN) {
+            // The next fragment has not arrived. The fill bytes stay at
+            // the front of cfg.buf, and the next ch_read continues from
+            // them (session.h, post_fill).
+            t->post_fill = fill;
+            return rc;
+        }
+#endif
         if (rc != CH_OK) {
             return rc;
         }

@@ -249,6 +249,14 @@ typedef struct {
     // Unread plaintext of the current record, inside cfg.buf.
     size_t pt_off;
     size_t pt_len;
+#ifdef CH_TRANSPORT_RECORD
+    // The bytes of a post-handshake message that arrived in part when
+    // ch_read returned CH_RECORD_AGAIN: they sit at the front of cfg.buf,
+    // and the next ch_read continues the message with the next record
+    // before it reads anything else (hspost_read). 0 when no message is
+    // in part.
+    size_t post_fill;
+#endif
 #ifdef CH_TRANSPORT_QUIC
     // The one handshake message the client owes, staged whole until
     // ch_quic_crypto_out hands it out. It carries no REC_HDR prefix:

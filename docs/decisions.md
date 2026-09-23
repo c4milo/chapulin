@@ -766,3 +766,29 @@ does nothing more.
     rejected: the build would then fail against every server that accepts
     ChaCha20 and not AES, and the reason to offer AES is to reach more
     servers, not different ones.
+
+46. **A record-mode `ch_read` returns `CH_RECORD_AGAIN` when no record has
+    arrived, and the session stays connected.** Entry 21 makes every
+    operational error fatal, and an empty `recv` in `TRANSPORT=record` is
+    not an error. The caller owns the socket and hands over whole records
+    as they arrive, so between records it has nothing to hand over. Before
+    this result existed, `ch_read` turned that empty `recv` into `CH_EIO`.
+    A caller that received a record with no application data, such as a
+    NewSessionTicket, had to hold it back until a data record arrived, or
+    lose the session. `TRANSPORT=tls` does not change: its `recv` blocks,
+    and a 0 there is the end of the stream.
+
+    Cost: a second live result from `ch_read`, and one field that lives
+    across calls, `ch_tls.post_fill`, which counts the bytes of a
+    post-handshake message split across records. INV-13 states the terms.
+    Gain: the caller passes each record to `ch_read` as it arrives and
+    keeps no queue of its own.
+
+    `CH_QUIET_CAP` still bounds the records one `ch_read` call handles
+    without application data. A peer that sends such records without end
+    now costs the caller one call per record, so the loop that repeats is
+    the caller's, and `ch_read` does not spin.
+
+    Treating a 0 inside a record as `CH_RECORD_AGAIN` too was considered
+    and rejected. The partial header would have to be kept across calls,
+    and `rec.h` already asks the caller for whole records.

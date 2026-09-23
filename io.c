@@ -23,7 +23,23 @@ int io_read_record(const ch_cfg *cfg, uint8_t *buf, size_t cap, uint8_t *outer,
     if (cap < REC_HDR) {
         return CH_ECAP;
     }
+#ifdef CH_TRANSPORT_RECORD
+    // A TRANSPORT=record caller owns the socket and hands over whole
+    // records, so a recv that returns 0 before a record's first byte says
+    // no record has arrived yet (rec.h). The caller runs ch_read again
+    // once one has. A 0 after that first byte breaks the whole-record
+    // promise, and read_exact fails it with CH_EIO like any short read.
+    int got = cfg->recv(cfg->io, buf, REC_HDR);
+    if (got == 0) {
+        return CH_RECORD_AGAIN;
+    }
+    if (got < 0 || (size_t)got > REC_HDR) {
+        return CH_EIO;
+    }
+    int rc = read_exact(cfg, buf + got, REC_HDR - (size_t)got);
+#else
     int rc = read_exact(cfg, buf, REC_HDR);
+#endif
     if (rc != CH_OK) {
         return rc;
     }

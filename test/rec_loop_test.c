@@ -42,6 +42,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "buf.h"
 #include "ch_assert.h"
 #include "handshake_message.h"
 #include "keylog.h"
@@ -320,6 +321,8 @@ static int run_handshake(ch_record *client, ch_record *server, const ch_cfg *ccf
     return rounds;
 }
 
+#include "rec_read_tests.h"
+
 int main(void) {
     static ch_record client;
     static ch_record server;
@@ -355,6 +358,10 @@ int main(void) {
     static const uint8_t zero[SHA256_LEN] = {0};
     CHECK(memcmp(from_client, zero, SHA256_LEN) != 0);
 
+    // ch_read on the connected client, over records that arrive apart.
+    // It ends the client's session, which the run below starts afresh.
+    test_read_waits_for_records(&client, &server);
+
     // The same run against a pin that is not this server's key. Without
     // it the pass above would hold for a client that verified nothing,
     // which is the reading a loopback invites: both halves are ours, so
@@ -385,7 +392,8 @@ int main(void) {
 
     if (failures == 0) {
         (void)printf("rec_loop: a whole handshake in %d rounds, 0 socket calls;"
-                     " both ends export one secret and log the same four; a wrong pin refused\n",
+                     " both ends export one secret and log the same four; ch_read waits"
+                     " between records; a wrong pin refused\n",
                      rounds);
         return 0;
     }

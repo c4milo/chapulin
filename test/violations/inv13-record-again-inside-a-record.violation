@@ -1,0 +1,17 @@
+invariant: INV-13
+file: io.c
+catches: rec_loop_test
+reason: a record-mode ch_read reports CH_RECORD_AGAIN for a recv that
+  stops inside a record, after its first byte. The bytes already read are
+  lost and the session stays live, so the caller can retry past a broken
+  stream; INV-13 admits the result only at a record boundary.
+
+--- old
+    int rc = read_exact(cfg, buf + got, REC_HDR - (size_t)got);
+#else
+--- new
+    int rc = read_exact(cfg, buf + got, REC_HDR - (size_t)got);
+    if (rc == CH_EIO) {
+        return CH_RECORD_AGAIN;
+    }
+#else

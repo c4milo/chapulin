@@ -577,11 +577,32 @@ last `ROLE=server` stub, as the entry said it would.
 ### INV-13 — no resumable errors
 
 - **Claim.** Every error kills the session: alert, wipe, dead. There
-  is no error a caller can retry past.
+  is no error a caller can retry past. The two non-blocking transports
+  also return results that are not errors and leave the session live,
+  and their headers list them: `rec.h` for `TRANSPORT=record` and
+  `quic.h` for `TRANSPORT=quic`. Each one means the call changed
+  nothing, the packet was dropped (`CH_QUIC_DISCARD`, RFC 9001 §5.5), or
+  no record has arrived yet (`CH_RECORD_AGAIN`).
+- `CH_RECORD_AGAIN` is the one returned after work was done, so its
+  terms are exact. `ch_read` returns it only when `cfg.recv` returns 0
+  before a record's first byte. Every record read before that has been
+  opened and handled: a NewSessionTicket went to `on_ticket`, a
+  KeyUpdate changed the keys, and the first part of a message split
+  across records waits at the front of `cfg.buf`, with
+  `ch_tls.post_fill` counting its bytes. A 0 after a record's first byte
+  is `CH_EIO` and a dead session.
 - **Mechanism.** Fail-closed policy; `tlsi_fail` is the single
-  funnel.
+  funnel. `io_read_record` is the only source of `CH_RECORD_AGAIN`, and
+  `dispatch_one_record` and `post_handshake` in `tls.c` are the only
+  places that return it without calling `tlsi_fail`.
 - **Check.** Convention; handshake_sequence's 466k-sequence run asserts no
-  sequence revives a failed session.
+  sequence revives a failed session. `bin/rec_loop_test`
+  (`test/rec_read_tests.h`) reads a ticket-only record and then nothing,
+  a ticket split across two records, and a record cut off after three
+  bytes. Three violations each break one term:
+  `inv13-record-read-dies-between-records`,
+  `inv13-record-read-drops-a-split-message` and
+  `inv13-record-again-inside-a-record`.
 - **Violation.** A PR returns a "soft" error that leaves keys live so
   the caller can retry a read.
 - See [decisions: Engineering](decisions.md#engineering).

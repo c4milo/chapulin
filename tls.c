@@ -144,12 +144,32 @@ int ch_connect(ch_tls *t, const ch_cfg *cfg) {
 #endif // CH_TRANSPORT_RECORD
 #endif
 #endif // CH_ROLE_SERVER
+// Hands the handshake plaintext at the front of cfg.buf to hspost_read.
+// Any result but CH_OK and CH_RECORD_AGAIN ends the session.
+static int post_handshake(ch_tls *t, size_t pt_len) {
+    int rc = hspost_read(t, pt_len);
+    if (rc != CH_OK && rc != CH_RECORD_AGAIN) {
+        tlsi_fail(t, rc == CH_EAUTH ? ALERT_BAD_RECORD_MAC : ALERT_UNEXPECTED_MESSAGE);
+    }
+    return rc;
+}
+
 // Reads and dispatches one record: application data lands in the buffer,
 // post-handshake messages are handled, close_notify returns CH_ECLOSED.
 static int dispatch_one_record(ch_tls *t) {
+#ifdef CH_TRANSPORT_RECORD
+    if (t->post_fill > 0) { // the next record continues a message (session.h)
+        size_t fill = t->post_fill;
+        t->post_fill = 0;
+        return post_handshake(t, fill);
+    }
+#endif
     uint8_t outer = 0;
     size_t record_len = 0;
     int rc = io_read_record(&t->cfg, t->cfg.buf, t->cfg.buf_len, &outer, &record_len);
+    if (rc == CH_RECORD_AGAIN) {
+        return rc; // TRANSPORT=record alone returns it (rec.h)
+    }
     if (rc != CH_OK) {
         tlsi_fail(t, ALERT_DECODE_ERROR);
         return rc;
@@ -171,11 +191,7 @@ static int dispatch_one_record(ch_tls *t) {
         return CH_OK;
     }
     if (inner_type == REC_HANDSHAKE) {
-        rc = hspost_read(t, pt_len);
-        if (rc != CH_OK) {
-            tlsi_fail(t, rc == CH_EAUTH ? ALERT_BAD_RECORD_MAC : ALERT_UNEXPECTED_MESSAGE);
-        }
-        return rc;
+        return post_handshake(t, pt_len);
     }
     if (inner_type == REC_ALERT && pt_len == 2 && t->cfg.buf[1] == ALERT_CLOSE_NOTIFY) {
         t->state = CH_ST_CLOSED;
@@ -233,10 +249,7 @@ int ch_read(ch_tls *t, uint8_t *p, size_t n) {
 }
 
 int ch_write(ch_tls *t, const uint8_t *p, size_t n) {
-    // Contract-point guard: no input can set an undefined state; only
-    // programmer error or corrupted memory can. TigerStyle-class
-    // defense priced at zero per-byte cost (docs/decisions.md).
-    CH_ASSERT(t->state <= CH_ST_FAILED);
+    CH_ASSERT(t->state <= CH_ST_FAILED); // the guard ch_read states
 
     if (t->state != CH_ST_CONNECTED) {
         return CH_EPROTO;
@@ -261,10 +274,7 @@ int ch_write(ch_tls *t, const uint8_t *p, size_t n) {
 }
 
 void ch_close(ch_tls *t) {
-    // Contract-point guard: no input can set an undefined state; only
-    // programmer error or corrupted memory can. TigerStyle-class
-    // defense priced at zero per-byte cost (docs/decisions.md).
-    CH_ASSERT(t->state <= CH_ST_FAILED);
+    CH_ASSERT(t->state <= CH_ST_FAILED); // the guard ch_read states
 
     if (t->keys) {
         (void)tlsi_send_alert(t, 1, ALERT_CLOSE_NOTIFY);
@@ -397,14 +407,10 @@ static int chain_config_ok(const ch_cfg *cfg) {
            pins_unset(cfg) && alpn_ok(cfg);
 }
 
-// session.h declares this call for every trust mode and says both client
-// drivers ask it. This build defined the chain rules alone and checked
-// the rest inside ch_connect, so a TRANSPORT=record object, which
-// compiles ch_record_init and no ch_connect, imported a tlsi_config_ok
-// nothing defined (https://github.com/c4milo/chapulin/issues/171). The
-// terms below are the ones the raw and ca definition above covers, so
-// ch_record_init now reads the receive floor and refuses require_pq in
-// this mode too.
+// The chain rules plus the terms the raw and ca definition above checks.
+// ch_record_init calls this and no ch_connect, so it too refuses a short
+// receive buffer and require_pq in this mode
+// (https://github.com/c4milo/chapulin/issues/171).
 int tlsi_config_ok(const ch_cfg *cfg) {
     if (!chain_config_ok(cfg) || cfg->buf == NULL || cfg->buf_len < CH_MIN_RXBUF) {
         return 0;
