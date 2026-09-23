@@ -6,8 +6,9 @@ this was written and no longer does.
 
 **Read "What has since landed" first.** The sections under "What is missing"
 below are the original scope, kept because the reasoning in them is still the
-reasoning; every item they describe except interop has since been built, and
-that section says which.
+reasoning; every item they describe has since been built, and that section
+says which. Interop ran outside this tree, through colibri ("Verification
+owed" below).
 
 `docs/quic.md` is the client's record and `docs/server.md` the role's. This
 one covers only what the two together do not.
@@ -76,8 +77,9 @@ frames, and `quic_fail.[ch]` holds the wipe both drivers share.
 `bin/srv_quic_test` feeds this tree's own ClientHello to it and watches the
 flight come back: the ServerHello at the Initial level and
 EncryptedExtensions, Certificate, CertificateVerify and Finished at the
-Handshake level. What no test covers yet is the client Finished, which needs
-a real client's transcript, and interop, which needs an outside peer.
+Handshake level. What no test here covers yet is the client Finished, which
+needs a real client's transcript; colibri's interop run below drives it
+against aioquic.
 
 **The Makefile refusal (was item 5), gone.** `ROLE=server` with
 `TRANSPORT=quic` builds, links and exports sixteen calls.
@@ -170,8 +172,8 @@ did.
 
 Gone, and the standard it was held to was met first: the axis was not
 claimed until `bin/srv_quic_test` showed a whole flight leaving the driver.
-What the axis still does not claim is a finished handshake against another
-implementation, which is the interop item below.
+The interop item below records its first finished handshake against another
+implementation.
 
 ## Verification owed
 
@@ -182,11 +184,14 @@ implementation, which is the interop item below.
   `proof/reach-floors.txt` if it does not converge.
 - The sequence differential against the Lean oracle, the way
   `quic_step.[ch]` is checked.
-- Interop, which neither side has. `test/quic_driver_test.c:1` says no QUIC
-  server speaks to the client test, and `test/e2e.sh` has no QUIC leg at
-  all. A chapulin server and a chapulin client can test each other, and that
-  is worth having, but two implementations sharing a bug agree with each
-  other. An outside peer is what settles it.
+- Interop. On 2026-09-23 colibri's `tools/quic_aioquic.sh` ran colibri's
+  `hq-interop` endpoint over a `ROLE=both` object at 9c903d8 against aioquic
+  1.3.0 on one host: as client it fetched three files, and as server, with
+  an ECDSA P-256 leaf, it served them and closed cleanly. That is an outside
+  peer, which two chapulin endpoints testing each other are not, since two
+  implementations sharing a bug agree with each other. It is colibri's
+  test: `test/quic_driver_test.c:1` still says no QUIC server speaks to the
+  client test, and `test/e2e.sh` still has no QUIC leg.
 
 ## What this does not scope
 

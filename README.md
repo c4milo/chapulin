@@ -898,13 +898,18 @@ host-side `TRUST=webpki` mode does, against anchors the caller
 supplies, and [`docs/webpki.md`](docs/webpki.md) lists what it does not
 check. [`docs/decisions.md`](docs/decisions.md) records every trade and why.
 The `TRANSPORT=quic` client is implemented and checked against RFC 9001's
-Appendix A vectors; [`docs/quic.md`](docs/quic.md) records its design and
-the interop it still owes, because no chapulin build has yet spoken to a
-live QUIC peer. A QUIC *server* now builds too: `ROLE=server` with `TRANSPORT=quic` runs
-the TLS 1.3 server handshake over CRYPTO frames and exports sixteen calls.
+Appendix A vectors; [`docs/quic.md`](docs/quic.md) records its design. A
+QUIC *server* now builds too: `ROLE=server` with `TRANSPORT=quic` runs the
+TLS 1.3 server handshake over CRYPTO frames and exports sixteen calls.
 [`docs/quic_server.md`](docs/quic_server.md) states what chapulin owes one,
-which is the keys and the packet protection and nothing above them. It has
-never spoken to another implementation, and neither role has.
+which is the keys and the packet protection and nothing above them. Both
+roles have completed handshakes with another implementation, in a test
+that lives outside this tree: on 2026-09-23 colibri's `hq-interop` endpoint,
+built over a `ROLE=both` object at 9c903d8, fetched three files from aioquic
+1.3.0 and served the same three to it, over UDP on one host. That run
+negotiated ChaCha20-Poly1305, the one suite the QUIC mode offers, and
+`make check-slow` does not repeat it: this tree's e2e suite still has no
+QUIC leg.
 
 The `ROLE=server` build is implemented and completes a handshake;
 [`docs/server.md`](docs/server.md) records its design. Built with

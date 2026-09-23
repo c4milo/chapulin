@@ -2013,7 +2013,7 @@ rest is colibri's.
   object holds no record layer and a TLS object holds no QUIC code.
 - **A server role, since 2026-09-20.** `ROLE=server` with `TRANSPORT=quic`
   builds and runs the handshake; `docs/quic_server.md` states what it owes and
-  what it has never done, which includes speaking to another implementation.
+  where it first spoke to another implementation.
 
 ## What the mode does not check or provide
 
@@ -2322,8 +2322,12 @@ The mode, its owner split and the AES exception are decided. These are not:
   CI's re-measured reading. The comment above `COVERAGE_FLOOR` carries the
   same debt;
 - the end-to-end leg. `test/e2e.sh` runs against `openssl s_server`, which
-  speaks no QUIC, so the mode has no interop evidence at all until a QUIC
-  server joins the suite. The three candidates are an OpenSSL 3.5 QUIC
+  speaks no QUIC, so this suite has no QUIC leg. The mode's first interop
+  evidence came from outside the tree: on 2026-09-23 colibri's
+  `tools/quic_aioquic.sh` ran colibri's endpoint over a `ROLE=both` object
+  at 9c903d8 against aioquic 1.3.0, as client and as server, and moved
+  three files each way. A leg here would repeat that on every
+  `make check-slow`. The three candidates are an OpenSSL 3.5 QUIC
   server, a Go `quic-go` echo server beside the Go echo server the suite
   already starts, and no leg at all, which leaves `make check-slow` green on
   a transport nothing has ever spoken to. The commit that landed `quic.[ch]`
