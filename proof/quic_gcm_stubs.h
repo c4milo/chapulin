@@ -12,15 +12,22 @@
 //
 // WHAT THIS MODELS, and therefore what the harness still proves:
 //
-//   aes_encrypt_block  16 output bytes that are a function of the 16
-//                      input bytes and nothing else. Both halves are
-//                      load-bearing. Being a function is what lets a
-//                      genuine seal open, because seal and open build
-//                      the same counter blocks and must get the same
-//                      keystream from them. Depending on the input is
-//                      what keeps a different counter block from
-//                      silently giving the same bytes, which would hide
-//                      a wrong inc32.
+//   aes_encrypt_schedule  16 output bytes that are a function of the
+//                         16 input bytes and nothing else. Both halves
+//                         are load-bearing. Being a function is what
+//                         lets a genuine seal open, because seal and
+//                         open build the same counter blocks and must
+//                         get the same keystream from them. Depending on
+//                         the input is what keeps a different counter
+//                         block from silently giving the same bytes,
+//                         which would hide a wrong inc32.
+//
+// The stub takes the name quic_gcm.c calls, aes_encrypt_schedule, and
+// not aes_encrypt_block, the wrapper that unwraps an aes_public_key.
+// Under the wrapper's name the stub has no caller, the real call has no
+// body, and proof/run.sh fails the proof. 234ec4e moved the call to
+// aes_encrypt_schedule, and the three GCM launch lines failed that way
+// until this stub was renamed.
 //
 // The mixing below is a rotate and an xor, never a multiply, for the
 // reason proof/aead_stubs.h states: a multiply chain over symbolic bytes
@@ -49,11 +56,11 @@ static void stub_cipher_init(void) {
     }
 }
 
-void aes_encrypt_block(const aes_public_key *k, const uint8_t in[AES_BLOCK],
-                       uint8_t out[AES_BLOCK]) {
-    __CPROVER_assert(__CPROVER_r_ok(k, sizeof *k), "aes_encrypt_block: key readable");
-    __CPROVER_assert(__CPROVER_r_ok(in, AES_BLOCK), "aes_encrypt_block: input readable");
-    __CPROVER_assert(__CPROVER_w_ok(out, AES_BLOCK), "aes_encrypt_block: output writable");
+void aes_encrypt_schedule(const aes_key_schedule *s, const uint8_t in[AES_BLOCK],
+                          uint8_t out[AES_BLOCK]) {
+    __CPROVER_assert(__CPROVER_r_ok(s, sizeof *s), "aes_encrypt_schedule: schedule readable");
+    __CPROVER_assert(__CPROVER_r_ok(in, AES_BLOCK), "aes_encrypt_schedule: input readable");
+    __CPROVER_assert(__CPROVER_w_ok(out, AES_BLOCK), "aes_encrypt_schedule: output writable");
     stub_cipher_init();
     // Built in a local first, so a caller that passes one buffer twice
     // gets an answer that reads every input byte before writing any.

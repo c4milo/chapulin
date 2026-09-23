@@ -928,19 +928,21 @@ launch fast full quic_packet 65 "fill_nondet.0:133" buf.c ct.c -DCH_TRANSPORT_QU
 # (proof/quic_gcm_stubs.h); the unwindset names hash_data and
 # counter_mode because both loop on a symbolic count, and without them
 # each unwinds to the global 130 and carries 130 copies of SP
-# 800-38D's 128-step multiply. Measured on an idle development machine
-# (arm64 macOS, the pinned cbmc, PROVE_NO_CACHE=1 /usr/bin/time -l):
-# quic_gcm_safety 388 properties, 582 s, 2.3 GB peak; quic_gcm_refusal
-# 393 properties, 64 s, 1.0 GB; quic_ghash 386 properties, 318 s,
-# 1.7 GB. Two of the three cost more than the 269 s and 260 s recorded
-# before the ct_wipe calls went in: the wipe of the running multiple sits
+# 800-38D's 128-step multiply. The wipe of the running multiple sits
 # inside multiply_by_subkey, so the solver carries one 16-byte volatile
-# loop per call and hash_data unwinds to 3 of them. The peaks did not
-# move and the weights below stand. Neither proves a functional or
+# loop per call, and hash_data unwinds to 3 of them. Measured after the
+# stub took the name quic_gcm.c calls, aes_encrypt_schedule (arm64
+# macOS, the pinned cbmc, kissat, PROVE_NO_CACHE=1 /usr/bin/time -l over
+# this script, two other processes busy on two of ten cores):
+# quic_gcm_safety 388 properties, 416 s, 2.5 GB peak; quic_gcm_refusal
+# 393 properties, 34 s, 1.9 GB; quic_ghash 386 properties, 235 s,
+# 1.8 GB. The property counts are the ones recorded before 234ec4e.
+# quic_gcm_refusal peaked at 0.97 GB at 3ff8517 under the same command,
+# so its weight moves from 1 to 2. Neither proves a functional or
 # authenticity property; the two harnesses that state those carry no
 # launch line, below.
 launch slow:3 full quic_gcm_safety 130 "fill_nondet.0:177,hash_data.1:3,counter_mode.1:3" --object-bits 11 ct.c -DCH_TRANSPORT_QUIC -DCH_GCM_PT_MAX=32 -DCH_GCM_AAD_MAX=32
-launch slow:1 full quic_gcm_refusal 130 "fill_nondet.0:177,hash_data.1:3,counter_mode.1:3" --object-bits 11 ct.c -DCH_TRANSPORT_QUIC -DCH_GCM_PT_MAX=32 -DCH_GCM_AAD_MAX=32
+launch slow:2 full quic_gcm_refusal 130 "fill_nondet.0:177,hash_data.1:3,counter_mode.1:3" --object-bits 11 ct.c -DCH_TRANSPORT_QUIC -DCH_GCM_PT_MAX=32 -DCH_GCM_AAD_MAX=32
 launch slow:2 full quic_ghash 130 "fill_nondet.0:257,hash_data.1:17" ct.c -DCH_TRANSPORT_QUIC
 launch fast full poly1305 85 "blocks.0:8" ct.c
 # The ROLE=server authentication flight: the two slot predicates over

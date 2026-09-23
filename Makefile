@@ -3599,9 +3599,11 @@ FUZZ_CFLAGS := -std=c11 -O1 -g -fsanitize=fuzzer,address -D_DEFAULT_SOURCE $(HOS
 FUZZ_TIME ?= 30
 FUZZ_RECORD_LINK := record.c ct.c sha256.c hkdf.c chacha20.c poly1305.c aead.c
 FUZZ_HANDSHAKE_PARSER_LINK := handshake_parser.c buf.c
-FUZZ_HANDSHAKE_POST_LINK := handshake.c handshake_parser.c handshake_record.c io.c record.c keysched.c session.c buf.c ct.c \
-                    sha256.c hkdf.c chacha20.c poly1305.c aead.c x25519.c rsa.c rsa_mont.c handshake_message.c \
-                    handshake_auth.c
+# handshake_post.c needs handshake.c, and handshake.c needs most of the
+# client, so this list is SRCS less the file the harness includes. A
+# hand-kept list lost the link when 33978f6 moved the flight handlers
+# into handshake_flight.c; SRCS gains every such file.
+FUZZ_HANDSHAKE_POST_LINK := $(filter-out handshake_post.c,$(SRCS))
 FUZZ_X509_LINK := x509.c x509_der.c buf.c ct.c sha256.c rsa.c rsa_mont.c
 # The TRUST=webpki walk and every file under it. -DCH_TRUST_WEBPKI is
 # not optional here: ch_cfg declares the anchors, the hostname and the

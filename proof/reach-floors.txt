@@ -50,6 +50,15 @@
 # proves that comparison and six test files drive it. The counts here come
 # from each launch line's own --cover location command on arm64 macOS; the
 # percentages below are the nightly's.
+#
+# hybrid_secret fell again, from 19.9 to 17.2, for the same reason. It
+# reaches the same 55 locations, now of 320 rather than 277, and the same
+# ones: main's 19, all 10 of hybrid_secret's, and the stubs'. 33978f6
+# moved the flight handlers and hybrid_secret out of handshake.c into
+# handshake_flight.c, and the harness includes both files. The split added
+# 43 locations to the handlers and the driver, and the harness enters
+# none of them. The handshake_psk and handshake_pin launch lines link
+# handshake_flight.c and prove the handlers.
 
 aead 97.4
 aead_forge 96.9
@@ -71,7 +80,7 @@ epoch 36.1
 handshake_record 92.1
 hello_build 76.9
 hkdf 52.5
-hybrid_secret 19.9
+hybrid_secret 17.2
 key_share 21.9
 keysched 87.3
 p256_mul 86.7
