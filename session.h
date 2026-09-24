@@ -73,9 +73,12 @@
 // (rfc9001.txt:1891-1895), where a TLS device build sends none. So each
 // value is the TLS one plus 254, and plus 270 again in the two device
 // modes. These are CH_HELLO_MAX's QUIC values, repeated as literals for
-// the reason the TLS ones are, and quic.c asserts the two agree.
+// the reason the TLS ones are, and quic.c asserts the two agree. The
+// webpki one carries the 23 bytes of CH_HELLO_CERT_PATH_MAX, as the TLS
+// one does, because the builder is the same; ch_quic_init refuses SPKI
+// pins, so 7 of them never go out over QUIC.
 #ifdef CH_TRUST_WEBPKI
-#define CH_TX_STAGE 2625
+#define CH_TX_STAGE 2648
 #elif defined(CH_KEX_PQ)
 #define CH_TX_STAGE 2325
 #elif defined(CH_ROLE_SERVER)
@@ -94,8 +97,12 @@
 // and length, 2 list length, then 8 names of 1 length byte and 32 name
 // bytes). Then the second group every webpki hello offers beside the
 // hybrid (docs/decisions.md 53): x25519 in supported_groups, 2 bytes,
-// and its KeyShareEntry, 36 bytes: 1801 + 262 + 270 + 2 + 36.
-#define CH_TX_STAGE (2371 + CH_TX_SECOND_SUITE)
+// and its KeyShareEntry, 36 bytes. Then the certificate path every
+// webpki hello offers, a resuming one included (docs/decisions.md 55):
+// the 16-byte signature_algorithms of five schemes and the 7-byte
+// server_certificate_type of a config with SPKI pins and anchors:
+// 1801 + 262 + 270 + 2 + 36 + 16 + 7.
+#define CH_TX_STAGE (2394 + CH_TX_SECOND_SUITE)
 #elif defined(CH_KEX_PQ)
 // 137 fixed + 320 ticket identity + 128 cookie with framing + the
 // 1216-byte hybrid share.
@@ -172,6 +179,22 @@ typedef struct {
     // cfg.server_pubkey2, 0 before a pinned handshake completes. Public
     // information — operators read it to watch key rotation progress.
     uint8_t pin_slot;
+    // Set when a PSK authenticated the handshake, so the server sent no
+    // Certificate and no CertificateVerify: the session resumed. 0 for a
+    // full handshake, and before a ServerHello is accepted. Both roles
+    // write it and give it that one meaning. A client writes it in
+    // hsf_accept_server_hello: set when the ServerHello selected the
+    // identity its hello offered, and clear when the hello offered no PSK
+    // or a TRUST=webpki server declined the one it offered, which that
+    // build answers with a full handshake in the same connection
+    // (docs/decisions.md 55). A raw or ca client fails closed on a
+    // declined PSK, so there it is set exactly when cfg.psk is. A server
+    // role writes it when a ticket this server issued authenticated the
+    // handshake, which then leaves sigalg 0 (srv_resume.h). Public, like
+    // pin_slot: the caller reads it to tell a resumed session from a full
+    // one, and the client's drivers read it to decide whether a
+    // Certificate comes next.
+    uint8_t psk_selected;
     // The NamedGroup of the key exchange that ran. hello_exchange
     // (handshake.c) writes it from the ServerHello: the code point
     // parse_key_share accepted — CH_GROUP_X25519 or
@@ -210,15 +233,12 @@ typedef struct {
     // session id, so one dummy change_cipher_spec record is owed
     // (rfc9846.txt:6401-6403). sni_len is how many bytes of server_name the handshake
     // copied into cfg.sni_buf, and 0 when the client sent none or the name did not fit.
-    // psk_selected is set when a ticket this server issued authenticated the handshake,
-    // which sent no Certificate and no CertificateVerify and leaves sigalg 0; the caller
-    // reads it to tell a resumed session from a full one (srv_resume.h).
+    // The server also writes psk_selected, which every build declares above.
     uint8_t session_id[32];
     uint8_t session_id_len;
     uint16_t suite;
     uint8_t hash_len;
     uint16_t sigalg;
-    uint8_t psk_selected;
     uint8_t hrr_sent;
     uint8_t compat_ccs;
     size_t sni_len;
@@ -295,9 +315,10 @@ typedef struct {
     //
     // CH_TX_STAGE's QUIC values are above, and each one is the length
     // hs_build_client_hello emits for the largest hello its build can
-    // write: 1141 raw and ca classic, 2325 under KEX=pq, 1403 under
-    // TRUST=webpki and 2589 under both, whose hello also lists x25519. quic.c asserts CH_HELLO_MAX
-    // against this constant, where both are visible.
+    // write: 1141 raw and ca classic, 2325 under KEX=pq, and 2648 under
+    // TRUST=webpki, whose hello carries both groups' shares and the
+    // certificate path. quic.c asserts CH_HELLO_MAX against this
+    // constant, where both are visible.
     uint8_t tx[CH_TX_STAGE];
 #else
     uint8_t tx[REC_HDR + CH_TX_STAGE];

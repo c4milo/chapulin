@@ -1,0 +1,15 @@
+invariant: INV-22
+file: handshake.c
+catches: webpki_resume_test
+reason: the blocking driver decides whether a Certificate comes next from
+  cfg.psk, which says what the hello offered, instead of
+  ch_tls.psk_selected, which says what the ServerHello chose. After a
+  declined ticket it skips the certificate step and refuses the server's
+  Certificate at the Finished step, and the declined-ticket rows object.
+
+--- old
+    if (!t->psk_selected) {
+        rc = hsa_server_auth(h);
+--- new
+    if (t->cfg.psk == NULL) {
+        rc = hsa_server_auth(h);

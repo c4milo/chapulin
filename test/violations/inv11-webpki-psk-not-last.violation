@@ -1,0 +1,22 @@
+invariant: INV-11
+file: handshake_message.c
+catches: webpki_resume_test
+reason: a resuming TRUST=webpki hello writes pre_shared_key ahead of the
+  certificate path. RFC 9846 section 4.3.11 requires it last, and
+  hsf_build_client_hello computes the binder over every byte but the last
+  CH_BINDERS_TAIL and writes it into the last 32, which now fall inside
+  the certificate path. The mock server's binder check and the
+  extension-order rows object.
+
+--- old
+    write_webpki_signature_algorithms(&w);
+    write_cert_types(&w, cfg);
+    if (cfg->psk != NULL) {
+        write_pre_shared_key(&w, cfg);
+    }
+--- new
+    if (cfg->psk != NULL) {
+        write_pre_shared_key(&w, cfg);
+    }
+    write_webpki_signature_algorithms(&w);
+    write_cert_types(&w, cfg);

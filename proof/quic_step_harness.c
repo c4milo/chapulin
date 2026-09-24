@@ -103,10 +103,16 @@ size_t hsf_build_client_hello(handshake_state *h, uint8_t *out, size_t cap) {
     return n;
 }
 
+// handshake_flight.h: on CH_OK the handler writes t->psk_selected, which
+// the EncryptedExtensions step reads to choose the next one.
 int hsf_accept_server_hello(handshake_state *h, const server_hello_info *info) {
     __CPROVER_assert(__CPROVER_r_ok(info, sizeof *info), "accept: info readable");
     __CPROVER_assert(info->hrr == 0, "accept: the message is not a HelloRetryRequest");
-    return handler_result(h);
+    int rc = handler_result(h);
+    if (rc == CH_OK) {
+        h->t->psk_selected = nondet_u8() & 1;
+    }
+    return rc;
 }
 
 int hsf_derive_handshake_secrets(handshake_state *h, const server_hello_info *info) {
@@ -197,7 +203,6 @@ void quic_keys_update(uint8_t secret[SHA256_LEN], quic_keys *k) {
 
 static uint8_t buf[CH_PROOF_RXBUF];
 static ch_quic q;
-static uint8_t psk[2];
 
 // cfg.on_level_ready. quic_step.h has a step fire it twice for the one
 // level it installed; ch_quic_init refuses a NULL, so a step may call
@@ -219,11 +224,8 @@ int main(void) {
     q.t.cfg.buf = buf;
     q.t.cfg.buf_len = sizeof buf;
     q.t.cfg.on_level_ready = level_ready;
-    q.t.cfg.psk = (nondet_u8() & 1) ? psk : NULL;
-    q.t.cfg.psk_len = sizeof psk;
     q.hs.t = &q.t;
     fill_nondet(buf, sizeof buf);
-    fill_nondet(psk, sizeof psk);
     fill_nondet(q.t.rd_secret, sizeof q.t.rd_secret);
     fill_nondet(q.t.wr_secret, sizeof q.t.wr_secret);
     fill_nondet(q.hs.c_hs, sizeof q.hs.c_hs);
@@ -244,6 +246,9 @@ int main(void) {
     q.hs.alert = nondet_u8();
     q.hs.server_finished_ok = nondet_u8();
     q.t.alpn_selected = nondet_u8();
+    // Whether the ServerHello selected the PSK, which an earlier step
+    // wrote: 0 or 1, the two values hsf_accept_server_hello writes.
+    q.t.psk_selected = nondet_u8() & 1;
     uint8_t state = nondet_u8();
     __CPROVER_assume(state == CH_ST_START || state == CH_ST_CONNECTED);
     q.t.state = state;
@@ -289,6 +294,11 @@ int main(void) {
         if (was_step < HSQ_STEP_COMPLETE) {
             __CPROVER_assert(q.step > was_step || q.step == HSQ_STEP_AWAIT_RETRY_HELLO,
                              "a step raises the step number, or waits for the retry hello");
+        }
+        if (was_step == HSQ_STEP_AWAIT_ENCRYPTED_EXTENSIONS) {
+            __CPROVER_assert(
+                q.step == (q.t.psk_selected ? HSQ_STEP_AWAIT_FINISHED : HSQ_STEP_AWAIT_CERTIFICATE),
+                "a Certificate comes next unless the ServerHello selected the PSK");
         }
         if (was_step == HSQ_STEP_AWAIT_RETRY_HELLO) {
             __CPROVER_assert(q.step == HSQ_STEP_AWAIT_ENCRYPTED_EXTENSIONS,

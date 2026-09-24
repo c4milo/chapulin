@@ -1,0 +1,14 @@
+invariant: INV-22
+file: handshake_flight.c
+catches: webpki_resume_test
+reason: ch_tls.psk_selected is set whenever the hello offered a ticket,
+  a declined one included. The drivers read it to decide whether a
+  Certificate comes next, so the client skips the certificate step and
+  refuses the server's Certificate, and a caller would read a full
+  handshake as a resumed one. The declined-ticket rows and the handler
+  row object.
+
+--- old
+    h->t->psk_selected = (uint8_t)(psk_offered && info->psk_ok);
+--- new
+    h->t->psk_selected = (uint8_t)psk_offered;

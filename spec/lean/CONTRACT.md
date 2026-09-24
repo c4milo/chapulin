@@ -556,10 +556,10 @@ boundary rather than weakening the model to match the split:
 | check | C decides | model decides |
 | --- | --- | --- |
 | ServerHello with no key_share | `hello_exchange`, on `have_share` | `parseServerHello` |
-| selected_identity outside the one offered index | `hello_exchange`, on `psk_ok` | `parseServerHello` |
+| selected_identity outside the one offered index | `hsf_accept_server_hello` (`handshake_flight.c`), on `psk_ok`, and under `TRUST=webpki` on `HSP_SEEN_PRE_SHARED_KEY` | `parseServerHello` |
 | HelloRetryRequest that asks for no change: no cookie | `hsf_read_server_hello` (`handshake_flight.c`), on an absent cookie | `parseServerHello` |
 | CertificateEntry carrying an unoffered extension | the trust mode's certificate parser | `parseCertificate` |
-| ServerHello that ignores the offered PSK | `hello_exchange`, on `psk_ok` | nothing — both parsers accept it; whether resumption was required sits above them |
+| ServerHello that ignores the offered PSK | `hsf_accept_server_hello` (`handshake_flight.c`), on `psk_ok`: a raw or ca build ends the handshake, and a `TRUST=webpki` build goes on as a full handshake (docs/decisions.md 55) | nothing — both parsers accept it; whether resumption was required sits above them |
 | two-group ServerHello that selects x25519 when `ch_cfg.require_pq` kept x25519 off the hello | `hsf_accept_server_hello` (`handshake_flight.c`), against `ch_cfg.require_pq` | nothing — both parsers accept either listed group; the flag sits above them |
 | ServerHello after a HelloRetryRequest whose cipher suite is not the retry's (§4.2.4) | `hsf_read_server_hello` (`handshake_flight.c`), against `handshake_state.suite`, which the retry wrote | nothing — both parsers accept any listed suite; whether a retry happened sits above them |
 

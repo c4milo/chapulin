@@ -486,6 +486,15 @@ int main(void) {
     }
 #endif
 
-    (void)ch_handshake(&t);
+    int rc = ch_handshake(&t);
+#ifdef CH_PROOF_PSK
+    // This is the raw-rsa build, whose hello offers the ticket alone, so a
+    // ServerHello that declines the PSK fails the handshake closed: a
+    // session that connected is one the server resumed.
+    __CPROVER_assert(rc != CH_OK || t.psk_selected == 1, "a connected PSK session resumed");
+#else
+    (void)rc;
+    __CPROVER_assert(t.psk_selected == 0, "a pinned session reports no resumption");
+#endif
     return 0;
 }

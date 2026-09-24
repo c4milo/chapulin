@@ -1,0 +1,15 @@
+invariant: INV-14
+file: webpki.c
+catches: webpki_resume_test
+reason: the leaf's subjectAltName is matched against the hostname only
+  when the hello offered no ticket, so a server that declines a ticket
+  may present a chain for any name. A declined ticket must get every
+  check a handshake with no ticket gets (docs/decisions.md 55); the row
+  that declines under other.example.test expects bad_certificate and
+  objects.
+
+--- old
+    if (!webpki_match_san(leaf->san, leaf->san_len, cfg->hostname, cfg->hostname_len)) {
+--- new
+    if (cfg->psk == NULL &&
+        !webpki_match_san(leaf->san, leaf->san_len, cfg->hostname, cfg->hostname_len)) {

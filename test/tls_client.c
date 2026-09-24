@@ -384,6 +384,9 @@ int main(int argc, char **argv) {
     (void)fprintf(stderr, "connected\n");
     // e2e asserts on this line: the group the ServerHello selected.
     (void)fprintf(stderr, "group 0x%04x\n", (unsigned)tls.group);
+    // And on this one: whether the ticket authenticated the handshake or
+    // the server declined it and sent a certificate (ch_tls.psk_selected).
+    (void)fprintf(stderr, "psk selected %u\n", (unsigned)tls.psk_selected);
 #ifdef CH_SUITE_AES_GCM
     // And the cipher suite, in a build that can negotiate one.
     (void)fprintf(stderr, "suite 0x%04x\n", (unsigned)tls.suite);

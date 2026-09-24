@@ -1,0 +1,21 @@
+invariant: INV-14
+file: handshake_flight.c
+catches: unit
+reason: a raw or ca client accepts a ServerHello that did not select the
+  ticket it offered. Its hello offered no signature scheme, so the server
+  it pins would then want a certificate this build never asked for; the
+  device modes fail a decline closed (docs/decisions.md 55). The handler
+  row in test/psk_decline_tests.h expects handshake_failure and objects.
+
+--- old
+static int decline_psk(handshake_state *h, const server_hello_info *info) {
+    (void)info;
+    h->alert = ALERT_HANDSHAKE_FAILURE;
+    return CH_EAUTH;
+}
+--- new
+static int decline_psk(handshake_state *h, const server_hello_info *info) {
+    (void)info;
+    (void)h;
+    return CH_OK;
+}

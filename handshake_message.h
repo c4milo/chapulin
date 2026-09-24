@@ -126,14 +126,20 @@
 // CH_HOSTNAME_MAX bytes, 262 in all. And the ALPN extension at the
 // longest offer: type and length words (4), the ProtocolNameList length
 // (2), then CH_ALPN_MAX names of one length byte and CH_ALPN_NAME_MAX
-// bytes each, 270 in all. It also offers five signature schemes instead
-// of one, 8 bytes more, but those bytes sit in the arm a config with no
-// psk takes, as does the server_certificate_type extension a config with
-// SPKI pins adds, 7 bytes at most. That arm's 23 bytes stay shorter than
-// the 47 + CH_TICKET_ID_MAX bytes of the pre_shared_key extension the
-// other arm carries. So the largest hello is still the
-// pre_shared_key arm, now with both extensions and the two groups below:
-// 2371, measured by test/webpki_session_test.c.
+// bytes each, 270 in all. And it offers the certificate path in every
+// hello, a resuming one too, so that a server that declines the ticket
+// can authenticate with a certificate (docs/decisions.md 55): five
+// signature schemes, whose extension is type and length words (4), the
+// list length (2) and five 2-byte schemes, 16 in all, and the
+// server_certificate_type extension a config with SPKI pins adds, type
+// and length words (4), the list length (1) and at most two types, 7 in
+// all. Those 23 bytes are CH_HELLO_CERT_PATH_MAX. A raw or ca build
+// puts its one scheme in the arm a config with no psk takes, 8 bytes
+// that stay shorter than the pre_shared_key extension the other arm
+// carries, so its term is 0. The largest webpki hello is the
+// pre_shared_key arm with both extensions above, the certificate path,
+// SPKI pins beside anchors and the two groups below: 2394, measured by
+// test/webpki_session_test.c.
 // A TRANSPORT=quic build adds two more terms. It drops the 6-byte
 // record_size_limit extension, because RFC 9001 §4.1.3 removes the
 // record layer that extension sizes (rfc9001.txt:462-464), and it sends
@@ -158,8 +164,10 @@
 #endif
 #ifdef CH_TRUST_WEBPKI
 #define CH_HELLO_SERVER_NAME_MAX (4 + 2 + 1 + 2 + CH_HOSTNAME_MAX)
+#define CH_HELLO_CERT_PATH_MAX ((4 + 2 + 5 * 2) + (4 + 1 + 2))
 #else
 #define CH_HELLO_SERVER_NAME_MAX 0
+#define CH_HELLO_CERT_PATH_MAX 0
 #endif
 #ifdef CH_TRANSPORT_QUIC
 #define CH_HELLO_TRANSPORT_MAX (4 + CH_TRANSPORT_PARAMS_MAX - 6)
@@ -182,8 +190,8 @@
 #endif
 #define CH_HELLO_MAX                                                                               \
     (137 + CH_HELLO_SERVER_NAME_MAX + CH_HELLO_ALPN_MAX + CH_HELLO_TRANSPORT_MAX +                 \
-     CH_HELLO_SECOND_GROUP_MAX + CH_HELLO_SECOND_SHARE_MAX + CH_HELLO_SECOND_SUITE_MAX +           \
-     CH_TICKET_ID_MAX + HSP_COOKIE_MAX + CH_HELLO_FIRST_SHARE_MAX)
+     CH_HELLO_CERT_PATH_MAX + CH_HELLO_SECOND_GROUP_MAX + CH_HELLO_SECOND_SHARE_MAX +              \
+     CH_HELLO_SECOND_SUITE_MAX + CH_TICKET_ID_MAX + HSP_COOKIE_MAX + CH_HELLO_FIRST_SHARE_MAX)
 
 // Pinned mode verifies exactly one signature algorithm per build: RSA-PSS
 // by default (what stock cert-based endpoints hold), ECDSA P-256 with
@@ -243,17 +251,20 @@
 // Builds a complete ClientHello handshake message (header included). In
 // PSK mode (cfg->psk set) the pre_shared_key extension comes last with a
 // zeroed binder: the binder occupies the final 32 bytes and the binder
-// transcript covers the first (length - CH_BINDERS_TAIL) bytes. In
-// pinned-key mode the hello offers signature_algorithms instead and has
-// no binder. record_size_limit is the limit we advertise; cookie echoes
-// an HRR cookie (NULL first flight). Returns the total length, or 0 if
-// cap is short.
+// transcript covers the first (length - CH_BINDERS_TAIL) bytes. A raw or
+// ca build offers signature_algorithms in pinned-key mode alone, so its
+// PSK hello offers no certificate path and a pinned-key hello has no
+// binder. record_size_limit is the limit we advertise; cookie echoes an
+// HRR cookie (NULL first flight). Returns the total length, or 0 if cap
+// is short.
 // A TRUST=webpki build puts server_name first in the extension list,
 // carrying cfg->hostname, whose length the caller holds to
-// CH_HOSTNAME_MAX (ch_connect checks it with webpki_hostname_ok), and
-// its signature_algorithms lists the five schemes above. It writes the
-// ALPN extension next when cfg->alpn_count is not 0, listing
-// cfg->alpn_protocols in the caller's order (RFC 7301 §3.1).
+// CH_HOSTNAME_MAX (ch_connect checks it with webpki_hostname_ok). It
+// writes the ALPN extension next when cfg->alpn_count is not 0, listing
+// cfg->alpn_protocols in the caller's order (RFC 7301 §3.1). It writes
+// signature_algorithms, listing the five schemes above, and then the
+// server_certificate_type offer webpki_cert_types_offered makes, in
+// every hello, so a PSK hello carries both ahead of pre_shared_key.
 // The hybrid share carries the ML-KEM encapsulation key ahead of the
 // x25519 public value, so a CH_KEX_HYBRID builder takes both. A
 // CH_KEX_TWO_GROUPS build lists CH_GROUP_X25519MLKEM768 and then

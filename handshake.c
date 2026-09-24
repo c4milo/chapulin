@@ -102,7 +102,11 @@ static int run(handshake_state *h) {
     if (rc != CH_OK) {
         return rc;
     }
-    if (t->cfg.psk == NULL) {
+    // A server that selected the PSK authenticated with it and sends no
+    // certificate (RFC 9846 §2.2). Every other server sends one: a full
+    // handshake, and under TRUST=webpki a server that declined the ticket
+    // this client offered.
+    if (!t->psk_selected) {
         rc = hsa_server_auth(h);
         if (rc != CH_OK) {
             return rc;

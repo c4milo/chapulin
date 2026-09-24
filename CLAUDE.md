@@ -55,7 +55,7 @@ Home: github.com/c4milo.
   raw-public-key certificate types outside TRUST=webpki (below), no
   0-RTT, no compression, no renegotiation-era anything. Within a mode the client offers exactly one
   of everything; the server takes it or the handshake fails closed.
-  TRUST=webpki breaks that rule five times. It offers several signature
+  TRUST=webpki breaks that rule six times. It offers several signature
   schemes, because it cannot know
   which family signed the chain the server will send, and it offers the
   list of ALPN protocols the caller configured, because it cannot know
@@ -76,7 +76,14 @@ Home: github.com/c4milo.
   ch_tls.server_cert_type reports the server's choice: a raw key needs a
   pin that names it, and a chain beside pins needs a pin on the path it
   verified as well as the walk. Pins alone are a whole configuration, with
-  no anchor, clock or hostname (docs/decisions.md 49).
+  no anchor, clock or hostname (docs/decisions.md 49). And a resuming hello
+  offers the certificate path beside the ticket: signature_algorithms,
+  and server_certificate_type with pins, ahead of pre_shared_key. A server
+  that declines the ticket then authenticates with its chain in the same
+  connection, checked as in a handshake with no ticket, and
+  ch_tls.psk_selected reports which one happened (docs/decisions.md 55); a
+  raw or ca resuming hello offers the ticket alone and fails a decline
+  closed.
 - One concern per file pair, dependencies pointing down only:
   `ct.[ch]` (constant-time bytes) ← `sha256.[ch]` + `sha3.[ch]` +
   `sha512.[ch]`/`sha512_compress.[ch]` (SHA-384 and SHA-512; the

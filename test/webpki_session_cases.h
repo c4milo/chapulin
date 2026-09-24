@@ -341,10 +341,12 @@ static void widest_alpn(ch_alpn_protocol *out, uint8_t (*names)[CH_ALPN_NAME_MAX
 
 // CH_HELLO_MAX is exact in this build, as test_hello_staging_boundary
 // holds it in the others: the pre_shared_key arm with the longest
-// ticket identity, the longest cookie, the longest hostname and the
-// widest ALPN offer builds at CH_HELLO_MAX and refuses one byte less.
-// The arm with no psk, the only one ch_connect lets this build send, is
-// 351 bytes shorter.
+// ticket identity, the longest cookie, the longest hostname, the widest
+// ALPN offer and both certificate types, which SPKI pins beside anchors
+// offer, builds at CH_HELLO_MAX and refuses one byte less. Every webpki
+// hello carries the certificate path, a resuming one too
+// (docs/decisions.md 55), so the arm with no psk is shorter by the
+// pre_shared_key extension alone, 367 bytes.
 static void test_webpki_hello_boundary(void) {
     static uint8_t out[CH_HELLO_MAX];
     static uint8_t identity[CH_TICKET_ID_MAX];
@@ -366,22 +368,38 @@ static void test_webpki_hello_boundary(void) {
     cfg.hostname_len = sizeof name;
     cfg.alpn_protocols = widest;
     cfg.alpn_count = CH_ALPN_MAX;
+    // webpki_cert_types_offered reads the two counts: a pin and an anchor
+    // offer the raw key and X.509 both.
+    cfg.spki_pin_count = 1;
+    cfg.anchor_count = 1;
 #define BUILD_HELLO(cap)                                                                           \
     hs_build_client_hello(out, (cap), &cfg, ek, pub, random32, 0xffff, cookie, sizeof cookie)
     size_t psk_arm = BUILD_HELLO(CH_HELLO_MAX);
     CHECK(psk_arm == CH_HELLO_MAX);
+    // The certificate path rides ahead of the ticket: five schemes, then
+    // both certificate types, then pre_shared_key last.
+    int count = 0;
+    int psk_index = hello_ext_index(out, psk_arm, EXT_PRE_SHARED_KEY, &count);
+    CHECK(count > 3 && psk_index == count - 1);
+    CHECK(hello_ext_index(out, psk_arm, EXT_SIGNATURE_ALGORITHMS, NULL) == count - 3);
+    CHECK(hello_ext_index(out, psk_arm, EXT_SERVER_CERTIFICATE_TYPE, NULL) == count - 2);
     CHECK(BUILD_HELLO(CH_HELLO_MAX - 1) == 0);
     // require_pq drops the x25519 group and its 36-byte share.
     cfg.require_pq = 1;
     CHECK(BUILD_HELLO(CH_HELLO_MAX) == CH_HELLO_MAX - 2 - 36);
     cfg.require_pq = 0;
+    // No pins: no server_certificate_type, 7 bytes.
+    cfg.spki_pin_count = 0;
+    CHECK(BUILD_HELLO(CH_HELLO_MAX) == CH_HELLO_MAX - 7);
+    cfg.spki_pin_count = 1;
     cfg.psk = NULL;
     size_t chain_arm = BUILD_HELLO(CH_HELLO_MAX);
-    CHECK(chain_arm == CH_HELLO_MAX - (47 + CH_TICKET_ID_MAX) + 16);
+    CHECK(chain_arm == CH_HELLO_MAX - (47 + CH_TICKET_ID_MAX));
 #undef BUILD_HELLO
     CHECK(CH_TX_STAGE == CH_HELLO_MAX);
     CHECK(CH_HELLO_ALPN_MAX == 270);
-    CHECK(CH_HELLO_MAX == 2371 + CH_HELLO_SECOND_SUITE_MAX);
+    CHECK(CH_HELLO_CERT_PATH_MAX == 16 + 7);
+    CHECK(CH_HELLO_MAX == 2394 + CH_HELLO_SECOND_SUITE_MAX);
     (void)printf("webpki hello: %zu bytes with pre_shared_key, %zu without, CH_TX_STAGE %d\n",
                  psk_arm, chain_arm, CH_TX_STAGE);
 }

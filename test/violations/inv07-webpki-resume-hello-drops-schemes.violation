@@ -1,0 +1,23 @@
+invariant: INV-7
+file: handshake_message.c
+catches: webpki_resume_test
+reason: a resuming TRUST=webpki hello offers the ticket alone again, with
+  no signature_algorithms and no server_certificate_type, which is the
+  hello entry 47 wrote. dns.google refused every such hello with
+  handshake_failure when cocuyo measured it on 2026-09-24, and
+  bin/webpki_resume_test's mock server answers it the same way, so every
+  resumption row objects, the declined-ticket rows with them.
+
+--- old
+    write_webpki_signature_algorithms(&w);
+    write_cert_types(&w, cfg);
+    if (cfg->psk != NULL) {
+        write_pre_shared_key(&w, cfg);
+    }
+--- new
+    if (cfg->psk == NULL) {
+        write_webpki_signature_algorithms(&w);
+        write_cert_types(&w, cfg);
+    } else {
+        write_pre_shared_key(&w, cfg);
+    }

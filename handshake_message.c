@@ -55,6 +55,21 @@ static void write_server_name(wbuf *w, const ch_cfg *cfg) {
     wb_bytes(w, cfg->hostname, cfg->hostname_len);
 }
 
+// signature_algorithms for a public chain: its links may be signed by any
+// family, so offer every scheme the walk verifies (RFC 9846 §4.3.3). The
+// first three may sign CertificateVerify; the two PKCS#1 v1.5 schemes are
+// for certificate signatures only (§4.3.3).
+static void write_webpki_signature_algorithms(wbuf *w) {
+    wb_u16(w, EXT_SIGNATURE_ALGORITHMS);
+    wb_u16(w, 2 + 5 * 2);
+    wb_u16(w, 5 * 2);
+    wb_u16(w, SIGALG_RSA_PSS_RSAE_SHA256);
+    wb_u16(w, SIGALG_ECDSA_P256_SHA256);
+    wb_u16(w, SIGALG_ECDSA_P384_SHA384);
+    wb_u16(w, SIGALG_RSA_PKCS1_SHA256);
+    wb_u16(w, SIGALG_RSA_PKCS1_SHA384);
+}
+
 // server_certificate_type (RFC 7250 §4.1): the certificate types this
 // configuration can judge, the raw public key first because a
 // configuration that offers it prefers it (webpki_pin.h). A
@@ -78,6 +93,28 @@ static void write_cert_types(wbuf *w, const ch_cfg *cfg) {
     }
 }
 #endif
+
+// pre_shared_key (RFC 9846 §4.3.11): the one identity cfg presents and a
+// zeroed 32-byte binder, which hsf_build_client_hello computes once the
+// rest of the hello is written. It is the last extension, which §4.3.11
+// requires (rfc9846.txt:2564-2565), because the binder covers every byte
+// before the binders list; the caller writes nothing after it.
+static void write_pre_shared_key(wbuf *w, const ch_cfg *cfg) {
+    wb_u16(w, EXT_PRE_SHARED_KEY);
+    size_t psk = wb_mark(w, 2);
+    size_t ids = wb_mark(w, 2);
+    wb_u16(w, (uint16_t)cfg->psk_id_len);
+    wb_bytes(w, cfg->psk_id, cfg->psk_id_len);
+    uint32_t age = cfg->resumption ? cfg->obfuscated_age : 0;
+    wb_u16(w, (uint16_t)(age >> 16));
+    wb_u16(w, (uint16_t)age);
+    wb_patch16(w, ids);
+    wb_u16(w, 33); // binders list: one 32-byte binder
+    wb_u8(w, 32);
+    size_t binder = wb_mark(w, 32);
+    (void)binder;
+    wb_patch16(w, psk);
+}
 
 #ifdef CH_KEX_TWO_GROUPS
 // supported_groups and key_share for the build that offers two groups
@@ -216,48 +253,31 @@ size_t hs_build_client_hello(uint8_t *out, size_t cap, const ch_cfg *cfg,
         wb_bytes(&w, cookie, cookie_len);
     }
 
-    if (cfg->psk == NULL) {
 #ifdef CH_TRUST_WEBPKI
-        // A public chain: its links may be signed by any family, so offer
-        // every scheme the walk verifies (RFC 9846 §4.3.3). The first
-        // three may sign CertificateVerify; the two PKCS#1 v1.5 schemes
-        // are for certificate signatures only (§4.3.3).
-        wb_u16(&w, EXT_SIGNATURE_ALGORITHMS);
-        wb_u16(&w, 2 + 5 * 2);
-        wb_u16(&w, 5 * 2);
-        wb_u16(&w, SIGALG_RSA_PSS_RSAE_SHA256);
-        wb_u16(&w, SIGALG_ECDSA_P256_SHA256);
-        wb_u16(&w, SIGALG_ECDSA_P384_SHA384);
-        wb_u16(&w, SIGALG_RSA_PKCS1_SHA256);
-        wb_u16(&w, SIGALG_RSA_PKCS1_SHA384);
-        // The same arm offers raw public keys, because only a hello that
-        // can be answered with a Certificate asks for a certificate type.
-        write_cert_types(&w, cfg);
+    // Every webpki hello offers the certificate path, a resuming one too:
+    // a server that declines the ticket then authenticates with a
+    // certificate in the same connection (docs/decisions.md 55), and RFC
+    // 9846 §4.3.3 requires signature_algorithms of a client that wants a
+    // server to authenticate that way (rfc9846.txt:1811-1813).
+    write_webpki_signature_algorithms(&w);
+    write_cert_types(&w, cfg);
+    if (cfg->psk != NULL) {
+        write_pre_shared_key(&w, cfg);
+    }
 #else
+    if (cfg->psk == NULL) {
         // Pinned-key mode: the server authenticates by signature, so
         // offer the one algorithm the pin can be.
         wb_u16(&w, EXT_SIGNATURE_ALGORITHMS);
         wb_u16(&w, 4);
         wb_u16(&w, 2);
         wb_u16(&w, CH_PIN_SIGALG);
-#endif
     } else {
-        // pre_shared_key comes last (RFC 9846 §4.3.11).
-        wb_u16(&w, EXT_PRE_SHARED_KEY);
-        size_t psk = wb_mark(&w, 2);
-        size_t ids = wb_mark(&w, 2);
-        wb_u16(&w, (uint16_t)cfg->psk_id_len);
-        wb_bytes(&w, cfg->psk_id, cfg->psk_id_len);
-        uint32_t age = cfg->resumption ? cfg->obfuscated_age : 0;
-        wb_u16(&w, (uint16_t)(age >> 16));
-        wb_u16(&w, (uint16_t)age);
-        wb_patch16(&w, ids);
-        wb_u16(&w, 33); // binders list: one 32-byte binder
-        wb_u8(&w, 32);
-        size_t binder = wb_mark(&w, 32);
-        (void)binder;
-        wb_patch16(&w, psk);
+        // The ticket alone, with no signature scheme beside it: a raw or
+        // ca server that declines it fails the handshake closed.
+        write_pre_shared_key(&w, cfg);
     }
+#endif
 
     wb_patch16(&w, exts);
     wb_patch24(&w, msg);

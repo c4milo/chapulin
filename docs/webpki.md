@@ -451,11 +451,23 @@ received it, and refuses to present it under any other.
   again, and `ch_tls.alpn_selected` reports the new answer. RFC 9846 ties
   the application protocol to a ticket only for 0-RTT data, which this
   client never sends.
-- **A declined ticket fails the handshake.** The resumed ClientHello
-  offers the ticket and no signature scheme, so a server that does not
-  select the ticket has no certificate path to take, and the client fails
-  closed with `CH_EAUTH`. The caller reconnects without the ticket.
-  `docs/decisions.md` entry 47 says why the hello does not offer both.
+- **The resuming hello offers the certificate path too.** It carries
+  the five signature schemes, and `server_certificate_type` when SPKI pins
+  are set, ahead of `pre_shared_key`, which stays the last extension
+  because the binder covers every byte before it. A retry hello after a
+  HelloRetryRequest carries the same extensions and a new binder.
+- **A declined ticket becomes a full handshake.** A ServerHello with no
+  `pre_shared_key` declined the ticket. The client wipes the PSK's early
+  secret and binder key, derives the early secret of no PSK
+  (`rfc9846.txt:4182-4185`), and reads Certificate and CertificateVerify
+  as a handshake with no ticket does: the chain, the clock, the hostname,
+  the anchors and any SPKI pins are all checked. A pre_shared_key that
+  names any identity but 0 is refused with `illegal_parameter`.
+  `docs/decisions.md` entry 55 says why the hello offers both, and records
+  the dns.google measurement behind it.
+- **`ch_tls.psk_selected` says which one happened.** It is 1 when the
+  server selected the ticket and sent no certificate, and 0 when the
+  handshake was a full one, whether the hello offered a ticket or not.
 - **The caller owns the ticket's age.** A ticket lives at most seven days
   (RFC 9846 §4.7.1), and the other modes leave that limit and
   `obfuscated_age` to the caller as well.
@@ -480,8 +492,8 @@ caller sets up to `CH_SPKI_PIN_MAX` (4) of them in `ch_cfg.spki_pins`.
   `server_certificate_type` (RFC 7250 §4.1) listing RawPublicKey, and X509
   after it when anchors are also set. Without pins it sends no extension,
   and the server sends the X.509 type RFC 9846 §4.5.1 defaults to. A
-  resumed hello offers no certificate type, because its server sends no
-  Certificate.
+  resuming hello makes the same offer, because a server that declines the
+  ticket sends a Certificate after all (see "Resumption").
 - **Pins alone** are a whole configuration: no anchors, no clock, and no
   hostname unless the caller wants one sent as `server_name`. This is RFC
   8310's "SPKI + IP" profile, for a DNS server on a private network with
@@ -550,15 +562,16 @@ peer can force before any anchor is consulted, and one more certificate
 in the formula least likely to converge.
 
 The ClientHello this mode sends carries a `server_name` extension of up
-to 262 bytes, an ALPN extension of up to 270, and five signature
-schemes, so its largest hello, `CH_HELLO_MAX`, is 1,149 bytes, and
-2,335 under `KEX=pq`, whose supported_groups also lists x25519. The
-session's TX staging array, `CH_TX_STAGE`,
-grows to match, and `test/webpki_session_cases.h` measures the built
-hello against both numbers. The PSK arm, which a resumed connection
-sends, sets that maximum: its `pre_shared_key` extension is longer than the
-`signature_algorithms` extension the full handshake sends in its place. The
-full handshake's hello is 798 bytes, or 1,984 under `KEX=pq`.
+to 262 bytes, an ALPN extension of up to 270, a key share for each of
+the two groups, and the certificate path: five signature schemes, 16
+bytes, and with SPKI pins the `server_certificate_type` offer, 7 bytes
+at most. So its largest hello, `CH_HELLO_MAX`, is 2,394 bytes, 2,396
+under `SUITE=aesgcm`, and 2,648 over QUIC. The session's TX staging
+array, `CH_TX_STAGE`, grows to match, and `test/webpki_session_cases.h`
+measures the built hello against both numbers. A resuming hello sets
+that maximum, because it carries the certificate path and the
+`pre_shared_key` extension both. A hello with no ticket is at most 2,027
+bytes.
 
 `CH_ALPN_MAX` and `CH_ALPN_NAME_MAX` are that budget split two ways. The
 extension costs 4 type and length bytes, 2 list-length bytes, and one
@@ -617,7 +630,8 @@ Read this list as part of the profile, not as a list of future work.
   (see "Resumption") holds the ticket to that hostname and those anchors.
   A certificate that expired since, or an anchor distrusted without the
   anchor array changing, is not checked again until the next full
-  handshake.
+  handshake. A server that declines the ticket gives that full handshake
+  in the same connection.
 - **No clock-skew tolerance.** `now_seconds` is compared exactly. As
   certificate lifetimes shorten, a fleet whose clock drifts turns a soft
   failure into a hard one, so the caller owns keeping the clock right.

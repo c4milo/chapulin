@@ -30,7 +30,7 @@ _Static_assert(CH_WEBPKI_KEY_MAX >= CH_RSA_MODULUS_MAX,
                "webpki_leaf_info.key must hold the widest modulus webpki_read_spki returns");
 
 uint8_t webpki_cert_types_offered(const ch_cfg *cfg) {
-    if (cfg->psk != NULL || cfg->spki_pin_count == 0) {
+    if (cfg->spki_pin_count == 0) {
         return 0;
     }
     uint8_t offered = 1U << CH_CERT_TYPE_RAW_PUBLIC_KEY;

@@ -9,11 +9,10 @@
 // bin/quic_loop_test is TRUST=raw-ecdsa, colibri's runner image: the
 // client pins the server's P-256 key for the full handshake, takes the
 // ticket at the 1-RTT level, and resumes with it. bin/quic_loop_webpki is
-// TRUST=webpki, colibri's local checks. No certificate chain this tree
-// holds comes with its private key, so that build cannot make the full
-// handshake; the server's own ticket format mints the ticket the client
-// presents instead, bound to the client's hostname and anchors the way
-// on_ticket would have bound it, and the resumed handshake runs the rest.
+// TRUST=webpki, colibri's local checks: the server presents the r2 corpus
+// chain with its leaf key, the client verifies it, resumes the ticket the
+// full handshake left, and completes a full handshake in one connection
+// when a server with another ticket key declines that ticket.
 //
 // The keys agree when a packet one end seals at the 1-RTT level opens at
 // the other, which is what the two cases below check after each
@@ -22,6 +21,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "buf.h"
 #include "ch_assert.h"
 #include "handshake_message.h"
 #include "p256_sign_vectors.h"

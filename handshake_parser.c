@@ -23,7 +23,7 @@ static uint8_t server_hello_ext_bit(uint16_t ext) {
     case EXT_KEY_SHARE:
         return 1U << 1;
     case EXT_PRE_SHARED_KEY:
-        return 1U << 2;
+        return HSP_SEEN_PRE_SHARED_KEY;
     case EXT_COOKIE:
         return 1U << 3;
     default:

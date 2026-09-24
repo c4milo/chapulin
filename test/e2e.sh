@@ -794,16 +794,38 @@ WEBPKI_HOST=$WEBPKI_HOSTNAME WEBPKI_NOW=$NOW \
 }
 
 # The ticket that session saved resumes the same hostname under the same
-# anchor. The resumed hello offers no signature scheme, so a connected
-# session means the server selected the ticket (webpki_ticket.h).
+# anchor (webpki_ticket.h). The client reports that the server selected
+# the ticket, so no certificate was sent.
 MSG='otra vez publica'
 WEBPKI_HOST=$WEBPKI_HOSTNAME WEBPKI_NOW=$NOW \
     expect webpki-resume "acilbup zev arto" "$DIR/err_wp_resume" \
     ./bin/tlsclient_webpki 127.0.0.1 "$PORT_WEBPKI" "$WEBPKI_ANCHOR" "@$DIR/wpticket"
-grep -q "^resuming" "$DIR/err_wp_resume" || {
-    echo "FAIL e2e webpki-resume: did not use the ticket"
+if ! grep -q "^resuming" "$DIR/err_wp_resume" ||
+    ! grep -q "^psk selected 1$" "$DIR/err_wp_resume"; then
+    echo "FAIL e2e webpki-resume: did not resume with the ticket"
+    cat "$DIR/err_wp_resume"
     exit 1
-}
+fi
+
+# The same ticket against a second s_server over the same chain, which
+# stands for the first one restarted: each OpenSSL process draws its own
+# ticket key, so this one cannot open the ticket and declines it. The
+# resuming hello offers the certificate path beside the ticket, so the
+# same connection completes as a full handshake that walks the chain and
+# checks the hostname (docs/decisions.md 55).
+start_server -tls1_3 -ciphersuites TLS_CHACHA20_POLY1305_SHA256 -cert "$DIR/wpleaf.pem" -key "$DIR/wpleaf.key" -cert_chain "$DIR/wpint.pem" -rev
+PORT_WEBPKI_RESTARTED=$SRV_PORT
+MSG='ticket rechazado'
+WEBPKI_HOST=$WEBPKI_HOSTNAME WEBPKI_NOW=$NOW \
+    expect webpki-resume-declined "odazahcer tekcit" "$DIR/err_wp_declined" \
+    ./bin/tlsclient_webpki 127.0.0.1 "$PORT_WEBPKI_RESTARTED" "$WEBPKI_ANCHOR" "@$DIR/wpticket"
+if ! grep -q "^resuming" "$DIR/err_wp_declined" ||
+    ! grep -q "^psk selected 0$" "$DIR/err_wp_declined" ||
+    ! grep -q "^cert type 0$" "$DIR/err_wp_declined"; then
+    echo "FAIL e2e webpki-resume-declined: expected a full handshake after the server declined the ticket"
+    cat "$DIR/err_wp_declined"
+    exit 1
+fi
 
 # The same ticket under another hostname: its binding names the first,
 # so ch_connect refuses the config before a byte leaves (CH_EINVAL).
@@ -1165,4 +1187,4 @@ else
     echo "SKIP webpki-aes legs: bin/tlsclient_webpki_aes is absent (no AES instructions)"
 fi
 
-echo "e2e: record + psk + tickets + resumption + pinned ecdsa + chapulin server resume x2 + chapulin server x25519${CHSRV_PQ_LEG} + pinned rsa + require-pq refused + rotation + ca rsa x2 + ca ecdsa x2 + ca rotation + ca negatives x3${EPOCH_LEG} + webpki rsa + webpki-resume x2 + webpki-rpk x7 + webpki ecdsa x2 + webpki negatives x4 + webpki alpn x3${GO_LEG}${OPENSSL_PQ_LEG}${AES_SUITE_LEG} + examples x4 OK"
+echo "e2e: record + psk + tickets + resumption + pinned ecdsa + chapulin server resume x2 + chapulin server x25519${CHSRV_PQ_LEG} + pinned rsa + require-pq refused + rotation + ca rsa x2 + ca ecdsa x2 + ca rotation + ca negatives x3${EPOCH_LEG} + webpki rsa + webpki-resume x3 + webpki-rpk x7 + webpki ecdsa x2 + webpki negatives x4 + webpki alpn x3${GO_LEG}${OPENSSL_PQ_LEG}${AES_SUITE_LEG} + examples x4 OK"

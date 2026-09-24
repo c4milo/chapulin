@@ -8,8 +8,10 @@
 //    pins-only configuration with no hostname refuses the
 //    acknowledgement with unsupported_extension;
 //  - the certificate types offered are webpki_cert_types_offered's, so a
-//    configuration without pins, or a resumption, refuses a
-//    server_certificate_type with unsupported_extension;
+//    configuration without pins refuses a server_certificate_type with
+//    unsupported_extension, and a resumption with pins accepts one,
+//    because its hello offered the certificate path beside the ticket
+//    (docs/decisions.md 55);
 //  - t->server_cert_type is seeded with CH_CERT_TYPE_X509 on every read,
 //    and the parser writes the selection into it.
 //
@@ -80,7 +82,7 @@ typedef enum {
     PINS_AND_ANCHORS, // offers the raw key and X.509, sends server_name
     PINS_ONLY,        // offers the raw key alone, sends no server_name
     ANCHORS_ONLY,     // offers no certificate type, sends server_name
-    RESUMPTION,       // pins and anchors with a PSK: offers no certificate type
+    RESUMPTION,       // pins and anchors with a PSK: offers both types too
 } cfg_shape;
 
 static const uint8_t pins[1][SHA256_LEN] = {{0x5a}};
@@ -182,9 +184,11 @@ static void test_selection_written(void) {
 }
 
 // The offer is webpki_cert_types_offered's. Pins alone offer the raw
-// key alone, so X.509 is a type the hello did not offer (47); no pins,
-// and a resumption, offer nothing, so any selection is unrequested
-// (110).
+// key alone, so X.509 is a type the hello did not offer (47); no pins
+// offer nothing, so any selection is unrequested (110). A resumption
+// offers what the same configuration offers without a ticket, because a
+// server that declines the ticket sends a Certificate after all
+// (docs/decisions.md 55), so its server may select the raw key.
 static void test_offer_passed(void) {
     uint8_t after = 0;
     uint8_t alert = 0;
@@ -195,8 +199,8 @@ static void test_offer_passed(void) {
                    &alert) == CH_EPROTO);
     CHECK(alert == ALERT_UNSUPPORTED_EXTENSION && after == CH_CERT_TYPE_X509);
     CHECK(read_row(RESUMPTION, select_raw, sizeof select_raw, CH_CERT_TYPE_X509, &after, &alert) ==
-          CH_EPROTO);
-    CHECK(alert == ALERT_UNSUPPORTED_EXTENSION);
+          CH_OK);
+    CHECK(after == CH_CERT_TYPE_RAW_PUBLIC_KEY);
 }
 
 // server_name counts as sent when the configuration has a hostname. A

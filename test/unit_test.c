@@ -322,6 +322,9 @@ static void test_record(void) {
 #include "rfc8448_tests.h"
 #include "session_tests.h"
 
+#include "handshake_flight.h"
+#include "psk_decline_tests.h"
+
 #include "rsa.h"
 #include "rsa_wide_vectors.h"
 
@@ -366,11 +369,13 @@ int main(void) {
     test_connect_cfg();
     test_rxbuf_floor();
     test_pinned_hello_extensions();
+    test_psk_hello_bytes();
     test_hello_staging_boundary();
     test_epoch_cfg();
     test_ch_write();
     test_record_padding();
     test_rsa_device_bound();
+    test_decline_handler();
     if (failures > 0) {
         (void)fprintf(stderr, "%d failure(s)\n", failures);
         return 1;

@@ -255,13 +255,18 @@ as for a full handshake and set `ticket_binding` to the stored binding;
 `ch_quic_init` refuses a ticket whose binding does not match them, which is
 what `docs/webpki.md`, "Resumption", describes for TCP.
 
-**A declined ticket.** The resumed ClientHello offers the ticket and no
-signature scheme, so a server that passes the ticket over has no
-certificate to send and the handshake fails: this server answers
-`missing_extension`, and the client closes. The caller reconnects without
-the ticket. A server passes a ticket over when it cannot open it, when it
-has expired on the server's clock, or when the connection negotiates
-another ALPN protocol.
+**A declined ticket.** A server passes a ticket over when it cannot open
+it, when it has expired on the server's clock, or when the connection
+negotiates another ALPN protocol. What happens next depends on the
+client's trust mode. A `TRUST=raw-ecdsa` resuming ClientHello offers the
+ticket and no signature scheme, so this server has no certificate to send
+and answers `missing_extension`; the client closes, and the caller
+reconnects without the ticket. A `TRUST=webpki` resuming ClientHello
+offers the five signature schemes beside the ticket, so this server
+sends its certificate and the same connection completes as a full
+handshake, which the client checks against its anchors, hostname and
+clock (`docs/decisions.md` entry 55). `ch_tls.psk_selected` reads 0 on
+both ends.
 
 **What checks it.** `bin/quic_loop_test` runs this tree's QUIC client
 against this tree's QUIC server in one `ROLE=both TRUST=raw-ecdsa` process:
@@ -269,10 +274,14 @@ the full handshake, the ticket at the 1-RTT level, the resumed handshake
 with two Handshake-level messages and keys that open each other's 1-RTT
 packets, a second ticket whose lifetime ended where the first one's did, a
 protocol mismatch refused, and no ticket without a clock.
-`bin/quic_loop_webpki` resumes a bound ticket under `TRUST=webpki` and
-checks that the ticket the server issues next is bound to the client's
-configuration, which is only true if `ch_quic_init` took its hash. Neither
-test sends a packet; colibri's runner does.
+`bin/quic_loop_webpki` runs the same pair under `TRUST=webpki`, with the
+server presenting the r2 corpus chain and signing with its leaf key: a
+full handshake whose ticket is bound to the client's configuration, which
+is only true if `ch_quic_init` took its hash, the resumed handshake, and a
+server with another ticket key that declines the ticket and completes a
+full handshake in the same connection, refused when the chain fails the
+client's hostname or anchor. Neither test sends a packet; colibri's
+runner does.
 
 ## The key exchange
 

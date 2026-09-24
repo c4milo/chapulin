@@ -441,6 +441,14 @@ class Session {
         return static_cast<Group>(tls_.group);
     }
 
+    // Whether a PSK authenticated the handshake (ch_tls.psk_selected):
+    // true for a resumed session, false for a full one. Under
+    // TRUST=webpki a server that declines the ticket gives a full
+    // handshake and false.
+    bool psk_selected() const {
+        return tls_.psk_selected != 0;
+    }
+
 #ifdef CH_TRUST_WEBPKI
     // Which protocol the server selected through ALPN
     // (ch_tls.alpn_selected): an index into the list Config::alpn() was

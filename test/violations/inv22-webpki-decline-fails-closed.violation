@@ -1,0 +1,23 @@
+invariant: INV-22
+file: handshake_flight.c
+catches: webpki_resume_test
+reason: a TRUST=webpki client fails a declined ticket closed with
+  handshake_failure, the behavior before docs/decisions.md 55, although
+  its hello offered the certificate path beside the ticket. A server that
+  declines then gets no chance to authenticate with its chain, and
+  bin/webpki_resume_test's declined-ticket rows, which expect the full
+  handshake to complete in the same connection, object.
+
+--- old
+    ct_wipe(h->early, sizeof h->early);
+    ct_wipe(h->binder_key, sizeof h->binder_key);
+    early_secret_without_psk(h->early);
+    return CH_OK;
+}
+--- new
+    ct_wipe(h->early, sizeof h->early);
+    ct_wipe(h->binder_key, sizeof h->binder_key);
+    early_secret_without_psk(h->early);
+    h->alert = ALERT_HANDSHAKE_FAILURE;
+    return CH_EAUTH;
+}

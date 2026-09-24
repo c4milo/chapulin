@@ -26,7 +26,8 @@
 // bit when cfg carries SPKI pins, and the X509 bit beside it when cfg
 // carries anchors too. 0 means the extension is not sent: a configuration
 // with no pins, whose server sends the X.509 type RFC 9846 §4.5.1 defaults
-// to, or a resumption, whose server sends no Certificate at all.
+// to. A resumption makes the same offer, because a server that declines
+// the ticket sends a Certificate after all (docs/decisions.md 55).
 // handshake_message.c writes the offer, the raw key first, and the
 // EncryptedExtensions parser admits a selection only from this set.
 uint8_t webpki_cert_types_offered(const ch_cfg *cfg);

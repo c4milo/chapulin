@@ -463,8 +463,10 @@ last `ROLE=server` stub, as the entry said it would.
   exactly one of everything; the server takes it or the handshake fails
   closed. The host-side `TRUST=webpki` mode offers several signature
   schemes (decisions.md 36), several application protocols (37), two
-  groups with a key share for each (39, 51), and under `SUITE=aesgcm`
-  two cipher suites (45). There a ServerHello selects either group,
+  groups with a key share for each (39, 51), under `SUITE=aesgcm`
+  two cipher suites (45), and in a resuming hello the ticket and the
+  certificate path beside it (55), so the server may resume or
+  authenticate with its chain in the same connection. There a ServerHello selects either group,
   or the hybrid alone under `ch_cfg.require_pq`, and a
   HelloRetryRequest may ask for a cookie and nothing else. It carries
   ChaCha20 or AES-128-GCM, and the same one as a retry before it. A
@@ -482,7 +484,10 @@ last `ROLE=server` stub, as the entry said it would.
   group. The two-suite offer is the `CH_CLIENT_TWO_SUITES`
   arms of `handshake_message.c` and `handshake_parser.c`, and
   `handshake_state.suite` records the suite a retry or ServerHello
-  named.
+  named. The resuming offer is the `CH_TRUST_WEBPKI` arm of
+  `handshake_message.c`, which writes `signature_algorithms` and
+  `server_certificate_type` in every hello and `pre_shared_key` last,
+  and a raw or ca hello offers a ticket alone.
 - **Check.** The differential (`inv07-second-cipher-suite.violation`)
   and handshake_sequence assert the reject on any ServerHello that picks
   another suite or group. `bin/webpki_session_test` drives the
@@ -495,7 +500,13 @@ last `ROLE=server` stub, as the entry said it would.
   require it to fail: a parser that takes `TLS_AES_256_GCM_SHA384`, and
   a ServerHello whose suite differs from the retry's.
   `handshake_parser_suite` proves an accepted message carries an
-  offered suite. The server's order is `srv_kex_group`'s, which the
+  offered suite. `bin/webpki_resume_test`'s mock server refuses a hello
+  with no `signature_algorithms` with handshake_failure, as dns.google
+  did when cocuyo measured it on 2026-09-24, and
+  `inv07-webpki-resume-hello-drops-schemes` requires the test to fail
+  when the resuming hello drops the schemes; `test/session_cfg_tests.h`
+  holds the raw and ca resuming hello to the bytes it had before entry
+  55, by digest, in `bin/unit`, `bin/unit_ca` and `bin/unit_pq`. The server's order is `srv_kex_group`'s, which the
   `srv_kex` harness proves over every groups and shares pair a parsed
   hello can report, and `bin/srv_flight_test` drives each row of it.
   `inv07-srv-x25519-despite-hybrid-share` takes x25519 whenever the
@@ -575,7 +586,13 @@ last `ROLE=server` stub, as the entry said it would.
   10024's order; the `srv_kex` harness proves where each half lands, and
   `inv11-srv-hybrid-halves-swapped.violation` swaps them, which
   `bin/srv_flight_test` catches by deriving the client's keys from the
-  ServerHello's own bytes.
+  ServerHello's own bytes. A PSK binder covers every byte of the hello
+  before its binders list, so `pre_shared_key` is the last extension
+  (RFC 9846 §4.3.11). That is tested and not proved: `bin/unit` and
+  `bin/webpki_session_test` read the extension order of a built hello,
+  and `inv11-webpki-psk-not-last` requires `bin/webpki_resume_test`,
+  whose mock checks every binder it reads, to fail when the webpki
+  certificate path is written after the ticket.
 - **Violation.** A PR hashes a message before validating it, and a
   rejected message influences derived keys.
 - See [decisions: Assurance](decisions.md#assurance).
@@ -706,9 +723,16 @@ last `ROLE=server` stub, as the entry said it would.
 
 ### INV-14 — the refusal set
 
-- **Claim.** The client refuses: Certificate in PSK mode,
-  CertificateRequest, psk_ke without DHE, a cookieless HRR, a second
-  HRR, dual auth configs, and an even RSA pin. A TRUST=webpki build
+- **Claim.** The client refuses: a Certificate after a ServerHello
+  that selected the PSK, CertificateRequest, psk_ke without DHE, a
+  cookieless HRR, a second HRR, dual auth configs, and an even RSA pin.
+  A raw or ca client also refuses, with handshake_failure, a ServerHello
+  that does not select the PSK its hello offered. A TRUST=webpki client
+  continues that ServerHello as a full handshake, and checks the chain,
+  the clock, the hostname, the anchors and any SPKI pins exactly as for
+  a hello with no ticket (docs/decisions.md 55); it refuses a
+  pre_shared_key naming an identity other than 0 with
+  illegal_parameter. A TRUST=webpki build
   also refuses a config that sets a pin or an epoch callback, or a
   length field of one of them, a PSK that is not a ticket bound to the
   config's hostname and anchors (`webpki_resumption_ok`,
@@ -777,6 +801,19 @@ last `ROLE=server` stub, as the entry said it would.
   `inv14-webpki-record-init-` violations guard it; the webpki_ticket
   CBMC harness proves the rule memory-safe and its verdict limited to
   an unset config or a ticket of the stated shape.
+  The declined-PSK rule is test/psk_decline_tests.h, which drives
+  hsf_accept_server_hello directly in bin/unit, bin/unit_ca, bin/unit_pq
+  and bin/webpki_resume_test and expects the mode's answer;
+  inv14-raw-accepts-declined-psk requires bin/unit to fail when a raw
+  client accepts a decline, and the handshake_psk harness proves that
+  every raw PSK session that connects reports `psk_selected`, so a
+  declined ticket never yields a session. A decline under
+  another hostname and under an anchor that carries the root's Name over
+  another key fails in bin/webpki_resume_test, bin/webpki_resume_record,
+  bin/webpki_loop_record and bin/quic_loop_webpki, and
+  inv14-webpki-decline-skips-hostname and
+  inv14-webpki-decline-skips-anchor require the first to fail when the
+  fallback skips either check.
   The CertificateVerify rules are bin/webpki_auth_test, which drives
   hsa_server_auth over one corpus chain per leaf key family with the
   signatures in test/webpki_auth_vectors.h: an accepted row per family,
@@ -1509,9 +1546,11 @@ last `ROLE=server` stub, as the entry said it would.
 
 - **Claim.** The client accepts exactly the server message orders
   RFC 9846 §4 allows and no others: one ServerHello, one
-  EncryptedExtensions, no certificate flight under PSK, Certificate
-  then CertificateVerify then Finished when the server authenticates
-  with a certificate, at most one HelloRetryRequest and only as the
+  EncryptedExtensions, no certificate flight after a ServerHello that
+  selected the PSK, Certificate then CertificateVerify then Finished
+  when the server authenticates with a certificate, which under
+  TRUST=webpki includes a server that declined the ticket the hello
+  offered, at most one HelloRetryRequest and only as the
   opening message, no ticket, key update, or application data before
   the Finished, and nothing after a close_notify. The order is the
   same whether the certificate is checked against a pinned server key
@@ -1528,7 +1567,10 @@ last `ROLE=server` stub, as the entry said it would.
   those type checks sits outside the `CH_TRUST_CA` conditionals, which
   only add chain verification between Certificate and
   CertificateVerify, so both trust builds compile the same order from
-  the same lines.
+  the same lines. All three client drivers take the one fork in the
+  order from `ch_tls.psk_selected`, which `hsf_accept_server_hello`
+  writes from the ServerHello, and not from `cfg.psk`, which says only
+  what the hello offered.
 - **Check.** Lean theorem (17 in `Spec/Handshake.lean`, over every
   trace the model admits; `accepts_decompose` bounds the flight at 4
   messages in the spec's `psk` Mode and 6 in its `pinned` Mode);
@@ -1543,7 +1585,14 @@ last `ROLE=server` stub, as the entry said it would.
   counted by bin/rec_loop_test and bin/quic_loop_test and resumed by
   s_client in test/e2e.sh, and three `srv-certificate-on-resumed-`
   violations, one per driver, require each to object to a Certificate in
-  it.
+  it. The TRUST=webpki fork is tested per driver: the declined-ticket
+  rows of bin/webpki_resume_test, bin/webpki_resume_record,
+  bin/webpki_loop_record and bin/quic_loop_webpki, and test/e2e.sh's
+  webpki-resume-declined leg against a second s_server.
+  `inv22-webpki-decline-fails-closed`, `inv22-webpki-fallback-reports-psk`
+  and one `inv22-*-driver-forks-on-cfg-psk` violation per driver require
+  them to fail, and the quic_step harness proves the QUIC table takes
+  the fork from `psk_selected`.
 - **Violation.** A PR relaxes one type check to tolerate a message a
   peer "usually" sends early, and a flight with a skipped
   CertificateVerify authenticates. This is the SMACK and FREAK class:
@@ -1570,7 +1619,12 @@ last `ROLE=server` stub, as the entry said it would.
   x25519 key pair; the `srv_kex` harness proves it, and
   `inv17-srv-keeps-mlkem-secret` requires `bin/srv_flight_test` to fail
   when the wipe goes. The 32 bytes of encapsulation randomness die inside
-  the call that drew them.
+  the call that drew them. A `TRUST=webpki` client whose ticket a server
+  declines wipes the PSK's early secret and binder key in
+  `hsf_accept_server_hello`, the moment the ServerHello declines, and
+  derives the early secret of no PSK in their place;
+  `inv17-webpki-decline-keeps-psk-early-secret` requires
+  `bin/webpki_resume_test` to fail when they survive.
 - **Violation.** A PR adds an early return between fail and wipe.
 - See [decisions: Memory and runtime](decisions.md#memory-and-runtime).
 

@@ -45,9 +45,10 @@
 
 // Draws the ephemeral secrets and starts the transcript. Writes
 // h->priv, h->pub and h->random, writes h->dz under CH_KEX_HYBRID,
-// computes h->early and h->binder_key from cfg.psk when the caller configured
-// one and from a hash-length zero string when it did not (RFC 9846
-// §7.1, rfc9846.txt:4034), and calls sha256_init on t->transcript.
+// computes h->early and h->binder_key from cfg.psk when the caller
+// configured one, and otherwise h->early alone from a hash-length zero
+// string (RFC 9846 §7.1, rfc9846.txt:4172-4175), leaving h->binder_key
+// zero, and calls sha256_init on t->transcript.
 //
 // Requires a handshake_state the caller has zeroed and whose t points
 // at the session. Runs before any message goes out or comes in, once
@@ -70,6 +71,10 @@ void hsf_begin(handshake_state *h);
 // rfc9846.txt:1444). Under CH_KEX_TWO_GROUPS it carries a key share for
 // the hybrid and one for x25519, both over h->pub, or the hybrid one
 // alone under cfg.require_pq, and a retry hello carries the same shares.
+// A retry hello that offers a PSK carries the same extensions as the
+// first, the certificate path included under CH_TRUST_WEBPKI, and a
+// binder computed again over the transcript the HelloRetryRequest
+// replaced (RFC 9846 §4.3.11.2).
 //
 // Requires hsf_begin to have run, and cap bytes at out. The caller
 // passes the staging array its transport wants: a TLS driver passes
@@ -124,21 +129,34 @@ int hsf_read_server_hello(handshake_state *h, server_hello_info *info);
 // Judges an accepted ServerHello: the one this client can continue
 // from. Writes t->group from the group the parser read off the wire,
 // and under CH_SUITE_AES_GCM t->suite from the suite, whether or not the
-// rest passes, because the session reports both either way.
+// rest passes, because the session reports both either way. On CH_OK it
+// writes t->psk_selected: 1 when cfg.psk is set and the server selected
+// the identity this client offered, and 0 otherwise. The drivers read
+// that field to decide whether a Certificate comes next.
 //
 // Requires an info that hsf_read_server_hello filled and whose hrr is
 // 0. Reads info and does not write it.
 //
 // Returns CH_OK when the message carried a key share this build
-// accepts, and, in PSK mode, when the server also accepted the identity
-// this client offered.
+// accepts, and, in PSK mode, when the server selected the identity this
+// client offered. Under CH_TRUST_WEBPKI it also returns CH_OK when cfg.psk
+// is set and the ServerHello carried no pre_shared_key: the server
+// declined the ticket, and the handshake goes on as a full one, with the
+// certificate path the hello offered beside the ticket (docs/decisions.md
+// 55). It then wipes h->early and h->binder_key, which the PSK wrote, and
+// writes h->early again from a hash-length zero string, the early secret
+// RFC 9846 §7.1 gives a handshake in which no PSK is selected
+// (rfc9846.txt:4182-4185).
 //
 // Returns CH_EAUTH with ALERT_HANDSHAKE_FAILURE when the ServerHello
-// carried no acceptable key share, or when cfg.psk is set and the
-// server ignored the identity: either one leaves the client with no
-// keys it can continue under, and a PSK server that ignores the
-// identity would want certificates this build did not pin (RFC 9846
-// §4.2.3, rfc9846.txt:1329).
+// carried no acceptable key share, which leaves the client with no keys
+// it can continue under. Outside CH_TRUST_WEBPKI it returns the same
+// when cfg.psk is set and the server did not select the identity: a raw
+// or ca hello offers the ticket alone, so such a server would want
+// certificates this build did not ask for (RFC 9846 §4.2.3,
+// rfc9846.txt:1329). Under CH_TRUST_WEBPKI it returns CH_EPROTO with
+// ALERT_ILLEGAL_PARAMETER for a pre_shared_key whose selected_identity is
+// not 0, which RFC 9846 §4.3.11 makes an abort (rfc9846.txt:2551-2557).
 //
 // Under CH_KEX_HYBRID it also returns CH_EPROTO with
 // ALERT_ILLEGAL_PARAMETER when cfg.require_pq is set and the group the
@@ -166,7 +184,9 @@ int hsf_accept_server_hello(handshake_state *h, const server_hello_info *info);
 //
 // Wipes h->priv, h->pub, h->random, h->early, h->binder_key and, under
 // CH_KEX_HYBRID, h->dz on both exits, along with the shared secret
-// itself.
+// itself. h->early is whichever early secret hsf_accept_server_hello
+// left: the PSK's when the server selected it, and the no-PSK one
+// otherwise.
 // After this call the retry hello can no longer be built, which is
 // correct: the exchange is over. The wipes are in this function because
 // the QUIC driver returns to its caller between messages, so the frame
@@ -243,8 +263,9 @@ int hsf_read_encrypted_extensions(handshake_state *h);
 // Returns CH_EAUTH with ALERT_DECRYPT_ERROR when it did not, which RFC
 // 9846 §4.5.3 requires (rfc9846.txt:3115-3117). Returns CH_EAUTH with
 // ALERT_HANDSHAKE_FAILURE for a Certificate or CertificateRequest where
-// none belongs: a PSK server that rejected the PSK, or a pinned-key
-// server asking for client authentication this build cannot do.
+// none belongs: a server that selected the PSK and sends a Certificate
+// anyway, or a server asking for client authentication this build
+// cannot do.
 // Returns CH_EPROTO with ALERT_UNEXPECTED_MESSAGE for any other type,
 // and for a Finished whose length is not HSF_FINISHED_LEN. It also
 // returns what hsr_next_msg returns, as hsf_read_server_hello does.

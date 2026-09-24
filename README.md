@@ -94,7 +94,10 @@ the rest of the flight unread. The object carries every verifier a
 public chain needs at once — RSA-PSS, RSA PKCS#1 v1.5, P-256 and
 P-384 — so `PIN` selects nothing in it. It resumes only a ticket bound
 to the configuration of the session that received it, and refuses any
-other PSK (docs/webpki.md, "Resumption"). It also takes SPKI pins, and
+other PSK (docs/webpki.md, "Resumption"). Its resuming hello offers the
+certificate path beside the ticket, so a server that declines the ticket
+authenticates with its chain in the same connection, and
+`ch_tls.psk_selected` says which one happened. It also takes SPKI pins, and
 with them RFC 7250 raw public keys, for a DNS-over-TLS caller: pins alone
 reach a server that has no public certificate, and pins beside anchors
 make a chain pass both checks (docs/webpki.md, "Raw public keys and SPKI
@@ -138,8 +141,8 @@ so an rv32 peak needs tooling that does not exist yet.
 | **total static working set** | **3192** | **3120** |
 | `ch_tls` under `KEX=pq` (includes 1806 B TX staging) | 2328 | 2256 |
 | **total static working set, `KEX=pq`** (2048 buffer) | **4376** | **4304** |
-| `ch_tls` under `TRUST=webpki` (includes 2376 B TX staging) | 3016 | 2912 |
-| **total static working set, `TRUST=webpki`** (12338 buffer, its floor) | **15354** | **15250** |
+| `ch_tls` under `TRUST=webpki` (includes 2399 B TX staging) | 3040 | 2936 |
+| **total static working set, `TRUST=webpki`** (12338 buffer, its floor) | **15378** | **15274** |
 | peak stack, `ch_connect` (RSA-3072 verify) | 4992 |
 | peak stack, `ch_connect` (`TRUST=raw-ecdsa`) | 3824 |
 | peak stack, `ch_connect` (PSK) | 2768 |
@@ -359,7 +362,7 @@ apart from one that passed — so for the slow rows, read the nightly.
 | handshake | the driver stays safe on any record stream: HRR restart, the state machine, and the flight's own arithmetic, in PSK and pinned-key mode. Record reading and message reassembly are stubbed here to the contract the `handshake_record` leg proves — compiling them multiplies this formula by the product of their loop bounds, past any runner. The ca-mode driver has a harness but no launch line, so it is unproven | 96 B receive buffer, slow tier |
 | hybrid_secret | the `KEX=pq` shared-secret derivation is safe for any stored seed, any server ciphertext and any server share, a refused key exchange wipes all 64 bytes rather than leaving half a secret on the stack (INV-3), and both exits leave the 64-byte ML-KEM seed zero. ML-KEM and x25519 are stubbed to their contracts, which their own harnesses prove. This is the only leg that builds `-DCH_KEX_PQ`: the rest of the hybrid driver carries the differential, the sequence enumeration and the e2e legs, not a proof | the full domain, fast tier |
 | key_share (two launch lines) | the `KEX=pq` arm of the ServerHello key_share parser is safe on any extension bytes, and on acceptance it records the hybrid group (`info.group == CH_GROUP_X25519MLKEM768`, the value `ch_tls.group` reports and `ch_cfg.require_pq` compares) and returns a whole readable ML-KEM ciphertext inside the bytes it consumed — the contract `hybrid_secret` assumes, so this proof discharges that assumption. `key_share_webpki` builds the same harness under `-DCH_TRUST_WEBPKI`, where the arm also accepts a ServerHello selecting x25519, whose share that build's hello carries beside the hybrid one: an x25519 share is exactly the group, the length and 32 bytes, with no ciphertext pointer. In both builds a HelloRetryRequest key_share is refused. That `ch_cfg.require_pq` refuses an x25519 selection is `hsf_accept_server_hello`'s check, which `bin/webpki_session_test` tests and no proof covers | extension ≤ 1,132 B, the full hybrid share, fast tier |
-| hello_build (two harnesses) | the ClientHello builder writes nothing outside the caller's buffer at any capacity, for every cookie and PSK identity a caller may pass, and returns either zero or a length that fits. It also checks the bound itself: at `CH_HELLO_MAX` the build always succeeds, so the constant `handshake.c` asserts `CH_TX_STAGE` against is sufficient, not merely plausible. `hello_build_webpki` is the same harness under `-DCH_TRUST_WEBPKI`, with the server_name extension over any hostname, the ALPN extension over any offer, the five signature schemes, and both key shares or, under `require_pq`, the hybrid one alone, against that build's `CH_HELLO_MAX` of 2,371; there the bound is tight, because the assertion moved to `CH_HELLO_MAX - 1` fails | capacity ≤ `CH_HELLO_MAX`, identity ≤ 320 B, cookie ≤ 128 B, hostname ≤ 253 B, 8 ALPN names ≤ 32 B each |
+| hello_build (two harnesses) | the ClientHello builder writes nothing outside the caller's buffer at any capacity, for every cookie and PSK identity a caller may pass, and returns either zero or a length that fits. It also checks the bound itself: at `CH_HELLO_MAX` the build always succeeds, so the constant `handshake.c` asserts `CH_TX_STAGE` against is sufficient, not merely plausible. `hello_build_webpki` is the same harness under `-DCH_TRUST_WEBPKI`, with the server_name extension over any hostname, the ALPN extension over any offer, the five signature schemes, which a resuming hello carries beside the ticket too, and both key shares or, under `require_pq`, the hybrid one alone, against that build's `CH_HELLO_MAX` of 2,394; there the bound is tight, because the assertion moved to `CH_HELLO_MAX - 1` fails. That `pre_shared_key` is the last extension is tested, in `test/session_cfg_tests.h` and `test/webpki_session_cases.h`, and **not proved**: the assertion over the hello's last bytes gave kissat a formula that returned no verdict in nine minutes at 5.7 GB | capacity ≤ `CH_HELLO_MAX`, identity ≤ 320 B, cookie ≤ 128 B, hostname ≤ 253 B, 8 ALPN names ≤ 32 B each |
 | chacha20 | safe at any counter, in place and into a distinct buffer | ≤ 160 B — three blocks, full, full, partial |
 | poly1305 | safe for any three-chunk split; 64-bit products stay in range | messages ≤ 80 B — five blocks, crossing the buffered-block path in every alignment. The five-call shape `aead.c` uses is no longer exercised by a proof: the aead harnesses stub Poly1305, so that shape rests on the unit vectors, Wycheproof and the differential |
 | aead (three harnesses) | seal/open round-trips; a forged tag writes zero bytes; backward-overlap decrypt works. ChaCha20 and Poly1305 are stubbed to their contracts — a keystream that is the same for the same key, nonce and counter, and a tag that is a function of the bytes absorbed — which their own harnesses prove. Compiling them in returned no verdict in five hours; the stubbed formulas take about three seconds. What the stubs give up, and why the composition is an argument rather than a machine-checked step, is stated at the top of `proof/aead_stubs.h`. Sealing fully in place (`pt == ct`, the shape every outgoing record uses) is **not proven**: `proof/aead_inplace_harness.c` states it, but the formula has returned no verdict, so it carries no launch line | plaintext ≤ 16 B, aad ≤ 16 B, fast tier |
@@ -839,7 +842,11 @@ has an empty name or key, when the hostname has any other shape, when
 the config also sets a pin or an epoch callback, and when it sets a PSK
 that is not a ticket bound to this hostname and these anchors. To resume,
 keep `ch_ticket.binding` beside the ticket's `psk` and `identity`, and
-present it in `ch_cfg.ticket_binding` with `resumption = 1`.
+present it in `ch_cfg.ticket_binding` with `resumption = 1`. Keep the
+anchors, the hostname and the clock set: a server that declines the
+ticket sends its chain, which the client checks as it checks any chain.
+`ch_tls.psk_selected` is 1 when the server resumed the ticket and 0 when
+the handshake was a full one.
 `ch_cfg.spki_pins` takes up to four SPKI pins, each the SHA-256 of a DER
 SubjectPublicKeyInfo. With pins set the client offers raw public keys,
 and pins with no anchors need no hostname and no clock.

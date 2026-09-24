@@ -17,6 +17,16 @@
 #include "webpki_pin.h"
 #endif
 
+// The early secret with no PSK: HKDF-Extract over 32 zero bytes (RFC
+// 9846 §7.1, rfc9846.txt:4172-4175). The binder key ks_early also derives
+// is never used, so it is wiped here.
+static void early_secret_without_psk(uint8_t early[SHA256_LEN]) {
+    static const uint8_t no_psk[SHA256_LEN] = {0};
+    uint8_t unused_binder_key[SHA256_LEN];
+    ks_early(no_psk, sizeof no_psk, 0, early, unused_binder_key);
+    ct_wipe(unused_binder_key, sizeof unused_binder_key);
+}
+
 void hsf_begin(handshake_state *h) {
     ch_tls *t = h->t;
     ch_rand_bytes(h->priv, sizeof h->priv);
@@ -44,10 +54,8 @@ void hsf_begin(handshake_state *h) {
     if (t->cfg.psk != NULL) {
         ks_early(t->cfg.psk, t->cfg.psk_len, t->cfg.resumption, h->early, h->binder_key);
     } else {
-        // No PSK: the early secret extracts from a hash-length zero string
-        // (RFC 9846 §7.1) and the binder key is never used.
-        static const uint8_t no_psk[SHA256_LEN] = {0};
-        ks_early(no_psk, sizeof no_psk, 0, h->early, h->binder_key);
+        // No PSK: h->binder_key stays the zero the caller wrote.
+        early_secret_without_psk(h->early);
     }
     sha256_init(&t->transcript);
 }
@@ -224,6 +232,34 @@ int hsf_read_server_hello(handshake_state *h, server_hello_info *info) {
     return CH_OK;
 }
 
+#ifdef CH_TRUST_WEBPKI
+// A ServerHello with no pre_shared_key declined the ticket, and a webpki
+// hello offers the certificate path beside it, so the handshake goes on
+// as a full one (docs/decisions.md 55): the PSK's early secret and binder
+// key die here, and the early secret of no PSK replaces them
+// (rfc9846.txt:4182-4185). A pre_shared_key naming any identity but 0 is
+// no decline but an illegal_parameter abort (rfc9846.txt:2551-2557).
+static int decline_psk(handshake_state *h, const server_hello_info *info) {
+    if ((info->seen & HSP_SEEN_PRE_SHARED_KEY) != 0) {
+        h->alert = ALERT_ILLEGAL_PARAMETER;
+        return CH_EPROTO;
+    }
+    ct_wipe(h->early, sizeof h->early);
+    ct_wipe(h->binder_key, sizeof h->binder_key);
+    early_secret_without_psk(h->early);
+    return CH_OK;
+}
+#else
+// A raw or ca hello offers the ticket alone, with no signature scheme
+// beside it, so a server that did not select the ticket has no way to
+// authenticate that this build can check, and the handshake fails closed.
+static int decline_psk(handshake_state *h, const server_hello_info *info) {
+    (void)info;
+    h->alert = ALERT_HANDSHAKE_FAILURE;
+    return CH_EAUTH;
+}
+#endif
+
 int hsf_accept_server_hello(handshake_state *h, const server_hello_info *info) {
     // The group of the one key_share the parser accepted, or 0 when the
     // ServerHello carried none: the session reports it either way.
@@ -231,12 +267,20 @@ int hsf_accept_server_hello(handshake_state *h, const server_hello_info *info) {
 #ifdef CH_SUITE_AES_GCM
     h->t->suite = info->suite;
 #endif
-    if (!info->have_share || (h->t->cfg.psk != NULL && !info->psk_ok)) {
-        // No ECDHE share, or a PSK server that ignored our identity and
-        // would want certificates we did not pin.
+    if (!info->have_share) {
+        // No ECDHE share: psk_dhe_ke is the one mode this client offers,
+        // so there are no keys to continue under.
         h->alert = ALERT_HANDSHAKE_FAILURE;
         return CH_EAUTH;
     }
+    int psk_offered = h->t->cfg.psk != NULL;
+    if (psk_offered && !info->psk_ok) {
+        int rc = decline_psk(h, info);
+        if (rc != CH_OK) {
+            return rc;
+        }
+    }
+    h->t->psk_selected = (uint8_t)(psk_offered && info->psk_ok);
 #ifdef CH_KEX_HYBRID
     // require_pq checks at run time what the hello promised: a raw or ca
     // KEX=pq build offers X25519MLKEM768 alone, and a CH_KEX_TWO_GROUPS
@@ -397,8 +441,8 @@ int hsf_read_finished(handshake_state *h) {
         return rc;
     }
     if (type == HS_CERTIFICATE || type == HS_CERTIFICATE_REQUEST) {
-        // Certificates where none belong: a PSK server that rejected the
-        // PSK, or a pinned-key server demanding client auth we cannot do.
+        // Certificates where none belong: a server that selected the PSK
+        // (RFC 9846 §2.2), or one demanding client auth we cannot do.
         h->alert = ALERT_HANDSHAKE_FAILURE;
         return CH_EAUTH;
     }

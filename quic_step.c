@@ -102,8 +102,10 @@ static int step_encrypted_extensions(ch_quic *q) {
     if (rc != CH_OK) {
         return rc;
     }
-    // The one fork in the table: a PSK server sends no certificate.
-    q->step = q->t.cfg.psk != NULL ? HSQ_STEP_AWAIT_FINISHED : HSQ_STEP_AWAIT_CERTIFICATE;
+    // The one fork in the table: a server that selected the PSK sends no
+    // certificate, and every other server sends one, a TRUST=webpki server
+    // that declined the offered ticket included.
+    q->step = q->t.psk_selected ? HSQ_STEP_AWAIT_FINISHED : HSQ_STEP_AWAIT_CERTIFICATE;
     return CH_OK;
 }
 

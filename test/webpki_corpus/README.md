@@ -33,7 +33,7 @@ re-key; every certificate over that key changes, and so does the header.
 | `int_le2_p384.pem` | P-384 | the letsencrypt intermediate under the anchor |
 | `leaf_rsa2048.pem` | RSA-2048 | the aws leaf and its variants |
 | `leaf_rsa1024.pem` | RSA-1024 | the leaf below the modulus floor |
-| `leaf_p256.pem` | P-256 | every ECDSA leaf |
+| `leaf_p256.pem` | P-256 | every ECDSA leaf, and the key a test server signs with when it presents the r2 chain (`webpki_corpus_server_priv`) |
 
 The corpus dates: leaves run 2026-01-01T00:00:00Z to
 2026-12-31T23:59:59Z, CA certificates 2025-01-01T00:00:00Z to

@@ -412,6 +412,17 @@ launch slow:5 noovf x25519_sqr 65 ""
 # in 55 s.
 # The property counts move because the six wipes hsf_derive_handshake_secrets
 # gained are six more objects to check.
+# The drivers now take the Certificate fork from ch_tls.psk_selected, and
+# the harness asserts what the session reports: a PSK session that
+# connects has psk_selected set, and a pinned one never does
+# (docs/decisions.md 55). Measured the same way on 2026-09-24, with other
+# lanes' work on the machine: psk 1809 properties in 147 s at 5.94 GB, pin
+# 1811 in 41 s at 3.69 GB, the peak being kissat's, which has varied as
+# much between solves of one formula before. The psk assertion still holds
+# with decline_psk's refusal removed, because a PSK configuration carries
+# no pin and check_certificate_verify then verifies nothing, so no
+# declined session connects either way; bin/unit's handler row is what
+# catches that mutant (inv14-raw-accepts-declined-psk).
 launch slow full handshake_psk 100 "fill_nondet.0:618,fill_buf_nondet.0:97,ct_wipe.0:449" handshake_auth.c handshake_flight.c buf.c ct.c
 launch slow full handshake_pin 100 "fill_nondet.0:618,fill_buf_nondet.0:97,ct_wipe.0:449" handshake_auth.c handshake_flight.c buf.c ct.c
 # ML-KEM's chained-product functions, one formula each; the inverse
@@ -814,8 +825,10 @@ launch fast full hello_build 400 "fill_nondet.0:321" buf.c
 # answer every offer webpki_cert_types_offered can give, and the two key
 # shares, or the hybrid one alone under a nondet require_pq
 # (docs/decisions.md entry 53) — against that build's CH_HELLO_MAX of
-# 2371. The sufficiency assertion is tight: moved to CH_HELLO_MAX - 1 it
-# fails, and a probe asserting false after the two-type offer is written
+# 2394, which the certificate path in a resuming hello raised from 2371
+# (docs/decisions.md 55). The sufficiency assertion is tight: moved to
+# CH_HELLO_MAX - 1 it fails, and a probe asserting false after the
+# two-type offer is written
 # fails too, so that arm is reached; a probe in each require_pq arm of
 # write_two_groups fails both. The two ALPN loops carry their own bounds
 # because the global 400 unrolled both past the array they walk, and
@@ -823,7 +836,12 @@ launch fast full hello_build 400 "fill_nondet.0:321" buf.c
 # returning a verdict. Measured (cbmc 6.11.0, kissat, PROVE_NO_CACHE=1
 # /usr/bin/time -l over this script): 584 properties, 62 s, 170 MB with
 # one key share, and 602 properties, 65 s and 88 s in two runs, 160 MB,
-# with both.
+# with both. With signature_algorithms and server_certificate_type in the
+# pre_shared_key arm too: 602 properties, 79 s, 160 MB, and the assertion
+# moved to CH_HELLO_MAX - 1 still fails. An assertion that a PSK hello ends
+# with its binders list, which would make pre_shared_key's position a
+# proof, returned no verdict in nine minutes at 5.7 GB of kissat, so it is
+# not here and the tests hold that order.
 launch fast full hello_build_webpki 400 "fill_nondet.0:321,main.0:9,write_alpn.0:9" -DCH_TRUST_WEBPKI buf.c
 # x509: primitives concrete (both variants), the walker with stubbed
 # primitives. The ECDSA walker proves the full two-entry bound in
@@ -1226,7 +1244,11 @@ launch slow:4 full handshake_record 65 "hsr_fetch_record.0:6,hsr_next_msg.0:11,f
 # took the webpki resumption rule, measured at 116 s wall on a machine
 # running other lanes' proofs;
 # quic_step 546 properties, 4.0 s, 42 MB; quic_step_ca 553 properties,
-# 4.8 s, 45 MB.
+# 4.8 s, 45 MB. After the table took its Certificate fork from
+# ch_tls.psk_selected and the harness asserted that fork
+# (docs/decisions.md 55): quic_step 559 properties, 3.7 s, 42 MB;
+# quic_step_ca 566 properties, 4.6 s, 45 MB. With the fork read from
+# cfg.psk instead, quic_step fails that assertion.
 # quic_driver carries fast:4 rather than the tier default of 2: the tier
 # default caps its address space at 6 GB, and cbmc's virtual footprint on
 # this formula runs past that and dies mid-solve at about 70 s, where

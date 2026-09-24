@@ -254,8 +254,10 @@ static void test_psk_and_pinned_config(chapulin::Io io) {
         cfg.pinned(chapulin::ConstBytes{pin, sizeof pin});
         chapulin::Session s;
         CHECK(s.connect(cfg) == chapulin::Status::io);
-        // No ServerHello arrived, so the session reports no group.
+        // No ServerHello arrived, so the session reports no group and no
+        // resumption.
         CHECK(s.group() == chapulin::Group::none);
+        CHECK(!s.psk_selected());
     }
 
     // require_pq: a classic build cannot satisfy it and rejects the

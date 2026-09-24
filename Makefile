@@ -355,7 +355,7 @@ LINT_C := $(filter-out softmul.c,$(SRCS)) drbg.c sha3.c sha512.c sha512_compress
           test/mlkem_test.c test/handshake_strict_test.c test/handshake_sequence_test.c \
           test/x509_strict_test.c $(QUIC_SRCS) $(filter-out $(AES_IMPL),$(AES_IMPL_SRCS)) \
           $(SRV_SRCS) test/srv_auth_test.c test/srv_test.c test/srv_flight_test.c test/tls_server.c \
-          srv_quic.c quic_token.c srv_rec.c test/srv_rec_test.c test/rec_loop_test.c test/exporter_test.c rec.c rec_frame.c rec_step.c \
+          srv_quic.c quic_token.c srv_rec.c test/srv_rec_test.c test/rec_loop_test.c test/webpki_loop_test.c test/exporter_test.c rec.c rec_frame.c rec_step.c \
           test/quic_driver_test.c test/quic_loop_test.c test/quic_vectors.c test/diff_quic_test.c \
           test/aes_equiv_test.c test/aes_equiv_soft.c test/aes_equiv_hw.c \
           test/ghash_equiv_test.c test/ghash_equiv_soft.c \
@@ -379,6 +379,7 @@ TESTH := test/test_random.h test/pem_armor.h test/pem_tests.h test/x509_ca_tests
          test/rsa_sign_vectors.h \
          test/diff_webpki.h test/diff_mlkem.h test/mlkem_vectors.h test/webpki_corpus.h test/webpki_sigalg_vectors.h \
          test/diff_webpki_sigalg.h test/hello_exts.h test/webpki_session_cases.h test/webpki_groups_cases.h test/webpki_suite_cases.h test/rec_read_tests.h test/rec_resume_tests.h test/quic_loop_raw.h test/quic_loop_webpki.h test/webpki_resume_session.h test/webpki_resume_cases.h test/webpki_pins_cases.h test/tls_client_webpki.h \
+         test/webpki_decline_cases.h test/webpki_r2_chain.h test/psk_decline_tests.h \
          test/handshake_strict_alpn.h test/handshake_strict_cert_type.h \
          test/webpki_cert_mutants.h test/webpki_ext_mutants.h test/diff_webpki_cert.h \
          test/webpki_auth_vectors.h test/webpki_auth_pins.h test/webpki_chain_path.h \
@@ -1523,6 +1524,16 @@ bin/rec_loop_pq: test/rec_loop_test.c $(REC_LOOP_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) -DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_TRANSPORT_RECORD -DCH_KEX_PQ $(EXPORTER_DEF) \
 	  -DCH_KEYLOG -I. -o $@ test/rec_loop_test.c $(REC_LOOP_SRCS)
+# The TRUST=webpki record client against this tree's record server, over
+# the ROLE=both TRANSPORT=record TRUST=webpki object's sources: the server
+# presents the r2 corpus chain with its leaf key, and a server holding
+# another ticket key declines the client's ticket (docs/decisions.md 55).
+WEBPKI_LOOP_SRCS := $(sort $(filter-out pem.c x509.c x509_ca.c,$(REC_LOOP_SRCS)) \
+                           $(WEBPKI_SRCS) $(WEBPKI_CHAIN_SRCS))
+bin/webpki_loop_record: test/webpki_loop_test.c $(WEBPKI_LOOP_SRCS) $(HDRS) $(TESTH)
+	@mkdir -p bin
+	$(CC) $(CFLAGS) -DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_TRANSPORT_RECORD -DCH_TRUST_WEBPKI \
+	  -I. -o $@ test/webpki_loop_test.c $(WEBPKI_LOOP_SRCS)
 bin/srv_test: test/srv_test.c srv_message.c srv_cookie.c srv_ticket.c srv_parser.c \
               srv_parser_ext.c $(SRV_DEPS) $(HDRS) $(TESTH)
 	@mkdir -p bin
@@ -1668,14 +1679,19 @@ bin/webpki_encrypted_exts_test: test/webpki_encrypted_exts_test.c $(WEBPKI_TEST_
 # TRUST=webpki resumption (webpki_ticket.h) over both TCP drivers: the
 # blocking one, and TRANSPORT=record's, which drops handshake.c for
 # rec.c, rec_frame.c and rec_step.c.
-bin/webpki_resume_test: test/webpki_resume_test.c $(WEBPKI_TEST_SRCS) $(HDRS) $(TESTH)
+# The mock server signs the CertificateVerify of a declined ticket with the
+# r2 corpus leaf key, so both binaries link the P-256 signer beside the
+# client.
+P256_SIGN_SRCS := p256_sign.c p256_scalar.c p256_point.c p256_field.c
+bin/webpki_resume_test: test/webpki_resume_test.c $(WEBPKI_TEST_SRCS) $(P256_SIGN_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -DCH_TRUST_WEBPKI -I. -o $@ test/webpki_resume_test.c $(WEBPKI_TEST_SRCS)
+	$(CC) $(CFLAGS) -DCH_TRUST_WEBPKI -I. -o $@ test/webpki_resume_test.c $(WEBPKI_TEST_SRCS) \
+	  $(P256_SIGN_SRCS)
 WEBPKI_RECORD_SRCS := $(filter-out handshake.c,$(WEBPKI_TEST_SRCS)) rec.c rec_frame.c rec_step.c
-bin/webpki_resume_record: test/webpki_resume_test.c $(WEBPKI_RECORD_SRCS) $(HDRS) $(TESTH)
+bin/webpki_resume_record: test/webpki_resume_test.c $(WEBPKI_RECORD_SRCS) $(P256_SIGN_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) -DCH_TRUST_WEBPKI -DCH_TRANSPORT_RECORD -I. -o $@ test/webpki_resume_test.c \
-	  $(WEBPKI_RECORD_SRCS)
+	  $(WEBPKI_RECORD_SRCS) $(P256_SIGN_SRCS)
 
 # The same main in the client that offers both cipher suites
 # (docs/decisions.md entry 45), so the mock can select AES-128-GCM. The
@@ -1874,7 +1890,7 @@ run-%: bin/%
 # and the invariant violation builds. The nightly runs it. Splitting on
 # duration rather than on importance is deliberate -- nothing here is
 # optional, and a change is not finished until check-slow passes too.
-check: bin/unit bin/unit_ca bin/unit_pq bin/tlsclient bin/tlsclient_ecdsa bin/tlsclient_ca bin/tlsclient_ca_ecdsa bin/tlsclient_webpki $(if $(AES_HW_PROBE),bin/tlsclient_webpki_aes) $(X25519_WIDE_BINS) bin/tlsclient_pq bin/drbg_test bin/softmul_test bin/rsa_test bin/sha3_test bin/sha512_test bin/p384_test bin/rsa_pkcs1_test bin/webpki_time_test bin/webpki_name_test bin/webpki_spki_test bin/webpki_sigalg_test bin/webpki_cert_test bin/webpki_chain_test bin/webpki_auth_test bin/webpki_encrypted_exts_test bin/mlkem_test bin/handshake_strict_test bin/handshake_strict_pq bin/handshake_strict_webpki bin/webpki_session_test bin/webpki_resume_test bin/webpki_resume_record bin/x509strict bin/x509strict_ecdsa bin/quic_driver_test bin/quic_test bin/recclient $(AES_HW_BINS) lint rand-check bin/srv_auth_test bin/srv_test bin/srv_quic_test bin/srv_quic_both_test bin/srv_rec_test bin/rec_loop_test bin/rec_loop_pq bin/quic_loop_test bin/quic_loop_webpki bin/tlsserver bin/exporter_test bin/rsa_sign_test bin/p256_field_test bin/p256_ecdh_test bin/p256_sign_test
+check: bin/unit bin/unit_ca bin/unit_pq bin/tlsclient bin/tlsclient_ecdsa bin/tlsclient_ca bin/tlsclient_ca_ecdsa bin/tlsclient_webpki $(if $(AES_HW_PROBE),bin/tlsclient_webpki_aes) $(X25519_WIDE_BINS) bin/tlsclient_pq bin/drbg_test bin/softmul_test bin/rsa_test bin/sha3_test bin/sha512_test bin/p384_test bin/rsa_pkcs1_test bin/webpki_time_test bin/webpki_name_test bin/webpki_spki_test bin/webpki_sigalg_test bin/webpki_cert_test bin/webpki_chain_test bin/webpki_auth_test bin/webpki_encrypted_exts_test bin/mlkem_test bin/handshake_strict_test bin/handshake_strict_pq bin/handshake_strict_webpki bin/webpki_session_test bin/webpki_resume_test bin/webpki_resume_record bin/x509strict bin/x509strict_ecdsa bin/quic_driver_test bin/quic_test bin/recclient $(AES_HW_BINS) lint rand-check bin/srv_auth_test bin/srv_test bin/srv_quic_test bin/srv_quic_both_test bin/srv_rec_test bin/rec_loop_test bin/rec_loop_pq bin/quic_loop_test bin/quic_loop_webpki bin/webpki_loop_record bin/tlsserver bin/exporter_test bin/rsa_sign_test bin/p256_field_test bin/p256_ecdh_test bin/p256_sign_test
 	# The packaged object is built once per entropy pattern, because
 	# lib-check reads a different export list and a different import
 	# list in each. Only the object is built twice: the examples and
@@ -2051,6 +2067,7 @@ check: bin/unit bin/unit_ca bin/unit_pq bin/tlsclient bin/tlsclient_ecdsa bin/tl
 	./bin/rec_loop_pq
 	./bin/quic_loop_test
 	./bin/quic_loop_webpki
+	./bin/webpki_loop_record
 	./bin/exporter_test
 	./bin/srv_flight_test
 	./bin/handshake_strict_test
@@ -2964,8 +2981,9 @@ else
 	  test/aes_equiv_hw.c test/ghash_equiv_test.c test/ghash_equiv_soft.c \
 	  $(SRV_SRCS) test/srv_auth_test.c test/srv_test.c test/srv_flight_test.c \
 	  test/tls_server.c srv_quic.c quic_token.c srv_rec.c test/srv_rec_test.c \
-	  test/rec_loop_test.c test/quic_loop_test.c test/exporter_test.c rec.c \
-	  rec_frame.c rec_step.c x25519_wide.c test/x25519_equiv_portable.c \
+	  test/rec_loop_test.c test/webpki_loop_test.c test/quic_loop_test.c \
+	  test/exporter_test.c rec.c rec_frame.c rec_step.c x25519_wide.c \
+	  test/x25519_equiv_portable.c \
 	  test/x25519_equiv_wide.c test/diff_x25519_test.c,$(LINT_C)), \
 	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -I.)
 	# The X25519=wide field. x25519_wide.c guards its body on
@@ -2985,7 +3003,7 @@ else
 	# webpki_session_test.c's hybrid arm too. Measured with clang-tidy
 	# 23.1.1: 2.9 s.
 	$(call TIDY_EACH,tls.c handshake_parser.c handshake_parser_ee.c \
-	  handshake_message.c handshake_auth.c handshake.c handshake_record.c \
+	  handshake_message.c handshake_auth.c handshake.c handshake_record.c handshake_flight.c \
 	  webpki.c webpki_ticket.c webpki_pin.c webpki_cfg.c \
 	  test/webpki_session_test.c test/webpki_chain_test.c test/webpki_auth_test.c \
 	  test/webpki_encrypted_exts_test.c test/handshake_strict_test.c \
@@ -3051,6 +3069,9 @@ else
 	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_TRANSPORT_QUIC -DCH_PIN_ECDSA -I. -Itest)
 	$(call TIDY_EACH,test/quic_loop_test.c, \
 	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_TRANSPORT_QUIC -DCH_TRUST_WEBPKI -I. -Itest)
+	# The TRUST=webpki record loopback, under the defines its object takes.
+	$(call TIDY_EACH,test/webpki_loop_test.c, \
+	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_TRANSPORT_RECORD -DCH_TRUST_WEBPKI -I.)
 	# The four ch_keylog call sites, which no other pass compiles: the
 	# hook exists only under CH_KEYLOG, and keylog.h refuses that define
 	# without a server role, so this pass names ROLE=both's pair.

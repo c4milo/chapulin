@@ -1,7 +1,8 @@
 // The resumption rows of test/webpki_resume_test.c: the binding's
 // layout, the shape of a presented ticket, the hostname and anchors it
 // names, and a resumed handshake from end to end. Included after
-// webpki_resume_session.h.
+// webpki_resume_session.h. The rows where the server declines the ticket
+// are test/webpki_decline_cases.h.
 #ifndef CH_TEST_WEBPKI_RESUME_CASES_H
 #define CH_TEST_WEBPKI_RESUME_CASES_H
 
@@ -172,13 +173,29 @@ static void test_ticket_names_its_config(void) {
     CHECK(refused(&cfg));
 }
 
+// The extension order the resuming hello keeps: signature_algorithms, and
+// server_certificate_type when it is sent, before pre_shared_key, which
+// is last, because the binder covers every byte before the binders list
+// (RFC 9846 §4.3.11, rfc9846.txt:2564-2565).
+static int certificate_path_then_ticket(const uint8_t *hello, size_t n, int cert_types) {
+    int count = 0;
+    int sigalgs = hello_ext_index(hello, n, EXT_SIGNATURE_ALGORITHMS, NULL);
+    int types = hello_ext_index(hello, n, EXT_SERVER_CERTIFICATE_TYPE, NULL);
+    int psk = hello_ext_index(hello, n, EXT_PRE_SHARED_KEY, &count);
+    uint16_t schemes[8] = {0};
+    return hello_sigalgs(hello, n, schemes, 8) == 5 && schemes[0] == SIGALG_RSA_PSS_RSAE_SHA256 &&
+           schemes[4] == SIGALG_RSA_PKCS1_SHA384 && sigalgs >= 0 && sigalgs < psk &&
+           (cert_types ? types > sigalgs && types < psk : types < 0) && psk == count - 1;
+}
+
 static void test_resumed_handshake(void) {
     ch_cfg cfg = base_cfg();
     present(&cfg, ticket_psk, known_binding);
     CHECK(resumes(&cfg, ticket_psk));
     // The resumed hello names the host and offers the ticket, and offers
-    // no signature scheme: a server that declines the ticket has no
-    // certificate path to take.
+    // the certificate path beside it, the five signature schemes ahead of
+    // pre_shared_key, so a server that declines the ticket can still
+    // authenticate (docs/decisions.md 55).
     CHECK(hello_first_ext(mock.hello, mock.hello_len) >= 0);
     size_t len = 0;
     const uint8_t *sni = hello_ext(mock.hello, mock.hello_len, EXT_SERVER_NAME, &len);
@@ -186,8 +203,8 @@ static void test_resumed_handshake(void) {
     const uint8_t *offer = hello_ext(mock.hello, mock.hello_len, EXT_PRE_SHARED_KEY, &len);
     CHECK(offer != NULL && len > 12 && offer[2] == 0 && offer[3] == 8 &&
           memcmp(offer + 4, ticket_id, 8) == 0);
-    uint16_t schemes[8];
-    CHECK(hello_sigalgs(mock.hello, mock.hello_len, schemes, 8) == -1);
+    CHECK(certificate_path_then_ticket(mock.hello, mock.hello_len, 0));
+    CHECK(session_tls()->psk_selected == 1 && mock.binders_ok == 1);
 
     // The session's ticket arrives bound to the same hostname and anchors.
     push_ticket(&mock);
@@ -214,17 +231,6 @@ static void test_resumed_handshake(void) {
     cfg.hostname = other_host;
     cfg.hostname_len = sizeof other_host;
     CHECK(refused(&cfg));
-}
-
-// A server that does not select the ticket fails the handshake closed:
-// the hello offered no certificate path.
-static void test_server_declines_ticket(void) {
-    ch_cfg cfg = base_cfg();
-    present(&cfg, ticket_psk, known_binding);
-    mock.decline = 1;
-    memcpy(mock.psk, ticket_psk, SHA256_LEN);
-    CHECK(connect_session(&cfg) == CH_EAUTH);
-    CHECK(session_tls()->state == CH_ST_FAILED);
 }
 
 #endif

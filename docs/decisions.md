@@ -835,7 +835,9 @@ does nothing more.
     rejected for now. It would put `signature_algorithms` in the resumed
     hello and give the client two ways through one handshake, where every
     mode here has one per hello. The cost of failing closed is one
-    reconnect after a declined ticket.
+    reconnect after a declined ticket. Entry 55 reversed this: dns.google
+    resumes no hello that lacks `signature_algorithms`, and declines about
+    one ticket in three.
 
 48. **A QUIC server's Retry token is an HMAC chapulin computes under a key
     the caller holds, bound to the client's address, with the caller's
@@ -1166,3 +1168,81 @@ does nothing more.
     encapsulation randomness in `srv_begin` beside the x25519 scalar would
     draw 32 bytes a classic handshake never uses and keep them in the
     handshake state until the ServerHello.
+
+55. **A `TRUST=webpki` client offers the certificate path beside a ticket,
+    and a declined ticket becomes a full handshake in the same
+    connection.** cocuyo, a DNS-over-TLS client that links the webpki
+    record object, measured dns.google (8.8.8.8:853) on 2026-09-24. With
+    the hello entry 47 wrote, which offered the ticket and no signature
+    scheme, it resumed 0 of 10 connections: dns.google answered every
+    resuming hello with a handshake_failure alert, a good ticket included.
+    It appears to choose its certificate and signature scheme before it
+    decides whether to resume, so a hello with no scheme fails there. RFC
+    9846 §4.3.3 names missing_extension for that case
+    (rfc9846.txt:1813-1816). With signature_algorithms added beside the
+    ticket and no fallback, cocuyo resumed 5 of 6; the sixth was an
+    ordinary decline, and the client failed it closed with `CH_EAUTH`.
+    OpenSSL 3.6.4's s_client resumed 6 of 9 and completed the other 3 as
+    full handshakes in the same connection. cloudflare-dns.com and
+    dns.quad9.net resumed with either hello.
+
+    So the change has two halves, and each one is in the RFC. RFC 9846
+    §4.3.3 requires signature_algorithms of a client that wants a server
+    to authenticate with a certificate (rfc9846.txt:1811-1813), and §9.2
+    lets a hello leave it out only when the hello offers a PSK
+    (rfc9846.txt:4595-4597). §2.2 asks a client that offers a PSK to send
+    a key share "to allow the server to decline resumption and fall back
+    to a full handshake" (rfc9846.txt:699-702), and this client always
+    sends one.
+
+    - **The hello.** Every webpki ClientHello carries signature_algorithms
+      with the five schemes, and server_certificate_type when SPKI pins
+      are set, whether or not it presents a ticket. pre_shared_key stays
+      the last extension, because the binder covers every byte before the
+      binders list (rfc9846.txt:2564-2565). A retry hello after a
+      HelloRetryRequest carries the same extensions and a binder computed
+      again over the transcript the retry replaced.
+    - **A selected ticket.** The handshake resumes as before: no
+      Certificate, and `ch_tls.psk_selected` is 1.
+    - **A declined ticket.** A ServerHello with no pre_shared_key makes
+      `hsf_accept_server_hello` wipe the PSK's early secret and binder key
+      and derive the early secret of no PSK, HKDF-Extract over 32 zero
+      bytes (rfc9846.txt:4182-4185). The handshake then reads
+      EncryptedExtensions, Certificate, CertificateVerify and Finished, and
+      checks the chain, the clock, the hostname, the anchors and any SPKI
+      pins exactly as a handshake with no ticket does. `ch_tls.psk_selected`
+      is 0. A pre_shared_key that names any identity but 0 is no decline,
+      and fails with illegal_parameter (rfc9846.txt:2551-2557).
+
+    The three drivers decide whether a Certificate comes next from
+    `ch_tls.psk_selected`, which `hsf_accept_server_hello` writes, and no
+    longer from `cfg.psk`. In the raw and ca modes the two agree on every
+    path, because those modes still fail a decline.
+
+    Cost: 16 bytes in every resuming webpki hello, 23 with SPKI pins
+    beside anchors. `CH_HELLO_MAX` and `CH_TX_STAGE` grow by 23 bytes in
+    the webpki builds, from 2,371 to 2,394 over TCP and from 2,625 to 2,648
+    over QUIC, and `ch_tls` grows from 3,016 to 3,040 bytes on arm64
+    (`bench/results-sram.csv`). A webpki hello now offers two ways for a
+    server to authenticate, the sixth thing the mode offers more than one
+    of, and one handshake has two paths through it. The device modes pay
+    nothing.
+
+    Gain: cocuyo resumes with dns.google, and a server that declines a
+    ticket costs one handshake instead of a failed connection and a
+    reconnect. That matches what OpenSSL does and what §2.2 describes.
+
+    The raw and ca modes stay as they were: their resuming hello offers
+    the ticket alone, and a decline fails with handshake_failure
+    (`CH_EAUTH`). Their server is the one endpoint a device pins, usually a
+    chapulin server that holds its own ticket key, so a decline is rare
+    and costs one reconnect. Offering the pinned scheme beside the ticket
+    would put a second path through the device driver for a case nothing
+    measured asks for, and in the ca modes a declined ticket would also
+    have to run the epoch check that a resumed handshake skips (INV-21).
+
+    Two alternatives were considered and rejected. Adding the schemes and
+    failing a decline closed, the build cocuyo measured, resumes with
+    dns.google and still turns about one connection in three into a
+    reconnect. Reconnecting inside `ch_connect` without the ticket needs a
+    second connection, and the caller owns the socket.

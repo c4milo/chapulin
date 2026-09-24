@@ -430,6 +430,40 @@ def load_captures():
     return certs, chains, anchor_pems
 
 
+# The key a test server signs its CertificateVerify with when it presents
+# the r2 chain, so a TRUST=webpki client runs a whole handshake against
+# this tree's own server (test/webpki_loop.h). The key file already sits
+# under test/webpki_corpus/keys/; this writes its private scalar and its
+# public point in the shapes ch_identity's ecdsa_p256 slot takes
+# (srv_cfg.h): 32 big-endian bytes, and X||Y without the 0x04 prefix.
+SERVER_CHAIN = "r2"
+SERVER_KEY = "leaf_p256"
+
+
+def key_field(text, field, next_field):
+    """The hex bytes `openssl pkey -text` prints between two field lines."""
+    body = text.split(f"{field}:\n", 1)[1].split(next_field, 1)[0]
+    return bytes.fromhex("".join(body.split()).replace(":", ""))
+
+
+def server_identity(ossl, certs):
+    text = mint.sh(ossl, "pkey", "-in", str(mint.key_path(SERVER_KEY)), "-text", "-noout").decode()
+    priv = key_field(text, "priv", "pub:")
+    pub = key_field(text, "pub", "ASN1 OID")
+    # openssl prints the scalar with a leading 00 when its top bit is set,
+    # and may drop leading zero bytes; the slot takes exactly 32.
+    priv = priv[-32:].rjust(32, b"\0")
+    if len(pub) != 65 or pub[0] != 4:
+        sys.exit(f"{SERVER_KEY}: expected an uncompressed P-256 point")
+    leaf = [c for c in CHAINS if c["name"] == SERVER_CHAIN][0]["entries"][0]
+    if not der.spki_tlv(certs[leaf]).endswith(pub):
+        sys.exit(f"{SERVER_KEY} is not the key of the {SERVER_CHAIN} chain's leaf, {leaf}")
+    return (f"// The server identity for the {SERVER_CHAIN} chain: {SERVER_KEY}'s private scalar,\n"
+            f"// big-endian, and its public point X||Y, the key of {leaf}.\n"
+            + emit.c_array("webpki_corpus_server_priv", priv)
+            + emit.c_array("webpki_corpus_server_pub", pub[1:]))
+
+
 def main():
     ossl, version = mint.find_openssl()
     mint.ensure_keys(ossl, KEYS)
@@ -442,6 +476,7 @@ def main():
                                                                         "root_p384", "impostor_p384"]}
         corpus_rows, corpus_text = build_rows(ossl, tmp, minter.der, CHAINS, "webpki_corpus", anchor_pems)
         check_oracle(corpus_rows)
+        identity_text = server_identity(ossl, minter.der)
         certs, chains, anchor_pems = load_captures()
         capture_rows, capture_text = build_rows(ossl, tmp, certs, chains, "webpki_capture", anchor_pems)
     disagree = [r["name"] for r in capture_rows if r["openssl_accepts"] != (r["expected"] == "ok")]
@@ -449,6 +484,7 @@ def main():
         sys.exit(f"openssl's verdict on captured rows {disagree} is not the row's expected verdict")
     out = emit.HEADER.format(version=version)
     out += corpus_text + emit.chain_table("webpki_corpus_chains", corpus_rows) + "\n"
+    out += identity_text + "\n"
     out += capture_text + emit.chain_table("webpki_capture_chains", capture_rows) + "\n"
     out += emit.FOOTER
     OUT.write_text(out)

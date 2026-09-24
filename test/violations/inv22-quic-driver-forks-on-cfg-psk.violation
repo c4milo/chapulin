@@ -1,0 +1,14 @@
+invariant: INV-22
+file: quic_step.c
+catches: quic_loop_webpki
+reason: the QUIC driver's step table chooses the step after
+  EncryptedExtensions from cfg.psk, which says what the hello offered,
+  instead of ch_tls.psk_selected, which says what the ServerHello chose.
+  After this tree's server declines a ticket the client waits for
+  Finished and refuses the Certificate, and the declined-ticket row
+  objects.
+
+--- old
+    q->step = q->t.psk_selected ? HSQ_STEP_AWAIT_FINISHED : HSQ_STEP_AWAIT_CERTIFICATE;
+--- new
+    q->step = q->t.cfg.psk != NULL ? HSQ_STEP_AWAIT_FINISHED : HSQ_STEP_AWAIT_CERTIFICATE;

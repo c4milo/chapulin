@@ -355,4 +355,55 @@ static void test_pinned_hello_extensions(void) {
           key_len == CH_KEX_CLIENT_SHARE);
 }
 
+// The PSK hello a raw or ca client sends, byte for byte. A TRUST=webpki
+// hello offers the certificate path beside the ticket
+// (docs/decisions.md 55), and this build's must not: its hello offers the
+// ticket alone, with no signature_algorithms, and pre_shared_key last.
+// want is SHA-256 of the hello hs_build_client_hello wrote over these
+// inputs at e82ed51, the commit before that change, in each group this
+// main links; the change left both digests as they were.
+static void test_psk_hello_bytes(void) {
+    static const uint8_t identity[8] = {'t', 'i', 'c', 'k', 'e', 't', '-', '1'};
+    static const uint8_t psk[SHA256_LEN] = {1};
+    static uint8_t out[CH_HELLO_MAX];
+    uint8_t pub[32];
+    uint8_t random32[32];
+    for (int i = 0; i < 32; i++) {
+        pub[i] = (uint8_t)(0x20 + i);
+        random32[i] = (uint8_t)(0x60 + i);
+    }
+    ch_cfg cfg = {0};
+    cfg.psk = psk;
+    cfg.psk_len = sizeof psk;
+    cfg.psk_id = identity;
+    cfg.psk_id_len = sizeof identity;
+    cfg.resumption = 1;
+    cfg.obfuscated_age = 0x01020304;
+#ifdef CH_KEX_PQ
+    static uint8_t ek[MLKEM_EK_LEN];
+    for (size_t i = 0; i < sizeof ek; i++) {
+        ek[i] = (uint8_t)i;
+    }
+    size_t n = hs_build_client_hello(out, sizeof out, &cfg, ek, pub, random32, 0x4001, NULL, 0);
+    static const size_t want_len = 1355;
+    static const uint8_t want[SHA256_LEN] = {0x63, 0x69, 0x41, 0x4d, 0x2c, 0xbb, 0x9d, 0x7e,
+                                             0x40, 0x4f, 0xc1, 0x72, 0xf0, 0xe3, 0xd5, 0x35,
+                                             0x50, 0xa0, 0x47, 0x5a, 0xc4, 0x59, 0x91, 0x29,
+                                             0x82, 0xb5, 0x42, 0xf5, 0x9c, 0xfb, 0x60, 0x5b};
+#else
+    size_t n = hs_build_client_hello(out, sizeof out, &cfg, pub, random32, 0x4001, NULL, 0);
+    static const size_t want_len = 171;
+    static const uint8_t want[SHA256_LEN] = {0x03, 0x45, 0xe8, 0x24, 0x81, 0x46, 0x50, 0x13,
+                                             0x15, 0xf2, 0x47, 0x39, 0xab, 0x6d, 0x88, 0xc1,
+                                             0x21, 0x58, 0x6e, 0xfe, 0x66, 0x02, 0x94, 0x24,
+                                             0xab, 0xf7, 0xfd, 0x7d, 0xa0, 0x1d, 0x1f, 0x8a};
+#endif
+    uint8_t digest[SHA256_LEN];
+    sha256_of(out, n, digest);
+    CHECK(n == want_len && memcmp(digest, want, sizeof want) == 0);
+    int count = 0;
+    CHECK(hello_ext_index(out, n, EXT_PRE_SHARED_KEY, &count) == count - 1 && count > 0);
+    CHECK(hello_ext_index(out, n, EXT_SIGNATURE_ALGORITHMS, NULL) == -1);
+}
+
 #endif

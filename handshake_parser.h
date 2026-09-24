@@ -25,11 +25,21 @@
 // (RFC 9846 §4.2.3).
 extern const uint8_t hsp_hrr_magic[32];
 
+// The bit server_hello_info.seen holds once the message's pre_shared_key
+// extension has been parsed. psk_ok alone cannot tell a server that sent
+// no pre_shared_key, which declined the PSK, from one that sent a
+// selected_identity other than 0, which RFC 9846 §4.3.11 makes an
+// illegal_parameter abort (rfc9846.txt:2551-2557); a TRUST=webpki client
+// answers the two differently, so hsf_accept_server_hello reads this bit.
+#define HSP_SEEN_PRE_SHARED_KEY (1U << 2)
+
 // Everything hsp_parse_server_hello learns from one ServerHello.
 typedef struct {
     int hrr;
     int version_ok;
     int have_share;
+    // Set when the message carried pre_shared_key with selected_identity
+    // 0, the one identity this client offers.
     int psk_ok;
     uint8_t seen; // extension types already parsed, bits per parse_server_hello_ext
     // The NamedGroup the accepted key_share named; parse_key_share

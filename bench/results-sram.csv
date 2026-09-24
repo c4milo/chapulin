@@ -8,11 +8,11 @@ session_struct_pq_arm64,2328
 session_struct_pq_rv32,2256
 static_working_set_pq_arm64,4376
 static_working_set_pq_rv32,4304
-session_struct_webpki_arm64,3016
-session_struct_webpki_rv32,2912
+session_struct_webpki_arm64,3040
+session_struct_webpki_rv32,2936
 receive_buffer_webpki,12338
-static_working_set_webpki_arm64,15354
-static_working_set_webpki_rv32,15250
+static_working_set_webpki_arm64,15378
+static_working_set_webpki_rv32,15274
 stack_connect_rsa,4992
 stack_connect_ecdsa,3824
 stack_connect_psk,2768

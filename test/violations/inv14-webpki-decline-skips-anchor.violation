@@ -1,0 +1,20 @@
+invariant: INV-14
+file: handshake_auth.c
+catches: webpki_resume_test
+reason: the chain walk's verdict is dropped when the hello offered a
+  ticket, so a server that declines the ticket may present a chain no
+  anchor verifies. A declined ticket must get every check a handshake
+  with no ticket gets (docs/decisions.md 55); the row that declines under
+  an anchor carrying root_p384's Name over another key expects
+  unknown_ca and objects.
+
+--- old
+    int rc = webpki_verify_chain(list, list_len, cfg, &h->leaf, &h->alert);
+    if (rc != CH_OK) {
+        return rc;
+    }
+--- new
+    int rc = webpki_verify_chain(list, list_len, cfg, &h->leaf, &h->alert);
+    if (rc != CH_OK && cfg->psk == NULL) {
+        return rc;
+    }

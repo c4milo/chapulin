@@ -53,6 +53,30 @@ static const uint8_t *hello_ext(const uint8_t *msg, size_t n, uint16_t type, siz
     return NULL;
 }
 
+// Where the extension of this type sits in the hello's extension list,
+// counting from 0, or -1 when the hello does not carry it. *count, when
+// count is not NULL, receives how many extensions the list holds, so a
+// caller can tell the last one.
+static int hello_ext_index(const uint8_t *msg, size_t n, uint16_t type, int *count) {
+    rbuf r;
+    int found = -1;
+    int i = 0;
+    if (hello_exts_open(&r, msg, n)) {
+        while (rb_left(&r) > 0 && !r.err) {
+            uint16_t ext = rb_u16(&r);
+            (void)rb_bytes(&r, rb_u16(&r));
+            if (!r.err && ext == type && found < 0) {
+                found = i;
+            }
+            i++;
+        }
+    }
+    if (count != NULL) {
+        *count = r.err ? -1 : i;
+    }
+    return r.err ? -1 : found;
+}
+
 // One KeyShareEntry of a captured hello: its NamedGroup and its
 // key_exchange value, which points into the capture.
 typedef struct {

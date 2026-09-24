@@ -1,0 +1,13 @@
+invariant: INV-22
+file: rec_step.c
+catches: webpki_resume_record
+reason: the record driver's step table chooses the step after
+  EncryptedExtensions from cfg.psk, which says what the hello offered,
+  instead of ch_tls.psk_selected, which says what the ServerHello chose.
+  After a declined ticket it waits for Finished and refuses the server's
+  Certificate, and the declined-ticket rows object.
+
+--- old
+    r->step = r->t.psk_selected ? HSR_STEP_AWAIT_FINISHED : HSR_STEP_AWAIT_CERTIFICATE;
+--- new
+    r->step = r->t.cfg.psk != NULL ? HSR_STEP_AWAIT_FINISHED : HSR_STEP_AWAIT_CERTIFICATE;
