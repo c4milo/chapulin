@@ -83,6 +83,15 @@ LLVM_NM ?= $(shell command -v llvm-nm-$(LLVM_MAJOR) \
              || command -v $(LLVM_PINNED_BIN)/llvm-nm \
              || command -v llvm-nm || command -v $(LLVM_BIN)/llvm-nm)
 CPPCHECK ?= $(shell command -v cppcheck)
+# clang-tidy reads each translation unit on its own, so its passes run
+# one process per file, LINT_JOBS at a time. The order and the count
+# change the wall time and nothing else. Each process prints its output
+# in one piece when it ends, so two files' findings never interleave.
+LINT_JOBS ?= $(shell getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)
+# $(call TIDY_EACH,files,compiler flags)
+TIDY_EACH = printf '%s\n' $(1) | xargs -P $(LINT_JOBS) -I{} sh -c \
+  'out=$$($(CLANG_TIDY) --quiet "$$1" -- $(2) 2>&1); rc=$$?; \
+   [ -z "$$out" ] || printf "%s\n" "$$out"; exit $$rc' sh {}
 CBMC ?= $(shell command -v cbmc)
 CXX ?= c++
 LAKE ?= $(shell command -v lake || command -v $(HOME)/.elan/bin/lake)
@@ -2268,30 +2277,42 @@ if [ "$$(git -C $(WYCHEPROOF_DIR) rev-parse HEAD 2>/dev/null)" != "$(WYCHEPROOF_
 	  || { echo "$(1): the wycheproof checkout is not WYCHEPROOF_COMMIT"; exit 1; }
 endef
 
-.PHONY: wycheproof
+.PHONY: wycheproof wycheproof-leg-default wycheproof-leg-aes-hw
 wycheproof:
 	@$(call wycheproof_fetch,wycheproof); \
 	python3 test/gen_wycheproof.py $(WYCHEPROOF_DIR) bin/wycheproof_vectors.h && \
-	$(CC) $(CFLAGS) $(RSA_WIDE_DEF) -DCH_TRANSPORT_QUIC $(AES_DEF) -I. -Ibin -o bin/wycheproof_test test/wycheproof_test.c \
-	  x25519.c chacha20.c poly1305.c aead.c hkdf.c sha256.c p256.c rsa.c rsa_mont.c mlkem.c mlkem_poly.c sha3.c buf.c ct.c sha512.c sha512_compress.c p384.c p384_field.c rsa_pkcs1.c rsa_sign.c quic_aes.c $(AES_IMPL) quic_gcm.c p256_sign.c \
-	  p256_ecdh.c p256_point.c p256_scalar.c p256_field.c && \
-	./bin/wycheproof_test
-	# The AES=hw leg. New crypto gets its Wycheproof suite on every leg
-	# that builds test/wycheproof_test.c, and the instruction path is a
-	# second AES-128 in this tree, so the AES-GCM suite answers for it
-	# too. Only the AES-GCM rows differ between this binary and the one
-	# above -- every other suite runs the same code twice -- and running
-	# the whole file is still what the rule asks for and what keeps this
-	# leg from rotting when a suite is added. A compiler without the AES
-	# instructions skips, the way the fetch above skips offline.
+	$(MAKE) --no-print-directory -j2 wycheproof-leg-default wycheproof-leg-aes-hw
+# The two legs build and run at once, each about 3 seconds to compile and
+# 6 to run. Each writes its report to a file and prints it whole when it
+# ends, so the two reports never interleave. Neither is a target to run
+# on its own: both read the bin/wycheproof_vectors.h the target above
+# writes.
+WYCHEPROOF_SRCS := x25519.c chacha20.c poly1305.c aead.c hkdf.c sha256.c p256.c rsa.c rsa_mont.c \
+  mlkem.c mlkem_poly.c sha3.c buf.c ct.c sha512.c sha512_compress.c p384.c p384_field.c \
+  rsa_pkcs1.c rsa_sign.c quic_aes.c quic_gcm.c p256_sign.c p256_ecdh.c p256_point.c \
+  p256_scalar.c p256_field.c
+wycheproof-leg-default:
+	@$(CC) $(CFLAGS) $(RSA_WIDE_DEF) -DCH_TRANSPORT_QUIC $(AES_DEF) -I. -Ibin -o bin/wycheproof_test \
+	  test/wycheproof_test.c $(WYCHEPROOF_SRCS) $(AES_IMPL) && \
+	{ ./bin/wycheproof_test > bin/wycheproof_test.log 2>&1; rc=$$?; cat bin/wycheproof_test.log; exit $$rc; }
+# The AES=hw leg. New crypto gets its Wycheproof suite on every leg
+# that builds test/wycheproof_test.c, and the instruction path is a
+# second AES-128 in this tree, so the AES-GCM suite answers for it
+# too. Only the AES-GCM rows differ between this binary and the one
+# above -- every other suite runs the same code twice -- and running
+# the whole file is still what the rule asks for and what keeps this
+# leg from rotting when a suite is added. A compiler without the AES
+# instructions skips, the way the fetch above skips offline.
+wycheproof-leg-aes-hw:
 	@set -e; if [ -z "$(AES_HW_BINS)" ]; then \
 	  $(call REQUIRE_ON_CI,wycheproof-aes-hw); \
 	  echo "SKIP wycheproof AES=hw: $(CC) has no AES instructions and no flag turns them on"; \
 	else \
 	  $(CC) $(CFLAGS) $(AES_HW_CFLAGS) $(RSA_WIDE_DEF) -DCH_TRANSPORT_QUIC -DCH_AES_HW -I. -Ibin \
-	    -o bin/wycheproof_test_aes_hw test/wycheproof_test.c \
-	    x25519.c chacha20.c poly1305.c aead.c hkdf.c sha256.c p256.c rsa.c rsa_mont.c mlkem.c mlkem_poly.c sha3.c buf.c ct.c sha512.c sha512_compress.c p384.c p384_field.c rsa_pkcs1.c rsa_sign.c quic_aes.c $(AES_HW_SRCS) quic_gcm.c p256_sign.c p256_ecdh.c p256_point.c p256_scalar.c p256_field.c ; \
-	  ./bin/wycheproof_test_aes_hw; \
+	    -o bin/wycheproof_test_aes_hw test/wycheproof_test.c $(WYCHEPROOF_SRCS) $(AES_HW_SRCS); \
+	  ./bin/wycheproof_test_aes_hw > bin/wycheproof_test_aes_hw.log 2>&1 \
+	    || { echo "== bin/wycheproof_test_aes_hw failed:"; cat bin/wycheproof_test_aes_hw.log; exit 1; }; \
+	  echo "== bin/wycheproof_test_aes_hw (AES=hw):"; cat bin/wycheproof_test_aes_hw.log; \
 	fi
 
 # The web PKI chain fixtures, test/webpki_corpus.h, live in the tree like
@@ -2491,18 +2512,32 @@ else
 	@cd spec/lean && $(LAKE) build 2>&1 | tee /tmp/lake-build.log \
 	  && ! grep -q "warning:" /tmp/lake-build.log \
 	  || { echo "lint-spec: lake build warnings are errors here"; exit 1; }
-	@cd spec/lean && $(LAKE) env lean AxiomCheck.lean > /tmp/axioms.log 2>&1 \
-	  || { cat /tmp/axioms.log; exit 1; }
-	@! grep -oE "depends on axioms: \[[^]]*\]" /tmp/axioms.log \
+	# The axiom check elaborates against all of Mathlib, about 11 seconds.
+	# Its answer depends only on the compiled Spec modules, the check
+	# itself, the Lean toolchain and the Mathlib commit, so a run whose
+	# hash of those matches bin/spec-axioms.ok, the hash of the last clean
+	# run, has nothing new to check. lake has already rebuilt every
+	# module whose source changed.
+	@key=$$(cat spec/lean/AxiomCheck.lean spec/lean/lean-toolchain spec/lean/lake-manifest.json \
+	    spec/lean/.lake/build/lib/lean/Spec.olean spec/lean/.lake/build/lib/lean/Spec/*.olean \
+	    | shasum -a 256 | cut -d' ' -f1); \
+	if [ "$$(cat bin/spec-axioms.ok 2>/dev/null)" = "$$key" ]; then \
+	  echo "lint-spec: model clean; the compiled model is the one the last axiom check passed"; \
+	  exit 0; \
+	fi; \
+	(cd spec/lean && $(LAKE) env lean AxiomCheck.lean) > /tmp/axioms.log 2>&1 \
+	  || { cat /tmp/axioms.log; exit 1; }; \
+	! grep -oE "depends on axioms: \[[^]]*\]" /tmp/axioms.log \
 	  | tr ',[]' '\n' | sed 's/.*axioms: //;s/^ *//;s/ *$$//' | grep -v '^$$' \
 	  | grep -vxE 'propext|Classical\.choice|Quot\.sound' \
-	  || { echo "lint-spec: a theorem in the model depends on a non-standard axiom"; exit 1; }
-	@echo "lint-spec: model clean, theorems rest on the standard axioms only"
+	  || { echo "lint-spec: a theorem in the model depends on a non-standard axiom"; exit 1; }; \
+	mkdir -p bin && echo "$$key" > bin/spec-axioms.ok; \
+	echo "lint-spec: model clean, theorems rest on the standard axioms only"
 endif
 
 # Checks and thresholds live in .clang-tidy; every disable carries a reason
 # there (fix-or-drop, never NOLINT in code).
-lint: lint-toolchain lint-pins lint-proof-cover lint-exact-fill lint-tidy lint-format lint-cppcheck lint-commits lint-docs lint-conflict-markers lint-invariants lint-stack lint-size lint-tracked-ignored lint-matrix lint-nightly-report lint-violation-builds lint-violation-anchors lint-impact lint-fuzz-budget lint-codegen-partition lint-runtime-symbols lint-wide-multiply lint-commit-citations lint-issue-links lint-shellcheck lint-bench-numbers lint-spec lint-trust-separation lint-quic-partition lint-quic-surface
+lint: lint-toolchain lint-pins lint-proof-cover lint-exact-fill lint-analyzers lint-format lint-commits lint-docs lint-conflict-markers lint-invariants lint-stack lint-size lint-tracked-ignored lint-matrix lint-nightly-report lint-violation-builds lint-violation-anchors lint-impact lint-fuzz-budget lint-codegen-partition lint-runtime-symbols lint-wide-multiply lint-commit-citations lint-issue-links lint-shellcheck lint-bench-numbers lint-spec lint-trust-separation lint-quic-partition lint-quic-surface
 
 # INV-19: bounded stack. The budget is the measured worst library
 # frame (rsa_vp1's RSA-3072 limb temporaries, 2,400 bytes) rounded up;
@@ -2581,11 +2616,18 @@ else
 	# workspace, and a dot target would audit their sources too. The
 	# violation file is excluded here because semgrep scans explicit
 	# targets regardless of --exclude.
+	# The rule tests run beside the scan: each semgrep start costs about
+	# three seconds, and neither run reads what the other writes.
+	@mkdir -p bin; \
+	$(SEMGREP) --metrics=off --test \
+	  --config .semgrep/invariants.yml .semgrep/invariants.c > bin/semgrep-test.log 2>&1 & \
+	test_pid=$$!; \
 	$(SEMGREP) scan --metrics=off --quiet --error \
-	  --config .semgrep/invariants.yml $$(git ls-files '*.c' '*.h' ':!.semgrep')
-	@$(SEMGREP) --metrics=off --test \
-	  --config .semgrep/invariants.yml .semgrep/invariants.c >/dev/null \
-	  && echo "lint-invariants: rules clean, tripwires trip"
+	  --config .semgrep/invariants.yml $$(git ls-files '*.c' '*.h' ':!.semgrep'); \
+	scan_rc=$$?; \
+	wait $$test_pid || { cat bin/semgrep-test.log; echo "lint-invariants: a rule missed its tripwire or matched a clean line"; exit 1; }; \
+	[ $$scan_rc -eq 0 ] || exit $$scan_rc; \
+	echo "lint-invariants: rules clean, tripwires trip"
 endif
 
 # Assert the resolved checkers are the pinned ones before any of them runs.
@@ -2685,6 +2727,14 @@ lint-quic-partition:
 lint-quic-surface:
 	@python3 tools/quic-footprint.py --check-surface
 
+# The two analyzers write nothing and read nothing the other writes, so
+# they run at once: cppcheck on one core for about 30 seconds, and
+# clang-tidy's passes on the rest. Their lines can interleave; each
+# finding still names its file.
+.PHONY: lint-analyzers
+lint-analyzers:
+	@$(MAKE) --no-print-directory -j2 lint-tidy lint-cppcheck
+
 lint-tidy:
 ifeq ($(CLANG_TIDY),)
 	$(call REQUIRE,clang-tidy,it ships with llvm — see the LLVM_MAJOR pin in tools/toolchain.env)
@@ -2696,8 +2746,17 @@ else
 	# reason: every declaration they hold sits behind
 	# -DCH_TRANSPORT_QUIC, which this pass does not define, so it would
 	# read eight empty translation units. The two passes below read them.
-	$(CLANG_TIDY) --quiet $(filter-out webpki.c webpki_ticket.c webpki_pin.c webpki_cfg.c test/webpki_resume_test.c test/webpki_session_test.c test/webpki_chain_test.c test/webpki_auth_test.c test/webpki_encrypted_exts_test.c examples/webpki_client.c $(QUIC_SRCS) $(AES_IMPL_SRCS) test/quic_driver_test.c test/quic_vectors.c test/diff_quic_test.c test/aes_equiv_test.c test/aes_equiv_soft.c test/aes_equiv_hw.c test/ghash_equiv_test.c test/ghash_equiv_soft.c $(SRV_SRCS) test/srv_auth_test.c test/srv_test.c test/srv_flight_test.c srv_quic.c quic_token.c srv_rec.c test/srv_rec_test.c test/rec_loop_test.c test/exporter_test.c rec.c rec_frame.c rec_step.c,$(LINT_C)) -- \
-	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -I.
+	$(call TIDY_EACH,$(filter-out webpki.c webpki_ticket.c webpki_pin.c \
+	  webpki_cfg.c test/webpki_resume_test.c test/webpki_session_test.c \
+	  test/webpki_chain_test.c test/webpki_auth_test.c \
+	  test/webpki_encrypted_exts_test.c examples/webpki_client.c $(QUIC_SRCS) \
+	  $(AES_IMPL_SRCS) test/quic_driver_test.c test/quic_vectors.c \
+	  test/diff_quic_test.c test/aes_equiv_test.c test/aes_equiv_soft.c \
+	  test/aes_equiv_hw.c test/ghash_equiv_test.c test/ghash_equiv_soft.c \
+	  $(SRV_SRCS) test/srv_auth_test.c test/srv_test.c test/srv_flight_test.c \
+	  srv_quic.c quic_token.c srv_rec.c test/srv_rec_test.c test/rec_loop_test.c \
+	  test/exporter_test.c rec.c rec_frame.c rec_step.c,$(LINT_C)), \
+	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -I.)
 	# The pass above defines no trust mode, so it reads none of the
 	# TRUST=webpki arms. This pass parses the sources that carry them or
 	# compile against the webpki layout of ch_cfg and handshake_state, and
@@ -2705,79 +2764,80 @@ else
 	# the cognitive-complexity threshold holds in that build too. The
 	# second pass adds -DCH_KEX_PQ for webpki_session_test.c's hybrid arm.
 	# Measured with clang-tidy 23.1.1: 2.9 s and 0.2 s.
-	$(CLANG_TIDY) --quiet tls.c handshake_parser.c handshake_parser_ee.c handshake_message.c handshake_auth.c \
-	  handshake.c handshake_record.c webpki.c webpki_ticket.c webpki_pin.c webpki_cfg.c \
+	$(call TIDY_EACH,tls.c handshake_parser.c handshake_parser_ee.c \
+	  handshake_message.c handshake_auth.c handshake.c handshake_record.c \
+	  webpki.c webpki_ticket.c webpki_pin.c webpki_cfg.c \
 	  test/webpki_session_test.c test/webpki_chain_test.c test/webpki_auth_test.c \
-	  test/webpki_encrypted_exts_test.c test/handshake_strict_test.c test/diff_test.c \
-	  examples/webpki_client.c \
-	  test/webpki_resume_test.c -- \
-	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_TRUST_WEBPKI -I.
-	$(CLANG_TIDY) --quiet test/webpki_session_test.c -- \
-	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_TRUST_WEBPKI -DCH_KEX_PQ -I.
+	  test/webpki_encrypted_exts_test.c test/handshake_strict_test.c \
+	  test/diff_test.c examples/webpki_client.c test/webpki_resume_test.c, \
+	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_TRUST_WEBPKI -I.)
+	$(call TIDY_EACH,test/webpki_session_test.c, \
+	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_TRUST_WEBPKI -DCH_KEX_PQ -I.)
 	# The QUIC mode: its sources and its three test mains, under every
 	# check.
-	$(CLANG_TIDY) --quiet $(QUIC_SRCS) -- \
-	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_TRANSPORT_QUIC -I.
-	$(CLANG_TIDY) --quiet test/quic_driver_test.c test/quic_vectors.c test/diff_quic_test.c -- \
-	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_TRANSPORT_QUIC -I.
+	$(call TIDY_EACH,$(QUIC_SRCS), \
+	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_TRANSPORT_QUIC -I.)
+	$(call TIDY_EACH,test/quic_driver_test.c test/quic_vectors.c \
+	  test/diff_quic_test.c, \
+	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_TRANSPORT_QUIC -I.)
 	# The two AES implementations this build did not pick. Each needs its
 	# own define, because each guards its body on one, and the AES=hw pair
 	# needs whatever flags turn the instructions on -- without them each
 	# file is its own #error rather than an empty translation unit. The
 	# pass above already read what $(AES_IMPL) names. quic_gcm.c joins the
 	# AES=hw pass because its AES=hw arm compiles only under -DCH_AES_HW.
-	$(CLANG_TIDY) --quiet $(filter-out $(AES_IMPL),quic_aes_extern.c) -- \
-	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_TRANSPORT_QUIC -DCH_AES_EXTERN -I.
+	$(call TIDY_EACH,$(filter-out $(AES_IMPL),quic_aes_extern.c), \
+	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_TRANSPORT_QUIC -DCH_AES_EXTERN -I.)
 	@set -e; [ -z "$(AES_HW_BINS)" ] || [ -z "$(filter-out $(AES_IMPL),$(AES_HW_SRCS))" ] || \
-	  $(CLANG_TIDY) --quiet $(AES_HW_SRCS) quic_gcm.c -- \
-	    -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) $(AES_HW_CFLAGS) -DCH_TRANSPORT_QUIC -DCH_AES_HW -I.
+	  $(call TIDY_EACH,$(AES_HW_SRCS) quic_gcm.c, \
+	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) $(AES_HW_CFLAGS) -DCH_TRANSPORT_QUIC -DCH_AES_HW -I.)
 	# test/aes_equiv_test.c alone: the two wrappers beside it compile a
 	# library source in under a renamed symbol, so linting them would
 	# report that source's findings a second time under a name no file
 	# on disk carries.
-	$(CLANG_TIDY) --quiet test/aes_equiv_test.c -- \
-	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_TRANSPORT_QUIC -I.
+	$(call TIDY_EACH,test/aes_equiv_test.c, \
+	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_TRANSPORT_QUIC -I.)
 	# test/ghash_equiv_test.c alone, for the same reason, and only where
 	# the probe found the instructions: it reads quic_ghash_hw.h, whose
 	# declarations sit behind CH_AES_HW.
 	@set -e; [ -z "$(AES_HW_BINS)" ] || \
-	  $(CLANG_TIDY) --quiet test/ghash_equiv_test.c -- \
-	    -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) $(AES_HW_CFLAGS) -DCH_TRANSPORT_QUIC -DCH_AES_HW -I.
+	  $(call TIDY_EACH,test/ghash_equiv_test.c, \
+	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) $(AES_HW_CFLAGS) -DCH_TRANSPORT_QUIC -DCH_AES_HW -I.)
 	# The server role gets its own pass: every declaration these files
 	# hold sits behind -DCH_ROLE_SERVER, so the pass above would read
 	# seven empty translation units.
-	$(CLANG_TIDY) --quiet $(SRV_SRCS) test/srv_auth_test.c test/srv_test.c \
-	  test/srv_flight_test.c -- \
-	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_ROLE_SERVER -I.
+	$(call TIDY_EACH,$(SRV_SRCS) test/srv_auth_test.c test/srv_test.c \
+	  test/srv_flight_test.c, \
+	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_ROLE_SERVER -I.)
 	# The record transport's client driver, behind -DCH_TRANSPORT_RECORD.
-	$(CLANG_TIDY) --quiet rec.c rec_frame.c rec_step.c -- \
-	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_TRANSPORT_RECORD -I.
+	$(call TIDY_EACH,rec.c rec_frame.c rec_step.c, \
+	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_TRANSPORT_RECORD -I.)
 	# Each server driver with the transport it is written for. Neither
 	# reads a declaration the role pass above sets, because both sit
 	# behind a transport define as well as the role. quic_token.c, the
 	# QUIC server's Retry token, sits behind the same two defines.
-	$(CLANG_TIDY) --quiet srv_quic.c quic_token.c -- \
-	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_ROLE_SERVER -DCH_TRANSPORT_QUIC -I.
-	$(CLANG_TIDY) --quiet srv_rec.c test/srv_rec_test.c -- \
-	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_ROLE_SERVER -DCH_TRANSPORT_RECORD -I.
+	$(call TIDY_EACH,srv_quic.c quic_token.c, \
+	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_ROLE_SERVER -DCH_TRANSPORT_QUIC -I.)
+	$(call TIDY_EACH,srv_rec.c test/srv_rec_test.c, \
+	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_ROLE_SERVER -DCH_TRANSPORT_RECORD -I.)
 	# The loopback drives both drivers, so it is the one source that needs
 	# CH_ROLE_BOTH as well: srv_cfg.h and tls.h keep the client half only
 	# under that define.
-	$(CLANG_TIDY) --quiet test/rec_loop_test.c -- \
-	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_ROLE_SERVER -DCH_ROLE_BOTH \
-	  -DCH_TRANSPORT_RECORD $(EXPORTER_DEF) -DCH_KEYLOG -I.
+	$(call TIDY_EACH,test/rec_loop_test.c, \
+	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_TRANSPORT_RECORD $(EXPORTER_DEF) -DCH_KEYLOG -I.)
 	# The four ch_keylog call sites, which no other pass compiles: the
 	# hook exists only under CH_KEYLOG, and keylog.h refuses that define
 	# without a server role, so this pass names ROLE=both's pair.
-	$(CLANG_TIDY) --quiet handshake_flight.c srv_flight.c -- \
-	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_KEYLOG -I.
+	$(call TIDY_EACH,handshake_flight.c srv_flight.c, \
+	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_KEYLOG -I.)
 	# The exporter, behind its own axis: without these defines tls.h
 	# declares no ch_export and keysched.h no ks_exporter, so this pass
 	# would read a file with nothing in it.
-	$(CLANG_TIDY) --quiet test/exporter_test.c tls.c keysched.c hkdf.c handshake_flight.c -- \
-	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) $(EXPORTER_DEF) -I.
-	$(CLANG_TIDY) --quiet srv_flight.c -- \
-	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) $(EXPORTER_DEF) -DCH_ROLE_SERVER -I.
+	$(call TIDY_EACH,test/exporter_test.c tls.c keysched.c hkdf.c \
+	  handshake_flight.c, \
+	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) $(EXPORTER_DEF) -I.)
+	$(call TIDY_EACH,srv_flight.c, \
+	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) $(EXPORTER_DEF) -DCH_ROLE_SERVER -I.)
 	# The M3 smoke runtimes and the KAT program lint with the target's
 	# own flags. Three checks are off, each with its reason:
 	# bugprone-reserved-identifier and its two cert aliases, because the
@@ -2824,6 +2884,13 @@ else
 	# single configuration; --force keeps it exploring CH_PIN_ECDSA,
 	# CH_TRUST_CA and CH_KEX_PQ the way it did before the declaration
 	# existed. Measured at 3.1 s without and 10.4 s with, over 42 files.
+	# cppcheck runs as one process. Its -j mode drops the whole-program
+	# checks unless it also has --cppcheck-build-dir, and there cppcheck
+	# 2.22 finds a file's entry in files.txt by suffix
+	# (getAnalyzerInfoFileFromFilesTxt in lib/analyzerinfo.cpp), so
+	# handshake_record.c, srv_handshake.c and srv_quic.c write into the
+	# files of record.c, handshake.c and quic.c, and a parallel run fails
+	# to load them. lint-analyzers runs this beside lint-tidy instead.
 	$(CPPCHECK) --std=c11 --enable=warning,style,performance,portability \
 	  --inline-suppr --suppress=missingIncludeSystem \
 	  --suppress=constParameterCallback --suppress=shiftTooManyBitsSigned \
@@ -3527,8 +3594,18 @@ BRANCH_CEILING := \
   mips32r2-gcc-O2/rsa_sign.c:26
 WIDEMUL_RUN ?= clang
 WIDEMUL_GCC ?= $(M3_CC)
-.PHONY: lint-wide-multiply lint-wide-multiply-gcc
+.PHONY: lint-wide-multiply lint-wide-multiply-gcc lint-wide-multiply-run
+# The clang specs, one sub-make each, all at once. Each compiles every
+# WIDEMUL_CEILING file for its own target and prints its own verdict, so
+# running them together changes the wall time and nothing else.
+WIDEMUL_CLANG := $(foreach s,$(WIDEMUL_SPECS),$(if $(filter clang,$(word 2,$(subst :, ,$(s)))),$(firstword $(subst :, ,$(s)))))
 lint-wide-multiply:
+	@$(MAKE) --no-print-directory -j$(words $(WIDEMUL_CLANG)) \
+	  $(addprefix lint-wide-multiply-spec-,$(WIDEMUL_CLANG))
+lint-wide-multiply-spec-%:
+	@$(MAKE) --no-print-directory lint-wide-multiply-run WIDEMUL_RUN=clang WIDEMUL_ONLY=$*
+# WIDEMUL_ONLY, when set, names the one spec to run.
+lint-wide-multiply-run:
 	@rc=0; ran=""; got=""; \
 	 for spec in $(WIDEMUL_SPECS); do \
 	   arch=$${spec%%:*}; rest=$${spec#*:}; \
@@ -3538,6 +3615,7 @@ lint-wide-multiply:
 	   tokens=$${rest%%:*}; branches=""; \
 	   case "$$rest" in *:*) branches=$${rest#*:} ;; esac; \
 	   [ "$$compiler" = "$(WIDEMUL_RUN)" ] || continue; \
+	   [ -z "$(WIDEMUL_ONLY)" ] || [ "$$arch" = "$(WIDEMUL_ONLY)" ] || continue; \
 	   case "$$compiler" in \
 	   clang) \
 	     [ -n "$(CLANG_RV)" ] || { echo "lint-wide-multiply: clang is missing, and a linter must not skip. It ships with llvm — see the LLVM_MAJOR pin in tools/toolchain.env"; exit 1; }; \
@@ -3603,7 +3681,7 @@ lint-wide-multiply:
 # run this with their toolchain; locally it defaults to the Arm GNU release
 # the m3 lane uses (M3_CC in test/platforms.mk).
 lint-wide-multiply-gcc:
-	@$(MAKE) --no-print-directory lint-wide-multiply WIDEMUL_RUN=gcc WIDEMUL_GCC="$(WIDEMUL_GCC)"
+	@$(MAKE) --no-print-directory lint-wide-multiply-run WIDEMUL_RUN=gcc WIDEMUL_GCC="$(WIDEMUL_GCC)"
 
 # A core without the M extension has no hardware multiply, so every `*`
 # becomes a libgcc call, and those routines branch on their operands
@@ -3773,17 +3851,7 @@ lint-fuzz-budget:
 # abbreviation would go unchecked, and none exist.
 .PHONY: lint-commit-citations
 lint-commit-citations:
-	@shas=$$(mktemp); git log --format=%H > $$shas; rc=0; \
-	 for c in $$(git log --format=%H); do \
-	   for t in $$(git log -1 --format=%b $$c | grep -v '^Claude-Session:' \
-	       | perl -ne 'while(/(?<![0-9a-fx])\b([0-9a-f]{7})\b/g){my $$h=$$1; print "$$h\n" if $$h =~ /[a-f]/}' \
-	       | sort -u); do \
-	     grep -q "^$$t" $$shas || { \
-	       echo "lint-commit-citations: $$(git log -1 --format=%h $$c) cites $$t, which no commit reaches"; \
-	       rc=1; }; \
-	   done; \
-	 done; rm -f $$shas; \
-	 [ $$rc -eq 0 ] && echo "lint-commit-citations: every hash a commit body cites resolves"; exit $$rc
+	@python3 tools/commit-citations.py
 
 # CBMC proofs: memory safety and absence of UB per module, at the bounds
 # each harness documents. The fast tier (seconds to a few minutes) gates
