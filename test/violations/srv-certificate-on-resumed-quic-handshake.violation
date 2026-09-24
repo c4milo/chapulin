@@ -1,0 +1,16 @@
+invariant: INV-22
+file: srv_quic.c
+catches: quic_loop_test
+reason: the QUIC server sends its Certificate and CertificateVerify on a
+  handshake a ticket authenticated, which is the second connection the
+  QUIC Interop Runner's resumption case fails a server for. The client
+  that resumed reads the Certificate as a message out of turn.
+  test/quic_loop_raw.h resumes a ticket between this tree's two QUIC
+  drivers and counts the Handshake-level messages.
+
+--- old
+    // A resumed handshake sends neither message: the ticket's PSK
+    // authenticates this server.
+    if (!sel->psk_selected) {
+--- new
+    if (1) {

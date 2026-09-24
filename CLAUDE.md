@@ -252,9 +252,14 @@ Home: github.com/c4milo.
 - Record size discipline: the client always sends `record_size_limit`
   (RFC 8449) sized to the caller's buffer. A peer record over the limit is
   a protocol error, not a resize.
-- RFC MUSTs we keep even though this is minimal: HelloRetryRequest
-  handling, KeyUpdate receipt, NewSessionTicket parse-and-expose
-  (resumption is just another PSK here), RFC 9257 binder discipline.
+- RFC MUSTs we keep even though this is minimal, per role. A client:
+  HelloRetryRequest handling, KeyUpdate receipt, NewSessionTicket
+  parse-and-expose (resumption is just another PSK here), RFC 9257
+  binder discipline. A server: HelloRetryRequest generation under an
+  integrity-protected cookie, the dummy change_cipher_spec a client's
+  non-empty session id obliges, KeyUpdate receipt, and a binder checked
+  in constant time over the truncated ClientHello before it accepts one
+  of its own tickets (docs/server.md, "Resumption").
 - Write all prose — README, docs, comments, commit messages — in active
   voice with plain words, following Google's Technical Writing One and
   Two: short sentences with one idea each, terms defined before use,

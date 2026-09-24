@@ -1,0 +1,16 @@
+invariant: INV-14
+file: srv_flight.c
+catches: srv_flight_test
+reason: the second ClientHello of a retry leaves the signature scheme where the
+  caller's selection had it. The record and QUIC drivers zero their
+  selection before the second hello, so the scheme stays 0 there and
+  every retried handshake that authenticates with a certificate fails at
+  the Certificate with internal_error, which is how those two drivers
+  first shipped. test/srv_resume_issue_tests.h runs the second hello over a
+  zeroed selection and requires the first hello's scheme back.
+
+--- old
+    sel->sigalg = srv_select_sigalg(&h->t->cfg, ch->sigalgs);
+    sel->need_retry = 0;
+--- new
+    sel->need_retry = 0;

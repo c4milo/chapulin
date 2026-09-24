@@ -1,0 +1,15 @@
+invariant: INV-14
+file: srv_resume.c
+catches: srv_flight_test
+reason: a ticket issued after a resumed handshake carries the instant of that
+  handshake rather than the instant the resumed ticket carried, so a
+  client that keeps resuming holds a PSK for ever and the server never
+  signs with its certificate again. srv_ticket.h carries the instant of
+  the last full handshake forward for that reason. test/srv_resume_tests.h
+  issues after a resumption ten seconds into the lifetime and requires
+  the lifetime left to be ten seconds shorter.
+
+--- old
+    uint64_t auth_seconds = t->psk_selected ? h->ticket_auth_seconds : now;
+--- new
+    uint64_t auth_seconds = now;

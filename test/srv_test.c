@@ -1,6 +1,7 @@
 // The ROLE=server unit vectors: the messages srv_message.c writes, the
-// HelloRetryRequest cookie srv_cookie.c mints and opens, and the ClientHello
-// srv_parser.c reads. docs/server.md names this binary bin/srv_test.
+// HelloRetryRequest cookie srv_cookie.c mints and opens, the resumption
+// ticket srv_ticket.c seals and opens, and the ClientHello srv_parser.c
+// reads. docs/server.md names this binary bin/srv_test.
 //
 // Every builder case compares the whole message against bytes written out by
 // hand from RFC 9846's message formats, not against a second construction of
@@ -23,6 +24,7 @@
 #include "srv_cookie.h"
 #include "srv_message.h"
 #include "srv_parser.h"
+#include "srv_ticket.h"
 
 // hkdf.c reaches this on a contract breach, and srv_cookie.c calls hkdf.c, so
 // this binary links the handler every other test main defines.
@@ -74,6 +76,7 @@ static int built(size_t n, const uint8_t *want, size_t want_len) {
 #include "srv_message_tests.h"
 #include "srv_parser_hello.h"
 #include "srv_parser_tests.h"
+#include "srv_ticket_tests.h"
 
 int main(void) {
     test_server_hello();
@@ -100,8 +103,13 @@ int main(void) {
     test_frozen_digest();
     test_quic_transport_params();
     test_predicates();
+    test_ticket_round_trip();
+    test_ticket_tamper();
+    test_ticket_bounds();
+    test_new_session_ticket();
+    test_server_hello_psk();
     if (failures == 0) {
-        (void)printf("srv: message vectors, cookie round trip and ClientHello parse\n");
+        (void)printf("srv: message vectors, cookie and ticket round trips and ClientHello parse\n");
     }
     return failures != 0;
 }

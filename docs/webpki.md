@@ -457,12 +457,14 @@ received it, and refuses to present it under any other.
 - **The caller owns the ticket's age.** A ticket lives at most seven days
   (RFC 9846 §4.7.1), and the other modes leave that limit and
   `obfuscated_age` to the caller as well.
-- **A `TRANSPORT=quic` webpki client keeps refusing a PSK.** No test here
-  drives that client, though `make check` builds its object, which
-  colibri links, and `quic_config.c` keeps its own copy of the refusal.
-  `ch_quic_init` computes no configuration hash, so the tickets such a
-  session hands to `on_ticket` carry a binding no configuration matches,
-  and presenting one fails closed with `CH_EINVAL`.
+- **A `TRANSPORT=quic` webpki client resumes the same way.**
+  `ch_quic_init` takes the configuration hash as `ch_connect` does, so the
+  tickets a QUIC session hands to `on_ticket` carry a binding to its
+  hostname and anchors, and `quic_config.c` checks a presented ticket with
+  the same `webpki_resumption_ok`, refusing the same shapes with
+  `CH_EINVAL`. `bin/quic_loop_webpki` resumes a bound ticket against this
+  tree's QUIC server and checks the binding on the ticket it issues next;
+  `docs/quic_server.md`, "Resumption", says what a QUIC caller does.
 
 ## Raw public keys and SPKI pins
 
@@ -516,7 +518,7 @@ caller sets up to `CH_SPKI_PIN_MAX` (4) of them in `ch_cfg.spki_pins`.
 - **Not here.** The server role neither sends nor accepts a raw public
   key: it ignores the extension and sends its certificate, which a
   configuration with anchors verifies as before. A `TRANSPORT=quic`
-  webpki client refuses pins, as it refuses tickets. Client raw public
+  webpki client refuses pins. Client raw public
   keys (`client_certificate_type`) are not offered, because this client
   sends no certificate.
 

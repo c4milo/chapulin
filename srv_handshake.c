@@ -15,6 +15,7 @@
 
 #include "ct.h"
 #include "srv_flight.h"
+#include "srv_resume.h"
 
 // Copies what the session keeps past the message that decided it, which
 // session.h lists field by field. This driver is the only scope that
@@ -29,6 +30,7 @@ static void store_selection(ch_tls *t, const client_hello *ch, const selection *
     t->hash_len = sel->hash_len;
     t->group = sel->group;
     t->sigalg = sel->sigalg;
+    t->psk_selected = sel->psk_selected;
     t->alpn_selected = ch->alpn_selected;
     // The client's record_size_limit (RFC 8449) bounds every record this
     // server seals from the EncryptedExtensions on. 0 is the absent
@@ -108,9 +110,9 @@ static int hello_exchange(handshake_state *h, client_hello *ch, selection *sel) 
 // the client Finished it reads before either direction advances to the
 // application keys.
 //
-// A PSK handshake sends no Certificate and no CertificateVerify, which
-// is why both calls sit under psk_selected. This build selects no PSK,
-// so the arm is taken in every handshake it runs today.
+// A resumed handshake sends no Certificate and no CertificateVerify,
+// because the ticket's PSK authenticates this server, which is why both
+// calls sit under psk_selected.
 static int auth_flight(handshake_state *h, const selection *sel) {
     int rc = srv_send_encrypted_extensions(h, sel);
     if (rc != CH_OK) {
@@ -160,7 +162,10 @@ static int run(handshake_state *h) {
         return rc;
     }
     srv_complete(h);
-    return CH_OK;
+    // The ticket goes out after the client Finished verified, which RFC
+    // 9846 §4.7.1 requires, and before h is wiped, because it needs
+    // h->master and the transcript.
+    return srv_send_new_session_ticket(h);
 }
 
 int srv_handshake(ch_tls *t) {

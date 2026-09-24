@@ -216,6 +216,64 @@ round trip or the address binding, because the stub makes every tag
 unconstrained; the tests hold those. Eight `quic-token-` violations in
 `test/violations/` each break one rule, and each is caught.
 
+## Resumption
+
+The QUIC Interop Runner's `resumption` case has a client make a full
+handshake, keep the NewSessionTicket, and open a second connection with it,
+and the runner fails the case if that second handshake carries a
+Certificate. colibri runs it in both roles over one `ROLE=both` object and
+refuses 0-RTT. `docs/server.md`, "Resumption", states the server's rules and
+`docs/decisions.md` entry 51 the choices; this section says what a QUIC
+endpoint does with them.
+
+**colibri's server.** Set `cfg.srv.ticket_key` to 32 bytes of key held for
+the deployment, and write the clock into `cfg.srv.now_seconds` before each
+`ch_srv_quic_init`. The call to `ch_srv_quic_crypto_in` that delivers the
+client Finished then pushes one NewSessionTicket through
+`cfg.srv.on_crypto_out` at `CH_LEVEL_APPLICATION`, after the Handshake-level
+bytes of that call, and colibri sends it in CRYPTO frames in 1-RTT packets
+(RFC 9001 §4.5, `rfc9001.txt:742-744`). The ticket carries no
+`early_data`, so no client may send 0-RTT on it. On a later connection that
+presents the ticket, the same calls produce a ServerHello at the Initial
+level and EncryptedExtensions and Finished at the Handshake level, with no
+Certificate and no CertificateVerify, and `ch_tls.psk_selected` reads 1 once
+the handshake is done.
+
+**colibri's client.** Set `cfg.on_ticket`. Once `ch_quic_state` reports
+`CH_ST_CONNECTED`, hand every 1-RTT CRYPTO byte to
+`ch_quic_crypto_in(q, CH_LEVEL_APPLICATION, ...)`, and `on_ticket` fires
+once per ticket with its `identity`, `psk` and `age_add`, and under
+`TRUST=webpki` its `binding`; copy them during the callback. To resume,
+configure the next `ch_quic_init` with `psk` set to the 32-byte PSK,
+`psk_id` to the identity, `resumption` to 1 and `obfuscated_age` to the
+ticket's age in milliseconds plus `age_add`, and offer the same ALPN
+protocol, because the server resumes a ticket only under the protocol it
+was issued under. Under `TRUST=raw-ecdsa` leave both `server_pubkey` slots
+unset: a raw-mode configuration authenticates one way, and here that way is
+the PSK. Under `TRUST=webpki` keep the anchors, the hostname and the clock
+as for a full handshake and set `ticket_binding` to the stored binding;
+`ch_quic_init` refuses a ticket whose binding does not match them, which is
+what `docs/webpki.md`, "Resumption", describes for TCP.
+
+**A declined ticket.** The resumed ClientHello offers the ticket and no
+signature scheme, so a server that passes the ticket over has no
+certificate to send and the handshake fails: this server answers
+`missing_extension`, and the client closes. The caller reconnects without
+the ticket. A server passes a ticket over when it cannot open it, when it
+has expired on the server's clock, or when the connection negotiates
+another ALPN protocol.
+
+**What checks it.** `bin/quic_loop_test` runs this tree's QUIC client
+against this tree's QUIC server in one `ROLE=both TRUST=raw-ecdsa` process:
+the full handshake, the ticket at the 1-RTT level, the resumed handshake
+with two Handshake-level messages and keys that open each other's 1-RTT
+packets, a second ticket whose lifetime ended where the first one's did, a
+protocol mismatch refused, and no ticket without a clock.
+`bin/quic_loop_webpki` resumes a bound ticket under `TRUST=webpki` and
+checks that the ticket the server issues next is bound to the client's
+configuration, which is only true if `ch_quic_init` took its hash. Neither
+test sends a packet; colibri's runner does.
+
 ## What is missing
 
 ### 1. The direction-to-label mapping

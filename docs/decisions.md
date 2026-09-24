@@ -912,3 +912,41 @@ does nothing more.
     `CH_NATIVE_WIDEMUL` stays apart because it covers a different
     instruction in different files, and a build asserts it without any
     AES at all.
+
+51. **A server issues one self-sealed ticket per connection and resumes
+    it under `psk_dhe_ke`, on the caller's clock.** colibri needs the QUIC
+    Interop Runner's `resumption` case in both roles, and Camilo answered
+    `docs/server.md`'s open question five yes. After the client Finished
+    verifies, the server seals the ticket's PSK, the suite, the ALPN
+    protocol and an issue instant under a ChaCha20-Poly1305 key the caller
+    supplies (`srv_ticket.[ch]`), and sends it in one NewSessionTicket with
+    no `early_data`. A later ClientHello that carries it resumes with a
+    fresh key exchange and no Certificate (`srv_resume.[ch]`).
+    `docs/server.md`, "Resumption", states the rules.
+
+    Cost: one caller-held key as valuable as the signing keys, one more
+    `ch_rand_bytes` site (INV-4), one more AEAD caller (INV-1), a caller
+    clock the server did not read before, and 104 bytes of ticket per
+    connection. Gain: a reconnect skips the signature and the certificate
+    on both ends, and two chapulin endpoints resume each other, which is
+    the deployment the client was written for.
+
+    One ticket, because a client that resumes one connection after another
+    gets a fresh ticket on each; a client racing parallel connections
+    wants more, and none asks. The instant is the last full handshake's,
+    carried forward through every resumed one, so a chain of resumptions
+    ends one lifetime after the certificate last signed. A server with no
+    clock issues no ticket and accepts none. A ticket binds its ALPN
+    protocol, because application state may follow a ticket across
+    connections (RFC 9001 §4.5), and it does not bind the server name or
+    the signing identity: RFC 9846 §4.3.11 tells a server it need not bind
+    the name, and a deployment that retires an identity rotates the ticket
+    key.
+
+    A database of tickets was considered and rejected: it needs storage
+    that outlives a connection, which the zero-heap rule forbids. An HMAC
+    over a readable ticket, the cookie's shape, was rejected because the
+    ticket carries the PSK, which must stay secret. Deriving a key per
+    ticket from a random salt, so no nonce can repeat, was considered and
+    left aside: a random 96-bit nonce is safe for 2^32 tickets under one
+    key, and `srv_ticket.h` tells the operator to rotate before then.

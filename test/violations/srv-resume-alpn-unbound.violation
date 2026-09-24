@@ -1,0 +1,16 @@
+invariant: INV-14
+file: srv_resume.c
+catches: srv_flight_test
+reason: a ticket resumes a connection that negotiated another application
+  protocol than the one it was issued under. srv_resume.h binds the
+  protocol because an application may carry state across a resumption
+  (RFC 9001 §4.5, rfc9001.txt:752-754), and a ticket that crossed
+  protocols would carry one protocol's session into another.
+  test/srv_resume_tests.h issues a ticket under h2 and requires it to be
+  passed over by a connection that selects http/1.1.
+
+--- old
+    return c->alpn_len == p->name_len && ct_memeq(c->alpn, p->name, p->name_len);
+--- new
+    (void)p;
+    return 1;

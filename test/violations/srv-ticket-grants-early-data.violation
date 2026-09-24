@@ -1,0 +1,20 @@
+invariant: INV-14
+file: srv_message.c
+catches: srv_test
+reason: the NewSessionTicket carries an early_data extension, which tells the
+  client it may send 0-RTT data under the ticket (RFC 9846 §4.7.1). This
+  server takes the first behaviour §4.3.10 allows and discards no early
+  data yet, so a client that accepted the grant would have its first
+  0-RTT record fail. test/srv_ticket_tests.h compares the whole message
+  against bytes written out by hand, with an empty extensions vector.
+
+--- old
+    // An empty extensions vector: no early_data, so no 0-RTT.
+    wb_u16(&w, 0);
+--- new
+    // early_data, max_early_data_size 16384.
+    wb_u16(&w, 8);
+    wb_u16(&w, EXT_EARLY_DATA);
+    wb_u16(&w, 4);
+    wb_u16(&w, 0);
+    wb_u16(&w, 0x4000);

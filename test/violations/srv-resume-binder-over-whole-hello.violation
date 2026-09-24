@@ -1,0 +1,14 @@
+invariant: INV-14
+file: srv_flight.c
+catches: srv_flight_test
+reason: the binder is checked against the hash of the whole ClientHello, binders
+  included, where RFC 9846 §4.3.11.2 computes it over the hello truncated
+  before the binders list (rfc9846.txt:2591-2598). No client can produce a
+  binder over bytes that contain it, so every resumption fails with
+  decrypt_error. test/srv_resume_tests.h reads back binder_hash for a hello
+  truncated at a known point.
+
+--- old
+        sha256_update(&partial, raw, 4 + ch->truncated_len);
+--- new
+        sha256_update(&partial, raw, raw_len);

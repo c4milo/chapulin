@@ -26,6 +26,7 @@
 #include "cfg.h"
 #include "handshake_message.h"
 #include "srv_parser.h"
+#include "srv_ticket.h"
 
 // The ServerHello.random value that marks a HelloRetryRequest (RFC 9846
 // §4.2.3): the SHA-256 of "HelloRetryRequest", a fixed 32 bytes the
@@ -88,6 +89,18 @@ extern const uint8_t srv_hrr_random[SRV_RANDOM];
 #define SRV_CERT_HEAD_LEN 8
 #define SRV_CERT_SUFFIX_LEN 2
 
+// The ticket_nonce every NewSessionTicket this server sends carries, in
+// bytes (RFC 9846 §4.7.1). RFC 9846 asks only that it be unique among the
+// tickets of one connection (rfc9846.txt:3272-3273), and this server
+// sends one ticket per connection, so any value would do. It draws 8
+// random bytes in the same ch_rand_bytes call as the ticket's other two
+// random values (srv_resume.h). SRV_NEW_SESSION_TICKET_MAX is
+// the message that carries it: a 4-byte handshake header, ticket_lifetime
+// (4), ticket_age_add (4), the nonce behind its length byte, the ticket
+// behind its two length bytes, and an empty extensions vector (2).
+#define SRV_TICKET_NONCE_LEN 8
+#define SRV_NEW_SESSION_TICKET_MAX (4 + 4 + 4 + 1 + SRV_TICKET_NONCE_LEN + 2 + SRV_TICKET_LEN + 2)
+
 // What the server selected for one connection, written by srv_select
 // (srv_flight.h) and read by the builders here, by srv_cookie.c and by
 // srv_auth.c. Every member holds a value the peer will see in the
@@ -128,17 +141,15 @@ typedef struct {
     // first hello.
     uint8_t need_retry;
 
-    // Set when a PSK authenticates this handshake, in which case the
-    // server sends no Certificate and no CertificateVerify.
-    //
-    // It is 0 in every handshake this build runs. Whether a v1 server
-    // accepts PSKs and issues tickets is docs/server.md's open
-    // question five, so every handshake authenticates with a
-    // certificate, which RFC 9846 permits: a server that selects no
-    // PSK simply sends no pre_shared_key in its ServerHello. The
-    // member exists so the PSK lane drops in without reshaping this
-    // struct or the flight above it.
+    // Set when a ticket this server issued authenticates this
+    // handshake, in which case the server sends no Certificate and no
+    // CertificateVerify, and its ServerHello carries pre_shared_key
+    // naming psk_identity: the index of that ticket in the client's
+    // identities list (RFC 9846 §4.3.11). srv_select_auth (srv_resume.h)
+    // writes both, and both go out in the clear. psk_identity is 0 when
+    // psk_selected is clear.
     uint8_t psk_selected;
+    uint16_t psk_identity;
 } selection;
 
 // Builds one ServerHello, handshake header included (RFC 9846 §4.2.3).
@@ -147,7 +158,10 @@ typedef struct {
 // whatever its length (rfc9846.txt:1365-1368), sel->suite,
 // legacy_compression_method 0, and two extensions:
 // supported_versions carrying TLS13, and key_share carrying sel->group
-// and the server's own share.
+// and the server's own share. When sel->psk_selected is set it writes a
+// third, pre_shared_key carrying sel->psk_identity as the
+// selected_identity (RFC 9846 §4.3.11), beside the key_share psk_dhe_ke
+// still requires (rfc9846.txt:2325-2329).
 //
 // Requires cap bytes at out; random32 pointing at SRV_RANDOM readable
 // bytes the caller drew through ch_rand_bytes; session_id pointing at
@@ -327,6 +341,24 @@ size_t srv_build_certificate_verify(uint8_t *out, size_t cap, uint16_t sigalg, c
 //
 // Returns the message length in bytes, or 0 when cap is short.
 size_t srv_build_finished(uint8_t *out, size_t cap, const uint8_t *verify_data, size_t hash_len);
+
+// Builds one NewSessionTicket, handshake header included (RFC 9846
+// §4.7.1): ticket_lifetime and ticket_age_add as four bytes each, the
+// ticket_nonce and the ticket each behind its length, and an empty
+// extensions vector. It writes no early_data extension, so the ticket
+// grants no 0-RTT, which this server refuses.
+//
+// Requires cap bytes at out; lifetime of 604800 or less, which RFC 9846
+// §4.7.1 requires of a server (rfc9846.txt:3257-3258) and this builder
+// does not check; nonce pointing at nonce_len readable bytes; ticket
+// pointing at ticket_len readable bytes.
+//
+// Returns the message length in bytes, or 0 when cap is short, when
+// nonce_len is above 255, or when ticket_len is 0 or above 65535, which
+// are the bounds of ticket_nonce<0..255> and ticket<1..2^16-1>.
+size_t srv_build_new_session_ticket(uint8_t *out, size_t cap, uint32_t lifetime, uint32_t age_add,
+                                    const uint8_t *nonce, size_t nonce_len, const uint8_t *ticket,
+                                    size_t ticket_len);
 
 // Builds one KeyUpdate, handshake header included (RFC 9846 §4.7.3):
 // one byte of request_update.

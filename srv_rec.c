@@ -29,6 +29,7 @@
 #include "rec_frame.h"
 #include "record.h"
 #include "srv_flight.h"
+#include "srv_resume.h"
 
 // Copies what the session keeps past the message that decided it, which
 // session.h lists field by field. This driver is the only scope that
@@ -44,6 +45,7 @@ static void store_selection(ch_tls *t, const client_hello *ch, const selection *
     t->hash_len = sel->hash_len;
     t->group = sel->group;
     t->sigalg = sel->sigalg;
+    t->psk_selected = sel->psk_selected;
     t->alpn_selected = ch->alpn_selected;
     // The client's record_size_limit (RFC 8449) bounds every record this
     // server seals from the EncryptedExtensions on. 0 is the absent
@@ -76,8 +78,8 @@ static int server_flight(ch_record *r, const client_hello *ch, const selection *
     if (rc != CH_OK) {
         return rc;
     }
-    // A PSK handshake sends neither message. This build selects no PSK, so
-    // the arm is taken in every handshake it runs today.
+    // A resumed handshake sends neither message: the ticket's PSK
+    // authenticates this server.
     if (!sel->psk_selected) {
         rc = srv_send_certificate(h, sel);
         if (rc != CH_OK) {
@@ -170,11 +172,15 @@ static int step_client_finished(ch_record *r) {
     }
     srv_complete(&r->hs);
     r->step = SR_STEP_COMPLETE;
+    // The ticket leaves through on_record_out after the client Finished
+    // verified (RFC 9846 §4.7.1), and before the wipe, because it needs
+    // hs.master and the transcript.
+    rc = srv_send_new_session_ticket(&r->hs);
     // INV-17: the handshake secrets die at CONNECTED. The wipe clears
     // hs.t with the rest, so this step writes the back pointer again.
     ct_wipe(&r->hs, sizeof r->hs);
     r->hs.t = &r->t;
-    return CH_OK;
+    return rc;
 }
 
 // Nothing is legal here. The caller moves to ch_read the moment

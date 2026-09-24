@@ -124,6 +124,10 @@ static struct {
     size_t len;
 } to_client;
 
+// How many records the server has pushed since run_handshake started, one
+// per sink call, which is how the resumption cases count the flight.
+static size_t records_pushed;
+
 static int sink(void *io, const uint8_t *p, size_t n) {
     (void)io;
     if (to_client.len + n > sizeof to_client.bytes) {
@@ -131,6 +135,7 @@ static int sink(void *io, const uint8_t *p, size_t n) {
     }
     memcpy(to_client.bytes + to_client.len, p, n);
     to_client.len += n;
+    records_pushed++;
     return 0;
 }
 
@@ -298,6 +303,7 @@ static int server_to_client(ch_record *client) {
 static int run_handshake(ch_record *client, ch_record *server, const ch_cfg *ccfg,
                          const ch_cfg *scfg) {
     to_client.len = 0;
+    records_pushed = 0;
     logged_count = 0;
     client_io = 0;
     server_io = 0;
@@ -313,6 +319,14 @@ static int run_handshake(ch_record *client, ch_record *server, const ch_cfg *ccf
         if (!client_to_server(client, server)) {
             break;
         }
+        // Once both ends are connected, what the server pushed after the
+        // client Finished is post-handshake and belongs to ch_read, which
+        // the ticket cases hand it to.
+        if (ch_record_state(client) == CH_ST_CONNECTED &&
+            ch_record_state(server) == CH_ST_CONNECTED) {
+            rounds++;
+            break;
+        }
         if (!server_to_client(client)) {
             break;
         }
@@ -322,6 +336,7 @@ static int run_handshake(ch_record *client, ch_record *server, const ch_cfg *ccf
 }
 
 #include "rec_read_tests.h"
+#include "rec_resume_tests.h"
 
 int main(void) {
     static ch_record client;
@@ -390,10 +405,13 @@ int main(void) {
     CHECK(ch_export(&client.t, "EXPORTER-Channel-Binding", NULL, 0, other, sizeof other) ==
           CH_EINVAL);
 
+    test_resumption();
+
     if (failures == 0) {
         (void)printf("rec_loop: a whole handshake in %d rounds, 0 socket calls;"
                      " both ends export one secret and log the same four; ch_read waits"
-                     " between records; a wrong pin refused\n",
+                     " between records; a wrong pin refused; a ticket resumes with no"
+                     " certificate\n",
                      rounds);
         return 0;
     }

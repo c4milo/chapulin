@@ -47,6 +47,7 @@
 #include "record.h"
 #include "srv_flight.h"
 #include "srv_rec.h"
+#include "srv_resume.h"
 
 #ifndef CH_PROOF_RXBUF
 #define CH_PROOF_RXBUF 8
@@ -247,6 +248,13 @@ void srv_complete(handshake_state *h) {
     __CPROVER_assert(finished_read > 0, "complete: the client Finished verified first");
     fill_nondet(h->t->rd_secret, sizeof h->t->rd_secret);
     h->t->state = CH_ST_CONNECTED;
+}
+
+// srv_resume.h's issuing call, which the driver makes after srv_complete
+// and before the wipe.
+int srv_send_new_session_ticket(handshake_state *h) {
+    __CPROVER_assert(h->t->state == CH_ST_CONNECTED, "ticket: only after the client Finished");
+    return handler_result(h);
 }
 
 // Reassembly, proven in handshake_record.c's own harness. It writes

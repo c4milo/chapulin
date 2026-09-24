@@ -1,0 +1,18 @@
+invariant: INV-14
+file: srv_resume.c
+catches: srv_flight_test
+reason: the server accepts the ticket it selected without checking the client's
+  binder, which RFC 9846 §4.3.11 makes a MUST before accepting a PSK
+  (rfc9846.txt:2541-2544). The binder is what ties the ticket to this
+  ClientHello, so without it anyone who replays a captured ticket gets a
+  resumed handshake started, and a client whose PSK does not match gets
+  as far as the Finished. test/srv_resume_tests.h offers a binder one bit
+  off and requires decrypt_error.
+
+--- old
+    return equal != 0;
+}
+--- new
+    (void)equal;
+    return 1;
+}

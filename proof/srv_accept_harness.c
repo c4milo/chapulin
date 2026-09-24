@@ -8,7 +8,7 @@
 // What is real and what is a stub. srv.c, srv_handshake.c, ct.c and
 // session.c are real, so the proof covers the configuration rules, the
 // flight's call order, and the wipe on the way out. The fourteen
-// srv_flight.h handlers are stubs, because a handler and the driver
+// srv_flight.h handlers and srv_resume.h's ticket call are stubs, because a handler and the driver
 // that calls it are separate proofs: srv_flight.c carries its own
 // harness, and inlining fourteen message builders into this formula
 // would make it a parser proof, not a driver proof. Each stub asserts
@@ -36,6 +36,7 @@
 #include "srv_auth.h"
 #include "srv_flight.h"
 #include "srv_handshake.h"
+#include "srv_resume.h"
 
 int nondet_int(void);
 uint16_t nondet_u16(void);
@@ -106,6 +107,7 @@ static void fill_selection(selection *sel) {
     sel->sigalg = nondet_u16();
     sel->need_retry = nondet_u8();
     sel->psk_selected = nondet_u8();
+    sel->psk_identity = nondet_u16();
 }
 
 void srv_begin(handshake_state *h) {
@@ -194,6 +196,13 @@ void srv_complete(handshake_state *h) {
     __CPROVER_assert(__CPROVER_w_ok(h, sizeof *h), "complete: state writable");
     flight_calls++;
     h->t->state = CH_ST_CONNECTED;
+}
+
+// srv_resume.h's issuing call, which the driver makes after srv_complete.
+// It sends at most one record and returns what the other handlers return.
+int srv_send_new_session_ticket(handshake_state *h) {
+    __CPROVER_assert(h->t->state == CH_ST_CONNECTED, "ticket: only after the client Finished");
+    return flight_result(h);
 }
 
 // srv_auth.c's two entry points, havocked. The real srv_identity_live

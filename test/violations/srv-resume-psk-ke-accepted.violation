@@ -1,0 +1,14 @@
+invariant: INV-14
+file: srv_resume.c
+catches: srv_flight_test
+reason: the server considers a ticket from a client that listed psk_ke alone.
+  RFC 9846 §4.3.9 forbids a server to select a mode the client did not
+  list (rfc9846.txt:2307-2308), and this server always runs a key
+  exchange, which is psk_dhe_ke, so it would answer psk_ke with a mode
+  the client refused. test/srv_resume_tests.h lists psk_ke alone and
+  requires a full handshake.
+
+--- old
+    return (ch->seen & SRV_EXT_PRE_SHARED_KEY) != 0 && (ch->psk_modes & SRV_PSK_DHE_KE) != 0;
+--- new
+    return (ch->seen & SRV_EXT_PRE_SHARED_KEY) != 0 && ch->psk_modes != 0;

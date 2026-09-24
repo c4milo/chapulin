@@ -1056,12 +1056,26 @@ launch fast full poly1305 85 "blocks.0:8" ct.c
 # in because three paths wipe. The global unwind covers fill_nondet over
 # the 384-byte signature buffer, which is the longest loop here.
 # Measured on an idle development machine (arm64 macOS, cbmc 6.11.0,
-# kissat, PROVE_NO_CACHE=1 /usr/bin/time -l through this script): 223
-# properties, 3 s, 0.16 GB peak, two runs. The same formula with an
+# kissat, PROVE_NO_CACHE=1 /usr/bin/time -l through this script): 385
+# properties, 8 s, 0.43 GB peak, after srv_select_sigalg moved into
+# srv_auth.c; the 223 this line once recorded was stale, because the
+# source before that move also measures 385. The same formula with an
 # assert of 0 at each of its four tails -- the assembly's wipe, the cap
 # refusal, the signing refusal and the provisioned arm of the boot
 # check -- fails all four, so every tail is reached.
 launch fast full srv_auth 385 "" ct.c -DCH_ROLE_SERVER
+# The server's ticket selection and issue, srv_resume.c, over any
+# identities and binders lists up to the bounds the harness states, any
+# ticket key, clock, modes and ALPN selection, with srv_ticket.c, the key
+# schedule and the builders as contract stubs. It is in the slow tier
+# because it measured over the fast tier's two minutes and 3 GB: 1017
+# properties, 186 s, 4.22 GB peak (arm64 macOS, cbmc 6.11.0, kissat,
+# PROVE_ONLY=srv_resume PROVE_NO_CACHE=1 /usr/bin/time -l over this script,
+# slow tier). An assert of 0 at the decrypt_error, the refusal, the
+# selected-ticket and the sent-ticket arms fails all four, so every arm is
+# reached. Before the binders bound fell to one binder and the start of a
+# second, the same formula took 268 s and 7.4 GB.
+launch slow full srv_resume 120 "fill_nondet.0:118,find_ticket.0:24,binder_at.0:36,ct_wipe.0:84,ct_memeq.0:33" buf.c ct.c -DCH_ROLE_SERVER
 # quic_gcm and quic_gcm_forge have no launch line, for the reason
 # aead_inplace has none: neither formula returned a verdict, and an
 # unconverged launch line proves nothing (docs/proofs.md). Measured with
@@ -1083,12 +1097,23 @@ launch fast full srv_auth 385 "" ct.c -DCH_ROLE_SERVER
 # fill_nondet over the longest buffer each harness havocs: the cookie at
 # SRV_COOKIE_MAX in the builders, and one byte past it in the cookie's own
 # open case. Measured on a development machine (arm64 macOS, cbmc 6.11.0,
-# kissat, PROVE_NO_CACHE=1 /usr/bin/time -l over this script): srv_message 538
-# properties, 4 s, 0.11 GB peak; srv_cookie 797 properties, 3 s, 0.07 GB. The
+# kissat, PROVE_NO_CACHE=1 /usr/bin/time -l over this script): srv_message 551
+# properties, 4 s, 0.14 GB peak, with the ServerHello's pre_shared_key and
+# the NewSessionTicket builder; srv_cookie 797 properties, 3 s, 0.07 GB. The
 # same srv_message formula with its ServerHello assertion tightened to n < cap
 # fails, so the formula reaches the builder rather than passing vacuously.
 launch fast full srv_message 130 "fill_nondet.0:118" buf.c -DCH_ROLE_SERVER
 launch fast full srv_cookie 130 "fill_nondet.0:119" buf.c ct.c hkdf.c -DCH_ROLE_SERVER
+# The resumption ticket's seal and open, over every contents and every
+# ticket length up to one byte past SRV_TICKET_LEN. buf.c and ct.c are real;
+# aead_seal and aead_open are contract stubs the harness defines, which the
+# harness comment prices. fill_nondet's longest call is the 105-byte ticket.
+# Measured (arm64 macOS, cbmc 6.11.0, kissat, PROVE_ONLY=srv_ticket
+# PROVE_NO_CACHE=1 /usr/bin/time -l over this script): 693 properties, 1 s,
+# 0.03 GB peak. The same formula with an assert of 0 at the seal's success
+# arm and at the open's CH_OK and refusal arms fails all three, so every arm
+# is reached.
+launch fast full srv_ticket 110 "fill_nondet.0:106" buf.c ct.c -DCH_ROLE_SERVER
 # The QUIC server's Retry token, the same shape as the cookie above: buf.c,
 # ct.c and hkdf.c real, SHA-256 the contract stub in harness.h, and both
 # calls over unconstrained inputs, the address length and the two connection
@@ -1107,7 +1132,10 @@ launch fast full quic_token 130 "fill_nondet.0:113,prove_mint.1:21,prove_mint.2:
 # reader in srv_parser_ext.c over an unconstrained extension body, any
 # type and any offset, with buf.c and ct.c real and SHA-256 the contract
 # stub in harness.h. Measured (arm64 macOS, cbmc 6.11.0, kissat,
-# /usr/bin/time -l, idle machine): 927 properties, 34 s, 985 MB.
+# /usr/bin/time -l, idle machine): 927 properties, 34 s, 985 MB. With the
+# pre_shared_key reader recording its two lists: 987 properties, 37 s of
+# solver time and 0.62 GB, measured at 72 s wall on a machine running
+# other lanes' proofs.
 launch fast:2 full srv_parser_ext 26 "fill_nondet.0:129,ct_memeq.0:33" buf.c ct.c -DCH_ROLE_SERVER
 # The walk half, proof/srv_parser_walk_harness.c, has no launch line. Its
 # formula converges in 0.32 s at 818 properties when fill_nondet is bounded
@@ -1155,7 +1183,10 @@ launch slow:4 full handshake_record 65 "hsr_fetch_record.0:6,hsr_next_msg.0:11,f
 #
 # Measured under this script's flags (kissat, PROVE_NO_CACHE=1
 # /usr/bin/time -l, 10-core M1 Pro, one formula at a time on an otherwise
-# idle machine): quic_driver 1455 properties, 72 s, 0.84 GB resident;
+# idle machine): quic_driver 1455 properties, 72 s, 0.84 GB resident,
+# and 1461 properties, 78 s of solver time and 0.91 GB after quic_config.c
+# took the webpki resumption rule, measured at 116 s wall on a machine
+# running other lanes' proofs;
 # quic_step 546 properties, 4.0 s, 42 MB; quic_step_ca 553 properties,
 # 4.8 s, 45 MB.
 # quic_driver carries fast:4 rather than the tier default of 2: the tier
@@ -1185,14 +1216,17 @@ launch fast full quic_step_ca 5 "fill_nondet.0:37,ct_wipe.0:849" -DCH_TRANSPORT_
 # a loop of its own, because an unwindset entry bounds a loop and not a
 # call site: the same bound on fill_nondet unrolls that loop 256 times at
 # the four 32-byte call sites the flight stubs make as well. ct_wipe.0 is
-# 449 for the reason the two client drivers give, that the driver wipes
-# the whole handshake_state on the way out.
+# 457 for the reason the two client drivers give, that the driver wipes
+# the whole handshake_state on the way out; a server's is 456 bytes since
+# it carries a resumed ticket's instant.
 #
 # Measured under this script's flags (arm64 macOS, the pinned cbmc,
-# kissat, /usr/bin/time -l, on a development machine running another
-# lane's proof): 821 properties, 32.8 s, 2.23 GB peak. The weight is 3
-# because that peak is over the fast tier's 2 GB default.
-launch fast:3 full srv_accept 100 "alpn_ok.0:9,alpn_name_repeats.0:9,ct_wipe.0:449,ct_memeq.0:33,fill_names.0:257,fill_nondet.0:33" -DCH_ROLE_SERVER srv.c srv_handshake.c ct.c session.c
+# kissat, PROVE_ONLY=srv_accept PROVE_NO_CACHE=1 /usr/bin/time -l, on a
+# development machine running other lanes' work): 871 properties, 32 s,
+# 2.39 GB peak, with srv_resume.h's ticket call stubbed beside the
+# fourteen handlers. The weight is 3 because that peak is over the fast
+# tier's 2 GB default.
+launch fast:3 full srv_accept 100 "alpn_ok.0:9,alpn_name_repeats.0:9,ct_wipe.0:457,ct_memeq.0:33,fill_names.0:257,fill_nondet.0:33" -DCH_ROLE_SERVER srv.c srv_handshake.c ct.c session.c
 # The ROLE=server record driver and the inbound framing under it, with
 # srv_accept's layering: srv_rec.c and rec_frame.c real, the fifteen
 # handlers contract stubs. It would cover the step table, the record

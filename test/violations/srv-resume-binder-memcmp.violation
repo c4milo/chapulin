@@ -1,0 +1,14 @@
+invariant: INV-16
+file: srv_resume.c
+catches: test/lint-invariants.sh
+reason: the binder is compared with memcmp instead of ct_memeq. memcmp returns
+  at the first differing byte, so a client that can repeat a ClientHello
+  learns how many leading bytes of its binder were right and can search
+  for the binder one byte at a time. The comparison is the only
+  secret-dependent step in the selection, which is why the rule and not a
+  test is what catches it, the way srv-cookie-memcmp is caught.
+
+--- old
+        equal = ct_memeq(want, binder, SHA256_LEN);
+--- new
+        equal = (uint32_t)(memcmp(want, binder, SHA256_LEN) == 0);

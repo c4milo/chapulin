@@ -70,6 +70,18 @@
 // ch_srv_check refuses.
 uint8_t srv_identity_live(const ch_cfg *cfg);
 
+// The SignatureScheme this connection's CertificateVerify is signed
+// with: the first in docs/server.md's order, ecdsa_secp256r1_sha256 then
+// rsa_pss_rsae_sha256, that the client offered and a provisioned slot
+// signs. offered is the client's signature_algorithms as the SRV_SIGALG_
+// bits srv_parser.h defines.
+//
+// It is a predicate over configuration and the offer, and changes
+// nothing. Returns the scheme's code point, or 0 when no offered scheme
+// has a provisioned slot, which srv_select and srv_select_auth
+// (srv_resume.h) answer.
+uint16_t srv_select_sigalg(const ch_cfg *cfg, uint8_t offered);
+
 // The identity that signs one SignatureScheme.
 //
 // Requires a cfg the caller owns and a sigalg code point.

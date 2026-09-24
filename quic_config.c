@@ -7,6 +7,7 @@
 #include "ct.h"
 #ifdef CH_TRUST_WEBPKI
 #include "webpki.h"
+#include "webpki_ticket.h"
 #endif
 #ifdef CH_PIN_ECDSA
 #include "p256.h"
@@ -68,10 +69,12 @@ static int transport_config_ok(const ch_cfg *cfg) {
 // The web PKI rules, webpki_cfg_ok's chain arm without the ALPN rule
 // above: 1 to CH_WEBPKI_ANCHOR_MAX anchors each carrying a non-empty
 // name and spki, a hostname webpki_hostname_ok accepts, a clock the
-// caller set, and neither a PSK, a pin slot nor an SPKI pin. No test here
-// drives a TRUST=webpki QUIC client (make check builds its object), so it
-// keeps refusing the resumption tickets and the raw public keys a TCP
-// client takes.
+// caller set, no pin slot and no SPKI pin, and PSK fields that are
+// either all unset or present a ticket bound to this hostname and these
+// anchors, which webpki_resumption_ok checks as ch_connect does
+// (webpki_ticket.h). The raw public keys a TCP client takes stay
+// refused: bin/quic_loop_webpki resumes a ticket over QUIC, and no test
+// here drives a pinned raw key.
 static int anchors_ok(const ch_cfg *cfg) {
     if (cfg->anchors == NULL || cfg->anchor_count == 0 ||
         cfg->anchor_count > CH_WEBPKI_ANCHOR_MAX) {
@@ -89,10 +92,9 @@ static int anchors_ok(const ch_cfg *cfg) {
 static int trust_config_ok(const ch_cfg *cfg) {
     return anchors_ok(cfg) && cfg->hostname != NULL &&
            webpki_hostname_ok(cfg->hostname, cfg->hostname_len) && cfg->now_seconds != 0 &&
-           cfg->psk == NULL && cfg->psk_len == 0 && cfg->psk_id == NULL && cfg->psk_id_len == 0 &&
-           !cfg->resumption && cfg->server_pubkey == NULL && cfg->server_pubkey_len == 0 &&
-           cfg->server_pubkey2 == NULL && cfg->server_pubkey2_len == 0 &&
-           cfg->ticket_binding == NULL && cfg->spki_pins == NULL && cfg->spki_pin_count == 0;
+           cfg->server_pubkey == NULL && cfg->server_pubkey_len == 0 &&
+           cfg->server_pubkey2 == NULL && cfg->server_pubkey2_len == 0 && cfg->spki_pins == NULL &&
+           cfg->spki_pin_count == 0 && webpki_resumption_ok(cfg);
 }
 #else
 // The pin length the build's one algorithm takes: 64 raw P-256 bytes

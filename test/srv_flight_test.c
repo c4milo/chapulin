@@ -58,6 +58,8 @@ _Static_assert(CH_KEX_CLIENT_SHARE == 32, "the vectors here spell a 32-byte clie
 #include "srv_flight_keys_tests.h"
 #include "srv_flight_suite_tests.h"
 #include "srv_flight_tests.h"
+#include "srv_resume_issue_tests.h"
+#include "srv_resume_tests.h"
 
 int main(void) {
     test_flight_begin();
@@ -75,6 +77,13 @@ int main(void) {
     test_flight_auth();
     test_flight_finish();
     test_flight_finished_length();
+    test_resume_select();
+    test_resume_binder();
+    test_resume_order();
+    test_retry_zeroed_selection();
+    test_resume_after_retry();
+    test_resume_binder_hash();
+    test_resume_issue();
     if (failures == 0) {
         (void)printf("srv_flight: the flight handlers write and refuse as srv_flight.h states\n");
     }

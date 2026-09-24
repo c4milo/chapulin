@@ -1,0 +1,14 @@
+invariant: INV-14
+file: srv_resume.c
+catches: srv_flight_test
+reason: the lifetime check admits a ticket one second past SRV_TICKET_LIFETIME,
+  so a server issues tickets whose ticket_lifetime understates how long it
+  honours them, and a build at the RFC 9846 §4.7.1 cap of 604800 seconds
+  accepts a ticket older than the seven days the section allows
+  (rfc9846.txt:3257-3261). test/srv_resume_tests.h resumes at the last
+  valid second and requires the next one to be passed over.
+
+--- old
+    return now_seconds >= auth_seconds && now_seconds - auth_seconds <= SRV_TICKET_LIFETIME;
+--- new
+    return now_seconds >= auth_seconds && now_seconds - auth_seconds <= SRV_TICKET_LIFETIME + 1;

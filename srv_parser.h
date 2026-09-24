@@ -161,19 +161,19 @@
 
 // The psk_key_exchange_modes values (RFC 9846 §4.3.9). The server must
 // select a mode the client listed (rfc9846.txt:1150-1152), and
-// psk_dhe_ke is the only one this build would ever select, because it
-// runs a key exchange in every handshake.
+// psk_dhe_ke is the only one this build selects, because it runs a key
+// exchange in every handshake (srv_resume.h).
 #define SRV_PSK_KE 0x01
 #define SRV_PSK_DHE_KE 0x02
 
 // Everything srv_parse_client_hello learns from one ClientHello. The
 // caller zeroes it; the parser fills it and reads none of it back.
 //
-// Three members point into the caller's message rather than copying:
-// share, cookie and server_name. Each pointer dies at the next call
-// that writes cfg.buf, the same lifetime handshake_parser.h gives
-// server_hello_info.cookie, so whoever keeps one of those values copies
-// it first. session_id is copied because it must outlive a
+// Five members point into the caller's message rather than copying:
+// share, cookie, server_name and the two pre_shared_key lists. Each
+// pointer dies at the next call that writes cfg.buf, the same lifetime
+// handshake_parser.h gives server_hello_info.cookie, so whoever keeps
+// one of those values copies it first. session_id is copied because it must outlive a
 // HelloRetryRequest round trip (rfc9846.txt:1451).
 typedef struct {
     uint8_t random[SRV_RANDOM];
@@ -242,14 +242,30 @@ typedef struct {
     // truncated at exactly that point (rfc9846.txt:2586 states the
     // client's half of the same rule), so the byte count is the one
     // value a binder check cannot recover afterwards.
-    //
-    // This build selects no PSK and verifies no binder: whether a v1
-    // server accepts PSKs and issues tickets is docs/server.md's open
-    // question five, and until it is answered every handshake
-    // authenticates with a certificate. The member is written anyway,
-    // so the PSK lane drops in without reshaping this struct, and
-    // selection.psk_selected stays 0 meanwhile.
     size_t truncated_len;
+
+    // The pre_shared_key extension's two lists (RFC 9846 §4.3.11): the
+    // identities list and the binders list, each the bytes after its
+    // two-byte length, and NULL and 0 when the client offered no PSK. The
+    // parser holds both to their syntax and reads no identity;
+    // srv_select_auth (srv_resume.h) walks them again to open a ticket
+    // and to find its binder. Both point into the caller's message, so
+    // they die with it, as share does.
+    const uint8_t *psk_identities;
+    size_t psk_identities_len;
+    const uint8_t *psk_binders;
+    size_t psk_binders_len;
+
+    // The transcript hash a binder covers: the transcript so far, then
+    // this message's first 4 + truncated_len bytes, which is the
+    // handshake header and the body up to the binders list
+    // (rfc9846.txt:2591-2598). srv_read_client_hello writes it when
+    // truncated_len is not 0, before it adds the whole message to the
+    // transcript; the parser never sees the transcript and leaves it zero.
+    // After a HelloRetryRequest the transcript so far is §4.1's synthetic
+    // message_hash and the retry, so the second hello's binders cover
+    // both, as the client computes them.
+    uint8_t binder_hash[SHA256_LEN];
 
     // The recognized extensions this message carried, as the SRV_EXT_
     // bits above.

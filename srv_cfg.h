@@ -1,7 +1,8 @@
 // What a ROLE=server build adds to the caller's configuration: the
 // certificate chains and private keys this endpoint proves itself with,
-// the key its HelloRetryRequest cookie is minted under, and where to
-// put the server_name a client sent. cfg.h includes this header and
+// the key its HelloRetryRequest cookie is minted under, the key and the
+// clock its resumption tickets need, and where to put the server_name a
+// client sent. cfg.h includes this header and
 // ch_cfg carries one ch_srv_cfg member, so a ROLE=client build declares
 // none of it and keeps the ch_cfg layout it had.
 //
@@ -145,6 +146,29 @@ typedef struct {
     // CH_EINVAL for that pair.
     uint8_t require_server_name;
 
+    // The ChaCha20-Poly1305 key this server seals its resumption
+    // tickets under and opens them with: SRV_TICKET_KEY_LEN bytes
+    // (srv_ticket.h), a key of its own and not cookie_key. One key per
+    // deployment, so a ticket one server issued resumes on another that
+    // holds the same key. NULL issues no ticket and accepts none, and
+    // every handshake then authenticates with a certificate.
+    //
+    // It is as valuable as the private keys above: whoever holds it can
+    // resume as this server with any client that kept a ticket, until
+    // the tickets expire. srv_ticket.h states that, and when the key must
+    // rotate.
+    const uint8_t *ticket_key;
+
+    // The caller's clock at the start of this connection, in seconds,
+    // from the same epoch on every server that shares ticket_key; Unix
+    // time is the plain choice. chapulin reads no clock of its own: it
+    // writes this instant into every ticket it issues and judges every
+    // ticket it is offered against it, so the caller writes it before
+    // each ch_srv_accept, ch_srv_record_init or ch_srv_quic_init. 0 means
+    // no clock, and a server with no clock issues no ticket and accepts
+    // none, because it could not tell a fresh ticket from an expired one.
+    uint64_t now_seconds;
+
 #ifdef CH_TRANSPORT_QUIC
     // Takes the server's handshake bytes as they are produced: level is a
     // CH_LEVEL_ value and the n bytes at p are CRYPTO frame content for it
@@ -160,6 +184,10 @@ typedef struct {
     // at CH_LEVEL_INITIAL and the rest of the flight at
     // CH_LEVEL_HANDSHAKE, so a caller needs a buffer per level rather than
     // one shared. docs/quic_server.md item 4 states the whole decision.
+    // With ticket_key and now_seconds set, the call that delivers the
+    // client Finished also produces one NewSessionTicket at
+    // CH_LEVEL_APPLICATION, which the caller sends in 1-RTT CRYPTO frames
+    // (RFC 9001 section 4.5).
     //
     // Required for a QUIC server: a server whose flight reaches nobody
     // completes no handshake. Re-entrancy: cfg.h's rule for
@@ -185,7 +213,10 @@ typedef struct {
     // Several calls arrive inside one ch_srv_record_in, because one
     // ClientHello produces the whole flight; the caller writes them in
     // the order they come. Each call carries one record, so a caller that
-    // writes them separately still sends a legal stream.
+    // writes them separately still sends a legal stream. With ticket_key
+    // and now_seconds set, the call that delivers the client Finished
+    // also produces one NewSessionTicket record, sealed under the
+    // application write key.
     //
     // The sink takes one whole record or fails the handshake, and cannot
     // report a short write. A caller whose socket accepts part of a

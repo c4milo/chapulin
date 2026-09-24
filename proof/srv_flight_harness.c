@@ -6,24 +6,23 @@
 // The layering is proof/srv_accept_harness.c's, turned around. There the
 // driver was real and these fifteen were contract stubs; here they are
 // real and everything they call is one: the parser, the nine builders,
-// the cookie, the two authentication entry points, the record reader,
+// the cookie, srv_auth.h's and srv_resume.h's entries, the record reader,
 // the key schedule, the record layer and the I/O shim. Each stub asserts
 // what its header requires of a caller and havocs what its header says
 // it writes. ct.c is real, because the wipes and the two constant-time
 // comparisons are this file's own steps.
 //
-// What the alert assertion means. The chain that holds srv_flight.h's
-// failure rule runs through three callees whose headers promise the
-// same thing: hsr_next_msg, srv_parse_client_hello and
-// srv_sign_certificate_verify each write the description they chose. So
-// the stubs write one on every refusal, and the assertion below reads a
-// byte no handler and no stub writes.
+// What the alert assertion means. The chain that holds srv_flight.h's failure
+// rule runs through four callees whose headers promise the same thing:
+// hsr_next_msg, srv_parse_client_hello, srv_select_auth and
+// srv_sign_certificate_verify each write the description they chose. So the
+// stubs write one on every refusal, and the assertion below reads a byte no
+// handler and no stub writes.
 //
-// Three bounds are the harness's and not the build's: CHAIN_MAX entries
-// in a chain, DER_MAX bytes in a certificate and LIMIT_MAX for the
-// peer's record limit. The first two bound a walk over the caller's
-// flash; the third bounds the fragment loop, and a larger limit runs it
-// fewer times, not more.
+// Three bounds are the harness's, not the build's: CHAIN_MAX entries in a
+// chain, DER_MAX bytes in a certificate and LIMIT_MAX for the peer's record
+// limit. The first two bound a walk over the caller's flash; the third bounds
+// the fragment loop, and a larger limit runs it fewer times, not more.
 #define CH_PROOF_STUB_SHA256
 #include "harness.h"
 
@@ -354,6 +353,7 @@ uint8_t srv_identity_live(const ch_cfg *cfg) {
     return nondet_u8();
 }
 
+#include "srv_select_stubs.h"
 const ch_identity *srv_identity_for(const ch_cfg *cfg, uint16_t sigalg) {
     __CPROVER_assert(__CPROVER_r_ok(cfg, sizeof *cfg), "identity_for: cfg readable");
     (void)sigalg;

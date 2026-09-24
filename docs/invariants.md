@@ -42,11 +42,17 @@ last `ROLE=server` stub, as the entry said it would.
 ### INV-1 — one sealing path
 
 - **Claim.** Record protection is the only path that seals or opens
-  bytes, and nonce and tag sizes cannot be wrong.
+  bytes, and nonce and tag sizes cannot be wrong. Two named callers sit
+  beside it, each with a nonce rule of its own: `quic_packet.c`, which
+  protects a QUIC packet where there is no record layer, and
+  `srv_ticket.c`, which seals a server's resumption ticket under the
+  ticket key with a random 96-bit nonce drawn for that ticket alone
+  (`srv_ticket.h` states when the key must rotate).
 - **Mechanism.** `aead_seal`/`aead_open` take `nonce[12]` and a fixed
-  16-byte tag by type; only `record.c` calls them.
+  16-byte tag by type; only `record.c`, `quic_packet.c` and
+  `srv_ticket.c` call them.
 - **Check.** Type system for the sizes; semgrep-structural (`inv-1-seal-only-in-record`)
-  for the single-caller rule.
+  for the named-caller rule.
 - **Violation.** A PR calls the AEAD directly from a new module "just
   for one message", bypassing sequence-number and length discipline.
 - See [decisions: Cryptography](decisions.md#cryptography).
@@ -82,14 +88,18 @@ last `ROLE=server` stub, as the entry said it would.
 ### INV-4 — randomness only through the hook
 
 - **Claim.** All randomness flows through `ch_rand_bytes`, consumed
-  at exactly six audited sites. Three are in `handshake.c`: the
+  at exactly seven audited sites. Three are in `handshake.c`: the
   key-share scalar, the ClientHello random, and the ML-KEM (d, z)
   seed, which only the `KEX=pq` build draws. Two are the server's
   mirror of the first two, in `srv_flight.c`: the key-share scalar it
   answers with, and the ServerHello random. A client and a server draw
   the same two values for the same reasons, so the audit is the same
   audit; the server draws no third, because `KEX=pq` is a client build.
-  The sixth is the PSS salt in `rsa_sign.c`, which no library object
+  The sixth is the server's one draw per resumption ticket, in
+  `srv_resume.c`: the ticket's AEAD nonce, its `ticket_age_add` and its
+  `ticket_nonce`, 24 bytes from one call, drawn only when the caller set
+  a ticket key and a clock. The seventh is the PSS salt in
+  `rsa_sign.c`, which no library object
   compiles today — nothing wires a signer into `srv_auth.c` yet, so
   only the test binaries, the Wycheproof suite and its CBMC harness
   compile it. Every draw carries the same all-zero check against a hook
@@ -101,7 +111,7 @@ last `ROLE=server` stub, as the entry said it would.
   reference generator in `drbg.c`, which faults on an unseeded draw.
   Neither build carries a fallback that quietly produces bytes.
 - **Check.** Semgrep-structural (`inv-4-randomness-sites`): no `ch_rand_bytes` call
-  outside `handshake.c`, `srv_flight.c` and `rsa_sign.c`.
+  outside `handshake.c`, `srv_flight.c`, `srv_resume.c` and `rsa_sign.c`.
 - **Violation.** A PR conjures a nonce or padding bytes from a new
   call site nobody audits for seeding requirements.
 - See [docs/entropy.md](entropy.md).
@@ -650,7 +660,19 @@ last `ROLE=server` stub, as the entry said it would.
   connection ID is longer than `CH_QUIC_DCID_MAX`, whose tag does not
   verify for the key and the client's address, or whose issue instant is
   after now or more than the lifetime before it with `CH_EAUTH`. Neither
-  refusal writes the connection IDs the caller would read.
+  refusal writes the connection IDs the caller would read. A server
+  (`srv_select_auth`, `srv_resume.c`) considers a PSK only under
+  `psk_dhe_ke`, and only with a ticket key and a clock; it passes over,
+  without failing the handshake, a ticket of any length but
+  `SRV_TICKET_LEN`, one that does not open under the ticket key, one
+  issued after its clock or more than `SRV_TICKET_LIFETIME` seconds
+  before it, one whose suite it does not hold, and one whose ALPN
+  protocol is not the one this connection selected; and it refuses the
+  binder of the ticket it selected with decrypt_error when that binder
+  is absent, is not 32 bytes, or does not compare equal under
+  `ct_memeq`. A hello left with no ticket and no scheme a provisioned
+  identity signs is missing_extension when it carried no
+  signature_algorithms and handshake_failure when it did.
 - **Mechanism.** Fail-closed policy, each refusal an explicit branch
   with its alert.
 - **Check.** handshake_strict table cases per refusal; CBMC proves the
@@ -744,6 +766,21 @@ last `ROLE=server` stub, as the entry said it would.
   bin/srv_quic_test, and quic-token-cid-length-unbounded fails the
   harness. An eighth, quic-token-memcmp, carries INV-16, because it
   keeps every answer and changes only the compare's timing.
+  The server's ticket rules are test/srv_resume_tests.h, which
+  bin/srv_flight_test runs over real tickets: each passed-over shape,
+  the lifetime at its last valid second and its first invalid one, a
+  ticket one second in the future, psk_ke alone, no clock and no key,
+  the ALPN binding both ways, the order rule over three identities, and
+  a binder one bit off, 33 bytes long, over another transcript or
+  absent. bin/rec_loop_test, bin/quic_loop_test and bin/quic_loop_webpki
+  run the same rules between this tree's client and server, and
+  test/e2e.sh has OpenSSL's s_client resume against bin/tlsserver. The
+  srv_ticket and srv_resume CBMC harnesses prove both files memory-safe
+  over any ticket bytes and any offer, and prove that a ticket is
+  selected only under psk_dhe_ke with a key and a clock and that a
+  binder refusal is decrypt_error. The `srv-resume-` and `srv-ticket-`
+  violations guard the rules, and srv-resume-binder-memcmp carries
+  INV-16 for the reason quic-token-memcmp does.
 - **Violation.** A PR relaxes one refusal for interop with a broken
   server, or makes the server refuse a ClientHello for carrying
   something it does not know.
@@ -1371,7 +1408,11 @@ last `ROLE=server` stub, as the entry said it would.
   the Finished, and nothing after a close_notify. The order is the
   same whether the certificate is checked against a pinned server key
   (a raw mode) or a pinned CA (a CA mode).
-- **Mechanism.** `handshake.c` reads the flight as a straight line —
+- **Mechanism.** The server writes its own flight in the order the
+  client reads it, by call position in `srv_handshake.c`, `srv_rec.c`
+  and `srv_quic.c`, and sends its one NewSessionTicket after the client
+  Finished verifies and never with the flight.
+  `handshake.c` reads the flight as a straight line —
   `hello_exchange`, then `hsa_server_auth`, then `expect_finished` — and
   each step compares the message type against the one it expects,
   answering `ALERT_UNEXPECTED_MESSAGE` otherwise. There is no state
@@ -1389,7 +1430,12 @@ last `ROLE=server` stub, as the entry said it would.
   the real client's verdict against that model. It links a raw-mode
   only, so the CA build's order rests on the shared lines named above
   plus the e2e run, not on the oracle; CBMC (`handshake` harness) for
-  memory safety only, not for order.
+  memory safety only, not for order. The server's side is tested, not
+  proved: a resumed flight of EncryptedExtensions and Finished alone is
+  counted by bin/rec_loop_test and bin/quic_loop_test and resumed by
+  s_client in test/e2e.sh, and three `srv-certificate-on-resumed-`
+  violations, one per driver, require each to object to a Certificate in
+  it.
 - **Violation.** A PR relaxes one type check to tolerate a message a
   peer "usually" sends early, and a flight with a skipped
   CertificateVerify authenticates. This is the SMACK and FREAK class:

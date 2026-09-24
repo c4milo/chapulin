@@ -68,6 +68,15 @@ typedef struct {
     uint8_t master[SHA256_LEN];
     uint8_t cookie[HSP_COOKIE_MAX];
     size_t cookie_len;
+#ifdef CH_ROLE_SERVER
+    // The auth_seconds of the ticket this handshake resumed (srv_ticket.h),
+    // which srv_select_auth writes and srv_send_new_session_ticket carries
+    // into the ticket it issues, so a chain of resumptions keeps the instant
+    // of the full handshake it started from. Meaningful only while
+    // ch_tls.psk_selected is set. Not secret: the server wrote it, and
+    // nothing derives a key from it.
+    uint64_t ticket_auth_seconds;
+#endif
 #ifndef CH_TRANSPORT_QUIC
     // The four fields the record layer owns. Only the TLS ClientHello
     // builder and the TLS record reader write or read them, and a QUIC

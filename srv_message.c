@@ -88,6 +88,14 @@ size_t srv_build_server_hello(uint8_t *out, size_t cap, const selection *sel,
     wb_u16(&w, (uint16_t)share_len);
     wb_bytes(&w, share, share_len);
 
+    // pre_shared_key carrying the selected_identity alone (RFC 9846
+    // §4.3.11), when a ticket authenticates this handshake.
+    if (sel->psk_selected) {
+        wb_u16(&w, EXT_PRE_SHARED_KEY);
+        wb_u16(&w, 2);
+        wb_u16(&w, sel->psk_identity);
+    }
+
     wb_patch16(&w, exts);
     wb_patch24(&w, msg);
     return w.err ? 0 : w.len;
@@ -260,6 +268,34 @@ size_t srv_build_finished(uint8_t *out, size_t cap, const uint8_t *verify_data, 
     wb_bytes(&w, verify_data, hash_len);
     wb_patch24(&w, msg);
 
+    return w.err ? 0 : w.len;
+}
+
+size_t srv_build_new_session_ticket(uint8_t *out, size_t cap, uint32_t lifetime, uint32_t age_add,
+                                    const uint8_t *nonce, size_t nonce_len, const uint8_t *ticket,
+                                    size_t ticket_len) {
+    if (nonce_len > 0xFF || ticket_len == 0 || ticket_len > 0xFFFF) {
+        return 0;
+    }
+    wbuf w;
+    wb_init(&w, out, cap);
+
+    wb_u8(&w, HS_NEW_SESSION_TICKET);
+    size_t msg = wb_mark(&w, 3);
+    // Two uint32 fields, each written as two uint16 halves, the high half
+    // first.
+    wb_u16(&w, (uint16_t)(lifetime >> 16));
+    wb_u16(&w, (uint16_t)lifetime);
+    wb_u16(&w, (uint16_t)(age_add >> 16));
+    wb_u16(&w, (uint16_t)age_add);
+    wb_u8(&w, (uint8_t)nonce_len);
+    wb_bytes(&w, nonce, nonce_len);
+    wb_u16(&w, (uint16_t)ticket_len);
+    wb_bytes(&w, ticket, ticket_len);
+    // An empty extensions vector: no early_data, so no 0-RTT.
+    wb_u16(&w, 0);
+
+    wb_patch24(&w, msg);
     return w.err ? 0 : w.len;
 }
 

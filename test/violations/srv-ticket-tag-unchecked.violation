@@ -1,0 +1,18 @@
+invariant: INV-14
+file: srv_ticket.c
+catches: srv_test
+reason: a ticket whose tag does not verify is decrypted under this server's key
+  anyway, so a ticket sealed under another key, or one a client altered,
+  opens and hands its bytes to the selection as if this server had sealed
+  them. The tag is the only thing that ties a ticket to the key that
+  sealed it. test/srv_ticket_tests.h flips one bit at every byte and opens
+  under a second key, and requires every one to be refused.
+
+--- old
+        0) {
+        return CH_EAUTH;
+    }
+--- new
+        0) {
+        chacha20_xor(key, nonce, 1, ct, body, sizeof body);
+    }

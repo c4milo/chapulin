@@ -76,9 +76,9 @@ side are the time spent inside each end's calls. Milliseconds:
 | pinned ECDSA P-256 | default | 6.44 | 3.17 | 3.26 |
 | pinned ECDSA P-256 | CH_NATIVE_WIDEMUL | 3.63 | 2.12 | 1.51 |
 
-The server in this tree selects no PSK (srv_rec.c) and has no `KEX=pq`
-half (srv_flight.h), so a resumed handshake and a hybrid one cannot run
-in this pairing. Both appear below as sums.
+The pairing gives the server no ticket key, so it times no resumed
+handshake, and the server has no `KEX=pq` half (srv_flight.h), so a
+hybrid one cannot run in it. Both appear below as sums.
 
 ## Where a handshake's time goes
 

@@ -25,6 +25,7 @@
 #include "quic_keys.h"
 #include "quic_retry.h"
 #include "srv_flight.h"
+#include "srv_resume.h"
 
 // Reports one direction of one level as usable and records it. The bit
 // and the callback move together, so the caller's view and
@@ -78,6 +79,7 @@ static void store_selection(ch_tls *t, const client_hello *ch, const selection *
     t->hash_len = sel->hash_len;
     t->group = sel->group;
     t->sigalg = sel->sigalg;
+    t->psk_selected = sel->psk_selected;
     t->alpn_selected = ch->alpn_selected;
 }
 
@@ -123,8 +125,8 @@ static int server_flight(ch_quic *q, const client_hello *ch, const selection *se
     if (rc != CH_OK) {
         return rc;
     }
-    // A PSK handshake sends neither message. This build selects no PSK, so
-    // the arm is taken in every handshake it runs today.
+    // A resumed handshake sends neither message: the ticket's PSK
+    // authenticates this server.
     if (!sel->psk_selected) {
         rc = srv_send_certificate(h, sel);
         if (rc != CH_OK) {
@@ -211,12 +213,17 @@ static int step_client_finished(ch_quic *q) {
     announce(q, CH_LEVEL_APPLICATION, CH_KEY_READ);
     q->rx_level = CH_LEVEL_APPLICATION;
     q->step = SQ_STEP_COMPLETE;
+    // The ticket goes out in 1-RTT CRYPTO frames (RFC 9001 section 4.5),
+    // after the client Finished verified and before the wipe, because it
+    // needs hs.master and the transcript.
+    q->hs.level = CH_LEVEL_APPLICATION;
+    rc = srv_send_new_session_ticket(&q->hs);
     // INV-17: the handshake secrets die at CONNECTED, one round trip
     // earlier than the TLS driver wipes its frame, because this one owns
     // the state the other keeps on a stack frame that is about to return.
     ct_wipe(&q->hs, sizeof q->hs);
     q->hs.t = &q->t;
-    return CH_OK;
+    return rc;
 }
 
 // Runs the one step q->step names, over the one whole handshake message

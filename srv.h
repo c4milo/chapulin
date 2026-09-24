@@ -32,10 +32,15 @@
 // What it declines conformantly, each with the permission it takes: no
 // client certificates (§4.4.2 makes the request a MAY), no 0-RTT (it
 // takes the first behavior §4.3.10 permits and answers 1-RTT), no
-// NewSessionTicket (§4.7.1 makes issuing one a MAY), no
 // post-handshake authentication (§4.7.2 makes it a MAY), and no
 // requirement that the client send server_name (§9.2 makes requiring
 // it a MAY). docs/server.md lists every one with its RFC line.
+//
+// It resumes. With cfg.srv.ticket_key and cfg.srv.now_seconds set, it
+// issues one NewSessionTicket after every handshake and accepts its own
+// tickets as PSKs under psk_dhe_ke, with a key exchange and no
+// Certificate; ch_tls.psk_selected tells a resumed session from a full
+// one. srv_resume.h states the rules and srv_ticket.h the ticket.
 #ifndef CH_SRV_H
 #define CH_SRV_H
 #ifdef CH_ROLE_SERVER
@@ -59,6 +64,10 @@
 // set while cfg.srv.sni_buf is NULL, because a server that requires a
 // name it cannot report would refuse every client silently; or the
 // ALPN list breaks the rules cfg.h states for it.
+//
+// A NULL cfg.srv.ticket_key or a cfg.srv.now_seconds of 0 is not
+// refused: the server then issues no ticket and accepts none, and every
+// handshake authenticates with a certificate.
 //
 // It returns CH_EINVAL for the client-only fields too, rather than
 // ignoring them: cfg.psk, cfg.psk_id, cfg.resumption, either

@@ -74,6 +74,21 @@ ALLOWED = {
         "stay unread on purpose, because no pin may name them "
         "(webpki_pin.h), and a framing failure here returns 0"
     ),
+    ("srv_resume.c", "find_ticket", "r"): (
+        "it reads back the identities list read_psk_identities "
+        "(srv_parser_ext.c) framed to its end, with used != *identities_len, "
+        "before srv_select_auth runs. It stops at the first ticket that "
+        "opens and holds on purpose, because only that ticket's binder is "
+        "checked (srv_resume.h), and a framing failure breaks the walk and "
+        "selects nothing"
+    ),
+    ("srv_resume.c", "binder_at", "r"): (
+        "it reads back the binders list read_psk_binders (srv_parser_ext.c) "
+        "framed to its end, with used != binders_len. It stops at the entry "
+        "the selected ticket names on purpose, and a framing failure "
+        "returns NULL, which binder_matches answers as a binder that does "
+        "not match"
+    ),
 }
 
 # Readers that consume the container by walking it to its end. The loop

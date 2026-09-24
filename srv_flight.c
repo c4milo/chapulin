@@ -21,6 +21,7 @@
 #include "rand.h"
 #include "srv_message.h"
 #include "srv_out.h"
+#include "srv_resume.h"
 #include "x25519.h"
 
 // Holds ch_rand_bytes to rand.h's contract: the caller zeroed what this
@@ -76,6 +77,13 @@ int srv_read_client_hello(handshake_state *h, client_hello *ch) {
     if (rc != CH_OK) {
         return rc;
     }
+    if (ch->truncated_len != 0) {
+        // The transcript a binder covers: everything before this message,
+        // then this message up to its binders list (rfc9846.txt:2591-2598).
+        sha256 partial = t->transcript;
+        sha256_update(&partial, raw, 4 + ch->truncated_len);
+        sha256_final(&partial, ch->binder_hash);
+    }
     sha256_update(&t->transcript, raw, raw_len);
     copy_hello_fields(t, ch);
     if (t->cfg.srv.require_server_name && t->sni_len == 0) {
@@ -85,19 +93,6 @@ int srv_read_client_hello(handshake_state *h, client_hello *ch) {
         return CH_EPROTO;
     }
     return CH_OK;
-}
-
-// The scheme this connection signs with: the first in docs/server.md's
-// order, ECDSA then RSA-PSS, that the client offered and a slot signs.
-static uint16_t select_sigalg(const ch_cfg *cfg, uint8_t offered) {
-    uint8_t live = srv_identity_live(cfg);
-    if ((offered & SRV_SIGALG_ECDSA_P256) != 0 && (live & SRV_IDENTITY_ECDSA_P256) != 0) {
-        return SIGALG_ECDSA_P256_SHA256;
-    }
-    if ((offered & SRV_SIGALG_RSA_PSS) != 0 && (live & SRV_IDENTITY_RSA_PSS) != 0) {
-        return SIGALG_RSA_PSS_RSAE_SHA256;
-    }
-    return 0;
 }
 
 // Whether RFC 7301 §3.2's fatal case holds, term by term in srv_flight.h.
@@ -138,8 +133,11 @@ int srv_select(handshake_state *h, const client_hello *ch, selection *sel) {
         return CH_EPROTO;
     }
     sel->group = CH_KEX_GROUP;
-    sel->sigalg = select_sigalg(&h->t->cfg, ch->sigalgs);
-    if (sel->sigalg == 0) {
+    // A hello with no scheme a slot signs can still resume a ticket, and
+    // only srv_select_auth can tell, so only a hello that offers no PSK
+    // fails here.
+    sel->sigalg = srv_select_sigalg(&h->t->cfg, ch->sigalgs);
+    if (sel->sigalg == 0 && (ch->seen & SRV_EXT_PRE_SHARED_KEY) == 0) {
         return CH_EPROTO;
     }
     if (alpn_mismatch(&h->t->cfg, ch)) {
@@ -147,9 +145,10 @@ int srv_select(handshake_state *h, const client_hello *ch, selection *sel) {
         return CH_EPROTO;
     }
     // Both halves of §4.2.1's retry condition: the group is one this
-    // build holds, and no KeyShareEntry arrived for it.
+    // build holds, and no KeyShareEntry arrived for it. A retry defers the
+    // ticket to the second hello, whose binders cover the retry.
     sel->need_retry = (ch->shares & SRV_GROUP_KEX) == 0;
-    return CH_OK;
+    return sel->need_retry ? CH_OK : srv_select_auth(h, ch, sel);
 }
 
 // Replaces the transcript with §4.1's synthetic construction over the
@@ -241,15 +240,16 @@ int srv_check_retry_hello(handshake_state *h, const client_hello *ch, selection 
         h->alert = ALERT_HANDSHAKE_FAILURE;
         return CH_EPROTO;
     }
-    // sigalg stays as the first hello selected it, because the frozen
-    // digest covers signature_algorithms. The transcript needs nothing
-    // here: srv_send_hello_retry_request replaced it and hashed the
-    // retry, and srv_read_client_hello hashed this hello onto that.
+    // The frozen digest covers signature_algorithms, so this is the
+    // scheme the first hello selected. The transcript needs nothing here:
+    // srv_send_hello_retry_request replaced it and hashed the retry, and
+    // srv_read_client_hello hashed this hello onto that.
     sel->suite = suite;
     sel->hash_len = (uint8_t)hash_len;
     sel->group = group;
+    sel->sigalg = srv_select_sigalg(&h->t->cfg, ch->sigalgs);
     sel->need_retry = 0;
-    return CH_OK;
+    return srv_select_auth(h, ch, sel);
 }
 
 int srv_send_server_hello(handshake_state *h, const client_hello *ch, const selection *sel) {
@@ -270,8 +270,6 @@ int srv_send_server_hello(handshake_state *h, const client_hello *ch, const sele
 
 int srv_derive_handshake_secrets(handshake_state *h, const client_hello *ch, const selection *sel) {
     ch_tls *t = h->t;
-    // Both suites hash with SHA-256, so only the record keys below read sel.
-    (void)sel;
     // srv_parser.h refuses a KeyShareEntry for this group at any other
     // length, and this call is reached only after a hello that carried
     // one, so a missing share is a call-order bug and not peer input.
@@ -285,12 +283,15 @@ int srv_derive_handshake_secrets(handshake_state *h, const client_hello *ch, con
         h->alert = ALERT_ILLEGAL_PARAMETER;
         return CH_EPROTO;
     }
-    // No PSK: the early secret extracts from a hash-length zero string
-    // (RFC 9846 §7.1) and the binder key is never used.
-    static const uint8_t no_psk[SHA256_LEN] = {0};
-    uint8_t binder_key[SHA256_LEN];
-    ks_early(no_psk, sizeof no_psk, 0, h->early, binder_key);
-    ct_wipe(binder_key, sizeof binder_key);
+    // A selected ticket left its early secret in h->early. With none, the
+    // early secret extracts from a hash-length zero string (RFC 9846 §7.1)
+    // and the binder key is never used.
+    if (!sel->psk_selected) {
+        static const uint8_t no_psk[SHA256_LEN] = {0};
+        uint8_t binder_key[SHA256_LEN];
+        ks_early(no_psk, sizeof no_psk, 0, h->early, binder_key);
+        ct_wipe(binder_key, sizeof binder_key);
+    }
 
     uint8_t hash[SHA256_LEN];
     (void)hsr_transcript_hash(h, hash);

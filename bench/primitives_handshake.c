@@ -15,9 +15,9 @@
 // The auth mode is pinned for the reason test/rec_loop_test.c gives:
 // the client pins the server's own public key and hashes the one-entry
 // chain below without reading it, so no certificate authority is
-// needed. The server selects no PSK and has no KEX=pq half
-// (srv_flight.h), so a resumed handshake and a hybrid one cannot run
-// here.
+// needed. The server is given no ticket key, so every handshake here is
+// a full one, and it has no KEX=pq half (srv_flight.h), so a hybrid one
+// cannot run here.
 //
 // Built with -DBENCH_COUNT_CALLS and -finstrument-functions, the program
 // times nothing. It runs one handshake per identity, then a second one

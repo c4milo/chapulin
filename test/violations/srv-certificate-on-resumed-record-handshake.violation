@@ -1,0 +1,17 @@
+invariant: INV-22
+file: srv_rec.c
+catches: rec_loop_test
+reason: the record-mode server sends its Certificate and CertificateVerify on a
+  handshake a ticket authenticated. The resumed flight is
+  EncryptedExtensions and Finished alone, and a client that resumes reads
+  a Certificate there as a message out of turn, which is also what the
+  QUIC Interop Runner's resumption case fails a server for.
+  test/rec_resume_tests.h resumes a ticket between this tree's two
+  record drivers and counts the records the server sent.
+
+--- old
+    // A resumed handshake sends neither message: the ticket's PSK
+    // authenticates this server.
+    if (!sel->psk_selected) {
+--- new
+    if (1) {

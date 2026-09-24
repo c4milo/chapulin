@@ -1,0 +1,17 @@
+invariant: INV-14
+file: srv_resume.c
+catches: srv_flight_test
+reason: the lifetime check measures the distance between the two instants in
+  either direction, so a ticket dated after the server's clock resumes.
+  A ticket this server issued can only carry a later instant when the
+  clocks of the servers sharing the key disagree or the key has leaked,
+  and either way the ticket's lifetime is no longer measured from a time
+  the server has seen. test/srv_resume_tests.h offers a ticket one second
+  in the future and requires it to be passed over.
+
+--- old
+    return now_seconds >= auth_seconds && now_seconds - auth_seconds <= SRV_TICKET_LIFETIME;
+--- new
+    uint64_t apart =
+        now_seconds >= auth_seconds ? now_seconds - auth_seconds : auth_seconds - now_seconds;
+    return apart <= SRV_TICKET_LIFETIME;

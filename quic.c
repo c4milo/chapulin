@@ -20,6 +20,9 @@
 #include "quic_initial.h"
 #include "quic_packet.h"
 #include "quic_retry.h"
+#ifdef CH_TRUST_WEBPKI
+#include "webpki_ticket.h"
+#endif
 
 // Which endpoint session q is. quic.c holds no other role: every other
 // call in it takes key sets and bytes and reads no side, which is why a
@@ -78,6 +81,13 @@ int ch_quic_init(ch_quic *q, const ch_cfg *cfg) {
     q->hs.t = &q->t;
     q->hs.alert = ALERT_DECODE_ERROR;
     q->endpoint = CH_QUIC_ENDPOINT_CLIENT;
+#ifdef CH_TRUST_WEBPKI
+    // The hash every ticket this session receives is bound to, taken now
+    // so the binding does not depend on the caller's hostname and anchor
+    // bytes after this call, as ch_connect and ch_record_init take it
+    // (webpki_ticket.h).
+    webpki_ticket_config_hash(cfg, q->t.ticket_config_hash);
+#endif
     // 0 is the first protocol in cfg.alpn_protocols, so the
     // no-selection value has to be written before the parser can report
     // one.

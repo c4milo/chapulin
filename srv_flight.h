@@ -90,9 +90,13 @@ int srv_config_ok(const ch_cfg *cfg);
 void srv_begin(handshake_state *h);
 
 // Reads one ClientHello, parses it into ch, and adds the raw message to
-// the transcript. It copies the client's legacy_session_id into the
-// session, because that value must survive a HelloRetryRequest round
-// trip (rfc9846.txt:1451) and the buffer the message sits in does not.
+// the transcript. When the hello carries pre_shared_key it first writes
+// ch->binder_hash, the transcript hash over the transcript so far and
+// this message up to its binders list, which srv_select_auth checks a
+// binder against (srv_resume.h). It copies the client's
+// legacy_session_id into the session, because that value must survive a
+// HelloRetryRequest round trip (rfc9846.txt:1451) and the buffer the
+// message sits in does not.
 // It copies the server_name into cfg.srv.sni_buf when the caller
 // supplied one and the name fits; a longer name is not copied
 // and t->sni_len stays 0, which is the same answer the caller sees for
@@ -125,7 +129,8 @@ int srv_read_client_hello(handshake_state *h, client_hello *ch);
 // Chooses what this connection will use, from the offer in ch and the
 // configuration in the session: the cipher suite and the hash length it
 // fixes, the group, the signature scheme and therefore the signing
-// identity, and whether a HelloRetryRequest is owed. It writes sel
+// identity, whether a HelloRetryRequest is owed, and, when none is, a
+// ticket to resume through srv_select_auth (srv_resume.h). It writes sel
 // whole and sends nothing.
 //
 // The preference order is a build constant and not configuration. The
@@ -156,11 +161,15 @@ int srv_read_client_hello(handshake_state *h, client_hello *ch);
 // Returns CH_OK with sel written.
 //
 // Returns CH_EPROTO with ALERT_HANDSHAKE_FAILURE when the offer and
-// this build do not overlap in suites, in groups or in signature
-// schemes, which RFC 9846 §4.2.1 requires when no acceptable set of
-// parameters exists (rfc9846.txt:1145-1148, rfc9846.txt:1181-1184).
-// Failing on a group named in supported_groups is not that case, and
-// is the retry above.
+// this build do not overlap in suites or in groups, or, for a hello
+// that offers no PSK, in signature schemes, which RFC 9846 §4.2.1
+// requires when no acceptable set of parameters exists
+// (rfc9846.txt:1145-1148, rfc9846.txt:1181-1184). Failing on a group
+// named in supported_groups is not that case, and is the retry above.
+// A hello that offers a PSK and no scheme a slot signs goes on, because
+// a ticket may authenticate it; srv_select_auth answers it once no
+// retry is owed, and srv_check_retry_hello after one. It also returns
+// what srv_select_auth returns.
 //
 // Returns CH_EPROTO with ALERT_NO_APPLICATION_PROTOCOL when all three
 // of RFC 7301 §3.2's terms hold. §3.2 says a server that supports none
@@ -185,6 +194,11 @@ int srv_read_client_hello(handshake_state *h, client_hello *ch);
 // handshake on the first ClientHello. A HelloRetryRequest would not
 // change the answer: §4.2.2 forbids the second ClientHello to change
 // the ALPN extension (rfc9846.txt:1191-1213), and ch->frozen covers it.
+//
+// A ticket is never selected on a hello that owes a retry. Its binders
+// cover the first hello alone, and the second hello's cover the
+// HelloRetryRequest too, so the server judges the ticket the second
+// hello carries and nothing from the first.
 int srv_select(handshake_state *h, const client_hello *ch, selection *sel);
 
 // Builds and sends one HelloRetryRequest, and replaces the transcript
@@ -241,15 +255,21 @@ int srv_send_compat_ccs(handshake_state *h, const client_hello *ch);
 // with ct_memeq against the one the cookie carried, and confirms that
 // the selection the cookie named still matches what this build holds.
 // It writes sel from the cookie, so the two hellos cannot be answered
-// under different parameters.
+// under different parameters. The signature scheme it selects again from
+// this hello, which gives the first hello's answer because the frozen
+// digest covers signature_algorithms, and then it calls srv_select_auth
+// (srv_resume.h), which may resume the ticket this hello carries.
 //
 // It never sets sel->need_retry: the state machine has one retry by
 // call position, and this is the only reader of a second hello.
 //
 // Requires a ch that srv_read_client_hello filled from the second
-// ClientHello, and the selection the first hello produced.
+// ClientHello. It reads nothing from sel, so a driver that zeroed its
+// selection before the second hello loses nothing.
 //
-// Returns CH_OK with sel written from the cookie.
+// Returns CH_OK with sel written from the cookie, this hello's signature
+// scheme and srv_select_auth's answer. It also returns what
+// srv_select_auth returns.
 //
 // Returns CH_EPROTO with ALERT_ILLEGAL_PARAMETER when the cookie is
 // absent, when srv_cookie_open refuses it, when the frozen digest does
@@ -265,7 +285,8 @@ int srv_check_retry_hello(handshake_state *h, const client_hello *ch, selection 
 // draws the 32 random bytes here through ch_rand_bytes
 // (rfc9846.txt:1358-1363), echoes the client's legacy_session_id
 // (rfc9846.txt:1365-1368) and carries the server's key share for
-// sel->group.
+// sel->group, and the selected ticket's index when sel->psk_selected is
+// set.
 //
 // Requires srv_begin to have run, so h->pub holds the share this
 // message sends, and a sel whose need_retry is clear.
@@ -281,7 +302,11 @@ int srv_send_server_hello(handshake_state *h, const client_hello *ch, const sele
 // ahead of the x25519 one, which is RFC 10024's order despite the
 // group's name. Then it takes the transcript hash and calls
 // ks_handshake (keysched.h), which writes the client secret before the
-// server one.
+// server one. The early secret ks_handshake extracts from is the one
+// srv_select_auth left in h->early when sel->psk_selected is set, which
+// is how a resumed handshake's keys depend on the ticket's PSK, and the
+// zero-PSK early secret of RFC 9846 §7.1 otherwise; psk_dhe_ke runs the
+// key exchange either way.
 //
 // The two secrets bind to the opposite directions from the client's,
 // and that is the whole of the asymmetry: this call passes h->c_hs to

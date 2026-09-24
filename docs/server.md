@@ -38,10 +38,12 @@ competing architectures preceded this record; the architecture below is the
 build-axis one, and the section "Considered and rejected" names what it took
 from the other two and what it refused.
 
-Two pieces of the plan have not landed. `test/e2e.sh` drives no real TLS 1.3
-client against a chapulin server, so nothing here has completed a handshake
-with another stack. `chapulin.hpp` declares no `Server` type, so the
-`ROLE=server` leg of `lib-check` runs without `cxx-check`.
+One piece of the plan has not landed. `chapulin.hpp` declares no `Server`
+type, so the `ROLE=server` leg of `lib-check` runs without `cxx-check`.
+`test/e2e.sh` does drive another stack against a chapulin server now:
+OpenSSL's `s_client` and this tree's own client each make a full handshake
+with `bin/tlsserver` and then resume the ticket it issued ("Resumption"
+below).
 
 Three items were stated as blocking the first line of code, and all three are
 in "What is still open": whether the key schedule goes hash-agile in the
@@ -846,10 +848,9 @@ reviewer who reads one line of this parser will read that one.
   EncryptedExtensions, and that absence is the rejection signal
   (`rfc9846.txt:2426-2428`). "What the mode does not check" states the discard
   budget the first behavior costs.
-- **NewSessionTicket.** `rfc9846.txt:3194-3196` makes issuing one a MAY:
-  "the server MAY send a NewSessionTicket message at any time after it has
-  received the client Finished message." Whether v1 issues them is open
-  question five.
+- **More than one NewSessionTicket.** `rfc9846.txt:3194-3196` makes
+  issuing one a MAY. The server issues one per connection, full or resumed,
+  and "Resumption" below says why one is enough.
 - **`status_request`.** `rfc9846.txt:2881-2892` imposes no MUST, and
   `status_request_v2` must never be echoed (`:2894-2900`), which the
   skip-unknown arm gives without a special case.
@@ -2235,9 +2236,9 @@ removes a state.
 
 `keysched.h` declares **six** functions, not five: `ks_early` (`:14`),
 `ks_verify_data` (`:18`), `ks_handshake` (`:23`), `ks_master` (`:29`),
-`ks_res_master` (`:34`) and `ks_res_psk` (`:36`). A v1 server that issues no
-tickets calls four of them; the last two exist only for resumption, which open
-question five may remove.
+`ks_res_master` (`:34`) and `ks_res_psk` (`:36`). The server calls all six:
+the last two issue a ticket after the client Finished, and `ks_early` takes a
+ticket's PSK when a handshake resumes one ("Resumption" below).
 
 No function assumes which side the caller is on. Two of them name the sides in
 their parameter order, and that ordering is the whole asymmetry:
@@ -2346,7 +2347,7 @@ Most of the work. Each row was read at the line given.
 | `ct.[ch]`, `buf.[ch]`, `sha256.[ch]` | Unchanged. |
 | `sha512.[ch]`, `sha512_compress.[ch]` | Packaged rather than rewritten. `sha384_init` (`sha512.h:32`), `sha512_update` (`:33`) and `sha384_final` (`:41`) are the streaming shape the transcript needs. Two sentences of the header's comment become false; see "The cost that dominates". |
 | `hkdf.[ch]` | Hash-agile. Five declarations change, and `hmac_sha256` is renamed `hmac`, because a function that computes HMAC-SHA-384 when it is handed 48 must not be called `hmac_sha256`. It also serves the cookie MAC and the RFC 6979 nonce, which pass `SHA256_LEN` and get the same computation they get today. |
-| `keysched.[ch]` | Six functions, of which a v1 server that issues no tickets calls four. All six change signature with the hash. No function assumes a side; `ks_handshake` and `ks_master` name client before server in their parameter order, which is the whole asymmetry. |
+| `keysched.[ch]` | Six functions, all of which the server calls: the last two issue its tickets ("Resumption"). All six change signature with the hash. No function assumes a side; `ks_handshake` and `ks_master` name client before server in their parameter order, which is the whole asymmetry. |
 | `record.[ch]` | Unchanged as control flow; the suite and the hash length appear in three lines. `rec_dir_init` derives `AEAD_KEY` bytes at `record.c:7`, and `rec_seal` and `rec_open` call the ChaCha20-Poly1305 functions by name at `record.c:56` and `record.c:82`. |
 | `chacha20.[ch]`, `poly1305.[ch]`, `aead.[ch]` | Unchanged, and not enough: `rfc9846.txt:4540` requires AES-128-GCM beside them and `:4542` makes AES-256-GCM a SHOULD the scope takes. |
 | `x25519.[ch]` | Unchanged and symmetric. The client's all-zero refusal (`handshake.c:300`) is the check a server makes too. |
@@ -2535,7 +2536,10 @@ lands. None of them exists today.
   `rfc9846.txt:2921-2926` and `:1931-1933` are provisioning checks, not runtime
   ones, when the identity is fixed at build time.
 - **Time.** It reads no clock. It verifies no certificate validity, and the
-  cookie carries no timestamp.
+  cookie carries no timestamp. The one instant it uses is the caller's:
+  `ch_cfg.srv.now_seconds`, which dates the tickets it issues and judges
+  the ones it is offered. A caller that leaves it 0 gets no tickets at all
+  ("Resumption" below).
 - **Cookie freshness.** A captured cookie is replayable. The attacker gains one
   skipped round trip on a handshake that fails at the Finished regardless. A
   4-byte caller-supplied epoch in the cookie body would close it and is
@@ -2745,12 +2749,86 @@ group keep firing under the replacement rule, because the replacement keeps a
 call-site allow-list that still excludes `quic_packet.c`. Only their reason
 text changes.
 
+## Resumption
+
+Open question five asked whether v1 accepts PSKs and issues tickets, and
+Camilo answered yes on 2026-09-24: colibri needs the QUIC Interop Runner's
+`resumption` case in both roles, and two chapulin endpoints resuming each
+other is the deployment the client was written for. `docs/decisions.md`
+entry 51 records the choice. `srv_ticket.[ch]` is the ticket format and
+`srv_resume.[ch]` the two flight steps that use it; both headers state
+every rule this section summarizes.
+
+**What the caller supplies.** `ch_cfg.srv.ticket_key`, 32 bytes of
+ChaCha20-Poly1305 key (`SRV_TICKET_KEY_LEN`), one per deployment and not the
+cookie key; NULL issues no ticket and accepts none. And
+`ch_cfg.srv.now_seconds`, its clock in seconds at the start of the
+connection, from one epoch on every server that shares the key; 0 means no
+clock, and a server with no clock issues no ticket and accepts none, because
+it could not tell a fresh ticket from an expired one. The instant is a
+configuration field rather than an argument to `ch_srv_accept`,
+`ch_srv_record_init` and `ch_srv_quic_init`, so the three calls keep their
+signatures; `ch_cfg.now_seconds` is the client's precedent.
+
+**What the server issues.** One NewSessionTicket per connection, full or
+resumed, after the client Finished verifies (`rfc9846.txt:3194-3196`), under
+the application write key: a record over TCP, CRYPTO bytes at
+`CH_LEVEL_APPLICATION` over QUIC. It carries no extension, so no
+`early_data`, a fresh random `ticket_age_add` and 8-byte `ticket_nonce`
+(`rfc9846.txt:3265-3273`), and a `ticket_lifetime` of what is left of
+`SRV_TICKET_LIFETIME`, 604800 seconds by default, the most
+`rfc9846.txt:3257-3258` allows. One is enough because a client that resumes
+serially gets a fresh ticket on every resumed connection; a client racing
+parallel connections would want more, and none asks.
+
+**What a ticket carries.** 104 bytes: a version byte, a 12-byte random
+nonce, and a 75-byte body sealed with ChaCha20-Poly1305 with the version
+byte as associated data. The body holds the instant of the last full
+handshake behind the ticket, the cipher suite, the ALPN protocol and the
+32-byte PSK. The instant is carried forward through every resumed
+handshake, so a chain of resumptions ends one lifetime after the
+certificate last signed. `srv_ticket.h` lays the bytes out and states when
+the key must rotate.
+
+**What a ticket binds, and what it does not.** It binds the suite's KDF hash
+(`rfc9846.txt:3219-3220`), the lifetime on the server's own clock, and the
+ALPN protocol, so a ticket resumes only a connection that negotiates the
+protocol it was issued under. It binds neither the server name, which
+`rfc9846.txt:2525-2527` says a server need not associate with a ticket, nor
+the signing identity, which the ticket key stands in for. `srv_resume.h`
+gives the reason for each.
+
+**What the server accepts.** A ticket it sealed, offered under `psk_dhe_ke`:
+a client that lists `psk_ke` alone gets a full handshake, because this
+server always runs a key exchange (`rfc9846.txt:2307-2308`). It walks the
+identities in the client's order, selects the first that opens and holds,
+and checks that identity's binder alone (`rfc9846.txt:2544-2546`) with
+`ct_memeq` over the transcript truncated before the binders list. A binder
+that is absent or wrong ends the handshake with `decrypt_error`
+(`rfc9846.txt:2541-2544`, `:3968-3970`). An identity that does not open, has
+expired, was issued in the future, names another hash or another protocol
+is passed over (`rfc9846.txt:2533-2537`), and a hello that had no other
+identity gets a full handshake, or `missing_extension` when it offered no
+signature scheme to authenticate one with. A resumed ServerHello carries
+`pre_shared_key` and a key share, and the flight after it is
+EncryptedExtensions and Finished alone. On a hello that owes a
+HelloRetryRequest the ticket is not judged; the second hello carries it
+again, and its binder covers the retry.
+
+**What stays as it was.** The server accepts no external PSK, sends no
+`early_data` in EncryptedExtensions or in a ticket, and still has no
+early-data discard (see "What the mode does not check"): a client that
+sends 0-RTT records under a ticket this server issued breaks the ticket's
+terms, and its first such record fails with `bad_record_mac`.
+
 ## What is still open
 
-Sixteen questions. The first three block the first line of code. Questions
+Fifteen questions. The first three block the first line of code. Questions
 eleven through sixteen arrived with the third round of this record. Each one is
 a choice the design cannot make on its own, and each one names what was
-measured on both answers.
+measured on both answers. Question five is answered and has left this list;
+the others keep their numbers, because comments across the tree cite them by
+number.
 
 **One: does the hash-agile key schedule land in the shared files or in a role
 arm?** Unconditional keeps one set of signatures for both roles and moves the
@@ -2784,15 +2862,6 @@ with no converged harness does not land, and this one is the AEAD on the data
 path. Measure this before writing any server protocol code. If it does not
 converge, the choice is between a `README.md` sentence saying the AEAD is
 tested and not proved, and stopping the lane.
-
-**Five: does v1 accept PSKs and issue tickets?** Issuing tickets is a MAY
-(`rfc9846.txt:3194-3196`), so nothing in the RFC forces it. Declining removes
-binder verification over a truncated ClientHello, a stateless ticket format, a
-ticket key, and `ks_res_master` and `ks_res_psk` from the server's call list.
-It also removes resumption between two chapulin endpoints, which is the
-deployment this tree's client was written for. It does **not** remove the
-early-data discard budget, because an external PSK carries its own permission;
-the profile row for `psk_dhe_ke` and the discard budget stand either way.
 
 **Six: bitsliced or masked-table for the constant-time AES?** Unmeasured on
 every target, and now at two key sizes. Build both, measure on rv32 against the
@@ -2934,7 +3003,7 @@ that applies it; nothing changes before that commit.
 | `CLAUDE.md:73-76`, `handshake_auth.[ch]` and `handshake.[ch]` | the same sentences with "ROLE=client" added, then the `srv_auth.[ch]` and `srv_handshake.[ch]` entries the appendix chain carries | `srv_auth.[ch]`, `srv_handshake.[ch]` |
 | `CLAUDE.md:79-80`, "Firmware takes everything below `tls.[ch]` as-is and supplies I/O callbacks and `ch_rand_bytes`" | the same sentence, then: "A `ROLE=server` firmware supplies the same two and adds the certificate chains, the private keys and the cookie key, all caller-owned and all read through pointers." | `srv.[ch]` |
 | `CLAUDE.md:148-150`, "the client always sends `record_size_limit` sized to the caller's buffer" | "Record size discipline runs in both directions. A client sends `record_size_limit` (RFC 8449) sized to the caller's buffer; a server sends its own in EncryptedExtensions and holds its sends to the client's. A peer record over the limit is a protocol error, not a resize, in both roles." | `srv_message.[ch]` |
-| `CLAUDE.md:151-153`, the MUSTs list | "RFC MUSTs we keep even though this is minimal, per role. A client: HelloRetryRequest handling, KeyUpdate receipt, NewSessionTicket parse-and-expose, RFC 9257 binder discipline. A server: HelloRetryRequest generation with an integrity-protected cookie (RFC 9846 §9.2 makes the extension mandatory to implement), KeyUpdate receipt and response, the dummy `change_cipher_spec` record a client's non-empty session id obliges, and the early-data discard §4.3.10 requires of a server that answers 1-RTT. Issuing NewSessionTicket is a MAY (`rfc9846.txt:3194-3196`) and is not on this list; whether a server accepts PSKs, and therefore whether it verifies binders, is `docs/server.md`'s open question five." | `srv_flight.[ch]` |
+| `CLAUDE.md:151-153`, the MUSTs list | "RFC MUSTs we keep even though this is minimal, per role. A client: HelloRetryRequest handling, KeyUpdate receipt, NewSessionTicket parse-and-expose, RFC 9257 binder discipline. A server: HelloRetryRequest generation with an integrity-protected cookie (RFC 9846 §9.2 makes the extension mandatory to implement), KeyUpdate receipt and response, the dummy `change_cipher_spec` record a client's non-empty session id obliges, and the early-data discard §4.3.10 requires of a server that answers 1-RTT. Issuing NewSessionTicket is a MAY (`rfc9846.txt:3194-3196`) and is not on this list; a server that issues them, as this one does, also verifies a binder before it accepts a ticket, which `rfc9846.txt:2541-2544` makes a MUST." | `srv_flight.[ch]` |
 | `CLAUDE.md:215-221`, `make check` and `make check-slow` | the same sentence, then: "The `ROLE` axis adds one leg to each: one `cxx-check ROLE=server`, one `bin/srv_test` run, and in `check-slow` one e2e leg driving a real TLS 1.3 client against a chapulin server." | `srv.[ch]` |
 | `CLAUDE.md:249-254`, the C++ wrapper | the same sentence, then: "A `ROLE=server` object exports `ch_srv_accept` and `ch_srv_check` beside `ch_read`, `ch_write` and `ch_close`, so the wrapper adds a `Server` type under `#ifdef CH_ROLE_SERVER` forwarding those, and adds no logic there either. `cxx-check` runs on both roles." | `srv.[ch]` |
 

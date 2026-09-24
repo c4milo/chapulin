@@ -171,6 +171,11 @@ static int read_psk_identities(rbuf *e, hello_parse *p, size_t *identities_len) 
     if (e->err || *identities_len < PSK_IDENTITIES_MIN || *identities_len > rb_left(e)) {
         return srv_refuse(p->alert, ALERT_DECODE_ERROR);
     }
+    // The list's first byte. A zero-length read returns the current
+    // position and advances nothing, and the length check above keeps the
+    // whole list inside this extension's body.
+    p->ch->psk_identities = rb_bytes(e, 0);
+    p->ch->psk_identities_len = *identities_len;
     size_t used = 0;
     while (used < *identities_len) {
         size_t identity_len = rb_u16(e);
@@ -193,6 +198,8 @@ static int read_psk_binders(rbuf *e, hello_parse *p) {
     if (e->err || binders_len < PSK_BINDERS_MIN || binders_len > rb_left(e)) {
         return srv_refuse(p->alert, ALERT_DECODE_ERROR);
     }
+    p->ch->psk_binders = rb_bytes(e, 0);
+    p->ch->psk_binders_len = binders_len;
     size_t used = 0;
     while (used < binders_len) {
         size_t binder_len = rb_u8(e);
@@ -207,12 +214,13 @@ static int read_psk_binders(rbuf *e, hello_parse *p) {
     return CH_OK;
 }
 
-// pre_shared_key (§4.3.11): OfferedPsks, the two lists above. This
-// build selects no PSK and reads no identity, so the walk holds the
-// syntax and records where the binders start, which is the one value
-// a later binder check cannot recover (rfc9846.txt:2586 states the
-// client's half of that rule). data_off is where this extension's body
-// starts, counted from the start of the ClientHello body.
+// pre_shared_key (§4.3.11): OfferedPsks, the two lists above. The
+// parser reads no identity: the walk holds the syntax, records where
+// each list sits for srv_select_auth (srv_resume.h), and records where
+// the binders start, which is the one value a later binder check cannot
+// recover (rfc9846.txt:2586 states the client's half of that rule).
+// data_off is where this extension's body starts, counted from the
+// start of the ClientHello body.
 static int read_pre_shared_key(rbuf *e, size_t data_off, hello_parse *p) {
     size_t identities_len = 0;
     int rc = read_psk_identities(e, p, &identities_len);

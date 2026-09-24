@@ -1,0 +1,14 @@
+invariant: INV-14
+file: srv_resume.c
+catches: srv_flight_test
+reason: a server with no clock issues and accepts tickets. With now_seconds 0 it
+  writes 0 as every ticket's instant, and a later server with a clock
+  judges those tickets as issued at its epoch, which is decades stale or,
+  on a clock that counts from boot, fresh for a week after every boot.
+  srv_cfg.h makes a missing clock mean no tickets. test/srv_resume_tests.h
+  clears the clock and requires that nothing is sent.
+
+--- old
+    return srv->ticket_key != NULL && srv->now_seconds != 0;
+--- new
+    return srv->ticket_key != NULL;

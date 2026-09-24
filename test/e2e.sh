@@ -63,6 +63,20 @@ start_server() {
     read_port "$SRV_PID" "$log" 's/^ACCEPT .*:\([0-9][0-9]*\)$/\1/p'
 }
 
+# The same for this tree's own server, bin/tlsserver, which prints the
+# port in s_server's ACCEPT shape. Sets SRV_LOG as well, because the legs
+# read what the server logs about each connection.
+start_chserver() {
+    SRV_N=$((SRV_N + 1))
+    local log="$DIR/server$SRV_N.log"
+    ./bin/tlsserver "$@" > "$log" 2>&1 &
+    SRV_PID=$!
+    SRV_PIDS="$SRV_PIDS $SRV_PID"
+    disown "$SRV_PID" 2>/dev/null || true
+    read_port "$SRV_PID" "$log" 's/^ACCEPT .*:\([0-9][0-9]*\)$/\1/p'
+    SRV_LOG=$log
+}
+
 # The same for the Go echo server, which prints Go's own Addr().
 start_goecho() {
     SRV_N=$((SRV_N + 1))
@@ -226,6 +240,65 @@ expect pin-ecdsa "soterces nis" "$DIR/err3" \
 }
 MSG='de nuevo'
 expect pin-ecdsa-resume "oveun ed" "$DIR/err3" ./bin/tlsclient_ecdsa 127.0.0.1 "$PORT2" "@$DIR/ticket2" -
+
+# --- This tree's server, with the same P-256 key and certificate: OpenSSL's
+# s_client, then this tree's own pinned client, each make a full handshake
+# and then resume the ticket the server issued. s_client prints "Reused"
+# only when the server selected its PSK, and the server logs "handshake:
+# resumed" only when a ticket authenticated the handshake, which is one
+# that sent no Certificate. ---
+"$OPENSSL" x509 -in "$DIR/cert.pem" -outform DER -out "$DIR/cert.der"
+# The private scalar as 64 hex digits: OpenSSL prints it with a leading 00
+# when its top bit is set, and without leading zeros when it is short.
+PRIV=$("$OPENSSL" ec -in "$DIR/key.pem" -text -noout 2>/dev/null \
+    | awk '/^priv:/{f=1;next} f&&/^[^ ]/{f=0} f{gsub(/[ :]/,"");printf "%s",$0}')
+PRIV=$(printf '%064s' "$PRIV" | tr ' ' 0 | tail -c 64)
+start_chserver "$DIR/cert.der" "$PRIV" "$PUB"
+PORT15=$SRV_PORT
+CHSRV_LOG=$SRV_LOG
+
+# Runs s_client against this tree's server with one line on stdin and the
+# session file arguments given, and checks the summary line and the reply.
+# Args: label, expected summary ("New" or "Reused"), line, reply, then the
+# session arguments. -ign_eof keeps s_client reading until the server
+# closes, so the ticket that follows the handshake is in the session it
+# saves.
+s_client_line() {
+    local label=$1 summary=$2 line=$3 reply=$4
+    shift 4
+    printf '%s\n' "$line" | "$OPENSSL" s_client -connect "127.0.0.1:$PORT15" -tls1_3 \
+        -ign_eof "$@" > "$DIR/$label.log" 2>&1 || {
+        echo "FAIL $label: s_client exited nonzero"
+        cat "$DIR/$label.log" "$CHSRV_LOG"
+        exit 1
+    }
+    if ! grep -q "^$summary, TLSv1.3, Cipher is TLS_CHACHA20_POLY1305_SHA256" "$DIR/$label.log" ||
+        ! grep -q "^$reply\$" "$DIR/$label.log"; then
+        echo "FAIL $label: want a $summary session answering '$reply'"
+        cat "$DIR/$label.log" "$CHSRV_LOG"
+        exit 1
+    fi
+}
+s_client_line chsrv-openssl New 'hola mundo' 'odnum aloh' -sess_out "$DIR/sess.pem"
+s_client_line chsrv-openssl-resume Reused 'otra vez' 'zev arto' -sess_in "$DIR/sess.pem"
+
+MSG='sin secretos'
+expect chsrv-chapulin "soterces nis" "$DIR/err15" \
+    ./bin/tlsclient_ecdsa 127.0.0.1 "$PORT15" "pin:$PUB" - "$DIR/ticket15"
+[ -s "$DIR/ticket15" ] || {
+    echo "FAIL chsrv-chapulin: no ticket from this tree's server"
+    exit 1
+}
+MSG='de nuevo'
+expect chsrv-chapulin-resume "oveun ed" "$DIR/err15" \
+    ./bin/tlsclient_ecdsa 127.0.0.1 "$PORT15" "@$DIR/ticket15" -
+# Four connections in order: full, resumed, full, resumed.
+[ "$(grep '^handshake: ' "$CHSRV_LOG" | tr '\n' ' ')" = \
+  "handshake: full handshake: resumed handshake: full handshake: resumed " ] || {
+    echo "FAIL chsrv: the server did not resume both tickets"
+    cat "$CHSRV_LOG"
+    exit 1
+}
 
 # --- Pinned key, default build: a self-signed RSA-3072 server, the pin is
 # the raw modulus and the signature is RSA-PSS. The cert's own signature
@@ -1030,4 +1103,4 @@ else
     echo "SKIP webpki-aes legs: bin/tlsclient_webpki_aes is absent (no AES instructions)"
 fi
 
-echo "e2e: record + psk + tickets + resumption + pinned ecdsa + pinned rsa + require-pq refused + rotation + ca rsa x2 + ca ecdsa x2 + ca rotation + ca negatives x3${EPOCH_LEG} + webpki rsa + webpki-resume x2 + webpki-rpk x7 + webpki ecdsa x2 + webpki negatives x4 + webpki alpn x3${GO_LEG}${OPENSSL_PQ_LEG}${AES_SUITE_LEG} + examples x4 OK"
+echo "e2e: record + psk + tickets + resumption + pinned ecdsa + chapulin server resume x2 + pinned rsa + require-pq refused + rotation + ca rsa x2 + ca ecdsa x2 + ca rotation + ca negatives x3${EPOCH_LEG} + webpki rsa + webpki-resume x2 + webpki-rpk x7 + webpki ecdsa x2 + webpki negatives x4 + webpki alpn x3${GO_LEG}${OPENSSL_PQ_LEG}${AES_SUITE_LEG} + examples x4 OK"

@@ -199,11 +199,15 @@ typedef struct {
     // session id, so one dummy change_cipher_spec record is owed
     // (rfc9846.txt:6401-6403). sni_len is how many bytes of server_name the handshake
     // copied into cfg.sni_buf, and 0 when the client sent none or the name did not fit.
+    // psk_selected is set when a ticket this server issued authenticated the handshake,
+    // which sent no Certificate and no CertificateVerify and leaves sigalg 0; the caller
+    // reads it to tell a resumed session from a full one (srv_resume.h).
     uint8_t session_id[32];
     uint8_t session_id_len;
     uint16_t suite;
     uint8_t hash_len;
     uint16_t sigalg;
+    uint8_t psk_selected;
     uint8_t hrr_sent;
     uint8_t compat_ccs;
     size_t sni_len;

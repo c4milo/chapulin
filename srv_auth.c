@@ -65,6 +65,17 @@ uint8_t srv_identity_live(const ch_cfg *cfg) {
     return live;
 }
 
+uint16_t srv_select_sigalg(const ch_cfg *cfg, uint8_t offered) {
+    uint8_t live = srv_identity_live(cfg);
+    if ((offered & SRV_SIGALG_ECDSA_P256) != 0 && (live & SRV_IDENTITY_ECDSA_P256) != 0) {
+        return SIGALG_ECDSA_P256_SHA256;
+    }
+    if ((offered & SRV_SIGALG_RSA_PSS) != 0 && (live & SRV_IDENTITY_RSA_PSS) != 0) {
+        return SIGALG_RSA_PSS_RSAE_SHA256;
+    }
+    return 0;
+}
+
 const ch_identity *srv_identity_for(const ch_cfg *cfg, uint16_t sigalg) {
     const ch_identity *id;
     if (sigalg == SIGALG_ECDSA_P256_SHA256) {
