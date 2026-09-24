@@ -1,0 +1,14 @@
+invariant: INV-14
+file: srv_resume.c
+catches: srv_flight_test
+reason: a server that selects a ticket keeps the signature scheme it
+  chose from the hello's signature_algorithms, so ch_tls.sigalg names a
+  scheme for a resumed session that sent no CertificateVerify. Every
+  client that offers schemes beside its ticket, OpenSSL's s_client among
+  them, sees it. The selected-ticket row expects sigalg 0 and objects.
+
+--- old
+    sel->sigalg = 0;
+    h->ticket_auth_seconds = auth_seconds;
+--- new
+    h->ticket_auth_seconds = auth_seconds;

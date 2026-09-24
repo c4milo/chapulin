@@ -866,7 +866,8 @@ last `ROLE=server` stub, as the entry said it would.
   test/e2e.sh has OpenSSL's s_client resume against bin/tlsserver. The
   srv_ticket and srv_resume CBMC harnesses prove both files memory-safe
   over any ticket bytes and any offer, and prove that a ticket is
-  selected only under psk_dhe_ke with a key and a clock and that a
+  selected only under psk_dhe_ke with a key and a clock, that a
+  selected ticket leaves no signature scheme selected, and that a
   binder refusal is decrypt_error. The `srv-resume-` and `srv-ticket-`
   violations guard the rules, and srv-resume-binder-memcmp carries
   INV-16 for the reason quic-token-memcmp does.

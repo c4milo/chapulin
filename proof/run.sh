@@ -1100,7 +1100,9 @@ launch fast full srv_auth 385 "" ct.c -DCH_ROLE_SERVER
 # slow tier). An assert of 0 at the decrypt_error, the refusal, the
 # selected-ticket and the sent-ticket arms fails all four, so every arm is
 # reached. Before the binders bound fell to one binder and the start of a
-# second, the same formula took 268 s and 7.4 GB.
+# second, the same formula took 268 s and 7.4 GB. With the assertion that
+# a selected ticket leaves no signature scheme: 1024 properties, 138 s,
+# 4.95 GB, measured the same way on 2026-09-24.
 launch slow full srv_resume 120 "fill_nondet.0:118,find_ticket.0:24,binder_at.0:36,ct_wipe.0:84,ct_memeq.0:33" buf.c ct.c -DCH_ROLE_SERVER
 # quic_gcm and quic_gcm_forge have no launch line, for the reason
 # aead_inplace has none: neither formula returned a verdict, and an

@@ -145,6 +145,9 @@ static void test_resume_select(void) {
     resume_ticket(ticket, resume_key, RESUME_AUTH, CH_ALPN_NONE);
     CHECK(resume_one(&sel, ticket) == CH_OK && resumed(&sel));
     CHECK(sel.psk_identity == 0 && hs.ticket_auth_seconds == RESUME_AUTH);
+    // The hello offered a scheme beside the ticket, and no CertificateVerify
+    // goes out, so the selection names none.
+    CHECK(sel.sigalg == 0);
 
     // A client that offers no signature scheme at all still resumes: the
     // ticket is its only way to authenticate the server.
@@ -332,6 +335,9 @@ static void test_resume_order(void) {
     offer_tickets(&h2, 1);
     flight_hello.alpn_selected = 0;
     CHECK(srv_select_auth(&hs, &flight_hello, &sel) == CH_OK && resumed(&sel));
+    // The resumed selection names no scheme, and srv_select writes the
+    // hello's scheme again before every call, so these rows do too.
+    sel.sigalg = SIGALG_ECDSA_P256_SHA256;
     flight_hello.alpn_selected = 1;
     CHECK(srv_select_auth(&hs, &flight_hello, &sel) == CH_OK && sel.psk_selected == 0);
     flight_hello.alpn_selected = CH_ALPN_NONE;

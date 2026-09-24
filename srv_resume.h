@@ -94,8 +94,9 @@
 // provisioned identity signs a scheme the client offered.
 //
 // Returns CH_OK with sel->psk_selected set, sel->psk_identity the selected
-// index, h->early the early secret of the ticket's PSK and
-// h->ticket_auth_seconds the ticket's auth_seconds. Returns CH_OK with
+// index, sel->sigalg 0, because no CertificateVerify goes out, h->early the
+// early secret of the ticket's PSK and h->ticket_auth_seconds the ticket's
+// auth_seconds. Returns CH_OK with
 // sel->psk_selected clear when no ticket was selected and sel->sigalg is
 // not 0: a full handshake follows.
 //

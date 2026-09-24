@@ -161,6 +161,10 @@ static int select_ticket(handshake_state *h, const client_hello *ch, selection *
     }
     sel->psk_selected = 1;
     sel->psk_identity = index;
+    // No CertificateVerify goes out, so no scheme is selected, even when
+    // the hello offered schemes beside the ticket, as OpenSSL's s_client
+    // does. ch_tls.sigalg then reports 0 for every resumed session.
+    sel->sigalg = 0;
     h->ticket_auth_seconds = auth_seconds;
     return CH_OK;
 }

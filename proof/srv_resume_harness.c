@@ -230,6 +230,8 @@ static void prove_select(void) {
                                  ch.psk_identities_len,
                          "a selected ticket's index names an entry inside the list");
         __CPROVER_assert(!sel.psk_selected || opened > 0, "a selected ticket was opened");
+        __CPROVER_assert(!sel.psk_selected || sel.sigalg == 0,
+                         "a selected ticket leaves no scheme for a CertificateVerify");
     }
     if (rc == CH_EAUTH) {
         __CPROVER_assert(h.alert == ALERT_DECRYPT_ERROR && sel.psk_selected == 0,

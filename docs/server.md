@@ -2812,7 +2812,10 @@ is passed over (`rfc9846.txt:2533-2537`), and a hello that had no other
 identity gets a full handshake, or `missing_extension` when it offered no
 signature scheme to authenticate one with. A resumed ServerHello carries
 `pre_shared_key` and a key share, and the flight after it is
-EncryptedExtensions and Finished alone. On a hello that owes a
+EncryptedExtensions and Finished alone. The session then reports
+`ch_tls.psk_selected` 1 and `ch_tls.sigalg` 0, even when the hello offered
+schemes beside the ticket, as OpenSSL's `s_client` does: no
+CertificateVerify goes out, so no scheme is selected. On a hello that owes a
 HelloRetryRequest the ticket is not judged; the second hello carries it
 again, and its binder covers the retry.
 
