@@ -1,10 +1,8 @@
 #!/usr/bin/env bash
 # Times chapulin's ChaCha20-Poly1305 and AES-128-GCM per byte on this
-# machine, with each AEAD split into its cipher half and its hash half,
-# and a carry-less multiply GHASH that the library does not contain
-# (bench/ghash_clmul.c, a prototype for measurement). Writes
-# bench/results-aead-<arch>.csv, one file per architecture, so an x86-64
-# run and an arm64 run sit side by side.
+# machine, with each AEAD split into its cipher half and its hash half.
+# Writes bench/results-aead-<arch>.csv, one file per architecture, so an
+# x86-64 run and an arm64 run sit side by side.
 #
 # It builds bench/aead.c three times, because each build carries one AES
 # implementation and one multiply:
@@ -12,11 +10,13 @@
 #   AES=soft                    ChaCha20, ChaCha20-Poly1305 and Poly1305
 #                               over the 16x16 multiply the packaged
 #                               object ships, and AES-128-GCM over the
-#                               S-box table
+#                               S-box table and quic_gcm.c's portable
+#                               GHASH
 #   AES=soft CH_NATIVE_WIDEMUL  ChaCha20-Poly1305 and Poly1305 again, over
 #                               the native multiply the host tests assert
-#   AES=hw                      AES-128-GCM over the AES instructions, and
-#                               the prototype GHASH on PMULL or PCLMULQDQ
+#   AES=hw                      AES-128-GCM over the AES instructions and
+#                               quic_ghash_hw.c's GHASH on PMULL or
+#                               PCLMULQDQ
 #
 # Every build is -O2, the level the packaged object uses. CC picks the
 # compiler (default cc); CI and the x86-64 row use CC=gcc.
@@ -25,9 +25,10 @@
 # the one macOS ships, calls an empty array unbound under set -u.
 #
 # Timings are properties of the machine that ran them. Never record a run
-# under emulation: `bench/aead.sh --quick` builds everything, checks the
-# prototype against quic_gcm.c, takes three short samples per row, prints
-# them and writes nothing, which is what an emulated or CI run is for.
+# under emulation: `bench/aead.sh --quick` builds everything, takes three
+# short samples per row, prints them and writes nothing, which is what an
+# emulated run is for. test/ghash_equiv_test.c, not this script, holds the
+# two GHASHes to the same answer.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -71,11 +72,12 @@ trap 'rm -rf "$W"' EXIT
 
 FLAGS=(-std=c11 -O2 -Wall -Wextra -Wpedantic -Werror -Wvla -D_DEFAULT_SOURCE
     -DCH_RAND_EXTERN -DCH_TRANSPORT_QUIC -I. -Ibench)
-COMMON=(bench/aead.c bench/aead_gcm.c bench/ghash_clmul.c quic_aes.c hkdf.c sha256.c ct.c
-    chacha20.c poly1305.c aead.c)
+COMMON=(bench/aead.c bench/aead_gcm.c quic_aes.c hkdf.c sha256.c ct.c chacha20.c poly1305.c
+    aead.c)
 "$CC" "${FLAGS[@]}" -o "$W/soft" "${COMMON[@]}" quic_aes_soft.c
 "$CC" "${FLAGS[@]}" -DCH_NATIVE_WIDEMUL -o "$W/native" "${COMMON[@]}" quic_aes_soft.c
-"$CC" "${FLAGS[@]}" ${HW_FLAGS[@]+"${HW_FLAGS[@]}"} -DCH_AES_HW -o "$W/hw" "${COMMON[@]}" quic_aes_hw.c
+"$CC" "${FLAGS[@]}" ${HW_FLAGS[@]+"${HW_FLAGS[@]}"} -DCH_AES_HW -o "$W/hw" "${COMMON[@]}" \
+    quic_aes_hw.c quic_ghash_hw.c
 
 load() { # the three load averages, space separated
     uptime | sed -e 's/.*load average[s]*: //' -e 's/,//g'
@@ -92,7 +94,7 @@ cpu() {
 LOAD_BEFORE=$(load)
 "$W/soft" ${QUICK:+"$QUICK"} chacha20 chachapoly gcm >"$W/rows"
 "$W/native" ${QUICK:+"$QUICK"} chachapoly >>"$W/rows"
-"$W/hw" ${QUICK:+"$QUICK"} gcm clmul >>"$W/rows"
+"$W/hw" ${QUICK:+"$QUICK"} gcm >>"$W/rows"
 LOAD_AFTER=$(load)
 
 if [ -n "$QUICK" ]; then

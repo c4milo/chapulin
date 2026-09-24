@@ -1031,9 +1031,13 @@ launch fast full quic_packet 65 "fill_nondet.0:133" buf.c ct.c -DCH_TRANSPORT_QU
 # 393 properties, 34 s, 1.9 GB; quic_ghash 386 properties, 235 s,
 # 1.8 GB. The property counts are the ones recorded before 234ec4e.
 # quic_gcm_refusal peaked at 0.97 GB at 3ff8517 under the same command,
-# so its weight moves from 1 to 2. Neither proves a functional or
-# authenticity property; the two harnesses that state those carry no
-# launch line, below.
+# so its weight moves from 1 to 2. Measured again under the same command
+# after quic_gcm.c gained its AES=hw arm, which these lines do not compile
+# because they define no CH_AES_HW, at load averages of 3.4 to 6.0 on ten
+# cores: quic_gcm_safety 388 properties, 370 s, 2.6 GB; quic_gcm_refusal
+# 393 properties, 33 s, 1.9 GB; quic_ghash 386 properties, 213 s, 1.8 GB.
+# Neither proves a functional or authenticity property; the two harnesses
+# that state those carry no launch line, below.
 launch slow:3 full quic_gcm_safety 130 "fill_nondet.0:177,hash_data.1:3,counter_mode.1:3" --object-bits 11 ct.c -DCH_TRANSPORT_QUIC -DCH_GCM_PT_MAX=32 -DCH_GCM_AAD_MAX=32
 launch slow:2 full quic_gcm_refusal 130 "fill_nondet.0:177,hash_data.1:3,counter_mode.1:3" --object-bits 11 ct.c -DCH_TRANSPORT_QUIC -DCH_GCM_PT_MAX=32 -DCH_GCM_AAD_MAX=32
 launch slow:2 full quic_ghash 130 "fill_nondet.0:257,hash_data.1:17" ct.c -DCH_TRANSPORT_QUIC

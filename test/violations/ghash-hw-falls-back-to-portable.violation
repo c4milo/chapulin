@@ -1,0 +1,20 @@
+invariant: INV-26
+file: quic_gcm.c
+catches: test/quic-builds.sh
+reason: quic_gcm.c guards its AES=hw arm on a macro no build defines, so
+  an AES=hw object runs the portable 128-step multiply under the AES=hw
+  name. Nothing else objects. quic_ghash_hw.c still compiles and links
+  and defines two functions nobody calls, and bin/ghash_equiv_test, the
+  published vectors and the Wycheproof suite all pass, because the
+  portable GHASH computes the same bytes; only the time is wrong, by the
+  factor docs/quic.md measures. The design refuses a silent fall back:
+  AES=hw is a statement about what the object contains. The script
+  compiles quic_gcm.c with -DCH_AES_HW and requires its object to call
+  both entries quic_ghash_hw.c defines.
+
+--- old
+#ifdef CH_AES_HW
+// AES=hw: quic_ghash_hw.c computes both GHASH steps on the carry-less
+--- new
+#ifdef CH_GHASH_HW
+// AES=hw: quic_ghash_hw.c computes both GHASH steps on the carry-less

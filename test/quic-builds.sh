@@ -28,9 +28,11 @@ cd "$(dirname "$0")/.." || exit 1
 make -s bin/quic_driver_test || exit 1
 
 # One translation unit that reads ct.h and nothing else, so what passes or
-# fails is the preprocessor rule and not some later compile error.
+# fails is the preprocessor rule and not some later compile error. The
+# second name is the object the GHASH check below reads.
 tu=$(mktemp -t chapulin_cfg_XXXXXX).c
-trap 'rm -f "$tu" "${tu%.c}"' EXIT
+gcm_obj=$(mktemp -t chapulin_gcm_XXXXXX).o
+trap 'rm -f "$tu" "${tu%.c}" "$gcm_obj" "${gcm_obj%.o}"' EXIT
 echo '#include "ct.h"' > "$tu"
 cc=${CC:-cc}
 
@@ -94,3 +96,37 @@ for role in -DCH_TRUST_WEBPKI -DCH_ROLE_SERVER; do
         exit 1
     fi
 done
+
+# AES=hw's GHASH. quic_gcm.c compiled with -DCH_AES_HW must call the two
+# entries quic_ghash_hw.c defines, and compiled without it must call
+# neither. The first half is what refuses an AES=hw object that runs the
+# portable multiply under the AES=hw name: quic_ghash_hw.c would still
+# link and define two functions nobody calls, and bin/ghash_equiv_test
+# would still pass, because the portable GHASH computes the same bytes.
+# quic_gcm.c names no intrinsic, so it compiles here without the flags
+# that turn the instructions on. nm lists an object's undefined symbols,
+# and the match is anchored at the end of the line because a Mach-O
+# object prefixes each name with an underscore.
+ghash_calls() { # $@ = extra flags: the quic_ghash_hw.c entries quic_gcm.c calls, on one line
+    "$cc" -std=c11 -I. -c -o "$gcm_obj" -DCH_RAND_EXTERN -DCH_TRANSPORT_QUIC "$@" quic_gcm.c ||
+        return 1
+    nm -u "$gcm_obj" | grep -oE 'gcm_(multiply_by_subkey|hash_data)_hw$' | sort -u | tr '\n' ' '
+}
+if ! hw_calls=$(ghash_calls -DCH_AES_HW); then
+    echo "quic-builds: quic_gcm.c under -DCH_AES_HW must compile" >&2
+    exit 1
+fi
+if [ "$hw_calls" != "gcm_hash_data_hw gcm_multiply_by_subkey_hw " ]; then
+    echo "quic-builds: quic_gcm.c under -DCH_AES_HW calls [$hw_calls] of quic_ghash_hw.c;" \
+        "it must call gcm_multiply_by_subkey_hw and gcm_hash_data_hw" >&2
+    exit 1
+fi
+if ! soft_calls=$(ghash_calls); then
+    echo "quic-builds: quic_gcm.c without -DCH_AES_HW must compile" >&2
+    exit 1
+fi
+if [ -n "$soft_calls" ]; then
+    echo "quic-builds: quic_gcm.c without -DCH_AES_HW calls $soft_calls;" \
+        "only an AES=hw object carries quic_ghash_hw.c" >&2
+    exit 1
+fi

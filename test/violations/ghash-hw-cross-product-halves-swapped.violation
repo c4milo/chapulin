@@ -1,0 +1,19 @@
+invariant: INV-26
+file: quic_ghash_hw.c
+catches: ghash_equiv_test
+reason: one cross product of the AES=hw multiply puts its high half where
+  its low half belongs and the reverse, so the unreduced product is wrong
+  in its middle two words whenever the accumulator's low half and the
+  subkey's high half are both nonzero. It is the mistake a four-product
+  schoolbook multiply invites, and it leaves every product with a zero
+  operand half right, which is why bin/ghash_equiv_test runs every pair
+  of single-bit operands and random pairs beside the fixed ones. The edit
+  is shared C after either instruction, so it lands on an ARMv8 runner
+  and an x86-64 one alike.
+
+--- old
+    uint64_t word1 = low_high ^ cross1_low ^ cross2_low;
+    uint64_t word2 = high_low ^ cross1_high ^ cross2_high;
+--- new
+    uint64_t word1 = low_high ^ cross1_high ^ cross2_low;
+    uint64_t word2 = high_low ^ cross1_low ^ cross2_high;

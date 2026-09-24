@@ -44,8 +44,11 @@ offers, and the device builds offer ChaCha20-Poly1305 on purpose.
   implementations the `AES` axis picks between: `quic_aes_soft.c`,
   `quic_aes_hw.c` and `quic_aes_extern.c`.
 - `AEAD_AES_128_GCM` and GHASH in `quic_gcm.c`, checked against SP 800-38D
-  and the Wycheproof AES-GCM suite on four legs.
-- The compile-time refusal this change switches on. `ct.h:87-92` errors
+  and the Wycheproof AES-GCM suite on four legs. Under `AES=hw`, the build
+  this suite takes, GHASH's multiply runs on the carry-less multiply in
+  `quic_ghash_hw.c`, and `CH_NATIVE_AES` covers that instruction too
+  (`docs/decisions.md` entry 50).
+- The compile-time refusal this change switches on. `ct.h:95-100` errors
   unless `CH_AES_HW` and `CH_NATIVE_AES` are both set, because the `AES=soft`
   S-box is indexed with the key and a traffic key is secret. That refusal
   landed before the suite so that the build which adds one stops the
@@ -122,8 +125,9 @@ asks for it.
 ### Where the suite cannot go
 
 `AES=hw` needs the instructions. The `m3` and `freertos` lanes target cores
-without them, where `quic_aes_hw.c` is an `#error`, so no device build
-carries this suite and `ct.h:87-92` is what stops one from trying.
+without them, where `quic_aes_hw.c` and `quic_ghash_hw.c` are each an
+`#error`, so no device build
+carries this suite and `ct.h:95-100` is what stops one from trying.
 
 ## Verification owed
 
@@ -148,6 +152,6 @@ INV-26 today claims every key AES sees is public. It becomes two claims. The
 first is unchanged and covers the three keys RFC 9001 fixes for QUIC Initial
 packets, their header protection and the Retry integrity tag. The second
 admits one traffic key, under a build that sets `CH_SUITE_AES_GCM`, which
-`ct.h:87-92` refuses unless the AES instructions are present and the build
+`ct.h:95-100` refuses unless the AES instructions are present and the build
 asserts their timing. The mechanism section gains the second type and the
 lint that holds it; the check section gains the mutants above.

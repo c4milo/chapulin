@@ -1011,7 +1011,11 @@ last `ROLE=server` stub, as the entry said it would.
   `quic_gcm.c` builds the AEAD on them; the key expansion and the block
   cipher sit in whichever of `quic_aes_soft.c`, `quic_aes_hw.c` and
   `quic_aes_extern.c` the Makefile `AES` variable picked, behind the
-  contract `quic_aes_block.h` states. Only `AES=soft` is table-driven,
+  contract `quic_aes_block.h` states. Under `AES=hw`, GHASH's multiply by
+  the hash subkey also moves out of `quic_gcm.c`, into `quic_ghash_hw.c`
+  on the carry-less multiply, behind `quic_ghash_hw.h`; the hash subkey
+  is the forward cipher of a zero block under the same key, so it is
+  public exactly when that key is. Only `AES=soft` is table-driven,
   and the claim below is what lets that one exist; it binds all three
   the same way, because `AES=extern` cannot state its timing either. There are three: the packet protection key and the header
   protection key, both expanded from `HKDF-Extract` over RFC 9001
@@ -1029,9 +1033,9 @@ last `ROLE=server` stub, as the entry said it would.
   traffic key, which is secret. Three things bound it. `ct.h` refuses the
   define unless the build takes `AES=hw` and also defines
   `CH_NATIVE_AES`, which is the build asserting that this part's AES
-  instructions run in constant time — so the table-driven `AES=soft`
-  S-box never sees a secret key, and neither does `AES=extern`, which
-  cannot state its timing. The key has its own type, `aes_traffic_key`,
+  instructions and its carry-less multiply run in constant time — so
+  the table-driven `AES=soft` S-box never sees a secret key, and neither
+  does `AES=extern`, which cannot state its timing. The key has its own type, `aes_traffic_key`,
   whose body lives in `aes_traffic_key.h` alone, so it cannot be passed
   where an `aes_public_key` is expected or the reverse. And `record.c`
   expands it on its own frame at each use and wipes it there, so no
@@ -1121,11 +1125,11 @@ last `ROLE=server` stub, as the entry said it would.
 
   Three more checks hold the rule from other directions.
   `lint-quic-surface` reads the premise the Semgrep rule rests on.
-  `lint-codegen-partition` keeps `quic_aes.c`, `quic_gcm.c` and the
-  three AES implementations in `WIDEMUL_PUBLIC`, the list whose own
-  comment says a secret arriving in any of these is a design change, so
-  moving one of them to `WIDEMUL_CEILING` is a diff a reviewer looks
-  for. That also says what these five files do not get: no codegen gate
+  `lint-codegen-partition` keeps `quic_aes.c`, `quic_gcm.c`, the
+  three AES implementations and `quic_ghash_hw.c` in `WIDEMUL_PUBLIC`,
+  the list whose own comment says a secret arriving in any of these is a
+  design change, so moving one of them to `WIDEMUL_CEILING` is a diff a
+  reviewer looks for. That also says what these six files do not get: no codegen gate
   compiles them, so `lint-wide-multiply` counts no branch of theirs. A
   change that gave AES a secret key would owe those entries. `lib-check` diffs
   the packaged object's exports against `PUBLIC`, which holds no `aes_`
@@ -1135,13 +1139,22 @@ last `ROLE=server` stub, as the entry said it would.
   object. All three define the same two entries, so a second one would
   not link, but a linker says nothing about which implementation an
   object ended up with; the lint reads the packaged source list per axis
-  value instead.
+  value instead. Its `AES=hw` row requires `quic_ghash_hw.c` beside
+  `quic_aes_hw.c`, and every other row bans it.
   `test/violations/aes-two-implementations-in-one-object.violation` is
   the mutant that proves it fires, and
   `aes-hw-diverges-from-soft.violation` breaks the `AES=hw` key
   expansion and requires `bin/aes_equiv_test` to fail, which is what
   holds the path no proof reaches (docs/quic.md, "What the AES axis
-  proves").
+  proves"). `ghash-hw-reduction-constant.violation` and
+  `ghash-hw-cross-product-halves-swapped.violation` break the `AES=hw`
+  GHASH multiply and require `bin/ghash_equiv_test` to fail.
+  `ghash-hw-falls-back-to-portable.violation` lets an `AES=hw` build of
+  `quic_gcm.c` run the portable multiply and requires
+  `test/quic-builds.sh` to fail, and
+  `ghash-hw-source-unpackaged.violation` drops `quic_ghash_hw.c` from
+  the `AES=hw` sources and requires `test/lint-trust-separation.sh` to
+  fail.
 
   **What a secret AES key would need, and what is in place.** The entry
   above used to say only that moving these files out of `WIDEMUL_PUBLIC`
@@ -1163,15 +1176,18 @@ last `ROLE=server` stub, as the entry said it would.
   silent fall back to the default.
 
   *The instruction's timing is asserted, not detected.* `__ARM_FEATURE_AES`
-  and `__AES__` say the AES instructions exist. Neither says their latency
-  is independent of their operands, and the architectures do not promise
-  it either -- Arm publishes FEAT_DIT and Intel publishes DOITM because
+  and `__AES__` say the AES instructions exist, and `__ARM_FEATURE_AES`
+  and `__PCLMUL__` say the carry-less multiply exists. None says the
+  latency is independent of the operands, and the architectures do not
+  promise it either -- Arm publishes FEAT_DIT and Intel publishes DOITM because
   the base architectures leave it to the implementation. `ct.h` already
   refuses that inference for the widening multiply and asks the build for
   `CH_NATIVE_WIDEMUL` instead
   ([#53](https://github.com/c4milo/chapulin/issues/53)). The AES path
-  follows it: `CH_NATIVE_AES` is the build's assertion, firmware defines
-  it only with a vendor statement, and `ct.h` refuses
+  follows it: `CH_NATIVE_AES` is the build's assertion, for the AES
+  instructions and for the carry-less multiply GHASH runs on under
+  `AES=hw` (`docs/decisions.md` entry 50), firmware defines it only with
+  a vendor statement that covers both, and `ct.h` refuses
   `-DCH_SUITE_AES_GCM` without it. This is an assertion and not a check,
   and it is the weakest link in the list; what it buys is that the claim
   is written in the image's build files by someone who can answer for it,
@@ -1183,17 +1199,21 @@ last `ROLE=server` stub, as the entry said it would.
   with a measured branch count per spec in `BRANCH_CEILING`. Before that
   no gate compiled them, so nothing held `multiply_by_subkey`'s two masks
   to a branchless lowering -- the same select `lint-wide-multiply` holds
-  for `poly1305_final` and `cswap`. `quic_aes_hw.c` stays in
-  `WIDEMUL_PUBLIC` because it cannot join: every spec targets a core
-  without the AES instructions, where the file is its own `#error`.
-  `test/aes_equiv_test.c`, the published vectors in `bin/quic_test_hw` and
-  the Wycheproof AES-GCM suite on that leg are what hold it, and none of
-  them is a timing measurement.
+  for `poly1305_final` and `cswap`. `quic_aes_hw.c` and `quic_ghash_hw.c`
+  stay in `WIDEMUL_PUBLIC` because they cannot join: every spec targets a
+  core without the AES or carry-less multiply instructions, where each
+  file is its own `#error`. `test/aes_equiv_test.c`,
+  `test/ghash_equiv_test.c`, the published vectors in `bin/quic_test_hw`,
+  the Wycheproof AES-GCM suite on that leg and `bin/diff_quic_hw` are what
+  hold them, and none of them is a timing measurement.
 
   *Key material is wiped where a secret could sit.* `quic_gcm.c` wipes the
   hash subkey, the running multiple in the GF(2^128) multiply, the
   keystream block, the tag mask and the tag it computed for comparison;
-  `quic_aes_hw.c` wipes its key-schedule word and its cipher state. Two
+  `quic_aes_hw.c` wipes its key-schedule word and its cipher state;
+  `quic_ghash_hw.c` wipes the object that holds the hash subkey, the
+  accumulator and the unreduced product once at the end of each entry,
+  not once per block. Two
   places deliberately hold no wipe. `quic_aes_soft.c` holds none because
   `ct.h` keeps every secret key away from it, so the stores would cost a
   device something for nothing. `aes_public_key_initial` holds none
@@ -1209,8 +1229,9 @@ last `ROLE=server` stub, as the entry said it would.
   `make lint-trust-separation`, `make lint-wide-multiply`, and a
   Semgrep tripwire (`inv-26-aes-public-keys-only`) over every library
   source but `quic_initial.c` and `quic_retry.c`, the two permitted
-  callers, with `quic_aes.c`, `quic_gcm.c` and the three AES
-  implementations excluded as the definition sites.
+  callers, with `quic_aes.c`, `quic_gcm.c`, the three AES
+  implementations and `quic_ghash_hw.c` excluded as the definition
+  sites.
 
   What `ct.h` refuses, and `test/quic-builds.sh` is the catch target for
   all three lines: `-DCH_SUITE_AES_GCM` without `CH_AES_HW`, and
@@ -1268,9 +1289,9 @@ last `ROLE=server` stub, as the entry said it would.
 
   What `make lint-quic-surface` reads, so the rule's own premise is
   checked rather than assumed. It fails when `quic_aes.h`,
-  `quic_aes_block.h` or `quic_gcm.h` declares a function or a
-  function-like macro outside the `aes_`, `gcm_` and `ch_aes_` family,
-  because the rule matches names;
+  `quic_aes_block.h`, `quic_gcm.h` or `quic_ghash_hw.h` declares a
+  function or a function-like macro outside the `aes_`, `gcm_` and
+  `ch_aes_` family, because the rule matches names;
   `inv26-cipher-entry-off-prefix.violation` adds a `quic_encrypt_block`
   entry and requires `test/lint-quic-surface.sh` to fail. It fails when
   either header gives a type a body, because that would put a key back

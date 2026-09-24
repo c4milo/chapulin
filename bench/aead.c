@@ -1,8 +1,10 @@
 // Times chapulin's two AEADs per byte on the machine that runs it:
 // ChaCha20-Poly1305 (aead.c) and AES-128-GCM (quic_gcm.c), each whole and
-// in its two halves, plus the carry-less multiply GHASH prototype in
-// bench/ghash_clmul.c. bench/aead.sh builds it once per AES and multiply
-// choice and writes the rows to bench/results-aead-<arch>.csv.
+// in its two halves. bench/aead.sh builds it once per AES and multiply
+// choice and writes the rows to bench/results-aead-<arch>.csv. The AES
+// value picks both halves of AES-128-GCM: AES=soft runs the S-box cipher
+// and quic_gcm.c's portable GHASH, and AES=hw runs the AES instructions
+// and quic_ghash_hw.c's GHASH on the carry-less multiply.
 //
 // Each argument names a group of rows to run:
 //
@@ -10,8 +12,6 @@
 //   chachapoly  aead_seal, aead_open, and Poly1305 alone
 //   gcm         gcm_seal, gcm_open, and its two halves: counter mode and
 //               gcm_ghash
-//   clmul       checks the prototype GHASH and the seal built on it
-//               against quic_gcm.c, then times both
 //
 // --quick before the groups takes three short samples per row, for a
 // build that only has to show the binary runs, such as an emulated one.
@@ -47,7 +47,6 @@
 #define QUICK_SAMPLES 3
 #define MAX_PAYLOAD 16384 // one full TLS record, RFC 8446 §5.1
 #define AAD_LEN 16        // both AEADs pad associated data to 16 bytes
-#define CHECK_TRIALS 2000
 
 // The payload sizes: a short packet; 1200 bytes, the smallest datagram
 // that may carry a QUIC Initial packet (RFC 9000 §14.1); 1350 bytes, a
@@ -191,18 +190,6 @@ static void run_ghash(size_t n) {
     consume(tag, sizeof tag);
 }
 
-#ifdef GHASH_CLMUL_INSTRUCTION
-static void run_ghash_clmul(size_t n) {
-    bench_ghash_clmul(&aes_key, aad, AAD_LEN, input, n, tag);
-    consume(tag, sizeof tag);
-}
-
-static void run_gcm_seal_clmul(size_t n) {
-    bench_gcm_seal_clmul(&aes_key, nonce, aad, AAD_LEN, input, n, output, tag);
-    consume(tag, sizeof tag);
-}
-#endif
-
 typedef struct {
     const char *name;
     void (*prepare)(size_t n); // untimed setup, such as the seal an open reads
@@ -225,13 +212,6 @@ static const bench_row GCM_ROWS[] = {
     {"aes128_ctr",      prepare_nothing,  run_gcm_counter_mode},
     {"ghash",           prepare_nothing,  run_ghash           },
 };
-
-#ifdef GHASH_CLMUL_INSTRUCTION
-static const bench_row CLMUL_ROWS[] = {
-    {"ghash_clmul_prototype",           prepare_nothing, run_ghash_clmul   },
-    {"aes128_gcm_seal_clmul_prototype", prepare_nothing, run_gcm_seal_clmul},
-};
-#endif
 
 static double time_repetitions(const bench_row *row, size_t n, size_t repetitions) {
     double start = now_ns();
@@ -276,56 +256,6 @@ static void measure_group(const bench_row *rows, size_t row_count) {
     }
 }
 
-#ifdef GHASH_CLMUL_INSTRUCTION
-// One trial: a fresh Initial key from a random connection ID, random
-// associated data and payload of the given lengths, and both GHASHes and
-// both seals over them. Returns 1 when every byte agrees.
-static int clmul_agrees(size_t aad_len, size_t n) {
-    uint8_t dcid[8];
-    fill_random(dcid, sizeof dcid);
-    if (aes_public_key_initial(&aes_key, dcid, sizeof dcid, CH_QUIC_ENDPOINT_CLIENT) != CH_OK) {
-        fail("aes_public_key_initial failed");
-    }
-    uint8_t check_aad[64];
-    fill_random(check_aad, aad_len);
-    fill_random(input, n);
-    uint8_t want[AES_BLOCK];
-    uint8_t got[AES_BLOCK];
-    gcm_ghash(&aes_key, check_aad, aad_len, input, n, want);
-    bench_ghash_clmul(&aes_key, check_aad, aad_len, input, n, got);
-    int same = memcmp(want, got, AES_BLOCK) == 0;
-    gcm_seal(&aes_key, nonce, check_aad, aad_len, input, n, sealed, want);
-    bench_gcm_seal_clmul(&aes_key, nonce, check_aad, aad_len, input, n, output, got);
-    same = same && memcmp(want, got, GCM_TAG) == 0 && memcmp(sealed, output, n) == 0;
-    return same;
-}
-
-// The prototype is timed only once it computes quic_gcm.c's answer:
-// every associated-data length from 0 to 64 against every payload length
-// from 0 to 48, which covers each partial block, then random lengths up
-// to MAX_PAYLOAD.
-static void check_clmul(void) {
-    size_t trials = 0;
-    for (size_t aad_len = 0; aad_len <= 64; aad_len++) {
-        for (size_t n = 0; n <= 48; n++) {
-            if (!clmul_agrees(aad_len, n)) {
-                fail("the prototype GHASH differs from gcm_ghash");
-            }
-            trials++;
-        }
-    }
-    for (size_t i = 0; i < CHECK_TRIALS; i++) {
-        if (!clmul_agrees((size_t)(rng_next() % 65), (size_t)(rng_next() % (MAX_PAYLOAD + 1)))) {
-            fail("the prototype GHASH differs from gcm_ghash");
-        }
-        trials++;
-    }
-    (void)fprintf(stderr,
-                  "bench/aead: %s GHASH prototype matches gcm_ghash and gcm_seal on %zu inputs\n",
-                  GHASH_CLMUL_INSTRUCTION, trials);
-}
-#endif
-
 static void set_up(void) {
     fill_random(input, sizeof input);
     fill_random(aad, sizeof aad);
@@ -346,14 +276,6 @@ static int run_group(const char *name) {
         measure_group(CHACHAPOLY_ROWS, sizeof CHACHAPOLY_ROWS / sizeof CHACHAPOLY_ROWS[0]);
     } else if (strcmp(name, "gcm") == 0) {
         measure_group(GCM_ROWS, sizeof GCM_ROWS / sizeof GCM_ROWS[0]);
-    } else if (strcmp(name, "clmul") == 0) {
-#ifdef GHASH_CLMUL_INSTRUCTION
-        check_clmul();
-        set_up();
-        measure_group(CLMUL_ROWS, sizeof CLMUL_ROWS / sizeof CLMUL_ROWS[0]);
-#else
-        fail("clmul: this build targets neither PMULL nor PCLMULQDQ");
-#endif
     } else {
         return 0;
     }
@@ -369,7 +291,7 @@ int main(int argc, char **argv) {
         first = 2;
     }
     if (first >= argc) {
-        (void)fprintf(stderr, "usage: %s [--quick] chacha20|chachapoly|gcm|clmul...\n", argv[0]);
+        (void)fprintf(stderr, "usage: %s [--quick] chacha20|chachapoly|gcm...\n", argv[0]);
         return 2;
     }
     set_up();

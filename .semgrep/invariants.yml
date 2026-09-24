@@ -160,8 +160,9 @@ rules:
       printed key for the Retry tag (§5.8), and every key those three
       use is public. So quic_initial.c and quic_retry.c are the only
       library sources that may name an aes_ or gcm_ entry; quic_aes.c,
-      quic_gcm.c and the three AES implementations the Makefile AES
-      variable chooses among are excluded as the definition sites.
+      quic_gcm.c, the three AES implementations the Makefile AES
+      variable chooses among and quic_ghash_hw.c, the GHASH AES=hw adds,
+      are excluded as the definition sites.
       ch_aes_block joins the family because an AES=extern build leaves
       that hook to the image, and a library source calling it would run
       AES on a key of its choosing exactly as a call to aes_ would. A use
@@ -178,12 +179,13 @@ rules:
     paths:
       exclude: [test, proof, fuzz, spec, bench, bin, examples, quic_initial.c,
                 quic_retry.c, quic_aes.c, quic_gcm.c, quic_aes_soft.c,
-                quic_aes_hw.c, quic_aes_extern.c]
+                quic_aes_hw.c, quic_aes_extern.c, quic_ghash_hw.c]
     pattern-either:
       # A call. `make lint-quic-surface` fails when a function, a
-      # function-like macro or a typedef in quic_aes.h or quic_gcm.h is
-      # named anything but aes_ or gcm_, so this prefix family matches
-      # a symbol either header gains tomorrow rather than assuming it.
+      # function-like macro or a typedef in quic_aes.h, quic_aes_block.h,
+      # quic_gcm.h or quic_ghash_hw.h is named anything but aes_ or
+      # gcm_, so this prefix family matches a symbol any of them gains
+      # tomorrow rather than assuming it.
       - patterns:
           - pattern: $F(...)
           - metavariable-regex:

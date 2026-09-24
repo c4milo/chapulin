@@ -879,3 +879,36 @@ does nothing more.
     was considered and rejected: RFC 7858 pins the validated chain, and an
     operator who pins an intermediate would be locked out on the next leaf
     rotation.
+
+50. **`CH_NATIVE_AES` covers the carry-less multiply as well as the AES
+    instructions.** Under `AES=hw`, GHASH multiplies on PMULL or
+    PCLMULQDQ in `quic_ghash_hw.c`, because `quic_gcm.c`'s portable
+    multiply was 98% of an `AES=hw` seal and the instruction runs GHASH 60
+    to 65 times faster from 1200 bytes up (docs/quic.md, "What the AES
+    axis costs in time, measured"). AES-GCM needs both instructions under one key: the AES
+    rounds produce the keystream and the hash subkey, and the carry-less
+    multiply multiplies by that subkey. So `CH_NATIVE_AES`, the build's
+    statement that this part's AES instructions run in constant time, now
+    also states that its carry-less multiply does. `ct.h` writes the
+    terms, and a `SUITE=aesgcm` build still names one define. A build
+    whose keys are the public QUIC Initial and Retry keys needs no
+    statement, as before (INV-26).
+
+    Cost: one define now asserts two things, so the vendor statement
+    behind it has to cover both instructions. A part whose AES rounds are
+    constant time and whose carry-less multiply is not cannot carry
+    `SUITE=aesgcm` honestly, and nothing here detects that part. Gain:
+    one statement per AEAD, written once in the build files by someone
+    who can answer for the part. On Arm the two are one feature already:
+    the Arm C Language Extensions put the 64-bit PMULL in the AES
+    extension, and `__ARM_FEATURE_AES` names both.
+
+    A second macro, `CH_NATIVE_CLMUL`, was considered and rejected. No
+    build here runs one instruction without the other: `AES=hw` compiles
+    `quic_aes_hw.c` and `quic_ghash_hw.c` together and every other `AES`
+    value compiles neither. The second define would be required exactly
+    when the first is, so it would add a line to every suite build and a
+    refusal to `ct.h` without separating any build that exists.
+    `CH_NATIVE_WIDEMUL` stays apart because it covers a different
+    instruction in different files, and a build asserts it without any
+    AES at all.

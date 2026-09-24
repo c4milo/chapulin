@@ -132,7 +132,7 @@ SRCS := ct.c sha256.c hkdf.c chacha20.c poly1305.c aead.c x25519.c p256.c rsa.c 
 HDRS := ct.h sha256.h hkdf.h chacha20.h poly1305.h aead.h x25519.h p256.h rsa.h ch_assert.h \
         pem.h x509.h x509_der.h x509_ca.h webpki.h webpki_cfg.h webpki_pin.h webpki_ticket.h buf.h record.h keysched.h io.h handshake_message.h handshake_parser.h handshake_record.h cfg.h session.h handshake_auth.h handshake.h handshake_post.h \
         tls.h rand.h drbg.h sha3.h sha512.h sha512_compress.h p384.h p384_field.h p256_field.h p256_scalar.h p256_point.h p256_sign.h p256_ecdh.h rsa_pkcs1.h rsa_sign.h mlkem.h mlkem_poly.h \
-        handshake_flight.h quic.h quic_aes.h quic_aes_block.h quic_aes_key.h quic_config.h quic_gcm.h quic_initial.h quic_keys.h quic_packet.h quic_retry.h quic_step.h quic_fail.h quic_token.h aes_traffic_key.h \
+        handshake_flight.h quic.h quic_aes.h quic_aes_block.h quic_aes_key.h quic_config.h quic_gcm.h quic_ghash_hw.h quic_initial.h quic_keys.h quic_packet.h quic_retry.h quic_step.h quic_fail.h quic_token.h aes_traffic_key.h \
         srv_cfg.h srv.h srv_parser.h srv_message.h srv_cookie.h srv_auth.h srv_out.h srv_flight.h srv_handshake.h srv_quic.h srv_rec.h keylog.h \
         rec.h rec_frame.h rec_step.h
 
@@ -186,13 +186,21 @@ else
 $(error SUITE=$(SUITE) is not a cipher suite; use SUITE=chacha or SUITE=aesgcm)
 endif
 
+# AES=hw is two sources rather than one: quic_aes_hw.c runs the block
+# cipher on the AES instructions and quic_ghash_hw.c runs GHASH's multiply
+# on the carry-less multiply instruction. quic_gcm.c calls the second in
+# place of its own portable multiply under -DCH_AES_HW, so an AES=hw object
+# carries both and the other two values carry neither. AES_HW_SRCS names
+# the pair once, for AES_IMPL below and for every test binary that builds
+# the AES=hw leg whatever this build's AES value is.
+AES_HW_SRCS := quic_aes_hw.c quic_ghash_hw.c
 AES ?= soft
 ifeq ($(AES),soft)
 AES_DEF :=
 AES_IMPL := quic_aes_soft.c
 else ifeq ($(AES),hw)
 AES_DEF := -DCH_AES_HW
-AES_IMPL := quic_aes_hw.c
+AES_IMPL := $(AES_HW_SRCS)
 else ifeq ($(AES),extern)
 AES_DEF := -DCH_AES_EXTERN
 AES_IMPL := quic_aes_extern.c
@@ -208,32 +216,39 @@ QUIC_SRCS := quic_aes.c $(AES_IMPL) quic_gcm.c quic_keys.c quic_packet.c quic_in
 # from meeting. Without this the object imported three functions no
 # source in it defined, and lib-check said so.
 SUITE_ADD := $(if $(SUITE_DEF),quic_aes.c $(AES_IMPL) quic_gcm.c)
-# The three implementation sources, named whichever one this build picks,
-# so a check that reads every AES choice does not re-derive the list.
-AES_IMPL_SRCS := quic_aes_soft.c quic_aes_hw.c quic_aes_extern.c
-# Whether this compiler can build AES=hw, and with which flag, probed
-# rather than assumed. clang on Apple silicon predefines
-# __ARM_FEATURE_AES with no flag; an x86-64 build needs -maes; a cross
-# compiler for a core without the instructions can do neither, and the
-# targets that read this skip rather than fail the whole check. `none`
-# means the macros are already there, so the flag added is empty.
+# The implementation sources, named whichever ones this build picks, so a
+# check that reads every AES choice does not re-derive the list.
+AES_IMPL_SRCS := quic_aes_soft.c $(AES_HW_SRCS) quic_aes_extern.c
+# Whether this compiler can build AES=hw, and with which flags, probed
+# rather than assumed. AES=hw needs two instructions: the AES rounds and
+# the carry-less multiply GHASH runs on. clang on Apple silicon
+# predefines __ARM_FEATURE_AES with no flag, and on Arm that one macro
+# covers both, because the Arm C Language Extensions put the 64-bit PMULL
+# in the AES extension. x86-64 names them apart: -maes turns on __AES__
+# and -mpclmul turns on __PCLMUL__, and the probe accepts the pair only
+# when both macros appear. A cross compiler for a core without the
+# instructions can do neither, and the targets that read this skip rather
+# than fail the whole check. `none` means the macros are already there,
+# so the flag added is empty.
 AES_HW_PROBE := $(shell \
-  if $(CC) -dM -E -x c /dev/null 2>/dev/null | grep -qE '__ARM_FEATURE_AES|__AES__'; then echo none; \
-  elif $(CC) -maes -dM -E -x c /dev/null 2>/dev/null | grep -q '__AES__'; then echo -maes; \
+  if $(CC) -dM -E -x c /dev/null 2>/dev/null | grep -q '__ARM_FEATURE_AES'; then echo none; \
+  elif [ "$$($(CC) -dM -E -x c /dev/null 2>/dev/null | grep -cwE '__AES__|__PCLMUL__')" = 2 ]; then echo none; \
+  elif [ "$$($(CC) -maes -mpclmul -dM -E -x c /dev/null 2>/dev/null | grep -cwE '__AES__|__PCLMUL__')" = 2 ]; then echo -maes -mpclmul; \
   elif $(CC) -march=armv8-a+crypto -dM -E -x c /dev/null 2>/dev/null | grep -q '__ARM_FEATURE_AES'; then echo -march=armv8-a+crypto; \
   fi)
 AES_HW_CFLAGS := $(filter-out none,$(AES_HW_PROBE))
-# The two binaries that need those instructions, named only when the
-# probe found them, so `check` builds and runs them where they work and
-# says it skipped them where they do not exist.
-AES_HW_BINS := $(if $(AES_HW_PROBE),bin/quic_test_hw bin/aes_equiv_test bin/aes_suite_test bin/srv_flight_test_aes \
-                                     bin/webpki_session_aes)
+# The binaries that need those instructions, named only when the probe
+# found them, so `check` builds and runs them where they work and says it
+# skipped them where they do not exist.
+AES_HW_BINS := $(if $(AES_HW_PROBE),bin/quic_test_hw bin/aes_equiv_test bin/ghash_equiv_test bin/aes_suite_test \
+                                     bin/srv_flight_test_aes bin/webpki_session_aes)
 # What lint-quic-partition needs to preprocess each AES implementation.
 # Each one guards its body on a second macro, so with CH_TRANSPORT_QUIC
 # alone it preprocesses to nothing and that lint would read it as a file
 # contributing to neither transport. Same shape as WIDEMUL_DEFINES, with
 # commas between a file's flags. quic_aes_soft.c needs no entry: its body
-# is what a build with neither macro compiles.
+# is what a build with neither macro compiles. quic_ghash_hw.[ch] guard
+# their body on CH_AES_HW the way quic_aes_hw.c does.
 COMMA := ,
 # aes_schedule.h and aes_traffic_key.h carry no quic prefix because they
 # are not the mode's: they hold the shape TLS_AES_128_GCM_SHA256 shares
@@ -246,12 +261,15 @@ COMMA := ,
 QUIC_EXTRA_DEFINES := quic_aes_extern.c:-DCH_AES_EXTERN \
                       aes_traffic_key.h:-DCH_SUITE_AES_GCM \
                       quic_token.c:-DCH_ROLE_SERVER quic_token.h:-DCH_ROLE_SERVER \
-                      quic_aes_hw.c:-DCH_AES_HW$(patsubst %,$(COMMA)%,$(AES_HW_CFLAGS))
+                      quic_aes_hw.c:-DCH_AES_HW$(patsubst %,$(COMMA)%,$(AES_HW_CFLAGS)) \
+                      quic_ghash_hw.c:-DCH_AES_HW$(patsubst %,$(COMMA)%,$(AES_HW_CFLAGS)) \
+                      quic_ghash_hw.h:-DCH_AES_HW
 # The files this compiler cannot preprocess at all, because the build
 # choice they need is one it does not offer. quic_aes_hw.c without the
-# AES instructions is its own #error, by design, so lint-quic-partition
-# skips it there and judges it everywhere else.
-QUIC_UNPROBED := $(if $(AES_HW_PROBE),,quic_aes_hw.c)
+# AES instructions and quic_ghash_hw.c without the carry-less multiply
+# are each their own #error, by design, so lint-quic-partition skips them
+# there and judges them everywhere else.
+QUIC_UNPROBED := $(if $(AES_HW_PROBE),,quic_aes_hw.c quic_ghash_hw.c)
 
 # The ROLE=server mode's own sources, named here for the reason
 # QUIC_SRCS and WEBPKI_SRCS are named: an auditor reads the object's
@@ -310,7 +328,8 @@ LINT_C := $(filter-out softmul.c,$(SRCS)) drbg.c sha3.c sha512.c sha512_compress
           $(SRV_SRCS) test/srv_auth_test.c test/srv_test.c test/srv_flight_test.c \
           srv_quic.c quic_token.c srv_rec.c test/srv_rec_test.c test/rec_loop_test.c test/exporter_test.c rec.c rec_frame.c rec_step.c \
           test/quic_driver_test.c test/quic_vectors.c test/diff_quic_test.c \
-          test/aes_equiv_test.c test/aes_equiv_soft.c test/aes_equiv_hw.c $(wildcard examples/*.c)
+          test/aes_equiv_test.c test/aes_equiv_soft.c test/aes_equiv_hw.c \
+          test/ghash_equiv_test.c test/ghash_equiv_soft.c $(wildcard examples/*.c)
 
 # Test-local headers: prerequisites for every binary that includes them,
 # so a header edit rebuilds the binaries it changes.
@@ -846,7 +865,10 @@ print-rec-loop-srcs:
 # because exactly one of them belongs in an object: they define the
 # same two entries, so a second one would not link. Those rows hold
 # the AES axis to one implementation, the way the PIN rows hold the
-# pinned algorithm to one. They name TRANSPORT
+# pinned algorithm to one. quic_ghash_hw.c comes out with them: the
+# AES=hw row requires it beside quic_aes_hw.c and every other row bans
+# it, because an AES=soft or AES=extern object runs quic_gcm.c's
+# portable GHASH and no second one. They name TRANSPORT
 # explicitly on both sides, because a `make check TRANSPORT=quic` hands
 # its value to every recursion below, and the TRANSPORT=tls row must
 # read the transport it names. The quic rows name EXPORTER=off for the
@@ -920,12 +942,12 @@ lint-trust-separation:
 	check "TRUST=raw-rsa KEX=pq" "x25519.c sha3.c mlkem.c mlkem_poly.c" "" "-DCH_KEX_PQ" ""; \
 	quic_files=$$(git ls-files 'quic*.c' | grep -v / | tr '\n' ' '); \
 	[ -n "$$quic_files" ] || { echo "lint-trust-separation: git tracks no quic*.c file at the root, so the transport rows would check nothing"; rc=1; }; \
-	quic_always=$$(printf '%s\n' $$quic_files | grep -vxF -e quic_aes_soft.c -e quic_aes_hw.c -e quic_aes_extern.c -e quic_token.c | tr '\n' ' '); \
+	quic_always=$$(printf '%s\n' $$quic_files | grep -vxF -e quic_aes_soft.c -e quic_aes_hw.c -e quic_ghash_hw.c -e quic_aes_extern.c -e quic_token.c | tr '\n' ' '); \
 	check "TRANSPORT=tls" "io.c record.c session.c handshake.c tls.c" "$$quic_files" "" "-DCH_TRANSPORT_QUIC"; \
-	check "TRANSPORT=quic EXPORTER=off" "$$quic_always quic_aes_soft.c" "io.c record.c session.c handshake.c tls.c quic_aes_hw.c quic_aes_extern.c quic_token.c" "-DCH_TRANSPORT_QUIC" "-DCH_AES_HW -DCH_AES_EXTERN"; \
-	check "TRANSPORT=quic AES=soft EXPORTER=off" "quic_aes_soft.c" "quic_aes_hw.c quic_aes_extern.c" "" "-DCH_AES_HW -DCH_AES_EXTERN"; \
-	check "TRANSPORT=quic AES=hw EXPORTER=off" "quic_aes_hw.c" "quic_aes_soft.c quic_aes_extern.c" "-DCH_AES_HW" "-DCH_AES_EXTERN"; \
-	check "TRANSPORT=quic AES=extern EXPORTER=off" "quic_aes_extern.c" "quic_aes_soft.c quic_aes_hw.c" "-DCH_AES_EXTERN" "-DCH_AES_HW"; \
+	check "TRANSPORT=quic EXPORTER=off" "$$quic_always quic_aes_soft.c" "io.c record.c session.c handshake.c tls.c quic_aes_hw.c quic_ghash_hw.c quic_aes_extern.c quic_token.c" "-DCH_TRANSPORT_QUIC" "-DCH_AES_HW -DCH_AES_EXTERN"; \
+	check "TRANSPORT=quic AES=soft EXPORTER=off" "quic_aes_soft.c" "quic_aes_hw.c quic_ghash_hw.c quic_aes_extern.c" "" "-DCH_AES_HW -DCH_AES_EXTERN"; \
+	check "TRANSPORT=quic AES=hw EXPORTER=off" "quic_aes_hw.c quic_ghash_hw.c" "quic_aes_soft.c quic_aes_extern.c" "-DCH_AES_HW" "-DCH_AES_EXTERN"; \
+	check "TRANSPORT=quic AES=extern EXPORTER=off" "quic_aes_extern.c" "quic_aes_soft.c quic_aes_hw.c quic_ghash_hw.c" "-DCH_AES_EXTERN" "-DCH_AES_HW"; \
 	srv_files=$$(git ls-files 'srv*.c' | grep -v / | tr '\n' ' '); \
 	[ -n "$$srv_files" ] || { echo "lint-trust-separation: git tracks no srv*.c file at the root, so the role rows would check nothing"; rc=1; }; \
 	client_only="handshake.c handshake_auth.c handshake_parser.c handshake_parser_ee.c handshake_message.c"; \
@@ -1175,10 +1197,12 @@ bin/quic_test: test/quic_vectors.c quic_aes.c $(AES_IMPL) quic_gcm.c quic_keys.c
 # The same vectors on AES=hw. CBMC cannot read an intrinsic, so the published
 # standards are how the instruction path answers for itself: FIPS 197 for the
 # cipher, RFC 9001 Appendix A for the Initial keys and the header protection
-# masks, SP 800-38D for the AEAD. bin/aes_equiv_test is the other half,
-# comparing the two implementations directly. quic_aes_hw.c is named rather
-# than $(AES_IMPL) because this binary is the hardware leg whatever the build's
-# AES value is.
+# masks, SP 800-38D for the AEAD, whose GHASH runs on the carry-less multiply
+# here. bin/aes_equiv_test and bin/ghash_equiv_test are the other half,
+# comparing each instruction path with its software twin directly.
+# $(AES_HW_SRCS) is named rather than $(AES_IMPL) because this binary is the
+# hardware leg whatever the build's AES value is, and so are the other AES=hw
+# binaries below.
 # TLS_AES_128_GCM_SHA256 in the record layer, against RFC 8448's printed
 # record. It needs the suite define, which ct.h refuses without hardware
 # AES and the build's own statement that those instructions are constant
@@ -1188,24 +1212,24 @@ bin/quic_test: test/quic_vectors.c quic_aes.c $(AES_IMPL) quic_gcm.c quic_keys.c
 # suite adds, so one source covers both builds.
 bin/srv_flight_test_aes: test/srv_flight_test.c srv_flight.c srv_out.c srv_message.c srv_cookie.c \
                          srv_auth.c $(SRV_FLIGHT_DEPS) $(SRV_SIGNERS) quic_gcm.c quic_aes.c \
-                         quic_aes_hw.c $(HDRS) $(TESTH)
+                         $(AES_HW_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) $(AES_HW_CFLAGS) -DCH_ROLE_SERVER -DCH_SUITE_AES_GCM -DCH_AES_HW \
 	  -DCH_NATIVE_AES -I. -o $@ test/srv_flight_test.c srv_flight.c srv_out.c srv_message.c \
-	  srv_cookie.c srv_auth.c $(SRV_FLIGHT_DEPS) $(SRV_SIGNERS) quic_gcm.c quic_aes.c quic_aes_hw.c
+	  srv_cookie.c srv_auth.c $(SRV_FLIGHT_DEPS) $(SRV_SIGNERS) quic_gcm.c quic_aes.c $(AES_HW_SRCS)
 
-bin/aes_suite_test: test/aes_suite_test.c record.c quic_gcm.c quic_aes.c quic_aes_hw.c \
+bin/aes_suite_test: test/aes_suite_test.c record.c quic_gcm.c quic_aes.c $(AES_HW_SRCS) \
                     aead.c chacha20.c poly1305.c hkdf.c sha256.c ct.c buf.c $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) $(AES_HW_CFLAGS) -DCH_SUITE_AES_GCM -DCH_AES_HW -DCH_NATIVE_AES -I. -o $@ \
-	  test/aes_suite_test.c record.c quic_gcm.c quic_aes.c quic_aes_hw.c aead.c chacha20.c \
+	  test/aes_suite_test.c record.c quic_gcm.c quic_aes.c $(AES_HW_SRCS) aead.c chacha20.c \
 	  poly1305.c hkdf.c sha256.c ct.c buf.c
 
-bin/quic_test_hw: test/quic_vectors.c quic_aes.c quic_aes_hw.c quic_gcm.c quic_keys.c quic_retry.c quic_initial.c quic_packet.c \
+bin/quic_test_hw: test/quic_vectors.c quic_aes.c $(AES_HW_SRCS) quic_gcm.c quic_keys.c quic_retry.c quic_initial.c quic_packet.c \
                   hkdf.c sha256.c chacha20.c poly1305.c aead.c buf.c ct.c $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) $(AES_HW_CFLAGS) -DCH_TRANSPORT_QUIC -DCH_AES_HW -I. -o $@ \
-	  test/quic_vectors.c quic_aes.c quic_aes_hw.c quic_gcm.c quic_keys.c quic_retry.c quic_initial.c quic_packet.c hkdf.c sha256.c chacha20.c poly1305.c aead.c buf.c ct.c
+	  test/quic_vectors.c quic_aes.c $(AES_HW_SRCS) quic_gcm.c quic_keys.c quic_retry.c quic_initial.c quic_packet.c hkdf.c sha256.c chacha20.c poly1305.c aead.c buf.c ct.c
 # AES=hw against AES=soft over the same inputs, the check that holds the
 # instruction path where a proof cannot reach. Both implementations are in one
 # binary under two names, which a library object may never do and a test binary
@@ -1218,6 +1242,19 @@ bin/quic_test_hw: test/quic_vectors.c quic_aes.c quic_aes_hw.c quic_gcm.c quic_k
 bin/aes_equiv_test: test/aes_equiv_test.c test/aes_equiv_soft.c test/aes_equiv_hw.c quic_aes_soft.c quic_aes_hw.c ct.c $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) $(AES_HW_CFLAGS) -DCH_TRANSPORT_QUIC -I. -o $@ test/aes_equiv_test.c test/aes_equiv_soft.c test/aes_equiv_hw.c ct.c
+# GHASH on the carry-less multiply against quic_gcm.c's portable GHASH, the
+# same check for quic_ghash_hw.c: the multiply, the loop over data and the
+# whole AEAD, each built twice in one binary. The line defines CH_AES_HW, so
+# quic_gcm.c compiles as the AES=hw build; test/ghash_equiv_soft.c undefines it
+# and compiles quic_gcm.c a second time under renamed entries, with the
+# portable GHASH the proofs cover. Both copies run quic_aes_hw.c's cipher, so
+# GHASH is the only difference. quic_aes.c calls hkdf.c for the Initial key
+# constructor, which is why hkdf.c and sha256.c link.
+bin/ghash_equiv_test: test/ghash_equiv_test.c test/ghash_equiv_soft.c quic_gcm.c quic_aes.c $(AES_HW_SRCS) \
+                      hkdf.c sha256.c ct.c $(HDRS) $(TESTH)
+	@mkdir -p bin
+	$(CC) $(CFLAGS) $(AES_HW_CFLAGS) -DCH_TRANSPORT_QUIC -DCH_AES_HW -I. -o $@ test/ghash_equiv_test.c \
+	  test/ghash_equiv_soft.c quic_gcm.c quic_aes.c $(AES_HW_SRCS) hkdf.c sha256.c ct.c
 # The same two rules for the ROLE=server mode, over the role's sources under
 # -DCH_ROLE_SERVER. Beside the seven srv sources it links what the implemented
 # ones call, which is SRV_BELOW: srv_message.c and srv_cookie.c read and write
@@ -1465,11 +1502,11 @@ bin/webpki_session_pq: test/webpki_session_test.c $(WEBPKI_TEST_SRCS) sha3.c mlk
 # suite define needs the AES instructions and the build's statement that
 # they run in constant time, so this binary builds only where
 # AES_HW_PROBE found them, like bin/aes_suite_test.
-bin/webpki_session_aes: test/webpki_session_test.c $(WEBPKI_TEST_SRCS) quic_aes.c quic_aes_hw.c quic_gcm.c \
+bin/webpki_session_aes: test/webpki_session_test.c $(WEBPKI_TEST_SRCS) quic_aes.c $(AES_HW_SRCS) quic_gcm.c \
                         $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) $(AES_HW_CFLAGS) -DCH_TRUST_WEBPKI -DCH_SUITE_AES_GCM -DCH_AES_HW -DCH_NATIVE_AES \
-	  -I. -o $@ test/webpki_session_test.c $(WEBPKI_TEST_SRCS) quic_aes.c quic_aes_hw.c quic_gcm.c
+	  -I. -o $@ test/webpki_session_test.c $(WEBPKI_TEST_SRCS) quic_aes.c $(AES_HW_SRCS) quic_gcm.c
 
 # Certificate grammar strictness: one binary per PIN, because the
 # profile's grammar is the build's grammar.
@@ -1628,11 +1665,11 @@ bin/tlsclient_pq: test/tls_client.c $(SRCS) sha3.c mlkem.c mlkem_poly.c $(HDRS) 
 # entry 45). It needs the AES instructions and the build's statement that
 # they run in constant time, so check builds it only where AES_HW_PROBE
 # found them, and e2e skips its legs, saying so, where it is absent.
-bin/tlsclient_webpki_aes: test/tls_client.c $(WEBPKI_TEST_SRCS) quic_aes.c quic_aes_hw.c quic_gcm.c \
+bin/tlsclient_webpki_aes: test/tls_client.c $(WEBPKI_TEST_SRCS) quic_aes.c $(AES_HW_SRCS) quic_gcm.c \
                           $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) $(AES_HW_CFLAGS) -DCH_TRUST_WEBPKI -DCH_SUITE_AES_GCM -DCH_AES_HW -DCH_NATIVE_AES \
-	  -I. -o $@ test/tls_client.c $(WEBPKI_TEST_SRCS) quic_aes.c quic_aes_hw.c quic_gcm.c
+	  -I. -o $@ test/tls_client.c $(WEBPKI_TEST_SRCS) quic_aes.c $(AES_HW_SRCS) quic_gcm.c
 
 bin/tlsclient_webpki_pq: test/tls_client.c $(WEBPKI_TEST_SRCS) sha3.c mlkem.c mlkem_poly.c $(HDRS) $(TESTH)
 	@mkdir -p bin
@@ -1794,13 +1831,15 @@ check: bin/unit bin/unit_ca bin/unit_pq bin/tlsclient bin/tlsclient_ecdsa bin/tl
 	./bin/mlkem_test
 	./bin/quic_driver_test
 	./bin/quic_test
-	# The AES=hw leg: the published vectors on the instructions, and the
-	# instruction path against the software one over the same inputs.
-	# CBMC cannot read an intrinsic, so these two are what hold that path
+	# The AES=hw leg: the published vectors on the instructions, and each
+	# instruction path against its software twin over the same inputs --
+	# the block cipher in bin/aes_equiv_test, GHASH in bin/ghash_equiv_test.
+	# CBMC cannot read an intrinsic, so these are what hold those paths
 	# (docs/quic.md, "What the AES axis proves"). A compiler without the
-	# AES instructions builds neither, which AES_HW_BINS reports above.
+	# AES instructions builds none of them, which AES_HW_BINS reports above.
 	@set -e; if [ -n "$(AES_HW_BINS)" ]; then \
-	  ./bin/quic_test_hw; ./bin/aes_equiv_test; ./bin/aes_suite_test; ./bin/srv_flight_test_aes; \
+	  ./bin/quic_test_hw; ./bin/aes_equiv_test; ./bin/ghash_equiv_test; ./bin/aes_suite_test; \
+	  ./bin/srv_flight_test_aes; \
 	  ./bin/webpki_session_aes; \
 	else \
 	  echo "SKIP AES=hw: $(CC) has no AES instructions and no flag turns them on"; \
@@ -1942,7 +1981,7 @@ else
 	$(CC) $(CFLAGS) $(RSA_WIDE_DEF) -DCH_TRUST_WEBPKI -DCH_KEX_PQ -I. -o bin/diff_webpki_pq test/diff_test.c $(SRCS) sha3.c sha512.c sha512_compress.c p384.c p384_field.c rsa_pkcs1.c webpki_sigalg.c webpki_cert.c webpki.c webpki_ticket.c webpki_pin.c webpki_cfg.c mlkem.c mlkem_poly.c
 	./bin/diff_webpki_pq
 ifneq ($(AES_HW_PROBE),)
-	$(CC) $(CFLAGS) $(AES_HW_CFLAGS) $(RSA_WIDE_DEF) -DCH_TRUST_WEBPKI -DCH_SUITE_AES_GCM -DCH_AES_HW -DCH_NATIVE_AES -I. -o bin/diff_webpki_aes test/diff_test.c $(SRCS) sha3.c sha512.c sha512_compress.c p384.c p384_field.c rsa_pkcs1.c webpki_sigalg.c webpki_cert.c webpki.c webpki_ticket.c webpki_pin.c webpki_cfg.c mlkem.c mlkem_poly.c quic_aes.c quic_aes_hw.c quic_gcm.c
+	$(CC) $(CFLAGS) $(AES_HW_CFLAGS) $(RSA_WIDE_DEF) -DCH_TRUST_WEBPKI -DCH_SUITE_AES_GCM -DCH_AES_HW -DCH_NATIVE_AES -I. -o bin/diff_webpki_aes test/diff_test.c $(SRCS) sha3.c sha512.c sha512_compress.c p384.c p384_field.c rsa_pkcs1.c webpki_sigalg.c webpki_cert.c webpki.c webpki_ticket.c webpki_pin.c webpki_cfg.c mlkem.c mlkem_poly.c quic_aes.c $(AES_HW_SRCS) quic_gcm.c
 	./bin/diff_webpki_aes
 else
 	@echo "SKIP diff-webpki's SUITE=aesgcm binary: $(CC) has no AES instructions"
@@ -1962,6 +2001,12 @@ else
 	./bin/diff
 	$(MAKE) bin/diff_quic
 	./bin/diff_quic
+ifneq ($(AES_HW_PROBE),)
+	$(MAKE) bin/diff_quic_hw
+	./bin/diff_quic_hw
+else
+	@echo "SKIP diff's AES=hw binary: $(CC) has no AES instructions"
+endif
 endif
 
 # The TRANSPORT=quic arm of the differential. Its own main, because
@@ -1972,6 +2017,17 @@ endif
 bin/diff_quic: test/diff_quic_test.c quic_aes.c $(AES_IMPL) quic_gcm.c hkdf.c sha256.c ct.c $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) -DCH_TRANSPORT_QUIC $(AES_DEF) -I. -o $@ test/diff_quic_test.c quic_aes.c $(AES_IMPL) quic_gcm.c hkdf.c sha256.c ct.c
+# The same main over the AES=hw sources, whatever this build's AES value is,
+# so the rows in test/diff_aes.h and test/diff_gcm.h run the AES instructions
+# and the carry-less multiply GHASH against spec/lean/Spec/Aes.lean and
+# spec/lean/Spec/Gcm.lean. bin/diff_quic runs them over the build's own AES
+# value, which is AES=soft unless the caller says otherwise, and no other
+# differential binary compiles GCM. `diff` builds this one only where
+# AES_HW_PROBE found the instructions.
+bin/diff_quic_hw: test/diff_quic_test.c quic_aes.c $(AES_HW_SRCS) quic_gcm.c hkdf.c sha256.c ct.c $(HDRS) $(TESTH)
+	@mkdir -p bin
+	$(CC) $(CFLAGS) $(AES_HW_CFLAGS) -DCH_TRANSPORT_QUIC -DCH_AES_HW -I. -o $@ test/diff_quic_test.c quic_aes.c \
+	  $(AES_HW_SRCS) quic_gcm.c hkdf.c sha256.c ct.c
 
 # The sequence enumerations compare against spec/lean/.lake/build/bin/diffspec,
 # and handshake_sequence_test skips the comparison when that binary is
@@ -2209,7 +2265,7 @@ wycheproof:
 	else \
 	  $(CC) $(CFLAGS) $(AES_HW_CFLAGS) $(RSA_WIDE_DEF) -DCH_TRANSPORT_QUIC -DCH_AES_HW -I. -Ibin \
 	    -o bin/wycheproof_test_aes_hw test/wycheproof_test.c \
-	    x25519.c chacha20.c poly1305.c aead.c hkdf.c sha256.c p256.c rsa.c rsa_mont.c mlkem.c mlkem_poly.c sha3.c buf.c ct.c sha512.c sha512_compress.c p384.c p384_field.c rsa_pkcs1.c rsa_sign.c quic_aes.c quic_aes_hw.c quic_gcm.c p256_sign.c p256_ecdh.c p256_point.c p256_scalar.c p256_field.c ; \
+	    x25519.c chacha20.c poly1305.c aead.c hkdf.c sha256.c p256.c rsa.c rsa_mont.c mlkem.c mlkem_poly.c sha3.c buf.c ct.c sha512.c sha512_compress.c p384.c p384_field.c rsa_pkcs1.c rsa_sign.c quic_aes.c $(AES_HW_SRCS) quic_gcm.c p256_sign.c p256_ecdh.c p256_point.c p256_scalar.c p256_field.c ; \
 	  ./bin/wycheproof_test_aes_hw; \
 	fi
 
@@ -2615,7 +2671,7 @@ else
 	# reason: every declaration they hold sits behind
 	# -DCH_TRANSPORT_QUIC, which this pass does not define, so it would
 	# read eight empty translation units. The two passes below read them.
-	$(CLANG_TIDY) --quiet $(filter-out webpki.c webpki_ticket.c webpki_pin.c webpki_cfg.c test/webpki_resume_test.c test/webpki_session_test.c test/webpki_chain_test.c test/webpki_auth_test.c test/webpki_encrypted_exts_test.c examples/webpki_client.c $(QUIC_SRCS) $(AES_IMPL_SRCS) test/quic_driver_test.c test/quic_vectors.c test/diff_quic_test.c test/aes_equiv_test.c test/aes_equiv_soft.c test/aes_equiv_hw.c $(SRV_SRCS) test/srv_auth_test.c test/srv_test.c test/srv_flight_test.c srv_quic.c quic_token.c srv_rec.c test/srv_rec_test.c test/rec_loop_test.c test/exporter_test.c rec.c rec_frame.c rec_step.c,$(LINT_C)) -- \
+	$(CLANG_TIDY) --quiet $(filter-out webpki.c webpki_ticket.c webpki_pin.c webpki_cfg.c test/webpki_resume_test.c test/webpki_session_test.c test/webpki_chain_test.c test/webpki_auth_test.c test/webpki_encrypted_exts_test.c examples/webpki_client.c $(QUIC_SRCS) $(AES_IMPL_SRCS) test/quic_driver_test.c test/quic_vectors.c test/diff_quic_test.c test/aes_equiv_test.c test/aes_equiv_soft.c test/aes_equiv_hw.c test/ghash_equiv_test.c test/ghash_equiv_soft.c $(SRV_SRCS) test/srv_auth_test.c test/srv_test.c test/srv_flight_test.c srv_quic.c quic_token.c srv_rec.c test/srv_rec_test.c test/rec_loop_test.c test/exporter_test.c rec.c rec_frame.c rec_step.c,$(LINT_C)) -- \
 	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -I.
 	# The pass above defines no trust mode, so it reads none of the
 	# TRUST=webpki arms. This pass parses the sources that carry them or
@@ -2640,14 +2696,15 @@ else
 	$(CLANG_TIDY) --quiet test/quic_driver_test.c test/quic_vectors.c test/diff_quic_test.c -- \
 	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_TRANSPORT_QUIC -I.
 	# The two AES implementations this build did not pick. Each needs its
-	# own define, because each guards its body on one, and quic_aes_hw.c
-	# needs whatever flag turns the instructions on -- without it the
+	# own define, because each guards its body on one, and the AES=hw pair
+	# needs whatever flags turn the instructions on -- without them each
 	# file is its own #error rather than an empty translation unit. The
-	# pass above already read the one $(AES_IMPL) names.
+	# pass above already read what $(AES_IMPL) names. quic_gcm.c joins the
+	# AES=hw pass because its AES=hw arm compiles only under -DCH_AES_HW.
 	$(CLANG_TIDY) --quiet $(filter-out $(AES_IMPL),quic_aes_extern.c) -- \
 	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_TRANSPORT_QUIC -DCH_AES_EXTERN -I.
-	@set -e; [ -z "$(AES_HW_BINS)" ] || [ -z "$(filter-out $(AES_IMPL),quic_aes_hw.c)" ] || \
-	  $(CLANG_TIDY) --quiet quic_aes_hw.c -- \
+	@set -e; [ -z "$(AES_HW_BINS)" ] || [ -z "$(filter-out $(AES_IMPL),$(AES_HW_SRCS))" ] || \
+	  $(CLANG_TIDY) --quiet $(AES_HW_SRCS) quic_gcm.c -- \
 	    -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) $(AES_HW_CFLAGS) -DCH_TRANSPORT_QUIC -DCH_AES_HW -I.
 	# test/aes_equiv_test.c alone: the two wrappers beside it compile a
 	# library source in under a renamed symbol, so linting them would
@@ -2655,6 +2712,12 @@ else
 	# on disk carries.
 	$(CLANG_TIDY) --quiet test/aes_equiv_test.c -- \
 	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_TRANSPORT_QUIC -I.
+	# test/ghash_equiv_test.c alone, for the same reason, and only where
+	# the probe found the instructions: it reads quic_ghash_hw.h, whose
+	# declarations sit behind CH_AES_HW.
+	@set -e; [ -z "$(AES_HW_BINS)" ] || \
+	  $(CLANG_TIDY) --quiet test/ghash_equiv_test.c -- \
+	    -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) $(AES_HW_CFLAGS) -DCH_TRANSPORT_QUIC -DCH_AES_HW -I.
 	# The server role gets its own pass: every declaration these files
 	# hold sits behind -DCH_ROLE_SERVER, so the pass above would read
 	# seven empty translation units.
@@ -3034,6 +3097,15 @@ lint-impact:
 #     to it. test/aes_equiv_test.c and the Wycheproof AES-GCM suite on
 #     that leg check it instead, and neither measures timing
 #     (docs/quic.md, "What the AES axis proves").
+#   quic_ghash_hw.c: GHASH's multiply on the carry-less multiply
+#     instruction, under AES=hw, in place of quic_gcm.c's portable one.
+#     It sits here for quic_aes_hw.c's reason: every spec below targets a
+#     core without PMULL or PCLMULQDQ, where the file is its own #error.
+#     Its multiply is branchless and reads no table, and the hash subkey
+#     it takes is the forward cipher of a zero block under one of the
+#     three public keys INV-26 admits. test/ghash_equiv_test.c and the
+#     Wycheproof AES-GCM suite on the AES=hw leg check it instead, and
+#     neither measures timing.
 #   srv_parser.c, srv_parser_ext.c, srv_message.c, srv_cookie.c,
 #     srv_auth.c, srv_flight.c, srv_handshake.c, srv.c: the ROLE=server
 #     protocol files. They are parsers and builders, and the transcript
@@ -3117,7 +3189,7 @@ WIDEMUL_DEFINES := quic_keys.c:-DCH_TRANSPORT_QUIC quic_packet.c:-DCH_TRANSPORT_
 WIDEMUL_PUBLIC := p256.c rsa.c rsa_mont.c pem.c x509.c x509_der.c x509_ca.c sha512.c sha512_compress.c \
                   p384.c p384_field.c rsa_pkcs1.c webpki_time.c webpki_name.c webpki_spki.c webpki_sigalg.c \
                   webpki_ext.c webpki_cert.c webpki.c webpki_pin.c webpki_cfg.c \
-                  quic_aes_hw.c quic_initial.c quic_retry.c
+                  quic_aes_hw.c quic_ghash_hw.c quic_initial.c quic_retry.c
 
 # The library sources are $(SRCS), drbg.c, and every .c file git tracks
 # at the repository root. The KEX=pq sources join LIB_SRCS by += rather
@@ -3831,13 +3903,14 @@ quic-footprint:
 	@python3 tools/quic-footprint.py
 
 # ChaCha20-Poly1305 against AES-128-GCM, timed per byte on this machine,
-# with each AEAD split into its cipher and its hash, and a carry-less
-# multiply GHASH the library does not contain. bench/aead.sh states what
-# it builds and writes bench/results-aead-<arch>.csv. It is a measurement,
-# so it is not in `check`: its numbers belong to the machine that ran
-# them, and a run takes about half a minute. `bench/aead.sh --quick`
-# builds every variant, checks the prototype GHASH against quic_gcm.c and
-# writes nothing, which is the form for CI or an emulated machine.
+# with each AEAD split into its cipher and its hash, under AES=soft and
+# AES=hw. bench/aead.sh states what it builds and writes
+# bench/results-aead-<arch>.csv. It is a measurement, so it is not in
+# `check`: its numbers belong to the machine that ran them, and a run
+# takes about half a minute. `bench/aead.sh --quick` builds every variant
+# and writes nothing, which is the form for an emulated machine.
+# .github/workflows/bench.yml runs the full form on an x86-64 runner when
+# someone starts it by hand.
 .PHONY: bench-aead
 bench-aead:
 	CC='$(CC)' bench/aead.sh

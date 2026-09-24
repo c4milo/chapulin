@@ -129,10 +129,12 @@ DOC_TABLE_HEAD = "| call | what it does |"
 # checks that, so the rule's coverage is read rather than assumed.
 # quic_aes_block.h joins the two public cipher headers because it
 # declares the key expansion and the block cipher the AES axis picks an
-# implementation for, plus the AES=extern hook. Every name all three
+# implementation for, plus the AES=extern hook. quic_ghash_hw.h joins
+# them because it declares the two GHASH steps AES=hw runs on the
+# carry-less multiply, and both take a hash subkey. Every name all four
 # declare must be one inv-26-aes-public-keys-only matches, which is
 # what cipher_surface() compares.
-CIPHER_HEADERS = ("quic_aes.h", "quic_aes_block.h", "quic_gcm.h")
+CIPHER_HEADERS = ("quic_aes.h", "quic_aes_block.h", "quic_gcm.h", "quic_ghash_hw.h")
 CIPHER_PREFIXES = ("aes_", "gcm_", "ch_aes_")
 RULES = Path(".semgrep/invariants.yml")
 RULE_ID = "inv-26-aes-public-keys-only"

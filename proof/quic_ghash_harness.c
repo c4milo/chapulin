@@ -19,6 +19,11 @@
 // The forward cipher is a contract stub (proof/quic_gcm_stubs.h), which
 // states what the composition gives up and where the real cipher is
 // proven.
+//
+// The launch line defines no CH_AES_HW, so this proves quic_gcm.c's
+// portable multiply and data loop. An AES=hw build runs quic_ghash_hw.c's
+// in their place, on an instruction CBMC cannot read, and
+// test/ghash_equiv_test.c holds those to these byte for byte.
 #include "harness.h"
 
 #include "quic_gcm_stubs.h"

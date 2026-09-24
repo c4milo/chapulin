@@ -59,28 +59,36 @@ void ct_wipe(void *p, size_t n);
 #define CH_WIDEMUL_NATIVE 1
 #endif
 
-// Whether an AES instruction runs in constant time is a claim of the same
-// kind, and the build makes it the same way. -DCH_SUITE_AES_GCM is how a build
-// says it carries a TLS cipher suite whose AEAD is AES-GCM, so its AES key is
-// what hkdf_expand_label derives from a traffic secret. No suite in this tree
-// declares it today; the two rules are written first so that the build that
-// adds one stops the compiler instead of taking whatever the Makefile AES
-// variable defaulted to. The rules sit here rather than in cfg.h, beside
-// CH_NATIVE_WIDEMUL rather than beside the trust modes, because both are one
-// claim about what a part does with secret operands.
+// Whether an AES instruction, or the carry-less multiply GHASH runs on under
+// AES=hw, runs in constant time is a claim of the same kind, and the build
+// makes it the same way. -DCH_SUITE_AES_GCM is how a build says it carries a
+// TLS cipher suite whose AEAD is AES-GCM, so its AES key is what
+// hkdf_expand_label derives from a traffic secret. SUITE=aesgcm declares it,
+// and the two rules below stop the compiler on that build instead of letting
+// it take whatever the Makefile AES variable defaulted to. The rules sit here
+// rather than in cfg.h, beside CH_NATIVE_WIDEMUL rather than beside the trust
+// modes, because both are one claim about what a part does with secret
+// operands.
 //
 //   CH_AES_HW      AES=soft is the default and reads a 256-byte S-box at an
 //                  index computed from the key, so a secret key needs the
 //                  implementation with no table. AES=extern cannot state its
 //                  timing either, because what ch_aes_block costs belongs to
 //                  the peripheral.
-//   CH_NATIVE_AES  the build asserts that this part's AES instructions run in
-//                  constant time. __ARM_FEATURE_AES and __AES__ say only that
-//                  the instructions exist, which is the inference this header
-//                  refuses above for the multiply; Arm publishes FEAT_DIT and
-//                  Intel publishes DOITM because the architectures leave the
-//                  timing to the implementation. Firmware defines it with a
-//                  vendor statement, and quic_aes_hw.c states what it covers.
+//   CH_NATIVE_AES  the build asserts that this part's AES instructions and
+//                  its carry-less multiply run in constant time. AES-GCM
+//                  needs both under one key: the AES rounds produce the
+//                  keystream and the hash subkey, and under AES=hw GHASH
+//                  multiplies by that subkey on PMULL or PCLMULQDQ
+//                  (quic_ghash_hw.c). __ARM_FEATURE_AES, __AES__ and
+//                  __PCLMUL__ say only that the instructions exist, which
+//                  is the inference this header refuses above for the
+//                  multiply; Arm publishes FEAT_DIT and Intel publishes
+//                  DOITM because the architectures leave the timing to the
+//                  implementation. Firmware defines it with a vendor
+//                  statement that covers both instructions, and
+//                  quic_aes_hw.c states what it covers. docs/decisions.md
+//                  entry 50 says why one define carries both.
 //
 // INV-26 in docs/invariants.md states the bound these two keep and what the
 // refused build would still owe. test/quic-builds.sh is the catch target.

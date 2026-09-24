@@ -82,7 +82,9 @@ Home: github.com/c4milo.
   `quic_aes_extern.c` (the AES-128 key expansion and forward cipher of
   FIPS 197, over plain bytes; the Makefile AES variable picks one)
   ← `aead.[ch]` (RFC 8439 seal/open) + `quic_gcm.[ch]`
-  (AEAD_AES_128_GCM and GHASH, TRANSPORT=quic) ← `x25519.[ch]` + `p256.[ch]` +
+  (AEAD_AES_128_GCM and GHASH, TRANSPORT=quic) with `quic_ghash_hw.[ch]`
+  (GHASH's multiply and data loop on the carry-less multiply, AES=hw
+  alone) ← `x25519.[ch]` + `p256.[ch]` +
   `rsa.[ch]`/`rsa_mont.c` (pinned-mode verify) + `p384.[ch]`/
   `p384_field.[ch]` + `rsa_pkcs1.[ch]` (the chain signatures a public
   CA writes, TRUST=webpki) ←
@@ -157,28 +159,35 @@ Home: github.com/c4milo.
   fires. `quic_aes.c`, `quic_aes_soft.c`, `quic_aes_extern.c` and
   `quic_gcm.c` sit in `WIDEMUL_CEILING` and `BRANCH_SRCS`, so a compiler
   that lowers one of their masked selects to a branch shows as a count
-  that grows; `quic_aes_hw.c` cannot join, because every spec targets a
-  core with no AES instructions.
+  that grows; `quic_aes_hw.c` and `quic_ghash_hw.c` cannot join, because
+  every spec targets a core with no AES or carry-less multiply
+  instructions.
   The Makefile AES variable chooses the implementation the way TRUST
   chooses the pinned algorithm, and never two in one object: `soft` is
   this S-box, `hw` uses the compiler's own intrinsics under
   `__ARM_FEATURE_AES` or `__AES__`, and `extern` takes a caller-supplied
   `ch_aes_block`, the way `ch_rand_bytes` takes entropy, so a vendor AES
-  peripheral needs no code here. Those two macros are the whole
-  detection, and the choice is the compiler's at build time: nothing here
-  probes a CPU and nothing asks an operating system. An arm64 core cannot
-  answer the question itself — reading ID_AA64ISAR0_EL1 from EL0 takes
-  SIGILL — so runtime detection means per-OS code this tree cannot carry
-  and which the bare-metal m3 and freertos lanes have nobody to ask. A
-  consumer compiles chapulin into its own build, so it already chooses
-  `-march=armv8-a+crypto` or `-maes`; a build without the flag takes
-  AES=soft and stays correct, and AES=hw without the instructions is an
-  #error rather than a silent fall back. CBMC cannot read an intrinsic,
-  so the proofs stay on the software path and AES=hw is held to it by
-  `test/aes_equiv_test.c`, by the published vectors in `bin/quic_test_hw`
-  and by the Wycheproof AES-GCM suite on that leg. docs/quic.md, "What
-  the AES axis proves", states what each value rests on and what none of
-  it proves.
+  peripheral needs no code here. `hw` also moves GHASH off `quic_gcm.c`'s
+  portable multiply onto the carry-less multiply, in `quic_ghash_hw.c`:
+  PMULL under `__ARM_FEATURE_AES`, which the Arm C Language Extensions
+  put in the AES extension, and PCLMULQDQ under `__PCLMUL__`, which
+  x86-64 turns on with `-mpclmul` beside `-maes`. Those macros are the
+  whole detection, and the choice is the compiler's at build time:
+  nothing here probes a CPU and nothing asks an operating system. An
+  arm64 core cannot answer the question itself — reading
+  ID_AA64ISAR0_EL1 from EL0 takes SIGILL — so runtime detection means
+  per-OS code this tree cannot carry and which the bare-metal m3 and
+  freertos lanes have nobody to ask. A consumer compiles chapulin into
+  its own build, so it already chooses `-march=armv8-a+crypto` or
+  `-maes -mpclmul`; a build without the flags takes AES=soft and stays
+  correct, and AES=hw without the instructions is an #error rather than
+  a silent fall back. CBMC cannot read an intrinsic, so the proofs stay
+  on the software path and AES=hw is held to it by
+  `test/aes_equiv_test.c` and `test/ghash_equiv_test.c`, by the published
+  vectors in `bin/quic_test_hw`, by the Wycheproof AES-GCM suite on that
+  leg and by the AES=hw differential, `bin/diff_quic_hw`. docs/quic.md,
+  "What the AES axis proves", states what each value rests on and what
+  none of it proves.
   A secret-key AES suite needs the instructions and needs somebody to
   say they are constant time — TLS_AES_128_GCM_SHA256, which strict RFC
   9846 §9.1 server conformance asks for. The AES axis does not enable
@@ -188,13 +197,15 @@ Home: github.com/c4milo.
   A build says it carries such a suite with `-DCH_SUITE_AES_GCM`, and
   that build is a compile error unless it also takes AES=hw and defines
   `CH_NATIVE_AES`. The second is the build's assertion that this part's
-  AES instructions run in constant time, the way `CH_NATIVE_WIDEMUL`
-  asserts the multiply: `__ARM_FEATURE_AES` and `__AES__` say the
-  instructions exist and say nothing about their latency, so firmware
-  defines it only with a vendor statement. The record layer, the
-  server's selection and the webpki client's offer run it under those
-  terms, and a QUIC build refuses it, because QUIC packet protection
-  here runs ChaCha20 alone.
+  AES instructions and its carry-less multiply run in constant time, the
+  way `CH_NATIVE_WIDEMUL` asserts the widening multiply:
+  `__ARM_FEATURE_AES`, `__AES__` and `__PCLMUL__` say the instructions
+  exist and say nothing about their latency, so firmware defines it only
+  with a vendor statement that covers both. One define carries both
+  because AES-GCM needs both under one key (docs/decisions.md 50). The
+  record layer, the server's selection and the webpki client's offer run
+  it under those terms, and a QUIC build refuses it, because QUIC packet
+  protection here runs ChaCha20 alone.
 - Proofs are mandatory, not optional, but they run in `check-slow`
   rather than `check`: `check` holds a one-minute budget so it stays
   usable as the inner loop, and the fast proof tier alone costs

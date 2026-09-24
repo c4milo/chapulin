@@ -464,8 +464,18 @@ as plain bytes.
 | value | source | what it is |
 | --- | --- | --- |
 | `soft` (default) | `quic_aes_soft.c` | FIPS 197 in C, with the S-box as a 256-byte table |
-| `hw` | `quic_aes_hw.c` | the compiler's AES intrinsics, ARMv8 or x86-64 |
+| `hw` | `quic_aes_hw.c` and `quic_ghash_hw.c` | the compiler's AES intrinsics, ARMv8 or x86-64, and GHASH on the carry-less multiply |
 | `extern` | `quic_aes_extern.c` | forwards to `ch_aes_block`, which the image defines |
+
+`AES=hw` is the one value that changes GHASH as well as the cipher. Under
+`CH_AES_HW`, `quic_gcm.c`'s `multiply_by_subkey` and `hash_data` call
+`gcm_multiply_by_subkey_hw` and `gcm_hash_data_hw` in `quic_ghash_hw.c`, which
+compute the same GF(2^128) products with four carry-less 64-bit products and a
+reduction per block. `AES=soft` and `AES=extern` run `quic_gcm.c`'s portable
+multiply, 128 masked steps per block, and compile no `quic_ghash_hw.c`.
+`quic_ghash_hw.h` states the two contracts. It is a pair of its own rather than
+more entries in `quic_aes_block.h`, because `quic_aes.c` alone calls that header
+and `quic_gcm.c` alone calls this one.
 
 One implementation per object, the way `PIN` puts one pinned algorithm in one
 object. All three define the same two entries, so a second one would not link;
@@ -483,16 +493,24 @@ a key object at all.
 **Detection is the compiler's, at build time.** `quic_aes_hw.c` guards on
 `__ARM_FEATURE_AES` (ARMv8 crypto extensions, `<arm_neon.h>`, `vaeseq_u8` and
 `vaesmcq_u8`) and `__AES__` (x86-64 AES-NI, `<wmmintrin.h>`, `_mm_aesenc_si128`,
-`_mm_aesenclast_si128` and `_mm_aeskeygenassist_si128`). Nothing probes a CPU
+`_mm_aesenclast_si128` and `_mm_aeskeygenassist_si128`). `quic_ghash_hw.c`
+guards on `__ARM_FEATURE_AES` (`vmull_p64`, the 64-bit PMULL the Arm C Language
+Extensions put in the AES extension) and `__PCLMUL__` (x86-64 PCLMULQDQ,
+`_mm_clmulepi64_si128`). x86-64 names the two apart, so an x86-64 build takes
+`-maes -mpclmul`, and the Makefile's `AES_HW_PROBE` accepts that pair only when
+the compiler then defines both `__AES__` and `__PCLMUL__`. Nothing probes a CPU
 and nothing asks an operating system. An arm64 core cannot answer the question
 itself — reading `ID_AA64ISAR0_EL1` from EL0 takes SIGILL — so runtime
 detection means per-OS code, which the C11-and-libc rule forbids and which the
 bare-metal m3 and freertos lanes have nobody to ask. A consumer compiles
 chapulin into its own build, so it already chooses `-march=armv8-a+crypto` or
-`-maes`. A build without the flag takes `AES=soft` and stays correct;
+`-maes -mpclmul`. A build without the flags takes `AES=soft` and stays correct;
 `AES=hw` without the instructions is a hard `#error`, not a silent fall back,
-because `AES=hw` is a statement about what the object contains. The intrinsic
-headers are the compiler's own, so they are not third-party code.
+because `AES=hw` is a statement about what the object contains. Each of the two
+files carries its own `#error`, so an x86-64 build with `-maes` and no
+`-mpclmul` stops at `quic_ghash_hw.c` rather than running the portable GHASH
+under an `AES=hw` label. The intrinsic headers are the compiler's own, so they
+are not third-party code.
 
 ### What the AES axis proves
 
@@ -504,8 +522,31 @@ each one rests on, and nothing more:
 | path | proved | tested |
 | --- | --- | --- |
 | `soft` | `proof/quic_aes_harness.c`: memory safety and absence of UB over unconstrained inputs at the module's real bound. `spec/lean/Spec/Aes.lean` through `test/diff_aes.h`: the cipher against FIPS 197 as the spec states it | FIPS 197 §B and §C.1, RFC 9001 Appendix A, SP 800-38D and Wycheproof AES-GCM, in `bin/quic_test` |
-| `hw` | nothing | `bin/aes_equiv_test`: the round keys and the cipher block against `soft`, byte for byte, over fixed edge cases, every single-bit key and block, and 200,000 random pairs. `bin/quic_test_hw`: the same published vectors `bin/quic_test` runs. `bin/wycheproof_test_aes_hw`: the AES-GCM suite |
+| `hw` | nothing | `bin/aes_equiv_test`: the round keys and the cipher block against `soft`, byte for byte, over fixed edge cases, every single-bit key and block, and 200,000 random pairs. `bin/ghash_equiv_test`: GHASH on the carry-less multiply against `quic_gcm.c`'s portable GHASH, byte for byte, at three levels: 117,409 multiplies (zero, one, x^127, all ones and R against each other, every pair of single-bit operands, 1,000 squares and 100,000 random pairs), 267 runs of the data loop over every length from 0 to 65 bytes and 200 random lengths up to 16,384, and 2,109 whole AEAD cases (seal, GHASH, open with the genuine tag and with one bit of it flipped, and the in-place seal). `bin/quic_test_hw`: the same published vectors `bin/quic_test` runs. `bin/wycheproof_test_aes_hw`: the AES-GCM suite. `bin/diff_quic_hw`: the AES and GCM rows of the Lean differential, which `make diff` runs where the compiler has the instructions |
 | `extern` | nothing | nothing here can: the block function is the image's |
+
+`bin/ghash_equiv_test` compiles `quic_gcm.c` twice into one binary: once as the
+`AES=hw` build and once, through `test/ghash_equiv_soft.c`, with `CH_AES_HW`
+undefined and the entries renamed, which is the portable GHASH the proofs cover.
+Both copies run `quic_aes_hw.c`'s cipher, so GHASH is the only difference
+between them. Every pair of single-bit operands puts each product degree from 0
+to 254 through the reduction on its own.
+`test/violations/ghash-hw-reduction-constant.violation` shifts the upper half
+of the product by 8 where the field polynomial's x^7 term needs 7, and
+`ghash-hw-cross-product-halves-swapped.violation` swaps the two halves of one
+cross product; each requires that binary to fail. Both edit the shared C after
+the instruction, not either architecture's arm, so they land on an ARMv8 runner
+and an x86-64 one alike.
+
+Two more mutants hold the build rather than the arithmetic, because the
+equivalence test cannot see an `AES=hw` object that runs the portable GHASH: the
+bytes agree and only the time differs.
+`ghash-hw-falls-back-to-portable.violation` guards `quic_gcm.c`'s `AES=hw` arm
+on a macro no build defines, and `test/quic-builds.sh` fails it, because that
+script compiles `quic_gcm.c` with `-DCH_AES_HW` and requires the object to call
+both `quic_ghash_hw.c` entries. `ghash-hw-source-unpackaged.violation` drops
+`quic_ghash_hw.c` from the `AES=hw` source list, and `lint-trust-separation`
+fails it.
 
 `bin/aes_equiv_test` compares two things rather than one. The round keys are
 compared whole, so a key schedule that diverges is named at the schedule rather
@@ -523,23 +564,29 @@ beyond the contract `quic_aes_block.h` states; the integrator owns
 `ch_aes_block` the way it owns `ch_rand_bytes`. And an `AES=hw` object is
 checked on the architecture the runner has: a run on an ARMv8 host exercises
 the `vaeseq_u8` arm and leaves the AES-NI arm compiled but unrun, and the
-reverse on x86-64. Both arms are exercised only across both CI legs.
+reverse on x86-64. Both arms are exercised only across both CI legs. The same
+holds for `quic_ghash_hw.c`: an ARMv8 runner runs PMULL and leaves the
+PCLMULQDQ arm compiled but unrun.
 
 None of the three rows is a timing measurement. Every entry above compares
 bytes, and no check in this tree times an AES instruction or a table lookup.
 What the rows do carry is a branch count: `quic_aes.c`, `quic_aes_soft.c`,
 `quic_aes_extern.c` and `quic_gcm.c` are in `BRANCH_SRCS`, so a compiler that
 lowers one of their masked selects to a conditional branch fails
-`lint-wide-multiply`. `quic_aes_hw.c` is not and cannot be: every spec targets
-a core without the AES instructions, where that file is its own `#error`.
+`lint-wide-multiply`. `quic_aes_hw.c` and `quic_ghash_hw.c` are not and cannot
+be: every spec targets a core without the AES or carry-less multiply
+instructions, where each file is its own `#error`. `quic_ghash_hw.c` holds no
+select to lower: its multiply is shifts, exclusive-ors and the instruction.
 
-So whether an AES instruction runs in constant time is a claim this tree never
-checks. It asks the build to make it instead. `-DCH_SUITE_AES_GCM` is how a
-build says it carries a TLS cipher suite whose AEAD is AES-GCM, and therefore
-hands AES a traffic key; `ct.h` refuses that build unless it also takes
-`AES=hw` and defines `CH_NATIVE_AES`, the build's own assertion about the part.
-`__ARM_FEATURE_AES` and `__AES__` do not carry it -- they say the instructions
-exist -- and `ct.h` refuses the same inference for the widening multiply
+So whether an AES instruction or the carry-less multiply runs in constant time
+is a claim this tree never checks. It asks the build to make it instead.
+`-DCH_SUITE_AES_GCM` is how a build says it carries a TLS cipher suite whose
+AEAD is AES-GCM, and therefore hands AES a traffic key; `ct.h` refuses that
+build unless it also takes `AES=hw` and defines `CH_NATIVE_AES`, the build's own
+assertion about the part, which covers both instructions (`docs/decisions.md`
+entry 50). `__ARM_FEATURE_AES`, `__AES__` and `__PCLMUL__` do not carry it --
+they say the instructions exist -- and `ct.h` refuses the same inference for
+the widening multiply
 ([#53](https://github.com/c4milo/chapulin/issues/53)). INV-26 in
 docs/invariants.md states what that build would owe and what is already in
 place for it.
@@ -560,59 +607,62 @@ of this one. An `AES=extern` build cannot even state its timing: what
 *Measured*, 2026-09-24, by `bench/aead.sh` (`make bench-aead`), which wrote
 `bench/results-aead-arm64.csv`. The machine is an Apple M1 Pro under macOS
 (Darwin 25.6.0), and the compiler is Apple clang 21.0.0 at `-O2`, the level the
-packaged object uses. The library sources are those of `5f8e824`. The load
-average was 8 to 9 during the recorded run. Two earlier runs at load averages of
-3.5 to 5 agree with it within 3.2% on every row that times library code.
+packaged object uses. The library sources are those of `6dd570f` with
+`quic_ghash_hw.c` added, which is the change that moved GHASH onto the
+carry-less multiply under `AES=hw`. The load average was 3.1 during the recorded
+run. Two more runs at the same load agree with it within 4.2% on every row but
+the `AES=hw` seal rows, whose spread is described below.
 
 Each figure is the median nanoseconds per payload byte over 101 samples, with 16
-bytes of associated data. Every open row is within 2.1% of its seal row, so the
-table leaves the open rows out; the CSV has them.
+bytes of associated data. The CSV has every row, the open rows of the other
+AEADs included.
 
 | ns per byte | 64 B | 1200 B | 1350 B | 16384 B |
 | --- | --- | --- | --- | --- |
-| ChaCha20-Poly1305 seal, the packaged 16x16 multiply | 7.29 | 3.73 | 3.77 | 3.52 |
-| ChaCha20-Poly1305 seal, `CH_NATIVE_WIDEMUL` | 5.27 | 2.44 | 2.50 | 2.28 |
-| AES-128-GCM seal, `AES=soft` | 70.3 | 47.4 | 47.5 | 46.2 |
-| AES-128-GCM seal, `AES=hw` | 58.2 | 39.5 | 39.6 | 38.5 |
-| its counter mode, `AES=soft` | 9.84 | 9.70 | 9.77 | 9.68 |
-| its counter mode, `AES=hw` | 0.78 | 0.61 | 0.62 | 0.60 |
-| its GHASH, `gcm_ghash` | 57.2 | 38.9 | 39.1 | 38.0 |
-| the PMULL GHASH prototype | 1.20 | 0.62 | 0.62 | 0.59 |
-| AES-128-GCM seal on the prototype, `AES=hw` | 2.37 | 1.50 | 1.48 | 1.45 |
+| ChaCha20-Poly1305 seal, the packaged 16x16 multiply | 7.06 | 3.58 | 3.62 | 3.37 |
+| ChaCha20-Poly1305 seal, `CH_NATIVE_WIDEMUL` | 4.96 | 2.30 | 2.35 | 2.14 |
+| AES-128-GCM seal, `AES=soft` | 68.6 | 45.9 | 46.1 | 44.8 |
+| AES-128-GCM seal, `AES=hw` | 3.05 | 1.39 | 1.21 | 1.11 |
+| AES-128-GCM open, `AES=hw` | 3.05 | 1.19 | 1.20 | 1.10 |
+| its counter mode, `AES=soft` | 9.24 | 9.12 | 9.18 | 9.10 |
+| its counter mode, `AES=hw` | 0.74 | 0.57 | 0.58 | 0.56 |
+| its GHASH, `AES=soft`: `quic_gcm.c`'s portable multiply | 55.9 | 36.6 | 36.8 | 35.6 |
+| its GHASH, `AES=hw`: `quic_ghash_hw.c` on PMULL | 1.93 | 0.61 | 0.61 | 0.55 |
 
 What the numbers show:
 
-- ChaCha20-Poly1305 is faster than AES-128-GCM at every size, under both `AES`
-  values. With `AES=hw`, AES-128-GCM takes 8.0 times as long as the packaged
-  ChaCha20-Poly1305 at 64 bytes, and 10.5 to 10.9 times as long from 1200 bytes
-  up.
-- GHASH is most of AES-128-GCM's time. With `AES=hw` the GHASH row is 98% to 99%
-  of the seal row at every size, and with `AES=soft` it is 82% to 85%. `quic_gcm.c`
-  multiplies bit by bit, 128 masked steps per 16-byte block
-  (`multiply_by_subkey`), and neither `AES` value changes that code. `AES=hw`
-  makes counter mode 12.6 times faster at 64 bytes and 16 times faster from 1200
-  bytes up, and the whole seal takes 17% less time.
-- The prototype is `bench/ghash_clmul.c`. The library does not contain it, and
-  the bench checks it against `gcm_ghash` and `gcm_seal` on 5185 inputs before it
-  times it. It computes GHASH 48 times faster at 64 bytes and 63 to 65 times
-  faster from 1200 bytes up. An `AES=hw` seal on it takes 0.33 to 0.41 of the
-  packaged ChaCha20-Poly1305's time, and 0.45 to 0.63 of the
-  `CH_NATIVE_WIDEMUL` one's.
-- The prototype hashes one block per multiply, keeps no table of the powers of
-  H, and computes four products per block where Karatsuba needs three. Its file
-  header lists these.
-- The seal on the prototype is the least stable row. Its spread between the
-  25th and 75th percentile reaches 11% in the recorded run and 20% in an
-  earlier one, and its median moved 10% between runs. It also takes longer than
-  its two halves timed apart: 1.50 ns per byte against 0.61 plus 0.62 at 1200
-  bytes. A row that calls the two halves back to back showed the same excess, so
-  the excess comes from running them together, not from the seal's code.
+- With `AES=hw`, AES-128-GCM is now faster than ChaCha20-Poly1305 at every size.
+  A seal takes 0.43 of the packaged ChaCha20-Poly1305 seal's time at 64 bytes
+  and 0.33 to 0.39 from 1200 bytes up, and 0.62 of the `CH_NATIVE_WIDEMUL`
+  one's at 64 bytes and 0.51 to 0.60 from 1200 bytes up. Before this change the
+  same seal took 8.0 to 10.9 times as long as the packaged ChaCha20-Poly1305.
+- GHASH on PMULL is 29 times faster than the portable multiply at 64 bytes and
+  60 to 65 times faster from 1200 bytes up. It is now about half of an
+  `AES=hw` open from 1200 bytes up, where the portable GHASH was 98% to 99% of
+  the `AES=hw` seal. At 64 bytes it is 63%, and 3.5 times its cost per byte at
+  16,384 bytes. Each GHASH call runs work that does not grow with the data:
+  one forward-cipher block for the hash subkey, one more multiply for the block
+  of lengths, and a 64-byte wipe per entry into `quic_ghash_hw.c`.
+- `AES=soft` runs the same code as before. Its GHASH is 80% to 82% of its seal, and an
+  `AES=soft` seal takes 9.7 to 13.3 times as long as the packaged
+  ChaCha20-Poly1305.
+- The `AES=hw` seal rows are the least stable in the file. Their spread between
+  the 25th and 75th percentile reaches 15.8% at 1200 bytes, and the three runs
+  disagree by up to 15.5% at 16,384 bytes. The open rows, which run the same
+  two halves in the other order, spread 0.2% to 0.4% in the recorded run, and at
+  1200 bytes the seal's median sits 16% above the open's. The earlier
+  prototype's seal row showed the same excess. Its cause was not measured, so
+  the open row is the steadier figure for what the AEAD costs.
+- The multiply is the plain form: four carry-less products and a reduction per
+  block, no table of the powers of H, and no Karatsuba split.
+  `quic_ghash_hw.c`'s header says why, and no other form was measured here.
 
-No x86-64 row exists. An emulated x86-64 run is no measurement, so the one run
-here, under Docker on this machine, only showed that the gcc 13.3 build with
-`-maes -mpclmul` compiles and that its PCLMULQDQ prototype matches `gcm_ghash`
-on the same 5185 inputs. On a real x86-64 Linux machine, `make bench-aead
-CC=gcc` writes `bench/results-aead-x86_64.csv` beside the arm64 file.
+No x86-64 row exists yet. An emulated x86-64 run is no measurement, so the one
+run here, under Docker on this machine, only showed that the gcc 13.3 build with
+`-maes -mpclmul` compiles and that `bin/ghash_equiv_test` passes on PCLMULQDQ.
+`.github/workflows/bench.yml` runs `make bench-aead CC=gcc` on an x86-64 runner
+when someone starts it by hand, prints `bench/results-aead-x86_64.csv` and keeps
+it as a run artifact.
 
 ### What the AES exception costs, against today's counts
 

@@ -15,6 +15,12 @@
 // be absent on the day it arrives. ct.h refuses that build unless it also
 // takes AES=hw, so no table sits underneath it.
 //
+// GHASH has two bodies, and the Makefile AES variable picks one.
+// AES=soft and AES=extern run the portable multiply below, 128 masked
+// steps per block. AES=hw runs quic_ghash_hw.c's, four carry-less
+// products and a reduction per block, and compiles no portable body.
+// Everything else here is one body under every AES value.
+//
 // Only the 96-bit IV exists here. SP 800-38D §7.1 takes the first
 // counter block straight from a 96-bit IV, and hashes any other IV
 // length with GHASH first. QUIC produces no other length, so the second
@@ -31,11 +37,29 @@
 #include <string.h>
 
 #include "ct.h"
+#ifdef CH_AES_HW
+#include "quic_ghash_hw.h"
+#endif
 
 // The block of zeros SP 800-38D §7.1 step 1 encrypts to get the hash
 // subkey H.
 static const uint8_t ZERO_BLOCK[AES_BLOCK] = {0};
 
+#ifdef CH_AES_HW
+// AES=hw: quic_ghash_hw.c computes both GHASH steps on the carry-less
+// multiply instruction, and the portable bodies under #else are not
+// compiled. CBMC cannot read an intrinsic, so the proofs cover the
+// portable bodies alone, and test/ghash_equiv_test.c holds each entry
+// below to its portable twin byte for byte.
+static void multiply_by_subkey(uint8_t acc[AES_BLOCK], const uint8_t subkey[AES_BLOCK]) {
+    gcm_multiply_by_subkey_hw(acc, subkey);
+}
+
+static void hash_data(uint8_t acc[AES_BLOCK], const uint8_t subkey[AES_BLOCK], const uint8_t *data,
+                      size_t n) {
+    gcm_hash_data_hw(acc, subkey, data, n);
+}
+#else
 // The 128 bits of one block, which is how many steps SP 800-38D §6.3's
 // Algorithm 1 takes. A size_t, because it counts loop iterations.
 #define GCM_BLOCK_BITS ((size_t)8 * AES_BLOCK)
@@ -96,6 +120,7 @@ static void hash_data(uint8_t acc[AES_BLOCK], const uint8_t subkey[AES_BLOCK], c
         off += take;
     }
 }
+#endif // CH_AES_HW
 
 // SP 800-38D §6.4's last block holds the two lengths in bits, each as a
 // 64-bit big-endian value. The bytes are written one at a time, so this

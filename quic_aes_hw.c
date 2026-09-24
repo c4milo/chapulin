@@ -41,9 +41,11 @@
 // So one macro carries that claim here, and it is the build's to make:
 //
 //   CH_NATIVE_AES  the build asserts that this part's AES instructions
-//                  run in constant time. Firmware defines it only with a
-//                  vendor statement, the way it defines CH_NATIVE_WIDEMUL.
-//                  Nothing in this file reads it.
+//                  run in constant time, and so does the carry-less
+//                  multiply quic_ghash_hw.c runs GHASH on, the other half
+//                  of an AES=hw object. Firmware defines it only with a
+//                  vendor statement that covers both, the way it defines
+//                  CH_NATIVE_WIDEMUL. Nothing in this file reads it.
 //
 // Nothing reads it because nothing here needs it: INV-26 admits only the
 // three public keys RFC 9001 fixes, and their timing leaks nothing an

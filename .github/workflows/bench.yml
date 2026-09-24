@@ -1,0 +1,45 @@
+name: bench
+
+# Times ChaCha20-Poly1305 against AES-128-GCM per byte on an x86-64
+# runner, which writes the partner of bench/results-aead-arm64.csv.
+# Someone starts it by hand and nothing else does: a timing belongs to
+# the machine that ran it, and a shared runner is a loaded machine, so a
+# run is a measurement to read, not a check that passes or fails. The job
+# commits nothing; it prints the CSV on the run page and keeps it as an
+# artifact, and whoever records it copies it into bench/ with the runner's
+# load average from its header.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  aead-x86_64:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Time the AEADs under gcc
+        # gcc is the runner's own, as in the check job, and the CSV header
+        # records its version. The job reads no pin from
+        # tools/toolchain.env, so it runs no load-pins step. bench/aead.sh
+        # probes -maes -mpclmul for the AES=hw build, and it fails rather
+        # than writing a file without that row when the probe finds
+        # nothing.
+        run: make bench-aead CC=gcc
+      - name: Print the CSV on the run page
+        run: |
+          {
+            echo '```'
+            cat bench/results-aead-x86_64.csv
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Keep the CSV
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: results-aead-x86_64
+          path: bench/results-aead-x86_64.csv
+          if-no-files-found: error
