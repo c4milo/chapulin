@@ -1,0 +1,17 @@
+invariant: INV-17
+file: quic.c
+catches: quic_driver_test
+reason: ch_quic_seal_close clears the level's write bit after its one
+  seal and leaves the key bytes in the session, so a secret Handshake or
+  1-RTT write key outlives the one packet it was kept for until
+  ch_quic_close. test_close_after_failure requires the Initial
+  connection ID and the Handshake send keys zero right after each seal.
+
+--- old
+    if (rc == CH_OK) {
+        quic_wipe_write_keys(q, level);
+    }
+--- new
+    if (rc == CH_OK) {
+        q->levels_ready &= (uint8_t)~CH_QUIC_LEVEL_BIT(level, CH_KEY_WRITE);
+    }

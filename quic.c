@@ -216,10 +216,13 @@ int ch_quic_crypto_out(ch_quic *q, uint8_t level, uint8_t *out, size_t cap, size
 }
 #endif // CH_ROLE_SERVER
 
-int ch_quic_seal(ch_quic *q, uint8_t level, uint64_t pn, size_t pn_len, const uint8_t *hdr,
-                 size_t hdr_len, const uint8_t *pt, size_t pt_len, uint8_t *out, size_t cap,
-                 size_t *out_len) {
-    if (session_dead(q) || level > CH_LEVEL_APPLICATION ||
+// One packet, at a level whose write bit q->levels_ready holds. The two
+// seal entries share it and differ only in the session state each admits
+// and in what ch_quic_seal_close wipes after it.
+static int seal_at_level(ch_quic *q, uint8_t level, uint64_t pn, size_t pn_len, const uint8_t *hdr,
+                         size_t hdr_len, const uint8_t *pt, size_t pt_len, uint8_t *out, size_t cap,
+                         size_t *out_len) {
+    if (level > CH_LEVEL_APPLICATION ||
         (q->levels_ready & CH_QUIC_LEVEL_BIT(level, CH_KEY_WRITE)) == 0) {
         return CH_EINVAL;
     }
@@ -247,6 +250,42 @@ int ch_quic_seal(ch_quic *q, uint8_t level, uint64_t pn, size_t pn_len, const ui
                                hdr, hdr_len, pt, pt_len, out, cap, out_len);
     if (rc == CH_OK) {
         q->initial_sealed++;
+    }
+    return rc;
+}
+
+int ch_quic_seal(ch_quic *q, uint8_t level, uint64_t pn, size_t pn_len, const uint8_t *hdr,
+                 size_t hdr_len, const uint8_t *pt, size_t pt_len, uint8_t *out, size_t cap,
+                 size_t *out_len) {
+    if (session_dead(q)) {
+        return CH_EINVAL;
+    }
+    return seal_at_level(q, level, pn, pn_len, hdr, hdr_len, pt, pt_len, out, cap, out_len);
+}
+
+// The Initial packet carries a GCM tag and the other two levels a
+// ChaCha20-Poly1305 one, and the close bound below counts one length for
+// both.
+#ifndef __cplusplus
+_Static_assert(GCM_TAG == AEAD_TAG, "every level's packet carries a 16-byte tag");
+#endif
+
+// A failed session's one packet per level. quic_fail kept the write keys
+// of each level whose write bit it left set, and this call wipes them
+// right after it seals, so the bit it clears is what refuses a second
+// call at that level (docs/decisions.md 57). A refusal and a short
+// buffer seal nothing, so both leave the keys for the call that does.
+int ch_quic_seal_close(ch_quic *q, uint8_t level, uint64_t pn, size_t pn_len, const uint8_t *hdr,
+                       size_t hdr_len, const uint8_t *pt, size_t pt_len, uint8_t *out, size_t cap,
+                       size_t *out_len) {
+    // Written so no sum of caller lengths can wrap past the bound.
+    if (q->t.state != CH_ST_FAILED || hdr_len > CH_QUIC_CLOSE_MAX ||
+        pt_len > CH_QUIC_CLOSE_MAX - hdr_len || CH_QUIC_CLOSE_MAX - hdr_len - pt_len < AEAD_TAG) {
+        return CH_EINVAL;
+    }
+    int rc = seal_at_level(q, level, pn, pn_len, hdr, hdr_len, pt, pt_len, out, cap, out_len);
+    if (rc == CH_OK) {
+        quic_wipe_write_keys(q, level);
     }
     return rc;
 }

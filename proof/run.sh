@@ -1242,7 +1242,13 @@ launch slow:4 full handshake_record 65 "hsr_fetch_record.0:6,hsr_next_msg.0:11,f
 # idle machine): quic_driver 1455 properties, 72 s, 0.84 GB resident,
 # and 1461 properties, 78 s of solver time and 0.91 GB after quic_config.c
 # took the webpki resumption rule, measured at 116 s wall on a machine
-# running other lanes' proofs;
+# running other lanes' proofs. After a failure kept the write keys for
+# ch_quic_seal_close and the harness proved that call and the failure's
+# wipe over havocked key bytes (docs/decisions.md 57): 1525 properties,
+# 93 to 95 s of solver time, 103 to 119 s wall at load 10 to 21, 0.97 GB
+# resident; the unchanged harness measured 83 s and 0.89 GB on the same
+# machine that day. A second assert_dead on the integrity-limit path took
+# the formula to 1.54 GB, so that path checks the bits alone;
 # quic_step 546 properties, 4.0 s, 42 MB; quic_step_ca 553 properties,
 # 4.8 s, 45 MB. After the table took its Certificate fork from
 # ch_tls.psk_selected and the harness asserted that fork
@@ -1255,7 +1261,7 @@ launch slow:4 full handshake_record 65 "hsr_fetch_record.0:6,hsr_next_msg.0:11,f
 # resident size stays under a gigabyte. The CA leg exists because
 # hsa_epoch_commit sits behind CH_TRUST_CA and its wipe bound is the
 # larger handshake_state that mode carries.
-launch fast:4 full quic_driver 5 "fill_nondet.0:257,ct_wipe.0:441,drive.0:8,assert_dead.0:33" -DCH_TRANSPORT_QUIC -DCH_PROOF_RXBUF=12 handshake_record.c quic_config.c ct.c
+launch fast:4 full quic_driver 5 "fill_nondet.0:257,ct_wipe.0:441,drive.0:8,assert_dead.0:33,zero_bytes.0:133" -DCH_TRANSPORT_QUIC -DCH_PROOF_RXBUF=12 handshake_record.c quic_config.c ct.c
 launch fast full quic_step 5 "fill_nondet.0:37,ct_wipe.0:441" -DCH_TRANSPORT_QUIC -DCH_PROOF_RXBUF=12 ct.c
 launch fast full quic_step_ca 5 "fill_nondet.0:37,ct_wipe.0:849" -DCH_TRANSPORT_QUIC -DCH_TRUST_CA -DCH_PROOF_RXBUF=12 ct.c
 # The ROLE=server public calls and the flight driver above them. The

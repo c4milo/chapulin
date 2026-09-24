@@ -11,7 +11,7 @@
 // The wrapper forks with the object it forwards to. A TRANSPORT=tls
 // object exports ch_connect, ch_read, ch_write and ch_close, and Session
 // forwards them. A TRANSPORT=quic object exports none of the four and
-// fifteen ch_quic_ entries instead, so Quic forwards those, and Config
+// sixteen ch_quic_ entries instead, so Quic forwards those, and Config
 // takes no Io and gains the transport parameters and the two QUIC
 // callbacks. One transport compiles per build, so one of the two classes
 // exists at a time.
@@ -502,7 +502,7 @@ class Session {
 };
 #else
 // A QUIC session owns its ch_quic and closes it — wiping every key set —
-// when it is destroyed. It forwards the fifteen ch_quic_ entries and adds
+// when it is destroyed. It forwards the sixteen ch_quic_ entries and adds
 // nothing else: chapulin owns every key and the caller owns packet
 // numbers, acknowledgments, loss recovery and streams (docs/quic.md).
 // Non-copyable and non-movable, like Session and like the C ch_quic,
@@ -550,6 +550,19 @@ class Quic {
         Written result;
         result.value = ch_quic_seal(&quic_, level, pn, pn_len, hdr.data, hdr.size, pt.data, pt.size,
                                     into.data, into.size, &result.size);
+        return result;
+    }
+
+    // Seals the one CONNECTION_CLOSE packet a failed session sends at one
+    // level, then wipes that level's write keys. close_frame is one
+    // CONNECTION_CLOSE frame and nothing else; a second call at the same
+    // level is refused.
+    Written seal_close(uint8_t level, uint64_t pn, size_t pn_len, ConstBytes hdr,
+                       ConstBytes close_frame, Bytes into) {
+        Written result;
+        result.value =
+            ch_quic_seal_close(&quic_, level, pn, pn_len, hdr.data, hdr.size, close_frame.data,
+                               close_frame.size, into.data, into.size, &result.size);
         return result;
     }
 

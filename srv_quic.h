@@ -10,10 +10,10 @@
 // in full and what it costs.
 //
 // The packet calls are quic.h's and are not repeated here: ch_quic_seal,
-// ch_quic_open, ch_quic_discard, ch_quic_key_update, ch_quic_close and
-// the three readers serve either role, because they take key sets and
-// bytes and read no side. What a server replaces is the driver, because
-// a server waits where a client speaks.
+// ch_quic_seal_close, ch_quic_open, ch_quic_discard, ch_quic_key_update,
+// ch_quic_close and the three readers serve either role, because they take
+// key sets and bytes and read no side. What a server replaces is the
+// driver, because a server waits where a client speaks.
 //
 // The Retry token is not repeated here either: ch_srv_quic_token_mint and
 // ch_srv_quic_token_check are quic_token.h's, which this header includes.
@@ -65,9 +65,12 @@ int ch_srv_quic_init(ch_quic *q, const ch_cfg *cfg);
 // CH_LEVEL_HANDSHAKE.
 //
 // Returns CH_OK when the bytes were taken, whether or not they completed
-// a message. Every other code leaves the session dead, and ch_quic_alert
-// names the alert the caller puts in a CONNECTION_CLOSE of type 0x0100
-// plus that value (RFC 9001 section 4.8).
+// a message. Every other code leaves the session dead, and
+// ch_quic_error_code names the code the caller puts in CONNECTION_CLOSE:
+// 0x0100 plus ch_quic_alert for a TLS alert (RFC 9001 section 4.8). The
+// server fails through quic_fail as a client does, so it keeps the write
+// keys of each level it had installed, and ch_quic_seal_close seals that
+// close once at each (docs/quic_server.md, "When the handshake fails").
 int ch_srv_quic_crypto_in(ch_quic *q, uint8_t level, const uint8_t *p, size_t n);
 
 // Writes the Retry integrity tag of RFC 9001 section 5.8 over the Retry

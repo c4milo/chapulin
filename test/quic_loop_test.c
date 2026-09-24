@@ -16,7 +16,9 @@
 //
 // The keys agree when a packet one end seals at the 1-RTT level opens at
 // the other, which is what the two cases below check after each
-// handshake.
+// handshake. The raw build also fails each end on purpose and has it seal
+// the one CONNECTION_CLOSE each level owes, which the other end opens
+// (test/quic_loop_close.h).
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -242,6 +244,7 @@ static size_t handshake_messages(void) {
 }
 
 #ifdef CH_PIN_ECDSA
+#include "quic_loop_close.h"
 #include "quic_loop_raw.h"
 #endif
 #ifdef CH_TRUST_WEBPKI
@@ -251,6 +254,7 @@ static size_t handshake_messages(void) {
 int main(void) {
 #ifdef CH_PIN_ECDSA
     test_raw_resumption();
+    test_close_after_failure();
 #endif
 #ifdef CH_TRUST_WEBPKI
     test_webpki_resumption();

@@ -319,7 +319,7 @@ static void test_psk_and_pinned_config(chapulin::Io io) {
 static void level_ready(void *, uint8_t, uint8_t) {
 }
 
-// The QUIC leg: every one of the fifteen forwarders compiles, links against
+// The QUIC leg: every one of the sixteen forwarders compiles, links against
 // the packaged object and answers. The subject is the wrapper, not the
 // answers, so this configuration is one the object refuses: it names no ALPN
 // protocol, which RFC 9001 §8.1 makes mandatory, and no pin or PSK. Each call
@@ -348,6 +348,10 @@ static void test_quic() {
     chapulin::Written sealed = q.seal(CH_LEVEL_APPLICATION, 1, 4, chapulin::ConstBytes{header},
                                       chapulin::ConstBytes{kParams}, chapulin::Bytes{packet});
     CHECK(!sealed.ok() && sealed.error() == chapulin::Status::invalid);
+    // A session refused at init holds no write key, so it owes no close.
+    chapulin::Written closed = q.seal_close(CH_LEVEL_INITIAL, 1, 4, chapulin::ConstBytes{header},
+                                            chapulin::ConstBytes{kParams}, chapulin::Bytes{packet});
+    CHECK(!closed.ok() && closed.error() == chapulin::Status::invalid);
 
     chapulin::Opened opened = q.open(CH_LEVEL_APPLICATION, chapulin::Bytes{packet}, 1, 0, 0);
     CHECK(!opened.ok() && opened.error() == chapulin::Status::invalid);

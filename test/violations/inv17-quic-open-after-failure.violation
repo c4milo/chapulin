@@ -1,0 +1,14 @@
+invariant: INV-17
+file: quic.c
+catches: quic_driver_test
+reason: ch_quic_open checks the level's range and neither the session
+  state nor the read bit, so a failed session, which still stores the
+  Initial connection ID for its close, opens the peer's Initial packets.
+  test_close_after_failure seals one under the server's Initial key and
+  requires the failed client to refuse it with CH_EINVAL.
+
+--- old
+    if (session_dead(q) || level > CH_LEVEL_APPLICATION ||
+        (q->levels_ready & CH_QUIC_LEVEL_BIT(level, CH_KEY_READ)) == 0) {
+--- new
+    if (level > CH_LEVEL_APPLICATION) {

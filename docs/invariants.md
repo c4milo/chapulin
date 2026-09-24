@@ -746,7 +746,9 @@ last `ROLE=server` stub, as the entry said it would.
   and their headers list them: `rec.h` for `TRANSPORT=record` and
   `quic.h` for `TRANSPORT=quic`. Each one means the call changed
   nothing, the packet was dropped (`CH_QUIC_DISCARD`, RFC 9001 §5.5), or
-  no record has arrived yet (`CH_RECORD_AGAIN`).
+  no record has arrived yet (`CH_RECORD_AGAIN`). A failed QUIC session
+  stays dead: it keeps only the write keys INV-17 names, for one
+  CONNECTION_CLOSE per level, and no call revives it.
 - `CH_RECORD_AGAIN` is the one returned after work was done, so its
   terms are exact. `ch_read` returns it only when `cfg.recv` returns 0
   before a record's first byte. Every record read before that has been
@@ -1663,12 +1665,35 @@ last `ROLE=server` stub, as the entry said it would.
 ### INV-17 — secrets die at phase boundaries
 
 - **Claim.** Handshake secrets are wiped at CONNECTED; every failure
-  path wipes through `tlsi_wipe`; the DRBG erases its key forward
-  after each output.
+  path wipes through `tlsi_wipe`, or through `quic_fail` under
+  `TRANSPORT=quic`; the DRBG erases its key forward after each output.
+  The one exception is the QUIC failure path's write keys. `quic_fail`
+  keeps, at each level whose write bit in `ch_quic.levels_ready` is set,
+  the bytes that level seals with: `initial_dcid` and `initial_dcid_len`
+  at the Initial level, `handshake_tx` and `handshake_hp_tx`, and `app_tx`
+  and `app_hp_tx`. It wipes the write keys of a level whose bit is clear,
+  every read key, `hs` and the traffic secrets, and clears every read bit.
+  The kept keys serve one CONNECTION_CLOSE packet per level, which
+  `ch_quic_seal_close` seals and then wipes that level's keys and clears
+  its bit; `ch_quic_close` wipes any left (docs/decisions.md 57).
 - **Mechanism.** Fail-closed policy plus fast-key-erasure
-  construction in drbg.c.
+  construction in drbg.c. Under `TRANSPORT=quic`, both drivers fail
+  through `quic_fail`, and the write bit is what admits the one close.
 - **Check.** Convention; the wipe sits in the single `tlsi_fail`
-  funnel, so review of that one function covers every error path. One
+  funnel, so review of that one function covers every error path. The
+  QUIC exception is checked three ways. The `quic_driver` proof shows
+  that every failure path in `quic.c` leaves no read key, no read bit,
+  no traffic secret and no write key at a level without its bit, and that
+  `ch_quic_seal_close` seals only for a failed session, once per level,
+  wiping that level's keys. `bin/quic_driver_test` and
+  `bin/quic_loop_test` (`test/quic_loop_close.h`) read the session's bytes
+  after the failure and after each seal, for the client and for the
+  server. Five violations each break one rule:
+  `inv17-quic-fail-keeps-read-key`, `inv17-quic-close-sealed-twice`,
+  `inv17-quic-close-keeps-write-key` and `inv17-quic-open-after-failure`,
+  which `bin/quic_driver_test` catches, and
+  `inv17-srv-quic-fails-without-close-keys`, which `bin/quic_loop_test`
+  catches. One
   wipe inside a phase has a test: a `TRUST=webpki` client wipes the
   ML-KEM seed once the ServerHello selects x25519, and
   `inv17-x25519-keeps-mlkem-seed` requires `bin/webpki_session_test` to
@@ -1684,7 +1709,9 @@ last `ROLE=server` stub, as the entry said it would.
   derives the early secret of no PSK in their place;
   `inv17-webpki-decline-keeps-psk-early-secret` requires
   `bin/webpki_resume_test` to fail when they survive.
-- **Violation.** A PR adds an early return between fail and wipe.
+- **Violation.** A PR adds an early return between fail and wipe, or
+  lets a failed QUIC session keep a read key, or a write key past its
+  one close.
 - See [decisions: Memory and runtime](decisions.md#memory-and-runtime).
 
 ### INV-18 — no library-global mutable state

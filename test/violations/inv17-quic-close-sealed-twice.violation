@@ -1,0 +1,14 @@
+invariant: INV-17
+file: quic_fail.c
+catches: quic_driver_test
+reason: quic_wipe_write_keys zeroes a level's write keys and leaves its
+  write bit set, so ch_quic_seal_close admits a second packet at a level
+  that already sent its close, sealed under zero keys. The write bit is
+  what refuses the second call, and test_close_after_failure requires
+  CH_EINVAL from it at the Initial and the Handshake level.
+
+--- old
+    q->levels_ready &= (uint8_t)~CH_QUIC_LEVEL_BIT(level, CH_KEY_WRITE);
+}
+--- new
+}

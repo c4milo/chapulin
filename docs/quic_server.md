@@ -84,9 +84,10 @@ needs a real client's transcript; colibri's interop run below drives it
 against aioquic.
 
 **The Makefile refusal (was item 5), gone.** `ROLE=server` with
-`TRANSPORT=quic` builds, links and exports eighteen calls. Two of them are
+`TRANSPORT=quic` builds, links and exports nineteen calls. Two of them are
 the Retry token's, which landed after the rest and have a section of their
-own below.
+own below, and one is `ch_quic_seal_close`, which "When the handshake fails"
+below covers.
 
 `CH_QUIC_PARAMS_MIN_RXBUF` is still 0, and a chapulin server cannot close
 it: it would measure the bodies clients send, which is the other direction.
@@ -215,6 +216,39 @@ reason for each of the check's codes, and the window. It does not prove the
 round trip or the address binding, because the stub makes every tag
 unconstrained; the tests hold those. Eight `quic-token-` violations in
 `test/violations/` each break one rule, and each is caught.
+
+## When the handshake fails
+
+A server that fails reports the alert the way a client does, and seals the
+same one CONNECTION_CLOSE per level. `srv_quic.c` fails through `quic_fail`,
+the function `quic.c` uses, so a failed server keeps the write keys of each
+level it had installed and nothing else. `docs/quic.md`, "When a session
+fails", states the rule, the calls colibri makes and what chapulin does not
+check, and `docs/decisions.md` entry 57 states why.
+
+Which levels a server can close at depends on where it failed:
+
+- **At a ClientHello.** no_application_protocol (RFC 9001 section 8.1),
+  missing_extension for absent transport parameters (section 8.2), and every
+  other refusal of the first or the retry hello come before any Handshake
+  key exists. The server has Initial keys alone and sends one close, in an
+  Initial packet.
+- **Inside its own flight.** A failure after the ServerHello goes out, such as
+  an `on_crypto_out` that refuses bytes, leaves Initial and Handshake keys.
+- **At the client Finished.** A Finished that does not verify, or a KeyUpdate
+  or any other message in its place, which h3spec sends, leaves Handshake
+  keys and the 1-RTT write keys the server installed with its own Finished,
+  and Initial keys unless colibri discarded them first (RFC 9001 section
+  4.9.1). RFC 9000 section 10.2.3 asks for the close at each of them
+  (`rfc9000.txt:3306-3308`, `rfc9000.txt:3316-3320`).
+
+colibri reads `ch_quic_error_code`, calls `ch_quic_seal_close` once at each of
+those levels, sends the packets, and calls `ch_quic_close`. A server sends a
+CONNECTION_CLOSE in an Initial packet without padding it: RFC 9000 section
+14.1 asks a server to pad only ack-eliciting Initial packets, and a packet
+that carries CONNECTION_CLOSE alone is not one (`rfc9000.txt:403-405`). `bin/quic_loop_test` fails this server with
+no_application_protocol and with a KeyUpdate in place of the client Finished,
+and the client opens every close the server seals.
 
 ## Resumption
 

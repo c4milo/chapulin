@@ -13,14 +13,18 @@
 // proof/quic_driver_stubs.h states. SHA-256 is harness.h's stub, called
 // only through hsr_transcript_hash, which the driver never calls.
 //
-// What is havocked and what is not. Every scalar the driver branches
-// on, both offsets, the staging array, the three traffic secrets, the
-// stored Destination Connection ID and every byte of the receive buffer
-// are unconstrained. The packet protection key structs are not: quic.c
-// passes their addresses to the stubs above and reads no byte of one,
-// so their content decides no path here. quic.c holds no
-// aes_public_key at all, which is what INV-26 asks of every file
-// outside the four that may write one.
+// What is havocked. Every scalar the driver branches on, both offsets,
+// the staging array, the three traffic secrets, the stored Destination
+// Connection ID and every byte of the receive buffer are unconstrained.
+// The packet protection keys are havocked where a wipe is checked: all of
+// them before drive_crypto_in, the write keys before drive_close. quic.c
+// branches on no key byte, so the other drivers take the keys as the last
+// one left them. quic.c holds no aes_public_key at all, which is what
+// INV-26 asks of every file outside the four that may write one.
+//
+// A failure keeps the write keys of each level whose write bit is set,
+// for the one CONNECTION_CLOSE ch_quic_seal_close seals there
+// (docs/decisions.md 57); assert_dead and drive_close state the rules.
 //
 // Bounds. CH_PROOF_RXBUF is 12, the value handshake_record's own
 // harness uses, so every state this leg drives is inside the window
@@ -32,7 +36,9 @@
 // 5: each iteration past the first runs a step, a step consumes at
 // least four buffer bytes, and twelve bytes hold at most three of them.
 // ct_wipe.0 is 441, one past sizeof(handshake_state), the largest
-// object quic_wipe clears; fill_nondet.0 is 33, one past CH_PROOF_TX.
+// object quic_wipe clears; fill_nondet.0 is 257, one past the pinned
+// key; zero_bytes.0 is 133, one past sizeof app_rx, the largest key
+// field this harness checks.
 //
 // What this harness does not carry: what a step does. That is
 // quic_step's, and the flight handlers under it stay with
@@ -119,6 +125,29 @@ static void level_ready(void *io, uint8_t level, uint8_t direction) {
     (void)direction;
 }
 
+// Every byte of one key set, and of a header protection key when h is
+// not NULL, through each field's own byte arrays at sizeof lengths.
+static void havoc_set(quic_keys *k, quic_hp_key *h) {
+    fill_nondet(k->key, sizeof k->key);
+    fill_nondet(k->iv, sizeof k->iv);
+    if (h != NULL) {
+        fill_nondet(h->key, sizeof h->key);
+    }
+}
+
+static void havoc_write_keys(void) {
+    havoc_set(&q.handshake_tx, &q.handshake_hp_tx);
+    havoc_set(&q.app_tx, &q.app_hp_tx);
+}
+
+static void havoc_keys(void) {
+    havoc_write_keys();
+    havoc_set(&q.handshake_rx, &q.handshake_hp_rx);
+    havoc_set(&q.app_rx[CH_QUIC_KEY_PREVIOUS], NULL);
+    havoc_set(&q.app_rx[CH_QUIC_KEY_CURRENT], &q.app_hp_rx);
+    havoc_set(&q.app_rx[CH_QUIC_KEY_NEXT], NULL);
+}
+
 // Any saved state a call can meet, with the one invariant every entry
 // establishes and this harness asserts again on exit: the unread window
 // sits inside the receive buffer.
@@ -163,16 +192,57 @@ static void assert_window(void) {
     __CPROVER_assert(q.tx_len <= CH_PROOF_TX, "staged message inside the staging array");
 }
 
+// Whether n bytes are all zero, as one answer, so each check below is
+// one property rather than one per byte.
+static int zero_bytes(const void *p, size_t n) {
+    const uint8_t *b = p;
+    uint8_t acc = 0;
+    for (size_t i = 0; i < n; i++) {
+        acc |= b[i];
+    }
+    return acc == 0;
+}
+
+#define WRITE_BITS                                                                                 \
+    (CH_QUIC_LEVEL_BIT(CH_LEVEL_INITIAL, CH_KEY_WRITE) |                                           \
+     CH_QUIC_LEVEL_BIT(CH_LEVEL_HANDSHAKE, CH_KEY_WRITE) |                                         \
+     CH_QUIC_LEVEL_BIT(CH_LEVEL_APPLICATION, CH_KEY_WRITE))
+
+// The write keys one level holds are zero: the stored connection ID at
+// Initial, the send set and its header protection key at the other two.
+static int write_keys_zero(uint8_t level) {
+    if (level == CH_LEVEL_INITIAL) {
+        return q.initial_dcid_len == 0 && zero_bytes(q.initial_dcid, sizeof q.initial_dcid);
+    }
+    if (level == CH_LEVEL_HANDSHAKE) {
+        return zero_bytes(&q.handshake_tx, sizeof q.handshake_tx) &&
+               zero_bytes(&q.handshake_hp_tx, sizeof q.handshake_hp_tx);
+    }
+    return zero_bytes(&q.app_tx, sizeof q.app_tx) && zero_bytes(&q.app_hp_tx, sizeof q.app_hp_tx);
+}
+
 // quic.h: every error but CH_EINVAL from ch_quic_crypto_in leaves the
-// session dead, with nothing staged and nothing unread.
+// session dead, with nothing staged and nothing unread, and INV-17: with
+// no read key, no traffic secret, and no write key but those of a level
+// whose write bit is still set, which ch_quic_seal_close uses once.
 static void assert_dead(void) {
     __CPROVER_assert(q.t.state == CH_ST_FAILED, "failure marks the session dead");
     __CPROVER_assert(q.tx_len == 0, "failure stages nothing");
     __CPROVER_assert(q.t.pt_off == 0 && q.t.pt_len == 0, "failure leaves nothing unread");
-    __CPROVER_assert(q.levels_ready == 0, "failure protects no packet");
+    __CPROVER_assert((q.levels_ready & (uint8_t)~WRITE_BITS) == 0, "failure opens no packet");
     for (size_t i = 0; i < SHA256_LEN; i++) {
         __CPROVER_assert(q.t.rd_secret[i] == 0 && q.t.wr_secret[i] == 0 && q.t.res_master[i] == 0,
                          "failure wipes the traffic secrets");
+    }
+    __CPROVER_assert(zero_bytes(&q.handshake_rx, sizeof q.handshake_rx) &&
+                         zero_bytes(&q.handshake_hp_rx, sizeof q.handshake_hp_rx) &&
+                         zero_bytes(q.app_rx, sizeof q.app_rx) &&
+                         zero_bytes(&q.app_hp_rx, sizeof q.app_hp_rx),
+                     "failure wipes every read key");
+    for (uint8_t level = CH_LEVEL_INITIAL; level <= CH_LEVEL_APPLICATION; level++) {
+        __CPROVER_assert((q.levels_ready & CH_QUIC_LEVEL_BIT(level, CH_KEY_WRITE)) != 0 ||
+                             write_keys_zero(level),
+                         "failure keeps no write key at a level without its write bit");
     }
 }
 
@@ -249,10 +319,13 @@ static void drive_packets(void) {
     size_t cap = nondet_size_t();
     __CPROVER_assume(cap <= sizeof out);
     uint64_t was_sealed = q.initial_sealed;
+    int live = q.t.state != CH_ST_CLOSED && q.t.state != CH_ST_FAILED;
     int rc = ch_quic_seal(&q, level, nondet_u64(), nondet_size_t(), hdr, sizeof hdr, pkt,
                           sizeof pkt, out, cap, &out_len);
     __CPROVER_assert(rc == CH_OK || q.initial_sealed == was_sealed,
                      "RFC 9001 6.6: a seal that did not happen counts nowhere");
+    __CPROVER_assert(rc == CH_EINVAL || live,
+                     "a dead session seals only through ch_quic_seal_close");
 
     level = nondet_u8();
     size_t pkt_len = nondet_size_t();
@@ -260,8 +333,17 @@ static void drive_packets(void) {
     __CPROVER_assume(pkt_len <= sizeof pkt && pn_off <= pkt_len);
     uint8_t was_state = q.t.state;
     uint64_t was_failures = q.open_failures;
+    uint8_t was_ready = q.levels_ready;
     rc = ch_quic_open(&q, level, pkt, pkt_len, pn_off, nondet_u64(), nondet_u64(), &key_set, &pn,
                       &pt_len);
+    __CPROVER_assert(rc == CH_EINVAL || live, "a dead session opens no packet");
+    // The same quic_fail drive_crypto_in's failures run, so this checks
+    // the bits it leaves and assert_dead there checks the bytes: a second
+    // assert_dead here took the formula from 0.97 to 1.54 GB.
+    if (rc == CH_QUIC_AEAD_LIMIT) {
+        __CPROVER_assert(q.levels_ready == (uint8_t)(was_ready & WRITE_BITS),
+                         "the integrity limit keeps exactly the write bits it found");
+    }
     if (rc == CH_OK) {
         __CPROVER_assert(key_set < CH_QUIC_KEY_SETS, "the set that opened it is a named index");
         __CPROVER_assert(pt_len <= pkt_len, "the plaintext is inside the packet");
@@ -280,6 +362,50 @@ static void drive_packets(void) {
     (void)ch_quic_alert(&q);
     (void)ch_quic_state(&q);
     (void)ch_quic_error_code(&q);
+}
+
+// ch_quic_seal_close over any saved state. It seals only for a failed
+// session at a level whose write bit is set; that one seal wipes the
+// level's write keys and clears its bit and no other, a second call at
+// that level is refused, and no call changes the session state.
+static void drive_close(void) {
+    uint8_t pt[CH_PROOF_RXBUF];
+    uint8_t out[CH_PROOF_RXBUF + 4 + GCM_TAG];
+    uint8_t hdr[4];
+    size_t out_len = 0;
+    fill_nondet(pt, sizeof pt);
+    fill_nondet(hdr, sizeof hdr);
+    uint8_t level = nondet_u8();
+    size_t cap = nondet_size_t();
+    size_t pt_len = nondet_size_t();
+    __CPROVER_assume(cap <= sizeof out && pt_len <= sizeof pt);
+    uint8_t was_state = q.t.state;
+    uint8_t was_ready = q.levels_ready;
+    int rc = ch_quic_seal_close(&q, level, nondet_u64(), nondet_size_t(), hdr, sizeof hdr, pt,
+                                pt_len, out, cap, &out_len);
+    __CPROVER_assert(q.t.state == was_state, "a close changes no session state");
+    if (rc != CH_OK) {
+        __CPROVER_assert(rc == CH_EINVAL || rc == CH_ECAP, "a refused close has two codes");
+        __CPROVER_assert(q.levels_ready == was_ready, "a refused close clears no bit");
+        return;
+    }
+    __CPROVER_assert(was_state == CH_ST_FAILED, "only a failed session seals a close");
+    __CPROVER_assert(level <= CH_LEVEL_APPLICATION &&
+                         (was_ready & CH_QUIC_LEVEL_BIT(level, CH_KEY_WRITE)) != 0,
+                     "a close goes out only at a level whose write bit was set");
+    __CPROVER_assert(q.levels_ready ==
+                         (uint8_t)(was_ready & (uint8_t)~CH_QUIC_LEVEL_BIT(level, CH_KEY_WRITE)),
+                     "the close clears that level's write bit and no other bit");
+    __CPROVER_assert(write_keys_zero(level), "the close wipes that level's write keys");
+    __CPROVER_assert(out_len == sizeof hdr + pt_len + GCM_TAG, "the close is one whole packet");
+    fill_nondet(pt, sizeof pt);
+    fill_nondet(hdr, sizeof hdr);
+    cap = nondet_size_t();
+    pt_len = nondet_size_t();
+    __CPROVER_assume(cap <= sizeof out && pt_len <= sizeof pt);
+    rc = ch_quic_seal_close(&q, level, nondet_u64(), nondet_size_t(), hdr, sizeof hdr, pt, pt_len,
+                            out, cap, &out_len);
+    __CPROVER_assert(rc == CH_EINVAL, "a second close at the same level is refused");
 }
 
 // The configuration ch_quic_init judges. Three fields vary, one per
@@ -349,6 +475,7 @@ int main(void) {
     assert_window();
 
     havoc_session();
+    havoc_keys();
     drive_crypto_in();
 
     havoc_session();
@@ -356,6 +483,11 @@ int main(void) {
 
     havoc_session();
     drive_packets();
+    assert_window();
+
+    havoc_session();
+    havoc_write_keys();
+    drive_close();
     assert_window();
 
     ch_quic_close(&q);

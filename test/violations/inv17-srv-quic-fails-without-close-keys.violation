@@ -1,0 +1,23 @@
+invariant: INV-17
+file: srv_quic.c
+catches: quic_loop_test
+reason: the server driver keeps its own copy of the old failure path and
+  wipes every key, the write keys included, instead of calling quic_fail,
+  so a server that fails with no_application_protocol, or on a KeyUpdate
+  at the Handshake level, has no key to seal the CONNECTION_CLOSE RFC
+  9001 section 4.8 asks for. test/quic_loop_close.h requires the server's
+  close at every level it had keys for to seal and to open at the client.
+
+--- old
+        rc = advance(q);
+        if (rc != CH_OK) {
+            return quic_fail(q, rc);
+        }
+--- new
+        rc = advance(q);
+        if (rc != CH_OK) {
+            q->alert = q->hs.alert;
+            quic_wipe(q);
+            q->t.state = CH_ST_FAILED;
+            return rc;
+        }

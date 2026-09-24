@@ -378,7 +378,7 @@ TESTH := test/test_random.h test/pem_armor.h test/pem_tests.h test/x509_ca_tests
          test/rsa_pkcs1_vectors.h test/rsa_wide_vectors.h test/rsa_pkcs1_wide_vectors.h \
          test/rsa_sign_vectors.h \
          test/diff_webpki.h test/diff_mlkem.h test/mlkem_vectors.h test/webpki_corpus.h test/webpki_sigalg_vectors.h \
-         test/diff_webpki_sigalg.h test/hello_exts.h test/webpki_session_cases.h test/webpki_groups_cases.h test/webpki_suite_cases.h test/rec_read_tests.h test/rec_resume_tests.h test/rec_coalesced_tests.h test/quic_loop_raw.h test/quic_loop_webpki.h test/webpki_resume_session.h test/webpki_resume_cases.h test/webpki_pins_cases.h test/tls_client_webpki.h \
+         test/diff_webpki_sigalg.h test/hello_exts.h test/webpki_session_cases.h test/webpki_groups_cases.h test/webpki_suite_cases.h test/rec_read_tests.h test/rec_resume_tests.h test/rec_coalesced_tests.h test/quic_loop_raw.h test/quic_loop_close.h test/quic_loop_webpki.h test/webpki_resume_session.h test/webpki_resume_cases.h test/webpki_pins_cases.h test/tls_client_webpki.h \
          test/webpki_decline_cases.h test/webpki_r2_chain.h test/psk_decline_tests.h \
          test/handshake_strict_alpn.h test/handshake_strict_cert_type.h \
          test/webpki_cert_mutants.h test/webpki_ext_mutants.h test/diff_webpki_cert.h \
@@ -531,7 +531,7 @@ TRANSPORT_DEF := -DCH_TRANSPORT_QUIC
 TRANSPORT_FILTER := $(QUIC_REPLACED) $(QUIC_PENDING)
 TRANSPORT_ADD := $(QUIC_SRCS)
 PUBLIC_TRANSPORT := ch_quic_init ch_quic_initial_keys ch_quic_crypto_in ch_quic_crypto_out \
-                    ch_quic_seal ch_quic_open ch_quic_retry_ok ch_quic_key_update \
+                    ch_quic_seal ch_quic_seal_close ch_quic_open ch_quic_retry_ok ch_quic_key_update \
                     ch_quic_key_phase ch_quic_drop_previous_keys ch_quic_discard \
                     ch_quic_state ch_quic_alert ch_quic_error_code ch_quic_close
 else ifeq ($(TRANSPORT),record)
@@ -637,7 +637,7 @@ ROLE_ADD    := $(filter-out srv_handshake.c,$(ROLE_ADD)) srv_quic.c quic_token.c
 # section 4.1.3 removes with the record layer.
 PUBLIC_ROLE := ch_srv_quic_init ch_srv_quic_crypto_in ch_srv_quic_retry_tag \
                ch_srv_quic_token_mint ch_srv_quic_token_check ch_srv_check \
-               ch_quic_initial_keys ch_quic_seal ch_quic_open ch_quic_retry_ok \
+               ch_quic_initial_keys ch_quic_seal ch_quic_seal_close ch_quic_open ch_quic_retry_ok \
                ch_quic_key_update ch_quic_key_phase ch_quic_drop_previous_keys \
                ch_quic_discard ch_quic_state ch_quic_alert ch_quic_error_code ch_quic_close
 else ifeq ($(TRANSPORT),record)
@@ -918,7 +918,7 @@ BENCH_C := $(wildcard bench/*.c bench/*.h)
 QEMU_SMOKE_C := $(wildcard test/qemu/*.c test/qemu/*.h test/freertos/*.c test/freertos/*.h)
 
 # Firmware links bin/chapulin.o: one relocatable object exposing exactly
-# the symbols PUBLIC names: its calls, four under TRANSPORT=tls, fifteen
+# the symbols PUBLIC names: its calls, four under TRANSPORT=tls, sixteen
 # under TRANSPORT=quic and five under ROLE=server, and in every variant
 # one data symbol, ch_build. Partial linking merges the modules; nmedit
 # (macOS) or objcopy (everything else) localizes every other symbol, so
@@ -1338,9 +1338,10 @@ bin/sha3_test: test/sha3_test.c sha3.c ct.c $(HDRS) $(TESTH)
 bin/mlkem_test: test/mlkem_test.c mlkem.c mlkem_poly.c sha3.c ct.c $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) -I. -o $@ test/mlkem_test.c mlkem.c mlkem_poly.c sha3.c ct.c
-# The TRANSPORT=quic driver through its fifteen public entries: the
+# The TRANSPORT=quic driver through its sixteen public entries: the
 # configuration rules, the staged ClientHello, a ServerHello delivered
-# over CRYPTO bytes, and the level rules RFC 9001 §4.1.3 states. Its own
+# over CRYPTO bytes, the level rules RFC 9001 §4.1.3 states, and the one
+# CONNECTION_CLOSE per level a failed session seals. Its own
 # binary over the whole QUIC object's sources under -DCH_TRANSPORT_QUIC,
 # the shape bin/sha3_test uses for a mode's own sources: bin/unit
 # compiles no QUIC source, because it includes tls.h and calls rec_seal,
@@ -1984,7 +1985,7 @@ check: bin/unit bin/unit_ca bin/unit_pq bin/tlsclient bin/tlsclient_ecdsa bin/tl
 	# when its builder vouches for the part (WIDEMUL above). The export
 	# list must not move; only the arithmetic inside changes.
 	$(MAKE) lib-check RAND=extern TRUST=webpki TRANSPORT=record WIDEMUL=native
-	# The QUIC arm exports the fifteen ch_quic_ calls and none of the four
+	# The QUIC arm exports the sixteen ch_quic_ calls and none of the four
 	# TLS ones, so it is the leg that holds PUBLIC_TRANSPORT to a
 	# replacement rather than an addition, and the one that compiles
 	# chapulin.hpp's Quic class against the object it forwards to.
@@ -2025,7 +2026,7 @@ check: bin/unit bin/unit_ca bin/unit_pq bin/tlsclient bin/tlsclient_ecdsa bin/tl
 	# chapulin.hpp forwards ch_export; cxx-check joins it on that commit.
 	$(MAKE) lib-check RAND=extern EXPORTER=on
 	# The key log axis, on the build colibri's interop endpoint links: a
-	# QUIC server. It proves the object still exports its eighteen calls
+	# QUIC server. It proves the object still exports its nineteen calls
 	# and imports ch_keylog as a hook. EXPORTER=off is named because that
 	# axis refuses TRANSPORT=quic and a recursion inherits the outer value.
 	$(MAKE) lib-check RAND=extern ROLE=server TRUST=none TRANSPORT=quic EXPORTER=off KEYLOG=on

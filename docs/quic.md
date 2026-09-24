@@ -40,7 +40,7 @@ level, with the AES exception below. `quic.c`, `quic_config.c` and
 `quic_step.c` run the handshake over CRYPTO frames, and the six
 packet-protection sources under them protect the packets. The Makefile's
 `TRANSPORT` axis packages all of it: `make lib TRANSPORT=quic` links an
-object that exports the fifteen `ch_quic_` calls. `make quic-footprint`
+object that exports the sixteen `ch_quic_` calls. `make quic-footprint`
 prints what exists, read from the tree, and `make lint-quic-partition` holds
 the mode to the files named `quic*`. The next section states the stub rule
 the mode was built under, which has no subject left here.
@@ -881,22 +881,23 @@ no crypto.
 Cost, and most of it is this tree's.
 
 - The AES exception above, with the verification debt the table counts.
-- The transport's own exported calls grow from four to the fifteen below,
+- The transport's own exported calls grow from four to the sixteen below,
   against `docs/decisions.md` entry 28. `PUBLIC` is
   `ch_connect ch_read ch_write ch_close $(PUBLIC_RAND) $(PUBLIC_CA)` today
   (`Makefile:363`), so the four TLS names are one term of three. The
   `TRANSPORT` axis replaces that term and nothing else: `PUBLIC` becomes
   `$(PUBLIC_TRANSPORT) $(PUBLIC_RAND) $(PUBLIC_CA)`, where `PUBLIC_TRANSPORT`
-  is the four TLS names under `TRANSPORT=tls` and the fifteen `ch_quic_` names
+  is the four TLS names under `TRANSPORT=tls` and the sixteen `ch_quic_` names
   under `TRANSPORT=quic`, selected the way `PUBLIC_CA` is selected on `TRUST`
   (`Makefile:211-221`). The other two terms keep their meaning:
   `ch_pubkey_from_pem` under a CA mode (`Makefile:211`) and `ch_drbg_seed`
-  under `RAND=drbg` (`Makefile:258`). So a QUIC object exports fifteen calls
-  under `TRUST=raw-rsa RAND=extern`, sixteen under a CA mode or `RAND=drbg`, and
-  seventeen under both. It cannot be a second term added to the first, because
-  `lib-check` diffs the object's exported symbols against `PUBLIC` for exact
-  equality (`Makefile:419-422`), so a `PUBLIC_TRANSPORT` carrying both sets
-  fails every build.
+  under `RAND=drbg` (`Makefile:258`). So a QUIC object exports sixteen calls
+  under `TRUST=raw-rsa RAND=extern`, seventeen under a CA mode or `RAND=drbg`,
+  and eighteen under both. The sixteenth, `ch_quic_seal_close`, landed with
+  `docs/decisions.md` entry 57. It cannot be a second term added to the first,
+  because `lib-check` diffs the object's exported symbols against `PUBLIC` for
+  exact equality (`Makefile:419-422`), so a `PUBLIC_TRANSPORT` carrying both
+  sets fails every build.
 - The suspendable driver, planned in its own section below. It is the larger
   piece.
 - Three sets of 1-RTT receive keys instead of the one `rec_dir` per direction
@@ -1030,9 +1031,9 @@ byte-stream API over a socket the library drives. None of them fits. A QUIC
 object exports a different set: `PUBLIC` becomes
 `$(PUBLIC_TRANSPORT) $(PUBLIC_RAND) $(PUBLIC_CA)` (`Makefile:363`), and
 `PUBLIC_TRANSPORT` holds the four TLS names under `TRANSPORT=tls` and these
-fifteen under `TRANSPORT=quic`, selected the way `PUBLIC_CA` is selected on
+sixteen under `TRANSPORT=quic`, selected the way `PUBLIC_CA` is selected on
 `TRUST` (`Makefile:211-221`). `PUBLIC_RAND` and `PUBLIC_CA` are unchanged on
-both transports, so `lib-check`'s list is these fifteen plus
+both transports, so `lib-check`'s list is these sixteen plus
 `ch_pubkey_from_pem` under a CA mode and `ch_drbg_seed` under `RAND=drbg`.
 These are the names the header will use.
 
@@ -1043,6 +1044,7 @@ These are the names the header will use.
 | `ch_quic_crypto_in(q, level, p, n)` | delivers the bytes CRYPTO frames carried at one level, in order. Runs the state machine until it needs more bytes, then returns |
 | `ch_quic_crypto_out(q, level, out, cap, out_len)` | hands out the one handshake message the client owes at that level, whole or not at all. Returns `CH_OK` and no bytes when nothing is owed there, and `CH_ECAP` with nothing consumed when `cap` is shorter than the message, so the caller can call again with a larger buffer |
 | `ch_quic_seal(q, level, pn, pn_len, hdr, hdr_len, pt, pt_len, out, cap, out_len)` | protects one packet: the nonce from the IV and the packet number, the header as associated data (RFC 9001 §5.3), then the header protection mask over byte 0 and the `pn_len` packet number bytes the caller encoded (§5.4). It writes one whole packet into `out` and modifies neither `hdr` nor `pt`: it copies the `hdr_len` header bytes into `out`, seals `pt` after them, and applies the header protection mask to the copy in `out`. `hdr` carries the packet number field the caller encoded, so `hdr_len` counts those bytes and `pn_len` says how many of the last ones they are; `pn` is that same number and it builds the nonce. `*out_len` is `hdr_len + pt_len + 16`, and a `cap` below it returns `CH_ECAP` with nothing written. It refuses a packet it cannot sample with `CH_EINVAL` and seals nothing. The sample starts 4 bytes after the packet number offset and is 16 bytes long, and RFC 9001 §5.4.2 requires the encoded packet number and the protected payload to run at least 4 bytes past it (`rfc9001.txt:1283-1286`). That is `pn_len + pt_len >= 4` here, because the AEAD adds 16 bytes. Writing the padding is colibri's, because colibri frames the packet, and the refusal is what keeps the sample inside `out`. The boundary test is that `pn_len + pt_len == 4` seals and `pn_len + pt_len == 3` returns `CH_EINVAL`. RFC 9001 §9.5 carries a second MUST for this direction: packet payloads and packet numbers must be free of side channels that reveal the packet number or the size it was encoded in (`rfc9001.txt:2114-2116`). So `pn` and `pn_len` are secret bytes for that rule, and the nonce construction and the mask application take no branch and no memory index on either. Under the Initial keys it counts the packets it seals against §6.6's confidentiality limit and refuses the 2^23rd |
+| `ch_quic_seal_close(q, level, pn, pn_len, hdr, hdr_len, pt, pt_len, out, cap, out_len)` | seals the one CONNECTION_CLOSE packet a failed session sends at one level, with `ch_quic_seal`'s arguments and argument refusals, then wipes that level's write keys and clears its write bit, so a second call there returns `CH_EINVAL`. It runs only when `t.state` is `CH_ST_FAILED` and the level's write bit is set, which a failure leaves at each level whose write keys were installed. `pt` is one CONNECTION_CLOSE frame of type 0x1c and nothing else; chapulin builds no frame and checks none. A packet above `CH_QUIC_CLOSE_MAX`, 1200 bytes with header and tag, returns `CH_EINVAL`. "When a session fails" below states what the caller does, and `docs/decisions.md` entry 57 why |
 | `ch_quic_open(q, level, pkt, pkt_len, pn_off, largest_pn, current_phase_lowest_pn, key_set, pn, pt_len)` | removes header protection, recovers the packet number and removes packet protection in one call, because RFC 9001 §9.5 requires the three applied together without timing side channels (`rfc9001.txt:2110-2112`). `largest_pn` is the largest packet number the caller has successfully processed in that packet number space, the value RFC 9000 §17.1 and Appendix A.3 recover from (`rfc9000.txt:8350-8351`). `current_phase_lowest_pn` is the lowest packet number the caller has processed in the current key phase, which §6.5's selection rule reads. Discards a packet shorter than `pn_off + 4 + 16` bytes before it samples (§5.4.2). A call at `CH_LEVEL_APPLICATION` while `t.state` is below `CH_ST_CONNECTED` returns `CH_EINVAL` and changes nothing, because RFC 9001 §5.7 forbids a client from processing a 1-RTT packet before the TLS handshake is complete even when it already holds the 1-RTT keys (`rfc9001.txt:1484-1486`). At the 1-RTT level it selects the receive key set by §6.5's rule rather than by the Key Phase bit alone: the previous phase and the next phase carry the same Key Phase value (`rfc9001.txt:1735-1737`), so the bit picks the phase and, when the bit differs from the current phase's bit, the recovered packet number decides (`rfc9001.txt:1739-1743`) — below `current_phase_lowest_pn` the previous keys open the packet, at or above it the next keys do. That keeps the §5.5 MUST at `rfc9001.txt:1365-1369`, which forbids opening a higher-numbered packet under the previous keys. The phase compare and the packet number compare both run branchless under §9.5, in the mask arithmetic `ct.h` supplies, never an `if` and never an index a secret chooses. It writes the set that opened the packet to `key_set`: `CH_QUIC_KEY_PREVIOUS`, `CH_QUIC_KEY_CURRENT` or `CH_QUIC_KEY_NEXT`. It works in place in `pkt`, which the caller owns and which holds one whole packet. The two new parameters are `uint64_t *pn` and `size_t *pt_len`. On `CH_OK` the unprotected header sits at the front of `pkt`, the plaintext follows it at `pn_off + pn_len`, `*pt_len` is the plaintext length in bytes and `*pn` is the recovered packet number; a call that does not return `CH_OK` leaves both outputs alone. `*pn` is the value RFC 9000 Appendix A.3 decodes (`rfc9000.txt:8350-8351`), and the caller has no other source for it: it feeds the next call's `largest_pn` and `current_phase_lowest_pn`, and §6.4's KEY_UPDATE_ERROR compares it against the packet numbers of newer key phases, which §6.4 leaves colibri to judge. Recovering it a second time in the caller would put packet number recovery outside the function §9.5 requires it to share with the two unprotect steps (`rfc9001.txt:2110-2112`). A `CH_QUIC_KEY_NEXT` result is a peer-initiated key update, and the caller must call `ch_quic_key_update` before it seals the ACK (§6.2, `rfc9001.txt:1654-1656`). A successful open leaves the unprotected header in `pkt`, so the caller reads byte 0 there for the reserved bits, the Key Phase bit and the packet number length. A packet whose Key Phase bit differs from the current phase and that then fails to authenticate under the selected key set is a discard, and it changes no key set: `ch_quic_open` never installs an update, and `key_set` is written only on a successful open. That is the second §5.5 MUST, which discards a packet that appears to trigger a key update and cannot be unprotected (`rfc9001.txt:1369-1371`), and §6.3 gives the reason, that packets carrying an apparent key update are easy to forge (`rfc9001.txt:1706-1707`). A packet that fails to authenticate is a discard rather than a session failure (§5.5), and it raises the connection-wide §6.6 count of failed opens; the call that carries `open_failures` past 2^36 returns `CH_QUIC_AEAD_LIMIT` and makes the session dead, so no later call processes a packet |
 | `ch_quic_retry_ok(q, pseudo, n, tag)` | recomputes the §5.8 tag under the RFC's printed key and nonce and compares it with `ct_memeq` |
 | `ch_quic_key_update(q)` | advances the 1-RTT send secret with `quic ku` (§6.1), toggles `key_phase`, which is the bit the caller must set in byte 0 of every 1-RTT header it seals from then on (RFC 9001 §6.1, `rfc9001.txt:1615-1616`), moves the current receive key set to previous and holds it, promotes the next receive keys to current and generates the next ones (§6.3). No call derives a receive key set while it opens a packet: RFC 9001 §6.3 makes that a timing signal an attacker reads (`rfc9001.txt:1692-1696`), and §9.5 says an endpoint generates and saves the next set after receiving a key update (`rfc9001.txt:2122-2123`). It rewrites the packet protection key and the packet protection IV of every set it touches from the new `quic ku` secret, and it leaves both `quic_hp_key` values alone: RFC 9001 §5.4 keeps one header protection key for the whole connection (`rfc9001.txt:1172-1174`) and §6.1 says the header protection key is not updated (`rfc9001.txt:1607`). A build that derived a new one would compute a mask the peer cannot reproduce, and every 1-RTT packet after the first update would fail header protection removal at both ends. It never drops a set: RFC 9001 §6.1 makes an endpoint retain its old keys until a packet sent under the new keys opens (`rfc9001.txt:1637-1638`), and `ch_quic_drop_previous_keys` is the only call that wipes the previous set. The caller initiates under §6.1's two MUST NOTs, not before the handshake is confirmed and not before a packet under the current keys was acknowledged (`rfc9001.txt:1618-1621`), and responds under §6.2 when `ch_quic_open` reports `CH_QUIC_KEY_NEXT`: then this call is mandatory before the ACK is sealed |
@@ -1052,7 +1054,7 @@ These are the names the header will use.
 | `ch_quic_state(q)` | reports whether the handshake is complete in the sense of RFC 9001 §4.1.1: this client has sent its Finished and verified the server's. It reports complete only after `ch_quic_crypto_out` has handed the Finished to the caller, never while those bytes are still staged |
 | `ch_quic_alert(q)` | reports the alert description. `ch_quic_error_code` is what the caller puts on the wire; this call names the TLS alert behind it |
 | `ch_quic_error_code(q)` | reports the transport error code the caller sends in CONNECTION_CLOSE (RFC 9001 §4.8). It returns a `uint64_t`, because that field is a variable-length integer (RFC 9000 §19.19, `rfc9000.txt:6670-6671`), even though every value this mode produces fits in 16 bits. It returns 0x0a, PROTOCOL_VIOLATION, for the four refusals RFC 9001 makes a connection error of that type — CRYPTO bytes at a level below `rx_level`, CRYPTO bytes at a higher level while bytes at a lower one sit unconsumed (§4.1.3, `rfc9001.txt:482-486`, `rfc9001.txt:491-493`), a post-handshake CertificateRequest (§4.4) and a NewSessionTicket whose `early_data` names any `max_early_data_size` but 0xffffffff (§4.6.1, `rfc9001.txt:808-809`) — and 0x0100 plus `ch_quic_alert`'s description for every other failure |
-| `ch_quic_close(q)` | wipes every secret a `ch_quic_discard` has not wiped yet and marks the session dead |
+| `ch_quic_close(q)` | wipes every secret a `ch_quic_discard` has not wiped yet, the write keys a failure kept for `ch_quic_seal_close` included, and marks the session dead |
 
 Two callbacks in `ch_cfg` carry what a return value cannot:
 
@@ -1130,6 +1132,77 @@ EncryptedExtensions is a failure with that alert.
 Zero heap is unchanged in kind. There is still one session struct and one
 caller-supplied buffer, and no allocation anywhere. The struct's size changes;
 see the next section.
+
+## When a session fails
+
+RFC 9001 §4.8 turns a TLS alert into a QUIC connection error: the error code
+is 0x0100 plus the alert, sent in a CONNECTION_CLOSE frame of type 0x1c
+(`rfc9001.txt:883-887`). RFC 9000 §10.2.3 asks for that frame at each level
+the peer may read before the handshake is confirmed. A server sends it in
+Initial and Handshake packets (`rfc9000.txt:3306-3308`), and an endpoint
+with 1-RTT keys sends it in Handshake and 1-RTT packets
+(`rfc9000.txt:3316-3320`). So a failed session keeps the write keys those
+packets need and nothing else, and `docs/decisions.md` entry 57 states why.
+The server driver fails through the same `quic_fail`, so the rule is the
+same for both roles.
+
+What survives the failure, by level. A level keeps its keys only when its
+write bit in `levels_ready` was set when the session failed, which means its
+keys were installed and not discarded.
+
+| level | what the session keeps | when it is wiped |
+| --- | --- | --- |
+| Initial | `initial_dcid` and `initial_dcid_len`, which the seal derives the Initial send key from. That key is public: RFC 9001 §5.2 derives it from a printed salt and a connection ID that travels in the clear | right after `ch_quic_seal_close` seals at that level, or at `ch_quic_close` |
+| Handshake | `handshake_tx` and `handshake_hp_tx`, the secret packet protection key, IV and header protection key this endpoint writes with | the same |
+| 1-RTT | `app_tx` and `app_hp_tx`, secret | the same |
+
+Every read key, `hs`, `t.rd_secret`, `t.wr_secret` and `t.res_master` are
+wiped when the session fails, and every read bit is cleared. So
+`ch_quic_open` returns `CH_EINVAL` at every level, the Initial level
+included, although the connection ID it would derive from is still stored.
+
+What colibri does after a call leaves the session dead: `ch_quic_crypto_in`,
+`ch_srv_quic_crypto_in`, or `ch_quic_open` with `CH_QUIC_AEAD_LIMIT`.
+
+1. It reads `ch_quic_error_code`. That is 0x0100 plus `ch_quic_alert` for a
+   TLS alert, and 0x0a for the PROTOCOL_VIOLATION refusals `quic.h` lists.
+   It stays readable until `ch_quic_close`.
+2. At each level it can send, it builds the packet header and one
+   CONNECTION_CLOSE frame of type 0x1c that carries that code, and calls
+   `ch_quic_seal_close` once. At the 1-RTT level it writes byte 0's Key
+   Phase bit from `ch_quic_key_phase`, as for any short header. A level
+   whose keys never existed returns `CH_EINVAL`, so colibri may call all
+   three levels and send what seals.
+3. It sends the packets, coalesced into one datagram if it chooses (RFC 9000
+   §12.2). A client's datagram that carries an Initial packet must be at
+   least 1200 bytes long (RFC 9000 §14.1). colibri pads the datagram after the sealed
+   packets, which §14.1 allows (`rfc9000.txt:4645-4647`), because the
+   plaintext holds the frame alone.
+4. It calls `ch_quic_close`, which wipes any write key a level did not use.
+
+`ch_quic_seal_close` returns `CH_OK` once per level: it writes the packet,
+then wipes that level's write keys and clears its write bit. A second call at
+that level returns `CH_EINVAL`. `CH_ECAP` means `cap` was short, and
+`CH_EINVAL` also covers a session that has not failed, a packet above
+`CH_QUIC_CLOSE_MAX`, and every argument refusal `ch_quic_seal` makes. Neither
+code changes anything, so the keys stay for a later call.
+
+What chapulin does not check is the frame. It seals the bytes it is given,
+and checking that they are one CONNECTION_CLOSE frame would mean parsing QUIC
+frames, which colibri owns. `CH_QUIC_CLOSE_MAX` bounds the packet at 1200
+bytes, header and tag included, which is RFC 9000 §14's smallest maximum
+datagram size (`rfc9000.txt:4598-4599`). A close needs a few dozen bytes, so
+the bound refuses nothing a close needs, and it caps what a caller that
+passes other bytes can send under a kept key.
+
+`bin/quic_driver_test` fails a client after its Handshake keys exist and
+seals both closes, with the Initial one at `CH_QUIC_CLOSE_MAX` exactly and
+one byte more refused. `bin/quic_loop_test` fails this tree's server with
+no_application_protocol at the Initial level and with a KeyUpdate at the
+Handshake level, and fails the client with decrypt_error. The other end opens
+each close and reads back the frame, and each test reads the session's bytes
+to check what was wiped. The `quic_driver` proof covers the same rules over
+any saved state, and five `inv17-` violations each break one of them.
 
 ## Suspending the driver
 
@@ -1411,12 +1484,15 @@ sent its Finished and verified the peer's. `ch_quic_state` reports `t.state`,
 so it never reports complete while the Finished is still staged.
 
 **Failure is one function.** `quic_fail` copies `hs.alert` into `q->alert`,
-wipes `hs`, every key field the struct holds, `t.rd_secret` and `t.wr_secret`,
-clears `tx_len`,
-`t.pt_off` and `t.pt_len`, and sets `CH_ST_FAILED`. It is what `tlsi_fail`
-(`session.c:36-40`) is for TLS, minus the alert record, which QUIC has no way
-to carry. `ch_quic_alert` then reports `q->alert`, and `ch_quic_close` wipes
-the same fields and sets `CH_ST_CLOSED`.
+wipes `hs`, every read key, `t.rd_secret`, `t.wr_secret` and `t.res_master`,
+clears `tx_len`, `t.pt_off`, `t.pt_len` and every read bit of `levels_ready`,
+and sets `CH_ST_FAILED`. It keeps the write keys of each level whose write bit
+is set, for the one CONNECTION_CLOSE packet `ch_quic_seal_close` seals there,
+and wipes the write keys of a level whose bit is clear ("When a session
+fails" below). It is what `tlsi_fail` (`session.c:36-40`) is for TLS, minus
+the alert record, which QUIC has no way to carry. `ch_quic_alert` then reports
+`q->alert`, and `ch_quic_close` wipes every field above, the kept write keys
+included, and sets `CH_ST_CLOSED`.
 
 Cognitive complexity is what `clang-tidy` measures against the threshold of
 15 (`.clang-tidy:98`), and the shape above is built for it: no function holds
@@ -1503,7 +1579,7 @@ and `pt_len`.
 | `t.pt_off`, `t.pt_len` | `size_t` each | `pt_off <= pt_len <= cfg.buf_len` | the unread CRYPTO bytes of `rx_level` |
 | `handshake_rx`, `handshake_tx`, `handshake_hp_rx`, `handshake_hp_tx`, `app_tx`, `app_rx`, `app_hp_rx`, `app_hp_tx`, `key_phase`, and `ch_tls`'s own `rd_secret` and `wr_secret` | `quic_keys`, `quic_keys[CH_QUIC_KEY_SETS]`, `quic_hp_key`, `uint8_t`, `uint8_t[32]` | `app_rx`'s three slots are the named indices, never a computed one | written into the fields of one named level; read by the packet calls and by `quic ku`. Each `quic_hp_key` is written once and never rewritten, which is the §6.1 rule (`rfc9001.txt:1607`) |
 | `initial_dcid`, `initial_dcid_len` | `uint8_t[CH_QUIC_DCID_MAX]`, `uint8_t` | `initial_dcid_len <= CH_QUIC_DCID_MAX`, RFC 9000 §17.2's cap (`rfc9000.txt:4991-4998`) | the Destination Connection ID the Initial keys are derived from, written by `ch_quic_initial_keys` and read by the two Initial packet calls, which build the key they need on their own stack. It holds no key, which is INV-26 |
-| `levels_ready` | `uint8_t` | six bits, one per level per direction at `CH_QUIC_LEVEL_BIT` | the only answer to "installed and not discarded", which `ch_quic_seal` and `ch_quic_open` read on every call. A key set of all-zero bytes is a legitimate derivation, so no call decides that question by comparing key bytes |
+| `levels_ready` | `uint8_t` | six bits, one per level per direction at `CH_QUIC_LEVEL_BIT` | the only answer to "installed and not discarded", which the packet calls read on every call. A key set of all-zero bytes is a legitimate derivation, so no call decides that question by comparing key bytes. A failure clears every read bit and keeps the write bits; each one left admits one `ch_quic_seal_close`, which clears it |
 | `error_code` | `uint64_t` | 0, or a QUIC transport error code | the code `ch_quic_error_code` reports for the four refusals RFC 9001 makes a connection error of type PROTOCOL_VIOLATION. `quic_fail_level` and those four steps are its only writers, and the caller reads it after the call that failed |
 | `open_failures`, `initial_sealed` | `uint64_t` each | `open_failures` stops the session at RFC 9001 §6.6's integrity limit, `initial_sealed` at its confidentiality limit | the §6.6 counts are per connection, so every call adds to the count the last call left |
 
@@ -1585,15 +1661,15 @@ already reaches a static function.
 **`quic.[ch]`, the public file beside `tls.[ch]`.** `ch_quic`, the entries in
 "The interface it exposes", and the two static functions the input loop and
 the failure path use.
-`PUBLIC_TRANSPORT` takes these fifteen names in place of the four TLS ones
+`PUBLIC_TRANSPORT` takes these sixteen names in place of the four TLS ones
 under `TRANSPORT=quic`, and `lib-check` (`Makefile:417-423`) holds
 `$(PUBLIC_TRANSPORT) $(PUBLIC_RAND) $(PUBLIC_CA)` (`Makefile:363`). It is a
 selection on one term, not an addition: `lib-check` diffs the object's
 exported symbols against `PUBLIC` for exact equality (`Makefile:419-422`), so
-a `PUBLIC_TRANSPORT` carrying both sets fails a TLS build by the fifteen
+a `PUBLIC_TRANSPORT` carrying both sets fails a TLS build by the sixteen
 `ch_quic_` names and a QUIC build by the four TLS ones. `ch_pubkey_from_pem`
 and `ch_drbg_seed` are unchanged on both transports, so a CA-mode QUIC
-object exports sixteen calls and a `TRUST=ca-rsa RAND=drbg` one seventeen. The
+object exports seventeen calls and a `TRUST=ca-rsa RAND=drbg` one eighteen. The
 ALPN configuration rules `tls.c:329-371` holds today are needed here in every
 trust mode.
 
@@ -2140,8 +2216,9 @@ rest is colibri's.
   (`ch_quic_initial_keys`); whether to accept the Retry, the token, and RFC
   8999 §5 and §6 version negotiation are colibri's. RFC 9221 datagrams are
   outside the interface.
-- **No connection close.** chapulin reports an alert description; colibri
-  builds the CONNECTION_CLOSE frame (RFC 9001 §4.8).
+- **No connection close frame.** chapulin reports the error code and seals
+  the one CONNECTION_CLOSE packet per level a failed session owes
+  (`ch_quic_seal_close`); colibri builds the frame (RFC 9001 §4.8).
 - **No second transport in one object.** `TRANSPORT` is a build axis, so a QUIC
   object holds no record layer and a TLS object holds no QUIC code.
 - **A server role, since 2026-09-20.** `ROLE=server` with `TRANSPORT=quic`
@@ -2402,7 +2479,7 @@ exports none of the four, so `make check TRANSPORT=quic` fails at the link. The
 decision is to give the wrapper a QUIC arm rather than to skip the gate:
 `chapulin.hpp` puts today's `Session` class under `#ifndef CH_TRANSPORT_QUIC`
 and adds a `Quic` class under `#ifdef CH_TRANSPORT_QUIC` that forwards the
-fifteen entries and adds only the RAII cleanup, byte views and typed results
+sixteen entries and adds only the RAII cleanup, byte views and typed results
 `CLAUDE.md:249-254` allows it; `test/hpp_test.cpp` gains a QUIC leg; and
 `check` gains a fourth `cxx-check` invocation with `TRANSPORT=quic`. `Config`
 (`chapulin.hpp:108-246`) forks with `Session`, because it builds `ch_cfg` and

@@ -1,0 +1,14 @@
+invariant: INV-17
+file: quic_fail.c
+catches: quic_driver_test
+reason: quic_fail skips the Handshake receive key set, so a failed session
+  keeps a key that opens the peer's packets, where INV-17 lets it keep only
+  the write keys its one CONNECTION_CLOSE per level needs.
+  test_close_after_failure requires every read key zero the moment the
+  session fails.
+
+--- old
+    ct_wipe(&q->hs, sizeof q->hs);
+    ct_wipe(&q->handshake_rx, sizeof q->handshake_rx);
+--- new
+    ct_wipe(&q->hs, sizeof q->hs);

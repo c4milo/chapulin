@@ -1334,3 +1334,70 @@ does nothing more.
     link line with each axis. The record compares layouts and bounds,
     not behavior, and defines, not revisions: headers from another
     commit are caught only where a size, a bound or a bit moved (INV-35).
+
+57. **A failed QUIC session keeps its write keys for one CONNECTION_CLOSE
+    per level, and a call of its own seals it.** RFC 9001 §4.8 turns a TLS
+    alert into a CONNECTION_CLOSE frame whose error code is 0x0100 plus the
+    alert (rfc9001.txt:883-887). Until this entry a failure wiped every key
+    at once, as entry 21 has every error do, so colibri could seal no close
+    and the peer waited out its idle timeout. h3spec's TLS cases, a
+    KeyUpdate at the Handshake level, no_application_protocol and
+    missing_extension, check for that close
+    ([colibri#59](https://github.com/c4milo/colibri/issues/59)).
+
+    - **What a failure keeps.** `quic_fail` wipes every read key, `hs` and
+      the traffic secrets, and clears every read bit of
+      `ch_quic.levels_ready`, as before. It keeps the write keys of each
+      level whose write bit is set: `initial_dcid` at the Initial level,
+      which the seal derives the Initial send key from, `handshake_tx` and
+      `handshake_hp_tx`, and `app_tx` and `app_hp_tx`. Both drivers fail
+      through it, so the rule is the same for the client and the server.
+    - **What the caller does.** It reads `ch_quic_error_code` and calls
+      `ch_quic_seal_close` once at each level it can send, with one
+      CONNECTION_CLOSE frame as the plaintext. The call seals the packet as
+      `ch_quic_seal` does, then wipes that level's write keys and clears its
+      write bit, so a second call there returns `CH_EINVAL`. `ch_quic_close`
+      wipes whatever keys remain. docs/quic.md, "When a session fails",
+      lists the steps.
+    - **Its own call, not `ch_quic_seal`.** `ch_quic_seal` keeps its rule
+      that a dead session seals nothing. So the caller's ordinary send path
+      cannot seal a queued ACK or STREAM frame in place of a level's one
+      close, and a reader of a call site knows which of the two it is.
+    - **A bound on the packet.** `CH_QUIC_CLOSE_MAX` is 1200 bytes, header
+      and tag included: RFC 9000 §14's smallest maximum datagram size
+      (rfc9000.txt:4598-4599). A close needs a few dozen bytes, so the
+      bound refuses nothing a close needs. chapulin checks no frame
+      content, because that means parsing QUIC frames, which colibri owns;
+      the bound caps what a caller that passes other bytes can send under
+      a kept key at one such packet per level.
+
+    Initial keys are public: RFC 9001 §5.2 derives them from a printed salt
+    and a connection ID that travels in the clear. Handshake and 1-RTT keys
+    are secret, and this entry lets a secret write key outlive the failure,
+    until its one seal or until `ch_quic_close`. Three facts make that
+    acceptable. RFC 9000 §10.2.3 asks for the close at the Handshake level,
+    and at the Initial level from a server, before the handshake is
+    confirmed, because the peer may not yet read a higher level
+    (rfc9000.txt:3306-3308, rfc9000.txt:3316-3320); the kept key is what
+    that packet needs. The key protects only the one packet the caller
+    builds, and the read keys, which would open the peer's packets, die
+    with the failure. And the key is wiped right after that packet, so it
+    lives as long as the caller takes to build one packet. When the failure
+    is the peer's authentication, the Handshake key is shared with a peer
+    this endpoint did not authenticate, and the close tells that peer the
+    error code and nothing else.
+
+    Cost: one exported call, so a `TRANSPORT=quic` client object exports
+    sixteen calls and a `ROLE=server TRANSPORT=quic` object nineteen. INV-17
+    gains an exception, stated there. A caller that neither seals nor
+    closes keeps a failed session's secret write keys for the life of the
+    session struct. Gain: the peer learns why the connection ended, at each
+    level it can read, and stops waiting on its idle timeout.
+
+    Three alternatives were considered and rejected. Letting `ch_quic_seal`
+    run once per level on a failed session changes the meaning of every
+    existing call site, and a queued packet could take the close's place. Keeping
+    every key and letting the caller seal any number of packets leaves
+    nothing bounding what a failed session encrypts under a secret key.
+    Building the frame inside chapulin would put a QUIC frame encoder on
+    chapulin's side of the line entry 38 draws.

@@ -5,7 +5,8 @@
 // file builds, with a key share it draws itself, so the driver installs
 // the Handshake level and stops: every later message is encrypted under
 // keys only a server holds. docs/quic.md, "What is still open", carries
-// the interop debt that leaves.
+// the interop debt that leaves. The last case fails that session and
+// seals the one CONNECTION_CLOSE each level owes (docs/decisions.md 57).
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -14,6 +15,7 @@
 #include "ch_assert.h"
 #include "handshake_message.h"
 #include "quic.h"
+#include "quic_initial.h"
 #include "quic_packet.h"
 #include "test_random.h"
 #include "x25519.h"
@@ -186,10 +188,137 @@ static void test_server_hello_refused(void) {
     CHECK(ch_quic_error_code(&q) == 0x0100 + ALERT_ILLEGAL_PARAMETER);
 }
 
+static int all_zero(const void *p, size_t n) {
+    const uint8_t *b = p;
+    uint8_t acc = 0;
+    for (size_t i = 0; i < n; i++) {
+        acc |= b[i];
+    }
+    return acc == 0;
+}
+
+// One CONNECTION_CLOSE frame of type 0x1c: the error code as a two-byte
+// variable-length integer, CRYPTO as the frame type, and a reason phrase
+// of reason_len bytes, which the boundary test sets so the packet is
+// CH_QUIC_CLOSE_MAX bytes long. Returns its length.
+static size_t close_frame(uint8_t *f, uint64_t code, size_t reason_len) {
+    f[0] = 0x1c;
+    f[1] = (uint8_t)(0x40 | (code >> 8));
+    f[2] = (uint8_t)code;
+    f[3] = 0x06;
+    f[4] = (uint8_t)(0x40 | (reason_len >> 8));
+    f[5] = (uint8_t)reason_len;
+    memset(f + 6, 'r', reason_len);
+    return 6 + reason_len;
+}
+
+// A client that fails after the ServerHello keeps its Initial and
+// Handshake write keys and nothing else, seals one CONNECTION_CLOSE at
+// each, and wipes each level's keys right after its one seal. The server
+// side is the test itself: quic_initial_open under the server's label
+// opens the Initial close, and a copy of the Handshake send keys taken
+// before the failure opens the Handshake close.
+static void test_close_after_failure(void) {
+    static uint8_t frame[CH_QUIC_CLOSE_MAX];
+    static uint8_t pkt[CH_QUIC_CLOSE_MAX + 1];
+    ch_cfg cfg;
+    uint8_t out[CH_TX_STAGE];
+    uint8_t sh[128];
+    uint8_t dcid[8] = {0x83, 0x94, 0xc8, 0xf0, 0x3e, 0x51, 0x57, 0x08};
+    uint8_t hdr[6] = {0xc0, 0, 0, 0, 1, 7}; // pn 7 in the last byte, pn_len 1
+    size_t n = 0;
+    size_t pkt_len = 0;
+    uint64_t pn = 0;
+    size_t pt_len = 0;
+    uint8_t key_set = 0;
+    configure(&cfg);
+    CHECK(ch_quic_init(&q, &cfg) == CH_OK);
+    CHECK(ch_quic_crypto_out(&q, CH_LEVEL_INITIAL, out, sizeof out, &n) == CH_OK);
+    CHECK(ch_quic_initial_keys(&q, dcid, sizeof dcid) == CH_OK);
+    size_t sh_len = build_server_hello(sh, sizeof sh, SUITE_CHACHA20_POLY1305_SHA256);
+    CHECK(ch_quic_crypto_in(&q, CH_LEVEL_INITIAL, sh, sh_len) == CH_OK);
+    size_t frame_len = close_frame(frame, 0x0a, 0);
+    // A live session owes no close.
+    CHECK(ch_quic_seal_close(&q, CH_LEVEL_INITIAL, 7, 1, hdr, sizeof hdr, frame, frame_len, pkt,
+                             sizeof pkt, &pkt_len) == CH_EINVAL);
+    quic_keys handshake_tx = q.handshake_tx;
+    quic_hp_key handshake_hp_tx = q.handshake_hp_tx;
+
+    // Bytes at a level this client has left: §4.1.3's PROTOCOL_VIOLATION.
+    CHECK(ch_quic_crypto_in(&q, CH_LEVEL_INITIAL, sh, sh_len) == CH_EPROTO);
+    CHECK(ch_quic_state(&q) == CH_ST_FAILED && ch_quic_error_code(&q) == 0x0a);
+    // Every read key is zero and every read bit clear; the two write keys
+    // the client had are still there, and nothing else is.
+    CHECK(all_zero(&q.handshake_rx, sizeof q.handshake_rx));
+    CHECK(all_zero(&q.handshake_hp_rx, sizeof q.handshake_hp_rx));
+    CHECK(all_zero(q.app_rx, sizeof q.app_rx) && all_zero(&q.app_hp_rx, sizeof q.app_hp_rx));
+    CHECK(all_zero(q.t.rd_secret, sizeof q.t.rd_secret));
+    CHECK(all_zero(q.t.wr_secret, sizeof q.t.wr_secret));
+    CHECK(all_zero(&q.hs, sizeof q.hs));
+    CHECK(q.levels_ready == (CH_QUIC_LEVEL_BIT(CH_LEVEL_INITIAL, CH_KEY_WRITE) |
+                             CH_QUIC_LEVEL_BIT(CH_LEVEL_HANDSHAKE, CH_KEY_WRITE)));
+    CHECK(memcmp(&q.handshake_tx, &handshake_tx, sizeof handshake_tx) == 0);
+    CHECK(memcmp(&q.handshake_hp_tx, &handshake_hp_tx, sizeof handshake_hp_tx) == 0);
+    CHECK(q.initial_dcid_len == sizeof dcid);
+
+    // No packet opens and no ordinary seal runs on the failed session. The
+    // Initial open is the one that matters: the connection ID it derives
+    // from is still stored, for the close below.
+    CHECK(ch_quic_seal(&q, CH_LEVEL_INITIAL, 7, 1, hdr, sizeof hdr, frame, frame_len, pkt,
+                       sizeof pkt, &pkt_len) == CH_EINVAL);
+    CHECK(quic_initial_seal(CH_QUIC_ENDPOINT_SERVER, dcid, sizeof dcid, 7, 1, hdr, sizeof hdr,
+                            frame, frame_len, pkt, sizeof pkt, &pkt_len) == CH_OK);
+    CHECK(ch_quic_open(&q, CH_LEVEL_INITIAL, pkt, pkt_len, sizeof hdr - 1, 0, 0, &key_set, &pn,
+                       &pt_len) == CH_EINVAL);
+
+    // The Initial close, at CH_QUIC_CLOSE_MAX exactly: one byte more is
+    // refused and keeps the keys.
+    size_t reason_len = CH_QUIC_CLOSE_MAX - sizeof hdr - GCM_TAG - 6;
+    frame_len = close_frame(frame, ch_quic_error_code(&q), reason_len + 1);
+    CHECK(ch_quic_seal_close(&q, CH_LEVEL_INITIAL, 7, 1, hdr, sizeof hdr, frame, frame_len, pkt,
+                             sizeof pkt, &pkt_len) == CH_EINVAL);
+    CHECK(q.initial_dcid_len == sizeof dcid);
+    frame_len = close_frame(frame, ch_quic_error_code(&q), reason_len);
+    CHECK(ch_quic_seal_close(&q, CH_LEVEL_INITIAL, 7, 1, hdr, sizeof hdr, frame, frame_len, pkt,
+                             sizeof pkt, &pkt_len) == CH_OK);
+    CHECK(pkt_len == CH_QUIC_CLOSE_MAX);
+    CHECK(q.initial_dcid_len == 0 && all_zero(q.initial_dcid, sizeof q.initial_dcid));
+    CHECK(ch_quic_seal_close(&q, CH_LEVEL_INITIAL, 8, 1, hdr, sizeof hdr, frame, frame_len, pkt,
+                             sizeof pkt, &pkt_len) == CH_EINVAL);
+    CHECK(quic_initial_open(CH_QUIC_ENDPOINT_SERVER, dcid, sizeof dcid, pkt, pkt_len,
+                            sizeof hdr - 1, 0, &pn, &pt_len) == CH_OK);
+    CHECK(pn == 7 && pt_len == frame_len && memcmp(pkt + sizeof hdr, frame, frame_len) == 0);
+
+    // The Handshake close. A short buffer seals nothing and keeps the keys.
+    frame_len = close_frame(frame, ch_quic_error_code(&q), 0);
+    CHECK(ch_quic_seal_close(&q, CH_LEVEL_HANDSHAKE, 7, 1, hdr, sizeof hdr, frame, frame_len, pkt,
+                             sizeof hdr + frame_len + GCM_TAG - 1, &pkt_len) == CH_ECAP);
+    CHECK(memcmp(&q.handshake_tx, &handshake_tx, sizeof handshake_tx) == 0);
+    CHECK(ch_quic_seal_close(&q, CH_LEVEL_HANDSHAKE, 7, 1, hdr, sizeof hdr, frame, frame_len, pkt,
+                             sizeof pkt, &pkt_len) == CH_OK);
+    CHECK(all_zero(&q.handshake_tx, sizeof q.handshake_tx));
+    CHECK(all_zero(&q.handshake_hp_tx, sizeof q.handshake_hp_tx));
+    CHECK(ch_quic_seal_close(&q, CH_LEVEL_HANDSHAKE, 8, 1, hdr, sizeof hdr, frame, frame_len, pkt,
+                             sizeof pkt, &pkt_len) == CH_EINVAL);
+    CHECK(quic_packet_open_handshake(&handshake_tx, &handshake_hp_tx, pkt, pkt_len, sizeof hdr - 1,
+                                     0, &pn, &pt_len) == CH_OK);
+    CHECK(pn == 7 && pt_len == frame_len && memcmp(pkt + sizeof hdr, frame, frame_len) == 0);
+
+    // No 1-RTT keys existed, so no 1-RTT close is owed, and none is left.
+    CHECK(ch_quic_seal_close(&q, CH_LEVEL_APPLICATION, 7, 1, hdr, sizeof hdr, frame, frame_len, pkt,
+                             sizeof pkt, &pkt_len) == CH_EINVAL);
+    CHECK(q.levels_ready == 0 && ch_quic_state(&q) == CH_ST_FAILED);
+    CHECK(ch_quic_error_code(&q) == 0x0a);
+    ch_quic_close(&q);
+    CHECK(ch_quic_seal_close(&q, CH_LEVEL_HANDSHAKE, 7, 1, hdr, sizeof hdr, frame, frame_len, pkt,
+                             sizeof pkt, &pkt_len) == CH_EINVAL);
+}
+
 int main(void) {
     test_config_refusals();
     test_driver();
     test_server_hello_refused();
+    test_close_after_failure();
     if (failures == 0) {
         (void)printf("quic_driver: the driver stages, installs and refuses as quic.h states\n");
     }
