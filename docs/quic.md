@@ -555,6 +555,64 @@ lifting that bound is a separate change with its own gates, not a consequence
 of this one. An `AES=extern` build cannot even state its timing: what
 `ch_aes_block` costs is the peripheral's.
 
+### What the AES axis costs in time, measured
+
+*Measured*, 2026-09-24, by `bench/aead.sh` (`make bench-aead`), which wrote
+`bench/results-aead-arm64.csv`. The machine is an Apple M1 Pro under macOS
+(Darwin 25.6.0), and the compiler is Apple clang 21.0.0 at `-O2`, the level the
+packaged object uses. The library sources are those of `5f8e824`. The load
+average was 8 to 9 during the recorded run. Two earlier runs at load averages of
+3.5 to 5 agree with it within 3.2% on every row that times library code.
+
+Each figure is the median nanoseconds per payload byte over 101 samples, with 16
+bytes of associated data. Every open row is within 2.1% of its seal row, so the
+table leaves the open rows out; the CSV has them.
+
+| ns per byte | 64 B | 1200 B | 1350 B | 16384 B |
+| --- | --- | --- | --- | --- |
+| ChaCha20-Poly1305 seal, the packaged 16x16 multiply | 7.29 | 3.73 | 3.77 | 3.52 |
+| ChaCha20-Poly1305 seal, `CH_NATIVE_WIDEMUL` | 5.27 | 2.44 | 2.50 | 2.28 |
+| AES-128-GCM seal, `AES=soft` | 70.3 | 47.4 | 47.5 | 46.2 |
+| AES-128-GCM seal, `AES=hw` | 58.2 | 39.5 | 39.6 | 38.5 |
+| its counter mode, `AES=soft` | 9.84 | 9.70 | 9.77 | 9.68 |
+| its counter mode, `AES=hw` | 0.78 | 0.61 | 0.62 | 0.60 |
+| its GHASH, `gcm_ghash` | 57.2 | 38.9 | 39.1 | 38.0 |
+| the PMULL GHASH prototype | 1.20 | 0.62 | 0.62 | 0.59 |
+| AES-128-GCM seal on the prototype, `AES=hw` | 2.37 | 1.50 | 1.48 | 1.45 |
+
+What the numbers show:
+
+- ChaCha20-Poly1305 is faster than AES-128-GCM at every size, under both `AES`
+  values. With `AES=hw`, AES-128-GCM takes 8.0 times as long as the packaged
+  ChaCha20-Poly1305 at 64 bytes, and 10.5 to 10.9 times as long from 1200 bytes
+  up.
+- GHASH is most of AES-128-GCM's time. With `AES=hw` the GHASH row is 98% to 99%
+  of the seal row at every size, and with `AES=soft` it is 82% to 85%. `quic_gcm.c`
+  multiplies bit by bit, 128 masked steps per 16-byte block
+  (`multiply_by_subkey`), and neither `AES` value changes that code. `AES=hw`
+  makes counter mode 12.6 times faster at 64 bytes and 16 times faster from 1200
+  bytes up, and the whole seal takes 17% less time.
+- The prototype is `bench/ghash_clmul.c`. The library does not contain it, and
+  the bench checks it against `gcm_ghash` and `gcm_seal` on 5185 inputs before it
+  times it. It computes GHASH 48 times faster at 64 bytes and 63 to 65 times
+  faster from 1200 bytes up. An `AES=hw` seal on it takes 0.33 to 0.41 of the
+  packaged ChaCha20-Poly1305's time, and 0.45 to 0.63 of the
+  `CH_NATIVE_WIDEMUL` one's.
+- The prototype hashes one block per multiply, keeps no table of the powers of
+  H, and computes four products per block where Karatsuba needs three. Its file
+  header lists these.
+- The seal on the prototype is the least stable row. Its spread between the
+  25th and 75th percentile reaches 11% in the recorded run and 20% in an
+  earlier one, and its median moved 10% between runs. It also takes longer than
+  its two halves timed apart: 1.50 ns per byte against 0.61 plus 0.62 at 1200
+  bytes. A row that calls the two halves back to back showed the same excess, so
+  the excess comes from running them together, not from the seal's code.
+
+No x86-64 row exists. An emulated x86-64 run is no measurement, so the one run
+here, under Docker on this machine, only showed that the gcc 13.3 build with
+`-maes -mpclmul` compiles and that its PCLMULQDQ prototype matches `gcm_ghash`
+on the same 5185 inputs. On a real x86-64 Linux machine, `make bench-aead
+CC=gcc` writes `bench/results-aead-x86_64.csv` beside the arm64 file.
 
 ### What the AES exception costs, against today's counts
 

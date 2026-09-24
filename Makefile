@@ -3823,3 +3823,15 @@ clean:
 .PHONY: quic-footprint
 quic-footprint:
 	@python3 tools/quic-footprint.py
+
+# ChaCha20-Poly1305 against AES-128-GCM, timed per byte on this machine,
+# with each AEAD split into its cipher and its hash, and a carry-less
+# multiply GHASH the library does not contain. bench/aead.sh states what
+# it builds and writes bench/results-aead-<arch>.csv. It is a measurement,
+# so it is not in `check`: its numbers belong to the machine that ran
+# them, and a run takes about half a minute. `bench/aead.sh --quick`
+# builds every variant, checks the prototype GHASH against quic_gcm.c and
+# writes nothing, which is the form for CI or an emulated machine.
+.PHONY: bench-aead
+bench-aead:
+	CC='$(CC)' bench/aead.sh
