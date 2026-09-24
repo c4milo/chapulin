@@ -81,8 +81,9 @@ side are the time spent inside each end's calls. Milliseconds:
 | pinned ECDSA P-256 | X25519=wide | 3.94 | 1.45 | 1.44 |
 
 The pairing gives the server no ticket key, so it times no resumed
-handshake, and the server has no `KEX=pq` half (srv_flight.h), so a
-hybrid one cannot run in it. Both appear below as sums.
+handshake. This arm64 run predates the server's hybrid half (4d897ed),
+so it timed no hybrid handshake either; the x86-64 section below times
+one. Both appear below as sums.
 
 ## Where a handshake's time goes
 
@@ -116,16 +117,17 @@ the rows it is computed from. So the public-key operations account for
 all of the time this method can resolve, and it cannot split the rest
 further.
 
-Sums for the two handshakes the pairing cannot run:
+Sums for the two handshakes this arm64 run did not time:
 
 - `KEX=pq`: the client adds two ML-KEM-768 key generations and one
   decapsulation. handshake_flight.c calls mlkem_keygen_dk once to build
-  the ClientHello and once before it decapsulates; that count is read
-  from the code, not measured. The sum is 96 us on the default build,
+  the ClientHello and once before it decapsulates;
+  bench/results-primitives-calls.csv measures that count, and the one
+  encapsulation the server adds. The sum is 96 us on the default build,
   3.7% on top of the RSA-3072 client side, and 94 us, 6.0%, on the
   native one. `X25519=wide` does not change ML-KEM, so there the same
-  96 us is 12% on top of the RSA-3072 client side. A server would add
-  one encapsulation, 33 us.
+  96 us is 12% on top of the RSA-3072 client side. The server adds one
+  encapsulation, 33 us.
 - Resumed PSK (psk_dhe_ke): the client skips the verifier and keeps the
   x25519 pair and the key schedule. The RSA-3072 client side minus the
   verify row is 1.91 ms on the default build, 0.92 ms on the native one
@@ -153,7 +155,7 @@ says who calls it and how often.
 | rsa_pkcs1_verify_2048 | 273 | same | client, per link, webpki |
 | mlkem768_decaps | 37.1 | 35.5 | client, once, KEX=pq |
 | x25519, x25519_base, `X25519=wide` | 34.3, 34.5 | | both ends, once each |
-| mlkem768_encaps | 33.2 | 32.0 | no caller yet; a server's KEX=pq half |
+| mlkem768_encaps | 33.2 | 32.0 | server, once, when it selects the hybrid |
 | mlkem768_keygen | 29.5 | 29.4 | client, twice, KEX=pq |
 | hkdf_expand_label | 1.66 | same | client 18, server 17 |
 
@@ -279,65 +281,98 @@ and FEAT_SHA3 (`sysctl hw.optional.arm`).
 ## x86-64
 
 bench/results-primitives-x86_64.csv is a run of the same script on a
-GitHub-hosted runner: an AMD EPYC 7763 under Linux 6.17, gcc 13.3 at
-`-std=c11 -O2`, tree c91e449, started by hand from
-.github/workflows/bench.yml. The 1-minute load average went from 0.61
-to 0.95. No row's spread inside a run passed 4.2%, and no row's spread
-between runs passed 1.6%.
+GitHub-hosted runner: an AMD EPYC 9V74 under Linux 6.17, gcc 13.3 at
+`-std=c11 -O2`, tree 4e02293, started by hand from
+.github/workflows/bench.yml. The 1-minute load average went from 0.81
+to 0.99. No row's spread inside a run passed 2.8%, and no row's spread
+between runs passed 1.9%. The runner's CPU is not fixed: the previous
+run of this script, at c91e449, drew an AMD EPYC 7763, so figures from
+two runs are not comparable to each other.
 
 Handshakes, milliseconds:
 
 | handshake | build | whole | client side | server side |
 |---|---|---:|---:|---:|
-| pinned RSA-2048 | default | 94.8 | 4.28 | 90.5 |
-| pinned RSA-2048 | CH_NATIVE_WIDEMUL | 28.5 | 2.14 | 26.4 |
-| pinned RSA-3072 | default | 297.8 | 4.66 | 293.1 |
-| pinned RSA-3072 | CH_NATIVE_WIDEMUL | 85.6 | 2.52 | 83.0 |
-| pinned ECDSA P-256 | default | 12.9 | 5.96 | 6.97 |
-| pinned ECDSA P-256 | CH_NATIVE_WIDEMUL | 6.93 | 3.83 | 3.10 |
+| pinned RSA-2048 | default | 106.2 | 4.68 | 101.6 |
+| pinned RSA-2048 | CH_NATIVE_WIDEMUL | 32.6 | 2.76 | 29.8 |
+| pinned RSA-2048 | X25519=wide | 98.0 | 0.56 | 97.4 |
+| pinned RSA-2048 | hybrid | 107.0 | 5.18 | 101.8 |
+| pinned RSA-3072 | default | 334.5 | 5.14 | 329.4 |
+| pinned RSA-3072 | CH_NATIVE_WIDEMUL | 95.9 | 3.19 | 92.7 |
+| pinned RSA-3072 | X25519=wide | 326.3 | 1.02 | 325.3 |
+| pinned RSA-3072 | hybrid | 335.3 | 5.68 | 329.6 |
+| pinned ECDSA P-256 | default | 14.4 | 6.57 | 7.81 |
+| pinned ECDSA P-256 | CH_NATIVE_WIDEMUL | 8.33 | 4.65 | 3.68 |
+| pinned ECDSA P-256 | X25519=wide | 6.11 | 2.46 | 3.65 |
+| pinned ECDSA P-256 | hybrid | 15.2 | 7.16 | 7.99 |
+
+The hybrid rows are the default build with `-DCH_KEX_PQ`: the client
+offers X25519MLKEM768 alone and the server selects it. What the hybrid
+adds, measured, against the sum of its ML-KEM rows:
+
+| side | measured | ML-KEM rows | rows used |
+|---|---:|---:|---|
+| RSA-2048 client | +501 us | 489 us | two keygens, one decapsulation |
+| RSA-3072 client | +534 us | 489 us | the same |
+| ECDSA client | +594 us | 489 us | the same |
+| RSA-2048 server | +227 us | 166 us | one encapsulation |
+| RSA-3072 server | +217 us | 166 us | the same |
+| ECDSA server | +177 us | 166 us | the same |
+
+The rest of each difference, 12 to 105 us on the client and 11 to 61 us
+on the server, is the larger hello and ServerHello: 1,184 more bytes to
+write, hash and parse one way and 1,088 the other.
 
 Each row as a multiple of its time in bench/results-primitives-arm64.csv, default build:
 
 | row | x86-64 over arm64 |
 |---|---:|
-| shake256_squeeze, 16 KB | 7.43 |
-| shake128_squeeze, 16 KB | 7.13 |
-| mlkem768_keygen, encaps, decaps | 4.52 to 4.71 |
-| sha3_256, 16 KB | 4.57 |
-| p256_sign, p256_ecdh | 2.28 to 2.33 |
-| x25519 | 2.07 |
-| poly1305, 16 KB | 1.69 |
-| chacha20_poly1305_seal, 16 KB | 1.58 |
-| p256_ecdsa_verify | 1.55 |
-| chacha20, 16 KB | 1.45 |
-| rsa_pss_sign_3072 | 1.43 |
-| rsa_pss_verify_3072 | 1.04 |
-| sha512, 16 KB | 0.88 |
-| hkdf_expand_label | 0.81 |
-| sha256 and hmac_sha256, 16 KB | 0.78 |
+| shake256_squeeze, 16 KB | 8.36 |
+| shake128_squeeze, 16 KB | 8.00 |
+| sha3_256, 16 KB | 5.09 |
+| mlkem768_keygen, encaps, decaps | 4.92 to 5.19 |
+| p256_sign, p256_ecdh | 2.63 to 2.66 |
+| x25519 | 2.27 |
+| x25519, `X25519=wide` | 2.01 |
+| poly1305, 16 KB | 1.93 |
+| chacha20_poly1305_seal, 16 KB | 1.80 |
+| p256_ecdsa_verify | 1.76 |
+| chacha20, 16 KB | 1.64 |
+| rsa_pss_sign_3072 | 1.61 |
+| rsa_pss_verify_3072 | 1.27 |
+| sha512, 16 KB | 0.98 |
+| sha256 and hmac_sha256, 16 KB | 0.83 to 0.84 |
+| hkdf_expand_label | 0.83 |
 
 The native multiply gains more here than on arm64. Default time over
 native time:
 
 | row | ratio |
 |---|---:|
-| poly1305, 16 KB | 4.73 |
-| rsa_pss_sign_3072 | 3.56 |
-| rsa_pss_sign_2048 | 3.53 |
-| p256_sign, p256_ecdh | 2.50 |
-| x25519 | 2.36 |
-| chacha20_poly1305_seal, 16 KB | 1.89 |
+| poly1305, 16 KB | 4.43 |
+| rsa_pss_sign_3072 | 3.60 |
+| rsa_pss_sign_2048 | 3.56 |
+| p256_sign, p256_ecdh | 2.63 to 2.64 |
+| chacha20_poly1305_seal, 16 KB | 1.87 |
+| x25519 | 1.83 |
 | ML-KEM-768 | 1.00 to 1.02 |
 
 What these show:
 
-- The rankings match arm64 at the top. A client's largest cost is the
-  x25519 pair, 3.95 ms of a 4.66 ms RSA-3072 client side on the
-  default build, and a server with an RSA identity spends its side in
-  rsa_pss_sign.
-- Keccak is the outlier. SHA-3 and SHAKE take 4.6 to 7.4 times their
-  arm64 time, where every other row takes at most 2.3 times, and
-  ML-KEM, which runs on them, takes 4.5 to 4.7 times. A `KEX=pq` client
-  adds two key generations and one decapsulation, 445 us, which is 9.6%
-  on top of the RSA-3072 client side.
-- SHA-256 is the one hash faster here than on arm64, without SHA-NI.
+- The x25519 pair is 83% of an RSA-3072 client side on the default
+  build. `X25519=wide` takes one scalar multiplication from 2,160 us to
+  69 us, 31 times faster than the default build and 17 times faster
+  than the native multiply, and the RSA-3072 client side from 5.14 ms
+  to 1.02 ms, where the pair is 14%.
+- The hybrid adds about 0.5 ms to a client and 0.2 ms to a server, and
+  the ML-KEM rows account for most of both. Against an RSA-3072 client
+  side that is 10% on the default build. No row times the hybrid with
+  `X25519=wide`; the wide field leaves ML-KEM unchanged, so the same
+  0.5 ms would be about half of that build's 1.02 ms client side.
+- A server with an RSA identity spends its side in rsa_pss_sign, so the
+  hybrid is 0.1% to 0.2% of it.
+- Keccak is the outlier. SHA-3 and SHAKE take 5.1 to 8.4 times their
+  arm64 time, where every other row takes at most 2.7 times, and
+  ML-KEM, which runs on them, takes 4.9 to 5.2 times.
+- SHA-256 runs faster here than on arm64, 0.84 of its time, without
+  SHA-NI, and SHA-512 about the same, 0.98.

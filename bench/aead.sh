@@ -103,9 +103,12 @@ if [ -n "$QUICK" ]; then
     exit 0
 fi
 
+# The tree is named before the CSV is opened: the redirect below truncates
+# a tracked file, and a later describe would call every tree dirty.
+TREE=$(git describe --always --dirty 2>/dev/null || echo unknown)
 {
     echo "# bench/aead.sh on $(cpu) ($ARCH), $(uname -s) $(uname -r), $(date -u +%Y-%m-%d)," \
-        "tree $(git describe --always --dirty 2>/dev/null || echo unknown)"
+        "tree $TREE"
     echo "# $("$CC" --version | head -1); ${FLAGS[*]}; AES=hw adds ${HW_FLAGS[*]:-no flag} -DCH_AES_HW"
     echo "# load average (1, 5, 15 min) before: $LOAD_BEFORE; after: $LOAD_AFTER"
     echo "# ns_per_byte: median of 101 samples of 2 to 4 ms each; mb_per_s: 10^6 bytes per" \

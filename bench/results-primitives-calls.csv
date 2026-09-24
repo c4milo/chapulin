@@ -1,4 +1,4 @@
-# bench/primitives.sh -finstrument-functions count of calls into each primitive during one handshake, per end; Apple clang version 21.0.0 (clang-2100.3.34.2), tree 0ae2dbe
+# bench/primitives.sh -finstrument-functions count of calls into each primitive during one handshake, per end; gcc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0, tree 4e02293
 handshake,function,client_calls,server_calls
 handshake_pinned_rsa2048,x25519,1,1
 handshake_pinned_rsa2048,x25519_base,1,1
@@ -39,3 +39,19 @@ handshake_pinned_ecdsa_p256,sha256_final,52,83
 handshake_pinned_ecdsa_p256,aead_seal,1,4
 handshake_pinned_ecdsa_p256,aead_open,4,1
 handshake_pinned_ecdsa_p256,ch_rand_bytes,2,2
+handshake_pinned_ecdsa_p256_hybrid,x25519,1,1
+handshake_pinned_ecdsa_p256_hybrid,x25519_base,1,1
+handshake_pinned_ecdsa_p256_hybrid,rsa_pss_sign,0,0
+handshake_pinned_ecdsa_p256_hybrid,rsa_pss_verify,0,0
+handshake_pinned_ecdsa_p256_hybrid,p256_sign,0,1
+handshake_pinned_ecdsa_p256_hybrid,p256_ecdsa_verify,1,0
+handshake_pinned_ecdsa_p256_hybrid,hkdf_extract,3,3
+handshake_pinned_ecdsa_p256_hybrid,hkdf_expand_label,18,17
+handshake_pinned_ecdsa_p256_hybrid,hmac_sha256,23,38
+handshake_pinned_ecdsa_p256_hybrid,sha256_final,52,83
+handshake_pinned_ecdsa_p256_hybrid,aead_seal,1,4
+handshake_pinned_ecdsa_p256_hybrid,aead_open,4,1
+handshake_pinned_ecdsa_p256_hybrid,ch_rand_bytes,3,3
+handshake_pinned_ecdsa_p256_hybrid,mlkem_keygen_dk,2,0
+handshake_pinned_ecdsa_p256_hybrid,mlkem_encaps_derand,0,1
+handshake_pinned_ecdsa_p256_hybrid,mlkem_decaps,1,0

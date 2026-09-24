@@ -659,30 +659,35 @@ What the numbers show:
 
 *Measured* on x86-64, 2026-09-24, by the same script started by hand from
 `.github/workflows/bench.yml`, which wrote `bench/results-aead-x86_64.csv`. The
-machine is a GitHub-hosted runner with an Intel Xeon Platinum 8573C under Linux
-6.17, and the compiler is gcc 13.3 at `-O2`, with `-maes -mpclmul` for the
-`AES=hw` rows. The tree is `c91e449`. The load average stayed under 0.6.
+machine is a GitHub-hosted runner with an AMD EPYC 7763 under Linux 6.17, and
+the compiler is gcc 13.3 at `-O2`, with `-maes -mpclmul` for the `AES=hw` rows.
+The tree is `4e02293`; the CSV's header says `4e02293-dirty` because the script
+truncated that tracked file before it named the tree, which `bench/aead.sh` no
+longer does. The load average stayed under 0.8. No row's spread between the
+25th and 75th percentile passed 2.8%. The runner's CPU is not fixed: the
+previous run drew an Intel Xeon Platinum 8573C, so the two runs' figures are
+not comparable to each other.
 
 | ns per byte | 64 B | 1200 B | 1350 B | 16384 B |
 | --- | --- | --- | --- | --- |
-| ChaCha20-Poly1305 seal, the packaged 16x16 multiply | 10.8 | 5.72 | 5.80 | 5.50 |
-| ChaCha20-Poly1305 seal, `CH_NATIVE_WIDEMUL` | 6.87 | 3.08 | 3.14 | 2.86 |
-| AES-128-GCM seal, `AES=soft` | 197 | 135 | 135 | 131 |
-| AES-128-GCM seal, `AES=hw` | 5.82 | 2.49 | 2.45 | 2.31 |
-| AES-128-GCM open, `AES=hw` | 5.78 | 2.45 | 2.44 | 2.31 |
-| its counter mode, `AES=hw` | 1.59 | 1.48 | 1.48 | 1.48 |
-| its GHASH, `AES=hw`: `quic_ghash_hw.c` on PCLMULQDQ | 3.85 | 1.00 | 0.94 | 0.84 |
+| ChaCha20-Poly1305 seal, the packaged 16x16 multiply | 11.6 | 6.04 | 6.09 | 5.73 |
+| ChaCha20-Poly1305 seal, `CH_NATIVE_WIDEMUL` | 7.17 | 3.25 | 3.30 | 3.02 |
+| AES-128-GCM seal, `AES=soft` | 198 | 135 | 135 | 132 |
+| AES-128-GCM seal, `AES=hw` | 6.38 | 3.02 | 3.01 | 2.84 |
+| AES-128-GCM open, `AES=hw` | 5.84 | 2.97 | 2.96 | 2.81 |
+| its counter mode, `AES=hw` | 1.77 | 1.66 | 1.67 | 1.66 |
+| its GHASH, `AES=hw`: `quic_ghash_hw.c` on PCLMULQDQ | 3.97 | 1.32 | 1.31 | 1.17 |
 
 What the x86-64 numbers show:
 
 - `AES=hw` AES-128-GCM is faster than ChaCha20-Poly1305 at every size here too,
-  by less than on arm64: a seal takes 0.42 to 0.54 of the packaged
-  ChaCha20-Poly1305 seal's time, and 0.78 to 0.85 of the `CH_NATIVE_WIDEMUL`
+  by less than on arm64: a seal takes 0.49 to 0.55 of the packaged
+  ChaCha20-Poly1305 seal's time, and 0.89 to 0.94 of the `CH_NATIVE_WIDEMUL`
   one's.
 - The counter mode, not GHASH, is the larger half of an `AES=hw` seal from 1200
-  bytes up: 1.48 ns of 2.31 at 16,384 bytes.
-- The `AES=hw` seal and open agree within 1.4%, so the seal-row excess seen on
-  arm64 does not appear on this machine.
+  bytes up: 1.66 ns of 2.84 at 16,384 bytes.
+- From 1200 bytes up the `AES=hw` seal and open agree within 1.7%. At 64 bytes
+  the seal takes 9% longer than the open.
 
 ### What the AES exception costs, against today's counts
 
