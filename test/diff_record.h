@@ -172,7 +172,7 @@ static void diff_rec_seal(void) {
         size_t n = rng_below(201);
         rng_fill(pt, n);
         // Any sequence the C actually seals; it refuses UINT64_MAX to stop
-        // before a wrap (RFC 9846 §5.5), which the pure spec does not model,
+        // before a wrap (RFC 9846 §5.3), which the pure spec does not model,
         // so that one value stays out of the compared domain.
         uint64_t seq = rng_next();
         if (seq == UINT64_MAX) {
@@ -201,7 +201,7 @@ static void diff_rec_seal(void) {
 
     // Boundaries: a full 2^14-byte plaintext (RFC 9846 §5.1's sender
     // cap) must agree end to end, and the wrap-guard sequence the C
-    // refuses (§5.5) must be a spec-side error, never a truncation.
+    // refuses (§5.3) must be a spec-side error, never a truncation.
     {
         uint8_t secret[SHA256_LEN] = {9};
         static uint8_t pt[0x4000];

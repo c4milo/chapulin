@@ -80,7 +80,7 @@ static size_t nondet_cap(void) {
     return cap;
 }
 
-// Any legacy_session_id length RFC 9846 §4.1.2 admits, which is what
+// Any legacy_session_id length RFC 9846 §4.2.2 admits, which is what
 // srv_parse_client_hello holds a ClientHello's to.
 static size_t nondet_session_id_len(void) {
     size_t len = nondet_size_t();

@@ -3,7 +3,7 @@ file: srv_parser_ext.c
 catches: srv_test
 reason: read_key_share stops requiring the entries to fill client_shares, so
   a list length that names fewer bytes than its one entry spans still yields
-  that entry's share, and two encodings name one key_share. RFC 9846 §4.2.8
+  that entry's share, and two encodings name one key_share. RFC 9846 §4.3.8
   frames the entries with that length.
   test/srv_parser_tests.h sends a 36-byte entry under a list length of 4,
   which fills the extension body exactly, so the exact-fill check after the

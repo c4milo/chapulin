@@ -41,7 +41,7 @@
 // The ClientHello fields whose sizes RFC 9846 fixes.
 //
 // SRV_RANDOM is ClientHello.random, 32 bytes (rfc9846.txt:1358-1363
-// gives the ServerHello's, and §4.1.2 gives the client's the same
+// gives the ServerHello's, and §4.2.2 gives the client's the same
 // width). SRV_SESSION_ID_MAX is legacy_session_id, 0 to 32 bytes; the
 // server echoes it whole in legacy_session_id_echo
 // (rfc9846.txt:1365-1368) and it must survive a HelloRetryRequest
@@ -153,13 +153,13 @@
 
 // The two extension code points handshake_message.h does not declare,
 // because no client this tree builds sends either one. early_data is
-// RFC 9846 §4.2.10 and padding is RFC 7685; the server recognizes both
-// so that §4.1.2's freeze rule can exclude them, and it acts on
+// RFC 9846 §4.3.10 and padding is RFC 7685; the server recognizes both
+// so that §4.2.2's freeze rule can exclude them, and it acts on
 // neither.
 #define EXT_PADDING 21
 #define EXT_EARLY_DATA 42
 
-// The psk_key_exchange_modes values (RFC 9846 §4.2.9). The server must
+// The psk_key_exchange_modes values (RFC 9846 §4.3.9). The server must
 // select a mode the client listed (rfc9846.txt:1150-1152), and
 // psk_dhe_ke is the only one this build would ever select, because it
 // runs a key exchange in every handshake.
@@ -238,7 +238,7 @@ typedef struct {
 
     // Where the pre_shared_key extension's binder list starts, counted
     // in bytes from the start of body, and 0 when the client offered no
-    // PSK. RFC 9846 §4.2.11.2 computes the binder over the ClientHello
+    // PSK. RFC 9846 §4.3.11.2 computes the binder over the ClientHello
     // truncated at exactly that point (rfc9846.txt:2586 states the
     // client's half of the same rule), so the byte count is the one
     // value a binder check cannot recover afterwards.
@@ -255,14 +255,14 @@ typedef struct {
     // bits above.
     uint16_t seen;
 
-    // SHA-256 over the ClientHello fields RFC 9846 §4.1.2 forbids the
+    // SHA-256 over the ClientHello fields RFC 9846 §4.2.2 forbids the
     // client to change across a HelloRetryRequest
     // (rfc9846.txt:1191-1213), accumulated as the parser walks. The
     // cookie the server mints carries this digest, and the second
     // ClientHello's digest is compared against it with ct_memeq, which
     // is how a stateless server checks the freeze rule without storing
     // the first message. The digest covers every byte of the message
-    // except the five things §4.1.2 permits a second ClientHello to
+    // except the five things §4.2.2 permits a second ClientHello to
     // change: the key_share the HelloRetryRequest asked for, an
     // early_data extension the second hello removes, the cookie the
     // second hello adds, the pre_shared_key extension, and the padding
@@ -299,7 +299,7 @@ typedef struct {
 int srv_ext_known(uint16_t type);
 
 // Whether an extension block carries two extensions of one type, which
-// RFC 9846 §4.2 forbids (rfc9846.txt:1673-1674). It walks the block
+// RFC 9846 §4.3 forbids (rfc9846.txt:1673-1674). It walks the block
 // once per extension, comparing each type against the types before it,
 // so it answers for every type including the ones srv_ext_known
 // declines: a duplicate among unrecognized types is still a duplicate,
@@ -321,7 +321,7 @@ int srv_ext_duplicate(const uint8_t *exts, size_t n);
 //
 // The checks it makes, each with the obligation behind it, in the order
 // the message presents them. legacy_version is read and not judged:
-// §4.2.1 has a server that sees supported_versions ignore it
+// §4.2.2 has a server that sees supported_versions ignore it
 // (rfc9846.txt:1306-1313), and a hello without supported_versions is
 // refused for that absence below, so no value there changes a verdict.
 // legacy_session_id is 0 to 32 bytes, or decode_error. cipher_suites
@@ -346,7 +346,7 @@ int srv_ext_duplicate(const uint8_t *exts, size_t n);
 // missing_extension too (rfc9846.txt:4599-4605). A key_share entry for
 // this build's group whose length is not CH_KEX_CLIENT_SHARE is
 // illegal_parameter, and so is one for a group supported_groups did
-// not list, which §4.2.8 forbids the client to send. Every list of
+// not list, which §4.3.8 forbids the client to send. Every list of
 // code points, names, shares, identities or binders must fill the
 // length that frames it, and every length must sit inside the vector
 // bounds RFC 9846 prints for it, or decode_error; the one bound not
@@ -367,7 +367,7 @@ int srv_ext_duplicate(const uint8_t *exts, size_t n);
 //
 // An early_data extension is recognized, takes its bit, and changes
 // nothing else: this server answers 1-RTT, which is the first of the
-// three behaviors RFC 9846 §4.2.10 permits (rfc9846.txt:2385-2401), and
+// three behaviors RFC 9846 §4.3.10 permits (rfc9846.txt:2385-2401), and
 // its EncryptedExtensions carries no early_data, which is the rejection
 // signal (rfc9846.txt:2426-2428).
 //

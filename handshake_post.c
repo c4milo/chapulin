@@ -19,7 +19,7 @@
 #endif
 
 #ifdef CH_TRANSPORT_QUIC
-// early_data in a NewSessionTicket (RFC 9846 §4.6.1). It is the one
+// early_data in a NewSessionTicket (RFC 9846 §4.7.1). It is the one
 // extension defined there, and RFC 9001 §4.6.1 gives its
 // max_early_data_size a single legal value on this transport.
 #define TICKET_EXT_EARLY_DATA 42

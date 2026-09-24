@@ -13,16 +13,16 @@
 // now has two roles.
 //
 // What it does not check, stated rather than omitted. It requests no
-// client certificate, which RFC 9846 §4.3.2 makes a MAY
+// client certificate, which RFC 9846 §4.4.2 makes a MAY
 // (rfc9846.txt:2675-2676), so it reaches no verdict about the peer and
 // the application above the session authenticates its users. It reads
 // no byte of its own chain, so it cannot tell that the chain's
 // end-entity key is the key it signs with; a provisioning script does
-// that off the device. And it does not meet RFC 9846 §4.4.2's sending
+// that off the device. And it does not meet RFC 9846 §4.5.1.2's sending
 // rule that all certificates provided MUST be signed by an algorithm
 // the peer advertised (rfc9846.txt:2948-2950): it selects an identity
 // on the CertificateVerify scheme alone and reads neither chain's
-// signatures. It takes the permission §4.4.2 gives a sender that
+// signatures. It takes the permission §4.5.1.2 gives a sender that
 // cannot produce a conforming chain (rfc9846.txt:2954-2960), and the
 // cost is a client that conformantly rejects the chain it receives.
 // docs/server.md's open question twelve asks whether that stays the
@@ -82,7 +82,7 @@ uint8_t srv_identity_live(const ch_cfg *cfg);
 // messages (rfc9846.txt:1882-1884).
 const ch_identity *srv_identity_for(const ch_cfg *cfg, uint16_t sigalg);
 
-// Builds the CertificateVerify signed content of RFC 9846 §4.4.3 and
+// Builds the CertificateVerify signed content of RFC 9846 §4.5.2 and
 // hashes it, which is the message the identity's signer signs.
 //
 // The content is 64 bytes of 0x20, the context string "TLS 1.3, server
@@ -192,7 +192,7 @@ int srv_sign_certificate_verify(const ch_cfg *cfg, uint16_t sigalg, const uint8_
 // wrong slot, once, at boot, with a local error code instead of a
 // client-side alert on every connection. It catches neither a chain
 // whose end-entity key is not this public key nor a fallback chain
-// signed with the SHA-1 RFC 9846 §4.4.2 forbids (rfc9846.txt:2958-2960),
+// signed with the SHA-1 RFC 9846 §4.5.1.2 forbids (rfc9846.txt:2958-2960),
 // because it reads no chain bytes.
 //
 // The fixed message is the CertificateVerify content of a transcript

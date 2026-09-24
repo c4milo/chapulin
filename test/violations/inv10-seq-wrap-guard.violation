@@ -6,7 +6,7 @@ reason: dropping the send-side wrap guard lets the sequence counter roll over
 
 --- old
     if (d->seq == UINT64_MAX) {
-        return -1; // RFC 9846 §5.5: stop before the next increment could wrap
+        return -1; // RFC 9846 §5.3: stop before the next increment could wrap
     }
     size_t body = n + 1 + AEAD_TAG; // inner type byte + tag
 --- new

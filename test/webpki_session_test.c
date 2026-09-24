@@ -320,7 +320,7 @@ static void push_retry(mock_server *s) {
 // That message, and a Certificate whose one entry is eight bytes that
 // are no certificate: the walk refuses them as malformed DER and the
 // session fails closed. After a retry the transcript opens with RFC
-// 9846 §4.4.1's message_hash over the first hello, then the retry, and
+// 9846 §4.1's message_hash over the first hello, then the retry, and
 // the ServerHello answers the retry hello.
 static void render_flight(mock_server *s) {
     sha256 transcript;

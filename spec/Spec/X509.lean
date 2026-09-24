@@ -6,7 +6,7 @@ import Spec.X509Der
 
 /-!
 Profiled X.509 for the own-CA trust mode, written from X.690 (DER),
-RFC 5280, and RFC 8446 §4.4.2 — never from the C sources; the
+RFC 5280, and RFC 9846 §4.5.1 — never from the C sources; the
 canonical-DER readers and encoders live in `Spec.X509Der`.
 
 `parse` models the profile over the Certificate message's
@@ -334,7 +334,7 @@ def readCertificate (alg : Alg) (isCa : Bool) (cert : ByteArray) :
   guard (sig.size ≥ 2 ∧ sig[0]! == 0) -- signature bits fill whole bytes
   some (keyEpoch, Spec.Sha256.sha256 (slice body 0 tbsEnd), sig.extract 1 sig.size)
 
-/-- One CertificateEntry at `off` (RFC 8446 §4.4.2): u24 length,
+/-- One CertificateEntry at `off` (RFC 9846 §4.5.1): u24 length,
 cert_data — at most the algorithm's `certMax` — empty (u16 0)
 per-entry extensions. Returns the certificate bytes and the offset
 just past the entry. -/
@@ -348,7 +348,7 @@ def entryAt? (alg : Alg) (list : ByteArray) (off : Nat) : Option (ByteArray × N
   guard (list[off + 3 + certLen]! == 0 ∧ list[off + 3 + certLen + 1]! == 0)
   some (slice list (off + 3) certLen, off + 3 + certLen + 2)
 
-/-- The Certificate message's CertificateEntry list (RFC 8446 §4.4.2):
+/-- The Certificate message's CertificateEntry list (RFC 9846 §4.5.1):
 one entry (the leaf, verified directly under the CA key) or two (the
 leaf, then the intermediate — the intermediate verified under the CA
 key and the leaf under the intermediate's SPKI), and nothing after
@@ -407,7 +407,7 @@ def mintCert (signer : CaKey) (serialTlv issuer validity subject subjectKey exts
   some cert
 
 /-- One CertificateEntry: u24 length, the certificate, empty (u16 0)
-per-entry extensions (RFC 8446 §4.4.2). -/
+per-entry extensions (RFC 9846 §4.5.1). -/
 def entryBytes (cert : ByteArray) : ByteArray :=
   natToBytesBE cert.size 3 ++ cert ++ natToBytesBE 0 2
 
@@ -551,7 +551,7 @@ private theorem bind_guard_eq_some {α : Type} {p : Prop} [Decidable p] {f : Uni
   | inr hp => rw [if_neg hp] at h; simp at h
 
 /-- An accepted CertificateEntry is a byte range of the list it was
-read from (RFC 8446 §4.4.2): the entry starts with the u24 length, the
+read from (RFC 9846 §4.5.1): the entry starts with the u24 length, the
 certificate follows, and the u16 zero extensions close it, so the
 entry spans `cert.size + 5` bytes and ends at or before the list's end.
 The certificate is nonempty and within the algorithm's `certMax`. -/
@@ -578,7 +578,7 @@ theorem entryAt?_sound (alg : Alg) (list : ByteArray) (off : Nat) (cert : ByteAr
   exact ⟨hlen.1, hlen.2, rfl, by omega, rfl⟩
 
 /--
-Parse soundness (RFC 5280 §6.1, RFC 8446 §4.4.2). `parse` never
+Parse soundness (RFC 5280 §6.1, RFC 9846 §4.5.1). `parse` never
 reports a key it did not first take from a certificate in the list and
 verify a signature chain over.
 

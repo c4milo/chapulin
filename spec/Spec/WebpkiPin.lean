@@ -6,7 +6,7 @@ SPKI pins and RFC 7250 raw public keys for the `TRUST=webpki` client
 (`webpki_pin.c`), written from RFC 7858 §4.2 (an SPKI pin is the SHA-256
 of a DER SubjectPublicKeyInfo, and the pins name keys on the validated
 chain), RFC 7250 §3 (a RawPublicKey Certificate message carries one
-SubjectPublicKeyInfo in place of a chain) and RFC 9846 §4.4.2 (the
+SubjectPublicKeyInfo in place of a chain) and RFC 9846 §4.5.1 (the
 CertificateEntry framing it shares with a chain).
 
 `verifyRawKey` judges a RawPublicKey CertificateEntry list by the pins
@@ -69,7 +69,7 @@ def judgeRawKey (pins : List ByteArray) (spki : ByteArray) : RawVerdict :=
   | none => .unsupportedCertificate
   | some (alg, key) => if pinned pins spki then .ok alg key else .unpinned
 
-/-- A RawPublicKey CertificateEntry list (RFC 7250 §3, RFC 9846 §4.4.2):
+/-- A RawPublicKey CertificateEntry list (RFC 7250 §3, RFC 9846 §4.5.1):
 exactly one entry, a u24 length from 1 to `spkiMax`, that many bytes, and
 an empty u16 extensions vector, with nothing after it. -/
 def verifyRawKey (pins : List ByteArray) (list : ByteArray) : RawVerdict :=

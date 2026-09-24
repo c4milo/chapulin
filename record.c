@@ -61,7 +61,7 @@ static void nonce_of(const rec_dir *d, uint8_t nonce[AEAD_NONCE]) {
 int rec_seal(rec_dir *d, uint8_t type, const uint8_t *pt, size_t n, uint8_t *out, size_t cap,
              size_t *out_len) {
     if (d->seq == UINT64_MAX) {
-        return -1; // RFC 9846 §5.5: stop before the next increment could wrap
+        return -1; // RFC 9846 §5.3: stop before the next increment could wrap
     }
     size_t body = n + 1 + AEAD_TAG; // inner type byte + tag
     if (body > 0x4000 + 256 || REC_HDR + body > cap) {
@@ -102,7 +102,7 @@ int rec_seal(rec_dir *d, uint8_t type, const uint8_t *pt, size_t n, uint8_t *out
 int rec_open(rec_dir *d, const uint8_t *rec, size_t n, uint8_t *pt, size_t cap, size_t *pt_len,
              uint8_t *type) {
     if (d->seq == UINT64_MAX) {
-        return -1; // RFC 9846 §5.5: stop before the next increment could wrap
+        return -1; // RFC 9846 §5.3: stop before the next increment could wrap
     }
     if (n < REC_HDR + 1 + AEAD_TAG) {
         return -1;

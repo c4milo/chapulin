@@ -221,7 +221,7 @@ def dispatch : List String → Option String
     let c ← ctype.toNat?
     let p ← hexArg? pt
     guard (s.size == 32 && c < 256)
-    -- RFC 9846 §5.1 caps sender plaintext at 2^14, and §5.5 stops one
+    -- RFC 9846 §5.1 caps sender plaintext at 2^14, and §5.3 stops one
     -- before the u64 sequence wraps (the C refuses UINT64_MAX). Untended,
     -- both would truncate mod 2^16 / 2^64 into valid-looking records.
     if p.size > 0x4000 then return "ERR rec_seal plaintext over 2^14"

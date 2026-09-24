@@ -26,13 +26,13 @@
 #include "p256_sign.h"
 #include "rsa_sign.h"
 
-// The 64 bytes of 0x20 that RFC 9846 section 4.4.3 puts in front of the
+// The 64 bytes of 0x20 that RFC 9846 section 4.5.2 puts in front of the
 // signed content.
 #define SRV_SIGNED_PAD_LEN 64
 
 // The context string of a server's CertificateVerify. Every copy below
 // writes sizeof this array, which carries the terminating NUL, and that
-// NUL is the single separator byte section 4.4.3 puts after the string.
+// NUL is the single separator byte section 4.5.2 puts after the string.
 static const char srv_cv_context[] = "TLS 1.3, server CertificateVerify";
 
 // The largest signed content this build assembles, in bytes: the

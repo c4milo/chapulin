@@ -60,7 +60,7 @@ int rec_take_record(ch_record *r, uint8_t *rec, size_t body_len, uint8_t outer) 
             r->hs.alert = ALERT_BAD_RECORD_MAC;
             return CH_EPROTO;
         }
-        // RFC 9846 section 5.4 keeps the dummy change_cipher_spec legal
+        // RFC 9846 section 5 keeps the dummy change_cipher_spec legal
         // until the handshake ends; every other non-handshake type here
         // is a message this mode has no state for.
         if (inner != REC_HANDSHAKE) {

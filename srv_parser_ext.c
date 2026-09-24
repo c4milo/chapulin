@@ -23,7 +23,7 @@
 #include "ct.h"
 
 // The two psk_key_exchange_modes values as the wire spells them (RFC
-// 9846 §4.2.9); SRV_PSK_KE and SRV_PSK_DHE_KE are the bits that report
+// 9846 §4.3.9); SRV_PSK_KE and SRV_PSK_DHE_KE are the bits that report
 // them.
 #define PSK_KE 0
 #define PSK_DHE_KE 1
@@ -34,7 +34,7 @@
 // RFC 8449 §4: the smallest record_size_limit a peer may send.
 #define RECORD_SIZE_LIMIT_MIN 64
 
-// The vector bounds of RFC 9846 §4.2.11's OfferedPsks: identities holds
+// The vector bounds of RFC 9846 §4.3.11's OfferedPsks: identities holds
 // at least one PskIdentity of a one-byte identity and its four-byte
 // obfuscated_ticket_age, and binders holds at least one PskBinderEntry
 // of 32 bytes with its length byte.
@@ -62,7 +62,7 @@ static int read_server_name(rbuf *e, hello_parse *p) {
     return CH_OK;
 }
 
-// supported_groups (§4.2.7): NamedGroup named_group_list<2..2^16-1>.
+// supported_groups (§4.3.7): NamedGroup named_group_list<2..2^16-1>.
 static int read_supported_groups(rbuf *e, hello_parse *p) {
     size_t list_len = 0;
     if (!srv_open_code_point_list(e, &list_len)) {
@@ -74,7 +74,7 @@ static int read_supported_groups(rbuf *e, hello_parse *p) {
     return CH_OK;
 }
 
-// signature_algorithms (§4.2.3): SignatureScheme
+// signature_algorithms (§4.3.3): SignatureScheme
 // supported_signature_algorithms<2..2^16-2>. One walk sets both bits;
 // a scheme outside the two is read and ignored.
 static int read_signature_algorithms(rbuf *e, hello_parse *p) {
@@ -207,7 +207,7 @@ static int read_psk_binders(rbuf *e, hello_parse *p) {
     return CH_OK;
 }
 
-// pre_shared_key (§4.2.11): OfferedPsks, the two lists above. This
+// pre_shared_key (§4.3.11): OfferedPsks, the two lists above. This
 // build selects no PSK and reads no identity, so the walk holds the
 // syntax and records where the binders start, which is the one value
 // a later binder check cannot recover (rfc9846.txt:2586 states the
@@ -223,7 +223,7 @@ static int read_pre_shared_key(rbuf *e, size_t data_off, hello_parse *p) {
     return read_psk_binders(e, p);
 }
 
-// supported_versions (§4.2.1): ProtocolVersion versions<2..254>, with a
+// supported_versions (§4.3.1): ProtocolVersion versions<2..254>, with a
 // one-byte length. The list must hold 0x0304, or the client is not
 // negotiating this version: protocol_version (rfc9846.txt:1742-1744,
 // rfc9846.txt:3972-3973). A version outside this build's one is read
@@ -239,7 +239,7 @@ static int read_supported_versions(rbuf *e, hello_parse *p) {
     return CH_OK;
 }
 
-// cookie (§4.2.2): opaque cookie<1..2^16-1>, the client's echo of what
+// cookie (§4.3.2): opaque cookie<1..2^16-1>, the client's echo of what
 // srv_send_hello_retry_request minted. srv_check_retry_hello opens it.
 static int read_cookie(rbuf *e, hello_parse *p) {
     size_t cookie_len = rb_u16(e);
@@ -252,7 +252,7 @@ static int read_cookie(rbuf *e, hello_parse *p) {
     return CH_OK;
 }
 
-// psk_key_exchange_modes (§4.2.9): PskKeyExchangeMode ke_modes<1..255>.
+// psk_key_exchange_modes (§4.3.9): PskKeyExchangeMode ke_modes<1..255>.
 // A mode outside the two the document defines is read and ignored.
 static int read_psk_modes(rbuf *e, hello_parse *p) {
     size_t list_len = rb_u8(e);
@@ -274,7 +274,7 @@ static int read_psk_modes(rbuf *e, hello_parse *p) {
 // One KeyShareEntry for this build's group. Its key_exchange must be
 // CH_KEX_CLIENT_SHARE bytes, or illegal_parameter, this design's choice
 // under §6 (rfc9846.txt:3789-3791). The first such entry is the share;
-// §4.2.8 forbids the client a second one for the same group and leaves
+// §4.3.8 forbids the client a second one for the same group and leaves
 // checking that to the server's discretion, so a second is read and
 // ignored.
 static int take_share(hello_parse *p, const uint8_t *share, size_t share_len) {
@@ -289,7 +289,7 @@ static int take_share(hello_parse *p, const uint8_t *share, size_t share_len) {
     return CH_OK;
 }
 
-// key_share (§4.2.8): KeyShareEntry client_shares<0..2^16-1>, each a
+// key_share (§4.3.8): KeyShareEntry client_shares<0..2^16-1>, each a
 // group and an opaque key_exchange<1..2^16-1>. An empty list is
 // permitted (rfc9846.txt:4599-4601) and leaves shares at 0. An entry
 // for a group this build does not hold is read and ignored.

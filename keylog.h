@@ -36,7 +36,7 @@
 #include "sha256.h"
 
 // The client random's length. It is the same 32 bytes both ends read
-// from one ClientHello (RFC 9846 §4.1.2).
+// from one ClientHello (RFC 9846 §4.2.2).
 #define CH_KEYLOG_RANDOM_LEN 32
 
 // The four labels, spelled as the NSS key log format spells them. A

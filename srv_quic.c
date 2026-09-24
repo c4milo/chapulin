@@ -49,7 +49,7 @@ static void install_handshake_keys(ch_quic *q) {
 
 // The 1-RTT keys. Both sets are written here, because srv_send_finished's
 // ks_master wrote both secrets, but only the write direction is announced:
-// RFC 9846 section 4.4.4 has the server's Finished authorize its own
+// RFC 9846 section 4.5.3 has the server's Finished authorize its own
 // application data while the client's is still outstanding, so a server
 // may write 1-RTT before it may read one. The read direction is announced
 // when that Finished verifies.

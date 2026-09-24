@@ -190,7 +190,7 @@ typedef struct {
     // clear in the ClientHello.
     //
     // session_id is the client's legacy_session_id, which the server echoes in
-    // legacy_session_id_echo (RFC 9846 §4.1.3, rfc9846.txt:1365-1368) and which must
+    // legacy_session_id_echo (RFC 9846 §4.2.3, rfc9846.txt:1365-1368) and which must
     // survive a HelloRetryRequest round trip (rfc9846.txt:1451), so it is copied rather
     // than pointed at. suite is the selected cipher suite and hash_len is the transcript
     // hash length that suite fixes (rfc9846.txt:4055-4056). sigalg is the scheme the

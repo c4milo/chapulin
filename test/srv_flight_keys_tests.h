@@ -153,7 +153,7 @@ static void test_flight_finish(void) {
     CHECK(sess.state == CH_ST_CONNECTED && sess.pt_off == 0 && sess.pt_len == 0);
 
     // A verify_data with one bit moved is the decrypt_error abort RFC
-    // 9846 section 4.4.4 requires.
+    // 9846 section 4.5.3 requires.
     auth_flight(&sel, &rd);
     CHECK(srv_send_finished(&hs) == CH_OK);
     feed_client_finished(0);

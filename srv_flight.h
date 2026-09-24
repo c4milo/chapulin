@@ -105,14 +105,14 @@ void srv_begin(handshake_state *h);
 //
 // Requires srv_begin to have run, and, on the second call, a
 // transcript srv_send_hello_retry_request has already replaced with
-// §4.4.1's synthetic message_hash construction. ch need not be zeroed:
+// §4.1's synthetic message_hash construction. ch need not be zeroed:
 // this function zeroes it.
 //
 // Returns CH_OK with ch filled.
 //
 // Returns CH_EPROTO with ALERT_UNEXPECTED_MESSAGE for any other
 // handshake type, and for a ClientHello that arrives after TLS 1.3 was
-// negotiated, which RFC 9846 §4.1.2 requires (rfc9846.txt:1215-1217).
+// negotiated, which RFC 9846 §4.2.2 requires (rfc9846.txt:1215-1217).
 // Returns CH_EPROTO with the alert srv_parse_client_hello chose for a
 // message it refuses. Returns CH_ECAP with ALERT_INTERNAL_ERROR for a
 // ClientHello larger than the caller's buffer, because the RFC defines
@@ -141,8 +141,8 @@ int srv_read_client_hello(handshake_state *h, client_hello *ch);
 //
 // It sets sel->need_retry when both halves hold: the client's
 // supported_groups names the group this build holds, and its key_share
-// carried no KeyShareEntry for that group. RFC 9846 §4.1.1 makes that
-// a MUST (rfc9846.txt:1158-1161) and §4.1.4 states the same condition
+// carried no KeyShareEntry for that group. RFC 9846 §4.2.1 makes that
+// a MUST (rfc9846.txt:1158-1161) and §4.2.4 states the same condition
 // in general terms (rfc9846.txt:1446-1449). Those two halves are
 // exactly the two checks the client runs on selected_group in reply
 // (rfc9846.txt:2205-2212), so a server that set the flag any other way
@@ -157,7 +157,7 @@ int srv_read_client_hello(handshake_state *h, client_hello *ch);
 //
 // Returns CH_EPROTO with ALERT_HANDSHAKE_FAILURE when the offer and
 // this build do not overlap in suites, in groups or in signature
-// schemes, which RFC 9846 §4.1.1 requires when no acceptable set of
+// schemes, which RFC 9846 §4.2.1 requires when no acceptable set of
 // parameters exists (rfc9846.txt:1145-1148, rfc9846.txt:1181-1184).
 // Failing on a group named in supported_groups is not that case, and
 // is the retry above.
@@ -183,12 +183,12 @@ int srv_read_client_hello(handshake_state *h, client_hello *ch);
 //
 // The check runs before need_retry above, so a mismatch ends the
 // handshake on the first ClientHello. A HelloRetryRequest would not
-// change the answer: §4.1.2 forbids the second ClientHello to change
+// change the answer: §4.2.2 forbids the second ClientHello to change
 // the ALPN extension (rfc9846.txt:1191-1213), and ch->frozen covers it.
 int srv_select(handshake_state *h, const client_hello *ch, selection *sel);
 
 // Builds and sends one HelloRetryRequest, and replaces the transcript
-// with §4.4.1's synthetic message_hash construction over the first
+// with §4.1's synthetic message_hash construction over the first
 // ClientHello (rfc9846.txt:1084-1087). It mints the cookie with
 // srv_cookie_mint from the first hello's transcript hash, the
 // selection and ch->frozen, and copies it into h->cookie so the second
@@ -197,7 +197,7 @@ int srv_select(handshake_state *h, const client_hello *ch, selection *sel);
 //
 // It is reached from exactly one call site, so a second
 // HelloRetryRequest is unreachable by call position. No RFC sentence
-// forbids a server from sending one — §4.1.4's limit is a client
+// forbids a server from sending one — §4.2.4's limit is a client
 // receipt obligation (rfc9846.txt:1469-1472) — but a server that sent
 // one would fail every conformant client, and there is no third call
 // site from which to send it.
@@ -214,7 +214,7 @@ int srv_send_hello_retry_request(handshake_state *h, const client_hello *ch, con
 // transcript, when the client's legacy_session_id was not empty. RFC
 // 9846 Appendix E.4 has the server send it immediately after its first
 // handshake message, which may be either a ServerHello or a
-// HelloRetryRequest (rfc9846.txt:6391-6393), and §D.4 makes it a MUST
+// HelloRetryRequest (rfc9846.txt:6391-6393), and Appendix E.4 makes it a MUST
 // once the client sent a non-empty session id
 // (rfc9846.txt:6401-6403). A client that sent an empty session id gets
 // no record and this call sends nothing.
@@ -254,8 +254,8 @@ int srv_send_compat_ccs(handshake_state *h, const client_hello *ch);
 // Returns CH_EPROTO with ALERT_ILLEGAL_PARAMETER when the cookie is
 // absent, when srv_cookie_open refuses it, when the frozen digest does
 // not compare equal, which is a client that changed a field RFC 9846
-// §4.1.2 freezes (rfc9846.txt:1191-1213), and when the second hello
-// carries an early_data extension, which §4.2.10 forbids there
+// §4.2.2 freezes (rfc9846.txt:1191-1213), and when the second hello
+// carries an early_data extension, which §4.3.10 forbids there
 // (rfc9846.txt:2397-2398). Returns CH_EPROTO with
 // ALERT_HANDSHAKE_FAILURE when the second hello still carries no
 // key_share for the group the cookie named.
@@ -379,7 +379,7 @@ int srv_send_finished(handshake_state *h);
 // Reads the client Finished under the handshake read key and verifies
 // it. It takes the transcript hash before it reads the message,
 // computes the expected verify_data from h->c_hs, and compares with
-// ct_memeq (RFC 9846 §4.4.4). On a match it adds the raw message to
+// ct_memeq (RFC 9846 §4.5.3). On a match it adds the raw message to
 // the transcript.
 //
 // Requires srv_send_finished to have run, so the transcript holds the
@@ -388,10 +388,10 @@ int srv_send_finished(handshake_state *h);
 // Returns CH_OK when the MAC compared equal.
 //
 // Returns CH_EAUTH with ALERT_DECRYPT_ERROR when it did not, which RFC
-// 9846 §4.4.4 requires (rfc9846.txt:3115-3117). Returns CH_EPROTO with
+// 9846 §4.5.3 requires (rfc9846.txt:3115-3117). Returns CH_EPROTO with
 // ALERT_UNEXPECTED_MESSAGE for any other handshake type, for a
 // Finished whose length is not the selected hash length, and for a
-// KeyUpdate arriving before this message, which §4.6.3 forbids
+// KeyUpdate arriving before this message, which §4.7.3 forbids
 // (rfc9846.txt:3346-3349). It also returns what hsr_next_msg returns.
 int srv_read_client_finished(handshake_state *h);
 
@@ -401,7 +401,7 @@ int srv_read_client_finished(handshake_state *h);
 // byte is read under a key the peer has not proved it holds.
 //
 // The server also sends no application data before this point. RFC
-// 9846 §4.4.4 permits it and says the server then has no assurance of
+// 9846 §4.5.3 permits it and says the server then has no assurance of
 // the peer's identity or liveness (rfc9846.txt:3127-3130); refusing
 // the permission costs nothing and removes a state, and ch_write
 // before ch_srv_accept returns is not reachable through this API.

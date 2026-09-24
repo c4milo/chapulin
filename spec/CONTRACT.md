@@ -69,7 +69,7 @@ Spec.Aead.seal        : (key nonce aad pt : ByteArray) → ByteArray     -- RFC 
 Spec.Aead.open?       : (key nonce aad ct tag : ByteArray) → Option ByteArray
 Spec.Record.seal      : (trafficSecret : ByteArray) → (seq : Nat) →
                         (ctype : UInt8) → (pt : ByteArray) → ByteArray
-                        -- RFC 9846 §5.2-5.3: key/iv = expandLabel secret "key"/"iv",
+                        -- RFC 9846 §7.3: key/iv = expandLabel secret "key"/"iv",
                         -- nonce = iv XOR seq (BE, low 8 bytes), inner = pt ++ [ctype],
                         -- header 17 03 03 len, out = header ++ seal(...)
 Spec.Drbg.next        : (key : ByteArray) → (n : Nat) →
@@ -272,7 +272,7 @@ Spec.WebpkiName.matchSan : ByteArray → List UInt8 → Bool
                         -- `1`/`0`.
 Spec.X509.parse       : Alg → (caKey list : ByteArray) →
                         Option (ByteArray × Option Nat)
-                        -- profiled chain acceptance over the RFC 8446 §4.4.2
+                        -- profiled chain acceptance over the RFC 9846 §4.5.1
                         -- CertificateEntry list (empty per-entry extensions):
                         -- one entry, the leaf verified directly under caKey;
                         -- or two, the leaf then the intermediate — the
@@ -433,7 +433,7 @@ Spec.Webpki.walkFrom  : Config → (cert : ByteArray) → Certificate → (rest 
                         -- Driven through `webpki_chain`.
 Spec.WebpkiPin.verifyRawKey : (pins : List ByteArray) → (list : ByteArray) → RawVerdict
                         -- an RFC 7250 RawPublicKey CertificateEntry list (RFC 9846
-                        -- §4.4.2): exactly one entry of 1 to spkiMax (550,
+                        -- §4.5.1): exactly one entry of 1 to spkiMax (550,
                         -- CH_WEBPKI_SPKI_MAX) bytes with an empty extensions vector and
                         -- nothing after it, whose bytes readSpki? reads whole, and a pin
                         -- equal to their SHA-256 (RFC 7858 §4.2). The four refusals are

@@ -3,7 +3,7 @@ file: srv_parser.c
 catches: srv_test
 reason: parse_extension stops comparing rb_left for the body it opened, so a
   recognized extension with a byte after its struct parses, and two
-  encodings name one value. RFC 9846 §4.2 makes extension_data match its
+  encodings name one value. RFC 9846 §4.3 makes extension_data match its
   struct exactly (rfc9846.txt:1561-1565). test/srv_parser_tests.h gives
   every recognized extension one trailing byte and requires
   decode_error; lint-exact-fill objects to the same edit.

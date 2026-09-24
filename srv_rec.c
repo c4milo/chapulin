@@ -161,7 +161,7 @@ static int step_retry_hello(ch_record *r) {
 // The client Finished, which is the last message of the handshake.
 // srv_complete installs the application read key and raises the session
 // to CH_ST_CONNECTED; the write key went in with srv_send_finished, one
-// round trip earlier, because RFC 9846 section 4.4.4 lets a server write
+// round trip earlier, because RFC 9846 section 4.5.3 lets a server write
 // application data before it has read the client's Finished.
 static int step_client_finished(ch_record *r) {
     int rc = srv_read_client_finished(&r->hs);
@@ -280,7 +280,7 @@ int ch_srv_record_in(ch_record *r, uint8_t *p, size_t n, size_t *consumed) {
         uint8_t *rec = p + off;
         size_t body_len = ((size_t)rec[3] << 8) | rec[4];
         if (body_len > 0x4000 + 256) {
-            // RFC 9846 section 5.1 caps a record; anything larger names
+            // RFC 9846 section 5.2 caps a record; anything larger names
             // no record this endpoint will ever read.
             r->hs.alert = ALERT_RECORD_OVERFLOW;
             return rec_fail(r, CH_EPROTO);

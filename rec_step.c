@@ -48,7 +48,7 @@ static int stage_sealed(ch_record *r, const uint8_t *pt, size_t n) {
 
 // The ServerHello step, which HSR_STEP_AWAIT_SERVER_HELLO and
 // HSR_STEP_AWAIT_RETRY_HELLO share. A HelloRetryRequest at the retry
-// step is the second one, which RFC 9846 section 4.1.4 forbids; the
+// step is the second one, which RFC 9846 section 4.2.4 forbids; the
 // blocking driver refuses it by call position and this one by the stored
 // step.
 //

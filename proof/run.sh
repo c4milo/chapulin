@@ -1040,7 +1040,7 @@ launch slow:2 full quic_ghash 130 "fill_nondet.0:257,hash_data.1:17" ct.c -DCH_T
 launch fast full poly1305 85 "blocks.0:8" ct.c
 # The ROLE=server authentication flight: the two slot predicates over
 # every SignatureScheme code point, the CertificateVerify signed content
-# of RFC 9846 section 4.4.3 at every transcript length the contract
+# of RFC 9846 section 4.5.2 at every transcript length the contract
 # admits, and both refusals srv_sign_certificate_verify documents.
 # SHA-256 is a contract stub, so this formula holds the assembly and the
 # selection and not the compression function; no signer exists in this

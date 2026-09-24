@@ -4,7 +4,7 @@
 // or 0 when cap is too short for the whole message.
 //
 // One definition here is not a builder, because a constant has nothing to
-// write: srv_hrr_random holds the 32 bytes RFC 9846 §4.1.3 fixes, the same
+// write: srv_hrr_random holds the 32 bytes RFC 9846 §4.2.3 fixes, the same
 // bytes handshake_parser.c:12-14 defines as hsp_hrr_magic for the client. A
 // ROLE=server object does not compile that file, so it cannot link the
 // client's copy. srv_message.h records that the duplication is owed a move to
@@ -21,7 +21,7 @@ const uint8_t srv_hrr_random[SRV_RANDOM] = {
     0xc2, 0xa2, 0x11, 0x16, 0x7a, 0xbb, 0x8c, 0x5e, 0x07, 0x9e, 0x09, 0xe2, 0xc8, 0xa8, 0x33, 0x9c};
 
 // The byte counts of the two fixed parts of a Certificate message
-// (RFC 9846 §4.4.2), which srv_certificate_message_len adds up and
+// (RFC 9846 §4.5.1), which srv_certificate_message_len adds up and
 // srv_build_certificate_header writes.
 //
 // SRV_CERT_HEAD is the 4-byte handshake header, the 1-byte
@@ -37,7 +37,7 @@ const uint8_t srv_hrr_random[SRV_RANDOM] = {
 #define SRV_U24_MAX 0xFFFFFFu
 
 // The fields a ServerHello and a HelloRetryRequest both carry, in the order
-// RFC 9846 §4.1.3 lists them. §4.1.4 gives the HelloRetryRequest the
+// RFC 9846 §4.2.3 lists them. §4.2.4 gives the HelloRetryRequest the
 // ServerHello's format and these five fields the same meaning
 // (rfc9846.txt:1449-1452), so one writer serves both messages and the random
 // value is the only thing the two callers pass differently.
@@ -56,7 +56,7 @@ static void write_hello_head(wbuf *w, const selection *sel, const uint8_t *rando
     wb_u8(w, 0); // legacy_compression_method
 }
 
-// The supported_versions extension both messages carry (RFC 9846 §4.2.1). A
+// The supported_versions extension both messages carry (RFC 9846 §4.3.1). A
 // server writes the one selected_version and not a list, so the body is two
 // bytes wide whichever message carries it.
 static void write_supported_versions(wbuf *w) {
@@ -78,7 +78,7 @@ size_t srv_build_server_hello(uint8_t *out, size_t cap, const selection *sel,
     size_t exts = wb_mark(&w, 2);
     write_supported_versions(&w);
 
-    // key_share carrying the server's own KeyShareEntry (RFC 9846 §4.2.8):
+    // key_share carrying the server's own KeyShareEntry (RFC 9846 §4.3.8):
     // the group, then the key_exchange bytes behind a two-byte length. The
     // caller passes CH_KEX_SERVER_SHARE bytes, which is 32 in a classic build
     // and 1120 under KEX=pq, so both length casts are in range.
@@ -106,14 +106,14 @@ size_t srv_build_hello_retry_request(uint8_t *out, size_t cap, const selection *
     size_t exts = wb_mark(&w, 2);
     write_supported_versions(&w);
 
-    // key_share carrying the group and no key (RFC 9846 §4.2.8): a
+    // key_share carrying the group and no key (RFC 9846 §4.3.8): a
     // HelloRetryRequest's KeyShare body is the selected_group alone, which is
     // what names the group the second ClientHello must send a share for.
     wb_u16(&w, EXT_KEY_SHARE);
     wb_u16(&w, 2);
     wb_u16(&w, sel->group);
 
-    // cookie (RFC 9846 §4.2.2), the bytes srv_cookie_mint produced. A mint
+    // cookie (RFC 9846 §4.3.2), the bytes srv_cookie_mint produced. A mint
     // returns at most SRV_COOKIE_MAX bytes, which is 117, so both length casts
     // are in range.
     wb_u16(&w, EXT_COOKIE);

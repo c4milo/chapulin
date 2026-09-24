@@ -3,7 +3,7 @@ file: srv_parser.c
 catches: srv_test
 reason: parse_head copies a legacy_session_id of any length the byte names
   into the 32-byte session_id array, so a 33-byte id writes one byte
-  past it. RFC 9846 §4.1.2 bounds the field at 32 and srv_parser.h
+  past it. RFC 9846 §4.2.2 bounds the field at 32 and srv_parser.h
   answers a longer one with decode_error; the boundary pair in
   test/srv_parser_tests.h requires 32 to parse and 33 to be refused.
 

@@ -2,7 +2,7 @@ invariant: INV-11
 file: srv_flight.c
 catches: srv_flight_test
 reason: the HelloRetryRequest keeps the first ClientHello in the transcript
-  instead of replacing it with RFC 9846 section 4.4.1's synthetic
+  instead of replacing it with RFC 9846 section 4.1's synthetic
   message_hash construction (rfc9846.txt:1084-1087). Every later secret
   binds to that transcript, so a retried handshake derives keys no client
   agrees with, and the failure surfaces only at the client Finished, one

@@ -3,7 +3,7 @@ file: srv_parser.c
 catches: srv_test
 reason: parse_head checks that legacy_compression_methods holds one byte and
   not that the byte is zero, so a hello asking for DEFLATE parses. RFC
-  9846 §4.1.2 makes any value but the single zero byte an
+  9846 §4.2.2 makes any value but the single zero byte an
   illegal_parameter (rfc9846.txt:1284-1288), and test/srv_parser_tests.h
   requires that alert for the byte 0x01.
 

@@ -39,9 +39,9 @@ static selection vec_selection(void) {
     return sel;
 }
 
-// RFC 9846 §4.1.3: the handshake header, legacy_version, the 32 random bytes,
+// RFC 9846 §4.2.3: the handshake header, legacy_version, the 32 random bytes,
 // legacy_session_id_echo, the cipher suite, legacy_compression_method, and an
-// extension block of supported_versions (§4.2.1) and key_share (§4.2.8).
+// extension block of supported_versions (§4.3.1) and key_share (§4.3.8).
 static const uint8_t want_server_hello[] = {
     0x02, 0x00, 0x00, 0x76,                         // ServerHello, 118 body bytes
     0x03, 0x03,                                     // legacy_version
@@ -65,9 +65,9 @@ static const uint8_t want_server_hello[] = {
     0x50, 0x51, 0x52, 0x53, 0x54, 0x55, 0x56, 0x57, //
     0x58, 0x59, 0x5a, 0x5b, 0x5c, 0x5d, 0x5e, 0x5f};
 
-// RFC 9846 §4.1.4: the ServerHello's format with srv_hrr_random in place of
+// RFC 9846 §4.2.4: the ServerHello's format with srv_hrr_random in place of
 // the random value, a key_share carrying the group alone, and the cookie
-// extension of §4.2.2.
+// extension of §4.3.2.
 static const uint8_t want_hello_retry_request[] = {
     0x02, 0x00, 0x00, 0x5e,                         // ServerHello, 94 body bytes
     0x03, 0x03,                                     // legacy_version
@@ -92,7 +92,7 @@ static const uint8_t want_hello_retry_request[] = {
 // legacy_record_version 0x0303, a length of 1 and the byte 0x01.
 static const uint8_t want_compat_ccs[] = {0x14, 0x03, 0x03, 0x00, 0x01, 0x01};
 
-// RFC 9846 §4.3.1 with no extension at all, which is legal and is 6 bytes.
+// RFC 9846 §4.4.1 with no extension at all, which is legal and is 6 bytes.
 static const uint8_t want_encrypted_extensions_empty[] = {0x08, 0x00, 0x00, 0x02, 0x00, 0x00};
 
 // The same message carrying all three extensions this server ever sends:
@@ -117,7 +117,7 @@ static void test_server_hello(void) {
                                       sizeof vec_session_id, vec_share, sizeof vec_share);
     CHECK(built(n, want_server_hello, sizeof want_server_hello));
 
-    // An empty legacy_session_id is the other end of §4.1.3's echo rule: the
+    // An empty legacy_session_id is the other end of §4.2.3's echo rule: the
     // length byte goes to 0 and the message loses exactly those 32 bytes.
     n = srv_build_server_hello(out, sizeof out, &sel, vec_random, vec_session_id, 0, vec_share,
                                sizeof vec_share);
@@ -132,7 +132,7 @@ static void test_hello_retry_request(void) {
     CHECK(built(n, want_hello_retry_request, sizeof want_hello_retry_request));
 
     // The retry differs from the ServerHello in the random value and nowhere
-    // else in the head, which is what §4.1.4 means by the same format.
+    // else in the head, which is what §4.2.4 means by the same format.
     CHECK(memcmp(out + 6, srv_hrr_random, SRV_RANDOM) == 0);
 }
 
@@ -183,7 +183,7 @@ static void test_encrypted_extensions(void) {
     CHECK(n == 0);
 }
 
-// RFC 9846 §4.4.2 over a two-certificate chain: the handshake header, an
+// RFC 9846 §4.5.1 over a two-certificate chain: the handshake header, an
 // empty certificate_request_context, the certificate_list length, and per
 // entry a 3-byte length, the DER and a 2-byte empty extensions vector.
 static const uint8_t want_certificate_header[] = {0x0b, 0x00, 0x00, 0x16, 0x00, 0x00, 0x00, 0x12};

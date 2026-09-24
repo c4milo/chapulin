@@ -69,7 +69,7 @@ int srv_ext_known(uint16_t type) {
 }
 
 // Whether the frozen digest covers an extension of this type. RFC 9846
-// §4.1.2 lets a second ClientHello change five extensions and nothing
+// §4.2.2 lets a second ClientHello change five extensions and nothing
 // else (rfc9846.txt:1191-1213): the key_share it replaces, the
 // early_data it removes, the cookie it adds, the pre_shared_key it
 // updates and the padding whose length it may change. The digest leaves
@@ -80,12 +80,12 @@ static int frozen_covers(uint16_t type) {
            type != EXT_PRE_SHARED_KEY && type != EXT_PADDING;
 }
 
-// The fields before the extension block, §4.1.2's legacy_version
+// The fields before the extension block, §4.2.2's legacy_version
 // through legacy_compression_methods, and the head's share of the
 // frozen digest.
 static int parse_head(rbuf *r, const uint8_t *body, hello_parse *p) {
     client_hello *ch = p->ch;
-    // legacy_version is read and not judged. §4.2.1 has a server that
+    // legacy_version is read and not judged. §4.2.2 has a server that
     // sees supported_versions ignore it (rfc9846.txt:1306-1313), and a
     // hello without supported_versions is refused for that absence in
     // check_required, so no value here changes a verdict.
@@ -245,7 +245,7 @@ static int check_required(const client_hello *ch, uint8_t *alert) {
     if (((seen & SRV_EXT_SUPPORTED_GROUPS) == 0) != ((seen & SRV_EXT_KEY_SHARE) == 0)) {
         return srv_refuse(alert, ALERT_MISSING_EXTENSION);
     }
-    // A KeyShareEntry for a group supported_groups did not list. §4.2.8
+    // A KeyShareEntry for a group supported_groups did not list. §4.3.8
     // forbids the client to send one and names illegal_parameter for a
     // server that checks; a conformant client never sends it.
     if ((ch->shares & (uint8_t)~ch->groups) != 0) {
@@ -274,7 +274,7 @@ int srv_parse_client_hello(const uint8_t *body, size_t n, client_hello *ch,
         return rc;
     }
     // Nothing after the compression list is a ClientHello from before
-    // this document, which §4.2.1's negotiation cannot bring to this
+    // this document, which §4.2.2's negotiation cannot bring to this
     // version: protocol_version (rfc9846.txt:1306-1313,
     // rfc9846.txt:3972-3973).
     if (rb_left(&r) == 0) {

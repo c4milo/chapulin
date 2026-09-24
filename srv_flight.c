@@ -146,13 +146,13 @@ int srv_select(handshake_state *h, const client_hello *ch, selection *sel) {
         h->alert = ALERT_NO_APPLICATION_PROTOCOL;
         return CH_EPROTO;
     }
-    // Both halves of §4.1.1's retry condition: the group is one this
+    // Both halves of §4.2.1's retry condition: the group is one this
     // build holds, and no KeyShareEntry arrived for it.
     sel->need_retry = (ch->shares & SRV_GROUP_KEX) == 0;
     return CH_OK;
 }
 
-// Replaces the transcript with §4.4.1's synthetic construction over the
+// Replaces the transcript with §4.1's synthetic construction over the
 // first ClientHello and hashes the HelloRetryRequest after it. It is
 // handshake_flight.c's hrr_transcript with the server's own bytes in
 // raw, a copy docs/server.md owes a move.

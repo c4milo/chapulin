@@ -2,7 +2,7 @@ invariant: INV-14
 file: srv_parser_ext.c
 catches: srv_test
 reason: read_psk_binders admits a binders list under 33 bytes, which RFC 9846
-  §4.2.11 bounds at <33..2^16-1> because one entry costs its length byte
+  §4.3.11 bounds at <33..2^16-1> because one entry costs its length byte
   plus 32. An empty list runs no walk, so the per-entry floor never reads
   it, and a pre_shared_key offering identities and no binder at all parses.
   test/srv_parser_tests.h sends that empty list.

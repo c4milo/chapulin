@@ -28,7 +28,7 @@
 #include "srv_parser.h"
 
 // The ServerHello.random value that marks a HelloRetryRequest (RFC 9846
-// §4.1.3): the SHA-256 of "HelloRetryRequest", a fixed 32 bytes the
+// §4.2.3): the SHA-256 of "HelloRetryRequest", a fixed 32 bytes the
 // server writes in place of a random value.
 //
 // The client's copy of the same 32 bytes is hsp_hrr_magic
@@ -42,7 +42,7 @@
 extern const uint8_t srv_hrr_random[SRV_RANDOM];
 
 // The legacy_version both the ServerHello and the HelloRetryRequest
-// carry, whatever version was negotiated: 0x0303 (RFC 9846 §4.1.3).
+// carry, whatever version was negotiated: 0x0303 (RFC 9846 §4.2.3).
 // TLS13 (handshake_message.h) is the value supported_versions carries
 // beside it.
 #define SRV_LEGACY_VERSION 0x0303
@@ -53,7 +53,7 @@ extern const uint8_t srv_hrr_random[SRV_RANDOM];
 // non-empty legacy_session_id (rfc9846.txt:6401-6403). It is a record
 // and not a handshake message: six fixed bytes, content type 20,
 // legacy_record_version 0x0303, length 1, body 0x01. It never enters
-// the transcript, because §4.4.1 hashes handshake messages and this is
+// the transcript, because §4.1 hashes handshake messages and this is
 // not one.
 #define SRV_CCS_RECORD_LEN 6
 
@@ -120,7 +120,7 @@ typedef struct {
     uint16_t sigalg;
 
     // Set when the client named a group this build holds and sent no
-    // KeyShareEntry for it, which RFC 9846 §4.1.1 makes the one
+    // KeyShareEntry for it, which RFC 9846 §4.2.1 makes the one
     // condition that requires a HelloRetryRequest
     // (rfc9846.txt:1158-1161, rfc9846.txt:1446-1449). It is never set
     // on a second ClientHello: the state machine has one retry by call
@@ -141,7 +141,7 @@ typedef struct {
     uint8_t psk_selected;
 } selection;
 
-// Builds one ServerHello, handshake header included (RFC 9846 §4.1.3).
+// Builds one ServerHello, handshake header included (RFC 9846 §4.2.3).
 // It writes legacy_version SRV_LEGACY_VERSION, the 32 random bytes,
 // legacy_session_id_echo copied from the client's legacy_session_id
 // whatever its length (rfc9846.txt:1365-1368), sel->suite,
@@ -167,7 +167,7 @@ size_t srv_build_server_hello(uint8_t *out, size_t cap, const selection *sel,
                               size_t session_id_len, const uint8_t *share, size_t share_len);
 
 // Builds one HelloRetryRequest, handshake header included (RFC 9846
-// §4.1.4). The message has the ServerHello's format, and
+// §4.2.4). The message has the ServerHello's format, and
 // legacy_version, legacy_session_id_echo, cipher_suite and
 // legacy_compression_method have the same meaning there
 // (rfc9846.txt:1449-1452), so this builder writes the same fields with
@@ -201,7 +201,7 @@ size_t srv_build_hello_retry_request(uint8_t *out, size_t cap, const selection *
 size_t srv_build_compat_ccs(uint8_t *out, size_t cap);
 
 // Builds one EncryptedExtensions, handshake header included (RFC 9846
-// §4.3.1). It carries the extensions that apply to the connection and
+// §4.4.1). It carries the extensions that apply to the connection and
 // are not needed to establish the keys, and this server sends at most
 // three of them: record_size_limit (RFC 8449) when record_size_limit is
 // not 0, application_layer_protocol_negotiation (RFC 7301 §3.2) when
@@ -210,7 +210,7 @@ size_t srv_build_compat_ccs(uint8_t *out, size_t cap);
 //
 // It sends no early_data extension, whatever the ClientHello offered,
 // and that absence is what rejects 0-RTT (rfc9846.txt:2426-2428). It
-// sends no supported_groups, which RFC 9846 §4.2.7 makes a SHOULD
+// sends no supported_groups, which RFC 9846 §4.3.7 makes a SHOULD
 // (rfc9846.txt:2122-2127) and this build declines. It echoes no
 // server_name: the caller reads the name the client sent and the
 // server binds nothing to it.
@@ -245,7 +245,7 @@ size_t srv_build_encrypted_extensions(uint8_t *out, size_t cap, uint16_t record_
                                       const uint8_t *transport_params, size_t transport_params_len);
 
 // The byte count the whole Certificate message occupies, header
-// included, for one identity's chain (RFC 9846 §4.4.2). It is 4 bytes
+// included, for one identity's chain (RFC 9846 §4.5.1). It is 4 bytes
 // of handshake header, 1 byte of certificate_request_context length, 3
 // bytes of certificate_list length, and then per entry 3 bytes of
 // cert_data length, the certificate itself, and 2 bytes of an empty
@@ -261,7 +261,7 @@ size_t srv_build_encrypted_extensions(uint8_t *out, size_t cap, uint16_t record_
 //
 // Returns the count, which is 8 for an identity with no entries. An
 // empty certificate_list is not a message this server sends: RFC 9846
-// §4.4.2 requires the end-entity certificate first
+// §4.5.1 requires the end-entity certificate first
 // (rfc9846.txt:2850-2851) and forbids an empty list
 // (rfc9846.txt:2876), so srv_identity_for declines an unprovisioned
 // slot and no caller reaches this function with one.
@@ -271,7 +271,7 @@ size_t srv_certificate_message_len(const ch_identity *id);
 // header whose length field is srv_certificate_message_len minus 4, a
 // zero-length certificate_request_context, and the 3-byte
 // certificate_list length. The context is empty because this server
-// sent no CertificateRequest, which RFC 9846 §4.4.2 requires of a
+// sent no CertificateRequest, which RFC 9846 §4.5.1 requires of a
 // Certificate sent in reply to a ClientHello.
 //
 // Requires cap bytes at out and the identity srv_certificate_message_len
@@ -291,7 +291,7 @@ size_t srv_build_certificate_entry_prefix(uint8_t *out, size_t cap, size_t cert_
 
 // Writes the 2-byte empty extensions vector that follows one
 // certificate's DER. Every entry carries one, including the last
-// (RFC 9846 §4.4.2). This server sends no certificate extension:
+// (RFC 9846 §4.5.1). This server sends no certificate extension:
 // status_request is a MAY it declines (docs/server.md, "What the
 // server declines, conformantly").
 //
@@ -301,7 +301,7 @@ size_t srv_build_certificate_entry_prefix(uint8_t *out, size_t cap, size_t cert_
 size_t srv_build_certificate_entry_suffix(uint8_t *out, size_t cap);
 
 // Builds one CertificateVerify, handshake header included (RFC 9846
-// §4.4.3): the two-byte SignatureScheme and the signature as an opaque
+// §4.5.2): the two-byte SignatureScheme and the signature as an opaque
 // vector.
 //
 // It writes the signature it is given and judges nothing about it. The
@@ -316,7 +316,7 @@ size_t srv_build_certificate_entry_suffix(uint8_t *out, size_t cap);
 size_t srv_build_certificate_verify(uint8_t *out, size_t cap, uint16_t sigalg, const uint8_t *sig,
                                     size_t sig_len);
 
-// Builds one Finished, handshake header included (RFC 9846 §4.4.4):
+// Builds one Finished, handshake header included (RFC 9846 §4.5.3):
 // the verify_data and nothing else. Its length is the hash length the
 // suite fixed, so the message is 4 + hash_len bytes
 // (rfc9846.txt:3141-3143 states the same shape for the client's).
@@ -328,10 +328,10 @@ size_t srv_build_certificate_verify(uint8_t *out, size_t cap, uint16_t sigalg, c
 // Returns the message length in bytes, or 0 when cap is short.
 size_t srv_build_finished(uint8_t *out, size_t cap, const uint8_t *verify_data, size_t hash_len);
 
-// Builds one KeyUpdate, handshake header included (RFC 9846 §4.6.3):
+// Builds one KeyUpdate, handshake header included (RFC 9846 §4.7.3):
 // one byte of request_update.
 //
-// The server both answers and initiates. RFC 9846 §4.6.3 requires an
+// The server both answers and initiates. RFC 9846 §4.7.3 requires an
 // endpoint that receives a KeyUpdate with request_update set to
 // update_requested to send one of its own with update_not_requested
 // (rfc9846.txt:3362-3365 covers the byte's two legal values), and

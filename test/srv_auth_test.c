@@ -1,5 +1,5 @@
 // The ROLE=server value vectors that are not message bytes: the fixed
-// HelloRetryRequest random of RFC 9846 §4.1.3, the CertificateVerify
+// HelloRetryRequest random of RFC 9846 §4.2.3, the CertificateVerify
 // signed content srv_auth.c hashes, the identity slots it selects from,
 // and the signatures each provisioned identity produces. The signing
 // cases check every signature with the verifier a client runs, so this
@@ -84,7 +84,7 @@ static void test_hrr_random(void) {
 }
 
 // srv_hash_signed_content is implemented, so this checks its value too.
-// The two vectors pin the exact bytes RFC 9846 §4.4.3 puts in front of
+// The two vectors pin the exact bytes RFC 9846 §4.5.2 puts in front of
 // the transcript hash: 64 bytes of 0x20, the context string "TLS 1.3,
 // server CertificateVerify", and one 0x00 separator. A wrong pad
 // length, a wrong context string or a missing separator moves the

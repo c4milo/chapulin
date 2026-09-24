@@ -211,7 +211,7 @@ static void test_flight_select(void) {
     selection sel;
 
     // No overlap in suites, then in groups, then in schemes: each is the
-    // handshake_failure RFC 9846 section 4.1.1 names.
+    // handshake_failure RFC 9846 section 4.2.1 names.
     flight_reset();
     offer_everything();
     flight_hello.suites = 0;
@@ -364,7 +364,7 @@ static void retry_round(selection *sel) {
     CHECK(srv_send_hello_retry_request(&hs, &flight_hello, sel) == CH_OK);
 }
 
-// The transcript a retry leaves behind is RFC 9846 section 4.4.1's
+// The transcript a retry leaves behind is RFC 9846 section 4.1's
 // synthetic construction over the first ClientHello, then the
 // HelloRetryRequest itself. A retry that left the first hello in the
 // transcript instead would make every Finished below disagree with the

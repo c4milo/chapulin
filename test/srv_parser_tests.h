@@ -1,4 +1,4 @@
-// srv_parser.c against the ClientHello of RFC 9846 §4.1.2: one hello
+// srv_parser.c against the ClientHello of RFC 9846 §4.2.2: one hello
 // written out by hand that parses, one mutant per refusal srv_parser.h
 // lists, and the exact boundary pair of every length rule, the shape
 // test/handshake_strict_test.c gives the client's parsers. The hello
@@ -44,7 +44,7 @@ static void test_golden_hello(void) {
 static void test_head(void) {
     uint8_t buf[HELLO_CAP];
     size_t n = golden(buf);
-    // legacy_version is read and not judged (§4.2.1): a hello that says
+    // legacy_version is read and not judged (§4.3.1): a hello that says
     // TLS 1.0 there negotiates on supported_versions.
     buf[1] = 0x01;
     CHECK(parse(buf, n) == CH_OK);
@@ -71,7 +71,7 @@ static void test_head(void) {
     CHECK(head_case(0, others, sizeof others, compression_null, 1) == CH_OK);
     CHECK(parsed.suites == 0);
     // legacy_compression_methods: exactly one zero byte, or
-    // illegal_parameter (§4.1.2), for a nonzero byte, two bytes and none.
+    // illegal_parameter (§4.2.2), for a nonzero byte, two bytes and none.
     static const uint8_t deflate[] = {0x01};
     static const uint8_t two[] = {0x00, 0x01};
     CHECK(head_case(0, chacha, sizeof chacha, deflate, sizeof deflate) == CH_EPROTO);
@@ -105,7 +105,7 @@ static void test_extension_block(void) {
     CHECK(refused(buf, n, ALERT_DECODE_ERROR));
     n = appended(buf, half_header, sizeof half_header);
     CHECK(refused(buf, n, ALERT_DECODE_ERROR));
-    // One extension of each type (§4.2): a second supported_versions, and
+    // One extension of each type (§4.3): a second supported_versions, and
     // a second unknown type, which a seen mask alone would not see.
     n = appended(buf, ext_versions, sizeof ext_versions);
     CHECK(refused(buf, n, ALERT_ILLEGAL_PARAMETER));
@@ -126,7 +126,7 @@ static void test_extension_block(void) {
     CHECK(parse(buf, n) == CH_OK);
 }
 
-// Every recognized extension must fill its body exactly (§4.2): the
+// Every recognized extension must fill its body exactly (§4.3): the
 // golden's parses, and the same extension with one trailing byte is
 // decode_error. padding is the one recognized type whose body is read
 // whole, so a longer padding is a longer padding.
@@ -162,7 +162,7 @@ static void test_exact_fill(void) {
     CHECK(refused(buf, n, ALERT_DECODE_ERROR));
 }
 
-// §9.2's required extensions, and §4.2.1's supported_versions.
+// §9.2's required extensions, and §4.3.1's supported_versions.
 static void test_required_extensions(void) {
     uint8_t buf[HELLO_CAP];
     size_t n = dropped(buf, AT_VERSIONS);
@@ -250,7 +250,7 @@ static void test_key_share(void) {
     n = replaced(buf, AT_KEY_SHARE, ext, sizeof ext_key_share);
     CHECK(refused(buf, n, ALERT_DECODE_ERROR));
     // A share for this build's group when supported_groups does not list
-    // it (§4.2.8): illegal_parameter.
+    // it (§4.3.8): illegal_parameter.
     static const uint8_t p256_only[] = {0x00, 0x0a, 0x00, 0x04, 0x00, 0x02, 0x00, 0x17};
     n = replaced(buf, AT_GROUPS, p256_only, sizeof p256_only);
     CHECK(refused(buf, n, ALERT_ILLEGAL_PARAMETER));
@@ -271,7 +271,7 @@ static void test_pre_shared_key(void) {
     CHECK(parse(buf, n) == CH_OK);
     n = variant(buf, AT_GROUPS, NULL, &psk);
     CHECK(refused(buf, n, ALERT_MISSING_EXTENSION));
-    // Not last (§4.2.11), and without psk_key_exchange_modes (§4.2.9).
+    // Not last (§4.3.11), and without psk_key_exchange_modes (§4.3.9).
     n = variant(buf, AT_PADDING, &psk, &golden_exts[AT_PADDING]);
     CHECK(refused(buf, n, ALERT_ILLEGAL_PARAMETER));
     n = variant(buf, AT_PSK_MODES, NULL, &psk);

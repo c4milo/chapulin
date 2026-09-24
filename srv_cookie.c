@@ -19,7 +19,7 @@
 // suite fixes.
 #define SRV_COOKIE_HEAD 5
 
-// The transcript hash length one cipher suite fixes (RFC 9846 §9.1 binds the
+// The transcript hash length one cipher suite fixes (RFC 9846 §7.1 binds the
 // hash to the suite), in bytes, or 0 for a suite this build does not hold.
 //
 // One suite answers a length today. This build offers

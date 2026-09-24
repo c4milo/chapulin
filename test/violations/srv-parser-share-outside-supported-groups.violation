@@ -3,7 +3,7 @@ file: srv_parser.c
 catches: srv_test
 reason: check_required stops comparing the groups a KeyShareEntry named
   against supported_groups, so a share for this build's group parses
-  when the client never listed the group. RFC 9846 §4.2.8 forbids the
+  when the client never listed the group. RFC 9846 §4.3.8 forbids the
   client to send one and names illegal_parameter for a server that
   checks, and the settled rule is that this server checks.
   test/srv_parser_tests.h lists secp256r1 alone beside an x25519 share

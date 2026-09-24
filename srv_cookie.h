@@ -1,9 +1,9 @@
 // The HelloRetryRequest cookie: mint and open. A ROLE=server build
 // keeps no state between the two ClientHellos of a retry, so everything
 // it must carry across the round trip travels in this cookie, under a
-// MAC the client cannot forge. RFC 9846 §4.2.2 describes exactly that
+// MAC the client cannot forge. RFC 9846 §4.3.2 describes exactly that
 // use — a stateless server stores Hash(ClientHello1) in the cookie
-// under integrity protection (rfc9846.txt:1779-1783) — and §4.4.1's
+// under integrity protection (rfc9846.txt:1779-1783) — and §4.1's
 // synthetic message_hash transcript exists so that one hash is all the
 // server must keep (rfc9846.txt:1084-1087). §9.2 makes the extension
 // mandatory to implement (rfc9846.txt:4560).
@@ -64,10 +64,10 @@
 // Mints one cookie: the body, then HMAC-SHA-256 over that body under
 // key. The body is the version byte, suite and group as two bytes each
 // in network byte order, hash_len bytes of Hash(ClientHello1), and
-// SHA256_LEN bytes of the digest over the fields RFC 9846 §4.1.2
+// SHA256_LEN bytes of the digest over the fields RFC 9846 §4.2.2
 // freezes (client_hello.frozen, srv_parser.h).
 //
-// Why each term is in the body. Hash(ClientHello1) is what §4.4.1's
+// Why each term is in the body. Hash(ClientHello1) is what §4.1's
 // synthetic transcript needs (rfc9846.txt:1084-1087). The suite is
 // there because a HelloRetryRequest carries one
 // (rfc9846.txt:1449-1452), so the server must rebuild those bytes

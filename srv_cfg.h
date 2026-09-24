@@ -72,7 +72,7 @@ typedef struct {
 // this server decline the other, and a client that offers only the
 // declined scheme gets handshake_failure.
 //
-// The chain lists the end-entity certificate first (RFC 9846 §4.4.2,
+// The chain lists the end-entity certificate first (RFC 9846 §4.5.1,
 // rfc9846.txt:2850-2851) and is never empty (rfc9846.txt:2876). A slot
 // whose chain_count is 0 is not provisioned, the server never selects
 // the scheme it signs, and ch_srv_check refuses a configuration with no
@@ -118,7 +118,7 @@ typedef struct {
     ch_identity rsa_pss;    // signs rsa_pss_rsae_sha256
 
     // The HMAC-SHA-256 key that protects the HelloRetryRequest cookie
-    // (RFC 9846 §4.2.2, rfc9846.txt:1779-1783): 32 bytes, the
+    // (RFC 9846 §4.3.2, rfc9846.txt:1779-1783): 32 bytes, the
     // SRV_COOKIE_KEY_LEN srv_cookie.h states. One key per deployment,
     // so a second ClientHello that lands on a different session, or on
     // a different device behind a load balancer, still verifies.

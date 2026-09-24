@@ -702,7 +702,7 @@ is `illegal_parameter` (`rfc9846.txt:3789-3791`, with the description at
 
 | Condition | Alert | Obligation | Alert source |
 |---|---|---|---|
-| `legacy_version` is not 0x0303 | none: the field is read and not judged. §4.2.1 tells a server that sees `supported_versions` to ignore it (1306-1313), and a hello without `supported_versions` takes the row below | 1306-1313 | — |
+| `legacy_version` is not 0x0303 | none: the field is read and not judged. §4.2.2 tells a server that sees `supported_versions` to ignore it (1306-1313), and a hello without `supported_versions` takes the row below | 1306-1313 | — |
 | `legacy_compression_methods` is not exactly one zero byte | `illegal_parameter` (47) | 1284-1288 | 1284-1288 |
 | No bytes after the compression list, or no `supported_versions` carrying 0x0304 | `protocol_version` (70) | 1306-1313, 1742-1744 | design's choice; 3972-3973 |
 | No `pre_shared_key`, and `signature_algorithms` or `supported_groups` missing | `missing_extension` (109) | 4595-4605 | 4595-4605 |
@@ -719,7 +719,7 @@ is `illegal_parameter` (`rfc9846.txt:3789-3791`, with the description at
 | No overlap in groups, suites or signature schemes | `handshake_failure` (40) | 1145-1148, 1181-1184 | 1181-1184 |
 | A ClientHello after TLS 1.3 was negotiated | `unexpected_message` (10) | 1215-1217 | 1215-1217 |
 | `early_data` in the retried ClientHello | `illegal_parameter` (47) | 2397-2398 | design's choice; 3789-3791 |
-| A retried ClientHello that changed a field §4.1.2 freezes | `illegal_parameter` (47) | 1191-1213 | design's choice; 3789-3791 |
+| A retried ClientHello that changed a field §4.2.2 freezes | `illegal_parameter` (47) | 1191-1213 | design's choice; 3789-3791 |
 | A `change_cipher_spec` record whose body is not the single byte 0x01, or one that arrives protected | `unexpected_message` (10) | 3433-3435 | 3433-3435 |
 | A record content type the document does not define | `unexpected_message` (10) | 3441-3444 | 3441-3444 |
 | A wrong client Finished | `decrypt_error` (51) | 3115-3117 | 3115-3117 |
@@ -2205,7 +2205,7 @@ Three more points in that order deserve their own sentences.
 sentence forbids the server from sending one.** `rfc9846.txt:1469-1472` is a
 client receipt obligation: "If a client receives a second HelloRetryRequest in
 the same connection ... it MUST abort the handshake with an
-'unexpected_message' alert." Searching §4.1.4 (`rfc9846.txt:1444-1500`) for a
+'unexpected_message' alert." Searching §4.2.4 (`rfc9846.txt:1444-1500`) for a
 server-side limit returns none; the nearest server sentence is
 `rfc9846.txt:1158-1161`, which requires sending one and says nothing about a
 second. So the argument is about consequences, not obligations: a server that

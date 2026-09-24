@@ -2,7 +2,7 @@ invariant: INV-14
 file: srv_parser_ext.c
 catches: srv_test
 reason: read_psk_binders admits a PskBinderEntry under 32 bytes, which RFC
-  9846 §4.2.11 bounds at <32..255> because the shortest binder is one
+  9846 §4.3.11 bounds at <32..255> because the shortest binder is one
   SHA-256 HMAC. A shorter entry cannot carry one, so the binder check the
   PSK lane adds would compare against bytes that are not there.
   test/srv_parser_tests.h sends 15- and 16-byte entries that fill the
