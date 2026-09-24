@@ -1,0 +1,14 @@
+invariant: INV-26
+file: Makefile
+catches: test/lint-trust-separation.sh
+reason: LIB_DEF gains -DCH_AES_256_TEST, the define that compiles the
+  software AES-256 key schedule and cipher in quic_aes_soft.c for the
+  tests and proofs. A packaged object would then carry a software
+  AES-256 beside the traffic path, one edit away from running it under
+  a secret key. The lint reads the packaged defines per axis value, and
+  its QUIC and SUITE=aesgcm rows ban the define.
+
+--- old
+LIB_DEF := $(strip $(PIN_DEF) $(TRUST_DEF) $(TRANSPORT_DEF) $(AES_DEF) $(SUITE_DEF) $(ROLE_DEF))
+--- new
+LIB_DEF := $(strip $(PIN_DEF) $(TRUST_DEF) $(TRANSPORT_DEF) $(AES_DEF) $(SUITE_DEF) $(ROLE_DEF) -DCH_AES_256_TEST)

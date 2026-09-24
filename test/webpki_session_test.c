@@ -223,8 +223,8 @@ static void render_server_hello(mock_server *s, sha256 *transcript, const uint8_
     uint8_t handshake_secret[SHA256_LEN];
     uint8_t c_hs[SHA256_LEN];
     uint8_t s_hs[SHA256_LEN];
-    ks_early(no_psk, sizeof no_psk, 0, early, binder);
-    ks_handshake(early, ecdhe, ecdhe_len, hash, handshake_secret, c_hs, s_hs);
+    ks_early(SHA256_LEN, no_psk, sizeof no_psk, 0, early, binder);
+    ks_handshake(SHA256_LEN, early, ecdhe, ecdhe_len, hash, handshake_secret, c_hs, s_hs);
     push_clear(s, msg, w.len);
     REC_DIR_INIT_SUITE(&s->wr, s_hs, mock_suite(s->suite));
     REC_DIR_INIT_SUITE(&s->rd, c_hs, mock_suite(s->suite));

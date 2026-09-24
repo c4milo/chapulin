@@ -349,9 +349,21 @@ launch() {
 # Measured apart (kissat), first at the old 64 and then at 54 on an
 # arm64 development machine: expand 745 s / 2.2 GB, then 525 s / 2.1 GB
 # over 283 properties; expand_label 747 s / 2.2 GB, then 549 s / 2.16 GB
-# over 299.
+# over 299. Re-measured after hash_len joined the signatures, with make
+# check running beside them: expand 283 properties, 660 s wall and 631 s
+# of CPU, 1.95 GB; expand_label 299, 668 s wall and 640 s of CPU, 1.98 GB.
 launch slow full hkdf_expand 120 "hkdf_expand.0:5" --object-bits 11 ct.c
 launch slow full hkdf_expand_label 120 "hkdf_expand.0:5" --object-bits 11 ct.c
+# The SHA-384 arms of the two lines above, under CH_HASH_SHA384 with
+# hash_len fixed at 48: output up to three 48-byte blocks, info up to the
+# 70-byte HKDF_INFO_MAX that build declares, and the SHA-512 context
+# stubs' 208-byte fill and wipe, which set the unwindset. Measured (arm64
+# macOS, cbmc 6.11.0, kissat, PROVE_ONLY=<name> PROVE_NO_CACHE=1
+# /usr/bin/time -l, slow tier, with make check running beside them):
+# expand 348 properties, 1817 s wall and 1365 s of CPU, 3.50 GB peak;
+# expand_label 364 properties, 1828 s wall and 1375 s of CPU, 3.61 GB.
+launch slow full hkdf384_expand 130 "hkdf_expand.0:5,fill_nondet.0:209,ct_wipe.0:209" --object-bits 11 ct.c
+launch slow full hkdf384_expand_label 130 "hkdf_expand.0:5,fill_nondet.0:209,ct_wipe.0:209" --object-bits 11 ct.c
 # These three prove aead.c's framing against the contract stubs in
 # proof/aead_stubs.h rather than compiling chacha20.c and poly1305.c into
 # every formula. Concretely they returned no verdict in five hours a night;
@@ -707,6 +719,13 @@ launch fast:2 full webpki_sigalg 50 "fill_nondet.0:3073" -DCH_TRUST_WEBPKI x509_
 # 6.11.0, kissat, /usr/bin/time -l): 975 properties, 46 s, 410 MB.
 launch fast full p384 113 "" buf.c
 launch fast full hkdf 120 "" ct.c
+# hkdf384: the hmac and extract leg under CH_HASH_SHA384, with keys up
+# to 160 bytes, one past SHA-512's 128-byte block plus 32, and extract's
+# hash_len free over the two values the dispatcher takes. Measured the
+# way the expand lines above were: 347 properties, 6 s, 0.10 GB peak.
+# The SHA-256 leg on the line above measured 282 properties, 2 s,
+# 0.04 GB after hash_len joined the signatures.
+launch fast full hkdf384 170 "fill_nondet.0:209,ct_wipe.0:209" ct.c
 # io: 458 s under this script's own flags. The transport shim over the
 # caller's callbacks, proven against a recv that honours no contract: it
 # returns any int, so read_exact's got <= 0 || got > n is under proof
@@ -717,6 +736,11 @@ launch slow:4 full io 24 ""
 # over 32-byte secrets; sha256 is harness.h's stub, since the schedule's
 # arithmetic is length handling rather than compression.
 launch fast full keysched 120 "" ct.c
+# keysched384: the same harness under CH_HASH_SHA384, every secret,
+# transcript hash and PSK at 48 bytes. Measured the same way: 359
+# properties, 27 s, 0.28 GB peak; the SHA-256 line above measured 294
+# properties, 18 s, 0.18 GB after hash_len joined the signatures.
+launch fast full keysched384 130 "fill_nondet.0:209,ct_wipe.0:209" ct.c
 # The same harness under the EXPORTER axis, which compiles two more ks_
 # calls and widens hkdf's label cap from 12 to 32. It would be a second
 # launch line rather than a define on the one above for quic_step_ca's

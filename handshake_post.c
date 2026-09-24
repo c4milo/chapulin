@@ -132,7 +132,7 @@ static int handle_ticket(ch_tls *t, const uint8_t *body, size_t n
         return CH_OK;
     }
     ticket.epoch = t->epoch;
-    ks_res_psk(t->res_master, nonce, nonce_len, ticket.psk);
+    ks_res_psk(SHA256_LEN, t->res_master, nonce, nonce_len, ticket.psk);
 #ifdef CH_TRUST_WEBPKI
     // Binds the ticket to this session's hostname and anchors, so no
     // other configuration can present it (webpki_ticket.h).

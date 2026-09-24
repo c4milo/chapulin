@@ -86,33 +86,40 @@ size_t srv_ticket_seal(const uint8_t key[SRV_TICKET_KEY_LEN], const uint8_t nonc
     return SRV_TICKET_LEN;
 }
 
-void ks_early(const uint8_t *psk, size_t psk_len, int resumption, uint8_t early[SHA256_LEN],
-              uint8_t binder_key[SHA256_LEN]) {
+void ks_early(size_t hash_len, const uint8_t *psk, size_t psk_len, int resumption, uint8_t *early,
+              uint8_t *binder_key) {
+    __CPROVER_assert(hash_len == SHA256_LEN || hash_len == HKDF_HASH_MAX,
+                     "ks_early: hash_len names a hash this build holds");
     __CPROVER_assert(__CPROVER_r_ok(psk, psk_len), "early: psk readable");
     __CPROVER_assert(resumption == 1, "early: a ticket's PSK takes the resumption label");
-    fill_nondet(early, SHA256_LEN);
-    fill_nondet(binder_key, SHA256_LEN);
+    fill_nondet(early, hash_len);
+    fill_nondet(binder_key, hash_len);
 }
 
-void ks_verify_data(const uint8_t key[SHA256_LEN], const uint8_t transcript[SHA256_LEN],
-                    uint8_t out[SHA256_LEN]) {
-    __CPROVER_assert(__CPROVER_r_ok(key, SHA256_LEN), "verify_data: key readable");
-    __CPROVER_assert(__CPROVER_r_ok(transcript, SHA256_LEN), "verify_data: hash readable");
-    fill_nondet(out, SHA256_LEN);
+void ks_verify_data(size_t hash_len, const uint8_t *key, const uint8_t *transcript, uint8_t *out) {
+    __CPROVER_assert(hash_len == SHA256_LEN || hash_len == HKDF_HASH_MAX,
+                     "ks_verify_data: hash_len names a hash this build holds");
+    __CPROVER_assert(__CPROVER_r_ok(key, hash_len), "verify_data: key readable");
+    __CPROVER_assert(__CPROVER_r_ok(transcript, hash_len), "verify_data: hash readable");
+    fill_nondet(out, hash_len);
 }
 
-void ks_res_master(const uint8_t master[SHA256_LEN], const uint8_t transcript[SHA256_LEN],
-                   uint8_t res_master[SHA256_LEN]) {
-    __CPROVER_assert(__CPROVER_r_ok(master, SHA256_LEN), "res_master: master readable");
-    __CPROVER_assert(__CPROVER_r_ok(transcript, SHA256_LEN), "res_master: hash readable");
-    fill_nondet(res_master, SHA256_LEN);
+void ks_res_master(size_t hash_len, const uint8_t *master, const uint8_t *transcript,
+                   uint8_t *res_master) {
+    __CPROVER_assert(hash_len == SHA256_LEN || hash_len == HKDF_HASH_MAX,
+                     "ks_res_master: hash_len names a hash this build holds");
+    __CPROVER_assert(__CPROVER_r_ok(master, hash_len), "res_master: master readable");
+    __CPROVER_assert(__CPROVER_r_ok(transcript, hash_len), "res_master: hash readable");
+    fill_nondet(res_master, hash_len);
 }
 
-void ks_res_psk(const uint8_t res_master[SHA256_LEN], const uint8_t *nonce, size_t nonce_len,
-                uint8_t psk[SHA256_LEN]) {
-    __CPROVER_assert(__CPROVER_r_ok(res_master, SHA256_LEN), "res_psk: secret readable");
+void ks_res_psk(size_t hash_len, const uint8_t *res_master, const uint8_t *nonce, size_t nonce_len,
+                uint8_t *psk) {
+    __CPROVER_assert(hash_len == SHA256_LEN || hash_len == HKDF_HASH_MAX,
+                     "ks_res_psk: hash_len names a hash this build holds");
+    __CPROVER_assert(__CPROVER_r_ok(res_master, hash_len), "res_psk: secret readable");
     __CPROVER_assert(__CPROVER_r_ok(nonce, nonce_len), "res_psk: nonce readable");
-    fill_nondet(psk, SHA256_LEN);
+    fill_nondet(psk, hash_len);
 }
 
 int hsr_transcript_hash(handshake_state *s, uint8_t out[SHA256_LEN]) {

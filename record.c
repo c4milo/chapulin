@@ -76,8 +76,8 @@ void rec_dir_init_suite(rec_dir *d, const uint8_t secret[SHA256_LEN], uint16_t s
     // leaves no bytes of the previous key behind it.
     ct_wipe(d->key, sizeof d->key);
     d->suite = suite;
-    hkdf_expand_label(secret, "key", NULL, 0, d->key, suite_key_len(suite));
-    hkdf_expand_label(secret, "iv", NULL, 0, d->iv, AEAD_NONCE);
+    hkdf_expand_label(SHA256_LEN, secret, "key", NULL, 0, d->key, suite_key_len(suite));
+    hkdf_expand_label(SHA256_LEN, secret, "iv", NULL, 0, d->iv, AEAD_NONCE);
     d->seq = 0;
 }
 #endif
@@ -86,15 +86,15 @@ void rec_dir_init(rec_dir *d, const uint8_t secret[SHA256_LEN]) {
 #ifdef CH_SUITE_AES_GCM
     rec_dir_init_suite(d, secret, SUITE_CHACHA20_POLY1305_SHA256);
 #else
-    hkdf_expand_label(secret, "key", NULL, 0, d->key, AEAD_KEY);
-    hkdf_expand_label(secret, "iv", NULL, 0, d->iv, AEAD_NONCE);
+    hkdf_expand_label(SHA256_LEN, secret, "key", NULL, 0, d->key, AEAD_KEY);
+    hkdf_expand_label(SHA256_LEN, secret, "iv", NULL, 0, d->iv, AEAD_NONCE);
     d->seq = 0;
 #endif
 }
 
 void rec_dir_update(uint8_t secret[SHA256_LEN], rec_dir *d) {
     uint8_t next[SHA256_LEN];
-    hkdf_expand_label(secret, "traffic upd", NULL, 0, next, SHA256_LEN);
+    hkdf_expand_label(SHA256_LEN, secret, "traffic upd", NULL, 0, next, SHA256_LEN);
     for (size_t i = 0; i < SHA256_LEN; i++) {
         secret[i] = next[i];
     }

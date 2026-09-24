@@ -46,7 +46,7 @@ static uint32_t hs_once(void) {
     sha256 tr, snap;
 
     x25519_base(pub, X25519_SCALAR);
-    ks_early(nopsk, sizeof nopsk, 0, early, binder);
+    ks_early(SHA256_LEN, nopsk, sizeof nopsk, 0, early, binder);
     sha256_init(&tr);
     sha256_update(&tr, msg, CH_CLASSIC_LEN); // ClientHello
     sha256_update(&tr, msg, SH_CLASSIC_LEN); // ServerHello
@@ -55,7 +55,7 @@ static uint32_t hs_once(void) {
     }
     snap = tr;
     sha256_final(&snap, hash); // CH..SH
-    ks_handshake(early, ecdhe, sizeof ecdhe, hash, hs_sec, c_hs, s_hs);
+    ks_handshake(SHA256_LEN, early, ecdhe, sizeof ecdhe, hash, hs_sec, c_hs, s_hs);
     rec_dir_init(&rd, s_hs);
     rec_dir_init(&wr, c_hs);
     sha256_update(&tr, msg, 40);   // EncryptedExtensions
@@ -86,8 +86,8 @@ static uint32_t hs_once(void) {
     }
     sha256_update(&tr, msg, 392); // CertificateVerify (384-byte signature)
     snap = tr;
-    sha256_final(&snap, hash);         // CH..CertificateVerify
-    ks_verify_data(s_hs, hash, vdata); // server Finished MAC
+    sha256_final(&snap, hash);                     // CH..CertificateVerify
+    ks_verify_data(SHA256_LEN, s_hs, hash, vdata); // server Finished MAC
     for (size_t i = 0; i < 32; i++) {
         wire[i] = vdata[i];
     }
@@ -97,12 +97,12 @@ static uint32_t hs_once(void) {
     sha256_update(&tr, msg, 36); // server Finished
     snap = tr;
     sha256_final(&snap, hash); // CH..server Finished
-    ks_master(hs_sec, hash, master, c_ap, s_ap);
-    ks_verify_data(c_hs, hash, vdata); // client Finished MAC
-    sha256_update(&tr, msg, 36);       // client Finished
+    ks_master(SHA256_LEN, hs_sec, hash, master, c_ap, s_ap);
+    ks_verify_data(SHA256_LEN, c_hs, hash, vdata); // client Finished MAC
+    sha256_update(&tr, msg, 36);                   // client Finished
     snap = tr;
     sha256_final(&snap, hash); // CH..client Finished
-    ks_res_master(master, hash, res);
+    ks_res_master(SHA256_LEN, master, hash, res);
     rec_dir_init(&rd, s_ap);
     rec_dir_init(&wr, c_ap);
     return (uint32_t)res[0] + rd.key[0] + wr.iv[0] + binder[0] + pub[0];
@@ -140,7 +140,7 @@ static uint32_t hs_once_pq(void) {
         mlkem_keygen_dk(dk, MLKEM_D, MLKEM_Z);
         sink = dk[0];
     }
-    ks_early(nopsk, sizeof nopsk, 0, early, binder);
+    ks_early(SHA256_LEN, nopsk, sizeof nopsk, 0, early, binder);
     sha256_init(&tr);
     sha256_update(&tr, msg, CH_HYBRID_LEN);
     sha256_update(&tr, msg, SH_HYBRID_LEN);
@@ -157,7 +157,7 @@ static uint32_t hs_once_pq(void) {
     }
     snap = tr;
     sha256_final(&snap, hash);
-    ks_handshake(early, ikm, sizeof ikm, hash, hs_sec, c_hs, s_hs);
+    ks_handshake(SHA256_LEN, early, ikm, sizeof ikm, hash, hs_sec, c_hs, s_hs);
     rec_dir_init(&rd, s_hs);
     rec_dir_init(&wr, c_hs);
 
@@ -173,7 +173,7 @@ static uint32_t hs_once_pq(void) {
     sha256_update(&tr, msg, 392);
     snap = tr;
     sha256_final(&snap, hash);
-    ks_verify_data(s_hs, hash, vdata);
+    ks_verify_data(SHA256_LEN, s_hs, hash, vdata);
     for (size_t i = 0; i < 32; i++) {
         wire[i] = vdata[i];
     }
@@ -183,12 +183,12 @@ static uint32_t hs_once_pq(void) {
     sha256_update(&tr, msg, 36);
     snap = tr;
     sha256_final(&snap, hash);
-    ks_master(hs_sec, hash, master, c_ap, s_ap);
-    ks_verify_data(c_hs, hash, vdata);
+    ks_master(SHA256_LEN, hs_sec, hash, master, c_ap, s_ap);
+    ks_verify_data(SHA256_LEN, c_hs, hash, vdata);
     sha256_update(&tr, msg, 36);
     snap = tr;
     sha256_final(&snap, hash);
-    ks_res_master(master, hash, res);
+    ks_res_master(SHA256_LEN, master, hash, res);
     rec_dir_init(&rd, s_ap);
     rec_dir_init(&wr, c_ap);
     return (uint32_t)res[0] + rd.key[0] + wr.iv[0] + binder[0] + pub[0];
@@ -211,7 +211,7 @@ int app_main(void) {
 #elif defined(OP_HKDF)
     uint8_t out[SHA256_LEN];
     for (int k = 0; k < ITERS; k++) {
-        hkdf_expand_label(msg, "c hs traffic", msg + 32, 32, out, 32);
+        hkdf_expand_label(SHA256_LEN, msg, "c hs traffic", msg + 32, 32, out, 32);
         acc += out[0];
     }
 #elif defined(OP_AEAD_1K)

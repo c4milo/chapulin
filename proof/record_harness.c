@@ -23,9 +23,11 @@
 #include "aead.h"
 #include "hkdf.h"
 
-void hkdf_expand_label(const uint8_t secret[SHA256_LEN], const char *label, const uint8_t *ctx,
-                       size_t ctx_len, uint8_t *out, size_t out_len) {
-    __CPROVER_assert(__CPROVER_r_ok(secret, SHA256_LEN), "label: secret readable");
+void hkdf_expand_label(size_t hash_len, const uint8_t *secret, const char *label,
+                       const uint8_t *ctx, size_t ctx_len, uint8_t *out, size_t out_len) {
+    __CPROVER_assert(hash_len == SHA256_LEN || hash_len == HKDF_HASH_MAX,
+                     "hkdf_expand_label: hash_len names a hash this build holds");
+    __CPROVER_assert(__CPROVER_r_ok(secret, hash_len), "label: secret readable");
     __CPROVER_assert(__CPROVER_r_ok(label, 1), "label: label readable");
     __CPROVER_assert(ctx_len == 0 || __CPROVER_r_ok(ctx, ctx_len), "label: ctx readable");
     __CPROVER_assert(__CPROVER_w_ok(out, out_len), "label: output writable");
@@ -33,7 +35,7 @@ void hkdf_expand_label(const uint8_t secret[SHA256_LEN], const char *label, cons
     // caller that breaks them fails this proof, not only the runtime.
     size_t label_len = strlen(label);
     __CPROVER_assert(label_len > 0 && label_len <= HKDF_LABEL_MAX, "label: length in contract");
-    __CPROVER_assert(ctx_len <= SHA256_LEN, "label: ctx within contract");
+    __CPROVER_assert(ctx_len <= hash_len, "label: ctx within contract");
     __CPROVER_assert(out_len <= 0xffff, "label: output within contract");
     fill_nondet(out, out_len);
 }

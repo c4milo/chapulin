@@ -433,8 +433,8 @@ static void test_retry_completes(const uint8_t *cookie, size_t cookie_len) {
     uint8_t c_hs[SHA256_LEN];
     uint8_t s_hs[SHA256_LEN];
     static const uint8_t no_psk[SHA256_LEN] = {0};
-    ks_early(no_psk, sizeof no_psk, 0, early, binder_key);
-    ks_handshake(early, ikm, sizeof ikm, hash, handshake_secret, c_hs, s_hs);
+    ks_early(SHA256_LEN, no_psk, sizeof no_psk, 0, early, binder_key);
+    ks_handshake(SHA256_LEN, early, ikm, sizeof ikm, hash, handshake_secret, c_hs, s_hs);
 
     const uint8_t *flight = retry_out.bytes[CH_LEVEL_HANDSHAKE];
     size_t flight_len = retry_out.len[CH_LEVEL_HANDSHAKE];
@@ -449,13 +449,13 @@ static void test_retry_completes(const uint8_t *cookie, size_t cookie_len) {
     CHECK(flight[off] == HS_FINISHED);
     retry_transcript(&hello1, exchanged, w.len, hash);
     uint8_t want[SHA256_LEN];
-    ks_verify_data(s_hs, hash, want);
+    ks_verify_data(SHA256_LEN, s_hs, hash, want);
     CHECK(memcmp(flight + off + 4, want, sizeof want) == 0);
 
     wb_bytes(&w, flight + off, len);
     retry_transcript(&hello1, exchanged, w.len, hash);
     uint8_t finished[4 + SHA256_LEN] = {HS_FINISHED, 0, 0, SHA256_LEN};
-    ks_verify_data(c_hs, hash, finished + 4);
+    ks_verify_data(SHA256_LEN, c_hs, hash, finished + 4);
     CHECK(ch_srv_quic_crypto_in(&q, CH_LEVEL_HANDSHAKE, finished, sizeof finished) == CH_OK);
     CHECK(ch_quic_state(&q) == CH_ST_CONNECTED);
 }

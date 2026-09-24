@@ -13,6 +13,13 @@
 // maximum only repeats the middle case, and symbolic offsets over an 8 kB
 // output array stall the solver. The extract/hmac half is
 // hkdf_harness.c; the sha256 stubs assert its proven contract.
+//
+// hkdf384_expand_harness.c and hkdf384_expand_label_harness.c compile
+// this file under CH_HASH_SHA384 with hash_len fixed at SHA384_LEN: the
+// output reaches three 48-byte blocks, the info buffer grows to 70 bytes
+// and the context to 48. The SHA-256 arm of that build, hash_len 32 in
+// the larger buffers, is not under proof there; this file's SHA-256
+// launch lines prove it in buffers sized exactly to it.
 #define CH_PROOF_STUB_SHA256
 #include "harness.h"
 
@@ -20,10 +27,16 @@
 
 #include "hkdf.c"
 
+#ifdef CH_HASH_SHA384
+#define PROOF_HASH_LEN SHA384_LEN
+#else
+#define PROOF_HASH_LEN SHA256_LEN
+#endif
+
 int main(void) {
     uint8_t info[HKDF_INFO_MAX];
-    uint8_t prk[SHA256_LEN];
-    uint8_t out[3 * SHA256_LEN];
+    uint8_t prk[PROOF_HASH_LEN];
+    uint8_t out[(size_t)3 * PROOF_HASH_LEN];
     fill_nondet(info, sizeof info);
     fill_nondet(prk, sizeof prk);
 
@@ -32,7 +45,7 @@ int main(void) {
     size_t info_len = nondet_size_t();
     __CPROVER_assume(out_len >= 1 && out_len <= sizeof out);
     __CPROVER_assume(info_len <= sizeof info);
-    hkdf_expand(prk, info, info_len, out, out_len);
+    hkdf_expand(PROOF_HASH_LEN, prk, info, info_len, out, out_len);
 #else
     // Any label the contract admits, not just the ones TLS uses today.
     char label[HKDF_LABEL_MAX + 1];
@@ -46,10 +59,10 @@ int main(void) {
     label[lab] = 0;
     fill_nondet(info, sizeof info);
     size_t ctx_len = nondet_size_t();
-    __CPROVER_assume(ctx_len <= SHA256_LEN);
+    __CPROVER_assume(ctx_len <= PROOF_HASH_LEN);
     size_t out_len2 = nondet_size_t();
     __CPROVER_assume(out_len2 >= 1 && out_len2 <= sizeof out);
-    hkdf_expand_label(prk, label, info, ctx_len, out, out_len2);
+    hkdf_expand_label(PROOF_HASH_LEN, prk, label, info, ctx_len, out, out_len2);
 #endif
     return 0;
 }

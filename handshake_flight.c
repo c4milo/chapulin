@@ -23,7 +23,7 @@
 static void early_secret_without_psk(uint8_t early[SHA256_LEN]) {
     static const uint8_t no_psk[SHA256_LEN] = {0};
     uint8_t unused_binder_key[SHA256_LEN];
-    ks_early(no_psk, sizeof no_psk, 0, early, unused_binder_key);
+    ks_early(SHA256_LEN, no_psk, sizeof no_psk, 0, early, unused_binder_key);
     ct_wipe(unused_binder_key, sizeof unused_binder_key);
 }
 
@@ -52,7 +52,8 @@ void hsf_begin(handshake_state *h) {
     }
     x25519_base(h->pub, h->priv);
     if (t->cfg.psk != NULL) {
-        ks_early(t->cfg.psk, t->cfg.psk_len, t->cfg.resumption, h->early, h->binder_key);
+        ks_early(SHA256_LEN, t->cfg.psk, t->cfg.psk_len, t->cfg.resumption, h->early,
+                 h->binder_key);
     } else {
         // No PSK: h->binder_key stays the zero the caller wrote.
         early_secret_without_psk(h->early);
@@ -96,7 +97,7 @@ static size_t build_client_hello_ek(handshake_state *h, uint8_t *out, size_t cap
         uint8_t hash[SHA256_LEN];
         sha256_update(&transcript, out, n - CH_BINDERS_TAIL);
         sha256_final(&transcript, hash);
-        ks_verify_data(h->binder_key, hash, out + n - SHA256_LEN);
+        ks_verify_data(SHA256_LEN, h->binder_key, hash, out + n - SHA256_LEN);
     }
     sha256_update(&t->transcript, out, n);
     return n;
@@ -345,7 +346,8 @@ int hsf_derive_handshake_secrets(handshake_state *h, const server_hello_info *in
     }
     uint8_t hash[SHA256_LEN];
     (void)hsr_transcript_hash(h, hash);
-    ks_handshake(h->early, ecdhe, ecdhe_len, hash, h->handshake_secret, h->c_hs, h->s_hs);
+    ks_handshake(SHA256_LEN, h->early, ecdhe, ecdhe_len, hash, h->handshake_secret, h->c_hs,
+                 h->s_hs);
     ct_wipe(ecdhe, sizeof ecdhe);
     ct_wipe(h->early, sizeof h->early);
     ct_wipe(h->binder_key, sizeof h->binder_key);
@@ -451,7 +453,7 @@ int hsf_read_finished(handshake_state *h) {
         return CH_EPROTO;
     }
     uint8_t want[SHA256_LEN];
-    ks_verify_data(h->s_hs, hash, want);
+    ks_verify_data(SHA256_LEN, h->s_hs, hash, want);
     if (!ct_memeq(want, raw + 4, SHA256_LEN)) {
         h->alert = ALERT_DECRYPT_ERROR;
         return CH_EAUTH;
@@ -469,21 +471,21 @@ void hsf_complete(handshake_state *h, uint8_t finished[HSF_FINISHED_LEN]) {
     CH_ASSERT(h->server_finished_ok);
     uint8_t hash[SHA256_LEN];
     (void)hsr_transcript_hash(h, hash);
-    ks_master(h->handshake_secret, hash, h->master, t->wr_secret, t->rd_secret);
+    ks_master(SHA256_LEN, h->handshake_secret, hash, h->master, t->wr_secret, t->rd_secret);
 #ifdef CH_EXPORTER
     // RFC 9846 §7.5 derives the exporter secret from this transcript,
     // the same one the application traffic secrets take, so it is
     // derived here rather than at a point of its own.
-    ks_exp_master(h->master, hash, t->exp_master);
+    ks_exp_master(SHA256_LEN, h->master, hash, t->exp_master);
 #endif
     finished[0] = HS_FINISHED;
     finished[1] = 0;
     finished[2] = 0;
     finished[3] = SHA256_LEN;
-    ks_verify_data(h->c_hs, hash, finished + 4);
+    ks_verify_data(SHA256_LEN, h->c_hs, hash, finished + 4);
     sha256_update(&t->transcript, finished, HSF_FINISHED_LEN);
     (void)hsr_transcript_hash(h, hash);
-    ks_res_master(h->master, hash, t->res_master);
+    ks_res_master(SHA256_LEN, h->master, hash, t->res_master);
 #ifdef CH_KEYLOG
     // After ks_master, which wrote this client's write secret into
     // wr_secret and the server's into rd_secret.

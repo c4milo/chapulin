@@ -21,6 +21,7 @@
 #include "diff_handshake_certificate.h"
 #include "diff_handshake_parser.h"
 #include "diff_hash.h"
+#include "diff_hash384.h"
 #include "diff_mlkem.h"
 #include "diff_p256.h"
 #include "diff_p384.h"
@@ -63,6 +64,12 @@ int main(int argc, char **argv) {
     diff_hkdf_expand();
     diff_expand_label();
     diff_schedule();
+#ifdef CH_HASH_SHA384
+    diff_hmac384();
+    diff_hkdf384();
+    diff_expand_label384();
+    diff_schedule384();
+#endif
     diff_chacha20();
     diff_poly1305();
     diff_aead_seal();

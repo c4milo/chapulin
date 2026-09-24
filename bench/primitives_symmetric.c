@@ -107,7 +107,7 @@ static void run_hmac_sha256(size_t n) {
 // schedule passes (RFC 9846 §7.1).
 static void run_hkdf_expand_label(size_t n) {
     uint8_t secret[SHA256_LEN];
-    hkdf_expand_label(key, "c hs traffic", input, SHA256_LEN, secret, n);
+    hkdf_expand_label(SHA256_LEN, key, "c hs traffic", input, SHA256_LEN, secret, n);
     bench_consume(secret, sizeof secret);
 }
 

@@ -121,8 +121,8 @@ static int binder_matches(const mock_server *s) {
     uint8_t early[SHA256_LEN];
     uint8_t binder_key[SHA256_LEN];
     uint8_t want[SHA256_LEN];
-    ks_early(s->psk, sizeof s->psk, 1, early, binder_key);
-    ks_verify_data(binder_key, hash, want);
+    ks_early(SHA256_LEN, s->psk, sizeof s->psk, 1, early, binder_key);
+    ks_verify_data(SHA256_LEN, binder_key, hash, want);
     return memcmp(want, s->hello + s->hello_len - SHA256_LEN, SHA256_LEN) == 0;
 }
 
@@ -255,11 +255,11 @@ static void answer_hello(mock_server *s) {
     uint8_t c_hs[SHA256_LEN];
     uint8_t s_hs[SHA256_LEN];
     if (s->decline) {
-        ks_early(no_psk, sizeof no_psk, 0, early, binder);
+        ks_early(SHA256_LEN, no_psk, sizeof no_psk, 0, early, binder);
     } else {
-        ks_early(s->psk, sizeof s->psk, 1, early, binder);
+        ks_early(SHA256_LEN, s->psk, sizeof s->psk, 1, early, binder);
     }
-    ks_handshake(early, ecdhe, sizeof ecdhe, hash, handshake_secret, c_hs, s_hs);
+    ks_handshake(SHA256_LEN, early, ecdhe, sizeof ecdhe, hash, handshake_secret, c_hs, s_hs);
     rec_dir handshake;
     rec_dir_init(&handshake, s_hs);
     rec_dir_init(&s->from_client, c_hs);
@@ -272,13 +272,13 @@ static void answer_hello(mock_server *s) {
     }
     transcript_hash(&s->transcript, hash);
     uint8_t finished[4 + SHA256_LEN] = {HS_FINISHED, 0, 0, SHA256_LEN};
-    ks_verify_data(s_hs, hash, finished + 4);
+    ks_verify_data(SHA256_LEN, s_hs, hash, finished + 4);
     push_message(s, &handshake, finished, sizeof finished);
     transcript_hash(&s->transcript, hash);
     uint8_t master[SHA256_LEN];
     uint8_t c_ap[SHA256_LEN];
     uint8_t s_ap[SHA256_LEN];
-    ks_master(handshake_secret, hash, master, c_ap, s_ap);
+    ks_master(SHA256_LEN, handshake_secret, hash, master, c_ap, s_ap);
     rec_dir_init(&s->application, s_ap);
 }
 

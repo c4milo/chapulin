@@ -20,14 +20,14 @@
 void quic_keys_init(quic_keys *k, const uint8_t secret[SHA256_LEN]) {
     CH_ASSERT(k != NULL);
     CH_ASSERT(secret != NULL);
-    hkdf_expand_label(secret, "quic key", NULL, 0, k->key, AEAD_KEY);
-    hkdf_expand_label(secret, "quic iv", NULL, 0, k->iv, AEAD_NONCE);
+    hkdf_expand_label(SHA256_LEN, secret, "quic key", NULL, 0, k->key, AEAD_KEY);
+    hkdf_expand_label(SHA256_LEN, secret, "quic iv", NULL, 0, k->iv, AEAD_NONCE);
 }
 
 void quic_hp_key_init(quic_hp_key *h, const uint8_t secret[SHA256_LEN]) {
     CH_ASSERT(h != NULL);
     CH_ASSERT(secret != NULL);
-    hkdf_expand_label(secret, "quic hp", NULL, 0, h->key, CHACHA20_KEY);
+    hkdf_expand_label(SHA256_LEN, secret, "quic hp", NULL, 0, h->key, CHACHA20_KEY);
 }
 
 void quic_keys_update(uint8_t secret[SHA256_LEN], quic_keys *k) {
@@ -38,7 +38,7 @@ void quic_keys_update(uint8_t secret[SHA256_LEN], quic_keys *k) {
     // secret argument while it writes out, so deriving straight over
     // the caller's buffer would read bytes this call had replaced.
     uint8_t next[SHA256_LEN];
-    hkdf_expand_label(secret, "quic ku", NULL, 0, next, SHA256_LEN);
+    hkdf_expand_label(SHA256_LEN, secret, "quic ku", NULL, 0, next, SHA256_LEN);
     memcpy(secret, next, SHA256_LEN);
     ct_wipe(next, sizeof next);
     // §6.1 updates the packet protection key and IV and nothing else;

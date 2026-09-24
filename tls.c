@@ -408,7 +408,7 @@ int ch_export(const ch_tls *t, const char *label, const uint8_t *context, size_t
     if (label_len == 0 || label_len > CH_EXPORT_LABEL_MAX) {
         return CH_EINVAL;
     }
-    ks_exporter(t->exp_master, label, context, context_len, out, out_len);
+    ks_exporter(SHA256_LEN, t->exp_master, label, context, context_len, out, out_len);
     return CH_OK;
 }
 #endif

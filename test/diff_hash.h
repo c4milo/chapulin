@@ -58,7 +58,7 @@ static void diff_hkdf_extract(void) {
         size_t ikm_len = rng_below(65);
         rng_fill(ikm, ikm_len);
         uint8_t prk[SHA256_LEN];
-        hkdf_extract(salt, salt_len, ikm, ikm_len, prk);
+        hkdf_extract(SHA256_LEN, salt, salt_len, ikm, ikm_len, prk);
         char salt_hex[129];
         (void)hex_encode(salt_hex, salt, salt_len);
         char ikm_hex[129];
@@ -83,7 +83,7 @@ static void diff_hkdf_expand(void) {
         rng_fill(info, info_len);
         size_t out_len = 1 + rng_below(64);
         uint8_t out[64];
-        hkdf_expand(prk, info, info_len, out, out_len);
+        hkdf_expand(SHA256_LEN, prk, info, info_len, out, out_len);
         char prk_hex[65];
         (void)hex_encode(prk_hex, prk, sizeof prk);
         char info_hex[2 * HKDF_INFO_MAX + 1];
@@ -112,7 +112,7 @@ static void diff_expand_label(void) {
         rng_fill(ctx, ctx_len);
         size_t out_len = 1 + rng_below(64);
         uint8_t out[64];
-        hkdf_expand_label(secret, label, ctx, ctx_len, out, out_len);
+        hkdf_expand_label(SHA256_LEN, secret, label, ctx, ctx_len, out, out_len);
         char secret_hex[65];
         (void)hex_encode(secret_hex, secret, sizeof secret);
         char label_hex[2 * HKDF_LABEL_MAX + 1];
@@ -135,7 +135,7 @@ static void diff_expand_label(void) {
     {
         uint8_t secret[SHA256_LEN] = {7};
         static uint8_t out[255 * SHA256_LEN];
-        hkdf_expand_label(secret, "key", NULL, 0, out, sizeof out);
+        hkdf_expand_label(SHA256_LEN, secret, "key", NULL, 0, out, sizeof out);
         char secret_hex[65];
         (void)hex_encode(secret_hex, secret, sizeof secret);
         static char want[2 * 255 * SHA256_LEN + 1];
@@ -182,15 +182,15 @@ static void diff_schedule_rows(size_t ecdhe_len) {
         rng_fill(finished, sizeof finished);
         uint8_t early[SHA256_LEN];
         uint8_t binder[SHA256_LEN];
-        ks_early(psk, sizeof psk, 0, early, binder);
+        ks_early(SHA256_LEN, psk, sizeof psk, 0, early, binder);
         uint8_t handshake_secret[SHA256_LEN];
         uint8_t c_hs[SHA256_LEN];
         uint8_t s_hs[SHA256_LEN];
-        ks_handshake(early, ecdhe, ecdhe_len, hello, handshake_secret, c_hs, s_hs);
+        ks_handshake(SHA256_LEN, early, ecdhe, ecdhe_len, hello, handshake_secret, c_hs, s_hs);
         uint8_t master[SHA256_LEN];
         uint8_t c_ap[SHA256_LEN];
         uint8_t s_ap[SHA256_LEN];
-        ks_master(handshake_secret, finished, master, c_ap, s_ap);
+        ks_master(SHA256_LEN, handshake_secret, finished, master, c_ap, s_ap);
         char psk_hex[65];
         (void)hex_encode(psk_hex, psk, sizeof psk);
         char ecdhe_hex[129];

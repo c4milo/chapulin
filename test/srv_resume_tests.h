@@ -58,8 +58,8 @@ static void resume_ticket(uint8_t ticket[SRV_TICKET_LEN], const uint8_t *key, ui
 static void resume_binder(uint8_t binder[SHA256_LEN]) {
     uint8_t early[SHA256_LEN];
     uint8_t binder_key[SHA256_LEN];
-    ks_early(resume_psk, sizeof resume_psk, 1, early, binder_key);
-    ks_verify_data(binder_key, resume_hash, binder);
+    ks_early(SHA256_LEN, resume_psk, sizeof resume_psk, 1, early, binder_key);
+    ks_verify_data(SHA256_LEN, binder_key, resume_hash, binder);
 }
 
 // One identity and one binder for a case to offer.
@@ -131,7 +131,7 @@ static int resume_one(selection *sel, const uint8_t *ticket) {
 static int resumed(const selection *sel) {
     uint8_t early[SHA256_LEN];
     uint8_t binder_key[SHA256_LEN];
-    ks_early(resume_psk, sizeof resume_psk, 1, early, binder_key);
+    ks_early(SHA256_LEN, resume_psk, sizeof resume_psk, 1, early, binder_key);
     return sel->psk_selected == 1 && memcmp(hs.early, early, sizeof early) == 0;
 }
 

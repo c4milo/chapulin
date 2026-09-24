@@ -157,6 +157,28 @@ def dispatch : List String → Option String
     let (cHs, sHs, cAp, sAp) :=
       Spec.Hkdf.schedule (← hexArg? psk) (← hexArg? ecdhe) (← hexArg? h1) (← hexArg? h2)
     return s!"{emit cHs} {emit sHs} {emit cAp} {emit sAp}"
+  -- The same five over SHA-384, TLS_AES_256_GCM_SHA384's hash (RFC 9846
+  -- §7.1), with the bounds each one checks above at HashLen = 48.
+  | ["hmac384", k, m] => do
+    return emit (Spec.Hkdf.hmacWith Spec.Hkdf.sha384H (← hexArg? k) (← hexArg? m))
+  | ["hkdf384_extract", salt, ikm] => do
+    return emit (Spec.Hkdf.extractWith Spec.Hkdf.sha384H (← hexArg? salt) (← hexArg? ikm))
+  | ["hkdf384_expand", prk, info, len] => do
+    let l ← len.toNat?
+    if l > 255 * Spec.Hkdf.sha384H.hashLen then return "ERR hkdf384_expand len over 255*HashLen"
+    return emit (Spec.Hkdf.expandWith Spec.Hkdf.sha384H (← hexArg? prk) (← hexArg? info) l)
+  | ["expand_label384", secret, label, ctx, len] => do
+    let lab ← String.fromUTF8? (← hexArg? label)
+    let c ← hexArg? ctx
+    let l ← len.toNat?
+    if lab.utf8ByteSize + 6 > 255 then return "ERR expand_label384 label unencodable"
+    if c.size > 255 then return "ERR expand_label384 context unencodable"
+    if l > 255 * Spec.Hkdf.sha384H.hashLen then return "ERR expand_label384 len over 255*HashLen"
+    return emit (Spec.Hkdf.expandLabelWith Spec.Hkdf.sha384H (← hexArg? secret) lab c l)
+  | ["schedule384", psk, ecdhe, h1, h2] => do
+    let (cHs, sHs, cAp, sAp) := Spec.Hkdf.scheduleWith Spec.Hkdf.sha384H
+      (← hexArg? psk) (← hexArg? ecdhe) (← hexArg? h1) (← hexArg? h2)
+    return s!"{emit cHs} {emit sHs} {emit cAp} {emit sAp}"
   | ["chacha20", key, nonce, counter, data] => do
     let k ← hexArg? key
     let n ← hexArg? nonce

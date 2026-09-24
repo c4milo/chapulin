@@ -77,11 +77,13 @@ int rec_seal(rec_dir *d, uint8_t type, const uint8_t *pt, size_t n, uint8_t *out
     return 0;
 }
 
-void ks_res_psk(const uint8_t res_master[SHA256_LEN], const uint8_t *nonce, size_t nonce_len,
-                uint8_t psk[SHA256_LEN]) {
-    __CPROVER_assert(__CPROVER_r_ok(res_master, SHA256_LEN), "res: master readable");
+void ks_res_psk(size_t hash_len, const uint8_t *res_master, const uint8_t *nonce, size_t nonce_len,
+                uint8_t *psk) {
+    __CPROVER_assert(hash_len == SHA256_LEN || hash_len == HKDF_HASH_MAX,
+                     "ks_res_psk: hash_len names a hash this build holds");
+    __CPROVER_assert(__CPROVER_r_ok(res_master, hash_len), "res: master readable");
     __CPROVER_assert(nonce_len == 0 || __CPROVER_r_ok(nonce, nonce_len), "res: nonce readable");
-    fill_nondet(psk, SHA256_LEN);
+    fill_nondet(psk, hash_len);
 }
 
 // These exist so handshake_post.c links; handle_post_handshake never

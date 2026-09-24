@@ -278,15 +278,15 @@ static void render_server_hello(mock_server *s) {
     uint8_t early[SHA256_LEN];
     uint8_t binder[SHA256_LEN];
     if (s->psk) {
-        ks_early(test_psk, sizeof test_psk, 0, early, binder);
+        ks_early(SHA256_LEN, test_psk, sizeof test_psk, 0, early, binder);
     } else {
         static const uint8_t no_psk[SHA256_LEN] = {0};
-        ks_early(no_psk, sizeof no_psk, 0, early, binder);
+        ks_early(SHA256_LEN, no_psk, sizeof no_psk, 0, early, binder);
     }
     uint8_t hash[SHA256_LEN];
     uint8_t c_hs[SHA256_LEN];
     hash_now(s, hash);
-    ks_handshake(early, ecdhe, sizeof ecdhe, hash, s->handshake_secret, c_hs, s->s_hs);
+    ks_handshake(SHA256_LEN, early, ecdhe, sizeof ecdhe, hash, s->handshake_secret, c_hs, s->s_hs);
     rec_dir_init(&s->rd_hs, c_hs);
     s->have_rd_hs = 1;
     push_record(s, REC_HANDSHAKE, msg, n); // plaintext: the phase flips below
@@ -317,7 +317,7 @@ static void render_finished(mock_server *s) {
     uint8_t msg[4 + SHA256_LEN] = {HS_FINISHED, 0, 0, SHA256_LEN};
     uint8_t hash[SHA256_LEN];
     hash_now(s, hash);
-    ks_verify_data(s->s_hs, hash, msg + 4);
+    ks_verify_data(SHA256_LEN, s->s_hs, hash, msg + 4);
     if (mut_mode == MUT_FIN_MAC) {
         msg[4] ^= 0x01;
     }
@@ -327,7 +327,7 @@ static void render_finished(mock_server *s) {
         uint8_t master[SHA256_LEN];
         uint8_t c_ap[SHA256_LEN];
         hash_now(s, hash);
-        ks_master(s->handshake_secret, hash, master, c_ap, s->s_ap);
+        ks_master(SHA256_LEN, s->handshake_secret, hash, master, c_ap, s->s_ap);
         rec_dir_init(&s->rd_ap, c_ap);
         s->have_rd_ap = 1;
         rec_dir_init(&s->wr, s->s_ap);

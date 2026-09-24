@@ -243,7 +243,7 @@ QUIC_SRCS := quic_aes.c $(AES_IMPL) quic_gcm.c quic_keys.c quic_packet.c quic_in
 # through QUIC_SRCS, and the SUITE-with-QUIC refusal keeps the two lists
 # from meeting. Without this the object imported three functions no
 # source in it defined, and lib-check said so.
-SUITE_ADD := $(if $(SUITE_DEF),quic_aes.c $(AES_IMPL) quic_gcm.c)
+SUITE_ADD := $(if $(SUITE_DEF),quic_aes.c $(AES_IMPL) quic_gcm.c sha512.c sha512_compress.c)
 # The implementation sources, named whichever ones this build picks, so a
 # check that reads every AES choice does not re-derive the list.
 AES_IMPL_SRCS := quic_aes_soft.c $(AES_HW_SRCS) quic_aes_extern.c
@@ -357,7 +357,7 @@ CLIENT_REPLACED := handshake.c handshake_auth.c handshake_parser.c handshake_par
 # working everywhere else, which disabling them in .clang-tidy would not.
 # clang-format still covers it, and so does lint-runtime-symbols.
 LINT_C := $(filter-out softmul.c,$(SRCS)) drbg.c sha3.c sha512.c sha512_compress.c p384.c p384_field.c p256_field.c p256_scalar.c p256_point.c p256_sign.c p256_ecdh.c rsa_pkcs1.c rsa_sign.c webpki_sigalg.c webpki_cert.c webpki.c webpki_ticket.c webpki_pin.c webpki_cfg.c mlkem.c mlkem_poly.c test/unit_test.c test/tls_client.c \
-          test/diff_test.c test/timing_test.c test/drbg_test.c test/softmul_test.c test/rsa_test.c test/rsa_sign_test.c test/sha3_test.c test/sha512_test.c test/p384_test.c test/p256_field_test.c test/p256_sign_test.c test/p256_ecdh_test.c test/rsa_pkcs1_test.c \
+          test/diff_test.c test/timing_test.c test/drbg_test.c test/softmul_test.c test/rsa_test.c test/rsa_sign_test.c test/sha3_test.c test/sha512_test.c test/hkdf384_test.c test/p384_test.c test/p256_field_test.c test/p256_sign_test.c test/p256_ecdh_test.c test/rsa_pkcs1_test.c \
           test/webpki_time_test.c test/webpki_name_test.c test/webpki_spki_test.c test/webpki_sigalg_test.c test/webpki_session_test.c test/webpki_resume_test.c test/webpki_cert_test.c test/webpki_chain_test.c \
           test/webpki_auth_test.c test/webpki_encrypted_exts_test.c \
           test/mlkem_test.c test/handshake_strict_test.c test/handshake_sequence_test.c \
@@ -374,7 +374,7 @@ LINT_C := $(filter-out softmul.c,$(SRCS)) drbg.c sha3.c sha512.c sha512_compress
 # Test-local headers: prerequisites for every binary that includes them,
 # so a header edit rebuilds the binaries it changes.
 TESTH := test/test_random.h test/pem_armor.h test/pem_tests.h test/x509_ca_tests.h test/session_tests.h test/session_post_tests.h \
-         test/session_cfg_tests.h test/quic_gcm_tests.h test/quic_initial_tests.h test/quic_packet_tests.h test/p256_tests.h test/p256_field_vectors.h test/p256_sign_vectors.h test/p256_ecdh_vectors.h test/wycheproof_p256.h test/wycheproof_aes_gcm.h test/diff_driver.h test/diff_aes.h test/diff_gcm.h test/diff_hash.h \
+         test/session_cfg_tests.h test/quic_gcm_tests.h test/quic_initial_tests.h test/quic_packet_tests.h test/p256_tests.h test/p256_field_vectors.h test/p256_sign_vectors.h test/p256_ecdh_vectors.h test/wycheproof_p256.h test/wycheproof_aes_gcm.h test/diff_driver.h test/diff_aes.h test/diff_gcm.h test/diff_hash.h test/diff_hash384.h \
          test/diff_handshake_parser.h test/diff_encrypted_exts.h test/diff_handshake_certificate.h test/diff_p256.h test/diff_pem.h test/diff_record.h test/diff_rsa.h \
          test/diff_x25519.h test/handshake_sequence_server.h test/rfc8448_vectors.h \
          test/rfc8448_tests.h \
@@ -1043,6 +1043,13 @@ print-rec-loop-srcs:
 # file that git tracks and WEBPKI_SRCS leaves out fails those rows
 # instead of being left out of the object. The lint also fails when git
 # names no webpki file at all.
+# The SUITE=aesgcm row holds a suite object to the AES instructions and
+# SHA-384: it requires quic_aes_hw.c, quic_ghash_hw.c and the two SHA-512
+# files, bans the software and caller-supplied ciphers, and bans
+# -DCH_AES_256_TEST, the define that compiles the software AES-256 for the
+# tests and proofs. The QUIC rows ban that define too. A packaged object
+# that carried it would hold a software AES-256 no secret key may reach.
+#
 # test/violations/inv05-webpki-source-in-raw.violation drops the webpki
 # files from TRUST=raw-rsa's filter, and
 # test/violations/inv05-webpki-source-unlisted.violation drops one file
@@ -1086,9 +1093,9 @@ lint-trust-separation:
 	[ -n "$$quic_files" ] || { echo "lint-trust-separation: git tracks no quic*.c file at the root, so the transport rows would check nothing"; rc=1; }; \
 	quic_always=$$(printf '%s\n' $$quic_files | grep -vxF -e quic_aes_soft.c -e quic_aes_hw.c -e quic_ghash_hw.c -e quic_aes_extern.c -e quic_token.c | tr '\n' ' '); \
 	check "TRANSPORT=tls" "io.c record.c session.c handshake.c tls.c" "$$quic_files" "" "-DCH_TRANSPORT_QUIC"; \
-	check "TRANSPORT=quic EXPORTER=off" "$$quic_always quic_aes_soft.c" "io.c record.c session.c handshake.c tls.c quic_aes_hw.c quic_ghash_hw.c quic_aes_extern.c quic_token.c" "-DCH_TRANSPORT_QUIC" "-DCH_AES_HW -DCH_AES_EXTERN"; \
+	check "TRANSPORT=quic EXPORTER=off" "$$quic_always quic_aes_soft.c" "io.c record.c session.c handshake.c tls.c quic_aes_hw.c quic_ghash_hw.c quic_aes_extern.c quic_token.c" "-DCH_TRANSPORT_QUIC" "-DCH_AES_HW -DCH_AES_EXTERN -DCH_AES_256_TEST"; \
 	check "TRANSPORT=quic AES=soft EXPORTER=off" "quic_aes_soft.c" "quic_aes_hw.c quic_ghash_hw.c quic_aes_extern.c" "" "-DCH_AES_HW -DCH_AES_EXTERN"; \
-	check "TRANSPORT=quic AES=hw EXPORTER=off" "quic_aes_hw.c quic_ghash_hw.c" "quic_aes_soft.c quic_aes_extern.c" "-DCH_AES_HW" "-DCH_AES_EXTERN"; \
+	check "TRANSPORT=quic AES=hw EXPORTER=off" "quic_aes_hw.c quic_ghash_hw.c" "quic_aes_soft.c quic_aes_extern.c" "-DCH_AES_HW" "-DCH_AES_EXTERN -DCH_AES_256_TEST"; \
 	check "TRANSPORT=quic AES=extern EXPORTER=off" "quic_aes_extern.c" "quic_aes_soft.c quic_aes_hw.c quic_ghash_hw.c" "-DCH_AES_EXTERN" "-DCH_AES_HW"; \
 	srv_files=$$(git ls-files 'srv*.c' | grep -v / | tr '\n' ' '); \
 	[ -n "$$srv_files" ] || { echo "lint-trust-separation: git tracks no srv*.c file at the root, so the role rows would check nothing"; rc=1; }; \
@@ -1101,6 +1108,7 @@ lint-trust-separation:
 	quic_srv=$$(printf '%s\n' $$quic_always | grep -vxF -e quic_step.c | tr '\n' ' '); \
 	check "ROLE=server TRUST=none TRANSPORT=quic EXPORTER=off" "$$srv_shared srv_quic.c quic_token.c $$signers $$quic_srv sha3.c mlkem.c mlkem_poly.c" "$$client_only srv_handshake.c srv_rec.c quic_step.c record.c" "-DCH_ROLE_SERVER -DCH_TRANSPORT_QUIC" "-DCH_PIN_ECDSA -DCH_KEX_PQ"; \
 	check "ROLE=server TRUST=none TRANSPORT=record" "$$srv_shared srv_rec.c $$signers rec.c rec_frame.c record.c sha3.c mlkem.c mlkem_poly.c" "$$client_only srv_handshake.c srv_quic.c rec_step.c" "-DCH_ROLE_SERVER -DCH_TRANSPORT_RECORD" "-DCH_PIN_ECDSA -DCH_TRANSPORT_QUIC -DCH_KEX_PQ"; \
+	check "ROLE=server TRUST=none TRANSPORT=tls SUITE=aesgcm AES=hw" "quic_aes.c quic_aes_hw.c quic_ghash_hw.c quic_gcm.c sha512.c sha512_compress.c" "quic_aes_soft.c quic_aes_extern.c" "-DCH_SUITE_AES_GCM -DCH_AES_HW" "-DCH_AES_EXTERN -DCH_AES_256_TEST"; \
 	[ $$rc = 0 ] && echo "lint-trust-separation: every axis value packages exactly its own sources and defines"; \
 	exit $$rc
 # bench/device-ram.sh builds with CLANG_RV, the clang the codegen lints
@@ -1401,18 +1409,19 @@ bin/quic_test: test/quic_vectors.c quic_aes.c $(AES_IMPL) quic_gcm.c quic_keys.c
 SRV_FLIGHT_SRCS := srv_flight.c srv_out.c srv_message.c srv_cookie.c srv_auth.c srv_ticket.c \
                    srv_resume.c srv_kex.c
 bin/srv_flight_test_aes: test/srv_flight_test.c $(SRV_FLIGHT_SRCS) $(SRV_FLIGHT_DEPS) $(SRV_SIGNERS) \
-                         quic_gcm.c quic_aes.c $(AES_HW_SRCS) $(HDRS) $(TESTH)
+                         quic_gcm.c quic_aes.c $(AES_HW_SRCS) sha512.c sha512_compress.c $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) $(AES_HW_CFLAGS) -DCH_ROLE_SERVER -DCH_SUITE_AES_GCM -DCH_AES_HW \
 	  -DCH_NATIVE_AES -I. -o $@ test/srv_flight_test.c $(SRV_FLIGHT_SRCS) \
-	  $(SRV_FLIGHT_DEPS) $(SRV_SIGNERS) quic_gcm.c quic_aes.c $(AES_HW_SRCS)
+	  $(SRV_FLIGHT_DEPS) $(SRV_SIGNERS) quic_gcm.c quic_aes.c $(AES_HW_SRCS) sha512.c sha512_compress.c
 
 bin/aes_suite_test: test/aes_suite_test.c record.c quic_gcm.c quic_aes.c $(AES_HW_SRCS) \
-                    aead.c chacha20.c poly1305.c hkdf.c sha256.c ct.c buf.c $(HDRS) $(TESTH)
+                    aead.c chacha20.c poly1305.c hkdf.c sha256.c sha512.c sha512_compress.c ct.c buf.c \
+                    $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) $(AES_HW_CFLAGS) -DCH_SUITE_AES_GCM -DCH_AES_HW -DCH_NATIVE_AES -I. -o $@ \
 	  test/aes_suite_test.c record.c quic_gcm.c quic_aes.c $(AES_HW_SRCS) aead.c chacha20.c \
-	  poly1305.c hkdf.c sha256.c ct.c buf.c
+	  poly1305.c hkdf.c sha256.c sha512.c sha512_compress.c ct.c buf.c
 
 bin/quic_test_hw: test/quic_vectors.c quic_aes.c $(AES_HW_SRCS) quic_gcm.c quic_keys.c quic_retry.c quic_initial.c quic_packet.c \
                   hkdf.c sha256.c chacha20.c poly1305.c aead.c buf.c ct.c $(HDRS) $(TESTH)
@@ -1612,6 +1621,14 @@ bin/srv_flight_test: test/srv_flight_test.c $(SRV_FLIGHT_SRCS) $(SRV_FLIGHT_DEPS
 bin/sha512_test: test/sha512_test.c sha512.c sha512_compress.c $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) -I. -o $@ test/sha512_test.c sha512.c sha512_compress.c
+# HMAC-SHA-384 and the SHA-384 key schedule against RFC 4231 and a
+# published TLS_AES_256_GCM_SHA384 trace. -DCH_HASH_SHA384 turns SHA-384
+# on in hkdf.c without the AES suite, which needs the AES instructions, so
+# this runs on every host.
+HKDF384_SRCS := hkdf.c keysched.c sha256.c sha512.c sha512_compress.c ct.c
+bin/hkdf384_test: test/hkdf384_test.c $(HKDF384_SRCS) $(HDRS) $(TESTH)
+	@mkdir -p bin
+	$(CC) $(CFLAGS) -DCH_HASH_SHA384 -I. -o $@ test/hkdf384_test.c $(HKDF384_SRCS)
 # P-384 ECDSA verification against RFC 6979 A.2.6 and openssl, and PKCS#1
 # v1.5 against openssl: their own binaries, out of the packaged object
 # like sha3, until TRUST=webpki links them.
@@ -1927,7 +1944,7 @@ bin/tlsclient_webpki_aes: test/tls_client.c $(WEBPKI_TEST_SRCS) quic_aes.c $(AES
 # test/spec_coverage.py passes the same flag.
 bin/diff: test/diff_test.c $(SRCS) sha3.c sha512.c sha512_compress.c p384.c p384_field.c rsa_pkcs1.c webpki_sigalg.c webpki_cert.c mlkem.c mlkem_poly.c $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) $(RSA_WIDE_DEF) -I. -o $@ test/diff_test.c $(SRCS) sha3.c sha512.c sha512_compress.c p384.c p384_field.c rsa_pkcs1.c webpki_sigalg.c webpki_cert.c mlkem.c mlkem_poly.c
+	$(CC) $(CFLAGS) $(RSA_WIDE_DEF) -DCH_HASH_SHA384 -I. -o $@ test/diff_test.c $(SRCS) sha3.c sha512.c sha512_compress.c p384.c p384_field.c rsa_pkcs1.c webpki_sigalg.c webpki_cert.c mlkem.c mlkem_poly.c
 
 # Build and run one test binary: make run-unit, make run-webpki_time_test.
 # check runs its roster from one recipe, which is the right shape for a
@@ -1947,7 +1964,7 @@ run-%: bin/%
 # and the invariant violation builds. The nightly runs it. Splitting on
 # duration rather than on importance is deliberate -- nothing here is
 # optional, and a change is not finished until check-slow passes too.
-check: bin/unit bin/unit_ca bin/unit_pq bin/tlsclient bin/tlsclient_ecdsa bin/tlsclient_ca bin/tlsclient_ca_ecdsa bin/tlsclient_webpki $(if $(AES_HW_PROBE),bin/tlsclient_webpki_aes) $(X25519_WIDE_BINS) bin/tlsclient_pq bin/drbg_test bin/softmul_test bin/rsa_test bin/sha3_test bin/sha512_test bin/p384_test bin/rsa_pkcs1_test bin/webpki_time_test bin/webpki_name_test bin/webpki_spki_test bin/webpki_sigalg_test bin/webpki_cert_test bin/webpki_chain_test bin/webpki_auth_test bin/webpki_encrypted_exts_test bin/mlkem_test bin/handshake_strict_test bin/handshake_strict_pq bin/handshake_strict_webpki bin/webpki_session_test bin/webpki_resume_test bin/webpki_resume_record bin/x509strict bin/x509strict_ecdsa bin/quic_driver_test bin/quic_test bin/recclient $(AES_HW_BINS) lint rand-check bin/srv_auth_test bin/srv_test bin/srv_quic_test bin/srv_quic_both_test bin/srv_rec_test bin/rec_loop_test bin/rec_loop_pq bin/quic_loop_test bin/quic_loop_webpki bin/webpki_loop_record bin/tlsserver bin/exporter_test bin/rsa_sign_test bin/p256_field_test bin/p256_ecdh_test bin/p256_sign_test
+check: bin/unit bin/unit_ca bin/unit_pq bin/tlsclient bin/tlsclient_ecdsa bin/tlsclient_ca bin/tlsclient_ca_ecdsa bin/tlsclient_webpki $(if $(AES_HW_PROBE),bin/tlsclient_webpki_aes) $(X25519_WIDE_BINS) bin/tlsclient_pq bin/drbg_test bin/softmul_test bin/rsa_test bin/sha3_test bin/sha512_test bin/hkdf384_test bin/p384_test bin/rsa_pkcs1_test bin/webpki_time_test bin/webpki_name_test bin/webpki_spki_test bin/webpki_sigalg_test bin/webpki_cert_test bin/webpki_chain_test bin/webpki_auth_test bin/webpki_encrypted_exts_test bin/mlkem_test bin/handshake_strict_test bin/handshake_strict_pq bin/handshake_strict_webpki bin/webpki_session_test bin/webpki_resume_test bin/webpki_resume_record bin/x509strict bin/x509strict_ecdsa bin/quic_driver_test bin/quic_test bin/recclient $(AES_HW_BINS) lint rand-check bin/srv_auth_test bin/srv_test bin/srv_quic_test bin/srv_quic_both_test bin/srv_rec_test bin/rec_loop_test bin/rec_loop_pq bin/quic_loop_test bin/quic_loop_webpki bin/webpki_loop_record bin/tlsserver bin/exporter_test bin/rsa_sign_test bin/p256_field_test bin/p256_ecdh_test bin/p256_sign_test
 	# The packaged object is built once per entropy pattern, because
 	# lib-check reads a different export list and a different import
 	# list in each. Only the object is built twice: the examples and
@@ -2081,6 +2098,7 @@ check: bin/unit bin/unit_ca bin/unit_pq bin/tlsclient bin/tlsclient_ecdsa bin/tl
 	./bin/rsa_sign_test
 	./bin/sha3_test
 	./bin/sha512_test
+	./bin/hkdf384_test
 	./bin/p384_test
 	./bin/p256_field_test
 	./bin/p256_ecdh_test
@@ -2543,12 +2561,18 @@ wycheproof:
 # ends, so the two reports never interleave. Neither is a target to run
 # on its own: both read the bin/wycheproof_vectors.h the target above
 # writes.
+# What every leg that builds test/wycheproof_test.c turns on beside its own
+# flags: AES-256 for the AES-GCM suite at 256 bits, and SHA-384 in hkdf.c
+# for the HKDF-SHA-384 and HMAC-SHA-384 suites. A library object has both
+# only under SUITE=aesgcm, which needs the AES instructions, so these two
+# are how the legs without them run TLS_AES_256_GCM_SHA384's primitives.
+WYCHEPROOF_TEST_DEFS := $(AES_256_TEST_DEF) -DCH_HASH_SHA384
 WYCHEPROOF_SRCS := x25519.c chacha20.c poly1305.c aead.c hkdf.c sha256.c p256.c rsa.c rsa_mont.c \
   mlkem.c mlkem_poly.c sha3.c buf.c ct.c sha512.c sha512_compress.c p384.c p384_field.c \
   rsa_pkcs1.c rsa_sign.c quic_aes.c quic_gcm.c p256_sign.c p256_ecdh.c p256_point.c \
   p256_scalar.c p256_field.c
 wycheproof-leg-default:
-	@$(CC) $(CFLAGS) $(RSA_WIDE_DEF) -DCH_TRANSPORT_QUIC $(AES_DEF) $(AES_256_TEST_DEF) -I. -Ibin -o bin/wycheproof_test \
+	@$(CC) $(CFLAGS) $(RSA_WIDE_DEF) -DCH_TRANSPORT_QUIC $(AES_DEF) $(WYCHEPROOF_TEST_DEFS) -I. -Ibin -o bin/wycheproof_test \
 	  test/wycheproof_test.c $(WYCHEPROOF_SRCS) $(AES_IMPL) && \
 	{ ./bin/wycheproof_test > bin/wycheproof_test.log 2>&1; rc=$$?; cat bin/wycheproof_test.log; exit $$rc; }
 # The AES=hw leg. New crypto gets its Wycheproof suite on every leg
@@ -2564,7 +2588,7 @@ wycheproof-leg-aes-hw:
 	  $(call REQUIRE_ON_CI,wycheproof-aes-hw); \
 	  echo "SKIP wycheproof AES=hw: $(CC) has no AES instructions and no flag turns them on"; \
 	else \
-	  $(CC) $(CFLAGS) $(AES_HW_CFLAGS) $(RSA_WIDE_DEF) -DCH_TRANSPORT_QUIC -DCH_AES_HW $(AES_256_TEST_DEF) -I. -Ibin \
+	  $(CC) $(CFLAGS) $(AES_HW_CFLAGS) $(RSA_WIDE_DEF) -DCH_TRANSPORT_QUIC -DCH_AES_HW $(WYCHEPROOF_TEST_DEFS) -I. -Ibin \
 	    -o bin/wycheproof_test_aes_hw test/wycheproof_test.c $(WYCHEPROOF_SRCS) $(AES_HW_SRCS); \
 	  ./bin/wycheproof_test_aes_hw > bin/wycheproof_test_aes_hw.log 2>&1 \
 	    || { echo "== bin/wycheproof_test_aes_hw failed:"; cat bin/wycheproof_test_aes_hw.log; exit 1; }; \
@@ -2579,7 +2603,7 @@ wycheproof-leg-aes-hw:
 	  [ -z "$$CI" ] || { echo "wycheproof X25519=wide: $(CC) has no unsigned __int128 on CI; the gate must not skip"; exit 1; }; \
 	  echo "SKIP wycheproof X25519=wide: $(CC) has no unsigned __int128"; \
 	else \
-	  $(CC) $(CFLAGS) $(X25519_WIDE_DEF) $(RSA_WIDE_DEF) -DCH_TRANSPORT_QUIC $(AES_DEF) $(AES_256_TEST_DEF) -I. -Ibin \
+	  $(CC) $(CFLAGS) $(X25519_WIDE_DEF) $(RSA_WIDE_DEF) -DCH_TRANSPORT_QUIC $(AES_DEF) $(WYCHEPROOF_TEST_DEFS) -I. -Ibin \
 	    -o bin/wycheproof_test_x25519_wide test/wycheproof_test.c \
 	    x25519.c x25519_wide.c chacha20.c poly1305.c aead.c hkdf.c sha256.c p256.c rsa.c rsa_mont.c mlkem.c mlkem_poly.c sha3.c buf.c ct.c sha512.c sha512_compress.c p384.c p384_field.c rsa_pkcs1.c rsa_sign.c quic_aes.c $(AES_IMPL) quic_gcm.c p256_sign.c p256_ecdh.c p256_point.c p256_scalar.c p256_field.c ; \
 	  ./bin/wycheproof_test_x25519_wide; \
@@ -2623,7 +2647,7 @@ webpki-auth-vectors:
 wycheproof-ct-widemul:
 	@$(call wycheproof_fetch,wycheproof-ct-widemul); \
 	python3 test/gen_wycheproof.py $(WYCHEPROOF_DIR) bin/wycheproof_vectors.h && \
-	$(CC) $(CT_WIDEMUL_CFLAGS) $(RSA_WIDE_DEF) -DCH_TRANSPORT_QUIC $(AES_DEF) $(AES_256_TEST_DEF) -I. -Ibin -o bin/wycheproof_test_ct_widemul test/wycheproof_test.c \
+	$(CC) $(CT_WIDEMUL_CFLAGS) $(RSA_WIDE_DEF) -DCH_TRANSPORT_QUIC $(AES_DEF) $(WYCHEPROOF_TEST_DEFS) -I. -Ibin -o bin/wycheproof_test_ct_widemul test/wycheproof_test.c \
 	  x25519.c chacha20.c poly1305.c aead.c hkdf.c sha256.c p256.c rsa.c rsa_mont.c mlkem.c mlkem_poly.c sha3.c buf.c ct.c sha512.c sha512_compress.c p384.c p384_field.c rsa_pkcs1.c rsa_sign.c quic_aes.c $(AES_IMPL) quic_gcm.c p256_sign.c \
 	  p256_ecdh.c p256_point.c p256_scalar.c p256_field.c && \
 	./bin/wycheproof_test_ct_widemul
@@ -2652,6 +2676,7 @@ san-check:
 	$(CC) $(SAN_CFLAGS) $(RSA_WIDE_DEF) -I. -o bin/san/rsa_test test/rsa_test.c rsa.c rsa_mont.c sha256.c ct.c
 	$(CC) $(SAN_CFLAGS) -I. -o bin/san/sha3_test test/sha3_test.c sha3.c ct.c
 	$(CC) $(SAN_CFLAGS) -I. -o bin/san/sha512_test test/sha512_test.c sha512.c sha512_compress.c
+	$(CC) $(SAN_CFLAGS) -DCH_HASH_SHA384 -I. -o bin/san/hkdf384_test test/hkdf384_test.c $(HKDF384_SRCS)
 	$(CC) $(SAN_CFLAGS) -I. -o bin/san/p384_test test/p384_test.c p384.c p384_field.c buf.c sha512.c sha512_compress.c
 	$(CC) $(SAN_CFLAGS) -I. -o bin/san/p256_field_test test/p256_field_test.c p256_field.c
 	$(CC) $(SAN_CFLAGS) -I. -o bin/san/p256_ecdh_test test/p256_ecdh_test.c p256_ecdh.c p256_point.c p256_scalar.c p256_field.c ct.c
@@ -2676,11 +2701,11 @@ san-check:
 	$(CC) $(SAN_CFLAGS) -DCH_PIN_ECDSA -I. -o bin/san/x509strict_ecdsa $(X509STRICT_SRC) p256.c
 	$(CC) $(SAN_CFLAGS) -I. -o bin/san/handshake_sequence_test test/handshake_sequence_test.c \
 	  $(filter-out p256.c rsa.c rsa_mont.c,$(SRCS))
-	@set -e; for b in unit rsa_test rsa_sign_test sha3_test sha512_test p384_test p256_field_test p256_ecdh_test p256_sign_test rsa_pkcs1_test webpki_time_test webpki_name_test webpki_spki_test webpki_sigalg_test webpki_cert_test webpki_chain_test webpki_session_test webpki_auth_test webpki_encrypted_exts_test mlkem_test handshake_strict_test x509strict_test x509strict_ecdsa; do \
+	@set -e; for b in unit rsa_test rsa_sign_test sha3_test sha512_test hkdf384_test p384_test p256_field_test p256_ecdh_test p256_sign_test rsa_pkcs1_test webpki_time_test webpki_name_test webpki_spki_test webpki_sigalg_test webpki_cert_test webpki_chain_test webpki_session_test webpki_auth_test webpki_encrypted_exts_test mlkem_test handshake_strict_test x509strict_test x509strict_ecdsa; do \
 	  echo "== $$b (SAN -O$(O))"; ENUM_DEPTH=4 ./bin/san/$$b; done
 	@$(call wycheproof_fetch,san wycheproof); \
 	python3 test/gen_wycheproof.py $(WYCHEPROOF_DIR) bin/wycheproof_vectors.h && \
-	$(CC) $(SAN_CFLAGS) $(RSA_WIDE_DEF) -DCH_TRANSPORT_QUIC $(AES_DEF) $(AES_256_TEST_DEF) -I. -Ibin -o bin/san/wycheproof_test test/wycheproof_test.c \
+	$(CC) $(SAN_CFLAGS) $(RSA_WIDE_DEF) -DCH_TRANSPORT_QUIC $(AES_DEF) $(WYCHEPROOF_TEST_DEFS) -I. -Ibin -o bin/san/wycheproof_test test/wycheproof_test.c \
 	  x25519.c chacha20.c poly1305.c aead.c hkdf.c sha256.c p256.c rsa.c rsa_mont.c mlkem.c mlkem_poly.c sha3.c buf.c ct.c sha512.c sha512_compress.c p384.c p384_field.c rsa_pkcs1.c rsa_sign.c quic_aes.c $(AES_IMPL) quic_gcm.c p256_sign.c \
 	  p256_ecdh.c p256_point.c p256_scalar.c p256_field.c && \
 	echo "== wycheproof_test (SAN -O$(O))" && ./bin/san/wycheproof_test
@@ -2693,7 +2718,7 @@ san-check:
 	    test/x25519_equiv_portable.c test/x25519_equiv_wide.c ct.c; \
 	  echo "== x25519_equiv_test (SAN -O$(O))"; ./bin/san/x25519_equiv_test; \
 	  [ -f bin/wycheproof_vectors.h ] || { echo "SKIP san wycheproof X25519=wide: the fetch above skipped"; exit 0; }; \
-	  $(CC) $(SAN_CFLAGS) $(X25519_WIDE_DEF) $(RSA_WIDE_DEF) -DCH_TRANSPORT_QUIC $(AES_DEF) $(AES_256_TEST_DEF) -I. -Ibin \
+	  $(CC) $(SAN_CFLAGS) $(X25519_WIDE_DEF) $(RSA_WIDE_DEF) -DCH_TRANSPORT_QUIC $(AES_DEF) $(WYCHEPROOF_TEST_DEFS) -I. -Ibin \
 	    -o bin/san/wycheproof_test_x25519_wide test/wycheproof_test.c \
 	    x25519.c x25519_wide.c chacha20.c poly1305.c aead.c hkdf.c sha256.c p256.c rsa.c rsa_mont.c mlkem.c mlkem_poly.c sha3.c buf.c ct.c sha512.c sha512_compress.c p384.c p384_field.c rsa_pkcs1.c rsa_sign.c quic_aes.c $(AES_IMPL) quic_gcm.c p256_sign.c p256_ecdh.c p256_point.c p256_scalar.c p256_field.c; \
 	  echo "== wycheproof_test_x25519_wide (SAN -O$(O))"; ./bin/san/wycheproof_test_x25519_wide; \
@@ -2740,6 +2765,7 @@ cross-check:
 	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) $(RSA_WIDE_DEF) -static -I. -o bin/cross/rsa_test test/rsa_test.c rsa.c rsa_mont.c sha256.c ct.c
 	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) -static -I. -o bin/cross/sha3_test test/sha3_test.c sha3.c ct.c
 	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) -static -I. -o bin/cross/sha512_test test/sha512_test.c sha512.c sha512_compress.c
+	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) -static -DCH_HASH_SHA384 -I. -o bin/cross/hkdf384_test test/hkdf384_test.c $(HKDF384_SRCS)
 	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) -static -I. -o bin/cross/p384_test test/p384_test.c p384.c p384_field.c buf.c sha512.c sha512_compress.c
 	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) -static -I. -o bin/cross/p256_field_test test/p256_field_test.c p256_field.c
 	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) -static -I. -o bin/cross/p256_ecdh_test test/p256_ecdh_test.c p256_ecdh.c p256_point.c p256_scalar.c p256_field.c ct.c
@@ -2759,14 +2785,14 @@ cross-check:
 	@if [ -d $(WYCHEPROOF_DIR)/.git ] \
 	  || git clone --quiet --depth 1 https://github.com/C2SP/wycheproof $(WYCHEPROOF_DIR) 2>/dev/null; then \
 	  python3 test/gen_wycheproof.py $(WYCHEPROOF_DIR) bin/wycheproof_vectors.h && \
-	  $(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) $(RSA_WIDE_DEF) -DCH_TRANSPORT_QUIC $(AES_DEF) $(AES_256_TEST_DEF) -static -I. -Ibin -o bin/cross/wycheproof_test test/wycheproof_test.c \
+	  $(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) $(RSA_WIDE_DEF) -DCH_TRANSPORT_QUIC $(AES_DEF) $(WYCHEPROOF_TEST_DEFS) -static -I. -Ibin -o bin/cross/wycheproof_test test/wycheproof_test.c \
 	    x25519.c chacha20.c poly1305.c aead.c hkdf.c sha256.c p256.c rsa.c rsa_mont.c mlkem.c mlkem_poly.c sha3.c buf.c ct.c sha512.c sha512_compress.c p384.c p384_field.c rsa_pkcs1.c rsa_sign.c quic_aes.c $(AES_IMPL) quic_gcm.c p256_sign.c \
 	  p256_ecdh.c p256_point.c p256_scalar.c p256_field.c ; \
 	else \
 	  [ -n "$$CI" ] && { echo "wycheproof: clone failed and CI must not skip a gate"; exit 1; }; \
 	  echo "SKIP cross wycheproof: no checkout and no network"; \
 	fi
-	@set -e; cd bin/cross; for b in unit rsa_test sha3_test sha512_test p384_test p256_field_test p256_ecdh_test p256_sign_test rsa_pkcs1_test webpki_time_test webpki_name_test webpki_spki_test webpki_sigalg_test webpki_cert_test mlkem_test handshake_strict_test x509strict_test x509strict_ecdsa; do \
+	@set -e; cd bin/cross; for b in unit rsa_test sha3_test sha512_test hkdf384_test p384_test p256_field_test p256_ecdh_test p256_sign_test rsa_pkcs1_test webpki_time_test webpki_name_test webpki_spki_test webpki_sigalg_test webpki_cert_test mlkem_test handshake_strict_test x509strict_test x509strict_ecdsa; do \
 	  echo "== $$b ($(RUNNER))"; ENUM_DEPTH=3 $(RUNNER) ./$$b; done; \
 	if [ -x wycheproof_test ]; then echo "== wycheproof_test ($(RUNNER))"; $(RUNNER) ./wycheproof_test; fi
 
@@ -3046,7 +3072,7 @@ else
 	  test/tls_server.c srv_quic.c quic_token.c srv_rec.c test/srv_rec_test.c \
 	  test/rec_loop_test.c test/webpki_loop_test.c test/quic_loop_test.c \
 	  test/exporter_test.c rec.c rec_frame.c rec_step.c x25519_wide.c \
-	  test/x25519_equiv_portable.c \
+	  test/x25519_equiv_portable.c test/hkdf384_test.c \
 	  test/x25519_equiv_wide.c test/diff_x25519_test.c,$(LINT_C)), \
 	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -I.)
 	# The X25519=wide field. x25519_wide.c guards its body on
@@ -3142,6 +3168,13 @@ else
 	# without a server role, so this pass names ROLE=both's pair.
 	$(call TIDY_EACH,handshake_flight.c srv_flight.c, \
 	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_KEYLOG -I.)
+	# SHA-384 in the key schedule, behind -DCH_HASH_SHA384: hmac_sha384,
+	# the dispatcher's second arm and keysched.c's SHA-384 constants and
+	# context hash compile only there, and so do the SHA-384 rows of the
+	# differential and test/hkdf384_test.c. The exporter's defines ride
+	# along, so ks_exporter's SHA-384 arm is read too.
+	$(call TIDY_EACH,hkdf.c keysched.c test/hkdf384_test.c test/diff_test.c, \
+	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_HASH_SHA384 $(EXPORTER_DEF) -I.)
 	# The exporter, behind its own axis: without these defines tls.h
 	# declares no ch_export and keysched.h no ks_exporter, so this pass
 	# would read a file with nothing in it.
@@ -3463,12 +3496,6 @@ lint-impact:
 #     and hands them, a CA's key and the signature to the three verifiers
 #     above. Every byte is from the wire or from the caller's anchor
 #     table.
-#   sha512.c, sha512_compress.c: SHA-384 for the signatures a public chain carries. Every
-#     byte it hashes is public — a certificate's TBS bytes, or the
-#     CertificateVerify signed content, which is 64 spaces, a context
-#     string and the transcript hash — and a hash has no multiply, so
-#     the gate would read zero either way. The list says what the file
-#     may see, not what it does.
 #   webpki_time.c, webpki_name.c: a certificate's dates and names, the
 #     caller's clock and the caller's hostname, under TRUST=webpki. The
 #     date packer multiplies decimal fields by constants and the clock
@@ -3555,7 +3582,8 @@ WIDEMUL_CEILING := ct.c:0 sha256.c:0 sha3.c:1 hkdf.c:0 chacha20.c:0 poly1305.c:0
                    srv_parser.c:0 srv_parser_ext.c:0 srv_message.c:0 srv_cookie.c:0 \
                    srv_ticket.c:0 srv_resume.c:0 srv_kex.c:0 \
                    srv_auth.c:0 srv_out.c:0 srv_flight.c:0 srv_handshake.c:0 srv.c:0 rsa_sign.c:0 \
-                   p256_scalar.c:0 p256_point.c:0 p256_sign.c:0 p256_ecdh.c:0 webpki_ticket.c:0
+                   p256_scalar.c:0 p256_point.c:0 p256_sign.c:0 p256_ecdh.c:0 webpki_ticket.c:0 \
+                   sha512.c:0 sha512_compress.c:0
 # The X25519=wide field, x25519_wide.c, is the one secret-bearing source no
 # spec in WIDEMUL_SPECS can compile: its products are unsigned __int128,
 # which no 32-bit target has, so ct.h makes the field an #error on every one
@@ -3608,8 +3636,9 @@ WIDEMUL_DEFINES := quic_keys.c:-DCH_TRANSPORT_QUIC quic_packet.c:-DCH_TRANSPORT_
                    srv_resume.c:-DCH_ROLE_SERVER srv_out.c:-DCH_ROLE_SERVER \
                    srv_kex.c:-DCH_ROLE_SERVER srv_flight.c:-DCH_ROLE_SERVER \
                    srv_handshake.c:-DCH_ROLE_SERVER \
-                   srv.c:-DCH_ROLE_SERVER webpki_ticket.c:-DCH_TRUST_WEBPKI$(COMMA)-UCH_KEX_PQ
-WIDEMUL_PUBLIC := p256.c rsa.c rsa_mont.c pem.c x509.c x509_der.c x509_ca.c sha512.c sha512_compress.c \
+                   srv.c:-DCH_ROLE_SERVER webpki_ticket.c:-DCH_TRUST_WEBPKI$(COMMA)-UCH_KEX_PQ \
+                   hkdf.c:-DCH_HASH_SHA384 keysched.c:-DCH_HASH_SHA384
+WIDEMUL_PUBLIC := p256.c rsa.c rsa_mont.c pem.c x509.c x509_der.c x509_ca.c \
                   p384.c p384_field.c rsa_pkcs1.c webpki_time.c webpki_name.c webpki_spki.c webpki_sigalg.c \
                   webpki_ext.c webpki_cert.c webpki.c webpki_pin.c webpki_cfg.c \
                   quic_aes_hw.c quic_ghash_hw.c quic_initial.c quic_retry.c build.c
@@ -3881,9 +3910,23 @@ WIDEMUL_CEILING_SPEC := m3-gcc/sha3.c:5 mips32r2-gcc/sha3.c:5 mips32r2-gcc-O2/sh
 # because no spec's target has the AES instructions.
 # test/aes_equiv_test.c and the Wycheproof AES-GCM suite on that leg
 # check it instead (docs/quic.md, "What the AES axis proves").
+#
+# sha512.c and sha512_compress.c joined when TLS_AES_256_GCM_SHA384 put
+# SHA-384 under the key schedule: hmac_sha384 hashes HMAC keys and the
+# transcript through them, so they left WIDEMUL_PUBLIC for WIDEMUL_CEILING
+# at 0 and this list. Their branches were read under every spec: the
+# compression function's four are the back edges of its sixteen-word load,
+# its eighty rounds and its message schedule, and the streaming half's are
+# loops over the caller's length and the pad, which are public. hkdf.c is
+# measured under -DCH_HASH_SHA384 (WIDEMUL_DEFINES), the build a suite
+# object compiles, and its count rose by six to twelve with it. The new
+# branches were read too: hmac_sha384's key-length test and its two pad
+# loops, the dispatcher's test of hash_len, and hkdf_expand's CH_ASSERT on
+# hash_len. hash_len is the suite's, which the ServerHello names in the
+# clear, and none of them reads a key byte.
 BRANCH_SRCS := ct.c sha256.c sha3.c hkdf.c chacha20.c poly1305.c aead.c x25519.c mlkem.c \
                mlkem_poly.c drbg.c softmul.c rsa_sign.c quic_aes.c quic_aes_soft.c \
-               quic_aes_extern.c quic_gcm.c p256_field.c x25519_wide.c
+               quic_aes_extern.c quic_gcm.c p256_field.c x25519_wide.c sha512.c sha512_compress.c
 # Per-spec branch ceilings, spec/file:count, one for every BRANCH_SRCS
 # file under every spec. A spec that lacks one fails, and the gate's own
 # output is where a new spec reads its numbers. Every number is measured
@@ -3913,41 +3956,41 @@ BRANCH_SRCS := ct.c sha256.c sha3.c hkdf.c chacha20.c poly1305.c aead.c x25519.c
 # function holding an array. ladder() lost the copy loop's branch, so the
 # net is the canary. Neither reads the scalar.
 BRANCH_CEILING := \
-  m3/ct.c:4 m3/sha256.c:17 m3/sha3.c:50 m3/hkdf.c:13 m3/chacha20.c:9 m3/poly1305.c:19 \
+  m3/ct.c:4 m3/sha256.c:17 m3/sha3.c:50 m3/hkdf.c:19 m3/chacha20.c:9 m3/poly1305.c:19 \
   m3/aead.c:4 m3/x25519.c:34 m3/p256_field.c:24 m3/mlkem.c:14 m3/mlkem_poly.c:43 m3/drbg.c:9 \
   m3/softmul.c:0 m3/quic_aes.c:3 m3/quic_aes_soft.c:12 m3/quic_aes_extern.c:0 \
   m3/quic_gcm.c:22 m3/rsa_sign.c:29 mips32r2/ct.c:4 mips32r2/sha256.c:16 mips32r2/sha3.c:29 \
-  mips32r2/hkdf.c:10 mips32r2/chacha20.c:7 mips32r2/poly1305.c:18 mips32r2/aead.c:2 \
+  mips32r2/hkdf.c:16 mips32r2/chacha20.c:7 mips32r2/poly1305.c:18 mips32r2/aead.c:2 \
   mips32r2/x25519.c:31 mips32r2/p256_field.c:21 mips32r2/mlkem.c:13 mips32r2/mlkem_poly.c:36 \
   mips32r2/drbg.c:8 mips32r2/softmul.c:0 mips32r2/quic_aes.c:2 mips32r2/quic_aes_soft.c:12 \
   mips32r2/quic_aes_extern.c:0 mips32r2/quic_gcm.c:16 mips32r2/rsa_sign.c:27 rv32imac/ct.c:4 \
-  rv32imac/sha256.c:17 rv32imac/sha3.c:38 rv32imac/hkdf.c:14 rv32imac/chacha20.c:8 \
+  rv32imac/sha256.c:17 rv32imac/sha3.c:38 rv32imac/hkdf.c:18 rv32imac/chacha20.c:8 \
   rv32imac/poly1305.c:18 rv32imac/aead.c:2 rv32imac/x25519.c:31 rv32imac/p256_field.c:21 \
   rv32imac/mlkem.c:14 rv32imac/mlkem_poly.c:36 rv32imac/drbg.c:9 rv32imac/softmul.c:0 \
   rv32imac/quic_aes.c:3 rv32imac/quic_aes_soft.c:12 rv32imac/quic_aes_extern.c:0 \
   rv32imac/quic_gcm.c:20 rv32imac/rsa_sign.c:27 m3-gcc/ct.c:2 m3-gcc/sha256.c:12 \
-  m3-gcc/sha3.c:24 m3-gcc/hkdf.c:12 m3-gcc/chacha20.c:7 m3-gcc/poly1305.c:14 m3-gcc/aead.c:2 \
+  m3-gcc/sha3.c:24 m3-gcc/hkdf.c:19 m3-gcc/chacha20.c:7 m3-gcc/poly1305.c:14 m3-gcc/aead.c:2 \
   m3-gcc/x25519.c:23 m3-gcc/p256_field.c:14 m3-gcc/mlkem.c:14 m3-gcc/mlkem_poly.c:37 \
   m3-gcc/drbg.c:8 m3-gcc/softmul.c:0 m3-gcc/quic_aes.c:3 m3-gcc/quic_aes_soft.c:9 \
   m3-gcc/quic_aes_extern.c:0 m3-gcc/quic_gcm.c:15 m3-gcc/rsa_sign.c:26 mips32r2-gcc/ct.c:2 \
-  mips32r2-gcc/sha256.c:12 mips32r2-gcc/sha3.c:21 mips32r2-gcc/hkdf.c:11 \
+  mips32r2-gcc/sha256.c:12 mips32r2-gcc/sha3.c:21 mips32r2-gcc/hkdf.c:18 \
   mips32r2-gcc/chacha20.c:6 mips32r2-gcc/poly1305.c:14 mips32r2-gcc/aead.c:2 \
   mips32r2-gcc/x25519.c:20 mips32r2-gcc/p256_field.c:13 mips32r2-gcc/mlkem.c:14 \
   mips32r2-gcc/mlkem_poly.c:41 mips32r2-gcc/drbg.c:7 mips32r2-gcc/softmul.c:0 \
   mips32r2-gcc/quic_aes.c:3 mips32r2-gcc/quic_aes_soft.c:9 mips32r2-gcc/quic_aes_extern.c:0 \
   mips32r2-gcc/quic_gcm.c:13 mips32r2-gcc/rsa_sign.c:23 \
   mips32r2-gcc-O2/ct.c:4 mips32r2-gcc-O2/sha256.c:23 mips32r2-gcc-O2/sha3.c:31 \
-  mips32r2-gcc-O2/hkdf.c:11 mips32r2-gcc-O2/chacha20.c:7 mips32r2-gcc-O2/poly1305.c:21 \
+  mips32r2-gcc-O2/hkdf.c:23 mips32r2-gcc-O2/chacha20.c:7 mips32r2-gcc-O2/poly1305.c:21 \
   mips32r2-gcc-O2/aead.c:2 mips32r2-gcc-O2/x25519.c:28 mips32r2-gcc-O2/p256_field.c:24 \
   mips32r2-gcc-O2/mlkem.c:18 \
   mips32r2-gcc-O2/mlkem_poly.c:38 mips32r2-gcc-O2/drbg.c:8 mips32r2-gcc-O2/softmul.c:0 \
-  rv32imac-gcc/ct.c:2 rv32imac-gcc/sha256.c:15 rv32imac-gcc/sha3.c:26 rv32imac-gcc/hkdf.c:15 \
+  rv32imac-gcc/ct.c:2 rv32imac-gcc/sha256.c:15 rv32imac-gcc/sha3.c:26 rv32imac-gcc/hkdf.c:23 \
   rv32imac-gcc/chacha20.c:10 rv32imac-gcc/poly1305.c:15 rv32imac-gcc/aead.c:4 \
   rv32imac-gcc/x25519.c:24 rv32imac-gcc/p256_field.c:20 rv32imac-gcc/mlkem.c:20 \
   rv32imac-gcc/mlkem_poly.c:39 rv32imac-gcc/drbg.c:9 rv32imac-gcc/softmul.c:0 \
   rv32imac-gcc/quic_aes.c:4 rv32imac-gcc/quic_aes_soft.c:12 rv32imac-gcc/quic_aes_extern.c:0 \
   rv32imac-gcc/quic_gcm.c:22 rv32imac-gcc/rsa_sign.c:27 rv32ic-gcc/ct.c:2 \
-  rv32ic-gcc/sha256.c:15 rv32ic-gcc/sha3.c:26 rv32ic-gcc/hkdf.c:15 rv32ic-gcc/chacha20.c:10 \
+  rv32ic-gcc/sha256.c:15 rv32ic-gcc/sha3.c:26 rv32ic-gcc/hkdf.c:23 rv32ic-gcc/chacha20.c:10 \
   rv32ic-gcc/poly1305.c:15 rv32ic-gcc/aead.c:4 rv32ic-gcc/x25519.c:24 \
   rv32ic-gcc/p256_field.c:20 rv32ic-gcc/mlkem.c:20 rv32ic-gcc/mlkem_poly.c:39 \
   rv32ic-gcc/drbg.c:9 rv32ic-gcc/softmul.c:2 rv32ic-gcc/quic_aes.c:4 \
@@ -3955,6 +3998,11 @@ BRANCH_CEILING := \
   rv32ic-gcc/rsa_sign.c:27 mips32r2-gcc-O2/quic_aes.c:3 mips32r2-gcc-O2/quic_aes_soft.c:12 \
   mips32r2-gcc-O2/quic_aes_extern.c:0 mips32r2-gcc-O2/quic_gcm.c:16 \
   mips32r2-gcc-O2/rsa_sign.c:26 \
+  m3/sha512.c:24 m3/sha512_compress.c:4 mips32r2/sha512.c:20 mips32r2/sha512_compress.c:4 \
+  rv32imac/sha512.c:23 rv32imac/sha512_compress.c:4 m3-gcc/sha512.c:12 \
+  m3-gcc/sha512_compress.c:4 mips32r2-gcc/sha512.c:12 mips32r2-gcc/sha512_compress.c:4 \
+  mips32r2-gcc-O2/sha512.c:27 mips32r2-gcc-O2/sha512_compress.c:4 rv32imac-gcc/sha512.c:14 \
+  rv32imac-gcc/sha512_compress.c:5 rv32ic-gcc/sha512.c:14 rv32ic-gcc/sha512_compress.c:5 \
   arm64/x25519_wide.c:16 x86-64/x25519_wide.c:20
 WIDEMUL_RUN ?= clang
 WIDEMUL_GCC ?= $(M3_CC)

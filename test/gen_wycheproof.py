@@ -199,7 +199,12 @@ def gen_aes_gcm_size(d, out, key_bits, name, macro):
     return len(rows)
 
 
-def gen_hkdf(d, out):
+# The HKDF suites, SHA-256 and SHA-384. hash_len is the hash's output
+# length, which fixes both halves of the library's asserted domain below.
+# The SHA-384 rows sit inside CH_HASH_SHA384, the define hkdf.h turns
+# SHA-384 on with, so a leg that builds without it reads a header that
+# declares nothing for them.
+def gen_hkdf(d, out, hash_len=32, name="wp_hkdf", macro="WP_HKDF"):
     blob = Blob()
     rows = []
     skipped = 0
@@ -209,31 +214,38 @@ def gen_hkdf(d, out):
             okm = bytes_of(t["okm"], t["size"] if t["result"] == "valid" else None)
             size = t["size"]
             # The library's asserted domain (hkdf.c): 0 < out_len <=
-            # 255*32 and info_len <= HKDF_INFO_MAX, which hkdf.h derives as
-            # 2 + 1 + 6 + HKDF_LABEL_MAX + 1 + 32 and the wycheproof build
-            # compiles at the default cap of 12. Outside it, CH_ASSERT
+            # 255*hash_len and info_len <= HKDF_INFO_MAX, which hkdf.h
+            # derives as 2 + 1 + 6 + HKDF_LABEL_MAX + 1 + HKDF_HASH_MAX
+            # and the wycheproof build compiles at the default cap of 12.
+            # The SHA-256 rows take a hash length of 32 there, which every
+            # build admits, and the SHA-384 rows 48. Outside it, CH_ASSERT
             # faults on purpose instead of proceeding; the test reports
             # the count. Written as the same sum, so a reader can check it
             # against hkdf.h rather than against a number.
-            hkdf_info_max = 2 + 1 + 6 + 12 + 1 + 32
-            if size == 0 or size > 255 * 32 or len(info) > hkdf_info_max:
+            hkdf_info_max = 2 + 1 + 6 + 12 + 1 + hash_len
+            if size == 0 or size > 255 * hash_len or len(info) > hkdf_info_max:
                 skipped += 1
                 continue
             off = blob.add(ikm + salt + info + okm)
             rows.append(
                 (uint_of(t["tcId"], 0xffffffff, "hkdf tcId"), off, len(ikm), len(salt), len(info),
-                 len(okm), uint_of(size, 8160, "hkdf size"), 1 if t["result"] == "valid" else 0)
+                 len(okm), uint_of(size, 255 * hash_len, "hkdf size"),
+                 1 if t["result"] == "valid" else 0)
             )
-    emit_blob(out, "wp_hkdf_data", blob)
+    if hash_len != 32:
+        out.append("#ifdef CH_HASH_SHA384")
+    emit_blob(out, f"{name}_data", blob)
     out.append(
         "static const struct { uint32_t tc; uint32_t off; uint16_t ikm_len; uint16_t salt_len;"
-        " uint16_t info_len; uint16_t okm_len; uint16_t size; uint8_t valid; } wp_hkdf[] = {"
+        f" uint16_t info_len; uint16_t okm_len; uint16_t size; uint8_t valid; }} {name}[] = {{"
     )
     for row in rows:
         out.append("    {" + ", ".join(str(v) for v in row) + "},")
     out.append("};")
     out.append("")
-    out.append(f"#define WP_HKDF_SKIPPED {skipped} // outside the library's CH_ASSERT domain")
+    out.append(f"#define {macro}_SKIPPED {skipped} // outside the library's CH_ASSERT domain")
+    if hash_len != 32:
+        out.append("#endif // CH_HASH_SHA384")
     out.append("")
     return len(rows)
 
@@ -252,7 +264,12 @@ def gen_hkdf(d, out):
 SHA256_LEN = 32
 
 
-def gen_hmac(d, out):
+# The HMAC-SHA-384 suite runs the same way through hmac_sha384, whose
+# output is SHA384_LEN, inside CH_HASH_SHA384 as the HKDF-SHA-384 rows are.
+SHA384_LEN = 48
+
+
+def gen_hmac(d, out, hash_len=SHA256_LEN, name="wp_hmac", macro="WP_HMAC"):
     blob = Blob()
     rows = []
     skipped = 0
@@ -261,8 +278,8 @@ def gen_hmac(d, out):
         tag_bits = uint_of(g["tagSize"], 0xffff, "hmac tagSize")
         if key_bits % 8 != 0 or tag_bits % 8 != 0:
             raise SystemExit(f"hmac group keySize {key_bits}, tagSize {tag_bits}: not whole bytes")
-        if tag_bits > 8 * SHA256_LEN:
-            skipped += len(g["tests"])  # longer than the 32 bytes hmac_sha256 writes
+        if tag_bits > 8 * hash_len:
+            skipped += len(g["tests"])  # longer than the hash_len bytes the HMAC writes
             continue
         for t in g["tests"]:
             key = bytes_of(t["key"], key_bits // 8, f"hmac tc{t['tcId']} key")
@@ -273,16 +290,20 @@ def gen_hmac(d, out):
                 (uint_of(t["tcId"], 0xffffffff, "hmac tcId"), off, len(key), len(msg), len(tag),
                  1 if t["result"] == "valid" else 0)
             )
-    emit_blob(out, "wp_hmac_data", blob)
+    if hash_len != SHA256_LEN:
+        out.append("#ifdef CH_HASH_SHA384")
+    emit_blob(out, f"{name}_data", blob)
     out.append(
         "static const struct { uint32_t tc; uint32_t off; uint16_t key_len; uint16_t msg_len;"
-        " uint8_t tag_len; uint8_t valid; } wp_hmac[] = {"
+        f" uint8_t tag_len; uint8_t valid; }} {name}[] = {{"
     )
     for row in rows:
         out.append("    {" + ", ".join(str(v) for v in row) + "},")
     out.append("};")
     out.append("")
-    out.append(f"#define WP_HMAC_SKIPPED {skipped} // tags longer than the 32 bytes hmac_sha256 writes")
+    out.append(f"#define {macro}_SKIPPED {skipped} // tags longer than the {hash_len} bytes the HMAC writes")
+    if hash_len != SHA256_LEN:
+        out.append("#endif // CH_HASH_SHA384")
     out.append("")
     return len(rows)
 
@@ -641,6 +662,10 @@ def main():
     n_a = gen_aead(json.load(open(v1 / "chacha20_poly1305_test.json")), out)
     n_h = gen_hkdf(json.load(open(v1 / "hkdf_sha256_test.json")), out)
     n_m = gen_hmac(json.load(open(v1 / "hmac_sha256_test.json")), out)
+    n_h384 = gen_hkdf(json.load(open(v1 / "hkdf_sha384_test.json")), out, 48, "wp_hkdf384",
+                      "WP_HKDF384")
+    n_m384 = gen_hmac(json.load(open(v1 / "hmac_sha384_test.json")), out, SHA384_LEN,
+                      "wp_hmac384", "WP_HMAC384")
     n_g, n_g256 = gen_aes_gcm(json.load(open(v1 / "aes_gcm_test.json")), out)
     # The four ECDSA arms: the two matched pairs a chain signs with, and
     # the two mismatched digest lengths that exercise the FIPS 186-4
@@ -680,6 +705,7 @@ def main():
     n_kf = gen_mlkem_full(json.load(open(v1 / "mlkem_768_test.json")), out)
     dst.write_text("\n".join(out) + "\n")
     print(f"wycheproof vectors: x25519 {n_x}, ecdh-p256 {n_d}, aead {n_a}, hkdf {n_h}, hmac {n_m},"
+          f" hkdf-sha384 {n_h384}, hmac-sha384 {n_m384},"
           f" aes-128-gcm {n_g}, aes-256-gcm {n_g256},"
           f" ecdsa p256-sha256 {n_e} p384-sha384 {n_e384} p384-sha256 {n_e384_256}"
           f" p256-sha512 {n_e256_512}, rsa-pss {n_r}, rsa-pkcs1 {n_rp}, rsa-sign {n_rs},"

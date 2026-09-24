@@ -64,7 +64,7 @@ def spec_ops():
 
 # Every driver that talks to the spec, not only test/diff_test.c: drbg_test
 # and handshake_sequence_test each own an op and speak the same protocol.
-DRIVERS = ["diff_test.c", "diff_driver.h", "diff_handshake_parser.h", "diff_handshake_certificate.h",
+DRIVERS = ["diff_test.c", "diff_driver.h", "diff_hash.h", "diff_hash384.h", "diff_handshake_parser.h", "diff_handshake_certificate.h",
            "diff_mlkem.h", "diff_p256.h", "diff_rsa.h", "diff_sha3.h",
            "diff_sha512.h", "diff_p384.h", "diff_rsa_pkcs1.h", "diff_webpki.h", "diff_webpki_sigalg.h", "diff_webpki_cert.h", "diff_webpki_chain.h", "diff_x509.h",
            "diff_x509_bounds.h",
@@ -102,9 +102,11 @@ def build_and_run():
     # through RSA_WIDE_DEF: the RSA differential samples a 4096-bit
     # modulus, which rsa.h admits only at that bound. The bound is named
     # rather than -DCH_TRUST_WEBPKI, which cfg.h refuses beside
-    # -DCH_TRUST_CA.
-    flags = ["--coverage", "-O0", "-g", "-std=c11", "-D_DEFAULT_SOURCE",
-             "-DCH_RAND_EXTERN", "-DCH_TRUST_CA", "-DCH_RSA_MODULUS_MAX=512", f"-I{ROOT}"]
+    # -DCH_TRUST_CA. -DCH_HASH_SHA384, as bin/diff passes it, so the
+    # SHA-384 rows of test/diff_hash384.h run too.
+    flags =["--coverage", "-O0", "-g", "-std=c11", "-D_DEFAULT_SOURCE",
+             "-DCH_RAND_EXTERN", "-DCH_TRUST_CA", "-DCH_RSA_MODULUS_MAX=512", "-DCH_HASH_SHA384",
+             f"-I{ROOT}"]
     objs = []
     for src in (s for s in SRCS if s not in TRUST_WEBPKI_ONLY):
         obj = OUT_DIR / (src[:-2] + ".o")

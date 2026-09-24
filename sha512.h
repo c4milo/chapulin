@@ -5,12 +5,16 @@
 // the result kept (FIPS 180-4 §5.3.4 and §6.5). sha512_update absorbs
 // for either; only init and final know which hash is running.
 //
-// Only a TRUST=webpki object packages this file, for the
-// ecdsa-with-SHA384 and sha384WithRSAEncryption signatures a public
-// chain carries. Every byte it hashes in this tree is public: a
-// certificate's TBS bytes, or the CertificateVerify signed content,
-// which is 64 spaces, a context string and the transcript hash. The
-// key schedule and the transcript stay on SHA-256.
+// Two builds package this file. A TRUST=webpki object hashes public
+// bytes with it: a certificate's TBS bytes for the ecdsa-with-SHA384
+// and sha384WithRSAEncryption signatures a public chain carries, and
+// the CertificateVerify signed content. A SUITE=aesgcm object runs
+// TLS_AES_256_GCM_SHA384's key schedule on it, through hkdf.c's
+// hmac_sha384 and the handshake transcript, so there it hashes secrets:
+// HMAC keys and the PSK. That is why sha512.c and sha512_compress.c sit
+// in the Makefile's WIDEMUL_CEILING and BRANCH_SRCS, where a compiler
+// that puts a branch on a word shows as a count that grew. Every other
+// build compiles SHA-256 alone.
 #ifndef CH_SHA512_H
 #define CH_SHA512_H
 
@@ -31,9 +35,9 @@ typedef struct {
 void sha512_init(sha512 *s);
 void sha384_init(sha512 *s);
 void sha512_update(sha512 *s, const uint8_t *in, size_t n);
-// Finalizes into out. s is spent; re-init to reuse. Does not wipe —
-// nothing secret passes through this module, and a caller that hashed
-// a secret anyway wipes the context itself.
+// Finalizes into out. s is spent; re-init to reuse. Does not wipe, the
+// way sha256_final does not: a caller that hashed a secret wipes the
+// context itself, as hmac_sha384 does.
 void sha512_final(sha512 *s, uint8_t out[SHA512_LEN]);
 // The SHA-384 digest: the same finalization, keeping the first 48 of
 // the 64 result bytes (FIPS 180-4 §6.5 step 3). Only meaningful after

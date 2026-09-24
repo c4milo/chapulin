@@ -171,8 +171,8 @@ static void run_hkdf(void) {
         const uint8_t *okm = info + wp_hkdf[i].info_len;
         uint8_t prk[SHA256_LEN];
         uint8_t out[8160];
-        hkdf_extract(salt, wp_hkdf[i].salt_len, ikm, wp_hkdf[i].ikm_len, prk);
-        hkdf_expand(prk, info, wp_hkdf[i].info_len, out, wp_hkdf[i].size);
+        hkdf_extract(SHA256_LEN, salt, wp_hkdf[i].salt_len, ikm, wp_hkdf[i].ikm_len, prk);
+        hkdf_expand(SHA256_LEN, prk, info, wp_hkdf[i].info_len, out, wp_hkdf[i].size);
         int match = wp_hkdf[i].okm_len == wp_hkdf[i].size && memcmp(out, okm, wp_hkdf[i].size) == 0;
         if (wp_hkdf[i].valid && !match) {
             fail("hkdf", wp_hkdf[i].tc, "valid case mismatched");
@@ -218,6 +218,55 @@ static void run_hmac(void) {
            " hmac_sha256 writes)\n",
            COUNT(wp_hmac), WP_HMAC_SKIPPED);
 }
+
+#ifdef CH_HASH_SHA384
+// The same two suites over SHA-384, the hash of TLS_AES_256_GCM_SHA384:
+// hkdf_extract and hkdf_expand at SHA384_LEN, and hmac_sha384 as a MAC.
+// Every leg that builds this file passes -DCH_HASH_SHA384, so every leg
+// runs them.
+static void run_hkdf384(void) {
+    static uint8_t out[255 * SHA384_LEN];
+    for (size_t i = 0; i < COUNT(wp_hkdf384); i++) {
+        const uint8_t *ikm = wp_hkdf384_data + wp_hkdf384[i].off;
+        const uint8_t *salt = ikm + wp_hkdf384[i].ikm_len;
+        const uint8_t *info = salt + wp_hkdf384[i].salt_len;
+        const uint8_t *okm = info + wp_hkdf384[i].info_len;
+        uint8_t prk[SHA384_LEN];
+        hkdf_extract(SHA384_LEN, salt, wp_hkdf384[i].salt_len, ikm, wp_hkdf384[i].ikm_len, prk);
+        hkdf_expand(SHA384_LEN, prk, info, wp_hkdf384[i].info_len, out, wp_hkdf384[i].size);
+        size_t size = wp_hkdf384[i].size;
+        int match = wp_hkdf384[i].okm_len == size && memcmp(out, okm, size) == 0;
+        if (wp_hkdf384[i].valid != match) {
+            fail("hkdf384", wp_hkdf384[i].tc, match ? "invalid case matched" : "valid mismatched");
+        }
+    }
+    printf("wycheproof hkdf-sha384: %zu cases, %d skipped (outside the asserted domain;"
+           " CH_ASSERT faults there instead of proceeding)\n",
+           COUNT(wp_hkdf384), WP_HKDF384_SKIPPED);
+}
+
+static void run_hmac384(void) {
+    for (size_t i = 0; i < COUNT(wp_hmac384); i++) {
+        const uint8_t *key = wp_hmac384_data + wp_hmac384[i].off;
+        const uint8_t *msg = key + wp_hmac384[i].key_len;
+        const uint8_t *tag = msg + wp_hmac384[i].msg_len;
+        size_t tag_len = wp_hmac384[i].tag_len;
+        if (tag_len > SHA384_LEN) {
+            fail("hmac384", wp_hmac384[i].tc, "tag longer than the output");
+            continue;
+        }
+        uint8_t out[SHA384_LEN];
+        hmac_sha384(key, wp_hmac384[i].key_len, msg, wp_hmac384[i].msg_len, out);
+        int match = memcmp(out, tag, tag_len) == 0;
+        if (wp_hmac384[i].valid != match) {
+            fail("hmac384", wp_hmac384[i].tc, match ? "invalid case matched" : "valid mismatched");
+        }
+    }
+    printf("wycheproof hmac-sha384: %zu cases, %d skipped (tags longer than the 48 bytes"
+           " hmac_sha384 writes)\n",
+           COUNT(wp_hmac384), WP_HMAC384_SKIPPED);
+}
+#endif
 
 // One signature verdict against the vector's, for every signature arm.
 static void check_verdict(const char *suite, uint32_t tc, int ok, int valid) {
@@ -417,6 +466,10 @@ int main(void) {
 #endif
     run_hkdf();
     run_hmac();
+#ifdef CH_HASH_SHA384
+    run_hkdf384();
+    run_hmac384();
+#endif
     run_ecdsa_p256_sha256();
     run_ecdsa_p256_sign();
     run_ecdsa_p384_sha384();

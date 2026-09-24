@@ -60,19 +60,20 @@ int aes_public_key_initial(aes_public_key *k, const uint8_t *dcid, size_t dcid_l
     // (rfc9001.txt:1057-1061). Which endpoint a caller asks for is the
     // caller's; this file reads no role and derives what it is given.
     uint8_t initial_secret[SHA256_LEN];
-    hkdf_extract(INITIAL_SALT, sizeof INITIAL_SALT, dcid, dcid_len, initial_secret);
+    hkdf_extract(SHA256_LEN, INITIAL_SALT, sizeof INITIAL_SALT, dcid, dcid_len, initial_secret);
     const char *label = endpoint == CH_QUIC_ENDPOINT_CLIENT ? "client in" : "server in";
     // RFC 9001 §5.2 names this one client_initial_secret or
     // server_initial_secret, one per endpoint.
     uint8_t direction_secret[SHA256_LEN];
-    hkdf_expand_label(initial_secret, label, NULL, 0, direction_secret, sizeof direction_secret);
+    hkdf_expand_label(SHA256_LEN, initial_secret, label, NULL, 0, direction_secret,
+                      sizeof direction_secret);
     // RFC 9001 §5.1: three labels over that secret, each with a
     // zero-length context (rfc9001.txt:1029-1032).
     uint8_t key[AES_128_KEY];
-    hkdf_expand_label(direction_secret, "quic key", NULL, 0, key, sizeof key);
+    hkdf_expand_label(SHA256_LEN, direction_secret, "quic key", NULL, 0, key, sizeof key);
     aes_expand_round_keys(key, k->key.round_keys);
-    hkdf_expand_label(direction_secret, "quic iv", NULL, 0, k->iv, sizeof k->iv);
-    hkdf_expand_label(direction_secret, "quic hp", NULL, 0, key, sizeof key);
+    hkdf_expand_label(SHA256_LEN, direction_secret, "quic iv", NULL, 0, k->iv, sizeof k->iv);
+    hkdf_expand_label(SHA256_LEN, direction_secret, "quic hp", NULL, 0, key, sizeof key);
     aes_expand_round_keys(key, k->hp.round_keys);
 #ifdef CH_AES_256
     // RFC 9001 §5.2 fixes AES-128 for the Initial level whatever suite

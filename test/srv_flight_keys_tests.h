@@ -105,7 +105,7 @@ static void feed_client_finished(int correct) {
     msg[1] = 0;
     msg[2] = 0;
     msg[3] = SHA256_LEN;
-    ks_verify_data(hs.c_hs, hash, msg + 4);
+    ks_verify_data(SHA256_LEN, hs.c_hs, hash, msg + 4);
     if (!correct) {
         msg[4] ^= 0x01;
     }
@@ -144,7 +144,7 @@ static void test_flight_finish(void) {
     uint8_t c_ap[SHA256_LEN];
     uint8_t s_ap[SHA256_LEN];
     (void)hsr_transcript_hash(&hs, hash);
-    ks_master(hs.handshake_secret, hash, master, c_ap, s_ap);
+    ks_master(SHA256_LEN, hs.handshake_secret, hash, master, c_ap, s_ap);
     CHECK(memcmp(sess.rd_secret, c_ap, sizeof c_ap) == 0);
     CHECK(memcmp(sess.wr_secret, s_ap, sizeof s_ap) == 0);
     feed_client_finished(1);
@@ -183,7 +183,7 @@ static void test_flight_finished_length(void) {
         memset(msg, 0, sizeof msg);
         msg[0] = HS_FINISHED;
         msg[3] = (uint8_t)body;
-        ks_verify_data(hs.c_hs, hash, msg + 4);
+        ks_verify_data(SHA256_LEN, hs.c_hs, hash, msg + 4);
         rec_dir_init(&wr, hs.c_hs);
         CHECK(rec_seal(&wr, REC_HANDSHAKE, msg, 4 + body, feed, sizeof feed, &n) == 0);
         feed_len = n;

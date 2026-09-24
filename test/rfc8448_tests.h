@@ -128,7 +128,7 @@ static void test_rfc8448_1rtt(void) {
     uint8_t zeros[SHA256_LEN] = {0};
     uint8_t early[SHA256_LEN];
     uint8_t binder_key[SHA256_LEN];
-    ks_early(zeros, sizeof zeros, 0, early, binder_key);
+    ks_early(SHA256_LEN, zeros, sizeof zeros, 0, early, binder_key);
     CHECK(memcmp(early, rfc8448_s3_early_secret, SHA256_LEN) == 0);
 
     // CH..SH snapshot feeds the handshake traffic secrets.
@@ -142,7 +142,7 @@ static void test_rfc8448_1rtt(void) {
     uint8_t handshake_secret[SHA256_LEN];
     uint8_t c_hs[SHA256_LEN];
     uint8_t s_hs[SHA256_LEN];
-    ks_handshake(early, shared, sizeof shared, h, handshake_secret, c_hs, s_hs);
+    ks_handshake(SHA256_LEN, early, shared, sizeof shared, h, handshake_secret, c_hs, s_hs);
     CHECK(memcmp(handshake_secret, rfc8448_s3_hs_secret, SHA256_LEN) == 0);
     CHECK(memcmp(c_hs, rfc8448_s3_c_hs_traffic, SHA256_LEN) == 0);
     CHECK(memcmp(s_hs, rfc8448_s3_s_hs_traffic, SHA256_LEN) == 0);
@@ -157,7 +157,7 @@ static void test_rfc8448_1rtt(void) {
     sha256_update(&transcript, rfc8448_s3_cv, sizeof rfc8448_s3_cv);
     rfc8448_snapshot(&transcript, h);
     uint8_t mac[SHA256_LEN];
-    ks_verify_data(s_hs, h, mac);
+    ks_verify_data(SHA256_LEN, s_hs, h, mac);
     CHECK(memcmp(mac, rfc8448_s3_server_fin_mac, SHA256_LEN) == 0);
     CHECK(memcmp(rfc8448_s3_server_fin_msg + 4, mac, SHA256_LEN) == 0);
 
@@ -169,14 +169,14 @@ static void test_rfc8448_1rtt(void) {
     uint8_t master[SHA256_LEN];
     uint8_t c_ap[SHA256_LEN];
     uint8_t s_ap[SHA256_LEN];
-    ks_master(handshake_secret, h, master, c_ap, s_ap);
+    ks_master(SHA256_LEN, handshake_secret, h, master, c_ap, s_ap);
     CHECK(memcmp(master, rfc8448_s3_master_secret, SHA256_LEN) == 0);
     CHECK(memcmp(c_ap, rfc8448_s3_c_ap_traffic, SHA256_LEN) == 0);
     CHECK(memcmp(s_ap, rfc8448_s3_s_ap_traffic, SHA256_LEN) == 0);
     uint8_t exp[SHA256_LEN];
-    hkdf_derive_secret(master, "exp master", h, exp);
+    hkdf_derive_secret(SHA256_LEN, master, "exp master", h, exp);
     CHECK(memcmp(exp, rfc8448_s3_exp_master, SHA256_LEN) == 0);
-    ks_verify_data(c_hs, h, mac);
+    ks_verify_data(SHA256_LEN, c_hs, h, mac);
     CHECK(memcmp(mac, rfc8448_s3_client_fin_mac, SHA256_LEN) == 0);
     CHECK(memcmp(rfc8448_s3_client_fin_msg + 4, mac, SHA256_LEN) == 0);
 
@@ -186,10 +186,10 @@ static void test_rfc8448_1rtt(void) {
     rfc8448_snapshot(&transcript, h);
     CHECK(memcmp(h, rfc8448_s3_th_ch_cf, SHA256_LEN) == 0);
     uint8_t res[SHA256_LEN];
-    ks_res_master(master, h, res);
+    ks_res_master(SHA256_LEN, master, h, res);
     CHECK(memcmp(res, rfc8448_s3_res_master, SHA256_LEN) == 0);
     uint8_t psk[SHA256_LEN];
-    ks_res_psk(res, rfc8448_s3_ticket_nonce, sizeof rfc8448_s3_ticket_nonce, psk);
+    ks_res_psk(SHA256_LEN, res, rfc8448_s3_ticket_nonce, sizeof rfc8448_s3_ticket_nonce, psk);
     CHECK(memcmp(psk, rfc8448_s3_res_psk, SHA256_LEN) == 0);
 }
 
@@ -197,7 +197,7 @@ static void test_rfc8448_1rtt(void) {
 static void test_rfc8448_binder(void) {
     uint8_t early[SHA256_LEN];
     uint8_t binder_key[SHA256_LEN];
-    ks_early(rfc8448_s3_res_psk, sizeof rfc8448_s3_res_psk, 1, early, binder_key);
+    ks_early(SHA256_LEN, rfc8448_s3_res_psk, sizeof rfc8448_s3_res_psk, 1, early, binder_key);
     CHECK(memcmp(early, rfc8448_s4_early_secret, SHA256_LEN) == 0);
     CHECK(memcmp(binder_key, rfc8448_s4_binder_key, SHA256_LEN) == 0);
     // The binder MACs the ClientHello truncated before the binder list.
@@ -205,7 +205,7 @@ static void test_rfc8448_binder(void) {
     sha256_of(rfc8448_s4_ch_prefix, sizeof rfc8448_s4_ch_prefix, h);
     CHECK(memcmp(h, rfc8448_s4_binder_hash, SHA256_LEN) == 0);
     uint8_t mac[SHA256_LEN];
-    ks_verify_data(binder_key, h, mac);
+    ks_verify_data(SHA256_LEN, binder_key, h, mac);
     CHECK(memcmp(mac, rfc8448_s4_binder, SHA256_LEN) == 0);
 }
 
@@ -234,11 +234,12 @@ static void test_rfc8448_hrr(void) {
     uint8_t zeros[SHA256_LEN] = {0};
     uint8_t early[SHA256_LEN];
     uint8_t binder_key[SHA256_LEN];
-    ks_early(zeros, sizeof zeros, 0, early, binder_key);
+    ks_early(SHA256_LEN, zeros, sizeof zeros, 0, early, binder_key);
     uint8_t handshake_secret[SHA256_LEN];
     uint8_t c_hs[SHA256_LEN];
     uint8_t s_hs[SHA256_LEN];
-    ks_handshake(early, rfc8448_s5_ecdhe, sizeof rfc8448_s5_ecdhe, h, handshake_secret, c_hs, s_hs);
+    ks_handshake(SHA256_LEN, early, rfc8448_s5_ecdhe, sizeof rfc8448_s5_ecdhe, h, handshake_secret,
+                 c_hs, s_hs);
     CHECK(memcmp(c_hs, rfc8448_s5_c_hs_traffic, SHA256_LEN) == 0);
     CHECK(memcmp(s_hs, rfc8448_s5_s_hs_traffic, SHA256_LEN) == 0);
 }

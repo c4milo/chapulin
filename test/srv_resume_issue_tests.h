@@ -148,14 +148,14 @@ static void test_resume_issue(void) {
     uint8_t hash[SHA256_LEN];
     (void)hsr_transcript_hash(&hs, hash);
     uint8_t res_master[SHA256_LEN];
-    ks_res_master(hs.master, hash, res_master);
+    ks_res_master(SHA256_LEN, hs.master, hash, res_master);
     CHECK(srv_send_new_session_ticket(&hs) == CH_OK);
     CHECK(records_written() == 1);
     CHECK(read_issued_ticket(&client_rd, &lifetime, nonce, &c) > 0);
     CHECK(lifetime == SRV_TICKET_LIFETIME && c.auth_seconds == RESUME_AUTH);
     CHECK(c.suite == SUITE_CHACHA20_POLY1305_SHA256 && c.alpn_len == 0);
     uint8_t psk[SHA256_LEN];
-    ks_res_psk(res_master, nonce, sizeof nonce, psk);
+    ks_res_psk(SHA256_LEN, res_master, nonce, sizeof nonce, psk);
     CHECK(memcmp(c.psk, psk, sizeof psk) == 0);
 
     // After a resumed one: the instant the resumed ticket carried, and what

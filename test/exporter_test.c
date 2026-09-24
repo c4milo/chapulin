@@ -78,26 +78,27 @@ static void test_vectors(void) {
     uint8_t exp_master[SHA256_LEN];
     fixed_inputs(master, transcript);
 
-    ks_exp_master(master, transcript, exp_master);
+    ks_exp_master(SHA256_LEN, master, transcript, exp_master);
     CHECK(hex_eq(exp_master, "61bab2e46006de1948b2e8e1b8661e9636e6034449a3734baf180be9732164a3",
                  SHA256_LEN));
 
     // RFC 9266's label, which is 24 bytes and the reason this axis raises
     // HKDF_LABEL_MAX past the 12 TLS 1.3's own labels need.
     uint8_t out[SHA256_LEN];
-    ks_exporter(exp_master, "EXPORTER-Channel-Binding", NULL, 0, out, sizeof out);
+    ks_exporter(SHA256_LEN, exp_master, "EXPORTER-Channel-Binding", NULL, 0, out, sizeof out);
     CHECK(hex_eq(out, "bf20dc7b67314ed4d32b7f375dbdb9c442bbffb92734b629d7ef70c457cf0e73",
                  sizeof out));
 
     static const uint8_t context[5] = {'h', 'e', 'l', 'l', 'o'};
-    ks_exporter(exp_master, "EXPORTER-Channel-Binding", context, sizeof context, out, sizeof out);
+    ks_exporter(SHA256_LEN, exp_master, "EXPORTER-Channel-Binding", context, sizeof context, out,
+                sizeof out);
     CHECK(hex_eq(out, "2fd00edd8b0265b9e784262b78d641ced8aa58050c2a91d03aaece563b48d665",
                  sizeof out));
 
     // A short label and a short output, so neither length is fixed by
     // the vectors above.
     uint8_t out16[16];
-    ks_exporter(exp_master, "exp", context, sizeof context, out16, sizeof out16);
+    ks_exporter(SHA256_LEN, exp_master, "exp", context, sizeof context, out16, sizeof out16);
     CHECK(hex_eq(out16, "e04d4785f4ff079237b84288fa3867f9", sizeof out16));
 }
 
@@ -109,21 +110,21 @@ static void test_label_separation(void) {
     uint8_t transcript[SHA256_LEN];
     uint8_t exp_master[SHA256_LEN];
     fixed_inputs(master, transcript);
-    ks_exp_master(master, transcript, exp_master);
+    ks_exp_master(SHA256_LEN, master, transcript, exp_master);
 
     uint8_t first[SHA256_LEN];
     uint8_t again[SHA256_LEN];
     uint8_t other[SHA256_LEN];
-    ks_exporter(exp_master, "label-one", NULL, 0, first, sizeof first);
-    ks_exporter(exp_master, "label-one", NULL, 0, again, sizeof again);
-    ks_exporter(exp_master, "label-two", NULL, 0, other, sizeof other);
+    ks_exporter(SHA256_LEN, exp_master, "label-one", NULL, 0, first, sizeof first);
+    ks_exporter(SHA256_LEN, exp_master, "label-one", NULL, 0, again, sizeof again);
+    ks_exporter(SHA256_LEN, exp_master, "label-two", NULL, 0, other, sizeof other);
     CHECK(memcmp(first, again, sizeof first) == 0);
     CHECK(memcmp(first, other, sizeof first) != 0);
 
     // The context separates as the label does.
     static const uint8_t context[1] = {0};
     uint8_t with_context[SHA256_LEN];
-    ks_exporter(exp_master, "label-one", context, sizeof context, with_context,
+    ks_exporter(SHA256_LEN, exp_master, "label-one", context, sizeof context, with_context,
                 sizeof with_context);
     CHECK(memcmp(first, with_context, sizeof first) != 0);
 }
@@ -137,7 +138,7 @@ static void test_public_refusals(void) {
     uint8_t transcript[SHA256_LEN];
     uint8_t master[SHA256_LEN];
     fixed_inputs(master, transcript);
-    ks_exp_master(master, transcript, t.exp_master);
+    ks_exp_master(SHA256_LEN, master, transcript, t.exp_master);
 
     uint8_t out[32];
     static const uint8_t context[2] = {1, 2};
@@ -179,7 +180,7 @@ static void test_public_refusals(void) {
     // call adds validation and nothing else.
     uint8_t direct[SHA256_LEN];
     uint8_t viapublic[SHA256_LEN];
-    ks_exporter(t.exp_master, "label", context, sizeof context, direct, sizeof direct);
+    ks_exporter(SHA256_LEN, t.exp_master, "label", context, sizeof context, direct, sizeof direct);
     CHECK(ch_export(&t, "label", context, sizeof context, viapublic, sizeof viapublic) == CH_OK);
     CHECK(memcmp(direct, viapublic, sizeof direct) == 0);
 }

@@ -1,0 +1,20 @@
+invariant: INV-11
+file: hkdf.c
+catches: hkdf384_test
+reason: the dispatcher in hmac runs HMAC-SHA-256 for a hash_len of 48,
+  so TLS_AES_256_GCM_SHA384's key schedule runs SHA-256 while its buffers
+  and labels say SHA-384. Every secret it derives is then wrong, and a
+  build that only exercised SHA-256 suites would not notice. The RFC 4231
+  HMAC-SHA-384 vectors and the SHA-384 schedule rows in hkdf384_test go
+  through hmac with hash_len 48, so they fail on the first derivation.
+
+--- old
+    if (hash_len == SHA384_LEN) {
+        hmac_sha384(key, key_len, msg, msg_len, out);
+        return;
+    }
+--- new
+    if (hash_len == SHA384_LEN) {
+        hmac_sha256(key, key_len, msg, msg_len, out);
+        return;
+    }

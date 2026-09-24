@@ -74,7 +74,7 @@ m3-check:
 	$(M3_CC) $(M3_FLAGS) -DCH_PIN_ECDSA -I. -o bin/m3/x509strict_ecdsa $(X509STRICT_SRC) p256.c
 	@$(call wycheproof_fetch,m3 wycheproof); \
 	python3 test/gen_wycheproof.py $(WYCHEPROOF_DIR) bin/wycheproof_vectors.h && \
-	$(M3_CC) $(M3_FLAGS) $(RSA_WIDE_DEF) -I. -Ibin -o bin/m3/wycheproof_test test/wycheproof_test.c \
+	$(M3_CC) $(M3_FLAGS) $(RSA_WIDE_DEF) -DCH_HASH_SHA384 -I. -Ibin -o bin/m3/wycheproof_test test/wycheproof_test.c \
 	  x25519.c chacha20.c poly1305.c aead.c hkdf.c sha256.c p256.c rsa.c rsa_mont.c mlkem.c mlkem_poly.c sha3.c buf.c ct.c sha512.c sha512_compress.c p384.c p384_field.c rsa_pkcs1.c rsa_sign.c p256_sign.c \
 	  p256_ecdh.c p256_point.c p256_scalar.c p256_field.c
 	@set -e; for b in unit rsa_test sha3_test sha512_test p384_test p256_ecdh_test p256_sign_test rsa_pkcs1_test webpki_time_test webpki_name_test webpki_spki_test webpki_sigalg_test webpki_cert_test mlkem_test handshake_strict_test x509strict_test x509strict_ecdsa; do \

@@ -87,39 +87,46 @@ void x25519_base(uint8_t out[X25519_LEN], const uint8_t scalar[X25519_LEN]) {
     fill_nondet(out, X25519_LEN);
 }
 
-void ks_early(const uint8_t *psk, size_t psk_len, int resumption, uint8_t early[SHA256_LEN],
-              uint8_t binder_key[SHA256_LEN]) {
+void ks_early(size_t hash_len, const uint8_t *psk, size_t psk_len, int resumption, uint8_t *early,
+              uint8_t *binder_key) {
+    __CPROVER_assert(hash_len == SHA256_LEN || hash_len == HKDF_HASH_MAX,
+                     "ks_early: hash_len names a hash this build holds");
     __CPROVER_assert(__CPROVER_r_ok(psk, psk_len), "ks_early: psk readable");
     (void)resumption;
-    fill_nondet(early, SHA256_LEN);
-    fill_nondet(binder_key, SHA256_LEN);
+    fill_nondet(early, hash_len);
+    fill_nondet(binder_key, hash_len);
 }
 
-void ks_handshake(const uint8_t early[SHA256_LEN], const uint8_t *ecdhe, size_t ecdhe_len,
-                  const uint8_t transcript[SHA256_LEN], uint8_t handshake_secret[SHA256_LEN],
-                  uint8_t c_hs[SHA256_LEN], uint8_t s_hs[SHA256_LEN]) {
-    __CPROVER_assert(__CPROVER_r_ok(early, SHA256_LEN), "ks_handshake: early readable");
+void ks_handshake(size_t hash_len, const uint8_t *early, const uint8_t *ecdhe, size_t ecdhe_len,
+                  const uint8_t *transcript, uint8_t *handshake_secret, uint8_t *c_hs,
+                  uint8_t *s_hs) {
+    __CPROVER_assert(hash_len == SHA256_LEN || hash_len == HKDF_HASH_MAX,
+                     "ks_handshake: hash_len names a hash this build holds");
+    __CPROVER_assert(__CPROVER_r_ok(early, hash_len), "ks_handshake: early readable");
     __CPROVER_assert(__CPROVER_r_ok(ecdhe, ecdhe_len), "ks_handshake: shared secret readable");
-    __CPROVER_assert(__CPROVER_r_ok(transcript, SHA256_LEN), "ks_handshake: transcript readable");
-    fill_nondet(handshake_secret, SHA256_LEN);
-    fill_nondet(c_hs, SHA256_LEN);
-    fill_nondet(s_hs, SHA256_LEN);
+    __CPROVER_assert(__CPROVER_r_ok(transcript, hash_len), "ks_handshake: transcript readable");
+    fill_nondet(handshake_secret, hash_len);
+    fill_nondet(c_hs, hash_len);
+    fill_nondet(s_hs, hash_len);
 }
 
-void ks_verify_data(const uint8_t key[SHA256_LEN], const uint8_t transcript[SHA256_LEN],
-                    uint8_t out[SHA256_LEN]) {
-    __CPROVER_assert(__CPROVER_r_ok(key, SHA256_LEN), "verify_data: key readable");
-    __CPROVER_assert(__CPROVER_r_ok(transcript, SHA256_LEN), "verify_data: transcript readable");
-    fill_nondet(out, SHA256_LEN);
+void ks_verify_data(size_t hash_len, const uint8_t *key, const uint8_t *transcript, uint8_t *out) {
+    __CPROVER_assert(hash_len == SHA256_LEN || hash_len == HKDF_HASH_MAX,
+                     "ks_verify_data: hash_len names a hash this build holds");
+    __CPROVER_assert(__CPROVER_r_ok(key, hash_len), "verify_data: key readable");
+    __CPROVER_assert(__CPROVER_r_ok(transcript, hash_len), "verify_data: transcript readable");
+    fill_nondet(out, hash_len);
 }
 
-void ks_master(const uint8_t handshake_secret[SHA256_LEN], const uint8_t transcript[SHA256_LEN],
-               uint8_t master[SHA256_LEN], uint8_t c_ap[SHA256_LEN], uint8_t s_ap[SHA256_LEN]) {
-    __CPROVER_assert(__CPROVER_r_ok(handshake_secret, SHA256_LEN), "ks_master: secret readable");
-    __CPROVER_assert(__CPROVER_r_ok(transcript, SHA256_LEN), "ks_master: transcript readable");
-    fill_nondet(master, SHA256_LEN);
-    fill_nondet(c_ap, SHA256_LEN);
-    fill_nondet(s_ap, SHA256_LEN);
+void ks_master(size_t hash_len, const uint8_t *handshake_secret, const uint8_t *transcript,
+               uint8_t *master, uint8_t *c_ap, uint8_t *s_ap) {
+    __CPROVER_assert(hash_len == SHA256_LEN || hash_len == HKDF_HASH_MAX,
+                     "ks_master: hash_len names a hash this build holds");
+    __CPROVER_assert(__CPROVER_r_ok(handshake_secret, hash_len), "ks_master: secret readable");
+    __CPROVER_assert(__CPROVER_r_ok(transcript, hash_len), "ks_master: transcript readable");
+    fill_nondet(master, hash_len);
+    fill_nondet(c_ap, hash_len);
+    fill_nondet(s_ap, hash_len);
 }
 
 void rec_dir_init(rec_dir *d, const uint8_t secret[SHA256_LEN]) {

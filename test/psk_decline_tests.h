@@ -24,7 +24,7 @@ static void offer_psk(handshake_state *h, server_hello_info *info, const uint8_t
     decline_session.cfg.psk = psk;
     decline_session.cfg.psk_len = SHA256_LEN;
     decline_session.cfg.resumption = 1;
-    ks_early(psk, SHA256_LEN, 1, h->early, h->binder_key);
+    ks_early(SHA256_LEN, psk, SHA256_LEN, 1, h->early, h->binder_key);
     info->have_share = 1;
     info->group = CH_GROUP_X25519;
 }
@@ -36,8 +36,8 @@ static void test_decline_handler(void) {
     uint8_t psk_binder_key[SHA256_LEN];
     uint8_t no_psk_early[SHA256_LEN];
     uint8_t unused[SHA256_LEN];
-    ks_early(psk, sizeof psk, 1, psk_early, psk_binder_key);
-    ks_early(zero, sizeof zero, 0, no_psk_early, unused);
+    ks_early(SHA256_LEN, psk, sizeof psk, 1, psk_early, psk_binder_key);
+    ks_early(SHA256_LEN, zero, sizeof zero, 0, no_psk_early, unused);
     handshake_state h;
     server_hello_info info;
 

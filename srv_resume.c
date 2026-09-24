@@ -128,9 +128,9 @@ static const uint8_t *binder_at(const client_hello *ch, uint16_t index, size_t *
 // when the binder compared equal.
 static int binder_matches(handshake_state *h, const client_hello *ch, const uint8_t psk[SHA256_LEN],
                           uint16_t index) {
-    ks_early(psk, SHA256_LEN, 1, h->early, h->binder_key);
+    ks_early(SHA256_LEN, psk, SHA256_LEN, 1, h->early, h->binder_key);
     uint8_t want[SHA256_LEN];
-    ks_verify_data(h->binder_key, ch->binder_hash, want);
+    ks_verify_data(SHA256_LEN, h->binder_key, ch->binder_hash, want);
     ct_wipe(h->binder_key, sizeof h->binder_key);
     size_t binder_len = 0;
     const uint8_t *binder = binder_at(ch, index, &binder_len);
@@ -226,13 +226,13 @@ static size_t build_ticket_message(handshake_state *h, uint64_t auth_seconds, ui
     uint8_t hash[SHA256_LEN];
     (void)hsr_transcript_hash(h, hash);
     uint8_t res_master[SHA256_LEN];
-    ks_res_master(h->master, hash, res_master);
+    ks_res_master(SHA256_LEN, h->master, hash, res_master);
     srv_ticket_contents c;
     memset(&c, 0, sizeof c);
     c.auth_seconds = auth_seconds;
     c.suite = t->suite;
     ticket_alpn(t, &c);
-    ks_res_psk(res_master, ticket_nonce, SRV_TICKET_NONCE_LEN, c.psk);
+    ks_res_psk(SHA256_LEN, res_master, ticket_nonce, SRV_TICKET_NONCE_LEN, c.psk);
     ct_wipe(res_master, sizeof res_master);
 
     uint8_t ticket[SRV_TICKET_LEN];

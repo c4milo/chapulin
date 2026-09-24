@@ -299,13 +299,13 @@ int srv_derive_handshake_secrets(handshake_state *h, const client_hello *ch, con
     if (!sel->psk_selected) {
         static const uint8_t no_psk[SHA256_LEN] = {0};
         uint8_t binder_key[SHA256_LEN];
-        ks_early(no_psk, sizeof no_psk, 0, h->early, binder_key);
+        ks_early(SHA256_LEN, no_psk, sizeof no_psk, 0, h->early, binder_key);
         ct_wipe(binder_key, sizeof binder_key);
     }
 
     uint8_t hash[SHA256_LEN];
     (void)hsr_transcript_hash(h, hash);
-    ks_handshake(h->early, ikm, ikm_len, hash, h->handshake_secret, h->c_hs, h->s_hs);
+    ks_handshake(SHA256_LEN, h->early, ikm, ikm_len, hash, h->handshake_secret, h->c_hs, h->s_hs);
     ct_wipe(ikm, sizeof ikm);
     ct_wipe(h->early, sizeof h->early);
 #ifdef CH_KEYLOG
@@ -425,7 +425,7 @@ int srv_send_finished(handshake_state *h) {
     uint8_t hash[SHA256_LEN];
     (void)hsr_transcript_hash(h, hash);
     uint8_t verify_data[SHA256_LEN];
-    ks_verify_data(h->s_hs, hash, verify_data);
+    ks_verify_data(SHA256_LEN, h->s_hs, hash, verify_data);
     uint8_t msg[SRV_FINISHED_MAX];
     size_t n = srv_build_finished(msg, sizeof msg, verify_data, sizeof verify_data);
     CH_ASSERT(n == sizeof msg);
@@ -438,11 +438,11 @@ int srv_send_finished(handshake_state *h) {
     // endpoint reads. Only the write direction advances here: the client
     // Finished still arrives under the handshake key.
     (void)hsr_transcript_hash(h, hash);
-    ks_master(h->handshake_secret, hash, h->master, t->rd_secret, t->wr_secret);
+    ks_master(SHA256_LEN, h->handshake_secret, hash, h->master, t->rd_secret, t->wr_secret);
 #ifdef CH_EXPORTER
     // The client's derivation, mirrored: RFC 9846 §7.5 takes the same
     // transcript the traffic secrets above take.
-    ks_exp_master(h->master, hash, t->exp_master);
+    ks_exp_master(SHA256_LEN, h->master, hash, t->exp_master);
 #endif
 #ifdef CH_KEYLOG
     // The reverse of the client's pair: here rd_secret holds the client's
@@ -476,7 +476,7 @@ int srv_read_client_finished(handshake_state *h) {
         return CH_EPROTO;
     }
     uint8_t want[SHA256_LEN];
-    ks_verify_data(h->c_hs, hash, want);
+    ks_verify_data(SHA256_LEN, h->c_hs, hash, want);
     if (!ct_memeq(want, raw + 4, sizeof want)) {
         h->alert = ALERT_DECRYPT_ERROR;
         return CH_EAUTH;

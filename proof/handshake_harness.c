@@ -176,47 +176,7 @@ size_t hs_build_client_hello(uint8_t *out, size_t cap, const ch_cfg *cfg, const 
     return n;
 }
 
-void ks_early(const uint8_t *psk, size_t psk_len, int resumption, uint8_t early[SHA256_LEN],
-              uint8_t binder_key[SHA256_LEN]) {
-    (void)resumption;
-    __CPROVER_assert(psk_len == 0 || __CPROVER_r_ok(psk, psk_len), "ks: psk readable");
-    fill_nondet(early, SHA256_LEN);
-    fill_nondet(binder_key, SHA256_LEN);
-}
-
-void ks_verify_data(const uint8_t key[SHA256_LEN], const uint8_t transcript[SHA256_LEN],
-                    uint8_t out[SHA256_LEN]) {
-    __CPROVER_assert(__CPROVER_r_ok(key, SHA256_LEN), "ks: key readable");
-    __CPROVER_assert(__CPROVER_r_ok(transcript, SHA256_LEN), "ks: transcript readable");
-    fill_nondet(out, SHA256_LEN);
-}
-
-void ks_handshake(const uint8_t early[SHA256_LEN], const uint8_t *ecdhe, size_t ecdhe_len,
-                  const uint8_t transcript[SHA256_LEN], uint8_t handshake_secret[SHA256_LEN],
-                  uint8_t c_hs[SHA256_LEN], uint8_t s_hs[SHA256_LEN]) {
-    __CPROVER_assert(__CPROVER_r_ok(early, SHA256_LEN), "ks: early readable");
-    __CPROVER_assert(ecdhe_len == 0 || __CPROVER_r_ok(ecdhe, ecdhe_len), "ks: ecdhe readable");
-    __CPROVER_assert(__CPROVER_r_ok(transcript, SHA256_LEN), "ks: transcript readable");
-    fill_nondet(handshake_secret, SHA256_LEN);
-    fill_nondet(c_hs, SHA256_LEN);
-    fill_nondet(s_hs, SHA256_LEN);
-}
-
-void ks_master(const uint8_t handshake_secret[SHA256_LEN], const uint8_t transcript[SHA256_LEN],
-               uint8_t master[SHA256_LEN], uint8_t c_ap[SHA256_LEN], uint8_t s_ap[SHA256_LEN]) {
-    __CPROVER_assert(__CPROVER_r_ok(handshake_secret, SHA256_LEN), "ks: handshake secret readable");
-    __CPROVER_assert(__CPROVER_r_ok(transcript, SHA256_LEN), "ks: transcript readable");
-    fill_nondet(master, SHA256_LEN);
-    fill_nondet(c_ap, SHA256_LEN);
-    fill_nondet(s_ap, SHA256_LEN);
-}
-
-void ks_res_master(const uint8_t master[SHA256_LEN], const uint8_t transcript[SHA256_LEN],
-                   uint8_t res_master[SHA256_LEN]) {
-    __CPROVER_assert(__CPROVER_r_ok(master, SHA256_LEN), "ks: master readable");
-    __CPROVER_assert(__CPROVER_r_ok(transcript, SHA256_LEN), "ks: transcript readable");
-    fill_nondet(res_master, SHA256_LEN);
-}
+#include "keysched_stubs.h"
 
 int x25519(uint8_t out[X25519_LEN], const uint8_t scalar[X25519_LEN],
            const uint8_t point[X25519_LEN]) {

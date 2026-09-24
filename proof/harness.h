@@ -77,4 +77,35 @@ void sha256_of(const uint8_t *in, size_t n, uint8_t out[SHA256_LEN]) {
 }
 #endif
 
+// The SHA-384 stub, the same contract over sha512.h: the harnesses that
+// compile hkdf.c or keysched.c under CH_HASH_SHA384 define
+// CH_PROOF_STUB_SHA384 beside CH_PROOF_STUB_SHA256, because that build
+// carries both hashes. sha512_harness.c proves the real functions.
+#ifdef CH_PROOF_STUB_SHA384
+#include "sha512.h"
+
+void sha384_init(sha512 *s) {
+    __CPROVER_assert(__CPROVER_w_ok(s, sizeof *s), "sha384_init: ctx writable");
+    fill_nondet((uint8_t *)s, sizeof *s);
+}
+
+void sha512_update(sha512 *s, const uint8_t *in, size_t n) {
+    __CPROVER_assert(__CPROVER_w_ok(s, sizeof *s), "sha512_update: ctx writable");
+    __CPROVER_assert(n == 0 || __CPROVER_r_ok(in, n), "sha512_update: input readable");
+    fill_nondet((uint8_t *)s, sizeof *s);
+}
+
+void sha384_final(sha512 *s, uint8_t out[SHA384_LEN]) {
+    __CPROVER_assert(__CPROVER_w_ok(s, sizeof *s), "sha384_final: ctx writable");
+    __CPROVER_assert(__CPROVER_w_ok(out, SHA384_LEN), "sha384_final: output writable");
+    fill_nondet(out, SHA384_LEN);
+}
+
+void sha384_of(const uint8_t *in, size_t n, uint8_t out[SHA384_LEN]) {
+    __CPROVER_assert(n == 0 || __CPROVER_r_ok(in, n), "sha384_of: input readable");
+    __CPROVER_assert(__CPROVER_w_ok(out, SHA384_LEN), "sha384_of: output writable");
+    fill_nondet(out, SHA384_LEN);
+}
+#endif
+
 #endif
