@@ -7,8 +7,8 @@
 # 2 GB; slow 6 GB, or 12 GB under the external solver) unless the launch
 # line carries one sized from a measured peak. The biggest measured fast
 # peak was handshake_parser at 9.9 GB, so its launch line carries
-# fast:10 (its comment records a later 4.6 GB measurement); sha256
-# follows at 5.7 GB with fast:6. Each proof checks
+# fast:10 (its comment records a later 4.6 GB measurement); sha256,
+# now in the slow tier, peaked at 5.7 GB and carries slow:6. Each proof checks
 # memory safety (bounds, pointer validity), UB (signed overflow,
 # undefined shifts, division), and the harness's explicit asserts, over
 # all inputs within the documented bounds; --unwinding-assertions proves
@@ -64,6 +64,11 @@ cd "$(dirname "$0")/.." || exit 1
 # through the prove target, and CI runs that on every push to main but
 # not on a pull request, so make check never runs a proof), "slow" (the
 # SAT heavyweights, run by CI and before release), or "all" (default).
+# A harness that takes more than about five minutes on the check job's
+# runner goes to the slow tier. An edit to a header most harnesses read,
+# cfg.h for one, re-proves the whole fast tier, and on 2026-09-24 that
+# took 91 minutes with nine such harnesses in it (353 to 816 s each);
+# they now run nightly, one job each.
 TIER="${1:-all}"
 
 CBMC="${CBMC:-cbmc}"
@@ -527,7 +532,7 @@ launch fast full certverify_webpki 260 "fill_nondet.0:513" -DCH_TRUST_WEBPKI han
 # same formula with its verdict assertion narrowed to an unset config
 # fails, so the formula reaches the ticket path.
 launch fast full webpki_ticket 66 "fill_nondet.0:254,webpki_ticket_config_hash.1:254,webpki_ticket_config_hash.2:13,webpki_ticket_config_hash.3:5,ct_wipe.0:113" --object-bits 10 -DCH_TRUST_WEBPKI buf.c ct.c hkdf.c
-launch fast:6 full sha256 3 "fill_nondet.0:97,sha256_update.0:66,sha256_update.1:3,sha256_update.2:66,sha256_final.0:65,sha256_final.1:9,sha256_final.2:9,compress.0:17,compress.1:49,compress.2:65"
+launch slow:6 full sha256 3 "fill_nondet.0:97,sha256_update.0:66,sha256_update.1:3,sha256_update.2:66,sha256_final.0:65,sha256_final.1:9,sha256_final.2:9,compress.0:17,compress.1:49,compress.2:65"
 # SHA-512 splits as ML-KEM does: the framing over a stubbed compression,
 # and the compression alone. One formula carrying both hashes and the
 # real compression returned no verdict in 43 min at a 12.9 GB peak; the
@@ -541,7 +546,7 @@ launch fast:6 full sha256 3 "fill_nondet.0:97,sha256_update.0:66,sha256_update.1
 # the split (cbmc 6.11.0, kissat, /usr/bin/time -l): sha512_compress
 # 0.5 s / 24 MB, 259 properties; sha512 536 s / 2.0 GB, 417 properties.
 launch fast full sha512_compress 3 "main.0:9,fill_nondet.0:129,sha512_compress.0:17,sha512_compress.1:65,sha512_compress.2:81,load_be64.0:9"
-launch fast:3 full sha512 3 "fill_nondet.0:193,sha512_update.0:130,sha512_update.1:3,sha512_update.2:130,sha512_final.0:9,sha384_final.0:7,sha512_compress.0:9,store_be64.0:9,finalize.0:130,finalize.1:130"
+launch slow:3 full sha512 3 "fill_nondet.0:193,sha512_update.0:130,sha512_update.1:3,sha512_update.2:130,sha512_final.0:9,sha384_final.0:7,sha512_compress.0:9,store_be64.0:9,finalize.0:130,finalize.1:130"
 # sha3's loops number by back-edge order, so the block loops' inner
 # copy loop precedes its while: absorb is head, block-copy, block-while,
 # tail; squeeze is head, block-copy, block-while. Measured peaks: sha3
@@ -561,9 +566,8 @@ launch fast full sha3_stream 26 "absorb.0:34,absorb.1:1,absorb.2:1,absorb.3:34,s
 launch fast full mlkem 385 "fill_nondet.0:2401,ct_wipe.0:1537,ct_memeq.0:1089" ct.c
 launch fast:3 full mlkem_poly 260 "mlk_sample_ntt.0:513,fill_nondet.0:1537,ct_wipe.0:225" ct.c
 # record: measured 830 s / 3.0 GB (kissat) since the direction-domain
-# and in-place-open shapes joined the formula — under the fast pool's
-# 1034 s pole (x509parse_ecdsa), so it stays a push-gate leg.
-launch fast:4 full record 165 "" ct.c
+# and in-place-open shapes joined the formula.
+launch slow:4 full record 165 "" ct.c
 # The x25519 ladder keeps its limbs inside the range the field-op proofs
 # assume (https://github.com/c4milo/chapulin/issues/50). x25519_step
 # proves one loop step on the shipped step(): from any state with
@@ -577,7 +581,7 @@ launch fast:4 full record 165 "" ct.c
 # and the tail together had none after 27 minutes, so they are two.
 # Measured (kissat): x25519_step 473 properties, 513 s, 2.6 GB;
 # x25519_tail 458 properties, 156 s, 2.6 GB.
-launch fast:3 full x25519_step 17 ""
+launch slow:3 full x25519_step 17 ""
 launch fast:3 full x25519_tail 17 ""
 launch fast full rsa 385 "fill_nondet.0:385,ct_memeq.0:33,greater_or_equal.0:385,modulus_bits.0:385,modulus_bits.1:9,mgf1.0:12,emsa_pss_verify.0:352,emsa_pss_verify.1:320,rsa_pss_verify.0:385" --object-bits 11 --max-field-sensitivity-array-size 385 ct.c
 # rsa_webpki is the same harness with CH_TRUST_WEBPKI set, so
@@ -694,7 +698,7 @@ launch fast full hkdf 120 "" ct.c
 # returns any int, so read_exact's got <= 0 || got > n is under proof
 # rather than assumed. The 16-byte buffer bounds its per-byte loop, which
 # is what sets the unwind.
-launch fast:4 full io 24 ""
+launch slow:4 full io 24 ""
 # keysched: 13 s under this script's own flags. Extract and Expand-Label sequencing
 # over 32-byte secrets; sha256 is harness.h's stub, since the schedule's
 # arithmetic is length handling rather than compression.
@@ -892,7 +896,7 @@ launch fast:4 full webpki_san 17 "fill_nondet.0:1025,webpki_match_san.0:17" -DCH
 # x509_read_extension from any reader state, basicConstraints over any
 # extnValue) and the purposes loop at 64 bytes. Under run.sh: 1217
 # properties, 386 s, 3.0 GB; run apart, the x509_read_extension half
-# peaked at 5.0 GB in 54 s, which fast:5 covers.
+# peaked at 5.0 GB in 54 s, which slow:5 covers.
 #
 # webpki_ext_one judges one Extension from any reader and walk state
 # over a list of up to CH_PROOF_ONE_LEN bytes: at 64 bytes 249 s and
@@ -913,7 +917,7 @@ launch fast:4 full webpki_san 17 "fill_nondet.0:1025,webpki_match_san.0:17" -DCH
 # tail fails both (2 of 1220, 2687 s, 7.5 GB), so both tails are
 # reached. So it runs at 48 bytes in the slow tier.
 launch fast:5 full webpki_cert 17 "fill_nondet.0:3074,ct_memeq.0:16" -DCH_TRUST_WEBPKI x509_der.c buf.c ct.c
-launch fast:5 full webpki_ext 18 "fill_nondet.0:1026,read_ext_key_usage.0:23,oid_minimal.0:17,ct_memeq.0:9" x509_der.c buf.c ct.c
+launch slow:5 full webpki_ext 18 "fill_nondet.0:1026,read_ext_key_usage.0:23,oid_minimal.0:17,ct_memeq.0:9" x509_der.c buf.c ct.c
 launch slow:3 full webpki_ext_one 18 "fill_nondet.0:97,read_ext_key_usage.0:33,oid_minimal.0:17,ct_memeq.0:9" -DCH_PROOF_ONE_LEN=96 x509_der.c buf.c ct.c
 launch slow:5 full webpki_ext_walk 18 "fill_nondet.0:49,webpki_read_extensions.0:8,read_ext_key_usage.0:13,oid_minimal.0:17,ct_memeq.0:9" --object-bits 11 -DCH_PROOF_EXT_LEN=48 x509_der.c buf.c ct.c
 # The TRUST=webpki chain walk, over a CertificateEntry list of up to
@@ -963,12 +967,12 @@ launch fast:4 full webpki_chain 49 "main.0:3,fill_nondet.0:49,read_entries.0:7,a
 # webpki_spki_pinned walks the pins by advancing a pointer: indexing them
 # as spki_pins + i * SHA256_LEN measured 9.0 to 11.8 GB. With an assert of 0 at the raw half's
 # CH_OK tail and at the path half's tail after a match, those two fail
-# (2 of 1285, 588 s, 7.3 GB), so both tails are reached. fast:8 covers
+# (2 of 1285, 588 s, 7.3 GB), so both tails are reached. slow:8 covers
 # that peak.
-launch fast:8 full webpki_pin 5 "fill_nondet.0:557,ct_memeq.0:33,memcmp.0:33" -DCH_TRUST_WEBPKI webpki.c buf.c ct.c
+launch slow:8 full webpki_pin 5 "fill_nondet.0:557,ct_memeq.0:33,memcmp.0:33" -DCH_TRUST_WEBPKI webpki.c buf.c ct.c
 launch fast:3 full x509der 452 "fill_nondet.0:449,ct_memeq.0:68" buf.c ct.c
 launch fast:3 full x509der_ecdsa 452 "fill_nondet.0:449,ct_memeq.0:68" buf.c ct.c
-launch fast:4 full x509parse_ecdsa 260 "fill_nondet.0:257,ct_memeq.0:68" buf.c ct.c
+launch slow:4 full x509parse_ecdsa 260 "fill_nondet.0:257,ct_memeq.0:68" buf.c ct.c
 launch slow:8 full x509parse 844 "fill_nondet.0:841,ct_memeq.0:68" buf.c ct.c
 launch fast full chacha20 165 "chacha20_xor.1:5"
 # The AES-128 forward cipher and the two aes_public_key constructors,
@@ -1139,7 +1143,7 @@ launch fast full buf 100 ""
 # because the harness havocs pt_off, pt_len, ccs_seen, quiet and every buffer
 # byte on entry rather than walking records to get there. Measured under this
 # script's flags: 567 properties, 457 s, 0.99 GB.
-launch fast:4 full handshake_record 65 "hsr_fetch_record.0:6,hsr_next_msg.0:11,fill_nondet.0:33,fill_buf_nondet.0:13" --object-bits 11 -DCH_QUIET_CAP=1 -DCH_PROOF_RXBUF=12
+launch slow:4 full handshake_record 65 "hsr_fetch_record.0:6,hsr_next_msg.0:11,fill_nondet.0:33,fill_buf_nondet.0:13" --object-bits 11 -DCH_QUIET_CAP=1 -DCH_PROOF_RXBUF=12
 # The TRANSPORT=quic driver and its step table, one formula each, with
 # the contract between them written twice: quic_driver stubs
 # hsq_advance to what quic_step.h states, and quic_step proves the
