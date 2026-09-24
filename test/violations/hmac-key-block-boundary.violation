@@ -1,0 +1,12 @@
+invariant: INV-11
+file: hkdf.c
+catches: unit
+reason: hmac_sha256 hashes a key of exactly one block, 64 bytes, though
+  RFC 2104 section 2 hashes only a key longer than the block. Every HMAC
+  under a 64-byte key would then be wrong, and no Finished, binder or
+  PSK would match a peer's. The 64-byte boundary row objects.
+
+--- old
+    if (key_len > SHA256_BLOCK) {
+--- new
+    if (key_len >= SHA256_BLOCK) {

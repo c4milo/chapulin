@@ -527,7 +527,13 @@ last `ROLE=server` stub, as the entry said it would.
   server's handshake directions with ChaCha20 after it chose AES-GCM,
   and `inv11-key-update-drops-suite.violation` rekeys through
   `rec_dir_init`; `bin/srv_flight_test_aes` and `bin/aes_suite_test`
-  each open the result under a reader keyed on its own.
+  each open the result under a reader keyed on its own. The schedule
+  rests on HMAC-SHA-256, which the Wycheproof suite checks directly, and
+  `bin/unit` pins its key-length boundary: a 64-byte key used as it is
+  and a 65-byte key hashed first (RFC 2104 §2).
+  `hmac-key-block-boundary.violation` and
+  `hmac-key-over-block-unhashed.violation` move that boundary one byte
+  each way.
 - **Violation.** A PR hashes a message before validating it, and a
   rejected message influences derived keys.
 - See [decisions: Assurance](decisions.md#assurance).

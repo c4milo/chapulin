@@ -95,6 +95,16 @@ static void test_hmac_hkdf(void) {
     hmac_sha256(key, 131, (const uint8_t *)"Test Using Larger Than Block-Size Key - Hash Key First",
                 54, out);
     CHECK(eq_hex(out, "60e431591ee0b67f0d8a26aacbf5b77f8e0bc6213728c5140546040f0ee37f54"));
+    // The block-size boundary (RFC 2104 §2): a 64-byte key is used as it
+    // is, and a 65-byte key is hashed first. Key bytes 0, 1, 2, ...; the
+    // tags come from Python's hmac module, outside this tree.
+    for (size_t i = 0; i < 65; i++) {
+        key[i] = (uint8_t)i;
+    }
+    hmac_sha256(key, 64, (const uint8_t *)"chapulin hmac key boundary", 26, out);
+    CHECK(eq_hex(out, "49806c179f5bedbbe28bd7f3607ff99b468e6f568ee7d1cb24a5dddefa0ea2c4"));
+    hmac_sha256(key, 65, (const uint8_t *)"chapulin hmac key boundary", 26, out);
+    CHECK(eq_hex(out, "b23cee979aeb89a51ede4850d4779591edc21f1908b43499bd665310bcc74a8c"));
 
     // RFC 5869 case 1.
     uint8_t ikm[22];
