@@ -18,10 +18,13 @@
 // description into *alert and returns CH_EPROTO, so a reader finds the
 // section, the alert and the return on one line.
 //
-// The frozen digest accumulates as the walk goes: one sha256_update
-// over the head, then one per extension the digest covers, over its
-// type, length and body as they sit in the message. frozen_covers
-// names the five extensions the digest leaves out.
+// The frozen digest takes one sha256_update over the head as the walk
+// reads it. Once the walk has accepted every extension, add_frozen_extensions
+// adds one sha256_update per extension the digest covers, over its type,
+// length and body as they sit in the message, in ascending type order
+// rather than in the order the client sent them. frozen_covers names the
+// five extensions the digest leaves out, and docs/decisions.md 59 states
+// why the order is the types' and not the wire's.
 #include "srv_parser.h"
 
 #ifdef CH_ROLE_SERVER
@@ -172,9 +175,77 @@ int srv_ext_duplicate(const uint8_t *exts, size_t n) {
     return 0;
 }
 
-// One extension: its framing, the frozen digest's share of it, and its
-// reader. It runs on the message reader, whose remaining bytes are the
-// block's, because the block ends the message.
+// The covered extension with the smallest type at or above lowest_type: a
+// pointer to its first byte, with its type in *type and its body length
+// in *len. Returns NULL when the block holds no covered extension of
+// such a type, and NULL when the block's framing is malformed, which
+// srv_parse_client_hello has refused before it calls add_frozen_extensions.
+//
+// Of two extensions with one type it reports the first, because only a
+// strictly smaller type replaces the one it holds.
+// add_frozen_extensions would then never add the second, which is why
+// the parser refuses a duplicate before that call.
+static const uint8_t *next_covered(const uint8_t *exts, size_t n, uint32_t lowest_type,
+                                   uint16_t *type, size_t *len) {
+    const uint8_t *found = NULL;
+    rbuf r;
+    rb_init(&r, exts, n);
+    while (rb_left(&r) > 0) {
+        // A zero-length read returns the current position and advances
+        // nothing.
+        const uint8_t *ext = rb_bytes(&r, 0);
+        uint16_t ext_type = rb_u16(&r);
+        size_t ext_len = rb_u16(&r);
+        rb_skip(&r, ext_len);
+        if (r.err) {
+            return NULL;
+        }
+        if (frozen_covers(ext_type) && ext_type >= lowest_type &&
+            (found == NULL || ext_type < *type)) {
+            found = ext;
+            *type = ext_type;
+            *len = ext_len;
+        }
+    }
+    return found;
+}
+
+// Adds every covered extension of the block to the frozen digest, whole
+// and in ascending type order. The order is the types' rather than the
+// wire's because RFC 9846 §4.3 lets extensions appear in any order
+// (rfc9846.txt:1669-1670), and a second ClientHello that keeps each
+// extension and changes the order changes nothing §4.2.2 freezes
+// (docs/decisions.md 59).
+//
+// Requires a block srv_ext_duplicate cleared, so no two extensions share
+// a type: each pass adds the extension of the smallest type above the
+// last one added, so a second extension of one type would never be
+// added. With distinct types the bytes hashed are one string per set of
+// covered extensions, because each extension carries its own type and
+// length.
+//
+// Each pass walks the whole block, and there is one pass per covered
+// extension and one more, so a block of n extensions costs at most
+// (n + 1) * n header reads. docs/decisions.md 59 gives the worst case.
+static void add_frozen_extensions(sha256 *frozen, const uint8_t *exts, size_t n) {
+    // The smallest type the next pass may add. It is 32 bits wide, so the
+    // pass after type 0xffff looks above every type and finds none.
+    uint32_t lowest_type = 0;
+    for (;;) {
+        uint16_t type = 0;
+        size_t len = 0;
+        const uint8_t *ext = next_covered(exts, n, lowest_type, &type, &len);
+        if (ext == NULL) {
+            return;
+        }
+        sha256_update(frozen, ext, 4 + len);
+        lowest_type = (uint32_t)type + 1;
+    }
+}
+
+// One extension: its framing and its reader. It runs on the message
+// reader, whose remaining bytes are the block's, because the block ends
+// the message.
 static int parse_extension(rbuf *r, hello_parse *p) {
     client_hello *ch = p->ch;
     // pre_shared_key must be the last extension (rfc9846.txt:2564-2567),
@@ -185,17 +256,11 @@ static int parse_extension(rbuf *r, hello_parse *p) {
     // Where this extension's body starts, counted from the start of the
     // message: four header bytes past the current position.
     size_t data_off = p->n - rb_left(r) + 4;
-    // The extension's first byte, for the digest below. A zero-length
-    // read returns the current position and advances nothing.
-    const uint8_t *ext = rb_bytes(r, 0);
     uint16_t type = rb_u16(r);
     size_t len = rb_u16(r);
     const uint8_t *data = rb_bytes(r, len);
     if (data == NULL) {
         return srv_refuse(p->alert, ALERT_DECODE_ERROR);
-    }
-    if (frozen_covers(type)) {
-        sha256_update(&p->frozen, ext, 4 + len);
     }
     // §4.2.2: an unrecognized extension is skipped by its length and
     // reaches no check (rfc9846.txt:1299).
@@ -288,12 +353,13 @@ int srv_parse_client_hello(const uint8_t *body, size_t n, client_hello *ch,
     if (r.err || exts_len != rb_left(&r)) {
         return srv_refuse(alert, ALERT_DECODE_ERROR);
     }
-    // The block's first byte, for the duplicate check. A zero-length
-    // read returns the current position and advances nothing.
+    // The block's first byte, for the duplicate check and the frozen
+    // digest. A zero-length read returns the current position and
+    // advances nothing.
     const uint8_t *exts = rb_bytes(&r, 0);
     // One extension of each type per block (rfc9846.txt:1673-1674);
     // illegal_parameter is this design's choice under §6
-    // (rfc9846.txt:3789-3791).
+    // (rfc9846.txt:3789-3791). add_frozen_extensions needs it as well.
     if (srv_ext_duplicate(exts, exts_len)) {
         return srv_refuse(alert, ALERT_ILLEGAL_PARAMETER);
     }
@@ -303,6 +369,7 @@ int srv_parse_client_hello(const uint8_t *body, size_t n, client_hello *ch,
             return rc;
         }
     }
+    add_frozen_extensions(&p.frozen, exts, exts_len);
     sha256_final(&p.frozen, ch->frozen);
     return check_required(ch, alert);
 }

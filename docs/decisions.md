@@ -1401,3 +1401,104 @@ does nothing more.
     nothing bounding what a failed session encrypts under a secret key.
     Building the frame inside chapulin would put a QUIC frame encoder on
     chapulin's side of the line entry 38 draws.
+
+59. **A server compares the extensions of a retried ClientHello as a set:
+    the frozen digest takes them in ascending type order.** colibri found
+    the need through the QUIC Interop Runner on 2026-09-24. Since entry 54
+    (4d897ed) a server asks for X25519MLKEM768 with a HelloRetryRequest
+    when a client lists it and shares x25519 alone, and ngtcp2's interop
+    client does exactly that. Its second ClientHello carries the same
+    extensions in another order: supported_versions moves from after
+    key_share to the front. The server keeps no state across the retry. It
+    compares a SHA-256 digest, carried in the cookie, over every field and
+    extension §4.2.2 does not let the client change, and it computed that
+    digest in the order the extensions sat on the wire. The reorder changed
+    the digest, `srv_check_retry_hello` answered illegal_parameter, and
+    every ngtcp2 handshake that needed a retry failed.
+    `test/srv_quic_retry_vectors.h` holds the two hellos colibri recorded.
+
+    §4.2.2 has the client send "the same ClientHello without modification"
+    apart from five listed changes (rfc9846.txt:1191-1213), and §4.3 lets
+    extensions "appear in any order" (rfc9846.txt:1669-1670). Camilo
+    decided on 2026-09-24 that a reorder is not a modification the server
+    refuses. A second hello that carries exactly the covered extensions of
+    the first, each with the same type and bytes, is accepted in any order.
+    One that
+    adds, drops or changes a covered extension, or changes a head field
+    from legacy_version through legacy_compression_methods, is refused
+    with illegal_parameter as before. The five extensions §4.2.2 lets
+    change, key_share, early_data, cookie, pre_shared_key and padding, stay
+    out of the digest.
+
+    **The construction.** The digest is SHA-256 over the head, then each
+    covered extension whole, its type, length and body, in ascending type
+    order (`add_frozen_extensions`, `srv_parser.c`). The parser already
+    refuses a second extension of any type, unknown types included, with
+    illegal_parameter (`srv_ext_duplicate`, rfc9846.txt:1673-1674), before
+    it computes the digest, so the types in a block it hashes are distinct.
+    With distinct types, one set of covered extensions gives one byte
+    string: the sort order is fixed, and each extension carries its own
+    type and length, so the string reads back into exactly one set. Two
+    different sets therefore give two different strings, and a digest that
+    matches across them is a SHA-256 collision. That is the argument the
+    wire-order digest rested on, with a list replaced by a set. The cookie
+    format does not change: 32 bytes of digest, opened and compared with
+    `ct_memeq` as before. A cookie minted before this change carries a
+    wire-order digest and fails the comparison for any hello whose
+    extensions were not already in ascending order, and a cookie lives for
+    one retry, so nothing supports the old form.
+
+    **The cost.** The walk keeps no list: each pass reads the whole block
+    for the covered extension with the smallest type above the last one it
+    added, and the pass after the last one finds none. A block of n
+    extensions costs at most (n + 1) * n extension headers read, beside
+    the n * (n - 1) / 2 that `srv_ext_duplicate` already read. Nothing new
+    bounds n. The block is at most 65,535 bytes and never longer than
+    `cfg.buf_len`, and an extension is at least 4 bytes, so n is at most
+    16,383, and a device's buffer holds far fewer. A ClientHello of n empty
+    extensions of distinct unknown types, parsed on an arm64 M1 Pro (clang
+    -O2) by the parser before this entry and after it, took:
+
+    | Extensions | Message | Duplicate check | Whole parse, before | Whole parse, after |
+    |---:|---:|---:|---:|---:|
+    | 100 | 443 B | under 1 ms | under 1 ms | under 1 ms |
+    | 1,000 | 4,043 B | 5 ms | 5 ms | 15 ms |
+    | 4,086 | 16,387 B | 75 ms | 74 ms | 252 ms |
+    | 16,383 | 65,575 B | 1.2 s | 1.2 s | 4.1 s |
+
+    A browser or ngtcp2 hello carries 10 to 20 extensions, a few hundred
+    header reads. The last row is a host that accepts a 64 KiB ClientHello:
+    one hello costs it 4.1 s of processor time where it cost 1.2 s
+    before, all of it before any key exists. A cap on the extension count
+    would bound that. None is written here, because the cap would be a new
+    refusal RFC 9846 does not ask for, and a caller who takes a buffer that
+    large chose the exposure.
+
+    Three alternatives were considered and rejected. An XOR of one digest
+    per extension is order-independent, but two copies of one extension
+    cancel and a client could add a pair unseen. A sum of per-extension
+    digests modulo 2^256 does not cancel, but its collision resistance is
+    a generalized birthday bound this record cannot state plainly. Sorting
+    into a buffer costs n log n, and needs memory in proportion to n or a
+    cap on n, which the zero-heap rule and the RFC leave no room for.
+
+    `bin/srv_quic_test` replays the recorded hellos: the first draws a
+    HelloRetryRequest that matches colibri's server's byte for byte up to
+    the digest, and the second completes the handshake through the client
+    Finished, with this server's cookie and the test's own key share written
+    over the recorded ones. The same binary holds the boundary pairs: the
+    first hello's order and ngtcp2's accepted; one covered byte changed,
+    one covered extension dropped, one added, one head byte changed and one
+    extension sent twice refused. `bin/srv_test` holds the digest to a
+    vector over the covered extensions in ascending order. Two CBMC
+    harnesses in the slow tier cover the parser. `srv_parser_frozen`
+    proves the construction above over every extension block up to 24
+    bytes: the duplicate check answers exactly when two types match, and
+    the walk hands SHA-256 each covered extension once, whole, in strictly
+    ascending type order. `srv_parser_walk` proves the whole ClientHello
+    walk memory safe up to 60 bytes with the readers stubbed; it had no
+    launch line before this entry, because harness.h's SHA-256 stub made
+    the formula too large, and it now keeps a stub of its own.
+    OpenSSL's `s_client` offers no option that reorders a retried hello,
+    so `test/e2e.sh` keeps its TCP retry leg, which sends the same order
+    twice and still passes.

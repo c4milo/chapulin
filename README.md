@@ -303,7 +303,7 @@ handshake falls from 2.57 ms to 0.77 ms
 
 Four layers cover four different failure classes.
 
-**Proofs cover memory safety.** Seventy-four of the eighty-eight C sources in
+**Proofs cover memory safety.** Seventy-five of the eighty-eight C sources in
 the tree root are compiled into a [CBMC](https://www.cprover.org/cbmc/) harness that a launch line runs,
 which proves them free of out-of-bounds access, invalid pointers, bad
 shifts, and division by zero, for every input within the harness's
@@ -311,14 +311,14 @@ bound. Signed overflow is checked too, except in the three x25519 mul
 harnesses that turn it off (see the x25519 row). The `X25519=wide`
 field's harnesses also check unsigned wrap, which C defines and the
 other checks never see, because that field's bounds are all on
-unsigned values (see the x25519_wide row). Fourteen sources are in
+unsigned values (see the x25519_wide row). Thirteen sources are in
 no such harness. `tls.c` has none at all: the post-handshake parser
 moved to its own file and took the harness with it, leaving the four
 public calls unproven.
-`srv_parser.c`, `srv_flight.c` and `srv_rec.c` each have one whose
-formula returns no verdict, which the `srv_parser (the walk)`,
-`srv_flight` and `srv_rec` rows below state. `srv_out.c`, `srv_quic.c`,
-`rec.c`, `rec_frame.c` and `rec_step.c` have none; `bin/srv_flight_test`,
+`srv_flight.c` and `srv_rec.c` each have one whose formula returns no
+verdict, which the `srv_flight` and `srv_rec` rows below state.
+`srv_out.c`, `srv_quic.c`, `rec.c`, `rec_frame.c` and `rec_step.c` have
+none; `bin/srv_flight_test`,
 `bin/srv_quic_test`, `bin/srv_rec_test` and `bin/rec_loop_test` test
 them instead. `quic_aes_hw.c` calls the
 compiler's AES intrinsics, which CBMC cannot unwind, and
@@ -394,7 +394,8 @@ apart from one that passed — so for the slow rows, read the nightly.
 | srv_parser_ext | every reader of `srv_parser_ext.c` stays safe and free of UB over an unconstrained extension body, any extension type and any offset the walk can hand it, and each answers `CH_OK` or `CH_EPROTO` | bodies ≤ 24 B |
 | srv_ticket | `srv_ticket_seal` writes only inside the caller's buffer and writes either nothing or the whole `SRV_TICKET_LEN`-byte ticket, which it always writes when the capacity and the ALPN length allow; `srv_ticket_open` reads only inside the bytes it is given, answers `CH_OK` only for a ticket of exactly `SRV_TICKET_LEN` bytes whose first is `SRV_TICKET_VERSION` and whose ALPN length fits its field, and leaves the contents zeroed on a refusal. The AEAD is a contract stub, so that a sealed ticket opens under its own key and under no other is tested in `test/srv_ticket_tests.h` and **not proved**; `ROLE=server` only | tickets ≤ 105 B, one past `SRV_TICKET_LEN`, and any contents; fast tier |
 | srv_resume | `srv_select_auth` walks any identities and binders lists without reading past either, selects a ticket only under `psk_dhe_ke` with a ticket key and a clock, names an index inside the list, and answers `CH_OK` with a way to authenticate, `CH_EAUTH` with decrypt_error, or `CH_EPROTO` with missing_extension or handshake_failure; `srv_send_new_session_ticket` sends at most one ticket, none without a key and a clock, with a lifetime of 1 to `SRV_TICKET_LIFETIME`. `srv_ticket.c`, the key schedule and the builders are contract stubs, so which binder matches is tested in `test/srv_resume_tests.h` and **not proved**; `ROLE=server` only | identities ≤ 117 B, one whole ticket and a short entry; binders ≤ 35 B; slow tier |
-| srv_parser (the walk) | **not proved.** `proof/srv_parser_walk_harness.c` exists and its formula returns no verdict at any `fill_nondet` bound large enough to cover the SHA-256 stub's context; `proof/run.sh` records what was measured. The walk is covered by `bin/srv_test` and twenty `.violation` mutants instead | — |
+| srv_parser_walk | the ClientHello walk in `srv_parser.c` stays safe and free of UB over any message, every byte and the length symbolic, with each reader stubbed to its contract: an accepted hello carried supported_versions and satisfies each rule `check_required` states, and a refused one names one of the five alerts `srv_parser.h` lists. What each reader writes is the srv_parser_ext row's. The duplicate check and the frozen digest's walk run real inside it; SHA-256 is a stub that keeps no context; `ROLE=server` only | messages ≤ 60 B, four empty extensions after the head; slow tier |
+| srv_parser_frozen | the frozen digest a HelloRetryRequest cookie carries (`docs/decisions.md` 59): over any extension block, the ascending walk and `srv_ext_duplicate` stay safe and read only inside the block; on a whole block `srv_ext_duplicate` answers 1 exactly when two extensions share a type, unknown types included; and on a whole block with no duplicate the walk hands SHA-256 each covered extension once, whole, in strictly ascending type order, which is what lets the retry check compare a second ClientHello's extensions as a set. SHA-256 is a stub that records what it is handed, so that the digest itself resists collision rests on SHA-256; `ROLE=server` only | blocks ≤ 24 B, six extensions; slow tier |
 | drbg | the generator stays safe for any request, seeded and across rekeys | requests ≤ 96 B |
 | x509der (two harnesses) | every DER primitive stays safe on hostile bytes at the rbuf shape its caller hands it, honors the pointer contracts the walker rests on, and consumes no more than the per-primitive cap the walker proof replays, in both builds | inputs ≤ 448 B; keyusage at its 256 B extnValue cap |
 | x509parse (two harnesses) | the certificate walker stays safe on any entry list, primitives stubbed to their proven contracts. Only the ECDSA build proves the full two-entry flight; the RSA bound holds one maximum certificate plus framing, so its two-entry walk rests on the ECDSA proof and the walker being identical outside the SPKI arm | ECDSA: ≤ 256 B, two entries; RSA: ≤ 840 B, one entry; both slow tier |

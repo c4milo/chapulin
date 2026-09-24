@@ -3,10 +3,12 @@
 // symbolic, and honours the contract srv_parser.h states on CH_OK and on
 // CH_EPROTO.
 //
-// What is real and what is a stub. srv_parser.c, buf.c and ct.c are real.
-// srv_read_extension is the contract stub below, and SHA-256 is the one in
-// harness.h. proof/srv_parser_ext_harness.c proves the readers that stub
-// stands for.
+// What is real and what is a stub. srv_parser.c, buf.c and ct.c are real,
+// the duplicate check and the ascending walk that feeds the frozen digest
+// included. srv_read_extension is the contract stub below, and SHA-256 is
+// a stub of this harness's own. proof/srv_parser_ext_harness.c proves the
+// readers that stub stands for, and proof/srv_parser_frozen_harness.c
+// proves which bytes the walk hands the hash.
 //
 // Why the parser is two formulas. srv_parser.c walks the extension block
 // and calls a reader that loops again inside each round, so one formula
@@ -15,28 +17,63 @@
 // ct_memeq bounded, and none at a 112-byte body. Splitting at the one
 // entry between the files is the layering proof/p256_ecdh_harness.c and
 // proof/srv_accept_harness.c use.
-#define CH_PROOF_STUB_SHA256
+//
+// Why SHA-256 is not harness.h's stub. That stub writes nondet bytes over
+// the whole 112-byte context on every call, and this formula returned no
+// verdict at any fill bound large enough to cover that context. The walk
+// never reads the context, so the stubs below assert the contract and
+// keep no context at all; sha256_final still returns an unconstrained
+// digest.
 #include "harness.h"
 
 #include <string.h>
 
 #include "srv_parser.c"
 
-#define HELLO_MAX 64
+// A 60-byte message has room for the four empty extensions an accepted
+// hello needs here: supported_versions, signature_algorithms,
+// supported_groups and key_share. The head and the extension block's
+// length take at least 43 bytes, which leaves 17, and the four take 16.
+// At 64 bytes the formula returned no verdict in 18 minutes.
+#define HELLO_MAX 60
+
+void sha256_init(sha256 *s) {
+    __CPROVER_assert(__CPROVER_w_ok(s, sizeof *s), "sha256_init: ctx writable");
+}
+
+void sha256_update(sha256 *s, const uint8_t *in, size_t n) {
+    __CPROVER_assert(__CPROVER_w_ok(s, sizeof *s), "sha256_update: ctx writable");
+    __CPROVER_assert(n == 0 || __CPROVER_r_ok(in, n), "sha256_update: input readable");
+}
+
+void sha256_final(sha256 *s, uint8_t out[SHA256_LEN]) {
+    __CPROVER_assert(__CPROVER_w_ok(s, sizeof *s), "sha256_final: ctx writable");
+    __CPROVER_assert(__CPROVER_w_ok(out, SHA256_LEN), "sha256_final: output writable");
+    for (size_t i = 0; i < SHA256_LEN; i++) {
+        out[i] = nondet_u8();
+    }
+}
 
 // The reader contract, asserted and then havocked. srv_read_extension
-// reads inside e and writes only through p; it answers CH_OK or CH_EPROTO,
-// and on CH_EPROTO it sets an alert. The walk may depend on none of what
-// it writes, which an unconstrained answer is what proves.
+// reads inside e and writes only through p; it answers CH_OK having read
+// any part of its body, or CH_EPROTO with one of the four alerts the
+// readers write. The walk may depend on none of what it writes, which an
+// unconstrained answer is what proves.
 int srv_read_extension(rbuf *e, uint16_t type, size_t data_off, hello_parse *p) {
     __CPROVER_assert(__CPROVER_r_ok(e, sizeof *e), "srv_read_extension: reader readable");
     __CPROVER_assert(__CPROVER_w_ok(p, sizeof *p), "srv_read_extension: parse state writable");
     (void)type;
     (void)data_off;
     if (nondet_u8() != 0) {
-        *p->alert = nondet_u8();
+        uint8_t alert = nondet_u8();
+        __CPROVER_assume(alert == ALERT_DECODE_ERROR || alert == ALERT_ILLEGAL_PARAMETER ||
+                         alert == ALERT_PROTOCOL_VERSION || alert == ALERT_UNSUPPORTED_EXTENSION);
+        *p->alert = alert;
         return CH_EPROTO;
     }
+    size_t used = nondet_size_t();
+    __CPROVER_assume(used <= rb_left(e));
+    rb_skip(e, used);
     return CH_OK;
 }
 
@@ -48,9 +85,7 @@ static int inside(const uint8_t *msg, size_t n, const uint8_t *p, size_t len) {
 int main(void) {
     static uint8_t msg[HELLO_MAX];
     // The message gets its own loop rather than fill_nondet, so its bound
-    // and the SHA-256 stub's context fill can be bounded apart: one
-    // fill_nondet.0 covering both put the formula past a cliff between 97
-    // and 113 that no message size explains.
+    // stands apart from any other fill.
     for (size_t i = 0; i < sizeof msg; i++) {
         msg[i] = nondet_u8();
     }
@@ -102,8 +137,9 @@ int main(void) {
                          "supported_groups and key_share came together");
     } else {
         __CPROVER_assert(alert == ALERT_DECODE_ERROR || alert == ALERT_ILLEGAL_PARAMETER ||
-                             alert == ALERT_PROTOCOL_VERSION || alert == ALERT_MISSING_EXTENSION,
-                         "a refusal writes one of the four descriptions the header lists");
+                             alert == ALERT_PROTOCOL_VERSION || alert == ALERT_MISSING_EXTENSION ||
+                             alert == ALERT_UNSUPPORTED_EXTENSION,
+                         "a refusal writes one of the five descriptions the header lists");
     }
     return 0;
 }

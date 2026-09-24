@@ -289,16 +289,19 @@ typedef struct {
 
     // SHA-256 over the ClientHello fields RFC 9846 §4.2.2 forbids the
     // client to change across a HelloRetryRequest
-    // (rfc9846.txt:1191-1213), accumulated as the parser walks. The
-    // cookie the server mints carries this digest, and the second
-    // ClientHello's digest is compared against it with ct_memeq, which
-    // is how a stateless server checks the freeze rule without storing
-    // the first message. The digest covers every byte of the message
-    // except the five things §4.2.2 permits a second ClientHello to
-    // change: the key_share the HelloRetryRequest asked for, an
-    // early_data extension the second hello removes, the cookie the
-    // second hello adds, the pre_shared_key extension, and the padding
-    // extension's length.
+    // (rfc9846.txt:1191-1213). The cookie the server mints carries this
+    // digest, and the second ClientHello's digest is compared against it
+    // with ct_memeq, which is how a stateless server checks the freeze
+    // rule without storing the first message. The digest covers the head,
+    // legacy_version through legacy_compression_methods, and then every
+    // extension whole, its type, length and body, except the five things
+    // §4.2.2 permits a second ClientHello to change: the key_share the
+    // HelloRetryRequest asked for, an early_data extension the second
+    // hello removes, the cookie the second hello adds, the pre_shared_key
+    // extension, and the padding extension's length.
+    // The extensions go in ascending type order, so a second hello that
+    // reorders them, which §4.3 permits (rfc9846.txt:1669-1670), keeps
+    // the digest (docs/decisions.md 59).
     uint8_t frozen[SHA256_LEN];
 
 #ifdef CH_TRANSPORT_QUIC
@@ -336,8 +339,10 @@ int srv_ext_known(uint16_t type);
 // so it answers for every type including the ones srv_ext_known
 // declines: a duplicate among unrecognized types is still a duplicate,
 // and a seen mask over recognized types alone could not see it. The
-// block is bounded by the ClientHello, which is bounded by
-// cfg.buf_len, and the walk allocates nothing.
+// frozen digest needs that answer: its ascending walk would add only the
+// first of two extensions of one type. The block is bounded by the
+// ClientHello, which is bounded by cfg.buf_len, and the walk allocates
+// nothing.
 //
 // Requires n readable bytes at exts, the extension block's body: the
 // bytes after the two-byte extensions length and nothing else.

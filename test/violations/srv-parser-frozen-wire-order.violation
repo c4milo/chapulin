@@ -1,0 +1,28 @@
+invariant: INV-14
+file: srv_parser.c
+catches: srv_quic_test
+reason: the frozen digest adds the covered extensions in the order the client
+  sent them, which is what the parser did before docs/decisions.md 59. A
+  second ClientHello that keeps every extension and moves one then has
+  another digest, and srv_check_retry_hello refuses it with
+  illegal_parameter. ngtcp2's interop client sends exactly that hello when
+  a server asks it for X25519MLKEM768, and RFC 9846 §4.3 lets extensions
+  appear in any order (rfc9846.txt:1669-1670). test/srv_quic_retry_tests.h
+  replays ngtcp2's two recorded hellos and requires the reordered one to
+  complete the handshake.
+
+--- old
+    add_frozen_extensions(&p.frozen, exts, exts_len);
+--- new
+    (void)add_frozen_extensions;
+    rbuf wire;
+    rb_init(&wire, exts, exts_len);
+    while (rb_left(&wire) > 0) {
+        const uint8_t *ext = rb_bytes(&wire, 0);
+        uint16_t type = rb_u16(&wire);
+        size_t len = rb_u16(&wire);
+        rb_skip(&wire, len);
+        if (frozen_covers(type)) {
+            sha256_update(&p.frozen, ext, 4 + len);
+        }
+    }

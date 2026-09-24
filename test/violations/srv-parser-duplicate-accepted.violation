@@ -1,0 +1,16 @@
+invariant: INV-14
+file: srv_parser.c
+catches: srv_quic_test
+reason: the parser no longer refuses a second extension of one type, which RFC
+  9846 §4.3 forbids (rfc9846.txt:1673-1674). The frozen digest depends on
+  that refusal: it adds the extensions in ascending type order, and of two
+  extensions with one type it adds only the first. So a second ClientHello
+  that repeats an extension keeps the first hello's digest, and the retry
+  check accepts a hello that added an extension. test/srv_quic_retry_tests.h
+  sends ngtcp2's second hello with encrypt_then_mac twice and requires
+  illegal_parameter.
+
+--- old
+    if (srv_ext_duplicate(exts, exts_len)) {
+--- new
+    if (0 && srv_ext_duplicate(exts, exts_len)) {

@@ -132,9 +132,13 @@ webpki_spki 41.1  # local reading, cbmc 6.11.0 on arm64 macOS; replace with the 
 webpki_time 33.3  # local reading, cbmc 6.11.0 on arm64 macOS; replace with the nightly table's number
 x25519_tail 52.7
 
-# srv_parser has no proof at all, not merely no cover floor: its own
-# formula does not converge either, so nothing to measure exists yet.
-# proof/run.sh states the split that would give it one.
+# srv_parser_walk and srv_parser_frozen carry no floor yet. Under the cover
+# command on a development machine on 2026-09-24 (arm64 macOS, cbmc
+# 6.11.0, other formulas solving beside them) both converged, at 78.0% and
+# 41.8%, in 1273 s for the two together. frozen reaches less because it
+# drives the duplicate check and the frozen digest's walk alone, and the
+# rest of srv_parser.c is the walk harness's. Copy the nightly's numbers
+# here once its table prints them.
 # No floor, because `cbmc --cover location` does not converge on them.
 # This is a limit of the measurement, not a gap someone forgot: the
 # same solver cost that makes the proof slow makes counting its

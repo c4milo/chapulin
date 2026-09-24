@@ -1193,27 +1193,54 @@ launch fast full quic_token 130 "fill_nondet.0:113,prove_mint.1:21,prove_mint.2:
 # of the shortest share, so this formula holds the key_share reader's
 # refusals and its walk; bin/srv_test holds each group's exact length.
 launch fast:2 full srv_parser_ext 26 "fill_nondet.0:129,ct_memeq.0:33" buf.c ct.c -DCH_ROLE_SERVER
-# The walk half, proof/srv_parser_walk_harness.c, has no launch line. Its
-# formula converges in 0.32 s at 818 properties when fill_nondet is bounded
-# at 97, and that bound is too small: the SHA-256 contract stub havocs a
-# 112-byte context, so the unwinding assertion fails there and the verdict
-# does not count. At 113, the smallest bound that covers the context, it
-# returned no verdict in 200 s, and the same holds whether the message is
-# filled by fill_nondet or by a loop of its own. The cliff is the stub's
-# symbolic context, not the message size. The harness is kept; what it
-# needs is a SHA-256 stub whose context this formula does not carry.
-# Until then the walk is tested and not proved, and README says so.
-# The line this replaced was the old one-formula parser harness,
-# which parsed any body of up to 256 bytes, and the
-# parser walks it with ten loops that nest: the extension walk in
-# srv_parser.c calls a reader in srv_parser_ext.c that loops again. One
-# formula over all of it returned no verdict in 33 minutes at --unwind 260,
-# nor in 5 minutes at --unwind 65 with fill_nondet and ct_memeq bounded, nor
-# at a 112-byte body. The harness is kept because the split it needs is
-# layered, not smaller: one formula for the walk with the readers stubbed to
-# their contracts, one per reader over its own bytes, which is what
-# proof/p256_ecdh_harness.c and proof/srv_accept_harness.c do. Until that
-# lands the parser is tested and not proved, and README says so.
+# The walk half, proof/srv_parser_walk_harness.c: srv_parser.c real with
+# srv_read_extension stubbed to its contract, over any message up to 60
+# bytes, which leaves room for four empty extensions after the head.
+#
+# It had no launch line before docs/decisions.md 59, and the cause was the
+# SHA-256 contract stub in harness.h, not the walk. That stub havocs a
+# 112-byte context on every call: the formula converged in 0.32 s at 818
+# properties with fill_nondet bounded at 97, which is too small to cover
+# the context, and returned no verdict in 200 s at 113. The harness now
+# keeps SHA-256 stubs of its own that hold no context, because the walk
+# never reads it. Making it converge showed two faults in the harness
+# itself, both fixed: the reader stub wrote any alert byte, and the refusal
+# assertion left out unsupported_extension, which srv_parser_ext.c writes
+# for quic_transport_parameters in a TLS build. The stub now writes one of
+# the four alerts the readers write and consumes any part of its body.
+#
+# The cost is the two walks that loop inside a loop: the duplicate check
+# reads the block up to each extension, and the frozen digest reads the
+# whole block once per covered extension. At 64 bytes the formula
+# returned no verdict in 18 minutes. At 60, measured under this script's
+# flags (arm64 macOS, cbmc 6.11.0, kissat, PROVE_ONLY=srv_parser_walk
+# PROVE_NO_CACHE=1 /usr/bin/time -l, with the srv_parser_frozen formula
+# solving beside it): 834 properties, 548 s, 2.25 GB peak. That is past the
+# fast tier's five minutes, so the nightly runs it in a job of its own, and
+# the weight is 3 for that peak. With check_required's supported_versions
+# refusal removed, the assertion that an accepted hello carried
+# supported_versions fails (794 s), so the formula reaches accepted hellos
+# and does not pass on refusals alone.
+launch slow:3 full srv_parser_walk 8 "main.0:61,sha256_final.0:33,srv_list_has.0:33" buf.c ct.c -DCH_ROLE_SERVER
+# The frozen digest's walk and the duplicate check under it, over any
+# extension block up to 24 bytes, six extensions: the walk reads only
+# inside the block, srv_ext_duplicate answers 1 on a whole block exactly
+# when two types match, and on a whole block with no duplicate the walk
+# hands SHA-256 each covered extension once, whole, in strictly ascending
+# type order (docs/decisions.md 59). buf.c and srv_parser.c are real;
+# SHA-256 is a stub of the harness's own that records what it is handed.
+# Measured the same way, with srv_parser_walk solving beside it for its
+# first 548 s: 700 properties, 909 s, 1.85 GB peak; an earlier run beside
+# other lanes' proofs took 947 s at 1.72 GB. The cost is the walk: split by
+# property at the same 24 bytes, each beside other formulas, memory safety
+# alone took 209 s, the duplicate answer alone 51 s and the order and count
+# alone 393 s, and all of it at 16 bytes took 161 s. Four mutants of
+# srv_parser.c each fail it: the walk in wire order fails the ascending
+# assertion (162 s); a pass that keeps the first covered extension at or
+# above lowest_type rather than the smallest, and one that takes only types
+# strictly above it, fail the count (592 s and 991 s); and srv_ext_duplicate
+# over recognized types alone fails the duplicate answer (822 s).
+launch slow:3 full srv_parser_frozen 8 "main.0:25" buf.c -DCH_ROLE_SERVER
 launch fast full buf 100 ""
 # handshake_record on its own, so the two drivers can stub it
 # (https://github.com/c4milo/chapulin/issues/37). Before this harness,

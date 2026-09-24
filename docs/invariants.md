@@ -921,13 +921,32 @@ last `ROLE=server` stub, as the entry said it would.
   (`rfc9001.txt:1945-1949`), and every build here runs over TLS records,
   because `srv_cfg.h` refuses `CH_ROLE_SERVER` together with
   `CH_TRANSPORT_QUIC`. So the parser recognizes that one type in order
-  to refuse it, rather than ignoring it.
+  to refuse it, rather than ignoring it. After a HelloRetryRequest,
+  `srv_check_retry_hello` refuses with illegal_parameter a second
+  ClientHello whose head or covered extensions differ from the first's,
+  compared as a set through the frozen digest, and accepts one that
+  carries the same extensions in another order (docs/decisions.md 59).
   test/srv_parser_tests.h holds one case per refusal, the boundary pair
   of every length rule, and the ignore rule. Twenty `srv-parser-`
   violations require bin/srv_test to object when one of those rules is
   relaxed, the ignore rule included: sixteen carry this invariant, three
   carry INV-25 because they are the exact-fill rules, and one carries
   INV-8 because it is the 1.3-only rule.
+  The retry rule is test/srv_quic_retry_tests.h, which bin/srv_quic_test
+  runs over the two ClientHellos ngtcp2's interop client sent colibri's
+  server: the reordered second hello completes the handshake, the first
+  hello's order is accepted, and one covered byte changed, one covered
+  extension dropped, one added, one head byte changed and one extension
+  sent twice are refused. test/srv_parser_reader_tests.h holds the digest
+  to a vector over the covered extensions in ascending type order. The
+  srv_parser_frozen CBMC harness proves, over every extension block up to
+  24 bytes, that `srv_ext_duplicate` answers 1 on a whole block exactly
+  when two types match, and that the walk hashes each covered extension
+  of a block without a duplicate once, whole, in strictly ascending type
+  order. srv-parser-frozen-wire-order and srv-parser-duplicate-accepted
+  require bin/srv_quic_test to fail, srv-parser-frozen-skips-lowest-type
+  requires bin/srv_test to fail, and srv-retry-frozen-memcmp carries
+  INV-16 for the reason srv-cookie-memcmp does.
   The Retry token's refusals are test/quic_token_tests.h, which
   bin/srv_quic_test runs: a one-bit flip at every byte, every truncation,
   another address and another key, a valid-tagged token of the reserved

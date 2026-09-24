@@ -10,8 +10,10 @@
 // two builders are on opposite sides of the connection, so neither can
 // hide a mistake in the other.
 //
-// What it does not check: the client Finished, which needs a real client's
-// transcript and key schedule. The steps up to it are what this covers.
+// The first flight stops before the client Finished, which needs a
+// client's transcript and key schedule. test/srv_quic_retry_tests.h runs one
+// handshake to the end: ngtcp2's recorded hellos through a HelloRetryRequest,
+// with the client Finished computed from this tree's key schedule.
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -268,8 +270,9 @@ static void test_both_roles_take_their_own_labels(const ch_cfg *server_cfg) {
 }
 #endif
 
-// The Retry token's cases, which need CHECK above.
+// The Retry token's cases and ngtcp2's retry round, which need CHECK above.
 #include "quic_token_tests.h"
+#include "srv_quic_retry_tests.h"
 
 int main(void) {
     // The client's side of the wire: one hello, built the way a QUIC
@@ -344,6 +347,7 @@ int main(void) {
     test_both_roles_take_their_own_labels(&cfg);
 #endif
     test_quic_token();
+    test_ngtcp2_retry();
 
     if (failures == 0) {
         (void)printf("srv_quic: a ClientHello in, %zu fragments out (%zu initial, %zu handshake)\n",

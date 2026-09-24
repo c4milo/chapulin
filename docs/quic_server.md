@@ -79,9 +79,9 @@ frames, and `quic_fail.[ch]` holds the wipe both drivers share.
 `bin/srv_quic_test` feeds this tree's own ClientHello to it and watches the
 flight come back: the ServerHello at the Initial level and
 EncryptedExtensions, Certificate, CertificateVerify and Finished at the
-Handshake level. What no test here covers yet is the client Finished, which
-needs a real client's transcript; colibri's interop run below drives it
-against aioquic.
+Handshake level. It also runs one handshake through the client Finished,
+over ngtcp2's recorded hellos and a HelloRetryRequest ("The key exchange"
+below), and colibri's interop run below drives it against aioquic.
 
 **The Makefile refusal (was item 5), gone.** `ROLE=server` with
 `TRANSPORT=quic` builds, links and exports nineteen calls. Two of them are
@@ -353,7 +353,13 @@ change.
   HelloRetryRequest at the Initial level where it used to get a
   ServerHello, and its second ClientHello arrives at the Initial level
   again. That is the retry path a client with an empty `client_shares`
-  list always took, so colibri already delivers both hellos.
+  list always took, so colibri already delivers both hellos. The second
+  hello may carry its extensions in another order: ngtcp2's interop
+  client moves `supported_versions` to the front. The server accepts
+  that, because its frozen digest takes the extensions in ascending type
+  order (`docs/decisions.md` entry 59). Before that entry the server
+  refused the reordered hello with illegal_parameter, and every ngtcp2
+  handshake that needed a retry failed in colibri's interop runs.
 
 The QUIC server's `ch_quic` grows from 2,712 to 2,816 bytes on arm64: its
 TX array must hold the 1,216-byte ServerHello, and the handshake state
@@ -366,8 +372,14 @@ X25519MLKEM768 over an Initial-level ServerHello that carries the
 1,120-byte share. `bin/quic_loop_test` requires x25519 from the raw-ecdsa
 client, which lists x25519 alone, for the full handshake and the resumed
 one. `bin/srv_quic_test` drives the same flight with this tree's
-x25519-only hello. No interop run has put the hybrid through colibri's
-UDP path yet; that run is colibri's to make.
+x25519-only hello. It also replays the two ClientHellos ngtcp2's interop
+client sent colibri's server on 2026-09-24 (`test/srv_quic_retry_vectors.h`):
+the first draws a HelloRetryRequest for X25519MLKEM768 whose bytes match
+colibri's server's up to the cookie's frozen digest, and the second,
+reordered, completes the handshake through the client Finished, with this
+server's cookie and the test's own key share written over the recorded
+ones. No interop run has put the hybrid through colibri's UDP path yet;
+that run is colibri's to make.
 
 ## What is missing
 

@@ -721,7 +721,7 @@ is `illegal_parameter` (`rfc9846.txt:3789-3791`, with the description at
 | No overlap in groups, suites or signature schemes | `handshake_failure` (40) | 1145-1148, 1181-1184 | 1181-1184 |
 | A ClientHello after TLS 1.3 was negotiated | `unexpected_message` (10) | 1215-1217 | 1215-1217 |
 | `early_data` in the retried ClientHello | `illegal_parameter` (47) | 2397-2398 | design's choice; 3789-3791 |
-| A retried ClientHello that changed a field §4.2.2 freezes | `illegal_parameter` (47) | 1191-1213 | design's choice; 3789-3791 |
+| A retried ClientHello that changed a field §4.2.2 freezes; the order of its extensions is not one of them (1669-1670, `docs/decisions.md` 59) | `illegal_parameter` (47) | 1191-1213 | design's choice; 3789-3791 |
 | A `change_cipher_spec` record whose body is not the single byte 0x01, or one that arrives protected | `unexpected_message` (10) | 3433-3435 | 3433-3435 |
 | A record content type the document does not define | `unexpected_message` (10) | 3441-3444 | 3441-3444 |
 | A wrong client Finished | `decrypt_error` (51) | 3115-3117 | 3115-3117 |
@@ -2326,10 +2326,20 @@ from the second ClientHello's `legacy_session_id`, the cookie's suite and
 group, and the cookie itself, which the client echoed.
 
 The second digest is SHA-256 over only the ClientHello fields
-`rfc9846.txt:1191-1206` forbids the client to change, accumulated during the
-first parse. On the second ClientHello the server recomputes it and compares
-with `ct_memeq`, which is how it checks the freeze rule without storing the
-first hello. The MAC is compared with `ct_memeq` over all 32 bytes; a mismatch
+`rfc9846.txt:1191-1206` forbids the client to change, computed during the
+first parse: the head, `legacy_version` through
+`legacy_compression_methods`, and then each extension except key_share,
+early_data, cookie, pre_shared_key and padding, whole, from its type through
+its body. The extensions go into the hash in ascending type order, not in the
+order the client sent them (`add_frozen_extensions`, `srv_parser.c`), so a
+second hello that carries the same extensions in another order has the same
+digest. RFC 9846 §4.3 lets extensions appear in any order
+(`rfc9846.txt:1669-1670`), and ngtcp2's interop client reorders them on its
+second hello; `docs/decisions.md` entry 59 gives the construction, why the
+parser's refusal of a second extension of one type is what makes it sound,
+and what the walk costs. On the second ClientHello the server recomputes the
+digest and compares with `ct_memeq`, which is how it checks the freeze rule
+without storing the first hello. The MAC is compared with `ct_memeq` over all 32 bytes; a mismatch
 is `illegal_parameter`, because a cookie the server did not mint is a
 semantically invalid field (`rfc9846.txt:3947`).
 

@@ -1,0 +1,16 @@
+invariant: INV-14
+file: srv_parser.c
+catches: srv_test
+reason: next_covered takes a type strictly above lowest_type instead of at or
+  above it, so the first pass never adds an extension of type 0 and each
+  later pass never adds a type one above the last one added. server_name is
+  type 0, so a second ClientHello that changes the name keeps the frozen
+  digest, and srv_check_retry_hello accepts a field RFC 9846 §4.2.2 freezes
+  (rfc9846.txt:1191-1213). The digest test in
+  test/srv_parser_reader_tests.h changes one byte of each covered extension
+  in turn and requires the digest to move.
+
+--- old
+        if (frozen_covers(ext_type) && ext_type >= lowest_type &&
+--- new
+        if (frozen_covers(ext_type) && ext_type > lowest_type &&

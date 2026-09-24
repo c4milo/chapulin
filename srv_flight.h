@@ -278,7 +278,10 @@ int srv_send_compat_ccs(handshake_state *h, const client_hello *ch);
 // not compare equal, which is a client that changed a field RFC 9846
 // §4.2.2 freezes (rfc9846.txt:1191-1213), and when the second hello
 // carries an early_data extension, which §4.3.10 forbids there
-// (rfc9846.txt:2397-2398). Returns CH_EPROTO with
+// (rfc9846.txt:2397-2398). The digest compares the extensions as a
+// set (client_hello.frozen, srv_parser.h), so a second hello that sends
+// the same extensions in another order passes, as ngtcp2's does, and
+// one that adds, drops or changes one does not. Returns CH_EPROTO with
 // ALERT_HANDSHAKE_FAILURE when the second hello still carries no
 // key_share for the group the cookie named.
 int srv_check_retry_hello(handshake_state *h, const client_hello *ch, selection *sel);

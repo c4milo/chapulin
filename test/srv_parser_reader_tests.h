@@ -67,19 +67,37 @@ static void test_readers(void) {
     CHECK(refused(buf, n, ALERT_DECODE_ERROR));
 }
 
+// The golden hello's covered extensions in ascending type order, written
+// out rather than sorted, so the order the digest takes is stated here:
+// server_name (0x0000), supported_groups (0x000a), signature_algorithms
+// (0x000d), ALPN (0x0010), record_size_limit (0x001c), supported_versions
+// (0x002b), psk_key_exchange_modes (0x002d) and GREASE (0x1a1a).
+static const size_t covered_ascending[] = {
+    AT_SERVER_NAME,       AT_GROUPS,   AT_SIGALGS,   AT_ALPN,
+    AT_RECORD_SIZE_LIMIT, AT_VERSIONS, AT_PSK_MODES, AT_GREASE};
+#define COVERED_COUNT (sizeof covered_ascending / sizeof covered_ascending[0])
+
+// Where one byte of each covered golden extension can change and leave a
+// hello that parses: the last byte, except in supported_versions, whose
+// last two bytes are the 0x0304 the parser requires, so the draft version
+// before them changes instead.
+static size_t changed_at(size_t at) {
+    return at == AT_VERSIONS ? 5 : golden_exts[at].len - 1;
+}
+
 // SHA-256 over the fields §4.1.2 freezes across a HelloRetryRequest: the
-// head and every extension but key_share, early_data, cookie,
-// pre_shared_key and padding, each with its type and length words.
+// head, then every extension but key_share, early_data, cookie,
+// pre_shared_key and padding, each with its type and length words, in
+// ascending type order (docs/decisions.md 59).
 static void test_frozen_digest(void) {
     uint8_t buf[HELLO_CAP];
     uint8_t covered[HELLO_CAP];
     size_t m = sizeof hello_head;
     memcpy(covered, hello_head, m);
-    for (size_t at = 0; at < GOLDEN_EXT_COUNT; at++) {
-        if (at != AT_KEY_SHARE && at != AT_PADDING) {
-            memcpy(covered + m, golden_exts[at].bytes, golden_exts[at].len);
-            m += golden_exts[at].len;
-        }
+    for (size_t i = 0; i < COVERED_COUNT; i++) {
+        const extension *e = &golden_exts[covered_ascending[i]];
+        memcpy(covered + m, e->bytes, e->len);
+        m += e->len;
     }
     uint8_t want[SHA256_LEN];
     sha256_of(covered, m, want);
@@ -107,21 +125,48 @@ static void test_frozen_digest(void) {
     exts[count++] = psk;
     n = assemble(buf, hello_head, sizeof hello_head, exts, count);
     CHECK(parse(buf, n) == CH_OK && memcmp(parsed.frozen, want, SHA256_LEN) == 0);
-    // A change to a frozen field moves it: one random byte, one
-    // supported_groups byte, and the order of two frozen extensions.
-    n = golden(buf);
-    buf[HEAD_RANDOM_AT] ^= 0x01;
-    CHECK(parse(buf, n) == CH_OK && memcmp(parsed.frozen, want, SHA256_LEN) != 0);
-    static const uint8_t groups_reordered[] = {0x00, 0x0a, 0x00, 0x08, 0x00, 0x06,
-                                               0x00, 0x1d, 0x0a, 0x0a, 0x00, 0x17};
-    n = replaced(buf, AT_GROUPS, groups_reordered, sizeof groups_reordered);
-    CHECK(parse(buf, n) == CH_OK && memcmp(parsed.frozen, want, SHA256_LEN) != 0);
+    // The order of the extensions is not frozen (rfc9846.txt:1669-1670):
+    // two swapped, and all ten reversed, keep the digest.
     extension swapped[GOLDEN_EXT_COUNT];
     memcpy(swapped, golden_exts, sizeof swapped);
     swapped[AT_GROUPS] = golden_exts[AT_SIGALGS];
     swapped[AT_SIGALGS] = golden_exts[AT_GROUPS];
     n = assemble(buf, hello_head, sizeof hello_head, swapped, GOLDEN_EXT_COUNT);
-    CHECK(parse(buf, n) == CH_OK && memcmp(parsed.frozen, want, SHA256_LEN) != 0);
+    CHECK(parse(buf, n) == CH_OK && memcmp(parsed.frozen, want, SHA256_LEN) == 0);
+    for (size_t i = 0; i < GOLDEN_EXT_COUNT; i++) {
+        swapped[i] = golden_exts[GOLDEN_EXT_COUNT - 1 - i];
+    }
+    n = assemble(buf, hello_head, sizeof hello_head, swapped, GOLDEN_EXT_COUNT);
+    CHECK(parse(buf, n) == CH_OK && memcmp(parsed.frozen, want, SHA256_LEN) == 0);
+    // A change to a frozen field moves the digest away from the golden
+    // hello's own, as this parser computes it, so each case below holds
+    // the walk and not only the vector above: one random byte, the order
+    // of the groups inside supported_groups, one byte of each covered
+    // extension in turn, one covered extension dropped and one unknown
+    // extension added.
+    n = golden(buf);
+    CHECK(parse(buf, n) == CH_OK);
+    uint8_t kept[SHA256_LEN];
+    memcpy(kept, parsed.frozen, sizeof kept);
+    buf[HEAD_RANDOM_AT] ^= 0x01;
+    CHECK(parse(buf, n) == CH_OK && memcmp(parsed.frozen, kept, SHA256_LEN) != 0);
+    static const uint8_t groups_reordered[] = {0x00, 0x0a, 0x00, 0x08, 0x00, 0x06,
+                                               0x00, 0x1d, 0x0a, 0x0a, 0x00, 0x17};
+    n = replaced(buf, AT_GROUPS, groups_reordered, sizeof groups_reordered);
+    CHECK(parse(buf, n) == CH_OK && memcmp(parsed.frozen, kept, SHA256_LEN) != 0);
+    uint8_t ext[HELLO_CAP];
+    for (size_t i = 0; i < COVERED_COUNT; i++) {
+        size_t at = covered_ascending[i];
+        memcpy(ext, golden_exts[at].bytes, golden_exts[at].len);
+        ext[changed_at(at)] ^= 0x01;
+        n = replaced(buf, at, ext, golden_exts[at].len);
+        CHECK(parse(buf, n) == CH_OK && memcmp(parsed.frozen, kept, SHA256_LEN) != 0);
+    }
+    n = dropped(buf, AT_ALPN);
+    CHECK(parse(buf, n) == CH_OK && memcmp(parsed.frozen, kept, SHA256_LEN) != 0);
+    static const uint8_t unknown[] = {0x2a, 0x2a, 0x00, 0x00};
+    n = appended(buf, unknown, sizeof unknown);
+    CHECK(parse(buf, n) == CH_OK && memcmp(parsed.frozen, kept, SHA256_LEN) != 0);
 }
 
 // quic_transport_parameters, the one extension this parser recognizes in

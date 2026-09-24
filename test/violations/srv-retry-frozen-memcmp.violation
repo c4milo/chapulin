@@ -1,0 +1,15 @@
+invariant: INV-16
+file: srv_flight.c
+catches: test/lint-invariants.sh
+reason: the frozen digest from the cookie is compared with memcmp instead of
+  ct_memeq. memcmp returns at the first differing byte, so a client that
+  can repeat a retry learns how many leading bytes of the digest its second
+  ClientHello matched. srv_cookie.h states that this comparison runs over
+  all SHA256_LEN bytes for the reason the MAC's does, and every answer stays
+  the same, which is why the rule and not a test catches it, the way
+  srv-cookie-memcmp is caught.
+
+--- old
+    if (!ct_memeq(frozen, ch->frozen, sizeof frozen)) {
+--- new
+    if (memcmp(frozen, ch->frozen, sizeof frozen) != 0) {

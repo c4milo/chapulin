@@ -62,21 +62,6 @@ AUDITED = {
         "with the layered split it needs. Delete this entry when that split "
         "gives it a launch line."
     ),
-    "srv_parser.c": (
-        "the extension walk. Every bitwise operator here takes unsigned "
-        "operands: `ch->suites |=` and `ch->seen |=` write a uint8_t and a "
-        "uint16_t mask, `ext_bit` returns uint16_t, and the `seen & ...` "
-        "tests read the same uint16_t. One site is worth the reader's eye, "
-        "`ch->shares & (uint8_t)~ch->groups`, where `~` promotes its uint8_t "
-        "operand to int and the explicit cast brings it back before the and; "
-        "dropping that cast would compare a sign-extended int against a "
-        "uint8_t. No shift anywhere takes a signed left operand. "
-        "proof/srv_parser_walk_harness.c covers this file and returns no "
-        "verdict at a fill bound large enough for the SHA-256 stub's "
-        "context, which proof/run.sh records; the readers half it splits "
-        "from is proved by proof/srv_parser_ext_harness.c. Delete this entry "
-        "when the walk gets a launch line."
-    ),
     "tls.c": (
         "two sites, both `server_pubkey[len - 1] & 1` on a uint8_t array "
         "element, checking that an RSA modulus is odd. No harness compiles "

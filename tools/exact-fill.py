@@ -119,6 +119,13 @@ WALKED = {
         "length of its own to compare, and the block's exact fill was "
         "checked by srv_parse_client_hello before either ran"
     ),
+    ("srv_parser.c", "next_covered", "r"): (
+        "the loop runs while rb_left(&r) > 0 and every framing failure "
+        "returns NULL. It reads the whole extension block on every pass of "
+        "the frozen digest, and srv_parse_client_hello checked that block's "
+        "exact fill, exts_len != rb_left(&r), and walked every extension "
+        "through parse_extension before add_frozen_extensions calls it"
+    ),
 }
 
 READER = re.compile(r"\brb_init\(&(\w+)\s*,")
