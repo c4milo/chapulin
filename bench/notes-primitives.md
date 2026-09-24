@@ -32,7 +32,7 @@ bench/results-aead-arm64.csv; this note does not repeat it.
   handshake groups twice.
 - `X25519=wide` is the build that replaces x25519.c's 16-limb field with
   x25519_wide.c's five 51-bit limbs on the 64x64->128 multiply
-  (docs/decisions.md entry 51). It changes one choice from the default
+  (docs/decisions.md entry 52). It changes one choice from the default
   and no other module, so the CSV times the two x25519 rows and the
   handshakes under it, and nothing else.
 
