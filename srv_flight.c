@@ -19,6 +19,7 @@
 #include "keylog.h"
 #include "keysched.h"
 #include "rand.h"
+#include "srv_kex.h"
 #include "srv_message.h"
 #include "srv_out.h"
 #include "srv_resume.h"
@@ -129,10 +130,12 @@ int srv_select(handshake_state *h, const client_hello *ch, selection *sel) {
     sel->suite = SUITE_CHACHA20_POLY1305_SHA256;
     sel->hash_len = SHA256_LEN;
 #endif
-    if ((ch->groups & SRV_GROUP_KEX) == 0) {
+    // The hybrid whenever the client listed it, x25519 otherwise
+    // (srv_kex.h). A hello that listed neither has no group in common.
+    sel->group = srv_kex_group(ch);
+    if (sel->group == 0) {
         return CH_EPROTO;
     }
-    sel->group = CH_KEX_GROUP;
     // A hello with no scheme a slot signs can still resume a ticket, and
     // only srv_select_auth can tell, so only a hello that offers no PSK
     // fails here.
@@ -147,7 +150,7 @@ int srv_select(handshake_state *h, const client_hello *ch, selection *sel) {
     // Both halves of §4.2.1's retry condition: the group is one this
     // build holds, and no KeyShareEntry arrived for it. A retry defers the
     // ticket to the second hello, whose binders cover the retry.
-    sel->need_retry = (ch->shares & SRV_GROUP_KEX) == 0;
+    sel->need_retry = !srv_kex_shared(ch, sel->group);
     return sel->need_retry ? CH_OK : srv_select_auth(h, ch, sel);
 }
 
@@ -236,10 +239,10 @@ int srv_check_retry_hello(handshake_state *h, const client_hello *ch, selection 
     // srv_cookie_open refused a suite this build does not hold, so the
     // suite needs no second check here: it is whichever one srv_select
     // chose for the first hello, AES-GCM included.
-    if (group != CH_KEX_GROUP) {
+    if (srv_group_bit(group) == 0) {
         return CH_EPROTO;
     }
-    if ((ch->shares & SRV_GROUP_KEX) == 0) {
+    if (!srv_kex_shared(ch, group)) {
         h->alert = ALERT_HANDSHAKE_FAILURE;
         return CH_EPROTO;
     }
@@ -257,12 +260,21 @@ int srv_check_retry_hello(handshake_state *h, const client_hello *ch, selection 
 
 int srv_send_server_hello(handshake_state *h, const client_hello *ch, const selection *sel) {
     ch_tls *t = h->t;
+    // The share first: for the hybrid it is an encapsulation that refuses
+    // an encapsulation key FIPS 203 §7.2 rejects, and a refused hello
+    // needs no random value.
+    uint8_t share[SRV_KEX_SHARE_MAX];
+    size_t share_len = 0;
+    if (srv_kex_share(h, ch, sel->group, share, &share_len) != CH_OK) {
+        h->alert = ALERT_ILLEGAL_PARAMETER;
+        return CH_EPROTO;
+    }
     uint8_t random32[SRV_RANDOM];
     ch_rand_bytes(random32, sizeof random32);
     assert_drawn(random32, sizeof random32);
     uint8_t *msg = t->tx + SRV_OUT_STAGE;
     size_t n = srv_build_server_hello(msg, sizeof t->tx - SRV_OUT_STAGE, sel, random32,
-                                      ch->session_id, ch->session_id_len, h->pub, sizeof h->pub);
+                                      ch->session_id, ch->session_id_len, share, share_len);
     if (n == 0) {
         h->alert = ALERT_INTERNAL_ERROR;
         return CH_ECAP;
@@ -273,16 +285,11 @@ int srv_send_server_hello(handshake_state *h, const client_hello *ch, const sele
 
 int srv_derive_handshake_secrets(handshake_state *h, const client_hello *ch, const selection *sel) {
     ch_tls *t = h->t;
-    // srv_parser.h refuses a KeyShareEntry for this group at any other
-    // length, and this call is reached only after a hello that carried
-    // one, so a missing share is a call-order bug and not peer input.
-    CH_ASSERT(ch->share != NULL && ch->share_len == CH_KEX_CLIENT_SHARE);
-    uint8_t ecdhe[X25519_LEN];
-    int shared_ok = x25519(ecdhe, h->priv, ch->share) != 0;
-    ct_wipe(h->priv, sizeof h->priv);
-    ct_wipe(h->pub, sizeof h->pub);
-    if (!shared_ok) {
-        ct_wipe(ecdhe, sizeof ecdhe);
+    // srv_kex_secret wipes the key exchange's inputs on both exits, and
+    // ikm itself on the refusal.
+    uint8_t ikm[SRV_KEX_SECRET_MAX];
+    size_t ikm_len = 0;
+    if (srv_kex_secret(h, ch, sel->group, ikm, &ikm_len) != CH_OK) {
         h->alert = ALERT_ILLEGAL_PARAMETER;
         return CH_EPROTO;
     }
@@ -298,8 +305,8 @@ int srv_derive_handshake_secrets(handshake_state *h, const client_hello *ch, con
 
     uint8_t hash[SHA256_LEN];
     (void)hsr_transcript_hash(h, hash);
-    ks_handshake(h->early, ecdhe, sizeof ecdhe, hash, h->handshake_secret, h->c_hs, h->s_hs);
-    ct_wipe(ecdhe, sizeof ecdhe);
+    ks_handshake(h->early, ikm, ikm_len, hash, h->handshake_secret, h->c_hs, h->s_hs);
+    ct_wipe(ikm, sizeof ikm);
     ct_wipe(h->early, sizeof h->early);
 #ifdef CH_KEYLOG
     memcpy(h->client_random, ch->random, sizeof h->client_random);

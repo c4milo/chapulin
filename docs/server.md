@@ -672,7 +672,7 @@ before the patch lands than after.
 | Version | TLS 1.3 (0x0304) only | §4.3.1, `rfc9846.txt:1734-1738`, selects from `supported_versions` alone. |
 | Cipher suite | `TLS_CHACHA20_POLY1305_SHA256` (0x1303), then `TLS_AES_256_GCM_SHA384` (0x1302), then `TLS_AES_128_GCM_SHA256` (0x1301) | All three of `rfc9846.txt:4540-4543`. ChaCha is preferred where the client offers it, because it is the code this tree has proved, differential-tested and kept free of tables, and because it keeps the handshake on SHA-256. |
 | Hash | SHA-256 with 0x1303 and 0x1301, SHA-384 with 0x1302 | `rfc9846.txt:4055-4056` binds the hash to the suite. The section above states the cost. |
-| Group | x25519 (0x001d), then secp256r1 (0x0017) | secp256r1 is the §9.1 MUST at `rfc9846.txt:4548-4549`, X25519 the SHOULD at `:4549-4550`. x25519 is preferred because `x25519.c` exists, is proved, and its `cswap` is branchless mask arithmetic (`x25519.c:36`). |
+| Group | X25519MLKEM768 (0x11ec), then x25519 (0x001d) | The hybrid first, for every client that lists it ("Key exchange" below, `docs/decisions.md` entry 54). X25519 is the §9.1 SHOULD at `rfc9846.txt:4549-4550`. secp256r1, the §9.1 MUST at `:4548-4549`, is not held, for the reason `srv_parser.h` gives at `SRV_GROUP_X25519`. |
 | Signature scheme | `ecdsa_secp256r1_sha256` (0x0403), then `rsa_pss_rsae_sha256` (0x0804) | Both are §9.1 CertificateVerify obligations at `rfc9846.txt:4545-4547`. The selected scheme picks which provisioned identity signs. |
 | Key exchange mode | `psk_dhe_ke` when a PSK is selected, certificate authentication otherwise | `rfc9846.txt:1150-1152` requires selecting a mode the client listed. |
 | ALPN | the caller's list, or none | The server cannot know which protocol the endpoint speaks. |
@@ -867,8 +867,9 @@ reviewer who reads one line of this parser will read that one.
   `CH_TRANSPORT_QUIC`. The skip-unknown arm cannot give that answer, so the
   type carries a `SRV_EXT_` bit of its own. `srv_build_encrypted_extensions`
   writes the same extension from a body its caller supplies, which is the
-  server's half of `ch_cfg.transport_params`; every build here passes NULL and
-  sends none. Open question ten covers the driver that would pass one.
+  server's half of `ch_cfg.transport_params`; a build over TLS records passes
+  NULL and sends none, and the QUIC server's driver passes the caller's body
+  (`docs/quic_server.md`).
 
 ## Where the cryptography lives
 
@@ -2351,7 +2352,7 @@ Most of the work. Each row was read at the line given.
 | `record.[ch]` | Unchanged as control flow; the suite and the hash length appear in three lines. `rec_dir_init` derives `AEAD_KEY` bytes at `record.c:7`, and `rec_seal` and `rec_open` call the ChaCha20-Poly1305 functions by name at `record.c:56` and `record.c:82`. |
 | `chacha20.[ch]`, `poly1305.[ch]`, `aead.[ch]` | Unchanged, and not enough: `rfc9846.txt:4540` requires AES-128-GCM beside them and `:4542` makes AES-256-GCM a SHOULD the scope takes. |
 | `x25519.[ch]` | Unchanged and symmetric. The client's all-zero refusal (`handshake.c:300`) is the check a server makes too. |
-| `mlkem.[ch]` | The server half already ships. `mlkem_encaps_derand` (`mlkem.h:40`) has known-answer vectors and a CBMC harness and no library source calls it today, so the code is free. The randomness audit is not: the function takes its 32-byte message `m` from the caller, so a `KEX=pq` server draws a third value through `ch_rand_bytes` and INV-4's count becomes per build for the server as it already is for the client. |
+| `mlkem.[ch]` | Reused as it stood. `srv_kex.c` calls `mlkem_encaps_derand` (`mlkem.h:40`), which already had known-answer vectors and a CBMC harness. The function takes its 32-byte message `m` from the caller, so a server that selects the hybrid draws it through `ch_rand_bytes`, which is INV-4's eighth site ("Key exchange" below). |
 | `handshake_record.[ch]` | Reusable. `accept_record` decrypts with `t->rd` (`handshake_record.c:35`), which is already the read direction. The ChangeCipherSpec tolerance at `handshake_record.c:53-58` is what `rfc9846.txt:1793-1797` requires of a stateless server, already written and already capped at four. |
 | the CertificateVerify signed content | **Moved, then reused.** See below. |
 | `handshake_post.[ch]` | A role arm. A server receives no NewSessionTicket and may write them; KeyUpdate receipt and the one-response rule are the same in both directions. |
@@ -2821,14 +2822,64 @@ early-data discard (see "What the mode does not check"): a client that
 sends 0-RTT records under a ticket this server issued breaks the ticket's
 terms, and its first such record fails with `bad_record_mac`.
 
+## Key exchange
+
+Every server build holds two groups, X25519MLKEM768 and x25519, and
+`srv_kex.[ch]` holds what the server does with them. Camilo answered open
+question ten on 2026-09-24, and `docs/decisions.md` entry 54 records the trade.
+
+**Which group.** The server reads `supported_groups` and prefers the hybrid:
+X25519MLKEM768 whenever the client lists it, x25519 when it lists x25519 alone,
+and handshake_failure when it lists neither (`rfc9846.txt:1145-1148`). The
+key_share then decides between a ServerHello and a HelloRetryRequest, the shape
+RFC 9846 §4.3.8 gives a server that selects from `supported_groups` first
+(`rfc9846.txt:2172-2177`). So a hello that carries the hybrid share gets the
+hybrid in one round trip, with or without an x25519 share beside it; a hello
+that lists the hybrid and shares x25519 alone gets a HelloRetryRequest that
+names X25519MLKEM768, and its second hello must carry that share
+(`rfc9846.txt:2212-2215`); and a hello that lists x25519 alone gets x25519, in
+one round trip or after a retry as before. The retry is the cookie path this
+server already had, and the cookie carries the group.
+
+**The hybrid's bytes.** RFC 10024 fixes them, and `srv_kex.h` states them. The
+client's share is the ML-KEM-768 encapsulation key, 1,184 bytes, then its
+x25519 value; the server encapsulates to that key and answers with the
+1,088-byte ciphertext, then its own x25519 value, 1,120 bytes in all; and the
+input keying material is the ML-KEM shared secret, then the x25519 one. That
+order is the one `handshake_flight.c`'s `hybrid_secret` reads, so a chapulin
+client and a chapulin server agree on it, and OpenSSL 3.6's `s_client` agrees
+with both in `test/e2e.sh`.
+
+**What it refuses.** A hybrid share of any length but 1,216 bytes and an x25519
+share of any length but 32, with illegal_parameter, at the parser. An
+encapsulation key that fails FIPS 203 §7.2's modulus check, with
+illegal_parameter, which RFC 10024 asks of a server; `mlkem_encaps_derand`
+runs the check before it writes anything. An x25519 half that yields the
+all-zero secret, with illegal_parameter (`rfc9846.txt:4293-4295`, INV-3).
+
+**What it draws and wipes.** The 32 bytes of encapsulation randomness come from
+`ch_rand_bytes` when the server selects the hybrid, and not otherwise (INV-4).
+The ML-KEM shared secret lives in `handshake_state.mlkem_ss` from the
+ServerHello, where the encapsulation runs, to `srv_derive_handshake_secrets`,
+which copies it into the input keying material and wipes it (INV-17).
+
+**What it costs.** The ServerHello, staged in the clear in `ch_tls.tx`, is up
+to 1,216 bytes (`SRV_SERVER_HELLO_MAX`, proved sufficient by the
+`srv_message` harness), so a server's TX array holds that many bytes behind
+the record header. `bench/sram.sh` measures the server's `ch_tls` at 1,968
+bytes on arm64, against 1,368 before, and `ch_srv_accept`'s stack peak at
+10,304 bytes, against 5,248, through the encapsulation into K-PKE encrypt.
+Every server object packages `mlkem.c`, `mlkem_poly.c` and `sha3.c`, and its
+frames are held to the hybrid's 6,656-byte budget (INV-19).
+
 ## What is still open
 
-Fifteen questions. The first three block the first line of code. Questions
-eleven through sixteen arrived with the third round of this record. Each one is
-a choice the design cannot make on its own, and each one names what was
-measured on both answers. Question five is answered and has left this list;
-the others keep their numbers, because comments across the tree cite them by
-number.
+Fourteen questions are open. The first three block the first line of code.
+Questions eleven through sixteen arrived with the third round of this record.
+Each one is a choice the design cannot make on its own, and each one names what
+was measured on both answers. Question five is answered and has left this list,
+and question ten is answered and stays below with its answer; the others keep
+their numbers, because comments across the tree cite them by number.
 
 **One: does the hash-agile key schedule land in the shared files or in a role
 arm?** Unconditional keeps one set of signatures for both roles and moves the
@@ -2901,17 +2952,16 @@ order must be chosen, because two documents creating one path is a conflict for
 whoever lands second.
 
 **Ten: does `ROLE=server` multiply with `KEX=pq`, and is a QUIC server in
-scope?** The hybrid's server half already ships and is already proved, so the
-code is nearly free and `KEX=pq` is left open, off by default. The audit is not
-free: a `KEX=pq` server draws a third value through `ch_rand_bytes`, the 32-byte
-ML-KEM encapsulation message `m` (`mlkem.h:40-41`), so INV-4's count becomes
-per build for the server too. `TRANSPORT=quic` with
-`ROLE=server` errors for now: RFC 9001 §4.1.3 removes the record layer, and the
-dummy `change_cipher_spec`, `record_size_limit` and the early-data discard all
-disappear with it. Nothing here forbids it later and nobody has measured what
-the two axes share. `quic_keys.h` also declares three entry points typed
-`secret[SHA256_LEN]` (`:88`, `:100`, `:124`), so the hash-agility question
-applies to that lane too.
+scope? Answered on 2026-09-24.** Both halves are yes, and the first is yes for
+every build rather than for a `KEX=pq` one: a server role holds X25519MLKEM768
+beside x25519 in every build and prefers it, and `KEX` chooses nothing for a
+server ("Key exchange" above, `docs/decisions.md` entry 54). The QUIC server
+had already landed (`docs/quic_server.md`), and it runs the hybrid like the
+other two drivers. The draw the question priced, the 32-byte ML-KEM
+encapsulation message `m` (`mlkem.h:40-41`), is INV-4's eighth site, made only
+when the server selects the hybrid. The note on `quic_keys.h`'s three entry
+points typed `secret[SHA256_LEN]` (`:88`, `:100`, `:124`) belongs to question
+one, and stands.
 
 **Eleven: does `hkdf.c` carry one HMAC body per hash behind a dispatcher?**
 The one-function form is ruled out by measurement rather than by taste: it

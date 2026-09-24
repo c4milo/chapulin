@@ -36,23 +36,22 @@
 #endif
 
 // The NamedGroup code points: x25519 (RFC 9846 §4.3.7), and the X25519MLKEM768 hybrid
-// (RFC 10024). ch_tls.group reports the one the ServerHello selected.
+// (RFC 10024). ch_tls.group reports the one the ServerHello selected, on both sides.
 //
 // A raw or ca client offers one group, and the Makefile KEX variable chooses it: x25519,
 // or the hybrid under -DCH_KEX_PQ. A TRUST=webpki client offers both in every build, with
 // a key share for each (CH_KEX_TWO_GROUPS, docs/decisions.md 53), so -DCH_KEX_PQ would
-// choose nothing there, and a webpki build without a server role refuses it. A build with
-// a server role meets srv_flight.h's refusal instead, until the server's hybrid half
-// lands. CH_KEX_HYBRID marks every client that offers the hybrid and so carries
-// ML-KEM-768: the KEX=pq client and every webpki client. Both defines come from the
-// client's own settings and never from CH_KEX_PQ, so a ROLE=both webpki build keeps its
-// server at x25519.
+// choose nothing there, and a webpki build refuses it. CH_KEX_HYBRID marks every client
+// that offers the hybrid and so carries ML-KEM-768: the KEX=pq client and every webpki
+// client. All three defines describe the client alone. A server role holds both groups
+// in every build, prefers the hybrid and names each group directly (srv_kex.h,
+// docs/decisions.md 54), so none of the three changes what a server selects.
 #define CH_GROUP_X25519 0x001d
 #define CH_GROUP_X25519MLKEM768 0x11ec
 #ifdef CH_TRUST_WEBPKI
 #define CH_KEX_TWO_GROUPS
 #endif
-#if defined(CH_KEX_PQ) && defined(CH_KEX_TWO_GROUPS) && !defined(CH_ROLE_SERVER)
+#if defined(CH_KEX_PQ) && defined(CH_KEX_TWO_GROUPS)
 #error "a TRUST=webpki client offers X25519MLKEM768 and x25519 in every build: drop CH_KEX_PQ"
 #endif
 #if defined(CH_KEX_PQ) || defined(CH_KEX_TWO_GROUPS)

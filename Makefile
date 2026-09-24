@@ -31,8 +31,9 @@ endif
 # clang 21 and clang 23.1.1 -O2 on arm64). 6.5 kB leaves room for
 # compiler variation; 6 kB did not hold clang. The ceiling applies to
 # KEX_HYBRID_SRCS alone, so every other file in an object that carries
-# ML-KEM (KEX=pq, and every TRUST=webpki object since docs/decisions.md
-# 53) keeps the ceiling above and a new buffer there still fails. See
+# ML-KEM (KEX=pq, every TRUST=webpki object since docs/decisions.md 53,
+# and every server role since docs/decisions.md 54) keeps the ceiling
+# above and a new buffer there still fails. See
 # docs/invariants.md INV-19 and the README's memory table.
 STACK_BUDGET_KEX_HYBRID := 6656
 
@@ -308,7 +309,8 @@ QUIC_UNPROBED := $(if $(AES_HW_PROBE),,quic_aes_hw.c quic_ghash_hw.c)
 # HelloRetryRequest cookie) below srv_auth (which identity signs, and
 # what the CertificateVerify covers) below srv_resume (which ticket a
 # hello resumes, and the NewSessionTicket a connection ends with) below
-# srv_flight (the flight handlers) below srv_handshake (the state
+# srv_kex (which group, the server's key share and the shared secret)
+# below srv_flight (the flight handlers) below srv_handshake (the state
 # machine) below srv (the public calls).
 #
 # None of them is a stub any more. docs/server.md, "Stubs first",
@@ -316,7 +318,7 @@ QUIC_UNPROBED := $(if $(AES_HW_PROBE),,quic_aes_hw.c quic_ghash_hw.c)
 # function its header declares from its first commit, so a ROLE=server
 # object linked before any handler was implemented.
 SRV_SRCS := srv_ticket.c srv_parser.c srv_parser_ext.c srv_message.c srv_cookie.c srv_auth.c \
-            srv_out.c srv_resume.c srv_flight.c srv_handshake.c srv.c
+            srv_out.c srv_resume.c srv_kex.c srv_flight.c srv_handshake.c srv.c
 # Which of them were still stubs was read from a marker rather than from
 # a hand-kept list: every stub body held one `// CH_SRV_STUB: ` line and
 # an implemented body held none. SRV_STUB_SRCS read that marker, and two
@@ -737,8 +739,9 @@ LIB_SRCS := $(filter-out $(PIN_FILTER) $(TRUST_FILTER) $(TRANSPORT_FILTER) $(ROL
 # needs from CH_TRUST_WEBPKI alone (docs/decisions.md 53): KEX=x25519
 # would ask for an x25519-only hello, and KEX=pq for the one-group hybrid
 # hello, which ch_cfg.require_pq gives at run time. A server role's key
-# exchange is not a build choice either: it offers x25519 until its
-# hybrid half lands, and then carries ML-KEM in every build. The test is
+# exchange is not a build choice either: it holds X25519MLKEM768 and
+# x25519 in every build, prefers the hybrid, and so carries ML-KEM
+# whatever KEX says (docs/decisions.md 54). The test is
 # $(origin KEX), which tells the default below from a value the command
 # line or the environment set, because the default is the one KEX those
 # builds can build under.
@@ -751,17 +754,17 @@ ifeq ($(ROLE)-$(filter raw-rsa raw-ecdsa ca-rsa ca-ecdsa,$(TRUST)),client-$(TRUS
 KEX_VARIANT := $(KEX)
 else
 ifneq ($(origin KEX),file)
-$(error KEX=$(KEX) chooses the group of a raw or ca client, and TRUST=$(TRUST) ROLE=$(ROLE) is not one: a TRUST=webpki client offers X25519MLKEM768 and x25519 in every build, and a server role's key exchange is fixed (docs/decisions.md 53). Drop KEX, and set ch_cfg.require_pq for the hybrid alone)
+$(error KEX=$(KEX) chooses the group of a raw or ca client, and TRUST=$(TRUST) ROLE=$(ROLE) is not one: a TRUST=webpki client offers X25519MLKEM768 and x25519 in every build, and a server role holds both in every build (docs/decisions.md 53 and 54). Drop KEX, and set ch_cfg.require_pq for the hybrid alone)
 endif
-# What LIB_VARIANT records for a key exchange KEX does not choose: "both"
-# for a build whose client offers the two groups, the fixed x25519
-# otherwise.
-KEX_VARIANT := $(if $(filter webpki,$(TRUST)),both,x25519)
+# What LIB_VARIANT records for a key exchange KEX does not choose: every
+# such build carries both groups, a webpki client because it offers both
+# and a server role because it holds both.
+KEX_VARIANT := both
 endif
 ifeq ($(KEX),pq)
 LIB_DEF += -DCH_KEX_PQ
 endif
-ifneq ($(filter pq-% %-webpki,$(KEX)-$(TRUST)),)
+ifneq ($(filter pq-% %-webpki,$(KEX)-$(TRUST))$(filter server both,$(ROLE)),)
 LIB_SRCS += $(KEX_HYBRID_SRCS)
 endif
 # The X25519 field, which both KEX values run: X25519=portable (default) is
@@ -1017,7 +1020,10 @@ print-rec-loop-srcs:
 # which driver a row skips, and a row has to say which one it wants.
 # srv_shared keeps the property that shape had -- a new srv*.c file that
 # is not a driver lands there, so every role row requires it and an arm
-# that forgot to add it fails here.
+# that forgot to add it fails here. Every server row also requires the
+# ML-KEM-768 and SHA-3 sources and bans -DCH_KEX_PQ, because a server
+# role holds the hybrid in every build and KEX chooses nothing for it
+# (docs/decisions.md 54).
 #
 # The webpki rows read their file lists from nowhere the build reads
 # them: the chain verifiers are written out, and the webpki*.c files are
@@ -1077,10 +1083,10 @@ lint-trust-separation:
 	srv_shared=$$(printf '%s\n' $$srv_files | grep -vxF -e srv_handshake.c -e srv_quic.c -e srv_rec.c | tr '\n' ' '); \
 	check "ROLE=client TRUST=raw-rsa TRANSPORT=tls" "$$client_only tls.c" "$$srv_files $$signers" "" "-DCH_ROLE_SERVER"; \
 	check "ROLE=both TRUST=webpki TRANSPORT=tls" "$$srv_shared srv_handshake.c $$signers tls.c handshake.c sha3.c mlkem.c mlkem_poly.c" "srv_quic.c srv_rec.c" "-DCH_ROLE_SERVER -DCH_ROLE_BOTH" "-DCH_KEX_PQ"; \
-	check "ROLE=server TRUST=none TRANSPORT=tls" "$$srv_shared srv_handshake.c $$signers tls.c rsa.c rsa_mont.c p256.c" "$$client_only srv_quic.c srv_rec.c" "-DCH_ROLE_SERVER" "-DCH_PIN_ECDSA"; \
+	check "ROLE=server TRUST=none TRANSPORT=tls" "$$srv_shared srv_handshake.c $$signers tls.c rsa.c rsa_mont.c p256.c sha3.c mlkem.c mlkem_poly.c" "$$client_only srv_quic.c srv_rec.c" "-DCH_ROLE_SERVER" "-DCH_PIN_ECDSA -DCH_KEX_PQ"; \
 	quic_srv=$$(printf '%s\n' $$quic_always | grep -vxF -e quic_step.c | tr '\n' ' '); \
-	check "ROLE=server TRUST=none TRANSPORT=quic EXPORTER=off" "$$srv_shared srv_quic.c quic_token.c $$signers $$quic_srv" "$$client_only srv_handshake.c srv_rec.c quic_step.c record.c" "-DCH_ROLE_SERVER -DCH_TRANSPORT_QUIC" "-DCH_PIN_ECDSA"; \
-	check "ROLE=server TRUST=none TRANSPORT=record" "$$srv_shared srv_rec.c $$signers rec.c rec_frame.c record.c" "$$client_only srv_handshake.c srv_quic.c rec_step.c" "-DCH_ROLE_SERVER -DCH_TRANSPORT_RECORD" "-DCH_PIN_ECDSA -DCH_TRANSPORT_QUIC"; \
+	check "ROLE=server TRUST=none TRANSPORT=quic EXPORTER=off" "$$srv_shared srv_quic.c quic_token.c $$signers $$quic_srv sha3.c mlkem.c mlkem_poly.c" "$$client_only srv_handshake.c srv_rec.c quic_step.c record.c" "-DCH_ROLE_SERVER -DCH_TRANSPORT_QUIC" "-DCH_PIN_ECDSA -DCH_KEX_PQ"; \
+	check "ROLE=server TRUST=none TRANSPORT=record" "$$srv_shared srv_rec.c $$signers rec.c rec_frame.c record.c sha3.c mlkem.c mlkem_poly.c" "$$client_only srv_handshake.c srv_quic.c rec_step.c" "-DCH_ROLE_SERVER -DCH_TRANSPORT_RECORD" "-DCH_PIN_ECDSA -DCH_TRANSPORT_QUIC -DCH_KEX_PQ"; \
 	[ $$rc = 0 ] && echo "lint-trust-separation: every axis value packages exactly its own sources and defines"; \
 	exit $$rc
 # bench/device-ram.sh builds with CLANG_RV, the clang the codegen lints
@@ -1335,7 +1341,7 @@ bin/quic_test: test/quic_vectors.c quic_aes.c $(AES_IMPL) quic_gcm.c quic_keys.c
 # The flight handlers and what they call in the role, without the parser,
 # which both flight binaries replace with test/srv_flight_tests.h's own.
 SRV_FLIGHT_SRCS := srv_flight.c srv_out.c srv_message.c srv_cookie.c srv_auth.c srv_ticket.c \
-                   srv_resume.c
+                   srv_resume.c srv_kex.c
 bin/srv_flight_test_aes: test/srv_flight_test.c $(SRV_FLIGHT_SRCS) $(SRV_FLIGHT_DEPS) $(SRV_SIGNERS) \
                          quic_gcm.c quic_aes.c $(AES_HW_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
@@ -1407,11 +1413,12 @@ bin/ghash_equiv_test: test/ghash_equiv_test.c test/ghash_equiv_soft.c quic_gcm.c
 # session through tlsi_fail, and session.c's alert path pulls the record
 # layer, the I/O shim and the key derivation record.c runs with it.
 # srv_parser.c reads through buf.c, hashes the frozen fields through sha256.c
-# and compares ALPN names with ct_memeq. srv_flight.c adds the last three:
-# keysched.c for the key schedule, x25519.c for the key exchange, and
-# handshake_record.c for the messages it reads. No stub is left in the role.
+# and compares ALPN names with ct_memeq. srv_flight.c adds keysched.c for
+# the key schedule and handshake_record.c for the messages it reads, and
+# srv_kex.c adds the key exchange: x25519.c, and the ML-KEM-768 and SHA-3
+# sources every server role carries. No stub is left in the role.
 SRV_BELOW := buf.c ct.c session.c io.c record.c aead.c chacha20.c poly1305.c hkdf.c sha256.c \
-             keysched.c x25519.c handshake_record.c
+             keysched.c x25519.c handshake_record.c $(KEX_HYBRID_SRCS)
 # The two signers srv_auth.c calls, each with the arithmetic it computes
 # over, and the two verifiers its boot-time check calls. Every binary
 # that links srv_auth.c links these, and so does the ROLE=server object
@@ -1441,7 +1448,7 @@ SRV_DEPS := buf.c ct.c sha256.c hkdf.c aead.c chacha20.c poly1305.c
 # It links both sides of the connection on purpose, which no packaged
 # object does, so the builder and the parser check each other.
 SRV_QUIC_SRCS := srv_quic.c srv_flight.c srv_out.c srv_message.c srv_cookie.c srv_auth.c \
-                 srv_ticket.c srv_resume.c \
+                 srv_ticket.c srv_resume.c srv_kex.c $(KEX_HYBRID_SRCS) \
                  srv_parser.c srv_parser_ext.c srv.c handshake_message.c handshake_record.c \
                  quic_fail.c quic.c quic_keys.c quic_packet.c quic_initial.c quic_retry.c \
                  quic_aes.c quic_aes_soft.c quic_gcm.c quic_config.c buf.c ct.c sha256.c \
@@ -1482,7 +1489,7 @@ bin/quic_loop_webpki: test/quic_loop_test.c $(QUIC_LOOP_WEBPKI_SRCS) $(HDRS) $(T
 # The record-mode server driver, over the same flight sources the blocking
 # server builds: srv_rec.c replaces srv_handshake.c and rec_frame.c comes
 # with the transport, and no rec_step.c, which is the client's table.
-SRV_REC_SRCS := $(filter-out srv_handshake.c,$(SRV_SRCS)) srv_rec.c rec.c rec_frame.c \
+SRV_REC_SRCS := $(filter-out srv_handshake.c,$(SRV_SRCS)) srv_rec.c rec.c rec_frame.c $(KEX_HYBRID_SRCS) \
                 handshake_message.c handshake_record.c record.c session.c buf.c ct.c sha256.c hkdf.c keysched.c \
                 x25519.c chacha20.c poly1305.c aead.c io.c rsa_sign.c p256_sign.c \
                 p256_scalar.c p256_point.c p256_field.c p256.c rsa.c rsa_mont.c
@@ -1500,12 +1507,22 @@ bin/srv_rec_test: test/srv_rec_test.c $(SRV_REC_SRCS) $(HDRS) $(TESTH)
 # binary, so it also links the certificate parsers a raw-rsa object
 # filters out and this program never reaches.
 REC_LOOP_SRCS := $(filter-out handshake.c,$(SRCS)) rec.c rec_frame.c rec_step.c \
-                 $(filter-out srv_handshake.c,$(SRV_SRCS)) srv_rec.c \
+                 $(filter-out srv_handshake.c,$(SRV_SRCS)) srv_rec.c $(KEX_HYBRID_SRCS) \
                  rsa_sign.c p256_sign.c p256_scalar.c p256_point.c p256_field.c
 bin/rec_loop_test: test/rec_loop_test.c $(REC_LOOP_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) -DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_TRANSPORT_RECORD $(EXPORTER_DEF) -DCH_KEYLOG \
 	  -I. -o $@ test/rec_loop_test.c $(REC_LOOP_SRCS)
+# The same main with the KEX=pq client, which offers X25519MLKEM768 alone,
+# so the server's hybrid half runs against this tree's own client for a
+# full handshake and a resumed one. The Makefile refuses KEX beside
+# ROLE=both for a packaged object, because the server half would ignore it;
+# a test binary may set it, because here it chooses only the client's
+# group, which is what the case is about.
+bin/rec_loop_pq: test/rec_loop_test.c $(REC_LOOP_SRCS) $(HDRS) $(TESTH)
+	@mkdir -p bin
+	$(CC) $(CFLAGS) -DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_TRANSPORT_RECORD -DCH_KEX_PQ $(EXPORTER_DEF) \
+	  -DCH_KEYLOG -I. -o $@ test/rec_loop_test.c $(REC_LOOP_SRCS)
 bin/srv_test: test/srv_test.c srv_message.c srv_cookie.c srv_ticket.c srv_parser.c \
               srv_parser_ext.c $(SRV_DEPS) $(HDRS) $(TESTH)
 	@mkdir -p bin
@@ -1515,7 +1532,7 @@ bin/srv_test: test/srv_test.c srv_message.c srv_cookie.c srv_ticket.c srv_parser
 # srv_parse_client_hello itself, so the flight cases drive every answer the
 # parser's contract admits rather than only the ones a real hello produces;
 # that definition and srv_parser.c cannot link into one object.
-SRV_FLIGHT_DEPS := buf.c ct.c sha256.c hkdf.c keysched.c x25519.c handshake_record.c io.c \
+SRV_FLIGHT_DEPS := buf.c ct.c sha256.c hkdf.c keysched.c x25519.c handshake_record.c io.c $(KEX_HYBRID_SRCS) \
                    record.c aead.c chacha20.c poly1305.c
 bin/srv_flight_test: test/srv_flight_test.c $(SRV_FLIGHT_SRCS) $(SRV_FLIGHT_DEPS) $(SRV_SIGNERS) \
                      $(HDRS) $(TESTH)
@@ -1857,7 +1874,7 @@ run-%: bin/%
 # and the invariant violation builds. The nightly runs it. Splitting on
 # duration rather than on importance is deliberate -- nothing here is
 # optional, and a change is not finished until check-slow passes too.
-check: bin/unit bin/unit_ca bin/unit_pq bin/tlsclient bin/tlsclient_ecdsa bin/tlsclient_ca bin/tlsclient_ca_ecdsa bin/tlsclient_webpki $(if $(AES_HW_PROBE),bin/tlsclient_webpki_aes) $(X25519_WIDE_BINS) bin/tlsclient_pq bin/drbg_test bin/softmul_test bin/rsa_test bin/sha3_test bin/sha512_test bin/p384_test bin/rsa_pkcs1_test bin/webpki_time_test bin/webpki_name_test bin/webpki_spki_test bin/webpki_sigalg_test bin/webpki_cert_test bin/webpki_chain_test bin/webpki_auth_test bin/webpki_encrypted_exts_test bin/mlkem_test bin/handshake_strict_test bin/handshake_strict_pq bin/handshake_strict_webpki bin/webpki_session_test bin/webpki_resume_test bin/webpki_resume_record bin/x509strict bin/x509strict_ecdsa bin/quic_driver_test bin/quic_test bin/recclient $(AES_HW_BINS) lint rand-check bin/srv_auth_test bin/srv_test bin/srv_quic_test bin/srv_quic_both_test bin/srv_rec_test bin/rec_loop_test bin/quic_loop_test bin/quic_loop_webpki bin/tlsserver bin/exporter_test bin/rsa_sign_test bin/p256_field_test bin/p256_ecdh_test bin/p256_sign_test
+check: bin/unit bin/unit_ca bin/unit_pq bin/tlsclient bin/tlsclient_ecdsa bin/tlsclient_ca bin/tlsclient_ca_ecdsa bin/tlsclient_webpki $(if $(AES_HW_PROBE),bin/tlsclient_webpki_aes) $(X25519_WIDE_BINS) bin/tlsclient_pq bin/drbg_test bin/softmul_test bin/rsa_test bin/sha3_test bin/sha512_test bin/p384_test bin/rsa_pkcs1_test bin/webpki_time_test bin/webpki_name_test bin/webpki_spki_test bin/webpki_sigalg_test bin/webpki_cert_test bin/webpki_chain_test bin/webpki_auth_test bin/webpki_encrypted_exts_test bin/mlkem_test bin/handshake_strict_test bin/handshake_strict_pq bin/handshake_strict_webpki bin/webpki_session_test bin/webpki_resume_test bin/webpki_resume_record bin/x509strict bin/x509strict_ecdsa bin/quic_driver_test bin/quic_test bin/recclient $(AES_HW_BINS) lint rand-check bin/srv_auth_test bin/srv_test bin/srv_quic_test bin/srv_quic_both_test bin/srv_rec_test bin/rec_loop_test bin/rec_loop_pq bin/quic_loop_test bin/quic_loop_webpki bin/tlsserver bin/exporter_test bin/rsa_sign_test bin/p256_field_test bin/p256_ecdh_test bin/p256_sign_test
 	# The packaged object is built once per entropy pattern, because
 	# lib-check reads a different export list and a different import
 	# list in each. Only the object is built twice: the examples and
@@ -1971,6 +1988,12 @@ check: bin/unit bin/unit_ca bin/unit_pq bin/tlsclient bin/tlsclient_ecdsa bin/tl
 	# The QUIC arm compiles the QUIC_SRCS, which no other leg compiles
 	# at all, against the 2,560 B device budget (INV-19).
 	$(MAKE) lint-stack TRANSPORT=quic EXPORTER=off
+	# The server object carries ML-KEM in every build (docs/decisions.md
+	# 54). This leg holds ML-KEM's sources to their 6,656 B ceiling and
+	# every server source, srv_kex.c and the signers included, to the
+	# 2,560 B device budget, so a hybrid-sized buffer on a server frame
+	# fails here (INV-19).
+	$(MAKE) lint-stack ROLE=server TRUST=none
 	./bin/unit
 	./bin/unit_ca
 	./bin/unit_pq
@@ -2025,6 +2048,7 @@ check: bin/unit bin/unit_ca bin/unit_pq bin/tlsclient bin/tlsclient_ecdsa bin/tl
 	./bin/srv_quic_both_test
 	./bin/srv_rec_test
 	./bin/rec_loop_test
+	./bin/rec_loop_pq
 	./bin/quic_loop_test
 	./bin/quic_loop_webpki
 	./bin/exporter_test
@@ -3019,6 +3043,8 @@ else
 	# under that define.
 	$(call TIDY_EACH,test/rec_loop_test.c, \
 	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_TRANSPORT_RECORD $(EXPORTER_DEF) -DCH_KEYLOG -I.)
+	$(call TIDY_EACH,test/rec_loop_test.c, \
+	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_TRANSPORT_RECORD -DCH_KEX_PQ $(EXPORTER_DEF) -DCH_KEYLOG -I.)
 	# The QUIC loopback, once per trust mode it is built in, because each
 	# includes a different half.
 	$(call TIDY_EACH,test/quic_loop_test.c, \
@@ -3399,11 +3425,11 @@ lint-impact:
 #     Wycheproof AES-GCM suite on the AES=hw leg check it instead, and
 #     neither measures timing.
 #   srv_parser.c, srv_parser_ext.c, srv_message.c, srv_cookie.c,
-#     srv_ticket.c, srv_auth.c, srv_resume.c, srv_flight.c,
+#     srv_ticket.c, srv_auth.c, srv_resume.c, srv_kex.c, srv_flight.c,
 #     srv_handshake.c, srv.c: the ROLE=server protocol files. They are
 #     parsers and builders, and the transcript hash, the verify_data, the
-#     cookie MAC, the ticket's PSK and the binder pass through them, so
-#     they take a ceiling here.
+#     cookie MAC, the ticket's PSK, the binder and the key exchange's
+#     shared secrets pass through them, so they take a ceiling here.
 #     They take no conditional-branch count, for the reason BRANCH_SRCS
 #     gives below: they branch on lengths, types and states the peer
 #     sent in the clear.
@@ -3437,7 +3463,7 @@ WIDEMUL_CEILING := ct.c:0 sha256.c:0 sha3.c:1 hkdf.c:0 chacha20.c:0 poly1305.c:0
                    quic_fail.c:0 srv_quic.c:0 quic_token.c:0 srv_rec.c:0 \
                    quic_aes.c:0 quic_aes_soft.c:0 quic_aes_extern.c:0 quic_gcm.c:0 \
                    srv_parser.c:0 srv_parser_ext.c:0 srv_message.c:0 srv_cookie.c:0 \
-                   srv_ticket.c:0 srv_resume.c:0 \
+                   srv_ticket.c:0 srv_resume.c:0 srv_kex.c:0 \
                    srv_auth.c:0 srv_out.c:0 srv_flight.c:0 srv_handshake.c:0 srv.c:0 rsa_sign.c:0 \
                    p256_scalar.c:0 p256_point.c:0 p256_sign.c:0 p256_ecdh.c:0 webpki_ticket.c:0
 # The X25519=wide field, x25519_wide.c, is the one secret-bearing source no
@@ -3472,17 +3498,15 @@ CODEGEN_SRCS := $(CODEGEN32_SRCS) $(foreach e,$(WIDE64_CEILING),$(firstword $(su
 # compile only without the transport and role defines, and
 # quic_aes_soft.c, which preprocesses to an empty file under
 # -DCH_AES_EXTERN.
-# srv_flight.c and srv_handshake.c carry -UCH_KEX_PQ because the codegen legs
-# compile every source with -DCH_KEX_PQ and both include srv_flight.h, which is
-# an #error under ROLE=server with it: the server has no KEX=pq half
-# (docs/server.md, open question ten). The leg measures the build that exists,
-# which is KEX=x25519. webpki_ticket.c carries it because cfg.h refuses
-# -DCH_KEX_PQ beside -DCH_TRUST_WEBPKI for a client: that client offers both
-# groups in every build (docs/decisions.md 53).
+# webpki_ticket.c carries -UCH_KEX_PQ because the codegen legs compile every
+# source with -DCH_KEX_PQ and cfg.h refuses it beside -DCH_TRUST_WEBPKI: that
+# client offers both groups in every build (docs/decisions.md 53). The server
+# entries need no such flag. -DCH_KEX_PQ chooses a client's group, and a
+# server source holds both groups whatever it says (docs/decisions.md 54).
 WIDEMUL_DEFINES := quic_keys.c:-DCH_TRANSPORT_QUIC quic_packet.c:-DCH_TRANSPORT_QUIC \
                    quic_config.c:-DCH_TRANSPORT_QUIC quic_step.c:-DCH_TRANSPORT_QUIC \
                    quic.c:-DCH_TRANSPORT_QUIC quic_fail.c:-DCH_TRANSPORT_QUIC \
-                   srv_quic.c:-DCH_ROLE_SERVER$(COMMA)-DCH_TRANSPORT_QUIC$(COMMA)-UCH_KEX_PQ \
+                   srv_quic.c:-DCH_ROLE_SERVER$(COMMA)-DCH_TRANSPORT_QUIC \
                    quic_token.c:-DCH_ROLE_SERVER$(COMMA)-DCH_TRANSPORT_QUIC \
                    quic_aes.c:-DCH_TRANSPORT_QUIC quic_aes_soft.c:-DCH_TRANSPORT_QUIC \
                    quic_aes_extern.c:-DCH_TRANSPORT_QUIC$(COMMA)-DCH_AES_EXTERN \
@@ -3491,10 +3515,9 @@ WIDEMUL_DEFINES := quic_keys.c:-DCH_TRANSPORT_QUIC quic_packet.c:-DCH_TRANSPORT_
                    srv_message.c:-DCH_ROLE_SERVER \
                    srv_cookie.c:-DCH_ROLE_SERVER srv_auth.c:-DCH_ROLE_SERVER \
                    srv_ticket.c:-DCH_ROLE_SERVER \
-                   srv_resume.c:-DCH_ROLE_SERVER$(COMMA)-UCH_KEX_PQ \
-                   srv_out.c:-DCH_ROLE_SERVER$(COMMA)-UCH_KEX_PQ \
-                   srv_flight.c:-DCH_ROLE_SERVER$(COMMA)-UCH_KEX_PQ \
-                   srv_handshake.c:-DCH_ROLE_SERVER$(COMMA)-UCH_KEX_PQ \
+                   srv_resume.c:-DCH_ROLE_SERVER srv_out.c:-DCH_ROLE_SERVER \
+                   srv_kex.c:-DCH_ROLE_SERVER srv_flight.c:-DCH_ROLE_SERVER \
+                   srv_handshake.c:-DCH_ROLE_SERVER \
                    srv.c:-DCH_ROLE_SERVER webpki_ticket.c:-DCH_TRUST_WEBPKI$(COMMA)-UCH_KEX_PQ
 WIDEMUL_PUBLIC := p256.c rsa.c rsa_mont.c pem.c x509.c x509_der.c x509_ca.c sha512.c sha512_compress.c \
                   p384.c p384_field.c rsa_pkcs1.c webpki_time.c webpki_name.c webpki_spki.c webpki_sigalg.c \

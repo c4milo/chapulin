@@ -37,6 +37,7 @@
 #include "cfg.h"
 #include "handshake_message.h"
 #include "sha256.h"
+#include "x25519.h"
 
 // The ClientHello fields whose sizes RFC 9846 fixes.
 //
@@ -79,17 +80,29 @@
 #endif
 
 // The key exchange groups this build can select, one bit each, read
-// from the client's supported_groups and from its key_share. One bit is
-// defined per build, because the KEX axis holds the client's rule here
-// too: a build offers x25519, or the X25519MLKEM768 hybrid under
-// KEX=pq, and never both. CH_KEX_GROUP (handshake_message.h) is the
-// code point this bit stands for. RFC 9846 §9.1 makes secp256r1 a MUST
+// from the client's supported_groups and from its key_share. Every
+// server build holds both: SRV_GROUP_X25519 stands for CH_GROUP_X25519
+// and SRV_GROUP_X25519MLKEM768 for CH_GROUP_X25519MLKEM768 (cfg.h). The
+// Makefile KEX variable chooses a client's group and selects nothing
+// here; srv_kex.h states which group the server prefers
+// (docs/decisions.md 54). RFC 9846 §9.1 makes secp256r1 a MUST
 // (rfc9846.txt:4548-4549), which this build does not meet either: the
 // P-256 this tree holds is verify-only and variable time (p256.h), so a
 // server key exchange over it needs the constant-time arithmetic
 // docs/server.md prices under "p256_field.[ch]". That group drops in as
-// a second bit and changes nothing else here.
-#define SRV_GROUP_KEX 0x01
+// a third bit and changes nothing else here.
+#define SRV_GROUP_X25519 0x01
+#define SRV_GROUP_X25519MLKEM768 0x02
+
+// The SRV_GROUP_ bit of a NamedGroup code point, or 0 for a group this
+// build does not hold. It is a predicate over a public value and
+// changes nothing.
+static inline uint8_t srv_group_bit(uint16_t group) {
+    if (group == CH_GROUP_X25519MLKEM768) {
+        return SRV_GROUP_X25519MLKEM768;
+    }
+    return group == CH_GROUP_X25519 ? SRV_GROUP_X25519 : 0;
+}
 
 // The signature schemes this build can sign a CertificateVerify with,
 // one bit each, read from the client's signature_algorithms. Both are
@@ -169,8 +182,8 @@
 // Everything srv_parse_client_hello learns from one ClientHello. The
 // caller zeroes it; the parser fills it and reads none of it back.
 //
-// Five members point into the caller's message rather than copying:
-// share, cookie, server_name and the two pre_shared_key lists. Each
+// Six members point into the caller's message rather than copying: the
+// two key shares, cookie, server_name and the two pre_shared_key lists. Each
 // pointer dies at the next call that writes cfg.buf, the same lifetime
 // handshake_parser.h gives server_hello_info.cookie, so whoever keeps
 // one of those values copies it first. session_id is copied because it must outlive a
@@ -189,14 +202,17 @@ typedef struct {
     uint8_t shares;  // from key_share: which group a KeyShareEntry carried
     uint8_t sigalgs; // from signature_algorithms
 
-    // The KeyShareEntry.key_exchange bytes for the group this build
-    // holds, and their length. NULL and 0 when the client sent no share
-    // for that group, which is the input a HelloRetryRequest answers.
-    // The parser checks the length against CH_KEX_CLIENT_SHARE
-    // (handshake_message.h) and refuses any other, so a caller that
-    // reads share_len reads a value it already knows.
-    const uint8_t *share;
-    size_t share_len;
+    // The KeyShareEntry.key_exchange bytes for each group this build
+    // holds, NULL when the client sent no share for that group. The
+    // parser refuses a share of any length but its group's, so
+    // x25519_share points at X25519_LEN bytes and hybrid_share at
+    // CH_HYBRID_CLIENT_SHARE bytes (handshake_message.h): the ML-KEM-768
+    // encapsulation key, then the x25519 public value (RFC 10024). A
+    // pointer is set exactly when its bit in shares is. A hello that
+    // carried no share for the group srv_select chose is the input a
+    // HelloRetryRequest answers.
+    const uint8_t *x25519_share;
+    const uint8_t *hybrid_share;
 
     // The cookie extension the client echoed, which is present only in
     // a second ClientHello (rfc9846.txt:1444). srv_check_retry_hello
@@ -360,7 +376,8 @@ int srv_ext_duplicate(const uint8_t *exts, size_t n);
 // be present, or missing_extension (rfc9846.txt:4595-4605), and
 // supported_groups without key_share or the reverse is
 // missing_extension too (rfc9846.txt:4599-4605). A key_share entry for
-// this build's group whose length is not CH_KEX_CLIENT_SHARE is
+// a group this build holds whose length is not that group's
+// (X25519_LEN or CH_HYBRID_CLIENT_SHARE) is
 // illegal_parameter, and so is one for a group supported_groups did
 // not list, which §4.3.8 forbids the client to send. Every list of
 // code points, names, shares, identities or binders must fill the

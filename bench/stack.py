@@ -21,6 +21,10 @@ ROOT = Path(__file__).resolve().parent.parent
 # so main() names the difference instead of printing a silent 0.
 ENTRIES = ["_ch_connect", "_ch_read", "_ch_write", "_ch_close"]
 CA_ENTRIES = ["_ch_pubkey_from_pem"]
+# A ROLE=server build exports ch_srv_accept where a client exports
+# ch_connect, and shares the other three. STACK_CFLAGS names the role the
+# way it names a trust mode.
+SERVER_ENTRIES = ["_ch_srv_accept", "_ch_read", "_ch_write", "_ch_close"]
 # Every root source, minus the ones a build's defines exclude. webpki.c,
 # webpki_ticket.c, webpki_pin.c and webpki_cfg.c read the ch_cfg fields that exist
 # only under CH_TRUST_WEBPKI, so they compile in that build alone; the
@@ -37,6 +41,8 @@ SRCS = sorted(ROOT.glob("*.c"))
 EXTRA_CFLAGS = ["-DCH_RAND_EXTERN"] + os.environ.get("STACK_CFLAGS", "").split()
 if "-DCH_TRUST_WEBPKI" not in EXTRA_CFLAGS:
     SRCS = [s for s in SRCS if s.name not in ("webpki.c", "webpki_ticket.c", "webpki_pin.c", "webpki_cfg.c")]
+if "-DCH_ROLE_SERVER" in EXTRA_CFLAGS and "-DCH_ROLE_BOTH" not in EXTRA_CFLAGS:
+    ENTRIES = SERVER_ENTRIES
 PRUNE = {"_" + f for f in os.environ.get("STACK_PRUNE", "").split(",") if f}
 
 

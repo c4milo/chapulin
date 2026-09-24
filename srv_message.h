@@ -89,6 +89,18 @@ extern const uint8_t srv_hrr_random[SRV_RANDOM];
 #define SRV_CERT_HEAD_LEN 8
 #define SRV_CERT_SUFFIX_LEN 2
 
+// The longest ServerHello srv_build_server_hello writes, which is sent in
+// the clear and staged in ch_tls.tx rather than on a frame: the 4-byte
+// handshake header, legacy_version (2), random (SRV_RANDOM), the
+// legacy_session_id_echo at its longest (1 + SRV_SESSION_ID_MAX),
+// cipher_suite (2), legacy_compression_method (1), the extensions length
+// (2), supported_versions (6), key_share over the hybrid share (8 +
+// CH_HYBRID_SERVER_SHARE) and pre_shared_key (6). That is 1216 bytes, and
+// session.h's CH_TX_SERVER_HELLO holds the same number, which
+// srv_flight.h asserts. An x25519 ServerHello is 1088 bytes shorter.
+#define SRV_SERVER_HELLO_MAX                                                                       \
+    (4 + 2 + SRV_RANDOM + 1 + SRV_SESSION_ID_MAX + 2 + 1 + 2 + 6 + 8 + CH_HYBRID_SERVER_SHARE + 6)
+
 // The ticket_nonce every NewSessionTicket this server sends carries, in
 // bytes (RFC 9846 §4.7.1). RFC 9846 asks only that it be unique among the
 // tickets of one connection (rfc9846.txt:3272-3273), and this server
@@ -121,8 +133,8 @@ typedef struct {
     // would have to be hunted down later.
     uint8_t hash_len;
 
-    // The NamedGroup of the key exchange, CH_KEX_GROUP
-    // (handshake_message.h) in every build today.
+    // The NamedGroup of the key exchange: CH_GROUP_X25519MLKEM768 or
+    // CH_GROUP_X25519 (cfg.h), whichever srv_kex_group chose.
     uint16_t group;
 
     // The SignatureScheme the CertificateVerify will carry:
@@ -132,7 +144,7 @@ typedef struct {
     // member for the slot.
     uint16_t sigalg;
 
-    // Set when the client named a group this build holds and sent no
+    // Set when the client named the group srv_kex_group chose and sent no
     // KeyShareEntry for it, which RFC 9846 §4.2.1 makes the one
     // condition that requires a HelloRetryRequest
     // (rfc9846.txt:1158-1161, rfc9846.txt:1446-1449). It is never set
@@ -167,15 +179,17 @@ typedef struct {
 // bytes the caller drew through ch_rand_bytes; session_id pointing at
 // session_id_len readable bytes, 0 to SRV_SESSION_ID_MAX of them, the
 // bytes the ClientHello carried; share pointing at share_len readable
-// bytes, the server's KeyShareEntry.key_exchange, which is
-// CH_KEX_SERVER_SHARE bytes (handshake_message.h).
+// bytes, the server's KeyShareEntry.key_exchange, which is X25519_LEN
+// bytes for x25519 and CH_HYBRID_SERVER_SHARE bytes for X25519MLKEM768
+// (srv_kex.h).
 //
 // The caller passes a random value it drew for this message and never
 // srv_hrr_random: a ServerHello carrying that value is a
 // HelloRetryRequest, and srv_build_hello_retry_request is the call
 // that writes one.
 //
-// Returns the message length in bytes, or 0 when cap is short.
+// Returns the message length in bytes, or 0 when cap is short. A cap of
+// SRV_SERVER_HELLO_MAX always suffices for those inputs.
 size_t srv_build_server_hello(uint8_t *out, size_t cap, const selection *sel,
                               const uint8_t random32[SRV_RANDOM], const uint8_t *session_id,
                               size_t session_id_len, const uint8_t *share, size_t share_len);

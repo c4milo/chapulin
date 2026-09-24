@@ -42,6 +42,10 @@ int main(void) {
 EOF
 cc -std=c11 -DCH_RAND_EXTERN -DCH_TRUST_WEBPKI -I. -o "$TMP/sz_webpki" "$TMP/sz.c"
 SESSION_WEBPKI=$("$TMP/sz_webpki" | awk '{print $2}')
+# ROLE=server stages its ServerHello in the TX array, and a hybrid one
+# carries a 1120-byte share, so its struct is measured on its own.
+cc -std=c11 -DCH_RAND_EXTERN -DCH_ROLE_SERVER -I. -o "$TMP/sz_server" "$TMP/sz.c"
+SESSION_SERVER=$("$TMP/sz_server" | awk '{print $2}')
 cc -std=c11 -DCH_RAND_EXTERN -DCH_TRUST_WEBPKI -I. -o "$TMP/floor_webpki" "$TMP/floor.c"
 RXBUF_WEBPKI=$("$TMP/floor_webpki" | awk '{print $2}')
 
@@ -56,6 +60,7 @@ RV32_NM=$(command -v llvm-nm || command -v /opt/homebrew/opt/llvm/bin/llvm-nm ||
 SESSION_RV32="unmeasured"
 SESSION_RV32_PQ="unmeasured"
 SESSION_RV32_WEBPKI="unmeasured"
+SESSION_RV32_SERVER="unmeasured"
 if [ -n "$RV32_CLANG" ] && [ -n "$RV32_NM" ]; then
     cat > "$TMP/probe.c" <<'PROBE'
 #include "session.h"
@@ -75,6 +80,7 @@ PROBE
     SESSION_RV32=$(rv32_size "")
     SESSION_RV32_PQ=$(rv32_size "-DCH_KEX_PQ")
     SESSION_RV32_WEBPKI=$(rv32_size "-DCH_TRUST_WEBPKI")
+    SESSION_RV32_SERVER=$(rv32_size "-DCH_ROLE_SERVER")
 fi
 
 echo "session struct:          ${SESSION} B"
@@ -86,6 +92,9 @@ echo "session struct, rv32:    ${SESSION_RV32_PQ} B (KEX=pq)"
 echo "session struct (TRUST=webpki): ${SESSION_WEBPKI} B"
 echo "static working set:      $((SESSION_WEBPKI + RXBUF_WEBPKI)) B (TRUST=webpki, its ${RXBUF_WEBPKI} B floor)"
 echo "session struct, rv32:    ${SESSION_RV32_WEBPKI} B (TRUST=webpki)"
+echo "session struct (ROLE=server): ${SESSION_SERVER} B"
+echo "static working set:      $((SESSION_SERVER + RXBUF)) B (ROLE=server, ${RXBUF} B receive buffer)"
+echo "session struct, rv32:    ${SESSION_RV32_SERVER} B (ROLE=server)"
 
 # Each stack.py report is saved whole, so the CSV rows below come from the
 # same run the report prints.
@@ -119,12 +128,15 @@ head -1 "$TMP/webpki.stack"
 echo "-- KEX=pq; ch_connect peak includes ML-KEM's K-PKE frames --"
 stack_report pq STACK_CFLAGS=-DCH_KEX_PQ
 head -1 "$TMP/pq.stack"
+echo "-- ROLE=server; ch_srv_accept peak is the deeper of the hybrid encapsulation and the RSA-PSS signer --"
+stack_report server STACK_CFLAGS=-DCH_ROLE_SERVER
+head -1 "$TMP/server.stack"
 
 # The CSV carries every column or nothing: without the rv32 toolchain the
 # report above says "unmeasured", and the committed CSV keeps the last
 # full measurement.
 if [ "$SESSION_RV32" = unmeasured ] || [ "$SESSION_RV32_PQ" = unmeasured ] ||
-    [ "$SESSION_RV32_WEBPKI" = unmeasured ]; then
+    [ "$SESSION_RV32_WEBPKI" = unmeasured ] || [ "$SESSION_RV32_SERVER" = unmeasured ]; then
     echo "SKIP bench/results-sram.csv: no rv32 toolchain, so the rv32 column is unmeasured" >&2
     exit 0
 fi
@@ -164,6 +176,11 @@ TMPOUT="$TMP/results-sram.csv"
     row stack_connect_pq "$(peak pq ch_connect)"
     row stack_write "$(peak default ch_write)"
     row stack_close "$(peak default ch_close)"
+    row session_struct_server_arm64 "$SESSION_SERVER"
+    row session_struct_server_rv32 "$SESSION_RV32_SERVER"
+    row static_working_set_server_arm64 "$((SESSION_SERVER + RXBUF))"
+    row static_working_set_server_rv32 "$((SESSION_RV32_SERVER + RXBUF))"
+    row stack_accept_server "$(peak server ch_srv_accept)"
 } > "$TMPOUT"
 mv "$TMPOUT" bench/results-sram.csv
 echo "wrote bench/results-sram.csv" >&2

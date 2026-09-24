@@ -63,22 +63,24 @@
 
 // The hybrid share sizes on each side, in RFC 10024's order: the ML-KEM bytes come first
 // on both sides, despite the group name. Every client that offers the hybrid
-// (CH_KEX_HYBRID, cfg.h) writes and reads them.
-#ifdef CH_KEX_HYBRID
+// (CH_KEX_HYBRID, cfg.h) writes and reads them, and so does every server role, which
+// holds the hybrid in every build (srv_kex.h).
+#if defined(CH_KEX_HYBRID) || defined(CH_ROLE_SERVER)
 #include "mlkem.h"
 #define CH_HYBRID_CLIENT_SHARE (MLKEM_EK_LEN + 32)
 #define CH_HYBRID_SERVER_SHARE (MLKEM_CT_LEN + 32)
 #endif
 
 // The one group a raw or ca client offers (Makefile KEX), and its share size on each side.
-// A server role reads the same three for its own half. A TRUST=webpki client offers both
-// groups and names each one directly, so a webpki build without a server role defines none
-// of the three, and a client source that reads one fails to compile there.
+// A TRUST=webpki client offers both groups and names each one directly, so a webpki build
+// defines none of the three, and a client source that reads one fails to compile there.
+// No server source reads them: a server role holds both groups whatever KEX says and
+// names each one directly (srv_kex.h).
 #ifdef CH_KEX_PQ
 #define CH_KEX_GROUP CH_GROUP_X25519MLKEM768
 #define CH_KEX_CLIENT_SHARE CH_HYBRID_CLIENT_SHARE
 #define CH_KEX_SERVER_SHARE CH_HYBRID_SERVER_SHARE
-#elif !defined(CH_KEX_TWO_GROUPS) || defined(CH_ROLE_SERVER)
+#elif !defined(CH_KEX_TWO_GROUPS)
 #define CH_KEX_GROUP CH_GROUP_X25519
 #define CH_KEX_CLIENT_SHARE 32
 #define CH_KEX_SERVER_SHARE 32

@@ -185,11 +185,11 @@ static void test_server_hello_psk(void) {
     memset(&sel, 0, sizeof sel);
     sel.suite = SUITE_CHACHA20_POLY1305_SHA256;
     sel.hash_len = SHA256_LEN;
-    sel.group = CH_KEX_GROUP;
+    sel.group = CH_GROUP_X25519;
     sel.psk_selected = 1;
     sel.psk_identity = 0x0102;
     uint8_t random32[SRV_RANDOM];
-    uint8_t share[CH_KEX_SERVER_SHARE];
+    uint8_t share[X25519_LEN];
     memset(random32, 0x5a, sizeof random32);
     memset(share, 0x77, sizeof share);
     size_t n =

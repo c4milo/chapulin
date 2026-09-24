@@ -53,6 +53,15 @@
 #else
 #define CH_TX_SECOND_SUITE 0
 #endif
+// A build with a server role stages its ServerHello in the same array, in
+// the clear and before any record is sealed, so the array also holds the
+// largest ServerHello: 1216 bytes, the one that carries the 1120-byte
+// X25519MLKEM768 share after the longest legacy_session_id_echo and a
+// pre_shared_key extension (SRV_SERVER_HELLO_MAX, srv_message.h, which
+// srv_flight.h asserts equal to this literal). It raises the two values
+// below it, the classic raw and ca ones over TLS and over QUIC; every
+// other value is larger already.
+#define CH_TX_SERVER_HELLO 1216
 #ifndef CH_TX_STAGE
 #ifdef CH_TRANSPORT_QUIC
 // A QUIC hello differs from the TLS one by three extensions. It drops
@@ -69,6 +78,8 @@
 #define CH_TX_STAGE 2625
 #elif defined(CH_KEX_PQ)
 #define CH_TX_STAGE 2325
+#elif defined(CH_ROLE_SERVER)
+#define CH_TX_STAGE CH_TX_SERVER_HELLO
 #else
 #define CH_TX_STAGE 1141
 #endif
@@ -89,6 +100,8 @@
 // 137 fixed + 320 ticket identity + 128 cookie with framing + the
 // 1216-byte hybrid share.
 #define CH_TX_STAGE 1801
+#elif defined(CH_ROLE_SERVER)
+#define CH_TX_STAGE CH_TX_SERVER_HELLO
 #else
 // The same sum with a 32-byte x25519 share: 617. Above the 529 a sealed record
 // needs, which is why a maximum ticket identity plus a maximum retry cookie
@@ -164,10 +177,13 @@ typedef struct {
     // parse_key_share accepted — CH_GROUP_X25519 or
     // CH_GROUP_X25519MLKEM768 (cfg.h), one per raw or ca build, and
     // whichever the ServerHello selected under CH_KEX_TWO_GROUPS — and 0
-    // before any ServerHello or when it carried no key_share. Public
+    // before any ServerHello or when it carried no key_share. A server
+    // role writes the group its own ServerHello selected, once the hello
+    // it answers is settled: CH_GROUP_X25519MLKEM768 whenever the client
+    // listed it, and CH_GROUP_X25519 otherwise (srv_kex.h). Public
     // information, like pin_slot: a caller reads it to see which exchange
-    // protected the session, and cfg.require_pq fails the handshake when it
-    // is not the hybrid.
+    // protected the session, and a client's cfg.require_pq fails the
+    // handshake when it is not the hybrid.
     uint16_t group;
 #if defined(CH_SUITE_AES_GCM) && !defined(CH_ROLE_SERVER)
     // The cipher suite the ServerHello selected, which a client written

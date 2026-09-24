@@ -53,13 +53,10 @@ static int failures = 0;
         }                                                                                          \
     } while (0)
 
-// The vectors below spell the key_share extension out, so they hold only for
-// the classic key exchange. The Makefile builds this binary with no KEX
-// define, so a build that ever gains one stops here instead of comparing
-// against bytes for the other group.
-_Static_assert(CH_KEX_GROUP == CH_GROUP_X25519, "the vectors here spell x25519's code point");
-_Static_assert(CH_KEX_SERVER_SHARE == 32, "the vectors here spell a 32-byte server share");
-_Static_assert(CH_KEX_CLIENT_SHARE == 32, "the vectors here spell a 32-byte client share");
+// The vectors below spell the key_share extension out for x25519, the group
+// whose code point and 32-byte share they name. Every server build holds it
+// beside X25519MLKEM768, so they hold in every build, and the hybrid's
+// shares have cases of their own.
 
 // One scratch buffer, larger than any message these vectors build. The
 // CertificateVerify length case is the one call that needs more, and it
@@ -97,6 +94,7 @@ int main(void) {
     test_exact_fill();
     test_required_extensions();
     test_key_share();
+    test_hybrid_key_share();
     test_pre_shared_key();
     test_alpn();
     test_readers();

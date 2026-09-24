@@ -72,6 +72,12 @@ static void test_webpki_resumption(void) {
     CHECK(server.t.psk_selected == 1 && server.t.sigalg == 0);
     CHECK(handshake_messages() == 2);
     check_keys_agree();
+    // The webpki client shares both groups, and the server prefers the
+    // hybrid, so the resumed handshake's key exchange is X25519MLKEM768
+    // (docs/decisions.md 54), with the Initial-level ServerHello carrying
+    // its 1120-byte share.
+    CHECK(server.t.group == CH_GROUP_X25519MLKEM768);
+    CHECK(client.t.group == CH_GROUP_X25519MLKEM768);
 
     // The ticket the server issues at the end carries a binding to this
     // hostname and these anchors, which is only true if ch_quic_init took
@@ -87,6 +93,7 @@ static void test_webpki_resumption(void) {
     present_ticket(&ccfg);
     CHECK(run_quic(&ccfg, &scfg));
     CHECK(server.t.psk_selected == 1);
+    CHECK(server.t.group == CH_GROUP_X25519MLKEM768);
 
     // What ch_quic_init refuses, with CH_EINVAL and nothing sent: a binding
     // one bit off, the ticket under another hostname, a ticket with no

@@ -39,19 +39,7 @@
 #include "handshake_parser.h"
 #include "handshake_record.h"
 #include "srv_auth.h"
-
-// The hybrid key exchange has no server half here, for two structural
-// reasons. handshake_state gives the server's share h->pub, which is
-// X25519_LEN bytes against CH_KEX_SERVER_SHARE's 1120 under KEX=pq. And
-// that share's ML-KEM half is a ciphertext under the client's
-// encapsulation key, which srv_begin has not read where this header
-// draws the server's secrets. Open question ten leaves the pair open.
-// The guard sits in the header every server source includes, so a
-// KEX=pq build stops at the first of them rather than at srv_flight.c
-// alone.
-#ifdef CH_KEX_PQ
-#error "ROLE=server has no KEX=pq half yet (docs/server.md, open question ten); use KEX=x25519"
-#endif
+#include "srv_message.h"
 
 // The cookie fits the field the handshake state already carries, so the
 // retry costs the session no new bytes. Both constants are visible
@@ -61,12 +49,19 @@
 #ifndef __cplusplus
 _Static_assert(SRV_COOKIE_MAX <= HSP_COOKIE_MAX,
                "a minted cookie must fit the handshake state's cookie field");
+// The ServerHello is staged in ch_tls.tx, which session.h sizes to hold
+// it through a literal because srv_message.h sits above that header. The
+// equality catches a literal left behind by a change to the message.
+_Static_assert(SRV_SERVER_HELLO_MAX == CH_TX_SERVER_HELLO,
+               "session.h's CH_TX_SERVER_HELLO must be the largest ServerHello");
+_Static_assert(SRV_SERVER_HELLO_MAX <= CH_TX_STAGE, "the largest ServerHello must fit TX staging");
 #endif
 
 // Draws the server's ephemeral secrets and starts the transcript.
-// Writes h->priv and h->pub, writes h->dz under KEX=pq, and calls
-// sha256_init on t->transcript. It does not draw the ServerHello random
-// here: that value is drawn where the message is built, because a
+// Writes h->priv and h->pub and calls sha256_init on t->transcript. The
+// ML-KEM randomness is not drawn here: srv_send_server_hello draws it
+// through srv_kex_share, and only when the server selected the hybrid. It does not draw the
+// ServerHello random here: that value is drawn where the message is built, because a
 // HelloRetryRequest carries srv_hrr_random in its place and the two
 // messages are written at different call sites.
 //
@@ -140,13 +135,15 @@ int srv_read_client_hello(handshake_state *h, client_hello *ch);
 // in quic_aes.c, which is admitted for QUIC Initial keys because those
 // are public and which would leak a TLS traffic key through cache
 // timing. So this build does not meet §9.1's cipher suite requirement
-// and does not claim to. The group order and the signature scheme
-// order are docs/server.md's, and a scheme whose identity slot
-// srv_identity_live leaves unset is not selected.
+// and does not claim to. The group order is srv_kex_group's:
+// X25519MLKEM768 whenever the client listed it, and x25519 otherwise
+// (docs/decisions.md 54). The signature scheme order is
+// docs/server.md's, and a scheme whose identity slot srv_identity_live
+// leaves unset is not selected.
 //
 // It sets sel->need_retry when both halves hold: the client's
-// supported_groups names the group this build holds, and its key_share
-// carried no KeyShareEntry for that group. RFC 9846 §4.2.1 makes that
+// supported_groups names the group srv_kex_group chose, and its
+// key_share carried no KeyShareEntry for that group. RFC 9846 §4.2.1 makes that
 // a MUST (rfc9846.txt:1158-1161) and §4.2.4 states the same condition
 // in general terms (rfc9846.txt:1446-1449). Those two halves are
 // exactly the two checks the client runs on selected_group in reply
@@ -154,7 +151,10 @@ int srv_read_client_hello(handshake_state *h, client_hello *ch);
 // would send a HelloRetryRequest the client aborts. The common input
 // is the empty client_shares list §9.2 permits
 // (rfc9846.txt:4599-4601), which is strictly conformant and costs one
-// round trip.
+// round trip. The other is a client that lists the hybrid and shares
+// x25519 alone: the server asks for the hybrid rather than take the
+// x25519 share, which costs that client one round trip and nobody else
+// one.
 //
 // Requires a ch that srv_read_client_hello filled and a writable sel.
 //
@@ -288,20 +288,27 @@ int srv_check_retry_hello(handshake_state *h, const client_hello *ch, selection 
 // (rfc9846.txt:1358-1363), echoes the client's legacy_session_id
 // (rfc9846.txt:1365-1368) and carries the server's key share for
 // sel->group, and the selected ticket's index when sel->psk_selected is
-// set.
+// set. The share is srv_kex_share's: h->pub for x25519, and for
+// X25519MLKEM768 the ML-KEM ciphertext it encapsulates to the client's
+// encapsulation key, then h->pub, keeping the ML-KEM shared secret in
+// h->mlkem_ss.
 //
-// Requires srv_begin to have run, so h->pub holds the share this
-// message sends, and a sel whose need_retry is clear.
+// Requires srv_begin to have run, so h->pub holds the server's x25519
+// value, and a sel whose need_retry is clear, so the hello carried a
+// share for sel->group.
 //
-// Returns CH_OK. Returns CH_EIO for a failed send, and CH_ECAP with
-// ALERT_INTERNAL_ERROR when the staging array cannot hold the message.
+// Returns CH_OK. Returns CH_EPROTO with ALERT_ILLEGAL_PARAMETER when the
+// client's encapsulation key fails FIPS 203 §7.2's modulus check, which
+// RFC 10024 makes the server's abort. Returns CH_EIO for a failed send,
+// and CH_ECAP with ALERT_INTERNAL_ERROR when the staging array cannot
+// hold the message.
 int srv_send_server_hello(handshake_state *h, const client_hello *ch, const selection *sel);
 
 // Completes the key exchange and derives the handshake secrets, then
-// installs the handshake keys in both directions. It runs x25519 over
-// h->priv and the client's share, or, under KEX=pq, encapsulates to
-// the client's encapsulation key and puts the ML-KEM shared secret
-// ahead of the x25519 one, which is RFC 10024's order despite the
+// installs the handshake keys in both directions. srv_kex_secret runs
+// x25519 over h->priv and the client's x25519 value, and for
+// X25519MLKEM768 puts the ML-KEM shared secret srv_send_server_hello
+// kept ahead of the x25519 one, which is RFC 10024's order despite the
 // group's name. Then it takes the transcript hash and calls
 // ks_handshake (keysched.h), which writes the client secret before the
 // server one. The early secret ks_handshake extracts from is the one
@@ -321,8 +328,8 @@ int srv_send_server_hello(handshake_state *h, const client_hello *ch, const sele
 // Requires a ch whose share still points at live bytes in cfg.buf:
 // nothing may read a further message between the parse and this call.
 //
-// Wipes h->priv and h->pub, and h->dz under KEX=pq, along with the
-// shared secret itself, on both exits.
+// Wipes h->priv, h->pub and h->mlkem_ss, along with the input keying
+// material itself, on both exits.
 //
 // Returns CH_OK. Returns CH_EPROTO with ALERT_ILLEGAL_PARAMETER when
 // x25519 yields the all-zero shared secret, which RFC 9846 §7.4.2

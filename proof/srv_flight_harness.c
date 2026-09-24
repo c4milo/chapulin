@@ -6,8 +6,8 @@
 // The layering is proof/srv_accept_harness.c's, turned around. There the
 // driver was real and these fifteen were contract stubs; here they are
 // real and everything they call is one: the parser, the nine builders,
-// the cookie, srv_auth.h's and srv_resume.h's entries, the record reader,
-// the key schedule, the record layer and the I/O shim. Each stub asserts
+// the cookie, srv_auth.h's, srv_resume.h's and srv_kex.h's entries, the
+// record reader, the key schedule, the record layer and the I/O shim. Each stub asserts
 // what its header requires of a caller and havocs what its header says
 // it writes. ct.c is real, because the wipes and the two constant-time
 // comparisons are this file's own steps.
@@ -53,7 +53,6 @@ static selection sel;
 static uint8_t message[MSG_MAX];
 static uint8_t name_bytes[NAME_MAX];
 static uint8_t cookie_bytes[SRV_COOKIE_MAX];
-static uint8_t share_bytes[CH_KEX_CLIENT_SHARE];
 static uint8_t sni_area[NAME_MAX];
 static uint8_t der_bytes[CHAIN_MAX][DER_MAX];
 static ch_cert chain[CHAIN_MAX];
@@ -80,14 +79,6 @@ void ch_rand_bytes(uint8_t *p, size_t n) {
     // rand.h's contract: an all-zero draw is a hook that returned
     // without writing, which the handlers catch with CH_ASSERT.
     __CPROVER_assume(n == 0 || p[0] != 0);
-}
-
-int x25519(uint8_t out[X25519_LEN], const uint8_t scalar[X25519_LEN], const uint8_t point[32]) {
-    __CPROVER_assert(__CPROVER_w_ok(out, X25519_LEN), "x25519: output writable");
-    __CPROVER_assert(__CPROVER_r_ok(scalar, X25519_LEN), "x25519: scalar readable");
-    __CPROVER_assert(__CPROVER_r_ok(point, X25519_LEN), "x25519: point readable");
-    fill_nondet(out, X25519_LEN);
-    return nondet_int();
 }
 
 void x25519_base(uint8_t out[X25519_LEN], const uint8_t scalar[X25519_LEN]) {
@@ -196,9 +187,9 @@ static void fill_hello(client_hello *ch) {
     ch->groups = nondet_u8();
     ch->shares = nondet_u8();
     ch->sigalgs = nondet_u8();
-    // srv_parser.h refuses a share for this group at any other length.
-    ch->share = (nondet_u8() & 1) ? share_bytes : NULL;
-    ch->share_len = CH_KEX_CLIENT_SHARE;
+    // Only srv_kex.c reads the shares, and its stubs read none of them.
+    ch->x25519_share = NULL;
+    ch->hybrid_share = NULL;
     ch->cookie = (nondet_u8() & 1) ? cookie_bytes : NULL;
     ch->cookie_len = nondet_size_t();
     __CPROVER_assume(ch->cookie_len <= sizeof cookie_bytes);
@@ -353,6 +344,7 @@ uint8_t srv_identity_live(const ch_cfg *cfg) {
     return nondet_u8();
 }
 
+#include "srv_kex_stubs.h"
 #include "srv_select_stubs.h"
 const ch_identity *srv_identity_for(const ch_cfg *cfg, uint16_t sigalg) {
     __CPROVER_assert(__CPROVER_r_ok(cfg, sizeof *cfg), "identity_for: cfg readable");
@@ -468,7 +460,6 @@ int main(void) {
     refusal_wrote_alert(srv_send_server_hello(&h, &hello, &sel));
 
     fresh();
-    __CPROVER_assume(hello.share != NULL);
     rc = srv_derive_handshake_secrets(&h, &hello, &sel);
     refusal_wrote_alert(rc);
     {

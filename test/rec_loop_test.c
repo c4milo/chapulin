@@ -38,6 +38,12 @@
 // every traffic secret to ch_keylog below, and the four labels must
 // carry one client random and one secret apiece on both ends, which is
 // what lets a capture tool decrypt a connection from either side's log.
+//
+// The Makefile builds it twice, once per group a raw client can offer.
+// bin/rec_loop_test's client offers x25519 alone, and the server, which
+// holds both groups, must select x25519. bin/rec_loop_pq's client is the
+// KEX=pq one and offers X25519MLKEM768 alone, and the server must select
+// the hybrid, for the full handshake and for the resumed one.
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -112,7 +118,24 @@ static const ch_cert chain[1] = {
 };
 static const uint8_t cookie_key[SHA256_LEN] = {7};
 
-static uint8_t srv_buf[CH_MIN_RXBUF];
+// The group both ends must report, the one the client's build offers.
+#ifdef CH_KEX_PQ
+#define LOOP_GROUP CH_GROUP_X25519MLKEM768
+#else
+#define LOOP_GROUP CH_GROUP_X25519
+#endif
+
+// The client's buffer is its build's floor, which sizes it for the
+// ServerHello it reads. The server's holds the client's hello, and a
+// KEX=pq client's carries the 1216-byte hybrid share and a ticket past
+// that floor, so that build gives the server room for the largest hello
+// its client sends.
+#ifdef CH_KEX_PQ
+#define LOOP_SRV_BUF (REC_HDR + CH_HELLO_MAX)
+#else
+#define LOOP_SRV_BUF CH_MIN_RXBUF
+#endif
+static uint8_t srv_buf[LOOP_SRV_BUF];
 static uint8_t cli_buf[CH_MIN_RXBUF];
 static ch_rsa_priv rsa_key;
 
@@ -352,6 +375,9 @@ int main(void) {
     CHECK(ch_record_state(&server) == CH_ST_CONNECTED);
     // The claim this binary exists for.
     CHECK(io_calls == 0);
+    // Both ends report the group the client's build offers, which the
+    // server selected out of the two it holds.
+    CHECK(client.t.group == LOOP_GROUP && server.t.group == LOOP_GROUP);
 
     // RFC 9846 section 7.5: both ends derive exporter_master from the
     // same transcript, so one label and one context give one answer on
@@ -408,11 +434,11 @@ int main(void) {
     test_resumption();
 
     if (failures == 0) {
-        (void)printf("rec_loop: a whole handshake in %d rounds, 0 socket calls;"
-                     " both ends export one secret and log the same four; ch_read waits"
-                     " between records; a wrong pin refused; a ticket resumes with no"
+        (void)printf("rec_loop: a whole handshake over group 0x%04x in %d rounds, 0 socket"
+                     " calls; both ends export one secret and log the same four; ch_read"
+                     " waits between records; a wrong pin refused; a ticket resumes with no"
                      " certificate\n",
-                     rounds);
+                     (unsigned)LOOP_GROUP, rounds);
         return 0;
     }
     (void)fprintf(stderr, "rec_loop: %d failures\n", failures);

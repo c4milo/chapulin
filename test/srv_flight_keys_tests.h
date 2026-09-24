@@ -49,7 +49,7 @@ static void test_flight_keys(void) {
     // A share that yields the all-zero shared secret is the abort RFC
     // 9846 section 7.4.2 requires.
     hello_exchange(&sel);
-    flight_hello.share = low_order_share;
+    flight_hello.x25519_share = low_order_share;
     CHECK(srv_derive_handshake_secrets(&hs, &flight_hello, &sel) == CH_EPROTO);
     CHECK(hs.alert == ALERT_ILLEGAL_PARAMETER && sess.keys == 0);
 }

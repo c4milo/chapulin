@@ -47,14 +47,11 @@ static int failures = 0;
         }                                                                                          \
     } while (0)
 
-// The vectors below spell the key_share extension out, so they hold only for
-// the classic key exchange. The Makefile builds this binary with no KEX
-// define, so a build that ever gains one stops here instead of comparing
-// against bytes for the other group.
-_Static_assert(CH_KEX_GROUP == CH_GROUP_X25519, "the vectors here spell x25519's code point");
-_Static_assert(CH_KEX_SERVER_SHARE == 32, "the vectors here spell a 32-byte server share");
-_Static_assert(CH_KEX_CLIENT_SHARE == 32, "the vectors here spell a 32-byte client share");
+// The x25519 cases drive the group whose 32-byte share they spell out, and
+// test/srv_flight_kex_tests.h drives X25519MLKEM768. Every server build
+// holds both, so no build define changes which bytes these compare.
 
+#include "srv_flight_kex_tests.h"
 #include "srv_flight_keys_tests.h"
 #include "srv_flight_suite_tests.h"
 #include "srv_flight_tests.h"
@@ -76,6 +73,10 @@ int main(void) {
     test_flight_retry();
     test_flight_server_hello();
     test_flight_keys();
+    test_flight_select_group();
+    test_flight_hybrid_secret();
+    test_flight_hybrid_refusals();
+    test_flight_hybrid_retry();
     test_flight_auth();
     test_flight_finish();
     test_flight_finished_length();

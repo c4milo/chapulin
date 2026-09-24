@@ -753,6 +753,20 @@ launch fast:3 full handshake_post 132 "handle_post_handshake.0:33,fill_nondet.0:
 # parser stays unproven: the 256-byte handshake_parser bound cannot hold a
 # 1,128-byte key share.
 launch fast full hybrid_secret 65 "fill_nondet.0:2401,ct_wipe.0:2401" -DCH_KEX_PQ ct.c
+# The server's half of the hybrid, and its group choice: srv_kex.c over any
+# groups and shares a parsed ClientHello reports, with mlkem_encaps_derand,
+# x25519 and ch_rand_bytes stubbed to their headers' contracts, the shape
+# hybrid_secret above takes on the client. The harness states the six facts
+# it proves beside memory safety, among them the preference, RFC 10024's
+# order of the two secrets and the wipes on both exits. Measured (arm64
+# macOS, cbmc 6.11.0, kissat, PROVE_ONLY=srv_kex PROVE_NO_CACHE=1
+# /usr/bin/time -l over this script, on a machine running other lanes'
+# work): 438 properties, 1.4 s, 0.04 GB peak. The same formula with an
+# assert of 0 at each of its six arms -- the x25519 share, the hybrid
+# share, the refused key, the refused secret and both accepted secrets --
+# fails all six, and with srv_kex_secret's two halves swapped it fails
+# the two order assertions, so the arms are reached and the order is held.
+launch fast full srv_kex 65 "fill_nondet.0:33,same.0:33,zero.0:65" ct.c -DCH_ROLE_SERVER
 # The parser half of the hybrid build
 # (https://github.com/c4milo/chapulin/issues/47). parse_key_share is driven
 # directly because handshake_parser bounds its message at 256 bytes and a
@@ -1114,6 +1128,12 @@ launch slow full srv_resume 120 "fill_nondet.0:118,find_ticket.0:24,binder_at.0:
 # the NewSessionTicket builder; srv_cookie 797 properties, 3 s, 0.07 GB. The
 # same srv_message formula with its ServerHello assertion tightened to n < cap
 # fails, so the formula reaches the builder rather than passing vacuously.
+# The ServerHello now carries either group's share, the 1120-byte hybrid one
+# included, into a buffer one byte past SRV_SERVER_HELLO_MAX, and two more
+# assertions hold that bound: no ServerHello is longer, and a buffer that long
+# always holds one. Measured under the same command: 553 properties, 9 s,
+# 0.18 GB peak. With the bound one byte smaller both assertions fail, so it is
+# tight in both directions.
 launch fast full srv_message 130 "fill_nondet.0:118" buf.c -DCH_ROLE_SERVER
 launch fast full srv_cookie 130 "fill_nondet.0:119" buf.c ct.c hkdf.c -DCH_ROLE_SERVER
 # The resumption ticket's seal and open, over every contents and every
@@ -1147,7 +1167,11 @@ launch fast full quic_token 130 "fill_nondet.0:113,prove_mint.1:21,prove_mint.2:
 # /usr/bin/time -l, idle machine): 927 properties, 34 s, 985 MB. With the
 # pre_shared_key reader recording its two lists: 987 properties, 37 s of
 # solver time and 0.62 GB, measured at 72 s wall on a machine running
-# other lanes' proofs.
+# other lanes' proofs. With supported_groups and key_share reading both
+# groups: 1000 properties, 27 s, 0.92 GB (PROVE_ONLY=srv_parser_ext
+# PROVE_NO_CACHE=1 /usr/bin/time -l). EXT_MAX keeps a body under the 32 bytes
+# of the shortest share, so this formula holds the key_share reader's
+# refusals and its walk; bin/srv_test holds each group's exact length.
 launch fast:2 full srv_parser_ext 26 "fill_nondet.0:129,ct_memeq.0:33" buf.c ct.c -DCH_ROLE_SERVER
 # The walk half, proof/srv_parser_walk_harness.c, has no launch line. Its
 # formula converges in 0.32 s at 818 properties when fill_nondet is bounded
@@ -1228,17 +1252,19 @@ launch fast full quic_step_ca 5 "fill_nondet.0:37,ct_wipe.0:849" -DCH_TRANSPORT_
 # a loop of its own, because an unwindset entry bounds a loop and not a
 # call site: the same bound on fill_nondet unrolls that loop 256 times at
 # the four 32-byte call sites the flight stubs make as well. ct_wipe.0 is
-# 457 for the reason the two client drivers give, that the driver wipes
-# the whole handshake_state on the way out; a server's is 456 bytes since
-# it carries a resumed ticket's instant.
+# 489 for the reason the two client drivers give, that the driver wipes
+# the whole handshake_state on the way out; a server's is 488 bytes since
+# it carries a resumed ticket's instant and the 32-byte ML-KEM shared
+# secret of a hybrid key exchange.
 #
 # Measured under this script's flags (arm64 macOS, the pinned cbmc,
 # kissat, PROVE_ONLY=srv_accept PROVE_NO_CACHE=1 /usr/bin/time -l, on a
 # development machine running other lanes' work): 871 properties, 32 s,
 # 2.39 GB peak, with srv_resume.h's ticket call stubbed beside the
-# fourteen handlers. The weight is 3 because that peak is over the fast
+# fourteen handlers, and 871 properties, 35 s, 2.39 GB once ct_wipe.0 rose
+# to 489 for the ML-KEM secret. The weight is 3 because that peak is over the fast
 # tier's 2 GB default.
-launch fast:3 full srv_accept 100 "alpn_ok.0:9,alpn_name_repeats.0:9,ct_wipe.0:457,ct_memeq.0:33,fill_names.0:257,fill_nondet.0:33" -DCH_ROLE_SERVER srv.c srv_handshake.c ct.c session.c
+launch fast:3 full srv_accept 100 "alpn_ok.0:9,alpn_name_repeats.0:9,ct_wipe.0:489,ct_memeq.0:33,fill_names.0:257,fill_nondet.0:33" -DCH_ROLE_SERVER srv.c srv_handshake.c ct.c session.c
 # The ROLE=server record driver and the inbound framing under it, with
 # srv_accept's layering: srv_rec.c and rec_frame.c real, the fifteen
 # handlers contract stubs. It would cover the step table, the record

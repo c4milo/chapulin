@@ -1,0 +1,19 @@
+invariant: INV-7
+file: srv_kex.c
+catches: srv_flight_test
+reason: the server takes x25519 whenever the client shared it, so a client
+  that sends a key share for both groups, as every TRUST=webpki client
+  and OpenSSL's default list do, completes a classic key exchange
+  though it offered the hybrid. docs/decisions.md 54 prefers the hybrid
+  whenever the client lists it, and test_flight_select_group requires
+  X25519MLKEM768 for a hello that shares both groups.
+
+--- old
+uint16_t srv_kex_group(const client_hello *ch) {
+    if ((ch->groups & SRV_GROUP_X25519MLKEM768) != 0) {
+--- new
+uint16_t srv_kex_group(const client_hello *ch) {
+    if ((ch->shares & SRV_GROUP_X25519) != 0) {
+        return CH_GROUP_X25519;
+    }
+    if ((ch->groups & SRV_GROUP_X25519MLKEM768) != 0) {

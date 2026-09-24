@@ -1,0 +1,19 @@
+invariant: INV-7
+file: srv_kex.c
+catches: srv_flight_test
+reason: the server selects by key share rather than by supported_groups, so
+  a client that lists X25519MLKEM768 and shares x25519 alone gets x25519
+  in one round trip instead of the HelloRetryRequest that asks for the
+  hybrid. docs/decisions.md 54 spends that round trip on purpose, and
+  test_flight_select_group requires the hybrid with need_retry set for
+  that hello.
+
+--- old
+    if ((ch->groups & SRV_GROUP_X25519MLKEM768) != 0) {
+        return CH_GROUP_X25519MLKEM768;
+    }
+--- new
+    if ((ch->groups & SRV_GROUP_X25519MLKEM768) != 0 &&
+        ((ch->shares & SRV_GROUP_X25519MLKEM768) != 0 || (ch->shares & SRV_GROUP_X25519) == 0)) {
+        return CH_GROUP_X25519MLKEM768;
+    }

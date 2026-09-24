@@ -21,6 +21,9 @@
 #include "session.h"
 #include "sha256.h"
 #include "x25519.h"
+#ifdef CH_ROLE_SERVER
+#include "mlkem.h"
+#endif
 #ifdef CH_TRUST_CA
 #include "x509.h"
 #endif
@@ -62,6 +65,12 @@ typedef struct {
     uint8_t cookie[HSP_COOKIE_MAX];
     size_t cookie_len;
 #ifdef CH_ROLE_SERVER
+    // The ML-KEM-768 shared secret of a hybrid key exchange (mlkem.h's
+    // ss). srv_kex_share writes it when it encapsulates for the
+    // ServerHello, and srv_kex_secret copies it into the input keying
+    // material and wipes it, so it lives from one message to the next and
+    // no longer (INV-17). It stays zero when the server selected x25519.
+    uint8_t mlkem_ss[MLKEM_SS_LEN];
     // The auth_seconds of the ticket this handshake resumed (srv_ticket.h),
     // which srv_select_auth writes and srv_send_new_session_ticket carries
     // into the ticket it issues, so a chain of resumptions keeps the instant

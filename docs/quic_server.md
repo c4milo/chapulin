@@ -274,6 +274,58 @@ checks that the ticket the server issues next is bound to the client's
 configuration, which is only true if `ch_quic_init` took its hash. Neither
 test sends a packet; colibri's runner does.
 
+## The key exchange
+
+A QUIC server runs the key exchange the other two server drivers run
+(`docs/server.md`, "Key exchange", and `docs/decisions.md` entry 54). It
+holds X25519MLKEM768 and x25519, selects the hybrid for any client that
+lists it and x25519 for one that lists x25519 alone, and asks with a
+HelloRetryRequest when the hello carried no share for the group it chose.
+`ch_tls.group` reports the group once the ServerHello has gone out, and
+`ch_quic.t.group` is where a caller reads it. No call and no configuration
+field changed, and `KEX` selects nothing for this build either.
+
+**What changes for colibri.** Three things, and none of them is an API
+change.
+
+- The ServerHello it receives through `cfg.srv.on_crypto_out` at
+  `CH_LEVEL_INITIAL` is up to 1,216 bytes when the server selects the
+  hybrid, against 128 before, because it carries a 1,120-byte key share.
+  That is more than one 1,200-byte Initial packet holds beside its header,
+  tag and ACK, so colibri carries the bytes in CRYPTO frames across more
+  than one Initial packet. RFC 9000 permits a server several Initial
+  packets for this (`rfc9000.txt:5203-5206`), and a CRYPTO frame's offset
+  is what lets the client put them back in order (§19.6,
+  `rfc9000.txt:6131-6133`).
+- The ClientHello it hands to `ch_srv_quic_crypto_in` carries the client's
+  1,216-byte hybrid share when the client offers the hybrid, which RFC
+  9001 §4.3 notes can span Initial packets (`rfc9001.txt:662-670`). The
+  whole message must fit `cfg.buf_len`: `CH_MIN_RXBUF` sizes a QUIC
+  server's buffer for the messages a client receives and not for this
+  one, so colibri sizes it for the largest hello it accepts. A client that
+  shares both groups carries a key_share extension of 1,262 bytes on its
+  own, and a `TRUST=webpki` chapulin client's QUIC hello is at most 2,625
+  bytes (`CH_HELLO_MAX` in that build).
+- A client that lists the hybrid and shares x25519 alone now gets a
+  HelloRetryRequest at the Initial level where it used to get a
+  ServerHello, and its second ClientHello arrives at the Initial level
+  again. That is the retry path a client with an empty `client_shares`
+  list always took, so colibri already delivers both hellos.
+
+The QUIC server's `ch_quic` grows from 2,712 to 2,816 bytes on arm64: its
+TX array must hold the 1,216-byte ServerHello, and the handshake state
+holds the 32-byte ML-KEM shared secret between the ServerHello and the key
+schedule.
+
+**What checks it.** `bin/quic_loop_webpki` resumes a ticket with the
+webpki client, which shares both groups, and requires both ends to report
+X25519MLKEM768 over an Initial-level ServerHello that carries the
+1,120-byte share. `bin/quic_loop_test` requires x25519 from the raw-ecdsa
+client, which lists x25519 alone, for the full handshake and the resumed
+one. `bin/srv_quic_test` drives the same flight with this tree's
+x25519-only hello. No interop run has put the hybrid through colibri's
+UDP path yet; that run is colibri's to make.
+
 ## What is missing
 
 ### 1. The direction-to-label mapping
@@ -314,7 +366,8 @@ that let `handshake_flight.c` serve both transports for the client, and it
 was fixed when `srv_flight.h` landed, before this document existed.
 
 Two decisions the client's driver does not force. `docs/server.md` open
-question ten left both open; the sizes below decide them.
+question ten left both open when this was written, and the sizes below
+decided them.
 
 **The server pushes its flight through a callback; it does not stage it.**
 The client stages one whole message in `ch_tls.tx` and the caller pulls it

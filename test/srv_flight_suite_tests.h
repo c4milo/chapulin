@@ -25,7 +25,7 @@ static void test_flight_select_suite(void) {
 
     // Both offered: the one that needs no statement about the hardware.
     flight_reset();
-    offer_everything();
+    offer_x25519();
     flight_hello.suites = SRV_SUITE_CHACHA20_POLY1305 | SRV_SUITE_AES_128_GCM;
     CHECK(srv_select(&hs, &flight_hello, &sel) == CH_OK);
     CHECK(sel.suite == SUITE_CHACHA20_POLY1305_SHA256);
@@ -34,20 +34,20 @@ static void test_flight_select_suite(void) {
     // AES alone: selected, which is the whole point of carrying it. A
     // client that offers only this is the one RFC 9846 section 9.1 exists
     // for, and the build without the suite answers handshake_failure.
-    offer_everything();
+    offer_x25519();
     flight_hello.suites = SRV_SUITE_AES_128_GCM;
     CHECK(srv_select(&hs, &flight_hello, &sel) == CH_OK);
     CHECK(sel.suite == SUITE_AES_128_GCM_SHA256);
     CHECK(sel.hash_len == SHA256_LEN);
 
     // ChaCha20 alone: unchanged from a one-suite build.
-    offer_everything();
+    offer_x25519();
     flight_hello.suites = SRV_SUITE_CHACHA20_POLY1305;
     CHECK(srv_select(&hs, &flight_hello, &sel) == CH_OK);
     CHECK(sel.suite == SUITE_CHACHA20_POLY1305_SHA256);
 
     // Neither: still handshake_failure, and no suite written.
-    offer_everything();
+    offer_x25519();
     flight_hello.suites = 0;
     CHECK(srv_select(&hs, &flight_hello, &sel) == CH_EPROTO && hs.alert == ALERT_HANDSHAKE_FAILURE);
 }
@@ -62,7 +62,7 @@ static void test_flight_retry_suite(void) {
     selection sel;
     flight_reset();
     srv_begin(&hs);
-    offer_everything();
+    offer_x25519();
     parse_result.suites = SRV_SUITE_AES_128_GCM;
     parse_result.shares = 0;
     feed_handshake(HS_CLIENT_HELLO, FLIGHT_HELLO_BODY);

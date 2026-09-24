@@ -314,6 +314,49 @@ expect chsrv-chapulin-resume "oveun ed" "$DIR/err15" \
     exit 1
 }
 
+# --- The same server's key exchange. It holds X25519MLKEM768 and x25519
+# and prefers the hybrid (docs/decisions.md 54), so each s_client group
+# list below names the group the server must select, and the server's
+# own "group:" line, the last one in its log, says which one ran.
+# Args: label, the group code the server must report, the summary, then
+# the s_client arguments.
+chsrv_group() {
+    local label=$1 group=$2 summary=$3
+    shift 3
+    s_client_line "$label" "$summary" 'grupo' 'opurg' "$@"
+    [ "$(grep '^group: ' "$CHSRV_LOG" | tail -1)" = "group: $group" ] || {
+        echo "FAIL $label: want the server to select group $group"
+        cat "$DIR/$label.log" "$CHSRV_LOG"
+        exit 1
+    }
+}
+# A client that lists x25519 alone still gets x25519.
+chsrv_group chsrv-openssl-x25519 0x001d New -groups X25519
+if "$OPENSSL" list -tls-groups 2>/dev/null | grep -qi x25519mlkem768; then
+    CHSRV_PQ_LEG=" + chapulin server pq x4"
+    # The hybrid first with its share: selected in one round trip, and a
+    # ticket from that connection resumes over the hybrid again.
+    chsrv_group chsrv-openssl-pq 0x11ec New -groups X25519MLKEM768:X25519 \
+        -sess_out "$DIR/sess_pq.pem"
+    chsrv_group chsrv-openssl-pq-resume 0x11ec Reused -groups X25519MLKEM768:X25519 \
+        -sess_in "$DIR/sess_pq.pem"
+    # A share for each group: the hybrid, though x25519 comes with it.
+    chsrv_group chsrv-openssl-pq-both 0x11ec New -groups '*X25519MLKEM768:*X25519'
+    # x25519 first, so s_client shares x25519 alone and lists the hybrid
+    # after it: the server asks for the hybrid with a HelloRetryRequest,
+    # which s_client's -msg trace shows as a second ServerHello.
+    chsrv_group chsrv-openssl-pq-retry 0x11ec New -groups X25519:X25519MLKEM768 -msg
+    [ "$(grep -c '<<< TLS 1.3, Handshake \[length [0-9a-f]*\], ServerHello' \
+        "$DIR/chsrv-openssl-pq-retry.log")" = 2 ] || {
+        echo "FAIL chsrv-openssl-pq-retry: want a HelloRetryRequest before the ServerHello"
+        cat "$DIR/chsrv-openssl-pq-retry.log"
+        exit 1
+    }
+else
+    CHSRV_PQ_LEG=" (chapulin server pq legs skipped)"
+    echo "SKIP chapulin server pq legs: $("$OPENSSL" version) does not list X25519MLKEM768 (needs 3.5)"
+fi
+
 # --- Pinned key, default build: a self-signed RSA-3072 server, the pin is
 # the raw modulus and the signature is RSA-PSS. The cert's own signature
 # is the stock PKCS#1 v1.5 self-signature: the client never parses it, so
@@ -1122,4 +1165,4 @@ else
     echo "SKIP webpki-aes legs: bin/tlsclient_webpki_aes is absent (no AES instructions)"
 fi
 
-echo "e2e: record + psk + tickets + resumption + pinned ecdsa + chapulin server resume x2 + pinned rsa + require-pq refused + rotation + ca rsa x2 + ca ecdsa x2 + ca rotation + ca negatives x3${EPOCH_LEG} + webpki rsa + webpki-resume x2 + webpki-rpk x7 + webpki ecdsa x2 + webpki negatives x4 + webpki alpn x3${GO_LEG}${OPENSSL_PQ_LEG}${AES_SUITE_LEG} + examples x4 OK"
+echo "e2e: record + psk + tickets + resumption + pinned ecdsa + chapulin server resume x2 + chapulin server x25519${CHSRV_PQ_LEG} + pinned rsa + require-pq refused + rotation + ca rsa x2 + ca ecdsa x2 + ca rotation + ca negatives x3${EPOCH_LEG} + webpki rsa + webpki-resume x2 + webpki-rpk x7 + webpki ecdsa x2 + webpki negatives x4 + webpki alpn x3${GO_LEG}${OPENSSL_PQ_LEG}${AES_SUITE_LEG} + examples x4 OK"

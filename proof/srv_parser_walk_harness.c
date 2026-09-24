@@ -71,10 +71,15 @@ int main(void) {
                          "an accepted hello carried supported_versions");
         __CPROVER_assert(ch.session_id_len <= SRV_SESSION_ID_MAX,
                          "legacy_session_id fits the session's copy");
-        __CPROVER_assert(ch.share == NULL || (ch.share_len == CH_KEX_CLIENT_SHARE &&
-                                              inside(msg, n, ch.share, ch.share_len)),
-                         "a share is CH_KEX_CLIENT_SHARE bytes inside the message");
-        __CPROVER_assert((ch.shares == 0) == (ch.share == NULL), "shares reports the share");
+        __CPROVER_assert(ch.x25519_share == NULL || inside(msg, n, ch.x25519_share, X25519_LEN),
+                         "an x25519 share is X25519_LEN bytes inside the message");
+        __CPROVER_assert(ch.hybrid_share == NULL ||
+                             inside(msg, n, ch.hybrid_share, CH_HYBRID_CLIENT_SHARE),
+                         "a hybrid share is CH_HYBRID_CLIENT_SHARE bytes inside the message");
+        __CPROVER_assert(((ch.shares & SRV_GROUP_X25519) == 0) == (ch.x25519_share == NULL),
+                         "shares reports the x25519 share");
+        __CPROVER_assert(((ch.shares & SRV_GROUP_X25519MLKEM768) == 0) == (ch.hybrid_share == NULL),
+                         "shares reports the hybrid share");
         __CPROVER_assert((ch.shares & (uint8_t)~ch.groups) == 0,
                          "every share's group was listed in supported_groups");
         __CPROVER_assert(ch.cookie == NULL || inside(msg, n, ch.cookie, ch.cookie_len),

@@ -3,9 +3,9 @@
 // key it is given, issues a resumption ticket after every handshake, reads
 // one line, answers it reversed the way s_server -rev does, and closes.
 // It serves one connection after another until it is killed, and prints
-// one line per connection saying whether the handshake resumed a ticket,
-// which is what the e2e legs read. Firmware replaces this file and
-// nothing below it.
+// two lines per connection, whether the handshake resumed a ticket and
+// the NamedGroup ch_tls.group reports, which are what the e2e legs read. Firmware replaces this
+// file and nothing below it.
 //
 // Usage: tlsserver <cert.der> <priv-hex> <pub-hex>
 //
@@ -193,6 +193,7 @@ int main(int argc, char **argv) {
         int rc = ch_srv_accept(&t, &cfg);
         if (rc == CH_OK) {
             (void)printf("handshake: %s\n", t.psk_selected ? "resumed" : "full");
+            (void)printf("group: 0x%04x\n", (unsigned)t.group);
             (void)fflush(stdout);
             echo_reversed(&t);
         } else {

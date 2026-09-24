@@ -34,7 +34,7 @@ static const uint8_t frozen_in[SHA256_LEN] = {
 
 // Mints one cookie into dst under key, at the SHA-256 length.
 static size_t mint(uint8_t *dst, size_t cap, const uint8_t *key) {
-    return srv_cookie_mint(key, SUITE_CHACHA20_POLY1305_SHA256, CH_KEX_GROUP, ch1_hash_in,
+    return srv_cookie_mint(key, SUITE_CHACHA20_POLY1305_SHA256, CH_GROUP_X25519, ch1_hash_in,
                            SHA256_LEN, frozen_in, dst, cap);
 }
 
@@ -69,7 +69,7 @@ static void test_cookie_round_trip(void) {
     memset(frozen, 0, sizeof frozen);
     CHECK(srv_cookie_open(mint_key, out, n, &suite, &group, hash, &hash_len, frozen) == CH_OK);
     CHECK(suite == SUITE_CHACHA20_POLY1305_SHA256);
-    CHECK(group == CH_KEX_GROUP);
+    CHECK(group == CH_GROUP_X25519);
     CHECK(hash_len == SHA256_LEN);
     CHECK(memcmp(hash, ch1_hash_in, SHA256_LEN) == 0);
     CHECK(memcmp(frozen, frozen_in, SHA256_LEN) == 0);
@@ -155,11 +155,11 @@ static void test_cookie_bounds(void) {
     uint8_t wide[SRV_COOKIE_MAX];
     uint8_t wide_hash[SRV_COOKIE_HASH_MAX];
     memset(wide_hash, 0x77, sizeof wide_hash);
-    CHECK(srv_cookie_mint(mint_key, SUITE_CHACHA20_POLY1305_SHA256, CH_KEX_GROUP, wide_hash,
+    CHECK(srv_cookie_mint(mint_key, SUITE_CHACHA20_POLY1305_SHA256, CH_GROUP_X25519, wide_hash,
                           SHA256_LEN - 1, frozen_in, wide, sizeof wide) == 0);
-    CHECK(srv_cookie_mint(mint_key, SUITE_CHACHA20_POLY1305_SHA256, CH_KEX_GROUP, wide_hash,
+    CHECK(srv_cookie_mint(mint_key, SUITE_CHACHA20_POLY1305_SHA256, CH_GROUP_X25519, wide_hash,
                           SRV_COOKIE_HASH_MAX, frozen_in, wide, sizeof wide) == SRV_COOKIE_MAX);
-    CHECK(srv_cookie_mint(mint_key, SUITE_CHACHA20_POLY1305_SHA256, CH_KEX_GROUP, wide_hash,
+    CHECK(srv_cookie_mint(mint_key, SUITE_CHACHA20_POLY1305_SHA256, CH_GROUP_X25519, wide_hash,
                           SRV_COOKIE_HASH_MAX + 1, frozen_in, wide, sizeof wide) == 0);
 
     // That longest cookie names a suite whose hash is 32 bytes, so this build

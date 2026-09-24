@@ -17,12 +17,12 @@ static void test_golden_hello(void) {
     CHECK(parsed.session_id_len == SRV_SESSION_ID_MAX);
     CHECK(memcmp(parsed.session_id, hello_head + HEAD_SESSION_ID_AT, SRV_SESSION_ID_MAX) == 0);
     CHECK(parsed.suites == SRV_SUITE_CHACHA20_POLY1305);
-    CHECK(parsed.groups == SRV_GROUP_KEX && parsed.shares == SRV_GROUP_KEX);
+    CHECK(parsed.groups == SRV_GROUP_X25519 && parsed.shares == SRV_GROUP_X25519);
     CHECK(parsed.sigalgs == (SRV_SIGALG_ECDSA_P256 | SRV_SIGALG_RSA_PSS));
     // The share is the key_exchange bytes where they sit in the message.
-    CHECK(inside(buf, n, parsed.share, parsed.share_len));
-    CHECK(parsed.share_len == CH_KEX_CLIENT_SHARE);
-    CHECK(memcmp(parsed.share, ext_key_share + KEY_SHARE_KEY_AT, CH_KEX_CLIENT_SHARE) == 0);
+    CHECK(inside(buf, n, parsed.x25519_share, X25519_LEN));
+    CHECK(memcmp(parsed.x25519_share, ext_key_share + KEY_SHARE_KEY_AT, X25519_LEN) == 0);
+    CHECK(parsed.hybrid_share == NULL);
     CHECK(inside(buf, n, parsed.server_name, parsed.server_name_len));
     CHECK(parsed.server_name_len == 9 && memcmp(parsed.server_name, "localhost", 9) == 0);
     // The hello advertises 0x4000. The stored value is the plaintext it
@@ -200,33 +200,33 @@ static void test_required_extensions(void) {
     static const uint8_t no_shares[] = {0x00, 0x33, 0x00, 0x02, 0x00, 0x00};
     n = replaced(buf, AT_KEY_SHARE, no_shares, sizeof no_shares);
     CHECK(parse(buf, n) == CH_OK && parsed.seen == GOLDEN_SEEN);
-    CHECK(parsed.shares == 0 && parsed.share == NULL && parsed.share_len == 0);
+    CHECK(parsed.shares == 0 && parsed.x25519_share == NULL && parsed.hybrid_share == NULL);
 }
 
 static void test_key_share(void) {
     uint8_t buf[HELLO_CAP];
     uint8_t ext[HELLO_CAP];
-    // A key_exchange for this build's group is CH_KEX_CLIENT_SHARE bytes:
-    // one fewer and one more are illegal_parameter, and an empty one is
-    // outside the vector's syntax.
-    size_t m = make_key_share(ext, CH_KEX_GROUP, CH_KEX_CLIENT_SHARE);
+    // An x25519 key_exchange is X25519_LEN bytes: one fewer and one more
+    // are illegal_parameter, and an empty one is outside the vector's
+    // syntax.
+    size_t m = make_key_share(ext, CH_GROUP_X25519, X25519_LEN);
     size_t n = replaced(buf, AT_KEY_SHARE, ext, m);
-    CHECK(parse(buf, n) == CH_OK && parsed.share_len == CH_KEX_CLIENT_SHARE);
-    m = make_key_share(ext, CH_KEX_GROUP, CH_KEX_CLIENT_SHARE - 1);
+    CHECK(parse(buf, n) == CH_OK && parsed.x25519_share != NULL);
+    m = make_key_share(ext, CH_GROUP_X25519, X25519_LEN - 1);
     n = replaced(buf, AT_KEY_SHARE, ext, m);
     CHECK(refused(buf, n, ALERT_ILLEGAL_PARAMETER));
-    m = make_key_share(ext, CH_KEX_GROUP, CH_KEX_CLIENT_SHARE + 1);
+    m = make_key_share(ext, CH_GROUP_X25519, X25519_LEN + 1);
     n = replaced(buf, AT_KEY_SHARE, ext, m);
     CHECK(refused(buf, n, ALERT_ILLEGAL_PARAMETER));
-    m = make_key_share(ext, CH_KEX_GROUP, 0);
+    m = make_key_share(ext, CH_GROUP_X25519, 0);
     n = replaced(buf, AT_KEY_SHARE, ext, m);
     CHECK(refused(buf, n, ALERT_DECODE_ERROR));
     // An entry for a group this build does not hold is read and ignored,
     // whatever its length: no share, and no refusal.
     m = make_key_share(ext, 0x0017, 65); // secp256r1
     n = replaced(buf, AT_KEY_SHARE, ext, m);
-    CHECK(parse(buf, n) == CH_OK && parsed.shares == 0 && parsed.share == NULL);
-    // Two entries for this build's group: the first is the share.
+    CHECK(parse(buf, n) == CH_OK && parsed.shares == 0 && parsed.x25519_share == NULL);
+    // Two entries for one group: the first is the share.
     static const uint8_t twice[] = {
         0x00, 0x33, 0x00, 0x4a, 0x00, 0x48, 0x00, 0x1d, 0x00, 0x20, 0x01, 0x01, 0x01,
         0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01,
@@ -235,7 +235,7 @@ static void test_key_share(void) {
         0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02,
         0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02};
     n = replaced(buf, AT_KEY_SHARE, twice, sizeof twice);
-    CHECK(parse(buf, n) == CH_OK && parsed.share != NULL && parsed.share[0] == 0x01);
+    CHECK(parse(buf, n) == CH_OK && parsed.x25519_share != NULL && parsed.x25519_share[0] == 0x01);
     // The entries fill client_shares: a list length one past them is
     // decode_error.
     memcpy(ext, ext_key_share, sizeof ext_key_share);
@@ -254,6 +254,97 @@ static void test_key_share(void) {
     static const uint8_t p256_only[] = {0x00, 0x0a, 0x00, 0x04, 0x00, 0x02, 0x00, 0x17};
     n = replaced(buf, AT_GROUPS, p256_only, sizeof p256_only);
     CHECK(refused(buf, n, ALERT_ILLEGAL_PARAMETER));
+}
+
+// A key_share extension holding an X25519MLKEM768 entry whose
+// key_exchange is hybrid_len bytes and, when x25519_len is not 0, an
+// x25519 entry after it, in the order a client that shares both sends
+// them (RFC 9846 §4.3.8 has the shares follow supported_groups' order).
+// Each key_exchange is filled with its group's low byte, so a case can
+// tell which bytes a pointer names.
+static size_t make_hybrid_key_share(uint8_t *dst, size_t hybrid_len, size_t x25519_len) {
+    wbuf w;
+    wb_init(&w, dst, HELLO_CAP);
+    size_t list = 4 + hybrid_len + (x25519_len != 0 ? 4 + x25519_len : 0);
+    wb_u16(&w, EXT_KEY_SHARE);
+    wb_u16(&w, (uint16_t)(2 + list));
+    wb_u16(&w, (uint16_t)list);
+    wb_u16(&w, CH_GROUP_X25519MLKEM768);
+    wb_u16(&w, (uint16_t)hybrid_len);
+    for (size_t i = 0; i < hybrid_len; i++) {
+        wb_u8(&w, 0xec);
+    }
+    if (x25519_len != 0) {
+        wb_u16(&w, CH_GROUP_X25519);
+        wb_u16(&w, (uint16_t)x25519_len);
+        for (size_t i = 0; i < x25519_len; i++) {
+            wb_u8(&w, 0x1d);
+        }
+    }
+    CHECK(!w.err);
+    return w.len;
+}
+
+// The golden hello with its supported_groups listing X25519MLKEM768 and
+// then x25519, and the key_share given.
+static size_t hybrid_hello(uint8_t *dst, const uint8_t *key_share, size_t n) {
+    static const uint8_t both_groups[] = {0x00, 0x0a, 0x00, 0x06, 0x00,
+                                          0x04, 0x11, 0xec, 0x00, 0x1d};
+    extension exts[GOLDEN_EXT_COUNT];
+    for (size_t i = 0; i < GOLDEN_EXT_COUNT; i++) {
+        exts[i] = golden_exts[i];
+    }
+    exts[AT_GROUPS] = (extension){both_groups, sizeof both_groups};
+    exts[AT_KEY_SHARE] = (extension){key_share, n};
+    return assemble(dst, hello_head, sizeof hello_head, exts, GOLDEN_EXT_COUNT);
+}
+
+// The X25519MLKEM768 share (RFC 10024): an ML-KEM-768 encapsulation key
+// and an x25519 value, CH_HYBRID_CLIENT_SHARE bytes. The exact length is
+// taken and one byte either side is illegal_parameter, as for x25519.
+static void test_hybrid_key_share(void) {
+    uint8_t buf[HELLO_CAP];
+    uint8_t ext[HELLO_CAP];
+    // The hybrid share alone: both groups listed, one share recorded.
+    size_t m = make_hybrid_key_share(ext, CH_HYBRID_CLIENT_SHARE, 0);
+    size_t n = hybrid_hello(buf, ext, m);
+    CHECK(parse(buf, n) == CH_OK);
+    CHECK(parsed.groups == (SRV_GROUP_X25519 | SRV_GROUP_X25519MLKEM768));
+    CHECK(parsed.shares == SRV_GROUP_X25519MLKEM768 && parsed.x25519_share == NULL);
+    CHECK(inside(buf, n, parsed.hybrid_share, CH_HYBRID_CLIENT_SHARE));
+    CHECK(parsed.hybrid_share[0] == 0xec &&
+          parsed.hybrid_share[CH_HYBRID_CLIENT_SHARE - 1] == 0xec);
+    // Both shares: each pointer names its own entry.
+    m = make_hybrid_key_share(ext, CH_HYBRID_CLIENT_SHARE, X25519_LEN);
+    n = hybrid_hello(buf, ext, m);
+    CHECK(parse(buf, n) == CH_OK);
+    CHECK(parsed.shares == (SRV_GROUP_X25519 | SRV_GROUP_X25519MLKEM768));
+    CHECK(inside(buf, n, parsed.hybrid_share, CH_HYBRID_CLIENT_SHARE));
+    CHECK(inside(buf, n, parsed.x25519_share, X25519_LEN));
+    CHECK(parsed.x25519_share[0] == 0x1d && parsed.hybrid_share[0] == 0xec);
+    // The boundary pair on the hybrid share, alone and beside x25519.
+    m = make_hybrid_key_share(ext, CH_HYBRID_CLIENT_SHARE - 1, 0);
+    n = hybrid_hello(buf, ext, m);
+    CHECK(refused(buf, n, ALERT_ILLEGAL_PARAMETER));
+    m = make_hybrid_key_share(ext, CH_HYBRID_CLIENT_SHARE + 1, 0);
+    n = hybrid_hello(buf, ext, m);
+    CHECK(refused(buf, n, ALERT_ILLEGAL_PARAMETER));
+    m = make_hybrid_key_share(ext, CH_HYBRID_CLIENT_SHARE - 1, X25519_LEN);
+    n = hybrid_hello(buf, ext, m);
+    CHECK(refused(buf, n, ALERT_ILLEGAL_PARAMETER));
+    m = make_hybrid_key_share(ext, CH_HYBRID_CLIENT_SHARE + 1, X25519_LEN);
+    n = hybrid_hello(buf, ext, m);
+    CHECK(refused(buf, n, ALERT_ILLEGAL_PARAMETER));
+    // A hybrid share when supported_groups lists x25519 alone (§4.3.8).
+    m = make_hybrid_key_share(ext, CH_HYBRID_CLIENT_SHARE, 0);
+    n = replaced(buf, AT_KEY_SHARE, ext, m);
+    CHECK(refused(buf, n, ALERT_ILLEGAL_PARAMETER));
+    // Both listed and x25519 shared alone: the hybrid bit is in groups
+    // and not in shares, the input srv_select answers with a retry.
+    n = hybrid_hello(buf, ext_key_share, sizeof ext_key_share);
+    CHECK(parse(buf, n) == CH_OK);
+    CHECK(parsed.groups == (SRV_GROUP_X25519 | SRV_GROUP_X25519MLKEM768));
+    CHECK(parsed.shares == SRV_GROUP_X25519 && parsed.hybrid_share == NULL);
 }
 
 static void test_pre_shared_key(void) {

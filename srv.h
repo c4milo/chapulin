@@ -1,9 +1,10 @@
 // chapulin's server API: a TLS 1.3 server for the same devices the
 // client targets, built with ROLE=server. It speaks one profile —
-// TLS_CHACHA20_POLY1305_SHA256 over this build's one key exchange
-// group, with the server authenticated by a certificate chain the
-// caller provisioned and the client authenticated by nothing. Zero
-// heap: the session struct, the caller's receive buffer and the
+// TLS_CHACHA20_POLY1305_SHA256 over the X25519MLKEM768 hybrid, or over
+// x25519 for a client that does not list the hybrid, with the server
+// authenticated by a certificate chain the caller provisioned and the
+// client authenticated by nothing. ch_tls.group reports which group ran
+// (srv_kex.h). Zero heap: the session struct, the caller's receive buffer and the
 // caller's own chains and keys are the entire working set.
 //
 // Five calls, not two. ch_read, ch_write and ch_close are the same
@@ -27,7 +28,7 @@
 // constant-time AES exists, and this header claims no §9.1 conformance
 // before then. §9.1 also requires secp256r1 for the key
 // exchange, which this build does not offer either, for the reason
-// srv_parser.h gives at SRV_GROUP_KEX.
+// srv_parser.h gives at SRV_GROUP_X25519.
 //
 // What it declines conformantly, each with the permission it takes: no
 // client certificates (§4.4.2 makes the request a MAY), no 0-RTT (it

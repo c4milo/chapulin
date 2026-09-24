@@ -80,8 +80,9 @@ size_t srv_build_server_hello(uint8_t *out, size_t cap, const selection *sel,
 
     // key_share carrying the server's own KeyShareEntry (RFC 9846 §4.3.8):
     // the group, then the key_exchange bytes behind a two-byte length. The
-    // caller passes CH_KEX_SERVER_SHARE bytes, which is 32 in a classic build
-    // and 1120 under KEX=pq, so both length casts are in range.
+    // caller passes X25519_LEN bytes for x25519 and CH_HYBRID_SERVER_SHARE,
+    // 1120, for X25519MLKEM768 (srv_kex.h), so both length casts are in
+    // range.
     wb_u16(&w, EXT_KEY_SHARE);
     wb_u16(&w, (uint16_t)(2 + 2 + share_len));
     wb_u16(&w, sel->group);

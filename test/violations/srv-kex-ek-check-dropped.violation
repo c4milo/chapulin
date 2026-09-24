@@ -1,0 +1,16 @@
+invariant: INV-14
+file: srv_kex.c
+catches: srv_flight_test
+reason: the server ignores the verdict of FIPS 203 section 7.2's modulus
+  check on the client's encapsulation key. mlkem_encaps_derand writes
+  nothing for a key with a coefficient at or above the modulus, so the
+  server sends a ServerHello around whatever the stack held and keys the
+  handshake from a shared secret nobody encapsulated. RFC 10024 has the
+  server abort with illegal_parameter, and test_flight_hybrid_refusals
+  requires it at 0xfff and at 3329 and requires 3328 to pass.
+
+--- old
+    int refused = mlkem_encaps_derand(share, h->mlkem_ss, ch->hybrid_share, m);
+--- new
+    int refused = 0;
+    (void)mlkem_encaps_derand(share, h->mlkem_ss, ch->hybrid_share, m);

@@ -96,7 +96,8 @@ does nothing more.
     TRUST=webpki` still offers x25519 alone and carries no ML-KEM.
     Entry 53 later changed the webpki half: every `TRUST=webpki` build
     carries ML-KEM and offers both groups, and `make` refuses a `KEX`
-    value beside that trust mode.
+    value beside that trust mode. Entry 54 gives every server role both
+    groups and a preference for the hybrid; this entry describes clients.
 
     Offering both groups and taking whichever the server picks was
     considered and rejected. It fails where it would matter most: the
@@ -1086,7 +1087,9 @@ does nothing more.
     `CH_TRUST_WEBPKI` and not from `CH_KEX_PQ`, so the server half keeps
     `CH_KEX_GROUP` at x25519 and never meets `srv_flight.h`'s refusal of
     `CH_KEX_PQ`. The server's hybrid half, when it lands, replaces that
-    refusal and those x25519 constants.
+    refusal and those x25519 constants. Entry 54 landed it: the refusal
+    and the server's use of `CH_KEX_GROUP` are gone, and that object's
+    server selects the hybrid its client offers.
 
     Entry 39 rejected carrying both shares for three costs: 1,216
     octets of ML-KEM share in every hello, a key pair most handshakes
@@ -1100,3 +1103,66 @@ does nothing more.
     considered and rejected. RFC 9954 permits the reuse, the server
     selects one group so only one share enters a key exchange, and the
     second pair would cost one more scalar multiplication per handshake.
+
+54. **A server holds both groups and prefers X25519MLKEM768, and asks for
+    it with a HelloRetryRequest when the client did not share it.** Camilo
+    answered `docs/server.md`'s open question ten on 2026-09-24: every
+    server build, `ROLE=server` and `ROLE=both` over all three transports,
+    carries ML-KEM-768 and selects the hybrid for any client that lists
+    it. `srv_kex.[ch]` holds the choice, the server's key share and the
+    shared secret, and `ch_tls.group` reports the group on the server as
+    it does on the client.
+
+    The order is the server's, and it reads `supported_groups`:
+    X25519MLKEM768 when the client lists it, and x25519 otherwise. A hello
+    that carries the hybrid share gets the hybrid in one round trip, even
+    when an x25519 share comes beside it. A hello that lists the hybrid
+    and shares x25519 alone gets a HelloRetryRequest that names the
+    hybrid, through the cookie the retry path already had, and its second
+    hello must carry that share. A hello that lists x25519 alone gets
+    x25519. RFC 9846 §4.3.8 describes this shape for a server that
+    respects preferences: select from `supported_groups` first, then send
+    a ServerHello or a HelloRetryRequest from what `key_share` carries
+    (rfc9846.txt:2172-2177). Here the preference is the server's own.
+
+    The trade is one round trip, paid only by a client that lists the
+    hybrid and shares x25519 alone. Taking that x25519 share would save
+    the round trip and complete a classic key exchange with a client that
+    offered post-quantum protection, which is the recording entry 12
+    names: harvested now and decrypted later. OpenSSL with x25519 first in
+    its group list pays the round trip. A `TRUST=webpki` client, a
+    `KEX=pq` client and OpenSSL's default list share the hybrid and pay
+    nothing.
+
+    The hybrid follows RFC 10024. The server encapsulates to the ML-KEM
+    encapsulation key at the front of the client's share and answers with
+    the ciphertext and then its x25519 value, and the shared secret is
+    the ML-KEM secret and then the x25519 one, the order
+    `handshake_flight.c`'s `hybrid_secret` already reads. An encapsulation
+    key that fails FIPS 203 §7.2's modulus check, and a share of any
+    length but 1,216 bytes, end the handshake with illegal_parameter, as
+    RFC 10024 asks; the x25519 half keeps the all-zero check (INV-3). The
+    32 bytes of encapsulation randomness are a new `ch_rand_bytes` site,
+    drawn only when the server selects the hybrid (INV-4), and the ML-KEM
+    secret lives in `handshake_state.mlkem_ss` from the ServerHello to the
+    key schedule and no longer (INV-17).
+
+    Cost: every server object carries ML-KEM-768 and SHA-3. The server's
+    `ch_tls` grows from 1,368 to 1,968 bytes on arm64, because the
+    ServerHello it stages in the TX array carries a 1,120-byte share, and
+    `ch_srv_accept`'s stack peak goes from 5,248 to 10,304 bytes through
+    the encapsulation (`bench/results-sram.csv`), which puts every server
+    build on the hybrid's 6,656-byte frame budget (INV-19). There is no
+    classic-only server: a device that cannot spare the stack cannot
+    build one. Gain: every client that can run the hybrid gets it from a
+    chapulin server, colibri's QUIC server included, with no build choice
+    to get wrong.
+
+    Three alternatives were considered and rejected. Selecting whichever
+    group the client shared saves the round trip and gives a classic key
+    exchange to exactly the clients that shared x25519 first. A `KEX`
+    axis for servers would be a build choice a server does not need, and
+    entry 53 already refuses `KEX` beside a server role. Drawing the
+    encapsulation randomness in `srv_begin` beside the x25519 scalar would
+    draw 32 bytes a classic handshake never uses and keep them in the
+    handshake state until the ServerHello.

@@ -83,6 +83,11 @@ MEMORY = [
     ("peak stack, `ch_read` (worst case: KeyUpdate rekey)", [["stack_read"]]),
     ("peak stack, `ch_connect` (`KEX=pq`)", [["stack_connect_pq"]]),
     ("peak stack, `ch_write` / `ch_close`", [["stack_write", "stack_close"]]),
+    ("`ch_tls` under `ROLE=server` (includes 1221 B TX staging)",
+     [["session_struct_server_arm64"], ["session_struct_server_rv32"]]),
+    ("**total static working set, `ROLE=server`** (2048 buffer)",
+     [["static_working_set_server_arm64"], ["static_working_set_server_rv32"]]),
+    ("peak stack, `ch_srv_accept` (`ROLE=server`)", [["stack_accept_server"]]),
 ]
 
 

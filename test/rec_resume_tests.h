@@ -123,6 +123,8 @@ static void test_resumption(void) {
     CHECK(ch_record_state(&client) == CH_ST_CONNECTED);
     CHECK(ch_record_state(&server) == CH_ST_CONNECTED);
     CHECK(server.t.psk_selected == 1 && server.t.sigalg == 0);
+    // psk_dhe_ke runs the key exchange again, over the same group.
+    CHECK(client.t.group == LOOP_GROUP && server.t.group == LOOP_GROUP);
     // ServerHello, EncryptedExtensions and Finished, then the ticket.
     CHECK(records_pushed == 4);
     uint8_t from_client[SHA256_LEN];

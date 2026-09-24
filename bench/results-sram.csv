@@ -15,7 +15,7 @@ static_working_set_webpki_arm64,15354
 static_working_set_webpki_rv32,15250
 stack_connect_rsa,4992
 stack_connect_ecdsa,3824
-stack_connect_psk,2480
+stack_connect_psk,2768
 stack_connect_ca_rsa,5472
 stack_connect_ca_ecdsa,3984
 stack_connect_webpki,16416
@@ -23,3 +23,8 @@ stack_read,1696
 stack_connect_pq,15872
 stack_write,912
 stack_close,864
+session_struct_server_arm64,1968
+session_struct_server_rv32,1816
+static_working_set_server_arm64,4016
+static_working_set_server_rv32,3864
+stack_accept_server,10304

@@ -16,8 +16,10 @@
 // the parser writes, so a case can tell a kept seed from a written one.
 #define ALERT_SEED 0xa5
 
-// Room for the hello and the largest mutant: the golden hello is 216 bytes.
-#define HELLO_CAP 512
+// Room for the hello and the largest mutant: the golden hello is 216 bytes,
+// and a hello that carries an X25519MLKEM768 share beside an x25519 one is
+// 1,434.
+#define HELLO_CAP 2048
 #define HEAD_CAP 128
 
 // §4.1.2's fields before the extension block: legacy_version, a counting

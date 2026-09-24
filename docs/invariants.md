@@ -78,7 +78,12 @@ last `ROLE=server` stub, as the entry said it would.
   `handshake_flight.c`: the hybrid secret under `KEX=pq`, the classic
   key exchange otherwise. A `TRUST=webpki` build compiles two, the
   hybrid secret and the x25519 one, one per group its ServerHello may
-  select. Each fails the handshake unless it returns 1.
+  select. A server role compiles one, in `srv_kex.c`'s `srv_kex_secret`,
+  which runs for either group it selects: against the client's x25519
+  share, or against the x25519 value that ends the client's hybrid share.
+  Each fails the handshake unless it returns 1, and the server's refusal
+  wipes all 64 bytes of the input keying material, which the `srv_kex`
+  harness proves.
   Wycheproof's small-order battery exercises the rejection. The clamp
   and the check sit in `x25519.c` for both X25519 fields:
   `x25519_wide.c` computes the ladder over a scalar `x25519.c` has
@@ -94,17 +99,20 @@ last `ROLE=server` stub, as the entry said it would.
 ### INV-4 — randomness only through the hook
 
 - **Claim.** All randomness flows through `ch_rand_bytes`, consumed
-  at exactly seven audited sites. Three are in `handshake.c`: the
+  at exactly eight audited sites. Three are in `handshake.c`: the
   key-share scalar, the ClientHello random, and the ML-KEM (d, z)
   seed, which only the `KEX=pq` and `TRUST=webpki` builds draw. Two are the server's
   mirror of the first two, in `srv_flight.c`: the key-share scalar it
   answers with, and the ServerHello random. A client and a server draw
   the same two values for the same reasons, so the audit is the same
-  audit; the server draws no third, because `KEX=pq` is a client build.
-  The sixth is the server's one draw per resumption ticket, in
+  audit. The sixth is the server's third: the 32 bytes of ML-KEM
+  encapsulation randomness, in `srv_kex.c`, drawn only when the server
+  selects X25519MLKEM768 and wiped once the encapsulation has run
+  (decisions.md 54). The client never draws it, because the client
+  decapsulates. The seventh is the server's one draw per resumption ticket, in
   `srv_resume.c`: the ticket's AEAD nonce, its `ticket_age_add` and its
   `ticket_nonce`, 24 bytes from one call, drawn only when the caller set
-  a ticket key and a clock. The seventh is the PSS salt in
+  a ticket key and a clock. The eighth is the PSS salt in
   `rsa_sign.c`, which no library object
   compiles today — nothing wires a signer into `srv_auth.c` yet, so
   only the test binaries, the Wycheproof suite and its CBMC harness
@@ -117,7 +125,8 @@ last `ROLE=server` stub, as the entry said it would.
   reference generator in `drbg.c`, which faults on an unseeded draw.
   Neither build carries a fallback that quietly produces bytes.
 - **Check.** Semgrep-structural (`inv-4-randomness-sites`): no `ch_rand_bytes` call
-  outside `handshake.c`, `srv_flight.c`, `srv_resume.c` and `rsa_sign.c`.
+  outside `handshake.c`, `srv_flight.c`, `srv_kex.c`, `srv_resume.c` and
+  `rsa_sign.c`.
 - **Violation.** A PR conjures a nonce or padding bytes from a new
   call site nobody audits for seeding requirements.
 - See [docs/entropy.md](entropy.md).
@@ -458,7 +467,13 @@ last `ROLE=server` stub, as the entry said it would.
   two cipher suites (45). There a ServerHello selects either group,
   or the hybrid alone under `ch_cfg.require_pq`, and a
   HelloRetryRequest may ask for a cookie and nothing else. It carries
-  ChaCha20 or AES-128-GCM, and the same one as a retry before it.
+  ChaCha20 or AES-128-GCM, and the same one as a retry before it. A
+  server role selects rather than offers, and its group order is fixed
+  (decisions.md 54): X25519MLKEM768 whenever the client lists it, x25519
+  only when the client lists x25519 alone, and a HelloRetryRequest that
+  names the group when the hello carried no share for it, so a hello
+  that lists the hybrid and shares x25519 alone is asked for the hybrid
+  rather than answered over x25519.
 - **Mechanism.** Absence of selection code; the TRUST build flag picks
   the sigalg of a raw or ca build at compile time, never at runtime.
   The two-group offer is the `CH_KEX_TWO_GROUPS` arms of
@@ -480,7 +495,13 @@ last `ROLE=server` stub, as the entry said it would.
   require it to fail: a parser that takes `TLS_AES_256_GCM_SHA384`, and
   a ServerHello whose suite differs from the retry's.
   `handshake_parser_suite` proves an accepted message carries an
-  offered suite.
+  offered suite. The server's order is `srv_kex_group`'s, which the
+  `srv_kex` harness proves over every groups and shares pair a parsed
+  hello can report, and `bin/srv_flight_test` drives each row of it.
+  `inv07-srv-x25519-despite-hybrid-share` takes x25519 whenever the
+  client shared it, and `inv07-srv-skips-hybrid-retry` answers over the
+  x25519 share instead of asking for the hybrid; the test fails on both.
+  `test/e2e.sh` runs the same rows against OpenSSL's `s_client`.
 - **Violation.** A PR accepts a second cipher suite value in
   ServerHello and downgrade surface exists again.
 - See [decisions: Protocol surface](decisions.md#protocol-surface).
@@ -549,7 +570,12 @@ last `ROLE=server` stub, as the entry said it would.
   and a 65-byte key hashed first (RFC 2104 §2).
   `hmac-key-block-boundary.violation` and
   `hmac-key-over-block-unhashed.violation` move that boundary one byte
-  each way.
+  each way. A server that ran X25519MLKEM768 extracts the handshake
+  secret from the ML-KEM shared secret and then the x25519 one, RFC
+  10024's order; the `srv_kex` harness proves where each half lands, and
+  `inv11-srv-hybrid-halves-swapped.violation` swaps them, which
+  `bin/srv_flight_test` catches by deriving the client's keys from the
+  ServerHello's own bytes.
 - **Violation.** A PR hashes a message before validating it, and a
   rejected message influences derived keys.
 - See [decisions: Assurance](decisions.md#assurance).
@@ -727,7 +753,15 @@ last `ROLE=server` stub, as the entry said it would.
   is absent, is not 32 bytes, or does not compare equal under
   `ct_memeq`. A hello left with no ticket and no scheme a provisioned
   identity signs is missing_extension when it carried no
-  signature_algorithms and handshake_failure when it did.
+  signature_algorithms and handshake_failure when it did. A server's
+  ClientHello parser refuses a key share of any length but its group's,
+  32 bytes for x25519 and 1,216 for X25519MLKEM768, with
+  illegal_parameter, and `srv_kex_share` refuses an encapsulation key
+  that fails FIPS 203 §7.2's modulus check with illegal_parameter, as
+  RFC 10024 asks. `bin/srv_test` holds both lengths at the boundary
+  pair, and `bin/srv_flight_test` holds the modulus at 3,328 taken and
+  3,329 refused; `srv-parser-share-length-floor` and
+  `srv-kex-ek-check-dropped` require each to fail.
 - **Mechanism.** Fail-closed policy, each refusal an explicit branch
   with its alert.
 - **Check.** handshake_strict table cases per refusal; CBMC proves the
@@ -1529,7 +1563,13 @@ last `ROLE=server` stub, as the entry said it would.
   wipe inside a phase has a test: a `TRUST=webpki` client wipes the
   ML-KEM seed once the ServerHello selects x25519, and
   `inv17-x25519-keeps-mlkem-seed` requires `bin/webpki_session_test` to
-  fail when it does not.
+  fail when it does not. A server that ran X25519MLKEM768 keeps the ML-KEM
+  shared secret in `handshake_state.mlkem_ss` from the ServerHello to the
+  key schedule, and `srv_kex_secret` wipes it on both exits with the
+  x25519 key pair; the `srv_kex` harness proves it, and
+  `inv17-srv-keeps-mlkem-secret` requires `bin/srv_flight_test` to fail
+  when the wipe goes. The 32 bytes of encapsulation randomness die inside
+  the call that drew them.
 - **Violation.** A PR adds an early return between fail and wipe.
 - See [decisions: Memory and runtime](decisions.md#memory-and-runtime).
 
@@ -1563,13 +1603,17 @@ last `ROLE=server` stub, as the entry said it would.
   `TRUST=webpki`, whose `rsa_vp1` verifies RSA-4096 over 128 limbs
   (measured 3,168 with clang 23 on arm64 and 3,128 with Arm GNU gcc 16.2
   on the Cortex-M3). ML-KEM's own sources, `KEX_HYBRID_SRCS`, get 6,656
-  in every build that carries them, `KEX=pq` and every `TRUST=webpki`
-  object (decisions.md 53): K-PKE encrypt holds three polynomial vectors
+  in every build that carries them, `KEX=pq`, every `TRUST=webpki`
+  object (decisions.md 53) and every server role (decisions.md 54):
+  K-PKE encrypt holds three polynomial vectors
   and two polynomials (measured worst: `mlk_pke_encrypt` at 5,744 with
   gcc 13.3 and 6,224 with clang 21 and 23 on arm64). That ceiling is
   per file, so a new buffer in any other file of those objects still
-  fails at its build's budget. A device that cannot spare the budget
-  builds the classic key exchange.
+  fails at its build's budget. A server's own sources keep the 2,560-byte
+  device budget: the largest, `srv_send_server_hello`, holds the
+  1,120-byte hybrid share it answers with (measured 1,232 with clang 23
+  on arm64). A device client that cannot spare the budget builds the
+  classic key exchange; a server has no classic-only build.
 - **Mechanism.** Compiler-enforced: `-Wvla` in global CFLAGS bans
   variable frames everywhere, and `make lint-stack` compiles the
   sources this build packages, under the defines it packages them
@@ -1587,7 +1631,8 @@ last `ROLE=server` stub, as the entry said it would.
   runs lint-stack for the build it was given through `lint`, and runs
   `make lint-stack TRUST=webpki` as a leg of its own, so plain `make
   check`, the target `make ci` runs on a pull request, holds the
-  4,096-byte budget too.
+  4,096-byte budget too. `make lint-stack ROLE=server TRUST=none` is
+  another leg, the one that compiles the server's sources.
 - **Violation.** A PR sizes a scratch buffer from a length field, or
   adds a frame that silently outgrows the smallest supported SRAM.
   `test/violations/inv19-webpki-object-frame.violation` is that mutant:

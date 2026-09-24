@@ -35,20 +35,18 @@
 // and CH_TRUST_WEBPKI would compile a certificate parser no session
 // reaches.
 //
-// A QUIC server is not in scope yet: RFC 9001 §4.1.3 removes the record
-// layer (rfc9001.txt:462-464), and the dummy change_cipher_spec,
-// record_size_limit and the early-data discard all disappear with it.
-// Nothing forbids it later and nobody has measured what the two axes
-// share (docs/server.md, open question ten).
+// A QUIC server builds, and docs/server.md's open question ten, which
+// asked whether it was in scope, is answered. RFC 9001 §4.1.3 removes the
+// record layer (rfc9001.txt:462-464), and the dummy change_cipher_spec,
+// record_size_limit and the early-data discard disappear with it, which
+// srv_flight.c's QUIC arms state.
 #if defined(CH_ROLE_SERVER) && !defined(CH_ROLE_BOTH)
 #if defined(CH_TRUST_CA) || defined(CH_TRUST_WEBPKI)
 #error "a server-only object has no trust mode: drop CH_TRUST_*, or build ROLE=both"
 #endif
 #endif
-// A QUIC server compiles this header and srv_flight.c's QUIC arm. What it
-// still lacks is the driver, so the Makefile refuses the combination and
-// this header no longer does: the pieces below have to compile before the
-// driver that drives them can be written (docs/quic_server.md, item 4).
+// A QUIC server compiles this header, srv_flight.c's QUIC arm and
+// srv_quic.c's driver (docs/quic_server.md).
 
 #ifdef CH_ROLE_SERVER
 

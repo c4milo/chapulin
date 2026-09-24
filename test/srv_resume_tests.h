@@ -72,9 +72,9 @@ typedef struct {
 
 // Writes n identities and n binders as the two OfferedPsks lists and points
 // flight_hello at them, with pre_shared_key and psk_dhe_ke offered and
-// every ALPN, suite, group and scheme bit offer_everything sets.
+// every ALPN, suite, group and scheme bit offer_x25519 sets.
 static void offer_tickets(const resume_offer *offers, size_t n) {
-    offer_everything();
+    offer_x25519();
     wbuf w;
     wb_init(&w, resume_identities, sizeof resume_identities);
     for (size_t i = 0; i < n; i++) {
@@ -113,7 +113,7 @@ static void resume_reset(selection *sel, uint64_t now) {
     memset(sel, 0, sizeof *sel);
     sel->suite = SUITE_CHACHA20_POLY1305_SHA256;
     sel->hash_len = SHA256_LEN;
-    sel->group = CH_KEX_GROUP;
+    sel->group = CH_GROUP_X25519;
     sel->sigalg = SIGALG_ECDSA_P256_SHA256;
 }
 

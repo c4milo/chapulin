@@ -21,7 +21,7 @@ static void test_retry_zeroed_selection(void) {
     // cookie_echo is file-scope, so flight_hello never points at this frame.
     size_t cookie_len = hs.cookie_len;
     memcpy(cookie_echo, hs.cookie, cookie_len);
-    offer_everything();
+    offer_x25519();
     flight_hello.cookie = cookie_echo;
     flight_hello.cookie_len = cookie_len;
     selection zeroed;
@@ -74,7 +74,7 @@ static void test_resume_binder_hash(void) {
     static const uint8_t zero[SHA256_LEN] = {0};
     flight_reset();
     srv_begin(&hs);
-    offer_everything();
+    offer_x25519();
     parse_result.truncated_len = 20;
     feed_handshake(HS_CLIENT_HELLO, FLIGHT_HELLO_BODY);
     CHECK(srv_read_client_hello(&hs, &flight_hello) == CH_OK);
@@ -84,7 +84,7 @@ static void test_resume_binder_hash(void) {
 
     flight_reset();
     srv_begin(&hs);
-    offer_everything();
+    offer_x25519();
     feed_handshake(HS_CLIENT_HELLO, FLIGHT_HELLO_BODY);
     CHECK(srv_read_client_hello(&hs, &flight_hello) == CH_OK);
     CHECK(memcmp(flight_hello.binder_hash, zero, sizeof zero) == 0);

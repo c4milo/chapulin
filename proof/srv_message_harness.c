@@ -2,13 +2,16 @@
 // buffer, for any capacity, and reports a length that fits the buffer it was
 // given.
 //
-// Three properties, over unconstrained inputs at each builder's real bound.
+// Four properties, over unconstrained inputs at each builder's real bound.
 // Memory safety and absence of UB, which is what the automatic checks
 // discharge. The return contract srv_message.h states once for all of them:
-// zero, or a length that fits cap. And the three refusals a builder makes on
+// zero, or a length that fits cap. The three refusals a builder makes on
 // something other than cap -- a cert_data length past the three-byte field, a
 // request_update that is neither of its two legal values, and a
-// transport-parameters body past CH_TRANSPORT_PARAMS_MAX.
+// transport-parameters body past CH_TRANSPORT_PARAMS_MAX. And the bound
+// session.h sizes ch_tls.tx by: a ServerHello over either group's share is
+// never longer than SRV_SERVER_HELLO_MAX, and a buffer of that length always
+// holds it, so the constant is sufficient rather than plausible.
 //
 // The wbuf writer is real, not stubbed: refusing to overflow is its contract,
 // and the point here is that each builder uses it correctly. Every operand is
@@ -67,7 +70,11 @@ static selection nondet_selection(void) {
 static uint8_t out[OUT_MAX];
 static uint8_t random32[SRV_RANDOM];
 static uint8_t session_id[SRV_SESSION_ID_MAX];
-static uint8_t share[CH_KEX_SERVER_SHARE];
+// The ServerHello's own buffer, one byte past the longest one, and the
+// longest share it carries. The share is not filled: the builder copies it
+// with wb_bytes and reads nothing from it, so its content is every content.
+static uint8_t hello_out[SRV_SERVER_HELLO_MAX + 1];
+static uint8_t share[CH_HYBRID_SERVER_SHARE];
 static uint8_t cookie[SRV_COOKIE_MAX];
 static uint8_t sig[SIG_MAX];
 static uint8_t der[16];
@@ -90,13 +97,18 @@ static size_t nondet_session_id_len(void) {
 
 static void prove_hellos(void) {
     selection sel = nondet_selection();
-    size_t cap = nondet_cap();
+    size_t cap = nondet_size_t();
+    __CPROVER_assume(cap <= sizeof hello_out);
     fill_nondet(random32, sizeof random32);
     fill_nondet(session_id, sizeof session_id);
-    fill_nondet(share, sizeof share);
-    size_t n = srv_build_server_hello(out, cap, &sel, random32, session_id, nondet_session_id_len(),
-                                      share, sizeof share);
+    // The two share lengths srv_kex_share writes (srv_kex.h).
+    size_t share_len = (nondet_u8() & 1) ? X25519_LEN : CH_HYBRID_SERVER_SHARE;
+    size_t n = srv_build_server_hello(hello_out, cap, &sel, random32, session_id,
+                                      nondet_session_id_len(), share, share_len);
     __CPROVER_assert(n <= cap, "a built ServerHello fits the buffer it was given");
+    __CPROVER_assert(n <= SRV_SERVER_HELLO_MAX, "no ServerHello is longer than its bound");
+    __CPROVER_assert(cap < SRV_SERVER_HELLO_MAX || n != 0,
+                     "SRV_SERVER_HELLO_MAX bytes always hold a ServerHello");
 
     sel = nondet_selection();
     cap = nondet_cap();

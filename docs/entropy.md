@@ -8,10 +8,13 @@ The stack draws randomness at exactly two points, both in the handshake:
 the ephemeral x25519 private key and the ClientHello random. In pinned
 mode the ephemeral key carries all confidentiality, so a guessable seed
 means a passive attacker can decrypt everything. A `ROLE=server` build
-draws the server's two, and one more per resumption ticket it issues:
-the ticket's AEAD nonce, its `ticket_age_add` and its `ticket_nonce`
-(INV-4). A repeated ticket nonce under one ticket key breaks the ticket
-seal, so a server's tickets are only as good as its seed.
+draws the server's two; 32 bytes of ML-KEM encapsulation randomness when
+it selects X25519MLKEM768, which fix the ML-KEM shared secret, so a
+guessable draw gives away the post-quantum half of that key exchange;
+and one more per resumption ticket it issues: the ticket's AEAD nonce,
+its `ticket_age_add` and its `ticket_nonce` (INV-4). A repeated ticket
+nonce under one ticket key breaks the ticket seal, so a server's tickets
+are only as good as its seed.
 
 Devices that generate keys at first boot, before any entropy exists, are
 a documented disaster class: Heninger, Durumeric, Wustrow, Halderman,

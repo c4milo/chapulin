@@ -8,6 +8,6 @@ reason: srv_check_retry_hello takes a second ClientHello only when the
   test_flight_retry_suite runs that retry to the end.
 
 --- old
-    if (group != CH_KEX_GROUP) {
+    if (srv_group_bit(group) == 0) {
 --- new
-    if (suite != SUITE_CHACHA20_POLY1305_SHA256 || group != CH_KEX_GROUP) {
+    if (suite != SUITE_CHACHA20_POLY1305_SHA256 || srv_group_bit(group) == 0) {

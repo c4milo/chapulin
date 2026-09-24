@@ -63,13 +63,16 @@ static int read_server_name(rbuf *e, hello_parse *p) {
 }
 
 // supported_groups (§4.3.7): NamedGroup named_group_list<2..2^16-1>.
+// One walk sets the bit of each group this build holds; a group outside
+// them is read and ignored. The client's order is not recorded, because
+// the server's preference decides (srv_kex.h).
 static int read_supported_groups(rbuf *e, hello_parse *p) {
     size_t list_len = 0;
     if (!srv_open_code_point_list(e, &list_len)) {
         return srv_refuse(p->alert, ALERT_DECODE_ERROR);
     }
-    if (srv_list_has(e, list_len, CH_KEX_GROUP)) {
-        p->ch->groups |= SRV_GROUP_KEX;
+    for (size_t i = 0; i < list_len; i += 2) {
+        p->ch->groups |= srv_group_bit(rb_u16(e));
     }
     return CH_OK;
 }
@@ -279,20 +282,29 @@ static int read_psk_modes(rbuf *e, hello_parse *p) {
     return CH_OK;
 }
 
-// One KeyShareEntry for this build's group. Its key_exchange must be
-// CH_KEX_CLIENT_SHARE bytes, or illegal_parameter, this design's choice
-// under §6 (rfc9846.txt:3789-3791). The first such entry is the share;
-// §4.3.8 forbids the client a second one for the same group and leaves
-// checking that to the server's discretion, so a second is read and
+// One KeyShareEntry for a group this build holds, whose bit is bit. Its
+// key_exchange must be that group's length, X25519_LEN for x25519 and
+// CH_HYBRID_CLIENT_SHARE for X25519MLKEM768, or illegal_parameter. For
+// the hybrid that is RFC 10024's answer to an encapsulation key that
+// fails FIPS 203 §7.2's check, whose first step is the length; for
+// x25519 it is this design's choice under §6 (rfc9846.txt:3789-3791).
+// The first entry for a group is its share; §4.3.8 forbids the client a
+// second one for the same group and leaves checking that to the
+// server's discretion (rfc9846.txt:2184-2188), so a second is read and
 // ignored.
-static int take_share(hello_parse *p, const uint8_t *share, size_t share_len) {
-    if (share_len != CH_KEX_CLIENT_SHARE) {
+static int take_share(hello_parse *p, uint8_t bit, const uint8_t *share, size_t share_len) {
+    int hybrid = bit == SRV_GROUP_X25519MLKEM768;
+    if (share_len != (hybrid ? CH_HYBRID_CLIENT_SHARE : X25519_LEN)) {
         return srv_refuse(p->alert, ALERT_ILLEGAL_PARAMETER);
     }
-    if (p->ch->share == NULL) {
-        p->ch->share = share;
-        p->ch->share_len = share_len;
-        p->ch->shares |= SRV_GROUP_KEX;
+    if ((p->ch->shares & bit) != 0) {
+        return CH_OK;
+    }
+    p->ch->shares |= bit;
+    if (hybrid) {
+        p->ch->hybrid_share = share;
+    } else {
+        p->ch->x25519_share = share;
     }
     return CH_OK;
 }
@@ -300,7 +312,8 @@ static int take_share(hello_parse *p, const uint8_t *share, size_t share_len) {
 // key_share (§4.3.8): KeyShareEntry client_shares<0..2^16-1>, each a
 // group and an opaque key_exchange<1..2^16-1>. An empty list is
 // permitted (rfc9846.txt:4599-4601) and leaves shares at 0. An entry
-// for a group this build does not hold is read and ignored.
+// for a group this build does not hold is read and ignored, and so is its
+// length.
 static int read_key_share(rbuf *e, hello_parse *p) {
     size_t list_len = rb_u16(e);
     if (e->err || list_len > rb_left(e)) {
@@ -314,8 +327,9 @@ static int read_key_share(rbuf *e, hello_parse *p) {
         if (share == NULL || share_len == 0) {
             return srv_refuse(p->alert, ALERT_DECODE_ERROR);
         }
-        if (group == CH_KEX_GROUP) {
-            int rc = take_share(p, share, share_len);
+        uint8_t bit = srv_group_bit(group);
+        if (bit != 0) {
+            int rc = take_share(p, bit, share, share_len);
             if (rc != CH_OK) {
                 return rc;
             }

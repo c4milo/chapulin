@@ -145,14 +145,16 @@ static void flight_reset(void) {
     parse_alert = ALERT_DECODE_ERROR;
 }
 
-// A client_hello that offers everything this build holds, written to both
-// objects so a case may drive a handler that reads a message or one that
-// takes the message a read already produced.
-static void offer_everything(void) {
+// A client_hello that offers every suite and scheme this build holds and
+// the x25519 group alone, with a share for it, written to both objects so
+// a case may drive a handler that reads a message or one that takes the
+// message a read already produced. test/srv_flight_kex_tests.h drives the
+// hybrid.
+static void offer_x25519(void) {
     memset(&flight_hello, 0, sizeof flight_hello);
     flight_hello.suites = SRV_SUITE_CHACHA20_POLY1305;
-    flight_hello.groups = SRV_GROUP_KEX;
-    flight_hello.shares = SRV_GROUP_KEX;
+    flight_hello.groups = SRV_GROUP_X25519;
+    flight_hello.shares = SRV_GROUP_X25519;
     flight_hello.sigalgs = SRV_SIGALG_ECDSA_P256 | SRV_SIGALG_RSA_PSS;
     flight_hello.alpn_selected = CH_ALPN_NONE;
     parse_result = flight_hello;
@@ -213,19 +215,19 @@ static void test_flight_select(void) {
     // No overlap in suites, then in groups, then in schemes: each is the
     // handshake_failure RFC 9846 section 4.2.1 names.
     flight_reset();
-    offer_everything();
+    offer_x25519();
     flight_hello.suites = 0;
     CHECK(srv_select(&hs, &flight_hello, &sel) == CH_EPROTO && hs.alert == ALERT_HANDSHAKE_FAILURE);
-    offer_everything();
+    offer_x25519();
     flight_hello.groups = 0;
     CHECK(srv_select(&hs, &flight_hello, &sel) == CH_EPROTO && hs.alert == ALERT_HANDSHAKE_FAILURE);
-    offer_everything();
+    offer_x25519();
     flight_hello.sigalgs = 0;
     CHECK(srv_select(&hs, &flight_hello, &sel) == CH_EPROTO && hs.alert == ALERT_HANDSHAKE_FAILURE);
 
     // A client that offers a scheme this deployment provisioned no
     // identity for gets the same answer.
-    offer_everything();
+    offer_x25519();
     flight_hello.sigalgs = SRV_SIGALG_ECDSA_P256;
     memset(&sess.cfg.srv.ecdsa_p256, 0, sizeof sess.cfg.srv.ecdsa_p256);
     CHECK(srv_select(&hs, &flight_hello, &sel) == CH_EPROTO && hs.alert == ALERT_HANDSHAKE_FAILURE);
@@ -236,10 +238,10 @@ static void test_flight_select(void) {
 
     // The whole offer, answered under this build's preference order.
     flight_reset();
-    offer_everything();
+    offer_x25519();
     CHECK(srv_select(&hs, &flight_hello, &sel) == CH_OK);
     CHECK(sel.suite == SUITE_CHACHA20_POLY1305_SHA256 && sel.hash_len == SHA256_LEN);
-    CHECK(sel.group == CH_KEX_GROUP && sel.sigalg == SIGALG_ECDSA_P256_SHA256);
+    CHECK(sel.group == CH_GROUP_X25519 && sel.sigalg == SIGALG_ECDSA_P256_SHA256);
     CHECK(sel.need_retry == 0 && sel.psk_selected == 0);
 
     // supported_groups names the group and key_share carries nothing for
@@ -259,7 +261,7 @@ static void test_flight_alpn(void) {
     // The caller offers two protocols and the client sent no extension.
     // Nothing was asked for, so nothing failed.
     flight_reset();
-    offer_everything();
+    offer_x25519();
     sess.cfg.alpn_protocols = flight_alpn;
     sess.cfg.alpn_count = 2;
     CHECK((flight_hello.seen & SRV_EXT_ALPN) == 0);
@@ -267,14 +269,14 @@ static void test_flight_alpn(void) {
 
     // The lists intersect: the client sent a list and the parser found
     // the caller's second name in it.
-    offer_everything();
+    offer_x25519();
     flight_hello.seen = SRV_EXT_ALPN;
     flight_hello.alpn_selected = 1;
     CHECK(srv_select(&hs, &flight_hello, &sel) == CH_OK);
 
     // The lists are disjoint: the client sent a list and no offered name
     // was in it. This is the case section 3.2 makes fatal.
-    offer_everything();
+    offer_x25519();
     flight_hello.seen = SRV_EXT_ALPN;
     CHECK(flight_hello.alpn_selected == CH_ALPN_NONE);
     CHECK(srv_select(&hs, &flight_hello, &sel) == CH_EPROTO);
@@ -310,12 +312,12 @@ static void test_flight_read_hello(void) {
     // alert for a local limit, so the answer is internal_error.
     flight_reset();
     srv_begin(&hs);
-    offer_everything();
+    offer_x25519();
     feed_handshake(HS_CLIENT_HELLO, sizeof rxbuf - REC_HDR);
     CHECK(srv_read_client_hello(&hs, &flight_hello) == CH_OK);
     flight_reset();
     srv_begin(&hs);
-    offer_everything();
+    offer_x25519();
     feed_handshake(HS_CLIENT_HELLO, sizeof rxbuf - REC_HDR + 1);
     CHECK(srv_read_client_hello(&hs, &flight_hello) == CH_ECAP);
     CHECK(hs.alert == ALERT_INTERNAL_ERROR);
@@ -329,7 +331,7 @@ static void test_flight_server_name(void) {
     // hello that carried no name gets.
     flight_reset();
     srv_begin(&hs);
-    offer_everything();
+    offer_x25519();
     sess.cfg.srv.sni_buf = sni_buf;
     sess.cfg.srv.sni_cap = sizeof sni_buf;
     parse_result.server_name = name;
@@ -355,7 +357,7 @@ static void test_flight_server_name(void) {
 static void retry_round(selection *sel) {
     flight_reset();
     srv_begin(&hs);
-    offer_everything();
+    offer_x25519();
     parse_result.shares = 0;
     parse_result.session_id_len = 32;
     feed_handshake(HS_CLIENT_HELLO, FLIGHT_HELLO_BODY);
@@ -413,7 +415,7 @@ static void test_flight_retry(void) {
     // retry asked for.
     flight_hello.cookie = cookie_echo;
     flight_hello.cookie_len = hs.cookie_len;
-    flight_hello.shares = SRV_GROUP_KEX;
+    flight_hello.shares = SRV_GROUP_X25519;
     selection second = sel;
     CHECK(srv_check_retry_hello(&hs, &flight_hello, &second) == CH_OK);
     CHECK(second.need_retry == 0 && second.suite == sel.suite && second.group == sel.group);
@@ -452,12 +454,11 @@ static uint8_t client_share[X25519_LEN];
 static void hello_exchange_offering(selection *sel, uint8_t suites) {
     flight_reset();
     srv_begin(&hs);
-    offer_everything();
+    offer_x25519();
     parse_result.suites = suites;
     memset(client_priv, 0x5a, sizeof client_priv);
     x25519_base(client_share, client_priv);
-    parse_result.share = client_share;
-    parse_result.share_len = sizeof client_share;
+    parse_result.x25519_share = client_share;
     feed_handshake(HS_CLIENT_HELLO, FLIGHT_HELLO_BODY);
     CHECK(srv_read_client_hello(&hs, &flight_hello) == CH_OK);
     CHECK(srv_select(&hs, &flight_hello, sel) == CH_OK && sel->need_retry == 0);

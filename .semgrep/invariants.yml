@@ -89,16 +89,17 @@ rules:
     languages: [c]
     severity: ERROR
     message: >-
-      INV-4: randomness is consumed at seven audited sites: three in
+      INV-4: randomness is consumed at eight audited sites: three in
       handshake.c (the third only in the KEX=pq and TRUST=webpki builds), two in srv_flight.c (the server's
-      key-share scalar and ServerHello random), the ticket's one draw in srv_resume.c (its
-      AEAD nonce, ticket_age_add and ticket_nonce) and the PSS salt in rsa_sign.c. A new
-      call site needs its own seeding audit —
+      key-share scalar and ServerHello random), the server's ML-KEM encapsulation randomness in
+      srv_kex.c (drawn only when it selects X25519MLKEM768), the ticket's one draw in
+      srv_resume.c (its AEAD nonce, ticket_age_add and ticket_nonce) and the PSS salt in
+      rsa_sign.c. A new call site needs its own seeding audit —
       amend docs/invariants.md in the same PR. drbg.c is excluded
       because it defines the hook, not because it may call it.
     paths:
       exclude: [test, proof, fuzz, spec, bench, bin, examples, handshake.c, drbg.c, rsa_sign.c,
-                srv_flight.c, srv_resume.c]
+                srv_flight.c, srv_kex.c, srv_resume.c]
     pattern: ch_rand_bytes(...)
 
   - id: inv-1-seal-only-in-record

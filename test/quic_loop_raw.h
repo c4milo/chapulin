@@ -20,6 +20,9 @@ static void test_raw_resumption(void) {
     CHECK(run_quic(&ccfg, &scfg));
     CHECK(server.t.psk_selected == 0 && server.t.sigalg == SIGALG_ECDSA_P256_SHA256);
     CHECK(handshake_messages() == 4);
+    // The client offers x25519 alone, so the server, which holds both
+    // groups, selects x25519, and both ends report it.
+    CHECK(server.t.group == CH_GROUP_X25519 && client.t.group == CH_GROUP_X25519);
     take_ticket();
     CHECK(kept.count == 1 && kept.lifetime_s == SRV_TICKET_LIFETIME);
     CHECK(kept.identity_len == SRV_TICKET_LEN);
@@ -34,6 +37,7 @@ static void test_raw_resumption(void) {
     CHECK(run_quic(&ccfg, &scfg));
     CHECK(server.t.psk_selected == 1 && server.t.sigalg == 0);
     CHECK(handshake_messages() == 2);
+    CHECK(server.t.group == CH_GROUP_X25519 && client.t.group == CH_GROUP_X25519);
     check_keys_agree();
     take_ticket();
     CHECK(kept.count == 2 && kept.lifetime_s == SRV_TICKET_LIFETIME - 30);

@@ -1,0 +1,17 @@
+invariant: INV-11
+file: srv_kex.c
+catches: srv_flight_test
+reason: the server puts the x25519 shared secret ahead of the ML-KEM one in
+  the input keying material, which is the order the group's name
+  suggests and the reverse of the one RFC 10024 fixes. Both halves are
+  still secret, so nothing on the server's side notices; the client
+  derives other handshake keys and the first sealed record fails.
+  test_flight_hybrid_secret derives the client's keys from the
+  ServerHello's own bytes and compares them with the server's.
+
+--- old
+        memcpy(ikm, h->mlkem_ss, MLKEM_SS_LEN);
+        ecdhe = ikm + MLKEM_SS_LEN;
+--- new
+        memcpy(ikm + X25519_LEN, h->mlkem_ss, MLKEM_SS_LEN);
+        ecdhe = ikm;
