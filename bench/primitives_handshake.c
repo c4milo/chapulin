@@ -16,8 +16,13 @@
 // the client pins the server's own public key and hashes the one-entry
 // chain below without reading it, so no certificate authority is
 // needed. The server is given no ticket key, so every handshake here is
-// a full one, and it has no KEX=pq half (srv_flight.h), so a hybrid one
-// cannot run here.
+// a full one.
+//
+// Built with -DCH_KEX_PQ, the client offers X25519MLKEM768 alone, as a
+// KEX=pq raw client does, and the server, which carries ML-KEM in every
+// build, selects it: the rows gain a _hybrid suffix, and a handshake that
+// ends on another group fails the bench. The server's buffer then holds
+// the client's hybrid hello, as test/rec_loop_test.c's does.
 //
 // Built with -DBENCH_COUNT_CALLS and -finstrument-functions, the program
 // times nothing. It runs one handshake per identity, then a second one
@@ -31,9 +36,17 @@
 #include "rec.h"
 #include "srv_rec.h"
 
+#ifdef CH_KEX_PQ
+#include "handshake_message.h"
+#include "record.h"
+#endif
+
 #ifdef BENCH_COUNT_CALLS
 #include "aead.h"
 #include "hkdf.h"
+#ifdef CH_KEX_PQ
+#include "mlkem.h"
+#endif
 #include "p256.h"
 #include "p256_sign.h"
 #include "rand.h"
@@ -57,6 +70,18 @@
 #define WIRE_MAX 4096 // room for one flight; the two calls that fill it check it
 #define COOKIE_KEY_BYTE 7
 
+// The group both ends must end on, and the suffix that tells its rows
+// apart from the x25519 ones.
+#ifdef CH_KEX_PQ
+#define BENCH_GROUP CH_GROUP_X25519MLKEM768
+#define KEX_TAG "_hybrid"
+#define SERVER_BUF_LEN (REC_HDR + CH_HELLO_MAX)
+#else
+#define BENCH_GROUP CH_GROUP_X25519
+#define KEX_TAG ""
+#define SERVER_BUF_LEN CH_MIN_RXBUF
+#endif
+
 // Valid DER that nothing on either side parses (test/rec_loop_test.c).
 static const uint8_t cert_der[4] = {0x30, 0x02, 0x05, 0x00};
 static const ch_cert chain[1] = {
@@ -64,7 +89,7 @@ static const ch_cert chain[1] = {
 };
 static uint8_t cookie_key[32];
 static uint8_t client_buf[CH_MIN_RXBUF];
-static uint8_t server_buf[CH_MIN_RXBUF];
+static uint8_t server_buf[SERVER_BUF_LEN];
 static ch_record client;
 static ch_record server;
 static ch_cfg client_cfg;
@@ -130,18 +155,18 @@ typedef struct {
 
 #ifdef CH_PIN_ECDSA
 static const identity IDENTITIES[] = {
-    {"handshake_pinned_ecdsa_p256", "handshake_pinned_ecdsa_p256_client_side",
-     "handshake_pinned_ecdsa_p256_server_side", p256_sign_vectors[0].pub,
+    {"handshake_pinned_ecdsa_p256" KEX_TAG, "handshake_pinned_ecdsa_p256" KEX_TAG "_client_side",
+     "handshake_pinned_ecdsa_p256" KEX_TAG "_server_side", p256_sign_vectors[0].pub,
      sizeof p256_sign_vectors[0].pub},
 };
 #else
 static ch_rsa_priv rsa_key;
 static const identity IDENTITIES[] = {
-    {"handshake_pinned_rsa2048", "handshake_pinned_rsa2048_client_side",
-     "handshake_pinned_rsa2048_server_side", rsa_sign_2048_n, sizeof rsa_sign_2048_n,
+    {"handshake_pinned_rsa2048" KEX_TAG, "handshake_pinned_rsa2048" KEX_TAG "_client_side",
+     "handshake_pinned_rsa2048" KEX_TAG "_server_side", rsa_sign_2048_n, sizeof rsa_sign_2048_n,
      rsa_sign_2048_d},
-    {"handshake_pinned_rsa3072", "handshake_pinned_rsa3072_client_side",
-     "handshake_pinned_rsa3072_server_side", rsa_sign_3072_n, sizeof rsa_sign_3072_n,
+    {"handshake_pinned_rsa3072" KEX_TAG, "handshake_pinned_rsa3072" KEX_TAG "_client_side",
+     "handshake_pinned_rsa3072" KEX_TAG "_server_side", rsa_sign_3072_n, sizeof rsa_sign_3072_n,
      rsa_sign_3072_d},
 };
 #endif
@@ -250,6 +275,9 @@ static void handshake_once(void) {
     for (int round = 0; round < ROUNDS_MAX; round++) {
         if (ch_record_state(&client) == CH_ST_CONNECTED &&
             ch_record_state(&server) == CH_ST_CONNECTED) {
+            if (client.t.group != BENCH_GROUP || server.t.group != BENCH_GROUP) {
+                bench_fail("the handshake connected on a group this build does not time");
+            }
             return;
         }
         if (!client_to_server() || !server_to_client()) {
@@ -303,19 +331,24 @@ typedef struct {
 } counted;
 
 static counted CALLS[] = {
-    {"x25519",            (void (*)(void))x25519,            {0, 0}},
-    {"x25519_base",       (void (*)(void))x25519_base,       {0, 0}},
-    {"rsa_pss_sign",      (void (*)(void))rsa_pss_sign,      {0, 0}},
-    {"rsa_pss_verify",    (void (*)(void))rsa_pss_verify,    {0, 0}},
-    {"p256_sign",         (void (*)(void))p256_sign,         {0, 0}},
-    {"p256_ecdsa_verify", (void (*)(void))p256_ecdsa_verify, {0, 0}},
-    {"hkdf_extract",      (void (*)(void))hkdf_extract,      {0, 0}},
-    {"hkdf_expand_label", (void (*)(void))hkdf_expand_label, {0, 0}},
-    {"hmac_sha256",       (void (*)(void))hmac_sha256,       {0, 0}},
-    {"sha256_final",      (void (*)(void))sha256_final,      {0, 0}},
-    {"aead_seal",         (void (*)(void))aead_seal,         {0, 0}},
-    {"aead_open",         (void (*)(void))aead_open,         {0, 0}},
-    {"ch_rand_bytes",     (void (*)(void))ch_rand_bytes,     {0, 0}},
+    {"x25519",              (void (*)(void))x25519,              {0, 0}},
+    {"x25519_base",         (void (*)(void))x25519_base,         {0, 0}},
+    {"rsa_pss_sign",        (void (*)(void))rsa_pss_sign,        {0, 0}},
+    {"rsa_pss_verify",      (void (*)(void))rsa_pss_verify,      {0, 0}},
+    {"p256_sign",           (void (*)(void))p256_sign,           {0, 0}},
+    {"p256_ecdsa_verify",   (void (*)(void))p256_ecdsa_verify,   {0, 0}},
+    {"hkdf_extract",        (void (*)(void))hkdf_extract,        {0, 0}},
+    {"hkdf_expand_label",   (void (*)(void))hkdf_expand_label,   {0, 0}},
+    {"hmac_sha256",         (void (*)(void))hmac_sha256,         {0, 0}},
+    {"sha256_final",        (void (*)(void))sha256_final,        {0, 0}},
+    {"aead_seal",           (void (*)(void))aead_seal,           {0, 0}},
+    {"aead_open",           (void (*)(void))aead_open,           {0, 0}},
+    {"ch_rand_bytes",       (void (*)(void))ch_rand_bytes,       {0, 0}},
+#ifdef CH_KEX_PQ
+    {"mlkem_keygen_dk",     (void (*)(void))mlkem_keygen_dk,     {0, 0}},
+    {"mlkem_encaps_derand", (void (*)(void))mlkem_encaps_derand, {0, 0}},
+    {"mlkem_decaps",        (void (*)(void))mlkem_decaps,        {0, 0}},
+#endif
 };
 #define CALLS_COUNT (sizeof CALLS / sizeof CALLS[0])
 

@@ -5,9 +5,9 @@
 # bench/results-primitives-calls.csv, how many times each end of each
 # handshake calls each primitive. bench/notes-primitives.md reads both.
 #
-# It builds bench/primitives.c into nine timed programs and two counting
-# ones, because the multiply, the X25519 field and the pinned algorithm are
-# build choices:
+# It builds bench/primitives.c into eleven timed programs and three
+# counting ones, because the multiply, the X25519 field, the key exchange
+# and the pinned algorithm are build choices:
 #
 #   primitives                  every primitive, over the 16x16 multiply
 #                               the packaged object ships (ct.h)
@@ -19,10 +19,12 @@
 #                               x25519_wide.c, the only code that build
 #                               changes; built only where the compiler has
 #                               unsigned __int128
-#   handshake, default, CH_NATIVE_WIDEMUL and X25519=wide, once pinning an
-#   RSA modulus and once pinning a P-256 point (-DCH_PIN_ECDSA)
-#   calls, the two handshake programs again with -finstrument-functions,
-#                               which count calls and time nothing
+#   handshake, default, CH_NATIVE_WIDEMUL, X25519=wide and KEX=pq, once
+#   pinning an RSA modulus and once pinning a P-256 point (-DCH_PIN_ECDSA);
+#   the KEX=pq client offers X25519MLKEM768 alone and the server selects it
+#   calls, the RSA and ECDSA handshake programs and the ECDSA hybrid one
+#                               again with -finstrument-functions, which
+#                               count calls and time nothing
 #
 # Each non-default build changes one choice from the default, so a row's
 # difference from its default row is that choice's alone.
@@ -87,6 +89,10 @@ build handshake_rsa_native "${HANDSHAKE_DEFS[@]}" -DCH_NATIVE_WIDEMUL "${HANDSHA
 build handshake_ecdsa "${HANDSHAKE_DEFS[@]}" -DCH_PIN_ECDSA "${HANDSHAKE_SRCS[@]}"
 build handshake_ecdsa_native "${HANDSHAKE_DEFS[@]}" -DCH_PIN_ECDSA -DCH_NATIVE_WIDEMUL \
     "${HANDSHAKE_SRCS[@]}"
+# The hybrid key exchange. The server carries ML-KEM in every build, so
+# LOOP_SRCS already holds its sources; -DCH_KEX_PQ makes the client offer it.
+build handshake_rsa_hybrid "${HANDSHAKE_DEFS[@]}" -DCH_KEX_PQ "${HANDSHAKE_SRCS[@]}"
+build handshake_ecdsa_hybrid "${HANDSHAKE_DEFS[@]}" -DCH_PIN_ECDSA -DCH_KEX_PQ "${HANDSHAKE_SRCS[@]}"
 # The X25519=wide programs, with the timing assertion ct.h asks of that build.
 # A compiler without unsigned __int128 cannot build the field, so it skips.
 WIDE=""
@@ -106,6 +112,8 @@ build calls_rsa "${HANDSHAKE_DEFS[@]}" -DBENCH_COUNT_CALLS -finstrument-function
     "${HANDSHAKE_SRCS[@]}"
 build calls_ecdsa "${HANDSHAKE_DEFS[@]}" -DBENCH_COUNT_CALLS -finstrument-functions \
     -DCH_PIN_ECDSA "${HANDSHAKE_SRCS[@]}"
+build calls_ecdsa_hybrid "${HANDSHAKE_DEFS[@]}" -DBENCH_COUNT_CALLS -finstrument-functions \
+    -DCH_PIN_ECDSA -DCH_KEX_PQ "${HANDSHAKE_SRCS[@]}"
 
 load() { # the three load averages, space separated
     uptime | sed -e 's/.*load average[s]*: //' -e 's/,//g'
@@ -150,9 +158,12 @@ run handshake_ecdsa_native handshake
 if [ -n "$WIDE" ]; then
     run handshake_ecdsa_x25519_wide handshake
 fi
+run handshake_rsa_hybrid handshake
+run handshake_ecdsa_hybrid handshake
 LOAD_AFTER=$(load)
 "$W/calls_rsa" --quick handshake | grep -v '^#' >"$W/calls"
 "$W/calls_ecdsa" --quick handshake | grep -v '^#' | tail -n +2 >>"$W/calls"
+"$W/calls_ecdsa_hybrid" --quick handshake | grep -v '^#' | tail -n +2 >>"$W/calls"
 
 if [ -n "$QUICK" ]; then
     cat "$W/rows" "$W/calls"
@@ -168,6 +179,7 @@ TREE=$(git describe --always --dirty 2>/dev/null || echo unknown)
     echo "# primitives adds -DCH_RSA_MODULUS_MAX=512; handshake adds ${HANDSHAKE_DEFS[*]}," \
         "and -DCH_PIN_ECDSA for the ecdsa rows"
     echo "# the X25519=wide rows add -DCH_X25519_WIDE -DCH_NATIVE_MUL128 and x25519_wide.c"
+    echo "# the _hybrid handshake rows add -DCH_KEX_PQ: the client offers X25519MLKEM768 alone"
     echo "# load average (1, 5, 15 min) before: $LOAD_BEFORE; after: $LOAD_AFTER"
     cat "$W/notes"
     echo "# ns: nanoseconds per byte (unit byte) or per operation (unit op), the median over" \
