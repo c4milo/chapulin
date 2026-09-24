@@ -59,7 +59,7 @@
 #   the caller supplies every I/O callback -- so no shipped source reaches
 #   execl, system or popen. Its one finding is test/diff_driver.h:124, where
 #   the differential driver execs the Lean spec binary named by argv[1]
-#   (test/diff_test.c:36, defaulting to spec/.lake/build/bin/diffspec). That is
+#   (test/diff_test.c:36, defaulting to spec/lean/.lake/build/bin/diffspec). That is
 #   the developer naming a path on their own command line.
 # - readability-math-missing-parentheses: byte-packing indices like
 #   p[4 * i + 1] saturate this codebase; the precedence is grade-school and

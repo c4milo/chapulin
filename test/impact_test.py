@@ -102,7 +102,7 @@ def check_commands(mapping):
     targets = set(mapping.rules)
     bad = 0
     files = sorted({v[0] for v in impact_read.violations().values()})
-    files += ["webpki_time.c", "spec/Spec/Sha256.lean", "test/unit_test.c",
+    files += ["webpki_time.c", "spec/lean/Spec/Sha256.lean", "test/unit_test.c",
               "proof/record_harness.c", "docs/proofs.md", "test/e2e.sh"]
     seen = set()
     for path in files:
@@ -245,7 +245,7 @@ def sample_paths():
     rule for."""
     files = sorted({v[0] for v in impact_read.violations().values()})
     return files + ["webpki_time.c", "tls.c", "p256.c", "mlkem.c",
-                    "spec/Spec/Sha256.lean", "test/unit_test.c",
+                    "spec/lean/Spec/Sha256.lean", "test/unit_test.c",
                     "test/hpp_test.cpp", "examples/psk_client.c",
                     "proof/record_harness.c", "docs/proofs.md", "test/e2e.sh",
                     "tools/proof-cover.py", "bench/sram.sh"]

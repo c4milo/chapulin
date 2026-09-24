@@ -35,7 +35,7 @@
 //
 // Not proved here: that the walk accepts only a chain whose signatures
 // verify. The stubs answer a nondet verdict, so the formula says
-// nothing about which chains reach CH_OK. spec/Spec/Webpki.lean states
+// nothing about which chains reach CH_OK. spec/lean/Spec/Webpki.lean states
 // that property and test/webpki_chain_test.c tests it over the corpus.
 #include "harness.h"
 

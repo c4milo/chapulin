@@ -64,8 +64,8 @@ int main(void) {
     // Differential leg against the Lean spec, when its binary exists:
     // for random seeds and lengths, the C generator's output and the
     // spec's next() must agree, across two consecutive requests.
-    if (access("spec/.lake/build/bin/diffspec", X_OK) == 0) {
-        spawn_spec("spec/.lake/build/bin/diffspec");
+    if (access("spec/lean/.lake/build/bin/diffspec", X_OK) == 0) {
+        spawn_spec("spec/lean/.lake/build/bin/diffspec");
         for (int i = 0; i < 50; i++) {
             uint8_t s0[32];
             rng_fill(s0, sizeof s0);
@@ -108,7 +108,7 @@ int main(void) {
         }
         (void)printf("drbg_test: %ld spec comparisons, C == spec\n", comparisons);
     } else {
-        (void)printf("drbg_test: spec comparisons skipped (build spec/ first)\n");
+        (void)printf("drbg_test: spec comparisons skipped (build spec/lean/ first)\n");
     }
 
     if (failures > 0) {

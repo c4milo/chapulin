@@ -1,7 +1,7 @@
 // PEM differential section: random certificates armoured at random line
 // widths, and random mutations of them. Every row asserts that pem.c
 // and the Lean spec reach the same verdict, and on acceptance return
-// the same bytes. spec/Spec/Pem.lean is written from RFC 7468 and RFC
+// the same bytes. spec/lean/Spec/Pem.lean is written from RFC 7468 and RFC
 // 4648 and never from pem.c, so agreement is evidence rather than a
 // restatement.
 //

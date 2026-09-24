@@ -5,7 +5,7 @@ proof/*.goto
 proof/results/
 proof/.cache/
 node_modules/
-spec/.lake/
+spec/lean/.lake/
 bin/hpp_test.o
 __pycache__/
 .claude/
@@ -14,4 +14,4 @@ __pycache__/
 # The setup symlinks agent worktrees create; node_modules/ with a slash
 # does not match a symlink of that name.
 tools/node_modules
-spec/.lake
+spec/lean/.lake

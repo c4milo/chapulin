@@ -1,5 +1,5 @@
 // TRUST=webpki chain walk differential section (webpki.c against
-// spec/Spec/Webpki.lean).
+// spec/lean/Spec/Webpki.lean).
 //
 // Every corpus and capture row is compared as it stands, and then under
 // mutations of its own inputs:
@@ -33,7 +33,7 @@
 // diff_webpki_pack compares it against the spec's own separately.
 //
 // Included by test/diff_test.c after diff_driver.h (single translation
-// unit). spec/Main.lean serves the op:
+// unit). spec/lean/Main.lean serves the op:
 //   webpki_chain <packed clock> <hostname> <anchors> <pins> <list>
 // where <anchors> is "-" or "name.spki" hex pairs joined by commas, and
 // <pins> is "-" or hex pins joined by commas.

@@ -665,7 +665,7 @@ does, and why.
   notice. The walk therefore counts, for each issuer, the CA
   certificates it read below it whose subject Name differs from their
   issuer Name (`webpki.c`, `self_issued` and `path_len_admits`;
-  `spec/Spec/Webpki.lean`, `selfIssued` and `pathLenAdmits`). Every other
+  `spec/lean/Spec/Webpki.lean`, `selfIssued` and `pathLenAdmits`). Every other
   rule still applies to a self-issued certificate: it is parsed under the
   issuer arm, its validity is checked, and it verifies under the next
   key. The corpus row `rekeyed_intermediate` pins the acceptance and
@@ -701,10 +701,10 @@ here: never overclaim.
   Its vectors are RFC 6234 and NIST CAVP, and the README says so rather than
   letting "Wycheproof" imply coverage it does not have.
 - **Lean spec and theorems.** Every new module gets a spec module, as all 23
-  existing C modules do. `spec/` gains mathlib, which unblocks the arithmetic
-  theorems `spec/CONTRACT.md` records as blocked: P-256, P-384, the RSA
+  existing C modules do. `spec/lean/` gains mathlib, which unblocks the arithmetic
+  theorems `spec/lean/CONTRACT.md` records as blocked: P-256, P-384, the RSA
   lemmas and the X25519 ladder invariants. mathlib v4.33.0 targets
-  `leanprover/lean4:v4.33.0`, which `spec/lean-toolchain` already pins, so no
+  `leanprover/lean4:v4.33.0`, which `spec/lean/lean-toolchain` already pins, so no
   toolchain moves. P-256 and P-384 theorems are in this work; the X25519 and
   RSA lemmas become newly possible and are filed separately rather than
   absorbed here.
@@ -726,7 +726,7 @@ here: never overclaim.
   48-byte entry list (cbmc 6.11.0 with kissat under `/usr/bin/time -l`,
   through `proof/run.sh` on 2026-09-16). What that costs is soundness: the stubs answer an
   unconstrained verdict, so the proof says nothing about which chains the
-  walk accepts, and `spec/Spec/Webpki.lean` states that property instead.
+  walk accepts, and `spec/lean/Spec/Webpki.lean` states that property instead.
 - **Fixtures.** Two corpora, doing different jobs. The captured chains above
   carry real extension bulk and test the bounds. A generated corpus of 30
   chains — 11 positive (the four shapes above, a P-384 leaf, one wildcard

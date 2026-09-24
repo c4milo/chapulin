@@ -380,8 +380,8 @@ int main(void) {
         depth = (int)v;
     }
 
-    if (access("spec/.lake/build/bin/diffspec", X_OK) == 0) {
-        spawn_spec("spec/.lake/build/bin/diffspec");
+    if (access("spec/lean/.lake/build/bin/diffspec", X_OK) == 0) {
+        spawn_spec("spec/lean/.lake/build/bin/diffspec");
         struct timespec t0;
         struct timespec t1;
         (void)clock_gettime(CLOCK_MONOTONIC, &t0);
@@ -402,7 +402,8 @@ int main(void) {
                 comparisons, ALPHA_N, depth, FLIGHT_N, FLIGHT_DEPTH, secs);
         }
     } else {
-        (void)printf("handshake_sequence_test: spec comparisons skipped (build spec/ first)\n");
+        (void)printf(
+            "handshake_sequence_test: spec comparisons skipped (build spec/lean/ first)\n");
     }
 
     if (failures > 0) {

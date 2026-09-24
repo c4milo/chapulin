@@ -25,7 +25,7 @@ over `ZMod p`: curve membership is Mathlib's `Equation`, `add` and
 `ecdsaSign` mints verifies under the key `pubKey?` derives. Every
 theorem about the curve takes `Fact p.Prime` as a hypothesis: the NIST
 primes are 256- and 384-bit numbers no tactic certifies, and a
-primality certificate is out of scope (spec/CONTRACT.md).
+primality certificate is out of scope (spec/lean/CONTRACT.md).
 -/
 
 namespace Spec.Weierstrass

@@ -1,5 +1,5 @@
 // Differential rows for quic_aes.c: the AES-128 forward cipher against
-// FIPS 197 as spec/Spec/Aes.lean states it, and the RFC 9001 §5.2
+// FIPS 197 as spec/lean/Spec/Aes.lean states it, and the RFC 9001 §5.2
 // Initial keys against the same file's derivation. The C ships a
 // 256-byte S-box table and the spec computes the S-box from the field
 // definition, so every row that agrees is the table checked against what

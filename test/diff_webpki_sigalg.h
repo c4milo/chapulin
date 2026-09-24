@@ -1,6 +1,6 @@
 // TRUST=webpki public-key reader, signature-algorithm reader and verify
 // dispatch differential section (webpki_spki.c, webpki_sigalg.c against
-// spec/Spec/WebpkiSpki.lean and spec/Spec/WebpkiSigalg.lean).
+// spec/lean/Spec/WebpkiSpki.lean and spec/lean/Spec/WebpkiSigalg.lean).
 //
 // Signatures: the Lean spec mints a signature over a random TBS for
 // every admitted algorithm under a key of its family (webpki_sign), and
@@ -27,7 +27,7 @@
 // there. bin/diff builds with -DCH_TRUST_WEBPKI, so the C admits the
 // RSA-4096 key the spec signs with.
 //
-// spec/Main.lean serves the ops:
+// spec/lean/Main.lean serves the ops:
 //   webpki_spki <spki>          -> "ok <rsa|p256|p384> <key>" / "ERR webpki_spki reject"
 //   webpki_sigalg <der>         -> "ok <name>" / "ERR webpki_sigalg reject"
 //   webpki_verify <name> <spki> <tbs> <sig>     -> "1" / "0"

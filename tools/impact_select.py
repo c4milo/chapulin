@@ -256,7 +256,7 @@ SPEC_GATES = [
     ("make diff-pq", "the KEX=pq arm reads the same oracle", []),
     ("make diff-webpki", "the TRUST=webpki arm reads the same oracle", []),
     ("make handshake-sequence",
-     "the enumeration compares against spec/.lake/build/bin/diffspec",
+     "the enumeration compares against spec/lean/.lake/build/bin/diffspec",
      ["handshake_sequence_test"]),
     ("make handshake-sequence-pq",
      "the KEX=pq enumeration compares against the same binary",

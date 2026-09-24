@@ -503,7 +503,7 @@ each one rests on, and nothing more:
 
 | path | proved | tested |
 | --- | --- | --- |
-| `soft` | `proof/quic_aes_harness.c`: memory safety and absence of UB over unconstrained inputs at the module's real bound. `spec/Spec/Aes.lean` through `test/diff_aes.h`: the cipher against FIPS 197 as the spec states it | FIPS 197 §B and §C.1, RFC 9001 Appendix A, SP 800-38D and Wycheproof AES-GCM, in `bin/quic_test` |
+| `soft` | `proof/quic_aes_harness.c`: memory safety and absence of UB over unconstrained inputs at the module's real bound. `spec/lean/Spec/Aes.lean` through `test/diff_aes.h`: the cipher against FIPS 197 as the spec states it | FIPS 197 §B and §C.1, RFC 9001 Appendix A, SP 800-38D and Wycheproof AES-GCM, in `bin/quic_test` |
 | `hw` | nothing | `bin/aes_equiv_test`: the round keys and the cipher block against `soft`, byte for byte, over fixed edge cases, every single-bit key and block, and 200,000 random pairs. `bin/quic_test_hw`: the same published vectors `bin/quic_test` runs. `bin/wycheproof_test_aes_hw`: the AES-GCM suite |
 | `extern` | nothing | nothing here can: the block function is the image's |
 
@@ -623,7 +623,7 @@ the design above, and each cell carries its derivation.
 | what is owed | today | command |
 | --- | --- | --- |
 | CBMC launch lines: 2 more, one `full` harness per new source, plus one more if the GCM formula splits the way `aead`'s did — four harness files, three launch lines (`proof/run.sh:351-355`) | 83 launch lines, 86 harness files | `grep -c '^[[:space:]]*launch ' proof/run.sh`; `ls proof/*_harness.c \| wc -l` |
-| Lean modules: 2 more, `Spec/Aes.lean` and `Spec/Gcm.lean`, plus rows in `test/diff_test.c` | 30 modules in `spec/Spec/` | `ls spec/Spec/*.lean \| wc -l` |
+| Lean modules: 2 more, `Spec/Aes.lean` and `Spec/Gcm.lean`, plus rows in `test/diff_test.c` | 30 modules in `spec/lean/Spec/` | `ls spec/lean/Spec/*.lean \| wc -l` |
 | Wycheproof: one suite, `aes_gcm_test.json`, and one generator arm | 18 vector files across 9 generator arms | read `test/gen_wycheproof.py:395-425` |
 | `lint-wide-multiply`: 16 more `BRANCH_CEILING` entries, for `quic_keys.c` and `quic_packet.c` across 8 compiler and architecture specs. `quic_aes.c` and `quic_gcm.c` owe none: `WIDEMUL_PUBLIC` means no codegen gate compiles them, and `lint-codegen-partition` fails a file in both lists (`Makefile:1822`) | 96 entries, 12 files across 8 specs | `Makefile:2020-2047` |
 | `docs/invariants.md`: 1 more invariant, INV-26. INV-27, the mode's partition, landed with the interface headers | stops at INV-27 | `docs/invariants.md:279` |
@@ -1199,7 +1199,7 @@ The psk and pin configurations differ at one step:
 `HSQ_STEP_AWAIT_ENCRYPTED_EXTENSIONS` advances to `HSQ_STEP_AWAIT_FINISHED`
 when `cfg.psk` is set and to `HSQ_STEP_AWAIT_CERTIFICATE` when it is not,
 which is the branch `handshake.c:103` takes today and the fork
-`spec/Spec/Handshake.lean:99-100` models.
+`spec/lean/Spec/Handshake.lean:99-100` models.
 
 **The levels.** `CH_LEVEL_INITIAL` 0, `CH_LEVEL_HANDSHAKE` 1 and
 `CH_LEVEL_APPLICATION` 2, declared in `cfg.h` under the QUIC guard.
@@ -1223,7 +1223,7 @@ colibri takes the bytes with `ch_quic_crypto_out`. Building the hello here
 rather than at the first `ch_quic_crypto_out` costs one step value fewer and
 needs no field saying a hello is owed, and it makes
 `HSQ_STEP_AWAIT_SERVER_HELLO` mean exactly what Lean's `start` means,
-"ClientHello sent" (`spec/Spec/Handshake.lean:63-64`).
+"ClientHello sent" (`spec/lean/Spec/Handshake.lean:63-64`).
 
 **`ch_quic_crypto_in(q, level, p, n)` is the one suspension point.** It
 asserts `t.state <= CH_ST_FAILED`, the contract-point guard `tls.c:178`
@@ -1724,11 +1724,11 @@ the nightly matrix (`.github/workflows/nightly.yml:52`), which `lint-matrix`
    | the next receive keys promoted inside `ch_quic_open` before the open succeeds, so a forged Key Phase bit installs a key update | `quic.c` | INV-13 | `quic_driver_test` |
    | the `seen` check removed from `hsp_parse_encrypted_exts`, so an EncryptedExtensions with no `quic_transport_parameters` is accepted | `handshake_parser.c` | INV-14 | `quic_driver_test` |
 
-The Lean oracle moves with the driver. `spec/Spec/Handshake.lean`'s `State`
+The Lean oracle moves with the driver. `spec/lean/Spec/Handshake.lean`'s `State`
 (`:62-78`) names the same states the step numbers do, constructor for
 constructor except `closed`, which no C step reaches because `ch_quic_close` is
 the caller's call. One arm differs: `.connected, .keyUpdate => some .connected`
-(`spec/Spec/Handshake.lean:110`) is what RFC 9001 §6 forbids. The spec gains a
+(`spec/lean/Spec/Handshake.lean:110`) is what RFC 9001 §6 forbids. The spec gains a
 transport parameter, that one arm answers `none` under `quic`, every existing
 theorem keeps its content over both values, gaining the level in `step`'s
 arguments and in its own binders, and one new theorem says an accepted QUIC
@@ -1742,7 +1742,7 @@ above it with bytes unread both answer `none`, which is what
 `ch_quic_crypto_in` does in "Suspending the driver". `bin/quic_driver_test`
 drives the pairs, so the two level mutants fail against the oracle rather than
 against a hand-written case alone. The oracle command at
-`spec/Main.lean:216-222` takes the transport as a fourth word, and the TLS test
+`spec/lean/Main.lean:216-222` takes the transport as a fourth word, and the TLS test
 passes `tls`. The QUIC sequence differential never draws application data or
 close_notify, so its input domain stays inside what the C and the spec agree on
 (`CLAUDE.md`).
@@ -2197,7 +2197,7 @@ Read this as part of the profile, not as a list of future work.
   a QUIC end-to-end leg needs a server this tree does not have. Every existing
   suite stays hermetic.
 - **Nothing about QUIC is proved yet.** The 83 launch lines in `proof/run.sh`,
-  the 30 modules in `spec/Spec/` and the 89 files in `test/violations/` cover
+  the 30 modules in `spec/lean/Spec/` and the 89 files in `test/violations/` cover
   the TLS transport. "Verification owed" lists what the mode owes, and owing is
   not having.
 
@@ -2243,12 +2243,12 @@ Every one of those lines, new or moved, must be measured with
 (`docs/proofs.md`). A launch line whose formula has not been seen to converge
 proves nothing.
 
-**Lean.** `spec/Spec/Record.lean` models the TLS record layer and its
+**Lean.** `spec/lean/Spec/Record.lean` models the TLS record layer and its
 `nextSecret` is `traffic upd`; it says nothing about QUIC and does not move. A
 QUIC mode owes its own modules — the key labels of §5.1 and §6.1, the §5.3
 seal and open, the §5.4 mask, and AES and GHASH for INV-26 — and an
 amendment to `HandshakeParser.lean` for `quic_transport_parameters` (it models
-the ALPN reply already), against 30 modules in `spec/Spec/` today. Each new
+the ALPN reply already), against 30 modules in `spec/lean/Spec/` today. Each new
 module owes rows in `test/diff_test.c`, whose input domain stays inside what
 the C and the spec agree on.
 
@@ -2307,7 +2307,7 @@ commit that adds it does. `test/spec_coverage.py`'s `SRCS` list holds the
 quic sources, which read as rows saying "not built" while the differential
 has no QUIC leg; `bin/quic_driver_test` is a unit test and not a
 differential driver, so its `DRIVERS` list waits for the leg that compares
-the mode against `spec/`. Every
+the mode against `spec/lean/`. Every
 one of those needs a row or a leg for the new axis, which is work that is done
 with the first line of code and not after it, and a gate that waits says so in
 "What is still open" rather than staying silent. `test/e2e.sh` is the exception:

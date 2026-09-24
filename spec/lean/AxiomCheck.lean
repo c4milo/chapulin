@@ -66,13 +66,13 @@ end AxiomCheck
 
 run_cmd do
   let env ← getEnv
-  -- spec/Spec.lean lists its imports by hand, so a new module can miss it.
+  -- spec/lean/Spec.lean lists its imports by hand, so a new module can miss it.
   -- That module still compiles under lake build, but its theorems never
   -- enter this environment, which is the same gap the hand-written list of
   -- theorems had.
   for module in (← AxiomCheck.specModuleFiles) do
     unless env.header.moduleNames.contains module do
-      throwError "{module} exists but spec/Spec.lean does not import it, so \
+      throwError "{module} exists but spec/lean/Spec.lean does not import it, so \
         its theorems go unchecked"
   let theorems := AxiomCheck.specTheorems env
   -- An empty run would print no axiom lines at all, and the Makefile check

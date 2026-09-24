@@ -1,5 +1,5 @@
 // Differential oracle: drives the Lean executable spec (built as
-// spec/.lake/build/bin/diffspec) over a blocking pipe line protocol and
+// spec/lean/.lake/build/bin/diffspec) over a blocking pipe line protocol and
 // compares every C crypto module against it on deterministic
 // pseudo-random inputs. Any divergence prints the request and both
 // answers, then fails the build.
@@ -44,7 +44,7 @@ noreturn void ch_assert_fail(const char *cond, const char *file, int line) {
 }
 
 int main(int argc, char **argv) {
-    const char *path = argc > 1 ? argv[1] : "spec/.lake/build/bin/diffspec";
+    const char *path = argc > 1 ? argv[1] : "spec/lean/.lake/build/bin/diffspec";
     (void)printf("diff: seed 0x%016llx\n", (unsigned long long)rng_seed_from_env());
     spawn_spec(path);
     expect("selftest", "ok");

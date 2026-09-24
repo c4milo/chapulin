@@ -31,7 +31,7 @@ noreturn void ch_assert_fail(const char *cond, const char *file, int line) {
 }
 
 int main(int argc, char **argv) {
-    const char *path = argc > 1 ? argv[1] : "spec/.lake/build/bin/diffspec";
+    const char *path = argc > 1 ? argv[1] : "spec/lean/.lake/build/bin/diffspec";
     (void)printf("diff quic: seed 0x%016llx\n", (unsigned long long)rng_seed_from_env());
     spawn_spec(path);
     expect("selftest", "ok");

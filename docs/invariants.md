@@ -16,7 +16,7 @@ this scale, strongest first:
    construction.
 3. *CBMC* — proved over all inputs at the harness's documented bound.
 4. *Lean theorem* — proved over every input, unbounded, but of the
-   `spec/` model rather than the C. It reaches the C only through the
+   `spec/lean/` model rather than the C. It reaches the C only through the
    differential's agreement, so it ranks here: stronger than a
    syntactic rule about what the code says, weaker than CBMC about
    what the code does.
@@ -793,7 +793,7 @@ last `ROLE=server` stub, as the entry said it would.
   nothing past `path_entries` and hashes the anchor at `anchor_index`.
   The webpki_chain harness proves `path_entries` is the count of
   certificates the walk parsed and that the anchor at `anchor_index`
-  verified the last one. spec/Spec/WebpkiPin.lean models both rules and
+  verified the last one. spec/lean/Spec/WebpkiPin.lean models both rules and
   proves the raw one sound, and the differential compares the C and the
   model on the `webpki_raw` op and on `webpki_chain`'s path and pin
   verdict. Nine `inv33-` violations guard the rules.

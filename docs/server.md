@@ -222,9 +222,9 @@ lands. `hkdf.h:1` changes with them: "HMAC-SHA-256 (RFC 2104)" becomes "HMAC
 (RFC 2104) over SHA-256 or SHA-384".
 
 The new name is `hmac` rather than `hkdf_hmac` or `ch_hmac`, because
-`spec/Spec/Hkdf.lean:24` already defines `hmac`, `spec/CONTRACT.md:50` already
+`spec/lean/Spec/Hkdf.lean:24` already defines `hmac`, `spec/lean/CONTRACT.md:50` already
 writes `Spec.Hkdf.hmac`, and the differential driver's line op is already the
-literal string `hmac` (`test/diff_hash.h:47` and `spec/Main.lean:120`). So the
+literal string `hmac` (`test/diff_hash.h:47` and `spec/lean/Main.lean:120`). So the
 C, the spec and the driver share one name, which is what `CLAUDE.md:166-169`
 asks for, and any other candidate would invent a second name for a thing that
 already has one. A bare name cannot collide in firmware, because the packaged
@@ -419,10 +419,10 @@ SHA-384 stubs beside them.
 
 ### What it costs the Lean specs
 
-`spec/Spec/Hkdf.lean` fixes both hash parameters as constants:
+`spec/lean/Spec/Hkdf.lean` fixes both hash parameters as constants:
 
-    spec/Spec/Hkdf.lean:13    def blockSize : Nat := 64
-    spec/Spec/Hkdf.lean:16    def hashLen : Nat := 32
+    spec/lean/Spec/Hkdf.lean:13    def blockSize : Nat := 64
+    spec/lean/Spec/Hkdf.lean:16    def hashLen : Nat := 32
 
 `hashLen` appears 16 times in that file and 22 more sites write the literal
 `32`. Six definitions take the two constants — `hmac` (`:24`), `extract`
@@ -430,13 +430,13 @@ SHA-384 stubs beside them.
 `schedule` (`:93`) — and five theorem statements assert a size that is no
 longer fixed: `hmac_size` (`:111`), the fold invariant inside `expand_size`
 (`:123`), `expandLabel_size` (`:132`), `schedule_eq` (`:210`) and
-`schedule_sizes` (`:235`). `spec/Spec/Record.lean`'s `nextSecret_size` asserts
+`schedule_sizes` (`:235`). `spec/lean/Spec/Record.lean`'s `nextSecret_size` asserts
 the same 32.
 
 The hash itself is already there and already proved.
-`spec/Spec/Sha512.lean:141` defines `sha384` and `:171` proves
+`spec/lean/Spec/Sha512.lean:141` defines `sha384` and `:171` proves
 `sha384_size : (sha384 msg).size = 48`. What does not exist is an HMAC and an
-HKDF parameterized over a hash. `spec/CONTRACT.md`'s "Writing proofs here"
+HKDF parameterized over a hash. `spec/lean/CONTRACT.md`'s "Writing proofs here"
 section governs the rewrite, including the second pass that shrinks a green
 proof's script with the statement frozen; a `Spec/Hkdf.lean` whose statements
 carry a `hashLen` hypothesis they do not need is the failure to avoid.
@@ -1043,7 +1043,7 @@ claims that every root file only a `TRANSPORT=quic` build compiles is named
 they lose the prefix rather than joining `QUIC_SHARED` (`Makefile:1615`).
 Renaming before the patch lands is cheaper: the patch already carries the old
 names into its Makefile lists, its Semgrep rule, its proof harness names, its
-Lean modules `spec/Spec/Aes.lean` and `spec/Spec/Gcm.lean`, and four
+Lean modules `spec/lean/Spec/Aes.lean` and `spec/lean/Spec/Gcm.lean`, and four
 `.violation` files.
 
 Bitsliced or masked is **undecided and unmeasured**. Both are constant time.
@@ -1359,13 +1359,13 @@ it is the opposite: the concern is the secret scalar and everything computed
 from it, and splitting it would put a value derived from the key into a second
 file.
 
-The Lean side is unusually far ahead. `spec/Spec/P256.lean:82` already defines
+The Lean side is unusually far ahead. `spec/lean/Spec/P256.lean:82` already defines
 `ecdsaSign d k z`, `:156-161` already proves `ecdsaVerify_ecdsaSign`,
-`spec/Main.lean:295` already exposes a `p256_sign` driver command, and
+`spec/lean/Main.lean:295` already exposes a `p256_sign` driver command, and
 `test/diff_p256.h:83` already calls it. The differential run has an oracle on
 the day the C file compiles. What is genuinely new in Lean is
 `Spec/Rfc6979.lean`: the tree carries the RFC 6979 A.2.5 P-256 vectors
-(`spec/Spec/P256.lean:163-178`, `test/diff_x509.h:43-48`,
+(`spec/lean/Spec/P256.lean:163-178`, `test/diff_x509.h:43-48`,
 `test/p256_tests.h:1-9`) and no HMAC_DRBG derivation.
 
 **Two claims about RFC 6979 are narrower than they read.**
@@ -2615,8 +2615,8 @@ re-measured.
 
 ### Lean specs
 
-`ls spec/Spec/` returns 30 modules and none models the client-to-server
-direction: `spec/Spec/Handshake.lean:4` models "server-to-client messages after
+`ls spec/lean/Spec/` returns 30 modules and none models the client-to-server
+direction: `spec/lean/Spec/Handshake.lean:4` models "server-to-client messages after
 the ClientHello".
 
 - `Spec/Hkdf.lean` — rewritten, not added. `blockSize` (`:13`) and `hashLen`
@@ -2634,7 +2634,7 @@ the ClientHello".
   verify side today.
 - `Spec/Aes.lean` and `Spec/Gcm.lean` arrive with the renamed patch.
 
-`spec/CONTRACT.md`'s "Writing proofs here" section governs, including the second
+`spec/lean/CONTRACT.md`'s "Writing proofs here" section governs, including the second
 pass that shrinks a green proof's script with the statement frozen.
 
 ### Tests
@@ -2647,7 +2647,7 @@ pass that shrinks a green proof's script with the statement frozen.
   arrive with the suite. RFC 6979 §A.2.5 P-256 material is already in the tree
   at `test/diff_x509.h:43-48`.
 - The differential driver: `test/diff_p256.h:83` already calls a `p256_sign`
-  driver command that `spec/Main.lean:295` already exposes, so the ECDSA signer
+  driver command that `spec/lean/Main.lean:295` already exposes, so the ECDSA signer
   has an oracle from its first commit. A new `test/diff_srv.h` drives the
   ClientHello parser against `Spec/ClientHello.lean`, and `test/diff_hash.h`
   gains the SHA-384 arm of every schedule case it already runs at SHA-256.

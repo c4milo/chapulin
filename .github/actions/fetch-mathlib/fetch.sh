@@ -1,5 +1,5 @@
 #!/bin/bash
-# Run from spec/: clone the packages lake-manifest.json pins and download
+# Run from spec/lean/: clone the packages lake-manifest.json pins and download
 # Mathlib's compiled files. The last line checks for the one file the
 # Makefile's REQUIRE_MATHLIB reads, so a download that produced nothing
 # fails here, by name, rather than as an hours-long Mathlib compile.

@@ -143,7 +143,7 @@ static inline void query(const char *cmd, char *out, size_t out_len) {
     (void)fputc('\n', to_spec);
     (void)fflush(to_spec);
     if (fgets(out, (int)out_len, from_spec) == NULL) {
-        die("spec process closed the pipe (did spec/.lake/build/bin/diffspec build?)");
+        die("spec process closed the pipe (did spec/lean/.lake/build/bin/diffspec build?)");
     }
     char *nl = strchr(out, '\n');
     if (nl != NULL) {
@@ -165,7 +165,7 @@ static inline void expect(const char *cmd, const char *want) {
     // record is 2*(2^14 + overhead) hex characters.
     static char got[40960];
     if (fgets(got, sizeof got, from_spec) == NULL) {
-        die("spec process closed the pipe (did spec/.lake/build/bin/diffspec build?)");
+        die("spec process closed the pipe (did spec/lean/.lake/build/bin/diffspec build?)");
     }
     char *nl = strchr(got, '\n');
     if (nl != NULL) {

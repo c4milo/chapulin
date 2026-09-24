@@ -92,14 +92,14 @@ LAKE ?= $(shell command -v lake || command -v $(HOME)/.elan/bin/lake)
 # Locally the skip stays a convenience. Usage: $(call REQUIRE_ON_CI,name)
 REQUIRE_ON_CI = @[ -z "$$CI" ] || { echo "$(1): missing on CI; the gate must not skip"; exit 1; }
 
-# spec/ depends on Mathlib (spec/lakefile.toml), and lake compiles from
+# spec/ depends on Mathlib (spec/lean/lakefile.toml), and lake compiles from
 # source any dependency whose compiled files it does not find. Mathlib
 # takes hours to compile, so every `lake build` below first checks for
 # the file `lake exe cache get` downloads and names that command when
 # the file is missing. CI runs the command in
 # .github/actions/fetch-mathlib. Usage: $(call REQUIRE_MATHLIB,name)
-MATHLIB_OLEAN := spec/.lake/packages/mathlib/.lake/build/lib/lean/Mathlib.olean
-REQUIRE_MATHLIB = @[ -f $(MATHLIB_OLEAN) ] || { echo "$(1): $(MATHLIB_OLEAN) is missing, and lake would compile Mathlib from source; run 'cd spec && lake exe cache get' once (spec/CONTRACT.md)"; exit 1; }
+MATHLIB_OLEAN := spec/lean/.lake/packages/mathlib/.lake/build/lib/lean/Mathlib.olean
+REQUIRE_MATHLIB = @[ -f $(MATHLIB_OLEAN) ] || { echo "$(1): $(MATHLIB_OLEAN) is missing, and lake would compile Mathlib from source; run 'cd spec/lean && lake exe cache get' once (spec/lean/CONTRACT.md)"; exit 1; }
 
 # A missing linter fails everywhere, CI or not. A lint gate that skips
 # is worse than no gate: check exits 0, the run reads green, and the
@@ -1889,7 +1889,7 @@ ifeq ($(LAKE),)
 	@echo "SKIP diff-ecdsa: lake not on PATH (install elan: https://leanprover.github.io)"
 else
 	$(call REQUIRE_MATHLIB,diff-ecdsa)
-	cd spec && $(LAKE) build
+	cd spec/lean && $(LAKE) build
 	@mkdir -p bin
 	$(CC) $(CFLAGS) $(RSA_WIDE_DEF) -DCH_PIN_ECDSA -I. -o bin/diff_ecdsa test/diff_test.c $(SRCS) sha3.c sha512.c sha512_compress.c p384.c p384_field.c rsa_pkcs1.c webpki_sigalg.c webpki_cert.c mlkem.c mlkem_poly.c
 	./bin/diff_ecdsa
@@ -1905,7 +1905,7 @@ ifeq ($(LAKE),)
 	@echo "SKIP diff-pq: lake not on PATH (install elan: https://leanprover.github.io)"
 else
 	$(call REQUIRE_MATHLIB,diff-pq)
-	cd spec && $(LAKE) build
+	cd spec/lean && $(LAKE) build
 	@mkdir -p bin
 	$(CC) $(CFLAGS) $(RSA_WIDE_DEF) -DCH_KEX_PQ -I. -o bin/diff_pq test/diff_test.c $(SRCS) sha3.c sha512.c sha512_compress.c p384.c p384_field.c rsa_pkcs1.c webpki_sigalg.c webpki_cert.c mlkem.c mlkem_poly.c
 	./bin/diff_pq
@@ -1929,7 +1929,7 @@ ifeq ($(LAKE),)
 	@echo "SKIP diff-webpki: lake not on PATH (install elan: https://leanprover.github.io)"
 else
 	$(call REQUIRE_MATHLIB,diff-webpki)
-	cd spec && $(LAKE) build
+	cd spec/lean && $(LAKE) build
 	@mkdir -p bin
 	$(CC) $(CFLAGS) $(RSA_WIDE_DEF) -DCH_TRUST_WEBPKI -I. -o bin/diff_webpki test/diff_test.c $(SRCS) sha3.c sha512.c sha512_compress.c p384.c p384_field.c rsa_pkcs1.c webpki_sigalg.c webpki_cert.c webpki.c webpki_ticket.c webpki_pin.c webpki_cfg.c mlkem.c mlkem_poly.c
 	./bin/diff_webpki
@@ -1943,7 +1943,7 @@ else
 endif
 endif
 
-# Differential oracle: the Lean spec in spec/ answers over a pipe and
+# Differential oracle: the Lean spec in spec/lean/ answers over a pipe and
 # test/diff_test.c compares every C module against it on random inputs.
 diff:
 ifeq ($(LAKE),)
@@ -1951,7 +1951,7 @@ ifeq ($(LAKE),)
 	@echo "SKIP diff: lake not on PATH (install elan: https://leanprover.github.io)"
 else
 	$(call REQUIRE_MATHLIB,diff)
-	cd spec && $(LAKE) build
+	cd spec/lean && $(LAKE) build
 	$(MAKE) bin/diff
 	./bin/diff
 	$(MAKE) bin/diff_quic
@@ -1967,7 +1967,7 @@ bin/diff_quic: test/diff_quic_test.c quic_aes.c $(AES_IMPL) quic_gcm.c hkdf.c sh
 	@mkdir -p bin
 	$(CC) $(CFLAGS) -DCH_TRANSPORT_QUIC $(AES_DEF) -I. -o $@ test/diff_quic_test.c quic_aes.c $(AES_IMPL) quic_gcm.c hkdf.c sha256.c ct.c
 
-# The sequence enumerations compare against spec/.lake/build/bin/diffspec,
+# The sequence enumerations compare against spec/lean/.lake/build/bin/diffspec,
 # and handshake_sequence_test skips the comparison when that binary is
 # absent. A caller that runs the binary directly therefore has to build the
 # spec first, or a restored cache decides what gets compared.
@@ -1980,7 +1980,7 @@ ifeq ($(LAKE),)
 	@echo "SKIP spec comparison: lake not on PATH (install elan: https://leanprover.github.io)"
 else
 	$(call REQUIRE_MATHLIB,handshake-sequence)
-	cd spec && $(LAKE) build
+	cd spec/lean && $(LAKE) build
 endif
 	./bin/handshake_sequence_test
 
@@ -1990,7 +1990,7 @@ ifeq ($(LAKE),)
 	@echo "SKIP spec comparison: lake not on PATH (install elan: https://leanprover.github.io)"
 else
 	$(call REQUIRE_MATHLIB,handshake-sequence-pq)
-	cd spec && $(LAKE) build
+	cd spec/lean && $(LAKE) build
 endif
 	./bin/handshake_sequence_pq
 
@@ -2063,7 +2063,7 @@ ifeq ($(LAKE),)
 	@echo "SKIP spec-coverage: lake not on PATH (install elan: https://leanprover.github.io)"
 else
 	$(call REQUIRE_MATHLIB,spec-coverage)
-	cd spec && $(LAKE) build
+	cd spec/lean && $(LAKE) build
 	python3 test/spec_coverage.py
 endif
 
@@ -2377,18 +2377,18 @@ cross-check:
 	if [ -x wycheproof_test ]; then echo "== wycheproof_test ($(RUNNER))"; $(RUNNER) ./wycheproof_test; fi
 
 # Lean spec hygiene: the escape hatches that would quietly weaken the
-# proofs are banned from the model (spec/Spec/, Spec.lean) — sorry,
+# proofs are banned from the model (spec/lean/Spec/, Spec.lean) — sorry,
 # admit, native_decide, unsafe, axiom declarations, and kernel-limit
 # bumps. Main.lean is the IO oracle driver, not the model; its one
 # `partial def loop` (a REPL cannot be proven terminating) is the sole
 # allowed use. The axiom check then proves the load-bearing theorems
 # rest only on Lean's three standard axioms.
-SPEC_MODEL := $(wildcard spec/Spec/*.lean) spec/Spec.lean
+SPEC_MODEL := $(wildcard spec/lean/Spec/*.lean) spec/lean/Spec.lean
 lint-spec:
 ifeq ($(LAKE),)
 	$(call REQUIRE,lint-spec,lake is not on PATH — install elan from https://leanprover.github.io)
 else
-	@rc=0; for f in $(SPEC_MODEL) spec/Main.lean; do \
+	@rc=0; for f in $(SPEC_MODEL) spec/lean/Main.lean; do \
 	  hits=$$(sed 's/--.*//' $$f \
 	    | grep -nwE 'sorry|admit|native_decide|unsafe' ; \
 	    sed 's/--.*//' $$f | grep -nE '^[[:space:]]*axiom[[:space:]]' ; \
@@ -2401,10 +2401,10 @@ else
 	done; \
 	[ $$rc -eq 0 ] || { echo "lint-spec: banned escape hatch in the model"; exit 1; }
 	$(call REQUIRE_MATHLIB,lint-spec)
-	@cd spec && $(LAKE) build 2>&1 | tee /tmp/lake-build.log \
+	@cd spec/lean && $(LAKE) build 2>&1 | tee /tmp/lake-build.log \
 	  && ! grep -q "warning:" /tmp/lake-build.log \
 	  || { echo "lint-spec: lake build warnings are errors here"; exit 1; }
-	@cd spec && $(LAKE) env lean AxiomCheck.lean > /tmp/axioms.log 2>&1 \
+	@cd spec/lean && $(LAKE) env lean AxiomCheck.lean > /tmp/axioms.log 2>&1 \
 	  || { cat /tmp/axioms.log; exit 1; }
 	@! grep -oE "depends on axioms: \[[^]]*\]" /tmp/axioms.log \
 	  | tr ',[]' '\n' | sed 's/.*axioms: //;s/^ *//;s/ *$$//' | grep -v '^$$' \
@@ -2859,7 +2859,7 @@ else
 	# builds them through the same recursion.
 	$(MAKE) RAND=extern bin/example_psk bin/example_pinned bin/example_ca
 	$(call REQUIRE_MATHLIB,test-invariants-not-proof-backed)
-	cd spec && $(LAKE) build
+	cd spec/lean && $(LAKE) build
 	python3 test/violations.py --not-proof-backed
 endif
 

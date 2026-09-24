@@ -15,7 +15,7 @@
 // (single translation unit). Until the C p384 lands, the section still
 // exercises the spec ops against themselves.
 //
-// spec/Main.lean must serve three ops, shaped like their p256 siblings
+// spec/lean/Main.lean must serve three ops, shaped like their p256 siblings
 // with every 32 replaced by 48 and 64 by 96:
 //   p384_pub <d-hex>                          -> X||Y as 192 hex chars
 //   p384_sign <d-hex> <k-hex> <hash-hex>      -> "<r-hex> <s-hex>"

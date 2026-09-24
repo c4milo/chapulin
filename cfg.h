@@ -55,7 +55,7 @@
 // more room raises the floor, so a too-small buffer fails at setup with CH_EINVAL, not
 // mid-handshake with CH_ECAP. See docs/decisions.md 23. The per-algorithm defaults, named
 // so the mirrors derive from one definition: the differential driver and the mutation kit
-// size their material from these, and spec/Spec/X509.lean pins the same two numbers as the
+// size their material from these, and spec/lean/Spec/X509.lean pins the same two numbers as the
 // spec's modeled caps.
 #define CH_X509_DEFAULT_MAX_RSA 1536
 #define CH_X509_DEFAULT_MAX_ECDSA 768

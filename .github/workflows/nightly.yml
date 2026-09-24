@@ -149,8 +149,8 @@ jobs:
         with:
           path: |
             ~/.elan
-            spec/.lake/build
-          key: lean-${{ hashFiles('spec/lean-toolchain', 'spec/lakefile.toml', 'spec/lake-manifest.json', 'spec/*.lean', 'spec/Spec/*.lean') }}
+            spec/lean/.lake/build
+          key: lean-${{ hashFiles('spec/lean/lean-toolchain', 'spec/lean/lakefile.toml', 'spec/lean/lake-manifest.json', 'spec/lean/*.lean', 'spec/lean/Spec/*.lean') }}
       - name: Download Mathlib's compiled files
         uses: ./.github/actions/fetch-mathlib
       - name: Enumerate every server message sequence, KEX=pq
@@ -193,8 +193,8 @@ jobs:
         with:
           path: |
             ~/.elan
-            spec/.lake/build
-          key: lean-${{ hashFiles('spec/lean-toolchain', 'spec/lakefile.toml', 'spec/lake-manifest.json', 'spec/*.lean', 'spec/Spec/*.lean') }}
+            spec/lean/.lake/build
+          key: lean-${{ hashFiles('spec/lean/lean-toolchain', 'spec/lean/lakefile.toml', 'spec/lean/lake-manifest.json', 'spec/lean/*.lean', 'spec/lean/Spec/*.lean') }}
       - name: Download Mathlib's compiled files
         uses: ./.github/actions/fetch-mathlib
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
@@ -337,8 +337,8 @@ jobs:
         with:
           path: |
             ~/.elan
-            spec/.lake/build
-          key: lean-${{ hashFiles('spec/lean-toolchain', 'spec/lakefile.toml', 'spec/lake-manifest.json', 'spec/*.lean', 'spec/Spec/*.lean') }}
+            spec/lean/.lake/build
+          key: lean-${{ hashFiles('spec/lean/lean-toolchain', 'spec/lean/lakefile.toml', 'spec/lean/lake-manifest.json', 'spec/lean/*.lean', 'spec/lean/Spec/*.lean') }}
       - name: Download Mathlib's compiled files
         uses: ./.github/actions/fetch-mathlib
       - name: Search random seeds until the budget runs out
@@ -347,9 +347,9 @@ jobs:
         run: |
           set -uo pipefail
           # Build the spec, not just the C: bin/diff shells out to
-          # spec/.lake/build/bin/diffspec, and the cache above is a
+          # spec/lean/.lake/build/bin/diffspec, and the cache above is a
           # speedup, not a guarantee that the binary is there.
-          (cd spec && lake build) || exit 1
+          (cd spec/lean && lake build) || exit 1
           make bin/diff || exit 1
           # One run on the built-in seed first. If that fails the tree
           # is broken, not the search, and the seed loop would report
@@ -396,8 +396,8 @@ jobs:
         with:
           path: |
             ~/.elan
-            spec/.lake/build
-          key: lean-${{ hashFiles('spec/lean-toolchain', 'spec/lakefile.toml', 'spec/lake-manifest.json', 'spec/*.lean', 'spec/Spec/*.lean') }}
+            spec/lean/.lake/build
+          key: lean-${{ hashFiles('spec/lean/lean-toolchain', 'spec/lean/lakefile.toml', 'spec/lean/lake-manifest.json', 'spec/lean/*.lean', 'spec/lean/Spec/*.lean') }}
       - name: Download Mathlib's compiled files
         uses: ./.github/actions/fetch-mathlib
       - run: make spec-coverage
@@ -427,8 +427,8 @@ jobs:
         with:
           path: |
             ~/.elan
-            spec/.lake/build
-          key: lean-${{ hashFiles('spec/lean-toolchain', 'spec/lakefile.toml', 'spec/lake-manifest.json', 'spec/*.lean', 'spec/Spec/*.lean') }}
+            spec/lean/.lake/build
+          key: lean-${{ hashFiles('spec/lean/lean-toolchain', 'spec/lean/lakefile.toml', 'spec/lean/lake-manifest.json', 'spec/lean/*.lean', 'spec/lean/Spec/*.lean') }}
       - name: Download Mathlib's compiled files
         uses: ./.github/actions/fetch-mathlib
       - run: make diff-ecdsa
@@ -453,8 +453,8 @@ jobs:
         with:
           path: |
             ~/.elan
-            spec/.lake/build
-          key: lean-${{ hashFiles('spec/lean-toolchain', 'spec/lakefile.toml', 'spec/lake-manifest.json', 'spec/*.lean', 'spec/Spec/*.lean') }}
+            spec/lean/.lake/build
+          key: lean-${{ hashFiles('spec/lean/lean-toolchain', 'spec/lean/lakefile.toml', 'spec/lean/lake-manifest.json', 'spec/lean/*.lean', 'spec/lean/Spec/*.lean') }}
       - name: Download Mathlib's compiled files
         uses: ./.github/actions/fetch-mathlib
       - run: make diff-pq
@@ -480,8 +480,8 @@ jobs:
         with:
           path: |
             ~/.elan
-            spec/.lake/build
-          key: lean-${{ hashFiles('spec/lean-toolchain', 'spec/lakefile.toml', 'spec/lake-manifest.json', 'spec/*.lean', 'spec/Spec/*.lean') }}
+            spec/lean/.lake/build
+          key: lean-${{ hashFiles('spec/lean/lean-toolchain', 'spec/lean/lakefile.toml', 'spec/lean/lake-manifest.json', 'spec/lean/*.lean', 'spec/lean/Spec/*.lean') }}
       - name: Download Mathlib's compiled files
         uses: ./.github/actions/fetch-mathlib
       - run: make diff-webpki

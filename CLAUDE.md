@@ -217,7 +217,7 @@ Home: github.com/c4milo.
   seen to converge proves nothing.
 - A crypto or protocol change touches three surfaces, not one. When you
   change behavior in a C module, update in the same commit: (1) the code,
-  (2) its Lean spec in `spec/` if the change alters what the spec models
+  (2) its Lean spec in `spec/lean/` if the change alters what the spec models
   or its stated domain, and (3) the tests — unit vectors, the differential
   driver in `test/diff_test.c` (keep its input domain inside what both C and
   spec agree on), and the CBMC harness if the contract moved. A fix that
@@ -324,7 +324,7 @@ Home: github.com/c4milo.
   kernel checks that. Judge a spec module by whether each statement
   reads in a few lines and carries no hypothesis it does not need; a
   long proof of a short statement costs an auditor nothing.
-  spec/CONTRACT.md is the styleguide for writing in spec/ — follow its
+  spec/lean/CONTRACT.md is the styleguide for writing in spec/ — follow its
   "Writing proofs here" section, including the second pass that
   shrinks a green proof's script with the statement frozen.
 - Names spell words out. Module prefixes stay short — they are C's

@@ -19,7 +19,7 @@
 // (single translation unit): the keys, DIFF_RSA_E, DIFF_RSA_N_MAX and
 // DIFF_RSA_ROWS come from there.
 //
-// spec/Main.lean must serve two ops, shaped like rsa_sign and rsa_verify
+// spec/lean/Main.lean must serve two ops, shaped like rsa_sign and rsa_verify
 // without a salt; the digest length, 32 or 48, selects the DigestInfo:
 //   rsa_pkcs1_sign <n-hex> <d-hex> <e> <digest-hex>      -> signature hex
 //   rsa_pkcs1_verify <n-hex> <e> <digest-hex> <sig-hex>  -> "1" or "0"

@@ -35,7 +35,7 @@
 typedef struct ch_quic ch_quic;
 
 // The step numbers. Each names the handshake message the driver waits
-// for, and they mirror the client states spec/Spec/Handshake.lean's
+// for, and they mirror the client states spec/lean/Spec/Handshake.lean's
 // State inductive carries, constructor for constructor: start,
 // retried, gotSH, awaitCert, awaitCV, awaitFin and connected. The
 // mirror is what lets one oracle judge both transports.

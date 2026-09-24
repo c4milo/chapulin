@@ -114,7 +114,7 @@ empty `proof/.cache`, which is what a first run after a clone costs.
 | change | selected | check-slow, warm | check-slow, cold |
 | --- | --- | --- | --- |
 | `webpki_time.c` | 503 s | 676 s | 2361 s |
-| `spec/Spec/WebpkiTime.lean` | 395 s | 688 s | 2361 s |
+| `spec/lean/Spec/WebpkiTime.lean` | 395 s | 688 s | 2361 s |
 | `sha3.c` | 218 s | 692 s † | 2361 s † |
 | `test/webpki_time_test.c` | 39 s | 692 s | 2361 s |
 

@@ -1,6 +1,6 @@
 // TRUST=webpki certificate parser and extension walk differential
 // section (webpki_cert.c and webpki_ext.c against
-// spec/Spec/WebpkiCert.lean).
+// spec/lean/Spec/WebpkiCert.lean).
 //
 // Three sources of certificates, each compared under the leaf arm and
 // the issuer arm or under the arm its position names:
@@ -29,7 +29,7 @@
 // pins those.
 //
 // Included by test/diff_test.c after diff_driver.h (single translation
-// unit). spec/Main.lean serves the op:
+// unit). spec/lean/Main.lean serves the op:
 //   webpki_cert <0|1> <cert> -> "ok <tbs off len> <issuer off len> <subject off len>
 //                                <not_before> <not_after> <spki off len>
 //                                <rsa|p256|p384> <key> <sigalg> <sig off len>

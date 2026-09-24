@@ -670,7 +670,7 @@ Cortex-M3 lane is the template for wiring a new emulated target.
 
 ## The differential oracle
 
-[`spec/`](spec/) is an executable [Lean 4](https://lean-lang.org/) specification of everything chapulin
+[`spec/lean/`](spec/lean/) is an executable [Lean 4](https://lean-lang.org/) specification of everything chapulin
 computes: SHA-256, SHA-384 and SHA-512, SHA-3 and both SHAKE XOFs,
 ML-KEM-768, HKDF and the
 key schedule, ChaCha20, Poly1305, the AEAD, record framing, x25519,
@@ -693,7 +693,7 @@ from a fixed seed. `make diff-ecdsa`, `make diff-pq` and `make
 diff-webpki` rebuild the same driver under `TRUST=raw-ecdsa`, `KEX=pq` and
 `TRUST=webpki`, whose parsers take other arms, and the nightly runs
 them. The spec depends on Mathlib, so run `lake exe cache
-get` inside `spec/` once after clone to download Mathlib's compiled
+get` inside `spec/lean/` once after clone to download Mathlib's compiled
 files; until then every spec target stops and names that command. Some
 rows are signatures the spec mints and the C must accept: the spec holds
 the private keys and signs, and the C, which can only verify, must
@@ -712,10 +712,10 @@ pointers are compared, not only its verdict.
 The spec also carries theorems about itself, so an agreement between C
 and spec transfers a proven fact rather than a matching answer. The
 theorems constrain the model, not the C: they stop a spec regression
-from quietly weakening the oracle. [`spec/CONTRACT.md`](spec/CONTRACT.md) lists them.
+from quietly weakening the oracle. [`spec/lean/CONTRACT.md`](spec/lean/CONTRACT.md) lists them.
 
 The state machine gets the same treatment one level up.
-[`spec/Spec/Handshake.lean`](spec/Spec/Handshake.lean) models the message-ordering rules as a step
+[`spec/lean/Spec/Handshake.lean`](spec/lean/Spec/Handshake.lean) models the message-ordering rules as a step
 function, and [`test/handshake_sequence_test.c`](test/handshake_sequence_test.c) enumerates every server message
 sequence the model admits — all eleven letters to depth 5, and the six
 handshake letters to depth 6, in both modes, 466,286 in all. It renders

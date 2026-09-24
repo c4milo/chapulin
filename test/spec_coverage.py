@@ -57,7 +57,7 @@ TRUST_WEBPKI_ONLY = ["webpki.c"]
 
 def spec_ops():
     """Op names the spec's dispatch accepts."""
-    text = (ROOT / "spec" / "Main.lean").read_text()
+    text = (ROOT / "spec" / "lean" / "Main.lean").read_text()
     body = text[text.index("def dispatch"):]
     return sorted(set(re.findall(r'^\s*\|\s*\["([a-z0-9_]+)"', body, re.M)))
 
@@ -114,7 +114,7 @@ def build_and_run():
     binary = OUT_DIR / "diff"
     subprocess.run(["gcc", *flags, str(ROOT / "test" / "diff_test.c"), *objs,
                     "-o", str(binary)], check=True, cwd=ROOT)
-    spec_bin = ROOT / "spec" / ".lake" / "build" / "bin" / "diffspec"
+    spec_bin = ROOT / "spec" / "lean" / ".lake" / "build" / "bin" / "diffspec"
     if not spec_bin.exists():
         sys.exit("spec binary missing: run `make -C spec` or `lake build` first")
     run = subprocess.run([str(binary), str(spec_bin)], cwd=OUT_DIR,

@@ -1,9 +1,9 @@
-# Downloads Mathlib's compiled files into spec/.lake/packages with
+# Downloads Mathlib's compiled files into spec/lean/.lake/packages with
 # `lake exe cache get`, the command Mathlib publishes for the purpose.
 # lake compiles from source any dependency whose compiled files it does
 # not find, and Mathlib takes hours to compile, so every job that runs
 # `lake build` runs this first, after install-elan has put lake on PATH.
-# The command also clones the packages spec/lake-manifest.json pins, so
+# The command also clones the packages spec/lean/lake-manifest.json pins, so
 # it runs on a fresh checkout.
 #
 # Each run downloads the files instead of restoring them from a GitHub
@@ -20,5 +20,5 @@ runs:
   using: composite
   steps:
     - shell: bash
-      working-directory: spec
+      working-directory: spec/lean
       run: bash "$GITHUB_ACTION_PATH/fetch.sh"

@@ -38,7 +38,7 @@
 // and unreached, so its callees need no stub.
 //
 // Not proved here: that a digest names the key it was taken over. The
-// stub answers any digest; spec/Spec/WebpkiPin.lean states the rule over
+// stub answers any digest; spec/lean/Spec/WebpkiPin.lean states the rule over
 // the real SHA-256 and the differential compares the two.
 #include "harness.h"
 

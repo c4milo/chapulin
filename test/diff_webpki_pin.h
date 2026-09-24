@@ -1,5 +1,5 @@
 // TRUST=webpki raw public key differential section (webpki_pin.c's
-// webpki_verify_raw_key against spec/Spec/WebpkiPin.lean's verifyRawKey).
+// webpki_verify_raw_key against spec/lean/Spec/WebpkiPin.lean's verifyRawKey).
 //
 // The keys are every SubjectPublicKeyInfo test/webpki_corpus.h carries:
 // each anchor's, the impostor's included, and each certificate's in every
@@ -26,7 +26,7 @@
 // apart, and test/webpki_auth_pins.h pins which alert each one is.
 //
 // Included by test/diff_test.c after diff_driver.h (single translation
-// unit). spec/Main.lean serves the op:
+// unit). spec/lean/Main.lean serves the op:
 //   webpki_raw <pins> <list>
 // where <pins> is "-" or hex pins joined by commas.
 #ifndef CH_DIFF_WEBPKI_PIN_H

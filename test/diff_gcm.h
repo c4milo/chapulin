@@ -1,5 +1,5 @@
 // Differential rows for quic_gcm.c: AEAD_AES_128_GCM and GHASH against
-// NIST SP 800-38D as spec/Spec/Gcm.lean states it. The C carries the
+// NIST SP 800-38D as spec/lean/Spec/Gcm.lean states it. The C carries the
 // byte-at-a-time GF(2^128) multiply of §6.3 and the spec carries the same
 // algorithm over a 128-bit value, so every row that agrees is one
 // representation checked against the other.

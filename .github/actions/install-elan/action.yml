@@ -1,5 +1,5 @@
 # Installs elan, the Lean toolchain manager, with --default-toolchain
-# none: lake installs the spec/lean-toolchain pin itself, so elan-init
+# none: lake installs the spec/lean/lean-toolchain pin itself, so elan-init
 # need not pull an unused stable release. The install is skipped when
 # ~/.elan/bin/elan already exists, which a restored Lean cache provides;
 # ~/.elan/bin goes on PATH either way. The pin value comes from the job's
