@@ -10,8 +10,9 @@
 // an acceptable case is a lax encoding the one-encoding verifiers must
 // refuse. Skips are reported, never silent: AEAD nonce sizes the fixed
 // nonce[12] API cannot express, HKDF cases outside the library's
-// CH_ASSERT domain, and RSA PKCS#1 v1.5 groups with a public exponent
-// other than the fixed 65537.
+// CH_ASSERT domain, HMAC tags longer than the 32 bytes hmac_sha256
+// writes, and RSA PKCS#1 v1.5 groups with a public exponent other than
+// the fixed 65537.
 //
 // The ECDSA arms cover the two digest-length mismatches FIPS 186-4
 // section 6.4 defines, because a public chain can sign a P-384 key with
@@ -236,6 +237,39 @@ static void run_hkdf(void) {
            COUNT(wp_hkdf), WP_HKDF_SKIPPED);
 }
 
+// hmac_sha256 called as a MAC, the way Finished, the binders, the QUIC
+// Retry token, the HelloRetryRequest cookie and the webpki ticket binding
+// call it. It always writes SHA256_LEN bytes. A group with a shorter tag
+// compares the first tag_len of them, the leftmost bits RFC 2104
+// section 5 keeps. An invalid case carries a modified tag, so it must not
+// match.
+static void run_hmac(void) {
+    for (size_t i = 0; i < COUNT(wp_hmac); i++) {
+        const uint8_t *key = wp_hmac_data + wp_hmac[i].off;
+        const uint8_t *msg = key + wp_hmac[i].key_len;
+        const uint8_t *tag = msg + wp_hmac[i].msg_len;
+        size_t tag_len = wp_hmac[i].tag_len;
+        // The generator skips every longer tag, so this never trips; it
+        // keeps a generator change from reading past the end of out.
+        if (tag_len > SHA256_LEN) {
+            fail("hmac", wp_hmac[i].tc, "tag longer than the output");
+            continue;
+        }
+        uint8_t out[SHA256_LEN];
+        hmac_sha256(key, wp_hmac[i].key_len, msg, wp_hmac[i].msg_len, out);
+        int match = memcmp(out, tag, tag_len) == 0;
+        if (wp_hmac[i].valid && !match) {
+            fail("hmac", wp_hmac[i].tc, "valid case mismatched");
+        }
+        if (!wp_hmac[i].valid && match) {
+            fail("hmac", wp_hmac[i].tc, "invalid case matched");
+        }
+    }
+    printf("wycheproof hmac-sha256: %zu cases, %d skipped (tags longer than the 32 bytes"
+           " hmac_sha256 writes)\n",
+           COUNT(wp_hmac), WP_HMAC_SKIPPED);
+}
+
 // One signature verdict against the vector's, for every signature arm.
 static void check_verdict(const char *suite, uint32_t tc, int ok, int valid) {
     if (ok != valid) {
@@ -430,6 +464,7 @@ int main(void) {
     run_aes_gcm();
 #endif
     run_hkdf();
+    run_hmac();
     run_ecdsa_p256_sha256();
     run_ecdsa_p256_sign();
     run_ecdsa_p384_sha384();

@@ -634,10 +634,12 @@ under `SUITE=aesgcm`.
   both. [`docs/entropy.md`](docs/entropy.md) carries the rest.
 
 Three more suites run on every push and add evidence rather than
-proof. [Wycheproof](https://github.com/C2SP/wycheproof)'s attack-derived cases (`make wycheproof`, 5,047
-across x25519, ChaCha20-Poly1305, HKDF-SHA256, ECDSA over P-256 and P-384 at every digest length a
+proof. [Wycheproof](https://github.com/C2SP/wycheproof)'s attack-derived cases (`make wycheproof`, 5,221
+across x25519, ChaCha20-Poly1305, HKDF-SHA256, HMAC-SHA256, ECDSA over P-256 and P-384 at every digest length a
 certificate signature can pair with either curve, RSA-PSS and RSA PKCS#1 v1.5 up to RSA-4096, and
-ML-KEM-768). The same lane signs every P-256 message in that corpus with `p256_sign` and hands the result to `p256_ecdsa_verify`, which shares no arithmetic with the signer; Wycheproof publishes no ECDSA signing vectors, so the signer's known answers are RFC 6979 A.2.5 and Python's integers in `test/p256_sign_test.c`.
+ML-KEM-768). The HMAC-SHA256 suite calls `hmac_sha256` directly, so the MAC that Finished, the binders,
+the QUIC Retry token, the HelloRetryRequest cookie and the webpki ticket binding compute is tested on its
+own and not only through HKDF. The same lane signs every P-256 message in that corpus with `p256_sign` and hands the result to `p256_ecdsa_verify`, which shares no arithmetic with the signer; Wycheproof publishes no ECDSA signing vectors, so the signer's known answers are RFC 6979 A.2.5 and Python's integers in `test/p256_sign_test.c`.
 Wycheproof tests no plain hash, so SHA-384 and SHA-512 rest on the
 FIPS 180-4 examples and RFC 6234 §8.5 in `test/sha512_test.c`, with the
 padding and block boundaries of the 128-byte block checked either side.

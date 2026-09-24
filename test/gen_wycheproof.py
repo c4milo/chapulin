@@ -12,7 +12,8 @@ header stays a few symbols instead of thousands.
 Skips are encoded, not dropped, so the test binary can report them:
 AEAD cases whose nonce size the fixed nonce[12] API cannot express,
 HKDF cases outside the library's CH_ASSERT domain (info > 64 bytes,
-okm 0 or > 255*32 bytes), and RSA PKCS#1 v1.5 groups whose public
+okm 0 or > 255*32 bytes), HMAC groups whose tag is longer than the 32
+bytes hmac_sha256 writes, and RSA PKCS#1 v1.5 groups whose public
 exponent is not the fixed 65537. All are findings in chapulin's favor
 and the test prints their counts.
 """
@@ -218,6 +219,55 @@ def gen_hkdf(d, out):
     out.append("};")
     out.append("")
     out.append(f"#define WP_HKDF_SKIPPED {skipped} // outside the library's CH_ASSERT domain")
+    out.append("")
+    return len(rows)
+
+
+# The HMAC-SHA-256 suite, for hmac_sha256 called as a MAC: Finished, the
+# binders, the QUIC Retry token, the HelloRetryRequest cookie and the
+# webpki ticket binding all call it that way. The HKDF suite calls it
+# only through extract and expand.
+#
+# hmac_sha256 asserts nothing about its key or message length (hkdf.c),
+# so unlike HKDF no case is skipped for an asserted domain. It always
+# writes SHA256_LEN bytes, and a group with a shorter tagSize compares a
+# prefix of them. A group whose tag is longer than SHA256_LEN is the one
+# the function cannot express. The constant takes sha256.h's name, so a
+# reader can check it against the header.
+SHA256_LEN = 32
+
+
+def gen_hmac(d, out):
+    blob = Blob()
+    rows = []
+    skipped = 0
+    for g in d["testGroups"]:
+        key_bits = uint_of(g["keySize"], 0xffff, "hmac keySize")
+        tag_bits = uint_of(g["tagSize"], 0xffff, "hmac tagSize")
+        if key_bits % 8 != 0 or tag_bits % 8 != 0:
+            raise SystemExit(f"hmac group keySize {key_bits}, tagSize {tag_bits}: not whole bytes")
+        if tag_bits > 8 * SHA256_LEN:
+            skipped += len(g["tests"])  # longer than the 32 bytes hmac_sha256 writes
+            continue
+        for t in g["tests"]:
+            key = bytes_of(t["key"], key_bits // 8, f"hmac tc{t['tcId']} key")
+            msg = bytes_of(t["msg"])
+            tag = bytes_of(t["tag"], tag_bits // 8, f"hmac tc{t['tcId']} tag")
+            off = blob.add(key + msg + tag)
+            rows.append(
+                (uint_of(t["tcId"], 0xffffffff, "hmac tcId"), off, len(key), len(msg), len(tag),
+                 1 if t["result"] == "valid" else 0)
+            )
+    emit_blob(out, "wp_hmac_data", blob)
+    out.append(
+        "static const struct { uint32_t tc; uint32_t off; uint16_t key_len; uint16_t msg_len;"
+        " uint8_t tag_len; uint8_t valid; } wp_hmac[] = {"
+    )
+    for row in rows:
+        out.append("    {" + ", ".join(str(v) for v in row) + "},")
+    out.append("};")
+    out.append("")
+    out.append(f"#define WP_HMAC_SKIPPED {skipped} // tags longer than the 32 bytes hmac_sha256 writes")
     out.append("")
     return len(rows)
 
@@ -575,6 +625,7 @@ def main():
     n_d = gen_ecdh_p256(json.load(open(v1 / "ecdh_secp256r1_ecpoint_test.json")), out)
     n_a = gen_aead(json.load(open(v1 / "chacha20_poly1305_test.json")), out)
     n_h = gen_hkdf(json.load(open(v1 / "hkdf_sha256_test.json")), out)
+    n_m = gen_hmac(json.load(open(v1 / "hmac_sha256_test.json")), out)
     n_g = gen_aes_gcm(json.load(open(v1 / "aes_gcm_test.json")), out)
     # The four ECDSA arms: the two matched pairs a chain signs with, and
     # the two mismatched digest lengths that exercise the FIPS 186-4
@@ -613,7 +664,8 @@ def main():
     n_ke = gen_mlkem_encaps(json.load(open(v1 / "mlkem_768_encaps_test.json")), out)
     n_kf = gen_mlkem_full(json.load(open(v1 / "mlkem_768_test.json")), out)
     dst.write_text("\n".join(out) + "\n")
-    print(f"wycheproof vectors: x25519 {n_x}, ecdh-p256 {n_d}, aead {n_a}, hkdf {n_h}, aes-gcm {n_g},"
+    print(f"wycheproof vectors: x25519 {n_x}, ecdh-p256 {n_d}, aead {n_a}, hkdf {n_h}, hmac {n_m},"
+          f" aes-gcm {n_g},"
           f" ecdsa p256-sha256 {n_e} p384-sha384 {n_e384} p384-sha256 {n_e384_256}"
           f" p256-sha512 {n_e256_512}, rsa-pss {n_r}, rsa-pkcs1 {n_rp}, rsa-sign {n_rs},"
           f" mlkem keygen {n_kk} encaps {n_ke} full {n_kf} (commit {commit[:12]})")
