@@ -1,0 +1,21 @@
+invariant: INV-14
+file: srv_cookie.c
+catches: srv_flight_test_aes
+reason: srv_cookie_open knows ChaCha20 alone again, which is what the first
+  SUITE=aesgcm server shipped. That server selects AES-GCM for a client
+  that offers no ChaCha20 and mints a cookie naming it, then refuses its
+  own cookie when the second ClientHello echoes it, so every such client
+  that sent no key share fails with illegal_parameter.
+  test_flight_retry_suite runs that retry, and
+  test_flight_cookie_suite_length opens an AES-GCM cookie at its exact
+  length.
+
+--- old
+#ifdef CH_SUITE_AES_GCM
+    if (suite == SUITE_AES_128_GCM_SHA256) {
+        return SHA256_LEN;
+    }
+#endif
+    if (suite == SUITE_CHACHA20_POLY1305_SHA256) {
+--- new
+    if (suite == SUITE_CHACHA20_POLY1305_SHA256) {

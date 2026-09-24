@@ -22,12 +22,20 @@
 // The transcript hash length one cipher suite fixes (RFC 9846 §7.1 binds the
 // hash to the suite), in bytes, or 0 for a suite this build does not hold.
 //
-// One suite answers a length today. This build offers
-// TLS_CHACHA20_POLY1305_SHA256 alone, for the reason srv_parser.h states, so
-// every other code point answers 0 and srv_cookie_open refuses the cookie
-// that names it. The two AES-GCM suites of §9.1 join this function as further
-// cases and change no declaration in srv_cookie.h.
+// The suites that answer a length are the ones srv_select can choose:
+// TLS_CHACHA20_POLY1305_SHA256 in every build, and TLS_AES_128_GCM_SHA256
+// under -DCH_SUITE_AES_GCM. Both hash with SHA-256. Every other code point
+// answers 0, and srv_cookie_open refuses the cookie that names it. A cookie
+// must open under every suite srv_select can choose, because the server
+// mints one for whichever suite it selected: a build that left AES-GCM out
+// here refused its own cookie, and with it every retried ClientHello from a
+// client that offers no ChaCha20.
 static size_t suite_hash_len(uint16_t suite) {
+#ifdef CH_SUITE_AES_GCM
+    if (suite == SUITE_AES_128_GCM_SHA256) {
+        return SHA256_LEN;
+    }
+#endif
     if (suite == SUITE_CHACHA20_POLY1305_SHA256) {
         return SHA256_LEN;
     }

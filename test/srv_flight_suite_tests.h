@@ -52,6 +52,63 @@ static void test_flight_select_suite(void) {
     CHECK(srv_select(&hs, &flight_hello, &sel) == CH_EPROTO && hs.alert == ALERT_HANDSHAKE_FAILURE);
 }
 
+// The HelloRetryRequest round for a client that offers AES-GCM and no
+// ChaCha20. The server selects AES-GCM, mints a cookie that names it, and
+// must accept that cookie when the second hello echoes it. The first
+// SUITE=aesgcm server refused it: srv_cookie_open knew ChaCha20 alone, so
+// every such client that sent no key share failed its retried hello with
+// illegal_parameter.
+static void test_flight_retry_suite(void) {
+    selection sel;
+    flight_reset();
+    srv_begin(&hs);
+    offer_everything();
+    parse_result.suites = SRV_SUITE_AES_128_GCM;
+    parse_result.shares = 0;
+    feed_handshake(HS_CLIENT_HELLO, FLIGHT_HELLO_BODY);
+    CHECK(srv_read_client_hello(&hs, &flight_hello) == CH_OK);
+    CHECK(srv_select(&hs, &flight_hello, &sel) == CH_OK && sel.need_retry == 1);
+    CHECK(sel.suite == SUITE_AES_128_GCM_SHA256);
+    CHECK(srv_send_hello_retry_request(&hs, &flight_hello, &sel) == CH_OK);
+
+    memcpy(cookie_echo, hs.cookie, hs.cookie_len);
+    flight_hello.cookie = cookie_echo;
+    flight_hello.cookie_len = hs.cookie_len;
+    flight_hello.shares = flight_hello.groups;
+    selection second;
+    memset(&second, 0, sizeof second);
+    CHECK(srv_check_retry_hello(&hs, &flight_hello, &second) == CH_OK);
+    CHECK(second.suite == SUITE_AES_128_GCM_SHA256 && second.hash_len == SHA256_LEN);
+    CHECK(second.group == sel.group && second.need_retry == 0);
+}
+
+// The cookie length an AES-GCM suite fixes, at its exact boundary. The
+// suite hashes with SHA-256, so the cookie is 5 + 3 * SHA256_LEN bytes:
+// that length opens and reports the suite, and one byte less or one byte
+// more is refused before the MAC runs.
+static void test_flight_cookie_suite_length(void) {
+    static const uint8_t ch1_hash[SHA256_LEN] = {0x80, 0x81, 0x82, 0x83};
+    static const uint8_t frozen[SHA256_LEN] = {0xc0, 0xc1, 0xc2, 0xc3};
+    uint8_t cookie[SRV_COOKIE_MAX + 1];
+    uint16_t suite = 0;
+    uint16_t group = 0;
+    size_t hash_len = 0;
+    uint8_t hash_out[SRV_COOKIE_HASH_MAX];
+    uint8_t frozen_out[SHA256_LEN];
+
+    memset(cookie, 0, sizeof cookie);
+    size_t n = srv_cookie_mint(cookie_key, SUITE_AES_128_GCM_SHA256, CH_GROUP_X25519, ch1_hash,
+                               SHA256_LEN, frozen, cookie, sizeof cookie);
+    CHECK(n == 5 + 3 * SHA256_LEN);
+    CHECK(srv_cookie_open(cookie_key, cookie, n, &suite, &group, hash_out, &hash_len, frozen_out) ==
+          CH_OK);
+    CHECK(suite == SUITE_AES_128_GCM_SHA256 && hash_len == SHA256_LEN);
+    CHECK(srv_cookie_open(cookie_key, cookie, n - 1, &suite, &group, hash_out, &hash_len,
+                          frozen_out) == CH_EPROTO);
+    CHECK(srv_cookie_open(cookie_key, cookie, n + 1, &suite, &group, hash_out, &hash_len,
+                          frozen_out) == CH_EPROTO);
+}
+
 // Whether one record w seals opens under r.
 static int seals_and_opens(rec_dir *w, rec_dir *r) {
     static const uint8_t note[3] = {1, 2, 3};

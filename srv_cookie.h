@@ -43,10 +43,11 @@
 
 // The largest transcript hash any cipher suite in RFC 9846 §9.1 names,
 // in bytes (rfc9846.txt:4055-4056 binds the hash to the suite). It is
-// 48, for TLS_AES_256_GCM_SHA384. This build selects only
-// TLS_CHACHA20_POLY1305_SHA256 and therefore mints only SHA256_LEN
-// cookies, and the constant is stated at the larger value so that the
-// buffer sizes below do not move when that suite arrives.
+// 48, for TLS_AES_256_GCM_SHA384. Every suite this build selects,
+// TLS_CHACHA20_POLY1305_SHA256 and, under -DCH_SUITE_AES_GCM,
+// TLS_AES_128_GCM_SHA256, hashes with SHA-256, so it mints only
+// SHA256_LEN cookies, and the constant is stated at the larger value so
+// that the buffer sizes below do not move when a SHA-384 suite arrives.
 #define SRV_COOKIE_HASH_MAX 48
 
 // The largest cookie this server mints, in bytes: 1 version byte, 2

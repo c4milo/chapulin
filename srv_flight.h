@@ -253,7 +253,9 @@ int srv_send_compat_ccs(handshake_state *h, const client_hello *ch);
 // the cookie's suite and group and the client's echoed session id,
 // recomputes the frozen-fields digest over this hello and compares it
 // with ct_memeq against the one the cookie carried, and confirms that
-// the selection the cookie named still matches what this build holds.
+// the selection the cookie named still matches what this build holds:
+// srv_cookie_open refuses a suite this build does not hold, and this
+// call refuses a group.
 // It writes sel from the cookie, so the two hellos cannot be answered
 // under different parameters. The signature scheme it selects again from
 // this hello, which gives the first hello's answer because the frozen

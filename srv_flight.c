@@ -233,7 +233,10 @@ int srv_check_retry_hello(handshake_state *h, const client_hello *ch, selection 
     if (!ct_memeq(frozen, ch->frozen, sizeof frozen)) {
         return CH_EPROTO;
     }
-    if (suite != SUITE_CHACHA20_POLY1305_SHA256 || group != CH_KEX_GROUP) {
+    // srv_cookie_open refused a suite this build does not hold, so the
+    // suite needs no second check here: it is whichever one srv_select
+    // chose for the first hello, AES-GCM included.
+    if (group != CH_KEX_GROUP) {
         return CH_EPROTO;
     }
     if ((ch->shares & SRV_GROUP_KEX) == 0) {

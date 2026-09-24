@@ -1,0 +1,13 @@
+invariant: INV-14
+file: srv_flight.c
+catches: srv_flight_test_aes
+reason: srv_check_retry_hello takes a second ClientHello only when the
+  cookie names ChaCha20, the check the first SUITE=aesgcm server carried
+  beside the cookie's own. The cookie opens, and the retry still fails
+  with illegal_parameter for a client that offers AES-GCM alone.
+  test_flight_retry_suite runs that retry to the end.
+
+--- old
+    if (group != CH_KEX_GROUP) {
+--- new
+    if (suite != SUITE_CHACHA20_POLY1305_SHA256 || group != CH_KEX_GROUP) {
