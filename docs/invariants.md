@@ -1556,24 +1556,25 @@ last `ROLE=server` stub, as the entry said it would.
 ### INV-19 — bounded stack
 
 - **Claim.** No VLAs, no recursion, and no function frame over the
-  build's budget: 2,560 bytes for every build except `TRUST=webpki` and
-  `KEX=pq` (measured worst there: `rsa_vp1` at 2,400); and 6,656 for
-  `KEX=pq` and `TRUST=webpki` (measured worst: `mlk_pke_encrypt` at
-  5,744 with gcc 13.3 and 6,224 with clang 21 and 23 on arm64). A
-  `TRUST=webpki` object carries ML-KEM in every build (decisions.md 53);
-  without it the mode would need 4,096, because its `rsa_vp1` verifies
-  RSA-4096 over 128 limbs (measured 3,168 with clang 23 on arm64 and
-  3,128 with Arm GNU gcc 16.2 on the Cortex-M3). ML-KEM's own working
-  memory sets that ceiling — K-PKE encrypt holds three polynomial
-  vectors and two polynomials — but chapulin's hybrid plumbing clears
-  2,560 as well: `ch_handshake` at 3,456 and `send_client_hello` at
-  2,672, the latter holding the re-expanded decapsulation key. A
-  device that cannot spare the budget builds the classic key
-  exchange.
+  build's budget. The budget is 2,560 bytes by default (measured worst:
+  `rsa_vp1` at 2,400); 3,072 under `KEX=pq`, where
+  `hsf_build_client_hello` holds ML-KEM's 2,400-byte decapsulation key
+  (measured 2,640 with clang 23 on arm64); and 4,096 under
+  `TRUST=webpki`, whose `rsa_vp1` verifies RSA-4096 over 128 limbs
+  (measured 3,168 with clang 23 on arm64 and 3,128 with Arm GNU gcc 16.2
+  on the Cortex-M3). ML-KEM's own sources, `KEX_HYBRID_SRCS`, get 6,656
+  in every build that carries them, `KEX=pq` and every `TRUST=webpki`
+  object (decisions.md 53): K-PKE encrypt holds three polynomial vectors
+  and two polynomials (measured worst: `mlk_pke_encrypt` at 5,744 with
+  gcc 13.3 and 6,224 with clang 21 and 23 on arm64). That ceiling is
+  per file, so a new buffer in any other file of those objects still
+  fails at its build's budget. A device that cannot spare the budget
+  builds the classic key exchange.
 - **Mechanism.** Compiler-enforced: `-Wvla` in global CFLAGS bans
   variable frames everywhere, and `make lint-stack` compiles the
   sources this build packages, under the defines it packages them
-  with, at `-Wframe-larger-than=$(STACK_BUDGET)`, so the README's
+  with, at `-Wframe-larger-than=$(STACK_BUDGET)`, or
+  `$(STACK_BUDGET_KEX_HYBRID)` for the ML-KEM sources, so the README's
   stack numbers are a compile-time contract, not a bench
   observation. Until the hybrid build landed the recipe iterated
   `$(SRCS)` without `$(LIB_DEF)`, so it measured the default build

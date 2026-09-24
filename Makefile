@@ -17,18 +17,24 @@ STACK_BUDGET := 2560
 ifeq ($(TRUST),webpki)
 STACK_BUDGET := 4096
 endif
-# The hybrid build's ceiling is set by ML-KEM's own working memory, not
-# by chapulin's plumbing: K-PKE encrypt holds three polynomial vectors
-# and two polynomials, 5,632 bytes of coefficients before locals
-# (measured 5,744 with gcc 13.3 -O2, and 6,224 with Apple clang 21 and
-# clang 23.1.1 -O2 on arm64). 6.5 kB leaves room for compiler variation
-# and still catches a new buffer; 6 kB did not hold clang, which no
-# local check measured until every TRUST=webpki object carried ML-KEM
-# (docs/decisions.md 53). KEX=pq carries ML-KEM too. See
-# docs/invariants.md INV-19 and the README's memory table.
-ifneq ($(filter pq-% %-webpki,$(KEX)-$(TRUST)),)
-STACK_BUDGET := 6656
+# A KEX=pq raw or ca client builds its hello around ML-KEM's 2,400-byte
+# decapsulation key, which hsf_build_client_hello holds while it writes
+# the encapsulation key into the share: measured 2,640 bytes (clang 23
+# -O2, arm64). 3 kB covers it and still catches a new buffer.
+ifeq ($(KEX),pq)
+STACK_BUDGET := 3072
 endif
+# ML-KEM's own sources get their own ceiling, set by ML-KEM's working
+# memory rather than chapulin's plumbing: K-PKE encrypt holds three
+# polynomial vectors and two polynomials, 5,632 bytes of coefficients
+# before locals (measured 5,744 with gcc 13.3 -O2, and 6,224 with Apple
+# clang 21 and clang 23.1.1 -O2 on arm64). 6.5 kB leaves room for
+# compiler variation; 6 kB did not hold clang. The ceiling applies to
+# KEX_HYBRID_SRCS alone, so every other file in an object that carries
+# ML-KEM (KEX=pq, and every TRUST=webpki object since docs/decisions.md
+# 53) keeps the ceiling above and a new buffer there still fails. See
+# docs/invariants.md INV-19 and the README's memory table.
+STACK_BUDGET_KEX_HYBRID := 6656
 
 # cfg.h makes the entropy pattern a declared build choice with no
 # default, so every translation unit that sees cfg.h must say which
@@ -2756,9 +2762,11 @@ lint-tracked-ignored:
 lint-stack:
 	@mkdir -p bin/obj/stack
 	@rc=0; for f in $(LIB_SRCS) drbg.c; do \
-	  $(CC) $(CFLAGS) $(LIB_DEF) -Wframe-larger-than=$(STACK_BUDGET) -I. -c $$f -o bin/obj/stack/$$f.o || rc=1; \
+	  budget=$(STACK_BUDGET); \
+	  case " $(KEX_HYBRID_SRCS) " in *" $$f "*) budget=$(STACK_BUDGET_KEX_HYBRID) ;; esac; \
+	  $(CC) $(CFLAGS) $(LIB_DEF) -Wframe-larger-than=$$budget -I. -c $$f -o bin/obj/stack/$$f.o || rc=1; \
 	done; rm -rf bin/obj/stack; \
-	[ $$rc -eq 0 ] && echo "lint-stack: every library frame under $(STACK_BUDGET) B"; exit $$rc
+	[ $$rc -eq 0 ] && echo "lint-stack: every library frame under $(STACK_BUDGET) B, ML-KEM's under $(STACK_BUDGET_KEX_HYBRID) B"; exit $$rc
 
 # Every document must be named in the README; an orphaned doc is a doc
 # nobody finds. The second and third loops keep the invariants
