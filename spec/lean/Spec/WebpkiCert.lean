@@ -436,13 +436,14 @@ def r2LeafExtensions : List ByteArray :=
    "301d0603551d0e0416041408ee7cfbcd51fcd6ceebe6120ef1657ba018a03e",
    "301f0603551d23041830168014e7ab73f72604d2cb3329676f5806ce7be8baef17"].map hex
 
+set_option compiler.extract_closed false in
 /-- The corpus leaf and issuer under both arms, the leaf's fields and
 ranges, and one refusal or acceptance per rule over the rebuilt leaf:
 each required extension removed, keyUsage without digitalSignature,
 extendedKeyUsage without serverAuth, a leaf asserting CA, a duplicate,
 an unknown extension critical and not, and the count and size caps on
 both sides. -/
-def selftest : Bool :=
+def selftest (_ : Unit) : Bool :=
   let joined := fun (l : List ByteArray) => l.foldl (· ++ ·) ByteArray.empty
   let without := fun (i : Nat) => joined (r2LeafExtensions.eraseIdx i)
   let unknown := fun (arc : UInt8) => hex "3009060355" ++ ByteArray.mk #[0x1d, arc] ++ hex "04023000"

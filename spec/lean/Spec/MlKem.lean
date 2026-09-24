@@ -457,10 +457,11 @@ ciphertext and shared secret bytes, plus one implicit-reject case with a
 single flipped ciphertext byte.
 -/
 
+set_option compiler.extract_closed false in
 /-- The seed-0 known-answer vector and one implicit-reject case, checked
 byte-for-byte. Returns `true` iff key generation, encapsulation, the honest
 decapsulation and the reject decapsulation all reproduce the reference. -/
-def selftest : Bool :=
+def selftest (_ : Unit) : Bool :=
   let d := "aeed86158e34d8e1f0a0b5eea10f6c10e8d5827ad42f444abb29c79510103184"
   let z := "e3ee0a22d4686b6c8cb995e25893cdf12a974dc71a3672a706118f53a813dec7"
   let m := "a877c13d2d9b9ce9cb3a5708c8912103f0b052869c2aaccc34ea8268ed16c0b7"

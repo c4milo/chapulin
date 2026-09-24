@@ -48,8 +48,15 @@ def webpkiSigned : Option (ByteArray × ByteArray) → String
   | some (spki, sig) => s!"{emit spki} {emit sig}"
   | none => "FAIL"
 
-def selftestAll : String :=
-  let mods : List (String × Bool) := [
+/-- Every module's `selftest`, in order: `ok`, or `FAIL` and the first
+module that failed. Each entry is the function, not its result, and
+`never_extract` keeps `dispatch` from lifting `selftestAll ()` into a
+constant: Lean evaluates such constants when the program starts, so a
+self-test there would run on every start of the oracle, not only when
+`selftest` is asked for. -/
+@[never_extract]
+def selftestAll (_ : Unit) : String :=
+  let mods : List (String × (Unit → Bool)) := [
     ("sha256", Spec.Sha256.selftest),
     ("sha3", Spec.Sha3.selftest),
     ("sha512", Spec.Sha512.selftest),
@@ -79,12 +86,12 @@ def selftestAll : String :=
     ("drbg", Spec.Drbg.selftest),
     ("handshake", Spec.Handshake.selftest),
     ("handshake_parser", Spec.HandshakeParser.selftest)]
-  match mods.find? (fun m => !m.2) with
+  match mods.find? (fun m => !m.2 ()) with
   | some (name, _) => s!"FAIL {name}"
   | none => "ok"
 
 def dispatch : List String → Option String
-  | ["selftest"] => some selftestAll
+  | ["selftest"] => some (selftestAll ())
   | ["sha256", m] => do
     return emit (Spec.Sha256.sha256 (← hexArg? m))
   | ["sha512", m] => do

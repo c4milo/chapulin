@@ -137,6 +137,7 @@ def matchSan (san : ByteArray) (host : List UInt8) : Bool :=
   | some es => es.any (fun e => e.1 == dnsNameTag && matchDnsName e.2.toList host)
   | none => false
 
+set_option compiler.extract_closed false in
 /-- Structural checks: the shape rules on the reference name, a hyphen
 inside a label and at each of its edges, a 63-byte label on both sides
 of the hyphen rule, exact and folded matches, the wildcard on each
@@ -144,7 +145,7 @@ side of its rules, a NUL in a presented name, a skipped iPAddress
 entry, and the GeneralName tag rule on both sides: [8] and [0]
 accepted, [9], a primitive [0], a constructed dNSName, universal tags
 and the high-tag-number form refused. -/
-def selftest : Bool :=
+def selftest (_ : Unit) : Bool :=
   let host (s : String) : List UInt8 := (ascii s).toList
   let entry (tag : UInt8) (s : String) : ByteArray :=
     ByteArray.mk #[tag, UInt8.ofNat s.utf8ByteSize] ++ ascii s

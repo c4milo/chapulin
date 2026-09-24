@@ -138,9 +138,10 @@ def encode (width : Nat) (der : ByteArray) : ByteArray := Id.run do
   if col ≠ 0 then out := out ++ [10]
   return ByteArray.mk (out ++ endLine ++ [10]).toArray
 
+set_option compiler.extract_closed false in
 /-- RFC 4648 §10's published vectors, then the properties the C relies
 on: every line width decodes alike, and each rejection shape is caught. -/
-def selftest : Bool :=
+def selftest (_ : Unit) : Bool :=
   let cap := 1536
   let rt (s : String) : Bool :=
     match decode? cap (encode 64 (ascii s)) with

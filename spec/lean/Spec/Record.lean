@@ -311,6 +311,7 @@ theorem open?_type_sound (secret : ByteArray) (seq : Nat) (rec : ByteArray)
       have h_type_nonzero := scanNonZero_ne_zero inner inner.size idx h_scan_found
       simp_all
 
+set_option compiler.extract_closed false in
 /--
 Structural checks: header is `17 03 03`, its length field is
 `|pt| + 17` (content type byte plus tag), the record body matches
@@ -321,7 +322,7 @@ the round trip, the §5.4 padding strip, and one case per refusal
 known-answer test; its functional coverage comes from the
 differential run against the C implementation.
 -/
-def selftest : Bool := Id.run do
+def selftest (_ : Unit) : Bool := Id.run do
   let secret := ByteArray.mk (Array.replicate 32 0x0b)
   let pt := ascii "ping"
   let out := «seal» secret 1 0x17 pt

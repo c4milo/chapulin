@@ -169,12 +169,13 @@ theorem ecdsaVerify_ecdsaSign [Fact p.Prime] [Fact n.Prime] (h_order : n • bas
   curve.ecdsaVerify_ecdsaSign two_lt_p discriminant_ne_zero g_onCurve p_lt_two_pow h_order
     h_sign h_pub h_hash
 
+set_option compiler.extract_closed false in
 /-- The RFC 6979 §A.2.6 P-384/SHA-384 "sample" and "test" vectors (the
 RFC's private key, digests, and signatures; `k` recovered from them as
 `s^-1 (z + r·d) mod n` and checked against `r`): key generation,
 deterministic signing, verification of both, tamper rejection, and a
 sign-then-verify round trip on unrelated inputs. -/
-def selftest : Bool :=
+def selftest (_ : Unit) : Bool :=
   -- A malformed literal falls back to a 1-byte sentinel and breaks the
   -- length-sensitive checks instead of testing the empty string.
   let hx := fun s => (hexToBytes? s).getD (ByteArray.mk #[0])

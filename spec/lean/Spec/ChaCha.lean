@@ -171,9 +171,10 @@ theorem xor_xor (key nonce : ByteArray) (c : UInt32) (d : ByteArray) :
     rw [← getElem!_pos _ i h_lt_out, xor_getElem! _ _ _ _ _ (by omega),
       xor_getElem! _ _ _ _ _ h_lt_data, uint8_xor_cancel, getElem!_pos d i h_lt_data]
 
+set_option compiler.extract_closed false in
 /-- Test vectors: RFC 8439 §2.3.2 (block keystream) and §2.4.2
 (encryption). -/
-def selftest : Bool := Id.run do
+def selftest (_ : Unit) : Bool := Id.run do
   -- A malformed literal falls back to a 1-byte sentinel and breaks the
   -- length-sensitive checks instead of testing the empty string.
   let hx (s : String) : ByteArray := (hexToBytes? s).getD (ByteArray.mk #[0])

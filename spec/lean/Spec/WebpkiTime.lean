@@ -172,10 +172,11 @@ def packSeconds (s : Nat) : Nat :=
   let s := min s secondsMax
   dateOfDays (s / 86400) * 1000000 + timeOfDay (s % 86400)
 
+set_option compiler.extract_closed false in
 /-- Structural checks: the century split, the GeneralizedTime floor,
 the leap rule at 2024, 2023 and 2100, and the clock at 1970-01-01,
 2000-02-29 and 2100-01-01. -/
-def selftest : Bool :=
+def selftest (_ : Unit) : Bool :=
   let utc (body : String) : Option (Nat × Nat) :=
     readTime (ByteArray.mk #[0x17, 13] ++ ascii body) 0
   let gen (body : String) : Option (Nat × Nat) :=

@@ -446,6 +446,7 @@ def mintChain (ca int : CaKey) (serial issuer validity subject leafKey leafExts 
   let intCert ← mintCert ca (tlv 0x02 serial) issuer validity subject intPub intExts
   some (entryBytes leafCert ++ entryBytes intCert)
 
+set_option compiler.extract_closed false in
 /-- Structural checks: a minted certificate parses back to the minted
 key — and the epoch number of its epoch-shaped notBefore
 (`250101000000Z` is number 8400) — under both algorithms; the last
@@ -458,7 +459,7 @@ missing keyUsage; the non-minimal-extnID variant fails on X.690
 §8.19.2 alone; a wrong CA key and a trailing byte fail. A minted chain parses back to the leaf key; the same chain
 fails under a wrong CA key, and a chain whose intermediate carries
 the leaf's extension arm fails on the profile. -/
-def selftest : Bool :=
+def selftest (_ : Unit) : Bool :=
   let serial := hexConst "2a"
   let name := hexConst "310c300a06035504030c03636861"
   let validity := tlv 0x17 (ascii "250101000000Z") ++ tlv 0x18 (ascii "20350101000000Z")

@@ -86,9 +86,10 @@ theorem open?_ne_tag (key nonce aad ct tag : ByteArray)
     exact h (bytesToHex_inj _ _ he).symm
   simp [hne]
 
+set_option compiler.extract_closed false in
 /-- Test vectors: RFC 8439 §2.8.2 (ciphertext and tag), a round-trip
 through `open?`, and a rejected forgery (one flipped tag byte). -/
-def selftest : Bool := Id.run do
+def selftest (_ : Unit) : Bool := Id.run do
   -- A malformed literal falls back to a 1-byte sentinel and breaks the
   -- length-sensitive checks instead of testing the empty string.
   let hx (s : String) : ByteArray := (hexToBytes? s).getD (ByteArray.mk #[0])

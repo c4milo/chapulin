@@ -40,8 +40,9 @@ def mac (key msg : ByteArray) : ByteArray := Id.run do
 theorem mac_size (key msg : ByteArray) : (mac key msg).size = 16 := by
   simp [mac, Spec.Bytes.natToBytesLE_size]
 
+set_option compiler.extract_closed false in
 /-- Test vector: RFC 8439 §2.5.2. -/
-def selftest : Bool :=
+def selftest (_ : Unit) : Bool :=
   -- A malformed literal falls back to a 1-byte sentinel and breaks the
   -- length-sensitive checks instead of testing the empty string.
   let hx (s : String) : ByteArray := (hexToBytes? s).getD (ByteArray.mk #[0])

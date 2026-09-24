@@ -171,12 +171,13 @@ def sign (a : SigAlg) (signer : Signer) (tbs : ByteArray) : Option (ByteArray ×
     some (encodeSpki .p384 pub, ecdsaSigDer r s)
   | _, _ => none
 
+set_option compiler.extract_closed false in
 /-- The reader over the four encodings and the refusals docs/webpki.md
 names — SHA-1 under both families, RSA-PSS, and each family with the
 other's parameter form — then sign-then-verify under both curves with
 both hashes (the cut and the pad included) and under RSA, and the
 refusals of a changed TBS, a family mismatch and the TBS cap. -/
-def selftest : Bool :=
+def selftest (_ : Unit) : Bool :=
   let hx := fun s => (hexToBytes? s).getD (ByteArray.mk #[0])
   let reads := all.all fun a => readSigalg? (encode a) == some a
   let refuses := [

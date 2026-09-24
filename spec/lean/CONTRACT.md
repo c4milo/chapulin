@@ -7,8 +7,12 @@ The Lean spec is a differential oracle for the C stack. Rules:
    detail, it is in the RFC. Definitional style: arithmetic over `Nat`
    with explicit `mod`, no performance tricks unless a vector demands it.
 2. **Signatures are fixed** (namespaces and types exactly as below).
-3. Every module ends with a `selftest : Bool`, `true` iff all checks
-   pass. Most check the RFC's published vectors; Record, Drbg, and X509
+3. Every module ends with a `selftest (_ : Unit) : Bool`, `true` iff
+   all checks pass, under `set_option compiler.extract_closed false in`.
+   Lean computes an argument-free definition, and every closed term the
+   compiler lifts out of a body, when the program starts. A
+   `selftest : Bool` made every start of `diffspec` run P-384's
+   signatures, 11 seconds before the first request. Most check the RFC's published vectors; Record, Drbg, and X509
    have no third-party vectors and their selftests are structural
    (framing, nonce construction, rekeying, mint/parse round trips) —
    the differential and, for Record, the planned RFC 8448 trace replay

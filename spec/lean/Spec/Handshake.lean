@@ -799,13 +799,14 @@ def msgOfChar? : Char → Option Msg
 def seq? (s : String) : Option (List Msg) :=
   s.toList.mapM msgOfChar?
 
+set_option compiler.extract_closed false in
 /--
 Hand-checked orderings. The accepting rows are the legal §4 shapes for
 each mode — with and without a HelloRetryRequest round and with
 post-handshake tails. Each rejecting row cites the RFC text it
 violates.
 -/
-def selftest : Bool :=
+def selftest (_ : Unit) : Bool :=
   let check := fun ((mode, letters, want) : Mode × String × Bool) =>
     match seq? letters with
     | some msgs => accepts mode msgs == want

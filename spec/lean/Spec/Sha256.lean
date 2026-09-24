@@ -141,10 +141,11 @@ theorem sha256_size (msg : ByteArray) : (sha256 msg).size = 32 := by
       (fun a => natToBytesBE_size a.toNat 4)]
   simp [Array.length_toList, hh]
 
+set_option compiler.extract_closed false in
 /-- FIPS 180-4 / NIST example vectors: SHA-256("abc") and the two-block
 message (FIPS 180-4 appendix examples, also NIST CAVP), plus SHA-256 of
 the empty string. -/
-def selftest : Bool :=
+def selftest (_ : Unit) : Bool :=
   let vec (msg want : String) : Bool := bytesToHex (sha256 (ascii msg)) == want
   vec "abc"
       "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"

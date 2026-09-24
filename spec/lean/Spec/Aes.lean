@@ -220,10 +220,11 @@ theorem encryptBlock_size (key block : ByteArray) (h_block : block.size = 16) :
   rw [addRoundKey, xorBytes_size, shiftRows_size, subBytes_size, roundKeyAt_size, h_fold]
   simp
 
+set_option compiler.extract_closed false in
 /-- Test vectors: FIPS 197 Appendix C.1 for the block cipher, the §5.1.1
 worked S-box entry, and RFC 9001 Appendix A.1 for the client's Initial
 keys. -/
-def selftest : Bool :=
+def selftest (_ : Unit) : Bool :=
   -- A malformed literal falls back to a 1-byte sentinel, which fails the
   -- length-sensitive checks instead of testing the empty string.
   let hx (s : String) : ByteArray := (hexToBytes? s).getD (ByteArray.mk #[0])

@@ -1197,6 +1197,7 @@ def certificateEntry (cert exts : ByteArray) : ByteArray := vec24 cert ++ vec16 
 
 /-! ## Selftest -/
 
+set_option compiler.extract_closed false in
 /--
 Structural checks: the message grammar has no third-party vectors, so
 the selftest builds one on-profile message of each kind, checks the
@@ -1213,7 +1214,7 @@ a retry and comes back in the fields, and suites the build did not
 offer are refused.
 Functional coverage against the C comes from the differential run.
 -/
-def selftest : Bool := Id.run do
+def selftest (_ : Unit) : Bool := Id.run do
   let random := ByteArray.mk (Array.replicate 32 0x5a)
   -- handshake_message.c offers an empty legacy_session_id, so the echo is empty.
   let sessionId := ByteArray.mk #[]

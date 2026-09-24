@@ -262,13 +262,14 @@ def corpusHost : List UInt8 := "s3.example.test".toUTF8.toList
 def r2Config : Config :=
   { anchors := [⟨rootP384Name, rootP384Spki⟩], hostname := corpusHost, now := 20260701000000 }
 
+set_option compiler.extract_closed false in
 /-- The corpus r2 chain accepted over a path of two entries ending at
 anchor 0, and at anchor 1 behind the impostor anchor, which names the
 issuer and verifies nothing; and one refusal per rule: the clock one
 second past the leaf's notAfter and one before its notBefore, a hostname
 no dNSName names, an anchor whose Name matches over another key, no
 anchor at all, a fifth entry, and an empty list. -/
-def selftest : Bool :=
+def selftest (_ : Unit) : Bool :=
   let ok := verifyChain r2Config r2List
   let leafKey := match parseCertificate? false r2Leaf with
     | some c => c.key

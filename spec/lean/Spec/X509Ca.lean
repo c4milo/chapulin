@@ -144,11 +144,12 @@ def caKey? (alg : Alg) (derMax : Nat) (pem : ByteArray) : Option ByteArray := do
   -- derMax for every accepted input, so a guard here is provably dead.
   readCertificate alg der
 
+set_option compiler.extract_closed false in
 /-- Structural, like `Spec.X509`'s: no third party publishes vectors
 for a provisioning walk. The differential in test/diff_x509_ca.h carries
 the known-answer weight, minting certificates with `Spec.X509.mint`
 and comparing against the C. -/
-def selftest : Bool :=
+def selftest (_ : Unit) : Bool :=
   isCaTrue (hexConst "30030101ff")            -- a root: no pathLenConstraint
     ∧ isCaTrue (hexConst "30060101ff020100")  -- an intermediate: pathLen 0
     ∧ isCaTrue (hexConst "30060101ff020103")  -- any pathLen is an anchor

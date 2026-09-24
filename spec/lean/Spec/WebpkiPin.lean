@@ -104,10 +104,11 @@ def pathPinned (pins : List ByteArray) (anchors : List Anchor) (list : ByteArray
         pinned pins a.spki)
   | _, _ => false
 
+set_option compiler.extract_closed false in
 /-- The corpus r2 leaf's SubjectPublicKeyInfo framed as one raw entry:
 accepted with its pin first or second of two, and refused without it;
 and one refusal per framing rule. -/
-def selftest : Bool :=
+def selftest (_ : Unit) : Bool :=
   let spki := match certificateSpki? 0 r2Leaf with
     | some b => b
     | none => ByteArray.empty

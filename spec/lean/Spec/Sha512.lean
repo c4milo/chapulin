@@ -185,9 +185,10 @@ theorem pad_prefix (msg : ByteArray) : (pad msg).extract 0 msg.size = msg := by
   rw [pad, ByteArray.append_assoc, ByteArray.append_assoc]
   exact ByteArray.extract_append_eq_left rfl
 
+set_option compiler.extract_closed false in
 /-- FIPS 180-4 appendix C and D examples: "abc" and the 896-bit two-block
 message for each hash, plus the empty string. -/
-def selftest : Bool :=
+def selftest (_ : Unit) : Bool :=
   let vec512 (msg want : String) : Bool := bytesToHex (sha512 (ascii msg)) == want
   let vec384 (msg want : String) : Bool := bytesToHex (sha384 (ascii msg)) == want
   let twoBlock := "abcdefghbcdefghicdefghijdefghijkefghijklfghijklmghijklmnhijklmnoijklmnop"

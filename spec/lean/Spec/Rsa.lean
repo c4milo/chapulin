@@ -165,11 +165,12 @@ def pssSign (n d : Nat) (mHash salt : ByteArray) : Option ByteArray :=
 def rsaSign (n d : Nat) (mHash salt : ByteArray) : Option ByteArray :=
   pssSign n d mHash salt
 
+set_option compiler.extract_closed false in
 /-- Test vectors: an OpenSSL-minted 2048-bit RSASSA-PSS/SHA-256
 signature (salt length 32) verifies; a sign-then-verify round trip over
 the same key with a fixed salt succeeds; and a one-byte flip of the
 digest is rejected on both paths. -/
-def selftest : Bool :=
+def selftest (_ : Unit) : Bool :=
   -- A malformed literal falls back to a 1-byte sentinel and breaks the
   -- length-sensitive checks instead of testing the empty string.
   let hx := fun s => (hexToBytes? s).getD (ByteArray.mk #[0])

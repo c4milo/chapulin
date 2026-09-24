@@ -24,9 +24,10 @@ def next (k : ByteArray) (n : Nat) : ByteArray × ByteArray :=
   let stream := Spec.ChaCha.xor k zeroNonce 0 (ByteArray.mk (Array.replicate (32 + n) 0))
   (stream.extract 0 32, stream.extract 32 (32 + n))
 
+set_option compiler.extract_closed false in
 /-- The construction rekeys: consecutive requests use distinct keys, and
 the output never contains the next key's bytes. -/
-def selftest : Bool :=
+def selftest (_ : Unit) : Bool :=
   let k0 := ByteArray.mk (Array.replicate 32 7)
   let (k1, out1) := next k0 40
   let (k2, out2) := next k1 40

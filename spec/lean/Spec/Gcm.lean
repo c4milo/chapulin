@@ -165,10 +165,11 @@ theorem decrypt?_isSome (key iv aad ct tag : ByteArray) :
   simp only [decrypt?]
   split <;> simp_all
 
+set_option compiler.extract_closed false in
 /-- Test vectors: NIST SP 800-38D's AES-128 cases 1 to 4, and the RFC
 9001 Appendix A.4 Retry integrity tag, which is this AEAD over an empty
 plaintext with the Retry Pseudo-Packet as associated data (§5.8). -/
-def selftest : Bool :=
+def selftest (_ : Unit) : Bool :=
   -- A malformed literal falls back to a 1-byte sentinel, which fails the
   -- length-sensitive checks instead of testing the empty string.
   let hx (s : String) : ByteArray := (hexToBytes? s).getD (ByteArray.mk #[0])

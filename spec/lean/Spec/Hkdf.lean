@@ -133,6 +133,7 @@ theorem expandLabel_size (secret : ByteArray) (label : String) (ctx : ByteArray)
     (len : Nat) : (expandLabel secret label ctx len).size = len := by
   simp [expandLabel, expand_size]
 
+set_option compiler.extract_closed false in
 /-- Official vectors: HMAC-SHA-256 RFC 4231 test cases 1 and 2; HKDF
 RFC 5869 test case 1 (PRK and 42-byte OKM); the RFC 8448 §3 Early Secret
 and "derived" secret (an all-zero PSK trace, exercising `expandLabel` with
@@ -141,7 +142,7 @@ exactly the §7.1 HkdfLabel encoding; a wiring check that `schedule`
 equals the step-by-step §7.1 derivation; and the four RFC 8448 §3
 traffic secrets, which pin every `schedule` label and step to the
 published trace. -/
-def selftest : Bool :=
+def selftest (_ : Unit) : Bool :=
   let hex := bytesToHex
   -- A malformed literal falls back to a 1-byte sentinel and breaks the
   -- length-sensitive checks instead of testing the empty string.

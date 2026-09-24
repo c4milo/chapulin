@@ -234,10 +234,11 @@ theorem pad_prefix (rate : Nat) (domain : UInt8) (msg : ByteArray) :
   · rw [ByteArray.append_assoc, ByteArray.append_assoc]
     exact ByteArray.extract_append_eq_left rfl
 
+set_option compiler.extract_closed false in
 /-- NIST FIPS 202 example values: the empty message and "abc" for the
 fixed-length digests; the empty message and the 1600-bit message of
 repeated 0xa3 for the XOFs, first 32 output bytes. -/
-def selftest : Bool :=
+def selftest (_ : Unit) : Bool :=
   let a3 := ByteArray.mk (Array.replicate 200 0xa3)
   bytesToHex (sha3_256 (ascii "")) ==
       "a7ffc6f8bf1ed76651c14756a061d662f580ff4de43b49fa82d80a4b80f8434a"

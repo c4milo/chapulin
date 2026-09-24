@@ -143,10 +143,11 @@ def encodeSpki (alg : KeyAlg) (key : ByteArray) : ByteArray :=
     | .p256 | .p384 => ByteArray.mk #[0x04] ++ key
   tlv 0x30 (algId alg ++ tlv 0x03 (ByteArray.mk #[0x00] ++ subjectKey))
 
+set_option compiler.extract_closed false in
 /-- Round trips over each algorithm and one refusal per profile rule:
 the exponent, the parity and each end of the modulus size range, the
 point form, and each curve's point under the other's identifier. -/
-def selftest : Bool :=
+def selftest (_ : Unit) : Bool :=
   let modulus := fun (bytes : Nat) => natToBytesBE (2 ^ (8 * bytes - 1) + 0x5a5a01) bytes
   let point := fun (len : Nat) =>
     ByteArray.mk ((List.range len).map (fun i => UInt8.ofNat (i + 1))).toArray

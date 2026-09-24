@@ -108,10 +108,11 @@ def scalarMult (scalar point : ByteArray) : ByteArray :=
 def base (scalar : ByteArray) : ByteArray :=
   scalarMult scalar (encodeUCoordinate 9)
 
+set_option compiler.extract_closed false in
 /-- RFC 7748 test vectors: the two §5.2 single vectors, one iteration of
 the §5.2 iteration test, and the §6.1 Diffie-Hellman public keys and
 shared secret. -/
-def selftest : Bool :=
+def selftest (_ : Unit) : Bool :=
   -- A malformed literal falls back to a 1-byte sentinel and breaks the
   -- length-sensitive checks instead of testing the empty string.
   let hx := fun s => (hexToBytes? s).getD (ByteArray.mk #[0])

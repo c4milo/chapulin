@@ -140,6 +140,7 @@ theorem pkcs1Verify_digest_len (n e : Nat) (digest sig : ByteArray)
     pkcs1Verify n e digest sig = false := by
   unfold pkcs1Verify encode?; simp [h_none]
 
+set_option compiler.extract_closed false in
 /-- Sign-then-verify round trips over the 2048-bit key `Spec/Rsa.lean`'s
 selftest carries, with a SHA-256-length and a SHA-384-length digest; a
 one-byte flip of either digest is rejected, a signature verified against
@@ -147,7 +148,7 @@ the other digest length is rejected, and a 20-byte digest signs nothing.
 Then an OpenSSL-minted RSA-2048/SHA-256 signature — the bytes
 `test/rsa_pkcs1_vectors.h` carries, from `openssl dgst -sha256 -sign` —
 verifies and rejects a flipped digest. -/
-def selftest : Bool :=
+def selftest (_ : Unit) : Bool :=
   -- A malformed literal falls back to a 1-byte sentinel and breaks the
   -- length-sensitive checks instead of testing the empty string.
   let hx := fun s => (hexToBytes? s).getD (ByteArray.mk #[0])
