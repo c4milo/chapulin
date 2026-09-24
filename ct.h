@@ -37,6 +37,8 @@ void ct_wipe(void *p, size_t n);
 //                      time. The Makefile passes it for host test binaries,
 //                      where nothing secret is at risk and solver time is;
 //                      firmware passes it only with a vendor statement.
+//                      `make lib WIDEMUL=native` puts it in the packaged
+//                      object, and the object's cc-stamp records it.
 //   CH_CT_WIDEMUL      force the decomposition, whatever else is set.
 //                      bin/timing and proof/ctwidemul_harness.c use it to
 //                      measure and prove the path that ships, and

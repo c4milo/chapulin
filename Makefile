@@ -772,6 +772,21 @@ ifneq ($(TRUST),webpki)
 $(error SUITE=aesgcm is refused for a device client: use TRUST=webpki, ROLE=server or ROLE=both)
 endif
 endif
+# The widening multiply the packaged object carries (ct.h). WIDEMUL=
+# decomposed, the default, builds every widening product from 16x16
+# pieces and claims nothing about the CPU. WIDEMUL=native defines
+# CH_NATIVE_WIDEMUL in the object: the builder states that this part's
+# widening multiply runs in constant time, which ct.h says firmware does
+# only with a vendor statement. The host test flags never reach the
+# object (LIB_CFLAGS filters them), so this is the one supported way to
+# ask for the native multiply, and LIB_VARIANT and the object's cc-stamp
+# record the choice.
+WIDEMUL ?= decomposed
+ifeq ($(WIDEMUL),native)
+LIB_DEF += -DCH_NATIVE_WIDEMUL
+else ifneq ($(WIDEMUL),decomposed)
+$(error WIDEMUL=$(WIDEMUL) is not a multiply; use WIDEMUL=decomposed or WIDEMUL=native)
+endif
 # Entropy pattern, and the one build variable with no default: RAND=extern
 # leaves ch_rand_bytes undefined for the image to supply, RAND=drbg packages
 # the reference generator and exports ch_drbg_seed so the image seeds it at
@@ -822,7 +837,7 @@ QEMU_SMOKE_C := $(wildcard test/qemu/*.c test/qemu/*.h test/freertos/*.c test/fr
 # SUITE belongs here for the same reason: -DCH_SUITE_AES_GCM changes
 # record.o and adds three objects, so the two suites must not share a
 # directory.
-LIB_VARIANT := $(TRUST)-$(KEX)-$(RAND)-$(TRANSPORT)-$(AES)-$(SUITE)-$(ROLE)-$(EXPORTER)-$(KEYLOG)
+LIB_VARIANT := $(TRUST)-$(KEX)-$(RAND)-$(TRANSPORT)-$(AES)-$(SUITE)-$(ROLE)-$(EXPORTER)-$(KEYLOG)-$(WIDEMUL)
 LIB_OBJS := $(LIB_SRCS:%.c=bin/obj/$(LIB_VARIANT)/%.o)
 
 # bench/device-ram.sh sizes the same modules the build packages. It asks
@@ -1747,6 +1762,10 @@ check: bin/unit bin/unit_ca bin/unit_pq bin/tlsclient bin/tlsclient_ecdsa bin/tl
 	# is not guarded imports the ch_handshake nothing compiled
 	# (https://github.com/c4milo/chapulin/issues/171). It took 2.4 s cold.
 	$(MAKE) lib-check RAND=extern TRUST=webpki TRANSPORT=record
+	# The same object with the native multiply, the build cocuyo links
+	# when its builder vouches for the part (WIDEMUL above). The export
+	# list must not move; only the arithmetic inside changes.
+	$(MAKE) lib-check RAND=extern TRUST=webpki TRANSPORT=record WIDEMUL=native
 	# The QUIC arm exports the fifteen ch_quic_ calls and none of the four
 	# TLS ones, so it is the leg that holds PUBLIC_TRANSPORT to a
 	# replacement rather than an addition, and the one that compiles

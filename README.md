@@ -891,7 +891,11 @@ Other targets:
   (decision 43). `KEYLOG=on` hands each traffic secret to a
   `ch_keylog` hook the image defines, for an NSS key log; it adds no
   export, it imports the hook, and it is refused for a client in a raw
-  or ca trust mode (decision 44, INV-29).
+  or ca trust mode (decision 44, INV-29). `WIDEMUL=native` defines
+  `CH_NATIVE_WIDEMUL` in the object: the builder states that this
+  part's widening multiply runs in constant time, and every widening
+  product then uses the CPU's multiply instead of 16x16 pieces (`ct.h`).
+  The default, `WIDEMUL=decomposed`, makes no claim about the part.
   `RAND` is the one build variable with no default. Compose with
   `TRUST=raw-ecdsa`, `TRUST=ca-rsa` or `TRUST=webpki`, and `KEX=pq`;
   the `TRUST=webpki` object carries every verifier, which is why that
