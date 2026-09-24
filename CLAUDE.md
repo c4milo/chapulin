@@ -88,7 +88,8 @@ Home: github.com/c4milo.
   ← `aead.[ch]` (RFC 8439 seal/open) + `quic_gcm.[ch]`
   (AEAD_AES_128_GCM and GHASH, TRANSPORT=quic) with `quic_ghash_hw.[ch]`
   (GHASH's multiply and data loop on the carry-less multiply, AES=hw
-  alone) ← `x25519.[ch]` + `p256.[ch]` +
+  alone) ← `x25519.[ch]` with `x25519_wide.[ch]` (the radix-2^51 field,
+  X25519=wide) + `p256.[ch]` +
   `rsa.[ch]`/`rsa_mont.c` (pinned-mode verify) + `p384.[ch]`/
   `p384_field.[ch]` + `rsa_pkcs1.[ch]` (the chain signatures a public
   CA writes, TRUST=webpki) ←
@@ -130,13 +131,20 @@ Home: github.com/c4milo.
   instruction exists. A multiplier that exists and is variable-time is
   the other half: `ct.h` builds widening products from 16x16 pieces
   unless the build asserts `CH_NATIVE_WIDEMUL`, which test binaries do
-  and firmware does only with a vendor statement, and
+  and firmware does only with a vendor statement (`make lib
+  WIDEMUL=native` puts it in the packaged object), and
   `lint-wide-multiply` holds the count at its recorded ceiling per
   file and compiler, and beside it the conditional-branch count of
   every arithmetic file, so a branch a compiler emits for a select
   shows as a count that grows.
   ChaCha20/Poly1305/x25519 are constant time by construction — keep them
-  that way. AES is admitted for one purpose: the keys RFC 9001 fixes for
+  that way. The Makefile X25519 variable picks the x25519 field:
+  `portable`, the default, is the 16-limb field every core runs, and
+  `wide` is `x25519_wide.c`'s five 51-bit limbs on the 64x64->128
+  multiply, for 64-bit hosts. `ct.h` refuses `wide` unless the compiler
+  has `unsigned __int128` and the build defines `CH_NATIVE_MUL128`, the
+  same kind of claim `CH_NATIVE_WIDEMUL` makes (docs/decisions.md 52,
+  INV-34). AES is admitted for one purpose: the keys RFC 9001 fixes for
   QUIC Initial packets (§5.2), their header protection (§5.4.3) and the
   Retry integrity tag (§5.8). Every key those three use is public — it
   comes from a salt the RFC prints and a connection ID that travels in
