@@ -1,0 +1,116 @@
+# bench/primitives.sh on Apple M1 Pro (arm64), Darwin 25.6.0, 2026-09-24, tree 6dd570f-dirty
+# Apple clang version 21.0.0 (clang-2100.3.34.2); -std=c11 -O2 -Wall -Wextra -Wpedantic -Werror -Wvla -D_DEFAULT_SOURCE -DCH_RAND_DRBG -I. -Ibench -Itest
+# primitives adds -DCH_RSA_MODULUS_MAX=512; handshake adds -DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_TRANSPORT_RECORD -DBENCH_HANDSHAKE_PROGRAM, and -DCH_PIN_ECDSA for the ecdsa rows
+# load average (1, 5, 15 min) before: 4.83 4.32 3.62; after: 5.89 5.09 4.03
+# primitives: default run 1 of 3: 1-minute load average 4.83 at its start
+# primitives: default run 2 of 3: 1-minute load average 5.91 at its start
+# primitives: default run 3 of 3: 1-minute load average 5.41 at its start
+# primitives_native: CH_NATIVE_WIDEMUL run 1 of 3: 1-minute load average 7.50 at its start
+# primitives_native: CH_NATIVE_WIDEMUL run 2 of 3: 1-minute load average 7.04 at its start
+# primitives_native: CH_NATIVE_WIDEMUL run 3 of 3: 1-minute load average 6.42 at its start
+# handshake_rsa: default run 1 of 3: 1-minute load average 6.31 at its start
+# handshake_rsa: default run 2 of 3: 1-minute load average 6.12 at its start
+# handshake_rsa: default run 3 of 3: 1-minute load average 5.95 at its start
+# handshake_rsa_native: CH_NATIVE_WIDEMUL run 1 of 3: 1-minute load average 6.04 at its start
+# handshake_rsa_native: CH_NATIVE_WIDEMUL run 2 of 3: 1-minute load average 6.04 at its start
+# handshake_rsa_native: CH_NATIVE_WIDEMUL run 3 of 3: 1-minute load average 5.79 at its start
+# handshake_ecdsa: default run 1 of 3: 1-minute load average 5.89 at its start
+# handshake_ecdsa: default run 2 of 3: 1-minute load average 5.89 at its start
+# handshake_ecdsa: default run 3 of 3: 1-minute load average 5.89 at its start
+# handshake_ecdsa_native: CH_NATIVE_WIDEMUL run 1 of 3: 1-minute load average 5.89 at its start
+# handshake_ecdsa_native: CH_NATIVE_WIDEMUL run 2 of 3: 1-minute load average 5.89 at its start
+# handshake_ecdsa_native: CH_NATIVE_WIDEMUL run 3 of 3: 1-minute load average 5.89 at its start
+# ns: nanoseconds per byte (unit byte) or per operation (unit op), the median over 3 runs of each run's median; per_second: 10^6 bytes, or operations, per second at that median; samples: the fewest one run took; iqr_pct: the largest 25th to 75th percentile spread inside one run, percent of its median; run_spread_pct: slowest run median minus fastest, percent of the median
+primitive,build,unit,bytes,ns,per_second,samples,iqr_pct,run_spread_pct
+sha256,default,byte,64,11.7235,85.3,101,2.0,0.6
+sha256,default,byte,1024,5.1881,192.7,101,1.9,0.2
+sha256,default,byte,16384,4.7866,208.9,101,0.2,0.1
+sha384,default,byte,64,9.1221,109.6,101,2.8,0.1
+sha384,default,byte,1024,3.6625,273.0,101,0.3,0.0
+sha384,default,byte,16384,3.1873,313.7,101,2.4,0.0
+sha512,default,byte,64,9.6599,103.5,101,3.0,0.2
+sha512,default,byte,1024,3.6982,270.4,101,1.3,0.0
+sha512,default,byte,16384,3.1922,313.3,101,1.2,0.1
+sha3_256,default,byte,64,7.5298,132.8,101,0.7,0.2
+sha3_256,default,byte,1024,4.1530,240.8,101,0.6,0.2
+sha3_256,default,byte,16384,3.9206,255.1,101,0.5,0.3
+shake128_squeeze,default,byte,64,5.3939,185.4,101,0.2,0.2
+shake128_squeeze,default,byte,1024,2.3204,431.0,101,1.4,0.2
+shake128_squeeze,default,byte,16384,2.0138,496.6,101,0.9,0.2
+shake256_squeeze,default,byte,64,5.3950,185.4,101,1.6,0.1
+shake256_squeeze,default,byte,1024,2.5564,391.2,101,0.4,0.1
+shake256_squeeze,default,byte,16384,2.3518,425.2,101,1.6,0.6
+hmac_sha256,default,byte,64,29.0168,34.5,101,2.2,0.1
+hmac_sha256,default,byte,1024,6.2851,159.1,101,3.9,0.2
+hmac_sha256,default,byte,16384,4.8505,206.2,101,1.8,0.2
+hkdf_expand_label,default,op,32,1639.0581,610106.5,101,2.0,0.1
+chacha20,default,byte,64,1.6884,592.3,101,0.9,3.2
+chacha20,default,byte,1200,1.5860,630.5,101,2.7,3.2
+chacha20,default,byte,16384,1.5544,643.3,101,0.8,3.2
+drbg,default,byte,32,4.3546,229.6,101,0.6,3.1
+drbg,default,byte,1024,1.8014,555.1,101,2.0,3.1
+drbg,default,byte,16384,1.6622,601.6,101,1.7,3.0
+poly1305,default,byte,64,2.5934,385.6,101,3.3,1.3
+poly1305,default,byte,1200,2.0468,488.6,101,0.5,3.0
+poly1305,default,byte,16384,1.9482,513.3,101,0.3,3.1
+chacha20_poly1305_seal,default,byte,64,7.4097,135.0,101,0.5,3.1
+chacha20_poly1305_seal,default,byte,1200,3.6913,270.9,101,0.5,3.1
+chacha20_poly1305_seal,default,byte,16384,3.4737,287.9,101,0.2,3.1
+chacha20_poly1305_open,default,byte,64,7.3063,136.9,101,2.0,3.2
+chacha20_poly1305_open,default,byte,1200,3.7025,270.1,101,1.8,3.2
+chacha20_poly1305_open,default,byte,16384,3.4752,287.8,101,0.4,3.1
+p256_ecdsa_verify,default,op,0,1251062.5000,799.3,101,0.3,3.2
+p384_ecdsa_verify,default,op,0,4034417.0000,247.9,101,0.3,3.2
+rsa_pss_verify_2048,default,op,0,263963.5000,3788.4,101,2.5,3.1
+rsa_pss_verify_3072,default,op,0,627687.5000,1593.1,101,3.0,1.0
+rsa_pss_verify_4096,default,op,0,1172395.5000,853.0,101,3.1,0.7
+rsa_pkcs1_verify_2048,default,op,0,262114.5000,3815.1,101,3.1,3.0
+rsa_pkcs1_verify_3072,default,op,0,627333.2500,1594.0,101,0.5,0.3
+rsa_pkcs1_verify_4096,default,op,0,1165812.5000,857.8,101,0.3,0.1
+x25519,default,op,0,897656.2500,1114.0,101,2.8,0.8
+x25519_base,default,op,0,896937.5000,1114.9,101,1.3,0.2
+mlkem768_keygen,default,op,0,27486.6562,36381.3,101,0.8,0.3
+mlkem768_encaps,default,op,0,31453.7812,31792.7,101,1.0,0.7
+mlkem768_decaps,default,op,0,35261.7188,28359.4,101,0.9,0.8
+p256_ecdh_keygen,default,op,0,1165687.5000,857.9,101,2.2,3.1
+p256_ecdh,default,op,0,1172416.5000,852.9,101,3.2,3.1
+p256_sign,default,op,0,1268937.5000,788.1,101,0.7,3.1
+rsa_pss_sign_2048,default,op,0,57292500.0000,17.5,17,2.7,2.9
+rsa_pss_sign_3072,default,op,0,196239417.0000,5.1,11,1.3,0.5
+poly1305,CH_NATIVE_WIDEMUL,byte,64,1.2278,814.4,101,0.2,3.1
+poly1305,CH_NATIVE_WIDEMUL,byte,1200,0.7300,1369.9,101,0.2,3.0
+poly1305,CH_NATIVE_WIDEMUL,byte,16384,0.7071,1414.3,101,0.3,3.0
+chacha20_poly1305_seal,CH_NATIVE_WIDEMUL,byte,64,5.6284,177.7,101,0.4,3.0
+chacha20_poly1305_seal,CH_NATIVE_WIDEMUL,byte,1200,2.4599,406.5,101,0.2,3.0
+chacha20_poly1305_seal,CH_NATIVE_WIDEMUL,byte,16384,2.2744,439.7,101,0.4,3.0
+chacha20_poly1305_open,CH_NATIVE_WIDEMUL,byte,64,5.5151,181.3,101,0.4,3.0
+chacha20_poly1305_open,CH_NATIVE_WIDEMUL,byte,1200,2.4586,406.7,101,2.6,3.1
+chacha20_poly1305_open,CH_NATIVE_WIDEMUL,byte,16384,2.2750,439.6,101,0.2,3.0
+x25519,CH_NATIVE_WIDEMUL,op,0,423151.0000,2363.2,101,0.3,3.0
+x25519_base,CH_NATIVE_WIDEMUL,op,0,422724.0000,2365.6,101,1.4,2.9
+mlkem768_keygen,CH_NATIVE_WIDEMUL,op,0,28304.3594,35330.2,101,2.2,2.3
+mlkem768_encaps,CH_NATIVE_WIDEMUL,op,0,31190.7500,32060.8,101,0.5,3.5
+mlkem768_decaps,CH_NATIVE_WIDEMUL,op,0,34795.5781,28739.3,101,0.9,3.4
+p256_ecdh_keygen,CH_NATIVE_WIDEMUL,op,0,609322.7500,1641.2,101,0.3,3.0
+p256_ecdh,CH_NATIVE_WIDEMUL,op,0,609531.2500,1640.6,101,3.1,2.8
+p256_sign,CH_NATIVE_WIDEMUL,op,0,667802.0000,1497.4,101,0.3,3.0
+rsa_pss_sign_2048,CH_NATIVE_WIDEMUL,op,0,36460167.0000,27.4,27,2.3,2.9
+rsa_pss_sign_3072,CH_NATIVE_WIDEMUL,op,0,143888333.0000,6.9,11,0.4,0.2
+handshake_pinned_rsa2048,default,op,0,59796291.0000,16.7,17,0.5,2.7
+handshake_pinned_rsa2048_client_side,default,op,0,2108375.0000,474.3,17,0.7,3.2
+handshake_pinned_rsa2048_server_side,default,op,0,57690417.0000,17.3,17,0.5,2.7
+handshake_pinned_rsa3072,default,op,0,194451375.0000,5.1,11,2.8,2.6
+handshake_pinned_rsa3072_client_side,default,op,0,2481126.0000,403.0,11,2.3,2.9
+handshake_pinned_rsa3072_server_side,default,op,0,191977459.0000,5.2,11,2.8,2.6
+handshake_pinned_rsa2048,CH_NATIVE_WIDEMUL,op,0,38417083.0000,26.0,25,0.4,3.0
+handshake_pinned_rsa2048_client_side,CH_NATIVE_WIDEMUL,op,0,1132916.0000,882.7,25,0.6,3.4
+handshake_pinned_rsa2048_server_side,CH_NATIVE_WIDEMUL,op,0,37284917.0000,26.8,25,0.4,3.0
+handshake_pinned_rsa3072,CH_NATIVE_WIDEMUL,op,0,148225291.0000,6.7,11,0.6,2.6
+handshake_pinned_rsa3072_client_side,CH_NATIVE_WIDEMUL,op,0,1544041.0000,647.7,11,1.1,3.1
+handshake_pinned_rsa3072_server_side,CH_NATIVE_WIDEMUL,op,0,146625543.0000,6.8,11,0.7,2.6
+handshake_pinned_ecdsa_p256,default,op,0,6436250.0000,155.4,101,0.9,3.0
+handshake_pinned_ecdsa_p256_client_side,default,op,0,3172916.0000,315.2,101,1.6,2.9
+handshake_pinned_ecdsa_p256_server_side,default,op,0,3261208.0000,306.6,101,0.5,2.9
+handshake_pinned_ecdsa_p256,CH_NATIVE_WIDEMUL,op,0,3632750.0000,275.3,101,3.5,0.5
+handshake_pinned_ecdsa_p256_client_side,CH_NATIVE_WIDEMUL,op,0,2117750.0000,472.2,101,3.1,0.8
+handshake_pinned_ecdsa_p256_server_side,CH_NATIVE_WIDEMUL,op,0,1512499.0000,661.2,101,3.8,0.3

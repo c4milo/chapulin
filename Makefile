@@ -815,6 +815,12 @@ print-lib-srcs:
 .PHONY: print-lib-def
 print-lib-def:
 	@echo $(LIB_DEF)
+# bench/primitives.sh builds its handshake program from the sources
+# bin/rec_loop_test links, and asks here rather than keeping its own list,
+# for the reason bench/device-ram.sh does.
+.PHONY: print-rec-loop-srcs
+print-rec-loop-srcs:
+	@echo $(REC_LOOP_SRCS)
 
 # The mode partition, checked from the build variables rather than
 # assumed from the ifeq chain above. Each axis value names the sources
@@ -3835,3 +3841,15 @@ quic-footprint:
 .PHONY: bench-aead
 bench-aead:
 	CC='$(CC)' bench/aead.sh
+
+# Every primitive the tree ships, per byte or per operation, and whole
+# handshakes between this tree's client and server, on this machine.
+# bench/primitives.sh states what it builds and writes
+# bench/results-primitives-<arch>.csv and the handshake call counts beside
+# it; bench/notes-primitives.md ranks the rows. Not in `check` for the
+# reason bench-aead is not, and a run took 2 min 11 s on an M1 Pro.
+# `bench/primitives.sh --quick` builds every program, checks every known
+# answer and writes nothing.
+.PHONY: bench-primitives
+bench-primitives:
+	CC='$(CC)' bench/primitives.sh
