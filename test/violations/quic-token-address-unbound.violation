@@ -1,0 +1,15 @@
+invariant: INV-14
+file: quic_token.c
+catches: srv_quic_test
+reason: the tag input keeps the address's length byte and drops its bytes,
+  so a token minted for one client checks at any other address of the same
+  length. An attacker that obtains a token at its own address can then
+  spend it from a spoofed one, which is the amplification RFC 9000 section
+  8.1.4 asks a Retry token to prevent. The address case in
+  test/quic_token_tests.h moves the port by one and changes the address's
+  first byte, and requires both to be refused.
+
+--- old
+    wb_bytes(&w, address, address_len);
+--- new
+    wb_bytes(&w, address, 0);

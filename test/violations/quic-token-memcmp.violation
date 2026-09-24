@@ -1,0 +1,15 @@
+invariant: INV-16
+file: quic_token.c
+catches: test/lint-invariants.sh
+reason: the Retry token's tag is compared with memcmp instead of ct_memeq.
+  memcmp returns at the first differing byte, so a client that can send
+  Initial after Initial learns one tag byte per attempt and forges a token
+  for its own address in 32 * 256 tries rather than 2^256. quic_token.h
+  states that the comparison runs over all SHA256_LEN bytes for that reason.
+  The answer stays correct, so no test sees it, which is why the rule and
+  not bin/srv_quic_test is what catches it.
+
+--- old
+    uint32_t equal = ct_memeq(tag, want, SHA256_LEN);
+--- new
+    uint32_t equal = (uint32_t)(memcmp(tag, want, SHA256_LEN) == 0);

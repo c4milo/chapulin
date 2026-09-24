@@ -825,3 +825,33 @@ does nothing more.
     hello and give the client two ways through one handshake, where every
     mode here has one per hello. The cost of failing closed is one
     reconnect after a declined ticket.
+
+48. **A QUIC server's Retry token is an HMAC chapulin computes under a key
+    the caller holds, bound to the client's address, with the caller's
+    clock.** colibri runs the QUIC Interop Runner's `retry` case as a server
+    over one `ROLE=both` object and holds no key, so `quic_token.[ch]` mints
+    and checks the token. `docs/quic_server.md`, "The Retry token", states
+    the format and what the caller still owns. Cost: two exported calls, so
+    a `ROLE=server TRANSPORT=quic` object exports eighteen, and one
+    HMAC-SHA-256 per mint and per check. Gain: a stateless server gets both
+    connection IDs back for its transport parameters, and a key stays on
+    chapulin's side of the line `docs/quic_server.md` draws.
+
+    The token is authenticated and not encrypted. RFC 9000 §8.1.4 asks
+    integrity of a Retry token and nothing more, and its fields are ones
+    the path saw in the clear. Sealing it with the ChaCha20-Poly1305 the
+    object already carries would need a fresh nonce per token, and a nonce
+    needs randomness or a stored counter: the first breaks the seeded
+    replay colibri needs, and the second breaks the statelessness a Retry
+    exists for. The §8.1.4 alternative of a random value the server
+    remembers breaks the same two things.
+
+    The instant is the caller's, in seconds, because chapulin reads no
+    clock and `ch_cfg.now_seconds` already counts seconds. The check tells
+    the caller which RFC answer applies: `CH_EPROTO` for a token that is
+    not a Retry token, which §8.1.3 treats as no token, and `CH_EAUTH` for
+    a Retry token that fails, which §8.1.2 answers with INVALID_TOKEN. The
+    first byte decides, because §8.1.1 requires the two kinds to be told
+    apart. A check that accepted each token once was considered and left
+    to the caller: it needs state, and the window and the address binding
+    already limit replay as §8.1.4 requires.

@@ -1,0 +1,14 @@
+invariant: INV-14
+file: quic_token.c
+catches: srv_quic_test
+reason: the window refuses only a token that is too old, so a token whose
+  issue instant is after now_seconds checks. A process whose clock runs
+  ahead of another that holds the same key then mints tokens the other
+  accepts for as long as the gap between the two clocks, whatever the
+  lifetime. The window case requires a token issued one second after now to
+  be refused.
+
+--- old
+    if (now_seconds < issued_seconds || now_seconds - issued_seconds > lifetime_seconds) {
+--- new
+    if (now_seconds > issued_seconds && now_seconds - issued_seconds > lifetime_seconds) {

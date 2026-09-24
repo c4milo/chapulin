@@ -1,0 +1,12 @@
+invariant: INV-14
+file: quic_token.c
+catches: srv_quic_test
+reason: the window's upper edge moves one second early, so a token checked
+  exactly lifetime_seconds after it was issued is refused, where
+  quic_token.h admits it. The window case requires that last valid instant
+  to check and the next one to be refused.
+
+--- old
+    if (now_seconds < issued_seconds || now_seconds - issued_seconds > lifetime_seconds) {
+--- new
+    if (now_seconds < issued_seconds || now_seconds - issued_seconds >= lifetime_seconds) {

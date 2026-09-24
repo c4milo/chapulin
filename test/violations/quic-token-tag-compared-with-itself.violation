@@ -1,0 +1,13 @@
+invariant: INV-14
+file: quic_token.c
+catches: srv_quic_test
+reason: the check compares the token's tag with itself rather than with the
+  tag the key computes, so every Retry token of the right length checks and
+  a client forges one for any address with no key at all. The tamper sweep
+  in test/quic_token_tests.h flips each tag byte and requires a refusal,
+  and the other-key and other-address cases require one too.
+
+--- old
+    uint32_t equal = ct_memeq(tag, want, SHA256_LEN);
+--- new
+    uint32_t equal = ct_memeq(tag, tag, SHA256_LEN);

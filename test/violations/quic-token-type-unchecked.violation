@@ -1,0 +1,16 @@
+invariant: INV-14
+file: quic_token.c
+catches: srv_quic_test
+reason: the check reads the type byte and ignores it, so a token of the
+  reserved NEW_TOKEN type, or of any other, checks as a Retry token whenever
+  its tag verifies. RFC 9000 section 8.1.1 requires a server to tell the two
+  kinds apart because they need different handling, and the caller reads
+  that difference from CH_EPROTO against CH_EAUTH. The type case builds a
+  NEW_TOKEN token with a valid tag and requires CH_EPROTO.
+
+--- old
+    uint8_t type = rb_u8(&r);
+    if (r.err || type != QUIC_TOKEN_TYPE_RETRY) {
+--- new
+    (void)rb_u8(&r);
+    if (r.err) {

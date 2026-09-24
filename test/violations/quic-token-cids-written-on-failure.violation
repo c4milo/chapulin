@@ -1,0 +1,30 @@
+invariant: INV-14
+file: quic_token.c
+catches: srv_quic_test
+reason: the check writes the connection IDs before it judges the window, so
+  an expired token leaves the IDs it carried in *cids although the answer
+  is CH_EAUTH. quic_token.h promises that every answer but CH_OK writes
+  nothing, and a caller that read *cids after a refusal would send
+  transport parameters for a connection the token never admitted. Every
+  refusal in test/quic_token_tests.h requires *cids to hold the bytes it
+  held before the call.
+
+--- old
+    if (now_seconds < issued_seconds || now_seconds - issued_seconds > lifetime_seconds) {
+        return CH_EAUTH;
+    }
+
+    memcpy(cids->original_dcid, original_dcid, original_dcid_len);
+    cids->original_dcid_len = (uint8_t)original_dcid_len;
+    memcpy(cids->retry_scid, retry_scid, retry_scid_len);
+    cids->retry_scid_len = (uint8_t)retry_scid_len;
+    return CH_OK;
+--- new
+    memcpy(cids->original_dcid, original_dcid, original_dcid_len);
+    cids->original_dcid_len = (uint8_t)original_dcid_len;
+    memcpy(cids->retry_scid, retry_scid, retry_scid_len);
+    cids->retry_scid_len = (uint8_t)retry_scid_len;
+    if (now_seconds < issued_seconds || now_seconds - issued_seconds > lifetime_seconds) {
+        return CH_EAUTH;
+    }
+    return CH_OK;

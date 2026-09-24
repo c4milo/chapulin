@@ -268,6 +268,9 @@ static void test_both_roles_take_their_own_labels(const ch_cfg *server_cfg) {
 }
 #endif
 
+// The Retry token's cases, which need CHECK above.
+#include "quic_token_tests.h"
+
 int main(void) {
     // The client's side of the wire: one hello, built the way a QUIC
     // client builds one, carrying the transport parameters RFC 9001
@@ -340,6 +343,7 @@ int main(void) {
 #ifdef CH_ROLE_BOTH
     test_both_roles_take_their_own_labels(&cfg);
 #endif
+    test_quic_token();
 
     if (failures == 0) {
         (void)printf("srv_quic: a ClientHello in, %zu fragments out (%zu initial, %zu handshake)\n",

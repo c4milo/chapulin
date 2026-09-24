@@ -628,7 +628,14 @@ last `ROLE=server` stub, as the entry said it would.
   certificate_expired when `now_seconds` lies outside an issuer's
   validity and not only the leaf's, and with unsupported_extension when
   any CertificateEntry, a trailing one included, carries a non-empty
-  extensions vector.
+  extensions vector. A QUIC server's Retry token check
+  (`ch_srv_quic_token_check`, `quic_token.c`) refuses a token that is
+  empty or whose first byte is not the Retry type with `CH_EPROTO`, and
+  a Retry token whose length does not match its length bytes, whose
+  connection ID is longer than `CH_QUIC_DCID_MAX`, whose tag does not
+  verify for the key and the client's address, or whose issue instant is
+  after now or more than the lifetime before it with `CH_EAUTH`. Neither
+  refusal writes the connection IDs the caller would read.
 - **Mechanism.** Fail-closed policy, each refusal an explicit branch
   with its alert.
 - **Check.** handshake_strict table cases per refusal; CBMC proves the
@@ -691,6 +698,22 @@ last `ROLE=server` stub, as the entry said it would.
   relaxed, the ignore rule included: sixteen carry this invariant, three
   carry INV-25 because they are the exact-fill rules, and one carries
   INV-8 because it is the 1.3-only rule.
+  The Retry token's refusals are test/quic_token_tests.h, which
+  bin/srv_quic_test runs: a one-bit flip at every byte, every truncation,
+  another address and another key, a valid-tagged token of the reserved
+  NEW_TOKEN type, a connection ID one byte past its cap under a valid
+  tag, and the window at both edges. The quic_token CBMC harness proves,
+  over every token and every instant, that CH_EPROTO answers only a
+  token that is not a Retry token and CH_EAUTH only one that is, that a
+  CH_OK token lies inside the window and its connection IDs inside their
+  arrays, and that no refusal writes the connection IDs. Seven
+  violations guard the rules:
+  quic-token-tag-compared-with-itself, quic-token-address-unbound,
+  quic-token-lifetime-off-by-one, quic-token-future-accepted,
+  quic-token-type-unchecked and quic-token-cids-written-on-failure fail
+  bin/srv_quic_test, and quic-token-cid-length-unbounded fails the
+  harness. An eighth, quic-token-memcmp, carries INV-16, because it
+  keeps every answer and changes only the compare's timing.
 - **Violation.** A PR relaxes one refusal for interop with a broken
   server, or makes the server refuse a ClientHello for carrying
   something it does not know.

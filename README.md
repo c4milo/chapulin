@@ -275,22 +275,26 @@ would change that trade.
 
 Four layers cover four different failure classes.
 
-**Proofs cover memory safety.** Sixty-six of the seventy C sources in
+**Proofs cover memory safety.** Sixty-eight of the seventy-nine C sources in
 the tree root are compiled into a [CBMC](https://www.cprover.org/cbmc/) harness that a launch line runs,
 which proves them free of out-of-bounds access, invalid pointers, bad
 shifts, and division by zero, for every input within the harness's
 bound. Signed overflow is checked too, except in the three x25519 mul
-harnesses that turn it off (see the x25519 row). Four sources are in
+harnesses that turn it off (see the x25519 row). Eleven sources are in
 no such harness. `tls.c` has none at all: the post-handshake parser
 moved to its own file and took the harness with it, leaving the four
 public calls unproven.
-`srv_parser.c` has one whose formula returns no verdict, which the
-`srv_parser (the walk)` row below states. `quic_aes_hw.c` calls the
+`srv_parser.c`, `srv_flight.c` and `srv_rec.c` each have one whose
+formula returns no verdict, which the `srv_parser (the walk)`,
+`srv_flight` and `srv_rec` rows below state. `srv_out.c`, `srv_quic.c`,
+`rec.c`, `rec_frame.c` and `rec_step.c` have none; `bin/srv_flight_test`,
+`bin/srv_quic_test`, `bin/srv_rec_test` and `bin/rec_loop_test` test
+them instead. `quic_aes_hw.c` calls the
 compiler's AES intrinsics, which CBMC cannot unwind, and
 `bin/aes_equiv_test` holds it to `quic_aes_soft.c` instead;
 `quic_aes_extern.c` forwards to a `ch_aes_block` the caller writes, so
 there is no body here to prove.
-`make check` counts all four and regenerates the source-by-source
+`make check` counts all eleven and regenerates the source-by-source
 table in `bin/proof-coverage.md`. Where a bound equals the module's real
 maximum, the proof covers all inputs.
 
@@ -330,6 +334,7 @@ apart from one that passed — so for the slow rows, read the nightly.
 | aead (three harnesses) | seal/open round-trips; a forged tag writes zero bytes; backward-overlap decrypt works. ChaCha20 and Poly1305 are stubbed to their contracts — a keystream that is the same for the same key, nonce and counter, and a tag that is a function of the bytes absorbed — which their own harnesses prove. Compiling them in returned no verdict in five hours; the stubbed formulas take about three seconds. What the stubs give up, and why the composition is an argument rather than a machine-checked step, is stated at the top of `proof/aead_stubs.h`. Sealing fully in place (`pt == ct`, the shape every outgoing record uses) is **not proven**: `proof/aead_inplace_harness.c` states it, but the formula has returned no verdict, so it carries no launch line | plaintext ≤ 16 B, aad ≤ 16 B, fast tier |
 | quic_aes | the AES-128 key schedule and forward cipher and both `aes_public_key` constructors are safe over unconstrained inputs, in the aliasing shape the callers use (`in == out`) and at every Destination Connection ID length RFC 9000 §17.2 admits, plus the first length past the cap, where the call refuses without reading the pointer. HKDF is stubbed to its contract (`proof/quic_aes_stubs.h`), which the three `hkdf` harnesses prove; `TRANSPORT=quic` only | connection IDs ≤ `CH_QUIC_DCID_MAX` (20 B), the rest of the domain fixed-size, fast tier |
 | quic_retry | `quic_retry_ok` reads only inside the pseudo-packet and the tag it is handed and commits no undefined behavior; it answers 1 for the tag `gcm_seal` computed over that pseudo-packet, and 0 for a tag that differs in one byte, at any position and by any nonzero amount. `gcm_seal` and `aes_public_key_retry` are contract stubs the harness defines, and the `gcm_seal` stub asserts what RFC 9001 §5.8 fixes at this one call site: the key `aes_public_key_retry` wrote, the nonce §5.8 prints, the caller's whole pseudo-packet as associated data, and an empty plaintext. That the AEAD meets that contract is what the `quic_gcm` harnesses and RFC 9001 Appendix A.4 carry, not this one; `TRANSPORT=quic` only | pseudo-packets ≤ 64 B, fast tier |
+| quic_token | `ch_srv_quic_token_mint` writes only inside the caller's buffer, writes the type byte, the issue instant, both lengths and both connection IDs where `quic_token.h`'s layout puts them, writes nothing on a refusal, and never refuses a capacity of `CH_QUIC_TOKEN_MAX`. `ch_srv_quic_token_check` reads only inside the token and the address, answers `CH_EINVAL` for exactly the address lengths outside 1 to `CH_QUIC_TOKEN_ADDRESS_MAX`, `CH_EPROTO` only for a token that is not a Retry token and `CH_EAUTH` only for one that is, writes nothing on any refusal, and answers `CH_OK` only for a token whose length its two length bytes fix, whose connection IDs fit their arrays, and whose issue instant is at most the lifetime before now and not after it. SHA-256 is the contract stub, so the tag is unconstrained: that a minted token checks, and that another address or key does not, are tested in `test/quic_token_tests.h` and **not proved**; `ROLE=server` or `ROLE=both` with `TRANSPORT=quic` only | any address length, any connection ID length a byte holds, any instant and lifetime; tokens ≤ 84 B, one past `CH_QUIC_TOKEN_MAX`; fast tier |
 | quic_initial | `quic_initial_seal` and `quic_initial_open` read and write only inside their buffers, commit no undefined behavior, and answer one of the codes their header documents, over unconstrained connection-ID, packet-number, header, payload, capacity and packet lengths. Two properties beside safety: a refusal writes neither output, and a successful open reports a plaintext length inside the packet it was handed. The eight calls the two entries make are stubbed to their contracts (`proof/quic_initial_stubs.h`) — `quic_aes` and the three `quic_gcm` harnesses prove four of them, and `quic_packet.c`'s own harness proves the header protection pair and the packet number pair. What the derivation, the seal and the mask compute is checked against RFC 9001 Appendix A.2's client Initial packet in `test/quic_vectors.c` instead; `TRANSPORT=quic` only | headers ≤ 6 B, payloads ≤ 6 B, packets ≤ 28 B — two bytes either side of §5.4.2's sample bound — connection IDs ≤ `CH_QUIC_DCID_MAX` (20 B), fast tier |
 | quic_driver | `quic.c`'s fifteen public entries and its input loop are safe and free of undefined behavior over any saved state and any caller argument: the unread window stays inside `cfg.buf`, `CH_EINVAL` changes nothing and names one of the three refusals `quic.h` lists, every other error leaves the session dead with no secret, nothing staged and nothing unread, and a level delivered out of order reports RFC 9001 §4.1.3's PROTOCOL_VIOLATION. The QUIC arm of `handshake_record.c` and all of `quic_config.c` are compiled in; `hsq_advance`, the two flight handlers `ch_quic_init` calls and the packet calls are contract stubs (`proof/quic_driver_stubs.h`), and `quic_step` proves the table against the same `hsq_advance` contract, so the two read as a pair; `TRANSPORT=quic` only | 12 B receive buffer, 32 B staged message, fast tier |
 | quic_step (two harnesses) | `hsq_advance` is safe over any saved state, a step number no step wrote included: it consumes its message, raises the step or waits for the retry hello, never raises `t.state`, touches no packet counter, stages nothing on an error, and at the Finished step stages the client Finished at the Handshake level, moves to 1-RTT, reports that level in both directions and writes the back pointer again after the wipe. Every flight handler and the three `quic_keys.c` derivations are contract stubs; `quic_step_ca` is the same harness under a ca mode, where `hsa_epoch_commit` runs and the wipe bound is that build's larger `handshake_state`; `TRANSPORT=quic` only | 12 B receive buffer, fast tier |
@@ -905,9 +910,12 @@ check. [`docs/decisions.md`](docs/decisions.md) records every trade and why.
 The `TRANSPORT=quic` client is implemented and checked against RFC 9001's
 Appendix A vectors; [`docs/quic.md`](docs/quic.md) records its design. A
 QUIC *server* now builds too: `ROLE=server` with `TRANSPORT=quic` runs the
-TLS 1.3 server handshake over CRYPTO frames and exports sixteen calls.
+TLS 1.3 server handshake over CRYPTO frames and exports eighteen calls,
+two of which mint and check the address validation token a server puts in
+a Retry.
 [`docs/quic_server.md`](docs/quic_server.md) states what chapulin owes one,
-which is the keys and the packet protection and nothing above them. Both
+which is the keys, the packet protection and that token, and nothing above
+them. Both
 roles have completed handshakes with another implementation, in a test
 that lives outside this tree: on 2026-09-23 colibri's `hq-interop` endpoint,
 built over a `ROLE=both` object at 9c903d8, fetched three files from aioquic

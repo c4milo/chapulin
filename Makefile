@@ -132,7 +132,7 @@ SRCS := ct.c sha256.c hkdf.c chacha20.c poly1305.c aead.c x25519.c p256.c rsa.c 
 HDRS := ct.h sha256.h hkdf.h chacha20.h poly1305.h aead.h x25519.h p256.h rsa.h ch_assert.h \
         pem.h x509.h x509_der.h x509_ca.h webpki.h webpki_ticket.h buf.h record.h keysched.h io.h handshake_message.h handshake_parser.h handshake_record.h cfg.h session.h handshake_auth.h handshake.h handshake_post.h \
         tls.h rand.h drbg.h sha3.h sha512.h sha512_compress.h p384.h p384_field.h p256_field.h p256_scalar.h p256_point.h p256_sign.h p256_ecdh.h rsa_pkcs1.h rsa_sign.h mlkem.h mlkem_poly.h \
-        handshake_flight.h quic.h quic_aes.h quic_aes_block.h quic_aes_key.h quic_config.h quic_gcm.h quic_initial.h quic_keys.h quic_packet.h quic_retry.h quic_step.h quic_fail.h aes_traffic_key.h \
+        handshake_flight.h quic.h quic_aes.h quic_aes_block.h quic_aes_key.h quic_config.h quic_gcm.h quic_initial.h quic_keys.h quic_packet.h quic_retry.h quic_step.h quic_fail.h quic_token.h aes_traffic_key.h \
         srv_cfg.h srv.h srv_parser.h srv_message.h srv_cookie.h srv_auth.h srv_out.h srv_flight.h srv_handshake.h srv_quic.h srv_rec.h keylog.h \
         rec.h rec_frame.h rec_step.h
 
@@ -240,8 +240,12 @@ COMMA := ,
 # with QUIC's packet protection. Judged with the suite define, both runs
 # see the same text and the file reads as shared rather than QUIC-only,
 # which is what it is.
+# quic_token.c and quic_token.h guard their body on CH_ROLE_SERVER as well
+# as the transport, because only a server mints or checks a Retry token,
+# so without the role define both runs would read nothing.
 QUIC_EXTRA_DEFINES := quic_aes_extern.c:-DCH_AES_EXTERN \
                       aes_traffic_key.h:-DCH_SUITE_AES_GCM \
+                      quic_token.c:-DCH_ROLE_SERVER quic_token.h:-DCH_ROLE_SERVER \
                       quic_aes_hw.c:-DCH_AES_HW$(patsubst %,$(COMMA)%,$(AES_HW_CFLAGS))
 # The files this compiler cannot preprocess at all, because the build
 # choice they need is one it does not offer. quic_aes_hw.c without the
@@ -304,7 +308,7 @@ LINT_C := $(filter-out softmul.c,$(SRCS)) drbg.c sha3.c sha512.c sha512_compress
           test/mlkem_test.c test/handshake_strict_test.c test/handshake_sequence_test.c \
           test/x509_strict_test.c $(QUIC_SRCS) $(filter-out $(AES_IMPL),$(AES_IMPL_SRCS)) \
           $(SRV_SRCS) test/srv_auth_test.c test/srv_test.c test/srv_flight_test.c \
-          srv_quic.c srv_rec.c test/srv_rec_test.c test/rec_loop_test.c test/exporter_test.c rec.c rec_frame.c rec_step.c \
+          srv_quic.c quic_token.c srv_rec.c test/srv_rec_test.c test/rec_loop_test.c test/exporter_test.c rec.c rec_frame.c rec_step.c \
           test/quic_driver_test.c test/quic_vectors.c test/diff_quic_test.c \
           test/aes_equiv_test.c test/aes_equiv_soft.c test/aes_equiv_hw.c $(wildcard examples/*.c)
 
@@ -328,6 +332,7 @@ TESTH := test/test_random.h test/pem_armor.h test/pem_tests.h test/x509_ca_tests
          test/webpki_cert_mutants.h test/webpki_ext_mutants.h test/diff_webpki_cert.h \
          test/webpki_auth_vectors.h test/rxbuf_floor_tests.h \
          test/srv_message_tests.h test/srv_cookie_tests.h test/srv_flight_tests.h test/srv_flight_suite_tests.h \
+         test/quic_token_tests.h \
          test/srv_flight_keys_tests.h test/srv_parser_hello.h test/srv_parser_tests.h test/srv_parser_reader_tests.h
 
 # Each axis names its value or stops the build. RAND has done this since
@@ -567,15 +572,18 @@ ifeq ($(TRANSPORT),quic)
 # srv_quic.c is the step table quic_step.c is for a client, and
 # srv_handshake.c drives the TLS records this transport does not have.
 # quic.c stays, because the packet calls in it read no side and a server
-# needs every one; its own client driver is guarded out there.
+# needs every one; its own client driver is guarded out there. The
+# server adds quic_token.c, which mints and checks the Retry token and
+# which no client calls.
 TRANSPORT_ADD := $(filter-out quic_step.c,$(TRANSPORT_ADD))
-ROLE_ADD    := $(filter-out srv_handshake.c,$(ROLE_ADD)) srv_quic.c
-# What this object exports: the server's three calls, the boot check, and
+ROLE_ADD    := $(filter-out srv_handshake.c,$(ROLE_ADD)) srv_quic.c quic_token.c
+# What this object exports: the server's five calls, the boot check, and
 # the packet calls quic.h declares for either role. Not ch_quic_init,
 # ch_quic_crypto_in or ch_quic_crypto_out, which are the client's driver;
 # not ch_read, ch_write or ch_close, which are record-layer calls RFC 9001
 # section 4.1.3 removes with the record layer.
-PUBLIC_ROLE := ch_srv_quic_init ch_srv_quic_crypto_in ch_srv_quic_retry_tag ch_srv_check \
+PUBLIC_ROLE := ch_srv_quic_init ch_srv_quic_crypto_in ch_srv_quic_retry_tag \
+               ch_srv_quic_token_mint ch_srv_quic_token_check ch_srv_check \
                ch_quic_initial_keys ch_quic_seal ch_quic_open ch_quic_retry_ok \
                ch_quic_key_update ch_quic_key_phase ch_quic_drop_previous_keys \
                ch_quic_discard ch_quic_state ch_quic_alert ch_quic_error_code ch_quic_close
@@ -632,9 +640,10 @@ ROLE_DEF    := -DCH_ROLE_SERVER -DCH_ROLE_BOTH
 ROLE_FILTER :=
 ROLE_ADD    := $(SRV_SRCS) rsa_sign.c p256_sign.c p256_scalar.c p256_point.c p256_field.c
 ifeq ($(TRANSPORT),quic)
-ROLE_ADD    := $(filter-out srv_handshake.c,$(ROLE_ADD)) srv_quic.c
+ROLE_ADD    := $(filter-out srv_handshake.c,$(ROLE_ADD)) srv_quic.c quic_token.c
 PUBLIC_ROLE := $(PUBLIC_TRANSPORT) ch_srv_quic_init ch_srv_quic_crypto_in \
-               ch_srv_quic_retry_tag ch_srv_check
+               ch_srv_quic_retry_tag ch_srv_quic_token_mint ch_srv_quic_token_check \
+               ch_srv_check
 else ifeq ($(TRANSPORT),record)
 # The server's blocking driver goes and its record driver takes the
 # place, the same swap the quic arm above makes. rec_step.c stays, unlike
@@ -839,6 +848,12 @@ print-lib-def:
 # value to those recursions would die in a row rather than in a build
 # anyone asked for.
 #
+# Two quic*.c files belong to one role. quic_step.c is the client's step
+# table, so the QUIC server row bans it. quic_token.c mints and checks
+# the Retry token, which only a server does, so it leaves the transport
+# rows' list with the AES implementations: the client row bans it and the
+# QUIC server row requires it.
+#
 # The role rows read their file list the same way, from git's srv*.c at
 # the root, and they name TRUST and TRANSPORT on both sides because the
 # ROLE=server arm stops the build on any other value of the two, and a
@@ -898,9 +913,9 @@ lint-trust-separation:
 	check "TRUST=raw-rsa KEX=pq" "x25519.c sha3.c mlkem.c mlkem_poly.c" "" "-DCH_KEX_PQ" ""; \
 	quic_files=$$(git ls-files 'quic*.c' | grep -v / | tr '\n' ' '); \
 	[ -n "$$quic_files" ] || { echo "lint-trust-separation: git tracks no quic*.c file at the root, so the transport rows would check nothing"; rc=1; }; \
-	quic_always=$$(printf '%s\n' $$quic_files | grep -vxF -e quic_aes_soft.c -e quic_aes_hw.c -e quic_aes_extern.c | tr '\n' ' '); \
+	quic_always=$$(printf '%s\n' $$quic_files | grep -vxF -e quic_aes_soft.c -e quic_aes_hw.c -e quic_aes_extern.c -e quic_token.c | tr '\n' ' '); \
 	check "TRANSPORT=tls" "io.c record.c session.c handshake.c tls.c" "$$quic_files" "" "-DCH_TRANSPORT_QUIC"; \
-	check "TRANSPORT=quic EXPORTER=off" "$$quic_always quic_aes_soft.c" "io.c record.c session.c handshake.c tls.c quic_aes_hw.c quic_aes_extern.c" "-DCH_TRANSPORT_QUIC" "-DCH_AES_HW -DCH_AES_EXTERN"; \
+	check "TRANSPORT=quic EXPORTER=off" "$$quic_always quic_aes_soft.c" "io.c record.c session.c handshake.c tls.c quic_aes_hw.c quic_aes_extern.c quic_token.c" "-DCH_TRANSPORT_QUIC" "-DCH_AES_HW -DCH_AES_EXTERN"; \
 	check "TRANSPORT=quic AES=soft EXPORTER=off" "quic_aes_soft.c" "quic_aes_hw.c quic_aes_extern.c" "" "-DCH_AES_HW -DCH_AES_EXTERN"; \
 	check "TRANSPORT=quic AES=hw EXPORTER=off" "quic_aes_hw.c" "quic_aes_soft.c quic_aes_extern.c" "-DCH_AES_HW" "-DCH_AES_EXTERN"; \
 	check "TRANSPORT=quic AES=extern EXPORTER=off" "quic_aes_extern.c" "quic_aes_soft.c quic_aes_hw.c" "-DCH_AES_EXTERN" "-DCH_AES_HW"; \
@@ -913,7 +928,7 @@ lint-trust-separation:
 	check "ROLE=both TRUST=webpki TRANSPORT=tls" "$$srv_shared srv_handshake.c $$signers tls.c handshake.c" "srv_quic.c srv_rec.c" "-DCH_ROLE_SERVER -DCH_ROLE_BOTH" ""; \
 	check "ROLE=server TRUST=none TRANSPORT=tls" "$$srv_shared srv_handshake.c $$signers tls.c rsa.c rsa_mont.c p256.c" "$$client_only srv_quic.c srv_rec.c" "-DCH_ROLE_SERVER" "-DCH_PIN_ECDSA"; \
 	quic_srv=$$(printf '%s\n' $$quic_always | grep -vxF -e quic_step.c | tr '\n' ' '); \
-	check "ROLE=server TRUST=none TRANSPORT=quic EXPORTER=off" "$$srv_shared srv_quic.c $$signers $$quic_srv" "$$client_only srv_handshake.c srv_rec.c quic_step.c record.c" "-DCH_ROLE_SERVER -DCH_TRANSPORT_QUIC" "-DCH_PIN_ECDSA"; \
+	check "ROLE=server TRUST=none TRANSPORT=quic EXPORTER=off" "$$srv_shared srv_quic.c quic_token.c $$signers $$quic_srv" "$$client_only srv_handshake.c srv_rec.c quic_step.c record.c" "-DCH_ROLE_SERVER -DCH_TRANSPORT_QUIC" "-DCH_PIN_ECDSA"; \
 	check "ROLE=server TRUST=none TRANSPORT=record" "$$srv_shared srv_rec.c $$signers rec.c rec_frame.c record.c" "$$client_only srv_handshake.c srv_quic.c rec_step.c" "-DCH_ROLE_SERVER -DCH_TRANSPORT_RECORD" "-DCH_PIN_ECDSA -DCH_TRANSPORT_QUIC"; \
 	[ $$rc = 0 ] && echo "lint-trust-separation: every axis value packages exactly its own sources and defines"; \
 	exit $$rc
@@ -1235,7 +1250,8 @@ SRV_QUIC_SRCS := srv_quic.c srv_flight.c srv_out.c srv_message.c srv_cookie.c sr
                  quic_fail.c quic.c quic_keys.c quic_packet.c quic_initial.c quic_retry.c \
                  quic_aes.c quic_aes_soft.c quic_gcm.c quic_config.c buf.c ct.c sha256.c \
                  hkdf.c keysched.c x25519.c chacha20.c poly1305.c aead.c rsa_sign.c \
-                 p256_sign.c p256_scalar.c p256_point.c p256_field.c p256.c rsa.c rsa_mont.c
+                 p256_sign.c p256_scalar.c p256_point.c p256_field.c p256.c rsa.c rsa_mont.c \
+                 quic_token.c
 bin/srv_quic_test: test/srv_quic_test.c $(SRV_QUIC_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) -DCH_ROLE_SERVER -DCH_TRANSPORT_QUIC -I. -o $@ test/srv_quic_test.c \
@@ -1708,7 +1724,7 @@ check: bin/unit bin/unit_ca bin/unit_pq bin/tlsclient bin/tlsclient_ecdsa bin/tl
 	# chapulin.hpp forwards ch_export; cxx-check joins it on that commit.
 	$(MAKE) lib-check RAND=extern EXPORTER=on
 	# The key log axis, on the build colibri's interop endpoint links: a
-	# QUIC server. It proves the object still exports its sixteen calls
+	# QUIC server. It proves the object still exports its eighteen calls
 	# and imports ch_keylog as a hook. EXPORTER=off is named because that
 	# axis refuses TRANSPORT=quic and a recursion inherits the outer value.
 	$(MAKE) lib-check RAND=extern ROLE=server TRUST=none TRANSPORT=quic EXPORTER=off KEYLOG=on
@@ -2572,7 +2588,7 @@ else
 	# reason: every declaration they hold sits behind
 	# -DCH_TRANSPORT_QUIC, which this pass does not define, so it would
 	# read eight empty translation units. The two passes below read them.
-	$(CLANG_TIDY) --quiet $(filter-out webpki.c webpki_ticket.c test/webpki_resume_test.c test/webpki_session_test.c test/webpki_chain_test.c test/webpki_auth_test.c examples/webpki_client.c $(QUIC_SRCS) $(AES_IMPL_SRCS) test/quic_driver_test.c test/quic_vectors.c test/diff_quic_test.c test/aes_equiv_test.c test/aes_equiv_soft.c test/aes_equiv_hw.c $(SRV_SRCS) test/srv_auth_test.c test/srv_test.c test/srv_flight_test.c srv_quic.c srv_rec.c test/srv_rec_test.c test/rec_loop_test.c test/exporter_test.c rec.c rec_frame.c rec_step.c,$(LINT_C)) -- \
+	$(CLANG_TIDY) --quiet $(filter-out webpki.c webpki_ticket.c test/webpki_resume_test.c test/webpki_session_test.c test/webpki_chain_test.c test/webpki_auth_test.c examples/webpki_client.c $(QUIC_SRCS) $(AES_IMPL_SRCS) test/quic_driver_test.c test/quic_vectors.c test/diff_quic_test.c test/aes_equiv_test.c test/aes_equiv_soft.c test/aes_equiv_hw.c $(SRV_SRCS) test/srv_auth_test.c test/srv_test.c test/srv_flight_test.c srv_quic.c quic_token.c srv_rec.c test/srv_rec_test.c test/rec_loop_test.c test/exporter_test.c rec.c rec_frame.c rec_step.c,$(LINT_C)) -- \
 	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -I.
 	# The pass above defines no trust mode, so it reads none of the
 	# TRUST=webpki arms. This pass parses the sources that carry them or
@@ -2622,8 +2638,9 @@ else
 	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_TRANSPORT_RECORD -I.
 	# Each server driver with the transport it is written for. Neither
 	# reads a declaration the role pass above sets, because both sit
-	# behind a transport define as well as the role.
-	$(CLANG_TIDY) --quiet srv_quic.c -- \
+	# behind a transport define as well as the role. quic_token.c, the
+	# QUIC server's Retry token, sits behind the same two defines.
+	$(CLANG_TIDY) --quiet srv_quic.c quic_token.c -- \
 	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_ROLE_SERVER -DCH_TRANSPORT_QUIC -I.
 	$(CLANG_TIDY) --quiet srv_rec.c test/srv_rec_test.c -- \
 	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_ROLE_SERVER -DCH_TRANSPORT_RECORD -I.
@@ -2927,6 +2944,9 @@ lint-impact:
 # its ceiling is zero like the rest. p256_field.c is in for the plainest
 # reason: a P-256 private scalar and an ECDSA nonce are its operands, which
 # is why it exists beside the verify-only p256.c rather than inside it.
+# quic_token.c is in because the Retry token key, which the caller holds
+# secret, passes through it on its way to hmac_sha256; it multiplies
+# nothing, so its ceiling is zero.
 #
 # WIDEMUL_PUBLIC is every other library source, each with the reason it
 # may multiply or divide: its operands are bytes the peer sent in the
@@ -3016,7 +3036,7 @@ WIDEMUL_CEILING := ct.c:0 sha256.c:0 sha3.c:1 hkdf.c:0 chacha20.c:0 poly1305.c:0
                    handshake_auth.c:0 handshake_flight.c:0 handshake.c:0 handshake_post.c:0 \
                    tls.c:0 drbg.c:0 softmul.c:0 rec.c:0 rec_frame.c:0 rec_step.c:0 \
                    quic_keys.c:0 quic_packet.c:0 quic_config.c:0 quic_step.c:0 quic.c:0 \
-                   quic_fail.c:0 srv_quic.c:0 srv_rec.c:0 \
+                   quic_fail.c:0 srv_quic.c:0 quic_token.c:0 srv_rec.c:0 \
                    quic_aes.c:0 quic_aes_soft.c:0 quic_aes_extern.c:0 quic_gcm.c:0 \
                    srv_parser.c:0 srv_parser_ext.c:0 srv_message.c:0 srv_cookie.c:0 \
                    srv_auth.c:0 srv_out.c:0 srv_flight.c:0 srv_handshake.c:0 srv.c:0 rsa_sign.c:0 \
@@ -3026,15 +3046,16 @@ CODEGEN_SRCS := $(foreach e,$(WIDEMUL_CEILING),$(firstword $(subst :, ,$(e))))
 # in the shape WIDEMUL_CEILING_SPEC uses for per-spec ceilings. Each gate
 # compiles every CODEGEN_SRCS file under one fixed flag set that names no
 # transport and no role, and two groups of entries above hold nothing
-# without their own define. The nine QUIC entries need
+# without their own define. The QUIC entries need
 # -DCH_TRANSPORT_QUIC: CH_LEVEL_*, the ch_quic struct and the QUIC
 # ch_cfg fields all sit behind it, and the four AES entries guard their
 # whole body on it. quic_aes_extern.c also needs -DCH_AES_EXTERN, the
 # AES=extern define its body sits behind, so the count reads that body
-# and not an empty file. The seven server entries need -DCH_ROLE_SERVER
-# for the same reason, and preprocess to an empty file without it.
-# webpki_ticket.c needs -DCH_TRUST_WEBPKI, because the ch_cfg hostname
-# and anchor fields it hashes exist only under that define.
+# and not an empty file. The server entries need -DCH_ROLE_SERVER
+# for the same reason, and preprocess to an empty file without it;
+# srv_quic.c and quic_token.c need both defines. webpki_ticket.c needs
+# -DCH_TRUST_WEBPKI, because the ch_cfg hostname and anchor fields it
+# hashes exist only under that define.
 # Adding any of the three to the shared line would break record.c, io.c,
 # session.c, handshake.c and tls.c, which are on the same list and
 # compile only without the transport and role defines, and
@@ -3049,6 +3070,7 @@ WIDEMUL_DEFINES := quic_keys.c:-DCH_TRANSPORT_QUIC quic_packet.c:-DCH_TRANSPORT_
                    quic_config.c:-DCH_TRANSPORT_QUIC quic_step.c:-DCH_TRANSPORT_QUIC \
                    quic.c:-DCH_TRANSPORT_QUIC quic_fail.c:-DCH_TRANSPORT_QUIC \
                    srv_quic.c:-DCH_ROLE_SERVER$(COMMA)-DCH_TRANSPORT_QUIC$(COMMA)-UCH_KEX_PQ \
+                   quic_token.c:-DCH_ROLE_SERVER$(COMMA)-DCH_TRANSPORT_QUIC \
                    quic_aes.c:-DCH_TRANSPORT_QUIC quic_aes_soft.c:-DCH_TRANSPORT_QUIC \
                    quic_aes_extern.c:-DCH_TRANSPORT_QUIC$(COMMA)-DCH_AES_EXTERN \
                    quic_gcm.c:-DCH_TRANSPORT_QUIC \

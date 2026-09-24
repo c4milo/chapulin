@@ -1022,6 +1022,19 @@ launch fast full srv_auth 385 "" ct.c -DCH_ROLE_SERVER
 # fails, so the formula reaches the builder rather than passing vacuously.
 launch fast full srv_message 130 "fill_nondet.0:118" buf.c -DCH_ROLE_SERVER
 launch fast full srv_cookie 130 "fill_nondet.0:119" buf.c ct.c hkdf.c -DCH_ROLE_SERVER
+# The QUIC server's Retry token, the same shape as the cookie above: buf.c,
+# ct.c and hkdf.c real, SHA-256 the contract stub in harness.h, and both
+# calls over unconstrained inputs, the address length and the two connection
+# ID lengths included. It compiles under both defines, because only a server
+# role with TRANSPORT=quic declares anything in quic_token.c. fill_nondet's
+# longest call is the stub's 112-byte SHA-256 context, so it unwinds to 113,
+# and the harness's four loops over one connection ID unwind to 21. Measured
+# on a development machine (arm64 macOS, cbmc 6.11.0, kissat,
+# PROVE_ONLY=quic_token PROVE_NO_CACHE=1 /usr/bin/time -l over this script):
+# 916 properties, 36 s and 52 s in two runs, 1.02 GB peak. The same formula
+# with an assert of 0 at each call's CH_OK tail and refusal tail fails all
+# four, so every tail is reached.
+launch fast full quic_token 130 "fill_nondet.0:113,prove_mint.1:21,prove_mint.2:21,prove_check.1:21,prove_check.2:21" buf.c ct.c hkdf.c -DCH_ROLE_SERVER -DCH_TRANSPORT_QUIC
 # The ROLE=server ClientHello parser, split in two at srv_read_extension,
 # the one entry between its files. This line is the readers half: every
 # reader in srv_parser_ext.c over an unconstrained extension body, any

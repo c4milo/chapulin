@@ -15,6 +15,11 @@
 // bytes and read no side. What a server replaces is the driver, because
 // a server waits where a client speaks.
 //
+// The Retry token is not repeated here either: ch_srv_quic_token_mint and
+// ch_srv_quic_token_check are quic_token.h's, which this header includes.
+// They take the token key and no session, because a Retry precedes every
+// piece of connection state.
+//
 // Output is a push, not a pull. A server has no ch_quic_crypto_out: one
 // Certificate message is larger than ch_tls.tx, so there is nothing to
 // stage and pull from, and the flight goes out through
@@ -29,6 +34,7 @@
 
 #include "cfg.h"
 #include "quic.h"
+#include "quic_token.h"
 
 // The step numbers ch_quic.step holds in a server build. A server reads
 // three messages and writes the rest, so the table is shorter than the
@@ -67,8 +73,8 @@ int ch_srv_quic_crypto_in(ch_quic *q, uint8_t level, const uint8_t *p, size_t n)
 // Writes the Retry integrity tag of RFC 9001 section 5.8 over the Retry
 // pseudo-packet the caller built, which is the server half of what
 // ch_quic_retry_ok checks. The caller decides whether to send a Retry and
-// owns every byte of the token; chapulin computes this tag and nothing
-// else.
+// builds the pseudo-packet; the token inside it is the one
+// ch_srv_quic_token_mint wrote, or one of the caller's own.
 //
 // Requires: n bytes readable at pseudo, GCM_TAG bytes writable at tag.
 void ch_srv_quic_retry_tag(const uint8_t *pseudo, size_t n, uint8_t *tag);

@@ -1,0 +1,17 @@
+invariant: INV-14
+file: quic_token.c
+catches: proof/prove-one.sh quic_token
+reason: the check stops bounding the Original Destination Connection ID's
+  length, so a token whose tag verifies and whose first length byte is above
+  CH_QUIC_DCID_MAX is copied into the 20-byte array *cids gives it and
+  writes past its end. Only a holder of the key can make such a token, so
+  no minted token in a test shows it. The quic_token harness drives the
+  check over every length byte with the tag unconstrained, and its memcpy
+  bounds check fails. Each run is a proof of about a minute, so this
+  belongs to the nightly's test-invariants-proof-backed job.
+
+--- old
+    if (r.err || rb_left(&r) != 0 || original_dcid_len > CH_QUIC_DCID_MAX ||
+        retry_scid_len > CH_QUIC_DCID_MAX) {
+--- new
+    if (r.err || rb_left(&r) != 0 || retry_scid_len > CH_QUIC_DCID_MAX) {
