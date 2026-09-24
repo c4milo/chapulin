@@ -22,8 +22,9 @@
 //  - ticket_binding: SHA256_LEN bytes, set with resumption alone: the
 //    ch_ticket.binding of the ticket in psk and psk_id. It must match
 //    this configuration (webpki_ticket.h).
-//  - spki_pins: spki_pin_count SPKI pins, 0 to CH_SPKI_PIN_MAX, each the
-//    SHA-256 of a DER SubjectPublicKeyInfo (RFC 7858 §4.2). With pins
+//  - spki_pins: spki_pin_count SPKI pins, 0 to CH_SPKI_PIN_MAX, of
+//    SHA256_LEN bytes each, back to back: each the SHA-256 of a DER
+//    SubjectPublicKeyInfo (RFC 7858 §4.2). With pins
 //    set, the client offers RFC 7250 raw public keys, and a server key
 //    is accepted only when a pin names it (webpki_pin.h). Pins without
 //    anchors are a whole configuration: the client then offers raw keys

@@ -81,7 +81,7 @@ static void diff_pin_c_reply(const uint8_t *list, size_t list_len, uint8_t (*pin
                              size_t pin_count, char *reply, size_t cap) {
     ch_cfg cfg;
     memset(&cfg, 0, sizeof cfg);
-    cfg.spki_pins = (const uint8_t (*)[SHA256_LEN])pins;
+    cfg.spki_pins = (const uint8_t *)pins;
     cfg.spki_pin_count = pin_count;
     webpki_leaf_info leaf;
     memset(&leaf, 0xa5, sizeof leaf);

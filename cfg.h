@@ -401,7 +401,7 @@ typedef struct {
     size_t hostname_len;
     uint64_t now_seconds;
     const uint8_t *ticket_binding;
-    const uint8_t (*spki_pins)[SHA256_LEN];
+    const uint8_t *spki_pins;
     size_t spki_pin_count;
 #endif
 

@@ -26,7 +26,7 @@ static size_t read_der_file(const char *path, uint8_t *out, size_t cap) {
 
 // WEBPKI_PINS carries SPKI pins, the SHA-256 of a DER
 // SubjectPublicKeyInfo in hex, comma separated. Unset or empty sets none.
-static uint8_t g_pins[CH_SPKI_PIN_MAX][SHA256_LEN];
+static uint8_t g_pins[CH_SPKI_PIN_MAX * SHA256_LEN];
 
 static int setup_pins(ch_cfg *cfg) {
     const char *list = getenv("WEBPKI_PINS");
@@ -41,7 +41,8 @@ static int setup_pins(ch_cfg *cfg) {
         if (comma != NULL) {
             *comma = '\0';
         }
-        if (count == CH_SPKI_PIN_MAX || unhex(pin, g_pins[count], SHA256_LEN) != SHA256_LEN) {
+        if (count == CH_SPKI_PIN_MAX ||
+            unhex(pin, g_pins + count * SHA256_LEN, SHA256_LEN) != SHA256_LEN) {
             (void)fprintf(stderr, "webpki: WEBPKI_PINS holds up to %d 64-digit hex pins\n",
                           CH_SPKI_PIN_MAX);
             return -1;

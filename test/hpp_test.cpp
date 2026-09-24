@@ -183,7 +183,7 @@ static void test_webpki_config(chapulin::Io io) {
         static const uint8_t pins[1][SHA256_LEN] = {{0x70}};
         chapulin::Config cfg(chapulin::Bytes{rxbuf}, io);
         cfg.spki_pins(pins);
-        CHECK(cfg.raw().spki_pins == pins && cfg.raw().spki_pin_count == 1);
+        CHECK(cfg.raw().spki_pins == &pins[0][0] && cfg.raw().spki_pin_count == 1);
         chapulin::Session s;
         CHECK(s.connect(cfg) == chapulin::Status::io);
     }

@@ -153,15 +153,15 @@ static int inside(const uint8_t *outer, size_t outer_len, const uint8_t *inner, 
 
 // Whether one of the first count pins equals the last digest the stub
 // answered.
-static int digest_pinned(uint8_t (*pins)[SHA256_LEN], size_t count) {
+static int digest_pinned(const uint8_t *pins, size_t count) {
     int found = 0;
     for (size_t i = 0; i < CH_SPKI_PIN_MAX; i++) {
-        found |= i < count && memcmp(pins[i], last_digest, SHA256_LEN) == 0;
+        found |= i < count && memcmp(pins + i * SHA256_LEN, last_digest, SHA256_LEN) == 0;
     }
     return found;
 }
 
-static void prove_raw_key(ch_cfg *cfg, uint8_t (*pins)[SHA256_LEN]) {
+static void prove_raw_key(ch_cfg *cfg, const uint8_t *pins) {
     static uint8_t list[RAW_LIST_LEN];
     fill_nondet(list, sizeof list);
     size_t list_len = nondet_size_t();
@@ -258,21 +258,19 @@ static void prove_path_pinned(ch_cfg *cfg) {
 }
 
 int main(void) {
-    static uint8_t pins[CH_SPKI_PIN_MAX][SHA256_LEN];
-    for (size_t i = 0; i < CH_SPKI_PIN_MAX; i++) {
-        fill_nondet(pins[i], SHA256_LEN);
-    }
+    // One flat array, the shape ch_cfg.spki_pins takes: the pins back to
+    // back, SHA256_LEN bytes each.
+    static uint8_t pins[CH_SPKI_PIN_MAX * SHA256_LEN];
+    fill_nondet(pins, sizeof pins);
     size_t pin_count = nondet_size_t();
     __CPROVER_assume(pin_count <= CH_SPKI_PIN_MAX);
     ch_cfg cfg;
     __CPROVER_havoc_object(&cfg);
-    cfg.spki_pins = (const uint8_t (*)[SHA256_LEN])pins;
+    cfg.spki_pins = pins;
     cfg.spki_pin_count = pin_count;
     prove_raw_key(&cfg, pins);
     // Fresh operands for the second call: other pins, another count.
-    for (size_t i = 0; i < CH_SPKI_PIN_MAX; i++) {
-        fill_nondet(pins[i], SHA256_LEN);
-    }
+    fill_nondet(pins, sizeof pins);
     pin_count = nondet_size_t();
     __CPROVER_assume(pin_count <= CH_SPKI_PIN_MAX);
     cfg.spki_pin_count = pin_count;

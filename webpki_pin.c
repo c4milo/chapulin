@@ -44,8 +44,10 @@ int webpki_spki_pinned(const ch_cfg *cfg, const uint8_t *spki, size_t spki_len) 
     uint8_t digest[SHA256_LEN];
     sha256_of(spki, spki_len, digest);
     uint32_t pinned = 0;
+    const uint8_t *pin = cfg->spki_pins;
     for (size_t i = 0; i < cfg->spki_pin_count; i++) {
-        pinned |= ct_memeq(digest, cfg->spki_pins[i], SHA256_LEN);
+        pinned |= ct_memeq(digest, pin, SHA256_LEN);
+        pin += SHA256_LEN;
     }
     return pinned != 0;
 }

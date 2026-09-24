@@ -330,13 +330,13 @@ class Config {
     // SubjectPublicKeyInfo, 1 to CH_SPKI_PIN_MAX. With pins set the client
     // offers RFC 7250 raw public keys, and pins without anchors() are a
     // whole configuration (webpki_cfg.h, webpki_pin.h).
-    Config &spki_pins(const uint8_t (*pins)[SHA256_LEN], size_t count) {
+    Config &spki_pins(const uint8_t *pins, size_t count) {
         cfg_.spki_pins = pins;
         cfg_.spki_pin_count = count;
         return *this;
     }
     template <size_t N> Config &spki_pins(const uint8_t (&pins)[N][SHA256_LEN]) {
-        return spki_pins(pins, N);
+        return spki_pins(&pins[0][0], N);
     }
 
     // The binding of the ticket resume() presents: the bytes

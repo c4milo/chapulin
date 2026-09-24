@@ -27,7 +27,7 @@ static ch_cfg pins_alone_cfg(mock_server *s) {
     cfg.hostname = NULL;
     cfg.hostname_len = 0;
     cfg.now_seconds = 0;
-    cfg.spki_pins = test_pins;
+    cfg.spki_pins = (const uint8_t *)test_pins;
     cfg.spki_pin_count = 1;
     return cfg;
 }
@@ -35,11 +35,11 @@ static ch_cfg pins_alone_cfg(mock_server *s) {
 static void test_webpki_pin_count(void) {
     mock_server s;
     ch_cfg cfg = valid_cfg(&s);
-    cfg.spki_pins = test_pins;
+    cfg.spki_pins = (const uint8_t *)test_pins;
     cfg.spki_pin_count = CH_SPKI_PIN_MAX;
     CHECK(sends_client_hello(&cfg));
     cfg = valid_cfg(&s);
-    cfg.spki_pins = test_pins;
+    cfg.spki_pins = (const uint8_t *)test_pins;
     cfg.spki_pin_count = CH_SPKI_PIN_MAX + 1;
     CHECK(refused(&cfg));
     cfg.spki_pin_count = 0; // a list without a count
@@ -88,13 +88,13 @@ static void test_webpki_pins_with_anchors(void) {
     // Anchors and pins: the raw key first, then X.509, and the anchors
     // still want a hostname and a clock.
     ch_cfg cfg = valid_cfg(&s);
-    cfg.spki_pins = test_pins;
+    cfg.spki_pins = (const uint8_t *)test_pins;
     cfg.spki_pin_count = 2;
     CHECK(sends_client_hello(&cfg));
     CHECK(offered_cert_types(&s, types) == 2 && types[0] == CH_CERT_TYPE_RAW_PUBLIC_KEY &&
           types[1] == CH_CERT_TYPE_X509);
     cfg = valid_cfg(&s);
-    cfg.spki_pins = test_pins;
+    cfg.spki_pins = (const uint8_t *)test_pins;
     cfg.spki_pin_count = 1;
     cfg.now_seconds = 0;
     CHECK(refused(&cfg));

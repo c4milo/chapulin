@@ -102,7 +102,7 @@ static void shape_cfg(ch_cfg *cfg, cfg_shape shape) {
     cfg->recv = mock_recv;
     cfg->io = &source;
     if (shape != ANCHORS_ONLY) {
-        cfg->spki_pins = pins;
+        cfg->spki_pins = (const uint8_t *)pins;
         cfg->spki_pin_count = 1;
     }
     if (shape != PINS_ONLY) {

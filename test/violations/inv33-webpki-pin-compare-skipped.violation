@@ -8,6 +8,6 @@ reason: webpki_spki_pinned counts every configured pin as a match
   X.509, object.
 
 --- old
-        pinned |= ct_memeq(digest, cfg->spki_pins[i], SHA256_LEN);
+        pinned |= ct_memeq(digest, pin, SHA256_LEN);
 --- new
-        pinned |= 1U;
+        pinned |= ct_memeq(pin, pin, SHA256_LEN);

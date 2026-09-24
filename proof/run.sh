@@ -523,7 +523,7 @@ launch fast full certverify_webpki 260 "fill_nondet.0:513" -DCH_TRUST_WEBPKI han
 # cannot read those bounds from the harness's assumptions; loop 0 is
 # CH_ASSERT's do-while. ct_wipe clears hkdf.c's 112-byte SHA-256
 # context. Measured (cbmc 6.11.0, kissat, PROVE_NO_CACHE=1
-# /usr/bin/time -l over this script): 943 properties, 8 s, 147 MB. The
+# /usr/bin/time -l over this script): 942 properties, 9 s, 149 MB. The
 # same formula with its verdict assertion narrowed to an unset config
 # fails, so the formula reaches the ticket path.
 launch fast full webpki_ticket 66 "fill_nondet.0:254,webpki_ticket_config_hash.1:254,webpki_ticket_config_hash.2:13,webpki_ticket_config_hash.3:5,ct_wipe.0:113" --object-bits 10 -DCH_TRUST_WEBPKI buf.c ct.c hkdf.c
@@ -958,7 +958,10 @@ launch fast:4 full webpki_chain 49 "main.0:3,fill_nondet.0:49,read_entries.0:7,a
 # properties in 169 s at 0.9 GB. Measured (cbmc 6.11.0, kissat,
 # PROVE_NO_CACHE=1 /usr/bin/time -l over this script, beside a
 # differential run): 1283 properties, 452 s, 5.5 GB; run directly under
-# these flags, 348 s at 6.4 GB. With an assert of 0 at the raw half's
+# these flags, 348 s at 6.4 GB. Since ch_cfg.spki_pins became a flat byte
+# pointer: 1281 properties, 600 s at a load average near 25, 6.8 GB.
+# webpki_spki_pinned walks the pins by advancing a pointer: indexing them
+# as spki_pins + i * SHA256_LEN measured 9.0 to 11.8 GB. With an assert of 0 at the raw half's
 # CH_OK tail and at the path half's tail after a match, those two fail
 # (2 of 1285, 588 s, 7.3 GB), so both tails are reached. fast:8 covers
 # that peak.

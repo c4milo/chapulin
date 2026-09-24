@@ -155,7 +155,7 @@ static void test_ticket_names_its_config(void) {
     static const uint8_t pin[1][SHA256_LEN] = {{0x70}};
     cfg = base_cfg();
     present(&cfg, ticket_psk, known_binding);
-    cfg.spki_pins = pin;
+    cfg.spki_pins = (const uint8_t *)pin;
     cfg.spki_pin_count = 1;
     CHECK(refused(&cfg));
     // The binding of another ticket, and a binding one bit off.

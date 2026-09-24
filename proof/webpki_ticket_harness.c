@@ -67,7 +67,7 @@ int main(void) {
     }
     cfg.anchors = anchors;
     fill_nondet((uint8_t *)pins, sizeof pins);
-    cfg.spki_pins = pins;
+    cfg.spki_pins = (const uint8_t *)pins;
     cfg.spki_pin_count = nondet_size_t();
     __CPROVER_assume(cfg.spki_pin_count <= CH_SPKI_PIN_MAX);
 

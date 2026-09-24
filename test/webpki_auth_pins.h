@@ -141,7 +141,7 @@ static void pinned_session(ch_tls *t, ch_trust_anchor *anchors, const webpki_cor
     }
     // ISO C has no implicit conversion that adds const to an array's
     // element type, so the pins take the field's type by cast.
-    t->cfg.spki_pins = (const uint8_t (*)[SHA256_LEN])pins;
+    t->cfg.spki_pins = (const uint8_t *)pins;
     t->cfg.spki_pin_count = pin_count;
     t->server_cert_type = cert_type;
 }
@@ -275,7 +275,7 @@ static void test_raw_key_bound(void) {
     sha256_of(spki, spki_len, pins[0]);
     ch_cfg cfg;
     memset(&cfg, 0, sizeof cfg);
-    cfg.spki_pins = (const uint8_t (*)[SHA256_LEN])pins;
+    cfg.spki_pins = (const uint8_t *)pins;
     cfg.spki_pin_count = 1;
     webpki_leaf_info leaf;
     uint8_t alert = ALERT_BAD_CERTIFICATE;
