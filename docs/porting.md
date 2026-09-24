@@ -307,6 +307,45 @@ One mode per build. A pinned key (`TRUST=raw-rsa` or `TRUST=raw-ecdsa`) or a
 CA (`TRUST=ca-rsa`), and `docs/ca.md` covers the CA path including the revocation
 epoch. Neither has a default that is right for every deployment.
 
+## Checking the object you link
+
+If you link the packaged object, `bin/chapulin.o`, instead of compiling the
+sources in your own build, you compile against its headers under defines you
+write yourself, and nothing in the link checks that they are the object's
+defines. A define you forget changes the layout of `ch_tls` or `ch_cfg`, or
+the value of `CH_MIN_RXBUF`, on your side only, and the program still links. Every
+packaged object exports `ch_build`, the build record (`build.h`): the axes,
+struct sizes and bounds it was compiled with. Compare it once at startup,
+before the first session:
+
+```c
+#include "build.h"
+
+if (!ch_build_matches(&ch_build)) {
+    // this program's defines are not the object's: do not start a session
+}
+```
+
+A program in another language reads the same symbol. `ch_build_info` is twelve
+`uint32_t` fields with no padding, and each `CH_BUILD_` macro is the value
+your defines give the field of the same name. Compare `version` first and the
+other fields only when it matches. In Zig, `@cImport` the header under your
+defines and call the same predicate:
+
+```zig
+const c = @cImport({
+    @cDefine("CH_TRUST_WEBPKI", "1");
+    @cDefine("CH_TRANSPORT_RECORD", "1");
+    @cDefine("CH_RAND_EXTERN", "1");
+    @cInclude("build.h");
+});
+
+if (c.ch_build_matches(&c.ch_build) == 0) return error.ChapulinBuildMismatch;
+```
+
+`docs/decisions.md` 56 lists what the record holds, which defines it leaves
+out and why.
+
 ## What our verification does and does not tell you about your build
 
 - **The proofs describe the single-multiply form.** They run on a development

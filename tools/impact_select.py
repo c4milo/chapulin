@@ -113,6 +113,11 @@ LIB_LEGS = [
          "-DCH_TRANSPORT_QUIC, against that build's own frame budget",
          ["test/lint-stack-quic.sh"]),
     ]),
+    ("TRUST=raw-ecdsa KEX=pq", [
+        ("make lib-check RAND=extern TRUST=raw-ecdsa KEX=pq",
+         "the raw-ecdsa KEX=pq object packages {path}, and it is the one "
+         "leg that links ML-KEM into a raw-mode object", []),
+    ]),
 ]
 
 # What "everything" means, in the order to run it: the two tiers, then

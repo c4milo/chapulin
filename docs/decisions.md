@@ -309,7 +309,9 @@ does nothing more.
 28. **Four exported symbols.** The library packages as one relocatable
     object; partial linking plus symbol localization does the
     namespacing, so sources keep natural names and applications cannot
-    collide with internals.
+    collide with internals. The four are the calls of the first build.
+    Each axis now sets its own list of calls (entries 38, 41 and 43),
+    and entry 56 adds one data symbol, `ch_build`, to every object.
 29. **CI compiles with gcc on purpose** while development machines run
     clang: consumers are firmware trees whose vendor SDKs ship gcc
     cross-compilers, so gcc-only diagnostics belong in CI. Between the
@@ -432,12 +434,12 @@ does nothing more.
     connection IDs, Retry and version negotiation logic, and path
     validation. Cost, and most of it lands here: a fifth value in
     `LIB_VARIANT` beside PIN, TRUST, KEX and RAND; fifteen exported
-    transport symbols against entry 28's four, on a `PUBLIC` whose
+    transport calls against entry 28's four, on a `PUBLIC` whose
     first term the axis selects —
     `$(PUBLIC_TRANSPORT) $(PUBLIC_RAND) $(PUBLIC_CA)`, where
     `PUBLIC_TRANSPORT` drops the four TLS names rather than adding to
     them and the other two terms keep their meaning, so a CA-mode or
-    RAND=drbg QUIC object exports sixteen and one with both exports
+    RAND=drbg QUIC object exports sixteen calls and one with both exports
     seventeen; five library files replaced — `record.c`, `io.c`, `session.c`, `handshake.c` and
     `tls.c`, 990 lines — and five more given a second arm under
     `#ifdef`; entry 19's `record_size_limit` dropped, which leaves
@@ -635,7 +637,7 @@ does nothing more.
     already states why: `ch_read`, `ch_write` and `ch_close` are the same
     functions over the same `ch_tls`, "because record.[ch] names no
     side". So the roles differ in one call each way, and `ROLE=both`
-    exports seven where the halves export five and six. It is also
+    exports seven calls where the halves export five and six. It is also
     smaller than what it replaces: 132,960 bytes against 183,980 for the
     two TLS objects, and 148,520 against 213,804 for the two QUIC ones.
     `TRUST=none` is refused here, because the client half judges a peer.
@@ -845,7 +847,7 @@ does nothing more.
     over one `ROLE=both` object and holds no key, so `quic_token.[ch]` mints
     and checks the token. `docs/quic_server.md`, "The Retry token", states
     the format and what the caller still owns. Cost: two exported calls, so
-    a `ROLE=server TRANSPORT=quic` object exports eighteen, and one
+    a `ROLE=server TRANSPORT=quic` object exports eighteen calls, and one
     HMAC-SHA-256 per mint and per check. Gain: a stateless server gets both
     connection IDs back for its transport parameters, and a key stays on
     chapulin's side of the line `docs/quic_server.md` draws.
@@ -1246,3 +1248,89 @@ does nothing more.
     dns.google and still turns about one connection in three into a
     reconnect. Reconnecting inside `ch_connect` without the ticket needs a
     second connection, and the caller owns the socket.
+
+56. **Every packaged object exports a build record, `ch_build`, and a
+    consumer compares it with its own headers.** A consumer links
+    `bin/chapulin.o` and compiles against the headers under defines it
+    writes itself. cocuyo reads them through Zig's `@cImport` under
+    `CH_TRUST_WEBPKI`, `CH_TRANSPORT_RECORD` and `CH_RAND_EXTERN`, and
+    colibri and stompy write their own lists. Nothing checked that those
+    defines were the object's, and a mismatch links and runs. A consumer
+    that forgets `CH_TRUST_WEBPKI` beside a webpki record-mode object
+    passes a 152-byte `ch_cfg` to a call that reads 232 bytes, and
+    declares a 1,624-byte `ch_record` that the object writes 4,120 bytes
+    of (arm64). So `build.c` defines one const `ch_build_info` in every
+    object: the record format, one bit per define that changes a public
+    layout or bound, the sizes of `ch_cfg`, `ch_tls`, `ch_ticket`,
+    `ch_record`, `ch_quic` and `ch_rsa_priv`, and four bounds:
+    `CH_TX_STAGE`, `CH_MIN_RXBUF`, `CH_X509_MAX` in a CA mode and
+    `CH_TRANSPORT_PARAMS_MAX` in a QUIC build. `build.h` computes the same
+    values from the consumer's defines as `CH_BUILD_` macros, and
+    `ch_build_matches(&ch_build)` compares them all.
+
+    The axes are the ten defines that change a size or a bound the
+    record holds, or, for `CH_PIN_ECDSA` in a raw mode, the length a
+    pinned key has: `CH_TRUST_CA`, `CH_TRUST_WEBPKI`, `CH_PIN_ECDSA`,
+    `CH_KEX_PQ`, `CH_TRANSPORT_QUIC`, `CH_TRANSPORT_RECORD`,
+    `CH_SUITE_AES_GCM`, `CH_ROLE_SERVER`, `CH_EXPORTER` and `CH_KEYLOG`.
+    `build.h` says what each one changes. Left out, each measured with and
+    without the define under all three transports:
+
+    - The RAND pattern. `rand.h` and `drbg.h` declare the same calls in
+      every build, so no header changes. A mismatch still reports itself.
+      An extern-pattern program that links a drbg object never has its
+      `ch_rand_bytes` called, and the object's generator stops at
+      `CH_ASSERT` on its first draw, unseeded, before a handshake sends a
+      byte. A drbg-pattern program that links an extern object fails to
+      link.
+    - `CH_ROLE_BOTH`. A `ROLE=both` object has the layouts and bounds of
+      the `ROLE=server` object with the same trust defines. The define
+      declares `ch_connect`, and a program that calls it against a server
+      object fails to link.
+    - The AES implementation, `X25519=wide` and `WIDEMUL`. They change
+      code and no size or bound. `AES=extern` imports `ch_aes_block`, and
+      a program that does not define it fails to link.
+    - `CH_NATIVE_AES` and `CH_NATIVE_MUL128`, statements about the part
+      that `ct.h` reads to refuse a build.
+    - `CH_KEX_TWO_GROUPS` and `CH_KEX_HYBRID`. `cfg.h` computes both from
+      `CH_TRUST_WEBPKI` and `CH_KEX_PQ`, so their bits would repeat
+      those two.
+
+    The record is data, and not a check inside `ch_connect` and the init
+    calls, for three reasons:
+
+    - No exported name changes and no call gains a parameter or a result
+      code, so every consumer links as it did.
+    - A consumer in another language reads it. The struct is twelve
+      `uint32_t` fields with no padding, and the expected values are
+      object-like macros, which Zig's translate-c turns into constants.
+      A Zig 0.16 program that `@cImport`s `build.h` under cocuyo's three
+      defines reads `c.ch_build`, calls `c.ch_build_matches`, and gets 1
+      against the webpki record object and 0 with `CH_TRANSPORT_RECORD`
+      left out.
+    - A consumer is asked, not forced. No library source reads
+      `ch_build`, so a firmware tree that compiles the sources into its
+      own build, and so cannot disagree with itself, carries 48 bytes of
+      read-only data and runs nothing.
+
+    Cost: one more exported symbol in every object, and the first that is
+    data rather than a call, so every export list names it and every
+    count of exported symbols grows by one, while the counts of calls
+    stay as they were. 48 bytes of read-only data per object. A consumer
+    that never compares gets nothing from it. `lib-check` builds a
+    consumer twice for every object it checks, about 0.2 s a leg, and
+    `make check` gained one leg, `TRUST=raw-ecdsa KEX=pq`, 2.6 s cold and
+    1.0 s warm, so the record is read in a `KEX=pq` object.
+
+    Gain: a disagreement between an object and a consumer's defines is
+    one comparison at startup instead of a struct written past its end.
+
+    Two alternatives were considered and rejected. A check inside each
+    init call, against a size the caller passes, changes every call's
+    signature or wraps each one in a macro that a Zig consumer cannot
+    use, and a size alone misses a bound such as `CH_X509_MAX`. A symbol
+    name per build, so a mismatch fails to link, would encode every axis
+    and every overridable bound in the name and change every consumer's
+    link line with each axis. The record compares layouts and bounds,
+    not behavior, and defines, not revisions: headers from another
+    commit are caught only where a size, a bound or a bit moved (INV-35).

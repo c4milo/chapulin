@@ -303,7 +303,7 @@ handshake falls from 2.57 ms to 0.77 ms
 
 Four layers cover four different failure classes.
 
-**Proofs cover memory safety.** Seventy-four of the eighty-seven C sources in
+**Proofs cover memory safety.** Seventy-four of the eighty-eight C sources in
 the tree root are compiled into a [CBMC](https://www.cprover.org/cbmc/) harness that a launch line runs,
 which proves them free of out-of-bounds access, invalid pointers, bad
 shifts, and division by zero, for every input within the harness's
@@ -311,7 +311,7 @@ bound. Signed overflow is checked too, except in the three x25519 mul
 harnesses that turn it off (see the x25519 row). The `X25519=wide`
 field's harnesses also check unsigned wrap, which C defines and the
 other checks never see, because that field's bounds are all on
-unsigned values (see the x25519_wide row). Thirteen sources are in
+unsigned values (see the x25519_wide row). Fourteen sources are in
 no such harness. `tls.c` has none at all: the post-handshake parser
 moved to its own file and took the harness with it, leaving the four
 public calls unproven.
@@ -327,8 +327,9 @@ compiler's AES intrinsics, which CBMC cannot unwind, and
 `bin/ghash_equiv_test` holds it to `quic_gcm.c`'s proven portable
 multiply; `quic_aes_extern.c` forwards to a `ch_aes_block` the caller
 writes, so there is no body here to prove. `webpki_cfg.c` has no harness
-either.
-`make check` counts all thirteen and regenerates the source-by-source
+either. `build.c` holds one const record and no function, so there is
+no path for a harness to drive; `lib-check` reads every field back.
+`make check` counts all fourteen and regenerates the source-by-source
 table in `bin/proof-coverage.md`. Where a bound equals the module's real
 maximum, the proof covers all inputs.
 
@@ -936,14 +937,15 @@ and the fast proof tier.
 Other targets:
 
 - `make lib RAND=extern` packages the library as one relocatable object
-  (`bin/chapulin.o`) exporting exactly the four public calls. Every
-  internal symbol is localized, and `lib-check` fails if the export
-  list ever changes. The list is per build on three axes: `RAND=drbg`
-  packages the reference generator and exports `ch_drbg_seed`, and
-  A ca mode exports `ch_pubkey_from_pem` for provisioning, so a
-  `TRUST=ca-rsa RAND=drbg` object exports six. `TRUST=webpki` exports the
-  four calls and no provisioning call. `EXPORTER=on` adds `ch_export`,
-  the exporter of RFC 9846 §7.5, and 32 bytes to `ch_tls`; it is off
+  (`bin/chapulin.o`) exporting exactly the four public calls and one data
+  symbol, `ch_build`. Every internal symbol is localized, and `lib-check`
+  fails if the export list ever changes. The calls are per build on
+  three axes: `RAND=drbg` packages the reference generator and exports
+  `ch_drbg_seed`, and a ca mode exports `ch_pubkey_from_pem` for
+  provisioning, so a `TRUST=ca-rsa RAND=drbg` object exports six calls.
+  `TRUST=webpki` exports the four calls and no provisioning call.
+  `EXPORTER=on` adds `ch_export`, the exporter of RFC 9846 §7.5, and 32
+  bytes to `ch_tls`; it is off
   by default, so the figures above are a build that exports nothing,
   and it refuses `TRANSPORT=quic`, whose object compiles no `tls.c`
   (decision 43). `KEYLOG=on` hands each traffic secret to a
@@ -969,6 +971,16 @@ Other targets:
   alone. `KEX` chooses the group of a raw or ca client only, and
   `ROLE=server` and `ROLE=both` refuse it too, because a server role
   holds both groups in every build (decision 54).
+- `ch_build` is the object's build record (`build.h`): the axes it was
+  compiled with, the sizes of `ch_cfg`, `ch_tls`, `ch_ticket`,
+  `ch_record`, `ch_quic` and `ch_rsa_priv`, and the bounds a program
+  sizes its buffers from. A program that links the object compiles the
+  headers under defines it writes itself, and a define it forgets
+  changes those sizes while the program still links. So call
+  `ch_build_matches(&ch_build)` once at startup and stop when it returns
+  0; a program in another language compares the same fields with the
+  `CH_BUILD_` macros. No library call reads the record, and decision 56
+  says what it holds and what it leaves out.
 - `make prove-slow` runs the slow-tier proofs, one per nightly job. The runner caches by
   content, so an incremental run re-proves only what changed
   (`PROVE_NO_CACHE=1` forces a full run). It uses [kissat](https://github.com/arminbiere/kissat) when

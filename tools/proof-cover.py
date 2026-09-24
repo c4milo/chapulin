@@ -28,6 +28,16 @@ ROOT = Path(__file__).resolve().parent.parent
 # the reader established. Re-audit an entry when its file changes shape, and
 # delete it once the file gains a harness.
 AUDITED = {
+    "build.c": (
+        "the build record, one const ch_build_info and no function. Every "
+        "initializer is a constant expression build.h writes: an integer "
+        "constant, a sizeof cast to uint32_t, or CH_BUILD_AXES, an or of "
+        "unsigned constants. No operand in the file is signed and nothing "
+        "runs at run time, so there is no path for a harness to drive and "
+        "no arithmetic for bugprone-signed-bitwise to judge. lib-check links "
+        "test/build_test.c against every object it checks and reads each "
+        "field back. Delete this entry if the file ever gains a function."
+    ),
     "srv_out.c": (
         "the server's handshake output, one arm per transport. One bitwise "
         "operator in the file: the shift `(uint8_t)(n >> 8)` at :70, which "

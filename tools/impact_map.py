@@ -80,12 +80,12 @@ GATE_ROOTS = ["check-slow", "diff-ecdsa", "diff-pq", "diff-webpki",
               "test-invariants", "prove-slow", "m3-check", "cross-check",
               "san-check"]
 
-# The axis values print-lib-srcs is asked about. The first five are
-# packaged-object legs `make check` builds; the sixth adds the sources
-# only an ecdsa mode and KEX=pq package, so the six together are every
-# source some client object carries. TRUST=webpki TRANSPORT=record
-# packages rec.c, rec_frame.c and rec_step.c, which no other client
-# object carries, and a violation names its leg.
+# The axis values print-lib-srcs is asked about, each a packaged-object
+# leg `make check` builds. The sixth carries the sources only an ecdsa
+# mode and KEX=pq package, so the six together are every source some
+# client object carries. TRUST=webpki TRANSPORT=record packages rec.c,
+# rec_frame.c and rec_step.c, which no other client object carries, and
+# a violation names its leg.
 LIB_AXES = ["", "TRUST=ca-rsa", "TRUST=webpki",
             "TRUST=webpki TRANSPORT=record", "TRANSPORT=quic",
             "TRUST=raw-ecdsa KEX=pq"]
@@ -211,8 +211,8 @@ class Mapping:
         once: it costs one make invocation per axis value, and
         test/impact_test.py builds a plan for every violation's file.
 
-        The first five axis values are packaged-object legs `make check`
-        builds. The sixth adds the sources only an ecdsa mode and KEX=pq
+        Every axis value is a packaged-object leg `make check` builds.
+        The sixth carries the sources only an ecdsa mode and KEX=pq
         package, so lib_sources() below is every source some client
         object carries. bench/device-ram.sh and lint-trust-separation ask
         the same way, and a list kept here is what fell four modules

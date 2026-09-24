@@ -372,6 +372,9 @@ static void test_quic() {
 #endif
 
 int main() {
+    // The object cxx-check links was built under the defines this file
+    // is compiled with, so its build record matches these headers.
+    CHECK(chapulin::build_matches());
 #ifdef CH_TRANSPORT_QUIC
     test_quic();
 #else

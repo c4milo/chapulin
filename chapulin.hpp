@@ -30,6 +30,7 @@ extern "C" {
 #ifdef CH_TRUST_CA
 #include "x509_ca.h"
 #endif
+#include "build.h"
 }
 
 namespace chapulin {
@@ -402,6 +403,14 @@ inline Pubkey pubkey_from_pem(ConstBytes pem, uint8_t (&der_scratch)[CH_X509_MAX
     return result;
 }
 #endif
+
+// Forwards ch_build_matches(&ch_build): whether the object this program
+// links was compiled with the struct sizes, bounds and axes these headers
+// compute under this program's defines (build.h). Call it once at
+// startup and refuse to run when it answers false.
+inline bool build_matches() {
+    return ch_build_matches(&ch_build) != 0;
+}
 
 #ifndef CH_TRANSPORT_QUIC
 // A session owns its ch_tls and closes it — wiping every key — when it is

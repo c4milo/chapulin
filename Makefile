@@ -147,14 +147,14 @@ SH_SRCS := $(shell git ls-files '*.sh' '.githooks/*' 2>/dev/null)
 
 SRCS := ct.c sha256.c hkdf.c chacha20.c poly1305.c aead.c x25519.c p256.c rsa.c rsa_mont.c \
         pem.c x509.c x509_der.c x509_ca.c webpki_time.c webpki_name.c webpki_spki.c webpki_ext.c buf.c record.c keysched.c io.c handshake_message.c handshake_parser.c handshake_parser_ee.c handshake_record.c session.c \
-        handshake_auth.c handshake_flight.c handshake.c handshake_post.c tls.c softmul.c
+        handshake_auth.c handshake_flight.c handshake.c handshake_post.c tls.c softmul.c build.c
 
 HDRS := ct.h sha256.h hkdf.h chacha20.h poly1305.h aead.h x25519.h x25519_wide.h p256.h rsa.h ch_assert.h \
         pem.h x509.h x509_der.h x509_ca.h webpki.h webpki_cfg.h webpki_pin.h webpki_ticket.h buf.h record.h keysched.h io.h handshake_message.h handshake_parser.h handshake_record.h cfg.h session.h handshake_auth.h handshake.h handshake_post.h \
         tls.h rand.h drbg.h sha3.h sha512.h sha512_compress.h p384.h p384_field.h p256_field.h p256_scalar.h p256_point.h p256_sign.h p256_ecdh.h rsa_pkcs1.h rsa_sign.h mlkem.h mlkem_poly.h \
         handshake_flight.h quic.h quic_aes.h quic_aes_block.h quic_aes_key.h quic_config.h quic_gcm.h quic_ghash_hw.h quic_initial.h quic_keys.h quic_packet.h quic_retry.h quic_step.h quic_fail.h quic_token.h aes_traffic_key.h \
         srv_cfg.h srv.h srv_parser.h srv_message.h srv_cookie.h srv_ticket.h srv_auth.h srv_out.h srv_flight.h srv_resume.h srv_handshake.h srv_quic.h srv_rec.h keylog.h \
-        rec.h rec_frame.h rec_step.h
+        rec.h rec_frame.h rec_step.h build.h
 
 # The TRANSPORT=quic mode's own sources, named here rather than matched
 # by a pattern, for the reason WEBPKI_SRCS is named: an auditor reads
@@ -360,7 +360,7 @@ LINT_C := $(filter-out softmul.c,$(SRCS)) drbg.c sha3.c sha512.c sha512_compress
           test/aes_equiv_test.c test/aes_equiv_soft.c test/aes_equiv_hw.c \
           test/ghash_equiv_test.c test/ghash_equiv_soft.c \
           x25519_wide.c test/x25519_equiv_test.c test/x25519_equiv_portable.c test/x25519_equiv_wide.c \
-          test/diff_x25519_test.c \
+          test/diff_x25519_test.c test/build_test.c \
           $(wildcard examples/*.c)
 
 # Test-local headers: prerequisites for every binary that includes them,
@@ -918,8 +918,9 @@ BENCH_C := $(wildcard bench/*.c bench/*.h)
 QEMU_SMOKE_C := $(wildcard test/qemu/*.c test/qemu/*.h test/freertos/*.c test/freertos/*.h)
 
 # Firmware links bin/chapulin.o: one relocatable object exposing exactly
-# the calls PUBLIC names, four under TRANSPORT=tls, fifteen under
-# TRANSPORT=quic and five under ROLE=server. Partial linking merges the modules; nmedit
+# the symbols PUBLIC names: its calls, four under TRANSPORT=tls, fifteen
+# under TRANSPORT=quic and five under ROLE=server, and in every variant
+# one data symbol, ch_build. Partial linking merges the modules; nmedit
 # (macOS) or objcopy (everything else) localizes every other symbol, so
 # the library cannot collide with application names. lib-check enforces
 # the export list as part of check. Objects live under the variant that
@@ -1038,11 +1039,15 @@ print-rec-loop-srcs:
 # files from TRUST=raw-rsa's filter, and
 # test/violations/inv05-webpki-source-unlisted.violation drops one file
 # from WEBPKI_SRCS; each requires this lint to fail.
+#
+# Every row requires build.c too, because every object exports the build
+# record it defines (docs/decisions.md 56), so a filter that drops it
+# from one variant fails here rather than in that variant's link.
 .PHONY: lint-trust-separation
 lint-trust-separation:
 	@rc=0; \
 	check() { \
-	  axis=$$1; want=$$2; ban=$$3; wantdef=$$4; bandef=$$5; \
+	  axis=$$1; want="$$2 build.c"; ban=$$3; wantdef=$$4; bandef=$$5; \
 	  srcs=" $$($(MAKE) -s --no-print-directory -f $(firstword $(MAKEFILE_LIST)) print-lib-srcs $$axis) "; \
 	  defs=" $$($(MAKE) -s --no-print-directory -f $(firstword $(MAKEFILE_LIST)) print-lib-def $$axis) "; \
 	  for f in $$want; do case "$$srcs" in *" $$f "*) ;; *) echo "lint-trust-separation: $$axis must package $$f"; rc=1;; esac; done; \
@@ -1105,7 +1110,13 @@ print-clang-rv:
 # build (docs/decisions.md 28). A ROLE=client build sets it from
 # PUBLIC_TRANSPORT, so the two transports' lists still reach here
 # unchanged.
-PUBLIC := $(PUBLIC_ROLE) $(PUBLIC_RAND) $(PUBLIC_CA) $(PUBLIC_EXPORT)
+#
+# PUBLIC_BUILD is the one export that is data rather than a call: the
+# build record build.c defines in every object, which a consumer compares
+# against its own headers (build.h, docs/decisions.md 56). No axis
+# changes it, so every variant's list names it.
+PUBLIC_BUILD := ch_build
+PUBLIC := $(PUBLIC_ROLE) $(PUBLIC_RAND) $(PUBLIC_CA) $(PUBLIC_EXPORT) $(PUBLIC_BUILD)
 
 # LIB_VARIANT names the build variables that pick the sources and the
 # defines, and the compiler is not one of them. So `make CC=<cross> lib`
@@ -1132,12 +1143,15 @@ bin/obj/$(LIB_VARIANT)/%.o: %.c $(HDRS) $(CC_STAMP)
 # mtimes alone cannot tell which variant built it; the stamp rewrites
 # (and so triggers a relink) only when a build variable LIB_VARIANT names changed
 # since the last build. RAND belongs here because it changes the link
-# and the export list even when no object's contents move.
+# and the export list even when no object's contents move. The stamp
+# holds PUBLIC too, because the link decides from that list which
+# symbols stay global, and an edit to the list changes no source: without
+# it, an object linked before a name left PUBLIC would still export it.
 
 PIN_STAMP := bin/obj/pin-stamp
 $(PIN_STAMP): FORCE
 	@mkdir -p bin/obj
-	@[ "$$(cat $@ 2>/dev/null)" = "$(LIB_VARIANT)" ] || echo "$(LIB_VARIANT)" > $@
+	@[ "$$(cat $@ 2>/dev/null)" = "$(LIB_VARIANT) $(strip $(PUBLIC))" ] || echo "$(LIB_VARIANT) $(strip $(PUBLIC))" > $@
 .PHONY: FORCE
 FORCE:
 
@@ -1150,6 +1164,20 @@ FORCE:
 # so the object kept drbg's ch_drbg_seed export and lib-check failed on a
 # tree that was correct.
 LIB_OBJ := bin/obj/$(LIB_VARIANT)/chapulin.o
+
+# The consumer lib-check links against the object to read its build
+# record, and the defines of the second consumer, which disagrees with
+# the object on one axis: the transport. A TRANSPORT=tls object meets a
+# record-mode consumer, and a record or QUIC object meets a TLS one.
+# Moving the transport keeps every hook the object imports, so the
+# second consumer still links, and it changes a bit of the axes and the
+# size of at least one session struct.
+BUILD_TEST := bin/obj/$(LIB_VARIANT)/build_test
+ifeq ($(TRANSPORT),tls)
+BUILD_MOVED_DEF := $(LIB_DEF) -DCH_TRANSPORT_RECORD
+else
+BUILD_MOVED_DEF := $(filter-out -DCH_TRANSPORT_QUIC -DCH_TRANSPORT_RECORD,$(LIB_DEF))
+endif
 
 $(LIB_OBJ): $(LIB_OBJS) $(PIN_STAMP)
 	ld -r -o $@ $(LIB_OBJS)
@@ -1176,9 +1204,13 @@ cxx-check: $(LIB_OBJ) chapulin.hpp test/hpp_test.cpp bin/srv_flight_test
 	$(CXX) -o bin/hpp_test bin/hpp_test.o $(LIB_OBJ)
 	./bin/hpp_test
 
+# nm names a defined symbol by the section it sits in, and the letters
+# differ by platform: T for code, D and B for data, S for any other
+# section on Mach-O, where ch_build's const data sits in __TEXT,__const,
+# and R for read-only data on ELF, where it sits in .rodata.
 lib-check: $(LIB_OBJ)
 	@cp $(LIB_OBJ) bin/chapulin.o
-	@nm -g $(LIB_OBJ) | awk '$$2 ~ /^[TDSB]$$/ {print $$3}' | sed 's/^_//' | sort > bin/exported.txt
+	@nm -g $(LIB_OBJ) | awk '$$2 ~ /^[TDSBR]$$/ {print $$3}' | sed 's/^_//' | sort > bin/exported.txt
 	@printf '%s\n' $(PUBLIC) | sort > bin/expected.txt
 	@diff -u bin/expected.txt bin/exported.txt || { \
 	  echo "lib-check: exported symbols differ from the public API"; exit 1; }
@@ -1219,6 +1251,20 @@ endif
 	done; \
 	[ -z "$$bad" ] || { echo "lib-check: the object imports$$bad, which this tree defines in a source this variant does not compile"; exit 1; }
 	@echo "lib-check: every undefined symbol is a libc call or a caller-supplied hook"
+# The build record (build.h, docs/decisions.md 56), read the way a
+# consumer reads it: test/build_test.c compiles against the headers and
+# links this object. Compiled under the object's own defines, it must
+# read a ch_build equal to what its headers compute and exit 0. Compiled
+# with the transport moved, it must read a difference and exit 1. It
+# exits 2 when its own header view disagrees with the defines it was
+# given, and that fails either run. The two builds add about 0.2 s to
+# each leg.
+	@$(CC) $(LIB_CFLAGS) $(LIB_DEF) -I. -o $(BUILD_TEST) test/build_test.c $(LIB_OBJ)
+	@$(BUILD_TEST) || { echo "lib-check: ch_build disagrees with the headers compiled under this object's own defines"; exit 1; }
+	@$(CC) $(LIB_CFLAGS) $(BUILD_MOVED_DEF) -I. -o $(BUILD_TEST)_moved test/build_test.c $(LIB_OBJ)
+	@rc=0; $(BUILD_TEST)_moved > /dev/null || rc=$$?; \
+	[ $$rc -eq 1 ] || { echo "lib-check: a consumer compiled with the transport moved must read a different ch_build, and it exited $$rc"; exit 1; }
+	@echo "lib-check: ch_build matches this object's defines and differs from a consumer's with the transport moved"
 
 # The declaration in cfg.h is the whole feature, so check that it fires.
 # tls.c is enough to drive it: it includes cfg.h, where the guard lives.
@@ -1961,13 +2007,18 @@ check: bin/unit bin/unit_ca bin/unit_pq bin/tlsclient bin/tlsclient_ecdsa bin/tl
 	# anyone asked for.
 	$(MAKE) lib-check RAND=extern ROLE=server TRUST=none
 	# The server's record transport: srv_rec.c in place of
-	# srv_handshake.c, rec.c and rec_frame.c under it, and nine exports
+	# srv_handshake.c, rec.c and rec_frame.c under it, and nine calls
 	# rather than five. lint-trust-separation reads that source list and
 	# this leg links it. A variant that keeps a caller and drops the
 	# module under it builds and passes the export list, which is the
 	# failure this target's own comment records for ROLE=server. It took
 	# 2.7 s cold.
 	$(MAKE) lib-check RAND=extern ROLE=server TRUST=none TRANSPORT=record
+	# The hybrid device client, with the P-256 pin: the one leg that links
+	# ML-KEM into a raw-mode object and the one that packages
+	# TRUST=raw-ecdsa. KEX=pq sets its CH_TX_STAGE and CH_MIN_RXBUF, and
+	# lib-check reads both from its build record.
+	$(MAKE) lib-check RAND=extern TRUST=raw-ecdsa KEX=pq
 	# The exporter axis: the one leg that verifies PUBLIC_EXPORT against
 	# a packaged object, since bin/exporter_test links $(SRCS) directly
 	# and never reads LIB_SRCS or PUBLIC. It is lib-check alone until
@@ -2929,16 +2980,17 @@ lint-exact-fill:
 # has stopped compiling in a TLS build.
 QUIC_SHARED := handshake_flight.c handshake_flight.h
 # The shared files that carry a #ifdef CH_TRANSPORT_QUIC arm: the
-# configuration, the session struct and the handshake layers the mode
-# reuses. Each holds text only a QUIC build compiles, so each is a place
-# to look that the prefix does not name, and a file that gains such an
-# arm without joining this list fails the lint. A file that stops
-# carrying one fails it too, so the list never sends a reader to a file
-# that holds nothing.
+# configuration, the session struct, the handshake layers the mode
+# reuses, and the build record, which holds sizeof(ch_quic) in a QUIC
+# build and 0 in the others. Each holds text only a QUIC build compiles,
+# so each is a place to look that the prefix does not name, and a file
+# that gains such an arm without joining this list fails the lint. A file
+# that stops carrying one fails it too, so the list never sends a reader
+# to a file that holds nothing.
 QUIC_CONDITIONAL := cfg.h session.h handshake_record.h handshake_post.h \
                     handshake_auth.h handshake_parser.h handshake_message.c \
                     handshake_parser_ee.c handshake_record.c handshake_auth.c \
-                    handshake_post.c
+                    handshake_post.c build.h build.c
 .PHONY: lint-quic-partition
 lint-quic-partition:
 	@CC='$(CC)' python3 tools/quic-partition.py
@@ -3045,14 +3097,16 @@ else
 	$(call TIDY_EACH,$(SRV_SRCS) test/srv_auth_test.c test/srv_test.c \
 	  test/srv_flight_test.c test/tls_server.c, \
 	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_ROLE_SERVER -I.)
-	# The record transport's client driver, behind -DCH_TRANSPORT_RECORD.
-	$(call TIDY_EACH,rec.c rec_frame.c rec_step.c, \
+	# The record transport's client driver, behind -DCH_TRANSPORT_RECORD,
+	# and the build record's arm for that transport.
+	$(call TIDY_EACH,rec.c rec_frame.c rec_step.c build.c, \
 	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_TRANSPORT_RECORD -I.)
 	# Each server driver with the transport it is written for. Neither
 	# reads a declaration the role pass above sets, because both sit
 	# behind a transport define as well as the role. quic_token.c, the
-	# QUIC server's Retry token, sits behind the same two defines.
-	$(call TIDY_EACH,srv_quic.c quic_token.c, \
+	# QUIC server's Retry token, sits behind the same two defines, and so
+	# do the build record's QUIC and server arms.
+	$(call TIDY_EACH,srv_quic.c quic_token.c build.c, \
 	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_ROLE_SERVER -DCH_TRANSPORT_QUIC -I.)
 	$(call TIDY_EACH,srv_rec.c test/srv_rec_test.c, \
 	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_ROLE_SERVER -DCH_TRANSPORT_RECORD -I.)
@@ -3459,6 +3513,10 @@ lint-impact:
 #     entries. They see the same three keys and the packet bytes that
 #     travel under them, which RFC 9001 §5 says have neither
 #     confidentiality nor integrity protection.
+#   build.c: the build record, one const struct of sizes and bounds the
+#     compiler computes (docs/decisions.md 56). It defines no function,
+#     so a gate would count nothing in it, and no byte of it depends on
+#     a key or a peer.
 # A secret arriving in any of these is a design change, and this list is
 # where it lands. Until https://github.com/c4milo/chapulin/issues/85 the
 # gate read four files and the rest went unmeasured.
@@ -3543,7 +3601,7 @@ WIDEMUL_DEFINES := quic_keys.c:-DCH_TRANSPORT_QUIC quic_packet.c:-DCH_TRANSPORT_
 WIDEMUL_PUBLIC := p256.c rsa.c rsa_mont.c pem.c x509.c x509_der.c x509_ca.c sha512.c sha512_compress.c \
                   p384.c p384_field.c rsa_pkcs1.c webpki_time.c webpki_name.c webpki_spki.c webpki_sigalg.c \
                   webpki_ext.c webpki_cert.c webpki.c webpki_pin.c webpki_cfg.c \
-                  quic_aes_hw.c quic_ghash_hw.c quic_initial.c quic_retry.c
+                  quic_aes_hw.c quic_ghash_hw.c quic_initial.c quic_retry.c build.c
 
 # The library sources are $(SRCS), drbg.c, and every .c file git tracks
 # at the repository root. The KEX=pq sources join LIB_SRCS by += rather

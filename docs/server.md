@@ -1865,7 +1865,7 @@ side: `rec_seal` writes `REC_APPDATA` unconditionally (`record.c:41`) and
 `rec_open` refuses any other outer type (`record.c:71`). One name per thing, so
 a server's read is `ch_read`.
 
-Five exported symbols against the client's four, held by `make lib-check`
+Five exported calls against the client's four, held by `make lib-check`
 against `PUBLIC`. `docs/decisions.md` entry 28 records four and entry 38
 already amends it to fifteen under `TRANSPORT=quic`; the server row joins them.
 

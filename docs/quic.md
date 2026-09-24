@@ -881,7 +881,7 @@ no crypto.
 Cost, and most of it is this tree's.
 
 - The AES exception above, with the verification debt the table counts.
-- The transport's own exported symbols grow from four to the fifteen below,
+- The transport's own exported calls grow from four to the fifteen below,
   against `docs/decisions.md` entry 28. `PUBLIC` is
   `ch_connect ch_read ch_write ch_close $(PUBLIC_RAND) $(PUBLIC_CA)` today
   (`Makefile:363`), so the four TLS names are one term of three. The
@@ -891,7 +891,7 @@ Cost, and most of it is this tree's.
   under `TRANSPORT=quic`, selected the way `PUBLIC_CA` is selected on `TRUST`
   (`Makefile:211-221`). The other two terms keep their meaning:
   `ch_pubkey_from_pem` under a CA mode (`Makefile:211`) and `ch_drbg_seed`
-  under `RAND=drbg` (`Makefile:258`). So a QUIC object exports fifteen symbols
+  under `RAND=drbg` (`Makefile:258`). So a QUIC object exports fifteen calls
   under `TRUST=raw-rsa RAND=extern`, sixteen under a CA mode or `RAND=drbg`, and
   seventeen under both. It cannot be a second term added to the first, because
   `lib-check` diffs the object's exported symbols against `PUBLIC` for exact
@@ -1593,7 +1593,7 @@ exported symbols against `PUBLIC` for exact equality (`Makefile:419-422`), so
 a `PUBLIC_TRANSPORT` carrying both sets fails a TLS build by the fifteen
 `ch_quic_` names and a QUIC build by the four TLS ones. `ch_pubkey_from_pem`
 and `ch_drbg_seed` are unchanged on both transports, so a CA-mode QUIC
-object exports sixteen symbols and a `TRUST=ca-rsa RAND=drbg` one seventeen. The
+object exports sixteen calls and a `TRUST=ca-rsa RAND=drbg` one seventeen. The
 ALPN configuration rules `tls.c:329-371` holds today are needed here in every
 trust mode.
 

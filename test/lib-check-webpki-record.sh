@@ -12,6 +12,14 @@
 # variant leaves out (https://github.com/c4milo/chapulin/issues/171).
 # The export list does not move, because the link localizes every symbol
 # PUBLIC does not name, so the import check is what fails.
+#
+# It also catches the four INV-35 violations, the mutants of the build
+# record: lib-check links test/build_test.c against this object, and a
+# record that omits the CH_TRANSPORT_RECORD bit, a stale sizeof(ch_tls),
+# a ch_build left out of PUBLIC and a CH_BUILD_AXES that forgets the
+# define each fail that consumer. This object is the one whose record
+# carries both a trust bit and a transport bit, and whose ch_tls differs
+# from the default object's.
 # tools/impact.py emits the same command for a source this object
 # packages; the two have to stay the same command, and
 # test/impact_test.py compares them.

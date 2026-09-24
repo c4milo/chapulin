@@ -132,7 +132,13 @@ Home: github.com/c4milo.
   `ch_cfg.server_pubkey` takes) reads `pem.[ch]` and `x509.[ch]`, and
   no library source reads it. A CA-mode build exports its
   `ch_pubkey_from_pem` as a fifth public call, which firmware calls
-  while provisioning and no session reaches.
+  while provisioning and no session reaches. A second pair sits off the
+  chain the same way: `build.[ch]` (the build record — the axes, struct
+  sizes and bounds the object was compiled with) reads the public
+  headers, and no library source reads it. Every packaged object
+  exports its `ch_build` as one data symbol beside its calls, which a
+  consumer compares with its own headers through `ch_build_matches` and
+  no library call reads (docs/decisions.md 56).
 - Everything that touches secret bytes is constant time: no secret-
   dependent branches, no secret-dependent memory indices. Comparisons go
   through `ct_memeq` and wipes through `ct_wipe`; constant-time selects,
