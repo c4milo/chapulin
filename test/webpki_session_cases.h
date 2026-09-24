@@ -161,22 +161,20 @@ static void test_webpki_cfg_other_modes(void) {
     CHECK(refused(&cfg));
 
     // The floor is the four-entry flight plus the record that completes
-    // it, 12338 bytes, in both KEX builds: the last valid size is the
-    // valid config's own buffer. test_rxbuf_floor reassembles that
-    // flight at this size and fails it one byte under.
+    // it, 12338 bytes, which also holds the hybrid ServerHello: the last
+    // valid size is the valid config's own buffer. test_rxbuf_floor
+    // reassembles that flight at this size and fails it one byte under.
     CHECK(CH_MIN_RXBUF == 4 * (CH_WEBPKI_CERT_MAX + 5) + 8 + REC_OVERHEAD);
     CHECK(CH_MIN_RXBUF == 12338);
     cfg = valid_cfg(&s);
     cfg.buf_len = CH_MIN_RXBUF - 1;
     CHECK(refused(&cfg));
 
+    // require_pq passes the config check: every webpki client offers the
+    // hybrid (docs/decisions.md entry 53).
     cfg = valid_cfg(&s);
     cfg.require_pq = 1;
-#ifdef CH_KEX_PQ
     CHECK(sends_client_hello(&cfg));
-#else
-    CHECK(refused(&cfg));
-#endif
 }
 
 // The ALPN count rule at its boundaries (RFC 7301 §3.1): offering
@@ -356,9 +354,7 @@ static void test_webpki_hello_boundary(void) {
     static uint8_t widest_names[CH_ALPN_MAX][CH_ALPN_NAME_MAX];
     uint8_t pub[32] = {0};
     uint8_t random32[32] = {0};
-#ifdef CH_KEX_PQ
     static uint8_t ek[MLKEM_EK_LEN];
-#endif
     long_hostname(name, sizeof name);
     widest_alpn(widest, widest_names);
     ch_cfg cfg = {0};
@@ -370,31 +366,22 @@ static void test_webpki_hello_boundary(void) {
     cfg.hostname_len = sizeof name;
     cfg.alpn_protocols = widest;
     cfg.alpn_count = CH_ALPN_MAX;
-#ifdef CH_KEX_TWO_GROUPS
-#define BUILD_HELLO(cap)                                                                           \
-    hs_build_client_hello(out, (cap), &cfg, CH_KEX_GROUP, ek, pub, random32, 0xffff, cookie,       \
-                          sizeof cookie)
-#elif defined(CH_KEX_PQ)
 #define BUILD_HELLO(cap)                                                                           \
     hs_build_client_hello(out, (cap), &cfg, ek, pub, random32, 0xffff, cookie, sizeof cookie)
-#else
-#define BUILD_HELLO(cap)                                                                           \
-    hs_build_client_hello(out, (cap), &cfg, pub, random32, 0xffff, cookie, sizeof cookie)
-#endif
     size_t psk_arm = BUILD_HELLO(CH_HELLO_MAX);
     CHECK(psk_arm == CH_HELLO_MAX);
     CHECK(BUILD_HELLO(CH_HELLO_MAX - 1) == 0);
+    // require_pq drops the x25519 group and its 36-byte share.
+    cfg.require_pq = 1;
+    CHECK(BUILD_HELLO(CH_HELLO_MAX) == CH_HELLO_MAX - 2 - 36);
+    cfg.require_pq = 0;
     cfg.psk = NULL;
     size_t chain_arm = BUILD_HELLO(CH_HELLO_MAX);
     CHECK(chain_arm == CH_HELLO_MAX - (47 + CH_TICKET_ID_MAX) + 16);
 #undef BUILD_HELLO
     CHECK(CH_TX_STAGE == CH_HELLO_MAX);
     CHECK(CH_HELLO_ALPN_MAX == 270);
-#ifdef CH_KEX_PQ
-    CHECK(CH_HELLO_MAX == 2335 + CH_HELLO_SECOND_SUITE_MAX);
-#else
-    CHECK(CH_HELLO_MAX == 1149 + CH_HELLO_SECOND_SUITE_MAX);
-#endif
+    CHECK(CH_HELLO_MAX == 2371 + CH_HELLO_SECOND_SUITE_MAX);
     (void)printf("webpki hello: %zu bytes with pre_shared_key, %zu without, CH_TX_STAGE %d\n",
                  psk_arm, chain_arm, CH_TX_STAGE);
 }

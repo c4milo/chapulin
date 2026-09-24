@@ -294,11 +294,11 @@ def dispatch : List String → Option String
       | "nopsk" => some false
       | _ => none
     -- `x25519` and `pq` are the Makefile's KEX values for the builds
-    -- that offer one group. `two-groups` is the KEX=pq TRUST=webpki
-    -- build, which lists X25519MLKEM768 then x25519 and sends a key
-    -- share for X25519MLKEM768 alone. The token fixes the groups a
-    -- ServerHello may select and the groups a HelloRetryRequest may
-    -- name; the selected group fixes the share size.
+    -- that offer one group. `two-groups` is the TRUST=webpki build,
+    -- which lists X25519MLKEM768 then x25519 and sends a key share for
+    -- each. The token fixes the groups a ServerHello may select and the
+    -- groups a HelloRetryRequest may name, none in any build; the
+    -- selected group fixes the share size.
     let k ← Spec.HandshakeParser.kexOf? kex
     -- `chacha` and `aesgcm` are the Makefile's SUITE values. `aesgcm` is
     -- the SUITE=aesgcm TRUST=webpki client, which offers

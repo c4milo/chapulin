@@ -12,18 +12,22 @@ STACK_BUDGET := 2560
 # arm64) and 3,128 (Arm GNU gcc 16.2 -O2, Cortex-M3), against 2,400 and
 # 2,360 at the device bound. The mode is host-side (docs/webpki.md), so
 # its ceiling is 4 kB rather than a device's 2.5 kB; it still catches a
-# new buffer. KEX=pq below raises it further.
+# new buffer. The hybrid ceiling below raises it further, because the
+# same object carries ML-KEM in every build.
 ifeq ($(TRUST),webpki)
 STACK_BUDGET := 4096
 endif
 # The hybrid build's ceiling is set by ML-KEM's own working memory, not
 # by chapulin's plumbing: K-PKE encrypt holds three polynomial vectors
 # and two polynomials, 5,632 bytes of coefficients before locals
-# (measured 5,744, gcc 13.3 -O2). 6 kB leaves room for compiler
-# variation and still catches a new buffer. See docs/invariants.md
-# INV-19 and the README's memory table.
-ifeq ($(KEX),pq)
-STACK_BUDGET := 6144
+# (measured 5,744 with gcc 13.3 -O2, and 6,224 with Apple clang 21 and
+# clang 23.1.1 -O2 on arm64). 6.5 kB leaves room for compiler variation
+# and still catches a new buffer; 6 kB did not hold clang, which no
+# local check measured until every TRUST=webpki object carried ML-KEM
+# (docs/decisions.md 53). KEX=pq carries ML-KEM too. See
+# docs/invariants.md INV-19 and the README's memory table.
+ifneq ($(filter pq-% %-webpki,$(KEX)-$(TRUST)),)
+STACK_BUDGET := 6656
 endif
 
 # cfg.h makes the entropy pattern a declared build choice with no
@@ -716,14 +720,43 @@ LIB_DEF := $(strip $(PIN_DEF) $(TRUST_DEF) $(TRANSPORT_DEF) $(AES_DEF) $(SUITE_D
 LIB_SRCS := $(filter-out $(PIN_FILTER) $(TRUST_FILTER) $(TRANSPORT_FILTER) $(ROLE_FILTER),$(SRCS)) \
             $(TRUST_ADD) $(TRANSPORT_ADD) $(ROLE_ADD) $(SUITE_ADD)
 # Key exchange: KEX=x25519 (default) or KEX=pq (-DCH_KEX_PQ), the
-# X25519MLKEM768 hybrid — the ML-KEM and SHA-3 modules join the
-# packaged object only there. One mode per object, like PIN and TRUST.
+# X25519MLKEM768 hybrid. KEX chooses the one group of a raw or ca device
+# client and nothing else. The ML-KEM and SHA-3 modules join the packaged
+# object under KEX=pq and in every TRUST=webpki object.
+#
+# Every other build's key exchange is fixed, so a KEX value on its build
+# line asks for something it will not get, and it is refused, as
+# decision 40 refused a stale PIN. A TRUST=webpki client offers both
+# groups in every build, a key share for each, and cfg.h defines what that
+# needs from CH_TRUST_WEBPKI alone (docs/decisions.md 53): KEX=x25519
+# would ask for an x25519-only hello, and KEX=pq for the one-group hybrid
+# hello, which ch_cfg.require_pq gives at run time. A server role's key
+# exchange is not a build choice either: it offers x25519 until its
+# hybrid half lands, and then carries ML-KEM in every build. The test is
+# $(origin KEX), which tells the default below from a value the command
+# line or the environment set, because the default is the one KEX those
+# builds can build under.
 KEX ?= x25519
+ifeq ($(filter x25519 pq,$(KEX)),)
+$(error KEX=$(KEX) is not a key exchange; use KEX=x25519 or KEX=pq)
+endif
+KEX_HYBRID_SRCS := sha3.c mlkem.c mlkem_poly.c
+ifeq ($(ROLE)-$(filter raw-rsa raw-ecdsa ca-rsa ca-ecdsa,$(TRUST)),client-$(TRUST))
+KEX_VARIANT := $(KEX)
+else
+ifneq ($(origin KEX),file)
+$(error KEX=$(KEX) chooses the group of a raw or ca client, and TRUST=$(TRUST) ROLE=$(ROLE) is not one: a TRUST=webpki client offers X25519MLKEM768 and x25519 in every build, and a server role's key exchange is fixed (docs/decisions.md 53). Drop KEX, and set ch_cfg.require_pq for the hybrid alone)
+endif
+# What LIB_VARIANT records for a key exchange KEX does not choose: "both"
+# for a build whose client offers the two groups, the fixed x25519
+# otherwise.
+KEX_VARIANT := $(if $(filter webpki,$(TRUST)),both,x25519)
+endif
 ifeq ($(KEX),pq)
 LIB_DEF += -DCH_KEX_PQ
-LIB_SRCS += sha3.c mlkem.c mlkem_poly.c
-else ifneq ($(KEX),x25519)
-$(error KEX=$(KEX) is not a key exchange; use KEX=x25519 or KEX=pq)
+endif
+ifneq ($(filter pq-% %-webpki,$(KEX)-$(TRUST)),)
+LIB_SRCS += $(KEX_HYBRID_SRCS)
 endif
 # The X25519 field, which both KEX values run: X25519=portable (default) is
 # x25519.c's 16 limbs of 16 bits, whose products are 32x32 multiplies that
@@ -892,7 +925,7 @@ QEMU_SMOKE_C := $(wildcard test/qemu/*.c test/qemu/*.h test/freertos/*.c test/fr
 # directory.
 # X25519 belongs here for SUITE's reason: -DCH_X25519_WIDE changes x25519.o
 # and adds x25519_wide.o.
-LIB_VARIANT := $(TRUST)-$(KEX)-$(RAND)-$(TRANSPORT)-$(AES)-$(SUITE)-$(ROLE)-$(EXPORTER)-$(KEYLOG)-$(WIDEMUL)-$(X25519)
+LIB_VARIANT := $(TRUST)-$(KEX_VARIANT)-$(RAND)-$(TRANSPORT)-$(AES)-$(SUITE)-$(ROLE)-$(EXPORTER)-$(KEYLOG)-$(WIDEMUL)-$(X25519)
 LIB_OBJS := $(LIB_SRCS:%.c=bin/obj/$(LIB_VARIANT)/%.o)
 
 # bench/device-ram.sh sizes the same modules the build packages. It asks
@@ -921,7 +954,11 @@ print-rec-loop-srcs:
 # command-line value overrides whatever the outer make was given. The
 # The KEX rows name TRUST as well, because `make check TRUST=webpki`
 # would otherwise hand that value to their recursions and measure a
-# different object than the row names.
+# different object than the row names. A TRUST=webpki object carries the
+# ML-KEM sources whatever KEX says and never defines CH_KEX_PQ, and the
+# last KEX rows require the Makefile to refuse either KEX value for a
+# build whose key exchange KEX does not choose: a webpki client, ROLE=both
+# and ROLE=server (docs/decisions.md 53).
 # The recursions pass --no-print-directory: GNU make 4 turns on -w for
 # a sub-make, and `make ci` runs this lint from one, so its captured
 # output would otherwise start with an "Entering directory" line and
@@ -1007,11 +1044,18 @@ lint-trust-separation:
 	check "TRUST=raw-ecdsa" "p256.c" "rsa.c rsa_mont.c pem.c x509.c x509_der.c x509_ca.c $$webpki_only" "-DCH_PIN_ECDSA" "-DCH_TRUST_CA -DCH_TRUST_WEBPKI"; \
 	check "TRUST=ca-rsa" "pem.c x509.c x509_der.c x509_ca.c rsa.c rsa_mont.c" "p256.c $$webpki_only" "-DCH_TRUST_CA" "-DCH_TRUST_WEBPKI -DCH_PIN_ECDSA"; \
 	check "TRUST=ca-ecdsa" "pem.c x509.c x509_der.c x509_ca.c p256.c" "rsa.c rsa_mont.c $$webpki_only" "-DCH_TRUST_CA -DCH_PIN_ECDSA" "-DCH_TRUST_WEBPKI"; \
-	check "TRUST=webpki" "x509_der.c rsa.c rsa_mont.c p256.c $$webpki_only" "pem.c x509.c x509_ca.c" "-DCH_TRUST_WEBPKI" "-DCH_TRUST_CA -DCH_PIN_ECDSA"; \
+	check "TRUST=webpki" "x509_der.c rsa.c rsa_mont.c p256.c sha3.c mlkem.c mlkem_poly.c $$webpki_only" "pem.c x509.c x509_ca.c" "-DCH_TRUST_WEBPKI" "-DCH_TRUST_CA -DCH_PIN_ECDSA -DCH_KEX_PQ"; \
 	check "TRUST=raw-rsa KEX=x25519" "x25519.c" "sha3.c mlkem.c mlkem_poly.c" "" "-DCH_KEX_PQ"; \
 	check "TRUST=raw-rsa KEX=pq" "x25519.c sha3.c mlkem.c mlkem_poly.c" "" "-DCH_KEX_PQ" ""; \
 	check "TRUST=raw-rsa X25519=portable" "x25519.c" "x25519_wide.c" "" "-DCH_X25519_WIDE"; \
 	check "TRUST=raw-rsa X25519=wide" "x25519.c x25519_wide.c" "" "-DCH_X25519_WIDE" "-DCH_NATIVE_MUL128"; \
+	for axis in "TRUST=webpki ROLE=client" "TRUST=webpki ROLE=both" "TRUST=none ROLE=server"; do \
+	  for k in x25519 pq; do \
+	    if $(MAKE) -s --no-print-directory -f $(firstword $(MAKEFILE_LIST)) print-lib-def $$axis KEX=$$k >/dev/null 2>&1; then \
+	      echo "lint-trust-separation: $$axis KEX=$$k must be refused, because KEX does not choose that build's key exchange"; rc=1; \
+	    fi; \
+	  done; \
+	done; \
 	quic_files=$$(git ls-files 'quic*.c' | grep -v / | tr '\n' ' '); \
 	[ -n "$$quic_files" ] || { echo "lint-trust-separation: git tracks no quic*.c file at the root, so the transport rows would check nothing"; rc=1; }; \
 	quic_always=$$(printf '%s\n' $$quic_files | grep -vxF -e quic_aes_soft.c -e quic_aes_hw.c -e quic_ghash_hw.c -e quic_aes_extern.c -e quic_token.c | tr '\n' ' '); \
@@ -1026,7 +1070,7 @@ lint-trust-separation:
 	signers="rsa_sign.c p256_sign.c p256_scalar.c p256_point.c p256_field.c"; \
 	srv_shared=$$(printf '%s\n' $$srv_files | grep -vxF -e srv_handshake.c -e srv_quic.c -e srv_rec.c | tr '\n' ' '); \
 	check "ROLE=client TRUST=raw-rsa TRANSPORT=tls" "$$client_only tls.c" "$$srv_files $$signers" "" "-DCH_ROLE_SERVER"; \
-	check "ROLE=both TRUST=webpki TRANSPORT=tls" "$$srv_shared srv_handshake.c $$signers tls.c handshake.c" "srv_quic.c srv_rec.c" "-DCH_ROLE_SERVER -DCH_ROLE_BOTH" ""; \
+	check "ROLE=both TRUST=webpki TRANSPORT=tls" "$$srv_shared srv_handshake.c $$signers tls.c handshake.c sha3.c mlkem.c mlkem_poly.c" "srv_quic.c srv_rec.c" "-DCH_ROLE_SERVER -DCH_ROLE_BOTH" "-DCH_KEX_PQ"; \
 	check "ROLE=server TRUST=none TRANSPORT=tls" "$$srv_shared srv_handshake.c $$signers tls.c rsa.c rsa_mont.c p256.c" "$$client_only srv_quic.c srv_rec.c" "-DCH_ROLE_SERVER" "-DCH_PIN_ECDSA"; \
 	quic_srv=$$(printf '%s\n' $$quic_always | grep -vxF -e quic_step.c | tr '\n' ' '); \
 	check "ROLE=server TRUST=none TRANSPORT=quic EXPORTER=off" "$$srv_shared srv_quic.c quic_token.c $$signers $$quic_srv" "$$client_only srv_handshake.c srv_rec.c quic_step.c record.c" "-DCH_ROLE_SERVER -DCH_TRANSPORT_QUIC" "-DCH_PIN_ECDSA"; \
@@ -1422,7 +1466,8 @@ bin/quic_loop_test: test/quic_loop_test.c $(SRV_QUIC_BOTH_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) -DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_TRANSPORT_QUIC -DCH_PIN_ECDSA -I. -Itest \
 	  -o $@ test/quic_loop_test.c $(SRV_QUIC_BOTH_SRCS)
-QUIC_LOOP_WEBPKI_SRCS := $(sort $(SRV_QUIC_BOTH_SRCS) $(WEBPKI_SRCS) $(WEBPKI_CHAIN_SRCS) x509_der.c)
+QUIC_LOOP_WEBPKI_SRCS := $(sort $(SRV_QUIC_BOTH_SRCS) $(WEBPKI_SRCS) $(WEBPKI_CHAIN_SRCS) x509_der.c \
+                                $(KEX_HYBRID_SRCS))
 bin/quic_loop_webpki: test/quic_loop_test.c $(QUIC_LOOP_WEBPKI_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) -DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_TRANSPORT_QUIC -DCH_TRUST_WEBPKI -I. \
@@ -1575,10 +1620,11 @@ bin/handshake_strict_webpki: test/handshake_strict_test.c $(HANDSHAKE_STRICT_SRC
 
 # The TRUST=webpki session surface: ch_connect's config rules, the
 # ClientHello bytes and the fail-closed handshake, linked over the
-# sources that object packages, once per KEX value, because CH_HELLO_MAX
-# and CH_TX_STAGE differ between the two.
+# sources that object packages. Every webpki client offers the hybrid
+# (docs/decisions.md 53), so the ML-KEM and SHA-3 sources are on the list
+# and there is one build, not one per KEX value.
 WEBPKI_TEST_SRCS := $(filter-out pem.c x509.c x509_ca.c,$(SRCS)) $(WEBPKI_CHAIN_SRCS) \
-                    $(filter-out $(SRCS),$(WEBPKI_SRCS))
+                    $(filter-out $(SRCS),$(WEBPKI_SRCS)) $(KEX_HYBRID_SRCS)
 bin/webpki_session_test: test/webpki_session_test.c $(WEBPKI_TEST_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) -DCH_TRUST_WEBPKI -I. -o $@ test/webpki_session_test.c $(WEBPKI_TEST_SRCS)
@@ -1607,11 +1653,6 @@ bin/webpki_resume_record: test/webpki_resume_test.c $(WEBPKI_RECORD_SRCS) $(HDRS
 	@mkdir -p bin
 	$(CC) $(CFLAGS) -DCH_TRUST_WEBPKI -DCH_TRANSPORT_RECORD -I. -o $@ test/webpki_resume_test.c \
 	  $(WEBPKI_RECORD_SRCS)
-
-bin/webpki_session_pq: test/webpki_session_test.c $(WEBPKI_TEST_SRCS) sha3.c mlkem.c mlkem_poly.c $(HDRS) $(TESTH)
-	@mkdir -p bin
-	$(CC) $(CFLAGS) -DCH_TRUST_WEBPKI -DCH_KEX_PQ -I. -o $@ test/webpki_session_test.c \
-	  $(WEBPKI_TEST_SRCS) sha3.c mlkem.c mlkem_poly.c
 
 # The same main in the client that offers both cipher suites
 # (docs/decisions.md entry 45), so the mock can select AES-128-GCM. The
@@ -1773,10 +1814,6 @@ bin/tlsclient_pq: test/tls_client.c $(SRCS) sha3.c mlkem.c mlkem_poly.c $(HDRS) 
 	@mkdir -p bin
 	$(CC) $(CFLAGS) -DCH_KEX_PQ -I. -o $@ test/tls_client.c $(SRCS) sha3.c mlkem.c mlkem_poly.c
 
-# The web PKI client under -DCH_KEX_PQ, the build that lists both groups
-# (docs/decisions.md entry 39). e2e runs it against a server that picks
-# the hybrid and against one that asks for x25519 through a
-# HelloRetryRequest.
 # The web PKI client that offers both cipher suites (docs/decisions.md
 # entry 45). It needs the AES instructions and the build's statement that
 # they run in constant time, so check builds it only where AES_HW_PROBE
@@ -1786,11 +1823,6 @@ bin/tlsclient_webpki_aes: test/tls_client.c $(WEBPKI_TEST_SRCS) quic_aes.c $(AES
 	@mkdir -p bin
 	$(CC) $(CFLAGS) $(AES_HW_CFLAGS) -DCH_TRUST_WEBPKI -DCH_SUITE_AES_GCM -DCH_AES_HW -DCH_NATIVE_AES \
 	  -I. -o $@ test/tls_client.c $(WEBPKI_TEST_SRCS) quic_aes.c $(AES_HW_SRCS) quic_gcm.c
-
-bin/tlsclient_webpki_pq: test/tls_client.c $(WEBPKI_TEST_SRCS) sha3.c mlkem.c mlkem_poly.c $(HDRS) $(TESTH)
-	@mkdir -p bin
-	$(CC) $(CFLAGS) -DCH_TRUST_WEBPKI -DCH_KEX_PQ -I. -o $@ test/tls_client.c $(WEBPKI_TEST_SRCS) \
-	  sha3.c mlkem.c mlkem_poly.c
 
 # Every differential arm builds with RSA_WIDE_DEF, CH_RSA_MODULUS_MAX at
 # 512: test/diff_rsa.h and test/diff_rsa_pkcs1.h sample a 4096-bit
@@ -1819,7 +1851,7 @@ run-%: bin/%
 # and the invariant violation builds. The nightly runs it. Splitting on
 # duration rather than on importance is deliberate -- nothing here is
 # optional, and a change is not finished until check-slow passes too.
-check: bin/unit bin/unit_ca bin/unit_pq bin/tlsclient bin/tlsclient_ecdsa bin/tlsclient_ca bin/tlsclient_ca_ecdsa bin/tlsclient_webpki bin/tlsclient_webpki_pq $(if $(AES_HW_PROBE),bin/tlsclient_webpki_aes) $(X25519_WIDE_BINS) bin/tlsclient_pq bin/drbg_test bin/softmul_test bin/rsa_test bin/sha3_test bin/sha512_test bin/p384_test bin/rsa_pkcs1_test bin/webpki_time_test bin/webpki_name_test bin/webpki_spki_test bin/webpki_sigalg_test bin/webpki_cert_test bin/webpki_chain_test bin/webpki_auth_test bin/webpki_encrypted_exts_test bin/mlkem_test bin/handshake_strict_test bin/handshake_strict_pq bin/handshake_strict_webpki bin/webpki_session_test bin/webpki_session_pq bin/webpki_resume_test bin/webpki_resume_record bin/x509strict bin/x509strict_ecdsa bin/quic_driver_test bin/quic_test bin/recclient $(AES_HW_BINS) lint rand-check bin/srv_auth_test bin/srv_test bin/srv_quic_test bin/srv_quic_both_test bin/srv_rec_test bin/rec_loop_test bin/quic_loop_test bin/quic_loop_webpki bin/tlsserver bin/exporter_test bin/rsa_sign_test bin/p256_field_test bin/p256_ecdh_test bin/p256_sign_test
+check: bin/unit bin/unit_ca bin/unit_pq bin/tlsclient bin/tlsclient_ecdsa bin/tlsclient_ca bin/tlsclient_ca_ecdsa bin/tlsclient_webpki $(if $(AES_HW_PROBE),bin/tlsclient_webpki_aes) $(X25519_WIDE_BINS) bin/tlsclient_pq bin/drbg_test bin/softmul_test bin/rsa_test bin/sha3_test bin/sha512_test bin/p384_test bin/rsa_pkcs1_test bin/webpki_time_test bin/webpki_name_test bin/webpki_spki_test bin/webpki_sigalg_test bin/webpki_cert_test bin/webpki_chain_test bin/webpki_auth_test bin/webpki_encrypted_exts_test bin/mlkem_test bin/handshake_strict_test bin/handshake_strict_pq bin/handshake_strict_webpki bin/webpki_session_test bin/webpki_resume_test bin/webpki_resume_record bin/x509strict bin/x509strict_ecdsa bin/quic_driver_test bin/quic_test bin/recclient $(AES_HW_BINS) lint rand-check bin/srv_auth_test bin/srv_test bin/srv_quic_test bin/srv_quic_both_test bin/srv_rec_test bin/rec_loop_test bin/quic_loop_test bin/quic_loop_webpki bin/tlsserver bin/exporter_test bin/rsa_sign_test bin/p256_field_test bin/p256_ecdh_test bin/p256_sign_test
 	# The packaged object is built once per entropy pattern, because
 	# lib-check reads a different export list and a different import
 	# list in each. Only the object is built twice: the examples and
@@ -1995,7 +2027,6 @@ check: bin/unit bin/unit_ca bin/unit_pq bin/tlsclient bin/tlsclient_ecdsa bin/tl
 	./bin/handshake_strict_pq
 	./bin/handshake_strict_webpki
 	./bin/webpki_session_test
-	./bin/webpki_session_pq
 	./bin/webpki_resume_test
 	./bin/webpki_resume_record
 	./bin/x509strict
@@ -2098,12 +2129,11 @@ endif
 # The web PKI arm: bin/diff compiles the pinned parsers, so the empty
 # server_name acknowledgement in EncryptedExtensions and the three
 # CertificateVerify schemes run against real C only here. Same lane as
-# diff-pq. It builds a second binary under -DCH_KEX_PQ, the build that
-# lists two groups (docs/decisions.md entry 39), so a retry naming
-# x25519 and a ServerHello selecting it meet the model's two-groups
-# token here and nowhere else, and a third under -DCH_SUITE_AES_GCM,
-# the client that offers two suites (entry 45), where the AES
-# instructions exist.
+# diff-pq. The webpki client lists two groups and sends a share for each
+# (docs/decisions.md entry 53), so a ServerHello selecting either one
+# meets the model's two-groups token here and nowhere else. It builds a
+# second binary under -DCH_SUITE_AES_GCM, the client that offers two
+# suites (entry 45), where the AES instructions exist.
 # The build links pem.c, x509.c and x509_ca.c too, which the webpki
 # object does not package, because test/diff_x509.h drives them.
 .PHONY: diff-webpki
@@ -2117,8 +2147,6 @@ else
 	@mkdir -p bin
 	$(CC) $(CFLAGS) $(RSA_WIDE_DEF) -DCH_TRUST_WEBPKI -I. -o bin/diff_webpki test/diff_test.c $(SRCS) sha3.c sha512.c sha512_compress.c p384.c p384_field.c rsa_pkcs1.c webpki_sigalg.c webpki_cert.c webpki.c webpki_ticket.c webpki_pin.c webpki_cfg.c mlkem.c mlkem_poly.c
 	./bin/diff_webpki
-	$(CC) $(CFLAGS) $(RSA_WIDE_DEF) -DCH_TRUST_WEBPKI -DCH_KEX_PQ -I. -o bin/diff_webpki_pq test/diff_test.c $(SRCS) sha3.c sha512.c sha512_compress.c p384.c p384_field.c rsa_pkcs1.c webpki_sigalg.c webpki_cert.c webpki.c webpki_ticket.c webpki_pin.c webpki_cfg.c mlkem.c mlkem_poly.c
-	./bin/diff_webpki_pq
 ifneq ($(AES_HW_PROBE),)
 	$(CC) $(CFLAGS) $(AES_HW_CFLAGS) $(RSA_WIDE_DEF) -DCH_TRUST_WEBPKI -DCH_SUITE_AES_GCM -DCH_AES_HW -DCH_NATIVE_AES -I. -o bin/diff_webpki_aes test/diff_test.c $(SRCS) sha3.c sha512.c sha512_compress.c p384.c p384_field.c rsa_pkcs1.c webpki_sigalg.c webpki_cert.c webpki.c webpki_ticket.c webpki_pin.c webpki_cfg.c mlkem.c mlkem_poly.c quic_aes.c $(AES_HW_SRCS) quic_gcm.c
 	./bin/diff_webpki_aes
@@ -2920,9 +2948,10 @@ else
 	# TRUST=webpki arms. This pass parses the sources that carry them or
 	# compile against the webpki layout of ch_cfg and handshake_state, and
 	# the four tests built under the define, with -DCH_TRUST_WEBPKI, so
-	# the cognitive-complexity threshold holds in that build too. The
-	# second pass adds -DCH_KEX_PQ for webpki_session_test.c's hybrid arm.
-	# Measured with clang-tidy 23.1.1: 2.9 s and 0.2 s.
+	# the cognitive-complexity threshold holds in that build too. That
+	# build offers the hybrid (docs/decisions.md 53), so the pass reads
+	# webpki_session_test.c's hybrid arm too. Measured with clang-tidy
+	# 23.1.1: 2.9 s.
 	$(call TIDY_EACH,tls.c handshake_parser.c handshake_parser_ee.c \
 	  handshake_message.c handshake_auth.c handshake.c handshake_record.c \
 	  webpki.c webpki_ticket.c webpki_pin.c webpki_cfg.c \
@@ -2930,8 +2959,6 @@ else
 	  test/webpki_encrypted_exts_test.c test/handshake_strict_test.c \
 	  test/diff_test.c examples/webpki_client.c test/webpki_resume_test.c, \
 	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_TRUST_WEBPKI -I.)
-	$(call TIDY_EACH,test/webpki_session_test.c, \
-	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_TRUST_WEBPKI -DCH_KEX_PQ -I.)
 	# The QUIC mode: its sources and its three test mains, under every
 	# check.
 	$(call TIDY_EACH,$(QUIC_SRCS), \
@@ -3441,7 +3468,9 @@ CODEGEN_SRCS := $(CODEGEN32_SRCS) $(foreach e,$(WIDE64_CEILING),$(firstword $(su
 # compile every source with -DCH_KEX_PQ and both include srv_flight.h, which is
 # an #error under ROLE=server with it: the server has no KEX=pq half
 # (docs/server.md, open question ten). The leg measures the build that exists,
-# which is KEX=x25519.
+# which is KEX=x25519. webpki_ticket.c carries it because cfg.h refuses
+# -DCH_KEX_PQ beside -DCH_TRUST_WEBPKI for a client: that client offers both
+# groups in every build (docs/decisions.md 53).
 WIDEMUL_DEFINES := quic_keys.c:-DCH_TRANSPORT_QUIC quic_packet.c:-DCH_TRANSPORT_QUIC \
                    quic_config.c:-DCH_TRANSPORT_QUIC quic_step.c:-DCH_TRANSPORT_QUIC \
                    quic.c:-DCH_TRANSPORT_QUIC quic_fail.c:-DCH_TRANSPORT_QUIC \
@@ -3458,7 +3487,7 @@ WIDEMUL_DEFINES := quic_keys.c:-DCH_TRANSPORT_QUIC quic_packet.c:-DCH_TRANSPORT_
                    srv_out.c:-DCH_ROLE_SERVER$(COMMA)-UCH_KEX_PQ \
                    srv_flight.c:-DCH_ROLE_SERVER$(COMMA)-UCH_KEX_PQ \
                    srv_handshake.c:-DCH_ROLE_SERVER$(COMMA)-UCH_KEX_PQ \
-                   srv.c:-DCH_ROLE_SERVER webpki_ticket.c:-DCH_TRUST_WEBPKI
+                   srv.c:-DCH_ROLE_SERVER webpki_ticket.c:-DCH_TRUST_WEBPKI$(COMMA)-UCH_KEX_PQ
 WIDEMUL_PUBLIC := p256.c rsa.c rsa_mont.c pem.c x509.c x509_der.c x509_ca.c sha512.c sha512_compress.c \
                   p384.c p384_field.c rsa_pkcs1.c webpki_time.c webpki_name.c webpki_spki.c webpki_sigalg.c \
                   webpki_ext.c webpki_cert.c webpki.c webpki_pin.c webpki_cfg.c \

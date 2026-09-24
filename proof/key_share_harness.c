@@ -10,11 +10,13 @@
 // assumption alone.
 //
 // Built a second time with -DCH_TRUST_WEBPKI (the key_share_webpki
-// launch line), where CH_KEX_TWO_GROUPS makes the arm accept two more
-// shapes (docs/decisions.md entry 39): a HelloRetryRequest key_share
-// naming x25519, and a ServerHello key_share selecting x25519 with a
-// 32-byte share. The asserts below state each shape's contract, and the
-// one-group build keeps its own.
+// launch line), where CH_KEX_TWO_GROUPS makes the arm accept one more
+// shape (docs/decisions.md entry 53): a ServerHello key_share selecting
+// x25519 with a 32-byte share, because that build's hello carries an
+// x25519 share beside the hybrid one. The asserts below state that
+// shape's contract beside the hybrid one, and in both builds a
+// HelloRetryRequest key_share is refused, because every group either
+// build lists already has a share in its hello.
 //
 // Narrow on purpose. handshake_parser's own harness bounds its message
 // at 256 bytes and a hybrid key_share extension is 1,128, so raising
@@ -47,17 +49,10 @@ int main(void) {
 
     __CPROVER_assert(rc == CH_OK || rc == CH_EPROTO, "key_share returns OK or EPROTO");
 #ifdef CH_KEX_TWO_GROUPS
-    if (rc == CH_OK && hrr) {
-        // A retry names x25519 and nothing else, in the one NamedGroup
-        // the caller then requires to fill the extension exactly.
-        __CPROVER_assert(info.retry_group == CH_GROUP_X25519, "a retry names x25519 alone");
-        __CPROVER_assert(info.have_share == 0, "a retry carries no share");
-        __CPROVER_assert(e.off == 2, "a retry's key_share is one NamedGroup");
-        return 0;
-    }
     if (rc == CH_OK && info.group == CH_GROUP_X25519) {
-        // The answer to that retry: the group, a 32-byte length and the
-        // x25519 point, and no ciphertext pointer.
+        // A ServerHello that selected the x25519 share: the group, a
+        // 32-byte length and the x25519 point, and no ciphertext pointer.
+        __CPROVER_assert(hrr == 0, "an HRR key_share is always refused");
         __CPROVER_assert(info.have_share == 1, "acceptance sets have_share");
         __CPROVER_assert(info.server_ct == NULL, "an x25519 share carries no ciphertext");
         __CPROVER_assert(e.off == 4 + X25519_LEN, "the share consumed the group, length and point");
@@ -67,11 +62,12 @@ int main(void) {
     if (rc == CH_OK) {
         __CPROVER_assert(hrr == 0, "an HRR key_share is always refused");
         __CPROVER_assert(info.have_share == 1, "acceptance sets have_share");
-        // The group the parser reports is the one this build offers,
-        // read from the wire: ch_tls.group reports this value and
-        // cfg.require_pq compares it, so the harness proves it beside
-        // the pointer contract.
-        __CPROVER_assert(info.group == CH_KEX_GROUP, "acceptance records the one offered group");
+        // The group the parser reports is the hybrid, read from the
+        // wire: ch_tls.group reports this value and cfg.require_pq
+        // compares it, so the harness proves it beside the pointer
+        // contract.
+        __CPROVER_assert(info.group == CH_GROUP_X25519MLKEM768,
+                         "acceptance records the hybrid group");
         // The contract hybrid_secret depends on: a whole ciphertext,
         // readable, inside the bytes this parser actually consumed.
         // Against e.off rather than against body, because body is
@@ -82,7 +78,7 @@ int main(void) {
         __CPROVER_assert(info.server_ct >= body && info.server_ct + MLKEM_CT_LEN <= body + e.off,
                          "server_ct lies inside the consumed bytes");
         // The share is the ciphertext then the x25519 point, contiguous
-        // and exactly CH_KEX_SERVER_SHARE long, so a read of either
+        // and exactly CH_HYBRID_SERVER_SHARE long, so a read of either
         // that is short or overlapping fails here.
         __CPROVER_assert(info.server_ct + MLKEM_CT_LEN + X25519_LEN == body + e.off,
                          "the share consumed exactly ct then point");

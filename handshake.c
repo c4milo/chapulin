@@ -34,13 +34,9 @@ static int send_client_hello(handshake_state *h) {
     t->tx[1] = 0x03;
     // The very first record may carry 0x0301 for old middleboxes; every
     // later one, including the post-HRR retry, must say 0x0303 (§5.1).
-#ifdef CH_KEX_TWO_GROUPS
-    // A retry that named x25519 may carry no cookie, so the moved key
-    // share marks the retry hello too.
-    t->tx[2] = h->cookie_len > 0 || h->share_group != CH_KEX_GROUP ? 0x03 : 0x01;
-#else
+    // Every retry this client answers carries a cookie, so the cookie
+    // marks the retry hello (hsf_read_server_hello).
     t->tx[2] = h->cookie_len > 0 ? 0x03 : 0x01;
-#endif
     t->tx[3] = (uint8_t)(n >> 8);
     t->tx[4] = (uint8_t)n;
     return io_send_all(&t->cfg, t->tx, REC_HDR + n);

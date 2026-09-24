@@ -4,7 +4,9 @@
 // path leaves no key material behind. Two asserts carry the contract:
 // on CH_OK the 64-byte ikm is fully written, and on CH_EPROTO — the
 // x25519 all-zero refusal, INV-3 — every one of those 64 bytes is zero,
-// so a rejected key exchange cannot leave half a secret on the stack.
+// so a rejected key exchange cannot leave half a secret on the stack. A
+// third holds the seed: on both exits all 64 bytes of h.dz are zero,
+// because the dk has been expanded from it and nothing reads it again.
 //
 // This is the only harness that builds with -DCH_KEX_PQ
 // (https://github.com/c4milo/chapulin/issues/47). The hybrid ServerHello
@@ -95,6 +97,9 @@ int main(void) {
         for (size_t i = 0; i < sizeof ikm; i++) {
             __CPROVER_assert(ikm[i] == 0, "refusal wipes the whole ikm");
         }
+    }
+    for (size_t i = 0; i < sizeof h.dz; i++) {
+        __CPROVER_assert(h.dz[i] == 0, "both exits wipe the ML-KEM seed");
     }
     return 0;
 }

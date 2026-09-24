@@ -74,9 +74,11 @@ last `ROLE=server` stub, as the entry said it would.
 - **Claim.** A key exchange landing on a small-order point (an
   all-zero shared secret) cannot be missed.
 - **Mechanism.** `x25519()` returns 0 on an all-zero shared secret
-  and 1 otherwise. One call site compiles per build, both in
-  `handshake.c`: the hybrid secret under `KEX=pq`, the classic key
-  exchange otherwise. Each fails the handshake unless it returns 1.
+  and 1 otherwise. One call site compiles per raw or ca build, in
+  `handshake_flight.c`: the hybrid secret under `KEX=pq`, the classic
+  key exchange otherwise. A `TRUST=webpki` build compiles two, the
+  hybrid secret and the x25519 one, one per group its ServerHello may
+  select. Each fails the handshake unless it returns 1.
   Wycheproof's small-order battery exercises the rejection. The clamp
   and the check sit in `x25519.c` for both X25519 fields:
   `x25519_wide.c` computes the ladder over a scalar `x25519.c` has
@@ -94,7 +96,7 @@ last `ROLE=server` stub, as the entry said it would.
 - **Claim.** All randomness flows through `ch_rand_bytes`, consumed
   at exactly seven audited sites. Three are in `handshake.c`: the
   key-share scalar, the ClientHello random, and the ML-KEM (d, z)
-  seed, which only the `KEX=pq` build draws. Two are the server's
+  seed, which only the `KEX=pq` and `TRUST=webpki` builds draw. Two are the server's
   mirror of the first two, in `srv_flight.c`: the key-share scalar it
   answers with, and the ServerHello random. A client and a server draw
   the same two values for the same reasons, so the audit is the same
@@ -451,29 +453,29 @@ last `ROLE=server` stub, as the entry said it would.
   and ca modes one group and one signature algorithm. The client offers
   exactly one of everything; the server takes it or the handshake fails
   closed. The host-side `TRUST=webpki` mode offers several signature
-  schemes (decisions.md 36), several application protocols (37), under
-  `KEX=pq` two groups (39), and under `SUITE=aesgcm` two cipher suites
-  (45). There a ServerHello selects the group whose share the hello it
-  answers carried: the hybrid, or x25519 after a HelloRetryRequest that
-  named x25519, and nothing else. It carries ChaCha20 or AES-128-GCM,
-  and the same one as a retry before it.
-- **Mechanism.** Absence of selection code; the PIN build flag picks
-  the sigalg at compile time, never at runtime. The two-group offer is
-  the `CH_KEX_TWO_GROUPS` arms of `handshake_message.c`,
-  `handshake_parser.c` and `handshake_flight.c`, and
-  `handshake_state.share_group` records the group the latest hello
-  carried a share for. The two-suite offer is the `CH_CLIENT_TWO_SUITES`
+  schemes (decisions.md 36), several application protocols (37), two
+  groups with a key share for each (39, 51), and under `SUITE=aesgcm`
+  two cipher suites (45). There a ServerHello selects either group,
+  or the hybrid alone under `ch_cfg.require_pq`, and a
+  HelloRetryRequest may ask for a cookie and nothing else. It carries
+  ChaCha20 or AES-128-GCM, and the same one as a retry before it.
+- **Mechanism.** Absence of selection code; the TRUST build flag picks
+  the sigalg of a raw or ca build at compile time, never at runtime.
+  The two-group offer is the `CH_KEX_TWO_GROUPS` arms of
+  `handshake_message.c`, `handshake_parser.c` and `handshake_flight.c`,
+  and every build's parser refuses a HelloRetryRequest that names a
+  group. The two-suite offer is the `CH_CLIENT_TWO_SUITES`
   arms of `handshake_message.c` and `handshake_parser.c`, and
   `handshake_state.suite` records the suite a retry or ServerHello
   named.
 - **Check.** The differential (`inv07-second-cipher-suite.violation`)
   and handshake_sequence assert the reject on any ServerHello that picks
-  another suite or group. `bin/webpki_session_pq` drives the two-group
-  offer against a mock server, and five mutants require it to fail: an
-  unchecked ServerHello group, a retry naming the hybrid, `require_pq`
-  keeping x25519 in the hello or taking a retry that names it, and a
-  cookieless retry hello sent under the initial record version
-  (INV-8). `key_share_webpki` proves the parser's two new shapes.
+  another suite or group. `bin/webpki_session_test` drives the
+  two-group offer against a mock server, and four mutants require it to
+  fail: a hello that lists x25519 without its share, a parser that takes
+  a retry naming a shared group, and `require_pq` keeping x25519 in the
+  hello or taking a ServerHello that selects it. `key_share_webpki`
+  proves the parser's x25519 shape beside the hybrid one.
   `bin/webpki_session_aes` drives the two-suite offer, and two mutants
   require it to fail: a parser that takes `TLS_AES_256_GCM_SHA384`, and
   a ServerHello whose suite differs from the retry's.
@@ -1523,7 +1525,11 @@ last `ROLE=server` stub, as the entry said it would.
 - **Mechanism.** Fail-closed policy plus fast-key-erasure
   construction in drbg.c.
 - **Check.** Convention; the wipe sits in the single `tlsi_fail`
-  funnel, so review of that one function covers every error path.
+  funnel, so review of that one function covers every error path. One
+  wipe inside a phase has a test: a `TRUST=webpki` client wipes the
+  ML-KEM seed once the ServerHello selects x25519, and
+  `inv17-x25519-keeps-mlkem-seed` requires `bin/webpki_session_test` to
+  fail when it does not.
 - **Violation.** A PR adds an early return between fail and wipe.
 - See [decisions: Memory and runtime](decisions.md#memory-and-runtime).
 
@@ -1551,11 +1557,13 @@ last `ROLE=server` stub, as the entry said it would.
 
 - **Claim.** No VLAs, no recursion, and no function frame over the
   build's budget: 2,560 bytes for every build except `TRUST=webpki` and
-  `KEX=pq` (measured worst there: `rsa_vp1` at 2,400); 4,096 for
-  `TRUST=webpki`, a host-side mode whose `rsa_vp1` verifies RSA-4096
-  over 128 limbs (measured 3,168 with clang 23 on arm64 and 3,128 with
-  Arm GNU gcc 16.2 on the Cortex-M3); and 6,144 for `KEX=pq`
-  (measured worst: `mlk_pke_encrypt` at 5,744). ML-KEM's own working
+  `KEX=pq` (measured worst there: `rsa_vp1` at 2,400); and 6,656 for
+  `KEX=pq` and `TRUST=webpki` (measured worst: `mlk_pke_encrypt` at
+  5,744 with gcc 13.3 and 6,224 with clang 21 and 23 on arm64). A
+  `TRUST=webpki` object carries ML-KEM in every build (decisions.md 53);
+  without it the mode would need 4,096, because its `rsa_vp1` verifies
+  RSA-4096 over 128 limbs (measured 3,168 with clang 23 on arm64 and
+  3,128 with Arm GNU gcc 16.2 on the Cortex-M3). ML-KEM's own working
   memory sets that ceiling — K-PKE encrypt holds three polynomial
   vectors and two polynomials — but chapulin's hybrid plumbing clears
   2,560 as well: `ch_handshake` at 3,456 and `send_client_hello` at

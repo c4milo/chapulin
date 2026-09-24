@@ -44,9 +44,8 @@
 #define HSF_FINISHED_LEN (4 + SHA256_LEN)
 
 // Draws the ephemeral secrets and starts the transcript. Writes
-// h->priv, h->pub and h->random, writes h->dz under KEX=pq, writes
-// h->share_group = CH_KEX_GROUP under CH_KEX_TWO_GROUPS, computes
-// h->early and h->binder_key from cfg.psk when the caller configured
+// h->priv, h->pub and h->random, writes h->dz under CH_KEX_HYBRID,
+// computes h->early and h->binder_key from cfg.psk when the caller configured
 // one and from a hash-length zero string when it did not (RFC 9846
 // §7.1, rfc9846.txt:4034), and calls sha256_init on t->transcript.
 //
@@ -68,9 +67,9 @@ void hsf_begin(handshake_state *h);
 // message's last SHA256_LEN bytes (RFC 9846 §4.3.11.2,
 // rfc9846.txt:2586). It echoes h->cookie when h->cookie_len is not 0,
 // which is what makes this the retry hello (RFC 9846 §4.2.4,
-// rfc9846.txt:1444). Under CH_KEX_TWO_GROUPS its key share is for
-// h->share_group: the hybrid, or, once a HelloRetryRequest named
-// x25519, x25519 over h->pub alone, with no ML-KEM key expanded.
+// rfc9846.txt:1444). Under CH_KEX_TWO_GROUPS it carries a key share for
+// the hybrid and one for x25519, both over h->pub, or the hybrid one
+// alone under cfg.require_pq, and a retry hello carries the same shares.
 //
 // Requires hsf_begin to have run, and cap bytes at out. The caller
 // passes the staging array its transport wants: a TLS driver passes
@@ -92,9 +91,7 @@ size_t hsf_build_client_hello(handshake_state *h, uint8_t *out, size_t cap);
 // replaces the transcript with the synthetic message_hash construction
 // RFC 9846 §4.1 prescribes (rfc9846.txt:1076-1082) and copies the
 // cookie into h->cookie and h->cookie_len, so the retry hello can echo
-// it. Under CH_KEX_TWO_GROUPS a HelloRetryRequest that names x25519
-// also moves h->share_group to x25519, and its cookie may be absent.
-// Under CH_SUITE_AES_GCM it writes h->suite from the message, after
+// it. Under CH_SUITE_AES_GCM it writes h->suite from the message, after
 // checking that a ServerHello repeats a retry's suite. On a ServerHello
 // it hashes the raw message.
 //
@@ -108,16 +105,15 @@ size_t hsf_build_client_hello(handshake_state *h, uint8_t *out, size_t cap);
 //
 // Returns CH_EPROTO with ALERT_UNEXPECTED_MESSAGE for any other
 // handshake type; CH_EPROTO with ALERT_ILLEGAL_PARAMETER when
-// hsp_parse_server_hello refuses the message, and for a
-// HelloRetryRequest that carries no cookie, which is an HRR that
-// changes nothing this client offered and which RFC 9846 §4.2.4 makes
-// an illegal_parameter abort (rfc9846.txt:1467-1469). Under
-// CH_KEX_TWO_GROUPS a retry that names x25519 changes the key share, so
-// the cookie refusal applies only to a retry that names no group; the
-// same alert answers a retry naming x25519 when cfg.require_pq kept it
-// off the hello, and a ServerHello whose group is not h->share_group
-// (RFC 9846 §4.3.8, rfc9846.txt:2205-2237), and under CH_SUITE_AES_GCM a
-// ServerHello whose suite is not the retry's (§4.2.4,
+// hsp_parse_server_hello refuses the message, which it does for a
+// HelloRetryRequest that names a group: every group this client lists
+// already has a key share in its hello, one group or both, so a retry
+// that names one names a group already shared or one never listed (RFC
+// 9846 §4.3.8, rfc9846.txt:2205-2212). The same alert answers a
+// HelloRetryRequest that carries no cookie, which is an HRR that changes
+// nothing this client offered and which RFC 9846 §4.2.4 makes an
+// illegal_parameter abort (rfc9846.txt:1467-1469), and under
+// CH_SUITE_AES_GCM a ServerHello whose suite is not the retry's (§4.2.4,
 // rfc9846.txt:1489-1491). It also returns
 // what hsr_next_msg returns: CH_EIO, CH_EPROTO, CH_EAUTH or CH_ECAP
 // under TRANSPORT=tls, and CH_EPROTO or CH_EINVAL under
@@ -144,29 +140,33 @@ int hsf_read_server_hello(handshake_state *h, server_hello_info *info);
 // identity would want certificates this build did not pin (RFC 9846
 // §4.2.3, rfc9846.txt:1329).
 //
-// Under KEX=pq it also returns CH_EPROTO with ALERT_ILLEGAL_PARAMETER
-// when cfg.require_pq is set and the group the parser wrote is not
-// CH_GROUP_X25519MLKEM768. The compare reads the field the parser wrote
-// rather than the constant the build offered.
+// Under CH_KEX_HYBRID it also returns CH_EPROTO with
+// ALERT_ILLEGAL_PARAMETER when cfg.require_pq is set and the group the
+// parser wrote is not CH_GROUP_X25519MLKEM768. Under CH_KEX_TWO_GROUPS
+// that is the refusal of a ServerHello selecting x25519, which the flag
+// kept off the hello and the parser still accepts. The compare reads the
+// field the parser wrote rather than the constant the build offered.
 int hsf_accept_server_hello(handshake_state *h, const server_hello_info *info);
 
 // Completes the key exchange and derives the handshake secrets. Runs
-// x25519 over h->priv and info->server_pub, or, under KEX=pq,
+// x25519 over h->priv and info->server_pub, or, for the hybrid,
 // decapsulates info->server_ct with the key pair h->dz re-expands and
 // puts the ML-KEM shared secret ahead of the x25519 one, which is RFC
 // 10024's order despite the group's name. Under CH_KEX_TWO_GROUPS a
 // ServerHello that selected x25519 runs x25519 alone, over the x25519
-// half of that key pair. Then it takes the transcript
+// half of that key pair, and wipes h->dz before it does, because the
+// ML-KEM key pair goes unused. Then it takes the transcript
 // hash and calls ks_handshake, writing h->handshake_secret, h->c_hs and
 // h->s_hs (RFC 9846 §7.1, rfc9846.txt:4034).
 //
-// Requires an info that hsf_accept_server_hello accepted, and, under
-// KEX=pq, that info->server_ct still points at the live ServerHello
+// Requires an info that hsf_accept_server_hello accepted, and, for the
+// hybrid, that info->server_ct still points at the live ServerHello
 // bytes in cfg.buf: nothing may read a further message between the
 // parse and this call.
 //
 // Wipes h->priv, h->pub, h->random, h->early, h->binder_key and, under
-// KEX=pq, h->dz on both exits, along with the shared secret itself.
+// CH_KEX_HYBRID, h->dz on both exits, along with the shared secret
+// itself.
 // After this call the retry hello can no longer be built, which is
 // correct: the exchange is over. The wipes are in this function because
 // the QUIC driver returns to its caller between messages, so the frame

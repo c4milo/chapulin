@@ -28,9 +28,9 @@ sends server_name when it has a hostname (`parseEncryptedExtensions`'s
 (`parseEncryptedExtensions`'s `alpnOffered`), with SPKI pins it offers
 RFC 7250 raw public keys and may offer X.509 beside them
 (`parseEncryptedExtensions`'s `certTypesOffered`), it
-offers five signature schemes instead of one (`SignatureOffer`), under
-KEX=pq it lists two groups, X25519MLKEM768 then x25519, with a key
-share for X25519MLKEM768 alone (`Kex.twoGroups`), and under
+offers five signature schemes instead of one (`SignatureOffer`), it
+lists two groups, X25519MLKEM768 then x25519, with a key share for each
+(`Kex.twoGroups`), and under
 SUITE=aesgcm it offers two cipher suites, TLS_CHACHA20_POLY1305_SHA256
 then TLS_AES_128_GCM_SHA256 (`SuiteOffer.chachaAndAes`).
 
@@ -174,7 +174,8 @@ groups. -/
 def x25519Group : Nat := 0x001d
 
 /-- NamedGroup X25519MLKEM768(0x11EC), the ML-KEM-768 + x25519 hybrid
-(RFC 10024): the group the KEX=pq builds send a key share for. -/
+(RFC 10024): the group the KEX=pq builds and the TRUST=webpki build send
+a key share for. -/
 def hybridGroup : Nat := 0x11ec
 
 /-- ProtocolVersion 0x0304, the value a TLS 1.3 server puts in the
@@ -191,22 +192,22 @@ def legacyVersion : Nat := 0x0303
 def x25519KeySize : Nat := 32
 
 /--
-The key-exchange groups the build offers. The Makefile's KEX variable
-fixes them at build time, and TRUST=webpki turns KEX=pq into the third
-value, so exactly one of these is live in a library object. The
-ClientHello lists `Kex.supportedGroups` in supported_groups (RFC 9846
-§4.3.7) and sends one key share, for `Kex.keyShareGroup` (§4.3.8).
+The key-exchange groups the build offers, fixed at build time: the
+Makefile's KEX variable picks one of the first two for a raw or ca
+build, and every TRUST=webpki build is the third, so exactly one of
+these is live in a library object. The ClientHello lists
+`Kex.supportedGroups` in supported_groups (RFC 9846 §4.3.7) and sends a
+key share for each of `Kex.keyShareGroups` (§4.3.8).
 -/
 inductive Kex
   /-- KEX=x25519: x25519(0x001D) alone (RFC 9846 §4.3.7). -/
   | x25519
-  /-- KEX=pq outside TRUST=webpki: X25519MLKEM768(0x11EC) alone, the
-  ML-KEM-768 + x25519 hybrid (RFC 10024). -/
+  /-- KEX=pq: X25519MLKEM768(0x11EC) alone, the ML-KEM-768 + x25519
+  hybrid (RFC 10024). -/
   | pq
-  /-- The KEX=pq TRUST=webpki build: it lists X25519MLKEM768 then x25519
-  and sends a key share for X25519MLKEM768 alone (docs/decisions.md
-  entry 39). A server without the hybrid asks for an x25519 share with
-  a HelloRetryRequest. -/
+  /-- The TRUST=webpki build: it lists X25519MLKEM768 then x25519 and
+  sends a key share for each (docs/decisions.md entry 53), so a server
+  selects either one without a HelloRetryRequest. -/
   | twoGroups
 deriving BEq
 
@@ -217,24 +218,29 @@ def Kex.supportedGroups : Kex → List Nat
   | .pq => [hybridGroup]
   | .twoGroups => [hybridGroup, x25519Group]
 
-/-- The NamedGroup of the one key share the build's ClientHello sends
-(RFC 9846 §4.3.8): x25519 in the x25519 build, X25519MLKEM768 in the
-other two. -/
-def Kex.keyShareGroup : Kex → Nat
-  | .x25519 => x25519Group
-  | .pq => hybridGroup
-  | .twoGroups => hybridGroup
+/-- The NamedGroups of the key shares the build's ClientHello sends, in
+the order it sends them (RFC 9846 §4.3.8): one per listed group, so the
+same list as `Kex.supportedGroups`. -/
+def Kex.keyShareGroups : Kex → List Nat
+  | .x25519 => [x25519Group]
+  | .pq => [hybridGroup]
+  | .twoGroups => [hybridGroup, x25519Group]
 
 /--
 The NamedGroups a HelloRetryRequest's key_share may select. RFC 9846
 §4.3.8 requires the selected_group to be one the ClientHello listed in
 supported_groups and not one it already sent a key share for, and makes
-either failure an illegal_parameter. The build sends one share, for
-`keyShareGroup`, so these are the supported groups other than that one:
-x25519 in the two-group build, and none in the other two.
+either failure an illegal_parameter. These are the supported groups the
+build sent no share for, and every build shares every group it lists,
+so the list is empty in every build (`Kex.retryGroups_eq_nil`).
 -/
 def Kex.retryGroups (kex : Kex) : List Nat :=
-  kex.supportedGroups.filter (· != kex.keyShareGroup)
+  kex.supportedGroups.filter (· ∉ kex.keyShareGroups)
+
+/-- No build leaves a listed group without a key share, so no build has
+a group a HelloRetryRequest may select. -/
+theorem Kex.retryGroups_eq_nil (kex : Kex) : kex.retryGroups = [] := by
+  cases kex <;> decide
 
 /--
 The octet count of a server key_exchange value in `group` (RFC 9846
@@ -252,7 +258,7 @@ def serverShareSize (group : Nat) : Nat :=
 
 /-- The line protocol's key-exchange token: `x25519` and `pq` as the
 Makefile's KEX variable spells the one-group builds, and `two-groups`
-for the KEX=pq TRUST=webpki build. -/
+for the TRUST=webpki build. -/
 def kexOf? : String → Option Kex
   | "x25519" => some .x25519
   | "pq" => some .pq
@@ -586,11 +592,10 @@ x25519 value is a low-order point is not decided here: §7.4.2 puts that
 check on the computed shared secret, after the key exchange this parser
 only feeds.
 
-In the two-group build either supported group passes here. §4.3.8 also
-requires the group to be the one the last ClientHello sent a share for:
-X25519MLKEM768 in the first hello, and the retry's selected group after
-a HelloRetryRequest. That turns on whether a retry happened, which one
-message cannot show, so the check belongs to the caller.
+In the two-group build either supported group passes here, because
+the ClientHello sent a share for each (§4.3.8), and a retry never moves
+the shares, because no build has a group a retry may select
+(`Kex.retryGroups_eq_nil`).
 
 Returns the group with the value. The check above admits only a
 supported group, but the reader returns the value the message carried,
@@ -665,16 +670,15 @@ The HelloRetryRequest branch (RFC 9846 §4.2.4).
 
 * only the three §4.3 HelloRetryRequest extensions may appear;
 * key_share, when present, names a group from `kex.retryGroups`
-  (`readSelectedGroup?`). The x25519 and pq builds have none, so
-  there every key_share is refused;
+  (`readSelectedGroup?`). No build has one, so every key_share is
+  refused;
 * cookie, when present, is one non-empty cookie (`readCookie?`);
 * at least one of the two is present. A cookie and a selected group
   are the only changes a retry can ask this client for, and §4.2.4
   makes a retry that "would not result in any change in the
-  ClientHello" an illegal_parameter. So the x25519 and pq builds
-  require the cookie, and the two-group build requires one of the two.
-  Neither is a §9.2 required extension, so a retry with neither is not
-  a missing_extension.
+  ClientHello" an illegal_parameter. So every build requires the
+  cookie. Neither is a §9.2 required extension, so a retry with neither
+  is not a missing_extension.
 -/
 def helloRetryRequestFields (kex : Kex) (p : ServerHelloPrefix) :
     Except Alert HelloRetryRequest := do
@@ -1340,13 +1344,12 @@ def selftest (_ : Unit) : Bool := Id.run do
     rejectsUnder .pq (hrrOf (versionExt ++ cookieExt ++ retryShareExt hybridGroup)) &&
     rejectsUnder .pq (hrrOf (versionExt ++ cookieExt ++ retryShareExt x25519Group)) &&
     rejectsUnder .pq (hrrOf (versionExt ++ retryShareExt x25519Group))
-  -- The two-group build (docs/decisions.md entry 39) lists
-  -- X25519MLKEM768 then x25519 and sends a share for the first alone.
-  -- Its ServerHello may select either group, each at its own share
-  -- length, and its retry may name x25519, the one group it listed
-  -- without a share.
+  -- The two-group build (docs/decisions.md entry 53) lists
+  -- X25519MLKEM768 then x25519 and sends a share for each. Its
+  -- ServerHello may select either group, each at its own share length,
+  -- and its retry may name neither: both already have a share.
   let twoGroupsOk :=
-    Kex.twoGroups.retryGroups == [x25519Group] &&
+    Kex.twoGroups.retryGroups == [] &&
     Kex.pq.retryGroups == [] && Kex.x25519.retryGroups == [] &&
     acceptsShareUnder .twoGroups (serverHelloOf (versionExt ++ pqShareExtOf hybridShare))
       hybridGroup hybridShare none &&
@@ -1360,13 +1363,14 @@ def selftest (_ : Unit) : Bool := Id.run do
     -- secp256r1(0x0017), a group the build never listed.
     refusesWithUnder .twoGroups (serverHelloOf (versionExt ++
       extension extKeyShare (u16 0x0017 ++ vec16 share))) .illegalParameter &&
-    -- A retry may carry the key_share alone, the cookie alone, or both.
-    retriesUnder .twoGroups (hrrOf (versionExt ++ retryShareExt x25519Group))
-      none (some x25519Group) &&
-    retriesUnder .twoGroups (hrrOf (versionExt ++ cookieExt ++ retryShareExt x25519Group))
-      (some cookie) (some x25519Group) &&
+    -- A retry carries the cookie alone. Both listed groups already have
+    -- a share, so a retry naming either is refused, with a cookie or
+    -- without one, and 0x0017 was never listed.
     retriesUnder .twoGroups (hrrOf (versionExt ++ cookieExt)) (some cookie) none &&
-    -- The hybrid already has a share, and 0x0017 was never listed.
+    refusesWithUnder .twoGroups (hrrOf (versionExt ++ retryShareExt x25519Group))
+      .illegalParameter &&
+    refusesWithUnder .twoGroups (hrrOf (versionExt ++ cookieExt ++ retryShareExt x25519Group))
+      .illegalParameter &&
     refusesWithUnder .twoGroups (hrrOf (versionExt ++ retryShareExt hybridGroup))
       .illegalParameter &&
     refusesWithUnder .twoGroups (hrrOf (versionExt ++ retryShareExt 0x0017))
@@ -1809,8 +1813,9 @@ server accepted a PSK, the only identity index the profile's single
 offered identity puts in range. The x25519 and pq builds list one group, so there the
 group is that one and the size is fixed: a KEX=pq build accepts no
 group but X25519MLKEM768. The two-group build accepts either of its
-two, and a caller that wants the hybrid alone sets `ch_cfg.require_pq`,
-which the handshake checks above this parser.
+two, because it sent a share for each, and a caller that wants the
+hybrid alone sets `ch_cfg.require_pq`, which the handshake checks above
+this parser.
 -/
 theorem parseServerHello_sound (kex : Kex) (suiteOffer : SuiteOffer) (pskOffered : Bool)
     (msg : ByteArray) (fields : ServerHello)
@@ -1839,9 +1844,11 @@ accepted retry carries a cipher suite the build offers, which is
 TLS_CHACHA20_POLY1305_SHA256 in every client build but the SUITE=aesgcm
 TRUST=webpki one. It asks for a change — it carries a cookie or a
 selected group — and a selected group is one of `kex.retryGroups`:
-listed in the ClientHello's supported_groups and not the group it sent a
-key share for. The x25519 and pq builds have no retry groups, so there
-an accepted retry never selects a group and always carries a cookie.
+listed in the ClientHello's supported_groups and not a group it sent a
+key share for. No build has a retry group (`Kex.retryGroups_eq_nil`),
+so `parseServerHello_helloRetryRequest_cookie` below reads the
+statement down to what it means here: an accepted retry never selects a
+group and always carries a cookie.
 -/
 theorem parseServerHello_helloRetryRequest_sound (kex : Kex) (suiteOffer : SuiteOffer)
     (pskOffered : Bool) (msg : ByteArray) (fields : HelloRetryRequest)
@@ -1874,6 +1881,30 @@ theorem parseServerHello_helloRetryRequest_sound (kex : Kex) (suiteOffer : Suite
       exact Option.some.inj (eq_of_pure_eq_ok h_selected) ▸ h_retry_group
   · obtain ⟨_, -, h_accepted⟩ := exists_of_bind_eq_ok h_accepted
     exact ServerHelloKind.noConfusion (eq_of_pure_eq_ok h_accepted)
+
+/--
+In every build an accepted HelloRetryRequest selects no group and
+carries a cookie (RFC 9846 §4.2.4, §4.3.8). Every group a build lists
+already has a key share in its ClientHello (`Kex.retryGroups_eq_nil`),
+so a cookie is the one change a retry can ask this client for.
+-/
+theorem parseServerHello_helloRetryRequest_cookie (kex : Kex) (suiteOffer : SuiteOffer)
+    (pskOffered : Bool) (msg : ByteArray) (fields : HelloRetryRequest)
+    (h_accepted :
+      parseServerHello kex suiteOffer pskOffered msg = .ok (.helloRetryRequest fields)) :
+    fields.selectedGroup = none ∧ fields.cookie.isSome := by
+  obtain ⟨-, h_asks_change, h_retry_group⟩ :=
+    parseServerHello_helloRetryRequest_sound kex suiteOffer pskOffered msg fields h_accepted
+  have h_no_group : fields.selectedGroup = none := by
+    cases h_selected : fields.selectedGroup with
+    | none => rfl
+    | some group =>
+      have h_member := h_retry_group group h_selected
+      rw [Kex.retryGroups_eq_nil] at h_member
+      exact absurd h_member (List.not_mem_nil)
+  refine ⟨h_no_group, ?_⟩
+  rw [h_no_group] at h_asks_change
+  simpa using h_asks_change
 
 /--
 The §4.2.4 discrimination, stated both ways: an accepted result is a

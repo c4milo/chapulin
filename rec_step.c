@@ -53,7 +53,7 @@ static int stage_sealed(ch_record *r, const uint8_t *pt, size_t n) {
 // step.
 //
 // The derivation runs in this same call because info.server_ct points
-// into cfg.buf under KEX=pq and the decapsulation reads those bytes, so
+// into cfg.buf under CH_KEX_HYBRID and the decapsulation reads those bytes, so
 // nothing may read a further message in between.
 static int step_server_hello(ch_record *r) {
     ch_tls *t = &r->t;

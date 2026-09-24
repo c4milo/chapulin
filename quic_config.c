@@ -175,12 +175,14 @@ int quic_config_ok(ch_tls *t, const ch_cfg *cfg) {
         cfg->buf_len < CH_MIN_RXBUF) {
         return CH_EINVAL;
     }
-#ifndef CH_KEX_PQ
+#ifndef CH_KEX_HYBRID
     // require_pq asks that the key exchange be post-quantum, and this
     // build offers x25519 alone, so no handshake it runs can satisfy
     // the flag. tls.c refuses it before it sends a byte for the same
     // reason: a request the build cannot enforce is a provisioning
-    // mistake, not a no-op.
+    // mistake, not a no-op. A TRUST=webpki build offers the hybrid in
+    // every build (docs/decisions.md 53), so it admits the flag, which
+    // drops x25519 from its hello as it does over TCP.
     if (cfg->require_pq) {
         return CH_EINVAL;
     }

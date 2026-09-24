@@ -61,29 +61,38 @@
 #define CH_CLIENT_TWO_SUITES
 #endif
 
-// The one group this build offers (its code point is one of cfg.h's
-// two CH_GROUP_* values), and its share size on each side. The hybrid
-// share order is RFC 10024's: the ML-KEM bytes come first on both
-// sides, despite the group name.
-#ifdef CH_KEX_PQ
+// The hybrid share sizes on each side, in RFC 10024's order: the ML-KEM bytes come first
+// on both sides, despite the group name. Every client that offers the hybrid
+// (CH_KEX_HYBRID, cfg.h) writes and reads them.
+#ifdef CH_KEX_HYBRID
 #include "mlkem.h"
+#define CH_HYBRID_CLIENT_SHARE (MLKEM_EK_LEN + 32)
+#define CH_HYBRID_SERVER_SHARE (MLKEM_CT_LEN + 32)
+#endif
+
+// The one group a raw or ca client offers (Makefile KEX), and its share size on each side.
+// A server role reads the same three for its own half. A TRUST=webpki client offers both
+// groups and names each one directly, so a webpki build without a server role defines none
+// of the three, and a client source that reads one fails to compile there.
+#ifdef CH_KEX_PQ
 #define CH_KEX_GROUP CH_GROUP_X25519MLKEM768
-#define CH_KEX_CLIENT_SHARE (MLKEM_EK_LEN + 32)
-#define CH_KEX_SERVER_SHARE (MLKEM_CT_LEN + 32)
-#else
+#define CH_KEX_CLIENT_SHARE CH_HYBRID_CLIENT_SHARE
+#define CH_KEX_SERVER_SHARE CH_HYBRID_SERVER_SHARE
+#elif !defined(CH_KEX_TWO_GROUPS) || defined(CH_ROLE_SERVER)
 #define CH_KEX_GROUP CH_GROUP_X25519
 #define CH_KEX_CLIENT_SHARE 32
 #define CH_KEX_SERVER_SHARE 32
 #endif
-// A KEX=pq TRUST=webpki client offers a second group (docs/decisions.md
-// entry 39). supported_groups lists X25519MLKEM768 and then x25519, and
-// the first hello carries a key share for X25519MLKEM768 alone, so a
-// server that lacks the hybrid answers with a HelloRetryRequest naming
-// x25519 and the retry hello carries an x25519 share. ch_cfg.require_pq
-// drops x25519 from the list, so that caller's hello is the one-group
-// hello every other KEX=pq build sends. Every other build offers
-// CH_KEX_GROUP alone. cfg.h defines CH_KEX_TWO_GROUPS, because the
-// session and parser headers that declare its fields sit below this one.
+// A TRUST=webpki client offers both groups in every build (docs/decisions.md entry 53).
+// supported_groups lists X25519MLKEM768 and then x25519, and key_share carries an entry
+// for each in the same order: the hybrid share, then an x25519 share that repeats the
+// x25519 half of the hybrid one. RFC 9954 §3.2 lets a client reuse one algorithm's
+// key_exchange value across the KeyShareEntry records of one ClientHello, so the x25519
+// entry costs 36 bytes and no second key generation. ch_cfg.require_pq drops x25519 from
+// both lists, so that caller's hello is the one-group hello a raw or ca KEX=pq build
+// sends. cfg.h defines CH_KEX_TWO_GROUPS, because the session and parser headers that
+// declare its fields sit below this one.
+
 // SignatureScheme code points (RFC 9846 §4.3.3). A raw or ca build
 // offers the first two, one per build (CH_PIN_SIGALG below). A
 // TRUST=webpki build offers all five, because it cannot know which
@@ -103,8 +112,9 @@
 // extensions, and the framing of the three variable ones — their type
 // and length words, and the pre_shared_key and cookie envelopes. The
 // terms are the largest ticket identity a resumption may carry, the
-// largest cookie an HRR may hand back, and the build's key share.
-// Measured against hs_build_client_hello: 617 classic, 1801 for pq. The
+// largest cookie an HRR may hand back, and the key_exchange bytes of the
+// first key share. Measured against hs_build_client_hello: 617 classic,
+// 1801 for pq. The
 // hello is built whole into one TX staging array, so CH_TX_STAGE must
 // hold this; handshake.c asserts it where both constants are visible.
 //
@@ -120,9 +130,8 @@
 // SPKI pins adds, 7 bytes at most. That arm's 23 bytes stay shorter than
 // the 47 + CH_TICKET_ID_MAX bytes of the pre_shared_key extension the
 // other arm carries. So the largest hello is still the
-// pre_shared_key arm, now with both extensions: 1149 classic, and 2335
-// for pq, whose supported_groups carries the second group, measured by
-// test/webpki_session_test.c.
+// pre_shared_key arm, now with both extensions and the two groups below:
+// 2371, measured by test/webpki_session_test.c.
 // A TRANSPORT=quic build adds two more terms. It drops the 6-byte
 // record_size_limit extension, because RFC 9001 §4.1.3 removes the
 // record layer that extension sizes (rfc9001.txt:462-464), and it sends
@@ -132,13 +141,14 @@
 // there (rfc9001.txt:1891-1895), so the ALPN term is no longer the
 // webpki build's alone.
 //
-// A CH_KEX_TWO_GROUPS build adds one more term: the second NamedGroup
-// in supported_groups, 2 bytes. A CH_CLIENT_TWO_SUITES build adds the
-// second cipher suite, 2 bytes more.
+// A CH_KEX_TWO_GROUPS build takes the hybrid share as its first key share
+// and adds two more terms: the second NamedGroup in supported_groups, 2
+// bytes, and the second KeyShareEntry, the x25519 one, whose group,
+// length and 32-byte value are 36 bytes. A CH_CLIENT_TWO_SUITES build
+// adds the second cipher suite, 2 bytes more.
 //
 // Each term is 0 in a build that sends nothing for it, so one sum
-// serves every combination and a TRANSPORT=tls build keeps the value it
-// had: 617 raw classic, 1149 webpki classic.
+// serves every combination.
 #if defined(CH_TRUST_WEBPKI) || defined(CH_TRANSPORT_QUIC)
 #define CH_HELLO_ALPN_MAX (4 + 2 + CH_ALPN_MAX * (1 + CH_ALPN_NAME_MAX))
 #else
@@ -155,9 +165,13 @@
 #define CH_HELLO_TRANSPORT_MAX 0
 #endif
 #ifdef CH_KEX_TWO_GROUPS
+#define CH_HELLO_FIRST_SHARE_MAX CH_HYBRID_CLIENT_SHARE
 #define CH_HELLO_SECOND_GROUP_MAX 2
+#define CH_HELLO_SECOND_SHARE_MAX (2 + 2 + 32)
 #else
+#define CH_HELLO_FIRST_SHARE_MAX CH_KEX_CLIENT_SHARE
 #define CH_HELLO_SECOND_GROUP_MAX 0
+#define CH_HELLO_SECOND_SHARE_MAX 0
 #endif
 #ifdef CH_CLIENT_TWO_SUITES
 #define CH_HELLO_SECOND_SUITE_MAX 2
@@ -166,8 +180,8 @@
 #endif
 #define CH_HELLO_MAX                                                                               \
     (137 + CH_HELLO_SERVER_NAME_MAX + CH_HELLO_ALPN_MAX + CH_HELLO_TRANSPORT_MAX +                 \
-     CH_HELLO_SECOND_GROUP_MAX + CH_HELLO_SECOND_SUITE_MAX + CH_TICKET_ID_MAX + HSP_COOKIE_MAX +   \
-     CH_KEX_CLIENT_SHARE)
+     CH_HELLO_SECOND_GROUP_MAX + CH_HELLO_SECOND_SHARE_MAX + CH_HELLO_SECOND_SUITE_MAX +           \
+     CH_TICKET_ID_MAX + HSP_COOKIE_MAX + CH_HELLO_FIRST_SHARE_MAX)
 
 // Pinned mode verifies exactly one signature algorithm per build: RSA-PSS
 // by default (what stock cert-based endpoints hold), ECDSA P-256 with
@@ -238,20 +252,14 @@
 // its signature_algorithms lists the five schemes above. It writes the
 // ALPN extension next when cfg->alpn_count is not 0, listing
 // cfg->alpn_protocols in the caller's order (RFC 7301 §3.1).
-// The hybrid build's share carries the ML-KEM encapsulation key ahead
-// of the x25519 public value, so its builder takes both.
-// A CH_KEX_TWO_GROUPS build also takes share_group, the one group its
-// key_share carries: CH_KEX_GROUP for the first hello and for a retry
-// that asked only for a cookie, with ek and pub as the hybrid share, or
-// CH_GROUP_X25519 for the retry a HelloRetryRequest naming x25519 asked
-// for, with pub alone and ek unread. Its supported_groups lists
-// CH_KEX_GROUP and then CH_GROUP_X25519, or CH_KEX_GROUP alone when
-// cfg->require_pq is set.
+// The hybrid share carries the ML-KEM encapsulation key ahead of the
+// x25519 public value, so a CH_KEX_HYBRID builder takes both. A
+// CH_KEX_TWO_GROUPS build lists CH_GROUP_X25519MLKEM768 and then
+// CH_GROUP_X25519 in supported_groups and sends a key share for each in
+// that order, the x25519 one over the same pub the hybrid share carries.
+// With cfg->require_pq set it lists and shares the hybrid alone.
 size_t hs_build_client_hello(uint8_t *out, size_t cap, const ch_cfg *cfg,
-#ifdef CH_KEX_TWO_GROUPS
-                             uint16_t share_group,
-#endif
-#ifdef CH_KEX_PQ
+#ifdef CH_KEX_HYBRID
                              const uint8_t ek[MLKEM_EK_LEN],
 #endif
                              const uint8_t pub[32], const uint8_t random32[32],

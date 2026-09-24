@@ -90,7 +90,7 @@ rules:
     severity: ERROR
     message: >-
       INV-4: randomness is consumed at seven audited sites: three in
-      handshake.c (the third only in the KEX=pq build), two in srv_flight.c (the server's
+      handshake.c (the third only in the KEX=pq and TRUST=webpki builds), two in srv_flight.c (the server's
       key-share scalar and ServerHello random), the ticket's one draw in srv_resume.c (its
       AEAD nonce, ticket_age_add and ticket_nonce) and the PSS salt in rsa_sign.c. A new
       call site needs its own seeding audit —

@@ -1,0 +1,18 @@
+invariant: INV-7
+file: handshake_parser.c
+catches: webpki_session_test
+reason: the parser takes a HelloRetryRequest whose key_share names x25519,
+  a group the webpki hello already carried a share for, and the client
+  resends the same hello. RFC 9846 section 4.3.8 makes a retry naming a
+  shared group an illegal_parameter at the retry itself, and a server
+  could loop the client or treat the resent hello as a change it never
+  asked for.
+
+--- old
+        // illegal_parameter abort (rfc9846.txt:2205-2212).
+        return CH_EPROTO;
+    }
+--- new
+        // illegal_parameter abort (rfc9846.txt:2205-2212).
+        return rb_u16(e) == CH_GROUP_X25519 ? CH_OK : CH_EPROTO;
+    }

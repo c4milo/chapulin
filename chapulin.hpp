@@ -287,9 +287,10 @@ class Config {
     }
 
     // Fail the handshake unless the key exchange is post-quantum
-    // (ch_cfg.require_pq). A KEX=pq build checks the flag against the
-    // group the ServerHello selected; a classic build cannot satisfy
-    // it, and ch_connect rejects the config before any I/O.
+    // (ch_cfg.require_pq). A KEX=pq or TRUST=webpki build checks the
+    // flag against the group the ServerHello selected; a classic raw or
+    // ca build cannot satisfy it, and ch_connect rejects the config
+    // before any I/O.
     Config &require_pq(bool on) {
         cfg_.require_pq = on ? 1 : 0;
         return *this;

@@ -102,7 +102,22 @@ int main(void) {
 
     uint16_t limit = nondet_u16();
 
-    size_t n = hs_build_client_hello(out, cap, &cfg, pub, random32, limit, ck, cookie_len);
+#ifdef CH_KEX_HYBRID
+    // hello_build_webpki: the two-group offer (docs/decisions.md entry
+    // 51), both arms of require_pq, which lists and shares the hybrid
+    // alone when set and adds the x25519 group and share when clear. The
+    // builder copies ek into the hybrid share and never reads its value,
+    // so a fixed array serves: memory safety and the length turn on the
+    // arm, not on the bytes.
+    cfg.require_pq = nondet_u8() & 1;
+    static const uint8_t ek[MLKEM_EK_LEN];
+#endif
+
+    size_t n = hs_build_client_hello(out, cap, &cfg,
+#ifdef CH_KEX_HYBRID
+                                     ek,
+#endif
+                                     pub, random32, limit, ck, cookie_len);
 
     __CPROVER_assert(n <= cap, "a built hello fits the buffer it was given");
     // CH_HELLO_MAX is what handshake.c asserts CH_TX_STAGE against, so

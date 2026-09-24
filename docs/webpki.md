@@ -112,7 +112,8 @@ local `openssl s_server`, and the `certverify_webpki` CBMC harness proves the
 binding and the hash choice over every scheme value and every leaf key family.
 
 SHA-384 needs a SHA-512 core, so `sha512.[ch]` is new. It is packaged only in
-a webpki object, the way `sha3.[ch]` is packaged only under `KEX=pq`.
+a webpki object, the way `sha3.[ch]` is packaged only where ML-KEM is: under
+`KEX=pq` and in a webpki object.
 
 ### Refused, and why
 
@@ -125,25 +126,25 @@ a webpki object, the way `sha3.[ch]` is packaged only under `KEX=pq`.
 
 ## Key exchange
 
-`KEX=x25519 TRUST=webpki` offers x25519 alone, as every classic build does.
-`KEX=pq TRUST=webpki` offers two groups, which `docs/decisions.md` entry 39
-decides. Its ClientHello lists X25519MLKEM768 and then x25519 in
-`supported_groups`, and carries one key share, for X25519MLKEM768. A server
-that has the hybrid selects it in one round trip. A server that lacks it
-answers with a HelloRetryRequest naming x25519, and the retry hello carries
-an x25519 share over the x25519 half of the key pair the hybrid share held.
-The raw and ca modes keep entry 12's one group per build.
+Every webpki build offers two groups, which `docs/decisions.md` entries 39
+and 51 decide, and the Makefile refuses a `KEX` value beside `TRUST=webpki`,
+because it would select nothing. The ClientHello lists X25519MLKEM768 and
+then x25519 in `supported_groups`, and carries a key share for each in the
+same order: the 1216-byte hybrid share, then a 32-byte x25519 share that
+repeats the x25519 half of the hybrid one (RFC 9954 §3.2 permits the reuse).
+A server selects either in one round trip, and the client wipes the unused
+ML-KEM seed as soon as the ServerHello selects x25519. The raw and ca modes
+keep entry 12's one group per build.
 
-The four refusals the offer adds, each an `illegal_parameter` abort before
-any key exists (RFC 9846 §4.2.4 and §4.3.8):
+Every group the hello lists has a share, so a HelloRetryRequest can ask this
+client for one change, a cookie. The refusals, each an `illegal_parameter`
+abort before any key exists (RFC 9846 §4.2.4 and §4.3.8):
 
-- a HelloRetryRequest that names the hybrid, whose share the hello already
+- a HelloRetryRequest that names either group, whose share the hello already
   carried, or any group the hello did not list;
-- a HelloRetryRequest with neither a cookie nor a key_share, which asks for
-  no change;
-- a ServerHello that selects x25519 when the hello it answers carried the
-  hybrid share, or the hybrid after a retry that named x25519;
-- a HelloRetryRequest naming x25519 when `ch_cfg.require_pq` is set.
+- a HelloRetryRequest without a cookie, which asks for no change;
+- a ServerHello that selects x25519 when `ch_cfg.require_pq` kept x25519 off
+  the hello.
 
 Measured 2026-09-09 with an ML-KEM-only offer, where a refusal is a
 `handshake_failure` alert and not a silent fallback:
@@ -155,10 +156,11 @@ Measured 2026-09-09 with an ML-KEM-only offer, where a refusal is a
 | Wasabi, Backblaze B2, DigitalOcean Spaces, Storj | refuses; accepts X25519, P-256, P-384 |
 
 So the hybrid runs against every AWS region tried, and Google and Cloudflare
-besides, and the four that refuse it now cost one round trip and complete
-under x25519. That is entry 39's trade: entry 12's fail-closed property does
-not survive the second group. A caller that wants it back sets
-`ch_cfg.require_pq`. The flag drops x25519 from the hello, so a server
+besides. The four that refuse it accept X25519, and a server that accepts
+X25519 selects the x25519 share in the first round trip, which `test/e2e.sh`
+checks against an OpenSSL server restricted to x25519. That is entry 39's
+trade: entry 12's fail-closed property does not survive the second group.
+A caller that wants it back sets `ch_cfg.require_pq`. The flag drops x25519 from the hello, so a server
 without the hybrid finds no common group and fails the handshake, and
 `ch_tls.group` must be `CH_GROUP_X25519MLKEM768` when the ServerHello is
 accepted. `ch_tls.group` reports the group the ServerHello selected in every

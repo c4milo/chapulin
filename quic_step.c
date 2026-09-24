@@ -59,7 +59,7 @@ static void install_application_keys(ch_quic *q) {
 // refuses it by call position and this one by the stored step.
 //
 // The derivation runs in this same call because info.server_ct points
-// into cfg.buf under KEX=pq and the decapsulation reads those bytes, so
+// into cfg.buf under CH_KEX_HYBRID and the decapsulation reads those bytes, so
 // nothing may read a further message in between.
 static int step_server_hello(ch_quic *q) {
     server_hello_info info;

@@ -1,0 +1,13 @@
+invariant: INV-7
+file: handshake_flight.c
+catches: webpki_session_test
+reason: require_pq no longer refuses a ServerHello that selects x25519. The
+  webpki parser accepts both groups, because the hello normally shares
+  both, so this compare is the only thing that holds a require_pq caller
+  to the hybrid: without it a server moves that caller to a classic
+  exchange the hello never offered, and the handshake completes.
+
+--- old
+    if (h->t->cfg.require_pq && h->t->group != CH_GROUP_X25519MLKEM768) {
+--- new
+    if (0) {

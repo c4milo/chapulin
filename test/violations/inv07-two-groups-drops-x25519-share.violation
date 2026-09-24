@@ -1,0 +1,17 @@
+invariant: INV-7
+file: handshake_message.c
+catches: webpki_session_test
+reason: the webpki hello lists x25519 but carries the hybrid share alone, so
+  a server without the hybrid answers with a HelloRetryRequest naming
+  x25519, which this client refuses as a group it already shared, and the
+  handshake with a classic server fails instead of taking one round trip.
+  docs/decisions.md entry 53 sends a share for every group the hello lists.
+
+--- old
+    if (!cfg->require_pq) {
+        wb_u16(w, CH_GROUP_X25519);
+        wb_u16(w, 32);
+--- new
+    if (0) {
+        wb_u16(w, CH_GROUP_X25519);
+        wb_u16(w, 32);

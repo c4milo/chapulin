@@ -106,21 +106,19 @@ Spec.HandshakeParser.parseServerHello : (kex : Kex) → (suiteOffer : SuiteOffer
                         -- Takes the whole Handshake structure of §4 (msg_type,
                         -- uint24 length, body); handshake_parser.c's entry points take the
                         -- body, so the driver frames it. kex is the Makefile's
-                        -- KEX variable, which TRUST=webpki turns into a third
-                        -- value under KEX=pq. x25519 lists x25519 (0x001D)
-                        -- alone and pq lists RFC 10024's X25519MLKEM768
-                        -- (0x11EC) alone; twoGroups (docs/decisions.md entry
-                        -- 39) lists X25519MLKEM768 then x25519 and sends a key
-                        -- share for X25519MLKEM768 alone. A ServerHello may
-                        -- select any listed group, and that group fixes the
-                        -- server share size (32, or 1120 — the ML-KEM-768
-                        -- ciphertext then the x25519 value). Whether it is the
-                        -- group the last ClientHello sent a share for turns on
-                        -- whether a retry happened, so neither parser checks
-                        -- it. A HelloRetryRequest may name a listed group the
-                        -- hello sent no share for — x25519 in twoGroups, none
-                        -- in the other two — and must ask for a change: a
-                        -- cookie, a selected group, or both (§4.2.4, §4.3.8).
+                        -- KEX variable for a raw or ca build, and twoGroups for
+                        -- every TRUST=webpki build. x25519 lists x25519
+                        -- (0x001D) alone and pq lists RFC 10024's
+                        -- X25519MLKEM768 (0x11EC) alone; twoGroups
+                        -- (docs/decisions.md entry 53) lists X25519MLKEM768
+                        -- then x25519. Every build sends a key share for each
+                        -- group it lists. A ServerHello may select any listed
+                        -- group, and that group fixes the server share size
+                        -- (32, or 1120 — the ML-KEM-768 ciphertext then the
+                        -- x25519 value). A HelloRetryRequest may name a listed
+                        -- group the hello sent no share for, which no build
+                        -- has, and must ask for a change, so every accepted
+                        -- retry carries a cookie (§4.2.4, §4.3.8).
                         -- suiteOffer names the cipher_suites list the
                         -- ClientHello sends (§4.2.2). chacha lists TLS_CHACHA20_POLY1305_SHA256 (0x1303)
                         -- alone, the offer of every client build but one.
@@ -559,10 +557,10 @@ boundary rather than weakening the model to match the split:
 | --- | --- | --- |
 | ServerHello with no key_share | `hello_exchange`, on `have_share` | `parseServerHello` |
 | selected_identity outside the one offered index | `hello_exchange`, on `psk_ok` | `parseServerHello` |
-| HelloRetryRequest that asks for no change: no cookie and no selected group | `hsf_read_server_hello` (`handshake_flight.c`), on an absent cookie and no selected group | `parseServerHello` |
+| HelloRetryRequest that asks for no change: no cookie | `hsf_read_server_hello` (`handshake_flight.c`), on an absent cookie | `parseServerHello` |
 | CertificateEntry carrying an unoffered extension | the trust mode's certificate parser | `parseCertificate` |
 | ServerHello that ignores the offered PSK | `hello_exchange`, on `psk_ok` | nothing — both parsers accept it; whether resumption was required sits above them |
-| two-group ServerHello whose group is not the one the last ClientHello sent a share for | `hsf_read_server_hello` (`handshake_flight.c`), against `handshake_state.share_group` | nothing — both parsers accept either listed group; whether a retry happened sits above them |
+| two-group ServerHello that selects x25519 when `ch_cfg.require_pq` kept x25519 off the hello | `hsf_accept_server_hello` (`handshake_flight.c`), against `ch_cfg.require_pq` | nothing — both parsers accept either listed group; the flag sits above them |
 | ServerHello after a HelloRetryRequest whose cipher suite is not the retry's (§4.2.4) | `hsf_read_server_hello` (`handshake_flight.c`), against `handshake_state.suite`, which the retry wrote | nothing — both parsers accept any listed suite; whether a retry happened sits above them |
 
 The first four end the handshake on both sides, with one exception:

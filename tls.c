@@ -305,22 +305,14 @@ _Static_assert(CH_TRUST_MIN_RXBUF ==
                    CH_WEBPKI_FLIGHT_ENTRIES * (CH_WEBPKI_CERT_MAX + 5) + 8 + REC_OVERHEAD,
                "cfg.h's webpki receive floor is the flight formula over webpki.h's bounds");
 
-// The mode's own rules (webpki_cfg.c) plus the terms the raw and ca
-// definition above checks. ch_record_init calls this and no ch_connect,
-// so it too refuses a short receive buffer and require_pq in this mode
-// (https://github.com/c4milo/chapulin/issues/171).
+// The mode's own rules (webpki_cfg.c) plus the buffer terms the raw and
+// ca definition above checks. ch_record_init calls this and no
+// ch_connect, so it too refuses a short receive buffer in this mode
+// (https://github.com/c4milo/chapulin/issues/171). It admits require_pq
+// in every build: every webpki client offers the hybrid
+// (docs/decisions.md 53).
 int tlsi_config_ok(const ch_cfg *cfg) {
-    if (!webpki_cfg_ok(cfg) || cfg->buf == NULL || cfg->buf_len < CH_MIN_RXBUF) {
-        return 0;
-    }
-#ifndef CH_KEX_PQ
-    // require_pq in a classic build: the raw and ca tlsi_config_ok above
-    // says why no handshake this build runs can satisfy it.
-    if (cfg->require_pq) {
-        return 0;
-    }
-#endif
-    return 1;
+    return webpki_cfg_ok(cfg) && cfg->buf != NULL && cfg->buf_len >= CH_MIN_RXBUF;
 }
 
 // Guarded as the raw and ca ch_connect above is: this transport filters

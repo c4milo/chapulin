@@ -315,9 +315,11 @@ static void test_connect_cfg(void) {
 }
 
 // The hello a raw or ca build sends. Its ClientHello carries no
-// server_name, and its signature_algorithms lists the one scheme the
-// pin can be. A TRUST=webpki build sends both differently, and
-// test/webpki_session_cases.h checks that hello.
+// server_name, its signature_algorithms lists the one scheme the pin can
+// be, and its key_share carries one entry, for the build's one group
+// (docs/decisions.md entry 12). A TRUST=webpki build sends all three
+// differently, and test/webpki_session_cases.h and
+// test/webpki_groups_cases.h check that hello.
 static void test_pinned_hello_extensions(void) {
     static uint8_t rxbuf[CH_MIN_RXBUF + 88];
     uint8_t pin[TEST_PIN_LEN] = {2};
@@ -346,6 +348,11 @@ static void test_pinned_hello_extensions(void) {
     uint16_t schemes[8] = {0};
     CHECK(hello_sigalgs(hello, hello_len, schemes, 8) == 1);
     CHECK(schemes[0] == CH_PIN_SIGALG);
+    hello_share_entry shares[2] = {{0}};
+    size_t key_len = 0;
+    CHECK(hello_key_shares(hello, hello_len, shares, 2) == 1);
+    CHECK(hello_key_share(hello, hello_len, CH_KEX_GROUP, &key_len) != NULL &&
+          key_len == CH_KEX_CLIENT_SHARE);
 }
 
 #endif

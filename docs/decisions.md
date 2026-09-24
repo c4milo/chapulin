@@ -94,6 +94,9 @@ does nothing more.
     offers both groups, for the reason that mode already offers several
     signature schemes and several application protocols. `KEX=x25519
     TRUST=webpki` still offers x25519 alone and carries no ML-KEM.
+    Entry 53 later changed the webpki half: every `TRUST=webpki` build
+    carries ML-KEM and offers both groups, and `make` refuses a `KEX`
+    value beside that trust mode.
 
     Offering both groups and taking whichever the server picks was
     considered and rejected. It fails where it would matter most: the
@@ -570,6 +573,13 @@ does nothing more.
     handshake, rather than asking for x25519 and being refused one round
     trip later.
 
+    Entry 53 replaces the key shares this entry describes, and the
+    paragraph above that rejected carrying both. Every webpki build now
+    sends a share for each group, so a server without the hybrid selects
+    x25519 in one round trip, and the HelloRetryRequest path described
+    here is gone. The rest stands: the mode offers two groups, and
+    `ch_cfg.require_pq` gives the fail-closed property back.
+
 40. **The pinned algorithm is half of a `TRUST` value, not an axis.**
     `PIN` chose RSA-PSS or P-256 for the key a raw or ca build pins. It
     selected nothing in the other two builds: a `TRUST=webpki` object
@@ -1009,3 +1019,84 @@ does nothing more.
     reduction mod p after every operation, so it states no limb layout,
     and `bin/diff_x25519_wide` runs the x25519 rows against it with the
     wide field.
+
+53. **A `TRUST=webpki` client sends a key share for both groups, and `KEX`
+    selects nothing for it.** Every webpki build carries ML-KEM-768 and
+    lists X25519MLKEM768 and then x25519, the offer entry 39 made under
+    `KEX=pq`. Its ClientHello now carries a key share for each: the
+    hybrid share, then an x25519 share. The x25519 share repeats the
+    x25519 half of the hybrid share. RFC 9846 §4.3.8 asks for the
+    key_exchange of each KeyShareEntry to be generated independently
+    (rfc9846.txt:2182-2184), and RFC 9954 §3.2 relaxes that rule for a
+    value of the same algorithm reused across the entries of one
+    ClientHello. So the second share needs no second key generation. A
+    server selects either group in one round trip. When it selects
+    x25519, the client wipes the ML-KEM seed, `handshake_state.dz`,
+    before it runs the exchange.
+
+    Cost: 36 bytes in every webpki hello, the second KeyShareEntry's
+    group, length and 32-byte value, so `CH_HELLO_MAX` goes from 2,335
+    to 2,371 against the `KEX=pq TRUST=webpki` build. Against the
+    classic webpki build, which this entry removes, the hello grows by
+    1,222 bytes, `ch_tls` from 1,800 to 3,016 bytes on arm64, and the
+    `ch_connect` stack peak from 7,152 to 16,416 bytes, because every
+    webpki object now carries ML-KEM (`bench/results-sram.csv`). A host
+    pays those bytes easily, and the device modes do not pay them.
+
+    Gain: no round trip to a server without the hybrid, and no key
+    exchange choice for a host client to get wrong. `make TRUST=webpki
+    KEX=x25519` built a client that could never run the hybrid, and
+    `make TRUST=webpki KEX=pq` one that paid a HelloRetryRequest round
+    trip to every classic server. Neither build exists now; the one
+    webpki build completes with either server in one round trip.
+
+    The change also deletes code. Both groups carry a share, so a
+    HelloRetryRequest that names either one names a group the hello
+    already shared, and RFC 9846 §4.3.8 makes that an illegal_parameter
+    abort (rfc9846.txt:2205-2212). A retry can ask this client for a
+    cookie and nothing else. `server_hello_info.retry_group`,
+    `handshake_state.share_group`, `take_retry` and the x25519-only retry
+    hello are gone, with the mutants that guarded them, and the retry
+    hello's record version depends on the cookie alone again. A cookie
+    retry still works: the retry hello resends both shares and echoes
+    the cookie.
+
+    `ch_cfg.require_pq` keeps its meaning. It drops x25519 from
+    `supported_groups` and from `key_share`, so the hello is the
+    one-group hybrid hello a raw or ca `KEX=pq` build sends, and a
+    ServerHello that selects x25519 fails with illegal_parameter.
+
+    `KEX` now chooses the group of a raw or ca device client and nothing
+    else, and the Makefile refuses both values everywhere else, for
+    entry 40's reason: a variable must not let a build ask for something
+    it will not get. Beside `TRUST=webpki`, `KEX=x25519` asks for an
+    x25519-only hello, and `KEX=pq` asks for the one-group hybrid hello,
+    which `require_pq` gives at run time. A server role's key exchange is
+    not a build choice either: the server offers x25519 until its hybrid
+    half lands, and then carries ML-KEM in every build, so `ROLE=server`
+    and `ROLE=both` refuse `KEX` too. `$(origin KEX)` tells the default
+    from a value on the command line or in the environment. The object
+    directory names a webpki build's key exchange `both`. `cfg.h`
+    refuses `-DCH_KEX_PQ` beside `-DCH_TRUST_WEBPKI` for a client-only
+    tree with its own build system.
+
+    A `ROLE=both` webpki object, the one colibri links, carries the
+    two-group client beside a server that still offers x25519 alone. The
+    client's defines, `CH_KEX_TWO_GROUPS` and `CH_KEX_HYBRID`, come from
+    `CH_TRUST_WEBPKI` and not from `CH_KEX_PQ`, so the server half keeps
+    `CH_KEX_GROUP` at x25519 and never meets `srv_flight.h`'s refusal of
+    `CH_KEX_PQ`. The server's hybrid half, when it lands, replaces that
+    refusal and those x25519 constants.
+
+    Entry 39 rejected carrying both shares for three costs: 1,216
+    octets of ML-KEM share in every hello, a key pair most handshakes
+    discard, and a larger `CH_HELLO_MAX`. The build that entry made
+    already paid the first two: its hello carries the hybrid share, and
+    so draws the ML-KEM key pair, whether or not the server takes it.
+    What both shares add is the 36-byte x25519 entry, and that entry's
+    key pair is the x25519 half the hybrid share already carries.
+
+    A second, independent x25519 key pair for the x25519 share was
+    considered and rejected. RFC 9954 permits the reuse, the server
+    selects one group so only one share enters a key exchange, and the
+    second pair would cost one more scalar multiplication per handshake.

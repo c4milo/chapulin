@@ -145,6 +145,20 @@ expect_fail() {
     }
 }
 
+# Fails unless an s_server started with -msg has read exactly one
+# ClientHello. A leg calls it after one handshake to show the server sent
+# no HelloRetryRequest, which would have brought a second ClientHello.
+# Args: label, the server's log.
+one_client_hello() {
+    local label=$1 log=$2 n
+    n=$(grep -c '^<<< .*ClientHello' "$log" || true)
+    [ "$n" = 1 ] || {
+        echo "FAIL e2e $label: the server read $n ClientHello messages, so the handshake took a HelloRetryRequest"
+        cat "$log"
+        exit 1
+    }
+}
+
 # Pin-string extractors for the CA legs. RSA builds pin the modulus as
 # lowercase hex; ECDSA builds pin the raw X||Y point from the key.
 rsa_modulus() {
@@ -1029,40 +1043,45 @@ if "$OPENSSL" list -tls-groups 2>/dev/null | grep -qi x25519mlkem768; then
         exit 1
     }
 
-    # The web PKI client that lists both groups (docs/decisions.md entry
-    # 39). A chain server that lists X25519MLKEM768 first selects the
-    # hybrid share the first hello carries, in one round trip. A
-    # server restricted to x25519 answers the hybrid share with a
-    # HelloRetryRequest naming x25519, and the retry hello completes the
-    # handshake under x25519. REQUIRE_PQ keeps x25519 off the hello, so
-    # that server finds no common group and the handshake fails.
-    start_server -tls1_3 -ciphersuites TLS_CHACHA20_POLY1305_SHA256 -groups X25519MLKEM768:X25519 -cert "$DIR/wpleaf.pem" -key "$DIR/wpleaf.key" -cert_chain "$DIR/wpint.pem" -rev
+    # The web PKI client, which lists both groups and sends a key share
+    # for each (docs/decisions.md entries 39 and 51). A chain server with
+    # X25519MLKEM768 alone selects the hybrid share, and one with x25519
+    # alone selects the x25519 share, each in one round trip: -msg logs
+    # the handshake messages, and each server's log shows one ClientHello,
+    # so neither sent a HelloRetryRequest. REQUIRE_PQ keeps x25519 off the
+    # hello, so the x25519 server finds no common group and the handshake
+    # fails.
+    start_server -tls1_3 -ciphersuites TLS_CHACHA20_POLY1305_SHA256 -groups X25519MLKEM768 -msg -cert "$DIR/wpleaf.pem" -key "$DIR/wpleaf.key" -cert_chain "$DIR/wpint.pem" -rev
     PORT_WEBPKI_PQ=$SRV_PORT
+    LOG_WEBPKI_PQ="$DIR/server$SRV_N.log"
     MSG='dos grupos'
     WEBPKI_HOST=$WEBPKI_HOSTNAME WEBPKI_NOW=$NOW \
         expect webpki-pq "sopurg sod" "$DIR/err_wp_pq" \
-        ./bin/tlsclient_webpki_pq 127.0.0.1 "$PORT_WEBPKI_PQ" "$WEBPKI_ANCHOR" -
+        ./bin/tlsclient_webpki 127.0.0.1 "$PORT_WEBPKI_PQ" "$WEBPKI_ANCHOR" -
     grep -q "^group 0x11ec$" "$DIR/err_wp_pq" || {
         echo "FAIL e2e webpki-pq: client did not report the X25519MLKEM768 group"
         cat "$DIR/err_wp_pq"
         exit 1
     }
-    start_server -tls1_3 -ciphersuites TLS_CHACHA20_POLY1305_SHA256 -groups X25519 -cert "$DIR/wpleaf.pem" -key "$DIR/wpleaf.key" -cert_chain "$DIR/wpint.pem" -rev
+    one_client_hello webpki-pq "$LOG_WEBPKI_PQ"
+    start_server -tls1_3 -ciphersuites TLS_CHACHA20_POLY1305_SHA256 -groups X25519 -msg -cert "$DIR/wpleaf.pem" -key "$DIR/wpleaf.key" -cert_chain "$DIR/wpint.pem" -rev
     PORT_WEBPKI_X25519=$SRV_PORT
-    MSG='reintento clasico'
+    LOG_WEBPKI_X25519="$DIR/server$SRV_N.log"
+    MSG='un solo viaje'
     WEBPKI_HOST=$WEBPKI_HOSTNAME WEBPKI_NOW=$NOW \
-        expect webpki-pq-retry "ocisalc otnetnier" "$DIR/err_wp_retry" \
-        ./bin/tlsclient_webpki_pq 127.0.0.1 "$PORT_WEBPKI_X25519" "$WEBPKI_ANCHOR" -
-    grep -q "^group 0x001d$" "$DIR/err_wp_retry" || {
-        echo "FAIL e2e webpki-pq-retry: client did not report the x25519 group"
-        cat "$DIR/err_wp_retry"
+        expect webpki-x25519 "ejaiv olos nu" "$DIR/err_wp_x25519" \
+        ./bin/tlsclient_webpki 127.0.0.1 "$PORT_WEBPKI_X25519" "$WEBPKI_ANCHOR" -
+    grep -q "^group 0x001d$" "$DIR/err_wp_x25519" || {
+        echo "FAIL e2e webpki-x25519: client did not report the x25519 group"
+        cat "$DIR/err_wp_x25519"
         exit 1
     }
+    one_client_hello webpki-x25519 "$LOG_WEBPKI_X25519"
     MSG='no debe pasar'
     WEBPKI_HOST=$WEBPKI_HOSTNAME WEBPKI_NOW=$NOW \
         expect_fail webpki-pq-require-pq -2 "$DIR/err_wp_require" \
-        env REQUIRE_PQ=1 ./bin/tlsclient_webpki_pq 127.0.0.1 "$PORT_WEBPKI_X25519" "$WEBPKI_ANCHOR" -
-    OPENSSL_PQ_LEG="$OPENSSL_PQ_LEG + webpki-pq x3"
+        env REQUIRE_PQ=1 ./bin/tlsclient_webpki 127.0.0.1 "$PORT_WEBPKI_X25519" "$WEBPKI_ANCHOR" -
+    OPENSSL_PQ_LEG="$OPENSSL_PQ_LEG + webpki-pq + webpki-x25519 + webpki-require-pq"
 else
     OPENSSL_PQ_LEG=""
     echo "SKIP openssl pq leg: $("$OPENSSL" version) does not list X25519MLKEM768 (needs 3.5)"

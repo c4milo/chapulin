@@ -1368,8 +1368,8 @@ accepted ServerHello it runs `hsf_accept_server_hello`
 (`handshake_flight.c:204-236`), installs the Handshake-level packet keys, fires
 `on_level_ready` twice, sets `rx_level = CH_LEVEL_HANDSHAKE` and advances the
 step. The derivation runs in the same call as the read because
-`info.server_ct` points into `cfg.buf` under `KEX=pq`
-(`handshake_parser.h:39-44`) and the ML-KEM decapsulation reads it.
+`info.server_ct` points into `cfg.buf` under `KEX=pq` and `TRUST=webpki`
+(`CH_KEX_HYBRID`, `handshake_parser.h`) and the ML-KEM decapsulation reads it.
 `info.server_pub` is a copy the parser writes into the struct
 (`handshake_parser.h:38`), so a classic build could defer the derivation; the
 design keeps one step for both so the step table has one shape.
@@ -1481,7 +1481,7 @@ and `pt_len`.
 | --- | --- | --- | --- |
 | `hs.t` | `ch_tls *` | none: every public entry rewrites it to `&q->t` | every `hsf_` and `hsa_` function reaches `cfg`, the transcript, `group`, `pin_slot` and the epoch fields through it |
 | `hs.priv`, `hs.pub`, `hs.random` | `uint8_t[32]` each | any bytes | the retry ClientHello resends the same share and random (`handshake_flight.c:75`), and `priv` feeds x25519 at the accepted ServerHello (`handshake_flight.c:210`). Wiped at the end of `hsf_derive_handshake_secrets` |
-| `hs.dz`, `KEX=pq` only | `uint8_t[64]` | any bytes | the seed re-expands for the retry share and for decapsulation (`handshake_flight.c:103-104`, `:119`). Wiped with `priv` |
+| `hs.dz`, `KEX=pq` and `TRUST=webpki` only | `uint8_t[64]` | any bytes | the seed re-expands for the retry share and for decapsulation (`hsf_build_client_hello`, `hybrid_secret`). Wiped in `hsf_derive_handshake_secrets` once the dk is expanded, or, when a webpki ServerHello selects x25519, before the exchange runs (`x25519_secret`) |
 | `hs.early`, `hs.binder_key` | `uint8_t[32]` each | any bytes | the retry binder (`handshake_flight.c:87`) and `ks_handshake` (`handshake_flight.c:231`). Wiped with `priv` |
 | `hs.handshake_secret` | `uint8_t[32]` | any bytes | `ks_master` at the Finished step (`handshake_flight.c:338`) |
 | `hs.c_hs`, `hs.s_hs` | `uint8_t[32]` each | any bytes | the client Finished (`handshake_flight.c:343`) and the server Finished check (`handshake_flight.c:320`); `s_hs` also seeds the Handshake-level packet keys |
@@ -2070,11 +2070,11 @@ its caps.
 | the §6.6 integrity limit | RFC 9001 §6.6: the endpoint closes once the count of received packets that fail authentication exceeds the limit of the AEAD in use, which is 2^36 invalid packets for AEAD_CHACHA20_POLY1305 (`rfc9001.txt:1830-1831`) | fixed by the RFC, not measured: the boundary test is that the 2^36th failed open returns `CH_QUIC_DISCARD` and the 2^36+1st returns `CH_QUIC_AEAD_LIMIT` |
 | the out-of-order CRYPTO buffer | RFC 9000 §7.5 makes an endpoint support at least 4096 bytes of out-of-order CRYPTO data, or close with CRYPTO_BUFFER_EXCEEDED | the caller's, under the interface above: chapulin takes ordered bytes. It belongs in colibri's bounds |
 | the largest handshake message | `hsr_next_msg` refuses `msg_len > 0x4000` (`handshake_record.c:119`), which is this client's own choice | unchanged. RFC 9000 and RFC 9001 state no per-message limit; the buffer rule of RFC 9000 §7.5 (`rfc9000.txt:2154-2157`) is the only bound they give, and `CH_QUIC_MIN_RXBUF` above is the real bound here |
-| `CH_HELLO_MAX` and `CH_TX_STAGE` | the QUIC hello drops 6 bytes of `record_size_limit` and adds `quic_transport_parameters`, plus ALPN in the device builds, which do not send it over TLS | measured: `session.h` holds 1141 for raw and ca classic, 2325 under `KEX=pq`, 1403 under `TRUST=webpki` and 2589 under both, each the TLS value plus 254 and, in the two device modes, plus 270 again. `quic.c` asserts `CH_HELLO_MAX` against `CH_TX_STAGE`, so a stale value fails the build |
+| `CH_HELLO_MAX` and `CH_TX_STAGE` | the QUIC hello drops 6 bytes of `record_size_limit` and adds `quic_transport_parameters`, plus ALPN in the device builds, which do not send it over TLS | measured: `session.h` holds 1141 for raw and ca classic, 2325 under `KEX=pq` and 2625 under `TRUST=webpki`, which offers both groups with a key share for each in every build (`docs/decisions.md` 51), each the TLS value plus 254 and, in the two device modes, plus 270 again. `quic.c` asserts `CH_HELLO_MAX` against `CH_TX_STAGE`, so a stale value fails the build |
 | the session struct | `ch_quic` holds a `ch_tls`, the `handshake_state` that lives on a stack frame today, the driver's own fields, the two Initial keys, the two Handshake key sets, the 1-RTT send set, the three 1-RTT receive sets and the four `quic_hp_key` values; the components are measured under "Suspending the driver" | `bench/sram.sh`, with a `-DCH_TRANSPORT_QUIC` probe beside its `-DCH_KEX_PQ` and `-DCH_TRUST_WEBPKI` ones (`bench/sram.sh:28-45`), over the real header. No arithmetic over the components in that section is the answer |
 | the 1-RTT key sets | RFC 9001 §6.3 makes two receive sets a floor, current and next (`rfc9001.txt:1711-1712`); the previous set is this record's policy choice, for the delayed packets §6.5 opens | `CH_QUIC_KEY_SETS` is 3, so the count is fixed and only `sizeof(quic_keys)` and `sizeof(quic_hp_key)` are left to measure; measure the struct again after them |
 | the transport-parameters body, both directions | the client's body is the caller's; the server's arrives in EncryptedExtensions | capture real server bodies, as `docs/webpki.md` captured real chains. This tree holds no QUIC bytes today, and a chapulin server would not close this row: it would see the bodies clients send it, which is the other direction |
-| `STACK_BUDGET` | `Makefile:9` sets 2560 by default, `Makefile:17` raises it to 4096 for `TRUST=webpki` and `Makefile:26` to 6144 for the hybrid | measure the mode's own object list under `lint-stack`; never carry another mode's ceiling |
+| `STACK_BUDGET` | `Makefile:9` sets 2560 by default, `Makefile:17` raises it to 4096 for `TRUST=webpki` and `Makefile:26` to 6656 for the hybrid, which every `TRUST=webpki` object carries too | measure the mode's own object list under `lint-stack`; never carry another mode's ceiling |
 | the SRAM row | `bench/sram.sh` regenerates the README's numbers from `sizeof` probes and `bench/stack.py`; `bench/device-ram.sh` sizes the packaged modules from `make print-lib-srcs` (`bench/device-ram.sh:81`) | add a probe for the new axis to each script; `LIB_VARIANT` (`Makefile:287`) gains the axis. `CLAUDE.md` forbids estimating these |
 
 ## What the mode does not do

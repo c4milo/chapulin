@@ -80,20 +80,13 @@ static void transcript_hash(const sha256 *transcript, uint8_t out[SHA256_LEN]) {
     sha256_final(&snapshot, out);
 }
 
-// The x25519 KeyShareEntry of the captured hello, or NULL.
+// The x25519 KeyShareEntry of the captured hello, or NULL. The hello
+// carries it beside the hybrid one (docs/decisions.md entry 53), and this
+// mock is a server without the hybrid, so it selects x25519.
 static const uint8_t *client_share(const mock_server *s) {
     size_t len = 0;
-    const uint8_t *ext = hello_ext(s->hello, s->hello_len, EXT_KEY_SHARE, &len);
-    if (ext == NULL || len != 2 + 2 + 2 + X25519_LEN) {
-        return NULL;
-    }
-    rbuf r;
-    rb_init(&r, ext, len);
-    (void)rb_u16(&r);
-    if (rb_u16(&r) != CH_GROUP_X25519 || rb_u16(&r) != X25519_LEN) {
-        return NULL;
-    }
-    return rb_bytes(&r, X25519_LEN);
+    const uint8_t *key = hello_key_share(s->hello, s->hello_len, CH_GROUP_X25519, &len);
+    return len == X25519_LEN ? key : NULL;
 }
 
 // The ServerHello, then EncryptedExtensions and Finished under s_hs.

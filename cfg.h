@@ -35,6 +35,30 @@
 #error "CH_TRUST_CA and CH_TRUST_WEBPKI are exclusive: a build has one trust mode"
 #endif
 
+// The NamedGroup code points: x25519 (RFC 9846 §4.3.7), and the X25519MLKEM768 hybrid
+// (RFC 10024). ch_tls.group reports the one the ServerHello selected.
+//
+// A raw or ca client offers one group, and the Makefile KEX variable chooses it: x25519,
+// or the hybrid under -DCH_KEX_PQ. A TRUST=webpki client offers both in every build, with
+// a key share for each (CH_KEX_TWO_GROUPS, docs/decisions.md 53), so -DCH_KEX_PQ would
+// choose nothing there, and a webpki build without a server role refuses it. A build with
+// a server role meets srv_flight.h's refusal instead, until the server's hybrid half
+// lands. CH_KEX_HYBRID marks every client that offers the hybrid and so carries
+// ML-KEM-768: the KEX=pq client and every webpki client. Both defines come from the
+// client's own settings and never from CH_KEX_PQ, so a ROLE=both webpki build keeps its
+// server at x25519.
+#define CH_GROUP_X25519 0x001d
+#define CH_GROUP_X25519MLKEM768 0x11ec
+#ifdef CH_TRUST_WEBPKI
+#define CH_KEX_TWO_GROUPS
+#endif
+#if defined(CH_KEX_PQ) && defined(CH_KEX_TWO_GROUPS) && !defined(CH_ROLE_SERVER)
+#error "a TRUST=webpki client offers X25519MLKEM768 and x25519 in every build: drop CH_KEX_PQ"
+#endif
+#if defined(CH_KEX_PQ) || defined(CH_KEX_TWO_GROUPS)
+#define CH_KEX_HYBRID
+#endif
+
 #define CH_OK 0
 #define CH_EIO (-1)     // transport failed or closed under us
 #define CH_EPROTO (-2)  // peer broke the protocol; session dead
@@ -96,7 +120,7 @@
 #else
 #define CH_TRUST_MIN_RXBUF 512
 #endif
-#ifdef CH_KEX_PQ
+#ifdef CH_KEX_HYBRID
 #define CH_KEX_MIN_RXBUF (5 + 4 + 40 + 6 + 1128 + 6)
 #else
 #define CH_KEX_MIN_RXBUF 512
@@ -152,15 +176,6 @@ _Static_assert(CH_MIN_RXBUF >= 512, "the floor only rises; the base profile need
 
 // Ticket identities beyond this cannot fit a future ClientHello; larger tickets are dropped.
 #define CH_TICKET_ID_MAX 320
-
-// The NamedGroup code points (Makefile KEX): x25519 (RFC 9846 §4.3.7), or the X25519MLKEM768
-// hybrid (RFC 10024) under -DCH_KEX_PQ. ch_tls.group reports the one the ServerHello
-// selected. A build offers one, except CH_KEX_TWO_GROUPS (handshake_message.h).
-#define CH_GROUP_X25519 0x001d
-#define CH_GROUP_X25519MLKEM768 0x11ec
-#if defined(CH_KEX_PQ) && defined(CH_TRUST_WEBPKI)
-#define CH_KEX_TWO_GROUPS
-#endif
 
 // A resumption ticket for on_ticket. Copy what you keep during the callback, and present
 // psk and identity on the next ch_connect with resumption = 1 for a cheaper reconnect.

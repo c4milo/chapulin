@@ -65,31 +65,26 @@
 // value is the TLS one plus 254, and plus 270 again in the two device
 // modes. These are CH_HELLO_MAX's QUIC values, repeated as literals for
 // the reason the TLS ones are, and quic.c asserts the two agree.
-#if defined(CH_TRUST_WEBPKI) && defined(CH_KEX_PQ)
-#define CH_TX_STAGE 2589
-#elif defined(CH_TRUST_WEBPKI)
-#define CH_TX_STAGE 1403
+#ifdef CH_TRUST_WEBPKI
+#define CH_TX_STAGE 2625
 #elif defined(CH_KEX_PQ)
 #define CH_TX_STAGE 2325
 #else
 #define CH_TX_STAGE 1141
 #endif
-#elif defined(CH_TRUST_WEBPKI) && defined(CH_KEX_PQ)
-// Each TRUST=webpki value below takes CH_TX_SECOND_SUITE on top: 2 bytes
-// for the second cipher suite a SUITE=aesgcm webpki client lists
+#elif defined(CH_TRUST_WEBPKI)
+// The TRUST=webpki value takes CH_TX_SECOND_SUITE on top: 2 bytes for
+// the second cipher suite a SUITE=aesgcm webpki client lists
 // (CH_CLIENT_TWO_SUITES in handshake_message.h), 0 in every other build.
 // The pq sum below plus the two extensions a TRUST=webpki hello adds:
 // the 262-byte server_name at the longest hostname (4 type and length,
 // 2 list length, 1 name_type, 2 name length, 253 name) and the 270-byte
 // application_layer_protocol_negotiation at the longest offer (4 type
 // and length, 2 list length, then 8 names of 1 length byte and 32 name
-// bytes), and the second NamedGroup in supported_groups, x25519, which
-// this build offers beside the hybrid (docs/decisions.md 39):
-// 1801 + 262 + 270 + 2.
-#define CH_TX_STAGE (2335 + CH_TX_SECOND_SUITE)
-#elif defined(CH_TRUST_WEBPKI)
-// The classic sum below plus the same two extensions: 617 + 262 + 270.
-#define CH_TX_STAGE (1149 + CH_TX_SECOND_SUITE)
+// bytes). Then the second group every webpki hello offers beside the
+// hybrid (docs/decisions.md 53): x25519 in supported_groups, 2 bytes,
+// and its KeyShareEntry, 36 bytes: 1801 + 262 + 270 + 2 + 36.
+#define CH_TX_STAGE (2371 + CH_TX_SECOND_SUITE)
 #elif defined(CH_KEX_PQ)
 // 137 fixed + 320 ticket identity + 128 cookie with framing + the
 // 1216-byte hybrid share.
@@ -167,12 +162,12 @@ typedef struct {
     // The NamedGroup of the key exchange that ran. hello_exchange
     // (handshake.c) writes it from the ServerHello: the code point
     // parse_key_share accepted — CH_GROUP_X25519 or
-    // CH_GROUP_X25519MLKEM768 (cfg.h), one per build except
-    // CH_KEX_TWO_GROUPS, where it is whichever the ServerHello
-    // selected — and 0 before any ServerHello or when it carried no
-    // key_share. Public information, like pin_slot: a caller reads it
-    // to see which exchange protected the session, and cfg.require_pq
-    // fails the handshake when it is not the hybrid.
+    // CH_GROUP_X25519MLKEM768 (cfg.h), one per raw or ca build, and
+    // whichever the ServerHello selected under CH_KEX_TWO_GROUPS — and 0
+    // before any ServerHello or when it carried no key_share. Public
+    // information, like pin_slot: a caller reads it to see which exchange
+    // protected the session, and cfg.require_pq fails the handshake when it
+    // is not the hybrid.
     uint16_t group;
 #if defined(CH_SUITE_AES_GCM) && !defined(CH_ROLE_SERVER)
     // The cipher suite the ServerHello selected, which a client written

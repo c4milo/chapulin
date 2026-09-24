@@ -33,26 +33,19 @@ typedef struct {
     int psk_ok;
     uint8_t seen; // extension types already parsed, bits per parse_server_hello_ext
     // The NamedGroup the accepted key_share named; parse_key_share
-    // writes it beside have_share, and it is 0 until then. The parser
-    // accepts the build's one group and no other, so this is
-    // CH_KEX_GROUP whenever have_share is set, read from the wire
-    // rather than from that constant. A CH_KEX_TWO_GROUPS build also
-    // accepts CH_GROUP_X25519 with a 32-byte share, and
-    // hsf_read_server_hello decides which of the two the ServerHello
-    // may select: the group the hello it answers carried a share for.
+    // writes it beside have_share, and it is 0 until then. A raw or ca
+    // build's parser accepts that build's one group and no other, so
+    // this is CH_KEX_GROUP whenever have_share is set, read from the wire
+    // rather than from that constant. A CH_KEX_TWO_GROUPS build accepts
+    // CH_GROUP_X25519MLKEM768 with its 1120-byte share and CH_GROUP_X25519
+    // with a 32-byte one, because its hello carried a share for each.
     uint16_t group;
-#ifdef CH_KEX_TWO_GROUPS
-    // The NamedGroup a HelloRetryRequest's key_share names, or 0 when
-    // the retry carries none. The parser accepts CH_GROUP_X25519 alone
-    // there: it is the one group the first hello offered without a
-    // share (RFC 9846 §4.3.8, rfc9846.txt:2205-2211).
-    uint16_t retry_group;
-#endif
     uint8_t server_pub[X25519_LEN];
-#ifdef CH_KEX_PQ
+#ifdef CH_KEX_HYBRID
     // The ML-KEM ciphertext, MLKEM_CT_LEN bytes into the caller's
     // message — like cookie, the pointer dies at the next record read;
-    // the handshake decapsulates before one runs.
+    // the handshake decapsulates before one runs. It stays NULL when
+    // group is CH_GROUP_X25519.
     const uint8_t *server_ct;
 #endif
     const uint8_t *cookie; // into the caller's message; NULL if absent

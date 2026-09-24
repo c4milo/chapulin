@@ -446,7 +446,10 @@ launch fast:10 full handshake_parser 260 "hsp_parse_server_hello.0:66" handshake
 # 4.5 GB peak, the parent's shape, and 675 properties, 65 s, 4.1 GB once
 # the EncryptedExtensions parser left handshake_parser.c. The same
 # formula with an assert that no accepted message carries AES-128-GCM
-# fails it (1 of 762), so that arm is reached.
+# fails it (1 of 762), so that arm is reached. -DCH_TRUST_WEBPKI now
+# compiles the two-group key_share arms too, the x25519 share and the
+# hybrid one (docs/decisions.md entry 53), and the formula grew to 719
+# properties, 128 s, 5.1 GB peak (the same command, nothing beside it).
 launch fast:10 full handshake_parser_suite 260 "hsp_parse_server_hello.0:66" handshake_parser.c buf.c -DCH_SUITE_AES_GCM -DCH_TRUST_WEBPKI -DCH_AES_HW -DCH_NATIVE_AES
 launch fast full eeparse 260 "hsp_parse_encrypted_exts.0:66" handshake_parser_ee.c buf.c
 launch fast full certparse 260 "" handshake_parser.c buf.c
@@ -743,7 +746,10 @@ launch fast:3 full handshake_post 132 "handle_post_handshake.0:33,fill_nondet.0:
 # driving a 2400-byte expansion and 256 symbolic multiplies here would be the
 # shape docs/proofs.md says not to build. Re-measured with handshake_flight.c
 # beside handshake.c: 639 properties, 2.9 s, 74 MB (kissat), where it read 508
-# in 3 s and 78 MB before the handlers moved out of the driver. The hybrid ServerHello
+# in 3 s and 78 MB before the handlers moved out of the driver. hybrid_secret
+# now wipes the seed h->dz once the dk is expanded from it, and the harness
+# asserts all 64 bytes zero on both exits: 641 properties, 3.6 s, 75 MB
+# (PROVE_NO_CACHE=1 /usr/bin/time -l over this script). The hybrid ServerHello
 # parser stays unproven: the 256-byte handshake_parser bound cannot hold a
 # 1,128-byte key share.
 launch fast full hybrid_secret 65 "fill_nondet.0:2401,ct_wipe.0:2401" -DCH_KEX_PQ ct.c
@@ -760,18 +766,20 @@ launch fast full hybrid_secret 65 "fill_nondet.0:2401,ct_wipe.0:2401" -DCH_KEX_P
 # /usr/bin/time -l over this script), and 648 properties, 1 s, 197 MB once
 # the EncryptedExtensions parser left the handshake_parser.c it includes.
 launch fast full key_share 1200 "fill_nondet.0:1133" -DCH_KEX_PQ buf.c
-# The same arm in the build that offers two groups (docs/decisions.md entry
-# 39): -DCH_TRUST_WEBPKI beside -DCH_KEX_PQ turns on CH_KEX_TWO_GROUPS, where
-# a retry may name x25519 and a ServerHello may select it with a 32-byte
-# share. The harness states both shapes' contracts beside the hybrid ones.
-# Which group a ServerHello may select is hsf_read_server_hello's check, and
-# bin/webpki_session_pq tests it; this formula holds the parser alone.
-# Measured (cbmc 6.11.0, kissat, PROVE_NO_CACHE=1 /usr/bin/time -l over
-# this script): 790 properties, 1.7 s, 0.22 GB peak, and 704 properties,
-# 1.4 s, 0.21 GB once the EncryptedExtensions parser left handshake_parser.c.
-# The same formula with an assert of 0 in each of the two new arms fails both
-# (2 of 792), so the retry shape and the x25519 share are both reached.
-launch fast full key_share_webpki 1200 "fill_nondet.0:1133" -DCH_KEX_PQ -DCH_TRUST_WEBPKI buf.c
+# The same arm in the build that offers two groups with a key share for each
+# (docs/decisions.md entry 53): -DCH_TRUST_WEBPKI turns on CH_KEX_TWO_GROUPS,
+# where a ServerHello may select x25519 with a 32-byte share beside the
+# hybrid one, and a retry key_share is refused as in every build. cfg.h
+# refuses -DCH_KEX_PQ beside it. The harness states the x25519 shape's
+# contract beside the hybrid one. That require_pq refuses an x25519
+# selection is hsf_accept_server_hello's check, and bin/webpki_session_test
+# tests it; this formula holds the parser alone. Measured (cbmc 6.11.0,
+# kissat, PROVE_NO_CACHE=1 /usr/bin/time -l over this script): 696
+# properties, 1.5 s and 1.6 s in two runs, 0.22 GB peak, where the formula
+# with the retry shape the arm no longer accepts measured 704 properties,
+# 1.4 s, 0.21 GB. The same formula with an assert of 0 in the x25519 arm
+# and in the hybrid arm fails both, so both arms are reached.
+launch fast full key_share_webpki 1200 "fill_nondet.0:1133" -DCH_TRUST_WEBPKI buf.c
 # handshake_message.c was the last library source no harness compiled
 # (https://github.com/c4milo/chapulin/issues/33). Beyond memory safety this
 # checks the constant handshake.c asserts CH_TX_STAGE against: at CH_HELLO_MAX
@@ -789,15 +797,19 @@ launch fast full hello_build 400 "fill_nondet.0:321" buf.c
 # length 0, the ALPN extension over any offer of up to CH_ALPN_MAX names
 # of up to CH_ALPN_NAME_MAX bytes, the five signature schemes, and the
 # server_certificate_type offer of SPKI pins, which the harness stubs to
-# answer every offer webpki_cert_types_offered can give — against that
-# build's CH_HELLO_MAX of 1149. The sufficiency assertion is tight:
-# moved to CH_HELLO_MAX - 1 it fails, and a probe asserting false after
-# the two-type offer is written fails too, so that arm is reached. The
-# two ALPN loops carry their own bounds because the global 400 unrolled
-# both past the array they walk, and CBMC then ran out of addressed
-# objects (--object-bits, 256) rather than returning a verdict. Measured
-# (cbmc 6.11.0, kissat, PROVE_NO_CACHE=1 /usr/bin/time -l over this
-# script): 584 properties, 62 s, 170 MB.
+# answer every offer webpki_cert_types_offered can give, and the two key
+# shares, or the hybrid one alone under a nondet require_pq
+# (docs/decisions.md entry 53) — against that build's CH_HELLO_MAX of
+# 2371. The sufficiency assertion is tight: moved to CH_HELLO_MAX - 1 it
+# fails, and a probe asserting false after the two-type offer is written
+# fails too, so that arm is reached; a probe in each require_pq arm of
+# write_two_groups fails both. The two ALPN loops carry their own bounds
+# because the global 400 unrolled both past the array they walk, and
+# CBMC then ran out of addressed objects (--object-bits, 256) rather than
+# returning a verdict. Measured (cbmc 6.11.0, kissat, PROVE_NO_CACHE=1
+# /usr/bin/time -l over this script): 584 properties, 62 s, 170 MB with
+# one key share, and 602 properties, 65 s and 88 s in two runs, 160 MB,
+# with both.
 launch fast full hello_build_webpki 400 "fill_nondet.0:321,main.0:9,write_alpn.0:9" -DCH_TRUST_WEBPKI buf.c
 # x509: primitives concrete (both variants), the walker with stubbed
 # primitives. The ECDSA walker proves the full two-entry bound in

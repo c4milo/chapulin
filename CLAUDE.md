@@ -33,11 +33,14 @@ Home: github.com/c4milo.
   ch_srv_check verifies both provisioned identities at boot. The
   algorithm is half of a TRUST value rather than an axis of its own
   precisely because it selects nothing in those two builds, and a
-  separate axis let a build ask for a verifier it would not get. The key exchange is one group per
-  build, chosen by the Makefile KEX variable: x25519 (default) or the
-  X25519MLKEM768 hybrid (KEX=pq, -DCH_KEX_PQ, `mlkem.[ch]`) — never both
-  in one raw or ca ClientHello, so a pq device and a classic-only server
-  fail closed against each other. No X.509 parsing outside the certificate
+  separate axis let a build ask for a verifier it would not get. The key exchange of a
+  raw or ca client is one group per build, chosen by the Makefile KEX
+  variable: x25519 (default) or the X25519MLKEM768 hybrid (KEX=pq,
+  -DCH_KEX_PQ, `mlkem.[ch]`) — never both in one raw or ca ClientHello,
+  so a pq device and a classic-only server fail closed against each
+  other. KEX chooses nothing else: TRUST=webpki offers both groups in
+  every build (below), a server role's key exchange is fixed, and the
+  Makefile refuses a KEX value for either. No X.509 parsing outside the certificate
   files: the canonical DER reader in x509_der.[ch], the profile verifier
   in x509.[ch] and the provisioning reader in x509_ca.[ch] under
   the ca modes, and the chain verifier in webpki.[ch] with its pieces under
@@ -53,11 +56,12 @@ Home: github.com/c4milo.
   list of ALPN protocols the caller configured, because it cannot know
   which one the endpoint speaks; the server picks one and
   ch_tls.alpn_selected reports it. docs/decisions.md 37 states what that
-  negotiation surface costs. Under KEX=pq it also lists x25519 after the
-  hybrid (CH_KEX_TWO_GROUPS) and sends the hybrid share alone, and a
-  HelloRetryRequest naming x25519 moves it there; ch_cfg.require_pq
-  drops x25519 from the hello and restores the fail-closed pairing
-  (docs/decisions.md 39). Under SUITE=aesgcm it lists
+  negotiation surface costs. In every build it lists x25519 after the
+  hybrid (CH_KEX_TWO_GROUPS) and sends a key share for each, the x25519
+  one over the x25519 half of the hybrid one, so a server picks either
+  in one round trip and a HelloRetryRequest that names a group is
+  refused; ch_cfg.require_pq drops x25519 from both lists and restores
+  the fail-closed pairing (docs/decisions.md 39 and 51). Under SUITE=aesgcm it lists
   TLS_AES_128_GCM_SHA256 after ChaCha20 (CH_CLIENT_TWO_SUITES), keys
   every record direction with the suite the ServerHello selected, and
   ch_tls.suite reports it (docs/decisions.md 45); a raw or ca client
@@ -72,8 +76,8 @@ Home: github.com/c4milo.
   `ct.[ch]` (constant-time bytes) ← `sha256.[ch]` + `sha3.[ch]` +
   `sha512.[ch]`/`sha512_compress.[ch]` (SHA-384 and SHA-512; the
   TRUST=webpki build packages them, other builds keep them test-only) ←
-  `mlkem.[ch]`/`mlkem_poly.[ch]` (ML-KEM-768; the KEX=pq build packages
-  them with `sha3.[ch]`, other builds keep them test-only) ← `hkdf.[ch]`
+  `mlkem.[ch]`/`mlkem_poly.[ch]` (ML-KEM-768; the KEX=pq and TRUST=webpki
+  builds package them with `sha3.[ch]`, other builds keep them test-only) ← `hkdf.[ch]`
   (HMAC + HKDF + TLS labels) ← `chacha20.[ch]` + `poly1305.[ch]` +
   `quic_aes.[ch]` with `quic_aes_key.h` (the `aes_public_key` type, whose
   body sits in the second header alone, and the two constructors that

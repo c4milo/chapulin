@@ -32,23 +32,9 @@ static uint8_t server_hello_ext_bit(uint16_t ext) {
 }
 
 #ifdef CH_KEX_TWO_GROUPS
-// key_share in a HelloRetryRequest, for the build that offers two
-// groups: one NamedGroup (RFC 9846 §4.3.8). The first hello offered
-// x25519 without a share, so x25519 is the only group a retry may name.
-// Naming the hybrid asks for a share the hello already carried, and
-// naming any other group names one it did not offer; §4.3.8 makes both
-// an illegal_parameter abort (rfc9846.txt:2205-2211).
-static int parse_retry_group(rbuf *e, server_hello_info *info) {
-    if (rb_u16(e) != CH_GROUP_X25519) {
-        return CH_EPROTO;
-    }
-    info->retry_group = CH_GROUP_X25519;
-    return CH_OK;
-}
-
-// key_share in a ServerHello that selected x25519, which only the
-// answer to a retry naming x25519 may do: the group, a 32-byte length
-// and the server's public value.
+// key_share in a ServerHello that selected x25519, whose share the hello
+// of the build that offers two groups carried beside the hybrid one: the
+// group, a 32-byte length and the server's public value.
 static int parse_x25519_share(rbuf *e, server_hello_info *info) {
     if (rb_u16(e) != X25519_LEN) {
         return CH_EPROTO;
@@ -78,28 +64,33 @@ static int suite_offered(uint16_t suite) {
 }
 #endif
 
-// key_share: our one offered group, echoed with the server's public.
+// key_share: a group this client sent a share for, echoed with the
+// server's share.
 static int parse_key_share(rbuf *e, server_hello_info *info, int hrr) {
     if (hrr) {
-#ifdef CH_KEX_TWO_GROUPS
-        return parse_retry_group(e, info);
-#else
-        // The build offers one group, so an HRR can never legally ask
-        // for a different share: selecting ours is redundant (illegal)
-        // and selecting another group is unsupported. Both are fatal.
+        // Every group the hello lists in supported_groups also has a share
+        // in its key_share: the build's one group, both groups in a
+        // CH_KEX_TWO_GROUPS build, or the hybrid alone there under
+        // require_pq, which lists the hybrid alone. So a retry that names
+        // a group names one the hello already sent a share for or one it
+        // never listed, and RFC 9846 §4.3.8 makes both an
+        // illegal_parameter abort (rfc9846.txt:2205-2212).
         return CH_EPROTO;
-#endif
     }
     uint16_t group = rb_u16(e);
 #ifdef CH_KEX_TWO_GROUPS
     if (group == CH_GROUP_X25519) {
         return parse_x25519_share(e, info);
     }
-#endif
+    if (group != CH_GROUP_X25519MLKEM768 || rb_u16(e) != CH_HYBRID_SERVER_SHARE) {
+        return CH_EPROTO;
+    }
+#else
     if (group != CH_KEX_GROUP || rb_u16(e) != CH_KEX_SERVER_SHARE) {
         return CH_EPROTO;
     }
-#ifdef CH_KEX_PQ
+#endif
+#ifdef CH_KEX_HYBRID
     const uint8_t *ct = rb_bytes(e, MLKEM_CT_LEN);
     if (ct == NULL) {
         return CH_EPROTO;

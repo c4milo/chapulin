@@ -1,0 +1,15 @@
+invariant: INV-17
+file: handshake_flight.c
+catches: webpki_session_test
+reason: a webpki client whose server selected x25519 keeps the ML-KEM seed
+  h->dz after the key exchange, so the decapsulation key it expands to
+  stays recoverable from the handshake state for the rest of the
+  handshake, and on the QUIC and record transports across calls. The key
+  pair is unused once x25519 is selected, and docs/decisions.md entry 53
+  wipes it at once.
+
+--- old
+    ct_wipe(h->dz, sizeof h->dz);
+    if (!x25519(ikm, h->priv, info->server_pub)) {
+--- new
+    if (!x25519(ikm, h->priv, info->server_pub)) {

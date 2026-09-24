@@ -113,7 +113,7 @@ head -1 "$TMP/ca_rsa.stack"
 echo "-- TRUST=ca-ecdsa --"
 stack_report ca_ecdsa "STACK_CFLAGS=-DCH_TRUST_CA -DCH_PIN_ECDSA"
 head -1 "$TMP/ca_ecdsa.stack"
-echo "-- TRUST=webpki; ch_connect peak = chain walk + RSA-4096 verify --"
+echo "-- TRUST=webpki; ch_connect peak includes ML-KEM's K-PKE frames, above the chain walk --"
 stack_report webpki STACK_CFLAGS=-DCH_TRUST_WEBPKI
 head -1 "$TMP/webpki.stack"
 echo "-- KEX=pq; ch_connect peak includes ML-KEM's K-PKE frames --"

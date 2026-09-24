@@ -10,9 +10,6 @@
 #if defined(CH_SUITE_AES_GCM) && !defined(CH_TRUST_WEBPKI) && !defined(CH_ROLE_SERVER)
 #error "CH_SUITE_AES_GCM is refused for a raw or ca client: use TRUST=webpki or a server role"
 #endif
-#ifdef CH_KEX_TWO_GROUPS
-#include "ch_assert.h"
-#endif
 #ifdef CH_TRUST_WEBPKI
 #include "webpki_pin.h"
 #endif
@@ -84,49 +81,47 @@ static void write_cert_types(wbuf *w, const ch_cfg *cfg) {
 
 #ifdef CH_KEX_TWO_GROUPS
 // supported_groups and key_share for the build that offers two groups
-// (docs/decisions.md entry 39). supported_groups lists the hybrid first,
-// the order the key share favours, then x25519 with no share. require_pq
-// leaves x25519 off, so a HelloRetryRequest naming it names a group this
-// hello did not offer.
+// (docs/decisions.md entry 53). supported_groups lists the hybrid first,
+// then x25519, and key_share carries an entry for each in the same order,
+// which RFC 9846 §4.3.8 requires (rfc9846.txt:2161-2163). require_pq
+// leaves x25519 off both lists.
 //
-// key_share carries one KeyShareEntry, for share_group. The retry a
-// HelloRetryRequest naming x25519 asked for replaces the hybrid entry
-// with an x25519 one (RFC 9846 §4.3.8, rfc9846.txt:2211-2215), over the
-// x25519 half of the key pair the hybrid share already carried.
-static void write_two_groups(wbuf *w, const ch_cfg *cfg, uint16_t share_group,
-                             const uint8_t ek[MLKEM_EK_LEN], const uint8_t pub[32]) {
+// The x25519 entry's key_exchange is the x25519 half of the hybrid
+// entry's, the same pub. RFC 9846 §4.3.8 asks for the key_exchange of
+// each KeyShareEntry to be generated independently
+// (rfc9846.txt:2182-2184), and RFC 9954 §3.2 relaxes that for a value of
+// the same algorithm reused across the KeyShareEntry records of one
+// ClientHello, which is what this is. The ML-KEM half has no second use.
+static void write_two_groups(wbuf *w, const ch_cfg *cfg, const uint8_t ek[MLKEM_EK_LEN],
+                             const uint8_t pub[32]) {
     size_t groups_len = cfg->require_pq ? 2 : 4;
     wb_u16(w, EXT_SUPPORTED_GROUPS);
     wb_u16(w, (uint16_t)(2 + groups_len));
     wb_u16(w, (uint16_t)groups_len);
-    wb_u16(w, CH_KEX_GROUP);
+    wb_u16(w, CH_GROUP_X25519MLKEM768);
     if (!cfg->require_pq) {
         wb_u16(w, CH_GROUP_X25519);
     }
 
-    CH_ASSERT(share_group == CH_KEX_GROUP || share_group == CH_GROUP_X25519);
     wb_u16(w, EXT_KEY_SHARE);
-    if (share_group == CH_GROUP_X25519) {
-        wb_u16(w, 2 + 2 + 2 + 32);
-        wb_u16(w, 2 + 2 + 32); // client_shares length
+    size_t ext = wb_mark(w, 2);
+    size_t shares = wb_mark(w, 2); // client_shares length
+    wb_u16(w, CH_GROUP_X25519MLKEM768);
+    wb_u16(w, CH_HYBRID_CLIENT_SHARE);
+    wb_bytes(w, ek, MLKEM_EK_LEN); // ML-KEM first (RFC 10024)
+    wb_bytes(w, pub, 32);
+    if (!cfg->require_pq) {
         wb_u16(w, CH_GROUP_X25519);
         wb_u16(w, 32);
-    } else {
-        wb_u16(w, 2 + 2 + 2 + CH_KEX_CLIENT_SHARE);
-        wb_u16(w, 2 + 2 + CH_KEX_CLIENT_SHARE); // client_shares length
-        wb_u16(w, CH_KEX_GROUP);
-        wb_u16(w, CH_KEX_CLIENT_SHARE);
-        wb_bytes(w, ek, MLKEM_EK_LEN); // ML-KEM first (RFC 10024)
+        wb_bytes(w, pub, 32);
     }
-    wb_bytes(w, pub, 32);
+    wb_patch16(w, shares);
+    wb_patch16(w, ext);
 }
 #endif
 
 size_t hs_build_client_hello(uint8_t *out, size_t cap, const ch_cfg *cfg,
-#ifdef CH_KEX_TWO_GROUPS
-                             uint16_t share_group,
-#endif
-#ifdef CH_KEX_PQ
+#ifdef CH_KEX_HYBRID
                              const uint8_t ek[MLKEM_EK_LEN],
 #endif
                              const uint8_t pub[32], const uint8_t random32[32],
@@ -172,7 +167,7 @@ size_t hs_build_client_hello(uint8_t *out, size_t cap, const ch_cfg *cfg,
     wb_u16(&w, TLS13);
 
 #ifdef CH_KEX_TWO_GROUPS
-    write_two_groups(&w, cfg, share_group, ek, pub);
+    write_two_groups(&w, cfg, ek, pub);
 #else
     wb_u16(&w, EXT_SUPPORTED_GROUPS);
     wb_u16(&w, 4);
@@ -184,7 +179,7 @@ size_t hs_build_client_hello(uint8_t *out, size_t cap, const ch_cfg *cfg,
     wb_u16(&w, 2 + 2 + CH_KEX_CLIENT_SHARE); // client_shares length
     wb_u16(&w, CH_KEX_GROUP);
     wb_u16(&w, CH_KEX_CLIENT_SHARE);
-#ifdef CH_KEX_PQ
+#ifdef CH_KEX_HYBRID
     wb_bytes(&w, ek, MLKEM_EK_LEN); // ML-KEM first (RFC 10024)
 #endif
     wb_bytes(&w, pub, 32);
