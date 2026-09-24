@@ -24,6 +24,10 @@
 #include "hkdf.h"
 #include "quic_aes_block.h"
 #include "quic_aes_key.h"
+#ifdef CH_SUITE_AES_GCM
+#include "aes_traffic_key.h"
+#include "ch_assert.h"
+#endif
 
 // RFC 9001 §5.2's printed salt, the input every Initial secret starts
 // from (rfc9001.txt:1051-1055, rfc9001.txt:1066).
@@ -70,6 +74,12 @@ int aes_public_key_initial(aes_public_key *k, const uint8_t *dcid, size_t dcid_l
     hkdf_expand_label(direction_secret, "quic iv", NULL, 0, k->iv, sizeof k->iv);
     hkdf_expand_label(direction_secret, "quic hp", NULL, 0, key, sizeof key);
     aes_expand_round_keys(key, k->hp.round_keys);
+#ifdef CH_AES_256
+    // RFC 9001 §5.2 fixes AES-128 for the Initial level whatever suite
+    // TLS goes on to negotiate.
+    k->key.rounds = AES_128_ROUNDS;
+    k->hp.rounds = AES_128_ROUNDS;
+#endif
     // No wipe of initial_secret, direction_secret or key. Every byte of
     // the three is public: RFC 9001 §5 says so of the Initial keys
     // (rfc9001.txt:999-1001), and this constructor derives nothing else.
@@ -83,6 +93,9 @@ int aes_public_key_initial(aes_public_key *k, const uint8_t *dcid, size_t dcid_l
 
 void aes_public_key_retry(aes_public_key *k) {
     aes_expand_round_keys(RETRY_KEY, k->key.round_keys);
+#ifdef CH_AES_256
+    k->key.rounds = AES_128_ROUNDS;
+#endif
     // RFC 9001 §5.8 prints the nonce the caller passes to gcm_seal, and
     // a Retry packet carries no header protection, so both fields stay
     // zero rather than holding a key this call did not derive.
@@ -93,6 +106,14 @@ void aes_public_key_retry(aes_public_key *k) {
 
 void aes_encrypt_schedule(const aes_key_schedule *s, const uint8_t in[AES_BLOCK],
                           uint8_t out[AES_BLOCK]) {
+#ifdef CH_AES_256
+    // The round count is the suite's, so this branch reads a public
+    // value.
+    if (s->rounds == AES_256_ROUNDS) {
+        aes_cipher_block_256(s->round_keys, in, out);
+        return;
+    }
+#endif
     aes_cipher_block(s->round_keys, in, out);
 }
 
@@ -108,5 +129,21 @@ void aes_encrypt_block_hp(const aes_public_key *k, const uint8_t sample[AES_BLOC
 }
 
 #endif // CH_TRANSPORT_QUIC
+
+#ifdef CH_SUITE_AES_GCM
+void aes_traffic_key_init(aes_traffic_key *k, const uint8_t *key, size_t key_len) {
+    CH_ASSERT(key_len == AES_128_KEY || key_len == AES_256_KEY);
+    // key_len is the suite's, which the ServerHello named in the clear,
+    // so the branch reads a public value. The key itself goes to the AES
+    // instructions alone: ct.h refuses this build without AES=hw.
+    if (key_len == AES_256_KEY) {
+        aes_expand_round_keys_256(key, k->key.round_keys);
+        k->key.rounds = AES_256_ROUNDS;
+        return;
+    }
+    aes_expand_round_keys(key, k->key.round_keys);
+    k->key.rounds = AES_128_ROUNDS;
+}
+#endif // CH_SUITE_AES_GCM
 
 #endif // CH_TRANSPORT_QUIC || CH_SUITE_AES_GCM

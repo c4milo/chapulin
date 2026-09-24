@@ -1,17 +1,15 @@
-// AEAD_AES_128_GCM (NIST SP 800-38D, RFC 5116 §5.1) and the GHASH
-// function under it. It exists for the two QUIC packet types whose keys
-// RFC 9001 prints or derives from public bytes: Initial packets (§5.2)
-// and the Retry integrity tag (§5.8). Only a TRANSPORT=quic build
-// compiles it, and the calls take an aes_public_key and nothing else,
-// so no key from the TLS key schedule reaches this AEAD. The type is
-// incomplete here: every call below takes a pointer, so this header
-// needs no body, and a file that includes it cannot build a key at all.
-// INV-26 in docs/invariants.md states that rule and names the checks;
-// quic_aes.h states it at the key type.
-//
-// Every QUIC level above Initial runs ChaCha20-Poly1305 through
-// aead.[ch] instead, because that is the cipher suite this client
-// offers. This file never becomes one.
+// AEAD_AES_128_GCM and AEAD_AES_256_GCM (NIST SP 800-38D, RFC 5116
+// §5.1 and §5.2) and the GHASH function under them. The first three
+// entries exist for the two QUIC packet types whose keys RFC 9001 prints
+// or derives from public bytes: Initial packets (§5.2) and the Retry
+// integrity tag (§5.8). They take an aes_public_key and nothing else, and
+// run AES-128. A -DCH_SUITE_AES_GCM build adds two entries that take an
+// aes_traffic_key, for the two AES-GCM cipher suites, and run AES-128 or
+// AES-256 as the key's round count says. Both types are incomplete here:
+// every call below takes a pointer, so this header needs no body, and a
+// file that includes it cannot build a key at all. INV-26 in
+// docs/invariants.md states that rule and names the checks; quic_aes.h
+// states it at the two key types.
 #ifndef CH_QUIC_GCM_H
 #define CH_QUIC_GCM_H
 #if defined(CH_TRANSPORT_QUIC) || defined(CH_SUITE_AES_GCM)
@@ -89,15 +87,18 @@ void gcm_ghash(const aes_public_key *k, const uint8_t *aad, size_t aad_len, cons
                size_t n, uint8_t out[AES_BLOCK]);
 
 #ifdef CH_SUITE_AES_GCM
-// The same AEAD over a TLS traffic key, for TLS_AES_128_GCM_SHA256. Two
-// entries rather than one taking both types, because the type is the
-// whole mechanism: a public key cannot reach the record layer and a
-// traffic key cannot reach the three QUIC call sites INV-26 admits.
-void gcm_seal_traffic(const aes_traffic_key *k, const uint8_t nonce[AES_IV], const uint8_t *aad,
+// The same AEAD over a TLS traffic key, for TLS_AES_128_GCM_SHA256 and
+// TLS_AES_256_GCM_SHA384: AEAD_AES_128_GCM or AEAD_AES_256_GCM, as the
+// key aes_traffic_key_init expanded says. The contracts are gcm_seal's
+// and gcm_open's. Two entries rather than one taking both types, because
+// the type is the whole mechanism: a public key cannot reach a traffic
+// entry and a traffic key cannot reach the three QUIC call sites INV-26
+// admits for public keys.
+void gcm_traffic_seal(const aes_traffic_key *k, const uint8_t nonce[AES_IV], const uint8_t *aad,
                       size_t aad_len, const uint8_t *pt, size_t n, uint8_t *ct,
                       uint8_t tag[GCM_TAG]);
 
-int gcm_open_traffic(const aes_traffic_key *k, const uint8_t nonce[AES_IV], const uint8_t *aad,
+int gcm_traffic_open(const aes_traffic_key *k, const uint8_t nonce[AES_IV], const uint8_t *aad,
                      size_t aad_len, const uint8_t *ct, size_t n, const uint8_t tag[GCM_TAG],
                      uint8_t *pt);
 #endif

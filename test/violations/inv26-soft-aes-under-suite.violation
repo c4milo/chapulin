@@ -1,0 +1,17 @@
+invariant: INV-26
+file: quic_aes_soft.c
+catches: test/quic-builds.sh
+reason: quic_aes_soft.c stops refusing -DCH_SUITE_AES_GCM, so a tree that
+  compiles these sources with its own build system can pair the AES=soft
+  S-box with a suite build and hand it a TLS traffic key, AES-128 or
+  AES-256. The S-box is indexed with the key, which is the leak INV-26
+  exists to keep from a secret. ct.h refuses the same pair, but only in a
+  file that reads ct.h, and this one does not; test/quic-builds.sh
+  compiles this file alone under the suite define and requires the
+  compiler to refuse it.
+
+--- old
+#ifdef CH_SUITE_AES_GCM
+#error "CH_SUITE_AES_GCM never compiles AES=soft: its S-box is indexed with the key (INV-26)"
+#endif
+--- new

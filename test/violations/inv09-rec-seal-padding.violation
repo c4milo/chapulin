@@ -26,18 +26,7 @@ reason: rec_seal starts emitting 16 bytes of TLSInnerPlaintext padding, so the
 
     uint8_t nonce[AEAD_NONCE];
     nonce_of(d, nonce);
-#ifdef CH_SUITE_AES_GCM
-    if (d->suite == SUITE_AES_128_GCM_SHA256) {
-        // The round keys live on this frame and die with it: rec_dir
-        // keeps the 16 key bytes and nothing expanded, so no schedule
-        // outlives the record it protected.
-        aes_traffic_key k;
-        aes_expand_round_keys(d->key, k.key.round_keys);
-        gcm_seal_traffic(&k, nonce, out, REC_HDR, inner, n + 1, inner, inner + n + 1);
-        ct_wipe(&k, sizeof k);
-    } else
-#endif
-        aead_seal(d->key, nonce, out, REC_HDR, inner, n + 1, inner, inner + n + 1);
+    seal_body(d, nonce, out, inner, n + 1);
 --- new
     // Pad every record to hide plaintext lengths from traffic analysis.
     size_t pad = 16;
@@ -63,15 +52,4 @@ reason: rec_seal starts emitting 16 bytes of TLSInnerPlaintext padding, so the
 
     uint8_t nonce[AEAD_NONCE];
     nonce_of(d, nonce);
-#ifdef CH_SUITE_AES_GCM
-    if (d->suite == SUITE_AES_128_GCM_SHA256) {
-        // The round keys live on this frame and die with it: rec_dir
-        // keeps the 16 key bytes and nothing expanded, so no schedule
-        // outlives the record it protected.
-        aes_traffic_key k;
-        aes_expand_round_keys(d->key, k.key.round_keys);
-        gcm_seal_traffic(&k, nonce, out, REC_HDR, inner, n + 1 + pad, inner, inner + n + 1 + pad);
-        ct_wipe(&k, sizeof k);
-    } else
-#endif
-        aead_seal(d->key, nonce, out, REC_HDR, inner, n + 1 + pad, inner, inner + n + 1 + pad);
+    seal_body(d, nonce, out, inner, n + 1 + pad);

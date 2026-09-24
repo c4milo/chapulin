@@ -1,7 +1,9 @@
 // AES=hw: the AES-128 key expansion and forward cipher of FIPS 197 on
-// the AES instructions, through the compiler's own intrinsic headers.
-// quic_aes_block.h states both contracts; this file implements them and
-// nothing else.
+// the AES instructions, through the compiler's own intrinsic headers, and
+// the AES-256 pair in a build that has AES-256 (CH_AES_256, quic_aes.h).
+// quic_aes_block.h states the contracts; this file implements them and
+// nothing else. Both key sizes share one expansion loop and one round
+// loop, so AES-256 adds two entries and no second cipher.
 //
 // Two instruction sets, and the compiler picks between them at build
 // time. __ARM_FEATURE_AES says the ARMv8 crypto extensions are available
@@ -47,12 +49,12 @@
 //                  vendor statement that covers both, the way it defines
 //                  CH_NATIVE_WIDEMUL. Nothing in this file reads it.
 //
-// Nothing reads it because nothing here needs it: INV-26 admits only the
-// three public keys RFC 9001 fixes, and their timing leaks nothing an
-// observer does not already hold. ct.h is what reads it, and only in a
-// build that declares -DCH_SUITE_AES_GCM: a cipher suite hands this file a
-// traffic key, and that build without CH_NATIVE_AES is a compile error
-// rather than an object whose timing nobody stated.
+// ct.h reads it, and only in a build that declares -DCH_SUITE_AES_GCM:
+// the two AES-GCM cipher suites hand this file a traffic key, AES-128
+// or AES-256, and that build without CH_NATIVE_AES is a compile error
+// rather than an object whose timing nobody stated. Every other build
+// hands it only the three public keys INV-26 names, whose timing leaks
+// nothing an observer does not already hold.
 //
 // CBMC cannot read an intrinsic, so the proofs stay on the software path
 // and this file is held to it by test/aes_equiv_test.c, which runs both
@@ -133,18 +135,27 @@ static uint8_t xtime(uint8_t b) {
     return (uint8_t)(((unsigned)b << 1) ^ (0x1bU & high_set));
 }
 
-void aes_expand_round_keys(const uint8_t key[AES_128_KEY],
-                           uint8_t round_keys[AES_ROUND_KEYS * AES_BLOCK]) {
-    // FIPS 197 §5.2, the same expansion quic_aes_soft.c writes, with the
-    // instruction-backed SubWord above in place of the table lookup. The
-    // two files agree byte for byte, which test/aes_equiv_test.c checks.
+// FIPS 197 §5.2 for either key size, the same expansion quic_aes_soft.c
+// writes, with the instruction-backed SubWord above in place of the table
+// lookup. The two files agree byte for byte, which test/aes_equiv_test.c
+// checks. key_len is AES_128_KEY (Nk = 4) or AES_256_KEY (Nk = 8) and
+// schedule_len is the bytes of round keys that size fills; both are the
+// entry's own constants, never an operand, so every branch below reads
+// a public value.
+//
+// Each word is the word key_len bytes back exclusive-ored with a
+// temporary. The temporary is the word before it, which every key_len-th
+// byte takes RotWord, SubWord and the round constant first, and which
+// AES-256 alone also passes through SubWord halfway between two of those
+// (FIPS 197 §5.2, the Nk > 6 step).
+static void expand(const uint8_t *key, size_t key_len, uint8_t *round_keys, size_t schedule_len) {
     uint8_t round_constant = 0x01;
-    memcpy(round_keys, key, AES_128_KEY);
+    memcpy(round_keys, key, key_len);
     uint8_t word[4];
     uint8_t substituted[4] = {0};
-    for (size_t i = AES_128_KEY; i < (size_t)AES_ROUND_KEYS * AES_BLOCK; i += 4) {
+    for (size_t i = key_len; i < schedule_len; i += 4) {
         memcpy(word, &round_keys[i - 4], sizeof word);
-        if (i % AES_128_KEY == 0) {
+        if (i % key_len == 0) {
             sub_word(word, substituted);
             // RotWord, then the round constant on the first byte.
             word[0] = (uint8_t)(substituted[1] ^ round_constant);
@@ -152,9 +163,12 @@ void aes_expand_round_keys(const uint8_t key[AES_128_KEY],
             word[2] = substituted[3];
             word[3] = substituted[0];
             round_constant = xtime(round_constant);
+        } else if (key_len == AES_256_KEY && i % key_len == AES_BLOCK) {
+            sub_word(word, substituted);
+            memcpy(word, substituted, sizeof word);
         }
         for (size_t j = 0; j < sizeof word; j++) {
-            round_keys[i + j] = (uint8_t)(round_keys[i - AES_128_KEY + j] ^ word[j]);
+            round_keys[i + j] = (uint8_t)(round_keys[i - key_len + j] ^ word[j]);
         }
     }
     // Both temporaries hold bytes of the last round key. Under
@@ -166,44 +180,70 @@ void aes_expand_round_keys(const uint8_t key[AES_128_KEY],
     ct_wipe(substituted, sizeof substituted);
 }
 
+void aes_expand_round_keys(const uint8_t key[AES_128_KEY],
+                           uint8_t round_keys[AES_ROUND_KEYS * AES_BLOCK]) {
+    expand(key, AES_128_KEY, round_keys, (size_t)AES_ROUND_KEYS * AES_BLOCK);
+}
+
 #ifdef __ARM_FEATURE_AES
-void aes_cipher_block(const uint8_t round_keys[AES_ROUND_KEYS * AES_BLOCK],
-                      const uint8_t in[AES_BLOCK], uint8_t out[AES_BLOCK]) {
-    // vaeseq_u8(s, k) is ShiftRows(SubBytes(s XOR k)) and vaesmcq_u8 is
-    // MixColumns, so each pair below is one FIPS 197 §5.1 round with its
-    // AddRoundKey taken from the front of the next instruction. Round
-    // AES_128_ROUNDS drops MixColumns and its AddRoundKey is the
-    // exclusive-or that follows.
+// FIPS 197 §5.1 over rounds rounds, AES_128_ROUNDS or AES_256_ROUNDS, a
+// constant each entry below passes. vaeseq_u8(s, k) is
+// ShiftRows(SubBytes(s XOR k)) and vaesmcq_u8 is MixColumns, so each pair
+// below is one round with its AddRoundKey taken from the front of the
+// next instruction. The last round drops MixColumns and its AddRoundKey
+// is the exclusive-or that follows.
+static void cipher(const uint8_t *round_keys, size_t rounds, const uint8_t in[AES_BLOCK],
+                   uint8_t out[AES_BLOCK]) {
     aes_state state = load_block(in);
-    for (size_t round = 0; round < AES_128_ROUNDS - 1; round++) {
+    for (size_t round = 0; round < rounds - 1; round++) {
         state = vaeseq_u8(state, load_block(&round_keys[round * AES_BLOCK]));
         state = vaesmcq_u8(state);
     }
-    state = vaeseq_u8(state, load_block(&round_keys[(size_t)(AES_128_ROUNDS - 1) * AES_BLOCK]));
-    state = veorq_u8(state, load_block(&round_keys[(size_t)AES_128_ROUNDS * AES_BLOCK]));
+    state = vaeseq_u8(state, load_block(&round_keys[(rounds - 1) * AES_BLOCK]));
+    state = veorq_u8(state, load_block(&round_keys[rounds * AES_BLOCK]));
     store_block(out, state);
-    // state holds the block this call produced, which under
-    // AEAD_AES_128_GCM is one block of keystream. out already holds it, so
-    // the wipe removes the copy this frame would leave behind.
+    // state holds the block this call produced, which under AES-GCM is one
+    // block of keystream. out already holds it, so the wipe removes the
+    // copy this frame would leave behind.
     ct_wipe(&state, sizeof state);
 }
 #else
-void aes_cipher_block(const uint8_t round_keys[AES_ROUND_KEYS * AES_BLOCK],
-                      const uint8_t in[AES_BLOCK], uint8_t out[AES_BLOCK]) {
-    // _mm_aesenc_si128(s, k) is MixColumns(SubBytes(ShiftRows(s))) XOR k,
-    // one whole FIPS 197 §5.1 round with its AddRoundKey at the end, and
-    // _mm_aesenclast_si128 is the same without MixColumns. So the first
-    // AddRoundKey is written out and the rounds follow it.
+// The same over the x86-64 instructions. _mm_aesenc_si128(s, k) is
+// MixColumns(SubBytes(ShiftRows(s))) XOR k, one whole FIPS 197 §5.1 round
+// with its AddRoundKey at the end, and _mm_aesenclast_si128 is the same
+// without MixColumns. So the first AddRoundKey is written out and the
+// rounds follow it.
+static void cipher(const uint8_t *round_keys, size_t rounds, const uint8_t in[AES_BLOCK],
+                   uint8_t out[AES_BLOCK]) {
     aes_state state = load_block(in);
     state = _mm_xor_si128(state, load_block(round_keys));
-    for (size_t round = 1; round < AES_128_ROUNDS; round++) {
+    for (size_t round = 1; round < rounds; round++) {
         state = _mm_aesenc_si128(state, load_block(&round_keys[round * AES_BLOCK]));
     }
-    state =
-        _mm_aesenclast_si128(state, load_block(&round_keys[(size_t)AES_128_ROUNDS * AES_BLOCK]));
+    state = _mm_aesenclast_si128(state, load_block(&round_keys[rounds * AES_BLOCK]));
     store_block(out, state);
     // The arm above states why.
     ct_wipe(&state, sizeof state);
+}
+#endif
+
+void aes_cipher_block(const uint8_t round_keys[AES_ROUND_KEYS * AES_BLOCK],
+                      const uint8_t in[AES_BLOCK], uint8_t out[AES_BLOCK]) {
+    cipher(round_keys, AES_128_ROUNDS, in, out);
+}
+
+#ifdef CH_AES_256
+// AES-256, the cipher of TLS_AES_256_GCM_SHA384. A library object compiles
+// it only under -DCH_SUITE_AES_GCM; test/aes_equiv_hw.c compiles it to
+// hold it to the software reference.
+void aes_expand_round_keys_256(const uint8_t key[AES_256_KEY],
+                               uint8_t round_keys[AES_256_ROUND_KEYS * AES_BLOCK]) {
+    expand(key, AES_256_KEY, round_keys, (size_t)AES_256_ROUND_KEYS * AES_BLOCK);
+}
+
+void aes_cipher_block_256(const uint8_t round_keys[AES_256_ROUND_KEYS * AES_BLOCK],
+                          const uint8_t in[AES_BLOCK], uint8_t out[AES_BLOCK]) {
+    cipher(round_keys, AES_256_ROUNDS, in, out);
 }
 #endif
 

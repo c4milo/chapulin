@@ -160,58 +160,7 @@ static void run_aead(void) {
            COUNT(wp_aead), WP_AEAD_SKIPPED, WP_AEAD_OVERSIZE);
 }
 
-// The AES-GCM suite, for quic_gcm.c. Guarded because only a
-// -DCH_TRANSPORT_QUIC build compiles that file, and the generator emits
-// the rows under the same guard, so the legs that build this file
-// without the define read a header that declares nothing here.
-//
-// The key comes from the vector, so this builds an aes_public_key
-// through the key schedule directly. INV-26 bounds which keys a library
-// source may hand the AEAD and excludes `test` from the rule that holds
-// it, for exactly this: a published suite fixes its own keys.
-#ifdef CH_TRANSPORT_QUIC
-static void run_aes_gcm(void) {
-    for (size_t i = 0; i < COUNT(wp_aes_gcm); i++) {
-        const uint8_t *p = wp_aes_gcm_data + wp_aes_gcm[i].off;
-        const uint8_t *key = p;
-        const uint8_t *iv = p + 16;
-        const uint8_t *tag = p + 28;
-        const uint8_t *aad = p + 44;
-        const uint8_t *msg = aad + wp_aes_gcm[i].aad_len;
-        const uint8_t *ct = msg + wp_aes_gcm[i].msg_len;
-        size_t n = wp_aes_gcm[i].msg_len;
-        // The generator skips anything longer, so this never trips; it is
-        // a hard backstop because the vectors track upstream HEAD.
-        if (n > 1024 || wp_aes_gcm[i].aad_len > 1024) {
-            fail("aes_gcm", wp_aes_gcm[i].tc, "message exceeds the test buffer");
-            continue;
-        }
-        aes_public_key k;
-        memset(&k, 0, sizeof k);
-        aes_expand_round_keys(key, k.key.round_keys);
-        uint8_t got_ct[1024];
-        uint8_t got_tag[16];
-        uint8_t got_pt[1024];
-        if (wp_aes_gcm[i].valid) {
-            gcm_seal(&k, iv, aad, wp_aes_gcm[i].aad_len, msg, n, got_ct, got_tag);
-            if (memcmp(got_ct, ct, n) != 0 || memcmp(got_tag, tag, 16) != 0) {
-                fail("aes_gcm", wp_aes_gcm[i].tc, "seal output differs from vector");
-            }
-            if (!gcm_open(&k, iv, aad, wp_aes_gcm[i].aad_len, ct, n, tag, got_pt) ||
-                memcmp(got_pt, msg, n) != 0) {
-                fail("aes_gcm", wp_aes_gcm[i].tc, "valid case failed to open");
-            }
-        } else {
-            if (gcm_open(&k, iv, aad, wp_aes_gcm[i].aad_len, ct, n, tag, got_pt)) {
-                fail("aes_gcm", wp_aes_gcm[i].tc, "invalid case accepted");
-            }
-        }
-    }
-    printf("wycheproof aes-128-gcm: %zu cases, %d skipped (key/nonce/tag sizes the fixed"
-           " API cannot express), %d skipped (over the 1 KB test buffer)\n",
-           COUNT(wp_aes_gcm), WP_AES_GCM_SKIPPED, WP_AES_GCM_OVERSIZE);
-}
-#endif // CH_TRANSPORT_QUIC
+#include "wycheproof_aes_gcm.h"
 
 static void run_hkdf(void) {
     for (size_t i = 0; i < COUNT(wp_hkdf); i++) {
@@ -462,6 +411,9 @@ int main(void) {
     run_aead();
 #ifdef CH_TRANSPORT_QUIC
     run_aes_gcm();
+#ifdef CH_AES_256
+    run_aes256_gcm();
+#endif
 #endif
     run_hkdf();
     run_hmac();

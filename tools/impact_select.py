@@ -413,8 +413,8 @@ def select_lints(out, changed, csources, lib):
     # compiles each quic file and checks which build keeps it;
     # lint-quic-surface compares quic.h against docs/quic.md's interface
     # table, against the stubs test/quic_stub_test.c would call if any
-    # were left, and against the sources that may include
-    # quic_aes_key.h; bin/quic_driver_test is
+    # were left, and against the sources that may include each AES key
+    # header; bin/quic_driver_test is
     # the build itself, which INV-26 turns into a check of its own, since
     # ch_quic holds no key and the key type is incomplete outside three
     # sources, so a write to a key field elsewhere does not compile. All
@@ -438,10 +438,13 @@ def select_lints(out, changed, csources, lib):
                 "handshake_message.c refuses the AES suite in a raw or ca "
                 "client, and this script compiles it either side of that",
                 ["test/quic-builds.sh"])
-    if quic_root or "docs/quic.md" in changed:
+    # lint-quic-surface also reads every root source for an include of a
+    # key header, quic_aes_key.h, aes_traffic_key.h or aes_schedule.h,
+    # outside the files each one names, so any root C source selects it.
+    if any("/" not in p for p in csources) or "docs/quic.md" in changed:
         out.add("lint", "make lint-quic-surface",
                 "quic.h and docs/quic.md must name one public surface, and "
-                "only three sources may include quic_aes_key.h",
+                "only the sources each AES key header names may include it",
                 ["test/lint-quic-surface.sh"])
     if any(p.endswith(".sh") or p.startswith(".githooks/") for p in changed):
         out.add("lint", "make lint-shellcheck",

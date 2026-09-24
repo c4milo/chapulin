@@ -1,8 +1,8 @@
 // Violation file for semgrep --test: each `ruleid:` line must be
 // flagged by the named rule, each `ok:` line must not. This file
 // never compiles and never should; it proves the tripwires trip.
-#include <stdint.h>
 #include <stddef.h>
+#include <stdint.h>
 
 // ruleid: inv-2-freestanding
 #include <stdio.h>
@@ -123,6 +123,14 @@ int use_everything(void) {
     aes_encrypt_block(&k, buf, buf);
     // ruleid: inv-26-aes-public-keys-only
     gcm_seal(&uninitialized, buf, buf, 0, buf, buf);
+    // The traffic families are the other rule's, and the public-key rule
+    // leaves them alone: record.c names them, and this rule reads record.c.
+    // ok: inv-26-aes-public-keys-only
+    // ruleid: inv-26-aes-traffic-keys-only
+    gcm_traffic_seal(&uninitialized, buf, buf, 0, buf, buf);
+    // ok: inv-26-aes-public-keys-only
+    // ruleid: inv-26-aes-traffic-keys-only
+    aes_traffic_key_init(&uninitialized, buf, 16);
 
     // The name used as a value rather than called. Each of these three
     // leaves the call branch nothing to match, so the value branch is

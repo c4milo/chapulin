@@ -1,5 +1,7 @@
 // Differential rows for quic_aes.c: the AES-128 forward cipher against
-// FIPS 197 as spec/lean/Spec/Aes.lean states it, and the RFC 9001 §5.2
+// FIPS 197 as spec/lean/Spec/Aes.lean states it, the AES-256 one beside it
+// in a build that has AES-256 (the Makefile builds both drivers with
+// -DCH_AES_256_TEST), and the RFC 9001 §5.2
 // Initial keys against the same file's derivation. The C ships a
 // 256-byte S-box table and the spec computes the S-box from the field
 // definition, so every row that agrees is the table checked against what
@@ -43,6 +45,34 @@ static void diff_aes128(void) {
         expect(cmd, want);
     }
 }
+
+#ifdef CH_AES_256
+// The same over a 256-bit key: TLS_AES_256_GCM_SHA384's cipher, on the
+// software reference under AES=soft and on the instructions under AES=hw.
+static void diff_aes256(void) {
+    for (int i = 0; i < 200; i++) {
+        uint8_t key[AES_256_KEY];
+        uint8_t block[AES_BLOCK];
+        rng_fill(key, sizeof key);
+        rng_fill(block, sizeof block);
+
+        uint8_t round_keys[AES_256_ROUND_KEYS * AES_BLOCK];
+        aes_expand_round_keys_256(key, round_keys);
+        uint8_t out[AES_BLOCK];
+        aes_cipher_block_256(round_keys, block, out);
+
+        char key_hex[2 * AES_256_KEY + 1];
+        (void)hex_encode(key_hex, key, sizeof key);
+        char block_hex[2 * AES_BLOCK + 1];
+        (void)hex_encode(block_hex, block, sizeof block);
+        char want[2 * AES_BLOCK + 1];
+        (void)hex_encode(want, out, sizeof out);
+        char cmd[160];
+        (void)snprintf(cmd, sizeof cmd, "aes256 %s %s", key_hex, block_hex);
+        expect(cmd, want);
+    }
+}
+#endif
 
 // Every Destination Connection ID length RFC 9001 §5.2 admits, from zero
 // to CH_QUIC_DCID_MAX, for both endpoints. The domain stops at the cap on

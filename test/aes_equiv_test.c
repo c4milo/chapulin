@@ -1,8 +1,12 @@
 // AES=hw against AES=soft: same key, same input, same output, byte for
-// byte. This is what holds the hardware path, because CBMC cannot read an
-// intrinsic — an AES instruction has no C body to unwind, so
-// proof/quic_aes_harness.c proves quic_aes_soft.c and this binary carries
-// quic_aes_hw.c to the same answer.
+// byte, for AES-128 and for AES-256. This is what holds the hardware
+// path, because CBMC cannot read an intrinsic — an AES instruction has no
+// C body to unwind, so proof/quic_aes_harness.c and
+// proof/quic_aes256_harness.c prove quic_aes_soft.c and this binary
+// carries quic_aes_hw.c to the same answer. The AES-256 half is what holds
+// TLS_AES_256_GCM_SHA384's cipher: a library object runs that one on the
+// instructions alone, and the software reference exists for this binary
+// and the proof.
 //
 // Two things are compared, not one. The round keys
 // aes_expand_round_keys writes are compared whole, so a key schedule that
@@ -72,6 +76,7 @@ static void rng_fill(uint8_t *p, size_t n) {
 // test/aes_equiv_soft.c and test/aes_equiv_hw.c. Declared here rather
 // than in a header because the renaming is this binary's alone.
 #define ROUND_KEY_BYTES ((size_t)AES_ROUND_KEYS * AES_BLOCK)
+#define ROUND_KEY_BYTES_256 ((size_t)AES_256_ROUND_KEYS * AES_BLOCK)
 
 void aes_expand_round_keys_soft(const uint8_t key[AES_128_KEY], uint8_t round_keys[]);
 void aes_cipher_block_soft(const uint8_t round_keys[], const uint8_t in[AES_BLOCK],
@@ -79,9 +84,16 @@ void aes_cipher_block_soft(const uint8_t round_keys[], const uint8_t in[AES_BLOC
 void aes_expand_round_keys_hw(const uint8_t key[AES_128_KEY], uint8_t round_keys[]);
 void aes_cipher_block_hw(const uint8_t round_keys[], const uint8_t in[AES_BLOCK],
                          uint8_t out[AES_BLOCK]);
+void aes_expand_round_keys_256_soft(const uint8_t key[AES_256_KEY], uint8_t round_keys[]);
+void aes_cipher_block_256_soft(const uint8_t round_keys[], const uint8_t in[AES_BLOCK],
+                               uint8_t out[AES_BLOCK]);
+void aes_expand_round_keys_256_hw(const uint8_t key[AES_256_KEY], uint8_t round_keys[]);
+void aes_cipher_block_256_hw(const uint8_t round_keys[], const uint8_t in[AES_BLOCK],
+                             uint8_t out[AES_BLOCK]);
 
 static int failures = 0;
 static unsigned long compared = 0;
+static unsigned long compared_256 = 0;
 
 static void print_hex(const char *name, const uint8_t *p, size_t n) {
     (void)fprintf(stderr, "  %s ", name);
@@ -141,6 +153,50 @@ static void compare(const char *case_name, const uint8_t key[AES_128_KEY],
         return;
     }
     compared++;
+}
+
+// The AES-256 twin of compare above: the same three questions, over the
+// fifteen round keys and fourteen rounds of Nk = 8.
+static void compare_256(const char *case_name, const uint8_t key[AES_256_KEY],
+                        const uint8_t block[AES_BLOCK]) {
+    uint8_t soft_keys[ROUND_KEY_BYTES_256];
+    uint8_t hw_keys[ROUND_KEY_BYTES_256];
+    aes_expand_round_keys_256_soft(key, soft_keys);
+    aes_expand_round_keys_256_hw(key, hw_keys);
+    if (memcmp(soft_keys, hw_keys, ROUND_KEY_BYTES_256) != 0) {
+        failures++;
+        (void)fprintf(stderr, "FAIL %s: the AES-256 key schedules differ\n", case_name);
+        print_hex("key ", key, AES_256_KEY);
+        print_hex("soft", soft_keys, ROUND_KEY_BYTES_256);
+        print_hex("hw  ", hw_keys, ROUND_KEY_BYTES_256);
+        return;
+    }
+    uint8_t soft_out[AES_BLOCK];
+    uint8_t hw_out[AES_BLOCK];
+    aes_cipher_block_256_soft(soft_keys, block, soft_out);
+    aes_cipher_block_256_hw(hw_keys, block, hw_out);
+    if (memcmp(soft_out, hw_out, AES_BLOCK) != 0) {
+        failures++;
+        (void)fprintf(stderr, "FAIL %s: the AES-256 cipher blocks differ\n", case_name);
+        print_hex("key ", key, AES_256_KEY);
+        print_hex("in  ", block, AES_BLOCK);
+        print_hex("soft", soft_out, AES_BLOCK);
+        print_hex("hw  ", hw_out, AES_BLOCK);
+        return;
+    }
+    uint8_t soft_same[AES_BLOCK];
+    uint8_t hw_same[AES_BLOCK];
+    memcpy(soft_same, block, AES_BLOCK);
+    memcpy(hw_same, block, AES_BLOCK);
+    aes_cipher_block_256_soft(soft_keys, soft_same, soft_same);
+    aes_cipher_block_256_hw(hw_keys, hw_same, hw_same);
+    if (memcmp(soft_same, soft_out, AES_BLOCK) != 0 || memcmp(hw_same, hw_out, AES_BLOCK) != 0) {
+        failures++;
+        (void)fprintf(stderr, "FAIL %s: AES-256 in == out differs from distinct buffers\n",
+                      case_name);
+        return;
+    }
+    compared_256++;
 }
 
 // The fixed operands a table and an instruction are most likely to
@@ -210,14 +266,50 @@ static void run_random(void) {
     }
 }
 
+// AES-256's fixed operands, single bits and random pairs, the three
+// passes above over a 32-byte key. Every key bit is flipped on its own
+// because Nk = 8 takes the second half of the key through a SubWord step
+// AES-128 does not have, and a schedule that got that step wrong differs
+// only for keys whose second half matters.
+static void run_aes256(void) {
+    uint8_t key[AES_256_KEY];
+    uint8_t block[AES_BLOCK];
+    static const uint8_t patterns[4] = {0x00, 0xff, 0x5a, 0xa5};
+    for (size_t k = 0; k < sizeof patterns; k++) {
+        for (size_t b = 0; b < sizeof patterns; b++) {
+            memset(key, patterns[k], sizeof key);
+            memset(block, patterns[b], sizeof block);
+            compare_256("aes-256 fixed pattern", key, block);
+        }
+    }
+    for (size_t bit = 0; bit < (size_t)8 * AES_256_KEY; bit++) {
+        memset(key, 0, sizeof key);
+        memset(block, 0, sizeof block);
+        key[bit / 8] = (uint8_t)(1U << (bit % 8));
+        compare_256("aes-256 single key bit", key, block);
+    }
+    for (size_t bit = 0; bit < (size_t)8 * AES_BLOCK; bit++) {
+        memset(key, 0, sizeof key);
+        memset(block, 0, sizeof block);
+        block[bit / 8] = (uint8_t)(1U << (bit % 8));
+        compare_256("aes-256 single block bit", key, block);
+    }
+    for (unsigned long i = 0; i < RANDOM_PAIRS && failures == 0; i++) {
+        rng_fill(key, sizeof key);
+        rng_fill(block, sizeof block);
+        compare_256("aes-256 random pair", key, block);
+    }
+}
+
 int main(void) {
     uint64_t seed = rng_seed_from_env();
     run_fixed();
     run_single_bits();
     run_random();
-    printf("aes equivalence: %lu pairs agree between AES=soft and AES=hw "
-           "(seed 0x%llx)\n",
-           compared, (unsigned long long)seed);
+    run_aes256();
+    printf("aes equivalence: %lu AES-128 pairs and %lu AES-256 pairs agree between AES=soft "
+           "and AES=hw (seed 0x%llx)\n",
+           compared, compared_256, (unsigned long long)seed);
     if (failures > 0) {
         printf("aes equivalence: %d mismatches\n", failures);
         return 1;

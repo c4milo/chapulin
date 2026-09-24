@@ -1,0 +1,17 @@
+invariant: INV-26
+file: quic_aes.c
+catches: proof/prove-one.sh quic_aes_traffic
+reason: aes_traffic_key_init records AES-128's round count beside the
+  AES-256 schedule it expanded, so aes_encrypt_schedule runs a
+  TLS_AES_256_GCM_SHA384 key through ten rounds of the wrong cipher.
+  Both ends of a chapulin connection would agree with each other and with
+  no other implementation, so no loopback notices; the constructor's proof
+  asserts the round count each key length writes and the cipher the
+  dispatch then runs, and fails on this edit.
+
+--- old
+        aes_expand_round_keys_256(key, k->key.round_keys);
+        k->key.rounds = AES_256_ROUNDS;
+--- new
+        aes_expand_round_keys_256(key, k->key.round_keys);
+        k->key.rounds = AES_128_ROUNDS;

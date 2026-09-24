@@ -19,11 +19,25 @@
 // build is the only one whose key is secret, ct.h refuses that build
 // unless it also takes AES=hw, so no key this file expands is ever worth
 // wiping and the stores would cost a device something for nothing.
+//
+// Under -DCH_AES_256_TEST it also holds AES-256, as the software
+// reference test/aes_equiv_test.c and proof/quic_aes256_harness.c hold
+// quic_aes_hw.c's AES-256 to. Only tests and proofs define that macro. A
+// library object takes AES-256 only for TLS_AES_256_GCM_SHA384, whose key
+// is secret, and so only with AES=hw.
 #include "quic_aes_block.h"
 
 #if defined(CH_TRANSPORT_QUIC) || defined(CH_SUITE_AES_GCM)
 #ifndef CH_AES_HW
 #ifndef CH_AES_EXTERN
+
+// The fence the paragraph above states, written in this file so that it
+// holds for a tree that compiles this source with its own build system and
+// never reads ct.h's refusal. A suite build hands AES a traffic key, and
+// this S-box is indexed with the key.
+#ifdef CH_SUITE_AES_GCM
+#error "CH_SUITE_AES_GCM never compiles AES=soft: its S-box is indexed with the key (INV-26)"
+#endif
 
 #include <stddef.h>
 #include <string.h>
@@ -148,6 +162,71 @@ void aes_cipher_block(const uint8_t round_keys[AES_ROUND_KEYS * AES_BLOCK],
     add_round_key(state, &round_keys[(size_t)AES_128_ROUNDS * AES_BLOCK]);
     memcpy(out, state, AES_BLOCK);
 }
+
+#ifdef CH_AES_256
+// The software AES-256 reference, which only a test binary or a proof
+// harness compiles (-DCH_AES_256_TEST, quic_aes.h). Written apart
+// from the AES-128 pair above rather than folded into it, so that pair
+// and the proof and the branch counts that measure it stay as they were.
+
+// FIPS 197 §5.1.1's SubWord applied in place: the S-box on each of 4
+// bytes.
+static void sub_word(uint8_t word[4]) {
+    for (size_t j = 0; j < 4; j++) {
+        word[j] = SBOX[word[j]];
+    }
+}
+
+void aes_expand_round_keys_256(const uint8_t key[AES_256_KEY],
+                               uint8_t round_keys[AES_256_ROUND_KEYS * AES_BLOCK]) {
+    // FIPS 197 §5.2, Key Expansion, for Nk = 8: the 32 key bytes are the
+    // first two round keys, and each later word is the word 32 bytes back
+    // exclusive-ored with the word before it. Every eighth word takes
+    // RotWord, SubWord and the round constant first, and the fourth word
+    // after it takes SubWord alone.
+    uint8_t round_constant = 0x01;
+    memcpy(round_keys, key, AES_256_KEY);
+    for (size_t i = AES_256_KEY; i < (size_t)AES_256_ROUND_KEYS * AES_BLOCK; i += 4) {
+        uint8_t word[4];
+        memcpy(word, &round_keys[i - 4], sizeof word);
+        if (i % AES_256_KEY == 0) {
+            uint8_t first = word[0];
+            word[0] = word[1];
+            word[1] = word[2];
+            word[2] = word[3];
+            word[3] = first;
+            sub_word(word);
+            word[0] = (uint8_t)(word[0] ^ round_constant);
+            round_constant = xtime(round_constant);
+        } else if (i % AES_256_KEY == AES_BLOCK) {
+            sub_word(word);
+        }
+        for (size_t j = 0; j < sizeof word; j++) {
+            round_keys[i + j] = (uint8_t)(round_keys[i - AES_256_KEY + j] ^ word[j]);
+        }
+    }
+}
+
+void aes_cipher_block_256(const uint8_t round_keys[AES_256_ROUND_KEYS * AES_BLOCK],
+                          const uint8_t in[AES_BLOCK], uint8_t out[AES_BLOCK]) {
+    // FIPS 197 §5.1 for Nr = 14: one AddRoundKey, thirteen full rounds,
+    // and a last round without MixColumns. The input is copied into a
+    // local state first, so in == out works.
+    uint8_t state[AES_BLOCK];
+    memcpy(state, in, AES_BLOCK);
+    add_round_key(state, round_keys);
+    for (size_t round = 1; round < AES_256_ROUNDS; round++) {
+        sub_bytes(state);
+        shift_rows(state);
+        mix_columns(state);
+        add_round_key(state, &round_keys[round * AES_BLOCK]);
+    }
+    sub_bytes(state);
+    shift_rows(state);
+    add_round_key(state, &round_keys[(size_t)AES_256_ROUNDS * AES_BLOCK]);
+    memcpy(out, state, AES_BLOCK);
+}
+#endif // CH_AES_256
 
 #endif // CH_AES_EXTERN
 #endif // CH_AES_HW

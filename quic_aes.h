@@ -1,12 +1,14 @@
-// The AES-128 forward cipher (FIPS 197) and the one key type it takes.
-// This file exists for QUIC Initial packets and the QUIC Retry tag, and
-// for nothing else: RFC 9001 §5.2 fixes AEAD_AES_128_GCM for Initial
-// packets, §5.4.3 fixes AES-ECB for their header protection, and §5.8
-// fixes AEAD_AES_128_GCM under a printed key for the Retry integrity
-// tag. None of the three is negotiable, and none of them reaches a key
-// the TLS key schedule derived. Only a TRANSPORT=quic build compiles
-// it. docs/quic.md, "Where packet protection lives", states the trade
-// and INV-26 in docs/invariants.md states the rule that holds it.
+// The AES forward cipher (FIPS 197) and the two key types it takes.
+// Every build that compiles this file has the first: RFC 9001 §5.2 fixes
+// AEAD_AES_128_GCM for Initial packets, §5.4.3 fixes AES-ECB for their
+// header protection, and §5.8 fixes AEAD_AES_128_GCM under a printed key
+// for the Retry integrity tag. None of the three is negotiable, and every
+// key they use is public, so they take aes_public_key. A
+// -DCH_SUITE_AES_GCM build adds the second, aes_traffic_key, for the two
+// AES-GCM cipher suites, whose keys the TLS key schedule derives. A
+// TRANSPORT=quic build compiles this file, and so does a suite build over
+// any transport. docs/quic.md, "Where packet protection lives", states the
+// trade and INV-26 in docs/invariants.md states the rule that holds both.
 //
 // Forward cipher only. GCM uses the forward cipher function alone (NIST
 // SP 800-38D) and the §5.4.3 mask is one forward block, so no inverse
@@ -21,28 +23,58 @@
 #include "cfg.h"
 
 #define AES_BLOCK 16      // FIPS 197 block size
-#define AES_128_KEY 16    // the only key size this build uses
+#define AES_128_KEY 16    // the key size of every public key, and of AES-128 suites
 #define AES_128_ROUNDS 10 // FIPS 197 Table 3, Nr for Nk = 4
 #define AES_ROUND_KEYS 11 // Nr + 1 round keys, AES_BLOCK bytes each
 #define AES_IV 12         // the 12-byte packet protection IV of §5.1
+
+// AES-256, which TLS_AES_256_GCM_SHA384 takes (RFC 9846 §9.1,
+// rfc9846.txt:4540-4543). A library object compiles it only under
+// -DCH_SUITE_AES_GCM, which ct.h refuses without AES=hw, so it runs on the
+// AES instructions in quic_aes_hw.c. A test binary or a proof harness
+// defines CH_AES_256_TEST to compile it without the suite: on AES=soft
+// that is the software reference in quic_aes_soft.c, which holds the
+// hardware path to FIPS 197 where CBMC cannot read an intrinsic, and on
+// AES=hw it is the instructions a suite build runs. The Makefile's
+// LIB_DEF never carries CH_AES_256_TEST, and quic_aes_soft.c refuses the
+// suite define outright. CH_AES_256 is the one name the sources below
+// test, so neither condition is spelled twice.
+#if defined(CH_SUITE_AES_GCM) || defined(CH_AES_256_TEST)
+#define CH_AES_256
+#endif
+#define AES_256_KEY 32        // FIPS 197 Table 3, Nk = 8 words
+#define AES_256_ROUNDS 14     // FIPS 197 Table 3, Nr for Nk = 8
+#define AES_256_ROUND_KEYS 15 // Nr + 1 round keys, AES_BLOCK bytes each
+
+// How many round keys one aes_key_schedule holds: room for AES-256 in a
+// build that has it, and AES-128's eleven in every other build, so the
+// public-key frames of a build without AES-256 keep the size INV-19
+// measured.
+#ifdef CH_AES_256
+#define AES_SCHEDULE_ROUND_KEYS AES_256_ROUND_KEYS
+#else
+#define AES_SCHEDULE_ROUND_KEYS AES_ROUND_KEYS
+#endif
 
 // One direction of one QUIC encryption level whose AEAD is
 // AEAD_AES_128_GCM: the packet protection key expanded into its round
 // keys, the packet protection IV, and the header protection key
 // expanded into its own round keys. Those are RFC 9001 §5.1's "quic
 // key", "quic iv" and "quic hp" (rfc9001.txt:1029-1032). Every aes_ and
-// gcm_ entry takes this type and nothing else, so a call that hands one
-// of them a rec_dir key, a quic_keys key or a bare byte array does not
+// gcm_ entry outside the aes_traffic_ and gcm_traffic_ families takes
+// this type and nothing else, so a call that hands one of them a rec_dir
+// key, a quic_keys key, an aes_traffic_key or a bare byte array does not
 // compile.
 //
 // The type is incomplete here, and quic_aes_key.h holds the definition.
 // A file that includes only this header can take a pointer to a key and
 // pass it on; it cannot declare one, size one, or write a field of one,
 // because the compiler does not know what is inside. That is INV-26's
-// first check, and the compiler is what runs it. Three sources include
-// quic_aes_key.h: quic_aes.c, which writes the two constructors, and
+// first check, and the compiler is what runs it. Four sources include
+// quic_aes_key.h: quic_aes.c, which writes the two constructors,
 // quic_initial.c and quic_retry.c, which build a key on their own stack
-// at each use. `make lint-quic-surface` fails on a fourth.
+// at each use, and quic_gcm.c, which reads the round keys to run the
+// AEAD. `make lint-quic-surface` fails on a fifth.
 //
 // Every key this type ever holds is public, and that is the whole
 // reason a table-driven cipher is allowed in this tree. The Initial
@@ -56,40 +88,61 @@
 // Filling this struct with anything else is what INV-26 forbids, and a
 // traffic secret from keysched.c is the case it names: the day one
 // reaches a lookup-table cipher, this tree has a timing story to defend
-// and docs/decisions.md entry 6's stated gain is gone. Nothing stores a
-// key between calls. ch_quic keeps the Destination Connection ID the
-// derivation reads, not the key it produces, so no long-lived key
-// object exists for a later line to overwrite. The two constructors
-// below are the only way a key is written at all.
+// and docs/decisions.md entry 6's stated gain is gone. A traffic key has
+// its own type below. Nothing stores a public key between calls. ch_quic
+// keeps the Destination Connection ID the derivation reads, not the key
+// it produces, so no long-lived key object exists for a later line to
+// overwrite. The two constructors below are the only way a key is
+// written at all.
 //
 // Four checks in the build hold the rest. The Semgrep rule
-// inv-26-aes-public-keys-only fails any use of an aes_ or gcm_ name, as
-// a call or as a value, outside quic_initial.c, quic_retry.c,
-// quic_aes.c and quic_gcm.c. lint-quic-surface fails a function, a
-// function-like macro or a type in this header or quic_gcm.h that the
-// rule does not match, fails a type this header completes, and fails a
-// source outside the three that includes quic_aes_key.h, so the rule's
-// own premise is read rather than assumed. lint-codegen-partition holds
-// quic_aes.c and quic_gcm.c in WIDEMUL_PUBLIC, the list whose comment
-// says a secret arriving in any of these is a design change. lib-check
-// keeps every aes_ and gcm_ symbol out of the packaged object's
-// exports, so no caller reuses this cipher on something else. INV-26 in
-// docs/invariants.md states what each one reads and what review still
-// owes.
+// inv-26-aes-public-keys-only fails any use of an aes_ or gcm_ name
+// outside the two traffic families, as a call or as a value, outside
+// quic_initial.c, quic_retry.c and the definition sites, and
+// inv-26-aes-traffic-keys-only fails any use of a traffic-family name
+// outside the files aes_traffic_key.h names. lint-quic-surface fails a
+// function, a function-like macro or a type in this header or quic_gcm.h
+// that the rules do not match, fails a type this header completes, and
+// fails a source outside each key header's list that includes it, so the
+// rules' own premise is read rather than assumed.
+// lint-codegen-partition holds quic_aes.c and quic_gcm.c in
+// WIDEMUL_CEILING and BRANCH_SRCS, where a compiler that lowers a masked
+// select to a branch shows. lib-check keeps every aes_ and gcm_ symbol
+// out of the packaged object's exports, so no caller reuses this cipher
+// on something else. INV-26 in docs/invariants.md states what each one
+// reads and what review still owes.
 // The expanded round keys, forward-declared so the entries below can name
-// one without the body. quic_aes_key.h completes it, and only the files
-// tools/quic-footprint.py admits may include that.
+// one without the body. aes_schedule.h completes it, and only the two key
+// headers include that, so only the files tools/quic-footprint.py admits
+// to one of them can build a schedule.
 typedef struct aes_key_schedule aes_key_schedule;
 
 typedef struct aes_public_key aes_public_key;
 
 #ifdef CH_SUITE_AES_GCM
-// The other key AES may see, and the only one that is not public: one
-// direction's TLS traffic key under TLS_AES_128_GCM_SHA256. Its body
-// lives in aes_traffic_key.h alone, so only the two files that
-// header names can build one or read one, and every other file sees this
-// incomplete type. INV-26 states both halves and what each rests on.
+// The other key AES may see, and the only one that is not public: a key
+// hkdf_expand_label derived from a TLS traffic secret, under
+// TLS_AES_128_GCM_SHA256 or TLS_AES_256_GCM_SHA384. Its body lives in
+// aes_traffic_key.h alone, so only the files that header names can build
+// one or read one, and every other file sees this incomplete type. Every
+// entry that takes one begins aes_traffic_ or gcm_traffic_, and every
+// other aes_ and gcm_ entry takes an aes_public_key, so a traffic key
+// cannot reach a public-key entry and a public key cannot reach a traffic
+// entry. INV-26 states both halves and what each rests on.
 typedef struct aes_traffic_key aes_traffic_key;
+
+// Expands one traffic key into k: key_len is AES_128_KEY for
+// TLS_AES_128_GCM_SHA256 and AES_256_KEY for TLS_AES_256_GCM_SHA384, the
+// "key" length the suite fixes (RFC 9846 §7.3). The key is secret, and
+// this build runs AES on the instructions alone (ct.h), so no table is
+// indexed with it.
+//
+// Requires: k is not NULL and points at one whole aes_traffic_key, so the
+// caller includes aes_traffic_key.h; key points at key_len readable bytes;
+// key_len is AES_128_KEY or AES_256_KEY, which the suite fixed. Writes k
+// whole and cannot fail. The caller wipes k with ct_wipe when it is done,
+// because k holds the expanded secret.
+void aes_traffic_key_init(aes_traffic_key *k, const uint8_t *key, size_t key_len);
 #endif
 
 // The two endpoints of a QUIC connection. RFC 9001 §5.2 derives one
@@ -169,9 +222,12 @@ void aes_public_key_retry(aes_public_key *k);
 // AES_BLOCK readable and writable bytes. in == out is allowed. Writes
 // AES_BLOCK bytes and cannot fail.
 // The forward cipher over an expanded key, whichever key type holds it.
-// The two entries below unwrap their typed key and call this, so the
-// cipher is written once and the type system still decides which call
-// sites may hold which key (INV-26).
+// The typed entries unwrap their key and call this, and so does
+// quic_gcm.c, so the cipher is written once and the type system still
+// decides which call sites may hold which key (INV-26). In a build with
+// AES-256 the schedule records its round count, and this runs the
+// fourteen rounds of AES-256 or the ten of AES-128 by it; the count is
+// the suite's, which the ServerHello named in the clear.
 void aes_encrypt_schedule(const aes_key_schedule *s, const uint8_t in[AES_BLOCK],
                           uint8_t out[AES_BLOCK]);
 

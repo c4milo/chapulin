@@ -81,6 +81,23 @@ if "$cc" -std=c11 -I. -fsyntax-only -DCH_RAND_EXTERN -DCH_TRANSPORT_QUIC \
     exit 1
 fi
 
+# The AES=soft cipher under the suite define: quic_aes_soft.c refuses it
+# itself, beside ct.h's refusal, because its S-box is indexed with the key
+# and a suite build hands AES a traffic key. The file reads no ct.h, so
+# this is the one line that stops a tree with its own build system from
+# pairing them. Without the suite the same file compiles, AES-256
+# reference included, so what fails is the refusal and nothing else.
+if ! "$cc" -std=c11 -I. -fsyntax-only -DCH_RAND_EXTERN -DCH_TRANSPORT_QUIC -DCH_AES_256_TEST \
+    quic_aes_soft.c; then
+    echo "quic-builds: quic_aes_soft.c with its AES-256 reference must compile" >&2
+    exit 1
+fi
+if "$cc" -std=c11 -I. -fsyntax-only -DCH_RAND_EXTERN -DCH_TRANSPORT_QUIC -DCH_SUITE_AES_GCM \
+    -DCH_NATIVE_AES quic_aes_soft.c 2>/dev/null; then
+    echo "quic-builds: quic_aes_soft.c under -DCH_SUITE_AES_GCM compiled; it must refuse the suite" >&2
+    exit 1
+fi
+
 # The suite in a raw or ca client: handshake_message.c refuses it, because
 # that client offers ChaCha20 alone (docs/decisions.md entry 45). The
 # same flags compile for a TRUST=webpki client, which offers both suites,

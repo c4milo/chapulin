@@ -139,23 +139,37 @@ CIPHER_PREFIXES = ("aes_", "gcm_", "ch_aes_")
 RULES = Path(".semgrep/invariants.yml")
 RULE_ID = "inv-26-aes-public-keys-only"
 
-# The one header that gives aes_public_key a body, and the three sources
-# INV-26 lets include it: quic_aes.c writes the two constructors, and
+# The one header that gives aes_public_key a body, and the four sources
+# INV-26 lets include it: quic_aes.c writes the two constructors,
 # quic_initial.c and quic_retry.c build one key per use on their own
-# stack. Every other root source sees the incomplete type quic_aes.h
-# declares, so the compiler refuses a key there. key_holders() checks it.
+# stack, and quic_gcm.c reads the round keys to run the AEAD. Every other
+# root source sees the incomplete type quic_aes.h declares, so the
+# compiler refuses a key there. key_holders() checks it.
 KEY_HEADER = "quic_aes_key.h"
-KEY_HOLDERS = ("quic_aes.c", "quic_initial.c", "quic_retry.c",
-               # TLS_AES_128_GCM_SHA256 adds two. aes_traffic_key.h gives
-               # the one key that is not public its body and needs the
-               # schedule that body contains; quic_gcm.c reads the round
-               # keys out of either key type to run the AEAD. Both are
-               # deliberate and both are why INV-26 now states two claims
-               # rather than one: every key AES sees is public, except the
-               # traffic key a -DCH_SUITE_AES_GCM build hands it, which
-               # ct.h refuses unless the build has hardware AES and
-               # asserts its timing.
-               "aes_traffic_key.h", "quic_gcm.c")
+KEY_HOLDERS = ("quic_aes.c", "quic_initial.c", "quic_retry.c", "quic_gcm.c")
+
+# The other key's body, and the sources INV-26 lets include it. A
+# -DCH_SUITE_AES_GCM build hands AES the traffic keys of its two AES-GCM
+# cipher suites, which are secret, and aes_traffic_key.h gives that type a
+# body: quic_aes.c writes its constructor, quic_gcm.c reads its round keys,
+# and record.c builds one per record. It includes aes_schedule.h and not
+# quic_aes_key.h, so a traffic-key holder cannot build a public key.
+TRAFFIC_KEY_HEADER = "aes_traffic_key.h"
+TRAFFIC_KEY_HOLDERS = ("quic_aes.c", "quic_gcm.c", "record.c")
+
+# The round keys both key types are built on. Two headers include it and
+# no root source does, so a file reaches a schedule's body only through a
+# key header it is admitted to.
+SCHEDULE_HEADER = "aes_schedule.h"
+SCHEDULE_HOLDERS = (KEY_HEADER, TRAFFIC_KEY_HEADER)
+
+# Each header that gives a key type a body: the header, the struct it
+# completes, and the files INV-26 admits to include it.
+KEY_BODIES = (
+    (KEY_HEADER, "aes_public_key", KEY_HOLDERS),
+    (TRAFFIC_KEY_HEADER, "aes_traffic_key", TRAFFIC_KEY_HOLDERS),
+    (SCHEDULE_HEADER, "aes_key_schedule", SCHEDULE_HOLDERS),
+)
 
 
 def run(*args):
@@ -470,41 +484,44 @@ def rule_exists():
 
 
 def key_holders():
-    """Every root source that includes quic_aes_key.h and is not one of
-    the three INV-26 admits, as the sentence each one deserves.
+    """Every root file that reaches a key type's body and is not one INV-26
+    admits, as the sentence each one deserves.
 
-    quic_aes_key.h is the one file that gives aes_public_key a body, so
-    including it is the one way a source can declare a key, size a key
-    or write a field of a key. Every other source sees the incomplete
-    type quic_aes.h declares and gets a compiler error for all three.
-    The allowlist is read here rather than from the build, the way
-    inv-26-aes-public-keys-only's exclude list is: it is a tripwire, and
-    a fourth name added to it is a diff a reviewer looks for."""
+    quic_aes_key.h, aes_traffic_key.h and aes_schedule.h are the three
+    files that give aes_public_key, aes_traffic_key and aes_key_schedule
+    a body, so including one is the one way a source can declare that
+    type, size it or write a field of it. Every other source sees the
+    incomplete types quic_aes.h declares and gets a compiler error for
+    all three. The allowlists are read here rather than from the build,
+    the way the Semgrep rules' exclude lists are: they are tripwires, and
+    a name added to one is a diff a reviewer looks for."""
     apart = []
     for path in run("git", "ls-files", "*.c", "*.h"):
-        if "/" in path or path in (KEY_HEADER, *KEY_HOLDERS):
+        if "/" in path:
             continue
         text = (ROOT / path).read_text()
-        # The header's name anywhere in an include line, however it is
-        # spelled. An exact match on the quoted form read past
-        # <quic_aes_key.h>, "./quic_aes_key.h", and a macro expanded
-        # into the directive, each of which reaches the same body.
-        if re.search(rf"#\s*include\s+.*{re.escape(KEY_HEADER)}", text) or \
-           re.search(rf"#\s*define\s+\w+\s+.*{re.escape(KEY_HEADER)}", text):
-            apart.append(f"{path} includes {KEY_HEADER}, so it can declare "
-                         f"an aes_public_key and write a traffic secret "
-                         f"into one; only {', '.join(KEY_HOLDERS)} may")
-            continue
-        # A file that spells the body itself needs no include at all. C
-        # diagnoses no mismatched struct definition across translation
-        # units, so this shape compiles clean and hands the writer a
-        # full key object; only this check refuses it.
-        body = re.search(r"struct\s+(aes_public_key|aes_key_schedule)\s*\{", text)
-        if body:
-            apart.append(f"{path} gives struct {body.group(1)} a body of its "
-                         f"own, so it can declare a key and write a traffic "
-                         f"secret into one with no include and no compiler "
-                         f"error; the body belongs in {KEY_HEADER} alone")
+        for header, struct, holders in KEY_BODIES:
+            if path == header or path in holders:
+                continue
+            # The header's name anywhere in an include line, however it
+            # is spelled. An exact match on the quoted form read past
+            # <quic_aes_key.h>, "./quic_aes_key.h", and a macro expanded
+            # into the directive, each of which reaches the same body.
+            if re.search(rf"#\s*include\s+.*{re.escape(header)}", text) or \
+               re.search(rf"#\s*define\s+\w+\s+.*{re.escape(header)}", text):
+                apart.append(f"{path} includes {header}, so it can declare "
+                             f"an {struct} and write a key into one; only "
+                             f"{', '.join(holders)} may")
+                continue
+            # A file that spells the body itself needs no include at all.
+            # C diagnoses no mismatched struct definition across
+            # translation units, so this shape compiles clean and hands
+            # the writer a full key object; only this check refuses it.
+            if re.search(rf"struct\s+{struct}\s*\{{", text):
+                apart.append(f"{path} gives struct {struct} a body of its "
+                             f"own, so it can declare one and write a key "
+                             f"into it with no include and no compiler "
+                             f"error; the body belongs in {header} alone")
     return apart
 
 

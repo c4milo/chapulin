@@ -1,8 +1,10 @@
 // The TRANSPORT=quic mode against its published vectors: FIPS 197 for the
-// AES-128 forward cipher, NIST SP 800-38D for AEAD_AES_128_GCM and GHASH,
-// and RFC 9001 Appendix A for the Initial keys, the header protection
-// masks, the client and server Initial packets and the Retry integrity
-// tag. Its own
+// AES-128 and AES-256 forward ciphers, NIST SP 800-38D for
+// AEAD_AES_128_GCM, AEAD_AES_256_GCM and GHASH, and RFC 9001 Appendix A
+// for the Initial keys, the header protection masks, the client and
+// server Initial packets and the Retry integrity tag. The Makefile builds
+// it with -DCH_AES_256_TEST, so the AES-256 rows run on both AES values
+// below. Its own
 // binary because bin/unit includes tls.h and calls rec_seal, which a
 // -DCH_TRANSPORT_QUIC build does not compile; bin/sha3_test and
 // bin/mlkem_test have the same shape for a mode's own sources.
@@ -129,6 +131,40 @@ static void test_fips197_blocks(void) {
     CHECK(memcmp(both, appendix_c_out, sizeof both) == 0);
 }
 
+#ifdef CH_AES_256
+// FIPS 197's AES-256 values, for TLS_AES_256_GCM_SHA384's cipher.
+// Appendix A.3 expands the 256-bit example key: its first two round keys
+// are the key, w[8] is the first word the expansion computes, and w[56]
+// to w[59] are the last round key, which only a schedule that ran every
+// step of Nk = 8 reaches. Appendix C.3 is the full block vector.
+static void test_fips197_aes256(void) {
+    static const char appendix_a3_key[] =
+        "603deb1015ca71be2b73aef0857d77811f352c073b6108d72d9810a30914dff4";
+    static const char appendix_c3_key[] =
+        "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f";
+    uint8_t key[AES_256_KEY];
+    uint8_t round_keys[AES_256_ROUND_KEYS * AES_BLOCK];
+    uint8_t out[AES_BLOCK];
+
+    CHECK(unhex(appendix_a3_key, key) == sizeof key);
+    aes_expand_round_keys_256(key, round_keys);
+    CHECK(memcmp(round_keys, key, AES_256_KEY) == 0);
+    CHECK(eq_hex(round_keys + AES_256_KEY, "9ba35411"));
+    CHECK(eq_hex(round_keys + (size_t)AES_256_ROUNDS * AES_BLOCK,
+                 "fe4890d1e6188d0b046df344706c631e"));
+
+    uint8_t in[AES_BLOCK];
+    CHECK(unhex(appendix_c3_key, key) == sizeof key);
+    CHECK(unhex("00112233445566778899aabbccddeeff", in) == sizeof in);
+    aes_expand_round_keys_256(key, round_keys);
+    aes_cipher_block_256(round_keys, in, out);
+    CHECK(eq_hex(out, "8ea2b7ca516745bfeafc49904b496089"));
+    // in == out, as for AES-128 above.
+    aes_cipher_block_256(round_keys, in, in);
+    CHECK(eq_hex(in, "8ea2b7ca516745bfeafc49904b496089"));
+}
+#endif
+
 // RFC 9001 Appendix A.1: the client and server Initial keys for the
 // Destination Connection ID above (rfc9001.txt:2352-2377). The first 16
 // bytes of a schedule are the key that built it, so comparing them
@@ -204,7 +240,7 @@ static void test_appendix_header_masks(void) {
 static void test_retry_key(void) {
     static const uint8_t retry_key[AES_128_KEY] = {0xbe, 0x0c, 0x69, 0x0b, 0x9f, 0x66, 0x57, 0x5a,
                                                    0x1d, 0x76, 0x6b, 0x54, 0xe3, 0x68, 0xc8, 0x4e};
-    static const aes_key_schedule zero_schedule = {{0}};
+    static const aes_key_schedule zero_schedule;
     static const uint8_t zero_iv[AES_IV] = {0};
     aes_public_key k;
     memset(&k, 0xa5, sizeof k);
@@ -370,6 +406,9 @@ static void test_appendix_a5_keys(void) {
 
 int main(void) {
     test_fips197_blocks();
+#ifdef CH_AES_256
+    test_fips197_aes256();
+#endif
     test_appendix_a1_keys();
     test_appendix_a5_keys();
     test_appendix_header_masks();

@@ -1,0 +1,16 @@
+invariant: INV-26
+file: handshake_post.c
+catches: test/lint-quic-surface.sh
+reason: handshake_post.c includes aes_traffic_key.h, the one header that
+  gives the traffic key a body, so the file that rekeys a direction on a
+  TLS KeyUpdate could declare an aes_traffic_key, fill it from a traffic
+  secret and run it through a path nobody reviewed for a secret key.
+  aes_traffic_key.h names the files admitted to it, and
+  tools/quic-footprint.py reads that list, so lint-quic-surface fails on
+  any other file that includes it.
+
+--- old
+#include "handshake_post.h"
+--- new
+#include "handshake_post.h"
+#include "aes_traffic_key.h"

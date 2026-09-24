@@ -152,7 +152,7 @@ SRCS := ct.c sha256.c hkdf.c chacha20.c poly1305.c aead.c x25519.c p256.c rsa.c 
 HDRS := ct.h sha256.h hkdf.h chacha20.h poly1305.h aead.h x25519.h x25519_wide.h p256.h rsa.h ch_assert.h \
         pem.h x509.h x509_der.h x509_ca.h webpki.h webpki_cfg.h webpki_pin.h webpki_ticket.h buf.h record.h keysched.h io.h handshake_message.h handshake_parser.h handshake_record.h cfg.h session.h handshake_auth.h handshake.h handshake_post.h \
         tls.h rand.h drbg.h sha3.h sha512.h sha512_compress.h p384.h p384_field.h p256_field.h p256_scalar.h p256_point.h p256_sign.h p256_ecdh.h rsa_pkcs1.h rsa_sign.h mlkem.h mlkem_poly.h \
-        handshake_flight.h quic.h quic_aes.h quic_aes_block.h quic_aes_key.h quic_config.h quic_gcm.h quic_ghash_hw.h quic_initial.h quic_keys.h quic_packet.h quic_retry.h quic_step.h quic_fail.h quic_token.h aes_traffic_key.h \
+        handshake_flight.h quic.h quic_aes.h quic_aes_block.h quic_aes_key.h quic_config.h quic_gcm.h quic_ghash_hw.h quic_initial.h quic_keys.h quic_packet.h quic_retry.h quic_step.h quic_fail.h quic_token.h aes_traffic_key.h aes_schedule.h \
         srv_cfg.h srv.h srv_parser.h srv_parser_ext.h srv_message.h srv_cookie.h srv_ticket.h srv_auth.h srv_out.h srv_flight.h srv_resume.h srv_handshake.h srv_quic.h srv_rec.h keylog.h \
         rec.h rec_frame.h rec_step.h build.h
 
@@ -214,6 +214,14 @@ endif
 # the pair once, for AES_IMPL below and for every test binary that builds
 # the AES=hw leg whatever this build's AES value is.
 AES_HW_SRCS := quic_aes_hw.c quic_ghash_hw.c
+# AES-256 outside a suite build, for the test binaries and proof harnesses
+# that hold it to FIPS 197 and SP 800-38D on every AES value: on AES=soft
+# it compiles the software reference quic_aes_soft.c keeps for that, and
+# on AES=hw the instructions a suite build runs (quic_aes.h). No library
+# object takes it: LIB_DEF never names it, lint-trust-separation fails a
+# packaged object whose defines carry it, and quic_aes_soft.c refuses the
+# suite define outright, so the software AES-256 never meets a traffic key.
+AES_256_TEST_DEF := -DCH_AES_256_TEST
 AES ?= soft
 ifeq ($(AES),soft)
 AES_DEF :=
@@ -285,7 +293,7 @@ AES_HW_ENTRY := $(subst $(SPACE),$(COMMA),$(strip -DCH_AES_HW $(AES_HW_CFLAGS)))
 # as the transport, because only a server mints or checks a Retry token,
 # so without the role define both runs would read nothing.
 QUIC_EXTRA_DEFINES := quic_aes_extern.c:-DCH_AES_EXTERN \
-                      aes_traffic_key.h:-DCH_SUITE_AES_GCM \
+                      aes_traffic_key.h:-DCH_SUITE_AES_GCM aes_schedule.h:-DCH_SUITE_AES_GCM \
                       quic_token.c:-DCH_ROLE_SERVER quic_token.h:-DCH_ROLE_SERVER \
                       quic_aes_hw.c:$(AES_HW_ENTRY) \
                       quic_ghash_hw.c:$(AES_HW_ENTRY) \
@@ -366,7 +374,7 @@ LINT_C := $(filter-out softmul.c,$(SRCS)) drbg.c sha3.c sha512.c sha512_compress
 # Test-local headers: prerequisites for every binary that includes them,
 # so a header edit rebuilds the binaries it changes.
 TESTH := test/test_random.h test/pem_armor.h test/pem_tests.h test/x509_ca_tests.h test/session_tests.h test/session_post_tests.h \
-         test/session_cfg_tests.h test/quic_gcm_tests.h test/quic_initial_tests.h test/quic_packet_tests.h test/p256_tests.h test/p256_field_vectors.h test/p256_sign_vectors.h test/p256_ecdh_vectors.h test/wycheproof_p256.h test/diff_driver.h test/diff_aes.h test/diff_gcm.h test/diff_hash.h \
+         test/session_cfg_tests.h test/quic_gcm_tests.h test/quic_initial_tests.h test/quic_packet_tests.h test/p256_tests.h test/p256_field_vectors.h test/p256_sign_vectors.h test/p256_ecdh_vectors.h test/wycheproof_p256.h test/wycheproof_aes_gcm.h test/diff_driver.h test/diff_aes.h test/diff_gcm.h test/diff_hash.h \
          test/diff_handshake_parser.h test/diff_encrypted_exts.h test/diff_handshake_certificate.h test/diff_p256.h test/diff_pem.h test/diff_record.h test/diff_rsa.h \
          test/diff_x25519.h test/handshake_sequence_server.h test/rfc8448_vectors.h \
          test/rfc8448_tests.h \
@@ -1355,9 +1363,11 @@ QUIC_DRIVER_SRCS := $(QUIC_SRCS) handshake_message.c handshake_parser.c handshak
 bin/quic_driver_test: test/quic_driver_test.c $(QUIC_DRIVER_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) -DCH_TRANSPORT_QUIC -I. -o $@ test/quic_driver_test.c $(QUIC_DRIVER_SRCS)
-# The mode against its published vectors: FIPS 197 for the AES-128 forward
-# cipher and RFC 9001 Appendix A for the Initial keys, the header
-# protection masks and the Retry key. Same shape and same reason as
+# The mode against its published vectors: FIPS 197 for the AES-128 and
+# AES-256 forward ciphers, SP 800-38D for both AEADs, and RFC 9001
+# Appendix A for the Initial keys, the header protection masks and the
+# Retry key. AES_256_TEST_DEF turns on the AES-256 rows, which a library
+# object has only under SUITE=aesgcm. Same shape and same reason as
 # bin/quic_driver_test above, and docs/quic.md, "Verification owed", names
 # both the file and this binary. quic_aes.c and the AES implementation this
 # build picked are both on the line: the cipher moved out of quic_aes.c into
@@ -1368,7 +1378,7 @@ bin/quic_driver_test: test/quic_driver_test.c $(QUIC_DRIVER_SRCS) $(HDRS) $(TEST
 bin/quic_test: test/quic_vectors.c quic_aes.c $(AES_IMPL) quic_gcm.c quic_keys.c quic_retry.c quic_initial.c quic_packet.c \
                hkdf.c sha256.c chacha20.c poly1305.c aead.c buf.c ct.c $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -DCH_TRANSPORT_QUIC $(AES_DEF) -I. -o $@ test/quic_vectors.c quic_aes.c \
+	$(CC) $(CFLAGS) -DCH_TRANSPORT_QUIC $(AES_DEF) $(AES_256_TEST_DEF) -I. -o $@ test/quic_vectors.c quic_aes.c \
 	  $(AES_IMPL) quic_gcm.c quic_keys.c quic_retry.c quic_initial.c quic_packet.c hkdf.c sha256.c chacha20.c poly1305.c aead.c buf.c ct.c
 # The same vectors on AES=hw. CBMC cannot read an intrinsic, so the published
 # standards are how the instruction path answers for itself: FIPS 197 for the
@@ -1407,7 +1417,7 @@ bin/aes_suite_test: test/aes_suite_test.c record.c quic_gcm.c quic_aes.c $(AES_H
 bin/quic_test_hw: test/quic_vectors.c quic_aes.c $(AES_HW_SRCS) quic_gcm.c quic_keys.c quic_retry.c quic_initial.c quic_packet.c \
                   hkdf.c sha256.c chacha20.c poly1305.c aead.c buf.c ct.c $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) $(AES_HW_CFLAGS) -DCH_TRANSPORT_QUIC -DCH_AES_HW -I. -o $@ \
+	$(CC) $(CFLAGS) $(AES_HW_CFLAGS) -DCH_TRANSPORT_QUIC -DCH_AES_HW $(AES_256_TEST_DEF) -I. -o $@ \
 	  test/quic_vectors.c quic_aes.c $(AES_HW_SRCS) quic_gcm.c quic_keys.c quic_retry.c quic_initial.c quic_packet.c hkdf.c sha256.c chacha20.c poly1305.c aead.c buf.c ct.c
 # AES=hw against AES=soft over the same inputs, the check that holds the
 # instruction path where a proof cannot reach. Both implementations are in one
@@ -2296,7 +2306,7 @@ bin/diff_x25519_wide: test/diff_x25519_test.c x25519.c x25519_wide.c ct.c $(HDRS
 # on the line for the reason bin/quic_test states.
 bin/diff_quic: test/diff_quic_test.c quic_aes.c $(AES_IMPL) quic_gcm.c hkdf.c sha256.c ct.c $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -DCH_TRANSPORT_QUIC $(AES_DEF) -I. -o $@ test/diff_quic_test.c quic_aes.c $(AES_IMPL) quic_gcm.c hkdf.c sha256.c ct.c
+	$(CC) $(CFLAGS) -DCH_TRANSPORT_QUIC $(AES_DEF) $(AES_256_TEST_DEF) -I. -o $@ test/diff_quic_test.c quic_aes.c $(AES_IMPL) quic_gcm.c hkdf.c sha256.c ct.c
 # The same main over the AES=hw sources, whatever this build's AES value is,
 # so the rows in test/diff_aes.h and test/diff_gcm.h run the AES instructions
 # and the carry-less multiply GHASH against spec/lean/Spec/Aes.lean and
@@ -2306,7 +2316,7 @@ bin/diff_quic: test/diff_quic_test.c quic_aes.c $(AES_IMPL) quic_gcm.c hkdf.c sh
 # AES_HW_PROBE found the instructions.
 bin/diff_quic_hw: test/diff_quic_test.c quic_aes.c $(AES_HW_SRCS) quic_gcm.c hkdf.c sha256.c ct.c $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) $(AES_HW_CFLAGS) -DCH_TRANSPORT_QUIC -DCH_AES_HW -I. -o $@ test/diff_quic_test.c quic_aes.c \
+	$(CC) $(CFLAGS) $(AES_HW_CFLAGS) -DCH_TRANSPORT_QUIC -DCH_AES_HW $(AES_256_TEST_DEF) -I. -o $@ test/diff_quic_test.c quic_aes.c \
 	  $(AES_HW_SRCS) quic_gcm.c hkdf.c sha256.c ct.c
 
 # The sequence enumerations compare against spec/lean/.lake/build/bin/diffspec,
@@ -2538,7 +2548,7 @@ WYCHEPROOF_SRCS := x25519.c chacha20.c poly1305.c aead.c hkdf.c sha256.c p256.c 
   rsa_pkcs1.c rsa_sign.c quic_aes.c quic_gcm.c p256_sign.c p256_ecdh.c p256_point.c \
   p256_scalar.c p256_field.c
 wycheproof-leg-default:
-	@$(CC) $(CFLAGS) $(RSA_WIDE_DEF) -DCH_TRANSPORT_QUIC $(AES_DEF) -I. -Ibin -o bin/wycheproof_test \
+	@$(CC) $(CFLAGS) $(RSA_WIDE_DEF) -DCH_TRANSPORT_QUIC $(AES_DEF) $(AES_256_TEST_DEF) -I. -Ibin -o bin/wycheproof_test \
 	  test/wycheproof_test.c $(WYCHEPROOF_SRCS) $(AES_IMPL) && \
 	{ ./bin/wycheproof_test > bin/wycheproof_test.log 2>&1; rc=$$?; cat bin/wycheproof_test.log; exit $$rc; }
 # The AES=hw leg. New crypto gets its Wycheproof suite on every leg
@@ -2554,7 +2564,7 @@ wycheproof-leg-aes-hw:
 	  $(call REQUIRE_ON_CI,wycheproof-aes-hw); \
 	  echo "SKIP wycheproof AES=hw: $(CC) has no AES instructions and no flag turns them on"; \
 	else \
-	  $(CC) $(CFLAGS) $(AES_HW_CFLAGS) $(RSA_WIDE_DEF) -DCH_TRANSPORT_QUIC -DCH_AES_HW -I. -Ibin \
+	  $(CC) $(CFLAGS) $(AES_HW_CFLAGS) $(RSA_WIDE_DEF) -DCH_TRANSPORT_QUIC -DCH_AES_HW $(AES_256_TEST_DEF) -I. -Ibin \
 	    -o bin/wycheproof_test_aes_hw test/wycheproof_test.c $(WYCHEPROOF_SRCS) $(AES_HW_SRCS); \
 	  ./bin/wycheproof_test_aes_hw > bin/wycheproof_test_aes_hw.log 2>&1 \
 	    || { echo "== bin/wycheproof_test_aes_hw failed:"; cat bin/wycheproof_test_aes_hw.log; exit 1; }; \
@@ -2569,7 +2579,7 @@ wycheproof-leg-aes-hw:
 	  [ -z "$$CI" ] || { echo "wycheproof X25519=wide: $(CC) has no unsigned __int128 on CI; the gate must not skip"; exit 1; }; \
 	  echo "SKIP wycheproof X25519=wide: $(CC) has no unsigned __int128"; \
 	else \
-	  $(CC) $(CFLAGS) $(X25519_WIDE_DEF) $(RSA_WIDE_DEF) -DCH_TRANSPORT_QUIC $(AES_DEF) -I. -Ibin \
+	  $(CC) $(CFLAGS) $(X25519_WIDE_DEF) $(RSA_WIDE_DEF) -DCH_TRANSPORT_QUIC $(AES_DEF) $(AES_256_TEST_DEF) -I. -Ibin \
 	    -o bin/wycheproof_test_x25519_wide test/wycheproof_test.c \
 	    x25519.c x25519_wide.c chacha20.c poly1305.c aead.c hkdf.c sha256.c p256.c rsa.c rsa_mont.c mlkem.c mlkem_poly.c sha3.c buf.c ct.c sha512.c sha512_compress.c p384.c p384_field.c rsa_pkcs1.c rsa_sign.c quic_aes.c $(AES_IMPL) quic_gcm.c p256_sign.c p256_ecdh.c p256_point.c p256_scalar.c p256_field.c ; \
 	  ./bin/wycheproof_test_x25519_wide; \
@@ -2613,7 +2623,7 @@ webpki-auth-vectors:
 wycheproof-ct-widemul:
 	@$(call wycheproof_fetch,wycheproof-ct-widemul); \
 	python3 test/gen_wycheproof.py $(WYCHEPROOF_DIR) bin/wycheproof_vectors.h && \
-	$(CC) $(CT_WIDEMUL_CFLAGS) $(RSA_WIDE_DEF) -DCH_TRANSPORT_QUIC $(AES_DEF) -I. -Ibin -o bin/wycheproof_test_ct_widemul test/wycheproof_test.c \
+	$(CC) $(CT_WIDEMUL_CFLAGS) $(RSA_WIDE_DEF) -DCH_TRANSPORT_QUIC $(AES_DEF) $(AES_256_TEST_DEF) -I. -Ibin -o bin/wycheproof_test_ct_widemul test/wycheproof_test.c \
 	  x25519.c chacha20.c poly1305.c aead.c hkdf.c sha256.c p256.c rsa.c rsa_mont.c mlkem.c mlkem_poly.c sha3.c buf.c ct.c sha512.c sha512_compress.c p384.c p384_field.c rsa_pkcs1.c rsa_sign.c quic_aes.c $(AES_IMPL) quic_gcm.c p256_sign.c \
 	  p256_ecdh.c p256_point.c p256_scalar.c p256_field.c && \
 	./bin/wycheproof_test_ct_widemul
@@ -2670,7 +2680,7 @@ san-check:
 	  echo "== $$b (SAN -O$(O))"; ENUM_DEPTH=4 ./bin/san/$$b; done
 	@$(call wycheproof_fetch,san wycheproof); \
 	python3 test/gen_wycheproof.py $(WYCHEPROOF_DIR) bin/wycheproof_vectors.h && \
-	$(CC) $(SAN_CFLAGS) $(RSA_WIDE_DEF) -DCH_TRANSPORT_QUIC $(AES_DEF) -I. -Ibin -o bin/san/wycheproof_test test/wycheproof_test.c \
+	$(CC) $(SAN_CFLAGS) $(RSA_WIDE_DEF) -DCH_TRANSPORT_QUIC $(AES_DEF) $(AES_256_TEST_DEF) -I. -Ibin -o bin/san/wycheproof_test test/wycheproof_test.c \
 	  x25519.c chacha20.c poly1305.c aead.c hkdf.c sha256.c p256.c rsa.c rsa_mont.c mlkem.c mlkem_poly.c sha3.c buf.c ct.c sha512.c sha512_compress.c p384.c p384_field.c rsa_pkcs1.c rsa_sign.c quic_aes.c $(AES_IMPL) quic_gcm.c p256_sign.c \
 	  p256_ecdh.c p256_point.c p256_scalar.c p256_field.c && \
 	echo "== wycheproof_test (SAN -O$(O))" && ./bin/san/wycheproof_test
@@ -2683,7 +2693,7 @@ san-check:
 	    test/x25519_equiv_portable.c test/x25519_equiv_wide.c ct.c; \
 	  echo "== x25519_equiv_test (SAN -O$(O))"; ./bin/san/x25519_equiv_test; \
 	  [ -f bin/wycheproof_vectors.h ] || { echo "SKIP san wycheproof X25519=wide: the fetch above skipped"; exit 0; }; \
-	  $(CC) $(SAN_CFLAGS) $(X25519_WIDE_DEF) $(RSA_WIDE_DEF) -DCH_TRANSPORT_QUIC $(AES_DEF) -I. -Ibin \
+	  $(CC) $(SAN_CFLAGS) $(X25519_WIDE_DEF) $(RSA_WIDE_DEF) -DCH_TRANSPORT_QUIC $(AES_DEF) $(AES_256_TEST_DEF) -I. -Ibin \
 	    -o bin/san/wycheproof_test_x25519_wide test/wycheproof_test.c \
 	    x25519.c x25519_wide.c chacha20.c poly1305.c aead.c hkdf.c sha256.c p256.c rsa.c rsa_mont.c mlkem.c mlkem_poly.c sha3.c buf.c ct.c sha512.c sha512_compress.c p384.c p384_field.c rsa_pkcs1.c rsa_sign.c quic_aes.c $(AES_IMPL) quic_gcm.c p256_sign.c p256_ecdh.c p256_point.c p256_scalar.c p256_field.c; \
 	  echo "== wycheproof_test_x25519_wide (SAN -O$(O))"; ./bin/san/wycheproof_test_x25519_wide; \
@@ -2749,7 +2759,7 @@ cross-check:
 	@if [ -d $(WYCHEPROOF_DIR)/.git ] \
 	  || git clone --quiet --depth 1 https://github.com/C2SP/wycheproof $(WYCHEPROOF_DIR) 2>/dev/null; then \
 	  python3 test/gen_wycheproof.py $(WYCHEPROOF_DIR) bin/wycheproof_vectors.h && \
-	  $(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) $(RSA_WIDE_DEF) -DCH_TRANSPORT_QUIC $(AES_DEF) -static -I. -Ibin -o bin/cross/wycheproof_test test/wycheproof_test.c \
+	  $(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) $(RSA_WIDE_DEF) -DCH_TRANSPORT_QUIC $(AES_DEF) $(AES_256_TEST_DEF) -static -I. -Ibin -o bin/cross/wycheproof_test test/wycheproof_test.c \
 	    x25519.c chacha20.c poly1305.c aead.c hkdf.c sha256.c p256.c rsa.c rsa_mont.c mlkem.c mlkem_poly.c sha3.c buf.c ct.c sha512.c sha512_compress.c p384.c p384_field.c rsa_pkcs1.c rsa_sign.c quic_aes.c $(AES_IMPL) quic_gcm.c p256_sign.c \
 	  p256_ecdh.c p256_point.c p256_scalar.c p256_field.c ; \
 	else \

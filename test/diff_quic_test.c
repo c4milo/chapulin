@@ -37,9 +37,15 @@ int main(int argc, char **argv) {
     expect("selftest", "ok");
     diff_aes128();
     diff_quic_initial_keys();
-    diff_aes128gcm_seal();
-    diff_aes128gcm_open();
-    diff_ghash();
+    diff_gcm_seal(AES_128_KEY);
+    diff_gcm_open(AES_128_KEY);
+    diff_ghash(AES_128_KEY);
+#ifdef CH_AES_256
+    diff_aes256();
+    diff_gcm_seal(AES_256_KEY);
+    diff_gcm_open(AES_256_KEY);
+    diff_ghash(AES_256_KEY);
+#endif
     if (fclose(to_spec) != 0 || fclose(from_spec) != 0) {
         die("closing spec pipes failed");
     }

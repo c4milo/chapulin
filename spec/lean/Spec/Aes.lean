@@ -2,8 +2,9 @@ import Spec.Bytes
 import Spec.Hkdf
 
 /-!
-AES-128, the forward cipher of FIPS 197, and the Initial keys RFC 9001
-§5.2 derives for it, written from the standards as an executable oracle.
+AES-128 and AES-256, the forward cipher of FIPS 197, and the Initial keys
+RFC 9001 §5.2 derives for AES-128, written from the standards as an
+executable oracle. AES-256 is TLS_AES_256_GCM_SHA384's cipher.
 
 The S-box is computed, not tabulated: FIPS 197 §5.1.1 defines it as the
 affine transform of the multiplicative inverse in GF(2^8), and this
@@ -108,6 +109,25 @@ first round key, and the 40 words after them are `expandWord`'s. The
 result is 11 round keys. -/
 def keySchedule (key : ByteArray) : ByteArray := (List.range' 4 40).foldl expandWord key
 
+/-- FIPS 197 §5.2 for Nk = 8: one word of the AES-256 expansion appended
+to what is built. Word `i` is word `i - 8` exclusive-ored with a
+temporary: every eighth word takes RotWord, SubWord and the round
+constant, and the word four past each of those takes SubWord alone,
+which is the step Nk = 4 does not have. -/
+def expandWord256 (w : ByteArray) (i : Nat) : ByteArray :=
+  let p := wordAt w (i - 1)
+  let t := if i % 8 == 0 then
+      ByteArray.mk #[sbox p[1]! ^^^ roundConstant (i / 8 - 1), sbox p[2]!, sbox p[3]!, sbox p[0]!]
+    else if i % 8 == 4 then
+      ByteArray.mk #[sbox p[0]!, sbox p[1]!, sbox p[2]!, sbox p[3]!]
+    else p
+  w ++ xorBytes (wordAt w (i - 8)) t
+
+/-- FIPS 197 §5.2, Key Expansion for Nk = 8: the 32 key bytes are the
+first two round keys, and the 52 words after them are
+`expandWord256`'s. The result is 15 round keys. -/
+def keySchedule256 (key : ByteArray) : ByteArray := (List.range' 8 52).foldl expandWord256 key
+
 /-- FIPS 197 §5.1: one full round — SubBytes, ShiftRows, MixColumns,
 AddRoundKey. -/
 def cipherRound (w : ByteArray) (s : ByteArray) (round : Nat) : ByteArray :=
@@ -119,6 +139,19 @@ def encryptBlock (key block : ByteArray) : ByteArray :=
   let w := keySchedule key
   let last := (List.range' 1 9).foldl (cipherRound w) (addRoundKey block (roundKeyAt w 0))
   addRoundKey (shiftRows (subBytes last)) (roundKeyAt w 10)
+
+/-- FIPS 197 §5.1: the forward cipher CIPH_K under a 256-bit key — one
+AddRoundKey, thirteen full rounds, and a last round without MixColumns. -/
+def encryptBlock256 (key block : ByteArray) : ByteArray :=
+  let w := keySchedule256 key
+  let last := (List.range' 1 13).foldl (cipherRound w) (addRoundKey block (roundKeyAt w 0))
+  addRoundKey (shiftRows (subBytes last)) (roundKeyAt w 14)
+
+/-- The forward cipher the key's length names (FIPS 197 Table 3): AES-256
+for a 32-byte key and AES-128 for every other. SP 800-38D's GCM takes
+whichever CIPH_K its key names, so `Spec.Gcm` calls this. -/
+def cipher (key block : ByteArray) : ByteArray :=
+  if key.size == 32 then encryptBlock256 key block else encryptBlock key block
 
 /-- RFC 9001 §5.2's printed salt, 0x38762cf7f55934b34d179ae6a4c80cadccbb7f0a. -/
 def initialSalt : ByteArray :=
@@ -172,6 +205,24 @@ theorem keySchedule_size (key : ByteArray) (h_key : key.size = 16) :
   simp only [List.length_range'] at h_fold
   exact h_fold
 
+/-- One AES-256 expansion step appends one 4-byte word. -/
+theorem expandWord256_size (w : ByteArray) (i : Nat) :
+    (expandWord256 w i).size = w.size + 4 := by
+  simp only [expandWord256]
+  split
+  · simp [ByteArray.size_append, xorBytes_size, wordAt_size]; rfl
+  · split <;> simp [ByteArray.size_append, xorBytes_size, wordAt_size] <;> rfl
+
+/-- The AES-256 key expansion emits 15 round keys of 16 bytes (FIPS 197
+§5.2: Nb(Nr+1) words, for a 32-byte key). -/
+theorem keySchedule256_size (key : ByteArray) (h_key : key.size = 32) :
+    (keySchedule256 key).size = 240 := by
+  have h_fold := foldl_inv_idx (List.range' 8 52) expandWord256
+    (fun k w => w.size = 32 + 4 * k) key (by simpa using h_key)
+    (fun k w i h_step => by simp [expandWord256_size, h_step]; omega)
+  simp only [List.length_range'] at h_fold
+  exact h_fold
+
 /-- Adding a round key twice is the identity: AddRoundKey is an XOR
 (FIPS 197 §5.1.4), so no round key loses state. -/
 theorem addRoundKey_addRoundKey (s roundKey : ByteArray) (h_fits : s.size ≤ roundKey.size) :
@@ -220,10 +271,33 @@ theorem encryptBlock_size (key block : ByteArray) (h_block : block.size = 16) :
   rw [addRoundKey, xorBytes_size, shiftRows_size, subBytes_size, roundKeyAt_size, h_fold]
   simp
 
+/-- The AES-256 forward cipher answers one block, as AES-128's does. -/
+theorem encryptBlock256_size (key block : ByteArray) (h_block : block.size = 16) :
+    (encryptBlock256 key block).size = 16 := by
+  have h_first : (addRoundKey block (roundKeyAt (keySchedule256 key) 0)).size = 16 := by
+    simp [addRoundKey, xorBytes_size, roundKeyAt_size, h_block]
+  have h_fold := foldl_inv (List.range' 1 13) (cipherRound (keySchedule256 key))
+    (fun s => s.size = 16) _ h_first
+    (fun s round h_step => cipherRound_size _ s round h_step)
+  show (addRoundKey (shiftRows (subBytes (List.foldl (cipherRound (keySchedule256 key))
+    (addRoundKey block (roundKeyAt (keySchedule256 key) 0)) (List.range' 1 13))))
+      (roundKeyAt (keySchedule256 key) 14)).size = 16
+  rw [addRoundKey, xorBytes_size, shiftRows_size, subBytes_size, roundKeyAt_size, h_fold]
+  simp
+
+/-- Whichever cipher the key names, the answer is one block. -/
+theorem cipher_size (key block : ByteArray) (h_block : block.size = 16) :
+    (cipher key block).size = 16 := by
+  simp only [cipher]
+  split
+  · exact encryptBlock256_size key block h_block
+  · exact encryptBlock_size key block h_block
+
 set_option compiler.extract_closed false in
 /-- Test vectors: FIPS 197 Appendix C.1 for the block cipher, the §5.1.1
-worked S-box entry, and RFC 9001 Appendix A.1 for the client's Initial
-keys. -/
+worked S-box entry, RFC 9001 Appendix A.1 for the client's Initial keys,
+and for AES-256 Appendix A.3's first computed word and last round key and
+Appendix C.3's block, both through `cipher`'s dispatch. -/
 def selftest (_ : Unit) : Bool :=
   -- A malformed literal falls back to a 1-byte sentinel, which fails the
   -- length-sensitive checks instead of testing the empty string.
@@ -231,7 +305,14 @@ def selftest (_ : Unit) : Bool :=
   let block := encryptBlock (hx "000102030405060708090a0b0c0d0e0f")
     (hx "00112233445566778899aabbccddeeff")
   let (key, iv, hp) := initialKeys (hx "8394c8f03e515708") true
+  let schedule256 :=
+    keySchedule256 (hx "603deb1015ca71be2b73aef0857d77811f352c073b6108d72d9810a30914dff4")
+  let block256 := cipher (hx "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f")
+    (hx "00112233445566778899aabbccddeeff")
   bytesToHex block == "69c4e0d86a7b0430d8cdb78070b4c55a"
+    && bytesToHex (wordAt schedule256 8) == "9ba35411"
+    && bytesToHex (roundKeyAt schedule256 14) == "fe4890d1e6188d0b046df344706c631e"
+    && bytesToHex block256 == "8ea2b7ca516745bfeafc49904b496089"
     && bytesToHex (ByteArray.mk #[sbox 0x53]) == "ed"
     && bytesToHex key == "1f369613dd76d5467730efcbe3b1a22d"
     && bytesToHex iv == "fa044b2f42a3fd3b46fb255c"

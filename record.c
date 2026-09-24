@@ -5,7 +5,6 @@
 #include "hkdf.h"
 #ifdef CH_SUITE_AES_GCM
 #include "aes_traffic_key.h"
-#include "quic_aes_block.h"
 #include "quic_gcm.h"
 
 // The key each suite fixes. TLS_AES_128_GCM_SHA256 takes 16 and
@@ -14,6 +13,63 @@
 static size_t suite_key_len(uint16_t suite) {
     return suite == SUITE_AES_128_GCM_SHA256 ? AES_128_KEY : AEAD_KEY;
 }
+
+// Whether d runs AES-GCM rather than ChaCha20-Poly1305. The suite is
+// public: the ServerHello named it in the clear.
+static int runs_aes_gcm(const rec_dir *d) {
+    return d->suite == SUITE_AES_128_GCM_SHA256;
+}
+
+// Seals and opens one AES-GCM record body in place, the two AES arms of
+// seal_body and open_body below. The round keys live on this frame and
+// die with it: rec_dir keeps the key bytes and nothing expanded, so no
+// schedule outlives the record it protected.
+static void seal_aes_gcm(const rec_dir *d, const uint8_t nonce[AEAD_NONCE],
+                         const uint8_t hdr[REC_HDR], uint8_t *body, size_t len) {
+    aes_traffic_key k;
+    aes_traffic_key_init(&k, d->key, suite_key_len(d->suite));
+    gcm_traffic_seal(&k, nonce, hdr, REC_HDR, body, len, body, body + len);
+    ct_wipe(&k, sizeof k);
+}
+
+static int open_aes_gcm(const rec_dir *d, const uint8_t nonce[AEAD_NONCE], const uint8_t *rec,
+                        size_t len, uint8_t *pt) {
+    aes_traffic_key k;
+    aes_traffic_key_init(&k, d->key, suite_key_len(d->suite));
+    int ok = gcm_traffic_open(&k, nonce, rec, REC_HDR, rec + REC_HDR, len, rec + REC_HDR + len, pt);
+    ct_wipe(&k, sizeof k);
+    return ok;
+}
+#endif
+
+// The AEAD of one record: len bytes of TLSInnerPlaintext at body sealed
+// in place with the tag after them, under whichever AEAD d runs, with
+// the record header as the associated data (RFC 9846 §5.2).
+static void seal_body(const rec_dir *d, const uint8_t nonce[AEAD_NONCE], const uint8_t hdr[REC_HDR],
+                      uint8_t *body, size_t len) {
+#ifdef CH_SUITE_AES_GCM
+    if (runs_aes_gcm(d)) {
+        seal_aes_gcm(d, nonce, hdr, body, len);
+        return;
+    }
+#endif
+    aead_seal(d->key, nonce, hdr, REC_HDR, body, len, body, body + len);
+}
+
+// The other direction: the record at rec holds a header, len bytes of
+// ciphertext and the tag, and pt gets the plaintext. Returns 1 when the
+// tag matched and 0, having written nothing, when it did not.
+static int open_body(const rec_dir *d, const uint8_t nonce[AEAD_NONCE], const uint8_t *rec,
+                     size_t len, uint8_t *pt) {
+#ifdef CH_SUITE_AES_GCM
+    if (runs_aes_gcm(d)) {
+        return open_aes_gcm(d, nonce, rec, len, pt);
+    }
+#endif
+    return aead_open(d->key, nonce, rec, REC_HDR, rec + REC_HDR, len, rec + REC_HDR + len, pt);
+}
+
+#ifdef CH_SUITE_AES_GCM
 
 void rec_dir_init_suite(rec_dir *d, const uint8_t secret[SHA256_LEN], uint16_t suite) {
     // The whole array is written before the shorter derive, so an AES key
@@ -82,18 +138,7 @@ int rec_seal(rec_dir *d, uint8_t type, const uint8_t *pt, size_t n, uint8_t *out
 
     uint8_t nonce[AEAD_NONCE];
     nonce_of(d, nonce);
-#ifdef CH_SUITE_AES_GCM
-    if (d->suite == SUITE_AES_128_GCM_SHA256) {
-        // The round keys live on this frame and die with it: rec_dir
-        // keeps the 16 key bytes and nothing expanded, so no schedule
-        // outlives the record it protected.
-        aes_traffic_key k;
-        aes_expand_round_keys(d->key, k.key.round_keys);
-        gcm_seal_traffic(&k, nonce, out, REC_HDR, inner, n + 1, inner, inner + n + 1);
-        ct_wipe(&k, sizeof k);
-    } else
-#endif
-        aead_seal(d->key, nonce, out, REC_HDR, inner, n + 1, inner, inner + n + 1);
+    seal_body(d, nonce, out, inner, n + 1);
     d->seq++;
     *out_len = REC_HDR + body;
     return 0;
@@ -119,20 +164,7 @@ int rec_open(rec_dir *d, const uint8_t *rec, size_t n, uint8_t *pt, size_t cap, 
     }
     uint8_t nonce[AEAD_NONCE];
     nonce_of(d, nonce);
-#ifdef CH_SUITE_AES_GCM
-    if (d->suite == SUITE_AES_128_GCM_SHA256) {
-        aes_traffic_key k;
-        aes_expand_round_keys(d->key, k.key.round_keys);
-        int ok = gcm_open_traffic(&k, nonce, rec, REC_HDR, rec + REC_HDR, inner_len,
-                                  rec + REC_HDR + inner_len, pt);
-        ct_wipe(&k, sizeof k);
-        if (!ok) {
-            return -1;
-        }
-    } else
-#endif
-        if (!aead_open(d->key, nonce, rec, REC_HDR, rec + REC_HDR, inner_len,
-                       rec + REC_HDR + inner_len, pt)) {
+    if (!open_body(d, nonce, rec, inner_len, pt)) {
         return -1;
     }
     d->seq++;

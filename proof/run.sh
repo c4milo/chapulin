@@ -1030,6 +1030,20 @@ launch fast full chacha20 165 "chacha20_xor.1:5"
 # properties, 26 s, 0.67 GB peak. The 377 recorded before predates the
 # split of the cipher into quic_aes_soft.c.
 launch fast full quic_aes 45 "fill_nondet.0:177" -DCH_TRANSPORT_QUIC
+# The software AES-256 reference and the round-count dispatch in
+# aes_encrypt_schedule, under -DCH_AES_256_TEST, which only tests and
+# proofs define: the key schedule's 52 words, the fourteen rounds and both
+# arms of the dispatch over a havocked round count. HKDF is the stub
+# quic_aes uses. Measured (arm64 macOS, cbmc 6.11.0, kissat,
+# PROVE_NO_CACHE=1 /usr/bin/time -l): 614 properties, 25 s, 0.92 GB peak.
+launch fast full quic_aes256 60 "fill_nondet.0:241" -DCH_TRANSPORT_QUIC -DCH_AES_256_TEST
+# The traffic-key constructor a -DCH_SUITE_AES_GCM build compiles, over
+# contract stubs of the four AES=hw block entries the harness defines,
+# because CBMC cannot read the instructions: both key lengths, the round
+# count each writes, and the dispatch that count drives. Measured the
+# same way: 140 properties, under 1 s, 0.02 GB peak.
+launch fast full quic_aes_traffic 45 "fill_nondet.0:241" -DCH_TRANSPORT_QUIC -DCH_SUITE_AES_GCM \
+    -DCH_AES_HW -DCH_NATIVE_AES
 # The three RFC 9001 §5.1 derivations and the §6.1 key update. HKDF is
 # the same contract stub quic_aes uses, so this formula holds the
 # framing of the three calls and not four HMAC derivations; ct.c is

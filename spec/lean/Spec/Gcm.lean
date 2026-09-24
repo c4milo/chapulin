@@ -2,8 +2,10 @@ import Spec.Bytes
 import Spec.Aes
 
 /-!
-AEAD_AES_128_GCM and the GHASH under it, NIST SP 800-38D, written from
-the standard as an executable oracle.
+AEAD_AES_128_GCM, AEAD_AES_256_GCM and the GHASH under them, NIST SP
+800-38D, written from the standard as an executable oracle. The two
+AEADs differ in the forward cipher alone, and `Spec.Aes.cipher` picks
+that by the key's length, so every definition below serves both.
 
 A block is a 128-bit value here, where `quic_gcm.c` carries 16 bytes.
 SP 800-38D numbers the bits of a block from the leftmost, so the
@@ -16,8 +18,8 @@ Only the 96-bit IV exists here, for the reason `quic_gcm.h` gives: SP
 800-38D §7.1 takes the first counter block straight from a 96-bit IV,
 QUIC produces no other length, and the C has no second arm to model.
 
-The forward cipher comes from `Spec.Aes`, so this module states GCM and
-restates nothing about AES.
+The forward cipher comes from `Spec.Aes.cipher`, so this module states
+GCM and restates nothing about AES.
 -/
 namespace Spec.Gcm
 open Spec.Bytes
@@ -61,7 +63,7 @@ def ghashBlocks (subkey : Nat) (blocks : List Nat) : Nat :=
 /-- SP 800-38D §7.1 step 1: the hash subkey is the forward cipher of a
 block of zeros. -/
 def hashSubkey (key : ByteArray) : Nat :=
-  bytesToNatBE (Spec.Aes.encryptBlock key (natToBytesBE 0 16))
+  bytesToNatBE (Spec.Aes.cipher key (natToBytesBE 0 16))
 
 /-- SP 800-38D §6.4's last block: the two lengths in bits, the
 associated data's in the high 64 bits and the ciphertext's in the low
@@ -96,13 +98,13 @@ cover the data and `xorBytes` cuts it to the data's length, which is
 §6.5's truncation of the last block. -/
 def gctr (key : ByteArray) (first : Nat) (data : ByteArray) : ByteArray :=
   let keystream := (List.range ((data.size + 15) / 16)).foldl (fun out i =>
-    out ++ Spec.Aes.encryptBlock key (natToBytesBE (inc32Iter first (i + 1)) 16)) ByteArray.empty
+    out ++ Spec.Aes.cipher key (natToBytesBE (inc32Iter first (i + 1)) 16)) ByteArray.empty
   xorBytes data keystream
 
 /-- SP 800-38D §7.1 step 6: the tag is GHASH exclusive-ored with the
 forward cipher of the first counter block. -/
 def tagOf (key iv aad ct : ByteArray) : ByteArray :=
-  xorBytes (ghash key aad ct) (Spec.Aes.encryptBlock key (natToBytesBE (firstCounter iv) 16))
+  xorBytes (ghash key aad ct) (Spec.Aes.cipher key (natToBytesBE (firstCounter iv) 16))
 
 /-- SP 800-38D §7.1, GCM-AE: the ciphertext and the tag. -/
 def encrypt (key iv aad pt : ByteArray) : ByteArray × ByteArray :=
@@ -138,19 +140,19 @@ never shortens the answer below the input. -/
 theorem gctr_size (key : ByteArray) (first : Nat) (data : ByteArray) :
     (gctr key first data).size = data.size := by
   have h_stream : ∀ n : Nat, ((List.range n).foldl (fun out i =>
-      out ++ Spec.Aes.encryptBlock key (natToBytesBE (inc32Iter first (i + 1)) 16))
+      out ++ Spec.Aes.cipher key (natToBytesBE (inc32Iter first (i + 1)) 16))
       ByteArray.empty).size = 16 * n := by
     intro n
     have := size_foldl_append_const (List.range n)
-      (fun i => Spec.Aes.encryptBlock key (natToBytesBE (inc32Iter first (i + 1)) 16)) 16
-      (fun i => Spec.Aes.encryptBlock_size key _ (natToBytesBE_size _ _)) ByteArray.empty
+      (fun i => Spec.Aes.cipher key (natToBytesBE (inc32Iter first (i + 1)) 16)) 16
+      (fun i => Spec.Aes.cipher_size key _ (natToBytesBE_size _ _)) ByteArray.empty
     simpa [List.length_range, Nat.mul_comm] using this
   simp only [gctr, xorBytes_size, h_stream]
   omega
 
 /-- The tag is one block (SP 800-38D §7.1 fixes it at 128 bits here). -/
 theorem tagOf_size (key iv aad ct : ByteArray) (h_key : ∀ b : ByteArray, b.size = 16 →
-    (Spec.Aes.encryptBlock key b).size = 16) : (tagOf key iv aad ct).size = 16 := by
+    (Spec.Aes.cipher key b).size = 16) : (tagOf key iv aad ct).size = 16 := by
   simp [tagOf, xorBytes_size, ghash_size, h_key _ (natToBytesBE_size _ _)]
 
 /-- Sealing does not change the length: SP 800-38D §7.1 writes one
@@ -166,9 +168,10 @@ theorem decrypt?_isSome (key iv aad ct tag : ByteArray) :
   split <;> simp_all
 
 set_option compiler.extract_closed false in
-/-- Test vectors: NIST SP 800-38D's AES-128 cases 1 to 4, and the RFC
-9001 Appendix A.4 Retry integrity tag, which is this AEAD over an empty
-plaintext with the Retry Pseudo-Packet as associated data (§5.8). -/
+/-- Test vectors: NIST SP 800-38D's AES-128 cases 1 to 4, its AES-256
+cases 13 to 16, and the RFC 9001 Appendix A.4 Retry integrity tag, which
+is this AEAD over an empty plaintext with the Retry Pseudo-Packet as
+associated data (§5.8). -/
 def selftest (_ : Unit) : Bool :=
   -- A malformed literal falls back to a 1-byte sentinel, which fails the
   -- length-sensitive checks instead of testing the empty string.
@@ -191,6 +194,13 @@ def selftest (_ : Unit) : Bool :=
   let (ct3, tag3) := encrypt key3 iv3 ByteArray.empty pt3
   let (ct4, tag4) := encrypt key3 iv3 aad4 pt4
   let (_, retryTag) := encrypt Spec.Aes.retryKey retryNonce pseudo ByteArray.empty
+  let zeroKey256 := hx "0000000000000000000000000000000000000000000000000000000000000000"
+  let key15 := hx "feffe9928665731c6d6a8f9467308308feffe9928665731c6d6a8f9467308308"
+  let (ct13, tag13) := encrypt zeroKey256 zeroIv ByteArray.empty ByteArray.empty
+  let (ct14, tag14) :=
+    encrypt zeroKey256 zeroIv ByteArray.empty (hx "00000000000000000000000000000000")
+  let (ct15, tag15) := encrypt key15 iv3 ByteArray.empty pt3
+  let (ct16, tag16) := encrypt key15 iv3 aad4 pt4
   bytesToHex ct1 == "" && bytesToHex tag1 == "58e2fccefa7e3061367f1d57a4e7455a"
     && bytesToHex ct2 == "0388dace60b6a392f328c2b971b2fe78"
     && bytesToHex tag2 == "ab6e47d42cec13bdf53a67b21257bddf"
@@ -205,5 +215,15 @@ def selftest (_ : Unit) : Bool :=
     && decrypt? key3 iv3 aad4 ct4 tag3 == none
     && bytesToHex (ghash zeroKey ByteArray.empty ByteArray.empty)
          == "00000000000000000000000000000000"
+    && bytesToHex ct13 == "" && bytesToHex tag13 == "530f8afbc74536b9a963b4f1c4cb738b"
+    && bytesToHex ct14 == "cea7403d4d606b6e074ec5d3baf39d18"
+    && bytesToHex tag14 == "d0d1c8a799996bf0265b98b5d48ab919"
+    && bytesToHex ct15 == ("522dc1f099567d07f47f37a32a84427d643a8cdcbfe5c0c97598a2bd2555d1aa" ++
+                           "8cb08e48590dbb3da7b08b1056828838c5f61e6393ba7a0abcc9f662898015ad")
+    && bytesToHex tag15 == "b094dac5d93471bdec1a502270e3cc6c"
+    && bytesToHex ct16 == ("522dc1f099567d07f47f37a32a84427d643a8cdcbfe5c0c97598a2bd2555d1aa" ++
+                           "8cb08e48590dbb3da7b08b1056828838c5f61e6393ba7a0abcc9f662")
+    && bytesToHex tag16 == "76fc6ece0f4e1768cddf8853bb2d551b"
+    && decrypt? key15 iv3 aad4 ct16 tag16 == some pt4
 
 end Spec.Gcm

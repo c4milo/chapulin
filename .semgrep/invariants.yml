@@ -158,26 +158,28 @@ rules:
     languages: [c]
     severity: ERROR
     message: >-
-      INV-26: AES exists for QUIC's public keys and nothing else. RFC
-      9001 fixes AES-128-GCM for Initial packets (§5.2), AES-128-ECB
-      for their header protection (§5.4.3) and AES-128-GCM under a
-      printed key for the Retry tag (§5.8), and every key those three
-      use is public. So quic_initial.c and quic_retry.c are the only
-      library sources that may name an aes_ or gcm_ entry; quic_aes.c,
-      quic_gcm.c, the three AES implementations the Makefile AES
-      variable chooses among and quic_ghash_hw.c, the GHASH AES=hw adds,
-      are excluded as the definition sites.
-      ch_aes_block joins the family because an AES=extern build leaves
-      that hook to the image, and a library source calling it would run
-      AES on a key of its choosing exactly as a call to aes_ would. A use
-      anywhere else is a key from the TLS key schedule arriving at a
-      lookup-table cipher, and this tree then has a timing story to
-      defend (docs/decisions.md entry 6). Tripwire grade: this catches
-      honest drift by name, not a reintroduction under another name.
-      This rule reads calls and values alone. Building a key is the
+      INV-26: AES sees public keys and one family of traffic keys, and
+      this rule holds the public half. RFC 9001 fixes AES-128-GCM for
+      Initial packets (§5.2), AES-128-ECB for their header protection
+      (§5.4.3) and AES-128-GCM under a printed key for the Retry tag
+      (§5.8), and every key those three use is public. So quic_initial.c
+      and quic_retry.c are the only library sources that may name an
+      aes_ or gcm_ entry outside the aes_traffic_ and gcm_traffic_
+      families; quic_aes.c, quic_gcm.c, the three AES implementations the
+      Makefile AES variable chooses among and quic_ghash_hw.c, the GHASH
+      AES=hw adds, are excluded as the definition sites. ch_aes_block
+      joins the family because an AES=extern build leaves that hook to
+      the image, and a library source calling it would run AES on a key
+      of its choosing exactly as a call to aes_ would. A use anywhere
+      else is a key from the TLS key schedule arriving at a public-key
+      entry, which may be the lookup-table cipher, and this tree then has
+      a timing story to defend (docs/decisions.md entry 6). The traffic
+      families are inv-26-aes-traffic-keys-only's. Tripwire grade: this
+      catches honest drift by name, not a reintroduction under another
+      name. This rule reads calls and values alone. Building a key is the
       compiler's to refuse: quic_aes.h declares aes_public_key
-      incomplete, quic_aes_key.h holds the body, and the three sources
-      above are the only ones that include it, which
+      incomplete, quic_aes_key.h holds the body, and only the sources
+      tools/quic-footprint.py lists include it, which
       `make lint-quic-surface` checks. docs/invariants.md INV-26 states
       what that closes and what review still owes.
     paths:
@@ -189,12 +191,13 @@ rules:
       # function-like macro or a typedef in quic_aes.h, quic_aes_block.h,
       # quic_gcm.h or quic_ghash_hw.h is named anything but aes_ or
       # gcm_, so this prefix family matches a symbol any of them gains
-      # tomorrow rather than assuming it.
+      # tomorrow rather than assuming it. The lookahead leaves the two
+      # traffic families to the rule below, and nothing else.
       - patterns:
           - pattern: $F(...)
           - metavariable-regex:
               metavariable: $F
-              regex: ^(aes|gcm|ch_aes)_
+              regex: ^(?!(aes|gcm)_traffic_)(aes|gcm|ch_aes)_
       # The name as a value rather than a call: &aes_encrypt_block, a
       # function pointer initialized or assigned from the name, the
       # name passed as an argument. The branch above misses all three,
@@ -205,7 +208,38 @@ rules:
           - pattern: $F
           - metavariable-regex:
               metavariable: $F
-              regex: ^(aes|gcm|ch_aes)_
+              regex: ^(?!(aes|gcm)_traffic_)(aes|gcm|ch_aes)_
+
+  - id: inv-26-aes-traffic-keys-only
+    languages: [c]
+    severity: ERROR
+    message: >-
+      INV-26: the traffic half. A -DCH_SUITE_AES_GCM build hands AES the
+      keys of TLS_AES_128_GCM_SHA256 and TLS_AES_256_GCM_SHA384, which the
+      TLS key schedule derives and which are secret, and every entry that
+      takes one begins aes_traffic_ or gcm_traffic_. record.c, which
+      protects TLS records, is the one library source that may name
+      them; quic_aes.c and quic_gcm.c are excluded as the definition
+      sites. ct.h refuses that build unless it takes AES=hw and asserts
+      the instructions' timing (CH_NATIVE_AES), so a traffic key never
+      meets the AES=soft S-box, and aes_traffic_key.h, the type's body,
+      is included by the same files and no other, which
+      `make lint-quic-surface` checks. A use anywhere else is a traffic
+      key on a path nobody reviewed for it. Tripwire grade, as above.
+    paths:
+      exclude: [test, proof, fuzz, spec, bench, bin, examples, record.c,
+                quic_aes.c, quic_gcm.c]
+    pattern-either:
+      - patterns:
+          - pattern: $F(...)
+          - metavariable-regex:
+              metavariable: $F
+              regex: ^(aes|gcm)_traffic_
+      - patterns:
+          - pattern: $F
+          - metavariable-regex:
+              metavariable: $F
+              regex: ^(aes|gcm)_traffic_
 
   - id: inv-6-no-pkcs1
     languages: [c]

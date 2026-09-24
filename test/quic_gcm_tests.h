@@ -1,5 +1,6 @@
 // Published vectors for quic_gcm.c: NIST SP 800-38D's own AES-128 test
-// cases for AEAD_AES_128_GCM and GHASH, and the two RFC 9001 Appendix A
+// cases for AEAD_AES_128_GCM and GHASH, its AES-256 cases for
+// AEAD_AES_256_GCM in a build that has AES-256, and the two RFC 9001 Appendix A
 // packets that use them — the client Initial packet of A.2 and the Retry
 // integrity tag of A.4.
 //
@@ -25,7 +26,7 @@
 // reader compares this table against the document rather than against a
 // re-encoding of it. An empty string is an empty field: case 1 has no
 // plaintext and no associated data, and case 2 has no associated data.
-static const struct {
+typedef struct {
     const char *name;
     const char *key;
     const char *iv;
@@ -33,7 +34,9 @@ static const struct {
     const char *pt;
     const char *ct;
     const char *tag;
-} SP800_38D_CASES[] = {
+} sp800_38d_case;
+
+static const sp800_38d_case SP800_38D_CASES[] = {
     {"case 1", "00000000000000000000000000000000", "000000000000000000000000", "", "", "",
      "58e2fccefa7e3061367f1d57a4e7455a"                                                                                                                       },
     {"case 2", "00000000000000000000000000000000", "000000000000000000000000", "",
@@ -49,14 +52,76 @@ static const struct {
      "4aa051ba30b396a0aac973d58e091", "5bc94fbc3221a5db94fae95ae7121a47"},
 };
 
+#ifdef CH_AES_256
+// The same four shapes under a 256-bit key: the GCM specification's test
+// cases 13 to 16, the AEAD_AES_256_GCM of TLS_AES_256_GCM_SHA384. Cases 17
+// and 18 use IVs of other lengths, which quic_gcm.h admits none of, so
+// they are not here.
+static const sp800_38d_case SP800_38D_CASE_13 = {
+    .name = "case 13",
+    .key = "0000000000000000000000000000000000000000000000000000000000000000",
+    .iv = "000000000000000000000000",
+    .aad = "",
+    .pt = "",
+    .ct = "",
+    .tag = "530f8afbc74536b9a963b4f1c4cb738b",
+};
+static const sp800_38d_case SP800_38D_CASE_14 = {
+    .name = "case 14",
+    .key = "0000000000000000000000000000000000000000000000000000000000000000",
+    .iv = "000000000000000000000000",
+    .aad = "",
+    .pt = "00000000000000000000000000000000",
+    .ct = "cea7403d4d606b6e074ec5d3baf39d18",
+    .tag = "d0d1c8a799996bf0265b98b5d48ab919",
+};
+static const sp800_38d_case SP800_38D_CASE_15 = {
+    .name = "case 15",
+    .key = "feffe9928665731c6d6a8f9467308308feffe9928665731c6d6a8f9467308308",
+    .iv = "cafebabefacedbaddecaf888",
+    .aad = "",
+    .pt = "d9313225f88406e5a55909c5aff5269a86a7a9531534f7da2e4c303d8a318a72"
+          "1c3c0c95956809532fcf0e2449a6b525b16aedf5aa0de657ba637b391aafd255",
+    .ct = "522dc1f099567d07f47f37a32a84427d643a8cdcbfe5c0c97598a2bd2555d1aa"
+          "8cb08e48590dbb3da7b08b1056828838c5f61e6393ba7a0abcc9f662898015ad",
+    .tag = "b094dac5d93471bdec1a502270e3cc6c",
+};
+static const sp800_38d_case SP800_38D_CASE_16 = {
+    .name = "case 16",
+    .key = "feffe9928665731c6d6a8f9467308308feffe9928665731c6d6a8f9467308308",
+    .iv = "cafebabefacedbaddecaf888",
+    .aad = "feedfacedeadbeeffeedfacedeadbeefabaddad2",
+    .pt = "d9313225f88406e5a55909c5aff5269a86a7a9531534f7da2e4c303d8a318a72"
+          "1c3c0c95956809532fcf0e2449a6b525b16aedf5aa0de657ba637b39",
+    .ct = "522dc1f099567d07f47f37a32a84427d643a8cdcbfe5c0c97598a2bd2555d1aa"
+          "8cb08e48590dbb3da7b08b1056828838c5f61e6393ba7a0abcc9f662",
+    .tag = "76fc6ece0f4e1768cddf8853bb2d551b",
+};
+static const sp800_38d_case *const SP800_38D_AES256_CASES[] = {
+    &SP800_38D_CASE_13, &SP800_38D_CASE_14, &SP800_38D_CASE_15, &SP800_38D_CASE_16};
+#endif
+
 // One aes_public_key over a key the caller chose. Only a test does this:
 // the two constructors in quic_aes.h are the only public way to write
 // this type, and neither takes a caller's key, so a vector whose key SP
 // 800-38D fixed reaches the cipher through the key schedule directly.
+//
+// A 32-byte key takes the AES-256 schedule, in a build that has AES-256,
+// and the schedule records its round count the way aes_traffic_key_init
+// records it for a traffic key.
 static void gcm_test_key(aes_public_key *k, const char *key_hex) {
-    uint8_t key[AES_128_KEY];
-    CHECK(unhex(key_hex, key) == sizeof key);
+    uint8_t key[AES_256_KEY];
+    size_t key_len = unhex(key_hex, key);
     memset(k, 0, sizeof *k);
+#ifdef CH_AES_256
+    if (key_len == AES_256_KEY) {
+        aes_expand_round_keys_256(key, k->key.round_keys);
+        k->key.rounds = AES_256_ROUNDS;
+        return;
+    }
+    k->key.rounds = AES_128_ROUNDS;
+#endif
+    CHECK(key_len == AES_128_KEY);
     aes_expand_round_keys(key, k->key.round_keys);
 }
 
@@ -65,42 +130,51 @@ static void gcm_test_key(aes_public_key *k, const char *key_hex) {
 // gcm_open answers with when one tag bit is wrong. The refusal arm also
 // checks that no plaintext byte was written, which is the promise
 // quic_gcm.h makes and the reason the tag is computed first.
+static void seal_and_open_case(const sp800_38d_case *c) {
+    uint8_t iv[AES_IV];
+    uint8_t aad[GCM_TEST_MAX];
+    uint8_t pt[GCM_TEST_MAX];
+    uint8_t ct[GCM_TEST_MAX];
+    uint8_t tag[GCM_TAG];
+    aes_public_key k;
+    gcm_test_key(&k, c->key);
+    CHECK(unhex(c->iv, iv) == sizeof iv);
+    size_t aad_len = unhex(c->aad, aad);
+    size_t n = unhex(c->pt, pt);
+    CHECK(unhex(c->ct, ct) == n);
+    CHECK(unhex(c->tag, tag) == sizeof tag);
+
+    uint8_t got_ct[GCM_TEST_MAX];
+    uint8_t got_tag[GCM_TAG];
+    gcm_seal(&k, iv, aad, aad_len, pt, n, got_ct, got_tag);
+    CHECK(memcmp(got_ct, ct, n) == 0);
+    CHECK(memcmp(got_tag, tag, sizeof tag) == 0);
+
+    uint8_t got_pt[GCM_TEST_MAX];
+    CHECK(gcm_open(&k, iv, aad, aad_len, ct, n, tag, got_pt) == 1);
+    CHECK(memcmp(got_pt, pt, n) == 0);
+
+    // One wrong tag bit, and the plaintext buffer stays as it was.
+    uint8_t wrong_tag[GCM_TAG];
+    memcpy(wrong_tag, tag, sizeof wrong_tag);
+    wrong_tag[0] = (uint8_t)(wrong_tag[0] ^ 1);
+    uint8_t untouched[GCM_TEST_MAX];
+    memset(untouched, 0xa5, sizeof untouched);
+    CHECK(gcm_open(&k, iv, aad, aad_len, ct, n, wrong_tag, untouched) == 0);
+    for (size_t j = 0; j < n; j++) {
+        CHECK(untouched[j] == 0xa5);
+    }
+}
+
 static void test_sp800_38d_cases(void) {
     for (size_t i = 0; i < sizeof SP800_38D_CASES / sizeof SP800_38D_CASES[0]; i++) {
-        uint8_t iv[AES_IV];
-        uint8_t aad[GCM_TEST_MAX];
-        uint8_t pt[GCM_TEST_MAX];
-        uint8_t ct[GCM_TEST_MAX];
-        uint8_t tag[GCM_TAG];
-        aes_public_key k;
-        gcm_test_key(&k, SP800_38D_CASES[i].key);
-        CHECK(unhex(SP800_38D_CASES[i].iv, iv) == sizeof iv);
-        size_t aad_len = unhex(SP800_38D_CASES[i].aad, aad);
-        size_t n = unhex(SP800_38D_CASES[i].pt, pt);
-        CHECK(unhex(SP800_38D_CASES[i].ct, ct) == n);
-        CHECK(unhex(SP800_38D_CASES[i].tag, tag) == sizeof tag);
-
-        uint8_t got_ct[GCM_TEST_MAX];
-        uint8_t got_tag[GCM_TAG];
-        gcm_seal(&k, iv, aad, aad_len, pt, n, got_ct, got_tag);
-        CHECK(memcmp(got_ct, ct, n) == 0);
-        CHECK(memcmp(got_tag, tag, sizeof tag) == 0);
-
-        uint8_t got_pt[GCM_TEST_MAX];
-        CHECK(gcm_open(&k, iv, aad, aad_len, ct, n, tag, got_pt) == 1);
-        CHECK(memcmp(got_pt, pt, n) == 0);
-
-        // One wrong tag bit, and the plaintext buffer stays as it was.
-        uint8_t wrong_tag[GCM_TAG];
-        memcpy(wrong_tag, tag, sizeof wrong_tag);
-        wrong_tag[0] = (uint8_t)(wrong_tag[0] ^ 1);
-        uint8_t untouched[GCM_TEST_MAX];
-        memset(untouched, 0xa5, sizeof untouched);
-        CHECK(gcm_open(&k, iv, aad, aad_len, ct, n, wrong_tag, untouched) == 0);
-        for (size_t j = 0; j < n; j++) {
-            CHECK(untouched[j] == 0xa5);
-        }
+        seal_and_open_case(&SP800_38D_CASES[i]);
     }
+#ifdef CH_AES_256
+    for (size_t i = 0; i < sizeof SP800_38D_AES256_CASES / sizeof SP800_38D_AES256_CASES[0]; i++) {
+        seal_and_open_case(SP800_38D_AES256_CASES[i]);
+    }
+#endif
 }
 
 // GHASH on its own. SP 800-38D prints tags rather than GHASH outputs, so
@@ -109,36 +183,45 @@ static void test_sp800_38d_cases(void) {
 // cipher of the first counter block. Both sides of that equation are
 // computed here from the specification's own numbers, so nothing below
 // is a value this tree invented.
+static void ghash_case(const sp800_38d_case *c) {
+    uint8_t iv[AES_IV];
+    uint8_t aad[GCM_TEST_MAX];
+    uint8_t ct[GCM_TEST_MAX];
+    uint8_t tag[GCM_TAG];
+    aes_public_key k;
+    gcm_test_key(&k, c->key);
+    CHECK(unhex(c->iv, iv) == sizeof iv);
+    size_t aad_len = unhex(c->aad, aad);
+    size_t n = unhex(c->ct, ct);
+    CHECK(unhex(c->tag, tag) == sizeof tag);
+
+    uint8_t hashed[AES_BLOCK];
+    gcm_ghash(&k, aad, aad_len, ct, n, hashed);
+
+    // SP 800-38D §7.1 step 2: a 96-bit IV gives the first counter
+    // block as the IV followed by 31 zero bits and a one.
+    uint8_t first_counter[AES_BLOCK];
+    memcpy(first_counter, iv, sizeof iv);
+    first_counter[12] = 0;
+    first_counter[13] = 0;
+    first_counter[14] = 0;
+    first_counter[15] = 1;
+    uint8_t mask[AES_BLOCK];
+    aes_encrypt_block(&k, first_counter, mask);
+    for (size_t j = 0; j < GCM_TAG; j++) {
+        CHECK((uint8_t)(hashed[j] ^ mask[j]) == tag[j]);
+    }
+}
+
 static void test_ghash_against_tags(void) {
     for (size_t i = 0; i < sizeof SP800_38D_CASES / sizeof SP800_38D_CASES[0]; i++) {
-        uint8_t iv[AES_IV];
-        uint8_t aad[GCM_TEST_MAX];
-        uint8_t ct[GCM_TEST_MAX];
-        uint8_t tag[GCM_TAG];
-        aes_public_key k;
-        gcm_test_key(&k, SP800_38D_CASES[i].key);
-        CHECK(unhex(SP800_38D_CASES[i].iv, iv) == sizeof iv);
-        size_t aad_len = unhex(SP800_38D_CASES[i].aad, aad);
-        size_t n = unhex(SP800_38D_CASES[i].ct, ct);
-        CHECK(unhex(SP800_38D_CASES[i].tag, tag) == sizeof tag);
-
-        uint8_t hashed[AES_BLOCK];
-        gcm_ghash(&k, aad, aad_len, ct, n, hashed);
-
-        // SP 800-38D §7.1 step 2: a 96-bit IV gives the first counter
-        // block as the IV followed by 31 zero bits and a one.
-        uint8_t first_counter[AES_BLOCK];
-        memcpy(first_counter, iv, sizeof iv);
-        first_counter[12] = 0;
-        first_counter[13] = 0;
-        first_counter[14] = 0;
-        first_counter[15] = 1;
-        uint8_t mask[AES_BLOCK];
-        aes_encrypt_block(&k, first_counter, mask);
-        for (size_t j = 0; j < GCM_TAG; j++) {
-            CHECK((uint8_t)(hashed[j] ^ mask[j]) == tag[j]);
-        }
+        ghash_case(&SP800_38D_CASES[i]);
     }
+#ifdef CH_AES_256
+    for (size_t i = 0; i < sizeof SP800_38D_AES256_CASES / sizeof SP800_38D_AES256_CASES[0]; i++) {
+        ghash_case(SP800_38D_AES256_CASES[i]);
+    }
+#endif
 }
 
 // SP 800-38D §6.4 over nothing at all: with no associated data and no

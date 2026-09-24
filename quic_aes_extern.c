@@ -24,6 +24,14 @@
 #if defined(CH_TRANSPORT_QUIC) || defined(CH_SUITE_AES_GCM)
 #ifdef CH_AES_EXTERN
 
+// ch_aes_block takes a 16-byte key, so this file has no AES-256 to offer.
+// A suite build, the one that needs AES-256, takes AES=hw (ct.h), and the
+// software reference is AES=soft's, so no build reaches this line; it
+// stops a tree with its own build system that asks for both.
+#ifdef CH_AES_256
+#error "AES=extern has no AES-256: ch_aes_block takes a 16-byte key"
+#endif
+
 #include <string.h>
 
 void aes_expand_round_keys(const uint8_t key[AES_128_KEY],

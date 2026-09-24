@@ -9,12 +9,13 @@
 // reason this tree admits a table-driven AES at all (docs/invariants.md
 // INV-26, docs/decisions.md entry 6).
 //
-// Three sources include this header, and `make lint-quic-surface` fails
-// on a fourth:
+// Four sources include this header, and `make lint-quic-surface` fails
+// on a fifth:
 //
 //   quic_aes.c      writes the two constructors and the cipher
 //   quic_initial.c  builds one Initial key per packet on its stack
 //   quic_retry.c    builds the §5.8 Retry key on its stack
+//   quic_gcm.c      reads the round keys out of one to run the AEAD
 //
 // Nothing stores a key between calls. ch_quic holds the Destination
 // Connection ID the derivation reads, in initial_dcid, and derives from
@@ -23,25 +24,22 @@
 // sit outside the library and the Semgrep rule excludes their
 // directories for the same reason.
 //
-// Only a TRANSPORT=quic build compiles it.
+// aes_traffic_key.h, the other key's body, does not include this header,
+// and this header does not include that one: aes_schedule.h holds the
+// round keys both are built on, so a file admitted to one key sees no
+// body of the other.
 #ifndef CH_QUIC_AES_KEY_H
 #define CH_QUIC_AES_KEY_H
 #if defined(CH_TRANSPORT_QUIC) || defined(CH_SUITE_AES_GCM)
 
 #include <stdint.h>
 
+#include "aes_schedule.h"
 #include "quic_aes.h"
 
 // One direction of one QUIC encryption level whose AEAD is
 // AEAD_AES_128_GCM. quic_aes.h states the three fields, what writes
 // them and why every key they ever hold is public.
-// One AES-128 key expanded into its round keys (FIPS 197 §5.2, Key
-// Expansion). Bytes rather than words, so no step of the schedule or the
-// cipher assumes host endianness.
-typedef struct aes_key_schedule {
-    uint8_t round_keys[AES_ROUND_KEYS * AES_BLOCK];
-} aes_key_schedule;
-
 struct aes_public_key {
     aes_key_schedule key;
     uint8_t iv[AES_IV];

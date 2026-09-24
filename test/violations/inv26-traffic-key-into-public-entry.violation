@@ -1,0 +1,18 @@
+invariant: INV-26
+file: record.c
+catches: test/lint-invariants.sh
+reason: the record layer seals an AES-GCM record through gcm_seal, the
+  public-key entry, with a cast that silences the compiler, so a traffic
+  key from the TLS key schedule reaches an entry INV-26 keeps for the
+  three public keys RFC 9001 fixes. In an AES=soft object that entry is
+  the S-box indexed with the key. The two key types are what refuse this
+  edit without the cast; with it, inv-26-aes-public-keys-only is what
+  fails, because record.c may name the traffic families and nothing else,
+  and it can: record.c's seal and open bodies are written so the rule's C
+  parser reads them.
+
+--- old
+    gcm_traffic_seal(&k, nonce, hdr, REC_HDR, body, len, body, body + len);
+--- new
+    gcm_seal((const aes_public_key *)(const void *)&k, nonce, hdr, REC_HDR, body, len, body,
+             body + len);

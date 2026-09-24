@@ -1,22 +1,24 @@
 // The AES-128 key expansion and forward cipher, as two entries over
-// plain byte arrays. The Makefile AES variable picks the one source that
-// defines them: quic_aes_soft.c (AES=soft, the default), quic_aes_hw.c
-// (AES=hw, the compiler's AES intrinsics) or quic_aes_extern.c
-// (AES=extern, a block function the caller supplies). One source per
-// object, the way PIN puts one pinned algorithm in one object.
+// plain byte arrays, and the AES-256 pair beside them in a build that
+// has AES-256 (CH_AES_256, quic_aes.h). The Makefile AES variable picks
+// the one source that defines them: quic_aes_soft.c (AES=soft, the
+// default), quic_aes_hw.c (AES=hw, the compiler's AES intrinsics) or
+// quic_aes_extern.c (AES=extern, a block function the caller supplies).
+// One source per object, the way PIN puts one pinned algorithm in one
+// object.
 //
-// quic_aes.c is the only library source that calls these. It owns the
-// aes_public_key, derives the RFC 9001 §5.2 keys into it, and hands the
-// round keys down as bytes.
+// quic_aes.c is the only library source that calls these. It owns both
+// key types, derives the RFC 9001 §5.2 keys into an aes_public_key,
+// expands a traffic key into an aes_traffic_key, and hands the round keys
+// down as bytes.
 //
-// Bytes rather than an aes_key_schedule, on purpose. quic_aes_key.h
-// holds the body of that type, and INV-26's first check is that only
-// quic_aes.c, quic_initial.c and quic_retry.c include it, so only those
-// three can declare a key or write a field of one. An implementation
-// source that took the struct would have to include that header and
-// would become a fourth. Taking bytes keeps the count at three: none of
-// the three implementations can build a key object at all, whatever it
-// does with the bytes it is handed.
+// Bytes rather than an aes_key_schedule, on purpose. aes_schedule.h holds
+// the body of that type, and INV-26's first check is that only the two key
+// headers include it, so only the sources admitted to one of those can
+// declare a key or write a field of one. An implementation source that
+// took the struct would have to join them. Taking bytes keeps it out:
+// none of the three implementations can build a key object at all,
+// whatever it does with the bytes it is handed.
 //
 // Detection is the compiler's, at build time, and nothing here probes a
 // CPU or asks an operating system. quic_aes_hw.c states why.
@@ -64,6 +66,35 @@ void aes_expand_round_keys(const uint8_t key[AES_128_KEY],
 // that it works. Writes AES_BLOCK bytes and cannot fail.
 void aes_cipher_block(const uint8_t round_keys[AES_ROUND_KEYS * AES_BLOCK],
                       const uint8_t in[AES_BLOCK], uint8_t out[AES_BLOCK]);
+
+#ifdef CH_AES_256
+// FIPS 197 §5.2, Key Expansion, for Nk = 8: key is the 32-byte AES-256
+// key and round_keys gets all AES_256_ROUND_KEYS round keys, AES_BLOCK
+// bytes each, the first two of which are the key itself. Every eighth
+// word takes RotWord, SubWord and the round constant, and the word four
+// after it takes SubWord alone, which is the step Nk = 4 does not have.
+//
+// quic_aes_hw.c defines it in a -DCH_SUITE_AES_GCM build, and
+// quic_aes_soft.c defines the software reference under
+// -DCH_AES_256_TEST, which only tests and proofs set (quic_aes.h).
+// quic_aes_extern.c defines neither: a peripheral hook takes a 16-byte key.
+//
+// Requires: key points at AES_256_KEY readable bytes; round_keys points
+// at AES_256_ROUND_KEYS * AES_BLOCK writable bytes. Writes them all and
+// cannot fail.
+void aes_expand_round_keys_256(const uint8_t key[AES_256_KEY],
+                               uint8_t round_keys[AES_256_ROUND_KEYS * AES_BLOCK]);
+
+// FIPS 197 §5.1, the forward cipher CIPH_K for Nr = 14: one AddRoundKey,
+// thirteen full rounds and a last round without MixColumns, under the
+// round keys aes_expand_round_keys_256 wrote.
+//
+// Requires: round_keys was written by aes_expand_round_keys_256; in and
+// out point at AES_BLOCK readable and writable bytes, and in == out is
+// allowed. Writes AES_BLOCK bytes and cannot fail.
+void aes_cipher_block_256(const uint8_t round_keys[AES_256_ROUND_KEYS * AES_BLOCK],
+                          const uint8_t in[AES_BLOCK], uint8_t out[AES_BLOCK]);
+#endif
 
 #ifdef CH_AES_EXTERN
 // The platform hook an AES=extern build leaves for the image to define,

@@ -172,6 +172,12 @@ def dispatch : List String → Option String
     -- key size and no other block size.
     guard (k.size == 16 && b.size == 16)
     return emit (Spec.Aes.encryptBlock k b)
+  | ["aes256", key, block] => do
+    let k ← hexArg? key
+    let b ← hexArg? block
+    -- FIPS 197 Table 3's Nk = 8: a 256-bit key and the one block size.
+    guard (k.size == 32 && b.size == 16)
+    return emit (Spec.Aes.encryptBlock256 k b)
   | ["aes128gcm_seal", key, iv, aad, pt] => do
     let k ← hexArg? key
     let n ← hexArg? iv
@@ -190,9 +196,27 @@ def dispatch : List String → Option String
     match Spec.Gcm.decrypt? k n (← hexArg? aad) (← hexArg? ct) t with
     | some pt => return emit pt
     | none => return "fail"
+  | ["aes256gcm_seal", key, iv, aad, pt] => do
+    let k ← hexArg? key
+    let n ← hexArg? iv
+    -- AEAD_AES_256_GCM fixes the key at 256 bits; the IV is the 96 bits
+    -- quic_gcm.h admits, as for AES-128.
+    guard (k.size == 32 && n.size == 12)
+    let (ct, tag) := Spec.Gcm.encrypt k n (← hexArg? aad) (← hexArg? pt)
+    return s!"{emit ct} {emit tag}"
+  | ["aes256gcm_open", key, iv, aad, ct, tag] => do
+    let k ← hexArg? key
+    let n ← hexArg? iv
+    let t ← hexArg? tag
+    guard (k.size == 32 && n.size == 12 && t.size == 16)
+    match Spec.Gcm.decrypt? k n (← hexArg? aad) (← hexArg? ct) t with
+    | some pt => return emit pt
+    | none => return "fail"
   | ["ghash", key, aad, ct] => do
     let k ← hexArg? key
-    guard (k.size == 16)
+    -- The hash subkey is the forward cipher of a zero block under either
+    -- key size (SP 800-38D §7.1 step 1).
+    guard (k.size == 16 || k.size == 32)
     return emit (Spec.Gcm.ghash k (← hexArg? aad) (← hexArg? ct))
   | ["quic_initial_keys", dcid, direction] => do
     let d ← hexArg? dcid

@@ -1,19 +1,21 @@
-// AEAD_AES_128_GCM and the GHASH under it, NIST SP 800-38D. quic_gcm.h
-// states every contract; this file implements them and nothing else.
+// AEAD_AES_128_GCM, AEAD_AES_256_GCM and the GHASH under them, NIST SP
+// 800-38D. quic_gcm.h states every contract; this file implements them
+// and nothing else. The two AEADs differ in the forward cipher alone, and
+// aes_encrypt_schedule picks that by the schedule's round count, so every
+// body below serves both.
 //
 // The forward cipher comes from quic_aes.c, and INV-26 in
-// docs/invariants.md bounds which keys it is given today: the Initial keys,
+// docs/invariants.md bounds which keys it is given: the Initial keys,
 // which anyone who sees a Destination Connection ID can derive (RFC 9001
-// §5.2), and the Retry key the RFC prints (§5.8). No key from the TLS key
-// schedule is passed to this file today.
+// §5.2), the Retry key the RFC prints (§5.8), and in a -DCH_SUITE_AES_GCM
+// build the traffic keys of the two AES-GCM cipher suites.
 //
-// Every local computed from the key is wiped anyway: the hash subkey, the
+// Every local computed from the key is wiped: the hash subkey, the
 // running multiple in the GF(2^128) multiply, the keystream, the tag mask
-// and the tag this call expected. The reason is the build that does not
-// exist yet. A build that declares -DCH_SUITE_AES_GCM runs these same
-// bodies under a traffic key, and a wipe that only that build needs would
-// be absent on the day it arrives. ct.h refuses that build unless it also
-// takes AES=hw, so no table sits underneath it.
+// and the tag this call expected. A public key does not need it; the
+// suite build runs these same bodies under a traffic key, and one body
+// serves both. ct.h refuses that build unless it also takes AES=hw, so no
+// table sits underneath it.
 //
 // GHASH has two bodies, and the Makefile AES variable picks one.
 // AES=soft and AES=extern run the portable multiply below, 128 masked
@@ -276,16 +278,17 @@ int gcm_open(const aes_public_key *k, const uint8_t nonce[AES_IV], const uint8_t
 }
 
 #ifdef CH_SUITE_AES_GCM
-// The same AEAD over a TLS traffic key. Its own entry rather than a cast,
+// The same AEAD over a TLS traffic key, AES-128 or AES-256 as its
+// schedule's round count says. Its own entry rather than a cast,
 // because the type is what keeps a traffic key out of the three public
 // call sites and a public key out of the record layer (INV-26).
-void gcm_seal_traffic(const aes_traffic_key *k, const uint8_t nonce[AES_IV], const uint8_t *aad,
+void gcm_traffic_seal(const aes_traffic_key *k, const uint8_t nonce[AES_IV], const uint8_t *aad,
                       size_t aad_len, const uint8_t *pt, size_t n, uint8_t *ct,
                       uint8_t tag[GCM_TAG]) {
     seal_schedule(&k->key, nonce, aad, aad_len, pt, n, ct, tag);
 }
 
-int gcm_open_traffic(const aes_traffic_key *k, const uint8_t nonce[AES_IV], const uint8_t *aad,
+int gcm_traffic_open(const aes_traffic_key *k, const uint8_t nonce[AES_IV], const uint8_t *aad,
                      size_t aad_len, const uint8_t *ct, size_t n, const uint8_t tag[GCM_TAG],
                      uint8_t *pt) {
     return open_schedule(&k->key, nonce, aad, aad_len, ct, n, tag, pt);

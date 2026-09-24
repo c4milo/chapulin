@@ -1,0 +1,17 @@
+invariant: INV-26
+file: quic_aes_hw.c
+catches: aes_equiv_test
+reason: the AES=hw AES-256 key expansion stops one round key short, so
+  its fifteenth round key is whatever the caller's buffer held and the
+  fourteenth round of every block runs under it. That is the round count
+  of TLS_AES_256_GCM_SHA384's schedule, and CBMC cannot read the
+  instructions this file runs, so bin/aes_equiv_test is what holds it: it
+  expands every key under both implementations and compares all fifteen
+  round keys byte for byte before it compares a block. The edit sits
+  outside the two architecture arms, so an ARMv8 runner and an x86-64
+  one each compile and catch it.
+
+--- old
+    expand(key, AES_256_KEY, round_keys, (size_t)AES_256_ROUND_KEYS * AES_BLOCK);
+--- new
+    expand(key, AES_256_KEY, round_keys, (size_t)(AES_256_ROUND_KEYS - 1) * AES_BLOCK);
