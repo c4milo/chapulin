@@ -3784,6 +3784,13 @@ BRANCH_SRCS := ct.c sha256.c sha3.c hkdf.c chacha20.c poly1305.c aead.c x25519.c
 # p256_fe_zero_mask as predicated moves, which is the gate's good case
 # rather than its bad one -- a predicated move is the select staying off
 # the control path.
+#
+# x25519.c's two riscv32 gcc entries rose from 23 to 24 when the clamp
+# moved into clamp_and_ladder(), which X25519=wide shares. Both branches
+# that function adds were read: a bne that closes the 32-byte copy loop,
+# and a beq that tests the stack-protector canary this toolchain adds to a
+# function holding an array. ladder() lost the copy loop's branch, so the
+# net is the canary. Neither reads the scalar.
 BRANCH_CEILING := \
   m3/ct.c:4 m3/sha256.c:17 m3/sha3.c:50 m3/hkdf.c:13 m3/chacha20.c:9 m3/poly1305.c:19 \
   m3/aead.c:4 m3/x25519.c:34 m3/p256_field.c:24 m3/mlkem.c:14 m3/mlkem_poly.c:43 m3/drbg.c:9 \
@@ -3815,12 +3822,12 @@ BRANCH_CEILING := \
   mips32r2-gcc-O2/mlkem_poly.c:38 mips32r2-gcc-O2/drbg.c:8 mips32r2-gcc-O2/softmul.c:0 \
   rv32imac-gcc/ct.c:2 rv32imac-gcc/sha256.c:15 rv32imac-gcc/sha3.c:26 rv32imac-gcc/hkdf.c:15 \
   rv32imac-gcc/chacha20.c:10 rv32imac-gcc/poly1305.c:15 rv32imac-gcc/aead.c:4 \
-  rv32imac-gcc/x25519.c:23 rv32imac-gcc/p256_field.c:20 rv32imac-gcc/mlkem.c:20 \
+  rv32imac-gcc/x25519.c:24 rv32imac-gcc/p256_field.c:20 rv32imac-gcc/mlkem.c:20 \
   rv32imac-gcc/mlkem_poly.c:39 rv32imac-gcc/drbg.c:9 rv32imac-gcc/softmul.c:0 \
   rv32imac-gcc/quic_aes.c:4 rv32imac-gcc/quic_aes_soft.c:12 rv32imac-gcc/quic_aes_extern.c:0 \
   rv32imac-gcc/quic_gcm.c:22 rv32imac-gcc/rsa_sign.c:27 rv32ic-gcc/ct.c:2 \
   rv32ic-gcc/sha256.c:15 rv32ic-gcc/sha3.c:26 rv32ic-gcc/hkdf.c:15 rv32ic-gcc/chacha20.c:10 \
-  rv32ic-gcc/poly1305.c:15 rv32ic-gcc/aead.c:4 rv32ic-gcc/x25519.c:23 \
+  rv32ic-gcc/poly1305.c:15 rv32ic-gcc/aead.c:4 rv32ic-gcc/x25519.c:24 \
   rv32ic-gcc/p256_field.c:20 rv32ic-gcc/mlkem.c:20 rv32ic-gcc/mlkem_poly.c:39 \
   rv32ic-gcc/drbg.c:9 rv32ic-gcc/softmul.c:2 rv32ic-gcc/quic_aes.c:4 \
   rv32ic-gcc/quic_aes_soft.c:12 rv32ic-gcc/quic_aes_extern.c:0 rv32ic-gcc/quic_gcm.c:22 \
