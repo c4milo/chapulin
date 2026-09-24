@@ -70,6 +70,11 @@ int ch_srv_record_init(ch_record *r, const ch_cfg *cfg);
 // this call, which is why one delivery of a ClientHello produces the
 // whole server flight.
 //
+// The call stops after the record that completes the handshake, with
+// *consumed covering it and nothing past it: a client may send its first
+// application record in the same segment as its Finished, and those
+// bytes belong to ch_read once ch_record_state reports CH_ST_CONNECTED.
+//
 // Returns CH_OK when the bytes were taken, whether or not they completed
 // a record or a message. Every other code leaves the session dead, and
 // ch_record_alert names the alert the caller sends before it closes.

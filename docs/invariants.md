@@ -1643,6 +1643,15 @@ last `ROLE=server` stub, as the entry said it would.
   and one `inv22-*-driver-forks-on-cfg-psk` violation per driver require
   them to fail, and the quic_step harness proves the QUIC table takes
   the fork from `psk_selected`.
+  The server reads the client's side the same way: a record-mode server
+  stops at the record that completes the handshake, so application data
+  the client sends in the same delivery as its Finished is left for
+  `ch_read` rather than read by the finished handshake.
+  `test/rec_coalesced_tests.h` delivers the Finished and one application
+  record in one `ch_srv_record_in` call, and
+  `test/violations/inv22-srv-record-in-reads-past-finished.violation`
+  keeps the loop going past the Finished and requires `bin/rec_loop_test`
+  to fail.
 - **Violation.** A PR relaxes one type check to tolerate a message a
   peer "usually" sends early, and a flight with a skipped
   CertificateVerify authenticates. This is the SMACK and FREAK class:

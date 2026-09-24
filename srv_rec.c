@@ -304,6 +304,12 @@ int ch_srv_record_in(ch_record *r, uint8_t *p, size_t n, size_t *consumed) {
         if (rc != CH_OK) {
             return rc;
         }
+        // The record that completed the handshake is the last one this
+        // call takes: what follows it is the peer's application data or
+        // alerts, and belongs to ch_read (srv_rec.h).
+        if (r->step == SR_STEP_COMPLETE) {
+            return CH_OK;
+        }
     }
 }
 

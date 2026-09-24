@@ -358,6 +358,7 @@ static int run_handshake(ch_record *client, ch_record *server, const ch_cfg *ccf
     return rounds;
 }
 
+#include "rec_coalesced_tests.h"
 #include "rec_read_tests.h"
 #include "rec_resume_tests.h"
 
@@ -432,6 +433,11 @@ int main(void) {
           CH_EINVAL);
 
     test_resumption();
+
+    // The client Finished and the first application record in one call.
+    server_config(&scfg);
+    client_config(&ccfg);
+    test_finished_and_data_in_one_delivery(&client, &server, &ccfg, &scfg);
 
     if (failures == 0) {
         (void)printf("rec_loop: a whole handshake over group 0x%04x in %d rounds, 0 socket"
