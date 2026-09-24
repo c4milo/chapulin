@@ -390,7 +390,11 @@ last `ROLE=server` stub, as the entry said it would.
   is filtered out by `TRANSPORT_FILTER`, `srv_handshake.c` by the server
   arm, and `tls.c` and `srv.c` guard their accept and connect calls out.
   What remains reaches the socket only through `srv_out.c`'s `emit`,
-  whose record arm calls the caller's sink. This is the invariant the
+  whose record arm calls the caller's sink. The compatibility
+  change_cipher_spec a server owes a client that sent a
+  legacy_session_id goes the same way, through `srv_out_record`; it
+  went through `cfg.send` until colibri found it against Go's
+  crypto/tls client. This is the invariant the
   mode exists for: a callback that blocks inside a completion-based
   event loop stalls every connection that loop holds, and there is no
   thread to park it on.
@@ -398,6 +402,9 @@ last `ROLE=server` stub, as the entry said it would.
   the run if the driver ever calls them, so the claim is measured rather
   than argued. `test/violations/srv-rec-out-blocks-the-caller.violation`
   makes `emit` send instead of pushing and requires that binary to fail.
+  `test/violations/inv28-srv-ccs-through-cfg-send.violation` sends the
+  change_cipher_spec through `cfg.send`, and the binary's hello with a
+  32-byte legacy_session_id catches it.
   `bin/rec_loop_test` measures both drivers at once: it runs this tree's
   client driver against this tree's server driver in one process, over
   the pinned auth mode, and counts the socket calls of both. A whole

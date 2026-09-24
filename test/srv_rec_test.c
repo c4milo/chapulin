@@ -28,6 +28,7 @@
 #include "rsa_sign.h"
 #include "rsa_sign_vectors.h"
 #include "srv_auth.h"
+#include "srv_message.h"
 #include "srv_rec.h"
 
 noreturn void ch_assert_fail(const char *cond, const char *file, int line) {
@@ -248,6 +249,61 @@ static void test_a_refusing_sink_kills_the_session(void) {
     CHECK(seen.io_calls == 0);
 }
 
+// The offset of legacy_session_id's length byte in a ClientHello message:
+// the 4-byte handshake header, legacy_version and the 32-byte random.
+#define HELLO_SESSION_ID_AT (4 + 2 + 32)
+#define SESSION_ID_LEN 32
+
+// A client in RFC 9846 Appendix E.4's middlebox compatibility mode sends
+// a non-empty legacy_session_id, as Go's crypto/tls does, and the server
+// answers with a change_cipher_spec after its ServerHello. In record mode
+// that record leaves through on_record_out like every other one; a
+// server that sent it through cfg.send broke INV-28, which colibri found
+// against a Go client. This tree's client sends an empty session id, so
+// the case rebuilds its hello with a 32-byte one.
+static void test_a_session_id_draws_the_change_cipher_spec_through_the_sink(void) {
+    uint8_t plain[CH_HELLO_MAX];
+    size_t plain_len = build_hello(plain, sizeof plain);
+    CHECK(plain_len > HELLO_SESSION_ID_AT && plain[HELLO_SESSION_ID_AT] == 0);
+
+    uint8_t hello[CH_HELLO_MAX + SESSION_ID_LEN];
+    size_t hello_len = plain_len + SESSION_ID_LEN;
+    size_t body_len = hello_len - 4;
+    memcpy(hello, plain, HELLO_SESSION_ID_AT);
+    hello[1] = (uint8_t)(body_len >> 16);
+    hello[2] = (uint8_t)(body_len >> 8);
+    hello[3] = (uint8_t)body_len;
+    hello[HELLO_SESSION_ID_AT] = SESSION_ID_LEN;
+    memset(hello + HELLO_SESSION_ID_AT + 1, 0x5A, SESSION_ID_LEN);
+    memcpy(hello + HELLO_SESSION_ID_AT + 1 + SESSION_ID_LEN, plain + HELLO_SESSION_ID_AT + 1,
+           plain_len - HELLO_SESSION_ID_AT - 1);
+    static uint8_t rec[CH_HELLO_MAX + SESSION_ID_LEN + REC_HDR];
+    size_t rec_len = wrap(rec, hello, hello_len);
+
+    ch_cfg cfg;
+    server_config(&cfg);
+    ch_record r;
+    memset(&seen, 0, sizeof seen);
+    CHECK(ch_srv_record_init(&r, &cfg) == CH_OK);
+
+    size_t consumed = 0;
+    int rc = ch_srv_record_in(&r, rec, rec_len, &consumed);
+    CHECK(rc == CH_OK);
+    CHECK(consumed == rec_len);
+    // The ServerHello, then the change_cipher_spec, then the protected
+    // flight, all through the sink.
+    CHECK(seen.count >= 6);
+    CHECK(seen.type[0] == REC_HANDSHAKE);
+    CHECK(seen.type[1] == REC_CCS);
+    CHECK(seen.len[1] == SRV_CCS_RECORD_LEN);
+    for (size_t i = 2; i < seen.count && i < MAX_RECORDS; i++) {
+        CHECK(seen.type[i] == REC_APPDATA);
+    }
+    // INV-28: not one byte through cfg.send.
+    CHECK(seen.io_calls == 0);
+    ch_record_close(&r);
+}
+
 int main(void) {
     uint8_t hello[CH_HELLO_MAX];
     size_t hello_len = build_hello(hello, sizeof hello);
@@ -313,6 +369,7 @@ int main(void) {
     test_init_refuses_a_missing_sink();
     test_a_partial_record_is_not_consumed();
     test_a_refusing_sink_kills_the_session();
+    test_a_session_id_draws_the_change_cipher_spec_through_the_sink();
 
     if (failures == 0) {
         (void)printf("srv_rec: a ClientHello in, %zu records out (%zu bytes)\n", records, bytes);

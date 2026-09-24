@@ -79,6 +79,10 @@ static int emit(ch_tls *t, const uint8_t *p, size_t n) {
 #endif
 }
 
+int srv_out_record(ch_tls *t, const uint8_t *rec, size_t n) {
+    return emit(t, rec, n);
+}
+
 // Sends the n bytes staged at t->tx + REC_HDR as one plaintext handshake
 // record. RFC 9846 §5.1 fixes legacy_record_version at 0x0303 here.
 int srv_out_plain(handshake_state *h, size_t n) {

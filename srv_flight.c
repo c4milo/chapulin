@@ -15,7 +15,6 @@
 
 #include "ch_assert.h"
 #include "ct.h"
-#include "io.h"
 #include "keylog.h"
 #include "keysched.h"
 #include "rand.h"
@@ -213,7 +212,8 @@ int srv_send_compat_ccs(handshake_state *h, const client_hello *ch) {
     size_t n = srv_build_compat_ccs(rec, sizeof rec);
     CH_ASSERT(n == SRV_CCS_RECORD_LEN);
     h->t->compat_ccs = 1;
-    return io_send_all(&h->t->cfg, rec, n);
+    // The driver's own output, never cfg.send: INV-28 holds this record too.
+    return srv_out_record(h->t, rec, n);
 #endif
 }
 

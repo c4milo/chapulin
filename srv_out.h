@@ -44,6 +44,12 @@ size_t srv_out_limit(const ch_tls *t);
 // the record header is never written.
 int srv_out_plain(handshake_state *h, size_t n);
 
+// Sends one whole record the caller built, header and all, the way every
+// other record leaves this server: through cfg.srv.on_record_out in a
+// TRANSPORT=record build (INV-28) and through cfg.send otherwise. The one
+// caller is the compatibility change_cipher_spec (srv_send_compat_ccs).
+int srv_out_record(ch_tls *t, const uint8_t *rec, size_t n);
+
 // Sends n bytes of one handshake message under the current protection.
 // Over TLS that is one or more sealed records; over QUIC it is the bytes
 // themselves. pt lies outside t->tx, where rec_seal writes.
