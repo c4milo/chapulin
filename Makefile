@@ -1698,6 +1698,11 @@ check: bin/unit bin/unit_ca bin/unit_pq bin/tlsclient bin/tlsclient_ecdsa bin/tl
 	# replacement rather than an addition, and the one that compiles
 	# chapulin.hpp's Quic class against the object it forwards to.
 	$(MAKE) lib-check cxx-check RAND=extern TRANSPORT=quic EXPORTER=off
+	# The object colibri links for its own QUIC checks: the webpki chain
+	# walk under both roles and the key log. No test here drives a
+	# TRUST=webpki QUIC client, so this leg is what holds the pair to
+	# compiling: 756ad91 broke it and nothing here saw it.
+	$(MAKE) lib-check RAND=extern TRUST=webpki TRANSPORT=quic ROLE=both KEYLOG=on EXPORTER=off
 	# The server arm exports ch_srv_accept and ch_srv_check beside
 	# ch_read, ch_write and ch_close, and no ch_connect, so it is the leg
 	# that holds PUBLIC_ROLE to a replacement rather than an addition. It

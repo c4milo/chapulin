@@ -447,9 +447,12 @@ received it, and refuses to present it under any other.
 - **The caller owns the ticket's age.** A ticket lives at most seven days
   (RFC 9846 §4.7.1), and the other modes leave that limit and
   `obfuscated_age` to the caller as well.
-- **A `TRANSPORT=quic` webpki client keeps refusing a PSK.** No build or
-  test runs that combination, and `quic_config.c` keeps its own copy of
-  the refusal until one does.
+- **A `TRANSPORT=quic` webpki client keeps refusing a PSK.** No test here
+  drives that client, though `make check` builds its object, which
+  colibri links, and `quic_config.c` keeps its own copy of the refusal.
+  `ch_quic_init` computes no configuration hash, so the tickets such a
+  session hands to `on_ticket` carry a binding no configuration matches,
+  and presenting one fails closed with `CH_EINVAL`.
 
 ## Bounds
 

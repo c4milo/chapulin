@@ -12,9 +12,10 @@
 #ifndef CH_TRANSPORT_QUIC
 #include "io.h"
 #include "record.h"
-#ifdef CH_TRUST_WEBPKI
-#include "webpki_ticket.h"
 #endif
+#ifdef CH_TRUST_WEBPKI
+// handle_ticket binds every ticket, on either transport.
+#include "webpki_ticket.h"
 #endif
 
 #ifdef CH_TRANSPORT_QUIC
