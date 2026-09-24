@@ -1,4 +1,4 @@
-# Where the time goes: chapulin's primitives on arm64
+# Where the time goes: chapulin's primitives on arm64 and x86-64
 
 This note ranks the primitives by the time they cost a connection, so
 that SIMD and crypto-instruction work can start where it pays. It reads
@@ -230,8 +230,72 @@ and FEAT_SHA3 (`sysctl hw.optional.arm`).
   give Keccak's speed per byte, not how many bytes ML-KEM squeezes.
 - A TRUST=webpki handshake. Its chain verify runs one verifier row per
   link, but no chain was timed here.
-- Timings from gcc or from x86-64. The program builds and runs there
-  (gcc 13.3 on arm64 and on emulated x86-64 Linux, `--quick`), and no
-  emulated timing was recorded. x86-64 numbers belong to a run on a
-  native x86-64 machine, which writes
-  bench/results-primitives-x86_64.csv.
+- Which half of a difference between the arm64 and x86-64 runs is the
+  compiler and which is the CPU. The arm64 run used clang and the
+  x86-64 run used gcc, so no row separates the two.
+
+## x86-64
+
+bench/results-primitives-x86_64.csv is a run of the same script on a
+GitHub-hosted runner: an AMD EPYC 7763 under Linux 6.17, gcc 13.3 at
+`-std=c11 -O2`, tree c91e449, started by hand from
+.github/workflows/bench.yml. The 1-minute load average went from 0.61
+to 0.95. No row's spread inside a run passed 4.2%, and no row's spread
+between runs passed 1.6%.
+
+Handshakes, milliseconds:
+
+| handshake | build | whole | client side | server side |
+|---|---|---:|---:|---:|
+| pinned RSA-2048 | default | 94.8 | 4.28 | 90.5 |
+| pinned RSA-2048 | CH_NATIVE_WIDEMUL | 28.5 | 2.14 | 26.4 |
+| pinned RSA-3072 | default | 297.8 | 4.66 | 293.1 |
+| pinned RSA-3072 | CH_NATIVE_WIDEMUL | 85.6 | 2.52 | 83.0 |
+| pinned ECDSA P-256 | default | 12.9 | 5.96 | 6.97 |
+| pinned ECDSA P-256 | CH_NATIVE_WIDEMUL | 6.93 | 3.83 | 3.10 |
+
+Each row as a multiple of its arm64 time, default build:
+
+| row | x86-64 over arm64 |
+|---|---:|
+| shake256_squeeze, 16 KB | 7.50 |
+| shake128_squeeze, 16 KB | 7.16 |
+| mlkem768_keygen, encaps, decaps | 4.75 to 5.04 |
+| sha3_256, 16 KB | 4.58 |
+| p256_sign, p256_ecdh | 2.37 to 2.43 |
+| x25519 | 2.20 |
+| poly1305, 16 KB | 1.76 |
+| chacha20_poly1305_seal, 16 KB | 1.65 |
+| p256_ecdsa_verify | 1.64 |
+| chacha20, 16 KB | 1.47 |
+| rsa_pss_sign_3072 | 1.47 |
+| rsa_pss_verify_3072 | 1.09 |
+| sha512, 16 KB | 0.89 |
+| hkdf_expand_label | 0.82 |
+| sha256 and hmac_sha256, 16 KB | 0.79 |
+
+The native multiply gains more here than on arm64. Default time over
+native time:
+
+| row | ratio |
+|---|---:|
+| poly1305, 16 KB | 4.73 |
+| rsa_pss_sign_3072 | 3.56 |
+| rsa_pss_sign_2048 | 3.53 |
+| p256_sign, p256_ecdh | 2.50 |
+| x25519 | 2.36 |
+| chacha20_poly1305_seal, 16 KB | 1.89 |
+| ML-KEM-768 | 1.00 to 1.02 |
+
+What these show:
+
+- The rankings match arm64 at the top. A client's largest cost is the
+  x25519 pair, 3.95 ms of a 4.66 ms RSA-3072 client side on the
+  default build, and a server with an RSA identity spends its side in
+  rsa_pss_sign.
+- Keccak is the outlier. SHA-3 and SHAKE take 4.6 to 7.5 times their
+  arm64 time, where every other row takes at most 2.4 times, and
+  ML-KEM, which runs on them, takes 4.8 to 5.0 times. A `KEX=pq` client
+  adds two key generations and one decapsulation, 445 us, which is 9.6%
+  on top of the RSA-3072 client side.
+- SHA-256 is the one hash faster here than on arm64, without SHA-NI.

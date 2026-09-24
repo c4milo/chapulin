@@ -657,12 +657,32 @@ What the numbers show:
   block, no table of the powers of H, and no Karatsuba split.
   `quic_ghash_hw.c`'s header says why, and no other form was measured here.
 
-No x86-64 row exists yet. An emulated x86-64 run is no measurement, so the one
-run here, under Docker on this machine, only showed that the gcc 13.3 build with
-`-maes -mpclmul` compiles and that `bin/ghash_equiv_test` passes on PCLMULQDQ.
-`.github/workflows/bench.yml` runs `make bench-aead CC=gcc` on an x86-64 runner
-when someone starts it by hand, prints `bench/results-aead-x86_64.csv` and keeps
-it as a run artifact.
+*Measured* on x86-64, 2026-09-24, by the same script started by hand from
+`.github/workflows/bench.yml`, which wrote `bench/results-aead-x86_64.csv`. The
+machine is a GitHub-hosted runner with an Intel Xeon Platinum 8573C under Linux
+6.17, and the compiler is gcc 13.3 at `-O2`, with `-maes -mpclmul` for the
+`AES=hw` rows. The tree is `c91e449`. The load average stayed under 0.6.
+
+| ns per byte | 64 B | 1200 B | 1350 B | 16384 B |
+| --- | --- | --- | --- | --- |
+| ChaCha20-Poly1305 seal, the packaged 16x16 multiply | 10.8 | 5.72 | 5.80 | 5.50 |
+| ChaCha20-Poly1305 seal, `CH_NATIVE_WIDEMUL` | 6.87 | 3.08 | 3.14 | 2.86 |
+| AES-128-GCM seal, `AES=soft` | 197 | 135 | 135 | 131 |
+| AES-128-GCM seal, `AES=hw` | 5.82 | 2.49 | 2.45 | 2.31 |
+| AES-128-GCM open, `AES=hw` | 5.78 | 2.45 | 2.44 | 2.31 |
+| its counter mode, `AES=hw` | 1.59 | 1.48 | 1.48 | 1.48 |
+| its GHASH, `AES=hw`: `quic_ghash_hw.c` on PCLMULQDQ | 3.85 | 1.00 | 0.94 | 0.84 |
+
+What the x86-64 numbers show:
+
+- `AES=hw` AES-128-GCM is faster than ChaCha20-Poly1305 at every size here too,
+  by less than on arm64: a seal takes 0.42 to 0.54 of the packaged
+  ChaCha20-Poly1305 seal's time, and 0.78 to 0.85 of the `CH_NATIVE_WIDEMUL`
+  one's.
+- The counter mode, not GHASH, is the larger half of an `AES=hw` seal from 1200
+  bytes up: 1.48 ns of 2.31 at 16,384 bytes.
+- The `AES=hw` seal and open agree within 1.4%, so the seal-row excess seen on
+  arm64 does not appear on this machine.
 
 ### What the AES exception costs, against today's counts
 
