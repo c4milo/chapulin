@@ -343,10 +343,43 @@ def lint_builds():
             print(f"lint-violation-builds: {path.name} runs {' '.join(missing)} "
                   f"but does not build it")
             bad = 1
+    bad |= builds_without_rule()
     if bad:
         return 1
-    print("lint-violation-builds: every script target names the binaries it runs")
+    print("lint-violation-builds: every script target names the binaries it runs, "
+          "and make has a rule for each")
     return 0
+
+
+def builds_without_rule():
+    """A 'builds' name make has no rule for fails only when that violation
+    runs, in check-slow, as an error rather than a verdict: the webpki
+    change deleted bin/tlsclient_webpki_pq while a server violation still
+    listed it. make's own database, printed without building anything,
+    names every target that has a rule; a dry run cannot stand in for it,
+    because a binary left on disk from before the rule went away reads as
+    a file with nothing to do. Returns 1 when a name has no rule."""
+    uses = {}
+    for path in sorted(VIOLATIONS.glob("*.violation")):
+        head, _, _ = parse(path)
+        for name in head.get("builds", "").split():
+            uses.setdefault(name, []).append(path.name)
+    if not uses:
+        return 0
+    r = subprocess.run(["make", "-p", "-q", "-n", "RAND=extern"], cwd=ROOT,
+                       capture_output=True, text=True)
+    targets = set()
+    previous = ""
+    for line in r.stdout.splitlines():
+        m = re.match(r"^([^#\s][^:=]*?):(?!=)", line)
+        if m and previous != "# Not a target:":
+            targets.update(m.group(1).split())
+        previous = line
+    unknown = sorted(name for name in uses if name not in targets)
+    for name in unknown:
+        print(f"lint-violation-builds: {', '.join(uses[name])} builds {name}, "
+              "which make has no rule for")
+    return 1 if unknown else 0
 
 
 def lint_fast_targets():
