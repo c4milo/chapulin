@@ -275,6 +275,9 @@ structure Tbs where
   notBefore : Nat
   /-- notAfter, packed the same way. -/
   notAfter : Nat
+  /-- The SubjectPublicKeyInfo TLV, header included: the bytes an SPKI pin
+  hashes (RFC 7858 §4.2). -/
+  spki : Range
   /-- The public key's algorithm. -/
   keyAlg : KeyAlg
   /-- The public key: the RSA modulus, or the EC point's X ‖ Y. -/
@@ -313,8 +316,8 @@ def readTbs? (isCa : Bool) (tbs : ByteArray) : Option Tbs := do
   let (keyAlg, key) ← readSpki? (slice tbs o6 (o7 - o6))
   let (extensions, o8) ← readExtensions? isCa tbs o7
   guard (o8 == tbs.size)
-  some ⟨⟨o3, o4 - o3⟩, ⟨o5, o6 - o5⟩, notBefore, notAfter, keyAlg, key, sigAlgTlv, sigAlg,
-    extensions⟩
+  some ⟨⟨o3, o4 - o3⟩, ⟨o5, o6 - o5⟩, notBefore, notAfter, ⟨o6, o7 - o6⟩, keyAlg, key, sigAlgTlv,
+    sigAlg, extensions⟩
 
 /-- One parsed certificate; every range is an offset into the
 certificate's bytes. -/
@@ -329,6 +332,8 @@ structure Certificate where
   notBefore : Nat
   /-- notAfter, packed. -/
   notAfter : Nat
+  /-- The SubjectPublicKeyInfo TLV, header included. -/
+  spki : Range
   /-- The public key's algorithm. -/
   keyAlg : KeyAlg
   /-- The public key's bytes. -/
@@ -361,6 +366,7 @@ def parseCertificate? (isCa : Bool) (cert : ByteArray) : Option Certificate := d
     subject := fields.subject.shift base
     notBefore := fields.notBefore
     notAfter := fields.notAfter
+    spki := fields.spki.shift base
     keyAlg := fields.keyAlg
     key := fields.key
     sigAlg := fields.sigAlg
@@ -455,7 +461,8 @@ def selftest : Bool :=
         (match c.extensions.subjectAltName with
          | some r => slice r2Leaf r.off r.len == hex "3011820f73332e6578616d706c652e74657374"
          | none => false) &&
-        slice r2Leaf c.issuer.off 2 == hex "303f" && slice r2Leaf c.subject.off 2 == hex "301a"
+        slice r2Leaf c.issuer.off 2 == hex "303f" && slice r2Leaf c.subject.off 2 == hex "301a" &&
+        c.spki.len == 91 && readSpki? (slice r2Leaf c.spki.off c.spki.len) == some (.p256, c.key)
   let issuerOk :=
     match parseCertificate? true r2Issuer with
     | some c => c.extensions.isCa && c.extensions.pathLen == some 0 &&
@@ -651,6 +658,59 @@ theorem parseCertificate?_frames (isCa : Bool) (cert : ByteArray) (c : Certifica
     rw [h1_slice, h2_slice, h3_slice] at h_all
     exact h_all.symm
   rw [h_cert, h_split]
+
+/-- The SubjectPublicKeyInfo range `readTbs?` records lies inside the TBS
+content and is the TLV the key was read from. -/
+private theorem readTbs?_spki {isCa : Bool} {tbs : ByteArray} {f : Tbs}
+    (h : readTbs? isCa tbs = some f) :
+    f.spki.off + f.spki.len ≤ tbs.size ∧
+      readSpki? (slice tbs f.spki.off f.spki.len) = some (f.keyAlg, f.key) := by
+  unfold readTbs? at h
+  obtain ⟨o1, -, h⟩ := bind_some_elim h
+  obtain ⟨o2, -, h⟩ := bind_some_elim h
+  obtain ⟨⟨_, o3⟩, -, h⟩ := bind_some_elim h
+  obtain ⟨sigAlg, -, h⟩ := bind_some_elim h
+  obtain ⟨⟨_, o4⟩, -, h⟩ := bind_some_elim h
+  obtain ⟨⟨notBefore, notAfter, o5⟩, -, h⟩ := bind_some_elim h
+  obtain ⟨⟨_, o6⟩, -, h⟩ := bind_some_elim h
+  obtain ⟨⟨spki, o7⟩, h_tlv, h⟩ := bind_some_elim h
+  obtain ⟨⟨keyAlg, key⟩, h_spki, h⟩ := bind_some_elim h
+  obtain ⟨⟨extensions, o8⟩, -, h⟩ := bind_some_elim h
+  obtain ⟨-, -, h⟩ := bind_some_elim h
+  simp only [Option.some.injEq] at h
+  subst h
+  obtain ⟨h_end, h_fits, -⟩ := readTlv_canonical tbs o6 0x30 spki o7 h_tlv
+  exact ⟨by simp only; omega, h_spki⟩
+
+/-- The SubjectPublicKeyInfo range an accepted certificate records lies
+inside its TBS content, and its bytes read back as the recorded key: the
+bytes an SPKI pin hashes (RFC 7858 §4.2) are the ones the key came from. -/
+theorem parseCertificate?_spki (isCa : Bool) (cert : ByteArray) (c : Certificate)
+    (h : parseCertificate? isCa cert = some c) :
+    c.tbs.off ≤ c.spki.off ∧ c.spki.off + c.spki.len ≤ c.tbs.off + c.tbs.len ∧
+      readSpki? (slice cert c.spki.off c.spki.len) = some (c.keyAlg, c.key) := by
+  unfold parseCertificate? at h
+  obtain ⟨-, -, h⟩ := bind_some_elim h
+  obtain ⟨⟨bodyOff, body, bodyEnd⟩, h_body, h⟩ := bind_some_elim h
+  obtain ⟨_, -, h⟩ := bind_some_elim h
+  obtain ⟨⟨tbsOff, tbs, tbsEnd⟩, h_tbs, h⟩ := bind_some_elim h
+  obtain ⟨fields, h_fields, h⟩ := bind_some_elim h
+  obtain ⟨o1, -, h⟩ := bind_some_elim h
+  obtain ⟨⟨sigOff, sig, sigEnd⟩, -, h⟩ := bind_some_elim h
+  obtain ⟨_, -, h⟩ := bind_some_elim h
+  simp only [Option.some.injEq] at h
+  subst h
+  obtain ⟨-, -, -, h_body_slice⟩ := readTlvAt_range h_body
+  obtain ⟨-, h_tbs_co, h_tbs_fits, h_tbs_slice⟩ := readTlvAt_range h_tbs
+  obtain ⟨h_inside, h_spki⟩ := readTbs?_spki h_fields
+  have h_tbs_range : slice cert (bodyOff + tbsOff) tbs.size = tbs := by
+    rw [← slice_slice cert bodyOff body.size tbsOff tbs.size (by omega), h_body_slice,
+      h_tbs_slice]
+  refine ⟨by simp only [Range.shift]; omega, by simp only [Range.shift]; omega, ?_⟩
+  simp only [Range.shift]
+  rw [← slice_slice cert (bodyOff + tbsOff) tbs.size fields.spki.off fields.spki.len h_inside,
+    h_tbs_range]
+  exact h_spki
 
 /-- An accepted extension either leaves the record as it was, or is one of
 the four the walk reads, recorded with an extnValue range inside the

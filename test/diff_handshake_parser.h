@@ -1,10 +1,10 @@
 // Handshake message parsing differential section: the four server-to-
-// client messages handshake_parser.c reads before the peer is authenticated —
-// ServerHello (including HelloRetryRequest), EncryptedExtensions,
-// Certificate, and CertificateVerify. Every row builds one message,
-// runs the C parser and the Lean spec on it, and compares. This header
-// holds the framing, the build tokens and the ServerHello;
-// test/diff_encrypted_exts.h holds EncryptedExtensions and
+// client messages handshake_parser.c and handshake_parser_ee.c read before
+// the peer is authenticated — ServerHello (including HelloRetryRequest),
+// EncryptedExtensions, Certificate, and CertificateVerify. Every row
+// builds one message, runs the C parser and the Lean spec on it, and
+// compares. This header holds the framing, the build tokens and the
+// ServerHello; test/diff_encrypted_exts.h holds EncryptedExtensions and
 // test/diff_handshake_certificate.h the other two.
 // Included by test/diff_test.c after diff_driver.h (single translation unit).
 #ifndef CH_DIFFHANDSHAKE_PARSER_H
@@ -22,10 +22,11 @@
 #define HSPD_CERTIFICATE_VERIFY 15
 
 // ExtensionType values this section builds with (RFC 9846 §4.3,
-// RFC 8449 §4).
+// RFC 8449 §4, RFC 7250 §3).
 #define HSPD_SERVER_NAME 0
 #define HSPD_SUPPORTED_GROUPS 10
 #define HSPD_ALPN 16
+#define HSPD_SERVER_CERTIFICATE_TYPE 20
 #define HSPD_RECORD_SIZE_LIMIT 28
 #define HSPD_PRE_SHARED_KEY 41
 #define HSPD_EARLY_DATA 42
@@ -33,28 +34,36 @@
 #define HSPD_COOKIE 44
 #define HSPD_KEY_SHARE 51
 
-// The trust mode fixes three more narrowings, as the KEX token fixes
-// the group. A TRUST=webpki ClientHello sends server_name, so the model
-// admits its empty acknowledgement (`sni`); it may offer application
-// protocols, so the model admits one selection from that offer
-// (`hspd_alpn_names`); and it offers five signature schemes, so the
-// model admits three of them in CertificateVerify (`webpki`). The raw
-// and ca builds send no server_name, offer no protocol and offer the
-// one pinned scheme.
+// The trust mode fixes four more narrowings, as the KEX token fixes
+// the group. A TRUST=webpki ClientHello sends server_name when its
+// configuration has a hostname, so an EncryptedExtensions row draws
+// whether it did, and the model admits the empty acknowledgement only
+// then (`sni`); it may offer application protocols, so the model admits
+// one selection from that offer (`hspd_alpn_names`); with SPKI pins it
+// offers RFC 7250 certificate types, so a row draws one of the offers
+// webpki_cert_types_offered makes and the model admits one selection
+// from it; and it offers five signature schemes, so the model admits
+// three of them in CertificateVerify (`webpki`). The raw and ca builds
+// send no server_name, offer no protocol and no certificate type, and
+// offer the one pinned scheme.
 // The protocols a row's ALPN extension selects from: "h2" and
 // "http/1.1" are what an HTTP client sends, and "x" is the shortest
 // ProtocolName RFC 7301 §3.1 admits. Every build builds from this
 // table; only a TRUST=webpki hello may offer any of them, so
 // HSPD_ALPN_OFFER_MAX is 0 in the other builds and every ALPN row there
-// is a response the client never requested.
+// is a response the client never requested. HSPD_SNI_SENT_CHOICES and
+// HSPD_CERT_TYPE_OFFER_CHOICES count the server_name and certificate
+// type offers a row may draw, one each (none) outside TRUST=webpki.
 #define HSPD_ALPN_MAX 3
 static const char *const hspd_alpn_names[HSPD_ALPN_MAX] = {"h2", "http/1.1", "x"};
 #ifdef CH_TRUST_WEBPKI
-#define HSPD_SNI_TOKEN "sni"
+#define HSPD_SNI_SENT_CHOICES 2
 #define HSPD_ALPN_OFFER_MAX HSPD_ALPN_MAX
+#define HSPD_CERT_TYPE_OFFER_CHOICES 3
 #else
-#define HSPD_SNI_TOKEN "nosni"
+#define HSPD_SNI_SENT_CHOICES 1
 #define HSPD_ALPN_OFFER_MAX 0
+#define HSPD_CERT_TYPE_OFFER_CHOICES 1
 #endif
 
 #define HSPD_X25519 0x001d

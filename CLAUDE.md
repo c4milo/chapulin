@@ -44,10 +44,10 @@ Home: github.com/c4milo.
   TRUST=webpki. x509_ca.[ch] reaches no verdict and no session reaches
   it (pinned mode hashes
   the certificate into the transcript, never reads it), no RFC 7250
-  raw-public-key certificate types, no 0-RTT, no compression, no
-  renegotiation-era anything. Within a mode the client offers exactly one
+  raw-public-key certificate types outside TRUST=webpki (below), no
+  0-RTT, no compression, no renegotiation-era anything. Within a mode the client offers exactly one
   of everything; the server takes it or the handshake fails closed.
-  TRUST=webpki breaks that rule four times. It offers several signature
+  TRUST=webpki breaks that rule five times. It offers several signature
   schemes, because it cannot know
   which family signed the chain the server will send, and it offers the
   list of ALPN protocols the caller configured, because it cannot know
@@ -61,7 +61,13 @@ Home: github.com/c4milo.
   TLS_AES_128_GCM_SHA256 after ChaCha20 (CH_CLIENT_TWO_SUITES), keys
   every record direction with the suite the ServerHello selected, and
   ch_tls.suite reports it (docs/decisions.md 45); a raw or ca client
-  refuses SUITE=aesgcm.
+  refuses SUITE=aesgcm. With SPKI pins (ch_cfg.spki_pins, the SHA-256 of
+  a DER SubjectPublicKeyInfo) it offers RFC 7250 raw public keys in
+  server_certificate_type, beside X.509 when anchors are set too, and
+  ch_tls.server_cert_type reports the server's choice: a raw key needs a
+  pin that names it, and a chain beside pins needs a pin on the path it
+  verified as well as the walk. Pins alone are a whole configuration, with
+  no anchor, clock or hostname (docs/decisions.md 49).
 - One concern per file pair, dependencies pointing down only:
   `ct.[ch]` (constant-time bytes) ← `sha256.[ch]` + `sha3.[ch]` +
   `sha512.[ch]`/`sha512_compress.[ch]` (SHA-384 and SHA-512; the
@@ -86,8 +92,10 @@ Home: github.com/c4milo.
   `webpki.[ch]` with `webpki_cert.c`, `webpki_ext.c`, `webpki_name.c`,
   `webpki_sigalg.c`, `webpki_spki.c` and `webpki_time.c` (chain verify
   against caller-supplied anchors, TRUST=webpki) + `webpki_ticket.[ch]`
-  (the binding that holds a resumption ticket to the hostname and
-  anchors that received it, TRUST=webpki) ←
+  (the binding that holds a resumption ticket to the configuration that
+  received it, TRUST=webpki) + `webpki_pin.[ch]` (SPKI pins and RFC 7250
+  raw public keys, TRUST=webpki) + `webpki_cfg.[ch]` (the mode's ch_cfg
+  declarations and the rules ch_connect checks, TRUST=webpki) ←
   `record.[ch]`
   (record layer) ← `handshake_parser.[ch]` (message parsers) ←
   `handshake_record.[ch]` (record reading and message reassembly) ←

@@ -1,0 +1,17 @@
+invariant: INV-33
+file: webpki_pin.c
+catches: webpki_auth_test
+reason: webpki_verify_raw_key reads the first entry and ignores what
+  follows it, so a RawPublicKey list with a second entry, or a trailing
+  byte, is accepted, against RFC 7250 §3's one SubjectPublicKeyInfo.
+  bin/webpki_auth_test's two-entry and trailing-byte rows, whose first
+  entry is pinned, object.
+
+--- old
+    if (rb_left(&r) != 0) {
+        // A second entry, or bytes that frame none (RFC 7250 §3: the
+        // list holds exactly one entry under this type).
+        *alert = ALERT_BAD_CERTIFICATE;
+        return CH_EPROTO;
+    }
+--- new

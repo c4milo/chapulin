@@ -290,10 +290,9 @@ void ch_close(ch_tls *t) {
 // above an assertion changes the raw and ca objects, and this mode
 // leaves those objects byte for byte as they were (docs/webpki.md).
 
-// ct.h and webpki_ticket.h are included here rather than at the top of
-// the file for the same reason: an include line above the assertions
-// would move them.
-#include "ct.h"
+// webpki_ticket.h is included here rather than at the top of the file
+// for the same reason: an include line above the assertions would move
+// them.
 #include "webpki_ticket.h"
 
 // cfg.h writes CH_TRUST_MIN_RXBUF out as numbers because webpki.h,
@@ -306,106 +305,12 @@ _Static_assert(CH_TRUST_MIN_RXBUF ==
                    CH_WEBPKI_FLIGHT_ENTRIES * (CH_WEBPKI_CERT_MAX + 5) + 8 + REC_OVERHEAD,
                "cfg.h's webpki receive floor is the flight formula over webpki.h's bounds");
 
-// The anchor rule: 1 to CH_WEBPKI_ANCHOR_MAX anchors, each carrying a
-// non-empty name and a non-empty spki. The chain walk reads through
-// both pointers of every anchor it consults, so a NULL or empty entry
-// is refused here, before the handshake sends a byte.
-static int anchors_ok(const ch_cfg *cfg) {
-    if (cfg->anchors == NULL || cfg->anchor_count == 0 ||
-        cfg->anchor_count > CH_WEBPKI_ANCHOR_MAX) {
-        return 0;
-    }
-    for (size_t i = 0; i < cfg->anchor_count; i++) {
-        const ch_trust_anchor *a = &cfg->anchors[i];
-        if (a->name == NULL || a->name_len == 0 || a->spki == NULL || a->spki_len == 0) {
-            return 0;
-        }
-    }
-    return 1;
-}
-
-// The hostname rule: the shape webpki_hostname_ok checks. That check
-// reads hostname_len bytes through the pointer, so a NULL hostname is
-// refused before it runs.
-static int hostname_ok(const ch_cfg *cfg) {
-    return cfg->hostname != NULL && webpki_hostname_ok(cfg->hostname, cfg->hostname_len);
-}
-
-// The clock rule: now_seconds 0 is the value a caller who never set the
-// field leaves there, so it is refused as an unset clock. It names
-// 1970-01-01T00:00:00Z, a moment no certificate the walk admits is
-// valid at, so the refusal turns a certain CH_EAUTH mid-handshake into
-// a CH_EINVAL that names the config.
-static int clock_set(const ch_cfg *cfg) {
-    return cfg->now_seconds != 0;
-}
-
-// The pin rule: this mode reads neither server_pubkey slot, so a config
-// that sets one, or only its length, is a provisioning mistake, not a
-// second trust path.
-static int pins_unset(const ch_cfg *cfg) {
-    return cfg->server_pubkey == NULL && cfg->server_pubkey_len == 0 &&
-           cfg->server_pubkey2 == NULL && cfg->server_pubkey2_len == 0;
-}
-
-// One offered ALPN protocol name: a non-NULL pointer and 1 to
-// CH_ALPN_NAME_MAX bytes. RFC 7301 §3.1 makes a ProtocolName 1 to 255
-// bytes; this mode's cap is shorter, and cfg.h says what it costs the
-// ClientHello.
-static int alpn_name_ok(const ch_alpn_protocol *protocol) {
-    return protocol->name != NULL && protocol->name_len > 0 &&
-           protocol->name_len <= CH_ALPN_NAME_MAX;
-}
-
-// Whether entry i repeats a name an earlier entry already offered. A
-// repeat offers the server the same protocol twice, and its selection
-// would name two indices, so ch_tls.alpn_selected could not report
-// which one the caller meant.
-static int alpn_name_repeats(const ch_cfg *cfg, size_t i) {
-    for (size_t j = 0; j < i; j++) {
-        if (cfg->alpn_protocols[i].name_len == cfg->alpn_protocols[j].name_len &&
-            ct_memeq(cfg->alpn_protocols[i].name, cfg->alpn_protocols[j].name,
-                     cfg->alpn_protocols[i].name_len)) {
-            return 1;
-        }
-    }
-    return 0;
-}
-
-// The ALPN rule: offering nothing is legal and sends no extension, so a
-// NULL list with a count of 0 passes. An offer is 1 to CH_ALPN_MAX
-// entries, each a name alpn_name_ok accepts and none repeating another.
-// A count without a list, or a list without a count, is a config with a
-// field missing, and is refused like a PSK length without its pointer.
-static int alpn_ok(const ch_cfg *cfg) {
-    if (cfg->alpn_protocols == NULL) {
-        return cfg->alpn_count == 0;
-    }
-    if (cfg->alpn_count == 0 || cfg->alpn_count > CH_ALPN_MAX) {
-        return 0;
-    }
-    for (size_t i = 0; i < cfg->alpn_count; i++) {
-        if (!alpn_name_ok(&cfg->alpn_protocols[i]) || alpn_name_repeats(cfg, i)) {
-            return 0;
-        }
-    }
-    return 1;
-}
-
-// The chain config: every rule above holds, and the PSK fields are unset
-// or present a ticket bound to this hostname and these anchors, which
-// webpki_resumption_ok checks after the rules it needs (webpki_ticket.h).
-static int chain_config_ok(const ch_cfg *cfg) {
-    return anchors_ok(cfg) && hostname_ok(cfg) && clock_set(cfg) && webpki_resumption_ok(cfg) &&
-           pins_unset(cfg) && alpn_ok(cfg);
-}
-
-// The chain rules plus the terms the raw and ca definition above checks.
-// ch_record_init calls this and no ch_connect, so it too refuses a short
-// receive buffer and require_pq in this mode
+// The mode's own rules (webpki_cfg.c) plus the terms the raw and ca
+// definition above checks. ch_record_init calls this and no ch_connect,
+// so it too refuses a short receive buffer and require_pq in this mode
 // (https://github.com/c4milo/chapulin/issues/171).
 int tlsi_config_ok(const ch_cfg *cfg) {
-    if (!chain_config_ok(cfg) || cfg->buf == NULL || cfg->buf_len < CH_MIN_RXBUF) {
+    if (!webpki_cfg_ok(cfg) || cfg->buf == NULL || cfg->buf_len < CH_MIN_RXBUF) {
         return 0;
     }
 #ifndef CH_KEX_PQ

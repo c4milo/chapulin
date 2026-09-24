@@ -1,5 +1,5 @@
 invariant: INV-14
-file: tls.c
+file: webpki_cfg.c
 catches: webpki_session_test
 reason: ch_connect stops holding the offer to CH_ALPN_MAX entries, so a
   longer list passes the config check and the ClientHello grows past

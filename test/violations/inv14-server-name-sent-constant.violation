@@ -1,0 +1,15 @@
+invariant: INV-14
+file: handshake_flight.c
+catches: webpki_encrypted_exts_test
+reason: the EncryptedExtensions handler tells the parser the
+  ClientHello sent server_name whatever the configuration, so a
+  pins-only client without a hostname, whose hello sent none, admits
+  an acknowledgement RFC 6066 §3 gives the server no reason to send.
+  bin/webpki_encrypted_exts_test's pins-only row objects.
+
+--- old
+        &t->alpn_selected, t->cfg.hostname_len > 0, webpki_cert_types_offered(&t->cfg),
+        &t->server_cert_type,
+--- new
+        &t->alpn_selected, 1, webpki_cert_types_offered(&t->cfg),
+        &t->server_cert_type,

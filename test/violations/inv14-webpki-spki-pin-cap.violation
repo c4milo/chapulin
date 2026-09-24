@@ -1,0 +1,10 @@
+invariant: INV-14
+file: webpki_cfg.c
+catches: webpki_session_test
+reason: the SPKI pin rule admits one pin over CH_SPKI_PIN_MAX, the cap
+  docs/webpki.md states. The first-invalid count row objects.
+
+--- old
+    return cfg->spki_pin_count > 0 && cfg->spki_pin_count <= CH_SPKI_PIN_MAX;
+--- new
+    return cfg->spki_pin_count > 0 && cfg->spki_pin_count <= CH_SPKI_PIN_MAX + 1;

@@ -1,0 +1,15 @@
+invariant: INV-14
+file: handshake_parser_ee.c
+catches: handshake_strict_webpki
+reason: the server_certificate_type arm stops checking that the body
+  ends at its one CertificateType, so a body of two octets parses on
+  its first. RFC 7250 §4.2 permits a single value there, and RFC 9846
+  §6 makes a body of the wrong length a decode_error.
+  bin/handshake_strict_webpki's two-octet row objects.
+
+--- old
+    uint8_t type = rb_u8(&e);
+    if (e.err || rb_left(&e) != 0) {
+--- new
+    uint8_t type = rb_u8(&e);
+    if (e.err) {

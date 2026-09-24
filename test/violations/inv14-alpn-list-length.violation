@@ -1,5 +1,5 @@
 invariant: INV-14
-file: handshake_parser.c
+file: handshake_parser_ee.c
 catches: handshake_strict_webpki
 reason: the ALPN arm stops checking that the ProtocolNameList length
   counts the one name it holds, so a server may claim a list longer or

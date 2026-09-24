@@ -68,7 +68,7 @@ m3-check:
 	$(M3_CC) $(M3_FLAGS) $(RSA_WIDE_DEF) -I. -o bin/m3/webpki_cert_test test/webpki_cert_test.c $(WEBPKI_CERT_SRC)
 	$(M3_CC) $(M3_FLAGS) -I. -Itest -o bin/m3/p256_sign_test test/p256_sign_test.c p256_sign.c p256_scalar.c p256_point.c p256_field.c p256.c sha256.c hkdf.c buf.c ct.c
 	$(M3_CC) $(M3_FLAGS) -I. -o bin/m3/mlkem_test test/mlkem_test.c mlkem.c mlkem_poly.c sha3.c ct.c
-	$(M3_CC) $(M3_FLAGS) -I. -o bin/m3/handshake_strict_test test/handshake_strict_test.c handshake_parser.c buf.c
+	$(M3_CC) $(M3_FLAGS) -I. -o bin/m3/handshake_strict_test test/handshake_strict_test.c $(HANDSHAKE_STRICT_SRCS)
 	$(M3_CC) $(M3_FLAGS) -I. -o bin/m3/x509strict_test $(X509STRICT_SRC) rsa.c rsa_mont.c
 	$(M3_CC) $(M3_FLAGS) -DCH_PIN_ECDSA -I. -o bin/m3/x509strict_ecdsa $(X509STRICT_SRC) p256.c
 	@$(call wycheproof_fetch,m3 wycheproof); \

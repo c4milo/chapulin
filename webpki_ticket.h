@@ -28,12 +28,16 @@
 //    matches names without case (RFC 6125 §6.4.1, webpki_name.c);
 //  - anchor_count as 8 big-endian bytes;
 //  - for each anchor in array order: name_len, name, spki_len and spki,
-//    each length as 8 big-endian bytes.
-// Every input is public, so the hash is too.
+//    each length as 8 big-endian bytes;
+//  - spki_pin_count as 8 big-endian bytes, then each pin's SHA256_LEN
+//    bytes in array order.
+// A configuration of SPKI pins alone hashes a hostname_len and an
+// anchor_count of 0. Every input is public, so the hash is too.
 //
-// Requires: cfg->hostname holds hostname_len bytes and cfg->anchors
-// holds anchor_count entries whose pointers hold their lengths, which
-// the webpki config rules check before any caller runs this.
+// Requires: cfg->hostname holds hostname_len bytes, cfg->anchors holds
+// anchor_count entries whose pointers hold their lengths, and
+// cfg->spki_pins holds spki_pin_count pins, which the webpki config
+// rules check before any caller runs this.
 void webpki_ticket_config_hash(const ch_cfg *cfg, uint8_t out[SHA256_LEN]);
 
 // The binding a ticket carries: HMAC-SHA256 keyed by the ticket's PSK
@@ -50,7 +54,8 @@ void webpki_ticket_binding(const uint8_t psk[SHA256_LEN], const uint8_t config_h
 // anchors. Any other shape is refused: an external PSK has no hostname
 // to bind, and a length set without its pointer is a field missing.
 //
-// Requires: the hostname and anchor rules already hold (tls.c).
+// Requires: the hostname, anchor and SPKI pin rules already hold
+// (webpki_cfg.c).
 int webpki_resumption_ok(const ch_cfg *cfg);
 
 #endif // CH_TRUST_WEBPKI

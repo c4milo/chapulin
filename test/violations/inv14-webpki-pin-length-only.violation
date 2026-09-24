@@ -1,5 +1,5 @@
 invariant: INV-14
-file: tls.c
+file: webpki_cfg.c
 catches: webpki_session_test
 reason: the TRUST=webpki pin rule reads only the two server_pubkey
   pointers, so a config that sets server_pubkey_len or

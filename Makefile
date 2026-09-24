@@ -126,11 +126,11 @@ SHELLCHECK ?= shellcheck
 SH_SRCS := $(shell git ls-files '*.sh' '.githooks/*' 2>/dev/null)
 
 SRCS := ct.c sha256.c hkdf.c chacha20.c poly1305.c aead.c x25519.c p256.c rsa.c rsa_mont.c \
-        pem.c x509.c x509_der.c x509_ca.c webpki_time.c webpki_name.c webpki_spki.c webpki_ext.c buf.c record.c keysched.c io.c handshake_message.c handshake_parser.c handshake_record.c session.c \
+        pem.c x509.c x509_der.c x509_ca.c webpki_time.c webpki_name.c webpki_spki.c webpki_ext.c buf.c record.c keysched.c io.c handshake_message.c handshake_parser.c handshake_parser_ee.c handshake_record.c session.c \
         handshake_auth.c handshake_flight.c handshake.c handshake_post.c tls.c softmul.c
 
 HDRS := ct.h sha256.h hkdf.h chacha20.h poly1305.h aead.h x25519.h p256.h rsa.h ch_assert.h \
-        pem.h x509.h x509_der.h x509_ca.h webpki.h webpki_ticket.h buf.h record.h keysched.h io.h handshake_message.h handshake_parser.h handshake_record.h cfg.h session.h handshake_auth.h handshake.h handshake_post.h \
+        pem.h x509.h x509_der.h x509_ca.h webpki.h webpki_cfg.h webpki_pin.h webpki_ticket.h buf.h record.h keysched.h io.h handshake_message.h handshake_parser.h handshake_record.h cfg.h session.h handshake_auth.h handshake.h handshake_post.h \
         tls.h rand.h drbg.h sha3.h sha512.h sha512_compress.h p384.h p384_field.h p256_field.h p256_scalar.h p256_point.h p256_sign.h p256_ecdh.h rsa_pkcs1.h rsa_sign.h mlkem.h mlkem_poly.h \
         handshake_flight.h quic.h quic_aes.h quic_aes_block.h quic_aes_key.h quic_config.h quic_gcm.h quic_initial.h quic_keys.h quic_packet.h quic_retry.h quic_step.h quic_fail.h quic_token.h aes_traffic_key.h \
         srv_cfg.h srv.h srv_parser.h srv_message.h srv_cookie.h srv_auth.h srv_out.h srv_flight.h srv_handshake.h srv_quic.h srv_rec.h keylog.h \
@@ -291,7 +291,7 @@ SRV_SRCS := srv_parser.c srv_parser_ext.c srv_message.c srv_cookie.c srv_auth.c 
 # the split runs inside the file under #ifndef CH_ROLE_SERVER.
 # handshake_flight.c holds the client's flight handlers, which both
 # transports compile and a server does not.
-CLIENT_REPLACED := handshake.c handshake_auth.c handshake_parser.c \
+CLIENT_REPLACED := handshake.c handshake_auth.c handshake_parser.c handshake_parser_ee.c \
                    handshake_message.c handshake_flight.c
 # softmul.c is excluded on purpose. It has to define __mulsi3 and
 # __muldi3 -- the names the compiler emits, so they replace the runtime
@@ -301,10 +301,10 @@ CLIENT_REPLACED := handshake.c handshake_auth.c handshake_parser.c \
 # one file keeps bugprone-reserved-identifier and misc-use-internal-linkage
 # working everywhere else, which disabling them in .clang-tidy would not.
 # clang-format still covers it, and so does lint-runtime-symbols.
-LINT_C := $(filter-out softmul.c,$(SRCS)) drbg.c sha3.c sha512.c sha512_compress.c p384.c p384_field.c p256_field.c p256_scalar.c p256_point.c p256_sign.c p256_ecdh.c rsa_pkcs1.c rsa_sign.c webpki_sigalg.c webpki_cert.c webpki.c webpki_ticket.c mlkem.c mlkem_poly.c test/unit_test.c test/tls_client.c \
+LINT_C := $(filter-out softmul.c,$(SRCS)) drbg.c sha3.c sha512.c sha512_compress.c p384.c p384_field.c p256_field.c p256_scalar.c p256_point.c p256_sign.c p256_ecdh.c rsa_pkcs1.c rsa_sign.c webpki_sigalg.c webpki_cert.c webpki.c webpki_ticket.c webpki_pin.c webpki_cfg.c mlkem.c mlkem_poly.c test/unit_test.c test/tls_client.c \
           test/diff_test.c test/timing_test.c test/drbg_test.c test/softmul_test.c test/rsa_test.c test/rsa_sign_test.c test/sha3_test.c test/sha512_test.c test/p384_test.c test/p256_field_test.c test/p256_sign_test.c test/p256_ecdh_test.c test/rsa_pkcs1_test.c \
           test/webpki_time_test.c test/webpki_name_test.c test/webpki_spki_test.c test/webpki_sigalg_test.c test/webpki_session_test.c test/webpki_resume_test.c test/webpki_cert_test.c test/webpki_chain_test.c \
-          test/webpki_auth_test.c \
+          test/webpki_auth_test.c test/webpki_encrypted_exts_test.c \
           test/mlkem_test.c test/handshake_strict_test.c test/handshake_sequence_test.c \
           test/x509_strict_test.c $(QUIC_SRCS) $(filter-out $(AES_IMPL),$(AES_IMPL_SRCS)) \
           $(SRV_SRCS) test/srv_auth_test.c test/srv_test.c test/srv_flight_test.c \
@@ -327,10 +327,11 @@ TESTH := test/test_random.h test/pem_armor.h test/pem_tests.h test/x509_ca_tests
          test/rsa_pkcs1_vectors.h test/rsa_wide_vectors.h test/rsa_pkcs1_wide_vectors.h \
          test/rsa_sign_vectors.h \
          test/diff_webpki.h test/diff_mlkem.h test/mlkem_vectors.h test/webpki_corpus.h test/webpki_sigalg_vectors.h \
-         test/diff_webpki_sigalg.h test/hello_exts.h test/webpki_session_cases.h test/webpki_groups_cases.h test/webpki_suite_cases.h test/rec_read_tests.h test/webpki_resume_session.h test/webpki_resume_cases.h \
-         test/handshake_strict_alpn.h \
+         test/diff_webpki_sigalg.h test/hello_exts.h test/webpki_session_cases.h test/webpki_groups_cases.h test/webpki_suite_cases.h test/rec_read_tests.h test/webpki_resume_session.h test/webpki_resume_cases.h test/webpki_pins_cases.h test/tls_client_webpki.h \
+         test/handshake_strict_alpn.h test/handshake_strict_cert_type.h \
          test/webpki_cert_mutants.h test/webpki_ext_mutants.h test/diff_webpki_cert.h \
-         test/webpki_auth_vectors.h test/rxbuf_floor_tests.h \
+         test/webpki_auth_vectors.h test/webpki_auth_pins.h test/webpki_chain_path.h \
+         test/diff_webpki_chain.h test/diff_webpki_pin.h test/rxbuf_floor_tests.h \
          test/srv_message_tests.h test/srv_cookie_tests.h test/srv_flight_tests.h test/srv_flight_suite_tests.h \
          test/quic_token_tests.h \
          test/srv_flight_keys_tests.h test/srv_parser_hello.h test/srv_parser_tests.h test/srv_parser_reader_tests.h
@@ -391,7 +392,7 @@ endif
 # without webpki.c still builds; the object then fails every handshake
 # closed (handshake_auth.c).
 WEBPKI_SRCS := webpki_time.c webpki_name.c webpki_spki.c webpki_sigalg.c webpki_ext.c \
-                webpki_cert.c webpki.c webpki_ticket.c
+                webpki_cert.c webpki.c webpki_ticket.c webpki_pin.c webpki_cfg.c
 # The verifiers and the SHA-384 core a public chain needs. SRCS lists
 # x509_der.c, rsa.c, rsa_mont.c and p256.c already; these five it does
 # not, because the device objects never package them.
@@ -467,7 +468,7 @@ QUIC_REPLACED := io.c record.c session.c handshake.c tls.c
 # The sources that keep their TLS text, carry a QUIC arm under #ifdef
 # CH_TRANSPORT_QUIC, and cannot be compiled into the object until they
 # have one. Every arm landed with the driver, so the list is empty and
-# the object compiles all of handshake_parser.c, handshake_record.c,
+# the object compiles all of handshake_parser_ee.c, handshake_record.c,
 # handshake_auth.c, handshake_post.c and handshake_message.c. The name
 # stays because TRANSPORT_FILTER and tools/quic-partition.py read it: a
 # source that loses its arm goes back on this list.
@@ -921,7 +922,7 @@ lint-trust-separation:
 	check "TRANSPORT=quic AES=extern EXPORTER=off" "quic_aes_extern.c" "quic_aes_soft.c quic_aes_hw.c" "-DCH_AES_EXTERN" "-DCH_AES_HW"; \
 	srv_files=$$(git ls-files 'srv*.c' | grep -v / | tr '\n' ' '); \
 	[ -n "$$srv_files" ] || { echo "lint-trust-separation: git tracks no srv*.c file at the root, so the role rows would check nothing"; rc=1; }; \
-	client_only="handshake.c handshake_auth.c handshake_parser.c handshake_message.c"; \
+	client_only="handshake.c handshake_auth.c handshake_parser.c handshake_parser_ee.c handshake_message.c"; \
 	signers="rsa_sign.c p256_sign.c p256_scalar.c p256_point.c p256_field.c"; \
 	srv_shared=$$(printf '%s\n' $$srv_files | grep -vxF -e srv_handshake.c -e srv_quic.c -e srv_rec.c | tr '\n' ' '); \
 	check "ROLE=client TRUST=raw-rsa TRANSPORT=tls" "$$client_only tls.c" "$$srv_files $$signers" "" "-DCH_ROLE_SERVER"; \
@@ -1143,8 +1144,9 @@ bin/mlkem_test: test/mlkem_test.c mlkem.c mlkem_poly.c sha3.c ct.c $(HDRS) $(TES
 # which a -DCH_TRANSPORT_QUIC build does not compile. It is also the
 # build that compiles quic.c for test/quic-builds.sh, the catch target
 # of the INV-26 mutants the compiler refuses.
-QUIC_DRIVER_SRCS := $(QUIC_SRCS) handshake_message.c handshake_parser.c handshake_record.c \
-                    handshake_auth.c handshake_post.c handshake_flight.c keysched.c x25519.c \
+QUIC_DRIVER_SRCS := $(QUIC_SRCS) handshake_message.c handshake_parser.c handshake_parser_ee.c \
+                    handshake_record.c handshake_auth.c handshake_post.c handshake_flight.c \
+                    keysched.c x25519.c \
                     rsa.c rsa_mont.c hkdf.c sha256.c chacha20.c poly1305.c aead.c buf.c ct.c
 bin/quic_driver_test: test/quic_driver_test.c $(QUIC_DRIVER_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
@@ -1397,17 +1399,20 @@ bin/webpki_chain_test: test/webpki_chain_test.c $(WEBPKI_CHAIN_TEST_SRC) $(HDRS)
 	$(CC) $(CFLAGS) -DCH_TRUST_WEBPKI -I. -o $@ test/webpki_chain_test.c $(WEBPKI_CHAIN_TEST_SRC)
 
 # Parser strictness: drives the ServerHello/EE parsers directly; their
-# whole dependency closure is handshake_parser.c + buf.c.
-bin/handshake_strict_test: test/handshake_strict_test.c handshake_parser.c buf.c $(HDRS) $(TESTH)
+# whole dependency closure is handshake_parser.c, handshake_parser_ee.c
+# and buf.c.
+HANDSHAKE_STRICT_SRCS := handshake_parser.c handshake_parser_ee.c buf.c
+bin/handshake_strict_test: test/handshake_strict_test.c $(HANDSHAKE_STRICT_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -I. -o $@ test/handshake_strict_test.c handshake_parser.c buf.c
+	$(CC) $(CFLAGS) -I. -o $@ test/handshake_strict_test.c $(HANDSHAKE_STRICT_SRCS)
 
-# The TRUST=webpki arms of the same parsers: the empty server_name
-# acknowledgement in EncryptedExtensions and the three CertificateVerify
-# schemes, with the PKCS#1 v1.5 two refused.
-bin/handshake_strict_webpki: test/handshake_strict_test.c handshake_parser.c buf.c $(HDRS) $(TESTH)
+# The TRUST=webpki arms of the same parsers: the server_name
+# acknowledgement, the ALPN selection and the server_certificate_type in
+# EncryptedExtensions, and the three CertificateVerify schemes, with the
+# PKCS#1 v1.5 two refused.
+bin/handshake_strict_webpki: test/handshake_strict_test.c $(HANDSHAKE_STRICT_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -DCH_TRUST_WEBPKI -I. -o $@ test/handshake_strict_test.c handshake_parser.c buf.c
+	$(CC) $(CFLAGS) -DCH_TRUST_WEBPKI -I. -o $@ test/handshake_strict_test.c $(HANDSHAKE_STRICT_SRCS)
 
 # The TRUST=webpki session surface: ch_connect's config rules, the
 # ClientHello bytes and the fail-closed handshake, linked over the
@@ -1425,6 +1430,12 @@ bin/webpki_session_test: test/webpki_session_test.c $(WEBPKI_TEST_SRCS) $(HDRS) 
 bin/webpki_auth_test: test/webpki_auth_test.c $(WEBPKI_TEST_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) -DCH_TRUST_WEBPKI -I. -o $@ test/webpki_auth_test.c $(WEBPKI_TEST_SRCS)
+# The TRUST=webpki EncryptedExtensions flight handler: what the
+# ClientHello asked for reaches the parser, and the certificate type the
+# server selected reaches ch_tls.server_cert_type.
+bin/webpki_encrypted_exts_test: test/webpki_encrypted_exts_test.c $(WEBPKI_TEST_SRCS) $(HDRS) $(TESTH)
+	@mkdir -p bin
+	$(CC) $(CFLAGS) -DCH_TRUST_WEBPKI -I. -o $@ test/webpki_encrypted_exts_test.c $(WEBPKI_TEST_SRCS)
 
 # TRUST=webpki resumption (webpki_ticket.h) over both TCP drivers: the
 # blocking one, and TRANSPORT=record's, which drops handshake.c for
@@ -1516,9 +1527,9 @@ bin/handshake_sequence_pq: test/handshake_sequence_test.c $(SRCS) sha3.c mlkem.c
 	$(CC) $(CFLAGS) -DCH_KEX_PQ -I. -o $@ test/handshake_sequence_test.c \
 	  $(filter-out p256.c rsa.c rsa_mont.c,$(SRCS)) sha3.c mlkem.c mlkem_poly.c
 
-bin/handshake_strict_pq: test/handshake_strict_test.c handshake_parser.c buf.c $(HDRS) $(TESTH)
+bin/handshake_strict_pq: test/handshake_strict_test.c $(HANDSHAKE_STRICT_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -DCH_KEX_PQ -I. -o $@ test/handshake_strict_test.c handshake_parser.c buf.c
+	$(CC) $(CFLAGS) -DCH_KEX_PQ -I. -o $@ test/handshake_strict_test.c $(HANDSHAKE_STRICT_SRCS)
 
 # The decomposed-multiply variants: bin/unit and bin/mlkem_test compiled
 # with the host's CH_NATIVE_WIDEMUL assertion filtered out and
@@ -1649,7 +1660,7 @@ run-%: bin/%
 # and the invariant violation builds. The nightly runs it. Splitting on
 # duration rather than on importance is deliberate -- nothing here is
 # optional, and a change is not finished until check-slow passes too.
-check: bin/unit bin/unit_ca bin/unit_pq bin/tlsclient bin/tlsclient_ecdsa bin/tlsclient_ca bin/tlsclient_ca_ecdsa bin/tlsclient_webpki bin/tlsclient_webpki_pq $(if $(AES_HW_PROBE),bin/tlsclient_webpki_aes) bin/tlsclient_pq bin/drbg_test bin/softmul_test bin/rsa_test bin/sha3_test bin/sha512_test bin/p384_test bin/rsa_pkcs1_test bin/webpki_time_test bin/webpki_name_test bin/webpki_spki_test bin/webpki_sigalg_test bin/webpki_cert_test bin/webpki_chain_test bin/webpki_auth_test bin/mlkem_test bin/handshake_strict_test bin/handshake_strict_pq bin/handshake_strict_webpki bin/webpki_session_test bin/webpki_session_pq bin/webpki_resume_test bin/webpki_resume_record bin/x509strict bin/x509strict_ecdsa bin/quic_driver_test bin/quic_test bin/recclient $(AES_HW_BINS) lint rand-check bin/srv_auth_test bin/srv_test bin/srv_quic_test bin/srv_quic_both_test bin/srv_rec_test bin/rec_loop_test bin/exporter_test bin/rsa_sign_test bin/p256_field_test bin/p256_ecdh_test bin/p256_sign_test
+check: bin/unit bin/unit_ca bin/unit_pq bin/tlsclient bin/tlsclient_ecdsa bin/tlsclient_ca bin/tlsclient_ca_ecdsa bin/tlsclient_webpki bin/tlsclient_webpki_pq $(if $(AES_HW_PROBE),bin/tlsclient_webpki_aes) bin/tlsclient_pq bin/drbg_test bin/softmul_test bin/rsa_test bin/sha3_test bin/sha512_test bin/p384_test bin/rsa_pkcs1_test bin/webpki_time_test bin/webpki_name_test bin/webpki_spki_test bin/webpki_sigalg_test bin/webpki_cert_test bin/webpki_chain_test bin/webpki_auth_test bin/webpki_encrypted_exts_test bin/mlkem_test bin/handshake_strict_test bin/handshake_strict_pq bin/handshake_strict_webpki bin/webpki_session_test bin/webpki_session_pq bin/webpki_resume_test bin/webpki_resume_record bin/x509strict bin/x509strict_ecdsa bin/quic_driver_test bin/quic_test bin/recclient $(AES_HW_BINS) lint rand-check bin/srv_auth_test bin/srv_test bin/srv_quic_test bin/srv_quic_both_test bin/srv_rec_test bin/rec_loop_test bin/exporter_test bin/rsa_sign_test bin/p256_field_test bin/p256_ecdh_test bin/p256_sign_test
 	# The packaged object is built once per entropy pattern, because
 	# lib-check reads a different export list and a different import
 	# list in each. Only the object is built twice: the examples and
@@ -1773,6 +1784,7 @@ check: bin/unit bin/unit_ca bin/unit_pq bin/tlsclient bin/tlsclient_ecdsa bin/tl
 	./bin/webpki_cert_test
 	./bin/webpki_chain_test
 	./bin/webpki_auth_test
+	./bin/webpki_encrypted_exts_test
 	./bin/mlkem_test
 	./bin/quic_driver_test
 	./bin/quic_test
@@ -1919,12 +1931,12 @@ else
 	$(call REQUIRE_MATHLIB,diff-webpki)
 	cd spec && $(LAKE) build
 	@mkdir -p bin
-	$(CC) $(CFLAGS) $(RSA_WIDE_DEF) -DCH_TRUST_WEBPKI -I. -o bin/diff_webpki test/diff_test.c $(SRCS) sha3.c sha512.c sha512_compress.c p384.c p384_field.c rsa_pkcs1.c webpki_sigalg.c webpki_cert.c webpki.c webpki_ticket.c mlkem.c mlkem_poly.c
+	$(CC) $(CFLAGS) $(RSA_WIDE_DEF) -DCH_TRUST_WEBPKI -I. -o bin/diff_webpki test/diff_test.c $(SRCS) sha3.c sha512.c sha512_compress.c p384.c p384_field.c rsa_pkcs1.c webpki_sigalg.c webpki_cert.c webpki.c webpki_ticket.c webpki_pin.c webpki_cfg.c mlkem.c mlkem_poly.c
 	./bin/diff_webpki
-	$(CC) $(CFLAGS) $(RSA_WIDE_DEF) -DCH_TRUST_WEBPKI -DCH_KEX_PQ -I. -o bin/diff_webpki_pq test/diff_test.c $(SRCS) sha3.c sha512.c sha512_compress.c p384.c p384_field.c rsa_pkcs1.c webpki_sigalg.c webpki_cert.c webpki.c webpki_ticket.c mlkem.c mlkem_poly.c
+	$(CC) $(CFLAGS) $(RSA_WIDE_DEF) -DCH_TRUST_WEBPKI -DCH_KEX_PQ -I. -o bin/diff_webpki_pq test/diff_test.c $(SRCS) sha3.c sha512.c sha512_compress.c p384.c p384_field.c rsa_pkcs1.c webpki_sigalg.c webpki_cert.c webpki.c webpki_ticket.c webpki_pin.c webpki_cfg.c mlkem.c mlkem_poly.c
 	./bin/diff_webpki_pq
 ifneq ($(AES_HW_PROBE),)
-	$(CC) $(CFLAGS) $(AES_HW_CFLAGS) $(RSA_WIDE_DEF) -DCH_TRUST_WEBPKI -DCH_SUITE_AES_GCM -DCH_AES_HW -DCH_NATIVE_AES -I. -o bin/diff_webpki_aes test/diff_test.c $(SRCS) sha3.c sha512.c sha512_compress.c p384.c p384_field.c rsa_pkcs1.c webpki_sigalg.c webpki_cert.c webpki.c webpki_ticket.c mlkem.c mlkem_poly.c quic_aes.c quic_aes_hw.c quic_gcm.c
+	$(CC) $(CFLAGS) $(AES_HW_CFLAGS) $(RSA_WIDE_DEF) -DCH_TRUST_WEBPKI -DCH_SUITE_AES_GCM -DCH_AES_HW -DCH_NATIVE_AES -I. -o bin/diff_webpki_aes test/diff_test.c $(SRCS) sha3.c sha512.c sha512_compress.c p384.c p384_field.c rsa_pkcs1.c webpki_sigalg.c webpki_cert.c webpki.c webpki_ticket.c webpki_pin.c webpki_cfg.c mlkem.c mlkem_poly.c quic_aes.c quic_aes_hw.c quic_gcm.c
 	./bin/diff_webpki_aes
 else
 	@echo "SKIP diff-webpki's SUITE=aesgcm binary: $(CC) has no AES instructions"
@@ -2070,7 +2082,8 @@ else
 	  $(COV_CC) test/unit_test.c $(COV_LIB_OBJS) -o $$d/unit; \
 	  $(COV_CC) test/drbg_test.c $$d/drbg.o $$d/chacha20.o $$d/ct.o -o $$d/drbg_test; \
 	  $(COV_CC) test/rsa_test.c $$d/rsa.o $$d/rsa_mont.o $$d/sha256.o $$d/ct.o -o $$d/rsa_test; \
-	  $(COV_CC) test/handshake_strict_test.c $$d/handshake_parser.o $$d/buf.o -o $$d/handshake_strict_test; \
+	  $(COV_CC) test/handshake_strict_test.c $$d/handshake_parser.o $$d/handshake_parser_ee.o $$d/buf.o \
+	    -o $$d/handshake_strict_test; \
 	  verifier="$$d/rsa.o $$d/rsa_mont.o"; if [ $$pin = ecdsa ]; then verifier=$$d/p256.o; fi; \
 	  strict_objs=""; for f in $(filter-out test/x509_strict_test.c,$(X509STRICT_SRC)); do \
 	    strict_objs="$$strict_objs $$d/$${f%.c}.o"; done; \
@@ -2104,10 +2117,12 @@ else
 	  link webpki_chain_test $(WEBPKI_CHAIN_TEST_SRC); \
 	  link webpki_session_test $(WEBPKI_TEST_SRCS); \
 	  link webpki_auth_test $(WEBPKI_TEST_SRCS); \
-	  link handshake_strict_test handshake_parser.c buf.c; \
+	  link webpki_encrypted_exts_test $(WEBPKI_TEST_SRCS); \
+	  link handshake_strict_test $(HANDSHAKE_STRICT_SRCS); \
 	  for b in sha512_test p384_test rsa_pkcs1_test webpki_time_test webpki_name_test \
 	           webpki_spki_test webpki_sigalg_test webpki_cert_test webpki_chain_test \
-	           webpki_session_test webpki_auth_test handshake_strict_test; do \
+	           webpki_session_test webpki_auth_test webpki_encrypted_exts_test \
+	           handshake_strict_test; do \
 	    if ./$$d/$$b > /dev/null; then \
 	      echo "| $$b | webpki | pass |" >> bin/coverage.md; \
 	    else \
@@ -2276,13 +2291,14 @@ san-check:
 	$(CC) $(SAN_CFLAGS) -DCH_TRUST_WEBPKI -I. -o bin/san/webpki_chain_test test/webpki_chain_test.c $(WEBPKI_CHAIN_TEST_SRC)
 	$(CC) $(SAN_CFLAGS) -DCH_TRUST_WEBPKI -I. -o bin/san/webpki_session_test test/webpki_session_test.c $(WEBPKI_TEST_SRCS)
 	$(CC) $(SAN_CFLAGS) -DCH_TRUST_WEBPKI -I. -o bin/san/webpki_auth_test test/webpki_auth_test.c $(WEBPKI_TEST_SRCS)
+	$(CC) $(SAN_CFLAGS) -DCH_TRUST_WEBPKI -I. -o bin/san/webpki_encrypted_exts_test test/webpki_encrypted_exts_test.c $(WEBPKI_TEST_SRCS)
 	$(CC) $(SAN_CFLAGS) -I. -o bin/san/mlkem_test test/mlkem_test.c mlkem.c mlkem_poly.c sha3.c ct.c
-	$(CC) $(SAN_CFLAGS) -I. -o bin/san/handshake_strict_test test/handshake_strict_test.c handshake_parser.c buf.c
+	$(CC) $(SAN_CFLAGS) -I. -o bin/san/handshake_strict_test test/handshake_strict_test.c $(HANDSHAKE_STRICT_SRCS)
 	$(CC) $(SAN_CFLAGS) -I. -o bin/san/x509strict_test $(X509STRICT_SRC) rsa.c rsa_mont.c
 	$(CC) $(SAN_CFLAGS) -DCH_PIN_ECDSA -I. -o bin/san/x509strict_ecdsa $(X509STRICT_SRC) p256.c
 	$(CC) $(SAN_CFLAGS) -I. -o bin/san/handshake_sequence_test test/handshake_sequence_test.c \
 	  $(filter-out p256.c rsa.c rsa_mont.c,$(SRCS))
-	@set -e; for b in unit rsa_test rsa_sign_test sha3_test sha512_test p384_test p256_field_test p256_ecdh_test p256_sign_test rsa_pkcs1_test webpki_time_test webpki_name_test webpki_spki_test webpki_sigalg_test webpki_cert_test webpki_chain_test webpki_session_test webpki_auth_test mlkem_test handshake_strict_test x509strict_test x509strict_ecdsa; do \
+	@set -e; for b in unit rsa_test rsa_sign_test sha3_test sha512_test p384_test p256_field_test p256_ecdh_test p256_sign_test rsa_pkcs1_test webpki_time_test webpki_name_test webpki_spki_test webpki_sigalg_test webpki_cert_test webpki_chain_test webpki_session_test webpki_auth_test webpki_encrypted_exts_test mlkem_test handshake_strict_test x509strict_test x509strict_ecdsa; do \
 	  echo "== $$b (SAN -O$(O))"; ENUM_DEPTH=4 ./bin/san/$$b; done
 	@$(call wycheproof_fetch,san wycheproof); \
 	python3 test/gen_wycheproof.py $(WYCHEPROOF_DIR) bin/wycheproof_vectors.h && \
@@ -2341,7 +2357,7 @@ cross-check:
 	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) $(RSA_WIDE_DEF) -static -I. -o bin/cross/webpki_sigalg_test test/webpki_sigalg_test.c $(WEBPKI_SIGALG_SRC)
 	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) $(RSA_WIDE_DEF) -static -I. -o bin/cross/webpki_cert_test test/webpki_cert_test.c $(WEBPKI_CERT_SRC)
 	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) -static -I. -o bin/cross/mlkem_test test/mlkem_test.c mlkem.c mlkem_poly.c sha3.c ct.c
-	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) -static -I. -o bin/cross/handshake_strict_test test/handshake_strict_test.c handshake_parser.c buf.c
+	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) -static -I. -o bin/cross/handshake_strict_test test/handshake_strict_test.c $(HANDSHAKE_STRICT_SRCS)
 	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) -static -I. -o bin/cross/x509strict_test $(X509STRICT_SRC) rsa.c rsa_mont.c
 	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) -static -DCH_PIN_ECDSA -I. -o bin/cross/x509strict_ecdsa $(X509STRICT_SRC) p256.c
 	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) -static -I. -o bin/cross/handshake_sequence_test test/handshake_sequence_test.c \
@@ -2566,7 +2582,7 @@ QUIC_SHARED := handshake_flight.c handshake_flight.h
 # that holds nothing.
 QUIC_CONDITIONAL := cfg.h session.h handshake_record.h handshake_post.h \
                     handshake_auth.h handshake_parser.h handshake_message.c \
-                    handshake_parser.c handshake_record.c handshake_auth.c \
+                    handshake_parser_ee.c handshake_record.c handshake_auth.c \
                     handshake_post.c
 .PHONY: lint-quic-partition
 lint-quic-partition:
@@ -2593,7 +2609,7 @@ else
 	# reason: every declaration they hold sits behind
 	# -DCH_TRANSPORT_QUIC, which this pass does not define, so it would
 	# read eight empty translation units. The two passes below read them.
-	$(CLANG_TIDY) --quiet $(filter-out webpki.c webpki_ticket.c test/webpki_resume_test.c test/webpki_session_test.c test/webpki_chain_test.c test/webpki_auth_test.c examples/webpki_client.c $(QUIC_SRCS) $(AES_IMPL_SRCS) test/quic_driver_test.c test/quic_vectors.c test/diff_quic_test.c test/aes_equiv_test.c test/aes_equiv_soft.c test/aes_equiv_hw.c $(SRV_SRCS) test/srv_auth_test.c test/srv_test.c test/srv_flight_test.c srv_quic.c quic_token.c srv_rec.c test/srv_rec_test.c test/rec_loop_test.c test/exporter_test.c rec.c rec_frame.c rec_step.c,$(LINT_C)) -- \
+	$(CLANG_TIDY) --quiet $(filter-out webpki.c webpki_ticket.c webpki_pin.c webpki_cfg.c test/webpki_resume_test.c test/webpki_session_test.c test/webpki_chain_test.c test/webpki_auth_test.c test/webpki_encrypted_exts_test.c examples/webpki_client.c $(QUIC_SRCS) $(AES_IMPL_SRCS) test/quic_driver_test.c test/quic_vectors.c test/diff_quic_test.c test/aes_equiv_test.c test/aes_equiv_soft.c test/aes_equiv_hw.c $(SRV_SRCS) test/srv_auth_test.c test/srv_test.c test/srv_flight_test.c srv_quic.c quic_token.c srv_rec.c test/srv_rec_test.c test/rec_loop_test.c test/exporter_test.c rec.c rec_frame.c rec_step.c,$(LINT_C)) -- \
 	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -I.
 	# The pass above defines no trust mode, so it reads none of the
 	# TRUST=webpki arms. This pass parses the sources that carry them or
@@ -2602,10 +2618,11 @@ else
 	# the cognitive-complexity threshold holds in that build too. The
 	# second pass adds -DCH_KEX_PQ for webpki_session_test.c's hybrid arm.
 	# Measured with clang-tidy 23.1.1: 2.9 s and 0.2 s.
-	$(CLANG_TIDY) --quiet tls.c handshake_parser.c handshake_message.c handshake_auth.c \
-	  handshake.c handshake_record.c webpki.c webpki_ticket.c \
+	$(CLANG_TIDY) --quiet tls.c handshake_parser.c handshake_parser_ee.c handshake_message.c handshake_auth.c \
+	  handshake.c handshake_record.c webpki.c webpki_ticket.c webpki_pin.c webpki_cfg.c \
 	  test/webpki_session_test.c test/webpki_chain_test.c test/webpki_auth_test.c \
-	  test/handshake_strict_test.c test/diff_test.c examples/webpki_client.c \
+	  test/webpki_encrypted_exts_test.c test/handshake_strict_test.c test/diff_test.c \
+	  examples/webpki_client.c \
 	  test/webpki_resume_test.c -- \
 	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_TRUST_WEBPKI -I.
 	$(CLANG_TIDY) --quiet test/webpki_session_test.c -- \
@@ -2825,7 +2842,7 @@ examples-check: bin/example_psk bin/example_pinned bin/example_ca bin/example_we
 # baseline plus a mutation pass costs real minutes — and the
 # proof-backed ones in its test-invariants-proof-backed job.
 .PHONY: test-invariants-fast
-test-invariants-fast: bin/unit bin/unit_ca bin/x509strict bin/x509strict_ecdsa bin/rsa_test bin/drbg_test bin/handshake_strict_test bin/handshake_strict_webpki bin/webpki_session_test bin/webpki_resume_test bin/webpki_resume_record bin/webpki_auth_test bin/softmul_test bin/unit_ct_widemul bin/mlkem_test_ct_widemul bin/webpki_spki_test bin/webpki_sigalg_test bin/webpki_cert_test
+test-invariants-fast: bin/unit bin/unit_ca bin/x509strict bin/x509strict_ecdsa bin/rsa_test bin/drbg_test bin/handshake_strict_test bin/handshake_strict_webpki bin/webpki_session_test bin/webpki_resume_test bin/webpki_resume_record bin/webpki_auth_test bin/webpki_encrypted_exts_test bin/softmul_test bin/unit_ct_widemul bin/mlkem_test_ct_widemul bin/webpki_spki_test bin/webpki_sigalg_test bin/webpki_cert_test
 	python3 test/violations.py --tier=fast
 
 # Every violation but the proof-backed ones: the fast tier plus the
@@ -2992,6 +3009,11 @@ lint-impact:
 #     Names, dates and depths. A public chain is public: every byte it
 #     reads is from the wire or from the caller's anchor table, and it
 #     never sees a key, a shared secret or record plaintext.
+#   webpki_cfg.c: the configuration rules under TRUST=webpki. It reads
+#     the caller's configuration alone and compares ALPN names.
+#   webpki_pin.c: SPKI pins and RFC 7250 raw public keys under
+#     TRUST=webpki. It hashes a server's public key and compares the
+#     hash with the caller's pins, which are hashes of public keys too.
 #   quic_aes_hw.c: the AES-128 forward cipher on the AES instructions,
 #     under TRANSPORT=quic AES=hw. It is the one AES source left on this
 #     list: quic_aes.c, quic_aes_soft.c, quic_aes_extern.c and quic_gcm.c
@@ -3037,7 +3059,7 @@ lint-impact:
 # held exactly.
 WIDEMUL_CEILING := ct.c:0 sha256.c:0 sha3.c:1 hkdf.c:0 chacha20.c:0 poly1305.c:0 aead.c:0 \
                    x25519.c:0 p256_field.c:0 mlkem.c:0 mlkem_poly.c:0 buf.c:0 record.c:0 keysched.c:0 io.c:0 \
-                   session.c:0 handshake_message.c:0 handshake_parser.c:0 handshake_record.c:0 \
+                   session.c:0 handshake_message.c:0 handshake_parser.c:0 handshake_parser_ee.c:0 handshake_record.c:0 \
                    handshake_auth.c:0 handshake_flight.c:0 handshake.c:0 handshake_post.c:0 \
                    tls.c:0 drbg.c:0 softmul.c:0 rec.c:0 rec_frame.c:0 rec_step.c:0 \
                    quic_keys.c:0 quic_packet.c:0 quic_config.c:0 quic_step.c:0 quic.c:0 \
@@ -3088,7 +3110,7 @@ WIDEMUL_DEFINES := quic_keys.c:-DCH_TRANSPORT_QUIC quic_packet.c:-DCH_TRANSPORT_
                    srv.c:-DCH_ROLE_SERVER webpki_ticket.c:-DCH_TRUST_WEBPKI
 WIDEMUL_PUBLIC := p256.c rsa.c rsa_mont.c pem.c x509.c x509_der.c x509_ca.c sha512.c sha512_compress.c \
                   p384.c p384_field.c rsa_pkcs1.c webpki_time.c webpki_name.c webpki_spki.c webpki_sigalg.c \
-                  webpki_ext.c webpki_cert.c webpki.c \
+                  webpki_ext.c webpki_cert.c webpki.c webpki_pin.c webpki_cfg.c \
                   quic_aes_hw.c quic_initial.c quic_retry.c
 
 # The library sources are $(SRCS), drbg.c, and every .c file git tracks
@@ -3733,7 +3755,7 @@ FUZZ_CC ?= $(shell command -v $(LLVM_BIN)/clang || command -v clang)
 FUZZ_CFLAGS := -std=c11 -O1 -g -fsanitize=fuzzer,address -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -I.
 FUZZ_TIME ?= 30
 FUZZ_RECORD_LINK := record.c ct.c sha256.c hkdf.c chacha20.c poly1305.c aead.c
-FUZZ_HANDSHAKE_PARSER_LINK := handshake_parser.c buf.c
+FUZZ_HANDSHAKE_PARSER_LINK := handshake_parser.c handshake_parser_ee.c buf.c
 # handshake_post.c needs handshake.c, and handshake.c needs most of the
 # client, so this list is SRCS less the file the harness includes. A
 # hand-kept list lost the link when 33978f6 moved the flight handlers

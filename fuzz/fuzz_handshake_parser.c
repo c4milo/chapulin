@@ -1,7 +1,8 @@
 // libFuzzer harness for the two handshake message parsers that face
-// pre-authentication attacker bytes: hsp_parse_server_hello (ServerHello) and
-// hsp_parse_encrypted_exts (EncryptedExtensions). Both live in handshake_parser.c and depend
-// only on buf.c, so those two files are the whole link line.
+// pre-authentication attacker bytes: hsp_parse_server_hello (ServerHello) in
+// handshake_parser.c and hsp_parse_encrypted_exts (EncryptedExtensions) in
+// handshake_parser_ee.c. Both depend only on buf.c, so those three files are
+// the whole link line.
 #include <stdint.h>
 #include <string.h>
 

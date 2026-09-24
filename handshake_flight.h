@@ -189,6 +189,13 @@ int hsf_derive_handshake_secrets(handshake_state *h, const server_hello_info *in
 // where the build offers protocols, and adds the raw message to the
 // transcript.
 //
+// Under CH_TRUST_WEBPKI it seeds t->server_cert_type with
+// CH_CERT_TYPE_X509 and passes the parser what the ClientHello asked
+// for: server_name when cfg.hostname_len is not 0, and the certificate
+// types webpki_cert_types_offered returns. The parser writes the type
+// the server selected into t->server_cert_type, which hsa_server_auth
+// reads to tell a raw public key from a chain.
+//
 // Under CH_TRANSPORT_QUIC it does two more things. It hands the
 // server's quic_transport_parameters body to cfg.on_transport_params
 // when the caller set that callback, unread, because the body belongs

@@ -226,7 +226,7 @@ typedef struct {
     //
     // The parser subtracts the inner content-type byte the wire value
     // counts (RFC 8449 §4), so a client advertising 0x4000 leaves 16383
-    // here. handshake_parser.c:232 is the client's matching step. A
+    // here. handshake_parser_ee.c:25 is the client's matching step. A
     // value below 64 is refused with illegal_parameter before it lands
     // here, which §4 requires; the parser checks no upper bound, because
     // §4 forbids a server to enforce the protocol's maximum.

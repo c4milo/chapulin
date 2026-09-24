@@ -301,8 +301,8 @@ class Config {
     // hostname the leaf must name (an ASCII hostname, sent as
     // server_name; convert a U-label to its A-label first), and the
     // clock its dates are checked against, in seconds since
-    // 1970-01-01T00:00:00Z. Set all three and no pinned(), and a PSK only
-    // through resume() with ticket_binding(). The
+    // 1970-01-01T00:00:00Z. Set all three, or spki_pins() alone, and no
+    // pinned(); a PSK only through resume() with ticket_binding(). The
     // array and the name are borrowed like every other byte view here.
     // ch_connect checks them (docs/webpki.md). ch_cfg has these fields
     // only in a TRUST=webpki build, so the setters exist only there too.
@@ -324,6 +324,19 @@ class Config {
     Config &now_seconds(uint64_t seconds) {
         cfg_.now_seconds = seconds;
         return *this;
+    }
+
+    // SPKI pins (ch_cfg.spki_pins): count SHA-256 digests of a DER
+    // SubjectPublicKeyInfo, 1 to CH_SPKI_PIN_MAX. With pins set the client
+    // offers RFC 7250 raw public keys, and pins without anchors() are a
+    // whole configuration (webpki_cfg.h, webpki_pin.h).
+    Config &spki_pins(const uint8_t (*pins)[SHA256_LEN], size_t count) {
+        cfg_.spki_pins = pins;
+        cfg_.spki_pin_count = count;
+        return *this;
+    }
+    template <size_t N> Config &spki_pins(const uint8_t (&pins)[N][SHA256_LEN]) {
+        return spki_pins(pins, N);
     }
 
     // The binding of the ticket resume() presents: the bytes

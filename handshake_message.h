@@ -29,6 +29,8 @@
 #define EXT_SUPPORTED_GROUPS 10
 #define EXT_SIGNATURE_ALGORITHMS 13
 #define EXT_ALPN 16 // RFC 7301 §3.1; sent by TRUST=webpki builds only
+// RFC 7250 §4.1; sent by TRUST=webpki builds with SPKI pins only
+#define EXT_SERVER_CERTIFICATE_TYPE 20
 #define EXT_RECORD_SIZE_LIMIT 28
 #define EXT_PRE_SHARED_KEY 41
 #define EXT_SUPPORTED_VERSIONS 43
@@ -114,9 +116,10 @@
 // (2), then CH_ALPN_MAX names of one length byte and CH_ALPN_NAME_MAX
 // bytes each, 270 in all. It also offers five signature schemes instead
 // of one, 8 bytes more, but those bytes sit in the arm a config with no
-// psk takes. That arm's 16-byte signature_algorithms extension stays
-// shorter than the 47 + CH_TICKET_ID_MAX bytes of the pre_shared_key
-// extension the other arm carries. So the largest hello is still the
+// psk takes, as does the server_certificate_type extension a config with
+// SPKI pins adds, 7 bytes at most. That arm's 23 bytes stay shorter than
+// the 47 + CH_TICKET_ID_MAX bytes of the pre_shared_key extension the
+// other arm carries. So the largest hello is still the
 // pre_shared_key arm, now with both extensions: 1149 classic, and 2335
 // for pq, whose supported_groups carries the second group, measured by
 // test/webpki_session_test.c.

@@ -1,5 +1,5 @@
 invariant: INV-14
-file: handshake_parser.c
+file: handshake_parser_ee.c
 catches: handshake_strict_webpki
 reason: the ALPN arm stops checking that the extension ends at the one
   ProtocolName, so bytes after it parse instead of failing. RFC 9846

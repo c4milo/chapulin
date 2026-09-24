@@ -5,7 +5,11 @@
 // returns CH_OK, CH_EPROTO or CH_EAUTH; a refusal names one of the five
 // alerts webpki.h's table lists; and CH_OK leaves a leaf key the
 // message buffer's reuse cannot disturb — copied into out, at most
-// CH_WEBPKI_KEY_MAX bytes, under one of the three key algorithms.
+// CH_WEBPKI_KEY_MAX bytes, under one of the three key algorithms — and
+// the path the SPKI pins may name: path_entries is the count of
+// certificates the walk parsed, 1 to CH_WEBPKI_CHAIN_MAX, and the key
+// that verified the last of them lies inside the spki of the anchor at
+// anchor_index, which is below anchor_count.
 //
 // Layered, the webpki_cert pattern. The five calls the walk makes are
 // stubs that assert what the walk passes them and havoc their outputs
@@ -93,10 +97,17 @@ int webpki_read_spki(rbuf *r, webpki_spki *out) {
     return 1;
 }
 
+// Certificates the walk parsed, and the signer key of the last signature
+// the verify stub accepted.
+static size_t parse_calls;
+static const uint8_t *verified_key;
+static size_t verified_key_len;
+
 int webpki_parse_certificate(const uint8_t *cert, size_t cert_len, int is_ca, webpki_cert *out,
                              uint8_t *alert) {
     __CPROVER_assert(cert_len == 0 || __CPROVER_r_ok(cert, cert_len),
                      "parse stub: the certificate is readable");
+    parse_calls++;
     __CPROVER_assert(__CPROVER_w_ok(out, sizeof *out), "parse stub: out writable");
     __CPROVER_assert(__CPROVER_w_ok(alert, sizeof *alert), "parse stub: alert writable");
     __CPROVER_assert(is_ca == 0 || is_ca == 1, "parse stub: the arm is 0 or 1");
@@ -163,7 +174,12 @@ int webpki_verify(const webpki_cert *cert, const webpki_spki *signer) {
     __CPROVER_assert(__CPROVER_r_ok(signer, sizeof *signer), "verify stub: signer readable");
     __CPROVER_assert(signer->key_len == 0 || __CPROVER_r_ok(signer->key, signer->key_len),
                      "verify stub: the signer key is readable");
-    return (int)(nondet_u8() & 1);
+    int verified = (int)(nondet_u8() & 1);
+    if (verified) {
+        verified_key = signer->key;
+        verified_key_len = signer->key_len;
+    }
+    return verified;
 }
 
 int webpki_match_san(const uint8_t *san, size_t san_len, const uint8_t *host, size_t host_len) {
@@ -182,6 +198,12 @@ uint64_t webpki_pack_seconds(uint64_t now_seconds) {
 }
 
 #include "webpki.c"
+
+// 1 when [inner, inner + inner_len) lies inside [outer, outer + outer_len).
+static int inside(const uint8_t *outer, size_t outer_len, const uint8_t *inner, size_t inner_len) {
+    return inner >= outer && inner_len <= outer_len &&
+           (size_t)(inner - outer) <= outer_len - inner_len;
+}
 
 int main(void) {
     static uint8_t list[CH_PROOF_LIST_LEN];
@@ -221,6 +243,9 @@ int main(void) {
     // framing one, so the assert below reads what the walk wrote rather
     // than what this line left.
     uint8_t alert = ALERT_BAD_CERTIFICATE;
+    parse_calls = 0;
+    verified_key = NULL;
+    verified_key_len = 0;
 
     int rc = webpki_verify_chain(list, list_len, &cfg, &out, &alert);
     __CPROVER_assert(rc == CH_OK || rc == CH_EPROTO || rc == CH_EAUTH,
@@ -237,5 +262,13 @@ int main(void) {
                      "walk: the leaf key algorithm is one of the three");
     __CPROVER_assert(out.key_len <= CH_WEBPKI_KEY_MAX,
                      "walk: the leaf key fits webpki_leaf_info.key");
+    __CPROVER_assert(out.path_entries >= 1 && out.path_entries <= CH_WEBPKI_CHAIN_MAX &&
+                         out.path_entries == parse_calls,
+                     "walk: path_entries counts the certificates the walk parsed");
+    __CPROVER_assert(out.anchor_index < anchor_count,
+                     "walk: anchor_index names a configured anchor");
+    __CPROVER_assert(inside(anchors[out.anchor_index].spki, anchors[out.anchor_index].spki_len,
+                            verified_key, verified_key_len),
+                     "walk: the anchor at anchor_index verified the last certificate");
     return 0;
 }

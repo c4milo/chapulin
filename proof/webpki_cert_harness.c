@@ -6,9 +6,11 @@
 // the length is at most CH_WEBPKI_CERT_MAX, and every pointer webpki.h
 // says points into the caller's buffer does:
 //
-//   - tbs lies inside the certificate; issuer, subject, the key and san
-//     (when not NULL) lie inside tbs; sig lies inside the certificate
-//     after tbs and is not empty
+//   - tbs lies inside the certificate; issuer, subject, the
+//     SubjectPublicKeyInfo TLV and san (when not NULL) lie inside tbs; the
+//     key lies inside that TLV, which is at most SPKI_MAX bytes, the bytes
+//     an SPKI pin hashes; sig lies inside the certificate after tbs and is
+//     not empty
 //   - issuer and subject are whole TLVs of two bytes or more
 //   - notBefore is no later than notAfter
 //   - sigalg is one of the four WEBPKI_SIG_* values and spki.alg one of
@@ -180,6 +182,11 @@ int main(void) {
                      "parse: subject is a TLV inside tbs");
     __CPROVER_assert(inside(out.tbs, out.tbs_len, out.spki.key, out.spki.key_len),
                      "parse: the key inside tbs");
+    __CPROVER_assert(inside(out.tbs, out.tbs_len, out.spki_tlv, out.spki_tlv_len) &&
+                         out.spki_tlv_len <= SPKI_MAX,
+                     "parse: the SubjectPublicKeyInfo TLV inside tbs");
+    __CPROVER_assert(inside(out.spki_tlv, out.spki_tlv_len, out.spki.key, out.spki.key_len),
+                     "parse: the key inside its SubjectPublicKeyInfo TLV");
     __CPROVER_assert(inside(cert, n, out.sig, out.sig_len) && out.sig_len >= 1,
                      "parse: a non-empty signature inside the certificate");
     __CPROVER_assert(out.sig >= out.tbs + out.tbs_len, "parse: the signature follows tbs");

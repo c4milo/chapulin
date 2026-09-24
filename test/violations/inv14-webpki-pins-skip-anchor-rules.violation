@@ -1,0 +1,12 @@
+invariant: INV-14
+file: webpki_cfg.c
+catches: webpki_session_test
+reason: any configuration with SPKI pins skips the anchor, hostname and clock
+  rules, though a configuration with anchors still verifies a chain,
+  which needs a hostname and a clock. The pins-with-anchors rows
+  without a clock or a hostname object.
+
+--- old
+    if (pins_alone(cfg)) {
+--- new
+    if (pins_alone(cfg) || cfg->spki_pin_count > 0) {

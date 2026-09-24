@@ -1,0 +1,15 @@
+invariant: INV-14
+file: handshake_flight.c
+catches: webpki_encrypted_exts_test
+reason: the EncryptedExtensions handler stops seeding
+  ch_tls.server_cert_type with CH_CERT_TYPE_X509, so a server that sends
+  no server_certificate_type leaves whatever the field held before. RFC
+  9846 §4.5.1 makes that server's Certificate message an X.509 chain,
+  and the session would read it as a raw public key.
+  bin/webpki_encrypted_exts_test's absent-extension row starts from a
+  session that holds RawPublicKey, and it objects.
+
+--- old
+    t->server_cert_type = CH_CERT_TYPE_X509;
+--- new
+    (void)t->server_cert_type;

@@ -1,5 +1,5 @@
 invariant: INV-14
-file: handshake_parser.c
+file: handshake_parser_ee.c
 catches: handshake_strict_webpki
 reason: a TRUST=webpki server_name acknowledgement that carries data
   still fails, but with unsupported_extension, the alert for an
@@ -9,11 +9,13 @@ reason: a TRUST=webpki server_name acknowledgement that carries data
   bin/handshake_strict_webpki's server_name alert rows object.
 
 --- old
-#ifdef CH_TRUST_WEBPKI
-    if (ext == EXT_SERVER_NAME) {
-        return ALERT_DECODE_ERROR;
-    }
-#endif
-    return ext == EXT_ALPN ? alpn_alert : ALERT_UNSUPPORTED_EXTENSION;
+        if (server_name_acknowledged(ext, ext_len)) {
+            return 1U << 2;
+        }
+        *out->alert = ALERT_DECODE_ERROR;
+        return 0;
 --- new
-    return ext == EXT_ALPN ? alpn_alert : ALERT_UNSUPPORTED_EXTENSION;
+        if (server_name_acknowledged(ext, ext_len)) {
+            return 1U << 2;
+        }
+        return 0;

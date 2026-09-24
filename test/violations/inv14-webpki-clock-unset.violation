@@ -1,5 +1,5 @@
 invariant: INV-14
-file: tls.c
+file: webpki_cfg.c
 catches: webpki_session_test
 reason: a TRUST=webpki config with now_seconds 0, a clock the caller
   never set, passes ch_connect, and the handshake it starts fails later

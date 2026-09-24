@@ -1,0 +1,11 @@
+invariant: INV-14
+file: webpki_cfg.c
+catches: webpki_session_test
+reason: a configuration with an anchor count but no anchor list passes as
+  pins alone, so a field missing from an anchor configuration drops
+  the chain check without a word. The half-anchor rows object.
+
+--- old
+    return cfg->spki_pin_count > 0 && cfg->anchors == NULL && cfg->anchor_count == 0;
+--- new
+    return cfg->spki_pin_count > 0 && cfg->anchors == NULL;

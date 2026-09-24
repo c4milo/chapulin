@@ -1,5 +1,5 @@
 invariant: INV-25
-file: handshake_parser.c
+file: handshake_parser_ee.c
 catches: handshake_strict_test
 builds: bin/handshake_strict_test
 reason: hsp_parse_encrypted_exts walks the message body instead of the

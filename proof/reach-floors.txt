@@ -125,6 +125,7 @@ webpki_ext 40.0  # local reading, cbmc 6.11.0 on arm64 macOS; replace with the n
 webpki_ext_one 51.4  # local reading, cbmc 6.11.0 on arm64 macOS; replace with the nightly table's number
 webpki_ext_walk 54.8  # local reading, cbmc 6.11.0 on arm64 macOS; replace with the nightly table's number
 webpki_name 24.2  # local reading, cbmc 6.11.0 on arm64 macOS; replace with the nightly table's number
+webpki_pin 56.5  # local reading, cbmc 6.11.0 on arm64 macOS; replace with the nightly table's number
 webpki_san 29.8
 webpki_sigalg 41.9  # local reading, cbmc 6.11.0 on arm64 macOS; replace with the nightly table's number
 webpki_spki 41.1  # local reading, cbmc 6.11.0 on arm64 macOS; replace with the nightly table's number

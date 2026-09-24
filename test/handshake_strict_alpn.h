@@ -40,10 +40,11 @@ static int alpn_row(const uint8_t *names, size_t n, size_t claimed, size_t offer
     uint8_t body[ALPN_CASE_CAP + 8];
     size_t len = make_encrypted_exts(body, ext, ext_len);
     uint16_t peer_limit = CH_TX_PT;
+    uint8_t cert_type = CH_CERT_TYPE_X509;
     *selected = CH_ALPN_NONE;
     *alert = ALERT_ILLEGAL_PARAMETER;
-    return hsp_parse_encrypted_exts(body, len, &peer_limit, alpn_offer, offer_count, selected,
-                                    alert);
+    return hsp_parse_encrypted_exts(body, len, &peer_limit, alpn_offer, offer_count, selected, 1, 0,
+                                    &cert_type, alert);
 }
 
 // One ProtocolName with its length byte, per row. alpn_offer's four
@@ -146,16 +147,17 @@ static void test_alpn_in_block(void) {
     uint16_t peer_limit = CH_TX_PT;
     uint8_t alert = ALERT_ILLEGAL_PARAMETER;
     uint8_t selected = CH_ALPN_NONE;
+    uint8_t cert_type = CH_CERT_TYPE_X509;
     size_t len = make_encrypted_exts(body, beside, sizeof beside);
     CHECK(hsp_parse_encrypted_exts(body, len, &peer_limit, alpn_offer, ALPN_OFFER_COUNT, &selected,
-                                   &alert) == CH_OK);
+                                   1, 0, &cert_type, &alert) == CH_OK);
     CHECK(selected == 0);
     CHECK(encrypted_exts_case(twice, sizeof twice) == CH_EPROTO);
     CHECK(encrypted_exts_alert_case(twice, sizeof twice, 47) == 47);
     selected = CH_ALPN_NONE;
     len = make_encrypted_exts(body, absent, sizeof absent);
     CHECK(hsp_parse_encrypted_exts(body, len, &peer_limit, alpn_offer, ALPN_OFFER_COUNT, &selected,
-                                   &alert) == CH_OK);
+                                   1, 0, &cert_type, &alert) == CH_OK);
     CHECK(selected == CH_ALPN_NONE);
 }
 #else

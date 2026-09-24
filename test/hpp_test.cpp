@@ -178,6 +178,16 @@ static void test_webpki_config(chapulin::Io io) {
         CHECK(s.connect(cfg) == chapulin::Status::invalid);
     }
     {
+        // SPKI pins alone: no anchor, hostname or clock, and the config
+        // passes, so connect reaches the transport.
+        static const uint8_t pins[1][SHA256_LEN] = {{0x70}};
+        chapulin::Config cfg(chapulin::Bytes{rxbuf}, io);
+        cfg.spki_pins(pins);
+        CHECK(cfg.raw().spki_pins == pins && cfg.raw().spki_pin_count == 1);
+        chapulin::Session s;
+        CHECK(s.connect(cfg) == chapulin::Status::io);
+    }
+    {
         // A ticket whose binding names nothing this config holds.
         chapulin::Config cfg(chapulin::Bytes{rxbuf}, io);
         cfg.anchors(kAnchors, 1).hostname({kHost, sizeof kHost}).now_seconds(1789000000U);

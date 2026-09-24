@@ -1,0 +1,13 @@
+invariant: INV-33
+file: webpki_pin.c
+catches: webpki_auth_test
+reason: webpki_path_pinned reads every entry of the list instead of the
+  path_entries the walk validated, so a pinned certificate appended to a
+  chain another CA signed passes the pins, against RFC 7858 §4.2.
+  bin/webpki_auth_test's aws chain with the r2 intermediate appended,
+  pinned on that CA certificate alone, objects.
+
+--- old
+    for (size_t i = 0; i < leaf->path_entries; i++) {
+--- new
+    for (size_t i = 0; rb_left(&r) > 0; i++) {

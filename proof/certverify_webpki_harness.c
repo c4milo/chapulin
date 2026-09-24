@@ -18,7 +18,9 @@
 //
 // Narrow on purpose, like proof/epoch_harness.c: hsa_server_auth's
 // other half calls webpki_verify_chain, and webpki_chain proves that
-// walk at its own bound.
+// walk at its own bound; under SPKI pins it calls webpki_verify_raw_key
+// and webpki_path_pinned, and webpki_pin proves both. main never reaches
+// that half, so cbmc needs no body for the two pin calls.
 #define CH_TRUST_WEBPKI 1
 #define CH_PROOF_STUB_SHA256
 

@@ -855,3 +855,27 @@ does nothing more.
     apart. A check that accepted each token once was considered and left
     to the caller: it needs state, and the window and the address binding
     already limit replay as §8.1.4 requires.
+
+49. **A `TRUST=webpki` client takes SPKI pins, and with them RFC 7250 raw
+    public keys.** RFC 8310 §9 makes RFC 7250 a MUST for a DNS-over-TLS
+    client and lets it offer raw keys only with an SPKI pin set, so the
+    host-side mode that caller builds takes pins. Pins alone are a whole
+    configuration, the "SPKI + IP" profile for a server with no public
+    certificate. With anchors too, a chain must pass the walk, the clock
+    and the hostname, and a pin must name a key on the path the walk
+    verified, as RFC 8310 §6.4 and RFC 7858 §4.2 ask. docs/webpki.md, "Raw
+    public keys and SPKI pins", states the rules.
+
+    Cost: a fifth thing the mode offers more than one of, the certificate
+    types, and a second way for a Certificate message to authenticate a
+    server, which is why the device modes stay without it. Gain: the
+    caller reaches a pinned server whether it presents a raw key or a
+    chain, and a pin change is a configuration change, not a CA.
+
+    A new trust mode for pins alone was considered and rejected: a
+    configuration with both a name and pins needs the chain code anyway,
+    and a second host-side mode would split the tickets, the ALPN offer
+    and the tests between two objects. Matching a pin on the leaf alone
+    was considered and rejected: RFC 7858 pins the validated chain, and an
+    operator who pins an intermediate would be locked out on the next leaf
+    rotation.

@@ -7,7 +7,9 @@ subjectAltName. It exists so a host-side client can reach a public endpoint —
 an S3-compatible object store is the case it was built for.
 
 It is the third trust mode, beside the raw modes, which pin the server's own
-key, and the CA modes, which pin a CA key the chain must reach. Those two are
+key, and the CA modes, which pin a CA key the chain must reach. It also takes
+SPKI pins, and with them RFC 7250 raw public keys, for a DNS-over-TLS caller
+(see "Raw public keys and SPKI pins"). Those two are
 the device modes: they read no clock and no names, and this mode does not
 change them. A `webpki` object needs a clock, a hostname and a receive buffer
 far larger than a device carries, so it is not for a device.
@@ -317,21 +319,27 @@ The rest of the configuration is the hostname and the clock:
 `ch_connect` returns `CH_EINVAL` before it sends a byte when:
 
 - `anchor_count` is outside 1 to `CH_WEBPKI_ANCHOR_MAX`, or any entry has
-  a NULL or empty `name` or `spki`;
-- the hostname fails `webpki_hostname_ok`;
-- `now_seconds` is 0;
+  a NULL or empty `name` or `spki`, unless SPKI pins stand alone (see "Raw
+  public keys and SPKI pins");
+- the hostname fails `webpki_hostname_ok`, or is unset beside anchors;
+- `now_seconds` is 0 beside anchors;
+- `spki_pin_count` is over `CH_SPKI_PIN_MAX`, or a pin list and its count
+  disagree about whether pins are set;
 - a PSK field is set and the fields do not present a ticket bound to this
   hostname and these anchors (see "Resumption" below);
 - either `server_pubkey` slot, or its length, is set;
 - an epoch callback is set;
 - `buf_len` is under `CH_MIN_RXBUF`, 12,338 bytes in this mode.
 
-`ch_trust_anchor`, `CH_WEBPKI_ANCHOR_MAX` and the eight `ch_cfg` fields
-exist only in a `TRUST=webpki` build, so the raw and ca objects keep the
-`ch_cfg` and `ch_tls` layout they had before this mode. A raw or ca build
-that sets one of the fields fails to compile. `chapulin.hpp` forwards the
-four through `Config::anchors`, `Config::hostname`, `Config::now_seconds`
-and `Config::alpn`, which a raw or ca build does not declare either.
+`ch_trust_anchor`, `CH_WEBPKI_ANCHOR_MAX`, `CH_SPKI_PIN_MAX` and the ten
+`ch_cfg` fields exist only in a `TRUST=webpki` build, so the raw and ca
+objects keep the `ch_cfg` and `ch_tls` layout they had before this mode.
+`webpki_cfg.h` declares them and states each field's rule, and
+`webpki_cfg.c` checks the rules. A raw or ca build that sets one of the
+fields fails to compile. `chapulin.hpp` forwards them through
+`Config::anchors`, `Config::hostname`, `Config::now_seconds`,
+`Config::alpn`, `Config::spki_pins` and `Config::ticket_binding`, which a
+raw or ca build does not declare either.
 
 Measured anchor sizes, from the captures: 120 B for a P-384 key, 294 B for
 RSA-2048, 550 B for RSA-4096.
@@ -418,13 +426,15 @@ received it, and refuses to present it under any other.
   stored binding.
 - **What the binding covers.** `webpki_ticket_config_hash` hashes the
   hostname with its ASCII capitals in lower case, then every anchor's
-  `name` and `spki` in array order, each field prefixed by its length.
+  `name` and `spki` in array order, then the SPKI pins, each field
+  prefixed by its length.
   The binding is HMAC-SHA256 keyed by the ticket's PSK over the label
   `chapulin webpki ticket` and that hash. `webpki_ticket.h` states the
   bytes, and `test/webpki_resume_cases.h` checks them against a value
   computed outside this tree.
 - **What `ch_connect` refuses, with `CH_EINVAL` and no byte sent.** A
-  ticket whose binding does not match this hostname and these anchors. A
+  ticket whose binding does not match this hostname, these anchors and
+  these pins. A
   binding from another ticket, because the key is that ticket's PSK. A
   PSK that is not 32 bytes, an identity outside 1 to `CH_TICKET_ID_MAX`
   bytes, a ticket with no binding, a binding with no ticket, and an
@@ -453,6 +463,62 @@ received it, and refuses to present it under any other.
   `ch_quic_init` computes no configuration hash, so the tickets such a
   session hands to `on_ticket` carry a binding no configuration matches,
   and presenting one fails closed with `CH_EINVAL`.
+
+## Raw public keys and SPKI pins
+
+RFC 8310 §9 asks a DNS-over-TLS client to implement RFC 7250 raw public
+keys, and to offer them only when it has an SPKI pin set
+(`rfc8310.txt:1134-1138`). An SPKI pin is the SHA-256 of a DER
+SubjectPublicKeyInfo (RFC 7858 §4.2, `rfc7858.txt:434-440`), and the
+caller sets up to `CH_SPKI_PIN_MAX` (4) of them in `ch_cfg.spki_pins`.
+
+- **The offer.** With pins set, the ClientHello sends
+  `server_certificate_type` (RFC 7250 §4.1) listing RawPublicKey, and X509
+  after it when anchors are also set. Without pins it sends no extension,
+  and the server sends the X.509 type RFC 9846 §4.5.1 defaults to. A
+  resumed hello offers no certificate type, because its server sends no
+  Certificate.
+- **Pins alone** are a whole configuration: no anchors, no clock, and no
+  hostname unless the caller wants one sent as `server_name`. This is RFC
+  8310's "SPKI + IP" profile, for a DNS server on a private network with
+  no certificate from a public CA. The client offers RawPublicKey alone.
+  Without a hostname the hello carries no `server_name`, and an
+  EncryptedExtensions that acknowledges one anyway is refused with
+  `unsupported_extension`, because the server acknowledged a name nobody
+  sent (RFC 6066 §3).
+- **A raw public key** carries no name and no dates, so the pins are the
+  whole check: the one CertificateEntry must hold a SubjectPublicKeyInfo
+  the mode's key rules accept, and one pin must equal its SHA-256. The
+  key then verifies CertificateVerify, as a leaf key does.
+- **A chain beside pins** must pass everything a chain passes without pins
+  — the anchors, the clock, the hostname — and one pin must also name a
+  key on the path the walk verified: the leaf, an intermediate the walk
+  used, or the anchor that verified. RFC 8310 §6.4 asks a client
+  configured with both a name and pins to require both
+  (`rfc8310.txt:805-814`), and RFC 7858 §4.2 pins the validated chain. A
+  certificate the server sent beyond that path does not count, so a
+  pinned certificate appended to a chain another CA signed does not pass.
+- **What the server chose** is `ch_tls.server_cert_type`:
+  `CH_CERT_TYPE_RAW_PUBLIC_KEY` (2) or `CH_CERT_TYPE_X509` (0).
+- **Refusals.** A key no pin names: `bad_certificate`, `CH_EAUTH`. An
+  X.509 answer to a configuration of pins alone, which has no anchor to
+  verify it with: `unsupported_certificate` (RFC 7250 §4.2), `CH_EAUTH`.
+  A `server_certificate_type` in EncryptedExtensions the client did not
+  offer, or naming a type it did not list, is refused there, before any
+  Certificate arrives. `webpki_pin.h` and `handshake_parser.h` give the
+  full table.
+- **Rotation.** RFC 7858 §4.2 asks for a backup pin. Any pin may match, so
+  a caller rotating a server key sets the old and the new pin together,
+  and removes the old one after the server moves.
+- **Tickets** bind the pin set as well as the hostname and the anchors
+  (see "Resumption"), so a pin change makes the next connection a full
+  handshake.
+- **Not here.** The server role neither sends nor accepts a raw public
+  key: it ignores the extension and sends its certificate, which a
+  configuration with anchors verifies as before. A `TRANSPORT=quic`
+  webpki client refuses pins, as it refuses tickets. Client raw public
+  keys (`client_certificate_type`) are not offered, because this client
+  sends no certificate.
 
 ## Bounds
 

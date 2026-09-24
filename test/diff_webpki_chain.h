@@ -15,9 +15,15 @@
 //   - the entry list cut after each entry, one entry dropped, the last
 //     entry repeated to one past the flight cap, and DIFF_CHAIN_BYTES
 //     single bytes of the list changed
+//   - the row itself under one SPKI pin at a time: on each entry's key,
+//     the ones past the path included, on each anchor's key, and on
+//     nothing. Every other case carries one of those pins, chosen by the
+//     row's index
 //
 // The reply carries the verdict's name and, when the chain verified,
-// the leaf key the walk copied out: "ok <rsa|p256|p384> <key>", or one
+// the leaf key the walk copied out, the path it reports and whether a
+// pin names a key on that path (webpki_path_pinned):
+// "ok <rsa|p256|p384> <key> <path_entries> <anchor_index> <1|0>", or one
 // of "rejected", "expired", "unauthenticated" and "unknown_ca". Those
 // four are exactly the pairs of return code and alert the C tells apart,
 // and test/webpki_chain_test.c pins which alert each one is.
@@ -28,8 +34,9 @@
 //
 // Included by test/diff_test.c after diff_driver.h (single translation
 // unit). spec/Main.lean serves the op:
-//   webpki_chain <packed clock> <hostname> <anchors> <list>
-// where <anchors> is "-" or "name.spki" hex pairs joined by commas.
+//   webpki_chain <packed clock> <hostname> <anchors> <pins> <list>
+// where <anchors> is "-" or "name.spki" hex pairs joined by commas, and
+// <pins> is "-" or hex pins joined by commas.
 #ifndef CH_DIFF_WEBPKI_CHAIN_H
 #define CH_DIFF_WEBPKI_CHAIN_H
 
@@ -41,8 +48,10 @@
 
 #include "buf.h"
 #include "handshake_message.h"
+#include "sha256.h"
 #include "webpki.h"
 #include "webpki_corpus.h"
+#include "webpki_pin.h"
 
 // The largest list any row or mutation carries: the flight cap plus one
 // entry, each at the certificate cap.
@@ -50,14 +59,18 @@
 #define DIFF_CHAIN_LIST_MAX (DIFF_CHAIN_ENTRIES * (CH_WEBPKI_CERT_MAX + 5))
 // One request line: the op, the clock, the hostname, the anchors and the
 // list, all in hex.
-#define DIFF_CHAIN_ANCHOR_HEX ((size_t)2 * CH_WEBPKI_ANCHOR_MAX * (256 + 2 * CH_WEBPKI_KEY_MAX + 32))
-#define DIFF_CHAIN_LINE_MAX ((size_t)2 * DIFF_CHAIN_LIST_MAX + DIFF_CHAIN_ANCHOR_HEX + 1024)
+#define DIFF_CHAIN_ANCHOR_HEX                                                                      \
+    ((size_t)2 * CH_WEBPKI_ANCHOR_MAX * (256 + 2 * CH_WEBPKI_KEY_MAX + 32))
+#define DIFF_CHAIN_PIN_HEX ((size_t)CH_SPKI_PIN_MAX * (2 * SHA256_LEN + 1))
+#define DIFF_CHAIN_LINE_MAX                                                                        \
+    ((size_t)2 * DIFF_CHAIN_LIST_MAX + DIFF_CHAIN_ANCHOR_HEX + DIFF_CHAIN_PIN_HEX + 1024)
 #define DIFF_CHAIN_REPLY_MAX ((size_t)2 * CH_WEBPKI_KEY_MAX + 64)
 // Single bytes of a list changed, one drawn from each stride.
 #define DIFF_CHAIN_BYTES 24
 
 static long diff_chain_rows;
 static long diff_chain_accepted;
+static long diff_chain_pinned;
 
 static const char *const diff_chain_key_names[4] = {"-", "rsa", "p256", "p384"};
 
@@ -70,6 +83,8 @@ typedef struct {
     uint64_t now_seconds;
     const uint8_t *list;
     size_t list_len;
+    uint8_t pins[CH_SPKI_PIN_MAX][SHA256_LEN];
+    size_t pin_count;
 } diff_chain_case;
 
 // The list of a row's Certificate message. The corpus messages are
@@ -93,7 +108,8 @@ static void diff_chain_list(const webpki_corpus_chain *row, const uint8_t **list
     }
 }
 
-// The C side: the verdict name, and the leaf key when the chain verified.
+// The C side: the verdict name, and when the chain verified the leaf key,
+// the path and the pin verdict over it.
 static void diff_chain_c_reply(const diff_chain_case *c, char *reply, size_t cap) {
     ch_trust_anchor anchors[CH_WEBPKI_ANCHOR_MAX];
     ch_cfg cfg;
@@ -114,6 +130,8 @@ static void diff_chain_c_reply(const diff_chain_case *c, char *reply, size_t cap
     cfg.hostname = (const uint8_t *)c->hostname;
     cfg.hostname_len = strlen(c->hostname);
     cfg.now_seconds = c->now_seconds;
+    cfg.spki_pins = (const uint8_t (*)[SHA256_LEN])c->pins;
+    cfg.spki_pin_count = c->pin_count;
     memset(&leaf, 0, sizeof leaf);
     int rc = webpki_verify_chain(c->list, c->list_len, &cfg, &leaf, &alert);
     if (rc == CH_OK) {
@@ -122,7 +140,9 @@ static void diff_chain_c_reply(const diff_chain_case *c, char *reply, size_t cap
         }
         static char key_hex[2 * CH_WEBPKI_KEY_MAX + 1];
         (void)hex_encode(key_hex, leaf.key, leaf.key_len);
-        (void)snprintf(reply, cap, "ok %s %s", diff_chain_key_names[leaf.alg], key_hex);
+        int pinned = webpki_path_pinned(c->list, c->list_len, &cfg, &leaf);
+        (void)snprintf(reply, cap, "ok %s %s %u %u %d", diff_chain_key_names[leaf.alg], key_hex,
+                       (unsigned)leaf.path_entries, (unsigned)leaf.anchor_index, pinned);
         return;
     }
     if (rc == CH_EPROTO) {
@@ -157,6 +177,25 @@ static size_t diff_chain_anchors_hex(char *out, const diff_chain_case *c) {
     return at;
 }
 
+// The pins as the op spells them: "-" for none, else hex pins joined by
+// commas. Returns the characters written.
+static size_t diff_chain_pins_hex(char *out, const diff_chain_case *c) {
+    if (c->pin_count == 0) {
+        out[0] = '-';
+        out[1] = '\0';
+        return 1;
+    }
+    size_t at = 0;
+    for (size_t i = 0; i < c->pin_count; i++) {
+        if (i > 0) {
+            out[at++] = ',';
+        }
+        at += hex_encode(out + at, c->pins[i], SHA256_LEN);
+    }
+    out[at] = '\0';
+    return at;
+}
+
 static void diff_chain_compare(const diff_chain_case *c) {
     static char cmd[DIFF_CHAIN_LINE_MAX];
     static char want[DIFF_CHAIN_REPLY_MAX];
@@ -169,10 +208,13 @@ static void diff_chain_compare(const diff_chain_case *c) {
     cmd[at++] = ' ';
     at += (int)diff_chain_anchors_hex(cmd + at, c);
     cmd[at++] = ' ';
+    at += (int)diff_chain_pins_hex(cmd + at, c);
+    cmd[at++] = ' ';
     (void)hex_encode(cmd + at, c->list, c->list_len);
     diff_chain_c_reply(c, want, sizeof want);
     diff_chain_rows++;
     diff_chain_accepted += want[0] == 'o';
+    diff_chain_pinned += want[0] == 'o' && want[strlen(want) - 1] == '1';
     expect(cmd, want);
 }
 
@@ -232,9 +274,8 @@ static void diff_chain_clocks(const diff_chain_case *base) {
 
 // Every hostname the corpus uses, so a row is compared against a name
 // its leaf does not carry as well as against its own.
-static const char *const diff_chain_hosts[] = {"s3.example.test", "other.example.test",
-                                               "a.b.example.test", "example.com",
-                                               "s3.amazonaws.com"};
+static const char *const diff_chain_hosts[] = {
+    "s3.example.test", "other.example.test", "a.b.example.test", "example.com", "s3.amazonaws.com"};
 #define DIFF_CHAIN_HOST_COUNT (sizeof diff_chain_hosts / sizeof diff_chain_hosts[0])
 
 static void diff_chain_hostnames(const diff_chain_case *base) {
@@ -267,8 +308,7 @@ static void diff_chain_anchor_sets(const diff_chain_case *base) {
 // Every anchor's key swapped for a key no corpus certificate is signed
 // under, so each anchor's Name still names an issuer and no anchor
 // verifies one.
-static void diff_chain_anchor_keys(const diff_chain_case *base,
-                                   const webpki_corpus_anchor *other) {
+static void diff_chain_anchor_keys(const diff_chain_case *base, const webpki_corpus_anchor *other) {
     static webpki_corpus_anchor swapped[CH_WEBPKI_ANCHOR_MAX];
     if (base->anchor_count == 0) {
         return;
@@ -345,15 +385,55 @@ static void diff_chain_bytes(const diff_chain_case *base) {
     }
 }
 
+// The pins one row is compared under, one per case: SHA-256 of each
+// entry's SubjectPublicKeyInfo, parsed under the arm its position names,
+// then of each anchor's, then a pin that names nothing. An entry that
+// does not parse under its arm gives no pin. Returns the count.
+static size_t diff_chain_pin_choices(const diff_chain_case *base, uint8_t choices[][SHA256_LEN]) {
+    size_t off[DIFF_CHAIN_ENTRIES];
+    size_t len[DIFF_CHAIN_ENTRIES];
+    size_t count = diff_chain_split(base->list, base->list_len, off, len);
+    size_t n = 0;
+    for (size_t i = 0; i < count; i++) {
+        webpki_cert parsed;
+        uint8_t alert = ALERT_BAD_CERTIFICATE;
+        if (webpki_parse_certificate(base->list + off[i], len[i], i != 0, &parsed, &alert) ==
+            CH_OK) {
+            sha256_of(parsed.spki_tlv, parsed.spki_tlv_len, choices[n++]);
+        }
+    }
+    for (size_t i = 0; i < base->anchor_count; i++) {
+        sha256_of(base->anchors[i].spki, base->anchors[i].spki_len, choices[n++]);
+    }
+    memset(choices[n++], 0x5a, SHA256_LEN);
+    return n;
+}
+
+// The row itself under one pin.
+static void diff_chain_pin_set(const diff_chain_case *base, const uint8_t pin[SHA256_LEN]) {
+    diff_chain_case c = *base;
+    c.pin_count = 1;
+    memcpy(c.pins[0], pin, SHA256_LEN);
+    diff_chain_compare(&c);
+}
+
 // One row: its own inputs, then one family of mutations at a time.
-static void diff_chain_row(const webpki_corpus_chain *row, const webpki_corpus_anchor *other) {
+static void diff_chain_row(const webpki_corpus_chain *row, size_t row_index,
+                           const webpki_corpus_anchor *other) {
+    static uint8_t choices[DIFF_CHAIN_ENTRIES + CH_WEBPKI_ANCHOR_MAX + 1][SHA256_LEN];
     diff_chain_case base;
     base.anchors = row->anchors;
     base.anchor_count = row->anchor_count;
     base.hostname = row->hostname;
     base.now_seconds = row->now_seconds;
     diff_chain_list(row, &base.list, &base.list_len);
+    size_t choice_count = diff_chain_pin_choices(&base, choices);
+    memcpy(base.pins[0], choices[row_index % choice_count], SHA256_LEN);
+    base.pin_count = 1;
     diff_chain_compare(&base);
+    for (size_t i = 0; i < choice_count; i++) {
+        diff_chain_pin_set(&base, choices[i]);
+    }
     diff_chain_clocks(&base);
     diff_chain_hostnames(&base);
     diff_chain_anchor_sets(&base);
@@ -370,17 +450,17 @@ static void diff_webpki_chain(void) {
     // signed under.
     const webpki_corpus_anchor *other = &webpki_corpus_chains[minted - 2].anchors[0];
     for (size_t i = 0; i < minted; i++) {
-        diff_chain_row(&webpki_corpus_chains[i], other);
+        diff_chain_row(&webpki_corpus_chains[i], i, other);
     }
     long minted_rows = diff_chain_rows;
     long minted_accepted = diff_chain_accepted;
     for (size_t i = 0; i < captured; i++) {
-        diff_chain_row(&webpki_capture_chains[i], other);
+        diff_chain_row(&webpki_capture_chains[i], i, other);
     }
     (void)printf("diff: webpki_chain: %ld minted rows (%ld accepted), %ld captured rows "
-                 "(%ld accepted), C == spec\n",
+                 "(%ld accepted), %ld accepted with a pin on the path, C == spec\n",
                  minted_rows, minted_accepted, diff_chain_rows - minted_rows,
-                 diff_chain_accepted - minted_accepted);
+                 diff_chain_accepted - minted_accepted, diff_chain_pinned);
 }
 
 #else

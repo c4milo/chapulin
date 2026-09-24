@@ -1,5 +1,5 @@
 invariant: INV-14
-file: handshake_parser.c
+file: handshake_parser_ee.c
 catches: webpki_session_test
 reason: a TRUST=webpki server_name acknowledgement that carries data
   still fails, but the parser leaves the alert handshake.c seeds,
@@ -9,6 +9,6 @@ reason: a TRUST=webpki server_name acknowledgement that carries data
   receives, and it objects.
 
 --- old
-            *alert = unadmitted_extension_alert(ext, alpn_alert);
+            *alert = arm_alert;
 --- new
-            *alert = ext == EXT_SERVER_NAME ? *alert : unadmitted_extension_alert(ext, alpn_alert);
+            *alert = ext == EXT_SERVER_NAME ? *alert : arm_alert;

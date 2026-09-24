@@ -1,11 +1,13 @@
 // Proves: webpki_resumption_ok reads a presented ticket's PSK and binding
 // only after the shape check admits them, and webpki_ticket_config_hash,
-// which it runs on that path, reads only inside the hostname and the
-// anchors the config names.
+// which it runs on that path, reads only inside the hostname, the
+// anchors and the SPKI pins the config names.
 //
 // The properties, over unconstrained inputs at the module's real bound: a
-// hostname of 1 to CH_HOSTNAME_MAX bytes, 1 to CH_WEBPKI_ANCHOR_MAX
-// anchors, and every PSK field NULL or set, with any length. Memory safety
+// hostname of 0 to CH_HOSTNAME_MAX bytes, 0 to CH_WEBPKI_ANCHOR_MAX
+// anchors and 0 to CH_SPKI_PIN_MAX pins (a configuration of pins alone
+// has no anchor and may have no hostname), and every PSK field NULL or
+// set, with any length. Memory safety
 // and absence of UB, which the automatic checks discharge.
 // And the verdict's contract: webpki_resumption_ok answers 0 or 1, and 1
 // only for a config whose PSK fields are all unset or that presents a
@@ -35,6 +37,7 @@ static ch_trust_anchor anchors[CH_WEBPKI_ANCHOR_MAX];
 static uint8_t psk[SHA256_LEN + 1];
 static uint8_t psk_id[CH_TICKET_ID_MAX + 1];
 static uint8_t binding[SHA256_LEN];
+static uint8_t pins[CH_SPKI_PIN_MAX][SHA256_LEN];
 
 // A length for a field whose pointer is set: at most the buffer's size.
 // With the pointer NULL, any length at all.
@@ -50,9 +53,9 @@ int main(void) {
     fill_nondet(hostname, sizeof hostname);
     cfg.hostname = hostname;
     cfg.hostname_len = nondet_size_t();
-    __CPROVER_assume(cfg.hostname_len >= 1 && cfg.hostname_len <= CH_HOSTNAME_MAX);
+    __CPROVER_assume(cfg.hostname_len <= CH_HOSTNAME_MAX);
     cfg.anchor_count = nondet_size_t();
-    __CPROVER_assume(cfg.anchor_count >= 1 && cfg.anchor_count <= CH_WEBPKI_ANCHOR_MAX);
+    __CPROVER_assume(cfg.anchor_count <= CH_WEBPKI_ANCHOR_MAX);
     for (size_t i = 0; i < CH_WEBPKI_ANCHOR_MAX; i++) {
         fill_nondet(names[i], ANCHOR_FIELD_MAX);
         fill_nondet(spkis[i], ANCHOR_FIELD_MAX);
@@ -63,6 +66,10 @@ int main(void) {
         anchors[i] = (ch_trust_anchor){names[i], name_len, spkis[i], spki_len};
     }
     cfg.anchors = anchors;
+    fill_nondet((uint8_t *)pins, sizeof pins);
+    cfg.spki_pins = pins;
+    cfg.spki_pin_count = nondet_size_t();
+    __CPROVER_assume(cfg.spki_pin_count <= CH_SPKI_PIN_MAX);
 
     fill_nondet(psk, sizeof psk);
     fill_nondet(binding, sizeof binding);

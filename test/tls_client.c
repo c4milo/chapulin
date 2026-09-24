@@ -246,95 +246,8 @@ static int setup_ticket(const char *path, ch_cfg *cfg, uint8_t *psk, uint8_t *id
 }
 
 #ifdef CH_TRUST_WEBPKI
-// A TRUST=webpki anchor is two whole DER fields of a root certificate:
-// its subject Name TLV and its SubjectPublicKeyInfo. e2e.sh writes each
-// to its own file, so this client reads bytes and parses no certificate.
-static uint8_t g_anchor_name[512];
-static uint8_t g_anchor_spki[CH_WEBPKI_KEY_MAX + 64];
-static ch_trust_anchor g_anchors[1];
-
-// The whole file, or 0 when it does not open or does not fit.
-static size_t read_der_file(const char *path, uint8_t *out, size_t cap) {
-    FILE *f = fopen(path, "rb");
-    if (f == NULL) {
-        return 0;
-    }
-    size_t n = fread(out, 1, cap, f);
-    int overflowed = fgetc(f) != EOF;
-    (void)fclose(f);
-    return overflowed ? 0 : n;
-}
-
-// Owns the "webpki:name-file,spki-file" form. The hostname and the clock
-// come from WEBPKI_HOST and WEBPKI_NOW, the way REQUIRE_PQ passes the
-// post-quantum flag, so the positional arguments stay as they are.
-static int setup_webpki(char *spec, ch_cfg *cfg) {
-    char *comma = strchr(spec, ',');
-    const char *host = getenv("WEBPKI_HOST");
-    const char *now = getenv("WEBPKI_NOW");
-    if (comma == NULL || host == NULL || now == NULL) {
-        (void)fprintf(stderr, "webpki: need name-file,spki-file and WEBPKI_HOST, WEBPKI_NOW\n");
-        return -1;
-    }
-    *comma = '\0';
-    g_anchors[0].name = g_anchor_name;
-    g_anchors[0].name_len = read_der_file(spec, g_anchor_name, sizeof g_anchor_name);
-    g_anchors[0].spki = g_anchor_spki;
-    g_anchors[0].spki_len = read_der_file(comma + 1, g_anchor_spki, sizeof g_anchor_spki);
-    if (g_anchors[0].name_len == 0 || g_anchors[0].spki_len == 0) {
-        (void)fprintf(stderr, "webpki: could not read the anchor files\n");
-        return -1;
-    }
-    cfg->anchors = g_anchors;
-    cfg->anchor_count = 1;
-    cfg->hostname = (const uint8_t *)host;
-    cfg->hostname_len = strlen(host);
-    cfg->now_seconds = strtoull(now, NULL, 10);
-    return 0;
-}
-
-// WEBPKI_ALPN carries the protocols to offer, comma separated, the way
-// WEBPKI_HOST carries the hostname: "h2,http/1.1". Unset or empty
-// offers none, which sends no extension. Splits the text in place, so
-// each name points into g_alpn_text and outlives the call.
-static char g_alpn_text[256];
-static ch_alpn_protocol g_alpn[CH_ALPN_MAX];
-
-static void setup_alpn(ch_cfg *cfg) {
-    const char *list = getenv("WEBPKI_ALPN");
-    if (list == NULL || list[0] == '\0') {
-        return;
-    }
-    (void)snprintf(g_alpn_text, sizeof g_alpn_text, "%s", list);
-    size_t count = 0;
-    char *name = g_alpn_text;
-    while (name != NULL && count < CH_ALPN_MAX) {
-        char *comma = strchr(name, ',');
-        if (comma != NULL) {
-            *comma = '\0';
-        }
-        g_alpn[count].name = (const uint8_t *)name;
-        g_alpn[count].name_len = strlen(name);
-        count++;
-        name = comma != NULL ? comma + 1 : NULL;
-    }
-    cfg->alpn_protocols = g_alpn;
-    cfg->alpn_count = count;
-}
-
-// The protocol the server selected, on the line e2e asserts against:
-// the name itself, or "none" when the server sent no ALPN extension.
-static void report_alpn(const ch_cfg *cfg, const ch_tls *tls) {
-    if (cfg->alpn_count == 0) {
-        return;
-    }
-    if (tls->alpn_selected == CH_ALPN_NONE) {
-        (void)fprintf(stderr, "alpn none\n");
-        return;
-    }
-    const ch_alpn_protocol *picked = &cfg->alpn_protocols[tls->alpn_selected];
-    (void)fprintf(stderr, "alpn %.*s\n", (int)picked->name_len, (const char *)picked->name);
-}
+// The webpki arm: anchors, SPKI pins, hostname, clock and ALPN.
+#include "tls_client_webpki.h"
 #endif
 
 // Fills the auth part of cfg: one branch per argv form — "pin:..." for
@@ -416,7 +329,7 @@ int main(int argc, char **argv) {
                       "usage: %s host port psk-hex psk-id [save-ticket-file [epoch-file]]\n"
                       "       %s host port @ticket-file - [save-ticket-file [epoch-file]]\n"
                       "       %s host port pin:hex[,hex2] - [save-ticket-file [epoch-file]]\n"
-                      "       %s host port webpki:name-file,spki-file @ticket-file|- "
+                      "       %s host port webpki:name-file,spki-file|- @ticket-file|- "
                       "[save-ticket-file]\n",
                       argv[0], argv[0], argv[0], argv[0]);
         return 2;
@@ -476,7 +389,7 @@ int main(int argc, char **argv) {
     (void)fprintf(stderr, "suite 0x%04x\n", (unsigned)tls.suite);
 #endif
 #ifdef CH_TRUST_WEBPKI
-    report_alpn(&cfg, &tls);
+    report_webpki(&cfg, &tls);
 #endif
     if (cfg.server_pubkey != NULL) {
         // e2e asserts on this line to watch rotation: 2 = the staged pin.

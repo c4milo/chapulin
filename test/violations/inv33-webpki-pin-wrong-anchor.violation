@@ -1,0 +1,13 @@
+invariant: INV-33
+file: webpki_pin.c
+catches: webpki_auth_test
+reason: webpki_path_pinned hashes the first configured anchor instead of
+  the one at anchor_index, so a pin on an anchor that named the issuer
+  and verified nothing passes, and a pin on the anchor that verified is
+  refused. bin/webpki_auth_test's r2 chain under the impostor anchor then
+  the real root objects.
+
+--- old
+    const ch_trust_anchor *anchor = &cfg->anchors[leaf->anchor_index];
+--- new
+    const ch_trust_anchor *anchor = &cfg->anchors[0];

@@ -1,0 +1,12 @@
+invariant: INV-33
+file: webpki_pin.c
+catches: webpki_auth_test
+reason: webpki_path_pinned stops at the path's last certificate and
+  never hashes the anchor that verified it, so a pin on the root the
+  caller trusts refuses every chain under it. bin/webpki_auth_test's
+  rows that pin each chain's anchor object.
+
+--- old
+    pinned |= webpki_spki_pinned(cfg, anchor->spki, anchor->spki_len);
+--- new
+    (void)anchor;

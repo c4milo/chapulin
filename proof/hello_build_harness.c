@@ -24,6 +24,20 @@ uint16_t nondet_u16(void);
 
 #include "handshake_message.c"
 
+#ifdef CH_TRUST_WEBPKI
+// The certificate types a webpki configuration offers (webpki_pin.c):
+// none, the raw public key alone, or the raw key and X.509. The stub
+// answers any of the three whatever cfg holds, so the builder's
+// server_certificate_type arm runs at every length it can write.
+uint8_t webpki_cert_types_offered(const ch_cfg *cfg) {
+    (void)cfg;
+    uint8_t offered = nondet_u8();
+    __CPROVER_assume(offered == 0 || offered == (1U << CH_CERT_TYPE_RAW_PUBLIC_KEY) ||
+                     offered == ((1U << CH_CERT_TYPE_RAW_PUBLIC_KEY) | (1U << CH_CERT_TYPE_X509)));
+    return offered;
+}
+#endif
+
 int main(void) {
     static uint8_t out[CH_HELLO_MAX];
     size_t cap = nondet_size_t();
@@ -54,7 +68,8 @@ int main(void) {
 #ifdef CH_TRUST_WEBPKI
     // hello_build_webpki: the builder puts server_name first in both
     // arms, carrying any hostname of up to CH_HOSTNAME_MAX bytes, the
-    // length ch_connect's webpki_hostname_ok holds it to.
+    // length ch_connect's webpki_hostname_ok holds it to, and none at
+    // length 0, which a configuration of SPKI pins alone may leave.
     static uint8_t host[CH_HOSTNAME_MAX];
     fill_nondet(host, sizeof host);
     cfg.hostname = host;

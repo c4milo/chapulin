@@ -1,0 +1,12 @@
+invariant: INV-14
+file: webpki_cfg.c
+catches: webpki_session_test
+reason: a configuration of pins alone takes any hostname, though the one it
+  sets goes out as server_name and must have the shape
+  webpki_hostname_ok checks. The pointer-without-length and
+  empty-label rows object.
+
+--- old
+        return (cfg->hostname == NULL && cfg->hostname_len == 0) || hostname_ok(cfg);
+--- new
+        return 1;

@@ -1,5 +1,5 @@
 invariant: INV-14
-file: handshake_parser.c
+file: handshake_parser_ee.c
 catches: handshake_strict_webpki
 reason: the ALPN arm matches an offered protocol by length alone, so a
   server that names "h3" is answered with the index of the two-byte

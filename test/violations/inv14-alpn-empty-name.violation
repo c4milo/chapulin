@@ -1,5 +1,5 @@
 invariant: INV-14
-file: handshake_parser.c
+file: handshake_parser_ee.c
 catches: handshake_strict_webpki
 reason: the ALPN arm admits a ProtocolName of zero bytes, which RFC 7301
   §3.1 puts outside the 1..255 range a ProtocolName takes. The empty

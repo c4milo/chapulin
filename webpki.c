@@ -4,7 +4,9 @@
 // caller configured. Contract in webpki.h; the order of the steps in
 // docs/webpki.md, "The chain walk". x509.c's x509_verify_leaf is the ca
 // mode's walk over the same message, and this file keeps its entry
-// reading and its alert convention.
+// reading and its alert convention. webpki_read_entry, the framing of
+// one entry, is here too, because webpki_pin.c reads a raw public key's
+// one entry with it.
 //
 // Every byte here is public: a certificate the peer sent, a Name, a
 // public key and the caller's own anchors. The code is variable time
@@ -23,6 +25,11 @@
 // are 64 and 96 bytes and fit under any value this assertion admits.
 _Static_assert(CH_WEBPKI_KEY_MAX >= CH_RSA_MODULUS_MAX,
                "webpki_leaf_info.key must hold the widest modulus webpki_read_spki returns");
+// webpki_leaf_info.path_entries holds a count of certificates read, at
+// most CH_WEBPKI_CHAIN_MAX, and anchor_index an index below anchor_count,
+// which ch_connect holds to CH_WEBPKI_ANCHOR_MAX (webpki_cfg.h).
+_Static_assert(CH_WEBPKI_CHAIN_MAX <= UINT8_MAX && CH_WEBPKI_ANCHOR_MAX <= UINT8_MAX,
+               "webpki_leaf_info's path fields are one byte each");
 
 // One CertificateEntry list, framed but not parsed: one pointer and one
 // length per certificate. The walk indexes this array and parses only
@@ -34,18 +41,38 @@ typedef struct {
     size_t count;
 } certificate_list;
 
-// The CertificateEntry list of RFC 9846 §4.5.1: each entry is a u24
-// certificate length, that many bytes, and a u16 extensions vector.
-// Returns CH_OK when the list holds 1 to CH_WEBPKI_FLIGHT_ENTRIES
-// entries of at most CH_WEBPKI_CERT_MAX bytes each, every extensions
-// vector is empty, and the entries fill the list exactly. Otherwise
-// CH_EPROTO, with *alert naming which rule failed: bad_certificate for
-// the framing, unsupported_extension for a non-empty extensions vector.
-// The framing of every entry is read, the trailing ones included, so a
-// CertificateEntry extension is refused wherever it sits: this client
-// offers no extension a CertificateEntry could answer, and RFC 9846
-// §4.3 names unsupported_extension for a reply to an extension the
-// peer never sent (docs/webpki.md, "Decisions").
+int webpki_read_entry(rbuf *r, size_t cert_max, const uint8_t **cert, size_t *cert_len,
+                      uint8_t *alert) {
+    *alert = ALERT_BAD_CERTIFICATE;
+    size_t len = rb_u24(r);
+    if (r->err || len == 0 || len > cert_max) {
+        return CH_EPROTO;
+    }
+    const uint8_t *bytes = rb_bytes(r, len);
+    size_t extensions_len = rb_u16(r);
+    if (bytes == NULL || r->err) {
+        return CH_EPROTO;
+    }
+    if (extensions_len != 0) {
+        *alert = ALERT_UNSUPPORTED_EXTENSION;
+        return CH_EPROTO;
+    }
+    *cert = bytes;
+    *cert_len = len;
+    return CH_OK;
+}
+
+// The CertificateEntry list of RFC 9846 §4.5.1, one webpki_read_entry
+// per entry. Returns CH_OK when the list holds 1 to
+// CH_WEBPKI_FLIGHT_ENTRIES entries of at most CH_WEBPKI_CERT_MAX bytes
+// each, every extensions vector is empty, and the entries fill the list
+// exactly. Otherwise CH_EPROTO, with *alert naming which rule failed:
+// bad_certificate for the framing, unsupported_extension for a non-empty
+// extensions vector. The framing of every entry is read, the trailing
+// ones included, so a CertificateEntry extension is refused wherever it
+// sits: this client offers no extension a CertificateEntry could answer,
+// and RFC 9846 §4.3 names unsupported_extension for a reply to an
+// extension the peer never sent (docs/webpki.md, "Decisions").
 static int read_entries(const uint8_t *list, size_t list_len, certificate_list *out,
                         uint8_t *alert) {
     rbuf r;
@@ -56,21 +83,11 @@ static int read_entries(const uint8_t *list, size_t list_len, certificate_list *
         if (out->count == CH_WEBPKI_FLIGHT_ENTRIES) {
             return CH_EPROTO;
         }
-        size_t cert_len = rb_u24(&r);
-        if (r.err || cert_len == 0 || cert_len > CH_WEBPKI_CERT_MAX) {
-            return CH_EPROTO;
+        int rc = webpki_read_entry(&r, CH_WEBPKI_CERT_MAX, &out->cert[out->count],
+                                   &out->cert_len[out->count], alert);
+        if (rc != CH_OK) {
+            return rc;
         }
-        const uint8_t *cert = rb_bytes(&r, cert_len);
-        size_t extensions_len = rb_u16(&r);
-        if (cert == NULL || r.err) {
-            return CH_EPROTO;
-        }
-        if (extensions_len != 0) {
-            *alert = ALERT_UNSUPPORTED_EXTENSION;
-            return CH_EPROTO;
-        }
-        out->cert[out->count] = cert;
-        out->cert_len[out->count] = cert_len;
         out->count++;
     }
     return out->count > 0 ? CH_OK : CH_EPROTO;
@@ -103,9 +120,10 @@ static int read_anchor_key(const ch_trust_anchor *anchor, webpki_spki *key) {
 // Step 6a: the anchors, consulted before any further entry is read. For
 // every anchor whose subject Name equals cert's issuer Name, this
 // verifies cert's signature under that anchor's key, and the first
-// anchor that verifies ends the walk. Every anchor naming the issuer is
+// anchor that verifies ends the walk: this returns 1 and writes its
+// index in cfg->anchors to *index. Every anchor naming the issuer is
 // tried, so a root re-keyed under one Name works.
-static int anchor_verifies(const ch_cfg *cfg, const webpki_cert *cert) {
+static int anchor_verifies(const ch_cfg *cfg, const webpki_cert *cert, size_t *index) {
     for (size_t i = 0; i < cfg->anchor_count; i++) {
         const ch_trust_anchor *anchor = &cfg->anchors[i];
         if (!names_equal(anchor->name, anchor->name_len, cert->issuer, cert->issuer_len)) {
@@ -113,6 +131,7 @@ static int anchor_verifies(const ch_cfg *cfg, const webpki_cert *cert) {
         }
         webpki_spki key;
         if (read_anchor_key(anchor, &key) && webpki_verify(cert, &key)) {
+            *index = i;
             return 1;
         }
     }
@@ -226,8 +245,13 @@ int webpki_verify_chain(const uint8_t *list, size_t list_len, const ch_cfg *cfg,
     // number a pathLenConstraint bounds.
     size_t below = 0;
     for (size_t read = 1; read <= CH_WEBPKI_CHAIN_MAX; read++) {
-        if (anchor_verifies(cfg, &cert)) {
+        size_t anchor = 0;
+        if (anchor_verifies(cfg, &cert, &anchor)) {
             copy_leaf_key(&leaf_key, out);
+            // The path the pins may name (webpki_pin.h): the read
+            // entries, the leaf first, and the anchor that verified.
+            out->path_entries = (uint8_t)read;
+            out->anchor_index = (uint8_t)anchor;
             return CH_OK;
         }
         if (read == CH_WEBPKI_CHAIN_MAX || read == entries.count) {

@@ -234,6 +234,11 @@ typedef struct {
     // ticket the session receives to it, so the binding does not depend
     // on the caller's hostname and anchor bytes after ch_connect returns.
     uint8_t ticket_config_hash[SHA256_LEN];
+    // The certificate type the server's EncryptedExtensions selected
+    // (RFC 7250), CH_CERT_TYPE_X509 when it sent none: what the
+    // Certificate message carries, a chain or one raw public key. Public,
+    // like alpn_selected; the caller may read it once connected.
+    uint8_t server_cert_type;
 #endif
     // Highest epoch accepted: loaded at ch_connect, raised once a verified
     // leaf authenticates the server. epoch_store_failed marks a failed

@@ -43,7 +43,7 @@ REPORT = ROOT / "bin" / "spec-coverage.md"
 # driver to test/diff_test.c.
 SRCS = """ct.c sha256.c sha512.c sha512_compress.c sha3.c mlkem.c mlkem_poly.c hkdf.c chacha20.c poly1305.c aead.c x25519.c p256.c
 p384.c p384_field.c rsa.c rsa_mont.c rsa_pkcs1.c pem.c x509.c x509_der.c x509_ca.c webpki_time.c webpki_name.c webpki_spki.c webpki_sigalg.c webpki_ext.c webpki_cert.c webpki.c buf.c record.c keysched.c io.c handshake_message.c
-handshake_parser.c handshake_record.c session.c handshake_auth.c handshake_flight.c handshake.c handshake_post.c tls.c
+handshake_parser.c handshake_parser_ee.c handshake_record.c session.c handshake_auth.c handshake_flight.c handshake.c handshake_post.c tls.c
 quic.c quic_aes.c quic_config.c quic_gcm.c quic_initial.c quic_keys.c quic_packet.c quic_retry.c quic_step.c""".split()
 
 # Sources this leg names but cannot compile. webpki.c reads

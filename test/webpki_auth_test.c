@@ -15,6 +15,8 @@
 // Three verdicts, each with both sides of its boundary: an accepted row
 // per key family, the same signature under a scheme that family cannot
 // produce, and a signature over the content hashed the other way.
+// test/webpki_auth_pins.h drives the same flight under SPKI pins: RFC
+// 7250 raw public keys, and chains a pin must name a key on.
 //
 // Its own binary, built with -DCH_TRUST_WEBPKI over the sources that
 // object packages: ch_cfg carries the anchors, the hostname and the
@@ -53,6 +55,9 @@ noreturn void ch_assert_fail(const char *cond, const char *file, int line) {
 // plaintext record. The Certificate message is the largest thing here,
 // and CH_MIN_RXBUF is the buffer the mode demands for it.
 #define FLIGHT_MAX (2 * (CH_MIN_RXBUF + REC_HDR))
+// The CertificateVerify message: a header, a scheme, a length and an
+// RSA-2048 signature fit with room to spare.
+#define VERIFY_MSG_MAX 1024
 
 typedef struct {
     uint8_t queue[FLIGHT_MAX];
@@ -122,8 +127,7 @@ static const webpki_corpus_chain *chain_named(const char *name) {
 
 // A row's configuration: its anchors, its hostname and its clock, as
 // test/webpki_chain_test.c builds them.
-static void row_cfg(const webpki_corpus_chain *row, ch_trust_anchor *anchors, uint8_t *buf,
-                    ch_cfg *cfg, mock_source *s) {
+static void row_cfg(const webpki_corpus_chain *row, ch_trust_anchor *anchors, ch_cfg *cfg) {
     memset(cfg, 0, sizeof *cfg);
     CHECK(row->anchor_count <= CH_WEBPKI_ANCHOR_MAX);
     for (size_t i = 0; i < row->anchor_count; i++) {
@@ -137,11 +141,6 @@ static void row_cfg(const webpki_corpus_chain *row, ch_trust_anchor *anchors, ui
     cfg->hostname = (const uint8_t *)row->hostname;
     cfg->hostname_len = strlen(row->hostname);
     cfg->now_seconds = row->now_seconds;
-    cfg->buf = buf;
-    cfg->buf_len = CH_MIN_RXBUF;
-    cfg->send = mock_send;
-    cfg->recv = mock_recv;
-    cfg->io = s;
 }
 
 // The verdict a row's expected name stands for: what hsa_server_auth
@@ -187,9 +186,50 @@ static uint8_t scheme_family(uint16_t scheme) {
 static uint8_t rxbuf[CH_MIN_RXBUF];
 static mock_source source;
 
+// One flight through hsa_server_auth, from a session that has hashed
+// nothing yet: a Certificate message, then a CertificateVerify under
+// scheme carrying sig. t->cfg holds the trust configuration and
+// t->server_cert_type the type the EncryptedExtensions selected; this
+// adds the buffer and the mock transport. Returns what hsa_server_auth
+// returns, with the handshake state left in h and the CertificateVerify
+// message in verify_msg.
+static int run_flight(ch_tls *t, handshake_state *h, const uint8_t *message, size_t message_len,
+                      uint16_t scheme, const uint8_t *sig, size_t sig_len, uint8_t *verify_msg,
+                      size_t *verify_len) {
+    *verify_len = build_certificate_verify(verify_msg, VERIFY_MSG_MAX, scheme, sig, sig_len);
+    memset(&source, 0, sizeof source);
+    push_message(&source, message, message_len);
+    push_message(&source, verify_msg, *verify_len);
+    t->cfg.buf = rxbuf;
+    t->cfg.buf_len = CH_MIN_RXBUF;
+    t->cfg.send = mock_send;
+    t->cfg.recv = mock_recv;
+    t->cfg.io = &source;
+    sha256_init(&t->transcript);
+    memset(h, 0, sizeof *h);
+    h->t = t;
+    return hsa_server_auth(h);
+}
+
+// An accepted CertificateVerify joins the transcript, so the Finished
+// that follows covers it: the running hash must be SHA-256 of the two
+// messages.
+static void check_transcript(const ch_tls *t, const uint8_t *message, size_t message_len,
+                             const uint8_t *verify_msg, size_t verify_len) {
+    uint8_t after[SHA256_LEN];
+    sha256 running = t->transcript;
+    sha256_final(&running, after);
+    sha256 s;
+    sha256_init(&s);
+    sha256_update(&s, message, message_len);
+    sha256_update(&s, verify_msg, verify_len);
+    uint8_t want_hash[SHA256_LEN];
+    sha256_final(&s, want_hash);
+    CHECK(memcmp(after, want_hash, SHA256_LEN) == 0);
+}
+
 // One vector: the chain's Certificate message and the row's
-// CertificateVerify through hsa_server_auth, from a session that has
-// hashed nothing yet.
+// CertificateVerify through hsa_server_auth.
 static void check_vector(const webpki_auth_vector *v) {
     const webpki_corpus_chain *row = chain_named(v->chain);
     if (row == NULL) {
@@ -198,10 +238,7 @@ static void check_vector(const webpki_auth_vector *v) {
     // The transcript the signature covers. hsa_server_auth hashes the
     // Certificate message and nothing else before CertificateVerify.
     uint8_t transcript[SHA256_LEN];
-    sha256 s;
-    sha256_init(&s);
-    sha256_update(&s, row->message, row->message_len);
-    sha256_final(&s, transcript);
+    sha256_of(row->message, row->message_len, transcript);
     if (memcmp(transcript, v->transcript, SHA256_LEN) != 0) {
         (void)fprintf(stderr, "FAIL %s: the corpus message is not the one it was signed over\n",
                       v->name);
@@ -209,23 +246,15 @@ static void check_vector(const webpki_auth_vector *v) {
         return;
     }
 
-    uint8_t verify_msg[1024];
-    size_t verify_len =
-        build_certificate_verify(verify_msg, sizeof verify_msg, v->scheme, v->sig, v->sig_len);
-    memset(&source, 0, sizeof source);
-    push_message(&source, row->message, row->message_len);
-    push_message(&source, verify_msg, verify_len);
-
     ch_trust_anchor anchors[CH_WEBPKI_ANCHOR_MAX];
     ch_tls t;
     memset(&t, 0, sizeof t);
-    row_cfg(row, anchors, rxbuf, &t.cfg, &source);
-    sha256_init(&t.transcript);
+    row_cfg(row, anchors, &t.cfg);
     handshake_state h;
-    memset(&h, 0, sizeof h);
-    h.t = &t;
-
-    int rc = hsa_server_auth(&h);
+    uint8_t verify_msg[VERIFY_MSG_MAX];
+    size_t verify_len = 0;
+    int rc = run_flight(&t, &h, row->message, row->message_len, v->scheme, v->sig, v->sig_len,
+                        verify_msg, &verify_len);
     const verdict *want = verdict_for(v->expected);
     if (rc != want->rc || (want->rc != CH_OK && h.alert != want->alert)) {
         (void)fprintf(stderr, "FAIL %s (%s): rc %d alert %u, want rc %d alert %u\n", v->name,
@@ -237,17 +266,7 @@ static void check_vector(const webpki_auth_vector *v) {
         return;
     }
     CHECK(h.leaf.alg == scheme_family(v->scheme));
-    // An accepted CertificateVerify joins the transcript, so the
-    // Finished that follows covers it.
-    uint8_t after[SHA256_LEN];
-    sha256 running = t.transcript;
-    sha256_final(&running, after);
-    sha256_init(&s);
-    sha256_update(&s, row->message, row->message_len);
-    sha256_update(&s, verify_msg, verify_len);
-    uint8_t want_hash[SHA256_LEN];
-    sha256_final(&s, want_hash);
-    CHECK(memcmp(after, want_hash, SHA256_LEN) == 0);
+    check_transcript(&t, row->message, row->message_len, verify_msg, verify_len);
 }
 
 // Every vector, and the count of each verdict, so a header that lost its
@@ -292,9 +311,15 @@ static void test_scheme_table(void) {
     }
 }
 
+#include "webpki_auth_pins.h"
+
 int main(void) {
     test_vectors();
     test_scheme_table();
+    test_raw_keys();
+    test_raw_key_framing();
+    test_raw_key_bound();
+    test_chain_pins();
     if (failures > 0) {
         (void)fprintf(stderr, "%d failure(s)\n", failures);
         return 1;

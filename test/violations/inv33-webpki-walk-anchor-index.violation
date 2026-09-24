@@ -1,0 +1,12 @@
+invariant: INV-33
+file: webpki.c
+catches: webpki_chain_test
+reason: the walk reports anchor 0 whichever anchor verified, so the pins
+  compare against a root that did not sign the path. The capture rows,
+  whose chains end at anchors 2, 3 and 4, and the re-keyed root, whose
+  real key sits at index 1, object.
+
+--- old
+            out->anchor_index = (uint8_t)anchor;
+--- new
+            out->anchor_index = 0;

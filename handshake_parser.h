@@ -1,10 +1,13 @@
-// Parsers for the two handshake messages that carry attacker-chosen
-// bytes before the peer is authenticated: ServerHello (including
-// HelloRetryRequest) and EncryptedExtensions. Pure functions over caller
-// buffers — no I/O, no session state; handshake.c decides what the
-// results mean. External linkage so proof, fuzz, and strictness-test
-// builds reach the parsers without the state machine; the packaged
-// library object localizes them like every other internal symbol.
+// Parsers for the handshake messages that carry attacker-chosen bytes
+// before the peer is authenticated: ServerHello (including
+// HelloRetryRequest), EncryptedExtensions, Certificate framing and
+// CertificateVerify. Pure functions over caller buffers — no I/O, no
+// session state; handshake.c decides what the results mean.
+// handshake_parser_ee.c defines hsp_parse_encrypted_exts and
+// handshake_parser.c the other three. External linkage so proof, fuzz,
+// and strictness-test builds reach the parsers without the state
+// machine; the packaged library object localizes them like every other
+// internal symbol.
 #ifndef CH_HANDSHAKE_PARSER_H
 #define CH_HANDSHAKE_PARSER_H
 
@@ -73,11 +76,7 @@ int hsp_parse_server_hello(const uint8_t *body, size_t n, server_hello_info *inf
 // record_size_limit when one arrives. Callers seed *alert with their
 // default; the parser overwrites it only when it knows better (an
 // extension we never offered gets unsupported_extension, RFC 9846
-// §4.3). A TRUST=webpki build also admits one server_name with empty
-// extension_data, the acknowledgement RFC 6066 §3 allows for the
-// server_name its ClientHello sent. A server_name that carries data
-// there has the wrong length, and the parser writes decode_error
-// (RFC 9846 §6). Returns CH_OK or CH_EPROTO.
+// §4.3). Returns CH_OK or CH_EPROTO.
 //
 // A TRUST=webpki build and a TRANSPORT=quic build take three more
 // parameters, the ALPN arm (RFC 7301 §3.2). Both take them for the same
@@ -102,6 +101,37 @@ int hsp_parse_server_hello(const uint8_t *body, size_t n, server_hello_info *inf
 // CH_TRANSPORT_QUIC that is still accepted here, and
 // hsf_read_encrypted_extensions refuses the handshake that reached its
 // end with *selected at CH_ALPN_NONE.
+//
+// A TRUST=webpki build takes three more parameters, after the ALPN
+// ones, for the two extensions only its ClientHello may ask for.
+//
+// server_name_sent says whether the ClientHello carried server_name,
+// which it does when ch_cfg.hostname_len is not 0. The parser then
+// admits one server_name with empty extension_data, the acknowledgement
+// RFC 6066 §3 allows, and writes decode_error (RFC 9846 §6) for one
+// that carries data, which has the wrong length. With server_name_sent
+// 0 any server_name is an unrequested response: unsupported_extension
+// (RFC 9846 §4.3), as in the raw and ca builds, which send none.
+//
+// cert_types_offered is the server_certificate_type offer the
+// ClientHello made, webpki_cert_types_offered's bit set of
+// (1 << CH_CERT_TYPE_*), 0 when it sent no such extension. The caller
+// seeds *cert_type with CH_CERT_TYPE_X509, and the parser writes the one
+// CertificateType a server_certificate_type extension carried (RFC 7250
+// §4.2, rfc7250.txt:474-487). An offer of 0 makes that extension an
+// unrequested response: unsupported_extension (rfc9846.txt:3990-3993).
+// With an offer, the parser writes decode_error for a body that is not
+// exactly one byte (RFC 7250 §3, rfc7250.txt:317-324; RFC 9846 §6,
+// rfc9846.txt:3784-3788) and illegal_parameter for a type the offer does
+// not hold, any value of 8 or more included (rfc9846.txt:3789-3791): a
+// server with no type in common sends unsupported_certificate instead
+// (rfc7250.txt:435-438). A second one is refused like any repeated
+// extension, with the caller's seed kept. A message with no such
+// extension is accepted and leaves *cert_type alone: the server then
+// sends X.509 certificates (RFC 9846 §4.5.1, rfc9846.txt:2846-2850),
+// the type the seed names. The boundary is one byte of body, and the
+// test rows are an offered type accepted, the other type refused with
+// 47, and bodies of 0 and 2 bytes refused with 50.
 //
 // A TRANSPORT=quic build takes two more parameters and admits one more
 // extension type, quic_transport_parameters at code point 0x39 (RFC
@@ -137,6 +167,9 @@ int hsp_parse_encrypted_exts(const uint8_t *body, size_t n, uint16_t *peer_limit
 #if defined(CH_TRUST_WEBPKI) || defined(CH_TRANSPORT_QUIC)
                              const ch_alpn_protocol *offered, size_t offered_count,
                              uint8_t *selected,
+#endif
+#ifdef CH_TRUST_WEBPKI
+                             int server_name_sent, uint8_t cert_types_offered, uint8_t *cert_type,
 #endif
 #ifdef CH_TRANSPORT_QUIC
                              const uint8_t **transport_params, size_t *transport_params_len,

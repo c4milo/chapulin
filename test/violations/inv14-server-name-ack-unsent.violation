@@ -1,0 +1,14 @@
+invariant: INV-14
+file: handshake_parser_ee.c
+catches: handshake_strict_webpki
+reason: the parser admits an empty server_name acknowledgement whether
+  or not the ClientHello sent server_name. A pins-only configuration
+  without a hostname sends none, and RFC 6066 §3 gives the server
+  nothing to acknowledge there, so RFC 9846 §4.3 makes the reply an
+  unrequested extension: unsupported_extension.
+  bin/handshake_strict_webpki's not-sent row objects.
+
+--- old
+    if (ext == EXT_SERVER_NAME && out->server_name_sent) {
+--- new
+    if (ext == EXT_SERVER_NAME) {

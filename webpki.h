@@ -37,6 +37,13 @@
 #define CH_WEBPKI_SERIAL_MAX 20    // serialNumber value bytes (RFC 5280 §4.1.2.2)
 #define CH_WEBPKI_KEY_MAX 512      // the leaf key copied out: an RSA-4096 modulus
 #define CH_HOSTNAME_MAX 253        // DNS's own limit on a name
+// The largest SubjectPublicKeyInfo webpki_read_spki accepts, an RSA-4096
+// key's: a SEQUENCE header, rsaEncryption's 15-byte AlgorithmIdentifier,
+// a BIT STRING header and its unused-bits octet, the RSAPublicKey and
+// INTEGER headers, the pad octet, the 512-byte modulus and the 5-byte
+// exponent, 4 + 15 + 4 + 1 + 4 + 4 + 1 + 512 + 5. It bounds the one
+// entry of an RFC 7250 raw public key (webpki_pin.h).
+#define CH_WEBPKI_SPKI_MAX 550
 
 // Public-key algorithm of a decoded SubjectPublicKeyInfo.
 #define WEBPKI_KEY_RSA 1  // rsaEncryption, exponent 65537
@@ -83,6 +90,10 @@ typedef struct {
     uint64_t not_before; // packed dates, see webpki_read_time
     uint64_t not_after;
     webpki_spki spki;
+    // The whole SubjectPublicKeyInfo TLV spki was read from, header
+    // included: the bytes an SPKI pin hashes (webpki_pin.h).
+    const uint8_t *spki_tlv;
+    size_t spki_tlv_len;
     uint8_t sigalg; // WEBPKI_SIG_*, equal in the TBS and the outer field
     const uint8_t *sig;
     size_t sig_len;
@@ -98,10 +109,18 @@ typedef struct {
 // CertificateVerify scheme: rsa_pss_rsae_sha256 for an RSA key,
 // ecdsa_secp256r1_sha256 for P-256, ecdsa_secp384r1_sha384 for P-384
 // (RFC 9846 §4.3.3 binds the hash to the curve there, and only there).
+//
+// path_entries and anchor_index name the path webpki_verify_chain
+// validated, which the SPKI pins may match anywhere on (RFC 7858 §4.2):
+// the first path_entries entries of the Certificate list, the leaf
+// first, then the anchor at anchor_index in ch_cfg.anchors. A raw public
+// key has no path, and webpki_verify_raw_key leaves both at 0.
 typedef struct {
     uint8_t alg; // WEBPKI_KEY_*
     uint8_t key[CH_WEBPKI_KEY_MAX];
     size_t key_len;
+    uint8_t path_entries;
+    uint8_t anchor_index;
 } webpki_leaf_info;
 
 // The walk (docs/webpki.md, "The chain walk"). Reads the Certificate
@@ -141,9 +160,25 @@ typedef struct {
 // webpki_read_spki answers one 0 for a key the mode refuses and for
 // malformed DER, and x509_read_keyusage one 0 for a missing keyUsage bit
 // and for malformed DER. test/webpki_cert_test.c pins all four alerts.
-// Returns CH_OK with out filled, or the error above.
+// Returns CH_OK with out filled, or the error above. On CH_OK,
+// out->path_entries is the count of certificates the walk read, 1 to
+// CH_WEBPKI_CHAIN_MAX with the leaf counted, and out->anchor_index is
+// the index in cfg->anchors of the first anchor whose subject Name is the
+// last one's issuer Name and whose key verifies its signature.
 int webpki_verify_chain(const uint8_t *list, size_t list_len, const ch_cfg *cfg,
                         webpki_leaf_info *out, uint8_t *alert);
+
+// One CertificateEntry of RFC 9846 §4.5.1 from r: a u24 length of 1 to
+// cert_max, that many bytes, and a u16 extensions vector that must be
+// empty. Returns CH_OK with *cert and *cert_len naming the bytes and r
+// past the entry. Otherwise CH_EPROTO, with *alert set to
+// ALERT_BAD_CERTIFICATE for the framing and ALERT_UNSUPPORTED_EXTENSION
+// for a non-empty extensions vector (RFC 9846 §4.3: this client offers no
+// extension a CertificateEntry could answer). The walk reads each entry
+// of a chain through it, and webpki_verify_raw_key the one entry of a raw
+// public key. Defined in webpki.c.
+int webpki_read_entry(rbuf *r, size_t cert_max, const uint8_t **cert, size_t *cert_len,
+                      uint8_t *alert);
 
 // One whole certificate: SEQUENCE { tbs, sigAlg, sigValue }, canonical
 // DER on every field it decodes except the one KeyPurposeId case
@@ -154,7 +189,8 @@ int webpki_verify_chain(const uint8_t *list, size_t list_len, const ch_cfg *cfg,
 // basicConstraints critical with cA TRUE and keyUsage keyCertSign.
 // Unrecognized critical extensions and the issuerUniqueID and
 // subjectUniqueID fields are refused. Fills out
-// with pointers into cert. Alert convention as webpki_verify_chain.
+// with pointers into cert, spki_tlv among them: the bytes
+// webpki_read_spki consumed. Alert convention as webpki_verify_chain.
 // Defined in webpki_cert.c.
 int webpki_parse_certificate(const uint8_t *cert, size_t cert_len, int is_ca, webpki_cert *out,
                              uint8_t *alert);
@@ -266,5 +302,11 @@ int webpki_hostname_ok(const uint8_t *host, size_t host_len);
 // either rule refuses the whole GeneralNames, even after a match.
 // Defined in webpki_name.c.
 int webpki_match_san(const uint8_t *san, size_t san_len, const uint8_t *host, size_t host_len);
+
+// Whether cfg meets every configuration rule of this mode: the anchors,
+// hostname and clock, or SPKI pins alone (webpki_cfg.h); the PSK fields
+// (webpki_ticket.h); both pin slots unset; and the ALPN offer. Reads the
+// caller's configuration alone. Defined in webpki_cfg.c.
+int webpki_cfg_ok(const ch_cfg *cfg);
 
 #endif

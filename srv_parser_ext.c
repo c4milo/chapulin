@@ -144,7 +144,7 @@ static int read_alpn(rbuf *e, hello_parse *p) {
 // The wire value counts the inner content-type byte, so what is stored
 // is one less: client_hello.record_size_limit is the largest plaintext
 // the server may put in one record, which is what srv_handshake.c
-// compares against CH_TX_PT. handshake_parser.c:232 is the client's
+// compares against CH_TX_PT. handshake_parser_ee.c:25 is the client's
 // matching step.
 //
 // No upper bound is checked. §4 forbids a server to enforce the

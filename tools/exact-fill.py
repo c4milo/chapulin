@@ -57,14 +57,22 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 
-# Readers whose exact-fill check sits in a function this one calls. Each
-# entry names that function and what it requires. Keys are file, function and
-# reader; an entry that no longer matches a reader is an error, so a renamed
-# reader is reported rather than silently exempt.
+# Readers whose exact-fill check sits in another function: one this one
+# calls, or the one that framed the same container before this runs. Each
+# entry names that function and what it requires. Keys are file, function
+# and reader; an entry that no longer matches a reader is an error, so a
+# renamed reader is reported rather than silently exempt.
 ALLOWED = {
     ("pem.c", "pem_decode_certificate", "r"): (
         "read_tail(&r) requires every byte after the END line to be a line "
         "terminator, so it consumes the rest or refuses it"
+    ),
+    ("webpki_pin.c", "webpki_path_pinned", "r"): (
+        "it reads back the first path_entries entries of a list "
+        "webpki_verify_chain accepted, and read_entries (WALKED below) "
+        "framed that list to its end first. The entries after the path "
+        "stay unread on purpose, because no pin may name them "
+        "(webpki_pin.h), and a framing failure here returns 0"
     ),
 }
 
@@ -224,7 +232,7 @@ def main():
     print(
         f"lint-exact-fill: {readers} sliced readers in the library, "
         f"{readers - len(ALLOWED) - len(WALKED)} checked in place, "
-        f"{len(ALLOWED)} one call down, {len(WALKED)} walked to the end"
+        f"{len(ALLOWED)} checked in another function, {len(WALKED)} walked to the end"
     )
     return 0
 

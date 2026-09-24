@@ -50,6 +50,10 @@ void webpki_ticket_config_hash(const ch_cfg *cfg, uint8_t out[SHA256_LEN]) {
         hash_len(&s, a->spki_len);
         sha256_update(&s, a->spki, a->spki_len);
     }
+    hash_len(&s, cfg->spki_pin_count);
+    for (size_t i = 0; i < cfg->spki_pin_count; i++) {
+        sha256_update(&s, cfg->spki_pins[i], SHA256_LEN);
+    }
     sha256_final(&s, out);
 }
 

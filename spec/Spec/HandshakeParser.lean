@@ -18,14 +18,16 @@ imposes on it. Each check's doc comment says which of the two it is.
 The profile: TLS 1.3 only, TLS_CHACHA20_POLY1305_SHA256, one
 key-exchange group per build (`Kex`: x25519, or the X25519MLKEM768
 hybrid), two auth modes (ECDHE-PSK or a server key checked through
-CertificateVerify), no 0-RTT, no compression, no renegotiation, no RFC
-7250 raw public keys, and `record_size_limit` (RFC 8449) always
-offered. The client offers exactly one of everything, so most of the
-RFC's negotiation choices collapse to a byte compare against a
-constant. The TRUST=webpki build is the one exception, and five
-parameters carry it: its ClientHello sends server_name
-(`parseEncryptedExtensions`'s `serverNameSent`), it may offer several
-application protocols (`parseEncryptedExtensions`'s `alpnOffered`), it
+CertificateVerify), no 0-RTT, no compression, no renegotiation, and
+`record_size_limit` (RFC 8449) always offered. The client offers
+exactly one of everything, so most of the RFC's negotiation choices
+collapse to a byte compare against a constant. The TRUST=webpki build
+is the one exception, and six parameters carry it: its ClientHello
+sends server_name when it has a hostname (`parseEncryptedExtensions`'s
+`serverNameSent`), it may offer several application protocols
+(`parseEncryptedExtensions`'s `alpnOffered`), with SPKI pins it offers
+RFC 7250 raw public keys and may offer X.509 beside them
+(`parseEncryptedExtensions`'s `certTypesOffered`), it
 offers five signature schemes instead of one (`SignatureOffer`), under
 KEX=pq it lists two groups, X25519MLKEM768 then x25519, with a key
 share for X25519MLKEM768 alone (`Kex.twoGroups`), and under
@@ -92,6 +94,10 @@ def extSupportedGroups : Nat := 10
 /-- ExtensionType application_layer_protocol_negotiation(16)
 (RFC 7301 §3.1). -/
 def extAlpn : Nat := 16
+
+/-- ExtensionType server_certificate_type(20) (RFC 7250 §3,
+RFC 9846 §4.3). -/
+def extServerCertificateType : Nat := 20
 
 /-- ExtensionType record_size_limit(28) (RFC 8449 §4). -/
 def extRecordSizeLimit : Nat := 28
@@ -709,20 +715,28 @@ structure EncryptedExtensions where
   /-- The index in `alpnOffered` of the protocol RFC 7301 §3.2's ALPN
   extension selected; absent when the server sent no such extension. -/
   alpnSelected : Option Nat
+  /-- The CertificateType RFC 7250 §4.2's server_certificate_type
+  selected from `certTypesOffered`; absent when the server sent no such
+  extension, and the Certificate message then carries X.509
+  certificates (RFC 9846 §4.5.1). -/
+  serverCertType : Option Nat
 
 /--
 The extension types this profile admits in EncryptedExtensions:
 supported_groups (RFC 9846 §4.3.7) and record_size_limit (RFC 8449 §4),
 which `CLAUDE.md` says the client always sends, the server_name
 acknowledgement (RFC 6066 §3) when `serverNameSent` says the ClientHello
-carried server_name, and the ALPN selection (RFC 7301 §3.2) when
-`alpnOffered` holds the protocols the ClientHello offered. The
-TRUST=webpki build sends both; the raw and ca builds send neither.
+carried server_name, the ALPN selection (RFC 7301 §3.2) when
+`alpnOffered` holds the protocols the ClientHello offered, and the
+server_certificate_type selection (RFC 7250 §4.2) when
+`certTypesOffered` holds the certificate types it offered. The
+TRUST=webpki build may send all three; the raw and ca builds send none.
 -/
-def encryptedExtensionsAllowed (serverNameSent : Bool) (alpnOffered : List ByteArray) :
-    List Nat :=
+def encryptedExtensionsAllowed (serverNameSent : Bool) (alpnOffered : List ByteArray)
+    (certTypesOffered : List Nat) : List Nat :=
   (if serverNameSent then [extServerName] else []) ++
     (if alpnOffered.isEmpty then [] else [extAlpn]) ++
+    (if certTypesOffered.isEmpty then [] else [extServerCertificateType]) ++
     [extSupportedGroups, extRecordSizeLimit]
 
 /--
@@ -730,26 +744,29 @@ Extension types RFC 9846 §4.3 permits in EncryptedExtensions that this
 client never requests: server_name(0) when `serverNameSent` is false —
 the ClientHello carried no SNI, so a server_name acknowledgement is a
 response to a request that never went out —
-application_layer_protocol_negotiation(16) when `alpnOffered` is empty,
-for the same reason, max_fragment_length(1), use_srtp(14),
-heartbeat(15), the RFC 7250 certificate-type pair (19, 20), and
-early_data(42) — the profile has no 0-RTT and no raw public keys. §4.3
-makes an unrequested response an unsupported_extension, which is a
-different refusal from §4.4.1's illegal_parameter for an extension that
-has no business in this message at all.
+application_layer_protocol_negotiation(16) when `alpnOffered` is empty
+and server_certificate_type(20) when `certTypesOffered` is empty, for
+the same reason, max_fragment_length(1), use_srtp(14), heartbeat(15),
+client_certificate_type(19), and early_data(42) — the profile has no
+0-RTT and no client certificate. §4.3 makes an unrequested response an
+unsupported_extension, which is a different refusal from §4.4.1's
+illegal_parameter for an extension that has no business in this
+message at all.
 -/
-def encryptedExtensionsUnrequested (serverNameSent : Bool) (alpnOffered : List ByteArray) :
-    List Nat :=
+def encryptedExtensionsUnrequested (serverNameSent : Bool) (alpnOffered : List ByteArray)
+    (certTypesOffered : List Nat) : List Nat :=
   (if serverNameSent then [] else [extServerName]) ++
-    (if alpnOffered.isEmpty then [extAlpn] else []) ++ [1, 14, 15, 19, 20, extEarlyData]
+    (if alpnOffered.isEmpty then [extAlpn] else []) ++
+    (if certTypesOffered.isEmpty then [extServerCertificateType] else []) ++
+    [1, 14, 15, 19, extEarlyData]
 
 /-- The alert an extension that does not belong in EncryptedExtensions
 earns: unsupported_extension when the RFC allows it here but the client
 never asked for it (§4.3), and otherwise §4.4.1's illegal_parameter for
 a forbidden extension, through `wrongMessageAlert`. -/
-def encryptedExtensionsAlert (serverNameSent : Bool) (alpnOffered : List ByteArray) (t : Nat) :
-    Alert :=
-  if (encryptedExtensionsUnrequested serverNameSent alpnOffered).contains t then
+def encryptedExtensionsAlert (serverNameSent : Bool) (alpnOffered : List ByteArray)
+    (certTypesOffered : List Nat) (t : Nat) : Alert :=
+  if (encryptedExtensionsUnrequested serverNameSent alpnOffered certTypesOffered).contains t then
     .unsupportedExtension
   else wrongMessageAlert t
 
@@ -884,6 +901,34 @@ def readAlpn? (alpnOffered : List ByteArray) (exts : List (Nat × ByteArray)) :
   | some data => do return some (← readAlpn alpnOffered data)
 
 /--
+RFC 7250 §3: the server's ServerCertTypeExtension is one
+`CertificateType server_certificate_type`, a single octet, and §4.2
+permits only a single value there. Any other length does not decode as
+that struct, a decode_error (RFC 9846 §6).
+
+A type the ClientHello did not offer is a different fault: the octet
+decodes and its value is not acceptable, §6.2's illegal_parameter.
+RFC 7250 §4.2 has a server with no type in common with the client end
+the handshake with unsupported_certificate instead of selecting one, so
+the client has no reason to accept a type outside its offer.
+-/
+def readServerCertType (certTypesOffered : List Nat) (data : ByteArray) : Except Alert Nat := do
+  ensure (data.size = 1) .decodeError
+  let certType ← u8At data 0
+  ensure (certType ∈ certTypesOffered) .illegalParameter
+  return certType
+
+/-- RFC 7250 §4.2's selection when the server sent server_certificate_type,
+and `none` when it did not: a server that does not support the extension
+leaves it out, and its Certificate message then carries X.509
+certificates (RFC 9846 §4.5.1), so absence is not a refusal. -/
+def readServerCertType? (certTypesOffered : List Nat) (exts : List (Nat × ByteArray)) :
+    Except Alert (Option Nat) :=
+  match extensionData? exts extServerCertificateType with
+  | none => .ok none
+  | some data => do return some (← readServerCertType certTypesOffered data)
+
+/--
 RFC 9846 §4.4.1: `struct { Extension extensions<0..2^16-1>; }`, and
 "the client MUST check EncryptedExtensions for the presence of any
 forbidden extensions and if any are found MUST abort the handshake
@@ -906,20 +951,27 @@ order it offered them, and it is empty when the hello sent no ALPN
 extension. An empty offer makes an ALPN selection an unrequested
 response too; a non-empty one makes it a fourth admitted extension,
 read by `readAlpn`.
+
+`certTypesOffered` is the list of CertificateType values the
+ClientHello's server_certificate_type offered (RFC 7250 §4.1), and it is
+empty when the hello sent no such extension. An empty offer makes a
+server_certificate_type an unrequested response; a non-empty one makes
+it a fifth admitted extension, read by `readServerCertType`.
 -/
 def parseEncryptedExtensions (serverNameSent : Bool) (alpnOffered : List ByteArray)
-    (msg : ByteArray) : Except Alert EncryptedExtensions := do
+    (certTypesOffered : List Nat) (msg : ByteArray) : Except Alert EncryptedExtensions := do
   let body ← messageBody msg encryptedExtensionsType
   let (extBytes, off) ← vec16At body 0
   ensure (off = body.size) .decodeError
   let exts ← extensionList extBytes
-  ensureAllowed (encryptedExtensionsAllowed serverNameSent alpnOffered)
-    (encryptedExtensionsAlert serverNameSent alpnOffered) exts
+  ensureAllowed (encryptedExtensionsAllowed serverNameSent alpnOffered certTypesOffered)
+    (encryptedExtensionsAlert serverNameSent alpnOffered certTypesOffered) exts
   checkSupportedGroups exts
   checkServerNameAck exts
   let alpnSelected ← readAlpn? alpnOffered exts
+  let serverCertType ← readServerCertType? certTypesOffered exts
   let recordSizeLimit ← readRecordSizeLimit? exts
-  return { recordSizeLimit, alpnSelected }
+  return { recordSizeLimit, alpnSelected, serverCertType }
 
 /-! ## Certificate (RFC 9846 §4.5.1) -/
 
@@ -939,10 +991,13 @@ An empty cert_data is out of the specified range (§6.2).
 Profile: the per-entry extensions must be empty. §4.5.1 admits the
 OCSP status_request and signed_certificate_timestamp responses there,
 and §4.3 makes any response the client did not request an
-unsupported_extension — this client requests neither. The entry's
-opaque is cert_data and never an ASN1_subjectPublicKeyInfo, because
-that choice is made by a server_certificate_type the profile refuses in
-EncryptedExtensions: no RFC 7250 raw public keys.
+unsupported_extension — this client requests neither. Which opaque an
+entry holds is the certificate type EncryptedExtensions negotiated: a
+DER X.509 certificate in cert_data by default, and, when the
+TRUST=webpki build's server_certificate_type selected RawPublicKey, an
+ASN1_subjectPublicKeyInfo (RFC 7250 §3). Both are
+`opaque <1..2^24-1>` followed by the same extensions vector, so the
+framing read here is the same for both, and the bytes go unread.
 
 `fuel` bounds the walk; every entry costs at least six octets, so the
 list's own size is fuel enough.
@@ -1363,7 +1418,7 @@ def selftest : Bool := Id.run do
   let encryptedExtensionsOf (exts : ByteArray) : ByteArray :=
     message encryptedExtensionsType (vec16 exts)
   let limitSent (serverNameSent : Bool) (msg : ByteArray) : Option (Option Nat) :=
-    (parseEncryptedExtensions serverNameSent [] msg).toOption.map
+    (parseEncryptedExtensions serverNameSent [] [] msg).toOption.map
       (fun fields => fields.recordSizeLimit)
   let limitOf := limitSent false
   let encryptedExtensionsOk :=
@@ -1385,7 +1440,7 @@ def selftest : Bool := Id.run do
     -- empty or not, is an unrequested response the client refuses.
     limitOf (encryptedExtensionsOf (extension extServerName ByteArray.empty)) == none &&
     limitOf (encryptedExtensionsOf (extension extServerName (ascii "x"))) == none &&
-    (match parseEncryptedExtensions false []
+    (match parseEncryptedExtensions false [] []
         (encryptedExtensionsOf (extension extServerName (ascii "x"))) with
      | .error .unsupportedExtension => true
      | _ => false) &&
@@ -1394,7 +1449,7 @@ def selftest : Bool := Id.run do
     -- of the wrong length, a decode_error (RFC 9846 §6).
     limitSent true (encryptedExtensionsOf (extension extServerName ByteArray.empty)) ==
       some none &&
-    (match parseEncryptedExtensions true []
+    (match parseEncryptedExtensions true [] []
         (encryptedExtensionsOf (extension extServerName (ascii "x"))) with
      | .error .decodeError => true
      | _ => false) &&
@@ -1416,9 +1471,9 @@ def selftest : Bool := Id.run do
   let offer := [h2, http11]
   let alpnExt (name : ByteArray) : ByteArray := extension extAlpn (vec16 (vec8 name))
   let alpnOf (msg : ByteArray) : Option (Option Nat) :=
-    (parseEncryptedExtensions true offer msg).toOption.map (fun fields => fields.alpnSelected)
+    (parseEncryptedExtensions true offer [] msg).toOption.map (fun fields => fields.alpnSelected)
   let refusesWith (offered : List ByteArray) (msg : ByteArray) (alert : Alert) : Bool :=
-    match parseEncryptedExtensions true offered msg with
+    match parseEncryptedExtensions true offered [] msg with
     | .error a => a == alert
     | .ok _ => false
   let alpnOk :=
@@ -1444,10 +1499,53 @@ def selftest : Bool := Id.run do
     alpnOf (encryptedExtensionsOf (alpnExt h2 ++ alpnExt h2)) == none &&
     refusesWith [] (encryptedExtensionsOf (alpnExt h2)) .unsupportedExtension &&
     -- The selection sits beside the other three admitted extensions.
-    (parseEncryptedExtensions true offer (encryptedExtensionsOf
+    (parseEncryptedExtensions true offer [] (encryptedExtensionsOf
       (extension extRecordSizeLimit (u16 64) ++ extension extServerName ByteArray.empty ++
         alpnExt h2))).toOption.map (fun f => (f.recordSizeLimit, f.alpnSelected)) ==
       some (some 64, some 0)
+  -- RFC 7250 §4.2: a ClientHello that offered certificate types admits
+  -- one selection from its offer, one octet long.
+  let rawKey := 2
+  let x509 := 0
+  let certTypeExt (data : ByteArray) : ByteArray := extension extServerCertificateType data
+  let certTypeOf (offered : List Nat) (msg : ByteArray) : Option (Option Nat) :=
+    (parseEncryptedExtensions true [] offered msg).toOption.map (fun f => f.serverCertType)
+  let certTypeRefusal (offered : List Nat) (msg : ByteArray) : Option Alert :=
+    match parseEncryptedExtensions true [] offered msg with
+    | .error a => some a
+    | .ok _ => none
+  let oneOctet (n : Nat) : ByteArray := ByteArray.mk #[UInt8.ofNat n]
+  let certTypeOk :=
+    certTypeOf [rawKey] (encryptedExtensionsOf (certTypeExt (oneOctet rawKey))) ==
+      some (some rawKey) &&
+    certTypeOf [rawKey, x509] (encryptedExtensionsOf (certTypeExt (oneOctet x509))) ==
+      some (some x509) &&
+    -- A server that sends none leaves the X.509 default to the client.
+    certTypeOf [rawKey, x509] (encryptedExtensionsOf ByteArray.empty) == some none &&
+    -- A type outside the offer is illegal_parameter; no offer at all
+    -- makes the extension unrequested.
+    certTypeRefusal [rawKey] (encryptedExtensionsOf (certTypeExt (oneOctet x509))) ==
+      some .illegalParameter &&
+    certTypeRefusal [rawKey, x509] (encryptedExtensionsOf (certTypeExt (oneOctet 1))) ==
+      some .illegalParameter &&
+    certTypeRefusal [] (encryptedExtensionsOf (certTypeExt (oneOctet rawKey))) ==
+      some .unsupportedExtension &&
+    -- One octet exactly: zero and two are decode_error.
+    certTypeRefusal [rawKey] (encryptedExtensionsOf (certTypeExt ByteArray.empty)) ==
+      some .decodeError &&
+    certTypeRefusal [rawKey] (encryptedExtensionsOf
+      (certTypeExt (oneOctet rawKey ++ oneOctet 0))) == some .decodeError &&
+    certTypeOf [rawKey] (encryptedExtensionsOf
+      (certTypeExt (oneOctet rawKey) ++ certTypeExt (oneOctet rawKey))) == none &&
+    -- The empty server_name acknowledgement passes when the ClientHello
+    -- sent server_name. One without a hostname sent none, so there the
+    -- same acknowledgement is unrequested.
+    certTypeRefusal [rawKey] (encryptedExtensionsOf (extension extServerName ByteArray.empty)) ==
+      none &&
+    (match parseEncryptedExtensions false [] [rawKey]
+        (encryptedExtensionsOf (extension extServerName ByteArray.empty)) with
+     | .error .unsupportedExtension => true
+     | _ => false)
   -- §4.5.1: the context is empty, the list is not, entries carry no extensions.
   let leaf := ByteArray.mk (Array.replicate 40 0xc1)
   let intermediate := ByteArray.mk (Array.replicate 24 0xc2)
@@ -1514,7 +1612,8 @@ def selftest : Bool := Id.run do
     hex (content.extract 64 97) == hex (ascii "TLS 1.3, server CertificateVerify") &&
     content[97]! == 0 && hex (content.extract 98 130) == hex transcript
   return hrrRandomOk && serverHelloOk && profileOk && hrrOk && kexOk && twoGroupsOk && suiteOk &&
-    encryptedExtensionsOk && alpnOk && certificateOk && certificateVerifyOk && verifyContentOk
+    encryptedExtensionsOk && alpnOk && certTypeOk && certificateOk && certificateVerifyOk &&
+    verifyContentOk
 
 /-! ## Soundness -/
 
@@ -1817,14 +1916,16 @@ sizes its record buffer against this number, and the RFC makes a
 smaller one a fatal error rather than a value to clamp.
 -/
 theorem parseEncryptedExtensions_limit_ge_64 (serverNameSent : Bool)
-    (alpnOffered : List ByteArray) (msg : ByteArray)
+    (alpnOffered : List ByteArray) (certTypesOffered : List Nat) (msg : ByteArray)
     (fields : EncryptedExtensions) (limit : Nat)
-    (h_accepted : parseEncryptedExtensions serverNameSent alpnOffered msg = .ok fields)
+    (h_accepted :
+      parseEncryptedExtensions serverNameSent alpnOffered certTypesOffered msg = .ok fields)
     (h_limit : fields.recordSizeLimit = some limit) : 64 ≤ limit := by
   rw [parseEncryptedExtensions] at h_accepted
   obtain ⟨_, -, h_accepted⟩ := exists_of_bind_eq_ok h_accepted
   obtain ⟨⟨_, _⟩, -, h_accepted⟩ := exists_of_bind_eq_ok h_accepted
   obtain ⟨-, h_accepted⟩ := of_ensure_bind h_accepted
+  obtain ⟨_, -, h_accepted⟩ := exists_of_bind_eq_ok h_accepted
   obtain ⟨_, -, h_accepted⟩ := exists_of_bind_eq_ok h_accepted
   obtain ⟨_, -, h_accepted⟩ := exists_of_bind_eq_ok h_accepted
   obtain ⟨_, -, h_accepted⟩ := exists_of_bind_eq_ok h_accepted
@@ -1854,8 +1955,10 @@ list holds — a server cannot make the client read past the array it
 configured.
 -/
 theorem parseEncryptedExtensions_alpn_offered (serverNameSent : Bool)
-    (alpnOffered : List ByteArray) (msg : ByteArray) (fields : EncryptedExtensions) (i : Nat)
-    (h_accepted : parseEncryptedExtensions serverNameSent alpnOffered msg = .ok fields)
+    (alpnOffered : List ByteArray) (certTypesOffered : List Nat) (msg : ByteArray)
+    (fields : EncryptedExtensions) (i : Nat)
+    (h_accepted :
+      parseEncryptedExtensions serverNameSent alpnOffered certTypesOffered msg = .ok fields)
     (h_selected : fields.alpnSelected = some i) : i < alpnOffered.length := by
   rw [parseEncryptedExtensions] at h_accepted
   obtain ⟨_, -, h_accepted⟩ := exists_of_bind_eq_ok h_accepted
@@ -1866,6 +1969,7 @@ theorem parseEncryptedExtensions_alpn_offered (serverNameSent : Bool)
   obtain ⟨_, -, h_accepted⟩ := exists_of_bind_eq_ok h_accepted
   obtain ⟨_, -, h_accepted⟩ := exists_of_bind_eq_ok h_accepted
   obtain ⟨selected, h_read, h_accepted⟩ := exists_of_bind_eq_ok h_accepted
+  obtain ⟨_, -, h_accepted⟩ := exists_of_bind_eq_ok h_accepted
   obtain ⟨_, -, h_accepted⟩ := exists_of_bind_eq_ok h_accepted
   obtain rfl := eq_of_pure_eq_ok h_accepted
   have h_eq : selected = some i := h_selected
@@ -1886,6 +1990,46 @@ theorem parseEncryptedExtensions_alpn_offered (serverNameSent : Bool)
     · next found =>
       exact offeredIndex?_lt_length _ _ _ (by rw [found]; exact congrArg _ (eq_of_pure_eq_ok h_index))
     · simp at h_index
+
+/--
+RFC 7250 §4.2: an accepted server_certificate_type names a type the
+ClientHello offered. The client reads the Certificate message under
+this type (`ch_tls.server_cert_type`), so a server cannot make it read
+a raw public key it never offered to accept, or a chain it offered no
+anchor for.
+-/
+theorem parseEncryptedExtensions_certType_offered (serverNameSent : Bool)
+    (alpnOffered : List ByteArray) (certTypesOffered : List Nat) (msg : ByteArray)
+    (fields : EncryptedExtensions) (certType : Nat)
+    (h_accepted :
+      parseEncryptedExtensions serverNameSent alpnOffered certTypesOffered msg = .ok fields)
+    (h_selected : fields.serverCertType = some certType) : certType ∈ certTypesOffered := by
+  rw [parseEncryptedExtensions] at h_accepted
+  obtain ⟨_, -, h_accepted⟩ := exists_of_bind_eq_ok h_accepted
+  obtain ⟨⟨_, _⟩, -, h_accepted⟩ := exists_of_bind_eq_ok h_accepted
+  obtain ⟨-, h_accepted⟩ := of_ensure_bind h_accepted
+  obtain ⟨_, -, h_accepted⟩ := exists_of_bind_eq_ok h_accepted
+  obtain ⟨_, -, h_accepted⟩ := exists_of_bind_eq_ok h_accepted
+  obtain ⟨_, -, h_accepted⟩ := exists_of_bind_eq_ok h_accepted
+  obtain ⟨_, -, h_accepted⟩ := exists_of_bind_eq_ok h_accepted
+  obtain ⟨_, -, h_accepted⟩ := exists_of_bind_eq_ok h_accepted
+  obtain ⟨selected, h_read, h_accepted⟩ := exists_of_bind_eq_ok h_accepted
+  obtain ⟨_, -, h_accepted⟩ := exists_of_bind_eq_ok h_accepted
+  obtain rfl := eq_of_pure_eq_ok h_accepted
+  have h_eq : selected = some certType := h_selected
+  subst h_eq
+  rw [readServerCertType?] at h_read
+  split at h_read
+  · simp at h_read
+  · obtain ⟨read, h_value, h_read⟩ := exists_of_bind_eq_ok h_read
+    have h_read_eq : read = certType := Option.some.inj (eq_of_pure_eq_ok h_read)
+    rw [readServerCertType] at h_value
+    obtain ⟨-, h_value⟩ := of_ensure_bind h_value
+    obtain ⟨octet, -, h_value⟩ := exists_of_bind_eq_ok h_value
+    obtain ⟨h_offered, h_value⟩ := of_ensure_bind h_value
+    have h_octet : octet = read := eq_of_pure_eq_ok h_value
+    rw [← h_read_eq, ← h_octet]
+    exact h_offered
 
 /-- Every code in `certificateVerifyCodes` is one the offer lists and none
 is an RSASSA-PKCS1-v1_5 scheme: the list keeps both §4.5.2 rules. -/

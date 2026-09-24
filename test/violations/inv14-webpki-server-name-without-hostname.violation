@@ -1,0 +1,16 @@
+invariant: INV-14
+file: handshake_message.c
+catches: webpki_session_test
+reason: the hello leaves out server_name even when a hostname is set, so a
+  server that picks its certificate by name answers with the wrong
+  one. Every row that reads the server_name extension objects.
+
+--- old
+    if (cfg->hostname_len == 0) {
+        return;
+    }
+    wb_u16(w, EXT_SERVER_NAME);
+--- new
+    (void)cfg;
+    return;
+    wb_u16(w, EXT_SERVER_NAME);

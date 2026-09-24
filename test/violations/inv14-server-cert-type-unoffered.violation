@@ -1,0 +1,15 @@
+invariant: INV-14
+file: handshake_parser_ee.c
+catches: handshake_strict_webpki
+reason: the server_certificate_type arm accepts either type this
+  client knows instead of the types its ClientHello offered, so a
+  pins-only client that offered RawPublicKey alone accepts X.509 and
+  then reads a chain it has no anchor for. RFC 7250 §4.2 has a server
+  with no type in common send unsupported_certificate rather than
+  select outside the offer. bin/handshake_strict_webpki's
+  offered-raw-alone row objects.
+
+--- old
+    if (!cert_type_offered(out->cert_types_offered, type)) {
+--- new
+    if (!cert_type_offered((1U << CH_CERT_TYPE_X509) | (1U << CH_CERT_TYPE_RAW_PUBLIC_KEY), type)) {

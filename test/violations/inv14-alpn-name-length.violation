@@ -1,5 +1,5 @@
 invariant: INV-14
-file: tls.c
+file: webpki_cfg.c
 catches: webpki_session_test
 reason: ch_connect stops holding an offered protocol name to
   CH_ALPN_NAME_MAX bytes, so a longer name passes the config check and

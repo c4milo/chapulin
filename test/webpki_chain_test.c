@@ -11,6 +11,7 @@
 // one byte over CH_WEBPKI_CERT_MAX, a fifth entry, a chain that would
 // need a fourth certificate, and a non-empty per-entry extensions
 // vector on the leaf's entry and on a trailing one.
+// test/webpki_chain_path.h checks the path the walk reports.
 //
 // Its own binary, built with -DCH_TRUST_WEBPKI: ch_cfg carries the
 // anchors, the hostname and the clock only there, and the RSA-4096 keys
@@ -432,21 +433,6 @@ static void test_chain_max_boundary(void) {
     CHECK(walk_framed(&capped, &e, &alert) == CH_EAUTH && alert == ALERT_UNKNOWN_CA);
 }
 
-// An anchor whose subject Name equals the issuer Name and whose key
-// does not verify the signature authorizes nothing: the corpus row
-// anchor_key_mismatch carries the P-384 root's Name over another key,
-// and the same chain under the real root is accepted.
-static void test_anchor_name_alone(void) {
-    const webpki_corpus_chain *r2 = row_named(ROW_R2, "r2");
-    const webpki_corpus_chain *impostor = row_named(ROW_ANCHOR_KEY_MISMATCH, "anchor_key_mismatch");
-    CHECK(impostor->anchor_count == 1 && r2->anchor_count == 1);
-    CHECK(impostor->anchors[0].name_len == r2->anchors[0].name_len &&
-          memcmp(impostor->anchors[0].name, r2->anchors[0].name, r2->anchors[0].name_len) == 0);
-    CHECK(impostor->anchors[0].spki_len != r2->anchors[0].spki_len ||
-          memcmp(impostor->anchors[0].spki, r2->anchors[0].spki, r2->anchors[0].spki_len) != 0);
-    CHECK(impostor->message == r2->message);
-}
-
 // Framing the list itself: an empty list is refused with
 // bad_certificate before any certificate is parsed, and a non-empty
 // per-entry extensions vector with unsupported_extension, on the leaf's
@@ -481,6 +467,8 @@ static void test_list_framing(void) {
     CHECK(walk(aws, list, list_len, &leaf, &alert) == CH_OK);
 }
 
+#include "webpki_chain_path.h"
+
 int main(void) {
     test_corpus();
     test_leaf_key();
@@ -493,6 +481,8 @@ int main(void) {
     test_chain_max_boundary();
     test_anchor_name_alone();
     test_list_framing();
+    test_path_outputs();
+    test_anchor_index();
     if (failures == 0) {
         (void)printf("webpki_chain: all tests passed\n");
     }

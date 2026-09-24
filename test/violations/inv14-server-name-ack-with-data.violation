@@ -1,5 +1,5 @@
 invariant: INV-14
-file: handshake_parser.c
+file: handshake_parser_ee.c
 catches: handshake_strict_webpki
 reason: the TRUST=webpki EncryptedExtensions parser admits a server_name
   that carries data, where RFC 6066 §3 allows only the empty

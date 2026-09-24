@@ -31,9 +31,10 @@
 // Included by test/diff_test.c after diff_driver.h (single translation
 // unit). spec/Main.lean serves the op:
 //   webpki_cert <0|1> <cert> -> "ok <tbs off len> <issuer off len> <subject off len>
-//                                <not_before> <not_after> <rsa|p256|p384> <key>
-//                                <sigalg> <sig off len> <san off len | - 0> <seen>
-//                                <is_ca> <path_len | ->" / "ERR webpki_cert reject"
+//                                <not_before> <not_after> <spki off len>
+//                                <rsa|p256|p384> <key> <sigalg> <sig off len>
+//                                <san off len | - 0> <seen> <is_ca> <path_len | ->"
+//                                / "ERR webpki_cert reject"
 #ifndef CH_DIFF_WEBPKI_CERT_H
 #define CH_DIFF_WEBPKI_CERT_H
 
@@ -97,13 +98,14 @@ static void diff_cert_c_reply(const uint8_t *cert, size_t n, int is_ca, char *re
     } else {
         (void)snprintf(path_len, sizeof path_len, "-");
     }
-    (void)snprintf(
-        reply, cap,
-        "ok %zu %zu %zu %zu %zu %zu %" PRIu64 " %" PRIu64 " %s %s %s %zu %zu %s %u %u %s",
-        (size_t)(c.tbs - cert), c.tbs_len, (size_t)(c.issuer - cert), c.issuer_len,
-        (size_t)(c.subject - cert), c.subject_len, c.not_before, c.not_after,
-        diff_cert_key_names[c.spki.alg], key_hex, diff_cert_sigalg_names[c.sigalg],
-        (size_t)(c.sig - cert), c.sig_len, san, (unsigned)c.seen, (unsigned)c.is_ca, path_len);
+    (void)snprintf(reply, cap,
+                   "ok %zu %zu %zu %zu %zu %zu %" PRIu64 " %" PRIu64
+                   " %zu %zu %s %s %s %zu %zu %s %u %u %s",
+                   (size_t)(c.tbs - cert), c.tbs_len, (size_t)(c.issuer - cert), c.issuer_len,
+                   (size_t)(c.subject - cert), c.subject_len, c.not_before, c.not_after,
+                   (size_t)(c.spki_tlv - cert), c.spki_tlv_len, diff_cert_key_names[c.spki.alg],
+                   key_hex, diff_cert_sigalg_names[c.sigalg], (size_t)(c.sig - cert), c.sig_len,
+                   san, (unsigned)c.seen, (unsigned)c.is_ca, path_len);
 }
 
 static void diff_cert_compare(const uint8_t *cert, size_t n, int is_ca) {

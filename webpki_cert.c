@@ -57,6 +57,19 @@ static int read_sigalg_tlv(rbuf *r, uint8_t *sigalg, const uint8_t **tlv, size_t
     return *tlv != NULL;
 }
 
+// subjectPublicKeyInfo: webpki_read_spki, and the whole TLV it consumed,
+// header included, through a copy of the reader made before the read.
+// Those bytes are what an SPKI pin hashes (webpki_pin.h).
+static int read_spki_tlv(rbuf *t, webpki_cert *out) {
+    rbuf start = *t;
+    if (!webpki_read_spki(t, &out->spki)) {
+        return 0;
+    }
+    out->spki_tlv_len = rb_left(&start) - rb_left(t);
+    out->spki_tlv = rb_bytes(&start, out->spki_tlv_len);
+    return out->spki_tlv != NULL;
+}
+
 // Validity ::= SEQUENCE { notBefore Time, notAfter Time }, filling its
 // length exactly, with notBefore no later than notAfter. Whether the
 // caller's clock falls inside is the walk's check.
@@ -116,7 +129,7 @@ static int read_tbs(const uint8_t *tbs, size_t tbs_len, int is_ca, webpki_cert *
     if (rc != CH_OK) {
         return rc;
     }
-    if (!webpki_read_spki(&t, &out->spki)) {
+    if (!read_spki_tlv(&t, out)) {
         // A key algorithm or size the mode refuses, or malformed DER:
         // webpki_read_spki answers one 0 for both (webpki.h's alert
         // exception).

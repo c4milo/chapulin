@@ -279,10 +279,10 @@ def select_modes(out, sources, legs):
     Each leg compiles its own source set under its own defines and its
     own frame budget, so a source another leg filters out is compiled
     here and nowhere else — and so is an #ifdef body only this leg's
-    defines keep. tls.c, handshake_auth.c, handshake_message.c and
-    handshake_parser.c each hold a CH_TRUST_WEBPKI block the default
-    object compiles out, so every leg that packages the file is
-    selected, not the default leg alone."""
+    defines keep. tls.c, handshake_auth.c, handshake_message.c,
+    handshake_parser.c and handshake_parser_ee.c each hold a
+    CH_TRUST_WEBPKI block the default object compiles out, so every leg
+    that packages the file is selected, not the default leg alone."""
     packaged = set().union(*legs.values())
     for path in sources:
         for axis, commands in LIB_LEGS:

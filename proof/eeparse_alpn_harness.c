@@ -7,7 +7,7 @@
 // holds, a refused one leaves the caller's CH_ALPN_NONE, and the alert
 // is the caller's seed or one of the arm's two.
 //
-// It reaches the static parse_alpn by including handshake_parser.c, the
+// It reaches the static parse_alpn by including handshake_parser_ee.c, the
 // hello_build precedent, so its launch line carries buf.c alone. Driving
 // the same offer through the whole EncryptedExtensions loop instead
 // multiplies the two bounds: each extension a message holds may reach
@@ -30,7 +30,7 @@
 #include "handshake_message.h"
 #include "handshake_parser.h"
 
-#include "handshake_parser.c"
+#include "handshake_parser_ee.c"
 
 int main(void) {
     // The extension_data of one ALPN extension. 40 bytes holds the

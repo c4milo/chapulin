@@ -95,11 +95,11 @@ def shipped_sources():
         if m:
             out |= {t for t in re.split(r"[\s\\]+", m.group(1)) if t.endswith(".c")}
     # drbg.c and the ML-KEM, SHA-3, SHA-512, P-384, PKCS#1 v1.5, webpki
-    # signature-dispatch, webpki certificate and webpki chain-walk sources
-    # join through build variables.
+    # signature-dispatch, webpki certificate, webpki chain-walk and webpki
+    # pin sources join through build variables.
     out |= {"drbg.c", "sha3.c", "sha512.c", "sha512_compress.c", "p384.c", "p384_field.c",
-            "rsa_pkcs1.c", "webpki_sigalg.c", "webpki_cert.c", "webpki.c", "mlkem.c",
-            "mlkem_poly.c"}
+            "rsa_pkcs1.c", "webpki_sigalg.c", "webpki_cert.c", "webpki.c", "webpki_pin.c",
+            "mlkem.c", "mlkem_poly.c"}
     return {s for s in out if (ROOT / s).exists()}
 
 

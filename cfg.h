@@ -210,23 +210,9 @@ _Static_assert(CH_EPOCH_BOUND >= 1 && CH_EPOCH_BOUND < CH_EPOCH_MAX,
 #define CH_EPOCH_UNTRUSTED 4 // not an allowed date, or too far ahead
 
 #ifdef CH_TRUST_WEBPKI
-// A trust anchor for a TRUST=webpki build: a root's subject Name and its public key, each
-// the whole DER TLV the root certificate carries — the Name SEQUENCE and the
-// SubjectPublicKeyInfo SEQUENCE, header included. Nothing else is read from the root, not
-// even its dates. The caller embeds the roots it trusts; the array is the whole trust
-// boundary, and any anchor may certify any name (docs/webpki.md, "Trust anchors"). Only a
-// TRUST=webpki build declares this type, the constant below and the ch_cfg fields that use
-// them (see the end of ch_cfg).
-typedef struct {
-    const uint8_t *name;
-    size_t name_len;
-    const uint8_t *spki;
-    size_t spki_len;
-} ch_trust_anchor;
-
-// Anchors one configuration may carry. The number is a measurement: nine roots cover the
-// endpoints docs/webpki.md captures, five of them Amazon Trust Services'.
-#define CH_WEBPKI_ANCHOR_MAX 12
+// ch_trust_anchor, the anchor and pin caps and the certificate types, and the rules of the
+// ch_cfg fields only this build has.
+#include "webpki_cfg.h"
 #endif
 
 // The ALPN declarations below serve three builds: a TRUST=webpki build offers a protocol
@@ -346,9 +332,9 @@ typedef struct {
     //    instead: the server's chain must verify up to the pinned CA key
     //    (see docs/ca.md). Tickets still arrive either way, so reconnects
     //    resume via PSK.
-    // A CH_TRUST_WEBPKI build reads no pin: it checks a public chain,
-    // configured by the fields at the end of this struct, and takes a PSK
-    // only as a ticket bound to them.
+    // A CH_TRUST_WEBPKI build reads neither server_pubkey slot: it checks
+    // a public chain or SPKI pins, configured by the fields at the end of
+    // this struct, and takes a PSK only as a ticket bound to them.
     const uint8_t *psk;
     size_t psk_len;
     const uint8_t *psk_id;
@@ -408,36 +394,15 @@ typedef struct {
     int require_pq;
 
 #ifdef CH_TRUST_WEBPKI
-    // Web PKI trust (TRUST=webpki, docs/webpki.md):
-    //  - anchors: anchor_count entries, 1 to CH_WEBPKI_ANCHOR_MAX, each
-    //    with a non-empty name and spki. The server's chain must verify
-    //    up to one of them.
-    //  - hostname: hostname_len bytes of an ASCII hostname that
-    //    webpki_hostname_ok (webpki.h) accepts: 1 to 253 bytes of
-    //    [A-Za-z0-9.-], no NUL, no empty label and no IP literal. A
-    //    caller with an internationalized name converts each U-label to
-    //    its A-label first. A dNSName in the leaf's subjectAltName must
-    //    match it, and the client sends it as the ClientHello's
-    //    server_name.
-    //  - now_seconds: the caller's clock, in seconds since
-    //    1970-01-01T00:00:00Z. Every certificate the walk reads must be
-    //    valid at it, compared exactly with no skew tolerance. 0 means
-    //    the caller never set the clock.
-    //  - ticket_binding: SHA256_LEN bytes, set with resumption alone: the ch_ticket.binding of
-    //    the ticket in psk and psk_id. It must match this hostname and these anchors.
-    // ch_connect returns CH_EINVAL before it sends a byte when any of those rules fails, when
-    // now_seconds is 0, and for any other PSK, a pin or an epoch callback (webpki_ticket.h).
-    //
-    // These six fields exist only in a TRUST=webpki build, so the raw
-    // and ca objects keep the ch_cfg and ch_tls layout they had before
-    // this mode. A raw or ca build that sets one fails to compile, which
-    // is stricter than a CH_EINVAL from ch_connect.
+    // Web PKI trust (TRUST=webpki): webpki_cfg.h states the rules of these eight fields.
     const ch_trust_anchor *anchors;
     size_t anchor_count;
     const uint8_t *hostname;
     size_t hostname_len;
     uint64_t now_seconds;
     const uint8_t *ticket_binding;
+    const uint8_t (*spki_pins)[SHA256_LEN];
+    size_t spki_pin_count;
 #endif
 
 // The same two fields serve all three builds; ch_connect, ch_quic_init or ch_srv_accept

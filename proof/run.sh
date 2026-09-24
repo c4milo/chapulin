@@ -422,13 +422,14 @@ launch slow:5 full mlkem_basemul 260 ""
 # the default weight and cap. handshake_parser's unwindset carried
 # main.0:600 from the first version of its harness, whose main looped;
 # c8e3c79 removed the last of those loops and kept the entry. The
-# model's loops are fill_nondet.0, hsp_parse_server_hello.0,
-# hsp_parse_encrypted_exts.0 and memcmp.0 (`cbmc --show-loops`), so the
-# entry bounded nothing and is gone
-# (https://github.com/c4milo/chapulin/issues/136). Measured without it:
-# 663 properties, 58 s, 4.6 GB. The weight stays at 10: the
-# address-space cap it sizes applies on Linux only, where this formula
-# was not re-measured.
+# model's loops are fill_nondet.0, hsp_parse_server_hello.0 and
+# memcmp.0 (`cbmc --show-loops`), so the entry bounded nothing and is
+# gone (https://github.com/c4milo/chapulin/issues/136). Measured without
+# it: 663 properties, 58 s, 4.6 GB, and 656 properties, 63 s, 4.0 GB
+# once the EncryptedExtensions parser left handshake_parser.c for
+# handshake_parser_ee.c. The weight stays at 10: the address-space cap
+# it sizes applies on Linux only, where this formula was not
+# re-measured.
 launch fast:10 full handshake_parser 260 "hsp_parse_server_hello.0:66" handshake_parser.c buf.c
 # The same harness in the client that offers both cipher suites
 # (docs/decisions.md entry 45): cipher_suite may carry AES-128-GCM there,
@@ -437,32 +438,48 @@ launch fast:10 full handshake_parser 260 "hsp_parse_server_hello.0:66" handshake
 # the suite define; the parser runs no cipher, so no AES source is
 # compiled. Measured (cbmc 6.11.0, kissat, PROVE_NO_CACHE=1 /usr/bin/time -l
 # over this script, a spec build running beside it): 761 properties, 76 s,
-# 4.5 GB peak, the parent's shape. The same formula with an assert that no
-# accepted message carries AES-128-GCM fails it (1 of 762), so that arm is
-# reached.
+# 4.5 GB peak, the parent's shape, and 675 properties, 65 s, 4.1 GB once
+# the EncryptedExtensions parser left handshake_parser.c. The same
+# formula with an assert that no accepted message carries AES-128-GCM
+# fails it (1 of 762), so that arm is reached.
 launch fast:10 full handshake_parser_suite 260 "hsp_parse_server_hello.0:66" handshake_parser.c buf.c -DCH_SUITE_AES_GCM -DCH_TRUST_WEBPKI -DCH_AES_HW -DCH_NATIVE_AES
-launch fast full eeparse 260 "hsp_parse_encrypted_exts.0:66" handshake_parser.c buf.c
+launch fast full eeparse 260 "hsp_parse_encrypted_exts.0:66" handshake_parser_ee.c buf.c
 launch fast full certparse 260 "" handshake_parser.c buf.c
+# The eeparse lines compile handshake_parser_ee.c, which holds the
+# EncryptedExtensions parser alone; the certparse, certverify and
+# handshake_parser lines compile handshake_parser.c, which holds the
+# other three parsers.
+#
 # The TRUST=webpki arms of the same two parsers, at the same 256-byte
 # bound: EncryptedExtensions admitting one empty server_name
-# acknowledgement and writing decode_error for one that carries data,
-# and CertificateVerify admitting three schemes, with certparse_webpki
+# acknowledgement when the ClientHello sent server_name and one
+# server_certificate_type from the certificate types it offered, and
+# writing decode_error for either one of the wrong length, and
+# CertificateVerify admitting three schemes, with certparse_webpki
 # asserting that an accepted scheme is one of them (the assertion fails
 # when one of the three is struck from it, so it is reached). Both
 # eeparse harnesses assert the alert contract: the parser keeps the seed
 # or writes unsupported_extension, and the webpki arm may also write
-# decode_error. eeparse_webpki drives the block with an empty ALPN
-# offer, the shape a caller that skips ALPN configures, and asserts that
-# the parser then reports no selection; eeparse_alpn below proves the
-# arm that reads an offered protocol. -DCH_TRUST_WEBPKI is on the launch
-# line because handshake_parser.c is its own translation unit. Measured
-# (cbmc 6.11.0, kissat, PROVE_NO_CACHE=1 /usr/bin/time -l over this
-# script, one harness at a time): eeparse_webpki 611 properties, 61 s,
-# 5.1 GB, which its weight records — the ALPN arm sits inside the
-# per-extension read, so its formula rides along even where no offer
-# lets it run; eeparse 504 properties, 29 s, 2.5 GB, inside the fast
-# tier's default weight; certparse_webpki 545 properties, 1 s, 38 MB.
-launch fast:6 full eeparse_webpki 260 "hsp_parse_encrypted_exts.0:66" -DCH_TRUST_WEBPKI handshake_parser.c buf.c
+# decode_error and illegal_parameter. eeparse_webpki draws whether
+# server_name was sent and the certificate type offer over every value,
+# and asserts that an accepted certificate type is the caller's seed or
+# one the offer holds; with the offer check replaced by a check against
+# both types this client knows, the formula fails that assertion (1 of
+# 544), so it is reached. It drives the block with an empty ALPN offer,
+# the shape a caller that skips ALPN configures, and asserts that the
+# parser then reports no selection; eeparse_alpn below proves the arm
+# that reads an offered protocol. -DCH_TRUST_WEBPKI is on the launch
+# line because handshake_parser_ee.c is its own translation unit.
+# Measured (cbmc 6.11.0, kissat, PROVE_NO_CACHE=1 /usr/bin/time -l over
+# this script, one harness at a time): eeparse_webpki 550 properties,
+# 132 s and 128 s over two runs, peaking at 2.6 GB and 5.9 GB, which its
+# weight records. The ALPN and certificate type arms sit inside the
+# per-extension read, so their formulas ride along on every extension,
+# and the certificate type arm took the time up from 61 s. eeparse 378
+# properties, 34 s, 2.1 GB, inside the fast tier's default weight;
+# certparse 525 properties, 0.7 s, 36 MB; certparse_webpki 532
+# properties, 0.6 s, 36 MB.
+launch fast:6 full eeparse_webpki 260 "hsp_parse_encrypted_exts.0:66" -DCH_TRUST_WEBPKI handshake_parser_ee.c buf.c
 # eeparse_alpn: the ALPN arm (RFC 7301 §3.2) at the offer bound
 # ch_connect admits — CH_ALPN_MAX names of up to CH_ALPN_NAME_MAX bytes,
 # every byte and every length symbolic — over any extension body up to
@@ -470,13 +487,15 @@ launch fast:6 full eeparse_webpki 260 "hsp_parse_encrypted_exts.0:66" -DCH_TRUST
 # an accepted body names a protocol the offer holds, a refused one
 # leaves the caller's CH_ALPN_NONE, and the alert is the seed or one of
 # the arm's two. It reaches the static parse_alpn by including
-# handshake_parser.c, so buf.c is its whole dependency line. Driving the
+# handshake_parser_ee.c, so buf.c is its whole dependency line. Driving the
 # same offer through the whole EncryptedExtensions loop instead
 # multiplies the two bounds: at a 256-byte message that formula reached
 # the SAT solver after 21 minutes with no verdict, and at 48 bytes it
 # verified once at 14.7 GB and then lost its solver to the machine's
 # memory. Measured (cbmc 6.11.0, kissat, PROVE_NO_CACHE=1
-# /usr/bin/time -l over this script): 616 properties, 4 s, 414 MB.
+# /usr/bin/time -l over this script): 616 properties, 4 s, 414 MB, and
+# 552 properties, 5 s, 377 MB once it included handshake_parser_ee.c
+# rather than handshake_parser.c.
 launch fast full eeparse_alpn 260 "parse_alpn.0:9,memcmp.0:33" -DCH_TRUST_WEBPKI buf.c
 launch fast full certparse_webpki 260 "" -DCH_TRUST_WEBPKI handshake_parser.c buf.c
 # certverify_webpki: the arm that reads what certparse_webpki parsed.
@@ -487,8 +506,11 @@ launch fast full certparse_webpki 260 "" -DCH_TRUST_WEBPKI handshake_parser.c bu
 # reader, the hashes and the three verifiers are stubs the harness
 # defines; handshake_record, sha256, sha512 and the three verifier
 # harnesses prove them. Measured (cbmc 6.11.0, kissat, PROVE_NO_CACHE=1
-# /usr/bin/time -l over this script, one harness at a time): 743
-# properties, 1.4 s, 44 MB, well inside the fast tier's default weight.
+# /usr/bin/time -l over this script, one harness at a time): 766
+# properties, 3.4 s, 44 MB, well inside the fast tier's default weight.
+# main never reaches the SPKI pin half of hsa_server_auth, so the log
+# names no callee without a body for webpki_verify_raw_key or
+# webpki_path_pinned; webpki_pin proves both.
 # Each of the three inv14-webpki-certificate-verify violations fails a
 # named assertion here as well as bin/webpki_auth_test.
 launch fast full certverify_webpki 260 "fill_nondet.0:513" -DCH_TRUST_WEBPKI handshake_parser.c buf.c
@@ -496,14 +518,15 @@ launch fast full certverify_webpki 260 "fill_nondet.0:513" -DCH_TRUST_WEBPKI han
 # (webpki_ticket.h), at a hostname of up to CH_HOSTNAME_MAX bytes and up
 # to CH_WEBPKI_ANCHOR_MAX anchors, over every PSK field NULL or set. buf.c,
 # ct.c and hkdf.c are real; SHA-256 is the contract stub in harness.h,
-# which the harness comment prices. The unwindset bounds the anchor loop
-# at 13 and the hostname loop at 254, because symex cannot read either
-# bound from the harness's assumptions; ct_wipe clears hkdf.c's 112-byte
-# SHA-256 context. Measured (cbmc 6.11.0, kissat, PROVE_NO_CACHE=1
-# /usr/bin/time -l over this script): 917 properties, 57 s, 473 MB. The
+# which the harness comment prices. The unwindset bounds the hostname
+# loop at 254, the anchor loop at 13 and the pin loop at 5, because symex
+# cannot read those bounds from the harness's assumptions; loop 0 is
+# CH_ASSERT's do-while. ct_wipe clears hkdf.c's 112-byte SHA-256
+# context. Measured (cbmc 6.11.0, kissat, PROVE_NO_CACHE=1
+# /usr/bin/time -l over this script): 943 properties, 8 s, 147 MB. The
 # same formula with its verdict assertion narrowed to an unset config
 # fails, so the formula reaches the ticket path.
-launch fast full webpki_ticket 66 "fill_nondet.0:254,webpki_ticket_config_hash.0:13,webpki_ticket_config_hash.1:254,ct_wipe.0:113" --object-bits 10 -DCH_TRUST_WEBPKI buf.c ct.c hkdf.c
+launch fast full webpki_ticket 66 "fill_nondet.0:254,webpki_ticket_config_hash.1:254,webpki_ticket_config_hash.2:13,webpki_ticket_config_hash.3:5,ct_wipe.0:113" --object-bits 10 -DCH_TRUST_WEBPKI buf.c ct.c hkdf.c
 launch fast:6 full sha256 3 "fill_nondet.0:97,sha256_update.0:66,sha256_update.1:3,sha256_update.2:66,sha256_final.0:65,sha256_final.1:9,sha256_final.2:9,compress.0:17,compress.1:49,compress.2:65"
 # SHA-512 splits as ML-KEM does: the framing over a stubbed compression,
 # and the compression alone. One formula carrying both hashes and the
@@ -730,7 +753,8 @@ launch fast full hybrid_secret 65 "fill_nondet.0:2401,ct_wipe.0:2401" -DCH_KEX_P
 # this proof discharges that assumption. Second, that the group the parser
 # records is the one this build offers, the value ch_tls.group reports and
 # cfg.require_pq compares. Measured: 661 properties, 1 s, 207 MB (kissat,
-# /usr/bin/time -l over this script).
+# /usr/bin/time -l over this script), and 648 properties, 1 s, 197 MB once
+# the EncryptedExtensions parser left the handshake_parser.c it includes.
 launch fast full key_share 1200 "fill_nondet.0:1133" -DCH_KEX_PQ buf.c
 # The same arm in the build that offers two groups (docs/decisions.md entry
 # 39): -DCH_TRUST_WEBPKI beside -DCH_KEX_PQ turns on CH_KEX_TWO_GROUPS, where
@@ -739,9 +763,10 @@ launch fast full key_share 1200 "fill_nondet.0:1133" -DCH_KEX_PQ buf.c
 # Which group a ServerHello may select is hsf_read_server_hello's check, and
 # bin/webpki_session_pq tests it; this formula holds the parser alone.
 # Measured (cbmc 6.11.0, kissat, PROVE_NO_CACHE=1 /usr/bin/time -l over
-# this script): 790 properties, 1.7 s, 0.22 GB peak. The same formula with an
-# assert of 0 in each of the two new arms fails both (2 of 792), so the retry
-# shape and the x25519 share are both reached.
+# this script): 790 properties, 1.7 s, 0.22 GB peak, and 704 properties,
+# 1.4 s, 0.21 GB once the EncryptedExtensions parser left handshake_parser.c.
+# The same formula with an assert of 0 in each of the two new arms fails both
+# (2 of 792), so the retry shape and the x25519 share are both reached.
 launch fast full key_share_webpki 1200 "fill_nondet.0:1133" -DCH_KEX_PQ -DCH_TRUST_WEBPKI buf.c
 # handshake_message.c was the last library source no harness compiled
 # (https://github.com/c4milo/chapulin/issues/33). Beyond memory safety this
@@ -756,16 +781,19 @@ launch fast full key_share_webpki 1200 "fill_nondet.0:1133" -DCH_KEX_PQ -DCH_TRU
 # properties, 3 s, 61 MB (kissat).
 launch fast full hello_build 400 "fill_nondet.0:321" buf.c
 # hello_build_webpki: the builder's TRUST=webpki arm — the server_name
-# extension over any hostname of up to CH_HOSTNAME_MAX bytes, the ALPN
-# extension over any offer of up to CH_ALPN_MAX names of up to
-# CH_ALPN_NAME_MAX bytes, and the five signature schemes — against that
+# extension over any hostname of up to CH_HOSTNAME_MAX bytes and none at
+# length 0, the ALPN extension over any offer of up to CH_ALPN_MAX names
+# of up to CH_ALPN_NAME_MAX bytes, the five signature schemes, and the
+# server_certificate_type offer of SPKI pins, which the harness stubs to
+# answer every offer webpki_cert_types_offered can give — against that
 # build's CH_HELLO_MAX of 1149. The sufficiency assertion is tight:
-# moved to CH_HELLO_MAX - 1 it fails. The two ALPN loops carry their own
-# bounds because the global 400 unrolled both past the array they walk,
-# and CBMC then ran out of addressed objects (--object-bits, 256) rather
-# than returning a verdict. Measured (cbmc 6.11.0, kissat,
-# PROVE_NO_CACHE=1 /usr/bin/time -l over this script): 575 properties,
-# 62 s, 133 MB.
+# moved to CH_HELLO_MAX - 1 it fails, and a probe asserting false after
+# the two-type offer is written fails too, so that arm is reached. The
+# two ALPN loops carry their own bounds because the global 400 unrolled
+# both past the array they walk, and CBMC then ran out of addressed
+# objects (--object-bits, 256) rather than returning a verdict. Measured
+# (cbmc 6.11.0, kissat, PROVE_NO_CACHE=1 /usr/bin/time -l over this
+# script): 584 properties, 62 s, 170 MB.
 launch fast full hello_build_webpki 400 "fill_nondet.0:321,main.0:9,write_alpn.0:9" -DCH_TRUST_WEBPKI buf.c
 # x509: primitives concrete (both variants), the walker with stubbed
 # primitives. The ECDSA walker proves the full two-entry bound in
@@ -853,7 +881,9 @@ launch fast:4 full webpki_san 17 "fill_nondet.0:1025,webpki_match_san.0:17" -DCH
 # the DER primitives real. Under run.sh: 1200 properties, 189 s, 3.7 GB.
 # The same formula with an assert of 0 at its CH_OK tail fails that one
 # assert (1 of 1201, 300 s, 4.4 GB), so the tail is reached; fast:5
-# covers that peak.
+# covers that peak. Re-measured under run.sh when the parser started
+# recording the SubjectPublicKeyInfo TLV, which the tail now asserts
+# lies inside tbs around the key: 1232 properties, 222 s, 3.2 GB.
 #
 # The extension walk splits the way webpki_san does, because a harness
 # cannot replace its statics with their contracts, so every composition
@@ -905,8 +935,34 @@ launch slow:5 full webpki_ext_walk 18 "fill_nondet.0:49,webpki_read_extensions.0
 # writing its own alert; 1097 properties, 113 s and 3.0 GB before that; 142 s and 6.6 GB at 48 bytes and 3 anchors, and 62
 # s and 1.9 GB at 30 bytes. The same formula with an assert of 0 at its
 # CH_OK tail fails that one assert (1 of 1098, 133 s, 3.1 GB), so the
-# tail is reached. fast:4 covers the peak.
+# tail is reached. fast:4 covers the peak. Re-measured under run.sh when
+# the walk started reporting path_entries and anchor_index and the tail
+# started asserting them against the certificates parsed and the anchor
+# that verified: 1204 properties, 138 s, 3.6 GB; with an assert of 0 at
+# the tail, 1 of 1205 fails (240 s, 2.3 GB, beside another proof).
 launch fast:4 full webpki_chain 49 "main.0:3,fill_nondet.0:49,read_entries.0:7,anchor_verifies.0:3,webpki_verify_chain.0:5" -DCH_TRUST_WEBPKI -DCH_PROOF_LIST_LEN=48 buf.c ct.c
+# webpki_pin: the SPKI pin calls of webpki_pin.c (webpki_pin.h). The raw
+# public key half runs at its real bound, a list one byte past an entry at
+# CH_WEBPKI_SPKI_MAX, so both sides of the entry cap and of the exact fill
+# are inside it, under CH_SPKI_PIN_MAX pins or fewer; the path half runs
+# over a 24-byte list, CH_WEBPKI_CHAIN_MAX entries of a few bytes and one
+# past them, two anchors and any leaf. webpki_read_entry, rbuf and
+# ct_memeq are real; webpki_read_spki and webpki_parse_certificate are
+# stubs to what webpki_spki and webpki_cert prove, and SHA-256 is
+# harness.h's contract with a record of what it hashed. The global unwind
+# of 5 bounds the pin loop at CH_SPKI_PIN_MAX and the path loop at
+# CH_WEBPKI_CHAIN_MAX; the unwindset covers the list fill and the two
+# 32-byte compares. Nearly all of the formula is the raw half's copy of a
+# key of up to CH_WEBPKI_KEY_MAX bytes from any offset of the 556-byte
+# list: the path half alone, at a global unwind of 34, proved its 1222
+# properties in 169 s at 0.9 GB. Measured (cbmc 6.11.0, kissat,
+# PROVE_NO_CACHE=1 /usr/bin/time -l over this script, beside a
+# differential run): 1283 properties, 452 s, 5.5 GB; run directly under
+# these flags, 348 s at 6.4 GB. With an assert of 0 at the raw half's
+# CH_OK tail and at the path half's tail after a match, those two fail
+# (2 of 1285, 588 s, 7.3 GB), so both tails are reached. fast:8 covers
+# that peak.
+launch fast:8 full webpki_pin 5 "fill_nondet.0:557,ct_memeq.0:33,memcmp.0:33" -DCH_TRUST_WEBPKI webpki.c buf.c ct.c
 launch fast:3 full x509der 452 "fill_nondet.0:449,ct_memeq.0:68" buf.c ct.c
 launch fast:3 full x509der_ecdsa 452 "fill_nondet.0:449,ct_memeq.0:68" buf.c ct.c
 launch fast:4 full x509parse_ecdsa 260 "fill_nondet.0:257,ct_memeq.0:68" buf.c ct.c

@@ -13,6 +13,9 @@
 #include "keysched.h"
 #include "rand.h"
 #include "x25519.h"
+#ifdef CH_TRUST_WEBPKI
+#include "webpki_pin.h"
+#endif
 
 void hsf_begin(handshake_state *h) {
     ch_tls *t = h->t;
@@ -362,18 +365,31 @@ int hsf_read_encrypted_extensions(handshake_state *h) {
     const uint8_t *transport_params = NULL;
     size_t transport_params_len = 0;
 #endif
+#ifdef CH_TRUST_WEBPKI
+    // A server that sends no server_certificate_type sends X.509
+    // certificates (RFC 9846 §4.5.1), so that is the type the session
+    // reports unless the parser writes the one the server selected.
+    // handshake_auth.c reads it to tell a raw key from a chain.
+    t->server_cert_type = CH_CERT_TYPE_X509;
+#endif
     // Seed the default first: the parser overrides it only when it has a
     // more specific alert (unsupported_extension, RFC 9846 §4.3, and in a
-    // TRUST=webpki build decode_error for a server_name that carries
-    // data), and that override must survive to the wire.
+    // TRUST=webpki build decode_error for a server_name or a
+    // server_certificate_type of the wrong length), and that override
+    // must survive to the wire.
     h->alert = ALERT_ILLEGAL_PARAMETER;
     rc = hsp_parse_encrypted_exts(
 #ifdef CH_TRANSPORT_QUIC
         raw + 4, raw_len - 4, &peer_limit, t->cfg.alpn_protocols, t->cfg.alpn_count,
-        &t->alpn_selected, &transport_params, &transport_params_len,
+        &t->alpn_selected,
+#ifdef CH_TRUST_WEBPKI
+        t->cfg.hostname_len > 0, webpki_cert_types_offered(&t->cfg), &t->server_cert_type,
+#endif
+        &transport_params, &transport_params_len,
 #elif defined(CH_TRUST_WEBPKI)
         raw + 4, raw_len - 4, &t->peer_limit, t->cfg.alpn_protocols, t->cfg.alpn_count,
-        &t->alpn_selected,
+        &t->alpn_selected, t->cfg.hostname_len > 0, webpki_cert_types_offered(&t->cfg),
+        &t->server_cert_type,
 #else
         raw + 4, raw_len - 4, &t->peer_limit,
 #endif

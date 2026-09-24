@@ -1,0 +1,13 @@
+invariant: INV-33
+file: handshake_auth.c
+catches: webpki_auth_test
+reason: webpki_server_key accepts a chain that verifies without asking
+  whether a pin names a key on its path, so a configuration with both a
+  name and pins passes on the name alone, against RFC 8310 §6.4.
+  bin/webpki_auth_test's chain rows that pin nothing the server sent
+  object.
+
+--- old
+    if (cfg->spki_pin_count > 0 && !webpki_path_pinned(list, list_len, cfg, &h->leaf)) {
+--- new
+    if (cfg->spki_pin_count > 0 && 0) {

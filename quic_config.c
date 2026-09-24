@@ -65,11 +65,13 @@ static int transport_config_ok(const ch_cfg *cfg) {
 }
 
 #ifdef CH_TRUST_WEBPKI
-// The web PKI rules, tls.c's chain_config_ok without the ALPN rule
+// The web PKI rules, webpki_cfg_ok's chain arm without the ALPN rule
 // above: 1 to CH_WEBPKI_ANCHOR_MAX anchors each carrying a non-empty
 // name and spki, a hostname webpki_hostname_ok accepts, a clock the
-// caller set, and neither a PSK nor a pin, because this mode reads
-// neither.
+// caller set, and neither a PSK, a pin slot nor an SPKI pin. No test here
+// drives a TRUST=webpki QUIC client (make check builds its object), so it
+// keeps refusing the resumption tickets and the raw public keys a TCP
+// client takes.
 static int anchors_ok(const ch_cfg *cfg) {
     if (cfg->anchors == NULL || cfg->anchor_count == 0 ||
         cfg->anchor_count > CH_WEBPKI_ANCHOR_MAX) {
@@ -89,7 +91,8 @@ static int trust_config_ok(const ch_cfg *cfg) {
            webpki_hostname_ok(cfg->hostname, cfg->hostname_len) && cfg->now_seconds != 0 &&
            cfg->psk == NULL && cfg->psk_len == 0 && cfg->psk_id == NULL && cfg->psk_id_len == 0 &&
            !cfg->resumption && cfg->server_pubkey == NULL && cfg->server_pubkey_len == 0 &&
-           cfg->server_pubkey2 == NULL && cfg->server_pubkey2_len == 0;
+           cfg->server_pubkey2 == NULL && cfg->server_pubkey2_len == 0 &&
+           cfg->ticket_binding == NULL && cfg->spki_pins == NULL && cfg->spki_pin_count == 0;
 }
 #else
 // The pin length the build's one algorithm takes: 64 raw P-256 bytes

@@ -1,0 +1,13 @@
+invariant: INV-33
+file: webpki_pin.c
+catches: webpki_auth_test
+reason: read_whole_spki accepts bytes after the SubjectPublicKeyInfo
+  inside the raw entry, so the key the reader decoded is not the whole of
+  the bytes the pin hashes, and two entries name one key.
+  bin/webpki_auth_test's row with one byte after the key, refused with
+  unsupported_certificate, objects.
+
+--- old
+    return webpki_read_spki(&r, key) && !r.err && rb_left(&r) == 0;
+--- new
+    return webpki_read_spki(&r, key) && !r.err;

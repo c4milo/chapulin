@@ -1,0 +1,11 @@
+invariant: INV-33
+file: webpki.c
+catches: webpki_chain_test
+reason: the walk reports one entry more than it read, so the pins may
+  name a certificate after the one an anchor verified, which the walk
+  never checked. bin/webpki_chain_test's path rows object.
+
+--- old
+            out->path_entries = (uint8_t)read;
+--- new
+            out->path_entries = (uint8_t)(read + 1);

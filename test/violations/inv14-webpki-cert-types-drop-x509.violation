@@ -1,0 +1,13 @@
+invariant: INV-14
+file: handshake_message.c
+catches: webpki_session_test
+reason: the hello offers the raw public key alone to a configuration that has
+  anchors too, so a server with a certificate chain and no raw key
+  cannot answer it. The pins-with-anchors offer row objects.
+
+--- old
+    if (x509) {
+        wb_u8(w, CH_CERT_TYPE_X509);
+    }
+--- new
+    (void)x509;

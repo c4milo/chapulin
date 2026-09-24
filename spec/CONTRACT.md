@@ -149,18 +149,31 @@ Spec.HandshakeParser.parseServerHello : (kex : Kex) → (suiteOffer : SuiteOffer
                         -- the handshake copies to ch_tls.group. selected_group
                         -- is the retry key_share's NamedGroup in decimal.
                         -- suite is the message's cipher_suite in decimal.
-Spec.HandshakeParser.parseEncryptedExtensions : (serverNameSent : Bool) → (msg : ByteArray) →
-                        Except Alert EncryptedExtensions               -- RFC 9846 §4.4.1.
-                        -- serverNameSent says whether the build's
-                        -- ClientHello carried server_name: TRUST=webpki's
-                        -- does, and RFC 6066 §3 then admits one empty
-                        -- acknowledgement, with data there a decode_error;
-                        -- the raw and ca builds' does not, and the
-                        -- acknowledgement is unrequested.
-                        -- Line op: `hs_encrypted_extensions <sni|nosni> <msg>` →
-                        -- `ok <record_size_limit|->` (RFC 8449 §4, decimal, the
-                        -- extension's own value; handshake_parser.c stores it less the
-                        -- inner content-type octet) / `ERR ... reject`.
+Spec.HandshakeParser.parseEncryptedExtensions : (serverNameSent : Bool) →
+                        (alpnOffered : List ByteArray) → (certTypesOffered : List Nat) →
+                        (msg : ByteArray) → Except Alert EncryptedExtensions
+                        -- RFC 9846 §4.4.1.
+                        -- serverNameSent says whether the ClientHello
+                        -- carried server_name: TRUST=webpki's does when its
+                        -- configuration has a hostname, and RFC 6066 §3 then
+                        -- admits one empty acknowledgement, with data there a
+                        -- decode_error; otherwise, and always in the raw and
+                        -- ca builds, the acknowledgement is unrequested.
+                        -- alpnOffered is the ProtocolNameList the hello
+                        -- offered (RFC 7301 §3.1), empty for none; a
+                        -- selection must name one of them, and is reported as
+                        -- its index. certTypesOffered is the CertificateType
+                        -- list its server_certificate_type offered (RFC 7250
+                        -- §4.1), empty for none; a selection is one octet the
+                        -- list holds (§4.2), and an empty list makes the
+                        -- extension unrequested. Line op:
+                        -- `hs_encrypted_extensions <sni|nosni> <alpn|-> <types|-> <msg>`
+                        -- → `ok <record_size_limit|-> <alpn_index|-> <cert_type|->`
+                        -- (RFC 8449 §4, decimal, the extension's own value;
+                        -- handshake_parser_ee.c stores it less the inner
+                        -- content-type octet) / `ERR ... reject`. alpn is the
+                        -- ProtocolNameList's hex and types the CertificateType
+                        -- list's hex, one octet per type; cert_type is decimal.
 Spec.HandshakeParser.parseCertificate : (msg : ByteArray) → Except Alert Certificate
                         -- RFC 9846 §4.5.1: the empty certificate_request_context
                         -- then the exact-fill CertificateEntry list, whose
@@ -368,11 +381,13 @@ Spec.WebpkiCert.parseCertificate? : (isCa : Bool) → (cert : ByteArray) → Opt
                         -- and nothing after it, so no unique identifier (§4.1.2.8); a BIT
                         -- STRING signature with zero unused bits and one byte or more.
                         -- `some` carries every range as an offset and a length into the
-                        -- certificate. The alert a refusal names is not modeled. Line op:
+                        -- certificate, the whole SubjectPublicKeyInfo TLV among them. The
+                        -- alert a refusal names is not modeled. Line op:
                         -- `webpki_cert <0|1> <cert>` → `ok <tbs off len> <issuer off len>
-                        -- <subject off len> <notBefore> <notAfter> <rsa|p256|p384> <key>
-                        -- <sigalg> <sig off len> <san off len | - 0> <seen> <cA>
-                        -- <pathLen | ->` / `ERR webpki_cert reject`.
+                        -- <subject off len> <notBefore> <notAfter> <spki off len>
+                        -- <rsa|p256|p384> <key> <sigalg> <sig off len>
+                        -- <san off len | - 0> <seen> <cA> <pathLen | ->` /
+                        -- `ERR webpki_cert reject`.
 Spec.WebpkiCert.readExtensions? : (isCa : Bool) → (b : ByteArray) → (off : Nat) →
                         Option (Extensions × Nat)
                         -- extensions [3] EXPLICIT at off (§4.1): 1 to extensionCountMax (16)
@@ -396,21 +411,44 @@ Spec.Webpki.verifyChain : Config → (list : ByteArray) → Verdict
                         -- inclusive, and a dNSName of its subjectAltName matches the
                         -- hostname; then walkFrom consults the anchors at each depth
                         -- before reading the next entry, and reads at most chainMax
-                        -- (3) certificates. The four refusals are the four pairs of
-                        -- return code and alert the C tells apart: rejected
+                        -- (3) certificates. `ok` carries the leaf's key, the count of
+                        -- certificates read and the index of the first anchor that
+                        -- verified the last of them. The four refusals are the four pairs
+                        -- of return code and alert the C tells apart: rejected
                         -- (CH_EPROTO), expired, unauthenticated (bad_certificate) and
                         -- unknownCa. The alert itself is not modeled. Line op:
-                        -- `webpki_chain <packed clock> <hostname> <anchors> <list>` →
-                        -- `ok <rsa|p256|p384> <key>` / the refusal's name, where
-                        -- <anchors> is `-` or `name.spki` hex pairs joined by commas.
+                        -- `webpki_chain <packed clock> <hostname> <anchors> <pins> <list>`
+                        -- → `ok <rsa|p256|p384> <key> <path> <anchor> <1|0>` / the
+                        -- refusal's name, where <anchors> is `-` or `name.spki` hex pairs
+                        -- joined by commas, <pins> is `-` or hex pins joined by commas,
+                        -- and the last field is Spec.WebpkiPin.pathPinned over the path.
 Spec.Webpki.walkFrom  : Config → (cert : ByteArray) → Certificate → (rest : List ByteArray) →
                         (read : Nat) → Step
-                        -- steps 6a to 6g from one certificate: an anchor whose subject
-                        -- Name equals this certificate's issuer Name and whose key
-                        -- verifies it ends the walk; otherwise the next entry is read
-                        -- as an issuer, checked against the clock, this certificate's
-                        -- issuer Name and its own pathLenConstraint, and must verify
-                        -- this certificate. Driven through `webpki_chain`.
+                        -- steps 6a to 6g from one certificate: the first anchor whose
+                        -- subject Name equals this certificate's issuer Name and whose
+                        -- key verifies it ends the walk, `reached` with read and that
+                        -- anchor's index; otherwise the next entry is read as an issuer,
+                        -- checked against the clock, this certificate's issuer Name and
+                        -- its own pathLenConstraint, and must verify this certificate.
+                        -- Driven through `webpki_chain`.
+Spec.WebpkiPin.verifyRawKey : (pins : List ByteArray) → (list : ByteArray) → RawVerdict
+                        -- an RFC 7250 RawPublicKey CertificateEntry list (RFC 9846
+                        -- §4.4.2): exactly one entry of 1 to spkiMax (550,
+                        -- CH_WEBPKI_SPKI_MAX) bytes with an empty extensions vector and
+                        -- nothing after it, whose bytes readSpki? reads whole, and a pin
+                        -- equal to their SHA-256 (RFC 7858 §4.2). The four refusals are
+                        -- the pairs of return code and alert the C tells apart: rejected
+                        -- (framing, bad_certificate), unsupported_extension,
+                        -- unsupported_certificate and unpinned (CH_EAUTH). Line op:
+                        -- `webpki_raw <pins> <list>` → `ok <rsa|p256|p384> <key>` / the
+                        -- refusal's name.
+Spec.WebpkiPin.pathPinned : (pins : List ByteArray) → (anchors : List Anchor) →
+                        (list : ByteArray) → (path anchor : Nat) → Bool
+                        -- a pin names the SubjectPublicKeyInfo of one of the first `path`
+                        -- entries, each parsed under the arm the walk read it under, or
+                        -- of the anchor at index `anchor`; an entry after the path does
+                        -- not count. Driven through `webpki_chain` on accepted chains,
+                        -- the domain webpki_pin.h's contract names.
 Spec.Handshake.step   : (mode : Mode) → State → Msg → Option State      -- RFC 9846 §4 order of
                         -- server-to-client messages after the ClientHello; none = fatal
                         -- (unexpected_message). Msg has one constructor per line-protocol
@@ -734,17 +772,30 @@ Spec.WebpkiCert.readExtensions?_complete, parseCertificate?_complete
                              the leaf saw keyUsage, extendedKeyUsage and subjectAltName,
                              -- with cA false; an issuer saw keyUsage and basicConstraints,
                              -- with cA true
+Spec.WebpkiCert.parseCertificate?_spki
+                             the recorded SubjectPublicKeyInfo range lies inside the TBS
+                             -- content and reads back through readSpki? as the recorded
+                             -- key, so the bytes an SPKI pin hashes are the key's own
+Spec.Webpki.anchorIndex?_verifies
+                             the anchor index a walk reports names an anchor that names
+                             -- the issuer and verifies the certificate, and no anchor
+                             -- before it does
 Spec.Webpki.walkFrom_reached, verifyChain_ok
                              an accepted chain has a verified signature path to an
                              -- anchor: HasPath holds from the leaf, so every step of
                              -- the path parsed under the issuer arm, covered the clock,
                              -- was named by the certificate below it, stayed inside its
                              -- own pathLenConstraint and verified that certificate,
-                             -- and the path ends at an anchor that both names the last
-                             -- issuer and verifies it. The key the verdict carries is
-                             -- the leaf's own, the leaf's validity covered the clock,
-                             -- and a dNSName of the leaf's subjectAltName matched
-                             -- cfg.hostname
+                             -- and the path ends at the anchor anchorIndex? names, at
+                             -- the index and after the count of certificates the
+                             -- verdict reports. The key the verdict carries is the
+                             -- leaf's own, the leaf's validity covered the clock, and a
+                             -- dNSName of the leaf's subjectAltName matched cfg.hostname
+Spec.WebpkiPin.verifyRawKey_ok
+                             an accepted raw public key list is one entry of 1 to
+                             -- spkiMax bytes and nothing after it, whose bytes readSpki?
+                             -- reads whole as the returned key and whose SHA-256 is one
+                             -- of the pins
 Spec.Record.nonce_inj        distinct sequence numbers below 2^64 give distinct record
                              -- nonces (RFC 9846 §5.3): within one traffic key the
                              -- nonce never repeats
@@ -836,7 +887,7 @@ means the module's selftest plus the differential oracle carry it;
 | --- | --- | --- |
 | Bytes | 24 | proof toolkit: fold characterizations, xor involution and left cancellation, hex injectivity, big-endian round trip and injectivity |
 | Drbg | 13 | key advance (the next key is the counter-0 block, independent of the request size), key/output disjointness within one keystream, request-prefix consistency, session key chain |
-| HandshakeParser | 12 | message-grammar soundness, quantified over all three `Kex` builds and both `SuiteOffer` values: an accepted ServerHello echoes the empty legacy_session_id the profile offers, carries a cipher suite the build offers, selects a group the build lists in supported_groups and carries a key_exchange of exactly `serverShareSize` octets for that group (32 x25519, 1120 hybrid), and any selected_identity it reports is the single index one offered identity puts in range; an accepted HelloRetryRequest carries a cipher suite the build offers and a cookie or a selected group, and a selected group is one the build listed and sent no key share for, so a retry in the x25519 and pq builds carries a cookie and never a group; a result is a HelloRetryRequest exactly when the Random is §4.2.4's fixed value; an accepted record_size_limit is at least 64 under either `serverNameSent`; an accepted ALPN selection is an index into the offered protocols; an accepted CertificateVerify reports an offered scheme that is never RSASSA-PKCS1-v1_5, so a pinned build's is its own pinned SignatureScheme and the webpki build's is one of rsa_pss_rsae_sha256, ecdsa_secp256r1_sha256 and ecdsa_secp384r1_sha384 |
+| HandshakeParser | 13 | message-grammar soundness, quantified over all three `Kex` builds and both `SuiteOffer` values: an accepted ServerHello echoes the empty legacy_session_id the profile offers, carries a cipher suite the build offers, selects a group the build lists in supported_groups and carries a key_exchange of exactly `serverShareSize` octets for that group (32 x25519, 1120 hybrid), and any selected_identity it reports is the single index one offered identity puts in range; an accepted HelloRetryRequest carries a cipher suite the build offers and a cookie or a selected group, and a selected group is one the build listed and sent no key share for, so a retry in the x25519 and pq builds carries a cookie and never a group; a result is a HelloRetryRequest exactly when the Random is §4.2.4's fixed value; an accepted record_size_limit is at least 64 under every offer; an accepted ALPN selection is an index into the offered protocols; an accepted server_certificate_type names a type the ClientHello offered; an accepted CertificateVerify reports an offered scheme that is never RSASSA-PKCS1-v1_5, so a pinned build's is its own pinned SignatureScheme and the webpki build's is one of rsa_pss_rsae_sha256, ecdsa_secp256r1_sha256 and ecdsa_secp384r1_sha384 |
 | Handshake | 17 | state-machine safety invariants: exactly one ServerHello, EncryptedExtensions and Finished; no certificate flight under PSK; pinned flight shape and order; HRR bound; no CertificateRequest; no post-handshake message before Finished; close_notify at most once and last |
 | Record | 8 | seal/open round trip at both the AEAD and record layers, record size, nonce size, nonce injectivity (distinct sequence numbers never share a nonce), and that an accepted record never carries content type invalid(0) |
 | ChaCha | 5 | block size, structural lemmas, keystream prefix stability; keystream itself vector-checked |
@@ -858,8 +909,9 @@ means the module's selftest plus the differential oracle carry it;
 | X509Ca | 6 | isCaTrue accepts exactly the two anchor encodings (the iff is kernel-checked false without its encodeLen-domain bound); an accepted certificate has exactly the SEQUENCE(TBS, sigAlg, BIT STRING) shape with the signature framing intact; the extracted key is exactly 64 bytes or 256..384 in 8-byte steps, tightening the CBMC harness's bound. Acceptance policy beyond the frame is executable oracle only: the differential's minted anchors, near shapes and mutations |
 | WebpkiSpki | 3 | the accepted RSA key is 256..512 bytes in multiples of 8 with its top bit set and odd, stated over the returned bytes from a reader that judges the decoded integer; the EC keys are 64 and 96 bytes. Acceptance beyond that is executable oracle only: the differential's spec-encoded keys and their perturbations |
 | WebpkiSigalg | 9 | the decoding reader accepts exactly the four canonical encodings, one algorithm each (the byte-compare view and the decode view agree); FIPS 186-4 §6.4's integer rule equals the C's byte cut for P-256 with SHA-384 and its zero pad for P-384 with SHA-256, with the pad lemma and big-endian concatenation lemma under them; the cap and both family mismatches refuse. The signature arithmetic is the RSA, P-256 and P-384 modules' and stays vector-checked |
-| WebpkiCert | 5 | an accepted certificate is exactly one Certificate SEQUENCE whose TBS content is the recorded range of the input and whose outer signatureAlgorithm is the encoding of the recorded algorithm; the recorded subjectAltName range lies inside the extensions field and the TBS content; the leaf saw keyUsage, extendedKeyUsage and subjectAltName with cA false, an issuer keyUsage and basicConstraints with cA true. Which values each extension admits, the caps and the other fields stay executable oracle only: the corpus certificates, their single-byte changes and the random extension lists of the differential |
-| Webpki | 2 | soundness of the walk: an accepted chain has a verified signature path to an anchor, stated as an inductive `HasPath` and proved for every walk that reaches one, and the leaf the accepted key comes from parsed under the leaf arm, was valid at the clock and matched `cfg.hostname` through a dNSName of its own subjectAltName. The entry framing and which refusal each failure names stay executable oracle only: the 25 corpus chains, the 5 captures and their clock, hostname, anchor, entry and byte mutations in the differential |
+| WebpkiCert | 6 | an accepted certificate is exactly one Certificate SEQUENCE whose TBS content is the recorded range of the input and whose outer signatureAlgorithm is the encoding of the recorded algorithm; the recorded subjectAltName range lies inside the extensions field and the TBS content; the recorded SubjectPublicKeyInfo range lies inside the TBS content and reads back as the recorded key; the leaf saw keyUsage, extendedKeyUsage and subjectAltName with cA false, an issuer keyUsage and basicConstraints with cA true. Which values each extension admits, the caps and the other fields stay executable oracle only: the corpus certificates, their single-byte changes and the random extension lists of the differential |
+| Webpki | 3 | soundness of the walk: an accepted chain has a verified signature path to an anchor, stated as an inductive `HasPath` and proved for every walk that reaches one, of the length and ending at the anchor index the verdict reports, and that index names the first anchor that verifies; the leaf the accepted key comes from parsed under the leaf arm, was valid at the clock and matched `cfg.hostname` through a dNSName of its own subjectAltName. The entry framing and which refusal each failure names stay executable oracle only: the 25 corpus chains, the 5 captures and their clock, hostname, anchor, entry and byte mutations in the differential |
+| WebpkiPin | 1 | soundness of the raw public key rule: an accepted list is one CertificateEntry of 1 to `spkiMax` bytes and nothing after it, whose bytes `readSpki?` reads whole as the returned key and whose SHA-256 is one of the pins. Which refusal each failure names, and path pinning, stay executable oracle only: the corpus keys framed as raw entries with their reframings, byte changes and random lists, and the chain rows under a pin on each entry, each anchor and nothing, in the differential |
 | X25519 | 2 | RFC 7748 §5 clamping: every decoded scalar is a multiple of the cofactor 8, and has bit 254 set with bit 255 clear. The first keeps `k * P` in the prime-order subgroup, the second fixes the ladder's iteration count. The ladder arithmetic itself stays vector-checked |
 | X509Der | 19 | DER canonicality: a length, a TLV, and an INTEGER are accepted only in the one encoding X.690 §10.1 and §8.3.2 admit, so the reader is DER-strict rather than BER-lenient; plus the encode/decode round trips and the §8.19.2 subidentifier rule |
 | X509 | 4 | parse soundness: an accepted list reports a key only after a signature over the complete DER of the TBSCertificate that carried it verified under the pinned key, or under an intermediate the pinned key itself signed; the entry is a byte range of the list and no third entry can follow. Acceptance policy beyond that is executable oracle only: mint/parse round trips for the single leaf and the chained pair (self-checked signatures; OpenSSL material is exercised by the C strictness suite) and the differential |

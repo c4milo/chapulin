@@ -616,7 +616,16 @@ last `ROLE=server` stub, as the entry said it would.
   length field of one of them, a PSK that is not a ticket bound to the
   config's hostname and anchors (`webpki_resumption_ok`,
   webpki_ticket.h), a config whose clock (`now_seconds`) is 0, and a
-  server_name acknowledgement that carries data. The web PKI fields exist only in that build, so a raw or ca
+  server_name acknowledgement that carries data. Its EncryptedExtensions
+  parser also refuses a server_name acknowledgement when the ClientHello
+  sent no server_name, which a configuration without a hostname does,
+  and a server_certificate_type (RFC 7250) when the ClientHello offered
+  no certificate type, both with unsupported_extension; a
+  server_certificate_type whose body is not one byte, with decode_error;
+  and one naming a type the ClientHello did not offer, with
+  illegal_parameter. The type an accepted one names is what
+  `ch_tls.server_cert_type` reports, and X.509 when the server sent
+  none. The web PKI fields exist only in that build, so a raw or ca
   build that sets one fails to compile rather than returning
   CH_EINVAL. `check_certificate_verify` (handshake_auth.c) refuses a
   CertificateVerify whose signature scheme is not the one the leaf key's
@@ -673,7 +682,22 @@ last `ROLE=server` stub, as the entry said it would.
   inv14-alpn-empty-name, inv14-alpn-list-length,
   inv14-alpn-extension-trailing, inv14-alpn-without-offer,
   inv14-alpn-duplicate-name, inv14-alpn-name-length,
-  inv14-alpn-count-cap and inv14-alpn-selection-unseeded.
+  inv14-alpn-count-cap and inv14-alpn-selection-unseeded. The
+  server_name and server_certificate_type rules have boundary rows in
+  test/handshake_strict_cert_type.h, which bin/handshake_strict_webpki
+  runs: the acknowledgement with and without server_name sent, each
+  offered type accepted, the type an offer lacks and the values 1, 3,
+  7, 8 and 255 refused with 47, bodies of 0 and 2 bytes refused with 50,
+  and a selection with no offer refused with 110.
+  bin/webpki_encrypted_exts_test drives hsf_read_encrypted_extensions
+  over each configuration shape and reads the type the session reports.
+  The eeparse_webpki CBMC harness proves, over every offer and every
+  message up to 256 bytes, that an accepted message leaves the caller's
+  type or names one the offer holds. Seven violations guard them:
+  inv14-server-cert-type-without-offer, inv14-server-cert-type-length,
+  inv14-server-cert-type-unoffered, inv14-server-name-ack-unsent,
+  inv14-server-cert-type-not-reported, inv14-server-cert-type-unseeded
+  and inv14-server-name-sent-constant.
   A `ROLE=server` build's ClientHello parser (`srv_parser.c` and
   `srv_parser_ext.c`) has the same shape with the sides swapped. It
   refuses only what RFC 9846 makes a server abort on — malformed
@@ -718,6 +742,60 @@ last `ROLE=server` stub, as the entry said it would.
   server, or makes the server refuse a ClientHello for carrying
   something it does not know.
 - See [decisions: Protocol surface](decisions.md#protocol-surface).
+
+### INV-33 — an SPKI pin names the server key, on the path the walk read
+
+- **Claim.** A TRUST=webpki client with SPKI pins (`ch_cfg.spki_pins`)
+  accepts a server key only when one pin is the SHA-256 of that key's
+  whole DER SubjectPublicKeyInfo (RFC 7858 §4.2). Under the RFC 7250
+  RawPublicKey type the pins are the whole check, and the Certificate
+  message's list is exactly one CertificateEntry of 1 to
+  `CH_WEBPKI_SPKI_MAX` bytes with an empty extensions vector, which
+  `webpki_read_spki` fills exactly. The client refuses a second entry, a
+  trailing byte or an oversized entry with bad_certificate, an extensions
+  vector with unsupported_extension, a malformed or refused key with
+  unsupported_certificate, and a key no pin names with bad_certificate.
+  Under the X.509 type a chain must first pass the walk (INV-14), and
+  then a pin must name the key of one of the `path_entries` certificates
+  the walk read, the leaf first, or of the anchor at `anchor_index` that
+  verified the last of them. A certificate the server sent after that
+  path does not count. RFC 8310 §6.4 asks a client with a name and pins
+  to require both, and this is how. With pins and no anchors, an X.509
+  answer is refused with unsupported_certificate.
+- **Mechanism.** `webpki_server_key` (`handshake_auth.c`) chooses the
+  rule by `ch_tls.server_cert_type`. `webpki_verify_raw_key` frames its
+  one entry with `webpki_read_entry`, the reader the walk frames every
+  entry with. `webpki_verify_chain` writes `path_entries` and
+  `anchor_index` in the one branch that returns CH_OK, and
+  `webpki_path_pinned` reads back only the first `path_entries` entries,
+  each under the arm the walk parsed it under, then that anchor's key.
+  `webpki_spki_pinned` compares every pin through `ct_memeq` and does not
+  stop at the first match.
+- **Check.** bin/webpki_auth_test drives hsa_server_auth through
+  test/webpki_auth_pins.h: each key family's raw key accepted with its
+  pin first or second of two and refused with none; each framing and
+  reader refusal with its alert; the `CH_WEBPKI_SPKI_MAX` boundary pair;
+  each accepted chain accepted with a pin on its leaf, its intermediate or
+  its anchor; and a pin only on a certificate appended past the path, on
+  an anchor that named the issuer and verified nothing, or on nothing,
+  refused. bin/webpki_chain_test's test/webpki_chain_path.h pins
+  `path_entries` and `anchor_index` on the corpus, on the captures, whose
+  chains end at anchors 0, 2, 3 and 4, and on a root re-keyed under one
+  Name. The webpki_pin CBMC harness proves both calls memory-safe at their
+  real bounds and their verdict and alert pairs, that an accepted raw list
+  is one entry whose bytes a pin hashes to, and that path pinning parses
+  nothing past `path_entries` and hashes the anchor at `anchor_index`.
+  The webpki_chain harness proves `path_entries` is the count of
+  certificates the walk parsed and that the anchor at `anchor_index`
+  verified the last one. spec/Spec/WebpkiPin.lean models both rules and
+  proves the raw one sound, and the differential compares the C and the
+  model on the `webpki_raw` op and on `webpki_chain`'s path and pin
+  verdict. Nine `inv33-` violations guard the rules.
+- **Violation.** A PR accepts a raw key or a chain on the name alone,
+  counts a certificate the walk never read, or compares a pin with a key
+  other than the one the walk or the reader returned.
+- docs/server.md names INV-30 to INV-32 for server rules it plans, so
+  this entry takes the next number after them.
 
 ### INV-15 — CH_ASSERT survives release
 
@@ -827,8 +905,9 @@ last `ROLE=server` stub, as the entry said it would.
   instruction the compiler emits for one does either. Comparisons on
   secret data go through `ct_memeq`, selects through branchless masks.
   Variable time is allowed only where every input is public, stated at
-  the call site — P-256 and RSA verify, and the HRR-magic compare in
-  handshake_parser.c.
+  the call site — P-256 and RSA verify, the HRR-magic compare in
+  handshake_parser.c and the ALPN name compare in
+  handshake_parser_ee.c.
   That second half is why `ct.h` builds widening products out of 16x16
   pieces on every architecture, unless the build asserts
   `CH_NATIVE_WIDEMUL` for a part whose own widening multiply is
@@ -852,9 +931,10 @@ last `ROLE=server` stub, as the entry said it would.
 - **Mechanism.** Constant-time construction; ChaCha20/Poly1305/x25519
   have no table lookups by design.
 - **Check.** Semgrep-structural (`inv-16-no-variable-time-compare`) bans
-  memcmp/strcmp in library sources, with handshake_parser.c allowlisted for its
-  public-data compare — the allowlist is file-wide, so review holds the
-  line on any new compare added to that file; `make timing` (Welch's
+  memcmp/strcmp in library sources, with handshake_parser.c and
+  handshake_parser_ee.c allowlisted for their public-data compares — the
+  allowlist is file-wide, so review holds the line on any new compare
+  added to either file; `make timing` (Welch's
   t-test) gives statistical evidence.
   Semgrep cannot know a buffer is secret — the real guards remain
   construction and the t-test.

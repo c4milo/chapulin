@@ -19,12 +19,12 @@ static const uint8_t other_host[] = {'s', '3', '.', 'e', 'x', 'a', 'm',
 static uint8_t ticket_psk[SHA256_LEN + 1]; // 0x00..0x20; the byte past SHA256_LEN is a length row
 static uint8_t ticket_id[CH_TICKET_ID_MAX + 1];
 
-// The binding of ticket_psk under base_cfg's hostname and two anchors,
-// computed outside this tree: Python's hashlib and hmac over the layout
+// The binding of ticket_psk under base_cfg's hostname, two anchors and no
+// SPKI pins, computed outside this tree: Python's hashlib and hmac over the layout
 // webpki_ticket.h states.
 static const uint8_t known_binding[SHA256_LEN] = {
-    0x2f, 0x83, 0xf7, 0xef, 0x8f, 0x96, 0x3b, 0x28, 0x6f, 0x65, 0x07, 0xcf, 0x7c, 0x0c, 0xb9, 0x55,
-    0x6b, 0xed, 0x74, 0x2d, 0xc5, 0x94, 0x2b, 0xb0, 0xd0, 0xcd, 0x47, 0xb6, 0x72, 0xa1, 0x3d, 0x69};
+    0x2f, 0x52, 0xb3, 0x95, 0xde, 0x95, 0xb8, 0x92, 0x58, 0xe5, 0x1a, 0xf0, 0x9f, 0x5c, 0x68, 0x3c,
+    0x08, 0x7a, 0x9f, 0x77, 0x3c, 0x56, 0x76, 0x99, 0xcf, 0x7b, 0xcf, 0x7c, 0x86, 0x7f, 0x18, 0x52};
 
 // A valid TRUST=webpki config with no PSK: two anchors, a hostname and a
 // clock. It resets the mock and the received ticket.
@@ -149,6 +149,14 @@ static void test_ticket_names_its_config(void) {
     cfg.anchor_count = 2;
     anchors[1].spki = other_spki;
     anchors[1].spki_len = sizeof other_spki;
+    CHECK(refused(&cfg));
+    // Another SPKI pin set: a ticket bound under no pins is refused under
+    // one, so a pin change cannot resume a session the old pins judged.
+    static const uint8_t pin[1][SHA256_LEN] = {{0x70}};
+    cfg = base_cfg();
+    present(&cfg, ticket_psk, known_binding);
+    cfg.spki_pins = pin;
+    cfg.spki_pin_count = 1;
     CHECK(refused(&cfg));
     // The binding of another ticket, and a binding one bit off.
     cfg = base_cfg();

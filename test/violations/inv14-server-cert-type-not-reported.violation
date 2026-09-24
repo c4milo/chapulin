@@ -1,0 +1,16 @@
+invariant: INV-14
+file: handshake_flight.c
+catches: webpki_encrypted_exts_test
+reason: the EncryptedExtensions handler hands the parser a temporary
+  instead of ch_tls.server_cert_type, so the type the server selected
+  is dropped and the session reports X.509 after a RawPublicKey
+  selection. hsa_server_auth then reads the server's one raw key as a
+  certificate chain. bin/webpki_encrypted_exts_test's raw-key row reads
+  the session's type, and it objects.
+
+--- old
+        &t->alpn_selected, t->cfg.hostname_len > 0, webpki_cert_types_offered(&t->cfg),
+        &t->server_cert_type,
+--- new
+        &t->alpn_selected, t->cfg.hostname_len > 0, webpki_cert_types_offered(&t->cfg),
+        &(uint8_t){CH_CERT_TYPE_X509},

@@ -1,0 +1,13 @@
+invariant: INV-33
+file: webpki_pin.c
+catches: webpki_auth_test
+reason: webpki_spki_pinned counts every configured pin as a match
+  without comparing it with the key's digest, so any raw public key, and
+  any chain that verifies, passes once one pin is set.
+  bin/webpki_auth_test's rows that pin nothing the server sent, raw and
+  X.509, object.
+
+--- old
+        pinned |= ct_memeq(digest, cfg->spki_pins[i], SHA256_LEN);
+--- new
+        pinned |= 1U;

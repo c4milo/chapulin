@@ -1,0 +1,14 @@
+invariant: INV-14
+file: webpki_ticket.c
+catches: webpki_resume_test
+reason: the configuration hash leaves out the SPKI pins, so a ticket issued
+  under one pin set resumes under another, and a resumed handshake
+  checks no key against the new pins. The pin-set row objects.
+
+--- old
+    hash_len(&s, cfg->spki_pin_count);
+    for (size_t i = 0; i < cfg->spki_pin_count; i++) {
+        sha256_update(&s, cfg->spki_pins[i], SHA256_LEN);
+    }
+--- new
+    (void)cfg->spki_pins;

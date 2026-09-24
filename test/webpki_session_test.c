@@ -455,6 +455,7 @@ static int sends_client_hello(const ch_cfg *cfg) {
 
 #include "rxbuf_floor_tests.h"
 #include "webpki_groups_cases.h"
+#include "webpki_pins_cases.h"
 #include "webpki_session_cases.h"
 #include "webpki_suite_cases.h"
 
@@ -472,6 +473,7 @@ int main(void) {
     test_webpki_handshake_fails_closed();
     test_webpki_handshake_reports_alpn();
     test_webpki_retry_names_shared_group();
+    test_webpki_pins();
 #ifdef CH_KEX_TWO_GROUPS
     test_webpki_groups_hello();
     test_webpki_retry_to_x25519();

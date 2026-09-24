@@ -38,7 +38,7 @@ static void store_selection(ch_tls *t, const client_hello *ch, const selection *
     // CH_TX_PT. Each send site compares against CH_TX_PT again anyway:
     // srv_flight.c's send_limit and tls.c's ch_write both take the
     // smaller of the two, which is the contract srv_flight.h states.
-    // The client lowers its own the same way (handshake_parser.c:233).
+    // The client lowers its own the same way (handshake_parser_ee.c:25-28).
     if (ch->record_size_limit != 0 && ch->record_size_limit < t->peer_limit) {
         t->peer_limit = ch->record_size_limit;
     }

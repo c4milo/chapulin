@@ -33,6 +33,15 @@ The exact commands per row, over a file holding the 130 signed octets:
 Every signature is checked with `openssl dgst -verify` under the leaf's
 public key before it is emitted, so a wrong invocation fails here
 instead of shipping a misleading vector.
+
+A second table holds the RFC 7250 raw public key flight, one row per
+key family: a Certificate message whose one CertificateEntry is the
+leaf key's DER SubjectPublicKeyInfo, from
+
+  openssl pkey -in leaf.pem -pubout -outform DER
+
+and the CertificateVerify signature its family's scheme names over that
+message's transcript hash, signed and checked the same way.
 """
 
 import hashlib
@@ -96,6 +105,30 @@ def sign(ossl, tmp, key_label, content, digest, padding):
                    "-sigopt", "rsa_mgf1_md:sha256"]
     mint.sh(*verify, str(data))
     return sig
+
+
+# (key family, leaf key label, scheme, digest, padding) for the raw
+# public key rows, one per key family, in the order the test reads them.
+RAW_SIGNERS = [
+    ("rsa", "leaf_rsa2048", SIGALG_RSA_PSS_RSAE_SHA256, "sha256", "pss"),
+    ("p256", "leaf_p256", SIGALG_ECDSA_P256_SHA256, "sha256", None),
+    ("p384", "leaf_p384", SIGALG_ECDSA_P384_SHA384, "sha384", None),
+]
+
+
+def build_raw_rows(ossl, tmp):
+    """The raw public key rows: each leaf key's DER SPKI as the one entry
+    of a Certificate message, and its family's signature over that
+    message's signed content."""
+    rows = []
+    for family, key, scheme, digest, padding in RAW_SIGNERS:
+        spki = mint.sh(ossl, "pkey", "-in", str(mint.key_path(key)), "-pubout", "-outform", "DER")
+        message = der.certificate_message([spki])
+        content, transcript = signed_content(message)
+        sig = sign(ossl, tmp, key, content, digest, padding)
+        rows.append(dict(name=family, spki=spki, message=message,
+                         transcript=transcript, scheme=scheme, sig=sig))
+    return rows
 
 
 def corrupt(sig):
@@ -174,6 +207,13 @@ HEADER = """\
 // "bad_signature". The test builds the refusals of the scheme rule
 // itself out of the accepted rows, because they need no signature of
 // their own.
+//
+// webpki_raw_vectors holds the RFC 7250 raw public key flight, one row
+// per key family: spki is the leaf key's DER SubjectPublicKeyInfo,
+// message the Certificate message whose one CertificateEntry it is,
+// transcript SHA-256 of that message, and sig the signature the scheme
+// names over it. Every row is one the client must accept once a pin
+// names spki.
 #ifndef CH_TEST_WEBPKI_AUTH_VECTORS_H
 #define CH_TEST_WEBPKI_AUTH_VECTORS_H
 
@@ -190,6 +230,18 @@ typedef struct {{
     const char *expected;
 }} webpki_auth_vector;
 
+typedef struct {{
+    const char *name;
+    const uint8_t *spki;
+    size_t spki_len;
+    const uint8_t *message;
+    size_t message_len;
+    const uint8_t *transcript;
+    uint16_t scheme;
+    const uint8_t *sig;
+    size_t sig_len;
+}} webpki_raw_vector;
+
 // clang-format off
 """
 
@@ -198,6 +250,24 @@ FOOTER = """\
 
 #endif
 """
+
+
+def render_raw(rows):
+    pool = emit.Pool("webpki_raw")
+    table = [f"static const webpki_raw_vector webpki_raw_vectors[{len(rows)}] = {{"]
+    for r in rows:
+        spki = pool.add(f"spki_{r['name']}", r["spki"], f"{r['name']}: the DER SubjectPublicKeyInfo")
+        message = pool.add(f"message_{r['name']}", r["message"],
+                           f"{r['name']}: the Certificate message")
+        transcript = pool.add(f"transcript_{r['name']}", r["transcript"],
+                              f"{r['name']}: SHA-256 of the Certificate message")
+        sig = pool.add(f"sig_{r['name']}", r["sig"], f"{r['name']}: the signature")
+        table.append("    {")
+        table.append(f'        "{r["name"]}", {spki}, sizeof {spki}, {message}, sizeof {message},')
+        table.append(f"        {transcript}, 0x{r['scheme']:04x}, {sig}, sizeof {sig},")
+        table.append("    },")
+    table.append("};")
+    return pool.render() + "\n" + "\n".join(table) + "\n"
 
 
 def render(rows):
@@ -237,9 +307,11 @@ def main():
             if chain_name not in messages:
                 sys.exit(f"{chain_name} is no positive corpus chain")
         rows = build_rows(ossl, tmp, messages)
-    OUT.write_text(HEADER.format(version=version) + render(rows) + FOOTER)
+        raw_rows = build_raw_rows(ossl, tmp)
+    OUT.write_text(HEADER.format(version=version) + render(rows) + render_raw(raw_rows) + FOOTER)
     accepted = sum(1 for r in rows if r["expected"] == "ok")
-    print(f"wrote {OUT}: {len(rows)} rows ({accepted} accepted, {len(rows) - accepted} refused)")
+    print(f"wrote {OUT}: {len(rows)} rows ({accepted} accepted, {len(rows) - accepted} refused), "
+          f"{len(raw_rows)} raw public key rows")
 
 
 if __name__ == "__main__":

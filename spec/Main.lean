@@ -38,6 +38,11 @@ def anchorsArg? (s : String) : Option (List Spec.Webpki.Anchor) :=
       return { name := nb, spki := kb }
     | _ => none
 
+/-- The SPKI pins of a `webpki_chain` or `webpki_raw` request: `-` for
+none, else 32-byte hex pins joined by commas. -/
+def pinsArg? (s : String) : Option (List ByteArray) :=
+  if s == "-" then some [] else (s.splitOn ",").mapM hexToBytes?
+
 /-- A `webpki_sign` reply: the signer's SPKI and the signature, or `FAIL`. -/
 def webpkiSigned : Option (ByteArray × ByteArray) → String
   | some (spki, sig) => s!"{emit spki} {emit sig}"
@@ -70,6 +75,7 @@ def selftestAll : String :=
     ("webpki_sigalg", Spec.WebpkiSigalg.selftest),
     ("webpki_cert", Spec.WebpkiCert.selftest),
     ("webpki", Spec.Webpki.selftest),
+    ("webpki_pin", Spec.WebpkiPin.selftest),
     ("drbg", Spec.Drbg.selftest),
     ("handshake", Spec.Handshake.selftest),
     ("handshake_parser", Spec.HandshakeParser.selftest)]
@@ -303,12 +309,12 @@ def dispatch : List String → Option String
       | .ok (.helloRetryRequest f) =>
         s!"hrr {(f.cookie.map emit).getD "-"} {emitNat? f.selectedGroup} {f.cipherSuite}"
       | .error _ => "ERR hs_server_hello reject"
-  | ["hs_encrypted_extensions", sni, alpn, msg] => do
+  | ["hs_encrypted_extensions", sni, alpn, certTypes, msg] => do
     let m ← hexArg? msg
-    -- `sni` and `nosni` say whether the build's ClientHello sent
-    -- server_name: the TRUST=webpki build does, the raw and ca builds
-    -- do not, and RFC 6066 §3 admits the acknowledgement only in the
-    -- first case.
+    -- `sni` and `nosni` say whether the ClientHello sent server_name:
+    -- the TRUST=webpki build does when its configuration has a
+    -- hostname, the raw and ca builds never do, and RFC 6066 §3 admits
+    -- the acknowledgement only in the first case.
     let sent ← match sni with
       | "sni" => some true
       | "nosni" => some false
@@ -321,8 +327,18 @@ def dispatch : List String → Option String
       | hex => do
         let bytes ← hexArg? hex
         Spec.HandshakeParser.protocolNames? bytes
-    return match Spec.HandshakeParser.parseEncryptedExtensions sent offered m with
-      | .ok f => s!"ok {emitNat? f.recordSizeLimit} {emitNat? f.alpnSelected}"
+    -- `certTypes` carries the CertificateType values the ClientHello's
+    -- server_certificate_type offered, as the hex of that list, one
+    -- octet per type (RFC 7250 §4.1), or "-" for a hello that sent no
+    -- such extension. Only a TRUST=webpki build with SPKI pins sends one.
+    let typesOffered ← match certTypes with
+      | "-" => some []
+      | hex => do
+        let bytes ← hexArg? hex
+        some (bytes.toList.map (·.toNat))
+    return match Spec.HandshakeParser.parseEncryptedExtensions sent offered typesOffered m with
+      | .ok f =>
+        s!"ok {emitNat? f.recordSizeLimit} {emitNat? f.alpnSelected} {emitNat? f.serverCertType}"
       | .error _ => "ERR hs_encrypted_extensions reject"
   | ["hs_certificate", msg] => do
     let m ← hexArg? msg
@@ -483,9 +499,10 @@ def dispatch : List String → Option String
         if Spec.WebpkiSigalg.verify a keyAlg key tbsB sigB then "1" else "0"
   -- One certificate under an arm, 0 for the leaf and 1 for an issuer. The
   -- reply lists every range as an offset and a length into the certificate,
-  -- the dates, the key, the algorithm, the signature range, the subjectAltName
-  -- range (`- 0` when absent), the webpki_cert.seen byte, cA and the
-  -- pathLenConstraint (`-` when absent), so the C side's pointers are compared.
+  -- the dates, the SubjectPublicKeyInfo range, the key, the algorithm, the
+  -- signature range, the subjectAltName range (`- 0` when absent), the
+  -- webpki_cert.seen byte, cA and the pathLenConstraint (`-` when absent), so
+  -- the C side's pointers are compared.
   | ["webpki_cert", arm, cert] => do
     let isCa ← (match arm with | "0" => some false | "1" => some true | _ => none)
     let b ← hexArg? cert
@@ -497,21 +514,35 @@ def dispatch : List String → Option String
           | some r => s!"{r.off} {r.len}"
           | none => "- 0"
         s!"ok {c.tbs.off} {c.tbs.len} {c.issuer.off} {c.issuer.len} {c.subject.off} " ++
-          s!"{c.subject.len} {c.notBefore} {c.notAfter} {c.keyAlg.name} {emit c.key} " ++
+          s!"{c.subject.len} {c.notBefore} {c.notAfter} {c.spki.off} {c.spki.len} " ++
+          s!"{c.keyAlg.name} {emit c.key} " ++
           s!"{c.sigAlg.name} {c.signature.off} {c.signature.len} {san} {e.seen} " ++
           s!"{if e.isCa then 1 else 0} {emitNat? e.pathLen}"
   -- One chain walk: the clock as a packed date, the reference hostname, the
-  -- anchors, and the CertificateEntry list. The reply is the leaf key on
-  -- acceptance and otherwise the name of the refusal, which is the pair of
-  -- return code and alert the C answers.
-  | ["webpki_chain", now, host, anchors, list] => do
+  -- anchors, the SPKI pins and the CertificateEntry list. The reply on
+  -- acceptance is the leaf key, the path the walk reports and whether a pin
+  -- names a key on it (1/0), and otherwise the name of the refusal, which is
+  -- the pair of return code and alert the C answers.
+  | ["webpki_chain", now, host, anchors, pins, list] => do
     let n ← now.toNat?
     let hostB ← hexArg? host
     let anchorList ← anchorsArg? anchors
+    let pinList ← pinsArg? pins
     let listB ← hexArg? list
     let cfg : Spec.Webpki.Config :=
       { anchors := anchorList, hostname := hostB.toList, now := n }
     return match Spec.Webpki.verifyChain cfg listB with
+      | .ok alg key path anchor =>
+        let pinned := Spec.WebpkiPin.pathPinned pinList anchorList listB path anchor
+        s!"ok {alg.name} {emit key} {path} {anchor} {if pinned then 1 else 0}"
+      | v => v.name
+  -- One RFC 7250 raw public key list under SPKI pins. The reply is the key
+  -- on acceptance and otherwise the name of the refusal, which is the pair
+  -- of return code and alert the C answers.
+  | ["webpki_raw", pins, list] => do
+    let pinList ← pinsArg? pins
+    let listB ← hexArg? list
+    return match Spec.WebpkiPin.verifyRawKey pinList listB with
       | .ok alg key => s!"ok {alg.name} {emit key}"
       | v => v.name
   | ["webpki_sign", alg, "rsa", n, d, tbs] => do

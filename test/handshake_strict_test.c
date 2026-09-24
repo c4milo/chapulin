@@ -3,12 +3,11 @@
 // match its struct exactly (RFC 9846 §4.3 makes trailing bytes a decode error)
 // and no extension type may repeat. Each behavior gets a boundary pair: the
 // exact-length body parses, the same body plus one byte fails. The parsers
-// live in handshake_parser.c and depend only on buf.c, so those two files are
-// the whole link line. Its own binary with a private main, like the other
-// standalone test mains. The same main also holds the CertificateVerify
-// algorithm rule and the server_name acknowledgement, whose arms differ by
-// trust mode, so the Makefile builds it once more as
-// bin/handshake_strict_webpki under -DCH_TRUST_WEBPKI.
+// live in handshake_parser.c and handshake_parser_ee.c and depend only on
+// buf.c, so those three files are the whole link line. Its own binary with a private main, like the
+// other standalone test mains. The same main also holds the CertificateVerify algorithm rule, the
+// server_name acknowledgement and the certificate type, whose arms differ by trust mode, so the
+// Makefile builds it once more as bin/handshake_strict_webpki under -DCH_TRUST_WEBPKI.
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
@@ -115,8 +114,9 @@ static int try_encrypted_exts(const uint8_t *body, size_t n) {
     uint8_t alert = 0;
 #ifdef CH_TRUST_WEBPKI
     uint8_t selected = CH_ALPN_NONE;
+    uint8_t cert_type = CH_CERT_TYPE_X509;
     return hsp_parse_encrypted_exts(body, n, &peer_limit, alpn_offer, ALPN_OFFER_COUNT, &selected,
-                                    &alert);
+                                    1, 0, &cert_type, &alert);
 #else
     return hsp_parse_encrypted_exts(body, n, &peer_limit, &alert);
 #endif
@@ -223,8 +223,9 @@ static uint8_t encrypted_exts_alert_case(const uint8_t *exts, size_t n, uint8_t 
     uint8_t alert = seed;
 #ifdef CH_TRUST_WEBPKI
     uint8_t selected = CH_ALPN_NONE;
+    uint8_t cert_type = CH_CERT_TYPE_X509;
     (void)hsp_parse_encrypted_exts(buf, len, &peer_limit, alpn_offer, ALPN_OFFER_COUNT, &selected,
-                                   &alert);
+                                   1, 0, &cert_type, &alert);
 #else
     (void)hsp_parse_encrypted_exts(buf, len, &peer_limit, &alert);
 #endif
@@ -416,6 +417,7 @@ static int server_hello_case2(const uint8_t *ext2, size_t n, int hrr, int psk_mo
 }
 
 #include "handshake_strict_alpn.h"
+#include "handshake_strict_cert_type.h"
 
 int main(void) {
 #ifdef CH_KEX_PQ
@@ -476,6 +478,8 @@ int main(void) {
     test_server_name_acknowledgement();
     test_alpn_selection();
     test_alpn_in_block();
+    test_server_name_sent();
+    test_server_cert_type();
     test_certificate_verify_schemes();
 
     if (failures > 0) {

@@ -1,0 +1,15 @@
+invariant: INV-14
+file: handshake_parser_ee.c
+catches: handshake_strict_webpki
+reason: the parser reads a server_certificate_type even when the
+  ClientHello offered no certificate type, so a response to a request
+  that never went out is judged on its contents instead of refused.
+  RFC 9846 §4.3 answers an unrequested extension with
+  unsupported_extension, and the alert here becomes illegal_parameter,
+  which names the wrong fault. bin/handshake_strict_webpki's no-offer
+  rows object.
+
+--- old
+    if (ext == EXT_SERVER_CERTIFICATE_TYPE && out->cert_types_offered != 0) {
+--- new
+    if (ext == EXT_SERVER_CERTIFICATE_TYPE) {

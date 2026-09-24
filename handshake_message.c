@@ -13,6 +13,9 @@
 #ifdef CH_KEX_TWO_GROUPS
 #include "ch_assert.h"
 #endif
+#ifdef CH_TRUST_WEBPKI
+#include "webpki_pin.h"
+#endif
 
 #if defined(CH_TRUST_WEBPKI) || defined(CH_TRANSPORT_QUIC)
 // application_layer_protocol_negotiation (RFC 7301 §3.1): a
@@ -35,6 +38,47 @@ static void write_alpn(wbuf *w, const ch_cfg *cfg) {
     }
     wb_patch16(w, list);
     wb_patch16(w, ext);
+}
+#endif
+
+#ifdef CH_TRUST_WEBPKI
+// server_name (RFC 6066 §3): a ServerNameList holding one host_name
+// entry. The chain walk matches the leaf's subjectAltName against the
+// same cfg->hostname bytes. A configuration of SPKI pins alone may set
+// no hostname, and then the hello names none (webpki_cfg.h).
+static void write_server_name(wbuf *w, const ch_cfg *cfg) {
+    if (cfg->hostname_len == 0) {
+        return;
+    }
+    wb_u16(w, EXT_SERVER_NAME);
+    wb_u16(w, (uint16_t)(2 + 1 + 2 + cfg->hostname_len));
+    wb_u16(w, (uint16_t)(1 + 2 + cfg->hostname_len)); // server_name_list length
+    wb_u8(w, 0);                                      // name_type: host_name
+    wb_u16(w, (uint16_t)cfg->hostname_len);
+    wb_bytes(w, cfg->hostname, cfg->hostname_len);
+}
+
+// server_certificate_type (RFC 7250 §4.1): the certificate types this
+// configuration can judge, the raw public key first because a
+// configuration that offers it prefers it (webpki_pin.h). A
+// configuration without SPKI pins sends no extension, and its server
+// sends the X.509 type RFC 9846 §4.5.1 defaults to.
+static void write_cert_types(wbuf *w, const ch_cfg *cfg) {
+    uint8_t offered = webpki_cert_types_offered(cfg);
+    if (offered == 0) {
+        return;
+    }
+    uint8_t raw = (offered >> CH_CERT_TYPE_RAW_PUBLIC_KEY) & 1U;
+    uint8_t x509 = (offered >> CH_CERT_TYPE_X509) & 1U;
+    wb_u16(w, EXT_SERVER_CERTIFICATE_TYPE);
+    wb_u16(w, (uint16_t)(1 + raw + x509));
+    wb_u8(w, (uint8_t)(raw + x509)); // server_certificate_types length
+    if (raw) {
+        wb_u8(w, CH_CERT_TYPE_RAW_PUBLIC_KEY);
+    }
+    if (x509) {
+        wb_u8(w, CH_CERT_TYPE_X509);
+    }
 }
 #endif
 
@@ -111,17 +155,8 @@ size_t hs_build_client_hello(uint8_t *out, size_t cap, const ch_cfg *cfg,
     size_t exts = wb_mark(&w, 2);
 
 #ifdef CH_TRUST_WEBPKI
-    // server_name (RFC 6066 §3), first in the list as clients
-    // conventionally send it: a ServerNameList holding one host_name
-    // entry. The chain walk matches the leaf's subjectAltName against
-    // the same cfg->hostname bytes.
-    wb_u16(&w, EXT_SERVER_NAME);
-    wb_u16(&w, (uint16_t)(2 + 1 + 2 + cfg->hostname_len));
-    wb_u16(&w, (uint16_t)(1 + 2 + cfg->hostname_len)); // server_name_list length
-    wb_u8(&w, 0);                                      // name_type: host_name
-    wb_u16(&w, (uint16_t)cfg->hostname_len);
-    wb_bytes(&w, cfg->hostname, cfg->hostname_len);
-
+    // server_name first in the list, as clients conventionally send it.
+    write_server_name(&w, cfg);
     write_alpn(&w, cfg);
 #elif defined(CH_TRANSPORT_QUIC)
     // RFC 9001 §8.1 makes ALPN mandatory for a QUIC client
@@ -200,6 +235,9 @@ size_t hs_build_client_hello(uint8_t *out, size_t cap, const ch_cfg *cfg,
         wb_u16(&w, SIGALG_ECDSA_P384_SHA384);
         wb_u16(&w, SIGALG_RSA_PKCS1_SHA256);
         wb_u16(&w, SIGALG_RSA_PKCS1_SHA384);
+        // The same arm offers raw public keys, because only a hello that
+        // can be answered with a Certificate asks for a certificate type.
+        write_cert_types(&w, cfg);
 #else
         // Pinned-key mode: the server authenticates by signature, so
         // offer the one algorithm the pin can be.

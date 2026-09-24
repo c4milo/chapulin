@@ -682,6 +682,76 @@ WEBPKI_HOST=other.example.test WEBPKI_NOW=$NOW \
     expect_fail webpki-resume-hostname -6 "$DIR/err_wp_resume_host" \
     ./bin/tlsclient_webpki 127.0.0.1 "$PORT_WEBPKI" "$WEBPKI_ANCHOR" "@$DIR/wpticket"
 
+# --- RFC 7250 raw public keys and SPKI pins (docs/webpki.md, "Raw public
+# keys and SPKI pins"). A pin is the SHA-256 of a DER SubjectPublicKeyInfo.
+spki_pin() {
+    "$OPENSSL" pkey -in "$1" -pubout -outform DER | "$OPENSSL" dgst -sha256 -r | cut -d' ' -f1
+}
+LEAF_PIN=$(spki_pin "$DIR/wpleaf.key")
+INT_PIN=$(spki_pin "$DIR/wpint.key")
+OTHER_PIN=$(spki_pin "$DIR/wpother.key")
+start_server -tls1_3 -ciphersuites TLS_CHACHA20_POLY1305_SHA256 -cert "$DIR/wpleaf.pem" -key "$DIR/wpleaf.key" -cert_chain "$DIR/wpint.pem" -enable_server_rpk -rev
+PORT_RPK=$SRV_PORT
+
+# Pins alone, with no anchor, hostname or clock: the server sends its key
+# raw, and the pin names it.
+MSG='llave cruda'
+WEBPKI_PINS=$LEAF_PIN \
+    expect webpki-rpk "adurc evall" "$DIR/err_rpk" \
+    ./bin/tlsclient_webpki 127.0.0.1 "$PORT_RPK" webpki:- -
+grep -q "^cert type 2$" "$DIR/err_rpk" || {
+    echo "FAIL e2e webpki-rpk: the server did not send a raw public key"
+    cat "$DIR/err_rpk"
+    exit 1
+}
+
+# Rotation: the pin that names the key sits second of two.
+MSG='segundo pin'
+WEBPKI_PINS=$OTHER_PIN,$LEAF_PIN \
+    expect webpki-rpk-rotation "nip odnuges" "$DIR/err_rpk_rot" \
+    ./bin/tlsclient_webpki 127.0.0.1 "$PORT_RPK" webpki:- -
+
+# A key no pin names.
+MSG='pin ajeno'
+WEBPKI_PINS=$OTHER_PIN \
+    expect_fail webpki-rpk-unpinned -3 "$DIR/err_rpk_unpinned" \
+    ./bin/tlsclient_webpki 127.0.0.1 "$PORT_RPK" webpki:- -
+
+# A server that answers the raw key offer with a certificate chain: pins
+# alone have no anchor to verify it with (RFC 7250 section 4.2).
+MSG='cadena no pedida'
+WEBPKI_PINS=$LEAF_PIN \
+    expect_fail webpki-rpk-certificate -3 "$DIR/err_rpk_cert" \
+    ./bin/tlsclient_webpki 127.0.0.1 "$PORT_WEBPKI" webpki:- -
+
+# Anchors and pins against a server with no raw key: the chain, the name
+# and a pin must all pass, and a pin may name the intermediate.
+MSG='cadena y pin'
+WEBPKI_HOST=$WEBPKI_HOSTNAME WEBPKI_NOW=$NOW WEBPKI_PINS=$INT_PIN \
+    expect webpki-pins-chain "nip y anedac" "$DIR/err_pins_chain" \
+    ./bin/tlsclient_webpki 127.0.0.1 "$PORT_WEBPKI" "$WEBPKI_ANCHOR" -
+grep -q "^cert type 0$" "$DIR/err_pins_chain" || {
+    echo "FAIL e2e webpki-pins-chain: expected an X.509 chain"
+    cat "$DIR/err_pins_chain"
+    exit 1
+}
+MSG='cadena sin pin'
+WEBPKI_HOST=$WEBPKI_HOSTNAME WEBPKI_NOW=$NOW WEBPKI_PINS=$OTHER_PIN \
+    expect_fail webpki-pins-chain-unpinned -3 "$DIR/err_pins_chain_unpinned" \
+    ./bin/tlsclient_webpki 127.0.0.1 "$PORT_WEBPKI" "$WEBPKI_ANCHOR" -
+
+# Anchors and pins against the raw key server: the client offers the raw
+# key first, and the server takes it.
+MSG='ambos'
+WEBPKI_HOST=$WEBPKI_HOSTNAME WEBPKI_NOW=$NOW WEBPKI_PINS=$LEAF_PIN \
+    expect webpki-pins-rpk "sobma" "$DIR/err_pins_rpk" \
+    ./bin/tlsclient_webpki 127.0.0.1 "$PORT_RPK" "$WEBPKI_ANCHOR" -
+grep -q "^cert type 2$" "$DIR/err_pins_rpk" || {
+    echo "FAIL e2e webpki-pins-rpk: the server did not send a raw public key"
+    cat "$DIR/err_pins_rpk"
+    exit 1
+}
+
 # The hostname the caller asked for is not one the leaf names, so the
 # name check refuses the chain the signatures would otherwise carry.
 MSG='nombre ajeno'
@@ -960,4 +1030,4 @@ else
     echo "SKIP webpki-aes legs: bin/tlsclient_webpki_aes is absent (no AES instructions)"
 fi
 
-echo "e2e: record + psk + tickets + resumption + pinned ecdsa + pinned rsa + require-pq refused + rotation + ca rsa x2 + ca ecdsa x2 + ca rotation + ca negatives x3${EPOCH_LEG} + webpki rsa + webpki-resume x2 + webpki ecdsa x2 + webpki negatives x4 + webpki alpn x3${GO_LEG}${OPENSSL_PQ_LEG}${AES_SUITE_LEG} + examples x4 OK"
+echo "e2e: record + psk + tickets + resumption + pinned ecdsa + pinned rsa + require-pq refused + rotation + ca rsa x2 + ca ecdsa x2 + ca rotation + ca negatives x3${EPOCH_LEG} + webpki rsa + webpki-resume x2 + webpki-rpk x7 + webpki ecdsa x2 + webpki negatives x4 + webpki alpn x3${GO_LEG}${OPENSSL_PQ_LEG}${AES_SUITE_LEG} + examples x4 OK"
