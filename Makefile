@@ -250,6 +250,12 @@ AES_HW_BINS := $(if $(AES_HW_PROBE),bin/quic_test_hw bin/aes_equiv_test bin/ghas
 # is what a build with neither macro compiles. quic_ghash_hw.[ch] guard
 # their body on CH_AES_HW the way quic_aes_hw.c does.
 COMMA := ,
+EMPTY :=
+SPACE := $(EMPTY) $(EMPTY)
+# An entry's flags joined by commas, with no space: an x86-64 AES=hw
+# build turns the instructions on with two flags, -maes -mpclmul, and a
+# space would split the entry into two words.
+AES_HW_ENTRY := $(subst $(SPACE),$(COMMA),$(strip -DCH_AES_HW $(AES_HW_CFLAGS)))
 # aes_schedule.h and aes_traffic_key.h carry no quic prefix because they
 # are not the mode's: they hold the shape TLS_AES_128_GCM_SHA256 shares
 # with QUIC's packet protection. Judged with the suite define, both runs
@@ -261,8 +267,8 @@ COMMA := ,
 QUIC_EXTRA_DEFINES := quic_aes_extern.c:-DCH_AES_EXTERN \
                       aes_traffic_key.h:-DCH_SUITE_AES_GCM \
                       quic_token.c:-DCH_ROLE_SERVER quic_token.h:-DCH_ROLE_SERVER \
-                      quic_aes_hw.c:-DCH_AES_HW$(patsubst %,$(COMMA)%,$(AES_HW_CFLAGS)) \
-                      quic_ghash_hw.c:-DCH_AES_HW$(patsubst %,$(COMMA)%,$(AES_HW_CFLAGS)) \
+                      quic_aes_hw.c:$(AES_HW_ENTRY) \
+                      quic_ghash_hw.c:$(AES_HW_ENTRY) \
                       quic_ghash_hw.h:-DCH_AES_HW
 # The files this compiler cannot preprocess at all, because the build
 # choice they need is one it does not offer. quic_aes_hw.c without the
