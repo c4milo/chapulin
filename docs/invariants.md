@@ -385,7 +385,15 @@ last `ROLE=server` stub, as the entry said it would.
   a server through `ch_srv_record_in` and `ch_srv_cfg.on_record_out`.
   Both callbacks are still required at configuration time, because
   `ch_read` and `ch_write` call them once the session is connected, and
-  by then the caller holds the bytes.
+  by then the caller holds the bytes. Once connected, `ch_read` calls
+  `cfg.send` in two cases alone: the reply to a KeyUpdate whose sender
+  asked for one (RFC 9846 §4.7.3), and the alert of a failure. The
+  peer's close_notify is neither. The `ch_read` that reads it sends
+  nothing, and `ch_close` sends this side's close_notify through
+  `cfg.send` in one call, whenever the caller makes it (INV-22). A
+  caller whose `cfg.send` holds only input while `ch_read` runs, as
+  colibri's does, therefore sees no send it did not ask for when the
+  peer closes.
 - **Mechanism.** The blocking driver is not in the object. `handshake.c`
   is filtered out by `TRANSPORT_FILTER`, `srv_handshake.c` by the server
   arm, and `tls.c` and `srv.c` guard their accept and connect calls out.
@@ -417,6 +425,11 @@ last `ROLE=server` stub, as the entry said it would.
   `cfg.recv` to wait for the rest of a message, which still completes
   the handshake, and requires that binary to fail. `bin/recclient`
   still covers the client against a real server in `check-slow`.
+  `bin/rec_loop_test` also counts each end's send calls after the
+  handshake (`test/rec_close_tests.h`): none while the peer's
+  close_notify is read, one per `ch_write`, and one for `ch_close`.
+  `test/violations/inv22-read-answers-close-notify.violation` makes
+  that `ch_read` send a close_notify and requires the binary to fail.
 
   That is the behavioral half, that neither driver calls a callback. The
   mechanism half, that a record-mode object holds no blocking driver to
@@ -1623,9 +1636,20 @@ last `ROLE=server` stub, as the entry said it would.
   TRUST=webpki includes a server that declined the ticket the hello
   offered, at most one HelloRetryRequest and only as the
   opening message, no ticket, key update, or application data before
-  the Finished, and nothing after a close_notify. The order is the
-  same whether the certificate is checked against a pinned server key
-  (a raw mode) or a pinned CA (a CA mode).
+  the Finished, and no record read after a close_notify. The order is
+  the same whether the certificate is checked against a pinned server
+  key (a raw mode) or a pinned CA (a CA mode).
+- A close_notify closes its sender's direction and no other (RFC 9846
+  §6, rfc9846.txt:3767-3768, and §6.1, rfc9846.txt:3857-3864), and this
+  holds for either role, because the client and the server read through
+  the one `ch_read`. The `ch_read` that reads the peer's close_notify
+  returns 0, sends nothing and leaves `ch_tls.state` at
+  `CH_ST_CONNECTED` with `ch_tls.read_closed` set. Every later
+  `ch_read` returns 0 without calling `cfg.recv`, so a record the peer
+  sends after its close_notify is never read, which is how §6.1's rule
+  that such data MUST be ignored is kept (rfc9846.txt:3837-3839).
+  `ch_write` keeps sending, and `ch_close` sends this side's
+  close_notify and sets `CH_ST_CLOSED`.
 - **Mechanism.** The server writes its own flight in the order the
   client reads it, by call position in `srv_handshake.c`, `srv_rec.c`
   and `srv_quic.c`, and sends its one NewSessionTicket after the client
@@ -1641,7 +1665,12 @@ last `ROLE=server` stub, as the entry said it would.
   the same lines. All three client drivers take the one fork in the
   order from `ch_tls.psk_selected`, which `hsf_accept_server_hello`
   writes from the ServerHello, and not from `cfg.psk`, which says only
-  what the hello offered.
+  what the hello offered. After the handshake, `tls.c`'s
+  `dispatch_one_record` answers a close_notify with `close_read_side`,
+  which wipes the read secrets and sets `read_closed`, and `ch_read` tests
+  `read_closed` before it reads a record. Nothing on that path calls
+  `ch_close` or `tlsi_send_alert`, and `ch_write` does not test
+  `read_closed`.
 - **Check.** Lean theorem (17 in `Spec/Handshake.lean`, over every
   trace the model admits; `accepts_decompose` bounds the flight at 4
   messages in the spec's `psk` Mode and 6 in its `pinned` Mode);
@@ -1673,10 +1702,29 @@ last `ROLE=server` stub, as the entry said it would.
   `test/violations/inv22-srv-record-in-reads-past-finished.violation`
   keeps the loop going past the Finished and requires `bin/rec_loop_test`
   to fail.
+  The close_notify rule is tested three ways, not proved: `tls.c` has
+  no harness (README, "These rest on tests, not proofs"). `bin/unit`'s
+  `test_peer_close_notify` (`test/session_post_tests.h`) queues a record
+  behind the close_notify and requires every later `ch_read` to return 0
+  with the record unread, no send call, and `ch_write` and `ch_close`
+  to send under the write key. `bin/rec_loop_test`
+  (`test/rec_close_tests.h`) closes one direction at a time between the
+  two record-mode drivers and counts each end's send calls, so the
+  `ch_read` that reads a close_notify is measured to send nothing, on
+  the client and on the server. `test/e2e.sh`'s go-half-close leg runs
+  it against Go's `CloseWrite`, which sends a close_notify and keeps
+  reading: the server logs the lines the client sent after that
+  close_notify, then the client's own. Three violations each break one
+  term: `inv22-read-answers-close-notify`, which `bin/rec_loop_test`
+  catches, and `inv22-read-past-close-notify` and
+  `inv22-write-refused-after-close-notify`, which `bin/unit` catches.
 - **Violation.** A PR relaxes one type check to tolerate a message a
   peer "usually" sends early, and a flight with a skipped
   CertificateVerify authenticates. This is the SMACK and FREAK class:
-  invisible to memory-safety proofs and to a golden-path e2e run.
+  invisible to memory-safety proofs and to a golden-path e2e run. Or a
+  PR answers the peer's close_notify with an immediate close_notify of
+  its own, as TLS 1.2 required, which drops what this side still had
+  to send and sends from inside a read.
 - See [decisions: Cryptography](decisions.md#cryptography).
 
 ## Lifetime and state
@@ -1686,6 +1734,13 @@ last `ROLE=server` stub, as the entry said it would.
 - **Claim.** Handshake secrets are wiped at CONNECTED; every failure
   path wipes through `tlsi_wipe`, or through `quic_fail` under
   `TRANSPORT=quic`; the DRBG erases its key forward after each output.
+  The peer's close_notify is a phase boundary for the read direction
+  alone. Nothing is read after it (INV-22), so the `ch_read` that reads
+  it wipes every secret only a read uses: `ch_tls.rd`, `rd_secret` and
+  `res_master`, which only taking a NewSessionTicket uses. It keeps `wr` and
+  `wr_secret`, because the write direction stays open, and `exp_master`,
+  because `ch_export` is not a read; `ch_close` wipes all of them, and
+  so does a failure.
   The one exception is the QUIC failure path's write keys. `quic_fail`
   keeps, at each level whose write bit in `ch_quic.levels_ready` is set,
   the bytes that level seals with: `initial_dcid` and `initial_dcid_len`
@@ -1727,10 +1782,17 @@ last `ROLE=server` stub, as the entry said it would.
   `hsf_accept_server_hello`, the moment the ServerHello declines, and
   derives the early secret of no PSK in their place;
   `inv17-webpki-decline-keeps-psk-early-secret` requires
-  `bin/webpki_resume_test` to fail when they survive.
+  `bin/webpki_resume_test` to fail when they survive. The read-direction
+  wipe at the peer's close_notify sits in `tls.c`'s `close_read_side`,
+  and `bin/unit`'s `test_peer_close_notify` reads the session's bytes
+  after it: `rd`, `rd_secret` and `res_master` all zero, `wr` and
+  `wr_secret` byte for byte what they were. Two violations each break
+  one half: `inv17-close-notify-keeps-read-key` and
+  `inv17-close-notify-wipes-write-key`, which `bin/unit` catches.
 - **Violation.** A PR adds an early return between fail and wipe, or
   lets a failed QUIC session keep a read key, or a write key past its
-  one close.
+  one close, or keeps the read key once the peer's close_notify has
+  arrived, or wipes the write key there.
 - See [decisions: Memory and runtime](decisions.md#memory-and-runtime).
 
 ### INV-18 — no library-global mutable state

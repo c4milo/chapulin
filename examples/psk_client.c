@@ -321,8 +321,9 @@ static int read_reply(ch_tls *tls, uint8_t *out, size_t cap) {
     return (int)have;
 }
 
-// Sends the request and prints the reply. Returns CH_OK, or the ch_err
-// that killed the session.
+// Sends the request and prints the reply. Returns CH_OK, CH_ECLOSED when
+// the server closed its direction before replying, or the ch_err that
+// killed the session.
 static int exchange(ch_tls *tls) {
     int rc = ch_write(tls, (const uint8_t *)g_request, sizeof g_request - 1);
     if (rc != CH_OK) {
@@ -344,8 +345,10 @@ static int exchange(ch_tls *tls) {
 }
 
 // Runs one session from socket to close. Returns CH_OK when the reply
-// arrived; any other return means the session is dead and its keys are
-// already wiped.
+// arrived. CH_ECLOSED means the server sent close_notify first, which
+// closes its direction alone: this side could still write, and ch_close
+// below sends its own close_notify. Any other return means the session
+// is dead and its keys are already wiped.
 static int run_session(const char *host, const char *port) {
     int fd = tcp_connect(host, port);
     if (fd < 0) {

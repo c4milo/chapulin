@@ -1,0 +1,13 @@
+invariant: INV-22
+file: tls.c
+catches: unit
+reason: ch_read reads the record the peer sent after its close_notify,
+  where RFC 9846 section 6.1 says data after a closure alert MUST be
+  ignored. It takes the bytes from the transport and fails the session
+  on them, so a peer that closed cleanly ends this side's session.
+
+--- old
+    if (t->read_closed) {
+        return 0; // the peer's close_notify arrived; nothing after it is read
+    }
+--- new

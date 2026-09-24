@@ -77,7 +77,8 @@ start_chserver() {
     SRV_LOG=$log
 }
 
-# The same for the Go echo server, which prints Go's own Addr().
+# The same for the Go echo server, which prints Go's own Addr(). Sets
+# SRV_LOG too, for the leg that reads what the server logs.
 start_goecho() {
     SRV_N=$((SRV_N + 1))
     local log="$DIR/server$SRV_N.log"
@@ -86,6 +87,7 @@ start_goecho() {
     SRV_PIDS="$SRV_PIDS $SRV_PID"
     disown "$SRV_PID" 2>/dev/null || true
     read_port "$SRV_PID" "$log" 's/.*listening on .*:\([0-9][0-9]*\)$/\1/p'
+    SRV_LOG=$log
 }
 
 # Waits for a just-started server to report the port it bound, and
@@ -1058,6 +1060,35 @@ if command -v go >/dev/null 2>&1; then
     MSG='ultima'
     expect go-rsa-resume "amitlu" "$DIR/err6" ./bin/tlsclient 127.0.0.1 "$PORT5" "@$DIR/ticket5" -
 
+    # --- One direction closed at a time (RFC 9846 §6.1). The server
+    # answers the first line, then sends close_notify with Go's CloseWrite
+    # and keeps reading. The client reads the reply, then 0 at that
+    # close_notify, still sends its last line after it, and its ch_close
+    # sends its own close_notify. The server must log both lines it read
+    # after its close_notify, then the client's close_notify. A client
+    # whose ch_read answers the server's close_notify with its own and
+    # wipes the write key, as TLS 1.2 required, fails here: the third line
+    # never leaves.
+    start_goecho -closewrite -cert "$DIR/rsacert.pem" -key "$DIR/rsakey.pem"
+    MSG=$'uno\ndos\ntres'
+    expect go-half-close "onu" "$DIR/err_half" ./bin/tlsclient 127.0.0.1 "$SRV_PORT" "pin:$MOD" -
+    grep -q "^read: 0, the server closed its direction$" "$DIR/err_half" || {
+        echo "FAIL go-half-close: the client did not read the server's close_notify as 0"
+        cat "$DIR/err_half"
+        exit 1
+    }
+    # The server logs from its own goroutine, so give it a moment.
+    for _ in $(seq 1 40); do
+        grep -q "peer close_notify$" "$SRV_LOG" && break
+        sleep 0.25
+    done
+    [ "$(grep -oE '(read after close_notify: .*|peer close_notify)$' "$SRV_LOG" | tr '\n' '|')" = \
+      "read after close_notify: dos|read after close_notify: tres|peer close_notify|" ] || {
+        echo "FAIL go-half-close: the server did not read both lines and then the client's close_notify"
+        cat "$SRV_LOG" "$DIR/err_half"
+        exit 1
+    }
+
     # --- Hybrid key exchange: the same RSA cert on a Go server that
     # accepts only X25519MLKEM768, against the KEX=pq client build,
     # ticket resumption included. The classic client offers only
@@ -1086,7 +1117,7 @@ if command -v go >/dev/null 2>&1; then
     MSG='no debe pasar'
     expect_fail go-pq-refuses-classic -2 "$DIR/err_pq" \
         ./bin/tlsclient 127.0.0.1 "$PORT17" "pin:$MOD" -
-    GO_LEG=" + go x2 + go-resume x2 + go-pq x2 + go-pq-refuses-classic"
+    GO_LEG=" + go x2 + go-resume x2 + go-half-close + go-pq x2 + go-pq-refuses-classic"
 else
     GO_LEG=" (go legs skipped)"
 fi

@@ -80,13 +80,16 @@ static void test_post_handshake(void) {
     // Zero-length reads are a caller bug, never the close sentinel.
     CHECK(ch_read(&t, out, 0) == CH_EINVAL);
 
-    // Clean close: exactly one close_notify reply, then 0 forever and no
-    // record sealed under wiped keys on a second close.
+    // The peer's close_notify: the read returns 0 and sends nothing
+    // (test_peer_close_notify covers the rest of that rule). ch_close
+    // then sends this side's close_notify, once, and nothing sealed under
+    // wiped keys follows it on a second close.
     const uint8_t close_notify[2] = {1, 0};
     mock_push(&m, &server, REC_ALERT, close_notify, 2);
     size_t before_close = m.sent;
     CHECK(ch_read(&t, out, sizeof out) == 0);
-    CHECK(m.sent > before_close); // our close_notify, under live keys
+    CHECK(m.sent == before_close);
+    ch_close(&t);
     // It opens only if the client rekeyed its write direction above.
     at = mock_pop_client_record(&m, at, &reader, reply, sizeof reply, &reply_len, &reply_type);
     CHECK(reply_type == REC_ALERT && reply_len == 2);
@@ -96,6 +99,78 @@ static void test_post_handshake(void) {
     ch_close(&t);
     CHECK(m.sent == after_close); // keys wiped: nothing more on the wire
     CHECK(ch_read(&t, out, sizeof out) == 0);
+}
+
+// The peer's close_notify closes the peer's direction and no other (RFC
+// 9846 §6.1). The read that meets it returns 0 and sends nothing. Every
+// later read returns 0 without calling recv, so a record queued behind
+// the close_notify stays unread. The read key, its secret and
+// res_master are wiped there, and the write key is not (INV-17), so
+// ch_write still sends, and ch_close sends this side's close_notify.
+static void test_peer_close_notify(void) {
+    uint8_t secret[SHA256_LEN];
+    ch_rand_bytes(secret, sizeof secret);
+    rec_dir server;
+    rec_dir_init(&server, secret);
+    mock_io m = {0};
+    static uint8_t rxbuf[1024];
+    ch_tls t;
+    uint8_t wr_secret[SHA256_LEN];
+    mock_session(&t, &m, rxbuf, sizeof rxbuf, secret, wr_secret);
+    ch_rand_bytes(t.res_master, sizeof t.res_master);
+    rec_dir reader;
+    rec_dir_init(&reader, wr_secret);
+    rec_dir write_key = t.wr;
+    // At least as long as a rec_dir key and IV, and as a secret.
+    static const uint8_t zero[SHA256_LEN] = {0};
+
+    const uint8_t close_notify[2] = {1, ALERT_CLOSE_NOTIFY};
+    mock_push(&m, &server, REC_APPDATA, (const uint8_t *)"hola", 4);
+    mock_push(&m, &server, REC_ALERT, close_notify, sizeof close_notify);
+    size_t close_end = m.len;
+    // A record the peer must not send after its close_notify.
+    mock_push(&m, &server, REC_APPDATA, (const uint8_t *)"tarde", 5);
+
+    uint8_t out[16];
+    CHECK(ch_read(&t, out, sizeof out) == 4);
+    CHECK(ch_read(&t, out, sizeof out) == 0);
+    CHECK(m.sends == 0);
+    CHECK(m.off == close_end);
+    CHECK(t.state == CH_ST_CONNECTED && t.read_closed == 1 && t.keys == 1);
+    // rec_dir has padding, so its members compare one at a time.
+    CHECK(memcmp(t.rd.key, zero, sizeof t.rd.key) == 0);
+    CHECK(memcmp(t.rd.iv, zero, sizeof t.rd.iv) == 0 && t.rd.seq == 0);
+    CHECK(memcmp(t.rd_secret, zero, sizeof zero) == 0);
+    CHECK(memcmp(t.res_master, zero, sizeof zero) == 0);
+    CHECK(memcmp(t.wr.key, write_key.key, sizeof write_key.key) == 0);
+    CHECK(memcmp(t.wr.iv, write_key.iv, sizeof write_key.iv) == 0);
+    CHECK(t.wr.seq == write_key.seq);
+    CHECK(memcmp(t.wr_secret, wr_secret, sizeof zero) == 0);
+
+    // The record after the close_notify is never read, however often
+    // the caller asks.
+    CHECK(ch_read(&t, out, sizeof out) == 0);
+    CHECK(ch_read(&t, out, sizeof out) == 0);
+    CHECK(m.off == close_end && m.sends == 0);
+    CHECK(t.state == CH_ST_CONNECTED);
+
+    // This side still writes, under the write key it had.
+    CHECK(ch_write(&t, (const uint8_t *)"chau", 4) == CH_OK);
+    uint8_t pt[16];
+    size_t pt_len = 0;
+    uint8_t type = 0;
+    size_t at = mock_pop_client_record(&m, 0, &reader, pt, sizeof pt, &pt_len, &type);
+    CHECK(type == REC_APPDATA && pt_len == 4 && memcmp(pt, "chau", 4) == 0);
+
+    // ch_close sends this side's close_notify, and the session is closed.
+    ch_close(&t);
+    at = mock_pop_client_record(&m, at, &reader, pt, sizeof pt, &pt_len, &type);
+    CHECK(type == REC_ALERT && pt_len == 2 && pt[0] == 1 && pt[1] == ALERT_CLOSE_NOTIFY);
+    CHECK(at == m.tx_len && m.sends == 2);
+    CHECK(t.state == CH_ST_CLOSED);
+    CHECK(ch_write(&t, (const uint8_t *)"x", 1) == CH_EPROTO);
+    CHECK(ch_read(&t, out, sizeof out) == 0);
+    CHECK(m.sends == 2);
 }
 
 // One NewSessionTicket message: the fields RFC 9846 §4.7.1 fixes, with a

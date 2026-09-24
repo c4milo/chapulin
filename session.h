@@ -169,7 +169,9 @@ typedef struct {
     uint8_t state;
 #ifndef CH_TRANSPORT_QUIC
     // Whether record protection is live, which decides whether an alert
-    // goes out encrypted. A TRANSPORT=quic build does not declare it,
+    // goes out encrypted. After the peer's close_notify only the write
+    // direction is live (read_closed, below), and an alert is sealed
+    // under that one. A TRANSPORT=quic build does not declare it,
     // because it sends no alert record at all: QUIC carries the failure
     // in a CONNECTION_CLOSE frame the caller writes (RFC 9001 §4.8),
     // and ch_quic_error_code reports the code that goes in it.
@@ -285,6 +287,20 @@ typedef struct {
     // allowed date; epoch_status is then CH_EPOCH_UNTRUSTED.
     uint32_t epoch_seen;
     uint8_t epoch_status;
+#ifndef CH_TRANSPORT_QUIC
+    // Set when the peer's close_notify arrived on a connected session.
+    // RFC 9846 §6 makes that alert close one direction of the
+    // connection, the sender's (rfc9846.txt:3767-3768), and §6.1 says it
+    // has no effect on the sender's read side (rfc9846.txt:3857-3859).
+    // So this session reads nothing more and still writes: ch_read
+    // returns 0 without reading, the read key is wiped, and state stays
+    // CH_ST_CONNECTED until ch_close. Public, like pin_slot. It sits in
+    // the padding before send_epochs, so sizeof(ch_tls) did not change
+    // when it was added. A TRANSPORT=quic build does not declare it:
+    // QUIC carries no close_notify, and RFC 9001 §4.8 treats every TLS
+    // alert as fatal (rfc9001.txt:888-893).
+    uint8_t read_closed;
+#endif
 #ifndef CH_TRANSPORT_QUIC
     // How many TLS KeyUpdate messages this client has sent. A
     // TRANSPORT=quic build does not declare it: RFC 9001 §6 forbids the

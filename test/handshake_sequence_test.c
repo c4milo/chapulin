@@ -150,6 +150,10 @@ static void case_config(ch_cfg *cfg, uint8_t *rxbuf, size_t rxlen, int psk) {
 
 // Drains the post-handshake tail with ch_read: accept (1) iff every
 // letter is consumed before close_notify or transport EOF cuts it off.
+// After close_notify ch_read returns 0 without reading (RFC 9846 §6.1:
+// what follows a closure alert is ignored), so a letter after L is never
+// consumed and the case rejects, as the model's closed state takes no
+// message.
 static int drain_tail(void) {
     for (;;) {
         if (seq_spent(&srv)) {

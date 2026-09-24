@@ -1,0 +1,11 @@
+invariant: INV-17
+file: tls.c
+catches: unit
+reason: the read key survives the peer's close_notify, although nothing is
+  read after it, so SRAM holds a live key for the rest of the session.
+
+--- old
+static void close_read_side(ch_tls *t) {
+    ct_wipe(&t->rd, sizeof t->rd);
+--- new
+static void close_read_side(ch_tls *t) {

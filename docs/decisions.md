@@ -1502,3 +1502,59 @@ does nothing more.
     OpenSSL's `s_client` offers no option that reorders a retried hello,
     so `test/e2e.sh` keeps its TCP retry leg, which sends the same order
     twice and still passes.
+
+60. **The peer's close_notify closes the peer's direction alone, and
+    `ch_close` closes this side's.** RFC 9846 §6 says a close_notify
+    closes one direction of the connection (rfc9846.txt:3767-3768), and
+    §6.1 says sending one has no effect on the sender's read side and
+    drops TLS 1.2's rule of answering one at once with a close_notify of
+    one's own (rfc9846.txt:3857-3864). Until this entry `ch_read` kept
+    the TLS 1.2 rule: on the peer's close_notify it called `ch_close`,
+    which sent this side's close_notify and wiped both directions. The
+    caller could not send what it still owed, because `ch_write` refused
+    the closed session. Under `TRANSPORT=record` the reply went through
+    `cfg.send` from inside `ch_read`, which colibri's adapter does not
+    expect, so the alert was lost, and the caller's own `ch_close` sent
+    nothing because the keys were gone.
+
+    - **What the read does.** The `ch_read` that reads the peer's
+      close_notify returns 0 and sends nothing. It wipes `rd`,
+      `rd_secret` and `res_master`, the secrets only a read uses
+      (INV-17), and sets `ch_tls.read_closed`. Every later `ch_read`
+      returns 0 before it calls `cfg.recv`. §6.1 says data after a
+      closure alert MUST be ignored (rfc9846.txt:3837-3839), and a
+      record that is never read is never decrypted or acted on.
+    - **What stays.** `wr`, `wr_secret` and `exp_master` stay, and
+      `ch_tls.state` stays `CH_ST_CONNECTED`. `ch_write` sends as
+      before, and `ch_close` sends this side's close_notify under the
+      write key and wipes the rest, as it always did.
+    - **How a caller learns of it.** From `ch_read`'s 0, which already
+      meant the peer closed, and from `read_closed`. A new state value
+      was considered and rejected. Callers test `CH_ST_CONNECTED` before
+      they write, and writing is still allowed, so every such test would
+      be wrong until the caller learned the new value; `CH_ASSERT(t->state
+      <= CH_ST_FAILED)` and `rec_session_dead` would each need to judge a
+      fifth value too. `CH_ST_CLOSED` keeps its one meaning: this side
+      called `ch_close` or `ch_record_close`, and no key is left. The
+      field sits in the padding before `send_epochs`, so `sizeof(ch_tls)`
+      did not change in any build, host or rv32, and `ch_build` records
+      the same sizes.
+    - **Every driver at once.** The blocking client and server and the
+      record-mode client and server all read through the one `ch_read`
+      in `tls.c`. A QUIC object compiles no `tls.c`: QUIC carries no
+      close_notify, and RFC 9001 §4.8 treats every TLS alert as fatal
+      (rfc9001.txt:888-893), so nothing there changes.
+
+    Cost: one public field. A caller whose `ch_read` returned 0 must
+    still call `ch_close`, or the peer never receives this side's
+    close_notify, and the write key lives until it does. The examples
+    already called it on that path, and `test/tls_client.c` now does.
+    Gain: this side can finish
+    sending after the peer is done, as RFC 9846 intends, and `ch_read`
+    sends nothing when the peer closes.
+
+    A call that sends this side's close_notify and keeps reading, the
+    other half of a half close, was not added. No caller has asked for
+    it, and `ch_close` stays the one call that ends a session. §6.1 lets
+    a party close its read side without waiting for the peer's
+    close_notify (rfc9846.txt:3864-3867), which `ch_close` does.

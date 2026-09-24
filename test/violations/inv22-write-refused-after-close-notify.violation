@@ -1,0 +1,21 @@
+invariant: INV-22
+file: tls.c
+catches: unit
+reason: ch_write refuses a session whose peer sent close_notify, so this
+  side cannot send what it still owes, although RFC 9846 section 6.1 says
+  a close_notify closes its sender's direction alone.
+
+--- old
+    CH_ASSERT(t->state <= CH_ST_FAILED); // the guard ch_read states
+
+    if (t->state != CH_ST_CONNECTED) {
+        return CH_EPROTO;
+    }
+    size_t limit
+--- new
+    CH_ASSERT(t->state <= CH_ST_FAILED); // the guard ch_read states
+
+    if (t->state != CH_ST_CONNECTED || t->read_closed) {
+        return CH_EPROTO;
+    }
+    size_t limit

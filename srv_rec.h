@@ -14,7 +14,10 @@
 // The post-handshake calls are rec.h's and are not repeated here.
 // ch_record_state, ch_record_alert and ch_record_close read no side, and
 // ch_read, ch_write and ch_close are the same record-layer calls a
-// client uses, because record.[ch] names no side either.
+// client uses, because record.[ch] names no side either. So rec.h's
+// account of closing holds for a server as written: the client's
+// close_notify makes ch_read return 0 and send nothing, ch_write still
+// sends, and ch_close sends the server's close_notify.
 //
 // Output is a push, not a pull. A server has no ch_srv_record_out: one
 // Certificate message is larger than ch_tls.tx, so there is nothing to

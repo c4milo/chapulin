@@ -1,0 +1,14 @@
+invariant: INV-17
+file: tls.c
+catches: unit
+reason: the peer's close_notify wipes the write key too, so ch_write and
+  ch_close seal under a zero key and the peer cannot open what this side
+  still sends, its close_notify among it.
+
+--- old
+    ct_wipe(t->res_master, sizeof t->res_master);
+    t->pt_off = 0;
+--- new
+    ct_wipe(t->res_master, sizeof t->res_master);
+    ct_wipe(&t->wr, sizeof t->wr);
+    t->pt_off = 0;

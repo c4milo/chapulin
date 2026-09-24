@@ -303,19 +303,32 @@ static int dial_host(const char *host, const char *port) {
     return fd;
 }
 
-// Owns the echo loop: sends each stdin line, prints the reply. Returns the
-// process exit code, or -1 once stdin ends and the caller should close.
+// Owns the echo loop: sends each stdin line, prints the reply. Once
+// ch_read returns 0 for the server's close_notify, the loop still sends
+// the lines left and reads no more, because that alert closes the
+// server's direction alone (RFC 9846 §6.1); e2e's go-half-close leg
+// checks the server read them. Returns the process exit code, or -1 once
+// stdin ends and the caller should close.
 static int echo_lines(ch_tls *tls) {
     char line[512];
+    int server_closed = 0;
     while (fgets(line, sizeof line, stdin) != NULL) {
         if (ch_write(tls, (const uint8_t *)line, strlen(line)) != CH_OK) {
             return 1;
         }
+        if (server_closed) {
+            continue;
+        }
         uint8_t reply[512];
         int got = ch_read(tls, reply, sizeof reply);
-        if (got <= 0) {
+        if (got < 0) {
             (void)fprintf(stderr, "read: %d\n", got);
-            return got == 0 ? 0 : 1;
+            return 1;
+        }
+        if (got == 0) {
+            (void)fprintf(stderr, "read: 0, the server closed its direction\n");
+            server_closed = 1;
+            continue;
         }
         (void)fwrite(reply, 1, (size_t)got, stdout);
         (void)fflush(stdout);

@@ -21,12 +21,23 @@
 int ch_connect(ch_tls *t, const ch_cfg *cfg);
 #endif
 
-// Sends n bytes as one or more records. Returns CH_OK or an error.
+// Sends n bytes as one or more records. Returns CH_OK or an error. It
+// keeps working after ch_read has returned 0 for the peer's close_notify,
+// and returns CH_EPROTO once ch_close has run or the session has failed.
 int ch_write(ch_tls *t, const uint8_t *p, size_t n);
 
-// Receives into p (n >= 1), returning the byte count (>0), 0 on clean
-// peer close (and on any read after), or an error. Handles
-// NewSessionTicket and KeyUpdate internally.
+// Receives into p (n >= 1), returning the byte count (>0), 0 at the end
+// of the peer's stream, or an error. Handles NewSessionTicket and
+// KeyUpdate internally.
+//
+// The end of the peer's stream is its close_notify, which closes the
+// peer's direction and no other (RFC 9846 §6.1). The ch_read that reads
+// it returns 0, wipes the read key and sends nothing. The session stays
+// CH_ST_CONNECTED with ch_tls.read_closed set, so ch_write still sends,
+// and ch_close sends this side's close_notify. Every later ch_read
+// returns 0 without calling cfg.recv, so a record the peer sends after
+// its close_notify is never read, which is how §6.1's rule to ignore it
+// is kept. ch_read returns 0 after ch_close as well.
 //
 // A TRANSPORT=record build may also return CH_RECORD_AGAIN (cfg.h): the
 // caller's recv returned 0 at a record boundary, so no record has arrived
@@ -70,7 +81,11 @@ int ch_export(const ch_tls *t, const char *label, const uint8_t *context, size_t
               uint8_t *out, size_t out_len);
 #endif
 
-// Sends close_notify (only under live keys) and wipes all key material.
+// Sends close_notify (only under live keys) and wipes all key material,
+// leaving the session CH_ST_CLOSED. RFC 9846 §6.1 has each side send a
+// close_notify before it closes its write direction, and this call is
+// what sends this side's, so a caller whose ch_read returned 0 for the
+// peer's close_notify still calls it.
 void ch_close(ch_tls *t);
 
 #endif

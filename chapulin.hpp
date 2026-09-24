@@ -151,7 +151,9 @@ struct Opened {
 };
 #endif
 
-// Result of a read: >0 bytes, 0 on a clean peer close, <0 on error.
+// Result of a read: >0 bytes, 0 once the peer's close_notify arrived, <0
+// on error. The close_notify closes the peer's direction alone (tls.h), so
+// after at_end() the session still writes until close().
 struct Read {
     int value = 0;
     bool ok() const {
@@ -491,8 +493,10 @@ class Session {
         return tls_.epoch_status;
     }
 
-    // Sends close_notify under live keys and wipes; safe to call more than
-    // once, and the destructor calls it too.
+    // Sends this side's close_notify under live keys and wipes; safe to
+    // call more than once, and the destructor calls it too. A read that
+    // returned at_end() does not do this: call it once this side has
+    // nothing more to write.
     void close() {
         ch_close(&tls_);
     }

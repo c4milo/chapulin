@@ -358,6 +358,7 @@ static int run_handshake(ch_record *client, ch_record *server, const ch_cfg *ccf
     return rounds;
 }
 
+#include "rec_close_tests.h"
 #include "rec_coalesced_tests.h"
 #include "rec_read_tests.h"
 #include "rec_resume_tests.h"
@@ -439,11 +440,17 @@ int main(void) {
     client_config(&ccfg);
     test_finished_and_data_in_one_delivery(&client, &server, &ccfg, &scfg);
 
+    // Each side's close_notify closes that side's direction alone.
+    server_config(&scfg);
+    client_config(&ccfg);
+    test_close_one_direction(&client, &server, &ccfg, &scfg);
+
     if (failures == 0) {
         (void)printf("rec_loop: a whole handshake over group 0x%04x in %d rounds, 0 socket"
                      " calls; both ends export one secret and log the same four; ch_read"
                      " waits between records; a wrong pin refused; a ticket resumes with no"
-                     " certificate\n",
+                     " certificate; a close_notify closes one direction and ch_read sends"
+                     " nothing\n",
                      (unsigned)LOOP_GROUP, rounds);
         return 0;
     }

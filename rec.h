@@ -28,6 +28,18 @@
 // the whole-record promise and leaves the session dead with CH_EIO, as a
 // short read does in TRANSPORT=tls.
 //
+// Closing takes two calls, one per direction. The peer's close_notify
+// closes the peer's direction alone (RFC 9846 §6.1): the ch_read that
+// reads it returns 0, wipes the read key and does not call cfg.send, and
+// every later ch_read returns 0 without calling cfg.recv. The write
+// direction stays open, so ch_record_state still reports
+// CH_ST_CONNECTED and ch_write still sends. The caller closes its own
+// direction with ch_close, which sends this side's close_notify through
+// cfg.send once and leaves the session CH_ST_CLOSED, whichever side
+// closed first. ch_record_close after it is safe. ch_read calls cfg.send
+// in two cases alone: to answer a KeyUpdate whose sender asked for one
+// (RFC 9846 §4.7.3), and to send the alert of a failure.
+//
 // Result codes match quic.h's meanings. CH_OK means the call did what it
 // says. CH_EINVAL means the caller called out of order and nothing
 // changed. CH_ECAP from ch_record_out means the caller's buffer was short,
@@ -105,7 +117,9 @@ int ch_record_out(ch_record *r, uint8_t *out, size_t cap, size_t *out_len);
 
 // CH_ST_START while the handshake runs, CH_ST_CONNECTED once it is done
 // and the session is ready for ch_read and ch_write, CH_ST_FAILED after
-// an error (session.h).
+// an error, and CH_ST_CLOSED after ch_close or ch_record_close
+// (session.h). The peer's close_notify leaves it at CH_ST_CONNECTED,
+// because ch_write still works; r->t.read_closed says it arrived.
 uint8_t ch_record_state(const ch_record *r);
 
 // The TLS alert a failure chose, for the caller to send before it closes
@@ -113,7 +127,8 @@ uint8_t ch_record_state(const ch_record *r);
 uint8_t ch_record_alert(const ch_record *r);
 
 // Wipes every secret and marks the session dead. Safe on a session that
-// already failed.
+// already failed. It sends nothing, so a connected caller calls ch_close
+// on &r->t first, which sends this side's close_notify.
 void ch_record_close(ch_record *r);
 
 #endif // CH_TRANSPORT_RECORD

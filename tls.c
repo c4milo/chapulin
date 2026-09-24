@@ -4,6 +4,7 @@
 
 #include <string.h>
 
+#include "ct.h"
 #include "handshake.h"
 #include "handshake_message.h"
 #include "handshake_post.h"
@@ -154,8 +155,30 @@ static int post_handshake(ch_tls *t, size_t pt_len) {
     return rc;
 }
 
+// The peer's close_notify closes the peer's direction and no other (RFC
+// 9846 §6, rfc9846.txt:3767-3768). This session reads nothing after it:
+// §6.1 says data after a closure alert MUST be ignored
+// (rfc9846.txt:3837-3839), and ch_read ignores it by never reading it. So
+// the secrets only a read uses die here (INV-17): the read key and its
+// secret, and the resumption master secret, which only taking a
+// NewSessionTicket uses. The write key and its secret stay, because
+// §6.1 leaves this side's writes open (rfc9846.txt:3857-3859): the caller
+// may still ch_write, and ch_close sends this side's close_notify under
+// that key. Nothing is sent here. TLS 1.2 answered a close_notify at
+// once with one of its own, and TLS 1.3 dropped that rule
+// (rfc9846.txt:3860-3864).
+static void close_read_side(ch_tls *t) {
+    ct_wipe(&t->rd, sizeof t->rd);
+    ct_wipe(t->rd_secret, sizeof t->rd_secret);
+    ct_wipe(t->res_master, sizeof t->res_master);
+    t->pt_off = 0;
+    t->pt_len = 0;
+    t->read_closed = 1;
+}
+
 // Reads and dispatches one record: application data lands in the buffer,
-// post-handshake messages are handled, close_notify returns CH_ECLOSED.
+// post-handshake messages are handled, and close_notify closes the read
+// side and returns CH_ECLOSED.
 static int dispatch_one_record(ch_tls *t) {
 #ifdef CH_TRANSPORT_RECORD
     if (t->post_fill > 0) { // the next record continues a message (session.h)
@@ -194,8 +217,7 @@ static int dispatch_one_record(ch_tls *t) {
         return post_handshake(t, pt_len);
     }
     if (inner_type == REC_ALERT && pt_len == 2 && t->cfg.buf[1] == ALERT_CLOSE_NOTIFY) {
-        t->state = CH_ST_CLOSED;
-        ch_close(t);
+        close_read_side(t);
         return CH_ECLOSED;
     }
     if (inner_type == REC_ALERT && pt_len == 2 && t->cfg.buf[1] == ALERT_USER_CANCELED) {
@@ -222,6 +244,9 @@ int ch_read(ch_tls *t, uint8_t *p, size_t n) {
     }
     if (t->state != CH_ST_CONNECTED) {
         return CH_EPROTO;
+    }
+    if (t->read_closed) {
+        return 0; // the peer's close_notify arrived; nothing after it is read
     }
     // A peer may legally send records that yield no application data
     // (tickets, key updates, empty records), but not an endless stream of

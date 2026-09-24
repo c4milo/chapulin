@@ -495,7 +495,12 @@ under `SUITE=aesgcm`.
   hostile bytes, but the `ch_read` / `ch_write` / `ch_close` loop
   around it — record reading and cross-record reassembly — does not
   converge as one CBMC formula. It rests on end-to-end runs, the
-  mock-transport unit tests, and the fuzzer.
+  mock-transport unit tests, and the fuzzer. Closing is part of it: a
+  close_notify closes its sender's direction alone (RFC 9846 §6.1), so
+  the `ch_read` that reads the peer's returns 0, wipes the read key and
+  sends nothing, and this side writes until its own `ch_close`. `bin/unit`,
+  `bin/rec_loop_test` and e2e's go-half-close leg test that (INV-22,
+  INV-17), and no proof covers it.
 - Constant-time behavior. It comes from construction: no branch and no
   memory index depends on a secret, and the stack avoids AES because of
   its lookup tables. `make timing` checks this with a Welch's t-test,
@@ -811,8 +816,8 @@ ch_cfg cfg = {
 static ch_tls tls;
 if (ch_connect(&tls, &cfg) != CH_OK) { /* reconnect later */ }
 ch_write(&tls, data, n);
-int got = ch_read(&tls, out, sizeof out);
-ch_close(&tls);
+int got = ch_read(&tls, out, sizeof out); // 0: the peer sent close_notify
+ch_close(&tls); // sends this side's close_notify and wipes the keys
 ```
 
 A `TRUST=webpki` build takes no pin, and a PSK only as a ticket it

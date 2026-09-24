@@ -1,0 +1,15 @@
+invariant: INV-22
+file: tls.c
+catches: rec_loop_test
+reason: ch_read answers the peer's close_notify with this side's own, as
+  TLS 1.2 required and RFC 9846 section 6.1 dropped. In TRANSPORT=record
+  that send comes from inside ch_read, which colibri's adapter does not
+  expect, so the alert is lost; bin/rec_loop_test counts the send.
+
+--- old
+        close_read_side(t);
+        return CH_ECLOSED;
+--- new
+        close_read_side(t);
+        (void)tlsi_send_alert(t, 1, ALERT_CLOSE_NOTIFY);
+        return CH_ECLOSED;

@@ -50,7 +50,9 @@ inductive Msg
   | keyUpdate
   /-- Application data, legal once the handshake completes. Line-protocol letter A. -/
   | appData
-  /-- close_notify: ends the connection. Line-protocol letter L. -/
+  /-- close_notify: the server sends nothing after it (RFC 9846 §6.1). It
+  closes the server's direction alone, the one this model reads.
+  Line-protocol letter L. -/
   | closeNotify
 
 /--
@@ -74,16 +76,19 @@ inductive State
   | awaitFin
   /-- Handshake complete; only post-handshake traffic is legal. -/
   | connected
-  /-- close_notify taken; nothing more is legal. -/
+  /-- close_notify taken; the client takes no further message. -/
   | closed
 
 /--
-Feed one message to the client. `none` is a fatal error: a handshake
-message out of the §4 order, a certificate-flight message under PSK
-(§2.2), a CertificateRequest (the client offers no certificate and
-fails closed instead of answering §4.5.1 with an empty Certificate),
-post-handshake traffic before the handshake completes (§4.7.1, §4.7.3,
-§5.1), or anything after close_notify (§6.1).
+Feed one message to the client. `none` means the client does not take
+the message. For a handshake message out of the §4 order, a
+certificate-flight message under PSK (§2.2), a CertificateRequest (the
+client offers no certificate and fails closed instead of answering
+§4.5.1 with an empty Certificate), and post-handshake traffic before the
+handshake completes (§4.7.1, §4.7.3, §5.1), that is a fatal error. For
+anything after close_notify it is §6.1's rule that data after a closure
+alert is ignored: the client reads nothing more, so it never takes the
+message.
 -/
 def step (mode : Mode) : State → Msg → Option State
   -- §4.2.3/§4.2.4: ServerHello or HelloRetryRequest answers the
@@ -109,7 +114,7 @@ def step (mode : Mode) : State → Msg → Option State
   | .connected, .newSessionTicket => some .connected
   | .connected, .keyUpdate => some .connected
   | .connected, .appData => some .connected
-  -- §6.1: close_notify ends the connection.
+  -- §6.1: close_notify ends the server's direction, the one read here.
   | .connected, .closeNotify => some .closed
   | _, _ => none
 
@@ -533,8 +538,8 @@ private theorem step_closeSeen (mode : Mode) (s s' : State) (m : Msg)
     simp [closeSeen]
 
 /-- No accepting trace contains two close_notify messages (RFC 9846
-§6.1: close_notify moves the client to the closed state, where every
-message is fatal). -/
+§6.1: close_notify moves the client to the closed state, which takes no
+message). -/
 theorem closeNotify_at_most_one (mode : Mode) (msgs : List Msg)
     (h : accepts mode msgs = true) : msgs.count .closeNotify ≤ 1 := by
   obtain ⟨t, hfold, ht⟩ := (accepts_iff mode msgs).mp h
@@ -542,7 +547,7 @@ theorem closeNotify_at_most_one (mode : Mode) (msgs : List Msg)
     msgs .start t hfold
   rcases ht with rfl | rfl <;> (simp [closeSeen] at this; omega)
 
-/-- Every message is fatal in the closed state (RFC 9846 §6.1). -/
+/-- The closed state takes no message (RFC 9846 §6.1). -/
 private theorem step_closed_none (mode : Mode) (m : Msg) :
     step mode State.closed m = none := by
   cases mode <;> cases m <;> rfl
@@ -557,8 +562,8 @@ private theorem foldlM_closed_nil (mode : Mode) :
   | cons x xs => simp [List.foldlM_cons, step_closed_none] at h
 
 /--
-close_notify comes last (RFC 9846 §6.1: it ends the connection, and
-every message after it is fatal). In an accepting trace split as
+close_notify comes last (RFC 9846 §6.1: it ends the server's direction,
+and the client takes no message after it). In an accepting trace split as
 `l ++ r`, if `l` contains close_notify then `r` is empty. Together with
 `closeNotify_at_most_one` this puts the one close_notify an accepting
 trace may carry at the end of the trace.
