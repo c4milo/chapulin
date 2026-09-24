@@ -275,9 +275,11 @@ chapulin keeps the 16-bit-limb x25519 as the default and the device
 path, for its machine-checked overflow proof and because a 32-bit core
 has no wider multiply to run a faster field on. A 64-bit host that
 opens many short connections can build `X25519=wide` instead (decision
-52): five 51-bit limbs whose products run on the 64x64->128 multiply,
-which [`bench/notes-primitives.md`](bench/notes-primitives.md) times on
-arm64.
+52): five 51-bit limbs whose products run on the 64x64->128 multiply.
+On an Apple M1 Pro a scalar multiplication takes 34 µs there against
+953 µs in the default build, and the client side of a pinned RSA-3072
+handshake falls from 2.57 ms to 0.77 ms
+([`bench/notes-primitives.md`](bench/notes-primitives.md)).
 
 ## Verification
 

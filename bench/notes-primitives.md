@@ -16,7 +16,7 @@ bench/results-aead-arm64.csv; this note does not repeat it.
 
 - Apple M1 Pro (8 performance and 2 efficiency cores), macOS 26.6.2
   (Darwin 25.6.0), Apple clang 21.0.0, `-std=c11 -O2`, the packaged
-  object's level. Tree 6dd570f with this change applied.
+  object's level. Tree 0ae2dbe.
 - Each row is the median over 3 runs of each run's median of 101 samples
   (11 to 27 samples for the operations slower than 10 ms; the CSV's
   samples column says which). The method is in bench/primitives.c.
@@ -30,35 +30,36 @@ bench/results-aead-arm64.csv; this note does not repeat it.
   program links builds to a byte-identical object either way (compared
   with clang 21), so the CSV times only the aead, secret_key and
   handshake groups twice.
+- `X25519=wide` is the build that replaces x25519.c's 16-limb field with
+  x25519_wide.c's five 51-bit limbs on the 64x64->128 multiply
+  (docs/decisions.md entry 51). It changes one choice from the default
+  and no other module, so the CSV times the two x25519 rows and the
+  handshakes under it, and nothing else.
 
 ## Load and variance
 
-The committed run started at a 1-minute load average of 4.83 and ended
-at 5.89. Inside it, no row's 25th-to-75th percentile spread or run-to-run
-spread passed 3.9%.
+The committed run started at a 1-minute load average of 24.25 and ended
+at 12.19. Other work held the machine between 10 and 24 for the whole
+run, where the run this note described before, at tree 6dd570f, ran
+between 4.8 and 5.9.
 
-The whole script ran three times in eight minutes:
+The medians moved less than the load did. Against that earlier run,
+the 92 rows both runs time read 2% slower on the median row, and 0.1% to
+11% slower across rows. The spreads moved more: inside this run the
+largest 25th-to-75th percentile spread is 187%, on the ECDSA handshake
+rows, and the largest run-to-run spread is 128%, on the RSA-2048
+handshake's server side. Outside the handshake group one row passed 10%
+between runs, Poly1305 at 16 KB on the native multiply at 26%, and
+every per-operation x25519 row stayed under 5%.
 
-- The first run, at a load of 3.5 to 3.8, read faster than the committed
-  one on nearly every row: by 5.6% on the median row, and by -2.9% to
-  +6.4% across rows.
-- The second run, while the load rose from 3.5 to 7.2, agreed with the
-  committed one to 0.0% on the median row, and to -3.8% to +5.9% across
-  rows.
-- The largest noise was in the second run: `rsa_pss_sign_2048` under
-  `CH_NATIVE_WIDEMUL` had a 61% spread inside one run and 78% between
-  runs. The median over its three runs still landed within 0.1% of the
-  committed value.
-
-So on this machine an absolute number carries about 6% of machine-wide
-drift, and the rows move together. Between the three runs only rows
-within 3% of each other swapped places in the rankings below, the
-handshake shares moved by up to 4 points, and the multiply ratios by up
-to 0.16.
+So read the handshake rows as medians of noisy samples, and compare rows
+within this run rather than against the earlier one. The three-run
+repeat the earlier note reported, which put about 6% of machine-wide
+drift on an absolute number at a load near 5, was not repeated here.
 
 `bench/primitives.sh --quick` numbers are not measurements. Its three
-0.1 ms samples read `p256_ecdsa_verify` at 3.06 ms, against 1.25 ms in a
-full run.
+0.1 ms samples once read `p256_ecdsa_verify` at 3.06 ms, against 1.25 ms
+in a full run.
 
 ## Handshakes, measured
 
@@ -69,12 +70,15 @@ side are the time spent inside each end's calls. Milliseconds:
 
 | handshake | build | whole | client side | server side |
 |---|---|---:|---:|---:|
-| pinned RSA-2048 | default | 59.8 | 2.11 | 57.7 |
-| pinned RSA-2048 | CH_NATIVE_WIDEMUL | 38.4 | 1.13 | 37.3 |
-| pinned RSA-3072 | default | 194.5 | 2.48 | 192.0 |
-| pinned RSA-3072 | CH_NATIVE_WIDEMUL | 148.2 | 1.54 | 146.6 |
-| pinned ECDSA P-256 | default | 6.44 | 3.17 | 3.26 |
-| pinned ECDSA P-256 | CH_NATIVE_WIDEMUL | 3.63 | 2.12 | 1.51 |
+| pinned RSA-2048 | default | 64.6 | 2.18 | 62.3 |
+| pinned RSA-2048 | CH_NATIVE_WIDEMUL | 40.5 | 1.19 | 39.2 |
+| pinned RSA-2048 | X25519=wide | 59.4 | 0.40 | 59.0 |
+| pinned RSA-3072 | default | 206.3 | 2.57 | 203.5 |
+| pinned RSA-3072 | CH_NATIVE_WIDEMUL | 151.1 | 1.58 | 149.6 |
+| pinned RSA-3072 | X25519=wide | 202.8 | 0.77 | 202.0 |
+| pinned ECDSA P-256 | default | 6.77 | 3.29 | 3.30 |
+| pinned ECDSA P-256 | CH_NATIVE_WIDEMUL | 4.04 | 2.31 | 1.58 |
+| pinned ECDSA P-256 | X25519=wide | 3.94 | 1.45 | 1.44 |
 
 The pairing gives the server no ticket key, so it times no resumed
 handshake, and the server has no `KEX=pq` half (srv_flight.h), so a
@@ -96,31 +100,36 @@ parsing.
 
 | side | build | x25519 pair | verify or sign | HKDF-Expand-Label | rest |
 |---|---|---:|---:|---:|---:|
-| RSA-3072 client | default | 72% | 25% | 1.2% | 1.2% |
-| RSA-3072 client | CH_NATIVE_WIDEMUL | 55% | 41% | 1.9% | 2.7% |
-| ECDSA client | default | 57% | 39% | 0.9% | 3.1% |
-| ECDSA client | CH_NATIVE_WIDEMUL | 40% | 59% | 1.4% | -0.4% |
-| RSA-3072 server | default | 0.9% | 102% | 0.0% | -3.2% |
-| ECDSA server | default | 55% | 39% | 0.9% | 5.2% |
-| ECDSA server | CH_NATIVE_WIDEMUL | 56% | 44% | 1.8% | -1.9% |
+| RSA-3072 client | default | 74% | 26% | 1.2% | -0.6% |
+| RSA-3072 client | CH_NATIVE_WIDEMUL | 54% | 42% | 1.9% | 2.1% |
+| RSA-3072 client | X25519=wide | 8.9% | 85% | 3.9% | 2.5% |
+| ECDSA client | default | 58% | 40% | 0.9% | 1.2% |
+| ECDSA client | CH_NATIVE_WIDEMUL | 37% | 57% | 1.3% | 4.4% |
+| ECDSA client | X25519=wide | 4.7% | 91% | 2.1% | 2.1% |
+| RSA-3072 server | default | 0.9% | 99% | 0.0% | 0.0% |
+| ECDSA server | default | 57% | 40% | 0.9% | 1.8% |
+| ECDSA server | CH_NATIVE_WIDEMUL | 54% | 42% | 1.8% | 1.7% |
+| ECDSA server | X25519=wide | 4.8% | 92% | 2.0% | 1.8% |
 
-The rest runs from -3.2% to +5.2% of a side, about the 3% run spread
-of the rows it is computed from. So the public-key operations account
-for all of the time this method can resolve, and it cannot split the
-rest further.
+The rest runs from -0.6% to +4.4% of a side, inside the run spread of
+the rows it is computed from. So the public-key operations account for
+all of the time this method can resolve, and it cannot split the rest
+further.
 
 Sums for the two handshakes the pairing cannot run:
 
 - `KEX=pq`: the client adds two ML-KEM-768 key generations and one
   decapsulation. handshake_flight.c calls mlkem_keygen_dk once to build
   the ClientHello and once before it decapsulates; that count is read
-  from the code, not measured. The sum is 90 us on the default build,
-  3.6% on top of the RSA-3072 client side, and 91 us, 5.9%, on the
-  native one. A server would add one encapsulation, 31 us.
+  from the code, not measured. The sum is 96 us on the default build,
+  3.7% on top of the RSA-3072 client side, and 94 us, 6.0%, on the
+  native one. `X25519=wide` does not change ML-KEM, so there the same
+  96 us is 12% on top of the RSA-3072 client side. A server would add
+  one encapsulation, 33 us.
 - Resumed PSK (psk_dhe_ke): the client skips the verifier and keeps the
   x25519 pair and the key schedule. The RSA-3072 client side minus the
-  verify row is 1.85 ms on the default build and 0.92 ms on the native
-  one.
+  verify row is 1.91 ms on the default build, 0.92 ms on the native one
+  and 0.12 ms under `X25519=wide`.
 
 ## Ranking: once-per-handshake costs
 
@@ -129,29 +138,32 @@ says who calls it and how often.
 
 | primitive | default | native | called by |
 |---|---:|---:|---|
-| rsa_pss_sign_3072 | 196,239 | 143,888 | server, once, RSA-3072 identity |
-| rsa_pss_sign_2048 | 57,293 | 36,460 | server, once, RSA-2048 identity |
-| p384_ecdsa_verify | 4,034 | same | client, per P-384 signature, TRUST=webpki |
-| p256_sign | 1,269 | 668 | server, once, ECDSA identity |
-| p256_ecdsa_verify | 1,251 | same | client, once, TRUST=raw-ecdsa; per link, webpki |
-| p256_ecdh | 1,172 | 610 | no caller yet; a server's P-256 key exchange |
-| rsa_pss_verify_4096 | 1,172 | same | client, TRUST=webpki |
-| rsa_pkcs1_verify_4096 | 1,166 | same | client, per RSA-4096 link, webpki |
-| x25519, x25519_base | 898, 897 | 423, 423 | both ends, once each |
-| rsa_pss_verify_3072 | 628 | same | client, once, TRUST=raw-rsa default |
-| rsa_pkcs1_verify_3072 | 627 | same | client, per link, webpki |
-| rsa_pss_verify_2048 | 264 | same | client, once |
-| rsa_pkcs1_verify_2048 | 262 | same | client, per link, webpki |
-| mlkem768_decaps | 35.3 | 34.8 | client, once, KEX=pq |
-| mlkem768_encaps | 31.5 | 31.2 | no caller yet; a server's KEX=pq half |
-| mlkem768_keygen | 27.5 | 28.3 | client, twice, KEX=pq |
-| hkdf_expand_label | 1.64 | same | client 18, server 17 |
+| rsa_pss_sign_3072 | 201,526 | 149,218 | server, once, RSA-3072 identity |
+| rsa_pss_sign_2048 | 59,167 | 38,093 | server, once, RSA-2048 identity |
+| p384_ecdsa_verify | 4,275 | same | client, per P-384 signature, TRUST=webpki |
+| p256_ecdsa_verify | 1,325 | same | client, once, TRUST=raw-ecdsa; per link, webpki |
+| p256_sign | 1,320 | 670 | server, once, ECDSA identity |
+| p256_ecdh | 1,228 | 610 | no caller yet; a server's P-256 key exchange |
+| rsa_pss_verify_4096 | 1,223 | same | client, TRUST=webpki |
+| rsa_pkcs1_verify_4096 | 1,204 | same | client, per RSA-4096 link, webpki |
+| x25519, x25519_base | 953, 944 | 428, 431 | both ends, once each |
+| rsa_pss_verify_3072 | 656 | same | client, once, TRUST=raw-rsa default |
+| rsa_pkcs1_verify_3072 | 652 | same | client, per link, webpki |
+| rsa_pss_verify_2048 | 275 | same | client, once |
+| rsa_pkcs1_verify_2048 | 273 | same | client, per link, webpki |
+| mlkem768_decaps | 37.1 | 35.5 | client, once, KEX=pq |
+| x25519, x25519_base, `X25519=wide` | 34.3, 34.5 | | both ends, once each |
+| mlkem768_encaps | 33.2 | 32.0 | no caller yet; a server's KEX=pq half |
+| mlkem768_keygen | 29.5 | 29.4 | client, twice, KEX=pq |
+| hkdf_expand_label | 1.66 | same | client 18, server 17 |
 
 For a client on the default build, the x25519 pair is the largest cost
 in both pinned modes and the verifier is second. The native multiply
 halves the pair and leaves the verifiers as they are, so on that build
-the P-256 verifier is the larger cost of an ECDSA client. For a server
-with an RSA identity, rsa_pss_sign is 97% to 102% of its side.
+the P-256 verifier is the larger cost of an ECDSA client. `X25519=wide`
+takes the pair to 69 us, under a tenth of either client side, and leaves
+the verifier as the largest cost of every client. For a server with an
+RSA identity, rsa_pss_sign is 99% of its side.
 rsa_sign.h states that it signs without the CRT, which it puts at
 about four times the cost of a CRT signature. That is a design choice
 rather than an instruction family, and this bench does not measure it.
@@ -163,27 +175,29 @@ common draw is 32 bytes). Default build; native where it differs.
 
 | primitive | 16 KB | 64 B | native 16 KB | where a connection runs it |
 |---|---:|---:|---:|---|
-| hmac_sha256 | 4.85 | 29.0 | | key schedule, Finished; short inputs |
-| sha256 | 4.79 | 11.7 | | transcript, inside HMAC and HKDF |
-| sha3_256 | 3.92 | 7.53 | | inside ML-KEM |
-| chacha20_poly1305_open | 3.48 | 7.31 | 2.28 | every received record |
-| chacha20_poly1305_seal | 3.47 | 7.41 | 2.27 | every sent record |
-| sha512, sha384 | 3.19, 3.19 | 9.66, 9.12 | | certificate signatures, webpki |
-| shake256_squeeze | 2.35 | 5.40 | | inside ML-KEM |
-| shake128_squeeze | 2.01 | 5.39 | | inside ML-KEM |
-| poly1305 | 1.95 | 2.59 | 0.71 | half of the AEAD |
-| drbg | 1.66 | 4.35 | | every ch_rand_bytes call |
-| chacha20 | 1.55 | 1.69 | | half of the AEAD |
+| hmac_sha256 | 4.92 | 29.3 | | key schedule, Finished; short inputs |
+| sha256 | 4.83 | 11.9 | | transcript, inside HMAC and HKDF |
+| sha3_256 | 3.93 | 7.61 | | inside ML-KEM |
+| chacha20_poly1305_seal | 3.62 | 7.81 | 2.29 | every sent record |
+| chacha20_poly1305_open | 3.60 | 7.55 | 2.29 | every received record |
+| sha512, sha384 | 3.23, 3.23 | 9.81, 9.23 | | certificate signatures, webpki |
+| shake256_squeeze | 2.37 | 5.44 | | inside ML-KEM |
+| poly1305 | 2.02 | 2.61 | 0.71 | half of the AEAD |
+| shake128_squeeze | 2.02 | 5.45 | | inside ML-KEM |
+| drbg | 1.69 | 4.40 | | every ch_rand_bytes call |
+| chacha20 | 1.58 | 1.71 | | half of the AEAD |
 
-A 1,200-byte record costs 4.4 us to seal on the default build and 3.0 us
+A 1,200-byte record costs 4.6 us to seal on the default build and 3.0 us
 on the native one. Record protection costs as much as the RSA-3072
-client handshake after about 714 KB sealed or opened (679 KB native),
-and as much as the ECDSA client handshake after about 913 KB. A
-connection that moves less than that spends most of its crypto time in
-the handshake, and most of that in x25519 and the verifier.
+client handshake after about 710 KB sealed or opened (688 KB native),
+and as much as the ECDSA client handshake after about 910 KB. Under
+`X25519=wide` those fall to 214 KB and 402 KB. A connection that moves
+less than that spends most of its crypto time in the handshake, and most
+of that in x25519 and the verifier, or in the verifier alone once the
+field is wide.
 
-On the default build Poly1305 is the slower half of the AEAD, 1.95 ns
-against ChaCha20's 1.55. The native multiply makes it 0.71, and
+On the default build Poly1305 is the slower half of the AEAD, 2.02 ns
+against ChaCha20's 1.58. The native multiply makes it 0.71, and
 ChaCha20 becomes the larger half.
 
 ## The multiply build
@@ -192,19 +206,42 @@ Default time over native time, from the rows above:
 
 | row | ratio |
 |---|---:|
-| poly1305, 16 KB | 2.76 |
-| x25519 | 2.12 |
-| p256_ecdh | 1.92 |
-| p256_sign | 1.90 |
-| rsa_pss_sign_2048 | 1.57 |
-| chacha20_poly1305_seal, 16 KB | 1.53 |
-| rsa_pss_sign_3072 | 1.36 |
-| mlkem768 keygen, encaps, decaps | 0.97 to 1.01 |
-| RSA-3072 handshake, client side | 1.61 |
-| ECDSA handshake, client side | 1.50 |
+| poly1305, 16 KB | 2.84 |
+| x25519 | 2.23 |
+| p256_ecdh | 2.01 |
+| p256_sign | 1.97 |
+| chacha20_poly1305_seal, 16 KB | 1.58 |
+| rsa_pss_sign_2048 | 1.55 |
+| rsa_pss_sign_3072 | 1.35 |
+| mlkem768 keygen, encaps, decaps | 1.00 to 1.05 |
+| RSA-3072 handshake, client side | 1.63 |
+| ECDSA handshake, client side | 1.42 |
 
-ML-KEM does not move. mlkem_poly.c builds to a different object under
-the native multiply, and the difference does not show in these rows.
+ML-KEM barely moves. mlkem_poly.c builds to a different object under
+the native multiply, and the difference is inside the run spread of
+these rows.
+
+## The X25519 field
+
+`X25519=wide` against the two builds of the 16-limb field. The first
+two rows are microseconds per scalar multiplication; the last two are
+milliseconds of client side:
+
+| row | default | CH_NATIVE_WIDEMUL | X25519=wide | default over wide | native over wide |
+|---|---:|---:|---:|---:|---:|
+| x25519 | 953 | 428 | 34.3 | 27.8 | 12.5 |
+| x25519_base | 944 | 431 | 34.5 | 27.4 | 12.5 |
+| RSA-3072 handshake, client side | 2.57 | 1.58 | 0.77 | 3.32 | 2.04 |
+| ECDSA handshake, client side | 3.29 | 2.31 | 1.45 | 2.26 | 1.59 |
+
+Three counts account for the 12.5 against the native multiply. A field
+multiply runs 25 products of 64 by 64 bits where the 16-limb field runs
+256 of 32 by 32; a squaring runs 15 where the 16-limb field runs a whole
+multiply; and the inversion's fixed chain runs 11 multiplies where the
+16-limb field's square-and-multiply runs 252. Against the default build
+the 16x16 decomposition's cost comes on top, which is where 27.8 comes
+from. A device cannot build the wide field, so the device rows in the
+README and bench/results-insn*.csv keep the 16-limb one.
 
 ## Instruction families that could speed each primitive
 
@@ -214,7 +251,7 @@ and FEAT_SHA3 (`sysctl hw.optional.arm`).
 
 | primitive | arm64 | x86-64 |
 |---|---|---|
-| x25519 (16-bit limbs in int64 words) | the native 64x64 multiply with UMULH over wider limbs; NEON for two field products at once | MULX (BMI2) with ADCX and ADOX (ADX); AVX2 for several field products at once |
+| x25519 (16-bit limbs in int64 words; 51-bit limbs under `X25519=wide`) | `X25519=wide` runs the native 64x64 multiply with UMULH over 51-bit limbs; NEON for two field products at once is still open | `X25519=wide` runs MUL; MULX (BMI2) with ADCX and ADOX (ADX), and AVX2 for several field products at once, are still open |
 | RSA verify and sign, P-256 and P-384 (32-bit limbs) | UMULH over 64-bit limbs; NEON UMULL and UMLAL for 32x32 products in lanes | MULX, ADCX and ADOX over 64-bit limbs; AVX2 VPMULUDQ; AVX-512 IFMA (VPMADD52LUQ, VPMADD52HUQ) |
 | Poly1305 | the native multiply first; NEON UMLAL over 26-bit limbs, several blocks at once | MULX; AVX2 VPMULUDQ over 26-bit limbs, four blocks at once |
 | ChaCha20, and the DRBG over it | NEON, four blocks per pass | AVX2, eight blocks per pass; AVX-512, sixteen |
@@ -233,6 +270,11 @@ and FEAT_SHA3 (`sysctl hw.optional.arm`).
 - Which half of a difference between the arm64 and x86-64 runs is the
   compiler and which is the CPU. The arm64 run used clang and the
   x86-64 run used gcc, so no row separates the two.
+- Whether the 64x64->128 multiply runs in constant time here. Nothing
+  in the bench or in this tree sets PSTATE.DIT, so the `X25519=wide`
+  rows time the field in whatever mode macOS runs the program in.
+  `make timing`'s t-test is the evidence this tree has, and ct.h says
+  what the build asserts instead.
 
 ## x86-64
 
@@ -254,25 +296,25 @@ Handshakes, milliseconds:
 | pinned ECDSA P-256 | default | 12.9 | 5.96 | 6.97 |
 | pinned ECDSA P-256 | CH_NATIVE_WIDEMUL | 6.93 | 3.83 | 3.10 |
 
-Each row as a multiple of its arm64 time, default build:
+Each row as a multiple of its time in bench/results-primitives-arm64.csv, default build:
 
 | row | x86-64 over arm64 |
 |---|---:|
-| shake256_squeeze, 16 KB | 7.50 |
-| shake128_squeeze, 16 KB | 7.16 |
-| mlkem768_keygen, encaps, decaps | 4.75 to 5.04 |
-| sha3_256, 16 KB | 4.58 |
-| p256_sign, p256_ecdh | 2.37 to 2.43 |
-| x25519 | 2.20 |
-| poly1305, 16 KB | 1.76 |
-| chacha20_poly1305_seal, 16 KB | 1.65 |
-| p256_ecdsa_verify | 1.64 |
-| chacha20, 16 KB | 1.47 |
-| rsa_pss_sign_3072 | 1.47 |
-| rsa_pss_verify_3072 | 1.09 |
-| sha512, 16 KB | 0.89 |
-| hkdf_expand_label | 0.82 |
-| sha256 and hmac_sha256, 16 KB | 0.79 |
+| shake256_squeeze, 16 KB | 7.43 |
+| shake128_squeeze, 16 KB | 7.13 |
+| mlkem768_keygen, encaps, decaps | 4.52 to 4.71 |
+| sha3_256, 16 KB | 4.57 |
+| p256_sign, p256_ecdh | 2.28 to 2.33 |
+| x25519 | 2.07 |
+| poly1305, 16 KB | 1.69 |
+| chacha20_poly1305_seal, 16 KB | 1.58 |
+| p256_ecdsa_verify | 1.55 |
+| chacha20, 16 KB | 1.45 |
+| rsa_pss_sign_3072 | 1.43 |
+| rsa_pss_verify_3072 | 1.04 |
+| sha512, 16 KB | 0.88 |
+| hkdf_expand_label | 0.81 |
+| sha256 and hmac_sha256, 16 KB | 0.78 |
 
 The native multiply gains more here than on arm64. Default time over
 native time:
@@ -293,9 +335,9 @@ What these show:
   x25519 pair, 3.95 ms of a 4.66 ms RSA-3072 client side on the
   default build, and a server with an RSA identity spends its side in
   rsa_pss_sign.
-- Keccak is the outlier. SHA-3 and SHAKE take 4.6 to 7.5 times their
-  arm64 time, where every other row takes at most 2.4 times, and
-  ML-KEM, which runs on them, takes 4.8 to 5.0 times. A `KEX=pq` client
+- Keccak is the outlier. SHA-3 and SHAKE take 4.6 to 7.4 times their
+  arm64 time, where every other row takes at most 2.3 times, and
+  ML-KEM, which runs on them, takes 4.5 to 4.7 times. A `KEX=pq` client
   adds two key generations and one decapsulation, 445 us, which is 9.6%
   on top of the RSA-3072 client side.
 - SHA-256 is the one hash faster here than on arm64, without SHA-NI.

@@ -960,9 +960,10 @@ does nothing more.
     into 128, which a 64-bit core computes as MUL and UMULH on arm64 and
     as one MUL or MULX on x86-64. On an
     Apple M1 Pro the wide field takes about 34 µs per scalar
-    multiplication, against 423 µs for the 16-limb field on the native
-    multiply and 898 µs on the 16x16 decomposition the packaged object
-    ships, and X25519 was 72% of an RSA-3072 client handshake there
+    multiplication, against 428 µs for the 16-limb field on the native
+    multiply and 953 µs on the 16x16 decomposition the packaged object
+    ships. The x25519 pair was 74% of an RSA-3072 client handshake there,
+    and the wide field takes that client side from 2.57 ms to 0.77 ms
     (bench/notes-primitives.md).
 
     It is an axis rather than a replacement because a device cannot run
