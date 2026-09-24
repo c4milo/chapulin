@@ -27,9 +27,10 @@
  * What the check covers: the chain verifies up to one of your anchors,
  * every certificate on the path is valid at now_seconds, and a dNSName
  * in the leaf's subjectAltName matches the hostname. What it does not
- * cover: revocation, Certificate Transparency, name constraints, and
- * resumption. docs/webpki.md, "What the mode does not check", is the
- * list; read it before deploying.
+ * cover: revocation, Certificate Transparency and name constraints.
+ * docs/webpki.md, "What the mode does not check", is the list; read it
+ * before deploying. This example makes one full handshake and does not
+ * resume; docs/webpki.md, "Resumption", says what a caller stores to.
  *
  * Getting the anchors. Download the root certificate from the CA's own
  * site — Amazon Trust Services publishes Amazon Root CA 1 through 4 and
@@ -230,16 +231,14 @@ static int dial(const char *host, const char *port) {
 
 // --- The session ---------------------------------------------------------
 
-// Tickets arrive in this mode too, and the client parses and exposes
-// them as RFC 9846 requires, but a webpki config cannot present one
-// back: nothing binds a ticket to the hostname it was issued for, so
-// ch_connect refuses a PSK in this mode and every connection is a full
-// handshake (docs/webpki.md, "No PSK, and no resumption"). This
-// example only reports what arrived.
+// Tickets arrive bound to this hostname and these anchors. A caller that
+// resumes stores psk, identity and binding, and presents them on its next
+// ch_connect under the same hostname and anchors (docs/webpki.md,
+// "Resumption"). This example only reports what arrived.
 static void on_ticket(void *io, const ch_ticket *ticket) {
     (void)io;
-    (void)fprintf(stderr, "ticket: %zu-byte identity, lifetime %us, not presentable in this mode\n",
-                  ticket->identity_len, ticket->lifetime_s);
+    (void)fprintf(stderr, "ticket: %zu-byte identity, lifetime %us\n", ticket->identity_len,
+                  ticket->lifetime_s);
 }
 
 // The ch_err codes a webpki session returns (cfg.h), in the words an
@@ -248,8 +247,8 @@ static void on_ticket(void *io, const ch_ticket *ticket) {
 static const char *error_text(int rc) {
     switch (rc) {
     case CH_EINVAL:
-        return "bad config: anchors, hostname, clock, a buffer under CH_MIN_RXBUF, or a PSK, "
-               "pin or epoch callback this mode refuses";
+        return "bad config: anchors, hostname, clock, a buffer under CH_MIN_RXBUF, a pin or "
+               "epoch callback, or a PSK that is not a ticket bound to this hostname";
     case CH_EAUTH:
         return "the chain did not verify: no anchor signed it, a certificate is outside "
                "now_seconds, the leaf does not name the hostname, or CertificateVerify failed";
@@ -300,9 +299,10 @@ static int one_exchange(ch_tls *tls) {
 
 // Fills in the config. Every field set here exists in cfg.h under
 // CH_TRUST_WEBPKI, and this mode needs no others. What stays zero is
-// deliberate: psk, psk_id, resumption, both pin slots and the epoch
-// callbacks all stay unset, because ch_connect refuses a webpki config
-// that sets any of them.
+// deliberate: this example does not resume, so psk, psk_id, resumption
+// and ticket_binding stay unset, and both pin slots and the epoch
+// callbacks stay unset because ch_connect refuses a webpki config that
+// sets any of them.
 static void configure(ch_cfg *cfg, int *fd, const char *server_name, size_t anchor_count,
                       uint8_t *rxbuf, size_t rxbuf_len) {
     cfg->anchors = g_anchors;

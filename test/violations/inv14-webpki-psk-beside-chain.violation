@@ -1,14 +1,14 @@
 invariant: INV-14
-file: tls.c
+file: webpki_ticket.c
 catches: webpki_session_test
-reason: a TRUST=webpki config may carry a PSK or a resumption ticket,
-  and a resumed handshake presents no certificate, so it skips the
-  hostname check docs/webpki.md says every webpki connection makes.
-  bin/webpki_session_test's psk, psk_id and resumption rows object.
+reason: a TRUST=webpki config may carry any PSK, external or a ticket
+  with no binding, and a resumed handshake presents no certificate, so
+  it skips the hostname check. bin/webpki_session_test's psk, psk_id and
+  resumption rows object.
 
 --- old
     return cfg->psk == NULL && cfg->psk_len == 0 && cfg->psk_id == NULL && cfg->psk_id_len == 0 &&
-           cfg->resumption == 0;
+           cfg->resumption == 0 && cfg->ticket_binding == NULL;
 --- new
     (void)cfg;
     return 1;

@@ -21,6 +21,9 @@
 #include "rec_frame.h"
 #include "rec_step.h"
 #include "record.h"
+#ifdef CH_TRUST_WEBPKI
+#include "webpki_ticket.h"
+#endif
 
 #if !defined(CH_ROLE_SERVER) || defined(CH_ROLE_BOTH)
 
@@ -43,6 +46,9 @@ int ch_record_init(ch_record *r, const ch_cfg *cfg) {
         r->t.state = CH_ST_FAILED;
         return CH_EINVAL;
     }
+#ifdef CH_TRUST_WEBPKI
+    webpki_ticket_config_hash(cfg, r->t.ticket_config_hash);
+#endif
     r->hs.t = &r->t;
     r->hs.alert = ALERT_DECODE_ERROR;
     // This client's own record_size_limit, sized to the caller's buffer,

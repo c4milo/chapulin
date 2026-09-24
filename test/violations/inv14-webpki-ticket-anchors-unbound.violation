@@ -1,0 +1,15 @@
+invariant: INV-14
+file: webpki_ticket.c
+catches: webpki_resume_test
+reason: the configuration hash leaves out the anchors, so a ticket issued
+  under one trust set resumes under another, including a set that no
+  longer holds the anchor that verified the original chain. The
+  known-answer row and the other-anchor rows object.
+
+--- old
+        hash_len(&s, a->name_len);
+        sha256_update(&s, a->name, a->name_len);
+        hash_len(&s, a->spki_len);
+        sha256_update(&s, a->spki, a->spki_len);
+--- new
+        (void)a;

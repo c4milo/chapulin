@@ -492,6 +492,18 @@ launch fast full certparse_webpki 260 "" -DCH_TRUST_WEBPKI handshake_parser.c bu
 # Each of the three inv14-webpki-certificate-verify violations fails a
 # named assertion here as well as bin/webpki_auth_test.
 launch fast full certverify_webpki 260 "fill_nondet.0:513" -DCH_TRUST_WEBPKI handshake_parser.c buf.c
+# webpki_ticket: the resumption rule of a TRUST=webpki client
+# (webpki_ticket.h), at a hostname of up to CH_HOSTNAME_MAX bytes and up
+# to CH_WEBPKI_ANCHOR_MAX anchors, over every PSK field NULL or set. buf.c,
+# ct.c and hkdf.c are real; SHA-256 is the contract stub in harness.h,
+# which the harness comment prices. The unwindset bounds the anchor loop
+# at 13 and the hostname loop at 254, because symex cannot read either
+# bound from the harness's assumptions; ct_wipe clears hkdf.c's 112-byte
+# SHA-256 context. Measured (cbmc 6.11.0, kissat, PROVE_NO_CACHE=1
+# /usr/bin/time -l over this script): 917 properties, 57 s, 473 MB. The
+# same formula with its verdict assertion narrowed to an unset config
+# fails, so the formula reaches the ticket path.
+launch fast full webpki_ticket 66 "fill_nondet.0:254,webpki_ticket_config_hash.0:13,webpki_ticket_config_hash.1:254,ct_wipe.0:113" --object-bits 10 -DCH_TRUST_WEBPKI buf.c ct.c hkdf.c
 launch fast:6 full sha256 3 "fill_nondet.0:97,sha256_update.0:66,sha256_update.1:3,sha256_update.2:66,sha256_final.0:65,sha256_final.1:9,sha256_final.2:9,compress.0:17,compress.1:49,compress.2:65"
 # SHA-512 splits as ML-KEM does: the framing over a stubbed compression,
 # and the compression alone. One formula carrying both hashes and the

@@ -162,9 +162,8 @@ _Static_assert(CH_MIN_RXBUF >= 512, "the floor only rises; the base profile need
 #define CH_KEX_TWO_GROUPS
 #endif
 
-// A resumption ticket surfaced to the application: store psk + identity and present them
-// on the next ch_connect (resumption = 1) for a cheaper reconnect. Valid only during the
-// callback; copy what you keep.
+// A resumption ticket for on_ticket. Copy what you keep during the callback, and present
+// psk and identity on the next ch_connect with resumption = 1 for a cheaper reconnect.
 typedef struct {
     const uint8_t *identity;
     size_t identity_len;
@@ -174,6 +173,9 @@ typedef struct {
     // The stored epoch when the ticket arrived; zero outside CA builds. Present it back in
     // ch_cfg.ticket_epoch on resumption, so an epoch bump also retires every earlier ticket.
     uint32_t epoch;
+#ifdef CH_TRUST_WEBPKI
+    uint8_t binding[SHA256_LEN]; // present it in ch_cfg.ticket_binding (webpki_ticket.h)
+#endif
 } ch_ticket;
 
 // Monotonic revocation epoch (docs/ca.md). The CA writes each server certificate's
@@ -344,10 +346,9 @@ typedef struct {
     //    instead: the server's chain must verify up to the pinned CA key
     //    (see docs/ca.md). Tickets still arrive either way, so reconnects
     //    resume via PSK.
-    // A CH_TRUST_WEBPKI build reads neither: it authenticates the server
-    // by a public chain, configured by the fields at the end of this
-    // struct. It refuses a config that sets any of these fields but
-    // obfuscated_age, which it never reads because it sends no PSK.
+    // A CH_TRUST_WEBPKI build reads no pin: it checks a public chain,
+    // configured by the fields at the end of this struct, and takes a PSK
+    // only as a ticket bound to them.
     const uint8_t *psk;
     size_t psk_len;
     const uint8_t *psk_id;
@@ -422,14 +423,12 @@ typedef struct {
     //    1970-01-01T00:00:00Z. Every certificate the walk reads must be
     //    valid at it, compared exactly with no skew tolerance. 0 means
     //    the caller never set the clock.
-    // ch_connect returns CH_EINVAL before it sends a byte when any of
-    // those rules fails, when now_seconds is 0, and when a webpki config
-    // sets psk, psk_len, psk_id, psk_id_len, resumption, either
-    // server_pubkey slot or its length, or the epoch callbacks. This
-    // mode reads no pin, and nothing binds a ticket to the hostname it
-    // was issued for (docs/webpki.md, "No PSK, and no resumption").
+    //  - ticket_binding: SHA256_LEN bytes, set with resumption alone: the ch_ticket.binding of
+    //    the ticket in psk and psk_id. It must match this hostname and these anchors.
+    // ch_connect returns CH_EINVAL before it sends a byte when any of those rules fails, when
+    // now_seconds is 0, and for any other PSK, a pin or an epoch callback (webpki_ticket.h).
     //
-    // These five fields exist only in a TRUST=webpki build, so the raw
+    // These six fields exist only in a TRUST=webpki build, so the raw
     // and ca objects keep the ch_cfg and ch_tls layout they had before
     // this mode. A raw or ca build that sets one fails to compile, which
     // is stricter than a CH_EINVAL from ch_connect.
@@ -438,6 +437,7 @@ typedef struct {
     const uint8_t *hostname;
     size_t hostname_len;
     uint64_t now_seconds;
+    const uint8_t *ticket_binding;
 #endif
 
 // The same two fields serve all three builds; ch_connect, ch_quic_init or ch_srv_accept

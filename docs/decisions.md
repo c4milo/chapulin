@@ -381,8 +381,9 @@ does nothing more.
     with hostnames and validity dates, so a host-side client can reach
     a public endpoint. Cost: a clock the caller supplies, a receive
     buffer measured in kilobytes, every signature family a public chain
-    uses in one object, and a mode that refuses PSK and resumption
-    because nothing binds a ticket to a hostname. Gain: the raw and ca
+    uses in one object, and a mode that refused PSK and resumption
+    because nothing bound a ticket to a hostname, until entry 47 bound
+    one. Gain: the raw and ca
     objects do not change — their sources, their defines and their
     SRAM rows stay where they are, and `make lint-trust-separation`
     holds the partition. docs/webpki.md states the profile, the
@@ -792,3 +793,35 @@ does nothing more.
     Treating a 0 inside a record as `CH_RECORD_AGAIN` too was considered
     and rejected. The partial header would have to be kept across calls,
     and `rec.h` already asks the caller for whole records.
+
+47. **A `TRUST=webpki` client resumes a ticket bound to the hostname and
+    anchors that received it.** A resumed handshake checks no certificate,
+    so entry 36 refused resumption in this mode. RFC 8310 §9 makes
+    resumption a MUST for a DNS-over-TLS client, and RFC 9846 §4.7.1 lets a
+    client resume only under a `server_name` valid for the original
+    certificate. Each ticket now carries a binding: HMAC-SHA256 keyed by
+    its PSK over a hash of the lowercased hostname and the anchor array.
+    `ch_connect` recomputes it and refuses a mismatch with `CH_EINVAL`
+    before it sends a byte. docs/webpki.md, "Resumption", states the rules.
+
+    Cost: 32 bytes in `ch_ticket`, 40 in `ch_tls` as `bench/sram.sh`
+    measures it (a 32-byte field and its alignment), one field in `ch_cfg`,
+    and a second path through the handshake for this mode, the one the raw
+    and ca modes already take after a ticket. Gain: a reconnect to a public
+    endpoint skips the chain walk and its signature checks, and a ticket
+    stored under the wrong name fails at configuration, not after a
+    session with a server the caller did not name.
+
+    Keying the binding by the PSK, not hashing the configuration alone,
+    ties it to one ticket: a caller cannot pair one ticket's PSK with
+    another's binding by mistake. Storing the hostname in the ticket and
+    comparing it was considered and rejected: the caller supplies both
+    sides of that comparison, so it checks nothing a storage mistake would
+    break.
+
+    Offering the certificate path beside the ticket, so a server that
+    declines the ticket can still authenticate by chain, was considered and
+    rejected for now. It would put `signature_algorithms` in the resumed
+    hello and give the client two ways through one handshake, where every
+    mode here has one per hello. The cost of failing closed is one
+    reconnect after a declined ticket.

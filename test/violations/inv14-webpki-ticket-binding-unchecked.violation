@@ -1,0 +1,12 @@
+invariant: INV-14
+file: webpki_ticket.c
+catches: webpki_resume_test
+reason: a presented ticket of the right shape passes without its binding being
+  compared, so a ticket received for one hostname resumes a connection
+  to another, and that resumed handshake checks no certificate. The
+  other-hostname, other-anchor and other-ticket rows object.
+
+--- old
+    uint32_t same = ct_memeq(expected, cfg->ticket_binding, SHA256_LEN);
+--- new
+    uint32_t same = 1;

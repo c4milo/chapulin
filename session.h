@@ -228,6 +228,13 @@ typedef struct {
     // object declares none of this and keeps the ch_tls layout it had.
     uint8_t alpn_selected;
 #endif
+#ifdef CH_TRUST_WEBPKI
+    // webpki_ticket_config_hash of this session's hostname and anchors,
+    // written when the session starts. handshake_post.c binds every
+    // ticket the session receives to it, so the binding does not depend
+    // on the caller's hostname and anchor bytes after ch_connect returns.
+    uint8_t ticket_config_hash[SHA256_LEN];
+#endif
     // Highest epoch accepted: loaded at ch_connect, raised once a verified
     // leaf authenticates the server. epoch_store_failed marks a failed
     // persist; the session stays up. Both stay zero outside CA builds.

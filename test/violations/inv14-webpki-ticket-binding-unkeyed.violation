@@ -1,0 +1,13 @@
+invariant: INV-14
+file: webpki_ticket.c
+catches: webpki_resume_test
+reason: the binding's HMAC is keyed by the configuration hash instead of the
+  ticket's PSK, so the binding no longer names one ticket: a binding
+  copied from another ticket for the same hostname passes. The
+  known-answer row and the other-ticket row object.
+
+--- old
+    hmac_sha256(psk, SHA256_LEN, msg, w.len, out);
+--- new
+    (void)psk;
+    hmac_sha256(config_hash, SHA256_LEN, msg, w.len, out);

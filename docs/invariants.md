@@ -612,10 +612,11 @@ last `ROLE=server` stub, as the entry said it would.
 - **Claim.** The client refuses: Certificate in PSK mode,
   CertificateRequest, psk_ke without DHE, a cookieless HRR, a second
   HRR, dual auth configs, and an even RSA pin. A TRUST=webpki build
-  also refuses a config that sets a PSK, a ticket, a pin or an epoch
-  callback, or a length field of one of them, a config whose clock
-  (`now_seconds`) is 0, and a server_name acknowledgement that carries
-  data. The web PKI fields exist only in that build, so a raw or ca
+  also refuses a config that sets a pin or an epoch callback, or a
+  length field of one of them, a PSK that is not a ticket bound to the
+  config's hostname and anchors (`webpki_resumption_ok`,
+  webpki_ticket.h), a config whose clock (`now_seconds`) is 0, and a
+  server_name acknowledgement that carries data. The web PKI fields exist only in that build, so a raw or ca
   build that sets one fails to compile rather than returning
   CH_EINVAL. `check_certificate_verify` (handshake_auth.c) refuses a
   CertificateVerify whose signature scheme is not the one the leaf key's
@@ -634,6 +635,15 @@ last `ROLE=server` stub, as the entry said it would.
   branches memory-safe. The TRUST=webpki config and server_name
   refusals have boundary rows in test/webpki_session_cases.h and
   bin/handshake_strict_webpki, each guarded by an `inv14-` violation.
+  The ticket rule is bin/webpki_resume_test and bin/webpki_resume_record,
+  one test over both TCP drivers: a binding checked against a known
+  answer, the shape rows at each boundary, a ticket refused under
+  another hostname, other anchors or another ticket's binding, and a
+  resumed handshake whose own ticket resumes the next one. Ten
+  `inv14-webpki-ticket-`, `inv14-webpki-connect-` and
+  `inv14-webpki-record-init-` violations guard it; the webpki_ticket
+  CBMC harness proves the rule memory-safe and its verdict limited to
+  an unset config or a ticket of the stated shape.
   The CertificateVerify rules are bin/webpki_auth_test, which drives
   hsa_server_auth over one corpus chain per leaf key family with the
   signatures in test/webpki_auth_vectors.h: an accepted row per family,

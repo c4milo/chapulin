@@ -1,0 +1,13 @@
+invariant: INV-14
+file: tls.c
+catches: webpki_resume_test
+reason: the webpki ch_connect never writes ch_tls.ticket_config_hash, so the
+  tickets a session receives are bound to an all-zero hash and none
+  resumes the configuration that received it. The received-ticket
+  rows object.
+
+--- old
+    webpki_ticket_config_hash(cfg, t->ticket_config_hash);
+    // psk_ok matters only to a CA build
+--- new
+    // psk_ok matters only to a CA build

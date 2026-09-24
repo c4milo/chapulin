@@ -1,0 +1,11 @@
+invariant: INV-14
+file: webpki_ticket.c
+catches: webpki_resume_test
+reason: the ticket shape admits an identity one byte over CH_TICKET_ID_MAX,
+  the largest one CH_HELLO_MAX makes room for, so the config passes
+  and the hello does not fit. The first-invalid identity row objects.
+
+--- old
+cfg->psk_id_len <= CH_TICKET_ID_MAX &&
+--- new
+cfg->psk_id_len <= CH_TICKET_ID_MAX + 1 &&

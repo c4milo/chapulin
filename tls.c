@@ -290,9 +290,11 @@ void ch_close(ch_tls *t) {
 // above an assertion changes the raw and ca objects, and this mode
 // leaves those objects byte for byte as they were (docs/webpki.md).
 
-// ct.h is included here rather than at the top of the file for the same
-// reason: an include line above the assertions would move them.
+// ct.h and webpki_ticket.h are included here rather than at the top of
+// the file for the same reason: an include line above the assertions
+// would move them.
 #include "ct.h"
+#include "webpki_ticket.h"
 
 // cfg.h writes CH_TRUST_MIN_RXBUF out as numbers because webpki.h,
 // which names the two flight terms, includes cfg.h, and record.h, which
@@ -336,17 +338,6 @@ static int hostname_ok(const ch_cfg *cfg) {
 // a CH_EINVAL that names the config.
 static int clock_set(const ch_cfg *cfg) {
     return cfg->now_seconds != 0;
-}
-
-// The PSK rule: no psk, no psk_id, both lengths 0, and no resumption. A
-// resumed handshake presents no certificate, so it would skip the
-// hostname check, and nothing binds a ticket to the hostname it was
-// issued for (docs/webpki.md, "No PSK, and no resumption"). A length
-// set without its pointer is refused too: it is a PSK config with a
-// field missing, not a chain config.
-static int psk_unset(const ch_cfg *cfg) {
-    return cfg->psk == NULL && cfg->psk_len == 0 && cfg->psk_id == NULL && cfg->psk_id_len == 0 &&
-           cfg->resumption == 0;
 }
 
 // The pin rule: this mode reads neither server_pubkey slot, so a config
@@ -401,9 +392,11 @@ static int alpn_ok(const ch_cfg *cfg) {
     return 1;
 }
 
-// The one auth mode this build has, the chain: every rule above holds.
+// The chain config: every rule above holds, and the PSK fields are unset
+// or present a ticket bound to this hostname and these anchors, which
+// webpki_resumption_ok checks after the rules it needs (webpki_ticket.h).
 static int chain_config_ok(const ch_cfg *cfg) {
-    return anchors_ok(cfg) && hostname_ok(cfg) && clock_set(cfg) && psk_unset(cfg) &&
+    return anchors_ok(cfg) && hostname_ok(cfg) && clock_set(cfg) && webpki_resumption_ok(cfg) &&
            pins_unset(cfg) && alpn_ok(cfg);
 }
 
@@ -436,8 +429,9 @@ int ch_connect(ch_tls *t, const ch_cfg *cfg) {
         t->state = CH_ST_FAILED;
         return CH_EINVAL;
     }
-    // No PSK is set, so psk_ok is 0; epoch_init refuses the epoch
-    // callbacks, as it does in every build but a CA mode.
+    webpki_ticket_config_hash(cfg, t->ticket_config_hash);
+    // psk_ok matters only to a CA build, so it is 0; epoch_init refuses
+    // the epoch callbacks, as it does in every build but a CA mode.
     int rc = tlsi_epoch_init(t, cfg, 0);
     if (rc != CH_OK) {
         t->state = CH_ST_FAILED;

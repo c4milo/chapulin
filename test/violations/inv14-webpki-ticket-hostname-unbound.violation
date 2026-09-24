@@ -1,0 +1,12 @@
+invariant: INV-14
+file: webpki_ticket.c
+catches: webpki_resume_test
+reason: the configuration hash leaves out the hostname, so a ticket's binding
+  names only the anchors and resumes under any hostname they share.
+  The known-answer row and the other-hostname rows object.
+
+--- old
+    hash_len(&s, cfg->hostname_len);
+    sha256_update(&s, lower, cfg->hostname_len);
+--- new
+    (void)lower;

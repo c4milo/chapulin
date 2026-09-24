@@ -178,6 +178,16 @@ static void test_webpki_config(chapulin::Io io) {
         CHECK(s.connect(cfg) == chapulin::Status::invalid);
     }
     {
+        // A ticket whose binding names nothing this config holds.
+        chapulin::Config cfg(chapulin::Bytes{rxbuf}, io);
+        cfg.anchors(kAnchors, 1).hostname({kHost, sizeof kHost}).now_seconds(1789000000U);
+        cfg.resume(chapulin::ConstBytes{psk, sizeof psk}, chapulin::ConstBytes{id, sizeof id}, 0)
+            .ticket_binding(psk);
+        CHECK(cfg.raw().ticket_binding == psk && cfg.raw().resumption == 1);
+        chapulin::Session s;
+        CHECK(s.connect(cfg) == chapulin::Status::invalid);
+    }
+    {
         chapulin::Config cfg(chapulin::Bytes{rxbuf}, io);
         cfg.anchors(kAnchors, 1).hostname({kHost, sizeof kHost}).now_seconds(1789000000U);
         cfg.pinned(chapulin::ConstBytes{psk, sizeof psk});

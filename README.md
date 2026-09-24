@@ -92,9 +92,9 @@ the anchors before it reads each next entry, so it stops at the first
 anchor that both names the issuer and verifies the signature and leaves
 the rest of the flight unread. The object carries every verifier a
 public chain needs at once — RSA-PSS, RSA PKCS#1 v1.5, P-256 and
-P-384 — so `PIN` selects nothing in it. It refuses a PSK and resumption: nothing binds a ticket
-to the hostname it was issued for, so every connection is a full
-handshake.
+P-384 — so `PIN` selects nothing in it. It resumes only a ticket bound
+to the hostname and anchors of the session that received it, and refuses
+any other PSK (docs/webpki.md, "Resumption").
 
 One signature algorithm per build. The default verifies RSA-PSS and
 pins the raw modulus, 256 to 384 bytes, covering RSA-2048 through
@@ -134,15 +134,15 @@ so an rv32 peak needs tooling that does not exist yet.
 | **total static working set** | **3192** | **3120** |
 | `ch_tls` under `KEX=pq` (includes 1806 B TX staging) | 2328 | 2256 |
 | **total static working set, `KEX=pq`** (2048 buffer) | **4376** | **4304** |
-| `ch_tls` under `TRUST=webpki` (includes 1154 B TX staging) | 1744 | 1648 |
-| **total static working set, `TRUST=webpki`** (12338 buffer, its floor) | **14082** | **13986** |
-| peak stack, `ch_connect` (RSA-3072 verify) | 5056 |
-| peak stack, `ch_connect` (`TRUST=raw-ecdsa`) | 3888 |
-| peak stack, `ch_connect` (PSK) | 2432 |
-| peak stack, `ch_connect` (`TRUST=ca-rsa` / `TRUST=ca-ecdsa`) | 5504 / 4016 |
+| `ch_tls` under `TRUST=webpki` (includes 1154 B TX staging) | 1784 | 1688 |
+| **total static working set, `TRUST=webpki`** (12338 buffer, its floor) | **14122** | **14026** |
+| peak stack, `ch_connect` (RSA-3072 verify) | 4992 |
+| peak stack, `ch_connect` (`TRUST=raw-ecdsa`) | 3824 |
+| peak stack, `ch_connect` (PSK) | 2480 |
+| peak stack, `ch_connect` (`TRUST=ca-rsa` / `TRUST=ca-ecdsa`) | 5472 / 3984 |
 | peak stack, `ch_connect` (`TRUST=webpki`, RSA-4096 verify) | 7200 |
-| peak stack, `ch_read` (worst case: KeyUpdate rekey) | 1712 |
-| peak stack, `ch_connect` (`KEX=pq`) | 15808 |
+| peak stack, `ch_read` (worst case: KeyUpdate rekey) | 1696 |
+| peak stack, `ch_connect` (`KEX=pq`) | 15872 |
 | peak stack, `ch_write` / `ch_close` | 912 / 864 |
 
 The hybrid build costs more of both. The session struct grows because
@@ -150,7 +150,7 @@ the ClientHello carries a 1,216-byte key share and is built whole into
 one staging array, and the stack grows because ML-KEM's K-PKE encrypt
 holds three polynomial vectors and two polynomials: 5,744 bytes in that
 one frame, against a 2,560-byte budget for every other build (INV-19
-carries the per-build numbers). The whole chain peaks at 15,808 bytes,
+carries the per-build numbers). The whole chain peaks at 15,872 bytes,
 through `mlkem_decaps` into K-PKE encrypt and Keccak, so the hybrid
 build needs about three times the stack of the classic one rather than
 the single frame's 5,744. A device that cannot spare it builds the
@@ -168,7 +168,7 @@ that completes it, so a buffer too small for the largest chain fails at
 setup rather than mid-handshake. A `TRUST=webpki` build derives 12,338
 bytes the same way, four certificates at its 3,072-byte cap, and its
 session struct carries a larger TX staging array for the `server_name`
-and ALPN extensions. Its `ch_connect` peaks at 7,200
+and ALPN extensions. Its `ch_connect` peaks at 7,104
 bytes, through the chain walk into an RSA-4096 verify, which is the
 widest modulus a public root carries.
 
@@ -364,6 +364,7 @@ apart from one that passed — so for the slow rows, read the nightly.
 | webpki_ext (three harnesses) | the certificate extension walk, in parts like `webpki_san`. `webpki_ext` proves the pieces that read one element: one KeyPurposeId from any reader state, which, when accepted, leaves err clear and moves the position forward by three bytes or more and never past the end, so the purposes loop ends; `x509_read_extension` at the 1024-byte cap from any reader state, whose accepted Extension takes 7 to 1024 bytes with its extnID and extnValue inside them; basicConstraints over any extnValue, cA 0 or 1 and a pathLenConstraint from −1 to 32767; and the whole purposes loop. `webpki_ext_one` judges one Extension from any reader state and any walk state before it: a refusal names one of the two alerts, and an accepted one consumes 7 to 1024 bytes, adds at most one seen bit not already set, moves san only with its bit and inside the consumed bytes, and moves is_ca and path_len only with basicConstraints, is_ca equal to the arm. `webpki_ext_walk` runs `webpki_read_extensions` whole, the field read from its first byte: on `CH_OK` the arm's required extensions were seen, is_ca equals the arm, path_len is −1 on the leaf, and san is inside the consumed bytes and present on the leaf. Asserting 0 on each arm's success tail fails both, so both are reached. `webpki_ext_one` and `webpki_ext_walk` are slow-tier legs | one KeyPurposeId, `x509_read_extension` and basicConstraints at `CH_WEBPKI_EXT_TLV_MAX` (1024 B), the real bound; the purposes loop ≤ 64 B; one judged Extension ≤ 96 B — at 128 B no verdict in 31 minutes; the whole walk ≤ 48 B, which holds the leaf's shortest accepted field of 47 B — from any reader state it converged at 40 B and returned no verdict at 48 B in 31 minutes, and from the first byte it returned none at 64 B in 30 minutes |
 | webpki_chain | `webpki_verify_chain` over any CertificateEntry list and any anchor array, with the five calls it makes (`webpki_parse_certificate`, `webpki_read_spki`, `webpki_verify`, `webpki_match_san`, `webpki_pack_seconds`) stubbed to the contracts their own harnesses prove. It returns `CH_OK`, `CH_EPROTO` or `CH_EAUTH`; a refusal names one of the four alerts `webpki.h`'s table lists; a success keeps the caller's alert and copies out a leaf key of at most `CH_WEBPKI_KEY_MAX` bytes under one of the three key algorithms. Asserting 0 at the success tail fails, so the tail is reached. Which chains it accepts is **not proved** here: the verify and match stubs answer an unconstrained verdict, so the formula says nothing about soundness. `Spec.Webpki.verifyChain_ok` states that an accepted chain has a verified signature path to an anchor, and `test/webpki_chain_test.c` and `test/diff_webpki_chain.h` test it over the corpus | lists ≤ 48 B, which holds eight framed entries of 6 bytes each, so both the `CH_WEBPKI_FLIGHT_ENTRIES` refusal and the `CH_WEBPKI_CHAIN_MAX` one are inside it; 2 anchors of ≤ 8 B each |
 | certverify_webpki | the `TRUST=webpki` CertificateVerify arm of `handshake_auth.c`, over every signature scheme value and every leaf key family: a signature reaches a verifier only under the scheme the leaf key's family can produce, the verifier that runs is that family's own, and the signed content takes SHA-384 for a P-384 leaf and SHA-256 for every other. The record reader, the two hashes and the three verifiers are stubs the harness defines, each asserting what the arm passes it; `handshake_record`, `sha256`, `sha512` and the three verifier harnesses prove them, so whether a signature is genuine is **not proved** here. `test/webpki_auth_test.c` tests that over real chains and real signatures | CertificateVerify messages ≤ 12 B, leaf keys ≤ `CH_WEBPKI_KEY_MAX` |
+| webpki_ticket | the `TRUST=webpki` resumption rule in `webpki_ticket.c`: the configuration hash reads only inside the hostname and the anchors the config names, and `webpki_resumption_ok` reads a presented ticket's PSK and binding only after the shape check admits them. It answers 0 or 1, and 1 only for a config whose PSK fields are all unset or that presents a ticket of the shape `webpki_ticket.h` states. SHA-256 is the contract stub, so which bindings match is **not proved** here; `test/webpki_resume_cases.h` tests that against a known answer computed outside this tree | hostname ≤ 253 B, 1 to 12 anchors with name and spki ≤ 4 B each, every PSK field NULL or set, fast tier |
 
 CBMC found one real bug during development: `carry()` left-shifted a
 negative value, which is undefined behavior even though compilers
@@ -742,8 +743,9 @@ int got = ch_read(&tls, out, sizeof out);
 ch_close(&tls);
 ```
 
-A `TRUST=webpki` build takes neither a PSK nor a pin. It takes the
-roots it trusts, the server's hostname and the time:
+A `TRUST=webpki` build takes no pin, and a PSK only as a ticket it
+bound itself. It takes the roots it trusts, the server's hostname and
+the time:
 
 ```c
 // Each anchor is the DER subject Name and the DER SubjectPublicKeyInfo
@@ -766,8 +768,11 @@ The hostname is an ASCII hostname of at most 253 bytes; convert a
 U-label to its A-label first. `ch_connect` returns `CH_EINVAL` before it
 sends a byte when the anchor count is outside 1 to 12, when an anchor
 has an empty name or key, when the hostname has any other shape, when
-`now_seconds` is 0, when the buffer is under the 12,338-byte floor, and
-when the config also sets a PSK, a ticket, a pin or an epoch callback.
+`now_seconds` is 0, when the buffer is under the 12,338-byte floor, when
+the config also sets a pin or an epoch callback, and when it sets a PSK
+that is not a ticket bound to this hostname and these anchors. To resume,
+keep `ch_ticket.binding` beside the ticket's `psk` and `identity`, and
+present it in `ch_cfg.ticket_binding` with `resumption = 1`.
 The anchor, hostname and clock fields exist only in a `TRUST=webpki`
 build, so a raw or ca build that sets one fails to compile. The hostname
 goes out as the ClientHello's `server_name`, and the hello offers five

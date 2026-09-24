@@ -85,7 +85,9 @@ Home: github.com/c4milo.
   `x509.[ch]` (profiled certificate verify, the ca modes) +
   `webpki.[ch]` with `webpki_cert.c`, `webpki_ext.c`, `webpki_name.c`,
   `webpki_sigalg.c`, `webpki_spki.c` and `webpki_time.c` (chain verify
-  against caller-supplied anchors, TRUST=webpki) ←
+  against caller-supplied anchors, TRUST=webpki) + `webpki_ticket.[ch]`
+  (the binding that holds a resumption ticket to the hostname and
+  anchors that received it, TRUST=webpki) ←
   `record.[ch]`
   (record layer) ← `handshake_parser.[ch]` (message parsers) ←
   `handshake_record.[ch]` (record reading and message reassembly) ←

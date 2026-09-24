@@ -1424,7 +1424,7 @@ at `rsa_mont.c:145`:
 
 A 3072-bit private exponent needs roughly 3,072 squarings plus multiplies, in a
 ladder whose operand selection is branchless and whose table reads, if it uses
-a window, are constant-time scans. `README.md:135` records a 5,056-byte peak
+a window, are constant-time scans. `README.md:135` records a 4,992-byte peak
 stack for an RSA-3072 *verify*.
 
 `rsa_sign.[ch]` is written, and this paragraph is what it changed about the
@@ -1686,7 +1686,9 @@ which is the other reason one list cannot hold them. `epoch_init` (`tls.c:17`)
 sits under no guard. `pin_len_ok` (`tls.c:64`) is in the
 `#ifndef CH_TRUST_WEBPKI` arm at `tls.c:60`. The six predicates
 `chain_config_ok` (`tls.c:374-377`) calls — `anchors_ok`, `hostname_ok`,
-`clock_set`, `psk_unset`, `pins_unset` and `alpn_ok` — and the two statics
+`clock_set`, `psk_unset`, `pins_unset` and `alpn_ok`, where `psk_unset` has
+since moved to `webpki_ticket.c` as `webpki_resumption_ok`
+(`docs/decisions.md` entry 47) — and the two statics
 `alpn_ok` calls are all inside the `#ifdef CH_TRUST_WEBPKI` arm at `tls.c:255`,
 which a server build never compiles, because the `ROLE` block refuses
 `TRUST=webpki`. So the two errors above need both defines to reach one
@@ -2508,7 +2510,7 @@ lands. None of them exists today.
 | The widening-multiply ceiling of each of the sixteen files the codegen partition gains or moves | `make lint-wide-multiply`, per compiler, in the `WIDEMUL_CEILING_SPEC` shape (`Makefile:2230`) | `make lint-codegen-partition` fails any library source in neither list (`Makefile:2054`), so none of the sixteen can land without a list. It checks list membership and nothing about the numbers; the ceiling is what `lint-wide-multiply` measures. |
 | The conditional-branch ceiling of the seven files that also join `BRANCH_SRCS`: `aes.c`, `gcm.c`, `p256_field.c`, `p256_ecdh.c`, `rsa_sign.c`, `sha512.c`, `sha512_compress.c` | `make lint-wide-multiply`, `make lint-wide-multiply-gcc`, `test/docker-mips.sh` and `test/docker-riscv32.sh`, in the `BRANCH_CEILING` shape (`Makefile:2253`) | The branch count runs only for files on `BRANCH_SRCS` (`Makefile:2335`). Eight `WIDEMUL_SPECS` rows times seven files is fifty-six numbers, four rows of them through the two Docker scripts. Without them no check fails when a signer's arithmetic branches on the nonce, and none fails when the SHA-384 key schedule branches on a secret block. Four of the fifty-six are measured already: `sha512.c` 23 and `sha512_compress.c` 4 on `rv32imac`, 24 and 4 on `m3`. |
 | The eight `BRANCH_CEILING` entries `hkdf.c` already has, re-measured | the same four commands | `hkdf.c` is already on `BRANCH_SRCS` and the hash-agile HMAC adds branches to it. It sits exactly at its recorded entry on both specs measured here: 14 on `rv32imac` against `rv32imac/hkdf.c:14` (`Makefile:2259`) and 13 on `m3` against `m3/hkdf.c:13` (`Makefile:2254`). Going over fails at `Makefile:2341-2342`, so the landing commit fails `make lint-wide-multiply` until all eight entries move. It is the only file already under a ceiling whose count this design changes; `keysched.c`, `record.c` and `session.h` are the other shared files it edits and none of the three is on `BRANCH_SRCS`. |
-| The stack frame of the P-256 ladder, of ECDSA signing, and of RSA-PSS signing | `make lint-stack` | INV-19 fixes a frame budget per build (`docs/invariants.md:835`) and `Makefile:1500` compiles at `-Wframe-larger-than=$(STACK_BUDGET)`, so a miss is a compile failure. `README.md:135` gives 5,056 bytes for an RSA-3072 *verify* as the only nearby figure. |
+| The stack frame of the P-256 ladder, of ECDSA signing, and of RSA-PSS signing | `make lint-stack` | INV-19 fixes a frame budget per build (`docs/invariants.md:835`) and `Makefile:1500` compiles at `-Wframe-larger-than=$(STACK_BUDGET)`, so a miss is a compile failure. `README.md:135` gives 4,992 bytes for an RSA-3072 *verify* as the only nearby figure. |
 | The stack frame of a hash-agile `hmac` | `make lint-stack` | Measured at 544 bytes for the one-function form and 528 for the split, against today's 304 (arm64, `-O2`, `-fstack-usage`). The row stays because the number that matters is the one the landing commit's own compiler prints. |
 | The stack frame of `srv_handshake`'s equivalent of `ch_handshake` | the same | `ch_handshake` measures 688 today and 784 hash-agile against a 2560-byte budget. A server holds a `client_hello` and a `selection` in the same frame, and neither struct exists yet. |
 | Code size and speed of a constant-time AES, bitsliced and masked, at both key sizes, on rv32 | `bench/insn_driver.c` and `bench/sram.sh` | It decides which one to write, and whether a server fits the target at all. |

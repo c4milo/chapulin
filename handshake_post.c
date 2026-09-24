@@ -12,6 +12,9 @@
 #ifndef CH_TRANSPORT_QUIC
 #include "io.h"
 #include "record.h"
+#ifdef CH_TRUST_WEBPKI
+#include "webpki_ticket.h"
+#endif
 #endif
 
 #ifdef CH_TRANSPORT_QUIC
@@ -129,6 +132,11 @@ static int handle_ticket(ch_tls *t, const uint8_t *body, size_t n
     }
     ticket.epoch = t->epoch;
     ks_res_psk(t->res_master, nonce, nonce_len, ticket.psk);
+#ifdef CH_TRUST_WEBPKI
+    // Binds the ticket to this session's hostname and anchors, so no
+    // other configuration can present it (webpki_ticket.h).
+    webpki_ticket_binding(ticket.psk, t->ticket_config_hash, ticket.binding);
+#endif
     t->cfg.on_ticket(t->cfg.io, &ticket);
     ct_wipe(ticket.psk, sizeof ticket.psk);
     return CH_OK;

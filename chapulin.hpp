@@ -301,7 +301,8 @@ class Config {
     // hostname the leaf must name (an ASCII hostname, sent as
     // server_name; convert a U-label to its A-label first), and the
     // clock its dates are checked against, in seconds since
-    // 1970-01-01T00:00:00Z. Set all three and no psk() or pinned(). The
+    // 1970-01-01T00:00:00Z. Set all three and no pinned(), and a PSK only
+    // through resume() with ticket_binding(). The
     // array and the name are borrowed like every other byte view here.
     // ch_connect checks them (docs/webpki.md). ch_cfg has these fields
     // only in a TRUST=webpki build, so the setters exist only there too.
@@ -322,6 +323,15 @@ class Config {
 
     Config &now_seconds(uint64_t seconds) {
         cfg_.now_seconds = seconds;
+        return *this;
+    }
+
+    // The binding of the ticket resume() presents: the bytes
+    // ch_ticket.binding held. ch_connect refuses a ticket whose binding
+    // does not name this hostname and these anchors (docs/webpki.md,
+    // "Resumption").
+    Config &ticket_binding(const uint8_t (&binding)[SHA256_LEN]) {
+        cfg_.ticket_binding = binding;
         return *this;
     }
 

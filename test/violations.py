@@ -263,6 +263,7 @@ def run(name):
 FAST_TARGETS = {"unit", "unit_ca", "x509strict", "x509strict_ecdsa",
                 "rsa_test", "drbg_test", "handshake_strict_test", "handshake_strict_webpki",
                 "webpki_name_test", "webpki_session_test", "webpki_chain_test",
+                "webpki_resume_test", "webpki_resume_record",
                 "webpki_auth_test",
                 "softmul_test", "unit_ct_widemul", "mlkem_test_ct_widemul",
                 "webpki_spki_test", "webpki_sigalg_test", "webpki_cert_test",

@@ -51,9 +51,9 @@ static void put_hex(FILE *f, const uint8_t *p, size_t n) {
     }
 }
 
-// Persists one ticket as "identity-hex psk-hex age_add" so a later run can
-// resume with it. The CA build appends the ticket's epoch as a fourth
-// field, so resumption can present it back as cfg.ticket_epoch.
+// Persists one ticket as "identity-hex psk-hex age_add" so a later run can resume with it. A
+// fourth field carries what resumption presents back: the CA build's epoch, for
+// cfg.ticket_epoch, or the webpki build's binding in hex, for cfg.ticket_binding.
 static void on_ticket(void *io, const ch_ticket *ticket) {
     (void)io;
     (void)fprintf(stderr, "ticket: id %zu bytes, lifetime %us\n", ticket->identity_len,
@@ -71,6 +71,10 @@ static void on_ticket(void *io, const ch_ticket *ticket) {
     (void)fprintf(f, " %u", ticket->age_add);
 #ifdef CH_TRUST_CA
     (void)fprintf(f, " %u", ticket->epoch);
+#endif
+#ifdef CH_TRUST_WEBPKI
+    (void)fputc(' ', f);
+    put_hex(f, ticket->binding, sizeof ticket->binding);
 #endif
     (void)fputc('\n', f);
     (void)fclose(f);
@@ -117,12 +121,11 @@ static int parse_u32(const char *s, uint32_t *out) {
     return 0;
 }
 
-// Loads a ticket saved by on_ticket. The identity replaces the psk-id, the
-// derived PSK replaces the external one, and obfuscated_age = 0 + age_add
-// (we reconnect within moments, so the true age rounds to zero). A file
-// without the fourth field leaves ticket_epoch at zero.
+// Loads a ticket saved by on_ticket. The identity replaces the psk-id, the derived PSK replaces
+// the external one, and obfuscated_age = 0 + age_add (we reconnect within moments, so the true
+// age rounds to zero). The fourth field stays text in extra, which keeps "0" when there is none.
 static int load_ticket(const char *path, uint8_t *id, size_t *id_len, uint8_t *psk, size_t *psk_len,
-                       uint32_t *age, uint32_t *ticket_epoch) {
+                       uint32_t *age, char extra[2 * SHA256_LEN + 1]) {
     FILE *f = fopen(path, "r");
     if (f == NULL) {
         return -1;
@@ -130,13 +133,9 @@ static int load_ticket(const char *path, uint8_t *id, size_t *id_len, uint8_t *p
     char id_hex[2 * CH_TICKET_ID_MAX + 1];
     char psk_hex[2 * SHA256_LEN + 1];
     char age_str[16];
-    char epoch_str[16] = "0";
-    int rc = fscanf(f, "%640s %64s %15s %15s", id_hex, psk_hex, age_str, epoch_str);
+    int rc = fscanf(f, "%640s %64s %15s %64s", id_hex, psk_hex, age_str, extra);
     (void)fclose(f);
-    if (rc < 3) {
-        return -1;
-    }
-    if (parse_u32(age_str, age) != 0 || parse_u32(epoch_str, ticket_epoch) != 0) {
+    if (rc < 3 || parse_u32(age_str, age) != 0) {
         return -1;
     }
     *id_len = unhex(id_hex, id, CH_TICKET_ID_MAX);
@@ -210,13 +209,28 @@ static int epoch_store_file(void *io, uint32_t value) {
 }
 #endif
 
+// A ticket file's fourth field: the webpki binding, required, or the epoch, "0" when absent.
+static int load_ticket_extra(const char *extra, ch_cfg *cfg, uint32_t *ticket_epoch) {
+#ifdef CH_TRUST_WEBPKI
+    static uint8_t binding[SHA256_LEN];
+    (void)ticket_epoch;
+    cfg->ticket_binding = binding;
+    return unhex(extra, binding, sizeof binding) == sizeof binding ? 0 : -1;
+#else
+    (void)cfg;
+    return parse_u32(extra, ticket_epoch);
+#endif
+}
+
 // Owns the "@ticket-file" form: loads a saved ticket into cfg for resumption.
 static int setup_ticket(const char *path, ch_cfg *cfg, uint8_t *psk, uint8_t *id) {
     size_t id_len = 0;
     size_t psk_len = 0;
     uint32_t age = 0;
     uint32_t ticket_epoch = 0;
-    if (load_ticket(path, id, &id_len, psk, &psk_len, &age, &ticket_epoch) != 0) {
+    char extra[2 * SHA256_LEN + 1] = "0";
+    if (load_ticket(path, id, &id_len, psk, &psk_len, &age, extra) != 0 ||
+        load_ticket_extra(extra, cfg, &ticket_epoch) != 0) {
         (void)fprintf(stderr, "bad ticket file: %s\n", path);
         return -1;
     }
@@ -333,7 +347,9 @@ static int setup_psk(char **argv, ch_cfg *cfg, uint8_t *psk, size_t psk_cap, uin
     }
 #ifdef CH_TRUST_WEBPKI
     if (strncmp(argv[3], "webpki:", 7) == 0) {
-        return setup_webpki(argv[3] + 7, cfg);
+        // "@file" in the psk-id slot resumes a ticket a webpki run saved.
+        int rc = setup_webpki(argv[3] + 7, cfg);
+        return rc == 0 && argv[4][0] == '@' ? setup_ticket(argv[4] + 1, cfg, psk, id) : rc;
     }
 #endif
     if (strncmp(argv[3], "ca:", 3) == 0) {
@@ -399,8 +415,10 @@ int main(int argc, char **argv) {
         (void)fprintf(stderr,
                       "usage: %s host port psk-hex psk-id [save-ticket-file [epoch-file]]\n"
                       "       %s host port @ticket-file - [save-ticket-file [epoch-file]]\n"
-                      "       %s host port pin:hex[,hex2] - [save-ticket-file [epoch-file]]\n",
-                      argv[0], argv[0], argv[0]);
+                      "       %s host port pin:hex[,hex2] - [save-ticket-file [epoch-file]]\n"
+                      "       %s host port webpki:name-file,spki-file @ticket-file|- "
+                      "[save-ticket-file]\n",
+                      argv[0], argv[0], argv[0], argv[0]);
         return 2;
     }
     g_ticket_path = argc >= 6 && argv[5][0] != '-' ? argv[5] : NULL;

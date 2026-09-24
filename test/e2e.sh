@@ -657,7 +657,30 @@ NOW=$(date +%s)
 MSG='cadena publica'
 WEBPKI_HOST=$WEBPKI_HOSTNAME WEBPKI_NOW=$NOW \
     expect webpki "acilbup anedac" "$DIR/err_wp" \
-    ./bin/tlsclient_webpki 127.0.0.1 "$PORT_WEBPKI" "$WEBPKI_ANCHOR" -
+    ./bin/tlsclient_webpki 127.0.0.1 "$PORT_WEBPKI" "$WEBPKI_ANCHOR" - "$DIR/wpticket"
+[ -s "$DIR/wpticket" ] || {
+    echo "FAIL e2e webpki: no ticket after a chain handshake"
+    exit 1
+}
+
+# The ticket that session saved resumes the same hostname under the same
+# anchor. The resumed hello offers no signature scheme, so a connected
+# session means the server selected the ticket (webpki_ticket.h).
+MSG='otra vez publica'
+WEBPKI_HOST=$WEBPKI_HOSTNAME WEBPKI_NOW=$NOW \
+    expect webpki-resume "acilbup zev arto" "$DIR/err_wp_resume" \
+    ./bin/tlsclient_webpki 127.0.0.1 "$PORT_WEBPKI" "$WEBPKI_ANCHOR" "@$DIR/wpticket"
+grep -q "^resuming" "$DIR/err_wp_resume" || {
+    echo "FAIL e2e webpki-resume: did not use the ticket"
+    exit 1
+}
+
+# The same ticket under another hostname: its binding names the first,
+# so ch_connect refuses the config before a byte leaves (CH_EINVAL).
+MSG='otro nombre'
+WEBPKI_HOST=other.example.test WEBPKI_NOW=$NOW \
+    expect_fail webpki-resume-hostname -6 "$DIR/err_wp_resume_host" \
+    ./bin/tlsclient_webpki 127.0.0.1 "$PORT_WEBPKI" "$WEBPKI_ANCHOR" "@$DIR/wpticket"
 
 # The hostname the caller asked for is not one the leaf names, so the
 # name check refuses the chain the signatures would otherwise carry.
@@ -937,4 +960,4 @@ else
     echo "SKIP webpki-aes legs: bin/tlsclient_webpki_aes is absent (no AES instructions)"
 fi
 
-echo "e2e: record + psk + tickets + resumption + pinned ecdsa + pinned rsa + require-pq refused + rotation + ca rsa x2 + ca ecdsa x2 + ca rotation + ca negatives x3${EPOCH_LEG} + webpki rsa + webpki ecdsa x2 + webpki negatives x4 + webpki alpn x3${GO_LEG}${OPENSSL_PQ_LEG}${AES_SUITE_LEG} + examples x4 OK"
+echo "e2e: record + psk + tickets + resumption + pinned ecdsa + pinned rsa + require-pq refused + rotation + ca rsa x2 + ca ecdsa x2 + ca rotation + ca negatives x3${EPOCH_LEG} + webpki rsa + webpki-resume x2 + webpki ecdsa x2 + webpki negatives x4 + webpki alpn x3${GO_LEG}${OPENSSL_PQ_LEG}${AES_SUITE_LEG} + examples x4 OK"

@@ -320,12 +320,13 @@ The rest of the configuration is the hostname and the clock:
   a NULL or empty `name` or `spki`;
 - the hostname fails `webpki_hostname_ok`;
 - `now_seconds` is 0;
-- `psk`, `psk_len`, `psk_id`, `psk_id_len` or `resumption` is set;
+- a PSK field is set and the fields do not present a ticket bound to this
+  hostname and these anchors (see "Resumption" below);
 - either `server_pubkey` slot, or its length, is set;
 - an epoch callback is set;
 - `buf_len` is under `CH_MIN_RXBUF`, 12,338 bytes in this mode.
 
-`ch_trust_anchor`, `CH_WEBPKI_ANCHOR_MAX` and the seven `ch_cfg` fields
+`ch_trust_anchor`, `CH_WEBPKI_ANCHOR_MAX` and the eight `ch_cfg` fields
 exist only in a `TRUST=webpki` build, so the raw and ca objects keep the
 `ch_cfg` and `ch_tls` layout they had before this mode. A raw or ca build
 that sets one of the fields fails to compile. `chapulin.hpp` forwards the
@@ -400,6 +401,56 @@ name outside the offer is well formed and unacceptable, §6.2's
 offer, and one that shares no protocol with the client sends a
 `no_application_protocol` alert instead.
 
+## Resumption
+
+A connection presents a ticket an earlier session received, and resumes
+without a certificate. RFC 9846 §4.7.1 lets a client resume only when the
+new `server_name` is valid for the certificate of the original session
+(`rfc9846.txt:3222-3224`). A resumed handshake checks no chain and no
+hostname, so this mode binds each ticket to the configuration that
+received it, and refuses to present it under any other.
+
+- **What the caller does.** `on_ticket` hands over `ch_ticket.psk`,
+  `identity` and, in this build, `binding`, 32 bytes. The caller stores all
+  three. To resume, it sets the full chain configuration as usual, then
+  `psk` to the 32-byte PSK, `psk_id` to the identity, `resumption` to 1,
+  `obfuscated_age` as in the other modes, and `ticket_binding` to the
+  stored binding.
+- **What the binding covers.** `webpki_ticket_config_hash` hashes the
+  hostname with its ASCII capitals in lower case, then every anchor's
+  `name` and `spki` in array order, each field prefixed by its length.
+  The binding is HMAC-SHA256 keyed by the ticket's PSK over the label
+  `chapulin webpki ticket` and that hash. `webpki_ticket.h` states the
+  bytes, and `test/webpki_resume_cases.h` checks them against a value
+  computed outside this tree.
+- **What `ch_connect` refuses, with `CH_EINVAL` and no byte sent.** A
+  ticket whose binding does not match this hostname and these anchors. A
+  binding from another ticket, because the key is that ticket's PSK. A
+  PSK that is not 32 bytes, an identity outside 1 to `CH_TICKET_ID_MAX`
+  bytes, a ticket with no binding, a binding with no ticket, and an
+  external PSK (`resumption` 0). `ch_record_init` applies the same rules.
+- **The same name in other capitals resumes.** The chain walk matches
+  names without case (RFC 6125 §6.4.1), so `S3.Example.TEST` resumes a
+  ticket `s3.example.test` received.
+- **The same anchors in another order do not.** The hash reads the array
+  as given. A caller that rebuilds its anchor array in a different order
+  loses its tickets and makes one full handshake.
+- **ALPN is not bound.** Every handshake, resumed or not, negotiates ALPN
+  again, and `ch_tls.alpn_selected` reports the new answer. RFC 9846 ties
+  the application protocol to a ticket only for 0-RTT data, which this
+  client never sends.
+- **A declined ticket fails the handshake.** The resumed ClientHello
+  offers the ticket and no signature scheme, so a server that does not
+  select the ticket has no certificate path to take, and the client fails
+  closed with `CH_EAUTH`. The caller reconnects without the ticket.
+  `docs/decisions.md` entry 47 says why the hello does not offer both.
+- **The caller owns the ticket's age.** A ticket lives at most seven days
+  (RFC 9846 §4.7.1), and the other modes leave that limit and
+  `obfuscated_age` to the caller as well.
+- **A `TRANSPORT=quic` webpki client keeps refusing a PSK.** No build or
+  test runs that combination, and `quic_config.c` keeps its own copy of
+  the refusal until one does.
+
 ## Bounds
 
 Every cap and the measurement behind it. *Derived* means a formula over
@@ -431,9 +482,10 @@ schemes, so its largest hello, `CH_HELLO_MAX`, is 1,149 bytes, and
 2,335 under `KEX=pq`, whose supported_groups also lists x25519. The
 session's TX staging array, `CH_TX_STAGE`,
 grows to match, and `test/webpki_session_cases.h` measures the built
-hello against both numbers. The PSK arm sets that maximum even though
-this mode refuses a PSK, because the builder takes any config; the hello
-`ch_connect` lets this mode send is 798 bytes, or 1,984 under `KEX=pq`.
+hello against both numbers. The PSK arm, which a resumed connection
+sends, sets that maximum: its `pre_shared_key` extension is longer than the
+`signature_algorithms` extension the full handshake sends in its place. The
+full handshake's hello is 798 bytes, or 1,984 under `KEX=pq`.
 
 `CH_ALPN_MAX` and `CH_ALPN_NAME_MAX` are that budget split two ways. The
 extension costs 4 type and length bytes, 2 list-length bytes, and one
@@ -486,15 +538,13 @@ Read this list as part of the profile, not as a list of future work.
   real interop limit rather than a bug: a technically-constrained corporate
   sub-CA is required to carry critical `nameConstraints`, so this mode cannot
   verify a chain under one.
-- **No PSK, and no resumption.** `TRUST=webpki` refuses `ch_cfg.psk` and
-  `ch_cfg.resumption` at `ch_connect`. The reason is the hostname, not
-  authentication: a resumed handshake authenticates the peer by the PSK, and
-  the shipped modes fail closed when a server does not select an offered PSK,
-  but nothing binds a ticket to the hostname it was issued for, so a resumed
-  connection would skip the name check. Every webpki connection is a full
-  handshake. NewSessionTicket is still parsed and exposed, an RFC 9846 MUST
-  this client keeps; it simply cannot be presented back. Binding a ticket to
-  a hostname is the future path, and it is an API change.
+- **A resumed connection checks no certificate.** It authenticates the
+  server by the ticket's PSK. The chain, the clock and the hostname were
+  checked by the full handshake that issued the ticket, and the binding
+  (see "Resumption") holds the ticket to that hostname and those anchors.
+  A certificate that expired since, or an anchor distrusted without the
+  anchor array changing, is not checked again until the next full
+  handshake.
 - **No clock-skew tolerance.** `now_seconds` is compared exactly. As
   certificate lifetimes shorten, a fleet whose clock drifts turns a soft
   failure into a hard one, so the caller owns keeping the clock right.
