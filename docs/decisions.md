@@ -950,3 +950,61 @@ does nothing more.
     ticket from a random salt, so no nonce can repeat, was considered and
     left aside: a random 96-bit nonce is safe for 2^32 tickets under one
     key, and `srv_ticket.h` tells the operator to rotate before then.
+
+52. **The X25519 field is a build axis, `X25519=portable` or
+    `X25519=wide`, and the wide field asserts its own multiply.**
+    `X25519=portable`, the default, is `x25519.c`'s 16 limbs of 16 bits:
+    256 products of 32 by 32 bits per field multiply, which `ct.h` can
+    build from 16x16 pieces on any core. `X25519=wide` adds
+    `x25519_wide.c`, five limbs of 51 bits: 25 products of 64 by 64 bits
+    into 128, which a 64-bit core computes as MUL and UMULH on arm64 and
+    as one MUL or MULX on x86-64. On an
+    Apple M1 Pro the wide field takes about 34 µs per scalar
+    multiplication, against 423 µs for the 16-limb field on the native
+    multiply and 898 µs on the 16x16 decomposition the packaged object
+    ships, and X25519 was 72% of an RSA-3072 client handshake there
+    (bench/notes-primitives.md).
+
+    It is an axis rather than a replacement because a device cannot run
+    the wide field. A 32-bit core has no 64x64->128 multiply, so its
+    compiler would build each product from a runtime routine that
+    branches on its operands; `ct.h` refuses the build instead, when the
+    compiler has no `unsigned __int128`. The 16-limb field stays the
+    default and the device path, unchanged, with its ten proofs, INV-24
+    and the 32-bit codegen specs. The axis follows the AES one: the
+    Makefile variable picks, one field per object, and the compiler's
+    predefined macros are the whole detection. Nothing probes a CPU at
+    run time, for the reasons `quic_aes_hw.c` gives.
+
+    The values name what each field needs from the target, because that
+    is what the person choosing has to know. `portable` runs on every
+    core this tree builds for; `wide` needs the wide multiply and a
+    statement about its timing. "fast" would name a property of one
+    machine, and "radix51" names the representation, which says nothing
+    about which targets can build it.
+
+    The wide field has its own timing assertion, `CH_NATIVE_MUL128`,
+    rather than reading `CH_NATIVE_WIDEMUL`, for two reasons. The two
+    macros name different instructions: `CH_NATIVE_WIDEMUL` is about the
+    32x32->64 multiply, and a part can promise one and not the other.
+    And the Makefile sets `CH_NATIVE_WIDEMUL` for every host test binary,
+    so a field keyed on it would move every host test off the 16-limb
+    field, which would lose its native-multiply unit, Wycheproof and
+    differential runs. `ct.h` writes the terms: Arm's FEAT_DIT list and
+    Intel's DOIT list both name the instructions, and each holds only in
+    the mode its vendor names.
+
+    Cost: two fields to keep correct instead of one. The wide field has
+    seven harnesses of its own (INV-34), an equivalence binary that
+    compares it with the 16-limb field on every `make check`, a
+    Wycheproof leg, a unit leg, a timing leg and a differential leg.
+    Its constant-time claim rests on a vendor statement this tree cannot
+    check, and on the code the pinned clang emits for arm64 and x86-64,
+    which `lint-wide-multiply` holds; no gcc spec measures it, because no
+    CI lane runs a 64-bit gcc through that gate. Gain: host builds, which
+    open many connections, stop paying for a representation chosen for a
+    core with no wide multiply. The Lean model needs no second copy:
+    `spec/lean/Spec/X25519.lean` computes over natural numbers with a
+    reduction mod p after every operation, so it states no limb layout,
+    and `bin/diff_x25519_wide` runs the x25519 rows against it with the
+    wide field.

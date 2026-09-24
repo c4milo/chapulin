@@ -54,6 +54,17 @@ and clang defines no `__ARM_FEATURE_DIT` even at `-march=armv8.4-a+dit`.
 `-DCH_CT_WIDEMUL` forces the decomposition and beats `-DCH_NATIVE_WIDEMUL` when
 both are set.
 
+**Your target is a 64-bit host.** `X25519=wide` gives X25519 a field of five
+51-bit limbs, whose products are 64x64->128 multiplies, in place of the 16-limb
+field every other build runs. A 32-bit core cannot build it: `ct.h` stops the
+build where the compiler has no `unsigned __int128`. On a host that can, the
+build must also pass `-DCH_NATIVE_MUL128`, the same kind of statement as
+`-DCH_NATIVE_WIDEMUL` about a different instruction, and it holds only in the
+mode the vendor names: PSTATE.DIT set on an Arm core with FEAT_DIT, DOITM
+enabled on an Intel part that enumerates it. Nothing in this tree sets either
+mode. `CH_NATIVE_WIDEMUL` does not select the wide field and does not imply
+`CH_NATIVE_MUL128` (decision 52).
+
 ### Check it on your target, because the compiler can undo it
 
 The decomposition is C, and an optimiser is free to prove one of the four

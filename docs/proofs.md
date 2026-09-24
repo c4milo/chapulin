@@ -170,6 +170,20 @@ whole overflow lemma over it
 bound, discharge the bound on the shipped code; leave equality to the
 proofs that read a value.
 
+**Check unsigned wrap where an unsigned bound is the claim.** `run.sh`
+checks signed overflow, which C calls undefined, and nothing about
+unsigned arithmetic, which C defines to wrap. A proof about a field
+held in `uint64_t` and `unsigned __int128` would then pass a sum that
+wrapped, because no check sees one. The `X25519=wide` launch lines add
+`--unsigned-overflow-check`, which makes every `+`, `-` and `*` on an
+unsigned type a property, so each column sum, carry and `a + 2p - b`
+of that field is one. The flag also fails every wrap written on
+purpose, and `ct.c`'s `ct_memeq` has one, `diff - 1`, so the flag goes
+on the launch line of a harness whose reachable code wraps nowhere,
+never on a whole tier. Its cost there was small: `x25519_wide_mul`'s 25
+products of 64-bit operands widened to 128 bits, with their top bits
+clear, prove with every check on in under 4 s.
+
 **Structure beats solver.** kissat returns verdicts where the built-in
 solver has none after hours, so keep it installed. But no solver
 rescues a monolithic formula: incremental z3 timed out on the same

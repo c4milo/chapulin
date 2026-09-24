@@ -51,8 +51,14 @@
 #define RUNS_MAX 9
 #define RESULTS_MAX 160
 
-#ifdef CH_NATIVE_WIDEMUL
+// bench/primitives.sh changes one build choice at a time from the default, so
+// no build here defines both.
+#if defined(CH_NATIVE_WIDEMUL) && defined(CH_X25519_WIDE)
+#error "bench/primitives.sh times CH_NATIVE_WIDEMUL and X25519=wide one at a time"
+#elif defined(CH_NATIVE_WIDEMUL)
 const char *const BENCH_BUILD = "CH_NATIVE_WIDEMUL";
+#elif defined(CH_X25519_WIDE)
+const char *const BENCH_BUILD = "X25519=wide";
 #else
 const char *const BENCH_BUILD = "default";
 #endif
@@ -242,8 +248,8 @@ static void measure_group(const bench_group *g) {
 #ifdef BENCH_HANDSHAKE_PROGRAM
 static const bench_group *const GROUPS[] = {&BENCH_HANDSHAKE};
 #else
-static const bench_group *const GROUPS[] = {&BENCH_HASH, &BENCH_CIPHER, &BENCH_AEAD, &BENCH_VERIFY,
-                                            &BENCH_SECRET_KEY};
+static const bench_group *const GROUPS[] = {&BENCH_HASH,   &BENCH_CIPHER,     &BENCH_AEAD,
+                                            &BENCH_VERIFY, &BENCH_SECRET_KEY, &BENCH_X25519};
 #endif
 #define GROUP_COUNT (sizeof GROUPS / sizeof GROUPS[0])
 

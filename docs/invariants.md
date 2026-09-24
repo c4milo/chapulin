@@ -77,7 +77,11 @@ last `ROLE=server` stub, as the entry said it would.
   and 1 otherwise. One call site compiles per build, both in
   `handshake.c`: the hybrid secret under `KEX=pq`, the classic key
   exchange otherwise. Each fails the handshake unless it returns 1.
-  Wycheproof's small-order battery exercises the rejection.
+  Wycheproof's small-order battery exercises the rejection. The clamp
+  and the check sit in `x25519.c` for both X25519 fields:
+  `x25519_wide.c` computes the ladder over a scalar `x25519.c` has
+  clamped and reports nothing, and `bin/x25519_equiv_test` requires both
+  fields to return 0 on every low-order point.
 - **Check.** Structural arithmetic (the check is the return value,
   not a side channel of it); convention holds the call site to
   checking it.
@@ -587,6 +591,55 @@ last `ROLE=server` stub, as the entry said it would.
   and `inv24-x25519-step-sqr-as-add`, through `proof/prove-one.sh`, which
   runs one harness and fails unless it verifies; the nightly gives that
   class its own job.
+- This entry is the `X25519=portable` field's, the default. INV-34 is
+  the same claim for `X25519=wide`.
+
+### INV-34 — the X25519=wide ladder stays inside its proven limb range
+
+- **Claim.** In an `X25519=wide` build, between the ladder's operations
+  limbs 0, 2, 3 and 4 of `a`, `b`, `c` and `d` lie in [0, 2^51), limb 1
+  lies in [0, 2^51 + 2^20), and every limb of `x` lies in [0, 2^51).
+  Every product the field computes takes a first operand under 2^55 and
+  a second under 2^60, so every product is under 2^115, and no unsigned
+  value wraps. On the real multiply the bounds are tighter: `mul` and
+  `sqr` on operands whose limbs are under 2^54 make every product under
+  38 * 2^108, every column sum under 77 * 2^108 (under 2^115) and every
+  carry between columns under 2^64, and leave limb 1 under
+  2^51 + 2^13. The field computes in `uint64_t` and `unsigned __int128`,
+  where C defines every wrap, so a limb that leaves these ranges does
+  not fault: it computes a wrong value.
+- **Mechanism.** `carry_columns` keeps each column's low 51 bits and
+  carries the rest to the next column 128 bits wide, so no bit of a sum
+  is dropped; the top carry comes in at the bottom times 19 and the last
+  carry stops at limb 1. `add` of two such results stays under 2^53.
+  `sub` computes a + 2p - b, and a result of `mul` never has a limb above
+  2p's. `step()` applies at most one `add` or `sub` to a value before the
+  next product takes it, so every operand the ladder hands a product is
+  under 2^53.
+- **Check.** CBMC, with `--unsigned-overflow-check` on every launch line,
+  which is what turns a wrap into a property. `x25519_wide_step` proves
+  one loop step on the shipped `step()`, from any state inside the
+  bounds back into them, and `x25519_wide_invert` the whole inversion
+  chain in place. `x25519_wide_tail` proves the output form of `mul`,
+  `sqr` and `mul_a24` from any operands under 2^54, in the aliasing
+  shapes the ladder uses, and the final multiply and `pack`. Those three
+  replace the multiply with the contract in
+  `proof/x25519_wide_stubs.h`, and `x25519_wide_mul128` proves the real
+  `ct_mul128` meets it. `x25519_wide_mul` and `x25519_wide_sqr` prove the
+  tighter bounds on the real multiply, and `x25519_wide_ops` the linear
+  ops, `unpack`, and that `pack` writes a value below p. The base case,
+  `a = d = 1`, `c = 0` and `b = x`, is read from
+  `x25519_wide_ladder()`'s prologue. The values are held by
+  `bin/x25519_equiv_test` against the 16-limb field, and by the RFC
+  7748, Wycheproof and Lean differential runs over this field.
+- **Violation.** A PR drops `carry_columns`' last carry, so limb 0 keeps
+  all of r0 and the value stays right while the limb passes 2^51; or it
+  folds the top carry in times 38, the 16-limb field's constant for
+  2^256. `make test-invariants` runs both: `inv34-x25519-wide-carry-dropped`
+  through `proof/prove-one.sh x25519_wide_step`, in the nightly's
+  proof-backed job, and `inv34-x25519-wide-fold-not-19` through
+  `bin/x25519_equiv_test`.
+- See [decisions: Engineering](decisions.md#engineering), entry 52.
 
 ## Fail-closed
 
@@ -971,6 +1024,11 @@ last `ROLE=server` stub, as the entry said it would.
   The x25519 ladder proofs rest on a product bound instead, and
   `proof/x25519_mul_ct_harness.c` proves it on the decomposition at the
   ladder's full operand range.
+  The `X25519=wide` field multiplies on a different instruction, the
+  64x64->128 multiply, and `ct.h` refuses that build unless it asserts
+  `CH_NATIVE_MUL128`, the same claim about that instruction, and unless
+  the compiler has `unsigned __int128`. `test/x25519-builds.sh` checks
+  both refusals in `make check` (decision 52).
 - **Mechanism.** Constant-time construction; ChaCha20/Poly1305/x25519
   have no table lookups by design.
 - **Check.** Semgrep-structural (`inv-16-no-variable-time-compare`) bans
@@ -1019,14 +1077,27 @@ last `ROLE=server` stub, as the entry said it would.
   corrections as `if`s on the operands' signs, which clang lowers back
   to the mask and every gcc lowers to two branches in x25519, so only
   the gcc gate sees it.
+  No spec above can compile `x25519_wide.c`, because none of their
+  targets has `unsigned __int128`, so two 64-bit specs compile it and
+  nothing else (`WIDE64_CEILING`): arm64 and x86-64 under the pinned
+  clang, with the defines an `X25519=wide` build states. They hold its
+  divisions and 128-bit runtime calls at zero and its conditional
+  branches at 16 and 20, every one loop control over a public count.
+  `inv16-x25519-wide-cswap-branch` writes that field's `cswap` as an
+  `if` on the scalar bit and both counts rise by two. No gcc spec
+  measures the file: no CI lane runs a 64-bit gcc through
+  `lint-wide-multiply-gcc`.
   `lint-runtime-symbols` builds for rv32ic, where
   there is no multiplier at all, and holds per file the runtime-library
   calls it may make — `softmul.c` supplies constant-time `__mulsi3` and
   `__muldi3` so the library's branching ones are never linked, and the
   gate asserts it still defines them; the rv32ic gcc spec holds
   `softmul.c` at zero calls to `__muldi3`, because gcc at `-Os` once
-  emitted one from inside `__muldi3` itself. Thirteen `inv16-*` violations
-  in `test/violations/` prove each detection catches its mutant. Four
+  emitted one from inside `__muldi3` itself. Twenty `inv16-*` violations
+  in `test/violations/` prove each detection catches its mutant, among
+  them `inv16-x25519-wide-without-timing-assertion`, which drops `ct.h`'s
+  refusal of an `X25519=wide` build without `CH_NATIVE_MUL128` and which
+  `test/x25519-builds.sh` catches. Four
   of them catch only under a gcc gate: `inv16-widemul-mid-widened` and
   `inv16-widemul-s-sign-branch` under `lint-wide-multiply-gcc`'s Arm
   gcc, `inv16-widemul-compare-carries` in the mips lane, and

@@ -1308,6 +1308,39 @@ launch fast full x25519_mul 20 ""
 # summed with kissat, which fast:3 covers.
 launch fast:3 full x25519_mul_ct 20 ""
 launch fast full x25519_ops 260 ""
+# The X25519=wide field, x25519_wide.c, and its ladder (INV-34). Every line
+# compiles the field under the two defines ct.h requires of it, and every
+# line adds --unsigned-overflow-check. The field computes in uint64_t and
+# unsigned __int128, where C defines every wrap, so the checks this script
+# passes by default see none of them; with the flag, each column sum, each
+# carry between columns, each carry folded in times 19, each doubled or
+# scaled limb and each a + 2p - b is a property of its own.
+# x25519_wide_mul, x25519_wide_sqr and x25519_wide_ops run the real
+# 64x64->128 multiply. x25519_wide_step and x25519_wide_tail run the
+# contract in proof/x25519_wide_stubs.h, and x25519_wide_mul128 discharges it
+# on the real multiply; x25519_wide_invert runs the whole of invert() over
+# it. None of these needs the split the 16-limb field's mul does: a
+# 64x64->128 product of operands with their top bits clear converges in
+# seconds with every check on. Measured one line at a time with
+# PROVE_ONLY=<name> PROVE_NO_CACHE=1 /usr/bin/time -l ./proof/run.sh fast
+# (cbmc 6.11.0, kissat 4.0.4, an arm64 development machine under load):
+#   x25519_wide_mul128     3 properties, 0.4 s, 20 MB
+#   x25519_wide_mul     1448 properties, 3.6 s, 620 MB
+#   x25519_wide_sqr     1447 properties, 1.8 s, 287 MB
+#   x25519_wide_ops     1598 properties, 1.2 s, 41 MB
+#   x25519_wide_step    1494 properties, 3.4 s, 213 MB
+#   x25519_wide_tail    1496 properties, 2.1 s, 138 MB
+#   x25519_wide_invert  1472 properties, 17.8 s, 2.7 GB, hence fast:3
+# One step over the real products instead of the contract also converged,
+# in 64 s at 4.5 GB, past what this tier admits; it has no line, and the
+# contract's composition is what x25519_wide_step states.
+launch fast full x25519_wide_mul128 2 "" -DCH_X25519_WIDE -DCH_NATIVE_MUL128 --unsigned-overflow-check
+launch fast full x25519_wide_mul 6 "" ct.c -DCH_X25519_WIDE -DCH_NATIVE_MUL128 --unsigned-overflow-check
+launch fast full x25519_wide_sqr 6 "" ct.c -DCH_X25519_WIDE -DCH_NATIVE_MUL128 --unsigned-overflow-check
+launch fast full x25519_wide_ops 256 "" ct.c -DCH_X25519_WIDE -DCH_NATIVE_MUL128 --unsigned-overflow-check
+launch fast full x25519_wide_step 6 "" ct.c -DCH_X25519_WIDE -DCH_NATIVE_MUL128 --unsigned-overflow-check
+launch fast full x25519_wide_tail 41 "" ct.c -DCH_X25519_WIDE -DCH_NATIVE_MUL128 --unsigned-overflow-check
+launch fast:3 full x25519_wide_invert 101 "" ct.c -DCH_X25519_WIDE -DCH_NATIVE_MUL128 --unsigned-overflow-check
 launch fast full drbg 100 "ch_rand_bytes.3:4" ct.c
 launch fast full p256_mul 20 ""
 # p384_mul is p256_mul's carry lemma at twelve limbs. Measured (cbmc

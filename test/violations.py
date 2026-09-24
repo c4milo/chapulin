@@ -250,7 +250,9 @@ def run(name):
 # compiles that object's sources in two, the QUIC partition lint
 # script, which preprocesses the root sources in three, and the
 # record-transport webpki link script, which links that object in two
-# and a half. Left out are the ones whose single run is expensive — the
+# and a half, the X25519=wide build script, which compiles ct.h five
+# times, and the X25519 equivalence binary, which runs in six
+# seconds. Left out are the ones whose single run is expensive — the
 # exhaustive handshake enumeration (minutes), the end-to-end suite
 # (needs live servers), and the differential (each run drives ~6000 oracle
 # comparisons, so a baseline and a mutation pass together are ~30s per
@@ -275,8 +277,8 @@ FAST_TARGETS = {"unit", "unit_ca", "x509strict", "x509strict_ecdsa",
                 "test/lint-stack-quic.sh",
                 "test/lib-check-webpki-record.sh",
                 "test/lint-quic-partition.sh", "test/lint-quic-surface.sh",
-                "test/quic-builds.sh",
-                "quic_driver_test", "srv_stub_test"}
+                "test/quic-builds.sh", "test/x25519-builds.sh",
+                "quic_driver_test", "srv_stub_test", "x25519_equiv_test"}
 
 
 def catches_of(name):

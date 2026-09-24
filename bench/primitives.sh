@@ -5,8 +5,9 @@
 # bench/results-primitives-calls.csv, how many times each end of each
 # handshake calls each primitive. bench/notes-primitives.md reads both.
 #
-# It builds bench/primitives.c into six timed programs and two counting
-# ones, because the multiply and the pinned algorithm are build choices:
+# It builds bench/primitives.c into nine timed programs and two counting
+# ones, because the multiply, the X25519 field and the pinned algorithm are
+# build choices:
 #
 #   primitives                  every primitive, over the 16x16 multiply
 #                               the packaged object ships (ct.h)
@@ -14,10 +15,17 @@
 #                               the aead and secret_key groups again, over
 #                               the native multiply the host tests assert;
 #                               the other groups compile to the same code
-#   handshake, default and CH_NATIVE_WIDEMUL, once pinning an RSA modulus
-#   and once pinning a P-256 point (-DCH_PIN_ECDSA)
+#   primitives X25519=wide      the two x25519 rows again, over
+#                               x25519_wide.c, the only code that build
+#                               changes; built only where the compiler has
+#                               unsigned __int128
+#   handshake, default, CH_NATIVE_WIDEMUL and X25519=wide, once pinning an
+#   RSA modulus and once pinning a P-256 point (-DCH_PIN_ECDSA)
 #   calls, the two handshake programs again with -finstrument-functions,
 #                               which count calls and time nothing
+#
+# Each non-default build changes one choice from the default, so a row's
+# difference from its default row is that choice's alone.
 #
 # Every timed build is -O2, the level the packaged object uses. CC picks
 # the compiler (default cc); the x86-64 row uses CC=gcc. RUNS (default 3)
@@ -79,6 +87,21 @@ build handshake_rsa_native "${HANDSHAKE_DEFS[@]}" -DCH_NATIVE_WIDEMUL "${HANDSHA
 build handshake_ecdsa "${HANDSHAKE_DEFS[@]}" -DCH_PIN_ECDSA "${HANDSHAKE_SRCS[@]}"
 build handshake_ecdsa_native "${HANDSHAKE_DEFS[@]}" -DCH_PIN_ECDSA -DCH_NATIVE_WIDEMUL \
     "${HANDSHAKE_SRCS[@]}"
+# The X25519=wide programs, with the timing assertion ct.h asks of that build.
+# A compiler without unsigned __int128 cannot build the field, so it skips.
+WIDE=""
+if "$CC" -dM -E -x c /dev/null | grep -q __SIZEOF_INT128__; then
+    WIDE=yes
+    X25519_WIDE=(-DCH_X25519_WIDE -DCH_NATIVE_MUL128)
+    build primitives_x25519_wide -DCH_RSA_MODULUS_MAX=512 "${X25519_WIDE[@]}" \
+        "${PRIMITIVE_SRCS[@]}" x25519_wide.c
+    build handshake_rsa_x25519_wide "${HANDSHAKE_DEFS[@]}" "${X25519_WIDE[@]}" \
+        "${HANDSHAKE_SRCS[@]}" x25519_wide.c
+    build handshake_ecdsa_x25519_wide "${HANDSHAKE_DEFS[@]}" -DCH_PIN_ECDSA "${X25519_WIDE[@]}" \
+        "${HANDSHAKE_SRCS[@]}" x25519_wide.c
+else
+    echo "primitives bench: $CC has no unsigned __int128, so X25519=wide is skipped" >&2
+fi
 build calls_rsa "${HANDSHAKE_DEFS[@]}" -DBENCH_COUNT_CALLS -finstrument-functions \
     "${HANDSHAKE_SRCS[@]}"
 build calls_ecdsa "${HANDSHAKE_DEFS[@]}" -DBENCH_COUNT_CALLS -finstrument-functions \
@@ -114,10 +137,19 @@ run() { # $1 = program; the rest = groups. Rows to rows, run notes to notes.
 LOAD_BEFORE=$(load)
 run primitives hash cipher aead verify secret_key
 run primitives_native aead secret_key
+if [ -n "$WIDE" ]; then
+    run primitives_x25519_wide x25519
+fi
 run handshake_rsa handshake
 run handshake_rsa_native handshake
+if [ -n "$WIDE" ]; then
+    run handshake_rsa_x25519_wide handshake
+fi
 run handshake_ecdsa handshake
 run handshake_ecdsa_native handshake
+if [ -n "$WIDE" ]; then
+    run handshake_ecdsa_x25519_wide handshake
+fi
 LOAD_AFTER=$(load)
 "$W/calls_rsa" --quick handshake | grep -v '^#' >"$W/calls"
 "$W/calls_ecdsa" --quick handshake | grep -v '^#' | tail -n +2 >>"$W/calls"
@@ -135,6 +167,7 @@ TREE=$(git describe --always --dirty 2>/dev/null || echo unknown)
     echo "# $("$CC" --version | head -1); ${FLAGS[*]}"
     echo "# primitives adds -DCH_RSA_MODULUS_MAX=512; handshake adds ${HANDSHAKE_DEFS[*]}," \
         "and -DCH_PIN_ECDSA for the ecdsa rows"
+    echo "# the X25519=wide rows add -DCH_X25519_WIDE -DCH_NATIVE_MUL128 and x25519_wide.c"
     echo "# load average (1, 5, 15 min) before: $LOAD_BEFORE; after: $LOAD_AFTER"
     cat "$W/notes"
     echo "# ns: nanoseconds per byte (unit byte) or per operation (unit op), the median over" \

@@ -271,20 +271,27 @@ floor and 86% of the pinned handshake's crypto. The signature verify is
 paid only on the first pinned connection; resumptions skip it. Record
 crypto is about 0.15 ms per kilobyte, which is negligible beside the
 handshake. Because a device typically opens one long-lived connection,
-chapulin keeps the 16-bit-limb x25519 for its machine-checked overflow
-proof rather than a faster wide-limb version. Many short connections
-would change that trade.
+chapulin keeps the 16-bit-limb x25519 as the default and the device
+path, for its machine-checked overflow proof and because a 32-bit core
+has no wider multiply to run a faster field on. A 64-bit host that
+opens many short connections can build `X25519=wide` instead (decision
+52): five 51-bit limbs whose products run on the 64x64->128 multiply,
+which [`bench/notes-primitives.md`](bench/notes-primitives.md) times on
+arm64.
 
 ## Verification
 
 Four layers cover four different failure classes.
 
-**Proofs cover memory safety.** Seventy-two of the eighty-five C sources in
+**Proofs cover memory safety.** Seventy-three of the eighty-six C sources in
 the tree root are compiled into a [CBMC](https://www.cprover.org/cbmc/) harness that a launch line runs,
 which proves them free of out-of-bounds access, invalid pointers, bad
 shifts, and division by zero, for every input within the harness's
 bound. Signed overflow is checked too, except in the three x25519 mul
-harnesses that turn it off (see the x25519 row). Thirteen sources are in
+harnesses that turn it off (see the x25519 row). The `X25519=wide`
+field's harnesses also check unsigned wrap, which C defines and the
+other checks never see, because that field's bounds are all on
+unsigned values (see the x25519_wide row). Thirteen sources are in
 no such harness. `tls.c` has none at all: the post-handshake parser
 moved to its own file and took the harness with it, leaving the four
 public calls unproven.
@@ -347,6 +354,7 @@ apart from one that passed — so for the slow rows, read the nightly.
 | quic_step (two harnesses) | `hsq_advance` is safe over any saved state, a step number no step wrote included: it consumes its message, raises the step or waits for the retry hello, never raises `t.state`, touches no packet counter, stages nothing on an error, and at the Finished step stages the client Finished at the Handshake level, moves to 1-RTT, reports that level in both directions and writes the back pointer again after the wipe. Every flight handler and the three `quic_keys.c` derivations are contract stubs; `quic_step_ca` is the same harness under a ca mode, where `hsa_epoch_commit` runs and the wipe bound is that build's larger `handshake_state`; `TRANSPORT=quic` only | 12 B receive buffer, fast tier |
 | quic_gcm (five harnesses) | Three carry a launch line and two do not. `quic_gcm_safety` proves that `gcm_seal`, `gcm_open` and `gcm_ghash` read and write only inside their buffers and commit no undefined behavior, for any key schedule, any nonce, and both aliasing shapes the header admits: separate buffers, and `pt == ct`, which is how `quic_initial.c` decrypts a payload in place. `quic_gcm_refusal` proves that `gcm_open` is all-or-nothing: for any tag at all, a call that returns 0 writes no plaintext byte. The same harness runs twice more, once per arm, with a define that asserts that arm is unreachable; both runs must fail. `quic_ghash` proves the same safety for GHASH alone, at sixteen blocks per argument, where the whole-module formula gets two. Two properties are not proved: that a genuine seal opens back to the plaintext it sealed, and that a forged tag is refused. `proof/quic_gcm_harness.c` and `proof/quic_gcm_forge_harness.c` state them, but neither formula returns a verdict, so neither carries a launch line, and `proof/run.sh` records both measurements. Those two rest on tests instead: SP 800-38D's four AES-128 cases, RFC 9001 Appendix A.2's client Initial packet and A.4's Retry tag, 67 Wycheproof cases on all four build legs, and the Lean differential. Every harness compiles the portable GHASH. An `AES=hw` build runs `quic_ghash_hw.c`'s GHASH on the carry-less multiply instead, which no harness reads; `bin/ghash_equiv_test` holds it to the portable one byte for byte, and the vectors, the Wycheproof `AES=hw` leg and `bin/diff_quic_hw` run over it | plaintext and associated data ≤ 32 B each for safety and refusal — two blocks, every length either side of the block boundary, on both arguments; ≤ 256 B each for `quic_ghash` |
 | x25519 (ten harnesses) | carry, add, sub, pack, cswap, and unpack are safe with every check on, add and sub in the ladder's aliased shape too, and the ladder's scalar bit index stays in bounds (fast tier); mul's index walk is safe in every caller aliasing shape — distinct, output aliasing either input, and sqr's all-one-object — with the signed-overflow class off (slow tier, one shape set per formula), and a separate lemma proves mul's int64 accumulation and fold cannot overflow (fast tier). Every one of these holds only inside the limb range in the next column, and `x25519_step` and `x25519_tail` prove the ladder keeps its limbs there: one loop step, on the shipped `step()`, takes any state with every limb in (-2^17, 2^17) back into that bound and hands mul only operands under 2^18; mul's output, one `invert` round, and the final multiply and pack do the same. The 255 steps and 254 rounds follow by induction from a base case read off `ladder()`'s prologue; `x25519_step` is a slow-tier leg and `x25519_tail` a fast one. Both harnesses replace mul's multiply with a magnitude contract (`proof/x25519_stubs.h`) that `x25519_mul` discharges on the native multiply and `x25519_mul_ct` on the shipped decomposition — see the note below | limbs ≤ 2^24; into carry, ≤ 2^58; between the ladder's operations, < 2^17 |
+| x25519_wide (seven harnesses) | the `X25519=wide` field (`x25519_wide.c`, INV-34), with `--unsigned-overflow-check` on every line. On the real 64x64->128 multiply, `mul` and `sqr` over any operands whose limbs are under 2^54 wrap nothing — every column sum stays under 2^115 and every carry under 2^64 — and leave limbs 0, 2, 3 and 4 under 2^51 and limb 1 under 2^51 + 2^13; add, sub, `mul_a24`, cswap, unpack and pack are safe at the same bounds, cswap swaps exactly when its bit is 1, and pack writes a value below p. `x25519_wide_step` proves one loop step, on the shipped `step()`, from any state inside INV-34's bounds back into them, `x25519_wide_invert` the whole inversion chain, and `x25519_wide_tail` the output form of every product and the final multiply and pack; those three replace the multiply with a contract, operands under 2^55 and 2^60 to a product under 2^115, which `x25519_wide_mul128` proves on the real multiply. The 255 steps follow by induction from a base case read off `x25519_wide_ladder()`'s prologue. One step over the real products also converged, in 64 s at 4.5 GB, and has no launch line | operand limbs < 2^54; between the ladder's operations, limb 1 < 2^51 + 2^20 and every other limb < 2^51; fast tier |
 | p256 | the DER parser and limb marshalling stay safe on hostile signatures; a carry lemma covers the Montgomery multiply | signatures ≤ 80 B |
 | p256_field | the constant-time field arithmetic, which is written as masks and is proved as masks: the limb add and subtract, the conditional subtraction of p, the select, `p256_fe_cmov`, `p256_fe_cswap` and the three predicates each match a reference that writes the same choice as a branch, so an inverted mask fails here; `p256_fe_add`, `p256_fe_sub` and `p256_fe_neg` take elements below p to an element below p; the byte marshalling round trips; and every routine is memory-safe and UB-free over full-range limbs in each aliasing shape a point routine uses. The Montgomery product's value is **not proved** — equality of two multipliers is the SAT instance that does not converge (`docs/proofs.md`) — so it rests on `test/p256_field_test.c`'s vectors, which run over both forms of `ct_widemul`, and its carry chain on the `p256_mul` lemma. `p256_fe_inv`'s 256 rounds are not unrolled; each round body is that multiply, and the exponent bit index is proved in bounds for every round | full-range limbs, any 32 bytes, exponent bits 0..255 |
 | p256_scalar | the signer's arithmetic mod the group order, concrete: every masked choice equals a reference that writes the same choice as a branch, both predicates equal `==`, the byte round trip, and the two contracts `p256_sign.c` rests on — that `p256_scalar_reduce` lands any 256-bit value below n, and that `p256_scalar_add` leaves a scalar. The Montgomery product is memory-safe with **no assertion on its value**: equality of two multipliers is the hard SAT instance, so its value rests on `test/p256_sign_test.c`'s vectors against Python's integers. `p256_scalar_inverse`'s 256 rounds are not unrolled; only its exponent index expressions are proven in bounds | full-range limbs, every aliasing shape `p256_sign.c` uses, exponent bits 0..255 |
@@ -419,7 +427,13 @@ under `SUITE=aesgcm`.
   [RFC 6979](https://www.rfc-editor.org/rfc/rfc6979), OpenSSL-produced PSS at 2048 and 3072 bits) plus fresh
   signatures the Lean spec mints and the C must accept. CBMC proves
   the pieces; it does not run a scalar multiplication or a 3072-bit
-  exponentiation whole.
+  exponentiation whole. The `X25519=wide` field rests on the same
+  vectors, on its own Wycheproof leg and Lean differential binary, and
+  on `bin/x25519_equiv_test`, which in `make check` compares it with the
+  16-limb field over 12,175 inputs: the RFC vectors and the 1,000-round
+  chain, every low-order and non-canonical u-coordinate, 10,000 random
+  scalar and u-coordinate pairs, and 1,000 random scalars on the base
+  point.
 - P-256 ECDH functional correctness, for the same reason. The 355
   Wycheproof `ecdh_secp256r1` cases and `test/p256_ecdh_test.c`'s
   Python-computed key pairs and shared secrets are what says the ladder
@@ -570,6 +584,18 @@ under `SUITE=aesgcm`.
   The x25519 ladder proofs need less than equality: their contract on
   `ct_widemul_s` is a product bound, and `x25519_mul_ct` proves it on the
   decomposition at the ladder's full operand range.
+  The `X25519=wide` field is the one secret-bearing source none of those
+  specs can build, since it needs `unsigned __int128`. It multiplies on
+  the 64x64->128 instruction, and `ct.h` refuses the build unless it
+  defines `CH_NATIVE_MUL128`, its own statement that this instruction
+  runs in constant time: Arm lists MUL and UMULH as data-independent
+  while PSTATE.DIT is set, and Intel lists MUL and MULX in its DOIT
+  instructions, which on recent parts hold only while the operating
+  system enables DOITM. `make lint-wide-multiply` compiles the file for
+  arm64 and x86-64 under the pinned clang and holds its divisions and
+  128-bit runtime calls at zero and its branch count at the loop
+  control it has, and `inv16-x25519-wide-cswap-branch` shows the count
+  sees a `cswap` written as an `if`. No gcc measures it.
   `make timing` measures the decomposed path rather than the host's
   native one. `make ct-widemul-check`, in `check-slow`, rebuilds the
   unit, ML-KEM and Wycheproof binaries with `CH_CT_WIDEMUL`, so the
@@ -642,7 +668,7 @@ Three more suites run on every push and add evidence rather than
 proof. [Wycheproof](https://github.com/C2SP/wycheproof)'s attack-derived cases (`make wycheproof`, 5,221
 across x25519, ChaCha20-Poly1305, HKDF-SHA256, HMAC-SHA256, ECDSA over P-256 and P-384 at every digest length a
 certificate signature can pair with either curve, RSA-PSS and RSA PKCS#1 v1.5 up to RSA-4096, and
-ML-KEM-768). The HMAC-SHA256 suite calls `hmac_sha256` directly, so the MAC that Finished, the binders,
+ML-KEM-768). The x25519 suite's 518 cases run a second time over the `X25519=wide` field, in its own binary. The HMAC-SHA256 suite calls `hmac_sha256` directly, so the MAC that Finished, the binders,
 the QUIC Retry token, the HelloRetryRequest cookie and the webpki ticket binding compute is tested on its
 own and not only through HKDF. The same lane signs every P-256 message in that corpus with `p256_sign` and hands the result to `p256_ecdsa_verify`, which shares no arithmetic with the signer; Wycheproof publishes no ECDSA signing vectors, so the signer's known answers are RFC 6979 A.2.5 and Python's integers in `test/p256_sign_test.c`.
 Wycheproof tests no plain hash, so SHA-384 and SHA-512 rest on the
@@ -697,7 +723,11 @@ random-input comparisons between the C and the spec over a pipe,
 from a fixed seed. It then runs the `TRANSPORT=quic` rows, 387 over the
 AES block, the Initial keys, AES-128-GCM and GHASH, twice: once under the
 build's `AES` value and once under `AES=hw`, the instructions and the
-carry-less multiply, where the compiler has them. `make diff-ecdsa`, `make diff-pq` and `make
+carry-less multiply, where the compiler has them. Last it runs the
+x25519 rows ten times over the `X25519=wide` field, 1,500
+comparisons, where the compiler has `unsigned __int128`; the spec
+computes over natural numbers mod p, so one model serves both fields.
+`make diff-ecdsa`, `make diff-pq` and `make
 diff-webpki` rebuild the same driver under `TRUST=raw-ecdsa`, `KEX=pq` and
 `TRUST=webpki`, whose parsers take other arms, and the nightly runs
 them. The spec depends on Mathlib, so run `lake exe cache
@@ -901,7 +931,13 @@ Other targets:
   `RAND` is the one build variable with no default. Compose with
   `TRUST=raw-ecdsa`, `TRUST=ca-rsa` or `TRUST=webpki`, and `KEX=pq`;
   the `TRUST=webpki` object carries every verifier, which is why that
-  value names no algorithm.
+  value names no algorithm. `X25519=wide` replaces the default 16-limb
+  X25519 field with `x25519_wide.c`'s five 51-bit limbs, for a 64-bit
+  host: `ct.h` stops the build unless the compiler has
+  `unsigned __int128` and the build adds `-DCH_NATIVE_MUL128` to
+  `CFLAGS`, its statement that the part's 64x64->128 multiply runs in
+  constant time in the mode the part runs in (decision 52, INV-34). The
+  Makefile never writes that define itself.
 - `make prove-slow` runs the slow-tier proofs, one per nightly job. The runner caches by
   content, so an incremental run re-proves only what changed
   (`PROVE_NO_CACHE=1` forces a full run). It uses [kissat](https://github.com/arminbiere/kissat) when

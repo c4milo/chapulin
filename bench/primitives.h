@@ -40,6 +40,7 @@ extern const bench_group BENCH_CIPHER;
 extern const bench_group BENCH_AEAD;
 extern const bench_group BENCH_VERIFY;
 extern const bench_group BENCH_SECRET_KEY;
+extern const bench_group BENCH_X25519;
 extern const bench_group BENCH_HANDSHAKE;
 
 // The build this program was compiled as, for the CSV's build column.

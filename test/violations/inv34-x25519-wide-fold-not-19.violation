@@ -1,0 +1,14 @@
+invariant: INV-34
+file: x25519_wide.c
+catches: x25519_equiv_test
+reason: the carry out of the top column is worth 19 at the bottom because
+  2^255 = 19 mod p. Folding it in times 38, the 16-limb field's constant
+  for 2^256, is the edit the two fields' different radixes invite. It
+  changes every product's value, and the comparison with the 16-limb field
+  over the same inputs sees that in seconds, where the bound proofs that
+  also object run only in the nightly's proof-backed job.
+
+--- old
+    ct_u128 r0 = (t0 & LIMB_MASK) + (t4 >> LIMB_BITS) * 19;
+--- new
+    ct_u128 r0 = (t0 & LIMB_MASK) + (t4 >> LIMB_BITS) * 38;

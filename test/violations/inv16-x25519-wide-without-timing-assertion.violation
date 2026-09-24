@@ -1,0 +1,16 @@
+invariant: INV-16
+file: ct.h
+catches: test/x25519-builds.sh
+reason: X25519=wide stops needing CH_NATIVE_MUL128, so a build selects the
+  radix-2^51 field and nobody states that the 64x64->128 multiply it runs
+  every product on takes the same time for every operand. The
+  architectures do not promise that, which is why Arm publishes FEAT_DIT
+  and Intel its DOIT list, and CH_NATIVE_WIDEMUL cannot stand in because
+  it names another instruction. Every source still compiles and every
+  vector passes, so the compiler's refusal is the only check.
+
+--- old
+#ifndef CH_NATIVE_MUL128
+#error "X25519=wide needs -DCH_NATIVE_MUL128: the build asserts the 64x64->128 multiply's timing"
+#endif
+--- new

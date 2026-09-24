@@ -103,6 +103,64 @@ void ct_wipe(void *p, size_t n);
 #endif
 #endif
 
+// The X25519=wide field (x25519_wide.c) multiplies two 64-bit limbs into a
+// 128-bit product, which is MUL and UMULH on arm64 and MUL or MULX on
+// x86-64. Whether that multiply runs in constant time is a third claim about
+// silicon, and it names a different instruction from the one
+// CH_NATIVE_WIDEMUL names. It cannot share that macro either: the Makefile
+// sets CH_NATIVE_WIDEMUL for every host test binary, so a shared macro would
+// let those binaries stop testing the 16-limb field on its native multiply.
+// X25519=wide declares -DCH_X25519_WIDE, and the two rules below stop the
+// compiler on that build unless both of these hold:
+//
+//   __SIZEOF_INT128__  the compiler has unsigned __int128, the type of the
+//                      product. gcc and clang define it on 64-bit targets
+//                      and on none of the 32-bit targets this tree builds
+//                      for, so a device build that asks for the wide field
+//                      stops here rather than at the first use of the type.
+//   CH_NATIVE_MUL128   the build asserts that this part's 64x64->128
+//                      multiply runs in constant time. Two vendor lists
+//                      back such a statement, and each holds only in the
+//                      mode its vendor names. Arm lists MADD, whose alias
+//                      MUL is, and UMULH among the instructions whose
+//                      timing is independent of their data while PSTATE.DIT
+//                      is 1, on a core that implements FEAT_DIT; with DIT
+//                      at 0 the architecture makes no timing statement.
+//                      Code at EL0 can set the bit, and nothing in this
+//                      tree does. Intel lists MUL, IMUL and MULX among its
+//                      data operand independent timing (DOIT) instructions;
+//                      on Ice Lake, Gracemont and later parts the list
+//                      holds only while the operating system has set
+//                      IA32_UARCH_MISC_CTL[DOITM], and older parts behave
+//                      as if it were set. A part from another vendor needs
+//                      its own vendor's statement. So the macro is a claim
+//                      about the part and the mode it runs in, and the
+//                      build that defines it owns both halves.
+//
+// docs/decisions.md entry 52 says why the field is a build axis and why this
+// macro is its own. INV-34 in docs/invariants.md states the limb bounds the
+// field keeps, and test/x25519-builds.sh checks that both rules fire.
+#ifdef CH_X25519_WIDE
+#ifndef __SIZEOF_INT128__
+#error "X25519=wide needs unsigned __int128, which this compiler has only on 64-bit targets"
+#endif
+#ifndef CH_NATIVE_MUL128
+#error "X25519=wide needs -DCH_NATIVE_MUL128: the build asserts the 64x64->128 multiply's timing"
+#endif
+
+// The product type of ct_mul128. C11 has no 128-bit integer, and
+// __extension__ keeps -Wpedantic from saying so.
+__extension__ typedef unsigned __int128 ct_u128;
+
+// a * b, widened to 128 bits, on the multiply CH_NATIVE_MUL128 vouches for.
+// It is a function rather than an operator at each call so that
+// proof/x25519_wide_stubs.h can replace it with a contract, the way
+// proof/x25519_stubs.h replaces ct_widemul_s.
+static inline ct_u128 ct_mul128(uint64_t a, uint64_t b) {
+    return (ct_u128)a * b;
+}
+#endif
+
 // a * b, widened, using only 32-to-32 multiplies.
 //
 // A 32-to-64 multiply is variable-time on some cores -- the Cortex-M3's umull

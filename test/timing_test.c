@@ -22,6 +22,16 @@
 // exit far past the threshold at these sizes.
 #define FAST_N 200000
 #define X25519_N 2000
+// bin/timing_x25519_wide builds this file with -DCH_X25519_WIDE, and that
+// field is about twelve times faster, so it takes ten times the samples in
+// less time and names its row apart.
+#ifdef CH_X25519_WIDE
+#undef X25519_N
+#define X25519_N 20000
+#define X25519_ROW "x25519_wide"
+#else
+#define X25519_ROW "x25519"
+#endif
 #define WARMUP 4096
 #define T_MAX 10.0
 
@@ -235,6 +245,6 @@ int main(void) {
     report("ct_memeq", measure(eq_prep, eq_run, FAST_N, WARMUP));
     report("poly1305", measure(poly_prep, poly_run, FAST_N, WARMUP));
     report("chacha20_xor", measure(chacha_prep, chacha_run, FAST_N, WARMUP));
-    report("x25519", measure(x_prep, x_run, X25519_N, 32));
+    report(X25519_ROW, measure(x_prep, x_run, X25519_N, 32));
     return failures ? 1 : 0;
 }

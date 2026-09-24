@@ -2,6 +2,16 @@
 
 #include "ct.h"
 
+// The field the ladder runs over is a build choice, the Makefile X25519
+// variable: X25519=portable (the default) compiles the 16-limb field below,
+// and X25519=wide compiles x25519_wide.c's radix-2^51 field in its place. One
+// object carries one field. The clamp and the all-zero check sit after both,
+// in clamp_and_ladder() and x25519(), so one line decides each whichever
+// field runs (INV-3).
+#ifdef CH_X25519_WIDE
+#include "x25519_wide.h"
+#else
+
 // Field element: 16 limbs of 16 bits, little-endian, radix 2^16, values
 // mod 2^255-19. Limbs live in int64 so products and transient negatives
 // from subtraction stay exact; carries re-normalize.
@@ -171,9 +181,9 @@ static void step(fe a, fe b, fe c, fe d, fe e, fe f, const fe x, int64_t r) {
     cswap(c, d, r);
 }
 
-static void ladder(uint8_t out[X25519_LEN], const uint8_t scalar[X25519_LEN],
+// The ladder over a scalar clamp_and_ladder() has already clamped.
+static void ladder(uint8_t out[X25519_LEN], const uint8_t z[X25519_LEN],
                    const uint8_t point[X25519_LEN]) {
-    uint8_t z[X25519_LEN];
     fe x;
     fe a;
     fe b;
@@ -181,13 +191,6 @@ static void ladder(uint8_t out[X25519_LEN], const uint8_t scalar[X25519_LEN],
     fe d;
     fe e;
     fe f;
-    for (int i = 0; i < X25519_LEN; i++) {
-        z[i] = scalar[i];
-    }
-    // RFC 7748 clamp.
-    z[0] &= 248;
-    z[31] = (z[31] & 127) | 64;
-
     unpack(x, point);
     for (int i = 0; i < 16; i++) {
         b[i] = x[i];
@@ -203,7 +206,6 @@ static void ladder(uint8_t out[X25519_LEN], const uint8_t scalar[X25519_LEN],
     mul(a, a, c);
     pack(out, a);
 
-    ct_wipe(z, sizeof z);
     ct_wipe(a, sizeof(fe));
     ct_wipe(b, sizeof(fe));
     ct_wipe(c, sizeof(fe));
@@ -211,15 +213,36 @@ static void ladder(uint8_t out[X25519_LEN], const uint8_t scalar[X25519_LEN],
     ct_wipe(e, sizeof(fe));
     ct_wipe(f, sizeof(fe));
 }
+#endif // CH_X25519_WIDE
+
+// RFC 7748 section 5: clamp a copy of the scalar, then run the ladder of the
+// field this build compiled. The clamp is here rather than in either ladder,
+// so the two fields cannot clamp differently.
+static void clamp_and_ladder(uint8_t out[X25519_LEN], const uint8_t scalar[X25519_LEN],
+                             const uint8_t point[X25519_LEN]) {
+    uint8_t z[X25519_LEN];
+    for (int i = 0; i < X25519_LEN; i++) {
+        z[i] = scalar[i];
+    }
+    // RFC 7748 clamp.
+    z[0] &= 248;
+    z[31] = (z[31] & 127) | 64;
+#ifdef CH_X25519_WIDE
+    x25519_wide_ladder(out, z, point);
+#else
+    ladder(out, z, point);
+#endif
+    ct_wipe(z, sizeof z);
+}
 
 int x25519(uint8_t out[X25519_LEN], const uint8_t scalar[X25519_LEN],
            const uint8_t point[X25519_LEN]) {
     static const uint8_t zeros[X25519_LEN] = {0};
-    ladder(out, scalar, point);
+    clamp_and_ladder(out, scalar, point);
     return !ct_memeq(out, zeros, X25519_LEN);
 }
 
 void x25519_base(uint8_t out[X25519_LEN], const uint8_t scalar[X25519_LEN]) {
     static const uint8_t nine[X25519_LEN] = {9};
-    ladder(out, scalar, nine);
+    clamp_and_ladder(out, scalar, nine);
 }

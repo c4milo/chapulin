@@ -10,7 +10,8 @@
 // compiles them to the same code. secret_key runs x25519.c,
 // mlkem_poly.c, p256_field.c, p256_scalar.c and rsa_sign.c, whose
 // products go through ct.h's ct_widemul, so bench/primitives.sh times
-// it under both builds.
+// it under both builds. A third group, x25519, holds secret_key's two
+// x25519 rows alone, for the X25519=wide build.
 //
 // The program is built with CH_RSA_MODULUS_MAX at 512, the value
 // TRUST=webpki gives it, so the RSA-4096 rows run. rsa_mont.c's loops
@@ -348,3 +349,6 @@ static const bench_row SECRET_KEY_ROWS[] = {
 
 const bench_group BENCH_VERIFY = {"verify", VERIFY_ROWS, COUNT(VERIFY_ROWS), NULL};
 const bench_group BENCH_SECRET_KEY = {"secret_key", SECRET_KEY_ROWS, COUNT(SECRET_KEY_ROWS), NULL};
+// The two x25519 rows alone, the first two of secret_key, for the
+// X25519=wide build: the field is the only code that build changes.
+const bench_group BENCH_X25519 = {"x25519", SECRET_KEY_ROWS, 2, NULL};

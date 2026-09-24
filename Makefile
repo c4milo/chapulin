@@ -138,7 +138,7 @@ SRCS := ct.c sha256.c hkdf.c chacha20.c poly1305.c aead.c x25519.c p256.c rsa.c 
         pem.c x509.c x509_der.c x509_ca.c webpki_time.c webpki_name.c webpki_spki.c webpki_ext.c buf.c record.c keysched.c io.c handshake_message.c handshake_parser.c handshake_parser_ee.c handshake_record.c session.c \
         handshake_auth.c handshake_flight.c handshake.c handshake_post.c tls.c softmul.c
 
-HDRS := ct.h sha256.h hkdf.h chacha20.h poly1305.h aead.h x25519.h p256.h rsa.h ch_assert.h \
+HDRS := ct.h sha256.h hkdf.h chacha20.h poly1305.h aead.h x25519.h x25519_wide.h p256.h rsa.h ch_assert.h \
         pem.h x509.h x509_der.h x509_ca.h webpki.h webpki_cfg.h webpki_pin.h webpki_ticket.h buf.h record.h keysched.h io.h handshake_message.h handshake_parser.h handshake_record.h cfg.h session.h handshake_auth.h handshake.h handshake_post.h \
         tls.h rand.h drbg.h sha3.h sha512.h sha512_compress.h p384.h p384_field.h p256_field.h p256_scalar.h p256_point.h p256_sign.h p256_ecdh.h rsa_pkcs1.h rsa_sign.h mlkem.h mlkem_poly.h \
         handshake_flight.h quic.h quic_aes.h quic_aes_block.h quic_aes_key.h quic_config.h quic_gcm.h quic_ghash_hw.h quic_initial.h quic_keys.h quic_packet.h quic_retry.h quic_step.h quic_fail.h quic_token.h aes_traffic_key.h \
@@ -346,7 +346,10 @@ LINT_C := $(filter-out softmul.c,$(SRCS)) drbg.c sha3.c sha512.c sha512_compress
           srv_quic.c quic_token.c srv_rec.c test/srv_rec_test.c test/rec_loop_test.c test/exporter_test.c rec.c rec_frame.c rec_step.c \
           test/quic_driver_test.c test/quic_loop_test.c test/quic_vectors.c test/diff_quic_test.c \
           test/aes_equiv_test.c test/aes_equiv_soft.c test/aes_equiv_hw.c \
-          test/ghash_equiv_test.c test/ghash_equiv_soft.c $(wildcard examples/*.c)
+          test/ghash_equiv_test.c test/ghash_equiv_soft.c \
+          x25519_wide.c test/x25519_equiv_test.c test/x25519_equiv_portable.c test/x25519_equiv_wide.c \
+          test/diff_x25519_test.c \
+          $(wildcard examples/*.c)
 
 # Test-local headers: prerequisites for every binary that includes them,
 # so a header edit rebuilds the binaries it changes.
@@ -722,6 +725,39 @@ LIB_SRCS += sha3.c mlkem.c mlkem_poly.c
 else ifneq ($(KEX),x25519)
 $(error KEX=$(KEX) is not a key exchange; use KEX=x25519 or KEX=pq)
 endif
+# The X25519 field, which both KEX values run: X25519=portable (default) is
+# x25519.c's 16 limbs of 16 bits, whose products are 32x32 multiplies that
+# ct.h can build from 16x16 pieces on any core, and X25519=wide adds
+# x25519_wide.c, five limbs of 51 bits whose products are 64x64->128
+# multiplies. One field per object, the way AES names one implementation:
+# x25519.c compiles its own field only without -DCH_X25519_WIDE and calls
+# x25519_wide.c's ladder only with it. docs/decisions.md entry 52 says why
+# the values are named for the multiply each field needs.
+#
+# The wide field is a host-side choice. ct.h stops the build unless the
+# compiler has unsigned __int128, which no 32-bit target here has, and
+# unless the build defines CH_NATIVE_MUL128, its assertion that the part's
+# 64x64->128 multiply runs in constant time. The Makefile does not define
+# it for the packaged object, because it is a claim about hardware and the
+# mode that hardware runs in; the test binaries that build the field state
+# it on their own lines, the way the AES suite's binaries state
+# CH_NATIVE_AES.
+X25519 ?= portable
+ifeq ($(X25519),wide)
+LIB_DEF += -DCH_X25519_WIDE
+LIB_SRCS += x25519_wide.c
+else ifneq ($(X25519),portable)
+$(error X25519=$(X25519) is not an X25519 field; use X25519=portable or X25519=wide)
+endif
+# The defines every test binary that builds the wide field passes: the
+# field and the timing assertion ct.h requires beside it.
+X25519_WIDE_DEF := -DCH_X25519_WIDE -DCH_NATIVE_MUL128
+# Whether this compiler can build the wide field at all, read from what it
+# predefines rather than assumed from the host: a cross compiler for a
+# 32-bit core has no __SIZEOF_INT128__, and the targets that read this skip
+# there rather than stop at ct.h's #error.
+X25519_WIDE_PROBE := $(shell $(CC) -dM -E -x c /dev/null 2>/dev/null | grep -q '__SIZEOF_INT128__' && echo yes)
+X25519_WIDE_BINS := $(if $(X25519_WIDE_PROBE),bin/x25519_equiv_test bin/unit_x25519_wide)
 # The exporter of RFC 9846 section 7.5, off by default. EXPORTER=on adds
 # ch_export to the public API and 32 bytes to ch_tls, so a device build
 # that exports nothing pays neither: the README's SRAM numbers are the
@@ -854,7 +890,9 @@ QEMU_SMOKE_C := $(wildcard test/qemu/*.c test/qemu/*.h test/freertos/*.c test/fr
 # SUITE belongs here for the same reason: -DCH_SUITE_AES_GCM changes
 # record.o and adds three objects, so the two suites must not share a
 # directory.
-LIB_VARIANT := $(TRUST)-$(KEX)-$(RAND)-$(TRANSPORT)-$(AES)-$(SUITE)-$(ROLE)-$(EXPORTER)-$(KEYLOG)-$(WIDEMUL)
+# X25519 belongs here for SUITE's reason: -DCH_X25519_WIDE changes x25519.o
+# and adds x25519_wide.o.
+LIB_VARIANT := $(TRUST)-$(KEX)-$(RAND)-$(TRANSPORT)-$(AES)-$(SUITE)-$(ROLE)-$(EXPORTER)-$(KEYLOG)-$(WIDEMUL)-$(X25519)
 LIB_OBJS := $(LIB_SRCS:%.c=bin/obj/$(LIB_VARIANT)/%.o)
 
 # bench/device-ram.sh sizes the same modules the build packages. It asks
@@ -972,6 +1010,8 @@ lint-trust-separation:
 	check "TRUST=webpki" "x509_der.c rsa.c rsa_mont.c p256.c $$webpki_only" "pem.c x509.c x509_ca.c" "-DCH_TRUST_WEBPKI" "-DCH_TRUST_CA -DCH_PIN_ECDSA"; \
 	check "TRUST=raw-rsa KEX=x25519" "x25519.c" "sha3.c mlkem.c mlkem_poly.c" "" "-DCH_KEX_PQ"; \
 	check "TRUST=raw-rsa KEX=pq" "x25519.c sha3.c mlkem.c mlkem_poly.c" "" "-DCH_KEX_PQ" ""; \
+	check "TRUST=raw-rsa X25519=portable" "x25519.c" "x25519_wide.c" "" "-DCH_X25519_WIDE"; \
+	check "TRUST=raw-rsa X25519=wide" "x25519.c x25519_wide.c" "" "-DCH_X25519_WIDE" "-DCH_NATIVE_MUL128"; \
 	quic_files=$$(git ls-files 'quic*.c' | grep -v / | tr '\n' ' '); \
 	[ -n "$$quic_files" ] || { echo "lint-trust-separation: git tracks no quic*.c file at the root, so the transport rows would check nothing"; rc=1; }; \
 	quic_always=$$(printf '%s\n' $$quic_files | grep -vxF -e quic_aes_soft.c -e quic_aes_hw.c -e quic_ghash_hw.c -e quic_aes_extern.c -e quic_token.c | tr '\n' ' '); \
@@ -1285,6 +1325,23 @@ bin/aes_equiv_test: test/aes_equiv_test.c test/aes_equiv_soft.c test/aes_equiv_h
 # portable GHASH the proofs cover. Both copies run quic_aes_hw.c's cipher, so
 # GHASH is the only difference. quic_aes.c calls hkdf.c for the Initial key
 # constructor, which is why hkdf.c and sha256.c link.
+# X25519=wide against X25519=portable, both fields in one binary under two
+# names, the way bin/aes_equiv_test holds both AES implementations:
+# test/x25519_equiv_portable.c and test/x25519_equiv_wide.c compile x25519.c
+# once each, the second with x25519_wide.c under -DCH_X25519_WIDE. The line
+# states CH_NATIVE_MUL128 because ct.h refuses the wide field without it; the
+# portable wrapper reads nothing that macro changes.
+bin/x25519_equiv_test: test/x25519_equiv_test.c test/x25519_equiv_portable.c test/x25519_equiv_wide.c \
+                       x25519.c x25519_wide.c ct.c $(HDRS) $(TESTH)
+	@mkdir -p bin
+	$(CC) $(CFLAGS) -DCH_NATIVE_MUL128 -I. -o $@ test/x25519_equiv_test.c test/x25519_equiv_portable.c \
+	  test/x25519_equiv_wide.c ct.c
+# The unit suite over the wide field: RFC 7748's vectors in test/unit_test.c,
+# and every handshake the suite drives, with x25519() answering from
+# x25519_wide.c.
+bin/unit_x25519_wide: test/unit_test.c $(SRCS) x25519_wide.c $(HDRS) $(TESTH)
+	@mkdir -p bin
+	$(CC) $(CFLAGS) $(X25519_WIDE_DEF) -I. -o $@ test/unit_test.c $(SRCS) x25519_wide.c
 bin/ghash_equiv_test: test/ghash_equiv_test.c test/ghash_equiv_soft.c quic_gcm.c quic_aes.c $(AES_HW_SRCS) \
                       hkdf.c sha256.c ct.c $(HDRS) $(TESTH)
 	@mkdir -p bin
@@ -1762,7 +1819,7 @@ run-%: bin/%
 # and the invariant violation builds. The nightly runs it. Splitting on
 # duration rather than on importance is deliberate -- nothing here is
 # optional, and a change is not finished until check-slow passes too.
-check: bin/unit bin/unit_ca bin/unit_pq bin/tlsclient bin/tlsclient_ecdsa bin/tlsclient_ca bin/tlsclient_ca_ecdsa bin/tlsclient_webpki bin/tlsclient_webpki_pq $(if $(AES_HW_PROBE),bin/tlsclient_webpki_aes) bin/tlsclient_pq bin/drbg_test bin/softmul_test bin/rsa_test bin/sha3_test bin/sha512_test bin/p384_test bin/rsa_pkcs1_test bin/webpki_time_test bin/webpki_name_test bin/webpki_spki_test bin/webpki_sigalg_test bin/webpki_cert_test bin/webpki_chain_test bin/webpki_auth_test bin/webpki_encrypted_exts_test bin/mlkem_test bin/handshake_strict_test bin/handshake_strict_pq bin/handshake_strict_webpki bin/webpki_session_test bin/webpki_session_pq bin/webpki_resume_test bin/webpki_resume_record bin/x509strict bin/x509strict_ecdsa bin/quic_driver_test bin/quic_test bin/recclient $(AES_HW_BINS) lint rand-check bin/srv_auth_test bin/srv_test bin/srv_quic_test bin/srv_quic_both_test bin/srv_rec_test bin/rec_loop_test bin/quic_loop_test bin/quic_loop_webpki bin/tlsserver bin/exporter_test bin/rsa_sign_test bin/p256_field_test bin/p256_ecdh_test bin/p256_sign_test
+check: bin/unit bin/unit_ca bin/unit_pq bin/tlsclient bin/tlsclient_ecdsa bin/tlsclient_ca bin/tlsclient_ca_ecdsa bin/tlsclient_webpki bin/tlsclient_webpki_pq $(if $(AES_HW_PROBE),bin/tlsclient_webpki_aes) $(X25519_WIDE_BINS) bin/tlsclient_pq bin/drbg_test bin/softmul_test bin/rsa_test bin/sha3_test bin/sha512_test bin/p384_test bin/rsa_pkcs1_test bin/webpki_time_test bin/webpki_name_test bin/webpki_spki_test bin/webpki_sigalg_test bin/webpki_cert_test bin/webpki_chain_test bin/webpki_auth_test bin/webpki_encrypted_exts_test bin/mlkem_test bin/handshake_strict_test bin/handshake_strict_pq bin/handshake_strict_webpki bin/webpki_session_test bin/webpki_session_pq bin/webpki_resume_test bin/webpki_resume_record bin/x509strict bin/x509strict_ecdsa bin/quic_driver_test bin/quic_test bin/recclient $(AES_HW_BINS) lint rand-check bin/srv_auth_test bin/srv_test bin/srv_quic_test bin/srv_quic_both_test bin/srv_rec_test bin/rec_loop_test bin/quic_loop_test bin/quic_loop_webpki bin/tlsserver bin/exporter_test bin/rsa_sign_test bin/p256_field_test bin/p256_ecdh_test bin/p256_sign_test
 	# The packaged object is built once per entropy pattern, because
 	# lib-check reads a different export list and a different import
 	# list in each. Only the object is built twice: the examples and
@@ -1857,6 +1914,13 @@ check: bin/unit bin/unit_ca bin/unit_pq bin/tlsclient bin/tlsclient_ecdsa bin/tl
 	# instructions.
 	$(if $(AES_HW_PROBE),$(MAKE) lib-check RAND=extern ROLE=server TRUST=none SUITE=aesgcm AES=hw \
 	  CFLAGS='$(CFLAGS) $(AES_HW_CFLAGS) -DCH_NATIVE_AES',@echo "SKIP lib-check SUITE=aesgcm: $(CC) has no AES instructions")
+	# The wide X25519 field, packaged. ct.h refuses it without the build's
+	# own CH_NATIVE_MUL128, which the Makefile never writes into a library
+	# build, so this leg states it the way the AES suite's leg states
+	# CH_NATIVE_AES, and lint-stack holds the field's frames to the device
+	# budget. Both run only where the compiler has unsigned __int128.
+	$(if $(X25519_WIDE_PROBE),$(MAKE) lib-check lint-stack RAND=extern X25519=wide \
+	  CFLAGS='$(CFLAGS) -DCH_NATIVE_MUL128',@echo "SKIP lib-check X25519=wide: $(CC) has no unsigned __int128")
 	# lint above holds lint-stack at the budget of the build check was
 	# given, 2,560 B for a plain `make check`, the target `make ci` runs.
 	# This leg compiles the TRUST=webpki object's sources under their own
@@ -1907,6 +1971,16 @@ check: bin/unit bin/unit_ca bin/unit_pq bin/tlsclient bin/tlsclient_ecdsa bin/tl
 	else \
 	  echo "SKIP AES=hw: $(CC) has no AES instructions and no flag turns them on"; \
 	fi
+	# The X25519=wide leg: the unit suite with x25519() answering from
+	# x25519_wide.c, the field against the 16-limb one over the same inputs,
+	# and ct.h's two refusals of a wide build that lacks what it needs. A
+	# compiler without unsigned __int128 builds neither binary.
+	@set -e; if [ -n "$(X25519_WIDE_BINS)" ]; then \
+	  ./bin/unit_x25519_wide; ./bin/x25519_equiv_test; \
+	else \
+	  echo "SKIP X25519=wide: $(CC) has no unsigned __int128"; \
+	fi
+	./test/x25519-builds.sh
 	./bin/srv_auth_test
 	./bin/srv_test
 	./bin/srv_quic_test
@@ -2072,7 +2146,21 @@ ifneq ($(AES_HW_PROBE),)
 else
 	@echo "SKIP diff's AES=hw binary: $(CC) has no AES instructions"
 endif
+ifneq ($(X25519_WIDE_PROBE),)
+	$(MAKE) bin/diff_x25519_wide
+	./bin/diff_x25519_wide
+else
+	@echo "SKIP diff's X25519=wide binary: $(CC) has no unsigned __int128"
 endif
+endif
+
+# The X25519=wide arm: the x25519 rows against spec/lean/Spec/X25519.lean
+# with x25519() answering from x25519_wide.c. Its own main, because the
+# field changes no other row bin/diff compares; test/diff_x25519_test.c
+# says so, and why the spec needs no second model.
+bin/diff_x25519_wide: test/diff_x25519_test.c x25519.c x25519_wide.c ct.c $(HDRS) $(TESTH)
+	@mkdir -p bin
+	$(CC) $(CFLAGS) $(X25519_WIDE_DEF) -I. -o $@ test/diff_x25519_test.c x25519.c x25519_wide.c ct.c
 
 # The TRANSPORT=quic arm of the differential. Its own main, because
 # test/diff_test.c calls rec_seal and reads the TLS layout of ch_cfg, and
@@ -2345,6 +2433,20 @@ wycheproof-leg-aes-hw:
 	    || { echo "== bin/wycheproof_test_aes_hw failed:"; cat bin/wycheproof_test_aes_hw.log; exit 1; }; \
 	  echo "== bin/wycheproof_test_aes_hw (AES=hw):"; cat bin/wycheproof_test_aes_hw.log; \
 	fi
+	# The X25519=wide leg, for the AES=hw leg's reason: the field is a
+	# second X25519 in this tree, so the x25519 suite's 518 cases answer for
+	# it too. Only the x25519 rows differ from the first binary. A compiler
+	# without unsigned __int128 cannot build the field, and skips; every CI
+	# host has the type, so there the skip is a failure.
+	@set -e; if [ -z "$(X25519_WIDE_PROBE)" ]; then \
+	  [ -z "$$CI" ] || { echo "wycheproof X25519=wide: $(CC) has no unsigned __int128 on CI; the gate must not skip"; exit 1; }; \
+	  echo "SKIP wycheproof X25519=wide: $(CC) has no unsigned __int128"; \
+	else \
+	  $(CC) $(CFLAGS) $(X25519_WIDE_DEF) $(RSA_WIDE_DEF) -DCH_TRANSPORT_QUIC $(AES_DEF) -I. -Ibin \
+	    -o bin/wycheproof_test_x25519_wide test/wycheproof_test.c \
+	    x25519.c x25519_wide.c chacha20.c poly1305.c aead.c hkdf.c sha256.c p256.c rsa.c rsa_mont.c mlkem.c mlkem_poly.c sha3.c buf.c ct.c sha512.c sha512_compress.c p384.c p384_field.c rsa_pkcs1.c rsa_sign.c quic_aes.c $(AES_IMPL) quic_gcm.c p256_sign.c p256_ecdh.c p256_point.c p256_scalar.c p256_field.c ; \
+	  ./bin/wycheproof_test_x25519_wide; \
+	fi
 
 # The web PKI chain fixtures, test/webpki_corpus.h, live in the tree like
 # test/rsa_pkcs1_vectors.h; regenerate them by hand. The keys under
@@ -2445,6 +2547,22 @@ san-check:
 	  x25519.c chacha20.c poly1305.c aead.c hkdf.c sha256.c p256.c rsa.c rsa_mont.c mlkem.c mlkem_poly.c sha3.c buf.c ct.c sha512.c sha512_compress.c p384.c p384_field.c rsa_pkcs1.c rsa_sign.c quic_aes.c $(AES_IMPL) quic_gcm.c p256_sign.c \
 	  p256_ecdh.c p256_point.c p256_scalar.c p256_field.c && \
 	echo "== wycheproof_test (SAN -O$(O))" && ./bin/san/wycheproof_test
+	# The X25519=wide field, where the compiler has unsigned __int128: the
+	# equivalence binary and the Wycheproof suites over it. UBSan finds no
+	# unsigned wrap, which C does not call undefined; the field's proofs
+	# check that class with --unsigned-overflow-check instead.
+	@set -e; if [ -n "$(X25519_WIDE_PROBE)" ]; then \
+	  $(CC) $(SAN_CFLAGS) -DCH_NATIVE_MUL128 -I. -o bin/san/x25519_equiv_test test/x25519_equiv_test.c \
+	    test/x25519_equiv_portable.c test/x25519_equiv_wide.c ct.c; \
+	  echo "== x25519_equiv_test (SAN -O$(O))"; ./bin/san/x25519_equiv_test; \
+	  [ -f bin/wycheproof_vectors.h ] || { echo "SKIP san wycheproof X25519=wide: the fetch above skipped"; exit 0; }; \
+	  $(CC) $(SAN_CFLAGS) $(X25519_WIDE_DEF) $(RSA_WIDE_DEF) -DCH_TRANSPORT_QUIC $(AES_DEF) -I. -Ibin \
+	    -o bin/san/wycheproof_test_x25519_wide test/wycheproof_test.c \
+	    x25519.c x25519_wide.c chacha20.c poly1305.c aead.c hkdf.c sha256.c p256.c rsa.c rsa_mont.c mlkem.c mlkem_poly.c sha3.c buf.c ct.c sha512.c sha512_compress.c p384.c p384_field.c rsa_pkcs1.c rsa_sign.c quic_aes.c $(AES_IMPL) quic_gcm.c p256_sign.c p256_ecdh.c p256_point.c p256_scalar.c p256_field.c; \
+	  echo "== wycheproof_test_x25519_wide (SAN -O$(O))"; ./bin/san/wycheproof_test_x25519_wide; \
+	else \
+	  echo "SKIP san X25519=wide: $(CC) has no unsigned __int128"; \
+	fi
 	$(MAKE) san-selftest
 
 # Proves the sanitizer has teeth on every run, not once in a scratch
@@ -2787,8 +2905,17 @@ else
 	  $(SRV_SRCS) test/srv_auth_test.c test/srv_test.c test/srv_flight_test.c \
 	  test/tls_server.c srv_quic.c quic_token.c srv_rec.c test/srv_rec_test.c \
 	  test/rec_loop_test.c test/quic_loop_test.c test/exporter_test.c rec.c \
-	  rec_frame.c rec_step.c,$(LINT_C)), \
+	  rec_frame.c rec_step.c x25519_wide.c test/x25519_equiv_portable.c \
+	  test/x25519_equiv_wide.c test/diff_x25519_test.c,$(LINT_C)), \
 	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -I.)
+	# The X25519=wide field. x25519_wide.c guards its body on
+	# -DCH_X25519_WIDE, and x25519.c compiles its dispatch to that field only
+	# under it, so the pass above reads the 16-limb field and this one reads
+	# the other, with the differential main that refuses any other build.
+	# The two test/x25519_equiv_*.c wrappers stay out of both, for the
+	# reason test/aes_equiv_soft.c does below.
+	$(call TIDY_EACH,x25519.c x25519_wide.c test/diff_x25519_test.c, \
+	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) $(X25519_WIDE_DEF) -I.)
 	# The pass above defines no trust mode, so it reads none of the
 	# TRUST=webpki arms. This pass parses the sources that carry them or
 	# compile against the webpki layout of ch_cfg and handshake_state, and
@@ -3041,7 +3168,7 @@ examples-check: bin/example_psk bin/example_pinned bin/example_ca bin/example_we
 # baseline plus a mutation pass costs real minutes — and the
 # proof-backed ones in its test-invariants-proof-backed job.
 .PHONY: test-invariants-fast
-test-invariants-fast: bin/unit bin/unit_ca bin/x509strict bin/x509strict_ecdsa bin/rsa_test bin/drbg_test bin/handshake_strict_test bin/handshake_strict_webpki bin/webpki_session_test bin/webpki_resume_test bin/webpki_resume_record bin/webpki_auth_test bin/webpki_encrypted_exts_test bin/softmul_test bin/unit_ct_widemul bin/mlkem_test_ct_widemul bin/webpki_spki_test bin/webpki_sigalg_test bin/webpki_cert_test
+test-invariants-fast: bin/unit bin/unit_ca bin/x509strict bin/x509strict_ecdsa bin/rsa_test bin/drbg_test bin/handshake_strict_test bin/handshake_strict_webpki bin/webpki_session_test bin/webpki_resume_test bin/webpki_resume_record bin/webpki_auth_test bin/webpki_encrypted_exts_test bin/softmul_test bin/unit_ct_widemul bin/mlkem_test_ct_widemul bin/webpki_spki_test bin/webpki_sigalg_test bin/webpki_cert_test bin/x25519_equiv_test
 	python3 test/violations.py --tier=fast
 
 # Every violation but the proof-backed ones: the fast tier plus the
@@ -3278,7 +3405,19 @@ WIDEMUL_CEILING := ct.c:0 sha256.c:0 sha3.c:1 hkdf.c:0 chacha20.c:0 poly1305.c:0
                    srv_ticket.c:0 srv_resume.c:0 \
                    srv_auth.c:0 srv_out.c:0 srv_flight.c:0 srv_handshake.c:0 srv.c:0 rsa_sign.c:0 \
                    p256_scalar.c:0 p256_point.c:0 p256_sign.c:0 p256_ecdh.c:0 webpki_ticket.c:0
-CODEGEN_SRCS := $(foreach e,$(WIDEMUL_CEILING),$(firstword $(subst :, ,$(e))))
+# The X25519=wide field, x25519_wide.c, is the one secret-bearing source no
+# spec in WIDEMUL_SPECS can compile: its products are unsigned __int128,
+# which no 32-bit target has, so ct.h makes the field an #error on every one
+# of them. WIDE64_SPECS below measure it instead, on 64-bit targets, and this
+# list is what they compile, file:ceiling as above. Its multiply is the
+# 64x64->128 instruction CH_NATIVE_MUL128 asserts, so that spec's tokens are
+# the divisions and the 128-bit runtime calls, and the ceiling is zero.
+WIDE64_CEILING := x25519_wide.c:0
+# The sources the 32-bit specs compile, which lint-runtime-symbols compiles
+# for rv32ic too, and the whole codegen list, which lint-codegen-partition
+# holds to a partition of the library sources.
+CODEGEN32_SRCS := $(foreach e,$(WIDEMUL_CEILING),$(firstword $(subst :, ,$(e))))
+CODEGEN_SRCS := $(CODEGEN32_SRCS) $(foreach e,$(WIDE64_CEILING),$(firstword $(subst :, ,$(e))))
 # Per-file defines both gates below add for one file alone, file:defines,
 # in the shape WIDEMUL_CEILING_SPEC uses for per-spec ceilings. Each gate
 # compiles every CODEGEN_SRCS file under one fixed flag set that names no
@@ -3340,8 +3479,8 @@ lint-codegen-partition:
 	   for g in $(CODEGEN_SRCS); do [ "$$g" = "$$f" ] && gated=1; done; \
 	   for p in $(WIDEMUL_PUBLIC); do [ "$$p" = "$$f" ] && public=1; done; \
 	   case "$$gated$$public" in \
-	     00) echo "lint-codegen-partition: $$f is in neither WIDEMUL_CEILING nor WIDEMUL_PUBLIC, so no codegen gate measures it"; rc=1 ;; \
-	     11) echo "lint-codegen-partition: $$f is in both WIDEMUL_CEILING and WIDEMUL_PUBLIC; a source is gated or public, never both"; rc=1 ;; \
+	     00) echo "lint-codegen-partition: $$f is in none of WIDEMUL_CEILING, WIDE64_CEILING and WIDEMUL_PUBLIC, so no codegen gate measures it"; rc=1 ;; \
+	     11) echo "lint-codegen-partition: $$f is in a ceiling list and in WIDEMUL_PUBLIC; a source is gated or public, never both"; rc=1 ;; \
 	   esac; \
 	 done; \
 	 for e in $(CODEGEN_SRCS) $(WIDEMUL_PUBLIC); do \
@@ -3349,7 +3488,7 @@ lint-codegen-partition:
 	     *) echo "lint-codegen-partition: $$e is in a gate list and is not a library source"; rc=1 ;; \
 	   esac; \
 	 done; \
-	 [ $$rc -eq 0 ] && echo "lint-codegen-partition: every library source is in exactly one of WIDEMUL_CEILING and WIDEMUL_PUBLIC"; exit $$rc
+	 [ $$rc -eq 0 ] && echo "lint-codegen-partition: every library source is in exactly one of WIDEMUL_CEILING, WIDE64_CEILING and WIDEMUL_PUBLIC"; exit $$rc
 
 # The Cortex-M3 has two multiply opcodes: mul is constant-time, umull is
 # not -- it returns sooner when both operands are below 65536, and has
@@ -3490,6 +3629,31 @@ WIDEMUL_SPECS := \
   mips32r2-gcc-O2:gcc:mips-:-march=mips32r2,-mabi=32,-O2:$(WIDEMUL_OPS_MIPS):$(BRANCH_OPS_MIPS) \
   rv32imac-gcc:gcc:riscv32-:-march=rv32imac,-mabi=ilp32:$(WIDEMUL_OPS_RV):$(BRANCH_OPS_RV) \
   rv32ic-gcc:gcc:riscv32-:-march=rv32ic,-mabi=ilp32:$(WIDEMUL_OPS_RV32I):$(BRANCH_OPS_RV)
+# The two 64-bit specs, which compile WIDE64_CEILING's files and nothing else,
+# under the pinned clang with the defines an X25519=wide build states. Their
+# multiply tokens are the divisions and the 128-bit runtime calls: a
+# 64x64->128 multiply is the instruction the field is built on, and
+# CH_NATIVE_MUL128 is the build's statement about its timing, so counting it
+# would hold nothing. What these specs hold is the branch count, which is the
+# field's claim that no instruction branches on a limb or a scalar bit: every
+# branch x25519_wide.c emits under both is loop control over a public count
+# -- the 255 ladder steps, the five limbs, the 40 bytes ct_wipe clears, the
+# eight bytes load_le64 reads, and sqr_times' count -- and cswap and pack's
+# conditional subtraction stay masks. arm64 counts b.<cond>, spelled out so
+# the dot cannot match bl, and cbz, cbnz, tbz and tbnz. x86-64 counts every
+# j<cond>, by prefixes that cannot match jmp. A compiler run that emits
+# either family's multiply by a limb as a call to __multi3 fails the zero.
+# No gcc spec measures the field: no CI lane runs a 64-bit gcc through
+# lint-wide-multiply-gcc, and a spec nothing runs would pass unread.
+WIDE64_OPS_ARM64 := udiv,sdiv,__udivti3,__divti3,__umodti3,__modti3,__multi3
+WIDE64_OPS_X86 := div,idiv,__udivti3,__divti3,__umodti3,__modti3,__multi3
+BRANCH_OPS_ARM64 := b.eq,b.ne,b.cs,b.hs,b.cc,b.lo,b.mi,b.pl,b.vs,b.vc,b.hi,b.ls,b.ge,b.lt,b.gt,b.le,cbz,cbnz,tbz,tbnz
+BRANCH_OPS_X86 := ja,jb,jc,je,jg,jl,jn,jo,jp,jr,js,jz
+WIDE64_FLAGS := -DCH_X25519_WIDE,-DCH_NATIVE_MUL128
+WIDE64_SPECS := \
+  arm64:clang:aarch64-none-elf:-march=armv8-a,$(WIDE64_FLAGS):$(WIDE64_OPS_ARM64):$(BRANCH_OPS_ARM64) \
+  x86-64:clang:x86_64-unknown-linux-gnu:-march=x86-64,$(WIDE64_FLAGS):$(WIDE64_OPS_X86):$(BRANCH_OPS_X86)
+WIDE64_SPEC_NAMES := $(foreach s,$(WIDE64_SPECS),$(firstword $(subst :, ,$(s))))
 # Per-spec ceilings, spec/file:count, where a spec measures a file above its
 # WIDEMUL_CEILING entry. Every number is measured with the spec's compiler
 # at its flags, at -Os unless the flags carry another level. The entries
@@ -3569,7 +3733,7 @@ WIDEMUL_CEILING_SPEC := m3-gcc/sha3.c:5 mips32r2-gcc/sha3.c:5 mips32r2-gcc-O2/sh
 # check it instead (docs/quic.md, "What the AES axis proves").
 BRANCH_SRCS := ct.c sha256.c sha3.c hkdf.c chacha20.c poly1305.c aead.c x25519.c mlkem.c \
                mlkem_poly.c drbg.c softmul.c rsa_sign.c quic_aes.c quic_aes_soft.c \
-               quic_aes_extern.c quic_gcm.c p256_field.c
+               quic_aes_extern.c quic_gcm.c p256_field.c x25519_wide.c
 # Per-spec branch ceilings, spec/file:count, one for every BRANCH_SRCS
 # file under every spec. A spec that lacks one fails, and the gate's own
 # output is where a new spec reads its numbers. Every number is measured
@@ -3633,14 +3797,15 @@ BRANCH_CEILING := \
   rv32ic-gcc/quic_aes_soft.c:12 rv32ic-gcc/quic_aes_extern.c:0 rv32ic-gcc/quic_gcm.c:22 \
   rv32ic-gcc/rsa_sign.c:27 mips32r2-gcc-O2/quic_aes.c:3 mips32r2-gcc-O2/quic_aes_soft.c:12 \
   mips32r2-gcc-O2/quic_aes_extern.c:0 mips32r2-gcc-O2/quic_gcm.c:16 \
-  mips32r2-gcc-O2/rsa_sign.c:26
+  mips32r2-gcc-O2/rsa_sign.c:26 \
+  arm64/x25519_wide.c:16 x86-64/x25519_wide.c:20
 WIDEMUL_RUN ?= clang
 WIDEMUL_GCC ?= $(M3_CC)
 .PHONY: lint-wide-multiply lint-wide-multiply-gcc lint-wide-multiply-run
 # The clang specs, one sub-make each, all at once. Each compiles every
 # WIDEMUL_CEILING file for its own target and prints its own verdict, so
 # running them together changes the wall time and nothing else.
-WIDEMUL_CLANG := $(foreach s,$(WIDEMUL_SPECS),$(if $(filter clang,$(word 2,$(subst :, ,$(s)))),$(firstword $(subst :, ,$(s)))))
+WIDEMUL_CLANG = $(foreach s,$(WIDEMUL_SPECS) $(WIDE64_SPECS),$(if $(filter clang,$(word 2,$(subst :, ,$(s)))),$(firstword $(subst :, ,$(s)))))
 lint-wide-multiply:
 	@$(MAKE) --no-print-directory -j$(words $(WIDEMUL_CLANG)) \
 	  $(addprefix lint-wide-multiply-spec-,$(WIDEMUL_CLANG))
@@ -3649,7 +3814,7 @@ lint-wide-multiply-spec-%:
 # WIDEMUL_ONLY, when set, names the one spec to run.
 lint-wide-multiply-run:
 	@rc=0; ran=""; got=""; \
-	 for spec in $(WIDEMUL_SPECS); do \
+	 for spec in $(WIDEMUL_SPECS) $(WIDE64_SPECS); do \
 	   arch=$${spec%%:*}; rest=$${spec#*:}; \
 	   compiler=$${rest%%:*}; rest=$${rest#*:}; \
 	   machine=$${rest%%:*}; rest=$${rest#*:}; \
@@ -3678,7 +3843,9 @@ lint-wide-multiply-run:
 	   [ -n "$$branches" ] || { echo "lint-wide-multiply: spec $$arch lists no conditional branch to count; the sixth field is the branch mnemonics of its ISA (BRANCH_OPS_ARM, BRANCH_OPS_MIPS or BRANCH_OPS_RV)"; exit 1; }; \
 	   bpattern="^[[:space:]]+($$(echo "$$branches" | tr ',' '\n' | paste -sd '|' -))"; \
 	   ran="$$ran$$arch "; table=""; btable=""; \
-	   for e in $(WIDEMUL_CEILING); do \
+	   files="$(WIDEMUL_CEILING)"; \
+	   case " $(WIDE64_SPEC_NAMES) " in *" $$arch "*) files="$(WIDE64_CEILING)" ;; esac; \
+	   for e in $$files; do \
 	     f=$${e%%:*}; cap=$${e##*:}; \
 	     for o in $(WIDEMUL_CEILING_SPEC); do [ "$${o%%:*}" = "$$arch/$$f" ] && cap=$${o##*:}; done; \
 	     extra=""; \
@@ -3735,9 +3902,10 @@ lint-wide-multiply-gcc:
 # never linked. clang carries the riscv32 target, so this needs no cross
 # toolchain.
 #
-# This gate builds every CODEGEN_SRCS file for rv32ic and holds two things:
+# This gate builds every CODEGEN32_SRCS file for rv32ic and holds two things:
 # which runtime routines each file pulls, and that softmul.c still defines
-# the ones the list admits.
+# the ones the list admits. x25519_wide.c is the one CODEGEN_SRCS file it
+# leaves out, because rv32ic has no unsigned __int128 to build it with.
 #
 # RV_ALLOWED is file:symbols, measured under the pinned clang; a file not
 # named pulls nothing. It used to be one list for all files, with softmul's
@@ -3772,7 +3940,7 @@ else ifeq ($(LLVM_NM),)
 	$(call REQUIRE,llvm-nm,it ships with llvm — see the LLVM_MAJOR pin in tools/toolchain.env)
 else
 	@d=$$(mktemp -d); rc=0; seen=0; \
-	 for f in $(CODEGEN_SRCS); do \
+	 for f in $(CODEGEN32_SRCS); do \
 	   extra=""; \
 	   for o in $(WIDEMUL_DEFINES); do [ "$${o%%:*}" = "$$f" ] && extra=$$(echo "$${o#*:}" | tr ',' ' '); done; \
 	   $(CLANG_RV) -target riscv32-unknown-elf -march=rv32ic -mabi=ilp32 -Os -std=c11 -ffreestanding \
@@ -3952,12 +4120,26 @@ endif
 bin/timing: test/timing_test.c $(SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) -DCH_CT_WIDEMUL -I. -o $@ test/timing_test.c $(SRCS)
+# The same t-test with x25519() answering from the X25519=wide field. It
+# states CH_NATIVE_MUL128 because ct.h refuses the field without it, and
+# what this binary measures is whether that assertion holds on this host:
+# whether the ladder's time moves with the scalar while the 64x64->128
+# multiply runs in the mode the host runs it in. It cannot say what another
+# part does, which is ct.h's point.
+bin/timing_x25519_wide: test/timing_test.c $(SRCS) x25519_wide.c $(HDRS) $(TESTH)
+	@mkdir -p bin
+	$(CC) $(CFLAGS) -DCH_CT_WIDEMUL $(X25519_WIDE_DEF) -I. -o $@ test/timing_test.c $(SRCS) x25519_wide.c
 
 # Constant-time check (Welch's t over interleaved input classes). Load-
 # sensitive, so it is not part of check; run it on an otherwise idle box.
 .PHONY: timing
-timing: bin/timing
+timing: bin/timing $(if $(X25519_WIDE_PROBE),bin/timing_x25519_wide)
 	./bin/timing
+ifneq ($(X25519_WIDE_PROBE),)
+	./bin/timing_x25519_wide
+else
+	@echo "SKIP timing X25519=wide: $(CC) has no unsigned __int128"
+endif
 
 # libFuzzer harnesses for the attacker-facing parsers in fuzz/. Each target
 # #includes the translation unit holding its statics, so the .c that

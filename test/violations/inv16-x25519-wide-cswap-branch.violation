@@ -1,0 +1,26 @@
+invariant: INV-16
+file: x25519_wide.c
+catches: test/lint-wide-multiply.sh
+reason: cswap takes the secret scalar bit, and writing the swap as an if
+  on that bit puts the bit on the control path of every ladder step. The
+  values stay right, so the vectors, the equivalence binary and the
+  proofs all pass; only the count of what the compiler emits sees it.
+  The pinned clang emits two more conditional branches for x25519_wide.c
+  on both 64-bit specs, 18 against 16 on arm64 and 22 against 20 on
+  x86-64, each above the file's ceiling.
+
+--- old
+    uint64_t mask = (uint64_t)((int64_t)(bit << 63) >> 63);
+    for (size_t i = 0; i < 5; i++) {
+        uint64_t t = mask & (p[i] ^ q[i]);
+        p[i] ^= t;
+        q[i] ^= t;
+    }
+--- new
+    if (bit != 0) {
+        for (size_t i = 0; i < 5; i++) {
+            uint64_t t = p[i];
+            p[i] = q[i];
+            q[i] = t;
+        }
+    }

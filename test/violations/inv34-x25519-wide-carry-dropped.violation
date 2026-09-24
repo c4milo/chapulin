@@ -1,0 +1,17 @@
+invariant: INV-34
+file: x25519_wide.c
+catches: proof/prove-one.sh x25519_wide_step
+reason: dropping carry_columns' last carry leaves all of r0 in limb 0 and
+  none of it in limb 1. The value is the same, so mul's result is still
+  right, but limb 0 now reaches about 2^64 where INV-34 holds it under
+  2^51, and the next sub subtracts it from 2p and wraps. The step proof
+  sees the bound on its own, before any vector reaches a wrong value.
+  Each run is a proof of seconds, and the class runs in the nightly's
+  test-invariants-proof-backed job with the other proof-backed mutants.
+
+--- old
+    o[0] = (uint64_t)(r0 & LIMB_MASK);
+    o[1] = (uint64_t)(t1 & LIMB_MASK) + (uint64_t)(r0 >> LIMB_BITS);
+--- new
+    o[0] = (uint64_t)r0;
+    o[1] = (uint64_t)(t1 & LIMB_MASK);

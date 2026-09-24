@@ -29,10 +29,11 @@ FREERTOS_SRCS = $(filter-out webpki_%.c,$(SRCS))
 # re-building the whole lint toolchain buys nothing. The roster is
 # check's own prerequisite list.
 .PHONY: suite-check
-suite-check: bin/unit bin/unit_ca bin/unit_pq bin/tlsclient bin/tlsclient_ecdsa bin/tlsclient_ca bin/tlsclient_ca_ecdsa bin/tlsclient_pq bin/drbg_test bin/softmul_test bin/rsa_test bin/sha3_test bin/sha512_test bin/p384_test bin/rsa_pkcs1_test bin/webpki_time_test bin/webpki_name_test bin/webpki_spki_test bin/webpki_sigalg_test bin/webpki_cert_test bin/mlkem_test bin/handshake_strict_test bin/handshake_strict_pq bin/x509strict bin/x509strict_ecdsa
+suite-check: bin/unit bin/unit_ca bin/unit_pq bin/tlsclient bin/tlsclient_ecdsa bin/tlsclient_ca bin/tlsclient_ca_ecdsa bin/tlsclient_pq bin/drbg_test bin/softmul_test bin/rsa_test bin/sha3_test bin/sha512_test bin/p384_test bin/rsa_pkcs1_test bin/webpki_time_test bin/webpki_name_test bin/webpki_spki_test bin/webpki_sigalg_test bin/webpki_cert_test bin/mlkem_test bin/handshake_strict_test bin/handshake_strict_pq bin/x509strict bin/x509strict_ecdsa $(X25519_WIDE_BINS)
 	@set -e; for b in unit unit_ca unit_pq drbg_test softmul_test rsa_test sha3_test sha512_test p384_test rsa_pkcs1_test webpki_time_test webpki_name_test webpki_spki_test webpki_sigalg_test webpki_cert_test mlkem_test \
 	  handshake_strict_test handshake_strict_pq x509strict x509strict_ecdsa; do \
 	  echo "== $$b (native)"; ./bin/$$b; done
+	@set -e; for b in $(notdir $(X25519_WIDE_BINS)); do echo "== $$b (native)"; ./bin/$$b; done
 	$(MAKE) wycheproof
 
 
