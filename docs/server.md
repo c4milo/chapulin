@@ -710,6 +710,7 @@ is `illegal_parameter` (`rfc9846.txt:3789-3791`, with the description at
 | No `pre_shared_key`, and `signature_algorithms` or `supported_groups` missing | `missing_extension` (109) | 4595-4605 | 4595-4605 |
 | `supported_groups` without `key_share`, or the reverse | `missing_extension` (109) | 4599-4605 | 4599-4605 |
 | Certificate authentication with no `signature_algorithms` | `missing_extension` (109) | 1812-1816 | 1812-1816 |
+| More than `SRV_CLIENT_HELLO_EXT_MAX` (128) extensions in one ClientHello, checked before every row below on the extensions themselves (`docs/decisions.md` 59) | `illegal_parameter` (47) | none; 1237 bounds the block's bytes, not its count | design's choice; 3789-3791 |
 | A second extension of one type | `illegal_parameter` (47) | 1673-1674 | design's choice; 3789-3791 |
 | A recognized extension in a message the §4.3 table forbids it in | `illegal_parameter` (47) | 1593-1596 | 1593-1596 |
 | Bytes left after an extension body the server implements | `decode_error` (50) | 1561-1565 | 1561-1565 |
@@ -730,16 +731,24 @@ is `illegal_parameter` (`rfc9846.txt:3789-3791`, with the description at
 | A `request_update` byte other than 0 or 1 | `illegal_parameter` (47) | 3362-3365 | 3362-3365 |
 | A KeyUpdate before the client's Finished | `unexpected_message` (10) | 3346-3349 | 3346-3349 |
 
-Seven rows say "design's choice" and each one is defensible on its own line.
+Eight rows say "design's choice" and each one is defensible on its own line.
 `rfc9846.txt:1742-1744` reads "Servers MUST be prepared to receive ClientHellos
 that include this extension but do not include 0x0304 in the list of versions",
 which is an obligation with no alert, and `rfc9846.txt:3972-3973` describes
 `protocol_version` as "recognized but not supported", which is the case.
 `rfc9846.txt:2306-2307` reads "servers MUST abort the handshake" with no
-description. `rfc9846.txt:2397-2398` reads "A client MUST NOT include the
-'early_data' extension in its followup ClientHello", addressed to the client
-and naming no alert. `rfc9846.txt:1673-1674` reads "There MUST NOT be more than
-one extension of the same type in a given extension block" and names no alert.
+description. The extension count row has no obligation behind it at all.
+`rfc9846.txt:1237` bounds the extension block's bytes and not its count, so
+a hello of 129 extensions parses under the syntax, which rules out
+`decode_error` (`rfc9846.txt:3785-3788`), and the server refuses a value it
+will not process, which is `illegal_parameter`'s class. The bound exists
+because the duplicate check and the frozen digest each cost the square of
+the count, and `docs/decisions.md` entry 59 gives the evidence for 128 and
+the RFC rule the bound departs from. `rfc9846.txt:2397-2398` reads "A client
+MUST NOT include the 'early_data' extension in its followup ClientHello",
+addressed to the client and naming no alert. `rfc9846.txt:1673-1674` reads
+"There MUST NOT be more than one extension of the same type in a given
+extension block" and names no alert.
 `rfc9846.txt:2264-2275` is the `UncompressedPointRepresentation` struct and its
 prose, and `rfc9846.txt:2277-2286` says only that "peers MUST validate each
 other's public value Q"; neither names an alert, and `rfc9846.txt:3790` gives
@@ -792,6 +801,13 @@ This is the sharpest behavioral inversion in the whole role. The ClientHello
 parser's default arm skips by the extension's length. It gets its own named
 predicate, its own boundary test, and its own violation mutant, because a
 reviewer who reads one line of this parser will read that one.
+
+An unknown extension still counts toward `SRV_CLIENT_HELLO_EXT_MAX`, 128. A
+hello whose unknown extensions carry it past that count is refused with
+`illegal_parameter` rather than ignored. That departs from
+`rfc9846.txt:1299` and `rfc9846.txt:4636-4637` for a hello no client sends:
+a browser's carries about 20 extensions. `docs/decisions.md` entry 59 gives
+the evidence and the cost the bound removes.
 
 ### What the server declines, conformantly
 

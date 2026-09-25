@@ -274,6 +274,9 @@ static void test_both_roles_take_their_own_labels(const ch_cfg *server_cfg) {
 #include "quic_token_tests.h"
 #include "srv_quic_retry_tests.h"
 
+// The count bound on that round, which needs the round's helpers.
+#include "srv_quic_retry_count_tests.h"
+
 int main(void) {
     // The client's side of the wire: one hello, built the way a QUIC
     // client builds one, carrying the transport parameters RFC 9001
@@ -348,6 +351,7 @@ int main(void) {
 #endif
     test_quic_token();
     test_ngtcp2_retry();
+    test_retry_extension_count();
 
     if (failures == 0) {
         (void)printf("srv_quic: a ClientHello in, %zu fragments out (%zu initial, %zu handshake)\n",

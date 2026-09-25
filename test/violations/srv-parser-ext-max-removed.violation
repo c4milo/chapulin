@@ -1,0 +1,15 @@
+invariant: INV-14
+file: srv_parser.c
+catches: srv_quic_test
+reason: the parser no longer bounds the extension count, so a ClientHello of
+  16,383 empty extensions costs the duplicate check and the frozen digest's
+  walk seconds of processor time before any key exists (docs/decisions.md
+  59). test/srv_quic_retry_count_tests.h fills ngtcp2's two recorded hellos
+  out with the same unknown extensions, so the frozen digest matches, and
+  requires the second hello, one past SRV_CLIENT_HELLO_EXT_MAX, to be
+  refused with illegal_parameter. Only the count can refuse it.
+
+--- old
+    if (srv_ext_over_max(exts, exts_len)) {
+--- new
+    if (0 && srv_ext_over_max(exts, exts_len)) {

@@ -112,6 +112,16 @@ WALKED = {
         "is the whole answer and srv_parser.h says this predicate reaches "
         "no verdict about framing"
     ),
+    ("srv_parser.c", "srv_ext_over_max", "r"): (
+        "the loop runs while rb_left(&r) > 0 and every framing failure "
+        "returns 0. It has no length of its own to compare: the block's "
+        "exact fill is checked by its caller, srv_parse_client_hello, with "
+        "exts_len != rb_left(&r) before this predicate runs. It returns 1 "
+        "from inside the loop at the first extension past "
+        "SRV_CLIENT_HELLO_EXT_MAX on purpose, because stopping there is "
+        "what bounds its cost, and srv_parser.h says this predicate gives "
+        "no verdict about framing"
+    ),
     ("srv_parser.c", "type_before", "r"): (
         "the loop runs while rb_left(&r) > 0 and every framing failure "
         "returns 0. Its container is a prefix of the extension block that "

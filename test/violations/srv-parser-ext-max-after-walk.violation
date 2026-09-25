@@ -1,0 +1,45 @@
+invariant: INV-14
+file: srv_parser.c
+catches: srv_test
+reason: the parser counts the extensions after the walk and the frozen
+  digest rather than before the duplicate check, so both walks whose cost is
+  the square of the count run over a block of any length before the bound
+  refuses it (docs/decisions.md 59). test/srv_parser_reader_tests.h sees
+  the order: a hello one past SRV_CLIENT_HELLO_EXT_MAX whose
+  supported_versions carries a trailing byte must be illegal_parameter,
+  and the walk, run first, answers decode_error.
+
+--- old
+    if (srv_ext_over_max(exts, exts_len)) {
+        return srv_refuse(alert, ALERT_ILLEGAL_PARAMETER);
+    }
+    // One extension of each type per block (rfc9846.txt:1673-1674);
+    // illegal_parameter is this design's choice under §6
+    // (rfc9846.txt:3789-3791). add_frozen_extensions needs it as well.
+    if (srv_ext_duplicate(exts, exts_len)) {
+        return srv_refuse(alert, ALERT_ILLEGAL_PARAMETER);
+    }
+    while (rb_left(&r) > 0) {
+        rc = parse_extension(&r, &p);
+        if (rc != CH_OK) {
+            return rc;
+        }
+    }
+    add_frozen_extensions(&p.frozen, exts, exts_len);
+--- new
+    // One extension of each type per block (rfc9846.txt:1673-1674);
+    // illegal_parameter is this design's choice under §6
+    // (rfc9846.txt:3789-3791). add_frozen_extensions needs it as well.
+    if (srv_ext_duplicate(exts, exts_len)) {
+        return srv_refuse(alert, ALERT_ILLEGAL_PARAMETER);
+    }
+    while (rb_left(&r) > 0) {
+        rc = parse_extension(&r, &p);
+        if (rc != CH_OK) {
+            return rc;
+        }
+    }
+    add_frozen_extensions(&p.frozen, exts, exts_len);
+    if (srv_ext_over_max(exts, exts_len)) {
+        return srv_refuse(alert, ALERT_ILLEGAL_PARAMETER);
+    }

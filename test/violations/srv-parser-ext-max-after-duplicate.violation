@@ -1,0 +1,34 @@
+invariant: INV-14
+file: srv_parser.c
+catches: proof/prove-one.sh srv_parser_walk
+reason: the parser counts the extensions after the duplicate check rather
+  than before it, so srv_ext_duplicate, whose cost is the square of the
+  count, runs over a block of any length before the bound refuses it
+  (docs/decisions.md 59). Both checks answer illegal_parameter, so no
+  alert shows the order and no test here can see it; only the work can.
+  proof/srv_parser_walk_harness.c takes SRV_CLIENT_HELLO_EXT_MAX at 4 and
+  proof/run.sh bounds the duplicate check's loops at four extensions, so
+  an unwinding assertion fails once either loop runs over a fifth. Each run is a
+  proof of minutes, so this belongs to the nightly's
+  test-invariants-proof-backed job, never the fast tier.
+
+--- old
+    if (srv_ext_over_max(exts, exts_len)) {
+        return srv_refuse(alert, ALERT_ILLEGAL_PARAMETER);
+    }
+    // One extension of each type per block (rfc9846.txt:1673-1674);
+    // illegal_parameter is this design's choice under §6
+    // (rfc9846.txt:3789-3791). add_frozen_extensions needs it as well.
+    if (srv_ext_duplicate(exts, exts_len)) {
+        return srv_refuse(alert, ALERT_ILLEGAL_PARAMETER);
+    }
+--- new
+    // One extension of each type per block (rfc9846.txt:1673-1674);
+    // illegal_parameter is this design's choice under §6
+    // (rfc9846.txt:3789-3791). add_frozen_extensions needs it as well.
+    if (srv_ext_duplicate(exts, exts_len)) {
+        return srv_refuse(alert, ALERT_ILLEGAL_PARAMETER);
+    }
+    if (srv_ext_over_max(exts, exts_len)) {
+        return srv_refuse(alert, ALERT_ILLEGAL_PARAMETER);
+    }

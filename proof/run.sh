@@ -1196,8 +1196,8 @@ launch fast full quic_token 130 "fill_nondet.0:113,prove_mint.1:21,prove_mint.2:
 # refusals and its walk; bin/srv_test holds each group's exact length.
 launch fast:2 full srv_parser_ext 26 "fill_nondet.0:129,ct_memeq.0:33" buf.c ct.c -DCH_ROLE_SERVER
 # The walk half, proof/srv_parser_walk_harness.c: srv_parser.c real with
-# srv_read_extension stubbed to its contract, over any message up to 60
-# bytes, which leaves room for four empty extensions after the head.
+# srv_read_extension stubbed to its contract, over any message up to 64
+# bytes, which leaves room for five empty extensions after the head.
 #
 # It had no launch line before docs/decisions.md 59, and the cause was the
 # SHA-256 contract stub in harness.h, not the walk. That stub havocs a
@@ -1213,17 +1213,33 @@ launch fast:2 full srv_parser_ext 26 "fill_nondet.0:129,ct_memeq.0:33" buf.c ct.
 #
 # The cost is the two walks that loop inside a loop: the duplicate check
 # reads the block up to each extension, and the frozen digest reads the
-# whole block once per covered extension. At 64 bytes the formula
-# returned no verdict in 18 minutes. At 60, measured under this script's
-# flags (arm64 macOS, cbmc 6.11.0, kissat, PROVE_ONLY=srv_parser_walk
-# PROVE_NO_CACHE=1 /usr/bin/time -l, with the srv_parser_frozen formula
-# solving beside it): 834 properties, 548 s, 2.25 GB peak. That is past the
-# fast tier's five minutes, so the nightly runs it in a job of its own, and
-# the weight is 3 for that peak. With check_required's supported_versions
+# whole block once per covered extension. Before the parser bounded the
+# extension count, the formula returned no verdict in 18 minutes at 64
+# bytes, and at 60 it took 548 s and 2.25 GB peak beside the
+# srv_parser_frozen formula.
+#
+# The bound changed the cost. The harness takes SRV_CLIENT_HELLO_EXT_MAX at
+# 4, and the unwind bounds below hold the count's loop, the duplicate
+# check's two loops, the walk and the frozen digest's two loops to four
+# extensions, one fewer than a 64-byte message holds. Each unwinding
+# assertion fails if its loop ever runs over a fifth extension, which is
+# the claim that the count is checked before both walks
+# (docs/decisions.md 59).
+# Measured under this script's flags (arm64 macOS, cbmc 6.11.0, kissat,
+# PROVE_ONLY=srv_parser_walk PROVE_NO_CACHE=1 /usr/bin/time -l, on a
+# machine whose load average stood above 40 from other work): 834
+# properties, 489 s, 1.34 GB peak. That is still past the fast tier's
+# budget, so the nightly keeps its job, and the weight stays 3. With
+# srv_ext_over_max moved below srv_ext_duplicate, the unwinding assertion
+# of type_before, the duplicate check's inner loop, fails: 1 of 834
+# properties, 492 s (test/violations/srv-parser-ext-max-after-duplicate.violation).
+# So the formula holds blocks past the bound, and the refusal is what
+# keeps them out of both walks. With check_required's supported_versions
 # refusal removed, the assertion that an accepted hello carried
-# supported_versions fails (794 s), so the formula reaches accepted hellos
-# and does not pass on refusals alone.
-launch slow:3 full srv_parser_walk 8 "main.0:61,sha256_final.0:33,srv_list_has.0:33" buf.c ct.c -DCH_ROLE_SERVER
+# supported_versions fails (420 s; 794 s at 60 bytes before the bound), so
+# the formula holds accepted hellos too and does not pass on refusals
+# alone.
+launch slow:3 full srv_parser_walk 8 "main.0:65,sha256_final.0:33,srv_list_has.0:33,srv_ext_over_max.0:5,srv_ext_duplicate.0:5,type_before.0:4,srv_parse_client_hello.0:5,next_covered.0:5,add_frozen_extensions.0:5" buf.c ct.c -DCH_ROLE_SERVER
 # The frozen digest's walk and the duplicate check under it, over any
 # extension block up to 24 bytes, six extensions: the walk reads only
 # inside the block, srv_ext_duplicate answers 1 on a whole block exactly
@@ -1243,6 +1259,20 @@ launch slow:3 full srv_parser_walk 8 "main.0:61,sha256_final.0:33,srv_list_has.0
 # strictly above it, fail the count (592 s and 991 s); and srv_ext_duplicate
 # over recognized types alone fails the duplicate answer (822 s).
 launch slow:3 full srv_parser_frozen 8 "main.0:25" buf.c -DCH_ROLE_SERVER
+# srv_ext_over_max, the count that bounds both walks above
+# (docs/decisions.md 59), over any extension block up to 24 bytes:
+# memory safe, 1 exactly when the block begins with more than
+# SRV_CLIENT_HELLO_EXT_MAX whole extensions, and never a header read past
+# the one that passes the bound. The harness takes the bound at 3, so six
+# empty extensions sit on both sides of it, and the count's loop is bounded
+# at four passes: its unwinding assertion fails if the walk reads a fifth
+# header. buf.c and srv_parser.c are real. Measured the same way: 565
+# properties, 1 s, 0.03 GB peak. Two mutants of srv_ext_over_max fail it:
+# the bound one higher fails the loop bound, and with that bound raised to
+# 5 it fails the answer; a count that walks the whole block before it
+# answers fails the loop bound. Asserting each answer in turn fails both,
+# so both are reached.
+launch fast full srv_parser_count 8 "main.0:25,srv_ext_over_max.0:4,whole_prefix.0:7" buf.c -DCH_ROLE_SERVER
 launch fast full buf 100 ""
 # handshake_record on its own, so the two drivers can stub it
 # (https://github.com/c4milo/chapulin/issues/37). Before this harness,

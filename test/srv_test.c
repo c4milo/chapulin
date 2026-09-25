@@ -99,6 +99,7 @@ int main(void) {
     test_alpn();
     test_readers();
     test_frozen_digest();
+    test_extension_count();
     test_quic_transport_params();
     test_predicates();
     test_ticket_round_trip();

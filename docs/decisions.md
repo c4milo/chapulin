@@ -1452,12 +1452,13 @@ does nothing more.
     for the covered extension with the smallest type above the last one it
     added, and the pass after the last one finds none. A block of n
     extensions costs at most (n + 1) * n extension headers read, beside
-    the n * (n - 1) / 2 that `srv_ext_duplicate` already read. Nothing new
-    bounds n. The block is at most 65,535 bytes and never longer than
-    `cfg.buf_len`, and an extension is at least 4 bytes, so n is at most
-    16,383, and a device's buffer holds far fewer. A ClientHello of n empty
-    extensions of distinct unknown types, parsed on an arm64 M1 Pro (clang
-    -O2) by the parser before this entry and after it, took:
+    the n * (n - 1) / 2 that `srv_ext_duplicate` already read. The
+    construction does not bound n. The block is at most 65,535 bytes and
+    never longer than `cfg.buf_len`, and an extension is at least 4 bytes,
+    so n is at most 16,383, and a device's buffer holds far fewer. A
+    ClientHello of n empty extensions of distinct unknown types, parsed on
+    an arm64 M1 Pro (clang -O2) by the parser before this entry and after
+    its construction, took:
 
     | Extensions | Message | Duplicate check | Whole parse, before | Whole parse, after |
     |---:|---:|---:|---:|---:|
@@ -1469,18 +1470,106 @@ does nothing more.
     A browser or ngtcp2 hello carries 10 to 20 extensions, a few hundred
     header reads. The last row is a host that accepts a 64 KiB ClientHello:
     one hello costs it 4.1 s of processor time where it cost 1.2 s
-    before, all of it before any key exists. A cap on the extension count
-    would bound that. None is written here, because the cap would be a new
-    refusal RFC 9846 does not ask for, and a caller who takes a buffer that
-    large chose the exposure.
+    before, all of it before any key exists.
+
+    **The bound on the extension count.** Camilo decided on 2026-09-24 to
+    bound n. The parser refuses a ClientHello whose extension block holds
+    more than `SRV_CLIENT_HELLO_EXT_MAX` extensions, 128, with
+    illegal_parameter (`srv_parser.h`). `srv_ext_over_max` counts them in
+    one walk that stops at the 129th, so it reads at most 129 headers
+    however long the block is. `srv_parse_client_hello` calls it after the
+    block's length check and before `srv_ext_duplicate`, so neither walk
+    whose cost is n squared ever runs over more than 128 extensions. The
+    count is not taken in `parse_extension`'s walk, because
+    `srv_ext_duplicate` runs before that walk: a count there would bound
+    the frozen digest's walk and leave the duplicate check unbounded. An
+    unknown type counts the same as a recognized one. Every server path
+    reads its hellos through `srv_parse_client_hello`: the blocking server
+    (`srv_handshake.c`), the record server (`srv_rec.c`) and the QUIC
+    server (`srv_quic.c`), for a first hello and a retried one alike, so
+    the refusal is the same on each.
+
+    Why 128. Each count below was published, or read from the library's
+    source, as of 2026-09-24.
+
+    - Browsers. JA4 fingerprints count a hello's extensions and leave
+      GREASE out (https://github.com/FoxIO-LLC/ja4). Chrome's carry 16 to
+      18, to which it adds two GREASE extensions, and one more,
+      pre_shared_key, when it resumes; a capture of Chrome 146 to 153 is
+      https://github.com/bogdanfinn/tls-client/issues/281. Firefox's
+      carry 17, Safari's 11 to 14, and Chromium's over QUIC 12.
+    - Libraries. A client sends at most the extensions its source can
+      write: OpenSSL defines 32, BoringSSL 31 plus padding,
+      pre_shared_key and two GREASE extensions, rustls 23 and Go's
+      crypto/tls 20. curl over OpenSSL sends 12.
+    - QUIC. ngtcp2's two recorded hellos carry 10 and 11.
+    - The registry. IANA's TLS ExtensionType Values registry
+      (https://www.iana.org/assignments/tls-extensiontype-values) assigns
+      64 values, 43 of them allowed in a TLS 1.3 ClientHello, and RFC
+      8701 reserves 16 GREASE values for extensions. A client that sent
+      every assigned type and every GREASE value once would send 80, and
+      the parser refuses a type sent twice.
+
+    So 128 is six times what Chrome sends and 48 more than a client can
+    send without inventing types. The bound departs from one RFC 9846
+    rule, and this record says so: a server must ignore an unrecognized
+    extension (`rfc9846.txt:1299`), and §9.3 restates that as an
+    invariant (`rfc9846.txt:4636-4637`). A hello of 129 extensions, most
+    of them unknown, is refused here where those lines would have it
+    negotiate. No client above sends one. tlsfuzzer's
+    `test-tls13-large-number-of-extensions.py`
+    (https://github.com/tlsfuzzer/tlsfuzzer) does: it sends thousands of
+    empty unknown extensions and expects a handshake, so those
+    conversations fail against this server by design. None of the
+    libraries above bounds the count. Each refuses only duplicates, and
+    BoringSSL, Go and rustls find them by sorting the types or with a map
+    or a set, each held in memory that grows with n; a parser with no
+    heap has no such memory.
+
+    Why illegal_parameter. RFC 9846 bounds the block's bytes,
+    `Extension extensions<7..2^16-1>` (`rfc9846.txt:1237`), and not its
+    count, so a block of 129 extensions parses under the syntax. §6 sends
+    decode_error for a message that "cannot be parsed according to the
+    syntax" and illegal_parameter for one that is "syntactically correct
+    but semantically invalid" (`rfc9846.txt:3784-3791`). The alert
+    definitions draw the same line (`rfc9846.txt:3947-3950`,
+    `rfc9846.txt:3961-3966`), and add that decode_error "should never be
+    observed in communication between proper implementations", which
+    would point an operator at a corrupted message that is not there. So
+    the refusal is illegal_parameter, this design's choice under §6, the
+    rule the refusal of a second extension of one type follows too. It is
+    checked before every rule on the extensions themselves, so a hello
+    past the bound is illegal_parameter whatever else its extensions
+    break.
+
+    The cost with the bound, measured the same way on the same machine,
+    best of 2,000 runs where a run takes under a millisecond. The clock
+    counts whole microseconds, so a refusal shows as its smallest step:
+
+    | Extensions | Message | Whole parse, without the bound | Whole parse, with it |
+    |---:|---:|---:|---:|
+    | 128 | 555 B | 0.25 ms | 0.25 ms |
+    | 128, with 507-byte bodies | 65,451 B | 0.58 ms | 0.57 ms |
+    | 129 | 559 B | 0.25 ms | 1 µs or less, refused |
+    | 4,086 | 16,387 B | 262 ms | 1 µs or less, refused |
+    | 16,383 | 65,575 B | 4.2 s | 1 µs or less, refused |
+
+    The most a hello can now cost the parser is the second row: the 128
+    extensions the bound admits, with bodies that fill a 64 KiB block.
+    What it adds to the row above is SHA-256 over those bodies, the only
+    work the parser does per byte of an unknown extension. Before this
+    entry, 16,383 empty extensions in the same 64 KiB cost 1.2 s.
 
     Three alternatives were considered and rejected. An XOR of one digest
     per extension is order-independent, but two copies of one extension
     cancel and a client could add a pair unseen. A sum of per-extension
     digests modulo 2^256 does not cancel, but its collision resistance is
     a generalized birthday bound this record cannot state plainly. Sorting
-    into a buffer costs n log n, and needs memory in proportion to n or a
-    cap on n, which the zero-heap rule and the RFC leave no room for.
+    into a buffer costs n log n and needs memory in proportion to n. With
+    the bound, the buffer would fit in 256 bytes of stack, but the walks
+    it would replace cost a quarter of a millisecond at the bound, so it
+    would add a buffer and a sort to audit and save nothing a caller
+    could measure.
 
     `bin/srv_quic_test` replays the recorded hellos: the first draws a
     HelloRetryRequest that matches colibri's server's byte for byte up to
@@ -1496,12 +1585,49 @@ does nothing more.
     bytes: the duplicate check answers exactly when two types match, and
     the walk hands SHA-256 each covered extension once, whole, in strictly
     ascending type order. `srv_parser_walk` proves the whole ClientHello
-    walk memory safe up to 60 bytes with the readers stubbed; it had no
+    walk memory safe up to 64 bytes with the readers stubbed; it had no
     launch line before this entry, because harness.h's SHA-256 stub made
     the formula too large, and it now keeps a stub of its own.
     OpenSSL's `s_client` offers no option that reorders a retried hello,
     so `test/e2e.sh` keeps its TCP retry leg, which sends the same order
     twice and still passes.
+
+    The bound has tests of its own. `bin/srv_test` fills the golden hello
+    out with unknown extensions: at exactly 128 it parses, and its frozen
+    digest matches a vector over every covered extension, the filler
+    included; at 129 it is illegal_parameter. A supported_versions with a
+    trailing byte is decode_error at 128 and illegal_parameter at 129, and
+    so is a block that ends in half a header, so the bound is checked
+    first. `bin/srv_rec_test` sends this tree's own hello, filled out to
+    128 and to 129, through the record server: the first draws the flight
+    and the second illegal_parameter. `bin/srv_quic_test` fills ngtcp2's
+    two recorded hellos out with the same unknown extensions, so the
+    frozen digest matches and only the count can refuse. A first hello of
+    127 and its retried hello of 128 draw the flight; a first hello of 128
+    draws a HelloRetryRequest and its retried hello of 129 is
+    illegal_parameter; a first hello of 129 is refused before any
+    HelloRetryRequest. The ngtcp2 replay above still passes.
+
+    Two CBMC harnesses hold the bound at smaller values, which
+    `srv_parser.h` admits for a harness. `srv_parser_count` proves, over
+    every block up to 24 bytes with the bound at 3, that
+    `srv_ext_over_max` answers 1 exactly when the block begins with more
+    than the bound's whole extensions, and that it never reads a header
+    past the one that passes the bound. It runs in the fast tier, in 1 s.
+    `srv_parser_walk` takes the bound at 4 and holds the loops of both
+    walks to four extensions, one fewer than its 64-byte message holds, so
+    an unwinding assertion fails if either walk ever runs over a fifth.
+    The bound let that formula grow from 60 bytes to 64: before it, 64
+    bytes returned no verdict in 18 minutes, and with it the formula
+    takes 489 s and 1.34 GB, still the slow tier. Five violations guard
+    the bound. srv-parser-ext-max-off-by-one,
+    srv-parser-ext-max-refuses-bound and srv-parser-ext-max-after-walk
+    require `bin/srv_test` to fail, srv-parser-ext-max-removed requires
+    `bin/srv_quic_test` to fail, and srv-parser-ext-max-after-duplicate,
+    which moves the count below the duplicate check, requires the
+    `srv_parser_walk` proof to fail. Both checks answer illegal_parameter,
+    so no test can see that order, and the proof's loop bound is what
+    catches it.
 
 60. **The peer's close_notify closes the peer's direction alone, and
     `ch_close` closes this side's.** RFC 9846 §6 says a close_notify

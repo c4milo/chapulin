@@ -1,7 +1,8 @@
 // Proves: the ClientHello walk in srv_parser.c is memory safe and free of
 // UB over any body of up to HELLO_MAX bytes, every byte and the length
-// symbolic, and honours the contract srv_parser.h states on CH_OK and on
-// CH_EPROTO.
+// symbolic; honours the contract srv_parser.h states on CH_OK and on
+// CH_EPROTO; and runs the duplicate check and the frozen digest's walk
+// only over a block of at most SRV_CLIENT_HELLO_EXT_MAX extensions.
 //
 // What is real and what is a stub. srv_parser.c, buf.c and ct.c are real,
 // the duplicate check and the ascending walk that feeds the frozen digest
@@ -24,18 +25,31 @@
 // never reads the context, so the stubs below assert the contract and
 // keep no context at all; sha256_final still returns an unconstrained
 // digest.
+//
+// The extension count bound. The parser refuses a block of more than
+// SRV_CLIENT_HELLO_EXT_MAX extensions before the duplicate check and the
+// frozen digest's walk, each of which costs the square of the count
+// (docs/decisions.md 59). The real bound, 128, needs a 559-byte message to
+// pass, so this formula takes the bound at 4, which srv_parser.h admits
+// for a harness. proof/run.sh then bounds the loops of those two walks at
+// four extensions: an unwinding assertion fails if either one ever runs
+// over a fifth. A 64-byte message holds five empty extensions and a byte,
+// so the formula holds blocks past the bound, and it is the refusal that
+// keeps them out of those loops.
+#define SRV_CLIENT_HELLO_EXT_MAX 4
+
 #include "harness.h"
 
 #include <string.h>
 
 #include "srv_parser.c"
 
-// A 60-byte message has room for the four empty extensions an accepted
-// hello needs here: supported_versions, signature_algorithms,
-// supported_groups and key_share. The head and the extension block's
-// length take at least 43 bytes, which leaves 17, and the four take 16.
-// At 64 bytes the formula returned no verdict in 18 minutes.
-#define HELLO_MAX 60
+// A 64-byte message has room for the four empty extensions an accepted
+// hello needs here, supported_versions, signature_algorithms,
+// supported_groups and key_share, and for a fifth past the bound. The
+// head and the extension block's length take at least 43 bytes, which
+// leaves 21, and five empty extensions take 20.
+#define HELLO_MAX 64
 
 void sha256_init(sha256 *s) {
     __CPROVER_assert(__CPROVER_w_ok(s, sizeof *s), "sha256_init: ctx writable");

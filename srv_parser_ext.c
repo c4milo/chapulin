@@ -15,7 +15,7 @@
 // Every byte here is public: it arrives before any key exists, so no
 // reader takes a constant-time obligation. All reading goes through the
 // rbuf reader (buf.h) and every multi-byte value moves byte by byte.
-#include "srv_parser.h"
+#include "srv_parser_ext.h"
 
 #ifdef CH_ROLE_SERVER
 

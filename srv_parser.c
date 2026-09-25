@@ -2,14 +2,18 @@
 // the contract; this file reads one body and reports what srv_flight.c
 // decides on. The per-extension readers sit in srv_parser_ext.c, which
 // this file reaches through srv_read_extension; the two are one parser
-// split by size, and srv_parser.h says so where it declares the call.
+// split by size, and srv_parser_ext.h says so where it declares the call.
 //
 // Structure. srv_parse_client_hello reads the head (legacy_version
 // through legacy_compression_methods) and the extension block's
-// framing, then parse_extension reads one extension at a time: an
-// unrecognized type is skipped by its length (RFC 9846 §4.2.2,
-// rfc9846.txt:1299) and a recognized one goes to its reader and must
-// fill its own body exactly (rfc9846.txt:1561-1565). The checks that
+// framing. srv_ext_over_max then counts the extensions, and
+// srv_ext_duplicate compares their types. The count comes first
+// because the duplicate check and the frozen digest's walk each cost
+// the square of it, and the count is what bounds them
+// (docs/decisions.md 59). Then parse_extension reads one extension at
+// a time: an unrecognized type is skipped by its length (RFC 9846
+// §4.2.2, rfc9846.txt:1299) and a recognized one goes to its reader and
+// must fill its own body exactly (rfc9846.txt:1561-1565). The checks that
 // need the whole message -- which required extension never arrived, and
 // whether the key exchange halves agree -- run once after the loop,
 // over the seen mask, in check_required.
@@ -26,6 +30,7 @@
 // five extensions the digest leaves out, and docs/decisions.md 59 states
 // why the order is the types' and not the wire's.
 #include "srv_parser.h"
+#include "srv_parser_ext.h"
 
 #ifdef CH_ROLE_SERVER
 
@@ -153,6 +158,30 @@ static int type_before(const uint8_t *exts, size_t n, uint16_t type) {
     return 0;
 }
 
+int srv_ext_over_max(const uint8_t *exts, size_t n) {
+    rbuf r;
+    rb_init(&r, exts, n);
+    // How many whole extensions the walk has read. The walk stops at the
+    // first one past SRV_CLIENT_HELLO_EXT_MAX, so this never exceeds
+    // SRV_CLIENT_HELLO_EXT_MAX + 1.
+    size_t count = 0;
+    while (rb_left(&r) > 0) {
+        (void)rb_u16(&r);
+        rb_skip(&r, rb_u16(&r));
+        if (r.err) {
+            // Malformed framing before the count passed
+            // SRV_CLIENT_HELLO_EXT_MAX: the caller's own walk answers
+            // decode_error.
+            return 0;
+        }
+        count++;
+        if (count > SRV_CLIENT_HELLO_EXT_MAX) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
 int srv_ext_duplicate(const uint8_t *exts, size_t n) {
     rbuf r;
     rb_init(&r, exts, n);
@@ -226,7 +255,9 @@ static const uint8_t *next_covered(const uint8_t *exts, size_t n, uint32_t lowes
 //
 // Each pass walks the whole block, and there is one pass per covered
 // extension and one more, so a block of n extensions costs at most
-// (n + 1) * n header reads. docs/decisions.md 59 gives the worst case.
+// (n + 1) * n header reads. srv_parse_client_hello has refused a block
+// of more than SRV_CLIENT_HELLO_EXT_MAX extensions before it calls this,
+// and docs/decisions.md 59 gives the worst case that leaves.
 static void add_frozen_extensions(sha256 *frozen, const uint8_t *exts, size_t n) {
     // The smallest type the next pass may add. It is 32 bits wide, so the
     // pass after type 0xffff looks above every type and finds none.
@@ -353,10 +384,20 @@ int srv_parse_client_hello(const uint8_t *body, size_t n, client_hello *ch,
     if (r.err || exts_len != rb_left(&r)) {
         return srv_refuse(alert, ALERT_DECODE_ERROR);
     }
-    // The block's first byte, for the duplicate check and the frozen
-    // digest. A zero-length read returns the current position and
+    // The block's first byte, for the count, the duplicate check and the
+    // frozen digest. A zero-length read returns the current position and
     // advances nothing.
     const uint8_t *exts = rb_bytes(&r, 0);
+    // At most SRV_CLIENT_HELLO_EXT_MAX extensions, counted before the two
+    // walks whose cost is the square of the count (docs/decisions.md
+    // 59). RFC 9846 bounds the block's bytes and not its count
+    // (rfc9846.txt:1237), so a block of more parses under the syntax and
+    // the refusal is not decode_error (rfc9846.txt:3785-3788);
+    // illegal_parameter is this design's choice under §6
+    // (rfc9846.txt:3789-3791).
+    if (srv_ext_over_max(exts, exts_len)) {
+        return srv_refuse(alert, ALERT_ILLEGAL_PARAMETER);
+    }
     // One extension of each type per block (rfc9846.txt:1673-1674);
     // illegal_parameter is this design's choice under §6
     // (rfc9846.txt:3789-3791). add_frozen_extensions needs it as well.

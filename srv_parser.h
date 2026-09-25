@@ -4,7 +4,9 @@
 // and no session state, so proof, fuzz and strictness builds reach it
 // without the state machine. srv_flight.c decides what the result
 // means. Only a ROLE=server build compiles it. docs/server.md states
-// the role.
+// the role. srv_parser_ext.h holds what the parser's two files,
+// srv_parser.c and srv_parser_ext.c, share with each other and nothing
+// else.
 //
 // It inverts the client's habit at exactly one point, and that point is
 // the sharpest behavioral difference in the role. RFC 9846 §4.2.2 reads
@@ -50,6 +52,24 @@
 // into a buffer the next record overwrites.
 #define SRV_RANDOM 32
 #define SRV_SESSION_ID_MAX 32
+
+// The most extensions srv_parse_client_hello accepts in one ClientHello.
+// It refuses a block of more with illegal_parameter, and it counts them
+// before srv_ext_duplicate and the frozen digest's walk run, because
+// each of those costs the square of the count: 16,383 empty extensions,
+// the most a 64 KiB block holds, took 4.1 s to parse on an M1 Pro
+// without this bound (docs/decisions.md 59). RFC 9846 sets no bound on the
+// count, so this refusal is this design's own. A browser's or a QUIC
+// stack's hello carries 10 to 20 extensions, and IANA has assigned 64
+// extension types; docs/decisions.md 59 gives the evidence and the cost
+// the bound leaves.
+//
+// A build-time constant so that a proof harness can set a smaller one
+// and hold a hello past it at a length its formula can solve, as
+// session.h's CH_QUIET_CAP is.
+#ifndef SRV_CLIENT_HELLO_EXT_MAX
+#define SRV_CLIENT_HELLO_EXT_MAX 128
+#endif
 
 // The cipher suites this build can select, one bit each, as
 // srv_parse_client_hello reports the client's offer and srv_select
@@ -333,6 +353,21 @@ typedef struct {
 // conformantly").
 int srv_ext_known(uint16_t type);
 
+// Whether an extension block carries more than SRV_CLIENT_HELLO_EXT_MAX
+// extensions. It walks the block once and stops at the first extension
+// past the bound, so it reads at most SRV_CLIENT_HELLO_EXT_MAX + 1
+// extension headers however long the block is. It counts every type,
+// the ones srv_ext_known declines included.
+//
+// Requires n readable bytes at exts, the extension block's body: the
+// bytes after the two-byte extensions length and nothing else.
+//
+// Returns 1 when the block begins with SRV_CLIENT_HELLO_EXT_MAX + 1
+// whole extensions, whatever follows them. Returns 0 otherwise,
+// including for a block whose framing breaks before that many, because
+// the caller's own walk reports that with decode_error.
+int srv_ext_over_max(const uint8_t *exts, size_t n);
+
 // Whether an extension block carries two extensions of one type, which
 // RFC 9846 §4.3 forbids (rfc9846.txt:1673-1674). It walks the block
 // once per extension, comparing each type against the types before it,
@@ -340,9 +375,10 @@ int srv_ext_known(uint16_t type);
 // declines: a duplicate among unrecognized types is still a duplicate,
 // and a seen mask over recognized types alone could not see it. The
 // frozen digest needs that answer: its ascending walk would add only the
-// first of two extensions of one type. The block is bounded by the
-// ClientHello, which is bounded by cfg.buf_len, and the walk allocates
-// nothing.
+// first of two extensions of one type. The walk allocates nothing, and
+// its cost is the square of the extension count, which is why
+// srv_parse_client_hello calls it only on a block srv_ext_over_max
+// answered 0 for.
 //
 // Requires n readable bytes at exts, the extension block's body: the
 // bytes after the two-byte extensions length and nothing else.
@@ -368,9 +404,12 @@ int srv_ext_duplicate(const uint8_t *exts, size_t n);
 // illegal_parameter (rfc9846.txt:1284-1288). The extension block must
 // be present and must carry supported_versions listing 0x0304, or
 // protocol_version (rfc9846.txt:1306-1313, rfc9846.txt:1742-1744). A
-// second extension of one type is illegal_parameter
-// (rfc9846.txt:1673-1674). Bytes left over inside a recognized
-// extension's body are decode_error (rfc9846.txt:1561-1565).
+// block of more than SRV_CLIENT_HELLO_EXT_MAX extensions is
+// illegal_parameter, a bound RFC 9846 does not set, and it is checked
+// before every rule on the extensions themselves. A second extension of
+// one type is illegal_parameter (rfc9846.txt:1673-1674). Bytes left
+// over inside a recognized extension's body are decode_error
+// (rfc9846.txt:1561-1565).
 // A quic_transport_parameters extension is unsupported_extension,
 // because this transport is not QUIC (RFC 9001 §8.2,
 // rfc9001.txt:1945-1949); the bit block above states the rule in full.
@@ -393,7 +432,8 @@ int srv_ext_duplicate(const uint8_t *exts, size_t n);
 // answers it with protocol_version. Nothing else is refused: a suite,
 // group, scheme, version, mode or extension this build does not know
 // is read and ignored, and so is a KeyShareEntry for a group this build
-// does not hold, whatever supported_groups says about that group.
+// does not hold, whatever supported_groups says about that group. An
+// unknown extension still counts toward SRV_CLIENT_HELLO_EXT_MAX.
 //
 // One reading the missing-extension checks must not invite: an empty
 // KeyShare.client_shares list is a present extension, not an absent
@@ -422,76 +462,6 @@ int srv_ext_duplicate(const uint8_t *exts, size_t n);
 // no caller reads it.
 int srv_parse_client_hello(const uint8_t *body, size_t n, client_hello *ch,
                            const ch_alpn_protocol *offered, size_t offered_count, uint8_t *alert);
-
-// What the parser's two files share, and nothing outside them uses. The
-// parser is one concern in two files because one file of it ran past the
-// 500-line limit, not because there are two concerns; webpki.h holds its
-// seven files the same way and says the same thing about them. Treat
-// everything below as a module internal: no lint stops a third file from
-// calling srv_read_extension, and nothing else should.
-
-// Everything one parse carries between the readers: the body's length,
-// which truncated_len counts from, the output, the caller's ALPN offer,
-// the alert slot and the running frozen digest.
-typedef struct {
-    size_t n;
-    client_hello *ch;
-    const ch_alpn_protocol *offered;
-    size_t offered_count;
-    uint8_t *alert;
-    sha256 frozen;
-} hello_parse;
-
-// Writes the description a refusal owes and returns the refusal, so
-// every refusal in either file is one line that names its alert.
-static inline int srv_refuse(uint8_t *alert, uint8_t description) {
-    *alert = description;
-    return CH_EPROTO;
-}
-
-// Reads the two-byte length of a list of two-byte code points and holds
-// it to the list's syntax: at least one code point, an even byte count,
-// and no more bytes than the reader has left. The last term keeps the
-// walks that follow at the list's own length on a message that lies
-// about it. Returns 1 with *list_len written, or 0 for a length outside
-// the syntax, which the caller answers with decode_error.
-//
-// That last term carries no verdict of its own, and no test guards it,
-// because deleting it changes no answer its callers give. A list longer
-// than the bytes left makes srv_list_has read past the end, which sets
-// the reader's sticky error, and every caller then refuses with
-// decode_error: parse_extension on rb_left, and parse_head on the
-// compression bytes it reads next. The term makes that refusal happen
-// here instead of two reads later, and nothing else, so a mutant that
-// removes it is not a coverage hole and test/violations/ holds none.
-static inline int srv_open_code_point_list(rbuf *r, size_t *list_len) {
-    *list_len = rb_u16(r);
-    return !r->err && *list_len >= 2 && (*list_len & 1) == 0 && *list_len <= rb_left(r);
-}
-
-// Whether the next list_len bytes of r, a list srv_open_code_point_list
-// admitted, hold code. It reads the whole list either way, so r ends at
-// the list's end, and a code point outside this build's tables is read
-// and ignored (rfc9846.txt:4636-4637).
-static inline int srv_list_has(rbuf *r, size_t list_len, uint16_t code) {
-    int found = 0;
-    for (size_t i = 0; i < list_len; i += 2) {
-        if (rb_u16(r) == code) {
-            found = 1;
-        }
-    }
-    return found;
-}
-
-// Reads one recognized extension's body. e is bounded by the length the
-// message gave that extension, so no reader walks past it; type is a
-// value srv_ext_known answers 1 for; data_off is where the body starts,
-// counted from the start of the ClientHello body, and only
-// pre_shared_key reads it. Returns CH_OK, or CH_EPROTO with p->alert
-// written. The caller holds the body to being read exactly, so a reader
-// that leaves bytes behind is refused without checking for itself.
-// Defined in srv_parser_ext.c.
-int srv_read_extension(rbuf *e, uint16_t type, size_t data_off, hello_parse *p);
 
 #endif // CH_ROLE_SERVER
 #endif

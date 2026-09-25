@@ -1,0 +1,13 @@
+invariant: INV-14
+file: srv_parser.c
+catches: srv_test
+reason: srv_ext_over_max answers 1 only past SRV_CLIENT_HELLO_EXT_MAX + 1
+  extensions, so the parser accepts a ClientHello of 129, one past the
+  bound srv_parser.h states (docs/decisions.md 59). This is the upper side
+  of the boundary pair: test/srv_parser_reader_tests.h fills the golden
+  hello out to one past the bound and requires illegal_parameter.
+
+--- old
+        if (count > SRV_CLIENT_HELLO_EXT_MAX) {
+--- new
+        if (count > SRV_CLIENT_HELLO_EXT_MAX + 1) {

@@ -53,7 +53,7 @@ AUDITED = {
     "srv_flight.c": (
         "the fifteen flight handlers. Every bitwise operator takes unsigned "
         "operands: `ch->suites`, `ch->groups` and `ch->shares` are uint8_t "
-        "bitmasks (srv_parser.h:156-158) tested against uint8_t constants. "
+        "bitmasks (srv_parser.h:220-222) tested against uint8_t constants. "
         "The file now holds no shift at all: the one it had went to "
         "srv_out.c with the record writer. No operand is signed. "
         "proof/srv_flight_harness.c covers this file and returns no verdict "

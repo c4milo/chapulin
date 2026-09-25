@@ -850,7 +850,11 @@ last `ROLE=server` stub, as the entry said it would.
   RFC 10024 asks. `bin/srv_test` holds both lengths at the boundary
   pair, and `bin/srv_flight_test` holds the modulus at 3,328 taken and
   3,329 refused; `srv-parser-share-length-floor` and
-  `srv-kex-ek-check-dropped` require each to fail.
+  `srv-kex-ek-check-dropped` require each to fail. The same parser
+  refuses a ClientHello of more than `SRV_CLIENT_HELLO_EXT_MAX` (128)
+  extensions with illegal_parameter, on a first hello and a retried one
+  and on every server path, before the duplicate check runs
+  (docs/decisions.md 59).
 - **Mechanism.** Fail-closed policy, each refusal an explicit branch
   with its alert.
 - **Check.** handshake_strict table cases per refusal; CBMC proves the
@@ -934,7 +938,12 @@ last `ROLE=server` stub, as the entry said it would.
   (`rfc9001.txt:1945-1949`), and every build here runs over TLS records,
   because `srv_cfg.h` refuses `CH_ROLE_SERVER` together with
   `CH_TRANSPORT_QUIC`. So the parser recognizes that one type in order
-  to refuse it, rather than ignoring it. After a HelloRetryRequest,
+  to refuse it, rather than ignoring it. One refusal comes from no RFC:
+  a ClientHello of more than `SRV_CLIENT_HELLO_EXT_MAX` (128)
+  extensions, unknown ones included, is illegal_parameter, checked
+  before every rule on the extensions themselves, because the duplicate
+  check and the frozen digest each cost the square of the count
+  (docs/decisions.md 59). After a HelloRetryRequest,
   `srv_check_retry_hello` refuses with illegal_parameter a second
   ClientHello whose head or covered extensions differ from the first's,
   compared as a set through the frozen digest, and accepts one that
@@ -960,6 +969,19 @@ last `ROLE=server` stub, as the entry said it would.
   require bin/srv_quic_test to fail, srv-parser-frozen-skips-lowest-type
   requires bin/srv_test to fail, and srv-retry-frozen-memcmp carries
   INV-16 for the reason srv-cookie-memcmp does.
+  The count bound has a boundary pair on every server path: 128
+  extensions accepted and 129 refused in test/srv_parser_reader_tests.h
+  (bin/srv_test), in bin/srv_rec_test, and in
+  test/srv_quic_retry_count_tests.h (bin/srv_quic_test), where ngtcp2's
+  retried hello at 129 carries the first hello's covered set, so only
+  the count refuses it. The srv_parser_count CBMC harness proves the
+  count exact and bounded, and srv_parser_walk proves that neither walk
+  whose cost is the square of the count runs over more extensions than
+  the bound. srv-parser-ext-max-off-by-one,
+  srv-parser-ext-max-refuses-bound and srv-parser-ext-max-after-walk
+  require bin/srv_test to fail, srv-parser-ext-max-removed requires
+  bin/srv_quic_test to fail, and srv-parser-ext-max-after-duplicate
+  requires the srv_parser_walk proof to fail.
   The Retry token's refusals are test/quic_token_tests.h, which
   bin/srv_quic_test runs: a one-bit flip at every byte, every truncation,
   another address and another key, a valid-tagged token of the reserved

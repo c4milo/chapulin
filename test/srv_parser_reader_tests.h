@@ -1,7 +1,7 @@
-// The per-extension readers of srv_parser_ext.c, the frozen-field digest and
-// the two predicates, split out of test/srv_parser_tests.h because that file
-// passed the 500-line limit. It is included from there, after the helpers and
-// the golden hello it reads.
+// The per-extension readers of srv_parser_ext.c, the frozen-field digest, the
+// bound on the extension count and the three predicates, split out of
+// test/srv_parser_tests.h because that file passed the 500-line limit. It is
+// included from there, after the helpers and the golden hello it reads.
 #ifndef CH_SRV_PARSER_READER_TESTS_H
 #define CH_SRV_PARSER_READER_TESTS_H
 
@@ -169,6 +169,89 @@ static void test_frozen_digest(void) {
     CHECK(parse(buf, n) == CH_OK && memcmp(parsed.frozen, kept, SHA256_LEN) != 0);
 }
 
+// The first of the distinct unknown types that fill a hello out to a count.
+// 0x1000 through 0x10ff is no type this parser recognizes and none the
+// golden hello carries, and every one of them sorts between
+// psk_key_exchange_modes (0x002d) and GREASE (0x1a1a).
+#define PAD_TYPE 0x1000
+
+// A ClientHello body over the golden head: the first `given` extensions of
+// exts, then empty extensions of types PAD_TYPE + given upward until the
+// block holds `count` in all, then `tail_len` bytes of tail.
+static size_t padded(uint8_t *dst, const extension *exts, size_t given, size_t count,
+                     const uint8_t *tail, size_t tail_len) {
+    wbuf w;
+    wb_init(&w, dst, HELLO_CAP);
+    wb_bytes(&w, hello_head, sizeof hello_head);
+    size_t mark = wb_mark(&w, 2);
+    for (size_t i = 0; i < given; i++) {
+        wb_bytes(&w, exts[i].bytes, exts[i].len);
+    }
+    for (size_t i = given; i < count; i++) {
+        wb_u16(&w, (uint16_t)(PAD_TYPE + i));
+        wb_u16(&w, 0);
+    }
+    wb_bytes(&w, tail, tail_len);
+    wb_patch16(&w, mark);
+    CHECK(!w.err);
+    return w.len;
+}
+
+// SRV_CLIENT_HELLO_EXT_MAX at its edge (docs/decisions.md 59). The golden
+// hello filled out to exactly the bound parses, and its digest still covers
+// every covered extension, the filler included; one more is illegal_parameter.
+// The bound is checked before any rule on the extensions themselves: a
+// supported_versions with a trailing byte is decode_error at the bound and
+// illegal_parameter one past it, and so is a block that ends in half a
+// header after the bound's extensions and after one more.
+static void test_extension_count(void) {
+    static uint8_t buf[HELLO_CAP];
+    size_t n = padded(buf, golden_exts, GOLDEN_EXT_COUNT, SRV_CLIENT_HELLO_EXT_MAX, NULL, 0);
+    CHECK(parse(buf, n) == CH_OK && parsed.seen == GOLDEN_SEEN);
+    // The digest: the head, the covered golden extensions below the filler
+    // in ascending order, the filler, then GREASE, the one covered golden
+    // type above it (covered_ascending ends with it).
+    static uint8_t covered[HELLO_CAP];
+    size_t m = sizeof hello_head;
+    memcpy(covered, hello_head, m);
+    for (size_t i = 0; i + 1 < COVERED_COUNT; i++) {
+        const extension *e = &golden_exts[covered_ascending[i]];
+        memcpy(covered + m, e->bytes, e->len);
+        m += e->len;
+    }
+    for (size_t i = GOLDEN_EXT_COUNT; i < SRV_CLIENT_HELLO_EXT_MAX; i++) {
+        covered[m++] = (uint8_t)((PAD_TYPE + i) >> 8);
+        covered[m++] = (uint8_t)(PAD_TYPE + i);
+        covered[m++] = 0;
+        covered[m++] = 0;
+    }
+    memcpy(covered + m, ext_grease, sizeof ext_grease);
+    m += sizeof ext_grease;
+    uint8_t want[SHA256_LEN];
+    sha256_of(covered, m, want);
+    CHECK(memcmp(parsed.frozen, want, SHA256_LEN) == 0);
+    n = padded(buf, golden_exts, GOLDEN_EXT_COUNT, SRV_CLIENT_HELLO_EXT_MAX + 1, NULL, 0);
+    CHECK(refused(buf, n, ALERT_ILLEGAL_PARAMETER));
+
+    extension exts[GOLDEN_EXT_COUNT];
+    memcpy(exts, golden_exts, sizeof exts);
+    uint8_t trailing[sizeof ext_versions + 1];
+    exts[AT_VERSIONS].bytes = trailing;
+    exts[AT_VERSIONS].len = trailed(trailing, ext_versions, sizeof ext_versions);
+    n = padded(buf, exts, GOLDEN_EXT_COUNT, SRV_CLIENT_HELLO_EXT_MAX, NULL, 0);
+    CHECK(refused(buf, n, ALERT_DECODE_ERROR));
+    n = padded(buf, exts, GOLDEN_EXT_COUNT, SRV_CLIENT_HELLO_EXT_MAX + 1, NULL, 0);
+    CHECK(refused(buf, n, ALERT_ILLEGAL_PARAMETER));
+
+    static const uint8_t half_header[] = {0x2a, 0x2a};
+    n = padded(buf, golden_exts, GOLDEN_EXT_COUNT, SRV_CLIENT_HELLO_EXT_MAX, half_header,
+               sizeof half_header);
+    CHECK(refused(buf, n, ALERT_DECODE_ERROR));
+    n = padded(buf, golden_exts, GOLDEN_EXT_COUNT, SRV_CLIENT_HELLO_EXT_MAX + 1, half_header,
+               sizeof half_header);
+    CHECK(refused(buf, n, ALERT_ILLEGAL_PARAMETER));
+}
+
 // quic_transport_parameters, the one extension this parser recognizes in
 // order to refuse. RFC 9001 §8.2 requires a fatal unsupported_extension
 // from an implementation that understands it when the transport is not
@@ -192,7 +275,7 @@ static void test_quic_transport_params(void) {
     CHECK(parse(buf, n) == CH_OK);
 }
 
-// The two predicates srv_parser.h exports beside the parser.
+// The three predicates srv_parser.h exports beside the parser.
 static void test_predicates(void) {
     static const uint16_t known[] = {EXT_SERVER_NAME,
                                      EXT_SUPPORTED_GROUPS,
@@ -226,6 +309,21 @@ static void test_predicates(void) {
     CHECK(srv_ext_duplicate(twice, sizeof twice) == 1);
     CHECK(srv_ext_duplicate(malformed, sizeof malformed) == 0);
     CHECK(srv_ext_duplicate(distinct, 0) == 0);
+    // srv_ext_over_max over blocks of empty extensions: the bound, one
+    // more, the most a 64 KiB block holds, and none. A block whose framing
+    // breaks at the extension one past the bound is not its verdict.
+    static uint8_t block[0xffff];
+    size_t most = sizeof block / 4;
+    for (size_t i = 0; i < most; i++) {
+        block[4 * i] = (uint8_t)((PAD_TYPE + i) >> 8);
+        block[4 * i + 1] = (uint8_t)(PAD_TYPE + i);
+    }
+    size_t bound = SRV_CLIENT_HELLO_EXT_MAX;
+    CHECK(srv_ext_over_max(block, 4 * bound) == 0);
+    CHECK(srv_ext_over_max(block, 4 * (bound + 1)) == 1);
+    CHECK(srv_ext_over_max(block, 4 * most) == 1);
+    CHECK(srv_ext_over_max(block, 0) == 0);
+    CHECK(srv_ext_over_max(block, 4 * bound + 3) == 0);
 }
 
 #endif

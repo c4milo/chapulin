@@ -24,12 +24,15 @@
 #include "srv_quic_retry_vectors.h"
 #include "x25519.h"
 
-// Room for the recorded second hello, 1,566 bytes, and the largest variant.
+// Room for the recorded second hello, 1,566 bytes, and the largest variant:
+// that hello filled out to one past SRV_CLIENT_HELLO_EXT_MAX, 2,038 bytes.
 #define RETRY_HELLO_CAP 2048
 // Room for what the server writes at one level.
 #define RETRY_OUT_CAP 4096
-// The recorded hellos carry ten and eleven extensions.
-#define RETRY_EXT_MAX 16
+// The recorded hellos carry ten and eleven extensions, and
+// test/srv_quic_retry_count_tests.h fills the second out to one past
+// SRV_CLIENT_HELLO_EXT_MAX.
+#define RETRY_EXT_MAX (SRV_CLIENT_HELLO_EXT_MAX + 1)
 // The HelloRetryRequest bytes before the frozen digest in its cookie: the
 // message up to the cookie's body (62 bytes), then the cookie's version,
 // suite and group (5) and Hash(ClientHello1) (32). Only the digest and the
