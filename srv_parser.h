@@ -77,18 +77,18 @@
 
 // The key exchange groups this build can select, one bit each, read
 // from the client's supported_groups and from its key_share. Every
-// server build holds both: SRV_GROUP_X25519 stands for CH_GROUP_X25519
-// and SRV_GROUP_X25519MLKEM768 for CH_GROUP_X25519MLKEM768 (cfg.h). The
-// Makefile KEX variable chooses a client's group and selects nothing
-// here; srv_kex.h states which group the server prefers
-// (docs/decisions.md 54). RFC 9846 §9.1 makes secp256r1 a MUST
-// (rfc9846.txt:4548-4549), which this build does not meet either: the
-// P-256 this tree holds is verify-only and variable time (p256.h), so a
-// server key exchange over it needs the constant-time arithmetic
-// docs/server.md prices under "p256_field.[ch]". That group drops in as
-// a third bit and changes nothing else here.
+// server build holds all three: SRV_GROUP_X25519 stands for
+// CH_GROUP_X25519, SRV_GROUP_X25519MLKEM768 for CH_GROUP_X25519MLKEM768
+// and SRV_GROUP_SECP256R1 for CH_GROUP_SECP256R1 (cfg.h). The Makefile
+// KEX variable chooses a client's group and selects nothing here;
+// srv_kex.h states which group the server prefers (docs/decisions.md 54
+// and 63). secp256r1 is the key exchange RFC 9846 §9.1 makes a MUST
+// (rfc9846.txt:4548-4550), and it runs over p256_ecdh.[ch], whose
+// arithmetic is constant time, never over p256.c, which verifies public
+// inputs and branches on them.
 #define SRV_GROUP_X25519 0x01
 #define SRV_GROUP_X25519MLKEM768 0x02
+#define SRV_GROUP_SECP256R1 0x04
 
 // The SRV_GROUP_ bit of a NamedGroup code point, or 0 for a group this
 // build does not hold. It is a predicate over a public value and
@@ -96,6 +96,9 @@
 static inline uint8_t srv_group_bit(uint16_t group) {
     if (group == CH_GROUP_X25519MLKEM768) {
         return SRV_GROUP_X25519MLKEM768;
+    }
+    if (group == CH_GROUP_SECP256R1) {
+        return SRV_GROUP_SECP256R1;
     }
     return group == CH_GROUP_X25519 ? SRV_GROUP_X25519 : 0;
 }
@@ -178,8 +181,8 @@ static inline uint8_t srv_group_bit(uint16_t group) {
 // Everything srv_parse_client_hello learns from one ClientHello. The
 // caller zeroes it; the parser fills it and reads none of it back.
 //
-// Six members point into the caller's message rather than copying: the
-// two key shares, cookie, server_name and the two pre_shared_key lists. Each
+// Seven members point into the caller's message rather than copying: the
+// three key shares, cookie, server_name and the two pre_shared_key lists. Each
 // pointer dies at the next call that writes cfg.buf, the same lifetime
 // handshake_parser.h gives server_hello_info.cookie, so whoever keeps
 // one of those values copies it first. session_id is copied because it must outlive a
@@ -201,14 +204,17 @@ typedef struct {
     // The KeyShareEntry.key_exchange bytes for each group this build
     // holds, NULL when the client sent no share for that group. The
     // parser refuses a share of any length but its group's, so
-    // x25519_share points at X25519_LEN bytes and hybrid_share at
+    // x25519_share points at X25519_LEN bytes, hybrid_share at
     // CH_HYBRID_CLIENT_SHARE bytes (handshake_message.h): the ML-KEM-768
-    // encapsulation key, then the x25519 public value (RFC 10024). A
-    // pointer is set exactly when its bit in shares is. A hello that
-    // carried no share for the group srv_select chose is the input a
-    // HelloRetryRequest answers.
+    // encapsulation key, then the x25519 public value (RFC 10024), and
+    // p256_share at P256_POINT_LEN bytes, which the parser has not judged:
+    // srv_kex_share checks the point before it answers (RFC 9846
+    // §4.3.8.2). A pointer is set exactly when its bit in shares is. A
+    // hello that carried no share for the group srv_select chose is the
+    // input a HelloRetryRequest answers.
     const uint8_t *x25519_share;
     const uint8_t *hybrid_share;
+    const uint8_t *p256_share;
 
     // The cookie extension the client echoed, which is present only in
     // a second ClientHello (rfc9846.txt:1444). srv_check_retry_hello

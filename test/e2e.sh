@@ -334,6 +334,19 @@ chsrv_group() {
 }
 # A client that lists x25519 alone still gets x25519.
 chsrv_group chsrv-openssl-x25519 0x001d New -groups X25519
+# A client that lists secp256r1 alone gets it, the group RFC 9846 section
+# 9.1 makes a MUST, which the server takes last (docs/decisions.md 63).
+chsrv_group chsrv-openssl-secp256r1 0x0017 New -groups P-256
+# secp256r1 first and x25519 after it: s_client shares secp256r1 alone,
+# and the server, which prefers x25519, asks for it with a
+# HelloRetryRequest, a second ServerHello in the -msg trace.
+chsrv_group chsrv-openssl-secp256r1-x25519 0x001d New -groups P-256:X25519 -msg
+[ "$(grep -c '<<< TLS 1.3, Handshake \[length [0-9a-f]*\], ServerHello' \
+    "$DIR/chsrv-openssl-secp256r1-x25519.log")" = 2 ] || {
+    echo "FAIL chsrv-openssl-secp256r1-x25519: want a HelloRetryRequest before the ServerHello"
+    cat "$DIR/chsrv-openssl-secp256r1-x25519.log"
+    exit 1
+}
 if "$OPENSSL" list -tls-groups 2>/dev/null | grep -qi x25519mlkem768; then
     CHSRV_PQ_LEG=" + chapulin server pq x4"
     # The hybrid first with its share: selected in one round trip, and a
@@ -1183,6 +1196,35 @@ else
     echo "SKIP openssl pq leg: $("$OPENSSL" version) does not list X25519MLKEM768 (needs 3.5)"
 fi
 
+# --- The web PKI client against a server that holds secp256r1 alone, as
+# nghttpd 1.52.0 on OpenSSL 3.0 does. The first hello lists secp256r1
+# after the two groups it shares and carries no secp256r1 share, so the
+# server asks for one with a HelloRetryRequest: its -msg log shows two
+# ClientHellos, and the client reports group 0x0017 (docs/decisions.md
+# 63). REQUIRE_PQ keeps secp256r1 off the hello, so that server finds no
+# common group and the handshake fails.
+start_server -tls1_3 -ciphersuites TLS_CHACHA20_POLY1305_SHA256 -groups P-256 -msg -cert "$DIR/wpleaf.pem" -key "$DIR/wpleaf.key" -cert_chain "$DIR/wpint.pem" -rev
+PORT_WEBPKI_SECP256R1=$SRV_PORT
+LOG_WEBPKI_SECP256R1="$DIR/server$SRV_N.log"
+MSG='curva nist'
+WEBPKI_HOST=$WEBPKI_HOSTNAME WEBPKI_NOW=$NOW \
+    expect webpki-secp256r1 "tsin avruc" "$DIR/err_wp_secp256r1" \
+    ./bin/tlsclient_webpki 127.0.0.1 "$PORT_WEBPKI_SECP256R1" "$WEBPKI_ANCHOR" -
+grep -q "^group 0x0017$" "$DIR/err_wp_secp256r1" || {
+    echo "FAIL e2e webpki-secp256r1: client did not report the secp256r1 group"
+    cat "$DIR/err_wp_secp256r1"
+    exit 1
+}
+[ "$(grep -c '^<<< .*ClientHello' "$LOG_WEBPKI_SECP256R1" || true)" = 2 ] || {
+    echo "FAIL e2e webpki-secp256r1: want a HelloRetryRequest and a second ClientHello"
+    cat "$LOG_WEBPKI_SECP256R1"
+    exit 1
+}
+MSG='no debe pasar'
+WEBPKI_HOST=$WEBPKI_HOSTNAME WEBPKI_NOW=$NOW \
+    expect_fail webpki-secp256r1-require-pq -2 "$DIR/err_wp_secp256r1_require" \
+    env REQUIRE_PQ=1 ./bin/tlsclient_webpki 127.0.0.1 "$PORT_WEBPKI_SECP256R1" "$WEBPKI_ANCHOR" -
+
 # --- The web PKI client that offers both cipher suites (docs/decisions.md
 # entry 45). A server that accepts TLS_AES_128_GCM_SHA256 alone selects
 # it, and the client keys every record with it. The ChaCha20 chain server
@@ -1276,4 +1318,4 @@ else
     echo "SKIP chapulin server aesgcm legs: bin/tlsserver_aes is absent (no AES instructions)"
 fi
 
-echo "e2e: record + psk + tickets + resumption + pinned ecdsa + chapulin server resume x2 + chapulin server x25519${CHSRV_PQ_LEG} + pinned rsa + require-pq refused + rotation + ca rsa x2 + ca ecdsa x2 + ca rotation + ca negatives x3${EPOCH_LEG} + webpki rsa + webpki-resume x3 + webpki-rpk x7 + webpki ecdsa x2 + webpki negatives x4 + webpki alpn x3${GO_LEG}${OPENSSL_PQ_LEG}${AES_SUITE_LEG}${CHSRV_AES_LEG} + examples x4 OK"
+echo "e2e: record + psk + tickets + resumption + pinned ecdsa + chapulin server resume x2 + chapulin server x25519 + chapulin server secp256r1 x2${CHSRV_PQ_LEG} + pinned rsa + require-pq refused + rotation + ca rsa x2 + ca ecdsa x2 + ca rotation + ca negatives x3${EPOCH_LEG} + webpki rsa + webpki-resume x3 + webpki-rpk x7 + webpki ecdsa x2 + webpki negatives x4 + webpki alpn x3 + webpki-secp256r1 x2${GO_LEG}${OPENSSL_PQ_LEG}${AES_SUITE_LEG}${CHSRV_AES_LEG} + examples x4 OK"

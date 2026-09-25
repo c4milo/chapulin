@@ -48,15 +48,32 @@ typedef struct {
     // this is CH_KEX_GROUP whenever have_share is set, read from the wire
     // rather than from that constant. A CH_KEX_TWO_GROUPS build accepts
     // CH_GROUP_X25519MLKEM768 with its 1120-byte share and CH_GROUP_X25519
-    // with a 32-byte one, because its hello carried a share for each.
+    // with a 32-byte one, because its first hello carried a share for
+    // each, and CH_GROUP_SECP256R1 with a 65-byte one, because a retry
+    // hello carries a share for it. Which of the three the ServerHello may
+    // select turns on whether a retry named secp256r1, which one message
+    // cannot show, so handshake_groups.c checks it.
     uint16_t group;
     uint8_t server_pub[X25519_LEN];
 #ifdef CH_KEX_HYBRID
     // The ML-KEM ciphertext, MLKEM_CT_LEN bytes into the caller's
     // message — like cookie, the pointer dies at the next record read;
     // the handshake decapsulates before one runs. It stays NULL when
-    // group is CH_GROUP_X25519.
+    // group is CH_GROUP_X25519 or CH_GROUP_SECP256R1.
     const uint8_t *server_ct;
+#endif
+#ifdef CH_KEX_TWO_GROUPS
+    // The server's P-256 point, P256_POINT_LEN bytes into the caller's
+    // message, set when group is CH_GROUP_SECP256R1 and NULL otherwise.
+    // The pointer dies as server_ct does. The parser holds the length
+    // alone; whether the bytes are a point on the curve is the key
+    // exchange's check (RFC 9846 §4.3.8.2, rfc9846.txt:2277-2286).
+    const uint8_t *server_p256;
+    // The NamedGroup a HelloRetryRequest's key_share names, or 0 when the
+    // retry carries none. The parser accepts CH_GROUP_SECP256R1 alone
+    // there: it is the one group the first hello lists without a share
+    // (RFC 9846 §4.3.8, rfc9846.txt:2205-2215).
+    uint16_t retry_group;
 #endif
     const uint8_t *cookie; // into the caller's message; NULL if absent
     size_t cookie_len;

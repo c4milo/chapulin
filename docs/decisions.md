@@ -98,6 +98,8 @@ does nothing more.
     carries ML-KEM and offers both groups, and `make` refuses a `KEX`
     value beside that trust mode. Entry 54 gives every server role both
     groups and a preference for the hybrid; this entry describes clients.
+    Entry 63 adds secp256r1 to the webpki offer, listed last with no
+    share, and to every server, taken last.
 
     Offering both groups and taking whichever the server picks was
     considered and rejected. It fails where it would matter most: the
@@ -1064,7 +1066,9 @@ does nothing more.
     hello are gone, with the mutants that guarded them, and the retry
     hello's record version depends on the cookie alone again. A cookie
     retry still works: the retry hello resends both shares and echoes
-    the cookie.
+    the cookie. Entry 63 lists secp256r1 after the two shared groups with
+    no share, so a retry may name that group again, and the retry hello's
+    record version depends on its position rather than on the cookie.
 
     `ch_cfg.require_pq` keeps its meaning. It drops x25519 from
     `supported_groups` and from `key_share`, so the hello is the
@@ -1170,6 +1174,10 @@ does nothing more.
     encapsulation randomness in `srv_begin` beside the x25519 scalar would
     draw 32 bytes a classic handshake never uses and keep them in the
     handshake state until the ServerHello.
+
+    Entry 63 adds secp256r1 as a third group, taken after x25519, only
+    from a client that lists neither of the other two; the order above
+    stands for them.
 
 55. **A `TRUST=webpki` client offers the certificate path beside a ticket,
     and a declined ticket becomes a full handshake in the same
@@ -1971,3 +1979,96 @@ does nothing more.
     TLS, and HTTP is one; and renaming the API, because `ch_record_in`
     still takes TLS records. "TCP" names the byte stream every consumer
     uses; any reliable byte stream works under either TCP value.
+
+63. **A `TRUST=webpki` client lists secp256r1 after the two groups it
+    shares and answers a HelloRetryRequest for it, and every server takes
+    secp256r1 last.** colibri's webpki client could not connect to
+    nghttpd 1.52.0 on OpenSSL 3.0, which accepts secp256r1 and no other
+    group: the hello listed X25519MLKEM768 and x25519, and the server
+    answered handshake_failure. RFC 9846 §9.1 makes key exchange with
+    secp256r1 a MUST and X25519 a SHOULD (rfc9846.txt:4548-4550).
+    `p256_ecdh.[ch]` already held a constant-time P-256 key exchange that
+    no library object called.
+
+    - **The client's offer.** `supported_groups` lists X25519MLKEM768,
+      x25519 and secp256r1, in that order, and `key_share` carries the
+      hybrid and x25519 shares entry 53 set and no secp256r1 share. §4.3.8
+      lets the shares be a subset of the list (rfc9846.txt:2161-2165). A
+      server that wants secp256r1 answers with a HelloRetryRequest naming
+      it, which is legal because the hello listed secp256r1 and sent no
+      share for it (rfc9846.txt:2205-2215). The retry hello replaces
+      `key_share` with one secp256r1 entry, the 65-byte uncompressed point
+      of §4.3.8.2 (rfc9846.txt:1194-1196, 2261-2275), and keeps the rest
+      of the first hello, a cookie beside it when the retry sent one. The
+      ServerHello must then select secp256r1 (rfc9846.txt:2233-2238). A
+      retry naming the hybrid or x25519 is still illegal_parameter, as
+      entry 53 made it, and so is a ServerHello that selects secp256r1
+      when no retry named it. `ch_cfg.require_pq` keeps its meaning: the
+      hello lists and shares the hybrid alone, so a retry naming
+      secp256r1 names a group the hello never listed and is refused.
+    - **The client's key.** `handshake_groups.c` draws the P-256 scalar
+      through `ch_rand_bytes` when a retry names secp256r1 and at no other
+      time, a new INV-4 site. A draw outside [1, n-1] happens with
+      probability below 2^-32 and is drawn again, up to four draws
+      (`P256_ECDH_DRAWS`); four refusals in a row from a working
+      generator happen with probability below 2^-128, so CH_ASSERT treats
+      them as a hook that wrote nothing, as every draw site treats an
+      all-zero draw. The retry wipes the first hello's x25519 and ML-KEM
+      key pairs, which no later message uses. The scalar and the point
+      live in `handshake_state` until the ServerHello; the call that
+      computes the secret wipes the scalar on both exits (INV-17).
+    - **The checks and the secret.** `p256_ecdh` refuses a server point
+      whose form byte is not 0x04, whose coordinates are not below p, or
+      which is not on the curve, the three steps §4.3.8.2 lists
+      (rfc9846.txt:2277-2286); the point at infinity has no 65-byte
+      encoding and fails the curve equation. The parser refuses any length
+      but 65. Each refusal is illegal_parameter. The shared secret is the
+      32-byte X coordinate with no leading zero dropped (§7.4.2,
+      rfc9846.txt:4266-4276), and the key schedule extracts from it as it
+      extracts from an x25519 secret. `ch_tls.group` reports
+      `CH_GROUP_SECP256R1`.
+    - **The server.** Every server role, `ROLE=server` and `ROLE=both`
+      over all three transports, holds secp256r1 as its third group and
+      takes it last: X25519MLKEM768 when the client lists it, then x25519,
+      then secp256r1. A client that lists secp256r1 alone gets it, in one
+      round trip when it shared it and after a HelloRetryRequest when it
+      did not. A client that lists x25519 or the hybrid never gets P-256.
+      `srv_kex_share` checks the client's point before it draws the
+      server's P-256 key, a new INV-4 site in `srv_kex.c`, and a refused
+      point is illegal_parameter before any ServerHello goes out.
+      `srv_kex_secret` wipes the scalar on both exits. The PQ-first rule
+      of entry 54 stands unchanged.
+
+    Cost: the webpki hello grows by the 2 bytes of the third NamedGroup, so
+    `CH_HELLO_MAX` and the webpki `CH_TX_STAGE` go from 2,394 to 2,396, and
+    the QUIC one from 2,648 to 2,650. The retry hello to secp256r1 needs no
+    term: its one 69-byte `KeyShareEntry` replaces the 1,256 bytes of the
+    first hello's two, so it is 1,187 bytes shorter than a cookie retry.
+    `bench/sram.sh` measures the webpki `ch_tls` at 3,048 bytes on arm64,
+    against 3,040, and `ch_connect`'s stack peak at 16,528 bytes, against
+    16,416, because the handshake state holds the retry group, the 65-byte
+    point and the 32-byte scalar; `ch_srv_accept` peaks at 10,336 bytes,
+    against 10,304, because it holds the scalar. Every webpki object now
+    packages `p256_ecdh.c`, `p256_point.c`, `p256_scalar.c` and
+    `p256_field.c`, and every server object adds `p256_ecdh.c` to the
+    three it already carried for its ECDSA signer. A server that holds
+    secp256r1 alone costs this client one round trip, and one P-256
+    scalar multiplication takes 1,228 microseconds against x25519's 953,
+    measured on an M1 Pro (`bench/notes-primitives.md`). Gain: the client
+    reaches a server that holds only the group §9.1 requires, and the
+    server serves a client that offers only that group.
+
+    Two alternatives were considered and rejected. Sending a secp256r1
+    share in the first hello saves that round trip, and puts 69 bytes and
+    a P-256 key generation in every hello, a key pair nearly every
+    handshake discards, which is the trade entry 39 declined for the
+    hybrid. Preferring secp256r1 to x25519 on the server gives the slower
+    group to every client that lists both, OpenSSL's default list and
+    every webpki client among them.
+
+    The earlier text overclaimed. `docs/server.md`'s list of §9.1
+    residuals, written on 2026-09-18, said the server held both secp256r1
+    and X25519, while its profile table and `srv_parser.h` said it held
+    X25519MLKEM768 and x25519 alone, and the code agreed with the table.
+    The server held no secp256r1 until this entry, and that sentence is
+    true from this entry on.

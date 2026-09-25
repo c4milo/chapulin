@@ -110,15 +110,20 @@ Spec.HandshakeParser.parseServerHello : (kex : Kex) → (suiteOffer : SuiteOffer
                         -- every TRUST=webpki build. x25519 lists x25519
                         -- (0x001D) alone and pq lists RFC 10024's
                         -- X25519MLKEM768 (0x11EC) alone; twoGroups
-                        -- (docs/decisions.md entry 53) lists X25519MLKEM768
-                        -- then x25519. Every build sends a key share for each
-                        -- group it lists. A ServerHello may select any listed
-                        -- group, and that group fixes the server share size
-                        -- (32, or 1120 — the ML-KEM-768 ciphertext then the
-                        -- x25519 value). A HelloRetryRequest may name a listed
-                        -- group the hello sent no share for, which no build
-                        -- has, and must ask for a change, so every accepted
-                        -- retry carries a cookie (§4.2.4, §4.3.8).
+                        -- (docs/decisions.md entries 53 and 63) lists
+                        -- X25519MLKEM768, x25519 and secp256r1 (0x0017) and
+                        -- sends a key share for the first two. A one-group
+                        -- build shares the group it lists. A ServerHello may
+                        -- select any listed group, and that group fixes the
+                        -- server share size (32; 1120, the ML-KEM-768
+                        -- ciphertext then the x25519 value; or 65, the
+                        -- uncompressed secp256r1 point). A HelloRetryRequest
+                        -- may name a listed group the hello sent no share
+                        -- for, which is secp256r1 in twoGroups and none in
+                        -- the others, and must ask for a change, so a
+                        -- one-group build's accepted retry carries a cookie
+                        -- and twoGroups' carries a cookie or names secp256r1
+                        -- (§4.2.4, §4.3.8).
                         -- suiteOffer names the cipher_suites list the
                         -- ClientHello sends (§4.2.2). chacha lists TLS_CHACHA20_POLY1305_SHA256 (0x1303)
                         -- alone, the offer of every client build but one.
@@ -891,7 +896,7 @@ means the module's selftest plus the differential oracle carry it;
 | --- | --- | --- |
 | Bytes | 24 | proof toolkit: fold characterizations, xor involution and left cancellation, hex injectivity, big-endian round trip and injectivity |
 | Drbg | 13 | key advance (the next key is the counter-0 block, independent of the request size), key/output disjointness within one keystream, request-prefix consistency, session key chain |
-| HandshakeParser | 13 | message-grammar soundness, quantified over all three `Kex` builds and both `SuiteOffer` values: an accepted ServerHello echoes the empty legacy_session_id the profile offers, carries a cipher suite the build offers, selects a group the build lists in supported_groups and carries a key_exchange of exactly `serverShareSize` octets for that group (32 x25519, 1120 hybrid), and any selected_identity it reports is the single index one offered identity puts in range; an accepted HelloRetryRequest carries a cipher suite the build offers and a cookie or a selected group, and a selected group is one the build listed and sent no key share for, so a retry in the x25519 and pq builds carries a cookie and never a group; a result is a HelloRetryRequest exactly when the Random is §4.2.4's fixed value; an accepted record_size_limit is at least 64 under every offer; an accepted ALPN selection is an index into the offered protocols; an accepted server_certificate_type names a type the ClientHello offered; an accepted CertificateVerify reports an offered scheme that is never RSASSA-PKCS1-v1_5, so a pinned build's is its own pinned SignatureScheme and the webpki build's is one of rsa_pss_rsae_sha256, ecdsa_secp256r1_sha256 and ecdsa_secp384r1_sha384 |
+| HandshakeParser | 15 | message-grammar soundness, quantified over all three `Kex` builds and both `SuiteOffer` values: an accepted ServerHello echoes the empty legacy_session_id the profile offers, carries a cipher suite the build offers, selects a group the build lists in supported_groups and carries a key_exchange of exactly `serverShareSize` octets for that group (32 x25519, 1120 hybrid, 65 secp256r1), and any selected_identity it reports is the single index one offered identity puts in range; an accepted HelloRetryRequest carries a cipher suite the build offers and a cookie or a selected group, and a selected group is one the build listed and sent no key share for, so a retry in the x25519 and pq builds carries a cookie and never a group, and a retry in the two-group build names secp256r1 or carries a cookie; a result is a HelloRetryRequest exactly when the Random is §4.2.4's fixed value; an accepted record_size_limit is at least 64 under every offer; an accepted ALPN selection is an index into the offered protocols; an accepted server_certificate_type names a type the ClientHello offered; an accepted CertificateVerify reports an offered scheme that is never RSASSA-PKCS1-v1_5, so a pinned build's is its own pinned SignatureScheme and the webpki build's is one of rsa_pss_rsae_sha256, ecdsa_secp256r1_sha256 and ecdsa_secp384r1_sha384 |
 | Handshake | 17 | state-machine safety invariants: exactly one ServerHello, EncryptedExtensions and Finished; no certificate flight under PSK; pinned flight shape and order; HRR bound; no CertificateRequest; no post-handshake message before Finished; close_notify at most once and last |
 | Record | 8 | seal/open round trip at both the AEAD and record layers, record size, nonce size, nonce injectivity (distinct sequence numbers never share a nonce), and that an accepted record never carries content type invalid(0) |
 | ChaCha | 5 | block size, structural lemmas, keystream prefix stability; keystream itself vector-checked |

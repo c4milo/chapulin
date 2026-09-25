@@ -1,0 +1,14 @@
+invariant: INV-17
+file: srv_kex.c
+catches: srv_flight_test
+reason: srv_kex_secret leaves the server's P-256 scalar in h->p256_priv, so
+  it outlives the key exchange for the rest of the handshake, and on the
+  quic-nonblocking and tcp-nonblocking transports, whose handshake state
+  lives in the session, across calls. test_flight_p256_secret and test_flight_p256_retry require
+  it zero once srv_derive_handshake_secrets returns.
+
+--- old
+    ct_wipe(h->p256_priv, sizeof h->p256_priv);
+    ct_wipe(h->priv, sizeof h->priv);
+--- new
+    ct_wipe(h->priv, sizeof h->priv);

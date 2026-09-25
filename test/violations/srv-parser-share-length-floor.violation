@@ -2,14 +2,14 @@ invariant: INV-14
 file: srv_parser_ext.c
 catches: srv_test
 reason: take_share holds a key_exchange to at least its group's length
-  rather than exactly that many, so a 33-byte x25519 share or a
-  1217-byte X25519MLKEM768 share is handed to the key exchange, which
-  reads the length it expects and agrees on a key the client computed
-  from different bytes. srv_parser.h fixes each length, and
-  test/srv_parser_tests.h requires illegal_parameter one byte over it as
-  well as one byte under, for both groups.
+  rather than exactly that many, so a 33-byte x25519 share, a 1217-byte
+  X25519MLKEM768 share or a 66-byte secp256r1 point is handed to the key
+  exchange, which reads the length it expects and agrees on a key the
+  client computed from different bytes. srv_parser.h fixes each length,
+  and test/srv_parser_tests.h requires illegal_parameter one byte over it
+  as well as one byte under, for every group.
 
 --- old
-    if (share_len != (hybrid ? CH_HYBRID_CLIENT_SHARE : X25519_LEN)) {
+    if (share_len != share_len_of(bit)) {
 --- new
-    if (share_len < (hybrid ? CH_HYBRID_CLIENT_SHARE : X25519_LEN)) {
+    if (share_len < share_len_of(bit)) {

@@ -136,8 +136,8 @@ int srv_select(handshake_state *h, const client_hello *ch, selection *sel) {
         return CH_EPROTO;
     }
     sel->hash_len = (uint8_t)suite_hash_len(sel->suite); // rfc9846.txt:4055-4056
-    // The hybrid whenever the client listed it, x25519 otherwise
-    // (srv_kex.h). A hello that listed neither has no group in common.
+    // The hybrid whenever the client listed it, then x25519, then
+    // secp256r1 (srv_kex.h). A hello that listed none has none in common.
     sel->group = srv_kex_group(ch);
     if (sel->group == 0) {
         return CH_EPROTO;
@@ -251,9 +251,9 @@ int srv_check_retry_hello(handshake_state *h, const client_hello *ch, selection 
 
 int srv_send_server_hello(handshake_state *h, const client_hello *ch, const selection *sel) {
     ch_tls *t = h->t;
-    // The share first: for the hybrid it is an encapsulation that refuses
-    // an encapsulation key FIPS 203 §7.2 rejects, and a refused hello
-    // needs no random value.
+    // The share first: it refuses a hybrid encapsulation key FIPS 203 §7.2
+    // rejects and a P-256 point off the curve, and a refused hello needs
+    // no random value.
     uint8_t share[SRV_KEX_SHARE_MAX];
     size_t share_len = 0;
     if (srv_kex_share(h, ch, sel->group, share, &share_len) != CH_OK) {

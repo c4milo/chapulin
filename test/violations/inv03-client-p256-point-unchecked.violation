@@ -1,0 +1,16 @@
+invariant: INV-3
+file: handshake_groups.c
+catches: webpki_session_test
+reason: the client drops p256_ecdh's verdict on the server's secp256r1
+  point, so a point off the curve, which lies on a curve whose order the
+  server chose, is multiplied into the client's scalar and the handshake
+  goes on. RFC 9846 section 4.3.8.2 makes the check a MUST, and the
+  invalid-curve attack recovers the scalar a few bits at a time.
+  test/webpki_p256_cases.h requires illegal_parameter for every point it
+  refuses.
+
+--- old
+    int shared_ok = p256_ecdh(h->p256_priv, info->server_p256, ikm);
+--- new
+    (void)p256_ecdh(h->p256_priv, info->server_p256, ikm);
+    int shared_ok = 1;

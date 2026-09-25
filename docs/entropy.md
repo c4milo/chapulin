@@ -11,6 +11,8 @@ means a passive attacker can decrypt everything. A `ROLE=server` build
 draws the server's two; 32 bytes of ML-KEM encapsulation randomness when
 it selects X25519MLKEM768, which fix the ML-KEM shared secret, so a
 guessable draw gives away the post-quantum half of that key exchange;
+the P-256 scalar when it selects secp256r1, which is the whole secret of
+that key exchange, as the x25519 key is of its own (`docs/decisions.md` 63);
 and one more per resumption ticket it issues: the ticket's AEAD nonce,
 its `ticket_age_add` and its `ticket_nonce` (INV-4). A repeated ticket
 nonce under one ticket key breaks the ticket seal, so a server's tickets

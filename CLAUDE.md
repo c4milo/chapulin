@@ -38,14 +38,16 @@ Home: github.com/c4milo.
   variable: x25519 (default) or the X25519MLKEM768 hybrid (KEX=pq,
   -DCH_KEX_PQ, `mlkem.[ch]`) — never both in one raw or ca ClientHello,
   so a pq device and a classic-only server fail closed against each
-  other. KEX chooses nothing else: TRUST=webpki offers both groups in
-  every build (below), a server role holds both groups in every build,
+  other. KEX chooses nothing else: TRUST=webpki offers three groups in
+  every build (below), a server role holds the same three in every build,
   and the Makefile refuses a KEX value for either. A server selects
-  X25519MLKEM768 whenever the client lists it, and x25519 when the
-  client lists x25519 alone; a hello that lists the hybrid and shares
-  x25519 alone gets a HelloRetryRequest that asks for the hybrid
-  (`srv_kex.[ch]`, docs/decisions.md 54). ch_tls.group reports the
-  group on both sides. No X.509 parsing outside the certificate
+  X25519MLKEM768 whenever the client lists it, then x25519, and secp256r1
+  only when the client lists neither; a hello that lists a preferred group
+  and does not share it gets a HelloRetryRequest that asks for it
+  (`srv_kex.[ch]`, docs/decisions.md 54 and 63). secp256r1 runs over the
+  constant-time `p256_ecdh.[ch]`, never over `p256.[ch]`, which verifies
+  public inputs and branches on them. ch_tls.group reports the group on
+  both sides. No X.509 parsing outside the certificate
   files: the canonical DER reader in x509_der.[ch], the profile verifier
   in x509.[ch] and the provisioning reader in x509_ca.[ch] under
   the ca modes, and the chain verifier in webpki.[ch] with its pieces under
@@ -64,9 +66,12 @@ Home: github.com/c4milo.
   negotiation surface costs. In every build it lists x25519 after the
   hybrid (CH_KEX_TWO_GROUPS) and sends a key share for each, the x25519
   one over the x25519 half of the hybrid one, so a server picks either
-  in one round trip and a HelloRetryRequest that names a group is
-  refused; ch_cfg.require_pq drops x25519 from both lists and restores
-  the fail-closed pairing (docs/decisions.md 39 and 51). Under SUITE=aesgcm it lists
+  in one round trip. It lists secp256r1 last with no share: a
+  HelloRetryRequest naming secp256r1 gets a retry hello carrying one
+  P-256 share, drawn only then, and a retry naming a shared group is
+  refused (`handshake_groups.[ch]`, docs/decisions.md 53 and 63).
+  ch_cfg.require_pq drops x25519 and secp256r1 from both lists and
+  restores the fail-closed pairing (docs/decisions.md 39). Under SUITE=aesgcm it lists
   TLS_AES_128_GCM_SHA256 and TLS_AES_256_GCM_SHA384 after ChaCha20
   (CH_CLIENT_AES_SUITES), runs the key schedule at the hash of the suite
   the ServerHello selected, keys every record direction and every QUIC
@@ -110,7 +115,9 @@ Home: github.com/c4milo.
   under a traffic key, SUITE=aesgcm) with `quic_ghash_hw.[ch]`
   (GHASH's multiply and data loop on the carry-less multiply, AES=hw
   alone) ← `x25519.[ch]` with `x25519_wide.[ch]` (the radix-2^51 field,
-  X25519=wide) + `p256.[ch]` +
+  X25519=wide) + `p256.[ch]` + `p256_ecdh.[ch]` (constant-time P-256
+  key exchange over `p256_point`, `p256_scalar` and `p256_field`, every
+  server role and TRUST=webpki) +
   `rsa.[ch]`/`rsa_mont.c` (pinned-mode verify) + `p384.[ch]`/
   `p384_field.[ch]` + `rsa_pkcs1.[ch]` (the chain signatures a public
   CA writes, TRUST=webpki) ←
@@ -127,6 +134,9 @@ Home: github.com/c4milo.
   `record.[ch]`
   (record layer) ← `handshake_parser.[ch]` (message parsers) ←
   `handshake_record.[ch]` (record reading and message reassembly) ←
+  `handshake_groups.[ch]` (the TRUST=webpki client's three groups: the
+  HelloRetryRequest that names secp256r1, and the x25519 and P-256
+  secrets) +
   `handshake_auth.[ch]` (server authentication: the Certificate and
   CertificateVerify flight, the CA build's revocation epoch, and the
   webpki build's chain walk and hostname check) ←

@@ -112,10 +112,21 @@ int main(void) {
     cfg.require_pq = nondet_u8() & 1;
     static const uint8_t ek[MLKEM_EK_LEN];
 #endif
+#ifdef CH_KEX_TWO_GROUPS
+    // hello_build_webpki: the retry hello a HelloRetryRequest naming
+    // secp256r1 asks for, whose key_share holds that one 65-byte share,
+    // or NULL for every other hello (docs/decisions.md 63). The builder
+    // copies the point and never reads its value.
+    static const uint8_t p256_point[P256_POINT_LEN];
+    const uint8_t *p256_pub = (nondet_u8() & 1) ? p256_point : NULL;
+#endif
 
     size_t n = hs_build_client_hello(out, cap, &cfg,
 #ifdef CH_KEX_HYBRID
                                      ek,
+#endif
+#ifdef CH_KEX_TWO_GROUPS
+                                     p256_pub,
 #endif
                                      pub, random32, limit, ck, cookie_len);
 

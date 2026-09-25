@@ -51,6 +51,7 @@
 #include "buf.h"
 #include "ch_assert.h"
 #include "handshake_message.h"
+#include "handshake_parser.h"
 #include "keylog.h"
 #include "rand.h"
 #include "rec.h"
@@ -364,6 +365,7 @@ static int run_handshake(ch_record *client, ch_record *server, const ch_cfg *ccf
 
 #include "rec_close_tests.h"
 #include "rec_coalesced_tests.h"
+#include "rec_group_tests.h"
 #include "rec_read_tests.h"
 #include "rec_resume_tests.h"
 
@@ -449,12 +451,15 @@ int main(void) {
     client_config(&ccfg);
     test_close_one_direction(&client, &server, &ccfg, &scfg);
 
+    // The server's group order over hellos no client here writes.
+    test_server_group_order();
+
     if (failures == 0) {
         (void)printf("rec_loop: a whole handshake over group 0x%04x in %d rounds, 0 socket"
                      " calls; both ends export one secret and log the same four; ch_read"
                      " waits between records; a wrong pin refused; a ticket resumes with no"
                      " certificate; a close_notify closes one direction and ch_read sends"
-                     " nothing\n",
+                     " nothing; the server takes secp256r1 only when x25519 is not listed\n",
                      (unsigned)LOOP_GROUP, rounds);
         return 0;
     }

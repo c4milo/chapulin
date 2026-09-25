@@ -8,6 +8,7 @@
 
 #include "ch_assert.h"
 #include "ct.h"
+#include "handshake_groups.h" // empty outside CH_KEX_TWO_GROUPS
 #include "handshake_message.h"
 #include "keylog.h"
 #include "keysched.h"
@@ -84,6 +85,9 @@ static size_t build_client_hello_ek(handshake_state *h, uint8_t *out, size_t cap
 #ifdef CH_KEX_HYBRID
                                      ek,
 #endif
+#ifdef CH_KEX_TWO_GROUPS
+                                     h->retry_group != 0 ? h->p256_pub : NULL,
+#endif
                                      h->pub, h->random, record_size_limit,
                                      h->cookie_len > 0 ? h->cookie : NULL, h->cookie_len);
     if (n == 0) {
@@ -104,14 +108,19 @@ static size_t build_client_hello_ek(handshake_state *h, uint8_t *out, size_t cap
 
 #ifdef CH_KEX_HYBRID
 // Expands the stored (d, z) seed into the FIPS 203 dk layout and hands
-// its ek slice to the builder. The expansion is deterministic, so the
-// HRR retry resends the identical share; the dk itself is scratch —
-// hsf_derive_handshake_secrets re-expands the same way at
-// decapsulation. The 2400-byte buffer gets its own frame so it is gone
-// before the handshake reads a record; the frame itself is over the
-// classic build's budget, which is why a build that offers the hybrid
-// carries its own (docs/invariants.md INV-19).
+// its ek slice to the builder. The expansion is deterministic, so a cookie
+// retry resends the identical share, and a retry to secp256r1 expands
+// nothing, because that hello carries the P-256 share alone. The dk is
+// scratch, re-expanded at decapsulation, in a frame of its own so it is
+// gone before the handshake reads a record; that frame is over the
+// classic build's budget, so a build with the hybrid carries its own
+// (docs/invariants.md INV-19).
 size_t hsf_build_client_hello(handshake_state *h, uint8_t *out, size_t cap) {
+#ifdef CH_KEX_TWO_GROUPS
+    if (h->retry_group != 0) {
+        return build_client_hello_ek(h, out, cap, NULL);
+    }
+#endif
     uint8_t dk[MLKEM_DK_LEN];
     mlkem_keygen_dk(dk, h->dz, h->dz + 32);
     size_t n = build_client_hello_ek(h, out, cap, dk + 1152);
@@ -146,23 +155,6 @@ size_t hsf_build_client_hello(handshake_state *h, uint8_t *out, size_t cap) {
 }
 #endif
 
-#ifdef CH_KEX_TWO_GROUPS
-// Runs x25519 alone into ikm, for a ServerHello that selected x25519.
-// The ML-KEM key pair the hello offered beside it goes unused, so its
-// seed h->dz is wiped before the exchange runs rather than kept until
-// the handshake ends. Returns CH_EPROTO for the all-zero shared secret,
-// with ikm wiped, as hybrid_secret does.
-static int x25519_secret(handshake_state *h, const server_hello_info *info,
-                         uint8_t ikm[X25519_LEN]) {
-    ct_wipe(h->dz, sizeof h->dz);
-    if (!x25519(ikm, h->priv, info->server_pub)) {
-        ct_wipe(ikm, X25519_LEN);
-        return CH_EPROTO;
-    }
-    return CH_OK;
-}
-#endif
-
 #ifdef CH_SUITE_AES_GCM
 // Stores the suite a HelloRetryRequest or ServerHello named. The parser
 // accepted it as one this client offered; what is left is RFC 9846
@@ -177,6 +169,25 @@ static int take_suite(handshake_state *h, const server_hello_info *info) {
     return CH_OK;
 }
 #endif
+
+// Stores what a HelloRetryRequest asks for: a cookie and, under CH_KEX_TWO_GROUPS, the
+// secp256r1 share hsg_take_retry draws. Neither is illegal_parameter (rfc9846.txt:1467-1469).
+static int take_retry(handshake_state *h, const server_hello_info *info) {
+#ifdef CH_KEX_TWO_GROUPS
+    if (hsg_take_retry(h, info) != CH_OK) {
+        return CH_EPROTO;
+    }
+#else
+    if (info->cookie_len == 0) {
+        return CH_EPROTO;
+    }
+#endif
+    if (info->cookie != NULL) {
+        memcpy(h->cookie, info->cookie, info->cookie_len);
+    }
+    h->cookie_len = info->cookie_len;
+    return CH_OK;
+}
 
 int hsf_read_server_hello(handshake_state *h, server_hello_info *info) {
     uint8_t type = 0;
@@ -205,17 +216,10 @@ int hsf_read_server_hello(handshake_state *h, server_hello_info *info) {
         // take_suite wrote the retry's suite, which names the hash the
         // synthetic message takes.
         hsr_restart_transcript(h, hsr_suite_hash_len(h), raw, raw_len);
-        // The parser refuses a retry that names a group, because every
-        // group the hello lists already has a share in it, so a cookie
-        // is the one change a retry can ask this client for. A retry
-        // without one changes nothing, which RFC 9846 §4.2.4 makes an
-        // illegal_parameter abort (rfc9846.txt:1467-1469).
-        if (info->cookie_len == 0) {
+        if (take_retry(h, info) != CH_OK) {
             h->alert = ALERT_ILLEGAL_PARAMETER;
             return CH_EPROTO;
         }
-        memcpy(h->cookie, info->cookie, info->cookie_len);
-        h->cookie_len = info->cookie_len;
     } else {
         transcript_update(&h->t->transcript, raw, raw_len);
     }
@@ -263,6 +267,12 @@ int hsf_accept_server_hello(handshake_state *h, const server_hello_info *info) {
         h->alert = ALERT_HANDSHAKE_FAILURE;
         return CH_EAUTH;
     }
+#ifdef CH_KEX_TWO_GROUPS
+    if (!hsg_selected_group_ok(h, info->group)) { // rfc9846.txt:2224-2238
+        h->alert = ALERT_ILLEGAL_PARAMETER;
+        return CH_EPROTO;
+    }
+#endif
     int psk_offered = h->t->cfg.psk != NULL;
     if (!psk_offered) {
         early_secret_without_psk(hsr_suite_hash_len(h), h->early);
@@ -283,14 +293,11 @@ int hsf_accept_server_hello(handshake_state *h, const server_hello_info *info) {
 #endif
     h->t->psk_selected = (uint8_t)(psk_offered && info->psk_ok);
 #ifdef CH_KEX_HYBRID
-    // require_pq checks at run time what the hello promised: a raw or ca
-    // KEX=pq build offers X25519MLKEM768 alone, and a CH_KEX_TWO_GROUPS
-    // build under the flag lists and shares the hybrid alone, though its
-    // parser still accepts x25519. The compare reads the field the parser
-    // wrote, never the constant the build offered, and the alert is the
-    // parser's own for a group the client did not offer (RFC 9846
-    // §4.3.8). A classic build never runs this: ch_connect refuses the
-    // flag there before it sends a byte.
+    // require_pq checks at run time what the hello promised: the hybrid
+    // alone, though a CH_KEX_TWO_GROUPS parser accepts x25519 and secp256r1
+    // too. It reads the field the parser wrote, never a build constant,
+    // with the parser's alert for a group never offered (RFC 9846 §4.3.8).
+    // ch_connect refuses the flag in a classic build before it sends.
     if (h->t->cfg.require_pq && h->t->group != CH_GROUP_X25519MLKEM768) {
         h->alert = ALERT_ILLEGAL_PARAMETER;
         return CH_EPROTO;
@@ -304,17 +311,11 @@ int hsf_derive_handshake_secrets(handshake_state *h, const server_hello_info *in
     uint8_t ecdhe[MLKEM_SS_LEN + X25519_LEN];
     size_t ecdhe_len = sizeof ecdhe;
 #ifdef CH_KEX_TWO_GROUPS
-    // A ServerHello that selected x25519 runs the classic exchange over
-    // the x25519 half of the key pair hsf_begin drew, the value both key
-    // shares carried, and the input keying material is its 32 bytes
-    // alone.
-    int shared_ok;
-    if (info->group == CH_GROUP_X25519) {
-        ecdhe_len = X25519_LEN;
-        shared_ok = x25519_secret(h, info, ecdhe) == CH_OK;
-    } else {
-        shared_ok = hybrid_secret(h, info, ecdhe) == CH_OK;
-    }
+    // x25519 and secp256r1 run in handshake_groups.c, and either one's
+    // 32-byte secret is the whole input keying material.
+    int shared_ok = info->group == CH_GROUP_X25519MLKEM768
+                        ? hybrid_secret(h, info, ecdhe) == CH_OK
+                        : hsg_classic_secret(h, info, ecdhe, &ecdhe_len) == CH_OK;
 #else
     int shared_ok = hybrid_secret(h, info, ecdhe) == CH_OK;
 #endif

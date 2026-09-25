@@ -7,8 +7,8 @@
 //
 // Each stub asserts what srv_kex.h requires of a caller and answers with
 // every value srv_kex.h allows: a group this build holds or 0, either
-// verdict, and a share or a secret of one of the two lengths the two
-// groups fix.
+// verdict, and a share or a secret of one of the lengths the three groups
+// fix.
 #ifndef CH_SRV_KEX_STUBS_H
 #define CH_SRV_KEX_STUBS_H
 
@@ -19,7 +19,8 @@
 uint16_t srv_kex_group(const client_hello *ch) {
     __CPROVER_assert(__CPROVER_r_ok(ch, sizeof *ch), "kex_group: hello readable");
     uint16_t group = nondet_u16();
-    __CPROVER_assume(group == 0 || group == CH_GROUP_X25519 || group == CH_GROUP_X25519MLKEM768);
+    __CPROVER_assume(group == 0 || group == CH_GROUP_X25519 || group == CH_GROUP_X25519MLKEM768 ||
+                     group == CH_GROUP_SECP256R1);
     return group;
 }
 
@@ -41,7 +42,9 @@ int srv_kex_share(handshake_state *hs, const client_hello *ch, uint16_t group,
     }
     // The bytes are not filled: the only reader is the stubbed builder,
     // which asserts they are readable and reads none of them.
-    *share_len = (nondet_u8() & 1) ? X25519_LEN : CH_HYBRID_SERVER_SHARE;
+    uint8_t pick = nondet_u8();
+    __CPROVER_assume(pick < 3);
+    *share_len = pick == 0 ? X25519_LEN : pick == 1 ? P256_POINT_LEN : CH_HYBRID_SERVER_SHARE;
     fill_nondet(hs->mlkem_ss, sizeof hs->mlkem_ss);
     return CH_OK;
 }
@@ -55,10 +58,12 @@ int srv_kex_secret(handshake_state *hs, const client_hello *ch, uint16_t group,
     memset(hs->priv, 0, sizeof hs->priv);
     memset(hs->pub, 0, sizeof hs->pub);
     memset(hs->mlkem_ss, 0, sizeof hs->mlkem_ss);
+    memset(hs->p256_priv, 0, sizeof hs->p256_priv);
     if ((nondet_u8() & 1) != 0) {
         memset(ikm, 0, SRV_KEX_SECRET_MAX);
         return CH_EPROTO;
     }
+    // X25519_LEN is P256_SECRET_LEN too: 32 bytes for either group alone.
     *ikm_len = (nondet_u8() & 1) ? X25519_LEN : SRV_KEX_SECRET_MAX;
     fill_nondet(ikm, *ikm_len);
     return CH_OK;

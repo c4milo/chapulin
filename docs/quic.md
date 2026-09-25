@@ -1619,7 +1619,7 @@ and `pt_len`.
 | `hs.alert` | `uint8_t` | any | each step seeds it before it parses (`handshake_flight.c:263`, `handshake_auth.c:110`, `:259`, `:269`, `:280`); a later step's failure reports it |
 | `hs.server_finished_ok` | `uint8_t` | any | `hsf_read_finished` sets it (`handshake_flight.c:326`) and `hsa_epoch_commit` asserts it (`handshake_auth.c:232`), both inside the Finished step |
 | `hs.leaf` | `x509_leaf_info` under a CA mode, `webpki_leaf_info` under `TRUST=webpki` | `key_len <= CH_X509_KEY_MAX` (`x509.h:35-39`) or `<= CH_WEBPKI_KEY_MAX` (`webpki.h:38`) | written at the Certificate step, read at the CertificateVerify step. This is the reason `hsa_server_auth` becomes two entry points |
-| fenced out under QUIC: `hs.record_size_limit`, `hs.encrypted`, `hs.ccs_seen`, `hs.quiet` (`handshake_record.h:43-46`) | — | — | only the TLS builder (`handshake_flight.c:69`) and the TLS record reader (`handshake_record.c:22`, `:57-58`, `:68-69`) read them |
+| fenced out under QUIC: `hs.record_size_limit`, `hs.encrypted`, `hs.ccs_seen`, `hs.quiet` (`handshake_record.h:43-46`) | — | — | only the TCP hello builder (`handshake_flight.c:69`) and the TCP record reader (`handshake_record.c:22`, `:57-58`, `:68-69`) read them |
 | `step` | `uint8_t` | the full byte range; the default arm refuses every value above 6 | names the message the driver waits for |
 | `rx_level` | `uint8_t` | the full range; compared, never an index | the one level whose CRYPTO bytes `cfg.buf` holds |
 | `tx_level`, `tx_len` | `uint8_t`, `size_t` | `tx_len <= CH_TX_STAGE` | the one message colibri has not taken yet |

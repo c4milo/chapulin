@@ -89,17 +89,19 @@ rules:
     languages: [c]
     severity: ERROR
     message: >-
-      INV-4: randomness is consumed at eight audited sites: three in
-      handshake.c (the third only in the KEX=pq and TRUST=webpki builds), two in srv_flight.c (the server's
-      key-share scalar and ServerHello random), the server's ML-KEM encapsulation randomness in
-      srv_kex.c (drawn only when it selects X25519MLKEM768), the ticket's one draw in
-      srv_resume.c (its AEAD nonce, ticket_age_add and ticket_nonce) and the PSS salt in
-      rsa_sign.c. A new call site needs its own seeding audit —
+      INV-4: randomness is consumed at ten audited sites: three in
+      handshake_flight.c (the third only in the KEX=pq and TRUST=webpki builds), the client's
+      P-256 scalar in handshake_groups.c (drawn only when a HelloRetryRequest names
+      secp256r1), two in srv_flight.c (the server's key-share scalar and ServerHello random),
+      two in srv_kex.c (the ML-KEM encapsulation randomness, drawn only when the server selects
+      X25519MLKEM768, and the P-256 scalar, drawn only when it selects secp256r1), the
+      ticket's one draw in srv_resume.c (its AEAD nonce, ticket_age_add and ticket_nonce) and
+      the PSS salt in rsa_sign.c. A new call site needs its own seeding audit —
       amend docs/invariants.md in the same PR. drbg.c is excluded
       because it defines the hook, not because it may call it.
     paths:
-      exclude: [test, proof, fuzz, spec, bench, bin, examples, handshake.c, drbg.c, rsa_sign.c,
-                srv_flight.c, srv_kex.c, srv_resume.c]
+      exclude: [test, proof, fuzz, spec, bench, bin, examples, handshake_flight.c,
+                handshake_groups.c, drbg.c, rsa_sign.c, srv_flight.c, srv_kex.c, srv_resume.c]
     pattern: ch_rand_bytes(...)
 
   - id: inv-1-seal-only-in-record

@@ -413,13 +413,15 @@ The library calls `ch_rand_bytes` at these points and no others:
 
 - **A client:** in `ch_connect`, `ch_record_init` and `ch_quic_init`, for its
   key share, its ClientHello random and, where it offers X25519MLKEM768, the
-  ML-KEM seed. When the secp256r1 key exchange lands, a client also draws
-  when a HelloRetryRequest names P-256.
+  ML-KEM seed. A `TRUST=webpki` client also draws in the call that delivers a
+  HelloRetryRequest naming secp256r1, for its P-256 key share
+  (`docs/decisions.md` 63).
 - **A server:** in `ch_srv_check` when an RSA-PSS identity is provisioned,
   for the signature's salt; in `ch_srv_record_init`, `ch_srv_quic_init` and
   `ch_srv_accept`, for its x25519 key share; in the call that delivers the
   ClientHello, for the ServerHello random, the ML-KEM encapsulation where it
-  selects X25519MLKEM768 and the salt where it signs with RSA-PSS; and in the
+  selects X25519MLKEM768, the P-256 key share where it selects secp256r1 and
+  the salt where it signs with RSA-PSS; and in the
   call that delivers the client Finished when `cfg.srv.ticket_key` and
   `cfg.srv.now_seconds` are set, for the ticket's AEAD nonce,
   `ticket_age_add` and `ticket_nonce`.

@@ -22,8 +22,9 @@ _Static_assert(CH_HELLO_MAX <= CH_TX_STAGE, "the largest ClientHello must fit TX
 // Builds the ClientHello into the TX staging array past the record
 // header, then sends it as a plaintext handshake record. The message
 // itself, the binder and the transcript update are
-// hsf_build_client_hello's.
-static int send_client_hello(handshake_state *h) {
+// hsf_build_client_hello's. retry is 1 for the hello a HelloRetryRequest
+// asked for, which the caller knows by position.
+static int send_client_hello(handshake_state *h, int retry) {
     ch_tls *t = h->t;
     uint8_t *msg = t->tx + REC_HDR;
     size_t n = hsf_build_client_hello(h, msg, sizeof t->tx - REC_HDR);
@@ -34,9 +35,9 @@ static int send_client_hello(handshake_state *h) {
     t->tx[1] = 0x03;
     // The very first record may carry 0x0301 for old middleboxes; every
     // later one, including the post-HRR retry, must say 0x0303 (§5.1).
-    // Every retry this client answers carries a cookie, so the cookie
-    // marks the retry hello (hsf_read_server_hello).
-    t->tx[2] = h->cookie_len > 0 ? 0x03 : 0x01;
+    // A retry to secp256r1 may carry no cookie, so the call position
+    // marks the retry hello rather than the cookie (docs/decisions.md 63).
+    t->tx[2] = retry ? 0x03 : 0x01;
     t->tx[3] = (uint8_t)(n >> 8);
     t->tx[4] = (uint8_t)n;
     return io_send_all(&t->cfg, t->tx, REC_HDR + n);
@@ -54,7 +55,7 @@ static int send_client_finished(handshake_state *h, const uint8_t *msg, size_t n
 // ClientHello out, ServerHello in, with at most one HelloRetryRequest
 // round; on CH_OK info holds an acceptable non-HRR ServerHello.
 static int hello_exchange(handshake_state *h, server_hello_info *info) {
-    int rc = send_client_hello(h);
+    int rc = send_client_hello(h, 0);
     if (rc != CH_OK) {
         return rc;
     }
@@ -63,7 +64,7 @@ static int hello_exchange(handshake_state *h, server_hello_info *info) {
         return rc;
     }
     if (info->hrr) {
-        rc = send_client_hello(h);
+        rc = send_client_hello(h, 1);
         if (rc != CH_OK) {
             return rc;
         }

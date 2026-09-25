@@ -1,0 +1,27 @@
+invariant: INV-7
+file: handshake_message.c
+catches: webpki_session_test
+reason: the first webpki hello carries a secp256r1 share beside the hybrid
+  and x25519 ones, a 65-byte point it never drew a scalar for. A server that
+  selects secp256r1 in one round trip then runs a key exchange the client
+  cannot finish, and every hello pays 69 bytes CH_HELLO_MAX does not count.
+  docs/decisions.md 63 lists secp256r1 with no share and draws its key only
+  when a HelloRetryRequest names it.
+
+--- old
+        if (!cfg->require_pq) {
+            wb_u16(w, CH_GROUP_X25519);
+            wb_u16(w, 32);
+            wb_bytes(w, pub, 32);
+        }
+--- new
+        if (!cfg->require_pq) {
+            wb_u16(w, CH_GROUP_X25519);
+            wb_u16(w, 32);
+            wb_bytes(w, pub, 32);
+            wb_u16(w, CH_GROUP_SECP256R1);
+            wb_u16(w, P256_POINT_LEN);
+            wb_u8(w, 0x04);
+            wb_bytes(w, pub, 32);
+            wb_bytes(w, pub, 32);
+        }

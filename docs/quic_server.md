@@ -326,9 +326,10 @@ runner does.
 ## The key exchange
 
 A QUIC server runs the key exchange the other two server drivers run
-(`docs/server.md`, "Key exchange", and `docs/decisions.md` entry 54). It
-holds X25519MLKEM768 and x25519, selects the hybrid for any client that
-lists it and x25519 for one that lists x25519 alone, and asks with a
+(`docs/server.md`, "Key exchange", and `docs/decisions.md` entries 54 and
+63). It holds X25519MLKEM768, x25519 and secp256r1, selects the hybrid for
+any client that lists it, x25519 for one that lists x25519 and not the
+hybrid, and secp256r1 for one that lists neither, and asks with a
 HelloRetryRequest when the hello carried no share for the group it chose.
 `ch_tls.group` reports the group once the ServerHello has gone out, and
 `ch_quic.t.group` is where a caller reads it. No call and no configuration

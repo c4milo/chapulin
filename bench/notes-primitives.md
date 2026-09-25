@@ -145,7 +145,7 @@ says who calls it and how often.
 | p384_ecdsa_verify | 4,275 | same | client, per P-384 signature, TRUST=webpki |
 | p256_ecdsa_verify | 1,325 | same | client, once, TRUST=raw-ecdsa; per link, webpki |
 | p256_sign | 1,320 | 670 | server, once, ECDSA identity |
-| p256_ecdh | 1,228 | 610 | no caller yet; a server's P-256 key exchange |
+| p256_ecdh | 1,228 | 610 | both ends, once each, when secp256r1 runs (docs/decisions.md 63) |
 | rsa_pss_verify_4096 | 1,223 | same | client, TRUST=webpki |
 | rsa_pkcs1_verify_4096 | 1,204 | same | client, per RSA-4096 link, webpki |
 | x25519, x25519_base | 953, 944 | 428, 431 | both ends, once each |

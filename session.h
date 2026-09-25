@@ -77,12 +77,12 @@
 // value is the TCP one plus 254, and plus 270 again in the two device
 // modes. These are CH_HELLO_MAX's QUIC values, repeated as literals for
 // the reason the TCP ones are, and quic.c asserts the two agree. The
-// webpki one carries the 23 bytes of CH_HELLO_CERT_PATH_MAX, as the TLS
+// webpki one carries the 23 bytes of CH_HELLO_CERT_PATH_MAX, as the TCP
 // one does, because the builder is the same; ch_quic_init refuses SPKI
 // pins, so 7 of them never go out over QUIC. It takes CH_TX_AES_SUITES
-// on top, as the TLS webpki value does.
+// on top, as the TCP webpki value does.
 #ifdef CH_TRUST_WEBPKI
-#define CH_TX_STAGE (2648 + CH_TX_AES_SUITES)
+#define CH_TX_STAGE (2650 + CH_TX_AES_SUITES)
 #elif defined(CH_KEX_PQ)
 #define CH_TX_STAGE 2325
 #elif defined(CH_ROLE_SERVER)
@@ -103,12 +103,14 @@
 // and length, 2 list length, then 8 names of 1 length byte and 32 name
 // bytes). Then the second group every webpki hello offers beside the
 // hybrid (docs/decisions.md 53): x25519 in supported_groups, 2 bytes,
-// and its KeyShareEntry, 36 bytes. Then the certificate path every
-// webpki hello offers, a resuming one included (docs/decisions.md 55):
-// the 16-byte signature_algorithms of five schemes and the 7-byte
-// server_certificate_type of a config with SPKI pins and anchors:
-// 1801 + 262 + 270 + 2 + 36 + 16 + 7.
-#define CH_TX_STAGE (2394 + CH_TX_AES_SUITES)
+// and its KeyShareEntry, 36 bytes. Then secp256r1 in supported_groups, 2
+// bytes, which the first hello lists with no share (docs/decisions.md
+// 63); the retry hello that carries its share is shorter than this one.
+// Then the certificate path every webpki hello offers, a resuming one
+// included (docs/decisions.md 55): the 16-byte signature_algorithms of
+// five schemes and the 7-byte server_certificate_type of a config with
+// SPKI pins and anchors: 1801 + 262 + 270 + 2 + 36 + 2 + 16 + 7.
+#define CH_TX_STAGE (2396 + CH_TX_AES_SUITES)
 #elif defined(CH_KEX_PQ)
 // 137 fixed + 320 ticket identity + 128 cookie with framing + the
 // 1216-byte hybrid share.
@@ -211,14 +213,16 @@ typedef struct {
     // (handshake.c) writes it from the ServerHello: the code point
     // parse_key_share accepted — CH_GROUP_X25519 or
     // CH_GROUP_X25519MLKEM768 (cfg.h), one per raw or ca build, and
-    // whichever the ServerHello selected under CH_KEX_TWO_GROUPS — and 0
+    // whichever the ServerHello selected under CH_KEX_TWO_GROUPS, which
+    // may also be CH_GROUP_SECP256R1 after a retry that named it — and 0
     // before any ServerHello or when it carried no key_share. A server
     // role writes the group its own ServerHello selected, once the hello
     // it answers is settled: CH_GROUP_X25519MLKEM768 whenever the client
-    // listed it, and CH_GROUP_X25519 otherwise (srv_kex.h). Public
-    // information, like pin_slot: a caller reads it to see which exchange
-    // protected the session, and a client's cfg.require_pq fails the
-    // handshake when it is not the hybrid.
+    // listed it, CH_GROUP_X25519 when the client listed that and not the
+    // hybrid, and CH_GROUP_SECP256R1 when it listed neither (srv_kex.h).
+    // Public information, like pin_slot: a caller reads it to see which
+    // exchange protected the session, and a client's cfg.require_pq fails
+    // the handshake when it is not the hybrid.
     uint16_t group;
 #if defined(CH_SUITE_AES_GCM) && !defined(CH_ROLE_SERVER)
     // The cipher suite the ServerHello selected, which a client written
@@ -343,9 +347,9 @@ typedef struct {
     //
     // CH_TX_STAGE's QUIC values are above, and each one is the length
     // hs_build_client_hello emits for the largest hello its build can
-    // write: 1141 raw and ca classic, 2325 under KEX=pq, and 2648 under
-    // TRUST=webpki, whose hello carries both groups' shares and the
-    // certificate path. quic.c asserts CH_HELLO_MAX against this
+    // write: 1141 raw and ca classic, 2325 under KEX=pq, and 2650 under
+    // TRUST=webpki, whose hello carries two groups' shares, lists a third
+    // group and offers the certificate path. quic.c asserts CH_HELLO_MAX against this
     // constant, where both are visible.
     uint8_t tx[CH_TX_STAGE];
 #else

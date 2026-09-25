@@ -53,6 +53,7 @@ static int failures = 0;
 
 #include "srv_flight_kex_tests.h"
 #include "srv_flight_keys_tests.h"
+#include "srv_flight_p256_tests.h"
 #include "srv_flight_suite_tests.h"
 #include "srv_flight_tests.h"
 #include "srv_resume_issue_tests.h"
@@ -77,6 +78,10 @@ int main(void) {
     test_flight_hybrid_secret();
     test_flight_hybrid_refusals();
     test_flight_hybrid_retry();
+    test_flight_select_p256();
+    test_flight_p256_secret();
+    test_flight_p256_refusals();
+    test_flight_p256_retry();
     test_flight_auth();
     test_flight_finish();
     test_flight_finished_length();

@@ -616,8 +616,11 @@ Three residuals remain, and each is a client this server refuses:
   conformant and gets `handshake_failure`. Open question two asks whether
   Camilo accepts that.
 - **Groups.** `rfc9846.txt:4548-4550` makes secp256r1 a MUST and X25519 a
-  SHOULD, and the server holds both. A client offering only secp384r1, x448, or
-  a finite-field group gets `handshake_failure`.
+  SHOULD, and the server holds both, beside X25519MLKEM768. This bullet said so
+  from 2026-09-18, and it overclaimed until `docs/decisions.md` entry 63: the
+  server held X25519MLKEM768 and x25519 and no secp256r1 before that entry. A
+  client offering only secp384r1, x448, or a finite-field group gets
+  `handshake_failure`.
 - **Signature schemes.** `rfc9846.txt:4545-4547` reads in full:
 
         4545:   *  A TLS-compliant application MUST support digital signatures with
@@ -672,7 +675,7 @@ before the patch lands than after.
 | Version | TLS 1.3 (0x0304) only | §4.3.1, `rfc9846.txt:1734-1738`, selects from `supported_versions` alone. |
 | Cipher suite | `TLS_CHACHA20_POLY1305_SHA256` (0x1303), then `TLS_AES_128_GCM_SHA256` (0x1301), then `TLS_AES_256_GCM_SHA384` (0x1302) | All three of `rfc9846.txt:4540-4543`. ChaCha is preferred where the client offers it, because it is the code this tree has proved, differential-tested and kept free of tables, and because it keeps the handshake on SHA-256. AES-128-GCM comes before AES-256-GCM for the second reason: its schedule is SHA-256, the hash every handshake proof covers (`docs/decisions.md` entry 58). |
 | Hash | SHA-256 with 0x1303 and 0x1301, SHA-384 with 0x1302 | `rfc9846.txt:4055-4056` binds the hash to the suite. The section above states the cost. |
-| Group | X25519MLKEM768 (0x11ec), then x25519 (0x001d) | The hybrid first, for every client that lists it ("Key exchange" below, `docs/decisions.md` entry 54). X25519 is the §9.1 SHOULD at `rfc9846.txt:4549-4550`. secp256r1, the §9.1 MUST at `:4548-4549`, is not held, for the reason `srv_parser.h` gives at `SRV_GROUP_X25519`. |
+| Group | X25519MLKEM768 (0x11ec), then x25519 (0x001d), then secp256r1 (0x0017) | The hybrid first, for every client that lists it ("Key exchange" below, `docs/decisions.md` entry 54). X25519 is the §9.1 SHOULD at `rfc9846.txt:4549-4550`. secp256r1, the §9.1 MUST at `:4548-4549`, comes last, only for a client that lists neither of the others, and runs over the constant-time `p256_ecdh.[ch]` (`docs/decisions.md` entry 63). |
 | Signature scheme | `ecdsa_secp256r1_sha256` (0x0403), then `rsa_pss_rsae_sha256` (0x0804) | Both are §9.1 CertificateVerify obligations at `rfc9846.txt:4545-4547`. The selected scheme picks which provisioned identity signs. |
 | Key exchange mode | `psk_dhe_ke` when a PSK is selected, certificate authentication otherwise | `rfc9846.txt:1150-1152` requires selecting a mode the client listed. |
 | ALPN | the caller's list, or none | The server cannot know which protocol the endpoint speaks. |
@@ -684,7 +687,7 @@ list may leave a suite out (`docs/decisions.md` entry 58).
 Runtime selection is unavoidable here and it is worth saying why. A build axis
 cannot carry the suite: a conformant client may offer AES-128-GCM alone, so the
 same binary must hold all three and pick per connection. The same argument
-carries the two groups and the two signature schemes. Every one of those
+carries the three groups and the two signature schemes. Every one of those
 branches reads a value the peer sent in the clear, so none of them is a
 constant-time defect; INV-16 requires each branch to name the public value it
 reads at the call site.
@@ -2853,22 +2856,27 @@ terms, and its first such record fails with `bad_record_mac`.
 
 ## Key exchange
 
-Every server build holds two groups, X25519MLKEM768 and x25519, and
-`srv_kex.[ch]` holds what the server does with them. Camilo answered open
-question ten on 2026-09-24, and `docs/decisions.md` entry 54 records the trade.
+Every server build holds three groups, X25519MLKEM768, x25519 and secp256r1,
+and `srv_kex.[ch]` holds what the server does with them. Camilo answered open
+question ten on 2026-09-24, and `docs/decisions.md` entry 54 records the trade;
+entry 63 added secp256r1.
 
 **Which group.** The server reads `supported_groups` and prefers the hybrid:
-X25519MLKEM768 whenever the client lists it, x25519 when it lists x25519 alone,
-and handshake_failure when it lists neither (`rfc9846.txt:1145-1148`). The
+X25519MLKEM768 whenever the client lists it, x25519 when it lists x25519 and
+not the hybrid, secp256r1 when it lists secp256r1 and neither of the others,
+and handshake_failure when it lists none of the three
+(`rfc9846.txt:1145-1148`). The
 key_share then decides between a ServerHello and a HelloRetryRequest, the shape
 RFC 9846 §4.3.8 gives a server that selects from `supported_groups` first
 (`rfc9846.txt:2172-2177`). So a hello that carries the hybrid share gets the
 hybrid in one round trip, with or without an x25519 share beside it; a hello
 that lists the hybrid and shares x25519 alone gets a HelloRetryRequest that
 names X25519MLKEM768, and its second hello must carry that share
-(`rfc9846.txt:2212-2215`); and a hello that lists x25519 alone gets x25519, in
-one round trip or after a retry as before. The retry is the cookie path this
-server already had, and the cookie carries the group.
+(`rfc9846.txt:2212-2215`); a hello that lists x25519 without the hybrid gets
+x25519, in one round trip or after a retry as before, whatever else it shares;
+and a hello that lists secp256r1 alone gets secp256r1, in one round trip when
+it shared it and after a retry when it did not. The retry is the cookie path
+this server already had, and the cookie carries the group.
 
 **The hybrid's bytes.** RFC 10024 fixes them, and `srv_kex.h` states them. The
 client's share is the ML-KEM-768 encapsulation key, 1,184 bytes, then its
@@ -2879,25 +2887,35 @@ order is the one `handshake_flight.c`'s `hybrid_secret` reads, so a chapulin
 client and a chapulin server agree on it, and OpenSSL 3.6's `s_client` agrees
 with both in `test/e2e.sh`.
 
-**What it refuses.** A hybrid share of any length but 1,216 bytes and an x25519
-share of any length but 32, with illegal_parameter, at the parser. An
+**What it refuses.** A hybrid share of any length but 1,216 bytes, an x25519
+share of any length but 32, and a secp256r1 share of any length but 65, with
+illegal_parameter, at the parser. A secp256r1 point whose form byte is not
+0x04, whose coordinates are not below p, or which is not on the curve, with
+illegal_parameter, before the ServerHello and before the server draws its own
+P-256 key (`rfc9846.txt:2277-2286`). An
 encapsulation key that fails FIPS 203 §7.2's modulus check, with
 illegal_parameter, which RFC 10024 asks of a server; `mlkem_encaps_derand`
 runs the check before it writes anything. An x25519 half that yields the
 all-zero secret, with illegal_parameter (`rfc9846.txt:4293-4295`, INV-3).
 
 **What it draws and wipes.** The 32 bytes of encapsulation randomness come from
-`ch_rand_bytes` when the server selects the hybrid, and not otherwise (INV-4).
-The ML-KEM shared secret lives in `handshake_state.mlkem_ss` from the
-ServerHello, where the encapsulation runs, to `srv_derive_handshake_secrets`,
-which copies it into the input keying material and wipes it (INV-17).
+`ch_rand_bytes` when the server selects the hybrid, and not otherwise, and the
+32-byte P-256 scalar comes from it when the server selects secp256r1, and not
+otherwise (INV-4). The ML-KEM shared secret lives in `handshake_state.mlkem_ss`
+from the ServerHello, where the encapsulation runs, to
+`srv_derive_handshake_secrets`, which copies it into the input keying material
+and wipes it, and the P-256 scalar lives in `handshake_state.p256_priv` over
+the same span and dies in the same call (INV-17). The P-256 shared secret is
+the 32-byte X coordinate (`rfc9846.txt:4266-4276`).
 
 **What it costs.** The ServerHello, staged in the clear in `ch_tls.tx`, is up
 to 1,216 bytes (`SRV_SERVER_HELLO_MAX`, proved sufficient by the
 `srv_message` harness), so a server's TX array holds that many bytes behind
 the record header. `bench/sram.sh` measures the server's `ch_tls` at 1,968
 bytes on arm64, against 1,368 before, and `ch_srv_accept`'s stack peak at
-10,304 bytes, against 5,248, through the encapsulation into K-PKE encrypt.
+10,304 bytes, against 5,248, through the encapsulation into K-PKE encrypt;
+the P-256 scalar in the handshake state raised that peak to 10,336
+(`docs/decisions.md` entry 63).
 Every server object packages `mlkem.c`, `mlkem_poly.c` and `sha3.c`, and its
 frames are held to the hybrid's 6,656-byte budget (INV-19).
 
@@ -3133,7 +3151,7 @@ New entries:
   claim is Semgrep's and the branch claim is `lint-wide-multiply`'s.
 - **INV-29 — the server selects from a closed set and refuses the rest.** The
   second arm INV-7 needs, written from the selecting side. Claim: three cipher
-  suites, two groups, two signature schemes, one version, and a key-exchange
+  suites, three groups, two signature schemes, one version, and a key-exchange
   mode the client listed; the server never sends a `key_share` for a group
   absent from `supported_groups`, never signs with a scheme the client did not
   offer, never runs a hash the selected suite did not name, and refuses
@@ -3237,7 +3255,7 @@ one means re-arguing the trade rather than editing the code.
 
 | entry | what it must now say |
 |---|---|
-| 1, one profile, nothing negotiated (`:10-13`) | The gain is what the server role spends. The entry states the new cost — a selection surface on the serving side, over three suites, two hashes, two groups and two signature schemes — and what it buys, which is every client whose offer meets §9.1. |
+| 1, one profile, nothing negotiated (`:10-13`) | The gain is what the server role spends. The entry states the new cost — a selection surface on the serving side, over three suites, two hashes, three groups and two signature schemes — and what it buys, which is every client whose offer meets §9.1. |
 | 3, the MUSTs stay (`:17-21`) | Every MUST inverts for a server, and cookie generation and the early-data discard join the list. "a conforming client" becomes "a conforming client and a conforming server". |
 | 6, ChaCha only; AES never enters (`:38-42`) | Replaced whole by the appendix text. The QUIC work already has a pending replacement, and the server changes its shape, because a server's AES key is a traffic secret while QUIC's are public. |
 | 8, one pinned signature algorithm per build (`:48-53`) | The entry is about verification. A server holds one identity per scheme it offers, and what varies is which scheme the client offered. Different trade, different failure mode. |
@@ -3288,8 +3306,9 @@ restatement at `CLAUDE.md:44-45`:
 > selects rather than offers, because RFC 9846 §9.1 tells a client what to
 > support and never what to offer, so a conformant client may offer any subset
 > of the mandatory set. It holds the three cipher suites of §9.1 and therefore
-> both transcript hashes, SHA-256 and SHA-384; two key-exchange groups,
-> secp256r1 and x25519; one signature scheme per provisioned identity, out of
+> both transcript hashes, SHA-256 and SHA-384; three key-exchange groups,
+> X25519MLKEM768, x25519 and secp256r1; one signature scheme per provisioned
+> identity, out of
 > the two §9.1 names for CertificateVerify; and one version. It refuses
 > everything outside that set with the alert the RFC names. INV-29 states the
 > closed set and holds it; the server never selects a parameter the client did

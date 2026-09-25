@@ -9,6 +9,9 @@
 #include "buf.h"
 #include "cfg.h"
 #include "handshake_message.h"
+#ifdef CH_KEX_TWO_GROUPS
+#include "p256_point.h"
+#endif
 
 const uint8_t hsp_hrr_magic[32] = {0xcf, 0x21, 0xad, 0x74, 0xe5, 0x9a, 0x61, 0x11, 0xbe, 0x1d, 0x8c,
                                    0x02, 0x1e, 0x65, 0xb8, 0x91, 0xc2, 0xa2, 0x11, 0x16, 0x7a, 0xbb,
@@ -48,6 +51,40 @@ static int parse_x25519_share(rbuf *e, server_hello_info *info) {
     info->have_share = 1;
     return CH_OK;
 }
+
+// key_share in a ServerHello that selected secp256r1: the group, a length
+// of exactly P256_POINT_LEN and the server's point in the uncompressed
+// form RFC 9846 §4.3.8.2 fixes (rfc9846.txt:2261-2275). A 64-byte or a
+// 66-byte value is the wrong length for that form and is refused here.
+static int parse_p256_share(rbuf *e, server_hello_info *info) {
+    if (rb_u16(e) != P256_POINT_LEN) {
+        return CH_EPROTO;
+    }
+    const uint8_t *point = rb_bytes(e, P256_POINT_LEN);
+    if (point == NULL) {
+        return CH_EPROTO;
+    }
+    info->server_p256 = point;
+    info->group = CH_GROUP_SECP256R1;
+    info->have_share = 1;
+    return CH_OK;
+}
+
+// key_share in a HelloRetryRequest: one NamedGroup (RFC 9846 §4.3.8). The
+// first hello lists secp256r1 without a share, so secp256r1 is the one
+// group a retry may name. Naming the hybrid or x25519 asks for a share
+// the hello already carried, and naming any other group names one it did
+// not list; §4.3.8 makes both an illegal_parameter abort
+// (rfc9846.txt:2205-2212). require_pq also keeps secp256r1 off the hello,
+// and hsg_take_retry refuses the retry there, because this parser is not
+// told the configuration.
+static int parse_retry_group(rbuf *e, server_hello_info *info) {
+    if (rb_u16(e) != CH_GROUP_SECP256R1) {
+        return CH_EPROTO;
+    }
+    info->retry_group = CH_GROUP_SECP256R1;
+    return CH_OK;
+}
 #endif
 
 #ifdef CH_SUITE_AES_GCM
@@ -69,19 +106,24 @@ static int suite_offered(uint16_t suite) {
 // server's share.
 static int parse_key_share(rbuf *e, server_hello_info *info, int hrr) {
     if (hrr) {
-        // Every group the hello lists in supported_groups also has a share
-        // in its key_share: the build's one group, both groups in a
-        // CH_KEX_TWO_GROUPS build, or the hybrid alone there under
-        // require_pq, which lists the hybrid alone. So a retry that names
-        // a group names one the hello already sent a share for or one it
-        // never listed, and RFC 9846 §4.3.8 makes both an
+#ifdef CH_KEX_TWO_GROUPS
+        return parse_retry_group(e, info);
+#else
+        // Every group a raw or ca hello lists in supported_groups also has
+        // a share in its key_share: the build's one group. So a retry that
+        // names a group names one the hello already sent a share for or
+        // one it never listed, and RFC 9846 §4.3.8 makes both an
         // illegal_parameter abort (rfc9846.txt:2205-2212).
         return CH_EPROTO;
+#endif
     }
     uint16_t group = rb_u16(e);
 #ifdef CH_KEX_TWO_GROUPS
     if (group == CH_GROUP_X25519) {
         return parse_x25519_share(e, info);
+    }
+    if (group == CH_GROUP_SECP256R1) {
+        return parse_p256_share(e, info);
     }
     if (group != CH_GROUP_X25519MLKEM768 || rb_u16(e) != CH_HYBRID_SERVER_SHARE) {
         return CH_EPROTO;

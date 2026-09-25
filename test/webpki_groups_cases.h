@@ -1,9 +1,11 @@
 // The key exchange groups a TRUST=webpki client offers and the
-// HelloRetryRequest rules around them (docs/decisions.md entry 53). Every
-// webpki build lists X25519MLKEM768 and then x25519 and sends a key share
-// for each, the x25519 one over the x25519 half of the hybrid one, so a
-// server picks either without a retry, and a retry that names a group
-// names one already shared. The rows run against the mock server in
+// HelloRetryRequest rules around them (docs/decisions.md entries 53 and
+// 63). Every webpki build lists X25519MLKEM768, x25519 and secp256r1 and
+// sends a key share for the first two, the x25519 one over the x25519
+// half of the hybrid one, so a server picks either without a retry, and a
+// retry that names either of them names one already shared. The retry to
+// secp256r1, the one group listed without a share, is
+// test/webpki_p256_cases.h's. The rows run against the mock server in
 // test/webpki_session_test.c, and a handshake that reaches the mock's
 // one bad certificate entry ends in bad_certificate under the handshake
 // keys, so that alert is the evidence the two sides derived the same
@@ -34,20 +36,20 @@ static int hello_shares_both(const uint8_t *hello, size_t n) {
            memcmp(shares[1].key, shares[0].key + MLKEM_EK_LEN, X25519_LEN) == 0;
 }
 
-// The first hello lists both groups, the hybrid first, and carries a key
-// share for each in the same order (RFC 9846 §4.3.8,
-// rfc9846.txt:2161-2163).
+// The first hello lists the three groups, the hybrid first and secp256r1
+// last, and carries a key share for the first two in the same order and
+// none for secp256r1 (RFC 9846 §4.3.8, rfc9846.txt:2161-2165).
 static void test_webpki_groups_hello(void) {
-    static const uint8_t both[] = {0x00, 0x04, 0x11, 0xec, 0x00, 0x1d};
+    static const uint8_t three[] = {0x00, 0x06, 0x11, 0xec, 0x00, 0x1d, 0x00, 0x17};
     mock_server s;
     ch_cfg cfg = valid_cfg(&s);
     CHECK(sends_client_hello(&cfg));
-    CHECK(hello_groups_are(s.hello, s.hello_len, both, sizeof both));
+    CHECK(hello_groups_are(s.hello, s.hello_len, three, sizeof three));
     CHECK(hello_shares_both(s.hello, s.hello_len));
 }
 
 // require_pq lists the hybrid alone and shares it alone, which is the
-// hello a raw or ca KEX=pq build sends.
+// hello a raw or ca KEX=pq build sends: neither x25519 nor secp256r1.
 static void test_webpki_groups_hello_require_pq(void) {
     static const uint8_t hybrid_only[] = {0x00, 0x02, 0x11, 0xec};
     mock_server s;
@@ -137,13 +139,14 @@ static void test_webpki_cookie_retry(void) {
     }
 }
 
-// The first invalid retries: every retry that names a group. Both groups
-// the hello lists already have a share in it, so naming either asks for
-// a share the hello carried, and under require_pq x25519 is a group it
-// never listed; RFC 9846 §4.3.8 makes both an illegal_parameter abort
+// The invalid retries that name a group: the hybrid and x25519 already
+// have a share in the hello, so naming either asks for a share the hello
+// carried, and under require_pq x25519 is a group it never listed; RFC
+// 9846 §4.3.8 makes both an illegal_parameter abort
 // (rfc9846.txt:2205-2212), with a cookie beside the group or without
 // one, and no retry hello goes out. A retry with neither a group nor a
-// cookie asks for no change, the same alert under §4.2.4.
+// cookie asks for no change, the same alert under §4.2.4. The one group a
+// retry may name, secp256r1, is test/webpki_p256_cases.h's.
 static void test_webpki_retry_names_a_group(void) {
     static const uint16_t groups[] = {CH_GROUP_X25519MLKEM768, CH_GROUP_X25519};
     for (size_t i = 0; i < 2 * sizeof groups / sizeof groups[0]; i++) {

@@ -97,14 +97,23 @@ static const char *const hspd_alpn_names[HSPD_ALPN_MAX] = {"h2", "http/1.1", "x"
 // cross-build refusal: a classic client refuses a hybrid selection and a
 // hybrid client refuses a classic one.
 //
-// The TRUST=webpki build lists both groups and sends a share for each
-// (docs/decisions.md entry 53), and the model's two-groups token says
-// so. A ServerHello there may select either group, each at its own share
-// length, so a row writes the hybrid by default and x25519 when it draws
-// sh_x25519, and the wrong-group mutation writes the other group over
-// the share, whose length then does not match. A retry that names a
-// group is refused in every build, because every group a build lists
-// already has a share in its hello.
+// The TRUST=webpki build lists three groups and sends a share for the
+// first two (docs/decisions.md entries 53 and 63), and the model's
+// two-groups token says so. A ServerHello there may select any of the
+// three, each at its own share length, so a row writes the hybrid by
+// default, x25519 when it draws sh_x25519 and secp256r1 when it draws
+// sh_p256, and the wrong-group mutation writes another group over the
+// share, whose length then does not match. A retry that names x25519 is
+// refused in every build, because every build that lists x25519 shares
+// it; a retry that names secp256r1 is accepted in the two-group build,
+// the one build that lists it without a share, and refused in the
+// others, which never list it.
+#define HSPD_SECP256R1 0x0017
+#ifdef CH_KEX_TWO_GROUPS
+#define HSPD_RETRY_GROUP(info) ((info).retry_group)
+#else
+#define HSPD_RETRY_GROUP(info) 0
+#endif
 #ifdef CH_KEX_TWO_GROUPS
 #define HSPD_KEX_TOKEN "two-groups"
 #define HSPD_GROUP HSPD_X25519MLKEM768
@@ -158,10 +167,49 @@ typedef struct {
     int psk_ext;       // a pre_shared_key response is in the message
     unsigned identity; // the selected_identity it carries
     int retry_x25519;  // a retry names x25519, which every build refuses
+    int retry_p256;    // a retry names secp256r1, which only two-groups takes
     int retry_bare;    // that retry carries no cookie
     int sh_x25519;     // a ServerHello selects x25519 with a 32-byte share
+    int sh_p256;       // a ServerHello selects secp256r1 with a 65-byte point
     uint16_t suite;    // the cipher_suite an on-profile row carries
 } hspd_sh_plan;
+
+// The model's reply to an accepted retry, which carries a cookie, a
+// selected group, or both, with "-" for either one it lacks.
+static void hspd_hrr_want(char *want, size_t cap, const server_hello_info *info) {
+    char cookie_hex[2 * HSP_COOKIE_MAX + 2] = "-";
+    if (info->cookie != NULL) {
+        (void)hex_encode(cookie_hex, info->cookie, info->cookie_len);
+    }
+    char group_text[8] = "-";
+    if (HSPD_RETRY_GROUP(*info) != 0) {
+        (void)snprintf(group_text, sizeof group_text, "%u", (unsigned)HSPD_RETRY_GROUP(*info));
+    }
+    (void)snprintf(want, cap, "hrr %s %s %u", cookie_hex, group_text,
+                   (unsigned)HSPD_ACCEPTED_SUITE(*info));
+}
+
+// The whole key_exchange value an accepted ServerHello carried, in hex.
+// The model reports it whole; the C parser stores the group and splits the
+// value into server_ct and server_pub (hybrid), stores server_pub alone
+// (x25519), or points at it where it arrived (secp256r1), so this
+// reassembles the wire order — ML-KEM ciphertext first (RFC 10024).
+static void hspd_share_hex(char share_hex[2 * HSPD_SHARE + 1], const server_hello_info *info) {
+#ifdef CH_KEX_HYBRID
+    size_t ct_hex_len = 0;
+    if (info->group == HSPD_X25519MLKEM768) {
+        ct_hex_len = hex_encode(share_hex, info->server_ct, MLKEM_CT_LEN);
+    }
+    (void)hex_encode(share_hex + ct_hex_len, info->server_pub, X25519_LEN);
+#ifdef CH_KEX_TWO_GROUPS
+    if (info->group == HSPD_SECP256R1) {
+        (void)hex_encode(share_hex, info->server_p256, P256_POINT_LEN);
+    }
+#endif
+#else
+    (void)hex_encode(share_hex, info->server_pub, X25519_LEN);
+#endif
+}
 
 static void hspd_sh_row(const hspd_sh_plan *plan, const uint8_t *body, size_t n) {
     server_hello_info info;
@@ -171,13 +219,13 @@ static void hspd_sh_row(const hspd_sh_plan *plan, const uint8_t *body, size_t n)
     // Three refusals the C parser defers to handshake_flight.c and the
     // model makes at parse time: a ServerHello with no usable key
     // share, a selected_identity outside the single index this client
-    // offers, and a retry carrying no cookie — the only change a retry
-    // can ask this client for (RFC 9846 §4.2.4). Each ends the
-    // handshake on both sides; only the layer that ends it differs, so
-    // project C down to the model's boundary rather than weaken the
-    // model to match the split.
-    int deferred =
-        info.hrr ? info.cookie == NULL : !info.have_share || (plan->psk_ext && !info.psk_ok);
+    // offers, and a retry carrying neither a cookie nor a group — it asks
+    // for no change (RFC 9846 §4.2.4). Each ends the handshake on both
+    // sides; only the layer that ends it differs, so project C down to
+    // the model's boundary rather than weaken the model to match the
+    // split.
+    int deferred = info.hrr ? info.cookie == NULL && HSPD_RETRY_GROUP(info) == 0
+                            : !info.have_share || (plan->psk_ext && !info.psk_ok);
 
     // The want buffer holds the largest accepted reply: "sh ", the
     // share's hex (2240 characters in the hybrid build), and the
@@ -186,28 +234,12 @@ static void hspd_sh_row(const hspd_sh_plan *plan, const uint8_t *body, size_t n)
     if (rc != CH_OK || deferred) {
         (void)snprintf(want, sizeof want, "ERR hs_server_hello reject");
     } else if (info.hrr) {
-        // An accepted retry carries a cookie and no key_share, so the
-        // model prints the cookie's hex and "-" for the selected group.
-        char cookie_hex[2 * HSP_COOKIE_MAX + 1];
-        (void)hex_encode(cookie_hex, info.cookie, info.cookie_len);
-        (void)snprintf(want, sizeof want, "hrr %s - %u", cookie_hex,
-                       (unsigned)HSPD_ACCEPTED_SUITE(info));
+        hspd_hrr_want(want, sizeof want, &info);
     } else {
-        // The model reports the selected group and the whole
-        // key_exchange value; the C parser stores the group and splits
-        // the value into server_ct and server_pub (hybrid) or stores
-        // server_pub alone, so the row reassembles the wire order —
-        // ML-KEM ciphertext first (RFC 10024).
+        // The model reports the selected group and the whole key_exchange
+        // value.
         char share_hex[2 * HSPD_SHARE + 1];
-#ifdef CH_KEX_HYBRID
-        size_t ct_hex_len = 0;
-        if (info.group == HSPD_X25519MLKEM768) {
-            ct_hex_len = hex_encode(share_hex, info.server_ct, MLKEM_CT_LEN);
-        }
-        (void)hex_encode(share_hex + ct_hex_len, info.server_pub, X25519_LEN);
-#else
-        (void)hex_encode(share_hex, info.server_pub, X25519_LEN);
-#endif
+        hspd_share_hex(share_hex, &info);
         (void)snprintf(want, sizeof want, "sh %u %s %s %u", (unsigned)info.group, share_hex,
                        plan->psk_ext ? "0" : "-", (unsigned)HSPD_ACCEPTED_SUITE(info));
     }
@@ -247,16 +279,17 @@ static void hspd_sh_version_ext(wbuf *w, size_t mut) {
     }
 }
 
-// The retry branch's extensions (§4.2.4): the cookie, and the key_share
-// a retry may not carry. A row that names x25519 writes a key_share every
-// build refuses, and may leave the cookie off, so the refusal is diffed
-// with and without one.
+// The retry branch's extensions (§4.2.4): the cookie, and a key_share
+// naming a group. A row that names x25519 writes a key_share every build
+// refuses, and one that names secp256r1 writes one the two-group build
+// takes and the others refuse; either may leave the cookie off, so each
+// verdict is diffed with and without one.
 static void hspd_sh_retry_exts(wbuf *w, size_t mut, const hspd_sh_plan *plan, const uint8_t *cookie,
                                size_t cookie_len) {
-    if (plan->retry_x25519 && mut != 9) {
+    if ((plan->retry_x25519 || plan->retry_p256) && mut != 9) {
         wb_u16(w, HSPD_KEY_SHARE);
         wb_u16(w, 2);
-        wb_u16(w, HSPD_X25519);
+        wb_u16(w, plan->retry_p256 ? HSPD_SECP256R1 : HSPD_X25519);
     }
     if (mut != 7 && !plan->retry_bare) {
         wb_u16(w, HSPD_COOKIE);
@@ -281,11 +314,11 @@ static void hspd_sh_retry_exts(wbuf *w, size_t mut, const hspd_sh_plan *plan, co
 // offered one (§4.3), which mut 13 defies.
 static void hspd_sh_share_exts(wbuf *w, size_t mut, hspd_sh_plan *plan, const uint8_t *share) {
     if (mut != 10) {
-        // The build's own share, or, when sh_x25519 is set, the 32-byte
-        // x25519 share a two-groups ServerHello may select beside the
-        // hybrid one. mut 11 writes the other group over the share, so
-        // each run diffs the cross-build refusal, and mut 12 shortens the
-        // share by one byte.
+        // The build's own share, or, when sh_x25519 or sh_p256 is set,
+        // the 32-byte x25519 share or the 65-byte secp256r1 point a
+        // two-groups ServerHello may select beside the hybrid one. mut 11
+        // writes another group over the share, so each run diffs the
+        // cross-build refusal, and mut 12 shortens the share by one byte.
         size_t len = HSPD_SHARE;
         uint16_t group = HSPD_GROUP;
         uint16_t other = HSPD_OTHER_GROUP;
@@ -294,6 +327,11 @@ static void hspd_sh_share_exts(wbuf *w, size_t mut, hspd_sh_plan *plan, const ui
             len = X25519_LEN;
             group = HSPD_X25519;
             other = HSPD_X25519MLKEM768;
+        }
+        if (plan->sh_p256) {
+            len = P256_POINT_LEN;
+            group = HSPD_SECP256R1;
+            other = HSPD_X25519;
         }
 #endif
         wb_u16(w, HSPD_KEY_SHARE);
@@ -326,15 +364,16 @@ static void hspd_sh_patch_vector(wbuf *w, size_t exts, size_t end) {
     w->p[exts + 1] = (uint8_t)n;
 }
 
-// The row's on-profile shape. A retry naming x25519, with and without a
-// cookie, is drawn in every build, so each diffs its refusal. A
-// ServerHello selecting x25519 is drawn only in the two-groups build,
-// the one build that admits it beside another group; the others see it
-// as mut 11. The suite is ChaCha20, or either
-// offered suite in the two-suite build.
+// The row's on-profile shape. A retry naming x25519 or secp256r1, with
+// and without a cookie, is drawn in every build, so each diffs its
+// verdict. A ServerHello selecting x25519 or secp256r1 is drawn only in
+// the two-groups build, the one build that admits either beside another
+// group; the others see it as mut 11. The suite is ChaCha20, or any
+// offered suite in the build that offers several.
 static void hspd_sh_draw_shapes(hspd_sh_plan *plan, int hrr) {
     plan->retry_x25519 = hrr && rng_below(3) == 0;
-    plan->retry_bare = plan->retry_x25519 && rng_below(2) == 0;
+    plan->retry_p256 = hrr && !plan->retry_x25519 && rng_below(2) == 0;
+    plan->retry_bare = (plan->retry_x25519 || plan->retry_p256) && rng_below(2) == 0;
     plan->suite = HSPD_SUITE;
 #ifdef CH_CLIENT_AES_SUITES
     // Any offered suite, in a retry or a ServerHello alike.
@@ -348,6 +387,7 @@ static void hspd_sh_draw_shapes(hspd_sh_plan *plan, int hrr) {
 #endif
 #ifdef CH_KEX_TWO_GROUPS
     plan->sh_x25519 = !hrr && rng_below(3) == 0;
+    plan->sh_p256 = !hrr && !plan->sh_x25519 && rng_below(2) == 0;
 #endif
 }
 

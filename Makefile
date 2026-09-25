@@ -152,7 +152,7 @@ SRCS := ct.c sha256.c hkdf.c chacha20.c poly1305.c aead.c x25519.c p256.c rsa.c 
 HDRS := ct.h sha256.h hkdf.h chacha20.h poly1305.h aead.h x25519.h x25519_wide.h p256.h rsa.h ch_assert.h \
         pem.h x509.h x509_der.h x509_ca.h webpki.h webpki_cfg.h webpki_pin.h webpki_ticket.h buf.h record.h keysched.h io.h handshake_message.h handshake_parser.h handshake_record.h cfg.h session.h handshake_auth.h handshake.h handshake_post.h \
         tls.h rand.h drbg.h sha3.h sha512.h sha512_compress.h p384.h p384_field.h p256_field.h p256_scalar.h p256_point.h p256_sign.h p256_ecdh.h rsa_pkcs1.h rsa_sign.h mlkem.h mlkem_poly.h \
-        handshake_flight.h quic.h quic_aes.h quic_aes_block.h quic_aes_key.h quic_config.h quic_gcm.h quic_ghash_hw.h quic_initial.h quic_keys.h quic_packet.h quic_retry.h quic_step.h quic_fail.h quic_token.h aes_traffic_key.h aes_schedule.h \
+        handshake_flight.h handshake_groups.h quic.h quic_aes.h quic_aes_block.h quic_aes_key.h quic_config.h quic_gcm.h quic_ghash_hw.h quic_initial.h quic_keys.h quic_packet.h quic_retry.h quic_step.h quic_fail.h quic_token.h aes_traffic_key.h aes_schedule.h \
         srv_cfg.h srv.h srv_parser.h srv_parser_ext.h srv_message.h srv_cookie.h srv_ticket.h srv_auth.h srv_out.h srv_flight.h srv_resume.h srv_handshake.h srv_quic.h srv_rec.h keylog.h \
         rec.h rec_frame.h rec_step.h build.h suite.h transcript.h
 
@@ -360,7 +360,7 @@ CLIENT_REPLACED := handshake.c handshake_auth.c handshake_parser.c handshake_par
 # one file keeps bugprone-reserved-identifier and misc-use-internal-linkage
 # working everywhere else, which disabling them in .clang-tidy would not.
 # clang-format still covers it, and so does lint-runtime-symbols.
-LINT_C := $(filter-out softmul.c,$(SRCS)) drbg.c sha3.c sha512.c sha512_compress.c p384.c p384_field.c p256_field.c p256_scalar.c p256_point.c p256_sign.c p256_ecdh.c rsa_pkcs1.c rsa_sign.c webpki_sigalg.c webpki_cert.c webpki.c webpki_ticket.c webpki_pin.c webpki_cfg.c mlkem.c mlkem_poly.c test/unit_test.c test/tls_client.c \
+LINT_C := $(filter-out softmul.c,$(SRCS)) handshake_groups.c drbg.c sha3.c sha512.c sha512_compress.c p384.c p384_field.c p256_field.c p256_scalar.c p256_point.c p256_sign.c p256_ecdh.c rsa_pkcs1.c rsa_sign.c webpki_sigalg.c webpki_cert.c webpki.c webpki_ticket.c webpki_pin.c webpki_cfg.c mlkem.c mlkem_poly.c test/unit_test.c test/tls_client.c \
           test/diff_test.c test/timing_test.c test/drbg_test.c test/softmul_test.c test/rsa_test.c test/rsa_sign_test.c test/sha3_test.c test/sha512_test.c test/hkdf384_test.c test/p384_test.c test/p256_field_test.c test/p256_sign_test.c test/p256_ecdh_test.c test/rsa_pkcs1_test.c \
           test/webpki_time_test.c test/webpki_name_test.c test/webpki_spki_test.c test/webpki_sigalg_test.c test/webpki_session_test.c test/webpki_resume_test.c test/webpki_cert_test.c test/webpki_chain_test.c \
           test/webpki_auth_test.c test/webpki_encrypted_exts_test.c \
@@ -390,13 +390,13 @@ TESTH := test/test_random.h test/pem_armor.h test/pem_tests.h test/x509_ca_tests
          test/rsa_pkcs1_vectors.h test/rsa_wide_vectors.h test/rsa_pkcs1_wide_vectors.h \
          test/rsa_sign_vectors.h \
          test/diff_webpki.h test/diff_mlkem.h test/mlkem_vectors.h test/webpki_corpus.h test/webpki_sigalg_vectors.h \
-         test/diff_webpki_sigalg.h test/hello_exts.h test/webpki_session_cases.h test/webpki_groups_cases.h test/webpki_suite_cases.h test/rec_read_tests.h test/rec_resume_tests.h test/rec_coalesced_tests.h test/rec_close_tests.h test/quic_loop_raw.h test/quic_loop_close.h test/quic_loop_webpki.h test/webpki_resume_session.h test/webpki_resume_cases.h test/webpki_pins_cases.h test/tls_client_webpki.h \
+         test/diff_webpki_sigalg.h test/hello_exts.h test/webpki_session_cases.h test/webpki_groups_cases.h test/webpki_p256_cases.h test/webpki_mock_kex.h test/webpki_suite_cases.h test/rec_read_tests.h test/rec_resume_tests.h test/rec_group_tests.h test/rec_coalesced_tests.h test/rec_close_tests.h test/quic_loop_raw.h test/quic_loop_close.h test/quic_loop_webpki.h test/webpki_resume_session.h test/webpki_resume_cases.h test/webpki_pins_cases.h test/tls_client_webpki.h \
          test/webpki_decline_cases.h test/webpki_r2_chain.h test/psk_decline_tests.h \
          test/handshake_strict_alpn.h test/handshake_strict_cert_type.h \
          test/webpki_cert_mutants.h test/webpki_ext_mutants.h test/diff_webpki_cert.h \
          test/webpki_auth_vectors.h test/webpki_auth_pins.h test/webpki_chain_path.h \
          test/diff_webpki_chain.h test/diff_webpki_pin.h test/rxbuf_floor_tests.h \
-         test/srv_message_tests.h test/srv_cookie_tests.h test/srv_ticket_tests.h test/srv_resume_tests.h test/srv_resume_issue_tests.h test/srv_flight_tests.h test/srv_flight_suite_tests.h \
+         test/srv_message_tests.h test/srv_cookie_tests.h test/srv_ticket_tests.h test/srv_resume_tests.h test/srv_resume_issue_tests.h test/srv_flight_tests.h test/srv_flight_suite_tests.h test/srv_flight_p256_tests.h \
          test/quic_token_tests.h test/srv_quic_retry_tests.h test/srv_quic_retry_count_tests.h test/srv_quic_retry_vectors.h \
          test/srv_flight_keys_tests.h test/srv_parser_hello.h test/srv_parser_tests.h test/srv_parser_reader_tests.h \
          test/lib_pair.h
@@ -462,6 +462,15 @@ WEBPKI_SRCS := webpki_time.c webpki_name.c webpki_spki.c webpki_sigalg.c webpki_
 # x509_der.c, rsa.c, rsa_mont.c and p256.c already; these five it does
 # not, because the device objects never package them.
 WEBPKI_CHAIN_SRCS := sha512.c sha512_compress.c p384.c p384_field.c rsa_pkcs1.c
+# The constant-time P-256 key exchange: p256_ecdh.c over the arithmetic
+# p256_sign.c computes with too. p256.c is the variable-time verifier and
+# is not among them. Every server role and every TRUST=webpki client
+# carries them (docs/decisions.md 63); the device clients do not.
+P256_ECDH_SRCS := p256_ecdh.c p256_point.c p256_scalar.c p256_field.c
+# What the TRUST=webpki client adds for its key exchange: the retry to
+# secp256r1, the group a ServerHello may then select, and the classic
+# secrets (handshake_groups.h), with the P-256 arithmetic under them.
+WEBPKI_KEX_SRCS := handshake_groups.c $(P256_ECDH_SRCS)
 TRUST ?= raw-rsa
 # Provisioning is a public call only where its parser is linked, so
 # PUBLIC_CA is set by the two ca arms alone.
@@ -516,7 +525,7 @@ PIN_DEF :=
 PUBLIC_CA :=
 TRUST_FILTER := pem.c x509.c x509_ca.c
 PIN_FILTER :=
-TRUST_ADD := $(WEBPKI_CHAIN_SRCS) $(filter-out $(SRCS),$(WEBPKI_SRCS))
+TRUST_ADD := $(WEBPKI_CHAIN_SRCS) $(filter-out $(SRCS),$(WEBPKI_SRCS)) $(WEBPKI_KEX_SRCS)
 else
 $(error TRUST=$(TRUST) is not a trust mode; use TRUST=raw-rsa, TRUST=raw-ecdsa, TRUST=ca-rsa, TRUST=ca-ecdsa, TRUST=webpki, or TRUST=none for ROLE=server)
 endif
@@ -620,9 +629,10 @@ ROLE_FILTER := $(CLIENT_REPLACED)
 # The server's own sources and the two signers srv_auth.c calls:
 # rsa_sign.c for rsa_pss_rsae_sha256 and p256_sign.c for
 # ecdsa_secp256r1_sha256, with the constant-time arithmetic p256_sign.c
-# computes over and p256.c does not carry. docs/server.md's ROLE_ADD
-# also names p256_ecdh.c, aes.c and gcm.c; those three do not exist, so
-# this object has no AES and the build offers
+# computes over and p256.c does not carry, and p256_ecdh.c over the same
+# arithmetic for srv_kex.c's secp256r1 key exchange (docs/decisions.md
+# 63). docs/server.md's ROLE_ADD also names aes.c and gcm.c; those two
+# do not exist, so this object has no AES and the build offers
 # TLS_CHACHA20_POLY1305_SHA256 alone. Each lane adds its own name here
 # when it lands.
 #
@@ -631,7 +641,7 @@ ROLE_FILTER := $(CLIENT_REPLACED)
 # once. lint-stack passes at the 2,560-byte budget because
 # -Wframe-larger-than measures one frame at a time, and docs/server.md
 # measures the sum a deployment has to size its stack from.
-ROLE_ADD    := $(SRV_SRCS) rsa_sign.c p256_sign.c p256_scalar.c p256_point.c p256_field.c
+ROLE_ADD    := $(SRV_SRCS) rsa_sign.c p256_sign.c $(P256_ECDH_SRCS)
 ifeq ($(TRANSPORT),quic-nonblocking)
 # The server's driver replaces the client's, source for source:
 # srv_quic.c is the step table quic_step.c is for a client, and
@@ -703,7 +713,7 @@ ROLE_DEF    := -DCH_ROLE_SERVER -DCH_ROLE_BOTH
 # Nothing is replaced: ROLE=server filters $(CLIENT_REPLACED) because its
 # srv_*.c files stand in for those drivers, and here both sets compile.
 ROLE_FILTER :=
-ROLE_ADD    := $(SRV_SRCS) rsa_sign.c p256_sign.c p256_scalar.c p256_point.c p256_field.c
+ROLE_ADD    := $(SRV_SRCS) rsa_sign.c p256_sign.c $(P256_ECDH_SRCS)
 ifeq ($(TRANSPORT),quic-nonblocking)
 ROLE_ADD    := $(filter-out srv_handshake.c,$(ROLE_ADD)) srv_quic.c quic_token.c
 PUBLIC_ROLE := $(PUBLIC_TRANSPORT) ch_srv_quic_init ch_srv_quic_crypto_in \
@@ -737,9 +747,12 @@ $(error ROLE=$(ROLE) is not a role; use ROLE=client, ROLE=server or ROLE=both)
 endif
 LIB_DEF := $(strip $(PIN_DEF) $(TRUST_DEF) $(TRANSPORT_DEF) $(AES_DEF) $(SUITE_DEF) $(ROLE_DEF))
 # The one assignment. Every axis above filters or names the sources
-# only its value adds; nothing below rewrites.
+# only its value adds; nothing below rewrites. A ROLE=both TRUST=webpki
+# object gets the P-256 arithmetic from both its trust mode and its
+# role, so the role's copy of a name the trust mode already added is
+# dropped: ld -r would otherwise see each of those objects twice.
 LIB_SRCS := $(filter-out $(PIN_FILTER) $(TRUST_FILTER) $(TRANSPORT_FILTER) $(ROLE_FILTER),$(SRCS)) \
-            $(TRUST_ADD) $(TRANSPORT_ADD) $(ROLE_ADD) \
+            $(TRUST_ADD) $(TRANSPORT_ADD) $(filter-out $(TRUST_ADD),$(ROLE_ADD)) \
             $(filter-out $(TRUST_ADD) $(TRANSPORT_ADD) $(ROLE_ADD),$(SUITE_ADD))
 # Key exchange: KEX=x25519 (default) or KEX=pq (-DCH_KEX_PQ), the
 # X25519MLKEM768 hybrid. KEX chooses the one group of a raw or ca device
@@ -1080,7 +1093,7 @@ lint-trust-separation:
 	}; \
 	webpki_files=$$(git ls-files 'webpki*.c' | grep -v / | tr '\n' ' '); \
 	[ -n "$$webpki_files" ] || { echo "lint-trust-separation: git tracks no webpki*.c file at the root, so the webpki rows would check nothing"; rc=1; }; \
-	webpki_only="sha512.c sha512_compress.c p384.c p384_field.c rsa_pkcs1.c $$webpki_files"; \
+	webpki_only="sha512.c sha512_compress.c p384.c p384_field.c rsa_pkcs1.c handshake_groups.c p256_ecdh.c p256_point.c p256_scalar.c p256_field.c $$webpki_files"; \
 	check "TRUST=raw-rsa" "rsa.c rsa_mont.c" "p256.c pem.c x509.c x509_der.c x509_ca.c $$webpki_only" "" "-DCH_TRUST_CA -DCH_TRUST_WEBPKI -DCH_PIN_ECDSA"; \
 	check "TRUST=raw-ecdsa" "p256.c" "rsa.c rsa_mont.c pem.c x509.c x509_der.c x509_ca.c $$webpki_only" "-DCH_PIN_ECDSA" "-DCH_TRUST_CA -DCH_TRUST_WEBPKI"; \
 	check "TRUST=ca-rsa" "pem.c x509.c x509_der.c x509_ca.c rsa.c rsa_mont.c" "p256.c $$webpki_only" "-DCH_TRUST_CA" "-DCH_TRUST_WEBPKI -DCH_PIN_ECDSA"; \
@@ -1108,14 +1121,14 @@ lint-trust-separation:
 	srv_files=$$(git ls-files 'srv*.c' | grep -v / | tr '\n' ' '); \
 	[ -n "$$srv_files" ] || { echo "lint-trust-separation: git tracks no srv*.c file at the root, so the role rows would check nothing"; rc=1; }; \
 	client_only="handshake.c handshake_auth.c handshake_parser.c handshake_parser_ee.c handshake_message.c"; \
-	signers="rsa_sign.c p256_sign.c p256_scalar.c p256_point.c p256_field.c"; \
+	role_crypto="rsa_sign.c p256_sign.c p256_ecdh.c p256_scalar.c p256_point.c p256_field.c"; \
 	srv_shared=$$(printf '%s\n' $$srv_files | grep -vxF -e srv_handshake.c -e srv_quic.c -e srv_rec.c | tr '\n' ' '); \
-	check "ROLE=client TRUST=raw-rsa TRANSPORT=tcp-blocking" "$$client_only tls.c" "$$srv_files $$signers" "" "-DCH_ROLE_SERVER"; \
-	check "ROLE=both TRUST=webpki TRANSPORT=tcp-blocking" "$$srv_shared srv_handshake.c $$signers tls.c handshake.c sha3.c mlkem.c mlkem_poly.c" "srv_quic.c srv_rec.c" "-DCH_ROLE_SERVER -DCH_ROLE_BOTH" "-DCH_KEX_PQ"; \
-	check "ROLE=server TRUST=none TRANSPORT=tcp-blocking" "$$srv_shared srv_handshake.c $$signers tls.c rsa.c rsa_mont.c p256.c sha3.c mlkem.c mlkem_poly.c" "$$client_only srv_quic.c srv_rec.c" "-DCH_ROLE_SERVER" "-DCH_PIN_ECDSA -DCH_KEX_PQ"; \
+	check "ROLE=client TRUST=raw-rsa TRANSPORT=tcp-blocking" "$$client_only tls.c" "$$srv_files $$role_crypto" "" "-DCH_ROLE_SERVER"; \
+	check "ROLE=both TRUST=webpki TRANSPORT=tcp-blocking" "$$srv_shared srv_handshake.c $$role_crypto tls.c handshake.c handshake_groups.c sha3.c mlkem.c mlkem_poly.c" "srv_quic.c srv_rec.c" "-DCH_ROLE_SERVER -DCH_ROLE_BOTH" "-DCH_KEX_PQ"; \
+	check "ROLE=server TRUST=none TRANSPORT=tcp-blocking" "$$srv_shared srv_handshake.c $$role_crypto tls.c rsa.c rsa_mont.c p256.c sha3.c mlkem.c mlkem_poly.c" "$$client_only srv_quic.c srv_rec.c" "-DCH_ROLE_SERVER" "-DCH_PIN_ECDSA -DCH_KEX_PQ"; \
 	quic_srv=$$(printf '%s\n' $$quic_always | grep -vxF -e quic_step.c | tr '\n' ' '); \
-	check "ROLE=server TRUST=none TRANSPORT=quic-nonblocking EXPORTER=off" "$$srv_shared srv_quic.c quic_token.c $$signers $$quic_srv sha3.c mlkem.c mlkem_poly.c" "$$client_only srv_handshake.c srv_rec.c quic_step.c record.c" "-DCH_ROLE_SERVER -DCH_TRANSPORT_QUIC_NONBLOCKING" "-DCH_PIN_ECDSA -DCH_KEX_PQ"; \
-	check "ROLE=server TRUST=none TRANSPORT=tcp-nonblocking" "$$srv_shared srv_rec.c $$signers rec.c rec_frame.c record.c sha3.c mlkem.c mlkem_poly.c" "$$client_only srv_handshake.c srv_quic.c rec_step.c" "-DCH_ROLE_SERVER -DCH_TRANSPORT_TCP_NONBLOCKING" "-DCH_PIN_ECDSA -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_KEX_PQ"; \
+	check "ROLE=server TRUST=none TRANSPORT=quic-nonblocking EXPORTER=off" "$$srv_shared srv_quic.c quic_token.c $$role_crypto $$quic_srv sha3.c mlkem.c mlkem_poly.c" "$$client_only srv_handshake.c srv_rec.c quic_step.c record.c" "-DCH_ROLE_SERVER -DCH_TRANSPORT_QUIC_NONBLOCKING" "-DCH_PIN_ECDSA -DCH_KEX_PQ"; \
+	check "ROLE=server TRUST=none TRANSPORT=tcp-nonblocking" "$$srv_shared srv_rec.c $$role_crypto rec.c rec_frame.c record.c sha3.c mlkem.c mlkem_poly.c" "$$client_only srv_handshake.c srv_quic.c rec_step.c" "-DCH_ROLE_SERVER -DCH_TRANSPORT_TCP_NONBLOCKING" "-DCH_PIN_ECDSA -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_KEX_PQ"; \
 	check "ROLE=server TRUST=none TRANSPORT=tcp-blocking SUITE=aesgcm AES=hw" "quic_aes.c quic_aes_hw.c quic_ghash_hw.c quic_gcm.c sha512.c sha512_compress.c" "quic_aes_soft.c quic_aes_extern.c" "-DCH_SUITE_AES_GCM -DCH_AES_HW" "-DCH_AES_EXTERN -DCH_AES_256_TEST"; \
 	check "ROLE=server TRUST=none TRANSPORT=quic-nonblocking SUITE=aesgcm AES=hw EXPORTER=off" "quic_aes.c quic_aes_hw.c quic_ghash_hw.c quic_gcm.c quic_packet.c sha512.c sha512_compress.c" "quic_aes_soft.c quic_aes_extern.c record.c" "-DCH_SUITE_AES_GCM -DCH_AES_HW -DCH_TRANSPORT_QUIC_NONBLOCKING" "-DCH_AES_EXTERN -DCH_AES_256_TEST"; \
 	[ $$rc = 0 ] && echo "lint-trust-separation: every axis value packages exactly its own sources and defines"; \
@@ -1555,10 +1568,11 @@ bin/ghash_equiv_test: test/ghash_equiv_test.c test/ghash_equiv_soft.c quic_gcm.c
 # srv_parser.c reads through buf.c, hashes the frozen fields through sha256.c
 # and compares ALPN names with ct_memeq. srv_flight.c adds keysched.c for
 # the key schedule and handshake_record.c for the messages it reads, and
-# srv_kex.c adds the key exchange: x25519.c, and the ML-KEM-768 and SHA-3
-# sources every server role carries. No stub is left in the role.
+# srv_kex.c adds the key exchange: x25519.c, p256_ecdh.c over the P-256
+# arithmetic SRV_SIGNERS lists, and the ML-KEM-768 and SHA-3 sources
+# every server role carries. No stub is left in the role.
 SRV_BELOW := buf.c ct.c session.c io.c record.c aead.c chacha20.c poly1305.c hkdf.c sha256.c \
-             keysched.c x25519.c handshake_record.c $(KEX_HYBRID_SRCS)
+             keysched.c x25519.c p256_ecdh.c handshake_record.c $(KEX_HYBRID_SRCS)
 # The two signers srv_auth.c calls, each with the arithmetic it computes
 # over, and the two verifiers its boot-time check calls. Every binary
 # that links srv_auth.c links these, and so does the ROLE=server object
@@ -1597,7 +1611,7 @@ SRV_DEPS := buf.c ct.c sha256.c hkdf.c aead.c chacha20.c poly1305.c
 # It links both sides of the connection on purpose, which no packaged
 # object does, so the builder and the parser check each other.
 SRV_QUIC_SRCS := srv_quic.c srv_flight.c srv_out.c srv_message.c srv_cookie.c srv_auth.c \
-                 srv_ticket.c srv_resume.c srv_kex.c $(KEX_HYBRID_SRCS) \
+                 srv_ticket.c srv_resume.c srv_kex.c p256_ecdh.c $(KEX_HYBRID_SRCS) \
                  srv_parser.c srv_parser_ext.c srv.c handshake_message.c handshake_record.c \
                  quic_fail.c quic.c quic_keys.c quic_packet.c quic_initial.c quic_retry.c \
                  quic_aes.c quic_aes_soft.c quic_gcm.c quic_config.c buf.c ct.c sha256.c \
@@ -1629,7 +1643,7 @@ bin/quic_loop_test: test/quic_loop_test.c $(SRV_QUIC_BOTH_SRCS) $(HDRS) $(TESTH)
 	$(CC) $(CFLAGS) -DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_PIN_ECDSA -I. -Itest \
 	  -o $@ test/quic_loop_test.c $(SRV_QUIC_BOTH_SRCS)
 QUIC_LOOP_WEBPKI_SRCS := $(sort $(SRV_QUIC_BOTH_SRCS) $(WEBPKI_SRCS) $(WEBPKI_CHAIN_SRCS) x509_der.c \
-                                $(KEX_HYBRID_SRCS))
+                                $(KEX_HYBRID_SRCS) $(WEBPKI_KEX_SRCS))
 bin/quic_loop_webpki: test/quic_loop_test.c $(QUIC_LOOP_WEBPKI_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) -DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_TRUST_WEBPKI -I. \
@@ -1659,7 +1673,7 @@ bin/quic_suite_test: test/quic_suite_test.c $(QUIC_SUITE_TEST_SRCS) $(HDRS) $(TE
 # with the transport, and no rec_step.c, which is the client's table.
 SRV_REC_SRCS := $(filter-out srv_handshake.c,$(SRV_SRCS)) srv_rec.c rec.c rec_frame.c $(KEX_HYBRID_SRCS) \
                 handshake_message.c handshake_record.c record.c session.c buf.c ct.c sha256.c hkdf.c keysched.c \
-                x25519.c chacha20.c poly1305.c aead.c io.c rsa_sign.c p256_sign.c \
+                x25519.c chacha20.c poly1305.c aead.c io.c rsa_sign.c p256_sign.c p256_ecdh.c \
                 p256_scalar.c p256_point.c p256_field.c p256.c rsa.c rsa_mont.c
 bin/srv_rec_test: test/srv_rec_test.c $(SRV_REC_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
@@ -1676,7 +1690,7 @@ bin/srv_rec_test: test/srv_rec_test.c $(SRV_REC_SRCS) $(HDRS) $(TESTH)
 # filters out and this program never reaches.
 REC_LOOP_SRCS := $(filter-out handshake.c,$(SRCS)) rec.c rec_frame.c rec_step.c \
                  $(filter-out srv_handshake.c,$(SRV_SRCS)) srv_rec.c $(KEX_HYBRID_SRCS) \
-                 rsa_sign.c p256_sign.c p256_scalar.c p256_point.c p256_field.c
+                 rsa_sign.c p256_sign.c $(P256_ECDH_SRCS)
 bin/rec_loop_test: test/rec_loop_test.c $(REC_LOOP_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) -DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_TRANSPORT_TCP_NONBLOCKING $(EXPORTER_DEF) -DCH_KEYLOG \
@@ -1697,7 +1711,7 @@ bin/rec_loop_pq: test/rec_loop_test.c $(REC_LOOP_SRCS) $(HDRS) $(TESTH)
 # presents the r2 corpus chain with its leaf key, and a server holding
 # another ticket key declines the client's ticket (docs/decisions.md 55).
 WEBPKI_LOOP_SRCS := $(sort $(filter-out pem.c x509.c x509_ca.c,$(REC_LOOP_SRCS)) \
-                           $(WEBPKI_SRCS) $(WEBPKI_CHAIN_SRCS))
+                           $(WEBPKI_SRCS) $(WEBPKI_CHAIN_SRCS) $(WEBPKI_KEX_SRCS))
 bin/webpki_loop_record: test/webpki_loop_test.c $(WEBPKI_LOOP_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) -DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_TRANSPORT_TCP_NONBLOCKING -DCH_TRUST_WEBPKI \
@@ -1721,7 +1735,7 @@ bin/srv_test: test/srv_test.c srv_message.c srv_cookie.c srv_ticket.c srv_parser
 # srv_parse_client_hello itself, so the flight cases drive every answer the
 # parser's contract admits rather than only the ones a real hello produces;
 # that definition and srv_parser.c cannot link into one object.
-SRV_FLIGHT_DEPS := buf.c ct.c sha256.c hkdf.c keysched.c x25519.c handshake_record.c io.c $(KEX_HYBRID_SRCS) \
+SRV_FLIGHT_DEPS := buf.c ct.c sha256.c hkdf.c keysched.c x25519.c p256_ecdh.c handshake_record.c io.c $(KEX_HYBRID_SRCS) \
                    record.c aead.c chacha20.c poly1305.c
 bin/srv_flight_test: test/srv_flight_test.c $(SRV_FLIGHT_SRCS) $(SRV_FLIGHT_DEPS) $(SRV_SIGNERS) \
                      $(HDRS) $(TESTH)
@@ -1758,9 +1772,9 @@ bin/p256_field_test: test/p256_field_test.c p256_field.c $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) -I. -o $@ test/p256_field_test.c p256_field.c
 # Constant-time P-256 ECDH: key pairs, shared secrets, the points it
-# refuses and the scalar boundary. Its own binary, out of the packaged
-# object like p384_test, because nothing links p256_ecdh.c until the
-# server role does.
+# refuses and the scalar boundary. Its own binary, like p384_test,
+# because only the server roles and the TRUST=webpki client link
+# p256_ecdh.c, and bin/unit builds neither.
 bin/p256_ecdh_test: test/p256_ecdh_test.c p256_ecdh.c p256_point.c p256_scalar.c p256_field.c ct.c $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) -I. -o $@ test/p256_ecdh_test.c p256_ecdh.c p256_point.c p256_scalar.c p256_field.c ct.c
@@ -1844,7 +1858,7 @@ bin/handshake_strict_webpki: test/handshake_strict_test.c $(HANDSHAKE_STRICT_SRC
 # (docs/decisions.md 53), so the ML-KEM and SHA-3 sources are on the list
 # and there is one build, not one per KEX value.
 WEBPKI_TEST_SRCS := $(filter-out pem.c x509.c x509_ca.c,$(SRCS)) $(WEBPKI_CHAIN_SRCS) \
-                    $(filter-out $(SRCS),$(WEBPKI_SRCS)) $(KEX_HYBRID_SRCS)
+                    $(filter-out $(SRCS),$(WEBPKI_SRCS)) $(KEX_HYBRID_SRCS) $(WEBPKI_KEX_SRCS)
 bin/webpki_session_test: test/webpki_session_test.c $(WEBPKI_TEST_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) -DCH_TRUST_WEBPKI -I. -o $@ test/webpki_session_test.c $(WEBPKI_TEST_SRCS)
@@ -1867,8 +1881,9 @@ bin/webpki_encrypted_exts_test: test/webpki_encrypted_exts_test.c $(WEBPKI_TEST_
 # rec.c, rec_frame.c and rec_step.c.
 # The mock server signs the CertificateVerify of a declined ticket with the
 # r2 corpus leaf key, so both binaries link the P-256 signer beside the
-# client.
-P256_SIGN_SRCS := p256_sign.c p256_scalar.c p256_point.c p256_field.c
+# client. The arithmetic under it is in WEBPKI_TEST_SRCS already, because
+# the client's secp256r1 key exchange computes over it too.
+P256_SIGN_SRCS := p256_sign.c
 bin/webpki_resume_test: test/webpki_resume_test.c $(WEBPKI_TEST_SRCS) $(P256_SIGN_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) -DCH_TRUST_WEBPKI -I. -o $@ test/webpki_resume_test.c $(WEBPKI_TEST_SRCS) \
@@ -2395,10 +2410,10 @@ else
 	$(call REQUIRE_MATHLIB,diff-webpki)
 	cd spec/lean && $(LAKE) build
 	@mkdir -p bin
-	$(CC) $(CFLAGS) $(RSA_WIDE_DEF) -DCH_TRUST_WEBPKI -I. -o bin/diff_webpki test/diff_test.c $(SRCS) sha3.c sha512.c sha512_compress.c p384.c p384_field.c rsa_pkcs1.c webpki_sigalg.c webpki_cert.c webpki.c webpki_ticket.c webpki_pin.c webpki_cfg.c mlkem.c mlkem_poly.c
+	$(CC) $(CFLAGS) $(RSA_WIDE_DEF) -DCH_TRUST_WEBPKI -I. -o bin/diff_webpki test/diff_test.c $(SRCS) sha3.c sha512.c sha512_compress.c p384.c p384_field.c rsa_pkcs1.c webpki_sigalg.c webpki_cert.c webpki.c webpki_ticket.c webpki_pin.c webpki_cfg.c mlkem.c mlkem_poly.c $(WEBPKI_KEX_SRCS)
 	./bin/diff_webpki
 ifneq ($(AES_HW_PROBE),)
-	$(CC) $(CFLAGS) $(AES_HW_CFLAGS) $(RSA_WIDE_DEF) -DCH_TRUST_WEBPKI -DCH_SUITE_AES_GCM -DCH_AES_HW -DCH_NATIVE_AES -I. -o bin/diff_webpki_aes test/diff_test.c $(SRCS) sha3.c sha512.c sha512_compress.c p384.c p384_field.c rsa_pkcs1.c webpki_sigalg.c webpki_cert.c webpki.c webpki_ticket.c webpki_pin.c webpki_cfg.c mlkem.c mlkem_poly.c quic_aes.c $(AES_HW_SRCS) quic_gcm.c
+	$(CC) $(CFLAGS) $(AES_HW_CFLAGS) $(RSA_WIDE_DEF) -DCH_TRUST_WEBPKI -DCH_SUITE_AES_GCM -DCH_AES_HW -DCH_NATIVE_AES -I. -o bin/diff_webpki_aes test/diff_test.c $(SRCS) sha3.c sha512.c sha512_compress.c p384.c p384_field.c rsa_pkcs1.c webpki_sigalg.c webpki_cert.c webpki.c webpki_ticket.c webpki_pin.c webpki_cfg.c mlkem.c mlkem_poly.c $(WEBPKI_KEX_SRCS) quic_aes.c $(AES_HW_SRCS) quic_gcm.c
 	./bin/diff_webpki_aes
 else
 	@echo "SKIP diff-webpki's SUITE=aesgcm binary: $(CC) has no AES instructions"
@@ -3183,12 +3198,14 @@ else
 	# webpki.c, the three webpki test mains and the webpki example read
 	# ch_cfg fields that exist only under -DCH_TRUST_WEBPKI, so this
 	# pass, which defines no trust mode, leaves them to the next one.
+	# handshake_groups.c guards its whole body on CH_KEX_TWO_GROUPS,
+	# which only that define sets, so it goes there too.
 	# The QUIC sources and their test main are left out for the same
 	# reason: every declaration they hold sits behind
 	# -DCH_TRANSPORT_QUIC_NONBLOCKING, which this pass does not define, so it would
 	# read eight empty translation units. The two passes below read them.
 	$(call TIDY_EACH,$(filter-out webpki.c webpki_ticket.c webpki_pin.c \
-	  webpki_cfg.c test/webpki_resume_test.c test/webpki_session_test.c \
+	  webpki_cfg.c handshake_groups.c test/webpki_resume_test.c test/webpki_session_test.c \
 	  test/webpki_chain_test.c test/webpki_auth_test.c \
 	  test/webpki_encrypted_exts_test.c examples/webpki_client.c $(QUIC_SRCS) \
 	  $(AES_IMPL_SRCS) test/quic_driver_test.c test/quic_vectors.c \
@@ -3219,7 +3236,7 @@ else
 	# 23.1.1: 2.9 s.
 	$(call TIDY_EACH,tls.c handshake_parser.c handshake_parser_ee.c \
 	  handshake_message.c handshake_auth.c handshake.c handshake_record.c handshake_flight.c \
-	  webpki.c webpki_ticket.c webpki_pin.c webpki_cfg.c \
+	  handshake_groups.c webpki.c webpki_ticket.c webpki_pin.c webpki_cfg.c \
 	  test/webpki_session_test.c test/webpki_chain_test.c test/webpki_auth_test.c \
 	  test/webpki_encrypted_exts_test.c test/handshake_strict_test.c \
 	  test/diff_test.c examples/webpki_client.c test/webpki_resume_test.c, \
@@ -3725,7 +3742,7 @@ WIDEMUL_CEILING := ct.c:0 sha256.c:0 sha3.c:1 hkdf.c:0 chacha20.c:0 poly1305.c:0
                    srv_ticket.c:0 srv_resume.c:0 srv_kex.c:0 \
                    srv_auth.c:0 srv_out.c:0 srv_flight.c:0 srv_handshake.c:0 srv.c:0 rsa_sign.c:0 \
                    p256_scalar.c:0 p256_point.c:0 p256_sign.c:0 p256_ecdh.c:0 webpki_ticket.c:0 \
-                   sha512.c:0 sha512_compress.c:0
+                   sha512.c:0 sha512_compress.c:0 handshake_groups.c:0
 # The X25519=wide field, x25519_wide.c, is the one secret-bearing source no
 # spec in WIDEMUL_SPECS can compile: its products are unsigned __int128,
 # which no 32-bit target has, so ct.h makes the field an #error on every one
@@ -3752,13 +3769,14 @@ CODEGEN_SRCS := $(CODEGEN32_SRCS) $(foreach e,$(WIDE64_CEILING),$(firstword $(su
 # for the same reason, and preprocess to an empty file without it;
 # srv_quic.c and quic_token.c need both defines. webpki_ticket.c needs
 # -DCH_TRUST_WEBPKI, because the ch_cfg hostname and anchor fields it
-# hashes exist only under that define.
+# hashes exist only under that define, and handshake_groups.c needs it
+# because its body sits behind CH_KEX_TWO_GROUPS, which that define sets.
 # Adding any of the three to the shared line would break record.c, io.c,
 # session.c, handshake.c and tls.c, which are on the same list and
 # compile only without the transport and role defines, and
 # quic_aes_soft.c, which preprocesses to an empty file under
 # -DCH_AES_EXTERN.
-# webpki_ticket.c carries -UCH_KEX_PQ because the codegen legs compile every
+# webpki_ticket.c and handshake_groups.c carry -UCH_KEX_PQ because the codegen legs compile every
 # source with -DCH_KEX_PQ and cfg.h refuses it beside -DCH_TRUST_WEBPKI: that
 # client offers both groups in every build (docs/decisions.md 53). The server
 # entries need no such flag. -DCH_KEX_PQ chooses a client's group, and a
@@ -3779,7 +3797,8 @@ WIDEMUL_DEFINES := quic_keys.c:-DCH_TRANSPORT_QUIC_NONBLOCKING quic_packet.c:-DC
                    srv_kex.c:-DCH_ROLE_SERVER srv_flight.c:-DCH_ROLE_SERVER \
                    srv_handshake.c:-DCH_ROLE_SERVER \
                    srv.c:-DCH_ROLE_SERVER webpki_ticket.c:-DCH_TRUST_WEBPKI$(COMMA)-UCH_KEX_PQ \
-                   hkdf.c:-DCH_HASH_SHA384 keysched.c:-DCH_HASH_SHA384
+                   hkdf.c:-DCH_HASH_SHA384 keysched.c:-DCH_HASH_SHA384 \
+                   handshake_groups.c:-DCH_TRUST_WEBPKI$(COMMA)-UCH_KEX_PQ
 WIDEMUL_PUBLIC := p256.c rsa.c rsa_mont.c pem.c x509.c x509_der.c x509_ca.c \
                   p384.c p384_field.c rsa_pkcs1.c webpki_time.c webpki_name.c webpki_spki.c webpki_sigalg.c \
                   webpki_ext.c webpki_cert.c webpki.c webpki_pin.c webpki_cfg.c \

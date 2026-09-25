@@ -142,25 +142,25 @@ so an rv32 peak needs tooling that does not exist yet.
 | **total static working set** | **3192** | **3120** |
 | `ch_tls` under `KEX=pq` (includes 1806 B TX staging) | 2328 | 2256 |
 | **total static working set, `KEX=pq`** (2048 buffer) | **4376** | **4304** |
-| `ch_tls` under `TRUST=webpki` (includes 2399 B TX staging) | 3040 | 2936 |
-| **total static working set, `TRUST=webpki`** (12338 buffer, its floor) | **15378** | **15274** |
+| `ch_tls` under `TRUST=webpki` (includes 2401 B TX staging) | 3048 | 2944 |
+| **total static working set, `TRUST=webpki`** (12338 buffer, its floor) | **15386** | **15282** |
 | peak stack, `ch_connect` (RSA-3072 verify) | 4992 |
 | peak stack, `ch_connect` (`TRUST=raw-ecdsa`) | 3824 |
 | peak stack, `ch_connect` (PSK) | 2768 |
 | peak stack, `ch_connect` (`TRUST=ca-rsa` / `TRUST=ca-ecdsa`) | 5472 / 3984 |
-| peak stack, `ch_connect` (`TRUST=webpki`) | 16416 |
+| peak stack, `ch_connect` (`TRUST=webpki`) | 16528 |
 | peak stack, `ch_read` (worst case: KeyUpdate rekey) | 1728 |
 | peak stack, `ch_connect` (`KEX=pq`) | 15872 |
 | peak stack, `ch_write` / `ch_close` | 912 / 864 |
 | `ch_tls` under `ROLE=server` (includes 1221 B TX staging) | 1968 | 1816 |
 | **total static working set, `ROLE=server`** (2048 buffer) | **4016** | **3864** |
-| peak stack, `ch_srv_accept` (`ROLE=server`) | 10304 |
+| peak stack, `ch_srv_accept` (`ROLE=server`) | 10336 |
 | `ch_tls` under `ROLE=server SUITE=aesgcm` | 2256 |
 | **total static working set, `ROLE=server SUITE=aesgcm`** (2048 buffer) | **4304** |
-| peak stack, `ch_srv_accept` (`ROLE=server SUITE=aesgcm`) | 10448 |
+| peak stack, `ch_srv_accept` (`ROLE=server SUITE=aesgcm`) | 10480 |
 | `ch_tls` under `TRUST=webpki SUITE=aesgcm` | 3336 |
 | **total static working set, `TRUST=webpki SUITE=aesgcm`** (12338 buffer, its floor) | **15674** |
-| peak stack, `ch_connect` (`TRUST=webpki SUITE=aesgcm`) | 16544 |
+| peak stack, `ch_connect` (`TRUST=webpki SUITE=aesgcm`) | 16656 |
 
 The hybrid build costs more of both. The session struct grows because
 the ClientHello carries a 1,216-byte key share and is built whole into
@@ -172,13 +172,15 @@ through `mlkem_decaps` into K-PKE encrypt and Keccak, so the hybrid
 build needs about three times the stack of the classic one rather than
 the single frame's 5,744. A device that cannot spare it builds the
 classic key exchange. A `TRUST=webpki` build carries the hybrid in every
-build, so it pays both costs too.
+build, so it pays both costs too, and its handshake state also holds the
+P-256 scalar and point a retry to secp256r1 draws
+([`docs/decisions.md`](docs/decisions.md) 63).
 
 A `ROLE=server` build pays them as well, because every server holds the
 hybrid ([`docs/decisions.md`](docs/decisions.md) 54). Its ServerHello is
 built in the clear in the same staging array, and the hybrid one carries a
 1,120-byte share, so the array holds 1,216 bytes of message behind the
-record header. `ch_srv_accept` peaks at 10,304 bytes, through the
+record header. `ch_srv_accept` peaks at 10,336 bytes, through the
 encapsulation to the client's key into K-PKE encrypt and Keccak, above
 the 5,280 its RSA-PSS signer reaches with the encapsulation pruned from
 the call graph (`STACK_PRUNE=srv_kex_share`).
@@ -186,7 +188,7 @@ the call graph (`STACK_PRUNE=srv_kex_share`).
 A `SUITE=aesgcm` build runs only where the core has AES instructions, so
 its rows are host figures and have no rv32 column. Its session struct is
 288 bytes larger than the same `ROLE=server` build without the suite, and
-296 larger for `TRUST=webpki`: the transcript runs a SHA-512 context beside
+288 larger for `TRUST=webpki`: the transcript runs a SHA-512 context beside
 SHA-256's, the traffic secrets take SHA-384's 48 bytes, and a webpki hello
 lists two more suites ([`docs/decisions.md`](docs/decisions.md) 58).
 
@@ -203,8 +205,9 @@ setup rather than mid-handshake. A `TRUST=webpki` build derives 12,338
 bytes the same way, four certificates at its 3,072-byte cap, and its
 session struct carries a larger TX staging array for the `server_name`
 and ALPN extensions and for both key shares, the 1,216-byte hybrid one
-and a 32-byte x25519 one ([`docs/decisions.md`](docs/decisions.md) 51).
-Its `ch_connect` peaks at 16,416 bytes, through ML-KEM's decapsulation,
+and a 32-byte x25519 one ([`docs/decisions.md`](docs/decisions.md) 51),
+and for the third group it lists, secp256r1 (63).
+Its `ch_connect` peaks at 16,528 bytes, through ML-KEM's decapsulation,
 above the 7,152 its chain walk into an RSA-4096 verify reaches, the
 widest modulus a public root carries.
 
@@ -377,8 +380,8 @@ apart from one that passed — so for the slow rows, read the nightly.
 | keysched_exporter | **not proved.** `proof/keysched_exporter_harness.c` runs the leg above under `EXPORTER=on`, which adds `ks_exp_master` and `ks_exporter` and widens hkdf's label cap to 32, and its formula returns no verdict: none in 10 minutes with the label length free, none in 7 min 50 s with it fixed at 13 and 32. `proof/run.sh` records both. The two calls are covered by `bin/exporter_test` instead, whose four vectors are cross-checked against an independent from-spec implementation rather than published, since RFC 9846 prints none | — |
 | handshake | the driver stays safe on any record stream: HRR restart, the state machine, and the flight's own arithmetic, in PSK and pinned-key mode. Record reading and message reassembly are stubbed here to the contract the `handshake_record` leg proves — compiling them multiplies this formula by the product of their loop bounds, past any runner. The ca-mode driver has a harness but no launch line, so it is unproven | 96 B receive buffer, slow tier |
 | hybrid_secret | the `KEX=pq` shared-secret derivation is safe for any stored seed, any server ciphertext and any server share, a refused key exchange wipes all 64 bytes rather than leaving half a secret on the stack (INV-3), and both exits leave the 64-byte ML-KEM seed zero. ML-KEM and x25519 are stubbed to their contracts, which their own harnesses prove. This is the only leg that builds `-DCH_KEX_PQ`: the rest of the hybrid driver carries the differential, the sequence enumeration and the e2e legs, not a proof | the full domain, fast tier |
-| key_share (two launch lines) | the `KEX=pq` arm of the ServerHello key_share parser is safe on any extension bytes, and on acceptance it records the hybrid group (`info.group == CH_GROUP_X25519MLKEM768`, the value `ch_tls.group` reports and `ch_cfg.require_pq` compares) and returns a whole readable ML-KEM ciphertext inside the bytes it consumed — the contract `hybrid_secret` assumes, so this proof discharges that assumption. `key_share_webpki` builds the same harness under `-DCH_TRUST_WEBPKI`, where the arm also accepts a ServerHello selecting x25519, whose share that build's hello carries beside the hybrid one: an x25519 share is exactly the group, the length and 32 bytes, with no ciphertext pointer. In both builds a HelloRetryRequest key_share is refused. That `ch_cfg.require_pq` refuses an x25519 selection is `hsf_accept_server_hello`'s check, which `bin/webpki_session_test` tests and no proof covers | extension ≤ 1,132 B, the full hybrid share, fast tier |
-| hello_build (two harnesses) | the ClientHello builder writes nothing outside the caller's buffer at any capacity, for every cookie and PSK identity a caller may pass, and returns either zero or a length that fits. It also checks the bound itself: at `CH_HELLO_MAX` the build always succeeds, so the constant `handshake.c` asserts `CH_TX_STAGE` against is sufficient, not merely plausible. `hello_build_webpki` is the same harness under `-DCH_TRUST_WEBPKI`, with the server_name extension over any hostname, the ALPN extension over any offer, the five signature schemes, which a resuming hello carries beside the ticket too, and both key shares or, under `require_pq`, the hybrid one alone, against that build's `CH_HELLO_MAX` of 2,394; there the bound is tight, because the assertion moved to `CH_HELLO_MAX - 1` fails. That `pre_shared_key` is the last extension is tested, in `test/session_cfg_tests.h` and `test/webpki_session_cases.h`, and **not proved**: the assertion over the hello's last bytes gave kissat a formula that returned no verdict in nine minutes at 5.7 GB | capacity ≤ `CH_HELLO_MAX`, identity ≤ 320 B, cookie ≤ 128 B, hostname ≤ 253 B, 8 ALPN names ≤ 32 B each |
+| key_share (two launch lines) | the `KEX=pq` arm of the ServerHello key_share parser is safe on any extension bytes, and on acceptance it records the hybrid group (`info.group == CH_GROUP_X25519MLKEM768`, the value `ch_tls.group` reports and `ch_cfg.require_pq` compares) and returns a whole readable ML-KEM ciphertext inside the bytes it consumed — the contract `hybrid_secret` assumes, so this proof discharges that assumption. `key_share_webpki` builds the same harness under `-DCH_TRUST_WEBPKI`, where the arm also accepts a ServerHello selecting x25519, whose share that build's hello carries beside the hybrid one, and one selecting secp256r1, whose share its retry hello carries: an x25519 share is exactly the group, the length and 32 bytes, with no ciphertext pointer, and a secp256r1 share is the group, the length and the 65-byte point, which the pointer spans inside the consumed bytes. There a HelloRetryRequest key_share may name secp256r1 and no other group; under `-DCH_KEX_PQ` every one is refused. That `ch_cfg.require_pq` refuses an x25519 selection is `hsf_accept_server_hello`'s check, which `bin/webpki_session_test` tests and no proof covers | extension ≤ 1,132 B, the full hybrid share, fast tier |
+| hello_build (two harnesses) | the ClientHello builder writes nothing outside the caller's buffer at any capacity, for every cookie and PSK identity a caller may pass, and returns either zero or a length that fits. It also checks the bound itself: at `CH_HELLO_MAX` the build always succeeds, so the constant `handshake.c` asserts `CH_TX_STAGE` against is sufficient, not merely plausible. `hello_build_webpki` is the same harness under `-DCH_TRUST_WEBPKI`, with the server_name extension over any hostname, the ALPN extension over any offer, the five signature schemes, which a resuming hello carries beside the ticket too, and both key shares, the one secp256r1 share of a retry hello, or, under `require_pq`, the hybrid one alone, against that build's `CH_HELLO_MAX` of 2,396; there the bound is tight, because the assertion moved to `CH_HELLO_MAX - 1` fails. That `pre_shared_key` is the last extension is tested, in `test/session_cfg_tests.h` and `test/webpki_session_cases.h`, and **not proved**: the assertion over the hello's last bytes gave kissat a formula that returned no verdict in nine minutes at 5.7 GB | capacity ≤ `CH_HELLO_MAX`, identity ≤ 320 B, cookie ≤ 128 B, hostname ≤ 253 B, 8 ALPN names ≤ 32 B each |
 | chacha20 | safe at any counter, in place and into a distinct buffer | ≤ 160 B — three blocks, full, full, partial |
 | poly1305 | safe for any three-chunk split; 64-bit products stay in range | messages ≤ 80 B — five blocks, crossing the buffered-block path in every alignment. The five-call shape `aead.c` uses is no longer exercised by a proof: the aead harnesses stub Poly1305, so that shape rests on the unit vectors, Wycheproof and the differential |
 | aead (three harnesses) | seal/open round-trips; a forged tag writes zero bytes; backward-overlap decrypt works. ChaCha20 and Poly1305 are stubbed to their contracts — a keystream that is the same for the same key, nonce and counter, and a tag that is a function of the bytes absorbed — which their own harnesses prove. Compiling them in returned no verdict in five hours; the stubbed formulas take about three seconds. What the stubs give up, and why the composition is an argument rather than a machine-checked step, is stated at the top of `proof/aead_stubs.h`. Sealing fully in place (`pt == ct`, the shape every outgoing record uses) is **not proven**: `proof/aead_inplace_harness.c` states it, but the formula has returned no verdict, so it carries no launch line | plaintext ≤ 16 B, aad ≤ 16 B, fast tier |
@@ -408,7 +411,8 @@ apart from one that passed — so for the slow rows, read the nightly.
 | handshake_parser, handshake_parser_suite, eeparse, certparse, eeparse_webpki, eeparse_alpn, certparse_webpki | the ServerHello, EncryptedExtensions, Certificate, and CertificateVerify parsers stay safe on hostile bytes, and the certificate list and signature slices they hand back lie inside the message. The `_webpki` harnesses prove the `TRUST=webpki` arms, the empty server_name acknowledgement and the three CertificateVerify schemes, and `certparse_webpki` also proves that an accepted scheme is one of those three. The three `eeparse` harnesses also prove the EncryptedExtensions alert contract: the parser keeps the caller's seeded alert or writes unsupported_extension, a `TRUST=webpki` arm may also write decode_error and illegal_parameter, the second for an ALPN name or a server certificate type outside the offer. The parser writes no other alert. `eeparse_webpki` also proves that an accepted server certificate type is the caller's seed or one the offer holds. `eeparse_alpn` proves the ALPN arm where it lives, over one extension body rather than a whole message: against an offer of up to 8 protocol names of up to 32 bytes, every byte and every length symbolic, an accepted body names a protocol the offer holds, a refused one leaves the caller's `CH_ALPN_NONE`, and the alert is the caller's seed or one of the arm's two. Driving that offer through the whole extension loop multiplies the two bounds and returned no verdict in 21 minutes, so the loop around the arm is `eeparse_webpki`'s, at its 256-byte message with an empty offer. The 256-byte bound cannot hold a hybrid key_share, so the `KEX=pq` arm is driven by its own `key_share` leg instead. `handshake_parser_suite` is `handshake_parser` in the `SUITE=aesgcm TRUST=webpki` client, and also proves that an accepted ServerHello or retry carries ChaCha20, AES-128-GCM or AES-256-GCM, the three suites that client offers | messages ≤ 256 B; the ALPN arm one extension body ≤ 40 B against 8 names ≤ 32 B each |
 | handshake_post | the post-handshake parser stays safe on hostile decrypted bytes and consumes no more than its input | messages ≤ 128 B, slow tier |
 | srv_accept | `ch_srv_accept` and `ch_srv_check` stay safe over an unconstrained `ch_cfg` — every pointer NULL or live, every length any `size_t`, an ALPN offer at `CH_ALPN_MAX` names of `CH_ALPN_NAME_MAX` bytes — and `srv_handshake` drives the flight in one order: a configuration it refuses reaches no handler and leaves a dead session, a handshake that fails after a handler ran wipes the record keys and leaves a dead session, and only a flight that reached `srv_complete` answers `CH_OK`. The fourteen `srv_flight.h` handlers, `srv_resume.h`'s ticket call, `srv_auth.h`'s two entry points, `rec_seal` and `io_send_all` are contract stubs the harness defines, so **no message this server writes is proved here**; the `srv_flight` leg below is where those handlers are real; `ROLE=server` only | ALPN offers ≤ 8 names of ≤ 32 B |
-| srv_kex | the server's key exchange, `srv_kex.c`, stays safe over any groups and shares a parsed ClientHello reports and every verdict its two primitives return, and computes what `srv_kex.h` states: X25519MLKEM768 whenever the client listed it and x25519 only when it listed x25519 alone; an x25519 share that is `h->pub`; a hybrid share that is the ciphertext and then `h->pub`, encapsulated to the key the hello carried; a refused encapsulation key that keeps no ML-KEM secret; input keying material that is the ML-KEM secret and then the x25519 one, computed against the x25519 value that ends the client's share, which is RFC 10024's order; and, on both exits, a wiped ML-KEM secret and x25519 key pair, with the whole 64-byte secret wiped on a refusal (INV-3, INV-17). ML-KEM, x25519 and `ch_rand_bytes` are stubbed to their contracts, as in `hybrid_secret`; `ROLE=server` only | every group and share a hello can report, fast tier |
+| srv_kex | the server's key exchange, `srv_kex.c`, stays safe over any groups and shares a parsed ClientHello reports and every verdict its two primitives return, and computes what `srv_kex.h` states: X25519MLKEM768 whenever the client listed it, x25519 when it listed x25519 and not the hybrid, and secp256r1 only when it listed neither; an x25519 share that is `h->pub`; a hybrid share that is the ciphertext and then `h->pub`, encapsulated to the key the hello carried; a secp256r1 share that is the point the key generation wrote, drawn only after the client's point passed its check; a refused encapsulation key that keeps no ML-KEM secret, and a refused client point that draws no key; input keying material that is the ML-KEM secret and then the x25519 one, computed against the x25519 value that ends the client's share, which is RFC 10024's order, or the P-256 secret of the scalar and the client's point; and, on both exits, a wiped ML-KEM secret, P-256 scalar and x25519 key pair, with the whole 64-byte secret wiped on a refusal (INV-3, INV-17). ML-KEM, x25519, the P-256 exchange and `ch_rand_bytes` are stubbed to their contracts, as in `hybrid_secret`; `ROLE=server` only | every group and share a hello can report, fast tier |
+| handshake_groups | the `TRUST=webpki` client's three-group rules, `handshake_groups.c`, stay safe over any configuration and every verdict their primitives return, and do what `handshake_groups.h` states: a retry naming no group is taken exactly when it carries a cookie; a retry naming secp256r1 is refused under `require_pq` and otherwise records the group, draws the P-256 key pair and wipes the first hello's x25519 and ML-KEM key pairs; a ServerHello may select secp256r1 exactly when a retry named it; the P-256 secret runs over the scalar and the server's point and wipes the scalar on both exits; and a refused exchange leaves no byte of the secret (INV-3, INV-17). The P-256 exchange, x25519 and `ch_rand_bytes` are stubbed to their contracts, as in `srv_kex` | every configuration and verdict, fast tier |
 | srv_rec | **not proved.** `proof/srv_rec_harness.c` exists and its formula returns no verdict with the record loop, the message loop and the step table in one solve: none in 11 minutes at `--unwind 8` over 12-byte buffers, none in 9 min 52 s at 6.2 GB at `--unwind 4` over 8-byte buffers. `proof/run.sh` records what was tried and the layered split it needs. `srv_rec.c` and `rec_frame.c` are covered by `bin/srv_rec_test` and `bin/rec_loop_test` and two `.violation` mutants instead | — |
 | srv_flight | **not proved.** `proof/srv_flight_harness.c` exists and its formula returns no verdict with all fifteen handlers real: no answer in 55 minutes at `--unwind 40`, none at 20 or 18. `proof/run.sh` records what was tried and the layered split it needs. The handlers are covered by `bin/srv_flight_test` and four `.violation` mutants instead | — |
 | srv_parser_ext | every reader of `srv_parser_ext.c` stays safe and free of UB over an unconstrained extension body, any extension type and any offset the walk can hand it, and each answers `CH_OK` or `CH_EPROTO` | bodies ≤ 24 B |
@@ -999,12 +1003,14 @@ Other targets:
   `unsigned __int128` and the build adds `-DCH_NATIVE_MUL128` to
   `CFLAGS`, its statement that the part's 64x64->128 multiply runs in
   constant time in the mode the part runs in (decision 52, INV-34). The
-  Makefile never writes that define itself. It also carries both key exchange groups,
-  so `make TRUST=webpki` refuses a `KEX` value, which would select
-  nothing there (decision 53); set `ch_cfg.require_pq` for the hybrid
+  Makefile never writes that define itself. It also carries every key
+  exchange group it offers, X25519MLKEM768 and x25519 with a share each
+  and secp256r1 listed after them for a HelloRetryRequest to ask for, so
+  `make TRUST=webpki` refuses a `KEX` value, which would select nothing
+  there (decisions 53 and 63); set `ch_cfg.require_pq` for the hybrid
   alone. `KEX` chooses the group of a raw or ca client only, and
   `ROLE=server` and `ROLE=both` refuse it too, because a server role
-  holds both groups in every build (decision 54).
+  holds all three groups in every build (decisions 54 and 63).
 - `ch_build` is the object's build record (`build.h`): the axes it was
   compiled with, the sizes of `ch_cfg`, `ch_tls`, `ch_ticket`,
   `ch_record`, `ch_quic` and `ch_rsa_priv`, and the bounds a program
@@ -1076,14 +1082,16 @@ selects ChaCha20 alone and does not meet that section.
 [`docs/aes_suite.md`](docs/aes_suite.md) states what the suite rests on and
 what it still owes.
 
-Every server build holds X25519MLKEM768 and x25519 and prefers the
-hybrid: a client that lists it gets it, in one round trip when its hello
-carries the hybrid share, and after a HelloRetryRequest that asks for it
-when the hello shares x25519 alone. A client that lists x25519 alone gets
-x25519. `ch_tls.group` reports which group ran, as it does for a client,
-and [`docs/decisions.md`](docs/decisions.md) entry 54 states the trade.
-`test/e2e.sh` checks each case against OpenSSL's `s_client`, and a
-resumed handshake runs the hybrid again.
+Every server build holds X25519MLKEM768, x25519 and secp256r1 and prefers
+the hybrid: a client that lists it gets it, in one round trip when its
+hello carries the hybrid share, and after a HelloRetryRequest that asks for
+it when the hello shares x25519 alone. A client that lists x25519 and not
+the hybrid gets x25519. A client that lists secp256r1 and neither of the
+others gets secp256r1, the key exchange RFC 9846 section 9.1 makes a MUST,
+over the constant-time `p256_ecdh.[ch]`. `ch_tls.group` reports which group
+ran, as it does for a client, and [`docs/decisions.md`](docs/decisions.md)
+entries 54 and 63 state the trade. `test/e2e.sh` checks each case against
+OpenSSL's `s_client`, and a resumed handshake runs the hybrid again.
 
 Two caveats worth knowing before you adopt it.
 

@@ -71,10 +71,14 @@ void hsf_begin(handshake_state *h);
 // transcript-so-far plus the truncated hello, at the PSK's hash, and
 // writes it into the message's last hs_psk_hash_len bytes (RFC 9846
 // §4.3.11.2, rfc9846.txt:2586). It echoes h->cookie when h->cookie_len
-// is not 0, which is what makes this the retry hello (RFC 9846 §4.2.4,
-// rfc9846.txt:1444). Under CH_KEX_TWO_GROUPS it carries a key share for
-// the hybrid and one for x25519, both over h->pub, or the hybrid one
-// alone under cfg.require_pq, and a retry hello carries the same shares.
+// is not 0 (RFC 9846 §4.2.4, rfc9846.txt:1444). Under CH_KEX_TWO_GROUPS
+// it carries a key share for the hybrid and one for x25519, both over
+// h->pub, or the hybrid one alone under cfg.require_pq, and a cookie
+// retry hello carries the same shares. Once h->retry_group is set, after
+// a HelloRetryRequest that named secp256r1, it carries the one secp256r1
+// share over h->p256_pub instead (RFC 9846 §4.2.2,
+// rfc9846.txt:1194-1196), with a cookie beside it when the retry sent
+// one.
 // A retry hello that offers a PSK carries the same extensions as the
 // first, the certificate path included under CH_TRUST_WEBPKI, and a
 // binder computed again over the transcript the HelloRetryRequest
@@ -100,28 +104,32 @@ size_t hsf_build_client_hello(handshake_state *h, uint8_t *out, size_t cap);
 // replaces the transcript with the synthetic message_hash construction
 // RFC 9846 §4.1 prescribes (rfc9846.txt:1076-1082) and copies the
 // cookie into h->cookie and h->cookie_len, so the retry hello can echo
-// it. Under CH_SUITE_AES_GCM it writes h->suite from the message, after
-// checking that a ServerHello repeats a retry's suite. On a ServerHello
+// it. Under CH_KEX_TWO_GROUPS a retry that names secp256r1 goes to
+// hsg_take_retry, which draws the P-256 key pair the retry hello
+// carries (handshake_groups.h). Under CH_SUITE_AES_GCM it writes
+// h->suite from the message, after checking that a ServerHello repeats a
+// retry's suite. On a ServerHello
 // it hashes the raw message.
 //
 // Requires a whole message to be readable; see the transport note at
 // the top. info need not be zeroed: this function zeroes it.
 //
 // Returns CH_OK, and then info->hrr says which message arrived. The
-// caller decides what a HelloRetryRequest means, because the two
-// transports refuse a second one differently: the tcp-blocking driver
-// refuses it by call position, and the tcp-nonblocking and QUIC drivers
-// refuse it by the stored step.
+// caller decides what a HelloRetryRequest means, because the drivers
+// refuse a second one differently: the tcp-blocking driver refuses it by
+// call position, and the tcp-nonblocking and QUIC drivers refuse it by
+// the stored step.
 //
 // Returns CH_EPROTO with ALERT_UNEXPECTED_MESSAGE for any other
 // handshake type; CH_EPROTO with ALERT_ILLEGAL_PARAMETER when
 // hsp_parse_server_hello refuses the message, which it does for a
-// HelloRetryRequest that names a group: every group this client lists
-// already has a key share in its hello, one group or both, so a retry
-// that names one names a group already shared or one never listed (RFC
-// 9846 §4.3.8, rfc9846.txt:2205-2212). The same alert answers a
-// HelloRetryRequest that carries no cookie, which is an HRR that changes
-// nothing this client offered and which RFC 9846 §4.2.4 makes an
+// HelloRetryRequest that names a group the hello already shared or never
+// listed (RFC 9846 §4.3.8, rfc9846.txt:2205-2212): any group in a raw or
+// ca build, whose one group has its share, and any group but secp256r1
+// under CH_KEX_TWO_GROUPS. The same alert answers a secp256r1 retry under
+// cfg.require_pq, which kept that group off the hello, and a
+// HelloRetryRequest that carries neither a cookie nor a group, which
+// changes nothing this client offered and which RFC 9846 §4.2.4 makes an
 // illegal_parameter abort (rfc9846.txt:1467-1469), and under
 // CH_SUITE_AES_GCM a ServerHello whose suite is not the retry's (§4.2.4,
 // rfc9846.txt:1489-1491). It also returns
@@ -168,6 +176,12 @@ int hsf_read_server_hello(handshake_state *h, server_hello_info *info);
 // ALERT_ILLEGAL_PARAMETER for a pre_shared_key whose selected_identity is
 // not 0, which RFC 9846 §4.3.11 makes an abort (rfc9846.txt:2551-2557).
 //
+// Under CH_KEX_TWO_GROUPS it returns CH_EPROTO with ALERT_ILLEGAL_PARAMETER
+// for a group the hello it answers carried no share for, which
+// hsg_selected_group_ok decides: secp256r1 without a retry that named it,
+// and anything but secp256r1 after one (RFC 9846 §4.3.8,
+// rfc9846.txt:2224-2238).
+//
 // Under CH_KEX_HYBRID it also returns CH_EPROTO with
 // ALERT_ILLEGAL_PARAMETER when cfg.require_pq is set and the group the
 // parser wrote is not CH_GROUP_X25519MLKEM768. Under CH_KEX_TWO_GROUPS
@@ -181,9 +195,12 @@ int hsf_accept_server_hello(handshake_state *h, const server_hello_info *info);
 // decapsulates info->server_ct with the key pair h->dz re-expands and
 // puts the ML-KEM shared secret ahead of the x25519 one, which is RFC
 // 10024's order despite the group's name. Under CH_KEX_TWO_GROUPS a
-// ServerHello that selected x25519 runs x25519 alone, over the x25519
-// half of that key pair, and wipes h->dz before it does, because the
-// ML-KEM key pair goes unused. Then it takes the transcript
+// ServerHello that selected x25519 or secp256r1 runs that group's exchange
+// through hsg_classic_secret: x25519 alone, over the x25519 half of that
+// key pair, after it wipes h->dz, because the ML-KEM key pair goes
+// unused; or P-256 ECDH over h->p256_priv and the server's point, which
+// it validates and whose X coordinate is the 32-byte secret, after which
+// it wipes h->p256_priv. Then it takes the transcript
 // hash and calls ks_handshake, writing h->handshake_secret, h->c_hs and
 // h->s_hs (RFC 9846 §7.1, rfc9846.txt:4034).
 //
@@ -194,7 +211,8 @@ int hsf_accept_server_hello(handshake_state *h, const server_hello_info *info);
 //
 // Wipes h->priv, h->pub, h->random, h->early, h->binder_key and, under
 // CH_KEX_HYBRID, h->dz on both exits, along with the shared secret
-// itself. h->early is whichever early secret hsf_accept_server_hello
+// itself; under CH_KEX_TWO_GROUPS a secp256r1 exchange wipes
+// h->p256_priv too. h->early is whichever early secret hsf_accept_server_hello
 // left: the PSK's when the server selected it, and the no-PSK one
 // otherwise.
 // After this call the retry hello can no longer be built, which is
@@ -206,7 +224,8 @@ int hsf_accept_server_hello(handshake_state *h, const server_hello_info *info);
 //
 // Returns CH_OK, or CH_EPROTO with ALERT_ILLEGAL_PARAMETER when x25519
 // yields the all-zero shared secret, which RFC 9846 §7.4.2 makes a MUST
-// (rfc9846.txt:4293-4295). Decapsulation itself cannot fail: a
+// (rfc9846.txt:4293-4295), or when the server's P-256 point fails the
+// check §4.3.8.2 requires (rfc9846.txt:2277-2286). Decapsulation itself cannot fail: a
 // tampered ciphertext yields the implicit-reject secret and the
 // handshake dies at the server Finished instead.
 int hsf_derive_handshake_secrets(handshake_state *h, const server_hello_info *info);

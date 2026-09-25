@@ -1,12 +1,15 @@
 invariant: INV-8
 file: handshake.c
 catches: webpki_session_test
-reason: the retry hello a cookie HelloRetryRequest asked for goes out under
+reason: the retry hello a HelloRetryRequest asked for goes out under
   legacy_record_version 0x0301, which RFC 9846 section 5.1 admits only on
-  the initial ClientHello. Every retry this client answers carries a
-  cookie, so the cookie is what marks the retry hello.
+  the initial ClientHello. A retry to secp256r1 may carry no cookie
+  (docs/decisions.md 63), so the call position, not the cookie, marks the
+  retry hello, and test/webpki_groups_cases.h and
+  test/webpki_p256_cases.h read the version with a cookie and without.
 
 --- old
-    t->tx[2] = h->cookie_len > 0 ? 0x03 : 0x01;
+    t->tx[2] = retry ? 0x03 : 0x01;
 --- new
+    (void)retry;
     t->tx[2] = 0x01;

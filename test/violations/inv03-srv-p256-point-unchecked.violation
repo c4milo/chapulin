@@ -1,0 +1,15 @@
+invariant: INV-3
+file: srv_kex.c
+catches: srv_flight_test
+reason: the server skips the check on the client's secp256r1 point before it
+  answers, so a point off the curve draws a P-256 key pair and a ServerHello
+  goes out for a key exchange RFC 9846 section 4.3.8.2 says to refuse.
+  test_flight_p256_refusals requires illegal_parameter before any
+  ServerHello and before any draw.
+
+--- old
+    if (!p256_ecdh_point_valid(ch->p256_share)) {
+        return CH_EPROTO;
+    }
+--- new
+    (void)p256_ecdh_point_valid(ch->p256_share);

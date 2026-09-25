@@ -70,7 +70,7 @@ MEMORY = [
      [["session_struct_pq_arm64"], ["session_struct_pq_rv32"]]),
     ("**total static working set, `KEX=pq`** (2048 buffer)",
      [["static_working_set_pq_arm64"], ["static_working_set_pq_rv32"]]),
-    ("`ch_tls` under `TRUST=webpki` (includes 2399 B TX staging)",
+    ("`ch_tls` under `TRUST=webpki` (includes 2401 B TX staging)",
      [["session_struct_webpki_arm64"], ["session_struct_webpki_rv32"]]),
     ("**total static working set, `TRUST=webpki`** (12338 buffer, its floor)",
      [["static_working_set_webpki_arm64"], ["static_working_set_webpki_rv32"]]),

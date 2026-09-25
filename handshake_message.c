@@ -119,10 +119,13 @@ static void write_pre_shared_key(wbuf *w, const ch_cfg *cfg) {
 
 #ifdef CH_KEX_TWO_GROUPS
 // supported_groups and key_share for the build that offers two groups
-// (docs/decisions.md entry 53). supported_groups lists the hybrid first,
-// then x25519, and key_share carries an entry for each in the same order,
-// which RFC 9846 §4.3.8 requires (rfc9846.txt:2161-2163). require_pq
-// leaves x25519 off both lists.
+// (docs/decisions.md entries 53 and 63). supported_groups lists the
+// hybrid first, then x25519, then secp256r1, and key_share carries an
+// entry for the first two in the same order, which RFC 9846 §4.3.8
+// requires (rfc9846.txt:2161-2163). secp256r1 is listed with no share:
+// §4.3.8 lets the shares be a subset of the list (rfc9846.txt:2163-2165),
+// and a server that wants secp256r1 asks for it with a HelloRetryRequest.
+// require_pq leaves x25519 and secp256r1 off both lists.
 //
 // The x25519 entry's key_exchange is the x25519 half of the hybrid
 // entry's, the same pub. RFC 9846 §4.3.8 asks for the key_exchange of
@@ -130,28 +133,40 @@ static void write_pre_shared_key(wbuf *w, const ch_cfg *cfg) {
 // (rfc9846.txt:2182-2184), and RFC 9954 §3.2 relaxes that for a value of
 // the same algorithm reused across the KeyShareEntry records of one
 // ClientHello, which is what this is. The ML-KEM half has no second use.
+//
+// A retry hello answering a HelloRetryRequest that named secp256r1
+// passes p256_pub, and its key_share holds that one entry: §4.2.2 has
+// the retry replace the shares with a single entry for the named group
+// (rfc9846.txt:1194-1196), and supported_groups stays as it was.
 static void write_two_groups(wbuf *w, const ch_cfg *cfg, const uint8_t ek[MLKEM_EK_LEN],
-                             const uint8_t pub[32]) {
-    size_t groups_len = cfg->require_pq ? 2 : 4;
+                             const uint8_t pub[32], const uint8_t *p256_pub) {
+    size_t groups_len = cfg->require_pq ? 2 : 6;
     wb_u16(w, EXT_SUPPORTED_GROUPS);
     wb_u16(w, (uint16_t)(2 + groups_len));
     wb_u16(w, (uint16_t)groups_len);
     wb_u16(w, CH_GROUP_X25519MLKEM768);
     if (!cfg->require_pq) {
         wb_u16(w, CH_GROUP_X25519);
+        wb_u16(w, CH_GROUP_SECP256R1);
     }
 
     wb_u16(w, EXT_KEY_SHARE);
     size_t ext = wb_mark(w, 2);
     size_t shares = wb_mark(w, 2); // client_shares length
-    wb_u16(w, CH_GROUP_X25519MLKEM768);
-    wb_u16(w, CH_HYBRID_CLIENT_SHARE);
-    wb_bytes(w, ek, MLKEM_EK_LEN); // ML-KEM first (RFC 10024)
-    wb_bytes(w, pub, 32);
-    if (!cfg->require_pq) {
-        wb_u16(w, CH_GROUP_X25519);
-        wb_u16(w, 32);
+    if (p256_pub != NULL) {
+        wb_u16(w, CH_GROUP_SECP256R1);
+        wb_u16(w, P256_POINT_LEN);
+        wb_bytes(w, p256_pub, P256_POINT_LEN);
+    } else {
+        wb_u16(w, CH_GROUP_X25519MLKEM768);
+        wb_u16(w, CH_HYBRID_CLIENT_SHARE);
+        wb_bytes(w, ek, MLKEM_EK_LEN); // ML-KEM first (RFC 10024)
         wb_bytes(w, pub, 32);
+        if (!cfg->require_pq) {
+            wb_u16(w, CH_GROUP_X25519);
+            wb_u16(w, 32);
+            wb_bytes(w, pub, 32);
+        }
     }
     wb_patch16(w, shares);
     wb_patch16(w, ext);
@@ -161,6 +176,9 @@ static void write_two_groups(wbuf *w, const ch_cfg *cfg, const uint8_t ek[MLKEM_
 size_t hs_build_client_hello(uint8_t *out, size_t cap, const ch_cfg *cfg,
 #ifdef CH_KEX_HYBRID
                              const uint8_t ek[MLKEM_EK_LEN],
+#endif
+#ifdef CH_KEX_TWO_GROUPS
+                             const uint8_t *p256_pub,
 #endif
                              const uint8_t pub[32], const uint8_t random32[32],
                              uint16_t record_size_limit, const uint8_t *cookie, size_t cookie_len) {
@@ -207,7 +225,7 @@ size_t hs_build_client_hello(uint8_t *out, size_t cap, const ch_cfg *cfg,
     wb_u16(&w, TLS13);
 
 #ifdef CH_KEX_TWO_GROUPS
-    write_two_groups(&w, cfg, ek, pub);
+    write_two_groups(&w, cfg, ek, pub, p256_pub);
 #else
     wb_u16(&w, EXT_SUPPORTED_GROUPS);
     wb_u16(&w, 4);

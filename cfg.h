@@ -36,19 +36,24 @@
 #error "CH_TRUST_CA and CH_TRUST_WEBPKI are exclusive: a build has one trust mode"
 #endif
 
-// The NamedGroup code points: x25519 (RFC 9846 §4.3.7), and the X25519MLKEM768 hybrid
-// (RFC 10024). ch_tls.group reports the one the ServerHello selected, on both sides.
+// The NamedGroup code points: x25519 and secp256r1 (RFC 9846 §4.3.7), and the
+// X25519MLKEM768 hybrid (RFC 10024). ch_tls.group reports the one the ServerHello
+// selected, on both sides.
 //
 // A raw or ca client offers one group, and the Makefile KEX variable chooses it: x25519,
-// or the hybrid under -DCH_KEX_PQ. A TRUST=webpki client offers both in every build, with
-// a key share for each (CH_KEX_TWO_GROUPS, docs/decisions.md 53), so -DCH_KEX_PQ would
-// choose nothing there, and a webpki build refuses it. CH_KEX_HYBRID marks every client
-// that offers the hybrid and so carries ML-KEM-768: the KEX=pq client and every webpki
-// client. All three defines describe the client alone. A server role holds both groups
-// in every build, prefers the hybrid and names each group directly (srv_kex.h,
-// docs/decisions.md 54), so none of the three changes what a server selects.
+// or the hybrid under -DCH_KEX_PQ. A TRUST=webpki client offers the hybrid and x25519 in
+// every build, with a key share for each (CH_KEX_TWO_GROUPS, docs/decisions.md 53), and
+// lists secp256r1 after them with no share, which it sends only in the hello a
+// HelloRetryRequest naming secp256r1 asks for (docs/decisions.md 63). So -DCH_KEX_PQ
+// would choose nothing there, and a webpki build refuses it. CH_KEX_HYBRID marks every
+// client that offers the hybrid and so carries ML-KEM-768: the KEX=pq client and every
+// webpki client. All three defines describe the client alone. A server role holds all
+// three groups in every build, prefers the hybrid, then x25519, then secp256r1, and names
+// each group directly (srv_kex.h, docs/decisions.md 54 and 63), so none of the three
+// changes what a server selects.
 #define CH_GROUP_X25519 0x001d
 #define CH_GROUP_X25519MLKEM768 0x11ec
+#define CH_GROUP_SECP256R1 0x0017
 #ifdef CH_TRUST_WEBPKI
 #define CH_KEX_TWO_GROUPS
 #endif

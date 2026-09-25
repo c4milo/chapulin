@@ -53,9 +53,12 @@ noreturn void ch_assert_fail(const char *cond, const char *file, int line) {
 // instead, carrying a key_share naming retry_group when that is not 0
 // and a cookie when retry_cookie is set, and answers the retry hello
 // with the flight above. The ServerHello selects the group of the first
-// share the hello it answers carried, which is the hybrid, or sh_group
-// when that is not 0: x25519 for a server without the hybrid, or for a
-// selection the client must refuse.
+// share the hello it answers carried, which is the hybrid, or secp256r1
+// after a retry that named it, or sh_group when that is not 0: x25519
+// for a server without the hybrid, or a selection the client must
+// refuse. p256_mode says how a secp256r1 share is written
+// (test/webpki_mock_kex.h), valid or one of the shapes the client must
+// refuse.
 // suite and retry_suite, when not 0, are the cipher suites the
 // ServerHello and the retry carry in place of ChaCha20, and the mock
 // keys its records with the ServerHello's.
@@ -66,6 +69,7 @@ typedef struct {
     uint16_t retry_group;
     int retry_cookie;
     uint16_t sh_group;
+    int p256_mode;
     uint16_t suite;
     uint16_t retry_suite;
     uint8_t hrr[96];
@@ -153,45 +157,18 @@ static void push_sealed(mock_server *s, const uint8_t *msg, size_t n) {
     s->queue_len += out_len;
 }
 
-// The ServerHello and the key schedule to the handshake traffic secrets:
-// the ecdhe input is the client's own derivation mirrored, over the
-// share of the group the ServerHello selects: the ML-KEM shared secret
-// then x25519 for the hybrid, x25519 alone for x25519. The hybrid entry
-// always comes first. An x25519 selection runs over the hello's x25519
-// entry, or over the hybrid entry's x25519 half when require_pq left
-// that entry out, so a row can still send the selection the client
-// must refuse.
+#include "webpki_mock_kex.h"
+
+// The ServerHello and the key schedule to the handshake traffic secrets,
+// over the key exchange test/webpki_mock_kex.h runs for the group the
+// ServerHello selects.
 static void render_server_hello(mock_server *s, ch_transcript *transcript, const uint8_t *hello,
                                 size_t hello_len) {
-    hello_share_entry shares[2] = {{0}};
-    int count = hello_key_shares(hello, hello_len, shares, 2);
-    CHECK(count == 1 || count == 2);
-    if (count != 1 && count != 2) {
-        return;
-    }
-    const hello_share_entry *hybrid = &shares[0];
-    CHECK(hybrid->group == CH_GROUP_X25519MLKEM768 && hybrid->key_len == CH_HYBRID_CLIENT_SHARE);
-    const uint8_t *x25519_value = hybrid->key + MLKEM_EK_LEN;
-    if (count == 2) {
-        CHECK(shares[1].group == CH_GROUP_X25519 && shares[1].key_len == X25519_LEN);
-        x25519_value = shares[1].key;
-    }
-    uint8_t server_pub[X25519_LEN];
-    x25519_base(server_pub, server_scalar);
-    uint8_t ecdhe[MLKEM_SS_LEN + X25519_LEN];
-    size_t ecdhe_len = X25519_LEN;
-    uint16_t group = s->sh_group != 0 ? s->sh_group : hybrid->group;
-    size_t server_share_len = X25519_LEN;
-    uint8_t ct[MLKEM_CT_LEN];
-    if (group == CH_GROUP_X25519MLKEM768) {
-        static const uint8_t m[32] = {0x4b};
-        CHECK(mlkem_encaps_derand(ct, ecdhe, hybrid->key, m) == 0);
-        CHECK(x25519(ecdhe + MLKEM_SS_LEN, server_scalar, hybrid->key + MLKEM_EK_LEN) == 1);
-        ecdhe_len = MLKEM_SS_LEN + X25519_LEN;
-        server_share_len = CH_HYBRID_SERVER_SHARE;
-    } else {
-        CHECK(x25519(ecdhe, server_scalar, x25519_value) == 1);
-    }
+    hello_share_entry first = {0};
+    CHECK(hello_key_shares(hello, hello_len, &first, 1) >= 1);
+    uint16_t group = s->sh_group != 0 ? s->sh_group : first.group;
+    mock_kex k;
+    mock_key_exchange(&k, group, s->p256_mode, hello, hello_len);
     uint8_t msg[128 + CH_HYBRID_SERVER_SHARE];
     wbuf w;
     wb_init(&w, msg, sizeof msg);
@@ -209,13 +186,10 @@ static void render_server_hello(mock_server *s, ch_transcript *transcript, const
     wb_u16(&w, 2);
     wb_u16(&w, TLS13);
     wb_u16(&w, EXT_KEY_SHARE);
-    wb_u16(&w, (uint16_t)(2 + 2 + server_share_len));
+    wb_u16(&w, (uint16_t)(2 + 2 + k.share_len));
     wb_u16(&w, group);
-    wb_u16(&w, (uint16_t)server_share_len);
-    if (group == CH_GROUP_X25519MLKEM768) {
-        wb_bytes(&w, ct, sizeof ct);
-    }
-    wb_bytes(&w, server_pub, sizeof server_pub);
+    wb_u16(&w, (uint16_t)k.share_len);
+    wb_bytes(&w, k.share, k.share_len);
     wb_patch16(&w, exts);
     wb_patch24(&w, body);
     CHECK(!w.err);
@@ -234,7 +208,7 @@ static void render_server_hello(mock_server *s, ch_transcript *transcript, const
     uint8_t c_hs[HKDF_HASH_MAX];
     uint8_t s_hs[HKDF_HASH_MAX];
     ks_early(hash_len, no_psk, hash_len, 0, early, binder);
-    ks_handshake(hash_len, early, ecdhe, ecdhe_len, hash, handshake_secret, c_hs, s_hs);
+    ks_handshake(hash_len, early, k.ecdhe, k.ecdhe_len, hash, handshake_secret, c_hs, s_hs);
     push_clear(s, msg, w.len);
     REC_DIR_INIT_SUITE(&s->wr, s_hs, mock_keyed_suite(s->suite));
     REC_DIR_INIT_SUITE(&s->rd, c_hs, mock_keyed_suite(s->suite));
@@ -443,6 +417,7 @@ static int sends_client_hello(const ch_cfg *cfg) {
 
 #include "rxbuf_floor_tests.h"
 #include "webpki_groups_cases.h"
+#include "webpki_p256_cases.h"
 #include "webpki_pins_cases.h"
 #include "webpki_session_cases.h"
 #include "webpki_suite_cases.h"
@@ -468,6 +443,11 @@ int main(void) {
     test_webpki_cookie_retry();
     test_webpki_retry_names_a_group();
     test_webpki_x25519_wipes_the_seed();
+    test_webpki_p256_retry_hello_size();
+    test_webpki_p256_retry();
+    test_webpki_p256_share_refusals();
+    test_webpki_p256_group_rules();
+    test_webpki_p256_wipes();
 #ifdef CH_CLIENT_AES_SUITES
     test_webpki_suites_hello();
     test_webpki_suite_aes();

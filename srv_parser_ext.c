@@ -282,27 +282,39 @@ static int read_psk_modes(rbuf *e, hello_parse *p) {
     return CH_OK;
 }
 
+// The key_exchange length of the group whose bit is bit: X25519_LEN for
+// x25519, CH_HYBRID_CLIENT_SHARE for X25519MLKEM768, and P256_POINT_LEN
+// for secp256r1, the uncompressed point of RFC 9846 §4.3.8.2
+// (rfc9846.txt:2261-2275). bit is one srv_group_bit returned.
+static size_t share_len_of(uint8_t bit) {
+    if (bit == SRV_GROUP_X25519MLKEM768) {
+        return CH_HYBRID_CLIENT_SHARE;
+    }
+    return bit == SRV_GROUP_SECP256R1 ? P256_POINT_LEN : X25519_LEN;
+}
+
 // One KeyShareEntry for a group this build holds, whose bit is bit. Its
-// key_exchange must be that group's length, X25519_LEN for x25519 and
-// CH_HYBRID_CLIENT_SHARE for X25519MLKEM768, or illegal_parameter. For
-// the hybrid that is RFC 10024's answer to an encapsulation key that
-// fails FIPS 203 §7.2's check, whose first step is the length; for
-// x25519 it is this design's choice under §6 (rfc9846.txt:3789-3791).
-// The first entry for a group is its share; §4.3.8 forbids the client a
-// second one for the same group and leaves checking that to the
-// server's discretion (rfc9846.txt:2184-2188), so a second is read and
-// ignored.
+// key_exchange must be that group's length, share_len_of(bit), or
+// illegal_parameter. For the hybrid that is RFC 10024's answer to an
+// encapsulation key that fails FIPS 203 §7.2's check, whose first step is
+// the length; for x25519 and secp256r1 it is this design's choice under
+// §6 (rfc9846.txt:3789-3791). Whether a secp256r1 point is on the curve is
+// srv_kex_share's check. The first entry for a group is its share; §4.3.8
+// forbids the client a second one for the same group and leaves checking
+// that to the server's discretion (rfc9846.txt:2184-2188), so a second is
+// read and ignored.
 static int take_share(hello_parse *p, uint8_t bit, const uint8_t *share, size_t share_len) {
-    int hybrid = bit == SRV_GROUP_X25519MLKEM768;
-    if (share_len != (hybrid ? CH_HYBRID_CLIENT_SHARE : X25519_LEN)) {
+    if (share_len != share_len_of(bit)) {
         return srv_refuse(p->alert, ALERT_ILLEGAL_PARAMETER);
     }
     if ((p->ch->shares & bit) != 0) {
         return CH_OK;
     }
     p->ch->shares |= bit;
-    if (hybrid) {
+    if (bit == SRV_GROUP_X25519MLKEM768) {
         p->ch->hybrid_share = share;
+    } else if (bit == SRV_GROUP_SECP256R1) {
+        p->ch->p256_share = share;
     } else {
         p->ch->x25519_share = share;
     }

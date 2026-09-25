@@ -56,6 +56,13 @@
 #define CH_HYBRID_CLIENT_SHARE (MLKEM_EK_LEN + 32)
 #define CH_HYBRID_SERVER_SHARE (MLKEM_CT_LEN + 32)
 #endif
+// A secp256r1 share is P256_POINT_LEN bytes on both sides, the
+// uncompressed point of RFC 9846 §4.3.8.2. A TRUST=webpki client writes
+// and reads one after a retry names the group, and every server role
+// holds the group (srv_kex.h).
+#if defined(CH_KEX_TWO_GROUPS) || defined(CH_ROLE_SERVER)
+#include "p256_point.h"
+#endif
 
 // The one group a raw or ca client offers (Makefile KEX), and its share size on each side.
 // A TRUST=webpki client offers both groups and names each one directly, so a webpki build
@@ -76,10 +83,12 @@
 // for each in the same order: the hybrid share, then an x25519 share that repeats the
 // x25519 half of the hybrid one. RFC 9954 §3.2 lets a client reuse one algorithm's
 // key_exchange value across the KeyShareEntry records of one ClientHello, so the x25519
-// entry costs 36 bytes and no second key generation. ch_cfg.require_pq drops x25519 from
-// both lists, so that caller's hello is the one-group hello a raw or ca KEX=pq build
-// sends. cfg.h defines CH_KEX_TWO_GROUPS, because the session and parser headers that
-// declare its fields sit below this one.
+// entry costs 36 bytes and no second key generation. supported_groups then lists
+// secp256r1 with no share, and a HelloRetryRequest naming it gets a retry hello whose
+// key_share holds one secp256r1 share (docs/decisions.md entry 63). ch_cfg.require_pq
+// drops x25519 and secp256r1 from both lists, so that caller's hello is the one-group
+// hello a raw or ca KEX=pq build sends. cfg.h defines CH_KEX_TWO_GROUPS, because the
+// session and parser headers that declare its fields sit below this one.
 
 // SignatureScheme code points (RFC 9846 §4.3.3). A raw or ca build
 // offers the first two, one per build (CH_PIN_SIGALG below). A
@@ -124,7 +133,7 @@
 // that stay shorter than the pre_shared_key extension the other arm
 // carries, so its term is 0. The largest webpki hello is the
 // pre_shared_key arm with both extensions above, the certificate path,
-// SPKI pins beside anchors and the two groups below: 2394, measured by
+// SPKI pins beside anchors and the groups below: 2396, measured by
 // test/webpki_session_test.c.
 // A TRANSPORT=quic-nonblocking build adds two more terms. It drops the 6-byte
 // record_size_limit extension, because RFC 9001 §4.1.3 removes the
@@ -136,9 +145,13 @@
 // webpki build's alone.
 //
 // A CH_KEX_TWO_GROUPS build takes the hybrid share as its first key share
-// and adds two more terms: the second NamedGroup in supported_groups, 2
-// bytes, and the second KeyShareEntry, the x25519 one, whose group,
-// length and 32-byte value are 36 bytes. A CH_CLIENT_AES_SUITES build
+// and adds two more terms: the second and third NamedGroups in
+// supported_groups, x25519 and secp256r1, 4 bytes, and the second
+// KeyShareEntry, the x25519 one, whose group, length and 32-byte value
+// are 36 bytes. Its retry hello to secp256r1 needs no term: that hello
+// carries one KeyShareEntry of 2 + 2 + 65 = 69 bytes in place of the two
+// the first hello carries, 1,256 bytes, so it is 1,187 bytes shorter than
+// the cookie retry that resends both shares. A CH_CLIENT_AES_SUITES build
 // adds the two AES-GCM cipher suites, 4 bytes more, and its binder can
 // be a SHA-384 one, 16 bytes longer than the SHA-256 binder the fixed
 // sum counts (CH_HELLO_SHA384_BINDER_MAX).
@@ -164,11 +177,11 @@
 #endif
 #ifdef CH_KEX_TWO_GROUPS
 #define CH_HELLO_FIRST_SHARE_MAX CH_HYBRID_CLIENT_SHARE
-#define CH_HELLO_SECOND_GROUP_MAX 2
+#define CH_HELLO_MORE_GROUPS_MAX (2 + 2)
 #define CH_HELLO_SECOND_SHARE_MAX (2 + 2 + 32)
 #else
 #define CH_HELLO_FIRST_SHARE_MAX CH_KEX_CLIENT_SHARE
-#define CH_HELLO_SECOND_GROUP_MAX 0
+#define CH_HELLO_MORE_GROUPS_MAX 0
 #define CH_HELLO_SECOND_SHARE_MAX 0
 #endif
 #ifdef CH_CLIENT_AES_SUITES
@@ -180,7 +193,7 @@
 #endif
 #define CH_HELLO_MAX                                                                               \
     (137 + CH_HELLO_SERVER_NAME_MAX + CH_HELLO_ALPN_MAX + CH_HELLO_TRANSPORT_MAX +                 \
-     CH_HELLO_CERT_PATH_MAX + CH_HELLO_SECOND_GROUP_MAX + CH_HELLO_SECOND_SHARE_MAX +              \
+     CH_HELLO_CERT_PATH_MAX + CH_HELLO_MORE_GROUPS_MAX + CH_HELLO_SECOND_SHARE_MAX +               \
      CH_HELLO_AES_SUITES_MAX + CH_HELLO_SHA384_BINDER_MAX + CH_TICKET_ID_MAX + HSP_COOKIE_MAX +    \
      CH_HELLO_FIRST_SHARE_MAX)
 
@@ -278,13 +291,20 @@ static inline size_t hs_psk_hash_len(const ch_cfg *cfg) {
 // every hello, so a PSK hello carries both ahead of pre_shared_key.
 // The hybrid share carries the ML-KEM encapsulation key ahead of the
 // x25519 public value, so a CH_KEX_HYBRID builder takes both. A
-// CH_KEX_TWO_GROUPS build lists CH_GROUP_X25519MLKEM768 and then
-// CH_GROUP_X25519 in supported_groups and sends a key share for each in
-// that order, the x25519 one over the same pub the hybrid share carries.
-// With cfg->require_pq set it lists and shares the hybrid alone.
+// CH_KEX_TWO_GROUPS build lists CH_GROUP_X25519MLKEM768, CH_GROUP_X25519
+// and CH_GROUP_SECP256R1 in supported_groups and sends a key share for the
+// first two in that order, the x25519 one over the same pub the hybrid
+// share carries. With p256_pub set it sends one share instead, the
+// secp256r1 one over the P256_POINT_LEN bytes at p256_pub: the retry
+// hello a HelloRetryRequest naming secp256r1 asks for, which reads
+// neither ek nor pub. p256_pub is NULL in every other hello. With
+// cfg->require_pq set it lists and shares the hybrid alone.
 size_t hs_build_client_hello(uint8_t *out, size_t cap, const ch_cfg *cfg,
 #ifdef CH_KEX_HYBRID
                              const uint8_t ek[MLKEM_EK_LEN],
+#endif
+#ifdef CH_KEX_TWO_GROUPS
+                             const uint8_t *p256_pub,
 #endif
                              const uint8_t pub[32], const uint8_t random32[32],
                              uint16_t record_size_limit, const uint8_t *cookie, size_t cookie_len);

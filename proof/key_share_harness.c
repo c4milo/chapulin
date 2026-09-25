@@ -10,13 +10,15 @@
 // assumption alone.
 //
 // Built a second time with -DCH_TRUST_WEBPKI (the key_share_webpki
-// launch line), where CH_KEX_TWO_GROUPS makes the arm accept one more
-// shape (docs/decisions.md entry 53): a ServerHello key_share selecting
-// x25519 with a 32-byte share, because that build's hello carries an
-// x25519 share beside the hybrid one. The asserts below state that
-// shape's contract beside the hybrid one, and in both builds a
-// HelloRetryRequest key_share is refused, because every group either
-// build lists already has a share in its hello.
+// launch line), where CH_KEX_TWO_GROUPS makes the arm accept three more
+// shapes (docs/decisions.md entries 53 and 63): a ServerHello key_share
+// selecting x25519 with a 32-byte share, because that build's hello
+// carries an x25519 share beside the hybrid one; one selecting secp256r1
+// with a 65-byte point, because its retry hello carries that share; and
+// a HelloRetryRequest key_share naming secp256r1, the one group its first
+// hello lists without a share. The asserts below state each shape's
+// contract beside the hybrid one. The -DCH_KEX_PQ build refuses every
+// HelloRetryRequest key_share, because its one group has its share.
 //
 // Narrow on purpose. handshake_parser's own harness bounds its message
 // at 256 bytes and a hybrid key_share extension is 1,128, so raising
@@ -49,6 +51,26 @@ int main(void) {
 
     __CPROVER_assert(rc == CH_OK || rc == CH_EPROTO, "key_share returns OK or EPROTO");
 #ifdef CH_KEX_TWO_GROUPS
+    if (rc == CH_OK && hrr) {
+        // A retry names secp256r1, the one group the first hello lists
+        // without a share, in exactly the two bytes of the group.
+        __CPROVER_assert(info.retry_group == CH_GROUP_SECP256R1,
+                         "a retry may name secp256r1 and no other group");
+        __CPROVER_assert(info.have_share == 0 && e.off == 2, "a retry carries no share");
+        return 0;
+    }
+    if (rc == CH_OK && info.group == CH_GROUP_SECP256R1) {
+        // A ServerHello that selected secp256r1: the group, a 65-byte
+        // length and the point, which the pointer spans inside the bytes
+        // the parser consumed. Whether it is on the curve is the key
+        // exchange's check.
+        __CPROVER_assert(info.have_share == 1 && info.server_ct == NULL,
+                         "a secp256r1 share sets have_share and carries no ciphertext");
+        __CPROVER_assert(info.server_p256 >= body &&
+                             info.server_p256 + P256_POINT_LEN == body + e.off && e.off == 69,
+                         "the point is the 65 bytes after the group and length");
+        return 0;
+    }
     if (rc == CH_OK && info.group == CH_GROUP_X25519) {
         // A ServerHello that selected the x25519 share: the group, a
         // 32-byte length and the x25519 point, and no ciphertext pointer.

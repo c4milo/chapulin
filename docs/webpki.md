@@ -126,23 +126,41 @@ a webpki object, the way `sha3.[ch]` is packaged only where ML-KEM is: under
 
 ## Key exchange
 
-Every webpki build offers two groups, which `docs/decisions.md` entries 39
-and 51 decide, and the Makefile refuses a `KEX` value beside `TRUST=webpki`,
-because it would select nothing. The ClientHello lists X25519MLKEM768 and
-then x25519 in `supported_groups`, and carries a key share for each in the
-same order: the 1216-byte hybrid share, then a 32-byte x25519 share that
-repeats the x25519 half of the hybrid one (RFC 9954 §3.2 permits the reuse).
-A server selects either in one round trip, and the client wipes the unused
-ML-KEM seed as soon as the ServerHello selects x25519. The raw and ca modes
-keep entry 12's one group per build.
+Every webpki build offers three groups, which `docs/decisions.md` entries 39,
+53 and 63 decide, and the Makefile refuses a `KEX` value beside
+`TRUST=webpki`, because it would select nothing. The ClientHello lists
+X25519MLKEM768, x25519 and secp256r1 in `supported_groups`, and carries a key
+share for the first two in the same order: the 1216-byte hybrid share, then a
+32-byte x25519 share that repeats the x25519 half of the hybrid one (RFC 9954
+§3.2 permits the reuse). A server selects either of those in one round trip,
+and the client wipes the unused ML-KEM seed as soon as the ServerHello selects
+x25519. The raw and ca modes keep entry 12's one group per build.
 
-Every group the hello lists has a share, so a HelloRetryRequest can ask this
-client for one change, a cookie. The refusals, each an `illegal_parameter`
-abort before any key exists (RFC 9846 §4.2.4 and §4.3.8):
+secp256r1, the key exchange RFC 9846 §9.1 makes a MUST, is listed with no
+share. A server that holds it and neither of the others, nghttpd 1.52.0 on
+OpenSSL 3.0 among them, answers with a HelloRetryRequest that names it, and
+the retry hello carries one secp256r1 share, the 65-byte uncompressed point,
+in place of the two shares, with a cookie when the retry sent one. The P-256
+key pair is drawn only then, and the retry wipes the first hello's x25519 and
+ML-KEM key pairs. The ServerHello must select secp256r1, the client checks
+the server's point is on the curve, and the shared secret is its 32-byte X
+coordinate. `ch_tls.group` reports `CH_GROUP_SECP256R1`. That server costs
+one extra round trip.
 
-- a HelloRetryRequest that names either group, whose share the hello already
-  carried, or any group the hello did not list;
-- a HelloRetryRequest without a cookie, which asks for no change;
+So a HelloRetryRequest can ask this client for a cookie, for secp256r1, or for
+both. The refusals, each an `illegal_parameter` abort before any key exists
+(RFC 9846 §4.2.4, §4.3.8 and §4.3.8.2):
+
+- a HelloRetryRequest that names the hybrid or x25519, whose share the hello
+  already carried, or any group the hello did not list;
+- a HelloRetryRequest with neither a cookie nor a group, which asks for no
+  change;
+- a HelloRetryRequest that names secp256r1 when `ch_cfg.require_pq` kept it
+  off the hello;
+- a ServerHello that selects secp256r1 when no retry named it, or selects
+  the hybrid or x25519 after one did;
+- a secp256r1 share of any length but 65, or a point that is not on the
+  curve or whose form byte is not 0x04;
 - a ServerHello that selects x25519 when `ch_cfg.require_pq` kept x25519 off
   the hello.
 
@@ -159,8 +177,9 @@ So the hybrid runs against every AWS region tried, and Google and Cloudflare
 besides. The four that refuse it accept X25519, and a server that accepts
 X25519 selects the x25519 share in the first round trip, which `test/e2e.sh`
 checks against an OpenSSL server restricted to x25519. That is entry 39's
-trade: entry 12's fail-closed property does not survive the second group.
-A caller that wants it back sets `ch_cfg.require_pq`. The flag drops x25519 from the hello, so a server
+trade: entry 12's fail-closed property does not survive the second group,
+and secp256r1 is a third classic group beside it.
+A caller that wants it back sets `ch_cfg.require_pq`. The flag drops x25519 and secp256r1 from the hello, so a server
 without the hybrid finds no common group and fails the handshake, and
 `ch_tls.group` must be `CH_GROUP_X25519MLKEM768` when the ServerHello is
 accepted. `ch_tls.group` reports the group the ServerHello selected in every
@@ -562,16 +581,18 @@ peer can force before any anchor is consulted, and one more certificate
 in the formula least likely to converge.
 
 The ClientHello this mode sends carries a `server_name` extension of up
-to 262 bytes, an ALPN extension of up to 270, a key share for each of
-the two groups, and the certificate path: five signature schemes, 16
-bytes, and with SPKI pins the `server_certificate_type` offer, 7 bytes
-at most. So its largest hello, `CH_HELLO_MAX`, is 2,394 bytes, 2,396
-under `SUITE=aesgcm`, and 2,648 over QUIC. The session's TX staging
-array, `CH_TX_STAGE`, grows to match, and `test/webpki_session_cases.h`
-measures the built hello against both numbers. A resuming hello sets
-that maximum, because it carries the certificate path and the
-`pre_shared_key` extension both. A hello with no ticket is at most 2,027
-bytes.
+to 262 bytes, an ALPN extension of up to 270, three groups with a key
+share for the first two, and the certificate path: five signature
+schemes, 16 bytes, and with SPKI pins the `server_certificate_type`
+offer, 7 bytes at most. So its largest hello, `CH_HELLO_MAX`, is 2,396
+bytes, 2,416 under `SUITE=aesgcm`, and 2,650 over QUIC. The session's TX
+staging array, `CH_TX_STAGE`, grows to match, and
+`test/webpki_session_cases.h` measures the built hello against both
+numbers. A resuming hello sets that maximum, because it carries the
+certificate path and the `pre_shared_key` extension both. A hello with no
+ticket is at most 2,029 bytes. The retry hello to secp256r1 is 1,187
+bytes shorter than a cookie retry, because its one 69-byte share replaces
+the first hello's two.
 
 `CH_ALPN_MAX` and `CH_ALPN_NAME_MAX` are that budget split two ways. The
 extension costs 4 type and length bytes, 2 list-length bytes, and one

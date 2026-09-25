@@ -72,12 +72,14 @@ last `ROLE=server` stub, as the entry said it would.
 ### INV-3 — the x25519 zero-check is the return value
 
 - **Claim.** A key exchange landing on a small-order point (an
-  all-zero shared secret) cannot be missed.
+  all-zero shared secret) cannot be missed, and neither can a P-256
+  point that is not on the curve.
 - **Mechanism.** `x25519()` returns 0 on an all-zero shared secret
   and 1 otherwise. One call site compiles per raw or ca build, in
   `handshake_flight.c`: the hybrid secret under `KEX=pq`, the classic
   key exchange otherwise. A `TRUST=webpki` build compiles two, the
-  hybrid secret and the x25519 one, one per group its ServerHello may
+  hybrid secret in `handshake_flight.c` and the x25519 one in
+  `handshake_groups.c`, one per x25519-bearing group its ServerHello may
   select. A server role compiles one, in `srv_kex.c`'s `srv_kex_secret`,
   which runs for either group it selects: against the client's x25519
   share, or against the x25519 value that ends the client's hybrid share.
@@ -89,35 +91,60 @@ last `ROLE=server` stub, as the entry said it would.
   `x25519_wide.c` computes the ladder over a scalar `x25519.c` has
   clamped and reports nothing, and `bin/x25519_equiv_test` requires both
   fields to return 0 on every low-order point.
+  secp256r1 has the same shape (docs/decisions.md 63). `p256_ecdh()`
+  returns 0, with its 32 output bytes zero, for a peer point whose form
+  byte is not 0x04, whose coordinates are not below p, or which is not
+  on the curve, the checks RFC 9846 §4.3.8.2 requires
+  (rfc9846.txt:2277-2286); the point at infinity has no 65-byte encoding.
+  Two call sites compile, one per role: `handshake_groups.c`'s
+  `p256_secret` on a webpki client and `srv_kex_secret` on a server, and
+  each fails the handshake with illegal_parameter unless it returns 1. A
+  server also checks the client's point with `p256_ecdh_point_valid` in
+  `srv_kex_share`, before its ServerHello and before it draws a key.
+  Wycheproof's `ecdh_secp256r1` suite exercises the arithmetic's
+  refusals.
 - **Check.** Structural arithmetic (the check is the return value,
   not a side channel of it); convention holds the call site to
-  checking it.
+  checking it. The `handshake_groups` and `srv_kex` harnesses prove a
+  refused P-256 exchange leaves no byte of the secret.
+  `inv03-client-p256-point-unchecked` drops the client's verdict and
+  `bin/webpki_session_test` fails; `inv03-srv-p256-point-unchecked`
+  drops the server's early check and `bin/srv_flight_test` fails.
 - **Violation.** A PR adds a second x25519 call site that drops the
-  return code.
+  return code, or a P-256 call site that computes over a point it did not
+  check.
 - See [decisions: Cryptography](decisions.md#cryptography).
 
 ### INV-4 — randomness only through the hook
 
 - **Claim.** All randomness flows through `ch_rand_bytes`, consumed
-  at exactly eight audited sites. Three are in `handshake.c`: the
+  at exactly ten audited sites. Three are in `handshake_flight.c`: the
   key-share scalar, the ClientHello random, and the ML-KEM (d, z)
-  seed, which only the `KEX=pq` and `TRUST=webpki` builds draw. Two are the server's
+  seed, which only the `KEX=pq` and `TRUST=webpki` builds draw. The
+  fourth is the webpki client's P-256 scalar, in `handshake_groups.c`,
+  drawn only when a HelloRetryRequest names secp256r1 (decisions.md 63).
+  Two are the server's
   mirror of the first two, in `srv_flight.c`: the key-share scalar it
   answers with, and the ServerHello random. A client and a server draw
   the same two values for the same reasons, so the audit is the same
-  audit. The sixth is the server's third: the 32 bytes of ML-KEM
-  encapsulation randomness, in `srv_kex.c`, drawn only when the server
-  selects X25519MLKEM768 and wiped once the encapsulation has run
-  (decisions.md 54). The client never draws it, because the client
-  decapsulates. The seventh is the server's one draw per resumption ticket, in
+  audit. Two more are the server's, in `srv_kex.c`: the 32 bytes of
+  ML-KEM encapsulation randomness, drawn only when the server selects
+  X25519MLKEM768 and wiped once the encapsulation has run (decisions.md
+  54), and the P-256 scalar, drawn only when it selects secp256r1, the
+  mirror of the client's fourth site (decisions.md 63). The client never
+  draws encapsulation randomness, because the client decapsulates. The
+  ninth is the server's one draw per resumption ticket, in
   `srv_resume.c`: the ticket's AEAD nonce, its `ticket_age_add` and its
   `ticket_nonce`, 24 bytes from one call, drawn only when the caller set
-  a ticket key and a clock. The eighth is the PSS salt in
+  a ticket key and a clock. The tenth is the PSS salt in
   `rsa_sign.c`, which no library object
   compiles today — nothing wires a signer into `srv_auth.c` yet, so
   only the test binaries, the Wycheproof suite and its CBMC harness
   compile it. Every draw carries the same all-zero check against a hook
-  that writes nothing.
+  that writes nothing. The two P-256 sites carry it as a bound: a
+  candidate outside [1, n-1], the zero one included, is drawn again up to
+  `P256_ECDH_DRAWS` times, and CH_ASSERT fires past that, which a working
+  generator reaches with probability below 2^-128.
 - **Mechanism.** The hook is the only randomness path into the library,
   and which side defines it is a declared build choice with no default.
   `RAND=extern` leaves it an undefined import, so an image that never
@@ -125,8 +152,8 @@ last `ROLE=server` stub, as the entry said it would.
   reference generator in `drbg.c`, which faults on an unseeded draw.
   Neither build carries a fallback that quietly produces bytes.
 - **Check.** Semgrep-structural (`inv-4-randomness-sites`): no `ch_rand_bytes` call
-  outside `handshake.c`, `srv_flight.c`, `srv_kex.c`, `srv_resume.c` and
-  `rsa_sign.c`.
+  outside `handshake_flight.c`, `handshake_groups.c`, `srv_flight.c`,
+  `srv_kex.c`, `srv_resume.c` and `rsa_sign.c`.
 - **Violation.** A PR conjures a nonce or padding bytes from a new
   call site nobody audits for seeding requirements.
 - See [docs/entropy.md](entropy.md).
@@ -483,20 +510,23 @@ last `ROLE=server` stub, as the entry said it would.
   exactly one of everything; the server takes it or the handshake fails
   closed. The host-side `TRUST=webpki` mode offers several signature
   schemes (decisions.md 36), several application protocols (37), two
-  groups with a key share for each (39, 51), under `SUITE=aesgcm`
+  groups with a key share for each and secp256r1 listed after them with
+  none (39, 53, 63), under `SUITE=aesgcm`
   three cipher suites (45, 58), and in a resuming hello the ticket and the
   certificate path beside it (55), so the server may resume or
-  authenticate with its chain in the same connection. There a ServerHello selects either group,
-  or the hybrid alone under `ch_cfg.require_pq`, and a
-  HelloRetryRequest may ask for a cookie and nothing else. It carries
+  authenticate with its chain in the same connection. There a ServerHello selects either shared
+  group, or the hybrid alone under `ch_cfg.require_pq`, and a
+  HelloRetryRequest may ask for a cookie, for secp256r1, or for both; after
+  a retry that names secp256r1 the ServerHello must select it. It carries
   ChaCha20, AES-128-GCM or AES-256-GCM, and the same one as a retry
   before it. A
   server role selects rather than offers, and its group order is fixed
-  (decisions.md 54): X25519MLKEM768 whenever the client lists it, x25519
-  only when the client lists x25519 alone, and a HelloRetryRequest that
-  names the group when the hello carried no share for it, so a hello
-  that lists the hybrid and shares x25519 alone is asked for the hybrid
-  rather than answered over x25519. Its suite order is ChaCha20, then
+  (decisions.md 54, 63): X25519MLKEM768 whenever the client lists it,
+  x25519 when the client lists x25519 and not the hybrid, secp256r1 only
+  when the client lists neither, and a HelloRetryRequest that names the
+  group when the hello carried no share for it, so a hello that lists the
+  hybrid and shares x25519 alone is asked for the hybrid rather than
+  answered over x25519. Its suite order is ChaCha20, then
   AES-128-GCM, then AES-256-GCM, and it selects the first of them the
   client listed, or the first of `ch_srv_cfg.cipher_suites` when the
   caller names an order (decisions.md 58). It never selects a suite the
@@ -505,8 +535,11 @@ last `ROLE=server` stub, as the entry said it would.
   the sigalg of a raw or ca build at compile time, never at runtime.
   The two-group offer is the `CH_KEX_TWO_GROUPS` arms of
   `handshake_message.c`, `handshake_parser.c` and `handshake_flight.c`,
-  and every build's parser refuses a HelloRetryRequest that names a
-  group. The three-suite offer is the `CH_CLIENT_AES_SUITES`
+  with `handshake_groups.c`. A raw or ca parser refuses a
+  HelloRetryRequest that names a group, and the webpki parser refuses one
+  that names any group but secp256r1; `hsg_selected_group_ok` holds the
+  ServerHello to the group of a share the hello it answers carried. The
+  three-suite offer is the `CH_CLIENT_AES_SUITES`
   arms of `handshake_message.c` and `handshake_parser.c`, and
   `handshake_state.suite` records the suite a retry or ServerHello
   named. The server's choice is `srv_first_offered_suite` in `suite.h`,
@@ -521,8 +554,15 @@ last `ROLE=server` stub, as the entry said it would.
   two-group offer against a mock server, and four mutants require it to
   fail: a hello that lists x25519 without its share, a parser that takes
   a retry naming a shared group, and `require_pq` keeping x25519 in the
-  hello or taking a ServerHello that selects it. `key_share_webpki`
-  proves the parser's x25519 shape beside the hybrid one.
+  hello or taking a ServerHello that selects it. Three more guard the
+  third group: `inv07-first-hello-shares-p256` sends a secp256r1 share in
+  the first hello, `inv07-require-pq-lists-secp256r1` keeps secp256r1 in a
+  `require_pq` hello, and `inv07-retry-names-shared-group` now takes a
+  retry naming x25519 as one naming secp256r1; `bin/webpki_session_test`
+  fails on each. `key_share_webpki` proves the parser's x25519 and
+  secp256r1 shapes beside the hybrid one, and its retry shape, and the
+  `handshake_groups` harness proves which group a ServerHello may select
+  before and after a retry.
   `bin/webpki_session_aes` drives the three-suite offer, and two mutants
   require it to fail: a parser that takes `TLS_AES_128_CCM_SHA256`, and
   a ServerHello whose suite differs from the retry's. `srv_select_suite`
@@ -545,9 +585,13 @@ last `ROLE=server` stub, as the entry said it would.
   `srv_kex` harness proves over every groups and shares pair a parsed
   hello can report, and `bin/srv_flight_test` drives each row of it.
   `inv07-srv-x25519-despite-hybrid-share` takes x25519 whenever the
-  client shared it, and `inv07-srv-skips-hybrid-retry` answers over the
-  x25519 share instead of asking for the hybrid; the test fails on both.
-  `test/e2e.sh` runs the same rows against OpenSSL's `s_client`.
+  client shared it, `inv07-srv-skips-hybrid-retry` answers over the
+  x25519 share instead of asking for the hybrid, and
+  `inv07-srv-p256-before-x25519` prefers secp256r1 to x25519; the test
+  fails on each. `bin/rec_loop_test` feeds this tree's tcp-nonblocking
+  server hand-written hellos that list secp256r1 alone and beside x25519.
+  `test/e2e.sh` runs the same rows against OpenSSL's `s_client`, and the
+  webpki client against an OpenSSL server that holds P-256 alone.
 - **Violation.** A PR accepts a second cipher suite value in
   ServerHello and downgrade surface exists again.
 - See [decisions: Protocol surface](decisions.md#protocol-surface).
@@ -1874,7 +1918,16 @@ last `ROLE=server` stub, as the entry said it would.
   x25519 key pair; the `srv_kex` harness proves it, and
   `inv17-srv-keeps-mlkem-secret` requires `bin/srv_flight_test` to fail
   when the wipe goes. The 32 bytes of encapsulation randomness die inside
-  the call that drew them. A `TRUST=webpki` client whose ticket a server
+  the call that drew them. The P-256 scalar of a secp256r1 exchange
+  (decisions.md 63) lives in `handshake_state.p256_priv` from the draw to
+  the key schedule on both sides: a webpki client draws it when a retry
+  names secp256r1, wipes the first hello's x25519 and ML-KEM key pairs
+  then, and wipes the scalar in `handshake_groups.c`'s `p256_secret`; a
+  server draws it in `srv_kex_share` and wipes it in `srv_kex_secret`,
+  each on both exits. The `handshake_groups` and `srv_kex` harnesses prove
+  both wipes, and `inv17-client-keeps-p256-scalar` and
+  `inv17-srv-keeps-p256-scalar` require `bin/webpki_session_test` and
+  `bin/srv_flight_test` to fail when either goes. A `TRUST=webpki` client whose ticket a server
   declines wipes the PSK's early secret and binder key in
   `hsf_accept_server_hello`, the moment the ServerHello declines, and
   derives the early secret of no PSK in their place;

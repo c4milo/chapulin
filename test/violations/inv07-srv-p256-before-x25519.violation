@@ -1,0 +1,23 @@
+invariant: INV-7
+file: srv_kex.c
+catches: srv_flight_test
+reason: the server prefers secp256r1 to x25519, so a client that lists both,
+  as OpenSSL's default list and a TRUST=webpki client do, runs the slower
+  group, and one that shares x25519 alone pays a HelloRetryRequest for it.
+  docs/decisions.md 63 takes secp256r1 last, only from a client that lists
+  neither the hybrid nor x25519, and test_flight_select_p256 holds each row.
+
+--- old
+    if ((ch->groups & SRV_GROUP_X25519) != 0) {
+        return CH_GROUP_X25519;
+    }
+    if ((ch->groups & SRV_GROUP_SECP256R1) != 0) {
+        return CH_GROUP_SECP256R1;
+    }
+--- new
+    if ((ch->groups & SRV_GROUP_SECP256R1) != 0) {
+        return CH_GROUP_SECP256R1;
+    }
+    if ((ch->groups & SRV_GROUP_X25519) != 0) {
+        return CH_GROUP_X25519;
+    }

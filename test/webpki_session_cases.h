@@ -376,7 +376,7 @@ static void test_webpki_hello_boundary(void) {
     cfg.spki_pin_count = 1;
     cfg.anchor_count = 1;
 #define BUILD_HELLO(cap)                                                                           \
-    hs_build_client_hello(out, (cap), &cfg, ek, pub, random32, 0xffff, cookie, sizeof cookie)
+    hs_build_client_hello(out, (cap), &cfg, ek, NULL, pub, random32, 0xffff, cookie, sizeof cookie)
     size_t psk_arm = BUILD_HELLO(CH_HELLO_MAX);
     CHECK(psk_arm == CH_HELLO_MAX);
     // The certificate path rides ahead of the ticket: five schemes, then
@@ -387,9 +387,9 @@ static void test_webpki_hello_boundary(void) {
     CHECK(hello_ext_index(out, psk_arm, EXT_SIGNATURE_ALGORITHMS, NULL) == count - 3);
     CHECK(hello_ext_index(out, psk_arm, EXT_SERVER_CERTIFICATE_TYPE, NULL) == count - 2);
     CHECK(BUILD_HELLO(CH_HELLO_MAX - 1) == 0);
-    // require_pq drops the x25519 group and its 36-byte share.
+    // require_pq drops the x25519 and secp256r1 groups and x25519's 36-byte share.
     cfg.require_pq = 1;
-    CHECK(BUILD_HELLO(CH_HELLO_MAX) == CH_HELLO_MAX - 2 - 36);
+    CHECK(BUILD_HELLO(CH_HELLO_MAX) == CH_HELLO_MAX - 4 - 36);
     cfg.require_pq = 0;
     // No pins: no server_certificate_type, 7 bytes.
     cfg.spki_pin_count = 0;
@@ -402,7 +402,7 @@ static void test_webpki_hello_boundary(void) {
     CHECK(CH_TX_STAGE == CH_HELLO_MAX);
     CHECK(CH_HELLO_ALPN_MAX == 270);
     CHECK(CH_HELLO_CERT_PATH_MAX == 16 + 7);
-    CHECK(CH_HELLO_MAX == 2394 + CH_HELLO_AES_SUITES_MAX + CH_HELLO_SHA384_BINDER_MAX);
+    CHECK(CH_HELLO_MAX == 2396 + CH_HELLO_AES_SUITES_MAX + CH_HELLO_SHA384_BINDER_MAX);
     (void)printf("webpki hello: %zu bytes with pre_shared_key, %zu without, CH_TX_STAGE %d\n",
                  psk_arm, chain_arm, CH_TX_STAGE);
 }

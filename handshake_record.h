@@ -24,6 +24,9 @@
 #ifdef CH_ROLE_SERVER
 #include "mlkem.h"
 #endif
+#if defined(CH_KEX_TWO_GROUPS) || defined(CH_ROLE_SERVER)
+#include "p256_ecdh.h"
+#endif
 #ifdef CH_TRUST_CA
 #include "x509.h"
 #endif
@@ -46,6 +49,25 @@ typedef struct {
     // (build and decapsulation), so the share the HRR retry resends is
     // identical by construction and no 2400-byte key lives in state.
     uint8_t dz[64];
+#endif
+#ifdef CH_KEX_TWO_GROUPS
+    // The group a HelloRetryRequest named, CH_GROUP_SECP256R1, or 0 when
+    // no retry named one. It is the one group the first hello lists
+    // without a share, so the retry hello carries a share for it alone
+    // and the ServerHello must select it (RFC 9846 §4.3.8,
+    // rfc9846.txt:2205-2215 and 2233-2238). handshake_groups.c writes it.
+    uint16_t retry_group;
+    // The P-256 public point the retry hello carries, in the uncompressed
+    // form of RFC 9846 §4.3.8.2. Public: it goes out in the clear.
+    uint8_t p256_pub[P256_POINT_LEN];
+#endif
+#if defined(CH_KEX_TWO_GROUPS) || defined(CH_ROLE_SERVER)
+    // The P-256 private scalar of a secp256r1 key exchange, drawn only
+    // when that group is chosen: by a client once a retry names it
+    // (handshake_groups.c), and by a server once it selects it
+    // (srv_kex.c). Zero otherwise. The call that computes the shared
+    // secret wipes it on both exits (INV-17).
+    uint8_t p256_priv[P256_SCALAR_LEN];
 #endif
 #ifdef CH_SUITE_AES_GCM
     // The cipher suite the server named, 0 until a HelloRetryRequest or
@@ -73,7 +95,8 @@ typedef struct {
     // ss). srv_kex_share writes it when it encapsulates for the
     // ServerHello, and srv_kex_secret copies it into the input keying
     // material and wipes it, so it lives from one message to the next and
-    // no longer (INV-17). It stays zero when the server selected x25519.
+    // no longer (INV-17). It stays zero when the server selected x25519
+    // or secp256r1.
     uint8_t mlkem_ss[MLKEM_SS_LEN];
     // The auth_seconds of the ticket this handshake resumed (srv_ticket.h),
     // which srv_select_auth writes and srv_send_new_session_ticket carries

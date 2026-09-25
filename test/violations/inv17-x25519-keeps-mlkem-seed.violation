@@ -1,5 +1,5 @@
 invariant: INV-17
-file: handshake_flight.c
+file: handshake_groups.c
 catches: webpki_session_test
 reason: a webpki client whose server selected x25519 keeps the ML-KEM seed
   h->dz after the key exchange, so the decapsulation key it expands to

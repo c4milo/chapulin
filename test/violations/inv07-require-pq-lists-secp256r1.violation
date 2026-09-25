@@ -1,10 +1,10 @@
 invariant: INV-7
 file: handshake_message.c
 catches: webpki_session_test
-reason: require_pq keeps x25519 in supported_groups, so the hello tells a
-  server this client would accept a classic exchange it will then refuse.
-  docs/decisions.md entry 53 says the flag makes the hello the one-group
-  hello a raw KEX=pq build sends.
+reason: require_pq keeps secp256r1 in supported_groups, so a server without
+  the hybrid asks for a P-256 share with a HelloRetryRequest the client then
+  refuses, one round trip later, where the one-group hybrid hello
+  docs/decisions.md entries 53 and 63 give the flag fails at once.
 
 --- old
     size_t groups_len = cfg->require_pq ? 2 : 6;
@@ -22,7 +22,7 @@ reason: require_pq keeps x25519 in supported_groups, so the hello tells a
     wb_u16(w, (uint16_t)(2 + groups_len));
     wb_u16(w, (uint16_t)groups_len);
     wb_u16(w, CH_GROUP_X25519MLKEM768);
-    wb_u16(w, CH_GROUP_X25519);
     if (!cfg->require_pq) {
-        wb_u16(w, CH_GROUP_SECP256R1);
+        wb_u16(w, CH_GROUP_X25519);
     }
+    wb_u16(w, CH_GROUP_SECP256R1);

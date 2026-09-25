@@ -50,17 +50,22 @@ static void test_readers(void) {
     // §4.2.7: an empty named_group_list is decode_error, and a list of
     // groups this build does not hold parses with groups at 0 when the
     // key_share carries no share for this build's group either.
+    // secp256r1 alone is a group every server holds (docs/decisions.md 63).
     static const uint8_t no_groups[] = {0x00, 0x0a, 0x00, 0x02, 0x00, 0x00};
+    static const uint8_t p384_only[] = {0x00, 0x0a, 0x00, 0x04, 0x00, 0x02, 0x00, 0x18};
     static const uint8_t p256_only[] = {0x00, 0x0a, 0x00, 0x04, 0x00, 0x02, 0x00, 0x17};
     static const uint8_t no_shares[] = {0x00, 0x33, 0x00, 0x02, 0x00, 0x00};
     n = replaced(buf, AT_GROUPS, no_groups, sizeof no_groups);
     CHECK(refused(buf, n, ALERT_DECODE_ERROR));
     extension exts[GOLDEN_EXT_COUNT];
     memcpy(exts, golden_exts, sizeof exts);
-    exts[AT_GROUPS] = (extension)EXTENSION(p256_only);
+    exts[AT_GROUPS] = (extension)EXTENSION(p384_only);
     exts[AT_KEY_SHARE] = (extension)EXTENSION(no_shares);
     n = assemble(buf, hello_head, sizeof hello_head, exts, GOLDEN_EXT_COUNT);
     CHECK(parse(buf, n) == CH_OK && parsed.groups == 0 && parsed.shares == 0);
+    exts[AT_GROUPS] = (extension)EXTENSION(p256_only);
+    n = assemble(buf, hello_head, sizeof hello_head, exts, GOLDEN_EXT_COUNT);
+    CHECK(parse(buf, n) == CH_OK && parsed.groups == SRV_GROUP_SECP256R1 && parsed.shares == 0);
     // §4.2.2: cookie<1..2^16-1>, so an empty cookie is decode_error.
     static const uint8_t no_cookie[] = {0x00, 0x2c, 0x00, 0x02, 0x00, 0x00};
     n = appended(buf, no_cookie, sizeof no_cookie);

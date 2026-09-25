@@ -10,6 +10,10 @@
 // way. The third reads peer bytes, and the parser held the client's
 // share to exactly CH_HYBRID_CLIENT_SHARE bytes before this file sees
 // it, so the x25519 half is the X25519_LEN bytes that end it.
+//
+// The P-256 key pair is drawn in srv_kex_share and nowhere earlier, so a
+// server that selects another group draws none, as it draws no
+// encapsulation randomness for a group other than the hybrid.
 #include "srv_kex.h"
 
 #ifdef CH_ROLE_SERVER
@@ -29,6 +33,9 @@ uint16_t srv_kex_group(const client_hello *ch) {
     }
     if ((ch->groups & SRV_GROUP_X25519) != 0) {
         return CH_GROUP_X25519;
+    }
+    if ((ch->groups & SRV_GROUP_SECP256R1) != 0) {
+        return CH_GROUP_SECP256R1;
     }
     return 0;
 }
@@ -63,11 +70,50 @@ static int encapsulate(handshake_state *h, const client_hello *ch,
     return CH_OK;
 }
 
+// Checks the client's P-256 point, then draws this server's key pair: the
+// scalar into h->p256_priv and the uncompressed point into share. The
+// point arrived on the wire, so the branch on its verdict leaks nothing,
+// and a refused point draws nothing. Each draw is a candidate scalar;
+// p256_ecdh_keygen refuses one outside [1, n-1] and zeroes both outputs,
+// so the loop draws again, up to P256_ECDH_DRAWS draws in all, and its
+// exit reads only whether the last candidate was refused. The candidate
+// buffer is zeroed before each draw, so a hook that returns without
+// writing leaves the zero candidate, which keygen refuses.
+static int p256_share(handshake_state *h, const client_hello *ch,
+                      uint8_t share[SRV_KEX_SHARE_MAX]) {
+    CH_ASSERT(ch->p256_share != NULL);
+    if (!p256_ecdh_point_valid(ch->p256_share)) {
+        return CH_EPROTO;
+    }
+    uint8_t draw[P256_SCALAR_LEN];
+    int drawn = 0;
+    for (int i = 0; i < P256_ECDH_DRAWS && !drawn; i++) {
+        ct_wipe(draw, sizeof draw);
+        ch_rand_bytes(draw, sizeof draw);
+        drawn = p256_ecdh_keygen(draw, h->p256_priv, share);
+    }
+    ct_wipe(draw, sizeof draw);
+    // rand.h's contract: a working generator refuses P256_ECDH_DRAWS
+    // candidates in a row with probability below 2^-128, so this is a
+    // hook that wrote nothing or wrote a constant, which is programmer
+    // error.
+    CH_ASSERT(drawn);
+    return CH_OK;
+}
+
 int srv_kex_share(handshake_state *h, const client_hello *ch, uint16_t group,
                   uint8_t share[SRV_KEX_SHARE_MAX], size_t *share_len) {
     if (group == CH_GROUP_X25519) {
         memcpy(share, h->pub, X25519_LEN);
         *share_len = X25519_LEN;
+        return CH_OK;
+    }
+    if (group == CH_GROUP_SECP256R1) {
+        int rc = p256_share(h, ch, share);
+        if (rc != CH_OK) {
+            return rc;
+        }
+        *share_len = P256_POINT_LEN;
         return CH_OK;
     }
     CH_ASSERT(group == CH_GROUP_X25519MLKEM768 && ch->hybrid_share != NULL);
@@ -80,8 +126,11 @@ int srv_kex_share(handshake_state *h, const client_hello *ch, uint16_t group,
     return CH_OK;
 }
 
-int srv_kex_secret(handshake_state *h, const client_hello *ch, uint16_t group,
-                   uint8_t ikm[SRV_KEX_SECRET_MAX], size_t *ikm_len) {
+// The x25519 and hybrid arms of srv_kex_secret, which differ only in
+// where the x25519 secret lands and whose value it runs against. Returns
+// x25519's verdict: 1, or 0 for the all-zero secret.
+static int x25519_secret(handshake_state *h, const client_hello *ch, uint16_t group,
+                         uint8_t ikm[SRV_KEX_SECRET_MAX], size_t *ikm_len) {
     // Where the x25519 shared secret lands, and whose public value it is
     // computed against.
     uint8_t *ecdhe = ikm;
@@ -97,7 +146,26 @@ int srv_kex_secret(handshake_state *h, const client_hello *ch, uint16_t group,
     }
     CH_ASSERT(peer != NULL);
     ct_wipe(h->mlkem_ss, sizeof h->mlkem_ss);
-    int shared_ok = x25519(ecdhe, h->priv, peer) != 0;
+    return x25519(ecdhe, h->priv, peer) != 0;
+}
+
+int srv_kex_secret(handshake_state *h, const client_hello *ch, uint16_t group,
+                   uint8_t ikm[SRV_KEX_SECRET_MAX], size_t *ikm_len) {
+    int shared_ok;
+    if (group == CH_GROUP_SECP256R1) {
+        // p256_ecdh checks the point again, which srv_kex_share already
+        // did, and zeroes its 32 bytes of ikm when it refuses.
+        CH_ASSERT(ch->p256_share != NULL);
+        *ikm_len = P256_SECRET_LEN;
+        shared_ok = p256_ecdh(h->p256_priv, ch->p256_share, ikm);
+    } else {
+        shared_ok = x25519_secret(h, ch, group, ikm, ikm_len);
+    }
+    // Both exits, and every group: the x25519 pair srv_begin drew is
+    // unused after a secp256r1 exchange, and the P-256 scalar stays zero
+    // when its group was not selected. x25519_secret wipes the ML-KEM
+    // secret, which only the hybrid writes.
+    ct_wipe(h->p256_priv, sizeof h->p256_priv);
     ct_wipe(h->priv, sizeof h->priv);
     ct_wipe(h->pub, sizeof h->pub);
     if (!shared_ok) {

@@ -17,7 +17,9 @@ static void test_golden_hello(void) {
     CHECK(parsed.session_id_len == SRV_SESSION_ID_MAX);
     CHECK(memcmp(parsed.session_id, hello_head + HEAD_SESSION_ID_AT, SRV_SESSION_ID_MAX) == 0);
     CHECK(parsed.suites == SRV_SUITE_CHACHA20_POLY1305);
-    CHECK(parsed.groups == SRV_GROUP_X25519 && parsed.shares == SRV_GROUP_X25519);
+    // The hello lists x25519 and secp256r1 and shares x25519 alone.
+    CHECK(parsed.groups == (SRV_GROUP_X25519 | SRV_GROUP_SECP256R1) &&
+          parsed.shares == SRV_GROUP_X25519 && parsed.p256_share == NULL);
     CHECK(parsed.sigalgs == (SRV_SIGALG_ECDSA_P256 | SRV_SIGALG_RSA_PSS));
     // The share is the key_exchange bytes where they sit in the message.
     CHECK(inside(buf, n, parsed.x25519_share, X25519_LEN));
@@ -221,9 +223,23 @@ static void test_key_share(void) {
     m = make_key_share(ext, CH_GROUP_X25519, 0);
     n = replaced(buf, AT_KEY_SHARE, ext, m);
     CHECK(refused(buf, n, ALERT_DECODE_ERROR));
+    // A secp256r1 share is the 65-byte uncompressed point of RFC 9846
+    // §4.3.8.2: the last valid length is taken, pointing into the message,
+    // and one byte either side of it is illegal_parameter. The parser
+    // judges the length alone; srv_kex_share checks the point.
+    m = make_key_share(ext, CH_GROUP_SECP256R1, P256_POINT_LEN);
+    n = replaced(buf, AT_KEY_SHARE, ext, m);
+    CHECK(parse(buf, n) == CH_OK && parsed.shares == SRV_GROUP_SECP256R1 &&
+          inside(buf, n, parsed.p256_share, P256_POINT_LEN) && parsed.x25519_share == NULL);
+    m = make_key_share(ext, CH_GROUP_SECP256R1, P256_POINT_LEN - 1);
+    n = replaced(buf, AT_KEY_SHARE, ext, m);
+    CHECK(refused(buf, n, ALERT_ILLEGAL_PARAMETER));
+    m = make_key_share(ext, CH_GROUP_SECP256R1, P256_POINT_LEN + 1);
+    n = replaced(buf, AT_KEY_SHARE, ext, m);
+    CHECK(refused(buf, n, ALERT_ILLEGAL_PARAMETER));
     // An entry for a group this build does not hold is read and ignored,
     // whatever its length: no share, and no refusal.
-    m = make_key_share(ext, 0x0017, 65); // secp256r1
+    m = make_key_share(ext, 0x0018, 97); // secp384r1
     n = replaced(buf, AT_KEY_SHARE, ext, m);
     CHECK(parse(buf, n) == CH_OK && parsed.shares == 0 && parsed.x25519_share == NULL);
     // Two entries for one group: the first is the share.

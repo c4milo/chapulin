@@ -834,7 +834,23 @@ launch fast full hybrid_secret 65 "fill_nondet.0:2401,ct_wipe.0:2401" -DCH_KEX_P
 # share, the refused key, the refused secret and both accepted secrets --
 # fails all six, and with srv_kex_secret's two halves swapped it fails
 # the two order assertions, so the arms are reached and the order is held.
-launch fast full srv_kex 65 "fill_nondet.0:33,same.0:33,zero.0:65" ct.c -DCH_ROLE_SERVER
+# With secp256r1 as the third group (docs/decisions.md 63), the three
+# p256_ecdh entries stubbed to their contracts and a fill of the 65-byte
+# point, measured the same way: 561 properties, 2.7 s, 0.14 GB. A probe
+# asserting false at the P-256 share, the refused point and the refused
+# P-256 secret fails all three.
+launch fast full srv_kex 66 "fill_nondet.0:66,same.0:33,zero.0:65" ct.c -DCH_ROLE_SERVER
+# The TRUST=webpki client's three-group rules (docs/decisions.md 63):
+# handshake_groups.c with ch_rand_bytes, the P-256 keygen and exchange, and
+# x25519 stubbed to their headers' contracts, the srv_kex shape on the
+# client. The harness states the six facts it proves beside memory safety.
+# Measured (cbmc 6.11.0, kissat, PROVE_ONLY=handshake_groups
+# PROVE_NO_CACHE=1 /usr/bin/time -l over this script, M1 Pro): 253
+# properties, 1.7 s, 0.04 GB. A probe asserting false in each arm -- the
+# cookie retry taken, the retry refused under require_pq, the P-256
+# secret accepted and refused, and the x25519 secret refused -- fails all
+# five, so every arm is reached.
+launch fast full handshake_groups 66 "fill_nondet.0:66,zero.0:65" -DCH_TRUST_WEBPKI ct.c
 # The parser half of the hybrid build
 # (https://github.com/c4milo/chapulin/issues/47). parse_key_share is driven
 # directly because handshake_parser bounds its message at 256 bytes and a
@@ -860,7 +876,12 @@ launch fast full key_share 1200 "fill_nondet.0:1133" -DCH_KEX_PQ buf.c
 # properties, 1.5 s and 1.6 s in two runs, 0.22 GB peak, where the formula
 # with the retry shape the arm no longer accepts measured 704 properties,
 # 1.4 s, 0.21 GB. The same formula with an assert of 0 in the x25519 arm
-# and in the hybrid arm fails both, so both arms are reached.
+# and in the hybrid arm fails both, so both arms are reached. With
+# secp256r1 listed without a share (docs/decisions.md 63) the arm takes two
+# more shapes, a ServerHello selecting secp256r1 with a 65-byte point and a
+# retry naming secp256r1, which a one-group build still refuses: 740
+# properties, 1.3 s, 0.23 GB (PROVE_ONLY=key_share_webpki PROVE_NO_CACHE=1
+# /usr/bin/time -l), and a probe in each of the two new arms fails both.
 launch fast full key_share_webpki 1200 "fill_nondet.0:1133" -DCH_TRUST_WEBPKI buf.c
 # handshake_message.c was the last library source no harness compiled
 # (https://github.com/c4milo/chapulin/issues/33). Beyond memory safety this
@@ -880,14 +901,19 @@ launch fast full hello_build 400 "fill_nondet.0:321" buf.c
 # of up to CH_ALPN_NAME_MAX bytes, the five signature schemes, and the
 # server_certificate_type offer of SPKI pins, which the harness stubs to
 # answer every offer webpki_cert_types_offered can give, and the two key
-# shares, or the hybrid one alone under a nondet require_pq
-# (docs/decisions.md entry 53) — against that build's CH_HELLO_MAX of
-# 2394, which the certificate path in a resuming hello raised from 2371
-# (docs/decisions.md 55). The sufficiency assertion is tight: moved to
+# shares, the one secp256r1 share of a retry hello, or the hybrid one
+# alone under a nondet require_pq (docs/decisions.md entries 53 and 63) —
+# against that build's CH_HELLO_MAX of 2396, which the certificate path in
+# a resuming hello raised from 2371 (docs/decisions.md 55) and the third
+# listed group from 2394. The sufficiency assertion is tight: moved to
 # CH_HELLO_MAX - 1 it fails, and a probe asserting false after the
 # two-type offer is written
 # fails too, so that arm is reached; a probe in each require_pq arm of
-# write_two_groups fails both. The two ALPN loops carry their own bounds
+# write_two_groups fails both, and so does one asserting that no secp256r1
+# retry hello is built. With the retry arm (docs/decisions.md 63):
+# 602 properties, 109 s, 0.19 GB (PROVE_ONLY=hello_build_webpki
+# PROVE_NO_CACHE=1 /usr/bin/time -l, M1 Pro, other lanes' work on the
+# machine). The two ALPN loops carry their own bounds
 # because the global 400 unrolled both past the array they walk, and
 # CBMC then ran out of addressed objects (--object-bits, 256) rather than
 # returning a verdict. Measured (cbmc 6.11.0, kissat, PROVE_NO_CACHE=1
@@ -1297,9 +1323,11 @@ launch fast full quic_token 130 "fill_nondet.0:113,prove_mint.1:21,prove_mint.2:
 # solver time and 0.62 GB, measured at 72 s wall on a machine running
 # other lanes' proofs. With supported_groups and key_share reading both
 # groups: 1000 properties, 27 s, 0.92 GB (PROVE_ONLY=srv_parser_ext
-# PROVE_NO_CACHE=1 /usr/bin/time -l). EXT_MAX keeps a body under the 32 bytes
-# of the shortest share, so this formula holds the key_share reader's
-# refusals and its walk; bin/srv_test holds each group's exact length.
+# PROVE_NO_CACHE=1 /usr/bin/time -l). With secp256r1 as a third group
+# (docs/decisions.md 63): 1012 properties, 29 s, 1.05 GB. EXT_MAX keeps a
+# body under the 32 bytes of the shortest share, so this formula holds the
+# key_share reader's refusals and its walk; bin/srv_test holds each group's
+# exact length.
 launch fast:2 full srv_parser_ext 26 "fill_nondet.0:129,ct_memeq.0:33" buf.c ct.c -DCH_ROLE_SERVER
 # The walk half, proof/srv_parser_walk_harness.c: srv_parser.c real with
 # srv_read_extension stubbed to its contract, over any message up to 64
@@ -1457,19 +1485,21 @@ launch fast full quic_step_ca 5 "fill_nondet.0:37,ct_wipe.0:849" -DCH_TRANSPORT_
 # a loop of its own, because an unwindset entry bounds a loop and not a
 # call site: the same bound on fill_nondet unrolls that loop 256 times at
 # the four 32-byte call sites the flight stubs make as well. ct_wipe.0 is
-# 489 for the reason the two client drivers give, that the driver wipes
-# the whole handshake_state on the way out; a server's is 488 bytes since
-# it carries a resumed ticket's instant and the 32-byte ML-KEM shared
-# secret of a hybrid key exchange.
+# 521 for the reason the two client drivers give, that the driver wipes
+# the whole handshake_state on the way out; a server's is 520 bytes since
+# it carries a resumed ticket's instant, the 32-byte ML-KEM shared secret
+# of a hybrid key exchange and the 32-byte P-256 scalar of a secp256r1 one
+# (docs/decisions.md 63).
 #
 # Measured under this script's flags (arm64 macOS, the pinned cbmc,
 # kissat, PROVE_ONLY=srv_accept PROVE_NO_CACHE=1 /usr/bin/time -l, on a
 # development machine running other lanes' work): 871 properties, 32 s,
 # 2.39 GB peak, with srv_resume.h's ticket call stubbed beside the
 # fourteen handlers, and 871 properties, 35 s, 2.39 GB once ct_wipe.0 rose
-# to 489 for the ML-KEM secret. The weight is 3 because that peak is over the fast
+# to 489 for the ML-KEM secret, and 871 properties, 29 s, 2.39 GB at 521 for
+# the P-256 scalar. The weight is 3 because that peak is over the fast
 # tier's 2 GB default.
-launch fast:3 full srv_accept 100 "alpn_ok.0:9,alpn_name_repeats.0:9,ct_wipe.0:489,ct_memeq.0:33,fill_names.0:257,fill_nondet.0:33" -DCH_ROLE_SERVER srv.c srv_handshake.c ct.c session.c
+launch fast:3 full srv_accept 100 "alpn_ok.0:9,alpn_name_repeats.0:9,ct_wipe.0:521,ct_memeq.0:33,fill_names.0:257,fill_nondet.0:33" -DCH_ROLE_SERVER srv.c srv_handshake.c ct.c session.c
 # The ROLE=server tcp-nonblocking driver and the inbound framing under it, with
 # srv_accept's layering: srv_rec.c and rec_frame.c real, the fifteen
 # handlers contract stubs. It would cover the step table, the record
