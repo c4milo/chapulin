@@ -218,9 +218,10 @@ rules:
       keys of TLS_AES_128_GCM_SHA256 and TLS_AES_256_GCM_SHA384, which the
       TLS key schedule derives and which are secret, and every entry that
       takes one begins aes_traffic_ or gcm_traffic_. record.c, which
-      protects TLS records, is the one library source that may name
-      them; quic_aes.c and quic_gcm.c are excluded as the definition
-      sites. ct.h refuses that build unless it takes AES=hw and asserts
+      protects TLS records, and quic_packet.c, which protects QUIC
+      Handshake and 1-RTT packets and their headers, are the two library
+      sources that may name them; quic_aes.c and quic_gcm.c are excluded
+      as the definition sites. ct.h refuses that build unless it takes AES=hw and asserts
       the instructions' timing (CH_NATIVE_AES), so a traffic key never
       meets the AES=soft S-box, and aes_traffic_key.h, the type's body,
       is included by the same files and no other, which
@@ -228,7 +229,7 @@ rules:
       key on a path nobody reviewed for it. Tripwire grade, as above.
     paths:
       exclude: [test, proof, fuzz, spec, bench, bin, examples, record.c,
-                quic_aes.c, quic_gcm.c]
+                quic_packet.c, quic_aes.c, quic_gcm.c]
     pattern-either:
       - patterns:
           - pattern: $F(...)

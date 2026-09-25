@@ -10,13 +10,13 @@ reason: the 1-RTT seal path calls aes_encrypt_block on a key set the TLS
   no include; the rule matches the call by name either way.
 
 --- old
-int quic_packet_seal(const quic_keys *k, const quic_hp_key *h, uint8_t level, uint64_t pn,
-                     size_t pn_len, const uint8_t *hdr, size_t hdr_len, const uint8_t *pt,
-                     size_t pt_len, uint8_t *out, size_t cap, size_t *out_len) {
+int quic_packet_seal(quic_keys *k, const quic_hp_key *h, uint8_t level, uint64_t pn, size_t pn_len,
+                     const uint8_t *hdr, size_t hdr_len, const uint8_t *pt, size_t pt_len,
+                     uint8_t *out, size_t cap, size_t *out_len) {
     CH_ASSERT(k != NULL);
 --- new
-int quic_packet_seal(const quic_keys *k, const quic_hp_key *h, uint8_t level, uint64_t pn,
-                     size_t pn_len, const uint8_t *hdr, size_t hdr_len, const uint8_t *pt,
-                     size_t pt_len, uint8_t *out, size_t cap, size_t *out_len) {
+int quic_packet_seal(quic_keys *k, const quic_hp_key *h, uint8_t level, uint64_t pn, size_t pn_len,
+                     const uint8_t *hdr, size_t hdr_len, const uint8_t *pt, size_t pt_len,
+                     uint8_t *out, size_t cap, size_t *out_len) {
     CH_ASSERT(k != NULL);
     aes_encrypt_block(k, hdr, out);

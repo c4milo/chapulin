@@ -237,12 +237,14 @@ $(error AES=$(AES) is not an AES implementation; use AES=soft, AES=hw or AES=ext
 endif
 QUIC_SRCS := quic_aes.c $(AES_IMPL) quic_gcm.c quic_keys.c quic_packet.c quic_initial.c \
              quic_retry.c quic_config.c quic_fail.c quic_step.c quic.c
-# What SUITE=aesgcm adds to a TRANSPORT=tls or TRANSPORT=record object:
-# the key expansion, the implementation AES picked and the AEAD, which
-# record.c calls under -DCH_SUITE_AES_GCM. A QUIC object compiles them
-# through QUIC_SRCS, and the SUITE-with-QUIC refusal keeps the two lists
-# from meeting. Without this the object imported three functions no
-# source in it defined, and lib-check said so.
+# What SUITE=aesgcm adds to an object: the key expansion, the
+# implementation AES picked and the AEAD, which record.c and quic_packet.c
+# call under -DCH_SUITE_AES_GCM, and SHA-512's core, which
+# TLS_AES_256_GCM_SHA384's key schedule runs. Without the first three the
+# object imported functions no source in it defined, and lib-check said
+# so. A QUIC object already compiles the AES sources through QUIC_SRCS
+# and a TRUST=webpki one the SHA-512 core through WEBPKI_SRCS, so
+# LIB_SRCS takes out of this list what another axis added.
 SUITE_ADD := $(if $(SUITE_DEF),quic_aes.c $(AES_IMPL) quic_gcm.c sha512.c sha512_compress.c)
 # The implementation sources, named whichever ones this build picks, so a
 # check that reads every AES choice does not re-derive the list.
@@ -269,7 +271,8 @@ AES_HW_CFLAGS := $(filter-out none,$(AES_HW_PROBE))
 # found them, so `check` builds and runs them where they work and says it
 # skipped them where they do not exist.
 AES_HW_BINS := $(if $(AES_HW_PROBE),bin/quic_test_hw bin/aes_equiv_test bin/ghash_equiv_test bin/aes_suite_test \
-                                     bin/srv_flight_test_aes bin/webpki_session_aes bin/webpki_loop_aes)
+                                     bin/srv_flight_test_aes bin/webpki_session_aes bin/webpki_loop_aes \
+                                     bin/quic_loop_aes bin/quic_suite_test)
 # What lint-quic-partition needs to preprocess each AES implementation.
 # Each one guards its body on a second macro, so with CH_TRANSPORT_QUIC
 # alone it preprocesses to nothing and that lint would read it as a file
@@ -563,13 +566,6 @@ PUBLIC_TRANSPORT := ch_connect ch_read ch_write ch_close
 else
 $(error TRANSPORT=$(TRANSPORT) is not a transport; use TRANSPORT=tls, TRANSPORT=record or TRANSPORT=quic)
 endif
-# QUIC protects its Handshake and 1-RTT packets with the suite TLS
-# negotiated, and quic_packet.c runs ChaCha20-Poly1305 alone, so a QUIC
-# object with the AES suite would name AES-GCM and run ChaCha20. cfg.h
-# refuses the pair for a tree with its own build system.
-ifeq ($(SUITE)-$(TRANSPORT),aesgcm-quic)
-$(error SUITE=aesgcm needs TRANSPORT=tls or TRANSPORT=record: QUIC packet protection here runs ChaCha20-Poly1305 alone)
-endif
 # Role: ROLE=client (default) builds the TLS 1.3 client this tree has
 # always built; ROLE=server builds a TLS 1.3 server from the same
 # primitives, the same record layer and the same key schedule
@@ -735,7 +731,8 @@ LIB_DEF := $(strip $(PIN_DEF) $(TRUST_DEF) $(TRANSPORT_DEF) $(AES_DEF) $(SUITE_D
 # The one assignment. Every axis above filters or names the sources
 # only its value adds; nothing below rewrites.
 LIB_SRCS := $(filter-out $(PIN_FILTER) $(TRUST_FILTER) $(TRANSPORT_FILTER) $(ROLE_FILTER),$(SRCS)) \
-            $(TRUST_ADD) $(TRANSPORT_ADD) $(ROLE_ADD) $(SUITE_ADD)
+            $(TRUST_ADD) $(TRANSPORT_ADD) $(ROLE_ADD) \
+            $(filter-out $(TRUST_ADD) $(TRANSPORT_ADD) $(ROLE_ADD),$(SUITE_ADD))
 # Key exchange: KEX=x25519 (default) or KEX=pq (-DCH_KEX_PQ), the
 # X25519MLKEM768 hybrid. KEX chooses the one group of a raw or ca device
 # client and nothing else. The ML-KEM and SHA-3 modules join the packaged
@@ -1109,6 +1106,7 @@ lint-trust-separation:
 	check "ROLE=server TRUST=none TRANSPORT=quic EXPORTER=off" "$$srv_shared srv_quic.c quic_token.c $$signers $$quic_srv sha3.c mlkem.c mlkem_poly.c" "$$client_only srv_handshake.c srv_rec.c quic_step.c record.c" "-DCH_ROLE_SERVER -DCH_TRANSPORT_QUIC" "-DCH_PIN_ECDSA -DCH_KEX_PQ"; \
 	check "ROLE=server TRUST=none TRANSPORT=record" "$$srv_shared srv_rec.c $$signers rec.c rec_frame.c record.c sha3.c mlkem.c mlkem_poly.c" "$$client_only srv_handshake.c srv_quic.c rec_step.c" "-DCH_ROLE_SERVER -DCH_TRANSPORT_RECORD" "-DCH_PIN_ECDSA -DCH_TRANSPORT_QUIC -DCH_KEX_PQ"; \
 	check "ROLE=server TRUST=none TRANSPORT=tls SUITE=aesgcm AES=hw" "quic_aes.c quic_aes_hw.c quic_ghash_hw.c quic_gcm.c sha512.c sha512_compress.c" "quic_aes_soft.c quic_aes_extern.c" "-DCH_SUITE_AES_GCM -DCH_AES_HW" "-DCH_AES_EXTERN -DCH_AES_256_TEST"; \
+	check "ROLE=server TRUST=none TRANSPORT=quic SUITE=aesgcm AES=hw EXPORTER=off" "quic_aes.c quic_aes_hw.c quic_ghash_hw.c quic_gcm.c quic_packet.c sha512.c sha512_compress.c" "quic_aes_soft.c quic_aes_extern.c record.c" "-DCH_SUITE_AES_GCM -DCH_AES_HW -DCH_TRANSPORT_QUIC" "-DCH_AES_EXTERN -DCH_AES_256_TEST"; \
 	[ $$rc = 0 ] && echo "lint-trust-separation: every axis value packages exactly its own sources and defines"; \
 	exit $$rc
 # bench/device-ram.sh builds with CLANG_RV, the clang the codegen lints
@@ -1561,6 +1559,25 @@ bin/quic_loop_webpki: test/quic_loop_test.c $(QUIC_LOOP_WEBPKI_SRCS) $(HDRS) $(T
 	@mkdir -p bin
 	$(CC) $(CFLAGS) -DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_TRANSPORT_QUIC -DCH_TRUST_WEBPKI -I. \
 	  -Itest -o $@ test/quic_loop_test.c $(QUIC_LOOP_WEBPKI_SRCS)
+# The same loop under -DCH_SUITE_AES_GCM on the AES instructions, the
+# object colibri links for a suite build: each of the three suites over
+# QUIC, full and resumed, with a key update (test/quic_loop_suites.h).
+QUIC_LOOP_AES_SRCS := $(filter-out $(AES_IMPL_SRCS),$(QUIC_LOOP_WEBPKI_SRCS)) $(AES_HW_SRCS)
+bin/quic_loop_aes: test/quic_loop_test.c test/quic_loop_suites.h $(QUIC_LOOP_AES_SRCS) $(HDRS) \
+                   $(TESTH)
+	@mkdir -p bin
+	$(CC) $(CFLAGS) $(AES_HW_CFLAGS) -DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_TRANSPORT_QUIC \
+	  -DCH_TRUST_WEBPKI -DCH_SUITE_AES_GCM -DCH_AES_HW -DCH_NATIVE_AES -I. -Itest -o $@ \
+	  test/quic_loop_test.c $(QUIC_LOOP_AES_SRCS)
+# QUIC packet and header protection under the two AES-GCM suites against
+# an independent computation, the key update and the §6.6 count
+# (test/quic_suite_test.c), on the AES instructions.
+QUIC_SUITE_TEST_SRCS := quic_packet.c quic_keys.c quic_aes.c $(AES_HW_SRCS) quic_gcm.c hkdf.c \
+                        sha256.c sha512.c sha512_compress.c chacha20.c poly1305.c aead.c buf.c ct.c
+bin/quic_suite_test: test/quic_suite_test.c $(QUIC_SUITE_TEST_SRCS) $(HDRS) $(TESTH)
+	@mkdir -p bin
+	$(CC) $(CFLAGS) $(AES_HW_CFLAGS) -DCH_TRANSPORT_QUIC -DCH_SUITE_AES_GCM -DCH_AES_HW \
+	  -DCH_NATIVE_AES -I. -o $@ test/quic_suite_test.c $(QUIC_SUITE_TEST_SRCS)
 
 # The record-mode server driver, over the same flight sources the blocking
 # server builds: srv_rec.c replaces srv_handshake.c and rec_frame.c comes
@@ -2145,6 +2162,8 @@ check: bin/unit bin/unit_ca bin/unit_pq bin/tlsclient bin/tlsclient_ecdsa bin/tl
 	  ./bin/srv_flight_test_aes; \
 	  ./bin/webpki_session_aes; \
 	  ./bin/webpki_loop_aes; \
+	  ./bin/quic_loop_aes; \
+	  ./bin/quic_suite_test; \
 	else \
 	  echo "SKIP AES=hw: $(CC) has no AES instructions and no flag turns them on"; \
 	fi

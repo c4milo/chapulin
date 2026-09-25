@@ -1,13 +1,13 @@
 // QUIC packet protection (RFC 9001 §5.3) and header protection (§5.4)
-// for the levels whose AEAD is the cipher suite this client offers,
-// TLS_CHACHA20_POLY1305_SHA256: the Handshake level and the 1-RTT
+// for the levels whose AEAD is the cipher suite TLS negotiated
+// (docs/decisions.md 58): the Handshake level and the 1-RTT
 // level. It also holds the §6.5 rule that picks a 1-RTT receive key
 // set, the §5.4.2 length checks and the §6.6 limits. Only a
 // TRANSPORT=quic build compiles it. docs/quic.md states the mode.
 //
 // These are the calls ch_quic_seal and ch_quic_open make. quic.c holds
 // the session and its counters and passes the key values down; this
-// file reads no session field, opens no socket and counts nothing.
+// file reads no session field and opens no socket.
 // quic_initial.c computes the AES-ECB mask of §5.4.3 under the Initial
 // keys and calls the header protection pair below with it, so no other
 // file writes a masked byte.
@@ -98,28 +98,29 @@
 // authentication, across every key of one connection, that
 // AEAD_CHACHA20_POLY1305 permits: 2^36 invalid packets
 // (rfc9001.txt:1830-1831). The endpoint closes once the count exceeds
-// it (rfc9001.txt:1823-1827). The AEAD named is the one TLS
-// negotiated, so this one limit covers every level, the Initial level
-// included, even though its packets run under AES-128-GCM.
+// it (rfc9001.txt:1823-1827). AES-GCM permits 2^52
+// (rfc9001.txt:1829-1830), so this one limit, the stricter, covers every
+// level and every suite, the AES-128-GCM Initial level included.
 //
 // QUIC_CONFIDENTIALITY_LIMIT is the count of packets encrypted under
-// one set of keys that AEAD_AES_128_GCM permits: 2^23 encrypted
-// packets (rfc9001.txt:1812-1813). Only the Initial keys pay it. For
-// AEAD_CHACHA20_POLY1305 the confidentiality limit is greater than the
-// packet number space and is disregarded (rfc9001.txt:1814-1815), so
-// quic_packet_seal takes no counter.
+// one set of keys that AES-GCM permits: 2^23 encrypted packets
+// (rfc9001.txt:1812-1813). The Initial keys pay it, and so does every
+// key set of an AES-GCM suite. For AEAD_CHACHA20_POLY1305 the limit is
+// greater than the packet number space and is disregarded
+// (rfc9001.txt:1814-1815).
 //
-// Both counts live in ch_quic, as open_failures and initial_sealed,
-// because §6.6 counts per connection and this file holds no session.
-// quic.c and quic_initial.c raise them and ask the two predicates below
-// what the count now means.
+// ch_quic holds open_failures, because §6.6 counts failures per
+// connection, and initial_sealed; quic.c raises both. An AES-GCM key
+// set counts its own packets in quic_keys.sealed, which quic_packet_seal
+// raises. Each asks the two predicates below what its count now means.
 #define QUIC_INTEGRITY_LIMIT (UINT64_C(1) << 36)
 #define QUIC_CONFIDENTIALITY_LIMIT (UINT64_C(1) << 23)
 
-// Writes the 5 header protection mask bytes of RFC 9001 §5.4.4, the
-// ChaCha20 form both levels here use (rfc9001.txt:1338-1362).
+// Writes the 5 header protection mask bytes of RFC 9001 §5.4.4
+// (rfc9001.txt:1338-1362), or under an AES-GCM suite those of §5.4.3,
+// AES-ECB at the suite's key length (rfc9001.txt:1332-1336).
 //
-// The mask is the first QUIC_HP_MASK_LEN bytes of one ChaCha20 block
+// The ChaCha20 mask is the first QUIC_HP_MASK_LEN bytes of one block
 // under h's key, which equals ChaCha20 applied to 5 zero bytes
 // (rfc9001.txt:1354-1361). The counter is sample[0..3] read as a
 // little-endian 32-bit value, assembled byte by byte: §5.4.4 says an
@@ -133,8 +134,8 @@
 // points at QUIC_HP_MASK_LEN writable bytes not overlapping sample.
 //
 // Writes QUIC_HP_MASK_LEN bytes and cannot fail, so it returns
-// nothing. It wipes the rest of the ChaCha20 block it computed with
-// ct_wipe, because those bytes are keystream under a secret key.
+// nothing. It wipes the block it computed, and any AES round keys, with
+// ct_wipe, because both come from a secret key.
 //
 // RFC 9001 Appendix A.5 is the vector: sample
 // 5e5cd55c41f69080575d7999c25a5bfb gives mask aefefe7d03
@@ -355,11 +356,14 @@ void quic_keys_select(const quic_keys sets[CH_QUIC_KEY_SETS], uint8_t selected, 
 // index on pn or pn_len, which is the §9.5 send rule
 // (rfc9001.txt:2114-2116).
 //
-// §6.6's confidentiality limit is not this call's: it applies to
-// AEAD_AES_128_GCM, which no level this call protects uses.
-int quic_packet_seal(const quic_keys *k, const quic_hp_key *h, uint8_t level, uint64_t pn,
-                     size_t pn_len, const uint8_t *hdr, size_t hdr_len, const uint8_t *pt,
-                     size_t pt_len, uint8_t *out, size_t cap, size_t *out_len);
+// Under an AES-GCM suite §6.6's confidentiality limit is this call's:
+// it returns CH_EINVAL and writes nothing for the packet that would
+// bring k->sealed to QUIC_CONFIDENTIALITY_LIMIT (rfc9001.txt:1812-1813),
+// and raises k->sealed for each packet it seals, the one field of k it
+// writes. A key update writes a new set and starts the count again.
+int quic_packet_seal(quic_keys *k, const quic_hp_key *h, uint8_t level, uint64_t pn, size_t pn_len,
+                     const uint8_t *hdr, size_t hdr_len, const uint8_t *pt, size_t pt_len,
+                     uint8_t *out, size_t cap, size_t *out_len);
 
 // Opens one Handshake-level packet in place: it removes header
 // protection, recovers the packet number and removes packet protection,
@@ -369,7 +373,7 @@ int quic_packet_seal(const quic_keys *k, const quic_hp_key *h, uint8_t level, ui
 // bit. The steps are
 // quic_hp_mask over the sample at pn_off + QUIC_PN_MAX_LEN,
 // quic_header_unprotect, quic_pn_read, quic_pn_decode, quic_nonce and
-// aead_open, with the unprotected header as the associated data.
+// k's AEAD, with the unprotected header as the associated data.
 //
 // The §5.4.2 discard (rfc9001.txt:1280-1281): a packet that cannot
 // hold a complete sample is discarded. That is pkt_len below pn_off +
@@ -470,14 +474,13 @@ int quic_packet_open_application(const quic_keys sets[CH_QUIC_KEY_SETS], const q
 // CONNECTION_CLOSE with AEAD_LIMIT_REACHED.
 int quic_integrity_limit_exceeded(uint64_t open_failures);
 
-// Whether sealing one more packet under one set of AEAD_AES_128_GCM
-// keys would reach RFC 9001 §6.6's confidentiality limit
-// (rfc9001.txt:1800-1803, rfc9001.txt:1812-1813). quic_initial.c is
-// the only caller, because the Initial keys are the only keys in this
-// build that pay the limit.
+// Whether sealing one more packet under one set of AES-GCM keys would
+// reach RFC 9001 §6.6's confidentiality limit (rfc9001.txt:1800-1803,
+// rfc9001.txt:1812-1813). quic.c asks it for the Initial keys and
+// quic_packet_seal for an AES-GCM suite's.
 //
-// Requires: sealed is ch_quic's initial_sealed, the count of packets
-// already sealed under those keys.
+// Requires: sealed is the count of packets already sealed under those
+// keys, ch_quic's initial_sealed or quic_keys.sealed.
 //
 // Returns 1 when sealed + 1 reaches QUIC_CONFIDENTIALITY_LIMIT, so the
 // call refuses the 2^23rd packet. That is one packet stricter than
@@ -486,13 +489,10 @@ int quic_integrity_limit_exceeded(uint64_t open_failures);
 // not reset initial_sealed after a Retry, so one running count covers
 // both sets of Initial keys.
 //
-// open: which code the refused seal returns. docs/quic.md states the
-// refusal, names no code, and says CH_QUIC_DISCARD and
-// CH_QUIC_AEAD_LIMIT are ch_quic_open's alone, which leaves CH_EINVAL.
-// CH_EINVAL leaves the session live and invites another call, where
-// §6.6 says the endpoint must stop using those keys. The commit that
-// lands quic_initial.c decides between CH_EINVAL and a code that kills
-// the session.
+// Both refusals return CH_EINVAL, because CH_QUIC_DISCARD and
+// CH_QUIC_AEAD_LIMIT are ch_quic_open's alone, and leave the session
+// live. Every later seal under those keys is refused the same way, so
+// the keys are used no more, which is §6.6's MUST (rfc9001.txt:1800-1803).
 int quic_confidentiality_limit_reached(uint64_t sealed);
 
 #endif // CH_TRANSPORT_QUIC

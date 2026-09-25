@@ -1,8 +1,14 @@
 // QUIC packet protection (RFC 9001 §5.3) and header protection (§5.4)
-// under TLS_CHACHA20_POLY1305_SHA256, plus the §6.5 receive key set
-// rule, the §5.4.2 length checks and the §6.6 limits. quic_packet.h
-// states every contract below and cites the RFC lines each one comes
-// from; this file states how each one is met.
+// under the suite TLS negotiated (rfc9001.txt:1109-1113), plus the §6.5
+// receive key set rule, the §5.4.2 length checks and the §6.6 limits.
+// quic_packet.h states every contract below and cites the RFC lines each
+// one comes from; this file states how each one is met.
+//
+// A -DCH_SUITE_AES_GCM build runs AES-GCM and AES header protection
+// (§5.4.3) under both AES suites. The keys here come from traffic
+// secrets and are secret, so ct.h refuses the define without AES=hw and
+// CH_NATIVE_AES (INV-26). Every dispatch reads a key set's suite, which
+// the ServerHello named in the clear.
 //
 // The §9.5 rule, as code. RFC 9001 §9.5 makes the packet number and its
 // encoded length secret in both directions (rfc9001.txt:2110-2112,
@@ -17,19 +23,48 @@
 
 #ifdef CH_TRANSPORT_QUIC
 
-// RFC 9001 §5.3 protects Handshake and 1-RTT packets with the AEAD of
-// the suite TLS negotiated (rfc9001.txt:1109-1113), and this file runs
-// ChaCha20-Poly1305 alone. A build that also carries the AES suite would
-// name AES-GCM in a ServerHello and protect every packet after it with
-// ChaCha20, and INV-26 admits no traffic key to AES under QUIC, so the
-// pair is refused here, where every QUIC build compiles it.
-#ifdef CH_SUITE_AES_GCM
-#error "CH_SUITE_AES_GCM is refused under CH_TRANSPORT_QUIC: QUIC packets here run ChaCha20 alone"
-#endif
-
 #include "buf.h"
 #include "ch_assert.h"
 #include "ct.h"
+#ifdef CH_SUITE_AES_GCM
+#include "aes_traffic_key.h"
+#include "quic_gcm.h"
+#include "suite.h"
+#endif
+
+// The AEAD k's suite names, over n bytes of pt sealed into ct with the
+// tag after them. AES round keys die with this frame, and an AES-GCM set
+// counts the packet for §6.6.
+static void seal_body(quic_keys *k, const uint8_t nonce[AEAD_NONCE], const uint8_t *aad,
+                      size_t aad_len, const uint8_t *pt, size_t n, uint8_t *ct) {
+#ifdef CH_SUITE_AES_GCM
+    if (suite_runs_aes_gcm(k->suite)) {
+        aes_traffic_key key;
+        aes_traffic_key_init(&key, k->key, suite_key_len(k->suite));
+        gcm_traffic_seal(&key, nonce, aad, aad_len, pt, n, ct, ct + n);
+        ct_wipe(&key, sizeof key);
+        k->sealed++;
+        return;
+    }
+#endif
+    aead_seal(k->key, nonce, aad, aad_len, pt, n, ct, ct + n);
+}
+
+// The other direction, ct and its tag opened into pt: 1 when the tag
+// matched, and 0, with nothing written, when it did not.
+static int open_body(const quic_keys *k, const uint8_t nonce[AEAD_NONCE], const uint8_t *aad,
+                     size_t aad_len, const uint8_t *ct, size_t n, uint8_t *pt) {
+#ifdef CH_SUITE_AES_GCM
+    if (suite_runs_aes_gcm(k->suite)) {
+        aes_traffic_key key;
+        aes_traffic_key_init(&key, k->key, suite_key_len(k->suite));
+        int ok = gcm_traffic_open(&key, nonce, aad, aad_len, ct, n, ct + n, pt);
+        ct_wipe(&key, sizeof key);
+        return ok;
+    }
+#endif
+    return aead_open(k->key, nonce, aad, aad_len, ct, n, ct + n, pt);
+}
 
 // The packet number space of RFC 9000 §17.1: every packet number is
 // below 2^62 (rfc9000.txt:4897-4899). RFC 9000 Appendix A.3's second
@@ -108,6 +143,22 @@ static void mask_pn_field(uint8_t *pkt, size_t pn_off, size_t pn_len,
 // they write a byte.
 void quic_hp_mask(const quic_hp_key *h, const uint8_t sample[QUIC_HP_SAMPLE_LEN],
                   uint8_t mask[QUIC_HP_MASK_LEN]) {
+#ifdef CH_SUITE_AES_GCM
+    // §5.4.3: the first QUIC_HP_MASK_LEN bytes of AES-ECB(hp_key, sample),
+    // under a key as long as the suite's (rfc9001.txt:1332-1336).
+    if (suite_runs_aes_gcm(h->suite)) {
+        aes_traffic_key k;
+        aes_traffic_key_init(&k, h->key, suite_key_len(h->suite));
+        uint8_t block[AES_BLOCK];
+        aes_traffic_encrypt_block(&k, sample, block);
+        for (size_t i = 0; i < QUIC_HP_MASK_LEN; i++) {
+            mask[i] = block[i];
+        }
+        ct_wipe(block, sizeof block);
+        ct_wipe(&k, sizeof k);
+        return;
+    }
+#endif
     // §5.4.4: the counter is sample[0..3] read little-endian and the
     // nonce is sample[4..15] taken as bytes (rfc9001.txt:1344-1347).
     // Both are assembled byte by byte, so no step assumes host
@@ -241,11 +292,16 @@ void quic_keys_select(const quic_keys sets[CH_QUIC_KEY_SETS], uint8_t selected, 
             out->iv[i] |= sets[s].iv[i] & take;
         }
     }
+#ifdef CH_SUITE_AES_GCM
+    // Every set of a connection runs one public suite, a key update included.
+    out->suite = sets[CH_QUIC_KEY_CURRENT].suite;
+    out->sealed = 0;
+#endif
 }
 
-int quic_packet_seal(const quic_keys *k, const quic_hp_key *h, uint8_t level, uint64_t pn,
-                     size_t pn_len, const uint8_t *hdr, size_t hdr_len, const uint8_t *pt,
-                     size_t pt_len, uint8_t *out, size_t cap, size_t *out_len) {
+int quic_packet_seal(quic_keys *k, const quic_hp_key *h, uint8_t level, uint64_t pn, size_t pn_len,
+                     const uint8_t *hdr, size_t hdr_len, const uint8_t *pt, size_t pt_len,
+                     uint8_t *out, size_t cap, size_t *out_len) {
     CH_ASSERT(k != NULL);
     CH_ASSERT(h != NULL);
     CH_ASSERT(hdr != NULL);
@@ -270,9 +326,16 @@ int quic_packet_seal(const quic_keys *k, const quic_hp_key *h, uint8_t level, ui
     if (cap < AEAD_TAG || cap - AEAD_TAG < pt_len || cap - AEAD_TAG - pt_len < hdr_len) {
         return CH_ECAP;
     }
+#ifdef CH_SUITE_AES_GCM
+    // §6.6's AES-GCM confidentiality limit, per key set and one packet
+    // early, as at the Initial level (rfc9001.txt:1812-1815).
+    if (suite_runs_aes_gcm(k->suite) && quic_confidentiality_limit_reached(k->sealed)) {
+        return CH_EINVAL;
+    }
+#endif
     size_t total = hdr_len + pt_len + AEAD_TAG;
 
-    // The writer places the header copy. aead_seal writes the
+    // The writer places the header copy. The AEAD writes the
     // ciphertext and the tag after it, inside the room the check above
     // proved, so this call cannot overrun and w.err stays clear.
     wbuf w;
@@ -284,7 +347,7 @@ int quic_packet_seal(const quic_keys *k, const quic_hp_key *h, uint8_t level, ui
     quic_nonce(k->iv, pn, nonce);
     // §5.3 makes the unprotected header the associated data
     // (rfc9001.txt:1141-1143), and out holds it now.
-    aead_seal(k->key, nonce, out, hdr_len, pt, pt_len, out + hdr_len, out + hdr_len + pt_len);
+    seal_body(k, nonce, out, hdr_len, pt, pt_len, out + hdr_len);
     ct_wipe(nonce, sizeof nonce);
 
     // §5.4.1 applies header protection after packet protection
@@ -328,7 +391,7 @@ static int unprotect_header(const quic_hp_key *h, uint8_t *pkt, size_t pkt_len, 
 }
 
 // Packet protection removal, the third of §9.5's steps: the §5.3 nonce,
-// then aead_open in place with the unprotected header as the associated
+// then open_body in place with the unprotected header as the associated
 // data. body_off is pn_off + pn_len, so the header runs from pkt to
 // body_off and the ciphertext and tag fill the rest of the packet.
 //
@@ -342,13 +405,12 @@ static int open_payload(const quic_keys *k, uint8_t *pkt, size_t pkt_len, size_t
     size_t ct_len = pkt_len - body_off - AEAD_TAG;
     uint8_t nonce[AEAD_NONCE];
     quic_nonce(k->iv, pn, nonce);
-    int opened = aead_open(k->key, nonce, pkt, body_off, pkt + body_off, ct_len,
-                           pkt + body_off + ct_len, pkt + body_off);
+    int opened = open_body(k, nonce, pkt, body_off, pkt + body_off, ct_len, pkt + body_off);
     ct_wipe(nonce, sizeof nonce);
     if (opened == 0) {
         // RFC 9001 §5.5 calls a tag that does not match a discard
         // rather than a protocol error (rfc9001.txt:1373-1376), and
-        // aead_open released no plaintext byte.
+        // the AEAD released no plaintext byte.
         return CH_QUIC_DISCARD;
     }
     *pt_len = ct_len;
@@ -419,19 +481,14 @@ int quic_packet_open_application(const quic_keys sets[CH_QUIC_KEY_SETS], const q
 }
 
 int quic_integrity_limit_exceeded(uint64_t open_failures) {
-    // §6.6 closes the connection once the count exceeds the limit
-    // (rfc9001.txt:1823-1827), so the limit-th failure is still a
-    // discard. open_failures is a count this session kept, not a peer
-    // value, so the compare branches.
+    // §6.6 closes once the count exceeds the limit (rfc9001.txt:1823-1827).
+    // The count is this session's own, not a peer value, so this branches.
     return open_failures > QUIC_INTEGRITY_LIMIT ? 1 : 0;
 }
 
 int quic_confidentiality_limit_reached(uint64_t sealed) {
-    // One packet stricter than §6.6, which stops an endpoint once the
-    // count exceeds the limit (rfc9001.txt:1801-1803): this refuses the
-    // packet that would reach it. The limit is what the count is
-    // reduced by rather than what the count is raised to, so a sealed
-    // value of UINT64_MAX answers 1 instead of wrapping to 0.
+    // One packet stricter than §6.6 (rfc9001.txt:1801-1803). The limit
+    // is lowered rather than the count raised, so UINT64_MAX answers 1.
     return sealed >= QUIC_CONFIDENTIALITY_LIMIT - 1 ? 1 : 0;
 }
 

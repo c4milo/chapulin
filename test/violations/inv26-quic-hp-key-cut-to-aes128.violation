@@ -1,0 +1,15 @@
+invariant: INV-26
+file: quic_packet.c
+catches: quic_suite_test
+reason: AES header protection keys its cipher at AES-128's 16 bytes under
+  every AES suite, so a TLS_AES_256_GCM_SHA384 connection masks its
+  packet numbers with half its "quic hp" key. RFC 9001 section 5.4.3
+  runs header protection with the AEAD's own AES, AES-256 there, so the
+  peer computes another mask and every Handshake and 1-RTT packet fails
+  to unprotect. quic_suite_test compares an AES-256 packet byte for byte
+  with an independent computation; quic_packet_suite proves the length.
+
+--- old
+        aes_traffic_key_init(&k, h->key, suite_key_len(h->suite));
+--- new
+        aes_traffic_key_init(&k, h->key, AES_128_KEY);

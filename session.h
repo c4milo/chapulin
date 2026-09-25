@@ -79,9 +79,10 @@
 // the reason the TLS ones are, and quic.c asserts the two agree. The
 // webpki one carries the 23 bytes of CH_HELLO_CERT_PATH_MAX, as the TLS
 // one does, because the builder is the same; ch_quic_init refuses SPKI
-// pins, so 7 of them never go out over QUIC.
+// pins, so 7 of them never go out over QUIC. It takes CH_TX_AES_SUITES
+// on top, as the TLS webpki value does.
 #ifdef CH_TRUST_WEBPKI
-#define CH_TX_STAGE 2648
+#define CH_TX_STAGE (2648 + CH_TX_AES_SUITES)
 #elif defined(CH_KEX_PQ)
 #define CH_TX_STAGE 2325
 #elif defined(CH_ROLE_SERVER)

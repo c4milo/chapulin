@@ -7,8 +7,8 @@
 // asserts their timing (docs/decisions.md 58).
 //
 // A suite code point is public: the ServerHello names it in the clear.
-// So is everything these two functions return, and a branch on either
-// reads a public value.
+// So is everything the functions below return, and a branch on any of
+// them reads a public value.
 #ifndef CH_SUITE_H
 #define CH_SUITE_H
 
@@ -59,6 +59,13 @@ static inline size_t suite_hash_len(uint16_t suite) {
 static inline size_t suite_key_len(uint16_t suite) {
     return suite == SUITE_AES_128_GCM_SHA256 ? 16 : SUITE_KEY_MAX;
 }
+
+#ifdef CH_SUITE_AES_GCM
+// Whether suite runs AES-GCM rather than ChaCha20-Poly1305.
+static inline int suite_runs_aes_gcm(uint16_t suite) {
+    return suite == SUITE_AES_128_GCM_SHA256 || suite == SUITE_AES_256_GCM_SHA384;
+}
+#endif
 
 #ifdef CH_ROLE_SERVER
 // The cipher suites a server role can select, one bit each, as

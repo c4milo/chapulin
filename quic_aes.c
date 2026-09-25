@@ -145,6 +145,13 @@ void aes_traffic_key_init(aes_traffic_key *k, const uint8_t *key, size_t key_len
     aes_expand_round_keys(key, k->key.round_keys);
     k->key.rounds = AES_128_ROUNDS;
 }
+
+#ifdef CH_TRANSPORT_QUIC
+void aes_traffic_encrypt_block(const aes_traffic_key *k, const uint8_t in[AES_BLOCK],
+                               uint8_t out[AES_BLOCK]) {
+    aes_encrypt_schedule(&k->key, in, out);
+}
+#endif
 #endif // CH_SUITE_AES_GCM
 
 #endif // CH_TRANSPORT_QUIC || CH_SUITE_AES_GCM

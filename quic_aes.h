@@ -143,6 +143,23 @@ typedef struct aes_traffic_key aes_traffic_key;
 // whole and cannot fail. The caller wipes k with ct_wipe when it is done,
 // because k holds the expanded secret.
 void aes_traffic_key_init(aes_traffic_key *k, const uint8_t *key, size_t key_len);
+
+#ifdef CH_TRANSPORT_QUIC
+// One forward-cipher block under a traffic key: out = CIPH_k(in). It is
+// RFC 9001 §5.4.3's header protection mask, AES-ECB(hp_key, sample)
+// (rfc9001.txt:1332-1336), under the "quic hp" key of a Handshake or
+// 1-RTT level whose suite is TLS_AES_128_GCM_SHA256 or
+// TLS_AES_256_GCM_SHA384. That key comes from a traffic secret and is
+// secret, so it takes this entry and never aes_encrypt_block_hp, whose
+// key is public.
+//
+// Requires: k was written by aes_traffic_key_init; in and out point at
+// AES_BLOCK bytes and may be the same. Writes AES_BLOCK bytes and cannot
+// fail. The caller wipes out past the bytes it keeps, because the block
+// is cipher output under a secret key.
+void aes_traffic_encrypt_block(const aes_traffic_key *k, const uint8_t in[AES_BLOCK],
+                               uint8_t out[AES_BLOCK]);
+#endif
 #endif
 
 // The two endpoints of a QUIC connection. RFC 9001 §5.2 derives one

@@ -12,12 +12,14 @@
 // name says what it holds, and the compiler decides which call sites may
 // hold which key rather than a reviewer.
 //
-// Three sources include this header, and tools/quic-footprint.py fails on
-// a fourth:
+// Four sources include this header, and tools/quic-footprint.py fails on
+// a fifth:
 //
 //   quic_aes.c     writes aes_traffic_key_init and the block entry
 //   quic_gcm.c     reads the round keys out of one to run the AEAD
 //   record.c       builds one per record from rec_dir's key bytes
+//   quic_packet.c  builds one per QUIC packet from quic_keys' key bytes,
+//                  and one per header protection mask from quic_hp_key's
 //
 // A build that never defines CH_SUITE_AES_GCM compiles none of it, and
 // ct.h refuses that define unless the build has hardware AES and asserts

@@ -1,0 +1,19 @@
+invariant: INV-26
+file: ct.h
+catches: test/quic-builds.sh
+reason: a TRANSPORT=quic build takes the AES-GCM suites without
+  CH_NATIVE_AES, so quic_packet.c hands AES the Handshake and 1-RTT
+  packet and header protection keys, which come from traffic secrets,
+  with nobody stating that the instructions run in constant time. The
+  TLS suite build still refuses the pair, so only the QUIC check sees it:
+  quic-builds.sh compiles quic_packet.c under the suite without the
+  statement and requires the refusal.
+
+--- old
+#ifndef CH_NATIVE_AES
+#error "CH_SUITE_AES_GCM needs -DCH_NATIVE_AES: the build asserts the timing (quic_aes_hw.c)"
+#endif
+--- new
+#if !defined(CH_NATIVE_AES) && !defined(CH_TRANSPORT_QUIC)
+#error "CH_SUITE_AES_GCM needs -DCH_NATIVE_AES: the build asserts the timing (quic_aes_hw.c)"
+#endif

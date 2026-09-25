@@ -152,10 +152,12 @@ KEY_HOLDERS = ("quic_aes.c", "quic_initial.c", "quic_retry.c", "quic_gcm.c")
 # -DCH_SUITE_AES_GCM build hands AES the traffic keys of its two AES-GCM
 # cipher suites, which are secret, and aes_traffic_key.h gives that type a
 # body: quic_aes.c writes its constructor, quic_gcm.c reads its round keys,
-# and record.c builds one per record. It includes aes_schedule.h and not
-# quic_aes_key.h, so a traffic-key holder cannot build a public key.
+# record.c builds one per record, and quic_packet.c builds one per QUIC
+# packet and one per header protection mask. It includes aes_schedule.h
+# and not quic_aes_key.h, so a traffic-key holder cannot build a public
+# key.
 TRAFFIC_KEY_HEADER = "aes_traffic_key.h"
-TRAFFIC_KEY_HOLDERS = ("quic_aes.c", "quic_gcm.c", "record.c")
+TRAFFIC_KEY_HOLDERS = ("quic_aes.c", "quic_gcm.c", "record.c", "quic_packet.c")
 
 # The round keys both key types are built on. Two headers include it and
 # no root source does, so a file reaches a schedule's body only through a

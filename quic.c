@@ -234,10 +234,11 @@ static int seal_at_level(ch_quic *q, uint8_t level, uint64_t pn, size_t pn_len, 
         return quic_packet_seal(&q->app_tx, &q->app_hp_tx, level, pn, pn_len, hdr, hdr_len, pt,
                                 pt_len, out, cap, out_len);
     }
-    // The Initial keys are the only ones here whose AEAD pays RFC 9001
-    // §6.6's confidentiality limit (rfc9001.txt:1812-1813). The refusal
-    // returns CH_EINVAL, the code quic.h leaves once CH_QUIC_DISCARD
-    // and CH_QUIC_AEAD_LIMIT are ch_quic_open's alone.
+    // The Initial keys pay RFC 9001 §6.6's confidentiality limit here,
+    // and an AES-GCM suite's keys pay it in quic_packet_seal
+    // (rfc9001.txt:1812-1813). The refusal returns CH_EINVAL, the code
+    // quic.h leaves once CH_QUIC_DISCARD and CH_QUIC_AEAD_LIMIT are
+    // ch_quic_open's alone.
     if (quic_confidentiality_limit_reached(q->initial_sealed)) {
         return CH_EINVAL;
     }

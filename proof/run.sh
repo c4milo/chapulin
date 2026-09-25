@@ -1105,6 +1105,15 @@ launch fast full quic_aes_traffic 45 "fill_nondet.0:241" -DCH_TRANSPORT_QUIC -DC
 # compiled in because quic_keys_update wipes its own copy of the new
 # secret. Measured, these flags: 79 properties, 0.24 s, 0.02 GB peak.
 launch fast full quic_keys 45 "fill_nondet.0:177" ct.c -DCH_TRANSPORT_QUIC
+# quic_keys_suite: the three derivations and the update in the
+# -DCH_SUITE_AES_GCM QUIC build, over each of the three suites, with HKDF
+# a stub that asserts the suite's hash and key lengths.
+# Measured the same way: 141 properties, 1 s, 0.04 GB peak. An update
+# that derives at SHA256_LEN under every suite fails two of the hash
+# assertions. The one-suite line above measured 106 properties, under
+# 1 s, 0.02 GB.
+launch fast full quic_keys_suite 60 "" ct.c -DCH_TRANSPORT_QUIC -DCH_SUITE_AES_GCM -DCH_AES_HW \
+    -DCH_NATIVE_AES
 # The RFC 9001 §5.8 Retry tag check. gcm_seal and aes_public_key_retry
 # are contract stubs the harness defines, so this formula holds the one
 # call's framing and its verdict and not AES-128-GCM; the harness states
@@ -1135,6 +1144,20 @@ launch fast full quic_initial 40 "fill_nondet.0:177" -DCH_TRANSPORT_QUIC
 # of 0 at each of its three CH_OK tails fails all three (3 of 926, 4
 # iterations), so every tail is reached.
 launch fast full quic_packet 65 "fill_nondet.0:133" buf.c ct.c -DCH_TRANSPORT_QUIC
+# quic_packet_suite: the same file in the -DCH_SUITE_AES_GCM QUIC build,
+# over each of the three suites: the mask, the seal and the Handshake open
+# run the cipher the set's suite names at its key length, and the seal
+# counts and refuses under AES-GCM's §6.6 limit alone. Every cipher is a
+# contract stub, because the AES entries run on the instructions.
+# Measured (arm64 macOS, cbmc 6.11.0, kissat, PROVE_ONLY=quic_packet_suite
+# PROVE_NO_CACHE=1 /usr/bin/time -l): 1142 properties, 23 s, 0.45 GB peak.
+# A header protection key cut to AES_128_KEY under every suite fails the
+# key length assertion, and a seal that skips the §6.6 check fails the
+# limit assertion, so both are reached. The one-suite line above
+# measured 923 properties, 8 s, 0.23 GB after quic_packet_seal lost its
+# const.
+launch fast full quic_packet_suite 250 "" buf.c ct.c -DCH_TRANSPORT_QUIC -DCH_SUITE_AES_GCM \
+    -DCH_AES_HW -DCH_NATIVE_AES
 # AEAD_AES_128_GCM's memory safety, its all-or-nothing refusal, and
 # GHASH on its own. The forward cipher is a contract stub
 # (proof/quic_gcm_stubs.h); the unwindset names hash_data and

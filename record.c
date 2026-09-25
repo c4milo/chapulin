@@ -12,12 +12,6 @@
 // suite_hash_len (suite.h).
 _Static_assert(SUITE_KEY_MAX == AEAD_KEY, "rec_dir.key holds the longest suite key");
 
-// Whether d runs AES-GCM rather than ChaCha20-Poly1305. The suite is
-// public: the ServerHello named it in the clear.
-static int runs_aes_gcm(const rec_dir *d) {
-    return d->suite == SUITE_AES_128_GCM_SHA256 || d->suite == SUITE_AES_256_GCM_SHA384;
-}
-
 // Seals and opens one AES-GCM record body in place, the two AES arms of
 // seal_body and open_body below. The round keys live on this frame and
 // die with it: rec_dir keeps the key bytes and nothing expanded, so no
@@ -46,7 +40,7 @@ static int open_aes_gcm(const rec_dir *d, const uint8_t nonce[AEAD_NONCE], const
 static void seal_body(const rec_dir *d, const uint8_t nonce[AEAD_NONCE], const uint8_t hdr[REC_HDR],
                       uint8_t *body, size_t len) {
 #ifdef CH_SUITE_AES_GCM
-    if (runs_aes_gcm(d)) {
+    if (suite_runs_aes_gcm(d->suite)) {
         seal_aes_gcm(d, nonce, hdr, body, len);
         return;
     }
@@ -60,7 +54,7 @@ static void seal_body(const rec_dir *d, const uint8_t nonce[AEAD_NONCE], const u
 static int open_body(const rec_dir *d, const uint8_t nonce[AEAD_NONCE], const uint8_t *rec,
                      size_t len, uint8_t *pt) {
 #ifdef CH_SUITE_AES_GCM
-    if (runs_aes_gcm(d)) {
+    if (suite_runs_aes_gcm(d->suite)) {
         return open_aes_gcm(d, nonce, rec, len, pt);
     }
 #endif

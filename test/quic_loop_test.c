@@ -253,6 +253,10 @@ static size_t handshake_messages(void) {
 #ifdef CH_TRUST_WEBPKI
 #include "quic_loop_webpki.h"
 #endif
+// The suite rows run quic_loop_webpki.h's client and server.
+#ifdef CH_SUITE_AES_GCM
+#include "quic_loop_suites.h"
+#endif
 
 int main(void) {
 #ifdef CH_PIN_ECDSA
@@ -261,6 +265,9 @@ int main(void) {
 #endif
 #ifdef CH_TRUST_WEBPKI
     test_webpki_resumption();
+#endif
+#ifdef CH_SUITE_AES_GCM
+    test_quic_suites();
 #endif
     if (failures == 0) {
         (void)printf("quic_loop: a QUIC client resumed a ticket from this tree's server with no"
