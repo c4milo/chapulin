@@ -241,6 +241,14 @@ x25519_tail 52.7
 # 11.9 GB resident, three quarters of the runner's 16 GB. It carries no
 # floor, so it is skipped rather than run.
 #
+# hkdf384_expand and hkdf384_expand_label are hkdf_expand and
+# hkdf_expand_label at SHA-384, whose compression function carries more
+# state than SHA-256's, so they are listed for their twins' reason, the
+# 16 GB their twins' cover runs need. The runner died on hkdf384_expand's
+# cover run on 2026-09-25 (run 36131661457), 22 minutes into proof-reach,
+# the first run that skipped handshake_parser_suite. Neither has been
+# measured by hand.
+#
 #   eeparse
 #   handshake_parser
 #   handshake_parser_suite
@@ -248,6 +256,8 @@ x25519_tail 52.7
 #   handshake_post
 #   handshake_psk
 #   hello_build_webpki
+#   hkdf384_expand
+#   hkdf384_expand_label
 #   hkdf_expand
 #   hkdf_expand_label
 #   io
