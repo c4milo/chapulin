@@ -1,0 +1,18 @@
+invariant: INV-4
+file: srv.c
+catches: test/lint-invariants.sh
+reason: ch_srv_check draws four bytes before it checks the identities.
+  srv.c is not one of the six files that hold the ten admitted calls, so
+  inv-4-randomness-files refuses it. This call passed while
+  srv_config_ok's header was split across #if and #else, because Semgrep
+  skipped the whole file; a split header now fails tools/semgrep-parse.py
+  instead.
+
+--- old
+int ch_srv_check(const ch_cfg *cfg) {
+    uint8_t live = srv_identity_live(cfg);
+--- new
+int ch_srv_check(const ch_cfg *cfg) {
+    uint8_t probe[4];
+    ch_rand_bytes(probe, sizeof probe);
+    uint8_t live = srv_identity_live(cfg);

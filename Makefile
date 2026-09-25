@@ -3070,16 +3070,24 @@ else
 	# targets regardless of --exclude.
 	# The rule tests run beside the scan: each semgrep start costs about
 	# three seconds, and neither run reads what the other writes.
-	@mkdir -p bin; \
+	# Semgrep reports a file it could not parse as a warning and exits 0,
+	# and no rule checks that file. tools/semgrep-parse.py reads the
+	# scan's JSON and fails on that, and on a partial parse of any file
+	# its PARTIAL list does not name. A rule that runs past --timeout
+	# skips the file the same way: inv-23 took over the default five
+	# seconds on test/mlkem_vectors.h at a load average of 70. So the
+	# scan sets no time limit, and its result does not depend on load.
+	@mkdir -p bin; rm -f bin/semgrep-scan.json; \
 	$(SEMGREP) --metrics=off --test \
 	  --config .semgrep/invariants.yml .semgrep/invariants.c > bin/semgrep-test.log 2>&1 & \
 	test_pid=$$!; \
-	$(SEMGREP) scan --metrics=off --quiet --error \
+	$(SEMGREP) scan --metrics=off --quiet --error --timeout 0 --json-output=bin/semgrep-scan.json \
 	  --config .semgrep/invariants.yml $$(git ls-files '*.c' '*.h' ':!.semgrep'); \
 	scan_rc=$$?; \
 	wait $$test_pid || { cat bin/semgrep-test.log; echo "lint-invariants: a rule missed its tripwire or matched a clean line"; exit 1; }; \
+	python3 tools/semgrep-parse.py bin/semgrep-scan.json || exit 1; \
 	[ $$scan_rc -eq 0 ] || exit $$scan_rc; \
-	echo "lint-invariants: rules clean, tripwires trip"
+	echo "lint-invariants: rules clean, tripwires trip, no parse failure outside the PARTIAL list"
 endif
 
 # Assert the resolved checkers are the pinned ones before any of them runs.

@@ -6,6 +6,15 @@ This document answers "what must a change never break", and
 the answer executable: `make lint-invariants` fails CI when a change
 breaks a machine-checkable entry.
 
+A rule checks only what Semgrep parsed. Semgrep reports a file it
+cannot parse as a warning and exits 0, so `lint-invariants` reads the
+scan's JSON with `tools/semgrep-parse.py` and fails when a file did not
+parse. Seven files parse only in part: an `#ifdef` inside a parameter
+list, or a function's closing brace inside one `#if` arm, makes Semgrep
+skip a few lines. The script's `PARTIAL` list names each file and its
+construct. A call on a skipped line passes every rule, and a partial
+parse of any file the list does not name fails.
+
 Each entry has four fields. **Claim** is the invariant. **Mechanism**
 is what enforces it. **Check** is what guards it, graded honestly on
 this scale, strongest first:
@@ -182,16 +191,15 @@ last `ROLE=server` stub, as the entry said it would.
   the claim names, a fourth call in `hsf_begin`, and a second call in
   any of the other seven. It counts a call in a branch, a loop or a
   block the same as one at the top of the function.
-  `test/lint-invariants.sh` fails on each of two violations:
-  `inv04-draw-in-handshake-post` adds a call to `handshake_post.c`, and
-  `inv04-second-draw-in-srv-flight` adds a second call to
-  `srv_send_server_hello`. Neither rule reads `handshake_flight.c` or
-  `srv.c`. Each splits a function header across `#if` and `#else`,
-  `handshake_flight.c` also puts `#ifdef` inside argument lists, and
-  semgrep's C parser gives up on both whole files and reports that as a
-  warning, not a failure. So review holds `hsf_begin` to its three calls
-  and `srv.c` to none. `lib-check` requires a `RAND=extern` object to
-  import `ch_rand_bytes` and a `RAND=drbg` object to define it.
+  `test/lint-invariants.sh` fails on each of four violations:
+  - `inv04-draw-in-handshake-post` adds a call to `handshake_post.c`.
+  - `inv04-draw-in-srv` adds a call to `srv.c`.
+  - `inv04-second-draw-in-srv-flight` adds a second call to
+    `srv_send_server_hello`.
+  - `inv04-fourth-draw-in-hsf-begin` adds a fourth call to `hsf_begin`.
+
+  `lib-check` requires a `RAND=extern` object to import `ch_rand_bytes`
+  and a `RAND=drbg` object to define it.
 - **Violation.** A PR conjures a nonce or padding bytes from a new
   call site nobody audits for seeding requirements.
 - See [docs/entropy.md](entropy.md).

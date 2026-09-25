@@ -1,0 +1,18 @@
+invariant: INV-4
+file: handshake_flight.c
+catches: test/lint-invariants.sh
+reason: hsf_begin draws the ClientHello random twice. The second call is a
+  fourth site in a function that holds three admitted ones, so
+  inv-4-randomness-files passes it, and nobody audited what it draws or
+  why. inv-4-randomness-calls refuses a fourth call in hsf_begin, and it
+  counts the ML-KEM seed draw under #ifdef CH_KEX_HYBRID as the third.
+  This call passed while build_client_hello_ek's header was split across
+  #if and #else, because Semgrep skipped the whole file.
+
+--- old
+    ch_rand_bytes(h->random, sizeof h->random);
+#ifdef CH_KEX_HYBRID
+--- new
+    ch_rand_bytes(h->random, sizeof h->random);
+    ch_rand_bytes(h->random, sizeof h->random);
+#ifdef CH_KEX_HYBRID
