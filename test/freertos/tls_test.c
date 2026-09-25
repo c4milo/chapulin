@@ -4,6 +4,7 @@
 // byte, then PASS over semihosting.
 #include <stddef.h>
 #include <stdint.h>
+#include <stdnoreturn.h>
 #include <string.h>
 
 #include "FreeRTOS.h"
@@ -92,10 +93,10 @@ NetworkInterface_t *pxMPS2_FillInterfaceDescriptor(BaseType_t idx, NetworkInterf
 #include "rand.h"
 #include "tls.h"
 
-extern void ch_assert_fail(const char *cond, const char *file, int line);
-void ch_assert_fail(const char *cond, const char *file, int line) {
+noreturn void ch_assert_fail(const char *cond, const char *file, int line) {
     (void)cond;
     freertos_assert_fail(file, line);
+    for (;;) {}
 }
 
 // Deterministic handshake randomness: fine against a live peer -- the
