@@ -15,6 +15,7 @@
 #include "ct.h"
 #include "handshake_message.h"
 #include "srv_auth.h"
+#include "srv_flight.h"
 #include "srv_handshake.h"
 
 // One offered ALPN protocol name: a non-NULL pointer and 1 to
@@ -145,16 +146,11 @@ static int transport_ok(const ch_cfg *cfg) {
 #endif
 }
 
-// A blocking build has one caller, ch_srv_accept below, so the linkage
-// is internal there and clang-tidy's misc-use-internal-linkage is right
-// to ask for it. The two non-blocking builds have their caller in
-// another file -- srv_quic.c and srv_rec.c -- which is why srv_flight.h
-// declares it at all.
-#if defined(CH_TRANSPORT_QUIC_NONBLOCKING) || defined(CH_TRANSPORT_TCP_NONBLOCKING)
+// External in every build, so one header serves all three transports: a
+// blocking build calls it only from ch_srv_accept below, and the
+// non-blocking builds call it from srv_quic.c and srv_rec.c. The
+// packaged object localizes it like every other internal symbol.
 int srv_config_ok(const ch_cfg *cfg) {
-#else
-static int srv_config_ok(const ch_cfg *cfg) {
-#endif
     return srv_fields_ok(cfg) && client_fields_unset(cfg) && alpn_ok(cfg) && transport_ok(cfg);
 }
 

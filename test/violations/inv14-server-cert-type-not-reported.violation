@@ -9,8 +9,8 @@ reason: the EncryptedExtensions handler hands the parser a temporary
   the session's type, and it objects.
 
 --- old
-        &t->alpn_selected, t->cfg.hostname_len > 0, webpki_cert_types_offered(&t->cfg),
-        &t->server_cert_type,
+                                  webpki_cert_types_offered(&t->cfg), &t->server_cert_type,
+                                  &h->alert);
 --- new
-        &t->alpn_selected, t->cfg.hostname_len > 0, webpki_cert_types_offered(&t->cfg),
-        &(uint8_t){CH_CERT_TYPE_X509},
+                                  webpki_cert_types_offered(&t->cfg), &(uint8_t){CH_CERT_TYPE_X509},
+                                  &h->alert);

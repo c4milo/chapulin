@@ -63,33 +63,32 @@ void hsf_begin(handshake_state *h) {
 
 // Builds the ClientHello (echoing an HRR cookie on the retry), computes
 // the binder over the transcript-so-far plus the truncated message, and
-// adds the message to the transcript. A build that offers the hybrid
-// calls this through hsf_build_client_hello below, which expands the
-// stored seed and hands the ek slice in.
-#ifdef CH_KEX_HYBRID
+// adds the message to the transcript. ek is the MLKEM_EK_LEN-byte slice
+// hsf_build_client_hello below expands from the stored seed, or NULL in a
+// classic build and in the retry hello that carries the P-256 share.
 static size_t build_client_hello_ek(handshake_state *h, uint8_t *out, size_t cap,
-                                    const uint8_t ek[MLKEM_EK_LEN]) {
-#else
-static size_t build_client_hello_ek(handshake_state *h, uint8_t *out, size_t cap) {
-#endif
+                                    const uint8_t *ek) {
     ch_tls *t = h->t;
 #ifdef CH_TRANSPORT_QUIC_NONBLOCKING
     // RFC 9001 §4.1.3 removes the record layer this extension sizes
-    // (rfc9001.txt:462-464), so a QUIC hello sends none and the builder
-    // reads the 0 this passes.
+    // (rfc9001.txt:462-464), so a QUIC hello sends none and this passes 0.
     const uint16_t record_size_limit = 0;
 #else
     const uint16_t record_size_limit = h->record_size_limit;
 #endif
-    size_t n = hs_build_client_hello(out, cap, &t->cfg,
-#ifdef CH_KEX_HYBRID
-                                     ek,
-#endif
+    const uint8_t *cookie = h->cookie_len > 0 ? h->cookie : NULL;
 #ifdef CH_KEX_TWO_GROUPS
-                                     h->retry_group != 0 ? h->p256_pub : NULL,
+    size_t n =
+        hs_build_client_hello(out, cap, &t->cfg, ek, h->retry_group != 0 ? h->p256_pub : NULL,
+                              h->pub, h->random, record_size_limit, cookie, h->cookie_len);
+#elif defined(CH_KEX_HYBRID)
+    size_t n = hs_build_client_hello(out, cap, &t->cfg, ek, h->pub, h->random, record_size_limit,
+                                     cookie, h->cookie_len);
+#else
+    (void)ek;
+    size_t n = hs_build_client_hello(out, cap, &t->cfg, h->pub, h->random, record_size_limit,
+                                     cookie, h->cookie_len);
 #endif
-                                     h->pub, h->random, record_size_limit,
-                                     h->cookie_len > 0 ? h->cookie : NULL, h->cookie_len);
     if (n == 0) {
         h->alert = ALERT_INTERNAL_ERROR;
         return 0;
@@ -151,7 +150,7 @@ static int hybrid_secret(handshake_state *h, const server_hello_info *info,
 }
 #else
 size_t hsf_build_client_hello(handshake_state *h, uint8_t *out, size_t cap) {
-    return build_client_hello_ek(h, out, cap);
+    return build_client_hello_ek(h, out, cap, NULL);
 }
 #endif
 
@@ -393,22 +392,23 @@ int hsf_read_encrypted_extensions(handshake_state *h) {
     // server_certificate_type of the wrong length), and that override
     // must survive to the wire.
     h->alert = ALERT_ILLEGAL_PARAMETER;
-    rc = hsp_parse_encrypted_exts(
-#ifdef CH_TRANSPORT_QUIC_NONBLOCKING
-        raw + 4, raw_len - 4, &peer_limit, t->cfg.alpn_protocols, t->cfg.alpn_count,
-        &t->alpn_selected,
-#ifdef CH_TRUST_WEBPKI
-        t->cfg.hostname_len > 0, webpki_cert_types_offered(&t->cfg), &t->server_cert_type,
-#endif
-        &transport_params, &transport_params_len,
+#if defined(CH_TRANSPORT_QUIC_NONBLOCKING) && defined(CH_TRUST_WEBPKI)
+    rc = hsp_parse_encrypted_exts(raw + 4, raw_len - 4, &peer_limit, t->cfg.alpn_protocols,
+                                  t->cfg.alpn_count, &t->alpn_selected, t->cfg.hostname_len > 0,
+                                  webpki_cert_types_offered(&t->cfg), &t->server_cert_type,
+                                  &transport_params, &transport_params_len, &h->alert);
+#elif defined(CH_TRANSPORT_QUIC_NONBLOCKING)
+    rc = hsp_parse_encrypted_exts(raw + 4, raw_len - 4, &peer_limit, t->cfg.alpn_protocols,
+                                  t->cfg.alpn_count, &t->alpn_selected, &transport_params,
+                                  &transport_params_len, &h->alert);
 #elif defined(CH_TRUST_WEBPKI)
-        raw + 4, raw_len - 4, &t->peer_limit, t->cfg.alpn_protocols, t->cfg.alpn_count,
-        &t->alpn_selected, t->cfg.hostname_len > 0, webpki_cert_types_offered(&t->cfg),
-        &t->server_cert_type,
+    rc = hsp_parse_encrypted_exts(raw + 4, raw_len - 4, &t->peer_limit, t->cfg.alpn_protocols,
+                                  t->cfg.alpn_count, &t->alpn_selected, t->cfg.hostname_len > 0,
+                                  webpki_cert_types_offered(&t->cfg), &t->server_cert_type,
+                                  &h->alert);
 #else
-        raw + 4, raw_len - 4, &t->peer_limit,
+    rc = hsp_parse_encrypted_exts(raw + 4, raw_len - 4, &t->peer_limit, &h->alert);
 #endif
-        &h->alert);
     if (rc != CH_OK) {
         return rc;
     }

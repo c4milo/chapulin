@@ -8,8 +8,8 @@ reason: the EncryptedExtensions handler tells the parser the
   bin/webpki_encrypted_exts_test's pins-only row objects.
 
 --- old
-        &t->alpn_selected, t->cfg.hostname_len > 0, webpki_cert_types_offered(&t->cfg),
-        &t->server_cert_type,
+    rc = hsp_parse_encrypted_exts(raw + 4, raw_len - 4, &t->peer_limit, t->cfg.alpn_protocols,
+                                  t->cfg.alpn_count, &t->alpn_selected, t->cfg.hostname_len > 0,
 --- new
-        &t->alpn_selected, 1, webpki_cert_types_offered(&t->cfg),
-        &t->server_cert_type,
+    rc = hsp_parse_encrypted_exts(raw + 4, raw_len - 4, &t->peer_limit, t->cfg.alpn_protocols,
+                                  t->cfg.alpn_count, &t->alpn_selected, 1,
