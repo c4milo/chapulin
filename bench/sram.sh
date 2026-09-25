@@ -48,6 +48,41 @@ cc -std=c11 -DCH_RAND_EXTERN -DCH_ROLE_SERVER -I. -o "$TMP/sz_server" "$TMP/sz.c
 SESSION_SERVER=$("$TMP/sz_server" | awk '{print $2}')
 cc -std=c11 -DCH_RAND_EXTERN -DCH_TRUST_WEBPKI -I. -o "$TMP/floor_webpki" "$TMP/floor.c"
 RXBUF_WEBPKI=$("$TMP/floor_webpki" | awk '{print $2}')
+# SUITE=aesgcm takes AES=hw and CH_NATIVE_AES, which no device target
+# carries, so its rows are measured on this host alone. Its secrets, its
+# transcript and a ticket's PSK take SHA-384's length, and a webpki
+# ClientHello lists two more suites (docs/decisions.md 58).
+SUITE_DEFS="-DCH_SUITE_AES_GCM -DCH_AES_HW -DCH_NATIVE_AES"
+# shellcheck disable=SC2086
+cc -std=c11 -DCH_RAND_EXTERN -DCH_ROLE_SERVER $SUITE_DEFS -I. -o "$TMP/sz_server_aes" "$TMP/sz.c"
+SESSION_SERVER_AES=$("$TMP/sz_server_aes" | awk '{print $2}')
+# shellcheck disable=SC2086
+cc -std=c11 -DCH_RAND_EXTERN -DCH_TRUST_WEBPKI $SUITE_DEFS -I. -o "$TMP/sz_webpki_aes" "$TMP/sz.c"
+SESSION_WEBPKI_AES=$("$TMP/sz_webpki_aes" | awk '{print $2}')
+# shellcheck disable=SC2086
+cc -std=c11 -DCH_RAND_EXTERN -DCH_TRUST_WEBPKI $SUITE_DEFS -I. -o "$TMP/floor_webpki_aes" "$TMP/floor.c"
+RXBUF_WEBPKI_AES=$("$TMP/floor_webpki_aes" | awk '{print $2}')
+# stack.py reads arm64 objects, and the arm64 cc this runs on defines
+# __ARM_FEATURE_AES by default, so quic_aes_hw.c needs no flag here.
+# ch_quic in the object colibri links, ROLE=both TRUST=webpki
+# TRANSPORT=quic, without and with the suite: under SUITE=aesgcm each
+# QUIC key set records its suite and its section 6.6 count. The report
+# prints both; the README table does not carry them.
+cat > "$TMP/szq.c" <<'EOF'
+#include <stdio.h>
+#include "quic.h"
+int main(void) {
+    printf("ch_quic %zu\n", sizeof(ch_quic));
+    return 0;
+}
+EOF
+QUIC_DEFS="-DCH_TRANSPORT_QUIC -DCH_TRUST_WEBPKI -DCH_ROLE_SERVER -DCH_ROLE_BOTH"
+# shellcheck disable=SC2086
+cc -std=c11 -DCH_RAND_EXTERN $QUIC_DEFS -I. -o "$TMP/szq" "$TMP/szq.c"
+QUIC_SESSION=$("$TMP/szq" | awk '{print $2}')
+# shellcheck disable=SC2086
+cc -std=c11 -DCH_RAND_EXTERN $QUIC_DEFS $SUITE_DEFS -I. -o "$TMP/szq_aes" "$TMP/szq.c"
+QUIC_SESSION_AES=$("$TMP/szq_aes" | awk '{print $2}')
 
 # The same struct on a 32-bit target. The pointer fields are what move, so
 # the host number overstates what a device needs, and the README used to
@@ -95,6 +130,12 @@ echo "session struct, rv32:    ${SESSION_RV32_WEBPKI} B (TRUST=webpki)"
 echo "session struct (ROLE=server): ${SESSION_SERVER} B"
 echo "static working set:      $((SESSION_SERVER + RXBUF)) B (ROLE=server, ${RXBUF} B receive buffer)"
 echo "session struct, rv32:    ${SESSION_RV32_SERVER} B (ROLE=server)"
+echo "session struct (ROLE=server SUITE=aesgcm): ${SESSION_SERVER_AES} B"
+echo "static working set:      $((SESSION_SERVER_AES + RXBUF)) B (ROLE=server SUITE=aesgcm, ${RXBUF} B receive buffer)"
+echo "session struct (TRUST=webpki SUITE=aesgcm): ${SESSION_WEBPKI_AES} B"
+echo "static working set:      $((SESSION_WEBPKI_AES + RXBUF_WEBPKI_AES)) B (TRUST=webpki SUITE=aesgcm, its ${RXBUF_WEBPKI_AES} B floor)"
+echo "ch_quic (ROLE=both TRUST=webpki TRANSPORT=quic): ${QUIC_SESSION} B"
+echo "ch_quic (the same, SUITE=aesgcm): ${QUIC_SESSION_AES} B"
 
 # Each stack.py report is saved whole, so the CSV rows below come from the
 # same run the report prints.
@@ -131,6 +172,12 @@ head -1 "$TMP/pq.stack"
 echo "-- ROLE=server; ch_srv_accept peak is the deeper of the hybrid encapsulation and the RSA-PSS signer --"
 stack_report server STACK_CFLAGS=-DCH_ROLE_SERVER
 head -1 "$TMP/server.stack"
+echo "-- ROLE=server SUITE=aesgcm; the same walk with SHA-384's schedule and the AES-GCM record path --"
+stack_report server_aes "STACK_CFLAGS=-DCH_ROLE_SERVER $SUITE_DEFS"
+head -1 "$TMP/server_aes.stack"
+echo "-- TRUST=webpki SUITE=aesgcm --"
+stack_report webpki_aes "STACK_CFLAGS=-DCH_TRUST_WEBPKI $SUITE_DEFS"
+head -1 "$TMP/webpki_aes.stack"
 
 # The CSV carries every column or nothing: without the rv32 toolchain the
 # report above says "unmeasured", and the committed CSV keeps the last
@@ -181,6 +228,13 @@ TMPOUT="$TMP/results-sram.csv"
     row static_working_set_server_arm64 "$((SESSION_SERVER + RXBUF))"
     row static_working_set_server_rv32 "$((SESSION_RV32_SERVER + RXBUF))"
     row stack_accept_server "$(peak server ch_srv_accept)"
+    row session_struct_server_aes_arm64 "$SESSION_SERVER_AES"
+    row static_working_set_server_aes_arm64 "$((SESSION_SERVER_AES + RXBUF))"
+    row stack_accept_server_aes "$(peak server_aes ch_srv_accept)"
+    row session_struct_webpki_aes_arm64 "$SESSION_WEBPKI_AES"
+    row receive_buffer_webpki_aes "$RXBUF_WEBPKI_AES"
+    row static_working_set_webpki_aes_arm64 "$((SESSION_WEBPKI_AES + RXBUF_WEBPKI_AES))"
+    row stack_connect_webpki_aes "$(peak webpki_aes ch_connect)"
 } > "$TMPOUT"
 mv "$TMPOUT" bench/results-sram.csv
 echo "wrote bench/results-sram.csv" >&2

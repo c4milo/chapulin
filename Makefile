@@ -189,8 +189,9 @@ HDRS := ct.h sha256.h hkdf.h chacha20.h poly1305.h aead.h x25519.h x25519_wide.h
 # hard #error, not a fall back to the table, when AES=hw is built without
 # the AES instructions.
 # Cipher suite: SUITE=chacha (default) offers TLS_CHACHA20_POLY1305_SHA256
-# alone, SUITE=aesgcm offers TLS_AES_128_GCM_SHA256 beside it and meets
-# RFC 9846 section 9.1. The second one is a compile error unless the build
+# alone, SUITE=aesgcm offers TLS_AES_128_GCM_SHA256 and
+# TLS_AES_256_GCM_SHA384 beside it, over every transport, and meets RFC
+# 9846 section 9.1 (docs/decisions.md 58). The second one is a compile error unless the build
 # also takes AES=hw and defines CH_NATIVE_AES, which ct.h checks and
 # INV-26 explains: the AES=soft S-box is indexed with the key, and
 # CH_NATIVE_AES is the build's own statement that this part's AES
@@ -1803,8 +1804,9 @@ bin/webpki_resume_record: test/webpki_resume_test.c $(WEBPKI_RECORD_SRCS) $(P256
 	$(CC) $(CFLAGS) -DCH_TRUST_WEBPKI -DCH_TRANSPORT_RECORD -I. -o $@ test/webpki_resume_test.c \
 	  $(WEBPKI_RECORD_SRCS) $(P256_SIGN_SRCS)
 
-# The same main in the client that offers both cipher suites
-# (docs/decisions.md entry 45), so the mock can select AES-128-GCM. The
+# The same main in the client that offers all three cipher suites
+# (docs/decisions.md entries 45 and 58), so the mock can select either
+# AES-GCM suite. The
 # suite define needs the AES instructions and the build's statement that
 # they run in constant time, so this binary builds only where
 # AES_HW_PROBE found them, like bin/aes_suite_test.

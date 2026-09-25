@@ -67,10 +67,12 @@ Home: github.com/c4milo.
   in one round trip and a HelloRetryRequest that names a group is
   refused; ch_cfg.require_pq drops x25519 from both lists and restores
   the fail-closed pairing (docs/decisions.md 39 and 51). Under SUITE=aesgcm it lists
-  TLS_AES_128_GCM_SHA256 after ChaCha20 (CH_CLIENT_TWO_SUITES), keys
-  every record direction with the suite the ServerHello selected, and
-  ch_tls.suite reports it (docs/decisions.md 45); a raw or ca client
-  refuses SUITE=aesgcm. With SPKI pins (ch_cfg.spki_pins, the SHA-256 of
+  TLS_AES_128_GCM_SHA256 and TLS_AES_256_GCM_SHA384 after ChaCha20
+  (CH_CLIENT_AES_SUITES), runs the key schedule at the hash of the suite
+  the ServerHello selected, keys every record direction and every QUIC
+  Handshake and 1-RTT packet with that suite, and ch_tls.suite reports it
+  (docs/decisions.md 45 and 58); a raw or ca client refuses
+  SUITE=aesgcm. With SPKI pins (ch_cfg.spki_pins, the SHA-256 of
   a DER SubjectPublicKeyInfo) it offers RFC 7250 raw public keys in
   server_certificate_type, beside X.509 when anchors are set too, and
   ch_tls.server_cert_type reports the server's choice: a raw key needs a
@@ -87,19 +89,25 @@ Home: github.com/c4milo.
 - One concern per file pair, dependencies pointing down only:
   `ct.[ch]` (constant-time bytes) ← `sha256.[ch]` + `sha3.[ch]` +
   `sha512.[ch]`/`sha512_compress.[ch]` (SHA-384 and SHA-512; the
-  TRUST=webpki build packages them, other builds keep them test-only) ←
+  TRUST=webpki and SUITE=aesgcm builds package them, other builds keep
+  them test-only) ←
   `mlkem.[ch]`/`mlkem_poly.[ch]` (ML-KEM-768; the KEX=pq and TRUST=webpki
   builds and every server role package them with `sha3.[ch]`, other
   builds keep them test-only) ← `hkdf.[ch]`
-  (HMAC + HKDF + TLS labels) ← `chacha20.[ch]` + `poly1305.[ch]` +
+  (HMAC + HKDF + TLS labels, over SHA-256 or, under SUITE=aesgcm,
+  SHA-384) ← `chacha20.[ch]` + `poly1305.[ch]` +
   `quic_aes.[ch]` with `quic_aes_key.h` (the `aes_public_key` type, whose
   body sits in the second header alone, and the two constructors that
-  write one, TRANSPORT=quic; INV-26 names the three keys it may see) +
+  write one, TRANSPORT=quic; INV-26 names the three keys it may see)
+  and `aes_traffic_key.h` (the `aes_traffic_key` type a SUITE=aesgcm
+  build's traffic keys take, whose body sits in that header alone) +
   `quic_aes_block.h` with one of `quic_aes_soft.c`, `quic_aes_hw.c` or
   `quic_aes_extern.c` (the AES-128 key expansion and forward cipher of
-  FIPS 197, over plain bytes; the Makefile AES variable picks one)
+  FIPS 197, over plain bytes, and AES-256's on `quic_aes_hw.c` alone; the
+  Makefile AES variable picks one)
   ← `aead.[ch]` (RFC 8439 seal/open) + `quic_gcm.[ch]`
-  (AEAD_AES_128_GCM and GHASH, TRANSPORT=quic) with `quic_ghash_hw.[ch]`
+  (AEAD_AES_128_GCM and GHASH, TRANSPORT=quic, and AEAD_AES_256_GCM
+  under a traffic key, SUITE=aesgcm) with `quic_ghash_hw.[ch]`
   (GHASH's multiply and data loop on the carry-less multiply, AES=hw
   alone) ← `x25519.[ch]` with `x25519_wide.[ch]` (the radix-2^51 field,
   X25519=wide) + `p256.[ch]` +
@@ -185,7 +193,11 @@ Home: github.com/c4milo.
   is what refuses that shape and the include that reaches the body
   however it is spelled. `ch_quic` stores no key: it keeps the
   Destination Connection ID and each packet call derives what it needs on
-  its own stack. INV-26 states the rule and what review still owes, the
+  its own stack. A SUITE=aesgcm build's traffic keys take a second type,
+  `aes_traffic_key`, whose body lives in `aes_traffic_key.h`, which only
+  `quic_aes.c`, `quic_gcm.c`, `record.c` and `quic_packet.c` include, so
+  a traffic key and a public key never pass for each other and only the
+  traffic path builds one. INV-26 states the rule and what review still owes, the
   Semgrep rule holds the calls, and `.violation` mutants prove each check
   fires. `quic_aes.c`, `quic_aes_soft.c`, `quic_aes_extern.c` and
   `quic_gcm.c` sit in `WIDEMUL_CEILING` and `BRANCH_SRCS`, so a compiler
@@ -221,9 +233,10 @@ Home: github.com/c4milo.
   none of it proves.
   A secret-key AES suite needs the instructions and needs somebody to
   say they are constant time — TLS_AES_128_GCM_SHA256, which strict RFC
-  9846 §9.1 server conformance asks for. The AES axis does not enable
-  it: only a SUITE=aesgcm build carries it, and INV-26 admits its one
-  traffic key there beside the three public keys. `ct.h` is where the
+  9846 §9.1 server conformance asks for, and TLS_AES_256_GCM_SHA384,
+  which it recommends. The AES axis does not enable them: only a
+  SUITE=aesgcm build carries them, and INV-26 admits their traffic keys
+  there, AES-128 and AES-256, beside the three public keys. `ct.h` is where the
   terms are written, beside the same rule for the widening multiply.
   A build says it carries such a suite with `-DCH_SUITE_AES_GCM`, and
   that build is a compile error unless it also takes AES=hw and defines
@@ -234,9 +247,10 @@ Home: github.com/c4milo.
   exist and say nothing about their latency, so firmware defines it only
   with a vendor statement that covers both. One define carries both
   because AES-GCM needs both under one key (docs/decisions.md 50). The
-  record layer, the server's selection and the webpki client's offer run
-  it under those terms, and a QUIC build refuses it, because QUIC packet
-  protection here runs ChaCha20 alone.
+  record layer, QUIC's Handshake and 1-RTT packet and header protection,
+  the server's selection and the webpki client's offer run it under
+  those terms; QUIC's Initial packets keep AES-128-GCM under their
+  public keys (docs/decisions.md 58).
 - Proofs are mandatory, not optional, but they run in `check-slow`
   rather than `check`: `check` holds a one-minute budget so it stays
   usable as the inner loop, and the fast proof tier alone costs

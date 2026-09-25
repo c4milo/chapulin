@@ -492,5 +492,7 @@ implementation.
 
 A QUIC server that accepts arbitrary clients needs
 `TLS_AES_128_GCM_SHA256`, for the reason `docs/aes_suite.md` gives: RFC 9846
-§9.1 makes it mandatory to implement and this tree holds one suite. That
-work is independent of everything above and can land before or after it.
+§9.1 makes it mandatory to implement. That work landed after this scope:
+a `SUITE=aesgcm` QUIC server selects `TLS_AES_128_GCM_SHA256` and
+`TLS_AES_256_GCM_SHA384` and protects its Handshake and 1-RTT packets with
+the suite it selected (`docs/decisions.md` entry 58).

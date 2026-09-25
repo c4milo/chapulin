@@ -7,7 +7,7 @@ passed to them.
 
 ## Status
 
-Most of the scope has landed since:
+The scope has landed, and the work went past it:
 
 - The record layer runs the suite (234ec4e), keyed at the length it fixes,
   and a KeyUpdate keeps it (e591002).
@@ -16,14 +16,20 @@ Most of the scope has landed since:
 - A `SUITE=aesgcm TRUST=webpki` client offers it beside ChaCha20
   (`docs/decisions.md` entry 45), the decision "Negotiation" below left
   open.
-- The build refuses the suite over QUIC and in a raw or ca client.
+- `TLS_AES_256_GCM_SHA384` joined it in both roles, the key schedule runs
+  at the selected suite's hash, and QUIC protects its Handshake and 1-RTT
+  packets with the suite (`docs/decisions.md` entry 58). The build
+  refuses the suites in a raw or ca client alone.
+- The traffic keys take a type of their own, `aes_traffic_key`, the first
+  shape "The type INV-26 rests on" below prefers.
+- `record_suite` proves the record layer's suite selection, `test/e2e.sh`
+  runs OpenSSL's `s_client` against this tree's server under each suite,
+  full and resumed, and `bench/sram.sh` measures a suite build.
 
 Still not done, of what this document lists: the rename of `quic_aes.[ch]`
-and `quic_gcm.[ch]`; a CBMC harness over the record layer's suite
-selection; an e2e leg in which a real client negotiates the suite with this
-tree's server; and `bench/sram.sh` re-measured for a suite build. The
-sections below keep the original scoping text, and their file and line
-references are as they were when it was written.
+and `quic_gcm.[ch]`. The sections below keep the original scoping text,
+and their file and line references are as they were when it was
+written.
 
 ## Why the tree needs it
 

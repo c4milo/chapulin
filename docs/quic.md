@@ -596,11 +596,58 @@ cipher, under every `AES` value. An AES instruction takes no table, so an
 `AES=hw` build carries no S-box lookup where `AES=soft` does; whether its
 latency depends on its operands is the claim `CH_NATIVE_AES` asserts above, and
 that property is what `docs/decisions.md` entry 6 says a secret-key AES suite
-would need. But no key
-from the TLS key schedule reaches `quic_aes.c` today whatever the build, and
-lifting that bound is a separate change with its own gates, not a consequence
-of this one. An `AES=extern` build cannot even state its timing: what
+would need. A key from the TLS key schedule reaches `quic_aes.c` only in a
+`-DCH_SUITE_AES_GCM` build, as an `aes_traffic_key`, and `ct.h` refuses that
+build under every `AES` value but `hw` (`docs/decisions.md` entries 45 and
+58). An `AES=extern` build cannot even state its timing: what
 `ch_aes_block` costs is the peripheral's.
+
+### The AES-GCM suites over QUIC
+
+A `-DCH_SUITE_AES_GCM` build protects Handshake and 1-RTT packets with the
+suite the ServerHello selected, because RFC 9001 §5.3 makes the packet AEAD
+the negotiated one (`rfc9001.txt:1109-1113`) and §5.4.3 makes AES header
+protection follow an AES suite (`docs/decisions.md` entry 58). What runs, per
+level:
+
+| level | packet protection | header protection | key |
+| --- | --- | --- | --- |
+| Initial | AEAD_AES_128_GCM (§5.2) | AES-128-ECB (§5.4.3) | public, every build |
+| Handshake and 1-RTT, ChaCha20 selected | AEAD_CHACHA20_POLY1305 | ChaCha20 (§5.4.4) | traffic secret |
+| Handshake and 1-RTT, `TLS_AES_128_GCM_SHA256` | AEAD_AES_128_GCM | AES-128-ECB (§5.4.3) | traffic secret, SHA-256 schedule |
+| Handshake and 1-RTT, `TLS_AES_256_GCM_SHA384` | AEAD_AES_256_GCM | AES-256-ECB (§5.4.3) | traffic secret, SHA-384 schedule |
+
+Every key in the last two rows is secret, so it takes `aes_traffic_key` and
+runs on the AES instructions alone (INV-26). `quic_keys` and `quic_hp_key`
+record the suite; `quic_packet.c` builds the traffic key on its frame for
+each packet and each mask and wipes it there, so no key set holds a
+schedule. A 1-RTT key update derives the next set at the suite's hash and
+keeps the suite. Each AES-GCM key set counts the packets it seals and
+refuses the 2^23rd, §6.6's confidentiality limit (`rfc9001.txt:1812-1813`);
+initiating the key update §6.6 asks for before that is colibri's
+(`rfc9001.txt:1803-1805`).
+
+What holds it:
+
+- `bin/quic_suite_test`: for both AES suites, the "quic key", "quic iv"
+  and "quic hp" values at the suite's hash and a 1-RTT packet sealed with
+  its header protection, byte for byte, against an independent Python
+  computation; then the packet opened, the key update and the §6.6 count.
+  No publication prints a QUIC packet under an AES-256-GCM key or a SHA-384
+  schedule, which is why the computation is independent rather than
+  published: RFC 9001 Appendix A protects its 1-RTT example with ChaCha20.
+  The computation reproduces Appendix A.5's values from its printed secret
+  before it computes these.
+- `bin/quic_loop_aes`: this tree's client against this tree's server in the
+  `ROLE=both TRUST=webpki TRANSPORT=quic SUITE=aesgcm AES=hw` object, one
+  row per suite, ChaCha20 included, each a full handshake, the ticket it
+  issued resumed, and a 1-RTT key update.
+- The `quic_keys_suite` and `quic_packet_suite` proofs: the three
+  derivations and the update derive at the suite's hash and key length, and
+  the mask, the seal and the open run the cipher the set's suite names at
+  its key length, with each cipher a contract stub.
+- `inv26-quic-hp-key-cut-to-aes128.violation` keys header protection with
+  16 bytes under every AES suite, and `bin/quic_suite_test` fails on it.
 
 ### What the AES axis costs in time, measured
 
@@ -1043,7 +1090,7 @@ These are the names the header will use.
 | `ch_quic_initial_keys(q, dcid, dcid_len)` | stores the caller's Destination Connection ID, which RFC 9001 §5.2 derives the Initial keys from, and marks both directions of the Initial level ready. It derives no key: the packet calls do that on their own stack (INV-26). The caller calls it again after a Retry, because the secrets change then (`rfc9001.txt:1092-1094`) |
 | `ch_quic_crypto_in(q, level, p, n)` | delivers the bytes CRYPTO frames carried at one level, in order. Runs the state machine until it needs more bytes, then returns |
 | `ch_quic_crypto_out(q, level, out, cap, out_len)` | hands out the one handshake message the client owes at that level, whole or not at all. Returns `CH_OK` and no bytes when nothing is owed there, and `CH_ECAP` with nothing consumed when `cap` is shorter than the message, so the caller can call again with a larger buffer |
-| `ch_quic_seal(q, level, pn, pn_len, hdr, hdr_len, pt, pt_len, out, cap, out_len)` | protects one packet: the nonce from the IV and the packet number, the header as associated data (RFC 9001 §5.3), then the header protection mask over byte 0 and the `pn_len` packet number bytes the caller encoded (§5.4). It writes one whole packet into `out` and modifies neither `hdr` nor `pt`: it copies the `hdr_len` header bytes into `out`, seals `pt` after them, and applies the header protection mask to the copy in `out`. `hdr` carries the packet number field the caller encoded, so `hdr_len` counts those bytes and `pn_len` says how many of the last ones they are; `pn` is that same number and it builds the nonce. `*out_len` is `hdr_len + pt_len + 16`, and a `cap` below it returns `CH_ECAP` with nothing written. It refuses a packet it cannot sample with `CH_EINVAL` and seals nothing. The sample starts 4 bytes after the packet number offset and is 16 bytes long, and RFC 9001 §5.4.2 requires the encoded packet number and the protected payload to run at least 4 bytes past it (`rfc9001.txt:1283-1286`). That is `pn_len + pt_len >= 4` here, because the AEAD adds 16 bytes. Writing the padding is colibri's, because colibri frames the packet, and the refusal is what keeps the sample inside `out`. The boundary test is that `pn_len + pt_len == 4` seals and `pn_len + pt_len == 3` returns `CH_EINVAL`. RFC 9001 §9.5 carries a second MUST for this direction: packet payloads and packet numbers must be free of side channels that reveal the packet number or the size it was encoded in (`rfc9001.txt:2114-2116`). So `pn` and `pn_len` are secret bytes for that rule, and the nonce construction and the mask application take no branch and no memory index on either. Under the Initial keys it counts the packets it seals against §6.6's confidentiality limit and refuses the 2^23rd |
+| `ch_quic_seal(q, level, pn, pn_len, hdr, hdr_len, pt, pt_len, out, cap, out_len)` | protects one packet: the nonce from the IV and the packet number, the header as associated data (RFC 9001 §5.3), then the header protection mask over byte 0 and the `pn_len` packet number bytes the caller encoded (§5.4). It writes one whole packet into `out` and modifies neither `hdr` nor `pt`: it copies the `hdr_len` header bytes into `out`, seals `pt` after them, and applies the header protection mask to the copy in `out`. `hdr` carries the packet number field the caller encoded, so `hdr_len` counts those bytes and `pn_len` says how many of the last ones they are; `pn` is that same number and it builds the nonce. `*out_len` is `hdr_len + pt_len + 16`, and a `cap` below it returns `CH_ECAP` with nothing written. It refuses a packet it cannot sample with `CH_EINVAL` and seals nothing. The sample starts 4 bytes after the packet number offset and is 16 bytes long, and RFC 9001 §5.4.2 requires the encoded packet number and the protected payload to run at least 4 bytes past it (`rfc9001.txt:1283-1286`). That is `pn_len + pt_len >= 4` here, because the AEAD adds 16 bytes. Writing the padding is colibri's, because colibri frames the packet, and the refusal is what keeps the sample inside `out`. The boundary test is that `pn_len + pt_len == 4` seals and `pn_len + pt_len == 3` returns `CH_EINVAL`. RFC 9001 §9.5 carries a second MUST for this direction: packet payloads and packet numbers must be free of side channels that reveal the packet number or the size it was encoded in (`rfc9001.txt:2114-2116`). So `pn` and `pn_len` are secret bytes for that rule, and the nonce construction and the mask application take no branch and no memory index on either. Under the Initial keys, and under the Handshake and 1-RTT keys of an AES-GCM suite, it counts the packets it seals under one key set against §6.6's confidentiality limit and refuses the 2^23rd; a 1-RTT key update starts the count again |
 | `ch_quic_seal_close(q, level, pn, pn_len, hdr, hdr_len, pt, pt_len, out, cap, out_len)` | seals the one CONNECTION_CLOSE packet a failed session sends at one level, with `ch_quic_seal`'s arguments and argument refusals, then wipes that level's write keys and clears its write bit, so a second call there returns `CH_EINVAL`. It runs only when `t.state` is `CH_ST_FAILED` and the level's write bit is set, which a failure leaves at each level whose write keys were installed. `pt` is one CONNECTION_CLOSE frame of type 0x1c, followed by nothing or by PADDING frames alone; chapulin builds no frame and checks none. A packet above `CH_QUIC_CLOSE_MAX`, 1200 bytes with header and tag, returns `CH_EINVAL`. "When a session fails" below states what the caller does, and `docs/decisions.md` entry 57 why |
 | `ch_quic_open(q, level, pkt, pkt_len, pn_off, largest_pn, current_phase_lowest_pn, key_set, pn, pt_len)` | removes header protection, recovers the packet number and removes packet protection in one call, because RFC 9001 §9.5 requires the three applied together without timing side channels (`rfc9001.txt:2110-2112`). `largest_pn` is the largest packet number the caller has successfully processed in that packet number space, the value RFC 9000 §17.1 and Appendix A.3 recover from (`rfc9000.txt:8350-8351`). `current_phase_lowest_pn` is the lowest packet number the caller has processed in the current key phase, which §6.5's selection rule reads. Discards a packet shorter than `pn_off + 4 + 16` bytes before it samples (§5.4.2). A call at `CH_LEVEL_APPLICATION` while `t.state` is below `CH_ST_CONNECTED` returns `CH_EINVAL` and changes nothing, because RFC 9001 §5.7 forbids a client from processing a 1-RTT packet before the TLS handshake is complete even when it already holds the 1-RTT keys (`rfc9001.txt:1484-1486`). At the 1-RTT level it selects the receive key set by §6.5's rule rather than by the Key Phase bit alone: the previous phase and the next phase carry the same Key Phase value (`rfc9001.txt:1735-1737`), so the bit picks the phase and, when the bit differs from the current phase's bit, the recovered packet number decides (`rfc9001.txt:1739-1743`) — below `current_phase_lowest_pn` the previous keys open the packet, at or above it the next keys do. That keeps the §5.5 MUST at `rfc9001.txt:1365-1369`, which forbids opening a higher-numbered packet under the previous keys. The phase compare and the packet number compare both run branchless under §9.5, in the mask arithmetic `ct.h` supplies, never an `if` and never an index a secret chooses. It writes the set that opened the packet to `key_set`: `CH_QUIC_KEY_PREVIOUS`, `CH_QUIC_KEY_CURRENT` or `CH_QUIC_KEY_NEXT`. It works in place in `pkt`, which the caller owns and which holds one whole packet. The two new parameters are `uint64_t *pn` and `size_t *pt_len`. On `CH_OK` the unprotected header sits at the front of `pkt`, the plaintext follows it at `pn_off + pn_len`, `*pt_len` is the plaintext length in bytes and `*pn` is the recovered packet number; a call that does not return `CH_OK` leaves both outputs alone. `*pn` is the value RFC 9000 Appendix A.3 decodes (`rfc9000.txt:8350-8351`), and the caller has no other source for it: it feeds the next call's `largest_pn` and `current_phase_lowest_pn`, and §6.4's KEY_UPDATE_ERROR compares it against the packet numbers of newer key phases, which §6.4 leaves colibri to judge. Recovering it a second time in the caller would put packet number recovery outside the function §9.5 requires it to share with the two unprotect steps (`rfc9001.txt:2110-2112`). A `CH_QUIC_KEY_NEXT` result is a peer-initiated key update, and the caller must call `ch_quic_key_update` before it seals the ACK (§6.2, `rfc9001.txt:1654-1656`). A successful open leaves the unprotected header in `pkt`, so the caller reads byte 0 there for the reserved bits, the Key Phase bit and the packet number length. A packet whose Key Phase bit differs from the current phase and that then fails to authenticate under the selected key set is a discard, and it changes no key set: `ch_quic_open` never installs an update, and `key_set` is written only on a successful open. That is the second §5.5 MUST, which discards a packet that appears to trigger a key update and cannot be unprotected (`rfc9001.txt:1369-1371`), and §6.3 gives the reason, that packets carrying an apparent key update are easy to forge (`rfc9001.txt:1706-1707`). A packet that fails to authenticate is a discard rather than a session failure (§5.5), and it raises the connection-wide §6.6 count of failed opens; the call that carries `open_failures` past 2^36 returns `CH_QUIC_AEAD_LIMIT` and makes the session dead, so no later call processes a packet |
 | `ch_quic_retry_ok(q, pseudo, n, tag)` | recomputes the §5.8 tag under the RFC's printed key and nonce and compares it with `ct_memeq` |
@@ -2247,21 +2294,29 @@ Read this as part of the profile, not as a list of future work.
   authentication within the connection, across all keys, and makes the
   endpoint close with AEAD_LIMIT_REACHED and process no more packets once
   that count exceeds the limit of the AEAD in use (`rfc9001.txt:1823-1827`).
-  The AEAD in use is the one TLS negotiated,
-  TLS_CHACHA20_POLY1305_SHA256, whose integrity limit is 2^36 invalid
-  packets (`rfc9001.txt:1830-1831`). So `ch_quic` holds one `open_failures`
+  The AEAD in use is the one TLS negotiated. ChaCha20-Poly1305's integrity
+  limit is 2^36 invalid packets and AES-GCM's is 2^52
+  (`rfc9001.txt:1829-1831`), and the count stops the session at 2^36
+  under every suite, the stricter of the two (`docs/decisions.md` entry
+  58). So `ch_quic` holds one `open_failures`
   counter, not one per key set, and every failed `ch_quic_open` raises it at
   every level, Initial included. The call that carries the count past 2^36
   returns `CH_QUIC_AEAD_LIMIT` and makes the session dead, so no later call
   processes a packet; colibri sends the CONNECTION_CLOSE with
   AEAD_LIMIT_REACHED.
-- **The confidentiality limit is per key set, and only the Initial keys pay
+- **The confidentiality limit is per key set, and the AES-GCM key sets pay
   it.** RFC 9001 §6.6 makes an endpoint count the packets it encrypts under
-  each set of keys. For AEAD_AES_128_GCM the confidentiality limit is 2^23
-  encrypted packets; for AEAD_CHACHA20_POLY1305 it exceeds the packet number
-  space and is disregarded. So the count is owed under the Initial keys
-  alone: `initial_sealed` counts what `ch_quic_seal` seals at that level and
-  the call refuses the 2^23rd. Two details make this client stricter than the
+  each set of keys. For AEAD_AES_128_GCM and AEAD_AES_256_GCM the
+  confidentiality limit is 2^23 encrypted packets; for
+  AEAD_CHACHA20_POLY1305 it exceeds the packet number space and is
+  disregarded (`rfc9001.txt:1812-1815`). So the count is owed under the
+  Initial keys, and under each Handshake and 1-RTT key set of an AES-GCM
+  suite (`docs/decisions.md` entry 58): `initial_sealed` counts what
+  `ch_quic_seal` seals at the Initial level, `quic_keys.sealed` counts what
+  one Handshake or 1-RTT set seals, and each call refuses the 2^23rd under
+  its set. A 1-RTT key update writes a new set whose count starts at zero,
+  and initiating it before the limit is colibri's
+  (`rfc9001.txt:1803-1805`). Two details make this client stricter than the
   RFC and never weaker: §6.6 stops an endpoint once the count exceeds the
   limit (`rfc9001.txt:1800-1802`), so refusing the 2^23rd refuses one legal
   packet, and `ch_quic_initial_keys` does not reset `initial_sealed` when a

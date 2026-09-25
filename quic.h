@@ -108,12 +108,12 @@ typedef struct ch_quic {
     quic_keys app_tx;
     quic_keys app_rx[CH_QUIC_KEY_SETS];
     quic_hp_key app_hp_rx, app_hp_tx;
-    // RFC 9001 §6.6's two counts. open_failures counts received packets that failed
+    // RFC 9001 §6.6's counts. open_failures counts received packets that failed
     // authentication in this connection, across every level and every key, because the
     // limit is stated that way (rfc9001.txt:1823-1827). initial_sealed counts packets
-    // sealed under the Initial keys, the only keys here whose AEAD pays a confidentiality
-    // limit (rfc9001.txt:1812-1813); a Retry does not reset it, so one count covers both key
-    // sets.
+    // sealed under the Initial keys, whose AES-128-GCM pays a confidentiality limit
+    // (rfc9001.txt:1812-1813); a Retry does not reset it. An AES-GCM suite's key sets
+    // count their own packets, in quic_keys.sealed.
     uint64_t open_failures;
     uint64_t initial_sealed;
 } ch_quic;
@@ -254,15 +254,15 @@ int ch_quic_crypto_out(ch_quic *q, uint8_t level, uint8_t *out, size_t cap, size
 // byte is sealed, and they reveal only a length the caller passed; quic_packet.h states
 // what the steps that produce bytes owe.
 //
-// At CH_LEVEL_INITIAL the call counts what it seals in q->initial_sealed and refuses the
-// 2^23rd packet, §6.6's confidentiality limit for AEAD_AES_128_GCM
-// (rfc9001.txt:1800-1813), one packet stricter than the RFC.
+// At CH_LEVEL_INITIAL, and at the other two levels under an AES-GCM suite, the call counts
+// what it seals under one key set and refuses the 2^23rd packet, §6.6's confidentiality
+// limit for AES-GCM (rfc9001.txt:1800-1813), one packet stricter than the RFC.
 //
-// That refusal returns CH_EINVAL. docs/quic.md states the refusal, names no code, and
-// makes CH_QUIC_DISCARD and CH_QUIC_AEAD_LIMIT ch_quic_open's alone, which leaves this
-// one. It invites another call, which §6.6 answers by refusing that one too: the count
-// only rises, so every later seal at this level returns CH_EINVAL and no packet goes out
-// under those keys.
+// That refusal returns CH_EINVAL, because CH_QUIC_DISCARD and CH_QUIC_AEAD_LIMIT are
+// ch_quic_open's alone. The count only rises, so every later seal under those keys
+// returns CH_EINVAL and no packet goes out under them. A 1-RTT key update writes a new
+// set whose count starts at zero, and §6.6 makes the caller initiate one before the
+// limit (rfc9001.txt:1803-1805).
 int ch_quic_seal(ch_quic *q, uint8_t level, uint64_t pn, size_t pn_len, const uint8_t *hdr,
                  size_t hdr_len, const uint8_t *pt, size_t pt_len, uint8_t *out, size_t cap,
                  size_t *out_len);

@@ -763,10 +763,10 @@ does nothing more.
     Cost: a negotiation surface, the AES sources in the object, and the
     build's statement about its hardware. `ct.h` refuses the suite without
     `AES=hw` and `CH_NATIVE_AES`, so the offer exists only on a host whose
-    AES instructions the builder vouches for, and `quic_packet.c` refuses
-    it over QUIC, where packet protection runs ChaCha20 alone. Gain: the
-    client completes a handshake with a server that accepts AES-128-GCM
-    alone, which the e2e suite checks against OpenSSL.
+    AES instructions the builder vouches for, and `quic_packet.c` refused
+    it over QUIC, where packet protection ran ChaCha20 alone, until entry
+    58. Gain: the client completes a handshake with a server that accepts
+    AES-128-GCM alone, which the e2e suite checks against OpenSSL.
 
     A raw or ca client refuses `SUITE=aesgcm`, the way it refuses
     `KEYLOG=on` (entry 44). It pins the endpoint it talks to, so it knows
@@ -1401,6 +1401,117 @@ does nothing more.
     nothing bounding what a failed session encrypts under a secret key.
     Building the frame inside chapulin would put a QUIC frame encoder on
     chapulin's side of the line entry 38 draws.
+
+58. **A `SUITE=aesgcm` build holds `TLS_AES_128_GCM_SHA256` and
+    `TLS_AES_256_GCM_SHA384` beside ChaCha20, over every transport, on the
+    AES instructions alone.** Entry 45 gave the build one AES suite, and
+    refused it over QUIC. colibri serves QUIC clients it does not control,
+    and such a client may offer AES-GCM alone: h3spec's ClientHello lists
+    `TLS_AES_256_GCM_SHA384`, `TLS_AES_128_GCM_SHA256` and
+    `TLS_AES_128_CCM_SHA256`, and no ChaCha20. RFC 9846 §9.1 makes the
+    AES-128 suite a MUST and the AES-256 one a SHOULD
+    (`rfc9846.txt:4540-4543`).
+
+    - **AES-256 runs on the instructions, never on the S-box.**
+      `aes_traffic_key_init` expands a 16-byte or a 32-byte key, and
+      `aes_encrypt_schedule` runs ten or fourteen rounds by the round count
+      the schedule records. A traffic key is secret, so `ct.h`'s refusal
+      of `-DCH_SUITE_AES_GCM` without `AES=hw` and `CH_NATIVE_AES` covers
+      both key sizes. `quic_aes_soft.c` holds a software AES-256 that only
+      `-DCH_AES_256_TEST` compiles: it is the reference
+      `bin/aes_equiv_test` and the `quic_aes256` proof hold the
+      instructions to, and `lint-trust-separation` refuses that define in
+      every packaged object.
+    - **The key schedule takes the hash length first.** `hmac`,
+      `hkdf_extract`, `hkdf_expand`, `hkdf_expand_label`,
+      `hkdf_derive_secret` and every `ks_` call take a leading
+      `size_t hash_len`: `SHA256_LEN`, or `SHA384_LEN` in a
+      `-DCH_SUITE_AES_GCM` build. HMAC-SHA-384 is a body of its own behind
+      a two-arm dispatcher, the shape `docs/server.md` measured, because
+      one body over both hashes exceeds the complexity limit. Every secret
+      array is `HKDF_HASH_MAX` wide, which is `SHA256_LEN` in every build
+      without the suite, so those builds keep their sizes.
+    - **The transcript runs both hashes in a suite build.** A client hashes
+      its ClientHello before the ServerHello names a suite, so
+      `ch_transcript` feeds SHA-256 and SHA-384 the same bytes, and each
+      read names its hash by length. A HelloRetryRequest writes the
+      synthetic message at the retry suite's hash. The client derives the
+      early secret of no PSK when the ServerHello arrives, at the suite's
+      hash.
+    - **A PSK carries its hash in its length.** A ticket's PSK is as long
+      as its suite's hash (`rfc9846.txt:3298-3301`), so `ch_ticket` gains
+      `psk_len`, a client presents it as `ch_cfg.psk_len`, and the binder
+      and the early secret take the hash that length names. A client
+      aborts with illegal_parameter when the server selects the PSK under
+      a suite of another hash (`rfc9846.txt:2551-2556`). A server passes a
+      ticket over unless its suite has the selected suite's hash
+      (`rfc9846.txt:3219-3220`), and the handshake goes on with a
+      certificate.
+    - **The record layer gains AES-256.** `rec_dir` records its suite, the
+      key and IV derive at the suite's hash, and a KeyUpdate runs "traffic
+      upd" at that hash and keeps the suite.
+    - **QUIC protects Handshake and 1-RTT packets with the suite.** Each
+      `quic_keys` and `quic_hp_key` records its suite, packet protection
+      runs AES-GCM or ChaCha20-Poly1305 by it (RFC 9001 §5.3), and header
+      protection runs AES-ECB or ChaCha20 by it, at the suite's key length
+      (§5.4.3, §5.4.4). The Initial level keeps AES-128-GCM under its
+      public keys, unchanged. `quic_packet.c` builds an `aes_traffic_key`
+      on its frame for each packet and each mask and wipes it there. Each
+      AES-GCM key set counts what it seals and refuses the packet that
+      would reach §6.6's confidentiality limit of 2^23
+      (`rfc9001.txt:1812-1813`). The count lives in the key set, so a key
+      update starts it again and `ch_quic` gains no field; initiating that
+      update before the limit is colibri's (`rfc9001.txt:1803-1805`). The
+      integrity limit stays ChaCha20's 2^36, which is stricter than
+      AES-GCM's 2^52 (`rfc9001.txt:1829-1831`).
+    - **The order.** The server selects ChaCha20, then AES-128-GCM, then
+      AES-256-GCM, the first of them the client listed, and the webpki
+      client offers them in that order. ChaCha20 comes first for entry
+      45's reason. AES-128-GCM comes before AES-256-GCM because its
+      schedule is SHA-256, the hash every handshake proof covers; the
+      SHA-384 schedule is proved in its own harnesses alone. So h3spec's
+      offer selects AES-128-GCM, which `bin/webpki_loop_aes` feeds the
+      server through the real parser. `ch_srv_cfg.cipher_suites` replaces
+      the order: a host whose AES instructions outrun its ChaCha20, or one
+      that wants AES-256's margin, names the order it wants, and a list
+      may leave a suite out. Every server init refuses a code point the
+      build does not hold.
+    - **The key log takes the secret's length.** `ch_keylog` gains
+      `secret_len`, because a SHA-384 secret is 48 bytes and the NSS
+      format writes all of them.
+
+    Cost, measured by `bench/sram.sh` on arm64: `ch_tls` grows from
+    1,984 to 2,256 bytes in a `ROLE=server SUITE=aesgcm` build and from 3,064
+    to 3,336 in a `TRUST=webpki SUITE=aesgcm` one, against the same probes
+    run on the tree before this change. `ch_quic` in the `ROLE=both
+    TRUST=webpki` QUIC object colibri links is 5,432 bytes with the suite and
+    4,944 without it. The suite build's `ch_srv_accept` peaks at 10,448 bytes
+    of stack where it peaked at 10,304, and its webpki `ch_connect` at 16,544
+    where it peaked at 16,432. `ch_read` peaks at 1,728 bytes where it peaked
+    at 1,696, in every build, on the KeyUpdate path through the hash-agile
+    HKDF. Every other build keeps its session size. A suite build
+    hashes every handshake byte twice. `ch_ticket` gains 8 bytes, for
+    `psk_len`, in every build, and the key log hook changes signature in
+    every `KEYLOG=on` build, colibri's included. A server ticket in a suite
+    build is 120 bytes where it was 104, because its body holds a 48-byte
+    PSK. Gain: the server meets §9.1 for AES-only clients over every
+    transport, and a webpki client reaches an AES-only endpoint.
+
+    No publication prints a QUIC packet protected under an AES-256-GCM
+    key or a SHA-384 schedule: RFC 9001 Appendix A protects its Initial
+    packets with AES-128-GCM and its 1-RTT packet with ChaCha20.
+    `test/quic_suite_test.c` holds both AES suites to an independent
+    Python computation instead, one that reproduces Appendix A.5 from its
+    printed secret first.
+
+    `TLS_AES_128_CCM_SHA256` stays out: no client this tree serves needs
+    it, and it would add a second AES mode with its own tag construction.
+
+    Adding the AES-256 rows to the webpki loop found a defect entry 45
+    shipped. The server read `cipher_suites` once per suite it held, and
+    each read walked the whole list, so a `SUITE=aesgcm` server read the
+    compression bytes as suites and refused every real ClientHello. The
+    parser now reads the list once.
 
 59. **A server compares the extensions of a retried ClientHello as a set:
     the frozen digest takes them in ascending type order.** colibri found

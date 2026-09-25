@@ -449,8 +449,8 @@ last `ROLE=server` stub, as the entry said it would.
 ### INV-29 — the key log is the only way a secret leaves, and it names the right connection
 
 - **Claim.** A `KEYLOG=on` build hands each of the four traffic secrets
-  to `ch_keylog` once per handshake, filed under the ClientHello's
-  random, and both ends of one connection log the same random and the
+  to `ch_keylog` once per handshake, at its suite's hash length, filed
+  under the ClientHello's random, and both ends of one connection log the same random and the
   same secret under each label. No other path gives a secret to the
   caller. A device client cannot be built with it.
 - **Mechanism.** Four calls, one per secret, at the two places
@@ -484,27 +484,34 @@ last `ROLE=server` stub, as the entry said it would.
   closed. The host-side `TRUST=webpki` mode offers several signature
   schemes (decisions.md 36), several application protocols (37), two
   groups with a key share for each (39, 51), under `SUITE=aesgcm`
-  two cipher suites (45), and in a resuming hello the ticket and the
+  three cipher suites (45, 58), and in a resuming hello the ticket and the
   certificate path beside it (55), so the server may resume or
   authenticate with its chain in the same connection. There a ServerHello selects either group,
   or the hybrid alone under `ch_cfg.require_pq`, and a
   HelloRetryRequest may ask for a cookie and nothing else. It carries
-  ChaCha20 or AES-128-GCM, and the same one as a retry before it. A
+  ChaCha20, AES-128-GCM or AES-256-GCM, and the same one as a retry
+  before it. A
   server role selects rather than offers, and its group order is fixed
   (decisions.md 54): X25519MLKEM768 whenever the client lists it, x25519
   only when the client lists x25519 alone, and a HelloRetryRequest that
   names the group when the hello carried no share for it, so a hello
   that lists the hybrid and shares x25519 alone is asked for the hybrid
-  rather than answered over x25519.
+  rather than answered over x25519. Its suite order is ChaCha20, then
+  AES-128-GCM, then AES-256-GCM, and it selects the first of them the
+  client listed, or the first of `ch_srv_cfg.cipher_suites` when the
+  caller names an order (decisions.md 58). It never selects a suite the
+  client did not list.
 - **Mechanism.** Absence of selection code; the TRUST build flag picks
   the sigalg of a raw or ca build at compile time, never at runtime.
   The two-group offer is the `CH_KEX_TWO_GROUPS` arms of
   `handshake_message.c`, `handshake_parser.c` and `handshake_flight.c`,
   and every build's parser refuses a HelloRetryRequest that names a
-  group. The two-suite offer is the `CH_CLIENT_TWO_SUITES`
+  group. The three-suite offer is the `CH_CLIENT_AES_SUITES`
   arms of `handshake_message.c` and `handshake_parser.c`, and
   `handshake_state.suite` records the suite a retry or ServerHello
-  named. The resuming offer is the `CH_TRUST_WEBPKI` arm of
+  named. The server's choice is `srv_first_offered_suite` in `suite.h`,
+  which walks the server's order and takes the first suite the parsed
+  offer holds, and `srv_parse_client_hello` reads `cipher_suites` once. The resuming offer is the `CH_TRUST_WEBPKI` arm of
   `handshake_message.c`, which writes `signature_algorithms` and
   `server_certificate_type` in every hello and `pre_shared_key` last,
   and a raw or ca hello offers a ticket alone.
@@ -516,9 +523,17 @@ last `ROLE=server` stub, as the entry said it would.
   a retry naming a shared group, and `require_pq` keeping x25519 in the
   hello or taking a ServerHello that selects it. `key_share_webpki`
   proves the parser's x25519 shape beside the hybrid one.
-  `bin/webpki_session_aes` drives the two-suite offer, and two mutants
-  require it to fail: a parser that takes `TLS_AES_256_GCM_SHA384`, and
-  a ServerHello whose suite differs from the retry's.
+  `bin/webpki_session_aes` drives the three-suite offer, and two mutants
+  require it to fail: a parser that takes `TLS_AES_128_CCM_SHA256`, and
+  a ServerHello whose suite differs from the retry's. `srv_select_suite`
+  proves the server's walk over every offer and every order of up to
+  three code points: the suite it names is offered, held, in the order,
+  and the first such. `inv07-srv-selects-unoffered-suite` takes the
+  first suite of the order whether or not the client listed it, and
+  `bin/srv_flight_test_aes` fails on it; `bin/webpki_loop_aes` feeds the
+  server h3spec's offer, `TLS_AES_256_GCM_SHA384`,
+  `TLS_AES_128_GCM_SHA256` and `TLS_AES_128_CCM_SHA256`, and requires
+  AES-128-GCM.
   `handshake_parser_suite` proves an accepted message carries an
   offered suite. `bin/webpki_resume_test`'s mock server refuses a hello
   with no `signature_algorithms` with handshake_failure, as dns.google
@@ -595,8 +610,19 @@ last `ROLE=server` stub, as the entry said it would.
   server's handshake directions with ChaCha20 after it chose AES-GCM,
   and `inv11-key-update-drops-suite.violation` rekeys through
   `rec_dir_init`; `bin/srv_flight_test_aes` and `bin/aes_suite_test`
-  each open the result under a reader keyed on its own. The schedule
-  rests on HMAC-SHA-256, which the Wycheproof suite checks directly, and
+  each open the result under a reader keyed on its own. The schedule runs
+  at the hash of the suite the ServerHello named, SHA-384 for
+  `TLS_AES_256_GCM_SHA384` (decisions.md 58), and five mutants hold that:
+  `inv11-hkdf-sha384-arm-runs-sha256` runs HKDF's SHA-384 arm on
+  SHA-256 (`bin/hkdf384_test`), `inv11-record-key-update-sha256` runs
+  "traffic upd" at `SHA256_LEN` (`bin/aes_suite_test`),
+  `inv11-client-retry-transcript-sha256` writes the retry's synthetic
+  message at `SHA256_LEN` and `inv11-client-psk-hash-unchecked` takes a
+  PSK under a suite of another hash (`bin/webpki_session_aes`), and
+  `inv11-srv-ticket-any-hash` resumes a ticket under a suite of another
+  hash (`bin/webpki_loop_aes`). `transcript384` proves the transcript's
+  two hashes and the retry's restart. The schedule
+  rests on HMAC-SHA-256 and HMAC-SHA-384, which the Wycheproof suite checks directly, and
   `bin/unit` pins its key-length boundary: a 64-byte key used as it is
   and a 65-byte key hashed first (RFC 2104 §2).
   `hmac-key-block-boundary.violation` and
@@ -1292,7 +1318,7 @@ last `ROLE=server` stub, as the entry said it would.
   the linker size looked better.
 - See [decisions: Cryptography](decisions.md#cryptography).
 
-### INV-26 — AES sees three public keys, and one traffic key only under a suite build
+### INV-26 — AES sees three public keys, and traffic keys only under a suite build
 
 - **Claim.** Under `TRANSPORT=quic` this tree carries an AES-128, and
   every key it is given is public. `quic_aes.c` derives the keys and
@@ -1311,14 +1337,20 @@ last `ROLE=server` stub, as the entry said it would.
   supplied, and the 16-byte constant RFC 9001 §5.8 prints for the Retry
   integrity tag. RFC 9001 §5 draws the conclusion for the first two
   itself: anyone can compute them, so Initial packets have no
-  confidentiality or integrity protection. No traffic secret
-  `keysched.c` derives is passed to AES, and AES is never a cipher
-  suite. No field of `ch_quic` holds an AES key, and no AES key outlives
-  the call that built it.
+  confidentiality or integrity protection. Outside a
+  `-DCH_SUITE_AES_GCM` build no traffic secret `keysched.c` derives is
+  passed to AES, and AES is never a cipher suite. No field of `ch_quic`
+  holds an AES key, and no AES key outlives the call that built it.
 
-  A `-DCH_SUITE_AES_GCM` build adds the second claim, and one key. That
-  build offers `TLS_AES_128_GCM_SHA256`, so `record.c` hands AES a TLS
-  traffic key, which is secret. Three things bound it. `ct.h` refuses the
+  A `-DCH_SUITE_AES_GCM` build adds the second claim, and the traffic
+  keys of two suites. That build holds `TLS_AES_128_GCM_SHA256` and
+  `TLS_AES_256_GCM_SHA384` (decisions.md 45 and 58), so AES runs under
+  keys the TLS key schedule derives, 16 or 32 bytes by the suite, and
+  every one is secret: `record.c`'s record key, and under
+  `TRANSPORT=quic` `quic_packet.c`'s packet protection key and header
+  protection key for the Handshake and 1-RTT levels (RFC 9001 §5.3,
+  §5.4.3). The Initial level keeps AES-128-GCM under its public keys in
+  every build. Three things bound the traffic keys. `ct.h` refuses the
   define unless the build takes `AES=hw` and also defines
   `CH_NATIVE_AES`, which is the build asserting that this part's AES
   instructions and its carry-less multiply run in constant time — so
@@ -1326,30 +1358,34 @@ last `ROLE=server` stub, as the entry said it would.
   does `AES=extern`, which cannot state its timing. The key has its own type, `aes_traffic_key`,
   whose body lives in `aes_traffic_key.h` alone, so it cannot be passed
   where an `aes_public_key` is expected or the reverse. And `record.c`
-  expands it on its own frame at each use and wipes it there, so no
-  schedule outlives the record it protected and no `rec_dir` holds one.
+  and `quic_packet.c` expand it on their own frame at each use and wipe
+  it there, so no schedule outlives the record, the packet or the mask it
+  protected, and no `rec_dir`, `quic_keys` or `quic_hp_key` holds one.
 
-  The mechanism grew with the claim, and the growth is the cost. The
-  files `tools/quic-footprint.py` admits to a key body are now five, not
-  three: `aes_traffic_key.h` needs the schedule its own body contains,
-  and `quic_gcm.c` reads the round keys out of either key type to run the
-  AEAD. Both can therefore declare an `aes_public_key`, which the three
-  original holders could already do. What still holds is the part that
-  matters: no file outside those five can build a key of either kind, and
-  `inv-26-aes-public-keys-only` still matches every call into the `aes_`
-  and `gcm_` families.
+  The mechanism grew with the claim, and the growth is the cost. Two
+  headers give a key a body: `quic_aes_key.h` for `aes_public_key`, which
+  `quic_aes.c`, `quic_initial.c`, `quic_retry.c` and `quic_gcm.c`
+  include, and `aes_traffic_key.h` for `aes_traffic_key`, which
+  `quic_aes.c`, `quic_gcm.c`, `record.c` and `quic_packet.c` include.
+  `tools/quic-footprint.py` holds each list, and `make
+  lint-quic-surface` fails on any other reader. `quic_gcm.c` reads the
+  round keys out of either key type to run the AEAD. What holds is the
+  part that matters: no file outside those lists can build a key of
+  either kind, `inv-26-aes-public-keys-only` still matches every call
+  into the `aes_` and `gcm_` families but the two traffic families,
+  outside the public-key callers, and
+  `inv-26-aes-traffic-keys-only` matches every call into the
+  `aes_traffic_` and `gcm_traffic_` families outside `record.c` and
+  `quic_packet.c`.
 
-  One build would break that claim, and it does not compile. A TLS cipher
-  suite whose AEAD is AES-GCM encrypts application data under
-  `hkdf_expand_label(secret, "key", ...)` over a traffic secret, which is
-  the one thing this invariant says AES never sees.
-  `-DCH_SUITE_AES_GCM` is how a build would declare such a suite, and
-  `ct.h` refuses it unless the build also takes `AES=hw` and asserts
-  `CH_NATIVE_AES`. So the claim above holds for every build that compiles
-  today, and the rest of this entry says what the refused build would owe
-  and what is already in place for it. `docs/server.md`, "AES-GCM becomes a
-  cipher suite carrying user data, in two key sizes", is the design
-  record.
+  A TLS cipher suite whose AEAD is AES-GCM encrypts application data
+  under `hkdf_expand_label(hash_len, secret, "key", ...)` over a traffic
+  secret, the key the first claim keeps from AES. `-DCH_SUITE_AES_GCM` is
+  how a build declares such a suite, and `ct.h` refuses it unless the
+  build also takes `AES=hw` and asserts `CH_NATIVE_AES`. The rest of this
+  entry says what that build owes and what holds it. `docs/server.md`,
+  "AES-GCM becomes a cipher suite carrying user data, in two key sizes",
+  is the design record.
 - **Mechanism.** No stored key is the first part, and the compiler is
   the second.
 
@@ -1444,11 +1480,11 @@ last `ROLE=server` stub, as the entry said it would.
   the `AES=hw` sources and requires `test/lint-trust-separation.sh` to
   fail.
 
-  **What a secret AES key would need, and what is in place.** The entry
-  above used to say only that moving these files out of `WIDEMUL_PUBLIC`
-  was a diff a reviewer looks for. Four of the five have moved, and the
-  rest of the list is here so the refused build's bill is written down
-  rather than rediscovered.
+  **What a secret AES key needs, and what holds it.** The entry above
+  used to say only that moving these files out of `WIDEMUL_PUBLIC` was a
+  diff a reviewer looks for. Four of the five have moved, and the rest of
+  the list is here so the suite build's bill is written down rather than
+  rediscovered.
 
   *One implementation, not three.* `AES=soft` reads a 256-byte S-box at an
   index computed from the key. `aes_expand_round_keys` substitutes the
@@ -1535,13 +1571,32 @@ last `ROLE=server` stub, as the entry said it would.
   requires `test/lint-wide-multiply.sh` to fail, which is what the new
   `BRANCH_SRCS` entries buy.
 
-  What `quic_packet.c` refuses, with the same script as its catch
-  target: `-DCH_SUITE_AES_GCM` with `CH_TRANSPORT_QUIC`. RFC 9001 §5.3
-  makes the packet AEAD the suite TLS negotiated, and `quic_packet.c`
-  runs ChaCha20-Poly1305 alone, so that build would name AES-GCM in a
-  ServerHello and protect the packets after it with ChaCha20. The
-  Makefile refuses `SUITE=aesgcm TRANSPORT=quic` the same way.
-  `inv26-aes-suite-over-quic.violation` deletes the `#error`.
+  The same two refusals hold over QUIC, where `quic_packet.c` hands AES
+  the Handshake and 1-RTT keys: `test/quic-builds.sh` compiles
+  `quic_packet.c` under the suite with `AES=hw` and `CH_NATIVE_AES` and
+  requires it to compile, and without `CH_NATIVE_AES` and requires ct.h
+  to refuse it. `inv26-quic-suite-without-vendor-statement.violation`
+  lets a QUIC build past the second refusal. `quic_aes_soft.c` refuses
+  the suite on its own, for a tree that compiles it without reading
+  ct.h, and `inv26-soft-aes-under-suite.violation` removes that refusal;
+  the script fails on both.
+
+  What holds the traffic keys. `inv26-traffic-key-into-public-entry`
+  seals a record through `gcm_seal`, the public-key entry, and requires
+  `test/lint-invariants.sh` to fail.
+  `inv26-traffic-key-header-extra-reader` includes `aes_traffic_key.h`
+  in `handshake_post.c` and requires `test/lint-quic-surface.sh` to
+  fail. `inv26-aes256-test-define-in-object` packages the software
+  AES-256 and requires `test/lint-trust-separation.sh` to fail.
+  `aes256-traffic-key-wrong-round-count` records AES-128's round count
+  beside an AES-256 schedule and requires the `quic_aes_traffic` proof
+  to fail, and `aes256-schedule-one-round-key-short` stops the `AES=hw`
+  AES-256 expansion one round key short and requires
+  `bin/aes_equiv_test` to fail. `inv26-quic-hp-key-cut-to-aes128` keys
+  QUIC header protection with 16 bytes under every AES suite and
+  requires `bin/quic_suite_test`, which checks an AES-256 packet byte for
+  byte against an independent computation, to fail; the
+  `quic_packet_suite` proof asserts the key length too.
 
   What the compiler refuses, in any source that does not include
   `quic_aes_key.h`: declaring an `aes_public_key`, declaring an array of

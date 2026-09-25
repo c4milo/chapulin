@@ -205,7 +205,7 @@ of 48 must not carry `sha256` in its name; `hkdf_extract` (`:16`),
 `record.h`: `rec_dir_init` (`:30`), `rec_dir_update` (`:35`). One in
 `handshake_record.h`: `hsr_transcript_hash` (`:191`). Each takes a leading
 `size_t hash_len` whose only valid values are `SHA256_LEN` and `SHA384_LEN`,
-and each array parameter becomes `CH_SECRET_MAX` wide.
+and each array parameter becomes `HKDF_HASH_MAX` wide.
 
 **Ten struct fields change type.** `session.h:104-106` (`rd_secret`,
 `wr_secret`, `res_master`), `handshake_record.h:48-53` (`early`, `binder_key`,
@@ -260,7 +260,7 @@ union of `sha256` and `sha512`.
 Across the whole file `SHA256_LEN` appears **21** times on **18** lines
 (`grep -c` returns 18 and `grep -o | wc -l` returns 21), and the three groups
 take three different edits: seven array bounds in signatures become
-`CH_SECRET_MAX`, eight runtime lengths become `hash_len`, and six buffer
+`HKDF_HASH_MAX`, eight runtime lengths become `hash_len`, and six buffer
 sizings take the larger hash.
 
 **Written as one function, the hash-agile HMAC fails `make lint-tidy`.**
@@ -319,7 +319,7 @@ with its padding is the remaining 8.
 change type live in `handshake_state` (`handshake_record.h:48-53`), and
 `handshake_state` is a stack local: `handshake.c:373` declares it inside
 `ch_handshake` and `handshake.c:390` wipes it. Measured with only those six
-declarations widened to `CH_SECRET_MAX` and nothing else changed,
+declarations widened to `HKDF_HASH_MAX` and nothing else changed,
 `sizeof(handshake_state)` goes **448 to 544** on arm64 and **436 to 532** on
 rv32, and `ch_handshake`'s own frame goes **688 to 784** (arm64, Apple clang
 21.0.0, `-O2`, `-fstack-usage`), 608 to 704 (rv32, Homebrew clang 23.1.1) and
@@ -670,16 +670,16 @@ before the patch lands than after.
 | Parameter | Values, in the server's preference order | Why |
 |---|---|---|
 | Version | TLS 1.3 (0x0304) only | §4.3.1, `rfc9846.txt:1734-1738`, selects from `supported_versions` alone. |
-| Cipher suite | `TLS_CHACHA20_POLY1305_SHA256` (0x1303), then `TLS_AES_256_GCM_SHA384` (0x1302), then `TLS_AES_128_GCM_SHA256` (0x1301) | All three of `rfc9846.txt:4540-4543`. ChaCha is preferred where the client offers it, because it is the code this tree has proved, differential-tested and kept free of tables, and because it keeps the handshake on SHA-256. |
+| Cipher suite | `TLS_CHACHA20_POLY1305_SHA256` (0x1303), then `TLS_AES_128_GCM_SHA256` (0x1301), then `TLS_AES_256_GCM_SHA384` (0x1302) | All three of `rfc9846.txt:4540-4543`. ChaCha is preferred where the client offers it, because it is the code this tree has proved, differential-tested and kept free of tables, and because it keeps the handshake on SHA-256. AES-128-GCM comes before AES-256-GCM for the second reason: its schedule is SHA-256, the hash every handshake proof covers (`docs/decisions.md` entry 58). |
 | Hash | SHA-256 with 0x1303 and 0x1301, SHA-384 with 0x1302 | `rfc9846.txt:4055-4056` binds the hash to the suite. The section above states the cost. |
 | Group | X25519MLKEM768 (0x11ec), then x25519 (0x001d) | The hybrid first, for every client that lists it ("Key exchange" below, `docs/decisions.md` entry 54). X25519 is the §9.1 SHOULD at `rfc9846.txt:4549-4550`. secp256r1, the §9.1 MUST at `:4548-4549`, is not held, for the reason `srv_parser.h` gives at `SRV_GROUP_X25519`. |
 | Signature scheme | `ecdsa_secp256r1_sha256` (0x0403), then `rsa_pss_rsae_sha256` (0x0804) | Both are §9.1 CertificateVerify obligations at `rfc9846.txt:4545-4547`. The selected scheme picks which provisioned identity signs. |
 | Key exchange mode | `psk_dhe_ke` when a PSK is selected, certificate authentication otherwise | `rfc9846.txt:1150-1152` requires selecting a mode the client listed. |
 | ALPN | the caller's list, or none | The server cannot know which protocol the endpoint speaks. |
 
-The preference order is a build constant, not configuration. A device with an
-AES accelerator wants a different suite order, and that is one constant to
-change.
+The preference order is the default, and `ch_srv_cfg.cipher_suites`
+replaces it: a host with an AES accelerator names the order it wants, and a
+list may leave a suite out (`docs/decisions.md` entry 58).
 
 Runtime selection is unavoidable here and it is worth saying why. A build axis
 cannot carry the suite: a conformant client may offer AES-128-GCM alone, so the
@@ -913,7 +913,7 @@ largest single cost", and each rank names the measure.
 
 `hkdf.[ch]`, `keysched.[ch]`, `record.[ch]` and `session.h` take `hash_len` as
 a leading `size_t` parameter with two valid values, `SHA256_LEN` and
-`SHA384_LEN`, and size every secret array at `CH_SECRET_MAX`, which is
+`SHA384_LEN`, and size every secret array at `HKDF_HASH_MAX`, which is
 `SHA384_LEN`. The bulk of the work is in `hkdf.c`, and "The cost that dominates"
 gives the measured counts: nine hash call sites, seven block-size reads and one
 context declaration inside a 28-line HMAC, and 21 uses of `SHA256_LEN` on 18
