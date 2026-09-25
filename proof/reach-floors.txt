@@ -249,6 +249,14 @@ x25519_tail 52.7
 # the first run that skipped handshake_parser_suite. Neither has been
 # measured by hand.
 #
+# srv_message measured 87.7% in 192 s on the runner on 2026-09-24 (run
+# 35975083480). Since then 2262eee has added the pre_shared_key extension
+# to the ServerHello it builds, and 4d897ed has changed the harness for
+# the hybrid's ServerHello share. On 2026-09-25 the runner died two minutes
+# into its cover run (run 36139181178), and on a development machine that
+# day (arm64 macOS, cbmc 6.11.0) it held 7.9 GB when the 1800 s budget
+# stopped it without a number. It carries no floor.
+#
 # quic_aes256 stops in 20 s under the cover command on a development
 # machine on 2026-09-25 (arm64 macOS, cbmc 6.11.0), with cbmc's "too many
 # addressed objects", so it reports no number. Its launch line carries no
@@ -284,6 +292,7 @@ x25519_tail 52.7
 #   sha256
 #   sha3
 #   sha3_stream
+#   srv_message
 #   x25519_mul
 #   x25519_mul_ct
 #   x25519_step
