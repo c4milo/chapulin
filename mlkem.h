@@ -2,9 +2,9 @@
 // x25519 in the TLS 1.3 key_share. One parameter set, no negotiation.
 //
 // The entry points are derandomized: the caller supplies every random
-// byte (d, z, m), because randomness in chapulin is consumed only at the
-// audited sites in handshake.c (INV-4). keygen and encaps take their
-// seeds as arguments; nothing here calls ch_rand_bytes.
+// byte (d, z, m), because chapulin calls ch_rand_bytes only at the sites
+// INV-4 lists. keygen and encaps take their seeds as arguments; nothing
+// here calls ch_rand_bytes.
 //
 // The KEX=pq build packages mlkem.c, mlkem_poly.c, and sha3.c into the
 // library object; every other build compiles them into test binaries

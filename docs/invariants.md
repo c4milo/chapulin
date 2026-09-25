@@ -117,43 +117,71 @@ last `ROLE=server` stub, as the entry said it would.
 
 ### INV-4 — randomness only through the hook
 
-- **Claim.** All randomness flows through `ch_rand_bytes`, consumed
-  at exactly ten audited sites. Three are in `handshake_flight.c`: the
-  key-share scalar, the ClientHello random, and the ML-KEM (d, z)
-  seed, which only the `KEX=pq` and `TRUST=webpki` builds draw. The
-  fourth is the webpki client's P-256 scalar, in `handshake_groups.c`,
-  drawn only when a HelloRetryRequest names secp256r1 (decisions.md 63).
-  Two are the server's
-  mirror of the first two, in `srv_flight.c`: the key-share scalar it
-  answers with, and the ServerHello random. A client and a server draw
-  the same two values for the same reasons, so the audit is the same
-  audit. Two more are the server's, in `srv_kex.c`: the 32 bytes of
-  ML-KEM encapsulation randomness, drawn only when the server selects
-  X25519MLKEM768 and wiped once the encapsulation has run (decisions.md
-  54), and the P-256 scalar, drawn only when it selects secp256r1, the
-  mirror of the client's fourth site (decisions.md 63). The client never
-  draws encapsulation randomness, because the client decapsulates. The
-  ninth is the server's one draw per resumption ticket, in
-  `srv_resume.c`: the ticket's AEAD nonce, its `ticket_age_add` and its
-  `ticket_nonce`, 24 bytes from one call, drawn only when the caller set
-  a ticket key and a clock. The tenth is the PSS salt in
-  `rsa_sign.c`, which no library object
-  compiles today — nothing wires a signer into `srv_auth.c` yet, so
-  only the test binaries, the Wycheproof suite and its CBMC harness
-  compile it. Every draw carries the same all-zero check against a hook
-  that writes nothing. The two P-256 sites carry it as a bound: a
-  candidate outside [1, n-1], the zero one included, is drawn again up to
-  `P256_ECDH_DRAWS` times, and CH_ASSERT fires past that, which a working
-  generator reaches with probability below 2^-128.
-- **Mechanism.** The hook is the only randomness path into the library,
-  and which side defines it is a declared build choice with no default.
-  `RAND=extern` leaves it an undefined import, so an image that never
-  wired a generator fails to link; `RAND=drbg` satisfies it with the
+- **Claim.** The library takes every random byte from `ch_rand_bytes`.
+  It calls the hook at exactly ten sites in six files. A client draws at
+  four of them:
+  - `hsf_begin` in `handshake_flight.c` draws the x25519 key-share
+    scalar and the ClientHello random, and in the `KEX=pq` and
+    `TRUST=webpki` builds the ML-KEM (d, z) seed: three calls.
+    `ch_connect`, `ch_record_init` and `ch_quic_init` call it.
+  - `draw_p256_key` in `handshake_groups.c` draws the `TRUST=webpki`
+    client's P-256 scalar, only when a HelloRetryRequest names
+    secp256r1 (decisions.md 63).
+
+  A server draws at the other six:
+  - `srv_begin` in `srv_flight.c` draws the x25519 key-share scalar.
+    `ch_srv_accept`, `ch_srv_record_init` and `ch_srv_quic_init` call
+    it.
+  - `srv_send_server_hello` in `srv_flight.c` draws the ServerHello
+    random. These two sites draw the values `hsf_begin` draws for a
+    client, for the same reasons, so they take the same audit.
+  - `encapsulate` in `srv_kex.c` draws the 32 bytes of ML-KEM
+    encapsulation randomness, only when the server selects
+    X25519MLKEM768, and wipes them once the encapsulation has run
+    (decisions.md 54). A client never draws these bytes, because a
+    client decapsulates.
+  - `p256_share` in `srv_kex.c` draws the P-256 scalar, only when the
+    server selects secp256r1 (decisions.md 63).
+  - `srv_send_new_session_ticket` in `srv_resume.c` draws 24 bytes in
+    one call per ticket: the ticket's AEAD nonce, its `ticket_age_add`
+    and its `ticket_nonce`. It draws only when the caller set
+    `cfg.srv.ticket_key` and `cfg.srv.now_seconds`.
+  - `emsa_pss_encode` in `rsa_sign.c` draws the 32-byte RSA-PSS salt
+    each time `rsa_pss_sign` signs with the server's RSA identity.
+    `ch_srv_check` signs once at boot when that identity is
+    provisioned, and `srv_sign_certificate_verify` signs once per
+    handshake whose CertificateVerify uses rsa_pss_rsae_sha256.
+    `p256_sign.c` draws nothing: it derives each ECDSA nonce from the
+    key and the message by RFC 6979.
+
+  Every site checks for a hook that returns without writing: CH_ASSERT
+  fires when the drawn bytes are all zero. The two
+  P-256 sites check a range instead. They draw again when a candidate
+  falls outside [1, n-1], zero included, up to `P256_ECDH_DRAWS` times,
+  and CH_ASSERT fires after the last one. A working generator fails
+  that many draws with probability below 2^-128.
+- **Mechanism.** `ch_rand_bytes` is the library's only source of random
+  bytes, and which side defines it is a declared build choice with no
+  default. `RAND=extern` leaves it an undefined import, so an image that
+  defines no generator fails to link. `RAND=drbg` defines it with the
   reference generator in `drbg.c`, which faults on an unseeded draw.
-  Neither build carries a fallback that quietly produces bytes.
-- **Check.** Semgrep-structural (`inv-4-randomness-sites`): no `ch_rand_bytes` call
-  outside `handshake_flight.c`, `handshake_groups.c`, `srv_flight.c`,
-  `srv_kex.c`, `srv_resume.c` and `rsa_sign.c`.
+  Neither build carries a fallback that quietly produces bytes. The
+  `ROLE` and `TRUST` axes choose which of the six files a packaged
+  object compiles:
+  - `ROLE=client` compiles `handshake_flight.c`, and `TRUST=webpki`
+    adds `handshake_groups.c`.
+  - `ROLE=server` compiles `srv_flight.c`, `srv_kex.c`, `srv_resume.c`
+    and `rsa_sign.c` on every transport.
+  - `ROLE=both` compiles both sets.
+- **Check.** Semgrep-structural (`inv-4-randomness-sites`): no
+  `ch_rand_bytes` call outside `handshake_flight.c`,
+  `handshake_groups.c`, `srv_flight.c`, `srv_kex.c`, `srv_resume.c` and
+  `rsa_sign.c`. The rule excludes `drbg.c` because that file defines the
+  hook. The rule matches files, not calls: a draw added to any other
+  file fails `make lint-invariants`, and a second draw added inside one
+  of the six passes it, so review holds the count of ten. `lib-check`
+  requires a `RAND=extern` object to import `ch_rand_bytes` and a
+  `RAND=drbg` object to define it.
 - **Violation.** A PR conjures a nonce or padding bytes from a new
   call site nobody audits for seeding requirements.
 - See [docs/entropy.md](entropy.md).

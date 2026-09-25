@@ -264,11 +264,10 @@ static void mgf1(const uint8_t *seed, size_t seed_len, uint8_t *mask, size_t len
 static void emsa_pss_encode(const uint8_t msg_hash[32], uint8_t *em, size_t em_len) {
     uint8_t salt[SLEN];
     ch_rand_bytes(salt, sizeof salt);
-    // The fourth draw site in the tree, and it carries the check the
-    // three in handshake.c carry (INV-4): a hook that returns without
-    // writing leaves the salt zero, every signature over one message
-    // becomes the same bytes, and nothing downstream notices. A real
-    // draw is all-zero with probability 2^-256, so this checks the
+    // Every draw site INV-4 lists carries this check. A hook that returns
+    // without writing leaves the salt zero, every signature over one
+    // message becomes the same bytes, and nothing downstream notices. A
+    // real draw is all-zero with probability 2^-256, so this checks the
     // integrator's hook against rand.h's contract, which is what
     // CH_ASSERT is for.
     {
