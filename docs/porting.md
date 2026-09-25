@@ -314,9 +314,9 @@ sources in your own build, you compile against its headers under defines you
 write yourself, and nothing in the link checks that they are the object's
 defines. A define you forget changes the layout of `ch_tls` or `ch_cfg`, or
 the value of `CH_MIN_RXBUF`, on your side only, and the program still links. Every
-packaged object exports `ch_build`, the build record (`build.h`): the axes,
-struct sizes and bounds it was compiled with. Compare it once at startup,
-before the first session:
+packaged object exports its build record (`build.h`): the axes, struct sizes
+and bounds it was compiled with. Compare it once at startup, before the first
+session:
 
 ```c
 #include "build.h"
@@ -326,11 +326,20 @@ if (!ch_build_matches(&ch_build)) {
 }
 ```
 
+The record's symbol name carries the object's transport: `ch_build_tls`,
+`ch_build_record` or `ch_build_quic`. `build.h` defines `ch_build` as the
+name your defines select, so the call above reads the record of the transport
+you compile for, and a program built for another transport than the object's
+fails to link.
+
 A program in another language reads the same symbol. `ch_build_info` is twelve
 `uint32_t` fields with no padding, and each `CH_BUILD_` macro is the value
 your defines give the field of the same name. Compare `version` first and the
 other fields only when it matches. In Zig, `@cImport` the header under your
-defines and call the same predicate:
+defines and call the same predicate on the transport's record. Zig's
+translate-c turns the `ch_build` macro into a constant that Zig refuses to
+evaluate, because its value is an extern variable, so write the record's own
+name:
 
 ```zig
 const c = @cImport({
@@ -340,11 +349,86 @@ const c = @cImport({
     @cInclude("build.h");
 });
 
-if (c.ch_build_matches(&c.ch_build) == 0) return error.ChapulinBuildMismatch;
+if (c.ch_build_matches(&c.ch_build_record) == 0) return error.ChapulinBuildMismatch;
 ```
 
-`docs/decisions.md` 56 lists what the record holds, which defines it leaves
-out and why.
+An `@cImport` without `CH_TRANSPORT_RECORD` declares no `ch_build_record`,
+so that mistake stops the compile. `docs/decisions.md` 56 lists what the
+record holds, which defines it leaves out and why, and entry 61 says why its
+name carries the transport.
+
+## Linking two transports into one image
+
+One image can link one packaged object of each of two transports: a
+`TRANSPORT=record` object beside a `TRANSPORT=quic` one, or a
+`TRANSPORT=tls` object beside a `TRANSPORT=quic` one. cocuyo does this for
+DNS over TLS and DNS over QUIC, and a server does it for HTTP/2 beside
+HTTP/3. Three exports that objects of both transports carry take the
+transport into their symbol names, and a header maps each to the name you
+call:
+
+| You call | Symbol, per transport | Mapped in |
+|---|---|---|
+| `ch_build` | `ch_build_tls`, `ch_build_record`, `ch_build_quic` | `build.h` |
+| `ch_srv_check` | `ch_srv_check_tls`, `ch_srv_check_record`, `ch_srv_check_quic` | `srv.h` |
+| `ch_pubkey_from_pem` | `ch_pubkey_from_pem_tls`, `ch_pubkey_from_pem_record`, `ch_pubkey_from_pem_quic` | `x509_ca.h` |
+
+Compile the calls to each object in a translation unit of its own, under that
+object's defines. The two objects' headers disagree about `ch_cfg` and
+`ch_tls`, so no one translation unit can include both. Each unit calls
+`ch_build_matches(&ch_build)` and reads its own object's record. In Zig, use
+one `@cImport` per object and each one's record name.
+
+Two pairs do not link, and the linker's duplicate-symbol error is the
+refusal:
+
+- **A `TRANSPORT=tls` object beside a `TRANSPORT=record` one.** Both export
+  `ch_read`, `ch_write` and `ch_close`, and `ch_export` under
+  `EXPORTER=on`. A record-mode object does everything a blocking one does,
+  with your code driving the socket, so link the record-mode object alone.
+- **Two `RAND=drbg` objects.** Both export `ch_drbg_seed`, and each carries a
+  generator of its own. Build every object `RAND=extern` instead. A
+  `RAND=drbg` object beside a `RAND=extern` one links, but it keeps a second
+  generator that your `ch_rand_bytes` does not feed, so do not build that
+  pair either.
+
+Two objects of one transport do not link either, for the same reason as the
+first pair: build `ROLE=both` for a client and a server over one transport.
+
+The image defines each hook once for every chapulin object it links, and for
+every user of chapulin it links, such as cocuyo beside a program that uses
+chapulin through colibri:
+
+- `ch_rand_bytes` (`rand.h`), which every `RAND=extern` object imports. There
+  is one per image, and there is no randomness callback per session. It must
+  be safe to call from several threads at once, because an image that runs one
+  thread per core runs sessions on every core. A hook that reads state held
+  per thread, as cocuyo's does, meets this.
+- `ch_assert_fail` (`ch_assert.h`), which every object imports.
+- `ch_keylog` (`keylog.h`) where an object is built `KEYLOG=on`, and
+  `ch_aes_block` (`quic_aes_block.h`) where one is built `AES=extern`.
+
+The library calls `ch_rand_bytes` at these points and no others:
+
+- **A client:** in `ch_connect`, `ch_record_init` and `ch_quic_init`, for its
+  key share, its ClientHello random and, where it offers X25519MLKEM768, the
+  ML-KEM seed. When the secp256r1 key exchange lands, a client also draws
+  when a HelloRetryRequest names P-256.
+- **A server:** in `ch_srv_check` when an RSA-PSS identity is provisioned,
+  for the signature's salt; in `ch_srv_record_init`, `ch_srv_quic_init` and
+  `ch_srv_accept`, for its x25519 key share; in the call that delivers the
+  ClientHello, for the ServerHello random, the ML-KEM encapsulation where it
+  selects X25519MLKEM768 and the salt where it signs with RSA-PSS; and in the
+  call that delivers the client Finished when `cfg.srv.ticket_key` and
+  `cfg.srv.now_seconds` are set, for the ticket's AEAD nonce,
+  `ticket_age_add` and `ticket_nonce`.
+- **Never** for a key update, a QUIC Retry token, header protection, or a
+  packet seal or open.
+
+`test/lib-pair-check.sh`, which `make check` runs, links four supported pairs
+and starts a session in each half, and requires the two refused pairs to fail
+to link. `docs/decisions.md` 61 lists every export two objects share
+and why each is renamed or refused.
 
 ## What our verification does and does not tell you about your build
 

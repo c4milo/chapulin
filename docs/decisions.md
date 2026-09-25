@@ -1335,6 +1335,11 @@ does nothing more.
     not behavior, and defines, not revisions: headers from another
     commit are caught only where a size, a bound or a bit moved (INV-35).
 
+    Entry 61 changed one thing here: the record's symbol name now
+    carries the object's transport, and `build.h` maps `ch_build` to it,
+    because two objects that both defined `ch_build` did not link into
+    one image.
+
 57. **A failed QUIC session keeps its write keys for one CONNECTION_CLOSE
     per level, and a call of its own seals it.** RFC 9001 §4.8 turns a TLS
     alert into a CONNECTION_CLOSE frame whose error code is 0x0100 plus the
@@ -1795,3 +1800,139 @@ does nothing more.
     it, and `ch_close` stays the one call that ends a session. §6.1 lets
     a party close its read side without waiting for the peer's
     close_notify (rfc9846.txt:3864-3867), which `ch_close` does.
+
+61. **An image links one packaged object of each of two transports: the
+    three exports every transport carries take the transport into their
+    symbol names, and the two pairs that share calls are refused at the
+    link.** cocuyo wants DNS over TLS, DNS over QUIC and DNS over HTTP/3 in
+    one binary, so it links a `TRUST=webpki TRANSPORT=record` object for
+    the first and colibri's `TRUST=webpki TRANSPORT=quic ROLE=both` object
+    for the other two. The link failed on `ch_build`, which both objects
+    defined (entry 56). The two objects' headers disagree about `ch_cfg`
+    and `ch_tls`, so a program calls each object from a translation unit
+    compiled under that object's defines. A name both objects define
+    fails the link, and a linker that kept one definition would hand one
+    of those units the other object's.
+
+    - **The build record.** Its symbol is `ch_build_tls`,
+      `ch_build_record` or `ch_build_quic`, and `build.h` defines
+      `ch_build` as an object-like macro for the one the defines in force
+      select. `ch_build_matches(&ch_build)` compiles unchanged in C and
+      through `chapulin.hpp`, reads the record of the object whose
+      headers the unit compiles against, and a unit compiled for another
+      transport than its object's fails to link.
+    - **Zig.** translate-c turns the macro into `pub const ch_build =
+      ch_build_record;`, and Zig 0.16 refuses to evaluate that constant,
+      because its initializer is an extern variable (checked 2026-09-25).
+      An asm label on the declaration is dropped by translate-c, and a
+      macro that dereferences the record's address meets the same
+      refusal. So a Zig program writes the record's own name,
+      `c.ch_build_matches(&c.ch_build_record)`, and an `@cImport` missing
+      `CH_TRANSPORT_RECORD` declares no such name, so that mistake stops
+      the compile. A function name maps without this: Zig evaluates
+      `pub const ch_srv_check = ch_srv_check_quic;`, because a function
+      is known at compile time.
+
+    The audit. Twenty-two objects were built on 2026-09-25 and each pair
+    of different transports was compared by the names `nm` lists as
+    defined: the four `TRUST` client modes and `RAND=drbg` over each
+    transport, `ROLE=server` and `ROLE=both` over each, `EXPORTER=on`, and
+    `SUITE=aesgcm AES=hw` over record and QUIC. No object defines a
+    common or weak symbol. Six names were shared:
+
+    | Name | Objects that export it | Resolution |
+    |---|---|---|
+    | `ch_build` | every object | named per transport, mapped in `build.h` |
+    | `ch_srv_check` | every `ROLE=server` and `ROLE=both` object | named per transport, mapped in `srv.h` |
+    | `ch_pubkey_from_pem` | every `TRUST=ca-rsa` and `TRUST=ca-ecdsa` object | named per transport, mapped in `x509_ca.h` |
+    | `ch_drbg_seed` | every `RAND=drbg` object | refused: two `RAND=drbg` objects do not link |
+    | `ch_read`, `ch_write`, `ch_close` | every `TRANSPORT=tls` and `TRANSPORT=record` object | refused: a tls object and a record object do not link |
+    | `ch_export` | `EXPORTER=on` objects, tls and record only | refused with the pair above |
+
+    `ch_srv_check` and `ch_pubkey_from_pem` follow the record for two
+    reasons. A server pair is the plain case, an HTTP/2 server beside an
+    HTTP/3 one, and two definitions of `ch_srv_check` are not
+    interchangeable, since each reads its own transport's `ch_cfg`. A CA
+    pair is rarer, but the rule is then one sentence: every export that
+    objects of more than one transport carry takes the transport into its
+    name. The Makefile applies it in one list, `TRANSPORT_NAMED`, so
+    `PUBLIC` and `lib-check` read symbol names.
+
+    The two refusals, and why neither is renamed:
+
+    - **`ch_drbg_seed`.** Each `RAND=drbg` object carries its own
+      generator, with its own state, local to the object. Two objects
+      are two generators and two seeds, and an image that hands one seed
+      to both draws the same bytes in each: the same key share in a
+      record session and a QUIC session. Renaming the call would make
+      that image link. A `RAND=drbg` object beside a `RAND=extern` one
+      links, because the generator's `ch_rand_bytes` is local, and it
+      still keeps a second generator the image's hook does not feed, so
+      `docs/porting.md` refuses that pair in words.
+    - **`ch_read`, `ch_write` and `ch_close`.** The record transport
+      keeps the connected session's calls under the blocking transport's
+      names (`rec.h`), and a record-mode object does everything a
+      blocking one does with the caller driving the socket. Renaming
+      them would move the three calls every TLS program links against,
+      for an image that gains nothing by carrying both transports.
+
+    Camilo decided on 2026-09-24 that an image defines `ch_rand_bytes`
+    and `ch_assert_fail` once, for every chapulin object and every user of
+    chapulin it links, and that no session takes a randomness callback of
+    its own. One entropy source per image is simpler to audit, INV-4
+    keeps a single hook, and two users already share one object per
+    transport: cocuyo, and a consumer that reaches chapulin through
+    colibri. So `ch_rand_bytes` must be safe to call from several threads
+    at once, because a thread-per-core image runs sessions on every core.
+    `docs/porting.md` states that and lists the calls that draw from it.
+
+    What holds it:
+
+    - `test/lib-pair-check.sh`, in `make check`, links four pairs and
+      runs each half: webpki record client beside the webpki QUIC
+      `ROLE=both` object (cocuyo's), record server beside QUIC server,
+      raw-rsa tls beside raw-rsa QUIC, and ca-rsa tls beside ca-rsa QUIC.
+      Each half reads its own record, runs `ch_srv_check` or
+      `ch_pubkey_from_pem` where its object has one, and starts a
+      session. The drbg pair and the tls and record pair must fail to
+      link, and the linker must name each shared name. It reuses the
+      objects the `lib-check` legs build and builds two more: 5.2 s with
+      every object built, 8 s with the two to build.
+    - `lib-check`'s consumer compiled with the transport moved now must
+      fail to link, naming the other transport's record. It used to read
+      a record that differed, which can no longer happen, so a consumer
+      with `CH_PIN_ECDSA` moved reads the difference instead. Every header
+      admits that define, and it changes no symbol name and no hook.
+    - `inv35-build-record-shared-name` gives the QUIC transport's record
+      the record transport's name, and `test/lib-pair-check.sh` catches
+      it.
+
+    One more change came with it. `test/violations.py` edits `PUBLIC`,
+    links, restores it and links again within one second, and make 3.81
+    compares mtimes to the second, so the second link was skipped and the
+    object kept the edited export list: `inv35-build-record-not-exported`
+    followed by `inv35-build-record-omits-axis` failed the second one's
+    baseline on a correct tree. The link stamp now forces the link when
+    its line differs from the build's, whatever the clocks say.
+
+    Cost: three symbol names change. A C or C++ consumer changes
+    nothing; a Zig consumer writes `ch_build_record` or `ch_build_quic`
+    where it wrote `ch_build`, which cocuyo does on three lines and
+    colibri's tests on four. `lint-quic-partition` lists `x509_ca.h` and
+    `x509_ca.c` beside `build.h` and `build.c`, because a QUIC build
+    compiles the provisioning call under its own name.
+    `bench/stack.py` reports `ch_pubkey_from_pem_tls`. `make check`
+    gains the pair test and one more consumer build per `lib-check` leg.
+
+    Gain: one image links the objects of two transports, and each unit
+    of it reads the record of its own object.
+
+    Rejected: a weak `ch_build` in every object, because the linker keeps
+    one, and the other transport's unit reads it; renaming at the link
+    with `objcopy --redefine-sym`, because Apple's toolchain has no
+    `objcopy` and the consumer's header must name the symbol anyway; and
+    one object carrying two transports, because `TRANSPORT` is one per
+    object and the two layouts of `ch_tls` cannot share one name. Entry
+    56 rejected a symbol name per build because it would encode every
+    axis in the name. The transport is one axis, and it already changes
+    the link line, since each transport exports its own calls.

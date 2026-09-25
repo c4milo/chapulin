@@ -372,7 +372,7 @@ LINT_C := $(filter-out softmul.c,$(SRCS)) drbg.c sha3.c sha512.c sha512_compress
           test/aes_equiv_test.c test/aes_equiv_soft.c test/aes_equiv_hw.c \
           test/ghash_equiv_test.c test/ghash_equiv_soft.c \
           x25519_wide.c test/x25519_equiv_test.c test/x25519_equiv_portable.c test/x25519_equiv_wide.c \
-          test/diff_x25519_test.c test/build_test.c \
+          test/diff_x25519_test.c test/build_test.c test/lib_pair_half.c test/lib_pair_main.c \
           $(wildcard examples/*.c)
 
 # Test-local headers: prerequisites for every binary that includes them,
@@ -398,7 +398,8 @@ TESTH := test/test_random.h test/pem_armor.h test/pem_tests.h test/x509_ca_tests
          test/diff_webpki_chain.h test/diff_webpki_pin.h test/rxbuf_floor_tests.h \
          test/srv_message_tests.h test/srv_cookie_tests.h test/srv_ticket_tests.h test/srv_resume_tests.h test/srv_resume_issue_tests.h test/srv_flight_tests.h test/srv_flight_suite_tests.h \
          test/quic_token_tests.h test/srv_quic_retry_tests.h test/srv_quic_retry_count_tests.h test/srv_quic_retry_vectors.h \
-         test/srv_flight_keys_tests.h test/srv_parser_hello.h test/srv_parser_tests.h test/srv_parser_reader_tests.h
+         test/srv_flight_keys_tests.h test/srv_parser_hello.h test/srv_parser_tests.h test/srv_parser_reader_tests.h \
+         test/lib_pair.h
 
 # Each axis names its value or stops the build. RAND has done this since
 # https://github.com/c4milo/chapulin/issues/41; PIN, TRUST and KEX each
@@ -926,9 +927,12 @@ QEMU_SMOKE_C := $(wildcard test/qemu/*.c test/qemu/*.h test/freertos/*.c test/fr
 # Firmware links bin/chapulin.o: one relocatable object exposing exactly
 # the symbols PUBLIC names: its calls, four under TRANSPORT=tls, sixteen
 # under TRANSPORT=quic and five under ROLE=server, and in every variant
-# one data symbol, ch_build. Partial linking merges the modules; nmedit
-# (macOS) or objcopy (everything else) localizes every other symbol, so
-# the library cannot collide with application names. lib-check enforces
+# one data symbol, the build record, named for the transport:
+# ch_build_tls, ch_build_record or ch_build_quic. Partial linking merges
+# the modules; nmedit (macOS) or objcopy (everything else) localizes
+# every other symbol, so the library cannot collide with application
+# names, and test/lib-pair-check.sh links two objects of different
+# transports into one image (docs/decisions.md 61). lib-check enforces
 # the export list as part of check. Objects live under the variant that
 # built them, so switching PIN, TRUST, KEX, RAND, TRANSPORT or ROLE
 # never reuses a stale object. TRANSPORT belongs here for a reason the other
@@ -1131,7 +1135,18 @@ print-clang-rv:
 # against its own headers (build.h, docs/decisions.md 56). No axis
 # changes it, so every variant's list names it.
 PUBLIC_BUILD := ch_build
-PUBLIC := $(PUBLIC_ROLE) $(PUBLIC_RAND) $(PUBLIC_CA) $(PUBLIC_EXPORT) $(PUBLIC_BUILD)
+# The lists above name each export as its header declares it. Three of
+# those names belong to exports that objects of more than one transport
+# carry: the build record, the server's boot check and the CA
+# provisioning call. One image may link one object of each transport,
+# so each of the three puts the object's transport in its symbol name,
+# and build.h, srv.h and x509_ca.h map the declared name to that symbol
+# name under the consumer's own defines (docs/decisions.md 61). PUBLIC
+# holds symbol names, because those are what the link keeps and what
+# lib-check reads.
+TRANSPORT_NAMED := ch_build ch_srv_check ch_pubkey_from_pem
+PUBLIC := $(foreach s,$(PUBLIC_ROLE) $(PUBLIC_RAND) $(PUBLIC_CA) $(PUBLIC_EXPORT) $(PUBLIC_BUILD), \
+            $(if $(filter $(s),$(TRANSPORT_NAMED)),$(s)_$(TRANSPORT),$(s)))
 
 # LIB_VARIANT names the build variables that pick the sources and the
 # defines, and the compiler is not one of them. So `make CC=<cross> lib`
@@ -1163,10 +1178,24 @@ bin/obj/$(LIB_VARIANT)/%.o: %.c $(HDRS) $(CC_STAMP)
 # symbols stay global, and an edit to the list changes no source: without
 # it, an object linked before a name left PUBLIC would still export it.
 
+#
+# A rewritten stamp reads as newer than the object only a second after
+# the object was linked, because make 3.81 compares mtimes to the
+# second. test/violations.py edits PUBLIC, links, restores it and links
+# again in well under a second, and the second link was skipped: the
+# object kept the edited export list under a stamp that held the
+# restored one, and every later lib-check failed on a correct tree. So a
+# stamp whose line differs from this build's forces the link through
+# FORCE, whatever the clocks say.
 PIN_STAMP := bin/obj/pin-stamp
+PIN_STAMP_LINE := $(LIB_VARIANT) $(strip $(PUBLIC))
+PIN_STAMP_FORCE :=
+ifneq ($(shell cat $(PIN_STAMP) 2>/dev/null),$(PIN_STAMP_LINE))
+PIN_STAMP_FORCE := FORCE
+endif
 $(PIN_STAMP): FORCE
 	@mkdir -p bin/obj
-	@[ "$$(cat $@ 2>/dev/null)" = "$(LIB_VARIANT) $(strip $(PUBLIC))" ] || echo "$(LIB_VARIANT) $(strip $(PUBLIC))" > $@
+	@[ "$$(cat $@ 2>/dev/null)" = "$(PIN_STAMP_LINE)" ] || echo "$(PIN_STAMP_LINE)" > $@
 .PHONY: FORCE
 FORCE:
 
@@ -1181,20 +1210,35 @@ FORCE:
 LIB_OBJ := bin/obj/$(LIB_VARIANT)/chapulin.o
 
 # The consumer lib-check links against the object to read its build
-# record, and the defines of the second consumer, which disagrees with
-# the object on one axis: the transport. A TRANSPORT=tls object meets a
-# record-mode consumer, and a record or QUIC object meets a TLS one.
-# Moving the transport keeps every hook the object imports, so the
-# second consumer still links, and it changes a bit of the axes and the
-# size of at least one session struct.
+# record, and the defines of two more consumers, each of which disagrees
+# with the object on one axis.
+#
+# The first moves CH_PIN_ECDSA: it adds the define where the object has
+# none and drops it where the object has it. No header refuses the
+# define in any build, and it changes no hook and no symbol name, so
+# that consumer links and reads a record whose axes differ from its
+# headers' in one bit.
+#
+# The second moves the transport: a TRANSPORT=tls object meets a
+# record-mode consumer, and a record or QUIC object meets a TLS one. Its
+# headers name another transport's record, which this object does not
+# define, so that consumer must fail to link (docs/decisions.md 61).
+# BUILD_OTHER_RECORD is the name its link reports missing.
 BUILD_TEST := bin/obj/$(LIB_VARIANT)/build_test
-ifeq ($(TRANSPORT),tls)
-BUILD_MOVED_DEF := $(LIB_DEF) -DCH_TRANSPORT_RECORD
+ifneq ($(filter -DCH_PIN_ECDSA,$(LIB_DEF)),)
+BUILD_PIN_MOVED_DEF := $(filter-out -DCH_PIN_ECDSA,$(LIB_DEF))
 else
-BUILD_MOVED_DEF := $(filter-out -DCH_TRANSPORT_QUIC -DCH_TRANSPORT_RECORD,$(LIB_DEF))
+BUILD_PIN_MOVED_DEF := $(LIB_DEF) -DCH_PIN_ECDSA
+endif
+ifeq ($(TRANSPORT),tls)
+BUILD_TRANSPORT_MOVED_DEF := $(LIB_DEF) -DCH_TRANSPORT_RECORD
+BUILD_OTHER_RECORD := ch_build_record
+else
+BUILD_TRANSPORT_MOVED_DEF := $(filter-out -DCH_TRANSPORT_QUIC -DCH_TRANSPORT_RECORD,$(LIB_DEF))
+BUILD_OTHER_RECORD := ch_build_tls
 endif
 
-$(LIB_OBJ): $(LIB_OBJS) $(PIN_STAMP)
+$(LIB_OBJ): $(LIB_OBJS) $(PIN_STAMP) $(PIN_STAMP_FORCE)
 	ld -r -o $@ $(LIB_OBJS)
 ifeq ($(shell uname),Darwin)
 	printf '_%s\n' $(PUBLIC) > bin/exports.txt
@@ -1203,9 +1247,19 @@ else
 	objcopy $(foreach s,$(PUBLIC),-G $(s)) $@
 endif
 
-.PHONY: lib lib-check cxx-check
+.PHONY: lib lib-check cxx-check lib-pair-object
 lib: $(LIB_OBJ)
 	@cp $(LIB_OBJ) bin/chapulin.o
+
+# test/lib-pair-check.sh links two packaged objects into one image, so it
+# needs each object at a path of its own rather than lib's copy at
+# bin/chapulin.o. This builds the object where lib-check builds it and
+# prints three lines: its path, the defines a consumer compiles against
+# it under, and the flags.
+lib-pair-object: $(LIB_OBJ)
+	@echo $(LIB_OBJ)
+	@echo $(LIB_DEF)
+	@echo $(LIB_CFLAGS)
 
 # The optional C++ wrapper (chapulin.hpp) compiles under -fno-exceptions
 # -fno-rtti and links against the packaged library object, the way a
@@ -1221,7 +1275,7 @@ cxx-check: $(LIB_OBJ) chapulin.hpp test/hpp_test.cpp bin/srv_flight_test
 
 # nm names a defined symbol by the section it sits in, and the letters
 # differ by platform: T for code, D and B for data, S for any other
-# section on Mach-O, where ch_build's const data sits in __TEXT,__const,
+# section on Mach-O, where the build record's const data sits in __TEXT,__const,
 # and R for read-only data on ELF, where it sits in .rodata.
 lib-check: $(LIB_OBJ)
 	@cp $(LIB_OBJ) bin/chapulin.o
@@ -1266,20 +1320,28 @@ endif
 	done; \
 	[ -z "$$bad" ] || { echo "lib-check: the object imports$$bad, which this tree defines in a source this variant does not compile"; exit 1; }
 	@echo "lib-check: every undefined symbol is a libc call or a caller-supplied hook"
-# The build record (build.h, docs/decisions.md 56), read the way a
-# consumer reads it: test/build_test.c compiles against the headers and
-# links this object. Compiled under the object's own defines, it must
-# read a ch_build equal to what its headers compute and exit 0. Compiled
-# with the transport moved, it must read a difference and exit 1. It
-# exits 2 when its own header view disagrees with the defines it was
-# given, and that fails either run. The two builds add about 0.2 s to
-# each leg.
+# The build record (build.h, docs/decisions.md 56 and 61), read the way
+# a consumer reads it: test/build_test.c compiles against the headers
+# and links this object. Compiled under the object's own defines, it
+# must read a record equal to what its headers compute and exit 0.
+# Compiled with CH_PIN_ECDSA moved, it must read a difference and exit
+# 1. It exits 2 when its own header view disagrees with the defines it
+# was given, and that fails either run. Compiled with the transport
+# moved, it must compile and then fail to link, and the link must name
+# the other transport's record. A build.h that gave two transports one
+# record name would let that consumer link and read this object's
+# record. The three builds add about 0.3 s to each leg.
 	@$(CC) $(LIB_CFLAGS) $(LIB_DEF) -I. -o $(BUILD_TEST) test/build_test.c $(LIB_OBJ)
-	@$(BUILD_TEST) || { echo "lib-check: ch_build disagrees with the headers compiled under this object's own defines"; exit 1; }
-	@$(CC) $(LIB_CFLAGS) $(BUILD_MOVED_DEF) -I. -o $(BUILD_TEST)_moved test/build_test.c $(LIB_OBJ)
-	@rc=0; $(BUILD_TEST)_moved > /dev/null || rc=$$?; \
-	[ $$rc -eq 1 ] || { echo "lib-check: a consumer compiled with the transport moved must read a different ch_build, and it exited $$rc"; exit 1; }
-	@echo "lib-check: ch_build matches this object's defines and differs from a consumer's with the transport moved"
+	@$(BUILD_TEST) || { echo "lib-check: the build record disagrees with the headers compiled under this object's own defines"; exit 1; }
+	@$(CC) $(LIB_CFLAGS) $(BUILD_PIN_MOVED_DEF) -I. -o $(BUILD_TEST)_pin test/build_test.c $(LIB_OBJ)
+	@rc=0; $(BUILD_TEST)_pin > /dev/null || rc=$$?; \
+	[ $$rc -eq 1 ] || { echo "lib-check: a consumer compiled with CH_PIN_ECDSA moved must read a different build record, and it exited $$rc"; exit 1; }
+	@$(CC) $(LIB_CFLAGS) $(BUILD_TRANSPORT_MOVED_DEF) -I. -c test/build_test.c -o $(BUILD_TEST)_transport.o
+	@if $(CC) -o $(BUILD_TEST)_transport $(BUILD_TEST)_transport.o $(LIB_OBJ) 2> $(BUILD_TEST)_transport.err; then \
+	  echo "lib-check: a consumer compiled for another transport linked against this object; build.h must give each transport's record its own name"; exit 1; fi
+	@grep -q "$(BUILD_OTHER_RECORD)" $(BUILD_TEST)_transport.err || { cat $(BUILD_TEST)_transport.err; \
+	  echo "lib-check: a consumer compiled for another transport failed to link without naming $(BUILD_OTHER_RECORD)"; exit 1; }
+	@echo "lib-check: the build record matches this object's defines, differs from a consumer's with CH_PIN_ECDSA moved, and is not the record a consumer of another transport names"
 
 # The declaration in cfg.h is the whole feature, so check that it fires.
 # tls.c is enough to drive it: it includes cfg.h, where the guard lives.
@@ -2109,6 +2171,12 @@ check: bin/unit bin/unit_ca bin/unit_pq bin/tlsclient bin/tlsclient_ecdsa bin/tl
 	# budget. Both run only where the compiler has unsigned __int128.
 	$(if $(X25519_WIDE_PROBE),$(MAKE) lib-check lint-stack RAND=extern X25519=wide \
 	  CFLAGS='$(CFLAGS) -DCH_NATIVE_MUL128',@echo "SKIP lib-check X25519=wide: $(CC) has no unsigned __int128")
+	# Two objects of different transports in one image (docs/decisions.md
+	# 61): four pairs that must link and run, and the two the decision
+	# refuses, whose link must fail on the names both objects export. It
+	# reuses the objects the legs above built and builds two more. It took
+	# 5.2 s with every object built and 8 s with those two to build.
+	CC='$(CC)' ./test/lib-pair-check.sh
 	# lint above holds lint-stack at the budget of the build check was
 	# given, 2,560 B for a plain `make check`, the target `make ci` runs.
 	# This leg compiles the TRUST=webpki object's sources under their own
@@ -3060,8 +3128,10 @@ lint-exact-fill:
 QUIC_SHARED := handshake_flight.c handshake_flight.h
 # The shared files that carry a #ifdef CH_TRANSPORT_QUIC arm: the
 # configuration, the session struct, the handshake layers the mode
-# reuses, and the build record, which holds sizeof(ch_quic) in a QUIC
-# build and 0 in the others. Each holds text only a QUIC build compiles,
+# reuses, the build record, which holds sizeof(ch_quic) in a QUIC build
+# and 0 in the others, and the CA provisioning call, whose symbol name
+# x509_ca.h gives the QUIC transport's suffix in a QUIC build
+# (docs/decisions.md 61). Each holds text only a QUIC build compiles,
 # so each is a place to look that the prefix does not name, and a file
 # that gains such an arm without joining this list fails the lint. A file
 # that stops carrying one fails it too, so the list never sends a reader
@@ -3069,7 +3139,7 @@ QUIC_SHARED := handshake_flight.c handshake_flight.h
 QUIC_CONDITIONAL := cfg.h session.h handshake_record.h handshake_post.h \
                     handshake_auth.h handshake_parser.h handshake_message.c \
                     handshake_parser_ee.c handshake_record.c handshake_auth.c \
-                    handshake_post.c build.h build.c
+                    handshake_post.c build.h build.c x509_ca.h x509_ca.c
 .PHONY: lint-quic-partition
 lint-quic-partition:
 	@CC='$(CC)' python3 tools/quic-partition.py
@@ -3225,6 +3295,22 @@ else
 	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) $(EXPORTER_DEF) -I.)
 	$(call TIDY_EACH,srv_flight.c, \
 	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) $(EXPORTER_DEF) -DCH_ROLE_SERVER -I.)
+	# test/lib_pair_half.c, under the defines of the objects
+	# test/lib-pair-check.sh compiles it for. The first pass above reads
+	# its TRANSPORT=tls client; these read the record client with the
+	# webpki configuration, the QUIC client with the CA provisioning call
+	# and the boot check, and the two server-only drivers. The last reads
+	# the image's key log hook, which only a KEYLOG=on pair compiles.
+	$(call TIDY_EACH,test/lib_pair_half.c, \
+	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_TRUST_WEBPKI -DCH_TRANSPORT_RECORD -I.)
+	$(call TIDY_EACH,test/lib_pair_half.c, \
+	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_TRUST_CA -DCH_TRANSPORT_QUIC -DCH_ROLE_SERVER -DCH_ROLE_BOTH -I.)
+	$(call TIDY_EACH,test/lib_pair_half.c, \
+	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_ROLE_SERVER -DCH_TRANSPORT_RECORD -I.)
+	$(call TIDY_EACH,test/lib_pair_half.c, \
+	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_ROLE_SERVER -DCH_TRANSPORT_QUIC -I.)
+	$(call TIDY_EACH,test/lib_pair_main.c, \
+	  -std=c11 -D_DEFAULT_SOURCE -DLIB_PAIR_TLS -DLIB_PAIR_RECORD -DLIB_PAIR_QUIC -DLIB_PAIR_KEYLOG -I.)
 	# The M3 smoke runtimes and the KAT program lint with the target's
 	# own flags. Three checks are off, each with its reason:
 	# bugprone-reserved-identifier and its two cert aliases, because the

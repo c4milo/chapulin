@@ -1,10 +1,12 @@
 // A consumer of the packaged object, the way a firmware image or a Zig
 // program is one: it compiles against the headers under defines of its
-// own and links bin/chapulin.o. lib-check builds it twice against every
-// object it checks. Compiled under the object's own defines it must read
-// ch_build equal to its header view and exit 0. Compiled with the
-// transport moved it must read a difference and exit 1. Exit 2 means the
-// program's own header view is wrong, whichever object it links.
+// own and links bin/chapulin.o. lib-check builds it three times against
+// every object it checks. Compiled under the object's own defines it must
+// read ch_build equal to its header view and exit 0. Compiled with
+// CH_PIN_ECDSA moved it must read a difference and exit 1. Compiled with
+// the transport moved it must not link, because build.h then names
+// another transport's record. Exit 2 means the program's own header view
+// is wrong, whichever object it links.
 //
 // It opens no session, so no hook below is ever called. The object
 // imports them all the same, and a program that links it defines them,

@@ -104,6 +104,19 @@ int ch_srv_accept(ch_tls *t, const ch_cfg *cfg);
 // signer refused or whose signature the verifier rejected. It does not
 // report which slots are live, because its result is one code; a
 // caller that needs to know reads its own ch_cfg.
+//
+// Every server object exports it, so its symbol name carries the
+// object's transport, as the build record's does (build.h): an image
+// that links a record-mode server and a QUIC server holds one of each,
+// and each reads the ch_cfg layout of its own transport
+// (docs/decisions.md 61).
+#ifdef CH_TRANSPORT_QUIC
+#define ch_srv_check ch_srv_check_quic
+#elif defined(CH_TRANSPORT_RECORD)
+#define ch_srv_check ch_srv_check_record
+#else
+#define ch_srv_check ch_srv_check_tls
+#endif
 int ch_srv_check(const ch_cfg *cfg);
 
 #endif // CH_ROLE_SERVER

@@ -967,11 +967,16 @@ Other targets:
 
 - `make lib RAND=extern` packages the library as one relocatable object
   (`bin/chapulin.o`) exporting exactly the four public calls and one data
-  symbol, `ch_build`. Every internal symbol is localized, and `lib-check`
-  fails if the export list ever changes. The calls are per build on
-  three axes: `RAND=drbg` packages the reference generator and exports
-  `ch_drbg_seed`, and a ca mode exports `ch_pubkey_from_pem` for
-  provisioning, so a `TRUST=ca-rsa RAND=drbg` object exports six calls.
+  symbol, the build record `ch_build_tls`. Every internal symbol is
+  localized, and `lib-check` fails if the export list ever changes. The
+  calls are per build on three axes: `RAND=drbg` packages the reference
+  generator and exports `ch_drbg_seed`, and a ca mode exports
+  `ch_pubkey_from_pem` for provisioning, so a `TRUST=ca-rsa RAND=drbg`
+  object exports six calls. The build record, `ch_pubkey_from_pem` and
+  a server's `ch_srv_check` carry the transport in their symbol names
+  (`ch_build_record`, `ch_srv_check_quic`), and the headers map the
+  names you call to them, so one image links an object of each of two
+  transports (decision 61, [`docs/porting.md`](docs/porting.md)).
   `TRUST=webpki` exports the four calls and no provisioning call.
   `EXPORTER=on` adds `ch_export`, the exporter of RFC 9846 §7.5, and 32
   bytes to `ch_tls`; it is off
@@ -1008,8 +1013,11 @@ Other targets:
   changes those sizes while the program still links. So call
   `ch_build_matches(&ch_build)` once at startup and stop when it returns
   0; a program in another language compares the same fields with the
-  `CH_BUILD_` macros. No library call reads the record, and decision 56
-  says what it holds and what it leaves out.
+  `CH_BUILD_` macros. `ch_build` is a macro for the transport's record,
+  `ch_build_tls`, `ch_build_record` or `ch_build_quic`, and a Zig
+  program names that record itself. No library call reads the record,
+  and decisions 56 and 61 say what it holds, what it leaves out and why
+  its name carries the transport.
 - `make prove-slow` runs the slow-tier proofs, one per nightly job. The runner caches by
   content, so an incremental run re-proves only what changed
   (`PROVE_NO_CACHE=1` forces a full run). It uses [kissat](https://github.com/arminbiere/kissat) when

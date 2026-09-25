@@ -1,0 +1,16 @@
+invariant: INV-35
+file: build.h
+catches: test/lib-pair-check.sh
+reason: build.h gives the QUIC transport's record the record transport's
+  name, so two transports name their records alike again, as every
+  object did before docs/decisions.md 61. A QUIC object then defines
+  ch_build_record while PUBLIC names ch_build_quic: nmedit refuses to
+  package it on macOS, and objcopy localizes it elsewhere, so the QUIC
+  half of cocuyo's pair links against the record-mode object's record
+  and ch_build_matches answers 0. test/lib-pair-check.sh objects either
+  way.
+
+--- old
+#define ch_build ch_build_quic
+--- new
+#define ch_build ch_build_record

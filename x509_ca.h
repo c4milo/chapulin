@@ -45,6 +45,18 @@
 // Returns CH_OK with *key_len set, or CH_EINVAL with *key_len 0 and
 // key wiped. One error code: the device's response is the same in
 // every case, and it has no console to read a reason from.
+//
+// Every CA-mode object exports it, so its symbol name carries the
+// object's transport, as the build record's does (build.h): an image
+// that links a CA-mode object of each of two transports holds one of
+// each (docs/decisions.md 61).
+#ifdef CH_TRANSPORT_QUIC
+#define ch_pubkey_from_pem ch_pubkey_from_pem_quic
+#elif defined(CH_TRANSPORT_RECORD)
+#define ch_pubkey_from_pem ch_pubkey_from_pem_record
+#else
+#define ch_pubkey_from_pem ch_pubkey_from_pem_tls
+#endif
 int ch_pubkey_from_pem(const uint8_t *pem, size_t pem_len, uint8_t der[CH_X509_MAX],
                        uint8_t key[CH_X509_KEY_MAX], size_t *key_len);
 

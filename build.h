@@ -6,16 +6,17 @@
 // object built with -DCH_TRUST_WEBPKI and a consumer that forgot the
 // define disagree about sizeof(ch_tls), CH_TX_STAGE and CH_MIN_RXBUF,
 // and the program links and runs anyway. So every packaged object
-// exports one const data symbol, ch_build, holding the values below as
-// the object computed them, and this header computes the same values
-// from the consumer's own defines. A consumer calls
+// exports one const data symbol, its build record, holding the values
+// below as the object computed them, and this header computes the same
+// values from the consumer's own defines. A consumer calls
 // ch_build_matches(&ch_build) once at startup, or compares the fields
 // itself, and refuses to run on a mismatch. Nothing in the library
 // calls the comparison: a consumer asks, and no init call changes.
 //
 // docs/decisions.md 56 states why the record is data rather than a
 // check inside ch_connect and the init calls, and which defines it
-// records and which it leaves out.
+// records and which it leaves out. docs/decisions.md 61 states why the
+// record's symbol name carries the object's transport.
 #ifndef CH_BUILD_H
 #define CH_BUILD_H
 
@@ -210,7 +211,24 @@ _Static_assert(sizeof(ch_build_info) == 12 * sizeof(uint32_t),
                "ch_build_info holds twelve uint32_t fields and no padding");
 #endif
 
-// The record of the object this program links, defined in build.c.
+// The record of the object this program links, defined in build.c. Its
+// symbol name carries the object's transport, because one image may link
+// one object of each transport and two definitions of one name do not
+// link: ch_build_tls, ch_build_record or ch_build_quic. ch_build is the
+// name of the one the defines in force here select, so
+// ch_build_matches(&ch_build) reads the record of the object whose
+// headers this translation unit compiles against.
+//
+// Zig's translate-c turns the macro into a constant initialized from an
+// extern variable, which Zig refuses to evaluate, so a Zig program writes
+// the transport's name itself: &c.ch_build_record, not &c.ch_build.
+#ifdef CH_TRANSPORT_QUIC
+#define ch_build ch_build_quic
+#elif defined(CH_TRANSPORT_RECORD)
+#define ch_build ch_build_record
+#else
+#define ch_build ch_build_tls
+#endif
 extern const ch_build_info ch_build;
 
 // Whether b holds the values this translation unit's headers compute: 1

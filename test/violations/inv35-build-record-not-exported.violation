@@ -1,13 +1,13 @@
 invariant: INV-35
 file: Makefile
 catches: test/lib-check-webpki-record.sh
-reason: PUBLIC stops naming ch_build, so the link localizes it and no
-  consumer can read the record. lib-check's export list reads PUBLIC,
-  so the object and the list still agree and the export check passes.
-  The consumer lib-check links against the object then finds no
-  ch_build to read and fails to link, so lib-check objects. The link
-  stamp holds PUBLIC, so the object is linked again under the edited
-  list rather than kept from the last run.
+reason: PUBLIC stops naming the build record, so the link localizes
+  ch_build_record and no consumer can read it. lib-check's export list
+  reads PUBLIC, so the object and the list still agree and the export
+  check passes. The consumer lib-check links against the object then
+  finds no ch_build_record to read and fails to link, so lib-check
+  objects. The link stamp holds PUBLIC, so the object is linked again
+  under the edited list rather than kept from the last run.
 
 --- old
 PUBLIC_BUILD := ch_build

@@ -144,9 +144,14 @@ Home: github.com/c4milo.
   chain the same way: `build.[ch]` (the build record — the axes, struct
   sizes and bounds the object was compiled with) reads the public
   headers, and no library source reads it. Every packaged object
-  exports its `ch_build` as one data symbol beside its calls, which a
-  consumer compares with its own headers through `ch_build_matches` and
-  no library call reads (docs/decisions.md 56).
+  exports its build record as one data symbol beside its calls, named
+  for its transport (`ch_build_tls`, `ch_build_record`,
+  `ch_build_quic`; build.h maps `ch_build` to the one the consumer's
+  defines select), which a consumer compares with its own headers
+  through `ch_build_matches` and no library call reads. `ch_srv_check`
+  and `ch_pubkey_from_pem` carry the transport in their symbol names
+  the same way, so one image links one object of each transport
+  (docs/decisions.md 56 and 61).
 - Everything that touches secret bytes is constant time: no secret-
   dependent branches, no secret-dependent memory indices. Comparisons go
   through `ct_memeq` and wipes through `ct_wipe`; constant-time selects,

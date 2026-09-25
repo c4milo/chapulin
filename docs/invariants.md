@@ -734,46 +734,59 @@ last `ROLE=server` stub, as the entry said it would.
 
 ### INV-35 — the build record holds what the object was compiled with
 
-- **Claim.** Every packaged object exports `ch_build`, and each of its
-  fields holds what `build.h` computes under that object's defines: the
-  record format, one bit per build define that changes a public layout or
-  bound, the sizes of `ch_cfg`, `ch_tls`, `ch_ticket`, `ch_record`,
-  `ch_quic` and `ch_rsa_priv`, and four bounds. A consumer that computes
-  the same values under its own defines, through
-  `ch_build_matches(&ch_build)` or field by field, reads equal values
-  exactly when its defines give the object's layouts, bounds and axes.
-  No library source reads the record or calls the comparison.
+- **Claim.** Every packaged object exports its build record under a
+  symbol name that carries its transport, `ch_build_tls`,
+  `ch_build_record` or `ch_build_quic`, and each of its fields holds what
+  `build.h` computes under that object's defines: the record format, one
+  bit per build define that changes a public layout or bound, the sizes
+  of `ch_cfg`, `ch_tls`, `ch_ticket`, `ch_record`, `ch_quic` and
+  `ch_rsa_priv`, and four bounds. A consumer that computes the same
+  values under its own defines, through `ch_build_matches(&ch_build)` or
+  field by field, reads equal values exactly when its defines give the
+  object's layouts, bounds and axes, and a consumer compiled for another
+  transport names another record and does not link. No library source
+  reads the record or calls the comparison.
 - **Mechanism.** Each value has one definition. `build.h` writes it as a
   `CH_BUILD_` macro, `build.c` sets the field of the same name from that
   macro, and a consumer's compile computes the same macro under its own
   defines. `CH_BUILD_AXES` is the one place a define is mapped to its
-  bit. `PUBLIC_BUILD` puts `ch_build` in every variant's export list, the
-  link stamp holds that list so an edit to it relinks the object, and
-  every `lint-trust-separation` row requires `build.c`.
+  bit, and `build.h`'s `ch_build` macro is the one place a transport is
+  mapped to its record's name. `PUBLIC_BUILD` puts the record in every
+  variant's export list and `TRANSPORT_NAMED` gives it the transport's
+  name there, the link stamp holds that list so an edit to it relinks
+  the object, and every `lint-trust-separation` row requires `build.c`.
 - **Check.** `lib-check` links `test/build_test.c` against every object
-  it checks, and every leg of `make check` runs it twice: compiled under
-  the object's own defines, where it must read a record equal to its
-  headers, and compiled with the transport moved, where it must read a
-  difference. The test also restates the axes from its own defines, one
-  line per define, because a `CH_BUILD_AXES` that forgets a define leaves
-  the object and every consumer in agreement. Four mutants in
-  `test/violations/` are each caught by `test/lib-check-webpki-record.sh`:
+  it checks, and every leg of `make check` builds it three times:
+  compiled under the object's own defines, where it must read a record
+  equal to its headers; compiled with `CH_PIN_ECDSA` moved, where it must
+  read a difference; and compiled with the transport moved, where it
+  must fail to link and the link must name the other transport's record.
+  The test also restates the axes from its own defines, one line per
+  define, because a `CH_BUILD_AXES` that forgets a define leaves the
+  object and every consumer in agreement. `test/lib-pair-check.sh` links
+  a record-mode and a QUIC object into one image and requires each half
+  to read its own object's record. Four mutants in `test/violations/` are
+  each caught by `test/lib-check-webpki-record.sh`:
   `inv35-build-record-omits-axis` drops the record-transport bit from
   the record, `inv35-build-record-stale-size` writes `sizeof(ch_tls)` as
-  a number, `inv35-build-record-not-exported` drops `ch_build` from
+  a number, `inv35-build-record-not-exported` drops the record from
   `PUBLIC`, and `inv35-build-axes-forget-define` drops the
-  record-transport term from `CH_BUILD_AXES`. `bin/hpp_test` calls the
-  C++ forwarder on the `cxx-check` legs.
+  record-transport term from `CH_BUILD_AXES`. A fifth,
+  `inv35-build-record-shared-name`, gives the QUIC transport's record
+  the record transport's name, and `test/lib-pair-check.sh` catches it.
+  `bin/hpp_test` calls the C++ forwarder on the `cxx-check` legs.
 - **Violation.** A PR writes a field of `build.c` as a number, adds a
-  define that moves a public layout without a bit in `CH_BUILD_AXES`, or
-  adds a public struct or bound that the record does not hold. The
-  checks above catch the first. They catch the second only once the
-  test's own list names the define, and nothing catches the third:
-  review holds `build.h`'s list.
+  define that moves a public layout without a bit in `CH_BUILD_AXES`,
+  adds a public struct or bound that the record does not hold, or gives
+  two transports' records one name. The checks above catch the first and
+  the last. They catch the second only once the test's own list names
+  the define, and nothing catches the third: review holds `build.h`'s
+  list.
 - The record compares layouts and bounds, not behavior, and defines, not
   revisions: headers from another commit are caught only where a size, a
   bound or a bit moved.
-- See [decisions: Engineering](decisions.md#engineering), entry 56.
+- See [decisions: Engineering](decisions.md#engineering), entries 56 and
+  61.
 
 ## Fail-closed
 

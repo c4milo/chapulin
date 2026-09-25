@@ -304,6 +304,26 @@ def select_modes(out, sources, legs):
                     f"each axis value to its own source list")
 
 
+# The files test/lib-pair-check.sh is or compiles. No bin/ rule names
+# them, so the script is the one gate that reads them.
+LIB_PAIR_FILES = {"test/lib-pair-check.sh", "test/lib_pair_half.c",
+                  "test/lib_pair_main.c", "test/lib_pair.h"}
+
+
+def select_pairs(out, changed, legs):
+    """test/lib-pair-check.sh, which links two packaged objects of
+    different transports into one image: a source some object packages
+    can break it, and so can the files the script compiles."""
+    packaged = set().union(*legs.values())
+    for path in changed:
+        if path in packaged or path in LIB_PAIR_FILES:
+            out.add("modes", "test/lib-pair-check.sh",
+                    f"{path} is packaged by some object or compiled by the "
+                    f"script, and the script links objects of two "
+                    f"transports into one image",
+                    ["test/lib-pair-check.sh"])
+
+
 def select_codegen(out, csources, lib):
     """The gates that read what the compiler emits rather than the
     source: the per-file multiply and branch ceilings, the runtime-call
@@ -498,6 +518,7 @@ def plan(changed, mapping):
     select_proofs(out, csources)
     select_spec(out, changed)
     select_modes(out, sources, mapping.lib_legs())
+    select_pairs(out, changed, mapping.lib_legs())
     select_codegen(out, csources, lib)
     select_runners(out, changed)
     select_violations(out, changed)

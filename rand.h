@@ -6,6 +6,9 @@
 // docs/entropy.md describes; a bare counter or clock is not a seed.
 // Either way the hook must not fail: a device without entropy has no
 // business starting a handshake, so implementations block or fault.
+// An image defines it once for every chapulin object it links, and it
+// must be safe to call from several threads at once (docs/porting.md,
+// "Linking two transports into one image").
 // The host tests use the OS entropy source.
 #ifndef CH_RAND_H
 #define CH_RAND_H
