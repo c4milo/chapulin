@@ -38,7 +38,7 @@ static int kept_ticket_bound(const ch_cfg *cfg) {
     uint8_t config_hash[SHA256_LEN];
     uint8_t want[SHA256_LEN];
     webpki_ticket_config_hash(cfg, config_hash);
-    webpki_ticket_binding(kept.psk, config_hash, want);
+    webpki_ticket_binding(kept.psk, kept.psk_len, config_hash, want);
     return memcmp(kept.binding, want, sizeof want) == 0;
 }
 
@@ -56,7 +56,7 @@ static void check_declined_chain_refused(const webpki_corpus_anchor *root, const
     present_ticket(&ccfg);
     uint8_t config_hash[SHA256_LEN];
     webpki_ticket_config_hash(&ccfg, config_hash);
-    webpki_ticket_binding(kept.psk, config_hash, kept.binding);
+    webpki_ticket_binding(kept.psk, kept.psk_len, config_hash, kept.binding);
     CHECK(!run_quic(&ccfg, &scfg));
     CHECK(ch_quic_state(&client) == CH_ST_FAILED);
     CHECK(ch_quic_error_code(&client) == 0x0100U + alert);

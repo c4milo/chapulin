@@ -38,13 +38,14 @@ int main(void) {
         __CPROVER_assert(info.cookie_len <= HSP_COOKIE_MAX, "cookie_len within destination");
     }
 #ifdef CH_SUITE_AES_GCM
-    // The handshake_parser_suite line: the client that offers both
+    // The handshake_parser_suite line: the client that offers the three
     // suites accepts a message only when it carries one of them, and the
     // parser reports which, the value every record direction is keyed
-    // with.
+    // with and the one whose hash the key schedule runs.
     if (rc == CH_OK) {
         __CPROVER_assert(info.suite == SUITE_CHACHA20_POLY1305_SHA256 ||
-                             info.suite == SUITE_AES_128_GCM_SHA256,
+                             info.suite == SUITE_AES_128_GCM_SHA256 ||
+                             info.suite == SUITE_AES_256_GCM_SHA384,
                          "an accepted message carries a suite this client offered");
     }
 #endif

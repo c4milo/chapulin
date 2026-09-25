@@ -348,7 +348,8 @@ def dispatch : List String → Option String
     let k ← Spec.HandshakeParser.kexOf? kex
     -- `chacha` and `aesgcm` are the Makefile's SUITE values. `aesgcm` is
     -- the SUITE=aesgcm TRUST=webpki client, which offers
-    -- TLS_CHACHA20_POLY1305_SHA256 then TLS_AES_128_GCM_SHA256; every
+    -- TLS_CHACHA20_POLY1305_SHA256, TLS_AES_128_GCM_SHA256 and
+    -- TLS_AES_256_GCM_SHA384; every
     -- other client build offers the first alone and takes `chacha`. The
     -- token fixes the suites a ServerHello or HelloRetryRequest may carry.
     let s ← Spec.HandshakeParser.suiteOf? suite

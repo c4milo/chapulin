@@ -56,12 +56,16 @@ typedef struct {
     uint16_t suite;
 #endif
     uint8_t random[32];
-    uint8_t early[SHA256_LEN];
-    uint8_t binder_key[SHA256_LEN];
-    uint8_t handshake_secret[SHA256_LEN];
-    uint8_t c_hs[SHA256_LEN];
-    uint8_t s_hs[SHA256_LEN];
-    uint8_t master[SHA256_LEN];
+    // The key schedule's secrets, each as long as the hash it runs: the
+    // suite's for all but the first two, and for those two the hash of
+    // the PSK the client presents or the server selects (RFC 9846 §7.1).
+    // The arrays are sized for the longest hash the build holds.
+    uint8_t early[HKDF_HASH_MAX];
+    uint8_t binder_key[HKDF_HASH_MAX];
+    uint8_t handshake_secret[HKDF_HASH_MAX];
+    uint8_t c_hs[HKDF_HASH_MAX];
+    uint8_t s_hs[HKDF_HASH_MAX];
+    uint8_t master[HKDF_HASH_MAX];
     uint8_t cookie[HSP_COOKIE_MAX];
     size_t cookie_len;
 #ifdef CH_ROLE_SERVER
@@ -230,9 +234,35 @@ int hsr_peek_message(const handshake_state *h, size_t *raw_len, uint8_t *alert);
 // untouched.
 int hsr_next_msg(handshake_state *h, uint8_t *type, const uint8_t **raw, size_t *raw_len);
 
-// The transcript hash as it stands now, without disturbing the running
-// hash: both the state machine and the authentication flight need this
-// snapshot at several points.
-int hsr_transcript_hash(handshake_state *h, uint8_t out[SHA256_LEN]);
+// The hash length of the suite the server named, which every client
+// derivation after the ServerHello runs at (rfc9846.txt:4055-4056). A
+// build that holds one suite answers SHA256_LEN. A -DCH_SUITE_AES_GCM
+// build answers suite_hash_len of h->suite, which the client's first
+// HelloRetryRequest or ServerHello writes, so a client reads it after
+// hsf_read_server_hello. A server reads its selection's hash_len
+// instead, because it keeps no h->suite. The suite is public: the
+// server named it in the clear.
+static inline size_t hsr_suite_hash_len(const handshake_state *h) {
+#ifdef CH_SUITE_AES_GCM
+    return suite_hash_len(h->suite);
+#else
+    (void)h;
+    return SHA256_LEN;
+#endif
+}
+
+// The transcript hash as it stands now at hash_len, without disturbing
+// the running hash: both the state machine and the authentication flight
+// need this snapshot at several points. hash_len is the suite's:
+// SHA256_LEN, or SHA384_LEN in a CH_HASH_SHA384 build, and out holds that
+// many bytes. Always CH_OK.
+int hsr_transcript_hash(handshake_state *h, size_t hash_len, uint8_t *out);
+
+// Replaces the transcript after a HelloRetryRequest with RFC 9846
+// §4.4.1's construction: a message_hash message whose body is the hash
+// at hash_len of the first ClientHello, then the n bytes of the retry at
+// retry. Both roles run it, a client over the retry it read and a server
+// over the one it wrote. hash_len is the hash the retry's suite names.
+void hsr_restart_transcript(handshake_state *h, size_t hash_len, const uint8_t *retry, size_t n);
 
 #endif

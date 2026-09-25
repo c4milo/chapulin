@@ -303,7 +303,7 @@ static int read_pin(const char *path, uint8_t pin[PIN_LEN]) {
 // verify — tens of milliseconds on the reference core, see the README's
 // speed table — is paid once per ticket lifetime instead of once per
 // connection. Storing one is PSK work: copy ticket->identity and
-// ticket->psk, which are valid only during this call, then set psk,
+// ticket->psk, which are valid only during this call, then set psk, psk_len,
 // psk_id, resumption = 1, and obfuscated_age in the next ch_cfg. This
 // example only reports what arrived.
 static void on_ticket(void *io, const ch_ticket *ticket) {

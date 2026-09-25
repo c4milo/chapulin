@@ -9,6 +9,7 @@ reason: the binder is checked against the hash of the whole ClientHello, binders
   truncated at a known point.
 
 --- old
-        sha256_update(&partial, raw, 4 + ch->truncated_len);
+        transcript_hash_after(&t->transcript, SHA256_LEN, raw, 4 + ch->truncated_len,
+                              ch->binder_hash);
 --- new
-        sha256_update(&partial, raw, raw_len);
+        transcript_hash_after(&t->transcript, SHA256_LEN, raw, raw_len, ch->binder_hash);

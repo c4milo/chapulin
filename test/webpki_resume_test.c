@@ -111,11 +111,11 @@ static void transcript_hash(const sha256 *transcript, uint8_t out[SHA256_LEN]) {
 // (RFC 9846 §4.3.11.2). After a HelloRetryRequest that transcript is the
 // replaced one, so a retry hello that kept its first binder fails here.
 static int binder_matches(const mock_server *s) {
-    if (s->hello_len < CH_BINDERS_TAIL) {
+    if (s->hello_len < CH_BINDERS_TAIL(SHA256_LEN)) {
         return 0;
     }
     sha256 transcript = s->transcript;
-    sha256_update(&transcript, s->hello, s->hello_len - CH_BINDERS_TAIL);
+    sha256_update(&transcript, s->hello, s->hello_len - CH_BINDERS_TAIL(SHA256_LEN));
     uint8_t hash[SHA256_LEN];
     sha256_final(&transcript, hash);
     uint8_t early[SHA256_LEN];
@@ -390,6 +390,7 @@ static int mock_recv(void *io, uint8_t *p, size_t n) {
 static struct {
     int count;
     uint8_t psk[SHA256_LEN];
+    size_t psk_len;
     uint8_t identity[CH_TICKET_ID_MAX];
     size_t identity_len;
     uint8_t binding[SHA256_LEN];
@@ -398,7 +399,10 @@ static struct {
 static void keep_ticket(void *io, const ch_ticket *ticket) {
     (void)io;
     received.count++;
+    // The mock runs ChaCha20 alone, so every ticket is a SHA-256 one.
+    CHECK(ticket->psk_len == SHA256_LEN);
     memcpy(received.psk, ticket->psk, SHA256_LEN);
+    received.psk_len = ticket->psk_len;
     memcpy(received.identity, ticket->identity, ticket->identity_len);
     received.identity_len = ticket->identity_len;
     memcpy(received.binding, ticket->binding, SHA256_LEN);

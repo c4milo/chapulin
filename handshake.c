@@ -42,11 +42,10 @@ static int send_client_hello(handshake_state *h) {
     return io_send_all(&t->cfg, t->tx, REC_HDR + n);
 }
 
-static int send_client_finished(handshake_state *h, const uint8_t msg[HSF_FINISHED_LEN]) {
+static int send_client_finished(handshake_state *h, const uint8_t *msg, size_t n) {
     ch_tls *t = h->t;
     size_t out_len = 0;
-    if (rec_seal(&t->wr, REC_HANDSHAKE, msg, HSF_FINISHED_LEN, t->tx, sizeof t->tx, &out_len) !=
-        0) {
+    if (rec_seal(&t->wr, REC_HANDSHAKE, msg, n, t->tx, sizeof t->tx, &out_len) != 0) {
         return CH_ECAP;
     }
     return io_send_all(&t->cfg, t->tx, out_len);
@@ -122,9 +121,9 @@ static int run(handshake_state *h) {
 
     // Server Finished is in; derive the application schedule, answer with
     // our Finished under the handshake keys, then switch both directions.
-    uint8_t finished[HSF_FINISHED_LEN];
-    hsf_complete(h, finished);
-    rc = send_client_finished(h, finished);
+    uint8_t finished[HSF_FINISHED_MAX];
+    size_t finished_len = hsf_complete(h, finished);
+    rc = send_client_finished(h, finished, finished_len);
     if (rc != CH_OK) {
         return rc;
     }

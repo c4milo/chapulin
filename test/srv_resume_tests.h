@@ -48,7 +48,10 @@ static void resume_ticket(uint8_t ticket[SRV_TICKET_LEN], const uint8_t *key, ui
         c.alpn_len = (uint8_t)flight_alpn[alpn_index].name_len;
         memcpy(c.alpn, flight_alpn[alpn_index].name, c.alpn_len);
     }
-    memcpy(c.psk, resume_psk, sizeof c.psk);
+    // The ticket's PSK array holds the longest hash a build has, and a
+    // SHA-256 ticket fills its first SHA256_LEN bytes.
+    memset(c.psk, 0, sizeof c.psk);
+    memcpy(c.psk, resume_psk, sizeof resume_psk);
     static const uint8_t nonce[AEAD_NONCE] = {9, 8, 7, 6, 5, 4, 3, 2, 1, 0, 1, 2};
     CHECK(srv_ticket_seal(key, nonce, &c, ticket, SRV_TICKET_LEN) == SRV_TICKET_LEN);
 }

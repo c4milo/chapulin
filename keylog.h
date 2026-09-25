@@ -31,6 +31,7 @@
 #error "CH_KEYLOG is refused for a device client: build TRUST=webpki, ROLE=server or ROLE=both"
 #endif
 
+#include <stddef.h>
 #include <stdint.h>
 
 #include "sha256.h"
@@ -47,8 +48,11 @@
 #define CH_KEYLOG_CLIENT_TRAFFIC "CLIENT_TRAFFIC_SECRET_0"
 #define CH_KEYLOG_SERVER_TRAFFIC "SERVER_TRAFFIC_SECRET_0"
 
+// secret_len is the hash length of the session's cipher suite: SHA256_LEN,
+// or SHA384_LEN for TLS_AES_256_GCM_SHA384, which the format writes as 96
+// hex digits where the other suites take 64.
 void ch_keylog(void *io, const char *label, const uint8_t client_random[CH_KEYLOG_RANDOM_LEN],
-               const uint8_t secret[SHA256_LEN]);
+               const uint8_t *secret, size_t secret_len);
 
 #endif // CH_KEYLOG
 #endif

@@ -24,7 +24,10 @@
 // not there.
 #include "record.h"
 #endif
+#include "hkdf.h"
 #include "sha256.h"
+#include "suite.h"
+#include "transcript.h"
 
 // Receive loops tolerate this many consecutive records that add no bytes
 // before failing the session. A build-time constant so proof harnesses can
@@ -49,9 +52,9 @@
 // both constants are visible, so a stale literal fails the build
 // rather than shipping.
 #if defined(CH_SUITE_AES_GCM) && defined(CH_TRUST_WEBPKI)
-#define CH_TX_SECOND_SUITE 2
+#define CH_TX_AES_SUITES (4 + 16)
 #else
-#define CH_TX_SECOND_SUITE 0
+#define CH_TX_AES_SUITES 0
 #endif
 // A build with a server role stages its ServerHello in the same array, in
 // the clear and before any record is sealed, so the array also holds the
@@ -87,9 +90,11 @@
 #define CH_TX_STAGE 1141
 #endif
 #elif defined(CH_TRUST_WEBPKI)
-// The TRUST=webpki value takes CH_TX_SECOND_SUITE on top: 2 bytes for
-// the second cipher suite a SUITE=aesgcm webpki client lists
-// (CH_CLIENT_TWO_SUITES in handshake_message.h), 0 in every other build.
+// The TRUST=webpki value takes CH_TX_AES_SUITES on top: 20 bytes for a
+// SUITE=aesgcm webpki client (CH_CLIENT_AES_SUITES in suite.h), 0 in
+// every other build. That client lists two more cipher suites, 4 bytes,
+// and a ticket from a TLS_AES_256_GCM_SHA384 session carries a SHA-384
+// binder, 16 bytes longer than the SHA-256 one the sum below counts.
 // The pq sum below plus the two extensions a TRUST=webpki hello adds:
 // the 262-byte server_name at the longest hostname (4 type and length,
 // 2 list length, 1 name_type, 2 name length, 253 name) and the 270-byte
@@ -102,7 +107,7 @@
 // the 16-byte signature_algorithms of five schemes and the 7-byte
 // server_certificate_type of a config with SPKI pins and anchors:
 // 1801 + 262 + 270 + 2 + 36 + 16 + 7.
-#define CH_TX_STAGE (2394 + CH_TX_SECOND_SUITE)
+#define CH_TX_STAGE (2394 + CH_TX_AES_SUITES)
 #elif defined(CH_KEX_PQ)
 // 137 fixed + 320 ticket identity + 128 cookie with framing + the
 // 1216-byte hybrid share.
@@ -146,18 +151,22 @@ typedef struct {
     rec_dir rd; // server -> client protection
     rec_dir wr; // client -> server protection
 #endif
-    uint8_t rd_secret[SHA256_LEN]; // current traffic secrets, for KeyUpdate
-    uint8_t wr_secret[SHA256_LEN];
-    uint8_t res_master[SHA256_LEN];
+    // The current traffic secrets, for KeyUpdate, and the resumption
+    // master secret. Each holds as many bytes as the suite's hash,
+    // tls_hash_len below, in an array sized for the longest hash the
+    // build holds.
+    uint8_t rd_secret[HKDF_HASH_MAX];
+    uint8_t wr_secret[HKDF_HASH_MAX];
+    uint8_t res_master[HKDF_HASH_MAX];
 #ifdef CH_EXPORTER
     // exporter_master (RFC 9846 §7.5). It is derived beside the
     // application traffic secrets and lives as long as the session,
     // because ch_export is a call a connected caller makes and the wipe
     // at CONNECTED clears the handshake state rather than this. Every
     // path that kills a session wipes it with the rest.
-    uint8_t exp_master[SHA256_LEN];
+    uint8_t exp_master[HKDF_HASH_MAX];
 #endif
-    sha256 transcript;
+    ch_transcript transcript;
 #ifndef CH_TRANSPORT_QUIC
     // The peer's record_size_limit. A TRANSPORT=quic build declares it
     // in neither direction: it sends no record_size_limit and receives
@@ -212,8 +221,10 @@ typedef struct {
     uint16_t group;
 #if defined(CH_SUITE_AES_GCM) && !defined(CH_ROLE_SERVER)
     // The cipher suite the ServerHello selected, which a client written
-    // under -DCH_SUITE_AES_GCM writes beside group: ChaCha20, or
-    // AES-128-GCM from a CH_CLIENT_TWO_SUITES client. Public, like group.
+    // under -DCH_SUITE_AES_GCM writes beside group: ChaCha20, AES-128-GCM
+    // or AES-256-GCM from a CH_CLIENT_AES_SUITES client, written as soon
+    // as a HelloRetryRequest or the ServerHello names it. Public, like
+    // group.
     // A build with a server role declares the field below and a client
     // in it writes that one.
     uint16_t suite;
@@ -340,6 +351,21 @@ typedef struct {
     uint8_t tx[REC_HDR + CH_TX_STAGE];
 #endif
 } ch_tls;
+
+// The hash length of the session's cipher suite (rfc9846.txt:4055-4056),
+// the length of every secret above. A build that holds one hash answers
+// SHA256_LEN. A -DCH_SUITE_AES_GCM build answers suite_hash_len of
+// t->suite, which is 0 until the handshake has named a suite, so a caller
+// reads it after the ServerHello, or after a HelloRetryRequest for a
+// client. suite is public, like group.
+static inline size_t tls_hash_len(const ch_tls *t) {
+#ifdef CH_SUITE_AES_GCM
+    return suite_hash_len(t->suite);
+#else
+    (void)t;
+    return SHA256_LEN;
+#endif
+}
 
 #ifndef CH_TRANSPORT_QUIC
 // The three calls session.c defines. A TRANSPORT=quic object compiles

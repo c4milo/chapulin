@@ -42,16 +42,17 @@ static int ticket_fresh(uint64_t auth_seconds, uint64_t now_seconds) {
     return now_seconds >= auth_seconds && now_seconds - auth_seconds <= SRV_TICKET_LIFETIME;
 }
 
-// Whether a ticket's suite is one this build holds. Every such suite
-// hashes with SHA-256, so the ticket resumes under any of them, which is
-// RFC 9846 §4.7.1's KDF hash rule (rfc9846.txt:3219-3220).
-static int ticket_suite_held(uint16_t suite) {
-#ifdef CH_SUITE_AES_GCM
-    if (suite == SUITE_AES_128_GCM_SHA256) {
-        return 1;
-    }
-#endif
-    return suite == SUITE_CHACHA20_POLY1305_SHA256;
+// Whether a ticket may resume under the selected suite: its own suite is
+// one this build holds, and that suite hashes with the selected suite's
+// hash, which is RFC 9846 §4.7.1's KDF hash rule (rfc9846.txt:3219-3220).
+// A SHA-384 ticket offered to a handshake that selected a SHA-256 suite
+// is passed over, and the handshake goes on with a certificate: the
+// server picks the suite first and then a PSK compatible with it
+// (rfc9846.txt:2515-2516). suite_hash_len answers 0 for a suite this
+// build does not hold, and such a ticket matches no selection.
+static int ticket_suite_matches(uint16_t suite, const selection *sel) {
+    size_t hash_len = suite_hash_len(suite);
+    return hash_len != 0 && hash_len == sel->hash_len;
 }
 
 // Whether the ticket names the protocol this connection selected, as an
@@ -70,8 +71,8 @@ static int ticket_alpn_matches(const srv_ticket_contents *c, const ch_cfg *cfg,
 // srv_resume.h lists after the open.
 static int ticket_holds(const srv_ticket_contents *c, const ch_cfg *cfg, const client_hello *ch,
                         const selection *sel) {
-    return ticket_fresh(c->auth_seconds, cfg->srv.now_seconds) && ticket_suite_held(c->suite) &&
-           sel->hash_len == SHA256_LEN && ticket_alpn_matches(c, cfg, ch->alpn_selected);
+    return ticket_fresh(c->auth_seconds, cfg->srv.now_seconds) &&
+           ticket_suite_matches(c->suite, sel) && ticket_alpn_matches(c, cfg, ch->alpn_selected);
 }
 
 // Walks the client's identities in its order and stops at the first
@@ -122,22 +123,34 @@ static const uint8_t *binder_at(const client_hello *ch, uint16_t index, size_t *
     return NULL;
 }
 
-// Derives the early secret from the ticket's PSK into h->early and checks
-// the client's binder at index against the one that secret gives
-// (RFC 9846 §4.3.11.2). The binder key dies here either way. Returns 1
-// when the binder compared equal.
-static int binder_matches(handshake_state *h, const client_hello *ch, const uint8_t psk[SHA256_LEN],
-                          uint16_t index) {
-    ks_early(SHA256_LEN, psk, SHA256_LEN, 1, h->early, h->binder_key);
-    uint8_t want[SHA256_LEN];
-    ks_verify_data(SHA256_LEN, h->binder_key, ch->binder_hash, want);
+// The transcript hash a binder of hash_len bytes covers: the one
+// srv_read_client_hello wrote at that hash.
+static const uint8_t *binder_hash_at(const client_hello *ch, size_t hash_len) {
+#ifdef CH_HASH_SHA384
+    if (hash_len == SHA384_LEN) {
+        return ch->binder_hash_sha384;
+    }
+#endif
+    CH_ASSERT(hash_len == SHA256_LEN);
+    return ch->binder_hash;
+}
+
+// Derives the early secret from the ticket's PSK, hash_len bytes, into
+// h->early and checks the client's binder at index against the one that
+// secret gives (RFC 9846 §4.3.11.2). The binder key dies here either
+// way. Returns 1 when the binder compared equal.
+static int binder_matches(handshake_state *h, const client_hello *ch, const uint8_t *psk,
+                          size_t hash_len, uint16_t index) {
+    ks_early(hash_len, psk, hash_len, 1, h->early, h->binder_key);
+    uint8_t want[HKDF_HASH_MAX];
+    ks_verify_data(hash_len, h->binder_key, binder_hash_at(ch, hash_len), want);
     ct_wipe(h->binder_key, sizeof h->binder_key);
     size_t binder_len = 0;
     const uint8_t *binder = binder_at(ch, index, &binder_len);
     // The length and the presence are public: the client sent both.
     uint32_t equal = 0;
-    if (binder != NULL && binder_len == SHA256_LEN) {
-        equal = ct_memeq(want, binder, SHA256_LEN);
+    if (binder != NULL && binder_len == hash_len) {
+        equal = ct_memeq(want, binder, hash_len);
     }
     ct_wipe(want, sizeof want);
     return equal != 0;
@@ -151,7 +164,7 @@ static int select_ticket(handshake_state *h, const client_hello *ch, selection *
     if (!find_ticket(&h->t->cfg, ch, sel, &index, &c)) {
         return CH_OK;
     }
-    int matched = binder_matches(h, ch, c.psk, index);
+    int matched = binder_matches(h, ch, c.psk, sel->hash_len, index);
     uint64_t auth_seconds = c.auth_seconds;
     ct_wipe(&c, sizeof c);
     if (!matched) {
@@ -223,16 +236,17 @@ static size_t build_ticket_message(handshake_state *h, uint64_t auth_seconds, ui
 
     // The resumption secret over the transcript through the client
     // Finished (rfc9846.txt:4157-4159), and the ticket's PSK from it.
-    uint8_t hash[SHA256_LEN];
-    (void)hsr_transcript_hash(h, hash);
-    uint8_t res_master[SHA256_LEN];
-    ks_res_master(SHA256_LEN, h->master, hash, res_master);
+    size_t hash_len = t->hash_len;
+    uint8_t hash[HKDF_HASH_MAX];
+    (void)hsr_transcript_hash(h, hash_len, hash);
+    uint8_t res_master[HKDF_HASH_MAX];
+    ks_res_master(hash_len, h->master, hash, res_master);
     srv_ticket_contents c;
     memset(&c, 0, sizeof c);
     c.auth_seconds = auth_seconds;
     c.suite = t->suite;
     ticket_alpn(t, &c);
-    ks_res_psk(SHA256_LEN, res_master, ticket_nonce, SRV_TICKET_NONCE_LEN, c.psk);
+    ks_res_psk(hash_len, res_master, ticket_nonce, SRV_TICKET_NONCE_LEN, c.psk);
     ct_wipe(res_master, sizeof res_master);
 
     uint8_t ticket[SRV_TICKET_LEN];

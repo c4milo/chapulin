@@ -41,11 +41,12 @@ void ch_rand_bytes(uint8_t *p, size_t n) {
 
 #ifdef CH_KEYLOG
 void ch_keylog(void *io, const char *label, const uint8_t client_random[CH_KEYLOG_RANDOM_LEN],
-               const uint8_t secret[SHA256_LEN]) {
+               const uint8_t *secret, size_t secret_len) {
     (void)io;
     (void)label;
     (void)client_random;
     (void)secret;
+    (void)secret_len;
     abort();
 }
 #endif

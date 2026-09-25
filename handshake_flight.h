@@ -37,18 +37,21 @@
 #include "handshake_record.h"
 #include "sha256.h"
 
-// The client Finished message, header included: the 4-byte handshake
-// header and one verify_data of SHA256_LEN bytes (RFC 9846 §4.5.3,
-// rfc9846.txt:3141-3143). The length is fixed, so hsf_complete writes
-// exactly this many bytes and needs no capacity argument.
-#define HSF_FINISHED_LEN (4 + SHA256_LEN)
+// The longest client Finished message, header included: the 4-byte
+// handshake header and one verify_data as long as the suite's hash (RFC
+// 9846 §4.5.3, rfc9846.txt:3141-3143), HKDF_HASH_MAX at the longest.
+// hsf_complete returns the length it wrote, 4 + hsr_suite_hash_len(h),
+// and a buffer this long always holds it, so it needs no capacity
+// argument.
+#define HSF_FINISHED_MAX (4 + HKDF_HASH_MAX)
 
 // Draws the ephemeral secrets and starts the transcript. Writes
 // h->priv, h->pub and h->random, writes h->dz under CH_KEX_HYBRID,
-// computes h->early and h->binder_key from cfg.psk when the caller
-// configured one, and otherwise h->early alone from a hash-length zero
-// string (RFC 9846 §7.1, rfc9846.txt:4172-4175), leaving h->binder_key
-// zero, and calls sha256_init on t->transcript.
+// computes h->early and h->binder_key from cfg.psk at the PSK's hash,
+// hs_psk_hash_len, when the caller configured one, and otherwise leaves
+// both zero: the early secret of no PSK takes the suite's hash, which no
+// message has named yet, so hsf_accept_server_hello computes it.
+// Calls transcript_init on t->transcript.
 //
 // Requires a handshake_state the caller has zeroed and whose t points
 // at the session. Runs before any message goes out or comes in, once
@@ -64,10 +67,10 @@ void hsf_begin(handshake_state *h);
 
 // Builds one ClientHello into out, header included, and adds it to the
 // transcript. In PSK mode it computes the binder over the
-// transcript-so-far plus the truncated hello and writes it into the
-// message's last SHA256_LEN bytes (RFC 9846 §4.3.11.2,
-// rfc9846.txt:2586). It echoes h->cookie when h->cookie_len is not 0,
-// which is what makes this the retry hello (RFC 9846 §4.2.4,
+// transcript-so-far plus the truncated hello, at the PSK's hash, and
+// writes it into the message's last hs_psk_hash_len bytes (RFC 9846
+// §4.3.11.2, rfc9846.txt:2586). It echoes h->cookie when h->cookie_len
+// is not 0, which is what makes this the retry hello (RFC 9846 §4.2.4,
 // rfc9846.txt:1444). Under CH_KEX_TWO_GROUPS it carries a key share for
 // the hybrid and one for x25519, both over h->pub, or the hybrid one
 // alone under cfg.require_pq, and a retry hello carries the same shares.
@@ -146,7 +149,12 @@ int hsf_read_server_hello(handshake_state *h, server_hello_info *info);
 // 55). It then wipes h->early and h->binder_key, which the PSK wrote, and
 // writes h->early again from a hash-length zero string, the early secret
 // RFC 9846 §7.1 gives a handshake in which no PSK is selected
-// (rfc9846.txt:4182-4185).
+// (rfc9846.txt:4182-4185). When cfg.psk is unset it writes that early
+// secret too, which hsf_begin could not, because only the ServerHello
+// names the suite whose hash it takes. When the server selected the PSK,
+// it returns CH_EPROTO with ALERT_ILLEGAL_PARAMETER unless the suite's
+// hash is the PSK's, which RFC 9846 §4.3.11 requires of a client
+// (rfc9846.txt:2551-2556).
 //
 // Returns CH_EAUTH with ALERT_HANDSHAKE_FAILURE when the ServerHello
 // carried no acceptable key share, which leaves the client with no keys
@@ -267,7 +275,7 @@ int hsf_read_encrypted_extensions(handshake_state *h);
 // anyway, or a server asking for client authentication this build
 // cannot do.
 // Returns CH_EPROTO with ALERT_UNEXPECTED_MESSAGE for any other type,
-// and for a Finished whose length is not HSF_FINISHED_LEN. It also
+// and for a Finished whose length is not 4 + hsr_suite_hash_len(h). It also
 // returns what hsr_next_msg returns, as hsf_read_server_hello does.
 int hsf_read_finished(handshake_state *h);
 
@@ -289,13 +297,14 @@ int hsf_read_finished(handshake_state *h);
 // Requires h->server_finished_ok, which is programmer error to skip
 // rather than peer input: running the client Finished before the server
 // proved it holds the keys would answer an unauthenticated peer.
-// CH_ASSERT holds it. Requires HSF_FINISHED_LEN bytes at finished.
+// CH_ASSERT holds it. Requires HSF_FINISHED_MAX bytes at finished.
 //
-// Returns nothing and cannot fail. The caller owns what happens next:
-// the TLS driver seals the message into a record and sends it, and the
-// QUIC driver stages it at the Handshake encryption level for
-// ch_quic_crypto_out. Both then install the application traffic keys
-// from t->wr_secret and t->rd_secret.
-void hsf_complete(handshake_state *h, uint8_t finished[HSF_FINISHED_LEN]);
+// Returns the Finished's length, 4 + hsr_suite_hash_len(h), and cannot
+// fail. The caller owns what happens next: the TLS driver seals the
+// message into a record and sends it, and the QUIC driver stages it at
+// the Handshake encryption level for ch_quic_crypto_out. Both then
+// install the application traffic keys from t->wr_secret and
+// t->rd_secret.
+size_t hsf_complete(handshake_state *h, uint8_t finished[HSF_FINISHED_MAX]);
 
 #endif

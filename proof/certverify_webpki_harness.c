@@ -156,7 +156,7 @@ int main(void) {
     sha384_finals = 0;
     verifier_ran = 0;
 
-    int rc = check_certificate_verify(&h, hash);
+    int rc = check_certificate_verify(&h, hash, SHA256_LEN);
 
     // The binding of RFC 9846 section 4.5.2: a signature is checked
     // only under the scheme the leaf key's family can produce, and the

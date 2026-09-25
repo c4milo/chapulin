@@ -1,0 +1,24 @@
+invariant: INV-25
+file: srv_parser.c
+catches: webpki_loop_aes
+reason: the cipher_suites list is read once per suite the build holds,
+  the shape the first SUITE=aesgcm server shipped. Each srv_list_has
+  call reads the whole list, so the second reads the compression bytes
+  and the extension block's length as suites, and every real ClientHello
+  then fails its compression check with illegal_parameter. No test fed
+  that server a ClientHello through the real parser until the suite loop
+  did; its h3spec offer and every handshake in it fail here.
+
+--- old
+    for (size_t i = 0; i < suites_len; i += 2) {
+        ch->suites |= srv_suite_bit(rb_u16(r));
+    }
+--- new
+    if (srv_list_has(r, suites_len, SUITE_CHACHA20_POLY1305_SHA256)) {
+        ch->suites |= SRV_SUITE_CHACHA20_POLY1305;
+    }
+#ifdef CH_SUITE_AES_GCM
+    if (srv_list_has(r, suites_len, SUITE_AES_128_GCM_SHA256)) {
+        ch->suites |= SRV_SUITE_AES_128_GCM;
+    }
+#endif

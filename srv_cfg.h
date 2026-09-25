@@ -167,6 +167,22 @@ typedef struct {
     // none, because it could not tell a fresh ticket from an expired one.
     uint64_t now_seconds;
 
+#ifdef CH_SUITE_AES_GCM
+    // The cipher suites this server selects from, in its order of
+    // preference: cipher_suite_count code points, each one of the three
+    // a -DCH_SUITE_AES_GCM build holds (suite.h). The server selects the
+    // first of them the ClientHello lists and ignores the client's own
+    // order. NULL with a count of 0 takes the default order,
+    // TLS_CHACHA20_POLY1305_SHA256, TLS_AES_128_GCM_SHA256,
+    // TLS_AES_256_GCM_SHA384, for the reasons srv_select states. A host
+    // whose AES instructions outrun its ChaCha20 may put AES-GCM first,
+    // and a list can leave a suite out. Any other shape, a code point
+    // this build does not hold or a count without its list, makes
+    // ch_srv_accept return CH_EINVAL (docs/decisions.md 58).
+    const uint16_t *cipher_suites;
+    size_t cipher_suite_count;
+#endif
+
 #ifdef CH_TRANSPORT_QUIC
     // Takes the server's handshake bytes as they are produced: level is a
     // CH_LEVEL_ value and the n bytes at p are CRYPTO frame content for it

@@ -127,7 +127,7 @@ void srv_frag_flush(srv_frag *f) {
     if (f->rc != CH_OK || f->len == 0) {
         return;
     }
-    sha256_update(&f->h->t->transcript, f->buf, f->len);
+    transcript_update(&f->h->t->transcript, f->buf, f->len);
     f->rc = srv_out_sealed(f->h, f->buf, f->len);
     f->len = 0;
 }

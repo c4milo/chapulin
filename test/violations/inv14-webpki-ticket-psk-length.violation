@@ -1,11 +1,11 @@
 invariant: INV-14
 file: webpki_ticket.c
 catches: webpki_resume_test
-reason: the ticket shape accepts a PSK of any non-zero length, though the
-  binding reads SHA256_LEN bytes of it and ks_res_psk writes exactly
-  that many. The one-short and one-over rows object.
+reason: the ticket shape accepts a PSK of any non-zero length, though
+  ks_res_psk writes exactly a suite's hash length, SHA256_LEN in this
+  build. The one-short and one-over rows object.
 
 --- old
-    return cfg->resumption != 0 && cfg->psk != NULL && cfg->psk_len == SHA256_LEN &&
+    return psk_len == SHA256_LEN;
 --- new
-    return cfg->resumption != 0 && cfg->psk != NULL && cfg->psk_len > 0 &&
+    return psk_len > 0;

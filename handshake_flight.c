@@ -17,13 +17,13 @@
 #include "webpki_pin.h"
 #endif
 
-// The early secret with no PSK: HKDF-Extract over 32 zero bytes (RFC
-// 9846 §7.1, rfc9846.txt:4172-4175). The binder key ks_early also derives
-// is never used, so it is wiped here.
-static void early_secret_without_psk(uint8_t early[SHA256_LEN]) {
-    static const uint8_t no_psk[SHA256_LEN] = {0};
-    uint8_t unused_binder_key[SHA256_LEN];
-    ks_early(SHA256_LEN, no_psk, sizeof no_psk, 0, early, unused_binder_key);
+// The early secret with no PSK: HKDF-Extract over hash_len zero bytes
+// (RFC 9846 §7.1, rfc9846.txt:4172-4175). The binder key ks_early also
+// derives is never used, so it is wiped here.
+static void early_secret_without_psk(size_t hash_len, uint8_t *early) {
+    static const uint8_t no_psk[HKDF_HASH_MAX] = {0};
+    uint8_t unused_binder_key[HKDF_HASH_MAX];
+    ks_early(hash_len, no_psk, hash_len, 0, early, unused_binder_key);
     ct_wipe(unused_binder_key, sizeof unused_binder_key);
 }
 
@@ -52,13 +52,12 @@ void hsf_begin(handshake_state *h) {
     }
     x25519_base(h->pub, h->priv);
     if (t->cfg.psk != NULL) {
-        ks_early(SHA256_LEN, t->cfg.psk, t->cfg.psk_len, t->cfg.resumption, h->early,
+        ks_early(hs_psk_hash_len(&t->cfg), t->cfg.psk, t->cfg.psk_len, t->cfg.resumption, h->early,
                  h->binder_key);
-    } else {
-        // No PSK: h->binder_key stays the zero the caller wrote.
-        early_secret_without_psk(h->early);
     }
-    sha256_init(&t->transcript);
+    // No PSK: h->early stays zero until hsf_accept_server_hello computes
+    // it at the hash of the suite the ServerHello names.
+    transcript_init(&t->transcript);
 }
 
 // Builds the ClientHello (echoing an HRR cookie on the retry), computes
@@ -92,14 +91,14 @@ static size_t build_client_hello_ek(handshake_state *h, uint8_t *out, size_t cap
         return 0;
     }
     if (t->cfg.psk != NULL) {
-        // PSK binder over the transcript-so-far plus the truncated hello.
-        sha256 transcript = t->transcript;
-        uint8_t hash[SHA256_LEN];
-        sha256_update(&transcript, out, n - CH_BINDERS_TAIL);
-        sha256_final(&transcript, hash);
-        ks_verify_data(SHA256_LEN, h->binder_key, hash, out + n - SHA256_LEN);
+        // PSK binder over the transcript-so-far plus the truncated hello,
+        // at the PSK's hash, which also sets the binder's length.
+        size_t hash_len = hs_psk_hash_len(&t->cfg);
+        uint8_t hash[HKDF_HASH_MAX];
+        transcript_hash_after(&t->transcript, hash_len, out, n - CH_BINDERS_TAIL(hash_len), hash);
+        ks_verify_data(hash_len, h->binder_key, hash, out + n - hash_len);
     }
-    sha256_update(&t->transcript, out, n);
+    transcript_update(&t->transcript, out, n);
     return n;
 }
 
@@ -164,18 +163,6 @@ static int x25519_secret(handshake_state *h, const server_hello_info *info,
 }
 #endif
 
-// Replaces the transcript after HRR: Hash(message_hash || 00 00 20 ||
-// Hash(CH1)) || HRR, per RFC 9846 §4.1.
-static void hrr_transcript(handshake_state *h, const uint8_t *raw, size_t raw_len) {
-    uint8_t ch1[SHA256_LEN];
-    sha256_final(&h->t->transcript, ch1);
-    sha256_init(&h->t->transcript);
-    const uint8_t synth[4] = {HS_MESSAGE_HASH, 0, 0, SHA256_LEN};
-    sha256_update(&h->t->transcript, synth, 4);
-    sha256_update(&h->t->transcript, ch1, SHA256_LEN);
-    sha256_update(&h->t->transcript, raw, raw_len);
-}
-
 #ifdef CH_SUITE_AES_GCM
 // Stores the suite a HelloRetryRequest or ServerHello named. The parser
 // accepted it as one this client offered; what is left is RFC 9846
@@ -215,7 +202,9 @@ int hsf_read_server_hello(handshake_state *h, server_hello_info *info) {
         return rc;
     }
     if (info->hrr) {
-        hrr_transcript(h, raw, raw_len);
+        // take_suite wrote the retry's suite, which names the hash the
+        // synthetic message takes.
+        hsr_restart_transcript(h, hsr_suite_hash_len(h), raw, raw_len);
         // The parser refuses a retry that names a group, because every
         // group the hello lists already has a share in it, so a cookie
         // is the one change a retry can ask this client for. A retry
@@ -228,7 +217,7 @@ int hsf_read_server_hello(handshake_state *h, server_hello_info *info) {
         memcpy(h->cookie, info->cookie, info->cookie_len);
         h->cookie_len = info->cookie_len;
     } else {
-        sha256_update(&h->t->transcript, raw, raw_len);
+        transcript_update(&h->t->transcript, raw, raw_len);
     }
     return CH_OK;
 }
@@ -237,9 +226,9 @@ int hsf_read_server_hello(handshake_state *h, server_hello_info *info) {
 // A ServerHello with no pre_shared_key declined the ticket, and a webpki
 // hello offers the certificate path beside it, so the handshake goes on
 // as a full one (docs/decisions.md 55): the PSK's early secret and binder
-// key die here, and the early secret of no PSK replaces them
-// (rfc9846.txt:4182-4185). A pre_shared_key naming any identity but 0 is
-// no decline but an illegal_parameter abort (rfc9846.txt:2551-2557).
+// key die here, and the early secret of no PSK replaces them, at the hash
+// the ServerHello's suite names (rfc9846.txt:4182-4185). A pre_shared_key naming any identity but 0
+// is no decline but an illegal_parameter abort (rfc9846.txt:2551-2557).
 static int decline_psk(handshake_state *h, const server_hello_info *info) {
     if ((info->seen & HSP_SEEN_PRE_SHARED_KEY) != 0) {
         h->alert = ALERT_ILLEGAL_PARAMETER;
@@ -247,7 +236,7 @@ static int decline_psk(handshake_state *h, const server_hello_info *info) {
     }
     ct_wipe(h->early, sizeof h->early);
     ct_wipe(h->binder_key, sizeof h->binder_key);
-    early_secret_without_psk(h->early);
+    early_secret_without_psk(hsr_suite_hash_len(h), h->early);
     return CH_OK;
 }
 #else
@@ -275,12 +264,23 @@ int hsf_accept_server_hello(handshake_state *h, const server_hello_info *info) {
         return CH_EAUTH;
     }
     int psk_offered = h->t->cfg.psk != NULL;
+    if (!psk_offered) {
+        early_secret_without_psk(hsr_suite_hash_len(h), h->early);
+    }
     if (psk_offered && !info->psk_ok) {
         int rc = decline_psk(h, info);
         if (rc != CH_OK) {
             return rc;
         }
     }
+#ifdef CH_CLIENT_AES_SUITES
+    // A selected PSK binds the suite's hash, or illegal_parameter
+    // (rfc9846.txt:2551-2556); only this build holds PSKs of two hashes.
+    if (psk_offered && info->psk_ok && hs_psk_hash_len(&h->t->cfg) != hsr_suite_hash_len(h)) {
+        h->alert = ALERT_ILLEGAL_PARAMETER;
+        return CH_EPROTO;
+    }
+#endif
     h->t->psk_selected = (uint8_t)(psk_offered && info->psk_ok);
 #ifdef CH_KEX_HYBRID
     // require_pq checks at run time what the hello promised: a raw or ca
@@ -344,16 +344,16 @@ int hsf_derive_handshake_secrets(handshake_state *h, const server_hello_info *in
         h->alert = ALERT_ILLEGAL_PARAMETER;
         return CH_EPROTO;
     }
-    uint8_t hash[SHA256_LEN];
-    (void)hsr_transcript_hash(h, hash);
-    ks_handshake(SHA256_LEN, h->early, ecdhe, ecdhe_len, hash, h->handshake_secret, h->c_hs,
-                 h->s_hs);
+    size_t hash_len = hsr_suite_hash_len(h);
+    uint8_t hash[HKDF_HASH_MAX];
+    (void)hsr_transcript_hash(h, hash_len, hash);
+    ks_handshake(hash_len, h->early, ecdhe, ecdhe_len, hash, h->handshake_secret, h->c_hs, h->s_hs);
     ct_wipe(ecdhe, sizeof ecdhe);
     ct_wipe(h->early, sizeof h->early);
     ct_wipe(h->binder_key, sizeof h->binder_key);
 #ifdef CH_KEYLOG
-    ch_keylog(h->t->cfg.io, CH_KEYLOG_CLIENT_HANDSHAKE, h->client_random, h->c_hs);
-    ch_keylog(h->t->cfg.io, CH_KEYLOG_SERVER_HANDSHAKE, h->client_random, h->s_hs);
+    ch_keylog(h->t->cfg.io, CH_KEYLOG_CLIENT_HANDSHAKE, h->client_random, h->c_hs, hash_len);
+    ch_keylog(h->t->cfg.io, CH_KEYLOG_SERVER_HANDSHAKE, h->client_random, h->s_hs, hash_len);
 #endif
     return CH_OK;
 }
@@ -428,13 +428,14 @@ int hsf_read_encrypted_extensions(handshake_state *h) {
         t->cfg.on_transport_params(t->cfg.io, transport_params, transport_params_len);
     }
 #endif
-    sha256_update(&t->transcript, raw, raw_len);
+    transcript_update(&t->transcript, raw, raw_len);
     return CH_OK;
 }
 
 int hsf_read_finished(handshake_state *h) {
-    uint8_t hash[SHA256_LEN];
-    (void)hsr_transcript_hash(h, hash);
+    size_t hash_len = hsr_suite_hash_len(h);
+    uint8_t hash[HKDF_HASH_MAX];
+    (void)hsr_transcript_hash(h, hash_len, hash);
     uint8_t type = 0;
     const uint8_t *raw = NULL;
     size_t raw_len = 0;
@@ -448,48 +449,51 @@ int hsf_read_finished(handshake_state *h) {
         h->alert = ALERT_HANDSHAKE_FAILURE;
         return CH_EAUTH;
     }
-    if (type != HS_FINISHED || raw_len != HSF_FINISHED_LEN) {
+    if (type != HS_FINISHED || raw_len != 4 + hash_len) {
         h->alert = ALERT_UNEXPECTED_MESSAGE;
         return CH_EPROTO;
     }
-    uint8_t want[SHA256_LEN];
-    ks_verify_data(SHA256_LEN, h->s_hs, hash, want);
-    if (!ct_memeq(want, raw + 4, SHA256_LEN)) {
+    uint8_t want[HKDF_HASH_MAX];
+    ks_verify_data(hash_len, h->s_hs, hash, want);
+    if (!ct_memeq(want, raw + 4, hash_len)) {
         h->alert = ALERT_DECRYPT_ERROR;
         return CH_EAUTH;
     }
-    sha256_update(&h->t->transcript, raw, raw_len);
+    transcript_update(&h->t->transcript, raw, raw_len);
     h->server_finished_ok = 1;
     return CH_OK;
 }
 
-void hsf_complete(handshake_state *h, uint8_t finished[HSF_FINISHED_LEN]) {
+size_t hsf_complete(handshake_state *h, uint8_t finished[HSF_FINISHED_MAX]) {
     ch_tls *t = h->t;
     // Running the client Finished before the server proved it holds the
     // keys would answer an unauthenticated peer, which is programmer
     // error rather than peer input.
     CH_ASSERT(h->server_finished_ok);
-    uint8_t hash[SHA256_LEN];
-    (void)hsr_transcript_hash(h, hash);
-    ks_master(SHA256_LEN, h->handshake_secret, hash, h->master, t->wr_secret, t->rd_secret);
+    size_t hash_len = hsr_suite_hash_len(h);
+    uint8_t hash[HKDF_HASH_MAX];
+    (void)hsr_transcript_hash(h, hash_len, hash);
+    ks_master(hash_len, h->handshake_secret, hash, h->master, t->wr_secret, t->rd_secret);
 #ifdef CH_EXPORTER
     // RFC 9846 §7.5 derives the exporter secret from this transcript,
     // the same one the application traffic secrets take, so it is
     // derived here rather than at a point of its own.
-    ks_exp_master(SHA256_LEN, h->master, hash, t->exp_master);
+    ks_exp_master(hash_len, h->master, hash, t->exp_master);
 #endif
     finished[0] = HS_FINISHED;
     finished[1] = 0;
     finished[2] = 0;
-    finished[3] = SHA256_LEN;
-    ks_verify_data(SHA256_LEN, h->c_hs, hash, finished + 4);
-    sha256_update(&t->transcript, finished, HSF_FINISHED_LEN);
-    (void)hsr_transcript_hash(h, hash);
-    ks_res_master(SHA256_LEN, h->master, hash, t->res_master);
+    finished[3] = (uint8_t)hash_len;
+    ks_verify_data(hash_len, h->c_hs, hash, finished + 4);
+    size_t n = 4 + hash_len;
+    transcript_update(&t->transcript, finished, n);
+    (void)hsr_transcript_hash(h, hash_len, hash);
+    ks_res_master(hash_len, h->master, hash, t->res_master);
 #ifdef CH_KEYLOG
     // After ks_master, which wrote this client's write secret into
     // wr_secret and the server's into rd_secret.
-    ch_keylog(t->cfg.io, CH_KEYLOG_CLIENT_TRAFFIC, h->client_random, t->wr_secret);
-    ch_keylog(t->cfg.io, CH_KEYLOG_SERVER_TRAFFIC, h->client_random, t->rd_secret);
+    ch_keylog(t->cfg.io, CH_KEYLOG_CLIENT_TRAFFIC, h->client_random, t->wr_secret, hash_len);
+    ch_keylog(t->cfg.io, CH_KEYLOG_SERVER_TRAFFIC, h->client_random, t->rd_secret, hash_len);
 #endif
+    return n;
 }

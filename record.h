@@ -21,11 +21,12 @@
 #define REC_APPDATA 23
 
 typedef struct {
-    // The larger of the two suites' keys. TLS_CHACHA20_POLY1305_SHA256
-    // fills all 32; TLS_AES_128_GCM_SHA256 fills the first 16 and leaves
-    // the rest zero, and record.c expands those 16 into round keys on its
-    // own frame at each use rather than keeping a schedule here, which is
-    // what keeps aes_traffic_key's body out of this header (INV-26).
+    // The longest key a suite fixes. TLS_CHACHA20_POLY1305_SHA256 and
+    // TLS_AES_256_GCM_SHA384 fill all 32; TLS_AES_128_GCM_SHA256 fills
+    // the first 16 and leaves the rest zero. record.c expands an AES key
+    // into round keys on its own frame at each use rather than keeping a
+    // schedule here, which is what keeps aes_traffic_key's body out of
+    // this header (INV-26).
     uint8_t key[AEAD_KEY];
     uint8_t iv[AEAD_NONCE];
     uint64_t seq;
@@ -36,25 +37,29 @@ typedef struct {
 #endif
 } rec_dir;
 
-// Derives key and IV from a traffic secret and resets the sequence.
+// Derives key and IV from a SHA-256 traffic secret and resets the
+// sequence: TLS_CHACHA20_POLY1305_SHA256.
 void rec_dir_init(rec_dir *d, const uint8_t secret[SHA256_LEN]);
 
 // Rekeys for KeyUpdate: secret' = Expand-Label(secret, "traffic upd").
 // The caller owns the traffic secret and passes it here; the new secret
-// replaces it in place. A two-suite build keeps d->suite: KeyUpdate
-// changes the key and never the AEAD.
-void rec_dir_update(uint8_t secret[SHA256_LEN], rec_dir *d);
+// replaces it in place. The secret is as long as the hash of d's suite,
+// SHA384_LEN for TLS_AES_256_GCM_SHA384 and SHA256_LEN otherwise, and
+// secret holds that many bytes. A build with several suites keeps
+// d->suite: KeyUpdate changes the key and never the AEAD.
+void rec_dir_update(uint8_t *secret, rec_dir *d);
 
 #ifdef CH_SUITE_AES_GCM
-// rec_dir_init for a build that has two suites: it derives the key at the
-// length the suite fixes and records which AEAD seal and open must run.
+// rec_dir_init for a build that has several suites: it derives the key
+// and IV with the suite's hash from a secret that long, the key at the
+// length the suite fixes, and records which AEAD seal and open must run.
 // rec_dir_init is this call with TLS_CHACHA20_POLY1305_SHA256, so the
 // forty-seven callers that predate the second suite need no change.
-void rec_dir_init_suite(rec_dir *d, const uint8_t secret[SHA256_LEN], uint16_t suite);
+void rec_dir_init_suite(rec_dir *d, const uint8_t *secret, uint16_t suite);
 #endif
 
 // Keys d with the suite the ServerHello named, for the handshake sites
-// that key a direction. A two-suite build calls rec_dir_init_suite. A
+// that key a direction. A build with several suites calls rec_dir_init_suite. A
 // one-suite build has one AEAD, so it calls rec_dir_init and never
 // evaluates suite: the expression may name a field that build does not
 // declare, and its compiled code is the call it made before a second

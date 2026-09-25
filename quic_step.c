@@ -144,8 +144,7 @@ static int step_finished(ch_quic *q) {
 #ifdef CH_TRUST_CA
     hsa_epoch_commit(&q->hs);
 #endif
-    hsf_complete(&q->hs, q->t.tx);
-    q->tx_len = HSF_FINISHED_LEN;
+    q->tx_len = hsf_complete(&q->hs, q->t.tx);
     q->tx_level = CH_LEVEL_HANDSHAKE;
     install_application_keys(q);
     q->rx_level = CH_LEVEL_APPLICATION;

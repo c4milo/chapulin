@@ -11,14 +11,6 @@ reason: the HelloRetryRequest keeps the first ClientHello in the transcript
   what this edit throws away.
 
 --- old
-    sha256 *transcript = &h->t->transcript;
-    uint8_t ch1[SHA256_LEN];
-    sha256_final(transcript, ch1);
-    sha256_init(transcript);
-    const uint8_t synth[4] = {HS_MESSAGE_HASH, 0, 0, SHA256_LEN};
-    sha256_update(transcript, synth, sizeof synth);
-    sha256_update(transcript, ch1, sizeof ch1);
-    sha256_update(transcript, raw, raw_len);
+    hsr_restart_transcript(h, sel->hash_len, msg, n);
 --- new
-    sha256 *transcript = &h->t->transcript;
-    sha256_update(transcript, raw, raw_len);
+    transcript_update(&t->transcript, msg, n);

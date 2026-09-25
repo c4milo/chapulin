@@ -84,6 +84,26 @@ static int sni_ok(const ch_srv_cfg *srv) {
     return srv->sni_buf != NULL || (srv->sni_cap == 0 && srv->require_server_name == 0);
 }
 
+#ifdef CH_SUITE_AES_GCM
+// The suite order rule (srv_cfg.h): no list takes the default order, and
+// a list is 1 to 3 code points, each one this build holds. A count
+// without a list, or a list without a count, is a field missing.
+static int suites_ok(const ch_srv_cfg *srv) {
+    if (srv->cipher_suites == NULL) {
+        return srv->cipher_suite_count == 0;
+    }
+    if (srv->cipher_suite_count == 0 || srv->cipher_suite_count > 3) {
+        return 0;
+    }
+    for (size_t i = 0; i < srv->cipher_suite_count; i++) {
+        if (suite_hash_len(srv->cipher_suites[i]) == 0) {
+            return 0;
+        }
+    }
+    return 1;
+}
+#endif
+
 // The server's own fields: at least one provisioned identity to prove
 // this endpoint with, and the key the HelloRetryRequest cookie is minted
 // under. RFC 9846 §9.2 makes the cookie extension mandatory to implement
@@ -91,6 +111,11 @@ static int sni_ok(const ch_srv_cfg *srv) {
 // cookie_key refuses the configuration rather than the first client that
 // sends an empty client_shares list.
 static int srv_fields_ok(const ch_cfg *cfg) {
+#ifdef CH_SUITE_AES_GCM
+    if (!suites_ok(&cfg->srv)) {
+        return 0;
+    }
+#endif
     return srv_identity_live(cfg) != 0 && cfg->srv.cookie_key != NULL && sni_ok(&cfg->srv);
 }
 

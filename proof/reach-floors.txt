@@ -78,7 +78,11 @@ drbg 84.4
 # floor below.
 eeparse_webpki 29.4  # local reading, cbmc 6.11.0 on arm64 macOS; replace with the nightly table's number
 eeparse_alpn 21.5  # local reading, cbmc 6.11.0 on arm64 macOS; replace with the nightly table's number
-epoch 36.1
+# epoch: handshake_auth.c now calls transcript.h's inline transcript
+# functions, whose locations join this harness's goto model and sit
+# outside the epoch arm it drives, so the share fell with the arm reached
+# whole. Local reading after that change, cbmc 6.11.0 on arm64 macOS.
+epoch 34.4
 handshake_record 92.1
 hello_build 76.9
 hkdf 52.5

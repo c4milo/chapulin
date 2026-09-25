@@ -194,6 +194,7 @@ int main(int argc, char **argv) {
         if (rc == CH_OK) {
             (void)printf("handshake: %s\n", t.psk_selected ? "resumed" : "full");
             (void)printf("group: 0x%04x\n", (unsigned)t.group);
+            (void)printf("suite: 0x%04x\n", (unsigned)t.suite);
             (void)fflush(stdout);
             echo_reversed(&t);
         } else {

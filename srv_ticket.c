@@ -59,7 +59,7 @@ static void write_body(const srv_ticket_contents *c, uint8_t body[SRV_TICKET_BOD
     wb_u16(&b, c->suite);
     wb_u8(&b, c->alpn_len);
     wb_bytes(&b, name, sizeof name);
-    wb_bytes(&b, c->psk, SHA256_LEN);
+    wb_bytes(&b, c->psk, HKDF_HASH_MAX);
     CH_ASSERT(b.err == 0 && b.len == SRV_TICKET_BODY_LEN);
 }
 
@@ -99,13 +99,13 @@ static int read_body(const uint8_t body[SRV_TICKET_BODY_LEN], srv_ticket_content
     c->suite = rb_u16(&r);
     c->alpn_len = rb_u8(&r);
     const uint8_t *name = rb_bytes(&r, CH_ALPN_NAME_MAX);
-    const uint8_t *psk = rb_bytes(&r, SHA256_LEN);
+    const uint8_t *psk = rb_bytes(&r, HKDF_HASH_MAX);
     CH_ASSERT(r.err == 0 && rb_left(&r) == 0);
     if (c->alpn_len > CH_ALPN_NAME_MAX) {
         return CH_EAUTH;
     }
     memcpy(c->alpn, name, CH_ALPN_NAME_MAX);
-    memcpy(c->psk, psk, SHA256_LEN);
+    memcpy(c->psk, psk, HKDF_HASH_MAX);
     return CH_OK;
 }
 

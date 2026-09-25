@@ -73,20 +73,21 @@
 // §4.3.11 asks of a server (rfc9846.txt:2544-2546). An identity passes
 // when it is SRV_TICKET_LEN bytes long, srv_ticket_open opens it under
 // the ticket key, now_seconds is at least its auth_seconds and at most
-// SRV_TICKET_LIFETIME seconds past it, its suite is one this build holds,
-// and its ALPN protocol is the one the parser selected for this hello, or
-// both are none. An identity that fails any test is passed over, which
+// SRV_TICKET_LIFETIME seconds past it, its suite is one this build holds
+// and hashes with the selected suite's hash, sel->hash_len
+// (rfc9846.txt:3219-3220), and its ALPN protocol is the one the parser
+// selected for this hello, or both are none. An identity that fails any test is passed over, which
 // RFC 9846 §4.3.11 asks of an unknown PSK (rfc9846.txt:2533-2537), and no
 // failure here ends the handshake.
 //
 // The binder. For the selected identity it derives the binder key from
-// the ticket's PSK with ks_early's "res binder" label, computes the
-// expected binder over ch->binder_hash with ks_verify_data, and compares
-// it with the client's binder at the same index with ct_memeq over all
-// SHA256_LEN bytes (RFC 9846 §4.3.11.2). A binder that is absent, not
-// SHA256_LEN bytes long, or not equal ends the handshake with
-// decrypt_error, which RFC 9846 §4.3.11 requires (rfc9846.txt:2541-2544)
-// and §6.2 names (rfc9846.txt:3968-3970).
+// the ticket's PSK with ks_early's "res binder" label at sel->hash_len,
+// computes the expected binder over the ch->binder_hash of that hash with
+// ks_verify_data, and compares it with the client's binder at the same
+// index with ct_memeq over all sel->hash_len bytes (RFC 9846 §4.3.11.2).
+// A binder that is absent, not sel->hash_len bytes long, or not equal
+// ends the handshake with decrypt_error, which RFC 9846 §4.3.11 requires
+// (rfc9846.txt:2541-2544) and §6.2 names (rfc9846.txt:3968-3970).
 //
 // Requires a ch that srv_read_client_hello filled, so binder_hash is the
 // transcript hash over the hello truncated before its binders; and a sel

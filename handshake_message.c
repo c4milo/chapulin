@@ -95,8 +95,8 @@ static void write_cert_types(wbuf *w, const ch_cfg *cfg) {
 #endif
 
 // pre_shared_key (RFC 9846 §4.3.11): the one identity cfg presents and a
-// zeroed 32-byte binder, which hsf_build_client_hello computes once the
-// rest of the hello is written. It is the last extension, which §4.3.11
+// zeroed binder as long as the PSK's hash, which hsf_build_client_hello
+// computes once the rest of the hello is written. It is the last extension, which §4.3.11
 // requires (rfc9846.txt:2564-2565), because the binder covers every byte
 // before the binders list; the caller writes nothing after it.
 static void write_pre_shared_key(wbuf *w, const ch_cfg *cfg) {
@@ -109,9 +109,10 @@ static void write_pre_shared_key(wbuf *w, const ch_cfg *cfg) {
     wb_u16(w, (uint16_t)(age >> 16));
     wb_u16(w, (uint16_t)age);
     wb_patch16(w, ids);
-    wb_u16(w, 33); // binders list: one 32-byte binder
-    wb_u8(w, 32);
-    size_t binder = wb_mark(w, 32);
+    size_t hash_len = hs_psk_hash_len(cfg);
+    wb_u16(w, (uint16_t)(1 + hash_len)); // binders list: one binder
+    wb_u8(w, (uint8_t)hash_len);
+    size_t binder = wb_mark(w, hash_len);
     (void)binder;
     wb_patch16(w, psk);
 }
@@ -171,12 +172,14 @@ size_t hs_build_client_hello(uint8_t *out, size_t cap, const ch_cfg *cfg,
     wb_u16(&w, 0x0303); // legacy_version
     wb_bytes(&w, random32, 32);
     wb_u8(&w, 0); // empty legacy_session_id: no middlebox compat needed
-#ifdef CH_CLIENT_TWO_SUITES
+#ifdef CH_CLIENT_AES_SUITES
     // ChaCha20 first, the order srv_select prefers for the reason it
-    // states, then AES-128-GCM (docs/decisions.md entry 45).
-    wb_u16(&w, 4);
+    // states, then AES-128-GCM and AES-256-GCM (docs/decisions.md 45 and
+    // 58).
+    wb_u16(&w, 6);
     wb_u16(&w, SUITE_CHACHA20_POLY1305_SHA256);
     wb_u16(&w, SUITE_AES_128_GCM_SHA256);
+    wb_u16(&w, SUITE_AES_256_GCM_SHA384);
 #else
     wb_u16(&w, 2); // one suite
     wb_u16(&w, SUITE_CHACHA20_POLY1305_SHA256);

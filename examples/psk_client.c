@@ -198,7 +198,8 @@ static uint8_t g_rxbuf[CH_MIN_RXBUF + 512];
 typedef struct {
     uint8_t identity[CH_TICKET_ID_MAX];
     size_t identity_len;
-    uint8_t psk[SHA256_LEN];
+    uint8_t psk[SHA256_LEN]; // this device build runs ChaCha20, a SHA-256 suite
+    size_t psk_len;
     uint32_t age_add;
     uint32_t arrival_ms;
     int valid;
@@ -226,12 +227,13 @@ static uint32_t now_ms(void) {
 // keep. This example keeps the newest ticket and overwrites the last.
 static void on_ticket(void *io, const ch_ticket *ticket) {
     (void)io; // the pointer cfg.io carries; this example does not need it
-    if (ticket->identity_len > sizeof g_ticket.identity) {
+    if (ticket->identity_len > sizeof g_ticket.identity || ticket->psk_len > sizeof g_ticket.psk) {
         return; // too big to store, so keep the ticket we already have
     }
     memcpy(g_ticket.identity, ticket->identity, ticket->identity_len);
     g_ticket.identity_len = ticket->identity_len;
-    memcpy(g_ticket.psk, ticket->psk, sizeof g_ticket.psk);
+    memcpy(g_ticket.psk, ticket->psk, ticket->psk_len);
+    g_ticket.psk_len = ticket->psk_len;
     g_ticket.age_add = ticket->age_add;
     g_ticket.arrival_ms = now_ms();
     g_ticket.valid = 1;
@@ -292,7 +294,7 @@ static void fill_auth(ch_cfg *cfg) {
         return;
     }
     cfg->psk = g_ticket.psk;
-    cfg->psk_len = sizeof g_ticket.psk;
+    cfg->psk_len = g_ticket.psk_len;
     cfg->psk_id = g_ticket.identity;
     cfg->psk_id_len = g_ticket.identity_len;
     cfg->resumption = 1;

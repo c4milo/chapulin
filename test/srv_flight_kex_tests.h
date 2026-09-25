@@ -150,7 +150,7 @@ static void test_flight_hybrid_secret(void) {
     uint8_t c_hs[SHA256_LEN];
     uint8_t s_hs[SHA256_LEN];
     ks_early(SHA256_LEN, no_psk, sizeof no_psk, 0, early, binder_key);
-    (void)hsr_transcript_hash(&hs, hash);
+    (void)hsr_transcript_hash(&hs, SHA256_LEN, hash);
     ks_handshake(SHA256_LEN, early, ikm, sizeof ikm, hash, secret, c_hs, s_hs);
     CHECK(memcmp(c_hs, hs.c_hs, sizeof c_hs) == 0 && memcmp(s_hs, hs.s_hs, sizeof s_hs) == 0);
 }

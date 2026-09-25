@@ -84,7 +84,8 @@ static void level_ready(void *io, uint8_t level, uint8_t direction) {
 static struct {
     uint8_t identity[CH_TICKET_ID_MAX];
     size_t identity_len;
-    uint8_t psk[SHA256_LEN];
+    uint8_t psk[HKDF_HASH_MAX];
+    size_t psk_len;
     uint32_t lifetime_s;
     uint32_t age_add;
 #ifdef CH_TRUST_WEBPKI
@@ -98,7 +99,9 @@ static void keep_ticket(void *io, const ch_ticket *ticket) {
     CHECK(ticket->identity_len <= sizeof kept.identity);
     memcpy(kept.identity, ticket->identity, ticket->identity_len);
     kept.identity_len = ticket->identity_len;
-    memcpy(kept.psk, ticket->psk, SHA256_LEN);
+    CHECK(ticket->psk_len <= sizeof kept.psk);
+    memcpy(kept.psk, ticket->psk, ticket->psk_len);
+    kept.psk_len = ticket->psk_len;
     kept.lifetime_s = ticket->lifetime_s;
     kept.age_add = ticket->age_add;
 #ifdef CH_TRUST_WEBPKI
@@ -166,7 +169,7 @@ static void client_config(ch_cfg *cfg, const ch_alpn_protocol *alpn) {
 // The kept ticket as a resuming client presents it.
 static void present_ticket(ch_cfg *cfg) {
     cfg->psk = kept.psk;
-    cfg->psk_len = SHA256_LEN;
+    cfg->psk_len = kept.psk_len;
     cfg->psk_id = kept.identity;
     cfg->psk_id_len = kept.identity_len;
     cfg->resumption = 1;

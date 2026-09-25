@@ -37,10 +37,11 @@
 // The signed content of RFC 9846 §4.5.2: 64 spaces, the context string,
 // a NUL byte, and the transcript hash. The signature scheme names the
 // hash that covers it, SHA-384 for ecdsa_secp384r1_sha384 and SHA-256
-// for the other two, while the transcript hash stays 32 bytes, because
-// the cipher suite fixes that one. The two lengths differ here and
-// nowhere else in the client.
-static void hash_signed_content(uint16_t scheme, const uint8_t hash[SHA256_LEN],
+// for the other two, while the transcript hash is hash_len bytes, 48
+// under TLS_AES_256_GCM_SHA384 and 32 under the other suites, because
+// the cipher suite fixes that one. The two hashes are chosen apart, by
+// two negotiated values, here and nowhere else in the client.
+static void hash_signed_content(uint16_t scheme, const uint8_t *hash, size_t hash_len,
                                 uint8_t out[SHA384_LEN]) {
     static const char ctx[] = "TLS 1.3, server CertificateVerify";
     uint8_t pad[64];
@@ -50,7 +51,7 @@ static void hash_signed_content(uint16_t scheme, const uint8_t hash[SHA256_LEN],
         sha384_init(&s384);
         sha512_update(&s384, pad, sizeof pad);
         sha512_update(&s384, (const uint8_t *)ctx, sizeof ctx); // sizeof keeps the NUL
-        sha512_update(&s384, hash, SHA256_LEN);
+        sha512_update(&s384, hash, hash_len);
         sha384_final(&s384, out);
         return;
     }
@@ -58,7 +59,7 @@ static void hash_signed_content(uint16_t scheme, const uint8_t hash[SHA256_LEN],
     sha256_init(&s);
     sha256_update(&s, pad, sizeof pad);
     sha256_update(&s, (const uint8_t *)ctx, sizeof ctx);
-    sha256_update(&s, hash, SHA256_LEN);
+    sha256_update(&s, hash, hash_len);
     sha256_final(&s, out);
 }
 
@@ -91,10 +92,12 @@ static int verify_leaf_signature(const webpki_leaf_info *leaf, const uint8_t *si
 }
 #endif
 
-// CertificateVerify: parse, rebuild the §4.5.2 signed content, and
-// verify against pin slot A then B. The CA and webpki
-// builds swap in the chain's leaf key here.
-static int check_certificate_verify(handshake_state *h, const uint8_t hash[SHA256_LEN]) {
+// CertificateVerify: parse, rebuild the §4.5.2 signed content over the
+// hash_len-byte transcript hash, and verify against pin slot A then B.
+// The CA and webpki builds swap in the chain's leaf key here. Only a
+// webpki build can run a suite whose hash is not SHA-256, so the raw and
+// ca arms read SHA256_LEN, which hash_len is there.
+static int check_certificate_verify(handshake_state *h, const uint8_t *hash, size_t hash_len) {
     uint8_t type = 0;
     const uint8_t *raw = NULL;
     size_t raw_len = 0;
@@ -128,10 +131,11 @@ static int check_certificate_verify(handshake_state *h, const uint8_t hash[SHA25
         return CH_EAUTH;
     }
     uint8_t signed_hash[SHA384_LEN];
-    hash_signed_content(scheme, hash, signed_hash);
+    hash_signed_content(scheme, hash, hash_len, signed_hash);
     int sig_ok = verify_leaf_signature(&h->leaf, signed_hash, sig, sig_len);
 #else
     // Signed content per §4.5.2: 64 spaces, context string, NUL, transcript.
+    CH_ASSERT(hash_len == SHA256_LEN);
     static const char ctx[] = "TLS 1.3, server CertificateVerify";
     uint8_t pad[64];
     memset(pad, ' ', sizeof pad);
@@ -172,7 +176,7 @@ static int check_certificate_verify(handshake_state *h, const uint8_t hash[SHA25
         h->alert = ALERT_DECRYPT_ERROR;
         return CH_EAUTH;
     }
-    sha256_update(&h->t->transcript, raw, raw_len);
+    transcript_update(&h->t->transcript, raw, raw_len);
     return CH_OK;
 }
 // Pinned-key server authentication (RFC 9846 §4.5.1 and §4.5.2): accept the
@@ -322,7 +326,7 @@ int hsa_server_auth(handshake_state *h) {
         return rc;
     }
 #endif
-    sha256_update(&h->t->transcript, raw, raw_len);
+    transcript_update(&h->t->transcript, raw, raw_len);
 
 #if defined(CH_TRANSPORT_QUIC) || defined(CH_TRANSPORT_RECORD)
     // One whole message per call: the QUIC driver returns to its caller
@@ -332,17 +336,19 @@ int hsa_server_auth(handshake_state *h) {
 }
 
 int hsa_read_certificate_verify(handshake_state *h) {
-    uint8_t hash[SHA256_LEN];
+    size_t hash_len = hsr_suite_hash_len(h);
+    uint8_t hash[HKDF_HASH_MAX];
     // Recomputed rather than carried from hsa_server_auth. That is
     // correct only while nothing writes h->t->transcript between the
     // two calls, which the step table holds by running them back to
     // back.
-    (void)hsr_transcript_hash(h, hash);
-    return check_certificate_verify(h, hash);
+    (void)hsr_transcript_hash(h, hash_len, hash);
+    return check_certificate_verify(h, hash, hash_len);
 }
 #else
-    uint8_t hash[SHA256_LEN];
-    (void)hsr_transcript_hash(h, hash);
-    return check_certificate_verify(h, hash);
+    size_t hash_len = hsr_suite_hash_len(h);
+    uint8_t hash[HKDF_HASH_MAX];
+    (void)hsr_transcript_hash(h, hash_len, hash);
+    return check_certificate_verify(h, hash, hash_len);
 }
 #endif

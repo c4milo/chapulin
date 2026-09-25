@@ -154,7 +154,7 @@ HDRS := ct.h sha256.h hkdf.h chacha20.h poly1305.h aead.h x25519.h x25519_wide.h
         tls.h rand.h drbg.h sha3.h sha512.h sha512_compress.h p384.h p384_field.h p256_field.h p256_scalar.h p256_point.h p256_sign.h p256_ecdh.h rsa_pkcs1.h rsa_sign.h mlkem.h mlkem_poly.h \
         handshake_flight.h quic.h quic_aes.h quic_aes_block.h quic_aes_key.h quic_config.h quic_gcm.h quic_ghash_hw.h quic_initial.h quic_keys.h quic_packet.h quic_retry.h quic_step.h quic_fail.h quic_token.h aes_traffic_key.h aes_schedule.h \
         srv_cfg.h srv.h srv_parser.h srv_parser_ext.h srv_message.h srv_cookie.h srv_ticket.h srv_auth.h srv_out.h srv_flight.h srv_resume.h srv_handshake.h srv_quic.h srv_rec.h keylog.h \
-        rec.h rec_frame.h rec_step.h build.h
+        rec.h rec_frame.h rec_step.h build.h suite.h transcript.h
 
 # The TRANSPORT=quic mode's own sources, named here rather than matched
 # by a pattern, for the reason WEBPKI_SRCS is named: an auditor reads
@@ -269,7 +269,7 @@ AES_HW_CFLAGS := $(filter-out none,$(AES_HW_PROBE))
 # found them, so `check` builds and runs them where they work and says it
 # skipped them where they do not exist.
 AES_HW_BINS := $(if $(AES_HW_PROBE),bin/quic_test_hw bin/aes_equiv_test bin/ghash_equiv_test bin/aes_suite_test \
-                                     bin/srv_flight_test_aes bin/webpki_session_aes)
+                                     bin/srv_flight_test_aes bin/webpki_session_aes bin/webpki_loop_aes)
 # What lint-quic-partition needs to preprocess each AES implementation.
 # Each one guards its body on a second macro, so with CH_TRANSPORT_QUIC
 # alone it preprocesses to nothing and that lint would read it as a file
@@ -1504,6 +1504,15 @@ bin/tlsserver: test/tls_server.c $(SRV_SRCS) $(SRV_BELOW) $(SRV_SIGNERS) tls.c h
 	@mkdir -p bin
 	$(CC) $(CFLAGS) -DCH_ROLE_SERVER -I. -Itest -o $@ test/tls_server.c $(SRV_SRCS) \
 	  $(SRV_BELOW) $(SRV_SIGNERS) tls.c handshake_post.c
+# The same server under -DCH_SUITE_AES_GCM on the AES instructions, which
+# test/e2e.sh drives with s_client restricted to one suite at a time. A
+# compiler without the instructions builds none of it, and e2e says so.
+bin/tlsserver_aes: test/tls_server.c $(SRV_SRCS) $(SRV_BELOW) $(SRV_SIGNERS) tls.c handshake_post.c \
+                   quic_aes.c $(AES_HW_SRCS) quic_gcm.c sha512.c sha512_compress.c $(HDRS) $(TESTH)
+	@mkdir -p bin
+	$(CC) $(CFLAGS) $(AES_HW_CFLAGS) -DCH_ROLE_SERVER -DCH_SUITE_AES_GCM -DCH_AES_HW -DCH_NATIVE_AES \
+	  -I. -Itest -o $@ test/tls_server.c $(SRV_SRCS) $(SRV_BELOW) $(SRV_SIGNERS) tls.c \
+	  handshake_post.c quic_aes.c $(AES_HW_SRCS) quic_gcm.c sha512.c sha512_compress.c
 # The role's unit vectors: the messages srv_message.c writes, the cookie
 # srv_cookie.c mints and opens, and the ClientHello srv_parser.c reads. It
 # links those sources and their dependencies alone, not the whole role,
@@ -1600,6 +1609,16 @@ bin/webpki_loop_record: test/webpki_loop_test.c $(WEBPKI_LOOP_SRCS) $(HDRS) $(TE
 	@mkdir -p bin
 	$(CC) $(CFLAGS) -DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_TRANSPORT_RECORD -DCH_TRUST_WEBPKI \
 	  -I. -o $@ test/webpki_loop_test.c $(WEBPKI_LOOP_SRCS)
+# The same loop under -DCH_SUITE_AES_GCM on the AES instructions: each of
+# the three suites through a full handshake and a resumption, a SHA-384
+# ticket passed over by a SHA-256 suite, and h3spec's suite offer through
+# the real parser (test/webpki_loop_suites.h).
+bin/webpki_loop_aes: test/webpki_loop_test.c test/webpki_loop_suites.h $(WEBPKI_LOOP_SRCS) \
+                     quic_aes.c $(AES_HW_SRCS) quic_gcm.c $(HDRS) $(TESTH)
+	@mkdir -p bin
+	$(CC) $(CFLAGS) $(AES_HW_CFLAGS) -DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_TRANSPORT_RECORD \
+	  -DCH_TRUST_WEBPKI -DCH_SUITE_AES_GCM -DCH_AES_HW -DCH_NATIVE_AES -I. -o $@ \
+	  test/webpki_loop_test.c $(WEBPKI_LOOP_SRCS) quic_aes.c $(AES_HW_SRCS) quic_gcm.c
 bin/srv_test: test/srv_test.c srv_message.c srv_cookie.c srv_ticket.c srv_parser.c \
               srv_parser_ext.c $(SRV_DEPS) $(HDRS) $(TESTH)
 	@mkdir -p bin
@@ -2125,6 +2144,7 @@ check: bin/unit bin/unit_ca bin/unit_pq bin/tlsclient bin/tlsclient_ecdsa bin/tl
 	  ./bin/quic_test_hw; ./bin/aes_equiv_test; ./bin/ghash_equiv_test; ./bin/aes_suite_test; \
 	  ./bin/srv_flight_test_aes; \
 	  ./bin/webpki_session_aes; \
+	  ./bin/webpki_loop_aes; \
 	else \
 	  echo "SKIP AES=hw: $(CC) has no AES instructions and no flag turns them on"; \
 	fi
@@ -2212,7 +2232,8 @@ endif
 # three compiles that would come out of check's one-minute budget, so it
 # sits here.
 .PHONY: check-slow
-check-slow: check bin/handshake_sequence_test bin/handshake_sequence_pq bin/pemkey bin/pemkey_ecdsa bin/tlsserver
+check-slow: check bin/handshake_sequence_test bin/handshake_sequence_pq bin/pemkey bin/pemkey_ecdsa bin/tlsserver \
+            $(if $(AES_HW_PROBE),bin/tlsserver_aes)
 	$(MAKE) ct-widemul-check
 	./test/qemu-m3.sh
 	./test/e2e.sh

@@ -66,7 +66,8 @@ extern const uint8_t srv_hrr_random[SRV_RANDOM];
 //
 // SRV_CERT_VERIFY_MAX is a 4-byte handshake header, the 2-byte scheme,
 // the 2-byte signature length and a signature of at most SRV_SIG_MAX
-// bytes. SRV_FINISHED_MAX is a header over one verify_data.
+// bytes. SRV_FINISHED_MAX is a header over one verify_data of the
+// longest hash the build holds, HKDF_HASH_MAX.
 // SRV_ENCRYPTED_EXTENSIONS_MAX is a header and an empty extension block
 // (6), record_size_limit (6), and ALPN at this API's longest name
 // (7 + CH_ALPN_NAME_MAX). A QUIC server sends no record_size_limit (RFC
@@ -80,7 +81,7 @@ extern const uint8_t srv_hrr_random[SRV_RANDOM];
 // one entry's suffix, which srv_certificate_message_len counts as
 // SRV_CERT_HEAD and the 2 bytes of SRV_CERT_ENTRY_FRAME.
 #define SRV_CERT_VERIFY_MAX (4 + 2 + 2 + SRV_SIG_MAX)
-#define SRV_FINISHED_MAX (4 + SHA256_LEN)
+#define SRV_FINISHED_MAX (4 + HKDF_HASH_MAX)
 #ifdef CH_TRANSPORT_QUIC
 #define SRV_ENCRYPTED_EXTENSIONS_MAX (6 + 7 + CH_ALPN_NAME_MAX + 4 + CH_TRANSPORT_PARAMS_MAX)
 #else
@@ -118,19 +119,16 @@ extern const uint8_t srv_hrr_random[SRV_RANDOM];
 // srv_auth.c. Every member holds a value the peer will see in the
 // clear, so no member is secret and every branch on one is public.
 typedef struct {
-    // The cipher suite, as a code point on the wire:
-    // SUITE_CHACHA20_POLY1305_SHA256 (handshake_message.h), or under
-    // -DCH_SUITE_AES_GCM SUITE_AES_128_GCM_SHA256 from a client that
-    // offers no ChaCha20 (srv_select). Every record direction the server
-    // keys runs it.
+    // The cipher suite, as a code point on the wire (suite.h):
+    // SUITE_CHACHA20_POLY1305_SHA256, or under -DCH_SUITE_AES_GCM one of
+    // the two AES-GCM suites, in the order srv_select states. Every
+    // record direction the server keys runs it.
     uint16_t suite;
 
     // The transcript hash length the suite fixes
-    // (rfc9846.txt:4055-4056), in bytes: SHA256_LEN under the suite
-    // above, and 48 under TLS_AES_256_GCM_SHA384 when that suite
-    // arrives. The member exists now so the key schedule, the cookie
-    // and the Finished read one value rather than a constant that
-    // would have to be hunted down later.
+    // (rfc9846.txt:4055-4056), in bytes: SHA384_LEN under
+    // TLS_AES_256_GCM_SHA384 and SHA256_LEN under the other two. The
+    // key schedule, the cookie and the Finished read this one value.
     uint8_t hash_len;
 
     // The NamedGroup of the key exchange: CH_GROUP_X25519MLKEM768 or

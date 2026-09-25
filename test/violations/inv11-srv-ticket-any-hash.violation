@@ -1,0 +1,14 @@
+invariant: INV-11
+file: srv_resume.c
+catches: webpki_loop_aes
+reason: the server resumes a ticket under a suite whose hash is not the
+  ticket's, which RFC 9846 §4.7.1 forbids (rfc9846.txt:3219-3220). A
+  SHA-384 ticket offered to a handshake that selected a SHA-256 suite is
+  then selected, its binder checked with the wrong hash, and the
+  handshake ends in decrypt_error where it should have gone on with a
+  certificate. The loop's hash mismatch row expects that certificate.
+
+--- old
+    return hash_len != 0 && hash_len == sel->hash_len;
+--- new
+    return hash_len != 0 && sel->hash_len != 0;

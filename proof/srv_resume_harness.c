@@ -7,7 +7,10 @@
 // a truncated one included, and never read past either list. The ticket
 // key is set or NULL, the clock any value, the offered modes and the seen
 // mask any value, the ALPN selection any index the parser could report,
-// and the selection's suite, hash length and scheme any value.
+// and the selection's suite and scheme any value. The selection's hash
+// length and the session's are SHA256_LEN, the one hash srv_select can
+// name in this build, which is the value srv_select_auth's contract and
+// the stored selection hold.
 // srv_select_auth answers CH_OK, CH_EAUTH with decrypt_error, or CH_EPROTO
 // with missing_extension or handshake_failure; a CH_OK names an
 // authentication path, a ticket or a scheme; a selected ticket's index
@@ -122,9 +125,12 @@ void ks_res_psk(size_t hash_len, const uint8_t *res_master, const uint8_t *nonce
     fill_nondet(psk, hash_len);
 }
 
-int hsr_transcript_hash(handshake_state *s, uint8_t out[SHA256_LEN]) {
+int hsr_transcript_hash(handshake_state *s, size_t hash_len, uint8_t *out) {
     __CPROVER_assert(__CPROVER_r_ok(s, sizeof *s), "transcript: state readable");
-    fill_nondet(out, SHA256_LEN);
+    __CPROVER_assert(hash_len == SHA256_LEN || hash_len == HKDF_HASH_MAX,
+                     "transcript: hash_len names a hash this build holds");
+    __CPROVER_assert(__CPROVER_w_ok(out, hash_len), "transcript: out writable");
+    fill_nondet(out, hash_len);
     return CH_OK;
 }
 
@@ -196,6 +202,7 @@ static void fill_session(void) {
     t.alpn_selected = nondet_u8();
     __CPROVER_assume(t.alpn_selected < 2 || t.alpn_selected == CH_ALPN_NONE);
     t.suite = nondet_u16();
+    t.hash_len = SHA256_LEN;
     t.psk_selected = nondet_u8();
     h.ticket_auth_seconds = nondet_u64();
 }
@@ -218,7 +225,7 @@ static void prove_select(void) {
     fill_nondet(ch.binder_hash, sizeof ch.binder_hash);
     memset(&sel, 0, sizeof sel);
     sel.suite = nondet_u16();
-    sel.hash_len = nondet_u8();
+    sel.hash_len = SHA256_LEN;
     sel.sigalg = nondet_u16();
     opened = 0;
 

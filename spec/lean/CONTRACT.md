@@ -123,8 +123,10 @@ Spec.HandshakeParser.parseServerHello : (kex : Kex) → (suiteOffer : SuiteOffer
                         -- ClientHello sends (§4.2.2). chacha lists TLS_CHACHA20_POLY1305_SHA256 (0x1303)
                         -- alone, the offer of every client build but one.
                         -- chachaAndAes, the SUITE=aesgcm TRUST=webpki
-                        -- client (docs/decisions.md entry 45), lists 0x1303
-                        -- then TLS_AES_128_GCM_SHA256 (0x1301). A ServerHello
+                        -- client (docs/decisions.md entries 45 and 58),
+                        -- lists 0x1303, then TLS_AES_128_GCM_SHA256
+                        -- (0x1301), then TLS_AES_256_GCM_SHA384 (0x1302).
+                        -- A ServerHello
                         -- or HelloRetryRequest may carry any listed suite,
                         -- and both report it. Whether a ServerHello carries
                         -- the suite of the retry before it (§4.2.4) turns on

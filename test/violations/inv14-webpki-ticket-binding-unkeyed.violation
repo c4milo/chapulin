@@ -7,7 +7,8 @@ reason: the binding's HMAC is keyed by the configuration hash instead of the
   known-answer row and the other-ticket row object.
 
 --- old
-    hmac_sha256(psk, SHA256_LEN, msg, w.len, out);
+    hmac_sha256(psk, psk_len, msg, w.len, out);
 --- new
     (void)psk;
+    (void)psk_len;
     hmac_sha256(config_hash, SHA256_LEN, msg, w.len, out);

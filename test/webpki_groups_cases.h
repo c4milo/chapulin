@@ -208,6 +208,11 @@ static void test_webpki_x25519_wipes_the_seed(void) {
         if (groups[i] == CH_GROUP_X25519MLKEM768) {
             info.server_ct = ct;
         }
+#ifdef CH_SUITE_AES_GCM
+        // The suite hsf_read_server_hello would have taken, which names
+        // the hash the secrets derive at.
+        h.suite = SUITE_CHACHA20_POLY1305_SHA256;
+#endif
         CHECK(hsf_derive_handshake_secrets(&h, &info) == CH_OK);
         CHECK(seed_wiped(h.dz));
     }

@@ -137,12 +137,15 @@ int hsf_read_finished(handshake_state *h) {
     return rc;
 }
 
-void hsf_complete(handshake_state *h, uint8_t finished[HSF_FINISHED_LEN]) {
+size_t hsf_complete(handshake_state *h, uint8_t finished[HSF_FINISHED_MAX]) {
     __CPROVER_assert(h->server_finished_ok, "complete: the server Finished verified first");
-    __CPROVER_assert(__CPROVER_w_ok(finished, HSF_FINISHED_LEN), "complete: staging writable");
-    fill_nondet(finished, HSF_FINISHED_LEN);
+    __CPROVER_assert(__CPROVER_w_ok(finished, HSF_FINISHED_MAX), "complete: staging writable");
+    fill_nondet(finished, HSF_FINISHED_MAX);
     fill_nondet(h->t->wr_secret, sizeof h->t->wr_secret);
     fill_nondet(h->t->rd_secret, sizeof h->t->rd_secret);
+    // The one suite this build holds hashes with SHA-256, so the message
+    // is the header and 32 bytes of verify_data.
+    return 4 + SHA256_LEN;
 }
 
 int hsa_server_auth(handshake_state *h) {
@@ -306,7 +309,7 @@ int main(void) {
         }
         if (was_step == HSQ_STEP_AWAIT_FINISHED) {
             __CPROVER_assert(q.step == HSQ_STEP_COMPLETE, "the Finished step ends the handshake");
-            __CPROVER_assert(q.tx_len == HSF_FINISHED_LEN, "and stages the client Finished");
+            __CPROVER_assert(q.tx_len == 4 + SHA256_LEN, "and stages the client Finished");
             __CPROVER_assert(q.tx_level == CH_LEVEL_HANDSHAKE, "at the Handshake level");
             __CPROVER_assert(q.rx_level == CH_LEVEL_APPLICATION, "and moves to 1-RTT");
             __CPROVER_assert(q.hs.t == &q.t, "and writes the back pointer again after the wipe");

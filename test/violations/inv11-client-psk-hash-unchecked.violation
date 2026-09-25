@@ -1,0 +1,13 @@
+invariant: INV-11
+file: handshake_flight.c
+catches: webpki_session_aes
+reason: the client accepts a ServerHello that selects its PSK under a
+  suite with another hash, so a SHA-384 ticket runs its early secret
+  into a SHA-256 schedule. RFC 9846 §4.3.11 makes the mismatch an
+  illegal_parameter abort (rfc9846.txt:2551-2556). The session test
+  drives hsf_accept_server_hello with each ticket under each hash.
+
+--- old
+    if (psk_offered && info->psk_ok && hs_psk_hash_len(&h->t->cfg) != hsr_suite_hash_len(h)) {
+--- new
+    if (psk_offered && info->psk_ok && hs_psk_hash_len(&h->t->cfg) == 0) {

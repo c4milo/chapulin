@@ -7,6 +7,6 @@ reason: a received ticket's binding is computed over its own PSK in place of
   received-ticket rows object.
 
 --- old
-    webpki_ticket_binding(ticket.psk, t->ticket_config_hash, ticket.binding);
+    webpki_ticket_binding(ticket.psk, ticket.psk_len, t->ticket_config_hash, ticket.binding);
 --- new
-    webpki_ticket_binding(ticket.psk, ticket.psk, ticket.binding);
+    webpki_ticket_binding(ticket.psk, ticket.psk_len, ticket.psk, ticket.binding);

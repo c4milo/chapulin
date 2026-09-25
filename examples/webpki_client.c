@@ -232,7 +232,7 @@ static int dial(const char *host, const char *port) {
 // --- The session ---------------------------------------------------------
 
 // Tickets arrive bound to this hostname and these anchors. A caller that
-// resumes stores psk, identity and binding, and presents them on its next
+// resumes stores psk, psk_len, identity and binding, and presents them on its next
 // ch_connect under the same hostname and anchors (docs/webpki.md,
 // "Resumption"). This example only reports what arrived.
 static void on_ticket(void *io, const ch_ticket *ticket) {

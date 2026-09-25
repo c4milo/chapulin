@@ -71,33 +71,9 @@
 #define SRV_CLIENT_HELLO_EXT_MAX 128
 #endif
 
-// The cipher suites this build can select, one bit each, as
-// srv_parse_client_hello reports the client's offer and srv_select
-// reads it. A bit is set when the ClientHello listed that suite; a
-// suite this build does not hold has no bit and its code point falls
-// through the same ignore rule an unknown extension takes.
-//
-// One bit is defined today. RFC 9846 §9.1 names three suites
-// (rfc9846.txt:4540-4543) and this build offers the first of them,
-// TLS_CHACHA20_POLY1305_SHA256, alone. The other two are AEAD_AES_128_GCM
-// and AEAD_AES_256_GCM. A -DCH_SUITE_AES_GCM build offers the first of
-// those two as well, and selects it only when the client offers no
-// ChaCha20 (srv_flight.c), so a build that meets section 9.1 still
-// prefers the cipher that is constant time by construction rather than
-// by a statement about the part it runs on. A build without that define
-// offers one suite and does not meet section 9.1, and no comment here
-// claims it does. AEAD_AES_256_GCM needs a second hash length and is not
-// offered at all.
-#define SRV_SUITE_CHACHA20_POLY1305 0x01
-
-#ifdef CH_SUITE_AES_GCM
-// TLS_AES_128_GCM_SHA256, the suite section 9.1 makes mandatory to
-// implement. Only a -DCH_SUITE_AES_GCM build reads this bit, and ct.h
-// refuses that define unless the build has hardware AES and states that
-// those instructions are constant time, because the AES=soft S-box is
-// indexed with the key and a traffic key is secret (INV-26).
-#define SRV_SUITE_AES_128_GCM 0x02
-#endif
+// The cipher suites this build can select, SRV_SUITE_CHACHA20_POLY1305
+// and, under -DCH_SUITE_AES_GCM, the two AES-GCM bits, are declared in
+// suite.h beside the code points, with srv_suite_bit.
 
 // The key exchange groups this build can select, one bit each, read
 // from the client's supported_groups and from its key_share. Every
@@ -302,6 +278,12 @@ typedef struct {
     // message_hash and the retry, so the second hello's binders cover
     // both, as the client computes them.
     uint8_t binder_hash[SHA256_LEN];
+#ifdef CH_HASH_SHA384
+    // The same at SHA-384, for a TLS_AES_256_GCM_SHA384 ticket: a binder
+    // takes its PSK's hash (rfc9846.txt:2612-2615), and the ticket is
+    // chosen after this message is hashed, so both are written.
+    uint8_t binder_hash_sha384[SHA384_LEN];
+#endif
 
     // The recognized extensions this message carried, as the SRV_EXT_
     // bits above.

@@ -15,7 +15,7 @@
 static void bind_ticket(const ch_cfg *cfg, const uint8_t *psk, uint8_t out[SHA256_LEN]) {
     uint8_t hash[SHA256_LEN];
     webpki_ticket_config_hash(cfg, hash);
-    webpki_ticket_binding(psk, hash, out);
+    webpki_ticket_binding(psk, SHA256_LEN, hash, out);
 }
 
 // A configuration that verifies the r2 chain, root_anchor and hostname as

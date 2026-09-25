@@ -1,0 +1,14 @@
+invariant: INV-11
+file: handshake_flight.c
+catches: webpki_session_aes
+reason: the client writes the HelloRetryRequest's synthetic message at
+  SHA-256 whatever suite the retry names, so after a retry that selects
+  TLS_AES_256_GCM_SHA384 its transcript holds a 32-byte message_hash
+  where RFC 9846 §4.4.1 puts Hash.length bytes, and every secret after
+  it differs from the server's. The session test's AES-256 retry row
+  reaches the certificate only when both ends agree.
+
+--- old
+        hsr_restart_transcript(h, hsr_suite_hash_len(h), raw, raw_len);
+--- new
+        hsr_restart_transcript(h, SHA256_LEN, raw, raw_len);

@@ -163,7 +163,7 @@ size_t hs_build_client_hello(uint8_t *out, size_t cap, const ch_cfg *cfg, const 
     // binders tail plus the handshake header. handshake_message.c has no harness
     // (the README names it), so this contract rests on the unit tests
     // until one exists; the binder patching below is what depends on it.
-    __CPROVER_assume(n >= CH_BINDERS_TAIL + 4 && n <= cap);
+    __CPROVER_assume(n >= CH_BINDERS_TAIL(SHA256_LEN) + 4 && n <= cap);
     // All cap bytes havoc, not n of them. The builder may write anywhere
     // inside the caller's cap -- hello_build proves it writes nothing
     // outside that and says nothing about the bytes past n -- so this is
@@ -370,11 +370,23 @@ int hsr_next_msg(handshake_state *h, uint8_t *type, const uint8_t **raw, size_t 
     return CH_OK;
 }
 
-int hsr_transcript_hash(handshake_state *h, uint8_t out[SHA256_LEN]) {
+int hsr_transcript_hash(handshake_state *h, size_t hash_len, uint8_t *out) {
     __CPROVER_assert(__CPROVER_w_ok(h, sizeof *h), "hash: state writable");
-    __CPROVER_assert(__CPROVER_w_ok(out, SHA256_LEN), "hash: out writable");
+    __CPROVER_assert(hash_len == SHA256_LEN, "hash: the one hash this build holds");
+    __CPROVER_assert(__CPROVER_w_ok(out, hash_len), "hash: out writable");
     fill_nondet(out, SHA256_LEN);
     return CH_OK;
+}
+
+// handshake_record.c's restart after a HelloRetryRequest, to its
+// contract: the retry is readable at its length, the hash is the one
+// this build holds, and the running transcript becomes some state the
+// SHA-256 stub havocs. transcript384 proves the real function.
+void hsr_restart_transcript(handshake_state *h, size_t hash_len, const uint8_t *retry, size_t n) {
+    __CPROVER_assert(__CPROVER_w_ok(h, sizeof *h), "restart: state writable");
+    __CPROVER_assert(hash_len == SHA256_LEN, "restart: the one hash this build holds");
+    __CPROVER_assert(n == 0 || __CPROVER_r_ok(retry, n), "restart: retry readable");
+    transcript_init(&h->t->transcript);
 }
 
 #include "handshake.c"

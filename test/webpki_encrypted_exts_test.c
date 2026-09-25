@@ -148,7 +148,7 @@ static int read_row(cfg_shape shape, const uint8_t *exts, size_t n, uint8_t befo
     t.peer_limit = CH_TX_PT;
     t.alpn_selected = CH_ALPN_NONE;
     t.server_cert_type = before;
-    sha256_init(&t.transcript);
+    transcript_init(&t.transcript);
     handshake_state h;
     memset(&h, 0, sizeof h);
     h.t = &t;

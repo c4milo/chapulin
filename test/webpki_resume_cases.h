@@ -81,12 +81,12 @@ static void test_binding_known_answer(void) {
     uint8_t hash[SHA256_LEN];
     uint8_t binding[SHA256_LEN];
     webpki_ticket_config_hash(&cfg, hash);
-    webpki_ticket_binding(ticket_psk, hash, binding);
+    webpki_ticket_binding(ticket_psk, SHA256_LEN, hash, binding);
     CHECK(memcmp(binding, known_binding, SHA256_LEN) == 0);
     // Capitals hash as their lower case, so the binding does not move.
     cfg.hostname = host_capitals;
     webpki_ticket_config_hash(&cfg, hash);
-    webpki_ticket_binding(ticket_psk, hash, binding);
+    webpki_ticket_binding(ticket_psk, SHA256_LEN, hash, binding);
     CHECK(memcmp(binding, known_binding, SHA256_LEN) == 0);
 }
 
@@ -95,12 +95,19 @@ static void test_ticket_shape(void) {
     present(&cfg, ticket_psk, known_binding);
     CHECK(resumes(&cfg, ticket_psk));
     // The PSK is the SHA256_LEN bytes ks_res_psk writes, no fewer or more.
-    cfg = base_cfg();
-    present(&cfg, ticket_psk, known_binding);
-    cfg.psk_len = SHA256_LEN - 1;
-    CHECK(refused(&cfg));
-    cfg.psk_len = SHA256_LEN + 1;
-    CHECK(refused(&cfg));
+    // Each row carries the binding of its own length, so only the length
+    // check refuses it.
+    const size_t wrong_lens[] = {SHA256_LEN - 1, SHA256_LEN + 1};
+    for (size_t i = 0; i < sizeof wrong_lens / sizeof wrong_lens[0]; i++) {
+        uint8_t hash[SHA256_LEN];
+        uint8_t binding[SHA256_LEN];
+        cfg = base_cfg();
+        webpki_ticket_config_hash(&cfg, hash);
+        webpki_ticket_binding(ticket_psk, wrong_lens[i], hash, binding);
+        present(&cfg, ticket_psk, binding);
+        cfg.psk_len = wrong_lens[i];
+        CHECK(refused(&cfg));
+    }
     // The identity is 1 to CH_TICKET_ID_MAX bytes.
     cfg = base_cfg();
     present(&cfg, ticket_psk, known_binding);
@@ -215,7 +222,7 @@ static void test_resumed_handshake(void) {
     uint8_t hash[SHA256_LEN];
     uint8_t binding[SHA256_LEN];
     webpki_ticket_config_hash(&cfg, hash);
-    webpki_ticket_binding(received.psk, hash, binding);
+    webpki_ticket_binding(received.psk, received.psk_len, hash, binding);
     CHECK(memcmp(binding, received.binding, SHA256_LEN) == 0);
 
     // It resumes the next session under the same name, and no other.

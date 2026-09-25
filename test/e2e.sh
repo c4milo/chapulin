@@ -69,7 +69,7 @@ start_server() {
 start_chserver() {
     SRV_N=$((SRV_N + 1))
     local log="$DIR/server$SRV_N.log"
-    ./bin/tlsserver "$@" > "$log" 2>&1 &
+    "${CHSRV_BIN:-./bin/tlsserver}" "$@" > "$log" 2>&1 &
     SRV_PID=$!
     SRV_PIDS="$SRV_PIDS $SRV_PID"
     disown "$SRV_PID" 2>/dev/null || true
@@ -1212,10 +1212,68 @@ if [ -x ./bin/tlsclient_webpki_aes ]; then
         cat "$DIR/err_wp_chacha"
         exit 1
     }
-    AES_SUITE_LEG=" + webpki-aes x2"
+    # TLS_AES_256_GCM_SHA384 runs the transcript and the key schedule on
+    # SHA-384, and the ticket OpenSSL issues under it carries a 48-byte
+    # PSK, so the resumption proves the SHA-384 binder too.
+    start_server -tls1_3 -ciphersuites TLS_AES_256_GCM_SHA384 -cert "$DIR/wpleaf.pem" -key "$DIR/wpleaf.key" -cert_chain "$DIR/wpint.pem" -rev
+    PORT_WEBPKI_AES256=$SRV_PORT
+    MSG='suite larga'
+    WEBPKI_HOST=$WEBPKI_HOSTNAME WEBPKI_NOW=$NOW \
+        expect webpki-aes256 "agral etius" "$DIR/err_wp_aes256" \
+        ./bin/tlsclient_webpki_aes 127.0.0.1 "$PORT_WEBPKI_AES256" "$WEBPKI_ANCHOR" - "$DIR/wpticket384"
+    grep -q "^suite 0x1302$" "$DIR/err_wp_aes256" || {
+        echo "FAIL e2e webpki-aes256: client did not report TLS_AES_256_GCM_SHA384"
+        cat "$DIR/err_wp_aes256"
+        exit 1
+    }
+    MSG='suite larga otra vez'
+    WEBPKI_HOST=$WEBPKI_HOSTNAME WEBPKI_NOW=$NOW \
+        expect webpki-aes256-resume "zev arto agral etius" "$DIR/err_wp_aes256_resume" \
+        ./bin/tlsclient_webpki_aes 127.0.0.1 "$PORT_WEBPKI_AES256" "$WEBPKI_ANCHOR" "@$DIR/wpticket384"
+    if ! grep -q "^psk selected 1$" "$DIR/err_wp_aes256_resume" ||
+        ! grep -q "^suite 0x1302$" "$DIR/err_wp_aes256_resume"; then
+        echo "FAIL e2e webpki-aes256-resume: did not resume under TLS_AES_256_GCM_SHA384"
+        cat "$DIR/err_wp_aes256_resume"
+        exit 1
+    fi
+    AES_SUITE_LEG=" + webpki-aes x4"
 else
     AES_SUITE_LEG=""
     echo "SKIP webpki-aes legs: bin/tlsclient_webpki_aes is absent (no AES instructions)"
 fi
 
-echo "e2e: record + psk + tickets + resumption + pinned ecdsa + chapulin server resume x2 + chapulin server x25519${CHSRV_PQ_LEG} + pinned rsa + require-pq refused + rotation + ca rsa x2 + ca ecdsa x2 + ca rotation + ca negatives x3${EPOCH_LEG} + webpki rsa + webpki-resume x3 + webpki-rpk x7 + webpki ecdsa x2 + webpki negatives x4 + webpki alpn x3${GO_LEG}${OPENSSL_PQ_LEG}${AES_SUITE_LEG} + examples x4 OK"
+# --- This tree's SUITE=aesgcm server against s_client restricted to one
+# suite at a time, a full handshake and then the ticket it issued resumed
+# (docs/decisions.md 58). The server's default order prefers ChaCha20, so
+# each s_client offer is what names the suite. ---
+if [ -x ./bin/tlsserver_aes ]; then
+    CHSRV_BIN=./bin/tlsserver_aes start_chserver "$DIR/cert.der" "$PRIV" "$PUB"
+    PORT_CHSRV_AES=$SRV_PORT
+    CHSRV_AES_LOG=$SRV_LOG
+    for suite in TLS_CHACHA20_POLY1305_SHA256 TLS_AES_128_GCM_SHA256 TLS_AES_256_GCM_SHA384; do
+        for leg in New Reused; do
+            session="-sess_out"
+            [ "$leg" = Reused ] && session="-sess_in"
+            label="chsrv-aes-$suite-$leg"
+            printf '%s\n' 'una suite' | "$OPENSSL" s_client -connect "127.0.0.1:$PORT_CHSRV_AES" \
+                -tls1_3 -ciphersuites "$suite" -ign_eof "$session" "$DIR/sess_$suite.pem" \
+                > "$DIR/$label.log" 2>&1 || {
+                echo "FAIL $label: s_client exited nonzero"
+                cat "$DIR/$label.log" "$CHSRV_AES_LOG"
+                exit 1
+            }
+            if ! grep -q "^$leg, TLSv1.3, Cipher is $suite" "$DIR/$label.log" ||
+                ! grep -q "^etius anu$" "$DIR/$label.log"; then
+                echo "FAIL $label: want a $leg session under $suite"
+                cat "$DIR/$label.log" "$CHSRV_AES_LOG"
+                exit 1
+            fi
+        done
+    done
+    CHSRV_AES_LEG=" + chapulin server aesgcm x6"
+else
+    CHSRV_AES_LEG=""
+    echo "SKIP chapulin server aesgcm legs: bin/tlsserver_aes is absent (no AES instructions)"
+fi
+
+echo "e2e: record + psk + tickets + resumption + pinned ecdsa + chapulin server resume x2 + chapulin server x25519${CHSRV_PQ_LEG} + pinned rsa + require-pq refused + rotation + ca rsa x2 + ca ecdsa x2 + ca rotation + ca negatives x3${EPOCH_LEG} + webpki rsa + webpki-resume x3 + webpki-rpk x7 + webpki ecdsa x2 + webpki negatives x4 + webpki alpn x3${GO_LEG}${OPENSSL_PQ_LEG}${AES_SUITE_LEG}${CHSRV_AES_LEG} + examples x4 OK"

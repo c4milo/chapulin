@@ -174,11 +174,12 @@ static struct {
     const char *label;
     uint8_t random[CH_KEYLOG_RANDOM_LEN];
     uint8_t secret[SHA256_LEN];
+    size_t secret_len;
 } logged[LOG_MAX];
 static size_t logged_count;
 
 void ch_keylog(void *io, const char *label, const uint8_t client_random[CH_KEYLOG_RANDOM_LEN],
-               const uint8_t secret[SHA256_LEN]) {
+               const uint8_t *secret, size_t secret_len) {
     CHECK(io == &client_io || io == &server_io);
     (*(int *)io)++;
     CHECK(logged_count < LOG_MAX);
@@ -188,7 +189,10 @@ void ch_keylog(void *io, const char *label, const uint8_t client_random[CH_KEYLO
     logged[logged_count].from_server = io == &server_io;
     logged[logged_count].label = label;
     memcpy(logged[logged_count].random, client_random, CH_KEYLOG_RANDOM_LEN);
+    // Every suite this loop runs hashes with SHA-256.
+    CHECK(secret_len == SHA256_LEN);
     memcpy(logged[logged_count].secret, secret, SHA256_LEN);
+    logged[logged_count].secret_len = secret_len;
     logged_count++;
 }
 

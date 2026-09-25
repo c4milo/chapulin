@@ -57,6 +57,7 @@
 
 #include "aead.h"
 #include "cfg.h"
+#include "hkdf.h"
 #include "sha256.h"
 
 // The ticket key: 32 bytes of ChaCha20-Poly1305 key the caller owns and
@@ -83,14 +84,17 @@
 #endif
 
 // The sealed body's length, in bytes: auth_seconds (8), suite (2),
-// alpn_len (1), the name at its longest (CH_ALPN_NAME_MAX) and the PSK
-// (SHA256_LEN). It is 75.
-#define SRV_TICKET_BODY_LEN (8 + 2 + 1 + CH_ALPN_NAME_MAX + SHA256_LEN)
+// alpn_len (1), the name at its longest (CH_ALPN_NAME_MAX) and the PSK at
+// the longest hash the build holds (HKDF_HASH_MAX). It is 75, and 91 in a
+// -DCH_SUITE_AES_GCM build, where a SHA-256 PSK leaves its last 16 bytes
+// zero.
+#define SRV_TICKET_BODY_LEN (8 + 2 + 1 + CH_ALPN_NAME_MAX + HKDF_HASH_MAX)
 
-// The whole ticket's length, in bytes, and the only length a ticket has:
-// the version byte, the AEAD nonce, the body and the tag. It is 104. The
-// fixed length is what lets srv_resume.c pass over an identity of any
-// other length without running the AEAD.
+// The whole ticket's length, in bytes, and the only length a ticket has
+// in one build: the version byte, the AEAD nonce, the body and the tag.
+// It is 104, and 120 in a -DCH_SUITE_AES_GCM build. The fixed length is
+// what lets srv_resume.c pass over an identity of any other length
+// without running the AEAD.
 #define SRV_TICKET_LEN (1 + AEAD_NONCE + SRV_TICKET_BODY_LEN + AEAD_TAG)
 
 // What one ticket carries.
@@ -106,8 +110,8 @@
 //
 // suite is the cipher suite of the connection that issued the ticket. RFC
 // 9846 §4.7.1 lets a ticket resume only under a suite with the same KDF
-// hash (rfc9846.txt:3219-3220). Every suite this build holds hashes with
-// SHA-256, so the hash is not stored separately.
+// hash (rfc9846.txt:3219-3220), and suite_hash_len (suite.h) of it names
+// that hash, so the hash is not stored separately.
 //
 // alpn and alpn_len are the application protocol that connection
 // negotiated, and alpn_len is 0 when it negotiated none. srv_resume.h
@@ -115,14 +119,15 @@
 // protocol.
 //
 // psk is the ticket's PSK, HKDF-Expand-Label(resumption_secret,
-// "resumption", ticket_nonce, Hash.length) (rfc9846.txt:3298-3301). It is
-// the one secret here, and every holder wipes it.
+// "resumption", ticket_nonce, Hash.length) (rfc9846.txt:3298-3301): its
+// first suite_hash_len(suite) bytes, and zero past them. It is the one
+// secret here, and every holder wipes it.
 typedef struct {
     uint64_t auth_seconds;
     uint16_t suite;
     uint8_t alpn_len;
     uint8_t alpn[CH_ALPN_NAME_MAX];
-    uint8_t psk[SHA256_LEN];
+    uint8_t psk[HKDF_HASH_MAX];
 } srv_ticket_contents;
 
 // Seals one ticket carrying c under key, with the AEAD nonce at nonce.

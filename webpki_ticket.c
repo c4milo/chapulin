@@ -4,6 +4,7 @@
 #include "ch_assert.h"
 #include "ct.h"
 #include "hkdf.h"
+#include "suite.h"
 #include "webpki.h"
 
 // The label the binding's HMAC covers ahead of the hash, so a binding
@@ -59,14 +60,14 @@ void webpki_ticket_config_hash(const ch_cfg *cfg, uint8_t out[SHA256_LEN]) {
     sha256_final(&s, out);
 }
 
-void webpki_ticket_binding(const uint8_t psk[SHA256_LEN], const uint8_t config_hash[SHA256_LEN],
-                           uint8_t out[SHA256_LEN]) {
+void webpki_ticket_binding(const uint8_t *psk, size_t psk_len,
+                           const uint8_t config_hash[SHA256_LEN], uint8_t out[SHA256_LEN]) {
     uint8_t msg[sizeof binding_label + SHA256_LEN];
     wbuf w;
     wb_init(&w, msg, sizeof msg);
     wb_bytes(&w, binding_label, sizeof binding_label);
     wb_bytes(&w, config_hash, SHA256_LEN);
-    hmac_sha256(psk, SHA256_LEN, msg, w.len, out);
+    hmac_sha256(psk, psk_len, msg, w.len, out);
 }
 
 // Every PSK field unset: the full handshake, which checks the chain.
@@ -75,11 +76,22 @@ static int psk_unset(const ch_cfg *cfg) {
            cfg->resumption == 0 && cfg->ticket_binding == NULL;
 }
 
-// The shape of a presented ticket, before its binding is checked: the
+// A PSK length ks_res_psk writes: the hash length of a suite this client
+// can run (ch_ticket.psk_len).
+static int psk_len_ok(size_t psk_len) {
+#ifdef CH_CLIENT_AES_SUITES
+    if (psk_len == SHA384_LEN) {
+        return 1;
+    }
+#endif
+    return psk_len == SHA256_LEN;
+}
+
+// The shape of a presented ticket, before its binding is checked: a
 // PSK length ks_res_psk writes and an identity handshake_post.c would
 // have passed to on_ticket.
 static int ticket_shape_ok(const ch_cfg *cfg) {
-    return cfg->resumption != 0 && cfg->psk != NULL && cfg->psk_len == SHA256_LEN &&
+    return cfg->resumption != 0 && cfg->psk != NULL && psk_len_ok(cfg->psk_len) &&
            cfg->psk_id != NULL && cfg->psk_id_len > 0 && cfg->psk_id_len <= CH_TICKET_ID_MAX &&
            cfg->ticket_binding != NULL;
 }
@@ -94,7 +106,7 @@ int webpki_resumption_ok(const ch_cfg *cfg) {
     uint8_t config_hash[SHA256_LEN];
     uint8_t expected[SHA256_LEN];
     webpki_ticket_config_hash(cfg, config_hash);
-    webpki_ticket_binding(cfg->psk, config_hash, expected);
+    webpki_ticket_binding(cfg->psk, cfg->psk_len, config_hash, expected);
     uint32_t same = ct_memeq(expected, cfg->ticket_binding, SHA256_LEN);
     ct_wipe(expected, sizeof expected);
     return same != 0;

@@ -176,10 +176,12 @@ int hsr_next_msg(handshake_state *s, uint8_t *type, const uint8_t **raw, size_t 
     return CH_OK;
 }
 
-int hsr_transcript_hash(handshake_state *s, uint8_t out[SHA256_LEN]) {
+int hsr_transcript_hash(handshake_state *s, size_t hash_len, uint8_t *out) {
     (void)s;
-    __CPROVER_assert(__CPROVER_w_ok(out, SHA256_LEN), "transcript hash: output writable");
-    fill_nondet(out, SHA256_LEN);
+    __CPROVER_assert(hash_len == SHA256_LEN || hash_len == HKDF_HASH_MAX,
+                     "transcript hash: hash_len names a hash this build holds");
+    __CPROVER_assert(__CPROVER_w_ok(out, hash_len), "transcript hash: output writable");
+    fill_nondet(out, hash_len);
     return CH_OK;
 }
 

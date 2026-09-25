@@ -9,6 +9,6 @@ reason: the binder is compared with memcmp instead of ct_memeq. memcmp returns
   test is what catches it, the way srv-cookie-memcmp is caught.
 
 --- old
-        equal = ct_memeq(want, binder, SHA256_LEN);
+        equal = ct_memeq(want, binder, hash_len);
 --- new
-        equal = (uint32_t)(memcmp(want, binder, SHA256_LEN) == 0);
+        equal = (uint32_t)(memcmp(want, binder, hash_len) == 0);

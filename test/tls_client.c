@@ -67,7 +67,7 @@ static void on_ticket(void *io, const ch_ticket *ticket) {
     }
     put_hex(f, ticket->identity, ticket->identity_len);
     (void)fputc(' ', f);
-    put_hex(f, ticket->psk, sizeof ticket->psk);
+    put_hex(f, ticket->psk, ticket->psk_len);
     (void)fprintf(f, " %u", ticket->age_add);
 #ifdef CH_TRUST_CA
     (void)fprintf(f, " %u", ticket->epoch);
@@ -130,17 +130,20 @@ static int load_ticket(const char *path, uint8_t *id, size_t *id_len, uint8_t *p
     if (f == NULL) {
         return -1;
     }
+    // The PSK is as long as the hash of the suite that issued the ticket:
+    // 32 bytes, or 48 after a TLS_AES_256_GCM_SHA384 session, whose 96
+    // hex digits the scan below allows in every build.
     char id_hex[2 * CH_TICKET_ID_MAX + 1];
-    char psk_hex[2 * SHA256_LEN + 1];
+    char psk_hex[2 * 48 + 1];
     char age_str[16];
-    int rc = fscanf(f, "%640s %64s %15s %64s", id_hex, psk_hex, age_str, extra);
+    int rc = fscanf(f, "%640s %96s %15s %64s", id_hex, psk_hex, age_str, extra);
     (void)fclose(f);
     if (rc < 3 || parse_u32(age_str, age) != 0) {
         return -1;
     }
     *id_len = unhex(id_hex, id, CH_TICKET_ID_MAX);
-    *psk_len = unhex(psk_hex, psk, SHA256_LEN);
-    return (*id_len > 0 && *psk_len == SHA256_LEN) ? 0 : -1;
+    *psk_len = unhex(psk_hex, psk, HKDF_HASH_MAX);
+    return (*id_len > 0 && (*psk_len == SHA256_LEN || *psk_len == HKDF_HASH_MAX)) ? 0 : -1;
 }
 
 // Owns the "pin:<pubkey-hex>[,<pubkey2-hex>]" form: parses one or two

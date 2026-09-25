@@ -116,7 +116,8 @@ static int unused_send(void *io, const uint8_t *p, size_t n) {
 static struct {
     uint8_t identity[CH_TICKET_ID_MAX];
     size_t identity_len;
-    uint8_t psk[SHA256_LEN];
+    uint8_t psk[HKDF_HASH_MAX];
+    size_t psk_len;
     uint32_t age_add;
     uint8_t binding[SHA256_LEN];
     size_t count;
@@ -127,7 +128,9 @@ static void keep_ticket(void *io, const ch_ticket *ticket) {
     CHECK(ticket->identity_len <= sizeof kept.identity);
     memcpy(kept.identity, ticket->identity, ticket->identity_len);
     kept.identity_len = ticket->identity_len;
-    memcpy(kept.psk, ticket->psk, SHA256_LEN);
+    CHECK(ticket->psk_len <= sizeof kept.psk);
+    memcpy(kept.psk, ticket->psk, ticket->psk_len);
+    kept.psk_len = ticket->psk_len;
     kept.age_add = ticket->age_add;
     memcpy(kept.binding, ticket->binding, SHA256_LEN);
     kept.count++;
@@ -161,7 +164,7 @@ static void client_config(ch_cfg *cfg, const webpki_corpus_anchor *root, const c
         return;
     }
     cfg->psk = kept.psk;
-    cfg->psk_len = SHA256_LEN;
+    cfg->psk_len = kept.psk_len;
     cfg->psk_id = kept.identity;
     cfg->psk_id_len = kept.identity_len;
     cfg->resumption = 1;
@@ -171,7 +174,7 @@ static void client_config(ch_cfg *cfg, const webpki_corpus_anchor *root, const c
     // anchor binds it again, as a caller that stored it there would have.
     uint8_t config_hash[SHA256_LEN];
     webpki_ticket_config_hash(cfg, config_hash);
-    webpki_ticket_binding(kept.psk, config_hash, kept.binding);
+    webpki_ticket_binding(kept.psk, kept.psk_len, config_hash, kept.binding);
     cfg->ticket_binding = kept.binding;
 }
 
@@ -245,6 +248,8 @@ static void check_declined_chain_refused(const uint8_t *key, const webpki_corpus
     CHECK(client.t.psk_selected == 0);
 }
 
+#include "webpki_loop_suites.h"
+
 int main(void) {
     ch_cfg scfg;
     ch_cfg ccfg;
@@ -285,6 +290,9 @@ int main(void) {
                                  ALERT_BAD_CERTIFICATE);
     check_declined_chain_refused(ticket_key, webpki_corpus_anchors_impostor_p384, "s3.example.test",
                                  ALERT_UNKNOWN_CA);
+#ifdef CH_SUITE_AES_GCM
+    check_suites();
+#endif
 
     if (failures == 0) {
         (void)printf("webpki_loop: a full handshake over the r2 chain, a resumed ticket with no"

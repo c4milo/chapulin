@@ -132,11 +132,14 @@ static int handle_ticket(ch_tls *t, const uint8_t *body, size_t n
         return CH_OK;
     }
     ticket.epoch = t->epoch;
-    ks_res_psk(SHA256_LEN, t->res_master, nonce, nonce_len, ticket.psk);
+    // The PSK takes the hash of the suite this session ran
+    // (rfc9846.txt:3298-3301), and its length says which one.
+    ticket.psk_len = tls_hash_len(t);
+    ks_res_psk(ticket.psk_len, t->res_master, nonce, nonce_len, ticket.psk);
 #ifdef CH_TRUST_WEBPKI
     // Binds the ticket to this session's hostname and anchors, so no
     // other configuration can present it (webpki_ticket.h).
-    webpki_ticket_binding(ticket.psk, t->ticket_config_hash, ticket.binding);
+    webpki_ticket_binding(ticket.psk, ticket.psk_len, t->ticket_config_hash, ticket.binding);
 #endif
     t->cfg.on_ticket(t->cfg.io, &ticket);
     ct_wipe(ticket.psk, sizeof ticket.psk);

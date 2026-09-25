@@ -98,6 +98,14 @@ static uint16_t mock_suite(uint16_t suite) {
     return suite != 0 ? suite : SUITE_CHACHA20_POLY1305_SHA256;
 }
 
+// The suite the mock keys with: the one its message carries when the
+// build holds it, and ChaCha20 for a row that sends a suite the client
+// must refuse, which it does before any key exists.
+static uint16_t mock_keyed_suite(uint16_t suite) {
+    return suite_hash_len(mock_suite(suite)) != 0 ? mock_suite(suite)
+                                                  : SUITE_CHACHA20_POLY1305_SHA256;
+}
+
 static int mock_send(void *io, const uint8_t *p, size_t n) {
     mock_server *s = io;
     s->sends++;
@@ -153,7 +161,7 @@ static void push_sealed(mock_server *s, const uint8_t *msg, size_t n) {
 // entry, or over the hybrid entry's x25519 half when require_pq left
 // that entry out, so a row can still send the selection the client
 // must refuse.
-static void render_server_hello(mock_server *s, sha256 *transcript, const uint8_t *hello,
+static void render_server_hello(mock_server *s, ch_transcript *transcript, const uint8_t *hello,
                                 size_t hello_len) {
     hello_share_entry shares[2] = {{0}};
     int count = hello_key_shares(hello, hello_len, shares, 2);
@@ -212,22 +220,24 @@ static void render_server_hello(mock_server *s, sha256 *transcript, const uint8_
     wb_patch24(&w, body);
     CHECK(!w.err);
 
-    sha256_update(transcript, hello, hello_len);
-    sha256_update(transcript, msg, w.len);
-    uint8_t hash[SHA256_LEN];
-    sha256 snapshot = *transcript;
-    sha256_final(&snapshot, hash);
-    static const uint8_t no_psk[SHA256_LEN] = {0};
-    uint8_t early[SHA256_LEN];
-    uint8_t binder[SHA256_LEN];
-    uint8_t handshake_secret[SHA256_LEN];
-    uint8_t c_hs[SHA256_LEN];
-    uint8_t s_hs[SHA256_LEN];
-    ks_early(SHA256_LEN, no_psk, sizeof no_psk, 0, early, binder);
-    ks_handshake(SHA256_LEN, early, ecdhe, ecdhe_len, hash, handshake_secret, c_hs, s_hs);
+    // The key schedule runs the hash of the suite the ServerHello names,
+    // SHA-384 for TLS_AES_256_GCM_SHA384.
+    size_t hash_len = suite_hash_len(mock_keyed_suite(s->suite));
+    transcript_update(transcript, hello, hello_len);
+    transcript_update(transcript, msg, w.len);
+    uint8_t hash[HKDF_HASH_MAX];
+    transcript_hash_after(transcript, hash_len, NULL, 0, hash);
+    static const uint8_t no_psk[HKDF_HASH_MAX] = {0};
+    uint8_t early[HKDF_HASH_MAX];
+    uint8_t binder[HKDF_HASH_MAX];
+    uint8_t handshake_secret[HKDF_HASH_MAX];
+    uint8_t c_hs[HKDF_HASH_MAX];
+    uint8_t s_hs[HKDF_HASH_MAX];
+    ks_early(hash_len, no_psk, hash_len, 0, early, binder);
+    ks_handshake(hash_len, early, ecdhe, ecdhe_len, hash, handshake_secret, c_hs, s_hs);
     push_clear(s, msg, w.len);
-    REC_DIR_INIT_SUITE(&s->wr, s_hs, mock_suite(s->suite));
-    REC_DIR_INIT_SUITE(&s->rd, c_hs, mock_suite(s->suite));
+    REC_DIR_INIT_SUITE(&s->wr, s_hs, mock_keyed_suite(s->suite));
+    REC_DIR_INIT_SUITE(&s->rd, c_hs, mock_keyed_suite(s->suite));
     s->keys = 1;
 }
 
@@ -302,18 +312,17 @@ static void push_retry(mock_server *s) {
 // 9846 §4.1's message_hash over the first hello, then the retry, and
 // the ServerHello answers the retry hello.
 static void render_flight(mock_server *s) {
-    sha256 transcript;
-    sha256_init(&transcript);
+    ch_transcript transcript;
+    transcript_init(&transcript);
     if (s->hrr_len > 0) {
-        uint8_t ch1[SHA256_LEN];
-        sha256 first;
-        sha256_init(&first);
-        sha256_update(&first, s->hello, s->hello_len);
-        sha256_final(&first, ch1);
-        const uint8_t synth[4] = {HS_MESSAGE_HASH, 0, 0, SHA256_LEN};
-        sha256_update(&transcript, synth, sizeof synth);
-        sha256_update(&transcript, ch1, sizeof ch1);
-        sha256_update(&transcript, s->hrr, s->hrr_len);
+        // The retry's suite names the hash of the synthetic message.
+        size_t hash_len = suite_hash_len(mock_keyed_suite(s->retry_suite));
+        uint8_t ch1[HKDF_HASH_MAX];
+        transcript_hash_after(&transcript, hash_len, s->hello, s->hello_len, ch1);
+        const uint8_t synth[4] = {HS_MESSAGE_HASH, 0, 0, (uint8_t)hash_len};
+        transcript_update(&transcript, synth, sizeof synth);
+        transcript_update(&transcript, ch1, hash_len);
+        transcript_update(&transcript, s->hrr, s->hrr_len);
         render_server_hello(s, &transcript, s->retry_hello, s->retry_hello_len);
     } else {
         render_server_hello(s, &transcript, s->hello, s->hello_len);
@@ -459,10 +468,11 @@ int main(void) {
     test_webpki_cookie_retry();
     test_webpki_retry_names_a_group();
     test_webpki_x25519_wipes_the_seed();
-#ifdef CH_CLIENT_TWO_SUITES
+#ifdef CH_CLIENT_AES_SUITES
     test_webpki_suites_hello();
     test_webpki_suite_aes();
     test_webpki_suite_refusals();
+    test_webpki_suite_psk_hash();
 #endif
     if (failures > 0) {
         (void)fprintf(stderr, "%d failure(s)\n", failures);

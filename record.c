@@ -1,23 +1,21 @@
 #include "record.h"
 
 #include "ct.h"
-#include "handshake_message.h"
 #include "hkdf.h"
+#include "suite.h"
 #ifdef CH_SUITE_AES_GCM
 #include "aes_traffic_key.h"
 #include "quic_gcm.h"
 
-// The key each suite fixes. TLS_AES_128_GCM_SHA256 takes 16 and
-// TLS_CHACHA20_POLY1305_SHA256 takes 32; both take the same 12-byte IV
-// and write the same 16-byte tag, so only the key length varies.
-static size_t suite_key_len(uint16_t suite) {
-    return suite == SUITE_AES_128_GCM_SHA256 ? AES_128_KEY : AEAD_KEY;
-}
+// The three suites take the same 12-byte IV and write the same 16-byte
+// tag, so only the key length and the hash vary: suite_key_len and
+// suite_hash_len (suite.h).
+_Static_assert(SUITE_KEY_MAX == AEAD_KEY, "rec_dir.key holds the longest suite key");
 
 // Whether d runs AES-GCM rather than ChaCha20-Poly1305. The suite is
 // public: the ServerHello named it in the clear.
 static int runs_aes_gcm(const rec_dir *d) {
-    return d->suite == SUITE_AES_128_GCM_SHA256;
+    return d->suite == SUITE_AES_128_GCM_SHA256 || d->suite == SUITE_AES_256_GCM_SHA384;
 }
 
 // Seals and opens one AES-GCM record body in place, the two AES arms of
@@ -71,13 +69,14 @@ static int open_body(const rec_dir *d, const uint8_t nonce[AEAD_NONCE], const ui
 
 #ifdef CH_SUITE_AES_GCM
 
-void rec_dir_init_suite(rec_dir *d, const uint8_t secret[SHA256_LEN], uint16_t suite) {
-    // The whole array is written before the shorter derive, so an AES key
-    // leaves no bytes of the previous key behind it.
+void rec_dir_init_suite(rec_dir *d, const uint8_t *secret, uint16_t suite) {
+    // The whole array is written before the shorter derive, so an AES-128
+    // key leaves no bytes of the previous key behind it.
     ct_wipe(d->key, sizeof d->key);
     d->suite = suite;
-    hkdf_expand_label(SHA256_LEN, secret, "key", NULL, 0, d->key, suite_key_len(suite));
-    hkdf_expand_label(SHA256_LEN, secret, "iv", NULL, 0, d->iv, AEAD_NONCE);
+    size_t hash_len = suite_hash_len(suite);
+    hkdf_expand_label(hash_len, secret, "key", NULL, 0, d->key, suite_key_len(suite));
+    hkdf_expand_label(hash_len, secret, "iv", NULL, 0, d->iv, AEAD_NONCE);
     d->seq = 0;
 }
 #endif
@@ -92,10 +91,15 @@ void rec_dir_init(rec_dir *d, const uint8_t secret[SHA256_LEN]) {
 #endif
 }
 
-void rec_dir_update(uint8_t secret[SHA256_LEN], rec_dir *d) {
-    uint8_t next[SHA256_LEN];
-    hkdf_expand_label(SHA256_LEN, secret, "traffic upd", NULL, 0, next, SHA256_LEN);
-    for (size_t i = 0; i < SHA256_LEN; i++) {
+void rec_dir_update(uint8_t *secret, rec_dir *d) {
+#ifdef CH_SUITE_AES_GCM
+    size_t hash_len = suite_hash_len(d->suite);
+#else
+    size_t hash_len = SHA256_LEN;
+#endif
+    uint8_t next[HKDF_HASH_MAX];
+    hkdf_expand_label(hash_len, secret, "traffic upd", NULL, 0, next, hash_len);
+    for (size_t i = 0; i < hash_len; i++) {
         secret[i] = next[i];
     }
     ct_wipe(next, sizeof next);

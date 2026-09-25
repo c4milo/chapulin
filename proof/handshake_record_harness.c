@@ -168,7 +168,7 @@ int main(void) {
     // there, so all of it is the peer's.
     fill_buf_nondet(buf, sizeof buf);
     fill_rec_dir_nondet(&t.rd);
-    fill_transcript_nondet(&t.transcript);
+    fill_transcript_nondet(&t.transcript.sha256_state);
 
     // The one thing a caller guarantees and this module never checks:
     // the unread window sits inside the buffer. tls.c and handshake.c
@@ -210,9 +210,9 @@ int main(void) {
     __CPROVER_assert(t.pt_off <= t.pt_len && t.pt_len <= t.cfg.buf_len, "window inside the buffer");
 
     uint8_t digest[SHA256_LEN];
-    sha256 before = t.transcript;
-    int hash_rc = hsr_transcript_hash(&h, digest);
+    sha256 before = t.transcript.sha256_state;
+    int hash_rc = hsr_transcript_hash(&h, SHA256_LEN, digest);
     __CPROVER_assert(hash_rc == CH_OK, "hash: snapshot never fails");
-    assert_transcript_kept(&t.transcript, &before);
+    assert_transcript_kept(&t.transcript.sha256_state, &before);
     return 0;
 }

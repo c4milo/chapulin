@@ -111,20 +111,18 @@ static int parse_head(rbuf *r, const uint8_t *body, hello_parse *p) {
     }
     memcpy(ch->session_id, session_id, session_id_len);
     ch->session_id_len = (uint8_t)session_id_len;
-    // cipher_suites<2..2^16-2>: every code point outside this build's
-    // one suite is read and ignored (rfc9846.txt:4636-4637).
+    // cipher_suites<2..2^16-2>, read once: each code point this build
+    // holds sets its bit, and every other one is read and ignored
+    // (rfc9846.txt:4636-4637). One pass, because each srv_list_has call
+    // reads the whole list, and a second call would read the bytes after
+    // it as suites.
     size_t suites_len = 0;
     if (!srv_open_code_point_list(r, &suites_len)) {
         return srv_refuse(p->alert, ALERT_DECODE_ERROR);
     }
-    if (srv_list_has(r, suites_len, SUITE_CHACHA20_POLY1305_SHA256)) {
-        ch->suites |= SRV_SUITE_CHACHA20_POLY1305;
+    for (size_t i = 0; i < suites_len; i += 2) {
+        ch->suites |= srv_suite_bit(rb_u16(r));
     }
-#ifdef CH_SUITE_AES_GCM
-    if (srv_list_has(r, suites_len, SUITE_AES_128_GCM_SHA256)) {
-        ch->suites |= SRV_SUITE_AES_128_GCM;
-    }
-#endif
     // legacy_compression_methods: exactly one zero byte, or
     // illegal_parameter (rfc9846.txt:1284-1288).
     size_t compression_len = rb_u8(r);

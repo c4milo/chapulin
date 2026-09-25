@@ -205,7 +205,7 @@ static void test_flight_begin(void) {
     srv_begin(&hs);
     CHECK(memcmp(hs.priv, zero, sizeof zero) != 0);
     CHECK(memcmp(hs.pub, zero, sizeof zero) != 0);
-    (void)hsr_transcript_hash(&hs, hash);
+    (void)hsr_transcript_hash(&hs, SHA256_LEN, hash);
     CHECK(memcmp(hash, empty, sizeof empty) == 0);
 }
 
@@ -387,7 +387,7 @@ static void check_hrr_transcript(const uint8_t *ch1, size_t ch1_len, const uint8
     sha256_update(&s, first, sizeof first);
     sha256_update(&s, hrr, hrr_len);
     sha256_final(&s, want);
-    (void)hsr_transcript_hash(&hs, got);
+    (void)hsr_transcript_hash(&hs, SHA256_LEN, got);
     CHECK(memcmp(got, want, sizeof want) == 0);
 }
 

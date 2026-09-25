@@ -80,10 +80,14 @@ void hkdf_expand(size_t hash_len, const uint8_t *prk, const uint8_t *info, size_
 #ifndef HKDF_LABEL_MAX
 #define HKDF_LABEL_MAX 12
 #endif
+// The library builds as C, so the two guards always run there; cfg.h
+// reaches this header, and chapulin.hpp reaches cfg.h from C++.
+#ifndef __cplusplus
 _Static_assert(HKDF_LABEL_MAX >= 12, "TLS 1.3's own labels need 12 bytes");
 // HkdfLabel's label vector carries a one-byte length that counts the
 // "tls13 " prefix too, so the cap has a ceiling as well as a floor.
 _Static_assert(HKDF_LABEL_MAX <= 255 - 6, "the label vector's length is one byte, prefix included");
+#endif
 
 // The longest info any caller here passes to hkdf_expand, which is the
 // one hkdf_expand_label builds: two length bytes, the label vector's own

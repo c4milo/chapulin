@@ -1,0 +1,16 @@
+invariant: INV-11
+file: record.c
+catches: aes_suite_test
+reason: rec_dir_update runs "traffic upd" at SHA256_LEN under every
+  suite, so a TLS_AES_256_GCM_SHA384 direction rekeys from 32 of its 48
+  secret bytes and keeps 16 stale ones. The peer derives the whole 48, so
+  the first record after a KeyUpdate fails its tag. aes_suite_test
+  compares the updated secret with HKDF-Expand-Label at SHA-384 over all
+  48 bytes.
+
+--- old
+    size_t hash_len = suite_hash_len(d->suite);
+#else
+--- new
+    size_t hash_len = SHA256_LEN;
+#else

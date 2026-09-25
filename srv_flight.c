@@ -35,7 +35,7 @@ void srv_begin(handshake_state *h) {
     ch_rand_bytes(h->priv, sizeof h->priv);
     assert_drawn(h->priv, sizeof h->priv);
     x25519_base(h->pub, h->priv);
-    sha256_init(&h->t->transcript);
+    transcript_init(&h->t->transcript);
 }
 
 // Copies the two values the session keeps past the hello, which sits in
@@ -80,11 +80,14 @@ int srv_read_client_hello(handshake_state *h, client_hello *ch) {
     if (ch->truncated_len != 0) {
         // The transcript a binder covers: everything before this message,
         // then this message up to its binders list (rfc9846.txt:2591-2598).
-        sha256 partial = t->transcript;
-        sha256_update(&partial, raw, 4 + ch->truncated_len);
-        sha256_final(&partial, ch->binder_hash);
+        transcript_hash_after(&t->transcript, SHA256_LEN, raw, 4 + ch->truncated_len,
+                              ch->binder_hash);
+#ifdef CH_HASH_SHA384
+        transcript_hash_after(&t->transcript, SHA384_LEN, raw, 4 + ch->truncated_len,
+                              ch->binder_hash_sha384);
+#endif
     }
-    sha256_update(&t->transcript, raw, raw_len);
+    transcript_update(&t->transcript, raw, raw_len);
     copy_hello_fields(t, ch);
     if (t->cfg.srv.require_server_name && t->sni_len == 0) {
         // §9.2 permits requiring the extension (rfc9846.txt:4609-4612),
@@ -101,34 +104,38 @@ static int alpn_mismatch(const ch_cfg *cfg, const client_hello *ch) {
            ch->alpn_selected == CH_ALPN_NONE;
 }
 
+// The default order: ChaCha20, constant time by construction, before
+// AES-GCM, constant time because the build asserted this part's
+// instructions are (ct.h, INV-26); AES-128-GCM before AES-256-GCM,
+// because the handshake proofs cover SHA-256 (docs/decisions.md 58). A
+// build without CH_SUITE_AES_GCM holds no AES suite, so srv_suite_bit
+// answers 0 for both and the walk below passes over them.
+static const uint16_t default_suites[] = {SUITE_CHACHA20_POLY1305_SHA256, SUITE_AES_128_GCM_SHA256,
+                                          SUITE_AES_256_GCM_SHA384};
+
+// The first suite in cfg.srv.cipher_suites, or in the order above when
+// that is unset, that the client offered; 0 when there is none.
+static uint16_t select_suite(const ch_cfg *cfg, uint8_t offered) {
+#ifdef CH_SUITE_AES_GCM
+    if (cfg->srv.cipher_suites != NULL) {
+        return srv_first_offered_suite(cfg->srv.cipher_suites, cfg->srv.cipher_suite_count,
+                                       offered);
+    }
+#else
+    (void)cfg;
+#endif
+    return srv_first_offered_suite(default_suites, sizeof default_suites / sizeof default_suites[0],
+                                   offered);
+}
+
 int srv_select(handshake_state *h, const client_hello *ch, selection *sel) {
     memset(sel, 0, sizeof *sel);
     h->alert = ALERT_HANDSHAKE_FAILURE;
-#ifdef CH_SUITE_AES_GCM
-    // ChaCha20-Poly1305 first, and AES-GCM only when the client offers no
-    // ChaCha20. Both meet the profile, and the order is not about speed:
-    // ChaCha20 is constant time by construction here, while AES is
-    // constant time because the build asserted that this part's
-    // instructions are (ct.h, INV-26). Preferring the one that needs no
-    // assertion costs a client that offers both nothing it asked for.
-    if ((ch->suites & SRV_SUITE_CHACHA20_POLY1305) != 0) {
-        sel->suite = SUITE_CHACHA20_POLY1305_SHA256;
-    } else if ((ch->suites & SRV_SUITE_AES_128_GCM) != 0) {
-        sel->suite = SUITE_AES_128_GCM_SHA256;
-    } else {
+    sel->suite = select_suite(&h->t->cfg, ch->suites);
+    if (sel->suite == 0) {
         return CH_EPROTO;
     }
-    // Both suites hash with SHA-256, so the key schedule needs no hash
-    // agility. TLS_AES_256_GCM_SHA384 would need it, which is one reason
-    // this build does not offer it.
-    sel->hash_len = SHA256_LEN;
-#else
-    if ((ch->suites & SRV_SUITE_CHACHA20_POLY1305) == 0) {
-        return CH_EPROTO;
-    }
-    sel->suite = SUITE_CHACHA20_POLY1305_SHA256;
-    sel->hash_len = SHA256_LEN;
-#endif
+    sel->hash_len = (uint8_t)suite_hash_len(sel->suite); // rfc9846.txt:4055-4056
     // The hybrid whenever the client listed it, x25519 otherwise
     // (srv_kex.h). A hello that listed neither has no group in common.
     sel->group = srv_kex_group(ch);
@@ -153,28 +160,10 @@ int srv_select(handshake_state *h, const client_hello *ch, selection *sel) {
     return sel->need_retry ? CH_OK : srv_select_auth(h, ch, sel);
 }
 
-// Replaces the transcript with §4.1's synthetic construction over the
-// first ClientHello and hashes the HelloRetryRequest after it. It is
-// handshake_flight.c's hrr_transcript with the server's own bytes in
-// raw, a copy docs/server.md owes a move.
-static void hrr_transcript(handshake_state *h, const uint8_t *raw, size_t raw_len) {
-    sha256 *transcript = &h->t->transcript;
-    uint8_t ch1[SHA256_LEN];
-    sha256_final(transcript, ch1);
-    sha256_init(transcript);
-    const uint8_t synth[4] = {HS_MESSAGE_HASH, 0, 0, SHA256_LEN};
-    sha256_update(transcript, synth, sizeof synth);
-    sha256_update(transcript, ch1, sizeof ch1);
-    sha256_update(transcript, raw, raw_len);
-}
-
 int srv_send_hello_retry_request(handshake_state *h, const client_hello *ch, const selection *sel) {
     ch_tls *t = h->t;
-    // The transcript this build runs is SHA-256, so a selection naming
-    // another length would make srv_cookie_mint read past ch1.
-    CH_ASSERT(sel->hash_len == SHA256_LEN);
-    uint8_t ch1[SHA256_LEN];
-    (void)hsr_transcript_hash(h, ch1);
+    uint8_t ch1[SRV_COOKIE_HASH_MAX];
+    (void)hsr_transcript_hash(h, sel->hash_len, ch1);
     size_t cookie_len = srv_cookie_mint(t->cfg.srv.cookie_key, sel->suite, sel->group, ch1,
                                         sel->hash_len, ch->frozen, h->cookie, sizeof h->cookie);
     if (cookie_len == 0) {
@@ -189,7 +178,9 @@ int srv_send_hello_retry_request(handshake_state *h, const client_hello *ch, con
         h->alert = ALERT_INTERNAL_ERROR;
         return CH_ECAP;
     }
-    hrr_transcript(h, msg, n);
+    // §4.4.1's synthetic message over the first ClientHello, at the
+    // selected suite's hash, and then the retry itself.
+    hsr_restart_transcript(h, sel->hash_len, msg, n);
     t->hrr_sent = 1;
     return srv_out_plain(h, n);
 }
@@ -279,7 +270,7 @@ int srv_send_server_hello(handshake_state *h, const client_hello *ch, const sele
         h->alert = ALERT_INTERNAL_ERROR;
         return CH_ECAP;
     }
-    sha256_update(&t->transcript, msg, n);
+    transcript_update(&t->transcript, msg, n);
     return srv_out_plain(h, n);
 }
 
@@ -296,22 +287,23 @@ int srv_derive_handshake_secrets(handshake_state *h, const client_hello *ch, con
     // A selected ticket left its early secret in h->early. With none, the
     // early secret extracts from a hash-length zero string (RFC 9846 §7.1)
     // and the binder key is never used.
+    size_t hash_len = sel->hash_len;
     if (!sel->psk_selected) {
-        static const uint8_t no_psk[SHA256_LEN] = {0};
-        uint8_t binder_key[SHA256_LEN];
-        ks_early(SHA256_LEN, no_psk, sizeof no_psk, 0, h->early, binder_key);
+        static const uint8_t no_psk[HKDF_HASH_MAX] = {0};
+        uint8_t binder_key[HKDF_HASH_MAX];
+        ks_early(hash_len, no_psk, hash_len, 0, h->early, binder_key);
         ct_wipe(binder_key, sizeof binder_key);
     }
 
-    uint8_t hash[SHA256_LEN];
-    (void)hsr_transcript_hash(h, hash);
-    ks_handshake(SHA256_LEN, h->early, ikm, ikm_len, hash, h->handshake_secret, h->c_hs, h->s_hs);
+    uint8_t hash[HKDF_HASH_MAX];
+    (void)hsr_transcript_hash(h, hash_len, hash);
+    ks_handshake(hash_len, h->early, ikm, ikm_len, hash, h->handshake_secret, h->c_hs, h->s_hs);
     ct_wipe(ikm, sizeof ikm);
     ct_wipe(h->early, sizeof h->early);
 #ifdef CH_KEYLOG
     memcpy(h->client_random, ch->random, sizeof h->client_random);
-    ch_keylog(h->t->cfg.io, CH_KEYLOG_CLIENT_HANDSHAKE, h->client_random, h->c_hs);
-    ch_keylog(h->t->cfg.io, CH_KEYLOG_SERVER_HANDSHAKE, h->client_random, h->s_hs);
+    ch_keylog(h->t->cfg.io, CH_KEYLOG_CLIENT_HANDSHAKE, h->client_random, h->c_hs, hash_len);
+    ch_keylog(h->t->cfg.io, CH_KEYLOG_SERVER_HANDSHAKE, h->client_random, h->s_hs, hash_len);
 #endif
     // The client secret protects what this endpoint reads and the server
     // secret what it writes, the reverse of handshake.c:94-95 and the
@@ -360,7 +352,7 @@ int srv_send_encrypted_extensions(handshake_state *h, const selection *sel) {
         h->alert = ALERT_INTERNAL_ERROR;
         return CH_ECAP;
     }
-    sha256_update(&t->transcript, msg, n);
+    transcript_update(&t->transcript, msg, n);
     return srv_out_sealed(h, msg, n);
 }
 
@@ -399,8 +391,8 @@ int srv_send_certificate(handshake_state *h, const selection *sel) {
 }
 
 int srv_send_certificate_verify(handshake_state *h, const selection *sel) {
-    uint8_t hash[SHA256_LEN];
-    (void)hsr_transcript_hash(h, hash);
+    uint8_t hash[HKDF_HASH_MAX];
+    (void)hsr_transcript_hash(h, sel->hash_len, hash);
     uint8_t sig[SRV_SIG_MAX];
     size_t sig_len = 0;
     // srv_auth.h has the signer write the alert on each refusal, so this
@@ -416,20 +408,21 @@ int srv_send_certificate_verify(handshake_state *h, const selection *sel) {
         h->alert = ALERT_INTERNAL_ERROR;
         return CH_ECAP;
     }
-    sha256_update(&h->t->transcript, msg, n);
+    transcript_update(&h->t->transcript, msg, n);
     return srv_out_sealed(h, msg, n);
 }
 
 int srv_send_finished(handshake_state *h) {
     ch_tls *t = h->t;
-    uint8_t hash[SHA256_LEN];
-    (void)hsr_transcript_hash(h, hash);
-    uint8_t verify_data[SHA256_LEN];
-    ks_verify_data(SHA256_LEN, h->s_hs, hash, verify_data);
+    size_t hash_len = t->hash_len;
+    uint8_t hash[HKDF_HASH_MAX];
+    (void)hsr_transcript_hash(h, hash_len, hash);
+    uint8_t verify_data[HKDF_HASH_MAX];
+    ks_verify_data(hash_len, h->s_hs, hash, verify_data);
     uint8_t msg[SRV_FINISHED_MAX];
-    size_t n = srv_build_finished(msg, sizeof msg, verify_data, sizeof verify_data);
-    CH_ASSERT(n == sizeof msg);
-    sha256_update(&t->transcript, msg, n);
+    size_t n = srv_build_finished(msg, sizeof msg, verify_data, hash_len);
+    CH_ASSERT(n == 4 + hash_len);
+    transcript_update(&t->transcript, msg, n);
     int rc = srv_out_sealed(h, msg, n);
     if (rc != CH_OK) {
         return rc;
@@ -437,18 +430,18 @@ int srv_send_finished(handshake_state *h) {
     // ks_master writes the client secret first, which is what this
     // endpoint reads. Only the write direction advances here: the client
     // Finished still arrives under the handshake key.
-    (void)hsr_transcript_hash(h, hash);
-    ks_master(SHA256_LEN, h->handshake_secret, hash, h->master, t->rd_secret, t->wr_secret);
+    (void)hsr_transcript_hash(h, hash_len, hash);
+    ks_master(hash_len, h->handshake_secret, hash, h->master, t->rd_secret, t->wr_secret);
 #ifdef CH_EXPORTER
     // The client's derivation, mirrored: RFC 9846 §7.5 takes the same
     // transcript the traffic secrets above take.
-    ks_exp_master(SHA256_LEN, h->master, hash, t->exp_master);
+    ks_exp_master(hash_len, h->master, hash, t->exp_master);
 #endif
 #ifdef CH_KEYLOG
     // The reverse of the client's pair: here rd_secret holds the client's
     // application secret and wr_secret this server's.
-    ch_keylog(t->cfg.io, CH_KEYLOG_CLIENT_TRAFFIC, h->client_random, t->rd_secret);
-    ch_keylog(t->cfg.io, CH_KEYLOG_SERVER_TRAFFIC, h->client_random, t->wr_secret);
+    ch_keylog(t->cfg.io, CH_KEYLOG_CLIENT_TRAFFIC, h->client_random, t->rd_secret, hash_len);
+    ch_keylog(t->cfg.io, CH_KEYLOG_SERVER_TRAFFIC, h->client_random, t->wr_secret, hash_len);
 #endif
 #ifndef CH_TRANSPORT_QUIC
     REC_DIR_INIT_SUITE(&t->wr, t->wr_secret, t->suite);
@@ -458,9 +451,9 @@ int srv_send_finished(handshake_state *h) {
 
 int srv_read_client_finished(handshake_state *h) {
     ch_tls *t = h->t;
-    CH_ASSERT(t->hash_len == SHA256_LEN);
-    uint8_t hash[SHA256_LEN];
-    (void)hsr_transcript_hash(h, hash);
+    size_t hash_len = t->hash_len;
+    uint8_t hash[HKDF_HASH_MAX];
+    (void)hsr_transcript_hash(h, hash_len, hash);
     uint8_t type = 0;
     const uint8_t *raw = NULL;
     size_t raw_len = 0;
@@ -471,17 +464,17 @@ int srv_read_client_finished(handshake_state *h) {
         }
         return rc;
     }
-    if (type != HS_FINISHED || raw_len != (size_t)4 + t->hash_len) {
+    if (type != HS_FINISHED || raw_len != 4 + hash_len) {
         h->alert = ALERT_UNEXPECTED_MESSAGE;
         return CH_EPROTO;
     }
-    uint8_t want[SHA256_LEN];
-    ks_verify_data(SHA256_LEN, h->c_hs, hash, want);
-    if (!ct_memeq(want, raw + 4, sizeof want)) {
+    uint8_t want[HKDF_HASH_MAX];
+    ks_verify_data(hash_len, h->c_hs, hash, want);
+    if (!ct_memeq(want, raw + 4, hash_len)) {
         h->alert = ALERT_DECRYPT_ERROR;
         return CH_EAUTH;
     }
-    sha256_update(&t->transcript, raw, raw_len);
+    transcript_update(&t->transcript, raw, raw_len);
     return CH_OK;
 }
 

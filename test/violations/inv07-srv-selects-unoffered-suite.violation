@@ -1,0 +1,15 @@
+invariant: INV-7
+file: suite.h
+catches: srv_flight_test_aes
+reason: srv_first_offered_suite takes the first suite in the server's order whether
+  or not the client listed it, so a client that offers AES-GCM alone is
+  answered with ChaCha20, and one that offers nothing this build holds
+  gets a suite instead of handshake_failure. RFC 9846 §4.2.3 makes a
+  suite the client did not offer an abort on the client's side, so the
+  server must never name one. The flight test's hello with no suite
+  expects handshake_failure; srv_select_suite proves the same rule.
+
+--- old
+        if ((offered & srv_suite_bit(order[i])) != 0) {
+--- new
+        if ((offered & srv_suite_bit(order[i])) != 0 || i == 0) {

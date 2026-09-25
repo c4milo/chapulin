@@ -71,7 +71,7 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
     t.cfg.buf_len = sizeof buf;
     t.cfg.recv = recv_stream;
     t.cfg.send = send_ok;
-    sha256_init(&t.transcript);
+    transcript_init(&t.transcript);
 
     handshake_state h;
     memset(&h, 0, sizeof h);

@@ -40,15 +40,18 @@
 // rules check before any caller runs this.
 void webpki_ticket_config_hash(const ch_cfg *cfg, uint8_t out[SHA256_LEN]);
 
-// The binding a ticket carries: HMAC-SHA256 keyed by the ticket's PSK
-// over the label "chapulin webpki ticket" and the hash above.
-void webpki_ticket_binding(const uint8_t psk[SHA256_LEN], const uint8_t config_hash[SHA256_LEN],
-                           uint8_t out[SHA256_LEN]);
+// The binding a ticket carries: HMAC-SHA256 keyed by the ticket's PSK,
+// the psk_len bytes at psk, over the label "chapulin webpki ticket" and
+// the hash above. The binding stays SHA-256 whatever hash the PSK came
+// from, because it is this client's own check and no protocol value.
+void webpki_ticket_binding(const uint8_t *psk, size_t psk_len,
+                           const uint8_t config_hash[SHA256_LEN], uint8_t out[SHA256_LEN]);
 
 // Whether cfg's PSK fields are one this build accepts. Either every PSK
 // field is unset: psk and psk_id NULL, psk_len and psk_id_len 0,
 // resumption 0 and ticket_binding NULL. Or cfg presents a ticket:
-// resumption set, a SHA256_LEN-byte psk, a psk_id of 1 to
+// resumption set, a psk of SHA256_LEN bytes, or of SHA384_LEN bytes in a
+// CH_CLIENT_AES_SUITES build (ch_ticket.psk_len), a psk_id of 1 to
 // CH_TICKET_ID_MAX bytes, and a ticket_binding equal, compared in
 // constant time, to the binding recomputed from psk, hostname and
 // anchors. Any other shape is refused: an external PSK has no hostname

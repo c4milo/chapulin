@@ -100,7 +100,7 @@ static void feed_client_finished(int correct) {
     rec_dir wr;
     size_t n = 0;
 
-    (void)hsr_transcript_hash(&hs, hash);
+    (void)hsr_transcript_hash(&hs, SHA256_LEN, hash);
     msg[0] = HS_FINISHED;
     msg[1] = 0;
     msg[2] = 0;
@@ -143,7 +143,7 @@ static void test_flight_finish(void) {
     uint8_t master[SHA256_LEN];
     uint8_t c_ap[SHA256_LEN];
     uint8_t s_ap[SHA256_LEN];
-    (void)hsr_transcript_hash(&hs, hash);
+    (void)hsr_transcript_hash(&hs, SHA256_LEN, hash);
     ks_master(SHA256_LEN, hs.handshake_secret, hash, master, c_ap, s_ap);
     CHECK(memcmp(sess.rd_secret, c_ap, sizeof c_ap) == 0);
     CHECK(memcmp(sess.wr_secret, s_ap, sizeof s_ap) == 0);
@@ -179,7 +179,7 @@ static void test_flight_finished_length(void) {
         auth_flight(&sel, &rd);
         CHECK(srv_send_finished(&hs) == CH_OK);
         uint8_t hash[SHA256_LEN];
-        (void)hsr_transcript_hash(&hs, hash);
+        (void)hsr_transcript_hash(&hs, SHA256_LEN, hash);
         memset(msg, 0, sizeof msg);
         msg[0] = HS_FINISHED;
         msg[3] = (uint8_t)body;

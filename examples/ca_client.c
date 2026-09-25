@@ -368,7 +368,7 @@ static void on_ticket(void *io, const ch_ticket *ticket) {
     (void)fprintf(stderr, "ticket: %zu-byte identity, lifetime %us, epoch %u\n",
                   ticket->identity_len, ticket->lifetime_s, ticket->epoch);
     // A device copies ticket->identity (identity_len bytes),
-    // ticket->psk (SHA256_LEN bytes), ticket->age_add, and
+    // ticket->psk (psk_len bytes), ticket->age_add, and
     // ticket->epoch into persistent storage here.
 }
 

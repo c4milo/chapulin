@@ -10,6 +10,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "hkdf.h"
 #include "sha256.h"
 #include "srv_cfg.h"
 
@@ -177,11 +178,17 @@ _Static_assert(CH_MIN_RXBUF >= 512, "the floor only rises; the base profile need
 #define CH_TICKET_ID_MAX 320
 
 // A resumption ticket for on_ticket. Copy what you keep during the callback, and present
-// psk and identity on the next ch_connect with resumption = 1 for a cheaper reconnect.
+// psk, psk_len and identity on the next ch_connect with resumption = 1 for a cheaper
+// reconnect.
 typedef struct {
     const uint8_t *identity;
     size_t identity_len;
-    uint8_t psk[SHA256_LEN];
+    // The PSK is as long as the hash of the suite the session ran (RFC 9846 §4.6.1):
+    // SHA256_LEN, or SHA384_LEN after a TLS_AES_256_GCM_SHA384 session, which only a
+    // SUITE=aesgcm TRUST=webpki client runs. psk_len says which; present it as
+    // ch_cfg.psk_len.
+    uint8_t psk[HKDF_HASH_MAX];
+    size_t psk_len;
     uint32_t lifetime_s;
     uint32_t age_add;
     // The stored epoch when the ticket arrived; zero outside CA builds. Present it back in

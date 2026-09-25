@@ -143,9 +143,9 @@ static int step_finished(ch_record *r) {
 #ifdef CH_TRUST_CA
     hsa_epoch_commit(&r->hs);
 #endif
-    uint8_t finished[HSF_FINISHED_LEN];
-    hsf_complete(&r->hs, finished);
-    rc = stage_sealed(r, finished, HSF_FINISHED_LEN);
+    uint8_t finished[HSF_FINISHED_MAX];
+    size_t finished_len = hsf_complete(&r->hs, finished);
+    rc = stage_sealed(r, finished, finished_len);
     ct_wipe(finished, sizeof finished);
     if (rc != CH_OK) {
         return rc;

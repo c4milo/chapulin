@@ -205,7 +205,7 @@ static int run_flight(ch_tls *t, handshake_state *h, const uint8_t *message, siz
     t->cfg.send = mock_send;
     t->cfg.recv = mock_recv;
     t->cfg.io = &source;
-    sha256_init(&t->transcript);
+    transcript_init(&t->transcript);
     memset(h, 0, sizeof *h);
     h->t = t;
     return hsa_server_auth(h);
@@ -217,8 +217,7 @@ static int run_flight(ch_tls *t, handshake_state *h, const uint8_t *message, siz
 static void check_transcript(const ch_tls *t, const uint8_t *message, size_t message_len,
                              const uint8_t *verify_msg, size_t verify_len) {
     uint8_t after[SHA256_LEN];
-    sha256 running = t->transcript;
-    sha256_final(&running, after);
+    transcript_hash_after(&t->transcript, SHA256_LEN, NULL, 0, after);
     sha256 s;
     sha256_init(&s);
     sha256_update(&s, message, message_len);

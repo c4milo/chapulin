@@ -68,18 +68,20 @@ static const char *const hspd_alpn_names[HSPD_ALPN_MAX] = {"h2", "http/1.1", "x"
 
 #define HSPD_X25519 0x001d
 #define HSPD_X25519MLKEM768 0x11ec
-#define HSPD_SUITE 0x1303     // TLS_CHACHA20_POLY1305_SHA256
-#define HSPD_SUITE_AES 0x1301 // TLS_AES_128_GCM_SHA256
+#define HSPD_SUITE 0x1303         // TLS_CHACHA20_POLY1305_SHA256
+#define HSPD_SUITE_AES 0x1301     // TLS_AES_128_GCM_SHA256
+#define HSPD_SUITE_AES_256 0x1302 // TLS_AES_256_GCM_SHA384
 
 // The suites the build's ClientHello offers, as the Makefile's SUITE
-// value spells them: ChaCha20 alone, or ChaCha20 and AES-128-GCM from
-// the SUITE=aesgcm TRUST=webpki client (docs/decisions.md entry 45).
-// mut 2 writes a suite the build did not offer: AES-128-GCM in the
-// one-suite builds, so each run diffs that refusal, and
-// TLS_AES_256_GCM_SHA384, which no build offers, in the two-suite one.
-#ifdef CH_CLIENT_TWO_SUITES
+// value spells them: ChaCha20 alone, or ChaCha20 and the two AES-GCM
+// suites from the SUITE=aesgcm TRUST=webpki client (docs/decisions.md
+// entries 45 and 58). mut 2 writes a suite the build did not offer:
+// AES-128-GCM in the one-suite builds, so each run diffs that refusal,
+// and TLS_AES_128_CCM_SHA256, which no build offers, in the three-suite
+// one.
+#ifdef CH_CLIENT_AES_SUITES
 #define HSPD_SUITE_TOKEN "aesgcm"
-#define HSPD_UNOFFERED_SUITE 0x1302
+#define HSPD_UNOFFERED_SUITE 0x1304
 #define HSPD_ACCEPTED_SUITE(info) ((info).suite)
 #else
 #define HSPD_SUITE_TOKEN "chacha"
@@ -334,10 +336,14 @@ static void hspd_sh_draw_shapes(hspd_sh_plan *plan, int hrr) {
     plan->retry_x25519 = hrr && rng_below(3) == 0;
     plan->retry_bare = plan->retry_x25519 && rng_below(2) == 0;
     plan->suite = HSPD_SUITE;
-#ifdef CH_CLIENT_TWO_SUITES
-    // Either offered suite, in a retry or a ServerHello alike.
-    if (rng_below(2) == 0) {
+#ifdef CH_CLIENT_AES_SUITES
+    // Any offered suite, in a retry or a ServerHello alike.
+    size_t pick = rng_below(3);
+    if (pick == 1) {
         plan->suite = HSPD_SUITE_AES;
+    }
+    if (pick == 2) {
+        plan->suite = HSPD_SUITE_AES_256;
     }
 #endif
 #ifdef CH_KEX_TWO_GROUPS

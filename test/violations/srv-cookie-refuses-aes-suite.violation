@@ -11,11 +11,6 @@ reason: srv_cookie_open knows ChaCha20 alone again, which is what the first
   length.
 
 --- old
-#ifdef CH_SUITE_AES_GCM
-    if (suite == SUITE_AES_128_GCM_SHA256) {
-        return SHA256_LEN;
-    }
-#endif
-    if (suite == SUITE_CHACHA20_POLY1305_SHA256) {
+    size_t body_hash_len = suite_hash_len(body_suite);
 --- new
-    if (suite == SUITE_CHACHA20_POLY1305_SHA256) {
+    size_t body_hash_len = body_suite == SUITE_CHACHA20_POLY1305_SHA256 ? SHA256_LEN : 0;

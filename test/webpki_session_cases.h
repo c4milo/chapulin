@@ -361,6 +361,9 @@ static void test_webpki_hello_boundary(void) {
     widest_alpn(widest, widest_names);
     ch_cfg cfg = {0};
     cfg.psk = identity;
+    // The longest PSK the build takes, which in a CH_CLIENT_AES_SUITES
+    // build is a SHA-384 one with a 48-byte binder.
+    cfg.psk_len = HKDF_HASH_MAX;
     cfg.psk_id = identity;
     cfg.psk_id_len = sizeof identity;
     cfg.resumption = 1;
@@ -394,12 +397,12 @@ static void test_webpki_hello_boundary(void) {
     cfg.spki_pin_count = 1;
     cfg.psk = NULL;
     size_t chain_arm = BUILD_HELLO(CH_HELLO_MAX);
-    CHECK(chain_arm == CH_HELLO_MAX - (47 + CH_TICKET_ID_MAX));
+    CHECK(chain_arm == CH_HELLO_MAX - (47 + CH_HELLO_SHA384_BINDER_MAX + CH_TICKET_ID_MAX));
 #undef BUILD_HELLO
     CHECK(CH_TX_STAGE == CH_HELLO_MAX);
     CHECK(CH_HELLO_ALPN_MAX == 270);
     CHECK(CH_HELLO_CERT_PATH_MAX == 16 + 7);
-    CHECK(CH_HELLO_MAX == 2394 + CH_HELLO_SECOND_SUITE_MAX);
+    CHECK(CH_HELLO_MAX == 2394 + CH_HELLO_AES_SUITES_MAX + CH_HELLO_SHA384_BINDER_MAX);
     (void)printf("webpki hello: %zu bytes with pre_shared_key, %zu without, CH_TX_STAGE %d\n",
                  psk_arm, chain_arm, CH_TX_STAGE);
 }

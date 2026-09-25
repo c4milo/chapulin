@@ -8,6 +8,7 @@
 #include <stdint.h>
 
 #include "cfg.h"
+#include "suite.h"
 #ifdef CH_TRUST_WEBPKI
 #include "webpki.h"
 #endif
@@ -45,21 +46,6 @@
 #define EXT_QUIC_TRANSPORT_PARAMS 0x39
 
 #define TLS13 0x0304
-#define SUITE_CHACHA20_POLY1305_SHA256 0x1303
-// TLS_AES_128_GCM_SHA256, which RFC 9846 section 9.1 makes mandatory to
-// implement (rfc9846.txt:4540-4543). Only a -DCH_SUITE_AES_GCM build
-// offers or selects it, and ct.h refuses that define unless the build has
-// hardware AES and asserts its timing.
-#define SUITE_AES_128_GCM_SHA256 0x1301
-// A SUITE=aesgcm TRUST=webpki client offers both suites, ChaCha20 first
-// and AES-128-GCM after it, and runs the one the ServerHello selects
-// (docs/decisions.md entry 45). A SUITE=aesgcm server selects AES-128-GCM
-// from a client that offers no ChaCha20 (srv_select). A raw or ca client
-// offers ChaCha20 alone, and handshake_message.c refuses the define for
-// one that carries no server role.
-#if defined(CH_SUITE_AES_GCM) && defined(CH_TRUST_WEBPKI)
-#define CH_CLIENT_TWO_SUITES
-#endif
 
 // The hybrid share sizes on each side, in RFC 10024's order: the ML-KEM bytes come first
 // on both sides, despite the group name. Every client that offers the hybrid
@@ -152,8 +138,10 @@
 // A CH_KEX_TWO_GROUPS build takes the hybrid share as its first key share
 // and adds two more terms: the second NamedGroup in supported_groups, 2
 // bytes, and the second KeyShareEntry, the x25519 one, whose group,
-// length and 32-byte value are 36 bytes. A CH_CLIENT_TWO_SUITES build
-// adds the second cipher suite, 2 bytes more.
+// length and 32-byte value are 36 bytes. A CH_CLIENT_AES_SUITES build
+// adds the two AES-GCM cipher suites, 4 bytes more, and its binder can
+// be a SHA-384 one, 16 bytes longer than the SHA-256 binder the fixed
+// sum counts (CH_HELLO_SHA384_BINDER_MAX).
 //
 // Each term is 0 in a build that sends nothing for it, so one sum
 // serves every combination.
@@ -183,15 +171,18 @@
 #define CH_HELLO_SECOND_GROUP_MAX 0
 #define CH_HELLO_SECOND_SHARE_MAX 0
 #endif
-#ifdef CH_CLIENT_TWO_SUITES
-#define CH_HELLO_SECOND_SUITE_MAX 2
+#ifdef CH_CLIENT_AES_SUITES
+#define CH_HELLO_AES_SUITES_MAX 4
+#define CH_HELLO_SHA384_BINDER_MAX (SHA384_LEN - SHA256_LEN)
 #else
-#define CH_HELLO_SECOND_SUITE_MAX 0
+#define CH_HELLO_AES_SUITES_MAX 0
+#define CH_HELLO_SHA384_BINDER_MAX 0
 #endif
 #define CH_HELLO_MAX                                                                               \
     (137 + CH_HELLO_SERVER_NAME_MAX + CH_HELLO_ALPN_MAX + CH_HELLO_TRANSPORT_MAX +                 \
      CH_HELLO_CERT_PATH_MAX + CH_HELLO_SECOND_GROUP_MAX + CH_HELLO_SECOND_SHARE_MAX +              \
-     CH_HELLO_SECOND_SUITE_MAX + CH_TICKET_ID_MAX + HSP_COOKIE_MAX + CH_HELLO_FIRST_SHARE_MAX)
+     CH_HELLO_AES_SUITES_MAX + CH_HELLO_SHA384_BINDER_MAX + CH_TICKET_ID_MAX + HSP_COOKIE_MAX +    \
+     CH_HELLO_FIRST_SHARE_MAX)
 
 // Pinned mode verifies exactly one signature algorithm per build: RSA-PSS
 // by default (what stock cert-based endpoints hold), ECDSA P-256 with
@@ -244,14 +235,34 @@
 // transports.
 #define ALERT_NO_APPLICATION_PROTOCOL 120
 
-// The binders list is a fixed 35-byte tail here (one 32-byte binder):
-// u16 list length, u8 binder length, 32 binder bytes.
-#define CH_BINDERS_TAIL 35
+// The binders list is the hello's tail: u16 list length, u8 binder
+// length, and one binder as long as the PSK's hash, 35 bytes for a
+// SHA-256 PSK and 51 for a SHA-384 one.
+#define CH_BINDERS_TAIL(hash_len) (3 + (hash_len))
+
+// The hash the PSK cfg presents runs under, which names its binder's
+// length and the early secret's hash. A ticket's PSK is as long as the
+// hash of the suite whose session issued it (rfc9846.txt:3298-3301), so a
+// CH_CLIENT_AES_SUITES build, which can hold a ticket from a
+// TLS_AES_256_GCM_SHA384 session, reads the hash off that length. Every
+// other build presents SHA-256 PSKs alone. The length is public: the
+// caller chose it and the binder's length shows it on the wire.
+static inline size_t hs_psk_hash_len(const ch_cfg *cfg) {
+#ifdef CH_CLIENT_AES_SUITES
+    if (cfg->resumption && cfg->psk_len == SHA384_LEN) {
+        return SHA384_LEN;
+    }
+#else
+    (void)cfg;
+#endif
+    return SHA256_LEN;
+}
 
 // Builds a complete ClientHello handshake message (header included). In
 // PSK mode (cfg->psk set) the pre_shared_key extension comes last with a
-// zeroed binder: the binder occupies the final 32 bytes and the binder
-// transcript covers the first (length - CH_BINDERS_TAIL) bytes. A raw or
+// zeroed binder as long as the PSK's hash, hs_psk_hash_len: the binder
+// occupies the final hash_len bytes and the binder transcript covers the
+// first (length - CH_BINDERS_TAIL(hash_len)) bytes. A raw or
 // ca build offers signature_algorithms in pinned-key mode alone, so its
 // PSK hello offers no certificate path and a pinned-key hello has no
 // binder. record_size_limit is the limit we advertise; cookie echoes an

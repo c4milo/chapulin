@@ -146,7 +146,7 @@ static void test_resume_issue(void) {
     // the transcript through the client Finished.
     resume_connected(RESUME_AUTH, &client_rd);
     uint8_t hash[SHA256_LEN];
-    (void)hsr_transcript_hash(&hs, hash);
+    (void)hsr_transcript_hash(&hs, SHA256_LEN, hash);
     uint8_t res_master[SHA256_LEN];
     ks_res_master(SHA256_LEN, hs.master, hash, res_master);
     CHECK(srv_send_new_session_ticket(&hs) == CH_OK);

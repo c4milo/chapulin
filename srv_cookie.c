@@ -22,25 +22,14 @@
 // The transcript hash length one cipher suite fixes (RFC 9846 §7.1 binds the
 // hash to the suite), in bytes, or 0 for a suite this build does not hold.
 //
-// The suites that answer a length are the ones srv_select can choose:
-// TLS_CHACHA20_POLY1305_SHA256 in every build, and TLS_AES_128_GCM_SHA256
-// under -DCH_SUITE_AES_GCM. Both hash with SHA-256. Every other code point
+// suite_hash_len (suite.h) answers a length for exactly the suites
+// srv_select can choose: TLS_CHACHA20_POLY1305_SHA256 in every build, and
+// the two AES-GCM suites under -DCH_SUITE_AES_GCM. Every other code point
 // answers 0, and srv_cookie_open refuses the cookie that names it. A cookie
 // must open under every suite srv_select can choose, because the server
 // mints one for whichever suite it selected: a build that left AES-GCM out
-// here refused its own cookie, and with it every retried ClientHello from a
-// client that offers no ChaCha20.
-static size_t suite_hash_len(uint16_t suite) {
-#ifdef CH_SUITE_AES_GCM
-    if (suite == SUITE_AES_128_GCM_SHA256) {
-        return SHA256_LEN;
-    }
-#endif
-    if (suite == SUITE_CHACHA20_POLY1305_SHA256) {
-        return SHA256_LEN;
-    }
-    return 0;
-}
+// of that answer refused its own cookie, and with it every retried
+// ClientHello from a client that offers no ChaCha20.
 
 size_t srv_cookie_mint(const uint8_t key[SRV_COOKIE_KEY_LEN], uint16_t suite, uint16_t group,
                        const uint8_t *ch1_hash, size_t hash_len, const uint8_t frozen[SHA256_LEN],

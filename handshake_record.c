@@ -209,8 +209,17 @@ int hsr_next_msg(handshake_state *h, uint8_t *type, const uint8_t **raw, size_t 
 }
 #endif // CH_TRANSPORT_QUIC || CH_TRANSPORT_RECORD
 
-int hsr_transcript_hash(handshake_state *h, uint8_t out[SHA256_LEN]) {
-    sha256 transcript = h->t->transcript;
-    sha256_final(&transcript, out);
+int hsr_transcript_hash(handshake_state *h, size_t hash_len, uint8_t *out) {
+    transcript_hash_after(&h->t->transcript, hash_len, NULL, 0, out);
     return CH_OK;
+}
+
+void hsr_restart_transcript(handshake_state *h, size_t hash_len, const uint8_t *retry, size_t n) {
+    uint8_t ch1[HKDF_HASH_MAX];
+    transcript_hash_after(&h->t->transcript, hash_len, NULL, 0, ch1);
+    const uint8_t synth[4] = {HS_MESSAGE_HASH, 0, 0, (uint8_t)hash_len};
+    transcript_init(&h->t->transcript);
+    transcript_update(&h->t->transcript, synth, sizeof synth);
+    transcript_update(&h->t->transcript, ch1, hash_len);
+    transcript_update(&h->t->transcript, retry, n);
 }

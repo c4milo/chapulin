@@ -31,8 +31,9 @@ RFC 7250 raw public keys and may offer X.509 beside them
 offers five signature schemes instead of one (`SignatureOffer`), it
 lists two groups, X25519MLKEM768 then x25519, with a key share for each
 (`Kex.twoGroups`), and under
-SUITE=aesgcm it offers two cipher suites, TLS_CHACHA20_POLY1305_SHA256
-then TLS_AES_128_GCM_SHA256 (`SuiteOffer.chachaAndAes`).
+SUITE=aesgcm it offers three cipher suites, TLS_CHACHA20_POLY1305_SHA256,
+then TLS_AES_128_GCM_SHA256, then TLS_AES_256_GCM_SHA384
+(`SuiteOffer.chachaAndAes`).
 
 Where the RFC fixes the alert, `Alert` names it. Where the RFC states
 a MUST but names no alert, the verdict is `Alert.unspecified` and the
@@ -140,6 +141,11 @@ appendix B.4). The SUITE=aesgcm TRUST=webpki client offers it second,
 after TLS_CHACHA20_POLY1305_SHA256; no other client build offers it. -/
 def aes128GcmSha256 : Nat := 0x1301
 
+/-- CipherSuite TLS_AES_256_GCM_SHA384 = `{0x13,0x02}` (RFC 9846
+appendix B.4). The SUITE=aesgcm TRUST=webpki client offers it third,
+after TLS_AES_128_GCM_SHA256; no other client build offers it. -/
+def aes256GcmSha384 : Nat := 0x1302
+
 /--
 The cipher suites the build's ClientHello offers in cipher_suites (RFC
 9846 §4.2.2). The Makefile's SUITE and TRUST variables fix them at build
@@ -149,8 +155,9 @@ inductive SuiteOffer
   /-- Every client build but the one below: TLS_CHACHA20_POLY1305_SHA256
   alone. -/
   | chacha
-  /-- The SUITE=aesgcm TRUST=webpki client: TLS_CHACHA20_POLY1305_SHA256
-  then TLS_AES_128_GCM_SHA256 (docs/decisions.md entry 45). -/
+  /-- The SUITE=aesgcm TRUST=webpki client: TLS_CHACHA20_POLY1305_SHA256,
+  then TLS_AES_128_GCM_SHA256, then TLS_AES_256_GCM_SHA384
+  (docs/decisions.md entries 45 and 58). -/
   | chachaAndAes
 deriving BEq
 
@@ -158,7 +165,7 @@ deriving BEq
 cipher_suites (RFC 9846 §4.2.2), in the order it lists them. -/
 def SuiteOffer.cipherSuites : SuiteOffer → List Nat
   | .chacha => [chacha20Poly1305Sha256]
-  | .chachaAndAes => [chacha20Poly1305Sha256, aes128GcmSha256]
+  | .chachaAndAes => [chacha20Poly1305Sha256, aes128GcmSha256, aes256GcmSha384]
 
 /-- The line protocol's cipher-suite token, spelled as the Makefile's
 SUITE variable spells its values: `chacha` for every client build but
@@ -504,7 +511,7 @@ RFC 9846 §4.2.3, read down the struct:
   §4.2.3 makes a suite that was not offered an illegal_parameter, and
   §4.2.4 repeats the rule for a HelloRetryRequest. Every client build
   offers TLS_CHACHA20_POLY1305_SHA256, and the SUITE=aesgcm TRUST=webpki
-  client also offers TLS_AES_128_GCM_SHA256. §4.2.4 also requires a
+  client also offers TLS_AES_128_GCM_SHA256 and TLS_AES_256_GCM_SHA384. §4.2.4 also requires a
   ServerHello after a HelloRetryRequest to carry the retry's suite. That
   turns on whether a retry happened, which one message cannot show, so
   the suite travels out in the fields and the caller checks it;
@@ -1380,10 +1387,11 @@ def selftest (_ : Unit) : Bool := Id.run do
       extension extKeyShare (u16 x25519Group ++ ByteArray.mk #[0]))) .decodeError &&
     -- A retry that asks for no change.
     refusesWithUnder .twoGroups (hrrOf versionExt) .illegalParameter
-  -- The SUITE=aesgcm TRUST=webpki client (docs/decisions.md entry 45)
-  -- offers TLS_CHACHA20_POLY1305_SHA256 then TLS_AES_128_GCM_SHA256. A
-  -- ServerHello or a retry may carry either and reports which (§4.2.3,
-  -- §4.2.4); a suite the client did not offer is an illegal_parameter.
+  -- The SUITE=aesgcm TRUST=webpki client (docs/decisions.md entries 45
+  -- and 58) offers TLS_CHACHA20_POLY1305_SHA256, TLS_AES_128_GCM_SHA256
+  -- and TLS_AES_256_GCM_SHA384. A ServerHello or a retry may carry any
+  -- of them and reports which (§4.2.3, §4.2.4); a suite the client did
+  -- not offer is an illegal_parameter.
   let withSuite (random : ByteArray) (suite : Nat) (exts : ByteArray) : ByteArray :=
     message serverHelloType (u16 legacyVersion ++ random ++ vec8 sessionId ++ u16 suite ++
       ByteArray.mk #[0] ++ vec16 exts)
@@ -1408,17 +1416,19 @@ def selftest (_ : Unit) : Bool := Id.run do
     helloSuite .chachaAndAes (helloWithSuite aes128GcmSha256) == some aes128GcmSha256 &&
     helloSuite .chachaAndAes (helloWithSuite chacha20Poly1305Sha256) ==
       some chacha20Poly1305Sha256 &&
-    -- TLS_AES_256_GCM_SHA384(0x1302) and TLS_AES_128_CCM_SHA256(0x1304):
-    -- RFC 9846 appendix B.4 defines both, and no client build offers
-    -- either.
-    refusesSuite .chachaAndAes (helloWithSuite 0x1302) &&
+    helloSuite .chachaAndAes (helloWithSuite aes256GcmSha384) == some aes256GcmSha384 &&
+    -- TLS_AES_128_CCM_SHA256(0x1304): RFC 9846 appendix B.4 defines it,
+    -- and no client build offers it.
     refusesSuite .chachaAndAes (helloWithSuite 0x1304) &&
+    retrySuite .chachaAndAes (retryWithSuite aes256GcmSha384) == some aes256GcmSha384 &&
     retrySuite .chachaAndAes (retryWithSuite aes128GcmSha256) == some aes128GcmSha256 &&
     retrySuite .chachaAndAes (retryWithSuite chacha20Poly1305Sha256) ==
       some chacha20Poly1305Sha256 &&
-    -- The one-suite offer refuses TLS_AES_128_GCM_SHA256 in either message.
+    -- The one-suite offer refuses both AES-GCM suites in either message.
     refusesSuite .chacha (helloWithSuite aes128GcmSha256) &&
-    refusesSuite .chacha (retryWithSuite aes128GcmSha256)
+    refusesSuite .chacha (retryWithSuite aes128GcmSha256) &&
+    refusesSuite .chacha (helloWithSuite aes256GcmSha384) &&
+    refusesSuite .chacha (retryWithSuite aes256GcmSha384)
   -- §4.4.1 and RFC 8449 §4.
   let encryptedExtensionsOf (exts : ByteArray) : ByteArray :=
     message encryptedExtensionsType (vec16 exts)

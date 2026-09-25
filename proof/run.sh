@@ -435,6 +435,11 @@ launch slow:5 noovf x25519_sqr 65 ""
 # no pin and check_certificate_verify then verifies nothing, so no
 # declined session connects either way; bin/unit's handler row is what
 # catches that mutant (inv14-raw-accepts-declined-psk).
+# The key schedule then took a hash length, the transcript became
+# ch_transcript, and hsr_restart_transcript joined the stubbed record
+# reader as a contract stub that transcript384 proves (docs/decisions.md
+# 58). Measured the same way on 2026-09-24: psk 1808 properties in 179 s
+# at 4.76 GB, pin 1810 in 41 s at 3.55 GB.
 launch slow full handshake_psk 100 "fill_nondet.0:618,fill_buf_nondet.0:97,ct_wipe.0:449" handshake_auth.c handshake_flight.c buf.c ct.c
 launch slow full handshake_pin 100 "fill_nondet.0:618,fill_buf_nondet.0:97,ct_wipe.0:449" handshake_auth.c handshake_flight.c buf.c ct.c
 # ML-KEM's chained-product functions, one formula each; the inverse
@@ -473,6 +478,8 @@ launch fast:10 full handshake_parser 260 "hsp_parse_server_hello.0:66" handshake
 # compiles the two-group key_share arms too, the x25519 share and the
 # hybrid one (docs/decisions.md entry 53), and the formula grew to 719
 # properties, 128 s, 5.1 GB peak (the same command, nothing beside it).
+# With TLS_AES_256_GCM_SHA384 as a third offered suite (docs/decisions.md
+# entry 58): 719 properties, 93 s, 4.45 GB peak.
 launch fast:10 full handshake_parser_suite 260 "hsp_parse_server_hello.0:66" handshake_parser.c buf.c -DCH_SUITE_AES_GCM -DCH_TRUST_WEBPKI -DCH_AES_HW -DCH_NATIVE_AES
 launch fast full eeparse 260 "hsp_parse_encrypted_exts.0:66" handshake_parser_ee.c buf.c
 launch fast full certparse 260 "" handshake_parser.c buf.c
@@ -592,8 +599,21 @@ launch fast full sha3_stream 26 "absorb.0:34,absorb.1:1,absorb.2:1,absorb.3:34,s
 launch fast full mlkem 385 "fill_nondet.0:2401,ct_wipe.0:1537,ct_memeq.0:1089" ct.c
 launch fast:3 full mlkem_poly 260 "mlk_sample_ntt.0:513,fill_nondet.0:1537,ct_wipe.0:225" ct.c
 # record: measured 830 s / 3.0 GB (kissat) since the direction-domain
-# and in-place-open shapes joined the formula.
+# and in-place-open shapes joined the formula. With rec_dir's suite and
+# its key and IV derived at the suite's hash (docs/decisions.md entry
+# 58): 435 properties, 596 s, 3.88 GB peak (arm64 macOS, cbmc 6.11.0,
+# kissat, PROVE_ONLY=record PROVE_NO_CACHE=1 /usr/bin/time -l).
 launch slow:4 full record 165 "" ct.c
+# record_suite: rec_dir_init_suite, rec_dir_update and one seal and one
+# open in the -DCH_SUITE_AES_GCM build, over each of the three suites,
+# with hkdf, the ChaCha20 AEAD and the AES-GCM traffic entries stubbed to
+# their contracts; the stubs assert the suite's hash and key length.
+# Measured (arm64 macOS, cbmc 6.11.0, kissat, PROVE_ONLY=record_suite
+# PROVE_NO_CACHE=1 /usr/bin/time -l): 579 properties, 30 s, 0.59 GB peak.
+# rec_dir_update deriving at SHA256_LEN under every suite fails the hash
+# assertion, and an AES dispatch that names AES-128-GCM alone fails the
+# seal and open assertions, so both properties are reached.
+launch fast full record_suite 250 "" ct.c -DCH_SUITE_AES_GCM -DCH_AES_HW -DCH_NATIVE_AES
 # The x25519 ladder keeps its limbs inside the range the field-op proofs
 # assume (https://github.com/c4milo/chapulin/issues/50). x25519_step
 # proves one loop step on the shipped step(): from any state with
@@ -741,6 +761,14 @@ launch fast full keysched 120 "" ct.c
 # properties, 27 s, 0.28 GB peak; the SHA-256 line above measured 294
 # properties, 18 s, 0.18 GB after hash_len joined the signatures.
 launch fast full keysched384 130 "fill_nondet.0:209,ct_wipe.0:209" ct.c
+# transcript384: the transcript's two hashes and hsr_transcript_hash,
+# transcript_hash_after and hsr_restart_transcript under CH_HASH_SHA384,
+# hash_len free over 32 and 48, with both hashes stubbed to their
+# contracts; the SHA-512 context stubs' 208-byte fill sets the unwindset.
+# Measured the same way: 434 properties, 5 s, 0.05 GB peak. A synthetic
+# message buffer of SHA256_LEN in hsr_restart_transcript fails five
+# bounds properties at hash_len 48.
+launch fast full transcript384 70 "fill_nondet.0:209"
 # The same harness under the EXPORTER axis, which compiles two more ks_
 # calls and widens hkdf's label cap from 12 to 32. It would be a second
 # launch line rather than a define on the one above for quic_step_ca's
@@ -775,6 +803,9 @@ launch fast full epoch 40 "" ct.c
 # its fields do not fill (INV-25). Measured again on 2026-09-24 at 211 to
 # 226 s and 4.1 to 4.8 GB peak on an M1 Pro, over the slow tier's line
 # at the top of this file, so it runs nightly: slow:5 covers that peak.
+# With the ks_ calls taking the suite's hash length and the ticket
+# carrying psk_len (docs/decisions.md 58): 695 properties, 261 s,
+# 4.26 GB peak.
 launch slow:5 full handshake_post 132 "handle_post_handshake.0:33,fill_nondet.0:130" --object-bits 11 buf.c ct.c session.c
 # The only launch line that builds the hybrid key exchange
 # (https://github.com/c4milo/chapulin/issues/47). hybrid_secret over any seed,
@@ -1160,7 +1191,12 @@ launch fast full srv_auth 385 "" ct.c -DCH_ROLE_SERVER
 # reached. Before the binders bound fell to one binder and the start of a
 # second, the same formula took 268 s and 7.4 GB. With the assertion that
 # a selected ticket leaves no signature scheme: 1024 properties, 138 s,
-# 4.95 GB, measured the same way on 2026-09-24.
+# 4.95 GB, measured the same way on 2026-09-24. With a ticket resumed
+# only under a suite of its own hash (docs/decisions.md 58), and the
+# selection's hash length set to SHA256_LEN, the one hash this build
+# holds: 1046 properties, 143 s, 7.94 GB, measured the same way the same
+# day. The peak is the solver's; the nightly runs this proof in a job of
+# its own.
 launch slow full srv_resume 120 "fill_nondet.0:118,find_ticket.0:24,binder_at.0:36,ct_wipe.0:84,ct_memeq.0:33" buf.c ct.c -DCH_ROLE_SERVER
 # quic_gcm and quic_gcm_forge have no launch line, for the reason
 # aead_inplace has none: neither formula returned a verdict, and an
@@ -1196,6 +1232,15 @@ launch slow full srv_resume 120 "fill_nondet.0:118,find_ticket.0:24,binder_at.0:
 # tight in both directions.
 launch fast full srv_message 130 "fill_nondet.0:118" buf.c -DCH_ROLE_SERVER
 launch fast full srv_cookie 130 "fill_nondet.0:119" buf.c ct.c hkdf.c -DCH_ROLE_SERVER
+# srv_select_suite: suite.h's srv_first_offered_suite, the walk
+# srv_select runs over the server's order, in the -DCH_SUITE_AES_GCM
+# build, over every offer of the three suites and every order of up to
+# three code points; the choice is offered, held, in the order, and
+# first. Measured the same way: 41 properties, under 1 s, 0.02 GB peak. A
+# walk that takes the first suite in the order whether or not the client
+# offered it fails three of the assertions.
+launch fast full srv_select_suite 5 "" -DCH_ROLE_SERVER -DCH_SUITE_AES_GCM -DCH_AES_HW \
+    -DCH_NATIVE_AES
 # The resumption ticket's seal and open, over every contents and every
 # ticket length up to one byte past SRV_TICKET_LEN. buf.c and ct.c are real;
 # aead_seal and aead_open are contract stubs the harness defines, which the
@@ -1277,7 +1322,11 @@ launch fast:2 full srv_parser_ext 26 "fill_nondet.0:129,ct_memeq.0:33" buf.c ct.
 # supported_versions fails (420 s; 794 s at 60 bytes before the bound), so
 # the formula holds accepted hellos too and does not pass on refusals
 # alone.
-launch slow:3 full srv_parser_walk 8 "main.0:65,sha256_final.0:33,srv_list_has.0:33,srv_ext_over_max.0:5,srv_ext_duplicate.0:5,type_before.0:4,srv_parse_client_hello.0:5,next_covered.0:5,add_frozen_extensions.0:5" buf.c ct.c -DCH_ROLE_SERVER
+# parse_head.0 is the one pass over cipher_suites that replaced a
+# srv_list_has call per suite (docs/decisions.md 58), at the bound
+# srv_list_has.0 had; at the default unwind of 8 its unwinding assertion
+# fails. Measured under this script's flags on 2026-09-24: 834 properties, 304 s, 1.20 GB peak.
+launch slow:3 full srv_parser_walk 8 "main.0:65,sha256_final.0:33,parse_head.0:33,srv_ext_over_max.0:5,srv_ext_duplicate.0:5,type_before.0:4,srv_parse_client_hello.0:5,next_covered.0:5,add_frozen_extensions.0:5" buf.c ct.c -DCH_ROLE_SERVER
 # The frozen digest's walk and the duplicate check under it, over any
 # extension block up to 24 bytes, six extensions: the walk reads only
 # inside the block, srv_ext_duplicate answers 1 on a whole block exactly
@@ -1324,7 +1373,13 @@ launch fast full buf 100 ""
 # because the harness havocs pt_off, pt_len, ccs_seen, quiet and every buffer
 # byte on entry rather than walking records to get there. Measured under this
 # script's flags: 567 properties, 457 s, 0.99 GB.
-launch slow:4 full handshake_record 65 "hsr_fetch_record.0:6,hsr_next_msg.0:11,fill_nondet.0:33,fill_buf_nondet.0:13" --object-bits 11 -DCH_QUIET_CAP=1 -DCH_PROOF_RXBUF=12
+# fill_nondet.0 is 113 because hsr_transcript_hash now runs
+# transcript_hash_after, whose sha256_update stub havocs the 112-byte
+# context copy before sha256_final writes the digest. Measured the same
+# way on 2026-09-24 (arm64 macOS, cbmc 6.11.0, kissat,
+# PROVE_ONLY=handshake_record PROVE_NO_CACHE=1 /usr/bin/time -l): 597
+# properties, 530 s, 3.51 GB peak.
+launch slow:4 full handshake_record 65 "hsr_fetch_record.0:6,hsr_next_msg.0:11,fill_nondet.0:113,fill_buf_nondet.0:13" --object-bits 11 -DCH_QUIET_CAP=1 -DCH_PROOF_RXBUF=12
 # The TRANSPORT=quic driver and its step table, one formula each, with
 # the contract between them written twice: quic_driver stubs
 # hsq_advance to what quic_step.h states, and quic_step proves the
