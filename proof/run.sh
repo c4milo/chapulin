@@ -1123,8 +1123,7 @@ launch fast full quic_aes256 60 "fill_nondet.0:241" -DCH_TRANSPORT_QUIC_NONBLOCK
 # because CBMC cannot read the instructions: both key lengths, the round
 # count each writes, and the dispatch that count drives. Measured the
 # same way: 140 properties, under 1 s, 0.02 GB peak.
-launch fast full quic_aes_traffic 45 "fill_nondet.0:241" -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_SUITE_AES_GCM \
-    -DCH_AES_HW -DCH_NATIVE_AES
+launch fast full quic_aes_traffic 45 "fill_nondet.0:241" -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_SUITE_AES_GCM -DCH_AES_HW -DCH_NATIVE_AES
 # The three RFC 9001 §5.1 derivations and the §6.1 key update. HKDF is
 # the same contract stub quic_aes uses, so this formula holds the
 # framing of the three calls and not four HMAC derivations; ct.c is
@@ -1138,8 +1137,7 @@ launch fast full quic_keys 45 "fill_nondet.0:177" ct.c -DCH_TRANSPORT_QUIC_NONBL
 # that derives at SHA256_LEN under every suite fails two of the hash
 # assertions. The one-suite line above measured 106 properties, under
 # 1 s, 0.02 GB.
-launch fast full quic_keys_suite 60 "" ct.c -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_SUITE_AES_GCM -DCH_AES_HW \
-    -DCH_NATIVE_AES
+launch fast full quic_keys_suite 60 "" ct.c -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_SUITE_AES_GCM -DCH_AES_HW -DCH_NATIVE_AES
 # The RFC 9001 §5.8 Retry tag check. gcm_seal and aes_public_key_retry
 # are contract stubs the harness defines, so this formula holds the one
 # call's framing and its verdict and not AES-128-GCM; the harness states
@@ -1182,8 +1180,7 @@ launch fast full quic_packet 65 "fill_nondet.0:133" buf.c ct.c -DCH_TRANSPORT_QU
 # limit assertion, so both are reached. The one-suite line above
 # measured 923 properties, 8 s, 0.23 GB after quic_packet_seal lost its
 # const.
-launch fast full quic_packet_suite 250 "" buf.c ct.c -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_SUITE_AES_GCM \
-    -DCH_AES_HW -DCH_NATIVE_AES
+launch fast full quic_packet_suite 250 "" buf.c ct.c -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_SUITE_AES_GCM -DCH_AES_HW -DCH_NATIVE_AES
 # AEAD_AES_128_GCM's memory safety, its all-or-nothing refusal, and
 # GHASH on its own. The forward cipher is a contract stub
 # (proof/quic_gcm_stubs.h); the unwindset names hash_data and
@@ -1288,8 +1285,7 @@ launch fast full srv_cookie 130 "fill_nondet.0:119" buf.c ct.c hkdf.c -DCH_ROLE_
 # first. Measured the same way: 41 properties, under 1 s, 0.02 GB peak. A
 # walk that takes the first suite in the order whether or not the client
 # offered it fails three of the assertions.
-launch fast full srv_select_suite 5 "" -DCH_ROLE_SERVER -DCH_SUITE_AES_GCM -DCH_AES_HW \
-    -DCH_NATIVE_AES
+launch fast full srv_select_suite 5 "" -DCH_ROLE_SERVER -DCH_SUITE_AES_GCM -DCH_AES_HW -DCH_NATIVE_AES
 # The resumption ticket's seal and open, over every contents and every
 # ticket length up to one byte past SRV_TICKET_LEN. buf.c and ct.c are real;
 # aead_seal and aead_open are contract stubs the harness defines, which the

@@ -48,6 +48,17 @@ def launch_lines():
     launch line unwinds far enough looks unreachable and the reachability
     number says nothing about the real proof."""
     text = (ROOT / "proof" / "run.sh").read_text()
+    # One physical line per launch. This parser, tools/impact_read.py and
+    # tools/proof-cover.py read a launch line to its end of line, so a
+    # flag after a backslash continuation is dropped without an error:
+    # four suite harnesses lost -DCH_NATIVE_AES that way, and two of them
+    # then failed to parse under the cover command and reported not
+    # measured.
+    continued = re.findall(r"^launch \S+ \w+ (\S+) .*\\$", text, re.M)
+    if continued:
+        sys.exit(f"proof-coverage: proof/run.sh continues the launch line of "
+                 f"{', '.join(continued)} with a backslash; keep each launch "
+                 f"on one line, because the scripts that read them read one")
     runs = {}
     for m in re.finditer(r'^launch (\S+) (\w+) (\S+) (\d+) "([^"]*)"(.*)$', text, re.M):
         tier, _mode, name, unwind, unwindset, rest = m.groups()
