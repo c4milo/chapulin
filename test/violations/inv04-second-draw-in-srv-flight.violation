@@ -1,0 +1,13 @@
+invariant: INV-4
+file: srv_flight.c
+catches: test/lint-invariants.sh
+reason: srv_send_server_hello draws its random twice. The second call is a
+  new site inside a file that already holds two admitted ones, so the
+  files rule passes it, and nobody audited what it draws or why. The
+  calls rule refuses a second call in any function that holds one.
+
+--- old
+    ch_rand_bytes(random32, sizeof random32);
+--- new
+    ch_rand_bytes(random32, sizeof random32);
+    ch_rand_bytes(random32, sizeof random32);

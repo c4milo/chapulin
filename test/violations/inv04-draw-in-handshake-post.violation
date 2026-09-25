@@ -1,0 +1,13 @@
+invariant: INV-4
+file: handshake_post.c
+catches: test/lint-invariants.sh
+reason: hspost_read draws a byte into the record buffer before it reads a
+  message. handshake_post.c is not one of the six files that hold the
+  ten admitted calls, so this is a site nobody audited for seeding, and
+  the files rule refuses it.
+
+--- old
+    uint8_t *buf = t->cfg.buf;
+--- new
+    uint8_t *buf = t->cfg.buf;
+    ch_rand_bytes(buf, 1);

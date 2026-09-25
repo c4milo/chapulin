@@ -85,24 +85,77 @@ rules:
       - pattern: $D.seq = 0
       - pattern: $D->seq = 0
 
-  - id: inv-4-randomness-sites
+  - id: inv-4-randomness-files
     languages: [c]
     severity: ERROR
     message: >-
-      INV-4: randomness is consumed at ten audited sites: three in
-      handshake_flight.c (the third only in the KEX=pq and TRUST=webpki builds), the client's
-      P-256 scalar in handshake_groups.c (drawn only when a HelloRetryRequest names
-      secp256r1), two in srv_flight.c (the server's key-share scalar and ServerHello random),
-      two in srv_kex.c (the ML-KEM encapsulation randomness, drawn only when the server selects
-      X25519MLKEM768, and the P-256 scalar, drawn only when it selects secp256r1), the
-      ticket's one draw in srv_resume.c (its AEAD nonce, ticket_age_add and ticket_nonce) and
-      the PSS salt in rsa_sign.c. A new call site needs its own seeding audit —
-      amend docs/invariants.md in the same PR. drbg.c is excluded
-      because it defines the hook, not because it may call it.
+      INV-4: randomness is consumed at ten audited sites, all in six
+      files: handshake_flight.c, handshake_groups.c, srv_flight.c,
+      srv_kex.c, srv_resume.c and rsa_sign.c. This rule refuses a call
+      in any other file; inv-4-randomness-calls holds the count inside
+      those six. A new call site needs its own seeding audit — amend
+      docs/invariants.md in the same PR. drbg.c is excluded because it
+      defines the hook, not because it may call it.
     paths:
       exclude: [test, proof, fuzz, spec, bench, bin, examples, handshake_flight.c,
                 handshake_groups.c, drbg.c, rsa_sign.c, srv_flight.c, srv_kex.c, srv_resume.c]
     pattern: ch_rand_bytes(...)
+
+  - id: inv-4-randomness-calls
+    languages: [c]
+    severity: ERROR
+    message: >-
+      INV-4: the ten calls in the six files inv-4-randomness-files
+      admits sit in eight functions. hsf_begin (handshake_flight.c)
+      holds three: the key-share scalar, the ClientHello random and the
+      ML-KEM seed. Each of the other seven holds one: draw_p256_key
+      (handshake_groups.c), srv_begin and srv_send_server_hello
+      (srv_flight.c), encapsulate and p256_share (srv_kex.c),
+      srv_send_new_session_ticket (srv_resume.c) and emsa_pss_encode
+      (rsa_sign.c). A call in any other function, a second call in one
+      of the seven or a fourth in hsf_begin is a new site. It needs its
+      own seeding audit — amend docs/invariants.md in the same PR.
+    paths:
+      include: [handshake_flight.c, handshake_groups.c, rsa_sign.c, srv_flight.c, srv_kex.c,
+                srv_resume.c]
+    pattern-either:
+      # A call outside the eight functions.
+      - patterns:
+          - pattern: ch_rand_bytes(...)
+          - pattern-not-inside: '$T hsf_begin(...) { ... }'
+          - pattern-not-inside: '$T draw_p256_key(...) { ... }'
+          - pattern-not-inside: '$T srv_begin(...) { ... }'
+          - pattern-not-inside: '$T srv_send_server_hello(...) { ... }'
+          - pattern-not-inside: '$T encapsulate(...) { ... }'
+          - pattern-not-inside: '$T p256_share(...) { ... }'
+          - pattern-not-inside: '$T srv_send_new_session_ticket(...) { ... }'
+          - pattern-not-inside: '$T emsa_pss_encode(...) { ... }'
+      # A function other than hsf_begin that holds two calls. Inside a
+      # function body, `...` also matches statements nested in a branch,
+      # a loop or a block, so the two calls match wherever they sit.
+      - patterns:
+          - pattern: |
+              $T $F(...) {
+                ...
+                <... ch_rand_bytes(...) ...>;
+                ...
+                <... ch_rand_bytes(...) ...>;
+                ...
+              }
+          - pattern-not: '$T hsf_begin(...) { ... }'
+      # hsf_begin holding a fourth call.
+      - pattern: |
+          $T hsf_begin(...) {
+            ...
+            <... ch_rand_bytes(...) ...>;
+            ...
+            <... ch_rand_bytes(...) ...>;
+            ...
+            <... ch_rand_bytes(...) ...>;
+            ...
+            <... ch_rand_bytes(...) ...>;
+            ...
+          }
 
   - id: inv-1-seal-only-in-record
     languages: [c]

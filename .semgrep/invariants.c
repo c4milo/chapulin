@@ -76,7 +76,7 @@ static int helper(int x) {
     d.seq = 1;
 
     uint8_t buf[32];
-    // ruleid: inv-4-randomness-sites
+    // ruleid: inv-4-randomness-files, inv-4-randomness-calls
     ch_rand_bytes(buf, sizeof buf);
 
     // ruleid: inv-1-seal-only-in-record
@@ -154,4 +154,60 @@ int use_everything(void) {
 
     // ruleid: inv-6-no-pkcs1
     return pkcs1_verify(0, 0) + helper(1);
+}
+
+// The call counts inv-4-randomness-calls holds. Each function takes the
+// name of one the rule admits, and this file never compiles, so a second
+// definition of a name is only a second shape to test. The files rule
+// reads no path list here, so it fires on every call below.
+
+// ok: inv-4-randomness-calls
+void srv_begin(uint8_t *priv) {
+    // ruleid: inv-4-randomness-files
+    ch_rand_bytes(priv, 32);
+}
+
+// A second call, nested after the admitted one.
+// ruleid: inv-4-randomness-calls
+int srv_send_server_hello(uint8_t *random32, int retry) {
+    // ruleid: inv-4-randomness-files
+    ch_rand_bytes(random32, 32);
+    if (retry) {
+        // ruleid: inv-4-randomness-files
+        ch_rand_bytes(random32, 32);
+    }
+    return 0;
+}
+
+// A second call after a loop that holds the admitted one.
+// ruleid: inv-4-randomness-calls
+static void draw_p256_key(uint8_t *draw, int drawn) {
+    for (int i = 0; i < 4 && !drawn; i++) {
+        // ruleid: inv-4-randomness-files
+        ch_rand_bytes(draw, 32);
+    }
+    // ruleid: inv-4-randomness-files
+    ch_rand_bytes(draw, 32);
+}
+
+// ok: inv-4-randomness-calls
+void hsf_begin(uint8_t *priv, uint8_t *random, uint8_t *dz) {
+    // ruleid: inv-4-randomness-files
+    ch_rand_bytes(priv, 32);
+    // ruleid: inv-4-randomness-files
+    ch_rand_bytes(random, 32);
+    // ruleid: inv-4-randomness-files
+    ch_rand_bytes(dz, 64);
+}
+
+// ruleid: inv-4-randomness-calls
+void hsf_begin(uint8_t *priv, uint8_t *random, uint8_t *dz) {
+    // ruleid: inv-4-randomness-files
+    ch_rand_bytes(priv, 32);
+    // ruleid: inv-4-randomness-files
+    ch_rand_bytes(random, 32);
+    // ruleid: inv-4-randomness-files
+    ch_rand_bytes(dz, 64);
+    // ruleid: inv-4-randomness-files
+    ch_rand_bytes(random, 32);
 }

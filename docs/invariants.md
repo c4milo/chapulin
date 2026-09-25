@@ -173,15 +173,25 @@ last `ROLE=server` stub, as the entry said it would.
   - `ROLE=server` compiles `srv_flight.c`, `srv_kex.c`, `srv_resume.c`
     and `rsa_sign.c` on every transport.
   - `ROLE=both` compiles both sets.
-- **Check.** Semgrep-structural (`inv-4-randomness-sites`): no
-  `ch_rand_bytes` call outside `handshake_flight.c`,
-  `handshake_groups.c`, `srv_flight.c`, `srv_kex.c`, `srv_resume.c` and
-  `rsa_sign.c`. The rule excludes `drbg.c` because that file defines the
-  hook. The rule matches files, not calls: a draw added to any other
-  file fails `make lint-invariants`, and a second draw added inside one
-  of the six passes it, so review holds the count of ten. `lib-check`
-  requires a `RAND=extern` object to import `ch_rand_bytes` and a
-  `RAND=drbg` object to define it.
+- **Check.** Semgrep-structural, in two rules.
+  `inv-4-randomness-files` refuses a `ch_rand_bytes` call in any file
+  other than `handshake_flight.c`, `handshake_groups.c`, `srv_flight.c`,
+  `srv_kex.c`, `srv_resume.c` and `rsa_sign.c`. It excludes `drbg.c`
+  because that file defines the hook. `inv-4-randomness-calls` reads
+  only those six files and refuses a call outside the eight functions
+  the claim names, a fourth call in `hsf_begin`, and a second call in
+  any of the other seven. It counts a call in a branch, a loop or a
+  block the same as one at the top of the function.
+  `test/lint-invariants.sh` fails on each of two violations:
+  `inv04-draw-in-handshake-post` adds a call to `handshake_post.c`, and
+  `inv04-second-draw-in-srv-flight` adds a second call to
+  `srv_send_server_hello`. Neither rule reads `handshake_flight.c` or
+  `srv.c`. Each splits a function header across `#if` and `#else`,
+  `handshake_flight.c` also puts `#ifdef` inside argument lists, and
+  semgrep's C parser gives up on both whole files and reports that as a
+  warning, not a failure. So review holds `hsf_begin` to its three calls
+  and `srv.c` to none. `lib-check` requires a `RAND=extern` object to
+  import `ch_rand_bytes` and a `RAND=drbg` object to define it.
 - **Violation.** A PR conjures a nonce or padding bytes from a new
   call site nobody audits for seeding requirements.
 - See [docs/entropy.md](entropy.md).
