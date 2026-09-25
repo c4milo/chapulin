@@ -6,9 +6,9 @@
 // INV-4 lists. keygen and encaps take their seeds as arguments; nothing
 // here calls ch_rand_bytes.
 //
-// The KEX=pq build packages mlkem.c, mlkem_poly.c, and sha3.c into the
-// library object; every other build compiles them into test binaries
-// only.
+// The KEX=pq and TRUST=webpki builds and every server role package mlkem.c,
+// mlkem_poly.c and sha3.c; a raw or ca client under KEX=x25519 compiles
+// them into test binaries only.
 #ifndef CH_MLKEM_H
 #define CH_MLKEM_H
 

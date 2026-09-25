@@ -4,19 +4,36 @@ The reference target (a mips32r2 core) has no random number peripheral
 and MIPS has no randomness instruction, so `ch_rand_bytes`
 comes from the fast-key-erasure generator in `drbg.[ch]`, and the
 security of every handshake reduces to the quality of its 32-byte seed.
-The stack draws randomness at exactly two points, both in the handshake:
-the ephemeral x25519 private key and the ClientHello random. In pinned
-mode the ephemeral key carries all confidentiality, so a guessable seed
-means a passive attacker can decrypt everything. A `ROLE=server` build
-draws the server's two; 32 bytes of ML-KEM encapsulation randomness when
-it selects X25519MLKEM768, which fix the ML-KEM shared secret, so a
-guessable draw gives away the post-quantum half of that key exchange;
-the P-256 scalar when it selects secp256r1, which is the whole secret of
-that key exchange, as the x25519 key is of its own (`docs/decisions.md` 63);
-and one more per resumption ticket it issues: the ticket's AEAD nonce,
-its `ticket_age_add` and its `ticket_nonce` (INV-4). A repeated ticket
-nonce under one ticket key breaks the ticket seal, so a server's tickets
-are only as good as its seed.
+INV-4 in [invariants.md](invariants.md) lists every call that draws
+randomness. What the draws protect:
+
+- **The key-exchange secret.** A client and a server each draw an
+  ephemeral x25519 private key per handshake. In pinned mode the
+  ephemeral key carries all confidentiality, so a guessable seed means a
+  passive attacker can decrypt everything. A P-256 scalar is the whole
+  secret of a secp256r1 key exchange in the same way. A `TRUST=webpki`
+  client draws one when a HelloRetryRequest names secp256r1, and a server
+  draws one when it selects secp256r1 (`docs/decisions.md` 63).
+- **The ML-KEM half of X25519MLKEM768.** A `KEX=pq` or `TRUST=webpki`
+  client draws the 64-byte (d, z) seed that fixes its ML-KEM key pair. A
+  server that selects the hybrid draws 32 bytes of encapsulation
+  randomness that fix the ML-KEM shared secret. A guessable draw on
+  either side gives away the post-quantum half of that key exchange.
+- **The hello randoms.** A client draws the 32-byte ClientHello random
+  and a server the 32-byte ServerHello random, once per handshake. Both
+  travel in the clear.
+- **A resumption ticket.** A server draws 24 bytes per ticket it issues:
+  the ticket's AEAD nonce, its `ticket_age_add` and its `ticket_nonce`.
+  A repeated ticket nonce under one ticket key breaks the ticket seal, so
+  a server's tickets are only as good as its seed.
+- **An RSA-PSS salt.** A server with an RSA identity draws a 32-byte salt
+  each time it signs: once in `ch_srv_check` at boot, and once per
+  handshake that signs with rsa_pss_rsae_sha256. The signature carries
+  the salt in the clear.
+
+An ECDSA signature draws nothing: `p256_sign` derives its nonce from the
+key and the message by RFC 6979, so a weak seed cannot repeat an ECDSA
+nonce.
 
 Devices that generate keys at first boot, before any entropy exists, are
 a documented disaster class: Heninger, Durumeric, Wustrow, Halderman,

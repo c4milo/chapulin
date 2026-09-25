@@ -1118,8 +1118,8 @@ branch on infinity or equality exists to remove.
 
 // Turns 32 drawn bytes into a scalar in [1, n-1]. Returns 0 when the draw is
 // out of range and the caller draws again; the rejection probability is below
-// 2^-32. Keeping the draw in the caller keeps every ch_rand_bytes call in one
-// file, which is what INV-4 counts.
+// 2^-32. The caller draws, so this file makes no ch_rand_bytes call, which
+// INV-4 requires.
 int p256_ecdh_keygen(const uint8_t draw[P256_SCALAR], uint8_t priv[P256_SCALAR],
                      uint8_t pub[P256_POINT]);
 
@@ -2381,7 +2381,7 @@ Most of the work. Each row was read at the line given.
 | `record.[ch]` | Unchanged as control flow; the suite and the hash length appear in three lines. `rec_dir_init` derives `AEAD_KEY` bytes at `record.c:7`, and `rec_seal` and `rec_open` call the ChaCha20-Poly1305 functions by name at `record.c:56` and `record.c:82`. |
 | `chacha20.[ch]`, `poly1305.[ch]`, `aead.[ch]` | Unchanged, and not enough: `rfc9846.txt:4540` requires AES-128-GCM beside them and `:4542` makes AES-256-GCM a SHOULD the scope takes. |
 | `x25519.[ch]` | Unchanged and symmetric. The client's all-zero refusal (`handshake.c:300`) is the check a server makes too. |
-| `mlkem.[ch]` | Reused as it stood. `srv_kex.c` calls `mlkem_encaps_derand` (`mlkem.h:40`), which already had known-answer vectors and a CBMC harness. The function takes its 32-byte message `m` from the caller, so a server that selects the hybrid draws it through `ch_rand_bytes`, which is INV-4's eighth site ("Key exchange" below). |
+| `mlkem.[ch]` | Reused as it stood. `srv_kex.c` calls `mlkem_encaps_derand` (`mlkem.h:40`), which already had known-answer vectors and a CBMC harness. The function takes its 32-byte message `m` from the caller, so a server that selects the hybrid draws it through `ch_rand_bytes` in `encapsulate` (`srv_kex.c`), one of the ten sites INV-4 lists ("Key exchange" below). |
 | `handshake_record.[ch]` | Reusable. `accept_record` decrypts with `t->rd` (`handshake_record.c:35`), which is already the read direction. The ChangeCipherSpec tolerance at `handshake_record.c:53-58` is what `rfc9846.txt:1793-1797` requires of a stateless server, already written and already capped at four. |
 | the CertificateVerify signed content | **Moved, then reused.** See below. |
 | `handshake_post.[ch]` | A role arm. A server receives no NewSessionTicket and may write them; KeyUpdate receipt and the one-response rule are the same in both directions. |
@@ -3005,10 +3005,11 @@ beside x25519 in every build and prefers it, and `KEX` chooses nothing for a
 server ("Key exchange" above, `docs/decisions.md` entry 54). The QUIC server
 had already landed (`docs/quic_server.md`), and it runs the hybrid like the
 other two drivers. The draw the question priced, the 32-byte ML-KEM
-encapsulation message `m` (`mlkem.h:40-41`), is INV-4's eighth site, made only
-when the server selects the hybrid. The note on `quic_keys.h`'s three entry
-points typed `secret[SHA256_LEN]` (`:88`, `:100`, `:124`) belongs to question
-one, and stands.
+encapsulation message `m` (`mlkem.h:40-41`), happens in `srv_kex.c`'s
+`encapsulate`, one of the ten sites INV-4 lists, and only when the server
+selects the hybrid. The note on `quic_keys.h`'s three entry points typed
+`secret[SHA256_LEN]` (`:88`, `:100`, `:124`) belongs to question one, and
+stands.
 
 **Eleven: does `hkdf.c` carry one HMAC body per hash behind a dispatcher?**
 The one-function form is ruled out by measurement rather than by taste: it
@@ -3217,6 +3218,11 @@ Amended entries:
   So the count and the file change per role, and `.semgrep/invariants.yml:96`
   gains `srv_handshake.c`; the rule excludes by path rather than by call site,
   so one entry covers all three draws.
+
+  The amendment landed differently. A server holds X25519MLKEM768 in every
+  build, so `KEX` changes no server count. Its draws sit in `srv_flight.c`,
+  `srv_kex.c`, `srv_resume.c` and `rsa_sign.c`, not in `srv_handshake.c`.
+  `docs/invariants.md` INV-4 lists every site and names its check.
 - **INV-5**, one certificate verifier. It gains one sentence: a `ROLE=server`
   build compiles no certificate reader at all, because the chain is presented
   pre-encoded and never parsed.

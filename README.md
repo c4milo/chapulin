@@ -713,7 +713,7 @@ under `SUITE=aesgcm`.
   share that looks uniform on the wire, and returns `CH_OK`. Two things
   narrow the gap and neither closes it. The build makes the choice
   explicit instead of silent — `RAND=extern` or `RAND=drbg`, no default
-  — and every draw in `handshake.c` is compared against all-zero, which
+  — and every draw site INV-4 lists refuses an all-zero draw, which
   catches a hook that returned without writing. A weak generator passes
   both. [`docs/entropy.md`](docs/entropy.md) carries the rest.
 
