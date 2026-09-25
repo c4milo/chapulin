@@ -232,8 +232,18 @@ x25519_tail 52.7
 # same stub over the field multiply alone, converges in seconds and
 # carries a floor above.
 #
+# handshake_parser_suite converges, and it is listed here for the reason
+# hkdf_expand is: its memory. The nightly's runner died on its cover run
+# on 2026-09-25 (run 36114766703), 18 minutes into the job, in the first
+# nightly after b32ad68 added the secp256r1 share parser to
+# handshake_parser.c. Under the cover command on a development machine
+# that day (arm64 macOS, cbmc 6.11.0) it reached 62.5% in 1217 s at
+# 11.9 GB resident, three quarters of the runner's 16 GB. It carries no
+# floor, so it is skipped rather than run.
+#
 #   eeparse
 #   handshake_parser
+#   handshake_parser_suite
 #   handshake_pin
 #   handshake_post
 #   handshake_psk
