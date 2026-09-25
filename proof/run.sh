@@ -1462,6 +1462,23 @@ launch slow:4 full handshake_record 65 "hsr_fetch_record.0:6,hsr_next_msg.0:11,f
 # larger handshake_state that mode carries.
 launch fast:4 full quic_driver 5 "fill_nondet.0:257,ct_wipe.0:441,drive.0:8,assert_dead.0:33,zero_bytes.0:133" -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_PROOF_RXBUF=12 handshake_record.c quic_config.c ct.c
 launch fast full quic_step 5 "fill_nondet.0:37,ct_wipe.0:441" -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_PROOF_RXBUF=12 ct.c
+# quic_config_webpki: the configuration rules ch_quic_init applies under
+# TRUST=webpki, which are webpki_cfg_ok's plus RFC 9001's, SPKI pins
+# included (docs/decisions.md 64). quic_driver compiles quic_config.c
+# without CH_TRUST_WEBPKI, so its formula holds the raw arm alone, and no
+# other harness compiles webpki_cfg.c. quic_config.c and webpki_cfg.c are
+# real; webpki_hostname_ok, webpki_resumption_ok and ct_memeq are
+# contract stubs the harness states, proven by webpki_name, webpki_ticket
+# and ct. The global unwind of 9 bounds the ALPN loops, whose walk runs
+# at most CH_ALPN_MAX times; the unwindset gives the anchor loops 13 and
+# the hostname fill 255. Measured under this script's flags (arm64 macOS,
+# cbmc 6.11.0, kissat, PROVE_ONLY=quic_config_webpki PROVE_NO_CACHE=1
+# /usr/bin/time -l): 557 properties, 1.8 s, 68 MB peak. With the real
+# ct_memeq the same formula took 141 s and 2.67 GB. Narrowing the verdict
+# assertion to exclude pins alone with no hostname, pins beside anchors
+# at both caps, or a presented ticket fails each, so the formula reaches
+# all three. inv14-webpki-cfg-resumption-first fails it.
+launch fast full quic_config_webpki 9 "fill_nondet.0:255,webpki_resumption_ok.0:13,havoc_anchors.0:13,anchors_ok.0:13" -DCH_TRUST_WEBPKI -DCH_TRANSPORT_QUIC_NONBLOCKING quic_config.c webpki_cfg.c
 launch fast full quic_step_ca 5 "fill_nondet.0:37,ct_wipe.0:849" -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_TRUST_CA -DCH_PROOF_RXBUF=12 ct.c
 # The ROLE=server public calls and the flight driver above them. The
 # fourteen srv_flight.h handlers are contract stubs the harness defines,

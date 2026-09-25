@@ -1,0 +1,17 @@
+invariant: INV-14
+file: webpki_ticket.c
+catches: quic_loop_webpki
+reason: the configuration hash leaves out the SPKI pins, so a ticket a
+  pinned QUIC session received resumes under another pin set, and the
+  resumed handshake checks no key against the new pins.
+  test/quic_loop_pins.h's resumption rows under another pin set object.
+
+--- old
+    hash_len(&s, cfg->spki_pin_count);
+    const uint8_t *pin = cfg->spki_pins;
+    for (size_t i = 0; i < cfg->spki_pin_count; i++) {
+        sha256_update(&s, pin, SHA256_LEN);
+        pin += SHA256_LEN;
+    }
+--- new
+    (void)cfg->spki_pins;

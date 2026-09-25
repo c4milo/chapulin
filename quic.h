@@ -122,12 +122,13 @@ typedef struct ch_quic {
 // the session's staging area. It sends nothing: the caller takes those bytes with
 // ch_quic_crypto_out at CH_LEVEL_INITIAL.
 //
-// It zeroes q, copies cfg into q->t.cfg, and applies the checks ch_connect applies over
-// TCP, minus cfg.send and cfg.recv, which have no meaning here. It keeps the ALPN
-// configuration checks, and adds three rules of its own: cfg.transport_params is not NULL
-// and its length is 1 to CH_TRANSPORT_PARAMS_MAX (§8.2, rfc9001.txt:1929-1936),
-// cfg.on_level_ready is not NULL, and the ALPN offer names at least one protocol, because
-// §8.1 makes ALPN mandatory for QUIC (rfc9001.txt:1891-1895).
+// It zeroes q, copies cfg into q->t.cfg, and applies the checks ch_connect applies over TCP, minus
+// cfg.send and cfg.recv, which have no meaning here. Under TRUST=webpki those are webpki_cfg_ok's,
+// so SPKI pins mean what they mean over TCP (docs/decisions.md 64). It keeps the ALPN configuration
+// checks, and adds three rules of its own: cfg.transport_params is not NULL and its length is 1 to
+// CH_TRANSPORT_PARAMS_MAX (§8.2, rfc9001.txt:1929-1936), cfg.on_level_ready is not NULL, and the
+// ALPN offer names at least one protocol, because §8.1 makes ALPN mandatory for QUIC
+// (rfc9001.txt:1891-1895).
 //
 // It keeps the buffer floor too, cfg.buf_len >= CH_MIN_RXBUF, which under this build is
 // CH_QUIC_MIN_RXBUF and nothing else (cfg.h): a QUIC client sends no record_size_limit

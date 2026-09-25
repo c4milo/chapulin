@@ -8,6 +8,10 @@
 // Certificate. A server that holds another ticket key cannot open it,
 // declines it, and the same connection completes as a full handshake
 // with the chain checked as before (docs/decisions.md 55).
+//
+// It also holds CH_HELLO_MAX to the largest hello a QUIC webpki client
+// builds, which carries the server_certificate_type offer since
+// ch_quic_init takes SPKI pins (docs/decisions.md 64).
 #ifndef CH_TEST_QUIC_LOOP_WEBPKI_H
 #define CH_TEST_QUIC_LOOP_WEBPKI_H
 
@@ -62,6 +66,56 @@ static void check_declined_chain_refused(const webpki_corpus_anchor *root, const
     CHECK(ch_quic_error_code(&client) == 0x0100U + alert);
     CHECK(client.t.psk_selected == 0);
     memcpy(kept.binding, binding, sizeof binding);
+}
+
+// CH_HELLO_MAX is exact over QUIC: the worst hello this build can emit,
+// the pre_shared_key arm with the longest ticket identity and cookie, the
+// longest hostname, the widest ALPN offer, CH_TRANSPORT_PARAMS_MAX bytes
+// of transport parameters, and both certificate types, which pins beside
+// anchors offer, builds at CH_HELLO_MAX and refuses one byte less.
+// Without pins it is the 7 bytes of server_certificate_type shorter.
+static void test_quic_hello_boundary(void) {
+    static uint8_t out[CH_HELLO_MAX];
+    static uint8_t identity[CH_TICKET_ID_MAX];
+    static uint8_t cookie[HSP_COOKIE_MAX];
+    static uint8_t name[CH_HOSTNAME_MAX];
+    static uint8_t transport[CH_TRANSPORT_PARAMS_MAX];
+    static ch_alpn_protocol widest[CH_ALPN_MAX];
+    static uint8_t names[CH_ALPN_MAX][CH_ALPN_NAME_MAX];
+    static uint8_t ek[MLKEM_EK_LEN];
+    uint8_t pub[32] = {0};
+    uint8_t random32[32] = {0};
+    for (size_t i = 0; i < sizeof name; i++) {
+        name[i] = (i % 64 == 63) ? '.' : 'a';
+    }
+    for (size_t i = 0; i < CH_ALPN_MAX; i++) {
+        memset(names[i], 'a', CH_ALPN_NAME_MAX);
+        names[i][0] = (uint8_t)('a' + i);
+        widest[i] = (ch_alpn_protocol){names[i], CH_ALPN_NAME_MAX};
+    }
+    ch_cfg cfg = {0};
+    cfg.psk = identity;
+    cfg.psk_len = HKDF_HASH_MAX;
+    cfg.psk_id = identity;
+    cfg.psk_id_len = sizeof identity;
+    cfg.resumption = 1;
+    cfg.hostname = name;
+    cfg.hostname_len = sizeof name;
+    cfg.alpn_protocols = widest;
+    cfg.alpn_count = CH_ALPN_MAX;
+    cfg.transport_params = transport;
+    cfg.transport_params_len = sizeof transport;
+    cfg.spki_pin_count = 1;
+    cfg.anchor_count = 1;
+#define BUILD_HELLO(cap)                                                                           \
+    hs_build_client_hello(out, (cap), &cfg, ek, NULL, pub, random32, 0, cookie, sizeof cookie)
+    CHECK(BUILD_HELLO(CH_HELLO_MAX) == CH_HELLO_MAX);
+    CHECK(BUILD_HELLO(CH_HELLO_MAX - 1) == 0);
+    cfg.spki_pin_count = 0;
+    CHECK(BUILD_HELLO(CH_HELLO_MAX) == CH_HELLO_MAX - 7);
+#undef BUILD_HELLO
+    CHECK(CH_TX_STAGE == CH_HELLO_MAX);
+    CHECK(CH_HELLO_MAX == 2650 + CH_HELLO_AES_SUITES_MAX + CH_HELLO_SHA384_BINDER_MAX);
 }
 
 static void test_webpki_resumption(void) {
@@ -137,6 +191,12 @@ static void test_webpki_resumption(void) {
     present_ticket(&ccfg);
     ccfg.resumption = 0;
     ccfg.ticket_binding = NULL;
+    CHECK(ch_quic_init(&probe, &ccfg) == CH_EINVAL);
+    // An offer of no protocol, which webpki_cfg_ok admits over TCP and
+    // RFC 9001 §8.1 forbids a QUIC client.
+    webpki_client(&ccfg, webpki_corpus_anchors_root_p384, "s3.example.test");
+    ccfg.alpn_protocols = NULL;
+    ccfg.alpn_count = 0;
     CHECK(ch_quic_init(&probe, &ccfg) == CH_EINVAL);
     // And the configuration with no ticket at all still initializes.
     webpki_client(&ccfg, webpki_corpus_anchors_root_p384, "s3.example.test");

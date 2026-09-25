@@ -1,0 +1,21 @@
+invariant: INV-33
+file: handshake_auth.c
+catches: quic_loop_webpki
+reason: a TRANSPORT=quic-nonblocking build compiles webpki_server_key
+  without the pin check, so a pinned QUIC session accepts a chain that
+  passes the walk and the name check on the name alone, against RFC 8310
+  §6.4. The TCP tests pass on this edit; test/quic_loop_pins.h's rows
+  that pin nothing on the path, against this tree's QUIC server, object.
+
+--- old
+    if (cfg->spki_pin_count > 0 && !webpki_path_pinned(list, list_len, cfg, &h->leaf)) {
+        h->alert = ALERT_BAD_CERTIFICATE;
+        return CH_EAUTH;
+    }
+--- new
+#ifndef CH_TRANSPORT_QUIC_NONBLOCKING
+    if (cfg->spki_pin_count > 0 && !webpki_path_pinned(list, list_len, cfg, &h->leaf)) {
+        h->alert = ALERT_BAD_CERTIFICATE;
+        return CH_EAUTH;
+    }
+#endif

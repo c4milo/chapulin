@@ -929,8 +929,9 @@ last `ROLE=server` stub, as the entry said it would.
   illegal_parameter. A TRUST=webpki build
   also refuses a config that sets a pin or an epoch callback, or a
   length field of one of them, a PSK that is not a ticket bound to the
-  config's hostname and anchors (`webpki_resumption_ok`,
-  webpki_ticket.h), a config whose clock (`now_seconds`) is 0, and a
+  config's hostname, anchors and SPKI pins (`webpki_resumption_ok`,
+  webpki_ticket.h), a config whose clock (`now_seconds`) is 0 while it
+  sets anchors, and a
   server_name acknowledgement that carries data. Its EncryptedExtensions
   parser also refuses a server_name acknowledgement when the ClientHello
   sent no server_name, which a configuration without a hostname does,
@@ -999,6 +1000,20 @@ last `ROLE=server` stub, as the entry said it would.
   `inv14-webpki-record-init-` violations guard it; the webpki_ticket
   CBMC harness proves the rule memory-safe and its verdict limited to
   an unset config or a ticket of the stated shape.
+  `ch_quic_init` applies the same configuration rules through
+  `webpki_cfg_ok` (docs/decisions.md 64). bin/quic_loop_webpki holds
+  them over QUIC at each boundary: `CH_SPKI_PIN_MAX` pins with anchors
+  and alone, `CH_WEBPKI_ANCHOR_MAX` anchors and `CH_HOSTNAME_MAX` bytes
+  of hostname under pins alone each accepted and one more refused, a
+  pinned session's ticket resumed under its pins and refused under another
+  pin set or none, and an ALPN offer of no protocol refused, which RFC
+  9001 §8.1 forbids a QUIC client. inv14-quic-spki-pin-cap,
+  inv14-quic-ticket-pins-unbound, inv14-quic-session-hash-unpinned and
+  inv14-quic-webpki-empty-alpn require it to fail. The quic_config_webpki CBMC harness proves
+  `quic_config_ok` memory-safe over any configuration, its `CH_OK`
+  limited to one that keeps these rules, and `webpki_resumption_ok` run
+  only after the pin, hostname and anchor rules hold;
+  inv14-webpki-cfg-resumption-first requires it to fail.
   The declined-PSK rule is test/psk_decline_tests.h, which drives
   hsf_accept_server_hello directly in bin/unit, bin/unit_ca, bin/unit_pq
   and bin/webpki_resume_test and expects the mode's answer;
@@ -1166,7 +1181,11 @@ last `ROLE=server` stub, as the entry said it would.
   verified the last of them. A certificate the server sent after that
   path does not count. RFC 8310 §6.4 asks a client with a name and pins
   to require both, and this is how. With pins and no anchors, an X.509
-  answer is refused with unsupported_certificate.
+  answer is refused with unsupported_certificate. A
+  `TRANSPORT=quic-nonblocking` client applies the same rules, because
+  `ch_quic_init` checks the configuration with `webpki_cfg_ok` and the
+  QUIC step table calls the same `hsa_server_auth` (docs/decisions.md
+  64).
 - **Mechanism.** `webpki_server_key` (`handshake_auth.c`) chooses the
   rule by `ch_tls.server_cert_type`. `webpki_verify_raw_key` frames its
   one entry with `webpki_read_entry`, the reader the walk frames every
@@ -1195,7 +1214,17 @@ last `ROLE=server` stub, as the entry said it would.
   verified the last one. spec/lean/Spec/WebpkiPin.lean models both rules and
   proves the raw one sound, and the differential compares the C and the
   model on the `webpki_raw` op and on `webpki_chain`'s path and pin
-  verdict. Nine `inv33-` violations guard the rules.
+  verdict. Over QUIC, bin/quic_loop_webpki runs the chain rules against
+  this tree's QUIC server (test/quic_loop_pins.h): a pin on the leaf, the
+  intermediate or the anchor accepted, the last of `CH_SPKI_PIN_MAX` pins
+  accepted, and a pin on nothing, on an anchor that verified nothing or
+  on a CA certificate appended past the path refused with
+  bad_certificate. Pins alone are refused with unsupported_certificate
+  when that server answers with its chain; it sends no raw public key, so
+  the raw rule runs end to end over TCP alone. Ten `inv33-` violations
+  guard the rules. inv33-quic-pins-ignored-on-chain compiles the pin
+  check out of a QUIC build alone, which no TCP test sees, and requires
+  bin/quic_loop_webpki to fail.
 - **Violation.** A PR accepts a raw key or a chain on the name alone,
   counts a certificate the walk never read, or compares a pin with a key
   other than the one the walk or the reader returned.

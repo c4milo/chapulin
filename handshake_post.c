@@ -137,8 +137,8 @@ static int handle_ticket(ch_tls *t, const uint8_t *body, size_t n
     ticket.psk_len = tls_hash_len(t);
     ks_res_psk(ticket.psk_len, t->res_master, nonce, nonce_len, ticket.psk);
 #ifdef CH_TRUST_WEBPKI
-    // Binds the ticket to this session's hostname and anchors, so no
-    // other configuration can present it (webpki_ticket.h).
+    // Binds the ticket to this session's hostname, anchors and SPKI pins,
+    // so no other configuration can present it (webpki_ticket.h).
     webpki_ticket_binding(ticket.psk, ticket.psk_len, t->ticket_config_hash, ticket.binding);
 #endif
     t->cfg.on_ticket(t->cfg.io, &ticket);

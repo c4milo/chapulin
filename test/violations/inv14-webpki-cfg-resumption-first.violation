@@ -1,0 +1,15 @@
+invariant: INV-14
+file: webpki_cfg.c
+catches: proof/prove-one.sh quic_config_webpki
+reason: webpki_cfg_ok checks the ticket before the pin, hostname and
+  anchor rules, so webpki_resumption_ok hashes a pin count, a hostname
+  length and an anchor count no rule has capped yet and reads past the
+  caller's arrays. webpki_ticket.h requires those rules to hold first;
+  the quic_config_webpki harness's webpki_resumption_ok stub asserts them.
+
+--- old
+    return spki_pins_ok(cfg) && trust_ok(cfg) && webpki_resumption_ok(cfg) &&
+           pin_slots_unset(cfg) && alpn_ok(cfg);
+--- new
+    return webpki_resumption_ok(cfg) && spki_pins_ok(cfg) && trust_ok(cfg) &&
+           pin_slots_unset(cfg) && alpn_ok(cfg);

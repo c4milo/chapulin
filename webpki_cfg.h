@@ -34,6 +34,8 @@
 // ch_connect returns CH_EINVAL before it sends a byte when any of those
 // rules fails, when now_seconds is 0 in a configuration with anchors,
 // and for any other PSK, a pin slot (server_pubkey) or an epoch callback.
+// ch_record_init and ch_quic_init apply the same rules, so each field
+// means the same thing on every transport (docs/decisions.md 64).
 #ifndef CH_WEBPKI_CFG_H
 #define CH_WEBPKI_CFG_H
 

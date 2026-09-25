@@ -49,7 +49,10 @@ the mode was built under, which has no subject left here.
 rules `ch_quic_init` applies and the stored revocation epoch it loads, which
 are `tls.c`'s and which a `TRANSPORT=quic-nonblocking` object does not compile. They sit
 in their own pair because `CLAUDE.md` caps a hand-written file at 500 lines
-and `quic.c` was at it.
+and `quic.c` was at it. Under `TRUST=webpki` the trust rules are not copied
+there: `quic_config.c` calls `webpki_cfg_ok`, the function `ch_connect`
+calls, so SPKI pins, anchors and tickets mean the same thing on both
+transports (`docs/decisions.md` entry 64).
 
 Every claim about chapulin names the file and line it came from, read at
 commit `3432a5d`. The citations into `docs/invariants.md` are read after the
@@ -1086,7 +1089,7 @@ These are the names the header will use.
 
 | call | what it does |
 | --- | --- |
-| `ch_quic_init(q, cfg)` | validates the configuration, prepares the state machine and builds the ClientHello into `t.tx` and sets `tx_len`. It sends nothing, and the caller takes those bytes with `ch_quic_crypto_out`. Refuses with `CH_EINVAL` for the same errors `tls.c:83-91` refuses today, minus the `cfg.send` and `cfg.recv` checks, which have no meaning here. Keeps the `cfg.buf_len >= CH_MIN_RXBUF` check, for the reason below, and keeps the `alpn_ok` check (`tls.c:376`). Adds three rules of its own, which "Suspending the driver" states: the caller's transport parameters, `on_level_ready`, and an ALPN offer of at least one protocol |
+| `ch_quic_init(q, cfg)` | validates the configuration, prepares the state machine and builds the ClientHello into `t.tx` and sets `tx_len`. It sends nothing, and the caller takes those bytes with `ch_quic_crypto_out`. Refuses with `CH_EINVAL` for the same errors `tls.c:83-91` refuses today, minus the `cfg.send` and `cfg.recv` checks, which have no meaning here; under `TRUST=webpki` those are `webpki_cfg_ok`'s, SPKI pins included (`docs/decisions.md` entry 64). Keeps the `cfg.buf_len >= CH_MIN_RXBUF` check, for the reason below, and keeps the `alpn_ok` check (`tls.c:376`). Adds three rules of its own, which "Suspending the driver" states: the caller's transport parameters, `on_level_ready`, and an ALPN offer of at least one protocol |
 | `ch_quic_initial_keys(q, dcid, dcid_len)` | stores the caller's Destination Connection ID, which RFC 9001 §5.2 derives the Initial keys from, and marks both directions of the Initial level ready. It derives no key: the packet calls do that on their own stack (INV-26). The caller calls it again after a Retry, because the secrets change then (`rfc9001.txt:1092-1094`) |
 | `ch_quic_crypto_in(q, level, p, n)` | delivers the bytes CRYPTO frames carried at one level, in order. Runs the state machine until it needs more bytes, then returns |
 | `ch_quic_crypto_out(q, level, out, cap, out_len)` | hands out the one handshake message the client owes at that level, whole or not at all. Returns `CH_OK` and no bytes when nothing is owed there, and `CH_ECAP` with nothing consumed when `cap` is shorter than the message, so the caller can call again with a larger buffer |
@@ -2402,7 +2405,9 @@ Read this as part of the profile, not as a list of future work.
 - **No change to the trust mode.** A QUIC build is still a raw mode, a CA mode or
   `webpki`, and `docs/webpki.md`'s own "What the mode does not check" list —
   no revocation, no Certificate Transparency, no name constraints — applies
-  unchanged.
+  unchanged. A `webpki` QUIC client takes SPKI pins as a TCP one does, pins
+  alone, anchors alone or both, with tickets bound to the pins
+  (`docs/decisions.md` entry 64).
 - **Nothing in the repository proves anything about a live QUIC endpoint.**
   `test/e2e.sh` runs against `openssl s_server`, which does not speak QUIC, so
   a QUIC end-to-end leg needs a server this tree does not have. Every existing
@@ -2428,8 +2433,9 @@ Against 83 launch lines and 86 harness files today:
   landed. `handshake_flight.c` is the exception and needs no harness of its
   own: `handshake_psk`, `handshake_pin` and `hybrid_secret` compile it, which
   is what `tools/proof-cover.py` asks for. The QUIC arm of
-  `handshake_record.c` and all of `quic_config.c` are compiled into
-  `quic_driver` rather than a leg of their own. The transport parameters add
+  `handshake_record.c` and `quic_config.c` in a raw build are compiled into
+  `quic_driver` rather than a leg of their own; `quic_config_webpki` proves
+  the `TRUST=webpki` arm, with `webpki_cfg.c` real. The transport parameters add
   no source: `handshake_message.c` writes them and `handshake_parser.c` reads
   them. `quic_gcm` split the way `aead` did — five harness files, three
   launch lines, because two formulas returned no verdict.

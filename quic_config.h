@@ -5,8 +5,10 @@
 // off cleanly, because no other call in the mode reads a rule here.
 //
 // The rules are tls.c's, which a TRANSPORT=quic-nonblocking object does not
-// compile, plus the three RFC 9001 adds. quic.c states each one beside
-// the call, and quic.h states them for the caller.
+// compile, plus the three RFC 9001 adds. Under TRUST=webpki the trust
+// rules are webpki_cfg_ok's, which both transports call, so SPKI pins
+// and tickets mean the same thing over QUIC as over TCP. quic.c states
+// each rule beside the call, and quic.h states them for the caller.
 #ifndef CH_QUIC_CONFIG_H
 #define CH_QUIC_CONFIG_H
 #ifdef CH_TRANSPORT_QUIC_NONBLOCKING

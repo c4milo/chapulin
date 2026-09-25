@@ -1,0 +1,12 @@
+invariant: INV-14
+file: webpki_cfg.c
+catches: quic_loop_webpki
+reason: the SPKI pin rule admits one pin over CH_SPKI_PIN_MAX, and
+  ch_quic_init takes that rule from webpki_cfg_ok, so a QUIC config
+  accepts five pins. test/quic_loop_pins.h's first-invalid count rows,
+  with a hostname and anchors and with pins alone, object.
+
+--- old
+    return cfg->spki_pin_count > 0 && cfg->spki_pin_count <= CH_SPKI_PIN_MAX;
+--- new
+    return cfg->spki_pin_count > 0 && cfg->spki_pin_count <= CH_SPKI_PIN_MAX + 1;

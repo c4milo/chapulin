@@ -1,0 +1,16 @@
+invariant: INV-14
+file: quic.c
+catches: quic_loop_webpki
+reason: ch_quic_init hashes the configuration for its tickets without the
+  SPKI pins, so the tickets a pinned QUIC session receives are bound to a
+  configuration with no pins. ch_quic_init then refuses such a ticket
+  under the pins that earned it and would take it under none.
+  test/quic_loop_pins.h's pinned resumption rows object.
+
+--- old
+    webpki_ticket_config_hash(cfg, q->t.ticket_config_hash);
+--- new
+    ch_cfg unpinned = *cfg;
+    unpinned.spki_pins = NULL;
+    unpinned.spki_pin_count = 0;
+    webpki_ticket_config_hash(&unpinned, q->t.ticket_config_hash);

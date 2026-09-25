@@ -12,7 +12,8 @@
 // TRUST=webpki, colibri's local checks: the server presents the r2 corpus
 // chain with its leaf key, the client verifies it, resumes the ticket the
 // full handshake left, and completes a full handshake in one connection
-// when a server with another ticket key declines that ticket.
+// when a server with another ticket key declines that ticket. The same
+// build runs the SPKI pin configurations (test/quic_loop_pins.h).
 //
 // The keys agree when a packet one end seals at the 1-RTT level opens at
 // the other, which is what the two cases below check after each
@@ -253,6 +254,10 @@ static size_t handshake_messages(void) {
 #ifdef CH_TRUST_WEBPKI
 #include "quic_loop_webpki.h"
 #endif
+// The pin rows run quic_loop_webpki.h's client and server.
+#ifdef CH_TRUST_WEBPKI
+#include "quic_loop_pins.h"
+#endif
 // The suite rows run quic_loop_webpki.h's client and server.
 #ifdef CH_SUITE_AES_GCM
 #include "quic_loop_suites.h"
@@ -264,7 +269,9 @@ int main(void) {
     test_close_after_failure();
 #endif
 #ifdef CH_TRUST_WEBPKI
+    test_quic_hello_boundary();
     test_webpki_resumption();
+    test_webpki_pins();
 #endif
 #ifdef CH_SUITE_AES_GCM
     test_quic_suites();

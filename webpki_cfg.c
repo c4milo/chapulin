@@ -1,8 +1,8 @@
 // The configuration rules of a TRUST=webpki build, which ch_connect and
-// ch_record_init check through tlsi_config_ok before the handshake sends
-// a byte. webpki_cfg.h states the fields; webpki.h declares
-// webpki_cfg_ok. Every rule here reads the caller's configuration alone,
-// never peer input.
+// ch_record_init check through tlsi_config_ok, and ch_quic_init through
+// quic_config_ok, before the handshake sends a byte. webpki_cfg.h states
+// the fields; webpki.h declares webpki_cfg_ok. Every rule here reads the
+// caller's configuration alone, never peer input.
 #include "webpki.h"
 
 // Only a TRUST=webpki build compiles this file (the Makefile's

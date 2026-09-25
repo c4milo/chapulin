@@ -4,10 +4,10 @@
 
 #ifdef CH_TRANSPORT_QUIC_NONBLOCKING
 
-#include "ct.h"
 #ifdef CH_TRUST_WEBPKI
 #include "webpki.h"
-#include "webpki_ticket.h"
+#else
+#include "ct.h"
 #endif
 #ifdef CH_PIN_ECDSA
 #include "p256.h"
@@ -15,6 +15,16 @@
 #include "rsa.h"
 #endif
 
+#ifdef CH_TRUST_WEBPKI
+// The ALPN rule under TRUST=webpki. webpki_cfg_ok, which trust_config_ok
+// below calls, holds an offer to 0 to CH_ALPN_MAX names of 1 to
+// CH_ALPN_NAME_MAX bytes, none repeating another, as it does over TCP.
+// RFC 9001 §8.1 makes ALPN mandatory for QUIC (rfc9001.txt:1891-1895), so
+// the one rule this transport adds is that the offer names a protocol.
+static int alpn_ok(const ch_cfg *cfg) {
+    return cfg->alpn_protocols != NULL && cfg->alpn_count > 0;
+}
+#else
 // One offered ALPN protocol name: a non-NULL pointer and 1 to
 // CH_ALPN_NAME_MAX bytes. RFC 7301 §3.1 makes a ProtocolName 1 to 255
 // bytes; this mode's cap is shorter, and cfg.h says what it costs the
@@ -55,6 +65,7 @@ static int alpn_ok(const ch_cfg *cfg) {
     }
     return 1;
 }
+#endif
 
 // The two rules this transport adds to its trust mode's: RFC 9001 §8.2
 // makes an endpoint that sends no transport parameters a protocol
@@ -66,35 +77,15 @@ static int transport_config_ok(const ch_cfg *cfg) {
 }
 
 #ifdef CH_TRUST_WEBPKI
-// The web PKI rules, webpki_cfg_ok's chain arm without the ALPN rule
-// above: 1 to CH_WEBPKI_ANCHOR_MAX anchors each carrying a non-empty
-// name and spki, a hostname webpki_hostname_ok accepts, a clock the
-// caller set, no pin slot and no SPKI pin, and PSK fields that are
-// either all unset or present a ticket bound to this hostname and these
-// anchors, which webpki_resumption_ok checks as ch_connect does
-// (webpki_ticket.h). The raw public keys a TCP client takes stay
-// refused: bin/quic_loop_webpki resumes a ticket over QUIC, and no test
-// here drives a pinned raw key.
-static int anchors_ok(const ch_cfg *cfg) {
-    if (cfg->anchors == NULL || cfg->anchor_count == 0 ||
-        cfg->anchor_count > CH_WEBPKI_ANCHOR_MAX) {
-        return 0;
-    }
-    for (size_t i = 0; i < cfg->anchor_count; i++) {
-        const ch_trust_anchor *a = &cfg->anchors[i];
-        if (a->name == NULL || a->name_len == 0 || a->spki == NULL || a->spki_len == 0) {
-            return 0;
-        }
-    }
-    return 1;
-}
-
+// The web PKI rules are webpki_cfg_ok's, the ones ch_connect applies
+// over TCP (webpki_cfg.h), so a configuration means the same thing on
+// both transports: anchors with a hostname and a clock, SPKI pins beside
+// the anchors or alone, 0 to CH_SPKI_PIN_MAX pins, no pin slot, and PSK
+// fields that are unset or present a ticket bound to this hostname,
+// these anchors and these pins (webpki_ticket.h). Its ALPN rule admits
+// an empty offer, which alpn_ok above refuses.
 static int trust_config_ok(const ch_cfg *cfg) {
-    return anchors_ok(cfg) && cfg->hostname != NULL &&
-           webpki_hostname_ok(cfg->hostname, cfg->hostname_len) && cfg->now_seconds != 0 &&
-           cfg->server_pubkey == NULL && cfg->server_pubkey_len == 0 &&
-           cfg->server_pubkey2 == NULL && cfg->server_pubkey2_len == 0 && cfg->spki_pins == NULL &&
-           cfg->spki_pin_count == 0 && webpki_resumption_ok(cfg);
+    return webpki_cfg_ok(cfg);
 }
 #else
 // The pin length the build's one algorithm takes: 64 raw P-256 bytes

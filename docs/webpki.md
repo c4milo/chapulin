@@ -493,10 +493,12 @@ received it, and refuses to present it under any other.
 - **A `TRANSPORT=quic-nonblocking` webpki client resumes the same way.**
   `ch_quic_init` takes the configuration hash as `ch_connect` does, so the
   tickets a QUIC session hands to `on_ticket` carry a binding to its
-  hostname and anchors, and `quic_config.c` checks a presented ticket with
-  the same `webpki_resumption_ok`, refusing the same shapes with
-  `CH_EINVAL`. `bin/quic_loop_webpki` resumes a bound ticket against this
-  tree's QUIC server and checks the binding on the ticket it issues next;
+  hostname, anchors and SPKI pins, and `quic_config.c` checks a presented
+  ticket with the same `webpki_cfg_ok`, which runs `webpki_resumption_ok`,
+  refusing the same shapes with `CH_EINVAL`. `bin/quic_loop_webpki`
+  resumes a bound ticket against this tree's QUIC server, with and without
+  pins, checks the binding on the ticket it issues next, and refuses a
+  pinned session's ticket under another pin set;
   `docs/quic_server.md`, "Resumption", says what a QUIC caller does.
 
 ## Raw public keys and SPKI pins
@@ -548,10 +550,22 @@ caller sets up to `CH_SPKI_PIN_MAX` (4) of them in `ch_cfg.spki_pins`.
 - **Tickets** bind the pin set as well as the hostname and the anchors
   (see "Resumption"), so a pin change makes the next connection a full
   handshake.
+- **Over QUIC.** A `TRANSPORT=quic-nonblocking` webpki client takes pins
+  with the meaning above: `ch_quic_init` checks the configuration with the
+  same `webpki_cfg_ok`, the hello carries the same offer, and the same
+  `webpki_server_key` judges the Certificate (`docs/decisions.md` 64).
+  RFC 9250 §5.1 gives a DNS-over-QUIC client the authentication
+  requirements RFC 7858 and RFC 8310 give a DNS-over-TLS one, SPKI pins
+  included.
+  `bin/quic_loop_webpki` runs all three configurations against this
+  tree's QUIC server (`test/quic_loop_pins.h`). That server sends no raw
+  public key, so over QUIC the pins-alone configuration is tested for its
+  offer and for the refusal of the chain the server sends, and a raw key
+  accepted end to end is tested over TCP alone, against `openssl s_server
+  -enable_server_rpk`.
 - **Not here.** The server role neither sends nor accepts a raw public
   key: it ignores the extension and sends its certificate, which a
-  configuration with anchors verifies as before. A `TRANSPORT=quic-nonblocking`
-  webpki client refuses pins. Client raw public
+  configuration with anchors verifies as before. Client raw public
   keys (`client_certificate_type`) are not offered, because this client
   sends no certificate.
 
@@ -588,7 +602,9 @@ offer, 7 bytes at most. So its largest hello, `CH_HELLO_MAX`, is 2,396
 bytes, 2,416 under `SUITE=aesgcm`, and 2,650 over QUIC. The session's TX
 staging array, `CH_TX_STAGE`, grows to match, and
 `test/webpki_session_cases.h` measures the built hello against both
-numbers. A resuming hello sets that maximum, because it carries the
+numbers. `test/quic_loop_webpki.h` measures the QUIC one: at 2,650 bytes
+it holds the `server_certificate_type` offer, which goes out over QUIC
+since `ch_quic_init` takes pins, and it is 7 bytes shorter without pins. A resuming hello sets that maximum, because it carries the
 certificate path and the `pre_shared_key` extension both. A hello with no
 ticket is at most 2,029 bytes. The retry hello to secp256r1 is 1,187
 bytes shorter than a cookie retry, because its one 69-byte share replaces

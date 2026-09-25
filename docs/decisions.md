@@ -2072,3 +2072,62 @@ does nothing more.
     X25519MLKEM768 and x25519 alone, and the code agreed with the table.
     The server held no secp256r1 until this entry, and that sentence is
     true from this entry on.
+
+64. **A `TRUST=webpki` QUIC client takes SPKI pins with the meaning they
+    have over TCP.** cocuyo, a DNS resolver, runs DNS over QUIC (RFC 9250)
+    through colibri with chapulin's QUIC object as its TLS. RFC 9250 §5.1
+    gives a DNS-over-QUIC client the authentication requirements RFC 7858
+    and RFC 8310 give a DNS-over-TLS one. RFC 8310 §6.3 lists an SPKI pin
+    set and an address as one way to authenticate a server, and §6.4 has a
+    client configured with a name and pins require both
+    (`rfc8310.txt:805-814`). cocuyo's DNS-over-TLS path already uses all
+    three configurations entry 49 allows: a hostname alone, pins alone, and
+    both. `ch_quic_init` refused pins and required a hostname, so its QUIC
+    path could use the first alone.
+
+    - **The rules.** `quic_config.c` calls `webpki_cfg_ok`, the function
+      `ch_connect` and `ch_record_init` call, where it kept its own copy
+      of the anchor, hostname and clock rules. So a configuration is valid
+      over QUIC exactly when it is valid over TCP, and RFC 9001's three
+      rules stay on top: transport parameters, `on_level_ready`, and an
+      ALPN offer that names a protocol. `CH_SPKI_PIN_MAX` bounds the pins
+      on both transports.
+    - **The handshake.** Nothing else changes. The ClientHello builder,
+      the EncryptedExtensions parser and `webpki_server_key` were already
+      shared with TCP, and the configuration rule alone kept pins out. The
+      hello offers `server_certificate_type` as over TCP, and the
+      Certificate is judged as over TCP: a raw key by the pins alone, a
+      chain beside anchors by the walk, the name and a pin on the path the
+      walk verified, and a chain answering pins alone refused with
+      unsupported_certificate.
+    - **The ticket binding.** `webpki_ticket_config_hash` hashes the pins
+      beside the hostname and the anchors, and `ch_quic_init` takes that
+      hash when the session starts, as `ch_connect` does. So every ticket a
+      pinned QUIC session receives is bound to its pins, and `ch_quic_init`
+      refuses the ticket under another pin set or none. A resumed
+      handshake sends no certificate, so no pin is checked in it; the
+      binding is what holds it to the pins that judged the first session's
+      key.
+    - **What is tested, and what is not.** `bin/quic_loop_webpki` runs the
+      three configurations against this tree's QUIC server, which sends a
+      chain and never a raw public key. A hostname alone and a hostname
+      with pins pass end to end. Pins alone are tested for their offer and
+      for the refusal of that server's chain. A raw public key accepted
+      over QUIC is not tested: no QUIC server this tree runs sends one,
+      and OpenSSL 3.6.4's `s_server` has `-enable_server_rpk` and no QUIC.
+      The raw-key rule is the TCP one, tested end to end over TCP.
+
+    Cost: the 7-byte `server_certificate_type` offer now goes out over
+    QUIC. `CH_HELLO_MAX` already counted it there, because the builder is
+    shared, so the QUIC webpki `CH_TX_STAGE` stays 2,650 bytes, and
+    `ch_tls` and `ch_quic` keep their sizes, read from the build record
+    of each object on arm64 macOS: 3,200 and 4,808 bytes in the client
+    object, 3,408 and 5,056 under `ROLE=both`. `quic_config.c` drops its
+    second copy of the ALPN name rules in this build, because
+    `webpki_cfg_ok` runs them, and its text falls from 452 to 144 bytes.
+    Gain: a DNS-over-QUIC client uses the configurations its DNS-over-TLS
+    path uses, and a pin means one thing on every transport.
+
+    A QUIC copy of the pin rules was considered and rejected: two copies
+    of one rule can drift apart, and a copy has no reason to exist when
+    the handshake code that reads the configuration is shared.

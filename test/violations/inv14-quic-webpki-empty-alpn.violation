@@ -1,0 +1,12 @@
+invariant: INV-14
+file: quic_config.c
+catches: quic_loop_webpki
+reason: a TRUST=webpki QUIC client takes an ALPN offer of no protocol,
+  which webpki_cfg_ok admits because a TCP client may offer none, and
+  RFC 9001 §8.1 makes ALPN mandatory for QUIC. The empty-offer row in
+  test/quic_loop_webpki.h objects.
+
+--- old
+    return cfg->alpn_protocols != NULL && cfg->alpn_count > 0;
+--- new
+    return cfg != NULL;

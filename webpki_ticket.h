@@ -5,9 +5,10 @@
 // hostname. RFC 9846 §4.7.1 therefore lets a client resume only when the
 // new server_name is valid for the certificate of the original session
 // (rfc9846.txt:3222-3224). These calls hold that rule. Each ticket
-// carries a binding to the hostname and the anchors of the session that
-// received it, and ch_connect and ch_record_init refuse a ticket whose
-// binding does not match the configuration presenting it.
+// carries a binding to the hostname, the anchors and the SPKI pins of the
+// session that received it, and ch_connect, ch_record_init and
+// ch_quic_init refuse a ticket whose binding does not match the
+// configuration presenting it.
 //
 // The binding is an HMAC-SHA256 keyed by the ticket's own PSK. The key
 // ties it to one ticket: a binding copied from another ticket fails,
