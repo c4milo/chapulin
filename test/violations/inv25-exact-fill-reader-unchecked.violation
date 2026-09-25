@@ -11,7 +11,7 @@ reason: handle_ticket opens an rbuf over the message and drops the only
     rb_skip(&r, ext_len);
 #endif
     if (r.err || rb_left(&r) != 0) {
-#ifdef CH_TRANSPORT_QUIC
+#ifdef CH_TRANSPORT_QUIC_NONBLOCKING
         *alert = ALERT_DECODE_ERROR;
 #endif
         return CH_EPROTO;

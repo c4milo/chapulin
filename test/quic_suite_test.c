@@ -20,8 +20,8 @@
 #include "quic_keys.h"
 #include "quic_packet.h"
 
-#if !defined(CH_SUITE_AES_GCM) || !defined(CH_TRANSPORT_QUIC)
-#error "test/quic_suite_test.c runs the QUIC suite build: -DCH_TRANSPORT_QUIC -DCH_SUITE_AES_GCM"
+#if !defined(CH_SUITE_AES_GCM) || !defined(CH_TRANSPORT_QUIC_NONBLOCKING)
+#error "test/quic_suite_test.c runs the QUIC suite build: -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_SUITE_AES_GCM"
 #endif
 
 noreturn void ch_assert_fail(const char *cond, const char *file, int line) {

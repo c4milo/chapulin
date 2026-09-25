@@ -16,7 +16,7 @@
 // wipes anything.
 #include "quic_retry.h"
 
-#ifdef CH_TRANSPORT_QUIC
+#ifdef CH_TRANSPORT_QUIC_NONBLOCKING
 
 #include "ct.h"
 #include "quic_aes_key.h"
@@ -49,4 +49,4 @@ uint8_t quic_retry_ok(const uint8_t *pseudo, size_t n, const uint8_t tag[GCM_TAG
     return (uint8_t)ct_memeq(want, tag, GCM_TAG);
 }
 
-#endif // CH_TRANSPORT_QUIC
+#endif // CH_TRANSPORT_QUIC_NONBLOCKING

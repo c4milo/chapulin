@@ -8,9 +8,9 @@
 // buffer, the PSK or pin bytes, and the I/O context must outlive the
 // Session, exactly as with ch_cfg.
 //
-// The wrapper forks with the object it forwards to. A TRANSPORT=tls
+// The wrapper forks with the object it forwards to. A TRANSPORT=tcp-blocking
 // object exports ch_connect, ch_read, ch_write and ch_close, and Session
-// forwards them. A TRANSPORT=quic object exports none of the four and
+// forwards them. A TRANSPORT=quic-nonblocking object exports none of the four and
 // sixteen ch_quic_ entries instead, so Quic forwards those, and Config
 // takes no Io and gains the transport parameters and the two QUIC
 // callbacks. One transport compiles per build, so one of the two classes
@@ -22,7 +22,7 @@
 #include <cstdint>
 
 extern "C" {
-#ifdef CH_TRANSPORT_QUIC
+#ifdef CH_TRANSPORT_QUIC_NONBLOCKING
 #include "quic.h"
 #else
 #include "tls.h"
@@ -43,13 +43,13 @@ enum class Status : int {
     cap = CH_ECAP,
     closed = CH_ECLOSED,
     invalid = CH_EINVAL,
-#ifdef CH_TRANSPORT_RECORD
-    // The code a TRANSPORT=record read adds (cfg.h): no record has arrived
+#ifdef CH_TRANSPORT_TCP_NONBLOCKING
+    // The code a TRANSPORT=tcp-nonblocking read adds (cfg.h): no record has arrived
     // yet, and the session stays connected (rec.h, INV-13).
     again = CH_RECORD_AGAIN,
 #endif
-#ifdef CH_TRANSPORT_QUIC
-    // The two codes a TRANSPORT=quic object adds (cfg.h). discard leaves
+#ifdef CH_TRANSPORT_QUIC_NONBLOCKING
+    // The two codes a TRANSPORT=quic-nonblocking object adds (cfg.h). discard leaves
     // the session live: RFC 9001 §5.5 says a packet that fails to
     // unprotect is not necessarily an attack. aead_limit is RFC 9001
     // §6.6's integrity limit, which ends the session.
@@ -101,11 +101,11 @@ struct ConstBytes {
     }
 };
 
-#ifndef CH_TRANSPORT_QUIC
+#ifndef CH_TRANSPORT_QUIC_NONBLOCKING
 // Blocking I/O plus the random source, matching the C callback contract:
 // send moves all n bytes and returns 0, anything else is failure; recv
 // returns 1..n bytes or -1. Pass captureless functions (or lambdas that
-// decay to function pointers) and one context. A TRANSPORT=quic object
+// decay to function pointers) and one context. A TRANSPORT=quic-nonblocking object
 // opens no socket and calls neither callback, so this type exists only
 // here.
 struct Io {
@@ -115,8 +115,8 @@ struct Io {
 };
 #endif
 
-#ifdef CH_TRANSPORT_QUIC
-// Result of a TRANSPORT=quic call that writes bytes into the caller's
+#ifdef CH_TRANSPORT_QUIC_NONBLOCKING
+// Result of a TRANSPORT=quic-nonblocking call that writes bytes into the caller's
 // buffer: Quic::crypto_out and Quic::seal. size counts the bytes written
 // and is meaningful only when ok(). A Status::cap result means the buffer
 // was short, nothing was written and the same call may run again with a
@@ -175,8 +175,8 @@ struct Read {
 // build calls anchors(), hostname() and now_seconds() instead.
 class Config {
   public:
-#ifdef CH_TRANSPORT_QUIC
-    // A TRANSPORT=quic object opens no socket, so the buffer is the whole
+#ifdef CH_TRANSPORT_QUIC_NONBLOCKING
+    // A TRANSPORT=quic-nonblocking object opens no socket, so the buffer is the whole
     // constructor. It holds one encryption level's reassembled CRYPTO
     // bytes rather than records (docs/quic.md).
     explicit Config(Bytes recv_buffer) {
@@ -414,7 +414,7 @@ inline bool build_matches() {
     return ch_build_matches(&ch_build) != 0;
 }
 
-#ifndef CH_TRANSPORT_QUIC
+#ifndef CH_TRANSPORT_QUIC_NONBLOCKING
 // A session owns its ch_tls and closes it — wiping every key — when it is
 // destroyed. Non-copyable and non-movable: allocate it where it lives
 // (a static for firmware, a scope for tests), like the C ch_tls.

@@ -3,7 +3,7 @@
 // (docs/decisions.md 58): the Handshake level and the 1-RTT
 // level. It also holds the §6.5 rule that picks a 1-RTT receive key
 // set, the §5.4.2 length checks and the §6.6 limits. Only a
-// TRANSPORT=quic build compiles it. docs/quic.md states the mode.
+// TRANSPORT=quic-nonblocking build compiles it. docs/quic.md states the mode.
 //
 // These are the calls ch_quic_seal and ch_quic_open make. quic.c holds
 // the session and its counters and passes the key values down; this
@@ -45,7 +45,7 @@
 // arithmetic instead.
 #ifndef CH_QUIC_PACKET_H
 #define CH_QUIC_PACKET_H
-#ifdef CH_TRANSPORT_QUIC
+#ifdef CH_TRANSPORT_QUIC_NONBLOCKING
 
 #include <stddef.h>
 #include <stdint.h>
@@ -495,5 +495,5 @@ int quic_integrity_limit_exceeded(uint64_t open_failures);
 // the keys are used no more, which is §6.6's MUST (rfc9001.txt:1800-1803).
 int quic_confidentiality_limit_reached(uint64_t sealed);
 
-#endif // CH_TRANSPORT_QUIC
+#endif // CH_TRANSPORT_QUIC_NONBLOCKING
 #endif

@@ -2,8 +2,8 @@
 // different transports: this file, the half of each transport
 // (test/lib_pair_half.c) and the two objects. It defines each hook once
 // for both objects, as docs/porting.md says an image does, and runs the
-// half of each transport the script names with -DLIB_PAIR_TLS,
-// -DLIB_PAIR_RECORD or -DLIB_PAIR_QUIC.
+// half of each transport the script names with -DLIB_PAIR_TCP_BLOCKING,
+// -DLIB_PAIR_TCP_NONBLOCKING or -DLIB_PAIR_QUIC_NONBLOCKING.
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -46,14 +46,14 @@ void ch_keylog(void *io, const char *label, const uint8_t client_random[32],
 // Exits with the number of halves that failed, so 0 means both ran.
 int main(void) {
     int failures = 0;
-#ifdef LIB_PAIR_TLS
-    failures += lib_pair_tls();
+#ifdef LIB_PAIR_TCP_BLOCKING
+    failures += lib_pair_tcp_blocking();
 #endif
-#ifdef LIB_PAIR_RECORD
-    failures += lib_pair_record();
+#ifdef LIB_PAIR_TCP_NONBLOCKING
+    failures += lib_pair_tcp_nonblocking();
 #endif
-#ifdef LIB_PAIR_QUIC
-    failures += lib_pair_quic();
+#ifdef LIB_PAIR_QUIC_NONBLOCKING
+    failures += lib_pair_quic_nonblocking();
 #endif
     return failures;
 }

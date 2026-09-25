@@ -1,9 +1,10 @@
 // The client's flight handlers, one function per handshake message, over
-// the handshake_state and the ch_tls it points at. Both transports
-// compile this file: the TLS driver in handshake.c calls these in one
-// straight line, and the QUIC driver in quic_step.c calls the same
-// functions one per step, so no protocol rule exists twice
-// (docs/quic.md, "The design: one whole message per step").
+// the handshake_state and the ch_tls it points at. Every transport
+// compiles this file: the tcp-blocking driver in handshake.c calls these
+// in one straight line, and the tcp-nonblocking driver in rec_step.c and
+// the QUIC driver in quic_step.c call the same functions one per step,
+// so no protocol rule exists twice (docs/quic.md, "The design: one whole
+// message per step").
 //
 // None of these functions calls the record layer, the I/O shim or a
 // tlsi_ function. Each reads its message through hsr_next_msg and writes
@@ -11,10 +12,10 @@
 // decides how a message arrives and how it goes out.
 //
 // How a message arrives differs by transport, and every function that
-// reads one inherits the difference. Under TRANSPORT=tls hsr_next_msg
+// reads one inherits the difference. Under TRANSPORT=tcp-blocking hsr_next_msg
 // reads records from the caller's recv callback until the message is
 // whole, so these functions block and can report CH_EIO and CH_EAUTH.
-// Under CH_TRANSPORT_QUIC hsr_next_msg never waits, so the driver must
+// Under CH_TRANSPORT_QUIC_NONBLOCKING hsr_next_msg never waits, so the driver must
 // have confirmed a whole message with hsr_peek_message before it calls
 // one of these; a call made without that check returns CH_EINVAL and
 // changes nothing. RFC 9001 §4.1.3 splits the buffering that way: TLS
@@ -80,7 +81,7 @@ void hsf_begin(handshake_state *h);
 // replaced (RFC 9846 §4.3.11.2).
 //
 // Requires hsf_begin to have run, and cap bytes at out. The caller
-// passes the staging array its transport wants: a TLS driver passes
+// passes the staging array its transport wants: a TCP driver passes
 // t->tx + REC_HDR and leaves room for the record header it writes
 // itself, and a QUIC driver passes t->tx whole, because RFC 9001 §4.1.3
 // puts no record header in front of a CRYPTO frame's bytes
@@ -108,8 +109,9 @@ size_t hsf_build_client_hello(handshake_state *h, uint8_t *out, size_t cap);
 //
 // Returns CH_OK, and then info->hrr says which message arrived. The
 // caller decides what a HelloRetryRequest means, because the two
-// transports refuse a second one differently: the TLS driver refuses it
-// by call position and the QUIC driver refuses it by the stored step.
+// transports refuse a second one differently: the tcp-blocking driver
+// refuses it by call position, and the tcp-nonblocking and QUIC drivers
+// refuse it by the stored step.
 //
 // Returns CH_EPROTO with ALERT_UNEXPECTED_MESSAGE for any other
 // handshake type; CH_EPROTO with ALERT_ILLEGAL_PARAMETER when
@@ -124,8 +126,8 @@ size_t hsf_build_client_hello(handshake_state *h, uint8_t *out, size_t cap);
 // CH_SUITE_AES_GCM a ServerHello whose suite is not the retry's (§4.2.4,
 // rfc9846.txt:1489-1491). It also returns
 // what hsr_next_msg returns: CH_EIO, CH_EPROTO, CH_EAUTH or CH_ECAP
-// under TRANSPORT=tls, and CH_EPROTO or CH_EINVAL under
-// CH_TRANSPORT_QUIC. On every failure the transcript may already hold
+// under TRANSPORT=tcp-blocking, and CH_EPROTO or CH_EINVAL under
+// CH_TRANSPORT_QUIC_NONBLOCKING. On every failure the transcript may already hold
 // the message, which costs nothing because the session dies.
 int hsf_read_server_hello(handshake_state *h, server_hello_info *info);
 
@@ -197,8 +199,9 @@ int hsf_accept_server_hello(handshake_state *h, const server_hello_info *info);
 // otherwise.
 // After this call the retry hello can no longer be built, which is
 // correct: the exchange is over. The wipes are in this function because
-// the QUIC driver returns to its caller between messages, so the frame
-// wipe the TLS driver ends the handshake with is a round trip away
+// the tcp-nonblocking and QUIC drivers return to their caller between
+// messages, so the frame wipe the tcp-blocking driver ends the handshake
+// with is a round trip away
 // (docs/quic.md, "Entry points and their contracts").
 //
 // Returns CH_OK, or CH_EPROTO with ALERT_ILLEGAL_PARAMETER when x25519
@@ -213,7 +216,7 @@ int hsf_derive_handshake_secrets(handshake_state *h, const server_hello_info *in
 // before it parses, because hsp_parse_encrypted_exts overrides that only
 // where it knows a better alert, and the override must reach the wire.
 // Lowers t->peer_limit to the peer's record_size_limit under
-// TRANSPORT=tls, records the server's ALPN choice in t->alpn_selected
+// TRANSPORT=tcp-blocking, records the server's ALPN choice in t->alpn_selected
 // where the build offers protocols, and adds the raw message to the
 // transcript.
 //
@@ -224,7 +227,7 @@ int hsf_derive_handshake_secrets(handshake_state *h, const server_hello_info *in
 // the server selected into t->server_cert_type, which hsa_server_auth
 // reads to tell a raw public key from a chain.
 //
-// Under CH_TRANSPORT_QUIC it does two more things. It hands the
+// Under CH_TRANSPORT_QUIC_NONBLOCKING it does two more things. It hands the
 // server's quic_transport_parameters body to cfg.on_transport_params
 // when the caller set that callback, unread, because the body belongs
 // to the QUIC version in use and is opaque to TLS (RFC 9001 §8.2,
@@ -249,7 +252,7 @@ int hsf_derive_handshake_secrets(handshake_state *h, const server_hello_info *in
 // chose for a message it refuses: ALERT_ILLEGAL_PARAMETER by default,
 // ALERT_UNSUPPORTED_EXTENSION for an extension this client never
 // offered (RFC 9846 §4.3, rfc9846.txt:1504), and, under
-// CH_TRANSPORT_QUIC, ALERT_MISSING_EXTENSION for a message that carries
+// CH_TRANSPORT_QUIC_NONBLOCKING, ALERT_MISSING_EXTENSION for a message that carries
 // no quic_transport_parameters (RFC 9001 §8.2, rfc9001.txt:1929-1936).
 // It also returns what hsr_next_msg returns, as hsf_read_server_hello
 // does.
@@ -300,8 +303,8 @@ int hsf_read_finished(handshake_state *h);
 // CH_ASSERT holds it. Requires HSF_FINISHED_MAX bytes at finished.
 //
 // Returns the Finished's length, 4 + hsr_suite_hash_len(h), and cannot
-// fail. The caller owns what happens next: the TLS driver seals the
-// message into a record and sends it, and the QUIC driver stages it at
+// fail. The caller owns what happens next: a TCP driver seals the
+// message into a record and sends or stages it, and the QUIC driver stages it at
 // the Handshake encryption level for ch_quic_crypto_out. Both then
 // install the application traffic keys from t->wr_secret and
 // t->rd_secret.

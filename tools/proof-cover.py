@@ -73,7 +73,7 @@ AUDITED = {
 
 # The two forms a stub body's marker takes, and the same pattern the
 # Makefile's SRV_STUB_SRCS greps for; QUIC_STUB_SRCS read the other one
-# until the TRANSPORT=quic mode was implemented. A file that still
+# until the TRANSPORT=quic-nonblocking mode was implemented. A file that still
 # carries one holds no implementation to prove, so STUBBED below exempts
 # it and the exemption ends on the commit that deletes the last marker in
 # that file. The two build axes stub independently, which is why there

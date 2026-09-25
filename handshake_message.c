@@ -14,7 +14,7 @@
 #include "webpki_pin.h"
 #endif
 
-#if defined(CH_TRUST_WEBPKI) || defined(CH_TRANSPORT_QUIC)
+#if defined(CH_TRUST_WEBPKI) || defined(CH_TRANSPORT_QUIC_NONBLOCKING)
 // application_layer_protocol_negotiation (RFC 7301 §3.1): a
 // ProtocolNameList of one or more ProtocolName, each an opaque vector
 // with a one-byte length, in the order the caller listed them. A caller
@@ -193,7 +193,7 @@ size_t hs_build_client_hello(uint8_t *out, size_t cap, const ch_cfg *cfg,
     // server_name first in the list, as clients conventionally send it.
     write_server_name(&w, cfg);
     write_alpn(&w, cfg);
-#elif defined(CH_TRANSPORT_QUIC)
+#elif defined(CH_TRANSPORT_QUIC_NONBLOCKING)
     // RFC 9001 §8.1 makes ALPN mandatory for a QUIC client
     // (rfc9001.txt:1891-1895), and ch_quic_init refuses a configuration
     // that offers no protocol, so this writes the extension in every
@@ -233,7 +233,7 @@ size_t hs_build_client_hello(uint8_t *out, size_t cap, const ch_cfg *cfg,
     wb_u8(&w, 1);
     wb_u8(&w, 1); // psk_dhe_ke only
 
-#ifndef CH_TRANSPORT_QUIC
+#ifndef CH_TRANSPORT_QUIC_NONBLOCKING
     wb_u16(&w, EXT_RECORD_SIZE_LIMIT);
     wb_u16(&w, 2);
     wb_u16(&w, record_size_limit);

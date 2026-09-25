@@ -37,7 +37,7 @@
 // quic_aes_key.h gives the type a body here, which INV-26 admits in a
 // test. quic_aes.c, quic_gcm.c and the AES implementation the build
 // picked are all linked.
-#ifdef CH_TRANSPORT_QUIC
+#ifdef CH_TRANSPORT_QUIC_NONBLOCKING
 #include "quic_aes_block.h"
 #include "quic_aes_key.h"
 #include "quic_gcm.h"
@@ -458,7 +458,7 @@ int main(void) {
     run_x25519();
     run_ecdh_p256();
     run_aead();
-#ifdef CH_TRANSPORT_QUIC
+#ifdef CH_TRANSPORT_QUIC_NONBLOCKING
     run_aes_gcm();
 #ifdef CH_AES_256
     run_aes256_gcm();

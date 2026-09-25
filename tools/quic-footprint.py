@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Report what chapulin's TRANSPORT=quic mode covers, read from the tree.
+"""Report what chapulin's TRANSPORT=quic-nonblocking mode covers, read from the tree.
 
 Run from the repository root through `make quic-footprint`:
 
@@ -11,7 +11,7 @@ names every file the mode owns. `handshake_flight.[ch]` is the one
 exception, and it is deliberate -- both transports compile it -- so the
 report names it and marks it shared rather than leaving a reader to
 notice its absence. The mode also writes text inside the
-`#ifdef CH_TRANSPORT_QUIC` arms of files a TLS build compiles, and the
+`#ifdef CH_TRANSPORT_QUIC_NONBLOCKING` arms of files a TCP build compiles, and the
 prefix does not name those, so the report counts them in their own
 section.
 
@@ -20,7 +20,7 @@ Seven questions, seven sections, every answer read from the tree:
   Files                    every quic file with its line count, plus the
                            shared pair, plus a total
   Mode-only text elsewhere the lines each file outside the prefix
-                           compiles only under CH_TRANSPORT_QUIC, which
+                           compiles only under CH_TRANSPORT_QUIC_NONBLOCKING, which
                            the Files table does not hold
   Share of the library     those lines against every root .c and .h
                            line, and against the .c lines one build
@@ -104,9 +104,9 @@ from quic_source import (DECLARATOR, complete_types, conditional_spans,
 
 ROOT = Path(__file__).resolve().parent.parent
 
-# The macro the mode's text sits behind, in the files a TLS build
+# The macro the mode's text sits behind, in the files a TCP build
 # compiles as well.
-TRANSPORT = "CH_TRANSPORT_QUIC"
+TRANSPORT = "CH_TRANSPORT_QUIC_NONBLOCKING"
 
 # The Makefile's variables, expanded by make and held after the first
 # read.
@@ -281,7 +281,7 @@ def role_of(path):
 
 def conditional_rows(quic):
     """Every root file outside the prefix that compiles lines only under
-    CH_TRANSPORT_QUIC, with how many blocks and how many lines. These
+    CH_TRANSPORT_QUIC_NONBLOCKING, with how many blocks and how many lines. These
     are the mode's text under names `git ls-files 'quic*'` does not
     print, so a reader who takes the Files table for the whole mode
     reads too small a number."""
@@ -302,7 +302,7 @@ def report_files(quic, shared, conditional):
     for path in quic:
         rows.append((path, lines_in(path), role_of(path)))
     for path in shared:
-        rows.append((path, lines_in(path), "shared with TRANSPORT=tls"))
+        rows.append((path, lines_in(path), "shared with TRANSPORT=tcp-blocking"))
     width = max(len(r[0]) for r in rows)
     for path, count, role in rows:
         print(f"  {path.ljust(width)}  {count:5d}  {role}")
@@ -313,7 +313,7 @@ def report_files(quic, shared, conditional):
     print(f"  The table holds whole files. Another "
           f"{sum(r[2] for r in conditional)} lines of the mode sit")
     print(f"  inside the {TRANSPORT} arms of "
-          f"{plural(len(conditional), 'file')} a TLS build")
+          f"{plural(len(conditional), 'file')} a TCP build")
     print(f"  compiles too, which the next section lists.")
     print()
     return quic_total, shared_total
@@ -733,11 +733,11 @@ def main(argv):
     quic, shared = quic_files()
     if not quic:
         sys.exit("quic-footprint: git ls-files names no quic file, so this "
-                 "tree has no TRANSPORT=quic mode to report")
+                 "tree has no TRANSPORT=quic-nonblocking mode to report")
     if argv:
         return check_surface()
     conditional = conditional_rows(quic)
-    print("quic-footprint: chapulin's TRANSPORT=quic mode, read from the "
+    print("quic-footprint: chapulin's TRANSPORT=quic-nonblocking mode, read from the "
           "tree\n")
     quic_total, shared_total = report_files(quic, shared, conditional)
     report_conditional(conditional)

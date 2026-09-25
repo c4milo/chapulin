@@ -328,7 +328,7 @@ int hsa_server_auth(handshake_state *h) {
 #endif
     transcript_update(&h->t->transcript, raw, raw_len);
 
-#if defined(CH_TRANSPORT_QUIC) || defined(CH_TRANSPORT_RECORD)
+#if defined(CH_TRANSPORT_QUIC_NONBLOCKING) || defined(CH_TRANSPORT_TCP_NONBLOCKING)
     // One whole message per call: the QUIC driver returns to its caller
     // here, and hsa_read_certificate_verify reads the next message in
     // the next step. The peer is not authenticated yet.

@@ -40,7 +40,7 @@
 #define EXT_KEY_SHARE 51
 // quic_transport_parameters (RFC 9001 §8.2, rfc9001.txt:1921-1923).
 // Declared in every build, as the two alert descriptions below are, so
-// a TRANSPORT=tls build can answer unsupported_extension for an
+// a TRANSPORT=tcp-blocking build can answer unsupported_extension for an
 // extension it understands on a transport that is not QUIC
 // (rfc9001.txt:1945-1949).
 #define EXT_QUIC_TRANSPORT_PARAMS 0x39
@@ -126,7 +126,7 @@
 // pre_shared_key arm with both extensions above, the certificate path,
 // SPKI pins beside anchors and the two groups below: 2394, measured by
 // test/webpki_session_test.c.
-// A TRANSPORT=quic build adds two more terms. It drops the 6-byte
+// A TRANSPORT=quic-nonblocking build adds two more terms. It drops the 6-byte
 // record_size_limit extension, because RFC 9001 §4.1.3 removes the
 // record layer that extension sizes (rfc9001.txt:462-464), and it sends
 // quic_transport_parameters in its place: type and length words (4) and
@@ -145,7 +145,7 @@
 //
 // Each term is 0 in a build that sends nothing for it, so one sum
 // serves every combination.
-#if defined(CH_TRUST_WEBPKI) || defined(CH_TRANSPORT_QUIC)
+#if defined(CH_TRUST_WEBPKI) || defined(CH_TRANSPORT_QUIC_NONBLOCKING)
 #define CH_HELLO_ALPN_MAX (4 + 2 + CH_ALPN_MAX * (1 + CH_ALPN_NAME_MAX))
 #else
 #define CH_HELLO_ALPN_MAX 0
@@ -157,7 +157,7 @@
 #define CH_HELLO_SERVER_NAME_MAX 0
 #define CH_HELLO_CERT_PATH_MAX 0
 #endif
-#ifdef CH_TRANSPORT_QUIC
+#ifdef CH_TRANSPORT_QUIC_NONBLOCKING
 #define CH_HELLO_TRANSPORT_MAX (4 + CH_TRANSPORT_PARAMS_MAX - 6)
 #else
 #define CH_HELLO_TRANSPORT_MAX 0
@@ -217,7 +217,7 @@
 // illegal_parameter.
 #define ALERT_PROTOCOL_VERSION 70
 #define ALERT_INTERNAL_ERROR 80
-// missing_extension, RFC 9846 §6 (rfc9846.txt:3816). A TRANSPORT=quic
+// missing_extension, RFC 9846 §6 (rfc9846.txt:3816). A TRANSPORT=quic-nonblocking
 // build writes it for an EncryptedExtensions that carries no
 // quic_transport_parameters, which RFC 9001 §8.2 makes an error of type
 // 0x016d (rfc9001.txt:1930-1936). §4.8's 0x0100 conversion reaches that
@@ -225,10 +225,10 @@
 #define ALERT_MISSING_EXTENSION 109
 #define ALERT_UNSUPPORTED_EXTENSION 110
 // no_application_protocol, RFC 9846 §6 (rfc9846.txt:3823). A
-// TRANSPORT=quic build writes it whenever ALPN negotiation fails, which
+// TRANSPORT=quic-nonblocking build writes it whenever ALPN negotiation fails, which
 // RFC 9001 §8.1 makes error 0x0178 for a client (rfc9001.txt:1896-1902)
 // and which §4.8's conversion reaches from this description and no
-// other. A TRANSPORT=tls build keeps illegal_parameter there.
+// other. A TRANSPORT=tcp-blocking build keeps illegal_parameter there.
 //
 // Both descriptions are declared in every build, as the descriptions
 // above are, so proof/eeparse_harness.c reads one alert list on both

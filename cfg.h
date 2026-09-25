@@ -66,7 +66,7 @@
 #define CH_ECAP (-4)    // caller buffer too small for the peer's message
 #define CH_ECLOSED (-5) // clean close_notify from the peer
 #define CH_EINVAL (-6)  // invalid configuration or call; nothing was sent
-// TRANSPORT=record's ch_read found no record yet; the session stays live (rec.h, INV-13).
+// TRANSPORT=tcp-nonblocking's ch_read found no record yet; the session stays live (rec.h, INV-13).
 #define CH_RECORD_AGAIN (-9)
 
 // Outgoing records are staged in the session struct so writes never
@@ -125,16 +125,16 @@
 #else
 #define CH_KEX_MIN_RXBUF 512
 #endif
-#ifdef CH_TRANSPORT_QUIC
-// A TRANSPORT=quic build takes the maximum over three QUIC terms and over nothing else. It
-// has no record layer (RFC 9001 §4.1.3, rfc9001.txt:462-464), so cfg.buf_len is the only
-// bound a peer meets and it bounds one whole handshake message at one encryption level.
+#ifdef CH_TRANSPORT_QUIC_NONBLOCKING
+// A TRANSPORT=quic-nonblocking build takes the maximum over three QUIC terms and over nothing else.
+// It has no record layer (RFC 9001 §4.1.3, rfc9001.txt:462-464), so cfg.buf_len is the only bound a
+// peer meets and it bounds one whole handshake message at one encryption level.
 // CH_QUIC_TRUST_MIN_RXBUF is the trust term without the 22 bytes that pay for the record
 // completing a message; under a raw mode that is 512 - 22, or 490, the smallest term any
 // QUIC build takes. CH_QUIC_KEX_MIN_RXBUF is the key-exchange term without its 5
 // record-header bytes; under KEX=pq the 1184 bytes left are the hybrid ServerHello message
-// itself, and dropping the term would floor a TRANSPORT=quic KEX=pq raw-mode build at 490
-// against that message. CH_QUIC_PARAMS_MIN_RXBUF is the whole EncryptedExtensions message
+// itself, and dropping the term would floor a TRANSPORT=quic-nonblocking KEX=pq raw-mode build at
+// 490 against that message. CH_QUIC_PARAMS_MIN_RXBUF is the whole EncryptedExtensions message
 // carrying the server's transport parameters, header included (§8.2, rfc9001.txt:1926-1928).
 //
 // open: that third number, and 0 is not one. Measure one real server's whole
@@ -167,7 +167,7 @@
 // buffer always holds the 4-byte handshake header hsr_peek_message reads, so a full buffer
 // never answers HSR_INCOMPLETE (docs/quic.md, "Suspending the driver").
 #ifndef __cplusplus
-#ifdef CH_TRANSPORT_QUIC
+#ifdef CH_TRANSPORT_QUIC_NONBLOCKING
 _Static_assert(CH_MIN_RXBUF >= 490, "the QUIC floor only rises; its smallest term is 490");
 #else
 _Static_assert(CH_MIN_RXBUF >= 512, "the floor only rises; the base profile needs 512");
@@ -237,11 +237,11 @@ _Static_assert(CH_EPOCH_BOUND >= 1 && CH_EPOCH_BOUND < CH_EPOCH_MAX,
 #endif
 
 // The ALPN declarations below serve three builds: a TRUST=webpki build offers a protocol
-// list over TCP (docs/decisions.md 37), a TRANSPORT=quic build offers one in every trust
-// mode because RFC 9001 §8.1 requires ALPN of every QUIC client (rfc9001.txt:1891-1895)
-// and closes with no_application_protocol when none is negotiated (rfc9001.txt:1896-1902)
-// where a TCP client keeps CH_ALPN_NONE, and a ROLE=server build selects from the list.
-#if defined(CH_TRUST_WEBPKI) || defined(CH_TRANSPORT_QUIC) || defined(CH_ROLE_SERVER)
+// list over TCP (docs/decisions.md 37), a TRANSPORT=quic-nonblocking build offers one in every
+// trust mode because RFC 9001 §8.1 requires ALPN of every QUIC client (rfc9001.txt:1891-1895) and
+// closes with no_application_protocol when none is negotiated (rfc9001.txt:1896-1902) where a TCP
+// client keeps CH_ALPN_NONE, and a ROLE=server build selects from the list.
+#if defined(CH_TRUST_WEBPKI) || defined(CH_TRANSPORT_QUIC_NONBLOCKING) || defined(CH_ROLE_SERVER)
 
 // One application protocol name the caller offers through ALPN (RFC 7301 §3.1), shaped
 // like ch_trust_anchor: the caller owns the bytes and they must outlive the session. "h2"
@@ -269,8 +269,8 @@ typedef struct {
 #define CH_ALPN_NONE 255
 #endif
 
-#ifdef CH_TRANSPORT_QUIC
-// A TRANSPORT=quic build runs this client over QUIC's CRYPTO frames and protects QUIC
+#ifdef CH_TRANSPORT_QUIC_NONBLOCKING
+// A TRANSPORT=quic-nonblocking build runs this client over QUIC's CRYPTO frames and protects QUIC
 // packets with the keys the handshake produces (RFC 9001, docs/quic.md). It has no record
 // layer: §4.1.3 takes the unprotected content of TLS handshake records as the content of
 // CRYPTO frames and uses no TLS record protection (rfc9001.txt:462-464).
@@ -280,7 +280,7 @@ typedef struct {
 // re-delivers bytes chapulin has consumed. A retransmitted CRYPTO frame is a duplicate the
 // caller drops, and chapulin stores no CRYPTO stream offset to tell one from new data. The
 // two result codes below sit beside CH_EINVAL above, both int. The CH_QUIC_ prefix says
-// neither has a meaning on the TLS transport, and ch_quic_open alone returns either.
+// neither has a meaning on the TCP transports, and ch_quic_open alone returns either.
 //
 // CH_QUIC_DISCARD leaves the session live, as CH_RECORD_AGAIN above does, for a packet the
 // caller drops: one that failed to authenticate, which RFC 9001 §5.5
@@ -428,7 +428,7 @@ typedef struct {
 
 // The same two fields serve all three builds; ch_connect, ch_quic_init or ch_srv_accept
 // checks them, and ch_quic_init alone refuses an offer of none (rfc9001.txt:1891-1895).
-#if defined(CH_TRUST_WEBPKI) || defined(CH_TRANSPORT_QUIC) || defined(CH_ROLE_SERVER)
+#if defined(CH_TRUST_WEBPKI) || defined(CH_TRANSPORT_QUIC_NONBLOCKING) || defined(CH_ROLE_SERVER)
     // Application protocols to offer through ALPN (RFC 7301), in the order the caller
     // prefers them: alpn_count entries, 0 to CH_ALPN_MAX. Offering none — alpn_protocols
     // NULL and alpn_count 0 — is legal and sends no extension. Every offered entry needs a
@@ -441,7 +441,7 @@ typedef struct {
     size_t alpn_count;
 #endif
 
-#ifdef CH_TRANSPORT_QUIC
+#ifdef CH_TRANSPORT_QUIC_NONBLOCKING
     // The caller's own encoded QUIC transport parameters, the body of the
     // quic_transport_parameters extension. The ClientHello copies these bytes unread into
     // extension 0x39 (RFC 9001 §8.2, rfc9001.txt:1922-1924); chapulin reads none of them,

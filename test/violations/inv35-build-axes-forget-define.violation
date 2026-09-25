@@ -1,14 +1,14 @@
 invariant: INV-35
 file: build.h
 catches: test/lib-check-webpki-record.sh
-reason: CH_BUILD_AXES leaves out the CH_TRANSPORT_RECORD term. The object
+reason: CH_BUILD_AXES leaves out the CH_TRANSPORT_TCP_NONBLOCKING term. The object
   and every consumer compute the axes from the same header, so the two
   still agree and a comparison between them cannot see it: a
-  record-mode object and a TLS one now differ in no bit. test/build_test.c
+  tcp-nonblocking object and a tcp-blocking one now differ in no bit. test/build_test.c
   restates the axes from its own defines, one line per define, and exits
   2 when CH_BUILD_AXES disagrees with them, so lib-check objects.
 
 --- old
-     CH_BUILD_IF_KEX_PQ | CH_BUILD_IF_TRANSPORT_QUIC | CH_BUILD_IF_TRANSPORT_RECORD |              \
+     CH_BUILD_IF_TRANSPORT_TCP_NONBLOCKING | CH_BUILD_IF_SUITE_AES_GCM | CH_BUILD_IF_ROLE_SERVER | \
 --- new
-     CH_BUILD_IF_KEX_PQ | CH_BUILD_IF_TRANSPORT_QUIC |                                             \
+     CH_BUILD_IF_SUITE_AES_GCM | CH_BUILD_IF_ROLE_SERVER | \

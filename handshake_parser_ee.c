@@ -29,7 +29,7 @@ static int parse_record_size_limit(const uint8_t *ext_data, size_t ext_len, uint
     return CH_OK;
 }
 
-#if defined(CH_TRUST_WEBPKI) || defined(CH_TRANSPORT_QUIC)
+#if defined(CH_TRUST_WEBPKI) || defined(CH_TRANSPORT_QUIC_NONBLOCKING)
 // What the ALPN arm reads and writes: the protocol names the
 // ClientHello offered, the index it reports, and the alert a refusal
 // names. One struct so the two functions below take one pointer rather
@@ -74,7 +74,7 @@ static int parse_alpn(const uint8_t *ext_data, size_t ext_len, const alpn_out *o
             return CH_OK;
         }
     }
-#ifdef CH_TRANSPORT_QUIC
+#ifdef CH_TRANSPORT_QUIC_NONBLOCKING
     // RFC 9001 §8.1 makes a QUIC client terminate with error 0x0178
     // whenever ALPN negotiation fails (rfc9001.txt:1896-1902), which
     // §4.8's 0x0100 conversion produces from alert 120 and not from
@@ -185,23 +185,23 @@ static uint8_t webpki_ext_bit(uint16_t ext, const uint8_t *ext_data, size_t ext_
 // supported_groups (a server may volunteer it for later connections)
 // and admit the extensions the ClientHello asked for: in a TRUST=webpki
 // build one empty server_name acknowledgement, one ALPN selection and
-// one server_certificate_type; in a TRANSPORT=quic build one ALPN
+// one server_certificate_type; in a TRANSPORT=quic-nonblocking build one ALPN
 // selection and quic_transport_parameters. Reject everything else —
 // RFC 9846 §4.3 requires unsupported_extension for anything the
 // ClientHello did not offer.
 int hsp_parse_encrypted_exts(const uint8_t *body, size_t n, uint16_t *peer_limit,
-#if defined(CH_TRUST_WEBPKI) || defined(CH_TRANSPORT_QUIC)
+#if defined(CH_TRUST_WEBPKI) || defined(CH_TRANSPORT_QUIC_NONBLOCKING)
                              const ch_alpn_protocol *offered, size_t offered_count,
                              uint8_t *selected,
 #endif
 #ifdef CH_TRUST_WEBPKI
                              int server_name_sent, uint8_t cert_types_offered, uint8_t *cert_type,
 #endif
-#ifdef CH_TRANSPORT_QUIC
+#ifdef CH_TRANSPORT_QUIC_NONBLOCKING
                              const uint8_t **transport_params, size_t *transport_params_len,
 #endif
                              uint8_t *alert) {
-#if defined(CH_TRUST_WEBPKI) || defined(CH_TRANSPORT_QUIC)
+#if defined(CH_TRUST_WEBPKI) || defined(CH_TRANSPORT_QUIC_NONBLOCKING)
     // An arm below writes over this one when it refuses the extension it
     // read, so a refused extension carries its arm's alert and one no
     // arm read carries the answer for an extension the client did not
@@ -229,7 +229,7 @@ int hsp_parse_encrypted_exts(const uint8_t *body, size_t n, uint16_t *peer_limit
         if (ext_data == NULL) {
             return CH_EPROTO;
         }
-#if defined(CH_TRUST_WEBPKI) || defined(CH_TRANSPORT_QUIC)
+#if defined(CH_TRUST_WEBPKI) || defined(CH_TRANSPORT_QUIC_NONBLOCKING)
         // Read before the chain rather than inside it, so this build's
         // extra extensions cost the chain one arm and not three.
         uint8_t extra_bit = alpn_ext_bit(ext, ext_data, ext_len, &alpn);
@@ -245,11 +245,11 @@ int hsp_parse_encrypted_exts(const uint8_t *body, size_t n, uint16_t *peer_limit
             }
         } else if (ext == EXT_SUPPORTED_GROUPS) {
             bit = 1U << 1; // tolerated; its body is deliberately unread
-#if defined(CH_TRUST_WEBPKI) || defined(CH_TRANSPORT_QUIC)
+#if defined(CH_TRUST_WEBPKI) || defined(CH_TRANSPORT_QUIC_NONBLOCKING)
         } else if (extra_bit != 0) {
             bit = extra_bit; // admitted once, like the other two
 #endif
-#ifdef CH_TRANSPORT_QUIC
+#ifdef CH_TRANSPORT_QUIC_NONBLOCKING
         } else if (ext == EXT_QUIC_TRANSPORT_PARAMS) {
             // The body belongs to the QUIC version in use and is opaque
             // to TLS (RFC 9001 §8.2, rfc9001.txt:1926-1928), so it is
@@ -259,7 +259,7 @@ int hsp_parse_encrypted_exts(const uint8_t *body, size_t n, uint16_t *peer_limit
             *transport_params_len = ext_len;
 #endif
         } else {
-#if defined(CH_TRUST_WEBPKI) || defined(CH_TRANSPORT_QUIC)
+#if defined(CH_TRUST_WEBPKI) || defined(CH_TRANSPORT_QUIC_NONBLOCKING)
             *alert = arm_alert;
 #else
             *alert = ALERT_UNSUPPORTED_EXTENSION;
@@ -271,7 +271,7 @@ int hsp_parse_encrypted_exts(const uint8_t *body, size_t n, uint16_t *peer_limit
         }
         seen |= bit;
     }
-#ifdef CH_TRANSPORT_QUIC
+#ifdef CH_TRANSPORT_QUIC_NONBLOCKING
     // RFC 9001 §8.2 makes an EncryptedExtensions without the extension
     // an error of type 0x016d (rfc9001.txt:1930-1936), which §4.8
     // produces from missing_extension and no other description.

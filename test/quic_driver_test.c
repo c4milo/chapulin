@@ -1,4 +1,4 @@
-// The TRANSPORT=quic driver through its public entries: the rules
+// The TRANSPORT=quic-nonblocking driver through its public entries: the rules
 // ch_quic_init adds to the trust mode's, the staged ClientHello, a
 // ServerHello delivered as CRYPTO bytes, and the level rules RFC 9001
 // §4.1.3 states. No QUIC server speaks here. The ServerHello is one this

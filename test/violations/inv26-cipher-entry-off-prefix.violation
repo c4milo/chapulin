@@ -11,7 +11,7 @@ reason: quic_aes.h gains a second forward-cipher entry named
   `make lint-quic-surface` is where it runs.
 
 --- old
-#endif // CH_TRANSPORT_QUIC || CH_SUITE_AES_GCM
+#endif // CH_TRANSPORT_QUIC_NONBLOCKING || CH_SUITE_AES_GCM
 #endif
 --- new
 // One forward-cipher block under the packet protection key, under a
@@ -19,5 +19,5 @@ reason: quic_aes.h gains a second forward-cipher entry named
 void quic_encrypt_block(const aes_public_key *k, const uint8_t in[AES_BLOCK],
                         uint8_t out[AES_BLOCK]);
 
-#endif // CH_TRANSPORT_QUIC || CH_SUITE_AES_GCM
+#endif // CH_TRANSPORT_QUIC_NONBLOCKING || CH_SUITE_AES_GCM
 #endif

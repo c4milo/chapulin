@@ -375,7 +375,7 @@ int srv_read_extension(rbuf *e, uint16_t type, size_t data_off, hello_parse *p) 
         // holds it to, and no other effect (rfc9846.txt:2385-2401).
         return CH_OK;
     case EXT_QUIC_TRANSPORT_PARAMS:
-#ifdef CH_TRANSPORT_QUIC
+#ifdef CH_TRANSPORT_QUIC_NONBLOCKING
         // A QUIC server keeps the body and reads none of it: its content
         // belongs to the QUIC version in use (rfc9001.txt:1926-1928), and
         // the driver hands these bytes to the caller. They point into

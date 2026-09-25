@@ -7,7 +7,7 @@
 // reads arrives decrypted from a peer that authenticated, which makes it
 // less exposed than the handshake flight and no less parsed.
 //
-// Under CH_TRANSPORT_QUIC they ride CRYPTO frames at the 1-RTT level
+// Under CH_TRANSPORT_QUIC_NONBLOCKING they ride CRYPTO frames at the 1-RTT level
 // and the driver's HSQ_STEP_COMPLETE step meets them, one whole message
 // per step. Only the NewSessionTicket survives there: RFC 9001 §6 makes
 // a TLS KeyUpdate a connection error (rfc9001.txt:1566-1568) and §4.4
@@ -21,17 +21,17 @@
 
 #include "session.h"
 
-#ifndef CH_TRANSPORT_QUIC
+#ifndef CH_TRANSPORT_QUIC_NONBLOCKING
 // Reads whole post-handshake messages, starting from pt_len plaintext
 // bytes already in cfg.buf and pulling further records when one message
 // is fragmented across them. Returns CH_OK once the run is consumed, or
-// an error; the caller turns the error into an alert. A TRANSPORT=record
+// an error; the caller turns the error into an alert. A TRANSPORT=tcp-nonblocking
 // build also returns CH_RECORD_AGAIN when the next fragment has not
 // arrived: the fragment bytes so far stay at the front of cfg.buf,
 // t->post_fill counts them, and the caller passes that count back here
 // on its next read. It is not an error, and the caller sends no alert.
 //
-// A TRANSPORT=quic build declares neither this call nor the KeyUpdate
+// A TRANSPORT=quic-nonblocking build declares neither this call nor the KeyUpdate
 // handler under it. There is no record run to drain, and a TLS
 // KeyUpdate message is a connection error of type 0x010a on that
 // transport (RFC 9001 §6, rfc9001.txt:1566-1568), so the only
@@ -40,11 +40,11 @@
 int hspost_read(ch_tls *t, size_t pt_len);
 #endif
 
-#ifdef CH_TRANSPORT_QUIC
+#ifdef CH_TRANSPORT_QUIC_NONBLOCKING
 // Handles one whole NewSessionTicket the caller has already read and
 // whose type it has already checked (RFC 9846 §4.7.1). It parses the
 // ticket, derives the resumption PSK and hands it to cfg.on_ticket,
-// which is what the TLS build does; resumption over QUIC is the same
+// which is what a TCP build does; resumption over QUIC is the same
 // external PSK it is over TCP.
 //
 // It reads the ticket's extension block rather than skipping it, which

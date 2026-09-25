@@ -107,15 +107,15 @@ int ch_srv_accept(ch_tls *t, const ch_cfg *cfg);
 //
 // Every server object exports it, so its symbol name carries the
 // object's transport, as the build record's does (build.h): an image
-// that links a record-mode server and a QUIC server holds one of each,
+// that links a tcp-nonblocking server and a QUIC server holds one of each,
 // and each reads the ch_cfg layout of its own transport
 // (docs/decisions.md 61).
-#ifdef CH_TRANSPORT_QUIC
-#define ch_srv_check ch_srv_check_quic
-#elif defined(CH_TRANSPORT_RECORD)
-#define ch_srv_check ch_srv_check_record
+#ifdef CH_TRANSPORT_QUIC_NONBLOCKING
+#define ch_srv_check ch_srv_check_quic_nonblocking
+#elif defined(CH_TRANSPORT_TCP_NONBLOCKING)
+#define ch_srv_check ch_srv_check_tcp_nonblocking
 #else
-#define ch_srv_check ch_srv_check_tls
+#define ch_srv_check ch_srv_check_tcp_blocking
 #endif
 int ch_srv_check(const ch_cfg *cfg);
 

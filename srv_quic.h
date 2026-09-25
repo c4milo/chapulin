@@ -1,7 +1,7 @@
-// chapulin's server API under TRANSPORT=quic: the TLS 1.3 server
+// chapulin's server API under TRANSPORT=quic-nonblocking: the TLS 1.3 server
 // handshake of srv_flight.[ch], driven over QUIC's CRYPTO frames instead
 // of TLS records. It sits beside srv.h the way quic.h sits beside tls.h,
-// and it adds the calls a QUIC server needs that a TLS one does not.
+// and it adds the calls a QUIC server needs that a TCP one does not.
 //
 // It is not a QUIC server. chapulin owns every key and every packet's
 // protection; the caller owns UDP, packet numbers, loss recovery,
@@ -27,7 +27,7 @@
 // contract and docs/quic_server.md item 4 the reasoning.
 #ifndef CH_SRV_QUIC_H
 #define CH_SRV_QUIC_H
-#if defined(CH_ROLE_SERVER) && defined(CH_TRANSPORT_QUIC)
+#if defined(CH_ROLE_SERVER) && defined(CH_TRANSPORT_QUIC_NONBLOCKING)
 
 #include <stddef.h>
 #include <stdint.h>
@@ -82,5 +82,5 @@ int ch_srv_quic_crypto_in(ch_quic *q, uint8_t level, const uint8_t *p, size_t n)
 // Requires: n bytes readable at pseudo, GCM_TAG bytes writable at tag.
 void ch_srv_quic_retry_tag(const uint8_t *pseudo, size_t n, uint8_t *tag);
 
-#endif // CH_ROLE_SERVER && CH_TRANSPORT_QUIC
+#endif // CH_ROLE_SERVER && CH_TRANSPORT_QUIC_NONBLOCKING
 #endif

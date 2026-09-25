@@ -143,8 +143,8 @@ static inline uint8_t srv_group_bit(uint16_t group) {
 // transport parameters (RFC 9001 §8.2, rfc9001.txt:1921-1923), and §8.2
 // requires a fatal unsupported_extension from an implementation that
 // understands the extension when the transport is not QUIC
-// (rfc9001.txt:1945-1949). A TRANSPORT=tls build is such a transport and
-// refuses it; a TRANSPORT=quic server keeps the body and hands it to its
+// (rfc9001.txt:1945-1949). A TRANSPORT=tcp-blocking build is such a transport and
+// refuses it; a TRANSPORT=quic-nonblocking server keeps the body and hands it to its
 // caller, which srv_parser_ext.c's two arms carry. The
 // extension needs its own bit to reach that answer, because §4.2.2's
 // ignore rule would otherwise skip it and negotiate
@@ -306,7 +306,7 @@ typedef struct {
     // the digest (docs/decisions.md 59).
     uint8_t frozen[SHA256_LEN];
 
-#ifdef CH_TRANSPORT_QUIC
+#ifdef CH_TRANSPORT_QUIC_NONBLOCKING
     // The client's quic_transport_parameters body, as extension 0x39
     // carried it (RFC 9001 section 8.2, rfc9001.txt:1922-1924). It points
     // into cfg.buf, so it is valid until the next message overwrites that

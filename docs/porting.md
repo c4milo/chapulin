@@ -326,8 +326,8 @@ if (!ch_build_matches(&ch_build)) {
 }
 ```
 
-The record's symbol name carries the object's transport: `ch_build_tls`,
-`ch_build_record` or `ch_build_quic`. `build.h` defines `ch_build` as the
+The record's symbol name carries the object's transport: `ch_build_info_tcp_blocking`,
+`ch_build_info_tcp_nonblocking` or `ch_build_info_quic_nonblocking`. `build.h` defines `ch_build` as the
 name your defines select, so the call above reads the record of the transport
 you compile for, and a program built for another transport than the object's
 fails to link.
@@ -344,15 +344,15 @@ name:
 ```zig
 const c = @cImport({
     @cDefine("CH_TRUST_WEBPKI", "1");
-    @cDefine("CH_TRANSPORT_RECORD", "1");
+    @cDefine("CH_TRANSPORT_TCP_NONBLOCKING", "1");
     @cDefine("CH_RAND_EXTERN", "1");
     @cInclude("build.h");
 });
 
-if (c.ch_build_matches(&c.ch_build_record) == 0) return error.ChapulinBuildMismatch;
+if (c.ch_build_matches(&c.ch_build_info_tcp_nonblocking) == 0) return error.ChapulinBuildMismatch;
 ```
 
-An `@cImport` without `CH_TRANSPORT_RECORD` declares no `ch_build_record`,
+An `@cImport` without `CH_TRANSPORT_TCP_NONBLOCKING` declares no `ch_build_info_tcp_nonblocking`,
 so that mistake stops the compile. `docs/decisions.md` 56 lists what the
 record holds, which defines it leaves out and why, and entry 61 says why its
 name carries the transport.
@@ -360,8 +360,8 @@ name carries the transport.
 ## Linking two transports into one image
 
 One image can link one packaged object of each of two transports: a
-`TRANSPORT=record` object beside a `TRANSPORT=quic` one, or a
-`TRANSPORT=tls` object beside a `TRANSPORT=quic` one. cocuyo does this for
+`TRANSPORT=tcp-nonblocking` object beside a `TRANSPORT=quic-nonblocking` one, or a
+`TRANSPORT=tcp-blocking` object beside a `TRANSPORT=quic-nonblocking` one. cocuyo does this for
 DNS over TLS and DNS over QUIC, and a server does it for HTTP/2 beside
 HTTP/3. Three exports that objects of both transports carry take the
 transport into their symbol names, and a header maps each to the name you
@@ -369,9 +369,9 @@ call:
 
 | You call | Symbol, per transport | Mapped in |
 |---|---|---|
-| `ch_build` | `ch_build_tls`, `ch_build_record`, `ch_build_quic` | `build.h` |
-| `ch_srv_check` | `ch_srv_check_tls`, `ch_srv_check_record`, `ch_srv_check_quic` | `srv.h` |
-| `ch_pubkey_from_pem` | `ch_pubkey_from_pem_tls`, `ch_pubkey_from_pem_record`, `ch_pubkey_from_pem_quic` | `x509_ca.h` |
+| `ch_build` | `ch_build_info_tcp_blocking`, `ch_build_info_tcp_nonblocking`, `ch_build_info_quic_nonblocking` | `build.h` |
+| `ch_srv_check` | `ch_srv_check_tcp_blocking`, `ch_srv_check_tcp_nonblocking`, `ch_srv_check_quic_nonblocking` | `srv.h` |
+| `ch_pubkey_from_pem` | `ch_pubkey_from_pem_tcp_blocking`, `ch_pubkey_from_pem_tcp_nonblocking`, `ch_pubkey_from_pem_quic_nonblocking` | `x509_ca.h` |
 
 Compile the calls to each object in a translation unit of its own, under that
 object's defines. The two objects' headers disagree about `ch_cfg` and
@@ -382,10 +382,11 @@ one `@cImport` per object and each one's record name.
 Two pairs do not link, and the linker's duplicate-symbol error is the
 refusal:
 
-- **A `TRANSPORT=tls` object beside a `TRANSPORT=record` one.** Both export
+- **A `TRANSPORT=tcp-blocking` object beside a `TRANSPORT=tcp-nonblocking` one.** Both export
   `ch_read`, `ch_write` and `ch_close`, and `ch_export` under
-  `EXPORTER=on`. A record-mode object does everything a blocking one does,
-  with your code driving the socket, so link the record-mode object alone.
+  `EXPORTER=on`. A tcp-nonblocking object does everything a tcp-blocking one
+  does, with your code driving the socket, so link the tcp-nonblocking
+  object alone.
 - **Two `RAND=drbg` objects.** Both export `ch_drbg_seed`, and each carries a
   generator of its own. Build every object `RAND=extern` instead. A
   `RAND=drbg` object beside a `RAND=extern` one links, but it keeps a second

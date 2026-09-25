@@ -1077,34 +1077,34 @@ launch slow:4 full x509parse_ecdsa 260 "fill_nondet.0:257,ct_memeq.0:68" buf.c c
 launch slow:8 full x509parse 844 "fill_nondet.0:841,ct_memeq.0:68" buf.c ct.c
 launch fast full chacha20 165 "chacha20_xor.1:5"
 # The AES-128 forward cipher and the two aes_public_key constructors,
-# TRANSPORT=quic. HKDF is a contract stub (proof/quic_aes_stubs.h), so
+# TRANSPORT=quic-nonblocking. HKDF is a contract stub (proof/quic_aes_stubs.h), so
 # this formula holds the key schedule and the cipher and not five HMAC
 # derivations; that header states what the composition gives up.
 # Re-measured on the commit that moved this file under the codegen gates
 # (arm64 macOS, the pinned cbmc, PROVE_NO_CACHE=1 /usr/bin/time -l): 434
 # properties, 26 s, 0.67 GB peak. The 377 recorded before predates the
 # split of the cipher into quic_aes_soft.c.
-launch fast full quic_aes 45 "fill_nondet.0:177" -DCH_TRANSPORT_QUIC
+launch fast full quic_aes 45 "fill_nondet.0:177" -DCH_TRANSPORT_QUIC_NONBLOCKING
 # The software AES-256 reference and the round-count dispatch in
 # aes_encrypt_schedule, under -DCH_AES_256_TEST, which only tests and
 # proofs define: the key schedule's 52 words, the fourteen rounds and both
 # arms of the dispatch over a havocked round count. HKDF is the stub
 # quic_aes uses. Measured (arm64 macOS, cbmc 6.11.0, kissat,
 # PROVE_NO_CACHE=1 /usr/bin/time -l): 614 properties, 25 s, 0.92 GB peak.
-launch fast full quic_aes256 60 "fill_nondet.0:241" -DCH_TRANSPORT_QUIC -DCH_AES_256_TEST
+launch fast full quic_aes256 60 "fill_nondet.0:241" -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_AES_256_TEST
 # The traffic-key constructor a -DCH_SUITE_AES_GCM build compiles, over
 # contract stubs of the four AES=hw block entries the harness defines,
 # because CBMC cannot read the instructions: both key lengths, the round
 # count each writes, and the dispatch that count drives. Measured the
 # same way: 140 properties, under 1 s, 0.02 GB peak.
-launch fast full quic_aes_traffic 45 "fill_nondet.0:241" -DCH_TRANSPORT_QUIC -DCH_SUITE_AES_GCM \
+launch fast full quic_aes_traffic 45 "fill_nondet.0:241" -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_SUITE_AES_GCM \
     -DCH_AES_HW -DCH_NATIVE_AES
 # The three RFC 9001 §5.1 derivations and the §6.1 key update. HKDF is
 # the same contract stub quic_aes uses, so this formula holds the
 # framing of the three calls and not four HMAC derivations; ct.c is
 # compiled in because quic_keys_update wipes its own copy of the new
 # secret. Measured, these flags: 79 properties, 0.24 s, 0.02 GB peak.
-launch fast full quic_keys 45 "fill_nondet.0:177" ct.c -DCH_TRANSPORT_QUIC
+launch fast full quic_keys 45 "fill_nondet.0:177" ct.c -DCH_TRANSPORT_QUIC_NONBLOCKING
 # quic_keys_suite: the three derivations and the update in the
 # -DCH_SUITE_AES_GCM QUIC build, over each of the three suites, with HKDF
 # a stub that asserts the suite's hash and key lengths.
@@ -1112,7 +1112,7 @@ launch fast full quic_keys 45 "fill_nondet.0:177" ct.c -DCH_TRANSPORT_QUIC
 # that derives at SHA256_LEN under every suite fails two of the hash
 # assertions. The one-suite line above measured 106 properties, under
 # 1 s, 0.02 GB.
-launch fast full quic_keys_suite 60 "" ct.c -DCH_TRANSPORT_QUIC -DCH_SUITE_AES_GCM -DCH_AES_HW \
+launch fast full quic_keys_suite 60 "" ct.c -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_SUITE_AES_GCM -DCH_AES_HW \
     -DCH_NATIVE_AES
 # The RFC 9001 §5.8 Retry tag check. gcm_seal and aes_public_key_retry
 # are contract stubs the harness defines, so this formula holds the one
@@ -1121,7 +1121,7 @@ launch fast full quic_keys_suite 60 "" ct.c -DCH_TRANSPORT_QUIC -DCH_SUITE_AES_G
 # ct_memeq's. Measured on an idle development machine (arm64 macOS, the
 # pinned cbmc, kissat, PROVE_NO_CACHE=1 /usr/bin/time -l over this
 # script): 160 properties, 3.5 s, 0.10 GB peak.
-launch fast full quic_retry 70 "fill_nondet.0:177" ct.c -DCH_TRANSPORT_QUIC
+launch fast full quic_retry 70 "fill_nondet.0:177" ct.c -DCH_TRANSPORT_QUIC_NONBLOCKING
 # The Initial packet path: both entries over unconstrained lengths, with
 # the eight calls they make stubbed to their contracts
 # (proof/quic_initial_stubs.h). The cipher, the AEAD and the header
@@ -1131,7 +1131,7 @@ launch fast full quic_retry 70 "fill_nondet.0:177" ct.c -DCH_TRANSPORT_QUIC
 # aes_public_key holds is what fill_nondet writes most of. Measured on a
 # development machine (arm64 macOS, the pinned cbmc, kissat,
 # /usr/bin/time -l): 285 properties, 10 s, 0.23 GB peak.
-launch fast full quic_initial 40 "fill_nondet.0:177" -DCH_TRANSPORT_QUIC
+launch fast full quic_initial 40 "fill_nondet.0:177" -DCH_TRANSPORT_QUIC_NONBLOCKING
 # RFC 9001 §5.3 packet protection, §5.4 header protection, the §6.5 key
 # set selection and the §6.6 limits, over a 40-byte packet with a
 # symbolic length and a symbolic packet number offset. ChaCha20 and the
@@ -1143,7 +1143,7 @@ launch fast full quic_initial 40 "fill_nondet.0:177" -DCH_TRANSPORT_QUIC
 # 923 properties, 9.7 s, 0.23 GB peak. The same formula with an assert
 # of 0 at each of its three CH_OK tails fails all three (3 of 926, 4
 # iterations), so every tail is reached.
-launch fast full quic_packet 65 "fill_nondet.0:133" buf.c ct.c -DCH_TRANSPORT_QUIC
+launch fast full quic_packet 65 "fill_nondet.0:133" buf.c ct.c -DCH_TRANSPORT_QUIC_NONBLOCKING
 # quic_packet_suite: the same file in the -DCH_SUITE_AES_GCM QUIC build,
 # over each of the three suites: the mask, the seal and the Handshake open
 # run the cipher the set's suite names at its key length, and the seal
@@ -1156,7 +1156,7 @@ launch fast full quic_packet 65 "fill_nondet.0:133" buf.c ct.c -DCH_TRANSPORT_QU
 # limit assertion, so both are reached. The one-suite line above
 # measured 923 properties, 8 s, 0.23 GB after quic_packet_seal lost its
 # const.
-launch fast full quic_packet_suite 250 "" buf.c ct.c -DCH_TRANSPORT_QUIC -DCH_SUITE_AES_GCM \
+launch fast full quic_packet_suite 250 "" buf.c ct.c -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_SUITE_AES_GCM \
     -DCH_AES_HW -DCH_NATIVE_AES
 # AEAD_AES_128_GCM's memory safety, its all-or-nothing refusal, and
 # GHASH on its own. The forward cipher is a contract stub
@@ -1180,9 +1180,9 @@ launch fast full quic_packet_suite 250 "" buf.c ct.c -DCH_TRANSPORT_QUIC -DCH_SU
 # 393 properties, 33 s, 1.9 GB; quic_ghash 386 properties, 213 s, 1.8 GB.
 # Neither proves a functional or authenticity property; the two harnesses
 # that state those carry no launch line, below.
-launch slow:3 full quic_gcm_safety 130 "fill_nondet.0:177,hash_data.1:3,counter_mode.1:3" --object-bits 11 ct.c -DCH_TRANSPORT_QUIC -DCH_GCM_PT_MAX=32 -DCH_GCM_AAD_MAX=32
-launch slow:2 full quic_gcm_refusal 130 "fill_nondet.0:177,hash_data.1:3,counter_mode.1:3" --object-bits 11 ct.c -DCH_TRANSPORT_QUIC -DCH_GCM_PT_MAX=32 -DCH_GCM_AAD_MAX=32
-launch slow:2 full quic_ghash 130 "fill_nondet.0:257,hash_data.1:17" ct.c -DCH_TRANSPORT_QUIC
+launch slow:3 full quic_gcm_safety 130 "fill_nondet.0:177,hash_data.1:3,counter_mode.1:3" --object-bits 11 ct.c -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_GCM_PT_MAX=32 -DCH_GCM_AAD_MAX=32
+launch slow:2 full quic_gcm_refusal 130 "fill_nondet.0:177,hash_data.1:3,counter_mode.1:3" --object-bits 11 ct.c -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_GCM_PT_MAX=32 -DCH_GCM_AAD_MAX=32
+launch slow:2 full quic_ghash 130 "fill_nondet.0:257,hash_data.1:17" ct.c -DCH_TRANSPORT_QUIC_NONBLOCKING
 launch fast full poly1305 85 "blocks.0:8" ct.c
 # The ROLE=server authentication flight: the two slot predicates over
 # every SignatureScheme code point, the CertificateVerify signed content
@@ -1278,7 +1278,7 @@ launch fast full srv_ticket 110 "fill_nondet.0:106" buf.c ct.c -DCH_ROLE_SERVER
 # ct.c and hkdf.c real, SHA-256 the contract stub in harness.h, and both
 # calls over unconstrained inputs, the address length and the two connection
 # ID lengths included. It compiles under both defines, because only a server
-# role with TRANSPORT=quic declares anything in quic_token.c. fill_nondet's
+# role with TRANSPORT=quic-nonblocking declares anything in quic_token.c. fill_nondet's
 # longest call is the stub's 112-byte SHA-256 context, so it unwinds to 113,
 # and the harness's four loops over one connection ID unwind to 21. Measured
 # on a development machine (arm64 macOS, cbmc 6.11.0, kissat,
@@ -1286,7 +1286,7 @@ launch fast full srv_ticket 110 "fill_nondet.0:106" buf.c ct.c -DCH_ROLE_SERVER
 # 916 properties, 36 s and 52 s in two runs, 1.02 GB peak. The same formula
 # with an assert of 0 at each call's CH_OK tail and refusal tail fails all
 # four, so every tail is reached.
-launch fast full quic_token 130 "fill_nondet.0:113,prove_mint.1:21,prove_mint.2:21,prove_check.1:21,prove_check.2:21" buf.c ct.c hkdf.c -DCH_ROLE_SERVER -DCH_TRANSPORT_QUIC
+launch fast full quic_token 130 "fill_nondet.0:113,prove_mint.1:21,prove_mint.2:21,prove_check.1:21,prove_check.2:21" buf.c ct.c hkdf.c -DCH_ROLE_SERVER -DCH_TRANSPORT_QUIC_NONBLOCKING
 # The ROLE=server ClientHello parser, split in two at srv_read_extension,
 # the one entry between its files. This line is the readers half: every
 # reader in srv_parser_ext.c over an unconstrained extension body, any
@@ -1314,7 +1314,7 @@ launch fast:2 full srv_parser_ext 26 "fill_nondet.0:129,ct_memeq.0:33" buf.c ct.
 # never reads it. Making it converge showed two faults in the harness
 # itself, both fixed: the reader stub wrote any alert byte, and the refusal
 # assertion left out unsupported_extension, which srv_parser_ext.c writes
-# for quic_transport_parameters in a TLS build. The stub now writes one of
+# for quic_transport_parameters in a TCP build. The stub now writes one of
 # the four alerts the readers write and consumes any part of its body.
 #
 # The cost is the two walks that loop inside a loop: the duplicate check
@@ -1403,7 +1403,7 @@ launch fast full buf 100 ""
 # PROVE_ONLY=handshake_record PROVE_NO_CACHE=1 /usr/bin/time -l): 597
 # properties, 530 s, 3.51 GB peak.
 launch slow:4 full handshake_record 65 "hsr_fetch_record.0:6,hsr_next_msg.0:11,fill_nondet.0:113,fill_buf_nondet.0:13" --object-bits 11 -DCH_QUIET_CAP=1 -DCH_PROOF_RXBUF=12
-# The TRANSPORT=quic driver and its step table, one formula each, with
+# The TRANSPORT=quic-nonblocking driver and its step table, one formula each, with
 # the contract between them written twice: quic_driver stubs
 # hsq_advance to what quic_step.h states, and quic_step proves the
 # table against that same statement, so a reader checks the pair rather
@@ -1436,9 +1436,9 @@ launch slow:4 full handshake_record 65 "hsr_fetch_record.0:6,hsr_next_msg.0:11,f
 # resident size stays under a gigabyte. The CA leg exists because
 # hsa_epoch_commit sits behind CH_TRUST_CA and its wipe bound is the
 # larger handshake_state that mode carries.
-launch fast:4 full quic_driver 5 "fill_nondet.0:257,ct_wipe.0:441,drive.0:8,assert_dead.0:33,zero_bytes.0:133" -DCH_TRANSPORT_QUIC -DCH_PROOF_RXBUF=12 handshake_record.c quic_config.c ct.c
-launch fast full quic_step 5 "fill_nondet.0:37,ct_wipe.0:441" -DCH_TRANSPORT_QUIC -DCH_PROOF_RXBUF=12 ct.c
-launch fast full quic_step_ca 5 "fill_nondet.0:37,ct_wipe.0:849" -DCH_TRANSPORT_QUIC -DCH_TRUST_CA -DCH_PROOF_RXBUF=12 ct.c
+launch fast:4 full quic_driver 5 "fill_nondet.0:257,ct_wipe.0:441,drive.0:8,assert_dead.0:33,zero_bytes.0:133" -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_PROOF_RXBUF=12 handshake_record.c quic_config.c ct.c
+launch fast full quic_step 5 "fill_nondet.0:37,ct_wipe.0:441" -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_PROOF_RXBUF=12 ct.c
+launch fast full quic_step_ca 5 "fill_nondet.0:37,ct_wipe.0:849" -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_TRUST_CA -DCH_PROOF_RXBUF=12 ct.c
 # The ROLE=server public calls and the flight driver above them. The
 # fourteen srv_flight.h handlers are contract stubs the harness defines,
 # because a handler and the driver that calls it are separate formulas;
@@ -1470,7 +1470,7 @@ launch fast full quic_step_ca 5 "fill_nondet.0:37,ct_wipe.0:849" -DCH_TRANSPORT_
 # to 489 for the ML-KEM secret. The weight is 3 because that peak is over the fast
 # tier's 2 GB default.
 launch fast:3 full srv_accept 100 "alpn_ok.0:9,alpn_name_repeats.0:9,ct_wipe.0:489,ct_memeq.0:33,fill_names.0:257,fill_nondet.0:33" -DCH_ROLE_SERVER srv.c srv_handshake.c ct.c session.c
-# The ROLE=server record driver and the inbound framing under it, with
+# The ROLE=server tcp-nonblocking driver and the inbound framing under it, with
 # srv_accept's layering: srv_rec.c and rec_frame.c real, the fifteen
 # handlers contract stubs. It would cover the step table, the record
 # loop and the wipe without resting on a handler.

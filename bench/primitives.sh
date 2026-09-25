@@ -67,13 +67,13 @@ PRIMITIVE_SRCS=(bench/primitives.c bench/primitives_symmetric.c bench/primitives
     aead.c x25519.c mlkem.c mlkem_poly.c p256.c p384.c p384_field.c rsa.c rsa_mont.c rsa_pkcs1.c
     rsa_sign.c p256_ecdh.c p256_sign.c p256_scalar.c p256_point.c p256_field.c)
 # The handshake program links what bin/rec_loop_test links, under the
-# defines of the ROLE=both TRANSPORT=record object, at the device RSA bound.
+# defines of the ROLE=both TRANSPORT=tcp-nonblocking object, at the device RSA bound.
 read -r -a LOOP_SRCS <<<"$(make -s --no-print-directory print-rec-loop-srcs)"
 if [ "${#LOOP_SRCS[@]}" -eq 0 ]; then
     echo "FAIL primitives bench: make print-rec-loop-srcs returned no sources" >&2
     exit 1
 fi
-HANDSHAKE_DEFS=(-DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_TRANSPORT_RECORD -DBENCH_HANDSHAKE_PROGRAM)
+HANDSHAKE_DEFS=(-DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_TRANSPORT_TCP_NONBLOCKING -DBENCH_HANDSHAKE_PROGRAM)
 HANDSHAKE_SRCS=(bench/primitives.c bench/primitives_handshake.c drbg.c "${LOOP_SRCS[@]}")
 
 build() { # $1 = program name; the rest = flags and sources

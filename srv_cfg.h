@@ -183,7 +183,7 @@ typedef struct {
     size_t cipher_suite_count;
 #endif
 
-#ifdef CH_TRANSPORT_QUIC
+#ifdef CH_TRANSPORT_QUIC_NONBLOCKING
     // Takes the server's handshake bytes as they are produced: level is a
     // CH_LEVEL_ value and the n bytes at p are CRYPTO frame content for it
     // (RFC 9001 section 4.1.3, rfc9001.txt:462-464). Returns 0 to accept
@@ -209,7 +209,7 @@ typedef struct {
     int (*on_crypto_out)(void *io, uint8_t level, const uint8_t *p, size_t n);
 #endif
 
-#ifdef CH_TRANSPORT_RECORD
+#ifdef CH_TRANSPORT_TCP_NONBLOCKING
     // Takes the server's handshake records as they are produced: the n
     // bytes at p are one whole TLS record, header and all, ready for the
     // caller to write to its socket. Returns 0 to accept them and any
@@ -238,7 +238,7 @@ typedef struct {
     // would need the resume point the paragraph above rules out
     // (https://github.com/c4milo/chapulin/issues/170).
     //
-    // Required for a record-mode server: a server whose flight reaches
+    // Required for a tcp-nonblocking server: a server whose flight reaches
     // nobody completes no handshake. Re-entrancy: cfg.h's rule for
     // on_level_ready, for the same reason.
     int (*on_record_out)(void *io, const uint8_t *p, size_t n);

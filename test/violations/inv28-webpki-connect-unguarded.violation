@@ -1,8 +1,8 @@
 invariant: INV-28
 file: tls.c
 catches: test/lib-check-webpki-record.sh
-reason: the webpki ch_connect loses the #ifndef CH_TRANSPORT_RECORD guard
-  the pinned one carries, so a record-mode object compiles the blocking
+reason: the webpki ch_connect loses the #ifndef CH_TRANSPORT_TCP_NONBLOCKING guard
+  the pinned one carries, so a tcp-nonblocking object compiles the blocking
   connect call and imports the ch_handshake that handshake.c defines and
   this variant does not compile. INV-28 rests on that driver staying out
   of the object. The object still links and its export list does not
@@ -14,7 +14,7 @@ reason: the webpki ch_connect loses the #ifndef CH_TRANSPORT_RECORD guard
 // Guarded as the raw and ca ch_connect above is: this transport filters
 // handshake.c out, so a compiled ch_connect leaves ch_handshake
 // undefined.
-#ifndef CH_TRANSPORT_RECORD
+#ifndef CH_TRANSPORT_TCP_NONBLOCKING
 int ch_connect(ch_tls *t, const ch_cfg *cfg) {
     memset(t, 0, sizeof *t);
     t->cfg = *cfg;
@@ -32,7 +32,7 @@ int ch_connect(ch_tls *t, const ch_cfg *cfg) {
     }
     return ch_handshake(t);
 }
-#endif // CH_TRANSPORT_RECORD
+#endif // CH_TRANSPORT_TCP_NONBLOCKING
 --- new
 int ch_connect(ch_tls *t, const ch_cfg *cfg) {
     memset(t, 0, sizeof *t);

@@ -33,7 +33,7 @@ which convention holds them.
 
 An entry that names a temporary state goes when that state does, and its
 number is never reused. INV-28, "a stub never reports success", was the
-one such entry. It held the `TRANSPORT=quic` and then the `ROLE=server`
+one such entry. It held the `TRANSPORT=quic-nonblocking` and then the `ROLE=server`
 stubs to refusals, and it retired with the commit that implemented the
 last `ROLE=server` stub, as the entry said it would.
 
@@ -321,25 +321,25 @@ last `ROLE=server` stub, as the entry said it would.
 
 ### INV-27 — the QUIC mode stays in files named quic*
 
-- **Claim.** Every root source and header that only a `TRANSPORT=quic`
+- **Claim.** Every root source and header that only a `TRANSPORT=quic-nonblocking`
   build compiles is named `quic*`, and no other root file is one. So
   `git ls-files 'quic*'` names every file the mode owns, and a reader
   sees where the QUIC code is without reading the build. Two lists in
   the Makefile hold the mode's text under other names, and a reader who
   wants all of it reads them too: `QUIC_SHARED`, the files both
   transports compile, and `QUIC_CONDITIONAL`, the shared files that
-  carry a `#ifdef CH_TRANSPORT_QUIC` arm. `handshake_flight.[ch]` is
+  carry a `#ifdef CH_TRANSPORT_QUIC_NONBLOCKING` arm. `handshake_flight.[ch]` is
   `QUIC_SHARED`: the QUIC mode adds it, both transports compile it, and
   it carries no prefix for that reason.
 - **Mechanism.** The preprocessor decides, not a list. A file is
-  QUIC-only when it declares nothing without `-DCH_TRANSPORT_QUIC` and
+  QUIC-only when it declares nothing without `-DCH_TRANSPORT_QUIC_NONBLOCKING` and
   gains something with it. The mode's own files put their whole body
-  inside one `#ifdef CH_TRANSPORT_QUIC`, so a TLS build compiles them
+  inside one `#ifdef CH_TRANSPORT_QUIC_NONBLOCKING`, so a TCP build compiles them
   to nothing, includes included. The files both transports share fence
   their QUIC arms instead and still declare their TLS text.
   `handshake_flight.[ch]` holds the flight handlers both drivers call,
   so no protocol rule exists twice; giving it the prefix would claim a
-  TLS build does not compile it, which is false.
+  TCP build does not compile it, which is false.
 - **Check.** Semgrep-tripwire grade (`make lint-quic-partition`,
   `tools/quic-partition.py`), and the mutants below measure it rather
   than claim it. The lint preprocesses every root `.c` and `.h` file
@@ -368,7 +368,7 @@ last `ROLE=server` stub, as the entry said it would.
   to `session.c` passes, and review is what catches that. A file that
   gates its body on a `CH_QUIC_`-prefixed macro it does not define is
   reported as one the lint cannot judge rather than judged, because the
-  lint defines `CH_TRANSPORT_QUIC` and nothing else. And the rule is a
+  lint defines `CH_TRANSPORT_QUIC_NONBLOCKING` and nothing else. And the rule is a
   naming rule: a determined author who writes the mode under other
   names defeats it, which is what the tripwire grade means
   (`docs/invariants.md:25-26`).
@@ -377,9 +377,9 @@ last `ROLE=server` stub, as the entry said it would.
   `git ls-files 'quic*'` stops naming every file the mode owns.
 - See [decisions: Engineering](decisions.md#engineering).
 
-### INV-28 — the record transport calls no I/O callback during the handshake
+### INV-28 — the tcp-nonblocking transport calls no I/O callback during the handshake
 
-- **Claim.** A `TRANSPORT=record` build runs its whole handshake without
+- **Claim.** A `TRANSPORT=tcp-nonblocking` build runs its whole handshake without
   calling `ch_cfg.send` or `ch_cfg.recv`. The caller feeds bytes in and
   takes bytes out: a client through `ch_record_in` and `ch_record_out`,
   a server through `ch_srv_record_in` and `ch_srv_cfg.on_record_out`.
@@ -398,7 +398,7 @@ last `ROLE=server` stub, as the entry said it would.
   is filtered out by `TRANSPORT_FILTER`, `srv_handshake.c` by the server
   arm, and `tls.c` and `srv.c` guard their accept and connect calls out.
   What remains reaches the socket only through `srv_out.c`'s `emit`,
-  whose record arm calls the caller's sink. The compatibility
+  whose tcp-nonblocking arm calls the caller's sink. The compatibility
   change_cipher_spec a server owes a client that sent a
   legacy_session_id goes the same way, through `srv_out_record`; it
   went through `cfg.send` until colibri found it against Go's
@@ -432,16 +432,16 @@ last `ROLE=server` stub, as the entry said it would.
   that `ch_read` send a close_notify and requires the binary to fail.
 
   That is the behavioral half, that neither driver calls a callback. The
-  mechanism half, that a record-mode object holds no blocking driver to
+  mechanism half, that a tcp-nonblocking object holds no blocking driver to
   call one with, carries its own mutant:
   `inv28-webpki-connect-unguarded` deletes the `#ifndef
-  CH_TRANSPORT_RECORD` around the webpki `ch_connect` and requires
+  CH_TRANSPORT_TCP_NONBLOCKING` around the webpki `ch_connect` and requires
   `test/lib-check-webpki-record.sh` to fail, because the compiled call
   imports the `ch_handshake` this variant does not compile
   ([171](https://github.com/c4milo/chapulin/issues/171)). That leg is
   the only client object with `ch_record_init` and no `ch_connect`, so
   no other build reports it.
-- **Violation.** A PR adds a `recv` call to a record-mode step so the
+- **Violation.** A PR adds a `recv` call to a tcp-nonblocking step so the
   driver can wait for the rest of a message, or routes one message of
   the server's flight through `io_send_all` because it is small.
 - See [decisions: Engineering](decisions.md#engineering).
@@ -455,7 +455,7 @@ last `ROLE=server` stub, as the entry said it would.
   caller. A device client cannot be built with it.
 - **Mechanism.** Four calls, one per secret, at the two places
   `ks_handshake` and `ks_master` run in `handshake_flight.c` and
-  `srv_flight.c`, which every driver reaches, blocking, record and QUIC
+  `srv_flight.c`, which every driver reaches, tcp-blocking, tcp-nonblocking and QUIC
   alike. Each role copies the random into `handshake_state.client_random`
   before it loses the original: the client before the key exchange
   wipes `h->random`, the server from the parsed hello. `keylog.h` and
@@ -735,8 +735,8 @@ last `ROLE=server` stub, as the entry said it would.
 ### INV-35 — the build record holds what the object was compiled with
 
 - **Claim.** Every packaged object exports its build record under a
-  symbol name that carries its transport, `ch_build_tls`,
-  `ch_build_record` or `ch_build_quic`, and each of its fields holds what
+  symbol name that carries its transport, `ch_build_info_tcp_blocking`,
+  `ch_build_info_tcp_nonblocking` or `ch_build_info_quic_nonblocking`, and each of its fields holds what
   `build.h` computes under that object's defines: the record format, one
   bit per build define that changes a public layout or bound, the sizes
   of `ch_cfg`, `ch_tls`, `ch_ticket`, `ch_record`, `ch_quic` and
@@ -764,16 +764,16 @@ last `ROLE=server` stub, as the entry said it would.
   The test also restates the axes from its own defines, one line per
   define, because a `CH_BUILD_AXES` that forgets a define leaves the
   object and every consumer in agreement. `test/lib-pair-check.sh` links
-  a record-mode and a QUIC object into one image and requires each half
+  a tcp-nonblocking and a QUIC object into one image and requires each half
   to read its own object's record. Four mutants in `test/violations/` are
   each caught by `test/lib-check-webpki-record.sh`:
-  `inv35-build-record-omits-axis` drops the record-transport bit from
+  `inv35-build-record-omits-axis` drops the tcp-nonblocking bit from
   the record, `inv35-build-record-stale-size` writes `sizeof(ch_tls)` as
   a number, `inv35-build-record-not-exported` drops the record from
   `PUBLIC`, and `inv35-build-axes-forget-define` drops the
-  record-transport term from `CH_BUILD_AXES`. A fifth,
-  `inv35-build-record-shared-name`, gives the QUIC transport's record
-  the record transport's name, and `test/lib-pair-check.sh` catches it.
+  tcp-nonblocking term from `CH_BUILD_AXES`. A fifth,
+  `inv35-build-record-shared-name`, gives the QUIC transport's build record
+  the tcp-nonblocking transport's name, and `test/lib-pair-check.sh` catches it.
   `bin/hpp_test` calls the C++ forwarder on the `cxx-check` legs.
 - **Violation.** A PR writes a field of `build.c` as a number, adds a
   define that moves a public layout without a bit in `CH_BUILD_AXES`,
@@ -795,8 +795,8 @@ last `ROLE=server` stub, as the entry said it would.
 - **Claim.** Every error kills the session: alert, wipe, dead. There
   is no error a caller can retry past. The two non-blocking transports
   also return results that are not errors and leave the session live,
-  and their headers list them: `rec.h` for `TRANSPORT=record` and
-  `quic.h` for `TRANSPORT=quic`. Each one means the call changed
+  and their headers list them: `rec.h` for `TRANSPORT=tcp-nonblocking` and
+  `quic.h` for `TRANSPORT=quic-nonblocking`. Each one means the call changed
   nothing, the packet was dropped (`CH_QUIC_DISCARD`, RFC 9001 §5.5), or
   no record has arrived yet (`CH_RECORD_AGAIN`). A failed QUIC session
   stays dead: it keeps only the write keys INV-17 names, for one
@@ -976,7 +976,7 @@ last `ROLE=server` stub, as the entry said it would.
   understands `quic_transport_parameters` when the transport is not QUIC
   (`rfc9001.txt:1945-1949`), and every build here runs over TLS records,
   because `srv_cfg.h` refuses `CH_ROLE_SERVER` together with
-  `CH_TRANSPORT_QUIC`. So the parser recognizes that one type in order
+  `CH_TRANSPORT_QUIC_NONBLOCKING`. So the parser recognizes that one type in order
   to refuse it, rather than ignoring it. One refusal comes from no RFC:
   a ClientHello of more than `SRV_CLIENT_HELLO_EXT_MAX` (128)
   extensions, unknown ones included, is illegal_parameter, checked
@@ -1333,7 +1333,7 @@ last `ROLE=server` stub, as the entry said it would.
 
 ### INV-26 — AES sees three public keys, and traffic keys only under a suite build
 
-- **Claim.** Under `TRANSPORT=quic` this tree carries an AES-128, and
+- **Claim.** Under `TRANSPORT=quic-nonblocking` this tree carries an AES-128, and
   every key it is given is public. `quic_aes.c` derives the keys and
   `quic_gcm.c` builds the AEAD on them; the key expansion and the block
   cipher sit in whichever of `quic_aes_soft.c`, `quic_aes_hw.c` and
@@ -1360,7 +1360,7 @@ last `ROLE=server` stub, as the entry said it would.
   `TLS_AES_256_GCM_SHA384` (decisions.md 45 and 58), so AES runs under
   keys the TLS key schedule derives, 16 or 32 bytes by the suite, and
   every one is secret: `record.c`'s record key, and under
-  `TRANSPORT=quic` `quic_packet.c`'s packet protection key and header
+  `TRANSPORT=quic-nonblocking` `quic_packet.c`'s packet protection key and header
   protection key for the Handshake and 1-RTT levels (RFC 9001 §5.3,
   §5.4.3). The Initial level keeps AES-128-GCM under its public keys in
   every build. Three things bound the traffic keys. `ct.h` refuses the
@@ -1431,7 +1431,7 @@ last `ROLE=server` stub, as the entry said it would.
   Deriving per use costs one HKDF-Extract, three HKDF-Expand-Label calls
   and two key expansions per packet per direction, and no bench in this
   tree times them. One `aes_public_key` is 364 bytes against a
-  2,560-byte budget, and `make lint-stack TRANSPORT=quic` measures every
+  2,560-byte budget, and `make lint-stack TRANSPORT=quic-nonblocking` measures every
   frame that builds one in each `make check`.
 
   **What the change does not do.** A covered file can write a traffic
@@ -1783,7 +1783,7 @@ last `ROLE=server` stub, as the entry said it would.
   and one `inv22-*-driver-forks-on-cfg-psk` violation per driver require
   them to fail, and the quic_step harness proves the QUIC table takes
   the fork from `psk_selected`.
-  The server reads the client's side the same way: a record-mode server
+  The server reads the client's side the same way: a tcp-nonblocking server
   stops at the record that completes the handshake, so application data
   the client sends in the same delivery as its Finished is left for
   `ch_read` rather than read by the finished handshake.
@@ -1806,7 +1806,7 @@ last `ROLE=server` stub, as the entry said it would.
   with the record unread, no send call, and `ch_write` and `ch_close`
   to send under the write key. `bin/rec_loop_test`
   (`test/rec_close_tests.h`) closes one direction at a time between the
-  two record-mode drivers and counts each end's send calls, so the
+  two tcp-nonblocking drivers and counts each end's send calls, so the
   `ch_read` that reads a close_notify is measured to send nothing, on
   the client and on the server. `test/e2e.sh`'s go-half-close leg runs
   it against Go's `CloseWrite`, which sends a close_notify and keeps
@@ -1830,7 +1830,7 @@ last `ROLE=server` stub, as the entry said it would.
 
 - **Claim.** Handshake secrets are wiped at CONNECTED; every failure
   path wipes through `tlsi_wipe`, or through `quic_fail` under
-  `TRANSPORT=quic`; the DRBG erases its key forward after each output.
+  `TRANSPORT=quic-nonblocking`; the DRBG erases its key forward after each output.
   The peer's close_notify is a phase boundary for the read direction
   alone. Nothing is read after it (INV-22), so the `ch_read` that reads
   it wipes every secret only a read uses: `ch_tls.rd`, `rd_secret` and
@@ -1848,7 +1848,7 @@ last `ROLE=server` stub, as the entry said it would.
   `ch_quic_seal_close` seals and then wipes that level's keys and clears
   its bit; `ch_quic_close` wipes any left (docs/decisions.md 57).
 - **Mechanism.** Fail-closed policy plus fast-key-erasure
-  construction in drbg.c. Under `TRANSPORT=quic`, both drivers fail
+  construction in drbg.c. Under `TRANSPORT=quic-nonblocking`, both drivers fail
   through `quic_fail`, and the write bit is what admits the one close.
 - **Check.** Convention; the wipe sits in the single `tlsi_fail`
   funnel, so review of that one function covers every error path. The

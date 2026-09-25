@@ -39,15 +39,15 @@
 #include "x509_vectors.h"
 #endif
 
-#ifdef CH_TRANSPORT_QUIC
-#define LIB_PAIR_HALF lib_pair_quic
-#define LIB_PAIR_TRANSPORT "quic"
-#elif defined(CH_TRANSPORT_RECORD)
-#define LIB_PAIR_HALF lib_pair_record
-#define LIB_PAIR_TRANSPORT "record"
+#ifdef CH_TRANSPORT_QUIC_NONBLOCKING
+#define LIB_PAIR_HALF lib_pair_quic_nonblocking
+#define LIB_PAIR_TRANSPORT "quic-nonblocking"
+#elif defined(CH_TRANSPORT_TCP_NONBLOCKING)
+#define LIB_PAIR_HALF lib_pair_tcp_nonblocking
+#define LIB_PAIR_TRANSPORT "tcp-nonblocking"
 #else
-#define LIB_PAIR_HALF lib_pair_tls
-#define LIB_PAIR_TRANSPORT "tls"
+#define LIB_PAIR_HALF lib_pair_tcp_blocking
+#define LIB_PAIR_TRANSPORT "tcp-blocking"
 #endif
 
 // A server-only object judges no peer certificate, so it has a server
@@ -65,7 +65,7 @@ static int failed(const char *step) {
 // object's own defines set.
 static uint8_t rxbuf[CH_MIN_RXBUF];
 
-#ifdef CH_TRANSPORT_QUIC
+#ifdef CH_TRANSPORT_QUIC_NONBLOCKING
 // RFC 9001 requires transport parameters (section 8.2) and an ALPN
 // protocol (section 8.1) in every QUIC handshake.
 static const uint8_t params[4] = {0x01, 0x02, 0x03, 0x04};
@@ -107,7 +107,7 @@ static void base_config(ch_cfg *cfg) {
     memset(cfg, 0, sizeof *cfg);
     cfg->buf = rxbuf;
     cfg->buf_len = sizeof rxbuf;
-#ifdef CH_TRANSPORT_QUIC
+#ifdef CH_TRANSPORT_QUIC_NONBLOCKING
     cfg->transport_params = params;
     cfg->transport_params_len = sizeof params;
     cfg->on_level_ready = level_ready;
@@ -149,7 +149,7 @@ static int check_identity(void) {
 #ifdef LIB_PAIR_SERVER_ONLY
 static const uint8_t cookie_key[SHA256_LEN] = {7};
 
-#ifdef CH_TRANSPORT_QUIC
+#ifdef CH_TRANSPORT_QUIC_NONBLOCKING
 static int take_crypto(void *io, uint8_t level, const uint8_t *p, size_t n) {
     (void)io;
     (void)level;
@@ -167,7 +167,7 @@ static int start_server(ch_cfg *cfg) {
     ch_quic_close(&server);
     return rc == CH_OK && state == CH_ST_START ? 0 : failed("ch_srv_quic_init refused a server");
 }
-#elif defined(CH_TRANSPORT_RECORD)
+#elif defined(CH_TRANSPORT_TCP_NONBLOCKING)
 static int take_record(void *io, const uint8_t *p, size_t n) {
     (void)io;
     (void)p;
@@ -185,7 +185,7 @@ static int start_server(ch_cfg *cfg) {
     return rc == CH_OK && state == CH_ST_START ? 0 : failed("ch_srv_record_init refused a server");
 }
 #else
-#error "no pair in test/lib-pair-check.sh links a TRANSPORT=tls server"
+#error "no pair in test/lib-pair-check.sh links a TRANSPORT=tcp-blocking server"
 #endif
 
 static int start_session(void) {
@@ -228,12 +228,12 @@ static void client_config(ch_cfg *cfg) {
 #endif
 }
 
-#if defined(CH_TRANSPORT_QUIC) || defined(CH_TRANSPORT_RECORD)
+#if defined(CH_TRANSPORT_QUIC_NONBLOCKING) || defined(CH_TRANSPORT_TCP_NONBLOCKING)
 // The client's first flight, which it stages in ch_tls.tx.
 static uint8_t flight[CH_TX_STAGE];
 #endif
 
-#ifdef CH_TRANSPORT_QUIC
+#ifdef CH_TRANSPORT_QUIC_NONBLOCKING
 // A ClientHello is handshake message type 1 (RFC 9846 section 4).
 #define LIB_PAIR_CLIENT_HELLO 1
 static ch_quic client;
@@ -251,7 +251,7 @@ static int start_session(void) {
                ? 0
                : failed("ch_quic_crypto_out handed out no ClientHello");
 }
-#elif defined(CH_TRANSPORT_RECORD)
+#elif defined(CH_TRANSPORT_TCP_NONBLOCKING)
 static ch_record client;
 
 static int start_session(void) {

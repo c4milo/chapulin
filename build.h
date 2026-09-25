@@ -24,10 +24,10 @@
 
 #include "cfg.h"
 #include "session.h"
-#ifdef CH_TRANSPORT_RECORD
+#ifdef CH_TRANSPORT_TCP_NONBLOCKING
 #include "rec.h"
 #endif
-#ifdef CH_TRANSPORT_QUIC
+#ifdef CH_TRANSPORT_QUIC_NONBLOCKING
 #include "quic.h"
 #endif
 #ifdef CH_ROLE_SERVER
@@ -51,9 +51,11 @@
 //                          CH_MIN_RXBUF, and the length of a pinned key
 //   CH_KEX_PQ              ch_tls, ch_record, ch_quic, CH_TX_STAGE and
 //                          CH_MIN_RXBUF
-//   CH_TRANSPORT_QUIC      ch_cfg, ch_tls, CH_TX_STAGE and CH_MIN_RXBUF,
+//   CH_TRANSPORT_QUIC_NONBLOCKING
+//                          ch_cfg, ch_tls, CH_TX_STAGE and CH_MIN_RXBUF,
 //                          and adds ch_quic
-//   CH_TRANSPORT_RECORD    ch_tls, and adds ch_record
+//   CH_TRANSPORT_TCP_NONBLOCKING
+//                          ch_tls, and adds ch_record
 //   CH_SUITE_AES_GCM       ch_cfg, ch_tls, ch_ticket, ch_record, ch_quic
 //                          and CH_TX_STAGE: a server's suite order,
 //                          SHA-384's secrets and PSK, a webpki hello's
@@ -76,8 +78,8 @@
 #define CH_BUILD_TRUST_WEBPKI 0x002U
 #define CH_BUILD_PIN_ECDSA 0x004U
 #define CH_BUILD_KEX_PQ 0x008U
-#define CH_BUILD_TRANSPORT_QUIC 0x010U
-#define CH_BUILD_TRANSPORT_RECORD 0x020U
+#define CH_BUILD_TRANSPORT_QUIC_NONBLOCKING 0x010U
+#define CH_BUILD_TRANSPORT_TCP_NONBLOCKING 0x020U
 #define CH_BUILD_SUITE_AES_GCM 0x040U
 #define CH_BUILD_ROLE_SERVER 0x080U
 #define CH_BUILD_EXPORTER 0x100U
@@ -106,15 +108,15 @@
 #else
 #define CH_BUILD_IF_KEX_PQ 0U
 #endif
-#ifdef CH_TRANSPORT_QUIC
-#define CH_BUILD_IF_TRANSPORT_QUIC CH_BUILD_TRANSPORT_QUIC
+#ifdef CH_TRANSPORT_QUIC_NONBLOCKING
+#define CH_BUILD_IF_TRANSPORT_QUIC_NONBLOCKING CH_BUILD_TRANSPORT_QUIC_NONBLOCKING
 #else
-#define CH_BUILD_IF_TRANSPORT_QUIC 0U
+#define CH_BUILD_IF_TRANSPORT_QUIC_NONBLOCKING 0U
 #endif
-#ifdef CH_TRANSPORT_RECORD
-#define CH_BUILD_IF_TRANSPORT_RECORD CH_BUILD_TRANSPORT_RECORD
+#ifdef CH_TRANSPORT_TCP_NONBLOCKING
+#define CH_BUILD_IF_TRANSPORT_TCP_NONBLOCKING CH_BUILD_TRANSPORT_TCP_NONBLOCKING
 #else
-#define CH_BUILD_IF_TRANSPORT_RECORD 0U
+#define CH_BUILD_IF_TRANSPORT_TCP_NONBLOCKING 0U
 #endif
 #ifdef CH_SUITE_AES_GCM
 #define CH_BUILD_IF_SUITE_AES_GCM CH_BUILD_SUITE_AES_GCM
@@ -138,9 +140,9 @@
 #endif
 #define CH_BUILD_AXES                                                                              \
     (CH_BUILD_IF_TRUST_CA | CH_BUILD_IF_TRUST_WEBPKI | CH_BUILD_IF_PIN_ECDSA |                     \
-     CH_BUILD_IF_KEX_PQ | CH_BUILD_IF_TRANSPORT_QUIC | CH_BUILD_IF_TRANSPORT_RECORD |              \
-     CH_BUILD_IF_SUITE_AES_GCM | CH_BUILD_IF_ROLE_SERVER | CH_BUILD_IF_EXPORTER |                  \
-     CH_BUILD_IF_KEYLOG)
+     CH_BUILD_IF_KEX_PQ | CH_BUILD_IF_TRANSPORT_QUIC_NONBLOCKING |                                 \
+     CH_BUILD_IF_TRANSPORT_TCP_NONBLOCKING | CH_BUILD_IF_SUITE_AES_GCM | CH_BUILD_IF_ROLE_SERVER | \
+     CH_BUILD_IF_EXPORTER | CH_BUILD_IF_KEYLOG)
 
 // The sizes of the public structs a consumer declares or reads, in
 // bytes, and 0 for a struct this build does not declare. A server role
@@ -149,12 +151,12 @@
 #define CH_BUILD_SIZEOF_CH_CFG ((uint32_t)sizeof(ch_cfg))
 #define CH_BUILD_SIZEOF_CH_TLS ((uint32_t)sizeof(ch_tls))
 #define CH_BUILD_SIZEOF_CH_TICKET ((uint32_t)sizeof(ch_ticket))
-#ifdef CH_TRANSPORT_RECORD
+#ifdef CH_TRANSPORT_TCP_NONBLOCKING
 #define CH_BUILD_SIZEOF_CH_RECORD ((uint32_t)sizeof(ch_record))
 #else
 #define CH_BUILD_SIZEOF_CH_RECORD 0U
 #endif
-#ifdef CH_TRANSPORT_QUIC
+#ifdef CH_TRANSPORT_QUIC_NONBLOCKING
 #define CH_BUILD_SIZEOF_CH_QUIC ((uint32_t)sizeof(ch_quic))
 #else
 #define CH_BUILD_SIZEOF_CH_QUIC 0U
@@ -181,7 +183,7 @@
 #else
 #define CH_BUILD_X509_MAX 0U
 #endif
-#ifdef CH_TRANSPORT_QUIC
+#ifdef CH_TRANSPORT_QUIC_NONBLOCKING
 #define CH_BUILD_TRANSPORT_PARAMS_MAX ((uint32_t)CH_TRANSPORT_PARAMS_MAX)
 #else
 #define CH_BUILD_TRANSPORT_PARAMS_MAX 0U
@@ -212,22 +214,24 @@ _Static_assert(sizeof(ch_build_info) == 12 * sizeof(uint32_t),
 #endif
 
 // The record of the object this program links, defined in build.c. Its
-// symbol name carries the object's transport, because one image may link
-// one object of each transport and two definitions of one name do not
-// link: ch_build_tls, ch_build_record or ch_build_quic. ch_build is the
-// name of the one the defines in force here select, so
+// symbol name is the type's name followed by the object's transport,
+// because one image may link one object of each transport and two
+// definitions of one name do not link: ch_build_info_tcp_blocking,
+// ch_build_info_tcp_nonblocking or ch_build_info_quic_nonblocking.
+// ch_build is the name of the one the defines in force here select, so
 // ch_build_matches(&ch_build) reads the record of the object whose
 // headers this translation unit compiles against.
 //
 // Zig's translate-c turns the macro into a constant initialized from an
 // extern variable, which Zig refuses to evaluate, so a Zig program writes
-// the transport's name itself: &c.ch_build_record, not &c.ch_build.
-#ifdef CH_TRANSPORT_QUIC
-#define ch_build ch_build_quic
-#elif defined(CH_TRANSPORT_RECORD)
-#define ch_build ch_build_record
+// the transport's name itself: &c.ch_build_info_tcp_nonblocking, not
+// &c.ch_build.
+#ifdef CH_TRANSPORT_QUIC_NONBLOCKING
+#define ch_build ch_build_info_quic_nonblocking
+#elif defined(CH_TRANSPORT_TCP_NONBLOCKING)
+#define ch_build ch_build_info_tcp_nonblocking
 #else
-#define ch_build ch_build_tls
+#define ch_build ch_build_info_tcp_blocking
 #endif
 extern const ch_build_info ch_build;
 

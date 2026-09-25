@@ -124,15 +124,15 @@ static int srv_fields_ok(const ch_cfg *cfg) {
 // declares; srv.h says the role's own floor waits on a bench/sram.sh
 // measurement, and this file states no number of its own before then.
 static int transport_ok(const ch_cfg *cfg) {
-#ifdef CH_TRANSPORT_QUIC
+#ifdef CH_TRANSPORT_QUIC_NONBLOCKING
     // A QUIC server drives no socket: the caller owns UDP and hands this
     // stack CRYPTO bytes, so send and recv are unset here rather than
     // required, and the sink those bytes leave through takes their place
     // (srv_cfg.h, on_crypto_out).
     return cfg->buf != NULL && cfg->buf_len >= CH_MIN_RXBUF && cfg->send == NULL &&
            cfg->recv == NULL && cfg->srv.on_crypto_out != NULL && cfg->on_level_ready != NULL;
-#elif defined(CH_TRANSPORT_RECORD)
-    // A record-mode server drives no socket while the handshake runs:
+#elif defined(CH_TRANSPORT_TCP_NONBLOCKING)
+    // A tcp-nonblocking server drives no socket while the handshake runs:
     // the caller owns it, and the flight leaves through on_record_out
     // (srv_cfg.h). send and recv stay required all the same, because
     // ch_read and ch_write call them once the session is connected, and
@@ -150,7 +150,7 @@ static int transport_ok(const ch_cfg *cfg) {
 // to ask for it. The two non-blocking builds have their caller in
 // another file -- srv_quic.c and srv_rec.c -- which is why srv_flight.h
 // declares it at all.
-#if defined(CH_TRANSPORT_QUIC) || defined(CH_TRANSPORT_RECORD)
+#if defined(CH_TRANSPORT_QUIC_NONBLOCKING) || defined(CH_TRANSPORT_TCP_NONBLOCKING)
 int srv_config_ok(const ch_cfg *cfg) {
 #else
 static int srv_config_ok(const ch_cfg *cfg) {
@@ -161,7 +161,7 @@ static int srv_config_ok(const ch_cfg *cfg) {
 // Only the blocking transport has an accept call: the other two return
 // to their caller between messages, and srv_handshake.c is not in either
 // object for this to call.
-#if !defined(CH_TRANSPORT_QUIC) && !defined(CH_TRANSPORT_RECORD)
+#if !defined(CH_TRANSPORT_QUIC_NONBLOCKING) && !defined(CH_TRANSPORT_TCP_NONBLOCKING)
 int ch_srv_accept(ch_tls *t, const ch_cfg *cfg) {
     memset(t, 0, sizeof *t);
     t->cfg = *cfg;

@@ -1,7 +1,7 @@
-// chapulin's public API under TRANSPORT=quic, beside tls.h: the same TLS 1.3 client, run
-// over QUIC's CRYPTO frames and used to protect QUIC packets. RFC 9001 §4.1.3 and §4.1.4
-// define the interface a TLS stack owes QUIC, and §5 defines the packet protection that
-// interface feeds. This header covers both and stops there.
+// chapulin's public API under TRANSPORT=quic-nonblocking, beside tls.h: the same TLS 1.3 client,
+// run over QUIC's CRYPTO frames and used to protect QUIC packets. RFC 9001 §4.1.3 and §4.1.4 define
+// the interface a TLS stack owes QUIC, and §5 defines the packet protection that interface feeds.
+// This header covers both and stops there.
 //
 // It is not a QUIC client. chapulin owns every key and every packet's protection; the
 // caller owns everything that is not cryptography, from packet numbers to loss recovery to
@@ -25,7 +25,7 @@
 // ch_quic_seal_close seals that frame once at each level whose write keys the session had.
 #ifndef CH_QUIC_H
 #define CH_QUIC_H
-#ifdef CH_TRANSPORT_QUIC
+#ifdef CH_TRANSPORT_QUIC_NONBLOCKING
 
 #include <stddef.h>
 #include <stdint.h>
@@ -44,9 +44,9 @@
 #define CH_QUIC_LEVEL_BIT(level, direction) ((uint8_t)(1U << ((level) * 2 + (direction))))
 
 // One QUIC session. It holds everything that survives a return, because the driver returns
-// to its caller between handshake messages: the ch_tls a TLS build holds alone, the
-// handshake_state a TLS build keeps on ch_handshake's stack frame, the driver's own fields,
-// and the packet protection keys of every encryption level. docs/quic.md, "The state that
+// to its caller between handshake messages: the ch_tls a TCP build holds alone, the
+// handshake_state a tcp-blocking build keeps on ch_handshake's stack frame, the driver's own
+// fields, and the packet protection keys of every encryption level. docs/quic.md, "The state that
 // survives a return", states the bound each field's proof harness assumes. The caller
 // declares one and passes its address to every call. It is not copyable: hs.t points at t,
 // and every public entry rewrites that pointer to its own &q->t, so a copy cannot leave a
@@ -59,7 +59,7 @@
 typedef struct ch_quic {
     ch_tls t;
     // The flight handlers' working state, wiped at HSQ_STEP_COMPLETE, one round trip
-    // earlier than the TLS driver wipes its frame, which is INV-17's rule that handshake
+    // earlier than the tcp-blocking driver wipes its frame, which is INV-17's rule that handshake
     // secrets die at CONNECTED.
     handshake_state hs;
     uint8_t step;     // HSQ_STEP_*, quic_step.h
@@ -495,5 +495,5 @@ uint64_t ch_quic_error_code(const ch_quic *q);
 // keys the failure kept, whether or not ch_quic_seal_close used them. Returns nothing.
 void ch_quic_close(ch_quic *q);
 
-#endif // CH_TRANSPORT_QUIC
+#endif // CH_TRANSPORT_QUIC_NONBLOCKING
 #endif

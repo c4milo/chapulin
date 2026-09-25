@@ -1,4 +1,4 @@
-// The record-mode server driver end to end: this tree's own ClientHello,
+// The tcp-nonblocking server driver end to end: this tree's own ClientHello,
 // built by handshake_message.c, wrapped in a plaintext record, fed to
 // srv_rec.c, and the records it pushes back. docs/server.md names this
 // binary bin/srv_rec_test.
@@ -83,7 +83,7 @@ static int sink(void *io, const uint8_t *p, size_t n) {
     return 0;
 }
 
-// INV-28: a record-mode server calls neither of these while the
+// INV-28: a tcp-nonblocking server calls neither of these while the
 // handshake runs. They are required all the same, because ch_read and
 // ch_write call them once the session is connected (srv.c's
 // transport_ok), so the test supplies both and counts instead of
@@ -185,7 +185,7 @@ static size_t build_hello(uint8_t *hello, size_t cap) {
     memset(random32, 0x22, sizeof random32);
     // The client's own record_size_limit, the arithmetic ch_record_init
     // does over the same buffer. Passing 0 the way a QUIC client may is
-    // what a record server refuses: RFC 8449 has no such limit, and
+    // what a tcp-nonblocking server refuses: RFC 8449 has no such limit, and
     // srv_parser_ext.c answers illegal_parameter.
     size_t room = sizeof srv_buf - REC_HDR - AEAD_TAG;
     uint16_t limit = room > 0x4001 ? 0x4001 : (uint16_t)room;
@@ -257,7 +257,7 @@ static void test_a_refusing_sink_kills_the_session(void) {
 
 // A client in RFC 9846 Appendix E.4's middlebox compatibility mode sends
 // a non-empty legacy_session_id, as Go's crypto/tls does, and the server
-// answers with a change_cipher_spec after its ServerHello. In record mode
+// answers with a change_cipher_spec after its ServerHello. In tcp-nonblocking mode
 // that record leaves through on_record_out like every other one; a
 // server that sent it through cfg.send broke INV-28, which colibri found
 // against a Go client. This tree's client sends an empty session id, so

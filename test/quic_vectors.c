@@ -1,4 +1,4 @@
-// The TRANSPORT=quic mode against its published vectors: FIPS 197 for the
+// The TRANSPORT=quic-nonblocking mode against its published vectors: FIPS 197 for the
 // AES-128 and AES-256 forward ciphers, NIST SP 800-38D for
 // AEAD_AES_128_GCM, AEAD_AES_256_GCM and GHASH, and RFC 9001 Appendix A
 // for the Initial keys, the header protection masks, the client and
@@ -6,7 +6,7 @@
 // it with -DCH_AES_256_TEST, so the AES-256 rows run on both AES values
 // below. Its own
 // binary because bin/unit includes tls.h and calls rec_seal, which a
-// -DCH_TRANSPORT_QUIC build does not compile; bin/sha3_test and
+// -DCH_TRANSPORT_QUIC_NONBLOCKING build does not compile; bin/sha3_test and
 // bin/mlkem_test have the same shape for a mode's own sources.
 // docs/quic.md, "Verification owed", names this file and the binary it
 // builds.

@@ -1,4 +1,4 @@
-// The record-mode driver's step table: the step numbers ch_record.step
+// The tcp-nonblocking driver's step table: the step numbers ch_record.step
 // stores and the one function that runs a step.
 //
 // It is quic_step.h's table for the other transport, and the steps are
@@ -14,10 +14,10 @@
 // nothing inside it waits. So a step needs no resume point of its own,
 // and the saved state is a step number rather than a program counter.
 //
-// Only a TRANSPORT=record build compiles it.
+// Only a TRANSPORT=tcp-nonblocking build compiles it.
 #ifndef CH_REC_STEP_H
 #define CH_REC_STEP_H
-#ifdef CH_TRANSPORT_RECORD
+#ifdef CH_TRANSPORT_TCP_NONBLOCKING
 
 #include "cfg.h"
 
@@ -54,5 +54,5 @@ int hsr_advance(ch_record *r);
 // HelloRetryRequest step stages the second.
 void rec_stage_plain(ch_record *r, size_t n);
 
-#endif // CH_TRANSPORT_RECORD
+#endif // CH_TRANSPORT_TCP_NONBLOCKING
 #endif

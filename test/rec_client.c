@@ -1,4 +1,4 @@
-// The TRANSPORT=record client, run against a real TLS 1.3 server. It is
+// The TRANSPORT=tcp-nonblocking client, run against a real TLS 1.3 server. It is
 // bin/tlsclient's PSK case with one difference, which is the whole point
 // of the mode: this program owns the socket during the handshake and
 // chapulin never touches it.

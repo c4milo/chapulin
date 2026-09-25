@@ -156,7 +156,7 @@ lands.
 | Struct fields that change type | 10, in three headers | the same |
 | CBMC harnesses re-aimed | 8, every launch line re-measured | "What it costs the proofs" |
 | Lean definitions and theorem statements that stop asserting 32 | 6 definitions, 5 statements, plus `Spec/Record.lean`'s | "What it costs the Lean specs" |
-| A `TRANSPORT=quic` session pays for AES-256's round keys | +260 bytes per session in the byte form | the `aes.[ch]` and `gcm.[ch]` section |
+| A `TRANSPORT=quic-nonblocking` session pays for AES-256's round keys | +260 bytes per session in the byte form | the `aes.[ch]` and `gcm.[ch]` section |
 
 Two costs in the role carry more unmeasured risk than any row above, and
 neither is a hash cost: whether a split CBMC harness for AES-GCM converges, and
@@ -575,7 +575,7 @@ rather than an edit, and "What changes in `docs/invariants.md`" says so.
 The cost is measurable and it is stated here rather than in a footnote. The
 patch's AES is table-driven; its own text says so, and the table is visible in
 the object file. Measured by compiling the patch's bodies with
-`cc -c -Os -std=c11 -I. -DCH_TRANSPORT_QUIC -DCH_RAND_EXTERN` and reading
+`cc -c -Os -std=c11 -I. -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_RAND_EXTERN` and reading
 `size -m`:
 
 | object | `__TEXT,__text` | `__TEXT,__const` |
@@ -880,7 +880,7 @@ the evidence and the cost the bound removes.
   that understands the extension when the transport is not QUIC
   (`rfc9001.txt:1945-1949`), and every build here runs over TLS records,
   because `srv_cfg.h` refuses `CH_ROLE_SERVER` together with
-  `CH_TRANSPORT_QUIC`. The skip-unknown arm cannot give that answer, so the
+  `CH_TRANSPORT_QUIC_NONBLOCKING`. The skip-unknown arm cannot give that answer, so the
   type carries a `SRV_EXT_` bit of its own. `srv_build_encrypted_extensions`
   writes the same extension from a body its caller supplies, which is the
   server's half of `ch_cfg.transport_params`; a build over TLS records passes
@@ -1039,7 +1039,7 @@ type at `scratchpad/server/quic_gcm_new.c:98`, `:150` and `:168`, so those three
 lines move with it. The landing order below assumes this is a type change rather
 than a rename, because it is one.
 
-**A `TRANSPORT=quic` build pays for round keys AES-128 never fills, and the
+**A `TRANSPORT=quic-nonblocking` build pays for round keys AES-128 never fills, and the
 cost is measured — but it is now stack, not SRAM.** `AES_ROUND_KEYS` goes from
 11 to 15. On the host, at the tree's `CFLAGS`: one schedule goes 176 to 241
 bytes and one bundle goes 364 to 494. The paragraphs below were written when
@@ -1050,13 +1050,13 @@ SRAM, **260 bytes** per QUIC session against a measured client `ch_tls` of
 own stack. So the 130 extra bytes land in a frame rather than in the session,
 against `lint-stack`'s 2,560-byte budget, and the SRAM row is gone.
 The two ways out are **unmeasured** and still available if a frame ever needs
-them: give `aes_key` a `CH_AES_ROUND_KEYS` that a `TRANSPORT=quic` build
+them: give `aes_key` a `CH_AES_ROUND_KEYS` that a `TRANSPORT=quic-nonblocking` build
 without `ROLE=server` sets to 11, or keep the QUIC bundle on its own 11-round
 type. Open question fifteen asks which, and "Bounds that need measuring"
 carries the row.
 
 The rename satisfies both halves of INV-27 (`docs/invariants.md:279`), which
-claims that every root file only a `TRANSPORT=quic` build compiles is named
+claims that every root file only a `TRANSPORT=quic-nonblocking` build compiles is named
 `quic*` and no other root file is. These two files stop being QUIC-only, so
 they lose the prefix rather than joining `QUIC_SHARED` (`Makefile:1615`).
 Renaming before the patch lands is cheaper: the patch already carries the old
@@ -1528,8 +1528,8 @@ endif
 ifneq ($(filter command line environment,$(origin PIN)),)
 $(error ROLE=server carries both verifiers for ch_srv_check, so PIN selects nothing in it; drop PIN=$(PIN))
 endif
-ifneq ($(TRANSPORT),tls)
-$(error ROLE=server runs over TLS records only; use TRANSPORT=tls)
+ifneq ($(TRANSPORT),tcp-blocking)
+$(error ROLE=server runs over TLS records only; use TRANSPORT=tcp-blocking)
 endif
 ROLE_DEF    := -DCH_ROLE_SERVER
 ROLE_FILTER := $(CLIENT_REPLACED)
@@ -1602,7 +1602,7 @@ any filter is inert. The five extra terms are dropped and the `TRUST` error arm
 carries the reason.
 
 All four error arms fire, measured on the wired copy: `ROLE=server
-TRUST=webpki`, `ROLE=server PIN=ecdsa`, `ROLE=server TRANSPORT=quic` and a
+TRUST=webpki`, `ROLE=server PIN=ecdsa`, `ROLE=server TRANSPORT=quic-nonblocking` and a
 misspelled `ROLE=sever` each stop the build with the message beside them.
 `$(origin PIN)` is what tells `PIN=rsa` typed on the command line from the
 `PIN ?= rsa` default at `Makefile:200`, and the local GNU Make 3.81 answers it
@@ -1653,7 +1653,7 @@ file is, except what two named lists carry with their reasons.
 SRV_SRCS := srv_parser.c srv_parser_ext.c srv_message.c srv_cookie.c srv_auth.c \
             srv_flight.c srv_handshake.c srv.c
 # Named for the algorithm rather than the role, because they are primitives.
-# aes.c and gcm.c are also compiled by a TRANSPORT=quic build. Test binaries
+# aes.c and gcm.c are also compiled by a TRANSPORT=quic-nonblocking build. Test binaries
 # compile all six in every build, the way they already compile both rsa.c and
 # p256.c, so all six stay tested everywhere.
 ROLE_SHARED := p256_field.c p256_field.h p256_ecdh.c p256_ecdh.h \
@@ -1883,7 +1883,7 @@ a server's read is `ch_read`.
 
 Five exported calls against the client's four, held by `make lib-check`
 against `PUBLIC`. `docs/decisions.md` entry 28 records four and entry 38
-already amends it to fifteen under `TRANSPORT=quic`; the server row joins them.
+already amends it to fifteen under `TRANSPORT=quic-nonblocking`; the server row joins them.
 
 `ch_srv_check` is the boot-time replacement for parsing the chain. It signs a
 fixed message with each provisioned key and verifies it with the verifier
@@ -1904,14 +1904,14 @@ the C core lacks, and a server session is the same RAII shape over one
 different name, so the fork is one forwarding function under
 `#ifdef CH_ROLE_SERVER`. `make cxx-check` runs on both roles.
 
-### The record transport: a server that does not block
+### TRANSPORT=tcp-nonblocking: a server that does not block
 
 `ch_srv_accept` runs the whole handshake behind `cfg.send` and `cfg.recv`, and
 both block. That is the right shape for the firmware this tree targets, where a
 blocking socket is all there is. It is the wrong shape for a host whose I/O is a
 completion-based event loop: a callback that blocks inside the loop's own thread
 stalls every other connection the loop holds, and there is no thread to park it
-on. `TRANSPORT=record ROLE=server` is the same server handshake with the socket
+on. `TRANSPORT=tcp-nonblocking ROLE=server` is the same server handshake with the socket
 given back to the caller.
 
 ```c
@@ -1940,7 +1940,7 @@ handler's own stack frame and streams the Certificate straight out of
 Certificate message is larger than `ch_tls.tx`, which is `CH_TX_STAGE` bytes
 (`session.h:64`). So there is no buffer for a caller to collect from. A pull
 would need a resume point inside `srv_out_sealed`'s record loop, which is the
-one thing the record mode's design rules out: `rec_step.h:12` states that a step
+one thing the tcp-nonblocking transport's design rules out: `rec_step.h:12` states that a step
 runs only when a whole message is already present, consumes that one message,
 and waits nowhere inside it. `srv_quic.h:18` reached the same conclusion for the
 same reason on the other transport, and `ch_srv_cfg.on_record_out` is
@@ -1972,18 +1972,18 @@ in `srv_send_finished` (`srv_flight.c:425`) and the application read key in
 there too. The step table decides only which handler runs next.
 
 `srv_out.c` gains a third arm. It had two: a QUIC arm that pushes to
-`on_crypto_out`, and a blocking arm that calls `io_send_all`. The record arm is
-the blocking one with `emit` in place of that call, so the framing, the
+`on_crypto_out`, and a tcp-blocking arm that calls `io_send_all`. The
+tcp-nonblocking arm is the tcp-blocking one with `emit` in place of that call, so the framing, the
 `record_size_limit` and the fragmentation are the same lines.
 
 #### The build line
 
 ```sh
-make RAND=drbg TRUST=none TRANSPORT=record ROLE=server lib
+make RAND=drbg TRUST=none TRANSPORT=tcp-nonblocking ROLE=server lib
 ```
 
 `TRUST=none` is required, as it is for any `ROLE=server` build: a server judges
-no peer certificate. `ROLE=both` takes the record transport too, with a real
+no peer certificate. `ROLE=both` takes the tcp-nonblocking transport too, with a real
 `TRUST` value, and carries both drivers in one object — `ch_record_init` and
 `ch_srv_record_init` are different names for that reason.
 
@@ -1994,9 +1994,9 @@ wants. The rows read git's root `srv*.c` list and subtracted a single driver
 name from it until `srv_rec.c` became the third, which no subtraction tells
 apart.
 
-`TRUST=webpki TRANSPORT=record` links too, which is the combination a
+`TRUST=webpki TRANSPORT=tcp-nonblocking` links too, which is the combination a
 public-PKI host client wants. It did not until the webpki `ch_connect` gained
-the `#ifndef CH_TRANSPORT_RECORD` guard the pinned one always had, and until
+the `#ifndef CH_TRANSPORT_TCP_NONBLOCKING` guard the pinned one always had, and until
 that mode defined the `tlsi_config_ok` `session.h` declares for every trust
 mode: the webpki arm checked the receive floor and `require_pq` inside
 `ch_connect` and left the call undefined, so an object with `ch_record_init`
@@ -2005,7 +2005,7 @@ checks into `tlsi_config_ok` is what gives `ch_record_init` the webpki floor
 and the `require_pq` refusal, which it did not have in this mode
 ([171](https://github.com/c4milo/chapulin/issues/171)).
 
-Nothing caught it because `check` linked no `TRANSPORT=record` library variant
+Nothing caught it because `check` linked no `TRANSPORT=tcp-nonblocking` library variant
 at all — only `bin/recclient`, which pins. Two `lib-check` legs now link one
 per side: `TRUST=none ROLE=server` and `TRUST=webpki`, both over this
 transport.
@@ -2013,7 +2013,7 @@ transport.
 ### What `ch_cfg` gains and drops
 
 `cfg.h` forks under `#ifdef CH_ROLE_SERVER`, the way it already forks under
-`#ifdef CH_TRANSPORT_QUIC`.
+`#ifdef CH_TRANSPORT_QUIC_NONBLOCKING`.
 
 ```c
 #ifdef CH_ROLE_SERVER
@@ -2097,7 +2097,7 @@ uint8_t  compat_ccs;      // the client sent a non-empty session id, so one
 
 40 bytes before padding, derived from the field widths. `group` already exists
 and already holds the selected group (`session.h:137`). `alpn_selected` already
-exists under `CH_TRUST_WEBPKI` and `CH_TRANSPORT_QUIC` (`session.h:152`) and a
+exists under `CH_TRUST_WEBPKI` and `CH_TRANSPORT_QUIC_NONBLOCKING` (`session.h:152`) and a
 server build declares it in every mode.
 
 Drops: `pin_slot` (`session.h:128`), `epoch`, `epoch_store_failed`,
@@ -2543,7 +2543,7 @@ lands. None of them exists today.
 | The stack frame of `srv_handshake`'s equivalent of `ch_handshake` | the same | `ch_handshake` measures 688 today and 784 hash-agile against a 2560-byte budget. A server holds a `client_hello` and a `selection` in the same frame, and neither struct exists yet. |
 | Code size and speed of a constant-time AES, bitsliced and masked, at both key sizes, on rv32 | `bench/insn_driver.c` and `bench/sram.sh` | It decides which one to write, and whether a server fits the target at all. |
 | The per-record cost of AES key expansion against stored round keys | the same | One AES-256 round-key array is 15 x 16 = 240 bytes and the struct that holds it measures 241; two of them are 482, against a measured client `ch_tls` of 1,144. v1 stores the key and expands per record, because SRAM is the scarce resource; `CH_AES_KEY_SCHEDULE_CACHED` trades those bytes back. Which default is right is **unmeasured**. |
-| Whether a `TRANSPORT=quic` build without `ROLE=server` carries the 15-round schedule | `make lint-stack TRANSPORT=quic` | Measured: one `aes_public_key` bundle goes 364 to 494 bytes. Since INV-26 `ch_quic` stores no bundle, so the cost is 130 bytes of stack in each call that builds a key, against a 2,560-byte budget, and no SRAM. The two ways out are a build-conditional `CH_AES_ROUND_KEYS` and a separate 11-round QUIC type, and neither is measured. |
+| Whether a `TRANSPORT=quic-nonblocking` build without `ROLE=server` carries the 15-round schedule | `make lint-stack TRANSPORT=quic-nonblocking` | Measured: one `aes_public_key` bundle goes 364 to 494 bytes. Since INV-26 `ch_quic` stores no bundle, so the cost is 130 bytes of stack in each call that builds a key, against a 2,560-byte budget, and no SRAM. The two ways out are a build-conditional `CH_AES_ROUND_KEYS` and a separate 11-round QUIC type, and neither is measured. |
 | Every new and every re-aimed CBMC launch line, including the eight the hash change touches | `/usr/bin/time -v` under `proof/run.sh`'s exact flags | `docs/proofs.md` requires the measurement before a launch line may be committed. `record` already stands at 830 s and 3.0 GB (`proof/run.sh:503`) against the fast pool's slowest harness at 1,034 s (`proof/run.sh:505`). |
 | The CI matrix cost of a sixth axis | a CI run | **Unmeasured.** |
 
@@ -3037,7 +3037,7 @@ three bytes more per schedule, and is faster on a 32-bit core; taking it means
 the record must state how `aes.c` fills those words byte by byte. The record
 takes bytes.
 
-**Fifteen: does a `TRANSPORT=quic` build without `ROLE=server` carry the
+**Fifteen: does a `TRANSPORT=quic-nonblocking` build without `ROLE=server` carry the
 15-round AES-256 schedule?** Measured: one `aes_public_key` bundle goes from
 364 to 494 bytes. The question used to cost SRAM, because `ch_quic` stored two
 bundles; INV-26 removed that storage, so a QUIC build now pays **130 bytes** of
@@ -3222,7 +3222,7 @@ Amended entries:
   compile failure.
 - **INV-27**, the QUIC partition. Its claim survives once `aes.c` and `gcm.c`
   lose the `quic_` prefix, because they stop being files only a
-  `TRANSPORT=quic` build compiles.
+  `TRANSPORT=quic-nonblocking` build compiles.
 - **INV-28**, stubs never report success. It ran out of subjects: the QUIC
   stubs it first covered and the `CH_SRV_STUB` bodies it covered after them
   are all implemented, so the entry retired rather than changed.
@@ -3243,7 +3243,7 @@ one means re-arguing the trade rather than editing the code.
 | 8, one pinned signature algorithm per build (`:48-53`) | The entry is about verification. A server holds one identity per scheme it offers, and what varies is which scheme the client offered. Different trade, different failure mode. |
 | 9, RSA is verify-only (`:54-60`) | It stops being true. A `ROLE=server` build signs with RSA-PSS through `rsa_sign.c`, which shares no arithmetic with `rsa.c` and carries the constant-time burden `rsa.h:4-6` says the verifier does not. The entry names both files and the rule that separates them. |
 | 20, single task, single connection (`:192-223`) | The entry admits that the reference generator has global state and every session in an image draws from one stream. A server serving one connection at a time is covered; one serving several is not, and the entry must say which this is. |
-| 28, four exported symbols (`:296-299`) | Five under `ROLE=server`, fifteen under `TRANSPORT=quic` per entry 38, four otherwise. `PUBLIC` selects the first term rather than adding to it. |
+| 28, four exported symbols (`:296-299`) | Five under `ROLE=server`, fifteen under `TRANSPORT=quic-nonblocking` per entry 38, four otherwise. `PUBLIC` selects the first term rather than adding to it. |
 | the SHA-256 specialization, wherever the entry that fixed it lives | A new entry records why the key schedule stopped being SHA-256-only, with the measured cost this document's first section gives, so the trade can be reopened with numbers. |
 
 `README.md` owes its own pass. `README.md:833-835` loses "the server role" and
@@ -3331,7 +3331,7 @@ replacement cannot be committed before that lane does.
 >   labels, over either hash; every entry point takes a `hash_len` of 32 or 48,
 >   fixed by the selected cipher suite) ← `chacha20.[ch]` + `poly1305.[ch]` +
 >   `aes.[ch]` (the AES forward cipher of FIPS 197 at both key sizes, constant
->   time, packaged by a `TRANSPORT=quic` or a `ROLE=server` build) ←
+>   time, packaged by a `TRANSPORT=quic-nonblocking` or a `ROLE=server` build) ←
 >   `aead.[ch]` (RFC 8439 seal/open) + `gcm.[ch]` (AEAD_AES_128_GCM,
 >   AEAD_AES_256_GCM and GHASH, the same two builds) ←
 >   `x25519.[ch]` + `p256.[ch]` + `rsa.[ch]`/`rsa_mont.c` (pinned-mode verify,

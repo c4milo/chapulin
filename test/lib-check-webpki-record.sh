@@ -15,8 +15,8 @@
 #
 # It also catches four of the INV-35 violations, the mutants of the build
 # record: lib-check links test/build_test.c against this object, and a
-# record that omits the CH_TRANSPORT_RECORD bit, a stale sizeof(ch_tls),
-# a ch_build_record left out of PUBLIC and a CH_BUILD_AXES that forgets the
+# record that omits the CH_TRANSPORT_TCP_NONBLOCKING bit, a stale sizeof(ch_tls),
+# a ch_build_info_tcp_nonblocking left out of PUBLIC and a CH_BUILD_AXES that forgets the
 # define each fail that consumer. This object is the one whose record
 # carries both a trust bit and a transport bit, and whose ch_tls differs
 # from the default object's.
@@ -24,4 +24,4 @@
 # packages; the two have to stay the same command, and
 # test/impact_test.py compares them.
 cd "$(dirname "$0")/.." || exit 1
-exec make -s lib-check RAND=extern TRUST=webpki TRANSPORT=record
+exec make -s lib-check RAND=extern TRUST=webpki TRANSPORT=tcp-nonblocking

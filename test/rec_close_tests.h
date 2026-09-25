@@ -1,5 +1,5 @@
-// Closing a TRANSPORT=record session, one direction at a time, between
-// this tree's two record-mode drivers. A close_notify closes its
+// Closing a TRANSPORT=tcp-nonblocking session, one direction at a time, between
+// this tree's two tcp-nonblocking drivers. A close_notify closes its
 // sender's direction alone (RFC 9846 §6, rfc9846.txt:3767-3768, and
 // §6.1, rfc9846.txt:3857-3859), so the side that receives one still
 // writes, and sends its own close_notify when its caller calls ch_close.

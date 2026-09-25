@@ -1,4 +1,4 @@
-// Resumption over the record transport, both halves in one process: this
+// Resumption over the tcp-nonblocking transport, both halves in one process: this
 // tree's server issues a ticket after a full handshake, this tree's client
 // takes it through ch_read and on_ticket, and a second connection resumes
 // with it and no certificate. Included by test/rec_loop_test.c after

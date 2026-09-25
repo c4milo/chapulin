@@ -53,7 +53,7 @@ NEEDS_VARIABLE = {
     "cross-check": ["test/docker-mips.sh", "test/docker-riscv32.sh"],
     # RAND has no default, so a bare `make lib-check` stops at cfg.h's
     # #error. The target reaches this selector at all only when the
-    # impact tool itself runs under TRANSPORT=quic: there the lib-check
+    # impact tool itself runs under TRANSPORT=quic-nonblocking: there the lib-check
     # recipe writes quic.c's name in the message that says why the
     # RAND=extern import check stands down, and a recipe that names a
     # source is what select_recipe_gates looks for.
@@ -98,19 +98,19 @@ LIB_LEGS = [
          "against that build's own frame budget",
          ["test/lint-stack-webpki.sh"]),
     ]),
-    ("TRUST=webpki TRANSPORT=record", [
-        ("make lib-check RAND=extern TRUST=webpki TRANSPORT=record",
-         "the record-transport webpki object packages {path}, and it is the "
+    ("TRUST=webpki TRANSPORT=tcp-nonblocking", [
+        ("make lib-check RAND=extern TRUST=webpki TRANSPORT=tcp-nonblocking",
+         "the tcp-nonblocking webpki object packages {path}, and it is the "
          "one client object that compiles ch_record_init and no ch_connect",
          ["test/lib-check-webpki-record.sh"]),
     ]),
-    ("TRANSPORT=quic", [
-        ("make lib-check cxx-check RAND=extern TRANSPORT=quic",
-         "the TRANSPORT=quic object packages {path} and exports the fifteen "
-         "ch_quic_ calls in place of the four TLS ones", []),
-        ("make lint-stack TRANSPORT=quic",
-         "the TRANSPORT=quic object compiles {path} under "
-         "-DCH_TRANSPORT_QUIC, against that build's own frame budget",
+    ("TRANSPORT=quic-nonblocking", [
+        ("make lib-check cxx-check RAND=extern TRANSPORT=quic-nonblocking",
+         "the TRANSPORT=quic-nonblocking object packages {path} and exports the fifteen "
+         "ch_quic_ calls in place of the four tcp-blocking ones", []),
+        ("make lint-stack TRANSPORT=quic-nonblocking",
+         "the TRANSPORT=quic-nonblocking object compiles {path} under "
+         "-DCH_TRANSPORT_QUIC_NONBLOCKING, against that build's own frame budget",
          ["test/lint-stack-quic.sh"]),
     ]),
     ("TRUST=raw-ecdsa KEX=pq", [

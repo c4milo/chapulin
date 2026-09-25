@@ -3,7 +3,7 @@ file: srv_flight.c
 catches: srv_rec_test
 reason: the compatibility change_cipher_spec, the one record a server sends
   when the client's hello carries a legacy_session_id, goes out through
-  cfg.send instead of the driver's own output. A TRANSPORT=record server
+  cfg.send instead of the driver's own output. A TRANSPORT=tcp-nonblocking server
   then writes to a socket it promised never to touch, and a caller whose
   send refuses during the handshake fails every handshake with a
   middlebox-compatibility client such as Go's crypto/tls, which is how

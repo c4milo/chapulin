@@ -1,7 +1,7 @@
 invariant: INV-28
 file: srv_out.c
 catches: srv_rec_test
-reason: a record-mode server sends its own flight through the caller's
+reason: a tcp-nonblocking server sends its own flight through the caller's
   blocking send instead of handing it to on_record_out, which is the one
   thing the mode exists to avoid: the callback runs inside an event loop
   that has no thread to park. The mode would still complete a handshake,
@@ -9,7 +9,7 @@ reason: a record-mode server sends its own flight through the caller's
 
 --- old
 static int emit(ch_tls *t, const uint8_t *p, size_t n) {
-#ifdef CH_TRANSPORT_RECORD
+#ifdef CH_TRANSPORT_TCP_NONBLOCKING
     const ch_cfg *cfg = &t->cfg;
     return cfg->srv.on_record_out(cfg->io, p, n) == 0 ? CH_OK : CH_EIO;
 #else

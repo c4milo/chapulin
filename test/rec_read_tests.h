@@ -1,4 +1,4 @@
-// ch_read in a TRANSPORT=record session, once connected, over a caller
+// ch_read in a TRANSPORT=tcp-nonblocking session, once connected, over a caller
 // that hands over whole records as they arrive and has none in between
 // (rec.h). The server seals each record with its own application write
 // key, so the client opens exactly what a server would send. Included by

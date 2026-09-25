@@ -9,7 +9,7 @@
 #include "ct.h"
 #include "handshake_message.h"
 #include "keysched.h"
-#ifndef CH_TRANSPORT_QUIC
+#ifndef CH_TRANSPORT_QUIC_NONBLOCKING
 #include "io.h"
 #include "record.h"
 #endif
@@ -18,7 +18,7 @@
 #include "webpki_ticket.h"
 #endif
 
-#ifdef CH_TRANSPORT_QUIC
+#ifdef CH_TRANSPORT_QUIC_NONBLOCKING
 // early_data in a NewSessionTicket (RFC 9846 §4.7.1). It is the one
 // extension defined there, and RFC 9001 §4.6.1 gives its
 // max_early_data_size a single legal value on this transport.
@@ -93,7 +93,7 @@ static int read_ticket_extensions(const uint8_t *block, size_t n, uint8_t *alert
 // length is what leaves rb_left below at zero for a whole message and
 // above zero for a message that carries anything else.
 static int handle_ticket(ch_tls *t, const uint8_t *body, size_t n
-#ifdef CH_TRANSPORT_QUIC
+#ifdef CH_TRANSPORT_QUIC_NONBLOCKING
                          ,
                          uint8_t *alert, uint64_t *error_code
 #endif
@@ -110,7 +110,7 @@ static int handle_ticket(ch_tls *t, const uint8_t *body, size_t n
     ticket.identity_len = rb_u16(&r);
     ticket.identity = rb_bytes(&r, ticket.identity_len);
     size_t ext_len = rb_u16(&r);
-#ifdef CH_TRANSPORT_QUIC
+#ifdef CH_TRANSPORT_QUIC_NONBLOCKING
     const uint8_t *exts = rb_bytes(&r, ext_len);
     if (exts != NULL) {
         int rc = read_ticket_extensions(exts, ext_len, alert, error_code);
@@ -122,7 +122,7 @@ static int handle_ticket(ch_tls *t, const uint8_t *body, size_t n
     rb_skip(&r, ext_len);
 #endif
     if (r.err || rb_left(&r) != 0) {
-#ifdef CH_TRANSPORT_QUIC
+#ifdef CH_TRANSPORT_QUIC_NONBLOCKING
         *alert = ALERT_DECODE_ERROR;
 #endif
         return CH_EPROTO;
@@ -146,14 +146,14 @@ static int handle_ticket(ch_tls *t, const uint8_t *body, size_t n
     return CH_OK;
 }
 
-#ifdef CH_TRANSPORT_QUIC
+#ifdef CH_TRANSPORT_QUIC_NONBLOCKING
 int hspost_take_ticket(ch_tls *t, const uint8_t *body, size_t n, uint8_t *alert,
                        uint64_t *error_code) {
     return handle_ticket(t, body, n, alert, error_code);
 }
 #endif
 
-#ifndef CH_TRANSPORT_QUIC
+#ifndef CH_TRANSPORT_QUIC_NONBLOCKING
 // One KeyUpdate: the read direction always rekeys — receivers are
 // forbidden from enforcing the peer's epoch cap (RFC 9846 §4.7.3) — and
 // a reply goes out only when requested and while our own epoch count is
@@ -230,7 +230,7 @@ int hspost_read(ch_tls *t, size_t pt_len) {
         uint8_t outer = 0;
         size_t record_len = 0;
         rc = io_read_record(&t->cfg, buf + fill, t->cfg.buf_len - fill, &outer, &record_len);
-#ifdef CH_TRANSPORT_RECORD
+#ifdef CH_TRANSPORT_TCP_NONBLOCKING
         if (rc == CH_RECORD_AGAIN) {
             // The next fragment has not arrived. The fill bytes stay at
             // the front of cfg.buf, and the next ch_read continues from
@@ -258,4 +258,4 @@ int hspost_read(ch_tls *t, size_t pt_len) {
     }
     return CH_EPROTO;
 }
-#endif // CH_TRANSPORT_QUIC
+#endif // CH_TRANSPORT_QUIC_NONBLOCKING

@@ -1,4 +1,4 @@
-// chapulin's client driver under TRANSPORT=record, and the three calls
+// chapulin's client driver under TRANSPORT=tcp-nonblocking, and the three calls
 // either role exports. Contract in rec.h. It is the file beside tls.c
 // and quic.c, and it holds no protocol rule of its own: hsr_advance runs
 // the handshake and record.[ch] protects what leaves.
@@ -9,7 +9,7 @@
 // that build has no use for, the way tls.c guards ch_connect.
 #include "rec.h"
 
-#ifdef CH_TRANSPORT_RECORD
+#ifdef CH_TRANSPORT_TCP_NONBLOCKING
 
 #include "ch_assert.h"
 
@@ -188,4 +188,4 @@ void ch_record_close(ch_record *r) {
     r->t.state = CH_ST_CLOSED;
 }
 
-#endif // CH_TRANSPORT_RECORD
+#endif // CH_TRANSPORT_TCP_NONBLOCKING

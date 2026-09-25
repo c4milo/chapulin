@@ -65,7 +65,7 @@
 // over the same inputs and compares byte for byte.
 #include "quic_ghash_hw.h"
 
-#if defined(CH_TRANSPORT_QUIC) || defined(CH_SUITE_AES_GCM)
+#if defined(CH_TRANSPORT_QUIC_NONBLOCKING) || defined(CH_SUITE_AES_GCM)
 #ifdef CH_AES_HW
 
 #include <stddef.h>
@@ -233,4 +233,4 @@ void gcm_hash_data_hw(uint8_t acc[AES_BLOCK], const uint8_t subkey[AES_BLOCK], c
 }
 
 #endif // CH_AES_HW
-#endif // CH_TRANSPORT_QUIC || CH_SUITE_AES_GCM
+#endif // CH_TRANSPORT_QUIC_NONBLOCKING || CH_SUITE_AES_GCM

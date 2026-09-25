@@ -1,11 +1,11 @@
-// Both record-mode drivers against each other in one process: this
+// Both tcp-nonblocking drivers against each other in one process: this
 // tree's client (rec.c) and this tree's server (srv_rec.c) complete a
 // whole TLS 1.3 handshake with no socket under either of them. The
 // Makefile builds it as bin/rec_loop_test from the ROLE=both
-// TRANSPORT=record source list, which is the one object that carries
+// TRANSPORT=tcp-nonblocking source list, which is the one object that carries
 // both drivers.
 //
-// Why it exists: INV-28 says a record-mode build calls neither cfg.send
+// Why it exists: INV-28 says a tcp-nonblocking build calls neither cfg.send
 // nor cfg.recv while the handshake runs, and the server half was the
 // only half measured. bin/srv_rec_test counts I/O calls on the server,
 // and the client's only driver was bin/recclient, which needs a live

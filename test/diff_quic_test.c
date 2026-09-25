@@ -1,10 +1,10 @@
-// The TRANSPORT=quic arm of the differential oracle: the same Lean spec
+// The TRANSPORT=quic-nonblocking arm of the differential oracle: the same Lean spec
 // process test/diff_test.c drives, over the modules only a
-// -DCH_TRANSPORT_QUIC build compiles.
+// -DCH_TRANSPORT_QUIC_NONBLOCKING build compiles.
 //
 // Its own main rather than rows in test/diff_test.c, for the reason that
 // file's own binary has: test/diff_test.c calls rec_seal and reads the
-// TLS layout of ch_cfg, and a -DCH_TRANSPORT_QUIC build compiles
+// TLS layout of ch_cfg, and a -DCH_TRANSPORT_QUIC_NONBLOCKING build compiles
 // neither. docs/quic.md records the same split for test/unit_test.c and
 // bin/quic_test. The driver plumbing is shared: test/diff_driver.h holds
 // the PRNG, the hex codecs and the pipe protocol, and both mains include

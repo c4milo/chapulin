@@ -9,7 +9,7 @@
 // "tls13 " prefix and nothing here builds an info string by hand.
 #include "quic_keys.h"
 
-#ifdef CH_TRANSPORT_QUIC
+#ifdef CH_TRANSPORT_QUIC_NONBLOCKING
 
 #include <string.h>
 
@@ -84,4 +84,4 @@ void quic_keys_update(uint8_t *secret, quic_keys *k) {
     QUIC_KEYS_INIT_SUITE(k, secret, k->suite);
 }
 
-#endif // CH_TRANSPORT_QUIC
+#endif // CH_TRANSPORT_QUIC_NONBLOCKING

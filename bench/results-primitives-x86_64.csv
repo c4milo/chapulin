@@ -1,6 +1,6 @@
 # bench/primitives.sh on AMD EPYC 9V74 80-Core Processor (x86_64), Linux 6.17.0-1022-azure, 2026-09-24, tree 4e02293
 # gcc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0; -std=c11 -O2 -Wall -Wextra -Wpedantic -Werror -Wvla -D_DEFAULT_SOURCE -DCH_RAND_DRBG -I. -Ibench -Itest
-# primitives adds -DCH_RSA_MODULUS_MAX=512; handshake adds -DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_TRANSPORT_RECORD -DBENCH_HANDSHAKE_PROGRAM, and -DCH_PIN_ECDSA for the ecdsa rows
+# primitives adds -DCH_RSA_MODULUS_MAX=512; handshake adds -DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_TRANSPORT_TCP_NONBLOCKING -DBENCH_HANDSHAKE_PROGRAM, and -DCH_PIN_ECDSA for the ecdsa rows
 # the X25519=wide rows add -DCH_X25519_WIDE -DCH_NATIVE_MUL128 and x25519_wide.c
 # the _hybrid handshake rows add -DCH_KEX_PQ: the client offers X25519MLKEM768 alone
 # load average (1, 5, 15 min) before: 0.81 0.27 0.10; after: 0.99 0.58 0.25

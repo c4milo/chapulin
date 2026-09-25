@@ -1,10 +1,10 @@
 // The handshake driver's state and the reader that turns arriving bytes
-// into whole handshake messages. Under TRANSPORT=tls the state lives on
+// into whole handshake messages. Under TRANSPORT=tcp-blocking the state lives on
 // ch_handshake's stack and is wiped wholesale when the handshake ends
 // either way; it yields records and whole messages out of cfg.buf,
 // where pointers die at the next record read.
 //
-// Under CH_TRANSPORT_QUIC there is no record layer to read: RFC 9001
+// Under CH_TRANSPORT_QUIC_NONBLOCKING there is no record layer to read: RFC 9001
 // §4.1.3 takes the unprotected content of TLS handshake records as the
 // content of CRYPTO frames and uses no TLS record protection
 // (rfc9001.txt:462-464). The state then lives inside ch_quic, which
@@ -32,8 +32,8 @@
 #endif
 
 // Everything the handshake needs beyond the session, wiped wholesale
-// when the handshake ends either way. Under TRANSPORT=tls it sits on
-// ch_handshake's one stack frame. Under CH_TRANSPORT_QUIC it sits
+// when the handshake ends either way. Under TRANSPORT=tcp-blocking it sits on
+// ch_handshake's one stack frame. Under CH_TRANSPORT_QUIC_NONBLOCKING it sits
 // inside ch_quic, because the driver returns to its caller between
 // messages, and the wipe comes one round trip earlier, at the step that
 // reaches HSQ_STEP_COMPLETE.
@@ -83,7 +83,7 @@ typedef struct {
     // nothing derives a key from it.
     uint64_t ticket_auth_seconds;
 #endif
-#ifndef CH_TRANSPORT_QUIC
+#ifndef CH_TRANSPORT_QUIC_NONBLOCKING
     // The four fields the record layer owns. Only the TLS ClientHello
     // builder and the TLS record reader write or read them, and a QUIC
     // build has neither: RFC 9001 §4.1.3 removes the record layer
@@ -96,7 +96,7 @@ typedef struct {
     uint8_t ccs_seen; // compat-mode CCS records tolerated so far
     uint8_t quiet;    // records that added no handshake bytes
 #endif
-#ifdef CH_TRANSPORT_QUIC
+#ifdef CH_TRANSPORT_QUIC_NONBLOCKING
     // The encryption level the bytes this handler produces belong to, a
     // CH_LEVEL_ value. The driver writes it before each step and
     // srv_flight.c passes it to ch_srv_cfg.on_crypto_out, because a
@@ -130,13 +130,13 @@ typedef struct {
 #endif
 } handshake_state;
 
-#if !defined(CH_TRANSPORT_QUIC) && !defined(CH_TRANSPORT_RECORD)
+#if !defined(CH_TRANSPORT_QUIC_NONBLOCKING) && !defined(CH_TRANSPORT_TCP_NONBLOCKING)
 // Reads records until one carrying handshake bytes lands; appends its
 // plaintext to the unconsumed bytes in cfg.buf.
 int hsr_fetch_record(handshake_state *h);
 #endif
 
-#if defined(CH_TRANSPORT_QUIC) || defined(CH_TRANSPORT_RECORD)
+#if defined(CH_TRANSPORT_QUIC_NONBLOCKING) || defined(CH_TRANSPORT_TCP_NONBLOCKING)
 // hsr_peek_message's answer when the bytes in cfg.buf stop short of a
 // whole message. The value is positive, so it collides with no ch_err
 // code: CH_OK is 0 and every error is negative, so a caller that tests
@@ -205,7 +205,7 @@ size_t hsr_feed(handshake_state *h, const uint8_t *p, size_t n);
 int hsr_peek_message(const handshake_state *h, size_t *raw_len, uint8_t *alert);
 #endif
 
-#ifdef CH_TRANSPORT_QUIC
+#ifdef CH_TRANSPORT_QUIC_NONBLOCKING
 // Answers the type of the next unread handshake message, the byte at
 // cfg.buf + pt_off, which opens a message because hsr_next_msg consumes
 // whole ones. It reads that one byte and nothing else, and changes no
@@ -225,13 +225,13 @@ int hsr_peek_type(const handshake_state *h, uint8_t *type);
 // difference an auditor must not read past: whether the call can wait
 // on the wire.
 //
-// Under TRANSPORT=tls it waits. It calls hsr_fetch_record until the
+// Under TRANSPORT=tcp-blocking it waits. It calls hsr_fetch_record until the
 // message is whole, so it drives the caller's recv callback and can
 // spend arbitrary wall-clock time inside one call. It returns CH_OK, or
 // CH_EIO, CH_EPROTO, CH_EAUTH or CH_ECAP from the record reading
 // underneath it.
 //
-// Under CH_TRANSPORT_QUIC it never waits, and it reads no record. It
+// Under CH_TRANSPORT_QUIC_NONBLOCKING it never waits, and it reads no record. It
 // yields the message the driver has already found whole with
 // hsr_peek_message, and it returns as soon as it has one. There is
 // nothing to wait for: the caller owns the transport and hands CRYPTO

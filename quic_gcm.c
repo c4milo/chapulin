@@ -34,7 +34,7 @@
 #include "aes_traffic_key.h"
 #endif
 
-#if defined(CH_TRANSPORT_QUIC) || defined(CH_SUITE_AES_GCM)
+#if defined(CH_TRANSPORT_QUIC_NONBLOCKING) || defined(CH_SUITE_AES_GCM)
 
 #include <string.h>
 
@@ -295,4 +295,4 @@ int gcm_traffic_open(const aes_traffic_key *k, const uint8_t nonce[AES_IV], cons
 }
 #endif // CH_SUITE_AES_GCM
 
-#endif // CH_TRANSPORT_QUIC || CH_SUITE_AES_GCM
+#endif // CH_TRANSPORT_QUIC_NONBLOCKING || CH_SUITE_AES_GCM

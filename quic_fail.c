@@ -7,7 +7,7 @@
 // have to die the same way. One list is checkable; two copies drift.
 #include "quic_fail.h"
 
-#ifdef CH_TRANSPORT_QUIC
+#ifdef CH_TRANSPORT_QUIC_NONBLOCKING
 
 #include "ct.h"
 #include "handshake_message.h"
@@ -78,7 +78,7 @@ static void wipe_write_keys_unless_ready(ch_quic *q, uint8_t level) {
     }
 }
 
-// What tlsi_fail is on the TLS transport, minus the alert record, which
+// What tlsi_fail is on the TCP transports, minus the alert record, which
 // QUIC has no way to carry: the alert goes to q->alert for
 // ch_quic_alert to report and the session is dead. The write keys of
 // each level whose write bit is set stay, for the one CONNECTION_CLOSE
@@ -114,4 +114,4 @@ int quic_refuse_unread(ch_quic *q) {
     return CH_EPROTO;
 }
 
-#endif // CH_TRANSPORT_QUIC
+#endif // CH_TRANSPORT_QUIC_NONBLOCKING

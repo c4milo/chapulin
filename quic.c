@@ -1,11 +1,11 @@
-// chapulin's public API under TRANSPORT=quic: the driver, the failure
+// chapulin's public API under TRANSPORT=quic-nonblocking: the driver, the failure
 // path and the packet calls. Contract in quic.h. It is the file beside
 // tls.c, and it holds no protocol rule of its own: hsq_advance runs the
 // handshake and quic_initial.c, quic_packet.c and quic_retry.c protect
 // the packets.
 #include "quic.h"
 
-#ifdef CH_TRANSPORT_QUIC
+#ifdef CH_TRANSPORT_QUIC_NONBLOCKING
 
 #include "ch_assert.h"
 
@@ -431,4 +431,4 @@ void ch_quic_close(ch_quic *q) {
     q->t.state = CH_ST_CLOSED;
 }
 
-#endif // CH_TRANSPORT_QUIC
+#endif // CH_TRANSPORT_QUIC_NONBLOCKING

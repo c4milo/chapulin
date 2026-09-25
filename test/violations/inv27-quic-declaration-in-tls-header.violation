@@ -16,7 +16,7 @@ void ch_close(ch_tls *t);
 --- new
 void ch_close(ch_tls *t);
 
-#ifdef CH_TRANSPORT_QUIC
+#ifdef CH_TRANSPORT_QUIC_NONBLOCKING
 // The transport parameters the peer sent, read from the session here
 // rather than from quic.h.
 const uint8_t *ch_quic_peer_params(const ch_tls *t, size_t *len);

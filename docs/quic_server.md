@@ -1,6 +1,6 @@
 # The QUIC server role
 
-This document scoped `ROLE=server` with `TRANSPORT=quic` before it existed, and
+This document scoped `ROLE=server` with `TRANSPORT=quic-nonblocking` before it existed, and
 records what it owes now that it does. The Makefile refused the combination when
 this was written and no longer does.
 
@@ -66,7 +66,7 @@ EncryptedExtensions carries a body its caller supplies, and the ClientHello
 parser refuses a client's with `unsupported_extension` because no build here
 is a QUIC transport. What cannot land until the driver does is storing the
 client's body and handing it to the caller: `cfg.on_transport_params` exists
-only under `CH_TRANSPORT_QUIC`, which `srv_cfg.h` refuses together with
+only under `CH_TRANSPORT_QUIC_NONBLOCKING`, which `srv_cfg.h` refuses together with
 `ROLE=server`.
 
 **The client's transport parameters (rest of item 3).** `srv_parser_ext.c`
@@ -84,7 +84,7 @@ over ngtcp2's recorded hellos and a HelloRetryRequest ("The key exchange"
 below), and colibri's interop run below drives it against aioquic.
 
 **The Makefile refusal (was item 5), gone.** `ROLE=server` with
-`TRANSPORT=quic` builds, links and exports nineteen calls. Two of them are
+`TRANSPORT=quic-nonblocking` builds, links and exports nineteen calls. Two of them are
 the Retry token's, which landed after the rest and have a section of their
 own below, and one is `ch_quic_seal_close`, which "When the handshake fails"
 below covers.

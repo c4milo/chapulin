@@ -72,12 +72,12 @@ fi
 # compiles with AES=hw and CH_NATIVE_AES, and without the vendor
 # statement ct.h refuses it, as it refuses every suite build: the file
 # itself, not only ct.h's own translation unit above, is what is checked.
-if ! "$cc" -std=c11 -I. -fsyntax-only -DCH_RAND_EXTERN -DCH_TRANSPORT_QUIC \
+if ! "$cc" -std=c11 -I. -fsyntax-only -DCH_RAND_EXTERN -DCH_TRANSPORT_QUIC_NONBLOCKING \
     -DCH_SUITE_AES_GCM -DCH_AES_HW -DCH_NATIVE_AES quic_packet.c; then
     echo "quic-builds: quic_packet.c under the suite with AES=hw and CH_NATIVE_AES must compile" >&2
     exit 1
 fi
-if "$cc" -std=c11 -I. -fsyntax-only -DCH_RAND_EXTERN -DCH_TRANSPORT_QUIC \
+if "$cc" -std=c11 -I. -fsyntax-only -DCH_RAND_EXTERN -DCH_TRANSPORT_QUIC_NONBLOCKING \
     -DCH_SUITE_AES_GCM -DCH_AES_HW quic_packet.c 2>/dev/null; then
     echo "quic-builds: a QUIC suite build without CH_NATIVE_AES compiled; ct.h must refuse it" >&2
     exit 1
@@ -89,12 +89,12 @@ fi
 # this is the one line that stops a tree with its own build system from
 # pairing them. Without the suite the same file compiles, AES-256
 # reference included, so what fails is the refusal and nothing else.
-if ! "$cc" -std=c11 -I. -fsyntax-only -DCH_RAND_EXTERN -DCH_TRANSPORT_QUIC -DCH_AES_256_TEST \
+if ! "$cc" -std=c11 -I. -fsyntax-only -DCH_RAND_EXTERN -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_AES_256_TEST \
     quic_aes_soft.c; then
     echo "quic-builds: quic_aes_soft.c with its AES-256 reference must compile" >&2
     exit 1
 fi
-if "$cc" -std=c11 -I. -fsyntax-only -DCH_RAND_EXTERN -DCH_TRANSPORT_QUIC -DCH_SUITE_AES_GCM \
+if "$cc" -std=c11 -I. -fsyntax-only -DCH_RAND_EXTERN -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_SUITE_AES_GCM \
     -DCH_NATIVE_AES quic_aes_soft.c 2>/dev/null; then
     echo "quic-builds: quic_aes_soft.c under -DCH_SUITE_AES_GCM compiled; it must refuse the suite" >&2
     exit 1
@@ -127,7 +127,7 @@ done
 # and the match is anchored at the end of the line because a Mach-O
 # object prefixes each name with an underscore.
 ghash_calls() { # $@ = extra flags: the quic_ghash_hw.c entries quic_gcm.c calls, on one line
-    "$cc" -std=c11 -I. -c -o "$gcm_obj" -DCH_RAND_EXTERN -DCH_TRANSPORT_QUIC "$@" quic_gcm.c ||
+    "$cc" -std=c11 -I. -c -o "$gcm_obj" -DCH_RAND_EXTERN -DCH_TRANSPORT_QUIC_NONBLOCKING "$@" quic_gcm.c ||
         return 1
     nm -u "$gcm_obj" | grep -oE 'gcm_(multiply_by_subkey|hash_data)_hw$' | sort -u | tr '\n' ' '
 }

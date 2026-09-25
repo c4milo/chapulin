@@ -8,7 +8,7 @@
 // FIPS 197 says the table is.
 //
 // Included by test/diff_quic_test.c only, which is the driver a
-// -DCH_TRANSPORT_QUIC build can compile.
+// -DCH_TRANSPORT_QUIC_NONBLOCKING build can compile.
 #ifndef CH_DIFF_AES_H
 #define CH_DIFF_AES_H
 

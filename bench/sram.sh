@@ -65,7 +65,7 @@ RXBUF_WEBPKI_AES=$("$TMP/floor_webpki_aes" | awk '{print $2}')
 # stack.py reads arm64 objects, and the arm64 cc this runs on defines
 # __ARM_FEATURE_AES by default, so quic_aes_hw.c needs no flag here.
 # ch_quic in the object colibri links, ROLE=both TRUST=webpki
-# TRANSPORT=quic, without and with the suite: under SUITE=aesgcm each
+# TRANSPORT=quic-nonblocking, without and with the suite: under SUITE=aesgcm each
 # QUIC key set records its suite and its section 6.6 count. The report
 # prints both; the README table does not carry them.
 cat > "$TMP/szq.c" <<'EOF'
@@ -76,7 +76,7 @@ int main(void) {
     return 0;
 }
 EOF
-QUIC_DEFS="-DCH_TRANSPORT_QUIC -DCH_TRUST_WEBPKI -DCH_ROLE_SERVER -DCH_ROLE_BOTH"
+QUIC_DEFS="-DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_TRUST_WEBPKI -DCH_ROLE_SERVER -DCH_ROLE_BOTH"
 # shellcheck disable=SC2086
 cc -std=c11 -DCH_RAND_EXTERN $QUIC_DEFS -I. -o "$TMP/szq" "$TMP/szq.c"
 QUIC_SESSION=$("$TMP/szq" | awk '{print $2}')
@@ -134,7 +134,7 @@ echo "session struct (ROLE=server SUITE=aesgcm): ${SESSION_SERVER_AES} B"
 echo "static working set:      $((SESSION_SERVER_AES + RXBUF)) B (ROLE=server SUITE=aesgcm, ${RXBUF} B receive buffer)"
 echo "session struct (TRUST=webpki SUITE=aesgcm): ${SESSION_WEBPKI_AES} B"
 echo "static working set:      $((SESSION_WEBPKI_AES + RXBUF_WEBPKI_AES)) B (TRUST=webpki SUITE=aesgcm, its ${RXBUF_WEBPKI_AES} B floor)"
-echo "ch_quic (ROLE=both TRUST=webpki TRANSPORT=quic): ${QUIC_SESSION} B"
+echo "ch_quic (ROLE=both TRUST=webpki TRANSPORT=quic-nonblocking): ${QUIC_SESSION} B"
 echo "ch_quic (the same, SUITE=aesgcm): ${QUIC_SESSION_AES} B"
 
 # Each stack.py report is saved whole, so the CSV rows below come from the

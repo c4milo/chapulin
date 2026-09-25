@@ -133,7 +133,7 @@ def gen_aead(d, out):
     return len(rows)
 
 
-# The AES-GCM suite, for quic_gcm.c. Only a -DCH_TRANSPORT_QUIC build
+# The AES-GCM suite, for quic_gcm.c. Only a -DCH_TRANSPORT_QUIC_NONBLOCKING build
 # compiles that file, so the rows below are emitted inside the same guard
 # and the other legs of wycheproof_test.c read a header that declares
 # nothing for them. INV-26 admits this key in a test: the rule bounds
@@ -180,8 +180,8 @@ def gen_aes_gcm_size(d, out, key_bits, name, macro):
             off = blob.add(key + iv + tag + aad + msg + ct)
             rows.append((uint_of(t["tcId"], 0xffffffff, "aes_gcm tcId"), off, len(aad), len(msg),
                          1 if t["result"] == "valid" else 0))
-    guard = "defined(CH_TRANSPORT_QUIC)" if key_bits == 128 else \
-        "defined(CH_TRANSPORT_QUIC) && defined(CH_AES_256)"
+    guard = "defined(CH_TRANSPORT_QUIC_NONBLOCKING)" if key_bits == 128 else \
+        "defined(CH_TRANSPORT_QUIC_NONBLOCKING) && defined(CH_AES_256)"
     out.append(f"#if {guard}")
     emit_blob(out, f"{name}_data", blob)
     out.append(

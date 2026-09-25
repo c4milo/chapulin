@@ -1,5 +1,5 @@
 # bench/aead.sh on AMD EPYC 7763 64-Core Processor (x86_64), Linux 6.17.0-1022-azure, 2026-09-24, tree 4e02293-dirty
-# gcc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0; -std=c11 -O2 -Wall -Wextra -Wpedantic -Werror -Wvla -D_DEFAULT_SOURCE -DCH_RAND_EXTERN -DCH_TRANSPORT_QUIC -I. -Ibench; AES=hw adds -maes -mpclmul -DCH_AES_HW
+# gcc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0; -std=c11 -O2 -Wall -Wextra -Wpedantic -Werror -Wvla -D_DEFAULT_SOURCE -DCH_RAND_EXTERN -DCH_TRANSPORT_QUIC_NONBLOCKING -I. -Ibench; AES=hw adds -maes -mpclmul -DCH_AES_HW
 # load average (1, 5, 15 min) before: 0.57 0.14 0.05; after: 0.77 0.22 0.08
 # ns_per_byte: median of 101 samples of 2 to 4 ms each; mb_per_s: 10^6 bytes per second at that median; iqr_pct: 25th to 75th percentile spread, percent of the median
 primitive,build,bytes,ns_per_byte,mb_per_s,iqr_pct

@@ -178,7 +178,7 @@ p256_pub() {
         | awk '/^pub:/{f=1;next} f&&/^[^ ]/{f=0} f{gsub(/[ :]/,"");printf "%s",$0}' | cut -c3-130
 }
 
-# --- TRANSPORT=record: the same PSK handshake, driven by a caller that
+# --- TRANSPORT=tcp-nonblocking: the same PSK handshake, driven by a caller that
 # owns the socket. The point of the leg is the comparison: bin/recclient
 # and bin/tlsclient reach the same connected session against the same
 # server, one with chapulin touching the descriptor and one without.

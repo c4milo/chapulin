@@ -12,7 +12,7 @@
 // aes_public_key, and no line anywhere keeps one between calls.
 #include "quic_initial.h"
 
-#ifdef CH_TRANSPORT_QUIC
+#ifdef CH_TRANSPORT_QUIC_NONBLOCKING
 
 #include "quic_aes_key.h"
 
@@ -177,4 +177,4 @@ int quic_initial_open(uint8_t endpoint, const uint8_t *dcid, size_t dcid_len, ui
     return CH_OK;
 }
 
-#endif // CH_TRANSPORT_QUIC
+#endif // CH_TRANSPORT_QUIC_NONBLOCKING

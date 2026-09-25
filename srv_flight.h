@@ -77,8 +77,8 @@ _Static_assert(SRV_SERVER_HELLO_MAX <= CH_TX_STAGE, "the largest ServerHello mus
 // transport's own arm. srv.c holds the predicates and both drivers ask it,
 // because a QUIC server needs the same answer ch_srv_accept needs and
 // gets it through a different entry. Declared for that second caller
-// alone, so a TLS build keeps it internal to srv.c.
-#if defined(CH_TRANSPORT_QUIC) || defined(CH_TRANSPORT_RECORD)
+// alone, so a tcp-blocking build keeps it internal to srv.c.
+#if defined(CH_TRANSPORT_QUIC_NONBLOCKING) || defined(CH_TRANSPORT_TCP_NONBLOCKING)
 int srv_config_ok(const ch_cfg *cfg);
 #endif
 

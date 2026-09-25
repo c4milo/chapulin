@@ -39,7 +39,7 @@ int ch_write(ch_tls *t, const uint8_t *p, size_t n);
 // its close_notify is never read, which is how §6.1's rule to ignore it
 // is kept. ch_read returns 0 after ch_close as well.
 //
-// A TRANSPORT=record build may also return CH_RECORD_AGAIN (cfg.h): the
+// A TRANSPORT=tcp-nonblocking build may also return CH_RECORD_AGAIN (cfg.h): the
 // caller's recv returned 0 at a record boundary, so no record has arrived
 // yet. The session stays connected and every record already read has
 // been handled, a ticket or a KeyUpdate among them; the caller calls

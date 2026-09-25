@@ -3,19 +3,19 @@
 // teardown and alert primitives every layer above record shares. Sits
 // between record and handshake in the include graph.
 //
-// A TRANSPORT=quic build declares a smaller struct and none of the
+// A TRANSPORT=quic-nonblocking build declares a smaller struct and none of the
 // three primitives. It has no record layer (RFC 9001 §4.1.3,
 // rfc9001.txt:462-464) and compiles no session.c, so every field and
-// call the record layer owns sits under #ifndef CH_TRANSPORT_QUIC with
+// call the record layer owns sits under #ifndef CH_TRANSPORT_QUIC_NONBLOCKING with
 // the reason beside it. The QUIC block at the end of this file lists
 // what a QUIC build keeps and what quic.c wipes.
 #ifndef CH_SESSION_H
 #define CH_SESSION_H
 
 #include "cfg.h"
-#ifndef CH_TRANSPORT_QUIC
+#ifndef CH_TRANSPORT_QUIC_NONBLOCKING
 // The record layer, and with it rec_dir, REC_HDR and AEAD_TAG. A
-// TRANSPORT=quic build reads none of the three: RFC 9001 §4.1.3 takes
+// TRANSPORT=quic-nonblocking build reads none of the three: RFC 9001 §4.1.3 takes
 // the unprotected content of a handshake record as the content of a
 // CRYPTO frame and uses no TLS record protection (rfc9001.txt:462-464),
 // and quic_keys.[ch] holds one direction of one encryption level where
@@ -66,17 +66,17 @@
 // other value is larger already.
 #define CH_TX_SERVER_HELLO 1216
 #ifndef CH_TX_STAGE
-#ifdef CH_TRANSPORT_QUIC
-// A QUIC hello differs from the TLS one by three extensions. It drops
+#ifdef CH_TRANSPORT_QUIC_NONBLOCKING
+// A QUIC hello differs from the TCP one by three extensions. It drops
 // the 6-byte record_size_limit, because RFC 9001 §4.1.3 removes the
 // record layer that extension sizes (rfc9001.txt:462-464). It adds
 // quic_transport_parameters, 4 framing bytes over a body of at most
 // CH_TRANSPORT_PARAMS_MAX (§8.2). And it adds the 270-byte ALPN offer
 // in every trust mode, because §8.1 makes ALPN mandatory there
-// (rfc9001.txt:1891-1895), where a TLS device build sends none. So each
-// value is the TLS one plus 254, and plus 270 again in the two device
+// (rfc9001.txt:1891-1895), where a TCP device build sends none. So each
+// value is the TCP one plus 254, and plus 270 again in the two device
 // modes. These are CH_HELLO_MAX's QUIC values, repeated as literals for
-// the reason the TLS ones are, and quic.c asserts the two agree. The
+// the reason the TCP ones are, and quic.c asserts the two agree. The
 // webpki one carries the 23 bytes of CH_HELLO_CERT_PATH_MAX, as the TLS
 // one does, because the builder is the same; ch_quic_init refuses SPKI
 // pins, so 7 of them never go out over QUIC. It takes CH_TX_AES_SUITES
@@ -126,8 +126,8 @@
 // The library builds as C, so the guards always run. The ceiling is
 // RFC 9846's 2^14 record-body cap; the hello ships as one record.
 #ifndef __cplusplus
-#ifndef CH_TRANSPORT_QUIC
-// A TRANSPORT=quic build stages no sealed record, so this floor has
+#ifndef CH_TRANSPORT_QUIC_NONBLOCKING
+// A TRANSPORT=quic-nonblocking build stages no sealed record, so this floor has
 // nothing to hold there, and AEAD_TAG comes from record.h, which that
 // build does not read.
 _Static_assert(CH_TX_STAGE >= CH_TX_PT + 1 + AEAD_TAG,
@@ -143,8 +143,8 @@ _Static_assert(CH_TX_STAGE <= 0x4000, "a handshake record body caps at 2^14");
 
 typedef struct {
     ch_cfg cfg;
-#ifndef CH_TRANSPORT_QUIC
-    // Record protection, one rec_dir per direction. A TRANSPORT=quic
+#ifndef CH_TRANSPORT_QUIC_NONBLOCKING
+    // Record protection, one rec_dir per direction. A TRANSPORT=quic-nonblocking
     // build declares neither: RFC 9001 §4.1.3 removes the record layer
     // (rfc9001.txt:462-464), and ch_quic holds one quic_keys per
     // direction per encryption level in their place. So a QUIC build
@@ -168,8 +168,8 @@ typedef struct {
     uint8_t exp_master[HKDF_HASH_MAX];
 #endif
     ch_transcript transcript;
-#ifndef CH_TRANSPORT_QUIC
-    // The peer's record_size_limit. A TRANSPORT=quic build declares it
+#ifndef CH_TRANSPORT_QUIC_NONBLOCKING
+    // The peer's record_size_limit. A TRANSPORT=quic-nonblocking build declares it
     // in neither direction: it sends no record_size_limit and receives
     // none, because RFC 9001 §4.1.3 removes the record layer the
     // extension sizes (rfc9001.txt:462-464). cfg.buf_len bounds one
@@ -177,11 +177,11 @@ typedef struct {
     uint16_t peer_limit; // max plaintext per record the peer accepts
 #endif
     uint8_t state;
-#ifndef CH_TRANSPORT_QUIC
+#ifndef CH_TRANSPORT_QUIC_NONBLOCKING
     // Whether record protection is live, which decides whether an alert
     // goes out encrypted. After the peer's close_notify only the write
     // direction is live (read_closed, below), and an alert is sealed
-    // under that one. A TRANSPORT=quic build does not declare it,
+    // under that one. A TRANSPORT=quic-nonblocking build does not declare it,
     // because it sends no alert record at all: QUIC carries the failure
     // in a CONNECTION_CLOSE frame the caller writes (RFC 9001 §4.8),
     // and ch_quic_error_code reports the code that goes in it.
@@ -257,7 +257,7 @@ typedef struct {
     uint8_t compat_ccs;
     size_t sni_len;
 #endif
-#if defined(CH_TRUST_WEBPKI) || defined(CH_TRANSPORT_QUIC) || defined(CH_ROLE_SERVER)
+#if defined(CH_TRUST_WEBPKI) || defined(CH_TRANSPORT_QUIC_NONBLOCKING) || defined(CH_ROLE_SERVER)
     // Which protocol the server selected through ALPN (RFC 7301 §3.2):
     // the index in ch_cfg.alpn_protocols of the name the
     // EncryptedExtensions carried, or CH_ALPN_NONE (cfg.h) when the
@@ -266,14 +266,14 @@ typedef struct {
     // with CH_ALPN_NONE, because index 0 is a protocol. Public
     // information, like group: the caller reads it to choose which
     // protocol to speak. A TRUST=webpki build declares it, and so does
-    // a TRANSPORT=quic build in every trust mode, because RFC 9001 §8.1
+    // a TRANSPORT=quic-nonblocking build in every trust mode, because RFC 9001 §8.1
     // requires ALPN there (rfc9001.txt:1891-1895) and ch_quic_init
     // seeds the field where ch_handshake seeds it over TCP. A
     // ROLE=server build declares it in every trust mode as well, and
     // writes it from the other side: the index is the protocol this
     // server selected out of cfg.alpn_protocols, and CH_ALPN_NONE when
     // the caller offered none, the client sent no ALPN extension, or
-    // the two lists did not intersect. A TRANSPORT=tls raw or ca client
+    // the two lists did not intersect. A TRANSPORT=tcp-blocking raw or ca client
     // object declares none of this and keeps the ch_tls layout it had.
     uint8_t alpn_selected;
 #endif
@@ -299,7 +299,7 @@ typedef struct {
     // allowed date; epoch_status is then CH_EPOCH_UNTRUSTED.
     uint32_t epoch_seen;
     uint8_t epoch_status;
-#ifndef CH_TRANSPORT_QUIC
+#ifndef CH_TRANSPORT_QUIC_NONBLOCKING
     // Set when the peer's close_notify arrived on a connected session.
     // RFC 9846 §6 makes that alert close one direction of the
     // connection, the sender's (rfc9846.txt:3767-3768), and §6.1 says it
@@ -308,14 +308,14 @@ typedef struct {
     // returns 0 without reading, the read key is wiped, and state stays
     // CH_ST_CONNECTED until ch_close. Public, like pin_slot. It sits in
     // the padding before send_epochs, so sizeof(ch_tls) did not change
-    // when it was added. A TRANSPORT=quic build does not declare it:
+    // when it was added. A TRANSPORT=quic-nonblocking build does not declare it:
     // QUIC carries no close_notify, and RFC 9001 §4.8 treats every TLS
     // alert as fatal (rfc9001.txt:888-893).
     uint8_t read_closed;
 #endif
-#ifndef CH_TRANSPORT_QUIC
+#ifndef CH_TRANSPORT_QUIC_NONBLOCKING
     // How many TLS KeyUpdate messages this client has sent. A
-    // TRANSPORT=quic build does not declare it: RFC 9001 §6 forbids the
+    // TRANSPORT=quic-nonblocking build does not declare it: RFC 9001 §6 forbids the
     // TLS KeyUpdate message on this transport (rfc9001.txt:1566-1568),
     // and the key update here is the packet-level one of §6.1, which
     // ch_quic_key_update runs and ch_quic.key_phase names.
@@ -324,7 +324,7 @@ typedef struct {
     // Unread plaintext of the current record, inside cfg.buf.
     size_t pt_off;
     size_t pt_len;
-#ifdef CH_TRANSPORT_RECORD
+#ifdef CH_TRANSPORT_TCP_NONBLOCKING
     // The bytes of a post-handshake message that arrived in part when
     // ch_read returned CH_RECORD_AGAIN: they sit at the front of cfg.buf,
     // and the next ch_read continues the message with the next record
@@ -332,7 +332,7 @@ typedef struct {
     // in part.
     size_t post_fill;
 #endif
-#ifdef CH_TRANSPORT_QUIC
+#ifdef CH_TRANSPORT_QUIC_NONBLOCKING
     // The one handshake message the client owes, staged whole until
     // ch_quic_crypto_out hands it out. It carries no REC_HDR prefix:
     // RFC 9001 §4.1.3 takes the unprotected content of a handshake
@@ -368,8 +368,8 @@ static inline size_t tls_hash_len(const ch_tls *t) {
 #endif
 }
 
-#ifndef CH_TRANSPORT_QUIC
-// The three calls session.c defines. A TRANSPORT=quic object compiles
+#ifndef CH_TRANSPORT_QUIC_NONBLOCKING
+// The three calls session.c defines. A TRANSPORT=quic-nonblocking object compiles
 // no session.c, so it declares none of them: quic.c holds quic_fail and
 // ch_quic_close, which wipe the fields the QUIC block below lists.
 
@@ -394,10 +394,10 @@ int tlsi_epoch_init(ch_tls *t, const ch_cfg *cfg, int psk_ok);
 void tlsi_wipe(ch_tls *t);
 #endif
 
-#ifdef CH_TRANSPORT_QUIC
-// What survives a return under TRANSPORT=quic.
+#ifdef CH_TRANSPORT_QUIC_NONBLOCKING
+// What survives a return under TRANSPORT=quic-nonblocking.
 //
-// The TLS driver runs one handshake to completion inside ch_connect and
+// The tcp-blocking driver runs one handshake to completion inside ch_connect and
 // keeps its working state on ch_handshake's own stack frame. The QUIC
 // driver returns to the caller between handshake messages, so every
 // value a later call reads lives in the session struct instead. That
@@ -452,7 +452,7 @@ void tlsi_wipe(ch_tls *t);
 // handshake_hp_tx, and app_tx and app_hp_tx. It wipes those of a level
 // whose bit is clear, and ch_quic_seal_close wipes a level's right after
 // its seal (docs/decisions.md 57). It wipes no rec_dir, because a
-// TRANSPORT=quic build declares none. ch_quic_close wipes every field
+// TRANSPORT=quic-nonblocking build declares none. ch_quic_close wipes every field
 // above, the write keys included, clears levels_ready and sets
 // CH_ST_CLOSED.
 //

@@ -19,11 +19,11 @@
 // the only entry point, so the driver's harness can stub it and a step
 // harness can reach the static functions by #include.
 //
-// Only a TRANSPORT=quic build compiles it. docs/quic.md, "Suspending
+// Only a TRANSPORT=quic-nonblocking build compiles it. docs/quic.md, "Suspending
 // the driver", states the design and the state each step leaves behind.
 #ifndef CH_QUIC_STEP_H
 #define CH_QUIC_STEP_H
-#ifdef CH_TRANSPORT_QUIC
+#ifdef CH_TRANSPORT_QUIC_NONBLOCKING
 
 #include "cfg.h"
 
@@ -119,5 +119,5 @@ typedef struct ch_quic ch_quic;
 // default arm answers nothing else.
 int hsq_advance(ch_quic *q);
 
-#endif // CH_TRANSPORT_QUIC
+#endif // CH_TRANSPORT_QUIC_NONBLOCKING
 #endif

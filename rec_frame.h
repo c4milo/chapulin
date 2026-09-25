@@ -1,4 +1,4 @@
-// What both record-mode drivers do identically: take one inbound record,
+// What both tcp-nonblocking drivers do identically: take one inbound record,
 // and die.
 //
 // rec.c drives the client and srv_rec.c the server, and neither owns
@@ -10,7 +10,7 @@
 // rather than in two copies that drift.
 #ifndef CH_REC_FRAME_H
 #define CH_REC_FRAME_H
-#ifdef CH_TRANSPORT_RECORD
+#ifdef CH_TRANSPORT_TCP_NONBLOCKING
 
 #include <stddef.h>
 #include <stdint.h>
@@ -39,5 +39,5 @@ int rec_session_dead(const ch_record *r);
 // outer is that record's own type byte.
 int rec_take_record(ch_record *r, uint8_t *rec, size_t body_len, uint8_t outer);
 
-#endif // CH_TRANSPORT_RECORD
+#endif // CH_TRANSPORT_TCP_NONBLOCKING
 #endif

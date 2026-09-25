@@ -1,7 +1,7 @@
-// chapulin's server API under TRANSPORT=record: the TLS 1.3 server
+// chapulin's server API under TRANSPORT=tcp-nonblocking: the TLS 1.3 server
 // handshake of srv_flight.[ch], driven by a caller that owns the socket.
 // It sits beside srv.h the way rec.h sits beside tls.h, and it adds the
-// calls a record-mode server needs that a blocking one does not.
+// calls a tcp-nonblocking server needs that a blocking one does not.
 //
 // srv.h's ch_srv_accept runs the handshake by calling cfg.send and
 // cfg.recv, which block. That is the right shape for the firmware
@@ -26,7 +26,7 @@
 // contract and docs/server.md the reasoning.
 #ifndef CH_SRV_REC_H
 #define CH_SRV_REC_H
-#if defined(CH_ROLE_SERVER) && defined(CH_TRANSPORT_RECORD)
+#if defined(CH_ROLE_SERVER) && defined(CH_TRANSPORT_TCP_NONBLOCKING)
 
 #include <stddef.h>
 #include <stdint.h>
@@ -83,5 +83,5 @@ int ch_srv_record_init(ch_record *r, const ch_cfg *cfg);
 // ch_record_alert names the alert the caller sends before it closes.
 int ch_srv_record_in(ch_record *r, uint8_t *p, size_t n, size_t *consumed);
 
-#endif // CH_ROLE_SERVER && CH_TRANSPORT_RECORD
+#endif // CH_ROLE_SERVER && CH_TRANSPORT_TCP_NONBLOCKING
 #endif

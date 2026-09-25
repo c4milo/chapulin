@@ -72,7 +72,7 @@ static size_t build_client_hello_ek(handshake_state *h, uint8_t *out, size_t cap
 static size_t build_client_hello_ek(handshake_state *h, uint8_t *out, size_t cap) {
 #endif
     ch_tls *t = h->t;
-#ifdef CH_TRANSPORT_QUIC
+#ifdef CH_TRANSPORT_QUIC_NONBLOCKING
     // RFC 9001 §4.1.3 removes the record layer this extension sizes
     // (rfc9001.txt:462-464), so a QUIC hello sends none and the builder
     // reads the 0 this passes.
@@ -323,9 +323,9 @@ int hsf_derive_handshake_secrets(handshake_state *h, const server_hello_info *in
     size_t ecdhe_len = sizeof ecdhe;
     int shared_ok = x25519(ecdhe, h->priv, info->server_pub) != 0;
 #endif
-    // The six values the exchange consumed. The TLS driver would wipe
-    // them with its frame; the QUIC driver returns to its caller
-    // between messages, so that wipe is a round trip away and they die
+    // The six values the exchange consumed. The tcp-blocking driver would
+    // wipe them with its frame; the tcp-nonblocking and QUIC drivers
+    // return to their caller between messages, so that wipe is a round trip away and they die
     // here instead. After this call the retry hello can no longer be
     // built, which is correct: the exchange is over.
 #ifdef CH_KEYLOG
@@ -371,7 +371,7 @@ int hsf_read_encrypted_extensions(handshake_state *h) {
         h->alert = ALERT_UNEXPECTED_MESSAGE;
         return CH_EPROTO;
     }
-#ifdef CH_TRANSPORT_QUIC
+#ifdef CH_TRANSPORT_QUIC_NONBLOCKING
     // A QUIC build declares no ch_tls.peer_limit, so the parser writes
     // a local this call drops: RFC 9001 §4.1.3 removes the record layer
     // record_size_limit sizes (rfc9001.txt:462-464).
@@ -393,7 +393,7 @@ int hsf_read_encrypted_extensions(handshake_state *h) {
     // must survive to the wire.
     h->alert = ALERT_ILLEGAL_PARAMETER;
     rc = hsp_parse_encrypted_exts(
-#ifdef CH_TRANSPORT_QUIC
+#ifdef CH_TRANSPORT_QUIC_NONBLOCKING
         raw + 4, raw_len - 4, &peer_limit, t->cfg.alpn_protocols, t->cfg.alpn_count,
         &t->alpn_selected,
 #ifdef CH_TRUST_WEBPKI
@@ -411,7 +411,7 @@ int hsf_read_encrypted_extensions(handshake_state *h) {
     if (rc != CH_OK) {
         return rc;
     }
-#ifdef CH_TRANSPORT_QUIC
+#ifdef CH_TRANSPORT_QUIC_NONBLOCKING
     // RFC 9001 §8.1 requires ALPN of every QUIC client and makes a
     // handshake that negotiated no protocol a failure
     // (rfc9001.txt:1897-1902). The parser accepts a message with no ALPN

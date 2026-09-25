@@ -1,7 +1,7 @@
 invariant: INV-26
 file: ct.h
 catches: test/quic-builds.sh
-reason: a TRANSPORT=quic build takes the AES-GCM suites without
+reason: a TRANSPORT=quic-nonblocking build takes the AES-GCM suites without
   CH_NATIVE_AES, so quic_packet.c hands AES the Handshake and 1-RTT
   packet and header protection keys, which come from traffic secrets,
   with nobody stating that the instructions run in constant time. The
@@ -14,6 +14,6 @@ reason: a TRANSPORT=quic build takes the AES-GCM suites without
 #error "CH_SUITE_AES_GCM needs -DCH_NATIVE_AES: the build asserts the timing (quic_aes_hw.c)"
 #endif
 --- new
-#if !defined(CH_NATIVE_AES) && !defined(CH_TRANSPORT_QUIC)
+#if !defined(CH_NATIVE_AES) && !defined(CH_TRANSPORT_QUIC_NONBLOCKING)
 #error "CH_SUITE_AES_GCM needs -DCH_NATIVE_AES: the build asserts the timing (quic_aes_hw.c)"
 #endif

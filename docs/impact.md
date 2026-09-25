@@ -52,7 +52,7 @@ For each changed path the plan carries:
   more define, and the Makefile names the rows that meet real C in one
   arm alone.
 - **Packaged-object legs.** One leg per axis value `make check` builds —
-  the default object, `TRUST=ca-rsa`, `TRUST=webpki` and `TRANSPORT=quic`. A
+  the default object, `TRUST=ca-rsa`, `TRUST=webpki` and `TRANSPORT=quic-nonblocking`. A
   source selects every leg that packages it, so a file the default object
   filters out still selects the leg that compiles it, and so does an
   `#ifdef` body only one leg's defines keep.

@@ -3,8 +3,8 @@
 // object is compiled with, so a consumer that computes the same macros
 // under its own defines reads equal values exactly when the two agree.
 // build.h maps ch_build to the name this object's transport gives it,
-// so the definition below is ch_build_tls, ch_build_record or
-// ch_build_quic.
+// so the definition below is ch_build_info_tcp_blocking, ch_build_info_tcp_nonblocking or
+// ch_build_info_quic_nonblocking.
 #include "build.h"
 
 const ch_build_info ch_build = {

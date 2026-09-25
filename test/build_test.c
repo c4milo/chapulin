@@ -84,11 +84,11 @@ static uint32_t axes_from_defines(void) {
 #ifdef CH_KEX_PQ
     axes |= CH_BUILD_KEX_PQ;
 #endif
-#ifdef CH_TRANSPORT_QUIC
-    axes |= CH_BUILD_TRANSPORT_QUIC;
+#ifdef CH_TRANSPORT_QUIC_NONBLOCKING
+    axes |= CH_BUILD_TRANSPORT_QUIC_NONBLOCKING;
 #endif
-#ifdef CH_TRANSPORT_RECORD
-    axes |= CH_BUILD_TRANSPORT_RECORD;
+#ifdef CH_TRANSPORT_TCP_NONBLOCKING
+    axes |= CH_BUILD_TRANSPORT_TCP_NONBLOCKING;
 #endif
 #ifdef CH_SUITE_AES_GCM
     axes |= CH_BUILD_SUITE_AES_GCM;

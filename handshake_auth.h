@@ -2,7 +2,7 @@
 // and the CA build's monotonic revocation rule. Split out of
 // handshake.c, which owns the state machine that calls this; the two
 // entry points below are the only ones it needs. The rest stays
-// private here. A CH_TRANSPORT_QUIC build declares a third, because its
+// private here. A CH_TRANSPORT_QUIC_NONBLOCKING build declares a third, because its
 // driver reads one handshake message per call and the flight is two
 // messages.
 #ifndef CH_HANDSHAKE_AUTH_H
@@ -15,7 +15,7 @@
 // chain up to the pinned CA key in a CA-mode build. Returns CH_OK, or
 // an error with h->alert set.
 //
-// Under CH_TRANSPORT_QUIC it stops one message earlier. It reads the
+// Under CH_TRANSPORT_QUIC_NONBLOCKING it stops one message earlier. It reads the
 // Certificate, verifies the chain the trust mode asks for, adds the raw
 // message to the transcript and returns CH_OK there, with h->leaf
 // written under a CA mode and TRUST=webpki, h->t->pin_slot written under
@@ -27,7 +27,7 @@
 // (docs/quic.md, "Entry points and their contracts").
 int hsa_server_auth(handshake_state *h);
 
-#if defined(CH_TRANSPORT_QUIC) || defined(CH_TRANSPORT_RECORD)
+#if defined(CH_TRANSPORT_QUIC_NONBLOCKING) || defined(CH_TRANSPORT_TCP_NONBLOCKING)
 // Reads the server's CertificateVerify and verifies its signature over
 // the handshake transcript, which authenticates the peer (RFC 9846
 // §4.5.2). It takes the transcript hash as it stands, rebuilds §4.5.2's

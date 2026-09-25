@@ -186,7 +186,7 @@ int srv_send_hello_retry_request(handshake_state *h, const client_hello *ch, con
 }
 
 int srv_send_compat_ccs(handshake_state *h, const client_hello *ch) {
-#ifdef CH_TRANSPORT_QUIC
+#ifdef CH_TRANSPORT_QUIC_NONBLOCKING
     // RFC 9001 section 8.4 forbids a QUIC client from requesting
     // compatibility mode and makes a ChangeCipherSpec a connection error
     // (rfc9001.txt:1976-1979), so a QUIC server sends none. The call stays
@@ -308,7 +308,7 @@ int srv_derive_handshake_secrets(handshake_state *h, const client_hello *ch, con
     // The client secret protects what this endpoint reads and the server
     // secret what it writes, the reverse of handshake.c:94-95 and the
     // whole of the asymmetry.
-#ifdef CH_TRANSPORT_QUIC
+#ifdef CH_TRANSPORT_QUIC_NONBLOCKING
     // No record layer to key. The two secrets stay in h->c_hs and h->s_hs
     // and the driver turns them into the Handshake level's packet and
     // header protection keys, which is where quic_step.c's client puts the
@@ -335,9 +335,9 @@ int srv_send_encrypted_extensions(handshake_state *h, const selection *sel) {
     uint8_t msg[SRV_ENCRYPTED_EXTENSIONS_MAX];
     // No quic_transport_parameters body on this arm. RFC 9001 §8.2
     // forbids the extension on a transport that is not QUIC
-    // (rfc9001.txt:1945-1949), and this arm is the record transport. The
+    // (rfc9001.txt:1945-1949), and this arm is the tcp-nonblocking transport. The
     // QUIC arm below passes the caller's body.
-#ifdef CH_TRANSPORT_QUIC
+#ifdef CH_TRANSPORT_QUIC_NONBLOCKING
     // RFC 9001 section 4.1.3 removes the record layer record_size_limit
     // sizes, and section 8.2 requires the transport parameters extension
     // in its place (rfc9001.txt:1922-1924). The body is the caller's and
@@ -443,7 +443,7 @@ int srv_send_finished(handshake_state *h) {
     ch_keylog(t->cfg.io, CH_KEYLOG_CLIENT_TRAFFIC, h->client_random, t->rd_secret, hash_len);
     ch_keylog(t->cfg.io, CH_KEYLOG_SERVER_TRAFFIC, h->client_random, t->wr_secret, hash_len);
 #endif
-#ifndef CH_TRANSPORT_QUIC
+#ifndef CH_TRANSPORT_QUIC_NONBLOCKING
     REC_DIR_INIT_SUITE(&t->wr, t->wr_secret, t->suite);
 #endif
     return CH_OK;
@@ -480,7 +480,7 @@ int srv_read_client_finished(handshake_state *h) {
 
 void srv_complete(handshake_state *h) {
     ch_tls *t = h->t;
-#ifndef CH_TRANSPORT_QUIC
+#ifndef CH_TRANSPORT_QUIC_NONBLOCKING
     // Over QUIC the read direction becomes a 1-RTT packet key set, which
     // the driver installs from t->rd_secret with the other three.
     REC_DIR_INIT_SUITE(&t->rd, t->rd_secret, t->suite);

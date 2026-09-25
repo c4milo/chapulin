@@ -30,7 +30,7 @@
 // body of the other.
 #ifndef CH_QUIC_AES_KEY_H
 #define CH_QUIC_AES_KEY_H
-#if defined(CH_TRANSPORT_QUIC) || defined(CH_SUITE_AES_GCM)
+#if defined(CH_TRANSPORT_QUIC_NONBLOCKING) || defined(CH_SUITE_AES_GCM)
 
 #include <stdint.h>
 
@@ -46,5 +46,5 @@ struct aes_public_key {
     aes_key_schedule hp;
 };
 
-#endif // CH_TRANSPORT_QUIC || CH_SUITE_AES_GCM
+#endif // CH_TRANSPORT_QUIC_NONBLOCKING || CH_SUITE_AES_GCM
 #endif

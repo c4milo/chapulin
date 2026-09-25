@@ -2,7 +2,7 @@ invariant: INV-26
 file: Makefile
 catches: test/lint-trust-separation.sh
 reason: AES=soft stops being one implementation and adds the hardware one
-  beside it, so a TRANSPORT=quic AES=soft object carries two definitions
+  beside it, so a TRANSPORT=quic-nonblocking AES=soft object carries two definitions
   of aes_expand_round_keys and aes_cipher_block. The rule is the one PIN
   keeps: one implementation per object, chosen by a build variable, never
   two. The linker would refuse this particular pair, but a linker is not

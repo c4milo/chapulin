@@ -6,7 +6,7 @@ reason: handle_ticket stops reading at the ticket and never asks what is
   left, so a NewSessionTicket with a byte after its extensions vector, or
   with no vector at all, is handed to the application as a whole message.
   The NewSessionTicket boundary pair in test/session_post_tests.h objects.
-  The mutant edits the TLS arm; the QUIC arm reads the vector through
+  The mutant edits the TCP arm; the QUIC arm reads the vector through
   read_ticket_extensions and keeps its own rb_left.
 
 --- old
@@ -14,7 +14,7 @@ reason: handle_ticket stops reading at the ticket and never asks what is
     rb_skip(&r, ext_len);
 #endif
     if (r.err || rb_left(&r) != 0) {
-#ifdef CH_TRANSPORT_QUIC
+#ifdef CH_TRANSPORT_QUIC_NONBLOCKING
         *alert = ALERT_DECODE_ERROR;
 #endif
         return CH_EPROTO;

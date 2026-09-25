@@ -42,9 +42,9 @@ load() {
 # The transport an object's defines name, as lib_pair.h spells it.
 transport_of() {
     case " $1 " in
-    *" -DCH_TRANSPORT_QUIC "*) echo quic ;;
-    *" -DCH_TRANSPORT_RECORD "*) echo record ;;
-    *) echo tls ;;
+    *" -DCH_TRANSPORT_QUIC_NONBLOCKING "*) echo quic_nonblocking ;;
+    *" -DCH_TRANSPORT_TCP_NONBLOCKING "*) echo tcp_nonblocking ;;
+    *) echo tcp_blocking ;;
     esac
 }
 
@@ -124,28 +124,28 @@ run() {
     case $1 in
     webpki)
         # cocuyo's image: a DNS-over-TLS client and colibri's QUIC object.
-        pair webpki "" "RAND=extern TRUST=webpki TRANSPORT=record" \
-            "RAND=extern TRUST=webpki TRANSPORT=quic ROLE=both KEYLOG=on EXPORTER=off"
+        pair webpki "" "RAND=extern TRUST=webpki TRANSPORT=tcp-nonblocking" \
+            "RAND=extern TRUST=webpki TRANSPORT=quic-nonblocking ROLE=both KEYLOG=on EXPORTER=off"
         ;;
     server)
         # An HTTP/2 server beside an HTTP/3 one.
-        pair server "" "RAND=extern ROLE=server TRUST=none TRANSPORT=record" \
-            "RAND=extern ROLE=server TRUST=none TRANSPORT=quic EXPORTER=off KEYLOG=on"
+        pair server "" "RAND=extern ROLE=server TRUST=none TRANSPORT=tcp-nonblocking" \
+            "RAND=extern ROLE=server TRUST=none TRANSPORT=quic-nonblocking EXPORTER=off KEYLOG=on"
         ;;
     raw)
-        pair raw "" "RAND=extern" "RAND=extern TRANSPORT=quic EXPORTER=off"
+        pair raw "" "RAND=extern" "RAND=extern TRANSPORT=quic-nonblocking EXPORTER=off"
         ;;
     ca)
-        pair ca "" "RAND=extern TRUST=ca-rsa" "RAND=extern TRUST=ca-rsa TRANSPORT=quic EXPORTER=off"
+        pair ca "" "RAND=extern TRUST=ca-rsa" "RAND=extern TRUST=ca-rsa TRANSPORT=quic-nonblocking EXPORTER=off"
         ;;
     drbg)
         # Two generators, each seeded on its own: refused.
-        pair drbg "ch_drbg_seed" "RAND=drbg" "RAND=drbg TRANSPORT=quic EXPORTER=off"
+        pair drbg "ch_drbg_seed" "RAND=drbg" "RAND=drbg TRANSPORT=quic-nonblocking EXPORTER=off"
         ;;
-    tls-record)
-        # Both transports carry the connected session's calls: refused.
-        pair tls-record "ch_close ch_read ch_write" "RAND=extern" \
-            "RAND=extern TRUST=webpki TRANSPORT=record"
+    tcp-both)
+        # Both TCP transports carry the connected session's calls: refused.
+        pair tcp-both "ch_close ch_read ch_write" "RAND=extern" \
+            "RAND=extern TRUST=webpki TRANSPORT=tcp-nonblocking"
         ;;
     *)
         echo "lib-pair: no pair is named $1" >&2
@@ -155,7 +155,7 @@ run() {
 }
 
 names=("$@")
-[ ${#names[@]} -gt 0 ] || names=(webpki server raw ca drbg tls-record)
+[ ${#names[@]} -gt 0 ] || names=(webpki server raw ca drbg tcp-both)
 rc=0
 for name in "${names[@]}"; do
     run "$name" || rc=1

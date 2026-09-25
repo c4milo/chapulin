@@ -98,7 +98,7 @@ Home: github.com/c4milo.
   SHA-384) ← `chacha20.[ch]` + `poly1305.[ch]` +
   `quic_aes.[ch]` with `quic_aes_key.h` (the `aes_public_key` type, whose
   body sits in the second header alone, and the two constructors that
-  write one, TRANSPORT=quic; INV-26 names the three keys it may see)
+  write one, TRANSPORT=quic-nonblocking; INV-26 names the three keys it may see)
   and `aes_traffic_key.h` (the `aes_traffic_key` type a SUITE=aesgcm
   build's traffic keys take, whose body sits in that header alone) +
   `quic_aes_block.h` with one of `quic_aes_soft.c`, `quic_aes_hw.c` or
@@ -106,7 +106,7 @@ Home: github.com/c4milo.
   FIPS 197, over plain bytes, and AES-256's on `quic_aes_hw.c` alone; the
   Makefile AES variable picks one)
   ← `aead.[ch]` (RFC 8439 seal/open) + `quic_gcm.[ch]`
-  (AEAD_AES_128_GCM and GHASH, TRANSPORT=quic, and AEAD_AES_256_GCM
+  (AEAD_AES_128_GCM and GHASH, TRANSPORT=quic-nonblocking, and AEAD_AES_256_GCM
   under a traffic key, SUITE=aesgcm) with `quic_ghash_hw.[ch]`
   (GHASH's multiply and data loop on the carry-less multiply, AES=hw
   alone) ← `x25519.[ch]` with `x25519_wide.[ch]` (the radix-2^51 field,
@@ -145,13 +145,16 @@ Home: github.com/c4milo.
   sizes and bounds the object was compiled with) reads the public
   headers, and no library source reads it. Every packaged object
   exports its build record as one data symbol beside its calls, named
-  for its transport (`ch_build_tls`, `ch_build_record`,
-  `ch_build_quic`; build.h maps `ch_build` to the one the consumer's
-  defines select), which a consumer compares with its own headers
-  through `ch_build_matches` and no library call reads. `ch_srv_check`
-  and `ch_pubkey_from_pem` carry the transport in their symbol names
-  the same way, so one image links one object of each transport
-  (docs/decisions.md 56 and 61).
+  for its transport (`ch_build_info_tcp_blocking`,
+  `ch_build_info_tcp_nonblocking`, `ch_build_info_quic_nonblocking`;
+  build.h maps `ch_build` to the one the consumer's defines select),
+  which a consumer compares with its own headers through
+  `ch_build_matches` and no library call reads. `ch_srv_check` and
+  `ch_pubkey_from_pem` carry the transport in their symbol names the
+  same way, so one image links one object of each transport
+  (docs/decisions.md 56 and 61). The Makefile TRANSPORT variable names
+  what TLS runs over and who does the I/O: `tcp-blocking` (default),
+  `tcp-nonblocking` or `quic-nonblocking` (docs/decisions.md 62).
 - Everything that touches secret bytes is constant time: no secret-
   dependent branches, no secret-dependent memory indices. Comparisons go
   through `ct_memeq` and wipes through `ct_wipe`; constant-time selects,

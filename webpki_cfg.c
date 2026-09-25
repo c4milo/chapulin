@@ -9,7 +9,7 @@
 // WEBPKI_SRCS), and the guard says so to a reader and to
 // lint-quic-partition, which preprocesses every root file without the
 // define: the ALPN caps below exist in that case only under
-// CH_TRANSPORT_QUIC.
+// CH_TRANSPORT_QUIC_NONBLOCKING.
 #ifdef CH_TRUST_WEBPKI
 
 #include "ct.h"

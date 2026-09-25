@@ -2,7 +2,7 @@
 // quic_config.h.
 #include "quic_config.h"
 
-#ifdef CH_TRANSPORT_QUIC
+#ifdef CH_TRANSPORT_QUIC_NONBLOCKING
 
 #include "ct.h"
 #ifdef CH_TRUST_WEBPKI
@@ -190,4 +190,4 @@ int quic_config_ok(ch_tls *t, const ch_cfg *cfg) {
     return epoch_init(t, cfg);
 }
 
-#endif // CH_TRANSPORT_QUIC
+#endif // CH_TRANSPORT_QUIC_NONBLOCKING

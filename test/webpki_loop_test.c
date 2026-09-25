@@ -1,6 +1,6 @@
-// This tree's TRUST=webpki record-mode client against this tree's
-// record-mode server in one process, over the object that carries both:
-// ROLE=both TRANSPORT=record TRUST=webpki. The server presents the r2
+// This tree's TRUST=webpki tcp-nonblocking client against this tree's
+// tcp-nonblocking server in one process, over the object that carries both:
+// ROLE=both TRANSPORT=tcp-nonblocking TRUST=webpki. The server presents the r2
 // corpus chain and signs with its leaf key (test/webpki_r2_chain.h), so
 // the client runs the whole chain walk against a real server flight.
 //

@@ -33,7 +33,7 @@ size_t srv_out_limit(const ch_tls *t);
 // build leaves room for the record header it writes in front; a QUIC build
 // writes no header, and session.h gives that build a tx with no room for
 // one, so the origin is the buffer itself.
-#ifdef CH_TRANSPORT_QUIC
+#ifdef CH_TRANSPORT_QUIC_NONBLOCKING
 #define SRV_OUT_STAGE 0
 #else
 #define SRV_OUT_STAGE REC_HDR
@@ -46,7 +46,7 @@ int srv_out_plain(handshake_state *h, size_t n);
 
 // Sends one whole record the caller built, header and all, the way every
 // other record leaves this server: through cfg.srv.on_record_out in a
-// TRANSPORT=record build (INV-28) and through cfg.send otherwise. The one
+// TRANSPORT=tcp-nonblocking build (INV-28) and through cfg.send otherwise. The one
 // caller is the compatibility change_cipher_spec (srv_send_compat_ccs).
 int srv_out_record(ch_tls *t, const uint8_t *rec, size_t n);
 

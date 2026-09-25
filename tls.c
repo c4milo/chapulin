@@ -88,7 +88,7 @@ static int psk_configured(const ch_cfg *cfg) {
 
 // Every rule a client configuration must keep whatever drives it. The I/O
 // callbacks are not among them: the blocking driver requires both and
-// TRANSPORT=record refuses both, so each caller checks that itself.
+// TRANSPORT=tcp-nonblocking refuses both, so each caller checks that itself.
 int tlsi_config_ok(const ch_cfg *cfg) {
     // Exactly one auth mode: a config carrying both a PSK and a pin is a
     // provisioning mistake and gets rejected, not silently resolved.
@@ -126,7 +126,7 @@ int tlsi_config_ok(const ch_cfg *cfg) {
     return 1;
 }
 
-#ifndef CH_TRANSPORT_RECORD
+#ifndef CH_TRANSPORT_TCP_NONBLOCKING
 int ch_connect(ch_tls *t, const ch_cfg *cfg) {
     memset(t, 0, sizeof *t);
     t->cfg = *cfg;
@@ -142,7 +142,7 @@ int ch_connect(ch_tls *t, const ch_cfg *cfg) {
     }
     return ch_handshake(t);
 }
-#endif // CH_TRANSPORT_RECORD
+#endif // CH_TRANSPORT_TCP_NONBLOCKING
 #endif
 #endif // CH_ROLE_SERVER
 // Hands the handshake plaintext at the front of cfg.buf to hspost_read.
@@ -180,7 +180,7 @@ static void close_read_side(ch_tls *t) {
 // post-handshake messages are handled, and close_notify closes the read
 // side and returns CH_ECLOSED.
 static int dispatch_one_record(ch_tls *t) {
-#ifdef CH_TRANSPORT_RECORD
+#ifdef CH_TRANSPORT_TCP_NONBLOCKING
     if (t->post_fill > 0) { // the next record continues a message (session.h)
         size_t fill = t->post_fill;
         t->post_fill = 0;
@@ -191,7 +191,7 @@ static int dispatch_one_record(ch_tls *t) {
     size_t record_len = 0;
     int rc = io_read_record(&t->cfg, t->cfg.buf, t->cfg.buf_len, &outer, &record_len);
     if (rc == CH_RECORD_AGAIN) {
-        return rc; // TRANSPORT=record alone returns it (rec.h)
+        return rc; // TRANSPORT=tcp-nonblocking alone returns it (rec.h)
     }
     if (rc != CH_OK) {
         tlsi_fail(t, ALERT_DECODE_ERROR);
@@ -343,7 +343,7 @@ int tlsi_config_ok(const ch_cfg *cfg) {
 // Guarded as the raw and ca ch_connect above is: this transport filters
 // handshake.c out, so a compiled ch_connect leaves ch_handshake
 // undefined.
-#ifndef CH_TRANSPORT_RECORD
+#ifndef CH_TRANSPORT_TCP_NONBLOCKING
 int ch_connect(ch_tls *t, const ch_cfg *cfg) {
     memset(t, 0, sizeof *t);
     t->cfg = *cfg;
@@ -361,7 +361,7 @@ int ch_connect(ch_tls *t, const ch_cfg *cfg) {
     }
     return ch_handshake(t);
 }
-#endif // CH_TRANSPORT_RECORD
+#endif // CH_TRANSPORT_TCP_NONBLOCKING
 #endif
 
 #ifdef CH_TRUST_CA

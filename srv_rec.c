@@ -1,4 +1,4 @@
-// The record-mode server driver: srv_flight.[ch]'s handlers run over TLS
+// The tcp-nonblocking server driver: srv_flight.[ch]'s handlers run over TLS
 // records, driven by a caller that owns the socket. srv_rec.h states the
 // contract; this file is srv_quic.c's mirror on the transport that keeps
 // its records, and srv_handshake.c's on a caller that will not block.
@@ -18,7 +18,7 @@
 // and no flight suspends half-written.
 #include "srv_rec.h"
 
-#if defined(CH_ROLE_SERVER) && defined(CH_TRANSPORT_RECORD)
+#if defined(CH_ROLE_SERVER) && defined(CH_TRANSPORT_TCP_NONBLOCKING)
 
 #include "ch_assert.h"
 
@@ -313,4 +313,4 @@ int ch_srv_record_in(ch_record *r, uint8_t *p, size_t n, size_t *consumed) {
     }
 }
 
-#endif // CH_ROLE_SERVER && CH_TRANSPORT_RECORD
+#endif // CH_ROLE_SERVER && CH_TRANSPORT_TCP_NONBLOCKING

@@ -50,7 +50,7 @@ void ks_res_psk(size_t hash_len, const uint8_t *res_master, const uint8_t *nonce
 // and it sits here rather than in cfg.h because cfg.h is at the
 // 500-line cap and this header is the one every build compiles that
 // also declares the exporter's own calls.
-#ifdef CH_TRANSPORT_QUIC
+#ifdef CH_TRANSPORT_QUIC_NONBLOCKING
 #error "CH_EXPORTER has no QUIC entry point: ch_export is a record-layer call"
 #endif
 // The axis is what raises hkdf's label cap, and this is where that is

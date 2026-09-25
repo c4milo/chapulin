@@ -17,8 +17,9 @@
 #include "hkdf.h"
 #include "suite.h"
 
-#if !defined(CH_SUITE_AES_GCM) || !defined(CH_TRANSPORT_QUIC)
-#error "quic_keys_suite proves the QUIC suite build: -DCH_TRANSPORT_QUIC -DCH_SUITE_AES_GCM"
+#if !defined(CH_SUITE_AES_GCM) || !defined(CH_TRANSPORT_QUIC_NONBLOCKING)
+#error                                                                                             \
+    "quic_keys_suite proves the QUIC suite build: -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_SUITE_AES_GCM"
 #endif
 
 uint64_t nondet_u64(void);

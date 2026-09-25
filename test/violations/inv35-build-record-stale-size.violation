@@ -4,7 +4,7 @@ catches: test/lib-check-webpki-record.sh
 reason: build.c records sizeof(ch_tls) as a number, 1144, the default
   object's size on a 64-bit host, rather than computing it. The number
   is right for one build and stale for every other, the TRUST=webpki
-  record-mode object among them, whose ch_tls is 3,048 bytes. lib-check
+  tcp-nonblocking object among them, whose ch_tls is 3,048 bytes. lib-check
   links test/build_test.c under that object's own defines, and the
   consumer reads 1144 where its headers compute 3,048, so it objects.
 

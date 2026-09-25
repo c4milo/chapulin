@@ -4,7 +4,7 @@
 #ifndef CH_TEST_WEBPKI_RESUME_SESSION_H
 #define CH_TEST_WEBPKI_RESUME_SESSION_H
 
-#ifdef CH_TRANSPORT_RECORD
+#ifdef CH_TRANSPORT_TCP_NONBLOCKING
 static ch_record session;
 
 static ch_tls *session_tls(void) {

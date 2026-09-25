@@ -1,7 +1,7 @@
 // The address validation token a QUIC server puts in a Retry packet: mint one
 // when the server sends a Retry, check the one the client's next Initial
 // carries (RFC 9000 §8.1.2, rfc9000.txt:2268-2273). Only a build with a server
-// role and TRANSPORT=quic compiles it, and srv_quic.h includes this header, so
+// role and TRANSPORT=quic-nonblocking compiles it, and srv_quic.h includes this header, so
 // a caller of the server's QUIC calls sees these two as well.
 //
 // A server that sends a Retry keeps no state for the connection, so what it
@@ -47,7 +47,7 @@
 // could not present one as the other.
 #ifndef CH_QUIC_TOKEN_H
 #define CH_QUIC_TOKEN_H
-#if defined(CH_ROLE_SERVER) && defined(CH_TRANSPORT_QUIC)
+#if defined(CH_ROLE_SERVER) && defined(CH_TRANSPORT_QUIC_NONBLOCKING)
 
 #include <stddef.h>
 #include <stdint.h>
@@ -177,5 +177,5 @@ int ch_srv_quic_token_check(const uint8_t key[CH_QUIC_TOKEN_KEY_LEN], const uint
                             uint64_t now_seconds, uint64_t lifetime_seconds,
                             ch_quic_retry_cids *cids);
 
-#endif // CH_ROLE_SERVER && CH_TRANSPORT_QUIC
+#endif // CH_ROLE_SERVER && CH_TRANSPORT_QUIC_NONBLOCKING
 #endif

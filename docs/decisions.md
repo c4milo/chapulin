@@ -426,7 +426,7 @@ does nothing more.
 38. **QUIC is a transport axis, and chapulin owns packet protection on
     it, AES included.** RFC 9001 §4.1.3 removes the record layer: QUIC
     carries bare handshake messages in CRYPTO frames and protects
-    packets itself. A `TRANSPORT=quic` build takes handshake bytes in,
+    packets itself. A `TRANSPORT=quic-nonblocking` build takes handshake bytes in,
     hands handshake bytes out, and seals and opens every packet at every
     level, so no traffic secret leaves the object. colibri, the HTTP/3
     caller, owns everything that is not cryptography: packet numbers,
@@ -457,7 +457,7 @@ does nothing more.
     bytes raw, 856 under TRUST=ca-rsa, 976 under TRUST=webpki, 512
     under KEX=pq — into the session, moves 233 of `handshake.c`'s 395
     lines into a `handshake_flight.c` both transports compile, and
-    changes `handshake.o` in every TLS build. `handshake_psk` and
+    changes `handshake.o` in every tcp-blocking build. `handshake_psk` and
     `handshake_pin`, two of `proof/run.sh`'s 83 launch lines, are
     re-measured because that file moves under them. Gain: no second
     crypto stack. Every traffic secret a QUIC connection uses is
@@ -639,15 +639,15 @@ does nothing more.
     side". So the roles differ in one call each way, and `ROLE=both`
     exports seven calls where the halves export five and six. It is also
     smaller than what it replaces: 132,960 bytes against 183,980 for the
-    two TLS objects, and 148,520 against 213,804 for the two QUIC ones.
+    two tcp-blocking objects, and 148,520 against 213,804 for the two QUIC ones.
     `TRUST=none` is refused here, because the client half judges a peer.
 
-42. **A record-mode server pushes its flight; only the client pulls.**
-    `TRANSPORT=record` exists because a blocking callback cannot sit
+42. **A tcp-nonblocking server pushes its flight; only the client pulls.**
+    `TRANSPORT=tcp-nonblocking` exists because a blocking callback cannot sit
     under a completion-based event loop: colibri drives rotor, whose loop
     is single-threaded with no fibers, so a `cfg.recv` that waits stalls
     every connection the loop holds. `ch_srv_accept` blocks by contract
-    (`cfg.h:371`), which is why `ROLE=server TRANSPORT=record` was
+    (`cfg.h:371`), which is why `ROLE=server TRANSPORT=tcp-nonblocking` was
     refused until the driver existed.
 
     The client's shape does not carry over. `ch_record_out` hands a
@@ -692,7 +692,7 @@ does nothing more.
     `CH_ST_CONNECTED`, because the secret does not exist until the peer's
     Finished verifies and a closed session has wiped it with the rest.
 
-    `EXPORTER=on` with `TRANSPORT=quic` is refused by name, in the Makefile
+    `EXPORTER=on` with `TRANSPORT=quic-nonblocking` is refused by name, in the Makefile
     and again in `keysched.h` for a tree with its own build system. The
     call sits in `tls.c`, which `QUIC_REPLACED` drops, so that object would
     list `ch_export` and never define it — which is what `lib-check` caught
@@ -781,15 +781,15 @@ does nothing more.
     ChaCha20 and not AES, and the reason to offer AES is to reach more
     servers, not different ones.
 
-46. **A record-mode `ch_read` returns `CH_RECORD_AGAIN` when no record has
+46. **A tcp-nonblocking `ch_read` returns `CH_RECORD_AGAIN` when no record has
     arrived, and the session stays connected.** Entry 21 makes every
-    operational error fatal, and an empty `recv` in `TRANSPORT=record` is
+    operational error fatal, and an empty `recv` in `TRANSPORT=tcp-nonblocking` is
     not an error. The caller owns the socket and hands over whole records
     as they arrive, so between records it has nothing to hand over. Before
     this result existed, `ch_read` turned that empty `recv` into `CH_EIO`.
     A caller that received a record with no application data, such as a
     NewSessionTicket, had to hold it back until a data record arrived, or
-    lose the session. `TRANSPORT=tls` does not change: its `recv` blocks,
+    lose the session. `TRANSPORT=tcp-blocking` does not change: its `recv` blocks,
     and a 0 there is the end of the stream.
 
     Cost: a second live result from `ch_read`, and one field that lives
@@ -847,7 +847,7 @@ does nothing more.
     over one `ROLE=both` object and holds no key, so `quic_token.[ch]` mints
     and checks the token. `docs/quic_server.md`, "The Retry token", states
     the format and what the caller still owns. Cost: two exported calls, so
-    a `ROLE=server TRANSPORT=quic` object exports eighteen calls, and one
+    a `ROLE=server TRANSPORT=quic-nonblocking` object exports eighteen calls, and one
     HMAC-SHA-256 per mint and per check. Gain: a stateless server gets both
     connection IDs back for its transport parameters, and a key stays on
     chapulin's side of the line `docs/quic_server.md` draws.
@@ -1174,7 +1174,7 @@ does nothing more.
 55. **A `TRUST=webpki` client offers the certificate path beside a ticket,
     and a declined ticket becomes a full handshake in the same
     connection.** cocuyo, a DNS-over-TLS client that links the webpki
-    record object, measured dns.google (8.8.8.8:853) on 2026-09-24. With
+    tcp-nonblocking object, measured dns.google (8.8.8.8:853) on 2026-09-24. With
     the hello entry 47 wrote, which offered the ticket and no signature
     scheme, it resumed 0 of 10 connections: dns.google answered every
     resuming hello with a handshake_failure alert, a good ticket included.
@@ -1253,10 +1253,10 @@ does nothing more.
     consumer compares it with its own headers.** A consumer links
     `bin/chapulin.o` and compiles against the headers under defines it
     writes itself. cocuyo reads them through Zig's `@cImport` under
-    `CH_TRUST_WEBPKI`, `CH_TRANSPORT_RECORD` and `CH_RAND_EXTERN`, and
+    `CH_TRUST_WEBPKI`, `CH_TRANSPORT_TCP_NONBLOCKING` and `CH_RAND_EXTERN`, and
     colibri and stompy write their own lists. Nothing checked that those
     defines were the object's, and a mismatch links and runs. A consumer
-    that forgets `CH_TRUST_WEBPKI` beside a webpki record-mode object
+    that forgets `CH_TRUST_WEBPKI` beside a webpki tcp-nonblocking object
     passes a 152-byte `ch_cfg` to a call that reads 232 bytes, and
     declares a 1,624-byte `ch_record` that the object writes 4,120 bytes
     of (arm64). So `build.c` defines one const `ch_build_info` in every
@@ -1271,7 +1271,7 @@ does nothing more.
     The axes are the ten defines that change a size or a bound the
     record holds, or, for `CH_PIN_ECDSA` in a raw mode, the length a
     pinned key has: `CH_TRUST_CA`, `CH_TRUST_WEBPKI`, `CH_PIN_ECDSA`,
-    `CH_KEX_PQ`, `CH_TRANSPORT_QUIC`, `CH_TRANSPORT_RECORD`,
+    `CH_KEX_PQ`, `CH_TRANSPORT_QUIC_NONBLOCKING`, `CH_TRANSPORT_TCP_NONBLOCKING`,
     `CH_SUITE_AES_GCM`, `CH_ROLE_SERVER`, `CH_EXPORTER` and `CH_KEYLOG`.
     `build.h` says what each one changes. Left out, each measured with and
     without the define under all three transports:
@@ -1306,7 +1306,7 @@ does nothing more.
       object-like macros, which Zig's translate-c turns into constants.
       A Zig 0.16 program that `@cImport`s `build.h` under cocuyo's three
       defines reads `c.ch_build`, calls `c.ch_build_matches`, and gets 1
-      against the webpki record object and 0 with `CH_TRANSPORT_RECORD`
+      against the webpki tcp-nonblocking object and 0 with `CH_TRANSPORT_TCP_NONBLOCKING`
       left out.
     - A consumer is asked, not forced. No library source reads
       `ch_build`, so a firmware tree that compiles the sources into its
@@ -1392,8 +1392,8 @@ does nothing more.
     this endpoint did not authenticate, and the close tells that peer the
     error code and nothing else.
 
-    Cost: one exported call, so a `TRANSPORT=quic` client object exports
-    sixteen calls and a `ROLE=server TRANSPORT=quic` object nineteen. INV-17
+    Cost: one exported call, so a `TRANSPORT=quic-nonblocking` client object exports
+    sixteen calls and a `ROLE=server TRANSPORT=quic-nonblocking` object nineteen. INV-17
     gains an exception, stated there. A caller that neither seals nor
     closes keeps a failed session's secret write keys for the life of the
     session struct. Gain: the peer learns why the connection ended, at each
@@ -1601,7 +1601,7 @@ does nothing more.
     the frozen digest's walk and leave the duplicate check unbounded. An
     unknown type counts the same as a recognized one. Every server path
     reads its hellos through `srv_parse_client_hello`: the blocking server
-    (`srv_handshake.c`), the record server (`srv_rec.c`) and the QUIC
+    (`srv_handshake.c`), the tcp-nonblocking server (`srv_rec.c`) and the QUIC
     server (`srv_quic.c`), for a first hello and a retried one alike, so
     the refusal is the same on each.
 
@@ -1715,7 +1715,7 @@ does nothing more.
     trailing byte is decode_error at 128 and illegal_parameter at 129, and
     so is a block that ends in half a header, so the bound is checked
     first. `bin/srv_rec_test` sends this tree's own hello, filled out to
-    128 and to 129, through the record server: the first draws the flight
+    128 and to 129, through the tcp-nonblocking server: the first draws the flight
     and the second illegal_parameter. `bin/srv_quic_test` fills ngtcp2's
     two recorded hellos out with the same unknown extensions, so the
     frozen digest matches and only the count can refuse. A first hello of
@@ -1754,7 +1754,7 @@ does nothing more.
     the TLS 1.2 rule: on the peer's close_notify it called `ch_close`,
     which sent this side's close_notify and wiped both directions. The
     caller could not send what it still owed, because `ch_write` refused
-    the closed session. Under `TRANSPORT=record` the reply went through
+    the closed session. Under `TRANSPORT=tcp-nonblocking` the reply went through
     `cfg.send` from inside `ch_read`, which colibri's adapter does not
     expect, so the alert was lost, and the caller's own `ch_close` sent
     nothing because the keys were gone.
@@ -1782,7 +1782,7 @@ does nothing more.
       did not change in any build, host or rv32, and `ch_build` records
       the same sizes.
     - **Every driver at once.** The blocking client and server and the
-      record-mode client and server all read through the one `ch_read`
+      tcp-nonblocking client and server all read through the one `ch_read`
       in `tls.c`. A QUIC object compiles no `tls.c`: QUIC carries no
       close_notify, and RFC 9001 §4.8 treats every TLS alert as fatal
       (rfc9001.txt:888-893), so nothing there changes.
@@ -1805,8 +1805,8 @@ does nothing more.
     three exports every transport carries take the transport into their
     symbol names, and the two pairs that share calls are refused at the
     link.** cocuyo wants DNS over TLS, DNS over QUIC and DNS over HTTP/3 in
-    one binary, so it links a `TRUST=webpki TRANSPORT=record` object for
-    the first and colibri's `TRUST=webpki TRANSPORT=quic ROLE=both` object
+    one binary, so it links a `TRUST=webpki TRANSPORT=tcp-nonblocking` object for
+    the first and colibri's `TRUST=webpki TRANSPORT=quic-nonblocking ROLE=both` object
     for the other two. The link failed on `ch_build`, which both objects
     defined (entry 56). The two objects' headers disagree about `ch_cfg`
     and `ch_tls`, so a program calls each object from a translation unit
@@ -1814,30 +1814,30 @@ does nothing more.
     fails the link, and a linker that kept one definition would hand one
     of those units the other object's.
 
-    - **The build record.** Its symbol is `ch_build_tls`,
-      `ch_build_record` or `ch_build_quic`, and `build.h` defines
+    - **The build record.** Its symbol is `ch_build_info_tcp_blocking`,
+      `ch_build_info_tcp_nonblocking` or `ch_build_info_quic_nonblocking`, and `build.h` defines
       `ch_build` as an object-like macro for the one the defines in force
       select. `ch_build_matches(&ch_build)` compiles unchanged in C and
       through `chapulin.hpp`, reads the record of the object whose
       headers the unit compiles against, and a unit compiled for another
       transport than its object's fails to link.
     - **Zig.** translate-c turns the macro into `pub const ch_build =
-      ch_build_record;`, and Zig 0.16 refuses to evaluate that constant,
+      ch_build_info_tcp_nonblocking;`, and Zig 0.16 refuses to evaluate that constant,
       because its initializer is an extern variable (checked 2026-09-25).
       An asm label on the declaration is dropped by translate-c, and a
       macro that dereferences the record's address meets the same
       refusal. So a Zig program writes the record's own name,
-      `c.ch_build_matches(&c.ch_build_record)`, and an `@cImport` missing
-      `CH_TRANSPORT_RECORD` declares no such name, so that mistake stops
+      `c.ch_build_matches(&c.ch_build_info_tcp_nonblocking)`, and an `@cImport` missing
+      `CH_TRANSPORT_TCP_NONBLOCKING` declares no such name, so that mistake stops
       the compile. A function name maps without this: Zig evaluates
-      `pub const ch_srv_check = ch_srv_check_quic;`, because a function
+      `pub const ch_srv_check = ch_srv_check_quic_nonblocking;`, because a function
       is known at compile time.
 
     The audit. Twenty-two objects were built on 2026-09-25 and each pair
     of different transports was compared by the names `nm` lists as
     defined: the four `TRUST` client modes and `RAND=drbg` over each
     transport, `ROLE=server` and `ROLE=both` over each, `EXPORTER=on`, and
-    `SUITE=aesgcm AES=hw` over record and QUIC. No object defines a
+    `SUITE=aesgcm AES=hw` over tcp-nonblocking and QUIC. No object defines a
     common or weak symbol. Six names were shared:
 
     | Name | Objects that export it | Resolution |
@@ -1846,8 +1846,8 @@ does nothing more.
     | `ch_srv_check` | every `ROLE=server` and `ROLE=both` object | named per transport, mapped in `srv.h` |
     | `ch_pubkey_from_pem` | every `TRUST=ca-rsa` and `TRUST=ca-ecdsa` object | named per transport, mapped in `x509_ca.h` |
     | `ch_drbg_seed` | every `RAND=drbg` object | refused: two `RAND=drbg` objects do not link |
-    | `ch_read`, `ch_write`, `ch_close` | every `TRANSPORT=tls` and `TRANSPORT=record` object | refused: a tls object and a record object do not link |
-    | `ch_export` | `EXPORTER=on` objects, tls and record only | refused with the pair above |
+    | `ch_read`, `ch_write`, `ch_close` | every `TRANSPORT=tcp-blocking` and `TRANSPORT=tcp-nonblocking` object | refused: a tcp-blocking object and a tcp-nonblocking object do not link |
+    | `ch_export` | `EXPORTER=on` objects, the two TCP transports only | refused with the pair above |
 
     `ch_srv_check` and `ch_pubkey_from_pem` follow the record for two
     reasons. A server pair is the plain case, an HTTP/2 server beside an
@@ -1869,9 +1869,9 @@ does nothing more.
       links, because the generator's `ch_rand_bytes` is local, and it
       still keeps a second generator the image's hook does not feed, so
       `docs/porting.md` refuses that pair in words.
-    - **`ch_read`, `ch_write` and `ch_close`.** The record transport
-      keeps the connected session's calls under the blocking transport's
-      names (`rec.h`), and a record-mode object does everything a
+    - **`ch_read`, `ch_write` and `ch_close`.** The tcp-nonblocking
+      transport keeps the connected session's calls under the blocking transport's
+      names (`rec.h`), and a tcp-nonblocking object does everything a
       blocking one does with the caller driving the socket. Renaming
       them would move the three calls every TLS program links against,
       for an image that gains nothing by carrying both transports.
@@ -1889,12 +1889,13 @@ does nothing more.
     What holds it:
 
     - `test/lib-pair-check.sh`, in `make check`, links four pairs and
-      runs each half: webpki record client beside the webpki QUIC
-      `ROLE=both` object (cocuyo's), record server beside QUIC server,
-      raw-rsa tls beside raw-rsa QUIC, and ca-rsa tls beside ca-rsa QUIC.
+      runs each half: webpki tcp-nonblocking client beside the webpki QUIC
+      `ROLE=both` object (cocuyo's), tcp-nonblocking server beside QUIC
+      server, raw-rsa tcp-blocking beside raw-rsa QUIC, and ca-rsa
+      tcp-blocking beside ca-rsa QUIC.
       Each half reads its own record, runs `ch_srv_check` or
       `ch_pubkey_from_pem` where its object has one, and starts a
-      session. The drbg pair and the tls and record pair must fail to
+      session. The drbg pair and the tcp-blocking and tcp-nonblocking pair must fail to
       link, and the linker must name each shared name. It reuses the
       objects the `lib-check` legs build and builds two more: 5.2 s with
       every object built, 8 s with the two to build.
@@ -1903,8 +1904,8 @@ does nothing more.
       a record that differed, which can no longer happen, so a consumer
       with `CH_PIN_ECDSA` moved reads the difference instead. Every header
       admits that define, and it changes no symbol name and no hook.
-    - `inv35-build-record-shared-name` gives the QUIC transport's record
-      the record transport's name, and `test/lib-pair-check.sh` catches
+    - `inv35-build-record-shared-name` gives the QUIC transport's build
+      record the tcp-nonblocking transport's name, and `test/lib-pair-check.sh` catches
       it.
 
     One more change came with it. `test/violations.py` edits `PUBLIC`,
@@ -1916,12 +1917,12 @@ does nothing more.
     its line differs from the build's, whatever the clocks say.
 
     Cost: three symbol names change. A C or C++ consumer changes
-    nothing; a Zig consumer writes `ch_build_record` or `ch_build_quic`
+    nothing; a Zig consumer writes `ch_build_info_tcp_nonblocking` or `ch_build_info_quic_nonblocking`
     where it wrote `ch_build`, which cocuyo does on three lines and
     colibri's tests on four. `lint-quic-partition` lists `x509_ca.h` and
     `x509_ca.c` beside `build.h` and `build.c`, because a QUIC build
     compiles the provisioning call under its own name.
-    `bench/stack.py` reports `ch_pubkey_from_pem_tls`. `make check`
+    `bench/stack.py` reports `ch_pubkey_from_pem_tcp_blocking`. `make check`
     gains the pair test and one more consumer build per `lib-check` leg.
 
     Gain: one image links the objects of two transports, and each unit
@@ -1936,3 +1937,37 @@ does nothing more.
     56 rejected a symbol name per build because it would encode every
     axis in the name. The transport is one axis, and it already changes
     the link line, since each transport exports its own calls.
+
+62. **Each `TRANSPORT` value names what TLS runs over and who does the
+    I/O: `tcp-blocking`, `tcp-nonblocking` and `quic-nonblocking`.** The
+    axis took `tls`, `record` and `quic`. TLS is not a transport: it runs
+    over TCP or inside QUIC. `record` named the unit the caller passes, a
+    TLS record, and not what sets the mode apart, which is that the
+    caller's code does the I/O. It also gave "record" two meanings, the
+    build record and a transport, so `ch_build_record` (entry 61) read as
+    the struct itself. The values now say both halves:
+    - `tcp-blocking`, the default: TLS records over a byte stream, and
+      chapulin calls the blocking `cfg.send` and `cfg.recv`.
+    - `tcp-nonblocking`: the same records, and the caller passes bytes in
+      and takes bytes out (`rec.h`).
+    - `quic-nonblocking`: TLS handshake messages inside QUIC, always
+      driven by the caller (`quic.h`).
+
+    Every value names its I/O style, the QUIC one included, which has no
+    blocking twin, so no reader takes an unmarked name to block. The
+    defines follow the values (`CH_TRANSPORT_TCP_NONBLOCKING`,
+    `CH_TRANSPORT_QUIC_NONBLOCKING`), and so do the symbol names entry 61
+    gave the transport: `ch_build_info_tcp_blocking`, named for the type
+    `ch_build_info`, and `ch_srv_check_tcp_blocking`. The old values stop
+    the build with a message naming the new ones, so no consumer gets a
+    different transport without noticing.
+
+    Gain: a reader learns from the name alone what the object runs over
+    and whether a call can wait on the network.
+
+    Rejected: marking only one I/O style (`tls` beside `tls-async`, or
+    `tls-blocking` beside `tls`), because the unmarked names then read as
+    the other style; `https`, because chapulin carries any protocol over
+    TLS, and HTTP is one; and renaming the API, because `ch_record_in`
+    still takes TLS records. "TCP" names the byte stream every consumer
+    uses; any reliable byte stream works under either TCP value.

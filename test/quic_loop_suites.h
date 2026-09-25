@@ -1,6 +1,6 @@
 // The three cipher suites over QUIC, end to end: this tree's QUIC
 // TRUST=webpki client against this tree's QUIC server in the ROLE=both
-// TRANSPORT=quic TRUST=webpki object compiled with -DCH_SUITE_AES_GCM.
+// TRANSPORT=quic-nonblocking TRUST=webpki object compiled with -DCH_SUITE_AES_GCM.
 // bin/quic_loop_aes runs them; test/quic_loop_test.c includes this file
 // after quic_loop_webpki.h, and a build without the define compiles none
 // of it.

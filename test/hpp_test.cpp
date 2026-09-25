@@ -32,7 +32,7 @@ extern "C" void ch_rand_bytes(uint8_t *p, size_t n) {
     }
 }
 
-#ifndef CH_TRANSPORT_QUIC
+#ifndef CH_TRANSPORT_QUIC_NONBLOCKING
 // A send that always fails, so connect reaches I/O and stops there — that
 // distinguishes a config that passed validation (io error) from one the
 // library rejected (CH_EINVAL), without needing a real socket.
@@ -46,9 +46,9 @@ static int fail_recv(void *, uint8_t *, size_t) {
 
 // Must match the algorithm the linked library object was built with; the
 // Makefile passes the same define to both compiles. A TRUST=webpki object
-// reads no pin, so it has no length to match, and a TRANSPORT=quic object
+// reads no pin, so it has no length to match, and a TRANSPORT=quic-nonblocking object
 // reaches no pinned handshake through this wrapper yet.
-#ifndef CH_TRANSPORT_QUIC
+#ifndef CH_TRANSPORT_QUIC_NONBLOCKING
 #ifdef CH_TRUST_WEBPKI
 #elif defined(CH_PIN_ECDSA)
 constexpr size_t kPinLen = 64;
@@ -122,10 +122,10 @@ static void test_pubkey_from_pem() {
 // would-be io result below into invalid.
 static uint8_t rxbuf[CH_MIN_RXBUF > 2048 ? CH_MIN_RXBUF : 2048];
 
-// The two TLS legs below take a chapulin::Io, which a TRANSPORT=quic
+// The two TCP legs below take a chapulin::Io, which a TRANSPORT=quic-nonblocking
 // build does not declare: that object opens no socket. test_quic covers
 // the QUIC wrapper instead.
-#ifndef CH_TRANSPORT_QUIC
+#ifndef CH_TRANSPORT_QUIC_NONBLOCKING
 #ifdef CH_TRUST_WEBPKI
 // The web PKI setters: a hostname and two anchors. The bytes are
 // placeholders, because ch_connect checks only that each anchor field
@@ -315,7 +315,7 @@ static void test_psk_and_pinned_config(chapulin::Io io) {
 #endif
 #endif
 
-#ifdef CH_TRANSPORT_QUIC
+#ifdef CH_TRANSPORT_QUIC_NONBLOCKING
 static void level_ready(void *, uint8_t, uint8_t) {
 }
 
@@ -379,7 +379,7 @@ int main() {
     // The object cxx-check links was built under the defines this file
     // is compiled with, so its build record matches these headers.
     CHECK(chapulin::build_matches());
-#ifdef CH_TRANSPORT_QUIC
+#ifdef CH_TRANSPORT_QUIC_NONBLOCKING
     test_quic();
 #else
     chapulin::Io io{fail_send, fail_recv, nullptr};

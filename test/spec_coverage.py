@@ -34,7 +34,7 @@ REPORT = ROOT / "bin" / "spec-coverage.md"
 # new module shows up as a missing row rather than vanishing.
 #
 # The quic sources are on the list for that reason alone. This run
-# compiles every file under -DCH_TRUST_CA and no -DCH_TRANSPORT_QUIC,
+# compiles every file under -DCH_TRUST_CA and no -DCH_TRANSPORT_QUIC_NONBLOCKING,
 # because the TLS sources beside them do not compile under that define,
 # so each quic file compiles to an empty translation unit and its row
 # reads "not built". That is the honest reading of a differential with

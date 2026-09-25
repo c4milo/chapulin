@@ -27,7 +27,7 @@
 // is secret, and so only with AES=hw.
 #include "quic_aes_block.h"
 
-#if defined(CH_TRANSPORT_QUIC) || defined(CH_SUITE_AES_GCM)
+#if defined(CH_TRANSPORT_QUIC_NONBLOCKING) || defined(CH_SUITE_AES_GCM)
 #ifndef CH_AES_HW
 #ifndef CH_AES_EXTERN
 
@@ -230,4 +230,4 @@ void aes_cipher_block_256(const uint8_t round_keys[AES_256_ROUND_KEYS * AES_BLOC
 
 #endif // CH_AES_EXTERN
 #endif // CH_AES_HW
-#endif // CH_TRANSPORT_QUIC || CH_SUITE_AES_GCM
+#endif // CH_TRANSPORT_QUIC_NONBLOCKING || CH_SUITE_AES_GCM

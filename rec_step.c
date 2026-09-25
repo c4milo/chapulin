@@ -1,4 +1,4 @@
-// The record-mode step table. rec_step.h states the contract; this file
+// The tcp-nonblocking step table. rec_step.h states the contract; this file
 // is quic_step.c's mirror on the transport that keeps its records.
 //
 // It holds no protocol rule of its own. handshake_flight.[ch] holds the
@@ -6,7 +6,7 @@
 // authentication flight, and this file calls them in order.
 #include "rec_step.h"
 
-#ifdef CH_TRANSPORT_RECORD
+#ifdef CH_TRANSPORT_TCP_NONBLOCKING
 
 #include <string.h>
 
@@ -197,4 +197,4 @@ int hsr_advance(ch_record *r) {
     }
 }
 
-#endif // CH_TRANSPORT_RECORD
+#endif // CH_TRANSPORT_TCP_NONBLOCKING

@@ -471,7 +471,7 @@ received it, and refuses to present it under any other.
 - **The caller owns the ticket's age.** A ticket lives at most seven days
   (RFC 9846 §4.7.1), and the other modes leave that limit and
   `obfuscated_age` to the caller as well.
-- **A `TRANSPORT=quic` webpki client resumes the same way.**
+- **A `TRANSPORT=quic-nonblocking` webpki client resumes the same way.**
   `ch_quic_init` takes the configuration hash as `ch_connect` does, so the
   tickets a QUIC session hands to `on_ticket` carry a binding to its
   hostname and anchors, and `quic_config.c` checks a presented ticket with
@@ -531,7 +531,7 @@ caller sets up to `CH_SPKI_PIN_MAX` (4) of them in `ch_cfg.spki_pins`.
   handshake.
 - **Not here.** The server role neither sends nor accepts a raw public
   key: it ignores the extension and sends its certificate, which a
-  configuration with anchors verifies as before. A `TRANSPORT=quic`
+  configuration with anchors verifies as before. A `TRANSPORT=quic-nonblocking`
   webpki client refuses pins. Client raw public
   keys (`client_certificate_type`) are not offered, because this client
   sends no certificate.

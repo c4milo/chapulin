@@ -1,7 +1,7 @@
 // The QUIC Initial packet path: RFC 9001 §5.2's key derivation from the
 // Destination Connection ID and the salt the RFC prints, AEAD_AES_128_GCM
 // packet protection in both directions, and §5.4.3's AES-ECB header
-// protection mask under the Initial keys. Only a TRANSPORT=quic build
+// protection mask under the Initial keys. Only a TRANSPORT=quic-nonblocking build
 // compiles it.
 //
 // This file and quic_retry.[ch] are the only sources that may call a
@@ -34,7 +34,7 @@
 // quic_aes_key.h.
 #ifndef CH_QUIC_INITIAL_H
 #define CH_QUIC_INITIAL_H
-#ifdef CH_TRANSPORT_QUIC
+#ifdef CH_TRANSPORT_QUIC_NONBLOCKING
 
 #include <stddef.h>
 #include <stdint.h>
@@ -89,7 +89,7 @@ _Static_assert(AES_BLOCK == QUIC_HP_SAMPLE_LEN,
 // caller's own two directions.
 //
 // The endpoint is an argument rather than a build define because
-// srv_cfg.h refuses CH_ROLE_SERVER beside CH_TRANSPORT_QUIC until a
+// srv_cfg.h refuses CH_ROLE_SERVER beside CH_TRANSPORT_QUIC_NONBLOCKING until a
 // QUIC server driver exists, so no build could select the server
 // mapping and no test could reach it. Nothing is negotiated here: a
 // caller is one endpoint and passes the same value at every call.
@@ -276,5 +276,5 @@ int quic_initial_open(uint8_t endpoint, const uint8_t *dcid, size_t dcid_len, ui
                       size_t pkt_len, size_t pn_off, uint64_t largest_pn, uint64_t *pn,
                       size_t *pt_len);
 
-#endif // CH_TRANSPORT_QUIC
+#endif // CH_TRANSPORT_QUIC_NONBLOCKING
 #endif

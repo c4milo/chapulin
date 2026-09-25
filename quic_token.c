@@ -5,7 +5,7 @@
 // endianness.
 #include "quic_token.h"
 
-#if defined(CH_ROLE_SERVER) && defined(CH_TRANSPORT_QUIC)
+#if defined(CH_ROLE_SERVER) && defined(CH_TRANSPORT_QUIC_NONBLOCKING)
 
 #include <string.h>
 
@@ -171,4 +171,4 @@ int ch_srv_quic_token_check(const uint8_t key[CH_QUIC_TOKEN_KEY_LEN], const uint
     return CH_OK;
 }
 
-#endif // CH_ROLE_SERVER && CH_TRANSPORT_QUIC
+#endif // CH_ROLE_SERVER && CH_TRANSPORT_QUIC_NONBLOCKING

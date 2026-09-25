@@ -15,7 +15,7 @@
 // source that includes it directly or spells the body itself.
 #ifndef CH_AES_SCHEDULE_H
 #define CH_AES_SCHEDULE_H
-#if defined(CH_TRANSPORT_QUIC) || defined(CH_SUITE_AES_GCM)
+#if defined(CH_TRANSPORT_QUIC_NONBLOCKING) || defined(CH_SUITE_AES_GCM)
 
 #include <stdint.h>
 
@@ -35,5 +35,5 @@ struct aes_key_schedule {
 #endif
 };
 
-#endif // CH_TRANSPORT_QUIC || CH_SUITE_AES_GCM
+#endif // CH_TRANSPORT_QUIC_NONBLOCKING || CH_SUITE_AES_GCM
 #endif

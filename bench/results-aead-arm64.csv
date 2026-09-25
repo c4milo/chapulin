@@ -1,5 +1,5 @@
 # bench/aead.sh on Apple M1 Pro (arm64), Darwin 25.6.0, 2026-09-24, tree 6dd570f-dirty
-# Apple clang version 21.0.0 (clang-2100.3.34.2); -std=c11 -O2 -Wall -Wextra -Wpedantic -Werror -Wvla -D_DEFAULT_SOURCE -DCH_RAND_EXTERN -DCH_TRANSPORT_QUIC -I. -Ibench; AES=hw adds no flag -DCH_AES_HW
+# Apple clang version 21.0.0 (clang-2100.3.34.2); -std=c11 -O2 -Wall -Wextra -Wpedantic -Werror -Wvla -D_DEFAULT_SOURCE -DCH_RAND_EXTERN -DCH_TRANSPORT_QUIC_NONBLOCKING -I. -Ibench; AES=hw adds no flag -DCH_AES_HW
 # load average (1, 5, 15 min) before: 3.12 3.05 3.10; after: 3.16 3.06 3.10
 # ns_per_byte: median of 101 samples of 2 to 4 ms each; mb_per_s: 10^6 bytes per second at that median; iqr_pct: 25th to 75th percentile spread, percent of the median
 primitive,build,bytes,ns_per_byte,mb_per_s,iqr_pct

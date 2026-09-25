@@ -156,7 +156,7 @@ HDRS := ct.h sha256.h hkdf.h chacha20.h poly1305.h aead.h x25519.h x25519_wide.h
         srv_cfg.h srv.h srv_parser.h srv_parser_ext.h srv_message.h srv_cookie.h srv_ticket.h srv_auth.h srv_out.h srv_flight.h srv_resume.h srv_handshake.h srv_quic.h srv_rec.h keylog.h \
         rec.h rec_frame.h rec_step.h build.h suite.h transcript.h
 
-# The TRANSPORT=quic mode's own sources, named here rather than matched
+# The TRANSPORT=quic-nonblocking mode's own sources, named here rather than matched
 # by a pattern, for the reason WEBPKI_SRCS is named: an auditor reads
 # the object's contents off this line, and an untracked scratch file
 # never enters the object. They sit outside SRCS because only one
@@ -177,9 +177,9 @@ HDRS := ct.h sha256.h hkdf.h chacha20.h poly1305.h aead.h x25519.h x25519_wide.h
 # so two of them in one object would not link, and AES_IMPL names the one
 # that joins QUIC_SRCS below.
 #
-# Only a TRANSPORT=quic object compiles any of them, because AES exists
+# Only a TRANSPORT=quic-nonblocking object compiles any of them, because AES exists
 # here for QUIC Initial packets and the Retry tag and for nothing else
-# (INV-26). A TRANSPORT=tls build accepts the variable and compiles no
+# (INV-26). A TRANSPORT=tcp-blocking build accepts the variable and compiles no
 # AES either way, which is why the define below is not conditioned on the
 # transport: LIB_VARIANT carries AES so the two objects never share a
 # path, and cfg.h refuses both defines at once.
@@ -275,7 +275,7 @@ AES_HW_BINS := $(if $(AES_HW_PROBE),bin/quic_test_hw bin/aes_equiv_test bin/ghas
                                      bin/srv_flight_test_aes bin/webpki_session_aes bin/webpki_loop_aes \
                                      bin/quic_loop_aes bin/quic_suite_test)
 # What lint-quic-partition needs to preprocess each AES implementation.
-# Each one guards its body on a second macro, so with CH_TRANSPORT_QUIC
+# Each one guards its body on a second macro, so with CH_TRANSPORT_QUIC_NONBLOCKING
 # alone it preprocesses to nothing and that lint would read it as a file
 # contributing to neither transport. Same shape as WIDEMUL_DEFINES, with
 # commas between a file's flags. quic_aes_soft.c needs no entry: its body
@@ -338,7 +338,7 @@ SRV_SRCS := srv_ticket.c srv_parser.c srv_parser_ext.c srv_message.c srv_cookie.
 # and lib-check's RAND=extern import check, for the object that drew no
 # randomness while srv_flight.c was a stub. The marker matches nothing
 # now, and the list and both exceptions went with the commit that
-# implemented the last stub. The TRANSPORT=quic axis retired the same
+# implemented the last stub. The TRANSPORT=quic-nonblocking axis retired the same
 # machinery under CH_QUIC_STUB.
 # The client driver sources a ROLE=server object does not compile: the
 # state machine, the peer-certificate flight, the parsers for the
@@ -520,8 +520,8 @@ TRUST_ADD := $(WEBPKI_CHAIN_SRCS) $(filter-out $(SRCS),$(WEBPKI_SRCS))
 else
 $(error TRUST=$(TRUST) is not a trust mode; use TRUST=raw-rsa, TRUST=raw-ecdsa, TRUST=ca-rsa, TRUST=ca-ecdsa, TRUST=webpki, or TRUST=none for ROLE=server)
 endif
-# Transport: TRANSPORT=tls (default) runs the client over TLS records and
-# a socket the caller's I/O callbacks drive; TRANSPORT=quic runs the same
+# Transport: TRANSPORT=tcp-blocking (default) runs the client over TLS records and
+# a socket the caller's I/O callbacks drive; TRANSPORT=quic-nonblocking runs the same
 # TLS 1.3 handshake over QUIC's CRYPTO frames and protects QUIC packets
 # with the keys it produces (docs/quic.md). One transport per packaged
 # object, like PIN and TRUST: the two export different public calls, so
@@ -531,42 +531,48 @@ endif
 # (docs/quic.md, "What is reused, and what changes").
 QUIC_REPLACED := io.c record.c session.c handshake.c tls.c
 # The sources that keep their TLS text, carry a QUIC arm under #ifdef
-# CH_TRANSPORT_QUIC, and cannot be compiled into the object until they
+# CH_TRANSPORT_QUIC_NONBLOCKING, and cannot be compiled into the object until they
 # have one. Every arm landed with the driver, so the list is empty and
 # the object compiles all of handshake_parser_ee.c, handshake_record.c,
 # handshake_auth.c, handshake_post.c and handshake_message.c. The name
 # stays because TRANSPORT_FILTER and tools/quic-partition.py read it: a
 # source that loses its arm goes back on this list.
 QUIC_PENDING :=
-TRANSPORT ?= tls
-ifeq ($(TRANSPORT),quic)
-TRANSPORT_DEF := -DCH_TRANSPORT_QUIC
+# Each value names what TLS runs over and who does the I/O: chapulin
+# through blocking callbacks, or the caller (docs/decisions.md 62). The
+# old names stop the build rather than pick a transport.
+TRANSPORT ?= tcp-blocking
+ifneq ($(filter tls record quic,$(TRANSPORT)),)
+$(error TRANSPORT=$(TRANSPORT) is renamed: tls is tcp-blocking, record is tcp-nonblocking, quic is quic-nonblocking)
+endif
+ifeq ($(TRANSPORT),quic-nonblocking)
+TRANSPORT_DEF := -DCH_TRANSPORT_QUIC_NONBLOCKING
 TRANSPORT_FILTER := $(QUIC_REPLACED) $(QUIC_PENDING)
 TRANSPORT_ADD := $(QUIC_SRCS)
 PUBLIC_TRANSPORT := ch_quic_init ch_quic_initial_keys ch_quic_crypto_in ch_quic_crypto_out \
                     ch_quic_seal ch_quic_seal_close ch_quic_open ch_quic_retry_ok ch_quic_key_update \
                     ch_quic_key_phase ch_quic_drop_previous_keys ch_quic_discard \
                     ch_quic_state ch_quic_alert ch_quic_error_code ch_quic_close
-else ifeq ($(TRANSPORT),record)
+else ifeq ($(TRANSPORT),tcp-nonblocking)
 # The same TLS records, driven by a caller that owns the socket. It
 # replaces handshake.c, the blocking driver, and keeps everything under
 # it: the flight handlers, the record layer and the post-handshake
-# messages are the ones TRANSPORT=tls compiles. ch_connect goes with
+# messages are the ones TRANSPORT=tcp-blocking compiles. ch_connect goes with
 # handshake.c, and ch_read, ch_write and ch_close stay, because a caller
 # that has finished the handshake holds its bytes and its callbacks no
 # longer block (rec.h).
-TRANSPORT_DEF := -DCH_TRANSPORT_RECORD
+TRANSPORT_DEF := -DCH_TRANSPORT_TCP_NONBLOCKING
 TRANSPORT_FILTER := handshake.c
 TRANSPORT_ADD := rec.c rec_frame.c rec_step.c
 PUBLIC_TRANSPORT := ch_record_init ch_record_in ch_record_out ch_record_state ch_record_alert ch_record_close \
                     ch_read ch_write ch_close
-else ifeq ($(TRANSPORT),tls)
+else ifeq ($(TRANSPORT),tcp-blocking)
 TRANSPORT_DEF :=
 TRANSPORT_FILTER :=
 TRANSPORT_ADD :=
 PUBLIC_TRANSPORT := ch_connect ch_read ch_write ch_close
 else
-$(error TRANSPORT=$(TRANSPORT) is not a transport; use TRANSPORT=tls, TRANSPORT=record or TRANSPORT=quic)
+$(error TRANSPORT=$(TRANSPORT) is not a transport; use TRANSPORT=tcp-blocking, TRANSPORT=tcp-nonblocking or TRANSPORT=quic-nonblocking)
 endif
 # Role: ROLE=client (default) builds the TLS 1.3 client this tree has
 # always built; ROLE=server builds a TLS 1.3 server from the same
@@ -626,7 +632,7 @@ ROLE_FILTER := $(CLIENT_REPLACED)
 # -Wframe-larger-than measures one frame at a time, and docs/server.md
 # measures the sum a deployment has to size its stack from.
 ROLE_ADD    := $(SRV_SRCS) rsa_sign.c p256_sign.c p256_scalar.c p256_point.c p256_field.c
-ifeq ($(TRANSPORT),quic)
+ifeq ($(TRANSPORT),quic-nonblocking)
 # The server's driver replaces the client's, source for source:
 # srv_quic.c is the step table quic_step.c is for a client, and
 # srv_handshake.c drives the TLS records this transport does not have.
@@ -646,7 +652,7 @@ PUBLIC_ROLE := ch_srv_quic_init ch_srv_quic_crypto_in ch_srv_quic_retry_tag \
                ch_quic_initial_keys ch_quic_seal ch_quic_seal_close ch_quic_open ch_quic_retry_ok \
                ch_quic_key_update ch_quic_key_phase ch_quic_drop_previous_keys \
                ch_quic_discard ch_quic_state ch_quic_alert ch_quic_error_code ch_quic_close
-else ifeq ($(TRANSPORT),record)
+else ifeq ($(TRANSPORT),tcp-nonblocking)
 # The server's driver replaces the client's, source for source: srv_rec.c
 # is the step table rec_step.c is for a client, and srv_handshake.c is the
 # blocking driver this transport exists to avoid. rec.c stays, because
@@ -698,13 +704,13 @@ ROLE_DEF    := -DCH_ROLE_SERVER -DCH_ROLE_BOTH
 # srv_*.c files stand in for those drivers, and here both sets compile.
 ROLE_FILTER :=
 ROLE_ADD    := $(SRV_SRCS) rsa_sign.c p256_sign.c p256_scalar.c p256_point.c p256_field.c
-ifeq ($(TRANSPORT),quic)
+ifeq ($(TRANSPORT),quic-nonblocking)
 ROLE_ADD    := $(filter-out srv_handshake.c,$(ROLE_ADD)) srv_quic.c quic_token.c
 PUBLIC_ROLE := $(PUBLIC_TRANSPORT) ch_srv_quic_init ch_srv_quic_crypto_in \
                ch_srv_quic_retry_tag ch_srv_quic_token_mint ch_srv_quic_token_check \
                ch_srv_check
-else ifeq ($(TRANSPORT),record)
-# The server's blocking driver goes and its record driver takes the
+else ifeq ($(TRANSPORT),tcp-nonblocking)
+# The server's blocking driver goes and its tcp-nonblocking driver takes the
 # place, the same swap the quic arm above makes. rec_step.c stays, unlike
 # the ROLE=server arm: this object keeps the client half, so both step
 # tables compile and each driver calls its own.
@@ -830,8 +836,8 @@ ifeq ($(EXPORTER),on)
 # records; a QUIC exporter is a separate change with its own entry in
 # quic.h, not a symbol this axis can promise. keysched.h refuses the
 # same pair for a firmware tree that builds these sources its own way.
-ifeq ($(TRANSPORT),quic)
-$(error EXPORTER=on has no QUIC entry point: ch_export is a record-layer call, so use TRANSPORT=tls or TRANSPORT=record)
+ifeq ($(TRANSPORT),quic-nonblocking)
+$(error EXPORTER=on has no QUIC entry point: ch_export is a record-layer call, so use TRANSPORT=tcp-blocking or TRANSPORT=tcp-nonblocking)
 endif
 LIB_DEF += $(EXPORTER_DEF)
 PUBLIC_EXPORT := ch_export
@@ -925,10 +931,10 @@ BENCH_C := $(wildcard bench/*.c bench/*.h)
 QEMU_SMOKE_C := $(wildcard test/qemu/*.c test/qemu/*.h test/freertos/*.c test/freertos/*.h)
 
 # Firmware links bin/chapulin.o: one relocatable object exposing exactly
-# the symbols PUBLIC names: its calls, four under TRANSPORT=tls, sixteen
-# under TRANSPORT=quic and five under ROLE=server, and in every variant
+# the symbols PUBLIC names: its calls, four under TRANSPORT=tcp-blocking, sixteen
+# under TRANSPORT=quic-nonblocking and five under ROLE=server, and in every variant
 # one data symbol, the build record, named for the transport:
-# ch_build_tls, ch_build_record or ch_build_quic. Partial linking merges
+# ch_build_info_tcp_blocking, ch_build_info_tcp_nonblocking or ch_build_info_quic_nonblocking. Partial linking merges
 # the modules; nmedit (macOS) or objcopy (everything else) localizes
 # every other symbol, so the library cannot collide with application
 # names, and test/lib-pair-check.sh links two objects of different
@@ -937,8 +943,8 @@ QEMU_SMOKE_C := $(wildcard test/qemu/*.c test/qemu/*.h test/freertos/*.c test/fr
 # built them, so switching PIN, TRUST, KEX, RAND, TRANSPORT or ROLE
 # never reuses a stale object. TRANSPORT belongs here for a reason the other
 # four share and it sharpens: the two transports link different object
-# lists into chapulin.o, so without it a TRANSPORT=tls chapulin.o and a
-# TRANSPORT=quic one write to the same path, make 3.81 compares mtimes
+# lists into chapulin.o, so without it a TRANSPORT=tcp-blocking chapulin.o and a
+# TRANSPORT=quic-nonblocking one write to the same path, make 3.81 compares mtimes
 # to the second, and the second link reuses the first object -- the
 # failure the paragraph below records for RAND.
 # SUITE belongs here for the same reason: -DCH_SUITE_AES_GCM changes
@@ -997,11 +1003,11 @@ print-rec-loop-srcs:
 # AES=hw row requires it beside quic_aes_hw.c and every other row bans
 # it, because an AES=soft or AES=extern object runs quic_gcm.c's
 # portable GHASH and no second one. They name TRANSPORT
-# explicitly on both sides, because a `make check TRANSPORT=quic` hands
-# its value to every recursion below, and the TRANSPORT=tls row must
+# explicitly on both sides, because a `make check TRANSPORT=quic-nonblocking` hands
+# its value to every recursion below, and the TRANSPORT=tcp-blocking row must
 # read the transport it names. The quic rows name EXPORTER=off for the
 # same reason in the other direction: the EXPORTER axis refuses
-# TRANSPORT=quic by name, so a `make check EXPORTER=on` that handed its
+# TRANSPORT=quic-nonblocking by name, so a `make check EXPORTER=on` that handed its
 # value to those recursions would die in a row rather than in a build
 # anyone asked for.
 #
@@ -1023,8 +1029,8 @@ print-rec-loop-srcs:
 # text in a file.
 #
 # Three of git's srv*.c files are drivers, one per transport:
-# srv_handshake.c for TRANSPORT=tls, srv_quic.c for TRANSPORT=quic and
-# srv_rec.c for TRANSPORT=record. A server object carries exactly one of
+# srv_handshake.c for TRANSPORT=tcp-blocking, srv_quic.c for TRANSPORT=quic-nonblocking and
+# srv_rec.c for TRANSPORT=tcp-nonblocking. A server object carries exactly one of
 # the three, so each role row names its own and bans the other two, and
 # srv_shared holds what every server object carries whatever the
 # transport. The rows subtracted one driver name from the whole git list
@@ -1094,24 +1100,24 @@ lint-trust-separation:
 	quic_files=$$(git ls-files 'quic*.c' | grep -v / | tr '\n' ' '); \
 	[ -n "$$quic_files" ] || { echo "lint-trust-separation: git tracks no quic*.c file at the root, so the transport rows would check nothing"; rc=1; }; \
 	quic_always=$$(printf '%s\n' $$quic_files | grep -vxF -e quic_aes_soft.c -e quic_aes_hw.c -e quic_ghash_hw.c -e quic_aes_extern.c -e quic_token.c | tr '\n' ' '); \
-	check "TRANSPORT=tls" "io.c record.c session.c handshake.c tls.c" "$$quic_files" "" "-DCH_TRANSPORT_QUIC"; \
-	check "TRANSPORT=quic EXPORTER=off" "$$quic_always quic_aes_soft.c" "io.c record.c session.c handshake.c tls.c quic_aes_hw.c quic_ghash_hw.c quic_aes_extern.c quic_token.c" "-DCH_TRANSPORT_QUIC" "-DCH_AES_HW -DCH_AES_EXTERN -DCH_AES_256_TEST"; \
-	check "TRANSPORT=quic AES=soft EXPORTER=off" "quic_aes_soft.c" "quic_aes_hw.c quic_ghash_hw.c quic_aes_extern.c" "" "-DCH_AES_HW -DCH_AES_EXTERN"; \
-	check "TRANSPORT=quic AES=hw EXPORTER=off" "quic_aes_hw.c quic_ghash_hw.c" "quic_aes_soft.c quic_aes_extern.c" "-DCH_AES_HW" "-DCH_AES_EXTERN -DCH_AES_256_TEST"; \
-	check "TRANSPORT=quic AES=extern EXPORTER=off" "quic_aes_extern.c" "quic_aes_soft.c quic_aes_hw.c quic_ghash_hw.c" "-DCH_AES_EXTERN" "-DCH_AES_HW"; \
+	check "TRANSPORT=tcp-blocking" "io.c record.c session.c handshake.c tls.c" "$$quic_files" "" "-DCH_TRANSPORT_QUIC_NONBLOCKING"; \
+	check "TRANSPORT=quic-nonblocking EXPORTER=off" "$$quic_always quic_aes_soft.c" "io.c record.c session.c handshake.c tls.c quic_aes_hw.c quic_ghash_hw.c quic_aes_extern.c quic_token.c" "-DCH_TRANSPORT_QUIC_NONBLOCKING" "-DCH_AES_HW -DCH_AES_EXTERN -DCH_AES_256_TEST"; \
+	check "TRANSPORT=quic-nonblocking AES=soft EXPORTER=off" "quic_aes_soft.c" "quic_aes_hw.c quic_ghash_hw.c quic_aes_extern.c" "" "-DCH_AES_HW -DCH_AES_EXTERN"; \
+	check "TRANSPORT=quic-nonblocking AES=hw EXPORTER=off" "quic_aes_hw.c quic_ghash_hw.c" "quic_aes_soft.c quic_aes_extern.c" "-DCH_AES_HW" "-DCH_AES_EXTERN -DCH_AES_256_TEST"; \
+	check "TRANSPORT=quic-nonblocking AES=extern EXPORTER=off" "quic_aes_extern.c" "quic_aes_soft.c quic_aes_hw.c quic_ghash_hw.c" "-DCH_AES_EXTERN" "-DCH_AES_HW"; \
 	srv_files=$$(git ls-files 'srv*.c' | grep -v / | tr '\n' ' '); \
 	[ -n "$$srv_files" ] || { echo "lint-trust-separation: git tracks no srv*.c file at the root, so the role rows would check nothing"; rc=1; }; \
 	client_only="handshake.c handshake_auth.c handshake_parser.c handshake_parser_ee.c handshake_message.c"; \
 	signers="rsa_sign.c p256_sign.c p256_scalar.c p256_point.c p256_field.c"; \
 	srv_shared=$$(printf '%s\n' $$srv_files | grep -vxF -e srv_handshake.c -e srv_quic.c -e srv_rec.c | tr '\n' ' '); \
-	check "ROLE=client TRUST=raw-rsa TRANSPORT=tls" "$$client_only tls.c" "$$srv_files $$signers" "" "-DCH_ROLE_SERVER"; \
-	check "ROLE=both TRUST=webpki TRANSPORT=tls" "$$srv_shared srv_handshake.c $$signers tls.c handshake.c sha3.c mlkem.c mlkem_poly.c" "srv_quic.c srv_rec.c" "-DCH_ROLE_SERVER -DCH_ROLE_BOTH" "-DCH_KEX_PQ"; \
-	check "ROLE=server TRUST=none TRANSPORT=tls" "$$srv_shared srv_handshake.c $$signers tls.c rsa.c rsa_mont.c p256.c sha3.c mlkem.c mlkem_poly.c" "$$client_only srv_quic.c srv_rec.c" "-DCH_ROLE_SERVER" "-DCH_PIN_ECDSA -DCH_KEX_PQ"; \
+	check "ROLE=client TRUST=raw-rsa TRANSPORT=tcp-blocking" "$$client_only tls.c" "$$srv_files $$signers" "" "-DCH_ROLE_SERVER"; \
+	check "ROLE=both TRUST=webpki TRANSPORT=tcp-blocking" "$$srv_shared srv_handshake.c $$signers tls.c handshake.c sha3.c mlkem.c mlkem_poly.c" "srv_quic.c srv_rec.c" "-DCH_ROLE_SERVER -DCH_ROLE_BOTH" "-DCH_KEX_PQ"; \
+	check "ROLE=server TRUST=none TRANSPORT=tcp-blocking" "$$srv_shared srv_handshake.c $$signers tls.c rsa.c rsa_mont.c p256.c sha3.c mlkem.c mlkem_poly.c" "$$client_only srv_quic.c srv_rec.c" "-DCH_ROLE_SERVER" "-DCH_PIN_ECDSA -DCH_KEX_PQ"; \
 	quic_srv=$$(printf '%s\n' $$quic_always | grep -vxF -e quic_step.c | tr '\n' ' '); \
-	check "ROLE=server TRUST=none TRANSPORT=quic EXPORTER=off" "$$srv_shared srv_quic.c quic_token.c $$signers $$quic_srv sha3.c mlkem.c mlkem_poly.c" "$$client_only srv_handshake.c srv_rec.c quic_step.c record.c" "-DCH_ROLE_SERVER -DCH_TRANSPORT_QUIC" "-DCH_PIN_ECDSA -DCH_KEX_PQ"; \
-	check "ROLE=server TRUST=none TRANSPORT=record" "$$srv_shared srv_rec.c $$signers rec.c rec_frame.c record.c sha3.c mlkem.c mlkem_poly.c" "$$client_only srv_handshake.c srv_quic.c rec_step.c" "-DCH_ROLE_SERVER -DCH_TRANSPORT_RECORD" "-DCH_PIN_ECDSA -DCH_TRANSPORT_QUIC -DCH_KEX_PQ"; \
-	check "ROLE=server TRUST=none TRANSPORT=tls SUITE=aesgcm AES=hw" "quic_aes.c quic_aes_hw.c quic_ghash_hw.c quic_gcm.c sha512.c sha512_compress.c" "quic_aes_soft.c quic_aes_extern.c" "-DCH_SUITE_AES_GCM -DCH_AES_HW" "-DCH_AES_EXTERN -DCH_AES_256_TEST"; \
-	check "ROLE=server TRUST=none TRANSPORT=quic SUITE=aesgcm AES=hw EXPORTER=off" "quic_aes.c quic_aes_hw.c quic_ghash_hw.c quic_gcm.c quic_packet.c sha512.c sha512_compress.c" "quic_aes_soft.c quic_aes_extern.c record.c" "-DCH_SUITE_AES_GCM -DCH_AES_HW -DCH_TRANSPORT_QUIC" "-DCH_AES_EXTERN -DCH_AES_256_TEST"; \
+	check "ROLE=server TRUST=none TRANSPORT=quic-nonblocking EXPORTER=off" "$$srv_shared srv_quic.c quic_token.c $$signers $$quic_srv sha3.c mlkem.c mlkem_poly.c" "$$client_only srv_handshake.c srv_rec.c quic_step.c record.c" "-DCH_ROLE_SERVER -DCH_TRANSPORT_QUIC_NONBLOCKING" "-DCH_PIN_ECDSA -DCH_KEX_PQ"; \
+	check "ROLE=server TRUST=none TRANSPORT=tcp-nonblocking" "$$srv_shared srv_rec.c $$signers rec.c rec_frame.c record.c sha3.c mlkem.c mlkem_poly.c" "$$client_only srv_handshake.c srv_quic.c rec_step.c" "-DCH_ROLE_SERVER -DCH_TRANSPORT_TCP_NONBLOCKING" "-DCH_PIN_ECDSA -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_KEX_PQ"; \
+	check "ROLE=server TRUST=none TRANSPORT=tcp-blocking SUITE=aesgcm AES=hw" "quic_aes.c quic_aes_hw.c quic_ghash_hw.c quic_gcm.c sha512.c sha512_compress.c" "quic_aes_soft.c quic_aes_extern.c" "-DCH_SUITE_AES_GCM -DCH_AES_HW" "-DCH_AES_EXTERN -DCH_AES_256_TEST"; \
+	check "ROLE=server TRUST=none TRANSPORT=quic-nonblocking SUITE=aesgcm AES=hw EXPORTER=off" "quic_aes.c quic_aes_hw.c quic_ghash_hw.c quic_gcm.c quic_packet.c sha512.c sha512_compress.c" "quic_aes_soft.c quic_aes_extern.c record.c" "-DCH_SUITE_AES_GCM -DCH_AES_HW -DCH_TRANSPORT_QUIC_NONBLOCKING" "-DCH_AES_EXTERN -DCH_AES_256_TEST"; \
 	[ $$rc = 0 ] && echo "lint-trust-separation: every axis value packages exactly its own sources and defines"; \
 	exit $$rc
 # bench/device-ram.sh builds with CLANG_RV, the clang the codegen lints
@@ -1145,8 +1151,13 @@ PUBLIC_BUILD := ch_build
 # holds symbol names, because those are what the link keeps and what
 # lib-check reads.
 TRANSPORT_NAMED := ch_build ch_srv_check ch_pubkey_from_pem
+# A symbol name takes no hyphen, so the suffix is the TRANSPORT value
+# with underscores, and the build record's symbol is named for its type,
+# ch_build_info: ch_build_info_tcp_blocking, ch_srv_check_tcp_blocking.
+TRANSPORT_SUFFIX := $(subst -,_,$(TRANSPORT))
+transport_symbol = $(if $(filter ch_build,$(1)),ch_build_info,$(1))_$(TRANSPORT_SUFFIX)
 PUBLIC := $(foreach s,$(PUBLIC_ROLE) $(PUBLIC_RAND) $(PUBLIC_CA) $(PUBLIC_EXPORT) $(PUBLIC_BUILD), \
-            $(if $(filter $(s),$(TRANSPORT_NAMED)),$(s)_$(TRANSPORT),$(s)))
+            $(if $(filter $(s),$(TRANSPORT_NAMED)),$(call transport_symbol,$(s)),$(s)))
 
 # LIB_VARIANT names the build variables that pick the sources and the
 # defines, and the compiler is not one of them. So `make CC=<cross> lib`
@@ -1219,8 +1230,9 @@ LIB_OBJ := bin/obj/$(LIB_VARIANT)/chapulin.o
 # that consumer links and reads a record whose axes differ from its
 # headers' in one bit.
 #
-# The second moves the transport: a TRANSPORT=tls object meets a
-# record-mode consumer, and a record or QUIC object meets a TLS one. Its
+# The second moves the transport: a TRANSPORT=tcp-blocking object meets a
+# tcp-nonblocking consumer, and a tcp-nonblocking or QUIC object meets a
+# tcp-blocking one. Its
 # headers name another transport's record, which this object does not
 # define, so that consumer must fail to link (docs/decisions.md 61).
 # BUILD_OTHER_RECORD is the name its link reports missing.
@@ -1230,12 +1242,12 @@ BUILD_PIN_MOVED_DEF := $(filter-out -DCH_PIN_ECDSA,$(LIB_DEF))
 else
 BUILD_PIN_MOVED_DEF := $(LIB_DEF) -DCH_PIN_ECDSA
 endif
-ifeq ($(TRANSPORT),tls)
-BUILD_TRANSPORT_MOVED_DEF := $(LIB_DEF) -DCH_TRANSPORT_RECORD
-BUILD_OTHER_RECORD := ch_build_record
+ifeq ($(TRANSPORT),tcp-blocking)
+BUILD_TRANSPORT_MOVED_DEF := $(LIB_DEF) -DCH_TRANSPORT_TCP_NONBLOCKING
+BUILD_OTHER_RECORD := ch_build_info_tcp_nonblocking
 else
-BUILD_TRANSPORT_MOVED_DEF := $(filter-out -DCH_TRANSPORT_QUIC -DCH_TRANSPORT_RECORD,$(LIB_DEF))
-BUILD_OTHER_RECORD := ch_build_tls
+BUILD_TRANSPORT_MOVED_DEF := $(filter-out -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_TRANSPORT_TCP_NONBLOCKING,$(LIB_DEF))
+BUILD_OTHER_RECORD := ch_build_info_tcp_blocking
 endif
 
 $(LIB_OBJ): $(LIB_OBJS) $(PIN_STAMP) $(PIN_STAMP_FORCE)
@@ -1415,14 +1427,14 @@ bin/sha3_test: test/sha3_test.c sha3.c ct.c $(HDRS) $(TESTH)
 bin/mlkem_test: test/mlkem_test.c mlkem.c mlkem_poly.c sha3.c ct.c $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) -I. -o $@ test/mlkem_test.c mlkem.c mlkem_poly.c sha3.c ct.c
-# The TRANSPORT=quic driver through its sixteen public entries: the
+# The TRANSPORT=quic-nonblocking driver through its sixteen public entries: the
 # configuration rules, the staged ClientHello, a ServerHello delivered
 # over CRYPTO bytes, the level rules RFC 9001 §4.1.3 states, and the one
 # CONNECTION_CLOSE per level a failed session seals. Its own
-# binary over the whole QUIC object's sources under -DCH_TRANSPORT_QUIC,
+# binary over the whole QUIC object's sources under -DCH_TRANSPORT_QUIC_NONBLOCKING,
 # the shape bin/sha3_test uses for a mode's own sources: bin/unit
 # compiles no QUIC source, because it includes tls.h and calls rec_seal,
-# which a -DCH_TRANSPORT_QUIC build does not compile. It is also the
+# which a -DCH_TRANSPORT_QUIC_NONBLOCKING build does not compile. It is also the
 # build that compiles quic.c for test/quic-builds.sh, the catch target
 # of the INV-26 mutants the compiler refuses.
 QUIC_DRIVER_SRCS := $(QUIC_SRCS) handshake_message.c handshake_parser.c handshake_parser_ee.c \
@@ -1431,7 +1443,7 @@ QUIC_DRIVER_SRCS := $(QUIC_SRCS) handshake_message.c handshake_parser.c handshak
                     rsa.c rsa_mont.c hkdf.c sha256.c chacha20.c poly1305.c aead.c buf.c ct.c
 bin/quic_driver_test: test/quic_driver_test.c $(QUIC_DRIVER_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -DCH_TRANSPORT_QUIC -I. -o $@ test/quic_driver_test.c $(QUIC_DRIVER_SRCS)
+	$(CC) $(CFLAGS) -DCH_TRANSPORT_QUIC_NONBLOCKING -I. -o $@ test/quic_driver_test.c $(QUIC_DRIVER_SRCS)
 # The mode against its published vectors: FIPS 197 for the AES-128 and
 # AES-256 forward ciphers, SP 800-38D for both AEADs, and RFC 9001
 # Appendix A for the Initial keys, the header protection masks and the
@@ -1447,7 +1459,7 @@ bin/quic_driver_test: test/quic_driver_test.c $(QUIC_DRIVER_SRCS) $(HDRS) $(TEST
 bin/quic_test: test/quic_vectors.c quic_aes.c $(AES_IMPL) quic_gcm.c quic_keys.c quic_retry.c quic_initial.c quic_packet.c \
                hkdf.c sha256.c chacha20.c poly1305.c aead.c buf.c ct.c $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -DCH_TRANSPORT_QUIC $(AES_DEF) $(AES_256_TEST_DEF) -I. -o $@ test/quic_vectors.c quic_aes.c \
+	$(CC) $(CFLAGS) -DCH_TRANSPORT_QUIC_NONBLOCKING $(AES_DEF) $(AES_256_TEST_DEF) -I. -o $@ test/quic_vectors.c quic_aes.c \
 	  $(AES_IMPL) quic_gcm.c quic_keys.c quic_retry.c quic_initial.c quic_packet.c hkdf.c sha256.c chacha20.c poly1305.c aead.c buf.c ct.c
 # The same vectors on AES=hw. CBMC cannot read an intrinsic, so the published
 # standards are how the instruction path answers for itself: FIPS 197 for the
@@ -1487,7 +1499,7 @@ bin/aes_suite_test: test/aes_suite_test.c record.c quic_gcm.c quic_aes.c $(AES_H
 bin/quic_test_hw: test/quic_vectors.c quic_aes.c $(AES_HW_SRCS) quic_gcm.c quic_keys.c quic_retry.c quic_initial.c quic_packet.c \
                   hkdf.c sha256.c chacha20.c poly1305.c aead.c buf.c ct.c $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) $(AES_HW_CFLAGS) -DCH_TRANSPORT_QUIC -DCH_AES_HW $(AES_256_TEST_DEF) -I. -o $@ \
+	$(CC) $(CFLAGS) $(AES_HW_CFLAGS) -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_AES_HW $(AES_256_TEST_DEF) -I. -o $@ \
 	  test/quic_vectors.c quic_aes.c $(AES_HW_SRCS) quic_gcm.c quic_keys.c quic_retry.c quic_initial.c quic_packet.c hkdf.c sha256.c chacha20.c poly1305.c aead.c buf.c ct.c
 # AES=hw against AES=soft over the same inputs, the check that holds the
 # instruction path where a proof cannot reach. Both implementations are in one
@@ -1500,7 +1512,7 @@ bin/quic_test_hw: test/quic_vectors.c quic_aes.c $(AES_HW_SRCS) quic_gcm.c quic_
 # links nothing, for the reason its file comment gives.
 bin/aes_equiv_test: test/aes_equiv_test.c test/aes_equiv_soft.c test/aes_equiv_hw.c quic_aes_soft.c quic_aes_hw.c ct.c $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) $(AES_HW_CFLAGS) -DCH_TRANSPORT_QUIC -I. -o $@ test/aes_equiv_test.c test/aes_equiv_soft.c test/aes_equiv_hw.c ct.c
+	$(CC) $(CFLAGS) $(AES_HW_CFLAGS) -DCH_TRANSPORT_QUIC_NONBLOCKING -I. -o $@ test/aes_equiv_test.c test/aes_equiv_soft.c test/aes_equiv_hw.c ct.c
 # GHASH on the carry-less multiply against quic_gcm.c's portable GHASH, the
 # same check for quic_ghash_hw.c: the multiply, the loop over data and the
 # whole AEAD, each built twice in one binary. The line defines CH_AES_HW, so
@@ -1529,7 +1541,7 @@ bin/unit_x25519_wide: test/unit_test.c $(SRCS) x25519_wide.c $(HDRS) $(TESTH)
 bin/ghash_equiv_test: test/ghash_equiv_test.c test/ghash_equiv_soft.c quic_gcm.c quic_aes.c $(AES_HW_SRCS) \
                       hkdf.c sha256.c ct.c $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) $(AES_HW_CFLAGS) -DCH_TRANSPORT_QUIC -DCH_AES_HW -I. -o $@ test/ghash_equiv_test.c \
+	$(CC) $(CFLAGS) $(AES_HW_CFLAGS) -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_AES_HW -I. -o $@ test/ghash_equiv_test.c \
 	  test/ghash_equiv_soft.c quic_gcm.c quic_aes.c $(AES_HW_SRCS) hkdf.c sha256.c ct.c
 # The same two rules for the ROLE=server mode, over the role's sources under
 # -DCH_ROLE_SERVER. Beside the seven srv sources it links what the implemented
@@ -1594,17 +1606,17 @@ SRV_QUIC_SRCS := srv_quic.c srv_flight.c srv_out.c srv_message.c srv_cookie.c sr
                  quic_token.c
 bin/srv_quic_test: test/srv_quic_test.c $(SRV_QUIC_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -DCH_ROLE_SERVER -DCH_TRANSPORT_QUIC -I. -o $@ test/srv_quic_test.c \
+	$(CC) $(CFLAGS) -DCH_ROLE_SERVER -DCH_TRANSPORT_QUIC_NONBLOCKING -I. -o $@ test/srv_quic_test.c \
 	  $(SRV_QUIC_SRCS)
 
-# The same main over a ROLE=both TRANSPORT=quic object: the server's QUIC
+# The same main over a ROLE=both TRANSPORT=quic-nonblocking object: the server's QUIC
 # sources and the client's, in one binary. A session takes its Initial
 # labels from the init call that made it, and only this build can show a
 # session taking the wrong ones: a one-role object has one side.
 SRV_QUIC_BOTH_SRCS := $(sort $(SRV_QUIC_SRCS) $(QUIC_DRIVER_SRCS))
 bin/srv_quic_both_test: test/srv_quic_test.c $(SRV_QUIC_BOTH_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_TRANSPORT_QUIC -I. -o $@ \
+	$(CC) $(CFLAGS) -DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_TRANSPORT_QUIC_NONBLOCKING -I. -o $@ \
 	  test/srv_quic_test.c $(SRV_QUIC_BOTH_SRCS)
 
 # Both QUIC drivers against each other in one ROLE=both object, the one
@@ -1614,13 +1626,13 @@ bin/srv_quic_both_test: test/srv_quic_test.c $(SRV_QUIC_BOTH_SRCS) $(HDRS) $(TES
 # its full handshake would run, which the resumed one never calls.
 bin/quic_loop_test: test/quic_loop_test.c $(SRV_QUIC_BOTH_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_TRANSPORT_QUIC -DCH_PIN_ECDSA -I. -Itest \
+	$(CC) $(CFLAGS) -DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_PIN_ECDSA -I. -Itest \
 	  -o $@ test/quic_loop_test.c $(SRV_QUIC_BOTH_SRCS)
 QUIC_LOOP_WEBPKI_SRCS := $(sort $(SRV_QUIC_BOTH_SRCS) $(WEBPKI_SRCS) $(WEBPKI_CHAIN_SRCS) x509_der.c \
                                 $(KEX_HYBRID_SRCS))
 bin/quic_loop_webpki: test/quic_loop_test.c $(QUIC_LOOP_WEBPKI_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_TRANSPORT_QUIC -DCH_TRUST_WEBPKI -I. \
+	$(CC) $(CFLAGS) -DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_TRUST_WEBPKI -I. \
 	  -Itest -o $@ test/quic_loop_test.c $(QUIC_LOOP_WEBPKI_SRCS)
 # The same loop under -DCH_SUITE_AES_GCM on the AES instructions, the
 # object colibri links for a suite build: each of the three suites over
@@ -1629,7 +1641,7 @@ QUIC_LOOP_AES_SRCS := $(filter-out $(AES_IMPL_SRCS),$(QUIC_LOOP_WEBPKI_SRCS)) $(
 bin/quic_loop_aes: test/quic_loop_test.c test/quic_loop_suites.h $(QUIC_LOOP_AES_SRCS) $(HDRS) \
                    $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) $(AES_HW_CFLAGS) -DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_TRANSPORT_QUIC \
+	$(CC) $(CFLAGS) $(AES_HW_CFLAGS) -DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_TRANSPORT_QUIC_NONBLOCKING \
 	  -DCH_TRUST_WEBPKI -DCH_SUITE_AES_GCM -DCH_AES_HW -DCH_NATIVE_AES -I. -Itest -o $@ \
 	  test/quic_loop_test.c $(QUIC_LOOP_AES_SRCS)
 # QUIC packet and header protection under the two AES-GCM suites against
@@ -1639,10 +1651,10 @@ QUIC_SUITE_TEST_SRCS := quic_packet.c quic_keys.c quic_aes.c $(AES_HW_SRCS) quic
                         sha256.c sha512.c sha512_compress.c chacha20.c poly1305.c aead.c buf.c ct.c
 bin/quic_suite_test: test/quic_suite_test.c $(QUIC_SUITE_TEST_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) $(AES_HW_CFLAGS) -DCH_TRANSPORT_QUIC -DCH_SUITE_AES_GCM -DCH_AES_HW \
+	$(CC) $(CFLAGS) $(AES_HW_CFLAGS) -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_SUITE_AES_GCM -DCH_AES_HW \
 	  -DCH_NATIVE_AES -I. -o $@ test/quic_suite_test.c $(QUIC_SUITE_TEST_SRCS)
 
-# The record-mode server driver, over the same flight sources the blocking
+# The tcp-nonblocking server driver, over the same flight sources the blocking
 # server builds: srv_rec.c replaces srv_handshake.c and rec_frame.c comes
 # with the transport, and no rec_step.c, which is the client's table.
 SRV_REC_SRCS := $(filter-out srv_handshake.c,$(SRV_SRCS)) srv_rec.c rec.c rec_frame.c $(KEX_HYBRID_SRCS) \
@@ -1651,11 +1663,11 @@ SRV_REC_SRCS := $(filter-out srv_handshake.c,$(SRV_SRCS)) srv_rec.c rec.c rec_fr
                 p256_scalar.c p256_point.c p256_field.c p256.c rsa.c rsa_mont.c
 bin/srv_rec_test: test/srv_rec_test.c $(SRV_REC_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -DCH_ROLE_SERVER -DCH_TRANSPORT_RECORD -I. -o $@ test/srv_rec_test.c \
+	$(CC) $(CFLAGS) -DCH_ROLE_SERVER -DCH_TRANSPORT_TCP_NONBLOCKING -I. -o $@ test/srv_rec_test.c \
 	  $(SRV_REC_SRCS)
 
-# Both record drivers against each other in one process, under the
-# defines of the one object that carries both: ROLE=both TRANSPORT=record.
+# Both tcp-nonblocking drivers against each other in one process, under the
+# defines of the one object that carries both: ROLE=both TRANSPORT=tcp-nonblocking.
 # It is the client half's INV-28 test -- bin/recclient needs a live
 # server and runs in check-slow, so that side's claim was checked once a
 # night. The two filters are the ones that arm applies, written the same
@@ -1667,7 +1679,7 @@ REC_LOOP_SRCS := $(filter-out handshake.c,$(SRCS)) rec.c rec_frame.c rec_step.c 
                  rsa_sign.c p256_sign.c p256_scalar.c p256_point.c p256_field.c
 bin/rec_loop_test: test/rec_loop_test.c $(REC_LOOP_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_TRANSPORT_RECORD $(EXPORTER_DEF) -DCH_KEYLOG \
+	$(CC) $(CFLAGS) -DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_TRANSPORT_TCP_NONBLOCKING $(EXPORTER_DEF) -DCH_KEYLOG \
 	  -I. -o $@ test/rec_loop_test.c $(REC_LOOP_SRCS)
 # The same main with the KEX=pq client, which offers X25519MLKEM768 alone,
 # so the server's hybrid half runs against this tree's own client for a
@@ -1677,17 +1689,18 @@ bin/rec_loop_test: test/rec_loop_test.c $(REC_LOOP_SRCS) $(HDRS) $(TESTH)
 # group, which is what the case is about.
 bin/rec_loop_pq: test/rec_loop_test.c $(REC_LOOP_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_TRANSPORT_RECORD -DCH_KEX_PQ $(EXPORTER_DEF) \
+	$(CC) $(CFLAGS) -DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_TRANSPORT_TCP_NONBLOCKING -DCH_KEX_PQ $(EXPORTER_DEF) \
 	  -DCH_KEYLOG -I. -o $@ test/rec_loop_test.c $(REC_LOOP_SRCS)
-# The TRUST=webpki record client against this tree's record server, over
-# the ROLE=both TRANSPORT=record TRUST=webpki object's sources: the server
+# The TRUST=webpki tcp-nonblocking client against this tree's tcp-nonblocking
+# server, over
+# the ROLE=both TRANSPORT=tcp-nonblocking TRUST=webpki object's sources: the server
 # presents the r2 corpus chain with its leaf key, and a server holding
 # another ticket key declines the client's ticket (docs/decisions.md 55).
 WEBPKI_LOOP_SRCS := $(sort $(filter-out pem.c x509.c x509_ca.c,$(REC_LOOP_SRCS)) \
                            $(WEBPKI_SRCS) $(WEBPKI_CHAIN_SRCS))
 bin/webpki_loop_record: test/webpki_loop_test.c $(WEBPKI_LOOP_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_TRANSPORT_RECORD -DCH_TRUST_WEBPKI \
+	$(CC) $(CFLAGS) -DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_TRANSPORT_TCP_NONBLOCKING -DCH_TRUST_WEBPKI \
 	  -I. -o $@ test/webpki_loop_test.c $(WEBPKI_LOOP_SRCS)
 # The same loop under -DCH_SUITE_AES_GCM on the AES instructions: each of
 # the three suites through a full handshake and a resumption, a SHA-384
@@ -1696,7 +1709,7 @@ bin/webpki_loop_record: test/webpki_loop_test.c $(WEBPKI_LOOP_SRCS) $(HDRS) $(TE
 bin/webpki_loop_aes: test/webpki_loop_test.c test/webpki_loop_suites.h $(WEBPKI_LOOP_SRCS) \
                      quic_aes.c $(AES_HW_SRCS) quic_gcm.c $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) $(AES_HW_CFLAGS) -DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_TRANSPORT_RECORD \
+	$(CC) $(CFLAGS) $(AES_HW_CFLAGS) -DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_TRANSPORT_TCP_NONBLOCKING \
 	  -DCH_TRUST_WEBPKI -DCH_SUITE_AES_GCM -DCH_AES_HW -DCH_NATIVE_AES -I. -o $@ \
 	  test/webpki_loop_test.c $(WEBPKI_LOOP_SRCS) quic_aes.c $(AES_HW_SRCS) quic_gcm.c
 bin/srv_test: test/srv_test.c srv_message.c srv_cookie.c srv_ticket.c srv_parser.c \
@@ -1850,7 +1863,7 @@ bin/webpki_encrypted_exts_test: test/webpki_encrypted_exts_test.c $(WEBPKI_TEST_
 	$(CC) $(CFLAGS) -DCH_TRUST_WEBPKI -I. -o $@ test/webpki_encrypted_exts_test.c $(WEBPKI_TEST_SRCS)
 
 # TRUST=webpki resumption (webpki_ticket.h) over both TCP drivers: the
-# blocking one, and TRANSPORT=record's, which drops handshake.c for
+# blocking one, and TRANSPORT=tcp-nonblocking's, which drops handshake.c for
 # rec.c, rec_frame.c and rec_step.c.
 # The mock server signs the CertificateVerify of a declined ticket with the
 # r2 corpus leaf key, so both binaries link the P-256 signer beside the
@@ -1863,7 +1876,7 @@ bin/webpki_resume_test: test/webpki_resume_test.c $(WEBPKI_TEST_SRCS) $(P256_SIG
 WEBPKI_RECORD_SRCS := $(filter-out handshake.c,$(WEBPKI_TEST_SRCS)) rec.c rec_frame.c rec_step.c
 bin/webpki_resume_record: test/webpki_resume_test.c $(WEBPKI_RECORD_SRCS) $(P256_SIGN_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -DCH_TRUST_WEBPKI -DCH_TRANSPORT_RECORD -I. -o $@ test/webpki_resume_test.c \
+	$(CC) $(CFLAGS) -DCH_TRUST_WEBPKI -DCH_TRANSPORT_TCP_NONBLOCKING -I. -o $@ test/webpki_resume_test.c \
 	  $(WEBPKI_RECORD_SRCS) $(P256_SIGN_SRCS)
 
 # The same main in the client that offers all three cipher suites
@@ -1985,13 +1998,13 @@ ct-widemul-check: bin/unit_ct_widemul bin/mlkem_test_ct_widemul bin/p256_field_t
 	./bin/p256_sign_test_ct_widemul
 	$(MAKE) wycheproof-ct-widemul
 
-# The TRANSPORT=record client, which owns its socket and lets chapulin
+# The TRANSPORT=tcp-nonblocking client, which owns its socket and lets chapulin
 # touch none of it. test/e2e.sh runs it against the same PSK server
 # bin/tlsclient uses, so the two drivers are compared over one wire.
 REC_SRCS := $(filter-out handshake.c,$(SRCS)) rec.c rec_frame.c rec_step.c
 bin/recclient: test/rec_client.c $(REC_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -DCH_TRANSPORT_RECORD -I. -o $@ test/rec_client.c $(REC_SRCS)
+	$(CC) $(CFLAGS) -DCH_TRANSPORT_TCP_NONBLOCKING -I. -o $@ test/rec_client.c $(REC_SRCS)
 
 bin/tlsclient: test/tls_client.c $(SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
@@ -2078,16 +2091,16 @@ check: bin/unit bin/unit_ca bin/unit_pq bin/tlsclient bin/tlsclient_ecdsa bin/tl
 	# every invocation.
 	$(MAKE) lib-check RAND=drbg
 	$(MAKE) lib-check cxx-check RAND=extern
-	# The examples are pinned to TRUST=raw-rsa and TRANSPORT=tls, whatever
+	# The examples are pinned to TRUST=raw-rsa and TRANSPORT=tcp-blocking, whatever
 	# this check was given. psk_client and pinned_client are raw-mode TLS
 	# programs: they call ch_connect, ch_write and ch_read, which a
-	# TRANSPORT=quic object does not export, and each drives a socket
+	# TRANSPORT=quic-nonblocking object does not export, and each drives a socket
 	# through the I/O callbacks that object has no use for. The fixed
 	# paths bin/example_psk and bin/example_pinned are what test/e2e.sh
 	# runs: `make check TRUST=webpki` used to leave the webpki-variant
 	# copies there, and the next e2e run started a PSK server against a
 	# client built for a mode that refuses a PSK.
-	$(MAKE) examples-check RAND=extern TRUST=raw-rsa TRANSPORT=tls
+	$(MAKE) examples-check RAND=extern TRUST=raw-rsa TRANSPORT=tcp-blocking
 	# The CA arm packages the provisioning reader and its fifth export;
 	# without this leg neither the export list nor the C++ forwarder is
 	# checked by anything. Both pinned algorithms run, because the
@@ -2100,28 +2113,28 @@ check: bin/unit bin/unit_ca bin/unit_pq bin/tlsclient bin/tlsclient_ecdsa bin/tl
 	# The webpki arm exports the four calls and no provisioning call, and
 	# its C++ forwarders are the anchors, hostname and clock setters.
 	$(MAKE) lib-check cxx-check RAND=extern TRUST=webpki
-	# The same mode over the record transport, which is what a public-PKI
+	# The same mode over the tcp-nonblocking transport, which is what a public-PKI
 	# host client on an event loop builds. It is the leg that checks the
-	# record export list on the client side at all, and the one that
+	# tcp-nonblocking export list on the client side at all, and the one that
 	# catches an unguarded ch_connect: this transport compiles
 	# ch_record_init and no ch_connect, so a trust mode whose ch_connect
 	# is not guarded imports the ch_handshake nothing compiled
 	# (https://github.com/c4milo/chapulin/issues/171). It took 2.4 s cold.
-	$(MAKE) lib-check RAND=extern TRUST=webpki TRANSPORT=record
+	$(MAKE) lib-check RAND=extern TRUST=webpki TRANSPORT=tcp-nonblocking
 	# The same object with the native multiply, the build cocuyo links
 	# when its builder vouches for the part (WIDEMUL above). The export
 	# list must not move; only the arithmetic inside changes.
-	$(MAKE) lib-check RAND=extern TRUST=webpki TRANSPORT=record WIDEMUL=native
+	$(MAKE) lib-check RAND=extern TRUST=webpki TRANSPORT=tcp-nonblocking WIDEMUL=native
 	# The QUIC arm exports the sixteen ch_quic_ calls and none of the four
-	# TLS ones, so it is the leg that holds PUBLIC_TRANSPORT to a
+	# tcp-blocking ones, so it is the leg that holds PUBLIC_TRANSPORT to a
 	# replacement rather than an addition, and the one that compiles
 	# chapulin.hpp's Quic class against the object it forwards to.
-	$(MAKE) lib-check cxx-check RAND=extern TRANSPORT=quic EXPORTER=off
+	$(MAKE) lib-check cxx-check RAND=extern TRANSPORT=quic-nonblocking EXPORTER=off
 	# The object colibri links for its own QUIC checks: the webpki chain
 	# walk under both roles and the key log. No test here drives a
 	# TRUST=webpki QUIC client, so this leg is what holds the pair to
 	# compiling: 756ad91 broke it and nothing here saw it.
-	$(MAKE) lib-check RAND=extern TRUST=webpki TRANSPORT=quic ROLE=both KEYLOG=on EXPORTER=off
+	$(MAKE) lib-check RAND=extern TRUST=webpki TRANSPORT=quic-nonblocking ROLE=both KEYLOG=on EXPORTER=off
 	# The server arm exports ch_srv_accept and ch_srv_check beside
 	# ch_read, ch_write and ch_close, and no ch_connect, so it is the leg
 	# that holds PUBLIC_ROLE to a replacement rather than an addition. It
@@ -2134,14 +2147,14 @@ check: bin/unit bin/unit_ca bin/unit_pq bin/tlsclient bin/tlsclient_ecdsa bin/tl
 	# `make check TRUST=raw-ecdsa` dies in this row rather than in a build
 	# anyone asked for.
 	$(MAKE) lib-check RAND=extern ROLE=server TRUST=none
-	# The server's record transport: srv_rec.c in place of
+	# The server's tcp-nonblocking transport: srv_rec.c in place of
 	# srv_handshake.c, rec.c and rec_frame.c under it, and nine calls
 	# rather than five. lint-trust-separation reads that source list and
 	# this leg links it. A variant that keeps a caller and drops the
 	# module under it builds and passes the export list, which is the
 	# failure this target's own comment records for ROLE=server. It took
 	# 2.7 s cold.
-	$(MAKE) lib-check RAND=extern ROLE=server TRUST=none TRANSPORT=record
+	$(MAKE) lib-check RAND=extern ROLE=server TRUST=none TRANSPORT=tcp-nonblocking
 	# The hybrid device client, with the P-256 pin: the one leg that links
 	# ML-KEM into a raw-mode object and the one that packages
 	# TRUST=raw-ecdsa. KEX=pq sets its CH_TX_STAGE and CH_MIN_RXBUF, and
@@ -2155,8 +2168,8 @@ check: bin/unit bin/unit_ca bin/unit_pq bin/tlsclient bin/tlsclient_ecdsa bin/tl
 	# The key log axis, on the build colibri's interop endpoint links: a
 	# QUIC server. It proves the object still exports its nineteen calls
 	# and imports ch_keylog as a hook. EXPORTER=off is named because that
-	# axis refuses TRANSPORT=quic and a recursion inherits the outer value.
-	$(MAKE) lib-check RAND=extern ROLE=server TRUST=none TRANSPORT=quic EXPORTER=off KEYLOG=on
+	# axis refuses TRANSPORT=quic-nonblocking and a recursion inherits the outer value.
+	$(MAKE) lib-check RAND=extern ROLE=server TRUST=none TRANSPORT=quic-nonblocking EXPORTER=off KEYLOG=on
 	# The AES suite, on the server that selects it. ct.h refuses the
 	# define without the build's own CH_NATIVE_AES, which the Makefile
 	# never writes into a library build, so this leg states it the way the
@@ -2188,7 +2201,7 @@ check: bin/unit bin/unit_ca bin/unit_pq bin/tlsclient bin/tlsclient_ecdsa bin/tl
 	$(MAKE) lint-stack EXPORTER=on
 	# The QUIC arm compiles the QUIC_SRCS, which no other leg compiles
 	# at all, against the 2,560 B device budget (INV-19).
-	$(MAKE) lint-stack TRANSPORT=quic EXPORTER=off
+	$(MAKE) lint-stack TRANSPORT=quic-nonblocking EXPORTER=off
 	# The server object carries ML-KEM in every build (docs/decisions.md
 	# 54). This leg holds ML-KEM's sources to their 6,656 B ceiling and
 	# every server source, srv_kex.c and the signers included, to the
@@ -2427,14 +2440,14 @@ bin/diff_x25519_wide: test/diff_x25519_test.c x25519.c x25519_wide.c ct.c $(HDRS
 	@mkdir -p bin
 	$(CC) $(CFLAGS) $(X25519_WIDE_DEF) -I. -o $@ test/diff_x25519_test.c x25519.c x25519_wide.c ct.c
 
-# The TRANSPORT=quic arm of the differential. Its own main, because
+# The TRANSPORT=quic-nonblocking arm of the differential. Its own main, because
 # test/diff_test.c calls rec_seal and reads the TLS layout of ch_cfg, and
-# a -DCH_TRANSPORT_QUIC build compiles neither; test/diff_driver.h holds
+# a -DCH_TRANSPORT_QUIC_NONBLOCKING build compiles neither; test/diff_driver.h holds
 # the plumbing both mains share. quic_aes.c and the AES implementation are
 # on the line for the reason bin/quic_test states.
 bin/diff_quic: test/diff_quic_test.c quic_aes.c $(AES_IMPL) quic_gcm.c hkdf.c sha256.c ct.c $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -DCH_TRANSPORT_QUIC $(AES_DEF) $(AES_256_TEST_DEF) -I. -o $@ test/diff_quic_test.c quic_aes.c $(AES_IMPL) quic_gcm.c hkdf.c sha256.c ct.c
+	$(CC) $(CFLAGS) -DCH_TRANSPORT_QUIC_NONBLOCKING $(AES_DEF) $(AES_256_TEST_DEF) -I. -o $@ test/diff_quic_test.c quic_aes.c $(AES_IMPL) quic_gcm.c hkdf.c sha256.c ct.c
 # The same main over the AES=hw sources, whatever this build's AES value is,
 # so the rows in test/diff_aes.h and test/diff_gcm.h run the AES instructions
 # and the carry-less multiply GHASH against spec/lean/Spec/Aes.lean and
@@ -2444,7 +2457,7 @@ bin/diff_quic: test/diff_quic_test.c quic_aes.c $(AES_IMPL) quic_gcm.c hkdf.c sh
 # AES_HW_PROBE found the instructions.
 bin/diff_quic_hw: test/diff_quic_test.c quic_aes.c $(AES_HW_SRCS) quic_gcm.c hkdf.c sha256.c ct.c $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) $(AES_HW_CFLAGS) -DCH_TRANSPORT_QUIC -DCH_AES_HW $(AES_256_TEST_DEF) -I. -o $@ test/diff_quic_test.c quic_aes.c \
+	$(CC) $(CFLAGS) $(AES_HW_CFLAGS) -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_AES_HW $(AES_256_TEST_DEF) -I. -o $@ test/diff_quic_test.c quic_aes.c \
 	  $(AES_HW_SRCS) quic_gcm.c hkdf.c sha256.c ct.c
 
 # The sequence enumerations compare against spec/lean/.lake/build/bin/diffspec,
@@ -2682,7 +2695,7 @@ WYCHEPROOF_SRCS := x25519.c chacha20.c poly1305.c aead.c hkdf.c sha256.c p256.c 
   rsa_pkcs1.c rsa_sign.c quic_aes.c quic_gcm.c p256_sign.c p256_ecdh.c p256_point.c \
   p256_scalar.c p256_field.c
 wycheproof-leg-default:
-	@$(CC) $(CFLAGS) $(RSA_WIDE_DEF) -DCH_TRANSPORT_QUIC $(AES_DEF) $(WYCHEPROOF_TEST_DEFS) -I. -Ibin -o bin/wycheproof_test \
+	@$(CC) $(CFLAGS) $(RSA_WIDE_DEF) -DCH_TRANSPORT_QUIC_NONBLOCKING $(AES_DEF) $(WYCHEPROOF_TEST_DEFS) -I. -Ibin -o bin/wycheproof_test \
 	  test/wycheproof_test.c $(WYCHEPROOF_SRCS) $(AES_IMPL) && \
 	{ ./bin/wycheproof_test > bin/wycheproof_test.log 2>&1; rc=$$?; cat bin/wycheproof_test.log; exit $$rc; }
 # The AES=hw leg. New crypto gets its Wycheproof suite on every leg
@@ -2698,7 +2711,7 @@ wycheproof-leg-aes-hw:
 	  $(call REQUIRE_ON_CI,wycheproof-aes-hw); \
 	  echo "SKIP wycheproof AES=hw: $(CC) has no AES instructions and no flag turns them on"; \
 	else \
-	  $(CC) $(CFLAGS) $(AES_HW_CFLAGS) $(RSA_WIDE_DEF) -DCH_TRANSPORT_QUIC -DCH_AES_HW $(WYCHEPROOF_TEST_DEFS) -I. -Ibin \
+	  $(CC) $(CFLAGS) $(AES_HW_CFLAGS) $(RSA_WIDE_DEF) -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_AES_HW $(WYCHEPROOF_TEST_DEFS) -I. -Ibin \
 	    -o bin/wycheproof_test_aes_hw test/wycheproof_test.c $(WYCHEPROOF_SRCS) $(AES_HW_SRCS); \
 	  ./bin/wycheproof_test_aes_hw > bin/wycheproof_test_aes_hw.log 2>&1 \
 	    || { echo "== bin/wycheproof_test_aes_hw failed:"; cat bin/wycheproof_test_aes_hw.log; exit 1; }; \
@@ -2713,7 +2726,7 @@ wycheproof-leg-aes-hw:
 	  [ -z "$$CI" ] || { echo "wycheproof X25519=wide: $(CC) has no unsigned __int128 on CI; the gate must not skip"; exit 1; }; \
 	  echo "SKIP wycheproof X25519=wide: $(CC) has no unsigned __int128"; \
 	else \
-	  $(CC) $(CFLAGS) $(X25519_WIDE_DEF) $(RSA_WIDE_DEF) -DCH_TRANSPORT_QUIC $(AES_DEF) $(WYCHEPROOF_TEST_DEFS) -I. -Ibin \
+	  $(CC) $(CFLAGS) $(X25519_WIDE_DEF) $(RSA_WIDE_DEF) -DCH_TRANSPORT_QUIC_NONBLOCKING $(AES_DEF) $(WYCHEPROOF_TEST_DEFS) -I. -Ibin \
 	    -o bin/wycheproof_test_x25519_wide test/wycheproof_test.c \
 	    x25519.c x25519_wide.c chacha20.c poly1305.c aead.c hkdf.c sha256.c p256.c rsa.c rsa_mont.c mlkem.c mlkem_poly.c sha3.c buf.c ct.c sha512.c sha512_compress.c p384.c p384_field.c rsa_pkcs1.c rsa_sign.c quic_aes.c $(AES_IMPL) quic_gcm.c p256_sign.c p256_ecdh.c p256_point.c p256_scalar.c p256_field.c ; \
 	  ./bin/wycheproof_test_x25519_wide; \
@@ -2757,7 +2770,7 @@ webpki-auth-vectors:
 wycheproof-ct-widemul:
 	@$(call wycheproof_fetch,wycheproof-ct-widemul); \
 	python3 test/gen_wycheproof.py $(WYCHEPROOF_DIR) bin/wycheproof_vectors.h && \
-	$(CC) $(CT_WIDEMUL_CFLAGS) $(RSA_WIDE_DEF) -DCH_TRANSPORT_QUIC $(AES_DEF) $(WYCHEPROOF_TEST_DEFS) -I. -Ibin -o bin/wycheproof_test_ct_widemul test/wycheproof_test.c \
+	$(CC) $(CT_WIDEMUL_CFLAGS) $(RSA_WIDE_DEF) -DCH_TRANSPORT_QUIC_NONBLOCKING $(AES_DEF) $(WYCHEPROOF_TEST_DEFS) -I. -Ibin -o bin/wycheproof_test_ct_widemul test/wycheproof_test.c \
 	  x25519.c chacha20.c poly1305.c aead.c hkdf.c sha256.c p256.c rsa.c rsa_mont.c mlkem.c mlkem_poly.c sha3.c buf.c ct.c sha512.c sha512_compress.c p384.c p384_field.c rsa_pkcs1.c rsa_sign.c quic_aes.c $(AES_IMPL) quic_gcm.c p256_sign.c \
 	  p256_ecdh.c p256_point.c p256_scalar.c p256_field.c && \
 	./bin/wycheproof_test_ct_widemul
@@ -2815,7 +2828,7 @@ san-check:
 	  echo "== $$b (SAN -O$(O))"; ENUM_DEPTH=4 ./bin/san/$$b; done
 	@$(call wycheproof_fetch,san wycheproof); \
 	python3 test/gen_wycheproof.py $(WYCHEPROOF_DIR) bin/wycheproof_vectors.h && \
-	$(CC) $(SAN_CFLAGS) $(RSA_WIDE_DEF) -DCH_TRANSPORT_QUIC $(AES_DEF) $(WYCHEPROOF_TEST_DEFS) -I. -Ibin -o bin/san/wycheproof_test test/wycheproof_test.c \
+	$(CC) $(SAN_CFLAGS) $(RSA_WIDE_DEF) -DCH_TRANSPORT_QUIC_NONBLOCKING $(AES_DEF) $(WYCHEPROOF_TEST_DEFS) -I. -Ibin -o bin/san/wycheproof_test test/wycheproof_test.c \
 	  x25519.c chacha20.c poly1305.c aead.c hkdf.c sha256.c p256.c rsa.c rsa_mont.c mlkem.c mlkem_poly.c sha3.c buf.c ct.c sha512.c sha512_compress.c p384.c p384_field.c rsa_pkcs1.c rsa_sign.c quic_aes.c $(AES_IMPL) quic_gcm.c p256_sign.c \
 	  p256_ecdh.c p256_point.c p256_scalar.c p256_field.c && \
 	echo "== wycheproof_test (SAN -O$(O))" && ./bin/san/wycheproof_test
@@ -2828,7 +2841,7 @@ san-check:
 	    test/x25519_equiv_portable.c test/x25519_equiv_wide.c ct.c; \
 	  echo "== x25519_equiv_test (SAN -O$(O))"; ./bin/san/x25519_equiv_test; \
 	  [ -f bin/wycheproof_vectors.h ] || { echo "SKIP san wycheproof X25519=wide: the fetch above skipped"; exit 0; }; \
-	  $(CC) $(SAN_CFLAGS) $(X25519_WIDE_DEF) $(RSA_WIDE_DEF) -DCH_TRANSPORT_QUIC $(AES_DEF) $(WYCHEPROOF_TEST_DEFS) -I. -Ibin \
+	  $(CC) $(SAN_CFLAGS) $(X25519_WIDE_DEF) $(RSA_WIDE_DEF) -DCH_TRANSPORT_QUIC_NONBLOCKING $(AES_DEF) $(WYCHEPROOF_TEST_DEFS) -I. -Ibin \
 	    -o bin/san/wycheproof_test_x25519_wide test/wycheproof_test.c \
 	    x25519.c x25519_wide.c chacha20.c poly1305.c aead.c hkdf.c sha256.c p256.c rsa.c rsa_mont.c mlkem.c mlkem_poly.c sha3.c buf.c ct.c sha512.c sha512_compress.c p384.c p384_field.c rsa_pkcs1.c rsa_sign.c quic_aes.c $(AES_IMPL) quic_gcm.c p256_sign.c p256_ecdh.c p256_point.c p256_scalar.c p256_field.c; \
 	  echo "== wycheproof_test_x25519_wide (SAN -O$(O))"; ./bin/san/wycheproof_test_x25519_wide; \
@@ -2895,7 +2908,7 @@ cross-check:
 	@if [ -d $(WYCHEPROOF_DIR)/.git ] \
 	  || git clone --quiet --depth 1 https://github.com/C2SP/wycheproof $(WYCHEPROOF_DIR) 2>/dev/null; then \
 	  python3 test/gen_wycheproof.py $(WYCHEPROOF_DIR) bin/wycheproof_vectors.h && \
-	  $(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) $(RSA_WIDE_DEF) -DCH_TRANSPORT_QUIC $(AES_DEF) $(WYCHEPROOF_TEST_DEFS) -static -I. -Ibin -o bin/cross/wycheproof_test test/wycheproof_test.c \
+	  $(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) $(RSA_WIDE_DEF) -DCH_TRANSPORT_QUIC_NONBLOCKING $(AES_DEF) $(WYCHEPROOF_TEST_DEFS) -static -I. -Ibin -o bin/cross/wycheproof_test test/wycheproof_test.c \
 	    x25519.c chacha20.c poly1305.c aead.c hkdf.c sha256.c p256.c rsa.c rsa_mont.c mlkem.c mlkem_poly.c sha3.c buf.c ct.c sha512.c sha512_compress.c p384.c p384_field.c rsa_pkcs1.c rsa_sign.c quic_aes.c $(AES_IMPL) quic_gcm.c p256_sign.c \
 	  p256_ecdh.c p256_point.c p256_scalar.c p256_field.c ; \
 	else \
@@ -3104,8 +3117,8 @@ lint-exact-fill:
 	@python3 tools/exact-fill.py
 
 # INV-27: the QUIC mode's partition, read from the preprocessor rather
-# than from a list kept by hand. A root file belongs to TRANSPORT=quic
-# when it writes no declaration without -DCH_TRANSPORT_QUIC and gains
+# than from a list kept by hand. A root file belongs to TRANSPORT=quic-nonblocking
+# when it writes no declaration without -DCH_TRANSPORT_QUIC_NONBLOCKING and gains
 # something with it. The rule is that every such file is named quic*,
 # and that no other root file is one, so `git ls-files 'quic*'` names
 # every file the mode owns and a reader sees how much it covers without
@@ -3115,18 +3128,19 @@ lint-exact-fill:
 # The two lists below are the mode's text outside the prefix, and the
 # lint reads them from here.
 #
-# handshake_flight.[ch] is the one file the QUIC mode adds that both
-# transports compile: the TLS driver in handshake.c and the QUIC driver
-# in quic_step.c call the same flight handlers, so no protocol rule
+# handshake_flight.[ch] is the one file the QUIC mode adds that every
+# transport compiles: the tcp-blocking driver in handshake.c, the
+# tcp-nonblocking driver in rec_step.c and the QUIC driver in
+# quic_step.c call the same flight handlers, so no protocol rule
 # exists twice (docs/quic.md, "The design: one whole message per step").
 # It carries no quic prefix on purpose, and QUIC_SHARED names it here so
 # a reader sees the exemption rather than reading the missing prefix as
 # a mistake. The exemption checks its file rather than skipping it: a
 # QUIC_SHARED file that becomes QUIC-only fails this lint too, under the
 # message that belongs to it, which says a file both transports compile
-# has stopped compiling in a TLS build.
+# has stopped compiling in a TCP build.
 QUIC_SHARED := handshake_flight.c handshake_flight.h
-# The shared files that carry a #ifdef CH_TRANSPORT_QUIC arm: the
+# The shared files that carry a #ifdef CH_TRANSPORT_QUIC_NONBLOCKING arm: the
 # configuration, the session struct, the handshake layers the mode
 # reuses, the build record, which holds sizeof(ch_quic) in a QUIC build
 # and 0 in the others, and the CA provisioning call, whose symbol name
@@ -3171,7 +3185,7 @@ else
 	# pass, which defines no trust mode, leaves them to the next one.
 	# The QUIC sources and their test main are left out for the same
 	# reason: every declaration they hold sits behind
-	# -DCH_TRANSPORT_QUIC, which this pass does not define, so it would
+	# -DCH_TRANSPORT_QUIC_NONBLOCKING, which this pass does not define, so it would
 	# read eight empty translation units. The two passes below read them.
 	$(call TIDY_EACH,$(filter-out webpki.c webpki_ticket.c webpki_pin.c \
 	  webpki_cfg.c test/webpki_resume_test.c test/webpki_session_test.c \
@@ -3213,10 +3227,10 @@ else
 	# The QUIC mode: its sources and its three test mains, under every
 	# check.
 	$(call TIDY_EACH,$(QUIC_SRCS), \
-	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_TRANSPORT_QUIC -I.)
+	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_TRANSPORT_QUIC_NONBLOCKING -I.)
 	$(call TIDY_EACH,test/quic_driver_test.c test/quic_vectors.c \
 	  test/diff_quic_test.c, \
-	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_TRANSPORT_QUIC -I.)
+	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_TRANSPORT_QUIC_NONBLOCKING -I.)
 	# The two AES implementations this build did not pick. Each needs its
 	# own define, because each guards its body on one, and the AES=hw pair
 	# needs whatever flags turn the instructions on -- without them each
@@ -3224,57 +3238,57 @@ else
 	# pass above already read what $(AES_IMPL) names. quic_gcm.c joins the
 	# AES=hw pass because its AES=hw arm compiles only under -DCH_AES_HW.
 	$(call TIDY_EACH,$(filter-out $(AES_IMPL),quic_aes_extern.c), \
-	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_TRANSPORT_QUIC -DCH_AES_EXTERN -I.)
+	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_AES_EXTERN -I.)
 	@set -e; [ -z "$(AES_HW_BINS)" ] || [ -z "$(filter-out $(AES_IMPL),$(AES_HW_SRCS))" ] || \
 	  $(call TIDY_EACH,$(AES_HW_SRCS) quic_gcm.c, \
-	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) $(AES_HW_CFLAGS) -DCH_TRANSPORT_QUIC -DCH_AES_HW -I.)
+	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) $(AES_HW_CFLAGS) -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_AES_HW -I.)
 	# test/aes_equiv_test.c alone: the two wrappers beside it compile a
 	# library source in under a renamed symbol, so linting them would
 	# report that source's findings a second time under a name no file
 	# on disk carries.
 	$(call TIDY_EACH,test/aes_equiv_test.c, \
-	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_TRANSPORT_QUIC -I.)
+	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_TRANSPORT_QUIC_NONBLOCKING -I.)
 	# test/ghash_equiv_test.c alone, for the same reason, and only where
 	# the probe found the instructions: it reads quic_ghash_hw.h, whose
 	# declarations sit behind CH_AES_HW.
 	@set -e; [ -z "$(AES_HW_BINS)" ] || \
 	  $(call TIDY_EACH,test/ghash_equiv_test.c, \
-	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) $(AES_HW_CFLAGS) -DCH_TRANSPORT_QUIC -DCH_AES_HW -I.)
+	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) $(AES_HW_CFLAGS) -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_AES_HW -I.)
 	# The server role gets its own pass: every declaration these files
 	# hold sits behind -DCH_ROLE_SERVER, so the pass above would read
 	# seven empty translation units.
 	$(call TIDY_EACH,$(SRV_SRCS) test/srv_auth_test.c test/srv_test.c \
 	  test/srv_flight_test.c test/tls_server.c, \
 	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_ROLE_SERVER -I.)
-	# The record transport's client driver, behind -DCH_TRANSPORT_RECORD,
+	# The tcp-nonblocking transport's client driver, behind -DCH_TRANSPORT_TCP_NONBLOCKING,
 	# and the build record's arm for that transport.
 	$(call TIDY_EACH,rec.c rec_frame.c rec_step.c build.c, \
-	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_TRANSPORT_RECORD -I.)
+	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_TRANSPORT_TCP_NONBLOCKING -I.)
 	# Each server driver with the transport it is written for. Neither
 	# reads a declaration the role pass above sets, because both sit
 	# behind a transport define as well as the role. quic_token.c, the
 	# QUIC server's Retry token, sits behind the same two defines, and so
 	# do the build record's QUIC and server arms.
 	$(call TIDY_EACH,srv_quic.c quic_token.c build.c, \
-	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_ROLE_SERVER -DCH_TRANSPORT_QUIC -I.)
+	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_ROLE_SERVER -DCH_TRANSPORT_QUIC_NONBLOCKING -I.)
 	$(call TIDY_EACH,srv_rec.c test/srv_rec_test.c, \
-	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_ROLE_SERVER -DCH_TRANSPORT_RECORD -I.)
+	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_ROLE_SERVER -DCH_TRANSPORT_TCP_NONBLOCKING -I.)
 	# The loopback drives both drivers, so it is the one source that needs
 	# CH_ROLE_BOTH as well: srv_cfg.h and tls.h keep the client half only
 	# under that define.
 	$(call TIDY_EACH,test/rec_loop_test.c, \
-	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_TRANSPORT_RECORD $(EXPORTER_DEF) -DCH_KEYLOG -I.)
+	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_TRANSPORT_TCP_NONBLOCKING $(EXPORTER_DEF) -DCH_KEYLOG -I.)
 	$(call TIDY_EACH,test/rec_loop_test.c, \
-	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_TRANSPORT_RECORD -DCH_KEX_PQ $(EXPORTER_DEF) -DCH_KEYLOG -I.)
+	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_TRANSPORT_TCP_NONBLOCKING -DCH_KEX_PQ $(EXPORTER_DEF) -DCH_KEYLOG -I.)
 	# The QUIC loopback, once per trust mode it is built in, because each
 	# includes a different half.
 	$(call TIDY_EACH,test/quic_loop_test.c, \
-	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_TRANSPORT_QUIC -DCH_PIN_ECDSA -I. -Itest)
+	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_PIN_ECDSA -I. -Itest)
 	$(call TIDY_EACH,test/quic_loop_test.c, \
-	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_TRANSPORT_QUIC -DCH_TRUST_WEBPKI -I. -Itest)
+	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_TRUST_WEBPKI -I. -Itest)
 	# The TRUST=webpki record loopback, under the defines its object takes.
 	$(call TIDY_EACH,test/webpki_loop_test.c, \
-	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_TRANSPORT_RECORD -DCH_TRUST_WEBPKI -I.)
+	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_TRANSPORT_TCP_NONBLOCKING -DCH_TRUST_WEBPKI -I.)
 	# The four ch_keylog call sites, which no other pass compiles: the
 	# hook exists only under CH_KEYLOG, and keylog.h refuses that define
 	# without a server role, so this pass names ROLE=both's pair.
@@ -3297,20 +3311,20 @@ else
 	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) $(EXPORTER_DEF) -DCH_ROLE_SERVER -I.)
 	# test/lib_pair_half.c, under the defines of the objects
 	# test/lib-pair-check.sh compiles it for. The first pass above reads
-	# its TRANSPORT=tls client; these read the record client with the
+	# its TRANSPORT=tcp-blocking client; these read the tcp-nonblocking client with the
 	# webpki configuration, the QUIC client with the CA provisioning call
 	# and the boot check, and the two server-only drivers. The last reads
 	# the image's key log hook, which only a KEYLOG=on pair compiles.
 	$(call TIDY_EACH,test/lib_pair_half.c, \
-	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_TRUST_WEBPKI -DCH_TRANSPORT_RECORD -I.)
+	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_TRUST_WEBPKI -DCH_TRANSPORT_TCP_NONBLOCKING -I.)
 	$(call TIDY_EACH,test/lib_pair_half.c, \
-	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_TRUST_CA -DCH_TRANSPORT_QUIC -DCH_ROLE_SERVER -DCH_ROLE_BOTH -I.)
+	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_TRUST_CA -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_ROLE_SERVER -DCH_ROLE_BOTH -I.)
 	$(call TIDY_EACH,test/lib_pair_half.c, \
-	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_ROLE_SERVER -DCH_TRANSPORT_RECORD -I.)
+	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_ROLE_SERVER -DCH_TRANSPORT_TCP_NONBLOCKING -I.)
 	$(call TIDY_EACH,test/lib_pair_half.c, \
-	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_ROLE_SERVER -DCH_TRANSPORT_QUIC -I.)
+	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_ROLE_SERVER -DCH_TRANSPORT_QUIC_NONBLOCKING -I.)
 	$(call TIDY_EACH,test/lib_pair_main.c, \
-	  -std=c11 -D_DEFAULT_SOURCE -DLIB_PAIR_TLS -DLIB_PAIR_RECORD -DLIB_PAIR_QUIC -DLIB_PAIR_KEYLOG -I.)
+	  -std=c11 -D_DEFAULT_SOURCE -DLIB_PAIR_TCP_BLOCKING -DLIB_PAIR_TCP_NONBLOCKING -DLIB_PAIR_QUIC_NONBLOCKING -DLIB_PAIR_KEYLOG -I.)
 	# The M3 smoke runtimes and the KAT program lint with the target's
 	# own flags. Three checks are off, each with its reason:
 	# bugprone-reserved-identifier and its two cert aliases, because the
@@ -3643,7 +3657,7 @@ lint-impact:
 #     TRUST=webpki. It hashes a server's public key and compares the
 #     hash with the caller's pins, which are hashes of public keys too.
 #   quic_aes_hw.c: the AES-128 forward cipher on the AES instructions,
-#     under TRANSPORT=quic AES=hw. It is the one AES source left on this
+#     under TRANSPORT=quic-nonblocking AES=hw. It is the one AES source left on this
 #     list: quic_aes.c, quic_aes_soft.c, quic_aes_extern.c and quic_gcm.c
 #     take a ceiling above, and this file cannot, because every spec
 #     below targets a core without the AES instructions, where the file
@@ -3730,7 +3744,7 @@ CODEGEN_SRCS := $(CODEGEN32_SRCS) $(foreach e,$(WIDE64_CEILING),$(firstword $(su
 # compiles every CODEGEN_SRCS file under one fixed flag set that names no
 # transport and no role, and two groups of entries above hold nothing
 # without their own define. The QUIC entries need
-# -DCH_TRANSPORT_QUIC: CH_LEVEL_*, the ch_quic struct and the QUIC
+# -DCH_TRANSPORT_QUIC_NONBLOCKING: CH_LEVEL_*, the ch_quic struct and the QUIC
 # ch_cfg fields all sit behind it, and the four AES entries guard their
 # whole body on it. quic_aes_extern.c also needs -DCH_AES_EXTERN, the
 # AES=extern define its body sits behind, so the count reads that body
@@ -3749,14 +3763,14 @@ CODEGEN_SRCS := $(CODEGEN32_SRCS) $(foreach e,$(WIDE64_CEILING),$(firstword $(su
 # client offers both groups in every build (docs/decisions.md 53). The server
 # entries need no such flag. -DCH_KEX_PQ chooses a client's group, and a
 # server source holds both groups whatever it says (docs/decisions.md 54).
-WIDEMUL_DEFINES := quic_keys.c:-DCH_TRANSPORT_QUIC quic_packet.c:-DCH_TRANSPORT_QUIC \
-                   quic_config.c:-DCH_TRANSPORT_QUIC quic_step.c:-DCH_TRANSPORT_QUIC \
-                   quic.c:-DCH_TRANSPORT_QUIC quic_fail.c:-DCH_TRANSPORT_QUIC \
-                   srv_quic.c:-DCH_ROLE_SERVER$(COMMA)-DCH_TRANSPORT_QUIC \
-                   quic_token.c:-DCH_ROLE_SERVER$(COMMA)-DCH_TRANSPORT_QUIC \
-                   quic_aes.c:-DCH_TRANSPORT_QUIC quic_aes_soft.c:-DCH_TRANSPORT_QUIC \
-                   quic_aes_extern.c:-DCH_TRANSPORT_QUIC$(COMMA)-DCH_AES_EXTERN \
-                   quic_gcm.c:-DCH_TRANSPORT_QUIC \
+WIDEMUL_DEFINES := quic_keys.c:-DCH_TRANSPORT_QUIC_NONBLOCKING quic_packet.c:-DCH_TRANSPORT_QUIC_NONBLOCKING \
+                   quic_config.c:-DCH_TRANSPORT_QUIC_NONBLOCKING quic_step.c:-DCH_TRANSPORT_QUIC_NONBLOCKING \
+                   quic.c:-DCH_TRANSPORT_QUIC_NONBLOCKING quic_fail.c:-DCH_TRANSPORT_QUIC_NONBLOCKING \
+                   srv_quic.c:-DCH_ROLE_SERVER$(COMMA)-DCH_TRANSPORT_QUIC_NONBLOCKING \
+                   quic_token.c:-DCH_ROLE_SERVER$(COMMA)-DCH_TRANSPORT_QUIC_NONBLOCKING \
+                   quic_aes.c:-DCH_TRANSPORT_QUIC_NONBLOCKING quic_aes_soft.c:-DCH_TRANSPORT_QUIC_NONBLOCKING \
+                   quic_aes_extern.c:-DCH_TRANSPORT_QUIC_NONBLOCKING$(COMMA)-DCH_AES_EXTERN \
+                   quic_gcm.c:-DCH_TRANSPORT_QUIC_NONBLOCKING \
                    srv_parser.c:-DCH_ROLE_SERVER srv_parser_ext.c:-DCH_ROLE_SERVER \
                    srv_message.c:-DCH_ROLE_SERVER \
                    srv_cookie.c:-DCH_ROLE_SERVER srv_auth.c:-DCH_ROLE_SERVER \
@@ -4249,7 +4263,7 @@ lint-wide-multiply-gcc:
 # the file that pulls it. sha3's __udivsi3 is Keccak's `% 5` over public
 # loop counters, a performance matter rather than a leak.
 #
-# The eight TRANSPORT=quic entries WIDEMUL_CEILING carries -- quic.c,
+# The eight TRANSPORT=quic-nonblocking entries WIDEMUL_CEILING carries -- quic.c,
 # quic_keys.c, quic_packet.c, quic_step.c, quic_aes.c, quic_aes_soft.c,
 # quic_aes_extern.c and quic_gcm.c -- get no row: measured under the
 # pinned clang for rv32ic with their WIDEMUL_DEFINES entry, each pulls
@@ -4538,9 +4552,9 @@ lint-commits-range:
 clean:
 	rm -rf bin
 
-# What the TRANSPORT=quic mode covers, read from the tree: the files and
-# their line counts, the mode's text inside the CH_TRANSPORT_QUIC arms of
-# files a TLS build compiles too, the mode's share of the library, how
+# What the TRANSPORT=quic-nonblocking mode covers, read from the tree: the files and
+# their line counts, the mode's text inside the CH_TRANSPORT_QUIC_NONBLOCKING arms of
+# files a TCP build compiles too, the mode's share of the library, how
 # many declared functions have a definition, the ch_quic_ surface against
 # the interface table in docs/quic.md, and the standards the headers cite
 # section by section. It is a report, so it is not in `lint` and not in `check`, and

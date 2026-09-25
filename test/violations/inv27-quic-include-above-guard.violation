@@ -3,7 +3,7 @@ file: quic_retry.h
 catches: test/lint-quic-partition.sh
 reason: quic_retry.h moves its #include lines above the transport
   guard, which is ordinary C layout and puts stddef.h's and stdint.h's
-  declarations into every TLS build that reads the header. The file
+  declarations into every TCP build that reads the header. The file
   itself still declares nothing without the define, so the comparison
   of the two runs passes it. The lint also reads the whole translation
   unit of a quic* file, sees the declarations the includes pulled in,
@@ -11,7 +11,7 @@ reason: quic_retry.h moves its #include lines above the transport
 
 --- old
 #define CH_QUIC_RETRY_H
-#ifdef CH_TRANSPORT_QUIC
+#ifdef CH_TRANSPORT_QUIC_NONBLOCKING
 
 #include <stddef.h>
 #include <stdint.h>
@@ -21,4 +21,4 @@ reason: quic_retry.h moves its #include lines above the transport
 #include <stddef.h>
 #include <stdint.h>
 
-#ifdef CH_TRANSPORT_QUIC
+#ifdef CH_TRANSPORT_QUIC_NONBLOCKING

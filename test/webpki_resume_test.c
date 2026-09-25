@@ -2,8 +2,8 @@
 // presented only under the hostname and anchors of the session that
 // received it, and a server that declines it gets a full handshake in the
 // same connection (docs/decisions.md 55). Built twice from this file:
-// bin/webpki_resume_test over TRANSPORT=tls, and bin/webpki_resume_record
-// over TRANSPORT=record.
+// bin/webpki_resume_test over TRANSPORT=tcp-blocking, and bin/webpki_resume_record
+// over TRANSPORT=tcp-nonblocking.
 //
 // The mock server answers a ClientHello the way the test asks. By default
 // it selects the offered ticket and sends EncryptedExtensions and Finished
@@ -32,7 +32,7 @@
 #include "tls.h"
 #include "webpki_ticket.h"
 #include "x25519.h"
-#ifdef CH_TRANSPORT_RECORD
+#ifdef CH_TRANSPORT_TCP_NONBLOCKING
 #include "rec.h"
 #endif
 
@@ -368,13 +368,13 @@ static int mock_send(void *io, const uint8_t *p, size_t n) {
     return 0;
 }
 
-// Hands over what the mock holds. Empty, it returns 0 in a record build,
-// where that means no record yet (rec.h), and -1 over TRANSPORT=tls.
+// Hands over what the mock holds. Empty, it returns 0 in a tcp-nonblocking build,
+// where that means no record yet (rec.h), and -1 over TRANSPORT=tcp-blocking.
 static int mock_recv(void *io, uint8_t *p, size_t n) {
     mock_server *s = io;
     size_t left = s->queue_len - s->queue_off;
     if (left == 0) {
-#ifdef CH_TRANSPORT_RECORD
+#ifdef CH_TRANSPORT_TCP_NONBLOCKING
         return 0;
 #else
         return -1;
@@ -430,7 +430,7 @@ int main(void) {
         (void)fprintf(stderr, "%d failure(s)\n", failures);
         return 1;
     }
-#ifdef CH_TRANSPORT_RECORD
+#ifdef CH_TRANSPORT_TCP_NONBLOCKING
     (void)printf("webpki_resume_record: all checks passed\n");
 #else
     (void)printf("webpki_resume_test: all checks passed\n");

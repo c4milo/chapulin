@@ -1,8 +1,8 @@
-// Whole handshakes for bench/primitives.c: this tree's record-mode client
-// (rec.c) against this tree's record-mode server (srv_rec.c) in one
+// Whole handshakes for bench/primitives.c: this tree's tcp-nonblocking client
+// (rec.c) against this tree's tcp-nonblocking server (srv_rec.c) in one
 // process, the pairing test/rec_loop_test.c drives. bench/primitives.sh
 // builds it from the Makefile's REC_LOOP_SRCS, the ROLE=both
-// TRANSPORT=record source list, once per pinned algorithm: the default
+// TRANSPORT=tcp-nonblocking source list, once per pinned algorithm: the default
 // build pins an RSA modulus and CH_PIN_ECDSA pins a P-256 point.
 //
 // Each sample is one handshake from two fresh sessions to both ends
@@ -270,7 +270,7 @@ static void handshake_once(void) {
     int client_rc = ch_record_init(&client, &client_cfg);
     leave(CLIENT);
     if (server_rc != CH_OK || client_rc != CH_OK) {
-        bench_fail("a record driver refused its configuration");
+        bench_fail("a tcp-nonblocking driver refused its configuration");
     }
     for (int round = 0; round < ROUNDS_MAX; round++) {
         if (ch_record_state(&client) == CH_ST_CONNECTED &&

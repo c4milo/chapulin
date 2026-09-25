@@ -7,7 +7,7 @@
 #define CH_WYCHEPROOF_AES_GCM_H
 
 // The AES-GCM suite, for quic_gcm.c. Guarded because only a
-// -DCH_TRANSPORT_QUIC build compiles that file, and the generator emits
+// -DCH_TRANSPORT_QUIC_NONBLOCKING build compiles that file, and the generator emits
 // the rows under the same guard, so the legs that build this file
 // without the define read a header that declares nothing here.
 //
@@ -15,7 +15,7 @@
 // through the key schedule directly. INV-26 bounds which keys a library
 // source may hand the AEAD and excludes `test` from the rule that holds
 // it, for exactly this: a published suite fixes its own keys.
-#ifdef CH_TRANSPORT_QUIC
+#ifdef CH_TRANSPORT_QUIC_NONBLOCKING
 // One case, laid out as the generator writes it: the key, the 12-byte IV,
 // the 16-byte tag, the associated data, the message and the ciphertext.
 // k already holds the expanded key; iv points just past the key bytes.
@@ -84,6 +84,6 @@ static void run_aes256_gcm(void) {
            COUNT(wp_aes256_gcm), WP_AES256_GCM_SKIPPED, WP_AES256_GCM_OVERSIZE);
 }
 #endif // CH_AES_256
-#endif // CH_TRANSPORT_QUIC
+#endif // CH_TRANSPORT_QUIC_NONBLOCKING
 
 #endif

@@ -8,7 +8,7 @@
 // keeping a copy that drifts from the other.
 #ifndef CH_QUIC_FAIL_H
 #define CH_QUIC_FAIL_H
-#ifdef CH_TRANSPORT_QUIC
+#ifdef CH_TRANSPORT_QUIC_NONBLOCKING
 
 #include <stdint.h>
 
@@ -28,7 +28,7 @@ void quic_wipe(ch_quic *q);
 // its one seal at that level. Requires: level is a CH_LEVEL_ value.
 void quic_wipe_write_keys(ch_quic *q, uint8_t level);
 
-// What tlsi_fail is on the TLS transport, minus the alert record, which
+// What tlsi_fail is on the TCP transports, minus the alert record, which
 // QUIC has no way to carry: the alert goes to q->alert for ch_quic_alert
 // to report and the session is dead. It wipes every secret but the write
 // keys of each level whose write bit is set, and clears every read bit, so
@@ -53,5 +53,5 @@ int quic_fail_level(ch_quic *q);
 // ch_quic_error_code reports as 0x010a.
 int quic_refuse_unread(ch_quic *q);
 
-#endif // CH_TRANSPORT_QUIC
+#endif // CH_TRANSPORT_QUIC_NONBLOCKING
 #endif

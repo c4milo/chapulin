@@ -82,7 +82,7 @@ extern const uint8_t srv_hrr_random[SRV_RANDOM];
 // SRV_CERT_HEAD and the 2 bytes of SRV_CERT_ENTRY_FRAME.
 #define SRV_CERT_VERIFY_MAX (4 + 2 + 2 + SRV_SIG_MAX)
 #define SRV_FINISHED_MAX (4 + HKDF_HASH_MAX)
-#ifdef CH_TRANSPORT_QUIC
+#ifdef CH_TRANSPORT_QUIC_NONBLOCKING
 #define SRV_ENCRYPTED_EXTENSIONS_MAX (6 + 7 + CH_ALPN_NAME_MAX + 4 + CH_TRANSPORT_PARAMS_MAX)
 #else
 #define SRV_ENCRYPTED_EXTENSIONS_MAX (6 + 6 + 7 + CH_ALPN_NAME_MAX)
@@ -245,8 +245,8 @@ size_t srv_build_compat_ccs(uint8_t *out, size_t cap);
 // this builder reads none of them: RFC 9001 §8.2 makes their content
 // the QUIC version's, not TLS's (rfc9001.txt:1926-1928). It is the
 // server's half of what ch_cfg.transport_params is for the client, so
-// the two directions share one field name and one cap. A TRANSPORT=tls
-// or TRANSPORT=record server passes NULL here, because §8.2 forbids the
+// the two directions share one field name and one cap. A TRANSPORT=tcp-blocking
+// or TRANSPORT=tcp-nonblocking server passes NULL here, because §8.2 forbids the
 // extension on a transport that is not QUIC (rfc9001.txt:1945-1949). A
 // QUIC server passes cfg.transport_params and its length, and
 // SRV_ENCRYPTED_EXTENSIONS_MAX holds the largest of them.

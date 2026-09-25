@@ -1,7 +1,7 @@
 // The Retry Integrity Tag of RFC 9001 §5.8: AEAD_AES_128_GCM over the
 // Retry Pseudo-Packet, under the 128-bit key and the 96-bit nonce the
 // RFC prints, either written for a Retry packet a server sends or
-// compared against the tag a packet carried. Only a TRANSPORT=quic
+// compared against the tag a packet carried. Only a TRANSPORT=quic-nonblocking
 // build compiles it.
 //
 // This file and quic_initial.[ch] are the only sources that may call a
@@ -25,7 +25,7 @@
 // both and no second copy of §5.8 can drift from the first.
 #ifndef CH_QUIC_RETRY_H
 #define CH_QUIC_RETRY_H
-#ifdef CH_TRANSPORT_QUIC
+#ifdef CH_TRANSPORT_QUIC_NONBLOCKING
 
 #include <stddef.h>
 #include <stdint.h>
@@ -132,5 +132,5 @@ uint8_t quic_retry_ok(const uint8_t *pseudo, size_t n, const uint8_t tag[GCM_TAG
 // printed in the RFC, so there is no secret to wipe.
 void quic_retry_tag(const uint8_t *pseudo, size_t n, uint8_t tag[GCM_TAG]);
 
-#endif // CH_TRANSPORT_QUIC
+#endif // CH_TRANSPORT_QUIC_NONBLOCKING
 #endif

@@ -1,22 +1,22 @@
 #!/usr/bin/env python3
-"""Check that chapulin's TRANSPORT=quic mode stays in files named quic*.
+"""Check that chapulin's TRANSPORT=quic-nonblocking mode stays in files named quic*.
 
 Run from the repository root through `make lint-quic-partition`:
 
     python3 tools/quic-partition.py
 
-INV-27. Every root source and header that only a `TRANSPORT=quic` build
+INV-27. Every root source and header that only a `TRANSPORT=quic-nonblocking` build
 compiles is named `quic*`, so `git ls-files 'quic*'` names every file the
 mode owns. Two sets of file hold mode-only text under another name, and
 the Makefile lists each so a reader finds them without the prefix:
 `QUIC_SHARED`, the pair both transports compile, and `QUIC_CONDITIONAL`,
-the shared files that carry a `#ifdef CH_TRANSPORT_QUIC` arm. A file
+the shared files that carry a `#ifdef CH_TRANSPORT_QUIC_NONBLOCKING` arm. A file
 outside those two lists that gains text under the define fails here, so
 a seventh conditional file is a decision someone makes rather than one
 that lands unnoticed.
 
 The preprocessor decides, not a list. Every root `.c` and `.h` file is
-preprocessed twice, once without `-DCH_TRANSPORT_QUIC` and once with it,
+preprocessed twice, once without `-DCH_TRANSPORT_QUIC_NONBLOCKING` and once with it,
 and the two outputs are compared against each other. Comparing each run
 against empty instead would see only the files that hold nothing else:
 a QUIC-only declaration added to a file that already declares something
@@ -26,7 +26,7 @@ Three flags make the comparison answer for the file in hand.
 
 Plain `-E` expands macros, which once made three files that carry no
 QUIC arm read as conditional: `handshake.c` writes `REC_HANDSHAKE`,
-`record.h` defines that macro in a TLS build alone, and `handshake.c`,
+`record.h` defines that macro in a TCP build alone, and `handshake.c`,
 `session.c` and `tls.c` all changed under the define. `-fdirectives-only`
 suppressed that expansion and was the first answer. It was the wrong one:
 clang and gcc disagree about what the flag means, clang evaluating `#if`
@@ -49,14 +49,14 @@ A `quic*` file is held to more than the comparison: the whole
 translation unit, its includes included, must preprocess to no
 declaration without the define. An `#include` above the transport guard
 passes the comparison, because the declarations it pulls in belong to
-the file included, and it still puts those declarations in a TLS build
+the file included, and it still puts those declarations in a TCP build
 that reads the header.
 
 What this cannot see. It reads whole files, so a QUIC-only function
 inside a file both transports compile is invisible: a QUIC arm added to
 `session.c` passes, and review catches that. It also cannot judge a file
 that compiles text only under a `CH_QUIC_`-prefixed macro it does not
-define itself, because the lint defines `CH_TRANSPORT_QUIC` and nothing
+define itself, because the lint defines `CH_TRANSPORT_QUIC_NONBLOCKING` and nothing
 else, so it reports such a file rather than passing it.
 """
 
@@ -79,7 +79,7 @@ CC = os.environ.get("CC") or "cc"
 # without the define, which is how this lint passed here and failed on CI
 # until 2026-09-18. Plain -E evaluates conditionals on both.
 FLAGS = ["-E", "-x", "c", "-std=c11", "-DCH_RAND_EXTERN", "-I."]
-DEFINE = "-DCH_TRANSPORT_QUIC"
+DEFINE = "-DCH_TRANSPORT_QUIC_NONBLOCKING"
 
 # A conditional and the identifiers it tests. `defined` is the operator,
 # not a macro name.
@@ -111,7 +111,7 @@ def preprocess(path, define, extra=()):
     without it the file preprocesses to nothing and this lint would read
     that as a file contributing nothing to either transport. It goes on
     both runs, because the AES choice is orthogonal to the transport: the
-    question here is still what CH_TRANSPORT_QUIC alone changes."""
+    question here is still what CH_TRANSPORT_QUIC_NONBLOCKING alone changes."""
     args = [CC] + FLAGS + list(extra) + ([DEFINE] if define else []) + [path]
     r = subprocess.run(args, cwd=ROOT, capture_output=True, text=True)
     if r.returncode != 0:
@@ -150,7 +150,7 @@ def plural(count, word):
 
 def unresolved_macros(path):
     """The `CH_QUIC_` macros one file compiles text under and does not
-    define itself. The lint defines `CH_TRANSPORT_QUIC` and nothing else,
+    define itself. The lint defines `CH_TRANSPORT_QUIC_NONBLOCKING` and nothing else,
     so an arm behind one of these stays closed in both runs and the file's
     verdict would be read off text neither build compiles. A file's own
     include guard is a definition, which is why it is not one of these.
@@ -218,7 +218,7 @@ def judge(path, quic, shared, conditional, extra=()):
         return None, [f"{path} compiles text under {', '.join(unresolved)}, "
                       f"which it does not define and this lint does not "
                       f"define either, so this lint cannot judge it; make "
-                      f"the mode's text conditional on CH_TRANSPORT_QUIC"]
+                      f"the mode's text conditional on CH_TRANSPORT_QUIC_NONBLOCKING"]
 
     whole_off, own_off = off
     _, own_on = on
@@ -253,19 +253,19 @@ def judge(path, quic, shared, conditional, extra=()):
 
 
 def quic_problems(path, own_code, whole_code, gains):
-    """What a `quic*` file must hold: nothing a TLS build compiles, and
+    """What a `quic*` file must hold: nothing a TCP build compiles, and
     something a QUIC build does."""
     if own_code:
         return [f"{path} declares something without {DEFINE}; a quic* file "
-                f"puts its whole body inside #ifdef CH_TRANSPORT_QUIC"]
+                f"puts its whole body inside #ifdef CH_TRANSPORT_QUIC_NONBLOCKING"]
     if whole_code:
         return [f"{path} preprocesses to declarations without {DEFINE}; put "
-                f"the #include lines inside the #ifdef CH_TRANSPORT_QUIC with "
+                f"the #include lines inside the #ifdef CH_TRANSPORT_QUIC_NONBLOCKING with "
                 f"the rest of the body, because an include above the guard "
-                f"pulls its declarations into a TLS build"]
+                f"pulls its declarations into a TCP build"]
     if not gains:
         return [f"{path} contributes nothing that {DEFINE} changes, so no "
-                f"build compiles anything from it that a TLS build does not"]
+                f"build compiles anything from it that a TCP build does not"]
     return []
 
 

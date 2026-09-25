@@ -4,7 +4,7 @@
 // or handshake_post.c defines, so no rule exists twice.
 #include "quic_step.h"
 
-#ifdef CH_TRANSPORT_QUIC
+#ifdef CH_TRANSPORT_QUIC_NONBLOCKING
 
 #include "ct.h"
 #include "handshake_auth.h"
@@ -58,8 +58,8 @@ static void install_application_keys(ch_quic *q) {
 
 // The ServerHello step, which HSQ_STEP_AWAIT_SERVER_HELLO and
 // HSQ_STEP_AWAIT_RETRY_HELLO share. A HelloRetryRequest at the retry
-// step is the second one, which RFC 9846 §4.2.4 forbids; the TLS driver
-// refuses it by call position and this one by the stored step.
+// step is the second one, which RFC 9846 §4.2.4 forbids; the tcp-blocking
+// driver refuses it by call position and this one by the stored step.
 //
 // The derivation runs in this same call because info.server_ct points
 // into cfg.buf under CH_KEX_HYBRID and the decapsulation reads those bytes, so
@@ -133,7 +133,7 @@ static int step_certificate_verify(ch_quic *q) {
 // The server Finished, then everything the handshake owes after it: the
 // client Finished staged at the Handshake level, the 1-RTT keys
 // installed, and q->hs wiped. The wipe is INV-17's rule that handshake
-// secrets die at CONNECTED, one round trip earlier than the TLS driver
+// secrets die at CONNECTED, one round trip earlier than the tcp-blocking driver
 // wipes them. It clears hs.t with the rest, so this step writes the
 // back pointer again; every public entry writes it too.
 //
@@ -207,4 +207,4 @@ int hsq_advance(ch_quic *q) {
     }
 }
 
-#endif // CH_TRANSPORT_QUIC
+#endif // CH_TRANSPORT_QUIC_NONBLOCKING

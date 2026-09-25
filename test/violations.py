@@ -211,7 +211,7 @@ def run(name):
         # produced older, so the next build compiles this file again. A
         # script target is why it matters: it builds what it runs, and
         # the deletion below cannot name the objects it left. A
-        # record-mode tls.o survived a violation this way and failed its
+        # tcp-nonblocking tls.o survived a violation this way and failed its
         # own leg afterwards, on restored source.
         restored = time.time() + 2
         os.utime(target, (restored, restored))
@@ -249,7 +249,7 @@ def run(name):
 # the Makefile in three, the TRUST=webpki frame-budget script, which
 # compiles that object's sources in two, the QUIC partition lint
 # script, which preprocesses the root sources in three, and the
-# record-transport webpki link script, which links that object in two
+# tcp-nonblocking webpki link script, which links that object in two
 # and a half, the X25519=wide build script, which compiles ct.h five
 # times, and the X25519 equivalence binary, which runs in six
 # seconds. Left out are the ones whose single run is expensive — the

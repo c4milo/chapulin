@@ -5,7 +5,7 @@
 // integrity tag of A.4.
 //
 // Included by test/quic_vectors.c only, which is the vectors binary a
-// -DCH_TRANSPORT_QUIC build compiles. It sits in its own header for the
+// -DCH_TRANSPORT_QUIC_NONBLOCKING build compiles. It sits in its own header for the
 // reason test/pem_tests.h and test/session_tests.h do: the arrays are
 // long, and the main stays readable beside them. That main compiles
 // quic_aes_block.h, so aes_expand_round_keys is in scope here and a test can build an

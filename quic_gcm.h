@@ -12,7 +12,7 @@
 // states it at the two key types.
 #ifndef CH_QUIC_GCM_H
 #define CH_QUIC_GCM_H
-#if defined(CH_TRANSPORT_QUIC) || defined(CH_SUITE_AES_GCM)
+#if defined(CH_TRANSPORT_QUIC_NONBLOCKING) || defined(CH_SUITE_AES_GCM)
 
 #include <stddef.h>
 #include <stdint.h>
@@ -103,5 +103,5 @@ int gcm_traffic_open(const aes_traffic_key *k, const uint8_t nonce[AES_IV], cons
                      uint8_t *pt);
 #endif
 
-#endif // CH_TRANSPORT_QUIC || CH_SUITE_AES_GCM
+#endif // CH_TRANSPORT_QUIC_NONBLOCKING || CH_SUITE_AES_GCM
 #endif

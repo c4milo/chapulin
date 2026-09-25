@@ -50,12 +50,12 @@
 // object's transport, as the build record's does (build.h): an image
 // that links a CA-mode object of each of two transports holds one of
 // each (docs/decisions.md 61).
-#ifdef CH_TRANSPORT_QUIC
-#define ch_pubkey_from_pem ch_pubkey_from_pem_quic
-#elif defined(CH_TRANSPORT_RECORD)
-#define ch_pubkey_from_pem ch_pubkey_from_pem_record
+#ifdef CH_TRANSPORT_QUIC_NONBLOCKING
+#define ch_pubkey_from_pem ch_pubkey_from_pem_quic_nonblocking
+#elif defined(CH_TRANSPORT_TCP_NONBLOCKING)
+#define ch_pubkey_from_pem ch_pubkey_from_pem_tcp_nonblocking
 #else
-#define ch_pubkey_from_pem ch_pubkey_from_pem_tls
+#define ch_pubkey_from_pem ch_pubkey_from_pem_tcp_blocking
 #endif
 int ch_pubkey_from_pem(const uint8_t *pem, size_t pem_len, uint8_t der[CH_X509_MAX],
                        uint8_t key[CH_X509_KEY_MAX], size_t *key_len);

@@ -21,7 +21,7 @@
 // level.
 #include "quic_packet.h"
 
-#ifdef CH_TRANSPORT_QUIC
+#ifdef CH_TRANSPORT_QUIC_NONBLOCKING
 
 #include "buf.h"
 #include "ch_assert.h"
@@ -492,4 +492,4 @@ int quic_confidentiality_limit_reached(uint64_t sealed) {
     return sealed >= QUIC_CONFIDENTIALITY_LIMIT - 1 ? 1 : 0;
 }
 
-#endif // CH_TRANSPORT_QUIC
+#endif // CH_TRANSPORT_QUIC_NONBLOCKING

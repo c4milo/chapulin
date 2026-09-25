@@ -103,12 +103,12 @@ p384_mul 86.7  # local reading, cbmc 6.11.0 on arm64 macOS; replace with the nig
 pem 74.6 budget=2700
 pem_ecdsa 74.6 budget=2700
 poly1305 94.3
-# quic_initial carries a floor where the other four TRANSPORT=quic
+# quic_initial carries a floor where the other four TRANSPORT=quic-nonblocking
 # harnesses carry none: its cover command converges in seconds, because
 # every call it makes is a stub and the formula holds length checks
 # alone.
 quic_initial 98.7  # local reading, cbmc 6.11.0 on arm64 macOS; replace with the nightly table's number
-# quic_packet is the one TRANSPORT=quic harness whose cover command
+# quic_packet is the one TRANSPORT=quic-nonblocking harness whose cover command
 # converges: 34 s and 0.75 GB against the 1800 s budget, where quic_aes
 # returned no number in 21 minutes. Its proof is cheap for the same
 # reason -- ChaCha20 and the AEAD are stubs, so the formula holds
@@ -174,7 +174,7 @@ x25519_tail 52.7
 # carries the same 32 int64 products and timed out the same way under
 # the cover command on 2026-09-03 (cbmc 6.11.0, 1.4 GB at the cap).
 #
-# The four TRANSPORT=quic harnesses are listed from one measurement and
+# The four TRANSPORT=quic-nonblocking harnesses are listed from one measurement and
 # one inference, and the inference is why they are here rather than in
 # the roster. quic_aes returned no usable number under the cover command
 # on a development machine on 2026-09-18 (arm64 macOS, the pinned cbmc,

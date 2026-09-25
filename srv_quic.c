@@ -15,7 +15,7 @@
 // and no flight suspends half-written.
 #include "srv_quic.h"
 
-#if defined(CH_ROLE_SERVER) && defined(CH_TRANSPORT_QUIC)
+#if defined(CH_ROLE_SERVER) && defined(CH_TRANSPORT_QUIC_NONBLOCKING)
 
 #include <string.h>
 
@@ -229,7 +229,7 @@ static int step_client_finished(ch_quic *q) {
     q->hs.level = CH_LEVEL_APPLICATION;
     rc = srv_send_new_session_ticket(&q->hs);
     // INV-17: the handshake secrets die at CONNECTED, one round trip
-    // earlier than the TLS driver wipes its frame, because this one owns
+    // earlier than the tcp-blocking driver wipes its frame, because this one owns
     // the state the other keeps on a stack frame that is about to return.
     ct_wipe(&q->hs, sizeof q->hs);
     q->hs.t = &q->t;
@@ -352,4 +352,4 @@ void ch_srv_quic_retry_tag(const uint8_t *pseudo, size_t n, uint8_t *tag) {
     quic_retry_tag(pseudo, n, tag);
 }
 
-#endif // CH_ROLE_SERVER && CH_TRANSPORT_QUIC
+#endif // CH_ROLE_SERVER && CH_TRANSPORT_QUIC_NONBLOCKING

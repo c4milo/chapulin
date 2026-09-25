@@ -23,8 +23,8 @@ int io_read_record(const ch_cfg *cfg, uint8_t *buf, size_t cap, uint8_t *outer,
     if (cap < REC_HDR) {
         return CH_ECAP;
     }
-#ifdef CH_TRANSPORT_RECORD
-    // A TRANSPORT=record caller owns the socket and hands over whole
+#ifdef CH_TRANSPORT_TCP_NONBLOCKING
+    // A TRANSPORT=tcp-nonblocking caller owns the socket and hands over whole
     // records, so a recv that returns 0 before a record's first byte says
     // no record has arrived yet (rec.h). The caller runs ch_read again
     // once one has. A 0 after that first byte breaks the whole-record

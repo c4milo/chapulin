@@ -1,6 +1,6 @@
 // Proves: ch_srv_record_init, ch_srv_record_in and the step table under
 // them (srv_rec.c), together with the inbound framing and the death path
-// both record-mode drivers share (rec_frame.c), are memory safe and free
+// both tcp-nonblocking drivers share (rec_frame.c), are memory safe and free
 // of UB over an unconstrained ch_cfg, an unconstrained saved state and
 // unconstrained caller bytes. And that the driver keeps what srv_rec.h
 // states: it takes whole records only, it never reports more bytes than
@@ -96,7 +96,7 @@ static int take_message(handshake_state *h) {
 
 // srv.c's configuration rules. The answer is free, but a 1 carries what
 // srv.h promises a caller that got one: the receive buffer is live and at
-// this build's floor, and the record transport's own arm has checked that
+// this build's floor, and the tcp-nonblocking transport's own arm has checked that
 // a sink is set. ch_srv_record_init reads all three on the strength of
 // that answer, so a stub that answered 1 for any cfg at all would prove
 // arithmetic the real predicate never admits.

@@ -1,7 +1,7 @@
 invariant: INV-28
 file: rec.c
 catches: rec_loop_test
-reason: the client's record driver reaches for the socket to wait for the
+reason: the client's tcp-nonblocking driver reaches for the socket to wait for the
   rest of a message instead of returning and letting the caller bring
   more bytes. That is the one thing the mode exists to avoid: the
   callback runs inside an event loop with no thread to park. It is

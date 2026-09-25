@@ -1,6 +1,6 @@
 # bench/primitives.sh on Apple M1 Pro (arm64), Darwin 25.6.0, 2026-09-24, tree 0ae2dbe
 # Apple clang version 21.0.0 (clang-2100.3.34.2); -std=c11 -O2 -Wall -Wextra -Wpedantic -Werror -Wvla -D_DEFAULT_SOURCE -DCH_RAND_DRBG -I. -Ibench -Itest
-# primitives adds -DCH_RSA_MODULUS_MAX=512; handshake adds -DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_TRANSPORT_RECORD -DBENCH_HANDSHAKE_PROGRAM, and -DCH_PIN_ECDSA for the ecdsa rows
+# primitives adds -DCH_RSA_MODULUS_MAX=512; handshake adds -DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_TRANSPORT_TCP_NONBLOCKING -DBENCH_HANDSHAKE_PROGRAM, and -DCH_PIN_ECDSA for the ecdsa rows
 # the X25519=wide rows add -DCH_X25519_WIDE -DCH_NATIVE_MUL128 and x25519_wide.c
 # load average (1, 5, 15 min) before: 24.25 21.83 19.36; after: 12.19 17.51 17.96
 # primitives: default run 1 of 3: 1-minute load average 24.25 at its start

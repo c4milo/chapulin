@@ -2,8 +2,8 @@ invariant: INV-35
 file: build.c
 catches: test/lib-check-webpki-record.sh
 reason: build.c writes the axes out as a union of its own and leaves out
-  CH_BUILD_IF_TRANSPORT_RECORD, so a record-mode object reports that it
-  was built without CH_TRANSPORT_RECORD. Every size in its record is
+  CH_BUILD_IF_TRANSPORT_TCP_NONBLOCKING, so a tcp-nonblocking object reports that it
+  was built without CH_TRANSPORT_TCP_NONBLOCKING. Every size in its record is
   still right, and a consumer built with the define reads different
   axes. lib-check links test/build_test.c under the object's own
   defines, and that consumer must read a record equal to its headers,
@@ -13,5 +13,5 @@ reason: build.c writes the axes out as a union of its own and leaves out
     .axes = CH_BUILD_AXES,
 --- new
     .axes = CH_BUILD_IF_TRUST_CA | CH_BUILD_IF_TRUST_WEBPKI | CH_BUILD_IF_PIN_ECDSA |
-            CH_BUILD_IF_KEX_PQ | CH_BUILD_IF_TRANSPORT_QUIC | CH_BUILD_IF_SUITE_AES_GCM |
+            CH_BUILD_IF_KEX_PQ | CH_BUILD_IF_TRANSPORT_QUIC_NONBLOCKING | CH_BUILD_IF_SUITE_AES_GCM |
             CH_BUILD_IF_ROLE_SERVER | CH_BUILD_IF_EXPORTER | CH_BUILD_IF_KEYLOG,

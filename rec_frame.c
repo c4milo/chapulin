@@ -1,10 +1,10 @@
-// The inbound record framing and the session-death path both record-mode
+// The inbound record framing and the session-death path both tcp-nonblocking
 // drivers share. rec_frame.h states the contract; this file is
 // quic_fail.c's counterpart on the transport that keeps its records, and
 // it holds no protocol rule beyond what one record is allowed to be.
 #include "rec_frame.h"
 
-#ifdef CH_TRANSPORT_RECORD
+#ifdef CH_TRANSPORT_TCP_NONBLOCKING
 
 #include <string.h>
 
@@ -82,4 +82,4 @@ int rec_take_record(ch_record *r, uint8_t *rec, size_t body_len, uint8_t outer) 
     return CH_OK;
 }
 
-#endif // CH_TRANSPORT_RECORD
+#endif // CH_TRANSPORT_TCP_NONBLOCKING

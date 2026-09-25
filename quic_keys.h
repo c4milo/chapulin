@@ -3,7 +3,7 @@
 // negotiated: TLS_CHACHA20_POLY1305_SHA256, and under -DCH_SUITE_AES_GCM
 // TLS_AES_128_GCM_SHA256 and TLS_AES_256_GCM_SHA384 too
 // (docs/decisions.md 58). It takes the place of record.[ch] in a
-// TRANSPORT=quic build: rec_dir holds one direction of TLS record
+// TRANSPORT=quic-nonblocking build: rec_dir holds one direction of TLS record
 // protection, and the types here hold one direction of one QUIC
 // encryption level. The Initial level is the exception and takes
 // quic_aes.h's aes_public_key instead, because RFC 9001 §5.2 fixes
@@ -11,11 +11,11 @@
 //
 // Pure derivation. Nothing here seals, opens, samples a packet or reads
 // a packet number; quic_packet.[ch] does that over the values this file
-// writes. Only a TRANSPORT=quic build compiles it. docs/quic.md states
+// writes. Only a TRANSPORT=quic-nonblocking build compiles it. docs/quic.md states
 // the mode.
 #ifndef CH_QUIC_KEYS_H
 #define CH_QUIC_KEYS_H
-#ifdef CH_TRANSPORT_QUIC
+#ifdef CH_TRANSPORT_QUIC_NONBLOCKING
 
 #include <stddef.h>
 #include <stdint.h>
@@ -161,5 +161,5 @@ void quic_hp_key_init_suite(quic_hp_key *h, const uint8_t *secret, uint16_t suit
 // packet under the new keys opens (rfc9001.txt:1637-1638).
 void quic_keys_update(uint8_t *secret, quic_keys *k);
 
-#endif // CH_TRANSPORT_QUIC
+#endif // CH_TRANSPORT_QUIC_NONBLOCKING
 #endif

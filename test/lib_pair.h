@@ -9,9 +9,9 @@
 
 #include <stdint.h>
 
-int lib_pair_tls(void);
-int lib_pair_record(void);
-int lib_pair_quic(void);
+int lib_pair_tcp_blocking(void);
+int lib_pair_tcp_nonblocking(void);
+int lib_pair_quic_nonblocking(void);
 
 #ifdef LIB_PAIR_KEYLOG
 // The key log hook a KEYLOG=on object imports. keylog.h declares it only

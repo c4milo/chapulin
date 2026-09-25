@@ -20,9 +20,9 @@ ROOT = Path(__file__).resolve().parent.parent
 # entry that is listed and absent is a script bug, not a build variant,
 # so main() names the difference instead of printing a silent 0. Its
 # symbol name carries the transport (x509_ca.h), and this script builds
-# TRANSPORT=tls, the one whose calls ENTRIES names.
+# TRANSPORT=tcp-blocking, the one whose calls ENTRIES names.
 ENTRIES = ["_ch_connect", "_ch_read", "_ch_write", "_ch_close"]
-CA_ENTRIES = ["_ch_pubkey_from_pem_tls"]
+CA_ENTRIES = ["_ch_pubkey_from_pem_tcp_blocking"]
 # A ROLE=server build exports ch_srv_accept where a client exports
 # ch_connect, and shares the other three. STACK_CFLAGS names the role the
 # way it names a trust mode.

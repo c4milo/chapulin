@@ -6,7 +6,7 @@
 // key they use is public, so they take aes_public_key. A
 // -DCH_SUITE_AES_GCM build adds the second, aes_traffic_key, for the two
 // AES-GCM cipher suites, whose keys the TLS key schedule derives. A
-// TRANSPORT=quic build compiles this file, and so does a suite build over
+// TRANSPORT=quic-nonblocking build compiles this file, and so does a suite build over
 // any transport. docs/quic.md, "Where packet protection lives", states the
 // trade and INV-26 in docs/invariants.md states the rule that holds both.
 //
@@ -15,7 +15,7 @@
 // cipher and no decryption round keys exist here.
 #ifndef CH_QUIC_AES_H
 #define CH_QUIC_AES_H
-#if defined(CH_TRANSPORT_QUIC) || defined(CH_SUITE_AES_GCM)
+#if defined(CH_TRANSPORT_QUIC_NONBLOCKING) || defined(CH_SUITE_AES_GCM)
 
 #include <stddef.h>
 #include <stdint.h>
@@ -144,7 +144,7 @@ typedef struct aes_traffic_key aes_traffic_key;
 // because k holds the expanded secret.
 void aes_traffic_key_init(aes_traffic_key *k, const uint8_t *key, size_t key_len);
 
-#ifdef CH_TRANSPORT_QUIC
+#ifdef CH_TRANSPORT_QUIC_NONBLOCKING
 // One forward-cipher block under a traffic key: out = CIPH_k(in). It is
 // RFC 9001 §5.4.3's header protection mask, AES-ECB(hp_key, sample)
 // (rfc9001.txt:1332-1336), under the "quic hp" key of a Handshake or
@@ -213,7 +213,7 @@ void aes_traffic_encrypt_block(const aes_traffic_key *k, const uint8_t in[AES_BL
 // nothing when dcid_len is above CH_QUIC_DCID_MAX, or when endpoint is
 // neither of the two names above; k keeps whatever it held. No other
 // code can be returned: the derivation itself cannot fail.
-#ifdef CH_TRANSPORT_QUIC
+#ifdef CH_TRANSPORT_QUIC_NONBLOCKING
 int aes_public_key_initial(aes_public_key *k, const uint8_t *dcid, size_t dcid_len,
                            uint8_t endpoint);
 
@@ -229,7 +229,7 @@ int aes_public_key_initial(aes_public_key *k, const uint8_t *dcid, size_t dcid_l
 // the caller includes quic_aes_key.h. Writes k whole and cannot fail,
 // so it returns nothing.
 void aes_public_key_retry(aes_public_key *k);
-#endif // CH_TRANSPORT_QUIC
+#endif // CH_TRANSPORT_QUIC_NONBLOCKING
 
 // One forward-cipher block under the packet protection key, k->key:
 // out = CIPH_K(in), FIPS 197 §5.1. quic_gcm.c calls it for the counter
@@ -265,11 +265,11 @@ void aes_encrypt_block(const aes_public_key *k, const uint8_t in[AES_BLOCK],
 // readable bytes, taken from the packet the way §5.4.2 says; out points
 // at AES_BLOCK writable bytes. sample == out is allowed. Writes
 // AES_BLOCK bytes and cannot fail.
-#ifdef CH_TRANSPORT_QUIC
+#ifdef CH_TRANSPORT_QUIC_NONBLOCKING
 void aes_encrypt_block_hp(const aes_public_key *k, const uint8_t sample[AES_BLOCK],
                           uint8_t out[AES_BLOCK]);
 
-#endif // CH_TRANSPORT_QUIC
+#endif // CH_TRANSPORT_QUIC_NONBLOCKING
 
-#endif // CH_TRANSPORT_QUIC || CH_SUITE_AES_GCM
+#endif // CH_TRANSPORT_QUIC_NONBLOCKING || CH_SUITE_AES_GCM
 #endif

@@ -1,6 +1,6 @@
 // chapulin's non-blocking handshake API: the same TLS 1.3 client, over
 // the same records, driven by a caller that owns the socket. Built with
-// TRANSPORT=record.
+// TRANSPORT=tcp-nonblocking.
 //
 // tls.h's ch_connect runs the handshake by calling cfg.send and cfg.recv,
 // which block. That is the right shape for the firmware chapulin targets,
@@ -15,7 +15,7 @@
 // to ch_read, ch_write and ch_close, whose callbacks no longer block: by
 // then the caller holds the bytes and its send and recv are buffer copies.
 // The record protection after the handshake is the same record.[ch] a
-// TRANSPORT=tls build uses, keyed the same way.
+// TRANSPORT=tcp-blocking build uses, keyed the same way.
 //
 // After the handshake the caller's recv hands over whole records, and it
 // returns 0 when it holds no record: ch_read then returns CH_RECORD_AGAIN
@@ -26,7 +26,7 @@
 // across records waits the same way, its first part kept in cfg.buf. A
 // recv that returns 0 inside a record, after a record's first byte, breaks
 // the whole-record promise and leaves the session dead with CH_EIO, as a
-// short read does in TRANSPORT=tls.
+// short read does in TRANSPORT=tcp-blocking.
 //
 // Closing takes two calls, one per direction. The peer's close_notify
 // closes the peer's direction alone (RFC 9846 §6.1): the ch_read that
@@ -48,7 +48,7 @@
 // the alert the caller should send before it closes.
 #ifndef CH_REC_H
 #define CH_REC_H
-#ifdef CH_TRANSPORT_RECORD
+#ifdef CH_TRANSPORT_TCP_NONBLOCKING
 
 #include <stddef.h>
 #include <stdint.h>
@@ -131,5 +131,5 @@ uint8_t ch_record_alert(const ch_record *r);
 // on &r->t first, which sends this side's close_notify.
 void ch_record_close(ch_record *r);
 
-#endif // CH_TRANSPORT_RECORD
+#endif // CH_TRANSPORT_TCP_NONBLOCKING
 #endif

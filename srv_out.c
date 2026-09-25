@@ -10,15 +10,15 @@
 #include "ct.h"
 #include "handshake_message.h"
 #include "sha256.h"
-// Both record transports seal, and only the blocking one sends: io.h is
+// Both TCP transports seal, and only tcp-blocking sends: io.h is
 // included for either, so emit below is a single arm a .violation mutant
-// can flip. A record build declares io_send_all and calls it nowhere.
-#ifndef CH_TRANSPORT_QUIC
+// can flip. A tcp-nonblocking build declares io_send_all and calls it nowhere.
+#ifndef CH_TRANSPORT_QUIC_NONBLOCKING
 #include "io.h"
 #include "record.h"
 #endif
 
-#ifdef CH_TRANSPORT_QUIC
+#ifdef CH_TRANSPORT_QUIC_NONBLOCKING
 
 // Hands n bytes to the caller at the level the driver set. RFC 9001
 // section 4.1.3 makes the unprotected content of a handshake record the
@@ -42,13 +42,13 @@ size_t srv_out_limit(const ch_tls *t) {
     return CH_TX_PT;
 }
 
-// A message the TLS build would send in the clear. It is staged at t->tx
+// A message a TCP build would send in the clear. It is staged at t->tx
 // itself, because SRV_OUT_STAGE is 0 where no record header precedes it.
 int srv_out_plain(handshake_state *h, size_t n) {
     return push(h, h->t->tx, n);
 }
 
-// A message the TLS build would seal. QUIC protects the packet rather than
+// A message a TCP build would seal. QUIC protects the packet rather than
 // the record, so these bytes go out exactly as the handler wrote them.
 int srv_out_sealed(handshake_state *h, const uint8_t *pt, size_t n) {
     return push(h, pt, n);
@@ -62,8 +62,8 @@ size_t srv_out_limit(const ch_tls *t) {
     return t->peer_limit < CH_TX_PT ? t->peer_limit : CH_TX_PT;
 }
 
-// Where one finished record goes. A TRANSPORT=tls server writes it to
-// the socket through the caller's blocking send. A TRANSPORT=record
+// Where one finished record goes. A TRANSPORT=tcp-blocking server writes it to
+// the socket through the caller's blocking send. A TRANSPORT=tcp-nonblocking
 // server hands it to the caller, which owns the socket, so nothing here
 // blocks and no record waits for one to drain. srv_cfg.h states why this
 // mode pushes rather than staging a record for a caller to pull.
@@ -71,7 +71,7 @@ size_t srv_out_limit(const ch_tls *t) {
 // ch_srv_record_init refuses a configuration whose on_record_out is
 // NULL, so this call needs no NULL test, the same way push does.
 static int emit(ch_tls *t, const uint8_t *p, size_t n) {
-#ifdef CH_TRANSPORT_RECORD
+#ifdef CH_TRANSPORT_TCP_NONBLOCKING
     const ch_cfg *cfg = &t->cfg;
     return cfg->srv.on_record_out(cfg->io, p, n) == 0 ? CH_OK : CH_EIO;
 #else
