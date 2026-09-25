@@ -212,6 +212,13 @@ static int step_client_finished(ch_quic *q) {
     if (rc != CH_OK) {
         return rc;
     }
+    // Bytes after the Finished in cfg.buf are data at the level this
+    // step leaves. srv_complete empties cfg.buf, so drive's check would
+    // never see them, and they are refused here instead: before the
+    // application read key is announced and before the ticket goes out.
+    if (q->t.pt_off != q->t.pt_len) {
+        return quic_refuse_unread(q);
+    }
     srv_complete(&q->hs);
     announce(q, CH_LEVEL_APPLICATION, CH_KEY_READ);
     q->rx_level = CH_LEVEL_APPLICATION;
@@ -283,9 +290,10 @@ static int drive(ch_quic *q, const uint8_t *p, size_t n) {
         // A step that moved rx_level consumed the whole delivery. A byte
         // left over is data at a level this server has left, which RFC
         // 9001 section 4.1.3 makes a connection error of type
-        // PROTOCOL_VIOLATION (rfc9001.txt:488-493).
+        // PROTOCOL_VIOLATION (rfc9001.txt:488-493), or 0x010a when it
+        // opens a KeyUpdate.
         if (q->rx_level != was && (q->t.pt_off != q->t.pt_len || off != n)) {
-            return quic_fail_level(q);
+            return quic_fail(q, quic_refuse_unread(q));
         }
     }
 }

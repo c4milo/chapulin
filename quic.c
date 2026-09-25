@@ -159,11 +159,11 @@ static int drive(ch_quic *q, const uint8_t *p, size_t n) {
         // consumed the whole delivery. A byte left over is data at a
         // level this client has left, which RFC 9001 §4.1.3 makes a
         // connection error of type PROTOCOL_VIOLATION
-        // (rfc9001.txt:488-493). The same check covers the
-        // HelloRetryRequest, whose answer cannot arrive before the
-        // retry hello goes out.
+        // (rfc9001.txt:488-493), or 0x010a when it opens a KeyUpdate.
+        // The same check covers the HelloRetryRequest, whose answer
+        // cannot arrive before the retry hello goes out.
         if ((q->rx_level != was || q->tx_len != 0) && (q->t.pt_off != q->t.pt_len || off != n)) {
-            return quic_fail_level(q);
+            return quic_fail(q, quic_refuse_unread(q));
         }
     }
 }

@@ -43,5 +43,15 @@ int quic_fail(ch_quic *q, int rc);
 // rfc9001.txt:491-493).
 int quic_fail_level(ch_quic *q);
 
+// Writes the error that unread bytes at a level this endpoint leaves owe,
+// and returns CH_EPROTO without failing the session: a driver passes it
+// to quic_fail, and a step returns it for its driver to pass on. RFC 9001
+// section 4.1.3 makes those bytes PROTOCOL_VIOLATION (rfc9001.txt:491-493),
+// but section 6 makes a KeyUpdate 0x010a wherever it arrives
+// (rfc9001.txt:1565-1568), so when the first unread message is a
+// KeyUpdate it writes only the unexpected_message alert, which
+// ch_quic_error_code reports as 0x010a.
+int quic_refuse_unread(ch_quic *q);
+
 #endif // CH_TRANSPORT_QUIC
 #endif

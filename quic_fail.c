@@ -11,6 +11,7 @@
 
 #include "ct.h"
 #include "handshake_message.h"
+#include "handshake_record.h"
 
 // QUIC's PROTOCOL_VIOLATION (RFC 9000 section 20.1). ch_quic_error_code
 // reports it for the refusals RFC 9001 makes a connection error of that
@@ -101,6 +102,16 @@ int quic_fail_level(ch_quic *q) {
     q->error_code = QUIC_PROTOCOL_VIOLATION;
     q->hs.alert = ALERT_UNEXPECTED_MESSAGE;
     return quic_fail(q, CH_EPROTO);
+}
+
+int quic_refuse_unread(ch_quic *q) {
+    uint8_t type = 0;
+    int waiting = hsr_peek_type(&q->hs, &type) == CH_OK;
+    if (!waiting || type != HS_KEY_UPDATE) {
+        q->error_code = QUIC_PROTOCOL_VIOLATION;
+    }
+    q->hs.alert = ALERT_UNEXPECTED_MESSAGE;
+    return CH_EPROTO;
 }
 
 #endif // CH_TRANSPORT_QUIC

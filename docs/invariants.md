@@ -1778,7 +1778,14 @@ last `ROLE=server` stub, as the entry said it would.
   record in one `ch_srv_record_in` call, and
   `test/violations/inv22-srv-record-in-reads-past-finished.violation`
   keeps the loop going past the Finished and requires `bin/rec_loop_test`
-  to fail.
+  to fail. A QUIC server refuses what the same delivery carries after the
+  Finished instead, because RFC 9001 §4.1.3 makes those bytes data at a
+  level it is leaving, and it refuses them before `srv_complete` empties
+  `cfg.buf`. `test/quic_loop_close.h` delivers a Finished and a KeyUpdate
+  in one `ch_srv_quic_crypto_in` call and requires 0x010a (RFC 9001 §6)
+  and no ticket, and
+  `test/violations/inv22-srv-quic-drops-bytes-after-finished.violation`
+  removes the refusal and requires `bin/quic_loop_test` to fail.
   The close_notify rule is tested three ways, not proved: `tls.c` has
   no harness (README, "These rest on tests, not proofs"). `bin/unit`'s
   `test_peer_close_notify` (`test/session_post_tests.h`) queues a record

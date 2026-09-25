@@ -162,28 +162,36 @@ static void test_server_close_at_initial(void) {
     ch_quic_close(&client);
 }
 
+static const uint8_t key_update[5] = {HS_KEY_UPDATE, 0x00, 0x00, 0x01, 0x00};
+
+// Runs a handshake until the client has staged its Finished, and takes
+// the Finished into buf, which holds cap bytes. The server has not seen
+// it.
+static void take_client_finished(uint8_t *buf, size_t cap, size_t *n) {
+    ch_cfg scfg;
+    ch_cfg ccfg;
+    server_config(&scfg);
+    pinned_client_config(&ccfg, &server_alpn[0]);
+    CHECK(start_close_case(&ccfg, &scfg));
+    CHECK(ch_quic_crypto_out(&client, CH_LEVEL_INITIAL, buf, cap, n) == CH_OK);
+    CHECK(ch_srv_quic_crypto_in(&server, CH_LEVEL_INITIAL, buf, *n) == CH_OK);
+    CHECK(ch_quic_crypto_in(&client, CH_LEVEL_INITIAL, from_server.bytes[CH_LEVEL_INITIAL],
+                            from_server.len[CH_LEVEL_INITIAL]) == CH_OK);
+    CHECK(ch_quic_crypto_in(&client, CH_LEVEL_HANDSHAKE, from_server.bytes[CH_LEVEL_HANDSHAKE],
+                            from_server.len[CH_LEVEL_HANDSHAKE]) == CH_OK);
+    CHECK(ch_quic_crypto_out(&client, CH_LEVEL_HANDSHAKE, buf, cap, n) == CH_OK && *n > 0);
+    CHECK(ch_quic_state(&client) == CH_ST_CONNECTED);
+}
+
 // A server that fails at the Handshake level, h3spec's case: the client
 // sends a TLS KeyUpdate where its Finished belongs, which RFC 9001 section
 // 6 makes 0x010a. The server has Initial, Handshake and 1-RTT write keys
 // by then, and one close goes out at each.
 static void test_server_close_at_handshake(void) {
-    static const uint8_t key_update[5] = {HS_KEY_UPDATE, 0x00, 0x00, 0x01, 0x00};
     static uint8_t buf[4096];
-    ch_cfg scfg;
-    ch_cfg ccfg;
     size_t n = 0;
-    server_config(&scfg);
-    pinned_client_config(&ccfg, &server_alpn[0]);
-    CHECK(start_close_case(&ccfg, &scfg));
-    CHECK(ch_quic_crypto_out(&client, CH_LEVEL_INITIAL, buf, sizeof buf, &n) == CH_OK);
-    CHECK(ch_srv_quic_crypto_in(&server, CH_LEVEL_INITIAL, buf, n) == CH_OK);
-    CHECK(ch_quic_crypto_in(&client, CH_LEVEL_INITIAL, from_server.bytes[CH_LEVEL_INITIAL],
-                            from_server.len[CH_LEVEL_INITIAL]) == CH_OK);
-    CHECK(ch_quic_crypto_in(&client, CH_LEVEL_HANDSHAKE, from_server.bytes[CH_LEVEL_HANDSHAKE],
-                            from_server.len[CH_LEVEL_HANDSHAKE]) == CH_OK);
     // The client's Finished is taken and never delivered.
-    CHECK(ch_quic_crypto_out(&client, CH_LEVEL_HANDSHAKE, buf, sizeof buf, &n) == CH_OK && n > 0);
-    CHECK(ch_quic_state(&client) == CH_ST_CONNECTED);
+    take_client_finished(buf, sizeof buf, &n);
     CHECK(ch_srv_quic_crypto_in(&server, CH_LEVEL_HANDSHAKE, key_update, sizeof key_update) ==
           CH_EPROTO);
     CHECK(ch_quic_alert(&server) == ALERT_UNEXPECTED_MESSAGE);
@@ -236,10 +244,69 @@ static void test_client_close_at_handshake(void) {
     ch_quic_close(&server);
 }
 
+// Delivers the client Finished with extra bytes after it in one Handshake
+// call, colibri's h3spec case. The server refuses the extra bytes before
+// it completes, so it never reaches CONNECTED and sends no ticket. A
+// KeyUpdate takes 0x010a (RFC 9001 section 6) and any other message
+// PROTOCOL_VIOLATION (section 4.1.3).
+static void server_refuses_after_finished(const uint8_t *extra, size_t extra_len,
+                                          uint64_t error_code) {
+    static uint8_t buf[4096];
+    size_t n = 0;
+    take_client_finished(buf, sizeof buf, &n);
+    CHECK(n + extra_len <= sizeof buf);
+    memcpy(buf + n, extra, extra_len);
+    CHECK(ch_srv_quic_crypto_in(&server, CH_LEVEL_HANDSHAKE, buf, n + extra_len) == CH_EPROTO);
+    CHECK(ch_quic_alert(&server) == ALERT_UNEXPECTED_MESSAGE);
+    CHECK(ch_quic_error_code(&server) == error_code);
+    CHECK(from_server.len[CH_LEVEL_APPLICATION] == 0);
+    check_failed(&server, CH_QUIC_LEVEL_BIT(CH_LEVEL_INITIAL, CH_KEY_WRITE) |
+                              CH_QUIC_LEVEL_BIT(CH_LEVEL_HANDSHAKE, CH_KEY_WRITE) |
+                              CH_QUIC_LEVEL_BIT(CH_LEVEL_APPLICATION, CH_KEY_WRITE));
+    ch_quic_close(&server);
+    ch_quic_close(&client);
+}
+
+// The client side of the same rule: the server's Handshake flight with a
+// KeyUpdate after its Finished, in one call.
+static void test_client_key_update_after_finished(void) {
+    static uint8_t buf[4096];
+    ch_cfg scfg;
+    ch_cfg ccfg;
+    size_t n = 0;
+    server_config(&scfg);
+    pinned_client_config(&ccfg, &server_alpn[0]);
+    CHECK(start_close_case(&ccfg, &scfg));
+    CHECK(ch_quic_crypto_out(&client, CH_LEVEL_INITIAL, buf, sizeof buf, &n) == CH_OK);
+    CHECK(ch_srv_quic_crypto_in(&server, CH_LEVEL_INITIAL, buf, n) == CH_OK);
+    CHECK(ch_quic_crypto_in(&client, CH_LEVEL_INITIAL, from_server.bytes[CH_LEVEL_INITIAL],
+                            from_server.len[CH_LEVEL_INITIAL]) == CH_OK);
+    n = from_server.len[CH_LEVEL_HANDSHAKE];
+    CHECK(n + sizeof key_update <= sizeof buf);
+    memcpy(buf, from_server.bytes[CH_LEVEL_HANDSHAKE], n);
+    memcpy(buf + n, key_update, sizeof key_update);
+    CHECK(ch_quic_crypto_in(&client, CH_LEVEL_HANDSHAKE, buf, n + sizeof key_update) == CH_EPROTO);
+    CHECK(ch_quic_alert(&client) == ALERT_UNEXPECTED_MESSAGE);
+    CHECK(ch_quic_error_code(&client) == 0x010a);
+    CHECK(ch_quic_state(&client) == CH_ST_FAILED);
+    ch_quic_close(&client);
+    ch_quic_close(&server);
+}
+
+static void test_refuse_after_finished(void) {
+    static const uint8_t empty_ticket[4] = {HS_NEW_SESSION_TICKET, 0x00, 0x00, 0x00};
+    server_refuses_after_finished(key_update, sizeof key_update, 0x010a);
+    // One byte is enough: the type names a KeyUpdate before its length does.
+    server_refuses_after_finished(key_update, 1, 0x010a);
+    server_refuses_after_finished(empty_ticket, sizeof empty_ticket, 0x0a);
+    test_client_key_update_after_finished();
+}
+
 static void test_close_after_failure(void) {
     test_server_close_at_initial();
     test_server_close_at_handshake();
     test_client_close_at_handshake();
+    test_refuse_after_finished();
 }
 
 #endif

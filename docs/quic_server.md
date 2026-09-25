@@ -240,15 +240,21 @@ Which levels a server can close at depends on where it failed:
   keys and the 1-RTT write keys the server installed with its own Finished,
   and Initial keys unless colibri discarded them first (RFC 9001 section
   4.9.1). RFC 9000 section 10.2.3 asks for the close at each of them
-  (`rfc9000.txt:3306-3308`, `rfc9000.txt:3316-3320`).
+  (`rfc9000.txt:3306-3308`, `rfc9000.txt:3316-3320`). A Finished that
+  verifies with more bytes after it in the same delivery fails the same
+  way, before the server reaches `CH_ST_CONNECTED` and before the ticket
+  goes out: the bytes are data at a level the server is leaving (RFC 9001
+  section 4.1.3), and `ch_quic_error_code` reports 0x0a, or 0x010a when
+  they open a KeyUpdate (section 6, `rfc9001.txt:1565-1568`).
 
 colibri reads `ch_quic_error_code`, calls `ch_quic_seal_close` once at each of
 those levels, sends the packets, and calls `ch_quic_close`. A server sends a
 CONNECTION_CLOSE in an Initial packet without padding it: RFC 9000 section
 14.1 asks a server to pad only ack-eliciting Initial packets, and a packet
 that carries CONNECTION_CLOSE alone is not one (`rfc9000.txt:403-405`). `bin/quic_loop_test` fails this server with
-no_application_protocol and with a KeyUpdate in place of the client Finished,
-and the client opens every close the server seals.
+no_application_protocol, with a KeyUpdate in place of the client Finished,
+and with a KeyUpdate or a second message after it, and the client opens every
+close the server seals.
 
 ## Resumption
 

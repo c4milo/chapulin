@@ -205,6 +205,20 @@ size_t hsr_feed(handshake_state *h, const uint8_t *p, size_t n);
 int hsr_peek_message(const handshake_state *h, size_t *raw_len, uint8_t *alert);
 #endif
 
+#ifdef CH_TRANSPORT_QUIC
+// Answers the type of the next unread handshake message, the byte at
+// cfg.buf + pt_off, which opens a message because hsr_next_msg consumes
+// whole ones. It reads that one byte and nothing else, and changes no
+// field. The QUIC drivers call it to name the first message a refused
+// delivery carries, because RFC 9001 section 6 gives a KeyUpdate its own
+// error code (rfc9001.txt:1565-1568).
+//
+// Requires what hsr_peek_message requires. Returns CH_OK and writes
+// *type when at least one byte is unread, and HSR_INCOMPLETE, leaving
+// *type alone, when none is.
+int hsr_peek_type(const handshake_state *h, uint8_t *type);
+#endif
+
 // Yields the next complete handshake message, raw (header included)
 // for the transcript. Pointers die at the next call. One name, one
 // signature and one sentence of contract on both transports, and one

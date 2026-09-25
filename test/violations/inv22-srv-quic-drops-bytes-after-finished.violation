@@ -1,0 +1,16 @@
+invariant: INV-22
+file: srv_quic.c
+catches: quic_loop_test
+reason: the QUIC server completes on a client Finished that has more bytes
+  after it in the same Handshake delivery. srv_complete empties cfg.buf, so
+  drive's check never sees the bytes, and a KeyUpdate that RFC 9001 section
+  6 makes 0x010a is dropped while the server reports CH_ST_CONNECTED.
+  colibri found it with h3spec. test/quic_loop_close.h delivers a Finished
+  and a KeyUpdate in one call and requires 0x010a and no ticket.
+
+--- old
+    if (q->t.pt_off != q->t.pt_len) {
+        return quic_refuse_unread(q);
+    }
+--- new
+    (void)quic_refuse_unread;

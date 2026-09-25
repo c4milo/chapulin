@@ -209,6 +209,17 @@ int hsr_next_msg(handshake_state *h, uint8_t *type, const uint8_t **raw, size_t 
 }
 #endif // CH_TRANSPORT_QUIC || CH_TRANSPORT_RECORD
 
+#ifdef CH_TRANSPORT_QUIC
+int hsr_peek_type(const handshake_state *h, uint8_t *type) {
+    const ch_tls *t = h->t;
+    if (t->pt_off == t->pt_len) {
+        return HSR_INCOMPLETE;
+    }
+    *type = t->cfg.buf[t->pt_off];
+    return CH_OK;
+}
+#endif
+
 int hsr_transcript_hash(handshake_state *h, size_t hash_len, uint8_t *out) {
     transcript_hash_after(&h->t->transcript, hash_len, NULL, 0, out);
     return CH_OK;

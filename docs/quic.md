@@ -1628,7 +1628,7 @@ and `pt_len`.
 | `handshake_rx`, `handshake_tx`, `handshake_hp_rx`, `handshake_hp_tx`, `app_tx`, `app_rx`, `app_hp_rx`, `app_hp_tx`, `key_phase`, and `ch_tls`'s own `rd_secret` and `wr_secret` | `quic_keys`, `quic_keys[CH_QUIC_KEY_SETS]`, `quic_hp_key`, `uint8_t`, `uint8_t[32]` | `app_rx`'s three slots are the named indices, never a computed one | written into the fields of one named level; read by the packet calls and by `quic ku`. Each `quic_hp_key` is written once and never rewritten, which is the §6.1 rule (`rfc9001.txt:1607`) |
 | `initial_dcid`, `initial_dcid_len` | `uint8_t[CH_QUIC_DCID_MAX]`, `uint8_t` | `initial_dcid_len <= CH_QUIC_DCID_MAX`, RFC 9000 §17.2's cap (`rfc9000.txt:4991-4998`) | the Destination Connection ID the Initial keys are derived from, written by `ch_quic_initial_keys` and read by the two Initial packet calls, which build the key they need on their own stack. It holds no key, which is INV-26 |
 | `levels_ready` | `uint8_t` | six bits, one per level per direction at `CH_QUIC_LEVEL_BIT` | the only answer to "installed and not discarded", which the packet calls read on every call. A key set of all-zero bytes is a legitimate derivation, so no call decides that question by comparing key bytes. A failure clears every read bit and keeps the write bits; each one left admits one `ch_quic_seal_close`, which clears it |
-| `error_code` | `uint64_t` | 0, or a QUIC transport error code | the code `ch_quic_error_code` reports for the four refusals RFC 9001 makes a connection error of type PROTOCOL_VIOLATION. `quic_fail_level` and those four steps are its only writers, and the caller reads it after the call that failed |
+| `error_code` | `uint64_t` | 0, or a QUIC transport error code | the code `ch_quic_error_code` reports for the four refusals RFC 9001 makes a connection error of type PROTOCOL_VIOLATION. `quic_fail_level`, `quic_refuse_unread` and those four steps are its only writers, and the caller reads it after the call that failed |
 | `open_failures`, `initial_sealed` | `uint64_t` each | `open_failures` stops the session at RFC 9001 §6.6's integrity limit, `initial_sealed` at its confidentiality limit | the §6.6 counts are per connection, so every call adds to the count the last call left |
 
 Five things are never saved: a pointer into `cfg.buf` past the step that took
@@ -2369,7 +2369,10 @@ Read this as part of the profile, not as a list of future work.
   fails with `CH_EPROTO` in the same call. The same delivery with
   `pt_off == pt_len` is `CH_EINVAL` instead, because no bytes went
   unconsumed and the caller may deliver them again once the keys are
-  installed. `ch_quic_error_code` reports 0x0a for both failures.
+  installed. `ch_quic_error_code` reports 0x0a for both failures, unless
+  the first byte left over opens a KeyUpdate: RFC 9001 §6 makes a KeyUpdate
+  0x010a wherever it arrives (`rfc9001.txt:1565-1568`), so
+  `quic_refuse_unread` reports that code instead.
 - **The server's transport parameters reach the caller before this client has
   authenticated the server.** `on_transport_params` fires from the
   EncryptedExtensions step, which in pin and webpki modes runs before
