@@ -272,13 +272,17 @@ static void test_close_after_failure(void) {
                        &pt_len) == CH_EINVAL);
 
     // The Initial close, at CH_QUIC_CLOSE_MAX exactly: one byte more is
-    // refused and keeps the keys.
-    size_t reason_len = CH_QUIC_CLOSE_MAX - sizeof hdr - GCM_TAG - 6;
-    frame_len = close_frame(frame, ch_quic_error_code(&q), reason_len + 1);
+    // refused and keeps the keys. The packet is filled the way a client
+    // fills its Initial to 1200 bytes (RFC 9000 §14.1): a short
+    // CONNECTION_CLOSE frame, then PADDING frames, each one zero byte.
+    size_t close_len = close_frame(frame, ch_quic_error_code(&q), 0);
+    size_t padded_len = CH_QUIC_CLOSE_MAX - sizeof hdr - GCM_TAG;
+    memset(frame + close_len, 0x00, padded_len + 1 - close_len);
+    frame_len = padded_len + 1;
     CHECK(ch_quic_seal_close(&q, CH_LEVEL_INITIAL, 7, 1, hdr, sizeof hdr, frame, frame_len, pkt,
                              sizeof pkt, &pkt_len) == CH_EINVAL);
     CHECK(q.initial_dcid_len == sizeof dcid);
-    frame_len = close_frame(frame, ch_quic_error_code(&q), reason_len);
+    frame_len = padded_len;
     CHECK(ch_quic_seal_close(&q, CH_LEVEL_INITIAL, 7, 1, hdr, sizeof hdr, frame, frame_len, pkt,
                              sizeof pkt, &pkt_len) == CH_OK);
     CHECK(pkt_len == CH_QUIC_CLOSE_MAX);

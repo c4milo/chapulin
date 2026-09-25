@@ -273,11 +273,10 @@ int ch_quic_seal(ch_quic *q, uint8_t level, uint64_t pn, size_t pn_len, const ui
 
 // Seals the one CONNECTION_CLOSE packet a failed session sends at one level (RFC 9001
 // §4.8), then wipes that level's write keys (docs/decisions.md 57). It takes ch_quic_seal's
-// arguments, requirements and argument refusals. pt is one CONNECTION_CLOSE frame of type
-// 0x1c and nothing else: chapulin builds no frame and cannot check one without parsing
-// QUIC frames, which the caller owns. A client whose Initial datagram must be at least 1200
-// bytes pads the datagram after this packet, as RFC 9000 §14.1 allows
-// (rfc9000.txt:4645-4647). Requires: q->t.state is CH_ST_FAILED and
+// arguments, requirements and argument refusals. pt is one CONNECTION_CLOSE frame (0x1c),
+// then nothing or PADDING frames (zero bytes) alone, which a client adds to reach 1200 bytes
+// (RFC 9000 §14.1, rfc9000.txt:4642-4645): chapulin builds and checks no frame, since that
+// means parsing QUIC frames, which the caller owns. Requires: q->t.state is CH_ST_FAILED and
 // CH_QUIC_LEVEL_BIT(level, CH_KEY_WRITE) is set, which a failure leaves at each level
 // whose write keys were installed and not discarded.
 //
