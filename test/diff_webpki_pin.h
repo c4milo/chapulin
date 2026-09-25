@@ -110,14 +110,13 @@ static void diff_pin_c_reply(const uint8_t *list, size_t list_len, uint8_t (*pin
     }
 }
 
-static void diff_pin_compare(const uint8_t *list, size_t list_len, uint8_t (*pins)[SHA256_LEN],
-                             size_t pin_count) {
-    static char cmd[DIFF_PIN_LINE_MAX];
-    static char want[DIFF_PIN_REPLY_MAX];
+// The request line for op: the pins, "-" for none, then the list.
+static void diff_pin_command(char *cmd, const char *op, const uint8_t *list, size_t list_len,
+                             uint8_t (*pins)[SHA256_LEN], size_t pin_count) {
     if (list_len > DIFF_PIN_LIST_MAX || pin_count > CH_SPKI_PIN_MAX) {
         die("webpki_raw: a driver case over its bounds");
     }
-    int at = snprintf(cmd, sizeof cmd, "webpki_raw ");
+    int at = snprintf(cmd, DIFF_PIN_LINE_MAX, "%s ", op);
     if (pin_count == 0) {
         cmd[at++] = '-';
     }
@@ -129,6 +128,13 @@ static void diff_pin_compare(const uint8_t *list, size_t list_len, uint8_t (*pin
     }
     cmd[at++] = ' ';
     (void)hex_encode(cmd + at, list, list_len);
+}
+
+static void diff_pin_compare(const uint8_t *list, size_t list_len, uint8_t (*pins)[SHA256_LEN],
+                             size_t pin_count) {
+    static char cmd[DIFF_PIN_LINE_MAX];
+    static char want[DIFF_PIN_REPLY_MAX];
+    diff_pin_command(cmd, "webpki_raw", list, list_len, pins, pin_count);
     diff_pin_c_reply(list, list_len, pins, pin_count, want, sizeof want);
     diff_pin_rows++;
     diff_pin_accepted += want[0] == 'o';
@@ -289,6 +295,8 @@ static void diff_pin_random(void) {
     }
 }
 
+#include "diff_webpki_leaf_pin.h"
+
 static void diff_webpki_pin(void) {
     for (size_t i = 0; i < sizeof webpki_corpus_chains / sizeof webpki_corpus_chains[0]; i++) {
         diff_pin_row_keys(&webpki_corpus_chains[i]);
@@ -312,6 +320,7 @@ static void diff_webpki_pin(void) {
     diff_pin_random();
     (void)printf("diff: webpki_raw: %zu corpus keys, %ld rows (%ld accepted), C == spec\n",
                  diff_pin_key_count, diff_pin_rows, diff_pin_accepted);
+    diff_webpki_leaf_pin();
 }
 
 #else

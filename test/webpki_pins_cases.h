@@ -53,10 +53,12 @@ static void test_webpki_pins_alone(void) {
     mock_server s;
     uint8_t types[2];
     // Pins alone need no anchor, hostname or clock, and the hello offers
-    // the raw public key alone and names no server.
+    // the raw public key and then X.509, whose leaf a pin must name
+    // (docs/decisions.md 65), and names no server.
     ch_cfg cfg = pins_alone_cfg(&s);
     CHECK(sends_client_hello(&cfg));
-    CHECK(offered_cert_types(&s, types) == 1 && types[0] == CH_CERT_TYPE_RAW_PUBLIC_KEY);
+    CHECK(offered_cert_types(&s, types) == 2 && types[0] == CH_CERT_TYPE_RAW_PUBLIC_KEY &&
+          types[1] == CH_CERT_TYPE_X509);
     size_t len = 0;
     CHECK(hello_ext(s.hello, s.hello_len, EXT_SERVER_NAME, &len) == NULL);
     // A hostname beside the pins is sent, and must still have its shape.

@@ -1,0 +1,14 @@
+invariant: INV-33
+file: handshake_auth.c
+catches: webpki_auth_test
+reason: a chain accepted under pins alone skips CertificateVerify, so a
+  server that presents a pinned leaf it does not hold the key for passes:
+  the certificate is public, and only the signature proves possession.
+  test/webpki_leaf_pins.h's bad_signature rows under a leaf pin, which
+  want decrypt_error, object.
+
+--- old
+    int sig_ok = verify_leaf_signature(&h->leaf, signed_hash, sig, sig_len);
+--- new
+    int sig_ok = verify_leaf_signature(&h->leaf, signed_hash, sig, sig_len) ||
+                 (h->t->cfg.anchor_count == 0 && h->t->server_cert_type == CH_CERT_TYPE_X509);

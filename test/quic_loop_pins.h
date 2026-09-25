@@ -9,9 +9,9 @@
 //  1. A hostname and anchors alone: test_webpki_resumption in
 //     quic_loop_webpki.h.
 //  2. Pins alone, with no hostname, anchor or clock: the hello offers the
-//     raw public key alone and names no server. This server answers with
-//     its chain, and the client refuses it with unsupported_certificate,
-//     as it does over TCP (RFC 7250 §4.2).
+//     raw public key and X.509 and names no server. This server answers
+//     with its chain, which passes when a pin names its leaf's key and no
+//     other (docs/decisions.md 65), as over TCP.
 //  3. A hostname, anchors and pins: the walk and the name check pass, and
 //     a pin must name a key on the path the walk verified.
 //
@@ -271,10 +271,11 @@ static void test_pin_beyond_path(void) {
 }
 
 // Configuration 2: pins alone need no hostname, anchor or clock, and the
-// hello offers the raw public key alone and names no server. This server
-// ignores the offer and sends its chain, which pins alone have no anchor
-// to verify, so the client refuses it with unsupported_certificate before
-// it reads the chain, even under a pin that names the leaf.
+// hello offers the raw public key, then X.509, and names no server. This
+// server ignores the offer and sends its chain. A pin on the leaf's key
+// passes, and CertificateVerify is checked under that key; a pin on the
+// intermediate, on the root or on nothing is refused with
+// bad_certificate, because under pins alone only the leaf's key counts.
 static void test_pins_alone(void) {
     static uint8_t hello[CH_HELLO_MAX];
     ch_cfg scfg;
@@ -287,22 +288,33 @@ static void test_pins_alone(void) {
     pins_alone_client(&ccfg, 1);
     size_t n = staged_hello(&ccfg, hello, sizeof hello);
     CHECK(n > 0);
-    CHECK(offered_cert_types(hello, n, types) == 1 && types[0] == CH_CERT_TYPE_RAW_PUBLIC_KEY);
+    CHECK(offered_cert_types(hello, n, types) == 2 && types[0] == CH_CERT_TYPE_RAW_PUBLIC_KEY &&
+          types[1] == CH_CERT_TYPE_X509);
     CHECK(hello_ext(hello, n, EXT_SERVER_NAME, &len) == NULL);
     CHECK(hello_first_ext(hello, n) == EXT_ALPN);
-    // A raw key verifies CertificateVerify as a leaf key does, so the
-    // hello still offers the signature schemes.
+    // The key the pins accept verifies CertificateVerify, so the hello
+    // offers the signature schemes.
     CHECK(hello_sigalgs(hello, n, schemes, 8) == 5);
-    check_refused_at_certificate(&ccfg, &scfg, ALERT_UNSUPPORTED_CERTIFICATE);
-    CHECK(client.t.server_cert_type == CH_CERT_TYPE_X509);
-    // A hostname beside the pins goes out as server_name, and the answer
-    // is refused the same way.
+    CHECK(run_quic(&ccfg, &scfg));
+    CHECK(client.t.server_cert_type == CH_CERT_TYPE_X509 && handshake_messages() == 4);
+    check_keys_agree();
+    // A hostname beside the pins goes out as server_name and is checked
+    // against nothing: the leaf does not name other.example.test.
     pins_alone_client(&ccfg, 1);
-    ccfg.hostname = (const uint8_t *)"s3.example.test";
-    ccfg.hostname_len = strlen("s3.example.test");
+    ccfg.hostname = (const uint8_t *)"other.example.test";
+    ccfg.hostname_len = strlen("other.example.test");
     n = staged_hello(&ccfg, hello, sizeof hello);
     CHECK(n > 0 && hello_first_ext(hello, n) == EXT_SERVER_NAME);
-    check_refused_at_certificate(&ccfg, &scfg, ALERT_UNSUPPORTED_CERTIFICATE);
+    CHECK(run_quic(&ccfg, &scfg));
+    CHECK(r2_pin(1, pins[0]));
+    pins_alone_client(&ccfg, 1);
+    check_refused_at_certificate(&ccfg, &scfg, ALERT_BAD_CERTIFICATE);
+    anchor_pin(webpki_corpus_anchors_root_p384, pins[0]);
+    pins_alone_client(&ccfg, 1);
+    check_refused_at_certificate(&ccfg, &scfg, ALERT_BAD_CERTIFICATE);
+    pin_of_nothing(pins[0]);
+    pins_alone_client(&ccfg, 1);
+    check_refused_at_certificate(&ccfg, &scfg, ALERT_BAD_CERTIFICATE);
 }
 
 // What ch_quic_init refuses in configuration 2, with the webpki_cfg.c
@@ -414,22 +426,38 @@ static void test_pinned_decline(void) {
     memcpy(kept.binding, binding, sizeof binding);
 }
 
-// A ticket bound under pins alone: ch_quic_init takes it with the pins
-// that bound it, no hostname and no anchor, and refuses it under another
-// pin.
-static void test_pins_alone_binding(void) {
+// A pins-alone session's ticket stays bound to its pins: it resumes under
+// the same pin with no Certificate, and ch_quic_init refuses it under
+// another pin, under the same pin beside anchors, and under anchors with
+// no pin.
+static void test_pins_alone_resumption(void) {
     static ch_quic probe;
+    ch_cfg scfg;
     ch_cfg ccfg;
-    uint8_t binding[SHA256_LEN];
-    memcpy(binding, kept.binding, sizeof binding);
+    webpki_server(&scfg, ticket_key);
     CHECK(r2_pin(0, pins[0]));
     pins_alone_client(&ccfg, 1);
+    size_t count = kept.count;
+    CHECK(run_quic(&ccfg, &scfg));
+    take_ticket();
+    CHECK(kept.count == count + 1 && kept_ticket_bound(&ccfg));
+    pins_alone_client(&ccfg, 1);
     present_ticket(&ccfg);
-    bind_kept_ticket(&ccfg);
-    CHECK(ch_quic_init(&probe, &ccfg) == CH_OK);
-    pin_of_nothing(pins[0]);
+    CHECK(run_quic(&ccfg, &scfg));
+    CHECK(client.t.psk_selected == 1 && handshake_messages() == 2);
+    take_ticket();
+    CHECK(kept_ticket_bound(&ccfg));
+    CHECK(r2_pin(1, pins[0]));
+    pins_alone_client(&ccfg, 1);
+    present_ticket(&ccfg);
     CHECK(ch_quic_init(&probe, &ccfg) == CH_EINVAL);
-    memcpy(kept.binding, binding, sizeof binding);
+    CHECK(r2_pin(0, pins[0]));
+    pinned_client(&ccfg, webpki_corpus_anchors_root_p384, 1);
+    present_ticket(&ccfg);
+    CHECK(ch_quic_init(&probe, &ccfg) == CH_EINVAL);
+    webpki_client(&ccfg, webpki_corpus_anchors_root_p384, "s3.example.test");
+    present_ticket(&ccfg);
+    CHECK(ch_quic_init(&probe, &ccfg) == CH_EINVAL);
 }
 
 static void test_webpki_pins(void) {
@@ -443,7 +471,7 @@ static void test_webpki_pins(void) {
     test_pins_alone_refusals();
     test_pinned_resumption();
     test_pinned_decline();
-    test_pins_alone_binding();
+    test_pins_alone_resumption();
 }
 
 #endif

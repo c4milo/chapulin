@@ -67,17 +67,19 @@ static int spki_pins_ok(const ch_cfg *cfg) {
 }
 
 // Whether the config trusts SPKI pins alone: pins, and neither an
-// anchor list nor a count. The client then offers raw public keys
-// alone, and no certificate chain is verified.
+// anchor list nor a count. The client then accepts a raw public key or a
+// chain whose leaf key a pin names, and verifies no chain above the leaf
+// (webpki_pin.h).
 static int pins_alone(const ch_cfg *cfg) {
     return cfg->spki_pin_count > 0 && cfg->anchors == NULL && cfg->anchor_count == 0;
 }
 
 // The trust rule. Anchors take a hostname for the leaf to name and a
 // clock for the dates to meet. Pins alone take neither: nothing checks
-// a name or a date on a raw public key, so the clock is not read, and a
-// hostname, which is then only the server_name to send, may be unset.
-// One that is set must still have the shape webpki_hostname_ok checks.
+// a name or a date on a raw public key or on a pinned leaf, so the clock
+// is not read, and a hostname, which is then only the server_name to
+// send, may be unset. One that is set must still have the shape
+// webpki_hostname_ok checks.
 static int trust_ok(const ch_cfg *cfg) {
     if (pins_alone(cfg)) {
         return (cfg->hostname == NULL && cfg->hostname_len == 0) || hostname_ok(cfg);

@@ -275,6 +275,8 @@ static void test_captures(void) {
 
 #include "webpki_cert_mutants.h"
 #include "webpki_ext_mutants.h"
+// The key reader's rows read webpki_cert_mutants.h's base leaf and helpers.
+#include "webpki_cert_key_mutants.h"
 
 int main(void) {
     test_corpus();
@@ -282,6 +284,7 @@ int main(void) {
     test_captures();
     test_mutants();
     test_extension_mutants();
+    test_key_mutants();
     if (failures == 0) {
         (void)printf("webpki_cert: all tests passed\n");
     }

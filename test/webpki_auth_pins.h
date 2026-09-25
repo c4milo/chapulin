@@ -11,7 +11,8 @@
 // by the reader. Under the X.509 type with anchors, each accepted chain
 // row is accepted with a pin on its leaf, its intermediate or its anchor,
 // and refused with a pin only on a certificate beyond the path, on an
-// anchor that did not verify, or on nothing.
+// anchor that did not verify, or on nothing. test/webpki_leaf_pins.h
+// holds the X.509 type under pins alone.
 //
 // Included by test/webpki_auth_test.c after run_flight and its helpers.
 #ifndef CH_TEST_WEBPKI_AUTH_PINS_H
@@ -381,25 +382,6 @@ static void test_pin_anchor_index(void) {
                   ALERT_BAD_CERTIFICATE);
 }
 
-// Pins without anchors offer the raw key alone, so an X.509 answer is
-// refused with unsupported_certificate before any chain is read, even
-// one whose leaf a pin names (RFC 7250 §4.2).
-static void test_pins_without_anchors(void) {
-    const webpki_auth_vector *v = auth_vector_named("rsa_pss");
-    const webpki_corpus_chain *row = chain_named(v->chain);
-    if (row == NULL) {
-        return;
-    }
-    pin_set pins;
-    handshake_state h;
-    CHECK(entry_pin(row->message, row->message_len, 0, pins[0]));
-    webpki_corpus_chain bare = *row;
-    bare.anchor_count = 0;
-    int rc = chain_flight(v, &bare, row->message, row->message_len, pins, 1, &h);
-    check_refusal("x509 answer without anchors", rc, h.alert, CH_EAUTH,
-                  ALERT_UNSUPPORTED_CERTIFICATE);
-}
-
 static void test_chain_pins(void) {
     for (size_t i = 0; i < sizeof webpki_auth_vectors / sizeof webpki_auth_vectors[0]; i++) {
         const webpki_auth_vector *v = &webpki_auth_vectors[i];
@@ -409,7 +391,6 @@ static void test_chain_pins(void) {
     }
     test_pin_beyond_path();
     test_pin_anchor_index();
-    test_pins_without_anchors();
 }
 
 #endif

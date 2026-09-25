@@ -1,0 +1,14 @@
+invariant: INV-33
+file: webpki_pin.c
+catches: webpki_session_test
+reason: pins alone offer the raw key alone, the offer before
+  docs/decisions.md 65, so a server that holds both types may not select
+  X.509 even though the client accepts a pinned leaf, and one that selects
+  it anyway is refused in EncryptedExtensions. test/webpki_pins_cases.h's
+  pins-alone offer row, which wants both types, objects.
+
+--- old
+    return (uint8_t)((1U << CH_CERT_TYPE_RAW_PUBLIC_KEY) | (1U << CH_CERT_TYPE_X509));
+--- new
+    return (uint8_t)((1U << CH_CERT_TYPE_RAW_PUBLIC_KEY) |
+                     (cfg->anchor_count > 0 ? (1U << CH_CERT_TYPE_X509) : 0U));

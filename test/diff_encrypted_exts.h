@@ -59,10 +59,12 @@ static void hspd_alpn_offer(size_t count, ch_alpn_protocol *offer, char *token, 
 }
 #endif
 
-// The server_certificate_type offers a row draws from, as
-// webpki_cert_types_offered's bit sets: none, the raw key alone (SPKI
-// pins without anchors), and the raw key and X.509 (pins and anchors).
-// A build outside TRUST=webpki draws the first alone.
+// The server_certificate_type offers a row draws from, as bit sets:
+// none, the raw key alone, and the raw key and X.509. Since
+// docs/decisions.md 65 webpki_cert_types_offered answers only the first
+// and the last, the second with no pins and the third with any; the
+// parser takes any set, so the rows keep the raw key alone too. A build
+// outside TRUST=webpki draws the first alone.
 static const uint8_t hspd_cert_type_offers[3] = {0, 1U << 2, (1U << 2) | (1U << 0)};
 
 // The offer as the model reads it: the hex of the CertificateType list

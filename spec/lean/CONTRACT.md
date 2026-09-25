@@ -458,6 +458,16 @@ Spec.WebpkiPin.pathPinned : (pins : List ByteArray) → (anchors : List Anchor) 
                         -- of the anchor at index `anchor`; an entry after the path does
                         -- not count. Driven through `webpki_chain` on accepted chains,
                         -- the domain webpki_pin.h's contract names.
+Spec.WebpkiPin.verifyLeafPin : (pins : List ByteArray) → (list : ByteArray) → LeafVerdict
+                        -- an X.509 CertificateEntry list under SPKI pins alone
+                        -- (docs/decisions.md 65): framed as readEntries? frames it, entry
+                        -- 0 read by certificateKey? only as far as its key, the fields
+                        -- after the key framed as whole TLVs that fill their containers,
+                        -- and a pin equal to the SHA-256 of that SubjectPublicKeyInfo. A
+                        -- pin on another entry names nothing. Every CH_EPROTO is
+                        -- rejected, as webpki_chain reports them, and a miss is unpinned.
+                        -- Line op: `webpki_leaf <pins> <list>` → `ok <rsa|p256|p384>
+                        -- <key>` / `rejected` / `unpinned`.
 Spec.Handshake.step   : (mode : Mode) → State → Msg → Option State      -- RFC 9846 §4 order of
                         -- server-to-client messages after the ClientHello; none = fatal
                         -- (unexpected_message). Msg has one constructor per line-protocol
@@ -805,6 +815,11 @@ Spec.WebpkiPin.verifyRawKey_ok
                              -- spkiMax bytes and nothing after it, whose bytes readSpki?
                              -- reads whole as the returned key and whose SHA-256 is one
                              -- of the pins
+Spec.WebpkiPin.verifyLeafPin_ok
+                             an accepted chain under pins alone frames as the walk
+                             -- frames it, and one of the pins is the SHA-256 of the
+                             -- SubjectPublicKeyInfo certificateKey? reads out of its
+                             -- first entry, whose key is the one returned
 Spec.Record.nonce_inj        distinct sequence numbers below 2^64 give distinct record
                              -- nonces (RFC 9846 §5.3): within one traffic key the
                              -- nonce never repeats
@@ -920,7 +935,7 @@ means the module's selftest plus the differential oracle carry it;
 | WebpkiSigalg | 9 | the decoding reader accepts exactly the four canonical encodings, one algorithm each (the byte-compare view and the decode view agree); FIPS 186-4 §6.4's integer rule equals the C's byte cut for P-256 with SHA-384 and its zero pad for P-384 with SHA-256, with the pad lemma and big-endian concatenation lemma under them; the cap and both family mismatches refuse. The signature arithmetic is the RSA, P-256 and P-384 modules' and stays vector-checked |
 | WebpkiCert | 6 | an accepted certificate is exactly one Certificate SEQUENCE whose TBS content is the recorded range of the input and whose outer signatureAlgorithm is the encoding of the recorded algorithm; the recorded subjectAltName range lies inside the extensions field and the TBS content; the recorded SubjectPublicKeyInfo range lies inside the TBS content and reads back as the recorded key; the leaf saw keyUsage, extendedKeyUsage and subjectAltName with cA false, an issuer keyUsage and basicConstraints with cA true. Which values each extension admits, the caps and the other fields stay executable oracle only: the corpus certificates, their single-byte changes and the random extension lists of the differential |
 | Webpki | 3 | soundness of the walk: an accepted chain has a verified signature path to an anchor, stated as an inductive `HasPath` and proved for every walk that reaches one, of the length and ending at the anchor index the verdict reports, and that index names the first anchor that verifies; the leaf the accepted key comes from parsed under the leaf arm, was valid at the clock and matched `cfg.hostname` through a dNSName of its own subjectAltName. The entry framing and which refusal each failure names stay executable oracle only: the 25 corpus chains, the 5 captures and their clock, hostname, anchor, entry and byte mutations in the differential |
-| WebpkiPin | 1 | soundness of the raw public key rule: an accepted list is one CertificateEntry of 1 to `spkiMax` bytes and nothing after it, whose bytes `readSpki?` reads whole as the returned key and whose SHA-256 is one of the pins. Which refusal each failure names, and path pinning, stay executable oracle only: the corpus keys framed as raw entries with their reframings, byte changes and random lists, and the chain rows under a pin on each entry, each anchor and nothing, in the differential |
+| WebpkiPin | 2 | soundness of the raw public key rule: an accepted list is one CertificateEntry of 1 to `spkiMax` bytes and nothing after it, whose bytes `readSpki?` reads whole as the returned key and whose SHA-256 is one of the pins; and soundness of the leaf rule under pins alone: an accepted chain frames as the walk frames it and a pin names the key its first entry carries. Which refusal each failure names, what the key reader admits, and path pinning, stay executable oracle only: the corpus and capture chains under a pin on the leaf, the second entry and nothing, reframed and with single bytes changed, the corpus keys framed as raw entries with their reframings, byte changes and random lists, and the chain rows under a pin on each entry, each anchor and nothing, in the differential |
 | X25519 | 2 | RFC 7748 §5 clamping: every decoded scalar is a multiple of the cofactor 8, and has bit 254 set with bit 255 clear. The first keeps `k * P` in the prime-order subgroup, the second fixes the ladder's iteration count. The ladder arithmetic itself stays vector-checked |
 | X509Der | 19 | DER canonicality: a length, a TLV, and an INTEGER are accepted only in the one encoding X.690 §10.1 and §8.3.2 admit, so the reader is DER-strict rather than BER-lenient; plus the encode/decode round trips and the §8.19.2 subidentifier rule |
 | X509 | 4 | parse soundness: an accepted list reports a key only after a signature over the complete DER of the TBSCertificate that carried it verified under the pinned key, or under an intermediate the pinned key itself signed; the entry is a byte range of the list and no third entry can follow. Acceptance policy beyond that is executable oracle only: mint/parse round trips for the single leaf and the chained pair (self-checked signatures; OpenSSL material is exercised by the C strictness suite) and the differential |

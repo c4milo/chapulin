@@ -1,0 +1,19 @@
+invariant: INV-33
+file: handshake_auth.c
+catches: quic_loop_webpki
+reason: a TRANSPORT=quic-nonblocking build keeps the rule before
+  docs/decisions.md 65 and refuses every chain under pins alone, so a
+  DNS-over-QUIC client with a leaf pin and no anchor never connects where
+  its DNS-over-TLS twin does. The TCP tests pass on this edit;
+  test/quic_loop_pins.h's leaf-pin rows against this tree's QUIC server
+  object.
+
+--- old
+        return webpki_verify_leaf_pin(list, list_len, cfg, &h->leaf, &h->alert);
+--- new
+#ifdef CH_TRANSPORT_QUIC_NONBLOCKING
+        h->alert = ALERT_UNSUPPORTED_CERTIFICATE;
+        return CH_EAUTH;
+#else
+        return webpki_verify_leaf_pin(list, list_len, cfg, &h->leaf, &h->alert);
+#endif

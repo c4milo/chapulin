@@ -1,0 +1,14 @@
+invariant: INV-5
+file: webpki_cert.c
+catches: proof/prove-one.sh webpki_cert_key
+reason: the reader a leaf pinned without anchors goes through parses the
+  whole TBSCertificate under the leaf arm, extensions included, where
+  docs/decisions.md 65 reads the certificate only as far as its key. A
+  leaf the walk would refuse for a missing subjectAltName or keyUsage bit
+  is then refused under a pin that names its key. The webpki_cert_key
+  harness asserts the extensions reader never runs.
+
+--- old
+    int rc = read_tbs_key(&t, out, &sigalg_tlv, &sigalg_tlv_len, alert);
+--- new
+    int rc = read_tbs(out->tbs, out->tbs_len, 0, out, &sigalg_tlv, &sigalg_tlv_len, alert);

@@ -330,6 +330,33 @@ rules:
       exclude: [test, proof, fuzz, spec, bench, bin, examples, handshake_auth.c, x509.c]
     pattern: x509_verify_leaf(...)
 
+  - id: inv-20-webpki-leaf-pin-entry
+    languages: [c]
+    severity: ERROR
+    message: >-
+      INV-20: webpki_verify_leaf_pin, the rule for a chain under SPKI pins
+      alone, has one audited call site, in handshake_auth.c, where every
+      failure feeds the alert and wipe discipline and CertificateVerify
+      follows under the key it returns. webpki_pin.c is excluded because
+      it defines the entry, not because it may call it.
+    paths:
+      exclude: [test, proof, fuzz, spec, bench, bin, examples, handshake_auth.c, webpki_pin.c]
+    pattern: webpki_verify_leaf_pin(...)
+
+  - id: inv-20-webpki-leaf-key-reader
+    languages: [c]
+    severity: ERROR
+    message: >-
+      INV-20: webpki_read_certificate_key reads a certificate only as far
+      as its key and judges nothing after it, so its one caller is
+      webpki_verify_leaf_pin in webpki_pin.c, which compares the key with
+      the pins. A caller that took its answer for a verified certificate
+      would skip the extensions, the dates and the names. webpki_cert.c is
+      excluded because it defines the reader.
+    paths:
+      exclude: [test, proof, fuzz, spec, bench, bin, examples, webpki_pin.c, webpki_cert.c]
+    pattern: webpki_read_certificate_key(...)
+
   - id: inv-20-provisioning-entry
     languages: [c]
     severity: ERROR

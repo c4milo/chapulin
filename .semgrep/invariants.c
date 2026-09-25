@@ -55,6 +55,9 @@ int asn1_get_tag(const uint8_t *p, size_t n);
 int der_parse(const uint8_t *sig, size_t n, uint8_t *r, uint8_t *s);
 int x509_verify_leaf(const uint8_t *list, size_t list_len, const uint8_t *ca_key_a, size_t ca_a_len,
                      const uint8_t *ca_key_b, size_t ca_b_len, void *out, uint8_t *alert);
+int webpki_verify_leaf_pin(const uint8_t *list, size_t list_len, const void *cfg, void *out,
+                           uint8_t *alert);
+int webpki_read_certificate_key(const uint8_t *cert, size_t cert_len, void *out, uint8_t *alert);
 long time(long *t);
 void *malloc(size_t n);
 void free(void *p);
@@ -108,6 +111,10 @@ int use_everything(void) {
     quic_header_protect(buf, 1, 4, 0, buf);
     // ruleid: inv-20-cert-entry-point
     x509_verify_leaf(buf, sizeof buf, buf, sizeof buf, buf, sizeof buf, 0, buf);
+    // ruleid: inv-20-webpki-leaf-pin-entry
+    webpki_verify_leaf_pin(buf, sizeof buf, 0, 0, buf);
+    // ruleid: inv-20-webpki-leaf-key-reader
+    webpki_read_certificate_key(buf, sizeof buf, 0, buf);
     // ruleid: inv-20-no-time-calls
     time(0);
 

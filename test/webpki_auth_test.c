@@ -17,6 +17,8 @@
 // produce, and a signature over the content hashed the other way.
 // test/webpki_auth_pins.h drives the same flight under SPKI pins: RFC
 // 7250 raw public keys, and chains a pin must name a key on.
+// test/webpki_leaf_pins.h drives it under pins alone, where a pin must
+// name the leaf's key.
 //
 // Its own binary, built with -DCH_TRUST_WEBPKI over the sources that
 // object packages: ch_cfg carries the anchors, the hostname and the
@@ -311,6 +313,8 @@ static void test_scheme_table(void) {
 }
 
 #include "webpki_auth_pins.h"
+// The leaf pin rows read webpki_auth_pins.h's helpers.
+#include "webpki_leaf_pins.h"
 
 int main(void) {
     test_vectors();
@@ -319,6 +323,7 @@ int main(void) {
     test_raw_key_framing();
     test_raw_key_bound();
     test_chain_pins();
+    test_leaf_pins();
     if (failures > 0) {
         (void)fprintf(stderr, "%d failure(s)\n", failures);
         return 1;

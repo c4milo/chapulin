@@ -510,23 +510,43 @@ SubjectPublicKeyInfo (RFC 7858 §4.2, `rfc7858.txt:434-440`), and the
 caller sets up to `CH_SPKI_PIN_MAX` (4) of them in `ch_cfg.spki_pins`.
 
 - **The offer.** With pins set, the ClientHello sends
-  `server_certificate_type` (RFC 7250 §4.1) listing RawPublicKey, and X509
-  after it when anchors are also set. Without pins it sends no extension,
-  and the server sends the X.509 type RFC 9846 §4.5.1 defaults to. A
+  `server_certificate_type` (RFC 7250 §4.1) listing RawPublicKey, then
+  X509, with anchors or without. Without pins it sends no extension, and
+  the server sends the X.509 type RFC 9846 §4.5.1 defaults to. A
   resuming hello makes the same offer, because a server that declines the
   ticket sends a Certificate after all (see "Resumption").
 - **Pins alone** are a whole configuration: no anchors, no clock, and no
   hostname unless the caller wants one sent as `server_name`. This is RFC
-  8310's "SPKI + IP" profile, for a DNS server on a private network with
-  no certificate from a public CA. The client offers RawPublicKey alone.
-  Without a hostname the hello carries no `server_name`, and an
-  EncryptedExtensions that acknowledges one anyway is refused with
-  `unsupported_extension`, because the server acknowledged a name nobody
-  sent (RFC 6066 §3).
+  8310's "SPKI + IP" profile. The server proves it holds a pinned leaf
+  key, sent raw or inside a certificate (`docs/decisions.md` 65), which
+  reaches a DNS server with no certificate from a public CA and a public
+  resolver whose certificate the caller pins. Without a hostname the hello
+  carries no `server_name`, and an EncryptedExtensions that acknowledges
+  one anyway is refused with `unsupported_extension`, because the server
+  acknowledged a name nobody sent (RFC 6066 §3).
 - **A raw public key** carries no name and no dates, so the pins are the
   whole check: the one CertificateEntry must hold a SubjectPublicKeyInfo
   the mode's key rules accept, and one pin must equal its SHA-256. The
   key then verifies CertificateVerify, as a leaf key does.
+- **A chain under pins alone** has no anchor, clock or hostname to check
+  it against, so a pin must name the leaf's key and no other key counts.
+  The list is framed as the walk frames it, and the leaf, entry 0, is
+  read only as far as its SubjectPublicKeyInfo (`webpki_read_certificate_key`):
+  version, serial number, signature algorithm, issuer, validity, subject
+  and key, each by the reader the walk uses, the dates for their shape
+  alone. The extensions field, the outer signature algorithm and the
+  signature are skipped as whole TLVs: each must still end where its
+  container ends (INV-25), and nothing inside it is read. Neither are the
+  names, the dates' values or any entry after the leaf. One pin must equal the SHA-256
+  of the leaf's SubjectPublicKeyInfo, and the leaf's key then verifies
+  CertificateVerify, which is what proves the server holds it. A pin on
+  an intermediate or a root names nothing here: with no name to check, a
+  pin on a CA key would accept any certificate that CA issued.
+- **A pinned leaf key breaks when the operator rotates it.** A leaf is
+  reissued often, and a reissued leaf may carry a new key. RFC 7858 §4.2
+  asks for a backup pin, so a caller pins the next key beside the
+  current one, or keeps a second configuration with anchors and a
+  hostname to fall back to.
 - **A chain beside pins** must pass everything a chain passes without pins
   — the anchors, the clock, the hostname — and one pin must also name a
   key on the path the walk verified: the leaf, an intermediate the walk
@@ -537,13 +557,16 @@ caller sets up to `CH_SPKI_PIN_MAX` (4) of them in `ch_cfg.spki_pins`.
   pinned certificate appended to a chain another CA signed does not pass.
 - **What the server chose** is `ch_tls.server_cert_type`:
   `CH_CERT_TYPE_RAW_PUBLIC_KEY` (2) or `CH_CERT_TYPE_X509` (0).
-- **Refusals.** A key no pin names: `bad_certificate`, `CH_EAUTH`. An
-  X.509 answer to a configuration of pins alone, which has no anchor to
-  verify it with: `unsupported_certificate` (RFC 7250 §4.2), `CH_EAUTH`.
-  A `server_certificate_type` in EncryptedExtensions the client did not
-  offer, or naming a type it did not list, is refused there, before any
-  Certificate arrives. `webpki_pin.h` and `handshake_parser.h` give the
-  full table.
+- **Refusals.** A key no pin names, a chain under pins alone whose
+  leaf key no pin names, and one whose pins name only an intermediate or
+  a root: `bad_certificate`, `CH_EAUTH`. A leaf under pins alone the key
+  reader refuses: `unsupported_certificate` for a key or signature
+  algorithm the mode does not admit, `bad_certificate` for malformed DER,
+  both `CH_EPROTO`. A CertificateVerify the pinned leaf key did not make:
+  `decrypt_error`, `CH_EAUTH`. A `server_certificate_type` in
+  EncryptedExtensions the client did not offer, or naming a type it did
+  not list, is refused there, before any Certificate arrives.
+  `webpki_pin.h` and `handshake_parser.h` give the full table.
 - **Rotation.** RFC 7858 §4.2 asks for a backup pin. Any pin may match, so
   a caller rotating a server key sets the old and the new pin together,
   and removes the old one after the server moves.
@@ -558,11 +581,10 @@ caller sets up to `CH_SPKI_PIN_MAX` (4) of them in `ch_cfg.spki_pins`.
   requirements RFC 7858 and RFC 8310 give a DNS-over-TLS one, SPKI pins
   included.
   `bin/quic_loop_webpki` runs all three configurations against this
-  tree's QUIC server (`test/quic_loop_pins.h`). That server sends no raw
-  public key, so over QUIC the pins-alone configuration is tested for its
-  offer and for the refusal of the chain the server sends, and a raw key
-  accepted end to end is tested over TCP alone, against `openssl s_server
-  -enable_server_rpk`.
+  tree's QUIC server (`test/quic_loop_pins.h`), pins alone against its
+  chain with a pin on the leaf and on the intermediate. That server sends
+  no raw public key, so a raw key accepted end to end is tested over TCP
+  alone, against `openssl s_server -enable_server_rpk`.
 - **Not here.** The server role neither sends nor accepts a raw public
   key: it ignores the extension and sends its certificate, which a
   configuration with anchors verifies as before. Client raw public
@@ -672,9 +694,14 @@ Read this list as part of the profile, not as a list of future work.
 - **No clock-skew tolerance.** `now_seconds` is compared exactly. As
   certificate lifetimes shorten, a fleet whose clock drifts turns a soft
   failure into a hard one, so the caller owns keeping the clock right.
-- **No leaf key pinning alongside the chain.** The mode verifies a chain or it
-  does not. Pinning a leaf key as well as verifying the chain is a defence
-  this design does not offer.
+- **Pins alone check no name, no date and no chain above the leaf.** Under
+  SPKI pins with no anchors a chain passes on a pin on its leaf's key and a
+  CertificateVerify under that key, and nothing else about it is read. An
+  expired leaf, or one issued for another name or by a CA no one trusts,
+  passes when its key is pinned. A caller who wants the name and the dates
+  checked sets anchors and a hostname beside the pins, and the chain then
+  passes the walk as well as the pin (see "Raw public keys and SPKI pins"
+  and `docs/decisions.md` 65).
 - **Nothing in the repository proves anything about a live endpoint.** Every
   test is hermetic against a local server, as every other suite in this tree
   is. The captures in this document were taken by hand and are recorded as

@@ -1,0 +1,14 @@
+invariant: INV-33
+file: handshake_auth.c
+catches: webpki_loop_record
+reason: pins alone offer X.509 beside the raw key, and the Certificate
+  step still refuses every chain under them with unsupported_certificate,
+  the rule before docs/decisions.md 65. A server that sends a chain,
+  which this tree's server always does, never connects. bin/webpki_loop_record's
+  leaf-pin rows against that server object.
+
+--- old
+        return webpki_verify_leaf_pin(list, list_len, cfg, &h->leaf, &h->alert);
+--- new
+        h->alert = ALERT_UNSUPPORTED_CERTIFICATE;
+        return CH_EAUTH;

@@ -16,6 +16,11 @@
 // This server answers a hello that offers no scheme and whose ticket it
 // passes over with missing_extension, so a client that dropped the
 // schemes from its resuming hello fails the decline rows here.
+//
+// It also runs SPKI pins alone against that chain (docs/decisions.md 65):
+// a pin on the leaf's key passes with no hostname, anchor or clock, its
+// ticket resumes under that pin alone, and a pin on the intermediate's
+// key is refused with bad_certificate.
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -248,6 +253,75 @@ static void check_declined_chain_refused(const uint8_t *key, const webpki_corpus
     CHECK(client.t.psk_selected == 0);
 }
 
+// The one pin a pins-alone client carries.
+static uint8_t loop_pin[1][SHA256_LEN];
+
+// The pin of entry index of the r2 chain the server presents, the leaf at
+// 0 and the intermediate at 1. server_config must have split the chain.
+static int r2_pin(size_t index) {
+    webpki_cert parsed;
+    uint8_t alert = ALERT_BAD_CERTIFICATE;
+    if (webpki_parse_certificate(r2_chain[index].der, r2_chain[index].len, index != 0, &parsed,
+                                 &alert) != CH_OK) {
+        return 0;
+    }
+    sha256_of(parsed.spki_tlv, parsed.spki_tlv_len, loop_pin[0]);
+    return 1;
+}
+
+// A client with loop_pin alone: no hostname, anchor or clock, presenting
+// the kept ticket, with the binding on_ticket gave it, when present is set.
+static void pins_alone_config(ch_cfg *cfg, int present) {
+    memset(cfg, 0, sizeof *cfg);
+    cfg->buf = cli_buf;
+    cfg->buf_len = sizeof cli_buf;
+    cfg->send = unused_send;
+    cfg->recv = held_recv;
+    cfg->on_ticket = keep_ticket;
+    cfg->spki_pins = (const uint8_t *)loop_pin;
+    cfg->spki_pin_count = 1;
+    if (present) {
+        cfg->psk = kept.psk;
+        cfg->psk_len = kept.psk_len;
+        cfg->psk_id = kept.identity;
+        cfg->psk_id_len = kept.identity_len;
+        cfg->resumption = 1;
+        cfg->obfuscated_age = kept.age_add + 5000;
+        cfg->ticket_binding = kept.binding;
+    }
+}
+
+// Pins alone against the r2 chain: the leaf's pin passes and binds its
+// ticket, which resumes under that pin and no other, and the
+// intermediate's pin is refused, because only the leaf's key counts.
+static void test_pins_alone(void) {
+    ch_cfg scfg;
+    ch_cfg ccfg;
+    server_config(&scfg, ticket_key);
+    CHECK(r2_pin(0));
+    pins_alone_config(&ccfg, 0);
+    size_t count = kept.count;
+    CHECK(run(&ccfg, &scfg));
+    CHECK(client.t.psk_selected == 0 && client.t.server_cert_type == CH_CERT_TYPE_X509);
+    CHECK(kept.count == count + 1);
+    uint8_t hash[SHA256_LEN];
+    uint8_t binding[SHA256_LEN];
+    webpki_ticket_config_hash(&ccfg, hash);
+    webpki_ticket_binding(kept.psk, kept.psk_len, hash, binding);
+    CHECK(memcmp(binding, kept.binding, SHA256_LEN) == 0);
+    pins_alone_config(&ccfg, 1);
+    CHECK(run(&ccfg, &scfg));
+    CHECK(client.t.psk_selected == 1 && server.t.psk_selected == 1 && records_pushed == 4);
+    CHECK(r2_pin(1));
+    pins_alone_config(&ccfg, 1);
+    static ch_record probe;
+    CHECK(ch_record_init(&probe, &ccfg) == CH_EINVAL);
+    pins_alone_config(&ccfg, 0);
+    CHECK(!run(&ccfg, &scfg));
+    CHECK(ch_record_state(&client) == CH_ST_FAILED &&
+          ch_record_alert(&client) == ALERT_BAD_CERTIFICATE);
+}
+
 #include "webpki_loop_suites.h"
 
 int main(void) {
@@ -290,6 +364,7 @@ int main(void) {
                                  ALERT_BAD_CERTIFICATE);
     check_declined_chain_refused(ticket_key, webpki_corpus_anchors_impostor_p384, "s3.example.test",
                                  ALERT_UNKNOWN_CA);
+    test_pins_alone();
 #ifdef CH_SUITE_AES_GCM
     check_suites();
 #endif

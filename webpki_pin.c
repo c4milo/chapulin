@@ -1,9 +1,9 @@
 // SPKI pins and RFC 7250 raw public keys for a TRUST=webpki client.
 // Contract in webpki_pin.h. A pin is the SHA-256 of a whole DER
 // SubjectPublicKeyInfo (RFC 7858 §4.2), and this file compares the pins
-// against two kinds of server key: the one entry of a RawPublicKey
-// Certificate message, and each key on the path webpki_verify_chain
-// validated.
+// against three kinds of server key: the one entry of a RawPublicKey
+// Certificate message, the leaf of a chain under pins alone, and each key
+// on the path webpki_verify_chain validated.
 //
 // Every byte here is public: a server's public key, the hash of a public
 // key, and the caller's anchors. The pin compare still goes through
@@ -33,11 +33,7 @@ uint8_t webpki_cert_types_offered(const ch_cfg *cfg) {
     if (cfg->spki_pin_count == 0) {
         return 0;
     }
-    uint8_t offered = 1U << CH_CERT_TYPE_RAW_PUBLIC_KEY;
-    if (cfg->anchor_count > 0) {
-        offered |= 1U << CH_CERT_TYPE_X509;
-    }
-    return offered;
+    return (uint8_t)((1U << CH_CERT_TYPE_RAW_PUBLIC_KEY) | (1U << CH_CERT_TYPE_X509));
 }
 
 int webpki_spki_pinned(const ch_cfg *cfg, const uint8_t *spki, size_t spki_len) {
@@ -50,6 +46,18 @@ int webpki_spki_pinned(const ch_cfg *cfg, const uint8_t *spki, size_t spki_len) 
         pin += SHA256_LEN;
     }
     return pinned != 0;
+}
+
+// The key the pins accepted, copied out of the message buffer, which the
+// session reuses before CertificateVerify arrives. path_entries is 0 for
+// a raw public key, which has no path, and 1 for a leaf pinned alone; no
+// anchor verified either, so anchor_index is 0.
+static void copy_key(const webpki_spki *key, uint8_t path_entries, webpki_leaf_info *out) {
+    out->alg = key->alg;
+    out->key_len = key->key_len;
+    memcpy(out->key, key->key, key->key_len);
+    out->path_entries = path_entries;
+    out->anchor_index = 0;
 }
 
 // A whole DER SubjectPublicKeyInfo: webpki_read_spki, then nothing after
@@ -85,11 +93,29 @@ int webpki_verify_raw_key(const uint8_t *list, size_t list_len, const ch_cfg *cf
         *alert = ALERT_BAD_CERTIFICATE;
         return CH_EAUTH;
     }
-    out->alg = key.alg;
-    out->key_len = key.key_len;
-    memcpy(out->key, key.key, key.key_len);
-    out->path_entries = 0;
-    out->anchor_index = 0;
+    copy_key(&key, 0, out);
+    return CH_OK;
+}
+
+int webpki_verify_leaf_pin(const uint8_t *list, size_t list_len, const ch_cfg *cfg,
+                           webpki_leaf_info *out, uint8_t *alert) {
+    const uint8_t *cert = NULL;
+    size_t cert_len = 0;
+    int rc = webpki_read_leaf_entry(list, list_len, &cert, &cert_len, alert);
+    if (rc != CH_OK) {
+        return rc;
+    }
+    webpki_cert leaf;
+    *alert = ALERT_BAD_CERTIFICATE;
+    rc = webpki_read_certificate_key(cert, cert_len, &leaf, alert);
+    if (rc != CH_OK) {
+        return rc;
+    }
+    if (!webpki_spki_pinned(cfg, leaf.spki_tlv, leaf.spki_tlv_len)) {
+        *alert = ALERT_BAD_CERTIFICATE;
+        return CH_EAUTH;
+    }
+    copy_key(&leaf.spki, 1, out);
     return CH_OK;
 }
 

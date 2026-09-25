@@ -26,9 +26,10 @@ uint16_t nondet_u16(void);
 
 #ifdef CH_TRUST_WEBPKI
 // The certificate types a webpki configuration offers (webpki_pin.c):
-// none, the raw public key alone, or the raw key and X.509. The stub
-// answers any of the three whatever cfg holds, so the builder's
-// server_certificate_type arm runs at every length it can write.
+// none, or the raw key and X.509. The stub also answers the raw public
+// key alone, which no configuration offers since docs/decisions.md 65,
+// so the builder's server_certificate_type arm runs at every length it
+// can write, whatever cfg holds.
 uint8_t webpki_cert_types_offered(const ch_cfg *cfg) {
     (void)cfg;
     uint8_t offered = nondet_u8();

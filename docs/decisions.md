@@ -881,7 +881,8 @@ does nothing more.
     certificate. With anchors too, a chain must pass the walk, the clock
     and the hostname, and a pin must name a key on the path the walk
     verified, as RFC 8310 §6.4 and RFC 7858 §4.2 ask. docs/webpki.md, "Raw
-    public keys and SPKI pins", states the rules.
+    public keys and SPKI pins", states the rules. Entry 65 widens pins
+    alone to a certificate chain whose leaf key a pin names.
 
     Cost: a fifth thing the mode offers more than one of, the certificate
     types, and a second way for a Certificate message to authenticate a
@@ -2131,3 +2132,64 @@ does nothing more.
     A QUIC copy of the pin rules was considered and rejected: two copies
     of one rule can drift apart, and a copy has no reason to exist when
     the handshake code that reads the configuration is shared.
+
+65. **SPKI pins alone accept a certificate chain whose leaf key a pin
+    names.** Entry 49 made pins alone RFC 8310's "SPKI + IP" profile
+    (`rfc8310.txt:683-685`) and read it as a raw public key alone: an
+    X.509 answer was refused with unsupported_certificate. cocuyo's
+    DNS-over-QUIC targets, AdGuard and NextDNS, send ordinary ECDSA chains
+    that end at USERTrust ECC, and cocuyo reaches them by address and pin.
+    RFC 7858 §4.2 has the client hash the keys of the validated server
+    chain, or the raw key the server sent, and match a pin
+    (`rfc7858.txt:434-440`). With no anchor, no clock and no hostname
+    there is no validated chain, so this entry fixes what pins alone check.
+    Pins alone now mean that the server proves it holds a pinned leaf key,
+    sent raw or inside a certificate.
+
+    - **The offer.** Pins alone offer RawPublicKey, then X509. With
+      anchors the offer already listed both.
+    - **The rule.** A chain under pins alone passes when one pin is the
+      SHA-256 of its leaf's SubjectPublicKeyInfo, and CertificateVerify
+      then verifies under the leaf's key. The certificate is public; the
+      signature is what proves the server holds the key.
+    - **What is not read.** The chain above the leaf, the dates and the
+      names, because there is no anchor, clock or hostname to check them
+      against. The list is framed by the walk's own framing, and the leaf
+      is read only as far as its key, by `webpki_cert.c`'s own field
+      readers. The fields after the key are skipped as whole TLVs, so
+      each container still ends where its fields end (INV-25), and their
+      content is not read. INV-20's containment holds: the reader has one
+      caller, that caller has one caller in `handshake_auth.c`, and
+      neither reads a clock.
+    - **Other keys do not count.** A pin that names only an intermediate
+      or a root key is refused with bad_certificate, the alert a pin miss
+      gets. With no name to check, a pin on a CA key would accept every
+      certificate that CA issued, to anyone.
+    - **Unchanged.** A raw public key, pins beside anchors, and the ticket
+      binding, which holds a resumed session to the pins that judged the
+      first one.
+
+    Cost: a pinned leaf key breaks when the operator rotates it, and a leaf
+    rotates more often than a CA key, so a caller pins a backup key too, as
+    RFC 7858 §4.2 asks. Under pins alone, `webpki_cert.c`'s readers now
+    parse peer input, where only `webpki_spki.c` parsed it before. The
+    pins-alone hello grows by 1 byte, the X509 entry, inside
+    the `CH_HELLO_MAX` every webpki build already counted, so
+    `CH_TX_STAGE`, `ch_tls` and `ch_quic` keep their sizes. Gain: pins
+    alone reach a server whose leaf key the caller knows, whether it sends
+    the key raw or in a certificate, over both TCP transports and QUIC.
+
+    What changes in entry 49: its "SPKI + IP" profile no longer means a
+    server with no public certificate alone. Its rejection of matching a
+    pin on the leaf alone stands where anchors are set, because there a
+    pin on any key of the validated path counts. Under pins alone the leaf
+    is the one key the signature proves, so it is the one key a pin may
+    name.
+
+    Two alternatives were considered and rejected. Accepting a pin on any
+    key of the chain and checking the signatures from the leaf up to it,
+    with the pinned certificate as an anchor, accepts every leaf that CA
+    issued, to anyone, when no name is checked; a caller who pins a CA
+    sets anchors and a hostname instead. Refusing X.509 under pins alone,
+    as entry 49 did, leaves a DNS client unable to reach a public resolver
+    by address and pin.

@@ -66,7 +66,8 @@ def spec_ops():
 # and handshake_sequence_test each own an op and speak the same protocol.
 DRIVERS = ["diff_test.c", "diff_driver.h", "diff_hash.h", "diff_hash384.h", "diff_handshake_parser.h", "diff_handshake_certificate.h",
            "diff_mlkem.h", "diff_p256.h", "diff_rsa.h", "diff_sha3.h",
-           "diff_sha512.h", "diff_p384.h", "diff_rsa_pkcs1.h", "diff_webpki.h", "diff_webpki_sigalg.h", "diff_webpki_cert.h", "diff_webpki_chain.h", "diff_x509.h",
+           "diff_sha512.h", "diff_p384.h", "diff_rsa_pkcs1.h", "diff_webpki.h", "diff_webpki_sigalg.h", "diff_webpki_cert.h", "diff_webpki_chain.h",
+           "diff_webpki_pin.h", "diff_webpki_leaf_pin.h", "diff_x509.h",
            "diff_x509_bounds.h",
            "diff_x509_chain.h", "drbg_test.c",
            "handshake_sequence_test.c", "handshake_sequence_server.h"]
@@ -83,11 +84,13 @@ def driven_ops():
         # A command is always the format string of an snprintf into
         # cmd, a literal handed to expect, or the op literal handed to
         # hspd_request, which the handshake message drivers build every
-        # command through. Matching those three shapes keeps ordinary
-        # strings that happen to start with an op name out of the count.
+        # command through, or to diff_pin_command, which the two SPKI pin
+        # drivers do. Matching those four shapes keeps ordinary strings
+        # that happen to start with an op name out of the count.
         found |= set(re.findall(r'snprintf\(\s*cmd[^"]*"([a-z0-9_]+)', text))
         found |= set(re.findall(r'expect\(\s*"([a-z0-9_]+)"', text))
         found |= set(re.findall(r'hspd_request\(\s*cmd[^"]*"([a-z0-9_]+)"', text))
+        found |= set(re.findall(r'diff_pin_command\(\s*cmd,\s*"([a-z0-9_]+)"', text))
     return found
 
 

@@ -9,6 +9,6 @@ reason: webpki_parse_certificate reads the TBS, the signature algorithm
   short-outer case objects.
 
 --- old
-    if (!x509_read_header(&r, TAG_SEQUENCE, &body_len) || body_len != rb_left(&r)) {
+    if (!x509_read_header(r, TAG_SEQUENCE, &body_len) || body_len != rb_left(r)) {
 --- new
-    if (!x509_read_header(&r, TAG_SEQUENCE, &body_len)) {
+    if (!x509_read_header(r, TAG_SEQUENCE, &body_len)) {

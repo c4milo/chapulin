@@ -547,8 +547,10 @@ launch fast full certparse_webpki 260 "" -DCH_TRUST_WEBPKI handshake_parser.c bu
 # /usr/bin/time -l over this script, one harness at a time): 766
 # properties, 3.4 s, 44 MB, well inside the fast tier's default weight.
 # main never reaches the SPKI pin half of hsa_server_auth, so the log
-# names no callee without a body for webpki_verify_raw_key or
-# webpki_path_pinned; webpki_pin proves both.
+# names no callee without a body for webpki_verify_raw_key,
+# webpki_verify_leaf_pin or webpki_path_pinned; webpki_pin and
+# webpki_leaf_pin prove them. Re-measured when webpki_server_key took the
+# leaf pin call: 802 properties, 1.6 s, 45 MB.
 # Each of the three inv14-webpki-certificate-verify violations fails a
 # named assertion here as well as bin/webpki_auth_test.
 launch fast full certverify_webpki 260 "fill_nondet.0:513" -DCH_TRUST_WEBPKI handshake_parser.c buf.c
@@ -1043,7 +1045,26 @@ launch fast:4 full webpki_san 17 "fill_nondet.0:1025,webpki_match_san.0:17" -DCH
 # bytes in 30 minutes. At 48 bytes an assert of 0 on each arm's success
 # tail fails both (2 of 1220, 2687 s, 7.5 GB), so both tails are
 # reached. So it runs at 48 bytes in the slow tier.
-launch fast:5 full webpki_cert 17 "fill_nondet.0:3074,ct_memeq.0:16" -DCH_TRUST_WEBPKI x509_der.c buf.c ct.c
+# Re-measured under run.sh when the reader stubs moved to
+# proof/webpki_cert_stubs.h, webpki_parse_certificate took its head from
+# read_certificate_head and read_tbs_key, and webpki_read_certificate_key
+# joined the file unreached here (docs/decisions.md 65), on an arm64 macOS
+# development machine: 1250 properties, 217 s at 3.8 GB with one other
+# proof running, 212 s at 5.6 GB beside a differential run, and 217 s at
+# 6.2 GB alone. fast:7 covers the highest of those peaks.
+launch fast:7 full webpki_cert 17 "fill_nondet.0:3074,ct_memeq.0:16" -DCH_TRUST_WEBPKI x509_der.c buf.c ct.c
+# webpki_cert_key proves webpki_read_certificate_key, the reader a leaf
+# pinned with no anchor goes through, over the same bytes and the same
+# stubs, with x509_skip real for the fields it frames after the key: its
+# pointers land inside the certificate as webpki_cert's do, the
+# extensions reader never runs, and the fields it does not write keep the
+# caller's values. Under run.sh (cbmc 6.11.0, kissat, PROVE_NO_CACHE=1
+# /usr/bin/time -l, alone): 1316 properties, 180 s, 4.2 GB, and 176 s at
+# 4.4 GB beside a differential run; 55 s at 3.2 GB before the reader
+# framed those fields. An assert of 0 at its CH_OK tail fails that one
+# assert (210 s, 4.7 GB, beside a cover run), so the tail is reached.
+# inv05-webpki-leaf-key-reads-extensions fails it.
+launch fast:5 full webpki_cert_key 17 "fill_nondet.0:3074,ct_memeq.0:16" -DCH_TRUST_WEBPKI x509_der.c buf.c ct.c
 launch slow:5 full webpki_ext 18 "fill_nondet.0:1026,read_ext_key_usage.0:23,oid_minimal.0:17,ct_memeq.0:9" x509_der.c buf.c ct.c
 launch slow:3 full webpki_ext_one 18 "fill_nondet.0:97,read_ext_key_usage.0:33,oid_minimal.0:17,ct_memeq.0:9" -DCH_PROOF_ONE_LEN=96 x509_der.c buf.c ct.c
 launch slow:5 full webpki_ext_walk 18 "fill_nondet.0:49,webpki_read_extensions.0:8,read_ext_key_usage.0:13,oid_minimal.0:17,ct_memeq.0:9" --object-bits 11 -DCH_PROOF_EXT_LEN=48 x509_der.c buf.c ct.c
@@ -1071,7 +1092,13 @@ launch slow:5 full webpki_ext_walk 18 "fill_nondet.0:49,webpki_read_extensions.0
 # started asserting them against the certificates parsed and the anchor
 # that verified: 1204 properties, 138 s, 3.6 GB; with an assert of 0 at
 # the tail, 1 of 1205 fails (240 s, 2.3 GB, beside another proof).
-launch fast:4 full webpki_chain 49 "main.0:3,fill_nondet.0:49,read_entries.0:7,anchor_verifies.0:3,webpki_verify_chain.0:5" -DCH_TRUST_WEBPKI -DCH_PROOF_LIST_LEN=48 buf.c ct.c
+# Re-measured when webpki.c gained webpki_read_leaf_entry, which this
+# formula holds unreached: 1216 properties, 122 s and 5.6 GB alone, and
+# 126 s and 7.3 GB beside another proof. The tree before that change
+# measured 1204 properties, 131 s and 4.6 GB the same day, so the peak had
+# already moved past the 3.6 GB recorded above; fast:8 covers the highest
+# peak seen.
+launch fast:8 full webpki_chain 49 "main.0:3,fill_nondet.0:49,read_entries.0:7,anchor_verifies.0:3,webpki_verify_chain.0:5" -DCH_TRUST_WEBPKI -DCH_PROOF_LIST_LEN=48 buf.c ct.c
 # webpki_pin: the SPKI pin calls of webpki_pin.c (webpki_pin.h). The raw
 # public key half runs at its real bound, a list one byte past an entry at
 # CH_WEBPKI_SPKI_MAX, so both sides of the entry cap and of the exact fill
@@ -1095,8 +1122,21 @@ launch fast:4 full webpki_chain 49 "main.0:3,fill_nondet.0:49,read_entries.0:7,a
 # as spki_pins + i * SHA256_LEN measured 9.0 to 11.8 GB. With an assert of 0 at the raw half's
 # CH_OK tail and at the path half's tail after a match, those two fail
 # (2 of 1285, 588 s, 7.3 GB), so both tails are reached. slow:8 covers
-# that peak.
+# that peak. Re-measured when webpki_pin.c gained webpki_verify_leaf_pin,
+# which this formula holds unreached, and the raw call's key copy moved to
+# copy_key: 1347 properties, 385 s, 7.4 GB, beside two other proofs.
 launch slow:8 full webpki_pin 5 "fill_nondet.0:557,ct_memeq.0:33,memcmp.0:33" -DCH_TRUST_WEBPKI webpki.c buf.c ct.c
+# webpki_leaf_pin proves webpki_verify_leaf_pin, the rule for a chain
+# under SPKI pins alone (docs/decisions.md 65), apart from the other two
+# calls, whose formula is near its weight already. The list framing in
+# webpki.c is real over a 24-byte list, four one-byte entries and part of
+# a fifth, which the global unwind of 6 covers with the framing loop's
+# CH_WEBPKI_FLIGHT_ENTRIES and one; webpki_read_certificate_key is a stub
+# to what webpki_cert_key proves, and SHA-256 a stub that records what it
+# hashed. Under run.sh (cbmc 6.11.0, kissat, PROVE_NO_CACHE=1
+# /usr/bin/time -l): 1280 properties, 38 s, 1.7 GB. An assert of 0 at its
+# CH_OK tail fails that one assert, so the tail is reached.
+launch fast full webpki_leaf_pin 6 "fill_nondet.0:129,ct_memeq.0:33,memcmp.0:33" -DCH_TRUST_WEBPKI webpki.c buf.c ct.c
 launch fast:3 full x509der 452 "fill_nondet.0:449,ct_memeq.0:68" buf.c ct.c
 launch fast:3 full x509der_ecdsa 452 "fill_nondet.0:449,ct_memeq.0:68" buf.c ct.c
 launch slow:4 full x509parse_ecdsa 260 "fill_nondet.0:257,ct_memeq.0:68" buf.c ct.c

@@ -233,8 +233,14 @@ last `ROLE=server` stub, as the entry said it would.
   refuses every other critical extension. `webpki.c` is the walk over
   them: it frames the CertificateEntry list, checks the leaf's clock and
   hostname, and walks issuers until an anchor both names the issuer and
-  verifies the signature. It is the mode's one entry point, the way
-  `x509_verify_leaf` is the ca mode's. The raw and ca
+  verifies the signature. It is the mode's one entry point for a chain
+  the anchors judge, the way `x509_verify_leaf` is the ca mode's. A
+  configuration of SPKI pins alone judges a chain by its leaf's key
+  (docs/decisions.md 65): `webpki_pin.c` frames the list through
+  `webpki_read_leaf_entry` and reads the leaf through
+  `webpki_read_certificate_key`, which is `webpki_cert.c`'s own field
+  readers stopped after subjectPublicKeyInfo. It reads the same grammar,
+  no further, and adds no reader. The raw and ca
   objects filter these files out, and `lint-trust-separation` checks
   that.
 - **Mechanism.** The length-first canonical-DER decoder in
@@ -273,6 +279,9 @@ last `ROLE=server` stub, as the entry said it would.
   file list read from git rather than from the Makefile's own filter
   (`inv05-webpki-source-in-raw`), and every root `webpki*.c` file git
   tracks must appear in `WEBPKI_SRCS` (`inv05-webpki-source-unlisted`).
+  inv05-webpki-leaf-key-reads-extensions makes the pins-alone key reader
+  parse the whole TBSCertificate, and the webpki_cert_key harness, which
+  asserts the extensions reader never runs there, objects.
   Two of the rows where the webpki profile is stricter than openssl
   ([webpki.md](webpki.md)) have their own guards over the corpus:
   `inv05-webpki-sha1-signature` admits sha1WithRSAEncryption and
@@ -329,6 +338,10 @@ last `ROLE=server` stub, as the entry said it would.
 - **Mechanism.** Two entries, each contained by a different fact.
   The DER primitives sit behind the profile walker and the walker
   sits behind one function, which only `handshake_auth.c` calls. The
+  TRUST=webpki leaf rule under SPKI pins alone is contained the same
+  way: `webpki_read_certificate_key` has one caller,
+  `webpki_verify_leaf_pin`, which has one caller, `handshake_auth.c`,
+  and neither reads a clock (docs/decisions.md 65). The
   provisioning reader sits above them in `x509_ca.c` as a side
   branch: nothing in the library includes its header, so a session
   cannot reach it however the firmware uses it. `x509_read_time` checks the Time shape and ignores the
@@ -338,6 +351,10 @@ last `ROLE=server` stub, as the entry said it would.
 - **Check.** Semgrep-structural (`inv-20-cert-entry-point`): no
   `x509_verify_leaf` call outside handshake_auth.c, with x509.c
   excluded as the definition site. Semgrep-structural
+  (`inv-20-webpki-leaf-pin-entry`, `inv-20-webpki-leaf-key-reader`): no
+  `webpki_verify_leaf_pin` call outside handshake_auth.c and no
+  `webpki_read_certificate_key` call outside webpki_pin.c, each with its
+  definition site excluded. Semgrep-structural
   (`inv-20-provisioning-entry`): no `ch_pubkey_from_pem` call in any
   library source, with x509_ca.c excluded as the definition site. Semgrep-tripwire
   (`inv-20-no-time-calls`): calls to `time`, `clock_gettime`,
@@ -1163,7 +1180,7 @@ last `ROLE=server` stub, as the entry said it would.
   something it does not know.
 - See [decisions: Protocol surface](decisions.md#protocol-surface).
 
-### INV-33 — an SPKI pin names the server key, on the path the walk read
+### INV-33 — an SPKI pin names the server key, on the path the walk read or on the leaf
 
 - **Claim.** A TRUST=webpki client with SPKI pins (`ch_cfg.spki_pins`)
   accepts a server key only when one pin is the SHA-256 of that key's
@@ -1181,7 +1198,12 @@ last `ROLE=server` stub, as the entry said it would.
   verified the last of them. A certificate the server sent after that
   path does not count. RFC 8310 §6.4 asks a client with a name and pins
   to require both, and this is how. With pins and no anchors, an X.509
-  answer is refused with unsupported_certificate. A
+  chain passes only when a pin names its leaf's key, entry 0, read only
+  as far as its SubjectPublicKeyInfo, and CertificateVerify then verifies
+  under that key (docs/decisions.md 65). A pin on any other entry or on a
+  root names nothing there and is refused with bad_certificate, the list
+  framing refuses what the walk's refuses, and a leaf key or signature
+  algorithm the reader refuses is unsupported_certificate. A
   `TRANSPORT=quic-nonblocking` client applies the same rules, because
   `ch_quic_init` checks the configuration with `webpki_cfg_ok` and the
   QUIC step table calls the same `hsa_server_auth` (docs/decisions.md
@@ -1193,8 +1215,13 @@ last `ROLE=server` stub, as the entry said it would.
   `anchor_index` in the one branch that returns CH_OK, and
   `webpki_path_pinned` reads back only the first `path_entries` entries,
   each under the arm the walk parsed it under, then that anchor's key.
+  With no anchors `webpki_server_key` calls `webpki_verify_leaf_pin`,
+  which frames the list with `webpki_read_leaf_entry`, the walk's own
+  framing, reads entry 0 with `webpki_read_certificate_key`, which stops
+  after the SubjectPublicKeyInfo, and hashes that TLV alone.
   `webpki_spki_pinned` compares every pin through `ct_memeq` and does not
-  stop at the first match.
+  stop at the first match. The key every rule accepts is the one
+  `check_certificate_verify` verifies the signature under.
 - **Check.** bin/webpki_auth_test drives hsa_server_auth through
   test/webpki_auth_pins.h: each key family's raw key accepted with its
   pin first or second of two and refused with none; each framing and
@@ -1214,20 +1241,39 @@ last `ROLE=server` stub, as the entry said it would.
   verified the last one. spec/lean/Spec/WebpkiPin.lean models both rules and
   proves the raw one sound, and the differential compares the C and the
   model on the `webpki_raw` op and on `webpki_chain`'s path and pin
-  verdict. Over QUIC, bin/quic_loop_webpki runs the chain rules against
-  this tree's QUIC server (test/quic_loop_pins.h): a pin on the leaf, the
-  intermediate or the anchor accepted, the last of `CH_SPKI_PIN_MAX` pins
-  accepted, and a pin on nothing, on an anchor that verified nothing or
-  on a CA certificate appended past the path refused with
-  bad_certificate. Pins alone are refused with unsupported_certificate
-  when that server answers with its chain; it sends no raw public key, so
-  the raw rule runs end to end over TCP alone. Ten `inv33-` violations
-  guard the rules. inv33-quic-pins-ignored-on-chain compiles the pin
-  check out of a QUIC build alone, which no TCP test sees, and requires
+  verdict. The leaf rule under pins alone: test/webpki_leaf_pins.h runs
+  every CertificateVerify row under a pin on its leaf to the row's own
+  verdict, a signature the leaf key did not make included, and refuses a
+  pin on the intermediate, the anchor's key or nothing with
+  bad_certificate; it accepts leaves the walk refuses for a name, an
+  extension or a date, refuses a refused key, counts entry 0 alone and
+  refuses the walk's framing faults. bin/webpki_loop_record runs a leaf
+  pin and an intermediate pin against this tree's tcp-nonblocking
+  server, and test/e2e.sh against `openssl s_server`. The webpki_leaf_pin
+  harness proves the call memory-safe and its verdict and alert pairs,
+  that the key reader runs once and on entry 0, and that an accepted list
+  hashed the leaf's SubjectPublicKeyInfo and returns its key; the
+  webpki_cert_key harness proves that reader never calls the
+  extensions reader. spec/lean/Spec/WebpkiPin.lean models the rule as
+  `verifyLeafPin` and proves it sound, and the differential compares it
+  with the C on the `webpki_leaf` op. Over QUIC, bin/quic_loop_webpki
+  runs the chain rules against this tree's QUIC server
+  (test/quic_loop_pins.h): a pin on the leaf, the intermediate or the
+  anchor accepted, the last of `CH_SPKI_PIN_MAX` pins accepted, and a pin
+  on nothing, on an anchor that verified nothing or on a CA certificate
+  appended past the path refused with bad_certificate; under pins alone
+  a pin on the leaf accepted and its ticket resumed under that pin alone,
+  and a pin on the intermediate, the root or nothing refused. That server
+  sends no raw public key, so the raw rule runs end to end over TCP
+  alone. Fifteen `inv33-` violations guard the rules.
+  inv33-quic-pins-ignored-on-chain and inv33-quic-pins-alone-leaf-refused
+  change a QUIC build alone, which no TCP test sees, and require
   bin/quic_loop_webpki to fail.
 - **Violation.** A PR accepts a raw key or a chain on the name alone,
-  counts a certificate the walk never read, or compares a pin with a key
-  other than the one the walk or the reader returned.
+  counts a certificate the walk never read, compares a pin with a key
+  other than the one the walk or the reader returned, lets a pin on a CA
+  key pass under pins alone, or skips CertificateVerify under the pinned
+  leaf key.
 - docs/server.md names INV-30 to INV-32 for server rules it plans, so
   this entry takes the next number after them.
 
@@ -1306,7 +1352,9 @@ last `ROLE=server` stub, as the entry said it would.
   mode's reader and `test/x509_ca_tests.h` the provisioning reader,
   `test/webpki_cert_mutants.h`, `test/webpki_ext_mutants.h`,
   `test/webpki_spki_test.c` and `test/webpki_time_test.c` the webpki
-  readers, `test/handshake_strict_test.c` the ServerHello and
+  readers, `test/webpki_cert_key_mutants.h` the reader a leaf pinned
+  with no anchor goes through, which skips the fields after the key as
+  whole TLVs that must still fill their containers, `test/handshake_strict_test.c` the ServerHello and
   EncryptedExtensions vectors and the Certificate list,
   `test/p384_test.c` the P-384 signature, and
   `test/session_post_tests.h` the NewSessionTicket. `make diff` reads

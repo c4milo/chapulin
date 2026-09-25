@@ -79,11 +79,13 @@ Home: github.com/c4milo.
   (docs/decisions.md 45 and 58); a raw or ca client refuses
   SUITE=aesgcm. With SPKI pins (ch_cfg.spki_pins, the SHA-256 of
   a DER SubjectPublicKeyInfo) it offers RFC 7250 raw public keys in
-  server_certificate_type, beside X.509 when anchors are set too, and
-  ch_tls.server_cert_type reports the server's choice: a raw key needs a
-  pin that names it, and a chain beside pins needs a pin on the path it
-  verified as well as the walk. Pins alone are a whole configuration, with
-  no anchor, clock or hostname (docs/decisions.md 49). And a resuming hello
+  server_certificate_type, then X.509, and ch_tls.server_cert_type
+  reports the server's choice: a raw key needs a pin that names it, a
+  chain beside anchors needs a pin on the path it verified as well as the
+  walk, and a chain under pins alone needs a pin on its leaf's key, which
+  then verifies CertificateVerify. Pins alone are a whole configuration,
+  with no anchor, clock or hostname, and pins mean the same over QUIC as
+  over TCP (docs/decisions.md 49, 64 and 65). And a resuming hello
   offers the certificate path beside the ticket: signature_algorithms,
   and server_certificate_type with pins, ahead of pre_shared_key. A server
   that declines the ticket then authenticates with its chain in the same
@@ -130,7 +132,7 @@ Home: github.com/c4milo.
   (the binding that holds a resumption ticket to the configuration that
   received it, TRUST=webpki) + `webpki_pin.[ch]` (SPKI pins and RFC 7250
   raw public keys, TRUST=webpki) + `webpki_cfg.[ch]` (the mode's ch_cfg
-  declarations and the rules ch_connect checks, TRUST=webpki) ←
+  declarations and the rules ch_connect and ch_quic_init check, TRUST=webpki) ←
   `record.[ch]`
   (record layer) ← `handshake_parser.[ch]` (message parsers) ←
   `handshake_record.[ch]` (record reading and message reassembly) ←

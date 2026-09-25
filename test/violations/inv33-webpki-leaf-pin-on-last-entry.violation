@@ -1,0 +1,16 @@
+invariant: INV-33
+file: webpki.c
+catches: webpki_auth_test
+reason: under pins alone the key read for the pin comes from the chain's
+  last entry instead of its leaf, so a pin on an intermediate or root key
+  passes the pin check, which RFC 7858 §4.2 and docs/decisions.md 65
+  refuse: with no anchor and no name, a CA key pin would accept any
+  certificate that CA issued. test/webpki_leaf_pins.h's intermediate-pin
+  rows, which want bad_certificate, object.
+
+--- old
+    *leaf = entries.cert[0];
+    *leaf_len = entries.cert_len[0];
+--- new
+    *leaf = entries.cert[entries.count - 1];
+    *leaf_len = entries.cert_len[entries.count - 1];

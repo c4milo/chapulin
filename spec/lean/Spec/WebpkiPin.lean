@@ -22,14 +22,21 @@ pairs of return code and alert the C tells apart:
   does not fill exactly;
 * `unpinned` is `CH_EAUTH` with `bad_certificate`: no pin names the key.
 
-`pathPinned` is the other rule: after `Spec.Webpki.verifyChain` accepted
+`pathPinned` is the second rule: after `Spec.Webpki.verifyChain` accepted
 a chain, a pin must name the key of one of the entries on the path it
 reported, or of the anchor that ended it.
+
+`verifyLeafPin` is the third (docs/decisions.md 65): with pins and no
+anchors, an X.509 chain passes when a pin names the key of its first
+entry, the leaf, which is read only as far as that key. It answers the
+key, `unpinned` when no pin names it, or `rejected` for every `CH_EPROTO`
+the C returns, the framing and the leaf's DER alike, as the walk's
+differential reports them; the unit tests pin each alert.
 -/
 
 namespace Spec.WebpkiPin
 
-open Spec.Bytes Spec.X509 Spec.WebpkiSpki Spec.WebpkiCert Spec.Webpki
+open Spec.Bytes Spec.X509 Spec.WebpkiSpki Spec.WebpkiSigalg Spec.WebpkiCert Spec.Webpki
 
 /-- `CH_WEBPKI_SPKI_MAX`: the largest SubjectPublicKeyInfo `readSpki?`
 accepts, an RSA key of `modulusMax` bytes, and so the largest raw
@@ -104,6 +111,90 @@ def pathPinned (pins : List ByteArray) (anchors : List Anchor) (list : ByteArray
         pinned pins a.spki)
   | _, _ => false
 
+/-- The TBSCertificate fields `readTbs?` reads through
+subjectPublicKeyInfo, read the same way, then the extensions [3] TLV
+framed and not read, which must fill the rest (RFC 5280 §4.1): the
+SubjectPublicKeyInfo TLV's range in `tbs`, the key's algorithm and the
+key. The dates are read for their shape and compared with no clock. -/
+def readTbsKey? (tbs : ByteArray) : Option (Range × KeyAlg × ByteArray) := do
+  let o1 ← matchAt tbs 0 versionV3
+  let o2 ← readSerial tbs o1
+  let (_, o3) ← readTlv tbs o2 0x30
+  let _ ← readSigalg? (slice tbs o2 (o3 - o2))
+  let (_, o4) ← readTlv tbs o3 0x30
+  let (_, _, o5) ← readValidity? tbs o4
+  let (_, o6) ← readTlv tbs o5 0x30
+  let (_, o7) ← readTlv tbs o6 0x30
+  let (keyAlg, key) ← readSpki? (slice tbs o6 (o7 - o6))
+  let (_, o8) ← readTlv tbs o7 0xa3
+  guard (o8 == tbs.size)
+  some (⟨o6, o7 - o6⟩, keyAlg, key)
+
+/-- A certificate read only as far as its key (RFC 5280 §4.1): at most
+`certificateMax` bytes, one Certificate SEQUENCE filling them, and
+`readTbsKey?` over its TBSCertificate's content, then a signatureAlgorithm
+SEQUENCE and a signature BIT STRING framed and not read, which must fill
+the Certificate. The SubjectPublicKeyInfo TLV's bytes, the bytes a pin
+hashes, then the key's algorithm and the key. -/
+def certificateKey? (cert : ByteArray) : Option (ByteArray × KeyAlg × ByteArray) := do
+  guard (cert.size ≤ certificateMax)
+  let (_, body, bodyEnd) ← readTlvAt cert 0 0x30
+  guard (bodyEnd == cert.size)
+  let (_, tbs, tbsEnd) ← readTlvAt body 0 0x30
+  let (spki, keyAlg, key) ← readTbsKey? tbs
+  let (_, o1) ← readTlv body tbsEnd 0x30
+  let (_, o2) ← readTlv body o1 0x03
+  guard (o2 == body.size)
+  some (slice tbs spki.off spki.len, keyAlg, key)
+
+/-- The answer for an X.509 chain under SPKI pins alone. -/
+inductive LeafVerdict where
+  /-- A pin names the leaf's key: its algorithm and bytes. -/
+  | ok (alg : KeyAlg) (key : ByteArray)
+  /-- The framing, or a leaf `certificateKey?` refuses. -/
+  | rejected
+  /-- No pin names the leaf's key. -/
+  | unpinned
+
+/-- The name the differential compares. -/
+def LeafVerdict.name : LeafVerdict → String
+  | .ok _ _ => "ok"
+  | .rejected => "rejected"
+  | .unpinned => "unpinned"
+
+/-- A CertificateEntry list under the X.509 type and SPKI pins alone
+(RFC 7858 §4.2 and docs/decisions.md 65): framed as the walk frames it,
+and a pin that names the key of entry 0, the leaf, read only as far as
+that key. A pin on any other entry names nothing, because with no anchor
+and no name a pin on a CA key would accept any certificate that CA
+issued. -/
+def verifyLeafPin (pins : List ByteArray) (list : ByteArray) : LeafVerdict :=
+  match readEntries? list with
+  | some (leaf :: _) =>
+    match certificateKey? leaf with
+    | some (spki, alg, key) => if pinned pins spki then .ok alg key else .unpinned
+    | none => .rejected
+  | _ => .rejected
+
+/-- The r2 chain under pins alone: accepted with a pin on its leaf's key,
+refused with a pin on the intermediate's key or on nothing, refused with
+the entries swapped, where the leaf's pin names entry 1, and refused for
+a framing the walk refuses. `certificateKey?` reads the leaf's key where
+`certificateSpki?` does. -/
+def leafSelftest (leafSpki leafPin other : ByteArray) : Bool :=
+  let entry := fun (cert : ByteArray) => natToBytesBE cert.size 3 ++ cert ++ ByteArray.mk #[0, 0]
+  let chain := entry r2Leaf ++ entry r2Issuer
+  let issuerPin := match certificateSpki? 1 r2Issuer with
+    | some b => Spec.Sha256.sha256 b
+    | none => other
+  (certificateKey? r2Leaf).map (·.1) == some leafSpki &&
+    (verifyLeafPin [other, leafPin] chain).name == "ok" &&
+    (verifyLeafPin [issuerPin] chain).name == "unpinned" &&
+    (verifyLeafPin [other] chain).name == "unpinned" &&
+    (verifyLeafPin [leafPin] (entry r2Issuer ++ entry r2Leaf)).name == "unpinned" &&
+    (verifyLeafPin [leafPin] (chain ++ ByteArray.mk #[0])).name == "rejected" &&
+    (verifyLeafPin [leafPin] ByteArray.empty).name == "rejected"
+
 set_option compiler.extract_closed false in
 /-- The corpus r2 leaf's SubjectPublicKeyInfo framed as one raw entry:
 accepted with its pin first or second of two, and refused without it;
@@ -126,11 +217,35 @@ def selftest (_ : Unit) : Bool :=
     (verifyRawKey [pin] (frame (spki ++ ByteArray.mk #[0]) (ByteArray.mk #[0, 0]))).name ==
       "unsupported_certificate" &&
     (verifyRawKey [pin] ByteArray.empty).name == "rejected" &&
-    spki.size == 91
+    spki.size == 91 &&
+    leafSelftest spki pin other
 
 /-!
 ## Proofs
 -/
+
+/-- Soundness of the leaf rule: an accepted list frames as the walk frames
+it, and one of the pins is the SHA-256 of the SubjectPublicKeyInfo bytes
+`certificateKey?` reads out of its first entry, whose key is the one
+returned. -/
+theorem verifyLeafPin_ok (pins : List ByteArray) (list : ByteArray) (alg : KeyAlg)
+    (key : ByteArray) (h_ok : verifyLeafPin pins list = .ok alg key) :
+    ∃ leaf rest spki, readEntries? list = some (leaf :: rest) ∧
+      certificateKey? leaf = some (spki, alg, key) ∧
+      pins.contains (Spec.Sha256.sha256 spki) = true := by
+  unfold verifyLeafPin at h_ok
+  split at h_ok
+  · rename_i leaf rest h_entries
+    split at h_ok
+    · rename_i spki read_alg read_key h_key
+      split at h_ok
+      · rename_i h_pinned
+        simp only [LeafVerdict.ok.injEq] at h_ok
+        obtain ⟨rfl, rfl⟩ := h_ok
+        exact ⟨leaf, rest, spki, h_entries, h_key, by simpa only [pinned] using h_pinned⟩
+      · simp at h_ok
+    · simp at h_ok
+  · simp at h_ok
 
 /-- Soundness of the raw key rule: an accepted list is one CertificateEntry
 of 1 to `spkiMax` bytes and nothing after it, whose bytes `readSpki?` reads

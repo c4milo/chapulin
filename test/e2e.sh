@@ -884,11 +884,26 @@ WEBPKI_PINS=$OTHER_PIN \
     expect_fail webpki-rpk-unpinned -3 "$DIR/err_rpk_unpinned" \
     ./bin/tlsclient_webpki 127.0.0.1 "$PORT_RPK" webpki:- -
 
-# A server that answers the raw key offer with a certificate chain: pins
-# alone have no anchor to verify it with (RFC 7250 section 4.2).
-MSG='cadena no pedida'
+# A server with no raw key answers the offer with its certificate chain.
+# Pins alone accept it when a pin names the leaf's key, with no anchor,
+# hostname or clock, and check CertificateVerify under that key
+# (docs/decisions.md 65).
+MSG='hoja fijada'
 WEBPKI_PINS=$LEAF_PIN \
-    expect_fail webpki-rpk-certificate -3 "$DIR/err_rpk_cert" \
+    expect webpki-pins-leaf "adajif ajoh" "$DIR/err_pins_leaf" \
+    ./bin/tlsclient_webpki 127.0.0.1 "$PORT_WEBPKI" webpki:- -
+grep -q "^cert type 0$" "$DIR/err_pins_leaf" || {
+    echo "FAIL e2e webpki-pins-leaf: expected an X.509 chain"
+    cat "$DIR/err_pins_leaf"
+    exit 1
+}
+
+# The same chain under a pin on the intermediate's key alone: pins alone
+# count the leaf's key and no other, because a pin on a CA key with no
+# name to check would take any certificate that CA issued.
+MSG='cadena no pedida'
+WEBPKI_PINS=$INT_PIN \
+    expect_fail webpki-pins-intermediate -3 "$DIR/err_pins_int" \
     ./bin/tlsclient_webpki 127.0.0.1 "$PORT_WEBPKI" webpki:- -
 
 # Anchors and pins against a server with no raw key: the chain, the name
@@ -1318,4 +1333,4 @@ else
     echo "SKIP chapulin server aesgcm legs: bin/tlsserver_aes is absent (no AES instructions)"
 fi
 
-echo "e2e: record + psk + tickets + resumption + pinned ecdsa + chapulin server resume x2 + chapulin server x25519 + chapulin server secp256r1 x2${CHSRV_PQ_LEG} + pinned rsa + require-pq refused + rotation + ca rsa x2 + ca ecdsa x2 + ca rotation + ca negatives x3${EPOCH_LEG} + webpki rsa + webpki-resume x3 + webpki-rpk x7 + webpki ecdsa x2 + webpki negatives x4 + webpki alpn x3 + webpki-secp256r1 x2${GO_LEG}${OPENSSL_PQ_LEG}${AES_SUITE_LEG}${CHSRV_AES_LEG} + examples x4 OK"
+echo "e2e: record + psk + tickets + resumption + pinned ecdsa + chapulin server resume x2 + chapulin server x25519 + chapulin server secp256r1 x2${CHSRV_PQ_LEG} + pinned rsa + require-pq refused + rotation + ca rsa x2 + ca ecdsa x2 + ca rotation + ca negatives x3${EPOCH_LEG} + webpki rsa + webpki-resume x3 + webpki-rpk x8 + webpki ecdsa x2 + webpki negatives x4 + webpki alpn x3 + webpki-secp256r1 x2${GO_LEG}${OPENSSL_PQ_LEG}${AES_SUITE_LEG}${CHSRV_AES_LEG} + examples x4 OK"

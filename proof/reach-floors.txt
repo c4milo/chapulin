@@ -123,13 +123,24 @@ rsa_webpki 91.7  # local reading, cbmc 6.11.0 on arm64 macOS; replace with the n
 sha512 90.9  # local reading, cbmc 6.11.0 on arm64 macOS; replace with the nightly table's number
 sha512_compress 97.1  # local reading, cbmc 6.11.0 on arm64 macOS; replace with the nightly table's number
 softmul 91.3
-webpki_cert 56.7  # local reading, cbmc 6.11.0 on arm64 macOS; replace with the nightly table's number
+# webpki_cert fell from 56.7 to 56.1 and webpki_pin from 56.5 to 54.1
+# when a configuration of SPKI pins alone started to accept a chain whose
+# leaf key a pin names (docs/decisions.md 65). webpki_cert.c gained
+# webpki_read_certificate_key and webpki_pin.c gained
+# webpki_verify_leaf_pin, which webpki_cert_key and webpki_leaf_pin
+# prove and these two harnesses leave unreached. Each reaches more
+# locations than before, of a larger model: webpki_cert 388 of 692
+# against 379 of 656 the commit before, webpki_pin 262 of 484 against
+# 259 of 463, each from its launch line's own --cover location command on
+# arm64 macOS with cbmc 6.11.0. webpki_pin read 55.9% there at the commit
+# before, already under the 56.5 recorded here.
+webpki_cert 56.1  # local reading, cbmc 6.11.0 on arm64 macOS; replace with the nightly table's number
 webpki_chain 80.6  # local reading, cbmc 6.11.0 on arm64 macOS; replace with the nightly table's number
 webpki_ext 40.0  # local reading, cbmc 6.11.0 on arm64 macOS; replace with the nightly table's number
 webpki_ext_one 51.4  # local reading, cbmc 6.11.0 on arm64 macOS; replace with the nightly table's number
 webpki_ext_walk 54.8  # local reading, cbmc 6.11.0 on arm64 macOS; replace with the nightly table's number
 webpki_name 24.2  # local reading, cbmc 6.11.0 on arm64 macOS; replace with the nightly table's number
-webpki_pin 56.5  # local reading, cbmc 6.11.0 on arm64 macOS; replace with the nightly table's number
+webpki_pin 54.1  # local reading, cbmc 6.11.0 on arm64 macOS; replace with the nightly table's number
 webpki_san 29.8
 webpki_sigalg 41.9  # local reading, cbmc 6.11.0 on arm64 macOS; replace with the nightly table's number
 webpki_spki 41.1  # local reading, cbmc 6.11.0 on arm64 macOS; replace with the nightly table's number

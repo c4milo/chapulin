@@ -6,7 +6,9 @@
 // mode's walk over the same message, and this file keeps its entry
 // reading and its alert convention. webpki_read_entry, the framing of
 // one entry, is here too, because webpki_pin.c reads a raw public key's
-// one entry with it.
+// one entry with it, and so is webpki_read_leaf_entry, the framing of a
+// whole list, which webpki_pin.c reads a leaf pinned without anchors
+// with.
 //
 // Every byte here is public: a certificate the peer sent, a Name, a
 // public key and the caller's own anchors. The code is variable time
@@ -91,6 +93,18 @@ static int read_entries(const uint8_t *list, size_t list_len, certificate_list *
         out->count++;
     }
     return out->count > 0 ? CH_OK : CH_EPROTO;
+}
+
+int webpki_read_leaf_entry(const uint8_t *list, size_t list_len, const uint8_t **leaf,
+                           size_t *leaf_len, uint8_t *alert) {
+    certificate_list entries;
+    int rc = read_entries(list, list_len, &entries, alert);
+    if (rc != CH_OK) {
+        return rc;
+    }
+    *leaf = entries.cert[0];
+    *leaf_len = entries.cert_len[0];
+    return CH_OK;
 }
 
 // Two whole Name TLVs, byte for byte. RFC 5280 §7.1 allows a richer

@@ -1,0 +1,12 @@
+invariant: INV-25
+file: webpki_cert.c
+catches: webpki_cert_test
+reason: the reader a leaf pinned with no anchor goes through skips the
+  extensions and stops there, so a TBSCertificate with a byte after its
+  extensions reads as the key beside it: two encodings name one leaf.
+  test/webpki_cert_key_mutants.h's byte-after-the-extensions row objects.
+
+--- old
+    if (!x509_skip(&t, TAG_EXTENSIONS) || t.err || rb_left(&t) != 0) {
+--- new
+    if (!x509_skip(&t, TAG_EXTENSIONS) || t.err) {

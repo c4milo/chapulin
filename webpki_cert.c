@@ -4,9 +4,11 @@
 // the profile in docs/webpki.md ("The chain walk", steps 2, 3 and 6c).
 // x509.c's parse_certificate and parse_tbs are the ca mode's parser
 // over the same grammar, and this file keeps their order and their
-// exact-fill checks. The walk, the clock and the hostname are the
-// caller's; this file decides none of them. Every byte here is public,
-// so variable time is fine and deliberate.
+// exact-fill checks. webpki_read_certificate_key reads the same fields
+// as far as the key and stops there, for a leaf an SPKI pin names with no
+// anchor to verify it (webpki_pin.h). The walk, the clock and the
+// hostname are the caller's; this file decides none of them. Every byte
+// here is public, so variable time is fine and deliberate.
 #include "webpki.h"
 
 #include "buf.h"
@@ -14,7 +16,9 @@
 #include "x509_der.h"
 
 // DER tags this file reads.
+#define TAG_BIT_STRING 0x03
 #define TAG_SEQUENCE 0x30
+#define TAG_EXTENSIONS 0xa3        // [3] EXPLICIT Extensions
 #define TAG_ISSUER_UNIQUE_ID 0x81  // [1] IMPLICIT UniqueIdentifier, a BIT STRING
 #define TAG_SUBJECT_UNIQUE_ID 0x82 // [2] IMPLICIT UniqueIdentifier, a BIT STRING
 
@@ -120,21 +124,32 @@ static int unique_id_follows(const rbuf *t) {
     return !next.err && (tag == TAG_ISSUER_UNIQUE_ID || tag == TAG_SUBJECT_UNIQUE_ID);
 }
 
-// The TBSCertificate body, first byte to last, exact-fill.
-static int read_tbs(const uint8_t *tbs, size_t tbs_len, int is_ca, webpki_cert *out,
-                    const uint8_t **sigalg_tlv, size_t *sigalg_tlv_len, uint8_t *alert) {
-    rbuf t;
-    rb_init(&t, tbs, tbs_len);
-    int rc = read_tbs_names(&t, out, sigalg_tlv, sigalg_tlv_len, alert);
+// The TBSCertificate fields through subjectPublicKeyInfo: the ones
+// read_tbs_names reads, then the key.
+static int read_tbs_key(rbuf *t, webpki_cert *out, const uint8_t **sigalg_tlv,
+                        size_t *sigalg_tlv_len, uint8_t *alert) {
+    int rc = read_tbs_names(t, out, sigalg_tlv, sigalg_tlv_len, alert);
     if (rc != CH_OK) {
         return rc;
     }
-    if (!read_spki_tlv(&t, out)) {
+    if (!read_spki_tlv(t, out)) {
         // A key algorithm or size the mode refuses, or malformed DER:
         // webpki_read_spki answers one 0 for both (webpki.h's alert
         // exception).
         *alert = ALERT_UNSUPPORTED_CERTIFICATE;
         return CH_EPROTO;
+    }
+    return CH_OK;
+}
+
+// The TBSCertificate body, first byte to last, exact-fill.
+static int read_tbs(const uint8_t *tbs, size_t tbs_len, int is_ca, webpki_cert *out,
+                    const uint8_t **sigalg_tlv, size_t *sigalg_tlv_len, uint8_t *alert) {
+    rbuf t;
+    rb_init(&t, tbs, tbs_len);
+    int rc = read_tbs_key(&t, out, sigalg_tlv, sigalg_tlv_len, alert);
+    if (rc != CH_OK) {
+        return rc;
     }
     if (unique_id_follows(&t)) {
         *alert = ALERT_UNSUPPORTED_CERTIFICATE;
@@ -150,29 +165,65 @@ static int read_tbs(const uint8_t *tbs, size_t tbs_len, int is_ca, webpki_cert *
     return CH_OK;
 }
 
-int webpki_parse_certificate(const uint8_t *cert, size_t cert_len, int is_ca, webpki_cert *out,
-                             uint8_t *alert) {
+// The Certificate SEQUENCE's header, whose length must fill cert, and
+// the TBSCertificate's, with out->tbs and out->tbs_len naming its
+// content. Leaves r after the TBSCertificate, at the outer
+// signatureAlgorithm.
+static int read_certificate_head(const uint8_t *cert, size_t cert_len, rbuf *r, webpki_cert *out) {
     if (cert_len > CH_WEBPKI_CERT_MAX) {
-        return CH_EPROTO;
+        return 0;
     }
-    rbuf r;
-    rb_init(&r, cert, cert_len);
+    rb_init(r, cert, cert_len);
     size_t body_len = 0;
-    if (!x509_read_header(&r, TAG_SEQUENCE, &body_len) || body_len != rb_left(&r)) {
-        return CH_EPROTO;
+    if (!x509_read_header(r, TAG_SEQUENCE, &body_len) || body_len != rb_left(r)) {
+        return 0;
     }
     size_t tbs_len = 0;
-    if (!x509_read_header(&r, TAG_SEQUENCE, &tbs_len)) {
+    if (!x509_read_header(r, TAG_SEQUENCE, &tbs_len)) {
+        return 0;
+    }
+    out->tbs = rb_bytes(r, tbs_len);
+    out->tbs_len = tbs_len;
+    return out->tbs != NULL;
+}
+
+int webpki_read_certificate_key(const uint8_t *cert, size_t cert_len, webpki_cert *out,
+                                uint8_t *alert) {
+    rbuf r;
+    if (!read_certificate_head(cert, cert_len, &r, out)) {
         return CH_EPROTO;
     }
-    out->tbs = rb_bytes(&r, tbs_len);
-    out->tbs_len = tbs_len;
-    if (out->tbs == NULL) {
+    rbuf t;
+    rb_init(&t, out->tbs, out->tbs_len);
+    const uint8_t *sigalg_tlv = NULL;
+    size_t sigalg_tlv_len = 0;
+    int rc = read_tbs_key(&t, out, &sigalg_tlv, &sigalg_tlv_len, alert);
+    if (rc != CH_OK) {
+        return rc;
+    }
+    // The fields after the key are skipped as whole TLVs and never read:
+    // the extensions in the TBSCertificate, then the signatureAlgorithm
+    // and the signature in the Certificate. Each container still ends
+    // where its last field ends (INV-25).
+    if (!x509_skip(&t, TAG_EXTENSIONS) || t.err || rb_left(&t) != 0) {
+        return CH_EPROTO;
+    }
+    if (!x509_skip(&r, TAG_SEQUENCE) || !x509_skip(&r, TAG_BIT_STRING) || r.err ||
+        rb_left(&r) != 0) {
+        return CH_EPROTO;
+    }
+    return CH_OK;
+}
+
+int webpki_parse_certificate(const uint8_t *cert, size_t cert_len, int is_ca, webpki_cert *out,
+                             uint8_t *alert) {
+    rbuf r;
+    if (!read_certificate_head(cert, cert_len, &r, out)) {
         return CH_EPROTO;
     }
     const uint8_t *sigalg_tlv = NULL;
     size_t sigalg_tlv_len = 0;
-    int rc = read_tbs(out->tbs, tbs_len, is_ca != 0, out, &sigalg_tlv, &sigalg_tlv_len, alert);
+    int rc = read_tbs(out->tbs, out->tbs_len, is_ca != 0, out, &sigalg_tlv, &sigalg_tlv_len, alert);
     if (rc != CH_OK) {
         return rc;
     }

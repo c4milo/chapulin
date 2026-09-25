@@ -114,7 +114,9 @@ typedef struct {
 // validated, which the SPKI pins may match anywhere on (RFC 7858 §4.2):
 // the first path_entries entries of the Certificate list, the leaf
 // first, then the anchor at anchor_index in ch_cfg.anchors. A raw public
-// key has no path, and webpki_verify_raw_key leaves both at 0.
+// key has no path, and webpki_verify_raw_key leaves both at 0. A leaf
+// pinned with no anchor is a path of the leaf alone, and
+// webpki_verify_leaf_pin writes path_entries 1 and anchor_index 0.
 typedef struct {
     uint8_t alg; // WEBPKI_KEY_*
     uint8_t key[CH_WEBPKI_KEY_MAX];
@@ -180,6 +182,17 @@ int webpki_verify_chain(const uint8_t *list, size_t list_len, const ch_cfg *cfg,
 int webpki_read_entry(rbuf *r, size_t cert_max, const uint8_t **cert, size_t *cert_len,
                       uint8_t *alert);
 
+// A whole CertificateEntry list, framed as the walk frames it: 1 to
+// CH_WEBPKI_FLIGHT_ENTRIES entries of 1 to CH_WEBPKI_CERT_MAX bytes, every
+// extensions vector empty, filling the list exactly. Returns CH_OK with
+// *leaf and *leaf_len naming entry 0, and reads no entry's content.
+// Otherwise CH_EPROTO, with *alert as webpki_read_entry sets it and
+// ALERT_BAD_CERTIFICATE for an empty list or one entry too many.
+// webpki_verify_leaf_pin reads a chain with it (webpki_pin.h). Defined in
+// webpki.c.
+int webpki_read_leaf_entry(const uint8_t *list, size_t list_len, const uint8_t **leaf,
+                           size_t *leaf_len, uint8_t *alert);
+
 // One whole certificate: SEQUENCE { tbs, sigAlg, sigValue }, canonical
 // DER on every field it decodes except the one KeyPurposeId case
 // webpki_read_extensions names, version 3, exactly the profile arm
@@ -194,6 +207,23 @@ int webpki_read_entry(rbuf *r, size_t cert_max, const uint8_t **cert, size_t *ce
 // Defined in webpki_cert.c.
 int webpki_parse_certificate(const uint8_t *cert, size_t cert_len, int is_ca, webpki_cert *out,
                              uint8_t *alert);
+
+// One certificate read only as far as its key: the Certificate SEQUENCE,
+// of at most CH_WEBPKI_CERT_MAX bytes and filling cert, and its
+// TBSCertificate's fields through subjectPublicKeyInfo, each under the
+// reader webpki_parse_certificate hands it to: version 3, serialNumber,
+// signature, issuer, validity, subject and subjectPublicKeyInfo. The
+// dates are read for their shape and compared with no clock. The fields
+// after the key are skipped as whole TLVs and never read: exactly one
+// extensions [3] TLV must fill the rest of the TBSCertificate, and one
+// signatureAlgorithm SEQUENCE and one signature BIT STRING the rest of
+// the Certificate (INV-25). Fills out's tbs, issuer, subject, dates,
+// sigalg, spki and spki_tlv, and writes no other field. Alert convention
+// as webpki_verify_chain. webpki_verify_leaf_pin reads the leaf of a
+// configuration with SPKI pins and no anchors with it (webpki_pin.h).
+// Defined in webpki_cert.c.
+int webpki_read_certificate_key(const uint8_t *cert, size_t cert_len, webpki_cert *out,
+                                uint8_t *alert);
 
 // extensions [3] EXPLICIT Extensions, required. Walks at most
 // CH_WEBPKI_EXT_COUNT_MAX extensions of at most CH_WEBPKI_EXT_TLV_MAX

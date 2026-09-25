@@ -38,8 +38,8 @@ def anchorsArg? (s : String) : Option (List Spec.Webpki.Anchor) :=
       return { name := nb, spki := kb }
     | _ => none
 
-/-- The SPKI pins of a `webpki_chain` or `webpki_raw` request: `-` for
-none, else 32-byte hex pins joined by commas. -/
+/-- The SPKI pins of a `webpki_chain`, `webpki_raw` or `webpki_leaf`
+request: `-` for none, else 32-byte hex pins joined by commas. -/
 def pinsArg? (s : String) : Option (List ByteArray) :=
   if s == "-" then some [] else (s.splitOn ",").mapM hexToBytes?
 
@@ -598,6 +598,15 @@ def dispatch : List String → Option String
     let pinList ← pinsArg? pins
     let listB ← hexArg? list
     return match Spec.WebpkiPin.verifyRawKey pinList listB with
+      | .ok alg key => s!"ok {alg.name} {emit key}"
+      | v => v.name
+  -- One X.509 CertificateEntry list under SPKI pins alone. The reply is the
+  -- leaf's key on acceptance, "unpinned" when no pin names it, and
+  -- "rejected" for every CH_EPROTO the C returns.
+  | ["webpki_leaf", pins, list] => do
+    let pinList ← pinsArg? pins
+    let listB ← hexArg? list
+    return match Spec.WebpkiPin.verifyLeafPin pinList listB with
       | .ok alg key => s!"ok {alg.name} {emit key}"
       | v => v.name
   | ["webpki_sign", alg, "rsa", n, d, tbs] => do

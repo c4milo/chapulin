@@ -246,11 +246,12 @@ void hsa_epoch_commit(handshake_state *h) {
 #ifdef CH_TRUST_WEBPKI
 // The server key, under the certificate type the EncryptedExtensions
 // selected (webpki_pin.h). A raw public key needs a pin that names it. A
-// chain must verify up to one of the caller's anchors, at the caller's
-// clock, for the caller's hostname (docs/webpki.md, "The chain walk"),
-// and with pins configured a pin must also name a key on the path it
-// verified. The key copied out then stands in for a pin at
-// CertificateVerify.
+// chain under pins alone needs a pin that names its leaf's key, and no
+// other certificate in it is read (docs/decisions.md 65). A chain under
+// anchors must verify up to one of them, at the caller's clock, for the
+// caller's hostname (docs/webpki.md, "The chain walk"), and with pins
+// configured a pin must also name a key on the path it verified. The key
+// copied out then stands in for a pin at CertificateVerify.
 static int webpki_server_key(handshake_state *h, const uint8_t *list, size_t list_len) {
     const ch_cfg *cfg = &h->t->cfg;
     h->alert = ALERT_BAD_CERTIFICATE;
@@ -258,12 +259,7 @@ static int webpki_server_key(handshake_state *h, const uint8_t *list, size_t lis
         return webpki_verify_raw_key(list, list_len, cfg, &h->leaf, &h->alert);
     }
     if (cfg->anchor_count == 0) {
-        // Pins alone offer the raw key alone. A server that sent no
-        // server_certificate_type sends the X.509 type it defaults to,
-        // and this configuration has no anchor to verify a chain with
-        // (RFC 7250 §4.2).
-        h->alert = ALERT_UNSUPPORTED_CERTIFICATE;
-        return CH_EAUTH;
+        return webpki_verify_leaf_pin(list, list_len, cfg, &h->leaf, &h->alert);
     }
     int rc = webpki_verify_chain(list, list_len, cfg, &h->leaf, &h->alert);
     if (rc != CH_OK) {

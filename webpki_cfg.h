@@ -24,12 +24,14 @@
 //    this configuration (webpki_ticket.h).
 //  - spki_pins: spki_pin_count SPKI pins, 0 to CH_SPKI_PIN_MAX, of
 //    SHA256_LEN bytes each, back to back: each the SHA-256 of a DER
-//    SubjectPublicKeyInfo (RFC 7858 §4.2). With pins
-//    set, the client offers RFC 7250 raw public keys, and a server key
-//    is accepted only when a pin names it (webpki_pin.h). Pins without
-//    anchors are a whole configuration: the client then offers raw keys
-//    alone, reads no clock, and takes a hostname only as the server_name
-//    to send.
+//    SubjectPublicKeyInfo (RFC 7858 §4.2). With pins set, the client
+//    offers RFC 7250 raw public keys and X.509 after them, and a server
+//    key is accepted only when a pin names it (webpki_pin.h). Pins
+//    without anchors are a whole configuration: the server then proves
+//    it holds a pinned key, sent raw or as the key of a leaf certificate,
+//    and the client reads no clock and takes a hostname only as the
+//    server_name to send. Such a pin names a leaf key, so it breaks when
+//    the operator rotates that key; RFC 7858 §4.2 asks for a backup pin.
 //
 // ch_connect returns CH_EINVAL before it sends a byte when any of those
 // rules fails, when now_seconds is 0 in a configuration with anchors,

@@ -80,7 +80,7 @@ static int mock_recv(void *io, uint8_t *p, size_t n) {
 // passes ch_connect, which holds the rules on how they combine.
 typedef enum {
     PINS_AND_ANCHORS, // offers the raw key and X.509, sends server_name
-    PINS_ONLY,        // offers the raw key alone, sends no server_name
+    PINS_ONLY,        // offers the raw key and X.509, sends no server_name
     ANCHORS_ONLY,     // offers no certificate type, sends server_name
     RESUMPTION,       // pins and anchors with a PSK: offers both types too
 } cfg_shape;
@@ -163,6 +163,8 @@ static int read_row(cfg_shape shape, const uint8_t *exts, size_t n, uint8_t befo
 static const uint8_t server_name_ack[] = {0x00, 0x00, 0x00, 0x00};
 static const uint8_t select_raw[] = {0x00, 0x14, 0x00, 0x01, CH_CERT_TYPE_RAW_PUBLIC_KEY};
 static const uint8_t select_x509[] = {0x00, 0x14, 0x00, 0x01, CH_CERT_TYPE_X509};
+// OpenPGP, CertificateType 1 (RFC 7250 §3), which no configuration offers.
+static const uint8_t select_openpgp[] = {0x00, 0x14, 0x00, 0x01, 0x01};
 
 // The selection lands in the session, and a message without one leaves
 // the X.509 type there, whatever the session held before the read.
@@ -184,16 +186,21 @@ static void test_selection_written(void) {
 }
 
 // The offer is webpki_cert_types_offered's. Pins alone offer the raw
-// key alone, so X.509 is a type the hello did not offer (47); no pins
-// offer nothing, so any selection is unrequested (110). A resumption
-// offers what the same configuration offers without a ticket, because a
-// server that declines the ticket sends a Certificate after all
-// (docs/decisions.md 55), so its server may select the raw key.
+// key and X.509, whose leaf a pin must then name (docs/decisions.md 65),
+// so a server may select X.509, and a type neither offer lists is one the
+// hello did not offer (47); no pins offer nothing, so any selection is
+// unrequested (110). A resumption offers what the same configuration
+// offers without a ticket, because a server that declines the ticket
+// sends a Certificate after all (docs/decisions.md 55), so its server may
+// select the raw key.
 static void test_offer_passed(void) {
     uint8_t after = 0;
     uint8_t alert = 0;
-    CHECK(read_row(PINS_ONLY, select_x509, sizeof select_x509, CH_CERT_TYPE_X509, &after, &alert) ==
-          CH_EPROTO);
+    CHECK(read_row(PINS_ONLY, select_x509, sizeof select_x509, CH_CERT_TYPE_RAW_PUBLIC_KEY, &after,
+                   &alert) == CH_OK);
+    CHECK(after == CH_CERT_TYPE_X509);
+    CHECK(read_row(PINS_ONLY, select_openpgp, sizeof select_openpgp, CH_CERT_TYPE_X509, &after,
+                   &alert) == CH_EPROTO);
     CHECK(alert == ALERT_ILLEGAL_PARAMETER && after == CH_CERT_TYPE_X509);
     CHECK(read_row(ANCHORS_ONLY, select_raw, sizeof select_raw, CH_CERT_TYPE_X509, &after,
                    &alert) == CH_EPROTO);
