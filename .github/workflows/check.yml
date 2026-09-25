@@ -247,7 +247,6 @@ jobs:
       # meant they applied on CI and not locally.
       CPPCHECK: /home/runner/cppcheck-inst/bin/cppcheck
       SHELLCHECK: /home/runner/shellcheck-inst/shellcheck
-      OPENSSL_PREFIX: /home/runner/openssl-inst
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -325,54 +324,13 @@ jobs:
           clang-format: "true"
           llvm: "true" # llvm-nm, which lint-runtime-symbols reads with
 
-      - name: Cache OpenSSL install
-        id: openssl-cache
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      - name: Build the pinned OpenSSL and put it on PATH
+        # test/e2e.sh needs options the runner's OpenSSL 3.0 lacks; the
+        # action states which.
+        uses: ./.github/actions/install-openssl
         with:
-          path: ~/openssl-inst
-          key: openssl-${{ runner.os }}-${{ env.OPENSSL_VERSION }}-inst
-
-      - name: Build and install OpenSSL at the development version
-        if: steps.openssl-cache.outputs.cache-hit != 'true'
-        # The tarball is checked against the pinned hash before it is
-        # unpacked. no-shared so the app carries its own libcrypto: no
-        # LD_LIBRARY_PATH, and no chance of binding the system 3.0.
-        # no-docs skips the pod2man pass, which is most of the build.
-        run: |
-          tarball="openssl-$OPENSSL_VERSION.tar.gz"
-          curl -fsSL -o "$RUNNER_TEMP/$tarball" "https://github.com/openssl/openssl/releases/download/openssl-$OPENSSL_VERSION/$tarball"
-          echo "$OPENSSL_SHA256  $RUNNER_TEMP/$tarball" | sha256sum -c -
-          tar xzf "$RUNNER_TEMP/$tarball"
-          cd "openssl-$OPENSSL_VERSION"
-          ./Configure --prefix="$OPENSSL_PREFIX" --openssldir="$OPENSSL_PREFIX/ssl" \
-            no-shared no-docs
-          make -j"$(nproc)"
-          # install_ssldirs too: install_sw alone leaves OPENSSLDIR
-          # without openssl.cnf, and `openssl req` needs it.
-          make install_sw install_ssldirs
-
-      - name: Put the pinned OpenSSL first on PATH
-        run: |
-          echo "$OPENSSL_PREFIX/bin" >> "$GITHUB_PATH"
-
-      - name: Prove the pinned OpenSSL can issue what e2e needs
-        # Not just a version check: mint a certificate the way e2e does
-        # and read the date back. A toolchain that cannot issue is how
-        # this broke before, and the failure was silent.
-        run: |
-          command -v openssl
-          openssl version
-          tmp=$(mktemp -d)
-          openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 \
-            -out "$tmp/k.pem"
-          openssl req -new -key "$tmp/k.pem" -subj /CN=probe -out "$tmp/r.csr"
-          openssl x509 -req -in "$tmp/r.csr" -signkey "$tmp/k.pem" \
-            -not_before 000103000000Z -not_after 491231235959Z \
-            -sha256 -out "$tmp/c.pem"
-          openssl x509 -in "$tmp/c.pem" -noout -startdate |
-            grep -q "Jan  3 00:00:00 2000" ||
-            { echo "the pinned OpenSSL did not honour -not_before"; exit 1; }
-          echo "issued a certificate at an absolute notBefore"
+          version: ${{ env.OPENSSL_VERSION }}
+          sha256: ${{ env.OPENSSL_SHA256 }}
 
       - name: Cache cppcheck install
         id: cppcheck-cache

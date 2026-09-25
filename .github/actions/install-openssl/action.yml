@@ -1,0 +1,36 @@
+# Builds the pinned OpenSSL into ~/openssl-inst, cached by version, puts
+# its bin first on PATH, and proves it can issue what test/e2e.sh needs.
+# The runner's own OpenSSL is 3.0, which lacks options e2e.sh uses, such
+# as s_server -enable_server_rpk (3.2) and x509 -not_before (3.4), so
+# every job that runs e2e.sh, directly or as a violation's catch target,
+# takes this action. The pin values come from the job's env via
+# ./.github/actions/load-pins: version is OPENSSL_VERSION and sha256 is
+# OPENSSL_SHA256, which the tarball is checked against before it is
+# unpacked.
+name: install-openssl
+description: Build the pinned OpenSSL into ~/openssl-inst and put it on PATH
+inputs:
+  version:
+    description: The OpenSSL release (OPENSSL_VERSION)
+    required: true
+  sha256:
+    description: The sha256 of the source tarball (OPENSSL_SHA256)
+    required: true
+runs:
+  using: composite
+  steps:
+    - id: cache
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ~/openssl-inst
+        key: openssl-${{ runner.os }}-${{ inputs.version }}-inst
+    - if: steps.cache.outputs.cache-hit != 'true'
+      shell: bash
+      env:
+        VERSION: ${{ inputs.version }}
+        SHA256: ${{ inputs.sha256 }}
+      run: bash "$GITHUB_ACTION_PATH/install.sh"
+    - shell: bash
+      run: echo "$HOME/openssl-inst/bin" >> "$GITHUB_PATH"
+    - shell: bash
+      run: bash "$GITHUB_ACTION_PATH/probe.sh"

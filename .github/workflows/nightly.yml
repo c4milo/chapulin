@@ -225,6 +225,16 @@ jobs:
         # (https://github.com/c4milo/chapulin/issues/106).
         run: echo "$HOME/armtc/bin" >> "$GITHUB_PATH"
 
+      - name: Build the pinned OpenSSL and put it on PATH
+        # Two violations name test/e2e.sh as their catch target, and e2e.sh
+        # starts s_server with options the runner's OpenSSL 3.0 lacks. On
+        # 3.0 the script fails on unedited source and violations.py
+        # reports ERROR, as it would for a missing semgrep below.
+        uses: ./.github/actions/install-openssl
+        with:
+          version: ${{ env.OPENSSL_VERSION }}
+          sha256: ${{ env.OPENSSL_SHA256 }}
+
       - name: Install semgrep (hash-pinned)
         # Five violations name test/lint-invariants.sh as their catch
         # target: the four INV-26 mutants that move a secret key into AES
