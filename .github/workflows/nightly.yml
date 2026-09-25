@@ -177,8 +177,12 @@ jobs:
   # (https://github.com/c4milo/chapulin/issues/144).
   test-invariants:
     runs-on: ubuntu-24.04
-    # 42 minutes measured for this set.
-    timeout-minutes: 90
+    # The set took 81 minutes on 2026-09-25 (run 36114766703), while the
+    # two test/e2e.sh mutants still stopped at their baseline. Once they
+    # ran, the job reached mutant 192 of 295 at the 90-minute limit (run
+    # 36139181178), after 47 minutes in the two handshake_sequence_test
+    # mutants alone, so the whole set needs about 100 minutes.
+    timeout-minutes: 150
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/load-pins
