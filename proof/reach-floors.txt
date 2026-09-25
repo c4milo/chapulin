@@ -249,6 +249,13 @@ x25519_tail 52.7
 # the first run that skipped handshake_parser_suite. Neither has been
 # measured by hand.
 #
+# quic_aes256 stops in 20 s under the cover command on a development
+# machine on 2026-09-25 (arm64 macOS, cbmc 6.11.0), with cbmc's "too many
+# addressed objects", so it reports no number. Its launch line carries no
+# --object-bits. Raising it would put the harness where quic_aes is,
+# a cover run that returned no usable number in 21 minutes, so it is
+# listed beside quic_aes rather than given more room.
+#
 #   eeparse
 #   handshake_parser
 #   handshake_parser_suite
@@ -269,6 +276,7 @@ x25519_tail 52.7
 #   p256
 #   p384
 #   quic_aes
+#   quic_aes256
 #   quic_gcm_refusal
 #   quic_gcm_safety
 #   quic_ghash
