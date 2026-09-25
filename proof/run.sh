@@ -748,8 +748,10 @@ launch fast full epoch 40 "" ct.c
 # Weighted from the measured peak: 694 properties, 2.6 GB RSS in 293 s,
 # up from 1.9 GB in 154 s before handle_ticket read the ticket's
 # extensions vector, compared rb_left against zero and refused a message
-# its fields do not fill (INV-25).
-launch fast:3 full handshake_post 132 "handle_post_handshake.0:33,fill_nondet.0:130" --object-bits 11 buf.c ct.c session.c
+# its fields do not fill (INV-25). Measured again on 2026-09-24 at 211 to
+# 226 s and 4.1 to 4.8 GB peak on an M1 Pro, over the slow tier's line
+# at the top of this file, so it runs nightly: slow:5 covers that peak.
+launch slow:5 full handshake_post 132 "handle_post_handshake.0:33,fill_nondet.0:130" --object-bits 11 buf.c ct.c session.c
 # The only launch line that builds the hybrid key exchange
 # (https://github.com/c4milo/chapulin/issues/47). hybrid_secret over any seed,
 # any server ciphertext and any server share, with mlkem and x25519 stubbed to
