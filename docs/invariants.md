@@ -954,8 +954,8 @@ last `ROLE=server` stub, as the entry said it would.
   (`test/tcp_nonblocking_read_tests.h`) reads a ticket-only record and
   then nothing, a ticket split across two records, and a record cut off
   after three bytes. Three violations each break one term:
-  `inv13-record-read-dies-between-records`,
-  `inv13-record-read-drops-a-split-message` and
+  `inv13-tcp-nonblocking-read-dies-between-records`,
+  `inv13-tcp-nonblocking-read-drops-a-split-message` and
   `inv13-record-again-inside-a-record`.
 - **Violation.** A PR returns a "soft" error that leaves keys live so
   the caller can retry a read.
