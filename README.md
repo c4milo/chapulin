@@ -155,10 +155,10 @@ so an rv32 peak needs tooling that does not exist yet.
 | peak stack, `ch_write` / `ch_close` | 912 / 864 |
 | `ch_tls` under `ROLE=server` (includes 1221 B TX staging) | 1968 | 1816 |
 | **total static working set, `ROLE=server`** (2048 buffer) | **4016** | **3864** |
-| peak stack, `ch_srv_accept` (`ROLE=server`) | 10336 |
+| peak stack, `ch_srv_accept` (`ROLE=server`) | 10304 |
 | `ch_tls` under `ROLE=server SUITE=aesgcm` | 2256 |
 | **total static working set, `ROLE=server SUITE=aesgcm`** (2048 buffer) | **4304** |
-| peak stack, `ch_srv_accept` (`ROLE=server SUITE=aesgcm`) | 10480 |
+| peak stack, `ch_srv_accept` (`ROLE=server SUITE=aesgcm`) | 10448 |
 | `ch_tls` under `TRUST=webpki SUITE=aesgcm` | 3336 |
 | **total static working set, `TRUST=webpki SUITE=aesgcm`** (12338 buffer, its floor) | **15674** |
 | peak stack, `ch_connect` (`TRUST=webpki SUITE=aesgcm`) | 16656 |
@@ -181,7 +181,7 @@ A `ROLE=server` build pays them as well, because every server holds the
 hybrid ([`docs/decisions.md`](docs/decisions.md) 54). Its ServerHello is
 built in the clear in the same staging array, and the hybrid one carries a
 1,120-byte share, so the array holds 1,216 bytes of message behind the
-record header. `ch_srv_accept` peaks at 10,336 bytes, through the
+record header. `ch_srv_accept` peaks at 10,304 bytes, through the
 encapsulation to the client's key into K-PKE encrypt and Keccak, above
 the 5,280 its RSA-PSS signer reaches with the encapsulation pruned from
 the call graph (`STACK_PRUNE=srv_kex_share`).
