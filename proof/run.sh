@@ -1161,6 +1161,14 @@ launch fast full aes256 60 "fill_nondet.0:241" -DCH_TRANSPORT_QUIC_NONBLOCKING -
 # count each writes, and the dispatch that count drives. Measured the
 # same way: 140 properties, under 1 s, 0.02 GB peak.
 launch fast full aes_traffic 45 "fill_nondet.0:241" -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_SUITE_AES_GCM -DCH_AES_HW -DCH_NATIVE_AES
+# aes_extern.c, the AES=extern implementation, under the SUITE=aesgcm
+# AES=extern defines, so its AES-256 pair is compiled beside the AES-128
+# one. ch_aes_block is a contract stub the harness defines, because the
+# image holds its body. Measured (arm64 macOS, cbmc 6.11.0, kissat,
+# PROVE_NO_CACHE=1 /usr/bin/time -l): 114 properties, under 1 s, 0.04 GB
+# peak. An aes_cipher_block_256 that passes AES_128_KEY fails the
+# key-length assertion.
+launch fast full aes_extern 2 "fill_nondet.0:241" -DCH_SUITE_AES_GCM -DCH_AES_EXTERN -DCH_AES_EXTERN_CONSTANT_TIME
 # The three RFC 9001 §5.1 derivations and the §6.1 key update. HKDF is
 # the same contract stub the aes harness uses, so this formula holds the
 # framing of the three calls and not four HMAC derivations; ct.c is

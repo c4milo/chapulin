@@ -48,8 +48,10 @@ cc -std=c11 -DCH_RAND_EXTERN -DCH_ROLE_SERVER -I. -o "$TMP/sz_server" "$TMP/sz.c
 SESSION_SERVER=$("$TMP/sz_server" | awk '{print $2}')
 cc -std=c11 -DCH_RAND_EXTERN -DCH_TRUST_WEBPKI -I. -o "$TMP/floor_webpki" "$TMP/floor.c"
 RXBUF_WEBPKI=$("$TMP/floor_webpki" | awk '{print $2}')
-# SUITE=aesgcm takes AES=hw and CH_NATIVE_AES, which no device target
-# carries, so its rows are measured on this host alone. Its secrets, its
+# SUITE=aesgcm is measured here with AES=hw and CH_NATIVE_AES, which no
+# device target carries, so its rows are measured on this host alone. An
+# AES=extern suite build can run on a device, and this script does not
+# measure one (docs/decisions.md 68). Its secrets, its
 # transcript and a ticket's PSK take SHA-384's length, and a webpki
 # ClientHello lists two more suites (docs/decisions.md 58).
 SUITE_DEFS="-DCH_SUITE_AES_GCM -DCH_AES_HW -DCH_NATIVE_AES"

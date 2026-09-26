@@ -16,13 +16,13 @@
 // HKDF is a contract stub (proof/aes_stubs.h), which states what
 // the composition gives up and where the real functions are proven.
 //
-// AES=soft is the implementation proven, and it is the only one CBMC can
-// read: an AES instruction has no C body to unwind, so aes_hw.c
-// reaches no property here, and quic_aes_extern.c calls a function this
-// tree does not contain. Both are held to this one by
-// test/aes_equiv_test.c, which runs them over the same inputs and
-// compares byte for byte. docs/quic.md, "What the AES axis proves",
-// states the split.
+// AES=soft is the implementation proven here, and it is the only cipher
+// CBMC can read: an AES instruction has no C body to unwind, so aes_hw.c
+// reaches no property here, and aes_extern.c calls a function this tree
+// does not contain. test/aes_equiv_test.c holds aes_hw.c to this one byte
+// for byte. proof/aes_extern_harness.c proves aes_extern.c's forwarding
+// over a contract stub of the hook. docs/quic.md, "What the AES axis
+// proves", states the split.
 #include "harness.h"
 
 #include "aes_stubs.h"

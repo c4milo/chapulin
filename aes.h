@@ -30,12 +30,14 @@
 
 // AES-256, which TLS_AES_256_GCM_SHA384 takes (RFC 9846 §9.1,
 // rfc9846.txt:4540-4543). A library object compiles it only under
-// -DCH_SUITE_AES_GCM, which ct.h refuses without AES=hw, so it runs on the
-// AES instructions in aes_hw.c. A test binary or a proof harness
+// -DCH_SUITE_AES_GCM, which ct.h refuses without AES=hw or AES=extern, so
+// it runs on the AES instructions in aes_hw.c or on the image's
+// ch_aes_block through aes_extern.c. A test binary or a proof harness
 // defines CH_AES_256_TEST to compile it without the suite: on AES=soft
 // that is the software reference in quic_aes_soft.c, which holds the
-// hardware path to FIPS 197 where CBMC cannot read an intrinsic, and on
-// AES=hw it is the instructions a suite build runs. The Makefile's
+// hardware path to FIPS 197 where CBMC cannot read an intrinsic, on
+// AES=hw it is the instructions a suite build runs, and on AES=extern it
+// is the hook with a 32-byte key. The Makefile's
 // LIB_DEF never carries CH_AES_256_TEST, and quic_aes_soft.c refuses the
 // suite define outright. CH_AES_256 is the one name the sources below
 // test, so neither condition is spelled twice.
@@ -134,8 +136,8 @@ typedef struct aes_traffic_key aes_traffic_key;
 // Expands one traffic key into k: key_len is AES_128_KEY for
 // TLS_AES_128_GCM_SHA256 and AES_256_KEY for TLS_AES_256_GCM_SHA384, the
 // "key" length the suite fixes (RFC 9846 §7.3). The key is secret, and
-// this build runs AES on the instructions alone (ct.h), so no table is
-// indexed with it.
+// this build runs AES on the instructions or on the image's peripheral
+// alone (ct.h), so no table in this tree is indexed with it.
 //
 // Requires: k is not NULL and points at one whole aes_traffic_key, so the
 // caller includes aes_traffic_key.h; key points at key_len readable bytes;

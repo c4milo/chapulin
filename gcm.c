@@ -14,13 +14,17 @@
 // running multiple in the GF(2^128) multiply, the keystream, the tag mask
 // and the tag this call expected. A public key does not need it; the
 // suite build runs these same bodies under a traffic key, and one body
-// serves both. ct.h refuses that build unless it also takes AES=hw, so no
-// table sits underneath it.
+// serves both. ct.h refuses that build unless it also takes AES=hw or
+// AES=extern, so no table in this tree sits underneath it.
 //
 // GHASH has two bodies, and the Makefile AES variable picks one.
 // AES=soft and AES=extern run the portable multiply below, 128 masked
 // steps per block. AES=hw runs ghash_hw.c's, four carry-less
 // products and a reduction per block, and compiles no portable body.
+// Under an AES=extern suite build the portable multiply runs under a
+// secret hash subkey. Its masks keep every subkey bit off a branch and
+// off a memory index, and it multiplies no integers, so it needs no
+// statement about the part.
 // Everything else here is one body under every AES value.
 //
 // Only the 96-bit IV exists here. SP 800-38D §7.1 takes the first

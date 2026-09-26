@@ -6,13 +6,15 @@
 // names.
 //
 // A suite build takes AES=hw, whose key expansion and cipher are the AES
-// instructions, and CBMC cannot read an intrinsic. So the four block
-// entries are contract stubs below: each asserts the buffers
-// aes_block.h says it reads and writes, and havocs what it writes.
-// What this proves is aes.c's own framing over them. The
-// instructions are held to FIPS 197 by test/aes_equiv_test.c, which
-// compares them with quic_aes_soft.c's reference, and
-// proof/aes256_harness.c proves that reference.
+// instructions, or AES=extern, whose cipher is the image's hook, and
+// CBMC can read neither. So the four block entries are contract stubs
+// below: each asserts the buffers aes_block.h says it reads and writes,
+// and havocs what it writes. What this proves is aes.c's own framing
+// over them. The instructions are held to FIPS 197 by
+// test/aes_equiv_test.c, which compares them with quic_aes_soft.c's
+// reference, and proof/aes256_harness.c proves that reference.
+// proof/aes_extern_harness.c proves aes_extern.c's four entries over a
+// stub of the hook.
 //
 // Each stub records whether it ran, so the harness asserts that a 16-byte
 // key reached the AES-128 schedule and a 32-byte key the AES-256 one, and

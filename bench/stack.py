@@ -45,8 +45,9 @@ if "-DCH_TRUST_WEBPKI" not in EXTRA_CFLAGS:
     SRCS = [s for s in SRCS if s.name not in ("webpki.c", "webpki_ticket.c", "webpki_pin.c", "webpki_cfg.c")]
 if "-DCH_ROLE_SERVER" in EXTRA_CFLAGS and "-DCH_ROLE_BOTH" not in EXTRA_CFLAGS:
     ENTRIES = SERVER_ENTRIES
-# A SUITE=aesgcm build takes AES=hw, and quic_aes_soft.c refuses the
-# suite, so the software AES is not one of that build's sources.
+# A SUITE=aesgcm build takes AES=hw or AES=extern, and quic_aes_soft.c
+# refuses the suite, so the software AES is not one of that build's
+# sources.
 if "-DCH_SUITE_AES_GCM" in EXTRA_CFLAGS:
     SRCS = [s for s in SRCS if s.name != "quic_aes_soft.c"]
 PRUNE = {"_" + f for f in os.environ.get("STACK_PRUNE", "").split(",") if f}

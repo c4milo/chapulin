@@ -1,6 +1,7 @@
 // TLS_AES_128_GCM_SHA256 in the record layer, against RFC 8448's printed
 // bytes, and TLS_AES_256_GCM_SHA384 against The Illustrated TLS 1.3
-// Connection's. docs/server.md names this binary bin/aes_suite_test.
+// Connection's. docs/server.md names this binary bin/aes_suite_test, and
+// bin/aes_suite_test_extern runs it on AES=extern.
 //
 // The vector is RFC 8448 section 3's client handshake traffic secret and
 // the record the client sends under it. Starting from the secret rather

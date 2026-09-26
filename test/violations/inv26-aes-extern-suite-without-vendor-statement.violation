@@ -1,0 +1,17 @@
+invariant: INV-26
+file: ct.h
+catches: test/quic-builds.sh
+reason: the AES-GCM suite build on AES=extern stops needing
+  CH_AES_EXTERN_CONSTANT_TIME, so the image's ch_aes_block gets every
+  TLS traffic key, AES-128 and AES-256, and nobody states that the
+  peripheral behind it runs in constant time. No mechanism in this tree
+  can observe a peripheral's timing, so the firmware author's statement
+  is the whole of the claim, and this edit drops the line that asks for
+  it (docs/decisions.md 68). quic-builds.sh compiles ct.h under the suite
+  on AES=extern without the statement and requires the refusal.
+
+--- old
+#ifndef CH_AES_EXTERN_CONSTANT_TIME
+#error "CH_SUITE_AES_GCM on AES=extern needs -DCH_AES_EXTERN_CONSTANT_TIME (aes_block.h)"
+#endif
+--- new

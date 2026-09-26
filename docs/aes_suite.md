@@ -25,12 +25,23 @@ The scope has landed, and the work went past it:
 - `record_suite` proves the record layer's suite selection, `test/e2e.sh`
   runs OpenSSL's `s_client` against this tree's server under each suite,
   full and resumed, and `bench/sram.sh` measures a suite build.
+- Both suites run on `AES=extern` too, so a part with an AES peripheral
+  and no AES instructions offers them over both TCP transports and QUIC
+  (`docs/decisions.md` entry 68,
+  [#177](https://github.com/c4milo/chapulin/issues/177)). `ch_aes_block`
+  takes a key length, and the build states the peripheral's timing with
+  `CH_AES_EXTERN_CONSTANT_TIME`, which `ct.h` requires beside
+  `CH_AES_EXTERN` the way it requires `CH_NATIVE_AES` beside
+  `CH_AES_HW`. What that statement rests on is the vendor's word and
+  nothing this tree can observe. "Where the suite cannot go" below
+  predates it.
 
 The rename landed last: `quic_aes.[ch]` and `quic_gcm.[ch]` are now
 `aes.[ch]` and `gcm.[ch]`, and the `AES=hw` and GHASH sources lost the
-`quic_` prefix with them. `quic_aes_soft.c` and `quic_aes_extern.c` keep
-it, because only a QUIC build compiles them. The sections below keep the
-original scoping text. Their line references are as they were when it
+`quic_` prefix with them. `quic_aes_extern.c` lost it later, as
+`aes_extern.c`, when a suite build began to compile it over TCP.
+`quic_aes_soft.c` keeps it, because only a QUIC build compiles it. The
+sections below keep the original scoping text. Their line references are as they were when it
 was written, and their file names are the current ones.
 
 ## Why the tree needs it
@@ -50,7 +61,7 @@ offers, and the device builds offer ChaCha20-Poly1305 on purpose.
 
 - The AES-128 key expansion and forward cipher of FIPS 197, in three
   implementations the `AES` axis picks between: `quic_aes_soft.c`,
-  `aes_hw.c` and `quic_aes_extern.c`.
+  `aes_hw.c` and `aes_extern.c`.
 - `AEAD_AES_128_GCM` and GHASH in `gcm.c`, checked against SP 800-38D
   and the Wycheproof AES-GCM suite on four legs. Under `AES=hw`, the build
   this suite takes, GHASH's multiply runs on the carry-less multiply in

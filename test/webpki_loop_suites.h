@@ -1,7 +1,8 @@
 // The three cipher suites of a SUITE=aesgcm build, end to end: this
 // tree's TRUST=webpki client against this tree's server, the ROLE=both
 // TRANSPORT=tcp-nonblocking TRUST=webpki object compiled with -DCH_SUITE_AES_GCM.
-// bin/webpki_loop_aes runs them; test/webpki_loop_test.c includes this
+// bin/webpki_loop_aes runs them on AES=hw and bin/webpki_loop_aes_extern on
+// AES=extern; test/webpki_loop_test.c includes this
 // file after its fixtures, and a build without the define compiles none
 // of it.
 //

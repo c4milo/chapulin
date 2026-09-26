@@ -19,10 +19,11 @@
 # the verdict reads correctly.
 #
 # It carries a second check for the same reason: ct.h refuses
-# -DCH_SUITE_AES_GCM unless the build also takes AES=hw and asserts
-# CH_NATIVE_AES, and an #error is a compiler refusal rather than a lint.
-# INV-26 states what that build would hand AES and why the AES=soft S-box
-# may not be underneath it.
+# -DCH_SUITE_AES_GCM unless the build takes AES=hw and asserts
+# CH_NATIVE_AES, or takes AES=extern and asserts
+# CH_AES_EXTERN_CONSTANT_TIME, and an #error is a compiler refusal rather
+# than a lint. INV-26 states what that build would hand AES and why the
+# AES=soft S-box may not be underneath it.
 cd "$(dirname "$0")/.." || exit 1
 
 make -s bin/quic_driver_test || exit 1
@@ -66,6 +67,45 @@ if "$cc" -std=c11 -I. -fsyntax-only \
     exit 1
 fi
 
+# The suite on AES=extern: the image's ch_aes_block gets the traffic keys,
+# so the build states the peripheral's timing with
+# CH_AES_EXTERN_CONSTANT_TIME (docs/decisions.md 68). With it the build
+# compiles. Without it ct.h refuses the build, and each statement is
+# checked against the other AES value too: CH_NATIVE_AES names
+# instructions an AES=extern build does not run, so it does not stand in
+# for the peripheral's statement, and the peripheral's statement does not
+# stand in for the instructions'. The extern statement without AES=extern
+# is the AES=soft build, which no statement admits.
+if ! "$cc" -std=c11 -I. -fsyntax-only \
+    -DCH_SUITE_AES_GCM -DCH_AES_EXTERN -DCH_AES_EXTERN_CONSTANT_TIME "$tu"; then
+    echo "quic-builds: -DCH_SUITE_AES_GCM with AES=extern and CH_AES_EXTERN_CONSTANT_TIME must compile" >&2
+    exit 1
+fi
+if "$cc" -std=c11 -I. -fsyntax-only \
+    -DCH_SUITE_AES_GCM -DCH_AES_EXTERN "$tu" 2>/dev/null; then
+    echo "quic-builds: -DCH_SUITE_AES_GCM on AES=extern without CH_AES_EXTERN_CONSTANT_TIME compiled;" \
+        "ct.h must refuse it" >&2
+    exit 1
+fi
+if "$cc" -std=c11 -I. -fsyntax-only \
+    -DCH_SUITE_AES_GCM -DCH_AES_EXTERN -DCH_NATIVE_AES "$tu" 2>/dev/null; then
+    echo "quic-builds: -DCH_SUITE_AES_GCM on AES=extern compiled with CH_NATIVE_AES in place of" \
+        "CH_AES_EXTERN_CONSTANT_TIME; ct.h must refuse it" >&2
+    exit 1
+fi
+if "$cc" -std=c11 -I. -fsyntax-only \
+    -DCH_SUITE_AES_GCM -DCH_AES_HW -DCH_AES_EXTERN_CONSTANT_TIME "$tu" 2>/dev/null; then
+    echo "quic-builds: -DCH_SUITE_AES_GCM on AES=hw compiled with CH_AES_EXTERN_CONSTANT_TIME in place of" \
+        "CH_NATIVE_AES; ct.h must refuse it" >&2
+    exit 1
+fi
+if "$cc" -std=c11 -I. -fsyntax-only \
+    -DCH_SUITE_AES_GCM -DCH_AES_EXTERN_CONSTANT_TIME "$tu" 2>/dev/null; then
+    echo "quic-builds: -DCH_SUITE_AES_GCM on AES=soft compiled with CH_AES_EXTERN_CONSTANT_TIME;" \
+        "ct.h must refuse it" >&2
+    exit 1
+fi
+
 # The suite over QUIC: quic_packet.c protects Handshake and 1-RTT packets
 # and their headers with the suite TLS negotiated (RFC 9001 sections 5.3
 # and 5.4.3), so under -DCH_SUITE_AES_GCM it hands AES traffic keys. It
@@ -80,6 +120,20 @@ fi
 if "$cc" -std=c11 -I. -fsyntax-only -DCH_RAND_EXTERN -DCH_TRANSPORT_QUIC_NONBLOCKING \
     -DCH_SUITE_AES_GCM -DCH_AES_HW quic_packet.c 2>/dev/null; then
     echo "quic-builds: a QUIC suite build without CH_NATIVE_AES compiled; ct.h must refuse it" >&2
+    exit 1
+fi
+# The same pair on AES=extern, where the image's ch_aes_block gets those
+# keys.
+if ! "$cc" -std=c11 -I. -fsyntax-only -DCH_RAND_EXTERN -DCH_TRANSPORT_QUIC_NONBLOCKING \
+    -DCH_SUITE_AES_GCM -DCH_AES_EXTERN -DCH_AES_EXTERN_CONSTANT_TIME quic_packet.c; then
+    echo "quic-builds: quic_packet.c under the suite with AES=extern and CH_AES_EXTERN_CONSTANT_TIME" \
+        "must compile" >&2
+    exit 1
+fi
+if "$cc" -std=c11 -I. -fsyntax-only -DCH_RAND_EXTERN -DCH_TRANSPORT_QUIC_NONBLOCKING \
+    -DCH_SUITE_AES_GCM -DCH_AES_EXTERN quic_packet.c 2>/dev/null; then
+    echo "quic-builds: a QUIC suite build on AES=extern without CH_AES_EXTERN_CONSTANT_TIME compiled;" \
+        "ct.h must refuse it" >&2
     exit 1
 fi
 

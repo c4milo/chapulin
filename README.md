@@ -16,7 +16,8 @@ a key share for each, so a server picks either in one round trip
 ([`docs/decisions.md`](docs/decisions.md) entries 39 and 51), and under
 `SUITE=aesgcm` it also offers `TLS_AES_128_GCM_SHA256` and
 `TLS_AES_256_GCM_SHA384` on a host whose AES instructions the build vouches
-for (entries 45 and 58). There is no 0-RTT.
+for, or on a part whose AES peripheral it vouches for (entries 45, 58 and
+68). There is no 0-RTT.
 
 It uses C11 and libc only, and never calls `malloc`. The working set is
 one session struct plus one receive buffer you provide.
@@ -186,8 +187,11 @@ encapsulation to the client's key into K-PKE encrypt and Keccak, above
 the 5,280 its RSA-PSS signer reaches with the encapsulation pruned from
 the call graph (`STACK_PRUNE=srv_kex_share`).
 
-A `SUITE=aesgcm` build runs only where the core has AES instructions, so
-its rows are host figures and have no rv32 column. Its session struct is
+`bench/sram.sh` measures a `SUITE=aesgcm` build with `AES=hw` on this host,
+so its rows are host figures and have no rv32 column. A suite build with
+`AES=extern` can run on a device with an AES peripheral
+([`docs/decisions.md`](docs/decisions.md) 68), and no script here measures
+one on a device target yet. Its session struct is
 288 bytes larger than the same `ROLE=server` build without the suite, and
 288 larger for `TRUST=webpki`: the transcript runs a SHA-512 context beside
 SHA-256's, the traffic secrets take SHA-384's 48 bytes, and a webpki hello
@@ -323,7 +327,7 @@ handshake falls from 2.57 ms to 0.77 ms
 
 Four layers cover four different failure classes.
 
-**Proofs cover memory safety.** Seventy-seven of the eighty-nine C sources in
+**Proofs cover memory safety.** Seventy-eight of the eighty-nine C sources in
 the tree root are compiled into a [CBMC](https://www.cprover.org/cbmc/) harness that a launch line runs,
 which proves them free of out-of-bounds access, invalid pointers, bad
 shifts, and division by zero, for every input within the harness's
@@ -331,7 +335,7 @@ bound. Signed overflow is checked too, except in the three x25519 mul
 harnesses that turn it off (see the x25519 row). The `X25519=wide`
 field's harnesses also check unsigned wrap, which C defines and the
 other checks never see, because that field's bounds are all on
-unsigned values (see the x25519_wide row). Twelve sources are in
+unsigned values (see the x25519_wide row). Eleven sources are in
 no such harness. `tls.c` has none at all: the post-handshake parser
 moved to its own file and took the harness with it, leaving the four
 public calls unproven.
@@ -345,8 +349,9 @@ compiler's AES intrinsics, which CBMC cannot unwind, and
 `bin/aes_equiv_test` holds it to `quic_aes_soft.c` instead;
 `ghash_hw.c` runs GHASH on the carry-less multiply intrinsics, and
 `bin/ghash_equiv_test` holds it to `gcm.c`'s proven portable
-multiply; `quic_aes_extern.c` forwards to a `ch_aes_block` the caller
-writes, so there is no body here to prove. `build.c` holds one const
+multiply. `aes_extern.c` is proved, but only up to the
+`ch_aes_block` the caller writes, which has no body here to prove (the
+aes_extern row). `build.c` holds one const
 record and no function, so there is
 no path for a harness to drive; `lib-check` reads every field back.
 `make check` counts all twelve and regenerates the source-by-source
@@ -389,6 +394,7 @@ apart from one that passed — so for the slow rows, read the nightly.
 | poly1305 | safe for any three-chunk split; 64-bit products stay in range | messages ≤ 80 B — five blocks, crossing the buffered-block path in every alignment. The five-call shape `aead.c` uses is no longer exercised by a proof: the aead harnesses stub Poly1305, so that shape rests on the unit vectors, Wycheproof and the differential |
 | aead (three harnesses) | seal/open round-trips; a forged tag writes zero bytes; backward-overlap decrypt works. ChaCha20 and Poly1305 are stubbed to their contracts — a keystream that is the same for the same key, nonce and counter, and a tag that is a function of the bytes absorbed — which their own harnesses prove. Compiling them in returned no verdict in five hours; the stubbed formulas take about three seconds. What the stubs give up, and why the composition is an argument rather than a machine-checked step, is stated at the top of `proof/aead_stubs.h`. Sealing fully in place (`pt == ct`, the shape every outgoing record uses) is **not proven**: `proof/aead_inplace_harness.c` states it, but the formula has returned no verdict, so it carries no launch line | plaintext ≤ 16 B, aad ≤ 16 B, fast tier |
 | aes | the AES-128 key schedule and forward cipher and both `aes_public_key` constructors are safe over unconstrained inputs, in the aliasing shape the callers use (`in == out`) and at every Destination Connection ID length RFC 9000 §17.2 admits, plus the first length past the cap, where the call refuses without reading the pointer. HKDF is stubbed to its contract (`proof/aes_stubs.h`), which the three `hkdf` harnesses prove; `TRANSPORT=quic-nonblocking` only | connection IDs ≤ `CH_QUIC_DCID_MAX` (20 B), the rest of the domain fixed-size, fast tier |
+| aes_extern | `aes_extern.c`'s four entries, which a `SUITE=aesgcm AES=extern` build compiles, are safe over unconstrained inputs; each expansion writes the key and then zeros at exactly the bound `aes_block.h` states; and each cipher entry calls `ch_aes_block` once, with the stored key, the key length its name says (16 or 32 bytes), a readable input and a writable output, `in == out` included. The hook is a contract stub the harness defines, so the cipher the image's peripheral computes, and its timing, are **not proved**; the `AES=extern` test binaries run a stand-in hook over the published vectors, Wycheproof and e2e | the full domain, fast tier |
 | aes256, aes_traffic | `aes256`: the software AES-256 key schedule and forward cipher that `-DCH_AES_256_TEST` compiles, the reference `bin/aes_equiv_test` holds the instructions to, are safe over unconstrained inputs, and `aes_encrypt_schedule` runs ten or fourteen rounds by the round count the schedule records. `aes_traffic`: `aes_traffic_key_init` writes AES-128's round count for a 16-byte key and AES-256's for a 32-byte one, and the dispatch runs the cipher that count names, over contract stubs of the `AES=hw` block entries. The `AES=hw` AES-256 cipher a suite build runs is **not proved**: CBMC cannot read an intrinsic, so `bin/aes_equiv_test` holds it to the software one over 200,400 pairs | the full domain, fast tier |
 | quic_retry | `quic_retry_ok` reads only inside the pseudo-packet and the tag it is handed and commits no undefined behavior; it answers 1 for the tag `gcm_seal` computed over that pseudo-packet, and 0 for a tag that differs in one byte, at any position and by any nonzero amount. `gcm_seal` and `aes_public_key_retry` are contract stubs the harness defines, and the `gcm_seal` stub asserts what RFC 9001 §5.8 fixes at this one call site: the key `aes_public_key_retry` wrote, the nonce §5.8 prints, the caller's whole pseudo-packet as associated data, and an empty plaintext. That the AEAD meets that contract is what the `gcm` harnesses and RFC 9001 Appendix A.4 carry, not this one; `TRANSPORT=quic-nonblocking` only | pseudo-packets ≤ 64 B, fast tier |
 | quic_token | `ch_srv_quic_token_mint` writes only inside the caller's buffer, writes the type byte, the issue instant, both lengths and both connection IDs where `quic_token.h`'s layout puts them, writes nothing on a refusal, and never refuses a capacity of `CH_QUIC_TOKEN_MAX`. `ch_srv_quic_token_check` reads only inside the token and the address, answers `CH_EINVAL` for exactly the address lengths outside 1 to `CH_QUIC_TOKEN_ADDRESS_MAX`, `CH_EPROTO` only for a token that is not a Retry token and `CH_EAUTH` only for one that is, writes nothing on any refusal, and answers `CH_OK` only for a token whose length its two length bytes fix, whose connection IDs fit their arrays, and whose issue instant is at most the lifetime before now and not after it. SHA-256 is the contract stub, so the tag is unconstrained: that a minted token checks, and that another address or key does not, are tested in `test/quic_token_tests.h` and **not proved**; `ROLE=server` or `ROLE=both` with `TRANSPORT=quic-nonblocking` only | any address length, any connection ID length a byte holds, any instant and lifetime; tokens ≤ 84 B, one past `CH_QUIC_TOKEN_MAX`; fast tier |
@@ -533,8 +539,11 @@ under `SUITE=aesgcm`.
   `bin/tcp_nonblocking_loop_test` and e2e's go-half-close leg test that (INV-22,
   INV-17), and no proof covers it.
 - Constant-time behavior. It comes from construction: no branch and no
-  memory index depends on a secret, and the stack avoids AES because of
-  its lookup tables. `make timing` checks this with a Welch's t-test,
+  memory index depends on a secret, and no secret key reaches the AES
+  lookup table. A `SUITE=aesgcm` build runs its traffic keys on AES
+  instructions or on an AES peripheral, and the build asserts their
+  timing with `CH_NATIVE_AES` or `CH_AES_EXTERN_CONSTANT_TIME`; nothing
+  here measures either (INV-26). `make timing` checks this with a Welch's t-test,
   which is evidence, not proof. P-256 and RSA verification are
   variable-time on purpose, since all of their inputs are public.
   On a core with no hardware multiplier the compiler turns every `*`
@@ -595,7 +604,7 @@ under `SUITE=aesgcm`.
   the compare-with-zero forms on mips, the six base branches and the
   compressed pair on rv32 — in the sixteen arithmetic files under the
   record layer, the twelve on the TLS path and the four AES and GCM
-  sources a `TRANSPORT=quic-nonblocking` build compiles, and holds each file at a
+  sources a QUIC or `SUITE=aesgcm` build compiles, and holds each file at a
   ceiling measured per compiler. Those ceilings are public loop
   control, not zero: the block loops, x25519's ladder, Keccak's
   counters and softmul's fixed iterations. So the gate holds that no
@@ -782,9 +791,10 @@ random-input comparisons between the C and the spec over a pipe,
 from a fixed seed, the SHA-384 rows of HMAC, HKDF, `expand_label` and
 the key schedule included. It then runs the `TRANSPORT=quic-nonblocking` rows, 731
 over the AES-128 and AES-256 blocks, the Initial keys, AES-128-GCM,
-AES-256-GCM and GHASH, twice: once under the
-build's `AES` value and once under `AES=hw`, the instructions and the
-carry-less multiply, where the compiler has them. Last it runs the
+AES-256-GCM and GHASH, three times: once under the
+build's `AES` value, once under `AES=hw`, the instructions and the
+carry-less multiply, where the compiler has them, and once under
+`AES=extern`, through the stand-in hook `test/aes_extern_hook.c`. Last it runs the
 x25519 rows ten times over the `X25519=wide` field, 1,500
 comparisons, where the compiler has `unsigned __int128`; the spec
 computes over natural numbers mod p, so one model serves both fields.
@@ -1019,6 +1029,18 @@ Other targets:
   alone. `KEX` chooses the group of a raw or ca client only, and
   `ROLE=server` and `ROLE=both` refuse it too, because a server role
   holds all three groups in every build (decisions 54 and 63).
+  `SUITE=aesgcm` adds `TLS_AES_128_GCM_SHA256` and
+  `TLS_AES_256_GCM_SHA384` to a `TRUST=webpki` client or a server role,
+  and it takes one of two `AES` values. `AES=hw` runs AES on the
+  compiler's intrinsics and needs `-DCH_NATIVE_AES` in `CFLAGS`, the
+  statement that the part's AES instructions and carry-less multiply run
+  in constant time (decision 50). `AES=extern` runs every AES block in a
+  `ch_aes_block(key, key_len, in, out)` the image defines, 16-byte and
+  32-byte keys both, and needs `-DCH_AES_EXTERN_CONSTANT_TIME`, the
+  statement that the peripheral behind it runs in constant time
+  (decision 68). The Makefile writes neither statement, `ct.h` refuses
+  the suite without the one its `AES` value needs, and nothing in this
+  tree can check either.
 - `ch_build` is the object's build record (`build.h`): the axes it was
   compiled with, the sizes of `ch_cfg`, `ch_tls`, `ch_ticket`,
   `ch_record`, `ch_quic` and `ch_rsa_priv`, and the bounds a program
@@ -1106,7 +1128,8 @@ Two caveats worth knowing before you adopt it.
 The IoT profile's mandatory suite is AES-128-CCM-8, and chapulin's
 device builds are ChaCha-only, because ChaCha needs no lookup tables and
 runs in constant time on any core. `SUITE=aesgcm` adds AES-128-GCM and
-AES-256-GCM, not CCM-8, and only where the core has AES instructions. That works when you control both ends and fails
+AES-256-GCM, not CCM-8, and only where the core has AES instructions or
+the part has an AES peripheral, and the build vouches for its timing. That works when you control both ends and fails
 against a server that insists on AES. An AES-CCM build flag is the
 likeliest v2 addition.
 

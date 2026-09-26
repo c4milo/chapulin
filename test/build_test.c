@@ -58,9 +58,10 @@ void ch_keylog(void *io, const char *label, const uint8_t client_random[CH_KEYLO
 // that header, so the declaration is repeated here. An AES=extern object
 // imports it whenever it compiles AES, and the transport this program
 // moves can be the one that decides that.
-void ch_aes_block(const uint8_t key[16], const uint8_t in[16], uint8_t out[16]);
-void ch_aes_block(const uint8_t key[16], const uint8_t in[16], uint8_t out[16]) {
+void ch_aes_block(const uint8_t *key, size_t key_len, const uint8_t in[16], uint8_t out[16]);
+void ch_aes_block(const uint8_t *key, size_t key_len, const uint8_t in[16], uint8_t out[16]) {
     (void)key;
+    (void)key_len;
     (void)in;
     memset(out, 0, 16);
     abort();

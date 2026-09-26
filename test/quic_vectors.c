@@ -20,8 +20,10 @@
 // aes_public_key a body here, which INV-26 admits in a test and the
 // Semgrep rule excludes `test` for.
 //
-// bin/quic_test runs AES=soft and bin/quic_test_hw runs the same vectors
-// on AES=hw, so every standard below is answered by both implementations.
+// bin/quic_test runs AES=soft, bin/quic_test_hw runs the same vectors on
+// AES=hw, and bin/quic_test_extern runs them on AES=extern, whose
+// ch_aes_block is test/aes_extern_hook.c, so every standard below is
+// answered by all three implementations.
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -149,9 +151,14 @@ static void test_fips197_aes256(void) {
     CHECK(unhex(appendix_a3_key, key) == sizeof key);
     aes_expand_round_keys_256(key, round_keys);
     CHECK(memcmp(round_keys, key, AES_256_KEY) == 0);
+#ifndef CH_AES_EXTERN
+    // AES=extern runs no expansion, so these two words exist only under
+    // the other two values; test_extern_layout below checks what
+    // aes_extern.c writes instead.
     CHECK(eq_hex(round_keys + AES_256_KEY, "9ba35411"));
     CHECK(eq_hex(round_keys + (size_t)AES_256_ROUNDS * AES_BLOCK,
                  "fe4890d1e6188d0b046df344706c631e"));
+#endif
 
     uint8_t in[AES_BLOCK];
     CHECK(unhex(appendix_c3_key, key) == sizeof key);
@@ -162,6 +169,49 @@ static void test_fips197_aes256(void) {
     // in == out, as for AES-128 above.
     aes_cipher_block_256(round_keys, in, in);
     CHECK(eq_hex(in, "8ea2b7ca516745bfeafc49904b496089"));
+}
+#endif
+
+#ifdef CH_AES_EXTERN
+// What aes_extern.c's two expansions write, at the exact bound
+// aes_block.h states: the key in the first bytes, zeros up to the last
+// round key's last byte, and nothing past it. Each buffer is one byte
+// longer than the schedule and starts filled with a marker, so the byte
+// after the bound must keep it. The 32 key bytes are all checked, so an
+// AES-256 expansion that stored 16 of them fails here as well as in the
+// FIPS 197 block above.
+static int bytes_are(const uint8_t *p, size_t n, uint8_t value) {
+    for (size_t i = 0; i < n; i++) {
+        if (p[i] != value) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+static void test_extern_layout(void) {
+    enum { MARK = 0xa5, SCHEDULE_128 = AES_ROUND_KEYS * AES_BLOCK };
+    uint8_t key[AES_256_KEY];
+    for (size_t i = 0; i < sizeof key; i++) {
+        key[i] = (uint8_t)(0x10U + i);
+    }
+
+    uint8_t round_keys[SCHEDULE_128 + 1];
+    memset(round_keys, MARK, sizeof round_keys);
+    aes_expand_round_keys(key, round_keys);
+    CHECK(memcmp(round_keys, key, AES_128_KEY) == 0);
+    CHECK(bytes_are(round_keys + AES_128_KEY, SCHEDULE_128 - AES_128_KEY, 0));
+    CHECK(round_keys[SCHEDULE_128] == MARK);
+
+#ifdef CH_AES_256
+    enum { SCHEDULE_256 = AES_256_ROUND_KEYS * AES_BLOCK };
+    uint8_t round_keys_256[SCHEDULE_256 + 1];
+    memset(round_keys_256, MARK, sizeof round_keys_256);
+    aes_expand_round_keys_256(key, round_keys_256);
+    CHECK(memcmp(round_keys_256, key, AES_256_KEY) == 0);
+    CHECK(bytes_are(round_keys_256 + AES_256_KEY, SCHEDULE_256 - AES_256_KEY, 0));
+    CHECK(round_keys_256[SCHEDULE_256] == MARK);
+#endif
 }
 #endif
 
@@ -408,6 +458,9 @@ int main(void) {
     test_fips197_blocks();
 #ifdef CH_AES_256
     test_fips197_aes256();
+#endif
+#ifdef CH_AES_EXTERN
+    test_extern_layout();
 #endif
     test_appendix_a1_keys();
     test_appendix_a5_keys();

@@ -4,7 +4,7 @@
 //
 // No cipher here. The Makefile AES variable picks the one source that
 // implements the key expansion and the block cipher — quic_aes_soft.c,
-// aes_hw.c or quic_aes_extern.c — and aes_block.h states the
+// aes_hw.c or aes_extern.c — and aes_block.h states the
 // contract all three meet. This file derives the RFC 9001 keys, owns the
 // aes_public_key, and hands round keys down as bytes.
 //
@@ -136,7 +136,8 @@ void aes_traffic_key_init(aes_traffic_key *k, const uint8_t *key, size_t key_len
     CH_ASSERT(key_len == AES_128_KEY || key_len == AES_256_KEY);
     // key_len is the suite's, which the ServerHello named in the clear,
     // so the branch reads a public value. The key itself goes to the AES
-    // instructions alone: ct.h refuses this build without AES=hw.
+    // instructions or to the image's AES peripheral, never to the S-box:
+    // ct.h refuses this build without AES=hw or AES=extern.
     if (key_len == AES_256_KEY) {
         aes_expand_round_keys_256(key, k->key.round_keys);
         k->key.rounds = AES_256_ROUNDS;

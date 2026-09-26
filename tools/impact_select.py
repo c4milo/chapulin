@@ -444,8 +444,8 @@ def select_lints(out, changed, csources, lib):
     # compiles them over TCP too, and the same three gates still read them:
     # INV-26 holds their keys, and lint-quic-partition judges each with the
     # suite's defines. So an aes*, gcm* or ghash* path at the root selects
-    # them as well. quic_aes_soft.c and quic_aes_extern.c, which a suite
-    # build refuses, keep the prefix and are selected through it.
+    # them as well. quic_aes_soft.c, which a suite build refuses, keeps
+    # the prefix and is selected through it.
     quic_root = [p for p in csources if "/" not in p
                  and p.startswith(("quic", "aes", "gcm", "ghash"))]
     if quic_root:

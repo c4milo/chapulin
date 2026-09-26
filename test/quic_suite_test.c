@@ -2,7 +2,8 @@
 // -DCH_SUITE_AES_GCM build: the RFC 9001 §5.1 keys at the suite's hash,
 // §5.3 AES-GCM packet protection, §5.4.3 AES header protection, the §6.1
 // key update and §6.6's confidentiality limit. bin/quic_suite_test runs
-// it on the AES instructions.
+// it on the AES instructions, and bin/quic_suite_test_extern on AES=extern
+// through test/aes_extern_hook.c.
 //
 // No RFC prints a QUIC packet under an AES-GCM suite past the Initial
 // level: RFC 9001 Appendix A protects its 1-RTT example with ChaCha20.

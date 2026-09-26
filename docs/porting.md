@@ -405,12 +405,20 @@ chapulin through colibri:
 - `ch_rand_bytes` (`rand.h`), which every `RAND=extern` object imports. The
   image defines it unless one of its objects is `RAND=drbg`, whose generator
   is then the image's. There is one per image, and there is no randomness
-  callback per session. It must be safe to call from several threads at once,
-  because an image that runs one thread per core runs sessions on every core. A hook that reads state held
-  per thread, as cocuyo's does, meets this.
+  callback per session. It must be safe to call from several threads at
+  once, because an image that runs one thread per core runs sessions on
+  every core. A hook that reads state held per thread, as cocuyo's does,
+  meets this.
 - `ch_assert_fail` (`ch_assert.h`), which every object imports.
 - `ch_keylog` (`keylog.h`) where an object is built `KEYLOG=on`, and
-  `ch_aes_block` (`aes_block.h`) where one is built `AES=extern`.
+  `ch_aes_block` (`aes_block.h`) where one is built `AES=extern`. It
+  takes a key length, 16 or 32 bytes, and a `SUITE=aesgcm` object passes
+  it TLS traffic keys, which is why that build also needs
+  `-DCH_AES_EXTERN_CONSTANT_TIME` (`docs/decisions.md` entry 68). The
+  library calls it from whichever thread runs the session and holds no lock
+  around it, so calls can overlap. A hook over state held per thread needs
+  nothing more; a hook over one AES peripheral shared by every thread
+  arbitrates access to it itself.
 
 The library calls `ch_rand_bytes` at these points and no others:
 

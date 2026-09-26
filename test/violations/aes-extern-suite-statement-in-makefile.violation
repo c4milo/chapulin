@@ -1,0 +1,14 @@
+invariant: INV-26
+file: Makefile
+catches: test/lint-trust-separation.sh
+reason: the Makefile writes CH_AES_EXTERN_CONSTANT_TIME into every
+  AES=extern object, so a SUITE=aesgcm AES=extern build compiles with
+  the peripheral's timing asserted by a build file rather than by the
+  firmware author who can answer for the part. ct.h's refusal then never
+  fires for a build that makes no statement. lint-trust-separation's
+  AES=extern suite rows ban the define in the object's defines.
+
+--- old
+AES_DEF := -DCH_AES_EXTERN
+--- new
+AES_DEF := -DCH_AES_EXTERN -DCH_AES_EXTERN_CONSTANT_TIME

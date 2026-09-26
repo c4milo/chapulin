@@ -1,0 +1,14 @@
+invariant: INV-26
+file: aes_extern.c
+catches: quic_test_extern
+reason: aes_cipher_block_256 tells ch_aes_block the key is 16 bytes, so
+  every TLS_AES_256_GCM_SHA384 block on an AES=extern object runs
+  AES-128 under the first half of the traffic key. Both ends of a loop
+  test run the same object and agree, so only a published answer shows
+  it: FIPS 197 Appendix C.3's AES-256 block in bin/quic_test_extern,
+  which the test hook computes for the length it is told.
+
+--- old
+    ch_aes_block(round_keys, AES_256_KEY, in, out);
+--- new
+    ch_aes_block(round_keys, AES_128_KEY, in, out);

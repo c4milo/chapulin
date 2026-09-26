@@ -12,19 +12,23 @@
 // protection (§5.1, §5.4.3) and the Retry integrity tag (§5.8), and
 // every one of those is public. No key from the TLS key schedule reaches
 // it. An AES=hw build has no table and no such trade, which is what
-// docs/decisions.md entry 6 says a secret-key AES suite would need.
+// docs/decisions.md entry 6 says a secret-key AES suite would need, and
+// an AES=extern build has no table in this tree.
 //
 // This file holds no wipe, where aes_hw.c wipes its round-key word
 // and its cipher state. The bound above is why: a -DCH_SUITE_AES_GCM
 // build is the only one whose key is secret, ct.h refuses that build
-// unless it also takes AES=hw, so no key this file expands is ever worth
-// wiping and the stores would cost a device something for nothing.
+// unless it also takes AES=hw or AES=extern, so no key this file expands
+// is ever worth wiping and the stores would cost a device something for
+// nothing.
 //
 // Under -DCH_AES_256_TEST it also holds AES-256, as the software
 // reference test/aes_equiv_test.c and proof/aes256_harness.c hold
-// aes_hw.c's AES-256 to. Only tests and proofs define that macro. A
-// library object takes AES-256 only for TLS_AES_256_GCM_SHA384, whose key
-// is secret, and so only with AES=hw.
+// aes_hw.c's AES-256 to, and it is the cipher behind the ch_aes_block
+// the AES=extern test binaries link (test/aes_extern_hook.c). Only tests
+// and proofs define that macro. A library object takes AES-256 only for
+// TLS_AES_256_GCM_SHA384, whose key is secret, and so only with AES=hw or
+// AES=extern.
 #include "aes_block.h"
 
 #if defined(CH_TRANSPORT_QUIC_NONBLOCKING) || defined(CH_SUITE_AES_GCM)

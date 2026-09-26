@@ -22,9 +22,10 @@
 //                  and one per header protection mask from quic_hp_key's
 //
 // A build that never defines CH_SUITE_AES_GCM compiles none of it, and
-// ct.h refuses that define unless the build has hardware AES and asserts
-// its timing. That refusal is what keeps a secret key away from the
-// AES=soft S-box, which is indexed with the key.
+// ct.h refuses that define unless the build runs AES on the AES
+// instructions or on an AES peripheral and asserts that one's timing.
+// That refusal is what keeps a secret key away from the AES=soft S-box,
+// which is indexed with the key.
 //
 // This header includes aes_schedule.h and not aes_public_key.h, so the
 // files above can build a traffic key, and record.c cannot build a public

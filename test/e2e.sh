@@ -1244,30 +1244,34 @@ WEBPKI_HOST=$WEBPKI_HOSTNAME WEBPKI_NOW=$NOW \
 # --- The web PKI client that offers both cipher suites (docs/decisions.md
 # entry 45). A server that accepts TLS_AES_128_GCM_SHA256 alone selects
 # it, and the client keys every record with it. The ChaCha20 chain server
-# selects ChaCha20, the first suite the client lists. The client needs the
-# AES instructions, so check builds it only where the compiler has them,
-# and this leg says so when it is absent.
-if [ -x ./bin/tlsclient_webpki_aes ]; then
+# selects ChaCha20, the first suite the client lists. The legs run once
+# per client binary: bin/tlsclient_webpki_aes runs AES on the
+# instructions and exists only where the compiler has them, and
+# bin/tlsclient_webpki_aes_extern runs it through ch_aes_block, which
+# test/aes_extern_hook.c answers, on every host (docs/decisions.md 68).
+# $1 is the client and $2 the label each leg carries.
+webpki_aes_legs() {
+    local client=$1 tag=$2
     start_server -tls1_3 -ciphersuites TLS_AES_128_GCM_SHA256 -cert "$DIR/wpleaf.pem" -key "$DIR/wpleaf.key" -cert_chain "$DIR/wpint.pem" -rev
     PORT_WEBPKI_AES=$SRV_PORT
     MSG='dos suites'
     WEBPKI_HOST=$WEBPKI_HOSTNAME WEBPKI_NOW=$NOW \
-        expect webpki-aes "setius sod" "$DIR/err_wp_aes" \
-        ./bin/tlsclient_webpki_aes 127.0.0.1 "$PORT_WEBPKI_AES" "$WEBPKI_ANCHOR" -
-    grep -q "^suite 0x1301$" "$DIR/err_wp_aes" || {
-        echo "FAIL e2e webpki-aes: client did not report TLS_AES_128_GCM_SHA256"
-        cat "$DIR/err_wp_aes"
+        expect "$tag" "setius sod" "$DIR/err_$tag" \
+        "$client" 127.0.0.1 "$PORT_WEBPKI_AES" "$WEBPKI_ANCHOR" -
+    grep -q "^suite 0x1301$" "$DIR/err_$tag" || {
+        echo "FAIL e2e $tag: client did not report TLS_AES_128_GCM_SHA256"
+        cat "$DIR/err_$tag"
         exit 1
     }
     start_server -tls1_3 -ciphersuites TLS_CHACHA20_POLY1305_SHA256 -cert "$DIR/wpleaf.pem" -key "$DIR/wpleaf.key" -cert_chain "$DIR/wpint.pem" -rev
     PORT_WEBPKI_CHACHA=$SRV_PORT
     MSG='primero chacha'
     WEBPKI_HOST=$WEBPKI_HOSTNAME WEBPKI_NOW=$NOW \
-        expect webpki-aes-chacha "ahcahc oremirp" "$DIR/err_wp_chacha" \
-        ./bin/tlsclient_webpki_aes 127.0.0.1 "$PORT_WEBPKI_CHACHA" "$WEBPKI_ANCHOR" -
-    grep -q "^suite 0x1303$" "$DIR/err_wp_chacha" || {
-        echo "FAIL e2e webpki-aes-chacha: client did not report TLS_CHACHA20_POLY1305_SHA256"
-        cat "$DIR/err_wp_chacha"
+        expect "$tag-chacha" "ahcahc oremirp" "$DIR/err_$tag-chacha" \
+        "$client" 127.0.0.1 "$PORT_WEBPKI_CHACHA" "$WEBPKI_ANCHOR" -
+    grep -q "^suite 0x1303$" "$DIR/err_$tag-chacha" || {
+        echo "FAIL e2e $tag-chacha: client did not report TLS_CHACHA20_POLY1305_SHA256"
+        cat "$DIR/err_$tag-chacha"
         exit 1
     }
     # TLS_AES_256_GCM_SHA384 runs the transcript and the key schedule on
@@ -1277,44 +1281,57 @@ if [ -x ./bin/tlsclient_webpki_aes ]; then
     PORT_WEBPKI_AES256=$SRV_PORT
     MSG='suite larga'
     WEBPKI_HOST=$WEBPKI_HOSTNAME WEBPKI_NOW=$NOW \
-        expect webpki-aes256 "agral etius" "$DIR/err_wp_aes256" \
-        ./bin/tlsclient_webpki_aes 127.0.0.1 "$PORT_WEBPKI_AES256" "$WEBPKI_ANCHOR" - "$DIR/wpticket384"
-    grep -q "^suite 0x1302$" "$DIR/err_wp_aes256" || {
-        echo "FAIL e2e webpki-aes256: client did not report TLS_AES_256_GCM_SHA384"
-        cat "$DIR/err_wp_aes256"
+        expect "$tag-256" "agral etius" "$DIR/err_$tag-256" \
+        "$client" 127.0.0.1 "$PORT_WEBPKI_AES256" "$WEBPKI_ANCHOR" - "$DIR/ticket_$tag-384"
+    grep -q "^suite 0x1302$" "$DIR/err_$tag-256" || {
+        echo "FAIL e2e $tag-256: client did not report TLS_AES_256_GCM_SHA384"
+        cat "$DIR/err_$tag-256"
         exit 1
     }
     MSG='suite larga otra vez'
     WEBPKI_HOST=$WEBPKI_HOSTNAME WEBPKI_NOW=$NOW \
-        expect webpki-aes256-resume "zev arto agral etius" "$DIR/err_wp_aes256_resume" \
-        ./bin/tlsclient_webpki_aes 127.0.0.1 "$PORT_WEBPKI_AES256" "$WEBPKI_ANCHOR" "@$DIR/wpticket384"
-    if ! grep -q "^psk selected 1$" "$DIR/err_wp_aes256_resume" ||
-        ! grep -q "^suite 0x1302$" "$DIR/err_wp_aes256_resume"; then
-        echo "FAIL e2e webpki-aes256-resume: did not resume under TLS_AES_256_GCM_SHA384"
-        cat "$DIR/err_wp_aes256_resume"
+        expect "$tag-256-resume" "zev arto agral etius" "$DIR/err_$tag-256-resume" \
+        "$client" 127.0.0.1 "$PORT_WEBPKI_AES256" "$WEBPKI_ANCHOR" "@$DIR/ticket_$tag-384"
+    if ! grep -q "^psk selected 1$" "$DIR/err_$tag-256-resume" ||
+        ! grep -q "^suite 0x1302$" "$DIR/err_$tag-256-resume"; then
+        echo "FAIL e2e $tag-256-resume: did not resume under TLS_AES_256_GCM_SHA384"
+        cat "$DIR/err_$tag-256-resume"
         exit 1
     fi
+}
+if [ -x ./bin/tlsclient_webpki_aes ]; then
+    webpki_aes_legs ./bin/tlsclient_webpki_aes webpki-aes
     AES_SUITE_LEG=" + webpki-aes x4"
 else
     AES_SUITE_LEG=""
     echo "SKIP webpki-aes legs: bin/tlsclient_webpki_aes is absent (no AES instructions)"
 fi
+[ -x ./bin/tlsclient_webpki_aes_extern ] || {
+    echo "FAIL e2e webpki-aes-extern: bin/tlsclient_webpki_aes_extern is absent; make check-slow builds it"
+    exit 1
+}
+webpki_aes_legs ./bin/tlsclient_webpki_aes_extern webpki-aes-extern
+AES_SUITE_LEG="$AES_SUITE_LEG + webpki-aes-extern x4"
 
 # --- This tree's SUITE=aesgcm server against s_client restricted to one
 # suite at a time, a full handshake and then the ticket it issued resumed
 # (docs/decisions.md 58). The server's default order prefers ChaCha20, so
-# each s_client offer is what names the suite. ---
-if [ -x ./bin/tlsserver_aes ]; then
-    CHSRV_BIN=./bin/tlsserver_aes start_chserver "$DIR/cert.der" "$PRIV" "$PUB"
+# each s_client offer is what names the suite. The legs run once per
+# server binary, bin/tlsserver_aes on the AES instructions where the
+# compiler has them and bin/tlsserver_aes_extern through the hook on
+# every host. $1 is the server and $2 the label each leg carries. ---
+chsrv_aes_legs() {
+    local server=$1 tag=$2
+    CHSRV_BIN=$server start_chserver "$DIR/cert.der" "$PRIV" "$PUB"
     PORT_CHSRV_AES=$SRV_PORT
     CHSRV_AES_LOG=$SRV_LOG
     for suite in TLS_CHACHA20_POLY1305_SHA256 TLS_AES_128_GCM_SHA256 TLS_AES_256_GCM_SHA384; do
         for leg in New Reused; do
             session="-sess_out"
             [ "$leg" = Reused ] && session="-sess_in"
-            label="chsrv-aes-$suite-$leg"
+            label="$tag-$suite-$leg"
             printf '%s\n' 'una suite' | "$OPENSSL" s_client -connect "127.0.0.1:$PORT_CHSRV_AES" \
-                -tls1_3 -ciphersuites "$suite" -ign_eof "$session" "$DIR/sess_$suite.pem" \
+                -tls1_3 -ciphersuites "$suite" -ign_eof "$session" "$DIR/sess_$tag-$suite.pem" \
                 > "$DIR/$label.log" 2>&1 || {
                 echo "FAIL $label: s_client exited nonzero"
                 cat "$DIR/$label.log" "$CHSRV_AES_LOG"
@@ -1328,10 +1345,19 @@ if [ -x ./bin/tlsserver_aes ]; then
             fi
         done
     done
+}
+if [ -x ./bin/tlsserver_aes ]; then
+    chsrv_aes_legs ./bin/tlsserver_aes chsrv-aes
     CHSRV_AES_LEG=" + chapulin server aesgcm x6"
 else
     CHSRV_AES_LEG=""
     echo "SKIP chapulin server aesgcm legs: bin/tlsserver_aes is absent (no AES instructions)"
 fi
+[ -x ./bin/tlsserver_aes_extern ] || {
+    echo "FAIL e2e chsrv-aes-extern: bin/tlsserver_aes_extern is absent; make check-slow builds it"
+    exit 1
+}
+chsrv_aes_legs ./bin/tlsserver_aes_extern chsrv-aes-extern
+CHSRV_AES_LEG="$CHSRV_AES_LEG + chapulin server aesgcm AES=extern x6"
 
 echo "e2e: record + psk + tickets + resumption + pinned ecdsa + chapulin server resume x2 + chapulin server x25519 + chapulin server secp256r1 x2${CHSRV_PQ_LEG} + pinned rsa + require-pq refused + rotation + ca rsa x2 + ca ecdsa x2 + ca rotation + ca negatives x3${EPOCH_LEG} + webpki rsa + webpki-resume x3 + webpki-rpk x8 + webpki ecdsa x2 + webpki negatives x4 + webpki alpn x3 + webpki-secp256r1 x2${GO_LEG}${OPENSSL_PQ_LEG}${AES_SUITE_LEG}${CHSRV_AES_LEG} + examples x4 OK"

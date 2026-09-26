@@ -468,7 +468,7 @@ as plain bytes.
 | --- | --- | --- |
 | `soft` (default) | `quic_aes_soft.c` | FIPS 197 in C, with the S-box as a 256-byte table |
 | `hw` | `aes_hw.c` and `ghash_hw.c` | the compiler's AES intrinsics, ARMv8 or x86-64, and GHASH on the carry-less multiply |
-| `extern` | `quic_aes_extern.c` | forwards to `ch_aes_block`, which the image defines |
+| `extern` | `aes_extern.c` | forwards to `ch_aes_block`, which the image defines, with a 16-byte or a 32-byte key |
 
 `AES=hw` is the one value that changes GHASH as well as the cipher. Under
 `CH_AES_HW`, `gcm.c`'s `multiply_by_subkey` and `hash_data` call
@@ -519,14 +519,15 @@ are not third-party code.
 
 CBMC cannot read an intrinsic. An AES instruction has no C body to unwind, and
 `ch_aes_block` is a function this tree does not contain, so the proofs cover
-`quic_aes_soft.c` alone and the other two are held to it by test. This is what
-each one rests on, and nothing more:
+`quic_aes_soft.c`'s cipher alone. `aes_hw.c` is held to it by test, and
+`aes_extern.c`'s forwarding is proved over a contract stub of the hook. This is
+what each one rests on, and nothing more:
 
 | path | proved | tested |
 | --- | --- | --- |
 | `soft` | `proof/aes_harness.c`: memory safety and absence of UB over unconstrained inputs at the module's real bound. `spec/lean/Spec/Aes.lean` through `test/diff_aes.h`: the cipher against FIPS 197 as the spec states it | FIPS 197 §B and §C.1, RFC 9001 Appendix A, SP 800-38D and Wycheproof AES-GCM, in `bin/quic_test` |
 | `hw` | nothing | `bin/aes_equiv_test`: the round keys and the cipher block against `soft`, byte for byte, over fixed edge cases, every single-bit key and block, and 200,000 random pairs. `bin/ghash_equiv_test`: GHASH on the carry-less multiply against `gcm.c`'s portable GHASH, byte for byte, at three levels: 117,409 multiplies (zero, one, x^127, all ones and R against each other, every pair of single-bit operands, 1,000 squares and 100,000 random pairs), 267 runs of the data loop over every length from 0 to 65 bytes and 200 random lengths up to 16,384, and 2,109 whole AEAD cases (seal, GHASH, open with the genuine tag and with one bit of it flipped, and the in-place seal). `bin/quic_test_hw`: the same published vectors `bin/quic_test` runs. `bin/wycheproof_test_aes_hw`: the AES-GCM suite. `bin/diff_quic_hw`: the AES and GCM rows of the Lean differential, which `make diff` runs where the compiler has the instructions |
-| `extern` | nothing | nothing here can: the block function is the image's |
+| `extern` | `proof/aes_extern_harness.c`: the four entries are memory-safe and UB-free over unconstrained inputs, each expansion writes the key and then zeros at exactly the bound `aes_block.h` states, and each cipher entry calls the hook once with the stored key, the key length its name says, a readable input and a writable output, `in == out` included. The hook is a contract stub, so nothing about the cipher it computes is proved | through `test/aes_extern_hook.c`, a stand-in hook that runs `soft`'s cipher for both key lengths and aborts on any other: `bin/quic_test_extern`, the same published vectors `bin/quic_test` runs, AES-256 included, and the layout each expansion writes; `bin/wycheproof_test_aes_extern`: the AES-GCM suite; `bin/diff_quic_extern`: the AES and GCM rows of the Lean differential; `bin/aes_suite_test_extern`, `bin/quic_suite_test_extern` and both loop tests; e2e's client and server legs against OpenSSL under each suite. What the image's peripheral computes is not tested here and cannot be |
 
 `bin/ghash_equiv_test` compiles `gcm.c` twice into one binary: once as the
 `AES=hw` build and once, through `test/ghash_equiv_soft.c`, with `CH_AES_HW`
@@ -562,9 +563,9 @@ the equivalence check is itself checked. That mutant edits
 `aes_expand_round_keys`, which sits outside the two architecture arms, so it
 lands on an ARMv8 runner and an x86-64 one alike.
 
-**What none of this proves.** An `AES=extern` build is unverified by this tree
-beyond the contract `aes_block.h` states; the integrator owns
-`ch_aes_block` the way it owns `ch_rand_bytes`. And an `AES=hw` object is
+**What none of this proves.** An `AES=extern` build is verified by this tree
+up to the hook and no further: the tests above run a stand-in, and the
+integrator owns the real `ch_aes_block` the way it owns `ch_rand_bytes`. And an `AES=hw` object is
 checked on the architecture the runner has: a run on an ARMv8 host exercises
 the `vaeseq_u8` arm and leaves the AES-NI arm compiled but unrun, and the
 reverse on x86-64. Both arms are exercised only across both CI legs. The same
@@ -574,20 +575,25 @@ PCLMULQDQ arm compiled but unrun.
 None of the three rows is a timing measurement. Every entry above compares
 bytes, and no check in this tree times an AES instruction or a table lookup.
 What the rows do carry is a branch count: `aes.c`, `quic_aes_soft.c`,
-`quic_aes_extern.c` and `gcm.c` are in `BRANCH_SRCS`, so a compiler that
+`aes_extern.c` and `gcm.c` are in `BRANCH_SRCS`, so a compiler that
 lowers one of their masked selects to a conditional branch fails
 `lint-wide-multiply`. `aes_hw.c` and `ghash_hw.c` are not and cannot
 be: every spec targets a core without the AES or carry-less multiply
 instructions, where each file is its own `#error`. `ghash_hw.c` holds no
 select to lower: its multiply is shifts, exclusive-ors and the instruction.
 
-So whether an AES instruction or the carry-less multiply runs in constant time
-is a claim this tree never checks. It asks the build to make it instead.
-`-DCH_SUITE_AES_GCM` is how a build says it carries a TLS cipher suite whose
-AEAD is AES-GCM, and therefore hands AES a traffic key; `ct.h` refuses that
-build unless it also takes `AES=hw` and defines `CH_NATIVE_AES`, the build's own
-assertion about the part, which covers both instructions (`docs/decisions.md`
-entry 50). `__ARM_FEATURE_AES`, `__AES__` and `__PCLMUL__` do not carry it --
+So whether an AES instruction, the carry-less multiply or an AES peripheral
+runs in constant time is a claim this tree never checks. It asks the build to
+make it instead. `-DCH_SUITE_AES_GCM` is how a build says it carries a TLS
+cipher suite whose AEAD is AES-GCM, and therefore hands AES a traffic key;
+`ct.h` refuses that build unless it also takes `AES=hw` and defines
+`CH_NATIVE_AES`, the build's own assertion about the part, which covers both
+instructions (`docs/decisions.md` entry 50), or takes `AES=extern` and defines
+`CH_AES_EXTERN_CONSTANT_TIME`, the build's assertion about the peripheral behind
+`ch_aes_block` (`docs/decisions.md` entry 68). Under `AES=extern` GHASH runs on
+`gcm.c`'s portable multiply, which the branch count above holds, so that flag
+claims nothing about GHASH. No mechanism in this tree can observe a
+peripheral's timing: the statement is the whole of the claim. `__ARM_FEATURE_AES`, `__AES__` and `__PCLMUL__` do not carry it --
 they say the instructions exist -- and `ct.h` refuses the same inference for
 the widening multiply
 ([#53](https://github.com/c4milo/chapulin/issues/53)). INV-26 in
@@ -601,9 +607,10 @@ latency depends on its operands is the claim `CH_NATIVE_AES` asserts above, and
 that property is what `docs/decisions.md` entry 6 says a secret-key AES suite
 would need. A key from the TLS key schedule reaches `aes.c` only in a
 `-DCH_SUITE_AES_GCM` build, as an `aes_traffic_key`, and `ct.h` refuses that
-build under every `AES` value but `hw` (`docs/decisions.md` entries 45 and
-58). An `AES=extern` build cannot even state its timing: what
-`ch_aes_block` costs is the peripheral's.
+build under `AES=soft` (`docs/decisions.md` entries 45, 58 and 68). An
+`AES=extern` build cannot state its timing from this tree: what `ch_aes_block`
+costs is the peripheral's, and the firmware author states it with
+`CH_AES_EXTERN_CONSTANT_TIME` or the suite build does not compile.
 
 ### The AES-GCM suites over QUIC
 
@@ -621,7 +628,8 @@ level:
 | Handshake and 1-RTT, `TLS_AES_256_GCM_SHA384` | AEAD_AES_256_GCM | AES-256-ECB (§5.4.3) | traffic secret, SHA-384 schedule |
 
 Every key in the last two rows is secret, so it takes `aes_traffic_key` and
-runs on the AES instructions alone (INV-26). `quic_keys` and `quic_hp_key`
+runs on the AES instructions or, under `AES=extern`, on the image's
+`ch_aes_block`, never on the S-box (INV-26). `quic_keys` and `quic_hp_key`
 record the suite; `quic_packet.c` builds the traffic key on its frame for
 each packet and each mask and wipes it there, so no key set holds a
 schedule. A 1-RTT key update derives the next set at the suite's hash and
@@ -645,6 +653,8 @@ What holds it:
   `ROLE=both TRUST=webpki TRANSPORT=quic-nonblocking SUITE=aesgcm AES=hw` object, one
   row per suite, ChaCha20 included, each a full handshake, the ticket it
   issued resumed, and a 1-RTT key update.
+- `bin/quic_suite_test_extern` and `bin/quic_loop_aes_extern`: the same two
+  on `AES=extern`, with `test/aes_extern_hook.c` as the hook.
 - The `quic_keys_suite` and `quic_packet_suite` proofs: the three
   derivations and the update derive at the suite's hash and key length, and
   the mask, the seal and the open run the cipher the set's suite names at

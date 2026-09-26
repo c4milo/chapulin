@@ -109,10 +109,11 @@ Home: github.com/c4milo.
   and `aes_traffic_key.h` (the `aes_traffic_key` type a SUITE=aesgcm
   build's traffic keys take, whose body sits in that header alone) +
   `aes_block.h` with one of `quic_aes_soft.c`, `aes_hw.c` or
-  `quic_aes_extern.c` (the AES-128 key expansion and forward cipher of
-  FIPS 197, over plain bytes, and AES-256's on `aes_hw.c` alone; the
-  Makefile AES variable picks one, and the two named quic_ compile only
-  in a QUIC build, because a SUITE=aesgcm build refuses both)
+  `aes_extern.c` (the AES-128 key expansion and forward cipher of
+  FIPS 197, over plain bytes, and AES-256's on `aes_hw.c` and
+  `aes_extern.c`; the Makefile AES variable picks one, and
+  `quic_aes_soft.c` compiles only in a QUIC build, because a
+  SUITE=aesgcm build refuses it)
   ← `aead.[ch]` (RFC 8439 seal/open) + `gcm.[ch]`
   (AEAD_AES_128_GCM and GHASH, TRANSPORT=quic-nonblocking, and AEAD_AES_256_GCM
   under a traffic key, SUITE=aesgcm) with `ghash_hw.[ch]`
@@ -200,11 +201,12 @@ Home: github.com/c4milo.
   by one leaks nothing an observer does not already hold. That is the
   whole reason the table is allowed at all: the public-key argument is
   what carries it, never a claim that the lookup is constant time. An
-  AES=hw build has no table and no such trade, and an AES=extern build
-  cannot state its timing at all, so the public-key argument is what
-  carries every AES value and INV-26 bounds all three the same way. No key from
-  the TLS key schedule is passed to AES outside a SUITE=aesgcm build, and
-  that build takes AES=hw and states its timing (below).
+  AES=hw build has no table and no such trade, and this tree cannot
+  state an AES=extern build's timing, so outside a suite build the
+  public-key argument is what carries every AES value and INV-26 bounds
+  all three the same way. No key from the TLS key schedule is passed to
+  AES outside a SUITE=aesgcm build, and that build takes AES=hw or
+  AES=extern and states its timing (below).
   What holds that: `aes.[ch]` and `gcm.[ch]` take a key type,
   `aes_public_key`, whose body lives in `aes_public_key.h` alone, so only
   `aes.c`, `quic_initial.c` and `quic_retry.c` can build one. A file
@@ -220,7 +222,7 @@ Home: github.com/c4milo.
   a traffic key and a public key never pass for each other and only the
   traffic path builds one. INV-26 states the rule and what review still owes, the
   Semgrep rule holds the calls, and `.violation` mutants prove each check
-  fires. `aes.c`, `quic_aes_soft.c`, `quic_aes_extern.c` and
+  fires. `aes.c`, `quic_aes_soft.c`, `aes_extern.c` and
   `gcm.c` sit in `WIDEMUL_CEILING` and `BRANCH_SRCS`, so a compiler
   that lowers one of their masked selects to a branch shows as a count
   that grows; `aes_hw.c` and `ghash_hw.c` cannot join, because
@@ -249,11 +251,14 @@ Home: github.com/c4milo.
   on the software path and AES=hw is held to it by
   `test/aes_equiv_test.c` and `test/ghash_equiv_test.c`, by the published
   vectors in `bin/quic_test_hw`, by the Wycheproof AES-GCM suite on that
-  leg and by the AES=hw differential, `bin/diff_quic_hw`. docs/quic.md,
+  leg and by the AES=hw differential, `bin/diff_quic_hw`. AES=extern is
+  proved over a contract stub of `ch_aes_block`, and its test binaries
+  link `test/aes_extern_hook.c`, a hook over the software cipher, for the
+  same vectors, Wycheproof suite, differential and e2e. docs/quic.md,
   "What the AES axis proves", states what each value rests on and what
   none of it proves.
-  A secret-key AES suite needs the instructions and needs somebody to
-  say they are constant time — TLS_AES_128_GCM_SHA256, which strict RFC
+  A secret-key AES suite needs an AES with no table and needs somebody to
+  say it is constant time — TLS_AES_128_GCM_SHA256, which strict RFC
   9846 §9.1 server conformance asks for, and TLS_AES_256_GCM_SHA384,
   which it recommends. The AES axis does not enable them: only a
   SUITE=aesgcm build carries them, and INV-26 admits their traffic keys
@@ -261,14 +266,21 @@ Home: github.com/c4milo.
   terms are written, beside the same rule for the widening multiply.
   A build says it carries such a suite with `-DCH_SUITE_AES_GCM`, and
   that build is a compile error unless it also takes AES=hw and defines
-  `CH_NATIVE_AES`. The second is the build's assertion that this part's
+  `CH_NATIVE_AES`, or takes AES=extern and defines
+  `CH_AES_EXTERN_CONSTANT_TIME`. `CH_NATIVE_AES` is the build's assertion that this part's
   AES instructions and its carry-less multiply run in constant time, the
   way `CH_NATIVE_WIDEMUL` asserts the widening multiply:
   `__ARM_FEATURE_AES`, `__AES__` and `__PCLMUL__` say the instructions
   exist and say nothing about their latency, so firmware defines it only
   with a vendor statement that covers both. One define carries both
-  because AES-GCM needs both under one key (docs/decisions.md 50). The
-  record layer, QUIC's Handshake and 1-RTT packet and header protection,
+  because AES-GCM needs both under one key (docs/decisions.md 50).
+  `CH_AES_EXTERN_CONSTANT_TIME` is the build's assertion that the
+  peripheral behind the image's `ch_aes_block(key, key_len, in, out)`
+  runs in constant time for 16-byte and 32-byte keys. Under AES=extern
+  GHASH runs on gcm.c's portable multiply, so the flag claims nothing
+  about GHASH, and no mechanism in this tree can observe a peripheral's
+  timing (docs/decisions.md 68). The Makefile writes neither statement.
+  The record layer, QUIC's Handshake and 1-RTT packet and header protection,
   the server's selection and the webpki client's offer run it under
   those terms; QUIC's Initial packets keep AES-128-GCM under their
   public keys (docs/decisions.md 58).

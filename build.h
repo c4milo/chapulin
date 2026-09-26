@@ -69,8 +69,9 @@
 //
 // Left out, because no public layout or bound reads them: the RAND
 // pattern, CH_ROLE_BOTH, the AES implementation, X25519=wide and the
-// three timing assertions, CH_NATIVE_WIDEMUL (which WIDEMUL=native
-// sets), CH_NATIVE_AES and CH_NATIVE_MUL128. CH_KEX_TWO_GROUPS and
+// four timing assertions, CH_NATIVE_WIDEMUL (which WIDEMUL=native
+// sets), CH_NATIVE_AES, CH_AES_EXTERN_CONSTANT_TIME and
+// CH_NATIVE_MUL128. CH_KEX_TWO_GROUPS and
 // CH_KEX_HYBRID are left out too: cfg.h computes both from
 // CH_TRUST_WEBPKI and CH_KEX_PQ, so a bit for either would repeat those
 // two. docs/decisions.md 56 gives the reason for each.

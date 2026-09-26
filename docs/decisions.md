@@ -2287,3 +2287,105 @@ does nothing more.
     The alternative, rewriting the three steps to need no generator
     output, was rejected: it drops the seed-file rewrite, the step that
     keeps two devices imaged from one flash from replaying one stream.
+
+68. **A `SUITE=aesgcm` build runs both AES-GCM suites on `AES=extern`, and
+    the build states the peripheral's timing with
+    `CH_AES_EXTERN_CONSTANT_TIME`**
+    ([#177](https://github.com/c4milo/chapulin/issues/177)). Entry 58 held
+    the suites to `AES=hw`, so a part with an AES peripheral and no AES
+    instructions could not offer them. `AES=extern` already left QUIC's
+    public keys to the image's `ch_aes_block`. Camilo decided on
+    2026-09-26 to let that hook take traffic keys too, over both TCP
+    transports and QUIC.
+
+    - **The hook takes a key length.** It is
+      `ch_aes_block(key, key_len, in, out)`, with `key_len` `AES_128_KEY`
+      or `AES_256_KEY`. `aes_extern.c` gains `aes_expand_round_keys_256`
+      and `aes_cipher_block_256`: the first stores the 32 key bytes where
+      the round keys go and zeros the rest, and the second passes them to
+      the hook with length 32, as the AES-128 pair does with 16. So
+      `SUITE=aesgcm` holds `TLS_AES_128_GCM_SHA256` and
+      `TLS_AES_256_GCM_SHA384` under every `AES` value it takes.
+    - **A separate timing flag.** `ct.h` admits `-DCH_SUITE_AES_GCM` on
+      `AES=hw` with `CH_NATIVE_AES`, or on `AES=extern` with
+      `CH_AES_EXTERN_CONSTANT_TIME`, and refuses every other pairing,
+      `AES=soft` included. `CH_AES_EXTERN_CONSTANT_TIME` is the firmware
+      author's statement, from the vendor, that the peripheral behind
+      `ch_aes_block` runs in constant time for 16-byte and 32-byte keys.
+      The Makefile never writes it, as it never writes `CH_NATIVE_AES`,
+      and `lint-trust-separation` bans both from every suite object's
+      defines. The test binaries state it on their own lines. The build
+      record leaves it out for entry 56's reason: no public layout or
+      bound reads it.
+    - **What the flag covers.** The AES blocks, and nothing else. Under
+      `AES=extern`, GHASH runs on `gcm.c`'s portable multiply: 128 masked
+      steps per block, with no table, no multiply instruction and no
+      branch on a subkey bit, and `lint-wide-multiply` holds its branch
+      count. So the flag claims nothing about GHASH. It claims nothing
+      about what the hook or the peripheral keeps after a call either,
+      such as a key register or a cached expansion; `aes_block.h` leaves
+      that to the image, and this tree wipes its own copies, the stored
+      key among them, where it wiped the round keys before. And no
+      mechanism in this tree can observe a peripheral's timing. The
+      statement is the whole of the claim, as `CH_NATIVE_AES` is for the
+      instructions.
+    - **The rename.** `quic_aes_extern.c` is now `aes_extern.c`, because a
+      suite build compiles it over TCP, so it is no longer QUIC-only
+      (INV-27). `quic_aes_soft.c` keeps its prefix: its S-box is indexed
+      with the key, so a suite build refuses it for good.
+    - **The tests.** Every `AES=extern` test binary links
+      `test/aes_extern_hook.c` as the hook: `quic_aes_soft.c`'s cipher
+      under other names, for both key lengths, which aborts on any other
+      length. Over it run FIPS 197, SP 800-38D and RFC 9001 Appendix A,
+      RFC 8448's record, the QUIC suite computation, both loop tests, the
+      Wycheproof AES-GCM suite, the AES rows of the Lean differential,
+      and e2e's client and server against OpenSSL under each suite. None
+      needs an AES instruction, so every host runs them. The
+      `aes_extern` proof holds the four entries to the hook's contract
+      over a stub of it.
+
+    Cost:
+
+    - The hook's signature changes. An image that defined the old
+      three-argument hook still links, because C checks no signature at
+      link time, and that hook then takes the key length for its input
+      pointer. No known image defines the hook; colibri and cocuyo do
+      not.
+    - A part whose peripheral has no AES-256 cannot build the suite with
+      `AES=extern`, and keeps ChaCha20.
+    - A second timing statement a firmware author must make and answer
+      for. It is as weak as `CH_NATIVE_AES`: this tree cannot check it.
+    - A traffic key now leaves code this tree compiles. Before this entry,
+      every suite build ran its traffic keys on instructions the compiler
+      emitted from this tree's sources. Now a suite build can hand them
+      to a function the image supplies, whose code nobody here reads.
+    - `make check` builds and runs five more binaries, a third Wycheproof
+      leg and one more `lib-check` object; `make diff` runs one more
+      binary, and `test/e2e.sh` ten more legs.
+
+    Gain: a part with an AES peripheral offers the suite RFC 9846 §9.1
+    makes mandatory, and the SHOULD one beside it, over every transport,
+    and the suite build is no longer host-only.
+
+    Three alternatives were considered and rejected.
+
+    - **AES-128 alone under `AES=extern`.** It keeps the hook's signature
+      and serves the mandatory suite. It was rejected because
+      `SUITE=aesgcm` would then name two suites under `AES=hw` and one
+      under `AES=extern`, so which suites a build holds would depend on a
+      second axis, and a `ch_srv_cfg.cipher_suites` order that names
+      `TLS_AES_256_GCM_SHA384` would be valid in one build and refused in
+      the other.
+    - **A second hook for AES-256.** `ch_aes_block_256` beside the 16-byte
+      hook would keep an old definition linking. It was rejected because
+      it doubles what the image implements and what the INV-26 rule
+      matches, while a part with AES-256 serves both lengths from one
+      peripheral driver; and no known image defines the old hook, so its
+      signature protects nobody.
+    - **Reusing `CH_NATIVE_AES`.** One define for both values. It was
+      rejected because `CH_NATIVE_AES` states the timing of the AES
+      instructions and of the carry-less multiply, and an `AES=extern`
+      object runs neither: its blocks are the peripheral's and its GHASH
+      is the portable multiply. One define would let a statement about
+      one piece of silicon be read as a statement about another.
+      `test/quic-builds.sh` refuses each flag on the other's value.

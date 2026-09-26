@@ -3,8 +3,8 @@
 // (rfc9846.txt:4055-4056) and the AEAD key length. Every build holds
 // TLS_CHACHA20_POLY1305_SHA256. A -DCH_SUITE_AES_GCM build holds
 // TLS_AES_128_GCM_SHA256 and TLS_AES_256_GCM_SHA384 beside it, and ct.h
-// refuses that define unless the build has the AES instructions and
-// asserts their timing (docs/decisions.md 58).
+// refuses that define unless the build has the AES instructions or an AES
+// peripheral and asserts its timing (docs/decisions.md 58 and 68).
 //
 // A suite code point is public: the ServerHello names it in the clear.
 // So is everything the functions below return, and a branch on any of

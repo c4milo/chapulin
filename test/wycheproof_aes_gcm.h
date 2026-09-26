@@ -67,8 +67,9 @@ static void run_aes_gcm(void) {
 #ifdef CH_AES_256
 // AEAD_AES_256_GCM, TLS_AES_256_GCM_SHA384's AEAD. Every leg that builds
 // this file passes -DCH_AES_256_TEST, so the AES=soft legs run the
-// software reference and the AES=hw leg the instructions a suite build
-// runs, and every leg answers the same suite.
+// software reference, the AES=hw leg the instructions a suite build runs
+// and the AES=extern leg the hook with a 32-byte key, and every leg
+// answers the same suite.
 static void run_aes256_gcm(void) {
     for (size_t i = 0; i < COUNT(wp_aes256_gcm); i++) {
         const uint8_t *key = wp_aes256_gcm_data + wp_aes256_gcm[i].off;

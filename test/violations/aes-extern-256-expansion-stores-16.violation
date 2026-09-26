@@ -1,0 +1,16 @@
+invariant: INV-26
+file: aes_extern.c
+catches: quic_test_extern
+reason: aes_expand_round_keys_256 stores 16 of the 32 key bytes and
+  zeros the rest, so the hook gets an AES-256 key whose second half is
+  zero. Every TLS_AES_256_GCM_SHA384 record on an AES=extern object then
+  runs under a key with 128 unknown bits, not 256. bin/quic_test_extern
+  checks the stored key byte for byte at the bound aes_block.h states
+  and runs FIPS 197 Appendix C.3's AES-256 block through it.
+
+--- old
+    memcpy(round_keys, key, AES_256_KEY);
+    memset(&round_keys[AES_256_KEY], 0, ((size_t)AES_256_ROUND_KEYS * AES_BLOCK) - AES_256_KEY);
+--- new
+    memcpy(round_keys, key, AES_128_KEY);
+    memset(&round_keys[AES_128_KEY], 0, ((size_t)AES_256_ROUND_KEYS * AES_BLOCK) - AES_128_KEY);

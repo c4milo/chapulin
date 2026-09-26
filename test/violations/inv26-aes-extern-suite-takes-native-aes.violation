@@ -1,0 +1,18 @@
+invariant: INV-26
+file: ct.h
+catches: test/quic-builds.sh
+reason: the AES=extern suite build accepts CH_NATIVE_AES in place of
+  CH_AES_EXTERN_CONSTANT_TIME. CH_NATIVE_AES states that a part's AES
+  instructions and its carry-less multiply run in constant time, and an
+  AES=extern object runs neither: its AES blocks are the peripheral's
+  and its GHASH is gcm.c's portable multiply. A vendor statement about
+  one does not cover the other, which is why the two flags are separate
+  (docs/decisions.md 68). quic-builds.sh compiles the extern suite with
+  CH_NATIVE_AES alone and requires ct.h to refuse it.
+
+--- old
+#ifndef CH_AES_EXTERN_CONSTANT_TIME
+#error "CH_SUITE_AES_GCM on AES=extern needs -DCH_AES_EXTERN_CONSTANT_TIME (aes_block.h)"
+--- new
+#if !defined(CH_AES_EXTERN_CONSTANT_TIME) && !defined(CH_NATIVE_AES)
+#error "CH_SUITE_AES_GCM on AES=extern needs -DCH_AES_EXTERN_CONSTANT_TIME (aes_block.h)"

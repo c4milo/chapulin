@@ -240,7 +240,7 @@ rules:
     paths:
       exclude: [test, proof, fuzz, spec, bench, bin, examples, quic_initial.c,
                 quic_retry.c, aes.c, gcm.c, quic_aes_soft.c,
-                aes_hw.c, quic_aes_extern.c, ghash_hw.c]
+                aes_hw.c, aes_extern.c, ghash_hw.c]
     pattern-either:
       # A call. `make lint-quic-surface` fails when a function, a
       # function-like macro or a typedef in aes.h, aes_block.h,
@@ -277,8 +277,9 @@ rules:
       Handshake and 1-RTT packets and their headers, are the two library
       sources that may name them; aes.c and gcm.c are excluded
       as the definition sites. ct.h refuses that build unless it takes AES=hw and asserts
-      the instructions' timing (CH_NATIVE_AES), so a traffic key never
-      meets the AES=soft S-box, and aes_traffic_key.h, the type's body,
+      the instructions' timing (CH_NATIVE_AES), or takes AES=extern and
+      asserts the peripheral's (CH_AES_EXTERN_CONSTANT_TIME), so a traffic
+      key never meets the AES=soft S-box, and aes_traffic_key.h, the type's body,
       is included by the same files and no other, which
       `make lint-quic-surface` checks. A use anywhere else is a traffic
       key on a path nobody reviewed for it. Tripwire grade, as above.

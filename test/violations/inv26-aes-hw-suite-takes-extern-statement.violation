@@ -1,0 +1,17 @@
+invariant: INV-26
+file: ct.h
+catches: test/quic-builds.sh
+reason: the AES=hw suite build accepts CH_AES_EXTERN_CONSTANT_TIME in
+  place of CH_NATIVE_AES. The extern flag is a statement about the
+  peripheral behind ch_aes_block, and an AES=hw object calls no such
+  hook: its traffic keys go to the AES instructions and its hash subkey
+  to the carry-less multiply, whose timing nobody would then have
+  stated (docs/decisions.md 50 and 68). quic-builds.sh compiles the
+  AES=hw suite with the extern flag alone and requires ct.h to refuse it.
+
+--- old
+#ifndef CH_NATIVE_AES
+#error "CH_SUITE_AES_GCM on AES=hw needs -DCH_NATIVE_AES: the build asserts the timing (aes_hw.c)"
+--- new
+#if !defined(CH_NATIVE_AES) && !defined(CH_AES_EXTERN_CONSTANT_TIME)
+#error "CH_SUITE_AES_GCM on AES=hw needs -DCH_NATIVE_AES: the build asserts the timing (aes_hw.c)"

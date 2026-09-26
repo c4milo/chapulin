@@ -12,9 +12,8 @@ reason: a build declares a TLS cipher suite whose AEAD is AES-GCM and
   so the compiler's refusal is the only check, and this edit removes it.
 
 --- old
-#ifdef CH_SUITE_AES_GCM
-#ifndef CH_AES_HW
-#error "CH_SUITE_AES_GCM needs AES=hw: the AES=soft S-box is indexed with the key"
+#else
+#error "CH_SUITE_AES_GCM needs AES=hw or AES=extern: the AES=soft S-box is indexed with the key"
 #endif
 --- new
-#ifdef CH_SUITE_AES_GCM
+#endif

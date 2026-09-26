@@ -1,0 +1,20 @@
+invariant: INV-26
+file: ct.h
+catches: test/quic-builds.sh
+reason: a TRANSPORT=quic-nonblocking build takes the AES-GCM suites on
+  AES=extern without CH_AES_EXTERN_CONSTANT_TIME, so quic_packet.c hands
+  the image's ch_aes_block the Handshake and 1-RTT packet and header
+  protection keys, which come from traffic secrets, with nobody stating
+  that the peripheral runs in constant time. The TLS suite build still
+  refuses the pair, so only the QUIC check sees it: quic-builds.sh
+  compiles quic_packet.c under the extern suite without the statement
+  and requires the refusal.
+
+--- old
+#ifndef CH_AES_EXTERN_CONSTANT_TIME
+#error "CH_SUITE_AES_GCM on AES=extern needs -DCH_AES_EXTERN_CONSTANT_TIME (aes_block.h)"
+#endif
+--- new
+#if !defined(CH_AES_EXTERN_CONSTANT_TIME) && !defined(CH_TRANSPORT_QUIC_NONBLOCKING)
+#error "CH_SUITE_AES_GCM on AES=extern needs -DCH_AES_EXTERN_CONSTANT_TIME (aes_block.h)"
+#endif
