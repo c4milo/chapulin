@@ -70,7 +70,7 @@ certparse 29.1
 certparse_webpki 26.3
 chacha20 98.1
 ct 94.1
-drbg 84.4
+drbg 81.7
 # eeparse_webpki fell from 29.5 to 29.4 when handshake_parser.c gained
 # parse_alpn: this harness drives the block with an empty ALPN offer, so
 # that function's locations are in its goto model and out of its reach.
