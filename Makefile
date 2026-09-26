@@ -2367,8 +2367,12 @@ check-skips:
 check-x25519-builds:
 	@mkdir -p bin/check; ./test/x25519-builds.sh > bin/check/$@.log 2>&1; $(CHECK_REPORT)
 
+# The Wycheproof legs, then the total docs/verification.md states against
+# the vectors they ran. The second is not stamped: an edit to the page
+# alone must meet it.
 check-wycheproof:
-	@mkdir -p bin/check; $(MAKE) --no-print-directory wycheproof > bin/check/$@.log 2>&1; $(CHECK_REPORT)
+	@mkdir -p bin/check; { $(MAKE) --no-print-directory wycheproof && python3 tools/wycheproof-total.py; } \
+	  > bin/check/$@.log 2>&1; $(CHECK_REPORT)
 
 # The packaged-object legs. Each runs lib-check, and some cxx-check, in a
 # recursive make for one variant. A variant's objects, its link and every

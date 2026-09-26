@@ -545,6 +545,10 @@ def select_lints(out, changed, csources, lib):
     if "docs/verification.md" in changed:
         out.add("lint", "make proof-coverage",
                 "docs/verification.md must name every launched harness at its tier")
+    if any(p in ("docs/verification.md", "tools/wycheproof-total.py",
+                 "test/gen_wycheproof.py") for p in changed):
+        out.add("lint", "make check-wycheproof",
+                "docs/verification.md must state the Wycheproof total the vectors hold")
     out.add("lint", "make lint-issue-links",
             "every issue reference carries its full URL, in any changed file")
     out.add("lint", "make lint-conflict-markers",

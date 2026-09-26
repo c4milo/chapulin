@@ -703,13 +703,18 @@ def main():
     n_kk = gen_mlkem_keygen(json.load(open(v1 / "mlkem_768_keygen_seed_test.json")), out)
     n_ke = gen_mlkem_encaps(json.load(open(v1 / "mlkem_768_encaps_test.json")), out)
     n_kf = gen_mlkem_full(json.load(open(v1 / "mlkem_768_test.json")), out)
+    # Every case above, summed: docs/verification.md states this total,
+    # and tools/wycheproof-total.py holds the page to it.
+    total = (n_x + n_d + n_a + n_h + n_m + n_h384 + n_m384 + n_g + n_g256 + n_e + n_e384
+             + n_e384_256 + n_e256_512 + n_r + n_rp + n_rs + n_kk + n_ke + n_kf)
+    out.append(f"#define WP_CASES_TOTAL {total}")
     dst.write_text("\n".join(out) + "\n")
     print(f"wycheproof vectors: x25519 {n_x}, ecdh-p256 {n_d}, aead {n_a}, hkdf {n_h}, hmac {n_m},"
           f" hkdf-sha384 {n_h384}, hmac-sha384 {n_m384},"
           f" aes-128-gcm {n_g}, aes-256-gcm {n_g256},"
           f" ecdsa p256-sha256 {n_e} p384-sha384 {n_e384} p384-sha256 {n_e384_256}"
           f" p256-sha512 {n_e256_512}, rsa-pss {n_r}, rsa-pkcs1 {n_rp}, rsa-sign {n_rs},"
-          f" mlkem keygen {n_kk} encaps {n_ke} full {n_kf} (commit {commit[:12]})")
+          f" mlkem keygen {n_kk} encaps {n_ke} full {n_kf}, {total} in all (commit {commit[:12]})")
 
 
 if __name__ == "__main__":

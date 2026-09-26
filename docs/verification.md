@@ -2057,6 +2057,9 @@ Three more suites run on every push and add evidence rather than proof.
   RSA-PSS signing;
 - ML-KEM-768.
 
+`make check` fails when that total differs from the sum of the vectors
+`make wycheproof` generates (`tools/wycheproof-total.py`).
+
 The x25519 suite's 518 cases run a second time over the `X25519=wide`
 field, in its own binary.
 
