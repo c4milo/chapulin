@@ -7,6 +7,7 @@
 #ifndef LIB_PAIR_H
 #define LIB_PAIR_H
 
+#include <stddef.h>
 #include <stdint.h>
 
 int lib_pair_tcp_blocking(void);
@@ -17,9 +18,9 @@ int lib_pair_quic_nonblocking(void);
 // The key log hook a KEYLOG=on object imports. keylog.h declares it only
 // under that object's defines, and test/lib_pair_main.c, which defines
 // it, compiles under no object's defines, so the declaration is repeated
-// here.
-void ch_keylog(void *io, const char *label, const uint8_t client_random[32],
-               const uint8_t secret[32]);
+// here, parameter for parameter.
+void ch_keylog(void *io, const char *label, const uint8_t client_random[32], const uint8_t *secret,
+               size_t secret_len);
 #endif
 
 #endif

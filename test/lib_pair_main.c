@@ -33,12 +33,13 @@ void ch_rand_bytes(uint8_t *p, size_t n) {
 
 #ifdef LIB_PAIR_KEYLOG
 // No session here derives a traffic secret, so the hook never runs.
-void ch_keylog(void *io, const char *label, const uint8_t client_random[32],
-               const uint8_t secret[32]) {
+void ch_keylog(void *io, const char *label, const uint8_t client_random[32], const uint8_t *secret,
+               size_t secret_len) {
     (void)io;
     (void)label;
     (void)client_random;
     (void)secret;
+    (void)secret_len;
     abort();
 }
 #endif
