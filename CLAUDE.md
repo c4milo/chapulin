@@ -338,7 +338,10 @@ Home: github.com/c4milo.
   points, never in per-byte paths.
 - Record size discipline: the client always sends `record_size_limit`
   (RFC 8449) sized to the caller's buffer. A peer record over the limit is
-  a protocol error, not a resize.
+  a protocol error, not a resize. Each outgoing record carries at most
+  `CH_TX_PT` bytes of plaintext, 512 by default; a TCP host build raises
+  it with `TX_RECORD` up to 2^14 (docs/decisions.md 71), the peer's
+  `record_size_limit` still lowers it, and a QUIC build refuses it.
 - RFC MUSTs we keep even though this is minimal, per role. A client:
   HelloRetryRequest handling, KeyUpdate receipt, NewSessionTicket
   parse-and-expose (resumption is just another PSK here), RFC 9257
