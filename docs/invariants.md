@@ -791,6 +791,67 @@ last `ROLE=server` stub, as the entry said it would.
   message mid-handshake and a compaction step corrupts it.
 - See [decisions: Memory and runtime](decisions.md#memory-and-runtime).
 
+### INV-38 — a record is never larger than either end allows
+
+- **Claim.** A record this endpoint sends carries at most the smaller
+  of `CH_TX_PT` and the plaintext the peer's `record_size_limit`
+  allows. A record it receives fits the buffer its own
+  `record_size_limit` advertised, or it is refused, never truncated.
+  `CH_TX_PT` is 512 unless the build raises it with `TX_RECORD`. Every
+  build refuses a value below 512 or above 2^14, the most plaintext RFC
+  9846 §5.1 lets one record carry, and a `TRANSPORT=quic-nonblocking`
+  build, which seals no TLS record, refuses any value but 512
+  (docs/decisions.md 71).
+- **Mechanism.**
+  - The range: `cfg.h` asserts 512 to 16384, `session.h` asserts 512
+    in a QUIC build, and the Makefile's and `build.zig`'s `TX_RECORD`
+    refuse the same values.
+  - The staging array: `session.h` sizes `ch_tls.tx` (`CH_TX_STAGE`) to
+    the larger of the build's largest hello and one sealed record of
+    `CH_TX_PT` bytes, and asserts that it holds `CH_TX_PT + 1 +
+    AEAD_TAG`.
+  - The send limit: `peer_limit` starts at `CH_TX_PT` in `handshake.c`,
+    `srv_handshake.c` and both tcp-nonblocking drivers. The client's
+    `parse_record_size_limit` (`handshake_parser_ee.c`) and the server's
+    `read_record_size_limit` (`srv_parser_ext.c`) lower it to the
+    peer's value less the content-type byte, never raise it, and refuse
+    a value under 64 (RFC 8449 §4).
+  - The writers: `ch_write` (`tls.c`) and the server's `srv_out_limit`
+    (`srv_out.c`) cut every write at the smaller of `peer_limit` and
+    `CH_TX_PT`. The server's Certificate writer, `srv_frag`, holds
+    `SRV_FRAG_MAX` (512) bytes whatever `CH_TX_PT` is, so a raised
+    `CH_TX_PT` adds nothing to the handshake's stack (INV-19).
+  - The receive limit: each role advertises its buffer's room after the
+    record header and the tag, capped at 2^14 + 1, in `handshake.c`,
+    `srv_handshake.c` and both tcp-nonblocking drivers; a QUIC build
+    sends none. A record the buffer cannot hold is refused:
+    `io_read_record` returns `CH_ECAP`, and the tcp-nonblocking drivers
+    send record_overflow.
+- **Check.** Type system for the range and the staging array: a value
+  outside it does not compile. Tests and mutants for the rest:
+  - `test/tx-record-builds.sh` compiles the headers at 511, 512, 16384
+    and 16385 and under QUIC, and runs the same values through make and
+    `build.zig`. `inv14-tx-record-past-2-14`,
+    `inv14-tx-record-quic-accepted`,
+    `inv14-tx-record-makefile-quic-accepted` and
+    `inv36-zig-build-tx-record-past-2-14` require it to fail.
+  - `bin/webpki_loop_tx_record` sends `CH_TX_PT` bytes as one record
+    and `CH_TX_PT + 1` as two, and a server writing to a client whose
+    `record_size_limit` allows 12,316 bytes of plaintext sends 12,316
+    in one record and 12,317 in two. `inv19-srv-frag-sized-by-tx-record` requires it to
+    fail.
+  - `bin/srv_test` holds the server's parser to the wire value less
+    one and to the floor of 64. `srv-parser-record-size-limit-units`
+    and `srv-parser-record-size-limit-floor` require it to fail.
+  - CBMC: `srv_accept` proves that the server's `peer_limit` never
+    exceeds `CH_TX_PT` after the client's limit is stored.
+- **Violation.** A PR raises `CH_TX_PT` past 2^14, sizes a stack
+  buffer by `CH_TX_PT`, lets a peer's `record_size_limit` raise the
+  send size rather than lower it, or truncates a record the receive
+  buffer cannot hold.
+- See [decisions: Memory and runtime](decisions.md#memory-and-runtime),
+  entries 22 and 71.
+
 ### INV-24 — the x25519 ladder stays inside its proven limb range
 
 - **Claim.** Between the ladder's operations every limb of `a`, `b`,
@@ -1128,11 +1189,8 @@ last `ROLE=server` stub, as the entry said it would.
   refuses a ClientHello of more than `SRV_CLIENT_HELLO_EXT_MAX` (128)
   extensions with illegal_parameter, on a first hello and a retried one
   and on every server path, before the duplicate check runs
-  (docs/decisions.md 59). Every build refuses to compile a `CH_TX_PT`
-  below 512 or above 2^14, the most plaintext RFC 9846 §5.1 lets one
-  record carry, and a `TRANSPORT=quic-nonblocking` build refuses any
-  value but 512; the Makefile's and `build.zig`'s `TX_RECORD` refuse
-  the same values (docs/decisions.md 71).
+  (docs/decisions.md 59). INV-38 states the refusals of a
+  `CH_TX_PT` or a `record_size_limit` out of range.
 - **Mechanism.** Fail-closed policy, each refusal an explicit branch
   with its alert.
 - **Check.** handshake_strict table cases per refusal; CBMC proves the
@@ -1308,11 +1366,6 @@ last `ROLE=server` stub, as the entry said it would.
   `srv-ticket-` violations guard the rules, and
   srv-resume-binder-memcmp carries INV-16 for the reason
   quic-token-memcmp does.
-  test/tx-record-builds.sh compiles the headers at each edge of
-  `CH_TX_PT`'s range and under QUIC, and runs the same values through
-  make and `build.zig`. inv14-tx-record-past-2-14,
-  inv14-tx-record-quic-accepted and
-  inv14-tx-record-makefile-quic-accepted require it to fail.
 - **Violation.** A PR relaxes one refusal for interop with a broken
   server, or makes the server refuse a ClientHello for carrying
   something it does not know.

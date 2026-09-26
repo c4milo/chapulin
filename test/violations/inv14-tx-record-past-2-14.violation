@@ -1,4 +1,4 @@
-invariant: INV-14
+invariant: INV-38
 file: cfg.h
 catches: test/tx-record-builds.sh
 reason: cfg.h admits a CH_TX_PT of 16385, one byte over the 2^14 plaintext

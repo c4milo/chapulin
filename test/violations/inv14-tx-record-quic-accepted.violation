@@ -1,4 +1,4 @@
-invariant: INV-14
+invariant: INV-38
 file: session.h
 catches: test/tx-record-builds.sh
 reason: session.h stops holding a QUIC build's CH_TX_PT at 512, so a firmware

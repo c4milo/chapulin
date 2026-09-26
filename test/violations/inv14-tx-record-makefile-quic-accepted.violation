@@ -1,4 +1,4 @@
-invariant: INV-14
+invariant: INV-38
 file: Makefile
 catches: test/tx-record-builds.sh
 reason: the Makefile stops refusing TX_RECORD beside
