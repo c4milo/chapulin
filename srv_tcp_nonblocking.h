@@ -42,11 +42,11 @@
 //
 // They mirror srv_quic.h's SQ_STEP_ constructor for constructor, because
 // the handshake is the same handshake and only the transport under it
-// differs. Consecutive from 0, with SR_STEP_COMPLETE largest.
-#define SR_STEP_AWAIT_CLIENT_HELLO 0
-#define SR_STEP_AWAIT_RETRY_HELLO 1
-#define SR_STEP_AWAIT_CLIENT_FINISHED 2
-#define SR_STEP_COMPLETE 3
+// differs. Consecutive from 0, with SRV_TCP_NONBLOCKING_STEP_COMPLETE largest.
+#define SRV_TCP_NONBLOCKING_STEP_AWAIT_CLIENT_HELLO 0
+#define SRV_TCP_NONBLOCKING_STEP_AWAIT_RETRY_HELLO 1
+#define SRV_TCP_NONBLOCKING_STEP_AWAIT_CLIENT_FINISHED 2
+#define SRV_TCP_NONBLOCKING_STEP_COMPLETE 3
 
 // Prepares a server session. It reads the configuration and waits:
 // unlike ch_record_init it stages no message, because a server speaks

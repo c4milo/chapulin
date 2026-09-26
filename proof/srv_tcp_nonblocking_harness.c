@@ -361,7 +361,8 @@ int main(void) {
     }
     if (rc == CH_OK) {
         __CPROVER_assert(r.t.state == CH_ST_START, "a prepared session waits");
-        __CPROVER_assert(r.step == SR_STEP_AWAIT_CLIENT_HELLO, "at the first step");
+        __CPROVER_assert(r.step == SRV_TCP_NONBLOCKING_STEP_AWAIT_CLIENT_HELLO,
+                         "at the first step");
         __CPROVER_assert(r.hs.t == &r.t, "with the back pointer set");
         __CPROVER_assert(r.t.peer_limit <= CH_TX_PT, "and this build's own send cap");
     }
@@ -397,16 +398,18 @@ int main(void) {
                      "a step leaves the window inside the buffer");
     __CPROVER_assert(r.t.peer_limit <= CH_TX_PT,
                      "the client's record_size_limit never raises the send cap");
-    if (was_step > SR_STEP_COMPLETE) {
+    if (was_step > SRV_TCP_NONBLOCKING_STEP_COMPLETE) {
         __CPROVER_assert(rc == CH_EPROTO, "a step number no step wrote kills the session");
         __CPROVER_assert(r.hs.alert == ALERT_UNEXPECTED_MESSAGE, "and names unexpected_message");
         __CPROVER_assert(r.step == was_step && r.t.pt_off == off, "and changes nothing else");
     }
     if (rc == CH_OK) {
-        __CPROVER_assert(was_step <= SR_STEP_COMPLETE, "only a step in the table can succeed");
+        __CPROVER_assert(was_step <= SRV_TCP_NONBLOCKING_STEP_COMPLETE,
+                         "only a step in the table can succeed");
         __CPROVER_assert(r.t.pt_off > off, "a step consumes its message");
-        if (was_step == SR_STEP_AWAIT_CLIENT_FINISHED) {
-            __CPROVER_assert(r.step == SR_STEP_COMPLETE, "the Finished step ends the handshake");
+        if (was_step == SRV_TCP_NONBLOCKING_STEP_AWAIT_CLIENT_FINISHED) {
+            __CPROVER_assert(r.step == SRV_TCP_NONBLOCKING_STEP_COMPLETE,
+                             "the Finished step ends the handshake");
             __CPROVER_assert(r.hs.t == &r.t, "and writes the back pointer again after the wipe");
         }
     }

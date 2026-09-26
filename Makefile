@@ -398,7 +398,7 @@ TESTH := test/test_random.h test/pem_armor.h test/pem_tests.h test/x509_ca_tests
          test/rsa_pkcs1_vectors.h test/rsa_wide_vectors.h test/rsa_pkcs1_wide_vectors.h \
          test/rsa_sign_vectors.h \
          test/diff_webpki.h test/diff_mlkem.h test/mlkem_vectors.h test/webpki_corpus.h test/webpki_sigalg_vectors.h \
-         test/diff_webpki_sigalg.h test/hello_exts.h test/webpki_session_cases.h test/webpki_groups_cases.h test/webpki_p256_cases.h test/webpki_mock_kex.h test/webpki_suite_cases.h test/rec_read_tests.h test/rec_resume_tests.h test/rec_group_tests.h test/rec_coalesced_tests.h test/rec_close_tests.h test/quic_loop_raw.h test/quic_loop_close.h test/quic_loop_webpki.h test/quic_loop_pins.h test/webpki_resume_session.h test/webpki_resume_cases.h test/webpki_pins_cases.h test/tls_client_webpki.h \
+         test/diff_webpki_sigalg.h test/hello_exts.h test/webpki_session_cases.h test/webpki_groups_cases.h test/webpki_p256_cases.h test/webpki_mock_kex.h test/webpki_suite_cases.h test/tcp_nonblocking_read_tests.h test/tcp_nonblocking_resume_tests.h test/tcp_nonblocking_group_tests.h test/tcp_nonblocking_coalesced_tests.h test/tcp_nonblocking_close_tests.h test/quic_loop_raw.h test/quic_loop_close.h test/quic_loop_webpki.h test/quic_loop_pins.h test/webpki_resume_session.h test/webpki_resume_cases.h test/webpki_pins_cases.h test/tls_client_webpki.h \
          test/webpki_decline_cases.h test/webpki_r2_chain.h test/psk_decline_tests.h \
          test/handshake_strict_alpn.h test/handshake_strict_cert_type.h \
          test/webpki_cert_mutants.h test/webpki_cert_key_mutants.h test/webpki_ext_mutants.h test/diff_webpki_cert.h \
@@ -1716,13 +1716,14 @@ bin/srv_tcp_nonblocking_test: test/srv_tcp_nonblocking_test.c $(SRV_TCP_NONBLOCK
 	  $(SRV_TCP_NONBLOCKING_SRCS)
 
 # Both tcp-nonblocking drivers against each other in one process, under the
-# defines of the one object that carries both: ROLE=both TRANSPORT=tcp-nonblocking.
-# It is the client half's INV-28 test -- bin/recclient needs a live
-# server and runs in check-slow, so that side's claim was checked once a
-# night. The two filters are the ones that arm applies, written the same
-# way here. The list is otherwise $(SRCS) whole, like every other test
-# binary, so it also links the certificate parsers a raw-rsa object
-# filters out and this program never reaches.
+# defines of the one object that carries both: ROLE=both
+# TRANSPORT=tcp-nonblocking. It is the client half's INV-28 test --
+# bin/tlsclient_tcp_nonblocking needs a live server and runs in check-slow,
+# so that side's claim was checked once a night. The two filters are the
+# ones that arm applies, written the same way here. The list is otherwise
+# $(SRCS) whole, like every other test binary, so it also links the
+# certificate parsers a raw-rsa object filters out and this program never
+# reaches.
 TCP_NONBLOCKING_LOOP_SRCS := $(filter-out handshake.c,$(SRCS)) tcp_nonblocking.c tcp_nonblocking_frame.c tcp_nonblocking_step.c \
                  $(filter-out srv_handshake.c,$(SRV_SRCS)) srv_tcp_nonblocking.c $(KEX_HYBRID_SRCS) \
                  rsa_sign.c p256_sign.c $(P256_ECDH_SRCS)
@@ -1747,7 +1748,7 @@ bin/tcp_nonblocking_loop_pq: test/tcp_nonblocking_loop_test.c $(TCP_NONBLOCKING_
 # another ticket key declines the client's ticket (docs/decisions.md 55).
 WEBPKI_LOOP_SRCS := $(sort $(filter-out pem.c x509.c x509_ca.c,$(TCP_NONBLOCKING_LOOP_SRCS)) \
                            $(WEBPKI_SRCS) $(WEBPKI_CHAIN_SRCS) $(WEBPKI_KEX_SRCS))
-bin/webpki_loop_record: test/webpki_loop_test.c $(WEBPKI_LOOP_SRCS) $(HDRS) $(TESTH)
+bin/webpki_loop_tcp_nonblocking: test/webpki_loop_test.c $(WEBPKI_LOOP_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) -DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_TRANSPORT_TCP_NONBLOCKING -DCH_TRUST_WEBPKI \
 	  -I. -o $@ test/webpki_loop_test.c $(WEBPKI_LOOP_SRCS)
@@ -1923,11 +1924,11 @@ bin/webpki_resume_test: test/webpki_resume_test.c $(WEBPKI_TEST_SRCS) $(P256_SIG
 	@mkdir -p bin
 	$(CC) $(CFLAGS) -DCH_TRUST_WEBPKI -I. -o $@ test/webpki_resume_test.c $(WEBPKI_TEST_SRCS) \
 	  $(P256_SIGN_SRCS)
-WEBPKI_RECORD_SRCS := $(filter-out handshake.c,$(WEBPKI_TEST_SRCS)) tcp_nonblocking.c tcp_nonblocking_frame.c tcp_nonblocking_step.c
-bin/webpki_resume_record: test/webpki_resume_test.c $(WEBPKI_RECORD_SRCS) $(P256_SIGN_SRCS) $(HDRS) $(TESTH)
+WEBPKI_TCP_NONBLOCKING_SRCS := $(filter-out handshake.c,$(WEBPKI_TEST_SRCS)) tcp_nonblocking.c tcp_nonblocking_frame.c tcp_nonblocking_step.c
+bin/webpki_resume_tcp_nonblocking: test/webpki_resume_test.c $(WEBPKI_TCP_NONBLOCKING_SRCS) $(P256_SIGN_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) -DCH_TRUST_WEBPKI -DCH_TRANSPORT_TCP_NONBLOCKING -I. -o $@ test/webpki_resume_test.c \
-	  $(WEBPKI_RECORD_SRCS) $(P256_SIGN_SRCS)
+	  $(WEBPKI_TCP_NONBLOCKING_SRCS) $(P256_SIGN_SRCS)
 
 # The same main in the client that offers all three cipher suites
 # (docs/decisions.md entries 45 and 58), so the mock can select either
@@ -2051,10 +2052,10 @@ ct-widemul-check: bin/unit_ct_widemul bin/mlkem_test_ct_widemul bin/p256_field_t
 # The TRANSPORT=tcp-nonblocking client, which owns its socket and lets chapulin
 # touch none of it. test/e2e.sh runs it against the same PSK server
 # bin/tlsclient uses, so the two drivers are compared over one wire.
-REC_SRCS := $(filter-out handshake.c,$(SRCS)) tcp_nonblocking.c tcp_nonblocking_frame.c tcp_nonblocking_step.c
-bin/recclient: test/rec_client.c $(REC_SRCS) $(HDRS) $(TESTH)
+TCP_NONBLOCKING_SRCS := $(filter-out handshake.c,$(SRCS)) tcp_nonblocking.c tcp_nonblocking_frame.c tcp_nonblocking_step.c
+bin/tlsclient_tcp_nonblocking: test/tcp_nonblocking_client.c $(TCP_NONBLOCKING_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -DCH_TRANSPORT_TCP_NONBLOCKING -I. -o $@ test/rec_client.c $(REC_SRCS)
+	$(CC) $(CFLAGS) -DCH_TRANSPORT_TCP_NONBLOCKING -I. -o $@ test/tcp_nonblocking_client.c $(TCP_NONBLOCKING_SRCS)
 
 bin/tlsclient: test/tls_client.c $(SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
@@ -2127,7 +2128,7 @@ run-%: bin/%
 # and the invariant violation builds. The nightly runs it. Splitting on
 # duration rather than on importance is deliberate -- nothing here is
 # optional, and a change is not finished until check-slow passes too.
-check: bin/unit bin/unit_ca bin/unit_pq bin/tlsclient bin/tlsclient_ecdsa bin/tlsclient_ca bin/tlsclient_ca_ecdsa bin/tlsclient_webpki $(if $(AES_HW_PROBE),bin/tlsclient_webpki_aes) $(X25519_WIDE_BINS) bin/tlsclient_pq bin/drbg_test bin/softmul_test bin/rsa_test bin/sha3_test bin/sha512_test bin/hkdf384_test bin/p384_test bin/rsa_pkcs1_test bin/webpki_time_test bin/webpki_name_test bin/webpki_spki_test bin/webpki_sigalg_test bin/webpki_cert_test bin/webpki_chain_test bin/webpki_auth_test bin/webpki_encrypted_exts_test bin/mlkem_test bin/handshake_strict_test bin/handshake_strict_pq bin/handshake_strict_webpki bin/webpki_session_test bin/webpki_resume_test bin/webpki_resume_record bin/x509strict bin/x509strict_ecdsa bin/quic_driver_test bin/quic_test bin/recclient $(AES_HW_BINS) lint rand-check bin/srv_auth_test bin/srv_test bin/srv_quic_test bin/srv_quic_both_test bin/srv_tcp_nonblocking_test bin/tcp_nonblocking_loop_test bin/tcp_nonblocking_loop_pq bin/quic_loop_test bin/quic_loop_webpki bin/webpki_loop_record bin/tlsserver bin/exporter_test bin/rsa_sign_test bin/p256_field_test bin/p256_ecdh_test bin/p256_sign_test
+check: bin/unit bin/unit_ca bin/unit_pq bin/tlsclient bin/tlsclient_ecdsa bin/tlsclient_ca bin/tlsclient_ca_ecdsa bin/tlsclient_webpki $(if $(AES_HW_PROBE),bin/tlsclient_webpki_aes) $(X25519_WIDE_BINS) bin/tlsclient_pq bin/drbg_test bin/softmul_test bin/rsa_test bin/sha3_test bin/sha512_test bin/hkdf384_test bin/p384_test bin/rsa_pkcs1_test bin/webpki_time_test bin/webpki_name_test bin/webpki_spki_test bin/webpki_sigalg_test bin/webpki_cert_test bin/webpki_chain_test bin/webpki_auth_test bin/webpki_encrypted_exts_test bin/mlkem_test bin/handshake_strict_test bin/handshake_strict_pq bin/handshake_strict_webpki bin/webpki_session_test bin/webpki_resume_test bin/webpki_resume_tcp_nonblocking bin/x509strict bin/x509strict_ecdsa bin/quic_driver_test bin/quic_test bin/tlsclient_tcp_nonblocking $(AES_HW_BINS) lint rand-check bin/srv_auth_test bin/srv_test bin/srv_quic_test bin/srv_quic_both_test bin/srv_tcp_nonblocking_test bin/tcp_nonblocking_loop_test bin/tcp_nonblocking_loop_pq bin/quic_loop_test bin/quic_loop_webpki bin/webpki_loop_tcp_nonblocking bin/tlsserver bin/exporter_test bin/rsa_sign_test bin/p256_field_test bin/p256_ecdh_test bin/p256_sign_test
 	# The packaged object is built once per entropy pattern, because
 	# lib-check reads a different export list and a different import
 	# list in each. Only the object is built twice: the examples and
@@ -2319,7 +2320,7 @@ check: bin/unit bin/unit_ca bin/unit_pq bin/tlsclient bin/tlsclient_ecdsa bin/tl
 	./bin/tcp_nonblocking_loop_pq
 	./bin/quic_loop_test
 	./bin/quic_loop_webpki
-	./bin/webpki_loop_record
+	./bin/webpki_loop_tcp_nonblocking
 	./bin/exporter_test
 	./bin/srv_flight_test
 	./bin/handshake_strict_test
@@ -2327,7 +2328,7 @@ check: bin/unit bin/unit_ca bin/unit_pq bin/tlsclient bin/tlsclient_ecdsa bin/tl
 	./bin/handshake_strict_webpki
 	./bin/webpki_session_test
 	./bin/webpki_resume_test
-	./bin/webpki_resume_record
+	./bin/webpki_resume_tcp_nonblocking
 	./bin/x509strict
 	./bin/x509strict_ecdsa
 	$(MAKE) wycheproof
@@ -3553,7 +3554,7 @@ examples-check: bin/example_psk bin/example_pinned bin/example_ca bin/example_we
 # baseline plus a mutation pass costs real minutes — and the
 # proof-backed ones in its test-invariants-proof-backed job.
 .PHONY: test-invariants-fast
-test-invariants-fast: bin/unit bin/unit_ca bin/x509strict bin/x509strict_ecdsa bin/rsa_test bin/drbg_test bin/handshake_strict_test bin/handshake_strict_webpki bin/webpki_session_test bin/webpki_resume_test bin/webpki_resume_record bin/webpki_auth_test bin/webpki_encrypted_exts_test bin/softmul_test bin/unit_ct_widemul bin/mlkem_test_ct_widemul bin/webpki_spki_test bin/webpki_sigalg_test bin/webpki_cert_test bin/x25519_equiv_test
+test-invariants-fast: bin/unit bin/unit_ca bin/x509strict bin/x509strict_ecdsa bin/rsa_test bin/drbg_test bin/handshake_strict_test bin/handshake_strict_webpki bin/webpki_session_test bin/webpki_resume_test bin/webpki_resume_tcp_nonblocking bin/webpki_auth_test bin/webpki_encrypted_exts_test bin/softmul_test bin/unit_ct_widemul bin/mlkem_test_ct_widemul bin/webpki_spki_test bin/webpki_sigalg_test bin/webpki_cert_test bin/x25519_equiv_test
 	python3 test/violations.py --tier=fast
 
 # Every violation but the proof-backed ones: the fast tier plus the

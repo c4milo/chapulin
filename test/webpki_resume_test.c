@@ -2,8 +2,8 @@
 // presented only under the hostname and anchors of the session that
 // received it, and a server that declines it gets a full handshake in the
 // same connection (docs/decisions.md 55). Built twice from this file:
-// bin/webpki_resume_test over TRANSPORT=tcp-blocking, and bin/webpki_resume_record
-// over TRANSPORT=tcp-nonblocking.
+// bin/webpki_resume_test over TRANSPORT=tcp-blocking, and
+// bin/webpki_resume_tcp_nonblocking over TRANSPORT=tcp-nonblocking.
 //
 // The mock server answers a ClientHello the way the test asks. By default
 // it selects the offered ticket and sends EncryptedExtensions and Finished
@@ -432,7 +432,7 @@ int main(void) {
         return 1;
     }
 #ifdef CH_TRANSPORT_TCP_NONBLOCKING
-    (void)printf("webpki_resume_record: all checks passed\n");
+    (void)printf("webpki_resume_tcp_nonblocking: all checks passed\n");
 #else
     (void)printf("webpki_resume_test: all checks passed\n");
 #endif

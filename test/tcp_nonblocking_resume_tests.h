@@ -1,8 +1,9 @@
-// Resumption over the tcp-nonblocking transport, both halves in one process: this
-// tree's server issues a ticket after a full handshake, this tree's client
-// takes it through ch_read and on_ticket, and a second connection resumes
-// with it and no certificate. Included by test/tcp_nonblocking_loop_test.c
-// after test/rec_read_tests.h, whose held records and held_recv it reads.
+// Resumption over the tcp-nonblocking transport, both halves in one
+// process: this tree's server issues a ticket after a full handshake, this
+// tree's client takes it through ch_read and on_ticket, and a second
+// connection resumes with it and no certificate. Included by
+// test/tcp_nonblocking_loop_test.c after test/tcp_nonblocking_read_tests.h,
+// whose held records and held_recv it reads.
 //
 // The client offers the ticket alone, with no signature scheme beside it,
 // because that is the one resumed hello this client writes (handshake.h).
@@ -10,8 +11,8 @@
 // and answers missing_extension: every refusal row below reads that alert
 // where a hello that also offered a scheme would get a full handshake
 // instead, which bin/srv_flight_test checks.
-#ifndef CH_TEST_REC_RESUME_TESTS_H
-#define CH_TEST_REC_RESUME_TESTS_H
+#ifndef CH_TEST_TCP_NONBLOCKING_RESUME_TESTS_H
+#define CH_TEST_TCP_NONBLOCKING_RESUME_TESTS_H
 
 #include "srv_resume.h"
 

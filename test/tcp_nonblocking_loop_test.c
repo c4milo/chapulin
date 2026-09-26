@@ -6,12 +6,12 @@
 // source list, which is the one object that carries both drivers.
 //
 // Why it exists: INV-28 says a tcp-nonblocking build calls neither cfg.send
-// nor cfg.recv while the handshake runs, and the server half was the
-// only half measured. bin/srv_tcp_nonblocking_test counts I/O calls on the
-// server, and the client's only driver was bin/recclient, which needs a
-// live server and so runs in check-slow. A claim checked once a night is
-// checked rarely. Here both halves supply a send and a recv that count, and
-// the test fails if either driver reaches for a socket.
+// nor cfg.recv while the handshake runs, and the server half was the only
+// half measured. bin/srv_tcp_nonblocking_test counts I/O calls on the
+// server, and the client's only driver was bin/tlsclient_tcp_nonblocking,
+// which needs a live server and so runs in check-slow. A claim checked once
+// a night is checked rarely. Here both halves supply a send and a recv that
+// count, and the test fails if either driver reaches for a socket.
 //
 // It answers a second question nothing else asks: whether the two
 // drivers agree. bin/srv_tcp_nonblocking_test feeds the server a
@@ -365,11 +365,11 @@ static int run_handshake(ch_record *client, ch_record *server, const ch_cfg *ccf
     return rounds;
 }
 
-#include "rec_close_tests.h"
-#include "rec_coalesced_tests.h"
-#include "rec_group_tests.h"
-#include "rec_read_tests.h"
-#include "rec_resume_tests.h"
+#include "tcp_nonblocking_close_tests.h"
+#include "tcp_nonblocking_coalesced_tests.h"
+#include "tcp_nonblocking_group_tests.h"
+#include "tcp_nonblocking_read_tests.h"
+#include "tcp_nonblocking_resume_tests.h"
 
 int main(void) {
     static ch_record client;

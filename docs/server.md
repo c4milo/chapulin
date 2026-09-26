@@ -2014,8 +2014,8 @@ and the `require_pq` refusal, which it did not have in this mode
 ([171](https://github.com/c4milo/chapulin/issues/171)).
 
 Nothing caught it because `check` linked no `TRANSPORT=tcp-nonblocking` library variant
-at all — only `bin/recclient`, which pins. Two `lib-check` legs now link one
-per side: `TRUST=none ROLE=server` and `TRUST=webpki`, both over this
+at all — only `bin/tlsclient_tcp_nonblocking`, which pins. Two `lib-check`
+legs now link one per side: `TRUST=none ROLE=server` and `TRUST=webpki`, both over this
 transport.
 
 ### What `ch_cfg` gains and drops

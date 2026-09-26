@@ -1,7 +1,7 @@
 invariant: INV-22
 file: srv_handshake.c
 catches: test/e2e.sh
-builds: bin/recclient bin/tlsclient bin/tlsclient_ecdsa bin/tlsclient_ca bin/tlsclient_ca_ecdsa bin/tlsclient_webpki bin/tlsclient_webpki_aes bin/tlsclient_pq bin/example_psk bin/example_pinned bin/example_ca bin/example_webpki bin/pemkey bin/pemkey_ecdsa bin/tlsserver bin/tlsserver_aes
+builds: bin/tlsclient_tcp_nonblocking bin/tlsclient bin/tlsclient_ecdsa bin/tlsclient_ca bin/tlsclient_ca_ecdsa bin/tlsclient_webpki bin/tlsclient_webpki_aes bin/tlsclient_pq bin/example_psk bin/example_pinned bin/example_ca bin/example_webpki bin/pemkey bin/pemkey_ecdsa bin/tlsserver bin/tlsserver_aes
 reason: the blocking server sends its Certificate and CertificateVerify on
   a handshake a ticket authenticated. No in-process test drives
   srv_handshake.c, because both of its ends block on a socket, so the e2e

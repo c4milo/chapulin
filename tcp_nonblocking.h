@@ -68,7 +68,7 @@
 typedef struct ch_record {
     ch_tls t;
     handshake_state hs;
-    uint8_t step;  // HSR_STEP_*, tcp_nonblocking_step.h
+    uint8_t step;  // TCP_NONBLOCKING_STEP_*, tcp_nonblocking_step.h
     uint8_t alert; // what ch_record_alert reports after a failure
     // Bytes of one finished record staged in t.tx and not yet collected,
     // and how many of them ch_record_out has already handed over. A partial

@@ -179,12 +179,13 @@ p256_pub() {
 }
 
 # --- TRANSPORT=tcp-nonblocking: the same PSK handshake, driven by a caller that
-# owns the socket. The point of the leg is the comparison: bin/recclient
-# and bin/tlsclient reach the same connected session against the same
-# server, one with chapulin touching the descriptor and one without.
+# owns the socket. The point of the leg is the comparison:
+# bin/tlsclient_tcp_nonblocking and bin/tlsclient reach the same connected
+# session against the same server, one with chapulin touching the descriptor and
+# one without.
 start_server -tls1_3 -ciphersuites TLS_CHACHA20_POLY1305_SHA256 -psk "$PSK" -psk_identity "$ID" -nocert -rev
 MSG='hola sapo'
-expect record "opas aloh" "$DIR/err_rec" ./bin/recclient 127.0.0.1 "$SRV_PORT" "$PSK" "$ID"
+expect tcp-nonblocking "opas aloh" "$DIR/err_tcp_nonblocking" ./bin/tlsclient_tcp_nonblocking 127.0.0.1 "$SRV_PORT" "$PSK" "$ID"
 
 # --- PSK: external key, then resume with the issued ticket ---
 start_server -tls1_3 -ciphersuites TLS_CHACHA20_POLY1305_SHA256 -psk "$PSK" -psk_identity "$ID" -nocert -rev

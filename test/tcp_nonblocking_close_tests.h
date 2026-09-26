@@ -1,9 +1,9 @@
 // Closing a TRANSPORT=tcp-nonblocking session, one direction at a time, between
-// this tree's two tcp-nonblocking drivers. A close_notify closes its
-// sender's direction alone (RFC 9846 §6, rfc9846.txt:3767-3768, and
-// §6.1, rfc9846.txt:3857-3859), so the side that receives one still
-// writes, and sends its own close_notify when its caller calls ch_close.
-// Included by test/tcp_nonblocking_loop_test.c; it reuses rec_read_tests.h's
+// this tree's two tcp-nonblocking drivers. A close_notify closes its sender's
+// direction alone (RFC 9846 §6, rfc9846.txt:3767-3768, and §6.1,
+// rfc9846.txt:3857-3859), so the side that receives one still writes, and sends
+// its own close_notify when its caller calls ch_close. Included by
+// test/tcp_nonblocking_loop_test.c; it reuses tcp_nonblocking_read_tests.h's
 // held records, held_recv and hold_record for what the server sends the client.
 //
 // colibri found the old behavior: ch_read answered the peer's
@@ -12,10 +12,10 @@
 // adapter holds only input during ch_read, so that alert was lost, and
 // its own ch_close later sent nothing because the keys were gone. So
 // this test counts every send call each end makes.
-#ifndef CH_TEST_REC_CLOSE_TESTS_H
-#define CH_TEST_REC_CLOSE_TESTS_H
+#ifndef CH_TEST_TCP_NONBLOCKING_CLOSE_TESTS_H
+#define CH_TEST_TCP_NONBLOCKING_CLOSE_TESTS_H
 
-#include "rec_read_tests.h"
+#include "tcp_nonblocking_read_tests.h"
 
 // What the client sent through cfg.send, for the server's recv.
 static struct {

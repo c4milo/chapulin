@@ -9,8 +9,8 @@
 // CH_RECORD_AGAIN existed the "then nothing" step killed the session, and
 // the only way around it was to hold every ticket-only record back until
 // a data record followed it.
-#ifndef CH_TEST_REC_READ_TESTS_H
-#define CH_TEST_REC_READ_TESTS_H
+#ifndef CH_TEST_TCP_NONBLOCKING_READ_TESTS_H
+#define CH_TEST_TCP_NONBLOCKING_READ_TESTS_H
 
 // The records the caller holds and has not yet handed over. recv hands
 // over what it holds and returns 0 when it holds nothing.

@@ -9,8 +9,8 @@
 // hello that lists secp256r1 alone gets it, and one that lists x25519
 // beside it gets x25519 whatever it shares. Included by
 // test/tcp_nonblocking_loop_test.c after its fixtures.
-#ifndef CH_TEST_REC_GROUP_TESTS_H
-#define CH_TEST_REC_GROUP_TESTS_H
+#ifndef CH_TEST_TCP_NONBLOCKING_GROUP_TESTS_H
+#define CH_TEST_TCP_NONBLOCKING_GROUP_TESTS_H
 
 #include "p256_ecdh.h"
 #include "x25519.h"

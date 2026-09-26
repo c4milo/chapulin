@@ -6,7 +6,7 @@ reason: the tcp-nonblocking server sends its Certificate and CertificateVerify o
   EncryptedExtensions and Finished alone, and a client that resumes reads
   a Certificate there as a message out of turn, which is also what the
   QUIC Interop Runner's resumption case fails a server for.
-  test/rec_resume_tests.h resumes a ticket between this tree's two
+  test/tcp_nonblocking_resume_tests.h resumes a ticket between this tree's two
   tcp-nonblocking drivers and counts the records the server sent.
 
 --- old

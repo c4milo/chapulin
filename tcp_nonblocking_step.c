@@ -47,9 +47,9 @@ static int stage_sealed(ch_record *r, const uint8_t *pt, size_t n) {
     return CH_OK;
 }
 
-// The ServerHello step, which HSR_STEP_AWAIT_SERVER_HELLO and
-// HSR_STEP_AWAIT_RETRY_HELLO share. A HelloRetryRequest at the retry
-// step is the second one, which RFC 9846 section 4.2.4 forbids; the
+// The ServerHello step, which TCP_NONBLOCKING_STEP_AWAIT_SERVER_HELLO and
+// TCP_NONBLOCKING_STEP_AWAIT_RETRY_HELLO share. A HelloRetryRequest at the
+// retry step is the second one, which RFC 9846 section 4.2.4 forbids; the
 // blocking driver refuses it by call position and this one by the stored
 // step.
 //
@@ -64,7 +64,7 @@ static int step_server_hello(ch_record *r) {
         return rc;
     }
     if (info.hrr) {
-        if (r->step == HSR_STEP_AWAIT_RETRY_HELLO) {
+        if (r->step == TCP_NONBLOCKING_STEP_AWAIT_RETRY_HELLO) {
             r->hs.alert = ALERT_UNEXPECTED_MESSAGE;
             return CH_EPROTO;
         }
@@ -75,7 +75,7 @@ static int step_server_hello(ch_record *r) {
             return CH_ECAP;
         }
         tcp_nonblocking_stage_plain(r, n);
-        r->step = HSR_STEP_AWAIT_RETRY_HELLO;
+        r->step = TCP_NONBLOCKING_STEP_AWAIT_RETRY_HELLO;
         return CH_OK;
     }
     rc = hsf_accept_server_hello(&r->hs, &info);
@@ -92,7 +92,7 @@ static int step_server_hello(ch_record *r) {
     REC_DIR_INIT_SUITE(&t->wr, r->hs.c_hs, r->hs.suite);
     r->hs.encrypted = 1;
     t->keys = 1; // alerts encrypt from here on
-    r->step = HSR_STEP_AWAIT_ENCRYPTED_EXTENSIONS;
+    r->step = TCP_NONBLOCKING_STEP_AWAIT_ENCRYPTED_EXTENSIONS;
     return CH_OK;
 }
 
@@ -104,7 +104,8 @@ static int step_encrypted_extensions(ch_record *r) {
     // The one fork in the table: a server that selected the PSK sends no
     // certificate, and every other server sends one, a TRUST=webpki server
     // that declined the offered ticket included.
-    r->step = r->t.psk_selected ? HSR_STEP_AWAIT_FINISHED : HSR_STEP_AWAIT_CERTIFICATE;
+    r->step = r->t.psk_selected ? TCP_NONBLOCKING_STEP_AWAIT_FINISHED
+                                : TCP_NONBLOCKING_STEP_AWAIT_CERTIFICATE;
     return CH_OK;
 }
 
@@ -113,7 +114,7 @@ static int step_certificate(ch_record *r) {
     if (rc != CH_OK) {
         return rc;
     }
-    r->step = HSR_STEP_AWAIT_CERTIFICATE_VERIFY;
+    r->step = TCP_NONBLOCKING_STEP_AWAIT_CERTIFICATE_VERIFY;
     return CH_OK;
 }
 
@@ -122,7 +123,7 @@ static int step_certificate_verify(ch_record *r) {
     if (rc != CH_OK) {
         return rc;
     }
-    r->step = HSR_STEP_AWAIT_FINISHED;
+    r->step = TCP_NONBLOCKING_STEP_AWAIT_FINISHED;
     return CH_OK;
 }
 
@@ -159,7 +160,7 @@ static int step_finished(ch_record *r) {
     t->pt_len = 0;
     ct_wipe(&r->hs, sizeof r->hs);
     r->hs.t = t;
-    r->step = HSR_STEP_COMPLETE;
+    r->step = TCP_NONBLOCKING_STEP_COMPLETE;
     return CH_OK;
 }
 
@@ -173,20 +174,20 @@ static int step_complete(ch_record *r) {
     return CH_EPROTO;
 }
 
-int hsr_advance(ch_record *r) {
+int tcp_nonblocking_advance(ch_record *r) {
     switch (r->step) {
-    case HSR_STEP_AWAIT_SERVER_HELLO:
-    case HSR_STEP_AWAIT_RETRY_HELLO:
+    case TCP_NONBLOCKING_STEP_AWAIT_SERVER_HELLO:
+    case TCP_NONBLOCKING_STEP_AWAIT_RETRY_HELLO:
         return step_server_hello(r);
-    case HSR_STEP_AWAIT_ENCRYPTED_EXTENSIONS:
+    case TCP_NONBLOCKING_STEP_AWAIT_ENCRYPTED_EXTENSIONS:
         return step_encrypted_extensions(r);
-    case HSR_STEP_AWAIT_CERTIFICATE:
+    case TCP_NONBLOCKING_STEP_AWAIT_CERTIFICATE:
         return step_certificate(r);
-    case HSR_STEP_AWAIT_CERTIFICATE_VERIFY:
+    case TCP_NONBLOCKING_STEP_AWAIT_CERTIFICATE_VERIFY:
         return step_certificate_verify(r);
-    case HSR_STEP_AWAIT_FINISHED:
+    case TCP_NONBLOCKING_STEP_AWAIT_FINISHED:
         return step_finished(r);
-    case HSR_STEP_COMPLETE:
+    case TCP_NONBLOCKING_STEP_COMPLETE:
         return step_complete(r);
     default:
         // A step value no step wrote, which a one-byte corruption of

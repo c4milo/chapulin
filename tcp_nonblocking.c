@@ -1,7 +1,8 @@
 // chapulin's client driver under TRANSPORT=tcp-nonblocking, and the three calls
 // either role exports. Contract in tcp_nonblocking.h. It is the file beside
-// tls.c and quic.c, and it holds no protocol rule of its own: hsr_advance runs
-// the handshake and record.[ch] protects what leaves.
+// tls.c and quic.c, and it holds no protocol rule of its own:
+// tcp_nonblocking_advance runs the handshake and record.[ch] protects what
+// leaves.
 //
 // ch_record_state, ch_record_alert and ch_record_close read no side, so
 // a ROLE=server object compiles them from here and srv_tcp_nonblocking.c
@@ -70,7 +71,7 @@ int ch_record_init(ch_record *r, const ch_cfg *cfg) {
         return CH_EINVAL;
     }
     tcp_nonblocking_stage_plain(r, n);
-    r->step = HSR_STEP_AWAIT_SERVER_HELLO;
+    r->step = TCP_NONBLOCKING_STEP_AWAIT_SERVER_HELLO;
     r->t.state = CH_ST_START;
     return CH_OK;
 }
@@ -89,7 +90,7 @@ static int drive(ch_record *r) {
         if (rc != CH_OK) {
             return tcp_nonblocking_fail(r, rc);
         }
-        rc = hsr_advance(r);
+        rc = tcp_nonblocking_advance(r);
         if (rc != CH_OK) {
             return tcp_nonblocking_fail(r, rc);
         }
@@ -164,7 +165,7 @@ int ch_record_out(ch_record *r, uint8_t *out, size_t cap, size_t *out_len) {
     if (r->tx_off == r->tx_len) {
         r->tx_len = 0;
         r->tx_off = 0;
-        if (r->step == HSR_STEP_COMPLETE && r->t.state == CH_ST_START) {
+        if (r->step == TCP_NONBLOCKING_STEP_COMPLETE && r->t.state == CH_ST_START) {
             // These bytes were the client Finished: this endpoint has now
             // sent its own and verified the peer's, which is what the
             // handshake being done means.

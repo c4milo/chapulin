@@ -102,7 +102,7 @@ LIB_LEGS = [
         ("make lib-check RAND=extern TRUST=webpki TRANSPORT=tcp-nonblocking",
          "the tcp-nonblocking webpki object packages {path}, and it is the "
          "one client object that compiles ch_record_init and no ch_connect",
-         ["test/lib-check-webpki-record.sh"]),
+         ["test/lib-check-webpki-tcp-nonblocking.sh"]),
     ]),
     ("TRANSPORT=quic-nonblocking", [
         ("make lib-check cxx-check RAND=extern TRANSPORT=quic-nonblocking",

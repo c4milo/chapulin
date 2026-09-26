@@ -6,13 +6,13 @@ reason: ch_srv_record_in keeps taking records after the one that completed
   same segment as its Finished, as h2spec does with its HTTP/2 preface,
   then sees the server feed that record to the finished handshake and die
   with unexpected_message, and a caller cannot split the bytes at the
-  handshake's end without parsing records itself. test/rec_coalesced_tests.h
+  handshake's end without parsing records itself. test/tcp_nonblocking_coalesced_tests.h
   delivers the Finished and one application record in one call and
   requires the record to reach ch_read.
 
 --- old
-        if (r->step == SR_STEP_COMPLETE) {
+        if (r->step == SRV_TCP_NONBLOCKING_STEP_COMPLETE) {
             return CH_OK;
         }
 --- new
-        (void)SR_STEP_COMPLETE;
+        (void)SRV_TCP_NONBLOCKING_STEP_COMPLETE;

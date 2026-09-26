@@ -535,14 +535,16 @@ last `ROLE=server` stub, as the entry said it would.
   meet -- `bin/srv_tcp_nonblocking_test` reads the server's records and
   never hands them to a client -- so a server flight the client refuses
   fails in `check` rather than in an interop run.
-  `test/violations/rec-in-waits-for-the-rest.violation` is the client's
+  `test/violations/record-in-waits-for-the-rest.violation` is the client's
   mirror of the server mutant above: it makes `ch_record_in` call
   `cfg.recv` to wait for the rest of a message, which still completes
-  the handshake, and requires that binary to fail. `bin/recclient` still
-  covers the client against a real server in `check-slow`.
+  the handshake, and requires that binary to fail.
+  `bin/tlsclient_tcp_nonblocking` still covers the client against a real
+  server in `check-slow`.
   `bin/tcp_nonblocking_loop_test` also counts each end's send calls
-  after the handshake (`test/rec_close_tests.h`): none while the peer's
-  close_notify is read, one per `ch_write`, and one for `ch_close`.
+  after the handshake (`test/tcp_nonblocking_close_tests.h`): none while
+  the peer's close_notify is read, one per `ch_write`, and one for
+  `ch_close`.
   `test/violations/inv22-read-answers-close-notify.violation` makes
   that `ch_read` send a close_notify and requires the binary to fail.
 
@@ -551,7 +553,7 @@ last `ROLE=server` stub, as the entry said it would.
   call one with, carries its own mutant:
   `inv28-webpki-connect-unguarded` deletes the `#ifndef
   CH_TRANSPORT_TCP_NONBLOCKING` around the webpki `ch_connect` and requires
-  `test/lib-check-webpki-record.sh` to fail, because the compiled call
+  `test/lib-check-webpki-tcp-nonblocking.sh` to fail, because the compiled call
   imports the `ch_handshake` this variant does not compile
   ([171](https://github.com/c4milo/chapulin/issues/171)). That leg is
   the only client object with `ch_record_init` and no `ch_connect`, so
@@ -899,7 +901,7 @@ last `ROLE=server` stub, as the entry said it would.
   object and every consumer in agreement. `test/lib-pair-check.sh` links
   a tcp-nonblocking and a QUIC object into one image and requires each half
   to read its own object's record. Four mutants in `test/violations/` are
-  each caught by `test/lib-check-webpki-record.sh`:
+  each caught by `test/lib-check-webpki-tcp-nonblocking.sh`:
   `inv35-build-record-omits-axis` drops the tcp-nonblocking bit from
   the record, `inv35-build-record-stale-size` writes `sizeof(ch_tls)` as
   a number, `inv35-build-record-not-exported` drops the record from
@@ -949,9 +951,9 @@ last `ROLE=server` stub, as the entry said it would.
   places that return it without calling `tlsi_fail`.
 - **Check.** Convention; handshake_sequence's 466k-sequence run asserts no
   sequence revives a failed session. `bin/tcp_nonblocking_loop_test`
-  (`test/rec_read_tests.h`) reads a ticket-only record and then nothing,
-  a ticket split across two records, and a record cut off after three
-  bytes. Three violations each break one term:
+  (`test/tcp_nonblocking_read_tests.h`) reads a ticket-only record and
+  then nothing, a ticket split across two records, and a record cut off
+  after three bytes. Three violations each break one term:
   `inv13-record-read-dies-between-records`,
   `inv13-record-read-drops-a-split-message` and
   `inv13-record-again-inside-a-record`.
@@ -1035,8 +1037,8 @@ last `ROLE=server` stub, as the entry said it would.
   branches memory-safe. The TRUST=webpki config and server_name
   refusals have boundary rows in test/webpki_session_cases.h and
   bin/handshake_strict_webpki, each guarded by an `inv14-` violation.
-  The ticket rule is bin/webpki_resume_test and bin/webpki_resume_record,
-  one test over both TCP drivers: a binding checked against a known
+  The ticket rule is bin/webpki_resume_test and
+  bin/webpki_resume_tcp_nonblocking, one test over both TCP drivers: a binding checked against a known
   answer, the shape rows at each boundary, a ticket refused under
   another hostname, other anchors or another ticket's binding, and a
   resumed handshake whose own ticket resumes the next one. Ten
@@ -1066,8 +1068,9 @@ last `ROLE=server` stub, as the entry said it would.
   every raw PSK session that connects reports `psk_selected`, so a
   declined ticket never yields a session. A decline under
   another hostname and under an anchor that carries the root's Name over
-  another key fails in bin/webpki_resume_test, bin/webpki_resume_record,
-  bin/webpki_loop_record and bin/quic_loop_webpki, and
+  another key fails in bin/webpki_resume_test,
+  bin/webpki_resume_tcp_nonblocking, bin/webpki_loop_tcp_nonblocking and
+  bin/quic_loop_webpki, and
   inv14-webpki-decline-skips-hostname and
   inv14-webpki-decline-skips-anchor require the first to fail when the
   fallback skips either check.
@@ -1275,7 +1278,7 @@ last `ROLE=server` stub, as the entry said it would.
   pin on the intermediate, the anchor's key or nothing with
   bad_certificate; it accepts leaves the walk refuses for a name, an
   extension or a date, refuses a refused key, counts entry 0 alone and
-  refuses the walk's framing faults. bin/webpki_loop_record runs a leaf
+  refuses the walk's framing faults. bin/webpki_loop_tcp_nonblocking runs a leaf
   pin and an intermediate pin against this tree's tcp-nonblocking
   server, and test/e2e.sh against `openssl s_server`. The webpki_leaf_pin
   harness proves the call memory-safe and its verdict and alert pairs,
@@ -1971,8 +1974,8 @@ last `ROLE=server` stub, as the entry said it would.
   s_client in test/e2e.sh, and three `srv-certificate-on-resumed-`
   violations, one per driver, require each to object to a Certificate in
   it. The TRUST=webpki fork is tested per driver: the declined-ticket
-  rows of bin/webpki_resume_test, bin/webpki_resume_record,
-  bin/webpki_loop_record and bin/quic_loop_webpki, and test/e2e.sh's
+  rows of bin/webpki_resume_test, bin/webpki_resume_tcp_nonblocking,
+  bin/webpki_loop_tcp_nonblocking and bin/quic_loop_webpki, and test/e2e.sh's
   webpki-resume-declined leg against a second s_server.
   `inv22-webpki-decline-fails-closed`, `inv22-webpki-fallback-reports-psk`
   and one `inv22-*-driver-forks-on-cfg-psk` violation per driver require
@@ -1982,8 +1985,8 @@ last `ROLE=server` stub, as the entry said it would.
   stops at the record that completes the handshake, so application data
   the client sends in the same delivery as its Finished is left for
   `ch_read` rather than read by the finished handshake.
-  `test/rec_coalesced_tests.h` delivers the Finished and one application
-  record in one `ch_srv_record_in` call, and
+  `test/tcp_nonblocking_coalesced_tests.h` delivers the Finished and one
+  application record in one `ch_srv_record_in` call, and
   `test/violations/inv22-srv-record-in-reads-past-finished.violation`
   keeps the loop going past the Finished and requires
   `bin/tcp_nonblocking_loop_test` to fail. A QUIC server refuses what the
@@ -2000,8 +2003,8 @@ last `ROLE=server` stub, as the entry said it would.
   behind the close_notify and requires every later `ch_read` to return 0
   with the record unread, no send call, and `ch_write` and `ch_close`
   to send under the write key. `bin/tcp_nonblocking_loop_test`
-  (`test/rec_close_tests.h`) closes one direction at a time between the
-  two tcp-nonblocking drivers and counts each end's send calls, so the
+  (`test/tcp_nonblocking_close_tests.h`) closes one direction at a time
+  between the two tcp-nonblocking drivers and counts each end's send calls, so the
   `ch_read` that reads a close_notify is measured to send nothing, on
   the client and on the server. `test/e2e.sh`'s go-half-close leg runs
   it against Go's `CloseWrite`, which sends a close_notify and keeps

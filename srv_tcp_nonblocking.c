@@ -70,7 +70,7 @@ static int server_flight(ch_record *r, const client_hello *ch, const selection *
     if (rc != CH_OK) {
         return rc;
     }
-    r->step = SR_STEP_AWAIT_CLIENT_FINISHED;
+    r->step = SRV_TCP_NONBLOCKING_STEP_AWAIT_CLIENT_FINISHED;
     return CH_OK;
 }
 
@@ -109,7 +109,7 @@ static int step_client_hello(ch_record *r) {
         if (rc != CH_OK) {
             return rc;
         }
-        r->step = SR_STEP_AWAIT_RETRY_HELLO;
+        r->step = SRV_TCP_NONBLOCKING_STEP_AWAIT_RETRY_HELLO;
         return CH_OK;
     }
     return server_flight(r, &ch, &sel);
@@ -147,7 +147,7 @@ static int step_client_finished(ch_record *r) {
         return rc;
     }
     srv_complete(&r->hs);
-    r->step = SR_STEP_COMPLETE;
+    r->step = SRV_TCP_NONBLOCKING_STEP_COMPLETE;
     // The ticket leaves through on_record_out after the client Finished
     // verified (RFC 9846 §4.7.1), and before the wipe, because it needs
     // hs.master and the transcript.
@@ -174,13 +174,13 @@ static int step_complete(ch_record *r) {
 // through a step number a step wrote.
 static int advance(ch_record *r) {
     switch (r->step) {
-    case SR_STEP_AWAIT_CLIENT_HELLO:
+    case SRV_TCP_NONBLOCKING_STEP_AWAIT_CLIENT_HELLO:
         return step_client_hello(r);
-    case SR_STEP_AWAIT_RETRY_HELLO:
+    case SRV_TCP_NONBLOCKING_STEP_AWAIT_RETRY_HELLO:
         return step_retry_hello(r);
-    case SR_STEP_AWAIT_CLIENT_FINISHED:
+    case SRV_TCP_NONBLOCKING_STEP_AWAIT_CLIENT_FINISHED:
         return step_client_finished(r);
-    case SR_STEP_COMPLETE:
+    case SRV_TCP_NONBLOCKING_STEP_COMPLETE:
         return step_complete(r);
     default:
         // A step value no step wrote, which a one-byte corruption of
@@ -244,7 +244,7 @@ int ch_srv_record_init(ch_record *r, const ch_cfg *cfg) {
     // The key share this connection answers with, drawn before the first
     // byte arrives the way ch_srv_quic_init draws it.
     srv_begin(&r->hs);
-    r->step = SR_STEP_AWAIT_CLIENT_HELLO;
+    r->step = SRV_TCP_NONBLOCKING_STEP_AWAIT_CLIENT_HELLO;
     r->t.state = CH_ST_START;
     return CH_OK;
 }
@@ -285,7 +285,7 @@ int ch_srv_record_in(ch_record *r, uint8_t *p, size_t n, size_t *consumed) {
         // The record that completed the handshake is the last one this
         // call takes: what follows it is the peer's application data or
         // alerts, and belongs to ch_read (srv_tcp_nonblocking.h).
-        if (r->step == SR_STEP_COMPLETE) {
+        if (r->step == SRV_TCP_NONBLOCKING_STEP_COMPLETE) {
             return CH_OK;
         }
     }

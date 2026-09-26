@@ -1,6 +1,6 @@
 invariant: INV-35
 file: build.h
-catches: test/lib-check-webpki-record.sh
+catches: test/lib-check-webpki-tcp-nonblocking.sh
 reason: CH_BUILD_AXES leaves out the CH_TRANSPORT_TCP_NONBLOCKING term. The object
   and every consumer compute the axes from the same header, so the two
   still agree and a comparison between them cannot see it: a

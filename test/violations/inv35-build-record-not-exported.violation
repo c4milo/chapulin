@@ -1,6 +1,6 @@
 invariant: INV-35
 file: Makefile
-catches: test/lib-check-webpki-record.sh
+catches: test/lib-check-webpki-tcp-nonblocking.sh
 reason: PUBLIC stops naming the build record, so the link localizes
   ch_build_info_tcp_nonblocking and no consumer can read it. lib-check's export list
   reads PUBLIC, so the object and the list still agree and the export

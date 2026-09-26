@@ -1,6 +1,6 @@
 invariant: INV-35
 file: build.c
-catches: test/lib-check-webpki-record.sh
+catches: test/lib-check-webpki-tcp-nonblocking.sh
 reason: build.c writes the axes out as a union of its own and leaves out
   CH_BUILD_IF_TRANSPORT_TCP_NONBLOCKING, so a tcp-nonblocking object reports that it
   was built without CH_TRANSPORT_TCP_NONBLOCKING. Every size in its record is

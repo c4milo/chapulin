@@ -1,6 +1,6 @@
 invariant: INV-28
 file: tls.c
-catches: test/lib-check-webpki-record.sh
+catches: test/lib-check-webpki-tcp-nonblocking.sh
 reason: the webpki ch_connect loses the #ifndef CH_TRANSPORT_TCP_NONBLOCKING guard
   the pinned one carries, so a tcp-nonblocking object compiles the blocking
   connect call and imports the ch_handshake that handshake.c defines and

@@ -1,10 +1,10 @@
 invariant: INV-33
 file: handshake_auth.c
-catches: webpki_loop_record
+catches: webpki_loop_tcp_nonblocking
 reason: pins alone offer X.509 beside the raw key, and the Certificate
   step still refuses every chain under them with unsupported_certificate,
   the rule before docs/decisions.md 65. A server that sends a chain,
-  which this tree's server always does, never connects. bin/webpki_loop_record's
+  which this tree's server always does, never connects. bin/webpki_loop_tcp_nonblocking's
   leaf-pin rows against that server object.
 
 --- old
