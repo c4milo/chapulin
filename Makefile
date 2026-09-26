@@ -2166,6 +2166,8 @@ bin/x509strict_ecdsa: $(X509STRICT_SRC) p256.c $(HDRS) $(TESTH)
 # (ENUM_DEPTH overrides; the default sweep is ~466k sequences over both modes) against the
 # Lean state machine's verdict. Links the stack minus the pinned
 # verifiers, which it stubs — V in a sequence means "signature valid".
+# `--shard K/N` checks the sequences whose index is K mod N, and
+# test/handshake_sequence_shards.sh runs one shard per core.
 bin/handshake_sequence_test: test/handshake_sequence_test.c $(SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) -I. -o $@ test/handshake_sequence_test.c $(filter-out p256.c rsa.c rsa_mont.c,$(SRCS))
@@ -2693,7 +2695,7 @@ check-slow: check bin/handshake_sequence_test bin/handshake_sequence_pq bin/pemk
 	./test/qemu-m3.sh
 	+./test/e2e.sh
 	$(MAKE) diff
-	./bin/handshake_sequence_test
+	./test/handshake_sequence_shards.sh ./bin/handshake_sequence_test
 	$(MAKE) test-invariants-fast
 	$(MAKE) prove
 
@@ -2827,7 +2829,10 @@ bin/diff_quic_extern: test/diff_quic_test.c aes.c $(AES_EXTERN_DEPS) gcm.c hkdf.
 # The sequence enumerations compare against spec/lean/.lake/build/bin/diffspec,
 # and handshake_sequence_test skips the comparison when that binary is
 # absent. A caller that runs the binary directly therefore has to build the
-# spec first, or a restored cache decides what gets compared.
+# spec first, or a restored cache decides what gets compared. Both targets
+# run the binary as one shard per core through
+# test/handshake_sequence_shards.sh, which fails unless the shards' counts
+# add up to the whole enumeration.
 .PHONY: handshake-sequence handshake-sequence-pq
 # Only the oracle build is guarded: the enumeration itself still runs
 # without lake, comparing nothing, which is what the binary does alone.
@@ -2839,7 +2844,7 @@ else
 	$(call REQUIRE_MATHLIB,handshake-sequence)
 	cd spec/lean && $(LAKE) build
 endif
-	./bin/handshake_sequence_test
+	./test/handshake_sequence_shards.sh ./bin/handshake_sequence_test
 
 handshake-sequence-pq: bin/handshake_sequence_pq
 ifeq ($(LAKE),)
@@ -2849,7 +2854,7 @@ else
 	$(call REQUIRE_MATHLIB,handshake-sequence-pq)
 	cd spec/lean && $(LAKE) build
 endif
-	./bin/handshake_sequence_pq
+	./test/handshake_sequence_shards.sh ./bin/handshake_sequence_pq
 
 # Line coverage over the library sources, merged across the five host
 # test binaries and both PIN builds. Per-pin object dirs share .gcno

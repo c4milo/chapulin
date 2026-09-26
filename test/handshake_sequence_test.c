@@ -20,6 +20,12 @@
 //
 // Its own binary with a private main, like drbg_test; the link line is
 // the library sources minus p256.c/rsa.c/rsa_mont.c plus the stubs here.
+//
+// `--shard K/N` checks only the sequences whose index in the enumeration
+// order is K mod N, so N processes, K = 0 to N-1, split the run between
+// them and together check every sequence once. The script
+// test/handshake_sequence_shards.sh starts one per core. With no
+// argument the binary checks every sequence, as one process.
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdnoreturn.h>
@@ -224,6 +230,42 @@ static void check_one(const char *letters, size_t len, int psk) {
     }
 }
 
+// The shard this process checks: every sequence whose index in the
+// enumeration order is shard_index mod shard_count. Without --shard the
+// process checks shard 0 of 1, which is every sequence.
+static long shard_index = 0;
+static long shard_count = 1;
+static int sharded;     // set by --shard, which also prints the whole count
+static long enumerated; // sequences the enumeration has generated, in every shard
+
+// Reads the K/N that follows --shard into shard_index and shard_count,
+// and exits unless 0 <= K < N.
+static void parse_shard(const char *value) {
+    char *end = NULL;
+    long k = strtol(value, &end, 10);
+    if (end == value || *end != '/') {
+        die("--shard takes K/N, for example 0/4");
+    }
+    const char *count_text = end + 1;
+    long n = strtol(count_text, &end, 10);
+    if (end == count_text || *end != 0 || n < 1 || k < 0 || k >= n) {
+        die("--shard K/N needs 0 <= K < N");
+    }
+    shard_index = k;
+    shard_count = n;
+    sharded = 1;
+}
+
+// Counts one sequence of the enumeration, and checks it when its index
+// falls in this process's shard.
+static void enumerate_one(const char *letters, size_t len, int psk) {
+    long index = enumerated;
+    enumerated++;
+    if (index % shard_count == shard_index) {
+        check_one(letters, len, psk);
+    }
+}
+
 // Every sequence over the given alphabet of each length 0..depth, one
 // mode. The two callers below differ only in which letters they draw.
 static void run_alphabet(const char *alphabet, int alpha_n, int depth, int psk) {
@@ -235,7 +277,7 @@ static void run_alphabet(const char *alphabet, int alpha_n, int depth, int psk) 
                 letters[i] = alphabet[idx[i]];
             }
             letters[len] = 0;
-            check_one(letters, (size_t)len, psk);
+            enumerate_one(letters, (size_t)len, psk);
             int i = len - 1;
             while (i >= 0 && ++idx[i] == alpha_n) {
                 idx[i] = 0;
@@ -261,7 +303,44 @@ static void run_flights(int psk) {
     run_alphabet(FLIGHT_ALPHABET, FLIGHT_N, FLIGHT_DEPTH, psk);
 }
 
-int main(void) {
+// Checks this process's shard of the enumeration against the spec and
+// prints how many sequences it checked. A --shard run also prints how
+// many the whole enumeration holds, so a caller that adds up the shards'
+// counts can tell that together they checked every sequence once.
+static void run_enumeration(int depth) {
+    spawn_spec("spec/lean/.lake/build/bin/diffspec");
+    struct timespec t0;
+    struct timespec t1;
+    (void)clock_gettime(CLOCK_MONOTONIC, &t0);
+    run_all(depth, 1);
+    run_all(depth, 0);
+    run_flights(1);
+    run_flights(0);
+    (void)clock_gettime(CLOCK_MONOTONIC, &t1);
+    double secs = (double)(t1.tv_sec - t0.tv_sec) + (double)(t1.tv_nsec - t0.tv_nsec) / 1e9;
+    if (mismatches > 0) {
+        (void)fprintf(stderr, "handshake_sequence_test: %ld mismatch(es) in %ld sequences\n",
+                      mismatches, comparisons);
+        failures++;
+        return;
+    }
+    if (sharded) {
+        (void)printf("handshake_sequence_test: shard %ld/%ld: %ld of %ld sequences", shard_index,
+                     shard_count, comparisons, enumerated);
+    } else {
+        (void)printf("handshake_sequence_test: %ld sequences", comparisons);
+    }
+    (void)printf(" (all %d letters to depth %d, the %d handshake letters to depth %d, both modes)"
+                 " in %.1f s, C == spec\n",
+                 ALPHA_N, depth, FLIGHT_N, FLIGHT_DEPTH, secs);
+}
+
+int main(int argc, char **argv) {
+    if (argc == 3 && strcmp(argv[1], "--shard") == 0) {
+        parse_shard(argv[2]);
+    } else if (argc != 1) {
+        die("usage: handshake_sequence_test [--shard K/N]");
+    }
     x25519_base(server_pub, server_scalar);
     memset(test_pin, 2, sizeof test_pin);
     test_pin[TEST_PIN_LEN - 1] = 1; // ch_connect requires an odd RSA pin
@@ -385,26 +464,7 @@ int main(void) {
     }
 
     if (access("spec/lean/.lake/build/bin/diffspec", X_OK) == 0) {
-        spawn_spec("spec/lean/.lake/build/bin/diffspec");
-        struct timespec t0;
-        struct timespec t1;
-        (void)clock_gettime(CLOCK_MONOTONIC, &t0);
-        run_all(depth, 1);
-        run_all(depth, 0);
-        run_flights(1);
-        run_flights(0);
-        (void)clock_gettime(CLOCK_MONOTONIC, &t1);
-        double secs = (double)(t1.tv_sec - t0.tv_sec) + (double)(t1.tv_nsec - t0.tv_nsec) / 1e9;
-        if (mismatches > 0) {
-            (void)fprintf(stderr, "handshake_sequence_test: %ld mismatch(es) in %ld sequences\n",
-                          mismatches, comparisons);
-            failures++;
-        } else {
-            (void)printf(
-                "handshake_sequence_test: %ld sequences (all %d letters to depth %d, the %d "
-                "handshake letters to depth %d, both modes) in %.1f s, C == spec\n",
-                comparisons, ALPHA_N, depth, FLIGHT_N, FLIGHT_DEPTH, secs);
-        }
+        run_enumeration(depth);
     } else {
         (void)printf(
             "handshake_sequence_test: spec comparisons skipped (build spec/lean/ first)\n");

@@ -2187,6 +2187,10 @@ letters to depth 5, and the six handshake letters to depth 6, in both
 modes, 466,286 in all. It renders each as real records over a mock
 transport, runs the real client, and requires its verdict to match the
 model's.
+[`test/handshake_sequence_shards.sh`](../test/handshake_sequence_shards.sh)
+splits the run across N processes, one per core, where process K checks
+every sequence whose index is K mod N, and it fails unless the N counts
+add up to the whole enumeration.
 
 The worst TLS bugs on record were ordering bugs of exactly this kind:
 early-CCS, skipped Finished, the SMACK/FREAK class. Memory-safety proofs
