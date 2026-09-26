@@ -1,0 +1,13 @@
+invariant: INV-33
+file: webpki_pin.c
+catches: proof/prove-one.sh webpki_pin
+reason: copy_key copies one byte more than the key the reader decoded, so a
+  key of CH_WEBPKI_KEY_MAX bytes writes one byte past webpki_leaf_info.key.
+  The byte stays inside the struct, so no object-level check sees it; the
+  webpki_pin proof's stub of this one memcpy asserts the copy fits the key
+  field, and fails here.
+
+--- old
+    memcpy(out->key, key->key, key->key_len);
+--- new
+    memcpy(out->key, key->key, key->key_len + 1);

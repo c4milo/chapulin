@@ -49,7 +49,7 @@ jobs:
       # solves would throw away the run's whole point.
       fail-fast: false
       matrix:
-        proof: [hkdf_expand, hkdf_expand_label, hkdf384_expand, hkdf384_expand_label, x25519, x25519_mul_alias_a, x25519_mul_alias_b, x25519_mul_inputs_alias, x25519_sqr, handshake_psk, handshake_pin, x509parse, webpki_ext_one, webpki_ext_walk, mlkem_ntt, mlkem_invntt_low, mlkem_invntt_high, mlkem_basemul, gcm_safety, gcm_refusal, ghash, sha256, sha512, record, x25519_step, io, webpki_ext, webpki_pin, x509parse_ecdsa, handshake_record, srv_resume, handshake_post, srv_parser_walk, srv_parser_frozen]
+        proof: [hkdf_expand, hkdf_expand_label, hkdf384_expand, hkdf384_expand_label, x25519, x25519_mul_alias_a, x25519_mul_alias_b, x25519_mul_inputs_alias, x25519_sqr, handshake_psk, handshake_pin, x509parse, webpki_ext_one, webpki_ext_walk, mlkem_ntt, mlkem_invntt_low, mlkem_invntt_high, mlkem_basemul, gcm_safety, gcm_refusal, ghash, sha256, sha512, record, x25519_step, io, webpki_ext, x509parse_ecdsa, handshake_record, srv_resume, handshake_post, srv_parser_walk, srv_parser_frozen]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/load-pins

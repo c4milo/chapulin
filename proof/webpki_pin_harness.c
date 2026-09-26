@@ -143,7 +143,32 @@ int webpki_parse_certificate(const uint8_t *cert, size_t cert_len, int is_ca, we
     return CH_OK;
 }
 
+// copy_key's one memcpy, the key into webpki_leaf_info.key, stubbed to the
+// contract C gives memcpy: n readable bytes at src, n writable bytes at
+// dst, and the two ranges apart. The destination is always the key field,
+// so n must also fit CH_WEBPKI_KEY_MAX: a copy one byte too long stays
+// inside the struct, where the object-level write check cannot see it.
+// The stub writes arbitrary bytes over the n it copies, so a copy made on
+// a refusal path still changes out and the refusal asserts below see it.
+// No assert here reads the copied bytes, and their data flow was nearly
+// the whole formula: 31.6 million clauses with it, 0.46 million without.
+static void *copy_key_memcpy(void *dst, const void *src, size_t n) {
+    __CPROVER_assert(n <= CH_WEBPKI_KEY_MAX, "copy: the key fits webpki_leaf_info.key");
+    __CPROVER_assert(__CPROVER_w_ok(dst, n), "copy: n writable bytes at dst");
+    __CPROVER_assert(n == 0 || __CPROVER_r_ok(src, n), "copy: n readable bytes at src");
+    __CPROVER_assert(n == 0 || __CPROVER_POINTER_OBJECT(dst) != __CPROVER_POINTER_OBJECT(src) ||
+                         (const uint8_t *)dst + n <= (const uint8_t *)src ||
+                         (const uint8_t *)src + n <= (const uint8_t *)dst,
+                     "copy: the two ranges do not overlap");
+    __CPROVER_havoc_slice(dst, n);
+    return dst;
+}
+
+// <string.h> may define memcpy as a macro of its own.
+#undef memcpy
+#define memcpy copy_key_memcpy
 #include "webpki_pin.c"
+#undef memcpy
 
 // 1 when [inner, inner + inner_len) lies inside [outer, outer + outer_len).
 static int inside(const uint8_t *outer, size_t outer_len, const uint8_t *inner, size_t inner_len) {

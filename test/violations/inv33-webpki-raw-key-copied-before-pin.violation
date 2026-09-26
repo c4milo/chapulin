@@ -1,0 +1,21 @@
+invariant: INV-33
+file: webpki_pin.c
+catches: proof/prove-one.sh webpki_pin
+reason: webpki_verify_raw_key copies the key into out before it checks the
+  pins, so a raw key no pin names is refused with the key already in out,
+  and webpki_pin.h promises that a refusal leaves out as it was. The
+  webpki_pin proof's copy stub writes arbitrary bytes over what it copies,
+  so the refusal assert sees the change and fails here.
+
+--- old
+    if (!webpki_spki_pinned(cfg, spki, spki_len)) {
+        *alert = ALERT_BAD_CERTIFICATE;
+        return CH_EAUTH;
+    }
+    copy_key(&key, 0, out);
+--- new
+    copy_key(&key, 0, out);
+    if (!webpki_spki_pinned(cfg, spki, spki_len)) {
+        *alert = ALERT_BAD_CERTIFICATE;
+        return CH_EAUTH;
+    }

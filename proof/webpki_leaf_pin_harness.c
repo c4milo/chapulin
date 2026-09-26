@@ -28,8 +28,8 @@
 // The list is short so the framing's walk over CH_WEBPKI_FLIGHT_ENTRIES
 // entries and one more stays small: 24 bytes hold four one-byte entries
 // and part of a fifth. So the key the call copies is at most 24 bytes
-// here; the copy is copy_key's, which webpki_pin proves at the raw key's
-// full bound.
+// here; the copy is copy_key's, whose bounds webpki_pin checks at the raw
+// key's full bound.
 #include "harness.h"
 
 #include <string.h>

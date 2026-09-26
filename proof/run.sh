@@ -1110,22 +1110,19 @@ launch fast:8 full webpki_chain 49 "main.0:3,fill_nondet.0:49,read_entries.0:7,a
 # harness.h's contract with a record of what it hashed. The global unwind
 # of 5 bounds the pin loop at CH_SPKI_PIN_MAX and the path loop at
 # CH_WEBPKI_CHAIN_MAX; the unwindset covers the list fill and the two
-# 32-byte compares. Nearly all of the formula is the raw half's copy of a
-# key of up to CH_WEBPKI_KEY_MAX bytes from any offset of the 556-byte
-# list: the path half alone, at a global unwind of 34, proved its 1222
-# properties in 169 s at 0.9 GB. Measured (cbmc 6.11.0, kissat,
-# PROVE_NO_CACHE=1 /usr/bin/time -l over this script, beside a
-# differential run): 1283 properties, 452 s, 5.5 GB; run directly under
-# these flags, 348 s at 6.4 GB. Since ch_cfg.spki_pins became a flat byte
-# pointer: 1281 properties, 600 s at a load average near 25, 6.8 GB.
-# webpki_spki_pinned walks the pins by advancing a pointer: indexing them
-# as spki_pins + i * SHA256_LEN measured 9.0 to 11.8 GB. With an assert of 0 at the raw half's
-# CH_OK tail and at the path half's tail after a match, those two fail
-# (2 of 1285, 588 s, 7.3 GB), so both tails are reached. slow:8 covers
-# that peak. Re-measured when webpki_pin.c gained webpki_verify_leaf_pin,
-# which this formula holds unreached, and the raw call's key copy moved to
-# copy_key: 1347 properties, 385 s, 7.4 GB, beside two other proofs.
-launch slow:8 full webpki_pin 5 "fill_nondet.0:557,ct_memeq.0:33,memcmp.0:33" -DCH_TRUST_WEBPKI webpki.c buf.c ct.c
+# 32-byte compares. copy_key's one memcpy is a stub to C's contract,
+# which also asserts the copy fits webpki_leaf_info.key; the harness says
+# why. With the copy's data flow in the formula, copying a key of up to
+# CH_WEBPKI_KEY_MAX bytes from any offset of the 556-byte list was 31.1 of
+# the raw half's 31.6 million clauses: 1347 properties, 385 s at
+# 7.4 GB on arm64 macOS, and on the nightly's Linux runner kissat reached
+# its 13 GB address-space cap at 8.1 GB resident. Measured with the stub
+# (cbmc 6.11.0, kissat, PROVE_NO_CACHE=1 over this script): 1330
+# properties, 24 s at 0.9 GB on arm64 macOS; 26 s on x86-64 Linux, with
+# kissat's address space peaking at 0.9 GB. With an assert of 0 at the
+# raw half's CH_OK tail and at the path half's tail after a match, those
+# two fail, so both tails are reached.
+launch fast full webpki_pin 5 "fill_nondet.0:557,ct_memeq.0:33,memcmp.0:33" -DCH_TRUST_WEBPKI webpki.c buf.c ct.c
 # webpki_leaf_pin proves webpki_verify_leaf_pin, the rule for a chain
 # under SPKI pins alone (docs/decisions.md 65), apart from the other two
 # calls, whose formula is near its weight already. The list framing in
