@@ -15,3 +15,7 @@ __pycache__/
 # does not match a symlink of that name.
 tools/node_modules
 spec/lean/.lake
+# zig build and zig fetch write these at the root when they run there.
+.zig-cache/
+zig-out/
+zig-pkg/

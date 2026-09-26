@@ -1,0 +1,494 @@
+//! The Zig build of the object `make lib` packages, for a Zig project that
+//! depends on chapulin as a package (docs/decisions.md 69).
+//!
+//! The Makefile is the source of truth. Each option is a Makefile variable
+//! with its name and values, and computePlan builds LIB_SRCS, LIB_DEF and
+//! PUBLIC as the Makefile does, one function per axis block. `make
+//! lint-zig-build` builds configurations both ways and requires the same
+//! sources, defines and exports.
+//!
+//! The sources compile into one relocatable object, as `ld -r` links them
+//! for `make lib`, and tools/localize_symbols.zig then makes every defined
+//! symbol local except PUBLIC, as `objcopy -G` and `nmedit -s` do.
+//!
+//! A dependent gets the named lazy path "chapulin.o", the localized object,
+//! and "include", the directory of the headers. It compiles the headers
+//! under the object's defines and calls ch_build_matches once (build.h).
+const std = @import("std");
+
+const Transport = enum { @"tcp-blocking", @"tcp-nonblocking", @"quic-nonblocking" };
+const Role = enum { client, server, both };
+const Trust = enum { @"raw-rsa", @"raw-ecdsa", @"ca-rsa", @"ca-ecdsa", webpki, none };
+const Suite = enum { chacha, aesgcm };
+const Aes = enum { soft, hw, @"extern" };
+const Rand = enum { @"extern", drbg };
+const Kex = enum { x25519, pq };
+const X25519 = enum { portable, wide };
+const Widemul = enum { decomposed, native };
+const Setting = enum { on, off };
+
+/// The build variables, with the Makefile's defaults. rand and kex have no
+/// default: the Makefile gives RAND none, and it tells a KEX value the
+/// command line set from its default.
+const Config = struct {
+    transport: Transport,
+    role: Role,
+    trust: Trust,
+    suite: Suite,
+    aes: Aes,
+    rand: ?Rand,
+    kex: ?Kex,
+    x25519: X25519,
+    widemul: Widemul,
+    exporter: Setting,
+    keylog: Setting,
+    /// The three hardware statements ct.h reads. The Makefile never writes
+    /// them into a library build, and a builder adds them to CFLAGS. They
+    /// default off here for the same reason: each is a claim about the
+    /// part that only the firmware author can make.
+    native_aes: bool,
+    aes_extern_constant_time: bool,
+    native_mul128: bool,
+};
+
+const Names = []const []const u8;
+
+/// LIB_SRCS, LIB_DEF with the hardware statements after it, and PUBLIC.
+const Plan = struct { srcs: Names, defs: Names, public: Names };
+
+/// What one axis block of the Makefile sets: its defines, the sources it
+/// filters out of SRCS, the sources it adds, and its public calls.
+const Axis = struct { defs: Names = &.{}, filter: Names = &.{}, add: Names = &.{}, public: Names = &.{} };
+
+// SRCS in the Makefile, in its order.
+const srcs = [_][]const u8{
+    "ct.c",                  "sha256.c",           "hkdf.c",              "chacha20.c",
+    "poly1305.c",            "aead.c",             "x25519.c",            "p256.c",
+    "rsa.c",                 "rsa_mont.c",         "pem.c",               "x509.c",
+    "x509_der.c",            "x509_ca.c",          "webpki_time.c",       "webpki_name.c",
+    "webpki_spki.c",         "webpki_ext.c",       "buf.c",               "record.c",
+    "keysched.c",            "io.c",               "handshake_message.c", "handshake_parser.c",
+    "handshake_parser_ee.c", "handshake_record.c", "session.c",           "handshake_auth.c",
+    "handshake_flight.c",    "handshake.c",        "handshake_post.c",    "tls.c",
+    "softmul.c",             "build.c",
+};
+
+// The Makefile's named lists, each under its Makefile name.
+const aes_hw_srcs = [_][]const u8{ "aes_hw.c", "ghash_hw.c" };
+const quic_srcs_after_aes = [_][]const u8{
+    "gcm.c",         "quic_keys.c", "quic_packet.c", "quic_initial.c", "quic_retry.c",
+    "quic_config.c", "quic_fail.c", "quic_step.c",   "quic.c",
+};
+const srv_srcs = [_][]const u8{
+    "srv_ticket.c", "srv_parser.c", "srv_parser_ext.c", "srv_message.c",
+    "srv_cookie.c", "srv_auth.c",   "srv_out.c",        "srv_resume.c",
+    "srv_kex.c",    "srv_flight.c", "srv_handshake.c",  "srv.c",
+};
+const client_replaced = [_][]const u8{
+    "handshake.c",           "handshake_auth.c",    "handshake_parser.c",
+    "handshake_parser_ee.c", "handshake_message.c", "handshake_flight.c",
+};
+const webpki_srcs = [_][]const u8{
+    "webpki_time.c", "webpki_name.c", "webpki_spki.c",   "webpki_sigalg.c", "webpki_ext.c",
+    "webpki_cert.c", "webpki.c",      "webpki_ticket.c", "webpki_pin.c",    "webpki_cfg.c",
+};
+const webpki_chain_srcs = [_][]const u8{ "sha512.c", "sha512_compress.c", "p384.c", "p384_field.c", "rsa_pkcs1.c" };
+const p256_ecdh_srcs = [_][]const u8{ "p256_ecdh.c", "p256_point.c", "p256_scalar.c", "p256_field.c" };
+const webpki_kex_srcs = [_][]const u8{"handshake_groups.c"} ++ p256_ecdh_srcs;
+const quic_replaced = [_][]const u8{ "io.c", "record.c", "session.c", "handshake.c", "tls.c" };
+const kex_hybrid_srcs = [_][]const u8{ "sha3.c", "mlkem.c", "mlkem_poly.c" };
+/// TRUST_FILTER's first four names, which every mode but webpki and the
+/// ca modes filters out.
+const certificate_srcs = [_][]const u8{ "pem.c", "x509.c", "x509_der.c", "x509_ca.c" };
+/// ROLE_ADD before a transport swaps the server's driver.
+const server_add = srv_srcs ++ [_][]const u8{ "rsa_sign.c", "p256_sign.c" } ++ p256_ecdh_srcs;
+
+// PUBLIC_TRANSPORT and PUBLIC_ROLE's lists.
+const public_quic = [_][]const u8{
+    "ch_quic_init",       "ch_quic_initial_keys", "ch_quic_crypto_in",          "ch_quic_crypto_out",
+    "ch_quic_seal",       "ch_quic_seal_close",   "ch_quic_open",               "ch_quic_retry_ok",
+    "ch_quic_key_update", "ch_quic_key_phase",    "ch_quic_drop_previous_keys", "ch_quic_discard",
+    "ch_quic_state",      "ch_quic_alert",        "ch_quic_error_code",         "ch_quic_close",
+};
+const public_tcp_nonblocking = [_][]const u8{
+    "ch_record_init",  "ch_record_in", "ch_record_out", "ch_record_state", "ch_record_alert",
+    "ch_record_close", "ch_read",      "ch_write",      "ch_close",
+};
+const public_tcp_blocking = [_][]const u8{ "ch_connect", "ch_read", "ch_write", "ch_close" };
+const public_srv_quic = [_][]const u8{
+    "ch_srv_quic_init",       "ch_srv_quic_crypto_in",   "ch_srv_quic_retry_tag",
+    "ch_srv_quic_token_mint", "ch_srv_quic_token_check", "ch_srv_check",
+};
+const public_srv_tcp_nonblocking = [_][]const u8{ "ch_srv_record_init", "ch_srv_record_in", "ch_srv_check" };
+const public_srv_tcp_blocking = [_][]const u8{ "ch_srv_accept", "ch_srv_check" };
+/// The packet calls quic.h declares for either role, which a ROLE=server
+/// QUIC object exports without the client's driver.
+const public_quic_either_role = [_][]const u8{
+    "ch_quic_initial_keys", "ch_quic_seal",       "ch_quic_seal_close", "ch_quic_open",
+    "ch_quic_retry_ok",     "ch_quic_key_update", "ch_quic_key_phase",  "ch_quic_drop_previous_keys",
+    "ch_quic_discard",      "ch_quic_state",      "ch_quic_alert",      "ch_quic_error_code",
+    "ch_quic_close",
+};
+/// The calls a connected tcp-nonblocking session makes, which a ROLE=server
+/// object exports without the client's driver.
+const public_record_either_role = [_][]const u8{
+    "ch_record_state", "ch_record_alert", "ch_record_close", "ch_read", "ch_write", "ch_close",
+};
+/// The calls a connected tcp-blocking session makes.
+const public_session = [_][]const u8{ "ch_read", "ch_write", "ch_close" };
+
+/// The flags every source compiles with besides the defines: LIB_CFLAGS,
+/// with the host test declarations filtered out as the Makefile filters
+/// them. -O2 is not among them because the module's optimize mode passes
+/// it (ReleaseFast below).
+///
+/// Zig passes flags of its own that make's cc does not, and cc applies
+/// defaults Zig does not. None of them changes what the object computes or
+/// exports, and none of them is a -D chapulin reads:
+///
+/// - -DNDEBUG. No source or header here reads it; CH_ASSERT is ch_assert.h's
+///   and stays on in every build.
+/// - -fPIC and a kept frame pointer. They change code generation, not
+///   behavior, and an object compiled -fPIC links into a position
+///   independent executable, a shared library or a static image alike.
+/// - no stack protector, which Apple's clang and Ubuntu's gcc turn on by
+///   default, and on Linux no _FORTIFY_SOURCE, which Ubuntu's gcc defines
+///   by default and Zig's glibc headers leave off. The Makefile asks for
+///   neither, and each adds checks a program without a memory error never
+///   fails.
+/// - the target's CPU features. Zig compiles for the target the dependent
+///   passes, which is the machine it builds on unless it says otherwise,
+///   and make compiles for its cc's default CPU.
+const cflags = [_][]const u8{
+    "-std=c11", "-D_DEFAULT_SOURCE", "-Wall", "-Wextra", "-Wpedantic", "-Werror", "-Wvla",
+};
+
+pub fn build(b: *std.Build) void {
+    const config = Config{
+        .transport = b.option(Transport, "TRANSPORT", "What TLS runs over and who does the I/O") orelse .@"tcp-blocking",
+        .role = b.option(Role, "ROLE", "client, server, or both for a host") orelse .client,
+        .trust = b.option(Trust, "TRUST", "How the server key is trusted; none for ROLE=server") orelse .@"raw-rsa",
+        .suite = b.option(Suite, "SUITE", "chacha, or aesgcm for the AES-GCM suites beside it") orelse .chacha,
+        .aes = b.option(Aes, "AES", "The AES implementation") orelse .soft,
+        .rand = b.option(Rand, "RAND", "The entropy pattern, which has no default (cfg.h)"),
+        .kex = b.option(Kex, "KEX", "The key exchange group of a raw or ca client"),
+        .x25519 = b.option(X25519, "X25519", "The X25519 field") orelse .portable,
+        .widemul = b.option(Widemul, "WIDEMUL", "The widening multiply (ct.h)") orelse .decomposed,
+        .exporter = b.option(Setting, "EXPORTER", "ch_export, RFC 9846 section 7.5") orelse .off,
+        .keylog = b.option(Setting, "KEYLOG", "The ch_keylog hook (keylog.h)") orelse .off,
+        .native_aes = b.option(bool, "CH_NATIVE_AES", "State that the AES and carry-less multiply instructions run in constant time (ct.h)") orelse false,
+        .aes_extern_constant_time = b.option(bool, "CH_AES_EXTERN_CONSTANT_TIME", "State that ch_aes_block runs in constant time (ct.h)") orelse false,
+        .native_mul128 = b.option(bool, "CH_NATIVE_MUL128", "State that the 64x64->128 multiply runs in constant time (ct.h)") orelse false,
+    };
+    refuseUnbuildable(config);
+    const plan = computePlan(b, config);
+    const target = aesTarget(b, b.standardTargetOptions(.{}), config.aes);
+
+    // The sources, compiled and partially linked into one object. make lib
+    // compiles at -O2, and ReleaseFast passes -O2 to clang. The C sources
+    // see none of Zig's safety modes: sanitize_c, stack_protector and
+    // stack_check are off. strip leaves out the debugging information make
+    // lib does not ask for either.
+    const module = b.createModule(.{
+        .target = target,
+        .optimize = .ReleaseFast,
+        .link_libc = true,
+        .strip = true,
+        .sanitize_c = .off,
+        .stack_protector = false,
+        .stack_check = false,
+    });
+    module.addIncludePath(b.path(""));
+    module.addCSourceFiles(.{ .files = plan.srcs, .flags = concat(b, &.{ &cflags, plan.defs }) });
+    const partial = b.addObject(.{ .name = "chapulin-partial", .root_module = module });
+
+    // The localizer runs on the host; test/localize-check.sh installs it.
+    const localizer = b.addExecutable(.{
+        .name = "localize_symbols",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("tools/localize_symbols.zig"),
+            .target = b.graph.host,
+            .optimize = .ReleaseSafe,
+        }),
+    });
+    b.step("localize-symbols", "Install the localizer to bin/").dependOn(&b.addInstallArtifact(localizer, .{}).step);
+    const unit_tests = b.addTest(.{ .root_module = localizer.root_module });
+    b.step("test", "Run the localizer's unit tests").dependOn(&b.addRunArtifact(unit_tests).step);
+    const localize = b.addRunArtifact(localizer);
+    localize.addFileArg(partial.getEmittedBin());
+    const object = localize.addOutputFileArg("chapulin.o");
+    localize.addArgs(plan.public);
+    b.addNamedLazyPath("chapulin.o", object);
+    b.getInstallStep().dependOn(&b.addInstallFile(object, "lib/chapulin.o").step);
+
+    // make lib compiles with -I. at the root, where every header sits.
+    b.addNamedLazyPath("include", b.path(""));
+
+    // What make lint-zig-build compares with make print-lib-srcs and make
+    // print-lib-def, one name per line.
+    const lists = b.addWriteFiles();
+    const lists_step = b.step("lib-lists", "Install lib-srcs.txt and lib-def.txt, the object's sources and defines");
+    lists_step.dependOn(&b.addInstallFile(lists.add("lib-srcs.txt", lines(b, plan.srcs)), "lib-srcs.txt").step);
+    lists_step.dependOn(&b.addInstallFile(lists.add("lib-def.txt", lines(b, plan.defs)), "lib-def.txt").step);
+}
+
+/// Every $(error) the Makefile's axis blocks raise for a combination of
+/// values, in the Makefile's order and with its words.
+fn refuseUnbuildable(config: Config) void {
+    const fatal = std.process.fatal;
+    const client_trusts = "use TRUST=raw-rsa, TRUST=raw-ecdsa, TRUST=ca-rsa, TRUST=ca-ecdsa or TRUST=webpki";
+    switch (config.role) {
+        .server => if (config.trust != .none)
+            fatal("ROLE=server judges no peer certificate, so it has no trust mode to choose; use TRUST=none", .{}),
+        .both => if (config.trust == .none)
+            fatal("ROLE=both carries a client, which judges a peer certificate; TRUST=none is ROLE=server only, so " ++ client_trusts, .{}),
+        .client => if (config.trust == .none)
+            fatal("TRUST=none is the ROLE=server value; a client judges a peer certificate, so " ++ client_trusts, .{}),
+    }
+    if (config.kex != null and !deviceClient(config)) {
+        fatal("KEX={t} chooses the group of a raw or ca client, and TRUST={t} ROLE={t} is not one: a TRUST=webpki " ++
+            "client offers X25519MLKEM768 and x25519 in every build, and a server role holds both in every build " ++
+            "(docs/decisions.md 53 and 54). Drop KEX, and set ch_cfg.require_pq for the hybrid alone", .{ config.kex.?, config.trust, config.role });
+    }
+    if (config.exporter == .on and config.transport == .@"quic-nonblocking") {
+        fatal("EXPORTER=on has no QUIC entry point: ch_export is a record-layer call, so use TRANSPORT=tcp-blocking or TRANSPORT=tcp-nonblocking", .{});
+    }
+    if (config.keylog == .on and config.role == .client and config.trust != .webpki) {
+        fatal("KEYLOG=on is refused for a device client: use TRUST=webpki, ROLE=server or ROLE=both", .{});
+    }
+    if (config.suite == .aesgcm and config.role == .client and config.trust != .webpki) {
+        fatal("SUITE=aesgcm is refused for a device client: use TRUST=webpki, ROLE=server or ROLE=both", .{});
+    }
+}
+
+/// A raw or ca client, the one build whose key exchange KEX chooses.
+fn deviceClient(config: Config) bool {
+    return config.role == .client and switch (config.trust) {
+        .@"raw-rsa", .@"raw-ecdsa", .@"ca-rsa", .@"ca-ecdsa" => true,
+        .webpki, .none => false,
+    };
+}
+
+/// LIB_DEF, LIB_SRCS and PUBLIC, assembled from the axis blocks as the
+/// Makefile assembles them.
+fn computePlan(b: *std.Build, config: Config) Plan {
+    const aes_impl: Names = switch (config.aes) {
+        .soft => &.{"quic_aes_soft.c"},
+        .hw => &aes_hw_srcs,
+        .@"extern" => &.{"aes_extern.c"},
+    };
+    const suite_add: Names = if (config.suite == .aesgcm)
+        concat(b, &.{ &.{"aes.c"}, aes_impl, &.{ "gcm.c", "sha512.c", "sha512_compress.c" } })
+    else
+        &.{};
+    const trust = trustAxis(b, config.trust);
+    var transport = transportAxis(b, config.transport, aes_impl);
+    const role = roleAxis(b, config, &transport);
+    // ROLE=both keeps both verifiers, whatever the client half pins.
+    const pin_filter: Names = if (config.role == .both) &.{} else pinFilter(config.trust);
+
+    var defs = concat(b, &.{ pinDefs(config.trust), trust.defs, transport.defs, aesDefs(config.aes), if (config.suite == .aesgcm) &.{"-DCH_SUITE_AES_GCM"} else &.{}, role.defs });
+    var lib_srcs = concat(b, &.{
+        without(b, &srcs, concat(b, &.{ pin_filter, trust.filter, transport.filter, role.filter })),
+        trust.add,
+        transport.add,
+        without(b, role.add, trust.add),
+        without(b, suite_add, concat(b, &.{ trust.add, transport.add, role.add })),
+    });
+
+    if (config.kex == .pq) defs = concat(b, &.{ defs, &.{"-DCH_KEX_PQ"} });
+    if (config.kex == .pq or config.trust == .webpki or config.role != .client) lib_srcs = concat(b, &.{ lib_srcs, &kex_hybrid_srcs });
+    if (config.x25519 == .wide) {
+        defs = concat(b, &.{ defs, &.{"-DCH_X25519_WIDE"} });
+        lib_srcs = concat(b, &.{ lib_srcs, &.{"x25519_wide.c"} });
+    }
+    if (config.exporter == .on) defs = concat(b, &.{ defs, &.{ "-DCH_EXPORTER", "-DHKDF_LABEL_MAX=32" } });
+    if (config.keylog == .on) defs = concat(b, &.{ defs, &.{"-DCH_KEYLOG"} });
+    if (config.widemul == .native) defs = concat(b, &.{ defs, &.{"-DCH_NATIVE_WIDEMUL"} });
+    if (config.rand == .drbg) {
+        defs = concat(b, &.{ defs, &.{"-DCH_RAND_DRBG"} });
+        lib_srcs = concat(b, &.{ lib_srcs, &.{"drbg.c"} });
+    }
+    if (config.rand == .@"extern") defs = concat(b, &.{ defs, &.{"-DCH_RAND_EXTERN"} });
+
+    // The hardware statements, which the Makefile takes in CFLAGS.
+    if (config.native_aes) defs = concat(b, &.{ defs, &.{"-DCH_NATIVE_AES"} });
+    if (config.aes_extern_constant_time) defs = concat(b, &.{ defs, &.{"-DCH_AES_EXTERN_CONSTANT_TIME"} });
+    if (config.native_mul128) defs = concat(b, &.{ defs, &.{"-DCH_NATIVE_MUL128"} });
+
+    const public_rand: Names = if (config.rand == .drbg) &.{ "ch_drbg_seed", "ch_rand_bytes" } else &.{};
+    const public_export: Names = if (config.exporter == .on) &.{"ch_export"} else &.{};
+    const public_ca: Names = if (trustsCa(config.trust)) &.{"ch_pubkey_from_pem"} else &.{};
+    return .{
+        .srcs = lib_srcs,
+        .defs = defs,
+        .public = symbolNames(b, config.transport, concat(b, &.{ role.public, public_rand, public_ca, public_export, &.{"ch_build"} })),
+    };
+}
+
+fn trustsCa(trust: Trust) bool {
+    return trust == .@"ca-rsa" or trust == .@"ca-ecdsa";
+}
+
+/// PIN_DEF: the ecdsa half of a pinned trust value.
+fn pinDefs(trust: Trust) Names {
+    return if (trust == .@"raw-ecdsa" or trust == .@"ca-ecdsa") &.{"-DCH_PIN_ECDSA"} else &.{};
+}
+
+/// PIN_FILTER: the verifier a pinned trust value does not name.
+fn pinFilter(trust: Trust) Names {
+    return switch (trust) {
+        .@"raw-rsa", .@"ca-rsa" => &.{"p256.c"},
+        .@"raw-ecdsa", .@"ca-ecdsa" => &.{ "rsa.c", "rsa_mont.c" },
+        .webpki, .none => &.{},
+    };
+}
+
+fn aesDefs(aes: Aes) Names {
+    return switch (aes) {
+        .soft => &.{},
+        .hw => &.{"-DCH_AES_HW"},
+        .@"extern" => &.{"-DCH_AES_EXTERN"},
+    };
+}
+
+/// TRUST_DEF, TRUST_FILTER and TRUST_ADD.
+fn trustAxis(b: *std.Build, trust: Trust) Axis {
+    return switch (trust) {
+        .@"raw-rsa", .@"raw-ecdsa", .none => .{ .filter = &(certificate_srcs ++ webpki_srcs) },
+        .@"ca-rsa", .@"ca-ecdsa" => .{ .defs = &.{"-DCH_TRUST_CA"}, .filter = &webpki_srcs },
+        .webpki => .{
+            .defs = &.{"-DCH_TRUST_WEBPKI"},
+            .filter = &.{ "pem.c", "x509.c", "x509_ca.c" },
+            .add = concat(b, &.{ &webpki_chain_srcs, without(b, &webpki_srcs, &srcs), &webpki_kex_srcs }),
+        },
+    };
+}
+
+/// TRANSPORT_DEF, TRANSPORT_FILTER, TRANSPORT_ADD and PUBLIC_TRANSPORT.
+fn transportAxis(b: *std.Build, transport: Transport, aes_impl: Names) Axis {
+    return switch (transport) {
+        .@"quic-nonblocking" => .{
+            .defs = &.{"-DCH_TRANSPORT_QUIC_NONBLOCKING"},
+            .filter = &quic_replaced,
+            .add = concat(b, &.{ &.{"aes.c"}, aes_impl, &quic_srcs_after_aes }),
+            .public = &public_quic,
+        },
+        .@"tcp-nonblocking" => .{
+            .defs = &.{"-DCH_TRANSPORT_TCP_NONBLOCKING"},
+            .filter = &.{"handshake.c"},
+            .add = &.{ "tcp_nonblocking.c", "tcp_nonblocking_frame.c", "tcp_nonblocking_step.c" },
+            .public = &public_tcp_nonblocking,
+        },
+        .@"tcp-blocking" => .{ .public = &public_tcp_blocking },
+    };
+}
+
+/// ROLE_DEF, ROLE_FILTER, ROLE_ADD and PUBLIC_ROLE. A server role swaps
+/// the server's driver for the transport's, and ROLE=server also drops the
+/// client's step table from the transport's add, as the Makefile rewrites
+/// TRANSPORT_ADD in that arm.
+fn roleAxis(b: *std.Build, config: Config, transport: *Axis) Axis {
+    if (config.role == .client) return .{ .public = transport.public };
+    const server_only = config.role == .server;
+    var role = Axis{
+        .defs = if (server_only) &.{"-DCH_ROLE_SERVER"} else &.{ "-DCH_ROLE_SERVER", "-DCH_ROLE_BOTH" },
+        .filter = if (server_only) &client_replaced else &.{},
+    };
+    const driver_swapped = without(b, &server_add, &.{"srv_handshake.c"});
+    switch (config.transport) {
+        .@"quic-nonblocking" => {
+            role.add = concat(b, &.{ driver_swapped, &.{ "srv_quic.c", "quic_token.c" } });
+            if (server_only) transport.add = without(b, transport.add, &.{"quic_step.c"});
+            role.public = if (server_only)
+                concat(b, &.{ &public_srv_quic, &public_quic_either_role })
+            else
+                concat(b, &.{ transport.public, &public_srv_quic });
+        },
+        .@"tcp-nonblocking" => {
+            role.add = concat(b, &.{ driver_swapped, &.{"srv_tcp_nonblocking.c"} });
+            if (server_only) transport.add = without(b, transport.add, &.{"tcp_nonblocking_step.c"});
+            role.public = if (server_only)
+                concat(b, &.{ &public_srv_tcp_nonblocking, &public_record_either_role })
+            else
+                concat(b, &.{ transport.public, &public_srv_tcp_nonblocking });
+        },
+        .@"tcp-blocking" => {
+            role.add = &server_add;
+            role.public = if (server_only)
+                concat(b, &.{ &public_srv_tcp_blocking, &public_session })
+            else
+                concat(b, &.{ transport.public, &public_srv_tcp_blocking });
+        },
+    }
+    return role;
+}
+
+/// PUBLIC in the Makefile: each of the three exports that objects of more
+/// than one transport carry takes the transport into its symbol name, and
+/// the build record's symbol is named for its type (docs/decisions.md 61).
+fn symbolNames(b: *std.Build, transport: Transport, names: Names) Names {
+    const suffix = b.dupe(@tagName(transport));
+    std.mem.replaceScalar(u8, suffix, '-', '_');
+    const out = b.allocator.alloc([]const u8, names.len) catch @panic("OOM");
+    for (names, out) |name, *symbol| {
+        if (std.mem.eql(u8, name, "ch_build")) {
+            symbol.* = b.fmt("ch_build_info_{s}", .{suffix});
+        } else if (std.mem.eql(u8, name, "ch_srv_check") or std.mem.eql(u8, name, "ch_pubkey_from_pem")) {
+            symbol.* = b.fmt("{s}_{s}", .{ name, suffix });
+        } else {
+            symbol.* = name;
+        }
+    }
+    return out;
+}
+
+/// AES=hw needs the AES instructions and the carry-less multiply GHASH
+/// runs on, which the Makefile's AES_HW_CFLAGS turns on for cc: aes and
+/// pclmul on x86, and aes on Arm, where the Arm C Language Extensions put
+/// the 64-bit PMULL in the AES extension. Another architecture gets
+/// nothing, and aes_hw.c's #error stops the build, as it does for a cc the
+/// Makefile's probe finds no flag for.
+fn aesTarget(b: *std.Build, target: std.Build.ResolvedTarget, aes: Aes) std.Build.ResolvedTarget {
+    if (aes != .hw) return target;
+    var query = target.query;
+    switch (target.result.cpu.arch) {
+        .x86, .x86_64 => {
+            query.cpu_features_add.addFeature(@intFromEnum(std.Target.x86.Feature.aes));
+            query.cpu_features_add.addFeature(@intFromEnum(std.Target.x86.Feature.pclmul));
+        },
+        .aarch64, .aarch64_be => query.cpu_features_add.addFeature(@intFromEnum(std.Target.aarch64.Feature.aes)),
+        .arm, .armeb, .thumb, .thumbeb => query.cpu_features_add.addFeature(@intFromEnum(std.Target.arm.Feature.aes)),
+        else => return target,
+    }
+    return b.resolveTargetQuery(query);
+}
+
+/// The lists joined in order.
+fn concat(b: *std.Build, lists: []const Names) Names {
+    var total: usize = 0;
+    for (lists) |list| total += list.len;
+    const out = b.allocator.alloc([]const u8, total) catch @panic("OOM");
+    var i: usize = 0;
+    for (lists) |list| {
+        @memcpy(out[i..][0..list.len], list);
+        i += list.len;
+    }
+    return out;
+}
+
+/// $(filter-out removed,list): list without every name removed holds.
+fn without(b: *std.Build, list: Names, removed: Names) Names {
+    var out = std.ArrayList([]const u8).initCapacity(b.allocator, list.len) catch @panic("OOM");
+    for (list) |name| {
+        for (removed) |gone| {
+            if (std.mem.eql(u8, gone, name)) break;
+        } else out.appendAssumeCapacity(name);
+    }
+    return out.items;
+}
+
+/// One name per line, each line ended.
+fn lines(b: *std.Build, names: Names) []const u8 {
+    return b.fmt("{s}\n", .{std.mem.join(b.allocator, "\n", names) catch @panic("OOM")});
+}

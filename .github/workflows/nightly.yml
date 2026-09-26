@@ -228,6 +228,14 @@ jobs:
         # violation is the one only that check catches
         # (https://github.com/c4milo/chapulin/issues/106).
         run: echo "$HOME/armtc/bin" >> "$GITHUB_PATH"
+      - name: Install Zig (pinned)
+        # The violations of build.zig and of the localizer name
+        # test/zig-build-check.sh or test/localize-check.sh as their catch
+        # target, and both run zig from PATH.
+        uses: ./.github/actions/install-zig
+        with:
+          version: ${{ env.ZIG_VERSION }}
+          sha256: ${{ env.ZIG_LINUX_X86_64_SHA256 }}
 
       - name: Build the pinned OpenSSL and put it on PATH
         # Two violations name test/e2e.sh as their catch target, and e2e.sh

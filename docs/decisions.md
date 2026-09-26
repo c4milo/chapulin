@@ -2389,3 +2389,106 @@ does nothing more.
       is the portable multiply. One define would let a statement about
       one piece of silicon be read as a statement about another.
       `test/quic-builds.sh` refuses each flag on the other's value.
+
+69. **A Zig project depends on chapulin as a package: `build.zig` builds the
+    object `make lib` builds, and `make lint-zig-build` holds the two builds
+    to each other.** colibri linked a `bin/*.o` from a checkout its caller
+    had built with make. Camilo decided on 2026-09-26 that the Makefile
+    stays the source of truth, that a Zig build beside it must produce the
+    same object, and that a check in `make check` compares the two. The
+    Zig version is colibri's, 0.16.0.
+
+    - **The options.** `b.dependency("chapulin", .{ ... })` takes the
+      Makefile's variables under their own names and values: `TRANSPORT`,
+      `ROLE`, `TRUST`, `SUITE`, `AES`, `RAND`, `EXPORTER`, `KEYLOG`, `KEX`,
+      `X25519` and `WIDEMUL`. The three hardware statements a builder adds
+      to make's `CFLAGS`, `CH_NATIVE_AES`, `CH_AES_EXTERN_CONSTANT_TIME` and
+      `CH_NATIVE_MUL128`, are options of their own that default off, so a
+      build that needs one and lacks it stops at `ct.h`, as make's does.
+      `build.zig` repeats each axis block of the Makefile as one function,
+      and refuses the same combinations with the same words. `AES=hw` adds
+      the target's AES and carry-less multiply features, as
+      `AES_HW_CFLAGS` adds flags for cc.
+    - **What a dependent gets.** The named lazy path `chapulin.o`, the
+      localized object, and `include`, the directory of the headers. The
+      dependent compiles the headers under the object's defines, as a C
+      program does, and calls `ch_build_matches` once (entry 56). There is
+      no static library: the object links with one `addObjectFile` call,
+      and Zig 0.16's archiver leaves an odd-sized last member unpadded,
+      which Apple's nm and llvm-ar refuse to read.
+    - **One object.** `addObject` over every source partially links them
+      with Zig's own linker, for ELF and Mach-O, as `ld -r` does for make.
+    - **The localizer.** `tools/localize_symbols.zig` does to that object
+      what `objcopy -G` and `nmedit -s` do to make's: every defined symbol
+      but the public names becomes local. In ELF32 and ELF64 of either byte
+      order it sets STB_LOCAL, moves the locals before the globals, rewrites
+      the symbol table's sh_info, and renumbers the symbol index in every
+      relocation, section group and SHT_SYMTAB_SHNDX entry. It clears the
+      sh_link of SHT_LLVM_ADDRSIG, which marks that table stale the way
+      `ld -r` does, and lld then ignores it. In 64-bit Mach-O it clears
+      N_EXT and N_PEXT, reorders the table into LC_DYSYMTAB's three ranges,
+      rewrites the ranges, renumbers every external relocation and indirect
+      symbol entry, and rewrites a localized variable's N_GSYM debugging
+      entry as nmedit does. No section moves and no size changes.
+    - **What it refuses.** Anything it cannot rewrite in full, rather than
+      a guess: another format, a section or load command that may hold
+      symbol indices it does not know, a common symbol, a name to keep that
+      the object does not define, and a MIPS GOT16 or CALL16 relocation
+      against a symbol it would make local. The MIPS ABI reads those two
+      differently against a local symbol, so localizing position
+      independent MIPS code changes what it computes; objcopy does that
+      without a word, and lld only warns. A MIPS object compiled without
+      PIC has neither relocation.
+    - **Flags.** The defines, `-std=c11` and `-O2` are make's, and so are
+      the warnings. Zig adds `-DNDEBUG`, which nothing here reads, `-fPIC`
+      and a kept frame pointer. It turns on no stack protector, which
+      Apple's clang and Ubuntu's gcc turn on by default, and on Linux no
+      `_FORTIFY_SOURCE`, which Ubuntu's gcc defines by default. The comment
+      above `cflags` in `build.zig` lists each and why it does not change
+      what the object computes or exports.
+    - **The check (INV-36).** `test/zig-build-check.sh` copies exactly the
+      files `build.zig.zon`'s `.paths` names, which is what a dependent
+      receives, after requiring that list to name every root source and
+      header git tracks. It builds the default object and colibri's four
+      both ways, requires the same sources, defines and exports, links
+      `test/build_test.c` against each Zig object under make's defines, and
+      links the tcp-nonblocking `ROLE=both` and QUIC objects into one image
+      and runs it. check-slow repeats the comparison over every `lib-check`
+      leg's configuration. `test/localize-check.sh` compares the localizer
+      with `llvm-objcopy -G` on nine ELF targets, big-endian mips32r2 among
+      them, and with `nmedit -s` as well on two Mach-O targets, and links
+      every result. Five mutants break `build.zig` or the localizer.
+    - **The pin.** `tools/toolchain.env` pins `ZIG_VERSION` and the hash of
+      the x86_64 Linux tarball, `.github/actions/install-zig` checks the
+      download against it, the check job and the nightly's violation job
+      install it, and `lint-toolchain` checks the version on every machine.
+
+    Cost:
+
+    - The Makefile's axis logic exists twice, and a change to an axis is
+      made in both files. The check catches a change made in one of them
+      in each configuration it builds; a combination it does not build is
+      caught when a dependent builds it.
+    - `make check` needs zig. `lint-zig-build` takes 8 s with every object
+      built and 90 s with none, and check-slow adds 37 s.
+    - About 1,300 lines of Zig, `build.zig` and the localizer, that this
+      tree reads and tests as it does its C.
+
+    Gain: a Zig project builds chapulin with `zig build`, for any target
+    Zig compiles C for, with no make, no binutils and no Xcode tools, and
+    links an object that exports what `lib-check` holds make's to.
+
+    Two alternatives were considered and rejected.
+
+    - **Host `ld -r` and `objcopy` or `nmedit`, run from `build.zig`.** It
+      would repeat the Makefile's recipe, and it would tie a Zig build to
+      the host's tools: macOS ships no objcopy, `nmedit` reads no ELF, and a
+      host linker partially links only its own target's objects, so a
+      cross build would need a binutils per target. `zig objcopy` in 0.16
+      has no option that keeps some globals and localizes the rest.
+    - **A plain static library whose internal symbols stay global.** It
+      is what Zig builds with no tool of ours. But every internal name is
+      then global, so two objects of different transports define the same
+      names and one image cannot link both (entry 61), an application's own
+      name can collide with one, and the export list `lib-check` holds
+      means nothing for that object.

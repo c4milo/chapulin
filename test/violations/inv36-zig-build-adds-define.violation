@@ -1,0 +1,12 @@
+invariant: INV-36
+file: build.zig
+catches: test/zig-build-check.sh
+reason: build.zig defines CH_NATIVE_WIDEMUL in every object, not only under
+  WIDEMUL=native, so a Zig object claims a constant-time widening multiply the
+  builder never stated. The define changes no export and no bit of the build
+  record, so only the comparison with make print-lib-def objects.
+
+--- old
+    if (config.widemul == .native) defs = concat(b, &.{ defs, &.{"-DCH_NATIVE_WIDEMUL"} });
+--- new
+    defs = concat(b, &.{ defs, &.{"-DCH_NATIVE_WIDEMUL"} });

@@ -287,7 +287,8 @@ def known(path):
     return any(path.startswith(p) for p in
                ("spec/", "test/", "proof/", "docs/", "bench/", "examples/",
                 "fuzz/", "tools/", ".githooks/")) or path in (
-        "README.md", "SECURITY.md", "CONTRIBUTING.md", "CLAUDE.md")
+        "README.md", "SECURITY.md", "CONTRIBUTING.md", "CLAUDE.md",
+        "build.zig", "build.zig.zon")
 
 
 class Plan:

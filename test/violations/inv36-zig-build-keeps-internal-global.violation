@@ -1,0 +1,12 @@
+invariant: INV-36
+file: build.zig
+catches: test/zig-build-check.sh
+reason: build.zig's tcp-blocking export list names ch_handshake, the blocking
+  driver's internal entry, so the localizer keeps it global and a Zig object
+  exports a name make's does not. Two such objects in one image, or one beside
+  an application that defines the name, would not link.
+
+--- old
+const public_tcp_blocking = [_][]const u8{ "ch_connect", "ch_read", "ch_write", "ch_close" };
+--- new
+const public_tcp_blocking = [_][]const u8{ "ch_connect", "ch_read", "ch_write", "ch_close", "ch_handshake" };

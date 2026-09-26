@@ -324,6 +324,27 @@ def select_pairs(out, changed, legs):
                     ["test/lib-pair-check.sh"])
 
 
+# The files make lint-zig-build reads beside the packaged sources: the Zig
+# build, the localizer it runs, and what the two scripts compile.
+ZIG_BUILD_FILES = {"build.zig", "build.zig.zon", "test/zig-build-check.sh",
+                   "test/localize-check.sh", "test/build_test.c"} | LIB_PAIR_FILES
+
+
+def select_zig(out, changed, legs):
+    """make lint-zig-build, which builds packaged objects with build.zig and
+    holds each to make's: a source some object packages can break it, and
+    so can the Zig build, the localizer and the files the two scripts
+    compile."""
+    packaged = set().union(*legs.values())
+    for path in changed:
+        if (path in packaged or path in ZIG_BUILD_FILES
+                or path.startswith(("tools/localize_", "test/localize/"))):
+            out.add("modes", "make lint-zig-build",
+                    f"{path} is packaged by some object or read by the Zig "
+                    f"build's check, which builds objects both ways",
+                    ["test/zig-build-check.sh", "test/localize-check.sh"])
+
+
 def select_codegen(out, csources, lib):
     """The gates that read what the compiler emits rather than the
     source: the per-file multiply and branch ceilings, the runtime-call
@@ -526,6 +547,7 @@ def plan(changed, mapping):
     select_spec(out, changed)
     select_modes(out, sources, mapping.lib_legs())
     select_pairs(out, changed, mapping.lib_legs())
+    select_zig(out, changed, mapping.lib_legs())
     select_codegen(out, csources, lib)
     select_runners(out, changed)
     select_violations(out, changed)

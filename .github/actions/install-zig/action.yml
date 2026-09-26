@@ -1,0 +1,32 @@
+# Installs the pinned Zig release into ~/zig, cached by version, and puts
+# it on PATH, where the Makefile's ZIG finds it. make lint-zig-build and
+# make lint-toolchain need it, and so does every violation that
+# test/zig-build-check.sh or test/localize-check.sh catches. The pin values
+# come from the job's env via ./.github/actions/load-pins: version is
+# ZIG_VERSION and sha256 is ZIG_LINUX_X86_64_SHA256, the publisher's hash,
+# which the download is checked against before it is unpacked.
+name: install-zig
+description: Install the pinned Zig release into ~/zig and put it on PATH
+inputs:
+  version:
+    description: The Zig release (ZIG_VERSION)
+    required: true
+  sha256:
+    description: The sha256 of the x86_64 Linux tarball (ZIG_LINUX_X86_64_SHA256)
+    required: true
+runs:
+  using: composite
+  steps:
+    - id: cache
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ~/zig
+        key: zig-${{ inputs.version }}-linux-x86_64-${{ inputs.sha256 }}
+    - if: steps.cache.outputs.cache-hit != 'true'
+      shell: bash
+      env:
+        VERSION: ${{ inputs.version }}
+        SHA256: ${{ inputs.sha256 }}
+      run: bash "$GITHUB_ACTION_PATH/install.sh"
+    - shell: bash
+      run: echo "$HOME/zig" >> "$GITHUB_PATH"

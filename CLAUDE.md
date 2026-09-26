@@ -148,7 +148,11 @@ Home: github.com/c4milo.
   `handshake_post.[ch]` (NewSessionTicket and KeyUpdate, the messages
   that arrive after the handshake) ← `tls.[ch]`
   (public API) ← demo/test mains. Firmware takes everything below
-  `tls.[ch]` as-is and supplies I/O callbacks and `ch_rand_bytes`.
+  `tls.[ch]` as-is and supplies I/O callbacks and `ch_rand_bytes`. A Zig
+  project takes the same object through `build.zig`, whose options are
+  the Makefile's variables; the Makefile stays the source of truth, and
+  `make lint-zig-build` fails when the two builds disagree
+  (docs/decisions.md 69).
   One pair sits off that chain rather than in it: `x509_ca.[ch]`
   (provisioning — one PEM certificate to the key bytes
   `ch_cfg.server_pubkey` takes) reads `pem.[ch]` and `x509.[ch]`, and
@@ -365,8 +369,10 @@ Home: github.com/c4milo.
   lint-issue-links` enforces this, and it reads this file too, so the
   rule is stated without an example of what it forbids.
 - Dev tooling lives in `tools/`, never at the repo root: the lint helper
-  scripts and the node packages commitlint needs. `tools/` is not built
-  into the library. Shell scripts stay with the thing they operate on
+  scripts, the node packages commitlint needs, and the symbol localizer
+  `build.zig` runs (`tools/localize_symbols.zig`). `build.zig` and
+  `build.zig.zon` are the one exception, because Zig reads a package's
+  build from its root. `tools/` is not built into the library. Shell scripts stay with the thing they operate on
   (`bench/`, `proof/`, `test/`), because that is where a reader looks for
   them. `make lint-shellcheck` runs shellcheck over every one of them,
   including the git hooks.
@@ -400,7 +406,8 @@ Home: github.com/c4milo.
   document. Write the body from the diff; never trim a long draft down,
   because editing anchors on the draft and lands long every time.
 - Every change passes `make check` (lint, unit, strict-parser and
-  Wycheproof vectors, the packaged-object export list) before it is
+  Wycheproof vectors, the packaged-object export list, and the Zig
+  build's agreement with make) before it is
   committed, and `make check-slow` (proofs, e2e against a real TLS 1.3
   server, the spec differential, the sequence enumerations, the invariant
   violation builds) before it is called done. Neither is optional; they

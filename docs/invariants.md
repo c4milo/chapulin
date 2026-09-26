@@ -924,6 +924,39 @@ last `ROLE=server` stub, as the entry said it would.
 - See [decisions: Engineering](decisions.md#engineering), entries 56 and
   61.
 
+### INV-36 — build.zig packages the object `make lib` packages
+
+- **Claim.** For a configuration both builds accept, the object
+  `build.zig` produces compiles the same sources under the same defines
+  as `make lib`, exports the same names, and holds the same build record.
+  Every other symbol it defines is local, so one image links a Zig-built
+  object of each of two transports, as it links make's.
+- **Mechanism.** `build.zig` repeats the Makefile's axis blocks, one
+  function per block, and writes the lists it compiles to `lib-srcs.txt`
+  and `lib-def.txt`. `tools/localize_symbols.zig` makes every defined
+  global but the public names local, as `objcopy -G` and `nmedit -s` do
+  for make, and refuses an object it cannot rewrite in full.
+- **Check.** `make lint-zig-build` runs `test/zig-build-check.sh`, which
+  builds the default object and the four colibri links both ways and
+  compares their sources, defines and exports, links
+  `test/build_test.c` against each Zig object under make's defines, and
+  links two Zig objects of different transports into one image and runs
+  it. check-slow runs it over every `lib-check` leg's configuration too.
+  The same target runs `test/localize-check.sh`, which compares the
+  localizer with `llvm-objcopy -G` on nine ELF targets and with
+  `llvm-objcopy -G` and `nmedit -s` on two Mach-O ones, and links every
+  result. Five mutants in `test/violations/` are each caught by one of
+  the two scripts: `inv36-zig-build-drops-source`,
+  `inv36-zig-build-adds-define` and `inv36-zig-build-keeps-internal-global`
+  edit `build.zig`, and `inv36-localize-elf-keeps-weak-global` and
+  `inv36-localize-macho-keeps-external-bit` edit the localizer.
+- **Violation.** A PR changes an axis in the Makefile and not in
+  `build.zig`, or the reverse, or teaches the localizer a symbol it leaves
+  global. The checks catch the change in each configuration they build.
+  A combination of values that neither list builds is caught by nothing
+  until a dependent builds it.
+- See [decisions: Engineering](decisions.md#engineering), entry 69.
+
 ## Fail-closed
 
 ### INV-13 — no resumable errors

@@ -324,6 +324,14 @@ jobs:
           clang-format: "true"
           llvm: "true" # llvm-nm, which lint-runtime-symbols reads with
 
+      - name: Install Zig (pinned)
+        # make lint-zig-build builds the object with build.zig and holds it
+        # to make's, and check-slow runs the violations that break either.
+        uses: ./.github/actions/install-zig
+        with:
+          version: ${{ env.ZIG_VERSION }}
+          sha256: ${{ env.ZIG_LINUX_X86_64_SHA256 }}
+
       - name: Build the pinned OpenSSL and put it on PATH
         # test/e2e.sh needs options the runner's OpenSSL 3.0 lacks; the
         # action states which.
@@ -415,6 +423,8 @@ jobs:
             || { echo "go is not the pinned $GO_VERSION"; exit 1; }
           "$SHELLCHECK" --version | grep -qF "version: $SHELLCHECK_VERSION" \
             || { echo "shellcheck is not the pinned $SHELLCHECK_VERSION"; exit 1; }
+          [ "$(zig version)" = "$ZIG_VERSION" ] \
+            || { echo "zig is not the pinned $ZIG_VERSION"; exit 1; }
           # lint-runtime-symbols reads the rv32ic objects with this. Assert it
           # here so a missing package names itself instead of surfacing as an
           # empty symbol list inside make.

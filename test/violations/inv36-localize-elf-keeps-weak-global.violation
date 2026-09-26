@@ -1,0 +1,14 @@
+invariant: INV-36
+file: tools/localize_elf.zig
+catches: test/localize-check.sh
+reason: the ELF localizer leaves every weak definition global, so an object
+  that defines one exports it. The library defines none today, which is why
+  the check reads a fixture that does: llvm-objcopy -G makes first_weak local,
+  and the tool's output no longer matches it.
+
+--- old
+    if (index == shn_undef) return .global;
+    const kept = keep.holds(name);
+--- new
+    if (index == shn_undef or binding == stb_weak) return .global;
+    const kept = keep.holds(name);

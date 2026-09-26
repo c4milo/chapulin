@@ -106,6 +106,10 @@ TIDY_EACH = printf '%s\n' $(1) | xargs -P $(LINT_JOBS) -I{} sh -c \
 CBMC ?= $(shell command -v cbmc)
 CXX ?= c++
 LAKE ?= $(shell command -v lake || command -v $(HOME)/.elan/bin/lake)
+# The Zig build (build.zig) and the localizer it runs; lint-zig-build and
+# lint-toolchain read it. CI installs the pinned release on PATH through
+# .github/actions/install-zig.
+ZIG ?= $(shell command -v zig)
 
 # On CI a missing tool must fail its gate, not skip it: a workflow edit
 # that drops an install step would otherwise disable a check silently.
@@ -959,6 +963,10 @@ BENCH_C := $(wildcard bench/*.c bench/*.h)
 # freertos-check lints its two programs against the fetched kernel
 # headers. lint-format and lint-cppcheck take the list whole.
 QEMU_SMOKE_C := $(wildcard test/qemu/*.c test/qemu/*.h test/freertos/*.c test/freertos/*.h)
+# The objects test/localize-check.sh localizes: formatted, and outside
+# LINT_C, because zig compiles them for eleven targets rather than with the
+# host flags, and entry.c defines _start.
+LOCALIZE_C := $(wildcard test/localize/*.c)
 
 # Firmware links bin/chapulin.o: one relocatable object exposing exactly
 # the symbols PUBLIC names: its calls, four under TRANSPORT=tcp-blocking, sixteen
@@ -994,6 +1002,16 @@ print-lib-srcs:
 .PHONY: print-lib-def
 print-lib-def:
 	@echo $(LIB_DEF)
+# test/zig-build-check.sh builds make's object under a CFLAGS of its own when
+# a configuration states a hardware claim, and starts from these flags, as
+# check's lib-check legs start from $(CFLAGS). It asks for the AES=hw probe
+# for the same reason those legs read it: empty when this compiler has no
+# AES instructions, none when no flag turns them on.
+.PHONY: print-lib-cflags print-aes-hw-probe
+print-lib-cflags:
+	@echo $(LIB_CFLAGS)
+print-aes-hw-probe:
+	@echo $(AES_HW_PROBE)
 # bench/primitives.sh builds its handshake program from the sources
 # bin/tcp_nonblocking_loop_test links, and asks here rather than
 # keeping its own list, for the reason bench/device-ram.sh does.
@@ -1177,6 +1195,11 @@ lint-trust-separation:
 .PHONY: print-clang-rv
 print-clang-rv:
 	@echo $(CLANG_RV)
+# test/localize-check.sh reads objects with the pinned llvm-nm and the
+# tools beside it, and asks here when test/violations.py runs it on its own.
+.PHONY: print-llvm-nm
+print-llvm-nm:
+	@echo $(LLVM_NM)
 # RAND=drbg packages the generator, so ch_drbg_seed becomes part of the
 # API the image calls and lib-check covers it like the role's own calls.
 # PUBLIC_ROLE is one role's set and replaces the other role's rather
@@ -1300,11 +1323,14 @@ BUILD_TRANSPORT_MOVED_DEF := $(filter-out -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_T
 BUILD_OTHER_RECORD := ch_build_info_tcp_blocking
 endif
 
+# nmedit reads its list from a file, which sits beside the object it
+# edits, so two variants linked at once never read each other's list:
+# test/zig-build-check.sh builds its five objects at once.
 $(LIB_OBJ): $(LIB_OBJS) $(PIN_STAMP) $(PIN_STAMP_FORCE)
 	ld -r -o $@ $(LIB_OBJS)
 ifeq ($(shell uname),Darwin)
-	printf '_%s\n' $(PUBLIC) > bin/exports.txt
-	nmedit -s bin/exports.txt $@
+	printf '_%s\n' $(PUBLIC) > $(@D)/exports.txt
+	nmedit -s $(@D)/exports.txt $@
 else
 	objcopy $(foreach s,$(PUBLIC),-G $(s)) $@
 endif
@@ -2498,6 +2524,11 @@ endif
 check-slow: check bin/handshake_sequence_test bin/handshake_sequence_pq bin/pemkey bin/pemkey_ecdsa bin/tlsserver \
             $(if $(AES_HW_PROBE),bin/tlsserver_aes) bin/tlsserver_aes_extern bin/tlsclient_webpki_aes_extern
 	$(MAKE) ct-widemul-check
+	# check's lint-zig-build holds build.zig to make over the default
+	# object and the four colibri links. This holds it over every
+	# lib-check leg's configuration too, so every value of every axis
+	# meets build.zig. It took 37 s with only those five objects built.
+	ZIG='$(ZIG)' CC='$(CC)' ./test/zig-build-check.sh --roster
 	./test/qemu-m3.sh
 	./test/e2e.sh
 	$(MAKE) diff
@@ -3153,7 +3184,29 @@ endif
 
 # Checks and thresholds live in .clang-tidy; every disable carries a reason
 # there (fix-or-drop, never NOLINT in code).
-lint: lint-toolchain lint-pins lint-proof-cover lint-exact-fill lint-analyzers lint-format lint-commits lint-docs lint-conflict-markers lint-invariants lint-stack lint-size lint-tracked-ignored lint-matrix lint-nightly-report lint-violation-builds lint-violation-anchors lint-impact lint-fuzz-budget lint-codegen-partition lint-runtime-symbols lint-wide-multiply lint-commit-citations lint-issue-links lint-shellcheck lint-bench-numbers lint-spec lint-trust-separation lint-quic-partition lint-quic-surface
+lint: lint-toolchain lint-pins lint-proof-cover lint-exact-fill lint-analyzers lint-format lint-commits lint-docs lint-conflict-markers lint-invariants lint-stack lint-size lint-tracked-ignored lint-matrix lint-nightly-report lint-violation-builds lint-violation-anchors lint-impact lint-fuzz-budget lint-codegen-partition lint-runtime-symbols lint-wide-multiply lint-commit-citations lint-issue-links lint-shellcheck lint-bench-numbers lint-spec lint-trust-separation lint-quic-partition lint-quic-surface lint-zig-build
+
+# The Zig build a Zig project depends on (build.zig, docs/decisions.md 69),
+# held to make's. zig fmt checks the Zig sources, `zig build test` runs the
+# localizer's unit tests, test/localize-check.sh compares the localizer
+# with llvm-objcopy -G and nmedit -s over objects of both formats, and
+# test/zig-build-check.sh builds the default object and the four colibri
+# links both ways and requires the same sources, defines, exports and
+# build record, then links two Zig objects of different transports into
+# one image and runs it. check-slow runs the last over every lib-check
+# leg's configuration. With every object built it takes 8 s on an
+# M-series Mac, and 90 s with none.
+ZIG_SRCS := build.zig build.zig.zon $(wildcard tools/*.zig)
+.PHONY: lint-zig-build
+lint-zig-build:
+ifeq ($(ZIG),)
+	$(call REQUIRE,zig,brew install zig -- see the ZIG_VERSION pin in tools/toolchain.env)
+else
+	@$(ZIG) fmt --check $(ZIG_SRCS) || { echo "lint-zig-build: zig fmt would rewrite the files above"; exit 1; }
+	@$(ZIG) build test --summary none --cache-dir bin/zig/root-cache
+	@ZIG='$(ZIG)' CC='$(CC)' LLVM_NM='$(LLVM_NM)' ./test/localize-check.sh
+	@ZIG='$(ZIG)' CC='$(CC)' ./test/zig-build-check.sh
+endif
 
 # INV-19: bounded stack. The budget is the measured worst library
 # frame (rsa_vp1's RSA-3072 limb temporaries, 2,400 bytes) rounded up;
@@ -3280,7 +3333,12 @@ lint-toolchain:
 	     echo "lint-toolchain: and take the new diagnostics as work -- never adapt the code to an older checker."; rc=1; \
 	   fi; \
 	 done; \
-	 [ $$rc -eq 0 ] && echo "lint-toolchain: every checker is the pinned LLVM $(LLVM_MAJOR)"; exit $$rc
+	 if [ -z "$(ZIG)" ]; then \
+	   echo "lint-toolchain: zig is missing; the pin is Zig $(ZIG_VERSION) (tools/toolchain.env)"; rc=1; \
+	 elif [ "$$($(ZIG) version 2>/dev/null)" != "$(ZIG_VERSION)" ]; then \
+	   echo "lint-toolchain: $(ZIG) is Zig $$($(ZIG) version 2>/dev/null), and the pin is $(ZIG_VERSION) (tools/toolchain.env)"; rc=1; \
+	 fi; \
+	 [ $$rc -eq 0 ] && echo "lint-toolchain: every checker is the pinned LLVM $(LLVM_MAJOR), and zig is the pinned $(ZIG_VERSION)"; exit $$rc
 
 # tools/toolchain.env is the only place a tool version is written, and every
 # job that reads one loads it. tools/toolchain-pins.py carries the reasoning
@@ -3544,7 +3602,7 @@ lint-format:
 ifeq ($(CLANG_FORMAT),)
 	$(call REQUIRE,clang-format,it ships with llvm — see the LLVM_MAJOR pin in tools/toolchain.env)
 else
-	$(CLANG_FORMAT) --dry-run --Werror $(LINT_C) $(HDRS) $(PROOF_C) $(FUZZ_C) $(BENCH_C) $(QEMU_SMOKE_C) $(TESTH)
+	$(CLANG_FORMAT) --dry-run --Werror $(LINT_C) $(HDRS) $(PROOF_C) $(FUZZ_C) $(BENCH_C) $(QEMU_SMOKE_C) $(TESTH) $(LOCALIZE_C)
 endif
 
 lint-cppcheck:

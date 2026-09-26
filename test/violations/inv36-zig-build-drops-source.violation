@@ -1,0 +1,12 @@
+invariant: INV-36
+file: build.zig
+catches: test/zig-build-check.sh
+reason: build.zig's copy of SRCS loses rsa_mont.c, so the Zig object of every
+  RSA build leaves out the Montgomery arithmetic the RSA-PSS verifier calls.
+  A relocatable object links with the calls undefined, and the localizer keeps
+  the same exports, so only the comparison with make print-lib-srcs objects.
+
+--- old
+    "rsa.c",                 "rsa_mont.c",         "pem.c",               "x509.c",
+--- new
+    "rsa.c",                 "pem.c",               "x509.c",

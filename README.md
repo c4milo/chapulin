@@ -1054,6 +1054,35 @@ Other targets:
   program names that record itself. No library call reads the record,
   and decisions 56 and 61 say what it holds, what it leaves out and why
   its name carries the transport.
+- A Zig project (Zig 0.16.0) depends on chapulin as a package and gets
+  the object `make lib` builds. The options are the Makefile's
+  variables, with the same names and values, and the three hardware
+  statements the Makefile takes in `CFLAGS` are options that default
+  off:
+
+  ```zig
+  const chapulin = b.dependency("chapulin", .{
+      .target = target,
+      .RAND = .@"extern",
+      .TRANSPORT = .@"quic-nonblocking",
+      .ROLE = .both,
+      .TRUST = .webpki,
+      .SUITE = .aesgcm,
+      .AES = .hw,
+      .CH_NATIVE_AES = true,
+  });
+  module.addObjectFile(chapulin.namedLazyPath("chapulin.o"));
+  module.addIncludePath(chapulin.namedLazyPath("include"));
+  ```
+
+  The program compiles the headers under the object's defines, which
+  `make print-lib-def` prints for the same variables, and calls
+  `ch_build_matches` once. `build.zig` compiles every source into one
+  relocatable object, and `tools/localize_symbols.zig` makes every symbol
+  but the public API local, as `objcopy -G` and `nmedit -s` do for make,
+  so one image links objects of two transports. `make lint-zig-build`
+  builds five configurations both ways and requires the same sources,
+  defines, exports and build record (decision 69, INV-36).
 - `make prove-slow` runs the slow-tier proofs, one per nightly job. The runner caches by
   content, so an incremental run re-proves only what changed
   (`PROVE_NO_CACHE=1` forces a full run). It uses [kissat](https://github.com/arminbiere/kissat) when

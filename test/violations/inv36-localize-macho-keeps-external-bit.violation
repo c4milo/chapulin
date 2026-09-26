@@ -1,0 +1,12 @@
+invariant: INV-36
+file: tools/localize_macho.zig
+catches: test/localize-check.sh
+reason: the Mach-O localizer clears N_PEXT and leaves N_EXT set, so every
+  symbol it moves into the local range stays external and the object exports
+  it. The check compares the fixture's result with nmedit -s and llvm-objcopy
+  -G on every host, so a Linux runner catches a Mach-O mistake too.
+
+--- old
+        if (class == .localized) symbol_table[i * nlist_size + 4] &= ~@as(u8, n_ext | n_pext);
+--- new
+        if (class == .localized) symbol_table[i * nlist_size + 4] &= ~@as(u8, n_pext);
