@@ -118,10 +118,10 @@
 #ifdef CH_TRUST_CA
 #define CH_TRUST_MIN_RXBUF (2 * (CH_X509_MAX + 5) + 8 + 22)
 #elif defined(CH_TRUST_WEBPKI)
-// The same formula over the flight a public server sends: four entries
-// (CH_WEBPKI_FLIGHT_ENTRIES) of up to 3072 bytes each (CH_WEBPKI_CERT_MAX), 12338 bytes
-// (docs/webpki.md, "Bounds"). Those two constants live in webpki.h, which includes this
-// header, so the value is written out here and tls.c asserts that it matches them.
+// The same formula over the flight a public server sends: four entries of up to 3072
+// bytes each, 12338 bytes (docs/webpki.md, "Bounds"). webpki.h holds the entry count and
+// the per-certificate cap, and it includes this header, so the value is written out here
+// and tls.c asserts that it matches them.
 #define CH_TRUST_MIN_RXBUF (4 * (3072 + 5) + 8 + 22)
 #else
 #define CH_TRUST_MIN_RXBUF 512
@@ -260,7 +260,7 @@ typedef struct {
 // The two caps on that list. Both are ClientHello budget: the extension costs 4 type and
 // length bytes, 2 ProtocolNameList length bytes, and one length byte per name, so
 // CH_ALPN_MAX names of CH_ALPN_NAME_MAX bytes cost 4 + 2 + 8 * (1 + 32) = 270 bytes, which
-// is what CH_HELLO_MAX and CH_TX_STAGE grow by in this mode
+// is what the largest ClientHello and CH_TX_STAGE grow by in this mode
 // (test/webpki_session_cases.h measures the built hello). RFC 7301 allows a ProtocolName
 // of 1 to 255 bytes, and four of those would cost the hello a kilobyte, so 32 caps one
 // name: every protocol ID this tree offers or tests is under 11 bytes. Eight names is four
@@ -332,7 +332,7 @@ typedef struct {
 // that need measuring"). 256 is a policy cap, not a measurement: it holds the RFC 9000
 // §18.2 parameters a client sets, each an identifier byte, a length byte and a value of at
 // most 8 bytes, with one connection ID of at most 20 among them. The commit that captures
-// real bodies decides the number, beside the re-measured CH_HELLO_MAX and CH_TX_STAGE; a
+// real bodies decides the number, beside the re-measured ClientHello bound and CH_TX_STAGE; a
 // build that needs more raises it here.
 #ifndef CH_TRANSPORT_PARAMS_MAX
 #define CH_TRANSPORT_PARAMS_MAX 256
@@ -344,8 +344,8 @@ typedef struct {
     //    (resumption = 1, obfuscated_age = ticket age ms + age_add).
     //  - Pinned key: psk NULL, server_pubkey = the server's raw public
     //    key, provisioned like a PSK would be. The key is an RSA modulus
-    //    (256..384 bytes big-endian, RSA-2048 to RSA-3072 — the value
-    //    rsa.h's CH_RSA_MODULUS_MAX takes in the device modes; exponent
+    //    (256..384 bytes big-endian, RSA-2048 to RSA-3072 — the cap
+    //    rsa.h sets for the modulus in the device modes; exponent
     //    fixed at 65537, RSA-PSS) by default, or 64 P-256 bytes (X||Y,
     //    ECDSA) when built with
     //    -DCH_PIN_ECDSA — one algorithm per build, never both. An RSA

@@ -90,9 +90,8 @@ typedef struct {
 // what srv_auth.c tests before it hands the pointer on.
 //
 // ecdsa_p256: priv points at 32 big-endian bytes, the private scalar
-// p256_sign.h calls P256_PRIV_LEN, and pub at the 64-byte uncompressed
-// point X||Y that p256_ecdsa_verify reads (p256.h). So priv_len is 32
-// and pub_len is 64.
+// p256_sign reads, and pub at the 64-byte uncompressed point X||Y that
+// p256_ecdsa_verify reads (p256.h). So priv_len is 32 and pub_len is 64.
 //
 // rsa_pss: priv points at one ch_rsa_priv (rsa_sign.h), which holds the
 // modulus, the private exponent and their length, so priv_len is

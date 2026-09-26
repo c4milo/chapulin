@@ -949,24 +949,30 @@ last `ROLE=server` stub, as the entry said it would.
   links two Zig objects of different transports into one image and runs
   it. It builds `test/zig-consumer`, a Zig project that depends on the
   package, against each object: `matches.zig` compiles only when the
-  module declares every export and, for a server, the lengths of the
-  keys its configuration points at, and runs `ch_build_matches` over the
+  module declares every export, and runs `ch_build_matches` over the
   module's types, and `pair.zig` imports the modules of two transports,
-  links both objects and starts a client on each. check-slow runs the
-  script over every `lib-check` leg's configuration too.
+  links both objects and starts a client on each. Before `matches.zig`,
+  `tools/public-constants.py` lists every length and cap the public
+  headers' comments name in the regions the object compiles, and fails
+  when the consumer cannot see one; `matches.zig` then declares and
+  evaluates each. check-slow runs the script over every `lib-check`
+  leg's configuration too.
   The same target runs `test/localize-check.sh`, which compares the
   localizer with `llvm-objcopy -G` on nine ELF targets and with
   `llvm-objcopy -G` and `nmedit -s` on two Mach-O ones, and links every
-  result. Seven mutants in `test/violations/` are each caught by one of
+  result. Eight mutants in `test/violations/` are each caught by one of
   the two scripts: `inv36-zig-build-drops-source`,
   `inv36-zig-build-adds-define`, `inv36-zig-build-keeps-internal-global`,
   `inv36-zig-module-drops-define` and `inv36-zig-module-misses-header`
-  edit `build.zig`, and `inv36-localize-elf-keeps-weak-global` and
+  edit `build.zig`, `inv36-public-header-names-hidden-length` names a
+  length in `srv_cfg.h` that no public header defines, and
+  `inv36-localize-elf-keeps-weak-global` and
   `inv36-localize-macho-keeps-external-bit` edit the localizer.
 - **Violation.** A PR changes an axis in the Makefile and not in
   `build.zig`, or the reverse, or teaches the localizer a symbol it leaves
   global, or translates the module under other defines or headers than
-  the object's. The checks catch the change in each configuration they
+  the object's, or a public header names a length its consumer cannot
+  see. The checks catch the change in each configuration they
   build. A combination of values that neither list builds is caught by
   nothing until a dependent builds it.
 - See [decisions: Engineering](decisions.md#engineering), entries 69 and 70.

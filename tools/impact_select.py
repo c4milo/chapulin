@@ -325,10 +325,12 @@ def select_pairs(out, changed, legs):
 
 
 # The files make lint-zig-build reads beside the packaged sources: the Zig
-# build, the localizer it runs, and what the two scripts compile. The Zig
+# build, the localizer it runs, what the two scripts compile, and the
+# helper that lists the lengths the public headers name. The Zig
 # project under test/zig-consumer/ is selected by its prefix below.
 ZIG_BUILD_FILES = {"build.zig", "build.zig.zon", "test/zig-build-check.sh",
-                   "test/localize-check.sh", "test/build_test.c"} | LIB_PAIR_FILES
+                   "test/localize-check.sh", "test/build_test.c",
+                   "tools/public-constants.py"} | LIB_PAIR_FILES
 
 
 def select_zig(out, changed, legs):

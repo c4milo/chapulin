@@ -1,0 +1,13 @@
+invariant: INV-36
+file: srv_cfg.h
+catches: test/zig-build-check.sh
+reason: srv_cfg.h documents the ECDSA identity's private key by
+  P256_PRIV_LEN, which only p256_sign.h defines and no public header
+  includes, so a consumer reads a length it cannot name. colibri met
+  SRV_TICKET_KEY_LEN that way at 8a813e2. tools/public-constants.py finds
+  the name in the header's comment and objects.
+
+--- old
+// p256_sign reads, and pub at the 64-byte uncompressed point X||Y that
+--- new
+// p256_sign.h calls P256_PRIV_LEN, and pub at the 64-byte uncompressed point X||Y that

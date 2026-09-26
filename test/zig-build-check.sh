@@ -29,7 +29,11 @@
 # colibri does. For each configuration the script builds matches.zig,
 # which imports the module "chapulin" and links the object, and runs it.
 # The module must declare every name the object exports, and the build
-# record must equal what the module's translated types compute.
+# record must equal what the module's translated types compute. Before
+# that, tools/public-constants.py lists the lengths and caps the public
+# headers' comments name in regions the object compiles, and fails when
+# one is not defined for the consumer; matches.zig then requires the
+# module to declare and evaluate each one.
 #
 # Zig keys its cache on the paths of a compile as written. The consumer
 # names the package's directory with no "..", so the dependency compiles
@@ -248,13 +252,20 @@ check() {
         fail "$name: the Zig object's build record disagrees with the headers compiled under make's defines"
     echo "lint-zig-build: $name: the same sources, defines, $(exports "$zig_obj" | wc -l | tr -d ' ') exports and build record as make's object"
 
+    # The lengths and caps the public headers name, each of which the
+    # consumer must be able to name too.
+    python3 tools/public-constants.py "$cc" "$out/$name/lib-headers.txt" "$out/$name/lib-def.txt" \
+        > "$out/$name/constants.txt" ||
+        fail "$name: a public header names a constant this object's consumer cannot see"
+
     local symbol declared=()
     for symbol in $(exports "$zig_obj"); do declared+=("-Dexport=$symbol"); done
+    while read -r symbol; do declared+=("-Dconstant=$symbol"); done < "$out/$name/constants.txt"
     zig_row "$2" "$3" > "$out/$name/zig-row.txt"
     consume "$name" "$out/$name" "-Dobject=$(cat "$out/$name/zig-row.txt")" "${declared[@]}"
     "$out/$name/bin/matches" ||
         fail "$name: the Zig object's build record disagrees with the types of the package's module"
-    echo "lint-zig-build: $name: the package's module declares the object's exports and has the types its build record describes"
+    echo "lint-zig-build: $name: the package's module declares the object's exports and the $(wc -l < "$out/$name/constants.txt" | tr -d ' ') lengths its headers name, and has the types its build record describes"
 }
 
 # Compiles test/lib_pair_half.c under the defines and flags of one

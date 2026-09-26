@@ -4,9 +4,10 @@
 //! from one row of the script's configurations, and each program imports
 //! that dependency's module "chapulin" and links its object "chapulin.o".
 //!
-//! - `zig build -Dobject=ROW -Dexport=NAME...` installs bin/matches,
-//!   matches.zig built against one object, which requires the module to
-//!   declare each NAME.
+//! - `zig build -Dobject=ROW -Dexport=NAME... -Dconstant=NAME...`
+//!   installs bin/matches, matches.zig built against one object, which
+//!   requires the module to declare each export and to declare and
+//!   evaluate each constant.
 //! - `zig build -Dh2=ROW -Dquic=ROW` installs bin/pair, pair.zig built
 //!   against colibri's tcp-nonblocking object and its QUIC object in one
 //!   image.
@@ -52,6 +53,7 @@ pub fn build(b: *std.Build) void {
     if (object) |row| {
         const exports = b.addOptions();
         exports.addOption([]const []const u8, "names", b.option([]const []const u8, "export", "A name the object exports") orelse &.{});
+        exports.addOption([]const []const u8, "constants", b.option([]const []const u8, "constant", "A length or cap a public header names") orelse &.{});
         const matches = program(b, "matches", target, optimize, &.{
             .{ .name = "chapulin", .dependency = b.dependency("chapulin", options(target, row)) },
         });

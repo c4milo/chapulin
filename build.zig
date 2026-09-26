@@ -279,11 +279,13 @@ pub fn build(b: *std.Build) void {
     _ = b.addModule("chapulin", .{ .root_source_file = translate.getOutput(), .link_libc = true });
 
     // What make lint-zig-build compares with make print-lib-srcs and make
-    // print-lib-def, one name per line.
+    // print-lib-def, one name per line, and the headers the module is
+    // translated from, which tools/public-constants.py reads.
     const lists = b.addWriteFiles();
-    const lists_step = b.step("lib-lists", "Install lib-srcs.txt and lib-def.txt, the object's sources and defines");
+    const lists_step = b.step("lib-lists", "Install lib-srcs.txt, lib-def.txt and lib-headers.txt, the object's sources, defines and public headers");
     lists_step.dependOn(&b.addInstallFile(lists.add("lib-srcs.txt", lines(b, plan.srcs)), "lib-srcs.txt").step);
     lists_step.dependOn(&b.addInstallFile(lists.add("lib-def.txt", lines(b, plan.defs)), "lib-def.txt").step);
+    lists_step.dependOn(&b.addInstallFile(lists.add("lib-headers.txt", lines(b, plan.headers)), "lib-headers.txt").step);
 }
 
 /// Every $(error) the Makefile's axis blocks raise for a combination of
