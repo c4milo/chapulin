@@ -910,7 +910,7 @@ last `ROLE=server` stub, as the entry said it would.
   tcp-nonblocking term from `CH_BUILD_AXES`. A fifth,
   `inv35-build-record-shared-name`, gives the QUIC transport's build record
   the tcp-nonblocking transport's name, and `test/lib-pair-check.sh` catches it.
-  `bin/hpp_test` calls the C++ forwarder on the `cxx-check` legs.
+  `test/hpp_test.cpp` calls the C++ forwarder on the `cxx-check` legs.
 - **Violation.** A PR writes a field of `build.c` as a number, adds a
   define that moves a public layout without a bit in `CH_BUILD_AXES`,
   adds a public struct or bound that the record does not hold, or gives
@@ -979,10 +979,10 @@ last `ROLE=server` stub, as the entry said it would.
 
 ### INV-37 — a stamp skips a check only on inputs the check passed on
 
-- **Claim.** `make check` skips a lint or a Wycheproof leg only when
-  every input it reads is byte for byte what it was when that check last
-  passed. A skip never stands in for a run over an input the check did
-  not see.
+- **Claim.** `make check` skips a lint, a Wycheproof leg or a
+  packaged-object leg only when every input it reads is byte for byte
+  what it was when that check last passed. A skip never stands in for a
+  run over an input the check did not see.
 - **Mechanism.** `tools/stamp.py` keys a check on a SHA-256 over the
   inputs its Makefile line names: the bytes of the files git lists for a
   pathspec, the output of a command such as a tool's `--version` or a

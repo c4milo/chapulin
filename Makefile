@@ -1284,9 +1284,9 @@ PUBLIC := $(foreach s,$(PUBLIC_ROLE) $(PUBLIC_RAND) $(PUBLIC_CA) $(PUBLIC_EXPORT
 # stamp holds the compile command, so a different one rebuilds the objects
 # instead of leaving two architectures in one directory.
 #
-# It sits under the variant rather than beside PIN_STAMP because check
-# builds several variants one after another, and a single shared stamp
-# would differ at every switch and rebuild all of them each time.
+# It sits under the variant because check builds several variants, and a
+# single shared stamp would differ at every switch and rebuild all of
+# them each time.
 CC_STAMP := bin/obj/$(LIB_VARIANT)/cc-stamp
 $(CC_STAMP): FORCE
 	@mkdir -p bin/obj/$(LIB_VARIANT)
@@ -1297,15 +1297,12 @@ bin/obj/$(LIB_VARIANT)/%.o: %.c $(HDRS) $(CC_STAMP)
 	@mkdir -p bin/obj/$(LIB_VARIANT)
 	$(CC) $(LIB_CFLAGS) $(LIB_DEF) -I. -c $< -o $@
 
-# The packaged object is variant-specific but lands at one path, so
-# mtimes alone cannot tell which variant built it; the stamp rewrites
-# (and so triggers a relink) only when a build variable LIB_VARIANT names changed
-# since the last build. RAND belongs here because it changes the link
-# and the export list even when no object's contents move. The stamp
-# holds PUBLIC too, because the link decides from that list which
+# The stamp holds PUBLIC, because the link decides from that list which
 # symbols stay global, and an edit to the list changes no source: without
 # it, an object linked before a name left PUBLIC would still export it.
-
+# It sits under the variant, beside the object it guards, for the reason
+# CC_STAMP does, and because check links several variants at once: one
+# stamp for every variant was rewritten by each of them in turn.
 #
 # A rewritten stamp reads as newer than the object only a second after
 # the object was linked, because make 3.81 compares mtimes to the
@@ -1315,14 +1312,14 @@ bin/obj/$(LIB_VARIANT)/%.o: %.c $(HDRS) $(CC_STAMP)
 # restored one, and every later lib-check failed on a correct tree. So a
 # stamp whose line differs from this build's forces the link through
 # FORCE, whatever the clocks say.
-PIN_STAMP := bin/obj/pin-stamp
+PIN_STAMP := bin/obj/$(LIB_VARIANT)/pin-stamp
 PIN_STAMP_LINE := $(LIB_VARIANT) $(strip $(PUBLIC))
 PIN_STAMP_FORCE :=
 ifneq ($(shell cat $(PIN_STAMP) 2>/dev/null),$(PIN_STAMP_LINE))
 PIN_STAMP_FORCE := FORCE
 endif
 $(PIN_STAMP): FORCE
-	@mkdir -p bin/obj
+	@mkdir -p bin/obj/$(LIB_VARIANT)
 	@[ "$$(cat $@ 2>/dev/null)" = "$(PIN_STAMP_LINE)" ] || echo "$(PIN_STAMP_LINE)" > $@
 .PHONY: FORCE
 FORCE:
@@ -1401,21 +1398,27 @@ cxx-check: $(LIB_OBJ) chapulin.hpp test/hpp_test.cpp bin/srv_flight_test
 	@command -v $(CXX) >/dev/null || { \
 	  [ -n "$$CI" ] && { echo "$(CXX): missing on CI; the gate must not skip"; exit 1; }; \
 	  echo "SKIP cxx-check: no C++ compiler"; exit 0; }
-	$(CXX) $(CXXFLAGS) $(LIB_DEF) -D_DEFAULT_SOURCE -I. -c test/hpp_test.cpp -o bin/hpp_test.o
-	$(CXX) -o bin/hpp_test bin/hpp_test.o $(LIB_OBJ)
-	./bin/hpp_test
+	$(CXX) $(CXXFLAGS) $(LIB_DEF) -D_DEFAULT_SOURCE -I. -c test/hpp_test.cpp -o bin/obj/$(LIB_VARIANT)/hpp_test.o
+	$(CXX) -o bin/obj/$(LIB_VARIANT)/hpp_test bin/obj/$(LIB_VARIANT)/hpp_test.o $(LIB_OBJ)
+	./bin/obj/$(LIB_VARIANT)/hpp_test
 
 # nm names a defined symbol by the section it sits in, and the letters
 # differ by platform: T for code, D and B for data, S for any other
 # section on Mach-O, where the build record's const data sits in __TEXT,__const,
 # and R for read-only data on ELF, where it sits in .rodata.
+#
+# check runs lib-check for several variants at once, so every file it
+# writes sits under the variant, and the copy to bin/chapulin.o lands by
+# rename: that path holds whole the object of whichever variant finished
+# last.
+LIB_CHECK_DIR := bin/obj/$(LIB_VARIANT)
 lib-check: $(LIB_OBJ)
-	@cp $(LIB_OBJ) bin/chapulin.o
-	@nm -g $(LIB_OBJ) | awk '$$2 ~ /^[TDSBR]$$/ {print $$3}' | sed 's/^_//' | sort > bin/exported.txt
-	@printf '%s\n' $(PUBLIC) | sort > bin/expected.txt
-	@diff -u bin/expected.txt bin/exported.txt || { \
+	@cp $(LIB_OBJ) bin/chapulin.o.$$$$ && mv -f bin/chapulin.o.$$$$ bin/chapulin.o
+	@nm -g $(LIB_OBJ) | awk '$$2 ~ /^[TDSBR]$$/ {print $$3}' | sed 's/^_//' | sort > $(LIB_CHECK_DIR)/exported.txt
+	@printf '%s\n' $(PUBLIC) | sort > $(LIB_CHECK_DIR)/expected.txt
+	@diff -u $(LIB_CHECK_DIR)/expected.txt $(LIB_CHECK_DIR)/exported.txt || { \
 	  echo "lib-check: exported symbols differ from the public API"; exit 1; }
-	@echo "lib-check: $$(wc -l < bin/exported.txt | tr -d ' ') exported symbols, all public API"
+	@echo "lib-check: $$(wc -l < $(LIB_CHECK_DIR)/exported.txt | tr -d ' ') exported symbols, all public API"
 # https://github.com/c4milo/chapulin/issues/41 calls the undefined import
 # chapulin's strongest randomness property: an image that never wired a
 # generator does not link. RAND=drbg trades it away deliberately, so assert
@@ -2274,9 +2277,10 @@ bin/diff: test/diff_test.c $(SRCS) sha3.c sha512.c sha512_compress.c p384.c p384
 	$(CC) $(CFLAGS) $(RSA_WIDE_DEF) -DCH_HASH_SHA384 -I. -o $@ test/diff_test.c $(SRCS) sha3.c sha512.c sha512_compress.c p384.c p384_field.c rsa_pkcs1.c webpki_sigalg.c webpki_cert.c mlkem.c mlkem_poly.c
 
 # Build and run one test binary: make run-unit, make run-webpki_time_test.
-# check runs its roster from one recipe, which is the right shape for a
-# full run and the wrong one for an inner loop that wants a single
-# binary. tools/impact.py emits this form for every binary it selects.
+# check runs every binary on its roster through a check-run- target of
+# its own, which holds the output until the run ends; this form prints as
+# the binary runs, which suits an inner loop that wants a single binary.
+# tools/impact.py emits this form for every binary it selects.
 run-%: bin/%
 	./bin/$*
 
@@ -2284,236 +2288,287 @@ run-%: bin/%
 # check is the inner loop and holds a one-minute budget, so it runs what
 # answers "did I break the build or a contract": the linters, every unit
 # and strict-parser binary, the packaged-object export check, and the
-# Wycheproof vectors. Measured at about 47 s.
+# Wycheproof vectors.
+#
+# Every part of it is a prerequisite: the linters, each packaged-object
+# leg, each test binary's run, the Wycheproof vectors and the proof scan.
+# So `make -j check` runs them side by side, and check's own recipe runs
+# only once every part has passed. A leg or a run holds its output in
+# bin/check/<target>.log and prints it whole when it ends, so two of them
+# never interleave their lines, and a failure ends with a line that names
+# its target. The linters skip what passed before on the same inputs
+# (tools/stamp.py), so on an unchanged tree most of the time goes to the
+# legs and the runs.
 #
 # check-slow holds everything whose cost is minutes: the proofs, e2e
 # against a real server, the spec differential, the sequence enumerations,
 # and the invariant violation builds. The nightly runs it. Splitting on
 # duration rather than on importance is deliberate -- nothing here is
 # optional, and a change is not finished until check-slow passes too.
-check: bin/unit bin/unit_ca bin/unit_pq bin/tlsclient bin/tlsclient_ecdsa bin/tlsclient_ca bin/tlsclient_ca_ecdsa bin/tlsclient_webpki $(if $(AES_HW_PROBE),bin/tlsclient_webpki_aes) $(X25519_WIDE_BINS) bin/tlsclient_pq bin/drbg_test bin/softmul_test bin/rsa_test bin/sha3_test bin/sha512_test bin/hkdf384_test bin/p384_test bin/rsa_pkcs1_test bin/webpki_time_test bin/webpki_name_test bin/webpki_spki_test bin/webpki_sigalg_test bin/webpki_cert_test bin/webpki_chain_test bin/webpki_auth_test bin/webpki_encrypted_exts_test bin/mlkem_test bin/handshake_strict_test bin/handshake_strict_pq bin/handshake_strict_webpki bin/webpki_session_test bin/webpki_resume_test bin/webpki_resume_tcp_nonblocking bin/x509strict bin/x509strict_ecdsa bin/quic_driver_test bin/quic_test bin/tlsclient_tcp_nonblocking $(AES_HW_BINS) $(AES_EXTERN_BINS) lint rand-check bin/srv_auth_test bin/srv_test bin/srv_quic_test bin/srv_quic_both_test bin/srv_tcp_nonblocking_test bin/tcp_nonblocking_loop_test bin/tcp_nonblocking_loop_pq bin/quic_loop_test bin/quic_loop_webpki bin/webpki_loop_tcp_nonblocking bin/tlsserver bin/exporter_test bin/rsa_sign_test bin/p256_field_test bin/p256_ecdh_test bin/p256_sign_test
-	# The packaged object is built once per entropy pattern, because
-	# lib-check reads a different export list and a different import
-	# list in each. Only the object is built twice: the examples and
-	# hpp_test define ch_rand_bytes, so they are extern-pattern programs
-	# and build in the extern pass only. The examples compile under the
-	# object's defines, so against the drbg object they stop at cfg.h,
-	# which rejects two entropy declarations, instead of linking into a
-	# binary whose first draw aborts on drbg.c's CH_ASSERT(g_seeded).
-	# Pass order does not matter to the fixed paths e2e runs: lib-check
-	# and the example targets copy the variant they built into place on
-	# every invocation.
-	$(MAKE) lib-check RAND=drbg
-	$(MAKE) lib-check cxx-check RAND=extern
-	# The examples are pinned to TRUST=raw-rsa and TRANSPORT=tcp-blocking, whatever
-	# this check was given. psk_client and pinned_client are raw-mode TLS
-	# programs: they call ch_connect, ch_write and ch_read, which a
-	# TRANSPORT=quic-nonblocking object does not export, and each drives a socket
-	# through the I/O callbacks that object has no use for. The fixed
-	# paths bin/example_psk and bin/example_pinned are what test/e2e.sh
-	# runs: `make check TRUST=webpki` used to leave the webpki-variant
-	# copies there, and the next e2e run started a PSK server against a
-	# client built for a mode that refuses a PSK.
-	$(MAKE) examples-check RAND=extern TRUST=raw-rsa TRANSPORT=tcp-blocking
-	# The CA arm packages the provisioning reader and its fifth export;
-	# without this leg neither the export list nor the C++ forwarder is
-	# checked by anything. Both pinned algorithms run, because the
-	# forwarder reads a certificate and the verifier that reads it is
-	# what the algorithm half names: with only the rsa leg,
-	# test/hpp_test.cpp asserted an RSA modulus that a P-256 verifier
-	# refuses, and no build here noticed.
-	$(MAKE) lib-check cxx-check RAND=extern TRUST=ca-rsa
-	$(MAKE) lib-check cxx-check RAND=extern TRUST=ca-ecdsa
-	# The webpki arm exports the four calls and no provisioning call, and
-	# its C++ forwarders are the anchors, hostname and clock setters.
-	$(MAKE) lib-check cxx-check RAND=extern TRUST=webpki
-	# The same mode over the tcp-nonblocking transport, which is what a public-PKI
-	# host client on an event loop builds. It is the leg that checks the
-	# tcp-nonblocking export list on the client side at all, and the one that
-	# catches an unguarded ch_connect: this transport compiles
-	# ch_record_init and no ch_connect, so a trust mode whose ch_connect
-	# is not guarded imports the ch_handshake nothing compiled
-	# (https://github.com/c4milo/chapulin/issues/171). It took 2.4 s cold.
-	$(MAKE) lib-check RAND=extern TRUST=webpki TRANSPORT=tcp-nonblocking
-	# The same object with the native multiply, the build cocuyo links
-	# when its builder vouches for the part (WIDEMUL above). The export
-	# list must not move; only the arithmetic inside changes.
-	$(MAKE) lib-check RAND=extern TRUST=webpki TRANSPORT=tcp-nonblocking WIDEMUL=native
-	# The QUIC arm exports the sixteen ch_quic_ calls and none of the four
-	# tcp-blocking ones, so it is the leg that holds PUBLIC_TRANSPORT to a
-	# replacement rather than an addition, and the one that compiles
-	# chapulin.hpp's Quic class against the object it forwards to.
-	$(MAKE) lib-check cxx-check RAND=extern TRANSPORT=quic-nonblocking EXPORTER=off
-	# The object colibri links for its own QUIC checks: the webpki chain
-	# walk under both roles and the key log. No test here drives a
-	# TRUST=webpki QUIC client, so this leg is what holds the pair to
-	# compiling: 756ad91 broke it and nothing here saw it.
-	$(MAKE) lib-check RAND=extern TRUST=webpki TRANSPORT=quic-nonblocking ROLE=both KEYLOG=on EXPORTER=off
-	# The server arm exports ch_srv_accept and ch_srv_check beside
-	# ch_read, ch_write and ch_close, and no ch_connect, so it is the leg
-	# that holds PUBLIC_ROLE to a replacement rather than an addition. It
-	# is lib-check alone: chapulin.hpp has no Server type yet, so
-	# cxx-check joins this line on the commit that adds one
-	# (docs/server.md). It is also the only leg that packages the two
-	# signers, so it is where a link error in them shows.
-	# Names TRUST as well as ROLE: the server arm admits one value, and a
-	# recursion inherits whatever the outer make was given, so without it
-	# `make check TRUST=raw-ecdsa` dies in this row rather than in a build
-	# anyone asked for.
-	$(MAKE) lib-check RAND=extern ROLE=server TRUST=none
-	# The server's tcp-nonblocking transport: srv_tcp_nonblocking.c in place of
-	# srv_handshake.c, tcp_nonblocking.c and tcp_nonblocking_frame.c
-	# under it, and nine calls rather than five. lint-trust-separation
-	# reads that source list and this leg links it. A variant that keeps
-	# a caller and drops the module under it builds and passes the
-	# export list, which is the failure this target's own comment
-	# records for ROLE=server. It took 2.7 s cold.
-	$(MAKE) lib-check RAND=extern ROLE=server TRUST=none TRANSPORT=tcp-nonblocking
-	# The hybrid device client, with the P-256 pin: the one leg that links
-	# ML-KEM into a raw-mode object and the one that packages
-	# TRUST=raw-ecdsa. KEX=pq sets its CH_TX_STAGE and CH_MIN_RXBUF, and
-	# lib-check reads both from its build record.
-	$(MAKE) lib-check RAND=extern TRUST=raw-ecdsa KEX=pq
-	# The exporter axis: the one leg that verifies PUBLIC_EXPORT against
-	# a packaged object, since bin/exporter_test links $(SRCS) directly
-	# and never reads LIB_SRCS or PUBLIC. It is lib-check alone until
-	# chapulin.hpp forwards ch_export; cxx-check joins it on that commit.
-	$(MAKE) lib-check RAND=extern EXPORTER=on
-	# The key log axis, on the build colibri's interop endpoint links: a
-	# QUIC server. It proves the object still exports its nineteen calls
-	# and imports ch_keylog as a hook. EXPORTER=off is named because that
-	# axis refuses TRANSPORT=quic-nonblocking and a recursion inherits the outer value.
-	$(MAKE) lib-check RAND=extern ROLE=server TRUST=none TRANSPORT=quic-nonblocking EXPORTER=off KEYLOG=on
-	# The AES suite, on the server that selects it. ct.h refuses the
-	# define without the build's own CH_NATIVE_AES, which the Makefile
-	# never writes into a library build, so this leg states it the way the
-	# suite's test binaries do. It links only where AES_HW_PROBE found the
-	# instructions.
-	$(if $(AES_HW_PROBE),$(MAKE) lib-check RAND=extern ROLE=server TRUST=none SUITE=aesgcm AES=hw \
-	  CFLAGS='$(CFLAGS) $(AES_HW_CFLAGS) -DCH_NATIVE_AES',@echo "SKIP lib-check SUITE=aesgcm: $(CC) has no AES instructions")
-	# The same server on AES=extern, the object a part with an AES
-	# peripheral links. It states CH_AES_EXTERN_CONSTANT_TIME the way the
-	# leg above states CH_NATIVE_AES, and it needs no AES instruction, so
-	# it runs on every host. The object imports ch_aes_block from the
-	# image, and lib-check's import rule passes it because no source here
-	# defines it.
-	$(MAKE) lib-check RAND=extern ROLE=server TRUST=none SUITE=aesgcm AES=extern \
-	  CFLAGS='$(CFLAGS) -DCH_AES_EXTERN_CONSTANT_TIME'
-	# The wide X25519 field, packaged. ct.h refuses it without the build's
-	# own CH_NATIVE_MUL128, which the Makefile never writes into a library
-	# build, so this leg states it the way the AES suite's leg states
-	# CH_NATIVE_AES, and lint-stack holds the field's frames to the device
-	# budget. Both run only where the compiler has unsigned __int128.
-	$(if $(X25519_WIDE_PROBE),$(MAKE) lib-check lint-stack RAND=extern X25519=wide \
-	  CFLAGS='$(CFLAGS) -DCH_NATIVE_MUL128',@echo "SKIP lib-check X25519=wide: $(CC) has no unsigned __int128")
-	# Two objects of different transports in one image (docs/decisions.md
-	# 61): four pairs that must link and run, and the two the decision
-	# refuses, whose link must fail on the names both objects export. It
-	# reuses the objects the legs above built and builds two more. It took
-	# 5.2 s with every object built and 8 s with those two to build.
-	CC='$(CC)' ./test/lib-pair-check.sh
-	# lint above holds lint-stack at the budget of the build check was
-	# given, 2,560 B for a plain `make check`, the target `make ci` runs.
-	# This leg compiles the TRUST=webpki object's sources under their own
-	# defines against that build's 4,096 B budget (INV-19), which nothing
-	# else in check measures. It took 2.0 to 3.1 s in three timed runs.
-	$(MAKE) lint-stack TRUST=webpki
-	# The EXPORTER axis widens hkdf's info buffer by 20 bytes and adds
-	# ks_exporter's frame; this holds both to the default budget.
-	$(MAKE) lint-stack EXPORTER=on
-	# The QUIC arm compiles the QUIC_SRCS, which no other leg compiles
-	# at all, against the 2,560 B device budget (INV-19).
-	$(MAKE) lint-stack TRANSPORT=quic-nonblocking EXPORTER=off
-	# The server object carries ML-KEM in every build (docs/decisions.md
-	# 54). This leg holds ML-KEM's sources to their 6,656 B ceiling and
-	# every server source, srv_kex.c and the signers included, to the
-	# 2,560 B device budget, so a hybrid-sized buffer on a server frame
-	# fails here (INV-19).
-	$(MAKE) lint-stack ROLE=server TRUST=none
-	./bin/unit
-	./bin/unit_ca
-	./bin/unit_pq
-	./bin/drbg_test
-	./bin/softmul_test
-	./bin/rsa_test
-	./bin/rsa_sign_test
-	./bin/sha3_test
-	./bin/sha512_test
-	./bin/hkdf384_test
-	./bin/p384_test
-	./bin/p256_field_test
-	./bin/p256_ecdh_test
-	./bin/p256_sign_test
-	./bin/rsa_pkcs1_test
-	./bin/webpki_time_test
-	./bin/webpki_name_test
-	./bin/webpki_spki_test
-	./bin/webpki_sigalg_test
-	./bin/webpki_cert_test
-	./bin/webpki_chain_test
-	./bin/webpki_auth_test
-	./bin/webpki_encrypted_exts_test
-	./bin/mlkem_test
-	./bin/quic_driver_test
-	./bin/quic_test
-	# The AES=hw leg: the published vectors on the instructions, and each
-	# instruction path against its software twin over the same inputs --
-	# the block cipher in bin/aes_equiv_test, GHASH in bin/ghash_equiv_test.
-	# CBMC cannot read an intrinsic, so these are what hold those paths
-	# (docs/quic.md, "What the AES axis proves"). A compiler without the
-	# AES instructions builds none of them, which AES_HW_BINS reports above.
-	@set -e; if [ -n "$(AES_HW_BINS)" ]; then \
-	  ./bin/quic_test_hw; ./bin/aes_equiv_test; ./bin/ghash_equiv_test; ./bin/aes_suite_test; \
-	  ./bin/srv_flight_test_aes; \
-	  ./bin/webpki_session_aes; \
-	  ./bin/webpki_loop_aes; \
-	  ./bin/quic_loop_aes; \
-	  ./bin/quic_suite_test; \
-	else \
-	  echo "SKIP AES=hw: $(CC) has no AES instructions and no flag turns them on"; \
-	fi
-	# The AES=extern leg: the same published vectors, the record layer's
-	# RFC 8448 record, the QUIC suite computation and both loops, on
-	# aes_extern.c over test/aes_extern_hook.c. It needs no instruction,
-	# so it never skips.
-	./bin/quic_test_extern
-	./bin/aes_suite_test_extern
-	./bin/quic_suite_test_extern
-	./bin/webpki_loop_aes_extern
-	./bin/quic_loop_aes_extern
-	# The X25519=wide leg: the unit suite with x25519() answering from
-	# x25519_wide.c, the field against the 16-limb one over the same inputs,
-	# and ct.h's two refusals of a wide build that lacks what it needs. A
-	# compiler without unsigned __int128 builds neither binary.
-	@set -e; if [ -n "$(X25519_WIDE_BINS)" ]; then \
-	  ./bin/unit_x25519_wide; ./bin/x25519_equiv_test; \
-	else \
-	  echo "SKIP X25519=wide: $(CC) has no unsigned __int128"; \
-	fi
-	./test/x25519-builds.sh
-	./bin/srv_auth_test
-	./bin/srv_test
-	./bin/srv_quic_test
-	./bin/srv_quic_both_test
-	./bin/srv_tcp_nonblocking_test
-	./bin/tcp_nonblocking_loop_test
-	./bin/tcp_nonblocking_loop_pq
-	./bin/quic_loop_test
-	./bin/quic_loop_webpki
-	./bin/webpki_loop_tcp_nonblocking
-	./bin/exporter_test
-	./bin/srv_flight_test
-	./bin/handshake_strict_test
-	./bin/handshake_strict_pq
-	./bin/handshake_strict_webpki
-	./bin/webpki_session_test
-	./bin/webpki_resume_test
-	./bin/webpki_resume_tcp_nonblocking
-	./bin/x509strict
-	./bin/x509strict_ecdsa
-	$(MAKE) wycheproof
-	$(MAKE) proof-coverage
-	$(MAKE) proof-reach-smoke
+CHECK_BUILDS := bin/tlsclient bin/tlsclient_ecdsa bin/tlsclient_ca bin/tlsclient_ca_ecdsa bin/tlsclient_webpki \
+                $(if $(AES_HW_PROBE),bin/tlsclient_webpki_aes) bin/tlsclient_pq bin/tlsclient_tcp_nonblocking \
+                bin/tlsserver
+# The binaries check runs. The AES=hw ones are named only where the
+# probe found the instructions, and the X25519=wide ones only where the
+# compiler has unsigned __int128; check-skips says which were left out.
+CHECK_RUN_BINS := unit unit_ca unit_pq drbg_test softmul_test rsa_test rsa_sign_test sha3_test sha512_test \
+                  hkdf384_test p384_test p256_field_test p256_ecdh_test p256_sign_test rsa_pkcs1_test \
+                  webpki_time_test webpki_name_test webpki_spki_test webpki_sigalg_test webpki_cert_test \
+                  webpki_chain_test webpki_auth_test webpki_encrypted_exts_test mlkem_test quic_driver_test \
+                  quic_test $(patsubst bin/%,%,$(AES_HW_BINS) $(AES_EXTERN_BINS) $(X25519_WIDE_BINS)) \
+                  srv_auth_test srv_test srv_quic_test srv_quic_both_test srv_tcp_nonblocking_test \
+                  tcp_nonblocking_loop_test tcp_nonblocking_loop_pq quic_loop_test quic_loop_webpki \
+                  webpki_loop_tcp_nonblocking exporter_test srv_flight_test handshake_strict_test \
+                  handshake_strict_pq handshake_strict_webpki webpki_session_test webpki_resume_test \
+                  webpki_resume_tcp_nonblocking x509strict x509strict_ecdsa
+CHECK_LEGS := check-lib-drbg check-lib-extern check-examples check-lib-ca-rsa check-lib-ca-ecdsa \
+              check-lib-webpki check-lib-webpki-tcp-nonblocking check-lib-webpki-widemul check-lib-quic \
+              check-lib-quic-webpki-both check-lib-server check-lib-server-tcp-nonblocking \
+              check-lib-raw-ecdsa-pq check-lib-exporter check-lib-server-quic-keylog \
+              check-lib-server-aes-hw check-lib-server-aes-extern check-lib-x25519-wide check-lib-pair \
+              check-stack-webpki check-stack-exporter check-stack-quic check-stack-server
+.PHONY: $(CHECK_LEGS) $(addprefix check-run-,$(CHECK_RUN_BINS)) check-x25519-builds check-wycheproof \
+        check-skips
+check: lint rand-check $(CHECK_BUILDS) $(CHECK_LEGS) $(addprefix check-run-,$(CHECK_RUN_BINS)) \
+       check-x25519-builds check-wycheproof check-skips proof-coverage proof-reach-smoke
+	@echo "check: every lint, leg and test run passed"
+
+# What a leg or a run ends with: its held output, and on a failure one
+# line that names the target and its exit status.
+CHECK_REPORT = rc=$$?; cat bin/check/$@.log; \
+  [ $$rc -eq 0 ] || echo "check: $@ failed with exit $$rc; bin/check/$@.log holds its output"; exit $$rc
+
+# One target per test binary, written out by $(eval) so that every run
+# stays a line of the form ./bin/<name> in make's database, which is
+# where tools/impact.py reads which binaries check runs.
+define CHECK_RUN
+check-run-$(1): bin/$(1)
+	@mkdir -p bin/check; ./bin/$(1) > bin/check/$$@.log 2>&1; $$(CHECK_REPORT)
+endef
+$(foreach b,$(CHECK_RUN_BINS),$(eval $(call CHECK_RUN,$(b))))
+
+# The AES=hw runs: the published vectors on the instructions, and each
+# instruction path against its software twin over the same inputs -- the
+# block cipher in bin/aes_equiv_test, GHASH in bin/ghash_equiv_test.
+# CBMC cannot read an intrinsic, so these are what hold those paths
+# (docs/quic.md, "What the AES axis proves"). The AES=extern runs are the
+# same published vectors, the record layer's RFC 8448 record, the QUIC
+# suite computation and both loops, on aes_extern.c over
+# test/aes_extern_hook.c; they need no instruction, so they never skip.
+# The X25519=wide runs are the unit suite with x25519() answering from
+# x25519_wide.c and the field against the 16-limb one over the same
+# inputs. A compiler without the AES instructions builds none of the
+# first set, and one without unsigned __int128 neither of the last.
+check-skips:
+	@[ -n "$(AES_HW_BINS)" ] || echo "SKIP AES=hw: $(CC) has no AES instructions and no flag turns them on"
+	@[ -n "$(X25519_WIDE_BINS)" ] || echo "SKIP X25519=wide: $(CC) has no unsigned __int128"
+
+# ct.h's two refusals of a wide build that lacks what it needs.
+check-x25519-builds:
+	@mkdir -p bin/check; ./test/x25519-builds.sh > bin/check/$@.log 2>&1; $(CHECK_REPORT)
+
+check-wycheproof:
+	@mkdir -p bin/check; $(MAKE) --no-print-directory wycheproof > bin/check/$@.log 2>&1; $(CHECK_REPORT)
+
+# The packaged-object legs. Each runs lib-check, and some cxx-check, in a
+# recursive make for one variant. A variant's objects, its link and every
+# file lib-check writes sit under bin/obj/<variant>/, so legs of
+# different variants run at once. Two things are shared, and the
+# prerequisites below order them: check-lib-extern and check-examples
+# build the same variant, which the default configuration of
+# test/zig-build-check.sh builds too, so the two legs wait for
+# lint-zig-build and the second waits for the first; and
+# test/lib-pair-check.sh builds objects of several legs' variants, so it
+# waits for every leg. cxx-check needs bin/srv_flight_test, which the
+# legs that run it wait for rather than each building it at once.
+#
+# A lib-check leg is skipped when it passed before on the same inputs:
+# every file git does not ignore, the C and C++ compilers' versions, the
+# system's release, which names the linker and nm, and the make
+# variables (tools/stamp.py). The examples leg is never skipped, because
+# it copies its variant to the fixed paths test/e2e.sh runs, and a skip
+# would leave there whatever an earlier build copied.
+CHECK_LEG_STAMP = python3 tools/stamp.py $@ --content . --output '$(CC) --version' \
+  --output '$(CXX) --version' --output 'ld -v' --output 'uname -srm' --
+#
+# The packaged object is built once per entropy pattern, because
+# lib-check reads a different export list and a different import list in
+# each. Only the object is built twice: the examples and hpp_test define
+# ch_rand_bytes, so they are extern-pattern programs and build in the
+# extern leg only. The examples compile under the object's defines, so
+# against the drbg object they stop at cfg.h, which rejects two entropy
+# declarations, instead of linking into a binary whose first draw aborts
+# on drbg.c's CH_ASSERT(g_seeded). Leg order does not matter to the fixed
+# paths e2e runs: the example targets copy the variant they built into
+# place on every invocation.
+check-lib-drbg:
+	@mkdir -p bin/check; $(CHECK_LEG_STAMP) $(MAKE) lib-check RAND=drbg > bin/check/$@.log 2>&1; $(CHECK_REPORT)
+check-lib-extern: lint-zig-build bin/srv_flight_test
+	@mkdir -p bin/check; $(CHECK_LEG_STAMP) $(MAKE) lib-check cxx-check RAND=extern > bin/check/$@.log 2>&1; $(CHECK_REPORT)
+# The examples are pinned to TRUST=raw-rsa and TRANSPORT=tcp-blocking, whatever
+# this check was given. psk_client and pinned_client are raw-mode TLS
+# programs: they call ch_connect, ch_write and ch_read, which a
+# TRANSPORT=quic-nonblocking object does not export, and each drives a socket
+# through the I/O callbacks that object has no use for. The fixed
+# paths bin/example_psk and bin/example_pinned are what test/e2e.sh
+# runs: `make check TRUST=webpki` used to leave the webpki-variant
+# copies there, and the next e2e run started a PSK server against a
+# client built for a mode that refuses a PSK.
+check-examples: lint-zig-build check-lib-extern
+	@mkdir -p bin/check; $(MAKE) examples-check RAND=extern TRUST=raw-rsa TRANSPORT=tcp-blocking \
+	  > bin/check/$@.log 2>&1; $(CHECK_REPORT)
+# The CA arm packages the provisioning reader and its fifth export;
+# without this leg neither the export list nor the C++ forwarder is
+# checked by anything. Both pinned algorithms run, because the
+# forwarder reads a certificate and the verifier that reads it is
+# what the algorithm half names: with only the rsa leg,
+# test/hpp_test.cpp asserted an RSA modulus that a P-256 verifier
+# refuses, and no build here noticed.
+check-lib-ca-rsa: bin/srv_flight_test
+	@mkdir -p bin/check; $(CHECK_LEG_STAMP) $(MAKE) lib-check cxx-check RAND=extern TRUST=ca-rsa > bin/check/$@.log 2>&1; $(CHECK_REPORT)
+check-lib-ca-ecdsa: bin/srv_flight_test
+	@mkdir -p bin/check; $(CHECK_LEG_STAMP) $(MAKE) lib-check cxx-check RAND=extern TRUST=ca-ecdsa > bin/check/$@.log 2>&1; $(CHECK_REPORT)
+# The webpki arm exports the four calls and no provisioning call, and
+# its C++ forwarders are the anchors, hostname and clock setters.
+check-lib-webpki: bin/srv_flight_test
+	@mkdir -p bin/check; $(CHECK_LEG_STAMP) $(MAKE) lib-check cxx-check RAND=extern TRUST=webpki > bin/check/$@.log 2>&1; $(CHECK_REPORT)
+# The same mode over the tcp-nonblocking transport, which is what a public-PKI
+# host client on an event loop builds. It is the leg that checks the
+# tcp-nonblocking export list on the client side at all, and the one that
+# catches an unguarded ch_connect: this transport compiles
+# ch_record_init and no ch_connect, so a trust mode whose ch_connect
+# is not guarded imports the ch_handshake nothing compiled
+# (https://github.com/c4milo/chapulin/issues/171). It took 2.4 s cold.
+check-lib-webpki-tcp-nonblocking:
+	@mkdir -p bin/check; $(CHECK_LEG_STAMP) $(MAKE) lib-check RAND=extern TRUST=webpki TRANSPORT=tcp-nonblocking \
+	  > bin/check/$@.log 2>&1; $(CHECK_REPORT)
+# The same object with the native multiply, the build cocuyo links
+# when its builder vouches for the part (WIDEMUL above). The export
+# list must not move; only the arithmetic inside changes.
+check-lib-webpki-widemul:
+	@mkdir -p bin/check; $(CHECK_LEG_STAMP) $(MAKE) lib-check RAND=extern TRUST=webpki TRANSPORT=tcp-nonblocking WIDEMUL=native \
+	  > bin/check/$@.log 2>&1; $(CHECK_REPORT)
+# The QUIC arm exports the sixteen ch_quic_ calls and none of the four
+# tcp-blocking ones, so it is the leg that holds PUBLIC_TRANSPORT to a
+# replacement rather than an addition, and the one that compiles
+# chapulin.hpp's Quic class against the object it forwards to.
+check-lib-quic: bin/srv_flight_test
+	@mkdir -p bin/check; $(CHECK_LEG_STAMP) $(MAKE) lib-check cxx-check RAND=extern TRANSPORT=quic-nonblocking EXPORTER=off \
+	  > bin/check/$@.log 2>&1; $(CHECK_REPORT)
+# The object colibri links for its own QUIC checks: the webpki chain
+# walk under both roles and the key log. No test here drives a
+# TRUST=webpki QUIC client, so this leg is what holds the pair to
+# compiling: 756ad91 broke it and nothing here saw it.
+check-lib-quic-webpki-both:
+	@mkdir -p bin/check; $(CHECK_LEG_STAMP) $(MAKE) lib-check RAND=extern TRUST=webpki TRANSPORT=quic-nonblocking ROLE=both \
+	  KEYLOG=on EXPORTER=off > bin/check/$@.log 2>&1; $(CHECK_REPORT)
+# The server arm exports ch_srv_accept and ch_srv_check beside
+# ch_read, ch_write and ch_close, and no ch_connect, so it is the leg
+# that holds PUBLIC_ROLE to a replacement rather than an addition. It
+# is lib-check alone: chapulin.hpp has no Server type yet, so
+# cxx-check joins this line on the commit that adds one
+# (docs/server.md). It is also the only leg that packages the two
+# signers, so it is where a link error in them shows.
+# Names TRUST as well as ROLE: the server arm admits one value, and a
+# recursion inherits whatever the outer make was given, so without it
+# `make check TRUST=raw-ecdsa` dies in this row rather than in a build
+# anyone asked for.
+check-lib-server:
+	@mkdir -p bin/check; $(CHECK_LEG_STAMP) $(MAKE) lib-check RAND=extern ROLE=server TRUST=none > bin/check/$@.log 2>&1; $(CHECK_REPORT)
+# The server's tcp-nonblocking transport: srv_tcp_nonblocking.c in place of
+# srv_handshake.c, tcp_nonblocking.c and tcp_nonblocking_frame.c
+# under it, and nine calls rather than five. lint-trust-separation
+# reads that source list and this leg links it. A variant that keeps
+# a caller and drops the module under it builds and passes the
+# export list, which is the failure this target's own comment
+# records for ROLE=server. It took 2.7 s cold.
+check-lib-server-tcp-nonblocking:
+	@mkdir -p bin/check; $(CHECK_LEG_STAMP) $(MAKE) lib-check RAND=extern ROLE=server TRUST=none TRANSPORT=tcp-nonblocking \
+	  > bin/check/$@.log 2>&1; $(CHECK_REPORT)
+# The hybrid device client, with the P-256 pin: the one leg that links
+# ML-KEM into a raw-mode object and the one that packages
+# TRUST=raw-ecdsa. KEX=pq sets its CH_TX_STAGE and CH_MIN_RXBUF, and
+# lib-check reads both from its build record.
+check-lib-raw-ecdsa-pq:
+	@mkdir -p bin/check; $(CHECK_LEG_STAMP) $(MAKE) lib-check RAND=extern TRUST=raw-ecdsa KEX=pq > bin/check/$@.log 2>&1; $(CHECK_REPORT)
+# The exporter axis: the one leg that verifies PUBLIC_EXPORT against
+# a packaged object, since bin/exporter_test links $(SRCS) directly
+# and never reads LIB_SRCS or PUBLIC. It is lib-check alone until
+# chapulin.hpp forwards ch_export; cxx-check joins it on that commit.
+check-lib-exporter:
+	@mkdir -p bin/check; $(CHECK_LEG_STAMP) $(MAKE) lib-check RAND=extern EXPORTER=on > bin/check/$@.log 2>&1; $(CHECK_REPORT)
+# The key log axis, on the build colibri's interop endpoint links: a
+# QUIC server. It proves the object still exports its nineteen calls
+# and imports ch_keylog as a hook. EXPORTER=off is named because that
+# axis refuses TRANSPORT=quic-nonblocking and a recursion inherits the outer value.
+check-lib-server-quic-keylog:
+	@mkdir -p bin/check; $(CHECK_LEG_STAMP) $(MAKE) lib-check RAND=extern ROLE=server TRUST=none TRANSPORT=quic-nonblocking \
+	  EXPORTER=off KEYLOG=on > bin/check/$@.log 2>&1; $(CHECK_REPORT)
+# The AES suite, on the server that selects it. ct.h refuses the
+# define without the build's own CH_NATIVE_AES, which the Makefile
+# never writes into a library build, so this leg states it the way the
+# suite's test binaries do. It links only where AES_HW_PROBE found the
+# instructions.
+check-lib-server-aes-hw:
+ifeq ($(AES_HW_PROBE),)
+	@echo "SKIP lib-check SUITE=aesgcm: $(CC) has no AES instructions"
+else
+	@mkdir -p bin/check; $(CHECK_LEG_STAMP) $(MAKE) lib-check RAND=extern ROLE=server TRUST=none SUITE=aesgcm AES=hw \
+	  CFLAGS='$(CFLAGS) $(AES_HW_CFLAGS) -DCH_NATIVE_AES' > bin/check/$@.log 2>&1; $(CHECK_REPORT)
+endif
+# The same server on AES=extern, the object a part with an AES
+# peripheral links. It states CH_AES_EXTERN_CONSTANT_TIME the way the
+# leg above states CH_NATIVE_AES, and it needs no AES instruction, so
+# it runs on every host. The object imports ch_aes_block from the
+# image, and lib-check's import rule passes it because no source here
+# defines it.
+check-lib-server-aes-extern:
+	@mkdir -p bin/check; $(CHECK_LEG_STAMP) $(MAKE) lib-check RAND=extern ROLE=server TRUST=none SUITE=aesgcm AES=extern \
+	  CFLAGS='$(CFLAGS) -DCH_AES_EXTERN_CONSTANT_TIME' > bin/check/$@.log 2>&1; $(CHECK_REPORT)
+# The wide X25519 field, packaged. ct.h refuses it without the build's
+# own CH_NATIVE_MUL128, which the Makefile never writes into a library
+# build, so this leg states it the way the AES suite's leg states
+# CH_NATIVE_AES, and lint-stack holds the field's frames to the device
+# budget. Both run only where the compiler has unsigned __int128.
+check-lib-x25519-wide:
+ifeq ($(X25519_WIDE_PROBE),)
+	@echo "SKIP lib-check X25519=wide: $(CC) has no unsigned __int128"
+else
+	@mkdir -p bin/check; $(CHECK_LEG_STAMP) $(MAKE) lib-check lint-stack RAND=extern X25519=wide \
+	  CFLAGS='$(CFLAGS) -DCH_NATIVE_MUL128' > bin/check/$@.log 2>&1; $(CHECK_REPORT)
+endif
+# Two objects of different transports in one image (docs/decisions.md
+# 61): four pairs that must link and run, and the two the decision
+# refuses, whose link must fail on the names both objects export. It
+# reuses the objects the legs above built and builds two more. It took
+# 5.2 s with every object built and 8 s with those two to build. It is
+# skipped when it passed before on the same tree, compiler and system
+# (tools/stamp.py).
+check-lib-pair: lint-zig-build $(filter check-lib-%,$(filter-out check-lib-pair,$(CHECK_LEGS))) check-examples
+	@mkdir -p bin/check; python3 tools/stamp.py lib-pair-check --content . --output '$(CC) --version' \
+	  --output 'ld -v' --output 'uname -srm' -- env CC='$(CC)' ./test/lib-pair-check.sh > bin/check/$@.log 2>&1; $(CHECK_REPORT)
+# lint above holds lint-stack at the budget of the build check was
+# given, 2,560 B for a plain `make check`, the target `make ci` runs.
+# This leg compiles the TRUST=webpki object's sources under their own
+# defines against that build's 4,096 B budget (INV-19), which nothing
+# else in check measures. It took 2.0 to 3.1 s in three timed runs.
+check-stack-webpki:
+	@mkdir -p bin/check; $(MAKE) lint-stack TRUST=webpki > bin/check/$@.log 2>&1; $(CHECK_REPORT)
+# The EXPORTER axis widens hkdf's info buffer by 20 bytes and adds
+# ks_exporter's frame; this holds both to the default budget.
+check-stack-exporter:
+	@mkdir -p bin/check; $(MAKE) lint-stack EXPORTER=on > bin/check/$@.log 2>&1; $(CHECK_REPORT)
+# The QUIC arm compiles the QUIC_SRCS, which no other leg compiles
+# at all, against the 2,560 B device budget (INV-19).
+check-stack-quic:
+	@mkdir -p bin/check; $(MAKE) lint-stack TRANSPORT=quic-nonblocking EXPORTER=off > bin/check/$@.log 2>&1; $(CHECK_REPORT)
+# The server object carries ML-KEM in every build (docs/decisions.md
+# 54). This leg holds ML-KEM's sources to their 6,656 B ceiling and
+# every server source, srv_kex.c and the signers included, to the
+# 2,560 B device budget, so a hybrid-sized buffer on a server frame
+# fails here (INV-19).
+check-stack-server:
+	@mkdir -p bin/check; $(MAKE) lint-stack ROLE=server TRUST=none > bin/check/$@.log 2>&1; $(CHECK_REPORT)
 
 # The gates a change can break, and running them. BASE names the
 # revision to compare against (default HEAD); `git diff BASE` compares
