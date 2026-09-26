@@ -9,11 +9,11 @@ the module "chapulin" is translated from, one per line. DEFINES is
 lib-def.txt from the same step: the -D flags the object compiled with.
 
 A public header documents a field or a buffer by the constant that sizes
-it: srv_cfg.h says ticket_key points at SRV_TICKET_KEY_LEN bytes. The
-consumer has to be able to name that constant. At 8a813e2
-SRV_TICKET_KEY_LEN lived in srv_ticket.h, which no public header
-includes, so colibri's QUIC server could not size its ticket key
-through the Zig module.
+it: srv_cfg.h says ticket_key points at CH_SRV_TICKET_KEY_LEN bytes. The
+consumer has to be able to name that constant. At 8a813e2 the ticket
+key's length lived in srv_ticket.h, which no public header includes,
+so colibri's QUIC server could not size its ticket key through the Zig
+module.
 
 This runs the C preprocessor over the headers under the object's
 defines, keeping comments, so only a comment in a region the object

@@ -2795,7 +2795,7 @@ entry 51 records the choice. `srv_ticket.[ch]` is the ticket format and
 every rule this section summarizes.
 
 **What the caller supplies.** `ch_cfg.srv.ticket_key`, 32 bytes of
-ChaCha20-Poly1305 key (`SRV_TICKET_KEY_LEN`), one per deployment and not the
+ChaCha20-Poly1305 key (`CH_SRV_TICKET_KEY_LEN`), one per deployment and not the
 cookie key; NULL issues no ticket and accepts none. And
 `ch_cfg.srv.now_seconds`, its clock in seconds at the start of the
 connection, from one epoch on every server that shares the key; 0 means no

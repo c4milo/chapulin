@@ -31,7 +31,7 @@
 // of that answer refused its own cookie, and with it every retried
 // ClientHello from a client that offers no ChaCha20.
 
-size_t srv_cookie_mint(const uint8_t key[SRV_COOKIE_KEY_LEN], uint16_t suite, uint16_t group,
+size_t srv_cookie_mint(const uint8_t key[CH_SRV_COOKIE_KEY_LEN], uint16_t suite, uint16_t group,
                        const uint8_t *ch1_hash, size_t hash_len, const uint8_t frozen[SHA256_LEN],
                        uint8_t *out, size_t cap) {
     if (hash_len < SHA256_LEN || hash_len > SRV_COOKIE_HASH_MAX) {
@@ -58,7 +58,7 @@ size_t srv_cookie_mint(const uint8_t key[SRV_COOKIE_KEY_LEN], uint16_t suite, ui
     // field, so nothing wipes it.
     const uint8_t *body = out;
     uint8_t mac[SHA256_LEN];
-    hmac_sha256(key, SRV_COOKIE_KEY_LEN, body, w.len, mac);
+    hmac_sha256(key, CH_SRV_COOKIE_KEY_LEN, body, w.len, mac);
     wb_bytes(&w, mac, sizeof mac);
 
     // The cap check above is what keeps the writer inside the caller's
@@ -67,7 +67,7 @@ size_t srv_cookie_mint(const uint8_t key[SRV_COOKIE_KEY_LEN], uint16_t suite, ui
     return w.err ? 0 : w.len;
 }
 
-int srv_cookie_open(const uint8_t key[SRV_COOKIE_KEY_LEN], const uint8_t *cookie, size_t n,
+int srv_cookie_open(const uint8_t key[CH_SRV_COOKIE_KEY_LEN], const uint8_t *cookie, size_t n,
                     uint16_t *suite, uint16_t *group, uint8_t *ch1_hash, size_t *hash_len,
                     uint8_t frozen[SHA256_LEN]) {
     rbuf r;
@@ -103,7 +103,7 @@ int srv_cookie_open(const uint8_t key[SRV_COOKIE_KEY_LEN], const uint8_t *cookie
     // valid MAC one byte per round trip. want_mac is the correct MAC over a
     // body the client chose, so it is wiped rather than left on the stack.
     uint8_t want_mac[SHA256_LEN];
-    hmac_sha256(key, SRV_COOKIE_KEY_LEN, cookie, n - SHA256_LEN, want_mac);
+    hmac_sha256(key, CH_SRV_COOKIE_KEY_LEN, cookie, n - SHA256_LEN, want_mac);
     uint32_t equal = ct_memeq(mac, want_mac, SHA256_LEN);
     ct_wipe(want_mac, sizeof want_mac);
     if (equal == 0) {

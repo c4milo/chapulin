@@ -68,7 +68,7 @@ int aead_open(const uint8_t key[AEAD_KEY], const uint8_t nonce[AEAD_NONCE], cons
 
 #define TICKET_BUF (SRV_TICKET_LEN + 1)
 
-static uint8_t key[SRV_TICKET_KEY_LEN];
+static uint8_t key[CH_SRV_TICKET_KEY_LEN];
 static uint8_t nonce[AEAD_NONCE];
 static uint8_t sealed[TICKET_BUF];
 static uint8_t ticket[TICKET_BUF];

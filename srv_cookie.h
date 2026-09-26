@@ -29,13 +29,13 @@
 #include "cfg.h"
 #include "sha256.h"
 
-// The cookie key: SRV_COOKIE_KEY_LEN bytes of HMAC-SHA-256 key the
+// The cookie key: CH_SRV_COOKIE_KEY_LEN bytes of HMAC-SHA-256 key the
 // caller owns and holds in ch_cfg's srv.cookie_key. srv_cfg.h defines
 // the length, because the caller sizes the key by it, and it is one
 // SHA-256 output. One key per deployment, so a second ClientHello that
 // lands on a different session, or on a different device behind a load
 // balancer, still verifies.
-_Static_assert(SRV_COOKIE_KEY_LEN == SHA256_LEN, "the cookie key is one SHA-256 output long");
+_Static_assert(CH_SRV_COOKIE_KEY_LEN == SHA256_LEN, "the cookie key is one SHA-256 output long");
 
 // The first byte of the cookie body: this format's own version number,
 // not a TLS version. It exists so a deployment that changes the format
@@ -81,7 +81,7 @@ _Static_assert(SRV_COOKIE_KEY_LEN == SHA256_LEN, "the cookie key is one SHA-256 
 // so the second ClientHello can be checked against the first without
 // storing the first.
 //
-// Requires key pointing at SRV_COOKIE_KEY_LEN readable bytes;
+// Requires key pointing at CH_SRV_COOKIE_KEY_LEN readable bytes;
 // ch1_hash pointing at hash_len readable bytes, the transcript hash of
 // the first ClientHello; hash_len equal to the selected suite's hash
 // length, from SHA256_LEN to SRV_COOKIE_HASH_MAX; frozen pointing at
@@ -94,7 +94,7 @@ _Static_assert(SRV_COOKIE_KEY_LEN == SHA256_LEN, "the cookie key is one SHA-256 
 // randomness: two retries of one ClientHello mint the same bytes, which
 // costs nothing, because the cookie authenticates a message the client
 // already sent.
-size_t srv_cookie_mint(const uint8_t key[SRV_COOKIE_KEY_LEN], uint16_t suite, uint16_t group,
+size_t srv_cookie_mint(const uint8_t key[CH_SRV_COOKIE_KEY_LEN], uint16_t suite, uint16_t group,
                        const uint8_t *ch1_hash, size_t hash_len, const uint8_t frozen[SHA256_LEN],
                        uint8_t *out, size_t cap);
 
@@ -108,7 +108,7 @@ size_t srv_cookie_mint(const uint8_t key[SRV_COOKIE_KEY_LEN], uint16_t suite, ui
 // is then computed over the body and compared with ct_memeq over all
 // SHA256_LEN bytes.
 //
-// Requires key pointing at SRV_COOKIE_KEY_LEN readable bytes; cookie
+// Requires key pointing at CH_SRV_COOKIE_KEY_LEN readable bytes; cookie
 // pointing at n readable bytes, the bytes client_hello.cookie names;
 // ch1_hash pointing at SRV_COOKIE_HASH_MAX writable bytes; suite,
 // group, hash_len and frozen pointing at writable objects. frozen takes
@@ -128,7 +128,7 @@ size_t srv_cookie_mint(const uint8_t key[SRV_COOKIE_KEY_LEN], uint16_t suite, ui
 // decrypt_error: nothing here verifies a signature, a Finished or a PSK
 // binder, which are the three failures §6.2 gives that description
 // (rfc9846.txt:3968-3970).
-int srv_cookie_open(const uint8_t key[SRV_COOKIE_KEY_LEN], const uint8_t *cookie, size_t n,
+int srv_cookie_open(const uint8_t key[CH_SRV_COOKIE_KEY_LEN], const uint8_t *cookie, size_t n,
                     uint16_t *suite, uint16_t *group, uint8_t *ch1_hash, size_t *hash_len,
                     uint8_t frozen[SHA256_LEN]);
 

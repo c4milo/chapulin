@@ -82,7 +82,7 @@ static int unhex_exact(const char *hex, uint8_t *out, size_t n) {
 static uint8_t cert_der[4096];
 static uint8_t priv[32];
 static uint8_t pub[64];
-static uint8_t ticket_key[SRV_TICKET_KEY_LEN];
+static uint8_t ticket_key[CH_SRV_TICKET_KEY_LEN];
 static uint8_t cookie_key[32];
 static uint8_t rxbuf[16384 + 256];
 

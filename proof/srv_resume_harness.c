@@ -56,9 +56,9 @@ uint64_t nondet_u64(void);
 // say that a selected ticket is one the walk opened.
 static uint16_t opened;
 
-int srv_ticket_open(const uint8_t key[SRV_TICKET_KEY_LEN], const uint8_t *ticket, size_t n,
+int srv_ticket_open(const uint8_t key[CH_SRV_TICKET_KEY_LEN], const uint8_t *ticket, size_t n,
                     srv_ticket_contents *c) {
-    __CPROVER_assert(__CPROVER_r_ok(key, SRV_TICKET_KEY_LEN), "open: key readable");
+    __CPROVER_assert(__CPROVER_r_ok(key, CH_SRV_TICKET_KEY_LEN), "open: key readable");
     __CPROVER_assert(n == SRV_TICKET_LEN, "open: only a ticket-length identity is opened");
     __CPROVER_assert(__CPROVER_r_ok(ticket, n), "open: identity readable");
     __CPROVER_assert(__CPROVER_w_ok(c, sizeof *c), "open: contents writable");
@@ -76,9 +76,9 @@ int srv_ticket_open(const uint8_t key[SRV_TICKET_KEY_LEN], const uint8_t *ticket
     return CH_OK;
 }
 
-size_t srv_ticket_seal(const uint8_t key[SRV_TICKET_KEY_LEN], const uint8_t nonce[AEAD_NONCE],
+size_t srv_ticket_seal(const uint8_t key[CH_SRV_TICKET_KEY_LEN], const uint8_t nonce[AEAD_NONCE],
                        const srv_ticket_contents *c, uint8_t *out, size_t cap) {
-    __CPROVER_assert(__CPROVER_r_ok(key, SRV_TICKET_KEY_LEN), "seal: key readable");
+    __CPROVER_assert(__CPROVER_r_ok(key, CH_SRV_TICKET_KEY_LEN), "seal: key readable");
     __CPROVER_assert(__CPROVER_r_ok(nonce, AEAD_NONCE), "seal: nonce readable");
     __CPROVER_assert(__CPROVER_r_ok(c, sizeof *c), "seal: contents readable");
     __CPROVER_assert(c->alpn_len <= CH_ALPN_NAME_MAX, "seal: the name fits its field");
@@ -176,7 +176,7 @@ static client_hello ch;
 static selection sel;
 static uint8_t identities[IDS_MAX];
 static uint8_t binders[BINDERS_MAX];
-static uint8_t ticket_key[SRV_TICKET_KEY_LEN];
+static uint8_t ticket_key[CH_SRV_TICKET_KEY_LEN];
 static uint8_t names[2][CH_ALPN_NAME_MAX];
 static ch_alpn_protocol protocols[2];
 

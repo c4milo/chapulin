@@ -60,7 +60,7 @@
 #include "hkdf.h"
 #include "sha256.h"
 
-// The ticket key: SRV_TICKET_KEY_LEN bytes of ChaCha20-Poly1305 key the
+// The ticket key: CH_SRV_TICKET_KEY_LEN bytes of ChaCha20-Poly1305 key the
 // caller owns and holds in ch_cfg's srv.ticket_key. srv_cfg.h defines the
 // length, because the caller sizes the key by it, and it is one AEAD key
 // (aead.h). One key per deployment, so a ticket
@@ -68,7 +68,7 @@
 // way srv_cookie.h's cookie key works. It must be a key of its own, not
 // the cookie key: the two protect different formats with different
 // primitives, and nothing here checks that they differ.
-_Static_assert(SRV_TICKET_KEY_LEN == AEAD_KEY, "the ticket key is one AEAD key long");
+_Static_assert(CH_SRV_TICKET_KEY_LEN == AEAD_KEY, "the ticket key is one AEAD key long");
 
 // The first byte of every ticket: this format's own version number, not a
 // TLS version. A deployment that changes the layout moves it, and every
@@ -134,7 +134,7 @@ typedef struct {
 
 // Seals one ticket carrying c under key, with the AEAD nonce at nonce.
 //
-// Requires: key points at SRV_TICKET_KEY_LEN readable bytes; nonce at
+// Requires: key points at CH_SRV_TICKET_KEY_LEN readable bytes; nonce at
 // AEAD_NONCE readable bytes the caller drew through ch_rand_bytes for
 // this ticket alone; c at a readable srv_ticket_contents; out at cap
 // writable bytes that overlap no input.
@@ -143,7 +143,7 @@ typedef struct {
 // nothing when cap is below SRV_TICKET_LEN or c->alpn_len is above
 // CH_ALPN_NAME_MAX. It stages the body on its own frame and wipes that
 // staging before it returns, because the body holds the PSK.
-size_t srv_ticket_seal(const uint8_t key[SRV_TICKET_KEY_LEN], const uint8_t nonce[AEAD_NONCE],
+size_t srv_ticket_seal(const uint8_t key[CH_SRV_TICKET_KEY_LEN], const uint8_t nonce[AEAD_NONCE],
                        const srv_ticket_contents *c, uint8_t *out, size_t cap);
 
 // Opens the n bytes of one ticket under key and writes what it carried to
@@ -156,7 +156,7 @@ size_t srv_ticket_seal(const uint8_t key[SRV_TICKET_KEY_LEN], const uint8_t nonc
 // whole body before it releases a byte (aead.h), and compares it in
 // constant time.
 //
-// Requires: key points at SRV_TICKET_KEY_LEN readable bytes; ticket at n
+// Requires: key points at CH_SRV_TICKET_KEY_LEN readable bytes; ticket at n
 // readable bytes; c at a writable srv_ticket_contents.
 //
 // Returns CH_OK and writes *c.
@@ -169,7 +169,7 @@ size_t srv_ticket_seal(const uint8_t key[SRV_TICKET_KEY_LEN], const uint8_t nonc
 // length past the name. Every refusal means only "not a ticket this key
 // sealed", and srv_resume.c answers each one by passing over the identity,
 // which RFC 9846 §4.3.11 asks of an unknown PSK (rfc9846.txt:2533-2537).
-int srv_ticket_open(const uint8_t key[SRV_TICKET_KEY_LEN], const uint8_t *ticket, size_t n,
+int srv_ticket_open(const uint8_t key[CH_SRV_TICKET_KEY_LEN], const uint8_t *ticket, size_t n,
                     srv_ticket_contents *c);
 
 #endif // CH_ROLE_SERVER

@@ -57,8 +57,8 @@
 // ticket_key. They are defined here, in the header the caller includes,
 // because the caller sizes its key storage by them. srv_cookie.h and
 // srv_ticket.h check each against the primitive that takes the key.
-#define SRV_COOKIE_KEY_LEN 32
-#define SRV_TICKET_KEY_LEN 32
+#define CH_SRV_COOKIE_KEY_LEN 32
+#define CH_SRV_TICKET_KEY_LEN 32
 
 // One certificate, as the DER bytes the caller holds in flash. chapulin
 // writes them out unread: a ROLE=server object links no X.509 reader at
@@ -123,7 +123,7 @@ typedef struct {
     ch_identity rsa_pss;    // signs rsa_pss_rsae_sha256
 
     // The HMAC-SHA-256 key that protects the HelloRetryRequest cookie
-    // (RFC 9846 §4.3.2, rfc9846.txt:1779-1783): SRV_COOKIE_KEY_LEN
+    // (RFC 9846 §4.3.2, rfc9846.txt:1779-1783): CH_SRV_COOKIE_KEY_LEN
     // bytes, which this header defines above. One key per deployment,
     // so a second ClientHello that lands on a different session, or on
     // a different device behind a load balancer, still verifies.
@@ -151,7 +151,7 @@ typedef struct {
     uint8_t require_server_name;
 
     // The ChaCha20-Poly1305 key this server seals its resumption
-    // tickets under and opens them with: SRV_TICKET_KEY_LEN bytes,
+    // tickets under and opens them with: CH_SRV_TICKET_KEY_LEN bytes,
     // which this header defines above, a key of its own and not
     // cookie_key. One key per
     // deployment, so a ticket one server issued resumes on another that

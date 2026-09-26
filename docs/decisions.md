@@ -2589,9 +2589,9 @@ does nothing more.
       catches both.
     - **The lengths the headers name.** A module that declares every
       export can still lack a constant a public header sizes a field by.
-      colibri's QUIC server could not name `SRV_TICKET_KEY_LEN`, which
-      `srv_cfg.h` cited and only `srv_ticket.h` defined, until
-      `64e2f25` moved it. `tools/public-constants.py` now preprocesses
+      colibri's QUIC server could not name the ticket key's length,
+      which `srv_cfg.h` cited and only `srv_ticket.h` defined, until
+      `64e2f25` moved it into `srv_cfg.h`. `tools/public-constants.py` now preprocesses
       each object's headers under its defines, comments kept, and lists
       every name shaped like a length or a cap in a comment of a public
       header. It fails when the consumer cannot see one, and

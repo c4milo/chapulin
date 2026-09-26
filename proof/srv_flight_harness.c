@@ -311,12 +311,12 @@ size_t srv_build_finished(uint8_t *out, size_t cap, const uint8_t *verify_data, 
     return cap >= 4 + hash_len ? 4 + hash_len : 0;
 }
 
-size_t srv_cookie_mint(const uint8_t key[SRV_COOKIE_KEY_LEN], uint16_t suite, uint16_t group,
+size_t srv_cookie_mint(const uint8_t key[CH_SRV_COOKIE_KEY_LEN], uint16_t suite, uint16_t group,
                        const uint8_t *ch1_hash, size_t hash_len, const uint8_t frozen[SHA256_LEN],
                        uint8_t *out, size_t cap) {
     (void)suite;
     (void)group;
-    __CPROVER_assert(__CPROVER_r_ok(key, SRV_COOKIE_KEY_LEN), "mint: key readable");
+    __CPROVER_assert(__CPROVER_r_ok(key, CH_SRV_COOKIE_KEY_LEN), "mint: key readable");
     __CPROVER_assert(__CPROVER_r_ok(ch1_hash, hash_len), "mint: transcript hash readable");
     __CPROVER_assert(__CPROVER_r_ok(frozen, SHA256_LEN), "mint: frozen digest readable");
     size_t n = nondet_size_t();
@@ -329,10 +329,10 @@ size_t srv_cookie_mint(const uint8_t key[SRV_COOKIE_KEY_LEN], uint16_t suite, ui
     return n;
 }
 
-int srv_cookie_open(const uint8_t key[SRV_COOKIE_KEY_LEN], const uint8_t *cookie, size_t n,
+int srv_cookie_open(const uint8_t key[CH_SRV_COOKIE_KEY_LEN], const uint8_t *cookie, size_t n,
                     uint16_t *suite, uint16_t *group, uint8_t *ch1_hash, size_t *hash_len,
                     uint8_t frozen[SHA256_LEN]) {
-    __CPROVER_assert(__CPROVER_r_ok(key, SRV_COOKIE_KEY_LEN), "open: key readable");
+    __CPROVER_assert(__CPROVER_r_ok(key, CH_SRV_COOKIE_KEY_LEN), "open: key readable");
     __CPROVER_assert(n == 0 || __CPROVER_r_ok(cookie, n), "open: cookie readable");
     __CPROVER_assert(__CPROVER_w_ok(ch1_hash, SRV_COOKIE_HASH_MAX), "open: hash writable");
     if (nondet_u8() & 1) {

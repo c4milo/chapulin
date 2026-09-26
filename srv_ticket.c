@@ -63,7 +63,7 @@ static void write_body(const srv_ticket_contents *c, uint8_t body[SRV_TICKET_BOD
     CH_ASSERT(b.err == 0 && b.len == SRV_TICKET_BODY_LEN);
 }
 
-size_t srv_ticket_seal(const uint8_t key[SRV_TICKET_KEY_LEN], const uint8_t nonce[AEAD_NONCE],
+size_t srv_ticket_seal(const uint8_t key[CH_SRV_TICKET_KEY_LEN], const uint8_t nonce[AEAD_NONCE],
                        const srv_ticket_contents *c, uint8_t *out, size_t cap) {
     if (cap < SRV_TICKET_LEN || c->alpn_len > CH_ALPN_NAME_MAX) {
         return 0;
@@ -109,7 +109,7 @@ static int read_body(const uint8_t body[SRV_TICKET_BODY_LEN], srv_ticket_content
     return CH_OK;
 }
 
-int srv_ticket_open(const uint8_t key[SRV_TICKET_KEY_LEN], const uint8_t *ticket, size_t n,
+int srv_ticket_open(const uint8_t key[CH_SRV_TICKET_KEY_LEN], const uint8_t *ticket, size_t n,
                     srv_ticket_contents *c) {
     memset(c, 0, sizeof *c);
     // INV-25's exact-fill check, and the two clear-text checks srv_ticket.h

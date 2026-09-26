@@ -30,7 +30,7 @@ uint16_t nondet_u16(void);
 // covers a cookie that is too long as well as every length below it.
 #define COOKIE_BUF (SRV_COOKIE_MAX + 1)
 
-static uint8_t key[SRV_COOKIE_KEY_LEN];
+static uint8_t key[CH_SRV_COOKIE_KEY_LEN];
 static uint8_t ch1_hash[SRV_COOKIE_HASH_MAX];
 static uint8_t frozen[SHA256_LEN];
 static uint8_t minted[SRV_COOKIE_MAX];
