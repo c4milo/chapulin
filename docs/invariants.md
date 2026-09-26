@@ -1872,9 +1872,10 @@ last `ROLE=server` stub, as the entry said it would.
   and e2e's client and server legs against OpenSSL under each suite.
   `aes-extern-256-cipher-passes-128-key.violation` tells the hook an
   AES-256 key is 16 bytes, `aes-extern-256-expansion-stores-16.violation`
-  stores half of an AES-256 key, and
-  `aes-extern-expansion-past-schedule.violation` zeros one byte past the
-  AES-128 schedule; each requires `bin/quic_test_extern` to fail. The
+  stores half of an AES-256 key; each requires `bin/quic_test_extern` to
+  fail. A store one byte past the AES-128 schedule has no violation file,
+  because gcc refuses it at compile time under `-Werror=array-bounds`;
+  under clang the marker byte in `bin/quic_test_extern` catches it. The
   `aes_extern` proof holds the four entries to the hook's contract over a
   stub of it. None of this is a timing measurement, and the hook these
   tests link is a stand-in: what the image's peripheral computes is the

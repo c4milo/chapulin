@@ -180,6 +180,11 @@ static void test_fips197_aes256(void) {
 // after the bound must keep it. The 32 key bytes are all checked, so an
 // AES-256 expansion that stored 16 of them fails here as well as in the
 // FIPS 197 block above.
+//
+// No .violation file writes past the bound: gcc 13, which CI compiles
+// with, refuses any store past round_keys under -Werror=array-bounds, so
+// such an edit does not build there. clang builds it, and the marker
+// check below fails on it, which was run by hand on 2026-09-26.
 static int bytes_are(const uint8_t *p, size_t n, uint8_t value) {
     for (size_t i = 0; i < n; i++) {
         if (p[i] != value) {
