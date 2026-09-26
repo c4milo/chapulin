@@ -1,0 +1,12 @@
+invariant: INV-14
+file: session.h
+catches: test/tx-record-builds.sh
+reason: session.h stops holding a QUIC build's CH_TX_PT at 512, so a firmware
+  tree that sets the value for a TRANSPORT=quic-nonblocking build compiles an
+  object that seals no TLS record and ignores the setting. The Makefile and
+  build.zig still refuse TX_RECORD there, so only a compile with the define
+  written by hand objects.
+
+--- old
+_Static_assert(CH_TX_PT == 512, "a QUIC build seals no TLS record, so CH_TX_PT stays 512");
+--- new

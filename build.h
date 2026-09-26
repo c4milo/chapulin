@@ -176,7 +176,9 @@
 // CH_TRANSPORT_PARAMS_MAX is the longest cfg.transport_params a QUIC
 // build accepts. Each of the four sits under #ifndef, so a build can set
 // it with a -D of its own, and the axes alone cannot tell two builds
-// apart that set it differently.
+// apart that set it differently. A TX_RECORD build's CH_TX_PT moves
+// CH_TX_STAGE only where its sealed record outgrows the hello, and the
+// record holds no other trace of it (docs/decisions.md 71).
 #define CH_BUILD_TX_STAGE ((uint32_t)CH_TX_STAGE)
 #define CH_BUILD_MIN_RXBUF ((uint32_t)CH_MIN_RXBUF)
 #ifdef CH_TRUST_CA

@@ -38,15 +38,16 @@
 
 // TX staging past the record header. One array serves two lifetimes
 // that never overlap: ClientHello construction, then sealed-record
-// staging. A build whose hello outgrows one sealed record (a PQ key
-// share) raises this for that build alone. See docs/decisions.md 22.
+// staging. See docs/decisions.md 22 and 71.
 //
-// This constant sets sizeof(ch_tls). The library object and every
-// build that includes this header must agree on it.
+// CH_TX_STAGE sets sizeof(ch_tls). The library object and every build
+// that includes this header must agree on it.
 // TX staging holds two different things, and the array takes whichever
-// is larger: one sealed application record (CH_TX_PT + 1 + AEAD_TAG),
-// or the largest ClientHello this build can emit. The hello wins in
-// every build. These are CH_HELLO_MAX's value per build, repeated here
+// is larger: one sealed record (CH_TX_PT + 1 + AEAD_TAG), or the largest
+// hello this build can emit, CH_TX_HELLO. At the default CH_TX_PT of 512
+// the hello wins in every build. A TX_RECORD build raises CH_TX_PT (cfg.h),
+// and where the sealed record then outgrows the hello it wins instead.
+// The CH_TX_HELLO values are CH_HELLO_MAX's value per build, repeated here
 // as literals because handshake_message.h sits above this header and
 // cannot be included from it; handshake.c asserts the two agree, where
 // both constants are visible, so a stale literal fails the build
@@ -65,7 +66,6 @@
 // below it, the classic raw and ca ones over TLS and over QUIC; every
 // other value is larger already.
 #define CH_TX_SERVER_HELLO 1216
-#ifndef CH_TX_STAGE
 #ifdef CH_TRANSPORT_QUIC_NONBLOCKING
 // A QUIC hello differs from the TCP one by three extensions. It drops
 // the 6-byte record_size_limit, because RFC 9001 §4.1.3 removes the
@@ -83,13 +83,13 @@
 // (docs/decisions.md 64). It takes CH_TX_AES_SUITES on top, as the TCP
 // webpki value does.
 #ifdef CH_TRUST_WEBPKI
-#define CH_TX_STAGE (2650 + CH_TX_AES_SUITES)
+#define CH_TX_HELLO (2650 + CH_TX_AES_SUITES)
 #elif defined(CH_KEX_PQ)
-#define CH_TX_STAGE 2325
+#define CH_TX_HELLO 2325
 #elif defined(CH_ROLE_SERVER)
-#define CH_TX_STAGE CH_TX_SERVER_HELLO
+#define CH_TX_HELLO CH_TX_SERVER_HELLO
 #else
-#define CH_TX_STAGE 1141
+#define CH_TX_HELLO 1141
 #endif
 #elif defined(CH_TRUST_WEBPKI)
 // The TRUST=webpki value takes CH_TX_AES_SUITES on top: 20 bytes for a
@@ -111,23 +111,39 @@
 // included (docs/decisions.md 55): the 16-byte signature_algorithms of
 // five schemes and the 7-byte server_certificate_type of a config with
 // SPKI pins and anchors: 1801 + 262 + 270 + 2 + 36 + 2 + 16 + 7.
-#define CH_TX_STAGE (2396 + CH_TX_AES_SUITES)
+#define CH_TX_HELLO (2396 + CH_TX_AES_SUITES)
 #elif defined(CH_KEX_PQ)
 // 137 fixed + 320 ticket identity + 128 cookie with framing + the
 // 1216-byte hybrid share.
-#define CH_TX_STAGE 1801
+#define CH_TX_HELLO 1801
 #elif defined(CH_ROLE_SERVER)
-#define CH_TX_STAGE CH_TX_SERVER_HELLO
+#define CH_TX_HELLO CH_TX_SERVER_HELLO
 #else
 // The same sum with a 32-byte x25519 share: 617. Above the 529 a sealed record
 // needs, which is why a maximum ticket identity plus a maximum retry cookie
 // used to fail closed with CH_ECAP
 // (https://github.com/c4milo/chapulin/issues/46).
-#define CH_TX_STAGE 617
+#define CH_TX_HELLO 617
+#endif
+// The array: the hello, or one sealed record where that is larger. The
+// choice is a preprocessor #if rather than a conditional expression, so
+// every build at the default CH_TX_PT keeps the literal it had. A
+// TRANSPORT=quic-nonblocking build stages its hello alone: it seals no
+// record (RFC 9001 §4.1.3, rfc9001.txt:462-464), and an assertion below
+// holds its CH_TX_PT at 512.
+#ifndef CH_TX_STAGE
+#ifdef CH_TRANSPORT_QUIC_NONBLOCKING
+#define CH_TX_STAGE CH_TX_HELLO
+#elif CH_TX_HELLO >= CH_TX_PT + 1 + AEAD_TAG
+#define CH_TX_STAGE CH_TX_HELLO
+#else
+#define CH_TX_STAGE (CH_TX_PT + 1 + AEAD_TAG)
 #endif
 #endif
 // The library builds as C, so the guards always run. The ceiling is
-// RFC 9846's 2^14 record-body cap; the hello ships as one record.
+// RFC 9846's 2^14 record-body cap; the hello ships as one record. A
+// sealed record may pass it: its body is ciphertext, which §5.2 caps at
+// 2^14 + 256 (rfc9846.txt:3595-3596), and cfg.h caps CH_TX_PT.
 #ifndef __cplusplus
 #ifndef CH_TRANSPORT_QUIC_NONBLOCKING
 // A TRANSPORT=quic-nonblocking build stages no sealed record, so this floor has
@@ -135,8 +151,14 @@
 // build does not read.
 _Static_assert(CH_TX_STAGE >= CH_TX_PT + 1 + AEAD_TAG,
                "TX staging must hold at least one sealed record");
+#else
+// For the same reason a raised CH_TX_PT would change nothing in a QUIC
+// build. A firmware tree that sets one is refused here, as the
+// Makefile's TX_RECORD refuses the transport (docs/decisions.md 71).
+_Static_assert(CH_TX_PT == 512, "a QUIC build seals no TLS record, so CH_TX_PT stays 512");
 #endif
-_Static_assert(CH_TX_STAGE <= 0x4000, "a handshake record body caps at 2^14");
+_Static_assert(CH_TX_STAGE >= CH_TX_HELLO, "TX staging must hold the largest hello");
+_Static_assert(CH_TX_HELLO <= 0x4000, "a handshake record body caps at 2^14");
 #endif
 
 #define CH_ST_START 0
@@ -347,12 +369,13 @@ typedef struct {
     // tx_len counts the bytes staged here and its tx_level names the
     // encryption level they go out at.
     //
-    // CH_TX_STAGE's QUIC values are above, and each one is the length
+    // CH_TX_HELLO's QUIC values are above, CH_TX_STAGE is that value in
+    // a QUIC build, and each one is the length
     // hs_build_client_hello emits for the largest hello its build can
     // write: 1141 raw and ca classic, 2325 under KEX=pq, and 2650 under
     // TRUST=webpki, whose hello carries two groups' shares, lists a third
-    // group and offers the certificate path. quic.c asserts CH_HELLO_MAX against this
-    // constant, where both are visible.
+    // group and offers the certificate path. quic.c asserts CH_HELLO_MAX against
+    // CH_TX_HELLO, where both are visible.
     uint8_t tx[CH_TX_STAGE];
 #else
     uint8_t tx[REC_HDR + CH_TX_STAGE];

@@ -91,6 +91,7 @@ roster=(
     "webpki|RAND=extern TRUST=webpki|"
     "webpki-tcp-nonblocking|RAND=extern TRUST=webpki TRANSPORT=tcp-nonblocking|"
     "webpki-widemul|RAND=extern TRUST=webpki TRANSPORT=tcp-nonblocking WIDEMUL=native|"
+    "tx-record|RAND=extern TRUST=webpki TRANSPORT=tcp-nonblocking ROLE=both TX_RECORD=16384|"
     "quic-raw|RAND=extern TRANSPORT=quic-nonblocking EXPORTER=off|"
     "quic-webpki-both|RAND=extern TRUST=webpki TRANSPORT=quic-nonblocking ROLE=both KEYLOG=on EXPORTER=off|"
     "server|RAND=extern ROLE=server TRUST=none|"

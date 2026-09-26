@@ -44,6 +44,9 @@ const Config = struct {
     widemul: Widemul,
     exporter: Setting,
     keylog: Setting,
+    /// TX_RECORD as the Makefile takes it, the text of a decimal integer,
+    /// and null for the default, cfg.h's 512.
+    tx_record: ?[]const u8,
     /// The three hardware statements ct.h reads. The Makefile never writes
     /// them into a library build, and a builder adds them to CFLAGS. They
     /// default off here for the same reason: each is a claim about the
@@ -208,6 +211,7 @@ pub fn build(b: *std.Build) void {
         .widemul = b.option(Widemul, "WIDEMUL", "The widening multiply (ct.h)") orelse .decomposed,
         .exporter = b.option(Setting, "EXPORTER", "ch_export, RFC 9846 section 7.5") orelse .off,
         .keylog = b.option(Setting, "KEYLOG", "The ch_keylog hook (keylog.h)") orelse .off,
+        .tx_record = nonEmpty(b.option([]const u8, "TX_RECORD", "The most plaintext one outgoing TLS record carries, 512 to 16384 (cfg.h's CH_TX_PT)")),
         .native_aes = b.option(bool, "CH_NATIVE_AES", "State that the AES and carry-less multiply instructions run in constant time (ct.h)") orelse false,
         .aes_extern_constant_time = b.option(bool, "CH_AES_EXTERN_CONSTANT_TIME", "State that ch_aes_block runs in constant time (ct.h)") orelse false,
         .native_mul128 = b.option(bool, "CH_NATIVE_MUL128", "State that the 64x64->128 multiply runs in constant time (ct.h)") orelse false,
@@ -315,6 +319,33 @@ fn refuseUnbuildable(config: Config) void {
     if (config.suite == .aesgcm and config.role == .client and config.trust != .webpki) {
         fatal("SUITE=aesgcm is refused for a device client: use TRUST=webpki, ROLE=server or ROLE=both", .{});
     }
+    if (config.tx_record) |text| {
+        if (config.transport == .@"quic-nonblocking") {
+            fatal("TX_RECORD={s} sizes a TLS record, and TRANSPORT=quic-nonblocking seals none: drop TX_RECORD, or use TRANSPORT=tcp-blocking or TRANSPORT=tcp-nonblocking", .{text});
+        }
+        if (!recordSize(text)) {
+            fatal("TX_RECORD={s} is not a record size; use a decimal integer from 512 to 16384, or leave TX_RECORD empty for 512", .{text});
+        }
+    }
+}
+
+/// An option the Makefile reads as unset when it is empty.
+fn nonEmpty(text: ?[]const u8) ?[]const u8 {
+    const value = text orelse return null;
+    return if (value.len == 0) null else value;
+}
+
+/// Whether text is a value the Makefile's TX_RECORD takes: a decimal
+/// integer with no leading zero, from 512 to 16384. The define repeats the
+/// text, and C reads a leading zero as octal, so the rule is the text's
+/// and not only the number's.
+fn recordSize(text: []const u8) bool {
+    if (text.len == 0 or text[0] == '0') return false;
+    for (text) |c| {
+        if (!std.ascii.isDigit(c)) return false;
+    }
+    const n = std.fmt.parseInt(u32, text, 10) catch return false;
+    return n >= 512 and n <= 16384;
 }
 
 /// A raw or ca client, the one build whose key exchange KEX chooses.
@@ -361,6 +392,7 @@ fn computePlan(b: *std.Build, config: Config) Plan {
     if (config.exporter == .on) defs = concat(b, &.{ defs, &.{ "-DCH_EXPORTER", "-DHKDF_LABEL_MAX=32" } });
     if (config.keylog == .on) defs = concat(b, &.{ defs, &.{"-DCH_KEYLOG"} });
     if (config.widemul == .native) defs = concat(b, &.{ defs, &.{"-DCH_NATIVE_WIDEMUL"} });
+    if (config.tx_record) |text| defs = concat(b, &.{ defs, &.{b.fmt("-DCH_TX_PT={s}", .{text})} });
     if (config.rand == .drbg) {
         defs = concat(b, &.{ defs, &.{"-DCH_RAND_DRBG"} });
         lib_srcs = concat(b, &.{ lib_srcs, &.{"drbg.c"} });

@@ -55,6 +55,17 @@ int srv_out_record(ch_tls *t, const uint8_t *rec, size_t n);
 // themselves. pt lies outside t->tx, where rec_seal writes.
 int srv_out_sealed(handshake_state *h, const uint8_t *pt, size_t n);
 
+// The most bytes one srv_frag holds, and so the most plaintext of one
+// Certificate record. It stays 512 whatever CH_TX_PT is. srv_frag lives
+// on srv_send_certificate's stack frame, and a TX_RECORD=16384 build
+// would otherwise put 16 KiB there, four times the 4,096-byte frame
+// budget of a TRUST=webpki object (INV-19). The Certificate goes out once
+// per full handshake, so a larger buffer would save a few records per
+// connection, while application data, the reason to raise CH_TX_PT, is
+// sealed in ch_tls.tx (docs/decisions.md 71). It equals the default
+// CH_TX_PT, so a default build sends the records it sent before.
+#define SRV_FRAG_MAX 512
+
 // A message written in pieces, hashed and sent a fragment at a time: the
 // Certificate is the one message no frame holds, because the chain stays
 // in the caller's flash. rc is sticky the way wbuf's err is, so the caller
@@ -63,13 +74,14 @@ typedef struct {
     handshake_state *h;
     size_t len;
     int rc;
-    uint8_t buf[CH_TX_PT];
+    uint8_t buf[SRV_FRAG_MAX];
 } srv_frag;
 
 // Hashes what the writer holds and sends it.
 void srv_frag_flush(srv_frag *f);
 
-// Adds n bytes, flushing whenever the writer fills.
+// Adds n bytes, flushing whenever the writer holds the smaller of
+// SRV_FRAG_MAX and srv_out_limit.
 void srv_frag_bytes(srv_frag *f, const uint8_t *p, size_t n);
 
 #endif // CH_ROLE_SERVER

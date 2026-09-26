@@ -253,7 +253,9 @@ def run(name):
 # and a half, the X25519=wide build script, which compiles ct.h five
 # times, the X25519 equivalence binary, which runs in six
 # seconds, and the two Zig build scripts, which answer in five and two
-# seconds with their objects built and rebuild what an edit touches. Left out are the ones whose single run is expensive — the
+# seconds with their objects built and rebuild what an edit touches, the
+# TX_RECORD build script, which answers in three, and the TX_RECORD loop
+# binary, which builds in three and runs in under one. Left out are the ones whose single run is expensive — the
 # exhaustive handshake enumeration (minutes), the end-to-end suite
 # (needs live servers), and the differential (each run drives ~6000 oracle
 # comparisons, so a baseline and a mutation pass together are ~30s per
@@ -280,6 +282,7 @@ FAST_TARGETS = {"unit", "unit_ca", "x509strict", "x509strict_ecdsa",
                 "test/lint-quic-partition.sh", "test/lint-quic-surface.sh",
                 "test/quic-builds.sh", "test/x25519-builds.sh",
                 "test/zig-build-check.sh", "test/localize-check.sh",
+                "test/tx-record-builds.sh", "webpki_loop_tx_record",
                 "quic_driver_test", "srv_stub_test", "x25519_equiv_test", "quic_test_extern"}
 
 

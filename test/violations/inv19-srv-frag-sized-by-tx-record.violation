@@ -1,0 +1,14 @@
+invariant: INV-19
+file: srv_out.h
+catches: webpki_loop_tx_record
+reason: srv_frag's buffer is sized by CH_TX_PT again, so a TX_RECORD=16384
+  build puts 16 KiB on srv_send_certificate's stack frame, four times the
+  4,096-byte budget of a TRUST=webpki object. Every default build is byte for
+  byte the same, because CH_TX_PT is 512 there. In the TX_RECORD build the
+  Certificate then leaves as one record rather than three, which the loop's
+  record count objects to.
+
+--- old
+    uint8_t buf[SRV_FRAG_MAX];
+--- new
+    uint8_t buf[CH_TX_PT];

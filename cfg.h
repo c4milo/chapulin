@@ -75,9 +75,17 @@
 // live (tcp_nonblocking.h, INV-13).
 #define CH_RECORD_AGAIN (-9)
 
-// Outgoing records are staged in the session struct so writes never
-// disturb buffered incoming data; 512 bytes of plaintext per record.
+// The most plaintext one outgoing record carries, which the peer's
+// record_size_limit may lower; records are staged in the session struct so
+// writes never disturb buffered incoming data. A host raises it with the
+// Makefile's TX_RECORD (docs/decisions.md 71), up to RFC 9846 §5.1's 2^14
+// (rfc9846.txt:3514-3516). session.h holds a QUIC build at 512.
+#ifndef CH_TX_PT
 #define CH_TX_PT 512
+#endif
+#ifndef __cplusplus
+_Static_assert(CH_TX_PT >= 512 && CH_TX_PT <= 16384, "CH_TX_PT runs from 512 to 2^14");
+#endif
 
 // Smallest receive buffer ch_connect accepts. The profile's control flights fit in 512
 // bytes. A raw-pin server's Certificate message has no fixed size, so raw-pin deployments

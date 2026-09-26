@@ -2289,8 +2289,9 @@ A chain is the caller's size, not the build's, so staging it whole would put
 the operator's certificate inside `sizeof(ch_tls)`. `srv_send_certificate`
 walks the selected identity's `chain`, writes the message header and the
 `certificate_list` framing, and emits the message in fragments, each sized to
-`min(CH_TX_PT, peer_limit)`, feeding the transcript hash as it goes and sealing
-each fragment as its own record through `rec_seal`. `rfc9846.txt:3460-3462`
+`min(CH_TX_PT, peer_limit)` and at most `SRV_FRAG_MAX`, 512 bytes, whatever
+`CH_TX_PT` a `TX_RECORD` build sets (decision 71), feeding the transcript hash
+as it goes and sealing each fragment as its own record through `rec_seal`. `rfc9846.txt:3460-3462`
 permits the fragmentation and forbids interleaving another record type, which a
 straight-line writer cannot do.
 

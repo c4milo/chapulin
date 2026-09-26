@@ -1,0 +1,13 @@
+invariant: INV-36
+file: build.zig
+catches: test/tx-record-builds.sh
+reason: build.zig admits TX_RECORD=16385, which the Makefile refuses, so
+  the two builds stop refusing the same values. cfg.h still stops the
+  compile, but the Zig build writes the define first, and
+  test/zig-build-check.sh compares only values both builds accept, so
+  only the refusal check at the edge objects.
+
+--- old
+    return n >= 512 and n <= 16384;
+--- new
+    return n >= 512 and n <= 16385;

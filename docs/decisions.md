@@ -262,7 +262,9 @@ does nothing more.
     run everywhere. A second array would cost every build the hello's bytes,
     and the handshake proof keeps one array to model. Streaming the hello
     stays rejected: the PSK binder is an HMAC over the contiguous truncated
-    hello, so a streaming builder would buffer the message anyway.
+    hello, so a streaming builder would buffer the message anyway. Entry 71
+    lets a TCP build raise the sealed record's plaintext with `TX_RECORD`,
+    and where the record then outgrows the hello, the record wins.
 23. **The receive-buffer floor is a build constant.** `ch_connect`
     checks `buf_len` against `CH_MIN_RXBUF` before anything is sent.
     A feature that needs more room raises the constant, so a
@@ -2628,3 +2630,107 @@ does nothing more.
       would read it and pass each define to its own `@cImport` or
       translate-c step. The program still does that work, and every
       consumer writes it again.
+71. **A TCP build sets how much plaintext one outgoing record carries,
+    `TX_RECORD`, from 512 to 16384 bytes, and the default stays 512.**
+    stompy uploads 5 MiB log segments to S3 over a `TRUST=webpki
+    TRANSPORT=tcp-nonblocking ROLE=both` object. At 512 bytes a record, one
+    segment takes 10,240 records and 10,240 send callbacks, and the 22
+    bytes each record adds come to 4.3% of the data. At 16384 bytes it
+    takes 320 records, and the overhead is 0.13%. Camilo approved the
+    option on 2026-09-26 at stompy's request. This entry amends entry 22.
+
+    - **The value.** `CH_TX_PT` (`cfg.h`) is the most plaintext one
+      outgoing record carries. It sits under `#ifndef`, and the Makefile's
+      `TX_RECORD=N` writes `-DCH_TX_PT=N` into the object, and `build.zig`'s
+      `TX_RECORD` option does the same. `ch_write` and a server's sealed
+      flight still put the smaller of `CH_TX_PT` and the peer's
+      `record_size_limit` (RFC 8449) into each record, so a peer that asks
+      for smaller records gets them.
+    - **The range.** 512 is the floor: nothing needs smaller records, and
+      every test and proof in this tree runs at 512 or above. 16384 is
+      the ceiling, the most plaintext RFC 9846 §5.1 lets one record carry
+      (`rfc9846.txt:3514-3516`). The Makefile and `build.zig` take a
+      decimal integer with no leading zero, because C reads a leading zero
+      as octal. `cfg.h` refuses a value outside the range for a firmware
+      tree that builds these sources its own way.
+    - **The staging array.** `session.h` names each build's hello literal
+      `CH_TX_HELLO`, and `CH_TX_STAGE` is the larger of it and one sealed
+      record, `CH_TX_PT + 1 + AEAD_TAG`. At the default the hello still
+      wins in every build, so every default `ch_tls` keeps its size byte
+      for byte. `handshake.c` and `quic.c` check `CH_HELLO_MAX` against
+      `CH_TX_HELLO`, not `CH_TX_STAGE`, because a raised `CH_TX_PT` can make
+      the array larger than any hello, and a stale literal would then pass.
+      The 2^14 assertion moves to `CH_TX_HELLO` too: the hello ships as one
+      plaintext record, while a sealed record's body is ciphertext, which
+      §5.2 caps at 2^14 + 256 bytes (`rfc9846.txt:3595-3596`).
+    - **The Certificate.** A server streams its Certificate through
+      `srv_frag`, which lives on `srv_send_certificate`'s stack frame. Its
+      buffer stays `SRV_FRAG_MAX`, 512 bytes, whatever `CH_TX_PT` is, so a
+      Certificate still goes out in records of at most 512 bytes. A buffer
+      of 16,384 bytes would be four times the 4,096-byte frame budget of a
+      `TRUST=webpki` object and more than six times the 2,560 bytes of
+      every other (INV-19). A Certificate goes out once per full
+      handshake, so larger fragments would save a few records per
+      connection.
+    - **The receive side.** The option changes what this endpoint sends
+      and nothing else. What it receives is bounded by its own
+      `cfg.buf_len`, which it advertises as `record_size_limit`, as before.
+      A peer of a `TX_RECORD=16384` object receives records of 16,384 bytes
+      only when its own buffer holds 16,406 bytes: the record header, the
+      plaintext, the inner content type and the tag.
+    - **The check.** `bin/webpki_loop_tx_record` is `test/webpki_loop_test.c`
+      at `TX_RECORD=16384`: a write of `CH_TX_PT` bytes goes out as one
+      record and `CH_TX_PT + 1` bytes as two, a client whose buffer
+      advertises a smaller limit gets records of that limit, and 32,868
+      bytes move each way between the object's two drivers. The
+      handshakes it shares with the default loop count the Certificate's
+      three records, which holds `srv_frag` at `SRV_FRAG_MAX`.
+      `test/tx-record-builds.sh` compiles each edge of the range in the
+      headers, runs it through make and `build.zig`, and checks where
+      `CH_TX_STAGE` turns from the hello to the sealed record. `make check`
+      runs both, with `lib-check` and `lint-stack`, on the `TX_RECORD=16384`
+      object, and check-slow's Zig roster builds that object both ways.
+      Five mutants in `test/violations/` break the rules:
+      `inv19-srv-frag-sized-by-tx-record`, which the loop catches, and
+      `inv14-tx-record-past-2-14`, `inv14-tx-record-quic-accepted`,
+      `inv14-tx-record-makefile-quic-accepted` and
+      `inv36-zig-build-tx-record-past-2-14`, which the script catches.
+
+    Cost:
+
+    - `ch_tls` grows by `CH_TX_PT + 17` bytes less the build's hello
+      literal, rounded to the struct's alignment. Measured with a `sizeof`
+      probe under Apple clang 21 on arm64, stompy's object, `TRUST=webpki
+      TRANSPORT=tcp-nonblocking ROLE=both`, goes from 3,264 bytes to 17,264
+      at `TX_RECORD=16384`, and its `ch_record` from 4,480 to 18,480. The
+      formula gives 16,401 - 2,396 = 14,005 bytes and the struct grew by
+      14,000, because `tx` is its last field and 5 of those bytes fill the
+      padding the old struct already carried at its end. The default
+      classic client would go from 1,144 bytes to 16,928.
+    - A device cannot spare that, which is why the default stays 512 and
+      the figures in docs/performance.md stay the default build's.
+    - The build record holds `CH_TX_STAGE` and not `CH_TX_PT`, so
+      `ch_build_matches` tells an object and a consumer apart only where
+      the two values give different arrays. A value whose sealed record
+      stays under the hello, such as 1,024 in a `KEX=pq` build, changes no
+      layout, and the record cannot see it.
+
+    A `TRANSPORT=quic-nonblocking` object refuses the option, in the
+    Makefile, in `build.zig` and in `session.h`. RFC 9001 §4.1.3 removes
+    the record layer (`rfc9001.txt:462-464`), so a QUIC build seals no
+    record and stages its hello alone, and the one place it reads
+    `CH_TX_PT` is `srv_out_limit`, which only `srv_frag` reads there and
+    `SRV_FRAG_MAX` caps anyway. A value there would change nothing, so the
+    build refuses it rather than accept a setting it ignores.
+
+    Two alternatives were considered and set aside.
+
+    - **A transmit buffer the caller supplies in `ch_cfg`,** the way
+      `cfg.buf` holds received records. One object could then send at
+      either size. But every build's `ch_cfg` would carry a pointer and a
+      length, every init call a second buffer rule, and no consumer needs
+      one object at two sizes.
+    - **Sealing straight from the caller's bytes,** a scatter-gather
+      `rec_seal` that writes no staged copy. It would cost `ch_tls` nothing
+      at any size, and it is a second sealing entry point, which INV-1
+      exists to prevent.

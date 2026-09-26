@@ -1,0 +1,15 @@
+invariant: INV-14
+file: Makefile
+catches: test/tx-record-builds.sh
+reason: the Makefile stops refusing TX_RECORD beside
+  TRANSPORT=quic-nonblocking and writes -DCH_TX_PT into a QUIC object's
+  defines. session.h still stops a raised value at the first source, with
+  a static assertion rather than the axis's own message, and
+  TX_RECORD=512 builds a QUIC object whose defines and variant directory
+  name a setting it never reads.
+
+--- old
+ifeq ($(TRANSPORT),quic-nonblocking)
+$(error TX_RECORD=$(TX_RECORD) sizes a TLS record, and TRANSPORT=quic-nonblocking seals none: drop TX_RECORD, or use TRANSPORT=tcp-blocking or TRANSPORT=tcp-nonblocking)
+endif
+--- new

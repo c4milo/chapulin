@@ -44,7 +44,7 @@
 // The cookie fits the field the handshake state already carries, so the
 // retry costs the session no new bytes. Both constants are visible
 // here and nowhere lower, which is why the assertion sits in this
-// header; handshake.c asserts CH_HELLO_MAX against CH_TX_STAGE the
+// header; handshake.c asserts CH_HELLO_MAX against CH_TX_HELLO the
 // same way. The library builds as C, so the guard always runs.
 #ifndef __cplusplus
 _Static_assert(SRV_COOKIE_MAX <= HSP_COOKIE_MAX,
@@ -397,8 +397,8 @@ int srv_send_encrypted_extensions(handshake_state *h, const selection *sel);
 // build's, so this call never stages it whole: it writes the message
 // header and the certificate_list framing with srv_message.h's
 // builders, walks the identity's chain, and emits the message in
-// fragments each sized to the smaller of CH_TX_PT and the peer's
-// record limit, feeding the transcript hash as it goes and sealing
+// fragments each sized to the smallest of SRV_FRAG_MAX, CH_TX_PT and the
+// peer's record limit, feeding the transcript hash as it goes and sealing
 // each fragment as its own record. RFC 9846 §5.1 permits that
 // fragmentation and forbids interleaving another record type
 // (rfc9846.txt:3460-3462), which a straight-line writer cannot do.

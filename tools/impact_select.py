@@ -367,6 +367,15 @@ def select_zig(out, changed, legs):
                     f"{path} is packaged by some object or read by the Zig "
                     f"build's check, which builds objects both ways",
                     ["test/zig-build-check.sh", "test/localize-check.sh"])
+        # test/tx-record-builds.sh runs build.zig's TX_RECORD refusals
+        # beside make's and the headers'. A root header or the Makefile
+        # selects every gate already, so the Zig build and the script are
+        # the paths left to name.
+        if path in ("build.zig", "build.zig.zon", "test/tx-record-builds.sh"):
+            out.add("tests", "test/tx-record-builds.sh",
+                    f"{path} is read by the TX_RECORD script, which holds "
+                    f"build.zig's refusals to make's",
+                    ["test/tx-record-builds.sh"])
 
 
 def select_codegen(out, csources, lib):

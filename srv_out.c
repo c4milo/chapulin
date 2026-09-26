@@ -134,6 +134,11 @@ void srv_frag_flush(srv_frag *f) {
 
 void srv_frag_bytes(srv_frag *f, const uint8_t *p, size_t n) {
     size_t limit = srv_out_limit(f->h->t);
+    // The writer holds SRV_FRAG_MAX bytes, and a raised CH_TX_PT exceeds
+    // that (srv_out.h).
+    if (limit > sizeof f->buf) {
+        limit = sizeof f->buf;
+    }
     while (n > 0 && f->rc == CH_OK) {
         size_t take = n < limit - f->len ? n : limit - f->len;
         memcpy(f->buf + f->len, p, take);

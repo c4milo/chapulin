@@ -944,6 +944,27 @@ LIB_DEF += -DCH_NATIVE_WIDEMUL
 else ifneq ($(WIDEMUL),decomposed)
 $(error WIDEMUL=$(WIDEMUL) is not a multiply; use WIDEMUL=decomposed or WIDEMUL=native)
 endif
+# The most plaintext one outgoing TLS record carries, cfg.h's CH_TX_PT.
+# Empty, the default, leaves cfg.h's 512, which keeps a device's ch_tls
+# small. TX_RECORD=N writes -DCH_TX_PT=N into the object, for a host that
+# sends bulk data: a 5 MiB upload takes 10,240 records at 512 and 320 at
+# 16384. N is a decimal integer from 512 to 16384, the most plaintext RFC
+# 9846 section 5.1 lets one record carry, and session.h grows ch_tls.tx to
+# hold one sealed record of N bytes (docs/decisions.md 71). A QUIC object
+# seals no TLS record, so it refuses the variable, the way the EXPORTER
+# axis refuses that transport. cfg.h and session.h refuse the same values
+# for a firmware tree that builds these sources its own way, and
+# test/tx-record-builds.sh checks all three places at each edge.
+TX_RECORD ?=
+ifneq ($(TX_RECORD),)
+ifeq ($(TRANSPORT),quic-nonblocking)
+$(error TX_RECORD=$(TX_RECORD) sizes a TLS record, and TRANSPORT=quic-nonblocking seals none: drop TX_RECORD, or use TRANSPORT=tcp-blocking or TRANSPORT=tcp-nonblocking)
+endif
+ifneq ($(shell echo '$(TX_RECORD)' | awk '/^[1-9][0-9]*$$/ && $$1 >= 512 && $$1 <= 16384'),$(TX_RECORD))
+$(error TX_RECORD=$(TX_RECORD) is not a record size; use a decimal integer from 512 to 16384, or leave TX_RECORD empty for 512)
+endif
+LIB_DEF += -DCH_TX_PT=$(TX_RECORD)
+endif
 # Entropy pattern, and the one build variable with no default: RAND=extern
 # leaves ch_rand_bytes undefined for the image to supply, RAND=drbg packages
 # the reference generator and exports ch_drbg_seed so the image seeds it at
@@ -1005,7 +1026,10 @@ LOCALIZE_C := $(wildcard test/localize/*.c)
 # directory.
 # X25519 belongs here for SUITE's reason: -DCH_X25519_WIDE changes x25519.o
 # and adds x25519_wide.o.
-LIB_VARIANT := $(TRUST)-$(KEX_VARIANT)-$(RAND)-$(TRANSPORT)-$(AES)-$(SUITE)-$(ROLE)-$(EXPORTER)-$(KEYLOG)-$(WIDEMUL)-$(X25519)
+# TX_RECORD belongs here because -DCH_TX_PT can change sizeof(ch_tls) and
+# so every object that reads it. It is added only when set, so the default
+# object keeps the directory it had.
+LIB_VARIANT := $(TRUST)-$(KEX_VARIANT)-$(RAND)-$(TRANSPORT)-$(AES)-$(SUITE)-$(ROLE)-$(EXPORTER)-$(KEYLOG)-$(WIDEMUL)-$(X25519)$(if $(TX_RECORD),-tx$(TX_RECORD))
 LIB_OBJS := $(LIB_SRCS:%.c=bin/obj/$(LIB_VARIANT)/%.o)
 
 # bench/device-ram.sh sizes the same modules the build packages. It asks
@@ -1911,6 +1935,22 @@ bin/webpki_loop_tcp_nonblocking: test/webpki_loop_test.c $(WEBPKI_LOOP_SRCS) $(H
 	@mkdir -p bin
 	$(CC) $(CFLAGS) -DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_TRANSPORT_TCP_NONBLOCKING -DCH_TRUST_WEBPKI \
 	  -I. -o $@ test/webpki_loop_test.c $(WEBPKI_LOOP_SRCS)
+# The same loop at TX_RECORD=16384, the object stompy links: every row
+# above, and test/webpki_loop_tx_record.h's application records of
+# CH_TX_PT bytes each way (docs/decisions.md 71). The define is written
+# here, as the other loop binaries write theirs, so the binary is the
+# same whatever this make was given.
+bin/webpki_loop_tx_record: test/webpki_loop_test.c test/webpki_loop_tx_record.h $(WEBPKI_LOOP_SRCS) \
+                           $(HDRS) $(TESTH)
+	@mkdir -p bin
+	$(CC) $(CFLAGS) -DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_TRANSPORT_TCP_NONBLOCKING -DCH_TRUST_WEBPKI \
+	  -DCH_TX_PT=16384 -I. -o $@ test/webpki_loop_test.c $(WEBPKI_LOOP_SRCS)
+# The TX_RECORD axis in one target, for check's TX_RECORD leg: the range
+# and the refusals of the headers, make and build.zig, then the loop above.
+.PHONY: tx-record-check
+tx-record-check: bin/webpki_loop_tx_record
+	./test/tx-record-builds.sh
+	./bin/webpki_loop_tx_record
 # The same loop under -DCH_SUITE_AES_GCM on the AES instructions: each of
 # the three suites through a full handshake and a resumption, a SHA-384
 # ticket passed over by a SHA-256 suite, and h3spec's suite offer through
@@ -2322,8 +2362,8 @@ CHECK_RUN_BINS := unit unit_ca unit_pq drbg_test softmul_test rsa_test rsa_sign_
                   handshake_strict_pq handshake_strict_webpki webpki_session_test webpki_resume_test \
                   webpki_resume_tcp_nonblocking x509strict x509strict_ecdsa
 CHECK_LEGS := check-lib-drbg check-lib-extern check-examples check-lib-ca-rsa check-lib-ca-ecdsa \
-              check-lib-webpki check-lib-webpki-tcp-nonblocking check-lib-webpki-widemul check-lib-quic \
-              check-lib-quic-webpki-both check-lib-server check-lib-server-tcp-nonblocking \
+              check-lib-webpki check-lib-webpki-tcp-nonblocking check-lib-webpki-widemul check-lib-tx-record \
+              check-lib-quic check-lib-quic-webpki-both check-lib-server check-lib-server-tcp-nonblocking \
               check-lib-raw-ecdsa-pq check-lib-exporter check-lib-server-quic-keylog \
               check-lib-server-aes-hw check-lib-server-aes-extern check-lib-x25519-wide check-lib-pair \
               check-stack-webpki check-stack-exporter check-stack-quic check-stack-server
@@ -2452,6 +2492,15 @@ check-lib-webpki-tcp-nonblocking:
 check-lib-webpki-widemul:
 	@mkdir -p bin/check; $(CHECK_LEG_STAMP) $(MAKE) lib-check RAND=extern TRUST=webpki TRANSPORT=tcp-nonblocking WIDEMUL=native \
 	  > bin/check/$@.log 2>&1; $(CHECK_REPORT)
+# TX_RECORD at its ceiling, on the ROLE=both object stompy links for
+# its uploads (docs/decisions.md 71): the export list and build record
+# of an object whose ch_tls.tx holds a sealed record of 16,384 bytes,
+# its frames against the webpki budget, the axis's range and refusals,
+# and records of 16,384 bytes between the object's two drivers. It took
+# 13.7 s cold and 7.2 s with everything built, 4 s of that lint-stack.
+check-lib-tx-record:
+	@mkdir -p bin/check; $(CHECK_LEG_STAMP) $(MAKE) lib-check lint-stack tx-record-check RAND=extern TRUST=webpki \
+	  TRANSPORT=tcp-nonblocking ROLE=both TX_RECORD=16384 > bin/check/$@.log 2>&1; $(CHECK_REPORT)
 # The QUIC arm exports the sixteen ch_quic_ calls and none of the four
 # tcp-blocking ones, so it is the leg that holds PUBLIC_TRANSPORT to a
 # replacement rather than an addition, and the one that compiles

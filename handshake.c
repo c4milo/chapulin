@@ -12,11 +12,15 @@
 
 // The hello is built whole into the TX staging array (docs/decisions.md
 // 22), so the array must hold the largest one this build can emit.
-// Both builds size CH_TX_STAGE to exactly that, and this is where the
+// session.h sizes CH_TX_HELLO to exactly that, and this is where the
 // two constants meet: session.h cannot see CH_HELLO_MAX, so it repeats
-// the value, and a drift between them fails the build here.
+// the value, and a drift between them fails the build here. The check
+// reads CH_TX_HELLO, not CH_TX_STAGE, because a TX_RECORD build's
+// sealed record can make the array larger than any hello, and a stale
+// literal would then pass (docs/decisions.md 71). session.h asserts
+// that CH_TX_STAGE holds CH_TX_HELLO.
 #ifndef __cplusplus
-_Static_assert(CH_HELLO_MAX <= CH_TX_STAGE, "the largest ClientHello must fit TX staging");
+_Static_assert(CH_HELLO_MAX <= CH_TX_HELLO, "the largest ClientHello must fit TX staging");
 #endif
 
 // Builds the ClientHello into the TX staging array past the record

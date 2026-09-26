@@ -1,0 +1,15 @@
+invariant: INV-14
+file: cfg.h
+catches: test/tx-record-builds.sh
+reason: cfg.h admits a CH_TX_PT of 16385, one byte over the 2^14 plaintext
+  RFC 9846 section 5.1 lets one record carry. rec_seal checks the
+  ciphertext's 2^14 + 256 and passes it, so a build that sets the value
+  sends records that a peer advertising no record_size_limit, or one above
+  2^14 + 1, must refuse with record_overflow. Every receiver in this tree
+  advertises at most 2^14 + 1, so no loop here sees the extra byte, and
+  only the compile at the edge objects.
+
+--- old
+_Static_assert(CH_TX_PT >= 512 && CH_TX_PT <= 16384, "CH_TX_PT runs from 512 to 2^14");
+--- new
+_Static_assert(CH_TX_PT >= 512 && CH_TX_PT <= 16385, "CH_TX_PT runs from 512 to 2^14");

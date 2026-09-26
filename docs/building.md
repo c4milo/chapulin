@@ -33,6 +33,16 @@ Other targets:
   part's widening multiply runs in constant time, and every widening
   product then uses the CPU's multiply instead of 16x16 pieces (`ct.h`).
   The default, `WIDEMUL=decomposed`, makes no claim about the part.
+  `TX_RECORD=N` sets `CH_TX_PT`, the most plaintext one outgoing record
+  carries, to N bytes, a decimal integer from 512 to 16384; the peer's
+  `record_size_limit` can still lower it. Empty, the default, leaves 512.
+  A host that sends bulk data raises it to send fewer, larger records,
+  and `ch_tls` grows to hold one sealed record: in stompy's `TRUST=webpki
+  TRANSPORT=tcp-nonblocking ROLE=both` object it measures 17,264 bytes at
+  `TX_RECORD=16384` against 3,264 at the default. It changes only what the
+  object sends; `cfg.buf_len` still sets the records it receives. A QUIC
+  object seals no TLS record, so `TRANSPORT=quic-nonblocking` refuses it
+  (decision 71).
   `RAND` is the one build variable with no default. Compose with
   `TRUST=raw-ecdsa`, `TRUST=ca-rsa` or `TRUST=webpki`, and `KEX=pq`;
   the `TRUST=webpki` object carries every verifier, which is why that
@@ -79,7 +89,7 @@ Other targets:
   the object `make lib` builds and a module of its API. The options are
   the Makefile's variables, with the same names and values, and the
   three hardware statements the Makefile takes in `CFLAGS` are options
-  that default off:
+  that default off. `TX_RECORD` takes its number, `.TX_RECORD = 16384`:
 
   ```zig
   const chapulin = b.dependency("chapulin", .{

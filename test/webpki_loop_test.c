@@ -21,6 +21,10 @@
 // a pin on the leaf's key passes with no hostname, anchor or clock, its
 // ticket resumes under that pin alone, and a pin on the intermediate's
 // key is refused with bad_certificate.
+//
+// Built at TX_RECORD=16384 as bin/webpki_loop_tx_record, it also sends
+// application records of CH_TX_PT bytes each way
+// (test/webpki_loop_tx_record.h, docs/decisions.md 71).
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -323,6 +327,7 @@ static void test_pins_alone(void) {
 }
 
 #include "webpki_loop_suites.h"
+#include "webpki_loop_tx_record.h"
 
 int main(void) {
     ch_cfg scfg;
@@ -368,11 +373,20 @@ int main(void) {
 #ifdef CH_SUITE_AES_GCM
     check_suites();
 #endif
+#if CH_TX_PT > 512
+    check_tx_records();
+#endif
 
     if (failures == 0) {
         (void)printf("webpki_loop: a full handshake over the r2 chain, a resumed ticket with no"
                      " certificate, and a declined ticket completed as a full handshake that"
                      " checked the hostname and the anchor\n");
+#if CH_TX_PT > 512
+        (void)printf("webpki_loop: at CH_TX_PT %d, a write of CH_TX_PT bytes went out as one record"
+                     " and one byte more as two, %d bytes moved each way, and a smaller"
+                     " record_size_limit set the size of the server's records\n",
+                     CH_TX_PT, TX_TRANSFER);
+#endif
         return 0;
     }
     (void)fprintf(stderr, "webpki_loop: %d failures\n", failures);

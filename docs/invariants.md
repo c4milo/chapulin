@@ -967,7 +967,11 @@ last `ROLE=server` stub, as the entry said it would.
   edit `build.zig`, `inv36-public-header-names-hidden-length` names a
   length in `srv_cfg.h` that no public header defines, and
   `inv36-localize-elf-keeps-weak-global` and
-  `inv36-localize-macho-keeps-external-bit` edit the localizer.
+  `inv36-localize-macho-keeps-external-bit` edit the localizer. The
+  comparison builds only values both builds accept, so
+  `test/tx-record-builds.sh` holds `build.zig`'s `TX_RECORD` refusals to
+  the Makefile's, and `inv36-zig-build-tx-record-past-2-14` requires it
+  to fail.
 - **Violation.** A PR changes an axis in the Makefile and not in
   `build.zig`, or the reverse, or teaches the localizer a symbol it leaves
   global, or translates the module under other defines or headers than
@@ -1124,7 +1128,11 @@ last `ROLE=server` stub, as the entry said it would.
   refuses a ClientHello of more than `SRV_CLIENT_HELLO_EXT_MAX` (128)
   extensions with illegal_parameter, on a first hello and a retried one
   and on every server path, before the duplicate check runs
-  (docs/decisions.md 59).
+  (docs/decisions.md 59). Every build refuses to compile a `CH_TX_PT`
+  below 512 or above 2^14, the most plaintext RFC 9846 §5.1 lets one
+  record carry, and a `TRANSPORT=quic-nonblocking` build refuses any
+  value but 512; the Makefile's and `build.zig`'s `TX_RECORD` refuse
+  the same values (docs/decisions.md 71).
 - **Mechanism.** Fail-closed policy, each refusal an explicit branch
   with its alert.
 - **Check.** handshake_strict table cases per refusal; CBMC proves the
@@ -1300,6 +1308,11 @@ last `ROLE=server` stub, as the entry said it would.
   `srv-ticket-` violations guard the rules, and
   srv-resume-binder-memcmp carries INV-16 for the reason
   quic-token-memcmp does.
+  test/tx-record-builds.sh compiles the headers at each edge of
+  `CH_TX_PT`'s range and under QUIC, and runs the same values through
+  make and `build.zig`. inv14-tx-record-past-2-14,
+  inv14-tx-record-quic-accepted and
+  inv14-tx-record-makefile-quic-accepted require it to fail.
 - **Violation.** A PR relaxes one refusal for interop with a broken
   server, or makes the server refuse a ClientHello for carrying
   something it does not know.
@@ -2325,7 +2338,14 @@ last `ROLE=server` stub, as the entry said it would.
   `make lint-stack TRUST=webpki` as a leg of its own, so plain `make
   check`, the target `make ci` runs on a pull request, holds the
   4,096-byte budget too. `make lint-stack ROLE=server TRUST=none` is
-  another leg, the one that compiles the server's sources.
+  another leg, the one that compiles the server's sources. The
+  `TX_RECORD` leg runs it on the `TRUST=webpki ROLE=both` object at
+  `TX_RECORD=16384`, the one axis that exists to make a buffer larger.
+  `srv_frag`, the one stack buffer `CH_TX_PT` used to size, keeps
+  `SRV_FRAG_MAX`, 512 bytes, whatever `CH_TX_PT` is (decisions.md 71).
+  `inv19-srv-frag-sized-by-tx-record` sizes it by `CH_TX_PT` again, and
+  `bin/webpki_loop_tx_record`, whose handshakes count the Certificate's
+  three records, fails.
 - **Violation.** A PR sizes a scratch buffer from a length field, or
   adds a frame that silently outgrows the smallest supported SRAM.
   `test/violations/inv19-webpki-object-frame.violation` is that mutant:
