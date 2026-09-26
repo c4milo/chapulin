@@ -133,7 +133,7 @@ def gen_aead(d, out):
     return len(rows)
 
 
-# The AES-GCM suite, for quic_gcm.c. Only a -DCH_TRANSPORT_QUIC_NONBLOCKING build
+# The AES-GCM suite, for gcm.c. Only a -DCH_TRANSPORT_QUIC_NONBLOCKING build
 # compiles that file, so the rows below are emitted inside the same guard
 # and the other legs of wycheproof_test.c read a header that declares
 # nothing for them. INV-26 admits this key in a test: the rule bounds
@@ -145,7 +145,7 @@ def gen_aead(d, out):
 # 256-bit groups each fill an array of their own and a group with any
 # other key, nonce or tag size is counted and skipped rather than
 # squeezed into an API that cannot express it. The 256-bit rows sit
-# inside CH_AES_256 as well, which quic_aes.h defines for a suite build
+# inside CH_AES_256 as well, which aes.h defines for a suite build
 # and for a test built with -DCH_AES_256_TEST, because only those builds
 # have an AES-256 to run them on.
 def gen_aes_gcm(d, out):

@@ -6,7 +6,7 @@
 // TRANSPORT=quic-nonblocking build: rec_dir holds one direction of TLS record
 // protection, and the types here hold one direction of one QUIC
 // encryption level. The Initial level is the exception and takes
-// quic_aes.h's aes_public_key instead, because RFC 9001 §5.2 fixes
+// aes.h's aes_public_key instead, because RFC 9001 §5.2 fixes
 // AEAD_AES_128_GCM there.
 //
 // Pure derivation. Nothing here seals, opens, samples a packet or reads

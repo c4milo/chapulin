@@ -4,9 +4,9 @@
 // steps -- rather than re-deriving AES-128, AEAD_AES_128_GCM and the
 // header protection pair inside one formula.
 //
-// Why this exists: the same reason proof/quic_gcm_stubs.h exists. The
-// cipher proves on its own in 23 s (proof/run.sh's quic_aes line) and
-// the AEAD in 269 s, 48 s and 260 s (the three quic_gcm lines). A
+// Why this exists: the same reason proof/gcm_stubs.h exists. The
+// cipher proves on its own in 23 s (proof/run.sh's aes line) and
+// the AEAD in 269 s, 48 s and 260 s (the three gcm lines). A
 // concrete composition here would carry all four of those formulas plus
 // this one, over a packet whose length is symbolic.
 //
@@ -14,7 +14,7 @@
 //
 //   aes_public_key_initial   CH_EINVAL above CH_QUIC_DCID_MAX, without
 //                            reading the connection ID, CH_EINVAL for an
-//                            endpoint that is neither name quic_aes.h
+//                            endpoint that is neither name aes.h
 //                            gives, and otherwise a whole key of
 //                            unconstrained bytes. It records the endpoint
 //                            it was handed, refusal included, so main()
@@ -23,7 +23,7 @@
 //   gcm_seal                 n ciphertext bytes and GCM_TAG tag bytes.
 //   gcm_open                 1 or 0, with the n plaintext bytes written
 //                            only on 1. That is the all-or-nothing rule
-//                            quic_gcm_refusal proves of the real call.
+//                            gcm_refusal proves of the real call.
 //   quic_header_protect      byte 0 and QUIC_PN_MAX_LEN bytes at pn_off.
 //   quic_header_unprotect    the same writes, and a length of 1 to
 //                            QUIC_PN_MAX_LEN, which is what quic_packet.h
@@ -39,14 +39,14 @@
 // the packet fails a stub's assert rather than passing quietly.
 //
 // WHAT THIS NO LONGER PROVES: that those eight meet their contracts.
-// quic_aes_harness proves the first two, the three quic_gcm launch
+// aes_harness proves the first two, the three gcm launch
 // lines prove the AEAD, and quic_packet.c's own harness proves the four
 // packet-protection entries.
 #ifndef CH_QUIC_INITIAL_STUBS_H
 #define CH_QUIC_INITIAL_STUBS_H
 
-#include "quic_aes_key.h"
-#include "quic_gcm.h"
+#include "aes_public_key.h"
+#include "gcm.h"
 #include "quic_packet.h"
 
 uint64_t nondet_u64(void);
@@ -67,7 +67,7 @@ int aes_public_key_initial(aes_public_key *k, const uint8_t *dcid, size_t dcid_l
         // so the assert below sits after it rather than before it.
         return CH_EINVAL;
     }
-    // A third endpoint is a refusal, not a precondition. quic_aes.c
+    // A third endpoint is a refusal, not a precondition. aes.c
     // returns CH_EINVAL for one, and quic_initial.c's peer_endpoint hands
     // an unnamed value straight through rather than mapping it, so the
     // harness reaches this arm with an endpoint that is neither name. A

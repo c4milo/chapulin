@@ -1,5 +1,5 @@
 // quic_packet.c against RFC 9001 Appendix A and RFC 9000 Appendix A.3,
-// in its own header for the reason test/quic_gcm_tests.h is one: the
+// in its own header for the reason test/gcm_tests.h is one: the
 // packet vectors are long and test/quic_vectors.c holds the helpers they
 // read. It uses unhex, eq_hex and CHECK from that file and is included
 // after them.

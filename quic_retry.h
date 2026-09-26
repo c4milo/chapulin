@@ -5,15 +5,15 @@
 // build compiles it.
 //
 // This file and quic_initial.[ch] are the only sources that may call a
-// symbol quic_aes.h or quic_gcm.h declares. That rule is INV-26 in
+// symbol aes.h or gcm.h declares. That rule is INV-26 in
 // docs/invariants.md, the AES exception: a lookup-table cipher is
 // allowed in this tree only where every key it sees is public, and this
 // key is printed in the RFC itself (rfc9001.txt:1499-1500). RFC 9001 §5
 // draws the conclusion: Retry packets use a fixed key and so lack
 // confidentiality and integrity protection (rfc9001.txt:1002-1003). The
 // Semgrep rule inv-26-aes-public-keys-only fails a call to any aes_ or
-// gcm_ symbol outside quic_initial.c, quic_retry.c, quic_aes.c and
-// quic_gcm.c.
+// gcm_ symbol outside quic_initial.c, quic_retry.c, aes.c and
+// gcm.c.
 // docs/quic.md, "Where packet protection lives", states the trade.
 //
 // A Retry packet carries no protected payload and no protected header
@@ -30,15 +30,15 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "quic_aes.h"
-#include "quic_gcm.h"
+#include "aes.h"
+#include "gcm.h"
 
 // Recomputes the Retry Integrity Tag over the caller's Retry
 // Pseudo-Packet and reports whether it equals tag. RFC 9001 §5.8 fixes
 // every input (rfc9001.txt:1496-1507): the key K is the 128-bit constant
 // 0xbe0c690b9f66575a1d766b54e368c84e, which aes_public_key_retry writes;
 // the nonce N is the 96-bit constant 0x461599d35d632bf2239825bb, which
-// quic_retry.c holds, because quic_aes.h leaves the iv field of a Retry
+// quic_retry.c holds, because aes.h leaves the iv field of a Retry
 // key zero; the plaintext is empty; and the associated data is the whole
 // pseudo-packet. So the computation is one gcm_seal over an empty
 // plaintext, then one ct_memeq over GCM_TAG bytes.

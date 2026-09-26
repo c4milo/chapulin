@@ -7,9 +7,9 @@
 # bin/quic_driver_test compiles every QUIC_SRCS file and the handshake
 # sources the driver calls, so it is the target that fails when a QUIC
 # source stops compiling. INV-26 turns a whole class of edit into that
-# failure: ch_quic stores no aes_public_key, quic_aes.h leaves the type
-# incomplete, and only quic_aes.c, quic_initial.c and quic_retry.c
-# include quic_aes_key.h, so a write to a field of a key anywhere else
+# failure: ch_quic stores no aes_public_key, aes.h leaves the type
+# incomplete, and only aes.c, quic_initial.c and quic_retry.c
+# include aes_public_key.h, so a write to a field of a key anywhere else
 # names a member that does not exist.
 #
 # test/violations.py counts a build failure under a 'builds' line as
@@ -116,36 +116,36 @@ for role in -DCH_TRUST_WEBPKI -DCH_ROLE_SERVER; do
     fi
 done
 
-# AES=hw's GHASH. quic_gcm.c compiled with -DCH_AES_HW must call the two
-# entries quic_ghash_hw.c defines, and compiled without it must call
+# AES=hw's GHASH. gcm.c compiled with -DCH_AES_HW must call the two
+# entries ghash_hw.c defines, and compiled without it must call
 # neither. The first half is what refuses an AES=hw object that runs the
-# portable multiply under the AES=hw name: quic_ghash_hw.c would still
+# portable multiply under the AES=hw name: ghash_hw.c would still
 # link and define two functions nobody calls, and bin/ghash_equiv_test
 # would still pass, because the portable GHASH computes the same bytes.
-# quic_gcm.c names no intrinsic, so it compiles here without the flags
+# gcm.c names no intrinsic, so it compiles here without the flags
 # that turn the instructions on. nm lists an object's undefined symbols,
 # and the match is anchored at the end of the line because a Mach-O
 # object prefixes each name with an underscore.
-ghash_calls() { # $@ = extra flags: the quic_ghash_hw.c entries quic_gcm.c calls, on one line
-    "$cc" -std=c11 -I. -c -o "$gcm_obj" -DCH_RAND_EXTERN -DCH_TRANSPORT_QUIC_NONBLOCKING "$@" quic_gcm.c ||
+ghash_calls() { # $@ = extra flags: the ghash_hw.c entries gcm.c calls, on one line
+    "$cc" -std=c11 -I. -c -o "$gcm_obj" -DCH_RAND_EXTERN -DCH_TRANSPORT_QUIC_NONBLOCKING "$@" gcm.c ||
         return 1
     nm -u "$gcm_obj" | grep -oE 'gcm_(multiply_by_subkey|hash_data)_hw$' | sort -u | tr '\n' ' '
 }
 if ! hw_calls=$(ghash_calls -DCH_AES_HW); then
-    echo "quic-builds: quic_gcm.c under -DCH_AES_HW must compile" >&2
+    echo "quic-builds: gcm.c under -DCH_AES_HW must compile" >&2
     exit 1
 fi
 if [ "$hw_calls" != "gcm_hash_data_hw gcm_multiply_by_subkey_hw " ]; then
-    echo "quic-builds: quic_gcm.c under -DCH_AES_HW calls [$hw_calls] of quic_ghash_hw.c;" \
+    echo "quic-builds: gcm.c under -DCH_AES_HW calls [$hw_calls] of ghash_hw.c;" \
         "it must call gcm_multiply_by_subkey_hw and gcm_hash_data_hw" >&2
     exit 1
 fi
 if ! soft_calls=$(ghash_calls); then
-    echo "quic-builds: quic_gcm.c without -DCH_AES_HW must compile" >&2
+    echo "quic-builds: gcm.c without -DCH_AES_HW must compile" >&2
     exit 1
 fi
 if [ -n "$soft_calls" ]; then
-    echo "quic-builds: quic_gcm.c without -DCH_AES_HW calls $soft_calls;" \
-        "only an AES=hw object carries quic_ghash_hw.c" >&2
+    echo "quic-builds: gcm.c without -DCH_AES_HW calls $soft_calls;" \
+        "only an AES=hw object carries ghash_hw.c" >&2
     exit 1
 fi

@@ -26,10 +26,12 @@ The scope has landed, and the work went past it:
   runs OpenSSL's `s_client` against this tree's server under each suite,
   full and resumed, and `bench/sram.sh` measures a suite build.
 
-Still not done, of what this document lists: the rename of `quic_aes.[ch]`
-and `quic_gcm.[ch]`. The sections below keep the original scoping text,
-and their file and line references are as they were when it was
-written.
+The rename landed last: `quic_aes.[ch]` and `quic_gcm.[ch]` are now
+`aes.[ch]` and `gcm.[ch]`, and the `AES=hw` and GHASH sources lost the
+`quic_` prefix with them. `quic_aes_soft.c` and `quic_aes_extern.c` keep
+it, because only a QUIC build compiles them. The sections below keep the
+original scoping text. Their line references are as they were when it
+was written, and their file names are the current ones.
 
 ## Why the tree needs it
 
@@ -48,11 +50,11 @@ offers, and the device builds offer ChaCha20-Poly1305 on purpose.
 
 - The AES-128 key expansion and forward cipher of FIPS 197, in three
   implementations the `AES` axis picks between: `quic_aes_soft.c`,
-  `quic_aes_hw.c` and `quic_aes_extern.c`.
-- `AEAD_AES_128_GCM` and GHASH in `quic_gcm.c`, checked against SP 800-38D
+  `aes_hw.c` and `quic_aes_extern.c`.
+- `AEAD_AES_128_GCM` and GHASH in `gcm.c`, checked against SP 800-38D
   and the Wycheproof AES-GCM suite on four legs. Under `AES=hw`, the build
   this suite takes, GHASH's multiply runs on the carry-less multiply in
-  `quic_ghash_hw.c`, and `CH_NATIVE_AES` covers that instruction too
+  `ghash_hw.c`, and `CH_NATIVE_AES` covers that instruction too
   (`docs/decisions.md` entry 50).
 - The compile-time refusal this change switches on. `ct.h:95-100` errors
   unless `CH_AES_HW` and `CH_NATIVE_AES` are both set, because the `AES=soft`
@@ -73,8 +75,8 @@ hash with SHA-256, so the key schedule needs no hash agility.
 
 ### The type INV-26 rests on
 
-`aes_public_key` is the type `quic_aes.[ch]` and `quic_gcm.[ch]` take. Its
-body lives in `quic_aes_key.h` alone, so only three files can build one, and
+`aes_public_key` is the type `aes.[ch]` and `gcm.[ch]` take. Its
+body lives in `aes_public_key.h` alone, so only three files can build one, and
 `make lint-quic-surface` refuses a file that spells the body itself. INV-26
 admits AES into this tree on the claim that every key it sees is public. A
 traffic key is not, so the claim must change with the code.
@@ -131,7 +133,7 @@ asks for it.
 ### Where the suite cannot go
 
 `AES=hw` needs the instructions. The `m3` and `freertos` lanes target cores
-without them, where `quic_aes_hw.c` and `quic_ghash_hw.c` are each an
+without them, where `aes_hw.c` and `ghash_hw.c` are each an
 `#error`, so no device build
 carries this suite and `ct.h:95-100` is what stops one from trying.
 

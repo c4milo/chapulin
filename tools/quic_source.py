@@ -196,8 +196,8 @@ STRUCT_BODY = re.compile(r"\b(?:struct|union)\s+(\w+)\s*\{")
 def complete_types(path):
     """Every type one file defines a body for, in the order written.
 
-    quic_aes.h declares `typedef struct aes_public_key aes_public_key;`
-    and stops, so this reads no name there; quic_aes_key.h writes
+    aes.h declares `typedef struct aes_public_key aes_public_key;`
+    and stops, so this reads no name there; aes_public_key.h writes
     `struct aes_public_key { ... };`, so this reads one. INV-26 rests on
     that difference, and tools/quic-footprint.py checks it.
 

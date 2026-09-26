@@ -1,13 +1,13 @@
 invariant: INV-26
 file: quic_aes_soft.c
-catches: proof/prove-one.sh quic_aes
+catches: proof/prove-one.sh aes
 reason: the key expansion's loop runs one word past round_keys, so the
   last four stores land outside the round key array and inside whatever
   the caller placed after it on its stack frame. INV-26 is what admits a
-  table-driven AES into this tree, and quic_aes_harness is what holds
+  table-driven AES into this tree, and aes_harness is what holds
   the admitted code to memory safety at its real bound, so this is the
-  bug that harness exists to catch. The loop moved here from quic_aes.c
-  when the AES axis split the cipher out; quic_aes_hw.c carries the same
+  bug that harness exists to catch. The loop moved here from aes.c
+  when the AES axis split the cipher out; aes_hw.c carries the same
   loop, and no proof reads it (docs/quic.md, "What the AES axis
   proves"). docs/proofs.md requires planting it once and landing it.
   Each run is a proof of seconds, but the catch line names

@@ -129,7 +129,7 @@ int srv_read_client_hello(handshake_state *h, client_hello *ch);
 // suite order is the one RFC 9846 §9.1 lists (rfc9846.txt:4540-4543)
 // with ChaCha20-Poly1305 first; today it is the only suite this build
 // holds, because the only AES in this tree is the software S-box table
-// in quic_aes.c, which is admitted for QUIC Initial keys because those
+// in aes.c, which is admitted for QUIC Initial keys because those
 // are public and which would leak a TLS traffic key through cache
 // timing. So this build does not meet §9.1's cipher suite requirement
 // and does not claim to. The group order is srv_kex_group's:

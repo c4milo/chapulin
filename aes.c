@@ -1,10 +1,10 @@
 // The two aes_public_key constructors and the two forward-cipher entries
-// that take one. quic_aes.h states every contract; this file implements
+// that take one. aes.h states every contract; this file implements
 // them and nothing else.
 //
 // No cipher here. The Makefile AES variable picks the one source that
 // implements the key expansion and the block cipher — quic_aes_soft.c,
-// quic_aes_hw.c or quic_aes_extern.c — and quic_aes_block.h states the
+// aes_hw.c or quic_aes_extern.c — and aes_block.h states the
 // contract all three meet. This file derives the RFC 9001 keys, owns the
 // aes_public_key, and hands round keys down as bytes.
 //
@@ -15,15 +15,15 @@
 // from the TLS key schedule reaches this file. That bound holds under
 // every AES choice, and it is what an AES=soft build needs, because that
 // implementation's S-box is a table indexed with cipher state.
-#include "quic_aes.h"
+#include "aes.h"
 
 #if defined(CH_TRANSPORT_QUIC_NONBLOCKING) || defined(CH_SUITE_AES_GCM)
 
 #include <string.h>
 
+#include "aes_block.h"
+#include "aes_public_key.h"
 #include "hkdf.h"
-#include "quic_aes_block.h"
-#include "quic_aes_key.h"
 #ifdef CH_SUITE_AES_GCM
 #include "aes_traffic_key.h"
 #include "ch_assert.h"
@@ -86,7 +86,7 @@ int aes_public_key_initial(aes_public_key *k, const uint8_t *dcid, size_t dcid_l
     // (rfc9001.txt:999-1001), and this constructor derives nothing else.
     // It is the one AES entry never passed a secret key, because a
     // -DCH_SUITE_AES_GCM build takes its key from keysched.c and not from
-    // here, so the wipes quic_gcm.c and the block implementations carry
+    // here, so the wipes gcm.c and the block implementations carry
     // would say something false in this frame. INV-26 states which entry
     // holds which rule.
     return CH_OK;

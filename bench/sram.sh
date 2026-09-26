@@ -63,7 +63,7 @@ SESSION_WEBPKI_AES=$("$TMP/sz_webpki_aes" | awk '{print $2}')
 cc -std=c11 -DCH_RAND_EXTERN -DCH_TRUST_WEBPKI $SUITE_DEFS -I. -o "$TMP/floor_webpki_aes" "$TMP/floor.c"
 RXBUF_WEBPKI_AES=$("$TMP/floor_webpki_aes" | awk '{print $2}')
 # stack.py reads arm64 objects, and the arm64 cc this runs on defines
-# __ARM_FEATURE_AES by default, so quic_aes_hw.c needs no flag here.
+# __ARM_FEATURE_AES by default, so aes_hw.c needs no flag here.
 # ch_quic in the object colibri links, ROLE=both TRUST=webpki
 # TRANSPORT=quic-nonblocking, without and with the suite: under SUITE=aesgcm each
 # QUIC key set records its suite and its section 6.6 count. The report

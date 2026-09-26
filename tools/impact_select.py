@@ -439,12 +439,19 @@ def select_lints(out, changed, csources, lib):
     # ch_quic holds no key and the key type is incomplete outside three
     # sources, so a write to a key field elsewhere does not compile. All
     # three read the .c files as well as the headers, so a root quic path
-    # selects them whichever suffix it carries.
-    quic_root = [p for p in csources if "/" not in p and p.startswith("quic")]
+    # selects them whichever suffix it carries. The AES and GCM sources a
+    # SUITE=aesgcm build compiles carry no quic prefix, because that build
+    # compiles them over TCP too, and the same three gates still read them:
+    # INV-26 holds their keys, and lint-quic-partition judges each with the
+    # suite's defines. So an aes*, gcm* or ghash* path at the root selects
+    # them as well. quic_aes_soft.c and quic_aes_extern.c, which a suite
+    # build refuses, keep the prefix and are selected through it.
+    quic_root = [p for p in csources if "/" not in p
+                 and p.startswith(("quic", "aes", "gcm", "ghash"))]
     if quic_root:
         out.add("lint", "make lint-quic-partition",
-                "a root quic source changed, and this gate holds each quic "
-                "file to the build that compiles it",
+                "a root quic, AES or GCM source changed, and this gate holds "
+                "each such file to the build that compiles it",
                 ["test/lint-quic-partition.sh"])
         out.add("unit", "make bin/quic_driver_test",
                 "the compiler is half of INV-26: a key field the session no "
@@ -459,7 +466,7 @@ def select_lints(out, changed, csources, lib):
                 "client, and this script compiles it either side of that",
                 ["test/quic-builds.sh"])
     # lint-quic-surface also reads every root source for an include of a
-    # key header, quic_aes_key.h, aes_traffic_key.h or aes_schedule.h,
+    # key header, aes_public_key.h, aes_traffic_key.h or aes_schedule.h,
     # outside the files each one names, so any root C source selects it.
     if any("/" not in p for p in csources) or "docs/quic.md" in changed:
         out.add("lint", "make lint-quic-surface",

@@ -1,5 +1,5 @@
-// Contract stubs for the two HKDF calls quic_aes.c makes, so
-// quic_aes_harness proves the key schedule, the forward cipher and the
+// Contract stubs for the two HKDF calls aes.c makes, so
+// aes_harness proves the key schedule, the forward cipher and the
 // constructors' own framing rather than re-deriving HMAC-SHA-256 inside
 // that formula.
 //
@@ -26,8 +26,8 @@
 // hkdf_expand_label_harness, which prove the real functions over their
 // own domains, and to the RFC 9001 Appendix A.1 vectors in
 // test/quic_vectors.c, which check the whole derivation end to end.
-#ifndef CH_QUIC_AES_STUBS_H
-#define CH_QUIC_AES_STUBS_H
+#ifndef CH_AES_STUBS_H
+#define CH_AES_STUBS_H
 
 #include "hkdf.h"
 

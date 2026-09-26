@@ -10,12 +10,12 @@
 #   AES=soft                    ChaCha20, ChaCha20-Poly1305 and Poly1305
 #                               over the 16x16 multiply the packaged
 #                               object ships, and AES-128-GCM over the
-#                               S-box table and quic_gcm.c's portable
+#                               S-box table and gcm.c's portable
 #                               GHASH
 #   AES=soft CH_NATIVE_WIDEMUL  ChaCha20-Poly1305 and Poly1305 again, over
 #                               the native multiply the host tests assert
 #   AES=hw                      AES-128-GCM over the AES instructions and
-#                               quic_ghash_hw.c's GHASH on PMULL or
+#                               ghash_hw.c's GHASH on PMULL or
 #                               PCLMULQDQ
 #
 # Every build is -O2, the level the packaged object uses. CC picks the
@@ -72,12 +72,12 @@ trap 'rm -rf "$W"' EXIT
 
 FLAGS=(-std=c11 -O2 -Wall -Wextra -Wpedantic -Werror -Wvla -D_DEFAULT_SOURCE
     -DCH_RAND_EXTERN -DCH_TRANSPORT_QUIC_NONBLOCKING -I. -Ibench)
-COMMON=(bench/aead.c bench/aead_gcm.c quic_aes.c hkdf.c sha256.c ct.c chacha20.c poly1305.c
+COMMON=(bench/aead.c bench/aead_gcm.c aes.c hkdf.c sha256.c ct.c chacha20.c poly1305.c
     aead.c)
 "$CC" "${FLAGS[@]}" -o "$W/soft" "${COMMON[@]}" quic_aes_soft.c
 "$CC" "${FLAGS[@]}" -DCH_NATIVE_WIDEMUL -o "$W/native" "${COMMON[@]}" quic_aes_soft.c
 "$CC" "${FLAGS[@]}" ${HW_FLAGS[@]+"${HW_FLAGS[@]}"} -DCH_AES_HW -o "$W/hw" "${COMMON[@]}" \
-    quic_aes_hw.c quic_ghash_hw.c
+    aes_hw.c ghash_hw.c
 
 load() { # the three load averages, space separated
     uptime | sed -e 's/.*load average[s]*: //' -e 's/,//g'

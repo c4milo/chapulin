@@ -8,16 +8,16 @@
 // AES-256 as the key's round count says. Both types are incomplete here:
 // every call below takes a pointer, so this header needs no body, and a
 // file that includes it cannot build a key at all. INV-26 in
-// docs/invariants.md states that rule and names the checks; quic_aes.h
+// docs/invariants.md states that rule and names the checks; aes.h
 // states it at the two key types.
-#ifndef CH_QUIC_GCM_H
-#define CH_QUIC_GCM_H
+#ifndef CH_GCM_H
+#define CH_GCM_H
 #if defined(CH_TRANSPORT_QUIC_NONBLOCKING) || defined(CH_SUITE_AES_GCM)
 
 #include <stddef.h>
 #include <stdint.h>
 
-#include "quic_aes.h"
+#include "aes.h"
 
 #define GCM_TAG 16 // the 128-bit authentication tag, the only length used
 
@@ -34,7 +34,7 @@
 // it after the ciphertext. That is aead_seal's shape, for the same
 // reason.
 //
-// Requires: k was written by a constructor in quic_aes.h; nonce points at
+// Requires: k was written by a constructor in aes.h; nonce points at
 // AES_IV readable bytes; aad points at aad_len readable bytes, and aad
 // may be NULL when aad_len is 0; pt points at n readable bytes and ct
 // at n writable bytes, with pt == ct allowed and no other overlap; tag
@@ -77,7 +77,7 @@ int gcm_open(const aes_public_key *k, const uint8_t nonce[AES_IV], const uint8_t
 // because SP 800-38D's own vectors test it directly and its proof
 // harness drives it directly.
 //
-// Requires: k was written by a constructor in quic_aes.h; aad points at
+// Requires: k was written by a constructor in aes.h; aad points at
 // aad_len readable bytes and ct at n readable bytes, either of which
 // may be NULL when its length is 0; out points at AES_BLOCK writable
 // bytes.

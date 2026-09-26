@@ -487,11 +487,11 @@ does nothing more.
     where the key is public — Initial packet protection (§5.2), Initial
     header protection (§5.4.3) and the Retry integrity tag (§5.8) — and
     never under a key from the TLS key schedule. A key type,
-    `aes_public_key`, that only `quic_aes.c`, `quic_initial.c` and
+    `aes_public_key`, that only `aes.c`, `quic_initial.c` and
     `quic_retry.c` can build is the first guard, and the compiler runs
     it: `quic.h` stores no key, only the Destination Connection ID the
     keys come from, so the type is incomplete everywhere but the three
-    sources that include `quic_aes_key.h`, and a fourth file that
+    sources that include `aes_public_key.h`, and a fourth file that
     declares one gets an error. The calls are the part a rule reads, so
     the new invariant is Semgrep-tripwire there, the grade this tree
     gives an identifier ban: it permits exactly two callers and exactly
@@ -903,7 +903,7 @@ does nothing more.
 
 50. **`CH_NATIVE_AES` covers the carry-less multiply as well as the AES
     instructions.** Under `AES=hw`, GHASH multiplies on PMULL or
-    PCLMULQDQ in `quic_ghash_hw.c`, because `quic_gcm.c`'s portable
+    PCLMULQDQ in `ghash_hw.c`, because `gcm.c`'s portable
     multiply was 98% of an `AES=hw` seal and the instruction runs GHASH 60
     to 65 times faster from 1200 bytes up (docs/quic.md, "What the AES
     axis costs in time, measured"). AES-GCM needs both instructions under one key: the AES
@@ -926,7 +926,7 @@ does nothing more.
 
     A second macro, `CH_NATIVE_CLMUL`, was considered and rejected. No
     build here runs one instruction without the other: `AES=hw` compiles
-    `quic_aes_hw.c` and `quic_ghash_hw.c` together and every other `AES`
+    `aes_hw.c` and `ghash_hw.c` together and every other `AES`
     value compiles neither. The second define would be required exactly
     when the first is, so it would add a line to every suite build and a
     refusal to `ct.h` without separating any build that exists.
@@ -996,7 +996,7 @@ does nothing more.
     and the 32-bit codegen specs. The axis follows the AES one: the
     Makefile variable picks, one field per object, and the compiler's
     predefined macros are the whole detection. Nothing probes a CPU at
-    run time, for the reasons `quic_aes_hw.c` gives.
+    run time, for the reasons `aes_hw.c` gives.
 
     The values name what each field needs from the target, because that
     is what the person choosing has to know. `portable` runs on every
@@ -1436,7 +1436,7 @@ does nothing more.
       of `-DCH_SUITE_AES_GCM` without `AES=hw` and `CH_NATIVE_AES` covers
       both key sizes. `quic_aes_soft.c` holds a software AES-256 that only
       `-DCH_AES_256_TEST` compiles: it is the reference
-      `bin/aes_equiv_test` and the `quic_aes256` proof hold the
+      `bin/aes_equiv_test` and the `aes256` proof hold the
       instructions to, and `lint-trust-separation` refuses that define in
       every packaged object.
     - **The key schedule takes the hash length first.** `hmac`,

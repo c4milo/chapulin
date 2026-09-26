@@ -18,8 +18,8 @@
 
 #ifdef CH_TRANSPORT_QUIC_NONBLOCKING
 
+#include "aes_public_key.h"
 #include "ct.h"
-#include "quic_aes_key.h"
 
 // RFC 9001 §5.8's printed nonce, 0x461599d35d632bf2239825bb
 // (rfc9001.txt:1501-1502). It sits here rather than in the key, because
@@ -32,7 +32,7 @@ void quic_retry_tag(const uint8_t *pseudo, size_t n, uint8_t tag[GCM_TAG]) {
     aes_public_key k;
     aes_public_key_retry(&k);
     // The empty plaintext of §5.8, and the empty ciphertext it seals to.
-    // quic_gcm.h states both pointers for n readable and n writable
+    // gcm.h states both pointers for n readable and n writable
     // bytes and says nothing about a null one, so each gets a real
     // buffer. gcm_seal allows pt == ct, which is the shape here.
     uint8_t empty[1] = {0};

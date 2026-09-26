@@ -1,7 +1,7 @@
-// GHASH on the carry-less multiply instruction (quic_ghash_hw.c, AES=hw)
-// against quic_gcm.c's portable GHASH: same operands, same output, byte
+// GHASH on the carry-less multiply instruction (ghash_hw.c, AES=hw)
+// against gcm.c's portable GHASH: same operands, same output, byte
 // for byte. This is what holds the instruction path, because CBMC cannot
-// read an intrinsic: the quic_gcm and quic_ghash harnesses in proof/
+// read an intrinsic: the gcm and ghash harnesses in proof/
 // cover the portable bodies, and this binary carries the instruction path
 // to the same answers. test/aes_equiv_test.c does the same for the AES
 // block cipher.
@@ -16,7 +16,7 @@
 //   the AEAD       gcm_seal, gcm_open and gcm_ghash over the instruction
 //                  GHASH against the same three over the portable one
 //
-// Both AEADs run quic_aes_hw.c's block cipher, so GHASH is the only
+// Both AEADs run aes_hw.c's block cipher, so GHASH is the only
 // difference between them; test/aes_equiv_test.c holds that cipher to
 // AES=soft.
 //
@@ -27,7 +27,7 @@
 // reduction step, each against each. Then every pair of single-bit
 // operands, whose product x^(i+j) runs every degree from 0 to 254, so
 // every bit the reduction moves is set once on its own. Then the
-// squaring shape acc == subkey, which quic_ghash_hw.h admits.
+// squaring shape acc == subkey, which ghash_hw.h admits.
 //
 // SP 800-38D and Wycheproof are not repeated here. bin/quic_test_hw and
 // the Wycheproof AES=hw leg run the published vectors over the same
@@ -37,13 +37,13 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "aes_block.h"
+#include "aes_public_key.h"
 #include "ch_assert.h"
-#include "quic_aes_block.h"
-#include "quic_aes_key.h"
-#include "quic_gcm.h"
-#include "quic_ghash_hw.h"
+#include "gcm.h"
+#include "ghash_hw.h"
 
-// hkdf.c asserts its contracts, and quic_aes.c links it for the Initial
+// hkdf.c asserts its contracts, and aes.c links it for the Initial
 // key constructor. Nothing here trips an assertion, so reaching this is
 // a bug in the test.
 noreturn void ch_assert_fail(const char *cond, const char *file, int line) {
@@ -253,7 +253,7 @@ static void compare_hash_data(const char *case_name, const uint8_t *bytes, size_
 
 // Every length from zero to four blocks and a byte, which puts each
 // length of a last partial block through the pad, then random lengths up
-// to MAX_DATA. NULL with a length of zero is the shape quic_gcm.h admits
+// to MAX_DATA. NULL with a length of zero is the shape gcm.h admits
 // for empty associated data.
 static void run_hash_data(void) {
     compare_hash_data("data loop over NULL", NULL, 0);
@@ -327,8 +327,8 @@ static void compare_aead(const char *case_name, size_t aad_len, size_t n) {
     rng_fill(nonce, sizeof nonce);
     rng_fill(aad, aad_len);
     rng_fill(plaintext, n);
-    // A key from any 16 bytes, built the way test/quic_gcm_tests.h builds
-    // one: the two constructors in quic_aes.h take a connection ID or the
+    // A key from any 16 bytes, built the way test/gcm_tests.h builds
+    // one: the two constructors in aes.h take a connection ID or the
     // Retry key, and SP 800-38D admits any key.
     aes_public_key k;
     memset(&k, 0, sizeof k);

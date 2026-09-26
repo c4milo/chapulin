@@ -14,7 +14,7 @@ reason: the AES-GCM suite build stops needing CH_NATIVE_AES, so
 
 --- old
 #ifndef CH_NATIVE_AES
-#error "CH_SUITE_AES_GCM needs -DCH_NATIVE_AES: the build asserts the timing (quic_aes_hw.c)"
+#error "CH_SUITE_AES_GCM needs -DCH_NATIVE_AES: the build asserts the timing (aes_hw.c)"
 #endif
 #endif
 --- new

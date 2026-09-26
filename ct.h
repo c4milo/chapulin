@@ -82,14 +82,14 @@ void ct_wipe(void *p, size_t n);
 //                  needs both under one key: the AES rounds produce the
 //                  keystream and the hash subkey, and under AES=hw GHASH
 //                  multiplies by that subkey on PMULL or PCLMULQDQ
-//                  (quic_ghash_hw.c). __ARM_FEATURE_AES, __AES__ and
+//                  (ghash_hw.c). __ARM_FEATURE_AES, __AES__ and
 //                  __PCLMUL__ say only that the instructions exist, which
 //                  is the inference this header refuses above for the
 //                  multiply; Arm publishes FEAT_DIT and Intel publishes
 //                  DOITM because the architectures leave the timing to the
 //                  implementation. Firmware defines it with a vendor
 //                  statement that covers both instructions, and
-//                  quic_aes_hw.c states what it covers. docs/decisions.md
+//                  aes_hw.c states what it covers. docs/decisions.md
 //                  entry 50 says why one define carries both.
 //
 // INV-26 in docs/invariants.md states the bound these two keep and what the
@@ -99,7 +99,7 @@ void ct_wipe(void *p, size_t n);
 #error "CH_SUITE_AES_GCM needs AES=hw: the AES=soft S-box is indexed with the key"
 #endif
 #ifndef CH_NATIVE_AES
-#error "CH_SUITE_AES_GCM needs -DCH_NATIVE_AES: the build asserts the timing (quic_aes_hw.c)"
+#error "CH_SUITE_AES_GCM needs -DCH_NATIVE_AES: the build asserts the timing (aes_hw.c)"
 #endif
 #endif
 

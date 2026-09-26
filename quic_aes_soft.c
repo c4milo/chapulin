@@ -1,6 +1,6 @@
 // AES=soft, the default: the AES-128 key expansion and forward cipher of
 // FIPS 197 in C, with the S-box as a 256-byte table.
-// quic_aes_block.h states both contracts; this file implements them and
+// aes_block.h states both contracts; this file implements them and
 // nothing else.
 //
 // The table is indexed with cipher state, so this code does not run in
@@ -14,18 +14,18 @@
 // it. An AES=hw build has no table and no such trade, which is what
 // docs/decisions.md entry 6 says a secret-key AES suite would need.
 //
-// This file holds no wipe, where quic_aes_hw.c wipes its round-key word
+// This file holds no wipe, where aes_hw.c wipes its round-key word
 // and its cipher state. The bound above is why: a -DCH_SUITE_AES_GCM
 // build is the only one whose key is secret, ct.h refuses that build
 // unless it also takes AES=hw, so no key this file expands is ever worth
 // wiping and the stores would cost a device something for nothing.
 //
 // Under -DCH_AES_256_TEST it also holds AES-256, as the software
-// reference test/aes_equiv_test.c and proof/quic_aes256_harness.c hold
-// quic_aes_hw.c's AES-256 to. Only tests and proofs define that macro. A
+// reference test/aes_equiv_test.c and proof/aes256_harness.c hold
+// aes_hw.c's AES-256 to. Only tests and proofs define that macro. A
 // library object takes AES-256 only for TLS_AES_256_GCM_SHA384, whose key
 // is secret, and so only with AES=hw.
-#include "quic_aes_block.h"
+#include "aes_block.h"
 
 #if defined(CH_TRANSPORT_QUIC_NONBLOCKING) || defined(CH_SUITE_AES_GCM)
 #ifndef CH_AES_HW
@@ -165,7 +165,7 @@ void aes_cipher_block(const uint8_t round_keys[AES_ROUND_KEYS * AES_BLOCK],
 
 #ifdef CH_AES_256
 // The software AES-256 reference, which only a test binary or a proof
-// harness compiles (-DCH_AES_256_TEST, quic_aes.h). Written apart
+// harness compiles (-DCH_AES_256_TEST, aes.h). Written apart
 // from the AES-128 pair above rather than folded into it, so that pair
 // and the proof and the branch counts that measure it stay as they were.
 

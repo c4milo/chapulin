@@ -1,7 +1,7 @@
 invariant: INV-27
-file: quic_aes.h
+file: quic_initial.h
 catches: test/lint-quic-partition.sh
-reason: a new type lands at the top of quic_aes.h, above the
+reason: a new type lands at the top of quic_initial.h, above the
   #ifdef CH_TRANSPORT_QUIC_NONBLOCKING the rest of the file sits under, so a
   TCP build compiles a declaration from a file the mode owns.
   The file still carries the prefix and still preprocesses, so
@@ -10,16 +10,16 @@ reason: a new type lands at the top of quic_aes.h, above the
   declaration, so it objects.
 
 --- old
-#ifndef CH_QUIC_AES_H
-#define CH_QUIC_AES_H
-#if defined(CH_TRANSPORT_QUIC_NONBLOCKING) || defined(CH_SUITE_AES_GCM)
+#ifndef CH_QUIC_INITIAL_H
+#define CH_QUIC_INITIAL_H
+#ifdef CH_TRANSPORT_QUIC_NONBLOCKING
 --- new
-#ifndef CH_QUIC_AES_H
-#define CH_QUIC_AES_H
+#ifndef CH_QUIC_INITIAL_H
+#define CH_QUIC_INITIAL_H
 
 // One AES-128 block, written above the transport guard.
 typedef struct {
     unsigned char b[16];
-} aes_block;
+} initial_block;
 
-#if defined(CH_TRANSPORT_QUIC_NONBLOCKING) || defined(CH_SUITE_AES_GCM)
+#ifdef CH_TRANSPORT_QUIC_NONBLOCKING

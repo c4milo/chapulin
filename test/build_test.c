@@ -54,7 +54,7 @@ void ch_keylog(void *io, const char *label, const uint8_t client_random[CH_KEYLO
 #endif
 
 #ifdef CH_AES_EXTERN
-// quic_aes_block.h declares this hook, and only a library source reads
+// aes_block.h declares this hook, and only a library source reads
 // that header, so the declaration is repeated here. An AES=extern object
 // imports it whenever it compiles AES, and the transport this program
 // moves can be the one that decides that.

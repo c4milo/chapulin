@@ -109,8 +109,10 @@ def preprocess(path, define, extra=()):
     `extra` is the file's own build choice, from QUIC_EXTRA_DEFINES. The
     three AES implementations each guard their body on a second macro, so
     without it the file preprocesses to nothing and this lint would read
-    that as a file contributing nothing to either transport. It goes on
-    both runs, because the AES choice is orthogonal to the transport: the
+    that as a file contributing nothing to either transport. The AES and
+    GCM sources a SUITE=aesgcm build compiles take that build's defines,
+    because without them each would read as QUIC-only. It goes on both
+    runs, because the AES choice is orthogonal to the transport: the
     question here is still what CH_TRANSPORT_QUIC_NONBLOCKING alone changes."""
     args = [CC] + FLAGS + list(extra) + ([DEFINE] if define else []) + [path]
     r = subprocess.run(args, cwd=ROOT, capture_output=True, text=True)
@@ -322,7 +324,7 @@ def main(argv):
     roots = [p for p in roots if p not in skipped]
     extra = extra_defines(names["QUIC_EXTRA_DEFINES"])
     # A file this compiler cannot preprocess at all, because the build
-    # choice it needs is one this compiler does not offer: quic_aes_hw.c
+    # choice it needs is one this compiler does not offer: aes_hw.c
     # on a compiler with no AES instructions is its own #error, by
     # design. The Makefile puts it here only in that case, so a compiler
     # that has them judges it like any other file.

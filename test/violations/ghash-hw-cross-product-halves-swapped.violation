@@ -1,5 +1,5 @@
 invariant: INV-26
-file: quic_ghash_hw.c
+file: ghash_hw.c
 catches: ghash_equiv_test
 reason: one cross product of the AES=hw multiply puts its high half where
   its low half belongs and the reverse, so the unreduced product is wrong

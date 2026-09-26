@@ -1,12 +1,12 @@
 invariant: INV-26
-file: quic_gcm.c
+file: gcm.c
 catches: quic_test
 builds: bin/quic_test
 reason: gcm_open writes the plaintext before it compares the tag, so a
   packet with a wrong tag hands its decryption to the caller and the
-  refusal arrives too late to matter. quic_gcm.h promises the opposite in
+  refusal arrives too late to matter. gcm.h promises the opposite in
   so many words, and aead.c has held the same order for ChaCha20-Poly1305
-  since it was written. The vectors in test/quic_gcm_tests.h check that a
+  since it was written. The vectors in test/gcm_tests.h check that a
   refused open leaves the output buffer as it was, so bin/quic_test is
   what objects.
 

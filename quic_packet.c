@@ -28,7 +28,7 @@
 #include "ct.h"
 #ifdef CH_SUITE_AES_GCM
 #include "aes_traffic_key.h"
-#include "quic_gcm.h"
+#include "gcm.h"
 #include "suite.h"
 #endif
 

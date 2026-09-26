@@ -13,8 +13,8 @@
 // Forward cipher only. GCM uses the forward cipher function alone (NIST
 // SP 800-38D) and the §5.4.3 mask is one forward block, so no inverse
 // cipher and no decryption round keys exist here.
-#ifndef CH_QUIC_AES_H
-#define CH_QUIC_AES_H
+#ifndef CH_AES_H
+#define CH_AES_H
 #if defined(CH_TRANSPORT_QUIC_NONBLOCKING) || defined(CH_SUITE_AES_GCM)
 
 #include <stddef.h>
@@ -31,7 +31,7 @@
 // AES-256, which TLS_AES_256_GCM_SHA384 takes (RFC 9846 §9.1,
 // rfc9846.txt:4540-4543). A library object compiles it only under
 // -DCH_SUITE_AES_GCM, which ct.h refuses without AES=hw, so it runs on the
-// AES instructions in quic_aes_hw.c. A test binary or a proof harness
+// AES instructions in aes_hw.c. A test binary or a proof harness
 // defines CH_AES_256_TEST to compile it without the suite: on AES=soft
 // that is the software reference in quic_aes_soft.c, which holds the
 // hardware path to FIPS 197 where CBMC cannot read an intrinsic, and on
@@ -66,14 +66,14 @@
 // key, a quic_keys key, an aes_traffic_key or a bare byte array does not
 // compile.
 //
-// The type is incomplete here, and quic_aes_key.h holds the definition.
+// The type is incomplete here, and aes_public_key.h holds the definition.
 // A file that includes only this header can take a pointer to a key and
 // pass it on; it cannot declare one, size one, or write a field of one,
 // because the compiler does not know what is inside. That is INV-26's
 // first check, and the compiler is what runs it. Four sources include
-// quic_aes_key.h: quic_aes.c, which writes the two constructors,
+// aes_public_key.h: aes.c, which writes the two constructors,
 // quic_initial.c and quic_retry.c, which build a key on their own stack
-// at each use, and quic_gcm.c, which reads the round keys to run the
+// at each use, and gcm.c, which reads the round keys to run the
 // AEAD. `make lint-quic-surface` fails on a fifth.
 //
 // Every key this type ever holds is public, and that is the whole
@@ -101,11 +101,11 @@
 // quic_initial.c, quic_retry.c and the definition sites, and
 // inv-26-aes-traffic-keys-only fails any use of a traffic-family name
 // outside the files aes_traffic_key.h names. lint-quic-surface fails a
-// function, a function-like macro or a type in this header or quic_gcm.h
+// function, a function-like macro or a type in this header or gcm.h
 // that the rules do not match, fails a type this header completes, and
 // fails a source outside each key header's list that includes it, so the
 // rules' own premise is read rather than assumed.
-// lint-codegen-partition holds quic_aes.c and quic_gcm.c in
+// lint-codegen-partition holds aes.c and gcm.c in
 // WIDEMUL_CEILING and BRANCH_SRCS, where a compiler that lowers a masked
 // select to a branch shows. lib-check keeps every aes_ and gcm_ symbol
 // out of the packaged object's exports, so no caller reuses this cipher
@@ -199,7 +199,7 @@ void aes_traffic_encrypt_block(const aes_traffic_key *k, const uint8_t in[AES_BL
 // Appendix A.1 is the vector for both endpoints (rfc9001.txt:2352-2377).
 //
 // Requires: k is not NULL and points at one whole aes_public_key, so
-// the caller includes quic_aes_key.h; dcid points at dcid_len readable
+// the caller includes aes_public_key.h; dcid points at dcid_len readable
 // bytes, and dcid is read only when dcid_len is above 0; endpoint is
 // CH_QUIC_ENDPOINT_CLIENT or CH_QUIC_ENDPOINT_SERVER. This file derives
 // whichever one it is handed and reads no role: which endpoint each of
@@ -226,13 +226,13 @@ int aes_public_key_initial(aes_public_key *k, const uint8_t *dcid, size_t dcid_l
 // own stack.
 //
 // Requires: k is not NULL and points at one whole aes_public_key, so
-// the caller includes quic_aes_key.h. Writes k whole and cannot fail,
+// the caller includes aes_public_key.h. Writes k whole and cannot fail,
 // so it returns nothing.
 void aes_public_key_retry(aes_public_key *k);
 #endif // CH_TRANSPORT_QUIC_NONBLOCKING
 
 // One forward-cipher block under the packet protection key, k->key:
-// out = CIPH_K(in), FIPS 197 §5.1. quic_gcm.c calls it for the counter
+// out = CIPH_K(in), FIPS 197 §5.1. gcm.c calls it for the counter
 // blocks and the GHASH subkey of AEAD_AES_128_GCM.
 //
 // Requires: k was written by a constructor above; in and out point at
@@ -240,7 +240,7 @@ void aes_public_key_retry(aes_public_key *k);
 // AES_BLOCK bytes and cannot fail.
 // The forward cipher over an expanded key, whichever key type holds it.
 // The typed entries unwrap their key and call this, and so does
-// quic_gcm.c, so the cipher is written once and the type system still
+// gcm.c, so the cipher is written once and the type system still
 // decides which call sites may hold which key (INV-26). In a build with
 // AES-256 the schedule records its round count, and this runs the
 // fourteen rounds of AES-256 or the ten of AES-128 by it; the count is

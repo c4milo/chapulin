@@ -1,22 +1,22 @@
 // Proves: gcm_open is all-or-nothing. On any tag that differs from the
 // genuine one it returns 0 and writes no plaintext, checked by asserting
-// that the output buffer's sentinel survives the failed open. quic_gcm.h
+// that the output buffer's sentinel survives the failed open. gcm.h
 // states that promise, and it is why the tag is computed over the
 // ciphertext before any plaintext byte is written.
 //
-// Split out of quic_gcm_harness.c, for the reason aead_forge is split
+// Split out of gcm_harness.c, for the reason aead_forge is split
 // out of aead_harness.c: one formula carrying the round trip and the
 // refusal together is the shape that stops converging
 // (https://github.com/c4milo/chapulin/issues/56).
 //
-// The forward cipher is a contract stub (proof/quic_gcm_stubs.h), which
+// The forward cipher is a contract stub (proof/gcm_stubs.h), which
 // states what the composition gives up and where the real cipher is
 // proven.
 #include "harness.h"
 
-#include "quic_gcm_stubs.h"
+#include "gcm_stubs.h"
 
-#include "quic_gcm.c"
+#include "gcm.c"
 
 int main(void) {
     aes_public_key k;

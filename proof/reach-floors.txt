@@ -109,8 +109,8 @@ poly1305 94.3
 # alone.
 quic_initial 98.7  # local reading, cbmc 6.11.0 on arm64 macOS; replace with the nightly table's number
 # quic_packet is the one TRANSPORT=quic-nonblocking harness whose cover command
-# converges: 34 s and 0.75 GB against the 1800 s budget, where quic_aes
-# returned no number in 21 minutes. Its proof is cheap for the same
+# converges: 34 s and 0.75 GB against the 1800 s budget, where the aes
+# harness returned no number in 21 minutes. Its proof is cheap for the same
 # reason -- ChaCha20 and the AEAD are stubs, so the formula holds
 # framing rather than a keystream.
 quic_packet 75.8  # local reading, cbmc 6.11.0 on arm64 macOS; replace with the nightly table's number
@@ -187,14 +187,14 @@ x25519_tail 52.2
 #
 # The four TRANSPORT=quic-nonblocking harnesses are listed from one measurement and
 # one inference, and the inference is why they are here rather than in
-# the roster. quic_aes returned no usable number under the cover command
-# on a development machine on 2026-09-18 (arm64 macOS, the pinned cbmc,
-# about 21 minutes, 0.6 GB peak) -- and its proof takes 23 s, so cover
-# costs it more than fifty times what proving it costs. quic_gcm_refusal
+# the roster. The aes harness returned no usable number under the cover
+# command on a development machine on 2026-09-18 (arm64 macOS, the pinned
+# cbmc, about 21 minutes, 0.6 GB peak) -- and its proof takes 23 s, so
+# cover costs it more than fifty times what proving it costs. gcm_refusal
 # was still running when the 1500 s cap on that whole session stopped it;
-# quic_gcm_safety and quic_ghash were not reached. Their proofs take 282 s,
-# 52 s and 274 s, all above quic_aes's 23 s, so nothing suggests their
-# cover formulas do better than the one that already failed. Listing all
+# gcm_safety and ghash were not reached. Their proofs take 282 s,
+# 52 s and 274 s, all above the aes harness's 23 s, so nothing suggests
+# their cover formulas do better than the one that already failed. Listing all
 # four keeps the nightly from spending up to 1800 s each finding that out.
 # Measure one by hand with `--only NAME` and move it to the roster above
 # when it converges.
@@ -268,12 +268,12 @@ x25519_tail 52.2
 # day (arm64 macOS, cbmc 6.11.0) it held 7.9 GB when the 1800 s budget
 # stopped it without a number. It carries no floor.
 #
-# quic_aes256 stops in 20 s under the cover command on a development
+# aes256 stops in 20 s under the cover command on a development
 # machine on 2026-09-25 (arm64 macOS, cbmc 6.11.0), with cbmc's "too many
 # addressed objects", so it reports no number. Its launch line carries no
-# --object-bits. Raising it would put the harness where quic_aes is,
-# a cover run that returned no usable number in 21 minutes, so it is
-# listed beside quic_aes rather than given more room.
+# --object-bits. Raising it would put the harness where the aes harness
+# is, a cover run that returned no usable number in 21 minutes, so it is
+# listed beside that one rather than given more room.
 #
 #   eeparse
 #   handshake_parser
@@ -294,11 +294,11 @@ x25519_tail 52.2
 #   mlkem_poly
 #   p256
 #   p384
-#   quic_aes
-#   quic_aes256
-#   quic_gcm_refusal
-#   quic_gcm_safety
-#   quic_ghash
+#   aes
+#   aes256
+#   gcm_refusal
+#   gcm_safety
+#   ghash
 #   rsa
 #   sha256
 #   sha3

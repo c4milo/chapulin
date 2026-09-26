@@ -36,7 +36,7 @@ HTTP/3 framing.
 
 ## What already works for a server, unchanged
 
-`quic_gcm.c`, `quic_aes.c`, `quic_keys.c` and `quic_packet.c` hold no role.
+`gcm.c`, `aes.c`, `quic_keys.c` and `quic_packet.c` hold no role.
 They take keys and bytes, so a server links them as they stand.
 
 `quic_initial.c` already derives both labels. `CH_KEY_WRITE` derives under
@@ -53,7 +53,7 @@ with what it cost.
 
 **The direction-to-label mapping (was item 1).** `quic_initial_seal` and
 `quic_initial_open` take an endpoint, and `aes_public_key_initial` takes one
-too, which leaves `quic_aes.c` holding no role at all: a direction and an
+too, which leaves `aes.c` holding no role at all: a direction and an
 endpoint are different questions. Checked against RFC 9001 A.3 byte for
 byte, header protection included.
 

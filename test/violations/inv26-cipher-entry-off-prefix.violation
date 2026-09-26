@@ -1,7 +1,7 @@
 invariant: INV-26
-file: quic_aes.h
+file: aes.h
 catches: test/lint-quic-surface.sh
-reason: quic_aes.h gains a second forward-cipher entry named
+reason: aes.h gains a second forward-cipher entry named
   quic_encrypt_block rather than aes_encrypt_block. Both branches of
   inv-26-aes-public-keys-only match a name beginning aes_ or gcm_, so
   from the day that name exists any file may call it and the Semgrep

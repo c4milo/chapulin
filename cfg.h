@@ -311,7 +311,7 @@ typedef struct {
 
 // The direction on_level_ready reports: read opens what the peer sent, write protects what
 // this caller sends, and RFC 9001 §5.1 gives each level separate secrets per direction
-// (rfc9001.txt:1010-1012). A direction is not an endpoint, and quic_aes.h holds the two
+// (rfc9001.txt:1010-1012). A direction is not an endpoint, and aes.h holds the two
 // endpoint names beside the derivation that reads them. CH_QUIC_DCID_MAX caps §5.2's other
 // input and sizes ch_quic's initial_dcid: a version 1 connection ID is at most 20 bytes and
 // may be empty (rfc9000.txt:4991-4998, rfc9001.txt:1098-1100).

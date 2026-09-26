@@ -1,5 +1,5 @@
 // quic_initial.c against RFC 9001 Appendix A.2 and Appendix A.3, in its
-// own header for the reason test/quic_gcm_tests.h and
+// own header for the reason test/gcm_tests.h and
 // test/quic_packet_tests.h are: the Initial vectors are long and
 // test/quic_vectors.c holds the helpers they read. It uses the helpers and
 // CHECK from that file and is included after them.

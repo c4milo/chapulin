@@ -1,12 +1,12 @@
 // Proves: gcm_open is all-or-nothing. For any tag at all, an open that
 // returns 0 leaves every byte of the output buffer as the caller left
-// it, checked against a sentinel the harness writes first. quic_gcm.h
+// it, checked against a sentinel the harness writes first. gcm.h
 // states that promise, and it is why the tag is computed over the
 // ciphertext and compared before any plaintext byte is written.
 //
 // Nothing constrains the tag and nothing constrains the return value, so
 // one formula carries the accepting arm and the refusing arm together.
-// quic_gcm_forge_harness.c asks for the same promise by sealing first
+// gcm_forge_harness.c asks for the same promise by sealing first
 // and then forcing the tag to differ from that seal's tag; that shape
 // puts a whole gcm_seal in the formula and returns no verdict, which
 // proof/run.sh records. Leaving the tag free gets the promise with one
@@ -19,14 +19,14 @@
 // records the measurement. CH_GCM_REACH=2 does the same for the
 // accepting arm.
 //
-// The forward cipher is a contract stub (proof/quic_gcm_stubs.h), which
+// The forward cipher is a contract stub (proof/gcm_stubs.h), which
 // states what the composition gives up and where the real cipher is
 // proven.
 #include "harness.h"
 
-#include "quic_gcm_stubs.h"
+#include "gcm_stubs.h"
 
-#include "quic_gcm.c"
+#include "gcm.c"
 
 #ifndef CH_GCM_PT_MAX
 #define CH_GCM_PT_MAX 16

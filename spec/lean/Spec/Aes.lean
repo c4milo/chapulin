@@ -8,10 +8,10 @@ executable oracle. AES-256 is TLS_AES_256_GCM_SHA384's cipher.
 
 The S-box is computed, not tabulated: FIPS 197 §5.1.1 defines it as the
 affine transform of the multiplicative inverse in GF(2^8), and this
-module says that, where `quic_aes.c` ships the 256-byte table the
+module says that, where `aes.c` ships the 256-byte table the
 definition produces. The differential compares the two.
 
-Only the forward cipher exists here, for the reason `quic_aes.h` gives:
+Only the forward cipher exists here, for the reason `aes.h` gives:
 GCM uses CIPH_K alone and the RFC 9001 §5.4.3 mask is one forward block,
 so nothing in this tree decrypts an AES block.
 -/

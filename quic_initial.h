@@ -5,7 +5,7 @@
 // compiles it.
 //
 // This file and quic_retry.[ch] are the only sources that may call a
-// symbol quic_aes.h or quic_gcm.h declares. That rule is INV-26 in
+// symbol aes.h or gcm.h declares. That rule is INV-26 in
 // docs/invariants.md, the AES exception: a lookup-table cipher is
 // allowed in this tree only where every key it sees is public, and the
 // Initial keys are public because anyone who reads a long header reads
@@ -13,8 +13,8 @@
 // that conclusion itself: Initial packets are not considered to have
 // confidentiality or integrity protection (rfc9001.txt:999-1001). The
 // Semgrep rule inv-26-aes-public-keys-only fails a call to any aes_ or
-// gcm_ symbol outside quic_initial.c, quic_retry.c, quic_aes.c and
-// quic_gcm.c.
+// gcm_ symbol outside quic_initial.c, quic_retry.c, aes.c and
+// gcm.c.
 // docs/quic.md, "Where packet protection lives", states the trade.
 //
 // Every encryption level above Initial runs ChaCha20-Poly1305 through
@@ -30,8 +30,8 @@
 // public entries ch_quic_seal and ch_quic_open reach the AES through
 // this file, name no aes_ or gcm_ symbol themselves, and never hold a
 // key: quic.c cannot declare an aes_public_key at all, because
-// quic_aes.h leaves that type incomplete and quic.c does not include
-// quic_aes_key.h.
+// aes.h leaves that type incomplete and quic.c does not include
+// aes_public_key.h.
 #ifndef CH_QUIC_INITIAL_H
 #define CH_QUIC_INITIAL_H
 #ifdef CH_TRANSPORT_QUIC_NONBLOCKING
@@ -39,9 +39,9 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "aes.h"
 #include "cfg.h"
-#include "quic_aes.h"
-#include "quic_gcm.h"
+#include "gcm.h"
 #include "quic_packet.h"
 
 // Two constants govern both packet paths, and quic_packet.h declares
@@ -54,7 +54,7 @@
 // starts QUIC_PN_MAX_LEN bytes past the packet number offset, because a
 // receiver that has not removed header protection yet does not know the
 // packet number length and takes the sample as if the field were its
-// longest. AES_BLOCK keeps the one meaning quic_aes.h gives it, the
+// longest. AES_BLOCK keeps the one meaning aes.h gives it, the
 // FIPS 197 block, which is also the input §5.4.3 feeds to AES-ECB whole
 // (rfc9001.txt:1332-1336).
 //

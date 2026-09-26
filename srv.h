@@ -21,7 +21,7 @@
 // later. RFC 9846 §9.1 requires TLS_AES_128_GCM_SHA256 and recommends
 // TLS_AES_256_GCM_SHA384 beside the suite above. This build offers
 // neither, because the only AES in this tree is the software S-box
-// table in quic_aes.c, which is admitted for QUIC Initial keys because
+// table in aes.c, which is admitted for QUIC Initial keys because
 // those keys are public, and a TLS traffic key is secret: that table
 // would leak it through cache timing. A client that offers only an
 // AES-GCM suite gets handshake_failure. The suites drop in when a

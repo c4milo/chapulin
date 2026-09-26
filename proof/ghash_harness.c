@@ -3,7 +3,7 @@
 // bytes and any ciphertext up to 256 bytes, at every length from zero to
 // that bound on both arguments.
 //
-// This harness exists for the lengths quic_gcm_safety_harness.c cannot
+// This harness exists for the lengths gcm_safety_harness.c cannot
 // afford. That harness drives the whole module, so its formula carries
 // five GHASH chains and it stops returning a verdict a few blocks up.
 // This one drives the hash alone, so the same time budget buys sixteen
@@ -16,19 +16,19 @@
 // differential in test/diff_quic_test.c are what cover the longer
 // lengths.
 //
-// The forward cipher is a contract stub (proof/quic_gcm_stubs.h), which
+// The forward cipher is a contract stub (proof/gcm_stubs.h), which
 // states what the composition gives up and where the real cipher is
 // proven.
 //
-// The launch line defines no CH_AES_HW, so this proves quic_gcm.c's
-// portable multiply and data loop. An AES=hw build runs quic_ghash_hw.c's
+// The launch line defines no CH_AES_HW, so this proves gcm.c's
+// portable multiply and data loop. An AES=hw build runs ghash_hw.c's
 // in their place, on an instruction CBMC cannot read, and
 // test/ghash_equiv_test.c holds those to these byte for byte.
 #include "harness.h"
 
-#include "quic_gcm_stubs.h"
+#include "gcm_stubs.h"
 
-#include "quic_gcm.c"
+#include "gcm.c"
 
 #ifndef CH_GHASH_AAD_MAX
 #define CH_GHASH_AAD_MAX 256

@@ -1,9 +1,9 @@
 // AES=hw against AES=soft: same key, same input, same output, byte for
 // byte, for AES-128 and for AES-256. This is what holds the hardware
 // path, because CBMC cannot read an intrinsic — an AES instruction has no
-// C body to unwind, so proof/quic_aes_harness.c and
-// proof/quic_aes256_harness.c prove quic_aes_soft.c and this binary
-// carries quic_aes_hw.c to the same answer. The AES-256 half is what holds
+// C body to unwind, so proof/aes_harness.c and
+// proof/aes256_harness.c prove quic_aes_soft.c and this binary
+// carries aes_hw.c to the same answer. The AES-256 half is what holds
 // TLS_AES_256_GCM_SHA384's cipher: a library object runs that one on the
 // instructions alone, and the software reference exists for this binary
 // and the proof.
@@ -30,7 +30,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "quic_aes_block.h"
+#include "aes_block.h"
 
 // xorshift64, the generator test/diff_driver.h uses, written here
 // because that header also carries the pipe protocol to the Lean spec
@@ -136,7 +136,7 @@ static void compare(const char *case_name, const uint8_t key[AES_128_KEY],
         return;
     }
 
-    // quic_aes_block.h promises in == out works, and quic_gcm.c relies
+    // aes_block.h promises in == out works, and gcm.c relies
     // on it for the counter block. Both implementations run it here, and
     // each must land on the answer it just gave with distinct buffers.
     uint8_t soft_same[AES_BLOCK];

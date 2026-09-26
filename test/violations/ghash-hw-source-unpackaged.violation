@@ -1,8 +1,8 @@
 invariant: INV-26
 file: Makefile
 catches: test/lint-trust-separation.sh
-reason: AES=hw stops packaging quic_ghash_hw.c, so an AES=hw object
-  carries quic_aes_hw.c and a quic_gcm.c that calls two GHASH entries no
+reason: AES=hw stops packaging ghash_hw.c, so an AES=hw object
+  carries aes_hw.c and a gcm.c that calls two GHASH entries no
   source in the object defines. A linker would refuse the test binaries,
   but a linker is not the gate: it names a missing symbol, not the axis
   value that lost its source, and a firmware tree that copies the
@@ -11,6 +11,6 @@ reason: AES=hw stops packaging quic_ghash_hw.c, so an AES=hw object
   requires both AES=hw sources.
 
 --- old
-AES_HW_SRCS := quic_aes_hw.c quic_ghash_hw.c
+AES_HW_SRCS := aes_hw.c ghash_hw.c
 --- new
-AES_HW_SRCS := quic_aes_hw.c
+AES_HW_SRCS := aes_hw.c

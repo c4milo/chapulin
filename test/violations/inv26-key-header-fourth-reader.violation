@@ -1,7 +1,7 @@
 invariant: INV-26
 file: quic_packet.c
 catches: test/lint-quic-surface.sh
-reason: quic_packet.c includes quic_aes_key.h, which gives it the body of
+reason: quic_packet.c includes aes_public_key.h, which gives it the body of
   aes_public_key and with it the ability to declare a key and write a
   traffic secret into a field of one. The compiler refuses that edit in
   every source that does not include the header, so the include is the
@@ -14,4 +14,4 @@ reason: quic_packet.c includes quic_aes_key.h, which gives it the body of
 #include "quic_packet.h"
 --- new
 #include "quic_packet.h"
-#include "quic_aes_key.h"
+#include "aes_public_key.h"

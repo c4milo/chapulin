@@ -31,8 +31,8 @@
 #include <stdint.h>
 
 #include "cfg.h"
+#include "gcm.h"
 #include "handshake_record.h"
-#include "quic_gcm.h"
 #include "quic_keys.h"
 #include "quic_step.h"
 #include "session.h"

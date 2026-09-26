@@ -1143,29 +1143,29 @@ launch slow:4 full x509parse_ecdsa 260 "fill_nondet.0:257,ct_memeq.0:68" buf.c c
 launch slow:8 full x509parse 844 "fill_nondet.0:841,ct_memeq.0:68" buf.c ct.c
 launch fast full chacha20 165 "chacha20_xor.1:5"
 # The AES-128 forward cipher and the two aes_public_key constructors,
-# TRANSPORT=quic-nonblocking. HKDF is a contract stub (proof/quic_aes_stubs.h), so
+# TRANSPORT=quic-nonblocking. HKDF is a contract stub (proof/aes_stubs.h), so
 # this formula holds the key schedule and the cipher and not five HMAC
 # derivations; that header states what the composition gives up.
 # Re-measured on the commit that moved this file under the codegen gates
 # (arm64 macOS, the pinned cbmc, PROVE_NO_CACHE=1 /usr/bin/time -l): 434
 # properties, 26 s, 0.67 GB peak. The 377 recorded before predates the
 # split of the cipher into quic_aes_soft.c.
-launch fast full quic_aes 45 "fill_nondet.0:177" -DCH_TRANSPORT_QUIC_NONBLOCKING
+launch fast full aes 45 "fill_nondet.0:177" -DCH_TRANSPORT_QUIC_NONBLOCKING
 # The software AES-256 reference and the round-count dispatch in
 # aes_encrypt_schedule, under -DCH_AES_256_TEST, which only tests and
 # proofs define: the key schedule's 52 words, the fourteen rounds and both
 # arms of the dispatch over a havocked round count. HKDF is the stub
-# quic_aes uses. Measured (arm64 macOS, cbmc 6.11.0, kissat,
+# the aes harness uses. Measured (arm64 macOS, cbmc 6.11.0, kissat,
 # PROVE_NO_CACHE=1 /usr/bin/time -l): 614 properties, 25 s, 0.92 GB peak.
-launch fast full quic_aes256 60 "fill_nondet.0:241" -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_AES_256_TEST
+launch fast full aes256 60 "fill_nondet.0:241" -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_AES_256_TEST
 # The traffic-key constructor a -DCH_SUITE_AES_GCM build compiles, over
 # contract stubs of the four AES=hw block entries the harness defines,
 # because CBMC cannot read the instructions: both key lengths, the round
 # count each writes, and the dispatch that count drives. Measured the
 # same way: 140 properties, under 1 s, 0.02 GB peak.
-launch fast full quic_aes_traffic 45 "fill_nondet.0:241" -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_SUITE_AES_GCM -DCH_AES_HW -DCH_NATIVE_AES
+launch fast full aes_traffic 45 "fill_nondet.0:241" -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_SUITE_AES_GCM -DCH_AES_HW -DCH_NATIVE_AES
 # The three RFC 9001 §5.1 derivations and the §6.1 key update. HKDF is
-# the same contract stub quic_aes uses, so this formula holds the
+# the same contract stub the aes harness uses, so this formula holds the
 # framing of the three calls and not four HMAC derivations; ct.c is
 # compiled in because quic_keys_update wipes its own copy of the new
 # secret. Measured, these flags: 79 properties, 0.24 s, 0.02 GB peak.
@@ -1223,29 +1223,29 @@ launch fast full quic_packet 65 "fill_nondet.0:133" buf.c ct.c -DCH_TRANSPORT_QU
 launch fast full quic_packet_suite 250 "" buf.c ct.c -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_SUITE_AES_GCM -DCH_AES_HW -DCH_NATIVE_AES
 # AEAD_AES_128_GCM's memory safety, its all-or-nothing refusal, and
 # GHASH on its own. The forward cipher is a contract stub
-# (proof/quic_gcm_stubs.h); the unwindset names hash_data and
+# (proof/gcm_stubs.h); the unwindset names hash_data and
 # counter_mode because both loop on a symbolic count, and without them
 # each unwinds to the global 130 and carries 130 copies of SP
 # 800-38D's 128-step multiply. The wipe of the running multiple sits
 # inside multiply_by_subkey, so the solver carries one 16-byte volatile
 # loop per call, and hash_data unwinds to 3 of them. Measured after the
-# stub took the name quic_gcm.c calls, aes_encrypt_schedule (arm64
+# stub took the name gcm.c calls, aes_encrypt_schedule (arm64
 # macOS, the pinned cbmc, kissat, PROVE_NO_CACHE=1 /usr/bin/time -l over
 # this script, two other processes busy on two of ten cores):
-# quic_gcm_safety 388 properties, 416 s, 2.5 GB peak; quic_gcm_refusal
-# 393 properties, 34 s, 1.9 GB; quic_ghash 386 properties, 235 s,
+# gcm_safety 388 properties, 416 s, 2.5 GB peak; gcm_refusal
+# 393 properties, 34 s, 1.9 GB; ghash 386 properties, 235 s,
 # 1.8 GB. The property counts are the ones recorded before 234ec4e.
-# quic_gcm_refusal peaked at 0.97 GB at 3ff8517 under the same command,
+# gcm_refusal peaked at 0.97 GB at 3ff8517 under the same command,
 # so its weight moves from 1 to 2. Measured again under the same command
-# after quic_gcm.c gained its AES=hw arm, which these lines do not compile
+# after gcm.c gained its AES=hw arm, which these lines do not compile
 # because they define no CH_AES_HW, at load averages of 3.4 to 6.0 on ten
-# cores: quic_gcm_safety 388 properties, 370 s, 2.6 GB; quic_gcm_refusal
-# 393 properties, 33 s, 1.9 GB; quic_ghash 386 properties, 213 s, 1.8 GB.
+# cores: gcm_safety 388 properties, 370 s, 2.6 GB; gcm_refusal
+# 393 properties, 33 s, 1.9 GB; ghash 386 properties, 213 s, 1.8 GB.
 # Neither proves a functional or authenticity property; the two harnesses
 # that state those carry no launch line, below.
-launch slow:3 full quic_gcm_safety 130 "fill_nondet.0:177,hash_data.1:3,counter_mode.1:3" --object-bits 11 ct.c -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_GCM_PT_MAX=32 -DCH_GCM_AAD_MAX=32
-launch slow:2 full quic_gcm_refusal 130 "fill_nondet.0:177,hash_data.1:3,counter_mode.1:3" --object-bits 11 ct.c -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_GCM_PT_MAX=32 -DCH_GCM_AAD_MAX=32
-launch slow:2 full quic_ghash 130 "fill_nondet.0:257,hash_data.1:17" ct.c -DCH_TRANSPORT_QUIC_NONBLOCKING
+launch slow:3 full gcm_safety 130 "fill_nondet.0:177,hash_data.1:3,counter_mode.1:3" --object-bits 11 ct.c -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_GCM_PT_MAX=32 -DCH_GCM_AAD_MAX=32
+launch slow:2 full gcm_refusal 130 "fill_nondet.0:177,hash_data.1:3,counter_mode.1:3" --object-bits 11 ct.c -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_GCM_PT_MAX=32 -DCH_GCM_AAD_MAX=32
+launch slow:2 full ghash 130 "fill_nondet.0:257,hash_data.1:17" ct.c -DCH_TRANSPORT_QUIC_NONBLOCKING
 launch fast full poly1305 85 "blocks.0:8" ct.c
 # The ROLE=server authentication flight: the two slot predicates over
 # every SignatureScheme code point, the CertificateVerify signed content
@@ -1284,11 +1284,11 @@ launch fast full srv_auth 385 "" ct.c -DCH_ROLE_SERVER
 # day. The peak is the solver's; the nightly runs this proof in a job of
 # its own.
 launch slow full srv_resume 120 "fill_nondet.0:118,find_ticket.0:24,binder_at.0:36,ct_wipe.0:84,ct_memeq.0:33" buf.c ct.c -DCH_ROLE_SERVER
-# quic_gcm and quic_gcm_forge have no launch line, for the reason
+# gcm and gcm_forge have no launch line, for the reason
 # aead_inplace has none: neither formula returned a verdict, and an
 # unconverged launch line proves nothing (docs/proofs.md). Measured with
-# the flags above, at --unwind 130 and "fill_nondet.0:177": quic_gcm ran
-# 2,144 s under kissat with no verdict, and quic_gcm_forge passed ten
+# the flags above, at --unwind 130 and "fill_nondet.0:177": the gcm
+# harness ran 2,144 s under kissat with no verdict, and gcm_forge passed ten
 # minutes at 2.6 GB resident and climbing. The unwind is what costs: SP
 # 800-38D §6.3's multiply is 128 steps per block, gcm_seal and gcm_open
 # each run it once per block plus twice more, and both harnesses run the

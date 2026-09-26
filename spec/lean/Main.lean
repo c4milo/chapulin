@@ -203,7 +203,7 @@ def dispatch : List String → Option String
   | ["aes128gcm_seal", key, iv, aad, pt] => do
     let k ← hexArg? key
     let n ← hexArg? iv
-    -- AEAD_AES_128_GCM fixes the key at 128 bits, and quic_gcm.h admits
+    -- AEAD_AES_128_GCM fixes the key at 128 bits, and gcm.h admits
     -- the 96-bit IV alone, so nothing else is in the shared domain.
     guard (k.size == 16 && n.size == 12)
     let (ct, tag) := Spec.Gcm.encrypt k n (← hexArg? aad) (← hexArg? pt)
@@ -222,7 +222,7 @@ def dispatch : List String → Option String
     let k ← hexArg? key
     let n ← hexArg? iv
     -- AEAD_AES_256_GCM fixes the key at 256 bits; the IV is the 96 bits
-    -- quic_gcm.h admits, as for AES-128.
+    -- gcm.h admits, as for AES-128.
     guard (k.size == 32 && n.size == 12)
     let (ct, tag) := Spec.Gcm.encrypt k n (← hexArg? aad) (← hexArg? pt)
     return s!"{emit ct} {emit tag}"

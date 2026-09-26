@@ -14,8 +14,8 @@
 //
 // The two calls quic_retry_ok makes are contract stubs below, so this
 // formula holds the Retry step's own framing rather than AES-128-GCM.
-// quic_aes_harness proves the cipher and the two constructors;
-// quic_gcm_safety, quic_gcm_refusal and quic_ghash prove the AEAD; and
+// aes_harness proves the cipher and the two constructors;
+// gcm_safety, gcm_refusal and ghash prove the AEAD; and
 // test/quic_vectors.c checks the whole computation against RFC 9001
 // Appendix A.4.
 //
@@ -33,8 +33,8 @@
 // 64 covers Appendix A.4's 29-byte pseudo-packet with room either side.
 #include "harness.h"
 
-#include "quic_aes_key.h"
-#include "quic_gcm.h"
+#include "aes_public_key.h"
+#include "gcm.h"
 
 // The pseudo-packet bound this formula runs to.
 #define RETRY_PSEUDO_MAX 64

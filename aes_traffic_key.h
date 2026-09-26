@@ -1,5 +1,5 @@
-// What an aes_traffic_key is made of. quic_aes.h declares the type
-// incomplete and declares the entries that take one, and quic_gcm.h
+// What an aes_traffic_key is made of. aes.h declares the type
+// incomplete and declares the entries that take one, and gcm.h
 // declares the AEAD over one; this header is the one place the struct has
 // a body, so it is the one place a file can declare one, size one or
 // write a field of one.
@@ -15,8 +15,8 @@
 // Four sources include this header, and tools/quic-footprint.py fails on
 // a fifth:
 //
-//   quic_aes.c     writes aes_traffic_key_init and the block entry
-//   quic_gcm.c     reads the round keys out of one to run the AEAD
+//   aes.c          writes aes_traffic_key_init and the block entry
+//   gcm.c          reads the round keys out of one to run the AEAD
 //   record.c       builds one per record from rec_dir's key bytes
 //   quic_packet.c  builds one per QUIC packet from quic_keys' key bytes,
 //                  and one per header protection mask from quic_hp_key's
@@ -26,7 +26,7 @@
 // its timing. That refusal is what keeps a secret key away from the
 // AES=soft S-box, which is indexed with the key.
 //
-// This header includes aes_schedule.h and not quic_aes_key.h, so the
+// This header includes aes_schedule.h and not aes_public_key.h, so the
 // files above can build a traffic key, and record.c cannot build a public
 // one.
 #ifndef CH_AES_TRAFFIC_KEY_H
@@ -35,8 +35,8 @@
 
 #include <stdint.h>
 
+#include "aes.h"
 #include "aes_schedule.h"
-#include "quic_aes.h"
 
 // One AES-128 or AES-256 key from the TLS key schedule, expanded. It holds
 // the round keys and their round count and nothing else: a TLS record's

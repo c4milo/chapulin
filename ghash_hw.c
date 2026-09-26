@@ -1,4 +1,4 @@
-// AES=hw: GHASH on the carry-less multiply instruction. quic_ghash_hw.h
+// AES=hw: GHASH on the carry-less multiply instruction. ghash_hw.h
 // states the two contracts; this file implements them and nothing else.
 //
 // What the instruction computes. GHASH multiplies in GF(2^128)
@@ -19,12 +19,12 @@
 // measured").
 //
 // Two instruction sets, and the compiler picks between them at build
-// time, as it does for quic_aes_hw.c:
+// time, as it does for aes_hw.c:
 //
 //   __ARM_FEATURE_AES  PMULL, through vmull_p64 in <arm_neon.h>. The Arm
 //                      C Language Extensions put the 64-bit PMULL in the
 //                      AES extension, so the macro that gives
-//                      quic_aes_hw.c its AES instructions gives this file
+//                      aes_hw.c its AES instructions gives this file
 //                      its multiply.
 //   __PCLMUL__         PCLMULQDQ, through _mm_clmulepi64_si128 in
 //                      <wmmintrin.h>, on x86-64. x86-64 names it apart
@@ -33,8 +33,8 @@
 //                      both.
 //
 // A build that defines neither gets the #error below rather than a
-// silent fall back to quic_gcm.c's portable multiply, because AES=hw is a
-// statement about what the object contains. quic_aes_hw.c states why
+// silent fall back to gcm.c's portable multiply, because AES=hw is a
+// statement about what the object contains. aes_hw.c states why
 // nothing here probes a CPU at run time.
 //
 // Bit order. SP 800-38D writes a block as a polynomial whose x^0
@@ -52,18 +52,18 @@
 // one: every step is a shift, an exclusive-or or the instruction.
 // Whether the instruction takes the same number of cycles whatever its
 // operands are is a claim neither macro makes, for the reason
-// quic_aes_hw.c gives for the AES instructions. CH_NATIVE_AES carries
+// aes_hw.c gives for the AES instructions. CH_NATIVE_AES carries
 // that claim for both: it is the build's statement that this part's AES
 // instructions and its carry-less multiply run in constant time. ct.h
 // states the terms, and only a -DCH_SUITE_AES_GCM build needs them,
 // because under the three public keys INV-26 admits, the hash subkey is
 // public too.
 //
-// CBMC cannot read an intrinsic, so the proofs stay on quic_gcm.c's
+// CBMC cannot read an intrinsic, so the proofs stay on gcm.c's
 // portable multiply and test/ghash_equiv_test.c holds this file to it:
 // it runs both multiplies, both loops over data and both whole AEADs
 // over the same inputs and compares byte for byte.
-#include "quic_ghash_hw.h"
+#include "ghash_hw.h"
 
 #if defined(CH_TRANSPORT_QUIC_NONBLOCKING) || defined(CH_SUITE_AES_GCM)
 #ifdef CH_AES_HW
@@ -200,7 +200,7 @@ void gcm_multiply_by_subkey_hw(uint8_t acc[AES_BLOCK], const uint8_t subkey[AES_
     multiply_by_subkey(&s);
     store_element(acc, &s.acc);
     // s holds the hash subkey itself and the unreduced product, so the
-    // frame would hand a later caller the subkey. quic_gcm.c's multiply
+    // frame would hand a later caller the subkey. gcm.c's multiply
     // wipes its running multiple for the same reason.
     ct_wipe(&s, sizeof s);
 }
@@ -214,7 +214,7 @@ void gcm_hash_data_hw(uint8_t acc[AES_BLOCK], const uint8_t subkey[AES_BLOCK], c
     while (off < n) {
         size_t take = n - off < AES_BLOCK ? n - off : AES_BLOCK;
         // Zero first, then the bytes there are, which leaves SP 800-38D
-        // §6.4's pad on a last block shorter than AES_BLOCK. quic_gcm.c's
+        // §6.4's pad on a last block shorter than AES_BLOCK. gcm.c's
         // hash_data pads the same way.
         uint8_t block[AES_BLOCK];
         memset(block, 0, AES_BLOCK);

@@ -103,18 +103,19 @@ Home: github.com/c4milo.
   builds keep them test-only) ← `hkdf.[ch]`
   (HMAC + HKDF + TLS labels, over SHA-256 or, under SUITE=aesgcm,
   SHA-384) ← `chacha20.[ch]` + `poly1305.[ch]` +
-  `quic_aes.[ch]` with `quic_aes_key.h` (the `aes_public_key` type, whose
+  `aes.[ch]` with `aes_public_key.h` (the `aes_public_key` type, whose
   body sits in the second header alone, and the two constructors that
   write one, TRANSPORT=quic-nonblocking; INV-26 names the three keys it may see)
   and `aes_traffic_key.h` (the `aes_traffic_key` type a SUITE=aesgcm
   build's traffic keys take, whose body sits in that header alone) +
-  `quic_aes_block.h` with one of `quic_aes_soft.c`, `quic_aes_hw.c` or
+  `aes_block.h` with one of `quic_aes_soft.c`, `aes_hw.c` or
   `quic_aes_extern.c` (the AES-128 key expansion and forward cipher of
-  FIPS 197, over plain bytes, and AES-256's on `quic_aes_hw.c` alone; the
-  Makefile AES variable picks one)
-  ← `aead.[ch]` (RFC 8439 seal/open) + `quic_gcm.[ch]`
+  FIPS 197, over plain bytes, and AES-256's on `aes_hw.c` alone; the
+  Makefile AES variable picks one, and the two named quic_ compile only
+  in a QUIC build, because a SUITE=aesgcm build refuses both)
+  ← `aead.[ch]` (RFC 8439 seal/open) + `gcm.[ch]`
   (AEAD_AES_128_GCM and GHASH, TRANSPORT=quic-nonblocking, and AEAD_AES_256_GCM
-  under a traffic key, SUITE=aesgcm) with `quic_ghash_hw.[ch]`
+  under a traffic key, SUITE=aesgcm) with `ghash_hw.[ch]`
   (GHASH's multiply and data loop on the carry-less multiply, AES=hw
   alone) ← `x25519.[ch]` with `x25519_wide.[ch]` (the radix-2^51 field,
   X25519=wide) + `p256.[ch]` + `p256_ecdh.[ch]` (constant-time P-256
@@ -204,9 +205,9 @@ Home: github.com/c4milo.
   carries every AES value and INV-26 bounds all three the same way. No key from
   the TLS key schedule is passed to AES outside a SUITE=aesgcm build, and
   that build takes AES=hw and states its timing (below).
-  What holds that: `quic_aes.[ch]` and `quic_gcm.[ch]` take a key type,
-  `aes_public_key`, whose body lives in `quic_aes_key.h` alone, so only
-  `quic_aes.c`, `quic_initial.c` and `quic_retry.c` can build one. A file
+  What holds that: `aes.[ch]` and `gcm.[ch]` take a key type,
+  `aes_public_key`, whose body lives in `aes_public_key.h` alone, so only
+  `aes.c`, `quic_initial.c` and `quic_retry.c` can build one. A file
   that names the incomplete type gets a compiler error; a file that
   spells the body itself gets none, because C diagnoses no mismatched
   struct definition across translation units, so `make lint-quic-surface`
@@ -215,14 +216,14 @@ Home: github.com/c4milo.
   Destination Connection ID and each packet call derives what it needs on
   its own stack. A SUITE=aesgcm build's traffic keys take a second type,
   `aes_traffic_key`, whose body lives in `aes_traffic_key.h`, which only
-  `quic_aes.c`, `quic_gcm.c`, `record.c` and `quic_packet.c` include, so
+  `aes.c`, `gcm.c`, `record.c` and `quic_packet.c` include, so
   a traffic key and a public key never pass for each other and only the
   traffic path builds one. INV-26 states the rule and what review still owes, the
   Semgrep rule holds the calls, and `.violation` mutants prove each check
-  fires. `quic_aes.c`, `quic_aes_soft.c`, `quic_aes_extern.c` and
-  `quic_gcm.c` sit in `WIDEMUL_CEILING` and `BRANCH_SRCS`, so a compiler
+  fires. `aes.c`, `quic_aes_soft.c`, `quic_aes_extern.c` and
+  `gcm.c` sit in `WIDEMUL_CEILING` and `BRANCH_SRCS`, so a compiler
   that lowers one of their masked selects to a branch shows as a count
-  that grows; `quic_aes_hw.c` and `quic_ghash_hw.c` cannot join, because
+  that grows; `aes_hw.c` and `ghash_hw.c` cannot join, because
   every spec targets a core with no AES or carry-less multiply
   instructions.
   The Makefile AES variable chooses the implementation the way TRUST
@@ -230,8 +231,8 @@ Home: github.com/c4milo.
   this S-box, `hw` uses the compiler's own intrinsics under
   `__ARM_FEATURE_AES` or `__AES__`, and `extern` takes a caller-supplied
   `ch_aes_block`, the way `ch_rand_bytes` takes entropy, so a vendor AES
-  peripheral needs no code here. `hw` also moves GHASH off `quic_gcm.c`'s
-  portable multiply onto the carry-less multiply, in `quic_ghash_hw.c`:
+  peripheral needs no code here. `hw` also moves GHASH off `gcm.c`'s
+  portable multiply onto the carry-less multiply, in `ghash_hw.c`:
   PMULL under `__ARM_FEATURE_AES`, which the Arm C Language Extensions
   put in the AES extension, and PCLMULQDQ under `__PCLMUL__`, which
   x86-64 turns on with `-mpclmul` beside `-maes`. Those macros are the

@@ -10,14 +10,14 @@
 // header names, so the refusal arm is proven over every other value.
 //
 // Aliasing: quic_packet.c will pass the sample buffer as the output of
-// the §5.4.3 mask and quic_gcm.c reuses its counter block, so both block
+// the §5.4.3 mask and gcm.c reuses its counter block, so both block
 // entries are called with in == out as well as with distinct buffers.
 //
-// HKDF is a contract stub (proof/quic_aes_stubs.h), which states what
+// HKDF is a contract stub (proof/aes_stubs.h), which states what
 // the composition gives up and where the real functions are proven.
 //
 // AES=soft is the implementation proven, and it is the only one CBMC can
-// read: an AES instruction has no C body to unwind, so quic_aes_hw.c
+// read: an AES instruction has no C body to unwind, so aes_hw.c
 // reaches no property here, and quic_aes_extern.c calls a function this
 // tree does not contain. Both are held to this one by
 // test/aes_equiv_test.c, which runs them over the same inputs and
@@ -25,9 +25,9 @@
 // states the split.
 #include "harness.h"
 
-#include "quic_aes_stubs.h"
+#include "aes_stubs.h"
 
-#include "quic_aes.c"
+#include "aes.c"
 #include "quic_aes_soft.c"
 
 int main(void) {

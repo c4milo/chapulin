@@ -549,7 +549,7 @@ ceilings.
 `:4542` makes `TLS_AES_256_GCM_SHA384` a SHOULD. The widened scope takes both.
 AES-128 uses 11 round keys and AES-256 uses 15 (FIPS 197, Nr = 10 and 14), so
 the round-key array is 176 bytes for one and 240 for the other;
-`quic_aes.h:26` fixes `AES_ROUND_KEYS 11` today and that constant becomes the
+`aes.h:26` fixes `AES_ROUND_KEYS 11` today and that constant becomes the
 larger one, or the type carries both.
 
 Today `CLAUDE.md:104` reads:
@@ -651,7 +651,7 @@ needs instead.
 |---|---|
 | A ClientHello parser | None. `handshake_parser.h` declares four parsers and every one reads a server-to-client message: `hsp_parse_server_hello` (`:53`), `hsp_parse_encrypted_exts` (`:119`), `hsp_parse_certificate` (`:134`), `hsp_parse_certificate_verify` (`:149`). |
 | Seven message builders | One. `hs_build_client_hello` (`handshake_message.c:29`). The message type codes, the alert descriptions and the extension codes are already defined (`handshake_message.h:16-37`, `:113-145`). |
-| Three cipher suites | One, written as a literal: `handshake_message.c:44` writes `SUITE_CHACHA20_POLY1305_SHA256`, defined at `handshake_message.h:40`. AES exists as fail-closed stubs; `quic_gcm.c:1` reads "Stub only." |
+| Three cipher suites | One, written as a literal: `handshake_message.c:44` writes `SUITE_CHACHA20_POLY1305_SHA256`, defined at `handshake_message.h:40`. AES exists as fail-closed stubs; `gcm.c:1` reads "Stub only." |
 | A SHA-384 key schedule | None. `keysched.h:2` says "specialized to one PSK and SHA-256". The hash itself exists: `sha512.h:32`, `:41`, `:44`. |
 | P-256 ECDH with a secret scalar | None. `p256.h:16` declares `p256_ecdsa_verify` and nothing else; `nm -gU p256.o` after `cc -c -Os -std=c11 -I. -DCH_RAND_EXTERN p256.c` prints exactly `_p256_ecdsa_verify`. |
 | Two signing operations | None. See "Two families of secret scalar enter this tree". |
@@ -989,13 +989,13 @@ changes no GCM arithmetic.
 
 **The file work is wider than the algorithm work, and the first draft of this
 record said only the narrow half.** The rename splits the type, and that split
-changes `gcm.c`. `quic_aes_key.h:43-48` bundles a round-key schedule, a 12-byte IV
+changes `gcm.c`. `aes_public_key.h:43-48` bundles a round-key schedule, a 12-byte IV
 and a second schedule for QUIC header protection into `aes_public_key`, and
 every GCM entry point takes it:
 
-    quic_aes.h:130    void aes_encrypt_block(const aes_public_key *k, const uint8_t in[AES_BLOCK],
-    quic_gcm.h:52     void gcm_seal(const aes_public_key *k, const uint8_t nonce[AES_IV], const uint8_t *aad,
-    quic_gcm.h:70     int gcm_open(const aes_public_key *k, const uint8_t nonce[AES_IV], const uint8_t *aad,
+    aes.h:130    void aes_encrypt_block(const aes_public_key *k, const uint8_t in[AES_BLOCK],
+    gcm.h:52     void gcm_seal(const aes_public_key *k, const uint8_t nonce[AES_IV], const uint8_t *aad,
+    gcm.h:70     int gcm_open(const aes_public_key *k, const uint8_t nonce[AES_IV], const uint8_t *aad,
 
 A TLS `rec_dir` has an IV and no header protection key, so `aes.h` declares the
 block cipher's schedule alone and the QUIC bundle stays with the QUIC files:
@@ -1033,8 +1033,8 @@ without assuming host order.
 So the rename costs three declaration changes in `gcm.h` (`gcm_seal`,
 `gcm_open`, `gcm_ghash` each take `const aes_key *`), three call sites inside
 `gcm.c`, one change at every QUIC caller, which passes `&bundle->key`, **and
-the QUIC bundle's own two fields**. `quic_aes_key.h:40` closes the typedef
-`aes_key_schedule`, and `quic_aes_key.h:45` and `:47` declare
+the QUIC bundle's own two fields**. `aes_public_key.h:40` closes the typedef
+`aes_key_schedule`, and `aes_public_key.h:45` and `:47` declare
 `aes_key_schedule key;` and `aes_key_schedule hp;` inside `aes_public_key`. The
 typedef is renamed `aes_key`, moves to `aes.h`, and both fields take the new
 name. The patch's own body calls `aes_encrypt_block(k, ...)` with the bundle
@@ -2445,7 +2445,7 @@ be stated at the call site (`docs/invariants.md:654-656`), and the comment at
 each branch names the value it reads and why that value is public.
 
 No buffer bound moves. `AEAD_NONCE` is 12 and `AEAD_TAG` is 16, measured, and
-`GCM_TAG` is 16 (`quic_gcm.h:22`) with a 96-bit nonce, so `REC_OVERHEAD` stays
+`GCM_TAG` is 16 (`gcm.h:22`) with a 96-bit nonce, so `REC_OVERHEAD` stays
 at the measured 22 and the nonce construction of `rfc9846.txt:3670-3679` is the
 same for all three suites.
 
@@ -3050,7 +3050,7 @@ already settled, so they are in "Bounds that need measuring" rather than here.
 
 **Fourteen: are `aes_key`'s round keys bytes or `uint32_t` words?** The byte
 form measures `sizeof` 241 and `_Alignof` 1, matches the existing
-`aes_key_schedule` (`quic_aes_key.h:36-40`) and keeps `CLAUDE.md:142-143`'s
+`aes_key_schedule` (`aes_public_key.h:36-40`) and keeps `CLAUDE.md:142-143`'s
 no-host-endianness rule without a sentence. The word form measures 244 and 4,
 three bytes more per schedule, and is faster on a 32-bit core; taking it means
 the record must state how `aes.c` fills those words byte by byte. The record

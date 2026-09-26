@@ -22,8 +22,8 @@
 
 #include "aead.h"
 #include "aes_traffic_key.h"
+#include "gcm.h"
 #include "hkdf.h"
-#include "quic_gcm.h"
 #include "suite.h"
 
 #if !defined(CH_SUITE_AES_GCM)

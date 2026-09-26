@@ -1,4 +1,4 @@
-// Contract stub for the one function quic_gcm.c calls, so the GCM
+// Contract stub for the one function gcm.c calls, so the GCM
 // harness proves GCM's own framing rather than re-deriving AES-128
 // inside the formula.
 //
@@ -7,8 +7,8 @@
 // more, and a round-trip property runs the whole pipeline twice over
 // symbolic data with equality constraints tying the two halves together.
 // That is the shape that made the AEAD harnesses unsolvable
-// (https://github.com/c4milo/chapulin/issues/56), and quic_aes.c proves
-// on its own in 23 s (proof/run.sh's quic_aes line).
+// (https://github.com/c4milo/chapulin/issues/56), and aes.c proves
+// on its own in 23 s (proof/run.sh's aes line).
 //
 // WHAT THIS MODELS, and therefore what the harness still proves:
 //
@@ -22,7 +22,7 @@
 //                         block from silently giving the same bytes,
 //                         which would hide a wrong inc32.
 //
-// The stub takes the name quic_gcm.c calls, aes_encrypt_schedule, and
+// The stub takes the name gcm.c calls, aes_encrypt_schedule, and
 // not aes_encrypt_block, the wrapper that unwraps an aes_public_key.
 // Under the wrapper's name the stub has no caller, the real call has no
 // body, and proof/run.sh fails the proof. 234ec4e moved the call to
@@ -34,14 +34,14 @@
 // is what made those formulas unsolvable, and a stub that reintroduced
 // it would trade one unsolvable formula for another.
 //
-// WHAT THIS NO LONGER PROVES: that quic_aes.c meets that contract. That
-// moves to quic_aes_harness, which proves the real cipher and the real
+// WHAT THIS NO LONGER PROVES: that aes.c meets that contract. That
+// moves to aes_harness, which proves the real cipher and the real
 // key schedule over unconstrained inputs, and to the FIPS 197 and RFC
 // 9001 Appendix A vectors in test/quic_vectors.c.
-#ifndef CH_QUIC_GCM_STUBS_H
-#define CH_QUIC_GCM_STUBS_H
+#ifndef CH_GCM_STUBS_H
+#define CH_GCM_STUBS_H
 
-#include "quic_aes_key.h"
+#include "aes_public_key.h"
 
 // One havoc'd 16-byte value, mixed into every answer so that no output
 // byte is a constant the harness chose. Filled once, at first use, so

@@ -31,16 +31,16 @@
 #include "ch_assert.h"
 
 // The AES-GCM arm only. A published suite fixes its own key, and INV-26
-// keeps the two constructors in quic_aes.h the only public way to write
+// keeps the two constructors in aes.h the only public way to write
 // an aes_public_key, so the suite reaches the cipher through
-// quic_aes_block.h's two entries, which take plain bytes.
-// quic_aes_key.h gives the type a body here, which INV-26 admits in a
-// test. quic_aes.c, quic_gcm.c and the AES implementation the build
+// aes_block.h's two entries, which take plain bytes.
+// aes_public_key.h gives the type a body here, which INV-26 admits in a
+// test. aes.c, gcm.c and the AES implementation the build
 // picked are all linked.
 #ifdef CH_TRANSPORT_QUIC_NONBLOCKING
-#include "quic_aes_block.h"
-#include "quic_aes_key.h"
-#include "quic_gcm.h"
+#include "aes_block.h"
+#include "aes_public_key.h"
+#include "gcm.h"
 #endif
 
 noreturn void ch_assert_fail(const char *cond, const char *file, int line) {

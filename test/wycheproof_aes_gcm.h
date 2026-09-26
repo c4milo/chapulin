@@ -6,7 +6,7 @@
 #ifndef CH_WYCHEPROOF_AES_GCM_H
 #define CH_WYCHEPROOF_AES_GCM_H
 
-// The AES-GCM suite, for quic_gcm.c. Guarded because only a
+// The AES-GCM suite, for gcm.c. Guarded because only a
 // -DCH_TRANSPORT_QUIC_NONBLOCKING build compiles that file, and the generator emits
 // the rows under the same guard, so the legs that build this file
 // without the define read a header that declares nothing here.

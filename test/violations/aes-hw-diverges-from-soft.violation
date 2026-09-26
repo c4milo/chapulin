@@ -1,5 +1,5 @@
 invariant: INV-26
-file: quic_aes_hw.c
+file: aes_hw.c
 catches: aes_equiv_test
 reason: the AES=hw key expansion starts from the wrong round constant, so
   it computes a different key schedule from AES=soft and a different

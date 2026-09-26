@@ -1,4 +1,4 @@
-// Differential rows for quic_aes.c: the AES-128 forward cipher against
+// Differential rows for aes.c: the AES-128 forward cipher against
 // FIPS 197 as spec/lean/Spec/Aes.lean states it, the AES-256 one beside it
 // in a build that has AES-256 (the Makefile builds both drivers with
 // -DCH_AES_256_TEST), and the RFC 9001 §5.2
@@ -14,11 +14,11 @@
 
 // The block cipher takes a key the caller chose, and INV-26 keeps the
 // two constructors the only public way to write an aes_public_key, so
-// this file reaches the cipher through quic_aes_block.h's two entries,
-// which take plain bytes. quic_aes_key.h gives aes_public_key a body for
+// this file reaches the cipher through aes_block.h's two entries,
+// which take plain bytes. aes_public_key.h gives aes_public_key a body for
 // the derivation rows below.
-#include "quic_aes_block.h"
-#include "quic_aes_key.h"
+#include "aes_block.h"
+#include "aes_public_key.h"
 
 // FIPS 197 fixes the key and the block at 128 bits, so the only domain
 // to sample is their contents.

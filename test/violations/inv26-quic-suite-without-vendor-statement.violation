@@ -11,9 +11,9 @@ reason: a TRANSPORT=quic-nonblocking build takes the AES-GCM suites without
 
 --- old
 #ifndef CH_NATIVE_AES
-#error "CH_SUITE_AES_GCM needs -DCH_NATIVE_AES: the build asserts the timing (quic_aes_hw.c)"
+#error "CH_SUITE_AES_GCM needs -DCH_NATIVE_AES: the build asserts the timing (aes_hw.c)"
 #endif
 --- new
 #if !defined(CH_NATIVE_AES) && !defined(CH_TRANSPORT_QUIC_NONBLOCKING)
-#error "CH_SUITE_AES_GCM needs -DCH_NATIVE_AES: the build asserts the timing (quic_aes_hw.c)"
+#error "CH_SUITE_AES_GCM needs -DCH_NATIVE_AES: the build asserts the timing (aes_hw.c)"
 #endif

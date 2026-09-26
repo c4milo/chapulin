@@ -34,7 +34,7 @@ Seven questions, seven sections, every answer read from the tree:
                            against the names docs/quic.md's interface
                            table lists
   Cipher names             the functions, function-like macros and types
-                           `quic_aes.h` and `quic_gcm.h` declare against
+                           `aes.h` and `gcm.h` declare against
                            what INV-26's Semgrep rule matches, and which
                            sources may include the one header that gives
                            `aes_public_key` a body
@@ -53,7 +53,7 @@ QUIC_SHARED, the line counts and the names from the files themselves.
 `--check-surface` prints nothing while all three comparisons agree and
 exits 1 on any mismatch: `quic.h` against docs/quic.md's interface
 table, the stub set against the function names test/quic_stub_test.c
-calls, and the names `quic_aes.h` and `quic_gcm.h` declare against what
+calls, and the names `aes.h` and `gcm.h` declare against what
 `inv-26-aes-public-keys-only` matches. The second is what keeps the
 safety rule mechanical -- a stub the test never calls is a stub whose
 refusal nothing measures, and a lane that adds one would otherwise leave
@@ -62,7 +62,7 @@ matches a name, so a function in either header named outside the `aes_`
 and `gcm_` family is a use of AES the rule never sees. The compiler
 holds the rest: `aes_public_key` has no body in either header, so no
 file that includes them can declare a key, size one or write a field of
-one, and only `quic_aes.c`, `quic_initial.c` and `quic_retry.c` may
+one, and only `aes.c`, `quic_initial.c` and `quic_retry.c` may
 include the header that does carry the body. docs/invariants.md INV-26
 states what that closes and what it does not.
 `make lint-quic-surface` runs all
@@ -127,37 +127,37 @@ DOC_TABLE_HEAD = "| call | what it does |"
 # function it never matches, and a key type it writes no initializer
 # pattern for is a key it never matches. cipher_surface() below is what
 # checks that, so the rule's coverage is read rather than assumed.
-# quic_aes_block.h joins the two public cipher headers because it
+# aes_block.h joins the two public cipher headers because it
 # declares the key expansion and the block cipher the AES axis picks an
-# implementation for, plus the AES=extern hook. quic_ghash_hw.h joins
+# implementation for, plus the AES=extern hook. ghash_hw.h joins
 # them because it declares the two GHASH steps AES=hw runs on the
 # carry-less multiply, and both take a hash subkey. Every name all four
 # declare must be one inv-26-aes-public-keys-only matches, which is
 # what cipher_surface() compares.
-CIPHER_HEADERS = ("quic_aes.h", "quic_aes_block.h", "quic_gcm.h", "quic_ghash_hw.h")
+CIPHER_HEADERS = ("aes.h", "aes_block.h", "gcm.h", "ghash_hw.h")
 CIPHER_PREFIXES = ("aes_", "gcm_", "ch_aes_")
 RULES = Path(".semgrep/invariants.yml")
 RULE_ID = "inv-26-aes-public-keys-only"
 
 # The one header that gives aes_public_key a body, and the four sources
-# INV-26 lets include it: quic_aes.c writes the two constructors,
+# INV-26 lets include it: aes.c writes the two constructors,
 # quic_initial.c and quic_retry.c build one key per use on their own
-# stack, and quic_gcm.c reads the round keys to run the AEAD. Every other
-# root source sees the incomplete type quic_aes.h declares, so the
+# stack, and gcm.c reads the round keys to run the AEAD. Every other
+# root source sees the incomplete type aes.h declares, so the
 # compiler refuses a key there. key_holders() checks it.
-KEY_HEADER = "quic_aes_key.h"
-KEY_HOLDERS = ("quic_aes.c", "quic_initial.c", "quic_retry.c", "quic_gcm.c")
+KEY_HEADER = "aes_public_key.h"
+KEY_HOLDERS = ("aes.c", "quic_initial.c", "quic_retry.c", "gcm.c")
 
 # The other key's body, and the sources INV-26 lets include it. A
 # -DCH_SUITE_AES_GCM build hands AES the traffic keys of its two AES-GCM
 # cipher suites, which are secret, and aes_traffic_key.h gives that type a
-# body: quic_aes.c writes its constructor, quic_gcm.c reads its round keys,
+# body: aes.c writes its constructor, gcm.c reads its round keys,
 # record.c builds one per record, and quic_packet.c builds one per QUIC
 # packet and one per header protection mask. It includes aes_schedule.h
-# and not quic_aes_key.h, so a traffic-key holder cannot build a public
+# and not aes_public_key.h, so a traffic-key holder cannot build a public
 # key.
 TRAFFIC_KEY_HEADER = "aes_traffic_key.h"
-TRAFFIC_KEY_HOLDERS = ("quic_aes.c", "quic_gcm.c", "record.c", "quic_packet.c")
+TRAFFIC_KEY_HOLDERS = ("aes.c", "gcm.c", "record.c", "quic_packet.c")
 
 # The round keys both key types are built on. Two headers include it and
 # no root source does, so a file reaches a schedule's body only through a
@@ -489,11 +489,11 @@ def key_holders():
     """Every root file that reaches a key type's body and is not one INV-26
     admits, as the sentence each one deserves.
 
-    quic_aes_key.h, aes_traffic_key.h and aes_schedule.h are the three
+    aes_public_key.h, aes_traffic_key.h and aes_schedule.h are the three
     files that give aes_public_key, aes_traffic_key and aes_key_schedule
     a body, so including one is the one way a source can declare that
     type, size it or write a field of it. Every other source sees the
-    incomplete types quic_aes.h declares and gets a compiler error for
+    incomplete types aes.h declares and gets a compiler error for
     all three. The allowlists are read here rather than from the build,
     the way the Semgrep rules' exclude lists are: they are tripwires, and
     a name added to one is a diff a reviewer looks for."""
@@ -507,7 +507,7 @@ def key_holders():
                 continue
             # The header's name anywhere in an include line, however it
             # is spelled. An exact match on the quoted form read past
-            # <quic_aes_key.h>, "./quic_aes_key.h", and a macro expanded
+            # <aes_public_key.h>, "./aes_public_key.h", and a macro expanded
             # into the directive, each of which reaches the same body.
             if re.search(rf"#\s*include\s+.*{re.escape(header)}", text) or \
                re.search(rf"#\s*define\s+\w+\s+.*{re.escape(header)}", text):
@@ -528,7 +528,7 @@ def key_holders():
 
 
 def cipher_surface():
-    """Every name in quic_aes.h and quic_gcm.h that INV-26 does not
+    """Every name in aes.h and gcm.h that INV-26 does not
     hold, as the sentence each one deserves.
 
     Three comparisons. Every function and every function-like macro must

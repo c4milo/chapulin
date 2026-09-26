@@ -1,4 +1,4 @@
-// Differential rows for quic_gcm.c: AEAD_AES_128_GCM, AEAD_AES_256_GCM in
+// Differential rows for gcm.c: AEAD_AES_128_GCM, AEAD_AES_256_GCM in
 // a build that has AES-256, and GHASH against NIST SP 800-38D as
 // spec/lean/Spec/Gcm.lean states it. Every row takes the key length, so
 // the two AEADs run the same rows and differ in the op name alone. The C carries the
@@ -7,14 +7,14 @@
 // representation checked against the other.
 //
 // Included by test/diff_quic_test.c only, after test/diff_aes.h, which
-// puts aes_expand_round_keys in scope through quic_aes_block.h.
+// puts aes_expand_round_keys in scope through aes_block.h.
 #ifndef CH_DIFF_GCM_H
 #define CH_DIFF_GCM_H
 
-#include "quic_gcm.h"
+#include "gcm.h"
 
 // The domain both sides agree on. AEAD_AES_128_GCM fixes the key at 16
-// bytes and quic_gcm.h admits the 96-bit IV alone, so the lengths that
+// bytes and gcm.h admits the 96-bit IV alone, so the lengths that
 // vary are the associated data's and the plaintext's. The cap is three
 // blocks and a byte: it covers an empty input, a partial last block and
 // a whole one on both arguments, and the spec's GF(2^128) multiply runs
@@ -26,9 +26,9 @@
 #define DIFF_GCM_KEY_MAX AES_256_KEY
 
 // The keys SP 800-38D admits are any 16 or 32 bytes, and INV-26 keeps
-// the two constructors in quic_aes.h the only public way to write an
+// the two constructors in aes.h the only public way to write an
 // aes_public_key, so a row builds the schedule directly the way
-// test/quic_gcm_tests.h does.
+// test/gcm_tests.h does.
 static void diff_gcm_key(aes_public_key *k, const uint8_t *key, size_t key_len) {
     memset(k, 0, sizeof *k);
 #ifdef CH_AES_256

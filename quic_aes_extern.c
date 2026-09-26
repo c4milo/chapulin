@@ -2,16 +2,16 @@
 // which the image defines, the way a RAND=extern build leaves
 // ch_rand_bytes to the image. A part with an AES peripheral wires that
 // one function to it and compiles no AES from this tree.
-// quic_aes_block.h states both contracts and declares the hook.
+// aes_block.h states both contracts and declares the hook.
 //
 // A peripheral takes a key, not a FIPS 197 key schedule, so there is no
 // expansion to run here. aes_expand_round_keys stores the 16 key bytes
 // in the first block of round_keys and zeros the rest, and
 // aes_cipher_block hands that first block back as the key. Nothing
 // outside this file reads round_keys as anything but an opaque block:
-// quic_aes.c writes it only through aes_expand_round_keys and reads it
+// aes.c writes it only through aes_expand_round_keys and reads it
 // only by passing it to aes_cipher_block. The remaining bytes stay in
-// the struct because quic_aes_key.h fixes its size for every AES choice,
+// the struct because aes_public_key.h fixes its size for every AES choice,
 // so the stack budget INV-19 measures does not move with this one.
 //
 // This build can be the fastest of the three or the slowest, and this
@@ -19,7 +19,7 @@
 // It is also the one choice whose timing this tree cannot state, so
 // INV-26's bound still holds it — the keys that reach it are the public
 // ones RFC 9001 fixes.
-#include "quic_aes_block.h"
+#include "aes_block.h"
 
 #if defined(CH_TRANSPORT_QUIC_NONBLOCKING) || defined(CH_SUITE_AES_GCM)
 #ifdef CH_AES_EXTERN

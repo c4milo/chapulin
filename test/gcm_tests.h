@@ -1,4 +1,4 @@
-// Published vectors for quic_gcm.c: NIST SP 800-38D's own AES-128 test
+// Published vectors for gcm.c: NIST SP 800-38D's own AES-128 test
 // cases for AEAD_AES_128_GCM and GHASH, its AES-256 cases for
 // AEAD_AES_256_GCM in a build that has AES-256, and the two RFC 9001 Appendix A
 // packets that use them — the client Initial packet of A.2 and the Retry
@@ -8,14 +8,14 @@
 // -DCH_TRANSPORT_QUIC_NONBLOCKING build compiles. It sits in its own header for the
 // reason test/pem_tests.h and test/session_tests.h do: the arrays are
 // long, and the main stays readable beside them. That main compiles
-// quic_aes_block.h, so aes_expand_round_keys is in scope here and a test can build an
+// aes_block.h, so aes_expand_round_keys is in scope here and a test can build an
 // aes_public_key over a key SP 800-38D chose. INV-26 bans that shape in
 // a library source and admits it in a test, which is why the Semgrep
 // rule excludes `test`.
-#ifndef CH_QUIC_GCM_TESTS_H
-#define CH_QUIC_GCM_TESTS_H
+#ifndef CH_GCM_TESTS_H
+#define CH_GCM_TESTS_H
 
-#include "quic_gcm.h"
+#include "gcm.h"
 
 // The longest plaintext below is A.2's 1162-byte packet payload, and
 // every buffer in this file is sized from that one number.
@@ -55,7 +55,7 @@ static const sp800_38d_case SP800_38D_CASES[] = {
 #ifdef CH_AES_256
 // The same four shapes under a 256-bit key: the GCM specification's test
 // cases 13 to 16, the AEAD_AES_256_GCM of TLS_AES_256_GCM_SHA384. Cases 17
-// and 18 use IVs of other lengths, which quic_gcm.h admits none of, so
+// and 18 use IVs of other lengths, which gcm.h admits none of, so
 // they are not here.
 static const sp800_38d_case SP800_38D_CASE_13 = {
     .name = "case 13",
@@ -102,7 +102,7 @@ static const sp800_38d_case *const SP800_38D_AES256_CASES[] = {
 #endif
 
 // One aes_public_key over a key the caller chose. Only a test does this:
-// the two constructors in quic_aes.h are the only public way to write
+// the two constructors in aes.h are the only public way to write
 // this type, and neither takes a caller's key, so a vector whose key SP
 // 800-38D fixed reaches the cipher through the key schedule directly.
 //
@@ -129,7 +129,7 @@ static void gcm_test_key(aes_public_key *k, const char *key_hex) {
 // gcm_seal writes, the plaintext gcm_open releases, and the refusal
 // gcm_open answers with when one tag bit is wrong. The refusal arm also
 // checks that no plaintext byte was written, which is the promise
-// quic_gcm.h makes and the reason the tag is computed first.
+// gcm.h makes and the reason the tag is computed first.
 static void seal_and_open_case(const sp800_38d_case *c) {
     uint8_t iv[AES_IV];
     uint8_t aad[GCM_TEST_MAX];
@@ -360,7 +360,7 @@ static void test_appendix_a4_retry(void) {
     memcpy(&pseudo[pseudo_len], A4_RETRY_PACKET, retry_body);
     pseudo_len += retry_body;
 
-    // quic_gcm.h states the plaintext pointer for n readable bytes and
+    // gcm.h states the plaintext pointer for n readable bytes and
     // says nothing about a null one, so the empty plaintext of §5.8 gets
     // a real buffer rather than a pointer the contract does not cover.
     uint8_t empty[1] = {0};
@@ -405,7 +405,7 @@ static void test_block_boundaries(void) {
     }
 }
 
-// The aliasing shapes quic_gcm.h admits: pt == ct on both calls, and pt
+// The aliasing shapes gcm.h admits: pt == ct on both calls, and pt
 // below ct on open. A packet caller decrypts in place, so these are the
 // shapes real code uses rather than shapes only a test produces.
 static void test_in_place(void) {

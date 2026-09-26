@@ -1,7 +1,7 @@
 // AES=hw: the AES-128 key expansion and forward cipher of FIPS 197 on
 // the AES instructions, through the compiler's own intrinsic headers, and
-// the AES-256 pair in a build that has AES-256 (CH_AES_256, quic_aes.h).
-// quic_aes_block.h states the contracts; this file implements them and
+// the AES-256 pair in a build that has AES-256 (CH_AES_256, aes.h).
+// aes_block.h states the contracts; this file implements them and
 // nothing else. Both key sizes share one expansion loop and one round
 // loop, so AES-256 adds two entries and no second cipher.
 //
@@ -44,7 +44,7 @@
 //
 //   CH_NATIVE_AES  the build asserts that this part's AES instructions
 //                  run in constant time, and so does the carry-less
-//                  multiply quic_ghash_hw.c runs GHASH on, the other half
+//                  multiply ghash_hw.c runs GHASH on, the other half
 //                  of an AES=hw object. Firmware defines it only with a
 //                  vendor statement that covers both, the way it defines
 //                  CH_NATIVE_WIDEMUL. Nothing in this file reads it.
@@ -59,7 +59,7 @@
 // CBMC cannot read an intrinsic, so the proofs stay on the software path
 // and this file is held to it by test/aes_equiv_test.c, which runs both
 // implementations over the same inputs and compares byte for byte.
-#include "quic_aes_block.h"
+#include "aes_block.h"
 
 #if defined(CH_TRANSPORT_QUIC_NONBLOCKING) || defined(CH_SUITE_AES_GCM)
 #ifdef CH_AES_HW

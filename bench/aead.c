@@ -1,10 +1,10 @@
 // Times chapulin's two AEADs per byte on the machine that runs it:
-// ChaCha20-Poly1305 (aead.c) and AES-128-GCM (quic_gcm.c), each whole and
+// ChaCha20-Poly1305 (aead.c) and AES-128-GCM (gcm.c), each whole and
 // in its two halves. bench/aead.sh builds it once per AES and multiply
 // choice and writes the rows to bench/results-aead-<arch>.csv. The AES
 // value picks both halves of AES-128-GCM: AES=soft runs the S-box cipher
-// and quic_gcm.c's portable GHASH, and AES=hw runs the AES instructions
-// and quic_ghash_hw.c's GHASH on the carry-less multiply.
+// and gcm.c's portable GHASH, and AES=hw runs the AES instructions
+// and ghash_hw.c's GHASH on the carry-less multiply.
 //
 // Each argument names a group of rows to run:
 //
@@ -37,8 +37,8 @@
 
 #include "aead.h"
 #include "aead_gcm.h"
+#include "aes_public_key.h"
 #include "ch_assert.h"
-#include "quic_aes_key.h"
 
 #define SAMPLE_NS 2000000.0 // 2 ms per sample
 #define SAMPLES 101         // odd, so the median is one sample

@@ -15,9 +15,9 @@ typedef struct {
     uint64_t seq;
 } fake_dir;
 
-// The key type quic_aes.h declares. This fixture gives it a body,
-// which the tree's own headers no longer do: quic_aes.h declares it
-// incomplete and quic_aes_key.h holds the body, so a library source
+// The key type aes.h declares. This fixture gives it a body,
+// which the tree's own headers no longer do: aes.h declares it
+// incomplete and aes_public_key.h holds the body, so a library source
 // that does not include that header cannot declare one at all. The body
 // is here because the lines below take a pointer to one and write a
 // field of one, and semgrep --test needs a file it can parse.
@@ -120,7 +120,7 @@ int use_everything(void) {
 
     // Two ways to make a key without calling anything. The rule reads
     // neither, and it no longer needs to: in the tree this type is
-    // incomplete outside quic_aes_key.h's three readers, so both lines
+    // incomplete outside aes_public_key.h's three readers, so both lines
     // are a compiler error there rather than a pattern to match.
     // ok: inv-26-aes-public-keys-only
     aes_public_key uninitialized;
@@ -154,7 +154,7 @@ int use_everything(void) {
     fp(&k, buf, buf);
     // A write to a field of a key the file already holds. No branch
     // matches this either. In the tree it is a compiler error outside
-    // quic_aes_key.h's three readers, and inside them it is the shape
+    // aes_public_key.h's three readers, and inside them it is the shape
     // docs/invariants.md INV-26 states as the review obligation.
     // ok: inv-26-aes-public-keys-only
     k.key.round_keys[0] = buf[0];

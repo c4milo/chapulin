@@ -3,7 +3,7 @@ file: quic_keys.c
 catches: test/lint-quic-surface.sh
 reason: quic_keys.c reaches the body of aes_public_key through a macro that
   expands to the header's name, so the directive carries no literal
-  include of quic_aes_key.h. A check that matched the quoted include
+  include of aes_public_key.h. A check that matched the quoted include
   text exactly read straight past it while the preprocessor did not.
   tools/quic-footprint.py's key_holders() matches the header's name in
   an include directive however it is spelled, and in the define that
@@ -13,5 +13,5 @@ reason: quic_keys.c reaches the body of aes_public_key through a macro that
 #include "quic_keys.h"
 --- new
 #include "quic_keys.h"
-#define CH_KEY_BODY "quic_aes_key.h"
+#define CH_KEY_BODY "aes_public_key.h"
 #include CH_KEY_BODY

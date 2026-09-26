@@ -14,4 +14,4 @@ reason: AES=soft stops being one implementation and adds the hardware one
 --- old
 AES_IMPL := quic_aes_soft.c
 --- new
-AES_IMPL := quic_aes_soft.c quic_aes_hw.c
+AES_IMPL := quic_aes_soft.c aes_hw.c

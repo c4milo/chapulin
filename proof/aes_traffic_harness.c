@@ -8,11 +8,11 @@
 // A suite build takes AES=hw, whose key expansion and cipher are the AES
 // instructions, and CBMC cannot read an intrinsic. So the four block
 // entries are contract stubs below: each asserts the buffers
-// quic_aes_block.h says it reads and writes, and havocs what it writes.
-// What this proves is quic_aes.c's own framing over them. The
+// aes_block.h says it reads and writes, and havocs what it writes.
+// What this proves is aes.c's own framing over them. The
 // instructions are held to FIPS 197 by test/aes_equiv_test.c, which
 // compares them with quic_aes_soft.c's reference, and
-// proof/quic_aes256_harness.c proves that reference.
+// proof/aes256_harness.c proves that reference.
 //
 // Each stub records whether it ran, so the harness asserts that a 16-byte
 // key reached the AES-128 schedule and a 32-byte key the AES-256 one, and
@@ -22,9 +22,9 @@
 // assertions that fail on it.
 #include "harness.h"
 
-#include "quic_aes_stubs.h"
+#include "aes_stubs.h"
 
-#include "quic_aes.c"
+#include "aes.c"
 
 static int ran_expand_128;
 static int ran_expand_256;

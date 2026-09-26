@@ -7,14 +7,14 @@ AEAD_AES_128_GCM, AEAD_AES_256_GCM and the GHASH under them, NIST SP
 AEADs differ in the forward cipher alone, and `Spec.Aes.cipher` picks
 that by the key's length, so every definition below serves both.
 
-A block is a 128-bit value here, where `quic_gcm.c` carries 16 bytes.
+A block is a 128-bit value here, where `gcm.c` carries 16 bytes.
 SP 800-38D numbers the bits of a block from the leftmost, so the
 standard's bit 0 is the most significant bit of the value, and the
 conversion in both directions is `natToBytesBE` and `bytesToNatBE`. The
 differential compares the bytes, so the two representations meet where
 they are compared and nowhere else.
 
-Only the 96-bit IV exists here, for the reason `quic_gcm.h` gives: SP
+Only the 96-bit IV exists here, for the reason `gcm.h` gives: SP
 800-38D §7.1 takes the first counter block straight from a 96-bit IV,
 QUIC produces no other length, and the C has no second arm to model.
 

@@ -19,7 +19,7 @@
 #include "aead.h"
 #include "aes_traffic_key.h"
 #include "chacha20.h"
-#include "quic_gcm.h"
+#include "gcm.h"
 #include "suite.h"
 
 #if !defined(CH_SUITE_AES_GCM) || !defined(CH_TRANSPORT_QUIC_NONBLOCKING)

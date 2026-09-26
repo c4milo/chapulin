@@ -1,12 +1,12 @@
 invariant: INV-26
-file: quic_ghash_hw.c
+file: ghash_hw.c
 catches: ghash_equiv_test
 reason: the AES=hw reduction adds the upper half shifted right by 8 where
   the x^7 term of x^128 + x^7 + x^2 + x + 1 needs a shift by 7, so every
   product with a nonzero upper half is reduced modulo the wrong
   polynomial and GHASH answers wrong under AES=hw alone. CBMC cannot read
   an intrinsic, so no proof covers this file, and bin/ghash_equiv_test
-  is what holds it to quic_gcm.c's portable multiply: it compares the
+  is what holds it to gcm.c's portable multiply: it compares the
   multiply, the loop over data and the whole AEAD byte for byte. The
   edit lands in reduce, which is the same C after either instruction, so
   it compiles on an ARMv8 host and an x86-64 one alike and the catch does

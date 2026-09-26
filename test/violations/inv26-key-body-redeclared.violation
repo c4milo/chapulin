@@ -3,14 +3,14 @@ file: quic_step.c
 catches: test/lint-quic-surface.sh
 reason: quic_step.c spells the body of struct aes_public_key itself, so it
   declares a key and writes a traffic secret into one without including
-  quic_aes_key.h at all. C diagnoses no mismatched struct definition
+  aes_public_key.h at all. C diagnoses no mismatched struct definition
   across translation units, so this edit compiles clean in every
-  compiler this tree uses and the incomplete type in quic_aes.h stops
+  compiler this tree uses and the incomplete type in aes.h stops
   nothing: the file passes its own key to aes_encrypt_block and the
   S-box is indexed by the secret. The include allowlist alone read past
   this shape, because there is no include to read.
   tools/quic-footprint.py's key_holders() refuses a body outside
-  quic_aes_key.h, and `make lint-quic-surface` is where it runs.
+  aes_public_key.h, and `make lint-quic-surface` is where it runs.
 
 --- old
 #include "quic_step.h"

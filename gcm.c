@@ -1,10 +1,10 @@
 // AEAD_AES_128_GCM, AEAD_AES_256_GCM and the GHASH under them, NIST SP
-// 800-38D. quic_gcm.h states every contract; this file implements them
+// 800-38D. gcm.h states every contract; this file implements them
 // and nothing else. The two AEADs differ in the forward cipher alone, and
 // aes_encrypt_schedule picks that by the schedule's round count, so every
 // body below serves both.
 //
-// The forward cipher comes from quic_aes.c, and INV-26 in
+// The forward cipher comes from aes.c, and INV-26 in
 // docs/invariants.md bounds which keys it is given: the Initial keys,
 // which anyone who sees a Destination Connection ID can derive (RFC 9001
 // §5.2), the Retry key the RFC prints (§5.8), and in a -DCH_SUITE_AES_GCM
@@ -19,7 +19,7 @@
 //
 // GHASH has two bodies, and the Makefile AES variable picks one.
 // AES=soft and AES=extern run the portable multiply below, 128 masked
-// steps per block. AES=hw runs quic_ghash_hw.c's, four carry-less
+// steps per block. AES=hw runs ghash_hw.c's, four carry-less
 // products and a reduction per block, and compiles no portable body.
 // Everything else here is one body under every AES value.
 //
@@ -27,9 +27,9 @@
 // counter block straight from a 96-bit IV, and hashes any other IV
 // length with GHASH first. QUIC produces no other length, so the second
 // arm has no caller and no code.
-#include "quic_gcm.h"
+#include "gcm.h"
 
-#include "quic_aes_key.h"
+#include "aes_public_key.h"
 #ifdef CH_SUITE_AES_GCM
 #include "aes_traffic_key.h"
 #endif
@@ -40,7 +40,7 @@
 
 #include "ct.h"
 #ifdef CH_AES_HW
-#include "quic_ghash_hw.h"
+#include "ghash_hw.h"
 #endif
 
 // The block of zeros SP 800-38D §7.1 step 1 encrypts to get the hash
@@ -48,7 +48,7 @@
 static const uint8_t ZERO_BLOCK[AES_BLOCK] = {0};
 
 #ifdef CH_AES_HW
-// AES=hw: quic_ghash_hw.c computes both GHASH steps on the carry-less
+// AES=hw: ghash_hw.c computes both GHASH steps on the carry-less
 // multiply instruction, and the portable bodies under #else are not
 // compiled. CBMC cannot read an intrinsic, so the proofs cover the
 // portable bodies alone, and test/ghash_equiv_test.c holds each entry

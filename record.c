@@ -5,7 +5,7 @@
 #include "suite.h"
 #ifdef CH_SUITE_AES_GCM
 #include "aes_traffic_key.h"
-#include "quic_gcm.h"
+#include "gcm.h"
 
 // The three suites take the same 12-byte IV and write the same 16-byte
 // tag, so only the key length and the hash vary: suite_key_len and

@@ -7,14 +7,14 @@
 // Each call takes the endpoint its caller is, derives the one
 // direction's key it needs on its own stack, and lets it die with the
 // frame. That is INV-26's structural check:
-// this file, quic_retry.c and quic_aes.c are the only sources that
-// include quic_aes_key.h, so they are the only ones that can hold an
+// this file, quic_retry.c and aes.c are the only sources that
+// include aes_public_key.h, so they are the only ones that can hold an
 // aes_public_key, and no line anywhere keeps one between calls.
 #include "quic_initial.h"
 
 #ifdef CH_TRANSPORT_QUIC_NONBLOCKING
 
-#include "quic_aes_key.h"
+#include "aes_public_key.h"
 
 // The endpoint that wrote what this caller opens: the one the caller is
 // not. RFC 9001 §5.2 derives one Initial secret per endpoint and each
@@ -43,7 +43,7 @@ static uint8_t peer_endpoint(uint8_t endpoint) {
 // quic_packet.c's quic_nonce builds the same value for the levels whose
 // AEAD is ChaCha20-Poly1305, over an IV that file sizes with AEAD_NONCE.
 // This one reads the AES_IV-length iv field of an aes_public_key, which
-// only this file, quic_retry.c and quic_aes.c can name, and takes no
+// only this file, quic_retry.c and aes.c can name, and takes no
 // constant from the other AEAD.
 static void initial_nonce(const aes_public_key *k, uint64_t pn, uint8_t nonce[AES_IV]) {
     for (size_t i = 0; i < AES_IV; i++) {
@@ -122,7 +122,7 @@ int quic_initial_seal(uint8_t endpoint, const uint8_t *dcid, size_t dcid_len, ui
     quic_header_protect(out, pn_off, pn_len, CH_LEVEL_INITIAL, mask);
     *out_len = hdr_len + pt_len + GCM_TAG;
     // No wipe: the key, the nonce and the mask are public bytes, for
-    // the reason quic_aes.c states at its own derivation. A ct_wipe
+    // the reason aes.c states at its own derivation. A ct_wipe
     // here would tell a reader they are secret.
     return CH_OK;
 }
@@ -166,7 +166,7 @@ int quic_initial_open(uint8_t endpoint, const uint8_t *dcid, size_t dcid_len, ui
     size_t ct_len = pkt_len - hdr_len - GCM_TAG;
     uint8_t nonce[AES_IV];
     initial_nonce(&k, recovered_pn, nonce);
-    // In place, which quic_gcm.h admits as pt == ct: the plaintext
+    // In place, which gcm.h admits as pt == ct: the plaintext
     // replaces the ciphertext where it sat, right after the header.
     if (!gcm_open(&k, nonce, pkt, hdr_len, &pkt[hdr_len], ct_len, &pkt[hdr_len + ct_len],
                   &pkt[hdr_len])) {

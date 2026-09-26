@@ -15,13 +15,13 @@
 // read bytes the call had already replaced; the implementation uses a
 // local and this harness covers the aliasing that results.
 //
-// HKDF is a contract stub (proof/quic_aes_stubs.h), which states what
+// HKDF is a contract stub (proof/aes_stubs.h), which states what
 // the composition gives up and where the real function is proven. The
 // derivation itself is checked against RFC 9001 Appendix A.5's four
 // printed values in test/quic_vectors.c.
 #include "harness.h"
 
-#include "quic_aes_stubs.h"
+#include "aes_stubs.h"
 
 #include "quic_keys.c"
 

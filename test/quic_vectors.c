@@ -12,11 +12,11 @@
 // builds.
 //
 // FIPS 197's vectors fix the key, and INV-26 makes the two constructors
-// in quic_aes.h the only public way to write an aes_public_key, so a
+// in aes.h the only public way to write an aes_public_key, so a
 // vector whose key the standard chose reaches the cipher through
-// quic_aes_block.h's two entries instead. Those take plain bytes and are
-// not static, so this file links quic_aes.c and the AES implementation
-// the build picked rather than compiling either in. quic_aes_key.h gives
+// aes_block.h's two entries instead. Those take plain bytes and are
+// not static, so this file links aes.c and the AES implementation
+// the build picked rather than compiling either in. aes_public_key.h gives
 // aes_public_key a body here, which INV-26 admits in a test and the
 // Semgrep rule excludes `test` for.
 //
@@ -26,9 +26,9 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "aes_block.h"
+#include "aes_public_key.h"
 #include "ch_assert.h"
-#include "quic_aes_block.h"
-#include "quic_aes_key.h"
 #include "quic_initial.h"
 #include "quic_keys.h"
 #include "quic_packet.h"
@@ -41,7 +41,7 @@ noreturn void ch_assert_fail(const char *cond, const char *file, int line) {
 
 // Hex helpers in the shape test/unit_test.c uses, so a vector below reads
 // as the standard prints it rather than as a byte array someone
-// re-encoded by hand. test/quic_gcm_tests.h is their only caller.
+// re-encoded by hand. test/gcm_tests.h is their only caller.
 static uint8_t nibble(char c) {
     if (c >= '0' && c <= '9') {
         return (uint8_t)(c - '0');
@@ -78,8 +78,8 @@ static const uint8_t APPENDIX_DCID[8] = {0x83, 0x94, 0xc8, 0xf0, 0x3e, 0x51, 0x5
 
 // The GCM vectors, in their own header because the RFC 9001 Appendix A.2
 // packet is long. They read APPENDIX_DCID, unhex, eq_hex and CHECK above,
-// and aes_expand_round_keys from quic_aes_block.h.
-#include "quic_gcm_tests.h"
+// and aes_expand_round_keys from aes_block.h.
+#include "gcm_tests.h"
 
 // The packet protection and header protection vectors, in their own
 // header for the same reason: RFC 9001 Appendix A.2's and A.3's headers

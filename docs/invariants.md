@@ -433,7 +433,14 @@ last `ROLE=server` stub, as the entry said it would.
   transports compile, and `QUIC_CONDITIONAL`, the shared files that
   carry a `#ifdef CH_TRANSPORT_QUIC_NONBLOCKING` arm. `handshake_flight.[ch]` is
   `QUIC_SHARED`: the QUIC mode adds it, both transports compile it, and
-  it carries no prefix for that reason.
+  it carries no prefix for that reason. `aes.[ch]` is
+  `QUIC_CONDITIONAL`: a suite build compiles its cipher over every
+  transport, and only a QUIC build compiles the entries that build the
+  Initial and Retry keys and run header protection. The other AES and
+  GCM sources a suite build compiles carry no prefix for the same
+  reason. `quic_aes_soft.c` and `quic_aes_extern.c` keep it: a
+  `SUITE=aesgcm` build refuses both (INV-26), so only a QUIC build
+  compiles them.
 - **Mechanism.** The preprocessor decides, not a list. A file is
   QUIC-only when it declares nothing without `-DCH_TRANSPORT_QUIC_NONBLOCKING` and
   gains something with it. The mode's own files put their whole body
@@ -442,7 +449,11 @@ last `ROLE=server` stub, as the entry said it would.
   their QUIC arms instead and still declare their TLS text.
   `handshake_flight.[ch]` holds the flight handlers both drivers call,
   so no protocol rule exists twice; giving it the prefix would claim a
-  TCP build does not compile it, which is false.
+  TCP build does not compile it, which is false. The AES and GCM sources
+  guard their body on the transport or on `-DCH_SUITE_AES_GCM`, so the
+  lint reads each one with the defines a suite build passes
+  (`QUIC_EXTRA_DEFINES`), and a file a suite build compiles reads as
+  shared.
 - **Check.** Semgrep-tripwire grade (`make lint-quic-partition`,
   `tools/quic-partition.py`), and the mutants below measure it rather
   than claim it. The lint preprocesses every root `.c` and `.h` file
@@ -461,7 +472,7 @@ last `ROLE=server` stub, as the entry said it would.
   prints the counts it found, so no count is written down here. Three
   mutants in `test/violations/` require `test/lint-quic-partition.sh`
   to fail, and the fast tier runs all three: `inv27-quic-type-above-guard`
-  writes a typedef above `quic_aes.h`'s transport guard,
+  writes a typedef above `quic_initial.h`'s transport guard,
   `inv27-quic-declaration-in-tls-header` adds a `ch_quic_` declaration
   to `tls.h` inside a transport arm, and `inv27-quic-include-above-guard`
   moves `quic_retry.h`'s `#include` lines above its guard.
@@ -1514,13 +1525,13 @@ last `ROLE=server` stub, as the entry said it would.
 ### INV-26 — AES sees three public keys, and traffic keys only under a suite build
 
 - **Claim.** Under `TRANSPORT=quic-nonblocking` this tree carries an AES-128, and
-  every key it is given is public. `quic_aes.c` derives the keys and
-  `quic_gcm.c` builds the AEAD on them; the key expansion and the block
-  cipher sit in whichever of `quic_aes_soft.c`, `quic_aes_hw.c` and
+  every key it is given is public. `aes.c` derives the keys and
+  `gcm.c` builds the AEAD on them; the key expansion and the block
+  cipher sit in whichever of `quic_aes_soft.c`, `aes_hw.c` and
   `quic_aes_extern.c` the Makefile `AES` variable picked, behind the
-  contract `quic_aes_block.h` states. Under `AES=hw`, GHASH's multiply by
-  the hash subkey also moves out of `quic_gcm.c`, into `quic_ghash_hw.c`
-  on the carry-less multiply, behind `quic_ghash_hw.h`; the hash subkey
+  contract `aes_block.h` states. Under `AES=hw`, GHASH's multiply by
+  the hash subkey also moves out of `gcm.c`, into `ghash_hw.c`
+  on the carry-less multiply, behind `ghash_hw.h`; the hash subkey
   is the forward cipher of a zero block under the same key, so it is
   public exactly when that key is. Only `AES=soft` is table-driven,
   and the claim below is what lets that one exist; it binds all three
@@ -1556,12 +1567,12 @@ last `ROLE=server` stub, as the entry said it would.
   protected, and no `rec_dir`, `quic_keys` or `quic_hp_key` holds one.
 
   The mechanism grew with the claim, and the growth is the cost. Two
-  headers give a key a body: `quic_aes_key.h` for `aes_public_key`, which
-  `quic_aes.c`, `quic_initial.c`, `quic_retry.c` and `quic_gcm.c`
+  headers give a key a body: `aes_public_key.h` for `aes_public_key`, which
+  `aes.c`, `quic_initial.c`, `quic_retry.c` and `gcm.c`
   include, and `aes_traffic_key.h` for `aes_traffic_key`, which
-  `quic_aes.c`, `quic_gcm.c`, `record.c` and `quic_packet.c` include.
+  `aes.c`, `gcm.c`, `record.c` and `quic_packet.c` include.
   `tools/quic-footprint.py` holds each list, and `make
-  lint-quic-surface` fails on any other reader. `quic_gcm.c` reads the
+  lint-quic-surface` fails on any other reader. `gcm.c` reads the
   round keys out of either key type to run the AEAD. What holds is the
   part that matters: no file outside those lists can build a key of
   either kind, `inv-26-aes-public-keys-only` still matches every call
@@ -1593,9 +1604,9 @@ last `ROLE=server` stub, as the entry said it would.
   `test/violations/inv26-secret-into-stored-key.violation` is that
   exact edit and requires `test/quic-builds.sh` to fail.
 
-  The type is now opaque outside three sources. `quic_aes.h` declares
+  The type is now opaque outside three sources. `aes.h` declares
   `typedef struct aes_public_key aes_public_key;` and stops;
-  `quic_aes_key.h` holds the body, and `quic_aes.c`, `quic_initial.c`
+  `aes_public_key.h` holds the body, and `aes.c`, `quic_initial.c`
   and `quic_retry.c` are the only sources that include it. Every other
   file sees an incomplete type, so `aes_public_key k;`,
   `aes_public_key k[1];`, `*dst = *src;` and any write to a field are
@@ -1642,8 +1653,8 @@ last `ROLE=server` stub, as the entry said it would.
 
   Three more checks hold the rule from other directions.
   `lint-quic-surface` reads the premise the Semgrep rule rests on.
-  `lint-codegen-partition` keeps `quic_aes.c`, `quic_gcm.c`, the
-  three AES implementations and `quic_ghash_hw.c` in `WIDEMUL_PUBLIC`,
+  `lint-codegen-partition` keeps `aes.c`, `gcm.c`, the
+  three AES implementations and `ghash_hw.c` in `WIDEMUL_PUBLIC`,
   the list whose own comment says a secret arriving in any of these is a
   design change, so moving one of them to `WIDEMUL_CEILING` is a diff a
   reviewer looks for. That also says what these six files do not get: no codegen gate
@@ -1656,8 +1667,8 @@ last `ROLE=server` stub, as the entry said it would.
   object. All three define the same two entries, so a second one would
   not link, but a linker says nothing about which implementation an
   object ended up with; the lint reads the packaged source list per axis
-  value instead. Its `AES=hw` row requires `quic_ghash_hw.c` beside
-  `quic_aes_hw.c`, and every other row bans it.
+  value instead. Its `AES=hw` row requires `ghash_hw.c` beside
+  `aes_hw.c`, and every other row bans it.
   `test/violations/aes-two-implementations-in-one-object.violation` is
   the mutant that proves it fires, and
   `aes-hw-diverges-from-soft.violation` breaks the `AES=hw` key
@@ -1667,9 +1678,9 @@ last `ROLE=server` stub, as the entry said it would.
   `ghash-hw-cross-product-halves-swapped.violation` break the `AES=hw`
   GHASH multiply and require `bin/ghash_equiv_test` to fail.
   `ghash-hw-falls-back-to-portable.violation` lets an `AES=hw` build of
-  `quic_gcm.c` run the portable multiply and requires
+  `gcm.c` run the portable multiply and requires
   `test/quic-builds.sh` to fail, and
-  `ghash-hw-source-unpackaged.violation` drops `quic_ghash_hw.c` from
+  `ghash-hw-source-unpackaged.violation` drops `ghash_hw.c` from
   the `AES=hw` sources and requires `test/lint-trust-separation.sh` to
   fail.
 
@@ -1710,13 +1721,13 @@ last `ROLE=server` stub, as the entry said it would.
   is written in the image's build files by someone who can answer for it,
   rather than inferred from a macro that does not carry it.
 
-  *The codegen gates now measure these files.* `quic_aes.c`,
-  `quic_aes_soft.c`, `quic_aes_extern.c` and `quic_gcm.c` moved from
+  *The codegen gates now measure these files.* `aes.c`,
+  `quic_aes_soft.c`, `quic_aes_extern.c` and `gcm.c` moved from
   `WIDEMUL_PUBLIC` into `WIDEMUL_CEILING` at 0, and into `BRANCH_SRCS`
   with a measured branch count per spec in `BRANCH_CEILING`. Before that
   no gate compiled them, so nothing held `multiply_by_subkey`'s two masks
   to a branchless lowering -- the same select `lint-wide-multiply` holds
-  for `poly1305_final` and `cswap`. `quic_aes_hw.c` and `quic_ghash_hw.c`
+  for `poly1305_final` and `cswap`. `aes_hw.c` and `ghash_hw.c`
   stay in `WIDEMUL_PUBLIC` because they cannot join: every spec targets a
   core without the AES or carry-less multiply instructions, where each
   file is its own `#error`. `test/aes_equiv_test.c`,
@@ -1724,11 +1735,11 @@ last `ROLE=server` stub, as the entry said it would.
   the Wycheproof AES-GCM suite on that leg and `bin/diff_quic_hw` are what
   hold them, and none of them is a timing measurement.
 
-  *Key material is wiped where a secret could sit.* `quic_gcm.c` wipes the
+  *Key material is wiped where a secret could sit.* `gcm.c` wipes the
   hash subkey, the running multiple in the GF(2^128) multiply, the
   keystream block, the tag mask and the tag it computed for comparison;
-  `quic_aes_hw.c` wipes its key-schedule word and its cipher state;
-  `quic_ghash_hw.c` wipes the object that holds the hash subkey, the
+  `aes_hw.c` wipes its key-schedule word and its cipher state;
+  `ghash_hw.c` wipes the object that holds the hash subkey, the
   accumulator and the unreduced product once at the end of each entry,
   not once per block. Two
   places deliberately hold no wipe. `quic_aes_soft.c` holds none because
@@ -1746,8 +1757,8 @@ last `ROLE=server` stub, as the entry said it would.
   `make lint-trust-separation`, `make lint-wide-multiply`, and a
   Semgrep tripwire (`inv-26-aes-public-keys-only`) over every library
   source but `quic_initial.c` and `quic_retry.c`, the two permitted
-  callers, with `quic_aes.c`, `quic_gcm.c`, the three AES
-  implementations and `quic_ghash_hw.c` excluded as the definition
+  callers, with `aes.c`, `gcm.c`, the three AES
+  implementations and `ghash_hw.c` excluded as the definition
   sites.
 
   What `ct.h` refuses, and `test/quic-builds.sh` is the catch target for
@@ -1782,7 +1793,7 @@ last `ROLE=server` stub, as the entry said it would.
   fail. `inv26-aes256-test-define-in-object` packages the software
   AES-256 and requires `test/lint-trust-separation.sh` to fail.
   `aes256-traffic-key-wrong-round-count` records AES-128's round count
-  beside an AES-256 schedule and requires the `quic_aes_traffic` proof
+  beside an AES-256 schedule and requires the `aes_traffic` proof
   to fail, and `aes256-schedule-one-round-key-short` stops the `AES=hw`
   AES-256 expansion one round key short and requires
   `bin/aes_equiv_test` to fail. `inv26-quic-hp-key-cut-to-aes128` keys
@@ -1792,7 +1803,7 @@ last `ROLE=server` stub, as the entry said it would.
   `quic_packet_suite` proof asserts the key length too.
 
   What the compiler refuses, in any source that does not include
-  `quic_aes_key.h`: declaring an `aes_public_key`, declaring an array of
+  `aes_public_key.h`: declaring an `aes_public_key`, declaring an array of
   them, assigning one, and writing a field of one. `quic.h` declares no
   member of that type, so `q->initial_tx.key.round_keys` names nothing.
 
@@ -1800,8 +1811,8 @@ last `ROLE=server` stub, as the entry said it would.
   `gcm_` and `ch_aes_`; the third is there because an `AES=extern`
   build leaves `ch_aes_block` to the image, and a library source calling
   it would run AES on a key of its choosing exactly as a call to `aes_`
-  would. The three implementation sources join `quic_aes.c` and
-  `quic_gcm.c` on the exclude list, as definition sites.
+  would. The three implementation sources join `aes.c` and
+  `gcm.c` on the exclude list, as definition sites.
   - *A call* to a name beginning `aes_`, `gcm_` or `ch_aes_`.
     `test/violations/inv26-aes-on-traffic-key.violation` seals a 1-RTT
     packet with `aes_encrypt_block` over a `quic_keys` set,
@@ -1824,26 +1835,26 @@ last `ROLE=server` stub, as the entry said it would.
   catch first.
 
   What `make lint-quic-surface` reads, so the rule's own premise is
-  checked rather than assumed. It fails when `quic_aes.h`,
-  `quic_aes_block.h`, `quic_gcm.h` or `quic_ghash_hw.h` declares a
+  checked rather than assumed. It fails when `aes.h`,
+  `aes_block.h`, `gcm.h` or `ghash_hw.h` declares a
   function or a function-like macro outside the `aes_`, `gcm_` and
   `ch_aes_` family, because the rule matches names;
   `inv26-cipher-entry-off-prefix.violation` adds a `quic_encrypt_block`
   entry and requires `test/lint-quic-surface.sh` to fail. It fails when
   either header gives a type a body, because that would put a key back
   within reach of every file that includes them. And it fails when any
-  root source outside `quic_aes.c`, `quic_initial.c` and `quic_retry.c`
-  includes `quic_aes_key.h`, which is the one line that undoes the
+  root source outside `aes.c`, `quic_initial.c` and `quic_retry.c`
+  includes `aes_public_key.h`, which is the one line that undoes the
   opacity; `inv26-key-header-fourth-reader.violation` adds that include
   to `quic_packet.c` and requires `test/lint-quic-surface.sh` to fail.
   `tools/quic-footprint.py` holds all three comparisons and prints their
   counts.
 
   One check holds the admitted code rather than its callers:
-  `proof/quic_aes_harness.c` proves the key expansion memory-safe at its
+  `proof/aes_harness.c` proves the key expansion memory-safe at its
   real bound, and `inv26-aes-schedule-past-round-keys.violation` runs
   the schedule one word past `round_keys` and requires
-  `proof/prove-one.sh quic_aes` to fail.
+  `proof/prove-one.sh aes` to fail.
 
   **What review still owes.** Three shapes, and no check in this tree
   reads any of them.
@@ -1851,8 +1862,8 @@ last `ROLE=server` stub, as the entry said it would.
     not one of the two permitted callers writes
     `#define MASK(k, s, o) aes_encrypt_block_hp(k, s, o)` and calls
     `MASK`. Semgrep parses C expressions, not macro bodies, so neither
-    branch fires. `lint-quic-surface` reads the macros `quic_aes.h` and
-    `quic_gcm.h` declare, not the macros other files define.
+    branch fires. `lint-quic-surface` reads the macros `aes.h` and
+    `gcm.h` declare, not the macros other files define.
   - *Token pasting.* `#define CIPHER(stem) aes_##stem`, called as
     `CIPHER(encrypt_block)(...)`, puts no `aes_` identifier in the file
     at all, so there is no name for the rule to read.
