@@ -70,22 +70,6 @@ static void install_application_keys(ch_quic *q) {
     announce(q, CH_LEVEL_APPLICATION, CH_KEY_WRITE);
 }
 
-// What the session keeps past the message that decided it, the copy
-// srv_handshake.c makes at the same point. This driver is the only scope
-// holding the selection, the parsed hello and the session at once.
-//
-// No record_size_limit is copied: RFC 9001 section 4.1.3 removes the
-// record layer it sizes, srv_parser.c refuses the extension from a QUIC
-// client, and a QUIC build declares no ch_tls.peer_limit to hold it.
-static void store_selection(ch_tls *t, const client_hello *ch, const selection *sel) {
-    t->suite = sel->suite;
-    t->hash_len = sel->hash_len;
-    t->group = sel->group;
-    t->sigalg = sel->sigalg;
-    t->psk_selected = sel->psk_selected;
-    t->alpn_selected = ch->alpn_selected;
-}
-
 // RFC 9001 section 8.2 requires the quic_transport_parameters extension in
 // every ClientHello and makes its absence an error of type 0x016d, which
 // is a fatal missing_extension alert (rfc9001.txt:1929-1936). The body is
@@ -117,7 +101,7 @@ static int server_flight(ch_quic *q, const client_hello *ch, const selection *se
     if (rc != CH_OK) {
         return rc;
     }
-    store_selection(&q->t, ch, sel);
+    srv_store_selection(&q->t, ch, sel);
     rc = srv_derive_handshake_secrets(h, ch, sel);
     if (rc != CH_OK) {
         return rc;

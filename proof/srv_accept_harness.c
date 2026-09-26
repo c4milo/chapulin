@@ -324,7 +324,7 @@ int main(void) {
         __CPROVER_assert(t.state == CH_ST_FAILED, "a failed handshake leaves a dead session");
         __CPROVER_assert(t.keys == 0, "a failed handshake wipes the record keys");
     }
-    // store_selection lowers t.peer_limit to the client's
+    // srv_store_selection lowers t.peer_limit to the client's
     // record_size_limit and never raises it, so this build's own
     // CH_TX_PT stands whatever the client asked for. fill_client_hello
     // havocs record_size_limit over the whole uint16_t, so this covers

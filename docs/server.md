@@ -2289,7 +2289,7 @@ each fragment as its own record through `rec_seal`. `rfc9846.txt:3460-3462`
 permits the fragmentation and forbids interleaving another record type, which a
 straight-line writer cannot do.
 
-`store_selection` (`srv_handshake.c`) writes the client's `record_size_limit`
+`srv_store_selection` (`srv_flight.h`) writes the client's `record_size_limit`
 into `peer_limit` only when it is smaller than the `CH_TX_PT` the driver
 seeded, so `peer_limit` is already at or below this build's own cap and the
 `min` above restates that bound rather than establishing it. The client lowers

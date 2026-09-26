@@ -125,7 +125,7 @@ int srv_read_client_hello(handshake_state *h, client_hello *ch) {
         return rc;
     }
     memset(ch, 0, sizeof *ch);
-    // The two members store_selection reads. record_size_limit runs over
+    // The two members srv_store_selection reads. record_size_limit runs over
     // the whole uint16_t, so both sides of its boundary are in the
     // formula: a value below this build's cap is adopted and every
     // larger one leaves it standing.

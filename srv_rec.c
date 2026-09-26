@@ -31,31 +31,6 @@
 #include "srv_flight.h"
 #include "srv_resume.h"
 
-// Copies what the session keeps past the message that decided it, which
-// session.h lists field by field. This driver is the only scope that
-// holds the selection, the parsed ClientHello and the session at once,
-// so the copy happens here.
-//
-// It is srv_handshake.c's copy of the same six lines. The two drivers
-// keep their own the way srv_quic.c keeps a third, because each stores
-// what its transport has: this one and srv_handshake.c's store
-// record_size_limit and the QUIC one cannot.
-static void store_selection(ch_tls *t, const client_hello *ch, const selection *sel) {
-    t->suite = sel->suite;
-    t->hash_len = sel->hash_len;
-    t->group = sel->group;
-    t->sigalg = sel->sigalg;
-    t->psk_selected = sel->psk_selected;
-    t->alpn_selected = ch->alpn_selected;
-    // The client's record_size_limit (RFC 8449) bounds every record this
-    // server seals from the EncryptedExtensions on. 0 is the absent
-    // extension, which leaves the 2^14 default, and ch_srv_record_init
-    // seeded CH_TX_PT, this build's own cap on one record's plaintext.
-    if (ch->record_size_limit != 0 && ch->record_size_limit < t->peer_limit) {
-        t->peer_limit = ch->record_size_limit;
-    }
-}
-
 // Everything the server owes once a hello is accepted, whether it was the
 // first or the one that answered a HelloRetryRequest. Every record of it
 // leaves through cfg.srv.on_record_out before this call returns.
@@ -69,7 +44,7 @@ static int server_flight(ch_record *r, const client_hello *ch, const selection *
     if (rc != CH_OK) {
         return rc;
     }
-    store_selection(&r->t, ch, sel);
+    srv_store_selection(&r->t, ch, sel);
     rc = srv_derive_handshake_secrets(h, ch, sel);
     if (rc != CH_OK) {
         return rc;
@@ -255,7 +230,7 @@ int ch_srv_record_init(ch_record *r, const ch_cfg *cfg) {
     r->hs.alert = ALERT_DECODE_ERROR;
     // This server's own record_size_limit, sized to the caller's buffer,
     // which srv_send_encrypted_extensions puts in the
-    // EncryptedExtensions. store_selection lowers t->peer_limit to the
+    // EncryptedExtensions. srv_store_selection lowers t->peer_limit to the
     // client's own limit once the hello has been read.
     size_t room = r->t.cfg.buf_len - REC_HDR - AEAD_TAG;
     r->hs.record_size_limit = room > 0x4001 ? 0x4001 : (uint16_t)room;

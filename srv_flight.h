@@ -198,6 +198,44 @@ int srv_read_client_hello(handshake_state *h, client_hello *ch);
 // hello carries and nothing from the first.
 int srv_select(handshake_state *h, const client_hello *ch, selection *sel);
 
+// Copies what the session keeps past the message that decided it, which
+// session.h lists field by field. Each server driver calls it once, after
+// the hello exchange and before srv_derive_handshake_secrets:
+// srv_handshake.c, srv_rec.c and srv_quic.c. The driver is the only
+// scope that holds the selection, the parsed ClientHello and the session
+// at once. srv_send_encrypted_extensions reads alpn_selected off the
+// session rather than off the hello, because its signature carries no
+// client_hello, so this call runs before it.
+//
+// Over TCP, the client's record_size_limit (RFC 8449) also bounds every
+// record this server seals from the EncryptedExtensions on. 0 is the
+// absent extension, which leaves the 2^14 default, and the driver seeded
+// t->peer_limit with CH_TX_PT, this build's own cap on one record's
+// plaintext. Only a smaller limit is stored, so t->peer_limit never
+// rises above CH_TX_PT. Each send site compares against CH_TX_PT again
+// anyway: srv_flight.c's send_limit and tls.c's ch_write both take the
+// smaller of the two. The client lowers its own the same way
+// (handshake_parser_ee.c). A QUIC build copies no limit: RFC 9001
+// section 4.1.3 removes the record layer it sizes, srv_parser.c refuses
+// the extension from a QUIC client, and ch_tls declares no peer_limit.
+//
+// Defined here, not in srv_flight.c, so the harnesses that prove
+// srv_handshake.c and srv_rec.c with srv_flight.c stubbed still prove
+// the peer_limit rule over the real code.
+static inline void srv_store_selection(ch_tls *t, const client_hello *ch, const selection *sel) {
+    t->suite = sel->suite;
+    t->hash_len = sel->hash_len;
+    t->group = sel->group;
+    t->sigalg = sel->sigalg;
+    t->psk_selected = sel->psk_selected;
+    t->alpn_selected = ch->alpn_selected;
+#ifndef CH_TRANSPORT_QUIC_NONBLOCKING
+    if (ch->record_size_limit != 0 && ch->record_size_limit < t->peer_limit) {
+        t->peer_limit = ch->record_size_limit;
+    }
+#endif
+}
+
 // Builds and sends one HelloRetryRequest, and replaces the transcript
 // with §4.1's synthetic message_hash construction over the first
 // ClientHello (rfc9846.txt:1084-1087). It mints the cookie with

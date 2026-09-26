@@ -17,35 +17,6 @@
 #include "srv_flight.h"
 #include "srv_resume.h"
 
-// Copies what the session keeps past the message that decided it, which
-// session.h lists field by field. This driver is the only scope that
-// holds the selection, the parsed ClientHello and the session at once,
-// so the copy happens here.
-//
-// srv_send_encrypted_extensions reads alpn_selected off the session
-// rather than off the hello, because its signature carries no
-// client_hello, so this call runs before it.
-static void store_selection(ch_tls *t, const client_hello *ch, const selection *sel) {
-    t->suite = sel->suite;
-    t->hash_len = sel->hash_len;
-    t->group = sel->group;
-    t->sigalg = sel->sigalg;
-    t->psk_selected = sel->psk_selected;
-    t->alpn_selected = ch->alpn_selected;
-    // The client's record_size_limit (RFC 8449) bounds every record this
-    // server seals from the EncryptedExtensions on. 0 is the absent
-    // extension, which leaves the 2^14 default, and srv_handshake seeded
-    // CH_TX_PT, this build's own cap on one record's plaintext. Only a
-    // smaller limit is stored, so t->peer_limit never rises above
-    // CH_TX_PT. Each send site compares against CH_TX_PT again anyway:
-    // srv_flight.c's send_limit and tls.c's ch_write both take the
-    // smaller of the two, which is the contract srv_flight.h states.
-    // The client lowers its own the same way (handshake_parser_ee.c:25-28).
-    if (ch->record_size_limit != 0 && ch->record_size_limit < t->peer_limit) {
-        t->peer_limit = ch->record_size_limit;
-    }
-}
-
 // The HelloRetryRequest round: the retry goes out, the dummy
 // change_cipher_spec follows it (RFC 9846 Appendix E.4,
 // rfc9846.txt:6391-6393), the second ClientHello comes back, and
@@ -152,7 +123,7 @@ static int run(handshake_state *h) {
     if (rc != CH_OK) {
         return rc;
     }
-    store_selection(h->t, &ch, &sel);
+    srv_store_selection(h->t, &ch, &sel);
     rc = srv_derive_handshake_secrets(h, &ch, &sel);
     if (rc != CH_OK) {
         return rc;
@@ -178,7 +149,7 @@ int srv_handshake(ch_tls *t) {
     h.alert = ALERT_DECODE_ERROR;
     // This server's own record_size_limit, sized to the caller's buffer,
     // which srv_send_encrypted_extensions puts in the
-    // EncryptedExtensions. store_selection lowers t->peer_limit to the
+    // EncryptedExtensions. srv_store_selection lowers t->peer_limit to the
     // client's own limit once the hello has been read, when the client
     // asks for less than this build sends.
     size_t room = t->cfg.buf_len - REC_HDR - AEAD_TAG;

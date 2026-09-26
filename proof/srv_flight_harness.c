@@ -401,7 +401,7 @@ static void fresh(void) {
     t.cfg.srv.require_server_name = nondet_u8();
     t.alpn_selected = CH_ALPN_NONE;
     t.hash_len = SHA256_LEN;
-    // store_selection writes peer_limit only from a nonzero
+    // srv_store_selection writes peer_limit only from a nonzero
     // record_size_limit, so the fragment loops below never see 0.
     t.peer_limit = nondet_u16();
     __CPROVER_assume(t.peer_limit >= 1 && t.peer_limit <= LIMIT_MAX);
