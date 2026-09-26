@@ -162,15 +162,21 @@ def run(name):
         incremental — a delete would recompile every source each time."""
         future = time.time() + 60
         os.utime(target, (future, future))
+        # close_fds=False keeps the jobserver make hands this script (its
+        # recipe line starts with +) open in the builds and the catch.
+        # Closed, a make under them finds no jobserver and prints its
+        # "Entering directory" lines into what a catch script reads from
+        # make, which failed three catches on CI run 36278767672 (the
+        # Makefile's comment above CHECK_REPORT).
         if builds:
             # RAND has no default and the examples link the packaged
             # object, so a bare make stops at cfg.h's #error. check
             # builds them the same way.
             b = subprocess.run(["make", "RAND=extern", *builds], cwd=ROOT,
-                               capture_output=True, text=True)
+                               capture_output=True, text=True, close_fds=False)
             if b.returncode != 0:
                 return False, None, b.stderr or b.stdout
-        r = subprocess.run(command, cwd=ROOT, capture_output=True, text=True)
+        r = subprocess.run(command, cwd=ROOT, capture_output=True, text=True, close_fds=False)
         return True, r.returncode, r.stderr or r.stdout
 
     # Baseline: the target must PASS on unedited source in this
@@ -372,7 +378,7 @@ def builds_without_rule():
     if not uses:
         return 0
     r = subprocess.run(["make", "-p", "-q", "-n", "RAND=extern"], cwd=ROOT,
-                       capture_output=True, text=True)
+                       capture_output=True, text=True, close_fds=False)
     targets = set()
     previous = ""
     for line in r.stdout.splitlines():
