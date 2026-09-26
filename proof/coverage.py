@@ -21,7 +21,9 @@ small to reach the interesting code still reports success. Pass
 --reach to measure that with `cbmc --cover location`; it is slow, so
 it stays off by default.
 
-Writes bin/proof-coverage.md and prints a summary.
+Writes bin/proof-coverage.md and prints a summary. It also reads
+docs/verification.md back against proof/run.sh and fails where the two
+disagree; see doc_problems().
 """
 
 import argparse
@@ -34,6 +36,7 @@ import sys
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 REPORT = ROOT / "bin" / "proof-coverage.md"
+DOC = ROOT / "docs" / "verification.md"
 
 # Sources that ship in the library. A file here with no harness is a
 # gap; a file absent from here is not library code.
@@ -127,6 +130,70 @@ def harness_includes(path, seen=None):
         else:
             found.add(inc)
     return found
+
+
+def doc_problems(runs, uncovered):
+    """Where docs/verification.md disagrees with proof/run.sh and with
+    this report. The page is written by hand: its count of covered
+    sources said twelve uncovered when there were eleven, it said three
+    harnesses ran without the signed-overflow check when five did, and
+    ten launched harnesses had no entry. Each check below reads one of
+    those statements back."""
+    text = DOC.read_text()
+    run_sh = (ROOT / "proof" / "run.sh").read_text()
+    out = []
+
+    m = re.search(r"^(\d+) of the (\d+) C sources", text, re.M)
+    want = (len(LIB) - len(uncovered), len(LIB))
+    if m is None:
+        out.append("has no sentence opening \"N of the M C sources\"")
+    elif (int(m.group(1)), int(m.group(2))) != want:
+        out.append(f"says {m.group(1)} of the {m.group(2)} sources are covered; "
+                   f"this report counts {want[0]} of {want[1]}")
+    m = re.search(r"^The other (\d+) sources", text, re.M)
+    if m is None or int(m.group(1)) != len(uncovered):
+        out.append(f"must say \"The other {len(uncovered)} sources\" before its "
+                   f"table of sources with no launched harness")
+
+    # The first cell of each row of that table names its sources.
+    section = re.search(r"^### Sources with no launched harness$(.*?)^#", text, re.M | re.S)
+    listed = set()
+    for cell in re.findall(r"^\| (`[^|]*)\|", section.group(1) if section else "", re.M):
+        listed |= set(re.findall(r"`([a-z0-9_]+\.c)`", cell))
+    for src in sorted(set(uncovered) - listed):
+        out.append(f"leaves {src} out of the table of sources with no launched harness")
+    for src in sorted(listed - set(uncovered)):
+        out.append(f"lists {src} as having no launched harness, but one covers it")
+
+    noovf = set(re.findall(r"^launch \S+ noovf (\S+) ", run_sh, re.M))
+    m = re.search(r"run without that check:(.*?)\(see", text, re.S)
+    named = set(re.findall(r"`([a-z0-9_]+)`", m.group(1))) if m else set()
+    if named != noovf:
+        out.append("names " + (", ".join(sorted(named)) or "no harness") +
+                   " as run without the signed-overflow check; proof/run.sh "
+                   "launches " + ", ".join(sorted(noovf)) + " with noovf")
+
+    # Every entry opens with a line such as
+    # - **Harnesses:** `sha512` (slow), `sha512_compress` (fast)
+    entries = {}
+    for line in re.findall(r"^- \*\*Harness(?:es)?:\*\* (.*)$", text, re.M):
+        for name, tier in re.findall(r"`([a-z0-9_]+)` \(([a-z ]+)\)", line):
+            entries[name] = tier
+    for name, run in sorted(runs.items()):
+        tier = run[0].split(":")[0]
+        if name not in entries:
+            out.append(f"has no entry for {name}, which proof/run.sh launches")
+        elif entries[name] != tier:
+            out.append(f"gives {name} the {entries[name]} tier; proof/run.sh "
+                       f"launches it in the {tier} tier")
+    for name, tier in sorted(entries.items()):
+        if name in runs:
+            continue
+        if tier != "no launch line":
+            out.append(f"gives {name} the {tier} tier, but proof/run.sh does not launch it")
+        elif not (ROOT / "proof" / f"{name}_harness.c").exists():
+            out.append(f"names {name}, but proof/{name}_harness.c does not exist")
+    return out
 
 
 def main():
@@ -240,7 +307,10 @@ def main():
     for name in reach_stale:
         print(f"proof-coverage: {name}'s launch line bounds a loop its goto "
               f"model does not have; run.sh fails the proof the same way")
-    if reach_dead or reach_fell or reach_stale:
+    doc = doc_problems(runs, uncovered)
+    for problem in doc:
+        print(f"proof-coverage: {DOC.relative_to(ROOT)} {problem}")
+    if reach_dead or reach_fell or reach_stale or doc:
         return 1
 
 

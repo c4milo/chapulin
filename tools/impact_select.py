@@ -517,6 +517,9 @@ def select_lints(out, changed, csources, lib):
            for p in changed):
         out.add("lint", "make lint-bench-numbers",
                 "the published memory numbers come from bench/")
+    if "docs/verification.md" in changed:
+        out.add("lint", "make proof-coverage",
+                "docs/verification.md must name every launched harness at its tier")
     out.add("lint", "make lint-issue-links",
             "every issue reference carries its full URL, in any changed file")
     out.add("lint", "make lint-conflict-markers",
