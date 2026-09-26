@@ -949,7 +949,8 @@ last `ROLE=server` stub, as the entry said it would.
   links two Zig objects of different transports into one image and runs
   it. It builds `test/zig-consumer`, a Zig project that depends on the
   package, against each object: `matches.zig` compiles only when the
-  module declares every export, and runs `ch_build_matches` over the
+  module declares every export and, for a server, the lengths of the
+  keys its configuration points at, and runs `ch_build_matches` over the
   module's types, and `pair.zig` imports the modules of two transports,
   links both objects and starts a client on each. check-slow runs the
   script over every `lib-check` leg's configuration too.

@@ -29,11 +29,13 @@
 #include "cfg.h"
 #include "sha256.h"
 
-// The cookie key: 32 bytes of HMAC-SHA-256 key the caller owns and
-// holds in ch_cfg's srv.cookie_key. One key per deployment, so a second
-// ClientHello that lands on a different session, or on a different
-// device behind a load balancer, still verifies.
-#define SRV_COOKIE_KEY_LEN SHA256_LEN
+// The cookie key: SRV_COOKIE_KEY_LEN bytes of HMAC-SHA-256 key the
+// caller owns and holds in ch_cfg's srv.cookie_key. srv_cfg.h defines
+// the length, because the caller sizes the key by it, and it is one
+// SHA-256 output. One key per deployment, so a second ClientHello that
+// lands on a different session, or on a different device behind a load
+// balancer, still verifies.
+_Static_assert(SRV_COOKIE_KEY_LEN == SHA256_LEN, "the cookie key is one SHA-256 output long");
 
 // The first byte of the cookie body: this format's own version number,
 // not a TLS version. It exists so a deployment that changes the format

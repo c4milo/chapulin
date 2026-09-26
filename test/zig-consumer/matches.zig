@@ -14,6 +14,19 @@ comptime {
     for (exports.names) |name| {
         if (!@hasDecl(c, name)) @compileError("the module declares no " ++ name ++ ", which the object exports");
     }
+    // A caller sizes the keys its configuration points at by these
+    // lengths, so a module that declares the configuration declares them:
+    // a server's two keys (srv_cfg.h) and a QUIC server's Retry token key
+    // (quic_token.h). Each is evaluated, so a length the module declares
+    // and cannot compute fails here as well.
+    if (@hasDecl(c, "ch_srv_cfg")) keyLength(c, "SRV_COOKIE_KEY_LEN");
+    if (@hasDecl(c, "ch_srv_cfg")) keyLength(c, "SRV_TICKET_KEY_LEN");
+    if (@hasDecl(c, "ch_srv_quic_token_mint")) keyLength(c, "CH_QUIC_TOKEN_KEY_LEN");
+}
+
+fn keyLength(comptime module: type, comptime name: []const u8) void {
+    if (!@hasDecl(module, name)) @compileError("the module declares no " ++ name ++ ", which a key is sized by");
+    _ = @as(usize, @field(module, name));
 }
 
 pub fn main() u8 {

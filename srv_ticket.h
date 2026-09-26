@@ -60,13 +60,15 @@
 #include "hkdf.h"
 #include "sha256.h"
 
-// The ticket key: 32 bytes of ChaCha20-Poly1305 key the caller owns and
-// holds in ch_cfg's srv.ticket_key. One key per deployment, so a ticket
+// The ticket key: SRV_TICKET_KEY_LEN bytes of ChaCha20-Poly1305 key the
+// caller owns and holds in ch_cfg's srv.ticket_key. srv_cfg.h defines the
+// length, because the caller sizes the key by it, and it is one AEAD key
+// (aead.h). One key per deployment, so a ticket
 // one server issued opens on another server that holds the same key, the
 // way srv_cookie.h's cookie key works. It must be a key of its own, not
 // the cookie key: the two protect different formats with different
 // primitives, and nothing here checks that they differ.
-#define SRV_TICKET_KEY_LEN AEAD_KEY
+_Static_assert(SRV_TICKET_KEY_LEN == AEAD_KEY, "the ticket key is one AEAD key long");
 
 // The first byte of every ticket: this format's own version number, not a
 // TLS version. A deployment that changes the layout moves it, and every
