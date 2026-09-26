@@ -1,0 +1,22 @@
+invariant: INV-37
+file: suite.h
+catches: test/lint-tidy.sh
+reason: suite_key_len returns from both arms of an if and its else,
+  which readability-else-after-return reports in every file that
+  includes suite.h. record.c and quic_packet.c do not change, so a stamp
+  keyed on each source's own bytes would skip them and pass; tidy-each's
+  key holds every header a file includes, so the files run again and
+  clang-tidy objects.
+
+--- old
+static inline size_t suite_key_len(uint16_t suite) {
+    return suite == SUITE_AES_128_GCM_SHA256 ? 16 : SUITE_KEY_MAX;
+}
+--- new
+static inline size_t suite_key_len(uint16_t suite) {
+    if (suite == SUITE_AES_128_GCM_SHA256) {
+        return 16;
+    } else {
+        return SUITE_KEY_MAX;
+    }
+}

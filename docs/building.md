@@ -112,6 +112,12 @@ Other targets:
   builds five configurations both ways and requires the same sources,
   defines, exports and build record, and builds a Zig program against
   each module (decisions 69 and 70, INV-36).
+- `make check` skips a lint or a Wycheproof leg that passed before on
+  the same inputs. `tools/stamp.py` states what a skip keys on: the
+  bytes of the files the check reads, the tools' versions, and the make
+  and environment variables it runs under, never a time (INV-37).
+  `CHECK_NO_STAMPS=1` runs every check. CI starts each job without
+  `bin/`, so CI runs every check in full.
 - `make prove-slow` runs the slow-tier proofs, one per nightly job. The runner caches by
   content, so an incremental run re-proves only what changed
   (`PROVE_NO_CACHE=1` forces a full run). It uses [kissat](https://github.com/arminbiere/kissat) when

@@ -16,8 +16,7 @@ sends it to full_plan(), which runs everything.
 import pathlib
 
 from impact_map import Entry, Plan, is_wide, known
-from impact_read import (ROOT, SUFFIXES, expand, script_target,
-                         target_sources)
+from impact_read import ROOT, SUFFIXES, expand, script_target
 
 
 # Binaries whose own make target builds them but does not run them, and
@@ -37,10 +36,31 @@ RUN_VIA = {
 # nothing without one (Makefile, O); cxx-check links the packaged
 # object, and RAND has no default, so a bare `make cxx-check` stops at
 # cfg.h's #error the way the examples do.
+#
+# The -run targets and the Wycheproof legs are the work behind a stamped
+# gate (tools/stamp.py): each is the command its gate runs when its
+# inputs changed, and a Wycheproof leg reads the vectors the wycheproof
+# target writes. So each runs through the gate.
 GATE_COMMAND = {
     "wycheproof-ct-widemul": "make ct-widemul-check",
     "san-check": "make san-check SAN=1 O=0",
     "cxx-check": "make cxx-check RAND=extern",
+    "lint-cppcheck-run": "make lint-cppcheck",
+    "lint-invariants-run": "make lint-invariants",
+    "lint-runtime-symbols-run": "make lint-runtime-symbols",
+    "lint-stack-run": "make lint-stack",
+    "lint-trust-separation-run": "make lint-trust-separation",
+    "lint-zig-build-run": "make lint-zig-build",
+    **{f"wycheproof-{kind}-{leg}": "make wycheproof"
+       for kind in ("leg", "run")
+       for leg in ("default", "aes-hw", "aes-extern", "x25519-wide")},
+}
+
+# The wrapper scripts a test/violations entry can name on its catches line
+# for a gate that a recipe or a helper script selects, so the violation
+# counts as covered by the make command the script runs.
+WRAPPER_GATES = {
+    "make wycheproof": ["test/wycheproof.sh"],
 }
 
 # Targets whose recipe stops unless a variable names what to run, and
@@ -225,7 +245,7 @@ def select_recipe_gates(out, sources):
     for target in sorted(mapping.gates):
         if target.startswith("bin/") or target in AGGREGATES:
             continue
-        scope = target_sources(target, mapping.variables, mapping.rules)
+        scope = mapping.scope(target)
         hit = next((p for p in sources if p in scope), None)
         if hit is None:
             continue
@@ -236,8 +256,9 @@ def select_recipe_gates(out, sources):
                         f"the {target} recipe compiles {hit}, and this "
                         f"command supplies the variables it needs")
             continue
-        out.add(group, GATE_COMMAND.get(target, f"make {target}"),
-                f"the {target} recipe names {hit}")
+        command = GATE_COMMAND.get(target, f"make {target}")
+        out.add(group, command, f"the {target} recipe names {hit}",
+                WRAPPER_GATES.get(command, []))
 
 
 def select_proofs(out, csources):
@@ -354,7 +375,7 @@ def select_codegen(out, csources, lib):
     allowlist, and the two cross lanes that run the roster elsewhere."""
     mapping = out.mapping
     codegen = set(mapping.variables.get("CODEGEN_SRCS", "").split())
-    cross = target_sources("cross-check", mapping.variables, mapping.rules)
+    cross = mapping.scope("cross-check")
     for path in csources:
         if path in codegen:
             for script in ("test/lint-wide-multiply.sh",
@@ -396,8 +417,9 @@ def select_runners(out, changed):
                             f"the {target} recipe names {path}, and this "
                             f"command supplies the variables it needs")
                 continue
-            out.add("lint", f"make {target}",
-                    f"the {target} recipe names {path}")
+            command = GATE_COMMAND.get(target, f"make {target}")
+            out.add("lint", command, f"the {target} recipe names {path}",
+                    WRAPPER_GATES.get(command, []))
 
 
 def select_violations(out, changed):
@@ -424,8 +446,8 @@ def select_violations(out, changed):
 SOURCE_LINTS = [
     ("make lint-size", "every tracked .c and .h stays under 500 lines", ()),
     ("make lint-format", "clang-format covers every source", ()),
-    ("make lint-tidy", "clang-tidy reads $(LINT_C) and $(HDRS)", ()),
-    ("make lint-cppcheck", "cppcheck reads $(LINT_C)", ()),
+    ("make lint-tidy", "clang-tidy reads $(LINT_C) and $(HDRS)", ("test/lint-tidy.sh",)),
+    ("make lint-cppcheck", "cppcheck reads $(LINT_C)", ("test/lint-cppcheck.sh",)),
     ("make lint-invariants", "semgrep scans every tracked .c and .h",
      ("test/lint-invariants.sh",)),
 ]

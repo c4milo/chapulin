@@ -977,6 +977,46 @@ last `ROLE=server` stub, as the entry said it would.
   nothing until a dependent builds it.
 - See [decisions: Engineering](decisions.md#engineering), entries 69 and 70.
 
+### INV-37 — a stamp skips a check only on inputs the check passed on
+
+- **Claim.** `make check` skips a lint or a Wycheproof leg only when
+  every input it reads is byte for byte what it was when that check last
+  passed. A skip never stands in for a run over an input the check did
+  not see.
+- **Mechanism.** `tools/stamp.py` keys a check on a SHA-256 over the
+  inputs its Makefile line names: the bytes of the files git lists for a
+  pathspec, the output of a command such as a tool's `--version` or a
+  compile run with `-E`, the command itself, the variables make was given
+  and the environment's compilers, flags and `PATH`. A stamp holds
+  content, never a time, so a same-second edit that make 3.81 cannot see
+  still changes the key. `tools/tidy-each.py` keys each translation unit
+  on every file `clang -M` lists for it, system headers included.
+  `lint-cppcheck-run` gives cppcheck a build directory per command line
+  and absolute paths, so each file keeps its own saved analysis and the
+  whole-program pass reads all of them. `lint-wide-multiply` keeps each
+  compile's assembly under a key over the preprocessed source and
+  computes its counts on every run. A stamp is written only after the
+  check passes and only when its key reads the same before and after the
+  run. CI starts each job with no `bin/`, so CI runs every check in full.
+- **Check.** Three mutants in `test/violations/` each change an input
+  that a narrower key would miss: `inv37-tidy-header-finding` edits a
+  header and not the sources that include it, caught by
+  `test/lint-tidy.sh`; `inv37-cppcheck-cross-file-null` edits a caller
+  whose null argument cppcheck reports only by joining it to a callee
+  read from the build directory, caught by `test/lint-cppcheck.sh`; and
+  `inv37-wycheproof-vector-flipped` edits the vector generator and no C
+  source, caught by `test/wycheproof.sh`. Every other lint violation in
+  that directory runs through its lint's stamp too, since each catch
+  script calls the stamped make target, so each of those mutants shows
+  its lint's key sees the edit.
+- **Violation.** A PR adds a stamp whose inputs leave out a file the
+  check reads, for one a script the check sources or a header outside
+  the pathspec, or a tool whose version string does not change. The
+  mutants catch a key that leaves out headers, the build directory's
+  saved analysis or generated vectors; a new stamp is held by review to
+  the rule in `tools/stamp.py`: name more inputs, never fewer.
+- See `tools/stamp.py` and the Makefile's comment above `check`.
+
 ## Fail-closed
 
 ### INV-13 — no resumable errors

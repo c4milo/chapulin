@@ -1,0 +1,14 @@
+invariant: INV-37
+file: handshake_parser.c
+catches: test/lint-cppcheck.sh
+reason: hsp_parse_certificate_verify asks rb_left about a null reader,
+  and rb_left in buf.c reads through it. Only cppcheck's whole-program
+  pass sees both files. buf.c does not change, so cppcheck reads its
+  analysis from the build directory rather than analysing it again, and
+  the whole-program pass must still join it to the edited caller and
+  report ctunullpointer.
+
+--- old
+    if (*sig == NULL || rb_left(&r) != 0) {
+--- new
+    if (*sig == NULL || rb_left(NULL) != 0) {

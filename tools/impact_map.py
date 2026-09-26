@@ -14,7 +14,7 @@ import re
 
 from impact_read import (ROOT, RUNS_BINARY, SUFFIXES, binaries_run,
                          binary_sources, expand, harness_sources, harnesses,
-                         make_db, named_in, run, violations)
+                         make_db, named_in, run, target_sources, violations)
 
 
 # Paths whose change the mapping refuses to narrow. Each one either feeds
@@ -101,6 +101,8 @@ class Mapping:
 
     def __init__(self):
         self._lib_legs = None
+        self._lib_sources = None
+        self._scopes = {}
         self._named = None
         self.variables, self.rules = make_db()
         self.harnesses = harnesses()
@@ -228,8 +230,21 @@ class Mapping:
         return self._lib_legs
 
     def lib_sources(self):
-        """Every source some packaged object carries."""
-        return set().union(*self.lib_legs().values())
+        """Every source some packaged object carries. Computed once, as
+        lib_legs is: a plan asks for it, and test/impact_test.py builds a
+        plan for every violation's file."""
+        if self._lib_sources is None:
+            self._lib_sources = set().union(*self.lib_legs().values())
+        return self._lib_sources
+
+    def scope(self, target):
+        """The sources a gate target's own prerequisites and recipe name
+        (impact_read.target_sources), read once per target. The make
+        database does not change while a Mapping lives, and every plan
+        asks the same question of every gate."""
+        if target not in self._scopes:
+            self._scopes[target] = target_sources(target, self.variables, self.rules)
+        return self._scopes[target]
 
     def named_sources(self):
         """Every source the tree's own lists name.

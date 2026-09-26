@@ -1,0 +1,14 @@
+invariant: INV-37
+file: test/gen_wycheproof.py
+catches: test/wycheproof.sh
+reason: the generator writes every ChaCha20-Poly1305 case as valid, so
+  bin/wycheproof_vectors.h expects the forged tags to open. No C source
+  changes, so a stamp keyed on the sources a leg compiles would skip the
+  legs and pass; each leg's key holds every byte its compile reads, the
+  generated vectors among them, so the legs run again and fail.
+
+--- old
+            rows.append((uint_of(t["tcId"], 0xffffffff, "aead tcId"), off, len(aad), len(msg),
+                         1 if t["result"] == "valid" else 0))
+--- new
+            rows.append((uint_of(t["tcId"], 0xffffffff, "aead tcId"), off, len(aad), len(msg), 1))
