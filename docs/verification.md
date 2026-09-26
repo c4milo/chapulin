@@ -2046,13 +2046,15 @@ Three more suites run on every push and add evidence rather than proof.
 ### Wycheproof
 
 [Wycheproof](https://github.com/C2SP/wycheproof)'s attack-derived cases
-(`make wycheproof`), 5,475 across:
+(`make wycheproof`), 5,967 across:
 
-- x25519, ChaCha20-Poly1305, HKDF-SHA256, HMAC-SHA256, HKDF-SHA384 and
-  HMAC-SHA384;
+- x25519 and ECDH over P-256;
+- ChaCha20-Poly1305, AES-128-GCM and AES-256-GCM;
+- HKDF-SHA256, HMAC-SHA256, HKDF-SHA384 and HMAC-SHA384;
 - ECDSA over P-256 and P-384, at every digest length a certificate
   signature can pair with either curve;
-- RSA-PSS and RSA PKCS#1 v1.5, up to RSA-4096;
+- RSA-PSS and RSA PKCS#1 v1.5 verification, up to RSA-4096, and
+  RSA-PSS signing;
 - ML-KEM-768.
 
 The x25519 suite's 518 cases run a second time over the `X25519=wide`
@@ -2094,19 +2096,24 @@ computes:
 - ML-KEM-768;
 - HKDF and the key schedule;
 - ChaCha20, Poly1305 and the AEAD;
+- the DRBG;
 - record framing;
 - x25519;
-- the AES-128 forward cipher of FIPS 197, AEAD_AES_128_GCM and the GHASH
-  under it (NIST SP 800-38D), and the RFC 9001 Initial keys a
-  `TRANSPORT=quic-nonblocking` build derives from that cipher;
+- the AES-128 and AES-256 forward cipher of FIPS 197, AEAD_AES_128_GCM,
+  AEAD_AES_256_GCM and the GHASH under them (NIST SP 800-38D), and the
+  RFC 9001 Initial keys a `TRANSPORT=quic-nonblocking` build derives
+  from AES-128;
 - P-256 and RSA-PSS;
 - the grammar of the four handshake messages a server sends;
 - the provisioning path: RFC 7468 armour with RFC 4648 base64, and the
   certificate walk that turns one PEM block into the key bytes a pin
   slot takes;
+- the ca modes' revocation epoch;
 - for `TRUST=webpki`, the public-key and signature-algorithm readers,
   the certificate signature verify over RSA PKCS#1 v1.5, P-256 and
-  P-384, and the one-certificate parser with its extension walk.
+  P-384, the one-certificate parser with its extension walk, the Time
+  reader, hostname matching, the chain walk, and SPKI pins with RFC 7250
+  raw public keys.
 
 It follows the RFC text and never the C, because a differential oracle
 only works when a shared misreading cannot make both sides agree.
@@ -2126,7 +2133,7 @@ comparisons between the C and the spec over a pipe, from a fixed seed:
      the compiler has them;
    - under `AES=extern`, through the stand-in hook
      `test/aes_extern_hook.c`.
-3. The x25519 rows, ten times over the `X25519=wide` field, 1,500
+3. The x25519 rows, ten times over the `X25519=wide` field, 1,501
    comparisons, where the compiler has `unsigned __int128`. The spec
    computes over natural numbers mod p, so one model serves both fields.
 
@@ -2151,9 +2158,10 @@ must reproduce it. The provisioning rows work the same way, on
 certificates the spec mints and the driver armours at every line width
 the decoder admits.
 
-6,941 rows feed the `TRUST=webpki` certificate parser: every corpus and
-captured certificate under both arms, single-byte changes of them, and
-random extension lists inside one corpus certificate. Each reply
+Under `make diff`, 6,898 rows feed the `TRUST=webpki` certificate
+parser: 4,282 from every corpus and captured certificate under both
+arms and single-byte changes of them, and 2,616 random extension lists
+inside one corpus certificate. Each reply
 carries every field's offset into the certificate, so the C's pointers
 are compared, not only its verdict.
 
