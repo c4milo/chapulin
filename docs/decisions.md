@@ -44,11 +44,14 @@ does nothing more.
    the Retry tag, where RFC 9001 §5 states the keys are public, and entry
    38 and INV-26 state how the build keeps it there. An AES-CCM build flag
    is the most likely future concession, and it would not reuse that AES.
-7. **x25519 in 16-bit limbs (the TweetNaCl scheme).** Cost: about 57 ms
-   per scalar multiplication on the mips32r2 reference target, where
-   wider limbs would be faster. Gain: a machine-checked overflow lemma
-   and citable prior formal work on the same scheme. Provability over
-   speed; revisit if the workload becomes many short connections.
+7. **x25519 in 16-bit limbs (the TweetNaCl scheme).** Cost: a scalar
+   multiplication takes about 78 ms on the mips32r2 reference target, or
+   57 ms in a build that asserts `CH_NATIVE_WIDEMUL`
+   (`bench/results-insn.csv`), and wider limbs would be faster. Gain: a
+   machine-checked overflow lemma and citable prior formal work on the
+   same scheme. Provability over speed; revisit if the workload becomes
+   many short connections. Entry 52 adds wider limbs for 64-bit hosts as
+   `X25519=wide`, and the 16-bit field stays the default.
 8. **One pinned signature algorithm per build**: RSA-PSS by default,
    P-256 behind `make TRUST=raw-ecdsa`, never both. Cost: switching means
    rebuilding. Gain: no signature-algorithm negotiation surface and a

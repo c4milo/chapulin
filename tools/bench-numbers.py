@@ -382,6 +382,40 @@ def check_flash_ecdsa(readme):
     return 0
 
 
+def check_speed_ecdsa(readme):
+    """The ecdsa trade's speed side: P-256 verify over RSA-3072-PSS verify,
+    from the mips32r2 column."""
+    insns = read_csv("bench/results-insn.csv", "insns")
+    want = "%.1f" % (insns["p256_ecdsa_verify"] / insns["rsa_pss_verify_3072"])
+    m = re.search(r"Its verify costs ([0-9.]+) times the default's on mips32r2", prose(readme))
+    if not m:
+        print("lint-bench-numbers: README does not state the ecdsa verify's speed")
+        return 1
+    if m.group(1) != want:
+        print("lint-bench-numbers: README says the ecdsa verify costs %s times the default's; "
+              "bench/results-insn.csv renders as %s" % (m.group(1), want))
+        return 1
+    return 0
+
+
+def check_decision_x25519():
+    """docs/decisions.md entry 7's cost of one x25519, in both columns."""
+    insns = read_csv("bench/results-insn.csv", "insns")
+    native = read_csv("bench/results-insn.csv", "native_insns")
+    want = (render_ms(insns["x25519_scalarmult"]), render_ms(native["x25519_scalarmult"]))
+    m = re.search(r"a scalar multiplication takes about (\d+) ms on the mips32r2 reference "
+                  r"target, or (\d+) ms in a build that asserts `CH_NATIVE_WIDEMUL`",
+                  prose(open("docs/decisions.md").read()))
+    if not m:
+        print("lint-bench-numbers: docs/decisions.md does not state x25519's cost")
+        return 1
+    if m.groups() != want:
+        print("lint-bench-numbers: docs/decisions.md says x25519 takes %s ms and %s ms; "
+              "bench/results-insn.csv renders as %s ms and %s ms" % (m.groups() + want))
+        return 1
+    return 0
+
+
 def main():
     readme = open("README.md").read()
     rc = 0
@@ -392,9 +426,11 @@ def main():
     rc |= check_flash(readme)
     rc |= check_flash_ecdsa(readme)
     rc |= check_floor(readme)
+    rc |= check_speed_ecdsa(readme)
+    rc |= check_decision_x25519()
     if rc == 0:
         print("lint-bench-numbers: the README's speed, decomposition, floor, memory and "
-              "flash figures match bench/")
+              "flash figures and docs/decisions.md's x25519 cost match bench/")
     return rc
 
 

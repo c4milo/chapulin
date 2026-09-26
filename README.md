@@ -290,7 +290,9 @@ of which the multiply decomposition is 2.3 kB, nearly all of it
 poly1305's unrolled block: the `total (CH_NATIVE_WIDEMUL)` row of
 [`bench/results-device.csv`](bench/results-device.csv) sizes the same
 modules over the native multiply. The `TRUST=raw-ecdsa` build trades 2.2 kB
-of RSA for 5.8 kB of P-256 and totals 31.5 kB.
+of RSA for 5.8 kB of P-256 and totals 31.5 kB. Its verify costs 4.0 times
+the default's on mips32r2, so the 64-byte pin costs both flash and handshake
+time.
 
 The hybrid key exchange costs less than its wire size suggests. `KEX=pq`
 adds two ML-KEM key expansions and one decapsulation — the key pair lives
