@@ -155,7 +155,7 @@ roles have completed handshakes with another implementation, in a test
 that lives outside this tree: on 2026-09-23 colibri's `hq-interop` endpoint,
 built over a `ROLE=both` object at 9c903d8, fetched three files from aioquic
 1.3.0 and served the same three to it, over UDP on one host. That run
-negotiated ChaCha20-Poly1305, the one suite the QUIC mode offers, and
+negotiated ChaCha20-Poly1305, the one suite that build offered, and
 `make check-slow` does not repeat it: this tree's e2e suite still has no
 QUIC leg.
 

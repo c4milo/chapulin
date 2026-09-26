@@ -21,8 +21,9 @@ date; the fix date comes out of the assessment.
 
 ## Scope
 
-In scope: the library as shipped — the TLS client, the crypto
-primitives, and the reference DRBG in `drbg.[ch]`.
+In scope: the library as shipped — the client and server roles over each
+transport, the QUIC packet protection, the crypto primitives, and the
+reference DRBG in `drbg.[ch]`.
 
 Out of scope, so triage stays fast:
 
@@ -34,13 +35,14 @@ Out of scope, so triage stays fast:
 - Denial of service against the device that runs the caller's code.
   The caller owns its own event loop and timeouts.
 
-The [README](README.md)'s verification section and
+[docs/verification.md](docs/verification.md) and
 [docs/decisions.md](docs/decisions.md) state the threat model in
 detail: what is proved, at what bounds, and what is only tested.
 
 ## Supported versions
 
-The latest release only. One maintainer does not promise backports.
+There are no releases yet, so fixes land on `main`. Once there are,
+the latest release only: one maintainer does not promise backports.
 
 ## Disclosure policy
 

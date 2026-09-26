@@ -44,6 +44,10 @@ does nothing more.
    the Retry tag, where RFC 9001 §5 states the keys are public, and entry
    38 and INV-26 state how the build keeps it there. An AES-CCM build flag
    is the most likely future concession, and it would not reuse that AES.
+   Entries 45, 50, 58 and 68 later admit AES under traffic keys, in a
+   `SUITE=aesgcm` build that takes AES instructions or an AES peripheral
+   whose timing the build vouches for; the default build is still
+   ChaCha20 alone.
 7. **x25519 in 16-bit limbs (the TweetNaCl scheme).** Cost: a scalar
    multiplication takes about 78 ms on the mips32r2 reference target, or
    57 ms in a build that asserts `CH_NATIVE_WIDEMUL`

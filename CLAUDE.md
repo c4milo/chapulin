@@ -1,7 +1,9 @@
 # chapulin rules
 
-chapulin is a TLS 1.3-only client for devices with a few kB of SRAM to
-spare, named after El Chapulín Colorado: small, unassuming, protective.
+chapulin is a TLS 1.3-only library for devices with a few kB of SRAM to
+spare: a client, a server (ROLE=server), and the TLS layer under a QUIC
+stack. It is named after El Chapulín Colorado: small, unassuming,
+protective.
 Home: github.com/c4milo.
 
 - C11, libc only. No third-party code, no OS assumptions beyond the
@@ -197,10 +199,10 @@ Home: github.com/c4milo.
   multiply, for 64-bit hosts. `ct.h` refuses `wide` unless the compiler
   has `unsigned __int128` and the build defines `CH_NATIVE_MUL128`, the
   same kind of claim `CH_NATIVE_WIDEMUL` makes (docs/decisions.md 52,
-  INV-34). AES is admitted for one purpose: the keys RFC 9001 fixes for
-  QUIC Initial packets (§5.2), their header protection (§5.4.3) and the
-  Retry integrity tag (§5.8). Every key those three use is public — it
-  comes from a salt the RFC prints and a connection ID that travels in
+  INV-34). AES is admitted for two purposes. The first is the keys RFC
+  9001 fixes for QUIC Initial packets (§5.2), their header protection
+  (§5.4.3) and the Retry integrity tag (§5.8). Every key those three use
+  is public — it comes from a salt the RFC prints and a connection ID that travels in
   the clear, or the RFC prints the key itself — so a table lookup indexed
   by one leaks nothing an observer does not already hold. That is the
   whole reason the table is allowed at all: the public-key argument is
@@ -208,9 +210,10 @@ Home: github.com/c4milo.
   AES=hw build has no table and no such trade, and this tree cannot
   state an AES=extern build's timing, so outside a suite build the
   public-key argument is what carries every AES value and INV-26 bounds
-  all three the same way. No key from the TLS key schedule is passed to
-  AES outside a SUITE=aesgcm build, and that build takes AES=hw or
-  AES=extern and states its timing (below).
+  all three the same way. The second is a SUITE=aesgcm build's traffic
+  keys: no key from the TLS key schedule is passed to AES outside that
+  build, and that build takes AES=hw or AES=extern and states its timing
+  (below).
   What holds that: `aes.[ch]` and `gcm.[ch]` take a key type,
   `aes_public_key`, whose body lives in `aes_public_key.h` alone, so only
   `aes.c`, `quic_initial.c` and `quic_retry.c` can build one. A file
