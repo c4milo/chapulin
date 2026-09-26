@@ -84,7 +84,7 @@ Domain vocabulary keeps the RFCs' own spelling: `pt`, `aad`, `iv`,
 - The RAND variable declares the entropy pattern and is the one build
   variable with no default: `RAND=extern` when the image supplies
   `ch_rand_bytes`, `RAND=drbg` to package the reference generator and
-  export `ch_drbg_seed`. `make lib` needs one of them; `make check`
+  export `ch_drbg_seed` and `ch_rand_bytes`. `make lib` needs one of them; `make check`
   builds both. A build naming neither stops at an `#error` in `cfg.h`,
   which is the point — docs/decisions.md 20 has the reasoning.
 - Generated files never get committed. `test/gen_rfc8448.py` and

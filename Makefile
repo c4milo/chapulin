@@ -913,7 +913,8 @@ endif
 # Entropy pattern, and the one build variable with no default: RAND=extern
 # leaves ch_rand_bytes undefined for the image to supply, RAND=drbg packages
 # the reference generator and exports ch_drbg_seed so the image seeds it at
-# boot. Neither is a default because the choice is the point
+# boot, and ch_rand_bytes so the image can draw the output docs/entropy.md's
+# seed file and reseed recipes need (docs/decisions.md 67). Neither is a default because the choice is the point
 # (https://github.com/c4milo/chapulin/issues/41): a weak generator completes
 # the handshake and reports success, so the only thing a build can enforce is
 # that somebody wrote the choice down. Naming neither reaches cfg.h's #error,
@@ -922,7 +923,7 @@ endif
 ifeq ($(RAND),drbg)
 LIB_DEF += -DCH_RAND_DRBG
 LIB_SRCS += drbg.c
-PUBLIC_RAND := ch_drbg_seed
+PUBLIC_RAND := ch_drbg_seed ch_rand_bytes
 else ifeq ($(RAND),extern)
 LIB_DEF += -DCH_RAND_EXTERN
 PUBLIC_RAND :=
@@ -1318,7 +1319,7 @@ lib-check: $(LIB_OBJ)
 ifeq ($(RAND),drbg)
 	@if nm -u $(LIB_OBJ) | awk '{print $$NF}' | sed 's/^_//' | grep -qx ch_rand_bytes; then \
 	  echo "lib-check: RAND=drbg packages the generator, so ch_rand_bytes must be defined here, not imported"; exit 1; fi
-	@echo "lib-check: ch_rand_bytes is defined in the object; the image seeds it with ch_drbg_seed at boot"
+	@echo "lib-check: ch_rand_bytes is defined and exported by the object; the image seeds it with ch_drbg_seed at boot"
 # docs/entropy.md's boot-seed recipe, compiled the way an image compiles
 # it and linked against this object. The page once told an integrator to
 # call sha256_of, which the object keeps local, and nothing compiled the

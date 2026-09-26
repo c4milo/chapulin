@@ -387,11 +387,13 @@ refusal:
   `EXPORTER=on`. A tcp-nonblocking object does everything a tcp-blocking one
   does, with your code driving the socket, so link the tcp-nonblocking
   object alone.
-- **Two `RAND=drbg` objects.** Both export `ch_drbg_seed`, and each carries a
-  generator of its own. Build every object `RAND=extern` instead. A
-  `RAND=drbg` object beside a `RAND=extern` one links, but it keeps a second
-  generator that your `ch_rand_bytes` does not feed, so do not build that
-  pair either.
+- **Two `RAND=drbg` objects.** Both export `ch_drbg_seed` and `ch_rand_bytes`,
+  and each carries a generator of its own. Build one object `RAND=drbg` at
+  most. A `RAND=drbg` object beside a `RAND=extern` one links when your image
+  defines no `ch_rand_bytes`: the `RAND=extern` object then draws from the
+  other object's generator, so the image has one. That generator is
+  single-task (`drbg.h`), so an image that runs sessions on several threads
+  builds every object `RAND=extern` instead.
 
 Two objects of one transport do not link either, for the same reason as the
 first pair: build `ROLE=both` for a client and a server over one transport.
@@ -400,10 +402,11 @@ The image defines each hook once for every chapulin object it links, and for
 every user of chapulin it links, such as cocuyo beside a program that uses
 chapulin through colibri:
 
-- `ch_rand_bytes` (`rand.h`), which every `RAND=extern` object imports. There
-  is one per image, and there is no randomness callback per session. It must
-  be safe to call from several threads at once, because an image that runs one
-  thread per core runs sessions on every core. A hook that reads state held
+- `ch_rand_bytes` (`rand.h`), which every `RAND=extern` object imports. The
+  image defines it unless one of its objects is `RAND=drbg`, whose generator
+  is then the image's. There is one per image, and there is no randomness
+  callback per session. It must be safe to call from several threads at once,
+  because an image that runs one thread per core runs sessions on every core. A hook that reads state held
   per thread, as cocuyo's does, meets this.
 - `ch_assert_fail` (`ch_assert.h`), which every object imports.
 - `ch_keylog` (`keylog.h`) where an object is built `KEYLOG=on`, and

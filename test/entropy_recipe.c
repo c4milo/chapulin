@@ -2,9 +2,10 @@
 // integrator to write it. make lib-check RAND=drbg compiles it against
 // the headers and links it against the packaged object, as an image
 // links it, so a recipe that calls a function the object keeps local
-// fails there (https://github.com/c4milo/chapulin/issues/164). Then it
-// starts one handshake, and the library draws the key share and the
-// ClientHello random from the generator this file seeded.
+// fails there (https://github.com/c4milo/chapulin/issues/164). It seeds
+// the generator, rewrites the seed file from generator output, reseeds
+// with late entropy, and then starts one handshake, and the library
+// draws the key share and the ClientHello random from that generator.
 //
 // The three sources are fixed bytes here. On a device they are the
 // factory secret in flash, the seed file, and samples of a cycle
@@ -19,6 +20,7 @@
 #include "cfg.h"
 #include "ch_assert.h"
 #include "drbg.h"
+#include "rand.h"
 #include "tls.h"
 
 noreturn void ch_assert_fail(const char *cond, const char *file, int line) {
@@ -28,7 +30,7 @@ noreturn void ch_assert_fail(const char *cond, const char *file, int line) {
 
 // The sources docs/entropy.md lists, each at its own length.
 static const uint8_t factory_secret[32] = {0x01};
-static const uint8_t seed_file[32] = {0x02};
+static uint8_t seed_file[32] = {0x02};
 static const uint8_t jitter_samples[16] = {0x03};
 
 // A wipe the compiler cannot remove: the stores go through a volatile
@@ -48,6 +50,21 @@ static void seed_at_boot(void) {
     memcpy(seed, factory_secret, sizeof factory_secret);
     memcpy(seed + sizeof factory_secret, seed_file, sizeof seed_file);
     memcpy(seed + sizeof factory_secret + sizeof seed_file, jitter_samples, sizeof jitter_samples);
+    ch_drbg_seed(seed, sizeof seed);
+    wipe(seed, sizeof seed);
+    // Overwrite the seed file with fresh generator output at once, so
+    // the next boot does not read the bytes this boot used.
+    ch_rand_bytes(seed_file, sizeof seed_file);
+}
+
+// Entropy that arrives after boot: draw 32 bytes of generator output,
+// put the fresh bytes after them, and pass the whole buffer.
+static const uint8_t late_entropy[16] = {0x04};
+
+static void reseed_late(void) {
+    uint8_t seed[32 + sizeof late_entropy];
+    ch_rand_bytes(seed, 32);
+    memcpy(seed + 32, late_entropy, sizeof late_entropy);
     ch_drbg_seed(seed, sizeof seed);
     wipe(seed, sizeof seed);
 }
@@ -89,7 +106,14 @@ static uint8_t rxbuf[CH_MIN_RXBUF];
 static ch_tls session;
 
 int main(void) {
+    uint8_t old_seed_file[sizeof seed_file];
+    memcpy(old_seed_file, seed_file, sizeof seed_file);
     seed_at_boot();
+    if (memcmp(seed_file, old_seed_file, sizeof seed_file) == 0) {
+        (void)fprintf(stderr, "entropy_recipe: the seed file was not rewritten\n");
+        return 1;
+    }
+    reseed_late();
     ch_cfg cfg;
     memset(&cfg, 0, sizeof cfg);
     cfg.buf = rxbuf;

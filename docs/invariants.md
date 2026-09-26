@@ -203,7 +203,7 @@ last `ROLE=server` stub, as the entry said it would.
   - `inv04-fourth-draw-in-hsf-begin` adds a fourth call to `hsf_begin`.
 
   `lib-check` requires a `RAND=extern` object to import `ch_rand_bytes`
-  and a `RAND=drbg` object to define it, and links
+  and a `RAND=drbg` object to define and export it, and links
   `test/entropy_recipe.c`, docs/entropy.md's boot-seed recipe, against
   the `RAND=drbg` object. `bin/drbg_test` checks the output of two
   seeds against known answers computed outside this tree, and the floor

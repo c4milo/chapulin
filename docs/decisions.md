@@ -1857,7 +1857,7 @@ does nothing more.
     | `ch_build` | every object | named per transport, mapped in `build.h` |
     | `ch_srv_check` | every `ROLE=server` and `ROLE=both` object | named per transport, mapped in `srv.h` |
     | `ch_pubkey_from_pem` | every `TRUST=ca-rsa` and `TRUST=ca-ecdsa` object | named per transport, mapped in `x509_ca.h` |
-    | `ch_drbg_seed` | every `RAND=drbg` object | refused: two `RAND=drbg` objects do not link |
+    | `ch_drbg_seed`, and `ch_rand_bytes` from entry 67 on | every `RAND=drbg` object | refused: two `RAND=drbg` objects do not link |
     | `ch_read`, `ch_write`, `ch_close` | every `TRANSPORT=tcp-blocking` and `TRANSPORT=tcp-nonblocking` object | refused: a tcp-blocking object and a tcp-nonblocking object do not link |
     | `ch_export` | `EXPORTER=on` objects, the two TCP transports only | refused with the pair above |
 
@@ -1880,7 +1880,9 @@ does nothing more.
       that image link. A `RAND=drbg` object beside a `RAND=extern` one
       links, because the generator's `ch_rand_bytes` is local, and it
       still keeps a second generator the image's hook does not feed, so
-      `docs/porting.md` refuses that pair in words.
+      `docs/porting.md` refuses that pair in words. Entry 67 exports
+      `ch_rand_bytes` from a `RAND=drbg` object, and that pair now has
+      one generator.
     - **`ch_read`, `ch_write` and `ch_close`.** The tcp-nonblocking
       transport keeps the connected session's calls under the blocking transport's
       names (`rec.h`), and a tcp-nonblocking object does everything a
@@ -2239,12 +2241,47 @@ does nothing more.
 
     What this entry does not change: rewriting the seed file and both
     reseed recipes read generator output, which takes a `ch_rand_bytes`
-    call. An image that compiles `drbg.c` itself can make it. The packaged
-    object keeps `ch_rand_bytes` local, so an image that links the object
-    cannot follow those three steps (docs/entropy.md).
+    call. The packaged object kept `ch_rand_bytes` local, so an image that
+    linked the object could not follow those three steps. Entry 67
+    exports it.
 
     Two alternatives were considered and rejected. Exporting a
     `ch_sha256` under `RAND=drbg` adds a sixth public call, and adds it
     because one recipe needed it, not because the API calls for a hash.
     Fixing only the documentation leaves a part with no SHA-256 of its
     own with nothing to hash with.
+
+67. **A `RAND=drbg` object exports `ch_rand_bytes`.** docs/entropy.md has
+    the image read generator output three times: it rewrites the seed file
+    at boot, it reseeds when entropy arrives later, and a part with a TRNG
+    reseeds on a schedule. The packaged object kept `ch_rand_bytes` local,
+    so an image that linked it had no call that returned generator output,
+    and entry 66 left those steps as a known gap. Camilo chose on
+    2026-09-26 to export the call.
+
+    - **The export.** `PUBLIC_RAND` is `ch_drbg_seed ch_rand_bytes`, so a
+      `RAND=drbg` object exports six calls, and seven under a ca mode.
+    - **An image that also defines `ch_rand_bytes`.** Before, the object
+      used its own generator and the image's definition was never called.
+      Now the link fails with a duplicate symbol, which names the mistake
+      at build time.
+    - **Pairs of objects (entry 61).** Two `RAND=drbg` objects still do not
+      link, and the linker now names `ch_rand_bytes` beside
+      `ch_drbg_seed`. A `RAND=drbg` object beside a `RAND=extern` one links
+      when the image defines no `ch_rand_bytes`, and the `RAND=extern`
+      object then draws from the other's generator. The image has one
+      generator, as entry 61's rule of one entropy source per image asks.
+      That generator is single-task (`drbg.h`), so an image that runs
+      sessions on several threads keeps `RAND=extern` everywhere.
+    - **The check.** `test/entropy_recipe.c` now rewrites its seed file
+      and reseeds with `ch_rand_bytes` before its handshake, and
+      `lib-check RAND=drbg` links it against the object, so a
+      `ch_rand_bytes` made local again fails there.
+
+    Cost: one more public call, and a `RAND=drbg` image's hook has a name it
+    must not also define. Gain: every step docs/entropy.md gives can be
+    followed with the packaged object alone.
+
+    The alternative, rewriting the three steps to need no generator
+    output, was rejected: it drops the seed-file rewrite, the step that
+    keeps two devices imaged from one flash from replaying one stream.

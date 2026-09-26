@@ -35,10 +35,9 @@
 // compute every byte the generator produces until the next call.
 //
 // Calling it again replaces the state. To add entropy that arrives
-// after boot, concatenate the fresh bytes with output the generator
-// just drew and pass that. Drawing that output takes a ch_rand_bytes
-// call, which an image that compiles drbg.c itself can make; the
-// packaged RAND=drbg object keeps ch_rand_bytes local.
+// after boot, draw output with ch_rand_bytes, concatenate the fresh
+// bytes after it, and pass that. The packaged RAND=drbg object exports
+// ch_rand_bytes so an image can draw that output (docs/decisions.md 67).
 void ch_drbg_seed(const uint8_t *seed, size_t seed_len);
 
 #endif

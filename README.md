@@ -957,8 +957,10 @@ seed provisioning.
 Say which of the two the image uses. `RAND=extern` leaves
 `ch_rand_bytes` for you to define, so an image that never wired a
 generator fails to link. `RAND=drbg` packages the reference generator
-and exports a fifth call, `ch_drbg_seed`, for the image to call once at
-boot. There is no default: a build naming neither stops at an `#error`.
+and exports two more calls: `ch_drbg_seed`, for the image to call once
+at boot, and `ch_rand_bytes`, for the generator output that
+[`docs/entropy.md`](docs/entropy.md)'s seed file and reseed need. There
+is no default: a build naming neither stops at an `#error`.
 No build can judge a generator — a weak one completes the handshake,
 sends a key share that looks uniform, and returns `CH_OK` — so writing
 the choice down is the only part a compiler can hold you to.
@@ -980,9 +982,9 @@ Other targets:
   symbol, the build record `ch_build_info_tcp_blocking`. Every internal symbol is
   localized, and `lib-check` fails if the export list ever changes. The
   calls are per build on three axes: `RAND=drbg` packages the reference
-  generator and exports `ch_drbg_seed`, and a ca mode exports
-  `ch_pubkey_from_pem` for provisioning, so a `TRUST=ca-rsa RAND=drbg`
-  object exports six calls. The build record, `ch_pubkey_from_pem` and
+  generator and exports `ch_drbg_seed` and `ch_rand_bytes`, and a ca mode
+  exports `ch_pubkey_from_pem` for provisioning, so a `TRUST=ca-rsa
+  RAND=drbg` object exports seven calls. The build record, `ch_pubkey_from_pem` and
   a server's `ch_srv_check` carry the transport in their symbol names
   (`ch_build_info_tcp_nonblocking`, `ch_srv_check_quic_nonblocking`), and the headers map the
   names you call to them, so one image links an object of each of two

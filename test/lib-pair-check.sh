@@ -140,7 +140,7 @@ run() {
         ;;
     drbg)
         # Two generators, each seeded on its own: refused.
-        pair drbg "ch_drbg_seed" "RAND=drbg" "RAND=drbg TRANSPORT=quic-nonblocking EXPORTER=off"
+        pair drbg "ch_drbg_seed ch_rand_bytes" "RAND=drbg" "RAND=drbg TRANSPORT=quic-nonblocking EXPORTER=off"
         ;;
     tcp-both)
         # Both TCP transports carry the connected session's calls: refused.

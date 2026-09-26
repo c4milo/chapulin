@@ -940,10 +940,11 @@ Cost, and most of it is this tree's.
   is the four TLS names under `TRANSPORT=tcp-blocking` and the sixteen `ch_quic_` names
   under `TRANSPORT=quic-nonblocking`, selected the way `PUBLIC_CA` is selected on `TRUST`
   (`Makefile:211-221`). The other two terms keep their meaning:
-  `ch_pubkey_from_pem` under a CA mode (`Makefile:211`) and `ch_drbg_seed`
-  under `RAND=drbg` (`Makefile:258`). So a QUIC object exports sixteen calls
-  under `TRUST=raw-rsa RAND=extern`, seventeen under a CA mode or `RAND=drbg`,
-  and eighteen under both. The sixteenth, `ch_quic_seal_close`, landed with
+  `ch_pubkey_from_pem` under a CA mode (`Makefile:211`), and `ch_drbg_seed`
+  and `ch_rand_bytes` under `RAND=drbg` (`Makefile:258`, docs/decisions.md
+  67). So a QUIC object exports sixteen calls under `TRUST=raw-rsa
+  RAND=extern`, seventeen under a CA mode, eighteen under `RAND=drbg`, and
+  nineteen under both. The sixteenth, `ch_quic_seal_close`, landed with
   `docs/decisions.md` entry 57. It cannot be a second term added to the first,
   because `lib-check` diffs the object's exported symbols against `PUBLIC` for
   exact equality (`Makefile:419-422`), so a `PUBLIC_TRANSPORT` carrying both
@@ -1084,7 +1085,8 @@ object exports a different set: `PUBLIC` becomes
 sixteen under `TRANSPORT=quic-nonblocking`, selected the way `PUBLIC_CA` is selected on
 `TRUST` (`Makefile:211-221`). `PUBLIC_RAND` and `PUBLIC_CA` are unchanged on
 both transports, so `lib-check`'s list is these sixteen plus
-`ch_pubkey_from_pem` under a CA mode and `ch_drbg_seed` under `RAND=drbg`.
+`ch_pubkey_from_pem` under a CA mode, and `ch_drbg_seed` and `ch_rand_bytes`
+under `RAND=drbg`.
 These are the names the header will use.
 
 | call | what it does |
@@ -1718,9 +1720,9 @@ under `TRANSPORT=quic-nonblocking`, and `lib-check` (`Makefile:417-423`) holds
 selection on one term, not an addition: `lib-check` diffs the object's
 exported symbols against `PUBLIC` for exact equality (`Makefile:419-422`), so
 a `PUBLIC_TRANSPORT` carrying both sets fails a tcp-blocking build by the sixteen
-`ch_quic_` names and a QUIC build by the four tcp-blocking ones. `ch_pubkey_from_pem`
-and `ch_drbg_seed` are unchanged on both transports, so a CA-mode QUIC
-object exports seventeen calls and a `TRUST=ca-rsa RAND=drbg` one eighteen. The
+`ch_quic_` names and a QUIC build by the four tcp-blocking ones. `ch_pubkey_from_pem`,
+`ch_drbg_seed` and `ch_rand_bytes` are unchanged on both transports, so a CA-mode
+QUIC object exports seventeen calls and a `TRUST=ca-rsa RAND=drbg` one nineteen. The
 ALPN configuration rules `tls.c:329-371` holds today are needed here in every
 trust mode.
 
