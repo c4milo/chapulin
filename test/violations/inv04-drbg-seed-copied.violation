@@ -1,0 +1,20 @@
+invariant: INV-4
+file: drbg.c
+catches: drbg_test
+reason: ch_drbg_seed copies the first 32 seed bytes into the key instead
+  of hashing the whole seed, so every source an image concatenates after
+  the first 32 bytes adds nothing, and an image that puts a public or
+  cloned source first seeds from that source alone. The known answers in
+  bin/drbg_test, computed with Python's hashlib and two ChaCha20
+  implementations outside the tree, refuse the copied key.
+
+--- old
+    sha256 s;
+    sha256_init(&s);
+    sha256_update(&s, seed, seed_len);
+    sha256_final(&s, g_key);
+    ct_wipe(&s, sizeof s);
+--- new
+    for (size_t i = 0; i < CHACHA20_KEY; i++) {
+        g_key[i] = seed[i];
+    }

@@ -1,0 +1,12 @@
+invariant: INV-4
+file: drbg.c
+catches: drbg_test
+reason: ch_drbg_seed refuses a seed of exactly CH_DRBG_SEED_MIN bytes,
+  the one-key seed drbg.h admits, so an image that seeds from one 32-byte
+  buffer faults at boot. bin/drbg_test passes exactly 32 bytes and
+  requires CH_ASSERT to stay quiet.
+
+--- old
+    CH_ASSERT(seed_len >= CH_DRBG_SEED_MIN); // a short seed is a programmer error (drbg.h)
+--- new
+    CH_ASSERT(seed_len > CH_DRBG_SEED_MIN); // a short seed is a programmer error (drbg.h)

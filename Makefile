@@ -373,6 +373,7 @@ LINT_C := $(filter-out softmul.c,$(SRCS)) handshake_groups.c drbg.c sha3.c sha51
           test/ghash_equiv_test.c test/ghash_equiv_soft.c \
           x25519_wide.c test/x25519_equiv_test.c test/x25519_equiv_portable.c test/x25519_equiv_wide.c \
           test/diff_x25519_test.c test/build_test.c test/lib_pair_half.c test/lib_pair_main.c \
+          test/entropy_recipe.c \
           $(wildcard examples/*.c)
 
 # Test-local headers: prerequisites for every binary that includes them,
@@ -1318,6 +1319,19 @@ ifeq ($(RAND),drbg)
 	@if nm -u $(LIB_OBJ) | awk '{print $$NF}' | sed 's/^_//' | grep -qx ch_rand_bytes; then \
 	  echo "lib-check: RAND=drbg packages the generator, so ch_rand_bytes must be defined here, not imported"; exit 1; fi
 	@echo "lib-check: ch_rand_bytes is defined in the object; the image seeds it with ch_drbg_seed at boot"
+# docs/entropy.md's boot-seed recipe, compiled the way an image compiles
+# it and linked against this object. The page once told an integrator to
+# call sha256_of, which the object keeps local, and nothing compiled the
+# page's code, so the link error went unnoticed
+# (https://github.com/c4milo/chapulin/issues/164). The program starts a
+# TCP-blocking client and defines no hook but ch_assert_fail, so it runs
+# on the objects that carry that client and import no other hook.
+ifeq ($(TRANSPORT)-$(ROLE)-$(KEYLOG),tcp-blocking-client-off)
+	@$(CC) $(LIB_CFLAGS) $(LIB_DEF) -I. -o bin/obj/$(LIB_VARIANT)/entropy_recipe test/entropy_recipe.c $(LIB_OBJ)
+	@bin/obj/$(LIB_VARIANT)/entropy_recipe || { \
+	  echo "lib-check: docs/entropy.md's boot-seed recipe links against this object but does not run"; exit 1; }
+	@echo "lib-check: docs/entropy.md's boot-seed recipe links against this object, and the handshake it starts draws from the seeded generator"
+endif
 else
 	@if ! nm -u $(LIB_OBJ) | awk '{print $$NF}' | sed 's/^_//' | grep -qx ch_rand_bytes; then \
 	  echo "lib-check: RAND=extern must leave ch_rand_bytes undefined, so an image that forgets the hook fails to link"; exit 1; fi
@@ -1391,9 +1405,9 @@ rand-check:
 # image's choice — so this is the one recipe that declares CH_RAND_DRBG
 # on its own. Whether the packaged object also carries drbg.c is RAND's
 # business, not this binary's.
-bin/drbg_test: test/drbg_test.c drbg.c chacha20.c ct.c $(HDRS) $(TESTH)
+bin/drbg_test: test/drbg_test.c drbg.c chacha20.c sha256.c ct.c $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(LIB_CFLAGS) -DCH_RAND_DRBG -I. -o $@ test/drbg_test.c drbg.c chacha20.c ct.c
+	$(CC) $(LIB_CFLAGS) -DCH_RAND_DRBG -I. -o $@ test/drbg_test.c drbg.c chacha20.c sha256.c ct.c
 
 # softmul.c only compiles where there is no hardware multiplier, so the
 # test forces it on and includes the unit. The host has a multiplier,
@@ -2588,7 +2602,7 @@ else
 	  d=bin/cov/$$pin; mkdir -p $$d; \
 	  for f in $(SRCS) drbg.c; do $(COV_CC) -c $$f -o $$d/$${f%.c}.o; done; \
 	  $(COV_CC) test/unit_test.c $(COV_LIB_OBJS) -o $$d/unit; \
-	  $(COV_CC) test/drbg_test.c $$d/drbg.o $$d/chacha20.o $$d/ct.o -o $$d/drbg_test; \
+	  $(COV_CC) test/drbg_test.c $$d/drbg.o $$d/chacha20.o $$d/sha256.o $$d/ct.o -o $$d/drbg_test; \
 	  $(COV_CC) test/rsa_test.c $$d/rsa.o $$d/rsa_mont.o $$d/sha256.o $$d/ct.o -o $$d/rsa_test; \
 	  $(COV_CC) test/handshake_strict_test.c $$d/handshake_parser.o $$d/handshake_parser_ee.o $$d/buf.o \
 	    -o $$d/handshake_strict_test; \
@@ -2810,7 +2824,7 @@ san-check:
 	@rm -rf bin/san && mkdir -p bin/san
 	@echo "san-check at -O$(O) with $$($(CC) --version | head -1)"
 	$(CC) $(SAN_CFLAGS) -I. -o bin/san/unit test/unit_test.c $(SRCS)
-	$(CC) $(SAN_CFLAGS) -I. -o bin/san/drbg_test test/drbg_test.c drbg.c chacha20.c ct.c
+	$(CC) $(SAN_CFLAGS) -I. -o bin/san/drbg_test test/drbg_test.c drbg.c chacha20.c sha256.c ct.c
 	$(CC) $(SAN_CFLAGS) $(RSA_WIDE_DEF) -I. -o bin/san/rsa_test test/rsa_test.c rsa.c rsa_mont.c sha256.c ct.c
 	$(CC) $(SAN_CFLAGS) -I. -o bin/san/sha3_test test/sha3_test.c sha3.c ct.c
 	$(CC) $(SAN_CFLAGS) -I. -o bin/san/sha512_test test/sha512_test.c sha512.c sha512_compress.c
@@ -2899,7 +2913,7 @@ cross-check:
 	@[ -n "$(CROSS)" ] || { echo "cross-check: set CROSS=<toolchain-prefix> (and RUNNER=<emulator>)"; exit 1; }
 	@mkdir -p bin/cross
 	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) -static -I. -o bin/cross/unit test/unit_test.c $(SRCS)
-	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) -static -I. -o bin/cross/drbg_test test/drbg_test.c drbg.c chacha20.c ct.c
+	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) -static -I. -o bin/cross/drbg_test test/drbg_test.c drbg.c chacha20.c sha256.c ct.c
 	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) $(RSA_WIDE_DEF) -static -I. -o bin/cross/rsa_test test/rsa_test.c rsa.c rsa_mont.c sha256.c ct.c
 	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) -static -I. -o bin/cross/sha3_test test/sha3_test.c sha3.c ct.c
 	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) -static -I. -o bin/cross/sha512_test test/sha512_test.c sha512.c sha512_compress.c
@@ -4124,6 +4138,14 @@ BRANCH_SRCS := ct.c sha256.c sha3.c hkdf.c chacha20.c poly1305.c aead.c x25519.c
 # and a beq that tests the stack-protector canary this toolchain adds to a
 # function holding an array. ladder() lost the copy loop's branch, so the
 # net is the canary. Neither reads the scalar.
+#
+# drbg.c's two riscv32 gcc entries rose from 9 to 10 when ch_drbg_seed began
+# to hash the seed (docs/decisions.md 66). Both branches the function now
+# holds were read: a bgtu that tests seed_len against CH_DRBG_SEED_MIN for
+# CH_ASSERT, a length the caller chose, and a beq that tests the
+# stack-protector canary this toolchain adds to a function holding an
+# array, here the SHA-256 context. The 32-byte copy loop and its bne are
+# gone. Neither reads a seed byte.
 BRANCH_CEILING := \
   m3/ct.c:4 m3/sha256.c:17 m3/sha3.c:50 m3/hkdf.c:19 m3/chacha20.c:9 m3/poly1305.c:19 \
   m3/aead.c:4 m3/x25519.c:34 m3/p256_field.c:24 m3/mlkem.c:14 m3/mlkem_poly.c:43 m3/drbg.c:9 \
@@ -4156,13 +4178,13 @@ BRANCH_CEILING := \
   rv32imac-gcc/ct.c:2 rv32imac-gcc/sha256.c:15 rv32imac-gcc/sha3.c:26 rv32imac-gcc/hkdf.c:23 \
   rv32imac-gcc/chacha20.c:10 rv32imac-gcc/poly1305.c:15 rv32imac-gcc/aead.c:4 \
   rv32imac-gcc/x25519.c:24 rv32imac-gcc/p256_field.c:20 rv32imac-gcc/mlkem.c:20 \
-  rv32imac-gcc/mlkem_poly.c:39 rv32imac-gcc/drbg.c:9 rv32imac-gcc/softmul.c:0 \
+  rv32imac-gcc/mlkem_poly.c:39 rv32imac-gcc/drbg.c:10 rv32imac-gcc/softmul.c:0 \
   rv32imac-gcc/quic_aes.c:4 rv32imac-gcc/quic_aes_soft.c:12 rv32imac-gcc/quic_aes_extern.c:0 \
   rv32imac-gcc/quic_gcm.c:22 rv32imac-gcc/rsa_sign.c:27 rv32ic-gcc/ct.c:2 \
   rv32ic-gcc/sha256.c:15 rv32ic-gcc/sha3.c:26 rv32ic-gcc/hkdf.c:23 rv32ic-gcc/chacha20.c:10 \
   rv32ic-gcc/poly1305.c:15 rv32ic-gcc/aead.c:4 rv32ic-gcc/x25519.c:24 \
   rv32ic-gcc/p256_field.c:20 rv32ic-gcc/mlkem.c:20 rv32ic-gcc/mlkem_poly.c:39 \
-  rv32ic-gcc/drbg.c:9 rv32ic-gcc/softmul.c:2 rv32ic-gcc/quic_aes.c:4 \
+  rv32ic-gcc/drbg.c:10 rv32ic-gcc/softmul.c:2 rv32ic-gcc/quic_aes.c:4 \
   rv32ic-gcc/quic_aes_soft.c:12 rv32ic-gcc/quic_aes_extern.c:0 rv32ic-gcc/quic_gcm.c:22 \
   rv32ic-gcc/rsa_sign.c:27 mips32r2-gcc-O2/quic_aes.c:3 mips32r2-gcc-O2/quic_aes_soft.c:12 \
   mips32r2-gcc-O2/quic_aes_extern.c:0 mips32r2-gcc-O2/quic_gcm.c:16 \

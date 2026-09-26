@@ -1,0 +1,12 @@
+invariant: INV-4
+file: drbg.c
+catches: drbg_test
+reason: ch_drbg_seed takes a 31-byte seed, one byte under
+  CH_DRBG_SEED_MIN, so a caller that passes a short buffer by mistake
+  gets a running generator instead of a fault. bin/drbg_test passes
+  exactly 31 bytes and requires CH_ASSERT to fire.
+
+--- old
+    CH_ASSERT(seed_len >= CH_DRBG_SEED_MIN); // a short seed is a programmer error (drbg.h)
+--- new
+    CH_ASSERT(seed_len >= CH_DRBG_SEED_MIN - 1); // a short seed is a programmer error (drbg.h)

@@ -79,6 +79,9 @@ Spec.Record.seal      : (trafficSecret : ByteArray) → (seq : Nat) →
 Spec.Drbg.next        : (key : ByteArray) → (n : Nat) →
                         (ByteArray × ByteArray)                        -- fast key erasure over ChaCha20:
                         -- (next key, n output bytes) from one request
+Spec.Drbg.seedKey     : (seed : ByteArray) → ByteArray                 -- the key a seed installs: the
+                        -- SHA-256 of the whole seed. Domain: any seed; the C asserts on a seed
+                        -- shorter than seedMin (32 bytes), so the differential sends 32 or more
 Spec.Record.open?     : (trafficSecret : ByteArray) → (seq : Nat) →
                         (rec : ByteArray) → Option (ByteArray × UInt8)
                         -- RFC 9846 §5.2-5.4 deprotection, the inverse of seal:
@@ -643,6 +646,8 @@ Spec.Drbg.next_key_out_disjoint
                              -- which is what fast key erasure rests on
 Spec.Drbg.next_out_prefix    a shorter request is a prefix of a longer one under the
                              -- same key: every request is cut from one stream
+Spec.Drbg.seedKey_size       every seed, of any length, installs a key of the 32 bytes
+                             -- next draws under
 Spec.Pem.decode?_encode      armour then decode is the identity: for non-empty der
                              -- within derMax whose armoured text fits pemMax,
                              -- decode? derMax (encode w der) = some der at EVERY
@@ -910,7 +915,7 @@ means the module's selftest plus the differential oracle carry it;
 | module | theorems | what is proven vs only vector-checked |
 | --- | --- | --- |
 | Bytes | 24 | proof toolkit: fold characterizations, xor involution and left cancellation, hex injectivity, big-endian round trip and injectivity |
-| Drbg | 13 | key advance (the next key is the counter-0 block, independent of the request size), key/output disjointness within one keystream, request-prefix consistency, session key chain |
+| Drbg | 14 | key advance (the next key is the counter-0 block, independent of the request size), key/output disjointness within one keystream, request-prefix consistency, session key chain, the seed key's size |
 | HandshakeParser | 15 | message-grammar soundness, quantified over all three `Kex` builds and both `SuiteOffer` values: an accepted ServerHello echoes the empty legacy_session_id the profile offers, carries a cipher suite the build offers, selects a group the build lists in supported_groups and carries a key_exchange of exactly `serverShareSize` octets for that group (32 x25519, 1120 hybrid, 65 secp256r1), and any selected_identity it reports is the single index one offered identity puts in range; an accepted HelloRetryRequest carries a cipher suite the build offers and a cookie or a selected group, and a selected group is one the build listed and sent no key share for, so a retry in the x25519 and pq builds carries a cookie and never a group, and a retry in the two-group build names secp256r1 or carries a cookie; a result is a HelloRetryRequest exactly when the Random is §4.2.4's fixed value; an accepted record_size_limit is at least 64 under every offer; an accepted ALPN selection is an index into the offered protocols; an accepted server_certificate_type names a type the ClientHello offered; an accepted CertificateVerify reports an offered scheme that is never RSASSA-PKCS1-v1_5, so a pinned build's is its own pinned SignatureScheme and the webpki build's is one of rsa_pss_rsae_sha256, ecdsa_secp256r1_sha256 and ecdsa_secp384r1_sha384 |
 | Handshake | 17 | state-machine safety invariants: exactly one ServerHello, EncryptedExtensions and Finished; no certificate flight under PSK; pinned flight shape and order; HRR bound; no CertificateRequest; no post-handshake message before Finished; close_notify at most once and last |
 | Record | 8 | seal/open round trip at both the AEAD and record layers, record size, nonce size, nonce injectivity (distinct sequence numbers never share a nonce), and that an accepted record never carries content type invalid(0) |

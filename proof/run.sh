@@ -1667,7 +1667,11 @@ launch fast full x25519_wide_ops 256 "" ct.c -DCH_X25519_WIDE -DCH_NATIVE_MUL128
 launch fast full x25519_wide_step 6 "" ct.c -DCH_X25519_WIDE -DCH_NATIVE_MUL128 --unsigned-overflow-check
 launch fast full x25519_wide_tail 41 "" ct.c -DCH_X25519_WIDE -DCH_NATIVE_MUL128 --unsigned-overflow-check
 launch fast:3 full x25519_wide_invert 101 "" ct.c -DCH_X25519_WIDE -DCH_NATIVE_MUL128 --unsigned-overflow-check
-launch fast full drbg 100 "ch_rand_bytes.3:4" ct.c
+# drbg: ch_drbg_seed hashes a seed of 32 to 96 bytes through the SHA-256
+# stub, then wipes the 112-byte context, so the stub's fill_nondet and
+# ct_wipe each loop 112 times, past the global bound. Measured (cbmc
+# 6.11.0, kissat, /usr/bin/time -l): 131 properties, 23 s, 671 MB.
+launch fast full drbg 100 "ch_rand_bytes.3:4,fill_nondet.0:113,ct_wipe.0:113" ct.c
 launch fast full p256_mul 20 ""
 # p384_mul is p256_mul's carry lemma at twelve limbs. Measured (cbmc
 # 6.11.0, kissat, /usr/bin/time -l): 7 properties, 2.1 s, 106 MB.

@@ -314,7 +314,7 @@ int main(int argc, char **argv) {
     // fixed value so every invocation draws the same stream.
     uint8_t seed[32];
     bench_fill(seed, sizeof seed);
-    ch_drbg_seed(seed);
+    ch_drbg_seed(seed, sizeof seed);
     for (size_t run = 0; run < runs; run++) {
         double load[1] = {0.0};
         (void)getloadavg(load, 1);

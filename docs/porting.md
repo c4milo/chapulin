@@ -234,8 +234,8 @@ four compare-with-zero forms on mips; the six base branches and `c.beqz` and
 | Arm GNU gcc 15.3, Cortex-M3 | 2 | 12 | 24 | 12 | 7 | 14 | 2 | 23 | 14 | 37 | 8 | 0 |
 | gcc 12.4 (Ubuntu 24.04), mips32r2 | 2 | 12 | 21 | 11 | 6 | 14 | 2 | 20 | 14 | 41 | 7 | 0 |
 | gcc 12.4 (Ubuntu 24.04), mips32r2, `-O2` | 4 | 23 | 31 | 11 | 7 | 21 | 2 | 28 | 18 | 38 | 8 | 0 |
-| Bootlin gcc 14.3, rv32imac | 2 | 15 | 26 | 15 | 10 | 15 | 4 | 23 | 20 | 39 | 9 | 0 |
-| Bootlin gcc 14.3, rv32ic | 2 | 15 | 26 | 15 | 10 | 15 | 4 | 23 | 20 | 39 | 9 | 2 |
+| Bootlin gcc 14.3, rv32imac | 2 | 15 | 26 | 15 | 10 | 15 | 4 | 23 | 20 | 39 | 10 | 0 |
+| Bootlin gcc 14.3, rv32ic | 2 | 15 | 26 | 15 | 10 | 15 | 4 | 23 | 20 | 39 | 10 | 2 |
 
 None of these is zero, and the lint does not claim they branch on public
 data: it cannot tell a loop counter from a limb. They are what each compiler

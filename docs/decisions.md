@@ -2196,3 +2196,55 @@ does nothing more.
     sets anchors and a hostname instead. Refusing X.509 under pins alone,
     as entry 49 did, leaves a DNS client unable to reach a public resolver
     by address and pin.
+
+66. **`ch_drbg_seed` takes a seed of any length from 32 bytes up and
+    hashes it into the generator key**
+    ([#164](https://github.com/c4milo/chapulin/issues/164)). docs/entropy.md
+    told a `RAND=drbg` integrator to concatenate several entropy sources
+    and hash them with `sha256_of` into the 32 bytes `ch_drbg_seed` took.
+    The packaged object exports `ch_drbg_seed` and keeps `sha256_of`
+    local, so that recipe did not link, and nothing compiled it.
+
+    - **The call.** `ch_drbg_seed(const uint8_t *seed, size_t seed_len)`.
+      The generator key is the SHA-256 of all `seed_len` bytes. The
+      caller concatenates its sources into one buffer and passes the
+      whole buffer, and needs no hash of its own.
+    - **The floor.** A seed shorter than `CH_DRBG_SEED_MIN`, 32 bytes, is
+      a programmer error, and `CH_ASSERT` fires. 32 is the key length. A
+      seed shorter than the key cannot carry a full key of entropy. The
+      floor does not measure entropy: a 32-byte counter passes it.
+    - **Reseeding.** A second call replaces the state, as before. The
+      reseed recipe concatenates fresh bytes with output the generator
+      just drew.
+    - **Wipes.** The digest goes straight into the generator key, so no
+      stack copy of it exists, and the SHA-256 context is wiped before
+      the call returns. The caller wipes its own buffer.
+    - **The check.** `test/entropy_recipe.c` is docs/entropy.md's
+      boot-seed recipe in C. `make lib-check RAND=drbg` links it against
+      the packaged object and runs it, so a recipe that calls a function
+      the object keeps local fails there.
+
+    Cost: an API break. Every caller changes its call, colibri's test
+    endpoints among them, and the known answers in `bin/drbg_test`
+    changed with the key. `sha256.c` was already in every object, so the
+    object gains no module; `drbg.c`'s text grows from 240 to 313 bytes
+    and `ch_drbg_seed`'s frame from 8 to 128 bytes on Cortex-M3 (Arm GNU
+    gcc 15.3, `-Os`), measured with `-fstack-usage`. The call runs at
+    boot, beside no handshake, so no stack peak bench/sram.sh reports
+    moves. Under the two riscv32 gcc specs, `drbg.c`'s branch ceiling
+    rises from 9 to 10: the test of `seed_len` and a stack-protector
+    canary replace the copy loop's back edge, and neither reads a seed
+    byte. Gain: the documented recipe links and runs, and a part with no
+    hash of its own seeds from several sources in one call.
+
+    What this entry does not change: rewriting the seed file and both
+    reseed recipes read generator output, which takes a `ch_rand_bytes`
+    call. An image that compiles `drbg.c` itself can make it. The packaged
+    object keeps `ch_rand_bytes` local, so an image that links the object
+    cannot follow those three steps (docs/entropy.md).
+
+    Two alternatives were considered and rejected. Exporting a
+    `ch_sha256` under `RAND=drbg` adds a sixth public call, and adds it
+    because one recipe needed it, not because the API calls for a hash.
+    Fixing only the documentation leaves a part with no SHA-256 of its
+    own with nothing to hash with.

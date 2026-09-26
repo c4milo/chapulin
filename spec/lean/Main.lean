@@ -310,6 +310,15 @@ def dispatch : List String → Option String
     guard (k.size == 32 && n <= 4096)
     let (k2, out) := Spec.Drbg.next k n
     return s!"{emit k2} {emit out}"
+  -- The first request after seeding. The C asserts on a seed shorter
+  -- than seedMin, so the op refuses one rather than answer for a call
+  -- the C never completes.
+  | ["drbg_seed", seed, nstr] => do
+    let s ← hexArg? seed
+    let n ← nstr.toNat?
+    guard (s.size >= Spec.Drbg.seedMin && n <= 4096)
+    let (k2, out) := Spec.Drbg.next (Spec.Drbg.seedKey s) n
+    return s!"{emit k2} {emit out}"
   | ["traffic_upd", secret] => do
     let s ← hexArg? secret
     guard (s.size == 32)

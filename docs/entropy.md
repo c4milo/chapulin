@@ -3,7 +3,7 @@
 The reference target (a mips32r2 core) has no random number peripheral
 and MIPS has no randomness instruction, so `ch_rand_bytes`
 comes from the fast-key-erasure generator in `drbg.[ch]`, and the
-security of every handshake reduces to the quality of its 32-byte seed.
+security of every handshake reduces to the quality of its seed.
 INV-4 in [invariants.md](invariants.md) lists every call that draws
 randomness. What the draws protect:
 
@@ -48,7 +48,7 @@ The build names the pattern, and there is no default.
 | Declaration | The image does this | The packaged object holds this |
 | --- | --- | --- |
 | `RAND=extern` (`-DCH_RAND_EXTERN`) | Defines `ch_rand_bytes` itself: a hardware RNG, or a generator of its own | `ch_rand_bytes` stays undefined, so an image that never wired one fails to link |
-| `RAND=drbg` (`-DCH_RAND_DRBG`) | Calls `ch_drbg_seed` once at boot, with 32 bytes assembled as below | `drbg.c`, and `ch_drbg_seed` exported beside the four public calls |
+| `RAND=drbg` (`-DCH_RAND_DRBG`) | Calls `ch_drbg_seed` once at boot, with at least 32 bytes concatenated as below | `drbg.c`, and `ch_drbg_seed` exported beside the four public calls |
 
 A build that names neither stops at an `#error` in `cfg.h`. That is the
 only part of this page a compiler can enforce. No library can grade an
@@ -65,9 +65,16 @@ nothing, and the generator faults on the first draw.
 
 ## Layer the seed — never one source alone
 
-Mix all of the following into the boot seed (concatenate and hash with
-`sha256_of`, or XOR into the reseed input). Each is listed with the
-attack it fails against alone.
+Concatenate all of the following into one buffer, and pass the whole
+buffer to `ch_drbg_seed` once. The call hashes the buffer with SHA-256,
+and the digest becomes the generator key, so the image needs no hash of
+its own. A buffer shorter than `CH_DRBG_SEED_MIN`, 32 bytes, is a
+programmer error, and the call faults on it (`CH_ASSERT`). Wipe the
+buffer after the call: anyone who reads it can compute every byte the
+generator produces. `test/entropy_recipe.c` is this recipe in C, and
+`make lib-check RAND=drbg` links it against the packaged object, so a
+recipe that calls a function the object does not export fails there.
+Each source is listed with the attack it fails against alone.
 
 1. **A factory-provisioned per-device secret** (32 random bytes written
    to flash at manufacturing, like the PSK or pin). Strong against
@@ -75,7 +82,7 @@ attack it fails against alone.
    firmware dumps or supply-chain copies leak flash contents, because
    the "random" stream becomes replayable.
 2. **A persisted seed file, rewritten every boot.** At boot, read it,
-   mix it into the seed, and immediately overwrite it with fresh
+   add it to the seed buffer, and immediately overwrite it with fresh
    generator output; at clean shutdown, overwrite it again. Each boot
    then inherits the accumulated history of every previous boot
    (Linux's boot-time seed file works this way). Alone it fails against
@@ -83,19 +90,29 @@ attack it fails against alone.
    same stream until they diverge.
 3. **Timing jitter as a topper.** Sample a cycle counter (MIPS `Count`)
    against an independent clock domain — packet-arrival interrupts, a
-   watchdog oscillator, link-state changes — and mix the low bits of
-   many samples. Jitter between unsynchronized clocks is the standard
-   TRNG-less entropy source, but its rate is hard to certify on any
-   given board, so it tops up the seed rather than being it.
+   watchdog oscillator, link-state changes — and add the low bits of
+   many samples to the seed buffer. Jitter between unsynchronized
+   clocks is the standard TRNG-less entropy source, but its rate is
+   hard to certify on any given board, so it tops up the seed rather
+   than being it.
 
 The generator itself (fast key erasure over ChaCha20, after Bernstein's
 "Fast-key-erasure random-number generators", 2017,
 https://blog.cr.yp.to/20170723-random.html) makes every request replace
 its key from its own keystream before output leaves, so compromising a
 device's state later does not reveal traffic it already protected.
-Reseeding after boot is optional; when late entropy arrives, reseed with
-a hash of fresh bytes and current generator output, so the state never
-gets worse.
+Reseeding after boot is optional. When entropy arrives after boot, draw
+32 bytes of generator output, concatenate the fresh bytes after them,
+and pass the whole buffer to `ch_drbg_seed`. The new key is the hash of
+both, so the state never gets worse.
+
+Three steps on this page read generator output: rewriting the seed
+file, the reseed above, and the hybrid reseed below. Reading it takes a
+`ch_rand_bytes` call. An image that compiles `drbg.c` into its own build
+can make that call. The packaged `RAND=drbg` object keeps
+`ch_rand_bytes` local, so an image that links the object has no call
+that returns generator output, and it cannot follow these three steps
+as written.
 
 ## Parts with a hardware TRNG
 
@@ -111,11 +128,11 @@ the wiring. Three patterns, strongest default first:
    so `ch_rand_bytes` latency is deterministic; and fast key erasure
    adds the backtracking resistance the raw source lacks.
 2. **Hybrid reseed.** Seed from the TRNG at boot; on a schedule or on
-   wake-from-sleep, reseed with a hash of fresh TRNG bytes mixed with
-   output the generator just drew (the recipe `ch_drbg_seed`'s comment
-   supports). The state then never gets worse than either input, and a
-   TRNG that quietly dies after boot leaves the generator no weaker
-   than pattern 1.
+   wake-from-sleep, pass `ch_drbg_seed` output the generator just drew
+   concatenated with fresh TRNG bytes (the recipe `ch_drbg_seed`'s
+   comment gives). The state then never gets worse than either input,
+   and a TRNG that quietly dies after boot leaves the generator no
+   weaker than pattern 1.
 3. **TRNG wired directly as `ch_rand_bytes`.** Earned, not default:
    appropriate only when the RNG block carries its own conditioning and
    on-chip health tests that the vendor documents — the certified

@@ -174,7 +174,11 @@ last `ROLE=server` stub, as the entry said it would.
   default. `RAND=extern` leaves it an undefined import, so an image that
   defines no generator fails to link. `RAND=drbg` defines it with the
   reference generator in `drbg.c`, which faults on an unseeded draw.
-  Neither build carries a fallback that quietly produces bytes. The
+  Its `ch_drbg_seed` takes the SHA-256 of the whole seed as the
+  generator key, so every source the image concatenates into the seed
+  counts, and faults on a seed shorter than `CH_DRBG_SEED_MIN`, 32
+  bytes (decisions.md 66). Neither build carries a fallback that
+  quietly produces bytes. The
   `ROLE` and `TRUST` axes choose which of the six files a packaged
   object compiles:
   - `ROLE=client` compiles `handshake_flight.c`, and `TRUST=webpki`
@@ -199,9 +203,18 @@ last `ROLE=server` stub, as the entry said it would.
   - `inv04-fourth-draw-in-hsf-begin` adds a fourth call to `hsf_begin`.
 
   `lib-check` requires a `RAND=extern` object to import `ch_rand_bytes`
-  and a `RAND=drbg` object to define it.
+  and a `RAND=drbg` object to define it, and links
+  `test/entropy_recipe.c`, docs/entropy.md's boot-seed recipe, against
+  the `RAND=drbg` object. `bin/drbg_test` checks the output of two
+  seeds against known answers computed outside this tree, and the floor
+  at exactly 32 bytes and 31. It fails on each of three violations:
+  - `inv04-drbg-seed-copied` copies the first 32 seed bytes into the
+    key instead of hashing the seed.
+  - `inv04-drbg-seed-floor-lowered` takes a 31-byte seed.
+  - `inv04-drbg-seed-floor-raised` refuses a 32-byte seed.
 - **Violation.** A PR conjures a nonce or padding bytes from a new
-  call site nobody audits for seeding requirements.
+  call site nobody audits for seeding requirements, or keys the
+  generator from part of the seed.
 - See [docs/entropy.md](entropy.md).
 
 ## Deleted by absence

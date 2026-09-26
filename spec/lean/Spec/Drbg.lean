@@ -1,13 +1,15 @@
 import Spec.Bytes
 import Spec.ChaCha
+import Spec.Sha256
 
 /-!
 The reference generator (drbg.[ch]): fast key erasure over ChaCha20,
 after Bernstein's construction (blog.cr.yp.to/20170723-random.html).
-One request under key `k` takes the ChaCha20 keystream with a zero
-nonce from counter 0; the first 32 bytes become the next key and the
-`n` bytes after them are the output. Defined over the keystream itself
-(XOR against zeros), so this spec shares no structure with the C's
+Seeding sets the key to the SHA-256 of the whole seed. One request
+under key `k` takes the ChaCha20 keystream with a zero nonce from
+counter 0; the first 32 bytes become the next key and the `n` bytes
+after them are the output. Defined over the keystream itself (XOR
+against zeros), so this spec shares no structure with the C's
 block-at-a-time walk.
 -/
 namespace Spec.Drbg
@@ -19,6 +21,22 @@ key changes on each one. -/
 def zeroNonce : ByteArray :=
   ByteArray.mk (Array.replicate 12 0)
 
+/-- The shortest seed the generator takes, in bytes: the length of the
+ChaCha20 key (RFC 8439 §2.3) the seed becomes. The C asserts on a
+shorter seed, so the differential sends none. -/
+def seedMin : Nat := 32
+
+/-- Seeding (docs/decisions.md 66): the key is the SHA-256 (FIPS 180-4
+§6.2) of the whole seed, so a caller passes its entropy sources
+concatenated, and the key is 32 bytes whatever the seed's length. -/
+def seedKey (seed : ByteArray) : ByteArray :=
+  Spec.Sha256.sha256 seed
+
+/-- Every seed installs a key of exactly the 32 bytes `next` draws
+under. -/
+theorem seedKey_size (seed : ByteArray) : (seedKey seed).size = 32 :=
+  Spec.Sha256.sha256_size seed
+
 /-- One request: `(next key, output)` for `n` output bytes. -/
 def next (k : ByteArray) (n : Nat) : ByteArray × ByteArray :=
   let stream := Spec.ChaCha.xor k zeroNonce 0 (ByteArray.mk (Array.replicate (32 + n) 0))
@@ -26,12 +44,15 @@ def next (k : ByteArray) (n : Nat) : ByteArray × ByteArray :=
 
 set_option compiler.extract_closed false in
 /-- The construction rekeys: consecutive requests use distinct keys, and
-the output never contains the next key's bytes. -/
+the output never contains the next key's bytes. Seeding hashes: a seed
+of one key's length installs a key other than the seed itself. -/
 def selftest (_ : Unit) : Bool :=
-  let k0 := ByteArray.mk (Array.replicate 32 7)
+  let seed := ByteArray.mk (Array.replicate seedMin 7)
+  let k0 := seedKey seed
   let (k1, out1) := next k0 40
   let (k2, out2) := next k1 40
-  k1 != k0 && k2 != k1 && out1 != out2 && out1.size == 40 && out2.size == 40
+  k0 != seed && k0.size == 32
+    && k1 != k0 && k2 != k1 && out1 != out2 && out1.size == 40 && out2.size == 40
 
 
 /-- The keystream one request draws: 32 bytes for the next key, then

@@ -4,14 +4,25 @@
 #include "chacha20.h"
 #include "ct.h"
 #include "rand.h"
+#include "sha256.h"
+
+_Static_assert(SHA256_LEN == CHACHA20_KEY, "the seed's SHA-256 is the whole generator key");
+_Static_assert(CH_DRBG_SEED_MIN == CHACHA20_KEY, "the shortest seed is one key long");
 
 static uint8_t g_key[CHACHA20_KEY];
 static int g_seeded;
 
-void ch_drbg_seed(const uint8_t seed[32]) {
-    for (int i = 0; i < CHACHA20_KEY; i++) {
-        g_key[i] = seed[i];
-    }
+// The key is the SHA-256 of the whole seed, written straight into
+// g_key, so no stack copy of the digest exists. The context holds seed
+// bytes in its block buffer and chaining value, so it is wiped before
+// return.
+void ch_drbg_seed(const uint8_t *seed, size_t seed_len) {
+    CH_ASSERT(seed_len >= CH_DRBG_SEED_MIN); // a short seed is a programmer error (drbg.h)
+    sha256 s;
+    sha256_init(&s);
+    sha256_update(&s, seed, seed_len);
+    sha256_final(&s, g_key);
+    ct_wipe(&s, sizeof s);
     g_seeded = 1;
 }
 
