@@ -76,8 +76,8 @@ drbg 81.7
 # that function's locations are in its goto model and out of its reach.
 # eeparse_alpn is the harness that reaches them, and it carries its own
 # floor below.
-eeparse_webpki 29.4  # local reading, cbmc 6.11.0 on arm64 macOS; replace with the nightly table's number
-eeparse_alpn 21.5  # local reading, cbmc 6.11.0 on arm64 macOS; replace with the nightly table's number
+eeparse_webpki 57.9
+eeparse_alpn 33.3
 # epoch: handshake_auth.c now calls transcript.h's inline transcript
 # functions, whose locations join this harness's goto model and sit
 # outside the epoch arm it drives, so the share fell with the arm reached
@@ -90,7 +90,7 @@ hybrid_secret 16.9
 key_share 21.9
 keysched 87.0
 p256_mul 86.7
-p384_mul 86.7  # local reading, cbmc 6.11.0 on arm64 macOS; replace with the nightly table's number
+p384_mul 86.7
 # pem and pem_ecdsa carry their own budget, 2700 s, where every other
 # cover run gets 1800 s (https://github.com/c4milo/chapulin/issues/163).
 # Their nightly cover runs took 1664 s and 1505 s on 2026-09-21, 1113 s
@@ -107,21 +107,21 @@ poly1305 94.3
 # harnesses carry none: its cover command converges in seconds, because
 # every call it makes is a stub and the formula holds length checks
 # alone.
-quic_initial 98.7  # local reading, cbmc 6.11.0 on arm64 macOS; replace with the nightly table's number
+quic_initial 98.8
 # quic_packet is the one TRANSPORT=quic-nonblocking harness whose cover command
 # converges: 34 s and 0.75 GB against the 1800 s budget, where the aes
 # harness returned no number in 21 minutes. Its proof is cheap for the same
 # reason -- ChaCha20 and the AEAD are stubs, so the formula holds
 # framing rather than a keystream.
-quic_packet 75.8  # local reading, cbmc 6.11.0 on arm64 macOS; replace with the nightly table's number
+quic_packet 75.8
 record 95.0
 rsa_mul 32.3
-rsa_mul_webpki 32.3  # local reading, cbmc 6.11.0 on arm64 macOS; replace with the nightly table's number
-rsa_pkcs1 90.3  # local reading, cbmc 6.11.0 on arm64 macOS; replace with the nightly table's number
-rsa_pkcs1_webpki 90.3  # local reading, cbmc 6.11.0 on arm64 macOS; replace with the nightly table's number
-rsa_webpki 91.7  # local reading, cbmc 6.11.0 on arm64 macOS; replace with the nightly table's number
-sha512 90.9  # local reading, cbmc 6.11.0 on arm64 macOS; replace with the nightly table's number
-sha512_compress 97.1  # local reading, cbmc 6.11.0 on arm64 macOS; replace with the nightly table's number
+rsa_mul_webpki 32.3
+rsa_pkcs1 90.3
+rsa_pkcs1_webpki 90.3
+rsa_webpki 91.7
+sha512 90.9
+sha512_compress 97.1
 softmul 91.3
 # webpki_cert fell from 56.7 to 56.1 and webpki_pin from 56.5 to 54.1
 # when a configuration of SPKI pins alone started to accept a chain whose
@@ -134,17 +134,17 @@ softmul 91.3
 # 259 of 463, each from its launch line's own --cover location command on
 # arm64 macOS with cbmc 6.11.0. webpki_pin read 55.9% there at the commit
 # before, already under the 56.5 recorded here.
-webpki_cert 56.1  # local reading, cbmc 6.11.0 on arm64 macOS; replace with the nightly table's number
-webpki_chain 80.6  # local reading, cbmc 6.11.0 on arm64 macOS; replace with the nightly table's number
-webpki_ext 40.0  # local reading, cbmc 6.11.0 on arm64 macOS; replace with the nightly table's number
-webpki_ext_one 51.4  # local reading, cbmc 6.11.0 on arm64 macOS; replace with the nightly table's number
-webpki_ext_walk 54.8  # local reading, cbmc 6.11.0 on arm64 macOS; replace with the nightly table's number
-webpki_name 24.2  # local reading, cbmc 6.11.0 on arm64 macOS; replace with the nightly table's number
-webpki_pin 54.1  # local reading, cbmc 6.11.0 on arm64 macOS; replace with the nightly table's number
+webpki_cert 56.1
+webpki_chain 80.7
+webpki_ext 40.0
+webpki_ext_one 51.4
+webpki_ext_walk 54.8
+webpki_name 24.2
+webpki_pin 54.7
 webpki_san 29.8
-webpki_sigalg 41.9  # local reading, cbmc 6.11.0 on arm64 macOS; replace with the nightly table's number
-webpki_spki 41.1  # local reading, cbmc 6.11.0 on arm64 macOS; replace with the nightly table's number
-webpki_time 33.3  # local reading, cbmc 6.11.0 on arm64 macOS; replace with the nightly table's number
+webpki_sigalg 44.5
+webpki_spki 41.4
+webpki_time 33.3
 x25519_tail 52.2
 
 # srv_parser_walk and srv_parser_frozen carry no floor yet. Under the cover
