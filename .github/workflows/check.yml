@@ -526,7 +526,13 @@ jobs:
 
       # One target. Which tier it means is decided in the Makefile, so the
       # workflow holds no copy of that rule.
-      - run: make ci
+      #
+      # check runs each lint, leg and test run as a prerequisite of its
+      # own, so -j runs them side by side on the runner's cores. Serial,
+      # check took 522 s of this job on run 36228452875. check-slow's own
+      # steps after it run one after another whatever -j says, and
+      # proof/run.sh schedules the proofs by its memory budget.
+      - run: make -j"$(nproc)" ci
       - name: Render what CBMC proves on the run page
         if: always()
         run: cat bin/proof-coverage.md >> "$GITHUB_STEP_SUMMARY" 2>/dev/null || true
