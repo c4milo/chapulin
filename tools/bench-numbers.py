@@ -1,9 +1,10 @@
-# The README publishes speed, memory and flash figures that only bench/ can
-# know. Nothing tied the prose to the CSVs, so the flash figure sat at 26.4
+# docs/performance.md publishes speed, memory and flash figures that only
+# bench/ can know, and the README's "At a glance" table repeats three of
+# them. Both used to be one README. Nothing tied the prose to the CSVs, so the flash figure sat at 26.4
 # kB while the real number was 27.3: bench/device-ram.sh had quietly dropped
 # four modules and no one could tell. The Memory table drifted the same way
 # (three stale stack rows, https://github.com/c4milo/chapulin/issues/90).
-# This renders the numbers the CSVs imply and fails when the README
+# This renders the numbers the CSVs imply and fails when either document
 # disagrees.
 #
 # The decomposition sentence under the speed table went the same way once:
@@ -15,7 +16,7 @@
 # along with the two sentences that restate its mips32r2 figures.
 #
 # It compares rendered strings rather than parsing prose, so the rounding
-# rule lives here and the README follows it.
+# rule lives here and the documents follow it.
 import csv
 import re
 import sys
@@ -169,7 +170,7 @@ def check_speed(readme):
         want = (render_insns(mips), render_ms(mips), render_insns(m3), render_insns(rv32))
         got = table_row(readme, label, len(want))
         if got is None:
-            print("lint-bench-numbers: README has no speed row for %r" % label)
+            print("lint-bench-numbers: docs/performance.md has no speed row for %r" % label)
             rc = 1
         elif got != want:
             print("lint-bench-numbers: %r says %s; the CSVs render as %s"
@@ -237,14 +238,15 @@ def check_decomposition_mips(readme):
     want_kb = "%.1f kB" % ((flash["total"] - flash["total (CH_NATIVE_WIDEMUL)"]) / 1024)
     m = re.search(r"of which the multiply decomposition is ([0-9.]+ kB)", text)
     if m is None:
-        print("lint-bench-numbers: README does not state the flash the decomposition takes")
+        print("lint-bench-numbers: docs/performance.md does not state the flash the decomposition takes")
         rc = 1
     elif m.group(1) != want_kb:
-        print("lint-bench-numbers: README says the multiply decomposition is %s of flash, "
+        print("lint-bench-numbers: docs/performance.md says the multiply decomposition is %s of flash, "
               "the device model says %s" % (m.group(1), want_kb))
         rc = 1
     want = (render_percent_more(insns["handshake_crypto"], native["handshake_crypto"]), want_kb)
-    return rc | check_restated("README.md", text, want) \
+    return rc | check_restated("docs/verification.md",
+                               prose(open("docs/verification.md").read()), want) \
         | check_restated("docs/porting.md", prose(open("docs/porting.md").read()), want)
 
 
@@ -277,7 +279,7 @@ def check_memory(readme):
         want = tuple(cell % " / ".join(str(sram[q]) for q in cells) for cells in columns)
         got = table_row(readme, label, len(columns))
         if got is None:
-            print("lint-bench-numbers: README has no memory row for %r" % label)
+            print("lint-bench-numbers: docs/performance.md has no memory row for %r" % label)
             rc = 1
         elif got != want:
             print("lint-bench-numbers: %r says %s; bench/results-sram.csv renders as %s"
@@ -302,24 +304,24 @@ def check_memory_prose(readme, sram):
                          readme)
     if less != less_pq:
         print("lint-bench-numbers: rv32 saves %d bytes in the default build but %d under "
-              "KEX=pq; the README states one figure for both" % (less, less_pq))
+              "KEX=pq; docs/performance.md states one figure for both" % (less, less_pq))
         rc = 1
     elif not m or not m_webpki:
-        print("lint-bench-numbers: README does not state the rv32 saving for the device "
+        print("lint-bench-numbers: docs/performance.md does not state the rv32 saving for the device "
               "builds and for TRUST=webpki")
         rc = 1
     elif m.group(1) != "%d" % less or m_webpki.group(1) != "%d" % less_webpki:
-        print("lint-bench-numbers: README says rv32 saves %s bytes (device builds) and %s "
+        print("lint-bench-numbers: docs/performance.md says rv32 saves %s bytes (device builds) and %s "
               "(TRUST=webpki), the CSV says %d and %d"
               % (m.group(1), m_webpki.group(1), less, less_webpki))
         rc = 1
     want = "{:,}".format(sram["stack_connect_pq"])
     m = re.search(r"The whole chain peaks at ([0-9,]+) bytes", readme)
     if not m:
-        print("lint-bench-numbers: README does not state the KEX=pq stack peak in prose")
+        print("lint-bench-numbers: docs/performance.md does not state the KEX=pq stack peak in prose")
         rc = 1
     elif m.group(1) != want:
-        print("lint-bench-numbers: README prose says the KEX=pq chain peaks at %s bytes, "
+        print("lint-bench-numbers: docs/performance.md prose says the KEX=pq chain peaks at %s bytes, "
               "the CSV says %s" % (m.group(1), want))
         rc = 1
     return rc
@@ -335,10 +337,10 @@ def check_flash(readme):
     want_kb = "%.1f kB" % (flash["total"] / 1024)
     m = re.search(r"Flash is ([0-9.]+ kB) for the default build", readme)
     if not m:
-        print("lint-bench-numbers: README does not state the default flash figure")
+        print("lint-bench-numbers: docs/performance.md does not state the default flash figure")
         rc = 1
     elif m.group(1) != want_kb:
-        print("lint-bench-numbers: README says flash is %s, the device model says %s"
+        print("lint-bench-numbers: docs/performance.md says flash is %s, the device model says %s"
               % (m.group(1), want_kb))
         rc = 1
     return rc
@@ -354,10 +356,10 @@ def check_floor(readme):
     m = re.search(r"so about (\d+) ms is the recurring floor and (\d+)% of the "
                   r"pinned handshake's crypto", prose(readme))
     if not m:
-        print("lint-bench-numbers: README does not state the two-x25519 floor")
+        print("lint-bench-numbers: docs/performance.md does not state the two-x25519 floor")
         return 1
     if (m.group(1), m.group(2)) != (want_ms, want_pct):
-        print("lint-bench-numbers: README says two x25519 are %s ms and %s%% of the "
+        print("lint-bench-numbers: docs/performance.md says two x25519 are %s ms and %s%% of the "
               "pinned handshake; bench/results-insn.csv renders as %s ms and %s%%"
               % (m.group(1), m.group(2), want_ms, want_pct))
         return 1
@@ -373,10 +375,10 @@ def check_flash_ecdsa(readme):
     m = re.search(r"trades ([0-9.]+ kB) of RSA for ([0-9.]+ kB) of P-256 and totals "
                   r"([0-9.]+ kB)", prose(readme))
     if not m:
-        print("lint-bench-numbers: README does not state the ecdsa flash trade")
+        print("lint-bench-numbers: docs/performance.md does not state the ecdsa flash trade")
         return 1
     if m.groups() != want:
-        print("lint-bench-numbers: README says the ecdsa mode trades %s of RSA for %s of P-256 "
+        print("lint-bench-numbers: docs/performance.md says the ecdsa mode trades %s of RSA for %s of P-256 "
               "and totals %s; the device model says %s, %s and %s" % (m.groups() + want))
         return 1
     return 0
@@ -389,10 +391,10 @@ def check_speed_ecdsa(readme):
     want = "%.1f" % (insns["p256_ecdsa_verify"] / insns["rsa_pss_verify_3072"])
     m = re.search(r"Its verify costs ([0-9.]+) times the default's on mips32r2", prose(readme))
     if not m:
-        print("lint-bench-numbers: README does not state the ecdsa verify's speed")
+        print("lint-bench-numbers: docs/performance.md does not state the ecdsa verify's speed")
         return 1
     if m.group(1) != want:
-        print("lint-bench-numbers: README says the ecdsa verify costs %s times the default's; "
+        print("lint-bench-numbers: docs/performance.md says the ecdsa verify costs %s times the default's; "
               "bench/results-insn.csv renders as %s" % (m.group(1), want))
         return 1
     return 0
@@ -416,9 +418,31 @@ def check_decision_x25519():
     return 0
 
 
+def check_glance(readme):
+    """The README's At a glance row for the default build: its 32-bit static
+    working set, its peak stack and its flash, the same figures
+    docs/performance.md states in full."""
+    sram = read_csv("bench/results-sram.csv", "bytes")
+    flash = read_csv("bench/results-device.csv", "mips_flash_B")
+    want = (str(sram["static_working_set_rv32"]), str(sram["stack_connect_rsa"]),
+            "%.1f kB" % (flash["total"] / 1024))
+    m = re.search(r"\| Memory, default build \| (\d+) B static working set on a 32-bit "
+                  r"device, receive buffer included; (\d+) B peak stack, measured on arm64; "
+                  r"([0-9.]+ kB) of flash \|", readme)
+    if not m:
+        print("lint-bench-numbers: README has no At a glance memory row")
+        return 1
+    if m.groups() != want:
+        print("lint-bench-numbers: README's At a glance row says %s B, %s B and %s; "
+              "bench/ renders as %s B, %s B and %s" % (m.groups() + want))
+        return 1
+    return 0
+
+
 def main():
-    readme = open("README.md").read()
+    readme = open("docs/performance.md").read()
     rc = 0
+    rc |= check_glance(open("README.md").read())
     rc |= check_speed(readme)
     rc |= check_decomposition(readme)
     rc |= check_decomposition_mips(readme)
@@ -429,8 +453,8 @@ def main():
     rc |= check_speed_ecdsa(readme)
     rc |= check_decision_x25519()
     if rc == 0:
-        print("lint-bench-numbers: the README's speed, decomposition, floor, memory and "
-              "flash figures and docs/decisions.md's x25519 cost match bench/")
+        print("lint-bench-numbers: docs/performance.md's figures, the README's At a "
+              "glance row and docs/decisions.md's x25519 cost match bench/")
     return rc
 
 

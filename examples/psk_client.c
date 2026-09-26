@@ -15,9 +15,9 @@
  *       -psk 0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20 \
  *       -psk_identity device-42 -nocert -accept 4433 -rev -quiet
  *
- *   make lib
- *   cc -Wall -Wextra -Wpedantic -Werror -std=c11 -D_DEFAULT_SOURCE -I. \
- *       examples/psk_client.c bin/chapulin.o -o psk_client
+ *   make lib RAND=extern
+ *   cc -Wall -Wextra -Wpedantic -Werror -std=c11 -D_DEFAULT_SOURCE \
+ *       -DCH_RAND_EXTERN -I. examples/psk_client.c bin/chapulin.o -o psk_client
  *
  * Every line below that belongs to this host rather than to firmware is
  * marked SWAP. Those are the parts you replace; the rest is what a
