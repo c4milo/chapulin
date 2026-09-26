@@ -796,7 +796,7 @@ last `ROLE=server` stub, as the entry said it would.
 - **Claim.** Between the ladder's operations every limb of `a`, `b`,
   `c`, `d` and `x` lies in (-2^17, 2^17), and mul receives no operand
   outside (-2^18, 2^18). Every x25519 field-op proof holds only inside
-  a stated limb range (the verification table in the README), so a
+  a stated limb range (its entry in docs/verification.md), so a
   limb that leaves it turns those verdicts into statements about
   inputs the code no longer produces.
 - **Mechanism.** mul ends in two carry passes, which leave limbs 1..15
@@ -2116,20 +2116,22 @@ last `ROLE=server` stub, as the entry said it would.
   `test/violations/inv22-srv-quic-drops-bytes-after-finished.violation`
   removes the refusal and requires `bin/quic_loop_test` to fail.
   The close_notify rule is tested three ways, not proved: `tls.c` has
-  no harness (README, "These rest on tests, not proofs"). `bin/unit`'s
-  `test_peer_close_notify` (`test/session_post_tests.h`) queues a record
-  behind the close_notify and requires every later `ch_read` to return 0
-  with the record unread, no send call, and `ch_write` and `ch_close`
-  to send under the write key. `bin/tcp_nonblocking_loop_test`
-  (`test/tcp_nonblocking_close_tests.h`) closes one direction at a time
-  between the two tcp-nonblocking drivers and counts each end's send calls, so the
-  `ch_read` that reads a close_notify is measured to send nothing, on
-  the client and on the server. `test/e2e.sh`'s go-half-close leg runs
-  it against Go's `CloseWrite`, which sends a close_notify and keeps
-  reading: the server logs the lines the client sent after that
-  close_notify, then the client's own. Three violations each break one
-  term: `inv22-read-answers-close-notify`, which `bin/tcp_nonblocking_loop_test`
-  catches, and `inv22-read-past-close-notify` and
+  no harness (docs/verification.md, "What rests on tests, not proofs").
+  `bin/unit`'s `test_peer_close_notify` (`test/session_post_tests.h`)
+  queues a record behind the close_notify and requires every later
+  `ch_read` to return 0 with the record unread, no send call, and
+  `ch_write` and `ch_close` to send under the write key.
+  `bin/tcp_nonblocking_loop_test` (`test/tcp_nonblocking_close_tests.h`)
+  closes one direction at a time between the two tcp-nonblocking drivers
+  and counts each end's send calls, so the `ch_read` that reads a
+  close_notify is measured to send nothing, on the client and on the
+  server. `test/e2e.sh`'s go-half-close leg runs it against Go's
+  `CloseWrite`, which sends a close_notify and keeps reading: the server
+  logs the lines the client sent after that close_notify, then the
+  client's own. Three violations each break one term:
+  `inv22-read-answers-close-notify`, which
+  `bin/tcp_nonblocking_loop_test` catches, and
+  `inv22-read-past-close-notify` and
   `inv22-write-refused-after-close-notify`, which `bin/unit` catches.
 - **Violation.** A PR relaxes one type check to tolerate a message a
   peer "usually" sends early, and a flight with a skipped
@@ -2262,8 +2264,8 @@ last `ROLE=server` stub, as the entry said it would.
   variable frames everywhere, and `make lint-stack` compiles the
   sources this build packages, under the defines it packages them
   with, at `-Wframe-larger-than=$(STACK_BUDGET)`, or
-  `$(STACK_BUDGET_KEX_HYBRID)` for the ML-KEM sources, so the README's
-  stack numbers are a compile-time contract, not a bench
+  `$(STACK_BUDGET_KEX_HYBRID)` for the ML-KEM sources, so
+  docs/performance.md's stack numbers are a compile-time contract, not a bench
   observation. Until the hybrid build landed the recipe iterated
   `$(SRCS)` without `$(LIB_DEF)`, so it measured the default build
   whatever PIN, TRUST or KEX asked for and no variant was ever
@@ -2271,7 +2273,7 @@ last `ROLE=server` stub, as the entry said it would.
   exempt from the frame budget; they keep vector tables in their
   frames.
 - **Check.** Type-system grade (the compiler refuses); bench/sram.sh
-  measures the whole-call-chain peaks the README reports. `make check`
+  measures the whole-call-chain peaks docs/performance.md reports. `make check`
   runs lint-stack for the build it was given through `lint`, and runs
   `make lint-stack TRUST=webpki` as a leg of its own, so plain `make
   check`, the target `make ci` runs on a pull request, holds the

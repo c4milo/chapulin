@@ -9,7 +9,7 @@
 // code and confirmed byte for byte against an independent implementation
 // written from §7.5's text in Python, over the same inputs. That catches
 // a misread of the spec, which is what a published vector would catch.
-// It does not catch a shared misreading, so the README says these are
+// It does not catch a shared misreading, so docs/verification.md says these are
 // cross-checked rather than published.
 //
 // The inputs are counters rather than a real handshake's secrets: this

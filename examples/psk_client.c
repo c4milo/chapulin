@@ -372,8 +372,8 @@ static int run_session(const char *host, const char *port) {
 
     // One session struct, static: firmware has no heap to put it on.
     // It holds the record keys for both directions, the transcript, and
-    // the staging area for outgoing records. The README's memory table
-    // gives its measured size.
+    // the staging area for outgoing records. docs/performance.md's memory
+    // table gives its measured size.
     static ch_tls tls;
     int rc = ch_connect(&tls, &cfg);
     if (rc == CH_OK) {

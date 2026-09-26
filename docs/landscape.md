@@ -130,7 +130,8 @@ magnitude above kB-class.
   [eprint 2026/192](https://eprint.iacr.org/2026/192.pdf) found 13 vulns
   in *verified* crypto libraries — 9 in unverified glue, 4 in specs. The
   answer is whole-stack coverage and an explicit statement of what is
-  proved at what bounds, which is what our README does.
+  proved at what bounds, which is what [verification.md](verification.md)
+  does.
 
 ## Table stakes vs. cuts (per [draft-ietf-uta-tls13-iot-profile](https://datatracker.ietf.org/doc/html/draft-ietf-uta-tls13-iot-profile) + RFC 9257)
 

@@ -296,8 +296,8 @@ does nothing more.
     contract-checking stubs of the proven layer below. Where a formula
     will not converge, the harness pins a representative bound and
     documents it. Cost: this is not functional verification. Gain:
-    proofs that finish, and claims nobody has to take on faith — the
-    README states what is proved, at what bound, and what is only
+    proofs that finish, and claims nobody has to take on faith —
+    docs/verification.md states what is proved, at what bound, and what is only
     tested.
 26. **The Lean spec is written from the RFCs, never from the C**, is
     partial exactly where the RFCs are partial, and carries theorems
@@ -680,8 +680,8 @@ does nothing more.
     a second serializer.** `EXPORTER=on` compiles `ch_export` (RFC 9846 §7.5)
     and adds `exp_master` to `ch_tls`; `EXPORTER=off`, the default, compiles
     neither. `ch_tls` measures 1144 bytes off and 1176 on, so a device that
-    exports nothing pays nothing and the README's SRAM figures are the
-    default build's, unchanged. colibri asked for the call for h2
+    exports nothing pays nothing and docs/performance.md's SRAM figures
+    are the default build's, unchanged. colibri asked for the call for h2
     (`docs/chapulin.md` in that tree), and a host is the only caller.
 
     The label is the caller's, and RFC 9266's is 24 bytes against the 12
@@ -715,7 +715,8 @@ does nothing more.
     stops short of it. `bin/exporter_test`'s four vectors were produced by
     this code and confirmed byte for byte against an implementation written
     from §7.5's text in Python, which catches a misreading of the spec and
-    not a shared one. The README says cross-checked, not published.
+    not a shared one. docs/verification.md says cross-checked, not
+    published.
 
 44. **The key log is an axis, a link-time hook, and refused for a device
     client.** colibri's interop endpoint must write an NSS key log in both

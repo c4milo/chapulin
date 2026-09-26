@@ -51,7 +51,7 @@ TARGETS = [
 DECOMPOSED_OPS = ["aead_seal_1kib", "x25519_scalarmult", "handshake_crypto"]
 UNCHANGED_OPS = ["sha256_1kib", "rsa_pss_verify_3072", "p256_ecdsa_verify"]
 
-# The sentence the README's Verification section and docs/porting.md each
+# The sentence docs/verification.md and docs/porting.md each
 # carry, restating the mips32r2 handshake percentage and the flash.
 RESTATED = re.compile(r"the pinned handshake's crypto costs (\d+%) more on mips32r2, "
                       r"and the decomposition is ([0-9.]+ kB) of flash")

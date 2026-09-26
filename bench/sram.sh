@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
-# Regenerates the README memory numbers. Everything is measured from the
-# code being committed, never hand-computed: struct sizes from sizeof,
-# stack peaks from bench/stack.py, which walks the real call graph
-# (otool-extracted edges weighted by -fstack-usage frames) instead of any
-# hand-picked chain. Host-native today; the cross-compiled ASIC model
-# (pushkin's device-ram.sh) lands with the bench. Prints the report and
-# writes bench/results-sram.csv, the file make lint-bench-numbers compares
-# against the README's Memory table
-# (https://github.com/c4milo/chapulin/issues/90).
+# Regenerates the memory numbers in docs/performance.md. Everything is
+# measured from the code being committed, never hand-computed: struct
+# sizes from sizeof, stack peaks from bench/stack.py, which walks the
+# real call graph (otool-extracted edges weighted by -fstack-usage
+# frames) instead of any hand-picked chain. Host-native today; the
+# cross-compiled ASIC model (pushkin's device-ram.sh) lands with the
+# bench. Prints the report and writes bench/results-sram.csv, the file
+# make lint-bench-numbers compares against docs/performance.md's Memory
+# table (https://github.com/c4milo/chapulin/issues/90).
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -69,7 +69,7 @@ RXBUF_WEBPKI_AES=$("$TMP/floor_webpki_aes" | awk '{print $2}')
 # ch_quic in the object colibri links, ROLE=both TRUST=webpki
 # TRANSPORT=quic-nonblocking, without and with the suite: under SUITE=aesgcm each
 # QUIC key set records its suite and its section 6.6 count. The report
-# prints both; the README table does not carry them.
+# prints both; docs/performance.md's table does not carry them.
 cat > "$TMP/szq.c" <<'EOF'
 #include <stdio.h>
 #include "quic.h"

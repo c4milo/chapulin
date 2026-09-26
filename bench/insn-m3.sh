@@ -10,8 +10,8 @@
 # boot, runtime setup and input setup. Counts are frequency-independent.
 # Each row is measured twice: over the multiply decomposition firmware
 # ships (insns) and over the same driver built with -DCH_NATIVE_WIDEMUL
-# (native_insns), the pair the README's decomposition sentence is
-# rendered from. Writes bench/results-insn-m3.csv. Skips without a
+# (native_insns), the pair docs/performance.md's decomposition sentence
+# is rendered from. Writes bench/results-insn-m3.csv. Skips without a
 # toolchain or QEMU; fails on a toolchain other than the pinned release.
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -25,13 +25,14 @@ M3_QEMU=$(command -v qemu-system-arm || true)
 [ -n "$M3_CC" ] || { echo "SKIP m3 insn count: no arm-none-eabi-gcc" >&2; exit 0; }
 [ -n "$M3_QEMU" ] || { echo "SKIP m3 insn count: no qemu-system-arm" >&2; exit 0; }
 
-# Every row is a property of what one compiler emits, and the README
-# credits this column to the Arm GNU release ARM_GNU_VERSION pins, so
-# an arm-none-eabi-gcc of another release stops the script instead of
-# measuring (the device-ram.sh rule). The unversioned PATH candidate
-# above can be any release, which is why this check is not optional.
-# The compiler prints the release as 15.3.Rel1 where tools/toolchain.env
-# spells the download path's 15.3.rel1, so the match ignores case.
+# Every row is a property of what one compiler emits, and
+# docs/performance.md credits this column to the Arm GNU release
+# ARM_GNU_VERSION pins, so an arm-none-eabi-gcc of another release stops
+# the script instead of measuring (the device-ram.sh rule). The
+# unversioned PATH candidate above can be any release, which is why this
+# check is not optional. The compiler prints the release as 15.3.Rel1
+# where tools/toolchain.env spells the download path's 15.3.rel1, so the
+# match ignores case.
 M3_VERSION=$("$M3_CC" --version | head -1)
 case "$(printf '%s' "$M3_VERSION" | tr '[:upper:]' '[:lower:]')" in
 *"$(printf '%s' "$ARM_GNU_VERSION" | tr '[:upper:]' '[:lower:]')"*) ;;

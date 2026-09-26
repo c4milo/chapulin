@@ -41,8 +41,8 @@ ship a compiler neither lint measures, run the lint with it, or read
 **Your core has a multiplier whose timing you cannot document.** This is the
 default and needs no flag. `ct.h` builds every widening product from four 16x16
 pieces. Measured, the pinned handshake's crypto costs 29% more on mips32r2, and
-the decomposition is 2.3 kB of flash; the README's Speed and flash section has
-every target's figures.
+the decomposition is 2.3 kB of flash; the Speed and flash section of
+[`docs/performance.md`](performance.md) has every target's figures.
 
 **Your core's multiply is documented constant-time.** Pass
 `-DCH_NATIVE_WIDEMUL` and take the speed back. Do this only with a vendor
@@ -464,4 +464,5 @@ and why each is renamed or refused.
   run it with that compiler: add the spec, read and record its twelve
   counts, and read the histogram it prints when one grows.
 - **The memory numbers are measured on arm64.** A 32-bit target shrinks the
-  pointer fields; the README says which numbers move.
+  pointer fields; [`docs/performance.md`](performance.md) says which numbers
+  move.

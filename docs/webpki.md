@@ -767,8 +767,8 @@ does, and why.
 
 ## Verification
 
-What is proved, what is tested, and at what bounds. The README's rule holds
-here: never overclaim.
+What is proved, what is tested, and at what bounds. The rule
+[`docs/verification.md`](verification.md) follows holds here: never overclaim.
 
 - **Wycheproof.** Eight suites the new code owes, all present at the pinned
   `WYCHEPROOF_COMMIT`, so no new fetched input needs a hash:
@@ -780,8 +780,8 @@ here: never overclaim.
   disagree in each direction. Wycheproof's `rsa_signature_*` suites are
   PKCS#1 v1.5 verification suites, which is the operation this mode needs.
 - **SHA-384 has no Wycheproof suite.** Wycheproof does not test plain hashes.
-  Its vectors are RFC 6234 and NIST CAVP, and the README says so rather than
-  letting "Wycheproof" imply coverage it does not have.
+  Its vectors are RFC 6234 and NIST CAVP, and docs/verification.md says so
+  rather than letting "Wycheproof" imply coverage it does not have.
 - **Lean spec and theorems.** Every new module gets a spec module, as all 23
   existing C modules do. `spec/lean/` gains mathlib, which unblocks the arithmetic
   theorems `spec/lean/CONTRACT.md` records as blocked: P-256, P-384, the RSA
@@ -801,14 +801,15 @@ here: never overclaim.
   certificate parser, whose ca-mode counterpart already records no verdict in
   25 minutes for a two-entry formula at 7.1 GB, and the name matcher, whose
   cost grows with roughly the cube of input length. Where a bound cannot be
-  reached, the README states the partial bound that was reached. The walk
-  itself turned out cheap rather than hard, because its harness stubs the
+  reached, docs/verification.md states the partial bound that was reached. The
+  walk itself turned out cheap rather than hard, because its harness stubs the
   parser and the verifiers and so keeps every certificate byte out of the
   formula: `webpki_chain` proves 1103 properties in 117 s at 3.0 GB over a
   48-byte entry list (cbmc 6.11.0 with kissat under `/usr/bin/time -l`,
-  through `proof/run.sh` on 2026-09-16). What that costs is soundness: the stubs answer an
-  unconstrained verdict, so the proof says nothing about which chains the
-  walk accepts, and `spec/lean/Spec/Webpki.lean` states that property instead.
+  through `proof/run.sh` on 2026-09-16). What that costs is soundness: the
+  stubs answer an unconstrained verdict, so the proof says nothing about which
+  chains the walk accepts, and `spec/lean/Spec/Webpki.lean` states that
+  property instead.
 - **Fixtures.** Two corpora, doing different jobs. The captured chains above
   carry real extension bulk and test the bounds. A generated corpus of 30
   chains — 11 positive (the four shapes above, a P-384 leaf, one wildcard

@@ -135,8 +135,9 @@ rather than chase a low reading.
 `/usr/bin/time -v` with the exact launch flags, including the solver
 `run.sh` would pick. Record the peak and time in the launch-line
 comment; set the weight at or above the measured peak. A verdict-less
-harness proves nothing, and the README calls that out — never commit a
-launch line whose formula has not been seen to converge.
+harness proves nothing, and docs/verification.md calls that out —
+never commit a launch line whose formula has not been seen to
+converge.
 
 **Name loops the goto model has.** Check every `--unwindset` id on a
 launch line against `cbmc --show-loops` run on the same harness,
@@ -202,9 +203,9 @@ In order, with precedents:
    split exists for the proof.
 3. **Prove an arithmetic lemma per shape** with full checks and run
    the concrete harness without the class the lemma covers
-   (x25519_mul, p256_mul, rsa_mul). Disclose the split in the README
-   row; the lemma must cover every shape at every operand range the
-   function can produce.
+   (x25519_mul, p256_mul, rsa_mul). Disclose the split in the
+   harness's entry in docs/verification.md; the lemma must cover every
+   shape at every operand range the function can produce.
 4. **Replace a callee with its contract** and prove the contract in
    the callee's own harness (aead over `proof/aead_stubs.h`;
    x25519_step and x25519_tail over `proof/x25519_stubs.h`). The stub
@@ -220,8 +221,8 @@ In order, with precedents:
    why the x25519 stub sits one level down, at `ct_widemul_s`, rather
    than at `mul`.
 5. **Demote to the slow tier** and let CI's nightly budget carry it.
-   A slow row's verdict comes from the last nightly, and the README
-   says so.
+   A slow harness's verdict comes from the last nightly, and
+   docs/verification.md says so.
 
 ## Prior art
 

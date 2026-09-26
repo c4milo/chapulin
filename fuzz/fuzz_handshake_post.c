@@ -10,8 +10,8 @@
 // first refill and the loop stays unreachable. The harness therefore seals
 // the input into records under the session's own key: the fuzzer drives the
 // plaintext and the fragment boundaries, the AEAD is satisfied by
-// construction, and the reassembly the README credits to the fuzzer is
-// actually executed.
+// construction, and the reassembly docs/verification.md credits to the
+// fuzzer is actually executed.
 #include <stdint.h>
 #include <stdlib.h>
 #include <stdnoreturn.h>

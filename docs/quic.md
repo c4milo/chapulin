@@ -1603,18 +1603,17 @@ whole difference between 856 and 536.
 The 448 cross-checks against the tree itself: `proof/run.sh:396-397` unwinds
 `ct_wipe` to 449 for the handshake harnesses, which is that frame plus one.
 
-These are struct sizes, not the README's memory row, and no arithmetic over
-them produces one. The QUIC `handshake_state` is smaller than the TCP one by
-the four fields fenced out below; the QUIC `ch_tls` is smaller by the five
-fields listed above and by the `REC_HDR` prefix on `tx`, and larger by
-nothing; `ch_quic` adds the driver's own fields, the two Initial keys, the
-two Handshake key sets, the 1-RTT send set, the three 1-RTT receive sets and
-the four `quic_hp_key` values, two per level at the two levels whose header
-protection is ChaCha20.
-`CLAUDE.md` forbids estimating these numbers. `bench/sram.sh` measures
+These are struct sizes, not docs/performance.md's memory rows, and no arithmetic
+over them produces one. The QUIC `handshake_state` is smaller than the TCP one
+by the four fields fenced out below; the QUIC `ch_tls` is smaller by the five
+fields listed above and by the `REC_HDR` prefix on `tx`, and larger by nothing;
+`ch_quic` adds the driver's own fields, the two Initial keys, the two Handshake
+key sets, the 1-RTT send set, the three 1-RTT receive sets and the four
+`quic_hp_key` values, two per level at the two levels whose header protection is
+ChaCha20. `CLAUDE.md` forbids estimating these numbers. `bench/sram.sh` measures
 `sizeof(ch_tls)` from `-D` probes (`bench/sram.sh:28-45`), and it needs a
-`-DCH_TRANSPORT_QUIC_NONBLOCKING` probe over the real header before the README says
-anything.
+`-DCH_TRANSPORT_QUIC_NONBLOCKING` probe over the real header before
+docs/performance.md says anything.
 
 Each row names a field, the bound a harness assumes on entry and asserts on
 exit, and why the field must outlive the call. The bounds are the inductive
@@ -2219,7 +2218,7 @@ its caps.
 | the 1-RTT key sets | RFC 9001 §6.3 makes two receive sets a floor, current and next (`rfc9001.txt:1711-1712`); the previous set is this record's policy choice, for the delayed packets §6.5 opens | `CH_QUIC_KEY_SETS` is 3, so the count is fixed and only `sizeof(quic_keys)` and `sizeof(quic_hp_key)` are left to measure; measure the struct again after them |
 | the transport-parameters body, both directions | the client's body is the caller's; the server's arrives in EncryptedExtensions | capture real server bodies, as `docs/webpki.md` captured real chains. This tree holds no QUIC bytes today, and a chapulin server would not close this row: it would see the bodies clients send it, which is the other direction |
 | `STACK_BUDGET` | `Makefile:9` sets 2560 by default, `Makefile:18` raises it to 4096 for `TRUST=webpki` and `Makefile:25` to 3072 for `KEX=pq`; `STACK_BUDGET_KEX_HYBRID` (`Makefile:37`, 6656) holds the ML-KEM sources alone, which every `TRUST=webpki` object carries | measure the mode's own object list under `lint-stack`; never carry another mode's ceiling |
-| the SRAM row | `bench/sram.sh` regenerates the README's numbers from `sizeof` probes and `bench/stack.py`; `bench/device-ram.sh` sizes the packaged modules from `make print-lib-srcs` (`bench/device-ram.sh:81`) | add a probe for the new axis to each script; `LIB_VARIANT` (`Makefile:287`) gains the axis. `CLAUDE.md` forbids estimating these |
+| the SRAM row | `bench/sram.sh` regenerates docs/performance.md's numbers from `sizeof` probes and `bench/stack.py`; `bench/device-ram.sh` sizes the packaged modules from `make print-lib-srcs` (`bench/device-ram.sh:81`) | add a probe for the new axis to each script; `LIB_VARIANT` (`Makefile:287`) gains the axis. `CLAUDE.md` forbids estimating these |
 
 ## What the mode does not do
 

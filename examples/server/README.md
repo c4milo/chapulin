@@ -104,8 +104,8 @@ same 22 bytes of room.
 
 The server's handshake flight has the same limit. Its Certificate
 message must fit as well, which is why pinned-key deployments size the
-buffer for their server's certificate. The Memory section of the
-top-level [`README.md`](../../README.md) gives the measured sizes.
+buffer for their server's certificate. The Memory section of
+[`docs/performance.md`](../../docs/performance.md) gives the measured sizes.
 
 ## PSK mode
 

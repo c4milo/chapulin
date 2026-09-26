@@ -300,12 +300,12 @@ static int read_pin(const char *path, uint8_t pin[PIN_LEN]) {
 
 // Tickets arrive in pinned mode too, and they are worth taking: a
 // resumed connection presents the ticket as a PSK, so the signature
-// verify — tens of milliseconds on the reference core, see the README's
-// speed table — is paid once per ticket lifetime instead of once per
-// connection. Storing one is PSK work: copy ticket->identity and
-// ticket->psk, which are valid only during this call, then set psk, psk_len,
-// psk_id, resumption = 1, and obfuscated_age in the next ch_cfg. This
-// example only reports what arrived.
+// verify — tens of milliseconds on the reference core, see
+// docs/performance.md's speed table — is paid once per ticket lifetime
+// instead of once per connection. Storing one is PSK work: copy
+// ticket->identity and ticket->psk, which are valid only during this call,
+// then set psk, psk_len, psk_id, resumption = 1, and obfuscated_age in the
+// next ch_cfg. This example only reports what arrived.
 static void on_ticket(void *io, const ch_ticket *ticket) {
     (void)io;
     (void)fprintf(stderr, "ticket: %zu-byte identity, lifetime %us\n", ticket->identity_len,

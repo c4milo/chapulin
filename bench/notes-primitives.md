@@ -243,8 +243,8 @@ multiply runs 25 products of 64 by 64 bits where the 16-limb field runs
 multiply; and the inversion's fixed chain runs 11 multiplies where the
 16-limb field's square-and-multiply runs 252. Against the default build
 the 16x16 decomposition's cost comes on top, which is where 27.8 comes
-from. A device cannot build the wide field, so the device rows in the
-README and bench/results-insn*.csv keep the 16-limb one.
+from. A device cannot build the wide field, so the device rows in
+docs/performance.md and bench/results-insn*.csv keep the 16-limb one.
 
 ## Instruction families that could speed each primitive
 

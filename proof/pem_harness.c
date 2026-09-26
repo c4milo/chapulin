@@ -32,7 +32,7 @@
 //
 // What is therefore NOT proved here: that some character count above
 // CH_PROOF_PEM_LEN drives the boundary sequence itself into a state
-// this bound never reaches. The README's verification section says so.
+// this bound never reaches. docs/verification.md says so.
 #include "harness.h"
 
 #include "pem.c"

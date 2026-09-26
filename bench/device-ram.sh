@@ -8,7 +8,8 @@
 # declaration-only libc shim stands in for string.h. The default build's
 # modules compile once more with -DCH_NATIVE_WIDEMUL, and their sum is
 # the `total (CH_NATIVE_WIDEMUL)` row: its distance from `total` is the
-# flash the multiply decomposition takes, the figure the README states.
+# flash the multiply decomposition takes, the figure docs/performance.md
+# states.
 # Writes bench/results-device.csv. Fails without the pinned clang.
 set -euo pipefail
 cd "$(dirname "$0")/.."

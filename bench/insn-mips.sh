@@ -10,8 +10,8 @@
 # loop. memcpy is byte-wise here, so counts lean conservative. Each row
 # is measured twice: over the multiply decomposition firmware ships
 # (insns) and over the same driver built with -DCH_NATIVE_WIDEMUL
-# (native_insns), the pair the README's decomposition sentence is
-# rendered from. Writes bench/results-insn.csv. Skips without docker.
+# (native_insns), the pair docs/performance.md's decomposition sentence
+# is rendered from. Writes bench/results-insn.csv. Skips without docker.
 set -euo pipefail
 
 if [ "${1:-}" != "--inside" ]; then

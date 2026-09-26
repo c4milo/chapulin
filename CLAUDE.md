@@ -11,8 +11,8 @@ Home: github.com/c4milo.
   lwIP-class socket stack.
 - Zero heap. No malloc anywhere, ever — one static `ch_tls` session
   struct plus a caller-provided record buffer is the entire working set.
-  bench/sram.sh measures the README's memory numbers; never estimate
-  them, and re-measure when the code changes.
+  bench/sram.sh measures the memory numbers in docs/performance.md;
+  never estimate them, and re-measure when the code changes.
 - One profile, no negotiation surface: TLS 1.3, TLS_CHACHA20_POLY1305_SHA256,
   one key-exchange group, and one of two auth modes — ECDHE-PSK
   (psk_dhe_ke) or a server key checked against CertificateVerify. The
@@ -152,9 +152,11 @@ Home: github.com/c4milo.
   (public API) ← demo/test mains. Firmware takes everything below
   `tls.[ch]` as-is and supplies I/O callbacks and `ch_rand_bytes`. A Zig
   project takes the same object through `build.zig`, whose options are
-  the Makefile's variables; the Makefile stays the source of truth, and
-  `make lint-zig-build` fails when the two builds disagree
-  (docs/decisions.md 69).
+  the Makefile's variables, with a module of the public headers that
+  translate-c makes under the object's defines; the Makefile stays the
+  source of truth, and `make lint-zig-build` fails when the two builds
+  disagree or the module does not describe the object
+  (docs/decisions.md 69 and 70).
   One pair sits off that chain rather than in it: `x509_ca.[ch]`
   (provisioning — one PEM certificate to the key bytes
   `ch_cfg.server_pubkey` takes) reads `pem.[ch]` and `x509.[ch]`, and
@@ -202,18 +204,18 @@ Home: github.com/c4milo.
   INV-34). AES is admitted for two purposes. The first is the keys RFC
   9001 fixes for QUIC Initial packets (§5.2), their header protection
   (§5.4.3) and the Retry integrity tag (§5.8). Every key those three use
-  is public — it comes from a salt the RFC prints and a connection ID that travels in
-  the clear, or the RFC prints the key itself — so a table lookup indexed
-  by one leaks nothing an observer does not already hold. That is the
-  whole reason the table is allowed at all: the public-key argument is
-  what carries it, never a claim that the lookup is constant time. An
-  AES=hw build has no table and no such trade, and this tree cannot
-  state an AES=extern build's timing, so outside a suite build the
-  public-key argument is what carries every AES value and INV-26 bounds
-  all three the same way. The second is a SUITE=aesgcm build's traffic
-  keys: no key from the TLS key schedule is passed to AES outside that
-  build, and that build takes AES=hw or AES=extern and states its timing
-  (below).
+  is public — it comes from a salt the RFC prints and a connection ID
+  that travels in the clear, or the RFC prints the key itself — so a
+  table lookup indexed by one leaks nothing an observer does not already
+  hold. That is the whole reason the table is allowed at all: the
+  public-key argument is what carries it, never a claim that the lookup
+  is constant time. An AES=hw build has no table and no such trade, and
+  this tree cannot state an AES=extern build's timing, so outside a
+  suite build the public-key argument is what carries every AES value
+  and INV-26 bounds all three the same way. The second is a SUITE=aesgcm
+  build's traffic keys: no key from the TLS key schedule is passed to AES
+  outside that build, and that build takes AES=hw or AES=extern and
+  states its timing (below).
   What holds that: `aes.[ch]` and `gcm.[ch]` take a key type,
   `aes_public_key`, whose body lives in `aes_public_key.h` alone, so only
   `aes.c`, `quic_initial.c` and `quic_retry.c` can build one. A file
@@ -300,9 +302,9 @@ Home: github.com/c4milo.
   (bounds, pointer validity, arithmetic overflow, division) over
   unconstrained inputs at the module's real bound. Crypto primitives
   additionally prove functional equivalence to a tiny reference spec at
-  bounded sizes, plus RFC test vectors in `test/unit_test.c`. The README's
-  verification section states exactly what is proved, at what bounds, and
-  what is only tested — never overclaim.
+  bounded sizes, plus RFC test vectors in `test/unit_test.c`.
+  docs/verification.md states exactly what is proved, at what bounds,
+  and what is only tested — never overclaim.
 - Write harnesses by docs/proofs.md. The rules that keep formulas
   solvable: SAT cost tracks the multiply count per formula, so split
   along it; store nondet values through the object's own type, never a

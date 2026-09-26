@@ -26,9 +26,11 @@
 # upper layers (hkdf, record, the handshake driver) are proven against
 # contract-checking stubs of the layer below — every stub asserts
 # pointer/size validity and havocs outputs, so nothing upper depends on
-# crypto values. Most stubbed layers are proven in their own harnesses;
-# io.c, keysched.c, and handshake_message.c have none (the README says so), so
-# their stubs assert contracts the unit tests carry.
+# crypto values. Most stubbed layers are proven in their own harnesses.
+# docs/verification.md lists the sources no launched harness compiles,
+# such as srv_flight.c under srv_accept; a stub of one of those asserts a
+# contract that tests carry, and so does a stub that assumes more than its
+# layer's harness proves (proof/handshake_harness.c says which).
 #
 # Every harness gets its full dependency closure on the command line — a
 # missing body would make CBMC havoc the callee and the proof unsound, so
@@ -789,7 +791,7 @@ launch fast full transcript384 70 "fill_nondet.0:209"
 # been measured alone. A line here would hang the fast tier, which is
 # the mistake CLAUDE.md names. Until it converges, ks_exp_master and
 # ks_exporter are covered by bin/exporter_test's cross-checked vectors
-# and refusals, and README says not proved.
+# and refusals, and docs/verification.md says not proved.
 # epoch: 0 s, 27 MB. The CA arm's own rules. handshake_ca drives the whole CA
 # driver and has no launch line: its header records the runs that returned no
 # verdict (https://github.com/c4milo/chapulin/issues/37). handshake_psk and
@@ -955,8 +957,8 @@ launch fast full hello_build_webpki 400 "fill_nondet.0:321,main.0:9,write_alpn.0
 # new shape -- 80 is 195 s / 4.6 GB, 160 is 1348 s / 7.3 GB -- and the
 # differential in test/diff_pem.h runs the full range to CH_PEM_MAX
 # against the Lean oracle, so the extra bound buys quantum count rather
-# than coverage. What no bound here proves is stated in README's
-# verification section.
+# than coverage. What no bound here proves is stated in
+# docs/verification.md.
 #
 # x509ca proves the provisioning walk over any input, with the DER
 # primitives stubbed to the contracts x509der proves. Measured 7 s /
@@ -1582,7 +1584,7 @@ launch fast:3 full srv_accept 100 "alpn_ok.0:9,alpn_name_repeats.0:9,ct_wipe.0:5
 # held at a single cheap handler. Neither has been measured, so neither
 # is here. Until one lands, srv_tcp_nonblocking.c is covered by
 # bin/srv_tcp_nonblocking_test and bin/tcp_nonblocking_loop_test and
-# guarded by two .violation mutants, and README says so.
+# guarded by two .violation mutants, and docs/verification.md says so.
 # The ROLE=server flight handlers, with srv_accept's layering turned
 # around: the fifteen handlers are real here and everything they call is
 # a contract stub, so the two formulas together cover the driver and the
@@ -1607,7 +1609,7 @@ launch fast:3 full srv_accept 100 "alpn_ok.0:9,alpn_name_repeats.0:9,ct_wipe.0:5
 # is the mistake CLAUDE.md names -- a launch line whose formula has not
 # been seen to converge proves nothing -- and it hung the proof tier.
 # Until the split lands the handlers are tested by bin/srv_flight_test
-# and guarded by four .violation mutants, and README says so.
+# and guarded by four .violation mutants, and docs/verification.md says so.
 launch fast full ct 65 ""
 # The 16x16 decomposition, which is what every other proof rests on. Those
 # formulas verify the single-multiply form, because the launch line above

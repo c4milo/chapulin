@@ -12,8 +12,8 @@
 # I/O happens inside a measured loop. memcpy is byte-wise here, so
 # counts lean conservative. Each row is measured twice: over the
 # multiply decomposition firmware ships (insns) and over the same
-# driver built with -DCH_NATIVE_WIDEMUL (native_insns), the pair the
-# README's decomposition sentence is rendered from. The toolchain
+# driver built with -DCH_NATIVE_WIDEMUL (native_insns), the pair
+# docs/performance.md's decomposition sentence is rendered from. The toolchain
 # ships x86_64 host binaries, so the measurement runs inside the
 # x86_64 ubuntu container test/docker-riscv32.sh uses, and the
 # download lands in bin/rv32tc-docker, where that script also keeps

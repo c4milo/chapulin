@@ -1,7 +1,7 @@
 // libFuzzer harness for handshake_record.c: reading records off the wire
 // and reassembling handshake messages that span several of them. Nothing
-// else fuzzes this module, and the README names the connected phase as
-// resting partly on the fuzzer, so this is that claim made true.
+// else fuzzes this module, and docs/verification.md names the connected
+// phase as resting partly on the fuzzer, so this is that claim made true.
 //
 // The input is the record stream. cfg.recv hands it out, so the fuzzer
 // controls the 5-byte headers, the length fields io_read_record reads at
