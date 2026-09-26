@@ -59,9 +59,11 @@ Domain vocabulary keeps the RFCs' own spelling: `pt`, `aad`, `iv`,
 - Commits are Conventional Commits, enforced by commitlint: run
   `npm ci --prefix tools` and `make hooks` once after clone, or CI tells
   you at PR time. Bodies explain why and wrap at 100 columns.
-- `make check` is the inner loop and answers in about a minute: build,
-  linters, unit and strict-parser tests, Wycheproof vectors, and the
-  packaged-object export list. `make check-slow` runs what costs minutes —
+- `make -j8 check` is the inner loop. It answers in about 15 seconds on
+  an unchanged tree and in about a minute after an edit, because it
+  skips a lint that already passed on the same inputs (INV-37). It runs
+  the build, linters, unit and strict-parser tests, Wycheproof vectors,
+  and the packaged-object export list. `make check-slow` runs what costs minutes —
   the proofs, e2e against a real server, the spec differential, the
   sequence enumerations — and the nightly runs it. Both must pass; they
   are split by duration, not by importance. The slow proof tier runs as

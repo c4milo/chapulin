@@ -34,7 +34,7 @@ endif
 # ML-KEM (KEX=pq, every TRUST=webpki object since docs/decisions.md 53,
 # and every server role since docs/decisions.md 54) keeps the ceiling
 # above and a new buffer there still fails. See
-# docs/invariants.md INV-19 and the README's memory table.
+# docs/invariants.md INV-19 and docs/performance.md's memory table.
 STACK_BUDGET_KEX_HYBRID := 6656
 
 # cfg.h makes the entropy pattern a declared build choice with no
@@ -198,11 +198,11 @@ HDRS := ct.h sha256.h hkdf.h chacha20.h poly1305.h aead.h x25519.h x25519_wide.h
 #
 # A TRANSPORT=quic-nonblocking object compiles one of them for QUIC
 # Initial packets and the Retry tag, and a SUITE=aesgcm object compiles
-# one for the two AES-GCM suites over every transport (INV-26). A
-# TRANSPORT=tcp-blocking build without the suite accepts the variable and
-# compiles no AES either way, which is why the define below is not
-# conditioned on the transport: LIB_VARIANT carries AES so the objects
-# never share a path, and aes_block.h refuses both defines at once.
+# one for the two AES-GCM suites over every transport (INV-26). A TCP
+# build without the suite accepts the variable and compiles no AES
+# either way, which is why the define below is not conditioned on the
+# transport: LIB_VARIANT carries AES so the objects never share a path,
+# and aes_block.h refuses both defines at once.
 #
 # Detection is the compiler's, at build time. aes_hw.c states why
 # nothing probes a CPU and nothing asks an operating system, and it is a
@@ -864,8 +864,8 @@ X25519_WIDE_PROBE := $(shell $(CC) -dM -E -x c /dev/null 2>/dev/null | grep -q '
 X25519_WIDE_BINS := $(if $(X25519_WIDE_PROBE),bin/x25519_equiv_test bin/unit_x25519_wide)
 # The exporter of RFC 9846 section 7.5, off by default. EXPORTER=on adds
 # ch_export to the public API and 32 bytes to ch_tls, so a device build
-# that exports nothing pays neither: the README's SRAM numbers are the
-# default build's and this axis leaves them alone.
+# that exports nothing pays neither: docs/performance.md's SRAM numbers
+# are the default build's and this axis leaves them alone.
 #
 # It raises HKDF_LABEL_MAX with it, because the exporter's label is the
 # caller's and RFC 9266's is 24 bytes against the 12 TLS 1.3 itself

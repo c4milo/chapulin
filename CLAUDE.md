@@ -416,8 +416,11 @@ Home: github.com/c4milo.
   committed, and `make check-slow` (proofs, e2e against a real TLS 1.3
   server, the spec differential, the sequence enumerations, the invariant
   violation builds) before it is called done. Neither is optional; they
-  are split by duration, so `check` answers in about a minute and
-  `check-slow` runs in the nightly.
+  are split by duration, so `make -j8 check` answers in about 15
+  seconds on an unchanged tree and in about a minute after a source or
+  header edit, and `check-slow` runs in the nightly. `check` skips a
+  lint that already passed on the same inputs (tools/stamp.py, INV-37);
+  CI keeps no stamps, so it runs every check.
 - The code optimizes for third-party audit: when compact and
   auditable conflict, auditable wins. A predicate-named function is
   pure; state changes get their own line. Prefer a byte-compare
