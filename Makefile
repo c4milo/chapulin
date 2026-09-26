@@ -1949,7 +1949,7 @@ bin/webpki_loop_tx_record: test/webpki_loop_test.c test/webpki_loop_tx_record.h 
 # and the refusals of the headers, make and build.zig, then the loop above.
 .PHONY: tx-record-check
 tx-record-check: bin/webpki_loop_tx_record
-	./test/tx-record-builds.sh
+	+./test/tx-record-builds.sh
 	./bin/webpki_loop_tx_record
 # The same loop under -DCH_SUITE_AES_GCM on the AES instructions: each of
 # the three suites through a full handshake and a resumption, a SHA-384
@@ -2373,6 +2373,15 @@ check: lint rand-check $(CHECK_BUILDS) $(CHECK_LEGS) $(addprefix check-run-,$(CH
        check-x25519-builds check-wycheproof check-skips proof-coverage proof-reach-smoke
 	@echo "check: every lint, leg and test run passed"
 
+# A recipe line that runs a script which calls make itself starts with +,
+# as a line that names $(MAKE) is treated without one, so make hands the
+# script its jobserver. Without it, GNU make 4.3 under make -j gives the
+# script's make no jobserver, and that make warns and prints its
+# "Entering directory" lines to stdout even with --no-print-directory, so
+# a script that reads a value from make reads those lines too. That is
+# how test/x25519-builds.sh failed on CI run 36277795480, the first
+# make -j ci. make 3.81 prints no such lines, so macOS never shows it.
+#
 # What a leg or a run ends with: its held output, and on a failure one
 # line that names the target and its exit status.
 CHECK_REPORT = rc=$$?; cat bin/check/$@.log; \
@@ -2405,7 +2414,7 @@ check-skips:
 
 # ct.h's two refusals of a wide build that lacks what it needs.
 check-x25519-builds:
-	@mkdir -p bin/check; ./test/x25519-builds.sh > bin/check/$@.log 2>&1; $(CHECK_REPORT)
+	+@mkdir -p bin/check; ./test/x25519-builds.sh > bin/check/$@.log 2>&1; $(CHECK_REPORT)
 
 # The Wycheproof legs, then the total docs/verification.md states against
 # the vectors they ran. The second is not stamped: an edit to the page
@@ -2598,7 +2607,7 @@ endif
 # skipped when it passed before on the same tree, compiler and system
 # (tools/stamp.py).
 check-lib-pair: lint-zig-build $(filter check-lib-%,$(filter-out check-lib-pair,$(CHECK_LEGS))) check-examples
-	@mkdir -p bin/check; python3 tools/stamp.py lib-pair-check --content . --output '$(CC) --version' \
+	+@mkdir -p bin/check; python3 tools/stamp.py lib-pair-check --content . --output '$(CC) --version' \
 	  --output 'ld -v' --output 'uname -srm' -- env CC='$(CC)' ./test/lib-pair-check.sh > bin/check/$@.log 2>&1; $(CHECK_REPORT)
 # lint above holds lint-stack at the budget of the build check was
 # given, 2,560 B for a plain `make check`, the target `make ci` runs.
@@ -2680,9 +2689,9 @@ check-slow: check bin/handshake_sequence_test bin/handshake_sequence_pq bin/pemk
 	# object and the four colibri links. This holds it over every
 	# lib-check leg's configuration too, so every value of every axis
 	# meets build.zig. It took 37 s with only those five objects built.
-	ZIG='$(ZIG)' CC='$(CC)' ./test/zig-build-check.sh --roster
+	+ZIG='$(ZIG)' CC='$(CC)' ./test/zig-build-check.sh --roster
 	./test/qemu-m3.sh
-	./test/e2e.sh
+	+./test/e2e.sh
 	$(MAKE) diff
 	./bin/handshake_sequence_test
 	$(MAKE) test-invariants-fast
@@ -3403,8 +3412,8 @@ endif
 lint-zig-build-run:
 	@$(ZIG) fmt --check $(ZIG_SRCS) || { echo "lint-zig-build: zig fmt would rewrite the files above"; exit 1; }
 	@$(ZIG) build test --summary none --cache-dir bin/zig/root-cache
-	@ZIG='$(ZIG)' CC='$(CC)' LLVM_NM='$(LLVM_NM)' ./test/localize-check.sh
-	@ZIG='$(ZIG)' CC='$(CC)' ./test/zig-build-check.sh
+	+@ZIG='$(ZIG)' CC='$(CC)' LLVM_NM='$(LLVM_NM)' ./test/localize-check.sh
+	+@ZIG='$(ZIG)' CC='$(CC)' ./test/zig-build-check.sh
 
 # INV-19: bounded stack. The budget is the measured worst library
 # frame (rsa_vp1's RSA-3072 limb temporaries, 2,400 bytes) rounded up;
@@ -3635,7 +3644,7 @@ QUIC_CONDITIONAL := cfg.h session.h handshake_record.h handshake_post.h \
 # does not ignore and the compiler's version (tools/stamp.py).
 .PHONY: lint-quic-partition
 lint-quic-partition:
-	@python3 tools/stamp.py lint-quic-partition --content . --output '$(CC) --version' \
+	+@python3 tools/stamp.py lint-quic-partition --content . --output '$(CC) --version' \
 	  -- env CC='$(CC)' python3 tools/quic-partition.py
 
 # quic.h and docs/quic.md's interface table must name the same ch_quic_
@@ -3646,7 +3655,7 @@ lint-quic-partition:
 # reaches no verdict of its own.
 .PHONY: lint-quic-surface
 lint-quic-surface:
-	@python3 tools/quic-footprint.py --check-surface
+	+@python3 tools/quic-footprint.py --check-surface
 
 # The two analyzers write nothing and read nothing the other writes, so
 # they run at once, each LINT_JOBS processes wide. Their lines can
@@ -3831,7 +3840,7 @@ else
 	# The host half of the KAT diff is ordinary hosted C; no checks off.
 	@$(call TIDY_EACH,test/qemu/host_runtime.c,-std=c11 -D_DEFAULT_SOURCE -I. -Itest/qemu)
 	# Every pass above wrote one line; this checks them all from one pool.
-	@CLANG_TIDY='$(CLANG_TIDY)' CLANG='$(CLANG_RV)' LINT_JOBS=$(LINT_JOBS) \
+	+@CLANG_TIDY='$(CLANG_TIDY)' CLANG='$(CLANG_RV)' LINT_JOBS=$(LINT_JOBS) \
 	  python3 tools/tidy-each.py --passes $(TIDY_PASSES)
 endif
 
@@ -4016,7 +4025,7 @@ examples-check: bin/example_psk bin/example_pinned bin/example_ca bin/example_we
 # proof-backed ones in its test-invariants-proof-backed job.
 .PHONY: test-invariants-fast
 test-invariants-fast: bin/unit bin/unit_ca bin/x509strict bin/x509strict_ecdsa bin/rsa_test bin/drbg_test bin/handshake_strict_test bin/handshake_strict_webpki bin/webpki_session_test bin/webpki_resume_test bin/webpki_resume_tcp_nonblocking bin/webpki_auth_test bin/webpki_encrypted_exts_test bin/softmul_test bin/unit_ct_widemul bin/mlkem_test_ct_widemul bin/webpki_spki_test bin/webpki_sigalg_test bin/webpki_cert_test bin/x25519_equiv_test
-	python3 test/violations.py --tier=fast
+	+python3 test/violations.py --tier=fast
 
 # Every violation but the proof-backed ones: the fast tier plus the
 # handshake_sequence_test, diff and e2e-backed violations that cost
@@ -4033,7 +4042,7 @@ else
 	$(MAKE) RAND=extern bin/example_psk bin/example_pinned bin/example_ca
 	$(call REQUIRE_MATHLIB,test-invariants-not-proof-backed)
 	cd spec/lean && $(LAKE) build
-	python3 test/violations.py --not-proof-backed
+	+python3 test/violations.py --not-proof-backed
 endif
 
 # The proof-backed violations, whose target is proof/prove-one.sh running
@@ -4047,7 +4056,7 @@ endif
 # violation lands here without a Makefile edit.
 .PHONY: test-invariants-proof-backed
 test-invariants-proof-backed:
-	python3 test/violations.py --proof-backed
+	+python3 test/violations.py --proof-backed
 
 # The whole set, one class after the other. Two recipe lines rather than
 # two prerequisites: the runner edits sources in place, so the classes
@@ -4087,7 +4096,7 @@ lint-nightly-report:
 # runs a binary nobody built and that invariant loses its verdict.
 .PHONY: lint-violation-builds
 lint-violation-builds:
-	@python3 test/violations.py --lint-builds
+	+@python3 test/violations.py --lint-builds
 
 # Every violation's edit still matches its file exactly once. The runner
 # reports a stale edit too, but only after building that edit's target,
@@ -4098,7 +4107,7 @@ lint-violation-builds:
 # line alone matched three of them.
 .PHONY: lint-violation-anchors
 lint-violation-anchors:
-	@python3 test/violations.py --lint-anchors
+	+@python3 test/violations.py --lint-anchors
 
 # The impact selection, checked against test/violations/ as its ground
 # truth: every violation names a file and the target that objects when
@@ -4119,7 +4128,7 @@ lint-violation-anchors:
 # and Python's versions (tools/stamp.py).
 .PHONY: lint-impact
 lint-impact:
-	@python3 tools/stamp.py lint-impact --content . --output 'git --version' \
+	+@python3 tools/stamp.py lint-impact --content . --output 'git --version' \
 	  --output 'make --version' --output 'python3 --version' -- python3 test/impact_test.py
 
 # ---------------------------------------------------------------------------
@@ -4998,7 +5007,7 @@ ifeq ($(CBMC),)
 	$(call REQUIRE_ON_CI,cbmc)
 	@echo "SKIP cbmc: not on PATH (brew install cbmc)"
 else
-	./proof/run.sh fast
+	+./proof/run.sh fast
 endif
 
 prove-slow:
@@ -5006,7 +5015,7 @@ ifeq ($(CBMC),)
 	$(call REQUIRE_ON_CI,cbmc)
 	@echo "SKIP cbmc: not on PATH (brew install cbmc)"
 else
-	./proof/run.sh slow
+	+./proof/run.sh slow
 endif
 
 prove-all:
@@ -5014,7 +5023,7 @@ ifeq ($(CBMC),)
 	$(call REQUIRE_ON_CI,cbmc)
 	@echo "SKIP cbmc: not on PATH (brew install cbmc)"
 else
-	./proof/run.sh all
+	+./proof/run.sh all
 endif
 
 # One harness by name: make prove-one HARNESS=webpki_time. The wrapper
