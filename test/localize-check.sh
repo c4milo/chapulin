@@ -42,7 +42,7 @@ out=bin/zig/localize
 tool=$out/bin/localize_symbols
 # zig writes its cache under the directory it runs in unless told where.
 # Builds run from the repository root keep a cache apart from the one
-# test/zig-build-check.sh fills from bin/zig/package: with one cache for
+# test/zig-build-check.sh fills from bin/zig/consumer/package: with one cache for
 # both, Zig 0.16 took a manifest recorded against the package's copy of
 # tools/localize_elf.zig as current for the root's edited file, and ran the
 # unedited localizer.

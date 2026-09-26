@@ -2419,7 +2419,8 @@ does nothing more.
       program does, and calls `ch_build_matches` once (entry 56). There is
       no static library: the object links with one `addObjectFile` call,
       and Zig 0.16's archiver leaves an odd-sized last member unpadded,
-      which Apple's nm and llvm-ar refuse to read.
+      which Apple's nm and llvm-ar refuse to read. Entry 70 adds the
+      module `chapulin`, so a Zig dependent no longer writes the defines.
     - **One object.** `addObject` over every source partially links them
       with Zig's own linker, for ELF and Mach-O, as `ld -r` does for make.
     - **The localizer.** `tools/localize_symbols.zig` does to that object
@@ -2496,3 +2497,122 @@ does nothing more.
       names and one image cannot link both (entry 61), an application's own
       name can collide with one, and the export list `lib-check` holds
       means nothing for that object.
+70. **The Zig package exports a module of the object's API, which
+    translate-c makes from the public headers under the defines
+    `build.zig` compiled that object with.** The public headers change
+    shape with the object's defines: fields of `ch_cfg` and `ch_tls`
+    appear and disappear, and array sizes change. A Zig program used to
+    write the define list for its own `@cImport` by hand. A wrong list
+    compiles, links and corrupts memory at run time, and only
+    `ch_build_matches` at startup catches it. colibri's list was already
+    wrong: it left out `HKDF_LABEL_MAX=32`, which `EXPORTER=on` adds.
+    colibri also links objects of two transports into one image, and
+    one `@cImport` cannot include `tls.h` twice under two sets of defines.
+    Camilo decided on 2026-09-26 that the package exports the module, and
+    that `ch_build_matches` stays as the run-time check.
+
+    - **The module.** `build.zig` writes `chapulin.h`, which includes the
+      headers that declare what the object exports and imports.
+      translate-c translates it for the object's target under every `-D`
+      in the flag list the sources compile with. Both take their defines
+      from that one list, so the object and the module cannot differ. Each
+      dependency gives a module of its own, so colibri's image of two
+      transports imports two modules and links two objects:
+
+      ```zig
+      const h2 = b.dependency("chapulin", .{
+          .target = target,
+          .RAND = .@"extern",
+          .TRANSPORT = .@"tcp-nonblocking",
+          .ROLE = .both,
+          .TRUST = .webpki,
+          .EXPORTER = .on,
+      });
+      const quic = b.dependency("chapulin", .{
+          .target = target,
+          .RAND = .@"extern",
+          .TRANSPORT = .@"quic-nonblocking",
+          .ROLE = .both,
+          .TRUST = .webpki,
+          .SUITE = .aesgcm,
+          .AES = .hw,
+          .KEYLOG = .on,
+          .CH_NATIVE_AES = true,
+      });
+      module.addImport("chapulin_h2", h2.module("chapulin"));
+      module.addImport("chapulin_quic", quic.module("chapulin"));
+      module.addObjectFile(h2.namedLazyPath("chapulin.o"));
+      module.addObjectFile(quic.namedLazyPath("chapulin.o"));
+      ```
+
+    - **The name.** The module is `chapulin`, the package's name. A Zig
+      package names its main module after itself, and this module is the
+      object's API for Zig, as `chapulin.hpp` is its API for C++.
+    - **The headers.** The `declarations` table in `build.zig` names the
+      header that declares each name an object can export and each hook it
+      can import (`docs/porting.md`). `chapulin.h` includes the headers of
+      the names one object exports and imports, and a name the table
+      lacks stops the build. So a QUIC client's module declares no
+      `ch_connect`, which that object does not define, and a CA mode's
+      module declares `ch_pubkey_from_pem`.
+    - **What translate-c handles.** Zig 0.16.0's translate-c translates
+      every public struct, union, enum constant, function pointer field
+      and call. It turns `_Static_assert` into a comptime check. It turns
+      the static inline `ch_build_matches` into a Zig function whose
+      `sizeof` terms become `@sizeOf` of the translated types, so the
+      comparison checks the layout the Zig program itself uses. It makes
+      the incomplete AES key types (`aes_public_key`, `aes_traffic_key`
+      and `aes_key_schedule`) opaque, so a Zig program cannot build one,
+      as a C file cannot (INV-26). No public header has a bit field or a
+      flexible array member. The macros that give a call its transport's
+      symbol name, `ch_srv_check` and `ch_pubkey_from_pem`, become
+      constants that name an extern function, and a Zig program calls
+      `c.ch_srv_check` as a C program does. Two of chapulin's macros do
+      not work. `CH_ASSERT` uses `__FILE__`, which translate-c does not
+      translate, and no caller needs it. `ch_build` becomes a constant
+      whose value is an extern variable, and Zig refuses to evaluate it,
+      so a program names the transport's record,
+      `&c.ch_build_info_quic_nonblocking`. The module declares only its
+      own transport's record, so a wrong name stops the compile.
+    - **The check (INV-36).** `test/zig-build-check.sh` copies
+      `test/zig-consumer`, a Zig project that depends on the staged
+      package as colibri does. For each configuration it builds
+      `matches.zig`, which imports the module and links the object. The
+      program compiles only when the module declares every name the
+      object exports, and it requires `ch_build_matches` to return 1. For
+      colibri's two objects it builds `pair.zig`, which imports both
+      modules, links both objects and starts a client on each.
+      `inv36-zig-module-drops-define` translates the module without
+      `-DCH_EXPORTER`, and `inv36-zig-module-misses-header` names the
+      wrong header for the tcp-nonblocking server's calls. The check
+      catches both.
+
+    Cost:
+
+    - It serves Zig alone. A C program, firmware among them, still writes
+      its own defines, and only `ch_build_matches` catches a mistake.
+    - The module is translate-c's output, and translate-c changes between
+      Zig releases: 0.16.0's is built on Aro. Zig is pinned at 0.16.0, so
+      translate-c changes only when the pin moves, and the pull request
+      that moves it runs the check against the new output.
+    - From nothing built, `lint-zig-build` takes about 25 s longer: 66 s
+      against 39 s before, and 103 s against 81 s, in two pairs of runs on
+      an M-series Mac with a load average above 18. With everything
+      built, `test/zig-build-check.sh` takes 3.5 s where it took 3.0 s.
+
+    Gain: a Zig program names no define. Its types come from the defines
+    the object compiled with, so no program keeps a list that can go out
+    of date as colibri's did, and each object in an image of two
+    transports has its own module.
+
+    Two alternatives were considered and set aside.
+
+    - **A generated configuration header every consumer includes.** `make
+      lib` and `build.zig` would write a header that defines the object's
+      defines, and every public header would include it first. It would
+      serve C firmware as well as Zig. But it changes the public headers
+      and the Makefile, so it waits until a C consumer asks for it.
+    - **The define list as a file the package exports.** A Zig program
+      would read it and pass each define to its own `@cImport` or
+      translate-c step. The program still does that work, and every
+      consumer writes it again.

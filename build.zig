@@ -11,9 +11,11 @@
 //! for `make lib`, and tools/localize_symbols.zig then makes every defined
 //! symbol local except PUBLIC, as `objcopy -G` and `nmedit -s` do.
 //!
-//! A dependent gets the named lazy path "chapulin.o", the localized object,
-//! and "include", the directory of the headers. It compiles the headers
-//! under the object's defines and calls ch_build_matches once (build.h).
+//! A dependent gets the named lazy path "chapulin.o", the localized object;
+//! the module "chapulin", which translate-c makes from the public headers
+//! under the defines the object compiled with (docs/decisions.md 70); and
+//! "include", the directory of the headers, for a dependent that compiles
+//! them as C. It calls ch_build_matches once (build.h).
 const std = @import("std");
 
 const Transport = enum { @"tcp-blocking", @"tcp-nonblocking", @"quic-nonblocking" };
@@ -53,8 +55,10 @@ const Config = struct {
 
 const Names = []const []const u8;
 
-/// LIB_SRCS, LIB_DEF with the hardware statements after it, and PUBLIC.
-const Plan = struct { srcs: Names, defs: Names, public: Names };
+/// LIB_SRCS, LIB_DEF with the hardware statements after it, PUBLIC, and
+/// the headers that declare PUBLIC's names and the hooks the object
+/// imports, which the module "chapulin" is translated from.
+const Plan = struct { srcs: Names, defs: Names, public: Names, headers: Names };
 
 /// What one axis block of the Makefile sets: its defines, the sources it
 /// filters out of SRCS, the sources it adds, and its public calls.
@@ -137,6 +141,34 @@ const public_record_either_role = [_][]const u8{
 /// The calls a connected tcp-blocking session makes.
 const public_session = [_][]const u8{ "ch_read", "ch_write", "ch_close" };
 
+/// One header and the names it declares.
+const Declaration = struct { header: []const u8, names: Names };
+
+/// The header that declares each name an object can export, under the name
+/// the header declares, and each hook an object can import from the image
+/// (docs/porting.md). The module is translated from the headers of the
+/// names one object exports and imports, in this order, and a name missing
+/// here stops the build (headersDeclaring).
+const declarations = [_]Declaration{
+    .{ .header = "tls.h", .names = &.{ "ch_connect", "ch_read", "ch_write", "ch_close", "ch_export" } },
+    .{ .header = "tcp_nonblocking.h", .names = &.{
+        "ch_record_init",  "ch_record_in",    "ch_record_out",
+        "ch_record_state", "ch_record_alert", "ch_record_close",
+    } },
+    .{ .header = "quic.h", .names = &public_quic },
+    .{ .header = "srv.h", .names = &.{ "ch_srv_accept", "ch_srv_check" } },
+    .{ .header = "srv_tcp_nonblocking.h", .names = &.{ "ch_srv_record_init", "ch_srv_record_in" } },
+    .{ .header = "srv_quic.h", .names = &.{ "ch_srv_quic_init", "ch_srv_quic_crypto_in", "ch_srv_quic_retry_tag" } },
+    .{ .header = "quic_token.h", .names = &.{ "ch_srv_quic_token_mint", "ch_srv_quic_token_check" } },
+    .{ .header = "x509_ca.h", .names = &.{"ch_pubkey_from_pem"} },
+    .{ .header = "drbg.h", .names = &.{"ch_drbg_seed"} },
+    .{ .header = "rand.h", .names = &.{"ch_rand_bytes"} },
+    .{ .header = "keylog.h", .names = &.{"ch_keylog"} },
+    .{ .header = "aes_block.h", .names = &.{"ch_aes_block"} },
+    .{ .header = "ch_assert.h", .names = &.{"ch_assert_fail"} },
+    .{ .header = "build.h", .names = &.{"ch_build"} },
+};
+
 /// The flags every source compiles with besides the defines: LIB_CFLAGS,
 /// with the host test declarations filtered out as the Makefile filters
 /// them. -O2 is not among them because the module's optimize mode passes
@@ -183,6 +215,10 @@ pub fn build(b: *std.Build) void {
     refuseUnbuildable(config);
     const plan = computePlan(b, config);
     const target = aesTarget(b, b.standardTargetOptions(.{}), config.aes);
+    // The flags the sources compile with. The module below is translated
+    // under every -D among them, so the object and the module take their
+    // defines from this one list.
+    const flags = concat(b, &.{ &cflags, plan.defs });
 
     // The sources, compiled and partially linked into one object. make lib
     // compiles at -O2, and ReleaseFast passes -O2 to clang. The C sources
@@ -199,7 +235,7 @@ pub fn build(b: *std.Build) void {
         .stack_check = false,
     });
     module.addIncludePath(b.path(""));
-    module.addCSourceFiles(.{ .files = plan.srcs, .flags = concat(b, &.{ &cflags, plan.defs }) });
+    module.addCSourceFiles(.{ .files = plan.srcs, .flags = flags });
     const partial = b.addObject(.{ .name = "chapulin-partial", .root_module = module });
 
     // The localizer runs on the host; test/localize-check.sh installs it.
@@ -223,6 +259,24 @@ pub fn build(b: *std.Build) void {
 
     // make lib compiles with -I. at the root, where every header sits.
     b.addNamedLazyPath("include", b.path(""));
+
+    // The module "chapulin": the headers of the plan, translated by
+    // translate-c for the object's target and optimize mode under the
+    // defines in flags, so a dependent's types have the object's layout
+    // (docs/decisions.md 70). chapulin.h is written here and includes each
+    // header. Nothing runs the translation until a dependent imports the
+    // module. The module sets no target and no optimize mode, so it takes
+    // both from the module that imports it.
+    const translate = b.addTranslateC(.{
+        .root_source_file = b.addWriteFiles().add("chapulin.h", includes(b, plan.headers)),
+        .target = target,
+        .optimize = .ReleaseFast,
+    });
+    translate.addIncludePath(b.path(""));
+    for (flags) |flag| {
+        if (std.mem.startsWith(u8, flag, "-D")) translate.defineCMacroRaw(flag["-D".len..]);
+    }
+    _ = b.addModule("chapulin", .{ .root_source_file = translate.getOutput(), .link_libc = true });
 
     // What make lint-zig-build compares with make print-lib-srcs and make
     // print-lib-def, one name per line.
@@ -319,11 +373,46 @@ fn computePlan(b: *std.Build, config: Config) Plan {
     const public_rand: Names = if (config.rand == .drbg) &.{ "ch_drbg_seed", "ch_rand_bytes" } else &.{};
     const public_export: Names = if (config.exporter == .on) &.{"ch_export"} else &.{};
     const public_ca: Names = if (trustsCa(config.trust)) &.{"ch_pubkey_from_pem"} else &.{};
+    const names = concat(b, &.{ role.public, public_rand, public_ca, public_export, &.{"ch_build"} });
+
+    // The hooks the object imports, which the image defines
+    // (docs/porting.md) and lib-check admits as undefined. An AES=extern
+    // object imports ch_aes_block where it compiles AES: under QUIC, and
+    // under SUITE=aesgcm.
+    const compiles_aes = config.transport == .@"quic-nonblocking" or config.suite == .aesgcm;
+    const hooks = concat(b, &.{
+        &.{"ch_assert_fail"},
+        if (config.rand == .@"extern") &.{"ch_rand_bytes"} else &.{},
+        if (config.keylog == .on) &.{"ch_keylog"} else &.{},
+        if (config.aes == .@"extern" and compiles_aes) &.{"ch_aes_block"} else &.{},
+    });
     return .{
         .srcs = lib_srcs,
         .defs = defs,
-        .public = symbolNames(b, config.transport, concat(b, &.{ role.public, public_rand, public_ca, public_export, &.{"ch_build"} })),
+        .public = symbolNames(b, config.transport, names),
+        .headers = headersDeclaring(b, concat(b, &.{ names, hooks })),
     };
+}
+
+/// The header of each declaration that declares one of names, in the
+/// order of declarations. A name no header there declares stops the
+/// build, so a new export cannot leave the module without its header.
+fn headersDeclaring(b: *std.Build, names: Names) Names {
+    for (names) |name| {
+        for (declarations) |declaration| {
+            if (contains(declaration.names, name)) break;
+        } else std.process.fatal("build.zig's declarations name no header that declares {s}", .{name});
+    }
+    var out = std.ArrayList([]const u8).initCapacity(b.allocator, declarations.len) catch @panic("OOM");
+    for (declarations) |declaration| {
+        for (declaration.names) |declared| {
+            if (contains(names, declared)) {
+                out.appendAssumeCapacity(declaration.header);
+                break;
+            }
+        }
+    }
+    return out.items;
 }
 
 fn trustsCa(trust: Trust) bool {
@@ -481,11 +570,25 @@ fn concat(b: *std.Build, lists: []const Names) Names {
 fn without(b: *std.Build, list: Names, removed: Names) Names {
     var out = std.ArrayList([]const u8).initCapacity(b.allocator, list.len) catch @panic("OOM");
     for (list) |name| {
-        for (removed) |gone| {
-            if (std.mem.eql(u8, gone, name)) break;
-        } else out.appendAssumeCapacity(name);
+        if (!contains(removed, name)) out.appendAssumeCapacity(name);
     }
     return out.items;
+}
+
+/// Whether list holds name.
+fn contains(list: Names, name: []const u8) bool {
+    for (list) |held| {
+        if (std.mem.eql(u8, held, name)) return true;
+    }
+    return false;
+}
+
+/// A C header that includes each of headers, one line each.
+fn includes(b: *std.Build, headers: Names) []const u8 {
+    var text: std.ArrayList(u8) = .empty;
+    text.appendSlice(b.allocator, "// Written by build.zig: the public headers of one packaged object.\n") catch @panic("OOM");
+    for (headers) |header| text.print(b.allocator, "#include \"{s}\"\n", .{header}) catch @panic("OOM");
+    return text.items;
 }
 
 /// One name per line, each line ended.

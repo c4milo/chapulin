@@ -1,0 +1,15 @@
+invariant: INV-36
+file: build.zig
+catches: test/zig-build-check.sh
+reason: build.zig translates the module under one define fewer than the object
+  compiles with: CH_EXPORTER, which colibri's h2 objects set. The module's
+  ch_tls then lacks the exporter secret, so a Zig program declares a ch_tls
+  shorter than the one the object writes, and everything still links. Only
+  ch_build_matches in test/zig-consumer's matches.zig objects.
+
+--- old
+    for (flags) |flag| {
+        if (std.mem.startsWith(u8, flag, "-D")) translate.defineCMacroRaw(flag["-D".len..]);
+--- new
+    for (without(b, flags, &.{"-DCH_EXPORTER"})) |flag| {
+        if (std.mem.startsWith(u8, flag, "-D")) translate.defineCMacroRaw(flag["-D".len..]);

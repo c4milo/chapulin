@@ -96,7 +96,8 @@ Call `ch_build_matches(&ch_build)` once at startup: it returns 0 when your
 flags and the object's differ ([`docs/building.md`](docs/building.md)).
 
 A Zig project (Zig 0.16.0) can depend on chapulin as a package and get the
-same object; [`docs/building.md`](docs/building.md) shows the
+same object, with a module of the headers translated under the object's
+defines; [`docs/building.md`](docs/building.md) shows the
 `build.zig.zon` dependency and its options.
 
 [`examples/`](examples/) has complete programs for each trust mode, and

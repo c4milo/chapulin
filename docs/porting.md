@@ -335,25 +335,23 @@ fails to link.
 A program in another language reads the same symbol. `ch_build_info` is twelve
 `uint32_t` fields with no padding, and each `CH_BUILD_` macro is the value
 your defines give the field of the same name. Compare `version` first and the
-other fields only when it matches. In Zig, `@cImport` the header under your
-defines and call the same predicate on the transport's record. Zig's
-translate-c turns the `ch_build` macro into a constant that Zig refuses to
-evaluate, because its value is an extern variable, so write the record's own
-name:
+other fields only when it matches. A Zig program that depends on the
+package imports its module `chapulin`, which translate-c makes from the
+headers under the object's own defines (`docs/building.md`), and calls the
+same predicate on the transport's record. Zig's translate-c turns the
+`ch_build` macro into a constant that Zig refuses to evaluate, because its
+value is an extern variable, so write the record's own name:
 
 ```zig
-const c = @cImport({
-    @cDefine("CH_TRUST_WEBPKI", "1");
-    @cDefine("CH_TRANSPORT_TCP_NONBLOCKING", "1");
-    @cDefine("CH_RAND_EXTERN", "1");
-    @cInclude("build.h");
-});
+const c = @import("chapulin");
 
 if (c.ch_build_matches(&c.ch_build_info_tcp_nonblocking) == 0) return error.ChapulinBuildMismatch;
 ```
 
-An `@cImport` without `CH_TRANSPORT_TCP_NONBLOCKING` declares no `ch_build_info_tcp_nonblocking`,
-so that mistake stops the compile. `docs/decisions.md` 56 lists what the
+The module of an object of another transport declares no
+`ch_build_info_tcp_nonblocking`, so that mistake stops the compile. A Zig
+program that links a make-built object instead `@cImport`s `build.h` under
+the defines `make print-lib-def` prints. `docs/decisions.md` 56 lists what the
 record holds, which defines it leaves out and why, and entry 61 says why its
 name carries the transport.
 

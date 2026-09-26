@@ -5,8 +5,9 @@
 # colibri links. check-slow runs it with --roster, which adds the
 # configuration of every lib-check leg in check.
 #
-# The Zig build runs in bin/zig/package, a copy of exactly the files
-# build.zig.zon's .paths names, because that is what a dependent receives.
+# The Zig build runs in bin/zig/consumer/package, a copy of exactly the
+# files build.zig.zon's .paths names, because that is what a dependent
+# receives.
 # Before the copy, .paths must name every root C source and header git
 # tracks, every tools/localize_*.zig file, and nothing else but the build
 # files, the license and the README.
@@ -22,14 +23,29 @@
 #     defines and linked against the Zig object, must read the record its
 #     headers compute, as lib-check requires of make's object.
 #
-# Then one image links colibri's two Zig objects of different transports,
-# the tcp-nonblocking ROLE=both object and the QUIC one, and runs each
-# half, as test/lib-pair-check.sh does with make's objects
-# (docs/decisions.md 61).
+# Then the module the package exports must describe the object it builds
+# (docs/decisions.md 70). test/zig-consumer, copied to bin/zig/consumer
+# around the package, is a Zig project that depends on the package as
+# colibri does. For each configuration the script builds matches.zig,
+# which imports the module "chapulin" and links the object, and runs it.
+# The module must declare every name the object exports, and the build
+# record must equal what the module's translated types compute.
+#
+# Zig keys its cache on the paths of a compile as written. The consumer
+# names the package's directory with no "..", so the dependency compiles
+# under the paths the package build above used and takes its object from
+# the cache.
+#
+# Last, one image links colibri's two Zig objects of different
+# transports, the tcp-nonblocking ROLE=both object and the QUIC one, and
+# runs each half, as test/lib-pair-check.sh does with make's objects
+# (docs/decisions.md 61). It does so twice: from C halves compiled under
+# make's defines, and as test/zig-consumer's pair.zig, which imports the
+# module of each object.
 #
 # Each configuration builds both objects and compares them in a process
 # of its own, as many at once as the machine has cores. With every object
-# built, the five take 3 s on an M-series Mac.
+# and program built, the five take 3.5 s on an M-series Mac.
 #
 # test/violations.py runs a script by path and reads its exit status.
 cd "$(dirname "$0")/.." || exit 1
@@ -41,7 +57,8 @@ root=$(pwd)
 zig=${ZIG:-zig}
 cc=${CC:-cc}
 out=bin/zig
-package=$out/package
+consumer=$out/consumer
+package=$consumer/package
 mk() { make -s --no-print-directory CC="$cc" "$@"; }
 
 # Zig compiles for the macOS version it runs on, and cc links for the
@@ -123,10 +140,33 @@ stage_package() {
         diff <(printf '%s\n' "$want") <(printf '%s\n' "$listed") >&2
         fail "build.zig.zon's .paths differ from the files a dependent needs (< wanted, > listed)"
     fi
-    rm -rf "$package"
+    rm -rf "$consumer"
     mkdir -p "$package"
     # shellcheck disable=SC2086 # one path per word, as .paths lists them
     tar -cf - $listed | tar -xf - -C "$package" || fail "copying the package failed"
+    cp test/zig-consumer/* "$consumer/" || fail "copying test/zig-consumer failed"
+}
+
+# The options of one configuration as test/zig-consumer takes them: the
+# make variables, then each hardware statement as NAME=true.
+zig_row() {
+    local v row=$1
+    for v in $2; do row="$row $v=true"; done
+    printf '%s\n' "$row"
+}
+
+# consume NAME PREFIX OPTION...
+#
+# Builds test/zig-consumer with the given options, and installs its
+# program under PREFIX.
+consume() {
+    local name=$1 prefix=$2
+    shift 2
+    (cd "$consumer" && "$zig" build --summary none --prefix "$root/$prefix" --cache-dir "$root/$out/cache" "$@") \
+        > "$prefix/zig-consumer.log" 2>&1 || {
+        cat "$prefix/zig-consumer.log" >&2
+        fail "$name: test/zig-consumer does not build against the package's module and object"
+    }
 }
 
 # The hardware statements as defines, the way make's CFLAGS carries them.
@@ -207,6 +247,14 @@ check() {
     "$out/$name/build_test" > /dev/null ||
         fail "$name: the Zig object's build record disagrees with the headers compiled under make's defines"
     echo "lint-zig-build: $name: the same sources, defines, $(exports "$zig_obj" | wc -l | tr -d ' ') exports and build record as make's object"
+
+    local symbol declared=()
+    for symbol in $(exports "$zig_obj"); do declared+=("-Dexport=$symbol"); done
+    zig_row "$2" "$3" > "$out/$name/zig-row.txt"
+    consume "$name" "$out/$name" "-Dobject=$(cat "$out/$name/zig-row.txt")" "${declared[@]}"
+    "$out/$name/bin/matches" ||
+        fail "$name: the Zig object's build record disagrees with the types of the package's module"
+    echo "lint-zig-build: $name: the package's module declares the object's exports and has the types its build record describes"
 }
 
 # Compiles test/lib_pair_half.c under the defines and flags of one
@@ -220,8 +268,9 @@ compile_half() {
         fail "pair: compiling the $name half failed"
 }
 
-# Links the h2 and quic Zig objects into one image with a half for each,
-# and runs it.
+# Links the h2 and quic Zig objects into one image with a C half for each,
+# and runs it. Then builds test/zig-consumer's pair.zig against the same
+# two configurations, and runs it.
 pair() {
     local image=$out/pair flag_words
     compile_half h2
@@ -234,6 +283,11 @@ pair() {
         fail "pair: one image does not link the tcp-nonblocking ROLE=both object beside the QUIC one"
     "./$image" || fail "pair: the image exited $?"
     echo "lint-zig-build: one image links colibri's tcp-nonblocking ROLE=both and QUIC objects, and each half ran"
+
+    mkdir -p "$out/zig-pair"
+    consume "zig pair" "$out/zig-pair" "-Dh2=$(cat "$out/h2/zig-row.txt")" "-Dquic=$(cat "$out/quic/zig-row.txt")"
+    "$out/zig-pair/bin/pair" || fail "zig pair: the program exited $?"
+    echo "lint-zig-build: one Zig program imports the modules of colibri's tcp-nonblocking ROLE=both and QUIC objects, links both objects, and each half ran"
 }
 
 # Waits for every check started so far, prints each one's output in the

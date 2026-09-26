@@ -3192,11 +3192,12 @@ lint: lint-toolchain lint-pins lint-proof-cover lint-exact-fill lint-analyzers l
 # with llvm-objcopy -G and nmedit -s over objects of both formats, and
 # test/zig-build-check.sh builds the default object and the four colibri
 # links both ways and requires the same sources, defines, exports and
-# build record, then links two Zig objects of different transports into
-# one image and runs it. check-slow runs the last over every lib-check
-# leg's configuration. With every object built it takes 8 s on an
-# M-series Mac, and 90 s with none.
-ZIG_SRCS := build.zig build.zig.zon $(wildcard tools/*.zig)
+# build record, builds test/zig-consumer against each object and the
+# module the package exports for it, then links two Zig objects of
+# different transports into one image and runs it. check-slow runs the
+# last over every lib-check leg's configuration. With every object and
+# program built it takes 6 s on an M-series Mac, and 66 s with none.
+ZIG_SRCS := build.zig build.zig.zon $(wildcard tools/*.zig test/zig-consumer/*.zig) test/zig-consumer/build.zig.zon
 .PHONY: lint-zig-build
 lint-zig-build:
 ifeq ($(ZIG),)

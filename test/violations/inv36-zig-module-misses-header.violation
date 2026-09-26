@@ -1,0 +1,15 @@
+invariant: INV-36
+file: build.zig
+catches: test/zig-build-check.sh
+reason: build.zig's declarations table names srv_quic.h for the
+  tcp-nonblocking server's calls, so the h2 modules include a header that
+  declares nothing under their defines and never include
+  srv_tcp_nonblocking.h. The objects still export ch_srv_record_init and
+  ch_srv_record_in, and the modules declare neither, so a Zig program
+  cannot call them. matches.zig's check that the module declares every
+  export objects.
+
+--- old
+    .{ .header = "srv_tcp_nonblocking.h", .names = &.{ "ch_srv_record_init", "ch_srv_record_in" } },
+--- new
+    .{ .header = "srv_quic.h", .names = &.{ "ch_srv_record_init", "ch_srv_record_in" } },

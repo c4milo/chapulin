@@ -76,10 +76,10 @@ Other targets:
   and decisions 56 and 61 say what it holds, what it leaves out and why
   its name carries the transport.
 - A Zig project (Zig 0.16.0) depends on chapulin as a package and gets
-  the object `make lib` builds. The options are the Makefile's
-  variables, with the same names and values, and the three hardware
-  statements the Makefile takes in `CFLAGS` are options that default
-  off:
+  the object `make lib` builds and a module of its API. The options are
+  the Makefile's variables, with the same names and values, and the
+  three hardware statements the Makefile takes in `CFLAGS` are options
+  that default off:
 
   ```zig
   const chapulin = b.dependency("chapulin", .{
@@ -92,18 +92,26 @@ Other targets:
       .AES = .hw,
       .CH_NATIVE_AES = true,
   });
+  module.addImport("chapulin", chapulin.module("chapulin"));
   module.addObjectFile(chapulin.namedLazyPath("chapulin.o"));
-  module.addIncludePath(chapulin.namedLazyPath("include"));
   ```
 
-  The program compiles the headers under the object's defines, which
-  `make print-lib-def` prints for the same variables, and calls
-  `ch_build_matches` once. `build.zig` compiles every source into one
+  The module `chapulin` is the public headers, translated by translate-c
+  under the defines the object compiled with, so its types have the
+  object's layout and the program names no define. The program writes
+  `const c = @import("chapulin");` and calls
+  `c.ch_build_matches(&c.ch_build_info_quic_nonblocking)` once. It names
+  the transport's record because Zig cannot evaluate the `ch_build`
+  macro. An image that links objects of two transports takes two
+  dependencies and imports each one's module under a name of its own. The
+  named lazy path `include` is the header directory, for a program that
+  compiles the headers as C. `build.zig` compiles every source into one
   relocatable object, and `tools/localize_symbols.zig` makes every symbol
   but the public API local, as `objcopy -G` and `nmedit -s` do for make,
   so one image links objects of two transports. `make lint-zig-build`
   builds five configurations both ways and requires the same sources,
-  defines, exports and build record (decision 69, INV-36).
+  defines, exports and build record, and builds a Zig program against
+  each module (decisions 69 and 70, INV-36).
 - `make prove-slow` runs the slow-tier proofs, one per nightly job. The runner caches by
   content, so an incremental run re-proves only what changed
   (`PROVE_NO_CACHE=1` forces a full run). It uses [kissat](https://github.com/arminbiere/kissat) when

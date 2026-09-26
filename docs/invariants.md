@@ -930,32 +930,45 @@ last `ROLE=server` stub, as the entry said it would.
   `build.zig` produces compiles the same sources under the same defines
   as `make lib`, exports the same names, and holds the same build record.
   Every other symbol it defines is local, so one image links a Zig-built
-  object of each of two transports, as it links make's.
+  object of each of two transports, as it links make's. The module
+  `chapulin` that the package exports beside the object declares every
+  name the object exports, and its types have the layout the object's
+  build record describes.
 - **Mechanism.** `build.zig` repeats the Makefile's axis blocks, one
   function per block, and writes the lists it compiles to `lib-srcs.txt`
   and `lib-def.txt`. `tools/localize_symbols.zig` makes every defined
   global but the public names local, as `objcopy -G` and `nmedit -s` do
-  for make, and refuses an object it cannot rewrite in full.
+  for make, and refuses an object it cannot rewrite in full. translate-c
+  makes the module from the headers that declare the object's exports
+  and imports, under every `-D` of the one flag list the sources compile
+  with.
 - **Check.** `make lint-zig-build` runs `test/zig-build-check.sh`, which
   builds the default object and the four colibri links both ways and
   compares their sources, defines and exports, links
   `test/build_test.c` against each Zig object under make's defines, and
   links two Zig objects of different transports into one image and runs
-  it. check-slow runs it over every `lib-check` leg's configuration too.
+  it. It builds `test/zig-consumer`, a Zig project that depends on the
+  package, against each object: `matches.zig` compiles only when the
+  module declares every export, and runs `ch_build_matches` over the
+  module's types, and `pair.zig` imports the modules of two transports,
+  links both objects and starts a client on each. check-slow runs the
+  script over every `lib-check` leg's configuration too.
   The same target runs `test/localize-check.sh`, which compares the
   localizer with `llvm-objcopy -G` on nine ELF targets and with
   `llvm-objcopy -G` and `nmedit -s` on two Mach-O ones, and links every
-  result. Five mutants in `test/violations/` are each caught by one of
+  result. Seven mutants in `test/violations/` are each caught by one of
   the two scripts: `inv36-zig-build-drops-source`,
-  `inv36-zig-build-adds-define` and `inv36-zig-build-keeps-internal-global`
+  `inv36-zig-build-adds-define`, `inv36-zig-build-keeps-internal-global`,
+  `inv36-zig-module-drops-define` and `inv36-zig-module-misses-header`
   edit `build.zig`, and `inv36-localize-elf-keeps-weak-global` and
   `inv36-localize-macho-keeps-external-bit` edit the localizer.
 - **Violation.** A PR changes an axis in the Makefile and not in
   `build.zig`, or the reverse, or teaches the localizer a symbol it leaves
-  global. The checks catch the change in each configuration they build.
-  A combination of values that neither list builds is caught by nothing
-  until a dependent builds it.
-- See [decisions: Engineering](decisions.md#engineering), entry 69.
+  global, or translates the module under other defines or headers than
+  the object's. The checks catch the change in each configuration they
+  build. A combination of values that neither list builds is caught by
+  nothing until a dependent builds it.
+- See [decisions: Engineering](decisions.md#engineering), entries 69 and 70.
 
 ## Fail-closed
 

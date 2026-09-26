@@ -1,0 +1,18 @@
+// test/zig-build-check.sh copies this directory to bin/zig/consumer and
+// the package into bin/zig/consumer/package, which the path below names.
+.{
+    .name = .zig_consumer,
+    .version = "0.0.0",
+    .fingerprint = 0x15987ea750e127f1,
+    .minimum_zig_version = "0.16.0",
+    .dependencies = .{
+        .chapulin = .{ .path = "package" },
+    },
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "hooks.zig",
+        "matches.zig",
+        "pair.zig",
+    },
+}
