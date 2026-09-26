@@ -46,8 +46,8 @@
 // nothing was consumed, and the same call may run again with a larger
 // one. Every other code leaves the session dead, and ch_record_alert names
 // the alert the caller should send before it closes.
-#ifndef CH_REC_H
-#define CH_REC_H
+#ifndef CH_TCP_NONBLOCKING_H
+#define CH_TCP_NONBLOCKING_H
 #ifdef CH_TRANSPORT_TCP_NONBLOCKING
 
 #include <stddef.h>
@@ -68,7 +68,7 @@
 typedef struct ch_record {
     ch_tls t;
     handshake_state hs;
-    uint8_t step;  // HSR_STEP_*, rec_step.h
+    uint8_t step;  // HSR_STEP_*, tcp_nonblocking_step.h
     uint8_t alert; // what ch_record_alert reports after a failure
     // Bytes of one finished record staged in t.tx and not yet collected,
     // and how many of them ch_record_out has already handed over. A partial

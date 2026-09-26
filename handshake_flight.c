@@ -331,8 +331,8 @@ int hsf_derive_handshake_secrets(handshake_state *h, const server_hello_info *in
 #ifdef CH_KEYLOG
     // Kept before the wipe below, which is what the first key log build
     // missed: it logged h->random after this point and filed every line
-    // under 32 zero bytes. bin/rec_loop_test compares the random both
-    // ends log, so that shape now fails a test.
+    // under 32 zero bytes. bin/tcp_nonblocking_loop_test compares the
+    // random both ends log, so that shape now fails a test.
     memcpy(h->client_random, h->random, sizeof h->client_random);
 #endif
     ct_wipe(h->priv, sizeof h->priv);

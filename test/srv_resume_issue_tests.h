@@ -10,10 +10,10 @@
 #include "srv_resume_tests.h"
 
 // A driver that zeroes its selection before the second hello, as
-// srv_rec.c and srv_quic.c do, gets the first hello's scheme back, because
-// srv_check_retry_hello reads nothing from sel. It once left sigalg 0 there,
-// and every retried handshake on those two transports failed at the
-// Certificate.
+// srv_tcp_nonblocking.c and srv_quic.c do, gets the first hello's scheme
+// back, because srv_check_retry_hello reads nothing from sel. It once left
+// sigalg 0 there, and every retried handshake on those two transports failed
+// at the Certificate.
 static void test_retry_zeroed_selection(void) {
     selection sel;
     retry_round(&sel);

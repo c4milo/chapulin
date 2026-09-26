@@ -115,9 +115,9 @@ int srv_select_auth(handshake_state *h, const client_hello *ch, selection *sel);
 
 // Issues one NewSessionTicket (RFC 9846 §4.7.1) under the application
 // write key, after the client Finished verified, which §4.7.1 requires
-// (rfc9846.txt:3194-3196). srv_handshake.c, srv_rec.c and srv_quic.c call
-// it right after srv_complete, and a QUIC driver sets h->level to
-// CH_LEVEL_APPLICATION first.
+// (rfc9846.txt:3194-3196). srv_handshake.c, srv_tcp_nonblocking.c and
+// srv_quic.c call it right after srv_complete, and a QUIC driver sets
+// h->level to CH_LEVEL_APPLICATION first.
 //
 // It takes the transcript hash through the client Finished, runs
 // ks_res_master over h->master and ks_res_psk over a fresh ticket_nonce,

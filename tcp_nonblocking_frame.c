@@ -1,8 +1,8 @@
 // The inbound record framing and the session-death path both tcp-nonblocking
-// drivers share. rec_frame.h states the contract; this file is
+// drivers share. tcp_nonblocking_frame.h states the contract; this file is
 // quic_fail.c's counterpart on the transport that keeps its records, and
 // it holds no protocol rule beyond what one record is allowed to be.
-#include "rec_frame.h"
+#include "tcp_nonblocking_frame.h"
 
 #ifdef CH_TRANSPORT_TCP_NONBLOCKING
 
@@ -13,7 +13,7 @@
 #include "handshake_record.h"
 #include "record.h"
 
-void rec_wipe(ch_record *r) {
+void tcp_nonblocking_wipe(ch_record *r) {
     ct_wipe(&r->hs, sizeof r->hs);
     ct_wipe(&r->t.rd, sizeof r->t.rd);
     ct_wipe(&r->t.wr, sizeof r->t.wr);
@@ -31,18 +31,18 @@ void rec_wipe(ch_record *r) {
     r->t.keys = 0;
 }
 
-int rec_fail(ch_record *r, int rc) {
+int tcp_nonblocking_fail(ch_record *r, int rc) {
     r->alert = r->hs.alert;
-    rec_wipe(r);
+    tcp_nonblocking_wipe(r);
     r->t.state = CH_ST_FAILED;
     return rc;
 }
 
-int rec_session_dead(const ch_record *r) {
+int tcp_nonblocking_session_dead(const ch_record *r) {
     return r->t.state == CH_ST_CLOSED || r->t.state == CH_ST_FAILED;
 }
 
-int rec_take_record(ch_record *r, uint8_t *rec, size_t body_len, uint8_t outer) {
+int tcp_nonblocking_take_record(ch_record *r, uint8_t *rec, size_t body_len, uint8_t outer) {
     const uint8_t *pt = rec + REC_HDR;
     size_t pt_len = body_len;
     if (outer == REC_CCS) {

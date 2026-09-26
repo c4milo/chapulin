@@ -64,9 +64,10 @@ in a full run.
 ## Handshakes, measured
 
 One sample is one handshake, both ends in one process
-(bench/primitives_handshake.c, the pairing test/rec_loop_test.c drives),
-from two fresh sessions to both ends connected. Client side and server
-side are the time spent inside each end's calls. Milliseconds:
+(bench/primitives_handshake.c, the pairing
+test/tcp_nonblocking_loop_test.c drives), from two fresh sessions to
+both ends connected. Client side and server side are the time spent
+inside each end's calls. Milliseconds:
 
 | handshake | build | whole | client side | server side |
 |---|---|---:|---:|---:|

@@ -1554,9 +1554,9 @@ launch fast full quic_step_ca 5 "fill_nondet.0:37,ct_wipe.0:849" -DCH_TRANSPORT_
 # tier's 2 GB default.
 launch fast:3 full srv_accept 100 "alpn_ok.0:9,alpn_name_repeats.0:9,ct_wipe.0:521,ct_memeq.0:33,fill_names.0:257,fill_nondet.0:33" -DCH_ROLE_SERVER srv.c srv_handshake.c ct.c session.c
 # The ROLE=server tcp-nonblocking driver and the inbound framing under it, with
-# srv_accept's layering: srv_rec.c and rec_frame.c real, the fifteen
-# handlers contract stubs. It would cover the step table, the record
-# loop and the wipe without resting on a handler.
+# srv_accept's layering: srv_tcp_nonblocking.c and tcp_nonblocking_frame.c
+# real, the fifteen handlers contract stubs. It would cover the step table, the
+# record loop and the wipe without resting on a handler.
 #
 # No launch line: this formula has never been seen to converge either.
 # Two loops nest here -- the record loop runs the message loop, which
@@ -1575,9 +1575,9 @@ launch fast:3 full srv_accept 100 "alpn_ok.0:9,alpn_name_repeats.0:9,ct_wipe.0:5
 # formula for the step table entered through advance, where no record
 # loop wraps it, and one for ch_srv_record_in's framing with the step
 # held at a single cheap handler. Neither has been measured, so neither
-# is here. Until one lands, srv_rec.c is covered by bin/srv_rec_test and
-# bin/rec_loop_test and guarded by two .violation mutants, and README
-# says so.
+# is here. Until one lands, srv_tcp_nonblocking.c is covered by
+# bin/srv_tcp_nonblocking_test and bin/tcp_nonblocking_loop_test and
+# guarded by two .violation mutants, and README says so.
 # The ROLE=server flight handlers, with srv_accept's layering turned
 # around: the fifteen handlers are real here and everything they call is
 # a contract stub, so the two formulas together cover the driver and the

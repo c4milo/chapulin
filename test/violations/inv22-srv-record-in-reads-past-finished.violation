@@ -1,6 +1,6 @@
 invariant: INV-22
-file: srv_rec.c
-catches: rec_loop_test
+file: srv_tcp_nonblocking.c
+catches: tcp_nonblocking_loop_test
 reason: ch_srv_record_in keeps taking records after the one that completed
   the handshake. A client that sends its first application record in the
   same segment as its Finished, as h2spec does with its HTTP/2 preface,

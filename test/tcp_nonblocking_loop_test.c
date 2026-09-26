@@ -1,24 +1,24 @@
 // Both tcp-nonblocking drivers against each other in one process: this
-// tree's client (rec.c) and this tree's server (srv_rec.c) complete a
-// whole TLS 1.3 handshake with no socket under either of them. The
-// Makefile builds it as bin/rec_loop_test from the ROLE=both
-// TRANSPORT=tcp-nonblocking source list, which is the one object that carries
-// both drivers.
+// tree's client (tcp_nonblocking.c) and this tree's server
+// (srv_tcp_nonblocking.c) complete a whole TLS 1.3 handshake with no socket
+// under either of them. The Makefile builds it as
+// bin/tcp_nonblocking_loop_test from the ROLE=both TRANSPORT=tcp-nonblocking
+// source list, which is the one object that carries both drivers.
 //
 // Why it exists: INV-28 says a tcp-nonblocking build calls neither cfg.send
 // nor cfg.recv while the handshake runs, and the server half was the
-// only half measured. bin/srv_rec_test counts I/O calls on the server,
-// and the client's only driver was bin/recclient, which needs a live
-// server and so runs in check-slow. A claim checked once a night is
-// checked rarely. Here both halves supply a send and a recv that count,
-// and the test fails if either driver reaches for a socket.
+// only half measured. bin/srv_tcp_nonblocking_test counts I/O calls on the
+// server, and the client's only driver was bin/recclient, which needs a
+// live server and so runs in check-slow. A claim checked once a night is
+// checked rarely. Here both halves supply a send and a recv that count, and
+// the test fails if either driver reaches for a socket.
 //
 // It answers a second question nothing else asks: whether the two
-// drivers agree. bin/srv_rec_test feeds the server a ClientHello this
-// tree builds at the message level and reads the records back; it never
-// hands them to a client. This runs the client's own state machine over
-// them, so a server flight the client refuses fails here rather than in
-// an interop run.
+// drivers agree. bin/srv_tcp_nonblocking_test feeds the server a
+// ClientHello this tree builds at the message level and reads the
+// records back; it never hands them to a client. This runs the client's
+// own state machine over them, so a server flight the client refuses
+// fails here rather than in an interop run.
 //
 // The auth mode is the pinned one, which is what lets the two meet with
 // no certificate authority in the picture: the client pins the server's
@@ -40,10 +40,11 @@
 // what lets a capture tool decrypt a connection from either side's log.
 //
 // The Makefile builds it twice, once per group a raw client can offer.
-// bin/rec_loop_test's client offers x25519 alone, and the server, which
-// holds both groups, must select x25519. bin/rec_loop_pq's client is the
-// KEX=pq one and offers X25519MLKEM768 alone, and the server must select
-// the hybrid, for the full handshake and for the resumed one.
+// bin/tcp_nonblocking_loop_test's client offers x25519 alone, and the
+// server, which holds both groups, must select x25519.
+// bin/tcp_nonblocking_loop_pq's client is the KEX=pq one and offers
+// X25519MLKEM768 alone, and the server must select the hybrid, for the
+// full handshake and for the resumed one.
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -54,11 +55,11 @@
 #include "handshake_parser.h"
 #include "keylog.h"
 #include "rand.h"
-#include "rec.h"
 #include "record.h"
 #include "rsa_sign.h"
 #include "rsa_sign_vectors.h"
-#include "srv_rec.h"
+#include "srv_tcp_nonblocking.h"
+#include "tcp_nonblocking.h"
 #include "tls.h"
 
 noreturn void ch_assert_fail(const char *cond, const char *file, int line) {
@@ -111,8 +112,9 @@ static int never_recv(void *io, uint8_t *p, size_t n) {
     return -1;
 }
 
-// One certificate the chain pointer names, in the shape bin/srv_rec_test
-// uses: valid DER that nothing here parses.
+// One certificate the chain pointer names, in the shape
+// bin/srv_tcp_nonblocking_test uses: valid DER that nothing here
+// parses.
 static const uint8_t cert_der[4] = {0x30, 0x02, 0x05, 0x00};
 static const ch_cert chain[1] = {
     {cert_der, sizeof cert_der}
@@ -141,7 +143,7 @@ static uint8_t cli_buf[CH_MIN_RXBUF];
 static ch_rsa_priv rsa_key;
 
 // What the server pushed, waiting for the client to read it. One flight
-// of five records fits: bin/srv_rec_test measures it at 512 bytes.
+// of five records fits: bin/srv_tcp_nonblocking_test measures it at 512 bytes.
 #define WIRE_MAX 4096
 static struct {
     uint8_t bytes[WIRE_MAX];
@@ -236,9 +238,9 @@ static void check_logs_agree(void) {
 
 // The rsa_pss identity alone, because the client below pins its modulus
 // and a pinned client offers the one signature scheme its build names.
-// bin/srv_rec_test provisions both; here the pin picks the slot, so the
-// unprovisioned one would make the server decline the only scheme the
-// client offers.
+// bin/srv_tcp_nonblocking_test provisions both; here the pin picks the
+// slot, so the unprovisioned one would make the server decline the only
+// scheme the client offers.
 static void server_config(ch_cfg *cfg) {
     memset(cfg, 0, sizeof *cfg);
     cfg->buf = srv_buf;
@@ -455,14 +457,15 @@ int main(void) {
     test_server_group_order();
 
     if (failures == 0) {
-        (void)printf("rec_loop: a whole handshake over group 0x%04x in %d rounds, 0 socket"
-                     " calls; both ends export one secret and log the same four; ch_read"
-                     " waits between records; a wrong pin refused; a ticket resumes with no"
-                     " certificate; a close_notify closes one direction and ch_read sends"
-                     " nothing; the server takes secp256r1 only when x25519 is not listed\n",
+        (void)printf("tcp_nonblocking_loop: a whole handshake over group 0x%04x in %d rounds,"
+                     " 0 socket calls; both ends export one secret and log the same four;"
+                     " ch_read waits between records; a wrong pin refused; a ticket resumes"
+                     " with no certificate; a close_notify closes one direction and ch_read"
+                     " sends nothing; the server takes secp256r1 only when x25519 is not"
+                     " listed\n",
                      (unsigned)LOOP_GROUP, rounds);
         return 0;
     }
-    (void)fprintf(stderr, "rec_loop: %d failures\n", failures);
+    (void)fprintf(stderr, "tcp_nonblocking_loop: %d failures\n", failures);
     return 1;
 }

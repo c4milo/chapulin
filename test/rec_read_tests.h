@@ -1,8 +1,8 @@
 // ch_read in a TRANSPORT=tcp-nonblocking session, once connected, over a caller
 // that hands over whole records as they arrive and has none in between
-// (rec.h). The server seals each record with its own application write
-// key, so the client opens exactly what a server would send. Included by
-// test/rec_loop_test.c after the handshake helpers.
+// (tcp_nonblocking.h). The server seals each record with its own application
+// write key, so the client opens exactly what a server would send. Included by
+// test/tcp_nonblocking_loop_test.c after the handshake helpers.
 //
 // The order is the one a completion-loop caller meets: a record that
 // carries no application data, then nothing, then a data record. Before

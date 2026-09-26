@@ -1,21 +1,23 @@
 // Proves: ch_srv_record_init, ch_srv_record_in and the step table under
-// them (srv_rec.c), together with the inbound framing and the death path
-// both tcp-nonblocking drivers share (rec_frame.c), are memory safe and free
-// of UB over an unconstrained ch_cfg, an unconstrained saved state and
-// unconstrained caller bytes. And that the driver keeps what srv_rec.h
+// them (srv_tcp_nonblocking.c), together with the inbound framing and the
+// death path both tcp-nonblocking drivers share
+// (tcp_nonblocking_frame.c), are memory safe and free of UB over an
+// unconstrained ch_cfg, an unconstrained saved state and unconstrained
+// caller bytes. And that the driver keeps what srv_tcp_nonblocking.h
 // states: it takes whole records only, it never reports more bytes than
 // it was handed, a step number no step wrote kills the session, and every
 // failure leaves a dead session holding no secret (INV-17).
 //
-// What is real and what is a stub. srv_rec.c, rec_frame.c and ct.c are
-// real, so the proof covers the step table, the record loop, the message
-// loop and the wipe on the way out. The fifteen srv_flight.h handlers are
-// stubs, for proof/srv_accept_harness.c's reason: a handler and the
-// driver that calls it are separate proofs, and inlining fifteen message
-// builders would make this a parser proof rather than a driver proof.
-// Each stub asserts the contract its own header states and havocs what
-// that header says it writes, so nothing here rests on one handler's
-// implementation. rec_open and hsr_feed are stubs for the same reason
+// What is real and what is a stub. srv_tcp_nonblocking.c,
+// tcp_nonblocking_frame.c and ct.c are real, so the proof covers the step
+// table, the record loop, the message loop and the wipe on the way out.
+// The fifteen srv_flight.h handlers are stubs, for
+// proof/srv_accept_harness.c's reason: a handler and the driver that
+// calls it are separate proofs, and inlining fifteen message builders
+// would make this a parser proof rather than a driver proof. Each stub
+// asserts the contract its own header states and havocs what that header
+// says it writes, so nothing here rests on one handler's implementation.
+// rec_open and hsr_feed are stubs for the same reason
 // proof/handshake_post_harness.c stubs them: record protection belongs to
 // record.c's harness and reassembly to handshake_record.c's.
 //
@@ -35,7 +37,7 @@
 // had no verdict in 11 minutes at 1.36 GB. At 8 bytes the loops need 3
 // iterations each, unwind 4 covers both, and 16 copies converge.
 // ct_wipe.0 is 623, one past the 622 bytes of ch_tls.tx, the largest
-// object rec_wipe clears.
+// object tcp_nonblocking_wipe clears.
 #define CH_PROOF_STUB_SHA256
 #include "harness.h"
 
@@ -43,11 +45,11 @@
 
 #include "handshake_message.h"
 #include "handshake_record.h"
-#include "rec_frame.h"
 #include "record.h"
 #include "srv_flight.h"
-#include "srv_rec.h"
 #include "srv_resume.h"
+#include "srv_tcp_nonblocking.h"
+#include "tcp_nonblocking_frame.h"
 
 #ifndef CH_PROOF_RXBUF
 #define CH_PROOF_RXBUF 8
@@ -74,12 +76,12 @@ static int handler_result(handshake_state *h) {
     return rc;
 }
 
-// The two handlers that read a message go through here. srv_rec.c runs a
-// step only after hsr_peek_message has found a whole message, so that is
-// what this asserts, and a message it yields is at least its own 4-byte
-// header. Consuming is what makes drive's loop terminate, so a stub that
-// answered CH_OK without advancing pt_off would prove a loop this driver
-// does not run.
+// The two handlers that read a message go through here.
+// srv_tcp_nonblocking.c runs a step only after hsr_peek_message has
+// found a whole message, so that is what this asserts, and a message it
+// yields is at least its own 4-byte header. Consuming is what makes
+// drive's loop terminate, so a stub that answered CH_OK without
+// advancing pt_off would prove a loop this driver does not run.
 static int take_message(handshake_state *h) {
     __CPROVER_assert(h != NULL && h->t != NULL, "msg: state valid");
     __CPROVER_assert(h->t->pt_len >= 4 && h->t->pt_off <= h->t->pt_len - 4,
@@ -259,7 +261,7 @@ int srv_send_new_session_ticket(handshake_state *h) {
 
 // Reassembly, proven in handshake_record.c's own harness. It writes
 // nothing outside cfg.buf, pt_off and pt_len, and it cannot fail: a short
-// count is what rec_take_record reads as a record over the limit.
+// count is what tcp_nonblocking_take_record reads as a record over the limit.
 size_t hsr_feed(handshake_state *h, const uint8_t *p, size_t n) {
     __CPROVER_assert(h != NULL && h->t != NULL, "feed: state valid");
     __CPROVER_assert(n == 0 || __CPROVER_r_ok(p, n), "feed: plaintext readable");
@@ -293,9 +295,10 @@ int hsr_peek_message(const handshake_state *h, size_t *raw_len, uint8_t *alert) 
     return rc;
 }
 
-// Record protection, proven in record.c's harness. rec_frame.c calls it
-// with pt == rec, which is the in-place shape rec.h admits, so the
-// assertion below is the aliasing this caller really uses.
+// Record protection, proven in record.c's harness.
+// tcp_nonblocking_frame.c calls it with pt == rec, which is the
+// in-place shape tcp_nonblocking.h admits, so the assertion below
+// is the aliasing this caller really uses.
 int rec_open(rec_dir *d, const uint8_t *rec, size_t rec_len, uint8_t *pt, size_t pt_cap,
              size_t *pt_len, uint8_t *inner) {
     __CPROVER_assert(__CPROVER_w_ok(d, sizeof *d), "open: dir writable");
@@ -313,7 +316,7 @@ int rec_open(rec_dir *d, const uint8_t *rec, size_t rec_len, uint8_t *pt, size_t
     return 0;
 }
 
-#include "srv_rec.c"
+#include "srv_tcp_nonblocking.c"
 
 static uint8_t buf[CH_PROOF_RXBUF];
 static uint8_t in[CH_PROOF_INBUF];
@@ -330,7 +333,7 @@ static int sink(void *io, const uint8_t *p, size_t n) {
     return 0;
 }
 
-// Whether the session holds any secret. rec_frame.h says a failure
+// Whether the session holds any secret. tcp_nonblocking_frame.h says a failure
 // clears every one of them, and this is that list read back.
 static int no_secret_left(const ch_record *s) {
     for (size_t i = 0; i < sizeof s->t.rd_secret; i++) {
@@ -352,8 +355,8 @@ int main(void) {
     int rc = ch_srv_record_init(&r, &cfg);
     __CPROVER_assert(rc == CH_OK || rc == CH_EINVAL, "init answers one of its two codes");
     if (rc == CH_EINVAL) {
-        // srv_rec.h: nothing was sent and the session is dead rather
-        // than half-live.
+        // srv_tcp_nonblocking.h: nothing was sent and the session
+        // is dead rather than half-live.
         __CPROVER_assert(r.t.state == CH_ST_FAILED, "a refused configuration leaves it dead");
     }
     if (rc == CH_OK) {
@@ -411,7 +414,7 @@ int main(void) {
     // The public entry, over unconstrained caller bytes and the saved
     // state again havocked. n runs past the array on purpose only as far
     // as the array: a caller that lies about n is outside the contract
-    // srv_rec.h states, so the assume holds it to the object.
+    // srv_tcp_nonblocking.h states, so the assume holds it to the object.
     memset(&r, 0, sizeof r);
     r.t.cfg = cfg;
     r.t.cfg.buf = buf;
@@ -440,9 +443,10 @@ int main(void) {
     __CPROVER_assert(r.t.pt_off <= r.t.pt_len && r.t.pt_len <= r.t.cfg.buf_len,
                      "and leaves the window inside the buffer");
     if (rc != CH_OK) {
-        // rec_frame.h's death path: the alert is saved for the caller to
-        // send, every secret is cleared and the session is dead.
-        __CPROVER_assert(rec_session_dead(&r), "a failure leaves the session dead");
+        // tcp_nonblocking_frame.h's death path: the alert is
+        // saved for the caller to send, every secret is cleared
+        // and the session is dead.
+        __CPROVER_assert(tcp_nonblocking_session_dead(&r), "a failure leaves the session dead");
         __CPROVER_assert(no_secret_left(&r), "and holds no secret (INV-17)");
     }
     return 0;

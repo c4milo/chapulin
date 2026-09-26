@@ -21,7 +21,7 @@
 
 #include "ch_assert.h"
 #include "rand.h"
-#include "rec.h"
+#include "tcp_nonblocking.h"
 #include "tls.h"
 
 noreturn void ch_assert_fail(const char *cond, const char *file, int line) {

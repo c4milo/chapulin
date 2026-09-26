@@ -1,13 +1,14 @@
 // chapulin's client driver under TRANSPORT=tcp-nonblocking, and the three calls
-// either role exports. Contract in rec.h. It is the file beside tls.c
-// and quic.c, and it holds no protocol rule of its own: hsr_advance runs
+// either role exports. Contract in tcp_nonblocking.h. It is the file beside
+// tls.c and quic.c, and it holds no protocol rule of its own: hsr_advance runs
 // the handshake and record.[ch] protects what leaves.
 //
 // ch_record_state, ch_record_alert and ch_record_close read no side, so
-// a ROLE=server object compiles them from here and srv_rec.c adds its
-// own two entry points beside them. The client driver above them is what
-// that build has no use for, the way tls.c guards ch_connect.
-#include "rec.h"
+// a ROLE=server object compiles them from here and srv_tcp_nonblocking.c
+// adds its own two entry points beside them. The client driver above
+// them is what that build has no use for, the way tls.c guards
+// ch_connect.
+#include "tcp_nonblocking.h"
 
 #ifdef CH_TRANSPORT_TCP_NONBLOCKING
 
@@ -18,9 +19,9 @@
 #include "ct.h"
 #include "handshake_flight.h"
 #include "handshake_message.h"
-#include "rec_frame.h"
-#include "rec_step.h"
 #include "record.h"
+#include "tcp_nonblocking_frame.h"
+#include "tcp_nonblocking_step.h"
 #ifdef CH_TRUST_WEBPKI
 #include "webpki_ticket.h"
 #endif
@@ -29,11 +30,11 @@
 
 int ch_record_init(ch_record *r, const ch_cfg *cfg) {
     // Neither pointer is checked, as ch_connect does not check its own:
-    // rec.h makes "r and cfg are not NULL" a caller requirement.
+    // tcp_nonblocking.h makes "r and cfg are not NULL" a caller requirement.
     memset(r, 0, sizeof *r);
     r->t.cfg = *cfg;
     // The callbacks go unused until the handshake is done; ch_read and
-    // ch_write need them after it (rec.h).
+    // ch_write need them after it (tcp_nonblocking.h).
     if (!tlsi_config_ok(cfg) || cfg->send == NULL || cfg->recv == NULL) {
         memset(r, 0, sizeof *r);
         r->t.state = CH_ST_FAILED;
@@ -68,7 +69,7 @@ int ch_record_init(ch_record *r, const ch_cfg *cfg) {
         r->t.state = CH_ST_FAILED;
         return CH_EINVAL;
     }
-    rec_stage_plain(r, n);
+    tcp_nonblocking_stage_plain(r, n);
     r->step = HSR_STEP_AWAIT_SERVER_HELLO;
     r->t.state = CH_ST_START;
     return CH_OK;
@@ -86,11 +87,11 @@ static int drive(ch_record *r) {
             return CH_OK;
         }
         if (rc != CH_OK) {
-            return rec_fail(r, rc);
+            return tcp_nonblocking_fail(r, rc);
         }
         rc = hsr_advance(r);
         if (rc != CH_OK) {
-            return rec_fail(r, rc);
+            return tcp_nonblocking_fail(r, rc);
         }
         // A step that staged a record has said everything it can until
         // the caller collects it and the peer answers.
@@ -104,7 +105,7 @@ int ch_record_in(ch_record *r, uint8_t *p, size_t n, size_t *consumed) {
     CH_ASSERT(r->t.state <= CH_ST_FAILED);
     r->hs.t = &r->t;
     *consumed = 0;
-    if (rec_session_dead(r)) {
+    if (tcp_nonblocking_session_dead(r)) {
         return CH_EPROTO;
     }
     // A staged record the caller has not collected means this endpoint
@@ -123,14 +124,14 @@ int ch_record_in(ch_record *r, uint8_t *p, size_t n, size_t *consumed) {
             // RFC 9846 section 5.2 caps a record; anything larger names
             // no record this endpoint will ever read.
             r->hs.alert = ALERT_RECORD_OVERFLOW;
-            return rec_fail(r, CH_EPROTO);
+            return tcp_nonblocking_fail(r, CH_EPROTO);
         }
         if (n - off < REC_HDR + body_len) {
             return CH_OK;
         }
-        int rc = rec_take_record(r, rec, body_len, rec[0]);
+        int rc = tcp_nonblocking_take_record(r, rec, body_len, rec[0]);
         if (rc != CH_OK) {
-            return rec_fail(r, rc);
+            return tcp_nonblocking_fail(r, rc);
         }
         off += REC_HDR + body_len;
         *consumed = off;
@@ -145,7 +146,7 @@ int ch_record_in(ch_record *r, uint8_t *p, size_t n, size_t *consumed) {
 }
 
 int ch_record_out(ch_record *r, uint8_t *out, size_t cap, size_t *out_len) {
-    if (rec_session_dead(r)) {
+    if (tcp_nonblocking_session_dead(r)) {
         return CH_EINVAL;
     }
     if (cap == 0) {
@@ -184,7 +185,7 @@ uint8_t ch_record_alert(const ch_record *r) {
 }
 
 void ch_record_close(ch_record *r) {
-    rec_wipe(r);
+    tcp_nonblocking_wipe(r);
     r->t.state = CH_ST_CLOSED;
 }
 

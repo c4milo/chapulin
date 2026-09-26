@@ -1,5 +1,5 @@
 invariant: INV-22
-file: rec_step.c
+file: tcp_nonblocking_step.c
 catches: webpki_resume_record
 reason: the tcp-nonblocking driver's step table chooses the step after
   EncryptedExtensions from cfg.psk, which says what the hello offered,

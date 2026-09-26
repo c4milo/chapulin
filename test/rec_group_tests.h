@@ -8,7 +8,7 @@
 // server holds three groups and takes secp256r1 last (srv_kex.h), so a
 // hello that lists secp256r1 alone gets it, and one that lists x25519
 // beside it gets x25519 whatever it shares. Included by
-// test/rec_loop_test.c after its fixtures.
+// test/tcp_nonblocking_loop_test.c after its fixtures.
 #ifndef CH_TEST_REC_GROUP_TESTS_H
 #define CH_TEST_REC_GROUP_TESTS_H
 

@@ -1,7 +1,7 @@
 // The tcp-nonblocking server driver end to end: this tree's own ClientHello,
 // built by handshake_message.c, wrapped in a plaintext record, fed to
-// srv_rec.c, and the records it pushes back. docs/server.md names this
-// binary bin/srv_rec_test.
+// srv_tcp_nonblocking.c, and the records it pushes back. docs/server.md
+// names this binary bin/srv_tcp_nonblocking_test.
 //
 // Why the client's builder rather than a byte vector: the message a
 // client sends is the thing the server has to read, and a vector written
@@ -30,7 +30,7 @@
 #include "srv_auth.h"
 #include "srv_message.h"
 #include "srv_parser.h"
-#include "srv_rec.h"
+#include "srv_tcp_nonblocking.h"
 
 noreturn void ch_assert_fail(const char *cond, const char *file, int line) {
     (void)fprintf(stderr, "ASSERT %s:%d: %s\n", file, line, cond);
@@ -445,7 +445,8 @@ int main(void) {
     test_extension_count_bound();
 
     if (failures == 0) {
-        (void)printf("srv_rec: a ClientHello in, %zu records out (%zu bytes)\n", records, bytes);
+        (void)printf("srv_tcp_nonblocking: a ClientHello in, %zu records out (%zu bytes)\n",
+                     records, bytes);
     }
     return failures != 0;
 }

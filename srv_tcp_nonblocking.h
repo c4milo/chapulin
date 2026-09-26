@@ -1,7 +1,8 @@
 // chapulin's server API under TRANSPORT=tcp-nonblocking: the TLS 1.3 server
 // handshake of srv_flight.[ch], driven by a caller that owns the socket.
-// It sits beside srv.h the way rec.h sits beside tls.h, and it adds the
-// calls a tcp-nonblocking server needs that a blocking one does not.
+// It sits beside srv.h the way tcp_nonblocking.h sits beside tls.h, and it
+// adds the calls a tcp-nonblocking server needs that a blocking one does
+// not.
 //
 // srv.h's ch_srv_accept runs the handshake by calling cfg.send and
 // cfg.recv, which block. That is the right shape for the firmware
@@ -11,10 +12,10 @@
 // This header gives that host the shape srv_quic.h already gives a QUIC
 // server.
 //
-// The post-handshake calls are rec.h's and are not repeated here.
+// The post-handshake calls are tcp_nonblocking.h's and are not repeated here.
 // ch_record_state, ch_record_alert and ch_record_close read no side, and
 // ch_read, ch_write and ch_close are the same record-layer calls a
-// client uses, because record.[ch] names no side either. So rec.h's
+// client uses, because record.[ch] names no side either. So tcp_nonblocking.h's
 // account of closing holds for a server as written: the client's
 // close_notify makes ch_read return 0 and send nothing, ch_write still
 // sends, and ch_close sends the server's close_notify.
@@ -24,15 +25,15 @@
 // stage and pull from, and the flight goes out through
 // ch_srv_cfg.on_record_out as it is produced. srv_cfg.h states that
 // contract and docs/server.md the reasoning.
-#ifndef CH_SRV_REC_H
-#define CH_SRV_REC_H
+#ifndef CH_SRV_TCP_NONBLOCKING_H
+#define CH_SRV_TCP_NONBLOCKING_H
 #if defined(CH_ROLE_SERVER) && defined(CH_TRANSPORT_TCP_NONBLOCKING)
 
 #include <stddef.h>
 #include <stdint.h>
 
 #include "cfg.h"
-#include "rec.h"
+#include "tcp_nonblocking.h"
 
 // The step numbers ch_record.step holds in a server build. A server reads
 // three messages and writes the rest, so the table is shorter than the

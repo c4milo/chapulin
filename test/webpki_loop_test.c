@@ -29,10 +29,10 @@
 #include "ch_assert.h"
 #include "handshake_message.h"
 #include "rand.h"
-#include "rec.h"
 #include "record.h"
-#include "srv_rec.h"
+#include "srv_tcp_nonblocking.h"
 #include "srv_ticket.h"
+#include "tcp_nonblocking.h"
 #include "tls.h"
 #include "webpki_ticket.h"
 
@@ -100,7 +100,7 @@ static int sink(void *io, const uint8_t *p, size_t n) {
 }
 
 // The client's recv once connected: the records the server pushed after
-// the handshake, the ticket among them, and then none (rec.h).
+// the handshake, the ticket among them, and then none (tcp_nonblocking.h).
 static int held_recv(void *io, uint8_t *p, size_t n) {
     (void)io;
     size_t left = to_client.len - to_client.off;

@@ -1,7 +1,8 @@
 // The tcp-nonblocking server driver: srv_flight.[ch]'s handlers run over TLS
-// records, driven by a caller that owns the socket. srv_rec.h states the
-// contract; this file is srv_quic.c's mirror on the transport that keeps
-// its records, and srv_handshake.c's on a caller that will not block.
+// records, driven by a caller that owns the socket. srv_tcp_nonblocking.h
+// states the contract; this file is srv_quic.c's mirror on the transport
+// that keeps its records, and srv_handshake.c's on a caller that will not
+// block.
 //
 // It holds no protocol rule of its own. The handlers decide what a
 // message says, srv_out.c decides how its bytes leave, and this file
@@ -16,7 +17,7 @@
 // message it answers, because a server pushes its flight rather than
 // staging it for a caller to collect, so no send needs a step of its own
 // and no flight suspends half-written.
-#include "srv_rec.h"
+#include "srv_tcp_nonblocking.h"
 
 #if defined(CH_ROLE_SERVER) && defined(CH_TRANSPORT_TCP_NONBLOCKING)
 
@@ -26,10 +27,10 @@
 
 #include "ct.h"
 #include "handshake_record.h"
-#include "rec_frame.h"
 #include "record.h"
 #include "srv_flight.h"
 #include "srv_resume.h"
+#include "tcp_nonblocking_frame.h"
 
 // Everything the server owes once a hello is accepted, whether it was the
 // first or the one that answered a HelloRetryRequest. Every record of it
@@ -192,8 +193,9 @@ static int advance(ch_record *r) {
 }
 
 // Runs every whole handshake message the fed plaintext now holds. It is
-// rec.c's drive loop without the staging test, because a server pushes
-// its flight instead of leaving it for the caller to collect.
+// tcp_nonblocking.c's drive loop without the staging test, because a
+// server pushes its flight instead of leaving it for the caller to
+// collect.
 static int drive(ch_record *r) {
     for (;;) {
         size_t raw_len = 0;
@@ -202,18 +204,19 @@ static int drive(ch_record *r) {
             return CH_OK;
         }
         if (rc != CH_OK) {
-            return rec_fail(r, rc);
+            return tcp_nonblocking_fail(r, rc);
         }
         rc = advance(r);
         if (rc != CH_OK) {
-            return rec_fail(r, rc);
+            return tcp_nonblocking_fail(r, rc);
         }
     }
 }
 
 int ch_srv_record_init(ch_record *r, const ch_cfg *cfg) {
     // Neither pointer is checked, as ch_srv_accept does not check its
-    // own: srv_rec.h makes "r and cfg are not NULL" a caller requirement.
+    // own: srv_tcp_nonblocking.h makes "r and cfg are not NULL" a
+    // caller requirement.
     memset(r, 0, sizeof *r);
     r->t.cfg = *cfg;
     // srv_config_ok's transport_ok requires on_record_out, and srv_out.c's
@@ -250,7 +253,7 @@ int ch_srv_record_in(ch_record *r, uint8_t *p, size_t n, size_t *consumed) {
     CH_ASSERT(r->t.state <= CH_ST_FAILED);
     r->hs.t = &r->t;
     *consumed = 0;
-    if (rec_session_dead(r)) {
+    if (tcp_nonblocking_session_dead(r)) {
         return CH_EPROTO;
     }
     size_t off = 0;
@@ -264,14 +267,14 @@ int ch_srv_record_in(ch_record *r, uint8_t *p, size_t n, size_t *consumed) {
             // RFC 9846 section 5.2 caps a record; anything larger names
             // no record this endpoint will ever read.
             r->hs.alert = ALERT_RECORD_OVERFLOW;
-            return rec_fail(r, CH_EPROTO);
+            return tcp_nonblocking_fail(r, CH_EPROTO);
         }
         if (n - off < REC_HDR + body_len) {
             return CH_OK;
         }
-        int rc = rec_take_record(r, rec, body_len, rec[0]);
+        int rc = tcp_nonblocking_take_record(r, rec, body_len, rec[0]);
         if (rc != CH_OK) {
-            return rec_fail(r, rc);
+            return tcp_nonblocking_fail(r, rc);
         }
         off += REC_HDR + body_len;
         *consumed = off;
@@ -281,7 +284,7 @@ int ch_srv_record_in(ch_record *r, uint8_t *p, size_t n, size_t *consumed) {
         }
         // The record that completed the handshake is the last one this
         // call takes: what follows it is the peer's application data or
-        // alerts, and belongs to ch_read (srv_rec.h).
+        // alerts, and belongs to ch_read (srv_tcp_nonblocking.h).
         if (r->step == SR_STEP_COMPLETE) {
             return CH_OK;
         }

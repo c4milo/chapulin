@@ -26,8 +26,8 @@ int io_read_record(const ch_cfg *cfg, uint8_t *buf, size_t cap, uint8_t *outer,
 #ifdef CH_TRANSPORT_TCP_NONBLOCKING
     // A TRANSPORT=tcp-nonblocking caller owns the socket and hands over whole
     // records, so a recv that returns 0 before a record's first byte says
-    // no record has arrived yet (rec.h). The caller runs ch_read again
-    // once one has. A 0 after that first byte breaks the whole-record
+    // no record has arrived yet (tcp_nonblocking.h). The caller runs ch_read
+    // again once one has. A 0 after that first byte breaks the whole-record
     // promise, and read_exact fails it with CH_EIO like any short read.
     int got = cfg->recv(cfg->io, buf, REC_HDR);
     if (got == 0) {

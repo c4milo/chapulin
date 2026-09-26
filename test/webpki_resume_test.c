@@ -33,7 +33,7 @@
 #include "webpki_ticket.h"
 #include "x25519.h"
 #ifdef CH_TRANSPORT_TCP_NONBLOCKING
-#include "rec.h"
+#include "tcp_nonblocking.h"
 #endif
 
 static int failures = 0;
@@ -369,7 +369,8 @@ static int mock_send(void *io, const uint8_t *p, size_t n) {
 }
 
 // Hands over what the mock holds. Empty, it returns 0 in a tcp-nonblocking build,
-// where that means no record yet (rec.h), and -1 over TRANSPORT=tcp-blocking.
+// where that means no record yet (tcp_nonblocking.h), and -1 over
+// TRANSPORT=tcp-blocking.
 static int mock_recv(void *io, uint8_t *p, size_t n) {
     mock_server *s = io;
     size_t left = s->queue_len - s->queue_off;

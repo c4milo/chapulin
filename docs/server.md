@@ -1918,7 +1918,7 @@ on. `TRANSPORT=tcp-nonblocking ROLE=server` is the same server handshake with th
 given back to the caller.
 
 ```c
-// srv_rec.h — the same TLS 1.3 server, driven by a caller that owns the socket.
+// srv_tcp_nonblocking.h — the same TLS 1.3 server, driven by a caller that owns the socket.
 
 // Prepares a server session. It reads the configuration and waits: unlike
 // ch_record_init it stages no message, because a server speaks second.
@@ -1930,11 +1930,13 @@ int ch_srv_record_init(ch_record *r, const ch_cfg *cfg);
 int ch_srv_record_in(ch_record *r, uint8_t *p, size_t n, size_t *consumed);
 ```
 
-`ch_record_state`, `ch_record_alert` and `ch_record_close` are `rec.h`'s and are
-not repeated: they read no side, so `rec.c` compiles them in either role and the
-client driver above them is what a `ROLE=server` object guards out
-(`rec.c:25`). `ch_read`, `ch_write` and `ch_close` are the same record-layer
-calls a client uses, for the reason this section already gives.
+`ch_record_state`, `ch_record_alert` and `ch_record_close` are
+`tcp_nonblocking.h`'s and are not repeated: they read no side, so
+`tcp_nonblocking.c` compiles them in either role and the client driver
+above them is what a `ROLE=server` object guards out
+(`tcp_nonblocking.c:25`). `ch_read`, `ch_write` and `ch_close` are the same
+record-layer calls a client uses, for the reason this section already
+gives.
 
 **Output is a push, not a pull.** There is no `ch_srv_record_out`, and the
 certificate chain is why. `srv_flight.c` stages a protected message on the
@@ -1943,36 +1945,39 @@ handler's own stack frame and streams the Certificate straight out of
 Certificate message is larger than `ch_tls.tx`, which is `CH_TX_STAGE` bytes
 (`session.h:64`). So there is no buffer for a caller to collect from. A pull
 would need a resume point inside `srv_out_sealed`'s record loop, which is the
-one thing the tcp-nonblocking transport's design rules out: `rec_step.h:12` states that a step
-runs only when a whole message is already present, consumes that one message,
-and waits nowhere inside it. `srv_quic.h:18` reached the same conclusion for the
-same reason on the other transport, and `ch_srv_cfg.on_record_out` is
-`on_crypto_out` without the encryption level.
+one thing the tcp-nonblocking transport's design rules out:
+`tcp_nonblocking_step.h:12` states that a step runs only when a whole message is
+already present, consumes that one message, and waits nowhere inside it.
+`srv_quic.h:18` reached the same conclusion for the same reason on the other
+transport, and `ch_srv_cfg.on_record_out` is `on_crypto_out` without the
+encryption level.
 
 That still answers the problem the mode exists for. The callback copies each
 record into a buffer the caller owns and returns; it never waits on a socket, so
 nothing blocks the loop.
 
 The whole flight leaves inside one `ch_srv_record_in`, because every send sits
-in the step that read the message it answers. `bin/srv_rec_test` measures it:
-one ClientHello in, five records out — the ServerHello in the clear, then the
-EncryptedExtensions, the Certificate, the CertificateVerify and the Finished,
-each protected. The test's `send` and `recv` fail the run if the driver ever
-calls them, which is how the mode's claim is checked rather than argued.
+in the step that read the message it answers. `bin/srv_tcp_nonblocking_test`
+measures it: one ClientHello in, five records out — the ServerHello in the
+clear, then the EncryptedExtensions, the Certificate, the CertificateVerify and
+the Finished, each protected. The test's `send` and `recv` fail the run if the
+driver ever calls them, which is how the mode's claim is checked rather than
+argued.
 
 #### The file partition
 
 | file | what it holds |
 | --- | --- |
-| `srv_rec.[ch]` | the driver: the three steps and the two entry points. `srv_quic.[ch]`'s mirror on the transport that keeps its records. |
-| `rec_frame.[ch]` | taking one inbound record, and dying. Both drivers call it, so INV-17's wipe list has one copy to check, the way `quic_fail.[ch]` holds QUIC's. |
+| `srv_tcp_nonblocking.[ch]` | the driver: the three steps and the two entry points. `srv_quic.[ch]`'s mirror on the transport that keeps its records. |
+| `tcp_nonblocking_frame.[ch]` | taking one inbound record, and dying. Both drivers call it, so INV-17's wipe list has one copy to check, the way `quic_fail.[ch]` holds QUIC's. |
 
-`srv_rec.c` installs no keys. Every `rec_dir_init` a server makes already sits
-inside the handler that derived the secret it takes — the handshake keys in
-`srv_derive_handshake_secrets` (`srv_flight.c:308`), the application write key
-in `srv_send_finished` (`srv_flight.c:425`) and the application read key in
-`srv_complete` (`srv_flight.c:464`) — because the blocking driver needs them
-there too. The step table decides only which handler runs next.
+`srv_tcp_nonblocking.c` installs no keys. Every `rec_dir_init` a server makes
+already sits inside the handler that derived the secret it takes — the
+handshake keys in `srv_derive_handshake_secrets` (`srv_flight.c:308`), the
+application write key in `srv_send_finished` (`srv_flight.c:425`) and the
+application read key in `srv_complete` (`srv_flight.c:464`) — because the
+blocking driver needs them there too. The step table decides only which
+handler runs next.
 
 `srv_out.c` gains a third arm. It had two: a QUIC arm that pushes to
 `on_crypto_out`, and a tcp-blocking arm that calls `io_send_all`. The
@@ -1991,11 +1996,11 @@ no peer certificate. `ROLE=both` takes the tcp-nonblocking transport too, with a
 `ch_srv_record_init` are different names for that reason.
 
 `make lint-trust-separation` carries a row for this build: it requires
-`srv_rec.c`, `rec.c` and `rec_frame.c`, and refuses `srv_handshake.c`,
-`srv_quic.c` and `rec_step.c`. Each role row names the one driver its transport
-wants. The rows read git's root `srv*.c` list and subtracted a single driver
-name from it until `srv_rec.c` became the third, which no subtraction tells
-apart.
+`srv_tcp_nonblocking.c`, `tcp_nonblocking.c` and `tcp_nonblocking_frame.c`, and
+refuses `srv_handshake.c`, `srv_quic.c` and `tcp_nonblocking_step.c`. Each
+role row names the one driver its transport wants. The rows read git's root
+`srv*.c` list and subtracted a single driver name from it until
+`srv_tcp_nonblocking.c` became the third, which no subtraction tells apart.
 
 `TRUST=webpki TRANSPORT=tcp-nonblocking` links too, which is the combination a
 public-PKI host client wants. It did not until the webpki `ch_connect` gained

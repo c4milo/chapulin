@@ -13,9 +13,9 @@
 // cross-checked rather than published.
 //
 // The inputs are counters rather than a real handshake's secrets: this
-// binary tests the derivation. bin/rec_loop_test is built with the same
-// axis and is where a real session runs it: a client and a server that
-// completed one handshake export one secret.
+// binary tests the derivation. bin/tcp_nonblocking_loop_test is built
+// with the same axis and is where a real session runs it: a client and
+// a server that completed one handshake export one secret.
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>

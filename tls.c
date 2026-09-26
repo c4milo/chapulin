@@ -191,7 +191,7 @@ static int dispatch_one_record(ch_tls *t) {
     size_t record_len = 0;
     int rc = io_read_record(&t->cfg, t->cfg.buf, t->cfg.buf_len, &outer, &record_len);
     if (rc == CH_RECORD_AGAIN) {
-        return rc; // TRANSPORT=tcp-nonblocking alone returns it (rec.h)
+        return rc; // TRANSPORT=tcp-nonblocking alone returns it (tcp_nonblocking.h)
     }
     if (rc != CH_OK) {
         tlsi_fail(t, ALERT_DECODE_ERROR);

@@ -1,10 +1,10 @@
 // The client's flight handlers, one function per handshake message, over
 // the handshake_state and the ch_tls it points at. Every transport
 // compiles this file: the tcp-blocking driver in handshake.c calls these
-// in one straight line, and the tcp-nonblocking driver in rec_step.c and
-// the QUIC driver in quic_step.c call the same functions one per step,
-// so no protocol rule exists twice (docs/quic.md, "The design: one whole
-// message per step").
+// in one straight line, and the tcp-nonblocking driver in
+// tcp_nonblocking_step.c and the QUIC driver in quic_step.c call the
+// same functions one per step, so no protocol rule exists twice
+// (docs/quic.md, "The design: one whole message per step").
 //
 // None of these functions calls the record layer, the I/O shim or a
 // tlsi_ function. Each reads its message through hsr_next_msg and writes

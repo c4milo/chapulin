@@ -43,8 +43,8 @@ int ch_write(ch_tls *t, const uint8_t *p, size_t n);
 // caller's recv returned 0 at a record boundary, so no record has arrived
 // yet. The session stays connected and every record already read has
 // been handled, a ticket or a KeyUpdate among them; the caller calls
-// ch_read again once it holds the next whole record. rec.h states the
-// recv contract that goes with it.
+// ch_read again once it holds the next whole record. tcp_nonblocking.h states
+// the recv contract that goes with it.
 int ch_read(ch_tls *t, uint8_t *p, size_t n);
 
 #ifdef CH_EXPORTER

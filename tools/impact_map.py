@@ -83,9 +83,10 @@ GATE_ROOTS = ["check-slow", "diff-ecdsa", "diff-pq", "diff-webpki",
 # The axis values print-lib-srcs is asked about, each a packaged-object
 # leg `make check` builds. The sixth carries the sources only an ecdsa
 # mode and KEX=pq package, so the six together are every source some
-# client object carries. TRUST=webpki TRANSPORT=tcp-nonblocking packages rec.c,
-# rec_frame.c and rec_step.c, which no other client object carries, and
-# a violation names its leg.
+# client object carries. TRUST=webpki TRANSPORT=tcp-nonblocking
+# packages tcp_nonblocking.c, tcp_nonblocking_frame.c and
+# tcp_nonblocking_step.c, which no other client object carries, and a
+# violation names its leg.
 LIB_AXES = ["", "TRUST=ca-rsa", "TRUST=webpki",
             "TRUST=webpki TRANSPORT=tcp-nonblocking", "TRANSPORT=quic-nonblocking",
             "TRUST=raw-ecdsa KEX=pq"]

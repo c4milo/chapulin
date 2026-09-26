@@ -1,6 +1,6 @@
 invariant: INV-13
 file: io.c
-catches: rec_loop_test
+catches: tcp_nonblocking_loop_test
 reason: a tcp-nonblocking ch_read reports CH_RECORD_AGAIN for a recv that
   stops inside a record, after its first byte. The bytes already read are
   lost and the session stays live, so the caller can retry past a broken

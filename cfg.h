@@ -71,7 +71,8 @@
 #define CH_ECAP (-4)    // caller buffer too small for the peer's message
 #define CH_ECLOSED (-5) // clean close_notify from the peer
 #define CH_EINVAL (-6)  // invalid configuration or call; nothing was sent
-// TRANSPORT=tcp-nonblocking's ch_read found no record yet; the session stays live (rec.h, INV-13).
+// TRANSPORT=tcp-nonblocking's ch_read found no record yet; the session stays
+// live (tcp_nonblocking.h, INV-13).
 #define CH_RECORD_AGAIN (-9)
 
 // Outgoing records are staged in the session struct so writes never

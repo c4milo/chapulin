@@ -137,7 +137,8 @@ static int transport_ok(const ch_cfg *cfg) {
     // the caller owns it, and the flight leaves through on_record_out
     // (srv_cfg.h). send and recv stay required all the same, because
     // ch_read and ch_write call them once the session is connected, and
-    // by then the caller holds the bytes and they never block (rec.h).
+    // by then the caller holds the bytes and they never block
+    // (tcp_nonblocking.h).
     return cfg->buf != NULL && cfg->send != NULL && cfg->recv != NULL &&
            cfg->buf_len >= CH_MIN_RXBUF && cfg->srv.on_record_out != NULL;
 #else
@@ -148,7 +149,7 @@ static int transport_ok(const ch_cfg *cfg) {
 
 // External in every build, so one header serves all three transports: a
 // blocking build calls it only from ch_srv_accept below, and the
-// non-blocking builds call it from srv_quic.c and srv_rec.c. The
+// non-blocking builds call it from srv_quic.c and srv_tcp_nonblocking.c. The
 // packaged object localizes it like every other internal symbol.
 int srv_config_ok(const ch_cfg *cfg) {
     return srv_fields_ok(cfg) && client_fields_unset(cfg) && alpn_ok(cfg) && transport_ok(cfg);

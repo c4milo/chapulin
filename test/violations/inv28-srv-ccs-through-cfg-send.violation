@@ -1,13 +1,13 @@
 invariant: INV-28
 file: srv_flight.c
-catches: srv_rec_test
+catches: srv_tcp_nonblocking_test
 reason: the compatibility change_cipher_spec, the one record a server sends
   when the client's hello carries a legacy_session_id, goes out through
   cfg.send instead of the driver's own output. A TRANSPORT=tcp-nonblocking server
   then writes to a socket it promised never to touch, and a caller whose
   send refuses during the handshake fails every handshake with a
   middlebox-compatibility client such as Go's crypto/tls, which is how
-  colibri found it. test/srv_rec_test.c sends a hello with a 32-byte
+  colibri found it. test/srv_tcp_nonblocking_test.c sends a hello with a 32-byte
   session id and requires the record from on_record_out.
 
 --- old

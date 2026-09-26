@@ -1,7 +1,8 @@
 // Whole handshakes for bench/primitives.c: this tree's tcp-nonblocking client
-// (rec.c) against this tree's tcp-nonblocking server (srv_rec.c) in one
-// process, the pairing test/rec_loop_test.c drives. bench/primitives.sh
-// builds it from the Makefile's REC_LOOP_SRCS, the ROLE=both
+// (tcp_nonblocking.c) against this tree's tcp-nonblocking server
+// (srv_tcp_nonblocking.c) in one process, the pairing
+// test/tcp_nonblocking_loop_test.c drives. bench/primitives.sh builds it from
+// the Makefile's TCP_NONBLOCKING_LOOP_SRCS, the ROLE=both
 // TRANSPORT=tcp-nonblocking source list, once per pinned algorithm: the default
 // build pins an RSA modulus and CH_PIN_ECDSA pins a P-256 point.
 //
@@ -12,17 +13,17 @@
 // up to the whole: the rest is the clock reads themselves and the loop
 // that carries bytes between the ends.
 //
-// The auth mode is pinned for the reason test/rec_loop_test.c gives:
-// the client pins the server's own public key and hashes the one-entry
-// chain below without reading it, so no certificate authority is
-// needed. The server is given no ticket key, so every handshake here is
-// a full one.
+// The auth mode is pinned for the reason
+// test/tcp_nonblocking_loop_test.c gives: the client pins the server's
+// own public key and hashes the one-entry chain below without reading
+// it, so no certificate authority is needed. The server is given no
+// ticket key, so every handshake here is a full one.
 //
 // Built with -DCH_KEX_PQ, the client offers X25519MLKEM768 alone, as a
 // KEX=pq raw client does, and the server, which carries ML-KEM in every
 // build, selects it: the rows gain a _hybrid suffix, and a handshake that
 // ends on another group fails the bench. The server's buffer then holds
-// the client's hybrid hello, as test/rec_loop_test.c's does.
+// the client's hybrid hello, as test/tcp_nonblocking_loop_test.c's does.
 //
 // Built with -DBENCH_COUNT_CALLS and -finstrument-functions, the program
 // times nothing. It runs one handshake per identity, then a second one
@@ -33,8 +34,8 @@
 #include <string.h>
 
 #include "primitives.h"
-#include "rec.h"
-#include "srv_rec.h"
+#include "srv_tcp_nonblocking.h"
+#include "tcp_nonblocking.h"
 
 #ifdef CH_KEX_PQ
 #include "handshake_message.h"
@@ -82,7 +83,8 @@
 #define SERVER_BUF_LEN CH_MIN_RXBUF
 #endif
 
-// Valid DER that nothing on either side parses (test/rec_loop_test.c).
+// Valid DER that nothing on either side parses
+// (test/tcp_nonblocking_loop_test.c).
 static const uint8_t cert_der[4] = {0x30, 0x02, 0x05, 0x00};
 static const ch_cert chain[1] = {
     {cert_der, sizeof cert_der}

@@ -201,7 +201,7 @@ int srv_select(handshake_state *h, const client_hello *ch, selection *sel);
 // Copies what the session keeps past the message that decided it, which
 // session.h lists field by field. Each server driver calls it once, after
 // the hello exchange and before srv_derive_handshake_secrets:
-// srv_handshake.c, srv_rec.c and srv_quic.c. The driver is the only
+// srv_handshake.c, srv_tcp_nonblocking.c and srv_quic.c. The driver is the only
 // scope that holds the selection, the parsed ClientHello and the session
 // at once. srv_send_encrypted_extensions reads alpn_selected off the
 // session rather than off the hello, because its signature carries no
@@ -220,8 +220,8 @@ int srv_select(handshake_state *h, const client_hello *ch, selection *sel);
 // the extension from a QUIC client, and ch_tls declares no peer_limit.
 //
 // Defined here, not in srv_flight.c, so the harnesses that prove
-// srv_handshake.c and srv_rec.c with srv_flight.c stubbed still prove
-// the peer_limit rule over the real code.
+// srv_handshake.c and srv_tcp_nonblocking.c with srv_flight.c
+// stubbed still prove the peer_limit rule over the real code.
 static inline void srv_store_selection(ch_tls *t, const client_hello *ch, const selection *sel) {
     t->suite = sel->suite;
     t->hash_len = sel->hash_len;

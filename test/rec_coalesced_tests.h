@@ -5,7 +5,7 @@
 // *consumed covers the Finished alone and the application record is left
 // for ch_read. Before it stopped, the next record reached the completed
 // handshake and failed it with unexpected_message, which colibri found
-// against h2spec. Included by test/rec_loop_test.c; it reuses
+// against h2spec. Included by test/tcp_nonblocking_loop_test.c; it reuses
 // rec_read_tests.h's held records and held_recv.
 #ifndef CH_TEST_REC_COALESCED_TESTS_H
 #define CH_TEST_REC_COALESCED_TESTS_H

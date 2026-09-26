@@ -520,27 +520,28 @@ last `ROLE=server` stub, as the entry said it would.
   mode exists for: a callback that blocks inside a completion-based
   event loop stalls every connection that loop holds, and there is no
   thread to park it on.
-- **Check.** `bin/srv_rec_test` supplies a `send` and a `recv` that fail
-  the run if the driver ever calls them, so the claim is measured rather
-  than argued. `test/violations/srv-rec-out-blocks-the-caller.violation`
+- **Check.** `bin/srv_tcp_nonblocking_test` supplies a `send` and a
+  `recv` that fail the run if the driver ever calls them, so the claim
+  is measured rather than argued.
+  `test/violations/srv-tcp-nonblocking-out-blocks-the-caller.violation`
   makes `emit` send instead of pushing and requires that binary to fail.
   `test/violations/inv28-srv-ccs-through-cfg-send.violation` sends the
   change_cipher_spec through `cfg.send`, and the binary's hello with a
-  32-byte legacy_session_id catches it.
-  `bin/rec_loop_test` measures both drivers at once: it runs this tree's
-  client driver against this tree's server driver in one process, over
-  the pinned auth mode, and counts the socket calls of both. A whole
-  handshake completes in two rounds with none. That is also the only
-  place the two drivers meet -- `bin/srv_rec_test` reads the server's
-  records and never hands them to a client -- so a server flight the
-  client refuses fails in `check` rather than in an interop run.
+  32-byte legacy_session_id catches it. `bin/tcp_nonblocking_loop_test`
+  measures both drivers at once: it runs this tree's client driver
+  against this tree's server driver in one process, over the pinned auth
+  mode, and counts the socket calls of both. A whole handshake completes
+  in two rounds with none. That is also the only place the two drivers
+  meet -- `bin/srv_tcp_nonblocking_test` reads the server's records and
+  never hands them to a client -- so a server flight the client refuses
+  fails in `check` rather than in an interop run.
   `test/violations/rec-in-waits-for-the-rest.violation` is the client's
   mirror of the server mutant above: it makes `ch_record_in` call
   `cfg.recv` to wait for the rest of a message, which still completes
-  the handshake, and requires that binary to fail. `bin/recclient`
-  still covers the client against a real server in `check-slow`.
-  `bin/rec_loop_test` also counts each end's send calls after the
-  handshake (`test/rec_close_tests.h`): none while the peer's
+  the handshake, and requires that binary to fail. `bin/recclient` still
+  covers the client against a real server in `check-slow`.
+  `bin/tcp_nonblocking_loop_test` also counts each end's send calls
+  after the handshake (`test/rec_close_tests.h`): none while the peer's
   close_notify is read, one per `ch_write`, and one for `ch_close`.
   `test/violations/inv22-read-answers-close-notify.violation` makes
   that `ch_read` send a close_notify and requires the binary to fail.
@@ -575,7 +576,7 @@ last `ROLE=server` stub, as the entry said it would.
   wipes `h->random`, the server from the parsed hello. `keylog.h` and
   the Makefile refuse `CH_KEYLOG` without a server role or
   `TRUST=webpki`.
-- **Check.** `bin/rec_loop_test` runs both ends in one process and
+- **Check.** `bin/tcp_nonblocking_loop_test` runs both ends in one process and
   requires eight rows, one per label per end, with one random and one
   secret per label across the two, and no zero secret. It also requires
   a client that refused CertificateVerify to have logged its handshake
@@ -675,10 +676,11 @@ last `ROLE=server` stub, as the entry said it would.
   client shared it, `inv07-srv-skips-hybrid-retry` answers over the
   x25519 share instead of asking for the hybrid, and
   `inv07-srv-p256-before-x25519` prefers secp256r1 to x25519; the test
-  fails on each. `bin/rec_loop_test` feeds this tree's tcp-nonblocking
-  server hand-written hellos that list secp256r1 alone and beside x25519.
-  `test/e2e.sh` runs the same rows against OpenSSL's `s_client`, and the
-  webpki client against an OpenSSL server that holds P-256 alone.
+  fails on each. `bin/tcp_nonblocking_loop_test` feeds this tree's
+  tcp-nonblocking server hand-written hellos that list secp256r1 alone
+  and beside x25519. `test/e2e.sh` runs the same rows against OpenSSL's
+  `s_client`, and the webpki client against an OpenSSL server that holds
+  P-256 alone.
 - **Violation.** A PR accepts a second cipher suite value in
   ServerHello and downgrade surface exists again.
 - See [decisions: Protocol surface](decisions.md#protocol-surface).
@@ -926,12 +928,13 @@ last `ROLE=server` stub, as the entry said it would.
 - **Claim.** Every error kills the session: alert, wipe, dead. There
   is no error a caller can retry past. The two non-blocking transports
   also return results that are not errors and leave the session live,
-  and their headers list them: `rec.h` for `TRANSPORT=tcp-nonblocking` and
-  `quic.h` for `TRANSPORT=quic-nonblocking`. Each one means the call changed
-  nothing, the packet was dropped (`CH_QUIC_DISCARD`, RFC 9001 §5.5), or
-  no record has arrived yet (`CH_RECORD_AGAIN`). A failed QUIC session
-  stays dead: it keeps only the write keys INV-17 names, for one
-  CONNECTION_CLOSE per level, and no call revives it.
+  and their headers list them: `tcp_nonblocking.h` for
+  `TRANSPORT=tcp-nonblocking` and `quic.h` for `TRANSPORT=quic-nonblocking`.
+  Each one means the call changed nothing, the packet was dropped
+  (`CH_QUIC_DISCARD`, RFC 9001 §5.5), or no record has arrived yet
+  (`CH_RECORD_AGAIN`). A failed QUIC session stays dead: it keeps only the
+  write keys INV-17 names, for one CONNECTION_CLOSE per level, and no call
+  revives it.
 - `CH_RECORD_AGAIN` is the one returned after work was done, so its
   terms are exact. `ch_read` returns it only when `cfg.recv` returns 0
   before a record's first byte. Every record read before that has been
@@ -945,7 +948,7 @@ last `ROLE=server` stub, as the entry said it would.
   `dispatch_one_record` and `post_handshake` in `tls.c` are the only
   places that return it without calling `tlsi_fail`.
 - **Check.** Convention; handshake_sequence's 466k-sequence run asserts no
-  sequence revives a failed session. `bin/rec_loop_test`
+  sequence revives a failed session. `bin/tcp_nonblocking_loop_test`
   (`test/rec_read_tests.h`) reads a ticket-only record and then nothing,
   a ticket split across two records, and a record cut off after three
   bytes. Three violations each break one term:
@@ -1156,7 +1159,7 @@ last `ROLE=server` stub, as the entry said it would.
   INV-16 for the reason srv-cookie-memcmp does.
   The count bound has a boundary pair on every server path: 128
   extensions accepted and 129 refused in test/srv_parser_reader_tests.h
-  (bin/srv_test), in bin/srv_rec_test, and in
+  (bin/srv_test), in bin/srv_tcp_nonblocking_test, and in
   test/srv_quic_retry_count_tests.h (bin/srv_quic_test), where ngtcp2's
   retried hello at 129 carries the first hello's covered set, so only
   the count refuses it. The srv_parser_count CBMC harness proves the
@@ -1189,16 +1192,17 @@ last `ROLE=server` stub, as the entry said it would.
   ticket one second in the future, psk_ke alone, no clock and no key,
   the ALPN binding both ways, the order rule over three identities, and
   a binder one bit off, 33 bytes long, over another transcript or
-  absent. bin/rec_loop_test, bin/quic_loop_test and bin/quic_loop_webpki
-  run the same rules between this tree's client and server, and
-  test/e2e.sh has OpenSSL's s_client resume against bin/tlsserver. The
-  srv_ticket and srv_resume CBMC harnesses prove both files memory-safe
-  over any ticket bytes and any offer, and prove that a ticket is
-  selected only under psk_dhe_ke with a key and a clock, that a
-  selected ticket leaves no signature scheme selected, and that a
-  binder refusal is decrypt_error. The `srv-resume-` and `srv-ticket-`
-  violations guard the rules, and srv-resume-binder-memcmp carries
-  INV-16 for the reason quic-token-memcmp does.
+  absent. bin/tcp_nonblocking_loop_test, bin/quic_loop_test and
+  bin/quic_loop_webpki run the same rules between this tree's client
+  and server, and test/e2e.sh has OpenSSL's s_client resume against
+  bin/tlsserver. The srv_ticket and srv_resume CBMC harnesses prove
+  both files memory-safe over any ticket bytes and any offer, and prove
+  that a ticket is selected only under psk_dhe_ke with a key and a
+  clock, that a selected ticket leaves no signature scheme selected,
+  and that a binder refusal is decrypt_error. The `srv-resume-` and
+  `srv-ticket-` violations guard the rules, and
+  srv-resume-binder-memcmp carries INV-16 for the reason
+  quic-token-memcmp does.
 - **Violation.** A PR relaxes one refusal for interop with a broken
   server, or makes the server refuse a ClientHello for carrying
   something it does not know.
@@ -1932,10 +1936,10 @@ last `ROLE=server` stub, as the entry said it would.
   `ch_write` keeps sending, and `ch_close` sends this side's
   close_notify and sets `CH_ST_CLOSED`.
 - **Mechanism.** The server writes its own flight in the order the
-  client reads it, by call position in `srv_handshake.c`, `srv_rec.c`
-  and `srv_quic.c`, and sends its one NewSessionTicket after the client
-  Finished verifies and never with the flight.
-  `handshake.c` reads the flight as a straight line —
+  client reads it, by call position in `srv_handshake.c`,
+  `srv_tcp_nonblocking.c` and `srv_quic.c`, and sends its one
+  NewSessionTicket after the client Finished verifies and never with the
+  flight. `handshake.c` reads the flight as a straight line —
   `hello_exchange`, then `hsa_server_auth`, then `expect_finished` — and
   each step compares the message type against the one it expects,
   answering `ALERT_UNEXPECTED_MESSAGE` otherwise. There is no state
@@ -1963,7 +1967,7 @@ last `ROLE=server` stub, as the entry said it would.
   plus the e2e run, not on the oracle; CBMC (`handshake` harness) for
   memory safety only, not for order. The server's side is tested, not
   proved: a resumed flight of EncryptedExtensions and Finished alone is
-  counted by bin/rec_loop_test and bin/quic_loop_test and resumed by
+  counted by bin/tcp_nonblocking_loop_test and bin/quic_loop_test and resumed by
   s_client in test/e2e.sh, and three `srv-certificate-on-resumed-`
   violations, one per driver, require each to object to a Certificate in
   it. The TRUST=webpki fork is tested per driver: the declined-ticket
@@ -1981,13 +1985,13 @@ last `ROLE=server` stub, as the entry said it would.
   `test/rec_coalesced_tests.h` delivers the Finished and one application
   record in one `ch_srv_record_in` call, and
   `test/violations/inv22-srv-record-in-reads-past-finished.violation`
-  keeps the loop going past the Finished and requires `bin/rec_loop_test`
-  to fail. A QUIC server refuses what the same delivery carries after the
-  Finished instead, because RFC 9001 §4.1.3 makes those bytes data at a
-  level it is leaving, and it refuses them before `srv_complete` empties
-  `cfg.buf`. `test/quic_loop_close.h` delivers a Finished and a KeyUpdate
-  in one `ch_srv_quic_crypto_in` call and requires 0x010a (RFC 9001 §6)
-  and no ticket, and
+  keeps the loop going past the Finished and requires
+  `bin/tcp_nonblocking_loop_test` to fail. A QUIC server refuses what the
+  same delivery carries after the Finished instead, because RFC 9001
+  §4.1.3 makes those bytes data at a level it is leaving, and it refuses
+  them before `srv_complete` empties `cfg.buf`. `test/quic_loop_close.h`
+  delivers a Finished and a KeyUpdate in one `ch_srv_quic_crypto_in` call
+  and requires 0x010a (RFC 9001 §6) and no ticket, and
   `test/violations/inv22-srv-quic-drops-bytes-after-finished.violation`
   removes the refusal and requires `bin/quic_loop_test` to fail.
   The close_notify rule is tested three ways, not proved: `tls.c` has
@@ -1995,7 +1999,7 @@ last `ROLE=server` stub, as the entry said it would.
   `test_peer_close_notify` (`test/session_post_tests.h`) queues a record
   behind the close_notify and requires every later `ch_read` to return 0
   with the record unread, no send call, and `ch_write` and `ch_close`
-  to send under the write key. `bin/rec_loop_test`
+  to send under the write key. `bin/tcp_nonblocking_loop_test`
   (`test/rec_close_tests.h`) closes one direction at a time between the
   two tcp-nonblocking drivers and counts each end's send calls, so the
   `ch_read` that reads a close_notify is measured to send nothing, on
@@ -2003,7 +2007,7 @@ last `ROLE=server` stub, as the entry said it would.
   it against Go's `CloseWrite`, which sends a close_notify and keeps
   reading: the server logs the lines the client sent after that
   close_notify, then the client's own. Three violations each break one
-  term: `inv22-read-answers-close-notify`, which `bin/rec_loop_test`
+  term: `inv22-read-answers-close-notify`, which `bin/tcp_nonblocking_loop_test`
   catches, and `inv22-read-past-close-notify` and
   `inv22-write-refused-after-close-notify`, which `bin/unit` catches.
 - **Violation.** A PR relaxes one type check to tolerate a message a

@@ -153,8 +153,8 @@ HDRS := ct.h sha256.h hkdf.h chacha20.h poly1305.h aead.h x25519.h x25519_wide.h
         pem.h x509.h x509_der.h x509_ca.h webpki.h webpki_cfg.h webpki_pin.h webpki_ticket.h buf.h record.h keysched.h io.h handshake_message.h handshake_parser.h handshake_record.h cfg.h session.h handshake_auth.h handshake.h handshake_post.h \
         tls.h rand.h drbg.h sha3.h sha512.h sha512_compress.h p384.h p384_field.h p256_field.h p256_scalar.h p256_point.h p256_sign.h p256_ecdh.h rsa_pkcs1.h rsa_sign.h mlkem.h mlkem_poly.h \
         handshake_flight.h handshake_groups.h quic.h quic_config.h quic_initial.h quic_keys.h quic_packet.h quic_retry.h quic_step.h quic_fail.h quic_token.h aes.h aes_block.h aes_public_key.h aes_traffic_key.h aes_schedule.h gcm.h ghash_hw.h \
-        srv_cfg.h srv.h srv_parser.h srv_parser_ext.h srv_message.h srv_cookie.h srv_ticket.h srv_auth.h srv_out.h srv_flight.h srv_resume.h srv_handshake.h srv_quic.h srv_rec.h keylog.h \
-        rec.h rec_frame.h rec_step.h build.h suite.h transcript.h
+        srv_cfg.h srv.h srv_parser.h srv_parser_ext.h srv_message.h srv_cookie.h srv_ticket.h srv_auth.h srv_out.h srv_flight.h srv_resume.h srv_handshake.h srv_quic.h srv_tcp_nonblocking.h keylog.h \
+        tcp_nonblocking.h tcp_nonblocking_frame.h tcp_nonblocking_step.h build.h suite.h transcript.h
 
 # The TRANSPORT=quic-nonblocking mode's own sources, named here rather than matched
 # by a pattern, for the reason WEBPKI_SRCS is named: an auditor reads
@@ -374,7 +374,7 @@ LINT_C := $(filter-out softmul.c,$(SRCS)) handshake_groups.c drbg.c sha3.c sha51
           test/mlkem_test.c test/handshake_strict_test.c test/handshake_sequence_test.c \
           test/x509_strict_test.c $(QUIC_SRCS) $(filter-out $(AES_IMPL),$(AES_IMPL_SRCS)) \
           $(SRV_SRCS) test/srv_auth_test.c test/srv_test.c test/srv_flight_test.c test/tls_server.c \
-          srv_quic.c quic_token.c srv_rec.c test/srv_rec_test.c test/rec_loop_test.c test/webpki_loop_test.c test/exporter_test.c rec.c rec_frame.c rec_step.c \
+          srv_quic.c quic_token.c srv_tcp_nonblocking.c test/srv_tcp_nonblocking_test.c test/tcp_nonblocking_loop_test.c test/webpki_loop_test.c test/exporter_test.c tcp_nonblocking.c tcp_nonblocking_frame.c tcp_nonblocking_step.c \
           test/quic_driver_test.c test/quic_loop_test.c test/quic_vectors.c test/diff_quic_test.c \
           test/aes_equiv_test.c test/aes_equiv_soft.c test/aes_equiv_hw.c \
           test/ghash_equiv_test.c test/ghash_equiv_soft.c \
@@ -577,10 +577,10 @@ else ifeq ($(TRANSPORT),tcp-nonblocking)
 # messages are the ones TRANSPORT=tcp-blocking compiles. ch_connect goes with
 # handshake.c, and ch_read, ch_write and ch_close stay, because a caller
 # that has finished the handshake holds its bytes and its callbacks no
-# longer block (rec.h).
+# longer block (tcp_nonblocking.h).
 TRANSPORT_DEF := -DCH_TRANSPORT_TCP_NONBLOCKING
 TRANSPORT_FILTER := handshake.c
-TRANSPORT_ADD := rec.c rec_frame.c rec_step.c
+TRANSPORT_ADD := tcp_nonblocking.c tcp_nonblocking_frame.c tcp_nonblocking_step.c
 PUBLIC_TRANSPORT := ch_record_init ch_record_in ch_record_out ch_record_state ch_record_alert ch_record_close \
                     ch_read ch_write ch_close
 else ifeq ($(TRANSPORT),tcp-blocking)
@@ -671,14 +671,15 @@ PUBLIC_ROLE := ch_srv_quic_init ch_srv_quic_crypto_in ch_srv_quic_retry_tag \
                ch_quic_key_update ch_quic_key_phase ch_quic_drop_previous_keys \
                ch_quic_discard ch_quic_state ch_quic_alert ch_quic_error_code ch_quic_close
 else ifeq ($(TRANSPORT),tcp-nonblocking)
-# The server's driver replaces the client's, source for source: srv_rec.c
-# is the step table rec_step.c is for a client, and srv_handshake.c is the
-# blocking driver this transport exists to avoid. rec.c stays, because
-# ch_record_state, ch_record_alert and ch_record_close read no side; its
-# own client driver is guarded out there. rec_frame.c stays for the same
-# reason: one inbound record reads the same from either side.
-TRANSPORT_ADD := $(filter-out rec_step.c,$(TRANSPORT_ADD))
-ROLE_ADD    := $(filter-out srv_handshake.c,$(ROLE_ADD)) srv_rec.c
+# The server's driver replaces the client's, source for source:
+# srv_tcp_nonblocking.c is the step table tcp_nonblocking_step.c is for
+# a client, and srv_handshake.c is the blocking driver this transport
+# exists to avoid. tcp_nonblocking.c stays, because ch_record_state,
+# ch_record_alert and ch_record_close read no side; its own client
+# driver is guarded out there. tcp_nonblocking_frame.c stays for the
+# same reason: one inbound record reads the same from either side.
+TRANSPORT_ADD := $(filter-out tcp_nonblocking_step.c,$(TRANSPORT_ADD))
+ROLE_ADD    := $(filter-out srv_handshake.c,$(ROLE_ADD)) srv_tcp_nonblocking.c
 # What this object exports: the server's two driver calls, the boot check,
 # the three session calls either role uses, and the record-layer calls a
 # connected session needs. Not ch_record_init, ch_record_in or
@@ -729,10 +730,10 @@ PUBLIC_ROLE := $(PUBLIC_TRANSPORT) ch_srv_quic_init ch_srv_quic_crypto_in \
                ch_srv_check
 else ifeq ($(TRANSPORT),tcp-nonblocking)
 # The server's blocking driver goes and its tcp-nonblocking driver takes the
-# place, the same swap the quic arm above makes. rec_step.c stays, unlike
-# the ROLE=server arm: this object keeps the client half, so both step
-# tables compile and each driver calls its own.
-ROLE_ADD    := $(filter-out srv_handshake.c,$(ROLE_ADD)) srv_rec.c
+# place, the same swap the quic arm above makes. tcp_nonblocking_step.c
+# stays, unlike the ROLE=server arm: this object keeps the client half, so
+# both step tables compile and each driver calls its own.
+ROLE_ADD    := $(filter-out srv_handshake.c,$(ROLE_ADD)) srv_tcp_nonblocking.c
 PUBLIC_ROLE := $(PUBLIC_TRANSPORT) ch_srv_record_init ch_srv_record_in ch_srv_check
 else
 PUBLIC_ROLE := $(PUBLIC_TRANSPORT) ch_srv_accept ch_srv_check
@@ -987,11 +988,11 @@ print-lib-srcs:
 print-lib-def:
 	@echo $(LIB_DEF)
 # bench/primitives.sh builds its handshake program from the sources
-# bin/rec_loop_test links, and asks here rather than keeping its own list,
-# for the reason bench/device-ram.sh does.
-.PHONY: print-rec-loop-srcs
-print-rec-loop-srcs:
-	@echo $(REC_LOOP_SRCS)
+# bin/tcp_nonblocking_loop_test links, and asks here rather than
+# keeping its own list, for the reason bench/device-ram.sh does.
+.PHONY: print-tcp-nonblocking-loop-srcs
+print-tcp-nonblocking-loop-srcs:
+	@echo $(TCP_NONBLOCKING_LOOP_SRCS)
 
 # The mode partition, checked from the build variables rather than
 # assumed from the ifeq chain above. Each axis value names the sources
@@ -1059,12 +1060,13 @@ print-rec-loop-srcs:
 #
 # Three of git's srv*.c files are drivers, one per transport:
 # srv_handshake.c for TRANSPORT=tcp-blocking, srv_quic.c for TRANSPORT=quic-nonblocking and
-# srv_rec.c for TRANSPORT=tcp-nonblocking. A server object carries exactly one of
-# the three, so each role row names its own and bans the other two, and
-# srv_shared holds what every server object carries whatever the
-# transport. The rows subtracted one driver name from the whole git list
-# instead until srv_rec.c landed and made the third: subtraction says
-# which driver a row skips, and a row has to say which one it wants.
+# srv_tcp_nonblocking.c for TRANSPORT=tcp-nonblocking. A server object
+# carries exactly one of the three, so each role row names its own and
+# bans the other two, and srv_shared holds what every server object
+# carries whatever the transport. The rows subtracted one driver name
+# from the whole git list instead until srv_tcp_nonblocking.c landed and
+# made the third: subtraction says which driver a row skips, and a row
+# has to say which one it wants.
 # srv_shared keeps the property that shape had -- a new srv*.c file that
 # is not a driver lands there, so every role row requires it and an arm
 # that forgot to add it fails here. Every server row also requires the
@@ -1141,13 +1143,13 @@ lint-trust-separation:
 	[ -n "$$srv_files" ] || { echo "lint-trust-separation: git tracks no srv*.c file at the root, so the role rows would check nothing"; rc=1; }; \
 	client_only="handshake.c handshake_auth.c handshake_parser.c handshake_parser_ee.c handshake_message.c"; \
 	role_crypto="rsa_sign.c p256_sign.c p256_ecdh.c p256_scalar.c p256_point.c p256_field.c"; \
-	srv_shared=$$(printf '%s\n' $$srv_files | grep -vxF -e srv_handshake.c -e srv_quic.c -e srv_rec.c | tr '\n' ' '); \
+	srv_shared=$$(printf '%s\n' $$srv_files | grep -vxF -e srv_handshake.c -e srv_quic.c -e srv_tcp_nonblocking.c | tr '\n' ' '); \
 	check "ROLE=client TRUST=raw-rsa TRANSPORT=tcp-blocking" "$$client_only tls.c" "$$srv_files $$role_crypto" "" "-DCH_ROLE_SERVER"; \
-	check "ROLE=both TRUST=webpki TRANSPORT=tcp-blocking" "$$srv_shared srv_handshake.c $$role_crypto tls.c handshake.c handshake_groups.c sha3.c mlkem.c mlkem_poly.c" "srv_quic.c srv_rec.c" "-DCH_ROLE_SERVER -DCH_ROLE_BOTH" "-DCH_KEX_PQ"; \
-	check "ROLE=server TRUST=none TRANSPORT=tcp-blocking" "$$srv_shared srv_handshake.c $$role_crypto tls.c rsa.c rsa_mont.c p256.c sha3.c mlkem.c mlkem_poly.c" "$$client_only srv_quic.c srv_rec.c" "-DCH_ROLE_SERVER" "-DCH_PIN_ECDSA -DCH_KEX_PQ"; \
+	check "ROLE=both TRUST=webpki TRANSPORT=tcp-blocking" "$$srv_shared srv_handshake.c $$role_crypto tls.c handshake.c handshake_groups.c sha3.c mlkem.c mlkem_poly.c" "srv_quic.c srv_tcp_nonblocking.c" "-DCH_ROLE_SERVER -DCH_ROLE_BOTH" "-DCH_KEX_PQ"; \
+	check "ROLE=server TRUST=none TRANSPORT=tcp-blocking" "$$srv_shared srv_handshake.c $$role_crypto tls.c rsa.c rsa_mont.c p256.c sha3.c mlkem.c mlkem_poly.c" "$$client_only srv_quic.c srv_tcp_nonblocking.c" "-DCH_ROLE_SERVER" "-DCH_PIN_ECDSA -DCH_KEX_PQ"; \
 	quic_srv=$$(printf '%s\n' $$quic_always | grep -vxF -e quic_step.c | tr '\n' ' '); \
-	check "ROLE=server TRUST=none TRANSPORT=quic-nonblocking EXPORTER=off" "$$srv_shared srv_quic.c quic_token.c $$role_crypto $$quic_srv $$aes_always sha3.c mlkem.c mlkem_poly.c" "$$client_only srv_handshake.c srv_rec.c quic_step.c record.c" "-DCH_ROLE_SERVER -DCH_TRANSPORT_QUIC_NONBLOCKING" "-DCH_PIN_ECDSA -DCH_KEX_PQ"; \
-	check "ROLE=server TRUST=none TRANSPORT=tcp-nonblocking" "$$srv_shared srv_rec.c $$role_crypto rec.c rec_frame.c record.c sha3.c mlkem.c mlkem_poly.c" "$$client_only srv_handshake.c srv_quic.c rec_step.c" "-DCH_ROLE_SERVER -DCH_TRANSPORT_TCP_NONBLOCKING" "-DCH_PIN_ECDSA -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_KEX_PQ"; \
+	check "ROLE=server TRUST=none TRANSPORT=quic-nonblocking EXPORTER=off" "$$srv_shared srv_quic.c quic_token.c $$role_crypto $$quic_srv $$aes_always sha3.c mlkem.c mlkem_poly.c" "$$client_only srv_handshake.c srv_tcp_nonblocking.c quic_step.c record.c" "-DCH_ROLE_SERVER -DCH_TRANSPORT_QUIC_NONBLOCKING" "-DCH_PIN_ECDSA -DCH_KEX_PQ"; \
+	check "ROLE=server TRUST=none TRANSPORT=tcp-nonblocking" "$$srv_shared srv_tcp_nonblocking.c $$role_crypto tcp_nonblocking.c tcp_nonblocking_frame.c record.c sha3.c mlkem.c mlkem_poly.c" "$$client_only srv_handshake.c srv_quic.c tcp_nonblocking_step.c" "-DCH_ROLE_SERVER -DCH_TRANSPORT_TCP_NONBLOCKING" "-DCH_PIN_ECDSA -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_KEX_PQ"; \
 	check "ROLE=server TRUST=none TRANSPORT=tcp-blocking SUITE=aesgcm AES=hw" "aes.c aes_hw.c ghash_hw.c gcm.c sha512.c sha512_compress.c" "quic_aes_soft.c quic_aes_extern.c" "-DCH_SUITE_AES_GCM -DCH_AES_HW" "-DCH_AES_EXTERN -DCH_AES_256_TEST"; \
 	check "ROLE=server TRUST=none TRANSPORT=quic-nonblocking SUITE=aesgcm AES=hw EXPORTER=off" "aes.c aes_hw.c ghash_hw.c gcm.c quic_packet.c sha512.c sha512_compress.c" "quic_aes_soft.c quic_aes_extern.c record.c" "-DCH_SUITE_AES_GCM -DCH_AES_HW -DCH_TRANSPORT_QUIC_NONBLOCKING" "-DCH_AES_EXTERN -DCH_AES_256_TEST"; \
 	[ $$rc = 0 ] && echo "lint-trust-separation: every axis value packages exactly its own sources and defines"; \
@@ -1701,16 +1703,17 @@ bin/quic_suite_test: test/quic_suite_test.c $(QUIC_SUITE_TEST_SRCS) $(HDRS) $(TE
 	  -DCH_NATIVE_AES -I. -o $@ test/quic_suite_test.c $(QUIC_SUITE_TEST_SRCS)
 
 # The tcp-nonblocking server driver, over the same flight sources the blocking
-# server builds: srv_rec.c replaces srv_handshake.c and rec_frame.c comes
-# with the transport, and no rec_step.c, which is the client's table.
-SRV_REC_SRCS := $(filter-out srv_handshake.c,$(SRV_SRCS)) srv_rec.c rec.c rec_frame.c $(KEX_HYBRID_SRCS) \
+# server builds: srv_tcp_nonblocking.c replaces srv_handshake.c and
+# tcp_nonblocking_frame.c comes with the transport, and no
+# tcp_nonblocking_step.c, which is the client's table.
+SRV_TCP_NONBLOCKING_SRCS := $(filter-out srv_handshake.c,$(SRV_SRCS)) srv_tcp_nonblocking.c tcp_nonblocking.c tcp_nonblocking_frame.c $(KEX_HYBRID_SRCS) \
                 handshake_message.c handshake_record.c record.c session.c buf.c ct.c sha256.c hkdf.c keysched.c \
                 x25519.c chacha20.c poly1305.c aead.c io.c rsa_sign.c p256_sign.c p256_ecdh.c \
                 p256_scalar.c p256_point.c p256_field.c p256.c rsa.c rsa_mont.c
-bin/srv_rec_test: test/srv_rec_test.c $(SRV_REC_SRCS) $(HDRS) $(TESTH)
+bin/srv_tcp_nonblocking_test: test/srv_tcp_nonblocking_test.c $(SRV_TCP_NONBLOCKING_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
-	$(CC) $(CFLAGS) -DCH_ROLE_SERVER -DCH_TRANSPORT_TCP_NONBLOCKING -I. -o $@ test/srv_rec_test.c \
-	  $(SRV_REC_SRCS)
+	$(CC) $(CFLAGS) -DCH_ROLE_SERVER -DCH_TRANSPORT_TCP_NONBLOCKING -I. -o $@ test/srv_tcp_nonblocking_test.c \
+	  $(SRV_TCP_NONBLOCKING_SRCS)
 
 # Both tcp-nonblocking drivers against each other in one process, under the
 # defines of the one object that carries both: ROLE=both TRANSPORT=tcp-nonblocking.
@@ -1720,29 +1723,29 @@ bin/srv_rec_test: test/srv_rec_test.c $(SRV_REC_SRCS) $(HDRS) $(TESTH)
 # way here. The list is otherwise $(SRCS) whole, like every other test
 # binary, so it also links the certificate parsers a raw-rsa object
 # filters out and this program never reaches.
-REC_LOOP_SRCS := $(filter-out handshake.c,$(SRCS)) rec.c rec_frame.c rec_step.c \
-                 $(filter-out srv_handshake.c,$(SRV_SRCS)) srv_rec.c $(KEX_HYBRID_SRCS) \
+TCP_NONBLOCKING_LOOP_SRCS := $(filter-out handshake.c,$(SRCS)) tcp_nonblocking.c tcp_nonblocking_frame.c tcp_nonblocking_step.c \
+                 $(filter-out srv_handshake.c,$(SRV_SRCS)) srv_tcp_nonblocking.c $(KEX_HYBRID_SRCS) \
                  rsa_sign.c p256_sign.c $(P256_ECDH_SRCS)
-bin/rec_loop_test: test/rec_loop_test.c $(REC_LOOP_SRCS) $(HDRS) $(TESTH)
+bin/tcp_nonblocking_loop_test: test/tcp_nonblocking_loop_test.c $(TCP_NONBLOCKING_LOOP_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) -DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_TRANSPORT_TCP_NONBLOCKING $(EXPORTER_DEF) -DCH_KEYLOG \
-	  -I. -o $@ test/rec_loop_test.c $(REC_LOOP_SRCS)
+	  -I. -o $@ test/tcp_nonblocking_loop_test.c $(TCP_NONBLOCKING_LOOP_SRCS)
 # The same main with the KEX=pq client, which offers X25519MLKEM768 alone,
 # so the server's hybrid half runs against this tree's own client for a
 # full handshake and a resumed one. The Makefile refuses KEX beside
 # ROLE=both for a packaged object, because the server half would ignore it;
 # a test binary may set it, because here it chooses only the client's
 # group, which is what the case is about.
-bin/rec_loop_pq: test/rec_loop_test.c $(REC_LOOP_SRCS) $(HDRS) $(TESTH)
+bin/tcp_nonblocking_loop_pq: test/tcp_nonblocking_loop_test.c $(TCP_NONBLOCKING_LOOP_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) -DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_TRANSPORT_TCP_NONBLOCKING -DCH_KEX_PQ $(EXPORTER_DEF) \
-	  -DCH_KEYLOG -I. -o $@ test/rec_loop_test.c $(REC_LOOP_SRCS)
+	  -DCH_KEYLOG -I. -o $@ test/tcp_nonblocking_loop_test.c $(TCP_NONBLOCKING_LOOP_SRCS)
 # The TRUST=webpki tcp-nonblocking client against this tree's tcp-nonblocking
 # server, over
 # the ROLE=both TRANSPORT=tcp-nonblocking TRUST=webpki object's sources: the server
 # presents the r2 corpus chain with its leaf key, and a server holding
 # another ticket key declines the client's ticket (docs/decisions.md 55).
-WEBPKI_LOOP_SRCS := $(sort $(filter-out pem.c x509.c x509_ca.c,$(REC_LOOP_SRCS)) \
+WEBPKI_LOOP_SRCS := $(sort $(filter-out pem.c x509.c x509_ca.c,$(TCP_NONBLOCKING_LOOP_SRCS)) \
                            $(WEBPKI_SRCS) $(WEBPKI_CHAIN_SRCS) $(WEBPKI_KEX_SRCS))
 bin/webpki_loop_record: test/webpki_loop_test.c $(WEBPKI_LOOP_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
@@ -1910,7 +1913,7 @@ bin/webpki_encrypted_exts_test: test/webpki_encrypted_exts_test.c $(WEBPKI_TEST_
 
 # TRUST=webpki resumption (webpki_ticket.h) over both TCP drivers: the
 # blocking one, and TRANSPORT=tcp-nonblocking's, which drops handshake.c for
-# rec.c, rec_frame.c and rec_step.c.
+# tcp_nonblocking.c, tcp_nonblocking_frame.c and tcp_nonblocking_step.c.
 # The mock server signs the CertificateVerify of a declined ticket with the
 # r2 corpus leaf key, so both binaries link the P-256 signer beside the
 # client. The arithmetic under it is in WEBPKI_TEST_SRCS already, because
@@ -1920,7 +1923,7 @@ bin/webpki_resume_test: test/webpki_resume_test.c $(WEBPKI_TEST_SRCS) $(P256_SIG
 	@mkdir -p bin
 	$(CC) $(CFLAGS) -DCH_TRUST_WEBPKI -I. -o $@ test/webpki_resume_test.c $(WEBPKI_TEST_SRCS) \
 	  $(P256_SIGN_SRCS)
-WEBPKI_RECORD_SRCS := $(filter-out handshake.c,$(WEBPKI_TEST_SRCS)) rec.c rec_frame.c rec_step.c
+WEBPKI_RECORD_SRCS := $(filter-out handshake.c,$(WEBPKI_TEST_SRCS)) tcp_nonblocking.c tcp_nonblocking_frame.c tcp_nonblocking_step.c
 bin/webpki_resume_record: test/webpki_resume_test.c $(WEBPKI_RECORD_SRCS) $(P256_SIGN_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) -DCH_TRUST_WEBPKI -DCH_TRANSPORT_TCP_NONBLOCKING -I. -o $@ test/webpki_resume_test.c \
@@ -2048,7 +2051,7 @@ ct-widemul-check: bin/unit_ct_widemul bin/mlkem_test_ct_widemul bin/p256_field_t
 # The TRANSPORT=tcp-nonblocking client, which owns its socket and lets chapulin
 # touch none of it. test/e2e.sh runs it against the same PSK server
 # bin/tlsclient uses, so the two drivers are compared over one wire.
-REC_SRCS := $(filter-out handshake.c,$(SRCS)) rec.c rec_frame.c rec_step.c
+REC_SRCS := $(filter-out handshake.c,$(SRCS)) tcp_nonblocking.c tcp_nonblocking_frame.c tcp_nonblocking_step.c
 bin/recclient: test/rec_client.c $(REC_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) -DCH_TRANSPORT_TCP_NONBLOCKING -I. -o $@ test/rec_client.c $(REC_SRCS)
@@ -2124,7 +2127,7 @@ run-%: bin/%
 # and the invariant violation builds. The nightly runs it. Splitting on
 # duration rather than on importance is deliberate -- nothing here is
 # optional, and a change is not finished until check-slow passes too.
-check: bin/unit bin/unit_ca bin/unit_pq bin/tlsclient bin/tlsclient_ecdsa bin/tlsclient_ca bin/tlsclient_ca_ecdsa bin/tlsclient_webpki $(if $(AES_HW_PROBE),bin/tlsclient_webpki_aes) $(X25519_WIDE_BINS) bin/tlsclient_pq bin/drbg_test bin/softmul_test bin/rsa_test bin/sha3_test bin/sha512_test bin/hkdf384_test bin/p384_test bin/rsa_pkcs1_test bin/webpki_time_test bin/webpki_name_test bin/webpki_spki_test bin/webpki_sigalg_test bin/webpki_cert_test bin/webpki_chain_test bin/webpki_auth_test bin/webpki_encrypted_exts_test bin/mlkem_test bin/handshake_strict_test bin/handshake_strict_pq bin/handshake_strict_webpki bin/webpki_session_test bin/webpki_resume_test bin/webpki_resume_record bin/x509strict bin/x509strict_ecdsa bin/quic_driver_test bin/quic_test bin/recclient $(AES_HW_BINS) lint rand-check bin/srv_auth_test bin/srv_test bin/srv_quic_test bin/srv_quic_both_test bin/srv_rec_test bin/rec_loop_test bin/rec_loop_pq bin/quic_loop_test bin/quic_loop_webpki bin/webpki_loop_record bin/tlsserver bin/exporter_test bin/rsa_sign_test bin/p256_field_test bin/p256_ecdh_test bin/p256_sign_test
+check: bin/unit bin/unit_ca bin/unit_pq bin/tlsclient bin/tlsclient_ecdsa bin/tlsclient_ca bin/tlsclient_ca_ecdsa bin/tlsclient_webpki $(if $(AES_HW_PROBE),bin/tlsclient_webpki_aes) $(X25519_WIDE_BINS) bin/tlsclient_pq bin/drbg_test bin/softmul_test bin/rsa_test bin/sha3_test bin/sha512_test bin/hkdf384_test bin/p384_test bin/rsa_pkcs1_test bin/webpki_time_test bin/webpki_name_test bin/webpki_spki_test bin/webpki_sigalg_test bin/webpki_cert_test bin/webpki_chain_test bin/webpki_auth_test bin/webpki_encrypted_exts_test bin/mlkem_test bin/handshake_strict_test bin/handshake_strict_pq bin/handshake_strict_webpki bin/webpki_session_test bin/webpki_resume_test bin/webpki_resume_record bin/x509strict bin/x509strict_ecdsa bin/quic_driver_test bin/quic_test bin/recclient $(AES_HW_BINS) lint rand-check bin/srv_auth_test bin/srv_test bin/srv_quic_test bin/srv_quic_both_test bin/srv_tcp_nonblocking_test bin/tcp_nonblocking_loop_test bin/tcp_nonblocking_loop_pq bin/quic_loop_test bin/quic_loop_webpki bin/webpki_loop_record bin/tlsserver bin/exporter_test bin/rsa_sign_test bin/p256_field_test bin/p256_ecdh_test bin/p256_sign_test
 	# The packaged object is built once per entropy pattern, because
 	# lib-check reads a different export list and a different import
 	# list in each. Only the object is built twice: the examples and
@@ -2194,13 +2197,13 @@ check: bin/unit bin/unit_ca bin/unit_pq bin/tlsclient bin/tlsclient_ecdsa bin/tl
 	# `make check TRUST=raw-ecdsa` dies in this row rather than in a build
 	# anyone asked for.
 	$(MAKE) lib-check RAND=extern ROLE=server TRUST=none
-	# The server's tcp-nonblocking transport: srv_rec.c in place of
-	# srv_handshake.c, rec.c and rec_frame.c under it, and nine calls
-	# rather than five. lint-trust-separation reads that source list and
-	# this leg links it. A variant that keeps a caller and drops the
-	# module under it builds and passes the export list, which is the
-	# failure this target's own comment records for ROLE=server. It took
-	# 2.7 s cold.
+	# The server's tcp-nonblocking transport: srv_tcp_nonblocking.c in place of
+	# srv_handshake.c, tcp_nonblocking.c and tcp_nonblocking_frame.c
+	# under it, and nine calls rather than five. lint-trust-separation
+	# reads that source list and this leg links it. A variant that keeps
+	# a caller and drops the module under it builds and passes the
+	# export list, which is the failure this target's own comment
+	# records for ROLE=server. It took 2.7 s cold.
 	$(MAKE) lib-check RAND=extern ROLE=server TRUST=none TRANSPORT=tcp-nonblocking
 	# The hybrid device client, with the P-256 pin: the one leg that links
 	# ML-KEM into a raw-mode object and the one that packages
@@ -2311,9 +2314,9 @@ check: bin/unit bin/unit_ca bin/unit_pq bin/tlsclient bin/tlsclient_ecdsa bin/tl
 	./bin/srv_test
 	./bin/srv_quic_test
 	./bin/srv_quic_both_test
-	./bin/srv_rec_test
-	./bin/rec_loop_test
-	./bin/rec_loop_pq
+	./bin/srv_tcp_nonblocking_test
+	./bin/tcp_nonblocking_loop_test
+	./bin/tcp_nonblocking_loop_pq
 	./bin/quic_loop_test
 	./bin/quic_loop_webpki
 	./bin/webpki_loop_record
@@ -3185,7 +3188,7 @@ lint-exact-fill:
 #
 # handshake_flight.[ch] is the one file the QUIC mode adds that every
 # transport compiles: the tcp-blocking driver in handshake.c, the
-# tcp-nonblocking driver in rec_step.c and the QUIC driver in
+# tcp-nonblocking driver in tcp_nonblocking_step.c and the QUIC driver in
 # quic_step.c call the same flight handlers, so no protocol rule
 # exists twice (docs/quic.md, "The design: one whole message per step").
 # It carries no quic prefix on purpose, and QUIC_SHARED names it here so
@@ -3255,9 +3258,9 @@ else
 	  test/diff_quic_test.c test/aes_equiv_test.c test/aes_equiv_soft.c \
 	  test/aes_equiv_hw.c test/ghash_equiv_test.c test/ghash_equiv_soft.c \
 	  $(SRV_SRCS) test/srv_auth_test.c test/srv_test.c test/srv_flight_test.c \
-	  test/tls_server.c srv_quic.c quic_token.c srv_rec.c test/srv_rec_test.c \
-	  test/rec_loop_test.c test/webpki_loop_test.c test/quic_loop_test.c \
-	  test/exporter_test.c rec.c rec_frame.c rec_step.c x25519_wide.c \
+	  test/tls_server.c srv_quic.c quic_token.c srv_tcp_nonblocking.c test/srv_tcp_nonblocking_test.c \
+	  test/tcp_nonblocking_loop_test.c test/webpki_loop_test.c test/quic_loop_test.c \
+	  test/exporter_test.c tcp_nonblocking.c tcp_nonblocking_frame.c tcp_nonblocking_step.c x25519_wide.c \
 	  test/x25519_equiv_portable.c test/hkdf384_test.c \
 	  test/x25519_equiv_wide.c test/diff_x25519_test.c,$(LINT_C)), \
 	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -I.)
@@ -3322,7 +3325,7 @@ else
 	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_ROLE_SERVER -I.)
 	# The tcp-nonblocking transport's client driver, behind -DCH_TRANSPORT_TCP_NONBLOCKING,
 	# and the build record's arm for that transport.
-	$(call TIDY_EACH,rec.c rec_frame.c rec_step.c build.c, \
+	$(call TIDY_EACH,tcp_nonblocking.c tcp_nonblocking_frame.c tcp_nonblocking_step.c build.c, \
 	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_TRANSPORT_TCP_NONBLOCKING -I.)
 	# Each server driver with the transport it is written for. Neither
 	# reads a declaration the role pass above sets, because both sit
@@ -3331,14 +3334,14 @@ else
 	# do the build record's QUIC and server arms.
 	$(call TIDY_EACH,srv_quic.c quic_token.c build.c, \
 	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_ROLE_SERVER -DCH_TRANSPORT_QUIC_NONBLOCKING -I.)
-	$(call TIDY_EACH,srv_rec.c test/srv_rec_test.c, \
+	$(call TIDY_EACH,srv_tcp_nonblocking.c test/srv_tcp_nonblocking_test.c, \
 	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_ROLE_SERVER -DCH_TRANSPORT_TCP_NONBLOCKING -I.)
 	# The loopback drives both drivers, so it is the one source that needs
 	# CH_ROLE_BOTH as well: srv_cfg.h and tls.h keep the client half only
 	# under that define.
-	$(call TIDY_EACH,test/rec_loop_test.c, \
+	$(call TIDY_EACH,test/tcp_nonblocking_loop_test.c, \
 	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_TRANSPORT_TCP_NONBLOCKING $(EXPORTER_DEF) -DCH_KEYLOG -I.)
-	$(call TIDY_EACH,test/rec_loop_test.c, \
+	$(call TIDY_EACH,test/tcp_nonblocking_loop_test.c, \
 	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_TRANSPORT_TCP_NONBLOCKING -DCH_KEX_PQ $(EXPORTER_DEF) -DCH_KEYLOG -I.)
 	# The QUIC loopback, once per trust mode it is built in, because each
 	# includes a different half.
@@ -3777,9 +3780,9 @@ WIDEMUL_CEILING := ct.c:0 sha256.c:0 sha3.c:1 hkdf.c:0 chacha20.c:0 poly1305.c:0
                    x25519.c:0 p256_field.c:0 mlkem.c:0 mlkem_poly.c:0 buf.c:0 record.c:0 keysched.c:0 io.c:0 \
                    session.c:0 handshake_message.c:0 handshake_parser.c:0 handshake_parser_ee.c:0 handshake_record.c:0 \
                    handshake_auth.c:0 handshake_flight.c:0 handshake.c:0 handshake_post.c:0 \
-                   tls.c:0 drbg.c:0 softmul.c:0 rec.c:0 rec_frame.c:0 rec_step.c:0 \
+                   tls.c:0 drbg.c:0 softmul.c:0 tcp_nonblocking.c:0 tcp_nonblocking_frame.c:0 tcp_nonblocking_step.c:0 \
                    quic_keys.c:0 quic_packet.c:0 quic_config.c:0 quic_step.c:0 quic.c:0 \
-                   quic_fail.c:0 srv_quic.c:0 quic_token.c:0 srv_rec.c:0 \
+                   quic_fail.c:0 srv_quic.c:0 quic_token.c:0 srv_tcp_nonblocking.c:0 \
                    aes.c:0 quic_aes_soft.c:0 quic_aes_extern.c:0 gcm.c:0 \
                    srv_parser.c:0 srv_parser_ext.c:0 srv_message.c:0 srv_cookie.c:0 \
                    srv_ticket.c:0 srv_resume.c:0 srv_kex.c:0 \

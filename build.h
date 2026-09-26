@@ -25,7 +25,7 @@
 #include "cfg.h"
 #include "session.h"
 #ifdef CH_TRANSPORT_TCP_NONBLOCKING
-#include "rec.h"
+#include "tcp_nonblocking.h"
 #endif
 #ifdef CH_TRANSPORT_QUIC_NONBLOCKING
 #include "quic.h"

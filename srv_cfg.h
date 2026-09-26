@@ -222,7 +222,7 @@ typedef struct {
     // so there is no buffer for a caller to collect from and no point in
     // the flight where a stack frame may be abandoned. A pull would need
     // a resume point inside srv_out_sealed's record loop, which is the
-    // one thing rec_step.h's "nothing inside it waits" rules out.
+    // one thing tcp_nonblocking_step.h's "nothing inside it waits" rules out.
     //
     // Several calls arrive inside one ch_srv_record_in, because one
     // ClientHello produces the whole flight; the caller writes them in

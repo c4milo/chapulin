@@ -661,15 +661,16 @@ does nothing more.
     is larger than `CH_TX_STAGE`, and `srv_flight.c` stages a protected
     message on the handler's own stack frame and streams the chain
     through `srv_frag`. There is nothing to pull from. A pull would need
-    a resume point inside `srv_out_sealed`'s record loop, and `rec_step.h`
-    rules that out: a step runs on a whole message and waits nowhere
-    inside it. `srv_quic.h` reached the same place for the same reason,
-    so `ch_srv_cfg.on_record_out` is `on_crypto_out` without the level.
+    a resume point inside `srv_out_sealed`'s record loop, and
+    `tcp_nonblocking_step.h` rules that out: a step runs on a whole
+    message and waits nowhere inside it. `srv_quic.h` reached the same
+    place for the same reason, so `ch_srv_cfg.on_record_out` is
+    `on_crypto_out` without the level.
 
     That still solves the problem: the callback copies each record into a
     buffer the caller owns and returns, so nothing waits on a socket.
-    INV-28 states the claim and `bin/srv_rec_test` measures it with a
-    `send` and a `recv` that fail the run if the driver calls them.
+    INV-28 states the claim and `bin/srv_tcp_nonblocking_test` measures it
+    with a `send` and a `recv` that fail the run if the driver calls them.
 
 43. **The exporter is a build axis, and it widens one cap rather than adding
     a second serializer.** `EXPORTER=on` compiles `ch_export` (RFC 9846 §7.5)
@@ -747,8 +748,8 @@ does nothing more.
     client wipes `h->random` when the key exchange finishes, before the
     handshake secrets it logs, and the secrets still matched across the
     two ends, so a test comparing secrets alone would have passed.
-    `bin/rec_loop_test` compares the random too, and INV-29 records the
-    rule with a mutant that restores the bug.
+    `bin/tcp_nonblocking_loop_test` compares the random too, and INV-29
+    records the rule with a mutant that restores the bug.
 
 45. **A `SUITE=aesgcm TRUST=webpki` client offers both cipher suites and
     the server picks one.** This is the mode's fourth exception to the
@@ -810,7 +811,7 @@ does nothing more.
 
     Treating a 0 inside a record as `CH_RECORD_AGAIN` too was considered
     and rejected. The partial header would have to be kept across calls,
-    and `rec.h` already asks the caller for whole records.
+    and `tcp_nonblocking.h` already asks the caller for whole records.
 
 47. **A `TRUST=webpki` client resumes a ticket bound to the hostname and
     anchors that received it.** A resumed handshake checks no certificate,
@@ -1613,9 +1614,10 @@ does nothing more.
     the frozen digest's walk and leave the duplicate check unbounded. An
     unknown type counts the same as a recognized one. Every server path
     reads its hellos through `srv_parse_client_hello`: the blocking server
-    (`srv_handshake.c`), the tcp-nonblocking server (`srv_rec.c`) and the QUIC
-    server (`srv_quic.c`), for a first hello and a retried one alike, so
-    the refusal is the same on each.
+    (`srv_handshake.c`), the tcp-nonblocking server
+    (`srv_tcp_nonblocking.c`) and the QUIC server (`srv_quic.c`), for a
+    first hello and a retried one alike, so the refusal is the same on
+    each.
 
     Why 128. Each count below was published, or read from the library's
     source, as of 2026-09-24.
@@ -1726,9 +1728,9 @@ does nothing more.
     included; at 129 it is illegal_parameter. A supported_versions with a
     trailing byte is decode_error at 128 and illegal_parameter at 129, and
     so is a block that ends in half a header, so the bound is checked
-    first. `bin/srv_rec_test` sends this tree's own hello, filled out to
-    128 and to 129, through the tcp-nonblocking server: the first draws the flight
-    and the second illegal_parameter. `bin/srv_quic_test` fills ngtcp2's
+    first. `bin/srv_tcp_nonblocking_test` sends this tree's own hello, filled out
+    to 128 and to 129, through the tcp-nonblocking server: the first draws the
+    flight and the second illegal_parameter. `bin/srv_quic_test` fills ngtcp2's
     two recorded hellos out with the same unknown extensions, so the
     frozen digest matches and only the count can refuse. A first hello of
     127 and its retried hello of 128 draw the flight; a first hello of 128
@@ -1787,12 +1789,12 @@ does nothing more.
       was considered and rejected. Callers test `CH_ST_CONNECTED` before
       they write, and writing is still allowed, so every such test would
       be wrong until the caller learned the new value; `CH_ASSERT(t->state
-      <= CH_ST_FAILED)` and `rec_session_dead` would each need to judge a
-      fifth value too. `CH_ST_CLOSED` keeps its one meaning: this side
-      called `ch_close` or `ch_record_close`, and no key is left. The
-      field sits in the padding before `send_epochs`, so `sizeof(ch_tls)`
-      did not change in any build, host or rv32, and `ch_build` records
-      the same sizes.
+      <= CH_ST_FAILED)` and `tcp_nonblocking_session_dead` would each need
+      to judge a fifth value too. `CH_ST_CLOSED` keeps its one meaning:
+      this side called `ch_close` or `ch_record_close`, and no key is
+      left. The field sits in the padding before `send_epochs`, so
+      `sizeof(ch_tls)` did not change in any build, host or rv32, and
+      `ch_build` records the same sizes.
     - **Every driver at once.** The blocking client and server and the
       tcp-nonblocking client and server all read through the one `ch_read`
       in `tls.c`. A QUIC object compiles no `tls.c`: QUIC carries no
@@ -1885,7 +1887,7 @@ does nothing more.
       one generator.
     - **`ch_read`, `ch_write` and `ch_close`.** The tcp-nonblocking
       transport keeps the connected session's calls under the blocking transport's
-      names (`rec.h`), and a tcp-nonblocking object does everything a
+      names (`tcp_nonblocking.h`), and a tcp-nonblocking object does everything a
       blocking one does with the caller driving the socket. Renaming
       them would move the three calls every TLS program links against,
       for an image that gains nothing by carrying both transports.
@@ -1963,7 +1965,7 @@ does nothing more.
     - `tcp-blocking`, the default: TLS records over a byte stream, and
       chapulin calls the blocking `cfg.send` and `cfg.recv`.
     - `tcp-nonblocking`: the same records, and the caller passes bytes in
-      and takes bytes out (`rec.h`).
+      and takes bytes out (`tcp_nonblocking.h`).
     - `quic-nonblocking`: TLS handshake messages inside QUIC, always
       driven by the caller (`quic.h`).
 

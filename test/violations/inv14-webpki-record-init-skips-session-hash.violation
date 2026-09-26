@@ -1,5 +1,5 @@
 invariant: INV-14
-file: rec.c
+file: tcp_nonblocking.c
 catches: webpki_resume_record
 reason: ch_record_init never writes ch_tls.ticket_config_hash in a webpki
   build, so the tickets a tcp-nonblocking session receives are bound to an

@@ -30,7 +30,7 @@
 #include "p256_sign_vectors.h"
 #include "srv.h"
 #include "srv_quic.h"
-#include "srv_rec.h"
+#include "srv_tcp_nonblocking.h"
 #endif
 #ifdef CH_TRUST_CA
 #include "pem.h"

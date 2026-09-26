@@ -1,10 +1,11 @@
-// The tcp-nonblocking step table. rec_step.h states the contract; this file
-// is quic_step.c's mirror on the transport that keeps its records.
+// The tcp-nonblocking step table. tcp_nonblocking_step.h states
+// the contract; this file is quic_step.c's mirror on the transport
+// that keeps its records.
 //
 // It holds no protocol rule of its own. handshake_flight.[ch] holds the
 // handlers both transports compile, handshake_auth.[ch] the server
 // authentication flight, and this file calls them in order.
-#include "rec_step.h"
+#include "tcp_nonblocking_step.h"
 
 #ifdef CH_TRANSPORT_TCP_NONBLOCKING
 
@@ -14,12 +15,12 @@
 #include "handshake_auth.h"
 #include "handshake_flight.h"
 #include "handshake_message.h"
-#include "rec.h"
 #include "record.h"
+#include "tcp_nonblocking.h"
 
-// rec_step.h states the contract. RFC 9846 section 5.1 fixes
+// tcp_nonblocking_step.h states the contract. RFC 9846 section 5.1 fixes
 // legacy_record_version at 0x0303 here.
-void rec_stage_plain(ch_record *r, size_t n) {
+void tcp_nonblocking_stage_plain(ch_record *r, size_t n) {
     ch_tls *t = &r->t;
     t->tx[0] = REC_HANDSHAKE;
     t->tx[1] = 0x03;
@@ -73,7 +74,7 @@ static int step_server_hello(ch_record *r) {
         if (n == 0) {
             return CH_ECAP;
         }
-        rec_stage_plain(r, n);
+        tcp_nonblocking_stage_plain(r, n);
         r->step = HSR_STEP_AWAIT_RETRY_HELLO;
         return CH_OK;
     }

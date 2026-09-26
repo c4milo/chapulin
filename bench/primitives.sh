@@ -66,11 +66,12 @@ PRIMITIVE_SRCS=(bench/primitives.c bench/primitives_symmetric.c bench/primitives
     drbg.c ct.c buf.c sha256.c sha512.c sha512_compress.c sha3.c hkdf.c chacha20.c poly1305.c
     aead.c x25519.c mlkem.c mlkem_poly.c p256.c p384.c p384_field.c rsa.c rsa_mont.c rsa_pkcs1.c
     rsa_sign.c p256_ecdh.c p256_sign.c p256_scalar.c p256_point.c p256_field.c)
-# The handshake program links what bin/rec_loop_test links, under the
-# defines of the ROLE=both TRANSPORT=tcp-nonblocking object, at the device RSA bound.
-read -r -a LOOP_SRCS <<<"$(make -s --no-print-directory print-rec-loop-srcs)"
+# The handshake program links what bin/tcp_nonblocking_loop_test links, under
+# the defines of the ROLE=both TRANSPORT=tcp-nonblocking object, at the device
+# RSA bound.
+read -r -a LOOP_SRCS <<<"$(make -s --no-print-directory print-tcp-nonblocking-loop-srcs)"
 if [ "${#LOOP_SRCS[@]}" -eq 0 ]; then
-    echo "FAIL primitives bench: make print-rec-loop-srcs returned no sources" >&2
+    echo "FAIL primitives bench: make print-tcp-nonblocking-loop-srcs returned no sources" >&2
     exit 1
 fi
 HANDSHAKE_DEFS=(-DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_TRANSPORT_TCP_NONBLOCKING -DBENCH_HANDSHAKE_PROGRAM)

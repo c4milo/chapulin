@@ -3,9 +3,8 @@
 // sender's direction alone (RFC 9846 §6, rfc9846.txt:3767-3768, and
 // §6.1, rfc9846.txt:3857-3859), so the side that receives one still
 // writes, and sends its own close_notify when its caller calls ch_close.
-// Included by test/rec_loop_test.c; it reuses rec_read_tests.h's held
-// records, held_recv and hold_record for what the server sends the
-// client.
+// Included by test/tcp_nonblocking_loop_test.c; it reuses rec_read_tests.h's
+// held records, held_recv and hold_record for what the server sends the client.
 //
 // colibri found the old behavior: ch_read answered the peer's
 // close_notify by calling ch_close, which sent this side's close_notify
@@ -41,7 +40,7 @@ static int client_send(void *io, const uint8_t *p, size_t n) {
 }
 
 // Hands over what the client sent, and 0 when it has sent nothing more,
-// which is rec.h's recv contract.
+// which is tcp_nonblocking.h's recv contract.
 static int server_recv(void *io, uint8_t *p, size_t n) {
     (void)io;
     size_t left = to_server.len - to_server.off;

@@ -1,8 +1,8 @@
 // Resumption over the tcp-nonblocking transport, both halves in one process: this
 // tree's server issues a ticket after a full handshake, this tree's client
 // takes it through ch_read and on_ticket, and a second connection resumes
-// with it and no certificate. Included by test/rec_loop_test.c after
-// test/rec_read_tests.h, whose held records and held_recv it reads.
+// with it and no certificate. Included by test/tcp_nonblocking_loop_test.c
+// after test/rec_read_tests.h, whose held records and held_recv it reads.
 //
 // The client offers the ticket alone, with no signature scheme beside it,
 // because that is the one resumed hello this client writes (handshake.h).

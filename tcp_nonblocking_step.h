@@ -15,16 +15,16 @@
 // and the saved state is a step number rather than a program counter.
 //
 // Only a TRANSPORT=tcp-nonblocking build compiles it.
-#ifndef CH_REC_STEP_H
-#define CH_REC_STEP_H
+#ifndef CH_TCP_NONBLOCKING_STEP_H
+#define CH_TCP_NONBLOCKING_STEP_H
 #ifdef CH_TRANSPORT_TCP_NONBLOCKING
 
 #include "cfg.h"
 
-// rec.h completes this type. The declaration is repeated here rather
-// than included so the dependency keeps pointing down, the way
-// quic_step.h repeats ch_quic. C11 allows a typedef name to be declared
-// twice for the same type.
+// tcp_nonblocking.h completes this type. The declaration is repeated
+// here rather than included so the dependency keeps pointing down, the
+// way quic_step.h repeats ch_quic. C11 allows a typedef name to be
+// declared twice for the same type.
 typedef struct ch_record ch_record;
 
 // The step numbers, mirroring quic_step.h's constructor for constructor
@@ -52,7 +52,7 @@ int hsr_advance(ch_record *r);
 // ClientHello goes out in. The message is already at t->tx + REC_HDR,
 // where the builder wrote it. ch_record_init stages the first hello and a
 // HelloRetryRequest step stages the second.
-void rec_stage_plain(ch_record *r, size_t n);
+void tcp_nonblocking_stage_plain(ch_record *r, size_t n);
 
 #endif // CH_TRANSPORT_TCP_NONBLOCKING
 #endif
