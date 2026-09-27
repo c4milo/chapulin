@@ -94,7 +94,10 @@ done
 # when it refuses them. It runs the configure step and writes two lists,
 # and compiles no C.
 command -v "$zig" > /dev/null || fail "$zig is missing; the pin is ZIG_VERSION in tools/toolchain.env"
-out=bin/zig/tx-record
+# A directory no other script writes. test/zig-build-check.sh builds its
+# tx-record configuration in bin/zig/tx-record, make check runs both
+# scripts at once, and each rm -rf here deleted that build while it ran.
+out=bin/zig/tx-record-builds
 zig_def() {
     rm -rf "$out"
     "$zig" build lib-lists --summary none --cache-dir bin/zig/root-cache --prefix "$out" \
