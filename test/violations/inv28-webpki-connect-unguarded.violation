@@ -23,8 +23,8 @@ int ch_connect(ch_tls *t, const ch_cfg *cfg) {
         return CH_EINVAL;
     }
     webpki_ticket_config_hash(cfg, t->ticket_config_hash);
-    // psk_ok matters only to a CA build, so it is 0; epoch_init refuses
-    // the epoch callbacks, as it does in every build but a CA mode.
+    // psk_ok matters only to a CA build, so it is 0; tlsi_epoch_init
+    // refuses the epoch callbacks, as it does in every build but a CA mode.
     int rc = tlsi_epoch_init(t, cfg, 0);
     if (rc != CH_OK) {
         t->state = CH_ST_FAILED;
@@ -42,8 +42,8 @@ int ch_connect(ch_tls *t, const ch_cfg *cfg) {
         return CH_EINVAL;
     }
     webpki_ticket_config_hash(cfg, t->ticket_config_hash);
-    // psk_ok matters only to a CA build, so it is 0; epoch_init refuses
-    // the epoch callbacks, as it does in every build but a CA mode.
+    // psk_ok matters only to a CA build, so it is 0; tlsi_epoch_init
+    // refuses the epoch callbacks, as it does in every build but a CA mode.
     int rc = tlsi_epoch_init(t, cfg, 0);
     if (rc != CH_OK) {
         t->state = CH_ST_FAILED;

@@ -16,8 +16,9 @@
 // it: a server build compiles no handshake.c, so a compiled ch_connect
 // would leave ch_handshake undefined and the object could not go into an
 // executable at all, and a TRANSPORT=tcp-nonblocking one guards it below.
-// epoch_init is inside the guard because ch_connect is its only caller in
-// either trust mode. lib-check's import check holds the rule for every axis.
+// tlsi_epoch_init is inside the guard because only client entries call it,
+// ch_connect here and ch_record_init in tcp_nonblocking.c, in either trust
+// mode. lib-check's import check holds the rule for every axis.
 #if !defined(CH_ROLE_SERVER) || defined(CH_ROLE_BOTH)
 
 // Loads the stored epoch and checks a resuming ticket against it
@@ -83,7 +84,7 @@ static int pin_len_ok(size_t len) {
 }
 
 // Whether a PSK is the configured auth mode. Both callers below ask, and
-// epoch_init takes the answer.
+// tlsi_epoch_init takes the answer.
 static int psk_configured(const ch_cfg *cfg) {
     return cfg->psk != NULL && cfg->psk_len > 0 && cfg->psk_id != NULL &&
            cfg->server_pubkey == NULL;
@@ -403,8 +404,8 @@ int ch_connect(ch_tls *t, const ch_cfg *cfg) {
         return CH_EINVAL;
     }
     webpki_ticket_config_hash(cfg, t->ticket_config_hash);
-    // psk_ok matters only to a CA build, so it is 0; epoch_init refuses
-    // the epoch callbacks, as it does in every build but a CA mode.
+    // psk_ok matters only to a CA build, so it is 0; tlsi_epoch_init
+    // refuses the epoch callbacks, as it does in every build but a CA mode.
     int rc = tlsi_epoch_init(t, cfg, 0);
     if (rc != CH_OK) {
         t->state = CH_ST_FAILED;
