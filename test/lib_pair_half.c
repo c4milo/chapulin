@@ -27,7 +27,12 @@
 #include "cfg.h"
 #include "lib_pair.h"
 #include "session.h"
+// A QUIC object has no call tls.h declares, and build.h brings in quic.h,
+// so this file reads tls.h only for the TCP transports, as srv.h and
+// chapulin.hpp do (INV-27).
+#ifndef CH_TRANSPORT_QUIC_NONBLOCKING
 #include "tls.h"
+#endif
 #ifdef CH_ROLE_SERVER
 #include "p256_sign_vectors.h"
 #include "srv.h"
