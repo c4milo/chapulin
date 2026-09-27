@@ -1725,7 +1725,11 @@ last `ROLE=server` stub, as the entry said it would.
   parser to both sides of `CH_WEBPKI_CERT_MAX`.
   bin/webpki_loop_tcp_nonblocking runs a leaf
   pin and an intermediate pin against this tree's tcp-nonblocking
-  server, and test/e2e.sh against `openssl s_server`. The webpki_leaf_pin
+  server, and test/e2e.sh against `openssl s_server`. That server also
+  presents the corpus leaf over `CH_WEBPKI_CERT_MAX`: a pin on its key
+  completes the handshake with the 6,106-byte Certificate reassembled in
+  the client's `CH_MIN_RXBUF` buffer, and the same chain from a server
+  that signs with another key is refused with decrypt_error. The webpki_leaf_pin
   harness proves the call memory-safe and its verdict and alert pairs,
   that the key reader runs once and on entry 0, and that an accepted list
   hashed the leaf's SubjectPublicKeyInfo and returns its key; the
@@ -1742,12 +1746,19 @@ last `ROLE=server` stub, as the entry said it would.
   on nothing, on an anchor that verified nothing or on a CA certificate
   appended past the path refused with bad_certificate; under pins alone
   a pin on the leaf accepted and its ticket resumed under that pin alone,
-  and a pin on the intermediate, the root or nothing refused. That server
-  sends no raw public key, so the raw rule runs end to end over TCP
-  alone. Twenty-five `inv33-` violations guard the rules.
-  inv33-quic-pins-ignored-on-chain and inv33-quic-pins-alone-leaf-refused
-  change a QUIC build alone, which no TCP test sees, and require
-  bin/quic_loop_webpki to fail.
+  a pin on the corpus leaf over `CH_WEBPKI_CERT_MAX` accepted, the same
+  chain from a server that signs with another key refused with
+  decrypt_error, and a pin on the intermediate, the root or nothing
+  refused. That server sends no raw public key, so the raw rule runs end
+  to end over TCP alone. Twenty-nine `inv33-` violations guard the rules.
+  inv33-quic-pins-ignored-on-chain, inv33-quic-pins-alone-leaf-refused,
+  inv33-quic-pins-alone-leaf-walk-cap and
+  inv33-quic-pins-alone-skips-certificate-verify change a QUIC build
+  alone, which no TCP test sees, and require bin/quic_loop_webpki to
+  fail. inv33-tcp-nonblocking-pins-alone-leaf-walk-cap and
+  inv33-tcp-nonblocking-pins-alone-skips-certificate-verify change a
+  tcp-nonblocking build alone, which no tcp-blocking test sees, and
+  require bin/webpki_loop_tcp_nonblocking to fail.
 - **Violation.** A PR accepts a raw key or a chain on the name alone,
   counts a certificate the walk never read, compares a pin with a key
   other than the one the walk or the reader returned, lets a pin on a CA

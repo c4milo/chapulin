@@ -1711,6 +1711,12 @@ Every harness in this group builds `TRANSPORT=quic-nonblocking`. The
 - **Not proved:** which digests match. `Spec.WebpkiPin.verifyLeafPin_ok`
   states the rule over the real SHA-256, and
   `test/diff_webpki_leaf_pin.h` compares the two.
+- **Tested instead:** the rule inside a handshake.
+  `bin/webpki_loop_tcp_nonblocking` and `bin/quic_loop_webpki` run pins
+  alone against this tree's server presenting the corpus leaf over
+  `CH_WEBPKI_CERT_MAX`, 5,558 bytes. A pin on its key completes the
+  handshake, and a server that presents the same chain and signs with
+  another key is refused with decrypt_error.
 
 #### webpki_ticket
 

@@ -1,0 +1,18 @@
+invariant: INV-33
+file: webpki_cert.c
+catches: webpki_loop_tcp_nonblocking
+reason: a TRANSPORT=tcp-nonblocking build holds the leaf under pins
+  alone to the walk's CH_WEBPKI_CERT_MAX, so an event-loop client
+  refuses a leaf over 3072 bytes that a blocking client takes. The
+  tcp-blocking tests pass on this edit; test/webpki_loop_test.c's
+  leaf_over_cert_max row against this tree's tcp-nonblocking server
+  objects.
+
+--- old
+    if (!read_certificate_head(cert, cert_len, CH_WEBPKI_LEAF_PIN_CERT_MAX, &r, out)) {
+--- new
+#ifdef CH_TRANSPORT_TCP_NONBLOCKING
+    if (!read_certificate_head(cert, cert_len, CH_WEBPKI_CERT_MAX, &r, out)) {
+#else
+    if (!read_certificate_head(cert, cert_len, CH_WEBPKI_LEAF_PIN_CERT_MAX, &r, out)) {
+#endif

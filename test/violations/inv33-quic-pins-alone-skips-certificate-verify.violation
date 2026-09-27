@@ -1,0 +1,17 @@
+invariant: INV-33
+file: handshake_auth.c
+catches: quic_loop_webpki
+reason: a TRANSPORT=quic-nonblocking build skips CertificateVerify for a
+  chain accepted under pins alone, so a QUIC server that presents a
+  pinned leaf it does not hold the key for passes. The TCP tests pass on
+  this edit; test/quic_loop_pins.h's row whose server signs for the
+  leaf_over_cert_max chain with another key, which wants decrypt_error,
+  objects.
+
+--- old
+    int sig_ok = verify_leaf_signature(&h->leaf, signed_hash, sig, sig_len);
+--- new
+    int sig_ok = verify_leaf_signature(&h->leaf, signed_hash, sig, sig_len);
+#ifdef CH_TRANSPORT_QUIC_NONBLOCKING
+    sig_ok |= h->t->cfg.anchor_count == 0 && h->t->server_cert_type == CH_CERT_TYPE_X509;
+#endif

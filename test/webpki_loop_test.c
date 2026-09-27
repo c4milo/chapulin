@@ -20,7 +20,9 @@
 // It also runs SPKI pins alone against that chain (docs/decisions.md 65):
 // a pin on the leaf's key passes with no hostname, anchor or clock, its
 // ticket resumes under that pin alone, and a pin on the intermediate's
-// key is refused with bad_certificate.
+// key is refused with bad_certificate. Pins alone also take the chain
+// whose leaf the walk refuses for its size, the leaf_over_cert_max row,
+// and that leaf's key verifies CertificateVerify.
 //
 // Built at TX_RECORD=16384 as bin/webpki_loop_tx_record, it also sends
 // application records of CH_TX_PT bytes each way
@@ -63,6 +65,7 @@ static int failures = 0;
         }                                                                                          \
     } while (0)
 
+#include "p256_sign_vectors.h"
 #include "webpki_r2_chain.h"
 
 static const uint8_t cookie_key[SHA256_LEN] = {7};
@@ -84,9 +87,11 @@ static uint8_t srv_buf[CH_MIN_RXBUF];
 static uint8_t cli_buf[CH_MIN_RXBUF];
 
 // What the server pushed and the client has not read, and how many
-// records since the handshake started.
+// records since the handshake started. The largest handshake here, pins
+// alone over the leaf_over_cert_max chain, pushes 17 records, under 8 KiB
+// in all with the ticket.
 static struct {
-    uint8_t bytes[4096];
+    uint8_t bytes[16384];
     size_t len;
     size_t off;
 } to_client;
@@ -326,6 +331,35 @@ static void test_pins_alone(void) {
           ch_alert_sent(&client.t) == ALERT_BAD_CERTIFICATE);
 }
 
+// The client's buffer holds the leaf_over_cert_max Certificate whole,
+// beside the header, inner content type and tag of the record that
+// completes it, so pins alone take that chain at this build's floor.
+_Static_assert(sizeof webpki_corpus_message_leaf_over_cert_max + REC_OVERHEAD <= sizeof cli_buf,
+               "the client buffer holds the large-leaf Certificate");
+
+// Pins alone against the leaf_over_cert_max chain, whose 5,558-byte leaf
+// the walk refuses for its size. A pin on the leaf's key passes, and the
+// client reassembles the 6,106-byte Certificate from twelve records of at
+// most 512 bytes. The server signs CertificateVerify with the leaf's key;
+// a server that presents the same chain and signs with another key is
+// refused with decrypt_error, so the leaf's key is what verifies it.
+static void test_pins_alone_large_leaf(void) {
+    ch_cfg scfg;
+    ch_cfg ccfg;
+    server_config(&scfg, ticket_key);
+    CHECK(r2_large_identity(&scfg.srv.ecdsa_p256));
+    CHECK(r2_large_pin(loop_pin[0]));
+    pins_alone_config(&ccfg, 0);
+    CHECK(run(&ccfg, &scfg));
+    CHECK(client.t.psk_selected == 0 && client.t.server_cert_type == CH_CERT_TYPE_X509);
+    CHECK(server.t.sigalg == SIGALG_ECDSA_P256_SHA256 && records_pushed == 17);
+    scfg.srv.ecdsa_p256.priv = p256_sign_vectors[0].priv;
+    scfg.srv.ecdsa_p256.pub = p256_sign_vectors[0].pub;
+    CHECK(!run(&ccfg, &scfg));
+    CHECK(ch_record_state(&client) == CH_ST_FAILED &&
+          ch_alert_sent(&client.t) == ALERT_DECRYPT_ERROR);
+}
+
 #include "webpki_loop_suites.h"
 #include "webpki_loop_tx_record.h"
 
@@ -370,6 +404,7 @@ int main(void) {
     check_declined_chain_refused(ticket_key, webpki_corpus_anchors_impostor_p384, "s3.example.test",
                                  ALERT_UNKNOWN_CA);
     test_pins_alone();
+    test_pins_alone_large_leaf();
 #ifdef CH_SUITE_AES_GCM
     check_suites();
 #endif

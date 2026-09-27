@@ -11,7 +11,8 @@
 //  2. Pins alone, with no hostname, anchor or clock: the hello offers the
 //     raw public key and X.509 and names no server. This server answers
 //     with its chain, which passes when a pin names its leaf's key and no
-//     other (docs/decisions.md 65), as over TCP.
+//     other (docs/decisions.md 65), as over TCP, a leaf over
+//     CH_WEBPKI_CERT_MAX included.
 //  3. A hostname, anchors and pins: the walk and the name check pass, and
 //     a pin must name a key on the path the walk verified.
 //
@@ -317,6 +318,26 @@ static void test_pins_alone(void) {
     check_refused_at_certificate(&ccfg, &scfg, ALERT_BAD_CERTIFICATE);
 }
 
+// Configuration 2 against the leaf_over_cert_max chain, whose 5,558-byte
+// leaf the walk refuses for its size: a pin on the leaf's key passes with
+// the 6,106-byte Certificate at the Handshake level, and a server that
+// presents the same chain and signs with another key is refused with
+// decrypt_error, so the leaf's key is what verifies CertificateVerify.
+static void test_pins_alone_large_leaf(void) {
+    ch_cfg scfg;
+    ch_cfg ccfg;
+    webpki_server(&scfg, ticket_key);
+    CHECK(r2_large_identity(&scfg.srv.ecdsa_p256) && r2_large_pin(pins[0]));
+    pins_alone_client(&ccfg, 1);
+    CHECK(run_quic(&ccfg, &scfg));
+    CHECK(server.t.sigalg == SIGALG_ECDSA_P256_SHA256 && handshake_messages() == 4);
+    check_keys_agree();
+    scfg.srv.ecdsa_p256.priv = p256_sign_vectors[0].priv;
+    scfg.srv.ecdsa_p256.pub = p256_sign_vectors[0].pub;
+    CHECK(!run_quic(&ccfg, &scfg));
+    CHECK(ch_quic_state(&client) == CH_ST_FAILED && ch_quic_alert(&client) == ALERT_DECRYPT_ERROR);
+}
+
 // What ch_quic_init refuses in configuration 2, with the webpki_cfg.c
 // rules: a hostname must still have its shape, at the CH_HOSTNAME_MAX
 // boundary, a hostname pointer needs its length, and half an anchor list
@@ -468,6 +489,7 @@ static void test_webpki_pins(void) {
     test_pin_on_unused_anchor();
     test_pin_beyond_path();
     test_pins_alone();
+    test_pins_alone_large_leaf();
     test_pins_alone_refusals();
     test_pinned_resumption();
     test_pinned_decline();

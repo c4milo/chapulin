@@ -59,9 +59,10 @@ static int failures = 0;
     } while (0)
 
 // What the server pushed, per encryption level, and how many messages at
-// each level.
+// each level. The largest level here is the Handshake level of pins alone
+// over the leaf_over_cert_max chain, whose Certificate is 6,106 bytes.
 static struct {
-    uint8_t bytes[3][4096];
+    uint8_t bytes[3][8192];
     size_t len[3];
 } from_server;
 
