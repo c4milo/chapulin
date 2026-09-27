@@ -2,9 +2,11 @@
 // decrypted post-handshake bytes (NewSessionTicket and KeyUpdate) — are
 // memory-safe and UB-free against ANY plaintext up to 128 bytes, and
 // report a consumed length no larger than the input, that no ticket
-// with a ticket_lifetime of 0 is handed to on_ticket, and that a
-// KeyUpdate rekeys only as the last message of the input, which RFC 9846
-// §5.1 requires of the message before a key change. This is the last
+// with a ticket_lifetime of 0 is handed to on_ticket, that a KeyUpdate
+// rekeys only as the last message of the input, which RFC 9846 §5.1
+// requires of the message before a key change, and that the one alert
+// the parser writes is illegal_parameter for a request_update neither 0
+// nor 1 (§4.7.3). This is the last
 // attacker-facing parser; a peer that reaches a connected session feeds
 // it arbitrary decrypted bytes.
 //
@@ -155,7 +157,15 @@ int main(void) {
     size_t n = nondet_size_t();
     __CPROVER_assume(n <= sizeof pt);
     size_t used = nondet_size_t();
-    int rc = handle_post_handshake(&t, pt, n, &used);
+    // What hspost_read sets before it calls the parser.
+    uint8_t alert = ALERT_UNEXPECTED_MESSAGE;
+    int rc = handle_post_handshake(&t, pt, n, &used, &alert);
+    // The one alert the parser writes is illegal_parameter, and only on a
+    // refusal: a KeyUpdate whose request_update is neither 0 nor 1 (RFC
+    // 9846 §4.7.3). Every other refusal keeps the caller's.
+    __CPROVER_assert(alert == ALERT_UNEXPECTED_MESSAGE ||
+                         (alert == ALERT_ILLEGAL_PARAMETER && rc == CH_EPROTO),
+                     "only a refused request_update writes an alert");
     if (rc == CH_OK) {
         __CPROVER_assert(used <= n, "consumed no more than the input");
         // pt[0..n) ends where the newest record ends, so a KeyUpdate that

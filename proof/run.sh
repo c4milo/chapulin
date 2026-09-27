@@ -838,6 +838,9 @@ launch fast full epoch 40 "" ct.c
 # the weight is 6. With the assertion that a KeyUpdate rekeys only as the
 # last message of its input (INV-39): 709 properties, 120 and 125 s, and
 # 3.01 and 4.37 GB peak on two runs on 2026-09-27, so the weight stays 6.
+# With the assertion that illegal_parameter, for a request_update neither
+# 0 nor 1, is the one alert the parser writes (INV-14): 746 properties,
+# 111 s, 4.17 GB peak at a load average near 30.
 launch slow:6 full handshake_post 132 "handle_post_handshake.0:33,fill_nondet.0:130" --object-bits 11 buf.c ct.c session.c
 # The only launch line that builds the hybrid key exchange
 # (https://github.com/c4milo/chapulin/issues/47). hybrid_secret over any seed,

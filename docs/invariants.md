@@ -1330,7 +1330,14 @@ last `ROLE=server` stub, as the entry said it would.
   post-handshake parser hands `on_ticket` no NewSessionTicket whose
   `ticket_lifetime` is 0, which RFC 9846 §4.6.1 says to discard at once,
   and `ch_ticket_obfuscated_age` adds the ticket's `age_add` to the age
-  modulo 2^32 (docs/decisions.md 72). Every server entry,
+  modulo 2^32 (docs/decisions.md 72). In either role the same parser
+  refuses a KeyUpdate whose request_update is neither 0 nor 1 with
+  illegal_parameter, before it rekeys (§4.7.3, rfc9846.txt:3362-3365):
+  `bin/unit` reads 0 and 1 as requests and requires illegal_parameter for
+  2 and 255, the `handshake_post` harness proves illegal_parameter is the
+  only alert the parser writes, and
+  `inv14-key-update-illegal-value-unexpected` requires `bin/unit` to fail
+  when it answers unexpected_message. Every server entry,
   `ch_srv_accept`, `ch_srv_record_init` and `ch_srv_quic_init`, and the
   boot check `ch_srv_check`, refuses with `CH_EINVAL` and sends nothing a
   configuration with a provisioned identity its flight could not sign

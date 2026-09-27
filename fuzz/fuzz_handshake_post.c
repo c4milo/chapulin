@@ -106,7 +106,8 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
     t.cfg.on_ticket = on_ticket;
 
     size_t used = 0;
-    (void)handle_post_handshake(&t, data, size, &used);
+    uint8_t alert = 0;
+    (void)handle_post_handshake(&t, data, size, &used, &alert);
 
     if (size == 0) {
         return 0;

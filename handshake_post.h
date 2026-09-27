@@ -63,7 +63,9 @@ static inline int hspost_ticket_age_ok(const ch_cfg *cfg) {
 // failure owes, and returns the error: unexpected_message, which is what
 // a KeyUpdate with bytes after it in its record gets, because RFC 9846
 // §5.1 lets no handshake message span the key change a KeyUpdate makes
-// (rfc9846.txt:3464-3470); bad_record_mac for a record that does not
+// (rfc9846.txt:3464-3470); illegal_parameter for a KeyUpdate whose
+// request_update is neither 0 nor 1 (§4.7.3, rfc9846.txt:3362-3365);
+// bad_record_mac for a record that does not
 // open; and what hsr_refuse_alert chose for an alert record between two
 // records of one message, whose error alert is the peer's fatal alert
 // and is answered with nothing. A TRANSPORT=tcp-nonblocking

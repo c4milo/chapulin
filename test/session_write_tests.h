@@ -34,6 +34,50 @@ static void test_key_update_replies(void) {
     CHECK(m.sends == 2 && m.sent == 2 * (size_t)CH_KEY_UPDATE_RECORD_LEN);
 }
 
+// request_update has two values (RFC 9846 §4.7.3), and any other ends the
+// connection with illegal_parameter (rfc9846.txt:3362-3365). 1 is the last
+// value read as a request, 2 the first refused, and 255 the last byte
+// there is. A refused KeyUpdate sends no reply, only that alert, under
+// the write key the session had.
+static void read_key_update_request(uint8_t request) {
+    uint8_t secret[SHA256_LEN];
+    ch_rand_bytes(secret, sizeof secret);
+    rec_dir server;
+    rec_dir_init(&server, secret);
+    mock_io m = {0};
+    static uint8_t rxbuf[1024];
+    ch_tls t;
+    uint8_t wr_secret[SHA256_LEN];
+    mock_session(&t, &m, rxbuf, sizeof rxbuf, secret, wr_secret);
+    rec_dir reader;
+    rec_dir_init(&reader, wr_secret);
+    const uint8_t key_update[5] = {HS_KEY_UPDATE, 0, 0, 1, request};
+    mock_push(&m, &server, REC_HANDSHAKE, key_update, sizeof key_update);
+    uint8_t out[16];
+    if (request <= 1) {
+        rec_dir_update(secret, &server);
+        mock_push(&m, &server, REC_APPDATA, (const uint8_t *)"hola", 4);
+        CHECK(ch_read(&t, out, sizeof out) == 4);
+        CHECK(ch_alert_sent(&t) == 0 && m.sends == (int)request);
+        return;
+    }
+    CHECK(ch_read(&t, out, sizeof out) == CH_EPROTO);
+    CHECK(ch_alert_sent(&t) == ALERT_ILLEGAL_PARAMETER);
+    uint8_t pt[16];
+    size_t pt_len = 0;
+    uint8_t type = 0;
+    size_t at = mock_pop_client_record(&m, 0, &reader, pt, sizeof pt, &pt_len, &type);
+    CHECK(type == REC_ALERT && pt_len == 2 && pt[0] == 2 && pt[1] == ALERT_ILLEGAL_PARAMETER);
+    CHECK(at == m.tx_len && m.sends == 1);
+}
+
+static void test_key_update_request(void) {
+    read_key_update_request(0);
+    read_key_update_request(1);
+    read_key_update_request(2);
+    read_key_update_request(255);
+}
+
 // The bytes one ch_write of n bytes hands the session's mock_send, read
 // through the session's own cfg.io.
 static size_t sent_by_write(ch_tls *t, const uint8_t *p, size_t n) {

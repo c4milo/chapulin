@@ -189,10 +189,33 @@ static int handle_key_update(ch_tls *t, uint8_t request) {
     return CH_OK;
 }
 
+// One KeyUpdate of msg_len bytes at body, which ends_input says is the
+// last message of its record. request_update has two values, and RFC
+// 9846 §4.7.3 ends the connection on any other with illegal_parameter
+// (rfc9846.txt:3362-3365), which this writes to *alert. A body that is not
+// one byte, and a KeyUpdate with bytes after it, keep the
+// unexpected_message the caller set. Each refusal comes before the rekey.
+static int take_key_update(ch_tls *t, const uint8_t *body, size_t msg_len, int ends_input,
+                           uint8_t *alert) {
+    if (msg_len != 1) {
+        return CH_EPROTO;
+    }
+    if (body[0] > 1) {
+        *alert = ALERT_ILLEGAL_PARAMETER;
+        return CH_EPROTO;
+    }
+    if (!ends_input) {
+        return CH_EPROTO;
+    }
+    return handle_key_update(t, body[0]);
+}
+
 // Handles the complete post-handshake messages in pt[0..n) — only
 // NewSessionTicket and KeyUpdate exist here — and reports through used
 // how many bytes were consumed. A trailing partial message is not an
-// error; the caller reassembles across records.
+// error; the caller reassembles across records. A failure that owes
+// another alert than the unexpected_message the caller set writes it to
+// *alert.
 //
 // A KeyUpdate changes the read key, so it must end its record (RFC 9846
 // §5.1, rfc9846.txt:3464-3470), and one that does not is refused before
@@ -201,7 +224,8 @@ static int handle_key_update(ch_tls *t, uint8_t request) {
 // message, so every byte after a whole message came from the record that
 // holds that message's last byte. A KeyUpdate split across two records
 // under one key ends the second, which is legal.
-static int handle_post_handshake(ch_tls *t, const uint8_t *pt, size_t n, size_t *used) {
+static int handle_post_handshake(ch_tls *t, const uint8_t *pt, size_t n, size_t *used,
+                                 uint8_t *alert) {
     size_t off = 0;
     while (n - off >= 4) {
         uint8_t type = pt[off];
@@ -213,14 +237,11 @@ static int handle_post_handshake(ch_tls *t, const uint8_t *pt, size_t n, size_t 
             break; // partial message, reassembled by the caller
         }
         const uint8_t *body = pt + off + 4;
-        int rc = CH_EPROTO; // any other message type, any KeyUpdate whose
-                            // body is not the one legal byte, and any
-                            // KeyUpdate with bytes after it in its record
+        int rc = CH_EPROTO; // any other message type
         if (type == HS_NEW_SESSION_TICKET) {
             rc = handle_ticket(t, body, msg_len);
-        } else if (type == HS_KEY_UPDATE && msg_len == 1 && body[0] <= 1 &&
-                   off + 4 + msg_len == n) {
-            rc = handle_key_update(t, body[0]);
+        } else if (type == HS_KEY_UPDATE) {
+            rc = take_key_update(t, body, msg_len, off + 4 + msg_len == n, alert);
         }
         if (rc != CH_OK) {
             return rc;
@@ -268,7 +289,7 @@ static int drain_run(ch_tls *t, size_t pt_len, uint8_t *alert) {
     // byte progress; an endless stream of empty fragments is an attack.
     for (int quiet = 0; quiet < CH_QUIET_CAP;) {
         size_t used = 0;
-        int rc = handle_post_handshake(t, buf, fill, &used);
+        int rc = handle_post_handshake(t, buf, fill, &used, alert);
         if (rc != CH_OK) {
             return rc;
         }

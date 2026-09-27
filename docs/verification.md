@@ -906,9 +906,11 @@ The entries are grouped by area:
 - **Harness:** `handshake_post` (slow)
 - **Proves:** the post-handshake parser stays safe on hostile decrypted
   bytes and consumes no more than its input, hands `on_ticket` no
-  ticket whose `ticket_lifetime` is 0, and rekeys on a KeyUpdate only
+  ticket whose `ticket_lifetime` is 0, rekeys on a KeyUpdate only
   when it is the last message of its input, the one RFC 9846 §5.1 lets
-  precede a key change (INV-39).
+  precede a key change (INV-39), and writes no alert but
+  illegal_parameter, and that only on a refusal, which is a
+  request_update neither 0 nor 1 (§4.7.3, INV-14).
 - **Bound:** messages ≤ 128 B.
 
 ### Server

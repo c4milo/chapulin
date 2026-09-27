@@ -382,6 +382,7 @@ int main(void) {
     test_ch_write();
     test_writable_len();
     test_key_update_replies();
+    test_key_update_request();
     test_key_update_ends_record();
     test_ticket_lifetime_zero();
     test_record_padding();
