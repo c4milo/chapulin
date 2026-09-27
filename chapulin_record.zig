@@ -233,9 +233,25 @@ fn Session(comptime side: Side, comptime receive_len: usize) type {
             return @enumFromInt(c.ch_record_state(&self.record));
         }
 
-        /// ch_record_alert: the alert a failure chose, null when none did.
+        /// ch_record_alert: the alert a handshake failure chose for the
+        /// caller to send, null when none did.
         pub fn recordAlert(self: *const Self) ?u8 {
             const alert = c.ch_record_alert(&self.record);
+            return if (alert == 0) null else alert;
+        }
+
+        /// ch_alert_sent: the fatal alert this side's failure chose, which
+        /// recordAlert also names during the handshake and which read and
+        /// write send themselves after it; null when none did.
+        pub fn alertSent(self: *const Self) ?u8 {
+            const alert = c.ch_alert_sent(&self.record.t);
+            return if (alert == 0) null else alert;
+        }
+
+        /// ch_alert_received: the fatal alert the peer sent, null when none
+        /// arrived. A session that failed on it sent nothing in answer.
+        pub fn alertReceived(self: *const Self) ?u8 {
+            const alert = c.ch_alert_received(&self.record.t);
             return if (alert == 0) null else alert;
         }
 

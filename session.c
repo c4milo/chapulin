@@ -36,8 +36,18 @@ void tlsi_wipe(ch_tls *t) {
     t->pt_len = 0;
 }
 
+// The failure funnel of the blocking drivers and of every connected TCP
+// session; tcp_nonblocking_fail and quic_fail are the other two, and each
+// writes alert_sent the way this one does. A reader that met the peer's
+// fatal alert wrote alert_received before it failed the session, and RFC
+// 9846 §6.2 has both sides close the connection at once on that alert
+// (rfc9846.txt:3890-3893), so nothing goes out after it and no alert of
+// this side's is recorded.
 void tlsi_fail(ch_tls *t, uint8_t description) {
-    (void)tlsi_send_alert(t, 2, description);
+    if (t->alert_received == 0) {
+        t->alert_sent = description;
+        (void)tlsi_send_alert(t, 2, description);
+    }
     tlsi_wipe(t);
     t->state = CH_ST_FAILED;
 }

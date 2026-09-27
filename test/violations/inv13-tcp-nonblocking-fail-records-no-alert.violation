@@ -1,0 +1,12 @@
+invariant: INV-13
+file: tcp_nonblocking_frame.c
+catches: tcp_nonblocking_loop_test
+reason: tcp_nonblocking_fail names the alert in ch_record_alert and no longer
+  records it for ch_alert_sent, so the one call a caller reads across its
+  sessions says no failure chose an alert in the handshake of a
+  tcp-nonblocking session. bin/tcp_nonblocking_loop_test requires both calls
+  to name decrypt_error after a wrong pin.
+
+--- old
+    r->t.alert_sent = r->alert;
+--- new

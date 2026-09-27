@@ -58,15 +58,19 @@ static inline int hspost_ticket_age_ok(const ch_cfg *cfg) {
 #ifndef CH_TRANSPORT_QUIC_NONBLOCKING
 // Reads whole post-handshake messages, starting from pt_len plaintext
 // bytes already in cfg.buf and pulling further records when one message
-// is fragmented across them. Returns CH_OK once the run is consumed, or
-// an error; the caller turns the error into an alert. A KeyUpdate with
-// bytes after it in its record is CH_EPROTO, which tls.c answers with
-// unexpected_message: RFC 9846 §5.1 lets no handshake message span the
-// key change a KeyUpdate makes (rfc9846.txt:3464-3470). A TRANSPORT=tcp-nonblocking
+// is fragmented across them. Returns CH_OK once the run is consumed.
+// Otherwise it fails the session through tlsi_fail with the alert the
+// failure owes, and returns the error: unexpected_message, which is what
+// a KeyUpdate with bytes after it in its record gets, because RFC 9846
+// §5.1 lets no handshake message span the key change a KeyUpdate makes
+// (rfc9846.txt:3464-3470); bad_record_mac for a record that does not
+// open; and what hsr_refuse_alert chose for an alert record between two
+// records of one message, whose error alert is the peer's fatal alert
+// and is answered with nothing. A TRANSPORT=tcp-nonblocking
 // build also returns CH_RECORD_AGAIN when the next fragment has not
 // arrived: the fragment bytes so far stay at the front of cfg.buf,
 // t->post_fill counts them, and the caller passes that count back here
-// on its next read. It is not an error, and the caller sends no alert.
+// on its next read. It is not an error, and nothing fails.
 //
 // A TRANSPORT=quic-nonblocking build declares neither this call nor the KeyUpdate
 // handler under it. There is no record run to drain, and a TLS

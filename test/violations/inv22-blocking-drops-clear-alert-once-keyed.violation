@@ -1,0 +1,16 @@
+invariant: INV-22
+file: handshake_record.c
+catches: tcp_blocking_loop_test
+reason: the blocking reader reads an alert in the clear only until its read
+  key is installed, so a server that has sent its flight refuses the alert of
+  a client that could not use the ServerHello as a record it cannot use and
+  answers an alert that closed the connection. bin/tcp_blocking_loop_test
+  requires ch_srv_accept to record the client's alert in the clear after its
+  flight and to send nothing more.
+
+--- old
+        if (outer == REC_ALERT) {
+            return hsr_refuse_alert(t, t->cfg.buf + part + REC_HDR, record_len - REC_HDR,
+--- new
+        if (outer == REC_ALERT && !h->encrypted) {
+            return hsr_refuse_alert(t, t->cfg.buf + part + REC_HDR, record_len - REC_HDR,

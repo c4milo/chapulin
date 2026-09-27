@@ -151,6 +151,10 @@ static void test_server_close_at_initial(void) {
     CHECK(ch_srv_quic_crypto_in(&server, CH_LEVEL_INITIAL, buf, n) == CH_EPROTO);
     CHECK(ch_quic_alert(&server) == ALERT_NO_APPLICATION_PROTOCOL);
     CHECK(ch_quic_error_code(&server) == 0x0100 + ALERT_NO_APPLICATION_PROTOCOL);
+    // The server fails through quic_fail as a client does, and alert.h's
+    // call reports what ch_quic_alert reports.
+    CHECK(ch_alert_sent(&server.t) == ALERT_NO_APPLICATION_PROTOCOL);
+    CHECK(ch_alert_received(&server.t) == 0);
     CHECK(from_server.len[CH_LEVEL_INITIAL] == 0);
     check_failed(&server, CH_QUIC_LEVEL_BIT(CH_LEVEL_INITIAL, CH_KEY_WRITE));
     check_open_refused(&server, &client, CH_LEVEL_INITIAL);

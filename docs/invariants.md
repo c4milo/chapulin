@@ -503,12 +503,13 @@ last `ROLE=server` stub, as the entry said it would.
   by then the caller holds the bytes. Once connected, `ch_read` calls
   `cfg.send` in two cases alone: the reply to a KeyUpdate whose sender
   asked for one (RFC 9846 §4.7.3), and the alert of a failure. The
-  peer's close_notify is neither. The `ch_read` that reads it sends
-  nothing, and `ch_close` sends this side's close_notify through
-  `cfg.send` in one call, whenever the caller makes it (INV-22). A
-  caller whose `cfg.send` holds only input while `ch_read` runs, as
-  colibri's does, therefore sees no send it did not ask for when the
-  peer closes.
+  peer's close_notify is neither, and neither is the peer's fatal
+  alert, which fails the session with no alert sent (INV-22). The
+  `ch_read` that reads either sends nothing, and `ch_close` sends this
+  side's close_notify through `cfg.send` in one call, whenever the
+  caller makes it. A caller whose `cfg.send` holds only input while
+  `ch_read` runs, as colibri's does, therefore sees no send it did not
+  ask for when the peer closes or aborts.
 - **Mechanism.** The blocking driver is not in the object. `handshake.c`
   is filtered out by `TRANSPORT_FILTER`, `srv_handshake.c` by the server
   arm, and `tls.c` and `srv.c` guard their accept and connect calls out.
@@ -1172,7 +1173,10 @@ last `ROLE=server` stub, as the entry said it would.
 ### INV-13 — no resumable errors
 
 - **Claim.** Every error kills the session: alert, wipe, dead. There
-  is no error a caller can retry past. Three kinds of result are not
+  is no error a caller can retry past. The failure records the alert it
+  chose, which `ch_alert_sent` reports (alert.h). The peer's fatal alert
+  kills the session with no alert of this side's, sent or recorded, and
+  `ch_alert_received` reports the peer's (INV-22). Three kinds of result are not
   errors in that sense, and each public header says which of its codes
   are which, call by call; cfg.h states the rule beside the codes:
   - A refusal on entry, `CH_EINVAL`, which sent nothing. An init call,
@@ -1206,12 +1210,17 @@ last `ROLE=server` stub, as the entry said it would.
 - **Mechanism.** Fail-closed policy with one funnel per driver family:
   `tlsi_fail` for the record layer and the blocking drivers,
   `tcp_nonblocking_fail` for the tcp-nonblocking handshake drivers and
-  `quic_fail` for the QUIC ones. Each entry checks its configuration or
-  its arguments before it sends a byte, and returns early, changing
-  nothing, when the session cannot take the call. `io_read_record` is
-  the only source of `CH_RECORD_AGAIN`, and `dispatch_one_record` and
-  `post_handshake` in `tls.c` are the only places that return it
-  without calling `tlsi_fail`.
+  `quic_fail` for the QUIC ones. Each funnel writes `ch_tls.alert_sent`,
+  the one field `ch_alert_sent` reads; `tcp_nonblocking_fail` writes
+  the same description to `ch_record.alert` for the caller to send, and
+  `quic_fail` to `ch_quic.alert`. `tlsi_fail` and `tcp_nonblocking_fail`
+  write and send nothing once `ch_tls.alert_received` is set. Each entry
+  checks its configuration or its arguments before it sends a byte, and
+  returns early, changing nothing, when the session cannot take the
+  call. `io_read_record` is the only source of `CH_RECORD_AGAIN`, and
+  `dispatch_one_record` in `tls.c` and `hspost_read` in
+  `handshake_post.c` are the only places that return it without calling
+  `tlsi_fail`.
 - **Check.** Convention; handshake_sequence's 466k-sequence run asserts no
   sequence revives a failed session. `bin/tcp_nonblocking_loop_test`
   (`test/tcp_nonblocking_read_tests.h`) reads a ticket-only record and
@@ -1226,9 +1235,21 @@ last `ROLE=server` stub, as the entry said it would.
   each refusal inside it, and `inv13-srv-signer-refusal-einval`, which
   returns `CH_EINVAL` from a signer's refusal again, requires
   `bin/srv_auth_test` to fail. The entry refusals are INV-14's, each
-  with its tests.
+  with its tests. Each funnel's recorded alert is tested:
+  `bin/unit` (`test/session_alert_tests.h`) reads `ch_alert_sent` after
+  `tlsi_fail` sent decode_error, unexpected_message and internal_error,
+  `bin/tcp_blocking_loop_test` after each blocking driver's
+  unexpected_message, `bin/tcp_nonblocking_loop_test` after a wrong pin,
+  where it equals `ch_record_alert`, and `bin/quic_driver_test` and
+  `bin/quic_loop_test` after each QUIC role's failure, where it equals
+  `ch_quic_alert`. `inv13-fail-records-no-alert`,
+  `inv13-tcp-nonblocking-fail-records-no-alert` and
+  `inv13-quic-fail-records-no-alert` each drop one funnel's write, and
+  `bin/unit`, `bin/tcp_nonblocking_loop_test` and `bin/quic_driver_test`
+  catch them.
 - **Violation.** A PR returns a "soft" error that leaves keys live so
-  the caller can retry a read.
+  the caller can retry a read, or adds a failure path that records no
+  alert, or one that sends an alert after the peer's fatal alert.
 - See [decisions: Engineering](decisions.md#engineering).
 
 ### INV-14 — the refusal set
@@ -2435,6 +2456,21 @@ last `ROLE=server` stub, as the entry said it would.
   that such data MUST be ignored is kept (rfc9846.txt:3837-3839).
   `ch_write` keeps sending, and `ch_close` sends this side's
   close_notify and sets `CH_ST_CLOSED`.
+- An error alert closes the connection on both sides at once (RFC 9846
+  §6.2, rfc9846.txt:3890-3893), and this holds for either role and
+  every TCP driver. An error alert is any 2-byte alert record whose
+  description is neither close_notify nor user_canceled, whatever its
+  level byte (§6, rfc9846.txt:3779-3782). The call that reads one, in
+  the handshake or after it, returns `CH_EPROTO`, wipes, marks the
+  session failed, sends nothing, owes the caller nothing
+  (`ch_record_alert` reads 0), and records the description in
+  `ch_tls.alert_received` for `ch_alert_received` (alert.h). The
+  handshake reads an alert in the clear even once its read key is
+  installed, because a peer that failed before it installed its own
+  write key has none to protect it with. A record of the alert type that
+  is not one 2-byte alert is not an alert (§5.1,
+  rfc9846.txt:3475-3478), and the reader answers it with decode_error
+  (rfc9846.txt:3785-3788).
 - **Mechanism.** The server writes its own flight in the order the
   client reads it, by call position in `srv_handshake.c`,
   `srv_tcp_nonblocking.c` and `srv_quic.c`, and sends its one
@@ -2455,7 +2491,13 @@ last `ROLE=server` stub, as the entry said it would.
   which wipes the read secrets and sets `read_closed`, and `ch_read` tests
   `read_closed` before it reads a record. Nothing on that path calls
   `ch_close` or `tlsi_send_alert`, and `ch_write` does not test
-  `read_closed`.
+  `read_closed`. Every other alert record goes to `hsr_refuse_alert`
+  (handshake_record.c), which all four TCP readers call: the two
+  handshake readers, `tls.c`'s `read_alert` and `handshake_post.c`'s
+  reader of a split message. It checks the length and writes
+  `alert_received`, and the two funnels that could answer, `tlsi_fail`
+  and `tcp_nonblocking_fail`, send and owe nothing once that field is
+  set.
 - **Check.** Lean theorem (17 in `Spec/Handshake.lean`, over every
   trace the model admits; `accepts_decompose` bounds the flight at 4
   messages in the spec's `psk` Mode and 6 in its `pinned` Mode);
@@ -2512,14 +2554,39 @@ last `ROLE=server` stub, as the entry said it would.
   `bin/tcp_nonblocking_loop_test` catches, and
   `inv22-read-past-close-notify` and
   `inv22-write-refused-after-close-notify`, which `bin/unit` catches.
+  The error alert rule is tested, not proved, over the same three
+  binaries and the blocking loop. `bin/unit` (`test/session_alert_tests.h`)
+  reads a connected session's error alert at level 2, at level 1 and
+  with an unknown description, and one between two records of a split
+  message: no send call, the keys wiped, and the description in
+  `ch_alert_received`. It reads alert records of one byte and of three,
+  either side of the 2 bytes that are one alert, and requires one
+  decode_error. `bin/tcp_blocking_loop_test`
+  (`test/tcp_blocking_alert_tests.h`) and `bin/tcp_nonblocking_loop_test`
+  (`test/tcp_nonblocking_alert_tests.h`) run the same two lengths in each
+  handshake: the client reads the alert in place of the server's flight
+  and under the server's handshake key, and the server reads it in place
+  of the ClientHello, in the clear after its flight and under the
+  client's handshake key. The tcp-nonblocking one also reads it after
+  the handshake on both ends. Six violations each break one term:
+  `inv22-fail-answers-peer-alert` and `inv22-peer-alert-not-recorded`,
+  which `bin/unit` catches; `inv22-alert-length-unchecked`, which
+  `bin/unit` catches; `inv22-tcp-nonblocking-owes-answer-to-peer-alert`
+  and `inv22-tcp-nonblocking-drops-clear-alert-once-keyed`, which
+  `bin/tcp_nonblocking_loop_test` catches; and
+  `inv22-blocking-drops-clear-alert-once-keyed`, which
+  `bin/tcp_blocking_loop_test` catches.
 - **Violation.** A PR relaxes one type check to tolerate a message a
   peer "usually" sends early, and a flight with a skipped
   CertificateVerify authenticates. This is the SMACK and FREAK class:
   invisible to memory-safety proofs and to a golden-path e2e run. Or a
   PR answers the peer's close_notify with an immediate close_notify of
   its own, as TLS 1.2 required, which drops what this side still had
-  to send and sends from inside a read.
-- See [decisions: Cryptography](decisions.md#cryptography).
+  to send and sends from inside a read. Or a PR answers the peer's
+  fatal alert with one of its own, or drops an alert in the clear
+  because the read key is already installed.
+- See [decisions: Cryptography](decisions.md#cryptography), and entry 75
+  for the alert rule.
 
 ## Lifetime and state
 
@@ -2528,6 +2595,9 @@ last `ROLE=server` stub, as the entry said it would.
 - **Claim.** Handshake secrets are wiped at CONNECTED; every failure
   path wipes through `tlsi_wipe`, or through `quic_fail` under
   `TRANSPORT=quic-nonblocking`; the DRBG erases its key forward after each output.
+  A failure on the peer's fatal alert is one of those paths: it sends
+  nothing (INV-22) and wipes as every other failure does, which
+  `bin/unit`'s `test/session_alert_tests.h` checks key byte by key byte.
   The peer's close_notify is a phase boundary for the read direction
   alone. Nothing is read after it (INV-22), so the `ch_read` that reads
   it wipes every secret only a read uses: `ch_tls.rd`, `rd_secret` and

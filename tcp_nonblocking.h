@@ -48,9 +48,14 @@
 // nothing was consumed, and the same call may run again with a larger
 // one. CH_EPROTO from a call on a session that failed or closed, and from
 // ch_read or ch_write before the handshake completes, changes nothing
-// either (tls.h). Every other code leaves the session dead, and
-// ch_record_alert names the alert the caller should send before it
-// closes.
+// either (tls.h). Every other code leaves the session dead. A failure in
+// ch_record_in or ch_srv_record_in, while the handshake runs, sends
+// nothing, and ch_record_alert names the alert the caller should send
+// before it closes. ch_read and ch_write send their failure's alert
+// themselves, through cfg.send, and leave ch_record_alert at 0.
+// ch_alert_sent names the alert in both cases (alert.h). A failure on the
+// peer's fatal alert sends none and owes none, so both calls read 0 then
+// (RFC 9846 §6.2).
 #ifndef CH_TCP_NONBLOCKING_H
 #define CH_TCP_NONBLOCKING_H
 #ifdef CH_TRANSPORT_TCP_NONBLOCKING
@@ -145,8 +150,11 @@ int ch_record_out(ch_record *r, uint8_t *out, size_t cap, size_t *out_len);
 // because ch_write still works; r->t.read_closed says it arrived.
 uint8_t ch_record_state(const ch_record *r);
 
-// The TLS alert a failure chose, for the caller to send before it closes
-// the connection. 0 when no failure has happened.
+// The TLS alert a failure in ch_record_in or ch_srv_record_in chose, for
+// the caller to send before it closes the connection. 0 when no such
+// failure has happened, after a failure in ch_read or ch_write, which
+// send their own alert, and after the peer's fatal alert, which this side
+// answers with none (alert.h).
 uint8_t ch_record_alert(const ch_record *r);
 
 // Wipes every secret and marks the session dead. Safe on a session that

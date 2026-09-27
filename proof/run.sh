@@ -1511,8 +1511,11 @@ launch fast full buf 100 ""
 # context copy before sha256_final writes the digest. Measured the same
 # way on 2026-09-24 (arm64 macOS, cbmc 6.11.0, kissat,
 # PROVE_ONLY=handshake_record PROVE_NO_CACHE=1 /usr/bin/time -l): 597
-# properties, 530 s, 3.51 GB peak.
-launch slow:4 full handshake_record 65 "hsr_fetch_record.0:6,hsr_next_msg.0:11,fill_nondet.0:113,fill_buf_nondet.0:13" --object-bits 11 -DCH_QUIET_CAP=1 -DCH_PROOF_RXBUF=12
+# properties, 530 s, 3.51 GB peak. With both alert branches of the fetch
+# loop calling hsr_refuse_alert (docs/decisions.md 75): 693 properties,
+# 805 s wall and 689 s user at a load average near 30, and 5.59 GB peak,
+# so the weight is 6.
+launch slow:6 full handshake_record 65 "hsr_fetch_record.0:6,hsr_next_msg.0:11,fill_nondet.0:113,fill_buf_nondet.0:13" --object-bits 11 -DCH_QUIET_CAP=1 -DCH_PROOF_RXBUF=12
 # The TRANSPORT=quic-nonblocking driver and its step table, one formula each, with
 # the contract between them written twice: quic_driver stubs
 # hsq_advance to what quic_step.h states, and quic_step proves the
@@ -1539,7 +1542,9 @@ launch slow:4 full handshake_record 65 "hsr_fetch_record.0:6,hsr_next_msg.0:11,f
 # ch_tls.psk_selected and the harness asserted that fork
 # (docs/decisions.md 55): quic_step 559 properties, 3.7 s, 42 MB;
 # quic_step_ca 566 properties, 4.6 s, 45 MB. With the fork read from
-# cfg.psk instead, quic_step fails that assertion.
+# cfg.psk instead, quic_step fails that assertion. With quic_fail writing
+# ch_tls.alert_sent beside q->alert (docs/decisions.md 75): quic_driver
+# 1663 properties, 86 s, 0.98 GB.
 # quic_driver carries fast:4 rather than the tier default of 2: the tier
 # default caps its address space at 6 GB, and cbmc's virtual footprint on
 # this formula runs past that and dies mid-solve at about 70 s, where
@@ -1602,8 +1607,10 @@ launch fast full quic_step_ca 5 "fill_nondet.0:37,ct_wipe.0:849" -DCH_TRANSPORT_
 # asked srv_identities_usable, stubbed like the other two srv_auth.c
 # entries. With hsr_check_record_end, the check before a key change,
 # stubbed beside them (INV-39): 894 properties, 84 s, 1.60 GB on a loaded
-# machine. The weight is 3 because the peaks above pass the fast tier's
-# 2 GB default.
+# machine. With tlsi_fail recording the alert it chooses and choosing none
+# after the peer's fatal alert (docs/decisions.md 75): 906 properties,
+# 45 s, 2.64 GB. The weight is 3 because the peaks above pass the fast
+# tier's 2 GB default.
 launch fast:3 full srv_accept 100 "alpn_ok.0:9,alpn_name_repeats.0:9,ct_wipe.0:521,ct_memeq.0:33,fill_names.0:257,fill_nondet.0:33" -DCH_ROLE_SERVER srv.c srv_handshake.c ct.c session.c
 # The ROLE=server tcp-nonblocking driver and the inbound framing under it, with
 # srv_accept's layering: srv_tcp_nonblocking.c and tcp_nonblocking_frame.c

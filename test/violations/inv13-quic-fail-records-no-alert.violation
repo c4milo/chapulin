@@ -1,0 +1,11 @@
+invariant: INV-13
+file: quic_fail.c
+catches: quic_driver_test
+reason: quic_fail keeps the alert for ch_quic_alert and no longer records it
+  for ch_alert_sent, so the two calls disagree on a failed QUIC session.
+  bin/quic_driver_test requires ch_alert_sent to answer what ch_quic_alert
+  answers.
+
+--- old
+    q->t.alert_sent = q->alert;
+--- new

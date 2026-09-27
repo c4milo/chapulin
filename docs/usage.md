@@ -140,6 +140,25 @@ Any error kills the session. The stack wipes its keys and you
 reconnect. Devices recover by reconnecting anyway, and the rule removes
 the whole resumable-error state space from the code and the proofs.
 
+Two calls report what ended a session, for your log (`alert.h`), and
+every object exports both, on every transport:
+
+```c
+if (ch_connect(&tls, &cfg) != CH_OK) {
+    uint8_t ours = ch_alert_sent(&tls);       // the alert this side chose
+    uint8_t theirs = ch_alert_received(&tls); // the alert the peer sent
+}
+```
+
+Each returns 0 when there is none. A session that reads the peer's
+fatal alert, in the handshake or after it, fails with `CH_EPROTO` and
+sends nothing in answer, because RFC 9846 §6.2 has both sides close the
+connection at once; `ch_alert_received` names that alert and
+`ch_alert_sent` reads 0. A tcp-nonblocking session passes `&r->t` and a
+QUIC session `&q->t`. Over QUIC `ch_alert_sent` answers what
+`ch_quic_alert` answers, and `ch_alert_received` reads 0, because QUIC
+carries no alert record.
+
 ## Resuming a ticket
 
 `on_ticket` hands over each ticket once (`ticket.h`). Its `identity`
@@ -186,7 +205,8 @@ how to cut and size its bytes:
   `record_size_limit` and `CH_TX_PT` per record. Pass at most that much
   when your send buffer holds `cap` bytes. Both TCP transports export it.
 - `CH_ALERT_RECORD_LEN`, 24, is what `ch_close` sends, and what a failing
-  `ch_read` sends. `CH_KEY_UPDATE_RECORD_LEN`, 27, is what `ch_read` sends
+  `ch_read` sends, unless the peer's fatal alert failed it: that read
+  sends nothing. `CH_KEY_UPDATE_RECORD_LEN`, 27, is what `ch_read` sends
   for each KeyUpdate that asks for an answer. A record carries at most
   one KeyUpdate, as its last message (RFC 9846 §5.1), so a record gets
   at most one answer, and a record with bytes after a KeyUpdate fails
@@ -197,9 +217,9 @@ how to cut and size its bytes:
 The `TRANSPORT=quic-nonblocking` client is implemented and checked against RFC 9001's
 Appendix A vectors; [`docs/quic.md`](quic.md) records its design. A
 QUIC *server* now builds too: `ROLE=server` with `TRANSPORT=quic-nonblocking` runs the
-TLS 1.3 server handshake over CRYPTO frames and exports nineteen calls,
+TLS 1.3 server handshake over CRYPTO frames and exports twenty-one calls,
 two of which mint and check the address validation token a server puts in
-a Retry.
+a Retry, and two of which are `alert.h`'s.
 [`docs/quic_server.md`](quic_server.md) states what chapulin owes one,
 which is the keys, the packet protection and that token, and nothing above
 them. Both

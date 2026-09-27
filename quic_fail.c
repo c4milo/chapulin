@@ -80,13 +80,15 @@ static void wipe_write_keys_unless_ready(ch_quic *q, uint8_t level) {
 
 // What tlsi_fail is on the TCP transports, minus the alert record, which
 // QUIC has no way to carry: the alert goes to q->alert for
-// ch_quic_alert to report and the session is dead. The write keys of
+// ch_quic_alert to report, and to q->t.alert_sent for ch_alert_sent
+// (alert.h), and the session is dead. The write keys of
 // each level whose write bit is set stay, for the one CONNECTION_CLOSE
 // packet ch_quic_seal_close seals there (RFC 9001 section 4.8,
 // docs/decisions.md 57). It leaves q->error_code alone, so a caller that
 // wrote 0x0a before it called still reports that code.
 int quic_fail(ch_quic *q, int rc) {
     q->alert = q->hs.alert;
+    q->t.alert_sent = q->alert;
     wipe_all_but_write_keys(q);
     wipe_write_keys_unless_ready(q, CH_LEVEL_INITIAL);
     wipe_write_keys_unless_ready(q, CH_LEVEL_HANDSHAKE);

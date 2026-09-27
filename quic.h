@@ -30,6 +30,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "alert.h"
 #include "cfg.h"
 #include "gcm.h"
 #include "handshake_record.h"
@@ -458,7 +459,7 @@ uint8_t ch_quic_state(const ch_quic *q);
 // handshake_message.h spells them. ch_quic_error_code is what the caller puts on the wire;
 // this call names the alert behind it, for a log or a test. Requires: q is initialized.
 // Returns 0 while no failure has happened, which is close_notify and never a failure's
-// description here. It cannot fail and changes nothing.
+// description here. It cannot fail and changes nothing. ch_alert_sent(&q->t) answers the same.
 uint8_t ch_quic_alert(const ch_quic *q);
 
 // Reports the QUIC transport error code the caller sends in CONNECTION_CLOSE (RFC 9001

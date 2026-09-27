@@ -6,12 +6,12 @@ reason: tlsi_fail returns before tlsi_wipe when the alert cannot go out, so a
   master in SRAM
 
 --- old
-void tlsi_fail(ch_tls *t, uint8_t description) {
-    (void)tlsi_send_alert(t, 2, description);
+        t->alert_sent = description;
+        (void)tlsi_send_alert(t, 2, description);
 --- new
-void tlsi_fail(ch_tls *t, uint8_t description) {
-    if (tlsi_send_alert(t, 2, description) != CH_OK) {
-        // The transport is gone, so there is nothing more to do here.
-        t->state = CH_ST_FAILED;
-        return;
-    }
+        t->alert_sent = description;
+        if (tlsi_send_alert(t, 2, description) != CH_OK) {
+            // The transport is gone, so there is nothing more to do here.
+            t->state = CH_ST_FAILED;
+            return;
+        }

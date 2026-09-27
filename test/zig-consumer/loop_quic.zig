@@ -168,5 +168,7 @@ pub fn run() !void {
     client.close();
     values.ticket_age_ms += 1;
     try check(client.init(values, &client_params, &client_peer) == error.Invalid and client.state() == .failed, "a stale ticket was not refused");
+    // An init refusal sends nothing, so it chose no alert (alert.h).
+    try check(client.alertSent() == null and client.alertReceived() == null, "an init refusal reported an alert");
     std.debug.print("a QUIC client and server ran through the API: a handshake at each level, a packet each way, a key update, the Retry tag and token, a resumed ticket, a stale one refused, and close\n", .{});
 }

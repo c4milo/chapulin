@@ -3,10 +3,12 @@
 // the session struct plus the caller's receive buffer is the entire
 // working set. The caller supplies blocking I/O callbacks (bounded by its
 // own timeouts) and a random source (rand.h). Configuration and result
-// codes live in cfg.h; the session struct in session.h.
+// codes live in cfg.h; the session struct in session.h; the two calls
+// that report what alert ended a session in alert.h.
 #ifndef CH_TLS_H
 #define CH_TLS_H
 
+#include "alert.h"
 #include "session.h"
 
 // Runs the full handshake. On CH_OK the session is ready for read/write.
@@ -14,7 +16,10 @@
 // configuration it refuses returns CH_EINVAL before a byte is sent, and a
 // CA build answers a ticket the stored epoch retired with CH_EAUTH, also
 // before a byte is sent (docs/ca.md). Every other error comes from the
-// handshake, which first tries to send the alert its failure chose.
+// handshake, which first tries to send the alert its failure chose, and
+// ch_alert_sent names it. The peer's fatal alert is the exception: the
+// handshake returns CH_EPROTO, sends nothing and ch_alert_received names
+// the alert (alert.h, RFC 9846 §6.2).
 //
 // It is declared only where it is defined, in a TRANSPORT=tcp-blocking
 // object with a client. A ROLE=server object exports ch_srv_accept in
@@ -35,7 +40,8 @@ int ch_connect(ch_tls *t, const ch_cfg *cfg);
 // nothing: once ch_close has run, once the session has failed, and in a
 // TRANSPORT=tcp-nonblocking build while the handshake still runs, which
 // that CH_EPROTO leaves running. Every other error, a record it cannot
-// seal (CH_ECAP) or a send that fails (CH_EIO), leaves the session dead.
+// seal (CH_ECAP) or a send that fails (CH_EIO), leaves the session dead,
+// after it tries to send internal_error, which ch_alert_sent names.
 int ch_write(ch_tls *t, const uint8_t *p, size_t n);
 
 // The most plaintext one ch_write seals into cap bytes of records, so a
@@ -55,7 +61,8 @@ size_t ch_writable_len(const ch_tls *t, size_t cap);
 
 // The wire length of one sealed alert record, 24 bytes: REC_OVERHEAD and
 // the 2-byte alert, a level and a description (RFC 9846 §6). ch_close sends
-// one, and a ch_read that fails sends one.
+// one, and a ch_read that fails sends one, unless the peer's fatal alert
+// is what failed it: that one it answers with nothing.
 #define CH_ALERT_RECORD_LEN (REC_OVERHEAD + 2)
 
 // The wire length of one sealed KeyUpdate record, 27 bytes: REC_OVERHEAD,
@@ -77,7 +84,10 @@ size_t ch_writable_len(const ch_tls *t, size_t cap);
 // changes nothing: one that failed, and in a TRANSPORT=tcp-nonblocking
 // build one whose handshake still runs, which keeps running. Every other
 // error leaves the session dead, after it tries to send the alert its
-// failure chose.
+// failure chose, which ch_alert_sent names. The peer's fatal alert is the
+// exception: it returns CH_EPROTO and sends nothing, and
+// ch_alert_received names the alert (alert.h, RFC 9846 §6.2). An alert
+// record that is not one 2-byte alert is answered with decode_error.
 //
 // The end of the peer's stream is its close_notify, which closes the
 // peer's direction and no other (RFC 9846 §6.1). The ch_read that reads

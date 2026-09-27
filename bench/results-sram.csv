@@ -19,7 +19,7 @@ stack_connect_psk,2768
 stack_connect_ca_rsa,5472
 stack_connect_ca_ecdsa,3984
 stack_connect_webpki,16528
-stack_read,1728
+stack_read,1712
 stack_connect_pq,15872
 stack_write,912
 stack_close,864

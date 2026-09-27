@@ -15,7 +15,8 @@
 // sixteen ch_quic_ entries instead, so Quic forwards those, and Config
 // takes no Io and gains the transport parameters and the two QUIC
 // callbacks. One transport compiles per build, so one of the two classes
-// exists at a time.
+// exists at a time. Both forward alert.h's two calls, which every object
+// exports.
 #ifndef CHAPULIN_HPP
 #define CHAPULIN_HPP
 
@@ -527,6 +528,16 @@ class Session {
         return tls_.epoch_status;
     }
 
+    // Forward alert.h's two calls: the fatal alert this side's failure
+    // chose, and the one the peer sent, 0 for none. A read or connect that
+    // failed on the peer's fatal alert sent nothing, and alert_sent() is 0.
+    uint8_t alert_sent() const {
+        return ch_alert_sent(&tls_);
+    }
+    uint8_t alert_received() const {
+        return ch_alert_received(&tls_);
+    }
+
     // Sends this side's close_notify under live keys and wipes; safe to
     // call more than once, and the destructor calls it too. A read that
     // returned at_end() does not do this: call it once this side has
@@ -540,9 +551,10 @@ class Session {
 };
 #else
 // A QUIC session owns its ch_quic and closes it — wiping every key set —
-// when it is destroyed. It forwards the sixteen ch_quic_ entries and adds
-// nothing else: chapulin owns every key and the caller owns packet
-// numbers, acknowledgments, loss recovery and streams (docs/quic.md).
+// when it is destroyed. It forwards the sixteen ch_quic_ entries and
+// alert.h's two calls and adds nothing else: chapulin owns every key and
+// the caller owns packet numbers, acknowledgments, loss recovery and
+// streams (docs/quic.md).
 // Non-copyable and non-movable, like Session and like the C ch_quic,
 // whose hs.t points at its own t.
 class Quic {
@@ -659,6 +671,17 @@ class Quic {
     // The TLS alert description behind a failure, for a log or a test.
     uint8_t alert() const {
         return ch_quic_alert(&quic_);
+    }
+
+    // Forward alert.h's two calls on the session's ch_tls, so a caller
+    // reads one pair across its Session and Quic objects: alert_sent()
+    // answers what alert() answers, and alert_received() is 0, because
+    // QUIC carries no alert record.
+    uint8_t alert_sent() const {
+        return ch_alert_sent(&quic_.t);
+    }
+    uint8_t alert_received() const {
+        return ch_alert_received(&quic_.t);
     }
 
     // The transport error code the caller puts in CONNECTION_CLOSE. Read

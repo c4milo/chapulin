@@ -9,21 +9,23 @@ and the fast proof tier.
 Other targets:
 
 - `make lib RAND=extern` packages the library as one relocatable object
-  (`bin/chapulin.o`) exporting exactly the six public calls and one data
-  symbol, the build record `ch_build_info_tcp_blocking`. The six are
-  `ch_connect`, `ch_read`, `ch_write`, `ch_writable_len`, `ch_close` and
-  `ch_ticket_obfuscated_age`. Every internal symbol is
+  (`bin/chapulin.o`) exporting exactly the eight public calls and one data
+  symbol, the build record `ch_build_info_tcp_blocking`. The eight are
+  `ch_connect`, `ch_read`, `ch_write`, `ch_writable_len`, `ch_close`,
+  `ch_ticket_obfuscated_age`, `ch_alert_sent` and `ch_alert_received`.
+  Every internal symbol is
   localized, and `lib-check` fails if the export list ever changes. The
   calls are per build on three axes: `RAND=drbg` packages the reference
   generator and exports `ch_drbg_seed` and `ch_rand_bytes`, and a ca mode
   exports `ch_pubkey_from_pem` for provisioning, so a `TRUST=ca-rsa
-  RAND=drbg` object exports nine calls. The build record, `ch_pubkey_from_pem`,
-  a server's `ch_srv_check` and a client's `ch_ticket_obfuscated_age` carry
+  RAND=drbg` object exports eleven calls. The build record, `ch_pubkey_from_pem`,
+  a server's `ch_srv_check`, a client's `ch_ticket_obfuscated_age` and the
+  two alert calls carry
   the transport in their symbol names (`ch_build_info_tcp_nonblocking`,
   `ch_srv_check_quic_nonblocking`), and the headers map the
   names you call to them, so one image links an object of each of two
-  transports (decisions 61 and 72, [`docs/porting.md`](porting.md)).
-  `TRUST=webpki` exports the six calls and no provisioning call.
+  transports (decisions 61, 72 and 75, [`docs/porting.md`](porting.md)).
+  `TRUST=webpki` exports the eight calls and no provisioning call.
   `EXPORTER=on` adds `ch_export`, the exporter of RFC 9846 §7.5, and 32
   bytes to `ch_tls`; it is off
   by default, so the figures in [`performance.md`](performance.md) are a build that exports nothing,

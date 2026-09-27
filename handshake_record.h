@@ -300,6 +300,26 @@ int hsr_next_msg(handshake_state *h, uint8_t *type, const uint8_t **raw, size_t 
 // Returns CH_OK when pt_off equals pt_len. Otherwise it writes
 // ALERT_UNEXPECTED_MESSAGE to h->alert and returns CH_EPROTO.
 int hsr_check_record_end(handshake_state *h);
+
+// Refuses one record of the alert type whose plaintext, pt[0..n), came
+// where no alert is read: in the handshake, or between the records of a
+// split post-handshake message (RFC 9846 §5.1). The four TCP readers call
+// it, and tls.c's ch_read calls it for every alert but the two closure
+// alerts it acts on. What the session answers depends on the record:
+//
+// - A record that is not one alert, 2 bytes (rfc9846.txt:3475-3478), is
+//   a message that does not parse, so it writes ALERT_DECODE_ERROR to
+//   *alert (rfc9846.txt:3785-3788).
+// - Every description but close_notify and user_canceled is an error
+//   alert, whatever the level byte says (§6, rfc9846.txt:3779-3782): the
+//   peer's fatal alert. It writes the description to t->alert_received,
+//   and the failure funnel then sends nothing (§6.2,
+//   rfc9846.txt:3890-3893, and alert.h).
+// - close_notify and user_canceled leave *alert as the caller set it,
+//   the answer that reader gives a record it cannot use.
+//
+// Returns CH_EPROTO, and the caller fails the session.
+int hsr_refuse_alert(ch_tls *t, const uint8_t *pt, size_t n, uint8_t *alert);
 #endif
 
 // The hash length of the suite the server named, which every client

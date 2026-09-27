@@ -3,8 +3,9 @@
 //! server name, data both ways across several records, a write that does
 //! not fit, the exporter, a ticket taken and resumed through
 //! Ticket.fromFields, a stale ticket refused, close in each direction and
-//! recordClose, and four refusals. At TX_RECORD=16384 the records carry
-//! CH_TX_PT bytes each.
+//! recordClose, and four refusals, the last of whose alerts the server
+//! reads as the client's fatal alert and does not answer. At
+//! TX_RECORD=16384 the records carry CH_TX_PT bytes each.
 const std = @import("std");
 const chapulin = @import("chapulin");
 const fixture = @import("fixture.zig");
@@ -211,6 +212,7 @@ fn refusals(flight_len: usize) !void {
         to_client = .{};
         _ = try clientToServer();
         try check(serverToClient() == error.Auth and client.recordAlert() == 48, "an impostor anchor was not refused with unknown_ca");
+        try check(client.alertSent() == 48 and client.alertReceived() == null, "alertSent did not name the handshake's unknown_ca");
         try check(client.init(.{ .trust = fixture.trust(.root, 0) }) == error.Invalid, "a clock of 0 was accepted");
     }
     try server.init(fixture.server(&server_alpn, server_now), &sni_buf);
@@ -226,6 +228,15 @@ fn refusals(flight_len: usize) !void {
     const waiting = try client.read(oversize[0..4], &received, &reply);
     try check(waiting.consumed == 0 and waiting.pt_len == 0, "read took a part of a header");
     try check(client.read(&oversize, &received, &reply) == error.Proto, "read waited on a record no peer may send");
+    // The client's read sent the alert its failure chose into reply, and
+    // recordAlert stays null, because read sends its own. The server reads
+    // that alert as the peer's fatal alert and sends nothing back (RFC 9846
+    // section 6.2).
+    const sent = client.alertSent() orelse return error.NoAlertSent;
+    try check(client.recordAlert() == null and client.alertReceived() == null, "the client's failed read reported an alert to send or one received");
+    var answer: [256]u8 = undefined;
+    try check(server.read(reply[0..client.replyLen()], &received, &answer) == error.Proto, "the server read on after the client's fatal alert");
+    try check(server.alertReceived() == sent and server.alertSent() == null and server.replyLen() == 0, "the server answered the client's fatal alert");
 }
 
 pub fn run() !void {

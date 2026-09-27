@@ -1,0 +1,19 @@
+invariant: INV-22
+file: handshake_record.c
+catches: unit
+reason: hsr_refuse_alert reads a record of the alert type of any length as
+  one alert, so three bytes from the peer read as its fatal alert and go
+  unanswered, where RFC 9846 section 5.1 makes such a record exactly one
+  2-byte alert and a message that does not parse is decode_error.
+  bin/unit requires decode_error for one byte and for three.
+
+--- old
+    if (n != 2) {
+        *alert = ALERT_DECODE_ERROR;
+        return CH_EPROTO;
+    }
+--- new
+    if (n < 2) {
+        *alert = ALERT_DECODE_ERROR;
+        return CH_EPROTO;
+    }

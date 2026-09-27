@@ -84,10 +84,11 @@ over ngtcp2's recorded hellos and a HelloRetryRequest ("The key exchange"
 below), and colibri's interop run below drives it against aioquic.
 
 **The Makefile refusal (was item 5), gone.** `ROLE=server` with
-`TRANSPORT=quic-nonblocking` builds, links and exports nineteen calls. Two of them are
+`TRANSPORT=quic-nonblocking` builds, links and exports twenty-one calls. Two of them are
 the Retry token's, which landed after the rest and have a section of their
-own below, and one is `ch_quic_seal_close`, which "When the handshake fails"
-below covers.
+own below, one is `ch_quic_seal_close`, which "When the handshake fails"
+below covers, and two are `alert.h`'s, which every object exports
+(`docs/decisions.md` 75).
 
 `CH_QUIC_PARAMS_MIN_RXBUF` is still 0, and a chapulin server cannot close
 it: it would measure the bodies clients send, which is the other direction.

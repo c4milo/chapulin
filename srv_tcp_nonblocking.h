@@ -18,7 +18,8 @@
 // client uses, because record.[ch] names no side either. So tcp_nonblocking.h's
 // account of closing holds for a server as written: the client's
 // close_notify makes ch_read return 0 and send nothing, ch_write still
-// sends, and ch_close sends the server's close_notify.
+// sends, and ch_close sends the server's close_notify. So does its
+// account of alerts, and alert.h's two calls report them on either side.
 //
 // Output is a push, not a pull. A server has no ch_srv_record_out: one
 // Certificate message is larger than ch_tls.tx, so there is nothing to
@@ -86,7 +87,10 @@ int ch_srv_record_init(ch_record *r, const ch_cfg *cfg);
 // ch_srv_record_init refused every configuration the flight could fail
 // on (srv_identities_usable, srv_auth.h). Every other code leaves the
 // session dead, and ch_record_alert names the alert the caller sends
-// before it closes.
+// before it closes, which ch_alert_sent names too (alert.h). A client's
+// fatal alert, in the clear or protected, is the exception: the call
+// returns CH_EPROTO, pushes nothing, and ch_alert_received names the
+// alert while both of the others read 0 (RFC 9846 §6.2).
 int ch_srv_record_in(ch_record *r, uint8_t *p, size_t n, size_t *consumed);
 
 #endif // CH_ROLE_SERVER && CH_TRANSPORT_TCP_NONBLOCKING

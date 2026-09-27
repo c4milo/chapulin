@@ -1,0 +1,12 @@
+invariant: INV-22
+file: handshake_record.c
+catches: unit
+reason: hsr_refuse_alert no longer records the peer's fatal alert, so
+  ch_alert_received reads 0 and the failure funnel, which sends nothing only
+  once that field is set, answers the peer's alert with one of its own.
+  bin/unit requires the description and no send call.
+
+--- old
+        t->alert_received = pt[1];
+--- new
+        (void)t;

@@ -1,0 +1,17 @@
+invariant: INV-22
+file: session.c
+catches: unit
+reason: tlsi_fail answers the peer's fatal alert with one of its own, which
+  RFC 9846 section 6.2 forbids: on a fatal alert both sides close the
+  connection at once. A caller whose send holds only input during ch_read
+  then sees a send it did not ask for. bin/unit requires the read that meets
+  the peer's alert to make no send call.
+
+--- old
+    if (t->alert_received == 0) {
+        t->alert_sent = description;
+        (void)tlsi_send_alert(t, 2, description);
+    }
+--- new
+    t->alert_sent = description;
+    (void)tlsi_send_alert(t, 2, description);

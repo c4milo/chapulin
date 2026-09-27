@@ -1,0 +1,13 @@
+invariant: INV-13
+file: session.c
+catches: unit
+reason: tlsi_fail sends the alert its failure chose and no longer records it,
+  so ch_alert_sent reads 0 after a failure that sent decode_error or
+  internal_error, and a caller's log of what ended the session is empty.
+  bin/unit requires the description the failure sent.
+
+--- old
+        t->alert_sent = description;
+        (void)tlsi_send_alert(t, 2, description);
+--- new
+        (void)tlsi_send_alert(t, 2, description);

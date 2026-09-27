@@ -55,8 +55,12 @@ void tcp_nonblocking_wipe(ch_record *r) {
     r->t.keys = 0;
 }
 
+// After the peer's fatal alert this side owes none (RFC 9846 §6.2,
+// rfc9846.txt:3890-3893), so the caller is told to send nothing and
+// alert_sent records nothing, as tlsi_fail does on the record layer.
 int tcp_nonblocking_fail(ch_record *r, int rc) {
-    r->alert = r->hs.alert;
+    r->alert = r->t.alert_received == 0 ? r->hs.alert : 0;
+    r->t.alert_sent = r->alert;
     tcp_nonblocking_wipe(r);
     r->t.state = CH_ST_FAILED;
     return rc;
@@ -77,6 +81,15 @@ int tcp_nonblocking_take_record(ch_record *r, uint8_t *rec, size_t body_len, uin
         // decrypting it would fail the connection.
         return CH_OK;
     }
+    // An alert in the clear, read ahead of the decryption for the same
+    // reason: a peer that failed before it installed its own write key,
+    // a client that could not use the ServerHello among them, sends one
+    // that way (hsr_fetch_record reads it the same way). close_notify and
+    // user_canceled are answered as any other record this mode cannot use.
+    if (outer == REC_ALERT) {
+        r->hs.alert = ALERT_UNEXPECTED_MESSAGE;
+        return hsr_refuse_alert(&r->t, pt, pt_len, &r->hs.alert);
+    }
     if (r->hs.encrypted) {
         uint8_t inner = 0;
         size_t opened = 0;
@@ -86,10 +99,12 @@ int tcp_nonblocking_take_record(ch_record *r, uint8_t *rec, size_t body_len, uin
         }
         // RFC 9846 section 5 keeps the dummy change_cipher_spec legal
         // until the handshake ends; every other non-handshake type here
-        // is a message this mode has no state for.
+        // is a message this mode has no state for, and a protected alert
+        // is read as the one in the clear above is.
         if (inner != REC_HANDSHAKE) {
             r->hs.alert = ALERT_UNEXPECTED_MESSAGE;
-            return CH_EPROTO;
+            return inner == REC_ALERT ? hsr_refuse_alert(&r->t, rec, opened, &r->hs.alert)
+                                      : CH_EPROTO;
         }
         pt = rec;
         pt_len = opened;

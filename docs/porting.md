@@ -365,7 +365,7 @@ One image can link one packaged object of each of two transports: a
 `TRANSPORT=tcp-nonblocking` object beside a `TRANSPORT=quic-nonblocking` one, or a
 `TRANSPORT=tcp-blocking` object beside a `TRANSPORT=quic-nonblocking` one. cocuyo does this for
 DNS over TLS and DNS over QUIC, and a server does it for HTTP/2 beside
-HTTP/3. Four exports that objects of both transports carry take the
+HTTP/3. Six exports that objects of both transports carry take the
 transport into their symbol names, and a header maps each to the name you
 call:
 
@@ -375,6 +375,8 @@ call:
 | `ch_srv_check` | `ch_srv_check_tcp_blocking`, `ch_srv_check_tcp_nonblocking`, `ch_srv_check_quic_nonblocking` | `srv.h` |
 | `ch_pubkey_from_pem` | `ch_pubkey_from_pem_tcp_blocking`, `ch_pubkey_from_pem_tcp_nonblocking`, `ch_pubkey_from_pem_quic_nonblocking` | `x509_ca.h` |
 | `ch_ticket_obfuscated_age` | `ch_ticket_obfuscated_age_tcp_blocking`, `ch_ticket_obfuscated_age_tcp_nonblocking`, `ch_ticket_obfuscated_age_quic_nonblocking` | `ticket.h` |
+| `ch_alert_sent` | `ch_alert_sent_tcp_blocking`, `ch_alert_sent_tcp_nonblocking`, `ch_alert_sent_quic_nonblocking` | `alert.h` |
+| `ch_alert_received` | `ch_alert_received_tcp_blocking`, `ch_alert_received_tcp_nonblocking`, `ch_alert_received_quic_nonblocking` | `alert.h` |
 
 Compile the calls to each object in a translation unit of its own, under that
 object's defines. The two objects' headers disagree about `ch_cfg` and

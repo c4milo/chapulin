@@ -173,7 +173,8 @@ HDRS := ct.h sha256.h hkdf.h chacha20.h poly1305.h aead.h x25519.h x25519_wide.h
         tls.h rand.h drbg.h sha3.h sha512.h sha512_compress.h p384.h p384_field.h p256_field.h p256_scalar.h p256_point.h p256_sign.h p256_ecdh.h rsa_pkcs1.h rsa_sign.h mlkem.h mlkem_poly.h \
         handshake_flight.h handshake_groups.h quic.h quic_config.h quic_initial.h quic_keys.h quic_packet.h quic_retry.h quic_step.h quic_fail.h quic_token.h aes.h aes_block.h aes_public_key.h aes_traffic_key.h aes_schedule.h gcm.h ghash_hw.h \
         srv_cfg.h srv.h srv_parser.h srv_parser_ext.h srv_message.h srv_cookie.h srv_ticket.h srv_auth.h srv_out.h srv_flight.h srv_resume.h srv_handshake.h srv_quic.h srv_tcp_nonblocking.h srv_kex.h keylog.h \
-        tcp_nonblocking.h tcp_nonblocking_frame.h tcp_nonblocking_step.h build.h suite.h transcript.h ticket.h
+        tcp_nonblocking.h tcp_nonblocking_frame.h tcp_nonblocking_step.h build.h suite.h transcript.h ticket.h \
+        alert.h
 
 # The TRANSPORT=quic-nonblocking mode's own sources, named here rather than matched
 # by a pattern, for the reason WEBPKI_SRCS is named: an auditor reads
@@ -412,6 +413,7 @@ LINT_C := $(filter-out softmul.c,$(SRCS)) handshake_groups.c drbg.c sha3.c sha51
 # Test-local headers: prerequisites for every binary that includes them,
 # so a header edit rebuilds the binaries it changes.
 TESTH := test/test_random.h test/pem_armor.h test/pem_tests.h test/x509_ca_tests.h test/session_tests.h test/session_post_tests.h test/session_record_end_tests.h test/session_write_tests.h \
+         test/session_alert_tests.h \
          test/session_cfg_tests.h test/gcm_tests.h test/quic_initial_tests.h test/quic_packet_tests.h test/p256_tests.h test/p256_field_vectors.h test/p256_sign_vectors.h test/p256_ecdh_vectors.h test/wycheproof_p256.h test/wycheproof_aes_gcm.h test/diff_driver.h test/diff_aes.h test/diff_gcm.h test/diff_hash.h test/diff_hash384.h \
          test/diff_handshake_parser.h test/diff_encrypted_exts.h test/diff_handshake_certificate.h test/diff_p256.h test/diff_pem.h test/diff_record.h test/diff_rsa.h \
          test/diff_x25519.h test/handshake_sequence_server.h test/rfc8448_vectors.h \
@@ -424,7 +426,7 @@ TESTH := test/test_random.h test/pem_armor.h test/pem_tests.h test/x509_ca_tests
          test/rsa_pkcs1_vectors.h test/rsa_wide_vectors.h test/rsa_pkcs1_wide_vectors.h \
          test/rsa_sign_vectors.h \
          test/diff_webpki.h test/diff_mlkem.h test/mlkem_vectors.h test/webpki_corpus.h test/webpki_sigalg_vectors.h \
-         test/diff_webpki_sigalg.h test/hello_exts.h test/webpki_session_cases.h test/webpki_groups_cases.h test/webpki_p256_cases.h test/webpki_mock_kex.h test/webpki_suite_cases.h test/tcp_nonblocking_read_tests.h test/tcp_nonblocking_record_end_tests.h test/record_edit.h test/tcp_blocking_retry_tests.h test/tcp_nonblocking_resume_tests.h test/tcp_nonblocking_group_tests.h test/tcp_nonblocking_coalesced_tests.h test/tcp_nonblocking_close_tests.h test/tcp_nonblocking_frame_tests.h test/quic_loop_raw.h test/quic_loop_close.h test/quic_loop_webpki.h test/quic_loop_pins.h test/webpki_resume_session.h test/webpki_resume_cases.h test/webpki_pins_cases.h test/tls_client_webpki.h \
+         test/diff_webpki_sigalg.h test/hello_exts.h test/webpki_session_cases.h test/webpki_groups_cases.h test/webpki_p256_cases.h test/webpki_mock_kex.h test/webpki_suite_cases.h test/tcp_nonblocking_read_tests.h test/tcp_nonblocking_record_end_tests.h test/record_edit.h test/tcp_blocking_retry_tests.h test/tcp_blocking_alert_tests.h test/tcp_nonblocking_resume_tests.h test/tcp_nonblocking_group_tests.h test/tcp_nonblocking_coalesced_tests.h test/tcp_nonblocking_close_tests.h test/tcp_nonblocking_alert_tests.h test/tcp_nonblocking_frame_tests.h test/quic_loop_raw.h test/quic_loop_close.h test/quic_loop_webpki.h test/quic_loop_pins.h test/webpki_resume_session.h test/webpki_resume_cases.h test/webpki_pins_cases.h test/tls_client_webpki.h \
          test/webpki_decline_cases.h test/webpki_r2_chain.h test/psk_decline_tests.h \
          test/handshake_strict_alpn.h test/handshake_strict_cert_type.h \
          test/webpki_cert_mutants.h test/webpki_cert_key_mutants.h test/webpki_ext_mutants.h test/diff_webpki_cert.h \
@@ -596,7 +598,7 @@ PUBLIC_TRANSPORT := ch_quic_init ch_quic_initial_keys ch_quic_crypto_in ch_quic_
                     ch_quic_seal ch_quic_seal_close ch_quic_open ch_quic_retry_ok ch_quic_key_update \
                     ch_quic_key_phase ch_quic_drop_previous_keys ch_quic_discard \
                     ch_quic_state ch_quic_alert ch_quic_error_code ch_quic_close \
-                    ch_ticket_obfuscated_age
+                    ch_ticket_obfuscated_age ch_alert_sent ch_alert_received
 else ifeq ($(TRANSPORT),tcp-nonblocking)
 # The same TLS records, driven by a caller that owns the socket. It
 # replaces handshake.c, the blocking driver, and keeps everything under
@@ -609,12 +611,14 @@ TRANSPORT_DEF := -DCH_TRANSPORT_TCP_NONBLOCKING
 TRANSPORT_FILTER := handshake.c
 TRANSPORT_ADD := tcp_nonblocking.c tcp_nonblocking_frame.c tcp_nonblocking_step.c
 PUBLIC_TRANSPORT := ch_record_init ch_record_in ch_record_out ch_record_state ch_record_alert ch_record_close \
-                    ch_record_whole_len ch_read ch_write ch_writable_len ch_close ch_ticket_obfuscated_age
+                    ch_record_whole_len ch_read ch_write ch_writable_len ch_close ch_ticket_obfuscated_age \
+                    ch_alert_sent ch_alert_received
 else ifeq ($(TRANSPORT),tcp-blocking)
 TRANSPORT_DEF :=
 TRANSPORT_FILTER :=
 TRANSPORT_ADD :=
-PUBLIC_TRANSPORT := ch_connect ch_read ch_write ch_writable_len ch_close ch_ticket_obfuscated_age
+PUBLIC_TRANSPORT := ch_connect ch_read ch_write ch_writable_len ch_close ch_ticket_obfuscated_age \
+                    ch_alert_sent ch_alert_received
 else
 $(error TRANSPORT=$(TRANSPORT) is not a transport; use TRANSPORT=tcp-blocking, TRANSPORT=tcp-nonblocking or TRANSPORT=quic-nonblocking)
 endif
@@ -687,8 +691,9 @@ ifeq ($(TRANSPORT),quic-nonblocking)
 # which no client calls.
 TRANSPORT_ADD := $(filter-out quic_step.c,$(TRANSPORT_ADD))
 ROLE_ADD    := $(filter-out srv_handshake.c,$(ROLE_ADD)) srv_quic.c quic_token.c
-# What this object exports: the server's five calls, the boot check, and
-# the packet calls quic.h declares for either role. Not ch_quic_init,
+# What this object exports: the server's five calls, the boot check, the
+# packet calls quic.h declares for either role, and alert.h's two calls,
+# which every object exports. Not ch_quic_init,
 # ch_quic_crypto_in or ch_quic_crypto_out, which are the client's driver;
 # not ch_read, ch_write or ch_close, which are record-layer calls RFC 9001
 # section 4.1.3 removes with the record layer.
@@ -696,7 +701,8 @@ PUBLIC_ROLE := ch_srv_quic_init ch_srv_quic_crypto_in ch_srv_quic_retry_tag \
                ch_srv_quic_token_mint ch_srv_quic_token_check ch_srv_check \
                ch_quic_initial_keys ch_quic_seal ch_quic_seal_close ch_quic_open ch_quic_retry_ok \
                ch_quic_key_update ch_quic_key_phase ch_quic_drop_previous_keys \
-               ch_quic_discard ch_quic_state ch_quic_alert ch_quic_error_code ch_quic_close
+               ch_quic_discard ch_quic_state ch_quic_alert ch_quic_error_code ch_quic_close \
+               ch_alert_sent ch_alert_received
 else ifeq ($(TRANSPORT),tcp-nonblocking)
 # The server's driver replaces the client's, source for source:
 # srv_tcp_nonblocking.c is the step table tcp_nonblocking_step.c is for
@@ -709,15 +715,17 @@ TRANSPORT_ADD := $(filter-out tcp_nonblocking_step.c,$(TRANSPORT_ADD))
 ROLE_ADD    := $(filter-out srv_handshake.c,$(ROLE_ADD)) srv_tcp_nonblocking.c
 # What this object exports: the server's two driver calls, the boot check,
 # the three session calls either role uses, the record framing call either
-# role uses, and the record-layer calls a connected session needs. Not
+# role uses, the record-layer calls a connected session needs, and
+# alert.h's two calls. Not
 # ch_record_init, ch_record_in or ch_record_out, which are the client's
 # driver, not ch_ticket_obfuscated_age, which only a client presents, and
 # not ch_srv_accept, which is the blocking one.
 PUBLIC_ROLE := ch_srv_record_init ch_srv_record_in ch_srv_check \
                ch_record_state ch_record_alert ch_record_close ch_record_whole_len \
-               ch_read ch_write ch_writable_len ch_close
+               ch_read ch_write ch_writable_len ch_close ch_alert_sent ch_alert_received
 else
-PUBLIC_ROLE := ch_srv_accept ch_srv_check ch_read ch_write ch_writable_len ch_close
+PUBLIC_ROLE := ch_srv_accept ch_srv_check ch_read ch_write ch_writable_len ch_close \
+               ch_alert_sent ch_alert_received
 endif
 # PIN_DEF and PIN_FILTER are already empty: the TRUST=none arm this
 # block requires sets them, and an empty PIN_FILTER keeps every verifier
@@ -1284,19 +1292,20 @@ print-llvm-nm:
 # against its own headers (build.h, docs/decisions.md 56). No axis
 # changes it, so every variant's list names it.
 PUBLIC_BUILD := ch_build
-# The lists above name each export as its header declares it. Four of
+# The lists above name each export as its header declares it. Six of
 # those names belong to exports that objects of more than one transport
 # carry: the build record, the server's boot check, the CA provisioning
-# call and the client's ticket age call. One image may link one object of
-# each transport, so each of the four puts the object's transport in its
-# symbol name, and build.h, srv.h, x509_ca.h and ticket.h map the declared
-# name to that symbol name under the consumer's own defines
-# (docs/decisions.md 61 and 72). ch_writable_len needs no such name: the
+# call, the client's ticket age call and the two alert calls. One image
+# may link one object of each transport, so each of the six puts the
+# object's transport in its symbol name, and build.h, srv.h, x509_ca.h,
+# ticket.h and alert.h map the declared name to that symbol name under
+# the consumer's own defines (docs/decisions.md 61, 72 and 75). ch_writable_len needs no such name: the
 # two TCP transports export it beside ch_write, and decision 61 refuses an
 # image of those two objects for ch_read, ch_write and ch_close already.
 # PUBLIC holds symbol names, because those are what the link keeps and
 # what lib-check reads.
-TRANSPORT_NAMED := ch_build ch_srv_check ch_pubkey_from_pem ch_ticket_obfuscated_age
+TRANSPORT_NAMED := ch_build ch_srv_check ch_pubkey_from_pem ch_ticket_obfuscated_age \
+                   ch_alert_sent ch_alert_received
 # A symbol name takes no hyphen, so the suffix is the TRANSPORT value
 # with underscores, and the build record's symbol is named for its type,
 # ch_build_info: ch_build_info_tcp_blocking, ch_srv_check_tcp_blocking.
@@ -3665,7 +3674,7 @@ QUIC_CONDITIONAL := cfg.h session.h handshake_record.h handshake_post.h \
                     handshake_auth.h handshake_parser.h handshake_message.c \
                     handshake_parser_ee.c handshake_record.c handshake_auth.c \
                     handshake_post.c build.h build.c x509_ca.h x509_ca.c \
-                    aes.h aes.c ticket.h
+                    aes.h aes.c ticket.h alert.h
 #
 # The lint preprocesses every root source and header with $(CC) and reads
 # the Makefile and git's file list, so its stamp covers every file git

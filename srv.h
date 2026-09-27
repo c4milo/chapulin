@@ -64,7 +64,9 @@
 // the session dead. A configuration it refuses, below, returns
 // CH_EINVAL before a byte is read or sent, so no alert goes out; every
 // other error comes from the handshake, which first tries to send the
-// alert its failure chose, and none of those is CH_EINVAL.
+// alert its failure chose, and none of those is CH_EINVAL. The client's
+// fatal alert is the one failure it answers with nothing: it returns
+// CH_EPROTO, and ch_alert_received names the alert (alert.h).
 //
 // It checks the configuration before it reads a byte and returns
 // CH_EINVAL, having sent nothing, when: no identity is provisioned; a

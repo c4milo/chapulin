@@ -122,12 +122,15 @@ const public_quic = [_][]const u8{
 /// The client's ticket age call, which every client object exports over
 /// every transport.
 const public_ticket = [_][]const u8{"ch_ticket_obfuscated_age"};
+/// The two calls alert.h declares, which every object exports, whatever
+/// its transport and role.
+const public_alert = [_][]const u8{ "ch_alert_sent", "ch_alert_received" };
 const public_tcp_nonblocking = [_][]const u8{
     "ch_record_init",  "ch_record_in",    "ch_record_out",       "ch_record_state",
     "ch_record_alert", "ch_record_close", "ch_record_whole_len", "ch_read",
     "ch_write",        "ch_writable_len", "ch_close",
-} ++ public_ticket;
-const public_tcp_blocking = [_][]const u8{ "ch_connect", "ch_read", "ch_write", "ch_writable_len", "ch_close" } ++ public_ticket;
+} ++ public_ticket ++ public_alert;
+const public_tcp_blocking = [_][]const u8{ "ch_connect", "ch_read", "ch_write", "ch_writable_len", "ch_close" } ++ public_ticket ++ public_alert;
 const public_srv_quic = [_][]const u8{
     "ch_srv_quic_init",       "ch_srv_quic_crypto_in",   "ch_srv_quic_retry_tag",
     "ch_srv_quic_token_mint", "ch_srv_quic_token_check", "ch_srv_check",
@@ -141,15 +144,15 @@ const public_quic_either_role = [_][]const u8{
     "ch_quic_retry_ok",     "ch_quic_key_update", "ch_quic_key_phase",  "ch_quic_drop_previous_keys",
     "ch_quic_discard",      "ch_quic_state",      "ch_quic_alert",      "ch_quic_error_code",
     "ch_quic_close",
-};
+} ++ public_alert;
 /// The calls a connected tcp-nonblocking session makes, which a ROLE=server
 /// object exports without the client's driver.
 const public_record_either_role = [_][]const u8{
     "ch_record_state", "ch_record_alert", "ch_record_close", "ch_record_whole_len",
     "ch_read",         "ch_write",        "ch_writable_len", "ch_close",
-};
+} ++ public_alert;
 /// The calls a connected tcp-blocking session makes.
-const public_session = [_][]const u8{ "ch_read", "ch_write", "ch_writable_len", "ch_close" };
+const public_session = [_][]const u8{ "ch_read", "ch_write", "ch_writable_len", "ch_close" } ++ public_alert;
 
 /// One header and the names it declares.
 const Declaration = struct { header: []const u8, names: Names };
@@ -173,6 +176,7 @@ const declarations = [_]Declaration{
     .{ .header = "quic_token.h", .names = &.{ "ch_srv_quic_token_mint", "ch_srv_quic_token_check" } },
     .{ .header = "x509_ca.h", .names = &.{"ch_pubkey_from_pem"} },
     .{ .header = "ticket.h", .names = &public_ticket },
+    .{ .header = "alert.h", .names = &public_alert },
     .{ .header = "drbg.h", .names = &.{"ch_drbg_seed"} },
     .{ .header = "rand.h", .names = &.{"ch_rand_bytes"} },
     .{ .header = "keylog.h", .names = &.{"ch_keylog"} },
@@ -526,7 +530,7 @@ fn transportAxis(b: *std.Build, transport: Transport, aes_impl: Names) Axis {
             .defs = &.{"-DCH_TRANSPORT_QUIC_NONBLOCKING"},
             .filter = &quic_replaced,
             .add = concat(b, &.{ &.{"aes.c"}, aes_impl, &quic_srcs_after_aes }),
-            .public = &(public_quic ++ public_ticket),
+            .public = &(public_quic ++ public_ticket ++ public_alert),
         },
         .@"tcp-nonblocking" => .{
             .defs = &.{"-DCH_TRANSPORT_TCP_NONBLOCKING"},
@@ -578,10 +582,10 @@ fn roleAxis(b: *std.Build, config: Config, transport: *Axis) Axis {
     return role;
 }
 
-/// PUBLIC in the Makefile: each of the four exports that objects of more
+/// PUBLIC in the Makefile: each of the six exports that objects of more
 /// than one transport carry takes the transport into its symbol name, and
-/// the build record's symbol is named for its type (docs/decisions.md 61
-/// and 72).
+/// the build record's symbol is named for its type (docs/decisions.md 61,
+/// 72 and 75).
 fn symbolNames(b: *std.Build, transport: Transport, names: Names) Names {
     const suffix = b.dupe(@tagName(transport));
     std.mem.replaceScalar(u8, suffix, '-', '_');
@@ -590,7 +594,7 @@ fn symbolNames(b: *std.Build, transport: Transport, names: Names) Names {
         if (std.mem.eql(u8, name, "ch_build")) {
             symbol.* = b.fmt("ch_build_info_{s}", .{suffix});
         } else if (std.mem.eql(u8, name, "ch_srv_check") or std.mem.eql(u8, name, "ch_pubkey_from_pem") or
-            std.mem.eql(u8, name, "ch_ticket_obfuscated_age"))
+            std.mem.eql(u8, name, "ch_ticket_obfuscated_age") or contains(&public_alert, name))
         {
             symbol.* = b.fmt("{s}_{s}", .{ name, suffix });
         } else {

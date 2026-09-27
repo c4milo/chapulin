@@ -1,0 +1,16 @@
+invariant: INV-22
+file: tcp_nonblocking_frame.c
+catches: tcp_nonblocking_loop_test
+reason: the tcp-nonblocking reader reads an alert in the clear only until its
+  read key is installed, so a server that has sent its flight decrypts the
+  alert of a client that could not use the ServerHello, fails it with
+  bad_record_mac and owes an answer to an alert that closed the connection.
+  bin/tcp_nonblocking_loop_test requires the server to record the client's
+  alert in the clear after its flight and to owe nothing.
+
+--- old
+    if (outer == REC_ALERT) {
+        r->hs.alert = ALERT_UNEXPECTED_MESSAGE;
+--- new
+    if (outer == REC_ALERT && !r->hs.encrypted) {
+        r->hs.alert = ALERT_UNEXPECTED_MESSAGE;

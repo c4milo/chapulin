@@ -367,6 +367,10 @@ int main(void) {
     test_peer_close_notify();
     test_ticket_exact_fill();
     test_alerts_and_epochs();
+    test_peer_fatal_alert();
+    test_alert_record_length();
+    test_alert_inside_message();
+    test_failure_alert_recorded();
     test_connect_cfg();
     test_rxbuf_floor();
     test_pinned_hello_extensions();

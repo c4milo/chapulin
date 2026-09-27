@@ -245,8 +245,8 @@ test "every declaration this object has compiles" {
     if (has_webpki) compile(chapulin, &.{ "trustAnchor", "CertType" });
     if (has_alpn) compile(chapulin, &.{"alpnProtocol"});
     if (@hasDecl(c, "ch_keylog")) compile(chapulin, &.{"hookContext"});
-    const record = [_][]const u8{ "init", "recordIn", "recordState", "recordAlert", "read", "write", "writableLen", "close", "recordClose", "group", "pskSelected", "peerLimit", "readClosed", "replyLen" };
-    const quic = [_][]const u8{ "init", "cryptoIn", "initialKeys", "keysReady", "peerTransportParams", "seal", "sealClose", "open", "retryOk", "keyUpdate", "keyPhase", "dropPreviousKeys", "discard", "state", "alert", "errorCode", "close", "alpnSelected", "group", "pskSelected" };
+    const record = [_][]const u8{ "init", "recordIn", "recordState", "recordAlert", "alertSent", "alertReceived", "read", "write", "writableLen", "close", "recordClose", "group", "pskSelected", "peerLimit", "readClosed", "replyLen" };
+    const quic = [_][]const u8{ "init", "cryptoIn", "initialKeys", "keysReady", "peerTransportParams", "seal", "sealClose", "open", "retryOk", "keyUpdate", "keyPhase", "dropPreviousKeys", "discard", "state", "alert", "alertSent", "alertReceived", "errorCode", "close", "alpnSelected", "group", "pskSelected" };
     if (@hasDecl(c, "ch_record_init")) compileSession(chapulin.record.Client(c.CH_MIN_RXBUF), &(record ++ .{ "recordOut", "takeTicket" }));
     if (@hasDecl(c, "ch_srv_record_init")) compileSession(chapulin.record.Server(c.CH_MIN_RXBUF), &(record ++ .{"sni"}));
     if (@hasDecl(c, "ch_quic_init")) compileSession(chapulin.quic.Client(c.CH_MIN_RXBUF), &(quic ++ .{ "cryptoOut", "takeTicket" }));

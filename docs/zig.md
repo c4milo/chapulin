@@ -252,7 +252,7 @@ returns.
 | C code | Zig | The session after it |
 |---|---|---|
 | `CH_EIO` | `error.Io` | Dead. An output slice could not take what C sent. |
-| `CH_EPROTO` | `error.Proto` | Dead after a protocol failure. As it was for bytes delivered to a session that failed or closed, and for `read` or `write` before the handshake completed, which keeps running. |
+| `CH_EPROTO` | `error.Proto` | Dead after a protocol failure, and after the peer's fatal alert, which `alertReceived` names. As it was for bytes delivered to a session that failed or closed, and for `read` or `write` before the handshake completed, which keeps running. |
 | `CH_EAUTH` | `error.Auth` | Dead. |
 | `CH_ECAP` | `error.Cap` | Live from `recordOut`, `cryptoOut`, `seal`, `sealClose` and `tokenMint`: the caller's buffer was short. Dead from `recordIn`, `cryptoIn` and `read`: the peer's message could never fit. |
 | `CH_EINVAL` | `error.Invalid` | Nothing was sent. From `init`, failed until the next `init`: C refused the configuration, a stale ticket or a server identity its flight could not use among the refusals. From any other call, as it was: the call came out of order or an argument was refused. A server's `recordIn` never returns it, and its `cryptoIn` returns it only for a level the call refuses on entry. |
@@ -295,6 +295,7 @@ its hook. colibri sizes both at 20,480 bytes.
 | `Server.recordIn(input, output)` | `ch_srv_record_in`, whose flight goes into `output`; returns `Progress{ consumed, written }` | Proto, Auth, Cap, Io |
 | `Server.sni()` | `sni_buf[0..ch_tls.sni_len]`, null when 0 | none |
 | `recordState()`, `recordAlert()` | `ch_record_state`, `ch_record_alert`; the alert is null when 0 | none |
+| `alertSent()`, `alertReceived()` | `ch_alert_sent`, `ch_alert_received` on `record.t` (alert.h); each null when 0 | none |
 | `read(input, pt, reply)` | `ch_record_whole_len`, then `ch_read` | Invalid, Proto, Auth, Cap, Io |
 | `write(pt, output)` | `ch_writable_len`, then `ch_write` | Proto, Cap, Io |
 | `writableLen(cap)` | `ch_writable_len` | none |
@@ -366,7 +367,10 @@ record of `key_update_record_len`, 27 bytes. A record carries at most one
 KeyUpdate, as its last message: RFC 9846 §5.1 lets no handshake message
 span the key change a KeyUpdate makes, so `ch_read` refuses a record
 with bytes after one (INV-39). A read that fails adds one alert record
-of `alert_record_len`, 24 bytes. So a `reply` of
+of `alert_record_len`, 24 bytes, and `alertSent` names its alert. A read
+that fails on the peer's fatal alert adds nothing, because RFC 9846 §6.2
+has both sides close at once, and `alertReceived` names the peer's
+alert. So a `reply` of
 `key_update_record_len + alert_record_len` bytes is never short. A
 `reply` too short for what `ch_read` sends fails the read with
 `error.Io` and the session with it.
@@ -439,6 +443,7 @@ ticket slot and the server's current `Outgoing`. colibri passes a
 | `retryOk(pseudo, tag)` | `ch_quic_retry_ok` | none |
 | `keyUpdate()`, `keyPhase()`, `dropPreviousKeys()`, `discard(level)` | `ch_quic_key_update`, `ch_quic_key_phase`, `ch_quic_drop_previous_keys`, `ch_quic_discard` | Invalid for `keyUpdate` and `discard` |
 | `state()`, `alert()`, `errorCode()` | `ch_quic_state`, `ch_quic_alert`, `ch_quic_error_code` | none |
+| `alertSent()`, `alertReceived()` | `ch_alert_sent`, `ch_alert_received` on `quic.t` (alert.h): `alertSent` answers what `alert` answers, and `alertReceived` is null, because QUIC carries no alert record | none |
 | `close()` | `ch_quic_close`, then the ticket slot zeroed | none |
 | `alpnSelected()`, `group()`, `suite()`, `pskSelected()`, `serverCertType()` | as in record mode | none |
 | `quic.retryTag(pseudo, tag)` | `ch_srv_quic_retry_tag` | none |
@@ -492,7 +497,8 @@ runs inside `seal` and `open`, as in C (RFC 9001 §9.5).
   can add.
 - **A record-mode KeyUpdate this side starts.** Reserved, above.
 - **Alert names.** No public header declares the `ALERT_` constants, so
-  `recordAlert` and `alert` return the AlertDescription byte.
+  `recordAlert`, `alert`, `alertSent` and `alertReceived` return the
+  AlertDescription byte.
 - **Private fields.** Zig has none, so a session's `record` or `quic`
   field is visible. The API promises nothing about them.
 
@@ -546,14 +552,18 @@ and stompy's (`TX_RECORD=16384`), each through the module alone
     refused;
   - a close in each direction;
   - four refusals: an impostor anchor, a clock of 0, a server output one
-    byte short of its flight, and a record header no peer may send.
+    byte short of its flight, and a record header no peer may send;
+  - `alertSent` after the first and the last refusal, and the server
+    reading the alert the last one sent as the client's fatal alert:
+    `alertReceived` names it and the server sends nothing back.
 
   Over QUIC:
   - a handshake at each level, with `keysReady` checked at each step;
   - the transport parameters each side received;
   - one packet each way, and a tampered one discarded;
   - a key update, the Retry tag and a Retry token;
-  - the ticket resumed, and the stale ticket refused;
+  - the ticket resumed, and the stale ticket refused with no alert
+    chosen;
   - under `KEYLOG=on`, `hookContext` finding the client's context.
 - `pair.zig` starts a client on each of colibri's two objects in one
   image, and computes a ticket's age through each object's call, directly

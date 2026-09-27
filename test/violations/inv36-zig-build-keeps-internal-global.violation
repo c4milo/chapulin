@@ -7,6 +7,6 @@ reason: build.zig's tcp-blocking export list names ch_handshake, the blocking
   an application that defines the name, would not link.
 
 --- old
-const public_tcp_blocking = [_][]const u8{ "ch_connect", "ch_read", "ch_write", "ch_writable_len", "ch_close" } ++ public_ticket;
+const public_tcp_blocking = [_][]const u8{ "ch_connect", "ch_read", "ch_write", "ch_writable_len", "ch_close" } ++ public_ticket ++ public_alert;
 --- new
-const public_tcp_blocking = [_][]const u8{ "ch_connect", "ch_read", "ch_write", "ch_writable_len", "ch_close", "ch_handshake" } ++ public_ticket;
+const public_tcp_blocking = [_][]const u8{ "ch_connect", "ch_read", "ch_write", "ch_writable_len", "ch_close", "ch_handshake" } ++ public_ticket ++ public_alert;

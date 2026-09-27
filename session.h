@@ -327,6 +327,8 @@ typedef struct {
     // allowed date; epoch_status is then CH_EPOCH_UNTRUSTED.
     uint32_t epoch_seen;
     uint8_t epoch_status;
+    // The fatal alert this side's failure chose, 0 for none (alert.h).
+    uint8_t alert_sent;
 #ifndef CH_TRANSPORT_QUIC_NONBLOCKING
     // Set when the peer's close_notify arrived on a connected session.
     // RFC 9846 §6 makes that alert close one direction of the
@@ -340,8 +342,9 @@ typedef struct {
     // QUIC carries no close_notify, and RFC 9001 §4.8 treats every TLS
     // alert as fatal (rfc9001.txt:888-893).
     uint8_t read_closed;
-#endif
-#ifndef CH_TRANSPORT_QUIC_NONBLOCKING
+    // The fatal alert the peer sent, 0 for none (alert.h). A QUIC build
+    // declares none: QUIC carries no alert record (RFC 9001 §4.8).
+    uint8_t alert_received;
     // How many TLS KeyUpdate messages this client has sent. A
     // TRANSPORT=quic-nonblocking build does not declare it: RFC 9001 §6 forbids the
     // TLS KeyUpdate message on this transport (rfc9001.txt:1566-1568),
@@ -407,6 +410,8 @@ static inline size_t tls_hash_len(const ch_tls *t) {
 int tlsi_send_alert(ch_tls *t, uint8_t level, uint8_t description);
 
 // Alert (best effort), wipe all key material, mark the session failed.
+// It records the alert in alert_sent. After the peer's fatal alert,
+// alert_received, it sends and records none (RFC 9846 §6.2).
 void tlsi_fail(ch_tls *t, uint8_t description);
 
 // Whether a client configuration keeps every rule that does not depend on

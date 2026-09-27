@@ -310,6 +310,20 @@ fn Session(comptime side: Side, comptime receive_len: usize) type {
             return if (code == 0) null else code;
         }
 
+        /// ch_alert_sent: what alert answers, through the call a record
+        /// session answers it with too.
+        pub fn alertSent(self: *const Self) ?u8 {
+            const code = c.ch_alert_sent(&self.quic.t);
+            return if (code == 0) null else code;
+        }
+
+        /// ch_alert_received: null, because QUIC carries no alert record;
+        /// the peer's CONNECTION_CLOSE is the caller's to read.
+        pub fn alertReceived(self: *const Self) ?u8 {
+            const code = c.ch_alert_received(&self.quic.t);
+            return if (code == 0) null else code;
+        }
+
         /// ch_quic_error_code: what the caller puts in CONNECTION_CLOSE.
         pub fn errorCode(self: *const Self) u64 {
             return c.ch_quic_error_code(&self.quic);

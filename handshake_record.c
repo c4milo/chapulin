@@ -40,6 +40,9 @@ static int accept_record(handshake_state *h, size_t part, uint8_t outer, size_t 
         h->alert = ALERT_BAD_RECORD_MAC;
         return CH_EAUTH;
     }
+    if (inner_type == REC_ALERT) {
+        return hsr_refuse_alert(t, buf + part, n, &h->alert);
+    }
     if (inner_type != REC_HANDSHAKE) {
         return CH_EPROTO;
     }
@@ -95,8 +98,15 @@ int hsr_fetch_record(handshake_state *h) {
             }
             continue;
         }
+        // An alert in the clear, read whether or not this side has
+        // installed its read key. A peer protects an alert under its own
+        // connection state (RFC 9846 §6, rfc9846.txt:3759-3760), and a
+        // peer that failed before it installed its write key has none: a
+        // client that could not use the ServerHello answers in the clear
+        // while the server already reads protected records.
         if (outer == REC_ALERT) {
-            return CH_EPROTO; // peer aborted; nothing to salvage
+            return hsr_refuse_alert(t, t->cfg.buf + part + REC_HDR, record_len - REC_HDR,
+                                    &h->alert);
         }
         rc = accept_record(h, part, outer, record_len);
         if (rc != CH_OK) {
@@ -217,6 +227,19 @@ int hsr_check_record_end(handshake_state *h) {
         return CH_EPROTO;
     }
     return CH_OK;
+}
+
+// handshake_record.h states the rules. The level byte, pt[0], is read by
+// nothing: §6 lets a receiver ignore it.
+int hsr_refuse_alert(ch_tls *t, const uint8_t *pt, size_t n, uint8_t *alert) {
+    if (n != 2) {
+        *alert = ALERT_DECODE_ERROR;
+        return CH_EPROTO;
+    }
+    if (pt[1] != ALERT_CLOSE_NOTIFY && pt[1] != ALERT_USER_CANCELED) {
+        t->alert_received = pt[1];
+    }
+    return CH_EPROTO;
 }
 #endif
 

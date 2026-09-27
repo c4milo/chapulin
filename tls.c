@@ -8,6 +8,7 @@
 #include "handshake.h"
 #include "handshake_message.h"
 #include "handshake_post.h"
+#include "handshake_record.h"
 #include "io.h"
 
 // A ROLE=server build compiles nothing from here to the end of
@@ -148,16 +149,6 @@ int ch_connect(ch_tls *t, const ch_cfg *cfg) {
 #endif // CH_TRANSPORT_TCP_NONBLOCKING
 #endif
 #endif // CH_ROLE_SERVER
-// Hands the handshake plaintext at the front of cfg.buf to hspost_read.
-// Any result but CH_OK and CH_RECORD_AGAIN ends the session.
-static int post_handshake(ch_tls *t, size_t pt_len) {
-    int rc = hspost_read(t, pt_len);
-    if (rc != CH_OK && rc != CH_RECORD_AGAIN) {
-        tlsi_fail(t, rc == CH_EAUTH ? ALERT_BAD_RECORD_MAC : ALERT_UNEXPECTED_MESSAGE);
-    }
-    return rc;
-}
-
 // The peer's close_notify closes the peer's direction and no other (RFC
 // 9846 §6, rfc9846.txt:3767-3768). This session reads nothing after it:
 // §6.1 says data after a closure alert MUST be ignored
@@ -179,6 +170,30 @@ static void close_read_side(ch_tls *t) {
     t->read_closed = 1;
 }
 
+// One protected alert record, pt_len bytes at the front of cfg.buf. The
+// two closure alerts act here: close_notify closes the peer's direction
+// and returns CH_ECLOSED, and user_canceled is read past, because RFC 9846
+// §6.1 has the reader go on until the close_notify after it. Every other
+// record goes to hsr_refuse_alert: one that is not a single 2-byte alert
+// fails the session with decode_error, and an error alert fails it with
+// nothing sent, because the peer has closed the connection (§6.2).
+static int read_alert(ch_tls *t, size_t pt_len) {
+    const uint8_t *pt = t->cfg.buf;
+    if (pt_len == 2 && pt[1] == ALERT_CLOSE_NOTIFY) {
+        close_read_side(t);
+        return CH_ECLOSED;
+    }
+    if (pt_len == 2 && pt[1] == ALERT_USER_CANCELED) {
+        // ch_read's quiet cap bounds a hostile stream of these like any
+        // other record that carries no data.
+        return CH_OK;
+    }
+    uint8_t alert = ALERT_UNEXPECTED_MESSAGE;
+    int rc = hsr_refuse_alert(t, pt, pt_len, &alert);
+    tlsi_fail(t, alert);
+    return rc;
+}
+
 // Reads and dispatches one record: application data lands in the buffer,
 // post-handshake messages are handled, and close_notify closes the read
 // side and returns CH_ECLOSED.
@@ -187,7 +202,7 @@ static int dispatch_one_record(ch_tls *t) {
     if (t->post_fill > 0) { // the next record continues a message (session.h)
         size_t fill = t->post_fill;
         t->post_fill = 0;
-        return post_handshake(t, fill);
+        return hspost_read(t, fill);
     }
 #endif
     uint8_t outer = 0;
@@ -217,17 +232,10 @@ static int dispatch_one_record(ch_tls *t) {
         return CH_OK;
     }
     if (inner_type == REC_HANDSHAKE) {
-        return post_handshake(t, pt_len);
+        return hspost_read(t, pt_len);
     }
-    if (inner_type == REC_ALERT && pt_len == 2 && t->cfg.buf[1] == ALERT_CLOSE_NOTIFY) {
-        close_read_side(t);
-        return CH_ECLOSED;
-    }
-    if (inner_type == REC_ALERT && pt_len == 2 && t->cfg.buf[1] == ALERT_USER_CANCELED) {
-        // RFC 9846 §6.1: user_canceled precedes a close_notify; keep
-        // reading for it. ch_read's quiet cap bounds a hostile stream of
-        // these like any other dataless record.
-        return CH_OK;
+    if (inner_type == REC_ALERT) {
+        return read_alert(t, pt_len);
     }
     tlsi_fail(t, ALERT_UNEXPECTED_MESSAGE);
     return CH_EPROTO;
@@ -453,3 +461,14 @@ int ch_export(const ch_tls *t, const char *label, const uint8_t *context, size_t
     return CH_OK;
 }
 #endif
+
+// alert.h states both contracts. Every TCP object compiles this file, in
+// either role, so both calls are defined here, below every CH_ASSERT;
+// quic.c defines the QUIC object's.
+uint8_t ch_alert_sent(const ch_tls *t) {
+    return t->alert_sent;
+}
+
+uint8_t ch_alert_received(const ch_tls *t) {
+    return t->alert_received;
+}

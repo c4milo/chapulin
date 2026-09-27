@@ -1834,6 +1834,14 @@ alone (RFC 9846 §6.1), so the `ch_read` that reads the peer's returns 0,
 wipes the read key and sends nothing, and this side writes until its
 own `ch_close`. `bin/unit`, `bin/tcp_nonblocking_loop_test` and e2e's
 go-half-close leg test that (INV-22, INV-17), and no proof covers it.
+The peer's fatal alert is the same kind of claim: the call that reads
+it sends nothing and records it for `ch_alert_received` (§6.2), and a
+record of the alert type that is not one 2-byte alert gets decode_error.
+`bin/unit`, `bin/tcp_blocking_loop_test` and
+`bin/tcp_nonblocking_loop_test` test it in every TCP reader (INV-22).
+The `handshake_record` harness reaches `hsr_refuse_alert` from both of
+the blocking reader's alert branches, so it proves the call memory-safe,
+and nothing proves what the session sends after it.
 
 ### The record boundary before a key change
 

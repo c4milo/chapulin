@@ -3069,3 +3069,77 @@ does nothing more.
     Gain: `CH_EINVAL` from a server means nothing was sent, on every
     path, and a broken identity is found at init rather than at the
     first handshake that selects it.
+
+75. **Every object reports what ended a session through two calls, and a
+    session that reads the peer's fatal alert answers it with nothing.**
+    colibri could not tell its own failure from its peer's: the alert a
+    tcp-nonblocking session chose after the handshake was sent by
+    `ch_read` and reported nowhere, because `ch_record_alert` names only
+    the handshake's, and a peer's alert was answered with
+    unexpected_message, which RFC 9846 §6.2 forbids: on a fatal alert both
+    sides close the connection at once (rfc9846.txt:3890-3893).
+
+    - **The calls.** `ch_alert_sent` reads `ch_tls.alert_sent`, which
+      each failure funnel writes: `tlsi_fail`, `tcp_nonblocking_fail`
+      beside `ch_record_alert`'s field, and `quic_fail` beside
+      `ch_quic_alert`'s. `ch_alert_received` reads
+      `ch_tls.alert_received`, which `hsr_refuse_alert` writes for every
+      TCP reader, and answers 0 in a QUIC object, which carries no alert
+      record and declares no such field. alert.h declares both, and
+      tls.h and quic.h include it: tls.h is the TCP transports' header
+      alone (INV-27), and a QUIC object exports the two calls as well.
+      Every object of every transport exports them, so their symbol
+      names carry the transport, as `ch_ticket_obfuscated_age`'s do
+      (entries 61 and 72). Both fields sit in padding, so `ch_tls`,
+      `ch_record` and `ch_quic` keep their sizes in every build
+      bench/sram.sh measures.
+    - **The peer's fatal alert.** Any 2-byte alert record whose
+      description is not close_notify or user_canceled is one, whatever
+      its level byte (§6, rfc9846.txt:3779-3782). The call that reads it
+      returns `CH_EPROTO`, the code a peer's alert already gave, wipes,
+      fails the session and sends nothing, and the funnels write no
+      `alert_sent` once `alert_received` is set. A record of the alert
+      type of any other length is not an alert (§5.1,
+      rfc9846.txt:3475-3478), and every reader now answers it with
+      decode_error, where the tcp-nonblocking handshake and the record
+      layer answered unexpected_message. close_notify and user_canceled
+      keep what they did: after the handshake the first closes the
+      peer's direction and the second is read past, and in the
+      handshake either ends it with the alert that reader gives any
+      record it cannot use.
+    - **An alert in the clear during the handshake.** Both handshake
+      readers take one whether or not this side has installed its read
+      key. A peer protects an alert under its own write key (§6,
+      rfc9846.txt:3759-3760), and a client that could not use the
+      ServerHello has none, so it answers in the clear to a server that
+      already reads protected records. The tcp-nonblocking reader used to
+      decrypt such a record and answer bad_record_mac.
+    - **Where the post-handshake reader fails.** `hspost_read` now calls
+      `tlsi_fail` itself, with bad_record_mac, decode_error or
+      unexpected_message, instead of returning a code for `tls.c` to map.
+      A wrapper in `tls.c` holding the alert as a local grew `ch_read`'s
+      peak stack by 48 bytes; with the call in `hspost_read` it is 16
+      bytes lower than before.
+
+    Rejected:
+
+    - **Both declarations in tls.h, with a second pair in quic.h.** Two
+      contracts to keep in step, a quic.h already at the 500-line cap,
+      and build.zig's header table names one header per call.
+    - **A new result code for the peer's alert.** Every wrapper would map
+      it, chapulin.hpp and the Zig API among them, and `CH_EPROTO` with
+      `ch_alert_received` already says what happened.
+    - **Reading an alert in the clear only before the read key.** The
+      server would decrypt the alert of a client that failed on the
+      ServerHello, fail it with bad_record_mac and answer an alert that
+      closed the connection.
+
+    Cost: two more exported calls in every object, and a peer's alert in
+    the clear is read during the whole handshake, where nothing
+    authenticates its description; it ends a handshake an on-path
+    attacker could end anyway by dropping bytes. `ch_read`'s peak stack is
+    1,712 bytes, from 1,728, and no struct grew.
+
+    Gain: a caller logs what ended each session through one pair of
+    calls on every transport, and neither side answers an alert that
+    closed the connection.

@@ -10,6 +10,7 @@
 #include "handshake_message.h"
 #include "keysched.h"
 #ifndef CH_TRANSPORT_QUIC_NONBLOCKING
+#include "handshake_record.h"
 #include "io.h"
 #include "record.h"
 #endif
@@ -230,12 +231,37 @@ static int handle_post_handshake(ch_tls *t, const uint8_t *pt, size_t n, size_t 
     return CH_OK;
 }
 
+// Opens, in place, the record io_read_record wrote at cfg.buf + fill, of
+// record_len bytes with outer type outer, and writes the length of the
+// handshake bytes it carries to *n. It is the next fragment of a split
+// message, so RFC 9846 §5.1 lets it be nothing else
+// (rfc9846.txt:3460-3462): a record that does not open is bad_record_mac,
+// an alert record goes to hsr_refuse_alert, which records the peer's
+// fatal alert, and any other type keeps the unexpected_message the caller
+// set.
+static int open_fragment(ch_tls *t, size_t fill, uint8_t outer, size_t record_len, size_t *n,
+                         uint8_t *alert) {
+    uint8_t *at = t->cfg.buf + fill;
+    uint8_t inner_type = 0;
+    if (outer != REC_APPDATA ||
+        rec_open(&t->rd, at, record_len, at, t->cfg.buf_len - fill, n, &inner_type) != 0) {
+        *alert = ALERT_BAD_RECORD_MAC;
+        return CH_EAUTH;
+    }
+    if (inner_type == REC_ALERT) {
+        return hsr_refuse_alert(t, at, *n, alert);
+    }
+    return inner_type == REC_HANDSHAKE ? CH_OK : CH_EPROTO;
+}
+
 // Drains a post-handshake handshake message run that starts with pt_len
 // plaintext bytes in cfg.buf, pulling further records when a message is
 // fragmented across them (RFC 9846 §5.1 allows it, and our own
 // record_size_limit forces peers with large tickets into it). Fragments
-// of one message cannot be interleaved with other record types.
-int hspost_read(ch_tls *t, size_t pt_len) {
+// of one message cannot be interleaved with other record types
+// (open_fragment). A failure writes the alert it owes to *alert where it
+// owes another than the unexpected_message hspost_read starts with.
+static int drain_run(ch_tls *t, size_t pt_len, uint8_t *alert) {
     uint8_t *buf = t->cfg.buf;
     size_t fill = pt_len;
     // Bounded like ch_read's quiet cap: a fragmented message must make
@@ -267,13 +293,9 @@ int hspost_read(ch_tls *t, size_t pt_len) {
             return rc;
         }
         size_t n = 0;
-        uint8_t inner_type = 0;
-        if (outer != REC_APPDATA || rec_open(&t->rd, buf + fill, record_len, buf + fill,
-                                             t->cfg.buf_len - fill, &n, &inner_type) != 0) {
-            return CH_EAUTH;
-        }
-        if (inner_type != REC_HANDSHAKE) {
-            return CH_EPROTO;
+        rc = open_fragment(t, fill, outer, record_len, &n, alert);
+        if (rc != CH_OK) {
+            return rc;
         }
         if (n == 0) {
             quiet++;
@@ -281,5 +303,14 @@ int hspost_read(ch_tls *t, size_t pt_len) {
         fill += n;
     }
     return CH_EPROTO;
+}
+
+int hspost_read(ch_tls *t, size_t pt_len) {
+    uint8_t alert = ALERT_UNEXPECTED_MESSAGE;
+    int rc = drain_run(t, pt_len, &alert);
+    if (rc != CH_OK && rc != CH_RECORD_AGAIN) {
+        tlsi_fail(t, alert);
+    }
+    return rc;
 }
 #endif // CH_TRANSPORT_QUIC_NONBLOCKING

@@ -22,6 +22,7 @@
         "aes_public_key.h",
         "aes_schedule.h",
         "aes_traffic_key.h",
+        "alert.h",
         "buf.c",
         "buf.h",
         "build.c",

@@ -416,6 +416,20 @@ uint8_t ch_quic_alert(const ch_quic *q) {
     return q->alert;
 }
 
+// alert.h states both contracts. quic_fail writes alert_sent beside
+// q->alert, so the first answers what ch_quic_alert answers, for a caller
+// that reads one call across its TCP and QUIC sessions. QUIC carries no
+// alert record, so no peer alert is read here and ch_tls declares no
+// alert_received.
+uint8_t ch_alert_sent(const ch_tls *t) {
+    return t->alert_sent;
+}
+
+uint8_t ch_alert_received(const ch_tls *t) {
+    (void)t;
+    return 0;
+}
+
 uint64_t ch_quic_error_code(const ch_quic *q) {
     if (q->t.state != CH_ST_FAILED) {
         return 0; // QUIC's NO_ERROR: a live or closed session says nothing

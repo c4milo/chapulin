@@ -287,6 +287,7 @@ static void client_reads_flight(int after_finished, size_t bytes) {
         return;
     }
     CHECK(rc == CH_EPROTO && client.state == CH_ST_FAILED);
+    CHECK(ch_alert_sent(&client) == ALERT_UNEXPECTED_MESSAGE && ch_alert_received(&client) == 0);
     check_client_alert(after_finished);
 }
 
@@ -383,6 +384,7 @@ static void server_reads_client(int after_finished, size_t bytes) {
         return;
     }
     CHECK(rc == CH_EPROTO && server.state == CH_ST_FAILED);
+    CHECK(ch_alert_sent(&server) == ALERT_UNEXPECTED_MESSAGE && ch_alert_received(&server) == 0);
     if (!after_finished) {
         // Refused before any ServerHello: the alert, in the clear, is all
         // that went out.
@@ -408,6 +410,7 @@ static void server_reads_client(int after_finished, size_t bytes) {
     CHECK(type == REC_ALERT && pt_len == 2 && pt[0] == 2 && pt[1] == ALERT_UNEXPECTED_MESSAGE);
 }
 
+#include "tcp_blocking_alert_tests.h"
 #include "tcp_blocking_retry_tests.h"
 
 int main(void) {
@@ -420,10 +423,13 @@ int main(void) {
         server_reads_client(1, bytes);
         server_reads_retry_hello(bytes);
     }
+    test_handshake_alerts();
     if (failures == 0) {
         (void)printf("tcp_blocking_loop: ch_connect and ch_srv_accept each go on when the"
                      " message before a key change ends its record, a retried ClientHello"
-                     " included, and refuse one byte after it with unexpected_message\n");
+                     " included, and refuse one byte after it with unexpected_message; each"
+                     " reads the peer's fatal alert, in the clear or protected, and sends"
+                     " nothing after it, and answers a 3-byte alert with decode_error\n");
         return 0;
     }
     (void)fprintf(stderr, "tcp_blocking_loop: %d failures\n", failures);

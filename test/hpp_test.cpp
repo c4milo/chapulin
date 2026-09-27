@@ -258,6 +258,9 @@ static void test_psk_and_pinned_config(chapulin::Io io) {
         // resumption.
         CHECK(s.group() == chapulin::Group::none);
         CHECK(!s.psk_selected());
+        // The failed handshake chose an alert for the transport it could
+        // not use, and no peer sent one (alert.h).
+        CHECK(s.alert_sent() != 0 && s.alert_received() == 0);
     }
 
     // require_pq: a classic build cannot satisfy it and rejects the
@@ -396,6 +399,7 @@ static void test_quic() {
     // No handshake failed, so no alert description was written. quic.h says
     // 0 there is close_notify and never a failure's description.
     CHECK(q.alert() == 0);
+    CHECK(q.alert_sent() == q.alert() && q.alert_received() == 0);
     CHECK(q.error_code() != 0);
     q.close();
 }

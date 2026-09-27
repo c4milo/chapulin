@@ -168,8 +168,12 @@ static void test_driver(void) {
     CHECK(ch_quic_crypto_in(&q, CH_LEVEL_INITIAL, sh, sh_len) == CH_EPROTO);
     CHECK(ch_quic_state(&q) == CH_ST_FAILED && ch_quic_error_code(&q) == 0x0a);
     CHECK(ch_quic_alert(&q) == ALERT_UNEXPECTED_MESSAGE);
+    // quic_fail wrote the alert for alert.h's call too, and QUIC reads no
+    // peer alert.
+    CHECK(ch_alert_sent(&q.t) == ALERT_UNEXPECTED_MESSAGE && ch_alert_received(&q.t) == 0);
     ch_quic_close(&q);
     CHECK(ch_quic_state(&q) == CH_ST_CLOSED && ch_quic_error_code(&q) == 0);
+    CHECK(ch_alert_sent(&q.t) == ALERT_UNEXPECTED_MESSAGE);
 }
 
 // A ServerHello naming a suite this client never offered kills the
@@ -186,6 +190,7 @@ static void test_server_hello_refused(void) {
     CHECK(ch_quic_crypto_in(&q, CH_LEVEL_INITIAL, sh, sh_len) == CH_EPROTO);
     CHECK(ch_quic_state(&q) == CH_ST_FAILED && ch_quic_alert(&q) == ALERT_ILLEGAL_PARAMETER);
     CHECK(ch_quic_error_code(&q) == 0x0100 + ALERT_ILLEGAL_PARAMETER);
+    CHECK(ch_alert_sent(&q.t) == ALERT_ILLEGAL_PARAMETER);
 }
 
 static int all_zero(const void *p, size_t n) {

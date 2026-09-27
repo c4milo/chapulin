@@ -728,6 +728,8 @@ is `illegal_parameter` (`rfc9846.txt:3789-3791`, with the description at
 | A retried ClientHello that changed a field §4.2.2 freezes; the order of its extensions is not one of them (1669-1670, `docs/decisions.md` 59) | `illegal_parameter` (47) | 1191-1213 | design's choice; 3789-3791 |
 | A `change_cipher_spec` record whose body is not the single byte 0x01, or one that arrives protected | `unexpected_message` (10) | 3433-3435 | 3433-3435 |
 | A record content type the document does not define | `unexpected_message` (10) | 3441-3444 | 3441-3444 |
+| A record of the alert type that is not one 2-byte alert | `decode_error` (50) | 3475-3478 | 3785-3788 |
+| The client's error alert: a 2-byte alert whose description is neither close_notify nor user_canceled, whatever its level byte, in the clear or protected | none: the server closes at once, sends nothing and records the description for `ch_alert_received` (`docs/decisions.md` 75) | 3779-3782, 3890-3893 | — |
 | A wrong client Finished | `decrypt_error` (51) | 3115-3117 | 3115-3117 |
 | Any deprotection failure | `bad_record_mac` (20) | 3641-3642 | 3641-3642 |
 | A ciphertext over 2^14 + 256, or a plaintext over 2^14 | `record_overflow` (22) | 3595-3598, 3644-3649 | 3595-3598 |
