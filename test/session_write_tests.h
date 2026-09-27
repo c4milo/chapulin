@@ -71,11 +71,43 @@ static void read_key_update_request(uint8_t request) {
     CHECK(at == m.tx_len && m.sends == 1);
 }
 
+// A KeyUpdate's body is the one request_update byte, and a body of any
+// other length does not parse, which RFC 9846 §6 answers with
+// decode_error (rfc9846.txt:3785-3788). One byte is
+// the length read_key_update_request reads; 0 and 2 are the lengths on
+// either side, each refused before any rekey with that alert alone.
+static void read_key_update_body(size_t body_len) {
+    uint8_t secret[SHA256_LEN];
+    ch_rand_bytes(secret, sizeof secret);
+    rec_dir server;
+    rec_dir_init(&server, secret);
+    mock_io m = {0};
+    static uint8_t rxbuf[1024];
+    ch_tls t;
+    uint8_t wr_secret[SHA256_LEN];
+    mock_session(&t, &m, rxbuf, sizeof rxbuf, secret, wr_secret);
+    rec_dir reader;
+    rec_dir_init(&reader, wr_secret);
+    const uint8_t key_update[6] = {HS_KEY_UPDATE, 0, 0, (uint8_t)body_len, 1, 0};
+    mock_push(&m, &server, REC_HANDSHAKE, key_update, 4 + body_len);
+    uint8_t out[16];
+    CHECK(ch_read(&t, out, sizeof out) == CH_EPROTO);
+    CHECK(ch_alert_sent(&t) == ALERT_DECODE_ERROR);
+    uint8_t pt[16];
+    size_t pt_len = 0;
+    uint8_t type = 0;
+    size_t at = mock_pop_client_record(&m, 0, &reader, pt, sizeof pt, &pt_len, &type);
+    CHECK(type == REC_ALERT && pt_len == 2 && pt[0] == 2 && pt[1] == ALERT_DECODE_ERROR);
+    CHECK(at == m.tx_len && m.sends == 1);
+}
+
 static void test_key_update_request(void) {
     read_key_update_request(0);
     read_key_update_request(1);
     read_key_update_request(2);
     read_key_update_request(255);
+    read_key_update_body(0);
+    read_key_update_body(2);
 }
 
 // The bytes one ch_write of n bytes hands the session's mock_send, read

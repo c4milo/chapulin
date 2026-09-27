@@ -209,10 +209,10 @@ static size_t build_ticket_msg(uint8_t *out, size_t cap, uint32_t lifetime, size
 // Feeds one NewSessionTicket over the mock transport, with application
 // data behind it so a read that survives the ticket still returns those
 // four bytes. Returns ch_read's result and writes how many tickets
-// reached the application through tickets, plus the session state the
-// read left behind through state.
+// reached the application through tickets, the session state the read
+// left behind through state, and ch_alert_sent's answer through alert.
 static int read_ticket_with_lifetime(uint32_t lifetime, size_t nonce_len, const uint8_t *tail,
-                                     size_t tail_len, int *tickets, int *state) {
+                                     size_t tail_len, int *tickets, int *state, uint8_t *alert) {
     uint8_t secret[SHA256_LEN];
     ch_rand_bytes(secret, sizeof secret);
     rec_dir server;
@@ -230,13 +230,14 @@ static int read_ticket_with_lifetime(uint32_t lifetime, size_t nonce_len, const 
     int rc = ch_read(&t, out, sizeof out);
     *tickets = m.tickets;
     *state = t.state;
+    *alert = ch_alert_sent(&t);
     return rc;
 }
 
 // The same with the ticket_lifetime of an hour.
 static int read_after_ticket(size_t nonce_len, const uint8_t *tail, size_t tail_len, int *tickets,
-                             int *state) {
-    return read_ticket_with_lifetime(3600, nonce_len, tail, tail_len, tickets, state);
+                             int *state, uint8_t *alert) {
+    return read_ticket_with_lifetime(3600, nonce_len, tail, tail_len, tickets, state, alert);
 }
 
 // RFC 9846 §4.6.1: a ticket_lifetime of 0 says the ticket is to be
@@ -248,50 +249,59 @@ static int read_after_ticket(size_t nonce_len, const uint8_t *tail, size_t tail_
 static void test_ticket_lifetime_zero(void) {
     int tickets = 0;
     int state = 0;
+    uint8_t alert = 0;
     const uint8_t empty_exts[2] = {0, 0};
-    CHECK(read_ticket_with_lifetime(1, 2, empty_exts, sizeof empty_exts, &tickets, &state) == 4);
+    CHECK(read_ticket_with_lifetime(1, 2, empty_exts, sizeof empty_exts, &tickets, &state,
+                                    &alert) == 4);
     CHECK(tickets == 1 && state == CH_ST_CONNECTED);
-    CHECK(read_ticket_with_lifetime(0, 2, empty_exts, sizeof empty_exts, &tickets, &state) == 4);
+    CHECK(read_ticket_with_lifetime(0, 2, empty_exts, sizeof empty_exts, &tickets, &state,
+                                    &alert) == 4);
     CHECK(tickets == 0 && state == CH_ST_CONNECTED);
 }
 
 // The NewSessionTicket fields must fill the message (RFC 9846 §4.7.1).
 // The boundary is exact: an empty extensions vector is the last message
 // the parser accepts, and one byte past it the first it refuses. A
-// refusal is fatal, not a skip: ch_read returns CH_EPROTO, the
-// application data behind the ticket never arrives, and the session
-// ends at CH_ST_FAILED. A ticket that fills its message but carries a
-// nonce this client cannot use is the other case, and it stays a skip.
+// refusal is fatal, not a skip: ch_read returns CH_EPROTO with
+// decode_error, which §6 requires for a message that cannot be parsed
+// against its syntax (rfc9846.txt:3785-3788), the application data behind the
+// ticket never arrives, and the session ends at CH_ST_FAILED. A ticket
+// that fills its message but carries a nonce this client cannot use is
+// the other case, and it stays a skip.
 static void test_ticket_exact_fill(void) {
     int tickets = 0;
     int state = 0;
+    uint8_t alert = 0;
     const uint8_t empty_exts[2] = {0, 0};
-    CHECK(read_after_ticket(2, empty_exts, sizeof empty_exts, &tickets, &state) == 4);
+    CHECK(read_after_ticket(2, empty_exts, sizeof empty_exts, &tickets, &state, &alert) == 4);
     CHECK(tickets == 1 && state == CH_ST_CONNECTED);
     // A ticket extension is read by nothing here — chapulin has no
     // 0-RTT — so a well-formed vector with one in it still delivers.
     const uint8_t one_ext[6] = {0, 4, 0, 42, 0, 0};
-    CHECK(read_after_ticket(2, one_ext, sizeof one_ext, &tickets, &state) == 4);
+    CHECK(read_after_ticket(2, one_ext, sizeof one_ext, &tickets, &state, &alert) == 4);
     CHECK(tickets == 1 && state == CH_ST_CONNECTED);
     // One byte past the empty vector, counted by the message length.
     const uint8_t trailing_byte[3] = {0, 0, 0};
-    CHECK(read_after_ticket(2, trailing_byte, sizeof trailing_byte, &tickets, &state) == CH_EPROTO);
-    CHECK(tickets == 0 && state == CH_ST_FAILED);
+    CHECK(read_after_ticket(2, trailing_byte, sizeof trailing_byte, &tickets, &state, &alert) ==
+          CH_EPROTO);
+    CHECK(tickets == 0 && state == CH_ST_FAILED && alert == ALERT_DECODE_ERROR);
     // The extensions vector absent altogether.
-    CHECK(read_after_ticket(2, empty_exts, 0, &tickets, &state) == CH_EPROTO);
-    CHECK(tickets == 0 && state == CH_ST_FAILED);
+    CHECK(read_after_ticket(2, empty_exts, 0, &tickets, &state, &alert) == CH_EPROTO);
+    CHECK(tickets == 0 && state == CH_ST_FAILED && alert == ALERT_DECODE_ERROR);
     // A vector whose length runs past the message.
     const uint8_t overlong[2] = {0, 1};
-    CHECK(read_after_ticket(2, overlong, sizeof overlong, &tickets, &state) == CH_EPROTO);
-    CHECK(tickets == 0 && state == CH_ST_FAILED);
+    CHECK(read_after_ticket(2, overlong, sizeof overlong, &tickets, &state, &alert) == CH_EPROTO);
+    CHECK(tickets == 0 && state == CH_ST_FAILED && alert == ALERT_DECODE_ERROR);
 
     // The other arm, and the reason the refusal above must be its own
     // branch: a nonce longer than SHA256_LEN fills its message, so the
     // ticket is skipped and the session reads on. SHA256_LEN is the last
     // nonce ks_res_psk accepts and SHA256_LEN + 1 the first it cannot.
-    CHECK(read_after_ticket(SHA256_LEN, empty_exts, sizeof empty_exts, &tickets, &state) == 4);
+    CHECK(read_after_ticket(SHA256_LEN, empty_exts, sizeof empty_exts, &tickets, &state, &alert) ==
+          4);
     CHECK(tickets == 1 && state == CH_ST_CONNECTED);
-    CHECK(read_after_ticket(SHA256_LEN + 1, empty_exts, sizeof empty_exts, &tickets, &state) == 4);
+    CHECK(read_after_ticket(SHA256_LEN + 1, empty_exts, sizeof empty_exts, &tickets, &state,
+                            &alert) == 4);
     CHECK(tickets == 0 && state == CH_ST_CONNECTED);
 }
 

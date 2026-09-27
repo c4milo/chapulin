@@ -1,0 +1,17 @@
+invariant: INV-14
+file: handshake_post.c
+catches: unit
+reason: a KeyUpdate whose body is not one byte is refused with
+  unexpected_message again, where RFC 9846 section 6 requires decode_error
+  for a message that does not parse (rfc9846.txt:3785-3788).
+  bin/unit requires decode_error for bodies of 0 and 2 bytes.
+
+--- old
+    if (msg_len != 1) {
+        *alert = ALERT_DECODE_ERROR;
+        return CH_EPROTO;
+    }
+--- new
+    if (msg_len != 1) {
+        return CH_EPROTO;
+    }

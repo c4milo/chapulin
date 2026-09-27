@@ -734,6 +734,7 @@ is `illegal_parameter` (`rfc9846.txt:3789-3791`, with the description at
 | Any deprotection failure | `bad_record_mac` (20) | 3641-3642 | 3641-3642 |
 | A ciphertext over 2^14 + 256, or a plaintext over 2^14 | `record_overflow` (22) | 3595-3598, 3644-3649 | 3595-3598 |
 | A `request_update` byte other than 0 or 1 | `illegal_parameter` (47) | 3362-3365 | 3362-3365 |
+| A KeyUpdate whose body is not the one `request_update` byte | `decode_error` (50) | 3354-3360, 3785-3788 | 3785-3788 |
 | A NewSessionTicket from the client, which §4.7.1 gives the server alone to send | `unexpected_message` (10) | 1054-1058, 3194-3196 | 1054-1058 |
 | A KeyUpdate before the client's Finished | `unexpected_message` (10) | 3346-3349 | 3346-3349 |
 | A ClientHello answered with a ServerHello, the client Finished, or a KeyUpdate, with bytes after it in its record (INV-39) | `unexpected_message` (10) | 3464-3470 | 3464-3470 |

@@ -1,0 +1,19 @@
+invariant: INV-14
+file: handshake_post.c
+catches: unit
+reason: a NewSessionTicket whose fields do not fill it is refused with
+  unexpected_message again over TCP, where RFC 9846 section 6 requires
+  decode_error for a message that does not parse
+  (rfc9846.txt:3785-3788). bin/unit requires decode_error for a trailing
+  byte, a missing extensions vector and one that runs past the message.
+
+--- old
+    if (r.err || rb_left(&r) != 0) {
+        *alert = ALERT_DECODE_ERROR;
+        return CH_EPROTO;
+    }
+--- new
+    if (r.err || rb_left(&r) != 0) {
+        (void)alert;
+        return CH_EPROTO;
+    }

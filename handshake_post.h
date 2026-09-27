@@ -65,7 +65,9 @@ static inline int hspost_ticket_age_ok(const ch_cfg *cfg) {
 // §5.1 lets no handshake message span the key change a KeyUpdate makes
 // (rfc9846.txt:3464-3470), and what a server's session gets for a
 // NewSessionTicket, which §4.7.1 gives the server alone to send
-// (rfc9846.txt:3194-3196); illegal_parameter for a KeyUpdate whose
+// (rfc9846.txt:3194-3196); decode_error for a KeyUpdate whose body is
+// not one byte and a NewSessionTicket whose fields do not fill it
+// (§6, rfc9846.txt:3785-3788); illegal_parameter for a KeyUpdate whose
 // request_update is neither 0 nor 1 (§4.7.3, rfc9846.txt:3362-3365);
 // bad_record_mac for a record that does not
 // open; and what hsr_refuse_alert chose for an alert record between two

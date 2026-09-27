@@ -908,9 +908,10 @@ The entries are grouped by area:
   bytes and consumes no more than its input, hands `on_ticket` no
   ticket whose `ticket_lifetime` is 0, rekeys on a KeyUpdate only
   when it is the last message of its input, the one RFC 9846 §5.1 lets
-  precede a key change (INV-39), and writes no alert but
-  illegal_parameter, and that only on a refusal, which is a
-  request_update neither 0 nor 1 (§4.7.3, INV-14).
+  precede a key change (INV-39), and writes no alert but two, each
+  only on a refusal: decode_error for a message that does not parse
+  (§6), and illegal_parameter for a request_update neither 0 nor 1
+  (§4.7.3, INV-14).
 - **Bound:** messages ≤ 128 B.
 
 ### Server

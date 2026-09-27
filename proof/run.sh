@@ -840,7 +840,10 @@ launch fast full epoch 40 "" ct.c
 # 3.01 and 4.37 GB peak on two runs on 2026-09-27, so the weight stays 6.
 # With the assertion that illegal_parameter, for a request_update neither
 # 0 nor 1, is the one alert the parser writes (INV-14): 746 properties,
-# 111 s, 4.17 GB peak at a load average near 30.
+# 111 s, 4.17 GB peak at a load average near 30. With decode_error beside
+# it, for a KeyUpdate body that is not one byte and a NewSessionTicket
+# whose fields do not fill it (INV-14): 758 properties, 107 s, 5.32 GB
+# peak at a load average near 6, under the weight of 6.
 launch slow:6 full handshake_post 132 "handle_post_handshake.0:33,fill_nondet.0:130" --object-bits 11 buf.c ct.c session.c
 # The only launch line that builds the hybrid key exchange
 # (https://github.com/c4milo/chapulin/issues/47). hybrid_secret over any seed,

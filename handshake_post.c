@@ -88,19 +88,21 @@ static int read_ticket_extensions(const uint8_t *block, size_t n, uint8_t *alert
 // give (hspost_ticket_age_ok).
 //
 // A message whose own fields do not fill it does not decode at all, so
-// it returns CH_EPROTO and hspost_read's caller kills the session. That
-// is the answer the KeyUpdate arm below already gives a body that is not
-// one byte long.
+// it returns CH_EPROTO with decode_error in *alert, which RFC 9846 §6
+// requires for a message that cannot be parsed against its syntax
+// (rfc9846.txt:3785-3788), and hspost_read's caller kills the session.
+// That is the answer the KeyUpdate arm below gives a body that is not one
+// byte long.
 //
 // The extensions vector closes the message (RFC 9846 §4.7.1). Its
 // length is read and its bytes are not: the only extension defined
 // there is early_data, and chapulin sends no 0-RTT. Skipping by that
 // length is what leaves rb_left below at zero for a whole message and
 // above zero for a message that carries anything else.
-static int handle_ticket(ch_tls *t, const uint8_t *body, size_t n
+static int handle_ticket(ch_tls *t, const uint8_t *body, size_t n, uint8_t *alert
 #ifdef CH_TRANSPORT_QUIC_NONBLOCKING
                          ,
-                         uint8_t *alert, uint64_t *error_code
+                         uint64_t *error_code
 #endif
 ) {
     rbuf r;
@@ -127,9 +129,7 @@ static int handle_ticket(ch_tls *t, const uint8_t *body, size_t n
     rb_skip(&r, ext_len);
 #endif
     if (r.err || rb_left(&r) != 0) {
-#ifdef CH_TRANSPORT_QUIC_NONBLOCKING
         *alert = ALERT_DECODE_ERROR;
-#endif
         return CH_EPROTO;
     }
     if (t->cfg.on_ticket == NULL || ticket.lifetime_s == 0 || nonce_len > SHA256_LEN ||
@@ -195,24 +195,27 @@ static int handle_key_update(ch_tls *t, uint8_t request) {
 // unexpected_message the caller set (rfc9846.txt:1054-1058). A ROLE=both
 // object holds sessions of both sides, and each server entry marks its
 // own (session.h).
-static int take_ticket(ch_tls *t, const uint8_t *body, size_t msg_len) {
+static int take_ticket(ch_tls *t, const uint8_t *body, size_t msg_len, uint8_t *alert) {
 #ifdef CH_ROLE_SERVER
     if (t->server != 0) {
         return CH_EPROTO;
     }
 #endif
-    return handle_ticket(t, body, msg_len);
+    return handle_ticket(t, body, msg_len, alert);
 }
 
 // One KeyUpdate of msg_len bytes at body, which ends_input says is the
-// last message of its record. request_update has two values, and RFC
-// 9846 §4.7.3 ends the connection on any other with illegal_parameter
-// (rfc9846.txt:3362-3365), which this writes to *alert. A body that is not
-// one byte, and a KeyUpdate with bytes after it, keep the
+// last message of its record. Its body is the one request_update byte,
+// and a body of another length does not parse, which RFC 9846 §6 answers
+// with decode_error (rfc9846.txt:3785-3788).
+// request_update has two values, and §4.7.3 ends the connection on any
+// other with illegal_parameter (rfc9846.txt:3362-3365). Each writes its
+// alert to *alert. A KeyUpdate with bytes after it keeps the
 // unexpected_message the caller set. Each refusal comes before the rekey.
 static int take_key_update(ch_tls *t, const uint8_t *body, size_t msg_len, int ends_input,
                            uint8_t *alert) {
     if (msg_len != 1) {
+        *alert = ALERT_DECODE_ERROR;
         return CH_EPROTO;
     }
     if (body[0] > 1) {
@@ -254,7 +257,7 @@ static int handle_post_handshake(ch_tls *t, const uint8_t *pt, size_t n, size_t 
         const uint8_t *body = pt + off + 4;
         int rc = CH_EPROTO; // any other message type
         if (type == HS_NEW_SESSION_TICKET) {
-            rc = take_ticket(t, body, msg_len);
+            rc = take_ticket(t, body, msg_len, alert);
         } else if (type == HS_KEY_UPDATE) {
             rc = take_key_update(t, body, msg_len, off + 4 + msg_len == n, alert);
         }

@@ -1334,10 +1334,17 @@ last `ROLE=server` stub, as the entry said it would.
   refuses a KeyUpdate whose request_update is neither 0 nor 1 with
   illegal_parameter, before it rekeys (§4.7.3, rfc9846.txt:3362-3365):
   `bin/unit` reads 0 and 1 as requests and requires illegal_parameter for
-  2 and 255, the `handshake_post` harness proves illegal_parameter is the
-  only alert the parser writes, and
-  `inv14-key-update-illegal-value-unexpected` requires `bin/unit` to fail
-  when it answers unexpected_message. A server's `ch_read` refuses a
+  2 and 255, and `inv14-key-update-illegal-value-unexpected` requires
+  `bin/unit` to fail when it answers unexpected_message. The same parser
+  refuses a KeyUpdate whose body is not one byte and a NewSessionTicket
+  whose fields do not fill it with decode_error, which §6 requires for a
+  message that does not parse (rfc9846.txt:3785-3788): `bin/unit`
+  requires it for KeyUpdate bodies of 0 and 2 bytes and for three
+  malformed tickets, and `inv14-key-update-length-unexpected` and
+  `inv14-ticket-framing-unexpected` require `bin/unit` to fail when
+  either answers unexpected_message. The `handshake_post` harness proves
+  those two are the only alerts the parser writes, each on a refusal. A
+  server's `ch_read` refuses a
   NewSessionTicket with unexpected_message, because RFC 9846 §4.7.1
   gives the message to the server to send (rfc9846.txt:3194-3196) and §4
   refuses one out of order (rfc9846.txt:1054-1058); each server entry
