@@ -1108,7 +1108,19 @@ launch fast:4 full webpki_san 17 "fill_nondet.0:1025,webpki_match_san.0:17" -DCH
 # x509_read_extension from any reader state, basicConstraints over any
 # extnValue) and the purposes loop at 64 bytes. Under run.sh: 1217
 # properties, 386 s, 3.0 GB; run apart, the x509_read_extension half
-# peaked at 5.0 GB in 54 s, which slow:5 covers.
+# peaked at 5.0 GB in 54 s, which slow:5 covers. The three pieces at the
+# 1024-byte bound now read heap objects of exactly their input's length,
+# as in webpki_cert_key. Under run.sh (PROVE_ONLY=webpki_ext
+# PROVE_NO_CACHE=1 /usr/bin/time -l) the fixed arrays measured 1217
+# properties, 448 s with 375 s of CPU, 2.95 GB and 8.9 million clauses at
+# a load average of 9 to 270, and the heap objects 1219 properties, 482 s
+# with 393 s of CPU, 2.05 GB and 3.2 million clauses at a load average
+# of 4 to 181: the clauses fell and the time did not. An assert in each
+# piece's success path, a purpose ending at the end of a full value, an
+# extension of CH_WEBPKI_EXT_TLV_MAX bytes and a pathLenConstraint of
+# 32767, fails all three (3 of 1222, 529 s, 1.47 GB), so each piece is
+# reached at its bound. slow:4 covers 3.3 GB, the highest peak seen from
+# these formulas.
 #
 # webpki_ext_one judges one Extension from any reader and walk state
 # over a list of up to CH_PROOF_ONE_LEN bytes: at 64 bytes 249 s and
@@ -1128,6 +1140,15 @@ launch fast:4 full webpki_san 17 "fill_nondet.0:1025,webpki_match_san.0:17" -DCH
 # bytes in 30 minutes. At 48 bytes an assert of 0 on each arm's success
 # tail fails both (2 of 1220, 2687 s, 7.5 GB), so both tails are
 # reached. So it runs at 48 bytes in the slow tier.
+#
+# webpki_ext_harness.c calls each part only in the lines whose
+# CH_PROOF_PARTS bit names it, and cbmc drops a static function nothing
+# calls, so a change to one part's code leaves the other lines' goto
+# models and reach shares alone. cbmc --show-properties lists 1188
+# properties for webpki_ext_one and 1168 for webpki_ext_walk, where all
+# three lines listed 1215 when every part was in every model; each
+# property that left was in a part the line does not run.
+#
 # Re-measured under run.sh when the reader stubs moved to
 # proof/webpki_cert_stubs.h, webpki_parse_certificate took its head from
 # read_certificate_head and read_tbs_key, and webpki_read_certificate_key
@@ -1170,7 +1191,7 @@ launch fast full webpki_cert 17 "ct_memeq.0:16" -DCH_TRUST_WEBPKI x509_der.c buf
 # array one past CH_WEBPKI_CERT_MAX it proved 1316 properties in 180 s at
 # 4.2 GB. inv05-webpki-leaf-key-reads-extensions fails it.
 launch fast full webpki_cert_key 17 "ct_memeq.0:16" -DCH_TRUST_WEBPKI x509_der.c buf.c ct.c
-launch slow:5 full webpki_ext 18 "fill_nondet.0:1026,read_ext_key_usage.0:23,oid_minimal.0:17,ct_memeq.0:9" x509_der.c buf.c ct.c
+launch slow:4 full webpki_ext 18 "fill_nondet.0:65,read_ext_key_usage.0:23,oid_minimal.0:17,ct_memeq.0:9" x509_der.c buf.c ct.c
 launch slow:3 full webpki_ext_one 18 "fill_nondet.0:97,read_ext_key_usage.0:33,oid_minimal.0:17,ct_memeq.0:9" -DCH_PROOF_ONE_LEN=96 x509_der.c buf.c ct.c
 launch slow:5 full webpki_ext_walk 18 "fill_nondet.0:49,webpki_read_extensions.0:8,read_ext_key_usage.0:13,oid_minimal.0:17,ct_memeq.0:9" --object-bits 11 -DCH_PROOF_EXT_LEN=48 x509_der.c buf.c ct.c
 # The TRUST=webpki chain walk, over a CertificateEntry list of up to

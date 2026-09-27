@@ -56,7 +56,18 @@
 //
 // CONCRETE: real bodies, the real rbuf (buf.c), the real DER readers
 // (x509_der.c) and ct_memeq (ct.c) on the command line.
+//
+// The three pieces of bits 1 and 2 read inputs of up to
+// CH_WEBPKI_EXT_TLV_MAX bytes, one more for x509_read_extension, from
+// heap objects of exactly their length, as in webpki_cert_key, so a
+// piece reads no byte past the end of its input. CBMC gives each object
+// unconstrained bytes. cbmc 6.11 gives each read at a symbolic offset
+// into a fixed-size array clauses in proportion to the array's length,
+// and these pieces read at offsets the reader's position and the length
+// fields set. The shorter inputs of bits 4, 8 and 16 stay fixed arrays.
 #include "harness.h"
+
+#include <stdlib.h>
 
 #include "webpki_ext.c"
 
@@ -90,6 +101,20 @@ static void havoc_reader(rbuf *r, const uint8_t *buf, size_t cap) {
     r->err = nondet_u8() & 1;
 }
 
+// A reader over a heap object of exactly len bytes, for any len up to
+// cap, at any position and either err value. Returns the object.
+static uint8_t *havoc_heap_reader(rbuf *r, size_t cap) {
+    size_t len = nondet_size_t();
+    __CPROVER_assume(len <= cap);
+    uint8_t *buf = malloc(len);
+    __CPROVER_assume(buf != NULL);
+    rb_init(r, buf, len);
+    r->off = nondet_size_t();
+    __CPROVER_assume(r->off <= len);
+    r->err = nondet_u8() & 1;
+    return buf;
+}
+
 // 1 when [inner, inner + inner_len) lies inside [outer, outer + outer_len).
 static int inside(const uint8_t *outer, size_t outer_len, const uint8_t *inner, size_t inner_len) {
     return inner != NULL && inner >= outer && inner_len <= outer_len &&
@@ -97,10 +122,8 @@ static int inside(const uint8_t *outer, size_t outer_len, const uint8_t *inner, 
 }
 
 static void one_purpose(void) {
-    static uint8_t value[CH_WEBPKI_EXT_TLV_MAX];
-    fill_nondet(value, sizeof value);
     rbuf v;
-    havoc_reader(&v, value, sizeof value);
+    uint8_t *value = havoc_heap_reader(&v, CH_WEBPKI_EXT_TLV_MAX);
     size_t before = v.off;
     int server_auth = nondet_u8() & 1;
     int prior = server_auth;
@@ -110,6 +133,7 @@ static void one_purpose(void) {
         __CPROVER_assert(v.off <= v.len, "purpose: never moves past the end");
     }
     __CPROVER_assert(server_auth == prior || server_auth == 1, "purpose: server_auth goes 0 to 1");
+    free(value);
 }
 
 // x509_read_extension at this walk's cap, from any reader state over
@@ -117,10 +141,8 @@ static void one_purpose(void) {
 // most CH_WEBPKI_EXT_TLV_MAX bytes, and points the extnID and the
 // extnValue inside them.
 static void extension_reader(void) {
-    static uint8_t list[CH_WEBPKI_EXT_TLV_MAX + 1];
-    fill_nondet(list, sizeof list);
     rbuf r;
-    havoc_reader(&r, list, sizeof list);
+    uint8_t *list = havoc_heap_reader(&r, CH_WEBPKI_EXT_TLV_MAX + 1);
     size_t before = r.off;
     x509_extension ext;
     if (x509_read_extension(&r, CH_WEBPKI_EXT_TLV_MAX, &ext)) {
@@ -135,6 +157,7 @@ static void extension_reader(void) {
                          "extension: the extnValue inside the consumed bytes");
         __CPROVER_assert(ext.critical == 0 || ext.critical == 1, "extension: critical is 0 or 1");
     }
+    free(list);
 }
 
 static void purposes_reader(void) {
@@ -149,16 +172,17 @@ static void purposes_reader(void) {
 }
 
 static void constraints_reader(void) {
-    static uint8_t constraints[CH_WEBPKI_EXT_TLV_MAX];
-    fill_nondet(constraints, sizeof constraints);
     size_t constraints_len = nondet_size_t();
-    __CPROVER_assume(constraints_len <= sizeof constraints);
+    __CPROVER_assume(constraints_len <= CH_WEBPKI_EXT_TLV_MAX);
+    uint8_t *constraints = malloc(constraints_len);
+    __CPROVER_assume(constraints != NULL);
     int ca = nondet_int();
     int path_len = nondet_int();
     if (read_basic_constraints(constraints, constraints_len, &ca, &path_len)) {
         __CPROVER_assert(ca == 0 || ca == 1, "bc: cA is 0 or 1");
         __CPROVER_assert(path_len >= -1 && path_len <= 32767, "bc: path_len in range");
     }
+    free(constraints);
 }
 
 static void one_extension(void) {
@@ -247,22 +271,26 @@ static void whole_walk(void) {
     __CPROVER_assert(is_ca || out.san != NULL, "walk: a leaf records its san");
 }
 
+// Each part is called only in the launch lines that run it, and cbmc
+// drops a static function nothing calls, so a line's goto model holds
+// no other part's code. proof/coverage.py's reach share of one line then
+// does not move when another part's code changes.
 int main(void) {
-    if (CH_PROOF_PARTS & 1) {
-        one_purpose();
-        extension_reader();
-    }
-    if (CH_PROOF_PARTS & 2) {
-        constraints_reader();
-    }
-    if (CH_PROOF_PARTS & 4) {
-        purposes_reader();
-    }
-    if (CH_PROOF_PARTS & 8) {
-        one_extension();
-    }
-    if (CH_PROOF_PARTS & 16) {
-        whole_walk();
-    }
+#if CH_PROOF_PARTS & 1
+    one_purpose();
+    extension_reader();
+#endif
+#if CH_PROOF_PARTS & 2
+    constraints_reader();
+#endif
+#if CH_PROOF_PARTS & 4
+    purposes_reader();
+#endif
+#if CH_PROOF_PARTS & 8
+    one_extension();
+#endif
+#if CH_PROOF_PARTS & 16
+    whole_walk();
+#endif
     return 0;
 }

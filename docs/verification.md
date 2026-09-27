@@ -1540,7 +1540,9 @@ Every harness in this group builds `TRANSPORT=quic-nonblocking`. The
 - **Harnesses:** `webpki_ext` (slow), `webpki_ext_one` (slow), `webpki_ext_walk` (slow)
 - **Proves:** the certificate extension walk, in parts like
   [webpki_san](#webpki_san).
-  - `webpki_ext` proves the pieces that read one element:
+  - `webpki_ext` proves the pieces that read one element, the first
+    three over heap objects of exactly their input's length, so none
+    reads a byte past the end:
     - one KeyPurposeId from any reader state, which, when accepted,
       leaves err clear and moves the position forward by three bytes or
       more and never past the end, so the purposes loop ends;
