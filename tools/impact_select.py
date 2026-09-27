@@ -56,11 +56,14 @@ GATE_COMMAND = {
        for leg in ("default", "aes-hw", "aes-extern", "x25519-wide")},
 }
 
-# The wrapper scripts a test/violations entry can name on its catches line
-# for a gate that a recipe or a helper script selects, so the violation
-# counts as covered by the make command the script runs.
+# The catches lines a test/violations entry can name for a gate that a
+# recipe or a helper script selects, so the violation counts as covered by
+# the make command beside it: a wrapper script, or the sequence shard
+# runner with the binary its target passes it.
 WRAPPER_GATES = {
     "make wycheproof": ["test/wycheproof.sh"],
+    "make handshake-sequence": ["test/handshake_sequence_shards.sh ./bin/handshake_sequence_test"],
+    "make handshake-sequence-pq": ["test/handshake_sequence_shards.sh ./bin/handshake_sequence_pq"],
 }
 
 # Targets whose recipe stops unless a variable names what to run, and
@@ -210,9 +213,11 @@ def select_tests(out, sources):
             if name not in mapping.runnable:
                 continue
             if name in mapping.direct_run:
-                out.add("tests", RUN_VIA.get(name, f"make run-{name}"),
+                command = RUN_VIA.get(name, f"make run-{name}")
+                out.add("tests", command,
                         f"bin/{name} compiles {path} "
-                        f"(the Makefile names it in the recipe)", [name])
+                        f"(the Makefile names it in the recipe)",
+                        [name] + WRAPPER_GATES.get(command, []))
             if name == "diff":
                 for command, reason in DIFF_ARMS:
                     out.add("differential", command, reason)
