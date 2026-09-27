@@ -1729,7 +1729,13 @@ last `ROLE=server` stub, as the entry said it would.
   presents the corpus leaf over `CH_WEBPKI_CERT_MAX`: a pin on its key
   completes the handshake with the 6,106-byte Certificate reassembled in
   the client's `CH_MIN_RXBUF` buffer, and the same chain from a server
-  that signs with another key is refused with decrypt_error. The webpki_leaf_pin
+  that signs with another key is refused with decrypt_error.
+  fuzz/fuzz_webpki_leaf_pin.c, which the nightly runs, drives
+  `webpki_verify_leaf_pin` over generated lists and up to
+  `CH_SPKI_PIN_MAX` pins. Its seeds are every corpus and captured list,
+  that large leaf's included, and the r2 leaf rebuilt at
+  `CH_WEBPKI_LEAF_PIN_CERT_MAX`, each after the pin of its leaf's key
+  where the key reader reads the leaf. The webpki_leaf_pin
   harness proves the call memory-safe and its verdict and alert pairs,
   that the key reader runs once and on entry 0, and that an accepted list
   hashed the leaf's SubjectPublicKeyInfo and returns its key; the

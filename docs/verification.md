@@ -1711,12 +1711,21 @@ Every harness in this group builds `TRANSPORT=quic-nonblocking`. The
 - **Not proved:** which digests match. `Spec.WebpkiPin.verifyLeafPin_ok`
   states the rule over the real SHA-256, and
   `test/diff_webpki_leaf_pin.h` compares the two.
-- **Tested instead:** the rule inside a handshake.
-  `bin/webpki_loop_tcp_nonblocking` and `bin/quic_loop_webpki` run pins
-  alone against this tree's server presenting the corpus leaf over
-  `CH_WEBPKI_CERT_MAX`, 5,558 bytes. A pin on its key completes the
-  handshake, and a server that presents the same chain and signs with
-  another key is refused with decrypt_error.
+- **Tested instead:** lists longer than the bound, and the rule inside
+  a handshake:
+  - `fuzz/fuzz_webpki_leaf_pin.c`, which the nightly runs, drives the
+    call over the lists and pins libFuzzer generates: up to
+    `CH_SPKI_PIN_MAX` pins, in inputs of up to 16,413 bytes. Its seeds
+    are every list in `test/webpki_corpus.h`, the corpus leaf over
+    `CH_WEBPKI_CERT_MAX`, 5,558 bytes, included, and the r2 leaf rebuilt
+    at `CH_WEBPKI_LEAF_PIN_CERT_MAX`, whose seed sets that input length.
+    Each seed carries the pin of its leaf's key, but for the two leaves
+    the key reader refuses.
+  - `bin/webpki_loop_tcp_nonblocking` and `bin/quic_loop_webpki` run
+    pins alone against this tree's server presenting the corpus leaf
+    over `CH_WEBPKI_CERT_MAX`. A pin on its key completes the handshake,
+    and a server that presents the same chain and signs with another key
+    is refused with decrypt_error.
 
 #### webpki_ticket
 
@@ -1778,7 +1787,7 @@ against the Lean oracle instead.
 
 No fuzz target covers this parser, on purpose. The differential drives
 the same domain against an oracle that checks the verdict and the bytes,
-where a fuzzer checks only for a crash, and a sixth target would push
+where a fuzzer checks only for a crash, and an eighth target would push
 the nightly fuzz job past the budget `lint-fuzz-budget` holds.
 
 ### x25519, P-256 and RSA functional correctness

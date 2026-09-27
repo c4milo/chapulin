@@ -2503,17 +2503,18 @@ enumerations and the violation files follow the rule every other mode follows:
 a mutation experiment that finds an unguarded rule lands a `.violation` file,
 never a new lint.
 
-**Fuzz.** `fuzz/` holds six libFuzzer targets over the attacker-facing
-parsers, and the nightly runs them at `FUZZ_TIME=400` inside a 45-minute cap
-(`.github/workflows/nightly.yml:508`, `:524`), which `lint-fuzz-budget` holds
-as targets times seconds under that cap (`Makefile:2235-2246`). The mode adds
+**Fuzz.** `fuzz/` holds seven libFuzzer targets over the attacker-facing
+parsers, and the nightly runs them at `FUZZ_TIME=340` inside a 45-minute cap
+(`.github/workflows/nightly.yml:543`, `:561`), which `lint-fuzz-budget` holds
+as targets times seconds under that cap (`Makefile:5053-5063`). The mode adds
 one target, `fuzz/fuzz_quic.c`, over `ch_quic_crypto_in` and the QUIC arm of
-`handshake_record.c`, which is where a peer's bytes arrive. Seven targets do
-not fit at 400 s, so the same commit lowers `FUZZ_TIME` to 380, which reads 44
-minutes, the trade the comment at `.github/workflows/nightly.yml:518-523`
-already records for the sixth target. `ch_quic_open` takes no target of its
-own: its input is one packet under a key a fuzzer would have to forge, and
-`quic_packet_harness.c` proves that path over unconstrained input instead.
+`handshake_record.c`, which is where a peer's bytes arrive. Eight targets do
+not fit at 340 s, so the same commit lowers `FUZZ_TIME` to 300, which reads 40
+minutes, the trade the comment at `.github/workflows/nightly.yml:553-560`
+already records for the sixth and seventh targets. `ch_quic_open` takes no
+target of its own: its input is one packet under a key a fuzzer would have to
+forge, and `quic_packet_harness.c` proves that path over unconstrained input
+instead.
 
 **Gates that read a build axis by name.** `LIB_VARIANT` (`Makefile:287`),
 `PUBLIC` and `lib-check` (`Makefile:363`, `Makefile:417-423`),
