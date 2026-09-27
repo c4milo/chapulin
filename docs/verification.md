@@ -1869,7 +1869,9 @@ Cortex-M3, mips32r2 and rv32imac. It counts, per file, the widening
 multiplies, the divisions and the calls into the compiler's 64-bit
 division runtime, matching each opcode as a prefix so a condition-code
 suffix cannot hide one. Under the pinned clang every file is at zero
-except sha3, whose public `% 5` is one multiply-high.
+except two, both over public values: sha3, whose `% 5` is one
+multiply-high, and tls.c, whose `ch_writable_len` divides the caller's
+buffer length by one record's length.
 
 `make lint-wide-multiply-gcc` runs the same count under the gcc each CI
 lane ships:
@@ -1880,7 +1882,9 @@ lane ships:
 
 At `-Os` every file is at zero there too, except sha3's `% 5`, which
 each gcc lowers to five hardware divisions, or on rv32ic to five calls
-to `__modsi3`.
+to `__modsi3`, and tls.c's one division. At `-O2` the mips gcc copies
+that division into both paths of `ch_writable_len`, so tls.c counts two
+there, one per path.
 
 It was not always so. gcc fused the decomposition's 64-bit
 cross-product sum back into `umlal`, and rewrote the sign mask

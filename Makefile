@@ -4600,9 +4600,18 @@ WIDE64_SPEC_NAMES := $(foreach s,$(WIDE64_SPECS),$(firstword $(subst :, ,$(s))))
 # instruction: the `% 5` is five calls to __modsi3. softmul.c is at zero
 # calls to __muldi3 there, which is the point of the spec
 # (https://github.com/c4milo/chapulin/issues/107).
+#
+# tls.c reads two divu under the -O2 spec, from ch_writable_len's one
+# division of the caller's cap by a record's length. gcc copies the
+# function body into both arms of the smaller-of in
+# record_plaintext_max: one arm divides by peer_limit + 22 and the
+# other by CH_TX_PT + 22, so each path still runs one division, and
+# every operand is a public length. Measured with Ubuntu 24.04's
+# mips-linux-gnu-gcc 12.4.0 under this spec's flags; CI run 36285635999
+# failed on it.
 WIDEMUL_CEILING_SPEC := m3-gcc/sha3.c:5 mips32r2-gcc/sha3.c:5 mips32r2-gcc-O2/sha3.c:5 \
                         mips32r2-gcc-O2/poly1305.c:2 mips32r2-gcc-O2/p256_scalar.c:2 \
-                        rv32imac-gcc/sha3.c:5 rv32ic-gcc/sha3.c:5
+                        mips32r2-gcc-O2/tls.c:2 rv32imac-gcc/sha3.c:5 rv32ic-gcc/sha3.c:5
 # The files the branch count covers: the arithmetic under the record
 # layer, whose every input is a key, a limb or a block. Almost every
 # branch they hold is loop control on a public count; the two exceptions
