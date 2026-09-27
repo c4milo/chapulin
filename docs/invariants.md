@@ -1023,27 +1023,41 @@ last `ROLE=server` stub, as the entry said it would.
   as `make lib`, exports the same names, and holds the same build record.
   Every other symbol it defines is local, so one image links a Zig-built
   object of each of two transports, as it links make's. The module
-  `chapulin` that the package exports beside the object declares every
-  name the object exports, and its types have the layout the object's
-  build record describes.
+  `chapulin` that the package exports is the Zig API, and it carries the
+  object, so a program that imports it links the object once and adds
+  none of its own. Its `chapulin.c` declares every name the object
+  exports, and its types have the layout the object's build record
+  describes. The API declares a Zig call for each C call it covers,
+  forwards to that call, maps each code the call returns to one error,
+  builds `ch_cfg` only from the fields each value names, and keeps no TLS
+  rule of its own: a record's length, a write's size and a ticket's age
+  come from the C calls that compute them.
 - **Mechanism.** `build.zig` repeats the Makefile's axis blocks, one
   function per block, and writes the lists it compiles to `lib-srcs.txt`
   and `lib-def.txt`. `tools/localize_symbols.zig` makes every defined
   global but the public names local, as `objcopy -G` and `nmedit -s` do
   for make, and refuses an object it cannot rewrite in full. translate-c
-  makes the module from the headers that declare the object's exports
+  makes `chapulin.c` from the headers that declare the object's exports
   and imports, under every `-D` of the one flag list the sources compile
-  with.
+  with. `build.zig` copies `chapulin.zig`, `chapulin_record.zig` and
+  `chapulin_quic.zig` into a directory of the configuration's own, roots
+  the module there, and adds the object to it with `addObjectFile`.
 - **Check.** `make lint-zig-build` runs `test/zig-build-check.sh`, which
-  builds the default object and the four colibri links both ways and
-  compares their sources, defines and exports, links
-  `test/build_test.c` against each Zig object under make's defines, and
-  links two Zig objects of different transports into one image and runs
-  it. It builds `test/zig-consumer`, a Zig project that depends on the
-  package, against each object: `matches.zig` compiles only when the
-  module declares every export, and runs `ch_build_matches` over the
-  module's types, and `pair.zig` imports the modules of two transports,
-  links both objects and starts a client on each. Before `matches.zig`,
+  builds the default object, the four colibri links and stompy's
+  `TX_RECORD=16384` object both ways and compares their sources, defines
+  and exports, links `test/build_test.c` against each Zig object under
+  make's defines, and links two Zig objects of different transports into
+  one image and runs it. It builds `test/zig-consumer`, a Zig project
+  that depends on the package and adds no object, against each object:
+  `matches.zig` compiles only when `chapulin.c` declares every export,
+  and runs `ch_build_matches` over its types; `unit.zig` checks each
+  value's `toCfg` against the `ch_cfg` written out field by field, the
+  Ticket constructors' bounds, the error of every code, and compiles
+  every declaration the object has; `loop.zig` runs a client and a server
+  of each `ROLE=both` object against each other through the API alone,
+  in record mode and over QUIC (`docs/zig.md`, "How it is checked"); and
+  `pair.zig` imports the modules of two transports and starts a client on
+  each through its API. Before `matches.zig`,
   `tools/public-constants.py` lists every length and cap the public
   headers' comments name in the regions the object compiles, and fails
   when the consumer cannot see one; `matches.zig` then declares and
@@ -1063,15 +1077,35 @@ last `ROLE=server` stub, as the entry said it would.
   comparison builds only values both builds accept, so
   `test/tx-record-builds.sh` holds `build.zig`'s `TX_RECORD` refusals to
   the Makefile's, and `inv36-zig-build-tx-record-past-2-14` requires it
-  to fail.
+  to fail. Seven more break the API or the module, and
+  `test/zig-build-check.sh` catches each:
+  `inv36-zig-module-drops-object` takes the object off the module, so
+  every consumer program fails to link; `inv36-zig-api-drops-ticket-age`
+  leaves `ch_cfg.ticket_age_ms` at 0 in `Client.toCfg`, so a stale ticket
+  resumes; `inv36-zig-api-write-seals-part` seals the part of `pt` that
+  fits where `write` must refuse it whole;
+  `inv36-zig-api-auth-proto-swapped` swaps two codes in the error table;
+  `inv36-zig-api-close-without-notify` closes without a close_notify;
+  `inv36-zig-api-ticket-drops-binding` zeroes a copied ticket's binding,
+  so it no longer resumes; and `inv36-zig-api-ticket-slot-kept` leaves
+  the resumption PSK in the slot after `takeTicket` and `recordClose`.
+  The slot's `std.crypto.secureZero` has no test of its own: in every
+  build measured, Debug and ReleaseFast, Zig 0.16.0 stored null by
+  writing zeros over the whole optional, so no test can tell the two
+  writes apart. The call keeps the rule for a compiler that stores the
+  optional's tag alone.
 - **Violation.** A PR changes an axis in the Makefile and not in
   `build.zig`, or the reverse, or teaches the localizer a symbol it leaves
   global, or translates the module under other defines or headers than
   the object's, or a public header names a length its consumer cannot
-  see. The checks catch the change in each configuration they
-  build. A combination of values that neither list builds is caught by
-  nothing until a dependent builds it.
-- See [decisions: Engineering](decisions.md#engineering), entries 69 and 70.
+  see. For the API, a PR adds a rule C does not hold, such as a record
+  length or a ticket age computed in Zig, maps a code to another error,
+  sets a `ch_cfg` field no value names, or tells a program to add the
+  object the module already carries. The checks catch the change in each
+  configuration they build. A combination of values that neither list
+  builds is caught by nothing until a dependent builds it.
+- See [decisions: Engineering](decisions.md#engineering), entries 69, 70
+  and 73.
 
 ### INV-37 — a stamp skips a check only on inputs the check passed on
 

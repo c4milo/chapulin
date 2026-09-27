@@ -1,0 +1,13 @@
+invariant: INV-36
+file: chapulin_record.zig
+catches: test/zig-build-check.sh
+reason: close calls ch_record_close where it calls ch_close, so the session
+  dies with its keys wiped and sends no close_notify. The peer cannot tell
+  a close from a cut connection (RFC 9846 section 6.1). loop_record.zig,
+  which requires one alert record from close and the peer's read to report
+  the close, objects.
+
+--- old
+            c.ch_close(&self.record.t);
+--- new
+            c.ch_record_close(&self.record);

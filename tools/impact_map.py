@@ -303,7 +303,8 @@ def known(path):
                ("spec/", "test/", "proof/", "docs/", "bench/", "examples/",
                 "fuzz/", "tools/", ".githooks/")) or path in (
         "README.md", "SECURITY.md", "CONTRIBUTING.md", "CLAUDE.md",
-        "build.zig", "build.zig.zon")
+        "build.zig", "build.zig.zon", "chapulin.zig", "chapulin_record.zig",
+        "chapulin_quic.zig")
 
 
 class Plan:

@@ -89,7 +89,7 @@ Other targets:
   and decisions 56 and 61 say what it holds, what it leaves out and why
   its name carries the transport.
 - A Zig project (Zig 0.16.0) depends on chapulin as a package and gets
-  the object `make lib` builds and a module of its API. The options are
+  the object `make lib` builds and a Zig API over it. The options are
   the Makefile's variables, with the same names and values, and the
   three hardware statements the Makefile takes in `CFLAGS` are options
   that default off. `TX_RECORD` takes its number, `.TX_RECORD = 16384`:
@@ -106,25 +106,27 @@ Other targets:
       .CH_NATIVE_AES = true,
   });
   module.addImport("chapulin", chapulin.module("chapulin"));
-  module.addObjectFile(chapulin.namedLazyPath("chapulin.o"));
   ```
 
-  The module `chapulin` is the public headers, translated by translate-c
-  under the defines the object compiled with, so its types have the
-  object's layout and the program names no define. The program writes
-  `const c = @import("chapulin");` and calls
-  `c.ch_build_matches(&c.ch_build_info_quic_nonblocking)` once. It names
-  the transport's record because Zig cannot evaluate the `ch_build`
-  macro. An image that links objects of two transports takes two
-  dependencies and imports each one's module under a name of its own. The
-  named lazy path `include` is the header directory, for a program that
-  compiles the headers as C. `build.zig` compiles every source into one
-  relocatable object, and `tools/localize_symbols.zig` makes every symbol
-  but the public API local, as `objcopy -G` and `nmedit -s` do for make,
-  so one image links objects of two transports. `make lint-zig-build`
-  builds five configurations both ways and requires the same sources,
-  defines, exports and build record, and builds a Zig program against
-  each module (decisions 69 and 70, INV-36).
+  The module `chapulin` is the Zig API, and it carries the object, so
+  the program adds no `addObjectFile` of its own; a second one defines
+  every public name twice. The program writes
+  `const chapulin = @import("chapulin");`, calls
+  `chapulin.buildMatches()` once, and runs sessions through
+  `chapulin.record` or `chapulin.quic` ([`zig.md`](zig.md)).
+  `chapulin.c` is the public headers, translated by translate-c under the
+  defines the object compiled with, so its types have the object's
+  layout and the program names no define. An image that links objects
+  of two transports takes two dependencies and imports each one's module
+  under a name of its own. The named lazy path `chapulin.o` is the object
+  and `include` the header directory, for a program that compiles the
+  headers as C. `build.zig` compiles every source into one relocatable
+  object, and `tools/localize_symbols.zig` makes every symbol but the
+  public API local, as `objcopy -G` and `nmedit -s` do for make, so one
+  image links objects of two transports. `make lint-zig-build` builds six
+  configurations both ways and requires the same sources, defines,
+  exports and build record, and builds and runs Zig programs against
+  each module (decisions 69, 70 and 73, INV-36).
 - `make check` skips a lint, a Wycheproof leg or a packaged-object leg
   that passed before on the same inputs, and `make -j check` runs its
   lints, legs and test runs side by side. `tools/stamp.py` states what a

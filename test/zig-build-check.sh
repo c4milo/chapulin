@@ -1,16 +1,16 @@
 #!/usr/bin/env bash
 # Builds the packaged object both ways, with make and with build.zig, and
 # requires the two to agree (docs/decisions.md 69). make lint-zig-build
-# runs it in check with no argument, over the default object and the four
-# colibri links. check-slow runs it with --roster, which adds the
-# configuration of every lib-check leg in check.
+# runs it in check with no argument, over the default object, the four
+# colibri links and stompy's. check-slow runs it with --roster, which adds
+# the configuration of every lib-check leg in check.
 #
 # The Zig build runs in bin/zig/consumer/package, a copy of exactly the
 # files build.zig.zon's .paths names, because that is what a dependent
 # receives.
 # Before the copy, .paths must name every root C source and header git
-# tracks, every tools/localize_*.zig file, and nothing else but the build
-# files, the license and the README.
+# tracks, the Zig API's files, every tools/localize_*.zig file, and
+# nothing else but the build files, the license and the README.
 #
 # For each configuration, the two objects must have:
 #
@@ -24,16 +24,25 @@
 #     headers compute, as lib-check requires of make's object.
 #
 # Then the module the package exports must describe the object it builds
-# (docs/decisions.md 70). test/zig-consumer, copied to bin/zig/consumer
-# around the package, is a Zig project that depends on the package as
-# colibri does. For each configuration the script builds matches.zig,
-# which imports the module "chapulin" and links the object, and runs it.
-# The module must declare every name the object exports, and the build
-# record must equal what the module's translated types compute. Before
-# that, tools/public-constants.py lists the lengths and caps the public
-# headers' comments name in regions the object compiles, and fails when
-# one is not defined for the consumer; matches.zig then requires the
-# module to declare and evaluate each one.
+# and carry it (docs/decisions.md 70 and 73). test/zig-consumer, copied to
+# bin/zig/consumer around the package, is a Zig project that depends on
+# the package as colibri does. For each configuration the script builds
+# and runs these programs against the module "chapulin", which carries
+# the object:
+#
+#   - matches.zig, which requires chapulin.c to declare every name the
+#     object exports, and the build record to equal what chapulin.c's
+#     translated types compute. Before it, tools/public-constants.py lists
+#     the lengths and caps the public headers' comments name in regions
+#     the object compiles, and fails when one is not defined for the
+#     consumer; matches.zig then requires chapulin.c to declare and
+#     evaluate each one.
+#   - unit.zig, the API's unit tests: each value's toCfg field by field,
+#     the Ticket constructors, the error of every ch_err code, and every
+#     declaration the object has, compiled.
+#   - for a ROLE=both object, loop.zig, which runs a client and a server of
+#     the object against each other through the API, over the r2 chain of
+#     test/webpki_corpus.h, which the script copies beside it.
 #
 # Zig keys its cache on the paths of a compile as written. The consumer
 # names the package's directory with no "..", so the dependency compiles
@@ -45,11 +54,11 @@
 # runs each half, as test/lib-pair-check.sh does with make's objects
 # (docs/decisions.md 61). It does so twice: from C halves compiled under
 # make's defines, and as test/zig-consumer's pair.zig, which imports the
-# module of each object.
+# module of each object and starts a client through each one's API.
 #
 # Each configuration builds both objects and compares them in a process
 # of its own, as many at once as the machine has cores. With every object
-# and program built, the five take 3.5 s on an M-series Mac.
+# and program built, the six take 5.1 s on an M-series Mac.
 #
 # test/violations.py runs a script by path and reads its exit status.
 cd "$(dirname "$0")/.." || exit 1
@@ -72,15 +81,18 @@ link_flags=()
 
 # Each configuration: a name, the make variables, and the hardware
 # statements it makes, which make takes in CFLAGS and build.zig as options.
-# The first is the default object; the other four are the ones colibri
+# The first is the default object; the next four are the ones colibri
 # links: its HTTP/2 client and server objects, and its QUIC object under
-# the two trust modes its checks and its interop runner use.
+# the two trust modes its checks and its interop runner use. The last is
+# stompy's, colibri's TCP object at TX_RECORD=16384 (docs/decisions.md 71
+# and 73).
 configs=(
     "default|RAND=extern|"
     "h2|RAND=extern TRANSPORT=tcp-nonblocking ROLE=both TRUST=webpki EXPORTER=on|"
     "h2-server|RAND=extern TRANSPORT=tcp-nonblocking ROLE=server TRUST=none EXPORTER=on|"
     "quic|RAND=extern TRANSPORT=quic-nonblocking ROLE=both TRUST=webpki SUITE=aesgcm AES=hw KEYLOG=on|CH_NATIVE_AES"
     "quic-interop|RAND=extern TRANSPORT=quic-nonblocking ROLE=both TRUST=raw-ecdsa SUITE=aesgcm AES=hw KEYLOG=on|CH_NATIVE_AES"
+    "tx-record|RAND=extern TRUST=webpki TRANSPORT=tcp-nonblocking ROLE=both TX_RECORD=16384|"
 )
 # The configuration of every other lib-check leg in check, in its order,
 # so every value of every axis meets build.zig at least once.
@@ -91,7 +103,6 @@ roster=(
     "webpki|RAND=extern TRUST=webpki|"
     "webpki-tcp-nonblocking|RAND=extern TRUST=webpki TRANSPORT=tcp-nonblocking|"
     "webpki-widemul|RAND=extern TRUST=webpki TRANSPORT=tcp-nonblocking WIDEMUL=native|"
-    "tx-record|RAND=extern TRUST=webpki TRANSPORT=tcp-nonblocking ROLE=both TX_RECORD=16384|"
     "quic-raw|RAND=extern TRANSPORT=quic-nonblocking EXPORTER=off|"
     "quic-webpki-both|RAND=extern TRUST=webpki TRANSPORT=quic-nonblocking ROLE=both KEYLOG=on EXPORTER=off|"
     "server|RAND=extern ROLE=server TRUST=none|"
@@ -137,7 +148,7 @@ stage_package() {
     local listed want
     listed=$(sed -n '/\.paths = \.{/,/}/p' build.zig.zon | grep -o '"[^"]*"' | tr -d '"' | sort)
     want=$({
-        git ls-files '*.c' '*.h' '*.hpp' | grep -v /
+        git ls-files '*.c' '*.h' '*.hpp' 'chapulin*.zig' | grep -v /
         git ls-files 'tools/localize_*.zig'
         printf '%s\n' build.zig build.zig.zon LICENSE README.md
     } | sort)
@@ -149,7 +160,7 @@ stage_package() {
     mkdir -p "$package"
     # shellcheck disable=SC2086 # one path per word, as .paths lists them
     tar -cf - $listed | tar -xf - -C "$package" || fail "copying the package failed"
-    cp test/zig-consumer/* "$consumer/" || fail "copying test/zig-consumer failed"
+    cp test/zig-consumer/* test/webpki_corpus.h "$consumer/" || fail "copying test/zig-consumer failed"
 }
 
 # The options of one configuration as test/zig-consumer takes them: the
@@ -263,10 +274,27 @@ check() {
     for symbol in $(exports "$zig_obj"); do declared+=("-Dexport=$symbol"); done
     while read -r symbol; do declared+=("-Dconstant=$symbol"); done < "$out/$name/constants.txt"
     zig_row "$2" "$3" > "$out/$name/zig-row.txt"
+    # A ROLE=both object has a client and a server to run against each
+    # other.
+    local both=0
+    case " $2 " in
+    *" ROLE=both "*) both=1 declared+=("-Dloop") ;;
+    esac
     consume "$name" "$out/$name" "-Dobject=$(cat "$out/$name/zig-row.txt")" "${declared[@]}"
     "$out/$name/bin/matches" ||
-        fail "$name: the Zig object's build record disagrees with the types of the package's module"
-    echo "lint-zig-build: $name: the package's module declares the object's exports and the $(wc -l < "$out/$name/constants.txt" | tr -d ' ') lengths its headers name, and has the types its build record describes"
+        fail "$name: the Zig object's build record disagrees with chapulin.c's types"
+    echo "lint-zig-build: $name: chapulin.c declares the object's exports and the $(wc -l < "$out/$name/constants.txt" | tr -d ' ') lengths its headers name, and has the types its build record describes"
+    "$out/$name/bin/unit" > "$out/$name/unit.log" 2>&1 || {
+        cat "$out/$name/unit.log" >&2
+        fail "$name: the API's unit tests failed"
+    }
+    echo "lint-zig-build: $name: the API's unit tests passed: $(tail -n 1 "$out/$name/unit.log")"
+    [ "$both" -eq 1 ] || return 0
+    "$out/$name/bin/loop" > "$out/$name/loop.log" 2>&1 || {
+        cat "$out/$name/loop.log" >&2
+        fail "$name: a client and a server of the object did not run against each other through the API"
+    }
+    echo "lint-zig-build: $name: $(tail -n 1 "$out/$name/loop.log")"
 }
 
 # Compiles test/lib_pair_half.c under the defines and flags of one

@@ -351,12 +351,16 @@ def select_pairs(out, changed, legs):
 
 
 # The files make lint-zig-build reads beside the packaged sources: the Zig
-# build, the localizer it runs, what the two scripts compile, and the
-# helper that lists the lengths the public headers name. The Zig
-# project under test/zig-consumer/ is selected by its prefix below.
+# build, the Zig API the package's module is built from, the localizer it
+# runs, what the two scripts compile, the helper that lists the lengths
+# the public headers name, and the corpus the loops take the r2 chain
+# from. The Zig project under test/zig-consumer/ is selected by its
+# prefix below.
+ZIG_API_FILES = {"chapulin.zig", "chapulin_record.zig", "chapulin_quic.zig"}
 ZIG_BUILD_FILES = {"build.zig", "build.zig.zon", "test/zig-build-check.sh",
                    "test/localize-check.sh", "test/build_test.c",
-                   "tools/public-constants.py"} | LIB_PAIR_FILES
+                   "tools/public-constants.py",
+                   "test/webpki_corpus.h"} | LIB_PAIR_FILES | ZIG_API_FILES
 
 
 def select_zig(out, changed, legs):
@@ -470,6 +474,9 @@ SOURCE_LINTS = [
 def select_lints(out, changed, csources, lib):
     for command, reason, gates in SOURCE_LINTS if csources else []:
         out.add("lint", command, reason, list(gates))
+    if any(p in ZIG_API_FILES for p in changed):
+        out.add("lint", "make lint-size",
+                "the Zig API's files stay under 500 lines, as the C does")
     # lint-proof-cover asks which shipped source a harness proves, so a
     # library source selects it and a test main does not. The frame budget
     # is per packaged object, so select_modes above runs one leg per

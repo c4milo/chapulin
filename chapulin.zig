@@ -1,0 +1,410 @@
+//! chapulin's Zig API: the values a session is configured from, the error
+//! each result code maps to, and the build record check. The record-mode
+//! sessions are in chapulin_record.zig and the QUIC sessions in
+//! chapulin_quic.zig. docs/zig.md is the reference.
+//!
+//! Each call forwards to the C call of the same name and adds nothing the C
+//! core lacks: it builds ch_cfg from values, maps result codes to errors,
+//! and copies bytes between the caller's slices and the C callbacks. Every
+//! TLS rule stays in C.
+//!
+//! The module is compiled once per object, against that object's
+//! translated headers, `c`. A declaration whose C name the object lacks is
+//! a @compileError that names the build option that adds it.
+const std = @import("std");
+
+/// The object's public headers, translated by translate-c under the
+/// defines the object compiled with (docs/decisions.md 70). What the API
+/// leaves out is used through it under its C name.
+pub const c = @import("chapulin_c");
+/// Record-mode sessions (TRANSPORT=tcp-nonblocking).
+pub const record = @import("chapulin_record.zig");
+/// QUIC sessions (TRANSPORT=quic-nonblocking).
+pub const quic = @import("chapulin_quic.zig");
+
+const has_client = @hasDecl(c, "ch_ticket_obfuscated_age");
+const has_server = @hasField(c.ch_cfg, "srv");
+const has_webpki = @hasField(c.ch_cfg, "anchors");
+const has_alpn = @hasField(c.ch_cfg, "alpn_protocols");
+const has_suite_order = has_server and @hasField(c.ch_srv_cfg, "cipher_suites");
+
+/// One error per ch_err code a call returns, named as chapulin.hpp's
+/// Status names it. Each call's error set is the part of this one its C
+/// call returns. CH_RECORD_AGAIN and CH_ECLOSED are no error here: record
+/// sessions' read reports the first as pt_len 0, and no call returns the
+/// second. A TCP object's set lacks Discard and AeadLimit, whose codes
+/// only a QUIC object's headers declare.
+pub const Error = if (@hasDecl(c, "CH_QUIC_DISCARD")) AnyError else error{ Io, Proto, Auth, Cap, Invalid };
+const AnyError = error{
+    /// CH_EIO: an output slice could not take what C sent. The session is dead.
+    Io,
+    /// CH_EPROTO: the peer broke the protocol, or the session was not live.
+    Proto,
+    /// CH_EAUTH: authentication failed. The session is dead.
+    Auth,
+    /// CH_ECAP: a buffer was short. From recordOut, cryptoOut, seal,
+    /// sealClose and tokenMint, and from write's own check, the session is
+    /// live; from recordIn, cryptoIn and read, and from ch_write, it is dead.
+    Cap,
+    /// CH_EINVAL: an argument was refused or a call came out of order, and
+    /// nothing was sent. From init the session is failed. From a server's
+    /// recordIn or cryptoIn it can also mean a provisioned key's signer
+    /// refused inside the flight, and the session is dead (srv_auth.c).
+    Invalid,
+    /// CH_QUIC_DISCARD: the caller drops the packet. The session is live.
+    Discard,
+    /// CH_QUIC_AEAD_LIMIT: RFC 9001 §6.6's integrity limit. The session is dead.
+    AeadLimit,
+};
+
+/// The C code each error stands for.
+fn codeOf(comptime err: AnyError) c_int {
+    return switch (err) {
+        error.Io => c.CH_EIO,
+        error.Proto => c.CH_EPROTO,
+        error.Auth => c.CH_EAUTH,
+        error.Cap => c.CH_ECAP,
+        error.Invalid => c.CH_EINVAL,
+        error.Discard => c.CH_QUIC_DISCARD,
+        error.AeadLimit => c.CH_QUIC_AEAD_LIMIT,
+    };
+}
+
+/// Nothing for CH_OK, and otherwise the error of E that code stands for. E
+/// is the error set of one C call, a part of Error. A code E does not name
+/// is one that call's header says it never returns, and it panics, as a
+/// broken contract is a programmer error. A program that calls a C
+/// function the API leaves out maps its result with fromCode(Error, code).
+pub fn fromCode(comptime E: type, code: c_int) E!void {
+    if (code == c.CH_OK) return;
+    inline for (@typeInfo(E).error_set.?) |member| {
+        if (code == comptime codeOf(@field(Error, member.name))) return @field(E, member.name);
+    }
+    @panic("chapulin: a C call returned a code its header does not name");
+}
+
+/// A root's subject Name and SubjectPublicKeyInfo, each the whole DER TLV
+/// (webpki_cfg.h).
+pub const trustAnchor = if (has_webpki) trustAnchorOf else @compileError("trustAnchor needs TRUST=webpki");
+fn trustAnchorOf(subject: []const u8, spki: []const u8) c.ch_trust_anchor {
+    return .{ .name = subject.ptr, .name_len = subject.len, .spki = spki.ptr, .spki_len = spki.len };
+}
+
+/// One protocol name to offer or select through ALPN (RFC 7301).
+pub const alpnProtocol = if (has_alpn) alpnProtocolOf else @compileError("alpnProtocol needs TRUST=webpki, TRANSPORT=quic-nonblocking or a server role");
+fn alpnProtocolOf(name: []const u8) c.ch_alpn_protocol {
+    return .{ .name = name.ptr, .name_len = name.len };
+}
+
+/// One DER certificate of a server's chain.
+pub const cert = if (has_server) certOf else @compileError("cert needs ROLE=server or ROLE=both");
+fn certOf(der: []const u8) c.ch_cert {
+    return .{ .der = der.ptr, .len = der.len };
+}
+
+/// The SHA-256 of a DER SubjectPublicKeyInfo. A slice of them is
+/// ch_cfg.spki_pins as it is.
+pub const SpkiPin = [c.SHA256_LEN]u8;
+
+/// How a client judges the server. The variants are the object's trust
+/// mode's. Every slice is borrowed and must outlive the session.
+pub const Trust = if (has_webpki) union(enum) {
+    web_pki: struct {
+        /// Roots the chain may end at: anchors, anchor_count.
+        anchors: []const c.ch_trust_anchor,
+        /// The name the leaf must carry, also sent as server_name: hostname, hostname_len.
+        server_name: []const u8,
+        /// Seconds since 1970-01-01T00:00:00Z: now_seconds.
+        now_seconds: u64,
+        /// Pins the verified path must also match: spki_pins, spki_pin_count.
+        pins: []const SpkiPin = &.{},
+    },
+    pins: struct {
+        /// The keys the server may prove it holds: spki_pins, spki_pin_count.
+        pins: []const SpkiPin,
+        /// Sent as server_name and judged against nothing: hostname, hostname_len.
+        server_name: ?[]const u8 = null,
+    },
+} else union(enum) {
+    pinned: struct {
+        /// The server's key (TRUST=raw-*) or its CA's (TRUST=ca-*): server_pubkey, server_pubkey_len.
+        server_pubkey: []const u8,
+        /// The staged next key during rotation: server_pubkey2, server_pubkey2_len.
+        server_pubkey2: ?[]const u8 = null,
+    },
+};
+
+/// What a client sets. Every slice and pointer is borrowed and must outlive
+/// the session, as ch_cfg's must (cfg.h).
+pub const Client = if (has_client) ClientValues else @compileError("Client needs ROLE=client or ROLE=both");
+const ClientValues = struct {
+    /// How the server is judged: the fields Trust names.
+    trust: Trust,
+    /// Protocols to offer, most preferred first: alpn_protocols, alpn_count.
+    alpn: if (has_alpn) []const c.ch_alpn_protocol else void = if (has_alpn) &.{} else {},
+    /// A ticket to resume with: psk, psk_len, psk_id, psk_id_len,
+    /// resumption, ticket_epoch, ticket_lifetime_s and, under TRUST=webpki,
+    /// ticket_binding. Under a raw or ca mode it leaves the server_pubkey
+    /// slots unset, because ch_cfg takes one auth mode.
+    ticket: ?*const Ticket = null,
+    /// The ticket's age in milliseconds: ticket_age_ms, and obfuscated_age
+    /// through ch_ticket_obfuscated_age. init answers error.Invalid for an
+    /// age above the ticket's lifetime or above seven days (ticket.h).
+    ticket_age_ms: u64 = 0,
+    /// Refuse a key exchange other than X25519MLKEM768: require_pq.
+    require_pq: bool = false,
+
+    /// The ch_cfg these values set. A session's init adds its own buffer,
+    /// callbacks and io to it.
+    pub fn toCfg(values: ClientValues) c.ch_cfg {
+        var cfg = std.mem.zeroes(c.ch_cfg);
+        if (has_webpki) switch (values.trust) {
+            .web_pki => |web| {
+                cfg.anchors = if (web.anchors.len == 0) null else web.anchors.ptr;
+                cfg.anchor_count = web.anchors.len;
+                cfg.hostname = web.server_name.ptr;
+                cfg.hostname_len = web.server_name.len;
+                cfg.now_seconds = web.now_seconds;
+                setPins(&cfg, web.pins);
+            },
+            .pins => |pinned| {
+                setPins(&cfg, pinned.pins);
+                if (pinned.server_name) |name| {
+                    cfg.hostname = name.ptr;
+                    cfg.hostname_len = name.len;
+                }
+            },
+        } else if (values.ticket == null) {
+            const pinned = values.trust.pinned;
+            cfg.server_pubkey = pinned.server_pubkey.ptr;
+            cfg.server_pubkey_len = pinned.server_pubkey.len;
+            if (pinned.server_pubkey2) |next| {
+                cfg.server_pubkey2 = next.ptr;
+                cfg.server_pubkey2_len = next.len;
+            }
+        }
+        if (has_alpn) {
+            cfg.alpn_protocols = if (values.alpn.len == 0) null else values.alpn.ptr;
+            cfg.alpn_count = values.alpn.len;
+        }
+        if (values.ticket) |ticket| {
+            cfg.psk = &ticket.ticket.psk;
+            cfg.psk_len = ticket.ticket.psk_len;
+            cfg.psk_id = &ticket.identity;
+            cfg.psk_id_len = ticket.ticket.identity_len;
+            cfg.resumption = 1;
+            cfg.obfuscated_age = c.ch_ticket_obfuscated_age(&ticket.ticket, values.ticket_age_ms);
+            cfg.ticket_age_ms = values.ticket_age_ms;
+            cfg.ticket_lifetime_s = ticket.ticket.lifetime_s;
+            cfg.ticket_epoch = ticket.ticket.epoch;
+            if (has_webpki) cfg.ticket_binding = &ticket.ticket.binding;
+        }
+        cfg.require_pq = @intFromBool(values.require_pq);
+        return cfg;
+    }
+};
+
+fn setPins(cfg: *c.ch_cfg, pins: []const SpkiPin) void {
+    cfg.spki_pins = if (pins.len == 0) null else @ptrCast(pins.ptr);
+    cfg.spki_pin_count = pins.len;
+}
+
+/// A NewSessionTicket (RFC 9846 §4.6.1) that outlives the session: the
+/// ch_ticket on_ticket received, by value, and the identity bytes it
+/// pointed at. A program that copies a Ticket owns zeroing that copy.
+pub const Ticket = struct {
+    /// The ch_ticket on_ticket received. Its identity pointer is null here,
+    /// because the bytes it named are valid during on_ticket alone. psk,
+    /// psk_len, age_add, lifetime_s, epoch and, under TRUST=webpki,
+    /// binding are read from it under their C names.
+    ticket: c.ch_ticket,
+    /// The identity bytes, ticket.identity_len of them, presented as psk_id.
+    identity: [c.CH_TICKET_ID_MAX]u8,
+
+    /// The fields fromFields takes. binding is the ticket's
+    /// ch_ticket.binding, which a TRUST=webpki object alone has.
+    pub const Fields = if (has_webpki) struct {
+        identity: []const u8,
+        psk: []const u8,
+        age_add: u32,
+        lifetime_s: u32,
+        epoch: u32 = 0,
+        binding: *const [c.SHA256_LEN]u8,
+    } else struct {
+        identity: []const u8,
+        psk: []const u8,
+        age_add: u32,
+        lifetime_s: u32,
+        epoch: u32 = 0,
+    };
+
+    /// A Ticket rebuilt from fields a program stored after an earlier
+    /// handshake, for a program that keeps its own ticket value across
+    /// connections and objects. It refuses an identity longer than
+    /// CH_TICKET_ID_MAX or a psk that is not a hash length this object
+    /// holds, SHA256_LEN or, where HKDF_HASH_MAX is SHA384_LEN, that too.
+    /// Setting ticket's fields by hand is not supported.
+    pub fn fromFields(fields: Fields) error{Invalid}!Ticket {
+        const psk_ok = fields.psk.len == c.SHA256_LEN or fields.psk.len == c.HKDF_HASH_MAX;
+        if (fields.identity.len > c.CH_TICKET_ID_MAX or !psk_ok) return error.Invalid;
+        var out: Ticket = .{ .ticket = std.mem.zeroes(c.ch_ticket), .identity = @splat(0) };
+        @memcpy(out.identity[0..fields.identity.len], fields.identity);
+        @memcpy(out.ticket.psk[0..fields.psk.len], fields.psk);
+        out.ticket.identity_len = fields.identity.len;
+        out.ticket.psk_len = fields.psk.len;
+        out.ticket.age_add = fields.age_add;
+        out.ticket.lifetime_s = fields.lifetime_s;
+        out.ticket.epoch = fields.epoch;
+        if (has_webpki) out.ticket.binding = fields.binding.*;
+        return out;
+    }
+
+    /// A copy of the ch_ticket on_ticket hands over, identity bytes and
+    /// all, or null for an identity longer than CH_TICKET_ID_MAX, which C
+    /// drops before on_ticket. The sessions' own on_ticket calls it.
+    pub fn fromOnTicket(ticket: *const c.ch_ticket) ?Ticket {
+        if (ticket.identity_len > c.CH_TICKET_ID_MAX or ticket.identity == null) return null;
+        var out: Ticket = .{ .ticket = ticket.*, .identity = @splat(0) };
+        @memcpy(out.identity[0..ticket.identity_len], ticket.identity[0..ticket.identity_len]);
+        out.ticket.identity = null;
+        return out;
+    }
+};
+
+/// An ecdsa_secp256r1_sha256 identity: srv.ecdsa_p256.
+pub const EcdsaP256Identity = if (has_server) struct {
+    /// DER certificates, leaf first: chain, chain_count.
+    chain: []const c.ch_cert,
+    /// The leaf's point X||Y: pub, pub_len.
+    public_key: *const [64]u8,
+    /// The private scalar, big-endian: priv, priv_len.
+    private_key: *const [32]u8,
+} else @compileError("EcdsaP256Identity needs ROLE=server or ROLE=both");
+
+/// An rsa_pss_rsae_sha256 identity: srv.rsa_pss.
+pub const RsaPssIdentity = if (has_server) struct {
+    /// DER certificates, leaf first: chain, chain_count.
+    chain: []const c.ch_cert,
+    /// The modulus, big-endian: pub, pub_len.
+    public_key: []const u8,
+    /// The modulus and the private exponent: priv, priv_len = @sizeOf(c.ch_rsa_priv).
+    private_key: *const c.ch_rsa_priv,
+} else @compileError("RsaPssIdentity needs ROLE=server or ROLE=both");
+
+/// What a server sets. Every slice and pointer is borrowed and must outlive
+/// the session.
+pub const Server = if (has_server) ServerValues else @compileError("Server needs ROLE=server or ROLE=both");
+const ServerValues = struct {
+    /// srv.ecdsa_p256; null leaves the slot unprovisioned.
+    ecdsa_p256: ?EcdsaP256Identity = null,
+    /// srv.rsa_pss; null leaves the slot unprovisioned.
+    rsa_pss: ?RsaPssIdentity = null,
+    /// The HelloRetryRequest cookie key: srv.cookie_key.
+    cookie_key: *const [c.CH_SRV_COOKIE_KEY_LEN]u8,
+    /// The key tickets are sealed under, null for no tickets: srv.ticket_key.
+    ticket_key: ?*const [c.CH_SRV_TICKET_KEY_LEN]u8 = null,
+    /// The caller's clock for this connection, 0 for none: srv.now_seconds.
+    now_seconds: u64,
+    /// Protocols to select from, in this server's order: alpn_protocols, alpn_count.
+    alpn: []const c.ch_alpn_protocol = &.{},
+    /// Refuse a ClientHello with no server_name: srv.require_server_name.
+    require_server_name: bool = false,
+    /// Suites in this server's order, empty for the default: srv.cipher_suites, cipher_suite_count.
+    cipher_suites: if (has_suite_order) []const Suite else void = if (has_suite_order) &.{} else {},
+
+    /// The ch_cfg these values set. error.Invalid for a chain longer than
+    /// chain_count's u8 holds, the width of a C field.
+    pub fn toCfg(values: ServerValues) error{Invalid}!c.ch_cfg {
+        var cfg = std.mem.zeroes(c.ch_cfg);
+        if (values.ecdsa_p256) |id| cfg.srv.ecdsa_p256 = .{
+            .chain = id.chain.ptr,
+            .chain_count = std.math.cast(u8, id.chain.len) orelse return error.Invalid,
+            .priv = id.private_key,
+            .priv_len = id.private_key.len,
+            .@"pub" = id.public_key,
+            .pub_len = id.public_key.len,
+        };
+        if (values.rsa_pss) |id| cfg.srv.rsa_pss = .{
+            .chain = id.chain.ptr,
+            .chain_count = std.math.cast(u8, id.chain.len) orelse return error.Invalid,
+            .priv = id.private_key,
+            .priv_len = @sizeOf(c.ch_rsa_priv),
+            .@"pub" = id.public_key.ptr,
+            .pub_len = id.public_key.len,
+        };
+        cfg.srv.cookie_key = values.cookie_key;
+        cfg.srv.ticket_key = if (values.ticket_key) |key| key else null;
+        cfg.srv.now_seconds = values.now_seconds;
+        cfg.alpn_protocols = if (values.alpn.len == 0) null else values.alpn.ptr;
+        cfg.alpn_count = values.alpn.len;
+        cfg.srv.require_server_name = @intFromBool(values.require_server_name);
+        if (has_suite_order) {
+            cfg.srv.cipher_suites = if (values.cipher_suites.len == 0) null else @ptrCast(values.cipher_suites.ptr);
+            cfg.srv.cipher_suite_count = values.cipher_suites.len;
+        }
+        return cfg;
+    }
+
+    /// ch_srv_check: each provisioned key signs, and the signature
+    /// verifies. It takes no session and runs no I/O.
+    pub fn check(values: ServerValues) error{Invalid}!void {
+        const cfg = try values.toCfg();
+        return fromCode(error{Invalid}, c.ch_srv_check(&cfg));
+    }
+};
+
+/// ch_tls.group's code points (cfg.h).
+pub const Group = enum(u16) {
+    x25519 = c.CH_GROUP_X25519,
+    x25519mlkem768 = c.CH_GROUP_X25519MLKEM768,
+    secp256r1 = c.CH_GROUP_SECP256R1,
+    _,
+};
+
+/// ch_tls.suite's and srv.cipher_suites' code points (suite.h).
+pub const Suite = enum(u16) {
+    chacha20_poly1305_sha256 = c.SUITE_CHACHA20_POLY1305_SHA256,
+    aes_128_gcm_sha256 = c.SUITE_AES_128_GCM_SHA256,
+    aes_256_gcm_sha384 = c.SUITE_AES_256_GCM_SHA384,
+    _,
+};
+
+/// ch_tls.state (session.h).
+pub const State = enum(u8) {
+    start = c.CH_ST_START,
+    connected = c.CH_ST_CONNECTED,
+    closed = c.CH_ST_CLOSED,
+    failed = c.CH_ST_FAILED,
+};
+
+/// ch_tls.server_cert_type (webpki_cfg.h).
+pub const CertType = if (has_webpki) enum(u8) {
+    x509 = c.CH_CERT_TYPE_X509,
+    raw_public_key = c.CH_CERT_TYPE_RAW_PUBLIC_KEY,
+    _,
+} else @compileError("CertType needs TRUST=webpki");
+
+/// ch_build_matches over this object's build record,
+/// ch_build_info_<transport> (build.h). Call it once at start. A test that
+/// checks a changed record calls chapulin.c.ch_build_matches with its own.
+pub fn buildMatches() bool {
+    const info = if (@hasDecl(c, "ch_build_info_quic_nonblocking"))
+        &c.ch_build_info_quic_nonblocking
+    else if (@hasDecl(c, "ch_build_info_tcp_nonblocking"))
+        &c.ch_build_info_tcp_nonblocking
+    else
+        &c.ch_build_info_tcp_blocking;
+    return c.ch_build_matches(info) == 1;
+}
+
+/// What ch_cfg.io points at in every session. context is the caller's, for
+/// ch_keylog: a session's init sets it to null, and the caller writes
+/// session.hook.context after init.
+pub const Hook = extern struct { context: ?*anyopaque = null };
+
+/// The caller's context, from the io argument ch_keylog receives (KEYLOG=on).
+pub const hookContext = if (@hasDecl(c, "ch_keylog")) hookContextOf else @compileError("hookContext needs KEYLOG=on");
+fn hookContextOf(io: ?*anyopaque) ?*anyopaque {
+    const hook: *const Hook = @ptrCast(@alignCast(io orelse return null));
+    return hook.context;
+}

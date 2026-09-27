@@ -1,0 +1,18 @@
+invariant: INV-36
+file: chapulin_record.zig
+catches: test/zig-build-check.sh
+reason: write seals the part of pt that output holds and reports success,
+  where it must refuse the whole write with error.Cap and seal nothing. A
+  caller that trusted the result would lose the rest of its plaintext
+  unannounced. loop_record.zig's write one byte past writableLen objects.
+
+--- old
+            if (pt.len > self.writableLen(output.len)) return error.Cap;
+            self.io.begin(&.{}, output);
+            defer self.io.end();
+            try chapulin.fromCode(error{ Proto, Cap, Io }, c.ch_write(&self.record.t, pt.ptr, pt.len));
+--- new
+            const fits = @min(pt.len, self.writableLen(output.len));
+            self.io.begin(&.{}, output);
+            defer self.io.end();
+            try chapulin.fromCode(error{ Proto, Cap, Io }, c.ch_write(&self.record.t, pt.ptr, fits));

@@ -1,0 +1,12 @@
+invariant: INV-36
+file: build.zig
+catches: test/zig-build-check.sh
+reason: the module "chapulin" no longer carries the object. Every program
+  in test/zig-consumer imports the module and adds no object of its own, as
+  docs/zig.md tells a program to, so each fails to link on the names the
+  object defines. pair.zig, matches.zig, unit.zig and loop.zig object.
+
+--- old
+    api.addObjectFile(object);
+--- new
+    _ = api;

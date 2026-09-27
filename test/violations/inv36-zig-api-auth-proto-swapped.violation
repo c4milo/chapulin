@@ -1,0 +1,15 @@
+invariant: INV-36
+file: chapulin.zig
+catches: test/zig-build-check.sh
+reason: the error table swaps CH_EPROTO and CH_EAUTH, so a chain the client
+  refused reads as the peer breaking the protocol, and the reverse. Both
+  leave the session dead, so nothing else notices. unit.zig's test of every
+  code and loop_record.zig's impostor anchor, which expects error.Auth,
+  object.
+
+--- old
+        error.Proto => c.CH_EPROTO,
+        error.Auth => c.CH_EAUTH,
+--- new
+        error.Proto => c.CH_EAUTH,
+        error.Auth => c.CH_EPROTO,

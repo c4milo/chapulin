@@ -2880,3 +2880,112 @@ does nothing more.
     - **Refusing a lifetime of 0 with `resumption` set.** Every
       configuration written before the field existed sets 0, so every
       resumption in them would be refused.
+73. **The Zig package's module `chapulin` is a Zig API that forwards to the
+    C calls and carries the object, and the translated headers are its
+    `chapulin.c`.** colibri and cocuyo each wrote an adapter over the
+    translated headers: callbacks, `ch_cfg` building, record framing and
+    error codes. Camilo approved an API that replaces them on 2026-09-26,
+    colibri and cocuyo reviewed its design, and entry 72 moved the three
+    computations it would otherwise have held into C. This entry amends
+    entry 69, whose dependents added the object themselves, and entry 70,
+    whose module becomes `chapulin.c`. docs/zig.md is the API's reference.
+
+    - **What it adds.** Values a session is configured from and the
+      `ch_cfg` each builds (`toCfg`), one Zig error per result code,
+      the callbacks C calls, which copy bytes between the caller's
+      slices and the session, and storage: the receive buffer, the
+      latest ticket and the peer's transport parameters. It is
+      chapulin.hpp's kind of wrapper. A record's length, a write's size
+      and a ticket's age come from `ch_record_whole_len`,
+      `ch_writable_len` and `ch_ticket_obfuscated_age`, so the API keeps
+      no TLS rule.
+    - **The module.** `build.zig` makes the translated headers a private
+      module, imported by the API as `chapulin_c` and declared as
+      `chapulin.c`, and roots the module `chapulin` at `chapulin.zig`.
+      Zig 0.16.0 refuses one file in two modules of one program, and
+      colibri imports the modules of two objects, so `build.zig` copies
+      the three files into a directory of each configuration's own, with
+      `defines.txt`, the object's define list, beside them.
+    - **The object.** The module carries it with `addObjectFile`. A
+      program links it once however many of its modules import the
+      module, and a program that also adds `chapulin.o` defines every
+      public name twice and fails to link. So `test/zig-consumer` adds no
+      object, and neither does the example in docs/building.md.
+    - **Per configuration.** Each file declares every call, and a call
+      whose C name the object lacks is a `@compileError` naming the
+      option that adds it. The headers declare the client's
+      `ch_record_init` and `ch_quic_init` in a `ROLE=server` object too,
+      which defines neither, so the client sessions also require the
+      client's ticket call, which `ticket.h` declares by role. A TCP
+      object's `Error` lacks `Discard` and `AeadLimit`, whose codes only
+      a QUIC object's headers declare.
+    - **Error sets.** Each call's set is the part of `chapulin.Error` its
+      C call returns, which a reading of every return path confirmed for
+      the 22 calls that return a code. `fromCode` maps a code, and panics
+      on one the call's header says it never returns. It is public, for a
+      program that calls a function the API leaves out.
+    - **Reading and writing.** `read` passes at most one whole record to
+      `ch_read`, and its `consumed` is 0, a record, or the 5-byte header
+      of a record no peer may send, which `ch_read` then refuses.
+      `ch_read` answers every KeyUpdate in a record that asks for one,
+      so `reply` takes k records of `key_update_record_len` bytes, and
+      one of `alert_record_len` when the read fails. `write` is all or
+      nothing: it seals nothing when `pt` is longer than
+      `ch_writable_len` allows. `close` is `ch_close`, which sends the
+      close_notify and wipes the keys.
+    - **Tickets.** A Ticket holds the `ch_ticket` by value and the
+      identity bytes, so `ch_ticket_obfuscated_age` takes it as it is and
+      `sizeof_ch_ticket` in the build record covers it. `takeTicket`,
+      `recordClose` and the QUIC `close` zero the slot.
+      `Ticket.fromFields` rebuilds one from stored fields, and
+      `Ticket.fromOnTicket` copies what `on_ticket` hands over.
+    - **The reserved `keyUpdate`.** No C call starts a record-mode
+      KeyUpdate, so a record session's `keyUpdate` is a `@compileError`.
+      When C gains the call, RFC 9846 §4.7.3's cap on updates sent gets a
+      result of its own.
+    - **The design's open questions.** Entry 72 settled the first two: the
+      age is 64 bits wide in `ch_cfg` and in `ch_ticket_obfuscated_age`,
+      so the Zig passes it whole and truncates nothing, and the call
+      reads `age_add` alone, so a ticket whose identity pointer is null
+      serves. Camilo decided the third: stompy's object, `TX_RECORD=16384`,
+      runs in `check`.
+    - **The check (INV-36).** `test/zig-build-check.sh` now builds six
+      configurations, stompy's among them, and for each runs `unit.zig`,
+      the API's unit tests, and for each `ROLE=both` object `loop.zig`, a
+      client and a server of that object against each other through the
+      API alone, in record mode and over QUIC. The loops take the r2
+      chain, its anchor, its clock and its leaf key from
+      `test/webpki_corpus.h`, the fixture the C loop tests use, through a
+      translate-c step. Seven mutants break the API or the module, and
+      the script catches each.
+
+    Cost:
+
+    - About 1,150 lines of Zig in the three files, each under 500, and
+      about 1,170 in `test/zig-consumer`. A change to a public C call
+      changes its Zig call in the same commit, as `chapulin.hpp` is kept.
+    - `lint-zig-build` builds one more configuration and runs more
+      programs. With every object built, `test/zig-build-check.sh` took
+      4.2 and 5.1 s where it took 3.65 s; with no Zig build, 41.1 and
+      41.7 s where it took 35.2 s, on an M-series Mac with a load
+      average between 7 and 14.
+    - A program's two objects give two sets of types, so a program that
+      serves both converts its own values once per object.
+
+    Gain: colibri, cocuyo and stompy run chapulin through Zig values and
+    errors, with no callback and no `ch_cfg` of their own, and the code
+    that did that work in three programs is tested here against both
+    roles of the objects they link.
+
+    Rejected:
+
+    - **Keeping `chapulin` as the translated module and exporting the API
+      as a second module.** colibri's two imports would stay as they are,
+      but the package's own name would keep naming the headers rather
+      than the API, and a program would still add the object.
+    - **The API's unit tests as `test` blocks in its own files.** Zig runs
+      a module's tests only when that module is the test's root, and the
+      API's files cannot define the hooks the object imports, so the
+      tests would need a second copy of the module. They sit in
+      `test/zig-consumer/unit.zig`, over the public calls, and run
+      against each configuration's module.

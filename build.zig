@@ -11,11 +11,13 @@
 //! for `make lib`, and tools/localize_symbols.zig then makes every defined
 //! symbol local except PUBLIC, as `objcopy -G` and `nmedit -s` do.
 //!
-//! A dependent gets the named lazy path "chapulin.o", the localized object;
-//! the module "chapulin", which translate-c makes from the public headers
-//! under the defines the object compiled with (docs/decisions.md 70); and
-//! "include", the directory of the headers, for a dependent that compiles
-//! them as C. It calls ch_build_matches once (build.h).
+//! A dependent gets the module "chapulin", the Zig API (docs/zig.md), which
+//! carries the object and declares the public headers as chapulin.c,
+//! translated by translate-c under the defines the object compiled with
+//! (docs/decisions.md 70 and 73); the named lazy path "chapulin.o", the
+//! localized object, for a program that compiles the headers as C; and
+//! "include", the directory of the headers. It calls
+//! chapulin.buildMatches once (build.h).
 const std = @import("std");
 
 const Transport = enum { @"tcp-blocking", @"tcp-nonblocking", @"quic-nonblocking" };
@@ -60,7 +62,7 @@ const Names = []const []const u8;
 
 /// LIB_SRCS, LIB_DEF with the hardware statements after it, PUBLIC, and
 /// the headers that declare PUBLIC's names and the hooks the object
-/// imports, which the module "chapulin" is translated from.
+/// imports, which chapulin.c is translated from.
 const Plan = struct { srcs: Names, defs: Names, public: Names, headers: Names };
 
 /// What one axis block of the Makefile sets: its defines, the sources it
@@ -154,7 +156,7 @@ const Declaration = struct { header: []const u8, names: Names };
 
 /// The header that declares each name an object can export, under the name
 /// the header declares, and each hook an object can import from the image
-/// (docs/porting.md). The module is translated from the headers of the
+/// (docs/porting.md). chapulin.c is translated from the headers of the
 /// names one object exports and imports, in this order, and a name missing
 /// here stops the build (headersDeclaring).
 const declarations = [_]Declaration{
@@ -271,13 +273,13 @@ pub fn build(b: *std.Build) void {
     // make lib compiles with -I. at the root, where every header sits.
     b.addNamedLazyPath("include", b.path(""));
 
-    // The module "chapulin": the headers of the plan, translated by
-    // translate-c for the object's target and optimize mode under the
-    // defines in flags, so a dependent's types have the object's layout
-    // (docs/decisions.md 70). chapulin.h is written here and includes each
-    // header. Nothing runs the translation until a dependent imports the
-    // module. The module sets no target and no optimize mode, so it takes
-    // both from the module that imports it.
+    // The headers of the plan, translated by translate-c for the object's
+    // target and optimize mode under the defines in flags, so a dependent's
+    // types have the object's layout (docs/decisions.md 70). chapulin.h is
+    // written here and includes each header. Nothing runs the translation
+    // until a dependent imports the module below. Neither module sets a
+    // target or an optimize mode, so each takes both from the module that
+    // imports it.
     const translate = b.addTranslateC(.{
         .root_source_file = b.addWriteFiles().add("chapulin.h", includes(b, plan.headers)),
         .target = target,
@@ -287,10 +289,32 @@ pub fn build(b: *std.Build) void {
     for (flags) |flag| {
         if (std.mem.startsWith(u8, flag, "-D")) translate.defineCMacroRaw(flag["-D".len..]);
     }
-    _ = b.addModule("chapulin", .{ .root_source_file = translate.getOutput(), .link_libc = true });
+    const translated = b.createModule(.{ .root_source_file = translate.getOutput(), .link_libc = true });
+
+    // The module "chapulin": the Zig API (chapulin.zig, docs/zig.md), which
+    // imports the translated headers as "chapulin_c" and declares them as
+    // chapulin.c. Zig refuses one file in two modules of one program, and
+    // a program that links objects of two transports imports two of these
+    // modules, so the API's files are copied into a directory of this
+    // configuration's own. defines.txt, the object's define list, is what
+    // makes two configurations' directories differ (docs/decisions.md 73).
+    const api_files = b.addWriteFiles();
+    const root = api_files.addCopyFile(b.path("chapulin.zig"), "chapulin.zig");
+    _ = api_files.addCopyFile(b.path("chapulin_record.zig"), "chapulin_record.zig");
+    _ = api_files.addCopyFile(b.path("chapulin_quic.zig"), "chapulin_quic.zig");
+    _ = api_files.add("defines.txt", lines(b, plan.defs));
+    const api = b.addModule("chapulin", .{
+        .root_source_file = root,
+        .imports = &.{.{ .name = "chapulin_c", .module = translated }},
+    });
+    // The module carries the object, so a program links it by importing
+    // the module, once however many of its modules import it, and adds no
+    // object of its own: a second addObjectFile of the same object defines
+    // every public name twice.
+    api.addObjectFile(object);
 
     // What make lint-zig-build compares with make print-lib-srcs and make
-    // print-lib-def, one name per line, and the headers the module is
+    // print-lib-def, one name per line, and the headers chapulin.c is
     // translated from, which tools/public-constants.py reads.
     const lists = b.addWriteFiles();
     const lists_step = b.step("lib-lists", "Install lib-srcs.txt, lib-def.txt and lib-headers.txt, the object's sources, defines and public headers");

@@ -95,10 +95,14 @@ cc -std=c11 -DCH_RAND_EXTERN -I path/to/chapulin app.c \
 Call `ch_build_matches(&ch_build)` once at startup: it returns 0 when your
 flags and the object's differ ([`docs/building.md`](docs/building.md)).
 
-A Zig project (Zig 0.16.0) can depend on chapulin as a package and get the
-same object, with a module of the headers translated under the object's
-defines; [`docs/building.md`](docs/building.md) shows the
-`build.zig.zon` dependency and its options.
+A Zig project (Zig 0.16.0) can depend on chapulin as a package. Its
+module `chapulin` is a Zig API over the same object, as `chapulin.hpp` is
+for C++: sessions a program places in its own memory, values in place of
+`ch_cfg`, and Zig errors in place of result codes. The module carries the
+object, and `chapulin.c` holds the headers translated under the object's
+defines. [`docs/zig.md`](docs/zig.md) is the API's reference, and
+[`docs/building.md`](docs/building.md) shows the `build.zig.zon`
+dependency and its options.
 
 [`examples/`](examples/) has complete programs for each trust mode, and
 `make examples-check` builds them. [`docs/usage.md`](docs/usage.md)
@@ -200,6 +204,7 @@ macOS is the development host. For another platform, start with
 | --- | --- |
 | [`docs/usage.md`](docs/usage.md) | The public calls, each mode's configuration, the server role and QUIC |
 | [`docs/building.md`](docs/building.md) | Makefile targets and every build variable |
+| [`docs/zig.md`](docs/zig.md) | The Zig API: values, sessions, errors and what it leaves to `chapulin.c` |
 | [`docs/trust-modes.md`](docs/trust-modes.md) | How a client authenticates the server, mode by mode |
 | [`docs/performance.md`](docs/performance.md) | Memory, stack, speed and flash for each build |
 | [`docs/verification.md`](docs/verification.md) | What is proved, at what bound, and what is only tested |

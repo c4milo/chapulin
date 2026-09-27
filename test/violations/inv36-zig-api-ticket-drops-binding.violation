@@ -1,0 +1,14 @@
+invariant: INV-36
+file: chapulin.zig
+catches: test/zig-build-check.sh
+reason: Ticket.fromOnTicket zeroes the ticket's binding when it copies what
+  on_ticket handed over, so a TRUST=webpki ticket no longer names the
+  configuration that received it and init refuses to resume with it. The
+  full handshake still completes, so only a resumption notices.
+  loop_record.zig and loop_quic.zig resume the ticket they took, and object.
+
+--- old
+        out.ticket.identity = null;
+--- new
+        out.ticket.identity = null;
+        if (@hasField(c.ch_ticket, "binding")) out.ticket.binding = @splat(0);

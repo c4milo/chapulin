@@ -1,5 +1,6 @@
-// test/zig-build-check.sh copies this directory to bin/zig/consumer and
-// the package into bin/zig/consumer/package, which the path below names.
+// test/zig-build-check.sh copies this directory and test/webpki_corpus.h
+// to bin/zig/consumer, and the package into bin/zig/consumer/package,
+// which the path below names.
 .{
     .name = .zig_consumer,
     .version = "0.0.0",
@@ -11,8 +12,14 @@
     .paths = .{
         "build.zig",
         "build.zig.zon",
+        "fixture.zig",
         "hooks.zig",
+        "loop.zig",
+        "loop_quic.zig",
+        "loop_record.zig",
         "matches.zig",
         "pair.zig",
+        "unit.zig",
+        "webpki_corpus.h",
     },
 }

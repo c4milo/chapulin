@@ -1,0 +1,13 @@
+invariant: INV-36
+file: chapulin.zig
+catches: test/zig-build-check.sh
+reason: Client.toCfg leaves ch_cfg.ticket_age_ms at 0, so C judges every
+  ticket as one that arrived this millisecond and offers a stale ticket
+  that RFC 9846 section 4.3.11.1 forbids. obfuscated_age still carries the
+  age, so the hello looks right. unit.zig's field-by-field toCfg test and
+  the stale-ticket rows of loop.zig object.
+
+--- old
+            cfg.ticket_age_ms = values.ticket_age_ms;
+--- new
+            cfg.ticket_age_ms = 0;

@@ -10,7 +10,7 @@ BARE = re.compile(r'(?<![\w/])#(\d{1,3})\b(?![0-9a-fA-F])')
 MD_LINK = re.compile(r'\]\(https://github\.com/c4milo/chapulin/issues/\d+\)')
 URL = "https://github.com/c4milo/chapulin/issues/"
 
-files = subprocess.run(["git", "ls-files", "*.c", "*.h", "*.md", "*.sh",
+files = subprocess.run(["git", "ls-files", "*.c", "*.h", "*.md", "*.sh", "*.zig",
                         "*.py", "Makefile", "*.yml"],
                        capture_output=True, text=True).stdout.split()
 rc = 0

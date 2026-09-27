@@ -336,15 +336,19 @@ A program in another language reads the same symbol. `ch_build_info` is twelve
 `uint32_t` fields with no padding, and each `CH_BUILD_` macro is the value
 your defines give the field of the same name. Compare `version` first and the
 other fields only when it matches. A Zig program that depends on the
-package imports its module `chapulin`, which translate-c makes from the
-headers under the object's own defines (`docs/building.md`), and calls the
-same predicate on the transport's record. Zig's translate-c turns the
+package imports its module `chapulin`, the Zig API (`docs/zig.md`), whose
+`buildMatches()` calls the same predicate on its own object's record. The
+module's `chapulin.c` holds the headers, which translate-c makes under the
+object's own defines (`docs/building.md`). Zig's translate-c turns the
 `ch_build` macro into a constant that Zig refuses to evaluate, because its
-value is an extern variable, so write the record's own name:
+value is an extern variable, so a program that calls the predicate itself
+writes the record's own name:
 
 ```zig
-const c = @import("chapulin");
+const chapulin = @import("chapulin");
+const c = chapulin.c;
 
+if (!chapulin.buildMatches()) return error.ChapulinBuildMismatch;
 if (c.ch_build_matches(&c.ch_build_info_tcp_nonblocking) == 0) return error.ChapulinBuildMismatch;
 ```
 
@@ -375,8 +379,9 @@ call:
 Compile the calls to each object in a translation unit of its own, under that
 object's defines. The two objects' headers disagree about `ch_cfg` and
 `ch_tls`, so no one translation unit can include both. Each unit calls
-`ch_build_matches(&ch_build)` and reads its own object's record. In Zig, use
-one `@cImport` per object and each one's record name.
+`ch_build_matches(&ch_build)` and reads its own object's record. In Zig,
+import each object's module under a name of its own, and each module's
+`buildMatches()` reads its own object's record (`docs/zig.md`).
 
 Two pairs do not link, and the linker's duplicate-symbol error is the
 refusal:
@@ -417,7 +422,11 @@ chapulin through colibri:
   library calls it from whichever thread runs the session and holds no lock
   around it, so calls can overlap. A hook over state held per thread needs
   nothing more; a hook over one AES peripheral shared by every thread
-  arbitrates access to it itself.
+  arbitrates access to it itself. `ch_keylog`'s first argument is
+  `cfg.io`. A Zig program whose sessions run through the API does not own
+  `cfg.io`, so it writes its context into `session.hook.context` after
+  `init`, and its `ch_keylog` reads it back with
+  `chapulin.hookContext(io)` (`docs/zig.md`).
 
 The library calls `ch_rand_bytes` at these points and no others:
 

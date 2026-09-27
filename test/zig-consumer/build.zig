@@ -1,13 +1,20 @@
 //! A Zig project that depends on chapulin as colibri does, which
 //! test/zig-build-check.sh builds against the staged package
-//! (docs/decisions.md 70). Each object is a dependency whose options come
-//! from one row of the script's configurations, and each program imports
-//! that dependency's module "chapulin" and links its object "chapulin.o".
+//! (docs/decisions.md 70 and 73). Each object is a dependency whose
+//! options come from one row of the script's configurations, and each
+//! program imports that dependency's module "chapulin", which carries the
+//! object. No program adds the object itself.
 //!
 //! - `zig build -Dobject=ROW -Dexport=NAME... -Dconstant=NAME...`
 //!   installs bin/matches, matches.zig built against one object, which
-//!   requires the module to declare each export and to declare and
-//!   evaluate each constant.
+//!   requires chapulin.c to declare each export and to declare and
+//!   evaluate each constant, and bin/unit, the tests in unit.zig built
+//!   against the same object.
+//! - Adding `-Dloop` also installs bin/loop, loop.zig built against that
+//!   object, which must be ROLE=both: a client and a server of it run
+//!   against each other through the API. It reads the r2 chain, its
+//!   anchor and the leaf key from webpki_corpus.h, which the script
+//!   copies from test/.
 //! - `zig build -Dh2=ROW -Dquic=ROW` installs bin/pair, pair.zig built
 //!   against colibri's tcp-nonblocking object and its QUIC object in one
 //!   image.
@@ -45,20 +52,27 @@ const Import = struct { name: []const u8, dependency: *std.Build.Dependency };
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
-    const object = b.option([]const u8, "object", "The options of the object matches.zig links");
+    const object = b.option([]const u8, "object", "The options of the object matches.zig, unit.zig and loop.zig link");
+    const loop = b.option(bool, "loop", "Also install bin/loop; the object must be ROLE=both") orelse false;
     const h2 = b.option([]const u8, "h2", "The options of the tcp-nonblocking object pair.zig links");
     const quic = b.option([]const u8, "quic", "The options of the QUIC object pair.zig links");
     if (object == null and (h2 == null or quic == null)) {
         std.process.fatal("name -Dobject, or -Dh2 and -Dquic", .{});
     }
     if (object) |row| {
+        const chapulin = b.dependency("chapulin", options(target, row));
+        const imports = [_]Import{.{ .name = "chapulin", .dependency = chapulin }};
         const exports = b.addOptions();
         exports.addOption([]const []const u8, "names", b.option([]const []const u8, "export", "A name the object exports") orelse &.{});
         exports.addOption([]const []const u8, "constants", b.option([]const []const u8, "constant", "A length or cap a public header names") orelse &.{});
-        const matches = program(b, "matches", target, optimize, &.{
-            .{ .name = "chapulin", .dependency = b.dependency("chapulin", options(target, row)) },
-        });
+        const matches = program(b, "matches", target, optimize, &imports);
         matches.addOptions("exports", exports);
+        const unit = b.addTest(.{ .name = "unit", .root_module = module(b, "unit", target, optimize, &imports) });
+        b.installArtifact(unit);
+        if (loop) {
+            const corpus = b.addTranslateC(.{ .root_source_file = b.path("webpki_corpus.h"), .target = target, .optimize = optimize });
+            program(b, "loop", target, optimize, &imports).addImport("corpus", corpus.createModule());
+        }
     }
     if (h2 != null and quic != null) {
         _ = program(b, "pair", target, optimize, &.{
@@ -68,21 +82,24 @@ pub fn build(b: *std.Build) void {
     }
 }
 
-/// Installs NAME.zig as bin/NAME, with each dependency's module imported
-/// under its name and each dependency's object linked, and returns the
-/// program's root module.
-fn program(b: *std.Build, name: []const u8, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode, imports: []const Import) *std.Build.Module {
-    const module = b.createModule(.{
+/// The module of NAME.zig, with each dependency's module "chapulin"
+/// imported under its name. That module carries the dependency's object,
+/// so the program links it with no addObjectFile of its own.
+fn module(b: *std.Build, name: []const u8, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode, imports: []const Import) *std.Build.Module {
+    const out = b.createModule(.{
         .root_source_file = b.path(b.fmt("{s}.zig", .{name})),
         .target = target,
         .optimize = optimize,
     });
-    for (imports) |import| {
-        module.addImport(import.name, import.dependency.module("chapulin"));
-        module.addObjectFile(import.dependency.namedLazyPath("chapulin.o"));
-    }
-    b.installArtifact(b.addExecutable(.{ .name = name, .root_module = module }));
-    return module;
+    for (imports) |import| out.addImport(import.name, import.dependency.module("chapulin"));
+    return out;
+}
+
+/// Installs NAME.zig as bin/NAME and returns the program's root module.
+fn program(b: *std.Build, name: []const u8, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode, imports: []const Import) *std.Build.Module {
+    const root = module(b, name, target, optimize, imports);
+    b.installArtifact(b.addExecutable(.{ .name = name, .root_module = root }));
+    return root;
 }
 
 /// The options one row names.
