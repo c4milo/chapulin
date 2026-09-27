@@ -87,8 +87,9 @@ static int psk_configured(const ch_cfg *cfg) {
 }
 
 // Every rule a client configuration must keep whatever drives it. The I/O
-// callbacks are not among them: the blocking driver requires both and
-// TRANSPORT=tcp-nonblocking refuses both, so each caller checks that itself.
+// callbacks are not among them: the blocking driver's ch_connect and
+// TRANSPORT=tcp-nonblocking's ch_record_init each require both, and each
+// checks that itself.
 int tlsi_config_ok(const ch_cfg *cfg) {
     // Exactly one auth mode: a config carrying both a PSK and a pin is a
     // provisioning mistake and gets rejected, not silently resolved.

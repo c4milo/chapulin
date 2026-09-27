@@ -148,7 +148,10 @@ Home: github.com/c4milo.
   webpki build's chain walk and hostname check) ←
   `handshake.[ch]` (client state machine) ←
   `handshake_post.[ch]` (NewSessionTicket and KeyUpdate, the messages
-  that arrive after the handshake) ← `tls.[ch]`
+  that arrive after the handshake) with `ticket.h` (the resumption
+  ticket `on_ticket` hands over, `ch_ticket_obfuscated_age` and the
+  seven-day cap; `cfg.h` includes it and `handshake_post.c` defines its
+  one call) ← `tls.[ch]`
   (public API) ← demo/test mains. Firmware takes everything below
   `tls.[ch]` as-is and supplies I/O callbacks and `ch_rand_bytes`. A Zig
   project takes the same object through `build.zig`, whose options are
@@ -344,8 +347,9 @@ Home: github.com/c4milo.
   `record_size_limit` still lowers it, and a QUIC build refuses it.
 - RFC MUSTs we keep even though this is minimal, per role. A client:
   HelloRetryRequest handling, KeyUpdate receipt, NewSessionTicket
-  parse-and-expose (resumption is just another PSK here), RFC 9257
-  binder discipline. A server: HelloRetryRequest generation under an
+  parse-and-expose (resumption is just another PSK here), a ticket older
+  than its lifetime or seven days refused before a byte is sent, RFC
+  9257 binder discipline. A server: HelloRetryRequest generation under an
   integrity-protected cookie, the dummy change_cipher_spec a client's
   non-empty session id obliges, KeyUpdate receipt, and a binder checked
   in constant time over the truncated ClientHello before it accepts one
