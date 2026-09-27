@@ -2692,8 +2692,8 @@ does nothing more.
       object, and check-slow's Zig roster builds that object both ways.
       Five mutants in `test/violations/` break the rules:
       `inv19-srv-frag-sized-by-tx-record`, which the loop catches, and
-      `inv14-tx-record-past-2-14`, `inv14-tx-record-quic-accepted`,
-      `inv14-tx-record-makefile-quic-accepted` and
+      `inv38-tx-record-past-2-14`, `inv38-tx-record-quic-accepted`,
+      `inv38-tx-record-makefile-quic-accepted` and
       `inv36-zig-build-tx-record-past-2-14`, which the script catches.
 
     Cost:

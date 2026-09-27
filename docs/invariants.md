@@ -845,9 +845,9 @@ last `ROLE=server` stub, as the entry said it would.
   outside it does not compile. Tests and mutants for the rest:
   - `test/tx-record-builds.sh` compiles the headers at 511, 512, 16384
     and 16385 and under QUIC, and runs the same values through make and
-    `build.zig`. `inv14-tx-record-past-2-14`,
-    `inv14-tx-record-quic-accepted`,
-    `inv14-tx-record-makefile-quic-accepted` and
+    `build.zig`. `inv38-tx-record-past-2-14`,
+    `inv38-tx-record-quic-accepted`,
+    `inv38-tx-record-makefile-quic-accepted` and
     `inv36-zig-build-tx-record-past-2-14` require it to fail.
   - `bin/webpki_loop_tx_record` sends `CH_TX_PT` bytes as one record
     and `CH_TX_PT + 1` as two, and a server writing to a client whose
