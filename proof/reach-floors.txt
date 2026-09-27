@@ -83,7 +83,7 @@ eeparse_alpn 33.3
 # outside the epoch arm it drives, so the share fell with the arm reached
 # whole. Local reading after that change, cbmc 6.11.0 on arm64 macOS.
 epoch 34.4
-handshake_record 87.3
+handshake_record 85.5
 hello_build 76.9
 hkdf 52.3
 hybrid_secret 16.6
