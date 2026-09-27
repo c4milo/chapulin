@@ -1,0 +1,17 @@
+invariant: INV-10
+file: tls_write.c
+catches: webpki_loop_aes_extern
+reason: at the ceiling ch_write moves its write direction to the next key
+  without sending the KeyUpdate, the mechanism docs/server.md once named.
+  The peer never rekeys its read direction, so the next record does not
+  open there, and the tcp-nonblocking loop's reader fails with
+  bad_record_mac.
+
+--- old
+    int rc = hspost_send_key_update(t);
+    if (rc != CH_OK) {
+--- new
+    rec_dir_update(t->wr_secret, &t->wr);
+    t->send_epochs++;
+    int rc = CH_OK;
+    if (rc != CH_OK) {

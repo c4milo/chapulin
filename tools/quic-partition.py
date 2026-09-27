@@ -314,7 +314,7 @@ def main(argv):
     shared = [f for f in names["QUIC_SHARED"] if (ROOT / f).exists()]
     quic = [p for p in run("git", "ls-files", "quic*") if "/" not in p]
     roots = [p for p in run("git", "ls-files", "*.c", "*.h") if "/" not in p]
-    # A QUIC object compiles neither list: QUIC_REPLACED names the five
+    # A QUIC object compiles neither list: QUIC_REPLACED names the six
     # sources the mode replaces outright, QUIC_PENDING the four that owe an
     # arm they do not have yet. Asking what those contribute under the
     # define reads text no build compiles -- three of them do not even

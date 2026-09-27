@@ -117,6 +117,14 @@ int rec_seal(rec_dir *d, uint8_t type, const uint8_t *pt, size_t n, uint8_t *out
     if (d->seq == UINT64_MAX) {
         return -1; // RFC 9846 §5.3: stop before the next increment could wrap
     }
+#ifdef CH_SUITE_AES_GCM
+    // RFC 9846 §5.5: an AES-GCM key seals no record at or past its ceiling
+    // (record.h). ch_write sends the KeyUpdate before it, so this refusal
+    // is the rule itself, for any path that would seal past it.
+    if (suite_runs_aes_gcm(d->suite) && d->seq >= REC_AES_GCM_RECORDS_MAX) {
+        return -1;
+    }
+#endif
     size_t body = n + 1 + AEAD_TAG; // inner type byte + tag
     if (body > 0x4000 + 256 || REC_HDR + body > cap) {
         return -1;

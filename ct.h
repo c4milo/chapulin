@@ -108,7 +108,7 @@ void ct_wipe(void *p, size_t n);
 // INV-26 in docs/invariants.md states the bound these keep and what the
 // refused build would still owe. test/quic-builds.sh is the catch target.
 #ifdef CH_SUITE_AES_GCM
-#if defined(CH_AES_HW)
+#ifdef CH_AES_HW
 #ifndef CH_NATIVE_AES
 #error "CH_SUITE_AES_GCM on AES=hw needs -DCH_NATIVE_AES: the build asserts the timing (aes_hw.c)"
 #endif

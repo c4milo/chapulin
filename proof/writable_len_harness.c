@@ -1,4 +1,4 @@
-// Proves: ch_writable_len (tls.c) is memory-safe and UB-free for any
+// Proves: ch_writable_len (tls_write.c) is memory-safe and UB-free for any
 // peer_limit a uint16_t holds and any cap a size_t holds. And its answer
 // is the most plaintext the real ch_write sends in cap bytes, at a bound:
 // for every cap up to three whole records of CH_TX_PT bytes and one byte
@@ -63,7 +63,7 @@ void tlsi_fail(ch_tls *t, uint8_t description) {
     __CPROVER_assert(0, "tlsi_fail unreachable: every seal and send succeeds");
 }
 
-#include "tls.c"
+#include "tls_write.c"
 
 // The largest cap the ch_write half takes: three whole records at
 // CH_TX_PT and one byte, which 11 bits hold at the default CH_TX_PT.

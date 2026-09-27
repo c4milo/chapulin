@@ -79,7 +79,7 @@ const srcs = [_][]const u8{
     "keysched.c",            "io.c",               "handshake_message.c", "handshake_parser.c",
     "handshake_parser_ee.c", "handshake_record.c", "session.c",           "handshake_auth.c",
     "handshake_flight.c",    "handshake.c",        "handshake_post.c",    "tls.c",
-    "softmul.c",             "build.c",
+    "tls_write.c",           "softmul.c",          "build.c",
 };
 
 // The Makefile's named lists, each under its Makefile name.
@@ -104,7 +104,7 @@ const webpki_srcs = [_][]const u8{
 const webpki_chain_srcs = [_][]const u8{ "sha512.c", "sha512_compress.c", "p384.c", "p384_field.c", "rsa_pkcs1.c" };
 const p256_ecdh_srcs = [_][]const u8{ "p256_ecdh.c", "p256_point.c", "p256_scalar.c", "p256_field.c" };
 const webpki_kex_srcs = [_][]const u8{"handshake_groups.c"} ++ p256_ecdh_srcs;
-const quic_replaced = [_][]const u8{ "io.c", "record.c", "session.c", "handshake.c", "tls.c" };
+const quic_replaced = [_][]const u8{ "io.c", "record.c", "session.c", "handshake.c", "tls.c", "tls_write.c" };
 const kex_hybrid_srcs = [_][]const u8{ "sha3.c", "mlkem.c", "mlkem_poly.c" };
 /// TRUST_FILTER's first four names, which every mode but webpki and the
 /// ca modes filters out.

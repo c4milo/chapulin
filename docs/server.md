@@ -2481,10 +2481,16 @@ same for all three suites.
 One new send-side rule arrives with GCM. `rfc9846.txt:3743-3744` requires
 closing or rekeying before the key-usage limit, and `rfc9846.txt:3750-3751`
 gives AES-GCM's as "up to 2^24.5 full-size records (about 24 million)" — a
-limit ChaCha20-Poly1305 never made anyone think about. `rec_seal` gains a
-per-suite ceiling beside its existing wrap guard at `record.c:33`, and the
-session rekeys with `rec_dir_update` before that count.
-`rfc9846.txt:3747-3748` is explicit that the limit is not enforced on receipt.
+limit ChaCha20-Poly1305 never made anyone think about. An AES-GCM write key
+seals at most `REC_AES_GCM_RECORDS_MAX` records, 2^24 (`record.h`), counted
+whatever their size. `ch_write` (`tls_write.c`), which both roles share,
+sends a KeyUpdate with request_update 0 at the key's last sequence number,
+under that key, then moves the write direction to the next key before it
+seals the record that follows. `rec_seal` refuses a record at or past the
+ceiling beside its wrap guard, so no path seals past it. Moving to the next
+key without that KeyUpdate would leave the peer reading under the old one
+(docs/decisions.md 78). `rfc9846.txt:3747-3748` is explicit that the limit
+is not enforced on receipt.
 
 ## Considered and rejected
 

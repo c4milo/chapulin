@@ -43,6 +43,16 @@ int ch_connect(ch_tls *t, const ch_cfg *cfg);
 // that CH_EPROTO leaves running. Every other error, a record it cannot
 // seal (CH_ECAP) or a send that fails (CH_EIO), leaves the session dead,
 // after it tries to send internal_error, which ch_alert_sent names.
+//
+// A write key that runs AES-GCM, which only a SUITE=aesgcm build has,
+// seals at most REC_AES_GCM_RECORDS_MAX records (record.h, RFC 9846
+// §5.5). When the next record of a write would be the last of those,
+// ch_write sends a KeyUpdate record in its place: request_update 0,
+// CH_KEY_UPDATE_RECORD_LEN bytes under the old key. It seals that next
+// record and the rest of the write under the next key. RFC 9846 §4.7.3
+// lets a sender send 2^48 - 1 KeyUpdates, and a key at its ceiling after
+// that many cannot be replaced: that write returns CH_ECAP and leaves the
+// session dead, after it tries to send internal_error under the old key.
 int ch_write(ch_tls *t, const uint8_t *p, size_t n);
 
 // The most plaintext one ch_write seals into cap bytes of records, so a
@@ -56,8 +66,18 @@ int ch_write(ch_tls *t, const uint8_t *p, size_t n);
 // cannot hold a record of one byte, and 0 for a session whose peer_limit
 // is 0, which no connected session has.
 //
-// It reads t->peer_limit and nothing else. ch_write still refuses a
-// session that is not connected, whatever this answers.
+// Under an AES-GCM write key, when those records would take the key to
+// its ceiling, ch_write sends one KeyUpdate record among them,
+// CH_KEY_UPDATE_RECORD_LEN bytes (above), and this counts it. It counts
+// one KeyUpdate and no second: it answers at most the plaintext of the
+// records the key has left and REC_AES_GCM_RECORDS_MAX - 1 records under
+// the next key, so a write it sizes crosses the ceiling once at most. At
+// the smallest record a peer may ask for, 63 bytes of plaintext, that is
+// still more than a gigabyte.
+//
+// It reads t->peer_limit, and under SUITE=aesgcm the write key's suite
+// and sequence number, and nothing else. ch_write still refuses a session
+// that is not connected, whatever this answers.
 size_t ch_writable_len(const ch_tls *t, size_t cap);
 
 // The wire length of one sealed alert record, 24 bytes: REC_OVERHEAD and
@@ -72,12 +92,13 @@ size_t ch_writable_len(const ch_tls *t, size_t cap);
 
 // The wire length of one sealed KeyUpdate record, 27 bytes: REC_OVERHEAD,
 // the 4-byte handshake header and the 1-byte request_update (RFC 9846
-// §4.7.3). ch_read sends one for each KeyUpdate whose sender asked for an
-// answer, and a failure in the same call adds one alert record. A record
-// carries at most one KeyUpdate, as its last message: RFC 9846 §5.1 lets
-// no handshake message span the key change it makes, so ch_read refuses a
-// record with bytes after a KeyUpdate (INV-39), and each record it reads
-// gets at most one answer.
+// §4.7.3). ch_write sends one as the last record an AES-GCM write key
+// seals (above). ch_read sends one for each KeyUpdate whose sender asked
+// for an answer, and a failure in the same call adds one alert record. A
+// record carries at most one KeyUpdate, as its last message: RFC 9846
+// §5.1 lets no handshake message span the key change it makes, so ch_read
+// refuses a record with bytes after a KeyUpdate (INV-39), and each record
+// it reads gets at most one answer.
 #define CH_KEY_UPDATE_RECORD_LEN (REC_OVERHEAD + 4 + 1)
 
 // Receives into p (n >= 1), returning the byte count (>0), 0 at the end

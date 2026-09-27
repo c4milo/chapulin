@@ -172,7 +172,7 @@ SH_SRCS := $(shell git ls-files '*.sh' '.githooks/*' 2>/dev/null)
 
 SRCS := ct.c sha256.c hkdf.c chacha20.c poly1305.c aead.c x25519.c p256.c rsa.c rsa_mont.c \
         pem.c x509.c x509_der.c x509_ca.c webpki_time.c webpki_name.c webpki_spki.c webpki_ext.c buf.c record.c keysched.c io.c handshake_message.c handshake_parser.c handshake_parser_ee.c handshake_record.c session.c \
-        handshake_auth.c handshake_flight.c handshake.c handshake_post.c tls.c softmul.c build.c
+        handshake_auth.c handshake_flight.c handshake.c handshake_post.c tls.c tls_write.c softmul.c build.c
 
 HDRS := ct.h sha256.h hkdf.h chacha20.h poly1305.h aead.h x25519.h x25519_wide.h p256.h rsa.h ch_assert.h \
         pem.h x509.h x509_der.h x509_ca.h webpki.h webpki_cfg.h webpki_pin.h webpki_ticket.h buf.h record.h keysched.h io.h handshake_message.h handshake_parser.h handshake_record.h cfg.h session.h handshake_auth.h handshake.h handshake_post.h \
@@ -389,9 +389,10 @@ SRV_SRCS := srv_ticket.c srv_parser.c srv_parser_ext.c srv_message.c srv_cookie.
 # messages a server sends, and the ClientHello builder. Their server
 # counterparts are in SRV_SRCS.
 #
-# tls.c is deliberately absent. It defines ch_read, ch_write and
-# ch_close, which both roles export, so a server object compiles it and
-# the split runs inside the file under #ifndef CH_ROLE_SERVER.
+# tls.c and tls_write.c are deliberately absent. They define ch_read,
+# ch_write and ch_close, which both roles export, so a server object
+# compiles them and the split runs inside tls.c under #ifndef
+# CH_ROLE_SERVER.
 # handshake_flight.c holds the client's flight handlers, which both
 # transports compile and a server does not.
 CLIENT_REPLACED := handshake.c handshake_auth.c handshake_parser.c handshake_parser_ee.c \
@@ -412,6 +413,7 @@ LINT_C := $(filter-out softmul.c,$(SRCS)) handshake_groups.c drbg.c sha3.c sha51
           test/x509_strict_test.c $(QUIC_SRCS) $(filter-out $(AES_IMPL),$(AES_IMPL_SRCS)) \
           $(SRV_SRCS) test/srv_auth_test.c test/srv_test.c test/srv_flight_test.c test/tls_server.c \
           srv_quic.c quic_token.c srv_tcp_nonblocking.c test/srv_tcp_nonblocking_test.c test/tcp_nonblocking_loop_test.c test/tcp_blocking_loop_test.c test/webpki_loop_test.c test/exporter_test.c tcp_nonblocking.c tcp_nonblocking_frame.c tcp_nonblocking_step.c \
+          test/tcp_blocking_key_limit_test.c \
           test/quic_driver_test.c test/quic_loop_test.c test/quic_vectors.c test/diff_quic_test.c \
           test/aes_equiv_test.c test/aes_equiv_soft.c test/aes_equiv_hw.c test/aes_extern_hook.c \
           test/ghash_equiv_test.c test/ghash_equiv_soft.c \
@@ -446,7 +448,7 @@ TESTH := test/test_random.h test/pem_armor.h test/pem_tests.h test/x509_ca_tests
          test/quic_token_tests.h test/srv_quic_retry_tests.h test/srv_quic_retry_count_tests.h test/srv_quic_retry_vectors.h \
          test/srv_flight_keys_tests.h test/srv_identity_tests.h test/srv_parser_hello.h test/srv_parser_tests.h test/srv_parser_reader_tests.h \
          test/lib_pair.h test/rand_session.h test/rand_session_cases.h test/tcp_nonblocking_session_tests.h \
-         test/tcp_blocking_session_tests.h test/quic_loop_session.h
+         test/tcp_blocking_session_tests.h test/quic_loop_session.h test/key_limit_cases.h
 
 # Each axis names its value or stops the build. RAND has done this since
 # https://github.com/c4milo/chapulin/issues/41; PIN, TRUST and KEX each
@@ -583,9 +585,9 @@ endif
 # object, like PIN and TRUST: the two export different public calls, so
 # an object cannot carry both.
 #
-# The five sources a QUIC object replaces: it compiles none of them
+# The six sources a QUIC object replaces: it compiles none of them
 # (docs/quic.md, "What is reused, and what changes").
-QUIC_REPLACED := io.c record.c session.c handshake.c tls.c
+QUIC_REPLACED := io.c record.c session.c handshake.c tls.c tls_write.c
 # The sources that keep their TLS text, carry a QUIC arm under #ifdef
 # CH_TRANSPORT_QUIC_NONBLOCKING, and cannot be compiled into the object until they
 # have one. Every arm landed with the driver, so the list is empty and
@@ -1268,8 +1270,8 @@ lint-trust-separation-run:
 	aes_files=$$(git ls-files 'aes*.c' 'gcm*.c' 'ghash*.c' | grep -v / | tr '\n' ' '); \
 	[ -n "$$aes_files" ] || { echo "lint-trust-separation: git tracks no aes*.c, gcm*.c or ghash*.c file at the root, so the AES rows would check nothing"; rc=1; }; \
 	aes_always=$$(printf '%s\n' $$aes_files | grep -vxF -e aes_hw.c -e ghash_hw.c -e aes_extern.c | tr '\n' ' '); \
-	check "TRANSPORT=tcp-blocking" "io.c record.c session.c handshake.c tls.c" "$$quic_files $$aes_files" "" "-DCH_TRANSPORT_QUIC_NONBLOCKING"; \
-	check "TRANSPORT=quic-nonblocking EXPORTER=off" "$$quic_always $$aes_always quic_aes_soft.c" "io.c record.c session.c handshake.c tls.c aes_hw.c ghash_hw.c aes_extern.c quic_token.c" "-DCH_TRANSPORT_QUIC_NONBLOCKING" "-DCH_AES_HW -DCH_AES_EXTERN -DCH_AES_256_TEST"; \
+	check "TRANSPORT=tcp-blocking" "io.c record.c session.c handshake.c tls.c tls_write.c" "$$quic_files $$aes_files" "" "-DCH_TRANSPORT_QUIC_NONBLOCKING"; \
+	check "TRANSPORT=quic-nonblocking EXPORTER=off" "$$quic_always $$aes_always quic_aes_soft.c" "io.c record.c session.c handshake.c tls.c tls_write.c aes_hw.c ghash_hw.c aes_extern.c quic_token.c" "-DCH_TRANSPORT_QUIC_NONBLOCKING" "-DCH_AES_HW -DCH_AES_EXTERN -DCH_AES_256_TEST"; \
 	check "TRANSPORT=quic-nonblocking AES=soft EXPORTER=off" "quic_aes_soft.c" "aes_hw.c ghash_hw.c aes_extern.c" "" "-DCH_AES_HW -DCH_AES_EXTERN"; \
 	check "TRANSPORT=quic-nonblocking AES=hw EXPORTER=off" "aes_hw.c ghash_hw.c" "quic_aes_soft.c aes_extern.c" "-DCH_AES_HW" "-DCH_AES_EXTERN -DCH_AES_256_TEST"; \
 	check "TRANSPORT=quic-nonblocking AES=extern EXPORTER=off" "aes_extern.c" "quic_aes_soft.c aes_hw.c ghash_hw.c" "-DCH_AES_EXTERN" "-DCH_AES_HW"; \
@@ -1278,9 +1280,9 @@ lint-trust-separation-run:
 	client_only="handshake.c handshake_auth.c handshake_parser.c handshake_parser_ee.c handshake_message.c"; \
 	role_crypto="rsa_sign.c p256_sign.c p256_ecdh.c p256_scalar.c p256_point.c p256_field.c"; \
 	srv_shared=$$(printf '%s\n' $$srv_files | grep -vxF -e srv_handshake.c -e srv_quic.c -e srv_tcp_nonblocking.c | tr '\n' ' '); \
-	check "ROLE=client TRUST=raw-rsa TRANSPORT=tcp-blocking" "$$client_only tls.c" "$$srv_files $$role_crypto" "" "-DCH_ROLE_SERVER"; \
-	check "ROLE=both TRUST=webpki TRANSPORT=tcp-blocking" "$$srv_shared srv_handshake.c $$role_crypto tls.c handshake.c handshake_groups.c sha3.c mlkem.c mlkem_poly.c" "srv_quic.c srv_tcp_nonblocking.c" "-DCH_ROLE_SERVER -DCH_ROLE_BOTH" "-DCH_KEX_PQ"; \
-	check "ROLE=server TRUST=none TRANSPORT=tcp-blocking" "$$srv_shared srv_handshake.c $$role_crypto tls.c rsa.c rsa_mont.c p256.c sha3.c mlkem.c mlkem_poly.c" "$$client_only srv_quic.c srv_tcp_nonblocking.c" "-DCH_ROLE_SERVER" "-DCH_PIN_ECDSA -DCH_KEX_PQ"; \
+	check "ROLE=client TRUST=raw-rsa TRANSPORT=tcp-blocking" "$$client_only tls.c tls_write.c" "$$srv_files $$role_crypto" "" "-DCH_ROLE_SERVER"; \
+	check "ROLE=both TRUST=webpki TRANSPORT=tcp-blocking" "$$srv_shared srv_handshake.c $$role_crypto tls.c tls_write.c handshake.c handshake_groups.c sha3.c mlkem.c mlkem_poly.c" "srv_quic.c srv_tcp_nonblocking.c" "-DCH_ROLE_SERVER -DCH_ROLE_BOTH" "-DCH_KEX_PQ"; \
+	check "ROLE=server TRUST=none TRANSPORT=tcp-blocking" "$$srv_shared srv_handshake.c $$role_crypto tls.c tls_write.c rsa.c rsa_mont.c p256.c sha3.c mlkem.c mlkem_poly.c" "$$client_only srv_quic.c srv_tcp_nonblocking.c" "-DCH_ROLE_SERVER" "-DCH_PIN_ECDSA -DCH_KEX_PQ"; \
 	quic_srv=$$(printf '%s\n' $$quic_always | grep -vxF -e quic_step.c | tr '\n' ' '); \
 	check "ROLE=server TRUST=none TRANSPORT=quic-nonblocking EXPORTER=off" "$$srv_shared srv_quic.c quic_token.c $$role_crypto $$quic_srv $$aes_always sha3.c mlkem.c mlkem_poly.c" "$$client_only srv_handshake.c srv_tcp_nonblocking.c quic_step.c record.c" "-DCH_ROLE_SERVER -DCH_TRANSPORT_QUIC_NONBLOCKING" "-DCH_PIN_ECDSA -DCH_KEX_PQ"; \
 	check "ROLE=server TRUST=none TRANSPORT=tcp-nonblocking" "$$srv_shared srv_tcp_nonblocking.c $$role_crypto tcp_nonblocking.c tcp_nonblocking_frame.c record.c sha3.c mlkem.c mlkem_poly.c" "$$client_only srv_handshake.c srv_quic.c tcp_nonblocking_step.c" "-DCH_ROLE_SERVER -DCH_TRANSPORT_TCP_NONBLOCKING" "-DCH_PIN_ECDSA -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_KEX_PQ"; \
@@ -1790,30 +1792,31 @@ bin/srv_auth_test: test/srv_auth_test.c $(SRV_SRCS) $(SRV_BELOW) $(SRV_SIGNERS) 
 # The e2e server: this tree's ROLE=server object behind a TCP socket,
 # which test/e2e.sh drives OpenSSL's s_client and this tree's own client
 # against, a full handshake and then a resumed one each.
-bin/tlsserver: test/tls_server.c $(SRV_SRCS) $(SRV_BELOW) $(SRV_SIGNERS) tls.c handshake_post.c \
-               $(HDRS) $(TESTH)
+bin/tlsserver: test/tls_server.c $(SRV_SRCS) $(SRV_BELOW) $(SRV_SIGNERS) tls.c tls_write.c \
+               handshake_post.c $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) -DCH_ROLE_SERVER -I. -Itest -o $@ test/tls_server.c $(SRV_SRCS) \
-	  $(SRV_BELOW) $(SRV_SIGNERS) tls.c handshake_post.c
+	  $(SRV_BELOW) $(SRV_SIGNERS) tls.c tls_write.c handshake_post.c
 # The same server under -DCH_SUITE_AES_GCM on the AES instructions, which
 # test/e2e.sh drives with s_client restricted to one suite at a time. A
 # compiler without the instructions builds none of it, and e2e says so.
-bin/tlsserver_aes: test/tls_server.c $(SRV_SRCS) $(SRV_BELOW) $(SRV_SIGNERS) tls.c handshake_post.c \
-                   aes.c $(AES_HW_SRCS) gcm.c sha512.c sha512_compress.c $(HDRS) $(TESTH)
+bin/tlsserver_aes: test/tls_server.c $(SRV_SRCS) $(SRV_BELOW) $(SRV_SIGNERS) tls.c tls_write.c \
+                   handshake_post.c aes.c $(AES_HW_SRCS) gcm.c sha512.c sha512_compress.c $(HDRS) \
+                   $(TESTH)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) $(AES_HW_CFLAGS) -DCH_ROLE_SERVER -DCH_SUITE_AES_GCM -DCH_AES_HW -DCH_NATIVE_AES \
-	  -I. -Itest -o $@ test/tls_server.c $(SRV_SRCS) $(SRV_BELOW) $(SRV_SIGNERS) tls.c \
+	  -I. -Itest -o $@ test/tls_server.c $(SRV_SRCS) $(SRV_BELOW) $(SRV_SIGNERS) tls.c tls_write.c \
 	  handshake_post.c aes.c $(AES_HW_SRCS) gcm.c sha512.c sha512_compress.c
 # The same server on AES=extern, its AES blocks answered by
 # test/aes_extern_hook.c. It needs no AES instruction, so e2e runs it on
 # every host.
 bin/tlsserver_aes_extern: test/tls_server.c $(SRV_SRCS) $(SRV_BELOW) $(SRV_SIGNERS) tls.c \
-                          handshake_post.c aes.c $(AES_EXTERN_DEPS) gcm.c sha512.c sha512_compress.c \
-                          $(HDRS) $(TESTH)
+                          tls_write.c handshake_post.c aes.c $(AES_EXTERN_DEPS) gcm.c sha512.c \
+                          sha512_compress.c $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) -DCH_ROLE_SERVER $(AES_EXTERN_SUITE_DEF) -I. -Itest -o $@ test/tls_server.c \
-	  $(SRV_SRCS) $(SRV_BELOW) $(SRV_SIGNERS) tls.c handshake_post.c aes.c $(AES_EXTERN_SRCS) gcm.c \
-	  sha512.c sha512_compress.c
+	  $(SRV_SRCS) $(SRV_BELOW) $(SRV_SIGNERS) tls.c tls_write.c handshake_post.c aes.c \
+	  $(AES_EXTERN_SRCS) gcm.c sha512.c sha512_compress.c
 # The role's unit vectors: the messages srv_message.c writes, the cookie
 # srv_cookie.c mints and opens, and the ClientHello srv_parser.c reads. It
 # links those sources and their dependencies alone, not the whole role,
@@ -1904,7 +1907,7 @@ bin/quic_suite_test: test/quic_suite_test.c $(QUIC_SUITE_TEST_SRCS) $(HDRS) $(TE
 AES_EXTERN_SRCS := aes_extern.c test/aes_extern_hook.c
 AES_EXTERN_DEPS := $(AES_EXTERN_SRCS) quic_aes_soft.c
 AES_EXTERN_BINS := bin/quic_test_extern bin/aes_suite_test_extern bin/quic_suite_test_extern \
-                   bin/webpki_loop_aes_extern bin/quic_loop_aes_extern
+                   bin/webpki_loop_aes_extern bin/quic_loop_aes_extern bin/tcp_blocking_key_limit
 # FIPS 197, SP 800-38D and RFC 9001 Appendix A through the hook, AES-256
 # included, and what aes_extern.c writes into round_keys at the exact
 # bound (test_extern_layout).
@@ -1931,17 +1934,12 @@ bin/quic_suite_test_extern: test/quic_suite_test.c $(filter-out $(AES_HW_SRCS),$
 	@mkdir -p bin
 	$(CC) $(CFLAGS) -DCH_TRANSPORT_QUIC_NONBLOCKING $(AES_EXTERN_SUITE_DEF) -I. -o $@ \
 	  test/quic_suite_test.c $(filter-out $(AES_HW_SRCS),$(QUIC_SUITE_TEST_SRCS)) $(AES_EXTERN_SRCS)
-# This tree's client against this tree's server over tcp-nonblocking, and
-# over QUIC, on the AES=extern suite object: the rows bin/webpki_loop_aes
-# and bin/quic_loop_aes run, each suite full and resumed. Both ends run
-# the same hook, so a loop alone cannot tell a wrong cipher from a right
-# one; the vectors above and the Wycheproof and e2e legs are what can.
-bin/webpki_loop_aes_extern: test/webpki_loop_test.c test/webpki_loop_suites.h $(WEBPKI_LOOP_SRCS) \
-                            aes.c $(AES_EXTERN_DEPS) gcm.c $(HDRS) $(TESTH)
-	@mkdir -p bin
-	$(CC) $(CFLAGS) -DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_TRANSPORT_TCP_NONBLOCKING -DCH_TRUST_WEBPKI \
-	  $(AES_EXTERN_SUITE_DEF) -I. -o $@ test/webpki_loop_test.c $(WEBPKI_LOOP_SRCS) aes.c \
-	  $(AES_EXTERN_SRCS) gcm.c
+# This tree's client against this tree's server over QUIC, on the
+# AES=extern suite object: the rows bin/quic_loop_aes runs, each suite
+# full and resumed. Both ends run the same hook, so a loop alone cannot
+# tell a wrong cipher from a right one; the vectors above and the
+# Wycheproof and e2e legs are what can. The tcp-nonblocking loop on this
+# object, bin/webpki_loop_aes_extern, sits below WEBPKI_LOOP_SRCS.
 QUIC_LOOP_AES_EXTERN_SRCS := $(filter-out $(AES_IMPL_SRCS),$(QUIC_LOOP_WEBPKI_SRCS)) $(AES_EXTERN_SRCS)
 bin/quic_loop_aes_extern: test/quic_loop_test.c test/quic_loop_suites.h $(QUIC_LOOP_AES_EXTERN_SRCS) \
                           quic_aes_soft.c $(HDRS) $(TESTH)
@@ -2021,6 +2019,20 @@ bin/tcp_blocking_loop_session: test/tcp_blocking_loop_test.c $(TCP_BLOCKING_LOOP
 	@mkdir -p bin
 	$(CC) $(SESSION_CFLAGS) -DCH_ROLE_SERVER -DCH_ROLE_BOTH -I. -o $@ test/tcp_blocking_loop_test.c \
 	  $(TCP_BLOCKING_LOOP_SRCS)
+# The AES-GCM key-usage ceiling between the two tcp-blocking sessions of
+# the ROLE=both TRUST=webpki SUITE=aesgcm object, on AES=extern so every
+# host builds it: ch_connect against the server's flight handlers, then
+# test/key_limit_cases.h's writes across the ceiling each way
+# (docs/decisions.md 78). bin/webpki_loop_aes runs the same cases over
+# tcp-nonblocking.
+TCP_BLOCKING_KEY_LIMIT_SRCS := $(sort $(filter-out pem.c x509.c x509_ca.c,$(TCP_BLOCKING_LOOP_SRCS)) \
+                                      $(WEBPKI_SRCS) $(WEBPKI_CHAIN_SRCS) $(WEBPKI_KEX_SRCS))
+bin/tcp_blocking_key_limit: test/tcp_blocking_key_limit_test.c $(TCP_BLOCKING_KEY_LIMIT_SRCS) aes.c \
+                            $(AES_EXTERN_DEPS) gcm.c $(HDRS) $(TESTH)
+	@mkdir -p bin
+	$(CC) $(CFLAGS) -DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_TRUST_WEBPKI $(AES_EXTERN_SUITE_DEF) -I. \
+	  -o $@ test/tcp_blocking_key_limit_test.c $(TCP_BLOCKING_KEY_LIMIT_SRCS) aes.c $(AES_EXTERN_SRCS) \
+	  gcm.c
 # The TRUST=webpki tcp-nonblocking client against this tree's tcp-nonblocking
 # server, over
 # the ROLE=both TRANSPORT=tcp-nonblocking TRUST=webpki object's sources: the server
@@ -2050,14 +2062,27 @@ tx-record-check: bin/webpki_loop_tx_record
 	./bin/webpki_loop_tx_record
 # The same loop under -DCH_SUITE_AES_GCM on the AES instructions: each of
 # the three suites through a full handshake and a resumption, a SHA-384
-# ticket passed over by a SHA-256 suite, and h3spec's suite offer through
-# the real parser (test/webpki_loop_suites.h).
+# ticket passed over by a SHA-256 suite, h3spec's suite offer through the
+# real parser (test/webpki_loop_suites.h), and each end writing across its
+# AES-GCM write key's ceiling (test/key_limit_cases.h).
 bin/webpki_loop_aes: test/webpki_loop_test.c test/webpki_loop_suites.h $(WEBPKI_LOOP_SRCS) \
                      aes.c $(AES_HW_SRCS) gcm.c $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) $(AES_HW_CFLAGS) -DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_TRANSPORT_TCP_NONBLOCKING \
 	  -DCH_TRUST_WEBPKI -DCH_SUITE_AES_GCM -DCH_AES_HW -DCH_NATIVE_AES -I. -o $@ \
 	  test/webpki_loop_test.c $(WEBPKI_LOOP_SRCS) aes.c $(AES_HW_SRCS) gcm.c
+# The same loop on the AES=extern suite object, the rows bin/webpki_loop_aes
+# runs. Both ends run the same hook, so a loop alone cannot tell a wrong
+# cipher from a right one; the vectors and the Wycheproof and e2e legs are
+# what can. The rule sits below WEBPKI_LOOP_SRCS, because make expands a
+# rule's prerequisites where it reads the rule: above it the list was
+# empty, and an edit to a library source left this binary as it was.
+bin/webpki_loop_aes_extern: test/webpki_loop_test.c test/webpki_loop_suites.h $(WEBPKI_LOOP_SRCS) \
+                            aes.c $(AES_EXTERN_DEPS) gcm.c $(HDRS) $(TESTH)
+	@mkdir -p bin
+	$(CC) $(CFLAGS) -DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_TRANSPORT_TCP_NONBLOCKING -DCH_TRUST_WEBPKI \
+	  $(AES_EXTERN_SUITE_DEF) -I. -o $@ test/webpki_loop_test.c $(WEBPKI_LOOP_SRCS) aes.c \
+	  $(AES_EXTERN_SRCS) gcm.c
 bin/srv_test: test/srv_test.c srv_message.c srv_cookie.c srv_ticket.c srv_parser.c \
               srv_parser_ext.c $(SRV_DEPS) $(HDRS) $(TESTH)
 	@mkdir -p bin
@@ -3844,7 +3869,7 @@ else
 	  $(SRV_SRCS) test/srv_auth_test.c test/srv_test.c test/srv_flight_test.c \
 	  test/tls_server.c srv_quic.c quic_token.c srv_tcp_nonblocking.c test/srv_tcp_nonblocking_test.c \
 	  test/tcp_nonblocking_loop_test.c test/tcp_blocking_loop_test.c test/webpki_loop_test.c \
-	  test/quic_loop_test.c test/ticket_epoch_test.c \
+	  test/tcp_blocking_key_limit_test.c test/quic_loop_test.c test/ticket_epoch_test.c \
 	  test/exporter_test.c tcp_nonblocking.c tcp_nonblocking_frame.c tcp_nonblocking_step.c x25519_wide.c \
 	  test/x25519_equiv_portable.c test/hkdf384_test.c \
 	  test/x25519_equiv_wide.c test/diff_x25519_test.c,$(LINT_C)), \
@@ -3971,6 +3996,15 @@ else
 	# The TRUST=webpki record loopback, under the defines its object takes.
 	@$(call TIDY_EACH,test/webpki_loop_test.c, \
 	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_TRANSPORT_TCP_NONBLOCKING -DCH_TRUST_WEBPKI -I.)
+	# The AES-GCM key-usage ceiling (docs/decisions.md 78): tls_write.c's
+	# KeyUpdate step and record.c's refusal compile only under
+	# -DCH_SUITE_AES_GCM, and so does the tcp-blocking loop that writes
+	# across the ceiling with test/key_limit_cases.h. The AES=extern
+	# defines name a suite build no instruction flag has to turn on.
+	@$(call TIDY_EACH,tls_write.c record.c, \
+	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) $(AES_EXTERN_SUITE_DEF) -I.)
+	@$(call TIDY_EACH,test/tcp_blocking_key_limit_test.c, \
+	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_TRUST_WEBPKI $(AES_EXTERN_SUITE_DEF) -I.)
 	# The ticket epoch test, once per non-blocking transport it is built
 	# for, under the CA mode it refuses to build without.
 	@$(call TIDY_EACH,test/ticket_epoch_test.c, \
@@ -4459,13 +4493,14 @@ lint-impact:
 # divisions whose lowering is a compiler choice and a recorded leak that is
 # meant to fall, and zero cannot be undershot, so every other module is
 # held exactly. The divisions are sha3.c's `% 5` over Keccak's lane
-# counters and tls.c's one division in ch_writable_len, the caller's
+# counters and tls_write.c's one division in ch_writable_len, the caller's
 # buffer length by the length of a record (docs/decisions.md 72).
 WIDEMUL_CEILING := ct.c:0 sha256.c:0 sha3.c:1 hkdf.c:0 chacha20.c:0 poly1305.c:0 aead.c:0 \
                    x25519.c:0 p256_field.c:0 mlkem.c:0 mlkem_poly.c:0 buf.c:0 record.c:0 keysched.c:0 io.c:0 \
                    session.c:0 handshake_message.c:0 handshake_parser.c:0 handshake_parser_ee.c:0 handshake_record.c:0 \
                    handshake_auth.c:0 handshake_flight.c:0 handshake.c:0 handshake_post.c:0 \
-                   tls.c:1 drbg.c:0 softmul.c:0 tcp_nonblocking.c:0 tcp_nonblocking_frame.c:0 tcp_nonblocking_step.c:0 \
+                   tls.c:0 tls_write.c:1 drbg.c:0 softmul.c:0 tcp_nonblocking.c:0 tcp_nonblocking_frame.c:0 \
+                   tcp_nonblocking_step.c:0 \
                    quic_keys.c:0 quic_packet.c:0 quic_config.c:0 quic_step.c:0 quic.c:0 \
                    quic_fail.c:0 srv_quic.c:0 quic_token.c:0 srv_tcp_nonblocking.c:0 \
                    aes.c:0 quic_aes_soft.c:0 aes_extern.c:0 gcm.c:0 \
@@ -4776,7 +4811,7 @@ WIDE64_SPEC_NAMES := $(foreach s,$(WIDE64_SPECS),$(firstword $(subst :, ,$(s))))
 # calls to __muldi3 there, which is the point of the spec
 # (https://github.com/c4milo/chapulin/issues/107).
 #
-# tls.c reads two divu under the -O2 spec, from ch_writable_len's one
+# tls_write.c reads two divu under the -O2 spec, from ch_writable_len's one
 # division of the caller's cap by a record's length. gcc copies the
 # function body into both arms of the smaller-of in
 # record_plaintext_max: one arm divides by peer_limit + 22 and the
@@ -4786,7 +4821,7 @@ WIDE64_SPEC_NAMES := $(foreach s,$(WIDE64_SPECS),$(firstword $(subst :, ,$(s))))
 # failed on it.
 WIDEMUL_CEILING_SPEC := m3-gcc/sha3.c:5 mips32r2-gcc/sha3.c:5 mips32r2-gcc-O2/sha3.c:5 \
                         mips32r2-gcc-O2/poly1305.c:2 mips32r2-gcc-O2/p256_scalar.c:2 \
-                        mips32r2-gcc-O2/tls.c:2 rv32imac-gcc/sha3.c:5 rv32ic-gcc/sha3.c:5
+                        mips32r2-gcc-O2/tls_write.c:2 rv32imac-gcc/sha3.c:5 rv32ic-gcc/sha3.c:5
 # The files the branch count covers: the arithmetic under the record
 # layer, whose every input is a key, a limb or a block. Almost every
 # branch they hold is loop control on a public count; the two exceptions
@@ -5053,7 +5088,7 @@ lint-wide-multiply-gcc:
 # new `/` anywhere hid behind sha3's __udivsi3
 # (https://github.com/c4milo/chapulin/issues/85). Now a symbol is judged in
 # the file that pulls it. sha3's __udivsi3 is Keccak's `% 5` over public
-# loop counters, a performance matter rather than a leak. tls.c's is
+# loop counters, a performance matter rather than a leak. tls_write.c's is
 # ch_writable_len's one division, the caller's buffer length by the length
 # of a record, both public (docs/decisions.md 72); its __mulsi3 is the
 # same call's count of whole records times their plaintext, which
@@ -5069,7 +5104,8 @@ lint-wide-multiply-gcc:
 # list's absence, and it is re-measured when the stubs among these
 # files are implemented.
 RV_ALLOWED := poly1305.c:__mulsi3 x25519.c:__mulsi3 mlkem_poly.c:__mulsi3 sha3.c:__udivsi3 \
-              rsa_sign.c:__mulsi3 p256_field.c:__mulsi3 p256_scalar.c:__mulsi3 tls.c:__mulsi3,__udivsi3
+              rsa_sign.c:__mulsi3 p256_field.c:__mulsi3 p256_scalar.c:__mulsi3 \
+              tls_write.c:__mulsi3,__udivsi3
 # What softmul.c must define. The __mul* names RV_ALLOWED admits are
 # constant-time only because this file supplies them; if it stopped, the
 # admitted calls would bind to libgcc's and the allowlist would keep

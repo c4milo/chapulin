@@ -227,6 +227,9 @@ how to cut and size its bytes:
   into `cap` bytes of records, at the smaller of the peer's
   `record_size_limit` and `CH_TX_PT` per record. Pass at most that much
   when your send buffer holds `cap` bytes. Both TCP transports export it.
+  Under `SUITE=aesgcm` it also counts the KeyUpdate record below when the
+  write crosses an AES-GCM write key's ceiling, so a buffer sized for
+  your largest write holds 27 bytes more.
 - `CH_ALERT_RECORD_LEN`, 24, is what `ch_close` sends, and what a failing
   `ch_read` sends, unless the peer's fatal alert failed it: that read
   sends nothing. A handshake that fails once its side's write key is
@@ -236,6 +239,16 @@ how to cut and size its bytes:
   one KeyUpdate, as its last message (RFC 9846 §5.1), so a record gets
   at most one answer, and a record with bytes after a KeyUpdate fails
   the read.
+- Under `SUITE=aesgcm`, `ch_write` sends one KeyUpdate record of its own,
+  `CH_KEY_UPDATE_RECORD_LEN` bytes, as the last of the
+  `REC_AES_GCM_RECORDS_MAX` records, 2^24, that an AES-GCM write key
+  seals, which RFC 9846 §5.5 requires of a sender. It seals the rest of
+  that write under the next key, and the peer reads across the change.
+  RFC 9846 §4.7.3 lets a sender send 2^48 - 1 KeyUpdates, and a session
+  that has sent that many cannot replace a key at its ceiling: that
+  `ch_write` returns `CH_ECAP` and fails the session with internal_error.
+  QUIC has no TLS KeyUpdate and counts its own AES-GCM packets instead
+  ([`docs/quic.md`](quic.md)).
 
 ## The server role and QUIC
 

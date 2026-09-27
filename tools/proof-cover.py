@@ -38,6 +38,20 @@ AUDITED = {
         "test/build_test.c against every object it checks and reads each "
         "field back. Delete this entry if the file ever gains a function."
     ),
+    "tls.c": (
+        "the public calls tls.h declares beside the send path: ch_connect and "
+        "the client configuration rules, ch_read, ch_close, ch_export and the "
+        "two alert calls. Two bitwise operators in the file, the `& 1` at "
+        ":133 and :135 that reads the low bit of a pinned RSA modulus's last "
+        "byte: the uint8_t widens to int and holds 0 to 255, so the operand "
+        "is never negative and bugprone-signed-bitwise has nothing to say "
+        "about it. No shift. No harness runs this file. "
+        "proof/writable_len_harness.c included it until ch_write and "
+        "ch_writable_len moved to tls_write.c, and drove those two calls "
+        "alone; it includes tls_write.c now. bin/unit and the loop tests "
+        "test every call left here. Delete this entry when tls.c gets a "
+        "harness of its own."
+    ),
     "srv_out.c": (
         "the server's handshake output, one arm per transport. One bitwise "
         "operator in the file: the shift `(uint8_t)(n >> 8)` at :70, which "

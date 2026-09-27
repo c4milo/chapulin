@@ -295,68 +295,6 @@ int ch_read(ch_tls *t, uint8_t *p, size_t n) {
     return CH_EPROTO;
 }
 
-// The most plaintext one outgoing record carries: CH_TX_PT, or the peer's
-// record_size_limit when that is lower (INV-38). ch_write cuts records at
-// it and ch_writable_len counts in it, so the two read one limit.
-static size_t record_plaintext_max(const ch_tls *t) {
-    return t->peer_limit < CH_TX_PT ? t->peer_limit : CH_TX_PT;
-}
-
-int ch_write(ch_tls *t, const uint8_t *p, size_t n) {
-    CH_ASSERT(t->state <= CH_ST_FAILED); // the guard ch_read states
-
-    if (t->state != CH_ST_CONNECTED) {
-        return CH_EPROTO;
-    }
-    size_t limit = record_plaintext_max(t);
-    while (n > 0) {
-        size_t take = n < limit ? n : limit;
-        size_t out_len = 0;
-        if (rec_seal(&t->wr, REC_APPDATA, p, take, t->tx, sizeof t->tx, &out_len) != 0) {
-            tlsi_fail(t, ALERT_INTERNAL_ERROR);
-            return CH_ECAP;
-        }
-        int rc = io_send_all(&t->cfg, t->tx, out_len);
-        if (rc != CH_OK) {
-            tlsi_fail(t, ALERT_INTERNAL_ERROR);
-            return rc;
-        }
-        p += take;
-        n -= take;
-    }
-    return CH_OK;
-}
-
-// tls.h states the contract. cap holds `whole` records of limit bytes of
-// plaintext, each REC_OVERHEAD bytes longer on the wire, and less than one
-// more. So the answer is the larger of two: the whole records' plaintext,
-// and what is left of cap once whole + 1 records' overhead is paid, which
-// is less than whole + 1 records of plaintext and is larger only when the
-// last record carries a byte. ch_write sends exactly those records for
-// that many bytes: whole records of limit bytes, then the last.
-//
-// It divides once. The overhead is counted per record rather than taken
-// as cap's remainder after the division, because gcc turns a remainder
-// into a second division, which lint-wide-multiply counts.
-size_t ch_writable_len(const ch_tls *t, size_t cap) {
-    size_t limit = record_plaintext_max(t);
-    if (limit == 0) {
-        return 0;
-    }
-    size_t whole = cap / (limit + REC_OVERHEAD);
-    size_t in_whole = whole * limit;
-    size_t overhead = (whole + 1) * REC_OVERHEAD;
-    size_t with_one_more = cap > overhead ? cap - overhead : 0;
-    return with_one_more > in_whole ? with_one_more : in_whole;
-}
-
-// tls.h writes the two lengths out from REC_OVERHEAD, and these hold them
-// to the 24 and 27 bytes a caller sizes buffers by. tls.h cannot say it
-// itself: a QUIC build reads no record.h, and a translation unit of that
-// build that includes tls.h would fail on the assertion.
-_Static_assert(CH_ALERT_RECORD_LEN == 24, "one sealed alert record is 24 bytes");
-_Static_assert(CH_KEY_UPDATE_RECORD_LEN == 27, "one sealed KeyUpdate record is 27 bytes");
-
 void ch_close(ch_tls *t) {
     CH_ASSERT(t->state <= CH_ST_FAILED); // the guard ch_read states
 

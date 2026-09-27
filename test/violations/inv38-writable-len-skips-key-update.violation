@@ -1,0 +1,13 @@
+invariant: INV-38
+file: tls_write.c
+catches: tcp_blocking_key_limit
+reason: ch_writable_len does not count the KeyUpdate record ch_write sends
+  when a write crosses an AES-GCM key's ceiling, so the answer's records
+  run 27 bytes past cap there, and the Zig API's all-or-nothing write
+  would hand ch_write an output it cannot take. The cap sweep at the
+  ceiling and the exact rows under it object.
+
+--- old
+    size_t rest = left > CH_KEY_UPDATE_RECORD_LEN ? left - CH_KEY_UPDATE_RECORD_LEN : 0;
+--- new
+    size_t rest = left;

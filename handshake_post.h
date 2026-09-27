@@ -85,6 +85,31 @@ static inline int hspost_ticket_age_ok(const ch_cfg *cfg) {
 // post-handshake message it accepts is a NewSessionTicket and
 // hspost_take_ticket is the one way in.
 int hspost_read(ch_tls *t, size_t pt_len);
+
+// The most KeyUpdates one session sends. RFC 9846 §4.7.3 forbids a sender
+// to let the epoch, and with it the number of key updates, pass 2^48 - 1
+// (rfc9846.txt:3400-3402). ch_tls.send_epochs counts the ones this side
+// sent.
+#define HSPOST_SEND_EPOCHS_MAX 0xffffffffffffULL
+
+// Sends one KeyUpdate whose request_update is update_not_requested (0),
+// as one record of CH_KEY_UPDATE_RECORD_LEN bytes (tls.h) under the
+// current write key, then moves the write direction to the next traffic
+// secret and adds one to t->send_epochs. RFC 9846 §4.7.3 has a sender
+// seal its KeyUpdate under the old key and send everything after it under
+// the new one (rfc9846.txt:3349-3351, 3391-3392). Two callers send one:
+// handle_key_update, to answer a peer that asked for one, and ch_write
+// (tls_write.c), as the last of the REC_AES_GCM_RECORDS_MAX records an
+// AES-GCM write key seals (record.h).
+//
+// Requires t->send_epochs below HSPOST_SEND_EPOCHS_MAX. Each caller checks
+// that first, because the two answer the cap differently: a peer's request
+// goes unanswered there, and ch_write fails the session.
+//
+// Returns CH_OK, or CH_EIO when the record could not be sealed or sent.
+// The write key is still the old one then, and the caller fails the
+// session.
+int hspost_send_key_update(ch_tls *t);
 #endif
 
 #ifdef CH_TRANSPORT_QUIC_NONBLOCKING

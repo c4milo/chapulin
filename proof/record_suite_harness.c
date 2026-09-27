@@ -7,7 +7,10 @@
 // record of up to 16 bytes seals and one opens, which proves the
 // dispatch to the AEAD the suite names: AES-GCM for the two AES suites
 // and ChaCha20-Poly1305 for the third, each with a key of the right
-// length.
+// length. The seal runs at any sequence number, and it refuses exactly
+// the last one there is and, under AES-GCM, every one at or past
+// REC_AES_GCM_RECORDS_MAX, the most records one AES-GCM key seals
+// (record.h).
 //
 // Layered proof, as proof/record_harness.c is: hkdf, the ChaCha20 AEAD
 // and the AES-GCM traffic entries are contract stubs. The AES entries run
@@ -29,6 +32,8 @@
 #if !defined(CH_SUITE_AES_GCM)
 #error "record_suite proves the suite build; its launch line must pass -DCH_SUITE_AES_GCM"
 #endif
+
+uint64_t nondet_u64(void);
 
 // What main expects the stubs to see for the suite it chose.
 static size_t expected_hash_len;
@@ -155,7 +160,16 @@ int main(void) {
     size_t out_len = 0;
     aes_ran = 0;
     chacha_ran = 0;
-    if (rec_seal(&d, REC_APPDATA, pt, n, out, sizeof out, &out_len) == 0) {
+    // Any sequence number. rec_seal refuses exactly two kinds: the last
+    // one there is, where the next increment would wrap (RFC 9846 §5.3),
+    // and under AES-GCM one at or past REC_AES_GCM_RECORDS_MAX (§5.5).
+    // out holds the record, so nothing else refuses.
+    uint64_t seq = nondet_u64();
+    d.seq = seq;
+    int sealed = rec_seal(&d, REC_APPDATA, pt, n, out, sizeof out, &out_len) == 0;
+    int refused = seq == UINT64_MAX || (aes_suite && seq >= REC_AES_GCM_RECORDS_MAX);
+    __CPROVER_assert(sealed == !refused, "seal: refuses the wrap and the AES-GCM ceiling alone");
+    if (sealed) {
         __CPROVER_assert(aes_ran == aes_suite && chacha_ran == !aes_suite,
                          "seal: the AEAD the suite names");
     }

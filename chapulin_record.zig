@@ -155,8 +155,9 @@ fn Session(comptime side: Side, comptime receive_len: usize) type {
         pub const suite = if (@hasField(c.ch_tls, "suite")) suiteOf else @compileError("suite needs SUITE=aesgcm or a server role");
         /// ch_tls.server_cert_type.
         pub const serverCertType = if (@hasField(c.ch_tls, "server_cert_type")) serverCertTypeOf else @compileError("serverCertType needs TRUST=webpki");
-        /// Reserved. No C call starts a record-mode KeyUpdate, so this side
-        /// starts none; read answers the peer's inside ch_read.
+        /// Reserved. No C call starts a record-mode KeyUpdate: write sends
+        /// one inside ch_write as the last record an AES-GCM write key
+        /// seals, and read answers the peer's inside ch_read.
         pub const keyUpdate = @compileError("chapulin has no call that starts a record-mode KeyUpdate");
 
         fn initClient(self: *Self, values: chapulin.Client) error{Invalid}!void {
@@ -305,7 +306,10 @@ fn Session(comptime side: Side, comptime receive_len: usize) type {
         /// Seals all of pt into output and returns the bytes written, or
         /// returns error.Cap with nothing sealed and the session as it was
         /// when pt.len > writableLen(output.len). It never seals part of
-        /// pt, as ch_write does not.
+        /// pt, as ch_write does not. Under SUITE=aesgcm the bytes written
+        /// may hold one KeyUpdate record of key_update_record_len bytes,
+        /// which ch_write sends as the last record an AES-GCM write key
+        /// seals, and writableLen counts.
         pub fn write(self: *Self, pt: []const u8, output: []u8) error{ Proto, Cap, Io }!usize {
             if (pt.len > self.writableLen(output.len)) return error.Cap;
             self.io.begin(&.{}, output);

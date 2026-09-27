@@ -1,0 +1,16 @@
+invariant: INV-10
+file: tls_write.c
+catches: tcp_blocking_key_limit
+reason: ch_write never takes the step before a record, so an AES-GCM write
+  key seals a data record at its last sequence number with no KeyUpdate
+  first, and the next write finds the key at its ceiling. The boundary case
+  counts two records where a KeyUpdate record belongs between them.
+
+--- old
+        int rc = key_update_at_ceiling(t);
+        if (rc != CH_OK) {
+            return rc; // it failed the session
+        }
+--- new
+        int rc = CH_OK;
+        (void)key_update_at_ceiling;

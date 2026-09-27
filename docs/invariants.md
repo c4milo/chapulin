@@ -761,19 +761,54 @@ last `ROLE=server` stub, as the entry said it would.
 
 - **Claim.** Nonce = static IV xor sequence number; the counter is
   monotonic, wrap-guarded, reset only by rekey; KeyUpdate epochs are
-  capped at 2^48−1.
+  capped at 2^48−1. An AES-GCM write key seals at most
+  `REC_AES_GCM_RECORDS_MAX` records, 2^24, counted whatever their size,
+  and the last of them is the KeyUpdate that retires it (RFC 9846 §5.5,
+  `rfc9846.txt:3743-3753`; docs/decisions.md 78). A key at that ceiling
+  after 2^48−1 KeyUpdates fails its session. ChaCha20-Poly1305 has no
+  ceiling but the wrap.
 - **Mechanism.** Structural arithmetic in `record.c`;
-  `rec_dir_update` is the only reset; the epoch cap lives in
-  `handle_key_update`.
+  `rec_dir_update` is the only reset; the epoch cap is
+  `HSPOST_SEND_EPOCHS_MAX`, which `handle_key_update` and `ch_write`
+  both read. `rec_seal` refuses an AES-GCM record at or past the
+  ceiling, beside the wrap. `ch_write` (`tls_write.c`) reads
+  `records_before_key_update` before each record it seals, and when an
+  AES-GCM key has no data record left, `key_update_at_ceiling` sends a
+  KeyUpdate at the key's last sequence number through
+  `hspost_send_key_update`, which seals, sends and rekeys, or fails the
+  session with internal_error and `CH_ECAP` when the cap is spent. Every
+  other record sealed under an application write key is a single one
+  that takes at most that last sequence number.
 - **Check.** CBMC (record and handshake_post harnesses cover the guards);
   Lean theorem (`Spec.Record.nonce_inj`): distinct sequence numbers
   below 2^64 give distinct nonces, so a repeat needs a repeated
   counter, not a colliding construction — the counter half stays with
   the mechanisms below; semgrep-structural
   (`inv-10-seq-reset-only-in-record`): no `.seq = 0` assignment
-  outside record.c.
+  outside record.c. The ceiling:
+  - CBMC: `record_suite` proves that `rec_seal` refuses the wrap and an
+    AES-GCM record at or past the ceiling and nothing else, at any
+    sequence number; `writable_len_suite` proves, at its bound, that
+    `ch_write` seals no data record at an AES-GCM key's last sequence
+    number, sends the KeyUpdate there and nowhere else, never under
+    ChaCha20, and leaves the key with that last sequence number free.
+  - Tests: `test/key_limit_cases.h` runs in `bin/tcp_blocking_key_limit`,
+    `bin/webpki_loop_aes` and `bin/webpki_loop_aes_extern`. Under both
+    AES-GCM suites each end of a connection writes across the ceiling
+    while the peer reads on, one write of three records sends one
+    KeyUpdate, and at the cap the write fails; ChaCha20 sends none at the
+    same sequence numbers. `bin/aes_suite_test` holds `rec_seal`'s
+    refusal to its exact boundary.
+  - Violations: `inv10-aes-gcm-ceiling-no-key-update`,
+    `inv10-aes-gcm-ceiling-rekey-unsent`,
+    `inv10-aes-gcm-ceiling-one-record-late`,
+    `inv10-aes-gcm-ceiling-past-epoch-cap`,
+    `inv10-chacha-under-aes-gcm-ceiling` and
+    `inv10-aes-gcm-seal-past-ceiling`.
 - **Violation.** A PR resets a sequence counter from the handshake
-  layer to "fix" a desync, and a nonce repeats under one key.
+  layer to "fix" a desync, and a nonce repeats under one key. Or it
+  moves an AES-GCM write key to its next key at the ceiling without the
+  KeyUpdate, and the peer cannot open the next record.
 - See [decisions: Cryptography](decisions.md#cryptography).
 
 ### INV-11 — transcript and secret schedule
@@ -849,9 +884,11 @@ last `ROLE=server` stub, as the entry said it would.
   (docs/decisions.md 71). A caller that sizes its own buffers asks C
   rather than restating the rule (docs/decisions.md 72):
   `ch_writable_len` answers the most plaintext one `ch_write` sends in
-  `cap` bytes of records; `ch_record_whole_len` answers where the record
-  at the front of the caller's bytes ends, and `REC_HDR` for a length
-  field above 2^14 + 256, which no peer may send; and
+  `cap` bytes of records, the KeyUpdate record `ch_write` sends at an
+  AES-GCM write key's ceiling included (INV-10); `ch_record_whole_len`
+  answers where the record at the front of the caller's bytes ends, and
+  `REC_HDR` for a length field above 2^14 + 256, which no peer may send;
+  and
   `CH_ALERT_RECORD_LEN` and `CH_KEY_UPDATE_RECORD_LEN` are the wire
   lengths of one sealed alert record and one sealed KeyUpdate record, 24
   and 27 bytes.
@@ -869,17 +906,22 @@ last `ROLE=server` stub, as the entry said it would.
     `read_record_size_limit` (`srv_parser_ext.c`) lower it to the
     peer's value less the content-type byte, never raise it, and refuse
     a value under 64 (RFC 8449 §4).
-  - The writers: `ch_write` (`tls.c`) and the server's `srv_out_limit`
-    (`srv_out.c`) cut every write at the smaller of `peer_limit` and
-    `CH_TX_PT`. The server's Certificate writer, `srv_frag`, holds
-    `SRV_FRAG_MAX` (512) bytes whatever `CH_TX_PT` is, so a raised
-    `CH_TX_PT` adds nothing to the handshake's stack (INV-19).
+  - The writers: `ch_write` (`tls_write.c`) and the server's
+    `srv_out_limit` (`srv_out.c`) cut every write at the smaller of
+    `peer_limit` and `CH_TX_PT`. The server's Certificate writer,
+    `srv_frag`, holds `SRV_FRAG_MAX` (512) bytes whatever `CH_TX_PT` is,
+    so a raised `CH_TX_PT` adds nothing to the handshake's stack (INV-19).
   - The framing calls: `ch_write` and `ch_writable_len` read the send
-    limit through one helper, `record_plaintext_max` (`tls.c`), and
+    limit through one helper, `record_plaintext_max` (`tls_write.c`), and
+    the AES-GCM ceiling through another, `records_before_key_update`.
     `ch_writable_len` counts `REC_OVERHEAD` per record, the length
-    `rec_seal` adds. `ch_record_whole_len` (`tcp_nonblocking_frame.c`)
-    reads the length field through the `rbuf` reader. `tls.c` asserts the
-    two record lengths are 24 and 27.
+    `rec_seal` adds, and `CH_KEY_UPDATE_RECORD_LEN` once when the write
+    it sizes crosses the ceiling; it counts no second KeyUpdate, so its
+    answer stops at the records the key has left and
+    `REC_AES_GCM_RECORDS_MAX - 1` more (tls.h).
+    `ch_record_whole_len` (`tcp_nonblocking_frame.c`) reads the length
+    field through the `rbuf` reader. `tls_write.c` asserts the two record
+    lengths are 24 and 27.
   - The receive limit: each role advertises its buffer's room after the
     record header and the tag, capped at 2^14 + 1, in `handshake.c`,
     `srv_handshake.c` and both tcp-nonblocking drivers; a QUIC build
@@ -908,6 +950,10 @@ last `ROLE=server` stub, as the entry said it would.
     contract for every `n` up to 2^20, and `writable_len` runs
     `ch_writable_len`'s answer through the real `ch_write` for every
     `cap` up to 1,603 bytes and every `peer_limit` from 63.
+    `writable_len_suite` does the same in the `SUITE=aesgcm` build for
+    every `cap` up to three records of the session's own limit, a
+    KeyUpdate record and one byte, over each suite and every write
+    sequence number below the ceiling, the KeyUpdate record included.
     `inv38-whole-len-one-byte-short` and
     `inv38-writable-len-overhead-short` require each to fail.
   - `bin/unit` sweeps every `cap` up to three records and one byte at
@@ -917,12 +963,18 @@ last `ROLE=server` stub, as the entry said it would.
     a record one byte short, a whole one, the largest the RFC allows and
     the first length past it. `inv38-writable-len-ignores-peer-limit` and
     `inv38-whole-len-oversize-waits` require them to fail.
+  - `test/key_limit_cases.h` sweeps every `cap` up to three records, a
+    KeyUpdate record and one byte at the ceiling and one and two records
+    before it, and checks the exact rows: at the ceiling a record of one
+    byte costs a KeyUpdate record too, and one record before it the
+    first record does not. `inv38-writable-len-skips-key-update`
+    requires `bin/tcp_blocking_key_limit` to fail.
 - **Violation.** A PR raises `CH_TX_PT` past 2^14, sizes a stack
   buffer by `CH_TX_PT`, lets a peer's `record_size_limit` raise the
   send size rather than lower it, or truncates a record the receive
   buffer cannot hold.
 - See [decisions: Memory and runtime](decisions.md#memory-and-runtime),
-  entries 22, 71 and 72.
+  entries 22, 71, 72 and 78.
 
 ### INV-24 — the x25519 ladder stays inside its proven limb range
 

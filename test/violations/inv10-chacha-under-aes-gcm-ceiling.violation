@@ -1,0 +1,16 @@
+invariant: INV-10
+file: tls_write.c
+catches: webpki_loop_aes_extern
+reason: the AES-GCM ceiling is applied to every suite a session selected,
+  ChaCha20-Poly1305 included, whose sequence number wraps before any usage
+  limit (rfc9846.txt:3752-3754). A ChaCha20 write key then sends a
+  KeyUpdate at REC_AES_GCM_RECORDS_MAX - 1, which the ChaCha20 case counts.
+
+--- old
+    if (!suite_runs_aes_gcm(t->wr.suite)) {
+        return SIZE_MAX;
+    }
+--- new
+    if (t->wr.suite == 0) {
+        return SIZE_MAX;
+    }

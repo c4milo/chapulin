@@ -1,7 +1,8 @@
 // TLS_AES_128_GCM_SHA256 in the record layer, against RFC 8448's printed
 // bytes, and TLS_AES_256_GCM_SHA384 against The Illustrated TLS 1.3
 // Connection's. docs/server.md names this binary bin/aes_suite_test, and
-// bin/aes_suite_test_extern runs it on AES=extern.
+// bin/aes_suite_test_extern runs it on AES=extern. It also holds rec_seal
+// to the exact boundary of the AES-GCM ceiling, REC_AES_GCM_RECORDS_MAX.
 //
 // The vector is RFC 8448 section 3's client handshake traffic secret and
 // the record the client sends under it. Starting from the secret rather
@@ -237,6 +238,31 @@ static void test_key_update_keeps_suite(void) {
     CHECK(pt_len == sizeof msg && memcmp(pt, msg, sizeof msg) == 0);
 }
 
+// RFC 9846 §5.5: an AES-GCM key seals no record at or past
+// REC_AES_GCM_RECORDS_MAX (record.h), and ch_write sends its KeyUpdate
+// before that. The refusal's boundary is exact under both AES-GCM suites:
+// the last sequence number below the ceiling seals, and the ceiling
+// itself does not. ChaCha20-Poly1305 has no such limit and seals there.
+static void test_aes_gcm_ceiling(void) {
+    uint8_t secret[SHA384_LEN];
+    memset(secret, 0x5a, sizeof secret);
+    static const uint16_t suites[3] = {SUITE_AES_128_GCM_SHA256, SUITE_AES_256_GCM_SHA384,
+                                       SUITE_CHACHA20_POLY1305_SHA256};
+    static const uint8_t msg[1] = {'x'};
+    static uint8_t out[64];
+    for (size_t i = 0; i < sizeof suites / sizeof suites[0]; i++) {
+        rec_dir d;
+        memset(&d, 0, sizeof d);
+        rec_dir_init_suite(&d, secret, suites[i]);
+        d.seq = REC_AES_GCM_RECORDS_MAX - 1;
+        size_t out_len = 0;
+        CHECK(rec_seal(&d, REC_APPDATA, msg, sizeof msg, out, sizeof out, &out_len) == 0);
+        CHECK(d.seq == REC_AES_GCM_RECORDS_MAX);
+        int want = suites[i] == SUITE_CHACHA20_POLY1305_SHA256 ? 0 : -1;
+        CHECK(rec_seal(&d, REC_APPDATA, msg, sizeof msg, out, sizeof out, &out_len) == want);
+    }
+}
+
 int main(void) {
     test_rfc8448_client_finished_record();
     test_rfc8448_record_opens();
@@ -244,10 +270,11 @@ int main(void) {
     test_key_update_keeps_suite();
     test_aes256_encrypted_extensions_record();
     test_aes256_key_update();
+    test_aes_gcm_ceiling();
     if (failures == 0) {
         (void)printf("aes_suite: RFC 8448's AES-128-GCM record and the Illustrated TLS 1.3 "
-                     "AES-256-GCM record seal and open, KeyUpdate keeps each suite, chacha20 "
-                     "unchanged\n");
+                     "AES-256-GCM record seal and open, KeyUpdate keeps each suite, an AES-GCM "
+                     "key seals nothing at its ceiling, chacha20 unchanged\n");
     }
     return failures != 0;
 }

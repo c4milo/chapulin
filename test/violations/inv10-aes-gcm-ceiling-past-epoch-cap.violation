@@ -1,0 +1,16 @@
+invariant: INV-10
+file: tls_write.c
+catches: tcp_blocking_key_limit
+reason: ch_write sends a KeyUpdate at the ceiling after this side has sent
+  2^48 - 1 of them, which RFC 9846 section 4.7.3 forbids a sender
+  (rfc9846.txt:3400-3402), rather than failing the session. The sender cap
+  case expects CH_ECAP and internal_error there.
+
+--- old
+    if (t->send_epochs >= HSPOST_SEND_EPOCHS_MAX) {
+        tlsi_fail(t, ALERT_INTERNAL_ERROR);
+        return CH_ECAP;
+    }
+    int rc = hspost_send_key_update(t);
+--- new
+    int rc = hspost_send_key_update(t);

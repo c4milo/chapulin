@@ -16,7 +16,8 @@
 // It also feeds the server the offer h3spec's ClientHello carries,
 // cipher_suites (0x1302, 0x1301, 0x1304), through the real parser: no
 // ChaCha20, both AES-GCM suites, and TLS_AES_128_CCM_SHA256, which no
-// build holds.
+// build holds. And it runs test/key_limit_cases.h: each end writes
+// across its AES-GCM write key's ceiling while the other reads.
 #ifndef CH_TEST_WEBPKI_LOOP_SUITES_H
 #define CH_TEST_WEBPKI_LOOP_SUITES_H
 #ifdef CH_SUITE_AES_GCM
@@ -209,6 +210,24 @@ static void check_suite_order_rules(void) {
     CHECK(ch_srv_record_init(&server, &scfg) == CH_OK);
 }
 
+// One handshake whose ServerHello selects suite, for
+// test/key_limit_cases.h. run leaves the ticket the server sent read, so
+// both ends are connected and nothing waits on either pipe.
+static int key_limit_connect(uint16_t suite, ch_tls **client_out, ch_tls **server_out) {
+    ch_cfg scfg;
+    ch_cfg ccfg;
+    server_config_suites(&scfg, ticket_key, &suite, 1);
+    client_config(&ccfg, webpki_corpus_anchors_root_p384, "s3.example.test", 0);
+    if (!run(&ccfg, &scfg) || client.t.suite != suite || server.t.suite != suite) {
+        return 0;
+    }
+    *client_out = &client.t;
+    *server_out = &server.t;
+    return 1;
+}
+
+#include "key_limit_cases.h"
+
 static void check_suites(void) {
     check_suite_round_trip(SUITE_CHACHA20_POLY1305_SHA256);
     check_suite_round_trip(SUITE_AES_128_GCM_SHA256);
@@ -217,6 +236,7 @@ static void check_suites(void) {
     check_default_order();
     check_h3spec_offer();
     check_suite_order_rules();
+    check_key_limit();
 }
 
 #endif // CH_SUITE_AES_GCM

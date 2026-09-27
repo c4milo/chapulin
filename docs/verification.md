@@ -16,7 +16,7 @@ Four layers cover four different failure classes:
 
 ## What the proofs cover
 
-80 of the 89 C sources in the tree root are compiled into a
+80 of the 90 C sources in the tree root are compiled into a
 [CBMC](https://www.cprover.org/cbmc/) harness that a launch line in
 `proof/run.sh` runs. For every input within the harness's bound, the
 proof shows the source is free of:
@@ -38,7 +38,7 @@ inputs.
 
 ### Sources with no launched harness
 
-The other 9 sources are in no such harness:
+The other 10 sources are in no such harness:
 
 | Source | Why | What covers it instead |
 |---|---|---|
@@ -48,12 +48,15 @@ The other 9 sources are in no such harness:
 | `aes_hw.c` | It calls the compiler's AES intrinsics, which CBMC cannot unwind. | `bin/aes_equiv_test` holds it to `quic_aes_soft.c`. |
 | `ghash_hw.c` | It runs GHASH on the carry-less multiply intrinsics. | `bin/ghash_equiv_test` holds it to `gcm.c`'s proven portable multiply. |
 | `build.c` | It holds one const record and no function, so there is no path for a harness to drive. | `lib-check` reads every field back. |
+| `tls.c` | No harness. Its send path, `ch_write` and `ch_writable_len`, is `tls_write.c`, which [writable_len](#writable_len) proves. | `bin/unit`, `bin/tcp_blocking_loop_test`, `bin/tcp_nonblocking_loop_test` and the webpki loop tests |
 
 `aes_extern.c` is proved, but only up to the `ch_aes_block` the caller
 writes, which has no body here to prove ([aes_extern](#aes_extern)).
-`tls.c` and `tcp_nonblocking_frame.c` are in a harness for one or two
-calls each, and the rest of each file is not proved
-([writable_len](#writable_len), [record_whole_len](#record_whole_len)).
+`tcp_nonblocking_frame.c` is in a harness for one call, and the rest of
+the file is not proved ([record_whole_len](#record_whole_len)).
+`tls_write.c` holds `ch_write`, `ch_writable_len` and their helpers
+alone, and [writable_len](#writable_len) drives both calls in each build
+the file compiles differently in.
 
 `make check` runs `make proof-coverage`, which counts them and
 regenerates the source-by-source table in `bin/proof-coverage.md`. It
@@ -668,8 +671,12 @@ The entries are grouped by area:
 - **Proves:** `rec_dir_init_suite` and `rec_dir_update`, over each of the
   three suites, derive at the suite's hash and key length and keep the
   suite across a KeyUpdate, and one seal and one open run the AEAD the
-  suite names. HKDF, the ChaCha20 AEAD and the AES-GCM traffic entries
-  are stubbed to their contracts.
+  suite names. The seal runs at any sequence number and refuses exactly
+  two kinds: the last one there is, where the next increment would wrap,
+  and under AES-GCM every one at or past `REC_AES_GCM_RECORDS_MAX`, the
+  most records one AES-GCM key seals (docs/decisions.md 78). HKDF, the
+  ChaCha20 AEAD and the AES-GCM traffic entries are stubbed to their
+  contracts.
 - **Bound:** records ≤ 16 B, secrets one hash long.
 
 #### record_whole_len
@@ -708,8 +715,59 @@ The entries are grouped by area:
   of it returned no verdict in 600 s. `bin/unit` checks the answer
   against `ch_write` for every `cap` up to three records and one byte at
   three limits, and at `SIZE_MAX`.
-- **Not proved:** the rest of `tls.c`: `ch_connect`, `ch_read`,
-  `ch_close` and `ch_export`, and `tlsi_config_ok`. Tests cover them.
+- **Not proved:** `tls.c`: `ch_connect`, `ch_read`, `ch_close` and
+  `ch_export`, and `tlsi_config_ok`. Tests cover them. The one-suite
+  build compiles no AES-GCM ceiling, so this harness reads none;
+  [writable_len_suite](#writable_len_suite) proves the build that does.
+
+#### writable_len_suite
+
+- **Harnesses:** `writable_len_suite` (fast), `writable_len_suite_any` (fast)
+- **Build:** `SUITE=aesgcm`.
+- **Proves:**
+  - `writable_len_suite_any`: `ch_writable_len` is safe and free of UB
+    for any `peer_limit`, any suite code point, any write sequence number
+    and any `cap`, the path that counts a KeyUpdate included;
+  - `writable_len_suite`: its answer is the most plaintext `ch_write`
+    sends in `cap` bytes, the KeyUpdate record `ch_write` sends at an
+    AES-GCM write key's ceiling included: the real `ch_write` hands
+    `cfg.send` at most `cap` bytes for the answer, and more than `cap`
+    bytes for one byte more;
+  - on the way, what `ch_write` does at the ceiling: under AES-GCM it
+    seals no data record at the key's last sequence number,
+    `REC_AES_GCM_RECORDS_MAX - 1`, sends the KeyUpdate there and nowhere
+    else, and returns with that last sequence number still free; under
+    ChaCha20-Poly1305 it sends no KeyUpdate.
+
+  The two claims sit in two harnesses because each costs a division, and
+  in one formula they returned no verdict in 14 minutes.
+- **Not proved:** that no unsigned product on the KeyUpdate path wraps.
+  C defines unsigned wrap, so the checks this page lists do not look for
+  it; `tls_write.c` states why none wraps, and `test/key_limit_cases.h`
+  checks the answer at `SIZE_MAX` on the host. With
+  `--unsigned-overflow-check`, `writable_len_suite_any` returned no verdict
+  in 10 minutes, on 64 bits and on 32.
+
+  `rec_seal`, `io_send_all` and `hspost_send_key_update` are stubbed to
+  their contracts: a sealed record is `REC_OVERHEAD` bytes longer than
+  its plaintext and moves the sequence number on by one, and a KeyUpdate
+  is one record of `CH_KEY_UPDATE_RECORD_LEN` bytes followed by the next
+  key at sequence number 0.
+- **Bound:** `writable_len_suite` at `peer_limit` ≥ 63, `cap` up to three
+  whole records of the session's own limit, a KeyUpdate record and one
+  byte (1,630 B at `CH_TX_PT`), each of the three suites, every write
+  sequence number below `REC_AES_GCM_RECORDS_MAX`, and a KeyUpdate count
+  below 2^48 − 1. So `ch_write` turns at most four times, and the
+  KeyUpdate falls before the first record, between two, or after the
+  last whole one. A cap of three records of `CH_TX_PT` instead, the
+  bound [writable_len](#writable_len) takes, lets `ch_write` turn 20 times
+  at a limit of 63, and with the KeyUpdate term that formula returned no
+  verdict in 10 minutes; `test/key_limit_cases.h` sweeps every cap up to
+  three records at a limit of 63 against the real `ch_write`. A write here
+  crosses the ceiling once at most, so no answer stops at the one
+  KeyUpdate `ch_writable_len` counts (tls.h); `test/key_limit_cases.h`
+  checks that answer at `SIZE_MAX`, and the write at the KeyUpdate count's
+  cap.
 
 ### Client handshake
 
@@ -1970,8 +2028,11 @@ multiplies, the divisions and the calls into the compiler's 64-bit
 division runtime, matching each opcode as a prefix so a condition-code
 suffix cannot hide one. Under the pinned clang every file is at zero
 except two, both over public values: sha3, whose `% 5` is one
-multiply-high, and tls.c, whose `ch_writable_len` divides the caller's
-buffer length by one record's length.
+multiply-high, and tls_write.c, whose `ch_writable_len` divides the
+caller's buffer length by one record's length. A `SUITE=aesgcm` build's
+`ch_writable_len` divides by that length a second time when the write
+it sizes crosses an AES-GCM key's ceiling; the lint compiles tls_write.c
+without the suite define, so it counts the first division alone.
 
 `make lint-wide-multiply-gcc` runs the same count under the gcc each CI
 lane ships:
@@ -1982,9 +2043,9 @@ lane ships:
 
 At `-Os` every file is at zero there too, except sha3's `% 5`, which
 each gcc lowers to five hardware divisions, or on rv32ic to five calls
-to `__modsi3`, and tls.c's one division. At `-O2` the mips gcc copies
-that division into both paths of `ch_writable_len`, so tls.c counts two
-there, one per path.
+to `__modsi3`, and tls_write.c's one division. At `-O2` the mips gcc
+copies that division into both paths of `ch_writable_len`, so
+tls_write.c counts two there, one per path.
 
 It was not always so. gcc fused the decomposition's 64-bit
 cross-product sum back into `umlal`, and rewrote the sign mask

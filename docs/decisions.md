@@ -3027,6 +3027,10 @@ does nothing more.
       `test/zig-consumer/unit.zig`, over the public calls, and run
       against each configuration's module.
 
+    Entry 78 changed one thing here: `ch_write` sends a KeyUpdate by
+    itself as the last record an AES-GCM write key seals, no call that a
+    caller starts one through is planned, and `keyUpdate` stays reserved.
+
 74. **A server checks every provisioned identity against what its flight
     needs before a session starts, and a refusal inside the flight is
     `CH_EAUTH`.** The Zig API's error table (entry 73) found a server
@@ -3321,3 +3325,138 @@ does nothing more.
     Gain: a replay needs only each session's seed, whichever calls draw
     and in whatever order, and two sessions never draw from each other's
     stream, on one thread or several.
+
+78. **An AES-GCM write key seals at most 2^24 records, and `ch_write` sends
+    the KeyUpdate that retires it by itself.** RFC 9846 §5.5 has a sender
+    close the connection or send a KeyUpdate while a key is still below
+    its AEAD's usage limit (`rfc9846.txt:3743-3744`), and gives AES-GCM's
+    as up to 2^24.5 full-size records under one set of keys
+    (`rfc9846.txt:3750-3753`). A `SUITE=aesgcm` build's record layer held
+    only the 64-bit sequence wrap, so a long connection sealed past that
+    limit under one key. docs/server.md said `rec_seal` had a per-suite
+    ceiling and that the session rekeyed with `rec_dir_update` before it.
+    Neither existed, and a rekey with no KeyUpdate would have left the
+    peer reading under the old key. colibri needed the rekey and asked for
+    a call that starts a KeyUpdate. Camilo decided on 2026-09-27 that
+    chapulin rekeys by itself and adds no public call.
+
+    - **The ceiling.** `REC_AES_GCM_RECORDS_MAX` (`record.h`) is 2^24, the
+      largest power of two at or below 2^24.5. It counts every record under
+      the key, whatever its size, the reading that can never let a key
+      pass the RFC's figure. An AES-GCM write key seals at sequence numbers
+      0 to 2^24 - 1 and at none above: `rec_seal` refuses a record at or
+      past the ceiling, beside its wrap guard, so no path seals past it.
+      `rec_open` keeps no count, because §5.5 says a receiver SHOULD NOT
+      enforce the limit (`rfc9846.txt:3747-3748`).
+    - **The KeyUpdate.** Before each record it seals, `ch_write` reads the
+      write key's suite and sequence number. When an AES-GCM key's next
+      record would take its last sequence number, `ch_write` sends a
+      KeyUpdate there, under the old key, then moves the write direction
+      to the next key and seals the record at sequence number 0 of it. So
+      the KeyUpdate is the last record under the old key. Its
+      request_update is 0: the key at its limit is this side's write key,
+      and the peer's write key keeps a count of its own.
+      `hspost_send_key_update` (`handshake_post.c`) seals, sends and
+      rekeys, for this and for the answer to a peer that asked for one.
+      `ch_write` serves both roles and both TCP transports.
+    - **The sender cap.** §4.7.3 lets a sender send 2^48 - 1 KeyUpdates
+      (`rfc9846.txt:3400-3402`), `HSPOST_SEND_EPOCHS_MAX`, and says the
+      limits of §5.5 may then end the connection
+      (`rfc9846.txt:3408-3410`). A key at its ceiling after that many
+      fails the write: `tlsi_fail` seals internal_error at the key's last
+      sequence number and wipes the keys, and `ch_write` returns
+      `CH_ECAP`. That is `ch_write`'s code for a record it cannot seal,
+      which it already returned at the sequence wrap, and it leaves the
+      session dead, as INV-13 and tls.h say of every `ch_write` error but
+      `CH_EPROTO`. internal_error, because the cause is this side's count
+      and not the peer's input.
+    - **Other sends.** A server's NewSessionTicket goes out at sequence
+      number 0 of the key its handshake installed, the answer to a peer's
+      KeyUpdate rekeys right after its one record, and an alert is the
+      last record before the keys are wiped. `ch_write` leaves every
+      AES-GCM key with its last sequence number free, so each of the three
+      takes at most that one, and none checks.
+    - **`ch_writable_len`.** It counts the KeyUpdate record when the write
+      it sizes would cross the ceiling, so the Zig API's all-or-nothing
+      `write` (entry 73) never hands `ch_write` an output too short for
+      what it sends. It counts one KeyUpdate and no second: it answers at
+      most the plaintext of the records the key has left and 2^24 - 1
+      records under the next key, over a gigabyte at the smallest record a
+      peer may ask for. Counting any number of KeyUpdates would divide cap
+      by the length of 2^24 - 1 records and a KeyUpdate, which passes 2^32
+      at records of 235 bytes, where a 32-bit `size_t` cannot hold it. The
+      crossing path divides by the record length a second time, in a
+      `SUITE=aesgcm` build alone, over public lengths.
+    - **The file.** `ch_write` and `ch_writable_len` moved from `tls.c` to
+      `tls_write.c`, which `tls.h` declares, because the change took
+      `tls.c` past 500 lines. `lint-wide-multiply`'s division ceiling and
+      `RV_ALLOWED`'s runtime calls moved with them, and `tls.c` joined
+      `tools/proof-cover.py`'s `AUDITED`, because `writable_len` now
+      includes `tls_write.c`.
+    - **QUIC.** Unchanged. RFC 9001 §6 forbids the TLS KeyUpdate message
+      there (`rfc9001.txt:1566-1568`), and each AES-GCM key set counts its
+      packets against §6.6's confidentiality limit (docs/quic.md).
+    - **The Zig API.** `write` is unchanged, because `writableLen` is
+      `ch_writable_len`. The reserved `keyUpdate` stays a `@compileError`,
+      and entry 73's result for a caller-started update at the cap goes
+      with the call.
+    - **The check.** `test/key_limit_cases.h` runs in
+      `bin/webpki_loop_aes` and `bin/webpki_loop_aes_extern` over
+      tcp-nonblocking, and in `bin/tcp_blocking_key_limit` over
+      tcp-blocking: a client and a server of one object each write across
+      the ceiling under both AES-GCM suites, with both ends' sequence
+      numbers moved near it rather than 2^24 records sealed.
+      `bin/aes_suite_test` holds `rec_seal`'s refusal to its exact
+      boundary. `writable_len_suite` proves `ch_writable_len`'s answer
+      against the real `ch_write` in the suite build, for every cap up to
+      three records of the session's limit, a KeyUpdate record and a
+      byte, and that no data record takes an AES-GCM key's last sequence
+      number; `writable_len_suite_any` proves the call safe over any
+      input; `record_suite` proves that `rec_seal` refuses the wrap and
+      the ceiling and nothing else. Seven mutants in `test/violations/`
+      break the rules, and each is caught.
+    - **Two repairs the checks needed.** `bin/webpki_loop_aes_extern`'s
+      rule sat above `WEBPKI_LOOP_SRCS`, and make expands a rule's
+      prerequisites where it reads the rule, so the list held none of the
+      library sources and an edit to one never rebuilt the binary. Two of
+      the mutants here passed on that stale binary until the rule moved
+      below the list. And a `lint-tidy` pass now reads `tls_write.c` and
+      `record.c` under the suite define, which reads `ct.h`'s suite guard
+      for the first time; its `#if defined(CH_AES_HW)` is `#ifdef` now,
+      as readability-use-concise-preprocessor-directives asks.
+    - **The spec.** Unchanged. `spec/lean/Spec/Record.lean` models one
+      record's protection under ChaCha20-Poly1305, and its `seal` says it
+      does not model `rec_seal`'s refusal; `Spec/Handshake.lean` models a
+      KeyUpdate as a message a connected session accepts. Neither models
+      the records a session sends or when it moves to a new key.
+
+    Rejected:
+
+    - **A KeyUpdate call the caller starts,** entry 73's reserved
+      `keyUpdate`. colibri needed it for this limit alone, and a caller
+      that forgot to call it would seal past the limit.
+    - **Closing the connection at the ceiling,** which §5.5 also allows.
+      A host moving large uploads would lose its connection every 2^24
+      records, 8 GiB at 512 bytes a record.
+    - **Rekeying without a KeyUpdate,** what docs/server.md described. The
+      peer's read direction would stay on the old key, and the next record
+      would fail its tag.
+    - **Counting full-size records alone,** the unit the RFC's figure is
+      in. `ch_write` would have to judge each record's size, and the key
+      could seal more records than the count here allows.
+    - **request_update 1.** The peer's write key keeps its own count, so
+      its answer would rekey a direction that is at no limit.
+
+    Cost: one comparison before each record a `SUITE=aesgcm` build seals
+    through `ch_write`, and one 27-byte KeyUpdate record per 2^24 records
+    under an AES-GCM key. No struct grew, and bench/sram.sh reads the same
+    numbers. A caller that sizes its output for one message adds
+    `CH_KEY_UPDATE_RECORD_LEN` bytes under `SUITE=aesgcm`, or the write
+    that crosses the ceiling returns `error.Cap` through the Zig API with
+    nothing sealed. `make check` runs one more binary and one more tidy
+    pass, and the fast proof tier two more harnesses, 49 seconds and
+    under one.
+
+    Gain: a `SUITE=aesgcm` session keeps RFC 9846 §5.5's AES-GCM limit for
+    as long as it runs, with nothing for the caller to call, and every
+    write sized with `ch_writable_len` still fits.

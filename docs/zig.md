@@ -347,10 +347,10 @@ A client in an object without SUITE=aesgcm offers ChaCha20 alone and
 writes no `ch_tls.suite`, so its `suite()` stays null.
 
 A record session's `keyUpdate` is reserved: no C call starts a
-record-mode KeyUpdate, so it is a `@compileError` that says so, and
-`read` answers the peer's KeyUpdate inside `ch_read`. When C gains that
-call, RFC 9846 §4.7.3's cap on updates sent gets a result of its own:
-nothing written, keys unchanged, session live.
+record-mode KeyUpdate, so it is a `@compileError` that says so. `write`
+sends one inside `ch_write` as the last record an AES-GCM write key
+seals, and `read` answers the peer's KeyUpdate inside `ch_read`, so no
+such call is planned (docs/decisions.md 78).
 
 ### A handshake
 
@@ -441,7 +441,12 @@ message at a time sizes `output` once and never loops. `ch_write` cuts
 records of the smaller of `CH_TX_PT` and `peerLimit()`, and
 `ch_writable_len` counts in the same limit, so a caller needs neither
 number to size a write. At `TX_RECORD=16384` a record carries 16,384
-bytes; the API adds nothing for it.
+bytes; the API adds nothing for it. Under `SUITE=aesgcm`, a write that
+takes an AES-GCM write key to its ceiling carries one KeyUpdate record
+among its records, `key_update_record_len` bytes, and `writableLen`
+counts it. A caller that sizes `output` for its largest message adds
+`key_update_record_len` bytes there, or the write that crosses the
+ceiling returns `error.Cap` with nothing sealed.
 
 `close(output)` sends this side's close_notify into `output`, at most
 `alert_record_len` bytes, and wipes the session's keys: that is
@@ -555,7 +560,7 @@ runs inside `seal` and `open`, as in C (RFC 9001 §9.5).
 - **An external PSK, the CA epoch callbacks and `pin_slot`.** They serve
   device builds. Each is one `ch_cfg` or `ch_tls` field a later version
   can add.
-- **A record-mode KeyUpdate this side starts.** Reserved, above.
+- **A record-mode KeyUpdate the caller starts.** Reserved, above.
 - **Alert names.** No public header declares the `ALERT_` constants, so
   `alert`, `alertSent` and `alertReceived` return the AlertDescription
   byte.

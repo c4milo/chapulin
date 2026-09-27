@@ -13,11 +13,11 @@ reason: the AES-GCM suite build stops needing CH_NATIVE_AES, so
   state the timing.
 
 --- old
-#if defined(CH_AES_HW)
+#ifdef CH_AES_HW
 #ifndef CH_NATIVE_AES
 #error "CH_SUITE_AES_GCM on AES=hw needs -DCH_NATIVE_AES: the build asserts the timing (aes_hw.c)"
 #endif
 #elif
 --- new
-#if defined(CH_AES_HW)
+#ifdef CH_AES_HW
 #elif

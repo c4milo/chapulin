@@ -1,5 +1,5 @@
 invariant: INV-38
-file: tls.c
+file: tls_write.c
 catches: proof/prove-one.sh writable_len
 reason: ch_writable_len counts each record one byte shorter than
   rec_seal writes it, so for some caps its answer's records are longer

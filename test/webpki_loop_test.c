@@ -26,7 +26,11 @@
 //
 // Built at TX_RECORD=16384 as bin/webpki_loop_tx_record, it also sends
 // application records of CH_TX_PT bytes each way
-// (test/webpki_loop_tx_record.h, docs/decisions.md 71).
+// (test/webpki_loop_tx_record.h, docs/decisions.md 71). Built with
+// -DCH_SUITE_AES_GCM as bin/webpki_loop_aes and bin/webpki_loop_aes_extern,
+// it runs each suite end to end (test/webpki_loop_suites.h), and each end
+// writes across its AES-GCM write key's ceiling (test/key_limit_cases.h,
+// docs/decisions.md 78).
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -416,6 +420,10 @@ int main(void) {
         (void)printf("webpki_loop: a full handshake over the r2 chain, a resumed ticket with no"
                      " certificate, and a declined ticket completed as a full handshake that"
                      " checked the hostname and the anchor\n");
+#ifdef CH_SUITE_AES_GCM
+        (void)printf("webpki_loop: under AES-128-GCM and AES-256-GCM each end sent one KeyUpdate"
+                     " at its write key's last sequence number and the other read on across it\n");
+#endif
 #if CH_TX_PT > 512
         (void)printf("webpki_loop: at CH_TX_PT %d, a write of CH_TX_PT bytes went out as one record"
                      " and one byte more as two, %d bytes moved each way, and a smaller"

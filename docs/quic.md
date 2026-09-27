@@ -636,7 +636,11 @@ schedule. A 1-RTT key update derives the next set at the suite's hash and
 keeps the suite. Each AES-GCM key set counts the packets it seals and
 refuses the 2^23rd, §6.6's confidentiality limit (`rfc9001.txt:1812-1813`);
 initiating the key update §6.6 asks for before that is colibri's
-(`rfc9001.txt:1803-1805`).
+(`rfc9001.txt:1803-1805`). The TCP record layer's AES-GCM ceiling,
+`REC_AES_GCM_RECORDS_MAX`, before which `ch_write` sends a KeyUpdate by
+itself (docs/decisions.md 78), does not apply here: RFC 9001 §6 forbids
+the TLS KeyUpdate message on this transport (`rfc9001.txt:1566-1568`), and
+these counts hold the AES-GCM key sets instead.
 
 What holds it:
 

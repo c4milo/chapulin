@@ -169,15 +169,7 @@ int hspost_take_ticket(ch_tls *t, const uint8_t *body, size_t n, uint8_t *alert,
 #endif
 
 #ifndef CH_TRANSPORT_QUIC_NONBLOCKING
-// One KeyUpdate: the read direction always rekeys — receivers are
-// forbidden from enforcing the peer's epoch cap (RFC 9846 §4.7.3) — and
-// a reply goes out only when requested and while our own epoch count is
-// under the cap the same section puts on senders.
-static int handle_key_update(ch_tls *t, uint8_t request) {
-    rec_dir_update(t->rd_secret, &t->rd);
-    if (request != 1 || t->send_epochs >= 0xffffffffffffULL) {
-        return CH_OK;
-    }
+int hspost_send_key_update(ch_tls *t) {
     uint8_t msg[5] = {HS_KEY_UPDATE, 0, 0, 1, 0};
     size_t out_len = 0;
     if (rec_seal(&t->wr, REC_HANDSHAKE, msg, sizeof msg, t->tx, sizeof t->tx, &out_len) != 0 ||
@@ -187,6 +179,18 @@ static int handle_key_update(ch_tls *t, uint8_t request) {
     rec_dir_update(t->wr_secret, &t->wr);
     t->send_epochs++;
     return CH_OK;
+}
+
+// One KeyUpdate: the read direction always rekeys — receivers are
+// forbidden from enforcing the peer's epoch cap (RFC 9846 §4.7.3) — and
+// a reply goes out only when requested and while our own epoch count is
+// under the cap the same section puts on senders.
+static int handle_key_update(ch_tls *t, uint8_t request) {
+    rec_dir_update(t->rd_secret, &t->rd);
+    if (request != 1 || t->send_epochs >= HSPOST_SEND_EPOCHS_MAX) {
+        return CH_OK;
+    }
+    return hspost_send_key_update(t);
 }
 
 // One NewSessionTicket. RFC 9846 §4.7.1 gives the message to the server to

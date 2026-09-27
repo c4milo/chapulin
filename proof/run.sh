@@ -625,7 +625,10 @@ launch slow:4 full record 165 "" ct.c
 # PROVE_NO_CACHE=1 /usr/bin/time -l): 579 properties, 30 s, 0.59 GB peak.
 # rec_dir_update deriving at SHA256_LEN under every suite fails the hash
 # assertion, and an AES dispatch that names AES-128-GCM alone fails the
-# seal and open assertions, so both properties are reached.
+# seal and open assertions, so both properties are reached. With the seal
+# at any sequence number, refusing the wrap and an AES-GCM record at or
+# past REC_AES_GCM_RECORDS_MAX and nothing else: 592 properties, 18 s,
+# 0.64 GB peak at a load average near 25.
 launch fast full record_suite 250 "" ct.c -DCH_SUITE_AES_GCM -DCH_AES_HW -DCH_NATIVE_AES
 # The x25519 ladder keeps its limbs inside the range the field-op proofs
 # assume (https://github.com/c4milo/chapulin/issues/50). x25519_step
@@ -800,8 +803,25 @@ launch fast full record_whole_len 2 "" -DCH_TRANSPORT_TCP_NONBLOCKING buf.c
 # contracts. ch_write.1 is its record loop, which turns at most 20 times
 # there. Measured the same way (PROVE_ONLY=writable_len PROVE_NO_CACHE=1):
 # 420 properties, 58 s, 185 MB. The harness records the forms that took
-# longer.
+# longer. With the send path in tls_write.c, which the harness includes in
+# place of tls.c: 71 properties, 77 s, 200 MB at a load average near 25.
+# The 349 that went were tls.c's calls, which no path here reaches.
 launch fast full writable_len 2 "ch_write.1:21"
+# writable_len_suite: the answer through the real ch_write in the
+# -DCH_SUITE_AES_GCM build, where ch_write sends a KeyUpdate at an AES-GCM
+# write key's ceiling and ch_writable_len counts it, over each of the three
+# suites and every write sequence number below the ceiling, with
+# hspost_send_key_update stubbed to its contract beside rec_seal and
+# io_send_all. Its cap holds three records of the session's own limit, so
+# ch_write.1 turns at most four times. writable_len_suite_any proves the
+# call safe over any input in that build. Beside each other in one
+# formula, the two returned no verdict in 14 minutes, 11.5 of them in
+# kissat, at a load average near 20. Measured apart (PROVE_ONLY=<name>
+# PROVE_NO_CACHE=1 /usr/bin/time -l ./proof/run.sh fast):
+# writable_len_suite 143 properties, 49 s, 72 MB at a load average near
+# 11; writable_len_suite_any 72 properties, under a second, 20 MB.
+launch fast full writable_len_suite 2 "ch_write.1:5" -DCH_SUITE_AES_GCM -DCH_AES_HW -DCH_NATIVE_AES
+launch fast full writable_len_suite_any 2 "" -DCH_SUITE_AES_GCM -DCH_AES_HW -DCH_NATIVE_AES
 # keysched: 13 s under this script's own flags. Extract and Expand-Label sequencing
 # over 32-byte secrets; sha256 is harness.h's stub, since the schedule's
 # arithmetic is length handling rather than compression.
@@ -867,7 +887,9 @@ launch fast full epoch 40 "" ct.c
 # 111 s, 4.17 GB peak at a load average near 30. With decode_error beside
 # it, for a KeyUpdate body that is not one byte and a NewSessionTicket
 # whose fields do not fill it (INV-14): 758 properties, 107 s, 5.32 GB
-# peak at a load average near 6, under the weight of 6.
+# peak at a load average near 6, under the weight of 6. With the KeyUpdate
+# answer sent through hspost_send_key_update, which ch_write shares: 758
+# properties, 130 s, 2.43 GB peak at a load average near 15.
 launch slow:6 full handshake_post 132 "handle_post_handshake.0:33,fill_nondet.0:130" --object-bits 11 buf.c ct.c session.c
 # The only launch line that builds the hybrid key exchange
 # (https://github.com/c4milo/chapulin/issues/47). hybrid_secret over any seed,

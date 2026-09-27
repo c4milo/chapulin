@@ -1,0 +1,12 @@
+invariant: INV-10
+file: record.c
+catches: aes_suite_test_extern
+reason: rec_seal seals an AES-GCM record at REC_AES_GCM_RECORDS_MAX, a record
+  past what one key may seal under RFC 9846 section 5.5. ch_write never
+  asks it to, so only the record layer's own boundary test sees the rule
+  go.
+
+--- old
+    if (suite_runs_aes_gcm(d->suite) && d->seq >= REC_AES_GCM_RECORDS_MAX) {
+--- new
+    if (suite_runs_aes_gcm(d->suite) && d->seq > REC_AES_GCM_RECORDS_MAX) {
