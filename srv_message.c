@@ -33,7 +33,8 @@ const uint8_t srv_hrr_random[SRV_RANDOM] = {
 
 // The largest value a 3-byte length field on the wire can carry. A cert_data
 // length above it names no message, which is what
-// srv_build_certificate_entry_prefix refuses.
+// srv_build_certificate_entry_prefix refuses, and srv_certificate_fits holds
+// a whole Certificate message's length to it.
 #define SRV_U24_MAX 0xFFFFFFu
 
 // The fields a ServerHello and a HelloRetryRequest both carry, in the order
@@ -210,6 +211,23 @@ size_t srv_certificate_message_len(const ch_identity *id) {
         n += SRV_CERT_ENTRY_FRAME + id->chain[i].len;
     }
     return n;
+}
+
+int srv_certificate_fits(const ch_identity *id) {
+    // What the handshake header's length field has left for the entries
+    // once the context length byte and the list length are counted.
+    size_t room = SRV_U24_MAX - (SRV_CERT_HEAD - 4);
+    for (uint8_t i = 0; i < id->chain_count; i++) {
+        const ch_cert *cert = &id->chain[i];
+        // Each test subtracts from room rather than adds to a total, so a
+        // len near SIZE_MAX cannot wrap past it.
+        if (cert->der == NULL || cert->len == 0 || room < SRV_CERT_ENTRY_FRAME ||
+            cert->len > room - SRV_CERT_ENTRY_FRAME) {
+            return 0;
+        }
+        room -= SRV_CERT_ENTRY_FRAME + cert->len;
+    }
+    return 1;
 }
 
 size_t srv_build_certificate_header(uint8_t *out, size_t cap, const ch_identity *id) {

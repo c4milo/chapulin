@@ -206,6 +206,35 @@ static void test_init_refuses_a_missing_sink(void) {
     CHECK(seen.count == 0);
 }
 
+// An RSA modulus length the flight's signature buffer holds, SRV_SIG_MAX,
+// signs its CertificateVerify, and one byte more is refused at init with
+// nothing sent, before the flight could fail on it with the ServerHello
+// already out (srv_identities_usable, srv_auth.h). This tree's client
+// offers rsa_pss_rsae_sha256, so the RSA slot is the one that signs.
+static void test_init_refuses_an_rsa_modulus_past_the_buffer(void) {
+    uint8_t hello[CH_HELLO_MAX];
+    size_t hello_len = build_hello(hello, sizeof hello);
+    static uint8_t rec[CH_HELLO_MAX + REC_HDR];
+    size_t rec_len = wrap(rec, hello, hello_len);
+
+    ch_cfg cfg;
+    server_config(&cfg);
+    cfg.srv.rsa_pss.pub_len = SRV_SIG_MAX;
+    ch_record r;
+    memset(&seen, 0, sizeof seen);
+    CHECK(ch_srv_record_init(&r, &cfg) == CH_OK);
+    size_t consumed = 0;
+    CHECK(ch_srv_record_in(&r, rec, rec_len, &consumed) == CH_OK);
+    CHECK(seen.count >= 5);
+    ch_record_close(&r);
+
+    cfg.srv.rsa_pss.pub_len = SRV_SIG_MAX + 1;
+    memset(&seen, 0, sizeof seen);
+    CHECK(ch_srv_record_init(&r, &cfg) == CH_EINVAL);
+    CHECK(ch_record_state(&r) == CH_ST_FAILED);
+    CHECK(seen.count == 0 && seen.io_calls == 0);
+}
+
 // A record the caller has only half of is left whole for the next call:
 // nothing is consumed and the session stays alive.
 static void test_a_partial_record_is_not_consumed(void) {
@@ -439,6 +468,7 @@ int main(void) {
     size_t bytes = seen.total;
 
     test_init_refuses_a_missing_sink();
+    test_init_refuses_an_rsa_modulus_past_the_buffer();
     test_a_partial_record_is_not_consumed();
     test_a_refusing_sink_kills_the_session();
     test_a_session_id_draws_the_change_cipher_spec_through_the_sink();

@@ -1,4 +1,4 @@
-// Proves: the five entries of srv_auth.c read and write only inside
+// Proves: the six entries of srv_auth.c read and write only inside
 // their own buffers and commit no undefined behavior, over an
 // unconstrained configuration, an unconstrained transcript hash at every
 // length the contract admits, and every SignatureScheme code point.
@@ -8,7 +8,9 @@
 // hash_len and cap, and this harness varies all five. Each slot is
 // written field by field rather than filled through a byte pointer, so
 // every pointer in it is a real object or NULL and a dereference
-// srv_auth.c makes is a question about srv_auth.c.
+// srv_auth.c makes is a question about srv_auth.c. A chain pointer names
+// an array of 255 certificates, the most chain_count counts, because
+// the caller's contract is that chain points at chain_count entries.
 //
 // Each key pointer names one of four objects: the one its scheme wants,
 // the one the other scheme wants, an object too short for either, or
@@ -26,7 +28,11 @@
 // and writes, so the assertion that a signer's key buffer is readable
 // at the length it reads is what this proof says about the length test
 // in key_lengths_match. p256_sign_harness.c and rsa_sign_harness.c
-// prove the real signers.
+// prove the real signers. So are the ECDSA key test and the chain rule
+// srv_identities_usable asks, p256_sign_key_ok and srv_certificate_fits,
+// which p256_sign_harness.c and srv_message_harness.c prove. The RSA
+// key test, rsa_pss_sign_key_ok, is inline in rsa_sign.h, so it runs
+// here as written.
 //
 // What this does not reach: any claim that a signature is correct. The
 // stubs return an unconstrained verdict, so the proof covers both
@@ -94,9 +100,23 @@ int rsa_pss_verify(const uint8_t *n, size_t n_len, const uint8_t msg_hash[32], c
     return nondet_u8() ? 1 : 0;
 }
 
-// One certificate a chain pointer can name. srv_auth.c reads no byte of
-// it: identity_provisioned tests the pointer and the count alone.
-static const ch_cert cert = {NULL, 0};
+int p256_sign_key_ok(const uint8_t priv[P256_PRIV_LEN]) {
+    __CPROVER_assert(__CPROVER_r_ok(priv, P256_PRIV_LEN), "p256_sign_key_ok: key readable");
+    return nondet_u8() ? 1 : 0;
+}
+
+// srv_message.h's chain rule, which reads chain_count entries of the
+// chain and no certificate byte.
+int srv_certificate_fits(const ch_identity *id) {
+    __CPROVER_assert(__CPROVER_r_ok(id->chain, (size_t)id->chain_count * sizeof *id->chain),
+                     "srv_certificate_fits: chain readable");
+    return nondet_u8() ? 1 : 0;
+}
+
+// The certificates a chain pointer can name, as many as chain_count
+// counts. srv_auth.c reads no byte of them: identity_provisioned tests
+// the pointer and the count alone, and the chain rule is the stub above.
+static const ch_cert certs[255];
 
 // The objects a provisioned slot's key pointers name: the ECDSA scalar
 // and point, the RSA private key and modulus, and one object shorter
@@ -160,7 +180,7 @@ static const uint8_t *nondet_pub(size_t *len) {
 // One identity slot, provisioned or not as nondet chooses. Each pointer
 // names a real object or is NULL, never a nondet address.
 static void make_identity(ch_identity *id) {
-    id->chain = nondet_u8() ? &cert : NULL;
+    id->chain = nondet_u8() ? certs : NULL;
     id->chain_count = nondet_u8();
     id->priv = nondet_priv(&id->priv_len);
     id->pub = nondet_pub(&id->pub_len);
@@ -196,6 +216,10 @@ int main(void) {
 
     make_identities(&cfg);
     (void)srv_identity_live(&cfg);
+
+    make_identities(&cfg);
+    int usable = srv_identities_usable(&cfg);
+    __CPROVER_assert(usable == 0 || usable == 1, "srv_identities_usable answers 0 or 1");
 
     // Every code point, not only the two this build signs:
     // srv_identity_for answers for all of them.

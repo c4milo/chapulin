@@ -1267,8 +1267,20 @@ last `ROLE=server` stub, as the entry said it would.
   post-handshake parser hands `on_ticket` no NewSessionTicket whose
   `ticket_lifetime` is 0, which RFC 9846 §4.6.1 says to discard at once,
   and `ch_ticket_obfuscated_age` adds the ticket's `age_add` to the age
-  modulo 2^32 (docs/decisions.md 72). INV-38 states the refusals of a
-  `CH_TX_PT` or a `record_size_limit` out of range.
+  modulo 2^32 (docs/decisions.md 72). Every server entry,
+  `ch_srv_accept`, `ch_srv_record_init` and `ch_srv_quic_init`, and the
+  boot check `ch_srv_check`, refuses with `CH_EINVAL` and sends nothing a
+  configuration with a provisioned identity its flight could not sign
+  with or send (`srv_identities_usable`, srv_auth.h): key lengths other
+  than srv_cfg.h's or an RSA `pub_len` above `SRV_SIG_MAX`, a private
+  key its signer refuses (`p256_sign_key_ok`, `rsa_pss_sign_key_ok`),
+  or a chain a Certificate message cannot carry (`srv_certificate_fits`,
+  srv_message.h): an empty certificate, one with no bytes pointer, or
+  entries whose frames and bytes pass the room the handshake header's
+  3-byte length leaves. The flight's own refusal of such an identity
+  returns `CH_EAUTH` with internal_error, never `CH_EINVAL`
+  (docs/decisions.md 74). INV-38 states the refusals of a `CH_TX_PT` or
+  a `record_size_limit` out of range.
 - **Mechanism.** Fail-closed policy, each refusal an explicit branch
   with its alert.
 - **Check.** handshake_strict table cases per refusal; CBMC proves the
@@ -1458,6 +1470,26 @@ last `ROLE=server` stub, as the entry said it would.
   `srv-ticket-` violations guard the rules, and
   srv-resume-binder-memcmp carries INV-16 for the reason
   quic-token-memcmp does.
+  The server's identity rules are test/srv_identity_tests.h, which
+  bin/srv_auth_test runs: each rule's last admitted configuration and
+  its first refused one, the ECDSA scalar at 1 and n - 1 admitted and at
+  0 and n refused, one certificate of 2^24 - 10 bytes admitted and one
+  byte more refused, and every refused one refused by `ch_srv_check`
+  and by `ch_srv_accept` before either callback runs.
+  bin/srv_tcp_nonblocking_test signs its flight at an RSA `pub_len` of
+  `SRV_SIG_MAX` and refuses one byte more at `ch_srv_record_init`, and
+  bin/srv_quic_test sends a one-byte certificate and refuses an empty
+  one at `ch_srv_quic_init`, each with nothing sent. bin/p256_sign_test
+  and bin/rsa_sign_test hold each key test to its signer's answer at
+  every boundary key. The srv_message CBMC harness proves
+  `srv_certificate_fits` exact over entries of any length, and srv_auth
+  proves `srv_identities_usable` memory-safe, where an assert against
+  either of its two answers fails.
+  inv14-srv-identity-check-dropped and inv14-srv-rsa-modulus-unbounded
+  require bin/srv_tcp_nonblocking_test to fail, inv14-srv-empty-certificate
+  bin/srv_quic_test, and inv14-srv-chain-bound-one-past and
+  inv14-srv-p256-key-unchecked bin/srv_auth_test;
+  inv13-srv-signer-refusal-einval carries the flight's code.
 - **Violation.** A PR relaxes one refusal for interop with a broken
   server, or makes the server refuse a ClientHello for carrying
   something it does not know.

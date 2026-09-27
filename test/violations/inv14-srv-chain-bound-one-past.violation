@@ -1,0 +1,16 @@
+invariant: INV-14
+file: srv_message.c
+catches: srv_auth_test
+reason: srv_certificate_fits admits one byte more than the Certificate
+  message's 3-byte length field holds, so a server takes a chain whose
+  message length it would write cut to its low 24 bits, a message no
+  client can parse. test/srv_identity_tests.h requires one certificate
+  of 2^24 - 9 bytes, and two whose lengths sum one byte past the same
+  bound, to be refused.
+
+--- old
+        if (cert->der == NULL || cert->len == 0 || room < SRV_CERT_ENTRY_FRAME ||
+            cert->len > room - SRV_CERT_ENTRY_FRAME) {
+--- new
+        if (cert->der == NULL || cert->len == 0 || room < SRV_CERT_ENTRY_FRAME ||
+            cert->len > room - SRV_CERT_ENTRY_FRAME + 1) {

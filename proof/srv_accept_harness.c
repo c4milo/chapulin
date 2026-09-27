@@ -18,13 +18,13 @@
 // handshake_post's harness stubs them: record protection is proven in
 // record.c's own harness.
 //
-// srv_identity_live and srv_identity_check are stubbed too, for two
-// reasons. The real srv_identity_check signs and verifies, so the
-// signers' arithmetic would join this formula, and each signer has its
-// own. And the ch_cfg here is havocked rather than provisioned, so the
-// real srv_identity_live would answer 0 for it, refusing every
-// configuration before the ALPN rules ran and leaving this formula
-// proving one branch.
+// srv_identity_live, srv_identities_usable and srv_identity_check are
+// stubbed too, for two reasons. The real srv_identity_check signs and
+// verifies, so the signers' arithmetic would join this formula, and each
+// signer has its own. And the ch_cfg here is havocked rather than
+// provisioned, so the real srv_identity_live would answer 0 for it,
+// refusing every configuration before the ALPN rules ran and leaving
+// this formula proving one branch.
 #include "harness.h"
 
 #include <string.h>
@@ -205,12 +205,18 @@ int srv_send_new_session_ticket(handshake_state *h) {
     return flight_result(h);
 }
 
-// srv_auth.c's two entry points, havocked. The real srv_identity_live
-// reads only cfg and the real srv_identity_check runs a signer; both
-// are srv_auth.c's own proof.
+// srv_auth.c's three entry points, havocked. The real srv_identity_live
+// reads only cfg, the real srv_identities_usable reads cfg and runs the
+// signers' key tests, and the real srv_identity_check runs a signer; all
+// three are srv_auth.c's own proof.
 uint8_t srv_identity_live(const ch_cfg *cfg) {
     __CPROVER_assert(__CPROVER_r_ok(cfg, sizeof *cfg), "identity_live: cfg readable");
     return nondet_u8();
+}
+
+int srv_identities_usable(const ch_cfg *cfg) {
+    __CPROVER_assert(__CPROVER_r_ok(cfg, sizeof *cfg), "identities_usable: cfg readable");
+    return nondet_u8() & 1;
 }
 
 int srv_identity_check(const ch_cfg *cfg, uint16_t sigalg) {

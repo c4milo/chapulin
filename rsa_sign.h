@@ -46,6 +46,31 @@ typedef struct {
     size_t n_len;                  // 256..CH_RSA_MODULUS_MAX, a multiple of 8
 } ch_rsa_priv;
 
+// Whether k is a key rsa_pss_sign signs with: n_len inside the bound
+// above and a multiple of 8, and a modulus that is odd and has its top
+// bit set. Montgomery arithmetic needs an odd modulus, and the encoder
+// needs the top bit, which makes emLen exactly n_len and emBits exactly
+// 8 * n_len - 1, the shape every RSA key generator produces. The
+// verifier admits a shorter modulus because a peer's key comes from
+// elsewhere; a server's own key is refused rather than signed with.
+//
+// It reads n_len and two bytes of the modulus, which is public, and no
+// byte of d. rsa_pss_sign runs it first, and a server runs it when it
+// checks its configuration (srv_auth.h), so a malformed key is refused
+// before a session starts rather than inside the handshake. It is
+// inline so that rsa_pss_sign compiles one copy of the test: rsa_sign.c
+// is among the files lint-wide-multiply counts branches in. Returns 1 or
+// 0.
+static inline int rsa_pss_sign_key_ok(const ch_rsa_priv *k) {
+    if (k->n_len < 256 || k->n_len > CH_RSA_MODULUS_MAX || k->n_len % 8 != 0) {
+        return 0;
+    }
+    if ((k->n[k->n_len - 1] & 1) == 0 || (k->n[0] & 0x80) == 0) {
+        return 0;
+    }
+    return 1;
+}
+
 // What the constant-time claim covers, and what it does not.
 //
 // Covered. The exponentiation is a Montgomery ladder whose trip count is
@@ -83,14 +108,11 @@ typedef struct {
 
 // Signs msg_hash, the 32-byte SHA-256 of the content RFC 9846 §4.5.2
 // defines, and writes n_len bytes to sig. cap is the room sig has;
-// sig_len takes the length written. Returns 1 on success and 0 when the
-// key is malformed or when cap is short. A key is malformed here when
-// its length is outside the bound or not a multiple of 8, when the
-// modulus is even, which has no Montgomery inverse, or when the
-// modulus has its top bit clear, which every RSA key generator sets and
-// which rsa_sign.c needs to make emLen exactly n_len. The 1-or-0 return
-// is rsa_pss_verify's, because a caller that holds both calls should
-// read one convention; the caller turns a 0 into the alert it sends.
+// sig_len takes the length written. Returns 1 on success and 0 when
+// rsa_pss_sign_key_ok refuses the key or when cap is short. The 1-or-0
+// return is rsa_pss_verify's, because a caller that holds both calls
+// should read one convention; the caller turns a 0 into the alert it
+// sends.
 //
 // The salt is 32 fresh bytes from ch_rand_bytes. A device without
 // entropy must not get this far (rand.h).

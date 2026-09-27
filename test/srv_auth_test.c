@@ -157,6 +157,10 @@ static void provision_rsa(ch_cfg *cfg) {
     cfg->srv.rsa_pss.pub_len = sizeof rsa_sign_2048_n;
 }
 
+// The rules srv_identities_usable holds each identity to, which read the
+// key pairs and the chain above.
+#include "srv_identity_tests.h"
+
 // The identity predicates over a configuration the caller filled in,
 // and the refusals a slot with the wrong key lengths gets. A slot whose
 // pointers are set but whose priv_len is not the size of the type the
@@ -200,9 +204,10 @@ static void test_identity(void) {
     alert = 0;
     // This slot's priv_len is SHA256_LEN, not sizeof(ch_rsa_priv), so
     // the selection refuses it and no signer runs. The refusal writes
-    // neither output.
+    // neither output, and its code is CH_EAUTH, never CH_EINVAL: a
+    // flight that got here has sent its ServerHello (srv_auth.h).
     CHECK(srv_sign_certificate_verify(&live, SIGALG_RSA_PSS_RSAE_SHA256, transcript, SHA256_LEN,
-                                      sig, sizeof sig, &sig_len, &alert) == CH_EINVAL);
+                                      sig, sizeof sig, &sig_len, &alert) == CH_EAUTH);
     CHECK(alert == ALERT_INTERNAL_ERROR);
     CHECK(untouched(sig, sizeof sig) && untouched(&sig_len, sizeof sig_len));
     CHECK(srv_identity_check(&live, SIGALG_RSA_PSS_RSAE_SHA256) == CH_EINVAL);
@@ -274,7 +279,9 @@ static void test_sign_ecdsa(void) {
 // What the caller sees when the signer itself refuses. A scalar of 32
 // 0xff bytes is above the group order, which p256_sign refuses
 // (p256_sign.h), so this reaches the one path that runs a signer and
-// still fails.
+// still fails. A session never gets here with such a key, because
+// srv_identities_usable refuses it first (test/srv_identity_tests.h);
+// the call is made directly to see what the refusal writes.
 static void test_sign_refused(void) {
     static const uint8_t out_of_range[P256_PRIV_LEN] = {
         0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
@@ -294,7 +301,7 @@ static void test_sign_refused(void) {
 
     CHECK(srv_sign_certificate_verify(&live, SIGALG_ECDSA_P256_SHA256, transcript,
                                       sizeof transcript, sig, sizeof sig, &sig_len,
-                                      &alert) == CH_EINVAL);
+                                      &alert) == CH_EAUTH);
     CHECK(alert == ALERT_INTERNAL_ERROR);
     // The refusal reports no signature and leaves no bytes of one
     // behind, so a caller that ignored the return value writes zeros.
@@ -305,10 +312,11 @@ static void test_sign_refused(void) {
     }
     CHECK(cleared);
 
-    // The same key fails the boot-time check, which is where a
-    // deployment finds out.
+    // The same key fails the boot-time check and the configuration
+    // check every session runs, which is where a deployment finds out.
     CHECK(srv_identity_check(&live, SIGALG_ECDSA_P256_SHA256) == CH_EINVAL);
     CHECK(ch_srv_check(&live) == CH_EINVAL);
+    CHECK(srv_identities_usable(&live) == 0);
 }
 
 // The same for the RSA identity, whose signature is exactly as long as
@@ -393,9 +401,10 @@ int main(void) {
     test_sign_rsa();
     test_sign_refused();
     test_check();
+    test_identity_rules();
     if (failures == 0) {
         (void)printf("srv_auth: the HelloRetryRequest random, the signed content, the identity "
-                     "slots and both signers\n");
+                     "slots, the rules they are held to at entry, and both signers\n");
     }
     return failures != 0;
 }

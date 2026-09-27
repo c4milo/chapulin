@@ -2989,3 +2989,71 @@ does nothing more.
       tests would need a second copy of the module. They sit in
       `test/zig-consumer/unit.zig`, over the public calls, and run
       against each configuration's module.
+
+74. **A server checks every provisioned identity against what its flight
+    needs before a session starts, and a refusal inside the flight is
+    `CH_EAUTH`.** The Zig API's error table (entry 73) found a server
+    flight that returned `CH_EINVAL` after its ServerHello went out:
+    `srv_auth.c` returned it when a slot's key lengths did not match its
+    scheme or its signer refused the key, and `srv_flight.c` when a
+    certificate did not fit its cert_data field. `CH_EINVAL` says nothing
+    was sent (cfg.h), and a caller that read it that way would retry a
+    dead session. Each of those conditions is a fact about the
+    configuration, so a check at entry can find it.
+
+    - **The rules.** `srv_identities_usable` (srv_auth.h) asks of every
+      provisioned slot: key lengths srv_cfg.h states, with an RSA
+      `pub_len` of at most `SRV_SIG_MAX`, the bytes the flight signs
+      into; a private key the scheme's signer takes; and a chain a
+      Certificate message can carry (`srv_certificate_fits`,
+      srv_message.h). `srv_config_ok`, which `ch_srv_accept`,
+      `ch_srv_record_init` and `ch_srv_quic_init` run, and `ch_srv_check`
+      ask it. Each rule reads lengths, pointers, two bytes of a public
+      modulus and one private scalar, and signs nothing.
+    - **The signers own their key tests.** `p256_sign_key_ok` and
+      `rsa_pss_sign_key_ok` are the tests `p256_sign` and `rsa_pss_sign`
+      already ran, now calls of their own that each signer runs first.
+      They read the private key, and `srv_auth.c` reads no byte behind
+      `ch_identity.priv`, so each sits in its signer's module.
+      `rsa_pss_sign_key_ok` is inline in rsa_sign.h, so rsa_sign.c
+      compiles one copy of the test, as it did before, and
+      `lint-wide-multiply`, which counts the branches in rsa_sign.c, reads
+      the same count. Measured before and after: identical assembly under
+      the three clang specs and under mips gcc at -Os, and the same branch
+      and multiply counts under mips gcc at -O2 and under Ubuntu's arm and
+      riscv gcc at the m3 and rv32 specs' flags.
+    - **The chain rule closes a second gap.** A chain whose Certificate
+      message runs past the handshake header's 3-byte length field was
+      never refused: `srv_build_certificate_header` wrote the length cut
+      to its low 24 bits. The same rule refuses it, and a certificate of
+      no bytes, which cert_data<1..2^24-1> forbids.
+    - **The code inside the flight.** Once the check has passed, a
+      refusal inside the flight comes from ECDSA's own signing, no nonce
+      candidate in range or an r or s of zero, each below 2^-127
+      (p256_sign.h), from key or chain bytes the caller changed after
+      init, or from a fault. The ServerHello has gone out by then. The
+      code is `CH_EAUTH`, because this side's authentication failed, and
+      the alert stays internal_error, which tells the peer the fault is
+      local.
+
+    Rejected:
+
+    - **`CH_ASSERT` inside the flight.** CLAUDE.md keeps it for
+      programmer error. The nonce refusal is not one, and a fault or a
+      caller's later write can cause the others; an assertion would stop
+      the whole device for one connection's failure.
+    - **A new result code for a local failure.** Every wrapper would map
+      it, chapulin.hpp and the Zig API among them, for events the check
+      now excludes, where `CH_EAUTH` already says what failed.
+    - **`CH_ECAP`.** The flight answers a message that does not fit with
+      it, and a signer's refusal is not that.
+
+    Cost: each server init runs the rules, one pass over each chain's
+    lengths and one scalar range test per ECDSA slot. And a
+    configuration with one broken slot beside a sound one, which served
+    every client that selected the sound one, now serves none: init
+    refuses it whole, as `ch_srv_check` already did.
+
+    Gain: `CH_EINVAL` from a server means nothing was sent, on every
+    path, and a broken identity is found at init rather than at the
+    first handshake that selects it.

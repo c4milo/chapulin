@@ -214,6 +214,14 @@ static int compute_signature(const p256_scalar *k, const p256_scalar *d, const p
     return rc;
 }
 
+int p256_sign_key_ok(const uint8_t priv[P256_PRIV_LEN]) {
+    p256_scalar d;
+    p256_scalar_from_bytes(&d, priv);
+    uint32_t usable = p256_scalar_reduced_mask(&d) & ~p256_scalar_zero_mask(&d);
+    ct_wipe(&d, sizeof d);
+    return usable != 0;
+}
+
 int p256_sign(const uint8_t priv[P256_PRIV_LEN], const uint8_t msg_hash[32], uint8_t *sig,
               size_t cap, size_t *sig_len) {
     p256_scalar d;
@@ -226,11 +234,10 @@ int p256_sign(const uint8_t priv[P256_PRIV_LEN], const uint8_t msg_hash[32], uin
 
     // The key must be in [1, n-1]. This branch reads the configured key,
     // which p256_sign.h states under "Not covered, second".
-    p256_scalar_from_bytes(&d, priv);
-    if (!(p256_scalar_reduced_mask(&d) & ~p256_scalar_zero_mask(&d))) {
-        ct_wipe(&d, sizeof d);
+    if (!p256_sign_key_ok(priv)) {
         return 0;
     }
+    p256_scalar_from_bytes(&d, priv);
 
     // z = bits2int(msg_hash) mod n. bits2int is the plain big-endian
     // integer here, because the hash and the group order are both 256

@@ -101,10 +101,13 @@ typedef struct {
 // exactly pub_len bytes, which is the length srv_sign_certificate_verify
 // tests the caller's buffer against.
 //
-// Three calls read the bytes behind these pointers and no other line
-// does: p256_sign and rsa_pss_sign read priv, and ch_srv_check's
-// boot-time self-test reads pub through the matching verifier.
-// srv_auth.c reads the two lengths and passes the pointers on.
+// These calls read the bytes behind the two pointers and no other line
+// does: p256_sign and rsa_pss_sign read priv, and so do their key tests,
+// p256_sign_key_ok and rsa_pss_sign_key_ok, when a server checks its
+// configuration; ch_srv_check's boot-time self-test reads pub through
+// the matching verifier. srv_auth.c reads the two lengths and passes the
+// pointers on. A slot whose lengths, key or chain the flight could not
+// use makes ch_srv_accept return CH_EINVAL (srv.h).
 typedef struct {
     const ch_cert *chain;
     uint8_t chain_count;

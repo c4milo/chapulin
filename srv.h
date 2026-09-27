@@ -56,7 +56,12 @@
 // chose, wipes all key material and leaves the session dead.
 //
 // It checks the configuration before it reads a byte and returns
-// CH_EINVAL, having sent nothing, when: no identity is provisioned;
+// CH_EINVAL, having sent nothing, when: no identity is provisioned; a
+// provisioned identity is one the flight could not sign with or send,
+// which is key lengths other than srv_cfg.h's, an RSA pub_len above
+// CH_RSA_MODULUS_MAX (rsa.h), a private key its signer refuses, or a
+// chain a Certificate message cannot carry (srv_identities_usable,
+// srv_auth.h);
 // cfg.srv.cookie_key is NULL, because §9.2 makes the cookie extension
 // mandatory to implement and a stateless HelloRetryRequest cannot be
 // minted without that key; cfg.buf or cfg.send or cfg.recv is NULL;
@@ -93,17 +98,18 @@ int ch_srv_accept(ch_tls *t, const ch_cfg *cfg);
 // It is the boot-time replacement for parsing the chain: it catches a
 // broken signer and a key the operator paired with the wrong slot
 // once, at boot, with a local error code, instead of a client-side
-// alert on every connection. It reads no chain bytes, so it catches
-// neither a chain whose end-entity key is not the provisioned public
-// key nor a fallback chain signed with SHA-1; a provisioning script
-// does both off the device.
+// alert on every connection. It reads the chain's lengths and no chain
+// bytes, so it catches neither a chain whose end-entity key is not the
+// provisioned public key nor a fallback chain signed with SHA-1; a
+// provisioning script does both off the device.
 //
 // Returns CH_OK when at least one identity is provisioned and every
 // provisioned identity signed and verified. Returns CH_EINVAL for a
-// configuration that cannot serve: no identity at all, or a slot whose
-// signer refused or whose signature the verifier rejected. It does not
-// report which slots are live, because its result is one code; a
-// caller that needs to know reads its own ch_cfg.
+// configuration that cannot serve: no identity at all, an identity the
+// flight could not sign with or send (ch_srv_accept above), or a slot
+// whose signer refused or whose signature the verifier rejected. It
+// does not report which slots are live, because its result is one
+// code; a caller that needs to know reads its own ch_cfg.
 //
 // Every server object exports it, so its symbol name carries the
 // object's transport, as the build record's does (build.h): an image

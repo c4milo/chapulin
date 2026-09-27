@@ -270,6 +270,32 @@ static void test_both_roles_take_their_own_labels(const ch_cfg *server_cfg) {
 }
 #endif
 
+// A certificate of one byte goes out in the flight, and an empty one is
+// refused at init with nothing sent: RFC 9846 §4.5.1 gives cert_data a
+// length of 1 to 2^24 - 1, and srv_certificate_fits (srv_message.h)
+// holds a chain to it before a session starts.
+static void test_init_refuses_an_empty_certificate(const ch_cfg *base, const uint8_t *hello,
+                                                   size_t hello_len) {
+    static ch_cert one_byte[1];
+    one_byte[0].der = cert_der;
+    one_byte[0].len = 1;
+    ch_cfg cfg = *base;
+    cfg.srv.ecdsa_p256.chain = one_byte;
+    cfg.srv.rsa_pss.chain = one_byte;
+    static ch_quic q;
+    memset(&seen, 0, sizeof seen);
+    CHECK(ch_srv_quic_init(&q, &cfg) == CH_OK);
+    CHECK(ch_srv_quic_crypto_in(&q, CH_LEVEL_INITIAL, hello, hello_len) == CH_OK);
+    CHECK(seen.total[CH_LEVEL_HANDSHAKE] > 0);
+    ch_quic_close(&q);
+
+    one_byte[0].len = 0;
+    memset(&seen, 0, sizeof seen);
+    CHECK(ch_srv_quic_init(&q, &cfg) == CH_EINVAL);
+    CHECK(ch_quic_state(&q) == CH_ST_FAILED);
+    CHECK(seen.count == 0);
+}
+
 // The Retry token's cases and ngtcp2's retry round, which need CHECK above.
 #include "quic_token_tests.h"
 #include "srv_quic_retry_tests.h"
@@ -344,6 +370,13 @@ int main(void) {
     CHECK(seen.ready[CH_LEVEL_APPLICATION][CH_KEY_WRITE] == 1);
     CHECK(seen.ready[CH_LEVEL_APPLICATION][CH_KEY_READ] == 0);
 
+    // The flight's numbers for the line main prints, kept before the case
+    // below resets seen.
+    size_t fragments = seen.count;
+    size_t initial = seen.total[CH_LEVEL_INITIAL];
+    size_t handshake = seen.total[CH_LEVEL_HANDSHAKE];
+    test_init_refuses_an_empty_certificate(&cfg, hello, hello_len);
+
     test_initial_seal_uses_the_server_labels();
     test_encrypted_extensions_max();
 #ifdef CH_ROLE_BOTH
@@ -355,7 +388,7 @@ int main(void) {
 
     if (failures == 0) {
         (void)printf("srv_quic: a ClientHello in, %zu fragments out (%zu initial, %zu handshake)\n",
-                     seen.count, seen.total[CH_LEVEL_INITIAL], seen.total[CH_LEVEL_HANDSHAKE]);
+                     fragments, initial, handshake);
     }
     return failures != 0;
 }

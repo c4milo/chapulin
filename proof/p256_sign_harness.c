@@ -145,10 +145,20 @@ static void prove_sign(void) {
     __CPROVER_assert(sig[P256_SIG_MAX] == guard, "p256_sign: nothing is written past the capacity");
 }
 
+// The key test on its own, the call a server runs on its configuration:
+// it reads the 32 key bytes and answers 1 or 0.
+static void prove_key_ok(void) {
+    uint8_t priv[P256_PRIV_LEN];
+    fill_nondet(priv, sizeof priv);
+    int ok = p256_sign_key_ok(priv);
+    __CPROVER_assert(ok == 0 || ok == 1, "p256_sign_key_ok: the answer is 1 or 0");
+}
+
 int main(void) {
     prove_nonce_cost_is_fixed();
     prove_der_writer();
     prove_integer_is_minimal();
     prove_sign();
+    prove_key_ok();
     return 0;
 }

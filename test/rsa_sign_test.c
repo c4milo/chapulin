@@ -137,7 +137,8 @@ static void run_vector(const vector *v) {
 
 // Every input rsa_pss_sign refuses, each one value away from an input it
 // accepts where that is possible: the length bounds and the two shapes a
-// modulus must have.
+// modulus must have. rsa_pss_sign_key_ok, the test a server runs on its
+// configuration, gives the signer's answer at each key.
 static void run_refusals(const vector *v) {
     uint8_t sig[CH_RSA_MODULUS_MAX];
     size_t sig_len = 0;
@@ -146,24 +147,30 @@ static void run_refusals(const vector *v) {
     memset(msg_hash, 0x42, sizeof msg_hash);
 
     load_key(v);
+    CHECK(rsa_pss_sign_key_ok(&g_key) == 1);
     CHECK(rsa_pss_sign(&g_key, msg_hash, sig, v->n_len - 1, &sig_len) == 0); // cap one short
     CHECK(rsa_pss_sign(&g_key, msg_hash, sig, v->n_len, &sig_len) == 1);     // cap exact
 
     load_key(v);
     g_key.n_len = 248; // one 8-byte step below the RSA-2048 floor
     CHECK(rsa_pss_sign(&g_key, msg_hash, sig, sizeof sig, &sig_len) == 0);
+    CHECK(rsa_pss_sign_key_ok(&g_key) == 0);
     g_key.n_len = 260; // inside the bounds, not a multiple of 8
     CHECK(rsa_pss_sign(&g_key, msg_hash, sig, sizeof sig, &sig_len) == 0);
+    CHECK(rsa_pss_sign_key_ok(&g_key) == 0);
     g_key.n_len = CH_RSA_MODULUS_MAX + 8; // one step above the ceiling
     CHECK(rsa_pss_sign(&g_key, msg_hash, sig, sizeof sig, &sig_len) == 0);
+    CHECK(rsa_pss_sign_key_ok(&g_key) == 0);
 
     load_key(v);
     g_key.n[g_key.n_len - 1] &= (uint8_t)~1U; // even modulus, no Montgomery inverse
     CHECK(rsa_pss_sign(&g_key, msg_hash, sig, sizeof sig, &sig_len) == 0);
+    CHECK(rsa_pss_sign_key_ok(&g_key) == 0);
 
     load_key(v);
     g_key.n[0] &= 0x7f; // top bit clear, so emLen would not be n_len
     CHECK(rsa_pss_sign(&g_key, msg_hash, sig, sizeof sig, &sig_len) == 0);
+    CHECK(rsa_pss_sign_key_ok(&g_key) == 0);
 }
 
 int main(void) {

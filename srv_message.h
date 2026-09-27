@@ -293,6 +293,23 @@ size_t srv_build_encrypted_extensions(uint8_t *out, size_t cap, uint16_t record_
 // slot and no caller reaches this function with one.
 size_t srv_certificate_message_len(const ch_identity *id);
 
+// Whether a Certificate message can carry one identity's chain. Every
+// entry names at least one byte at a der that is not NULL, because RFC
+// 9846 §4.5.1 gives cert_data a length of 1 to 2^24 - 1
+// (rfc9846.txt:2816). And srv_certificate_message_len minus the 4-byte
+// handshake header fits that header's 3-byte length field
+// (rfc9846.txt:1039), which is the tighter of the two bounds on a whole
+// chain: the certificate_list length it also writes is 4 bytes shorter.
+// So one certificate is at most 2^24 - 10 bytes.
+//
+// It reads the chain's pointers and lengths and no certificate byte,
+// and it changes nothing. No sum it forms can wrap. Requires an identity
+// whose chain points at chain_count entries.
+//
+// srv_identities_usable (srv_auth.h) asks it before a session starts, so
+// the flight never writes a chain this refuses.
+int srv_certificate_fits(const ch_identity *id);
+
 // Writes the fixed head of a Certificate message: the 4-byte handshake
 // header whose length field is srv_certificate_message_len minus 4, a
 // zero-length certificate_request_context, and the 3-byte
@@ -301,7 +318,9 @@ size_t srv_certificate_message_len(const ch_identity *id);
 // Certificate sent in reply to a ClientHello.
 //
 // Requires cap bytes at out and the identity srv_certificate_message_len
-// was asked about.
+// was asked about, one srv_certificate_fits accepts: a longer chain's
+// counts do not fit the two 3-byte fields, and they would be written
+// cut to their low 24 bits.
 //
 // Returns the byte count written, which is 8, or 0 when cap is short.
 size_t srv_build_certificate_header(uint8_t *out, size_t cap, const ch_identity *id);

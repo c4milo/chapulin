@@ -1,17 +1,20 @@
 // Proves: every builder in srv_message.c writes only inside the caller's
 // buffer, for any capacity, and reports a length that fits the buffer it was
-// given.
+// given; and srv_certificate_fits answers exactly the chain rule
+// srv_message.h states.
 //
-// Four properties, over unconstrained inputs at each builder's real bound.
+// Five properties, over unconstrained inputs at each builder's real bound.
 // Memory safety and absence of UB, which is what the automatic checks
 // discharge. The return contract srv_message.h states once for all of them:
 // zero, or a length that fits cap. The three refusals a builder makes on
 // something other than cap -- a cert_data length past the three-byte field, a
 // request_update that is neither of its two legal values, and a
-// transport-parameters body past CH_TRANSPORT_PARAMS_MAX. And the bound
+// transport-parameters body past CH_TRANSPORT_PARAMS_MAX. The bound
 // session.h sizes ch_tls.tx by: a ServerHello over either group's share is
 // never longer than SRV_SERVER_HELLO_MAX, and a buffer of that length always
-// holds it, so the constant is sufficient rather than plausible.
+// holds it, so the constant is sufficient rather than plausible. And the
+// chain rule's verdict, over CHAIN_MAX entries of any length and either
+// pointer, against the rule computed here the long way.
 //
 // The wbuf writer is real, not stubbed: refusing to overflow is its contract,
 // and the point here is that each builder uses it correctly. Every operand is
@@ -202,6 +205,42 @@ static void prove_certificate(void) {
     __CPROVER_assert(n <= cap, "a built certificate entry suffix fits the buffer it was given");
 }
 
+// The chain rule, over any length and either pointer in each entry: its
+// verdict is exactly the rule srv_message.h states, computed here the
+// long way. No length is bounded, so a sum that could wrap inside the
+// rule would show as a wrong verdict.
+static void prove_certificate_fits(void) {
+    ch_cert chain[CHAIN_MAX];
+    for (size_t i = 0; i < CHAIN_MAX; i++) {
+        chain[i].der = (nondet_u8() & 1) ? der : NULL;
+        chain[i].len = nondet_size_t();
+    }
+    ch_identity id;
+    id.chain = chain;
+    id.chain_count = nondet_u8();
+    __CPROVER_assume(id.chain_count <= CHAIN_MAX);
+    id.priv = NULL;
+    id.priv_len = 0;
+    id.pub = NULL;
+    id.pub_len = 0;
+
+    // Every entry names 1 to 2^24 - 1 bytes at a pointer, and the
+    // entries' frames and bytes leave the header's 3-byte length room for
+    // the context and list lengths. Each len is below 2^24 before it is
+    // added, so this sum cannot wrap.
+    int shaped = 1;
+    size_t entries = 0;
+    for (size_t i = 0; i < id.chain_count; i++) {
+        shaped = shaped && chain[i].der != NULL && chain[i].len >= 1 && chain[i].len <= 0xFFFFFFu;
+        if (shaped) {
+            entries += 5 + chain[i].len;
+        }
+    }
+    int want = shaped && entries <= 0xFFFFFFu - 4;
+    __CPROVER_assert(srv_certificate_fits(&id) == want,
+                     "the chain rule is the one srv_message.h states");
+}
+
 static void prove_signed_messages(void) {
     size_t cap = nondet_cap();
     fill_nondet(sig, sizeof sig);
@@ -229,6 +268,7 @@ int main(void) {
     prove_fixed_records();
     prove_encrypted_extensions();
     prove_certificate();
+    prove_certificate_fits();
     prove_signed_messages();
     return 0;
 }

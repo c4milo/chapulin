@@ -188,11 +188,11 @@ fn Session(comptime side: Side, comptime receive_len: usize) type {
             return consumed;
         }
 
-        fn recordInServer(self: *Self, input: []u8, output: []u8) error{ Invalid, Proto, Auth, Cap, Io }!Progress {
+        fn recordInServer(self: *Self, input: []u8, output: []u8) error{ Proto, Auth, Cap, Io }!Progress {
             var consumed: usize = 0;
             self.io.begin(&.{}, output);
             defer self.io.end();
-            try chapulin.fromCode(error{ Invalid, Proto, Auth, Cap, Io }, c.ch_srv_record_in(&self.record, input.ptr, input.len, &consumed));
+            try chapulin.fromCode(error{ Proto, Auth, Cap, Io }, c.ch_srv_record_in(&self.record, input.ptr, input.len, &consumed));
             return .{ .consumed = consumed, .written = self.io.written };
         }
 

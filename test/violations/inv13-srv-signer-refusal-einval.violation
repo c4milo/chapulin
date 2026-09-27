@@ -1,0 +1,18 @@
+invariant: INV-13
+file: srv_auth.c
+catches: srv_auth_test
+reason: a signer's refusal inside the flight returns CH_EINVAL again,
+  the code that says nothing was sent, from a flight whose ServerHello
+  already went out, so a caller that retries on CH_EINVAL retries a dead
+  session. bin/srv_auth_test requires the refusal's code to be CH_EAUTH.
+
+--- old
+        ct_wipe(sig, cap);
+        *sig_len = 0;
+        *alert = ALERT_INTERNAL_ERROR;
+        return CH_EAUTH;
+--- new
+        ct_wipe(sig, cap);
+        *sig_len = 0;
+        *alert = ALERT_INTERNAL_ERROR;
+        return CH_EINVAL;

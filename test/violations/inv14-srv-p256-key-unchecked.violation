@@ -1,0 +1,17 @@
+invariant: INV-14
+file: srv_auth.c
+catches: srv_auth_test
+reason: srv_identities_usable stops asking p256_sign_key_ok, so a
+  server starts a session with an ECDSA scalar of 0 or of the group
+  order, which p256_sign refuses inside the flight after the ServerHello
+  went out. test/srv_identity_tests.h requires both scalars to be
+  refused by the check and by ch_srv_accept before any I/O.
+
+--- old
+    if (sigalg == SIGALG_ECDSA_P256_SHA256) {
+        return p256_sign_key_ok(id->priv);
+    }
+--- new
+    if (sigalg == SIGALG_ECDSA_P256_SHA256) {
+        return 1;
+    }

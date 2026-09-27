@@ -78,17 +78,20 @@ static void test_flight_auth(void) {
     CHECK(srv_send_certificate(&hs, &sel) == CH_OK);
     CHECK(records_written() == 1);
 
-    // An identity the caller never provisioned is a local fault.
+    // An identity the caller never provisioned is a local fault. Its
+    // code is CH_EAUTH and never CH_EINVAL, because the flight has sent
+    // its ServerHello by now (srv_flight.h).
     memset(&sess.cfg.srv.ecdsa_p256, 0, sizeof sess.cfg.srv.ecdsa_p256);
-    CHECK(srv_send_certificate(&hs, &sel) == CH_EINVAL);
+    CHECK(srv_send_certificate(&hs, &sel) == CH_EAUTH);
     CHECK(hs.alert == ALERT_INTERNAL_ERROR);
 
     // This configuration sets both key pointers and neither key length,
     // so srv_auth.c refuses the slot before it reaches a signer, and
-    // the CertificateVerify carries that refusal out unchanged.
+    // the CertificateVerify carries that refusal out unchanged. A
+    // session never gets here with it: srv_config_ok refuses it first.
     // bin/srv_auth_test signs with real key pairs.
     auth_flight(&sel, &rd);
-    CHECK(srv_send_certificate_verify(&hs, &sel) == CH_EINVAL);
+    CHECK(srv_send_certificate_verify(&hs, &sel) == CH_EAUTH);
     CHECK(hs.alert == ALERT_INTERNAL_ERROR);
 }
 

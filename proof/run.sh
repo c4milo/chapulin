@@ -711,7 +711,9 @@ launch fast full p256_point_ladder 34 ""
 # which is the constant-time claim p256_sign.h makes about the retry, and
 # the DER writer stays inside P256_SIG_MAX and writes a minimal INTEGER
 # for every pair of 32-byte scalars. Measured (cbmc 6.11.0, kissat,
-# /usr/bin/time -l): 791 properties, 36 s, and 1.2 GB of cbmc.
+# /usr/bin/time -l): 791 properties, 36 s, and 1.2 GB of cbmc; and 792
+# properties, 15 s, 1.24 GB once p256_sign_key_ok became a call of its
+# own and the harness called it directly too.
 launch fast:3 full p256_sign 100 "" buf.c ct.c
 # p256_ecdh is the three public entries over the scalar and point layers
 # stubbed to their contracts, proof/p256_scalar_stubs.h and
@@ -1290,6 +1292,10 @@ launch fast full poly1305 85 "blocks.0:8" ct.c
 # assert of 0 at each of its four tails -- the assembly's wipe, the cap
 # refusal, the signing refusal and the provisioned arm of the boot
 # check -- fails all four, so every tail is reached.
+# srv_identities_usable, the rule a configuration is held to before a
+# session starts, took the formula to 464 properties, 10 s and 0.54 GB
+# measured the same way, and an assert against either of its two answers
+# fails.
 launch fast full srv_auth 385 "" ct.c -DCH_ROLE_SERVER
 # The server's ticket selection and issue, srv_resume.c, over any
 # identities and binders lists up to the bounds the harness states, any
@@ -1341,7 +1347,10 @@ launch slow full srv_resume 120 "fill_nondet.0:118,find_ticket.0:24,binder_at.0:
 # assertions hold that bound: no ServerHello is longer, and a buffer that long
 # always holds one. Measured under the same command: 553 properties, 9 s,
 # 0.18 GB peak. With the bound one byte smaller both assertions fail, so it is
-# tight in both directions.
+# tight in both directions. srv_certificate_fits joined it, its verdict
+# asserted equal to the chain rule over two entries of any length: 604
+# properties, 11 s, 0.77 GB peak. With the rule's bound one byte lower or
+# one byte higher in the harness the assertion fails, so it is exact.
 launch fast full srv_message 130 "fill_nondet.0:118" buf.c -DCH_ROLE_SERVER
 launch fast full srv_cookie 130 "fill_nondet.0:119" buf.c ct.c hkdf.c -DCH_ROLE_SERVER
 # srv_select_suite: suite.h's srv_first_offered_suite, the walk
@@ -1578,8 +1587,10 @@ launch fast full quic_step_ca 5 "fill_nondet.0:37,ct_wipe.0:849" -DCH_TRANSPORT_
 # 2.39 GB peak, with srv_resume.h's ticket call stubbed beside the
 # fourteen handlers, and 871 properties, 35 s, 2.39 GB once ct_wipe.0 rose
 # to 489 for the ML-KEM secret, and 871 properties, 29 s, 2.39 GB at 521 for
-# the P-256 scalar. The weight is 3 because that peak is over the fast
-# tier's 2 GB default.
+# the P-256 scalar, and 876 properties, 33 s, 2.32 GB once srv_config_ok
+# asked srv_identities_usable, stubbed like the other two srv_auth.c
+# entries. The weight is 3 because that peak is over the fast tier's 2 GB
+# default.
 launch fast:3 full srv_accept 100 "alpn_ok.0:9,alpn_name_repeats.0:9,ct_wipe.0:521,ct_memeq.0:33,fill_names.0:257,fill_nondet.0:33" -DCH_ROLE_SERVER srv.c srv_handshake.c ct.c session.c
 # The ROLE=server tcp-nonblocking driver and the inbound framing under it, with
 # srv_accept's layering: srv_tcp_nonblocking.c and tcp_nonblocking_frame.c
@@ -1711,12 +1722,13 @@ launch fast full rsa_mul 20 "fill_nondet.0:385,from_bytes.0:97,main.0:97,to_byte
 # 2.1 s, 73 MB.
 launch fast full rsa_mul_webpki 20 "fill_nondet.0:513,from_bytes.0:129,main.0:129,to_bytes.0:129"
 # The signer: the marshalling and every limb helper at 96 limbs, the mask,
-# the exponent index and the PSS encoder whole over a stubbed SHA-256,
-# plus the CIOS carry lemma. One global unwind of 385 covers all of it --
-# the longest loop is fill_nondet over the 384-byte encoded message -- so
-# the line carries no unwindset. Measured (cbmc 6.11.0, kissat,
-# /usr/bin/time -l, with other jobs on the machine): 759 properties,
-# 7 s, 194 MB.
+# the key test, the exponent index and the PSS encoder whole over a
+# stubbed SHA-256, plus the CIOS carry lemma. One global unwind of 385
+# covers all of it -- the longest loop is fill_nondet over the 384-byte
+# encoded message -- so the line carries no unwindset. Measured (cbmc
+# 6.11.0, kissat, /usr/bin/time -l, with other jobs on the machine): 759
+# properties, 7 s, 194 MB, and 761 properties, 8 s, 205 MB with the key
+# test, where an assert of 0 on the arm that admits a key fails.
 launch fast full rsa_sign 385 "" ct.c
 
 FAIL=0

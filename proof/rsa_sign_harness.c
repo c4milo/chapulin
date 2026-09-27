@@ -1,13 +1,18 @@
 // Proves rsa_sign.c's memory safety and absence of UB over unconstrained
-// inputs, in five pieces, with full checks.
+// inputs, in six pieces, with full checks.
 //
 // Marshalling and the limb helpers, at the real bound. limbs_from_bytes
 // and limbs_to_bytes, and then sub_borrow, sub_masked, below, cond_sub
 // and cswap_limbs, run at k = LIMBS_MAX (96 for the device bound of
 // RSA-3072) over nondet bytes and nondet limbs, with the operands
 // havocked freshly before every call. The maximal k is the binding case
-// for every index: rsa_pss_sign's n_len check is what holds k there, and
-// a smaller k only shortens the same loops.
+// for every index: rsa_pss_sign_key_ok's n_len check is what holds k
+// there, and a smaller k only shortens the same loops.
+//
+// The key test. rsa_pss_sign_key_ok (rsa_sign.h), over any n_len and any
+// modulus bytes, reads inside n, and every key it admits has the n_len
+// the paragraph above rests on: 256 to CH_RSA_MODULUS_MAX, a multiple of
+// 8.
 //
 // The mask. mask_of_bit must return all ones or all zeros and nothing
 // else, because every select in the file is an AND against it or its
@@ -138,6 +143,19 @@ static void prove_masks(void) {
     __CPROVER_assert((bit == 1) == (m == UINT32_MAX), "mask_of_bit follows its bit");
 }
 
+// The key test rsa_pss_sign runs first and a server runs on its
+// configuration, over any n_len and any modulus bytes: it reads inside
+// n, and a key it admits has the n_len every piece above assumes.
+static void prove_key_ok(void) {
+    static ch_rsa_priv k;
+    fill_nondet(k.n, sizeof k.n);
+    k.n_len = nondet_size_t();
+    int ok = rsa_pss_sign_key_ok(&k);
+    __CPROVER_assert(ok == 0 || ok == 1, "rsa_pss_sign_key_ok: the answer is 1 or 0");
+    __CPROVER_assert(!ok || (k.n_len >= 256 && k.n_len <= CH_RSA_MODULUS_MAX && k.n_len % 8 == 0),
+                     "an admitted key's n_len is the one the marshalling bound assumes");
+}
+
 // The ladder's read of bit i of d, over the range the loop gives it.
 static void prove_exponent_index(void) {
     size_t n_len = nondet_size_t();
@@ -164,6 +182,7 @@ int main(void) {
     prove_marshalling();
     prove_limb_helpers();
     prove_masks();
+    prove_key_ok();
     prove_exponent_index();
     prove_encoder();
 

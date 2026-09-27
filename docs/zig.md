@@ -251,7 +251,7 @@ returns.
 | `CH_EPROTO` | `error.Proto` | Dead, or it was not live. |
 | `CH_EAUTH` | `error.Auth` | Dead. |
 | `CH_ECAP` | `error.Cap` | Live from `recordOut`, `cryptoOut`, `seal`, `sealClose` and `tokenMint`: the caller's buffer was short. Dead from `recordIn`, `cryptoIn` and `read`: the peer's message could never fit. |
-| `CH_EINVAL` | `error.Invalid` | From `init`, failed until the next `init`; a stale ticket is one such refusal. From a server's `recordIn` or `cryptoIn`, dead when a provisioned key's signer refused inside the flight (`srv_auth.c`). From any other call, as it was: the call came out of order or an argument was refused. |
+| `CH_EINVAL` | `error.Invalid` | Nothing was sent. From `init`, failed until the next `init`: C refused the configuration, a stale ticket or a server identity its flight could not use among the refusals. From any other call, as it was: the call came out of order or an argument was refused. A server's `recordIn` never returns it, and its `cryptoIn` returns it only for a level the call refuses on entry. |
 | `CH_QUIC_DISCARD` | `error.Discard` | Live. The caller drops the packet. |
 | `CH_QUIC_AEAD_LIMIT` | `error.AeadLimit` | Dead. |
 | `CH_RECORD_AGAIN` | none | `read` returns `pt_len = 0`. |
@@ -288,7 +288,7 @@ its hook. colibri sizes both at 20,480 bytes.
 | `Client.recordIn(input)` | `ch_record_in`; returns the bytes consumed | Invalid, Proto, Auth, Cap |
 | `Client.takeTicket()` | none: moves the slot out and zeroes it | none |
 | `Server.init(values, sni_buf)` | `Server.toCfg`, then `ch_srv_record_init` with the API's `send`, `recv` and `on_record_out`; `sni_buf` is `srv.sni_buf` and `srv.sni_cap` | Invalid |
-| `Server.recordIn(input, output)` | `ch_srv_record_in`, whose flight goes into `output`; returns `Progress{ consumed, written }` | Invalid, Proto, Auth, Cap, Io |
+| `Server.recordIn(input, output)` | `ch_srv_record_in`, whose flight goes into `output`; returns `Progress{ consumed, written }` | Proto, Auth, Cap, Io |
 | `Server.sni()` | `sni_buf[0..ch_tls.sni_len]`, null when 0 | none |
 | `recordState()`, `recordAlert()` | `ch_record_state`, `ch_record_alert`; the alert is null when 0 | none |
 | `read(input, pt, reply)` | `ch_record_whole_len`, then `ch_read` | Invalid, Proto, Auth, Cap, Io |
@@ -424,7 +424,7 @@ ticket slot and the server's current `Outgoing`. colibri passes a
 | `initialKeys(dcid)` | `ch_quic_initial_keys` | Invalid |
 | `Client.cryptoIn(level, bytes)` | `ch_quic_crypto_in` | Invalid (live), Proto, Auth, Cap |
 | `Client.cryptoOut(level, out)` | `ch_quic_crypto_out` | Invalid, Cap (live) |
-| `Server.cryptoIn(level, bytes, outgoing)` | `ch_srv_quic_crypto_in` | Invalid, Proto, Auth, Cap, Io |
+| `Server.cryptoIn(level, bytes, outgoing)` | `ch_srv_quic_crypto_in` | Invalid (live), Proto, Auth, Cap, Io |
 | `Client.takeTicket()`, `Server.sni()` | as in record mode | none |
 | `keysReady(level, direction)` | the bit `CH_QUIC_LEVEL_BIT` names in `ch_quic.levels_ready` | none |
 | `peerTransportParams()` | the body `on_transport_params` copied, null before it arrives | Cap, when it was longer than `peer_params` |

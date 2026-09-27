@@ -432,7 +432,7 @@ TESTH := test/test_random.h test/pem_armor.h test/pem_tests.h test/x509_ca_tests
          test/diff_webpki_chain.h test/diff_webpki_pin.h test/diff_webpki_leaf_pin.h test/rxbuf_floor_tests.h \
          test/srv_message_tests.h test/srv_cookie_tests.h test/srv_ticket_tests.h test/srv_resume_tests.h test/srv_resume_issue_tests.h test/srv_flight_tests.h test/srv_flight_suite_tests.h test/srv_flight_p256_tests.h \
          test/quic_token_tests.h test/srv_quic_retry_tests.h test/srv_quic_retry_count_tests.h test/srv_quic_retry_vectors.h \
-         test/srv_flight_keys_tests.h test/srv_parser_hello.h test/srv_parser_tests.h test/srv_parser_reader_tests.h \
+         test/srv_flight_keys_tests.h test/srv_identity_tests.h test/srv_parser_hello.h test/srv_parser_tests.h test/srv_parser_reader_tests.h \
          test/lib_pair.h
 
 # Each axis names its value or stops the build. RAND has done this since

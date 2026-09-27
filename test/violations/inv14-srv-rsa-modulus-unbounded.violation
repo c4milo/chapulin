@@ -1,0 +1,14 @@
+invariant: INV-14
+file: srv_auth.c
+catches: srv_tcp_nonblocking_test
+reason: key_lengths_match stops bounding an RSA slot's pub_len, so a
+  server takes a modulus length longer than the SRV_SIG_MAX bytes its
+  flight signs into, and srv_sign_certificate_verify refuses it with
+  CH_ECAP after the ServerHello went out. bin/srv_tcp_nonblocking_test
+  requires SRV_SIG_MAX + 1 to be refused at ch_srv_record_init with
+  nothing sent.
+
+--- old
+    return id->priv_len == sizeof(ch_rsa_priv) && id->pub_len <= SRV_SIG_MAX;
+--- new
+    return id->priv_len == sizeof(ch_rsa_priv);

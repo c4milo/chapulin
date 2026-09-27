@@ -169,7 +169,9 @@ static void test_message_binding(void) {
     CHECK(p256_ecdsa_verify(v->pub, hash, other, other_len) == 1);
 }
 
-// The key range, at the exact boundary: 1 and n-1 sign, 0 and n do not.
+// The key range, at the exact boundary: 1 and n-1 sign, 0 and n do not,
+// and p256_sign_key_ok, the test a server runs on its configuration,
+// gives the same answer as the signer at each.
 static void test_key_boundary(void) {
     static const uint8_t ORDER[32] = {0xff, 0xff, 0xff, 0xff, 0x00, 0x00, 0x00, 0x00,
                                       0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
@@ -182,19 +184,24 @@ static void test_key_boundary(void) {
 
     memset(priv, 0, sizeof priv);
     CHECK(p256_sign(priv, hash, sig, sizeof sig, &sig_len) == 0);
+    CHECK(p256_sign_key_ok(priv) == 0);
 
     priv[31] = 1;
     CHECK(p256_sign(priv, hash, sig, sizeof sig, &sig_len) == 1);
+    CHECK(p256_sign_key_ok(priv) == 1);
 
     memcpy(priv, ORDER, sizeof priv);
     priv[31] = 0x50; // n - 1
     CHECK(p256_sign(priv, hash, sig, sizeof sig, &sig_len) == 1);
+    CHECK(p256_sign_key_ok(priv) == 1);
 
     memcpy(priv, ORDER, sizeof priv); // n
     CHECK(p256_sign(priv, hash, sig, sizeof sig, &sig_len) == 0);
+    CHECK(p256_sign_key_ok(priv) == 0);
 
     memset(priv, 0xff, sizeof priv); // above n
     CHECK(p256_sign(priv, hash, sig, sizeof sig, &sig_len) == 0);
+    CHECK(p256_sign_key_ok(priv) == 0);
 }
 
 // The output buffer boundary: the exact length works and one byte less

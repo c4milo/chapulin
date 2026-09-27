@@ -11,8 +11,9 @@
 //
 // No line here reads a byte behind ch_identity.priv. This file tests
 // priv_len against the size of the type the scheme's signer declares
-// and hands the pointer on, so the private key is read inside
-// p256_sign.c and rsa_sign.c and nowhere else.
+// and hands the pointer on, to the signer or to the signer's own key
+// test, so the private key is read inside p256_sign.c and rsa_sign.[ch]
+// and nowhere else.
 #include "srv_auth.h"
 
 #ifdef CH_ROLE_SERVER
@@ -127,13 +128,43 @@ void srv_hash_signed_content(uint16_t sigalg, const uint8_t *transcript_hash, si
 // types have. It is what makes the pointers safe to pass on: p256_sign
 // reads P256_PRIV_LEN bytes and p256_ecdsa_verify reads SRV_P256_PUB_LEN
 // bytes whatever the slot claims, and rsa_pss_sign reads a whole
-// ch_rsa_priv. The RSA modulus needs no test here, because pub_len is
-// the length rsa_pss_verify takes as a parameter and checks.
+// ch_rsa_priv. The RSA modulus is held to an upper bound alone: its
+// signature is pub_len bytes, which signature_bound below tests against
+// the buffer, and the flight's buffer holds SRV_SIG_MAX. rsa_pss_verify
+// takes pub_len as a parameter and checks the rest of its range.
 static int key_lengths_match(const ch_identity *id, uint16_t sigalg) {
     if (sigalg == SIGALG_ECDSA_P256_SHA256) {
         return id->priv_len == P256_PRIV_LEN && id->pub_len == SRV_P256_PUB_LEN;
     }
-    return id->priv_len == sizeof(ch_rsa_priv);
+    return id->priv_len == sizeof(ch_rsa_priv) && id->pub_len <= SRV_SIG_MAX;
+}
+
+// Whether one provisioned slot is one the flight can present and sign
+// with: its key lengths match, the scheme's signer takes its private
+// key, and a Certificate message can carry its chain. Each is a fact
+// about the configuration, so srv_identities_usable asks all three
+// before a session starts rather than when the flight signs.
+static int identity_usable(const ch_identity *id, uint16_t sigalg) {
+    if (!key_lengths_match(id, sigalg) || !srv_certificate_fits(id)) {
+        return 0;
+    }
+    if (sigalg == SIGALG_ECDSA_P256_SHA256) {
+        return p256_sign_key_ok(id->priv);
+    }
+    return rsa_pss_sign_key_ok(id->priv);
+}
+
+int srv_identities_usable(const ch_cfg *cfg) {
+    uint8_t live = srv_identity_live(cfg);
+    if ((live & SRV_IDENTITY_ECDSA_P256) != 0 &&
+        !identity_usable(&cfg->srv.ecdsa_p256, SIGALG_ECDSA_P256_SHA256)) {
+        return 0;
+    }
+    if ((live & SRV_IDENTITY_RSA_PSS) != 0 &&
+        !identity_usable(&cfg->srv.rsa_pss, SIGALG_RSA_PSS_RSAE_SHA256)) {
+        return 0;
+    }
+    return 1;
 }
 
 // The bytes this identity's signature takes, which is what cap must
@@ -165,10 +196,13 @@ static int sign_digest(const ch_identity *id, uint16_t sigalg, const uint8_t dig
 int srv_sign_certificate_verify(const ch_cfg *cfg, uint16_t sigalg, const uint8_t *transcript_hash,
                                 size_t hash_len, uint8_t *sig, size_t cap, size_t *sig_len,
                                 uint8_t *alert) {
+    // srv_identities_usable accepted this slot before the session
+    // started, so the flight never meets this refusal; it keeps the
+    // signer's reads in bounds for any caller.
     const ch_identity *id = srv_identity_for(cfg, sigalg);
     if (id == NULL || !key_lengths_match(id, sigalg)) {
         *alert = ALERT_INTERNAL_ERROR;
-        return CH_EINVAL;
+        return CH_EAUTH;
     }
     if (cap < signature_bound(id, sigalg)) {
         *alert = ALERT_INTERNAL_ERROR;
@@ -192,7 +226,7 @@ int srv_sign_certificate_verify(const ch_cfg *cfg, uint16_t sigalg, const uint8_
         ct_wipe(sig, cap);
         *sig_len = 0;
         *alert = ALERT_INTERNAL_ERROR;
-        return CH_EINVAL;
+        return CH_EAUTH;
     }
     return CH_OK;
 }

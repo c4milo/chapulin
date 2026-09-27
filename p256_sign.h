@@ -57,10 +57,11 @@
 // ordinary branches. Nothing there reads the key or the nonce.
 //
 // Not covered, second: whether the configured key is in range. A key at
-// or above the group order, or zero, makes this function return 0, and
-// the branch that does so reads the key. It reveals that the server's
-// provisioned key is unusable, which the failed handshake reveals
-// anyway, and it does not vary from one signature to the next.
+// or above the group order, or zero, makes p256_sign_key_ok answer 0 and
+// p256_sign return 0, and the branch on that answer reads the key. It
+// reveals that the server's provisioned key is unusable, which the
+// refused configuration or the failed handshake reveals anyway, and it
+// does not vary from one signature to the next.
 //
 // Not covered, third: fault injection. A deterministic nonce signs one
 // message the same way every time, which is the shape a differential
@@ -71,15 +72,24 @@
 // from a weak entropy source -- is also full key recovery and needs no
 // fault to reach.
 
+// Whether priv is a private scalar p256_sign signs with: a value from 1
+// to n-1, read as 32 big-endian bytes. p256_sign runs this test first,
+// and a server runs it when it checks its configuration (srv_auth.h), so
+// a key out of range is refused before a session starts rather than
+// inside the handshake. The verdict comes from p256_scalar.c's
+// constant-time masks, and it reveals what "Not covered, second" above
+// states and nothing more. Returns 1 or 0.
+int p256_sign_key_ok(const uint8_t priv[P256_PRIV_LEN]);
+
 // Signs msg_hash, the 32-byte SHA-256 of the content RFC 9846 §4.5.2
 // defines, and writes the DER ECDSA-Sig-Value to sig. cap is the room
 // sig has, and sig_len takes the number of bytes written. Returns 1 on
-// success and 0 when the key is out of range, when cap is below the
-// length the signature needs, or when the nonce generator produced no
-// candidate below the group order in its fixed number of tries. The
-// 1-or-0 return is p256_ecdsa_verify's, because a caller that holds both
-// should read one convention; the caller turns a 0 into the alert it
-// sends.
+// success and 0 when p256_sign_key_ok refuses the key, when cap is
+// below the length the signature needs, or when the nonce generator
+// produced no candidate below the group order in its fixed number of
+// tries. The 1-or-0 return is p256_ecdsa_verify's, because a caller that
+// holds both should read one convention; the caller turns a 0 into the
+// alert it sends.
 //
 // The nonce is RFC 6979 deterministic, derived from the private scalar
 // and msg_hash by HMAC-SHA-256 (hkdf.h:13). No entropy is drawn here, so

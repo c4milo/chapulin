@@ -308,16 +308,9 @@ static void emsa_pss_encode(const uint8_t msg_hash[32], uint8_t *em, size_t em_l
 
 int rsa_pss_sign(const ch_rsa_priv *k, const uint8_t msg_hash[32], uint8_t *sig, size_t cap,
                  size_t *sig_len) {
-    if (k->n_len < 256 || k->n_len > CH_RSA_MODULUS_MAX || k->n_len % 8 != 0) {
-        return 0;
-    }
-    // Montgomery arithmetic needs an odd modulus, and this file's encoder
-    // needs a modulus whose top bit is set: that makes emLen exactly
-    // n_len and emBits exactly 8 * n_len - 1, which is the shape every
-    // RSA key generator produces. The verifier admits a shorter modulus
-    // because a peer's key comes from elsewhere; a server's own key is
-    // refused here rather than signed with.
-    if ((k->n[k->n_len - 1] & 1) == 0 || (k->n[0] & 0x80) == 0) {
+    // The length bound, an odd modulus and its top bit: rsa_sign.h says
+    // why each one.
+    if (!rsa_pss_sign_key_ok(k)) {
         return 0;
     }
     if (cap < k->n_len) {

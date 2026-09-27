@@ -412,9 +412,13 @@ int srv_send_encrypted_extensions(handshake_state *h, const selection *sel);
 // Requires a sel whose psk_selected is clear, because a PSK handshake
 // sends no Certificate, and an identity srv_identity_for accepts.
 //
-// Returns CH_OK. Returns CH_EIO for a failed send, and CH_EINVAL with
-// ALERT_INTERNAL_ERROR when the selected identity is not provisioned,
-// which ch_srv_check should have caught at boot.
+// Returns CH_OK. Returns CH_EIO for a failed send, and CH_EAUTH with
+// ALERT_INTERNAL_ERROR when the selected identity is not provisioned or
+// a certificate of its chain does not fit its cert_data field. The
+// selection names a provisioned slot alone, and srv_config_ok refused
+// every chain srv_certificate_fits refuses before the session started,
+// so neither happens unless the caller changed its chain since; the
+// code is CH_EAUTH for srv_sign_certificate_verify's reason (srv_auth.h).
 int srv_send_certificate(handshake_state *h, const selection *sel);
 
 // Signs and sends the CertificateVerify, and adds it to the
@@ -427,9 +431,9 @@ int srv_send_certificate(handshake_state *h, const selection *sel);
 // signature covers from the transcript as it stands, so anything
 // hashed out of order would produce a signature no client verifies.
 //
-// Returns CH_OK. Returns CH_EIO for a failed send, and CH_EINVAL or
-// CH_ECAP with ALERT_INTERNAL_ERROR when the signer refused, which
-// srv_sign_certificate_verify's contract states.
+// Returns CH_OK. Returns CH_EIO for a failed send, and CH_EAUTH or
+// CH_ECAP with ALERT_INTERNAL_ERROR when srv_sign_certificate_verify
+// refuses, which its contract states (srv_auth.h).
 int srv_send_certificate_verify(handshake_state *h, const selection *sel);
 
 // Builds and sends the server Finished, adds it to the transcript,

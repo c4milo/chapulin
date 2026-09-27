@@ -70,6 +70,25 @@
 // ch_srv_check refuses.
 uint8_t srv_identity_live(const ch_cfg *cfg);
 
+// Whether the flight can use every identity srv_identity_live reports.
+// For each one: its key lengths are the ones srv_cfg.h states, with an
+// RSA pub_len of at most SRV_SIG_MAX, because the flight signs into that
+// many bytes; the scheme's signer takes its private key
+// (p256_sign_key_ok in p256_sign.h, rsa_pss_sign_key_ok in rsa_sign.h);
+// and a Certificate message can carry its chain (srv_certificate_fits,
+// srv_message.h).
+//
+// Each test is a fact about the configuration. srv_config_ok and
+// ch_srv_check ask this before a session starts, so a configuration
+// that fails one gets CH_EINVAL with nothing sent (srv.h), and the
+// flight meets none of these refusals. It reads the private keys only
+// through the signers' own tests.
+//
+// It is a predicate over configuration and changes nothing. Returns 1
+// when every provisioned slot passes, and so for a ch_cfg with no
+// identity at all, which srv_identity_live answers; 0 otherwise.
+int srv_identities_usable(const ch_cfg *cfg);
+
 // The SignatureScheme this connection's CertificateVerify is signed
 // with: the first in docs/server.md's order, ecdsa_secp256r1_sha256 then
 // rsa_pss_rsae_sha256, that the client offered and a provisioned slot
@@ -164,12 +183,13 @@ void srv_hash_signed_content(uint16_t sigalg, const uint8_t *transcript_hash, si
 // Requires a cfg whose selected identity srv_identity_for accepts;
 // sigalg and hash_len from the selection; transcript_hash pointing at
 // hash_len readable bytes; cap bytes writable at sig, for which
-// SRV_SIG_MAX always suffices; sig_len pointing at a writable size_t.
+// SRV_SIG_MAX suffices whenever srv_identities_usable accepts the cfg;
+// sig_len pointing at a writable size_t.
 //
 // Returns CH_OK, writes the signature at sig and its length at
 // *sig_len.
 //
-// Returns CH_EINVAL and writes neither output when the identity is not
+// Returns CH_EAUTH and writes neither output when the identity is not
 // provisioned or its key lengths are not the ones srv_cfg.h states, and
 // CH_ECAP and writes neither when cap is below the signature the
 // identity produces. That length is exact for the RSA identity, whose
@@ -177,9 +197,20 @@ void srv_hash_signed_content(uint16_t sigalg, const uint8_t *transcript_hash, si
 // the 72-byte longest DER ECDSA-Sig-Value for the ECDSA one, whose
 // three possible lengths the signature values choose between.
 //
-// Returns CH_EINVAL and writes a zero *sig_len when the signer itself
+// Returns CH_EAUTH and writes a zero *sig_len when the signer itself
 // refused, after wiping cap bytes at sig, because a refusing signer may
 // have written part of a signature first.
+//
+// The flight meets neither CH_EAUTH through its configuration.
+// srv_identities_usable refuses, with CH_EINVAL before a session starts,
+// every configuration behind the first and every key a signer refuses
+// for its value. What can still cause the second is ECDSA's own refusal,
+// no nonce candidate in range or an r or s of zero, each below 2^-127
+// (p256_sign.h), and key bytes the caller changed after that check. By
+// then the flight has sent its ServerHello, so the code cannot be
+// CH_EINVAL, which says nothing was sent. It is CH_EAUTH: this side's
+// authentication failed (docs/decisions.md 74). The flight signs into
+// SRV_SIG_MAX bytes, so it never meets the CH_ECAP.
 //
 // It writes ALERT_INTERNAL_ERROR into *alert on all three, because a
 // server that cannot sign with a key it selected has a local fault and

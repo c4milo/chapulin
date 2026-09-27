@@ -359,8 +359,10 @@ int srv_send_encrypted_extensions(handshake_state *h, const selection *sel) {
 int srv_send_certificate(handshake_state *h, const selection *sel) {
     const ch_identity *id = srv_identity_for(&h->t->cfg, sel->sigalg);
     if (id == NULL) {
-        h->alert = ALERT_INTERNAL_ERROR; // ch_srv_check should have caught this at boot
-        return CH_EINVAL;
+        // srv_select_sigalg names a scheme only for a provisioned slot,
+        // so this is a selection fault and not a configuration one.
+        h->alert = ALERT_INTERNAL_ERROR;
+        return CH_EAUTH;
     }
     // One buffer for all three fixed pieces: each is streamed before the
     // next is written, and the head is the longest.
@@ -376,9 +378,11 @@ int srv_send_certificate(handshake_state *h, const selection *sel) {
         n = srv_build_certificate_entry_prefix(frame, sizeof frame, id->chain[i].len);
         if (n == 0) {
             // A certificate past the three-byte cert_data field names no
-            // message this server can write.
+            // message this server can write. srv_certificate_fits refused
+            // such a chain before the session started, so only a chain
+            // the caller changed since then gets here.
             h->alert = ALERT_INTERNAL_ERROR;
-            return CH_EINVAL;
+            return CH_EAUTH;
         }
         srv_frag_bytes(&f, frame, n);
         srv_frag_bytes(&f, id->chain[i].der, id->chain[i].len);

@@ -558,7 +558,9 @@ The entries are grouped by area:
     retry;
   - the DER writer stays inside `P256_SIG_MAX`, writes a minimal
     INTEGER, and refuses a short capacity rather than truncating, with no
-    byte written past it.
+    byte written past it;
+  - `p256_sign_key_ok`, the key test a server also runs on its
+    configuration, reads the key and answers 1 or 0.
 - **Bound:** any key, any message hash, any capacity ≤ `P256_SIG_MAX`.
 - **Not proved:** whether a signature is genuine. `test/p256_sign_test.c`
   checks that against RFC 6979 A.2.5 and Python, and the Wycheproof lane
@@ -602,6 +604,10 @@ The entries are grouped by area:
     over fully nondet limbs at 96 limbs;
   - `mask_of_bit` returns all ones or all zeros and nothing else, and
     `below` answers the one bit that mask admits;
+  - `rsa_pss_sign_key_ok`, the key test `rsa_pss_sign` runs first and a
+    server runs on its configuration, reads inside the modulus for any
+    `n_len`, and every key it admits has the `n_len` the 96-limb bound
+    assumes;
   - the ladder's exponent byte index stays inside `d` for every bit
     position the loop reads;
   - the PSS encoder writes inside the encoded message at the largest one
@@ -920,7 +926,7 @@ Every harness in this group builds the server role (`-DCH_ROLE_SERVER`).
 - **Bound:** ALPN offers ≤ 8 names of ≤ 32 B.
 - **Not proved:** any message this server writes. The fourteen
   `srv_flight.h` handlers, `srv_resume.h`'s ticket call, `srv_auth.h`'s
-  two entry points, `rec_seal` and `io_send_all` are contract stubs the
+  three entry points, `rec_seal` and `io_send_all` are contract stubs the
   harness defines. [srv_flight](#srv_flight) is where those handlers are
   real.
 
@@ -1035,7 +1041,10 @@ Every harness in this group builds the server role (`-DCH_ROLE_SERVER`).
   - a ServerHello, whatever group the selection names, is never longer
     than `SRV_SERVER_HELLO_MAX`, and a buffer of that length always
     holds it, so the constant `session.h` sizes `ch_tls.tx` by is
-    sufficient.
+    sufficient;
+  - `srv_certificate_fits` answers exactly the chain rule
+    `srv_message.h` states, over entries of any length and either
+    pointer, so no sum inside it wraps.
 
   The `wbuf` writer is real, not stubbed.
 - **Bound:** capacity ≤ 256 B, larger than any message these builders
@@ -1047,22 +1056,29 @@ Every harness in this group builds the server role (`-DCH_ROLE_SERVER`).
 #### srv_auth
 
 - **Harness:** `srv_auth` (fast)
-- **Proves:** the five entries of `srv_auth.c` read and write only
+- **Proves:** the six entries of `srv_auth.c` read and write only
   inside their own buffers and commit no undefined behavior, over an
   unconstrained configuration, an unconstrained transcript hash at every
   length the contract admits, and every SignatureScheme code point.
   - Each key pointer names one of four objects: the one its scheme
     wants, the one the other scheme wants, an object too short for
-    either, or NULL.
+    either, or NULL. A chain pointer names 255 certificates, the most
+    `chain_count` counts.
   - Under the caller's contract that each key length measures its
     object, `key_lengths_match` is the only line that keeps `srv_auth.c`
-    from handing a signer a buffer shorter than the signer reads. The
-    signer stubs assert the key buffer is readable at the length they
-    read, and those assertions fail if that line stops doing its job.
+    from handing a signer, or a signer's key test, a buffer shorter than
+    it reads. The signer stubs assert the key buffer is readable at the
+    length they read, and those assertions fail if that line stops doing
+    its job.
+  - `srv_identities_usable`, the rule a configuration is held to before
+    a session starts, answers 0 or 1, and an assert against either
+    answer fails, so the formula holds both.
 
-  The two signers, the two verifiers and SHA-256 are contract stubs.
-  [p256_sign](#p256_sign), [rsa_sign](#rsa_sign) and [sha256](#sha256)
-  prove the real ones.
+  The two signers, the two verifiers, the ECDSA key test, the chain rule
+  and SHA-256 are contract stubs. [p256_sign](#p256_sign),
+  [rsa_sign](#rsa_sign), [srv_message](#srv_message) and
+  [sha256](#sha256) prove the real ones. The RSA key test is inline in
+  `rsa_sign.h` and runs as written.
 - **Bound:** the full domain. `srv_auth.c` holds no parser and no loop,
   and the harness varies all of its inputs: both identity slots, the
   sigalg code point, `hash_len` and the capacity.

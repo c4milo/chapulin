@@ -46,10 +46,9 @@ const AnyError = error{
     /// sealClose and tokenMint, and from write's own check, the session is
     /// live; from recordIn, cryptoIn and read, and from ch_write, it is dead.
     Cap,
-    /// CH_EINVAL: an argument was refused or a call came out of order, and
-    /// nothing was sent. From init the session is failed. From a server's
-    /// recordIn or cryptoIn it can also mean a provisioned key's signer
-    /// refused inside the flight, and the session is dead (srv_auth.c).
+    /// CH_EINVAL: a configuration or an argument was refused, or a call
+    /// came out of order, and nothing was sent. From init the session is
+    /// failed until the next init; from any other call it is as it was.
     Invalid,
     /// CH_QUIC_DISCARD: the caller drops the packet. The session is live.
     Discard,

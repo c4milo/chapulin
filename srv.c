@@ -106,18 +106,21 @@ static int suites_ok(const ch_srv_cfg *srv) {
 #endif
 
 // The server's own fields: at least one provisioned identity to prove
-// this endpoint with, and the key the HelloRetryRequest cookie is minted
+// this endpoint with, every provisioned identity one the flight can
+// sign with and send, and the key the HelloRetryRequest cookie is minted
 // under. RFC 9846 §9.2 makes the cookie extension mandatory to implement
 // and a stateless retry cannot be minted without that key, so a NULL
 // cookie_key refuses the configuration rather than the first client that
-// sends an empty client_shares list.
+// sends an empty client_shares list. An identity the flight cannot use
+// is refused here for the same reason (srv_auth.h).
 static int srv_fields_ok(const ch_cfg *cfg) {
 #ifdef CH_SUITE_AES_GCM
     if (!suites_ok(&cfg->srv)) {
         return 0;
     }
 #endif
-    return srv_identity_live(cfg) != 0 && cfg->srv.cookie_key != NULL && sni_ok(&cfg->srv);
+    return srv_identity_live(cfg) != 0 && srv_identities_usable(cfg) &&
+           cfg->srv.cookie_key != NULL && sni_ok(&cfg->srv);
 }
 
 // The transport the caller supplies, and the buffer every message this
@@ -172,7 +175,7 @@ int ch_srv_accept(ch_tls *t, const ch_cfg *cfg) {
 
 int ch_srv_check(const ch_cfg *cfg) {
     uint8_t live = srv_identity_live(cfg);
-    if (live == 0) {
+    if (live == 0 || !srv_identities_usable(cfg)) {
         return CH_EINVAL;
     }
     if ((live & SRV_IDENTITY_ECDSA_P256) != 0 &&
