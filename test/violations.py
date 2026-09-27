@@ -107,6 +107,22 @@ def proof_backed(catches):
     return catches.split()[0] == PROOF_RUNNER
 
 
+def date_after_every_build(target):
+    """Dates target at the start of the next whole second and waits for
+    that second to begin. Every file a build wrote before this call is
+    then older than target, even to make 3.81, which compares whole
+    seconds, so the next build compiles what depends on target. And
+    target is never ahead of the clock: GNU make warns about a file dated
+    in the future, and a catch script that reads make's output takes the
+    warning for a finding. Nightly run 36308636104 failed seven baselines
+    that way when target was the Makefile or a source a lint reads through
+    make. The wait costs under a second per build."""
+    now = time.time()
+    second = float(int(now) + 1)
+    time.sleep(second - now)
+    os.utime(target, (second, second))
+
+
 def parse(path):
     head, old, new, where = {}, [], [], "head"
     for line in path.read_text().splitlines():
@@ -186,14 +202,14 @@ def run_steps(name, root, env, say):
         make decides staleness by whole-second mtimes, and a prior
         violation's edit-then-restore plus this one's edit can all land in
         one tick — leaving a binary make thinks is current but that was
-        built from other source. So the edited file's mtime is pushed a
-        minute into the future before each build: make then always sees
-        it as newer than any binary and rebuilds, and the verdict depends
-        on the source rather than on build-cache timing. A minute ahead of
-        the object files, not deleting them, keeps the rebuild
-        incremental — a delete would recompile every source each time."""
-        future = time.time() + 60
-        os.utime(target, (future, future))
+        built from other source. So the edited file is dated after every
+        file an earlier build wrote before each build
+        (date_after_every_build): make then sees it as newer than any
+        binary and rebuilds, and the verdict depends on the source rather
+        than on build-cache timing. Dating the file, not deleting the
+        objects, keeps the rebuild incremental — a delete would recompile
+        every source each time."""
+        date_after_every_build(target)
         # close_fds=False keeps the jobserver make hands this script (its
         # recipe line starts with +) open in the builds and the catch.
         # Closed, a make under them finds no jobserver and prints its
@@ -244,19 +260,18 @@ def run_steps(name, root, env, say):
             return "unguarded"
     finally:
         target.write_text(original)
-        # Two seconds ahead rather than now: make 3.81 compares mtimes
+        # After every build rather than now: make 3.81 compares mtimes
         # to the second, and the mutation build wrote its objects in the
         # second this restore lands in, so a source touched here does
         # not read as newer and make keeps them — a later `make check`
         # then reads an object built from the violation. Dating the
-        # restored source ahead makes every object and binary the edit
-        # produced older, so the next build compiles this file again. A
-        # script target is why it matters: it builds what it runs, and
-        # the deletion below cannot name the objects it left. A
+        # restored source after them makes every object and binary the
+        # edit produced older, so the next build compiles this file
+        # again. A script target is why it matters: it builds what it
+        # runs, and the deletion below cannot name the objects it left. A
         # tcp-nonblocking tls.o survived a violation this way and failed its
         # own leg afterwards, on restored source.
-        restored = time.time() + 2
-        os.utime(target, (restored, restored))
+        date_after_every_build(target)
         # The binaries go as well, so no run takes one the violation
         # built. A poisoned bin/rsa_test once failed a full check an
         # hour after the violation run that made it.
