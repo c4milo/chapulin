@@ -398,8 +398,10 @@ static void test_extension_count_bound(void) {
         if (count <= SRV_CLIENT_HELLO_EXT_MAX) {
             CHECK(rc == CH_OK && seen.count >= 5);
         } else {
-            CHECK(rc == CH_EPROTO && ch_record_alert(&r) == ALERT_ILLEGAL_PARAMETER);
-            CHECK(seen.count == 0);
+            // No ServerHello, and one record through the sink: the alert,
+            // in the clear, because the server holds no key yet.
+            CHECK(rc == CH_EPROTO && r.t.alert_sent == ALERT_ILLEGAL_PARAMETER);
+            CHECK(seen.count == 1 && seen.type[0] == REC_ALERT && seen.len[0] == REC_HDR + 2);
         }
         ch_record_close(&r);
     }
@@ -425,7 +427,7 @@ int main(void) {
     size_t consumed = 0;
     int rc = ch_srv_record_in(&r, rec, rec_len, &consumed);
     if (rc != CH_OK) {
-        (void)fprintf(stderr, "record_in rc=%d alert=%u\n", rc, ch_record_alert(&r));
+        (void)fprintf(stderr, "record_in rc=%d alert=%u\n", rc, r.t.alert_sent);
     }
     CHECK(rc == CH_OK);
     CHECK(consumed == rec_len);
@@ -456,7 +458,7 @@ int main(void) {
     // The handshake is not done: the client Finished has not arrived, so
     // the session is still CH_ST_START and the caller keeps feeding.
     CHECK(ch_record_state(&r) == CH_ST_START);
-    CHECK(ch_record_alert(&r) == 0);
+    CHECK(r.t.alert_sent == 0);
 
     // INV-28: the whole flight ran without the driver touching the
     // socket, which is the one thing this mode exists to promise.

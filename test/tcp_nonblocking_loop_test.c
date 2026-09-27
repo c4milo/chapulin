@@ -301,7 +301,7 @@ static int client_to_server(ch_record *client, ch_record *server) {
     if (rc != CH_OK) {
         if (!expect_refusal) {
             (void)fprintf(stderr, "server refused the client's bytes: rc=%d alert=%u\n", rc,
-                          ch_record_alert(server));
+                          ch_alert_sent(&server->t));
         }
         return 0;
     }
@@ -319,7 +319,7 @@ static int server_to_client(ch_record *client) {
     if (rc != CH_OK) {
         if (!expect_refusal) {
             (void)fprintf(stderr, "client refused the server's flight: rc=%d alert=%u\n", rc,
-                          ch_record_alert(client));
+                          ch_alert_sent(&client->t));
         }
         return 0;
     }
@@ -368,6 +368,7 @@ static int run_handshake(ch_record *client, ch_record *server, const ch_cfg *ccf
 #include "tcp_nonblocking_alert_tests.h"
 #include "tcp_nonblocking_close_tests.h"
 #include "tcp_nonblocking_coalesced_tests.h"
+#include "tcp_nonblocking_failure_alert_tests.h"
 #include "tcp_nonblocking_frame_tests.h"
 #include "tcp_nonblocking_group_tests.h"
 #include "tcp_nonblocking_read_tests.h"
@@ -420,34 +421,9 @@ int main(void) {
     // server seals, which no client reads after it.
     test_record_whole_len(&server);
 
-    // The same run against a pin that is not this server's key. Without
-    // it the pass above would hold for a client that verified nothing,
-    // which is the reading a loopback invites: both halves are ours, so
-    // agreement is the cheap outcome. One flipped bit in the modulus
-    // makes rsa_pss_verify refuse the CertificateVerify, and the client
-    // must end dead with decrypt_error rather than connected.
-    static uint8_t wrong_pin[sizeof rsa_sign_2048_n];
-    memcpy(wrong_pin, rsa_sign_2048_n, sizeof wrong_pin);
-    wrong_pin[sizeof wrong_pin - 1] ^= 0x02; // the modulus stays odd
-    ccfg.server_pubkey = wrong_pin;
-    io_calls = 0;
-    expect_refusal = 1;
-    (void)run_handshake(&client, &server, &ccfg, &scfg);
-    CHECK(ch_record_state(&client) == CH_ST_FAILED);
-    CHECK(ch_record_alert(&client) == ALERT_DECRYPT_ERROR);
-    CHECK(ch_alert_sent(&client.t) == ALERT_DECRYPT_ERROR && ch_alert_received(&client.t) == 0);
-    CHECK(io_calls == 0);
-    // The client refused CertificateVerify, which comes before the
-    // server Finished, so it derived its handshake secrets and never its
-    // application ones: two rows, both handshake labels.
-    const uint8_t *unused = NULL;
-    CHECK(logged_secret(0, CH_KEYLOG_CLIENT_HANDSHAKE, &unused) != NULL);
-    CHECK(logged_secret(0, CH_KEYLOG_SERVER_HANDSHAKE, &unused) != NULL);
-    CHECK(logged_secret(0, CH_KEYLOG_CLIENT_TRAFFIC, &unused) == NULL);
-    CHECK(logged_secret(0, CH_KEYLOG_SERVER_TRAFFIC, &unused) == NULL);
-    // A dead session exports nothing: the secret went with the wipe.
-    CHECK(ch_export(&client.t, "EXPORTER-Channel-Binding", NULL, 0, other, sizeof other) ==
-          CH_EINVAL);
+    // Each end's own alert when its handshake fails, on both sides of its
+    // write key, a wrong pin among the failures (INV-13).
+    test_failure_alerts(&client, &server, &ccfg, &scfg);
 
     test_resumption();
 
@@ -483,8 +459,9 @@ int main(void) {
                      " stale one is refused; a close_notify closes one direction and ch_read"
                      " sends nothing; the server takes secp256r1 only when x25519 is not"
                      " listed; each end refuses a message before a key change that does not"
-                     " end its record; each end sends nothing after the peer's fatal alert"
-                     " and answers a 3-byte one with decode_error; the server refuses a"
+                     " end its record; each end emits its failure's alert in the clear before"
+                     " its write key and sealed after, sends nothing after the peer's fatal"
+                     " alert and answers a 3-byte one with decode_error; the server refuses a"
                      " client's NewSessionTicket\n",
                      (unsigned)LOOP_GROUP, rounds);
         return 0;

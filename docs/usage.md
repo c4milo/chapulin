@@ -159,6 +159,14 @@ QUIC session `&q->t`. Over QUIC `ch_alert_sent` answers what
 `ch_quic_alert` answers, and `ch_alert_received` reads 0, because QUIC
 carries no alert record.
 
+A tcp-nonblocking session that fails in its handshake gives you its alert
+as one record to send before you close the connection. After a failed
+`ch_record_in`, `ch_record_out` returns that record once and then answers
+`CH_EINVAL`. A failed `ch_srv_record_in` has pushed it through
+`cfg.srv.on_record_out` before it returns. The record is in the clear
+before that side's write key is installed and sealed under the key after,
+so send it as it is (`tcp_nonblocking.h`).
+
 ## Resuming a ticket
 
 `on_ticket` hands over each ticket once (`ticket.h`). Its `identity`
@@ -206,7 +214,9 @@ how to cut and size its bytes:
   when your send buffer holds `cap` bytes. Both TCP transports export it.
 - `CH_ALERT_RECORD_LEN`, 24, is what `ch_close` sends, and what a failing
   `ch_read` sends, unless the peer's fatal alert failed it: that read
-  sends nothing. `CH_KEY_UPDATE_RECORD_LEN`, 27, is what `ch_read` sends
+  sends nothing. A handshake that fails once its side's write key is
+  installed gives one too, through `ch_record_out` or `on_record_out`;
+  one that fails before it gives the alert in the clear, 7 bytes. `CH_KEY_UPDATE_RECORD_LEN`, 27, is what `ch_read` sends
   for each KeyUpdate that asks for an answer. A record carries at most
   one KeyUpdate, as its last message (RFC 9846 §5.1), so a record gets
   at most one answer, and a record with bytes after a KeyUpdate fails

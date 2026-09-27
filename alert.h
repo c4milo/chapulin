@@ -33,9 +33,11 @@
 // - ch_connect, ch_srv_accept, ch_read and ch_write send it themselves,
 //   through cfg.send, in the clear before any key and protected after.
 //   The send is best effort: a transport that failed may not carry it.
-// - ch_record_in and ch_srv_record_in send nothing while the handshake
-//   runs, and ch_record_alert names the same description for the caller
-//   to send (tcp_nonblocking.h).
+// - ch_record_in stages it as one record, which ch_record_out hands over
+//   on the failed session, and ch_srv_record_in pushes that record
+//   through cfg.srv.on_record_out before it returns. Either record is in
+//   the clear before this side's write key and protected after
+//   (tcp_nonblocking.h), and the push is best effort as the send is.
 // - A QUIC session reports what ch_quic_alert reports, and
 //   ch_quic_error_code turns it into the code the caller puts in
 //   CONNECTION_CLOSE (quic.h).
@@ -59,7 +61,7 @@ uint8_t ch_alert_sent(const ch_tls *t);
 // session. The call that read it returns CH_EPROTO, wipes the keys, marks
 // the session failed and sends nothing, because §6.2 has both sides close
 // the connection at once (rfc9846.txt:3890-3893). ch_alert_sent then reads
-// 0, and in a tcp-nonblocking session ch_record_alert does too.
+// 0, and a tcp-nonblocking session stages and pushes no alert record.
 //
 // The handshake reads an alert in the clear even once this side reads
 // protected records, because a peer that failed before it installed its

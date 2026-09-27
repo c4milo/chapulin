@@ -126,9 +126,9 @@ const public_ticket = [_][]const u8{"ch_ticket_obfuscated_age"};
 /// its transport and role.
 const public_alert = [_][]const u8{ "ch_alert_sent", "ch_alert_received" };
 const public_tcp_nonblocking = [_][]const u8{
-    "ch_record_init",  "ch_record_in",    "ch_record_out",       "ch_record_state",
-    "ch_record_alert", "ch_record_close", "ch_record_whole_len", "ch_read",
-    "ch_write",        "ch_writable_len", "ch_close",
+    "ch_record_init",  "ch_record_in",        "ch_record_out", "ch_record_state",
+    "ch_record_close", "ch_record_whole_len", "ch_read",       "ch_write",
+    "ch_writable_len", "ch_close",
 } ++ public_ticket ++ public_alert;
 const public_tcp_blocking = [_][]const u8{ "ch_connect", "ch_read", "ch_write", "ch_writable_len", "ch_close" } ++ public_ticket ++ public_alert;
 const public_srv_quic = [_][]const u8{
@@ -148,8 +148,8 @@ const public_quic_either_role = [_][]const u8{
 /// The calls a connected tcp-nonblocking session makes, which a ROLE=server
 /// object exports without the client's driver.
 const public_record_either_role = [_][]const u8{
-    "ch_record_state", "ch_record_alert", "ch_record_close", "ch_record_whole_len",
-    "ch_read",         "ch_write",        "ch_writable_len", "ch_close",
+    "ch_record_state", "ch_record_close", "ch_record_whole_len", "ch_read",
+    "ch_write",        "ch_writable_len", "ch_close",
 } ++ public_alert;
 /// The calls a connected tcp-blocking session makes.
 const public_session = [_][]const u8{ "ch_read", "ch_write", "ch_writable_len", "ch_close" } ++ public_alert;
@@ -165,9 +165,8 @@ const Declaration = struct { header: []const u8, names: Names };
 const declarations = [_]Declaration{
     .{ .header = "tls.h", .names = &.{ "ch_connect", "ch_read", "ch_write", "ch_writable_len", "ch_close", "ch_export" } },
     .{ .header = "tcp_nonblocking.h", .names = &.{
-        "ch_record_init",      "ch_record_in",    "ch_record_out",
-        "ch_record_state",     "ch_record_alert", "ch_record_close",
-        "ch_record_whole_len",
+        "ch_record_init",  "ch_record_in",    "ch_record_out",
+        "ch_record_state", "ch_record_close", "ch_record_whole_len",
     } },
     .{ .header = "quic.h", .names = &public_quic },
     .{ .header = "srv.h", .names = &.{ "ch_srv_accept", "ch_srv_check" } },

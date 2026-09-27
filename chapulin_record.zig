@@ -68,6 +68,8 @@ const Io = struct {
     refused: bool = false,
     /// Bytes the last read wrote into reply.
     reply_len: usize = 0,
+    /// Bytes a server's last recordIn wrote into output.
+    output_len: usize = 0,
 
     fn begin(io: *Io, input: []const u8, output: []u8) void {
         io.input = input;
@@ -124,10 +126,18 @@ fn Session(comptime side: Side, comptime receive_len: usize) type {
         /// failed until the next init.
         pub const init = if (side == .client) initClient else initServer;
         /// Client: ch_record_in. Server: ch_srv_record_in, which writes the
-        /// server's flight into output.
+        /// server's flight into output, and after a failure the failure's
+        /// alert record, which outputLen counts.
         pub const recordIn = if (side == .client) recordInClient else recordInServer;
-        /// ch_record_out: bytes the client owes, 0 when it owes none.
+        /// ch_record_out: bytes the client owes, 0 when it owes none. After
+        /// a failed recordIn, the failure's alert record, and error.Invalid
+        /// once all of it has been returned.
         pub const recordOut = if (side == .client) recordOutClient else @compileError("a server writes its flight from recordIn");
+        /// Bytes the last recordIn wrote into output, which a failed
+        /// recordIn also sets: the records of the flight before the
+        /// failure, then the failure's alert record
+        /// (srv_tcp_nonblocking.h). Progress.written when it succeeds.
+        pub const outputLen = if (side == .server) outputLenServer else @compileError("a client's recordIn writes no output; recordOut returns its bytes");
         /// Moves the latest ticket out and zeroes the slot.
         pub const takeTicket = if (side == .client) takeTicketClient else @compileError("a server receives no ticket");
         /// The server_name the client sent: sni_buf[0..ch_tls.sni_len], null when 0.
@@ -192,7 +202,9 @@ fn Session(comptime side: Side, comptime receive_len: usize) type {
             var consumed: usize = 0;
             self.io.begin(&.{}, output);
             defer self.io.end();
-            try chapulin.fromCode(error{ Proto, Auth, Cap, Io }, c.ch_srv_record_in(&self.record, input.ptr, input.len, &consumed));
+            const rc = c.ch_srv_record_in(&self.record, input.ptr, input.len, &consumed);
+            self.io.output_len = self.io.written;
+            try chapulin.fromCode(error{ Proto, Auth, Cap, Io }, rc);
             return .{ .consumed = consumed, .written = self.io.written };
         }
 
@@ -222,6 +234,10 @@ fn Session(comptime side: Side, comptime receive_len: usize) type {
             }
         }
 
+        fn outputLenServer(self: *const Self) usize {
+            return self.io.output_len;
+        }
+
         fn sniServer(self: *const Self) ?[]const u8 {
             const t = &self.record.t;
             if (t.sni_len == 0) return null;
@@ -233,16 +249,10 @@ fn Session(comptime side: Side, comptime receive_len: usize) type {
             return @enumFromInt(c.ch_record_state(&self.record));
         }
 
-        /// ch_record_alert: the alert a handshake failure chose for the
-        /// caller to send, null when none did.
-        pub fn recordAlert(self: *const Self) ?u8 {
-            const alert = c.ch_record_alert(&self.record);
-            return if (alert == 0) null else alert;
-        }
-
-        /// ch_alert_sent: the fatal alert this side's failure chose, which
-        /// recordAlert also names during the handshake and which read and
-        /// write send themselves after it; null when none did.
+        /// ch_alert_sent: the fatal alert this side's failure chose, null
+        /// when none did. The failing call emits it: a client's recordIn
+        /// stages it for recordOut, a server's recordIn writes it into
+        /// output, and read and write send it into their own output.
         pub fn alertSent(self: *const Self) ?u8 {
             const alert = c.ch_alert_sent(&self.record.t);
             return if (alert == 0) null else alert;

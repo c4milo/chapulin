@@ -3156,3 +3156,71 @@ does nothing more.
     Gain: a caller logs what ended each session through one pair of
     calls on every transport, and neither side answers an alert that
     closed the connection.
+
+    Entry 76 changed one thing here: a tcp-nonblocking driver sends the
+    alert of its own handshake failure, and `ch_record_alert` and its
+    field are gone.
+
+76. **A tcp-nonblocking driver sends the alert of its own handshake
+    failure, sealed once it has a write key, and `ch_record_alert` is
+    gone.** A failure in `ch_record_in` or `ch_srv_record_in` wiped every
+    key and named its alert in `ch_record_alert` for the caller to send.
+    The caller holds no key, so it could send the alert only in the clear.
+    RFC 9846 §6 encrypts an alert under the current connection state
+    (rfc9846.txt:3758-3760), and a strict peer that already reads
+    protected records takes a record in the clear for a bad one. The
+    blocking drivers did this right: `tlsi_fail` seals under `ch_tls.wr`
+    when `ch_tls.keys` is set.
+
+    - **The seal.** `tcp_nonblocking_fail` writes the alert as one record
+      before it wipes: sealed under `ch_tls.wr` when `ch_tls.keys` is set,
+      and in the clear before. A client sets `keys` right after the
+      ServerHello, and a server right after it has sent its own. The wipe
+      then clears every key, so none outlives the failure. The record is
+      `CH_ALERT_RECORD_LEN` bytes sealed and `REC_HDR + 2` in the clear.
+    - **The client stages it.** The record goes into `ch_tls.tx`, where
+      the client stages every record it writes. `ch_record_out` hands it
+      over on the failed session, in as many calls as the caller's buffer
+      needs, and answers `CH_EINVAL` after the last byte, the answer a
+      failed session gave before.
+    - **The server pushes it.** The record leaves through
+      `cfg.srv.on_record_out` inside the failing `ch_srv_record_in`, after
+      the records of the flight that went out first. The push is best
+      effort, as `tlsi_fail`'s send is. A failed `recordIn` in the Zig API
+      returns no `Progress`, so a server's `outputLen()` returns what the
+      last `recordIn` wrote into `output`, a failed one included. The QUIC
+      server's `cryptoIn` needs no such call: the caller's `Outgoing`
+      keeps its own counts, and a QUIC failure pushes no bytes, because
+      the caller seals the CONNECTION_CLOSE (entry 57).
+    - **Nothing after the peer's alert.** A failure on the peer's fatal
+      alert stages and pushes nothing (§6.2, entry 75).
+    - **`ch_record_alert` and its field go.** The call would read 0 after
+      every failure now, and `ch_alert_sent` names the alert in every
+      case. The field sat in padding, so `ch_record` keeps its size in
+      every build.
+
+    Rejected:
+
+    - **Keeping the write key for the caller,** as `quic_fail` keeps a
+      level's write keys for `ch_quic_seal_close` (entry 57). The caller
+      would need a call to seal with, and the key would outlive the
+      failure until the caller made that call. A QUIC caller builds the
+      CONNECTION_CLOSE packet around its seal; a record-mode alert is one
+      fixed record the driver can finish itself.
+    - **A pull for the server's alert.** A server pushes every record it
+      writes and has no `ch_srv_record_out` (docs/server.md). One record
+      to pull would give the server a second output path.
+    - **Keeping `ch_record_alert` for the callers that read it.** It would
+      read 0 after every failure, and a caller that sent what it named
+      would send nothing.
+
+    Cost: `ch_record_out` returns bytes on a failed session once, a caller
+    of `ch_record_alert` no longer links, and a server whose sink refused
+    a record pushes the alert into the same sink. A record sealed after a
+    refused one is one sequence number ahead of what the peer read, so the
+    peer cannot open it; the blocking server has the same limit.
+
+    Gain: a caller sends the bytes the API hands it and nothing else, and
+    a strict peer reads every handshake alert: in the clear before the
+    failing side's write key, and protected after. No key survives a
+    failure.

@@ -1,0 +1,17 @@
+invariant: INV-13
+file: tcp_nonblocking_frame.c
+catches: tcp_nonblocking_loop_test
+reason: tcp_nonblocking_fail writes the alert record after the wipe, when the
+  write key it would seal under is gone, so every handshake failure after that
+  key sends its alert in the clear. bin/tcp_nonblocking_loop_test requires
+  those failures to emit CH_ALERT_RECORD_LEN bytes sealed under the key the
+  wipe then clears.
+
+--- old
+    size_t rec_len = alert != 0 ? alert_record(r, alert, rec) : 0;
+    r->t.alert_sent = alert;
+    tcp_nonblocking_wipe(r);
+--- new
+    r->t.alert_sent = alert;
+    tcp_nonblocking_wipe(r);
+    size_t rec_len = alert != 0 ? alert_record(r, alert, rec) : 0;

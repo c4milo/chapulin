@@ -6,7 +6,9 @@
 // server Finished the client reads, the ClientHello and the client
 // Finished the server reads, and a KeyUpdate the connected server reads.
 // Each runs twice, with 0 bytes added and with 1, so the edit is shown to
-// be sound before the byte it adds is shown to be refused. Included by
+// be sound before the byte it adds is shown to be refused, and each
+// refusal's alert record is read back: in the clear before the refusing
+// end's write key, and sealed under that key after. Included by
 // test/tcp_nonblocking_loop_test.c; it edits records through
 // test/record_edit.h, and it reuses tcp_nonblocking_close_tests.h's
 // to_server, server_recv and server_send, and the held records they share
@@ -28,6 +30,48 @@ static size_t take_client_bytes(ch_record *client, uint8_t *wire) {
     return total;
 }
 
+// What a failed client staged, collected into out in calls of at most
+// step bytes until ch_record_out answers CH_EINVAL, which it must do on
+// the call after the last byte and on no call before. Returns the bytes
+// collected, 0 when the client staged nothing.
+static size_t take_client_alert(ch_record *client, uint8_t out[64], size_t step) {
+    size_t total = 0;
+    size_t calls = 0;
+    int rc = CH_OK;
+    while (rc == CH_OK && calls < 64) {
+        size_t room = 64 - total < step ? 64 - total : step;
+        size_t n = 0;
+        rc = ch_record_out(client, out + total, room, &n);
+        calls++;
+        CHECK(rc != CH_OK || (n > 0 && n <= room));
+        total += rc == CH_OK ? n : 0;
+    }
+    CHECK(rc == CH_EINVAL && calls == (total + step - 1) / step + 1);
+    return total;
+}
+
+// One alert record of len bytes at rec, as the failing end emitted it.
+// With reader NULL it is in the clear: REC_HDR + 2 bytes holding the fatal
+// alert. Otherwise it is CH_ALERT_RECORD_LEN bytes that open under a copy
+// of reader to exactly 2 bytes of plaintext, that alert. The copy leaves
+// the key it was taken from where it was.
+static void check_alert_record(const uint8_t *rec, size_t len, const rec_dir *reader,
+                               uint8_t alert) {
+    if (reader == NULL) {
+        static const uint8_t header[REC_HDR] = {REC_ALERT, 0x03, 0x03, 0, 2};
+        CHECK(len == REC_HDR + 2 && memcmp(rec, header, REC_HDR) == 0);
+        CHECK(len == REC_HDR + 2 && rec[REC_HDR] == 2 && rec[REC_HDR + 1] == alert);
+        return;
+    }
+    CHECK(len == CH_ALERT_RECORD_LEN);
+    rec_dir copy = *reader;
+    uint8_t pt[CH_ALERT_RECORD_LEN];
+    size_t pt_len = 0;
+    uint8_t type = 0;
+    CHECK(rec_open(&copy, rec, len, pt, sizeof pt, &pt_len, &type) == 0);
+    CHECK(type == REC_ALERT && pt_len == 2 && pt[0] == 2 && pt[1] == alert);
+}
+
 // Two fresh sessions with the ClientHello not yet taken.
 static void start_pair(ch_record *client, ch_record *server, const ch_cfg *ccfg,
                        const ch_cfg *scfg) {
@@ -42,7 +86,7 @@ static void start_pair(ch_record *client, ch_record *server, const ch_cfg *ccfg,
 // dead session.
 static void check_refused_with(const ch_record *r, int rc) {
     CHECK(rc == CH_EPROTO);
-    CHECK(ch_record_alert(r) == ALERT_UNEXPECTED_MESSAGE);
+    CHECK(ch_alert_sent(&r->t) == ALERT_UNEXPECTED_MESSAGE);
     CHECK(ch_record_state(r) == CH_ST_FAILED);
 }
 
@@ -62,6 +106,13 @@ static void client_reads_flight(ch_record *client, ch_record *server, const ch_c
     int rc = ch_record_in(client, to_client.bytes, to_client.len, &consumed);
     if (extra > 0) {
         check_refused_with(client, rc);
+        // A ServerHello is refused before the client's write key, so its
+        // alert goes in the clear, and a server Finished after it, sealed
+        // under the handshake write key the server reads with.
+        uint8_t alert[64];
+        size_t alert_len = take_client_alert(client, alert, sizeof alert);
+        check_alert_record(alert, alert_len, after_finished ? &server->t.rd : NULL,
+                           ALERT_UNEXPECTED_MESSAGE);
         return;
     }
     CHECK(rc == CH_OK && consumed == to_client.len);
@@ -89,13 +140,19 @@ static void server_reads_client(ch_record *client, ch_record *server, const ch_c
         grow_first_record(wire, &total, WIRE_MAX, extra);
     }
     size_t pushed = records_pushed;
+    size_t before = to_client.len;
     size_t consumed = 0;
     int rc = ch_srv_record_in(server, wire, total, &consumed);
     if (extra > 0) {
         check_refused_with(server, rc);
         // A refused ClientHello gets no ServerHello, and a refused client
-        // Finished gets no ticket.
-        CHECK(records_pushed == pushed);
+        // Finished gets no ticket: the one record pushed is the alert, in
+        // the clear before the server's write key and sealed under its
+        // application write key after its Finished, which the connected
+        // client reads with.
+        CHECK(records_pushed == pushed + 1);
+        check_alert_record(to_client.bytes + before, to_client.len - before,
+                           after_finished ? &client->t.rd : NULL, ALERT_UNEXPECTED_MESSAGE);
         return;
     }
     CHECK(rc == CH_OK && consumed == total);

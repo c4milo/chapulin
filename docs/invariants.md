@@ -498,6 +498,7 @@ last `ROLE=server` stub, as the entry said it would.
   calling `ch_cfg.send` or `ch_cfg.recv`. The caller feeds bytes in and
   takes bytes out: a client through `ch_record_in` and `ch_record_out`,
   a server through `ch_srv_record_in` and `ch_srv_cfg.on_record_out`.
+  The alert of a handshake failure leaves the same way (INV-13).
   Both callbacks are still required at configuration time, because
   `ch_read` and `ch_write` call them once the session is connected, and
   by then the caller holds the bytes. Once connected, `ch_read` calls
@@ -1174,7 +1175,10 @@ last `ROLE=server` stub, as the entry said it would.
 
 - **Claim.** Every error kills the session: alert, wipe, dead. There
   is no error a caller can retry past. The failure records the alert it
-  chose, which `ch_alert_sent` reports (alert.h). The peer's fatal alert
+  chose, which `ch_alert_sent` reports (alert.h), and the call that
+  failed sends that alert as one record: sealed under this side's write
+  key once there is one, in the clear before it, and with no key left
+  after the wipe (docs/decisions.md 76). The peer's fatal alert
   kills the session with no alert of this side's, sent or recorded, and
   `ch_alert_received` reports the peer's (INV-22). Three kinds of result are not
   errors in that sense, and each public header says which of its codes
@@ -1211,10 +1215,15 @@ last `ROLE=server` stub, as the entry said it would.
   `tlsi_fail` for the record layer and the blocking drivers,
   `tcp_nonblocking_fail` for the tcp-nonblocking handshake drivers and
   `quic_fail` for the QUIC ones. Each funnel writes `ch_tls.alert_sent`,
-  the one field `ch_alert_sent` reads; `tcp_nonblocking_fail` writes
-  the same description to `ch_record.alert` for the caller to send, and
-  `quic_fail` to `ch_quic.alert`. `tlsi_fail` and `tcp_nonblocking_fail`
-  write and send nothing once `ch_tls.alert_received` is set. Each entry
+  the one field `ch_alert_sent` reads, and `quic_fail` writes the same
+  description to `ch_quic.alert`. `tlsi_fail` sends the alert through
+  `cfg.send`. `tcp_nonblocking_fail` writes it as one record before its
+  wipe, sealed under `ch_tls.wr` when `ch_tls.keys` is set and in the
+  clear otherwise, and the driver that called it emits the record the
+  way it emits its others: the client stages it in `ch_tls.tx` for
+  `ch_record_out`, and the server pushes it through
+  `cfg.srv.on_record_out`. `tlsi_fail` and `tcp_nonblocking_fail` write
+  and send nothing once `ch_tls.alert_received` is set. Each entry
   checks its configuration or its arguments before it sends a byte, and
   returns early, changing nothing, when the session cannot take the
   call. `io_read_record` is the only source of `CH_RECORD_AGAIN`, and
@@ -1239,17 +1248,35 @@ last `ROLE=server` stub, as the entry said it would.
   `bin/unit` (`test/session_alert_tests.h`) reads `ch_alert_sent` after
   `tlsi_fail` sent decode_error, unexpected_message and internal_error,
   `bin/tcp_blocking_loop_test` after each blocking driver's
-  unexpected_message, `bin/tcp_nonblocking_loop_test` after a wrong pin,
-  where it equals `ch_record_alert`, and `bin/quic_driver_test` and
+  unexpected_message, `bin/tcp_nonblocking_loop_test` after each
+  handshake failure below, and `bin/quic_driver_test` and
   `bin/quic_loop_test` after each QUIC role's failure, where it equals
   `ch_quic_alert`. `inv13-fail-records-no-alert`,
   `inv13-tcp-nonblocking-fail-records-no-alert` and
   `inv13-quic-fail-records-no-alert` each drop one funnel's write, and
   `bin/unit`, `bin/tcp_nonblocking_loop_test` and `bin/quic_driver_test`
-  catch them.
+  catch them. The tcp-nonblocking alert record is tested between the two
+  drivers: `bin/tcp_nonblocking_loop_test` and `bin/tcp_nonblocking_loop_pq`
+  (`test/tcp_nonblocking_failure_alert_tests.h`) fail each side at the
+  last check before its write key and the first after it, and at a
+  wrong pin and a client Finished after it. Each failure emits one
+  record: `REC_HDR + 2` bytes in the clear before the key, and
+  `CH_ALERT_RECORD_LEN` bytes after it that open to 2 bytes of plaintext
+  under a copy of the peer's read key. `ch_record_out` hands the client's
+  record over once and then answers `CH_EINVAL`, and the other side reads
+  each record through `ch_alert_received`. `test/zig-consumer/loop_record.zig`
+  runs failures on both sides of each key through the Zig API and
+  collects the server's record through `outputLen()`. Four violations
+  each break one term, and `bin/tcp_nonblocking_loop_test` catches each:
+  `inv13-tcp-nonblocking-alert-clear-after-key`,
+  `inv13-tcp-nonblocking-seals-after-wipe`,
+  `inv13-tcp-nonblocking-client-stages-no-alert` and
+  `inv13-tcp-nonblocking-server-pushes-no-alert`.
 - **Violation.** A PR returns a "soft" error that leaves keys live so
   the caller can retry a read, or adds a failure path that records no
-  alert, or one that sends an alert after the peer's fatal alert.
+  alert, or one that sends an alert after the peer's fatal alert, or
+  leaves a tcp-nonblocking alert for the caller to send, who holds no
+  key to protect it with.
 - See [decisions: Engineering](decisions.md#engineering).
 
 ### INV-14 — the refusal set
@@ -2506,8 +2533,8 @@ last `ROLE=server` stub, as the entry said it would.
   description is neither close_notify nor user_canceled, whatever its
   level byte (§6, rfc9846.txt:3779-3782). The call that reads one, in
   the handshake or after it, returns `CH_EPROTO`, wipes, marks the
-  session failed, sends nothing, owes the caller nothing
-  (`ch_record_alert` reads 0), and records the description in
+  session failed, sends nothing (a tcp-nonblocking session stages and
+  pushes no alert record), and records the description in
   `ch_tls.alert_received` for `ch_alert_received` (alert.h). The
   handshake reads an alert in the clear even once its read key is
   installed, because a peer that failed before it installed its own
@@ -2540,7 +2567,7 @@ last `ROLE=server` stub, as the entry said it would.
   handshake readers, `tls.c`'s `read_alert` and `handshake_post.c`'s
   reader of a split message. It checks the length and writes
   `alert_received`, and the two funnels that could answer, `tlsi_fail`
-  and `tcp_nonblocking_fail`, send and owe nothing once that field is
+  and `tcp_nonblocking_fail`, send and write nothing once that field is
   set.
 - **Check.** Lean theorem (17 in `Spec/Handshake.lean`, over every
   trace the model admits; `accepts_decompose` bounds the flight at 4
@@ -2612,7 +2639,9 @@ last `ROLE=server` stub, as the entry said it would.
   and under the server's handshake key, and the server reads it in place
   of the ClientHello, in the clear after its flight and under the
   client's handshake key. The tcp-nonblocking one also reads it after
-  the handshake on both ends. Six violations each break one term:
+  the handshake on both ends, and requires each end to stage and push
+  nothing after a fatal alert and to emit decode_error after a 3-byte
+  one. Six violations each break one term:
   `inv22-fail-answers-peer-alert` and `inv22-peer-alert-not-recorded`,
   which `bin/unit` catches; `inv22-alert-length-unchecked`, which
   `bin/unit` catches; `inv22-tcp-nonblocking-owes-answer-to-peer-alert`
@@ -2639,6 +2668,9 @@ last `ROLE=server` stub, as the entry said it would.
 - **Claim.** Handshake secrets are wiped at CONNECTED; every failure
   path wipes through `tlsi_wipe`, or through `quic_fail` under
   `TRANSPORT=quic-nonblocking`; the DRBG erases its key forward after each output.
+  A tcp-nonblocking handshake failure wipes through `tcp_nonblocking_wipe`
+  right after it has sealed the alert record it sends, so the driver
+  emits that record and keeps no key (INV-13).
   A failure on the peer's fatal alert is one of those paths: it sends
   nothing (INV-22) and wipes as every other failure does, which
   `bin/unit`'s `test/session_alert_tests.h` checks key byte by key byte.

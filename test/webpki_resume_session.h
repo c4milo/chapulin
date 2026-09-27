@@ -24,8 +24,9 @@ static void drain_out(mock_server *s) {
 // ch_record_init, then the mock's answer through ch_record_in, handing
 // the mock what the client staged after each call: a retry hello after a
 // HelloRetryRequest, which the mock answers onto the same queue, and the
-// client's Finished at the end. Returns CH_OK once connected, or the first
-// error.
+// client's Finished at the end. A failure's alert record goes to the mock
+// the same way, as cfg.send carries the tcp-blocking client's. Returns
+// CH_OK once connected, or the first error.
 static int connect_session(const ch_cfg *cfg) {
     int rc = ch_record_init(&session, cfg);
     if (rc != CH_OK) {
@@ -38,6 +39,7 @@ static int connect_session(const ch_cfg *cfg) {
         size_t consumed = 0;
         rc = ch_record_in(&session, s->queue + off, s->queue_len - off, &consumed);
         if (rc != CH_OK) {
+            drain_out(s);
             return rc;
         }
         if (consumed == 0) {
@@ -49,13 +51,6 @@ static int connect_session(const ch_cfg *cfg) {
     s->queue_off = off;
     return ch_record_state(&session) == CH_ST_CONNECTED ? CH_OK : CH_EPROTO;
 }
-
-// The alert the client chose when its handshake failed. This driver
-// sends none itself; the caller reads it from ch_record_alert.
-static uint8_t session_alert(const mock_server *s) {
-    (void)s;
-    return ch_record_alert(&session);
-}
 #else
 static ch_tls session;
 
@@ -66,12 +61,13 @@ static ch_tls *session_tls(void) {
 static int connect_session(const ch_cfg *cfg) {
     return ch_connect(&session, cfg);
 }
+#endif
 
 // The alert the client sent when its handshake failed, which the mock
-// read off the wire.
+// read off the wire: in the clear, or sealed under the client's handshake
+// write key.
 static uint8_t session_alert(const mock_server *s) {
     return s->alert;
 }
-#endif
 
 #endif

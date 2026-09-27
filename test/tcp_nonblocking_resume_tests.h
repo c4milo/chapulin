@@ -93,7 +93,7 @@ static uint8_t refused(ch_record *client, ch_record *server, const ch_cfg *ccfg,
     expect_refusal = 0;
     CHECK(ch_record_state(server) == CH_ST_FAILED);
     CHECK(ch_record_state(client) != CH_ST_CONNECTED);
-    return ch_record_alert(server);
+    return ch_alert_sent(&server->t);
 }
 
 static void test_resumption(void) {

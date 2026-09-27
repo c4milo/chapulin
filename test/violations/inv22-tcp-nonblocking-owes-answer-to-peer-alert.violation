@@ -1,13 +1,13 @@
 invariant: INV-22
 file: tcp_nonblocking_frame.c
 catches: tcp_nonblocking_loop_test
-reason: tcp_nonblocking_fail names an alert for the caller to send after the
-  peer's fatal alert, so a caller that follows ch_record_alert answers an
-  alert that closed the connection, which RFC 9846 section 6.2 forbids.
-  bin/tcp_nonblocking_loop_test requires ch_record_alert to read 0 after it,
-  on both ends.
+reason: tcp_nonblocking_fail writes an alert record after the peer's fatal
+  alert, so a client stages one for ch_record_out and a server pushes one, and
+  each answers an alert that closed the connection, which RFC 9846 section 6.2
+  forbids. bin/tcp_nonblocking_loop_test requires both ends to stage and push
+  nothing after it.
 
 --- old
-    r->alert = r->t.alert_received == 0 ? r->hs.alert : 0;
+    uint8_t alert = r->t.alert_received == 0 ? r->hs.alert : 0;
 --- new
-    r->alert = r->hs.alert;
+    uint8_t alert = r->hs.alert;

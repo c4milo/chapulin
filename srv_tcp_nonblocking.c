@@ -29,6 +29,7 @@
 #include "handshake_record.h"
 #include "record.h"
 #include "srv_flight.h"
+#include "srv_out.h"
 #include "srv_resume.h"
 #include "tcp_nonblocking_frame.h"
 
@@ -205,6 +206,20 @@ static int advance(ch_record *r) {
     }
 }
 
+// A failure, with the alert record tcp_nonblocking_fail wrote pushed
+// through cfg.srv.on_record_out, the way every record this driver writes
+// leaves (srv_out_record). The push is best effort, as tlsi_fail's send
+// is: a sink that refused a record of the flight may refuse this one
+// too, and the call returns rc either way.
+static int fail(ch_record *r, int rc) {
+    uint8_t rec[CH_ALERT_RECORD_LEN] = {0};
+    size_t rec_len = tcp_nonblocking_fail(r, rec);
+    if (rec_len != 0) {
+        (void)srv_out_record(&r->t, rec, rec_len);
+    }
+    return rc;
+}
+
 // Runs every whole handshake message the fed plaintext now holds. It is
 // tcp_nonblocking.c's drive loop without the staging test, because a
 // server pushes its flight instead of leaving it for the caller to
@@ -217,11 +232,11 @@ static int drive(ch_record *r) {
             return CH_OK;
         }
         if (rc != CH_OK) {
-            return tcp_nonblocking_fail(r, rc);
+            return fail(r, rc);
         }
         rc = advance(r);
         if (rc != CH_OK) {
-            return tcp_nonblocking_fail(r, rc);
+            return fail(r, rc);
         }
     }
 }
@@ -281,14 +296,14 @@ int ch_srv_record_in(ch_record *r, uint8_t *p, size_t n, size_t *consumed) {
             // RFC 9846 section 5.2 caps a record; anything larger names
             // no record this endpoint will ever read.
             r->hs.alert = ALERT_RECORD_OVERFLOW;
-            return tcp_nonblocking_fail(r, CH_EPROTO);
+            return fail(r, CH_EPROTO);
         }
         if (n - off < REC_HDR + body_len) {
             return CH_OK;
         }
         int rc = tcp_nonblocking_take_record(r, rec, body_len, rec[0]);
         if (rc != CH_OK) {
-            return tcp_nonblocking_fail(r, rc);
+            return fail(r, rc);
         }
         off += REC_HDR + body_len;
         *consumed = off;

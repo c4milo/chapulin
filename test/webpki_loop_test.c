@@ -253,7 +253,7 @@ static void check_declined_chain_refused(const uint8_t *key, const webpki_corpus
     server_config(&scfg, key);
     client_config(&ccfg, root, hostname, 1);
     CHECK(!run(&ccfg, &scfg));
-    CHECK(ch_record_state(&client) == CH_ST_FAILED && ch_record_alert(&client) == alert);
+    CHECK(ch_record_state(&client) == CH_ST_FAILED && ch_alert_sent(&client.t) == alert);
     CHECK(client.t.psk_selected == 0);
 }
 
@@ -323,7 +323,7 @@ static void test_pins_alone(void) {
     pins_alone_config(&ccfg, 0);
     CHECK(!run(&ccfg, &scfg));
     CHECK(ch_record_state(&client) == CH_ST_FAILED &&
-          ch_record_alert(&client) == ALERT_BAD_CERTIFICATE);
+          ch_alert_sent(&client.t) == ALERT_BAD_CERTIFICATE);
 }
 
 #include "webpki_loop_suites.h"

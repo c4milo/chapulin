@@ -1,9 +1,10 @@
 // The inbound record framing and the session-death path both tcp-nonblocking
 // drivers share. tcp_nonblocking_frame.h states the contract; this file is
 // quic_fail.c's counterpart on the transport that keeps its records, and
-// it holds no protocol rule beyond what one record is allowed to be. It
-// also holds ch_record_whole_len, the public call that tells a caller of
-// either role where one inbound record ends (tcp_nonblocking.h).
+// it holds no protocol rule beyond what one record is allowed to be and
+// which key protects the alert a failure owes. It also holds
+// ch_record_whole_len, the public call that tells a caller of either role
+// where one inbound record ends (tcp_nonblocking.h).
 #include "tcp_nonblocking_frame.h"
 
 #ifdef CH_TRANSPORT_TCP_NONBLOCKING
@@ -55,15 +56,43 @@ void tcp_nonblocking_wipe(ch_record *r) {
     r->t.keys = 0;
 }
 
+// One fatal alert record, written to rec: sealed under r->t.wr when
+// r->t.keys is set, the rule tlsi_send_alert follows, and in the clear
+// otherwise. A client sets keys right after the ServerHello and a server
+// right after it has sent its own. tlsi_send_alert also sends nothing
+// from a session whose keys are wiped, which it tells by the state. This
+// call never runs on such a session: it runs only while the state is
+// CH_ST_START or CH_ST_CONNECTED, and a connected session holds its keys.
+// Returns the record's length, or 0 when the seal refused, which it does
+// only at the last sequence number (RFC 9846 §5.3).
+static size_t alert_record(ch_record *r, uint8_t description, uint8_t rec[CH_ALERT_RECORD_LEN]) {
+    // Level 2 is fatal (RFC 9846 §6), the level tlsi_fail sends.
+    const uint8_t body[2] = {2, description};
+    if (r->t.keys) {
+        size_t sealed_len = 0;
+        if (rec_seal(&r->t.wr, REC_ALERT, body, sizeof body, rec, CH_ALERT_RECORD_LEN,
+                     &sealed_len) != 0) {
+            return 0;
+        }
+        return sealed_len;
+    }
+    const uint8_t clear[REC_HDR + 2] = {REC_ALERT, 0x03, 0x03, 0, 2, 2, description};
+    memcpy(rec, clear, sizeof clear);
+    return sizeof clear;
+}
+
 // After the peer's fatal alert this side owes none (RFC 9846 §6.2,
-// rfc9846.txt:3890-3893), so the caller is told to send nothing and
-// alert_sent records nothing, as tlsi_fail does on the record layer.
-int tcp_nonblocking_fail(ch_record *r, int rc) {
-    r->alert = r->t.alert_received == 0 ? r->hs.alert : 0;
-    r->t.alert_sent = r->alert;
+// rfc9846.txt:3890-3893), so no record is written and alert_sent records
+// nothing, as tlsi_fail does on the record layer. The seal runs before
+// the wipe because it needs the write key, and the wipe then clears that
+// key with every other secret.
+size_t tcp_nonblocking_fail(ch_record *r, uint8_t rec[CH_ALERT_RECORD_LEN]) {
+    uint8_t alert = r->t.alert_received == 0 ? r->hs.alert : 0;
+    size_t rec_len = alert != 0 ? alert_record(r, alert, rec) : 0;
+    r->t.alert_sent = alert;
     tcp_nonblocking_wipe(r);
     r->t.state = CH_ST_FAILED;
-    return rc;
+    return rec_len;
 }
 
 int tcp_nonblocking_session_dead(const ch_record *r) {

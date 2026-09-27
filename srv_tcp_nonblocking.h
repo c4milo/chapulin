@@ -13,13 +13,13 @@
 // server.
 //
 // The post-handshake calls are tcp_nonblocking.h's and are not repeated here.
-// ch_record_state, ch_record_alert and ch_record_close read no side, and
-// ch_read, ch_write and ch_close are the same record-layer calls a
-// client uses, because record.[ch] names no side either. So tcp_nonblocking.h's
-// account of closing holds for a server as written: the client's
-// close_notify makes ch_read return 0 and send nothing, ch_write still
-// sends, and ch_close sends the server's close_notify. So does its
-// account of alerts, and alert.h's two calls report them on either side.
+// ch_record_state and ch_record_close read no side, and ch_read, ch_write
+// and ch_close are the same record-layer calls a client uses, because
+// record.[ch] names no side either. So tcp_nonblocking.h's account of
+// closing holds for a server as written: the client's close_notify makes
+// ch_read return 0 and send nothing, ch_write still sends, and ch_close
+// sends the server's close_notify. So does its account of alerts, and
+// alert.h's two calls report them on either side.
 //
 // Output is a push, not a pull. A server has no ch_srv_record_out: one
 // Certificate message is larger than ch_tls.tx, so there is nothing to
@@ -86,11 +86,17 @@ int ch_srv_record_init(ch_record *r, const ch_cfg *cfg);
 // session that failed or closed. It never returns CH_EINVAL:
 // ch_srv_record_init refused every configuration the flight could fail
 // on (srv_identities_usable, srv_auth.h). Every other code leaves the
-// session dead, and ch_record_alert names the alert the caller sends
-// before it closes, which ch_alert_sent names too (alert.h). A client's
+// session dead, and before the call returns it pushes the alert its
+// failure chose through cfg.srv.on_record_out as one more record, which
+// ch_alert_sent names (alert.h). That record is in the clear until the
+// server installs its handshake write key, which it does right after it
+// has sent its ServerHello, and sealed under its current write key after,
+// CH_ALERT_RECORD_LEN bytes (tls.h). The push is best effort: a sink that
+// refused a record of the flight may refuse this one too. The caller
+// sends what the sink took and then closes the connection. A client's
 // fatal alert, in the clear or protected, is the exception: the call
-// returns CH_EPROTO, pushes nothing, and ch_alert_received names the
-// alert while both of the others read 0 (RFC 9846 §6.2).
+// returns CH_EPROTO and pushes nothing, ch_alert_received names the
+// alert, and ch_alert_sent reads 0 (RFC 9846 §6.2).
 int ch_srv_record_in(ch_record *r, uint8_t *p, size_t n, size_t *consumed);
 
 #endif // CH_ROLE_SERVER && CH_TRANSPORT_TCP_NONBLOCKING

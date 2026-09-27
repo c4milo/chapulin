@@ -1,0 +1,16 @@
+invariant: INV-13
+file: tcp_nonblocking_frame.c
+catches: tcp_nonblocking_loop_test
+reason: a tcp-nonblocking handshake failure writes its alert in the clear
+  after this side has installed its write key, sealing only once the session
+  is connected, where RFC 9846 section 6 protects an alert under the current
+  write key. bin/tcp_nonblocking_loop_test requires every handshake failure
+  after that key, the first one included, to emit CH_ALERT_RECORD_LEN bytes
+  that open under the peer's read key.
+
+--- old
+    if (r->t.keys) {
+        size_t sealed_len = 0;
+--- new
+    if (r->t.state == CH_ST_CONNECTED) {
+        size_t sealed_len = 0;

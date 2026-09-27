@@ -768,7 +768,10 @@ launch slow:4 full io 24 ""
 # object CBMC allocates exactly n bytes long, so a read on either side of
 # p[0..n) fails. buf.c is real. The call has no loop, so the global unwind
 # bounds nothing. Measured under this script's flags (arm64 macOS, cbmc
-# 6.11.0, kissat, /usr/bin/time -l): 481 properties, 0.3 s, 22 MB.
+# 6.11.0, kissat, /usr/bin/time -l): 481 properties, 0.3 s, 22 MB, and 499
+# properties, 0.3 s, 22 MB once tcp_nonblocking_fail sealed the alert
+# record of a failure, code the harness includes and never calls
+# (docs/decisions.md 76).
 launch fast full record_whole_len 2 "" -DCH_TRANSPORT_TCP_NONBLOCKING buf.c
 # writable_len: ch_writable_len over any peer_limit and any cap, then its
 # answer written through the real ch_write at caps up to 1,603 bytes and a
@@ -1643,7 +1646,11 @@ launch fast:3 full srv_accept 100 "alpn_ok.0:9,alpn_name_repeats.0:9,ct_wipe.0:5
 # The ROLE=server tcp-nonblocking driver and the inbound framing under it, with
 # srv_accept's layering: srv_tcp_nonblocking.c and tcp_nonblocking_frame.c
 # real, the fifteen handlers contract stubs. It would cover the step table, the
-# record loop and the wipe without resting on a handler.
+# record loop and the wipe without resting on a handler, and the alert record a
+# failure pushes: rec_seal and srv_out_record are stubs that assert the seal
+# runs under a key the wipe has not cleared and that a failure pushes at most
+# one record. cbmc --show-properties over the harness, tcp_nonblocking_frame.c,
+# ct.c and buf.c lists 1,399 properties; no solve was run.
 #
 # No launch line: this formula has never been seen to converge either.
 # Two loops nest here -- the record loop runs the message loop, which

@@ -1,0 +1,15 @@
+invariant: INV-13
+file: srv_tcp_nonblocking.c
+catches: tcp_nonblocking_loop_test
+reason: the tcp-nonblocking server pushes no alert record when its handshake
+  fails, so the client waits on a connection the server has closed without
+  learning why. bin/tcp_nonblocking_loop_test requires each server failure to
+  push one alert record through cfg.srv.on_record_out, which the client then
+  reads.
+
+--- old
+    if (rec_len != 0) {
+        (void)srv_out_record(&r->t, rec, rec_len);
+    }
+--- new
+    (void)rec_len;

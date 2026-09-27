@@ -6,7 +6,8 @@
 // caller bytes. And that the driver keeps what srv_tcp_nonblocking.h
 // states: it takes whole records only, it never reports more bytes than
 // it was handed, a step number no step wrote kills the session, and every
-// failure leaves a dead session holding no secret (INV-17).
+// failure pushes at most one record, its alert, sealed only before its
+// wipe (INV-13), and leaves a dead session holding no secret (INV-17).
 //
 // What is real and what is a stub. srv_tcp_nonblocking.c,
 // tcp_nonblocking_frame.c and ct.c are real, so the proof covers the step
@@ -17,9 +18,10 @@
 // would make this a parser proof rather than a driver proof. Each stub
 // asserts the contract its own header states and havocs what that header
 // says it writes, so nothing here rests on one handler's implementation.
-// rec_open and hsr_feed are stubs for the same reason
+// rec_open, rec_seal and hsr_feed are stubs for the same reason
 // proof/handshake_post_harness.c stubs them: record protection belongs to
-// record.c's harness and reassembly to handshake_record.c's.
+// record.c's harness and reassembly to handshake_record.c's. srv_out_record
+// states srv_out.h's contract and counts the records a failure pushes.
 //
 // The pairing with srv_flight. proof/srv_flight_harness.c turns this
 // layering around -- there the handlers are real and the driver is the
@@ -334,6 +336,32 @@ static uint8_t buf[CH_PROOF_RXBUF];
 static uint8_t in[CH_PROOF_INBUF];
 static ch_record r;
 static ch_cfg cfg;
+static size_t records_pushed; // srv_out_record's calls, all a failure's
+
+// tcp_nonblocking_fail's seal of one fatal alert, under a live write key:
+// the wipe after the seal clears ch_tls.keys, so a seal after it fails.
+int rec_seal(rec_dir *d, uint8_t type, const uint8_t *pt, size_t n, uint8_t *out, size_t cap,
+             size_t *out_len) {
+    __CPROVER_assert(r.t.keys != 0 && d == &r.t.wr, "seal: under the write key, before the wipe");
+    __CPROVER_assert(type == REC_ALERT && n == 2 && __CPROVER_r_ok(pt, n) &&
+                         cap >= REC_OVERHEAD + n && __CPROVER_w_ok(out, cap) && out_len != NULL,
+                     "seal: one alert into a record it fits");
+    if (nondet_u8() & 1) {
+        return -1; // the last sequence number (RFC 9846 section 5.3)
+    }
+    fill_nondet(out, REC_OVERHEAD + n);
+    *out_len = REC_OVERHEAD + n;
+    return 0;
+}
+
+// srv_out.h's push to cfg.srv.on_record_out, which answers CH_OK or CH_EIO.
+int srv_out_record(ch_tls *t, const uint8_t *rec, size_t n) {
+    __CPROVER_assert(t == &r.t && n >= REC_HDR && n <= CH_ALERT_RECORD_LEN &&
+                         __CPROVER_r_ok(rec, n),
+                     "push: one alert record of the session under proof");
+    records_pushed++;
+    return (nondet_u8() & 1) ? CH_OK : CH_EIO;
+}
 
 // cfg.srv.on_record_out. srv_config_ok refuses a NULL, so srv_out.c's
 // emit calls it without a check; this harness compiles no handler, so
@@ -457,10 +485,12 @@ int main(void) {
     __CPROVER_assert(consumed <= n, "it never reports more bytes than it was handed");
     __CPROVER_assert(r.t.pt_off <= r.t.pt_len && r.t.pt_len <= r.t.cfg.buf_len,
                      "and leaves the window inside the buffer");
+    __CPROVER_assert(records_pushed <= (size_t)(rc != CH_OK), "only a failure pushes: its alert");
     if (rc != CH_OK) {
-        // tcp_nonblocking_frame.h's death path: the alert is
-        // saved for the caller to send, every secret is cleared
-        // and the session is dead.
+        // tcp_nonblocking_frame.h's death path: no alert after the peer's
+        // fatal alert, every secret cleared and the session dead.
+        __CPROVER_assert(r.t.alert_received == 0 || records_pushed == 0,
+                         "no alert after the peer's fatal alert");
         __CPROVER_assert(tcp_nonblocking_session_dead(&r), "a failure leaves the session dead");
         __CPROVER_assert(no_secret_left(&r), "and holds no secret (INV-17)");
     }

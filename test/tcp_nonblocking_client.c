@@ -91,26 +91,35 @@ static int from_hex(const char *hex, uint8_t *out, size_t cap, size_t *len) {
     return 0;
 }
 
+// Sends everything chapulin has staged. It returns 0 once ch_record_out
+// answers that nothing is owed, and 1 when it answers anything else, which
+// after a failure comes right after the alert record has gone out.
+static int send_staged(ch_record *r, int fd) {
+    uint8_t out_buf[4096];
+    for (;;) {
+        size_t n = 0;
+        if (ch_record_out(r, out_buf, sizeof out_buf, &n) != CH_OK) {
+            return 1;
+        }
+        if (n == 0) {
+            return 0;
+        }
+        if (sock_send(&fd, out_buf, n) != 0) {
+            return 1;
+        }
+    }
+}
+
 // Drives the handshake to connected. Everything chapulin wants to say
-// leaves through out_buf, and everything the peer says arrives through
+// leaves through send_staged, and everything the peer says arrives through
 // in_buf; leftover_len holds the bytes of a record that has not all
 // arrived, which ch_record_in leaves for the next call.
 static int run_handshake(ch_record *r, int fd) {
-    uint8_t out_buf[4096];
     uint8_t in_buf[16384];
     size_t leftover = 0;
     for (;;) {
-        for (;;) {
-            size_t n = 0;
-            if (ch_record_out(r, out_buf, sizeof out_buf, &n) != CH_OK) {
-                return 1;
-            }
-            if (n == 0) {
-                break;
-            }
-            if (sock_send(&fd, out_buf, n) != 0) {
-                return 1;
-            }
+        if (send_staged(r, fd) != 0) {
+            return 1;
         }
         if (ch_record_state(r) == CH_ST_CONNECTED) {
             return 0;
@@ -124,7 +133,10 @@ static int run_handshake(ch_record *r, int fd) {
         size_t used = 0;
         int rc = ch_record_in(r, in_buf, have, &used);
         if (rc != CH_OK) {
-            (void)fprintf(stderr, "rec_in: %d alert=%u\n", rc, ch_record_alert(r));
+            // The failure staged its alert record, which goes to the
+            // server before the connection closes.
+            (void)fprintf(stderr, "rec_in: %d alert=%u\n", rc, ch_alert_sent(&r->t));
+            (void)send_staged(r, fd);
             return 1;
         }
         leftover = have - used;

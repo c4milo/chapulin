@@ -48,14 +48,21 @@
 // nothing was consumed, and the same call may run again with a larger
 // one. CH_EPROTO from a call on a session that failed or closed, and from
 // ch_read or ch_write before the handshake completes, changes nothing
-// either (tls.h). Every other code leaves the session dead. A failure in
-// ch_record_in or ch_srv_record_in, while the handshake runs, sends
-// nothing, and ch_record_alert names the alert the caller should send
-// before it closes. ch_read and ch_write send their failure's alert
-// themselves, through cfg.send, and leave ch_record_alert at 0.
-// ch_alert_sent names the alert in both cases (alert.h). A failure on the
-// peer's fatal alert sends none and owes none, so both calls read 0 then
-// (RFC 9846 §6.2).
+// either (tls.h). Every other code leaves the session dead.
+//
+// The call that fails emits its failure's alert the way it emits its
+// other records. ch_record_in stages it as one record, which ch_record_out
+// hands over on the failed session. ch_srv_record_in pushes it through
+// cfg.srv.on_record_out before it returns (srv_tcp_nonblocking.h). ch_read
+// and ch_write send it through cfg.send. The caller holds no key, so the
+// driver seals the record itself: under this side's write key once there
+// is one, because RFC 9846 §6 protects an alert under the current write
+// key, and in the clear before that. A client installs its write key
+// right after the ServerHello, and a server right after it has sent its
+// own. So a handshake failure before that key emits REC_HDR + 2 bytes, and
+// one after it CH_ALERT_RECORD_LEN bytes (tls.h). ch_alert_sent names the
+// alert in every case (alert.h). A failure on the peer's fatal alert
+// emits none, and ch_alert_sent reads 0 then (RFC 9846 §6.2).
 #ifndef CH_TCP_NONBLOCKING_H
 #define CH_TCP_NONBLOCKING_H
 #ifdef CH_TRANSPORT_TCP_NONBLOCKING
@@ -78,10 +85,10 @@
 typedef struct ch_record {
     ch_tls t;
     handshake_state hs;
-    uint8_t step;  // TCP_NONBLOCKING_STEP_*, tcp_nonblocking_step.h
-    uint8_t alert; // what ch_record_alert reports after a failure
+    uint8_t step; // TCP_NONBLOCKING_STEP_*, tcp_nonblocking_step.h
     // Bytes of one finished record staged in t.tx and not yet collected,
-    // and how many of them ch_record_out has already handed over. A partial
+    // and how many of them ch_record_out has already handed over: a
+    // handshake message, or the alert record of a failure. A partial
     // collection is what lets a caller with a small buffer make progress.
     size_t tx_len;
     size_t tx_off;
@@ -127,9 +134,10 @@ int ch_record_init(ch_record *r, const ch_cfg *cfg);
 // nothing, while a record ch_record_out has not handed over yet is
 // staged: the peer cannot have answered it. Returns CH_EPROTO without
 // reading a byte on a session that failed or closed. Every other code
-// leaves the session dead, and so does a record delivered here once
-// ch_record_state reports CH_ST_CONNECTED: that record is ch_read's, and
-// this call fails the session on it.
+// leaves the session dead, with the alert its failure chose staged for
+// ch_record_out unless the failure was the peer's fatal alert (above). A
+// record delivered here once ch_record_state reports CH_ST_CONNECTED
+// fails the session too: that record is ch_read's.
 int ch_record_in(ch_record *r, uint8_t *p, size_t n, size_t *consumed);
 
 // Collects bytes the caller must send. out_len is 0 when nothing is
@@ -137,9 +145,16 @@ int ch_record_in(ch_record *r, uint8_t *p, size_t n, size_t *consumed);
 // whose buffer is smaller than the staged record gets what fits and
 // calls again; the record is finished when out_len is 0.
 //
+// After a failure in ch_record_in the staged record is that failure's
+// alert, and this call hands it over on the failed session the same way,
+// in as many calls as the caller's buffer needs. Once its last byte is
+// out, the next call returns CH_EINVAL. The caller sends those bytes and
+// then closes the connection.
+//
 // Returns CH_ECAP only when cap is 0, because any other capacity makes
-// progress. Returns CH_EINVAL on a session that failed or closed.
-// Neither changes the session, and neither writes *out_len.
+// progress. Returns CH_EINVAL on a session that failed or closed and
+// holds no staged byte. Neither changes the session, and neither writes
+// *out_len.
 int ch_record_out(ch_record *r, uint8_t *out, size_t cap, size_t *out_len);
 #endif
 
@@ -150,15 +165,9 @@ int ch_record_out(ch_record *r, uint8_t *out, size_t cap, size_t *out_len);
 // because ch_write still works; r->t.read_closed says it arrived.
 uint8_t ch_record_state(const ch_record *r);
 
-// The TLS alert a failure in ch_record_in or ch_srv_record_in chose, for
-// the caller to send before it closes the connection. 0 when no such
-// failure has happened, after a failure in ch_read or ch_write, which
-// send their own alert, and after the peer's fatal alert, which this side
-// answers with none (alert.h).
-uint8_t ch_record_alert(const ch_record *r);
-
 // Wipes every secret and marks the session dead. Safe on a session that
-// already failed. It sends nothing, so a connected caller calls ch_close
+// already failed, where it also drops an alert record ch_record_out has
+// not handed over. It sends nothing, so a connected caller calls ch_close
 // on &r->t first, which sends this side's close_notify.
 void ch_record_close(ch_record *r);
 

@@ -1166,8 +1166,9 @@ Every harness in this group builds the server role (`-DCH_ROLE_SERVER`).
   8-byte buffers. `proof/run.sh` records what was tried and the layered
   split it needs.
 - **Tested instead:** `bin/srv_tcp_nonblocking_test`,
-  `bin/tcp_nonblocking_loop_test` and four `.violation` mutants cover
-  `srv_tcp_nonblocking.c` and `tcp_nonblocking_frame.c`.
+  `bin/tcp_nonblocking_loop_test` and thirteen `.violation` mutants cover
+  `srv_tcp_nonblocking.c` and `tcp_nonblocking_frame.c`, among them the
+  alert record a failure seals before its wipe and pushes (INV-13).
 
 ### QUIC
 

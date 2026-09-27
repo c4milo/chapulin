@@ -62,7 +62,11 @@ size_t ch_writable_len(const ch_tls *t, size_t cap);
 // The wire length of one sealed alert record, 24 bytes: REC_OVERHEAD and
 // the 2-byte alert, a level and a description (RFC 9846 §6). ch_close sends
 // one, and a ch_read that fails sends one, unless the peer's fatal alert
-// is what failed it: that one it answers with nothing.
+// is what failed it: that one it answers with nothing. A tcp-nonblocking
+// handshake that fails after this side's write key is installed emits one
+// through ch_record_out or cfg.srv.on_record_out, and one that fails
+// before it emits the alert in the clear, REC_HDR + 2 bytes
+// (tcp_nonblocking.h).
 #define CH_ALERT_RECORD_LEN (REC_OVERHEAD + 2)
 
 // The wire length of one sealed KeyUpdate record, 27 bytes: REC_OVERHEAD,

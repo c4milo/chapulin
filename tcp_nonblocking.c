@@ -1,14 +1,13 @@
-// chapulin's client driver under TRANSPORT=tcp-nonblocking, and the three calls
+// chapulin's client driver under TRANSPORT=tcp-nonblocking, and the two calls
 // either role exports. Contract in tcp_nonblocking.h. It is the file beside
 // tls.c and quic.c, and it holds no protocol rule of its own:
 // tcp_nonblocking_advance runs the handshake and record.[ch] protects what
 // leaves.
 //
-// ch_record_state, ch_record_alert and ch_record_close read no side, so
-// a ROLE=server object compiles them from here and srv_tcp_nonblocking.c
-// adds its own two entry points beside them. The client driver above
-// them is what that build has no use for, the way tls.c guards
-// ch_connect.
+// ch_record_state and ch_record_close read no side, so a ROLE=server
+// object compiles them from here and srv_tcp_nonblocking.c adds its own
+// two entry points beside them. The client driver above them is what that
+// build has no use for, the way tls.c guards ch_connect.
 #include "tcp_nonblocking.h"
 
 #ifdef CH_TRANSPORT_TCP_NONBLOCKING
@@ -76,6 +75,19 @@ int ch_record_init(ch_record *r, const ch_cfg *cfg) {
     return CH_OK;
 }
 
+// A failure, with the alert record tcp_nonblocking_fail wrote staged in
+// t.tx, where this driver stages every record it writes. ch_record_out
+// hands it over on the failed session and then answers CH_EINVAL
+// (tcp_nonblocking.h). Returns rc, so a caller can tail-call it.
+static int fail(ch_record *r, int rc) {
+    uint8_t rec[CH_ALERT_RECORD_LEN] = {0};
+    size_t rec_len = tcp_nonblocking_fail(r, rec);
+    memcpy(r->t.tx, rec, rec_len);
+    r->tx_len = rec_len;
+    r->tx_off = 0;
+    return rc;
+}
+
 // Runs every whole handshake message the fed plaintext now holds. It is
 // quic.c's drive loop without the level checks, and it terminates for the
 // same reason: a copy that leaves bytes over means the buffer is full,
@@ -88,11 +100,11 @@ static int drive(ch_record *r) {
             return CH_OK;
         }
         if (rc != CH_OK) {
-            return tcp_nonblocking_fail(r, rc);
+            return fail(r, rc);
         }
         rc = tcp_nonblocking_advance(r);
         if (rc != CH_OK) {
-            return tcp_nonblocking_fail(r, rc);
+            return fail(r, rc);
         }
         // A step that staged a record has said everything it can until
         // the caller collects it and the peer answers.
@@ -125,14 +137,14 @@ int ch_record_in(ch_record *r, uint8_t *p, size_t n, size_t *consumed) {
             // RFC 9846 section 5.2 caps a record; anything larger names
             // no record this endpoint will ever read.
             r->hs.alert = ALERT_RECORD_OVERFLOW;
-            return tcp_nonblocking_fail(r, CH_EPROTO);
+            return fail(r, CH_EPROTO);
         }
         if (n - off < REC_HDR + body_len) {
             return CH_OK;
         }
         int rc = tcp_nonblocking_take_record(r, rec, body_len, rec[0]);
         if (rc != CH_OK) {
-            return tcp_nonblocking_fail(r, rc);
+            return fail(r, rc);
         }
         off += REC_HDR + body_len;
         *consumed = off;
@@ -147,7 +159,10 @@ int ch_record_in(ch_record *r, uint8_t *p, size_t n, size_t *consumed) {
 }
 
 int ch_record_out(ch_record *r, uint8_t *out, size_t cap, size_t *out_len) {
-    if (tcp_nonblocking_session_dead(r)) {
+    // A failed session holds the alert record its failure staged until the
+    // last byte of it is handed over, and nothing after that. A closed one
+    // holds none: ch_record_close empties the staging array.
+    if (tcp_nonblocking_session_dead(r) && r->tx_len == 0) {
         return CH_EINVAL;
     }
     if (cap == 0) {
@@ -179,10 +194,6 @@ int ch_record_out(ch_record *r, uint8_t *out, size_t cap, size_t *out_len) {
 
 uint8_t ch_record_state(const ch_record *r) {
     return r->t.state;
-}
-
-uint8_t ch_record_alert(const ch_record *r) {
-    return r->alert;
 }
 
 void ch_record_close(ch_record *r) {

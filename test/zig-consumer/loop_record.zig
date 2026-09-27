@@ -3,9 +3,11 @@
 //! server name, data both ways across several records, a write that does
 //! not fit, the exporter, a ticket taken and resumed through
 //! Ticket.fromFields, a stale ticket refused, close in each direction and
-//! recordClose, and four refusals, the last of whose alerts the server
-//! reads as the client's fatal alert and does not answer. At
-//! TX_RECORD=16384 the records carry CH_TX_PT bytes each.
+//! recordClose, four refusals, the last of whose alerts the server reads
+//! as the client's fatal alert and does not answer, and each side's
+//! handshake failure before and after its write key, whose alert record the
+//! other side reads. At TX_RECORD=16384 the records carry CH_TX_PT bytes
+//! each.
 const std = @import("std");
 const chapulin = @import("chapulin");
 const fixture = @import("fixture.zig");
@@ -211,8 +213,11 @@ fn refusals(flight_len: usize) !void {
         to_server = .{};
         to_client = .{};
         _ = try clientToServer();
-        try check(serverToClient() == error.Auth and client.recordAlert() == 48, "an impostor anchor was not refused with unknown_ca");
+        try check(serverToClient() == error.Auth, "an impostor anchor was not refused");
         try check(client.alertSent() == 48 and client.alertReceived() == null, "alertSent did not name the handshake's unknown_ca");
+        // The client refused the Certificate after its write key went in,
+        // so its unknown_ca is sealed.
+        try clientAlertReachesServer(48, record.alert_record_len);
         try check(client.init(.{ .trust = fixture.trust(.root, 0) }) == error.Invalid, "a clock of 0 was accepted");
     }
     try server.init(fixture.server(&server_alpn, server_now), &sni_buf);
@@ -229,14 +234,95 @@ fn refusals(flight_len: usize) !void {
     try check(waiting.consumed == 0 and waiting.pt_len == 0, "read took a part of a header");
     try check(client.read(&oversize, &received, &reply) == error.Proto, "read waited on a record no peer may send");
     // The client's read sent the alert its failure chose into reply, and
-    // recordAlert stays null, because read sends its own. The server reads
-    // that alert as the peer's fatal alert and sends nothing back (RFC 9846
-    // section 6.2).
+    // staged nothing for recordOut. The server reads that alert as the
+    // peer's fatal alert and sends nothing back (RFC 9846 section 6.2).
     const sent = client.alertSent() orelse return error.NoAlertSent;
-    try check(client.recordAlert() == null and client.alertReceived() == null, "the client's failed read reported an alert to send or one received");
+    try check(client.alertReceived() == null and client.recordOut(to_server.free()) == error.Invalid, "the client's failed read staged an alert or reported one received");
     var answer: [256]u8 = undefined;
     try check(server.read(reply[0..client.replyLen()], &received, &answer) == error.Proto, "the server read on after the client's fatal alert");
     try check(server.alertReceived() == sent and server.alertSent() == null and server.replyLen() == 0, "the server answered the client's fatal alert");
+}
+
+/// The failed client's alert record, handed to the server: recordOut
+/// returns all len bytes of it, then error.Invalid, and the server reads it
+/// as the client's fatal alert and writes nothing into output.
+fn clientAlertReachesServer(alert: u8, len: usize) !void {
+    to_server = .{};
+    const n = try client.recordOut(to_server.free());
+    to_server.push(n);
+    try check(n == len and client.recordOut(to_server.free()) == error.Invalid, "recordOut did not return the client's alert record once");
+    try check(server.recordIn(to_server.pending(), to_client.free()) == error.Proto, "the server read on after the client's fatal alert");
+    try check(server.alertReceived() == alert and server.alertSent() == null and server.outputLen() == 0, "the server did not read the client's alert, or answered it");
+}
+
+/// What the failed server wrote into output, outputLen bytes, handed to
+/// the client in its handshake: the client reads the alert as the server's
+/// fatal alert and stages nothing for recordOut.
+fn serverAlertReachesClient(alert: u8) !void {
+    to_client.push(server.outputLen());
+    try check(serverToClient() == error.Proto, "the client read on after the server's fatal alert");
+    try check(client.alertReceived() == alert and client.alertSent() == null, "the client did not read the server's alert");
+    try check(client.recordOut(to_server.free()) == error.Invalid, "the client answered the server's fatal alert");
+}
+
+/// Fresh sessions, with the ClientHello in to_server and nothing sent yet.
+fn startPair() !void {
+    try server.init(fixture.server(&server_alpn, server_now), &sni_buf);
+    try client.init(clientValues());
+    to_server = .{};
+    to_client = .{};
+    to_server.push(try client.recordOut(to_server.free()));
+}
+
+/// Hands the ClientHello in to_server to the server, and the flight it
+/// writes into to_client.
+fn serverAnswersHello() !void {
+    const progress = try server.recordIn(to_server.pending(), to_client.free());
+    to_server.pop(progress.consumed);
+    to_client.push(progress.written);
+}
+
+/// Each side's handshake failure on each side of its write key. The alert
+/// goes in the clear before the key, REC_HDR + 2 bytes, and sealed after,
+/// alert_record_len bytes, and the other side reads it.
+fn failureAlerts() !void {
+    // The client, before its key: the ServerHello selects a suite the
+    // client did not offer. Its cipher_suite follows the record and message
+    // headers, legacy_version, random and the empty legacy_session_id_echo.
+    try startPair();
+    try serverAnswersHello();
+    const suite_at = c.REC_HDR + 4 + 2 + 32 + 1;
+    const flight = to_client.pending();
+    try check(flight[suite_at] == 0x13 and flight[suite_at + 1] == 0x03, "the ServerHello's cipher_suite is not ChaCha20 where the test looks");
+    flight[suite_at + 1] = 0x01;
+    try check(serverToClient() == error.Proto, "the client took a suite it did not offer");
+    const refused_hello = client.alertSent() orelse return error.NoAlertSent;
+    try clientAlertReachesServer(refused_hello, c.REC_HDR + 2);
+
+    // The server, before its key: a first message whose type is the
+    // ServerHello's. Its unexpected_message goes into output in the clear.
+    try startPair();
+    to_server.pending()[c.REC_HDR] = 2;
+    try check(server.recordIn(to_server.pending(), to_client.free()) == error.Proto, "the server took a ServerHello as its first message");
+    try check(server.alertSent() == 10 and server.outputLen() == c.REC_HDR + 2, "the server did not write unexpected_message in the clear");
+    try serverAlertReachesClient(10);
+
+    // The server, under its application write key: the client Finished
+    // with one bit of its tag flipped. Its bad_record_mac goes into output
+    // sealed, and the connected client reads it with read and replies with
+    // nothing.
+    try startPair();
+    try serverAnswersHello();
+    try serverToClient();
+    to_server.push(try client.recordOut(to_server.free()));
+    try check(client.recordState() == .connected, "the client did not connect once its Finished went out");
+    const finished = to_server.pending();
+    finished[finished.len - 1] ^= 1;
+    try check(server.recordIn(finished, to_client.free()) == error.Proto, "the server took a Finished whose tag does not verify");
+    try check(server.alertSent() == 20 and server.outputLen() == record.alert_record_len, "the server did not write a sealed bad_record_mac");
+    to_client.push(server.outputLen());
+    try check(client.read(to_client.pending(), &received, &reply) == error.Proto, "the client read on after the server's fatal alert");
+    try check(client.alertReceived() == 20 and client.alertSent() == null and client.replyLen() == 0, "the client did not read the server's alert, or answered it");
 }
 
 pub fn run() !void {
@@ -259,5 +345,6 @@ pub fn run() !void {
     to_client = .{};
     const flight_len = try clientToServer();
     try refusals(flight_len);
-    std.debug.print("a record-mode client and server ran through the API at CH_TX_PT {d}: a handshake, {d} bytes each way, a resumed ticket, a stale one refused, both closes and four refusals\n", .{ c.CH_TX_PT, payload.len });
+    try failureAlerts();
+    std.debug.print("a record-mode client and server ran through the API at CH_TX_PT {d}: a handshake, {d} bytes each way, a resumed ticket, a stale one refused, both closes, four refusals and each side's failure alert on each side of its write key\n", .{ c.CH_TX_PT, payload.len });
 }

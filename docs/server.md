@@ -1935,7 +1935,7 @@ int ch_srv_record_init(ch_record *r, const ch_cfg *cfg);
 int ch_srv_record_in(ch_record *r, uint8_t *p, size_t n, size_t *consumed);
 ```
 
-`ch_record_state`, `ch_record_alert` and `ch_record_close` are
+`ch_record_state` and `ch_record_close` are
 `tcp_nonblocking.h`'s and are not repeated: they read no side, so
 `tcp_nonblocking.c` compiles them in either role and the client driver
 above them is what a `ROLE=server` object guards out
@@ -1969,12 +1969,18 @@ the Finished, each protected. The test's `send` and `recv` fail the run if the
 driver ever calls them, which is how the mode's claim is checked rather than
 argued.
 
+A failure pushes one more record the same way: the alert it chose, pushed
+through `on_record_out` before `ch_srv_record_in` returns. The caller holds no
+key, so `tcp_nonblocking_fail` seals the alert under the server's write key
+once the server has one, which it installs right after it has sent its
+ServerHello, and writes it in the clear before that (`docs/decisions.md` 76).
+
 #### The file partition
 
 | file | what it holds |
 | --- | --- |
 | `srv_tcp_nonblocking.[ch]` | the driver: the three steps and the two entry points. `srv_quic.[ch]`'s mirror on the transport that keeps its records. |
-| `tcp_nonblocking_frame.[ch]` | taking one inbound record, and dying. Both drivers call it, so INV-17's wipe list has one copy to check, the way `quic_fail.[ch]` holds QUIC's. |
+| `tcp_nonblocking_frame.[ch]` | taking one inbound record, and dying: the alert record a failure sends, sealed before the wipe. Both drivers call it, so INV-17's wipe list has one copy to check, the way `quic_fail.[ch]` holds QUIC's. |
 
 `srv_tcp_nonblocking.c` installs no keys. Every `rec_dir_init` a server makes
 already sits inside the handler that derived the secret it takes — the

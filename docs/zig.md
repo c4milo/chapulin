@@ -288,13 +288,14 @@ its hook. colibri sizes both at 20,480 bytes.
 | Zig call | C call | Errors |
 |---|---|---|
 | `Client.init(values)` | `Client.toCfg`, then `ch_record_init` with the API's `send`, `recv` and `on_ticket` | Invalid |
-| `Client.recordOut(output)` | `ch_record_out` | Invalid, Cap |
+| `Client.recordOut(output)` | `ch_record_out`; after a failed `recordIn`, the failure's alert record, then `error.Invalid` | Invalid, Cap |
 | `Client.recordIn(input)` | `ch_record_in`; returns the bytes consumed | Invalid, Proto, Auth, Cap |
 | `Client.takeTicket()` | none: moves the slot out and zeroes it | none |
 | `Server.init(values, sni_buf)` | `Server.toCfg`, then `ch_srv_record_init` with the API's `send`, `recv` and `on_record_out`; `sni_buf` is `srv.sni_buf` and `srv.sni_cap` | Invalid |
 | `Server.recordIn(input, output)` | `ch_srv_record_in`, whose flight goes into `output`; returns `Progress{ consumed, written }` | Proto, Auth, Cap, Io |
+| `Server.outputLen()` | the bytes the last `recordIn` wrote into `output`, which a failed `recordIn` also sets: `Progress.written` on success | none |
 | `Server.sni()` | `sni_buf[0..ch_tls.sni_len]`, null when 0 | none |
-| `recordState()`, `recordAlert()` | `ch_record_state`, `ch_record_alert`; the alert is null when 0 | none |
+| `recordState()` | `ch_record_state` | none |
 | `alertSent()`, `alertReceived()` | `ch_alert_sent`, `ch_alert_received` on `record.t` (alert.h); each null when 0 | none |
 | `read(input, pt, reply)` | `ch_record_whole_len`, then `ch_read` | Invalid, Proto, Auth, Cap, Io |
 | `write(pt, output)` | `ch_writable_len`, then `ch_write` | Proto, Cap, Io |
@@ -338,6 +339,27 @@ the caller to present again, unchanged, with more bytes after it. A
 server's `recordIn` writes its whole flight into `output`, one record at
 a time, and answers `error.Io` when `output` cannot take one; the
 session is then dead.
+
+When `recordIn` fails, the side that failed has one alert record for
+the caller to send before it closes the connection. A client's
+`recordOut` returns it, all of it when `output` holds it, and then
+`error.Invalid`. A server's `recordIn` has already written it into
+`output`, after the records of the flight that went out before the
+failure, and `outputLen()` counts them all, because the error returns no
+`Progress`. The record is in the clear before the failing side's write
+key is installed, 7 bytes, and sealed after, `alert_record_len` bytes: a
+client installs its key right after the ServerHello and a server right
+after it has sent its own (tcp_nonblocking.h). `alertSent` names the
+alert. A `recordIn` that fails on the peer's fatal alert has nothing to
+send (RFC 9846 §6.2): `recordOut` answers `error.Invalid` at once, and
+`outputLen()` counts only the records written before that alert.
+
+```zig
+const progress = server.recordIn(input, &output) catch |err| {
+    send(output[0..server.outputLen()]); // the flight so far, then the alert
+    return err;
+};
+```
 
 ### Reading
 
@@ -497,8 +519,8 @@ runs inside `seal` and `open`, as in C (RFC 9001 §9.5).
   can add.
 - **A record-mode KeyUpdate this side starts.** Reserved, above.
 - **Alert names.** No public header declares the `ALERT_` constants, so
-  `recordAlert`, `alert`, `alertSent` and `alertReceived` return the
-  AlertDescription byte.
+  `alert`, `alertSent` and `alertReceived` return the AlertDescription
+  byte.
 - **Private fields.** Zig has none, so a session's `record` or `quic`
   field is visible. The API promises nothing about them.
 
@@ -554,8 +576,14 @@ and stompy's (`TX_RECORD=16384`), each through the module alone
   - four refusals: an impostor anchor, a clock of 0, a server output one
     byte short of its flight, and a record header no peer may send;
   - `alertSent` after the first and the last refusal, and the server
-    reading the alert the last one sent as the client's fatal alert:
-    `alertReceived` names it and the server sends nothing back.
+    reading the alert each one sent as the client's fatal alert:
+    `alertReceived` names it and the server sends nothing back;
+  - each side's handshake failure on each side of its write key: a
+    client that refuses the ServerHello in the clear and a Certificate
+    sealed, whose alert `recordOut` returns once, and a server that
+    refuses a first message in the clear and a client Finished sealed,
+    whose alert `outputLen` counts. The other side reads each one as its
+    peer's fatal alert and sends nothing back.
 
   Over QUIC:
   - a handshake at each level, with `keysReady` checked at each step;

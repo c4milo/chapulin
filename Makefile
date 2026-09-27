@@ -426,7 +426,7 @@ TESTH := test/test_random.h test/pem_armor.h test/pem_tests.h test/x509_ca_tests
          test/rsa_pkcs1_vectors.h test/rsa_wide_vectors.h test/rsa_pkcs1_wide_vectors.h \
          test/rsa_sign_vectors.h \
          test/diff_webpki.h test/diff_mlkem.h test/mlkem_vectors.h test/webpki_corpus.h test/webpki_sigalg_vectors.h \
-         test/diff_webpki_sigalg.h test/hello_exts.h test/webpki_session_cases.h test/webpki_groups_cases.h test/webpki_p256_cases.h test/webpki_mock_kex.h test/webpki_suite_cases.h test/tcp_nonblocking_read_tests.h test/tcp_nonblocking_record_end_tests.h test/record_edit.h test/tcp_blocking_retry_tests.h test/tcp_blocking_alert_tests.h test/tcp_nonblocking_resume_tests.h test/tcp_nonblocking_group_tests.h test/tcp_nonblocking_coalesced_tests.h test/tcp_nonblocking_close_tests.h test/tcp_nonblocking_alert_tests.h test/tcp_nonblocking_frame_tests.h test/quic_loop_raw.h test/quic_loop_close.h test/quic_loop_webpki.h test/quic_loop_pins.h test/webpki_resume_session.h test/webpki_resume_cases.h test/webpki_pins_cases.h test/tls_client_webpki.h \
+         test/diff_webpki_sigalg.h test/hello_exts.h test/webpki_session_cases.h test/webpki_groups_cases.h test/webpki_p256_cases.h test/webpki_mock_kex.h test/webpki_suite_cases.h test/tcp_nonblocking_read_tests.h test/tcp_nonblocking_record_end_tests.h test/record_edit.h test/tcp_blocking_retry_tests.h test/tcp_blocking_alert_tests.h test/tcp_nonblocking_resume_tests.h test/tcp_nonblocking_group_tests.h test/tcp_nonblocking_coalesced_tests.h test/tcp_nonblocking_close_tests.h test/tcp_nonblocking_alert_tests.h test/tcp_nonblocking_failure_alert_tests.h test/tcp_nonblocking_frame_tests.h test/quic_loop_raw.h test/quic_loop_close.h test/quic_loop_webpki.h test/quic_loop_pins.h test/webpki_resume_session.h test/webpki_resume_cases.h test/webpki_pins_cases.h test/tls_client_webpki.h \
          test/webpki_decline_cases.h test/webpki_r2_chain.h test/psk_decline_tests.h \
          test/handshake_strict_alpn.h test/handshake_strict_cert_type.h \
          test/webpki_cert_mutants.h test/webpki_cert_key_mutants.h test/webpki_ext_mutants.h test/diff_webpki_cert.h \
@@ -610,7 +610,7 @@ else ifeq ($(TRANSPORT),tcp-nonblocking)
 TRANSPORT_DEF := -DCH_TRANSPORT_TCP_NONBLOCKING
 TRANSPORT_FILTER := handshake.c
 TRANSPORT_ADD := tcp_nonblocking.c tcp_nonblocking_frame.c tcp_nonblocking_step.c
-PUBLIC_TRANSPORT := ch_record_init ch_record_in ch_record_out ch_record_state ch_record_alert ch_record_close \
+PUBLIC_TRANSPORT := ch_record_init ch_record_in ch_record_out ch_record_state ch_record_close \
                     ch_record_whole_len ch_read ch_write ch_writable_len ch_close ch_ticket_obfuscated_age \
                     ch_alert_sent ch_alert_received
 else ifeq ($(TRANSPORT),tcp-blocking)
@@ -707,21 +707,22 @@ else ifeq ($(TRANSPORT),tcp-nonblocking)
 # The server's driver replaces the client's, source for source:
 # srv_tcp_nonblocking.c is the step table tcp_nonblocking_step.c is for
 # a client, and srv_handshake.c is the blocking driver this transport
-# exists to avoid. tcp_nonblocking.c stays, because ch_record_state,
-# ch_record_alert and ch_record_close read no side; its own client
-# driver is guarded out there. tcp_nonblocking_frame.c stays for the
-# same reason: one inbound record reads the same from either side.
+# exists to avoid. tcp_nonblocking.c stays, because ch_record_state and
+# ch_record_close read no side; its own client driver is guarded out
+# there. tcp_nonblocking_frame.c stays for the same reason: one inbound
+# record reads the same from either side, and a failure's alert record
+# is sealed the same way on either side.
 TRANSPORT_ADD := $(filter-out tcp_nonblocking_step.c,$(TRANSPORT_ADD))
 ROLE_ADD    := $(filter-out srv_handshake.c,$(ROLE_ADD)) srv_tcp_nonblocking.c
 # What this object exports: the server's two driver calls, the boot check,
-# the three session calls either role uses, the record framing call either
+# the two session calls either role uses, the record framing call either
 # role uses, the record-layer calls a connected session needs, and
 # alert.h's two calls. Not
 # ch_record_init, ch_record_in or ch_record_out, which are the client's
 # driver, not ch_ticket_obfuscated_age, which only a client presents, and
 # not ch_srv_accept, which is the blocking one.
 PUBLIC_ROLE := ch_srv_record_init ch_srv_record_in ch_srv_check \
-               ch_record_state ch_record_alert ch_record_close ch_record_whole_len \
+               ch_record_state ch_record_close ch_record_whole_len \
                ch_read ch_write ch_writable_len ch_close ch_alert_sent ch_alert_received
 else
 PUBLIC_ROLE := ch_srv_accept ch_srv_check ch_read ch_write ch_writable_len ch_close \
