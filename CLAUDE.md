@@ -155,11 +155,12 @@ Home: github.com/c4milo.
   (public API) ← demo/test mains. Firmware takes everything below
   `tls.[ch]` as-is and supplies I/O callbacks and `ch_rand_bytes`. A Zig
   project takes the same object through `build.zig`, whose options are
-  the Makefile's variables, with a module of the public headers that
-  translate-c makes under the object's defines; the Makefile stays the
-  source of truth, and `make lint-zig-build` fails when the two builds
-  disagree or the module does not describe the object
-  (docs/decisions.md 69 and 70).
+  the Makefile's variables, as the module `chapulin`: the Zig API below,
+  which carries the object, with the public headers that translate-c
+  makes under the object's defines as its `chapulin.c`. The Makefile
+  stays the source of truth, and `make lint-zig-build` fails when the
+  two builds disagree or the module does not describe the object
+  (docs/decisions.md 69, 70 and 73).
   One pair sits off that chain rather than in it: `x509_ca.[ch]`
   (provisioning — one PEM certificate to the key bytes
   `ch_cfg.server_pubkey` takes) reads `pem.[ch]` and `x509.[ch]`, and
@@ -461,3 +462,14 @@ Home: github.com/c4milo.
   it forwards to the C API and adds only RAII cleanup, byte views, and
   typed results. `make cxx-check` compiles it against the packaged
   library object as part of check.
+- `chapulin.zig`, `chapulin_record.zig` and `chapulin_quic.zig` are the
+  Zig API, the module `chapulin` that `build.zig` exports, under the same
+  rule as `chapulin.hpp`: it forwards to the C calls and adds only typed
+  values, the `ch_cfg` each value builds, one Zig error per result code,
+  the callbacks that copy bytes between the caller's slices and the
+  session, and storage. It computes no TLS rule itself: a record's
+  length, a write's size and a ticket's age come from the C calls that
+  compute them (docs/decisions.md 72 and 73). A change to a public C
+  call changes its Zig call in the same commit, and `make
+  lint-zig-build` builds and runs the API against every configuration it
+  checks (docs/zig.md, INV-36).
