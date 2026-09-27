@@ -367,6 +367,7 @@ static int run_handshake(ch_record *client, ch_record *server, const ch_cfg *ccf
 
 #include "tcp_nonblocking_close_tests.h"
 #include "tcp_nonblocking_coalesced_tests.h"
+#include "tcp_nonblocking_frame_tests.h"
 #include "tcp_nonblocking_group_tests.h"
 #include "tcp_nonblocking_read_tests.h"
 #include "tcp_nonblocking_resume_tests.h"
@@ -412,6 +413,10 @@ int main(void) {
     // ch_read on the connected client, over records that arrive apart.
     // It ends the client's session, which the run below starts afresh.
     test_read_waits_for_records(&client, &server);
+
+    // Where a record ends, over headers built here and records the
+    // server seals, which no client reads after it.
+    test_record_whole_len(&server);
 
     // The same run against a pin that is not this server's key. Without
     // it the pass above would hold for a client that verified nothing,
@@ -459,8 +464,9 @@ int main(void) {
     if (failures == 0) {
         (void)printf("tcp_nonblocking_loop: a whole handshake over group 0x%04x in %d rounds,"
                      " 0 socket calls; both ends export one secret and log the same four;"
-                     " ch_read waits between records; a wrong pin refused; a ticket resumes"
-                     " with no certificate; a close_notify closes one direction and ch_read"
+                     " ch_read waits between records; ch_record_whole_len frames each record;"
+                     " a wrong pin refused; a ticket resumes with no certificate, and a"
+                     " stale one is refused; a close_notify closes one direction and ch_read"
                      " sends nothing; the server takes secp256r1 only when x25519 is not"
                      " listed\n",
                      (unsigned)LOOP_GROUP, rounds);

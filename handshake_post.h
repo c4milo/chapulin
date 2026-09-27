@@ -21,6 +21,40 @@
 
 #include "session.h"
 
+// Whether cfg may offer its ticket, which every client entry asks before
+// it sends a byte: ch_connect and ch_record_init through tls.c's
+// tlsi_config_ok, and ch_quic_init through quic_config_ok. RFC 9846
+// §4.3.11.1 says a client MUST NOT use a ticket older than its
+// ticket_lifetime (rfc9846.txt:2572-2574), and §4.6.1 that it MUST NOT use
+// one more than 7 days after issuance whatever that lifetime says
+// (rfc9846.txt:3259-3261).
+//
+// So with cfg->resumption set it answers 0 when cfg->ticket_age_ms is above
+// cfg->ticket_lifetime_s seconds or above CH_TICKET_LIFETIME_MAX seconds,
+// and 1 when it is at or below both. A lifetime of 0 is one the caller did
+// not give, because handle_ticket hands on_ticket no ticket with that
+// lifetime (ticket.h), and the age is then held to CH_TICKET_LIFETIME_MAX
+// alone. An age of 0 is a ticket that arrived this millisecond. So a
+// configuration that sets neither field, as every one written before the
+// two existed, is refused nothing. Without resumption no ticket is
+// offered, and the answer is 1.
+//
+// The lifetime is capped before it is scaled, so it is at most
+// 604,800,000 milliseconds, which a uint32_t holds. The product is then a
+// 32-bit multiply, where a 64-bit one is a widening multiply on a 32-bit
+// core, which lint-wide-multiply counts.
+static inline int hspost_ticket_age_ok(const ch_cfg *cfg) {
+    if (!cfg->resumption) {
+        return 1;
+    }
+    uint32_t lifetime_s = CH_TICKET_LIFETIME_MAX;
+    if (cfg->ticket_lifetime_s != 0 && cfg->ticket_lifetime_s < lifetime_s) {
+        lifetime_s = cfg->ticket_lifetime_s;
+    }
+    uint32_t lifetime_ms = lifetime_s * 1000U;
+    return cfg->ticket_age_ms <= lifetime_ms;
+}
+
 #ifndef CH_TRANSPORT_QUIC_NONBLOCKING
 // Reads whole post-handshake messages, starting from pt_len plaintext
 // bytes already in cfg.buf and pulling further records when one message

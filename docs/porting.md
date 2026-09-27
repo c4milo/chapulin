@@ -361,7 +361,7 @@ One image can link one packaged object of each of two transports: a
 `TRANSPORT=tcp-nonblocking` object beside a `TRANSPORT=quic-nonblocking` one, or a
 `TRANSPORT=tcp-blocking` object beside a `TRANSPORT=quic-nonblocking` one. cocuyo does this for
 DNS over TLS and DNS over QUIC, and a server does it for HTTP/2 beside
-HTTP/3. Three exports that objects of both transports carry take the
+HTTP/3. Four exports that objects of both transports carry take the
 transport into their symbol names, and a header maps each to the name you
 call:
 
@@ -370,6 +370,7 @@ call:
 | `ch_build` | `ch_build_info_tcp_blocking`, `ch_build_info_tcp_nonblocking`, `ch_build_info_quic_nonblocking` | `build.h` |
 | `ch_srv_check` | `ch_srv_check_tcp_blocking`, `ch_srv_check_tcp_nonblocking`, `ch_srv_check_quic_nonblocking` | `srv.h` |
 | `ch_pubkey_from_pem` | `ch_pubkey_from_pem_tcp_blocking`, `ch_pubkey_from_pem_tcp_nonblocking`, `ch_pubkey_from_pem_quic_nonblocking` | `x509_ca.h` |
+| `ch_ticket_obfuscated_age` | `ch_ticket_obfuscated_age_tcp_blocking`, `ch_ticket_obfuscated_age_tcp_nonblocking`, `ch_ticket_obfuscated_age_quic_nonblocking` | `ticket.h` |
 
 Compile the calls to each object in a translation unit of its own, under that
 object's defines. The two objects' headers disagree about `ch_cfg` and
@@ -381,8 +382,8 @@ Two pairs do not link, and the linker's duplicate-symbol error is the
 refusal:
 
 - **A `TRANSPORT=tcp-blocking` object beside a `TRANSPORT=tcp-nonblocking` one.** Both export
-  `ch_read`, `ch_write` and `ch_close`, and `ch_export` under
-  `EXPORTER=on`. A tcp-nonblocking object does everything a tcp-blocking one
+  `ch_read`, `ch_write`, `ch_writable_len` and `ch_close`, and `ch_export`
+  under `EXPORTER=on`. A tcp-nonblocking object does everything a tcp-blocking one
   does, with your code driving the socket, so link the tcp-nonblocking
   object alone.
 - **Two `RAND=drbg` objects.** Both export `ch_drbg_seed` and `ch_rand_bytes`,

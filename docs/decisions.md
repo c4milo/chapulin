@@ -2734,3 +2734,149 @@ does nothing more.
       `rec_seal` that writes no staged copy. It would cost `ch_tls` nothing
       at any size, and it is a second sealing entry point, which INV-1
       exists to prevent.
+72. **Where a record ends, how much plaintext a send buffer holds, and a
+    ticket's age are computed in C, not by the caller.** Camilo approved a
+    Zig API that forwards to C and holds no TLS logic, and on 2026-09-26
+    he decided that three computations colibri makes in Zig move into C
+    first: `whole_record_len`, `sealable_len` and `owed_len_max` in its
+    record adapter, and the obfuscated ticket age in its resumption code.
+    Each one is a TLS rule, so a caller that computes it keeps a copy of
+    the rule that no proof and no test here checks.
+
+    - **`ch_record_whole_len(p, n)`** (`tcp_nonblocking.h`,
+      `tcp_nonblocking_frame.c`, every `TRANSPORT=tcp-nonblocking` object in
+      either role). It answers the length of the record at the front of
+      `p`, header included, or 0 while `p` holds less than that record.
+      A caller passes that many bytes to `ch_read`, whose `recv` must hand
+      over whole records. A length field above 2^14 + 256, which RFC 9846
+      §5.2 forbids a peer (`rfc9846.txt:3595-3596`), answers `REC_HDR`, the
+      header alone: `ch_read` reads those five bytes and refuses the
+      record, where an answer of 0 would leave the caller waiting for a
+      body that must not come.
+    - **`ch_writable_len(t, cap)`** (`tls.h`, `tls.c`, both TCP
+      transports). It answers the most plaintext one `ch_write` seals into
+      `cap` bytes of records. `ch_write` and this call read the record
+      limit, the smaller of `peer_limit` and `CH_TX_PT` (INV-38), through
+      one helper, `record_plaintext_max`, so the two cannot disagree about
+      it.
+    - **`CH_ALERT_RECORD_LEN` and `CH_KEY_UPDATE_RECORD_LEN`** (`tls.h`),
+      `REC_OVERHEAD + 2` and `REC_OVERHEAD + 5`, which `tls.c` asserts are
+      24 and 27 bytes. `ch_close` sends one alert record. `ch_read` sends
+      one KeyUpdate record for each KeyUpdate that asks for an answer,
+      and an alert record when it fails, so one record that carries two
+      such KeyUpdates gets two answers; `bin/unit` checks that.
+    - **`ch_ticket_obfuscated_age(ticket, age_ms)`** (`ticket.h`,
+      `handshake_post.c`, every object with a client). It answers
+      `age_ms + ticket->age_add` modulo 2^32 (RFC 9846 §4.3.11.1,
+      `rfc9846.txt:2574-2578`) and reads no other field, so a copy of the
+      ticket kept after `on_ticket` returned serves. `age_ms` is 64 bits
+      wide, like the configuration field below, so a caller passes one
+      value to both and the reduction happens here.
+    - **`ch_cfg.ticket_age_ms` and `ch_cfg.ticket_lifetime_s`.** RFC 9846
+      §4.3.11.1 says a client MUST NOT use a ticket older than its
+      `ticket_lifetime` (`rfc9846.txt:2572-2574`), and §4.6.1 that it MUST
+      NOT use one more than 7 days after issuance whatever the lifetime
+      (`rfc9846.txt:3259-3261`). With `resumption` set, `ch_connect`,
+      `ch_record_init` and `ch_quic_init` return `CH_EINVAL` before a byte
+      is sent when the age is above the lifetime or above
+      `CH_TICKET_LIFETIME_MAX`, 604,800 seconds. An age equal to either is
+      still offered. The rule is one predicate, `hspost_ticket_age_ok`
+      (`handshake_post.h`), which `tls.c`'s two `tlsi_config_ok`
+      definitions and `quic_config_ok` each call.
+    - **What 0 means.** An age of 0 is a ticket that arrived this
+      millisecond. A lifetime of 0 is one the caller did not give, and the
+      age is then held to seven days alone. That reading is sound because
+      `handle_ticket` now drops a NewSessionTicket whose `ticket_lifetime`
+      is 0, which §4.6.1 says to discard at once
+      (`rfc9846.txt:3258-3259`), so no ticket with that lifetime is handed
+      to `on_ticket`. A configuration that sets neither field, as every one
+      written before them does, is refused nothing. A lifetime above seven
+      days, which a server must not send, keeps the seven days.
+    - **Symbol names.** An image links one object of each of two
+      transports (entry 61), and every client object exports
+      `ch_ticket_obfuscated_age`, so it joins `TRANSPORT_NAMED`: its symbol
+      is `ch_ticket_obfuscated_age_tcp_blocking`, `_tcp_nonblocking` or
+      `_quic_nonblocking`, and `ticket.h` maps the name a caller writes,
+      as `srv.h` maps `ch_srv_check`. `build.zig` names the same symbols.
+      `ch_writable_len` keeps its name: the two TCP transports export it
+      beside `ch_write`, and entry 61 refuses an image of those two
+      objects for `ch_read`, `ch_write` and `ch_close` already.
+      `test/lib-pair-check.sh`'s refused pair now names it. Each client
+      half that script links, and each half of
+      `test/zig-consumer/pair.zig`, calls its own object's ticket call.
+    - **The header.** `ch_ticket` and `CH_TICKET_ID_MAX` moved from
+      `cfg.h` to `ticket.h`, which `cfg.h` includes. `cfg.h` was at the
+      500-line limit, and the ticket, the call that reads it and the
+      seven-day cap are one concern.
+    - **The build record.** The two fields grow `ch_cfg`, and with it
+      `ch_tls`, `ch_record` and `ch_quic`: 16 bytes on arm64, 1,144 to
+      1,160 for the default `ch_tls`, and 8 on rv32, 1,072 to 1,080
+      (`bench/results-sram.csv`). `ch_build_matches` compares
+      `sizeof(ch_cfg)`, which grew in every build measured: 152 to 168
+      bytes on arm64, and by 8 or 12 on rv32 and Cortex-M3. A consumer
+      compiled under these headers and linked against an object built at
+      `02515f2` read `sizeof_ch_cfg` 152 against its own 168 and exited 1,
+      in the default, the webpki tcp-nonblocking `ROLE=both`, the webpki
+      QUIC `ROLE=both` and the tcp-nonblocking server configurations.
+    - **The proofs.** `record_whole_len` proves the whole contract over
+      every `n` up to 2^20, in a heap object exactly `n` bytes long.
+      `writable_len` proves the call safe over any `peer_limit` and `cap`,
+      and runs its answer through the real `ch_write` for every `cap` up
+      to 1,603 bytes and every `peer_limit` from 63: what `ch_write` sends
+      fits `cap`, and one byte more does not. The second claim is an
+      equality over a division, and at 16 bits of `cap` it returned no
+      verdict in 600 seconds, so `bin/unit` checks the answer at
+      `SIZE_MAX`. `quic_config_webpki` proves the age rule over any age
+      and lifetime, and `handshake_post` that no ticket with a lifetime of
+      0 is handed over. Thirteen mutants in `test/violations/` break the
+      rules, and each is caught.
+    - **The spec.** Unchanged. `spec/lean/Spec/Record.lean` models one
+      record's protection, and its `seal_size` theorem states the
+      22 bytes a record adds, which is the size `writable_len`'s
+      `rec_seal` stub asserts. It models no byte stream cut into
+      records, no write loop and no configuration refusal, and
+      `Spec/Handshake.lean` models a NewSessionTicket as a message in the
+      handshake's order and reads none of its fields. The three
+      additions are length arithmetic and one configuration rule, which
+      CBMC proves on the C itself, so a spec model would add a second
+      statement of the same arithmetic and a differential that compares
+      two copies of one formula.
+
+    Cost:
+
+    - `ch_cfg` grows by 16 bytes on arm64 and by 8 or 12 on rv32, and
+      every session struct with it: the default `ch_tls` by 16 and 8.
+    - Every client object exports one more call and every TCP object one
+      more; every tcp-nonblocking object exports `ch_record_whole_len`.
+    - `ch_writable_len` divides once, so `tls.c` takes a ceiling of 1 in
+      `lint-wide-multiply` beside `sha3.c`'s, and `RV_ALLOWED` records its
+      `__mulsi3` and `__udivsi3` on rv32ic. Both operands are public: the
+      caller's buffer length and a record's length. It counts the overhead
+      per record rather than taking the remainder of the division, because
+      gcc turned that remainder into a second division on riscv32.
+    - `ch_cfg` carries both the age and `obfuscated_age`, which the
+      caller computes from it. C cannot check that the two agree, because
+      `ch_cfg` carries no `age_add`.
+
+    Gain: the Zig API and colibri keep no TLS rule of their own, and the
+    ticket lifetime that RFC 9846 puts on a client is checked where every
+    client entry checks its configuration.
+
+    Rejected:
+
+    - **`ch_record_read` and `ch_record_write`, bytes in and bytes out,**
+      the design's option (b). A tcp-nonblocking session would then need
+      no `send` or `recv` after the handshake, but a connected session
+      would have two ways to read and two to write, each with a contract
+      and tests of its own, where the two calls above read a header and
+      a limit and change nothing.
+    - **Leaving the three in the caller,** the design's option (c). It
+      keeps a record rule outside C, which is what the API was approved
+      to avoid.
+    - **A 32-bit age.** RFC 9846 says 32 bits hold any plausible age, and
+      an age kept in 32 bits wraps after about 49.7 days, where a
+      ticket reads as young again. The field is 64 bits wide and the call
+      reduces its sum itself.
+    - **Refusing a lifetime of 0 with `resumption` set.** Every
+      configuration written before the field existed sets 0, so every
+      resumption in them would be refused.

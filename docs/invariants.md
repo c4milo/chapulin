@@ -801,7 +801,15 @@ last `ROLE=server` stub, as the entry said it would.
   build refuses a value below 512 or above 2^14, the most plaintext RFC
   9846 §5.1 lets one record carry, and a `TRANSPORT=quic-nonblocking`
   build, which seals no TLS record, refuses any value but 512
-  (docs/decisions.md 71).
+  (docs/decisions.md 71). A caller that sizes its own buffers asks C
+  rather than restating the rule (docs/decisions.md 72):
+  `ch_writable_len` answers the most plaintext one `ch_write` sends in
+  `cap` bytes of records; `ch_record_whole_len` answers where the record
+  at the front of the caller's bytes ends, and `REC_HDR` for a length
+  field above 2^14 + 256, which no peer may send; and
+  `CH_ALERT_RECORD_LEN` and `CH_KEY_UPDATE_RECORD_LEN` are the wire
+  lengths of one sealed alert record and one sealed KeyUpdate record, 24
+  and 27 bytes.
 - **Mechanism.**
   - The range: `cfg.h` asserts 512 to 16384, `session.h` asserts 512
     in a QUIC build, and the Makefile's and `build.zig`'s `TX_RECORD`
@@ -821,6 +829,12 @@ last `ROLE=server` stub, as the entry said it would.
     `CH_TX_PT`. The server's Certificate writer, `srv_frag`, holds
     `SRV_FRAG_MAX` (512) bytes whatever `CH_TX_PT` is, so a raised
     `CH_TX_PT` adds nothing to the handshake's stack (INV-19).
+  - The framing calls: `ch_write` and `ch_writable_len` read the send
+    limit through one helper, `record_plaintext_max` (`tls.c`), and
+    `ch_writable_len` counts `REC_OVERHEAD` per record, the length
+    `rec_seal` adds. `ch_record_whole_len` (`tcp_nonblocking_frame.c`)
+    reads the length field through the `rbuf` reader. `tls.c` asserts the
+    two record lengths are 24 and 27.
   - The receive limit: each role advertises its buffer's room after the
     record header and the tag, capped at 2^14 + 1, in `handshake.c`,
     `srv_handshake.c` and both tcp-nonblocking drivers; a QUIC build
@@ -845,12 +859,25 @@ last `ROLE=server` stub, as the entry said it would.
     and `srv-parser-record-size-limit-floor` require it to fail.
   - CBMC: `srv_accept` proves that the server's `peer_limit` never
     exceeds `CH_TX_PT` after the client's limit is stored.
+  - CBMC: `record_whole_len` proves `ch_record_whole_len`'s whole
+    contract for every `n` up to 2^20, and `writable_len` runs
+    `ch_writable_len`'s answer through the real `ch_write` for every
+    `cap` up to 1,603 bytes and every `peer_limit` from 63.
+    `inv38-whole-len-one-byte-short` and
+    `inv38-writable-len-overhead-short` require each to fail.
+  - `bin/unit` sweeps every `cap` up to three records and one byte at
+    limits of 63, 200 and `CH_TX_PT`, checks the answer at `SIZE_MAX`,
+    and checks that `ch_close` and a KeyUpdate answer send 24 and 27
+    bytes; `bin/tcp_nonblocking_loop_test` holds `ch_record_whole_len` to
+    a record one byte short, a whole one, the largest the RFC allows and
+    the first length past it. `inv38-writable-len-ignores-peer-limit` and
+    `inv38-whole-len-oversize-waits` require them to fail.
 - **Violation.** A PR raises `CH_TX_PT` past 2^14, sizes a stack
   buffer by `CH_TX_PT`, lets a peer's `record_size_limit` raise the
   send size rather than lower it, or truncates a record the receive
   buffer cannot hold.
 - See [decisions: Memory and runtime](decisions.md#memory-and-runtime),
-  entries 22 and 71.
+  entries 22, 71 and 72.
 
 ### INV-24 — the x25519 ladder stays inside its proven limb range
 
@@ -971,6 +998,10 @@ last `ROLE=server` stub, as the entry said it would.
   tcp-nonblocking term from `CH_BUILD_AXES`. A fifth,
   `inv35-build-record-shared-name`, gives the QUIC transport's build record
   the tcp-nonblocking transport's name, and `test/lib-pair-check.sh` catches it.
+  `TRANSPORT_NAMED` gives `ch_ticket_obfuscated_age` its transport's name
+  the way it gives the record, and `inv35-ticket-age-not-transport-named`,
+  which drops it from the list, is caught by
+  `test/lib-check-webpki-tcp-nonblocking.sh`.
   `test/hpp_test.cpp` calls the C++ forwarder on the `cxx-check` legs.
 - **Violation.** A PR writes a field of `build.c` as a number, adds a
   define that moves a public layout without a bit in `CH_BUILD_AXES`,
@@ -1189,12 +1220,35 @@ last `ROLE=server` stub, as the entry said it would.
   refuses a ClientHello of more than `SRV_CLIENT_HELLO_EXT_MAX` (128)
   extensions with illegal_parameter, on a first hello and a retried one
   and on every server path, before the duplicate check runs
-  (docs/decisions.md 59). INV-38 states the refusals of a
+  (docs/decisions.md 59). Every client entry, `ch_connect`,
+  `ch_record_init` and `ch_quic_init`, refuses with `CH_EINVAL` and
+  sends nothing a configuration with `resumption` set whose
+  `ticket_age_ms` is above `ticket_lifetime_s` seconds or above
+  `CH_TICKET_LIFETIME_MAX` seconds, seven days, where a lifetime of 0 is
+  none given (`hspost_ticket_age_ok`, handshake_post.h). The
+  post-handshake parser hands `on_ticket` no NewSessionTicket whose
+  `ticket_lifetime` is 0, which RFC 9846 §4.6.1 says to discard at once,
+  and `ch_ticket_obfuscated_age` adds the ticket's `age_add` to the age
+  modulo 2^32 (docs/decisions.md 72). INV-38 states the refusals of a
   `CH_TX_PT` or a `record_size_limit` out of range.
 - **Mechanism.** Fail-closed policy, each refusal an explicit branch
   with its alert.
 - **Check.** handshake_strict table cases per refusal; CBMC proves the
-  branches memory-safe. The TRUST=webpki config and server_name
+  branches memory-safe. The ticket age rule has boundary rows at each
+  client entry: `bin/unit` for `ch_connect`,
+  `bin/tcp_nonblocking_loop_test` for `ch_record_init`,
+  `bin/webpki_resume_test` and `bin/webpki_resume_tcp_nonblocking` for
+  the webpki definition over both TCP drivers, and `bin/quic_loop_test`
+  and `bin/quic_loop_webpki` for `ch_quic_init`. `bin/unit` also holds
+  the lifetime of 0 and of 1 second on the parser, and the obfuscated
+  age's sum modulo 2^32. The quic_config_webpki CBMC harness proves the
+  verdict over any age and lifetime, and the handshake_post harness that
+  no ticket with a lifetime of 0 is handed over. Eight violations guard
+  them: inv14-ticket-age-tcp-unchecked, inv14-ticket-age-webpki-unchecked,
+  inv14-ticket-age-quic-unchecked, inv14-ticket-age-seven-days-dropped,
+  inv14-ticket-age-lifetime-ignored, inv14-ticket-age-low-bits,
+  inv14-ticket-lifetime-zero-handed-over and
+  inv14-ticket-obfuscated-age-drops-add. The TRUST=webpki config and server_name
   refusals have boundary rows in test/webpki_session_cases.h and
   bin/handshake_strict_webpki, each guarded by an `inv14-` violation.
   The ticket rule is bin/webpki_resume_test and

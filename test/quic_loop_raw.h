@@ -33,6 +33,7 @@ static void test_raw_resumption(void) {
     // a fresh ticket follows.
     client_config(&ccfg, &server_alpn[0]);
     present_ticket(&ccfg);
+    check_ticket_age(&ccfg);
     scfg.srv.now_seconds = LOOP_NOW + 30;
     CHECK(run_quic(&ccfg, &scfg));
     CHECK(server.t.psk_selected == 1 && server.t.sigalg == 0);

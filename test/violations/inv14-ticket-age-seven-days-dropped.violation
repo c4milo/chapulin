@@ -1,0 +1,15 @@
+invariant: INV-14
+file: handshake_post.h
+catches: unit
+reason: hspost_ticket_age_ok starts from a cap of about 49.7 days rather
+  than seven, so a config that gives no lifetime, and one that gives the
+  lifetime above seven days a server must not send, offer a ticket up to
+  seven weeks old. RFC 9846 section
+  4.6.1 forbids a client a ticket older than seven days whatever its
+  lifetime says. The rows for a lifetime of 0 and of 604801 seconds
+  require the first millisecond past seven days to be refused.
+
+--- old
+    uint32_t lifetime_s = CH_TICKET_LIFETIME_MAX;
+--- new
+    uint32_t lifetime_s = UINT32_MAX / 1000U;

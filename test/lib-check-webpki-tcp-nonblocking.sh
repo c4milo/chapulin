@@ -19,7 +19,8 @@
 # a ch_build_info_tcp_nonblocking left out of PUBLIC and a CH_BUILD_AXES that forgets the
 # define each fail that consumer. This object is the one whose record
 # carries both a trust bit and a transport bit, and whose ch_tls differs
-# from the default object's.
+# from the default object's. A fifth drops ch_ticket_obfuscated_age from
+# TRANSPORT_NAMED, and the export list no longer matches PUBLIC.
 # tools/impact.py emits the same command for a source this object
 # packages; the two have to stay the same command, and
 # test/impact_test.py compares them.

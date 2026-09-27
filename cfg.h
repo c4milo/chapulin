@@ -13,6 +13,7 @@
 #include "hkdf.h"
 #include "sha256.h"
 #include "srv_cfg.h"
+#include "ticket.h"
 
 // The entropy pattern is a declared build choice with no default. An image either supplies
 // its own ch_rand_bytes (-DCH_RAND_EXTERN) or links the reference generator in drbg.[ch]
@@ -188,31 +189,6 @@ _Static_assert(CH_MIN_RXBUF >= 512, "the floor only rises; the base profile need
 #endif
 #endif
 
-// Ticket identities beyond this cannot fit a future ClientHello; larger tickets are dropped.
-#define CH_TICKET_ID_MAX 320
-
-// A resumption ticket for on_ticket. Copy what you keep during the callback, and present
-// psk, psk_len and identity on the next ch_connect with resumption = 1 for a cheaper
-// reconnect.
-typedef struct {
-    const uint8_t *identity;
-    size_t identity_len;
-    // The PSK is as long as the hash of the suite the session ran (RFC 9846 §4.6.1):
-    // SHA256_LEN, or SHA384_LEN after a TLS_AES_256_GCM_SHA384 session, which only a
-    // SUITE=aesgcm TRUST=webpki client runs. psk_len says which; present it as
-    // ch_cfg.psk_len.
-    uint8_t psk[HKDF_HASH_MAX];
-    size_t psk_len;
-    uint32_t lifetime_s;
-    uint32_t age_add;
-    // The stored epoch when the ticket arrived; zero outside CA builds. Present it back in
-    // ch_cfg.ticket_epoch on resumption, so an epoch bump also retires every earlier ticket.
-    uint32_t epoch;
-#ifdef CH_TRUST_WEBPKI
-    uint8_t binding[SHA256_LEN]; // present it in ch_cfg.ticket_binding (webpki_ticket.h)
-#endif
-} ch_ticket;
-
 // Monotonic revocation epoch (docs/ca.md). The CA writes each server certificate's
 // notBefore as one of a restricted set of dates — year 2000..2049, day 01..28, time
 // 000000Z — and advances it one step per revocation. The value compared is the number
@@ -349,7 +325,7 @@ typedef struct {
 typedef struct {
     // Authentication is one of two modes:
     //  - PSK: psk/psk_id set (external, resumption = 0) or a stored ticket
-    //    (resumption = 1, obfuscated_age = ticket age ms + age_add).
+    //    (resumption = 1 and the ticket fields below, ticket.h).
     //  - Pinned key: psk NULL, server_pubkey = the server's raw public
     //    key, provisioned like a PSK would be. The key is an RSA modulus
     //    (256..384 bytes big-endian, RSA-2048 to RSA-3072 — the cap
@@ -375,7 +351,15 @@ typedef struct {
     const uint8_t *psk_id;
     size_t psk_id_len;
     int resumption;
-    uint32_t obfuscated_age;
+    uint32_t obfuscated_age; // ch_ticket_obfuscated_age(ticket, ticket_age_ms)
+    // The ticket's age in milliseconds, the time since on_ticket handed it over, and its
+    // ch_ticket.lifetime_s in seconds. With resumption set, every client entry refuses with
+    // CH_EINVAL, before a byte is sent, an age above the lifetime or above
+    // CH_TICKET_LIFETIME_MAX seconds (RFC 9846 §4.3.11.1 and §4.6.1). A lifetime of 0 is
+    // one the caller did not give, since on_ticket is never handed a ticket with that
+    // lifetime, and the age is then held to CH_TICKET_LIFETIME_MAX alone.
+    uint64_t ticket_age_ms;
+    uint32_t ticket_lifetime_s;
     const uint8_t *server_pubkey;
     size_t server_pubkey_len;
 

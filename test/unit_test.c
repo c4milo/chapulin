@@ -373,7 +373,12 @@ int main(void) {
     test_psk_hello_bytes();
     test_hello_staging_boundary();
     test_epoch_cfg();
+    test_ticket_age_cfg();
+    test_ticket_obfuscated_age();
     test_ch_write();
+    test_writable_len();
+    test_key_update_replies();
+    test_ticket_lifetime_zero();
     test_record_padding();
     test_rsa_device_bound();
     test_decline_handler();

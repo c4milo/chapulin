@@ -143,6 +143,7 @@ static void test_webpki_resumption(void) {
     // the server that selected the ticket names no scheme.
     webpki_client(&ccfg, webpki_corpus_anchors_root_p384, "s3.example.test");
     present_ticket(&ccfg);
+    check_ticket_age(&ccfg);
     CHECK(run_quic(&ccfg, &scfg));
     CHECK(client.t.psk_selected == 1 && server.t.psk_selected == 1 && server.t.sigalg == 0);
     CHECK(handshake_messages() == 2);

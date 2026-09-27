@@ -110,10 +110,13 @@ static void test_close_one_direction(ch_record *client, ch_record *server, const
     CHECK(ch_read(&server->t, got, sizeof got) == (int)sizeof bye);
     CHECK(memcmp(got, bye, sizeof bye) == 0);
 
-    // The client's ch_close sends its close_notify in one call. The
-    // server reads 0 and sends nothing in answer.
+    // The client's ch_close sends its close_notify in one call, one record
+    // of the length tls.h names. The server reads 0 and sends nothing in
+    // answer.
+    size_t before_close = to_server.len;
     ch_close(&client->t);
     CHECK(client_sends == 2);
+    CHECK(to_server.len - before_close == CH_ALERT_RECORD_LEN);
     CHECK(ch_record_state(client) == CH_ST_CLOSED);
     CHECK(ch_export(&client->t, "EXPORTER-Channel-Binding", NULL, 0, exported, sizeof exported) ==
           CH_EINVAL);
@@ -126,8 +129,10 @@ static void test_close_one_direction(ch_record *client, ch_record *server, const
     static const uint8_t tail[4] = {'c', 'h', 'a', 'u'};
     CHECK(ch_write(&server->t, tail, sizeof tail) == CH_OK);
     CHECK(server_sends == 1);
+    before_close = held.len;
     ch_close(&server->t);
     CHECK(server_sends == 2);
+    CHECK(held.len - before_close == CH_ALERT_RECORD_LEN);
     CHECK(ch_record_state(server) == CH_ST_CLOSED);
     CHECK(ch_write(&server->t, tail, sizeof tail) == CH_EPROTO);
     ch_record_close(client);

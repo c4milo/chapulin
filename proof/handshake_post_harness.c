@@ -1,7 +1,8 @@
 // Proves: handle_post_handshake and handle_ticket — the parsers that run over
 // decrypted post-handshake bytes (NewSessionTicket and KeyUpdate) — are
 // memory-safe and UB-free against ANY plaintext up to 128 bytes, and
-// report a consumed length no larger than the input. This is the last
+// report a consumed length no larger than the input, and that no ticket
+// with a ticket_lifetime of 0 is handed to on_ticket. This is the last
 // attacker-facing parser; a peer that reaches a connected session feeds
 // it arbitrary decrypted bytes.
 //
@@ -111,9 +112,12 @@ int ch_handshake(ch_tls *t) {
     return CH_EPROTO;
 }
 
-// Every pointer the driver hands the application must be readable.
+// Every pointer the driver hands the application must be readable, and no
+// ticket it hands over has a lifetime of 0, which RFC 9846 §4.6.1 says to
+// discard at once and ch_cfg.ticket_lifetime_s reads as none given.
 static void on_ticket(void *io, const ch_ticket *ticket) {
     (void)io;
+    __CPROVER_assert(ticket->lifetime_s != 0, "cb: no ticket with a lifetime of 0");
     __CPROVER_assert(__CPROVER_r_ok(ticket->psk, sizeof ticket->psk), "cb: psk readable");
     __CPROVER_assert(ticket->identity_len == 0 ||
                          __CPROVER_r_ok(ticket->identity, ticket->identity_len),

@@ -1,0 +1,15 @@
+invariant: INV-14
+file: handshake_post.c
+catches: unit
+reason: ch_ticket_obfuscated_age returns the age without ticket_age_add, so
+  every resumed ClientHello sends the ticket's age in the clear and a
+  passive observer links the connections that resume one ticket, which
+  RFC 9846 section 4.3.11.1 adds the value to prevent. A server in this
+  tree ignores the field, so every resumption still completes; the rows
+  that add age_add modulo 2^32 object.
+
+--- old
+    return (uint32_t)age_ms + ticket->age_add;
+--- new
+    (void)ticket;
+    return (uint32_t)age_ms;

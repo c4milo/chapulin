@@ -26,6 +26,33 @@ int ch_connect(ch_tls *t, const ch_cfg *cfg);
 // and returns CH_EPROTO once ch_close has run or the session has failed.
 int ch_write(ch_tls *t, const uint8_t *p, size_t n);
 
+// The most plaintext one ch_write seals into cap bytes of records, so a
+// caller whose send takes at most cap bytes per call knows how much to
+// pass. ch_write cuts its input into records of at most the smaller of
+// t->peer_limit and CH_TX_PT bytes of plaintext, the send limit INV-38
+// states, and each record costs REC_OVERHEAD bytes more: the 5-byte
+// header, the inner content type and the AEAD tag. So n bytes go out as
+// ceil(n / limit) records, n + ceil(n / limit) * REC_OVERHEAD bytes in all,
+// and this is the largest n whose records fit cap. It is 0 when cap
+// cannot hold a record of one byte, and 0 for a session whose peer_limit
+// is 0, which no connected session has.
+//
+// It reads t->peer_limit and nothing else. ch_write still refuses a
+// session that is not connected, whatever this answers.
+size_t ch_writable_len(const ch_tls *t, size_t cap);
+
+// The wire length of one sealed alert record, 24 bytes: REC_OVERHEAD and
+// the 2-byte alert, a level and a description (RFC 9846 §6). ch_close sends
+// one, and a ch_read that fails sends one.
+#define CH_ALERT_RECORD_LEN (REC_OVERHEAD + 2)
+
+// The wire length of one sealed KeyUpdate record, 27 bytes: REC_OVERHEAD,
+// the 4-byte handshake header and the 1-byte request_update (RFC 9846
+// §4.7.3). ch_read sends one for each KeyUpdate whose sender asked for an
+// answer, so a record that carries several KeyUpdate messages gets several,
+// and a failure in the same call adds one alert record.
+#define CH_KEY_UPDATE_RECORD_LEN (REC_OVERHEAD + 4 + 1)
+
 // Receives into p (n >= 1), returning the byte count (>0), 0 at the end
 // of the peer's stream, or an error. Handles NewSessionTicket and
 // KeyUpdate internally.

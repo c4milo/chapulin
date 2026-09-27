@@ -1,0 +1,16 @@
+invariant: INV-14
+file: tls.c
+catches: unit
+reason: the raw and ca tlsi_config_ok stops asking hspost_ticket_age_ok, so
+  ch_connect and ch_record_init offer a ticket older than its lifetime, or
+  kept past the seven days RFC 9846 section 4.6.1 allows any ticket. A
+  server that checks its own clock still passes such a ticket over, so the
+  handshakes in this tree complete either way; the config rows at each
+  boundary object.
+
+--- old
+    // A ticket past its lifetime, or past the 7 days RFC 9846 allows any
+    // ticket (handshake_post.h).
+    return hspost_ticket_age_ok(cfg);
+--- new
+    return 1;

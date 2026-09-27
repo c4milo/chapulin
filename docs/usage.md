@@ -140,6 +140,56 @@ Any error kills the session. The stack wipes its keys and you
 reconnect. Devices recover by reconnecting anyway, and the rule removes
 the whole resumable-error state space from the code and the proofs.
 
+## Resuming a ticket
+
+`on_ticket` hands over each ticket once (`ticket.h`). Its `identity`
+points into the message and is valid only during the call, so copy the
+`ch_ticket` and the identity bytes, and note when the ticket arrived. To
+resume, present the copy with the ticket's age in milliseconds:
+
+```c
+uint64_t age_ms = now_ms() - kept.received_ms;
+cfg.psk = kept.ticket.psk;
+cfg.psk_len = kept.ticket.psk_len;
+cfg.psk_id = kept.identity;
+cfg.psk_id_len = kept.ticket.identity_len;
+cfg.resumption = 1;
+cfg.ticket_age_ms = age_ms;
+cfg.ticket_lifetime_s = kept.ticket.lifetime_s;
+cfg.obfuscated_age = ch_ticket_obfuscated_age(&kept.ticket, age_ms);
+```
+
+`ch_ticket_obfuscated_age` adds the ticket's `age_add` to the age modulo
+2^32, as RFC 9846 §4.3.11.1 asks, and reads `age_add` alone, so a kept
+copy whose `identity` pointer no longer points anywhere serves.
+`ch_connect`, `ch_record_init` and `ch_quic_init` return `CH_EINVAL`,
+before a byte is sent, when the age is above the lifetime or above
+`CH_TICKET_LIFETIME_MAX`, 604,800 seconds, which RFC 9846 §4.6.1 makes the
+most any ticket lives. A lifetime of 0 means you gave none, and then the
+seven days alone apply. No ticket with a lifetime of 0 is handed to
+`on_ticket`, because §4.6.1 says to discard one at once. A CA build also
+takes `ticket_epoch`, and a `TRUST=webpki` build `ticket_binding`.
+
+## Sizing buffers in record mode
+
+A `TRANSPORT=tcp-nonblocking` caller owns the socket and hands records to
+`ch_read` whole (`tcp_nonblocking.h`). Two calls and two lengths tell it
+how to cut and size its bytes:
+
+- `ch_record_whole_len(p, n)` is the length of the record at the front of
+  `p`, header included, or 0 while `p` holds less than that record. Pass
+  that many bytes to `ch_read`. A header whose length field is above
+  2^14 + 256, which no peer may send, answers 5, the header alone, and
+  `ch_read` refuses it.
+- `ch_writable_len(&tls, cap)` is the most plaintext one `ch_write` seals
+  into `cap` bytes of records, at the smaller of the peer's
+  `record_size_limit` and `CH_TX_PT` per record. Pass at most that much
+  when your send buffer holds `cap` bytes. Both TCP transports export it.
+- `CH_ALERT_RECORD_LEN`, 24, is what `ch_close` sends, and what a failing
+  `ch_read` sends. `CH_KEY_UPDATE_RECORD_LEN`, 27, is what `ch_read` sends
+  for each KeyUpdate that asks for an answer; a record that carries two
+  such messages gets two answers.
+
 ## The server role and QUIC
 
 The `TRANSPORT=quic-nonblocking` client is implemented and checked against RFC 9001's

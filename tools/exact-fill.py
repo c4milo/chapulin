@@ -82,6 +82,14 @@ ALLOWED = {
         "checked (srv_resume.h), and a framing failure breaks the walk and "
         "selects nothing"
     ),
+    ("tcp_nonblocking_frame.c", "ch_record_whole_len", "r"): (
+        "its reader runs over the caller's received bytes, not over one "
+        "record: it reads the first record's header and answers where that "
+        "record ends, and the bytes after it are the next record on "
+        "purpose. The record the caller then hands ch_read is framed "
+        "exactly by io_read_record, which reads REC_HDR bytes and then the "
+        "length field's bytes and no others"
+    ),
     ("srv_resume.c", "binder_at", "r"): (
         "it reads back the binders list read_psk_binders (srv_parser_ext.c) "
         "framed to its end, with used != binders_len. It stops at the entry "

@@ -1,0 +1,19 @@
+invariant: INV-38
+file: tls.c
+catches: unit
+reason: ch_writable_len counts in records of CH_TX_PT bytes whatever the
+  peer's record_size_limit says, while ch_write cuts at the smaller of the
+  two. Against a peer that asks for smaller records the answer's records
+  no longer fit cap, and a caller's send that takes cap bytes fails and
+  kills the session. The cap sweeps at limits of 63 and 200 object.
+
+--- old
+    size_t limit = record_plaintext_max(t);
+    if (limit == 0) {
+        return 0;
+    }
+--- new
+    size_t limit = t->peer_limit == 0 ? 0 : CH_TX_PT;
+    if (limit == 0) {
+        return 0;
+    }

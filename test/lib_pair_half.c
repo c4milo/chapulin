@@ -5,17 +5,19 @@
 // disagree about ch_cfg and ch_tls, so no translation unit reads both.
 //
 // Its one function is named for the transport (lib_pair.h) and runs up
-// to four steps against the object:
+// to five steps against the object:
 //
 //   1. ch_build_matches(&ch_build), which reads this transport's record;
 //   2. ch_srv_check, where the object carries a server;
 //   3. ch_pubkey_from_pem, where the object is a CA mode;
-//   4. one session: a client builds its ClientHello, and a server-only
+//   4. ch_ticket_obfuscated_age, where the object carries a client;
+//   5. one session: a client builds its ClientHello, and a server-only
 //      object prepares a session to read one.
 //
-// Steps 1 to 3 call names that build.h, srv.h and x509_ca.h map to this
-// transport's symbol names (docs/decisions.md 61). A step that reached
-// the other object would read a record or a ch_cfg of another layout.
+// Steps 1 to 4 call names that build.h, srv.h, x509_ca.h and ticket.h map
+// to this transport's symbol names (docs/decisions.md 61 and 72). A step
+// that called into the other object would read a record or a ch_cfg of
+// another layout.
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -228,6 +230,18 @@ static void client_config(ch_cfg *cfg) {
 #endif
 }
 
+// RFC 9846 section 4.3.11.1's sum modulo 2^32, over an age above 2^32
+// milliseconds and a ticket whose fields but age_add are unset, as in a
+// copy kept after on_ticket returned.
+static int ticket_age(void) {
+    ch_ticket ticket;
+    memset(&ticket, 0, sizeof ticket);
+    ticket.age_add = 0xfffffff0U;
+    return ch_ticket_obfuscated_age(&ticket, 0x100000020ULL) == 0x10U
+               ? 0
+               : failed("ch_ticket_obfuscated_age did not add age_add modulo 2^32");
+}
+
 #if defined(CH_TRANSPORT_QUIC_NONBLOCKING) || defined(CH_TRANSPORT_TCP_NONBLOCKING)
 // The client's first flight, which it stages in ch_tls.tx.
 static uint8_t flight[CH_TX_STAGE];
@@ -320,6 +334,11 @@ int LIB_PAIR_HALF(void) {
 #endif
 #ifdef CH_TRUST_CA
     if (provision_ca() != 0) {
+        return 1;
+    }
+#endif
+#ifndef LIB_PAIR_SERVER_ONLY
+    if (ticket_age() != 0) {
         return 1;
     }
 #endif

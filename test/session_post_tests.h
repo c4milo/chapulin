@@ -73,6 +73,8 @@ static void test_post_handshake(void) {
     const uint8_t want_reply[5] = {24, 0, 0, 1, 0};
     CHECK(reply_type == REC_HANDSHAKE && reply_len == sizeof want_reply);
     CHECK(memcmp(reply, want_reply, sizeof want_reply) == 0);
+    // The one record the reply takes is the length tls.h names.
+    CHECK(at == CH_KEY_UPDATE_RECORD_LEN);
     // Follow the client's write-side rekey; everything after opens under
     // the new secret, and under the old one it does not.
     rec_dir_update(wr_secret, &reader);
@@ -90,8 +92,11 @@ static void test_post_handshake(void) {
     CHECK(ch_read(&t, out, sizeof out) == 0);
     CHECK(m.sent == before_close);
     ch_close(&t);
-    // It opens only if the client rekeyed its write direction above.
+    // It opens only if the client rekeyed its write direction above, and
+    // it takes the length tls.h names.
+    size_t close_at = at;
     at = mock_pop_client_record(&m, at, &reader, reply, sizeof reply, &reply_len, &reply_type);
+    CHECK(at - close_at == CH_ALERT_RECORD_LEN);
     CHECK(reply_type == REC_ALERT && reply_len == 2);
     CHECK(reply[0] == 1 && reply[1] == 0);
     CHECK(at == m.tx_len); // the reply and the close_notify, nothing else
@@ -174,18 +179,19 @@ static void test_peer_close_notify(void) {
 }
 
 // One NewSessionTicket message: the fields RFC 9846 §4.7.1 fixes, with a
-// nonce of nonce_len bytes, then whatever bytes the caller supplies where
-// the extensions vector belongs. wb_patch24 counts those bytes into the
-// message length, so a tail that is not a well-formed extensions vector
-// is a message whose fields do not fill it.
-static size_t build_ticket_msg(uint8_t *out, size_t cap, size_t nonce_len, const uint8_t *tail,
-                               size_t tail_len) {
+// ticket_lifetime of lifetime seconds and a nonce of nonce_len bytes, then
+// whatever bytes the caller supplies where the extensions vector belongs.
+// wb_patch24 counts those bytes into the message length, so a tail that is
+// not a well-formed extensions vector is a message whose fields do not
+// fill it.
+static size_t build_ticket_msg(uint8_t *out, size_t cap, uint32_t lifetime, size_t nonce_len,
+                               const uint8_t *tail, size_t tail_len) {
     wbuf w;
     wb_init(&w, out, cap);
     wb_u8(&w, HS_NEW_SESSION_TICKET);
     size_t msg = wb_mark(&w, 3);
-    wb_u16(&w, 0);
-    wb_u16(&w, 3600); // lifetime
+    wb_u16(&w, (uint16_t)(lifetime >> 16));
+    wb_u16(&w, (uint16_t)lifetime); // lifetime
     wb_u16(&w, 0);
     wb_u16(&w, 7); // age_add
     wb_u8(&w, (uint8_t)nonce_len);
@@ -205,8 +211,8 @@ static size_t build_ticket_msg(uint8_t *out, size_t cap, size_t nonce_len, const
 // four bytes. Returns ch_read's result and writes how many tickets
 // reached the application through tickets, plus the session state the
 // read left behind through state.
-static int read_after_ticket(size_t nonce_len, const uint8_t *tail, size_t tail_len, int *tickets,
-                             int *state) {
+static int read_ticket_with_lifetime(uint32_t lifetime, size_t nonce_len, const uint8_t *tail,
+                                     size_t tail_len, int *tickets, int *state) {
     uint8_t secret[SHA256_LEN];
     ch_rand_bytes(secret, sizeof secret);
     rec_dir server;
@@ -217,7 +223,7 @@ static int read_after_ticket(size_t nonce_len, const uint8_t *tail, size_t tail_
     mock_session(&t, &m, rxbuf, sizeof rxbuf, secret, NULL);
 
     uint8_t msg[96];
-    size_t msg_len = build_ticket_msg(msg, sizeof msg, nonce_len, tail, tail_len);
+    size_t msg_len = build_ticket_msg(msg, sizeof msg, lifetime, nonce_len, tail, tail_len);
     mock_push(&m, &server, REC_HANDSHAKE, msg, msg_len);
     mock_push(&m, &server, REC_APPDATA, (const uint8_t *)"hola", 4);
     uint8_t out[16];
@@ -225,6 +231,28 @@ static int read_after_ticket(size_t nonce_len, const uint8_t *tail, size_t tail_
     *tickets = m.tickets;
     *state = t.state;
     return rc;
+}
+
+// The same with the ticket_lifetime of an hour.
+static int read_after_ticket(size_t nonce_len, const uint8_t *tail, size_t tail_len, int *tickets,
+                             int *state) {
+    return read_ticket_with_lifetime(3600, nonce_len, tail, tail_len, tickets, state);
+}
+
+// RFC 9846 §4.6.1: a ticket_lifetime of 0 says the ticket is to be
+// discarded at once (rfc9846.txt:3258-3259). The parser drops it the way
+// it drops a nonce it cannot use: no on_ticket call, and the session reads
+// on. A lifetime of 1 second is the first it hands over. That drop is why
+// ch_cfg.ticket_lifetime_s may read 0 as a lifetime the caller did not
+// give (handshake_post.h).
+static void test_ticket_lifetime_zero(void) {
+    int tickets = 0;
+    int state = 0;
+    const uint8_t empty_exts[2] = {0, 0};
+    CHECK(read_ticket_with_lifetime(1, 2, empty_exts, sizeof empty_exts, &tickets, &state) == 4);
+    CHECK(tickets == 1 && state == CH_ST_CONNECTED);
+    CHECK(read_ticket_with_lifetime(0, 2, empty_exts, sizeof empty_exts, &tickets, &state) == 4);
+    CHECK(tickets == 0 && state == CH_ST_CONNECTED);
 }
 
 // The NewSessionTicket fields must fill the message (RFC 9846 §4.7.1).

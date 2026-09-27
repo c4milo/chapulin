@@ -131,5 +131,24 @@ uint8_t ch_record_alert(const ch_record *r);
 // on &r->t first, which sends this side's close_notify.
 void ch_record_close(ch_record *r);
 
+// The length of the TLS record at the front of p, its 5-byte header
+// included, or 0 while p holds less than that whole record. It reads the
+// header's length field, p[3] and p[4], and no byte at or past p[n]. A
+// caller whose recv hands ch_read whole records (above) asks it of the
+// bytes it holds, passes that many to ch_read, and waits for more bytes
+// when it answers 0. It reads no session, so either role asks it.
+//
+// A header whose length field is above 2^14 + 256 names a record no peer
+// may send: RFC 9846 §5.2 caps the field there (rfc9846.txt:3595-3596). The
+// answer for such a header is REC_HDR, the header alone, as soon as p holds
+// it. ch_read reads those five bytes, refuses the length and fails the
+// session, so the caller does not wait for a body the peer must not send.
+// So every answer is 0 or a length from REC_HDR to n, and the largest is
+// REC_HDR + 2^14 + 256, 16,645 bytes. A record of up to that length that
+// cfg.buf_len cannot hold is ch_read's to refuse once it is whole; a peer
+// that keeps to this endpoint's record_size_limit sends records of at most
+// cfg.buf_len bytes.
+size_t ch_record_whole_len(const uint8_t *p, size_t n);
+
 #endif // CH_TRANSPORT_TCP_NONBLOCKING
 #endif

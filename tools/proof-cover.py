@@ -62,13 +62,6 @@ AUDITED = {
         "with the layered split it needs. Delete this entry when that split "
         "gives it a launch line."
     ),
-    "tls.c": (
-        "two sites, both `server_pubkey[len - 1] & 1` on a uint8_t array "
-        "element, checking that an RSA modulus is odd. No harness compiles "
-        "tls.c -- proof/coverage.py reports it, and docs/verification.md "
-        "already records that the connected-phase driver rests on tests "
-        "rather than a proof."
-    ),
 }
 
 

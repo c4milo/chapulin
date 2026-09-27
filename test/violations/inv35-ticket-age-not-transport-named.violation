@@ -1,0 +1,15 @@
+invariant: INV-35
+file: Makefile
+catches: test/lib-check-webpki-tcp-nonblocking.sh
+reason: TRANSPORT_NAMED stops naming ch_ticket_obfuscated_age, so PUBLIC
+  lists the name ticket.h declares while the object defines the name the
+  header maps it to, ch_ticket_obfuscated_age_tcp_nonblocking. nmedit
+  refuses to package the object on macOS, and objcopy localizes the call
+  elsewhere, so lib-check's export list differs from PUBLIC either way.
+  An image of two transports needs each object's call under its own name
+  (docs/decisions.md 61 and 72).
+
+--- old
+TRANSPORT_NAMED := ch_build ch_srv_check ch_pubkey_from_pem ch_ticket_obfuscated_age
+--- new
+TRANSPORT_NAMED := ch_build ch_srv_check ch_pubkey_from_pem

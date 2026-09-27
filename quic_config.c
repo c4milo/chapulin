@@ -4,6 +4,8 @@
 
 #ifdef CH_TRANSPORT_QUIC_NONBLOCKING
 
+#include "handshake_post.h"
+
 #ifdef CH_TRUST_WEBPKI
 #include "webpki.h"
 #else
@@ -164,6 +166,12 @@ static int epoch_init(ch_tls *t, const ch_cfg *cfg) {
 int quic_config_ok(ch_tls *t, const ch_cfg *cfg) {
     if (!trust_config_ok(cfg) || !transport_config_ok(cfg) || !alpn_ok(cfg) || cfg->buf == NULL ||
         cfg->buf_len < CH_MIN_RXBUF) {
+        return CH_EINVAL;
+    }
+    // A ticket past its lifetime, or past the 7 days RFC 9846 allows any
+    // ticket: tls.c's rule, from the one predicate both transports call
+    // (handshake_post.h).
+    if (!hspost_ticket_age_ok(cfg)) {
         return CH_EINVAL;
     }
 #ifndef CH_KEX_HYBRID

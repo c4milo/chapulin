@@ -1,0 +1,13 @@
+invariant: INV-38
+file: tls.c
+catches: proof/prove-one.sh writable_len
+reason: ch_writable_len counts each record one byte shorter than
+  rec_seal writes it, so for some caps its answer's records are longer
+  than cap, and a caller's send that takes cap bytes fails and kills the
+  session. The writable_len harness writes the answer through the real
+  ch_write and requires what it sends to fit cap.
+
+--- old
+    size_t overhead = (whole + 1) * REC_OVERHEAD;
+--- new
+    size_t overhead = (whole + 1) * (REC_OVERHEAD - 1);

@@ -1,0 +1,12 @@
+invariant: INV-14
+file: handshake_post.h
+catches: unit
+reason: hspost_ticket_age_ok compares the age's low 32 bits alone, so a
+  ticket about 49.7 days old or older reads as a young one and is offered.
+  ch_cfg.ticket_age_ms is 64 bits wide so that no such age wraps. The row
+  whose age is 2^32 + 5 milliseconds requires the refusal.
+
+--- old
+    return cfg->ticket_age_ms <= lifetime_ms;
+--- new
+    return (uint32_t)cfg->ticket_age_ms <= lifetime_ms;

@@ -9,18 +9,21 @@ and the fast proof tier.
 Other targets:
 
 - `make lib RAND=extern` packages the library as one relocatable object
-  (`bin/chapulin.o`) exporting exactly the four public calls and one data
-  symbol, the build record `ch_build_info_tcp_blocking`. Every internal symbol is
+  (`bin/chapulin.o`) exporting exactly the six public calls and one data
+  symbol, the build record `ch_build_info_tcp_blocking`. The six are
+  `ch_connect`, `ch_read`, `ch_write`, `ch_writable_len`, `ch_close` and
+  `ch_ticket_obfuscated_age`. Every internal symbol is
   localized, and `lib-check` fails if the export list ever changes. The
   calls are per build on three axes: `RAND=drbg` packages the reference
   generator and exports `ch_drbg_seed` and `ch_rand_bytes`, and a ca mode
   exports `ch_pubkey_from_pem` for provisioning, so a `TRUST=ca-rsa
-  RAND=drbg` object exports seven calls. The build record, `ch_pubkey_from_pem` and
-  a server's `ch_srv_check` carry the transport in their symbol names
-  (`ch_build_info_tcp_nonblocking`, `ch_srv_check_quic_nonblocking`), and the headers map the
+  RAND=drbg` object exports nine calls. The build record, `ch_pubkey_from_pem`,
+  a server's `ch_srv_check` and a client's `ch_ticket_obfuscated_age` carry
+  the transport in their symbol names (`ch_build_info_tcp_nonblocking`,
+  `ch_srv_check_quic_nonblocking`), and the headers map the
   names you call to them, so one image links an object of each of two
-  transports (decision 61, [`docs/porting.md`](porting.md)).
-  `TRUST=webpki` exports the four calls and no provisioning call.
+  transports (decisions 61 and 72, [`docs/porting.md`](porting.md)).
+  `TRUST=webpki` exports the six calls and no provisioning call.
   `EXPORTER=on` adds `ch_export`, the exporter of RFC 9846 §7.5, and 32
   bytes to `ch_tls`; it is off
   by default, so the figures in [`performance.md`](performance.md) are a build that exports nothing,
@@ -38,8 +41,8 @@ Other targets:
   `record_size_limit` can still lower it. Empty, the default, leaves 512.
   A host that sends bulk data raises it to send fewer, larger records,
   and `ch_tls` grows to hold one sealed record: in stompy's `TRUST=webpki
-  TRANSPORT=tcp-nonblocking ROLE=both` object it measures 17,264 bytes at
-  `TX_RECORD=16384` against 3,264 at the default. It changes only what the
+  TRANSPORT=tcp-nonblocking ROLE=both` object it measures 17,280 bytes at
+  `TX_RECORD=16384` against 3,280 at the default. It changes only what the
   object sends; `cfg.buf_len` still sets the records it receives. A QUIC
   object seals no TLS record, so `TRANSPORT=quic-nonblocking` refuses it
   (decision 71).

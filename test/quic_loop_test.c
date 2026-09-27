@@ -167,17 +167,40 @@ static void client_config(ch_cfg *cfg, const ch_alpn_protocol *alpn) {
     cfg->on_ticket = keep_ticket;
 }
 
-// The kept ticket as a resuming client presents it.
+// The kept ticket as a resuming client presents it, one second after it
+// arrived. The obfuscated age comes from a ch_ticket holding the kept
+// age_add and nothing else, as a caller's copy does.
 static void present_ticket(ch_cfg *cfg) {
     cfg->psk = kept.psk;
     cfg->psk_len = kept.psk_len;
     cfg->psk_id = kept.identity;
     cfg->psk_id_len = kept.identity_len;
     cfg->resumption = 1;
-    cfg->obfuscated_age = kept.age_add + 1000;
+    ch_ticket ticket;
+    memset(&ticket, 0, sizeof ticket);
+    ticket.age_add = kept.age_add;
+    cfg->ticket_age_ms = 1000;
+    cfg->ticket_lifetime_s = kept.lifetime_s;
+    cfg->obfuscated_age = ch_ticket_obfuscated_age(&ticket, cfg->ticket_age_ms);
 #ifdef CH_TRUST_WEBPKI
     cfg->ticket_binding = kept.binding;
 #endif
+}
+
+// The ticket's age against its lifetime, which ch_quic_init judges before
+// it builds a hello (handshake_post.h): an age equal to the lifetime is
+// taken, and one millisecond more is refused with the session left dead.
+// cfg presents the kept ticket, and leaves as it came.
+static void check_ticket_age(ch_cfg *cfg) {
+    static ch_quic probe;
+    uint64_t age_ms = cfg->ticket_age_ms;
+    cfg->ticket_age_ms = (uint64_t)kept.lifetime_s * 1000U;
+    CHECK(ch_quic_init(&probe, cfg) == CH_OK);
+    ch_quic_close(&probe);
+    cfg->ticket_age_ms += 1;
+    CHECK(ch_quic_init(&probe, cfg) == CH_EINVAL);
+    CHECK(ch_quic_state(&probe) == CH_ST_FAILED);
+    cfg->ticket_age_ms = age_ms;
 }
 
 static ch_quic client;

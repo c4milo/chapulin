@@ -756,6 +756,21 @@ launch fast full hkdf384 170 "fill_nondet.0:209,ct_wipe.0:209" ct.c
 # rather than assumed. The 16-byte buffer bounds its per-byte loop, which
 # is what sets the unwind.
 launch slow:4 full io 24 ""
+# record_whole_len: where a TRANSPORT=tcp-nonblocking caller's record ends,
+# ch_record_whole_len over every n up to 2^20 and every byte, in a heap
+# object CBMC allocates exactly n bytes long, so a read on either side of
+# p[0..n) fails. buf.c is real. The call has no loop, so the global unwind
+# bounds nothing. Measured under this script's flags (arm64 macOS, cbmc
+# 6.11.0, kissat, /usr/bin/time -l): 481 properties, 0.3 s, 22 MB.
+launch fast full record_whole_len 2 "" -DCH_TRANSPORT_TCP_NONBLOCKING buf.c
+# writable_len: ch_writable_len over any peer_limit and any cap, then its
+# answer written through the real ch_write at caps up to 1,603 bytes and a
+# peer_limit from 63, with rec_seal and io_send_all stubbed to their
+# contracts. ch_write.1 is its record loop, which turns at most 20 times
+# there. Measured the same way (PROVE_ONLY=writable_len PROVE_NO_CACHE=1):
+# 420 properties, 58 s, 185 MB. The harness records the forms that took
+# longer.
+launch fast full writable_len 2 "ch_write.1:21"
 # keysched: 13 s under this script's own flags. Extract and Expand-Label sequencing
 # over 32-byte secrets; sha256 is harness.h's stub, since the schedule's
 # arithmetic is length handling rather than compression.
@@ -809,8 +824,12 @@ launch fast full epoch 40 "" ct.c
 # at the top of this file, so it runs nightly: slow:5 covers that peak.
 # With the ks_ calls taking the suite's hash length and the ticket
 # carrying psk_len (docs/decisions.md 58): 695 properties, 261 s,
-# 4.26 GB peak.
-launch slow:5 full handshake_post 132 "handle_post_handshake.0:33,fill_nondet.0:130" --object-bits 11 buf.c ct.c session.c
+# 4.26 GB peak. With the on_ticket stub asserting that no ticket with a
+# lifetime of 0 is handed over (docs/decisions.md 72): 708 properties,
+# 230 to 236 s, and 3.85 and 5.68 GB peak on two runs
+# (PROVE_ONLY=handshake_post /usr/bin/time -l ./proof/run.sh slow), so
+# the weight is 6.
+launch slow:6 full handshake_post 132 "handle_post_handshake.0:33,fill_nondet.0:130" --object-bits 11 buf.c ct.c session.c
 # The only launch line that builds the hybrid key exchange
 # (https://github.com/c4milo/chapulin/issues/47). hybrid_secret over any seed,
 # any server ciphertext and any server share, with mlkem and x25519 stubbed to
@@ -1520,7 +1539,9 @@ launch fast full quic_step 5 "fill_nondet.0:37,ct_wipe.0:441" -DCH_TRANSPORT_QUI
 # at most CH_ALPN_MAX times; the unwindset gives the anchor loops 13 and
 # the hostname fill 255. Measured under this script's flags (arm64 macOS,
 # cbmc 6.11.0, kissat, PROVE_ONLY=quic_config_webpki PROVE_NO_CACHE=1
-# /usr/bin/time -l): 557 properties, 1.8 s, 68 MB peak. With the real
+# /usr/bin/time -l): 557 properties, 1.8 s, 68 MB peak, and 588
+# properties, 3.9 s, 123 MB once the ticket age and lifetime joined the
+# configuration and the verdict. With the real
 # ct_memeq the same formula took 141 s and 2.67 GB. Narrowing the verdict
 # assertion to exclude pins alone with no hostname, pins beside anchors
 # at both caps, or a presented ticket fails each, so the formula reaches

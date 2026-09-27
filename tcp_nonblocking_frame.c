@@ -1,17 +1,41 @@
 // The inbound record framing and the session-death path both tcp-nonblocking
 // drivers share. tcp_nonblocking_frame.h states the contract; this file is
 // quic_fail.c's counterpart on the transport that keeps its records, and
-// it holds no protocol rule beyond what one record is allowed to be.
+// it holds no protocol rule beyond what one record is allowed to be. It
+// also holds ch_record_whole_len, the public call that tells a caller of
+// either role where one inbound record ends (tcp_nonblocking.h).
 #include "tcp_nonblocking_frame.h"
 
 #ifdef CH_TRANSPORT_TCP_NONBLOCKING
 
 #include <string.h>
 
+#include "buf.h"
 #include "ct.h"
 #include "handshake_message.h"
 #include "handshake_record.h"
 #include "record.h"
+
+// The largest value RFC 9846 §5.2 lets a record's length field hold,
+// 2^14 + 256 (rfc9846.txt:3595-3596).
+#define RECORD_BODY_MAX (0x4000 + 256)
+
+// tcp_nonblocking.h states the contract. The reader refuses a header p
+// does not yet hold whole, and the length it reads is compared with the
+// bytes after the header, so no sum here can wrap.
+size_t ch_record_whole_len(const uint8_t *p, size_t n) {
+    rbuf r;
+    rb_init(&r, p, n);
+    rb_skip(&r, 3); // the content type and legacy_record_version
+    size_t body_len = rb_u16(&r);
+    if (r.err) {
+        return 0;
+    }
+    if (body_len > RECORD_BODY_MAX) {
+        return REC_HDR;
+    }
+    return rb_left(&r) < body_len ? 0 : REC_HDR + body_len;
+}
 
 void tcp_nonblocking_wipe(ch_record *r) {
     ct_wipe(&r->hs, sizeof r->hs);

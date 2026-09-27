@@ -311,6 +311,32 @@ static void test_psk_and_pinned_config(chapulin::Io io) {
         chapulin::Session s;
         CHECK(s.connect(cfg) == chapulin::Status::invalid);
     }
+
+    // A resumed ticket: its age at its lifetime passes the checks and
+    // fails at the socket, and one millisecond more is refused before any
+    // I/O. The obfuscated age comes from a ticket with only age_add set.
+    {
+        ch_ticket ticket;
+        std::memset(&ticket, 0, sizeof ticket);
+        ticket.age_add = 0xfffffff0U;
+        CHECK(chapulin::ticket_obfuscated_age(ticket, 0x20) == 0x10U);
+        chapulin::Config cfg(chapulin::Bytes{rxbuf}, io);
+        cfg.resume(chapulin::ConstBytes{psk, sizeof psk}, chapulin::ConstBytes{id, sizeof id},
+                   chapulin::ticket_obfuscated_age(ticket, 60000));
+        cfg.ticket_age(60000, 60);
+        chapulin::Session s;
+        CHECK(s.connect(cfg) == chapulin::Status::io);
+        cfg.ticket_age(60001, 60);
+        CHECK(s.connect(cfg) == chapulin::Status::invalid);
+    }
+
+    // writable_len forwards ch_writable_len, which reads the session's
+    // peer_limit alone: a Session that never connected holds none, so it
+    // answers 0.
+    {
+        chapulin::Session s;
+        CHECK(s.writable_len(4096) == 0);
+    }
 }
 #endif
 #endif

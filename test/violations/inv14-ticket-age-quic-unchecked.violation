@@ -1,0 +1,12 @@
+invariant: INV-14
+file: quic_config.c
+catches: quic_loop_test
+reason: quic_config_ok stops asking hspost_ticket_age_ok, so ch_quic_init
+  builds a ClientHello around a ticket older than its lifetime, which
+  ch_connect over TCP refuses. The QUIC loop's check at the lifetime
+  boundary requires the first stale millisecond to be refused.
+
+--- old
+    if (!hspost_ticket_age_ok(cfg)) {
+--- new
+    if (0) {

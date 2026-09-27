@@ -420,6 +420,7 @@ static void keep_ticket(void *io, const ch_ticket *ticket) {
 int main(void) {
     test_binding_known_answer();
     test_ticket_shape();
+    test_ticket_age();
     test_ticket_names_its_config();
     test_resumed_handshake();
     test_resumed_hello_offers_certificates();

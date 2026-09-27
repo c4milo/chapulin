@@ -21,8 +21,8 @@ compiles counts: a QUIC constant named inside #ifdef
 CH_TRANSPORT_QUIC_NONBLOCKING is not required of a TCP object. A name
 counts when it has the shape of a length or a cap (a suffix below) and
 sits in a comment of a public header. The public headers are the ones
-listed plus the three that declare ch_cfg, which every public call
-takes. A named constant must be defined after the headers are included,
+listed plus the four that declare ch_cfg and the types its members
+take, which every public call takes. A named constant must be defined after the headers are included,
 or the script fails and names it. Otherwise it prints each name, one
 per line, and test/zig-consumer's matches.zig requires the module to
 declare and evaluate each one.
@@ -37,7 +37,7 @@ import tempfile
 
 # The headers that declare ch_cfg and its members. Every object's module
 # includes them through the headers of its calls.
-CONFIG_HEADERS = {"cfg.h", "srv_cfg.h", "webpki_cfg.h"}
+CONFIG_HEADERS = {"cfg.h", "srv_cfg.h", "ticket.h", "webpki_cfg.h"}
 
 # The suffixes of a name that sizes something a caller allocates or
 # fills in.

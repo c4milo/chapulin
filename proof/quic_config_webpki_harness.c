@@ -20,9 +20,13 @@
 // pins alone, with no anchor, no clock read and a hostname unset or of
 // the checked shape, or 1 to CH_WEBPKI_ANCHOR_MAX anchors with a
 // hostname and a clock; no pin slot; PSK fields webpki_resumption_ok
-// took; 1 to CH_ALPN_MAX protocols; transport parameters of 1 to
+// took; with resumption set, a ticket age no older than the ticket's
+// lifetime, and no older than CH_TICKET_LIFETIME_MAX seconds whatever the
+// lifetime, where a lifetime of 0 is none given (handshake_post.h); 1 to
+// CH_ALPN_MAX protocols; transport parameters of 1 to
 // CH_TRANSPORT_PARAMS_MAX bytes; on_level_ready; the buffer floor; and
-// no epoch callback.
+// no epoch callback. The age and the lifetime take any value their types
+// hold.
 //
 // Three callees are contract stubs, each proven by its own harness.
 // webpki_hostname_ok asserts it may read the name and answers 1 only for
@@ -64,6 +68,8 @@ static uint8_t binding[SHA256_LEN];
 // Whether webpki_resumption_ok answered, and what.
 static int resumption_called;
 static int resumption_verdict;
+
+uint64_t nondet_u64(void);
 
 int webpki_hostname_ok(const uint8_t *host, size_t host_len) {
     __CPROVER_assert(__CPROVER_r_ok(host, host_len), "hostname_ok: the name is readable");
@@ -177,6 +183,8 @@ static void havoc_trust(void) {
     cfg.psk_id = maybe(psk);
     cfg.psk_id_len = field_len(cfg.psk_id, sizeof psk);
     cfg.resumption = (int)nondet_u32();
+    cfg.ticket_age_ms = nondet_u64();
+    cfg.ticket_lifetime_s = nondet_u32();
     cfg.ticket_binding = maybe(binding);
     cfg.epoch_load = (nondet_u8() & 1) ? epoch_load : NULL;
     cfg.epoch_store = (nondet_u8() & 1) ? epoch_store : NULL;
@@ -208,6 +216,18 @@ static int trust_holds(void) {
            resumption_verdict == 1;
 }
 
+// The ticket age half, as handshake_post.h states it, written out here in
+// seconds and milliseconds rather than read from the predicate.
+static int ticket_age_holds(void) {
+    if (cfg.resumption == 0) {
+        return 1;
+    }
+    uint64_t cap_ms = (uint64_t)CH_TICKET_LIFETIME_MAX * 1000U;
+    uint64_t lifetime_ms = (uint64_t)cfg.ticket_lifetime_s * 1000U;
+    return cfg.ticket_age_ms <= cap_ms &&
+           (cfg.ticket_lifetime_s == 0 || cfg.ticket_age_ms <= lifetime_ms);
+}
+
 // The transport half, as quic.h states it.
 static int transport_holds(void) {
     return cfg.alpn_protocols != NULL && cfg.alpn_count >= 1 && cfg.alpn_count <= CH_ALPN_MAX &&
@@ -229,6 +249,7 @@ int main(void) {
     if (rc == CH_OK) {
         __CPROVER_assert(trust_holds(), "CH_OK keeps the webpki trust rules");
         __CPROVER_assert(transport_holds(), "CH_OK keeps the QUIC transport rules");
+        __CPROVER_assert(ticket_age_holds(), "CH_OK keeps the ticket age rule");
     }
     return 0;
 }

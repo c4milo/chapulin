@@ -139,6 +139,32 @@ static void test_ticket_shape(void) {
     CHECK(refused(&cfg));
 }
 
+// The ticket's age against its lifetime, judged with the shape rows above
+// before a byte leaves (handshake_post.h): each pair is the last age
+// offered and the first refused.
+static void test_ticket_age(void) {
+    // An hour's lifetime.
+    ch_cfg cfg = base_cfg();
+    present(&cfg, ticket_psk, known_binding);
+    cfg.ticket_lifetime_s = 3600;
+    cfg.ticket_age_ms = 3600000U;
+    CHECK(resumes(&cfg, ticket_psk));
+    cfg = base_cfg();
+    present(&cfg, ticket_psk, known_binding);
+    cfg.ticket_lifetime_s = 3600;
+    cfg.ticket_age_ms = 3600001U;
+    CHECK(refused(&cfg));
+    // No lifetime given: 7 days, CH_TICKET_LIFETIME_MAX seconds.
+    cfg = base_cfg();
+    present(&cfg, ticket_psk, known_binding);
+    cfg.ticket_age_ms = (uint64_t)CH_TICKET_LIFETIME_MAX * 1000U;
+    CHECK(resumes(&cfg, ticket_psk));
+    cfg = base_cfg();
+    present(&cfg, ticket_psk, known_binding);
+    cfg.ticket_age_ms = (uint64_t)CH_TICKET_LIFETIME_MAX * 1000U + 1U;
+    CHECK(refused(&cfg));
+}
+
 static void test_ticket_names_its_config(void) {
     ch_cfg cfg = base_cfg();
     present(&cfg, ticket_psk, known_binding);

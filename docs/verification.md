@@ -16,7 +16,7 @@ Four layers cover four different failure classes:
 
 ## What the proofs cover
 
-78 of the 89 C sources in the tree root are compiled into a
+80 of the 89 C sources in the tree root are compiled into a
 [CBMC](https://www.cprover.org/cbmc/) harness that a launch line in
 `proof/run.sh` runs. For every input within the harness's bound, the
 proof shows the source is free of:
@@ -38,20 +38,22 @@ inputs.
 
 ### Sources with no launched harness
 
-The other 11 sources are in no such harness:
+The other 9 sources are in no such harness:
 
 | Source | Why | What covers it instead |
 |---|---|---|
-| `tls.c` | The post-handshake parser moved to its own file and took the harness with it. | Nothing: the four public calls are unproven. |
 | `srv_flight.c` | Its harness's formula returns no verdict ([srv_flight](#srv_flight)). | `bin/srv_flight_test` |
 | `srv_tcp_nonblocking.c` | Its harness's formula returns no verdict ([srv_tcp_nonblocking](#srv_tcp_nonblocking)). | `bin/srv_tcp_nonblocking_test` |
-| `srv_out.c`, `srv_quic.c`, `tcp_nonblocking.c`, `tcp_nonblocking_frame.c`, `tcp_nonblocking_step.c` | No harness. | `bin/srv_flight_test`, `bin/srv_quic_test`, `bin/srv_tcp_nonblocking_test` and `bin/tcp_nonblocking_loop_test` |
+| `srv_out.c`, `srv_quic.c`, `tcp_nonblocking.c`, `tcp_nonblocking_step.c` | No harness. | `bin/srv_flight_test`, `bin/srv_quic_test`, `bin/srv_tcp_nonblocking_test` and `bin/tcp_nonblocking_loop_test` |
 | `aes_hw.c` | It calls the compiler's AES intrinsics, which CBMC cannot unwind. | `bin/aes_equiv_test` holds it to `quic_aes_soft.c`. |
 | `ghash_hw.c` | It runs GHASH on the carry-less multiply intrinsics. | `bin/ghash_equiv_test` holds it to `gcm.c`'s proven portable multiply. |
 | `build.c` | It holds one const record and no function, so there is no path for a harness to drive. | `lib-check` reads every field back. |
 
 `aes_extern.c` is proved, but only up to the `ch_aes_block` the caller
 writes, which has no body here to prove ([aes_extern](#aes_extern)).
+`tls.c` and `tcp_nonblocking_frame.c` are in a harness for one or two
+calls each, and the rest of each file is not proved
+([writable_len](#writable_len), [record_whole_len](#record_whole_len)).
 
 `make check` runs `make proof-coverage`, which counts them and
 regenerates the source-by-source table in `bin/proof-coverage.md`. It
@@ -663,6 +665,45 @@ The entries are grouped by area:
   are stubbed to their contracts.
 - **Bound:** records ≤ 16 B, secrets one hash long.
 
+#### record_whole_len
+
+- **Harness:** `record_whole_len` (fast)
+- **Build:** `TRANSPORT=tcp-nonblocking`.
+- **Proves:** `ch_record_whole_len` reads no byte outside `p[0..n)`, in
+  a heap object exactly `n` bytes long, and answers exactly what
+  `tcp_nonblocking.h` states for every byte `p` holds: 0 while the
+  header or the body it names is not whole, `REC_HDR` for a length field
+  above 2^14 + 256, and the whole record's length otherwise. So every
+  answer is 0 or a length from `REC_HDR` to `n`. `buf.c` is real.
+- **Bound:** `n` ≤ 2^20 B. The longest record the call frames is 16,645
+  B, and the call has no loop.
+- **Not proved:** the rest of `tcp_nonblocking_frame.c`, which
+  `bin/tcp_nonblocking_loop_test` and `bin/srv_tcp_nonblocking_test`
+  test.
+
+#### writable_len
+
+- **Harness:** `writable_len` (fast)
+- **Proves:**
+  - `ch_writable_len` is safe and free of UB for any `peer_limit` and
+    any `cap`;
+  - its answer is the most plaintext `ch_write` sends in `cap` bytes:
+    the real `ch_write` hands `cfg.send` at most `cap` bytes for the
+    answer, and more than `cap` bytes for one byte more.
+
+  `rec_seal` and `io_send_all` are stubbed to their contracts: a sealed
+  record is `REC_OVERHEAD` bytes longer than its plaintext, which
+  [record](#record) proves, and the stub send counts what it is handed.
+- **Bound:** the second claim at `cap` ≤ 1,603 B, three whole records
+  of `CH_TX_PT` bytes and one byte, and `peer_limit` ≥ 63, the least a
+  connected session holds, at the default `CH_TX_PT` of 512. The
+  claim is an equality over a division, and at 16 bits of `cap` a model
+  of it returned no verdict in 600 s. `bin/unit` checks the answer
+  against `ch_write` for every `cap` up to three records and one byte at
+  three limits, and at `SIZE_MAX`.
+- **Not proved:** the rest of `tls.c`: `ch_connect`, `ch_read`,
+  `ch_close` and `ch_export`, and `tlsi_config_ok`. Tests cover them.
+
 ### Client handshake
 
 #### handshake
@@ -856,7 +897,8 @@ The entries are grouped by area:
 
 - **Harness:** `handshake_post` (slow)
 - **Proves:** the post-handshake parser stays safe on hostile decrypted
-  bytes and consumes no more than its input.
+  bytes and consumes no more than its input, and hands `on_ticket` no
+  ticket whose `ticket_lifetime` is 0.
 - **Bound:** messages ≤ 128 B.
 
 ### Server
@@ -1275,14 +1317,16 @@ Every harness in this group builds `TRANSPORT=quic-nonblocking`. The
     `webpki_cfg.h` and `quic.h` state: 0 to `CH_SPKI_PIN_MAX` pins;
     either pins alone or 1 to `CH_WEBPKI_ANCHOR_MAX` anchors with a
     hostname and a clock; no pin slot; a ticket `webpki_resumption_ok`
-    took or no PSK; 1 to `CH_ALPN_MAX` protocols; the transport
-    parameters; `on_level_ready`; the buffer floor; and no epoch
-    callback.
+    took or no PSK; with `resumption` set, a ticket age no older than
+    the ticket's lifetime or `CH_TICKET_LIFETIME_MAX` seconds; 1 to
+    `CH_ALPN_MAX` protocols; the transport parameters; `on_level_ready`;
+    the buffer floor; and no epoch callback.
 
   `quic_config.c` and `webpki_cfg.c` are real; `webpki_hostname_ok`,
   `webpki_resumption_ok` and `ct_memeq` are contract stubs.
 - **Bound:** every pointer NULL or set, every count and length any
-  `size_t`, anchor names and keys ≤ 4 B.
+  `size_t`, the ticket age any `uint64_t` and the lifetime any
+  `uint32_t`, anchor names and keys ≤ 4 B.
 - **Not proved:** which hostnames pass, which bindings match and which
   names repeat. Those are tested.
 

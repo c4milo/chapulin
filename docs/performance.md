@@ -14,25 +14,25 @@ section and writes them to
 
 The session struct is measured twice, once native on arm64 and once for
 rv32ic. The byte-count constants do not move, only the pointer fields,
-so a 32-bit device needs 72 bytes less than the host figure in either device
+so a 32-bit device needs 80 bytes less than the host figure in either device
 build. `TRUST=webpki` adds pointer-sized fields to `ch_cfg`, pointers
-and `size_t` lengths, so that build needs 104 bytes less than the host figure on rv32.
+and `size_t` lengths, so that build needs 112 bytes less than the host figure on rv32.
 
 | what | arm64 | rv32 |
 |---|---|---|
-| `ch_tls` session struct (includes 622 B TX staging) | 1144 | 1072 |
+| `ch_tls` session struct (includes 622 B TX staging) | 1160 | 1080 |
 | receive buffer you provide (2048 shown; floor `CH_MIN_RXBUF`) | 2048 | 2048 |
-| **total static working set** | **3192** | **3120** |
-| `ch_tls` under `KEX=pq` (includes 1806 B TX staging) | 2328 | 2256 |
-| **total static working set, `KEX=pq`** (2048 buffer) | **4376** | **4304** |
-| `ch_tls` under `TRUST=webpki` (includes 2401 B TX staging) | 3048 | 2944 |
-| **total static working set, `TRUST=webpki`** (12338 buffer, its floor) | **15386** | **15282** |
-| `ch_tls` under `ROLE=server` (includes 1221 B TX staging) | 1968 | 1816 |
-| **total static working set, `ROLE=server`** (2048 buffer) | **4016** | **3864** |
-| `ch_tls` under `ROLE=server SUITE=aesgcm` | 2256 | — |
-| **total static working set, `ROLE=server SUITE=aesgcm`** (2048 buffer) | **4304** | — |
-| `ch_tls` under `TRUST=webpki SUITE=aesgcm` | 3336 | — |
-| **total static working set, `TRUST=webpki SUITE=aesgcm`** (12338 buffer, its floor) | **15674** | — |
+| **total static working set** | **3208** | **3128** |
+| `ch_tls` under `KEX=pq` (includes 1806 B TX staging) | 2344 | 2264 |
+| **total static working set, `KEX=pq`** (2048 buffer) | **4392** | **4312** |
+| `ch_tls` under `TRUST=webpki` (includes 2401 B TX staging) | 3064 | 2952 |
+| **total static working set, `TRUST=webpki`** (12338 buffer, its floor) | **15402** | **15290** |
+| `ch_tls` under `ROLE=server` (includes 1221 B TX staging) | 1984 | 1824 |
+| **total static working set, `ROLE=server`** (2048 buffer) | **4032** | **3872** |
+| `ch_tls` under `ROLE=server SUITE=aesgcm` | 2272 | — |
+| **total static working set, `ROLE=server SUITE=aesgcm`** (2048 buffer) | **4320** | — |
+| `ch_tls` under `TRUST=webpki SUITE=aesgcm` | 3352 | — |
+| **total static working set, `TRUST=webpki SUITE=aesgcm`** (12338 buffer, its floor) | **15690** | — |
 
 ### Peak stack
 

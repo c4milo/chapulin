@@ -5,10 +5,11 @@
 //! TRUST=webpki. The two modules declare ch_cfg with different layouts,
 //! and each half uses its own module's.
 //!
-//! Each half reads its object's build record, then starts a client,
-//! which checks the ch_cfg it is given and builds a ClientHello, as
-//! test/lib_pair_half.c does for make's objects. The program exits with
-//! the number of halves that failed.
+//! Each half reads its object's build record, computes a ticket's
+//! obfuscated age through the call ticket.h names for its transport, then
+//! starts a client, which checks the ch_cfg it is given and builds a
+//! ClientHello, as test/lib_pair_half.c does for make's objects. The
+//! program exits with the number of halves that failed.
 const std = @import("std");
 const h2 = @import("chapulin_h2");
 const quic = @import("chapulin_quic");
@@ -33,6 +34,16 @@ fn failed(half: []const u8, step: []const u8) u8 {
 const anchor_name = [_]u8{ 0x30, 0x00 };
 const anchor_spki = [_]u8{ 0x30, 0x00 };
 const hostname = "dns.example";
+
+/// Whether module c's ch_ticket_obfuscated_age adds a ticket's age_add to
+/// its age modulo 2^32 (RFC 9846 section 4.3.11.1). Each module's name
+/// maps to its own object's symbol, so each half calls its own object.
+/// Every field but age_add is unset, as in a ticket kept after on_ticket.
+fn ticketAgeAdds(comptime c: type) bool {
+    var ticket = std.mem.zeroes(c.ch_ticket);
+    ticket.age_add = 0xffff_fff0;
+    return c.ch_ticket_obfuscated_age(&ticket, (1 << 32) + 0x20) == 0x10;
+}
 
 /// The fields both clients set, in the ch_cfg of module c.
 fn clientConfig(comptime c: type, buf: []u8) c.ch_cfg {
@@ -75,6 +86,7 @@ fn startH2() u8 {
     if (h2.ch_build_matches(hooks.record(h2)) != 1) {
         return failed("h2", "ch_build_matches read a record that is not this object's");
     }
+    if (!ticketAgeAdds(h2)) return failed("h2", "ch_ticket_obfuscated_age did not add age_add modulo 2^32");
     var cfg = clientConfig(h2, &h2_rx);
     cfg.send = keepSend;
     cfg.recv = failRecv;
@@ -105,6 +117,7 @@ fn startQuic() u8 {
     if (quic.ch_build_matches(hooks.record(quic)) != 1) {
         return failed("quic", "ch_build_matches read a record that is not this object's");
     }
+    if (!ticketAgeAdds(quic)) return failed("quic", "ch_ticket_obfuscated_age did not add age_add modulo 2^32");
     var cfg = clientConfig(quic, &quic_rx);
     cfg.transport_params = &params;
     cfg.transport_params_len = params.len;

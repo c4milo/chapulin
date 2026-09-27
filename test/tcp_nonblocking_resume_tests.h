@@ -64,7 +64,10 @@ static void take_post_handshake(ch_record *client) {
     CHECK(held.off == held.len);
 }
 
-// The client configuration that presents t: the PSK fields and no pin.
+// The client configuration that presents t five seconds after it arrived:
+// the PSK fields, the age and the lifetime, and no pin. The obfuscated age
+// comes from a ch_ticket holding t's age_add and nothing else, as a
+// caller's kept copy does.
 static void resume_config(ch_cfg *cfg, const kept_ticket *t) {
     client_config(cfg);
     cfg->server_pubkey = NULL;
@@ -74,7 +77,12 @@ static void resume_config(ch_cfg *cfg, const kept_ticket *t) {
     cfg->psk_id = t->identity;
     cfg->psk_id_len = t->identity_len;
     cfg->resumption = 1;
-    cfg->obfuscated_age = t->age_add + 5000; // five seconds in milliseconds
+    ch_ticket kept;
+    memset(&kept, 0, sizeof kept);
+    kept.age_add = t->age_add;
+    cfg->ticket_age_ms = 5000;
+    cfg->ticket_lifetime_s = t->lifetime_s;
+    cfg->obfuscated_age = ch_ticket_obfuscated_age(&kept, cfg->ticket_age_ms);
 }
 
 // Runs one handshake the server must refuse, and returns the alert it chose.
@@ -150,6 +158,24 @@ static void test_resumption(void) {
     CHECK(to_client.len == 0 && records_pushed == 3);
     scfg.srv.now_seconds = (uint64_t)LOOP_NOW + SRV_TICKET_LIFETIME + 1;
     CHECK(refused(&client, &server, &ccfg, &scfg) == ALERT_MISSING_EXTENSION);
+
+    // The same boundary on the client's side, which judges the ticket's
+    // age before it stages a byte (handshake_post.h): an age equal to the
+    // ticket's lifetime is offered and resumes, and one millisecond more
+    // is refused by ch_record_init, which leaves nothing to collect.
+    resume_config(&ccfg, &first);
+    ccfg.ticket_age_ms = (uint64_t)first.lifetime_s * 1000U;
+    scfg.srv.now_seconds = (uint64_t)LOOP_NOW + SRV_TICKET_LIFETIME;
+    (void)run_handshake(&client, &server, &ccfg, &scfg);
+    CHECK(server.t.psk_selected == 1 && ch_record_state(&client) == CH_ST_CONNECTED);
+    ccfg.ticket_age_ms += 1;
+    CHECK(ch_record_init(&client, &ccfg) == CH_EINVAL);
+    CHECK(ch_record_state(&client) == CH_ST_FAILED);
+    uint8_t staged[8];
+    size_t staged_len = 0;
+    CHECK(ch_record_out(&client, staged, sizeof staged, &staged_len) == CH_EINVAL);
+    CHECK(staged_len == 0);
+    resume_config(&ccfg, &first);
 
     // A ticket issued after the server's clock reads is refused.
     scfg.srv.now_seconds = LOOP_NOW - 1;

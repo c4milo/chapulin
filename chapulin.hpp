@@ -9,8 +9,9 @@
 // Session, exactly as with ch_cfg.
 //
 // The wrapper forks with the object it forwards to. A TRANSPORT=tcp-blocking
-// object exports ch_connect, ch_read, ch_write and ch_close, and Session
-// forwards them. A TRANSPORT=quic-nonblocking object exports none of the four and
+// object exports ch_connect, ch_read, ch_write, ch_writable_len and
+// ch_close, and Session forwards them. A TRANSPORT=quic-nonblocking object
+// exports none of the five and
 // sixteen ch_quic_ entries instead, so Quic forwards those, and Config
 // takes no Io and gains the transport parameters and the two QUIC
 // callbacks. One transport compiles per build, so one of the two classes
@@ -238,11 +239,22 @@ class Config {
     }
 
     // Resume from a stored ticket: its identity and derived PSK, plus the
-    // obfuscated age the ticket carried.
+    // obfuscated age the ticket carried (ticket_obfuscated_age below).
     Config &resume(ConstBytes derived_psk, ConstBytes identity, uint32_t obfuscated_age) {
         psk(derived_psk, identity);
         cfg_.resumption = 1;
         cfg_.obfuscated_age = obfuscated_age;
+        return *this;
+    }
+
+    // The stored ticket's age in milliseconds and its lifetime in seconds
+    // (ch_cfg.ticket_age_ms and ch_cfg.ticket_lifetime_s). With resume()
+    // set, the connection is refused before a byte is sent when the age
+    // is above the lifetime or above seven days (ticket.h). A lifetime of
+    // 0 means none was given.
+    Config &ticket_age(uint64_t age_ms, uint32_t lifetime_s) {
+        cfg_.ticket_age_ms = age_ms;
+        cfg_.ticket_lifetime_s = lifetime_s;
         return *this;
     }
 
@@ -409,6 +421,15 @@ inline Pubkey pubkey_from_pem(ConstBytes pem, uint8_t (&der_scratch)[CH_X509_MAX
 }
 #endif
 
+#if !defined(CH_ROLE_SERVER) || defined(CH_ROLE_BOTH)
+// Forwards ch_ticket_obfuscated_age: age_ms plus the ticket's age_add,
+// modulo 2^32, the value Config::resume() takes. It reads age_add alone,
+// so a ticket copied during on_ticket and kept serves (ticket.h).
+inline uint32_t ticket_obfuscated_age(const ch_ticket &ticket, uint64_t age_ms) {
+    return ch_ticket_obfuscated_age(&ticket, age_ms);
+}
+#endif
+
 // Forwards ch_build_matches(&ch_build): whether the object this program
 // links was compiled with the struct sizes, bounds and axes these headers
 // compute under this program's defines (build.h). Call it once at
@@ -436,6 +457,12 @@ class Session {
 
     Status write(ConstBytes data) {
         return static_cast<Status>(ch_write(&tls_, data.data, data.size));
+    }
+
+    // Forwards ch_writable_len: the most plaintext one write() seals into
+    // cap bytes of records (tls.h).
+    size_t writable_len(size_t cap) const {
+        return ch_writable_len(&tls_, cap);
     }
 
     Read read(Bytes into) {

@@ -285,8 +285,10 @@ the handshake is done.
 once per ticket with its `identity`, `psk` and `age_add`, and under
 `TRUST=webpki` its `binding`; copy them during the callback. To resume,
 configure the next `ch_quic_init` with `psk` set to the 32-byte PSK,
-`psk_id` to the identity, `resumption` to 1 and `obfuscated_age` to the
-ticket's age in milliseconds plus `age_add`, and offer the same ALPN
+`psk_id` to the identity, `resumption` to 1, `ticket_age_ms` to the
+ticket's age in milliseconds, `ticket_lifetime_s` to its `lifetime_s` and
+`obfuscated_age` to `ch_ticket_obfuscated_age` of the ticket and that
+age, and offer the same ALPN
 protocol, because the server resumes a ticket only under the protocol it
 was issued under. Under `TRUST=raw-ecdsa` leave both `server_pubkey` slots
 unset: a raw-mode configuration authenticates one way, and here that way is

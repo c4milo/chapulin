@@ -173,7 +173,7 @@ HDRS := ct.h sha256.h hkdf.h chacha20.h poly1305.h aead.h x25519.h x25519_wide.h
         tls.h rand.h drbg.h sha3.h sha512.h sha512_compress.h p384.h p384_field.h p256_field.h p256_scalar.h p256_point.h p256_sign.h p256_ecdh.h rsa_pkcs1.h rsa_sign.h mlkem.h mlkem_poly.h \
         handshake_flight.h handshake_groups.h quic.h quic_config.h quic_initial.h quic_keys.h quic_packet.h quic_retry.h quic_step.h quic_fail.h quic_token.h aes.h aes_block.h aes_public_key.h aes_traffic_key.h aes_schedule.h gcm.h ghash_hw.h \
         srv_cfg.h srv.h srv_parser.h srv_parser_ext.h srv_message.h srv_cookie.h srv_ticket.h srv_auth.h srv_out.h srv_flight.h srv_resume.h srv_handshake.h srv_quic.h srv_tcp_nonblocking.h srv_kex.h keylog.h \
-        tcp_nonblocking.h tcp_nonblocking_frame.h tcp_nonblocking_step.h build.h suite.h transcript.h
+        tcp_nonblocking.h tcp_nonblocking_frame.h tcp_nonblocking_step.h build.h suite.h transcript.h ticket.h
 
 # The TRANSPORT=quic-nonblocking mode's own sources, named here rather than matched
 # by a pattern, for the reason WEBPKI_SRCS is named: an auditor reads
@@ -411,7 +411,7 @@ LINT_C := $(filter-out softmul.c,$(SRCS)) handshake_groups.c drbg.c sha3.c sha51
 
 # Test-local headers: prerequisites for every binary that includes them,
 # so a header edit rebuilds the binaries it changes.
-TESTH := test/test_random.h test/pem_armor.h test/pem_tests.h test/x509_ca_tests.h test/session_tests.h test/session_post_tests.h \
+TESTH := test/test_random.h test/pem_armor.h test/pem_tests.h test/x509_ca_tests.h test/session_tests.h test/session_post_tests.h test/session_write_tests.h \
          test/session_cfg_tests.h test/gcm_tests.h test/quic_initial_tests.h test/quic_packet_tests.h test/p256_tests.h test/p256_field_vectors.h test/p256_sign_vectors.h test/p256_ecdh_vectors.h test/wycheproof_p256.h test/wycheproof_aes_gcm.h test/diff_driver.h test/diff_aes.h test/diff_gcm.h test/diff_hash.h test/diff_hash384.h \
          test/diff_handshake_parser.h test/diff_encrypted_exts.h test/diff_handshake_certificate.h test/diff_p256.h test/diff_pem.h test/diff_record.h test/diff_rsa.h \
          test/diff_x25519.h test/handshake_sequence_server.h test/rfc8448_vectors.h \
@@ -424,7 +424,7 @@ TESTH := test/test_random.h test/pem_armor.h test/pem_tests.h test/x509_ca_tests
          test/rsa_pkcs1_vectors.h test/rsa_wide_vectors.h test/rsa_pkcs1_wide_vectors.h \
          test/rsa_sign_vectors.h \
          test/diff_webpki.h test/diff_mlkem.h test/mlkem_vectors.h test/webpki_corpus.h test/webpki_sigalg_vectors.h \
-         test/diff_webpki_sigalg.h test/hello_exts.h test/webpki_session_cases.h test/webpki_groups_cases.h test/webpki_p256_cases.h test/webpki_mock_kex.h test/webpki_suite_cases.h test/tcp_nonblocking_read_tests.h test/tcp_nonblocking_resume_tests.h test/tcp_nonblocking_group_tests.h test/tcp_nonblocking_coalesced_tests.h test/tcp_nonblocking_close_tests.h test/quic_loop_raw.h test/quic_loop_close.h test/quic_loop_webpki.h test/quic_loop_pins.h test/webpki_resume_session.h test/webpki_resume_cases.h test/webpki_pins_cases.h test/tls_client_webpki.h \
+         test/diff_webpki_sigalg.h test/hello_exts.h test/webpki_session_cases.h test/webpki_groups_cases.h test/webpki_p256_cases.h test/webpki_mock_kex.h test/webpki_suite_cases.h test/tcp_nonblocking_read_tests.h test/tcp_nonblocking_resume_tests.h test/tcp_nonblocking_group_tests.h test/tcp_nonblocking_coalesced_tests.h test/tcp_nonblocking_close_tests.h test/tcp_nonblocking_frame_tests.h test/quic_loop_raw.h test/quic_loop_close.h test/quic_loop_webpki.h test/quic_loop_pins.h test/webpki_resume_session.h test/webpki_resume_cases.h test/webpki_pins_cases.h test/tls_client_webpki.h \
          test/webpki_decline_cases.h test/webpki_r2_chain.h test/psk_decline_tests.h \
          test/handshake_strict_alpn.h test/handshake_strict_cert_type.h \
          test/webpki_cert_mutants.h test/webpki_cert_key_mutants.h test/webpki_ext_mutants.h test/diff_webpki_cert.h \
@@ -595,7 +595,8 @@ TRANSPORT_ADD := $(QUIC_SRCS)
 PUBLIC_TRANSPORT := ch_quic_init ch_quic_initial_keys ch_quic_crypto_in ch_quic_crypto_out \
                     ch_quic_seal ch_quic_seal_close ch_quic_open ch_quic_retry_ok ch_quic_key_update \
                     ch_quic_key_phase ch_quic_drop_previous_keys ch_quic_discard \
-                    ch_quic_state ch_quic_alert ch_quic_error_code ch_quic_close
+                    ch_quic_state ch_quic_alert ch_quic_error_code ch_quic_close \
+                    ch_ticket_obfuscated_age
 else ifeq ($(TRANSPORT),tcp-nonblocking)
 # The same TLS records, driven by a caller that owns the socket. It
 # replaces handshake.c, the blocking driver, and keeps everything under
@@ -608,12 +609,12 @@ TRANSPORT_DEF := -DCH_TRANSPORT_TCP_NONBLOCKING
 TRANSPORT_FILTER := handshake.c
 TRANSPORT_ADD := tcp_nonblocking.c tcp_nonblocking_frame.c tcp_nonblocking_step.c
 PUBLIC_TRANSPORT := ch_record_init ch_record_in ch_record_out ch_record_state ch_record_alert ch_record_close \
-                    ch_read ch_write ch_close
+                    ch_record_whole_len ch_read ch_write ch_writable_len ch_close ch_ticket_obfuscated_age
 else ifeq ($(TRANSPORT),tcp-blocking)
 TRANSPORT_DEF :=
 TRANSPORT_FILTER :=
 TRANSPORT_ADD :=
-PUBLIC_TRANSPORT := ch_connect ch_read ch_write ch_close
+PUBLIC_TRANSPORT := ch_connect ch_read ch_write ch_writable_len ch_close ch_ticket_obfuscated_age
 else
 $(error TRANSPORT=$(TRANSPORT) is not a transport; use TRANSPORT=tcp-blocking, TRANSPORT=tcp-nonblocking or TRANSPORT=quic-nonblocking)
 endif
@@ -707,15 +708,16 @@ else ifeq ($(TRANSPORT),tcp-nonblocking)
 TRANSPORT_ADD := $(filter-out tcp_nonblocking_step.c,$(TRANSPORT_ADD))
 ROLE_ADD    := $(filter-out srv_handshake.c,$(ROLE_ADD)) srv_tcp_nonblocking.c
 # What this object exports: the server's two driver calls, the boot check,
-# the three session calls either role uses, and the record-layer calls a
-# connected session needs. Not ch_record_init, ch_record_in or
-# ch_record_out, which are the client's driver, and not ch_srv_accept,
-# which is the blocking one.
+# the three session calls either role uses, the record framing call either
+# role uses, and the record-layer calls a connected session needs. Not
+# ch_record_init, ch_record_in or ch_record_out, which are the client's
+# driver, not ch_ticket_obfuscated_age, which only a client presents, and
+# not ch_srv_accept, which is the blocking one.
 PUBLIC_ROLE := ch_srv_record_init ch_srv_record_in ch_srv_check \
-               ch_record_state ch_record_alert ch_record_close \
-               ch_read ch_write ch_close
+               ch_record_state ch_record_alert ch_record_close ch_record_whole_len \
+               ch_read ch_write ch_writable_len ch_close
 else
-PUBLIC_ROLE := ch_srv_accept ch_srv_check ch_read ch_write ch_close
+PUBLIC_ROLE := ch_srv_accept ch_srv_check ch_read ch_write ch_writable_len ch_close
 endif
 # PIN_DEF and PIN_FILTER are already empty: the TRUST=none arm this
 # block requires sets them, and an empty PIN_FILTER keeps every verifier
@@ -1282,16 +1284,19 @@ print-llvm-nm:
 # against its own headers (build.h, docs/decisions.md 56). No axis
 # changes it, so every variant's list names it.
 PUBLIC_BUILD := ch_build
-# The lists above name each export as its header declares it. Three of
+# The lists above name each export as its header declares it. Four of
 # those names belong to exports that objects of more than one transport
-# carry: the build record, the server's boot check and the CA
-# provisioning call. One image may link one object of each transport,
-# so each of the three puts the object's transport in its symbol name,
-# and build.h, srv.h and x509_ca.h map the declared name to that symbol
-# name under the consumer's own defines (docs/decisions.md 61). PUBLIC
-# holds symbol names, because those are what the link keeps and what
-# lib-check reads.
-TRANSPORT_NAMED := ch_build ch_srv_check ch_pubkey_from_pem
+# carry: the build record, the server's boot check, the CA provisioning
+# call and the client's ticket age call. One image may link one object of
+# each transport, so each of the four puts the object's transport in its
+# symbol name, and build.h, srv.h, x509_ca.h and ticket.h map the declared
+# name to that symbol name under the consumer's own defines
+# (docs/decisions.md 61 and 72). ch_writable_len needs no such name: the
+# two TCP transports export it beside ch_write, and decision 61 refuses an
+# image of those two objects for ch_read, ch_write and ch_close already.
+# PUBLIC holds symbol names, because those are what the link keeps and
+# what lib-check reads.
+TRANSPORT_NAMED := ch_build ch_srv_check ch_pubkey_from_pem ch_ticket_obfuscated_age
 # A symbol name takes no hyphen, so the suffix is the TRANSPORT value
 # with underscores, and the build record's symbol is named for its type,
 # ch_build_info: ch_build_info_tcp_blocking, ch_srv_check_tcp_blocking.
@@ -3642,7 +3647,7 @@ QUIC_CONDITIONAL := cfg.h session.h handshake_record.h handshake_post.h \
                     handshake_auth.h handshake_parser.h handshake_message.c \
                     handshake_parser_ee.c handshake_record.c handshake_auth.c \
                     handshake_post.c build.h build.c x509_ca.h x509_ca.c \
-                    aes.h aes.c
+                    aes.h aes.c ticket.h
 #
 # The lint preprocesses every root source and header with $(CC) and reads
 # the Makefile and git's file list, so its stamp covers every file git
@@ -4271,15 +4276,17 @@ lint-impact:
 #
 # Ceilings are file:count and hold on every spec below unless
 # WIDEMUL_CEILING_SPEC names the spec and file. Going over fails. Coming in
-# under only prints, because the only non-zero entries are a public
-# division whose lowering is a compiler choice and a recorded leak that is
+# under only prints, because the only non-zero entries are two public
+# divisions whose lowering is a compiler choice and a recorded leak that is
 # meant to fall, and zero cannot be undershot, so every other module is
-# held exactly.
+# held exactly. The divisions are sha3.c's `% 5` over Keccak's lane
+# counters and tls.c's one division in ch_writable_len, the caller's
+# buffer length by the length of a record (docs/decisions.md 72).
 WIDEMUL_CEILING := ct.c:0 sha256.c:0 sha3.c:1 hkdf.c:0 chacha20.c:0 poly1305.c:0 aead.c:0 \
                    x25519.c:0 p256_field.c:0 mlkem.c:0 mlkem_poly.c:0 buf.c:0 record.c:0 keysched.c:0 io.c:0 \
                    session.c:0 handshake_message.c:0 handshake_parser.c:0 handshake_parser_ee.c:0 handshake_record.c:0 \
                    handshake_auth.c:0 handshake_flight.c:0 handshake.c:0 handshake_post.c:0 \
-                   tls.c:0 drbg.c:0 softmul.c:0 tcp_nonblocking.c:0 tcp_nonblocking_frame.c:0 tcp_nonblocking_step.c:0 \
+                   tls.c:1 drbg.c:0 softmul.c:0 tcp_nonblocking.c:0 tcp_nonblocking_frame.c:0 tcp_nonblocking_step.c:0 \
                    quic_keys.c:0 quic_packet.c:0 quic_config.c:0 quic_step.c:0 quic.c:0 \
                    quic_fail.c:0 srv_quic.c:0 quic_token.c:0 srv_tcp_nonblocking.c:0 \
                    aes.c:0 quic_aes_soft.c:0 aes_extern.c:0 gcm.c:0 \
@@ -4858,7 +4865,11 @@ lint-wide-multiply-gcc:
 # new `/` anywhere hid behind sha3's __udivsi3
 # (https://github.com/c4milo/chapulin/issues/85). Now a symbol is judged in
 # the file that pulls it. sha3's __udivsi3 is Keccak's `% 5` over public
-# loop counters, a performance matter rather than a leak.
+# loop counters, a performance matter rather than a leak. tls.c's is
+# ch_writable_len's one division, the caller's buffer length by the length
+# of a record, both public (docs/decisions.md 72); its __mulsi3 is the
+# same call's count of whole records times their plaintext, which
+# softmul.c supplies in constant time like every other.
 #
 # The eight QUIC and AES entries WIDEMUL_CEILING carries -- quic.c,
 # quic_keys.c, quic_packet.c, quic_step.c, aes.c, quic_aes_soft.c,
@@ -4870,7 +4881,7 @@ lint-wide-multiply-gcc:
 # list's absence, and it is re-measured when the stubs among these
 # files are implemented.
 RV_ALLOWED := poly1305.c:__mulsi3 x25519.c:__mulsi3 mlkem_poly.c:__mulsi3 sha3.c:__udivsi3 \
-              rsa_sign.c:__mulsi3 p256_field.c:__mulsi3 p256_scalar.c:__mulsi3
+              rsa_sign.c:__mulsi3 p256_field.c:__mulsi3 p256_scalar.c:__mulsi3 tls.c:__mulsi3,__udivsi3
 # What softmul.c must define. The __mul* names RV_ALLOWED admits are
 # constant-time only because this file supplies them; if it stopped, the
 # admitted calls would bind to libgcc's and the allowlist would keep

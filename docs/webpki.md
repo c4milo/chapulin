@@ -487,9 +487,11 @@ received it, and refuses to present it under any other.
 - **`ch_tls.psk_selected` says which one happened.** It is 1 when the
   server selected the ticket and sent no certificate, and 0 when the
   handshake was a full one, whether the hello offered a ticket or not.
-- **The caller owns the ticket's age.** A ticket lives at most seven days
-  (RFC 9846 §4.7.1), and the other modes leave that limit and
-  `obfuscated_age` to the caller as well.
+- **The ticket's age is checked before a byte is sent.** The caller sets
+  `ticket_age_ms` and `ticket_lifetime_s`, as in every mode, and
+  `ch_ticket_obfuscated_age` computes `obfuscated_age` from the age. An
+  age above the lifetime, or above the seven days RFC 9846 §4.6.1 allows
+  any ticket, is refused with `CH_EINVAL` (docs/decisions.md 72).
 - **A `TRANSPORT=quic-nonblocking` webpki client resumes the same way.**
   `ch_quic_init` takes the configuration hash as `ch_connect` does, so the
   tickets a QUIC session hands to `on_ticket` carry a binding to its
