@@ -271,6 +271,18 @@ size_t hsr_feed(handshake_state *h, const uint8_t *p, size_t n) {
     return took;
 }
 
+// The check before a key change, to the contract handshake_record.h
+// states: CH_OK when no handshake byte is unread, and otherwise CH_EPROTO
+// with ALERT_UNEXPECTED_MESSAGE written first.
+int hsr_check_record_end(handshake_state *h) {
+    __CPROVER_assert(h != NULL && h->t != NULL, "record end: state valid");
+    if (h->t->pt_off != h->t->pt_len) {
+        h->alert = ALERT_UNEXPECTED_MESSAGE;
+        return CH_EPROTO;
+    }
+    return CH_OK;
+}
+
 // The message header check, proven with the reassembly it reads. It
 // answers HSR_INCOMPLETE while the unread bytes stop short of a whole
 // message, which is what ends the driver's loop.

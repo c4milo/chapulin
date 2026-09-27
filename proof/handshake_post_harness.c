@@ -1,8 +1,10 @@
 // Proves: handle_post_handshake and handle_ticket — the parsers that run over
 // decrypted post-handshake bytes (NewSessionTicket and KeyUpdate) — are
 // memory-safe and UB-free against ANY plaintext up to 128 bytes, and
-// report a consumed length no larger than the input, and that no ticket
-// with a ticket_lifetime of 0 is handed to on_ticket. This is the last
+// report a consumed length no larger than the input, that no ticket
+// with a ticket_lifetime of 0 is handed to on_ticket, and that a
+// KeyUpdate rekeys only as the last message of the input, which RFC 9846
+// §5.1 requires of the message before a key change. This is the last
 // attacker-facing parser; a peer that reaches a connected session feeds
 // it arbitrary decrypted bytes.
 //
@@ -53,8 +55,13 @@ static void fill_rec_dir_nondet(rec_dir *d) {
     d->seq = nondet_u64();
 }
 
+// How many directions a KeyUpdate rekeyed, so main can tell whether one
+// ran. The harness's own counter; it models nothing in the code.
+static unsigned rekeys;
+
 void rec_dir_update(uint8_t secret[SHA256_LEN], rec_dir *d) {
     __CPROVER_assert(__CPROVER_w_ok(secret, SHA256_LEN), "upd: secret writable");
+    rekeys++;
     fill_nondet(secret, SHA256_LEN);
     fill_rec_dir_nondet(d);
 }
@@ -151,6 +158,10 @@ int main(void) {
     int rc = handle_post_handshake(&t, pt, n, &used);
     if (rc == CH_OK) {
         __CPROVER_assert(used <= n, "consumed no more than the input");
+        // pt[0..n) ends where the newest record ends, so a KeyUpdate that
+        // rekeyed a direction was the last message of its record (RFC
+        // 9846 §5.1).
+        __CPROVER_assert(rekeys == 0 || used == n, "a KeyUpdate ends the input");
     }
     return 0;
 }

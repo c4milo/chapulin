@@ -271,6 +271,37 @@ int hsr_peek_type(const handshake_state *h, uint8_t *type);
 // untouched.
 int hsr_next_msg(handshake_state *h, uint8_t *type, const uint8_t **raw, size_t *raw_len);
 
+#ifndef CH_TRANSPORT_QUIC_NONBLOCKING
+// The check RFC 9846 §5.1 puts on a key change. Handshake messages MUST
+// NOT span key changes, so the message read just before one must end its
+// record, and one that does not ends the connection with
+// unexpected_message (rfc9846.txt:3464-3470). The four TCP drivers call
+// this after they read such a message and before they act on it: a
+// client after the ServerHello and after the server Finished, and a
+// server after a ClientHello it answers with a ServerHello and after the
+// client Finished. A ClientHello answered with a HelloRetryRequest is not
+// such a message, because the read key does not change before the second
+// ClientHello. handshake_post.c checks a KeyUpdate against its own
+// buffer, and a QUIC driver checks each encryption level instead (RFC
+// 9001 §4.1.3).
+//
+// It compares pt_off with pt_len and reads nothing else. Both TCP readers
+// take a record whole, so a message that does not end its record leaves
+// bytes unread. A message that ends its record leaves none:
+// hsr_next_msg reads a record only while the unread bytes hold no whole
+// message, and a tcp-nonblocking driver runs every whole message one
+// record completes before it takes the next record. The one exception is
+// the client's HelloRetryRequest step, which returns once the retry hello
+// is staged, so bytes a server put after its HelloRetryRequest are still
+// unread when the next record arrives. No message can follow a
+// HelloRetryRequest before the retry hello it asks for, so the check
+// after the ServerHello refuses those bytes as well.
+//
+// Returns CH_OK when pt_off equals pt_len. Otherwise it writes
+// ALERT_UNEXPECTED_MESSAGE to h->alert and returns CH_EPROTO.
+int hsr_check_record_end(handshake_state *h);
+#endif
+
 // The hash length of the suite the server named, which every client
 // derivation after the ServerHello runs at (rfc9846.txt:4055-4056). A
 // build that holds one suite answers SHA256_LEN. A -DCH_SUITE_AES_GCM

@@ -47,9 +47,10 @@ pub const Read = struct { consumed: usize, pt_len: usize, reply_len: usize, peer
 pub const alert_record_len: usize = if (has_record) c.CH_ALERT_RECORD_LEN else @compileError("alert_record_len needs TRANSPORT=tcp-nonblocking");
 
 /// The wire length of one sealed KeyUpdate record, 27 bytes
-/// (CH_KEY_UPDATE_RECORD_LEN). ch_read answers every KeyUpdate in a record
-/// that asks for an answer, so a read of one record with k of them writes
-/// k of these into reply, and alert_record_len more if it fails.
+/// (CH_KEY_UPDATE_RECORD_LEN). ch_read answers a KeyUpdate that asks for
+/// an answer, and a record carries at most one KeyUpdate, as its last
+/// message (RFC 9846 §5.1), so a read of one record writes at most one of
+/// these into reply, and alert_record_len more if it fails.
 pub const key_update_record_len: usize = if (has_record) c.CH_KEY_UPDATE_RECORD_LEN else @compileError("key_update_record_len needs TRANSPORT=tcp-nonblocking");
 
 const Side = enum { client, server };
@@ -245,12 +246,13 @@ fn Session(comptime side: Side, comptime receive_len: usize) type {
         /// calls read until consumed and pt_len are both 0.
         ///
         /// reply takes what ch_read sends: key_update_record_len bytes for
-        /// each KeyUpdate in the record that asks for an answer (RFC 9846
-        /// §4.7.3), and alert_record_len more when the read fails. Each
-        /// KeyUpdate is 5 bytes of the record's plaintext, so a reply of
-        /// key_update_record_len * (consumed / 5) + alert_record_len bytes
-        /// is never short. A reply too short for what ch_read sends fails
-        /// the read with error.Io and the session with it.
+        /// a KeyUpdate in the record that asks for an answer (RFC 9846
+        /// §4.7.3), and alert_record_len more when the read fails. A
+        /// record carries at most one KeyUpdate, as its last message (RFC
+        /// 9846 §5.1), so a reply of key_update_record_len +
+        /// alert_record_len bytes is never short. A reply too short for
+        /// what ch_read sends fails the read with error.Io and the session
+        /// with it.
         pub fn read(self: *Self, input: []const u8, pt: []u8, reply: []u8) error{ Invalid, Proto, Auth, Cap, Io }!Read {
             const whole = c.ch_record_whole_len(input.ptr, input.len);
             self.io.begin(input[0..whole], reply);

@@ -61,8 +61,11 @@ size_t ch_writable_len(const ch_tls *t, size_t cap);
 // The wire length of one sealed KeyUpdate record, 27 bytes: REC_OVERHEAD,
 // the 4-byte handshake header and the 1-byte request_update (RFC 9846
 // §4.7.3). ch_read sends one for each KeyUpdate whose sender asked for an
-// answer, so a record that carries several KeyUpdate messages gets several,
-// and a failure in the same call adds one alert record.
+// answer, and a failure in the same call adds one alert record. A record
+// carries at most one KeyUpdate, as its last message: RFC 9846 §5.1 lets
+// no handshake message span the key change it makes, so ch_read refuses a
+// record with bytes after a KeyUpdate (INV-39), and each record it reads
+// gets at most one answer.
 #define CH_KEY_UPDATE_RECORD_LEN (REC_OVERHEAD + 4 + 1)
 
 // Receives into p (n >= 1), returning the byte count (>0), 0 at the end

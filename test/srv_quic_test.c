@@ -296,6 +296,52 @@ static void test_init_refuses_an_empty_certificate(const ch_cfg *base, const uin
     CHECK(seen.count == 0);
 }
 
+// Where the flights of test_client_hello_ends_level go, so they leave
+// main's counts in seen as they were.
+static int drop_crypto(void *io, uint8_t level, const uint8_t *p, size_t n) {
+    (void)io;
+    (void)level;
+    (void)p;
+    (void)n;
+    return 0;
+}
+
+static void drop_level(void *io, uint8_t level, uint8_t direction) {
+    (void)io;
+    (void)level;
+    (void)direction;
+}
+
+// RFC 9001 §4.1.3 (INV-39): a ClientHello's Initial delivery with one
+// byte after it leaves Initial data unread when the Handshake keys
+// arrive, which is PROTOCOL_VIOLATION once the flight has gone out. The
+// same delivery without the byte gets the flight and leaves the session
+// live.
+static void test_client_hello_ends_level(const ch_cfg *cfg, const uint8_t *hello,
+                                         size_t hello_len) {
+    static uint8_t more[CH_HELLO_MAX + 1];
+    static ch_quic server;
+    ch_cfg quiet = *cfg;
+    quiet.srv.on_crypto_out = drop_crypto;
+    quiet.on_level_ready = drop_level;
+    quiet.on_transport_params = NULL;
+    CHECK(hello_len < sizeof more);
+    memcpy(more, hello, hello_len);
+    more[hello_len] = 0;
+    for (size_t extra = 0; extra <= 1; extra++) {
+        CHECK(ch_srv_quic_init(&server, &quiet) == CH_OK);
+        int rc = ch_srv_quic_crypto_in(&server, CH_LEVEL_INITIAL, more, hello_len + extra);
+        if (extra == 0) {
+            CHECK(rc == CH_OK && ch_quic_state(&server) == CH_ST_START);
+        } else {
+            CHECK(rc == CH_EPROTO && ch_quic_state(&server) == CH_ST_FAILED);
+            CHECK(ch_quic_error_code(&server) == 0x0a);
+            CHECK(ch_quic_alert(&server) == ALERT_UNEXPECTED_MESSAGE);
+        }
+        ch_quic_close(&server);
+    }
+}
+
 // The Retry token's cases and ngtcp2's retry round, which need CHECK above.
 #include "quic_token_tests.h"
 #include "srv_quic_retry_tests.h"
@@ -379,6 +425,7 @@ int main(void) {
 
     test_initial_seal_uses_the_server_labels();
     test_encrypted_extensions_max();
+    test_client_hello_ends_level(&cfg, hello, hello_len);
 #ifdef CH_ROLE_BOTH
     test_both_roles_take_their_own_labels(&cfg);
 #endif

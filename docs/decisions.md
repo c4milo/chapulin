@@ -2763,8 +2763,12 @@ does nothing more.
       `REC_OVERHEAD + 2` and `REC_OVERHEAD + 5`, which `tls.c` asserts are
       24 and 27 bytes. `ch_close` sends one alert record. `ch_read` sends
       one KeyUpdate record for each KeyUpdate that asks for an answer,
-      and an alert record when it fails, so one record that carries two
-      such KeyUpdates gets two answers; `bin/unit` checks that.
+      and an alert record when it fails. A record carries at most one
+      KeyUpdate, as its last message, because RFC 9846 §5.1 lets no
+      handshake message span the key change it makes (INV-39), so a
+      record gets at most one answer; `bin/unit` checks that. This entry
+      first said one record could carry two KeyUpdates and get two
+      answers, which is the record INV-39 refuses.
     - **`ch_ticket_obfuscated_age(ticket, age_ms)`** (`ticket.h`,
       `handshake_post.c`, every object with a client). It answers
       `age_ms + ticket->age_add` modulo 2^32 (RFC 9846 §4.3.11.1,
@@ -2929,9 +2933,10 @@ does nothing more.
     - **Reading and writing.** `read` passes at most one whole record to
       `ch_read`, and its `consumed` is 0, a record, or the 5-byte header
       of a record no peer may send, which `ch_read` then refuses.
-      `ch_read` answers every KeyUpdate in a record that asks for one,
-      so `reply` takes k records of `key_update_record_len` bytes, and
-      one of `alert_record_len` when the read fails. `write` is all or
+      `ch_read` answers a KeyUpdate that asks for one, and a record
+      carries at most one KeyUpdate (INV-39), so `reply` takes at most
+      one record of `key_update_record_len` bytes, and one of
+      `alert_record_len` when the read fails. `write` is all or
       nothing: it seals nothing when `pt` is longer than
       `ch_writable_len` allows. `close` is `ch_close`, which sends the
       close_notify and wipes the keys.

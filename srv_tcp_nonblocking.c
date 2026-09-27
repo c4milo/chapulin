@@ -34,10 +34,16 @@
 
 // Everything the server owes once a hello is accepted, whether it was the
 // first or the one that answered a HelloRetryRequest. Every record of it
-// leaves through cfg.srv.on_record_out before this call returns.
+// leaves through cfg.srv.on_record_out before this call returns. The
+// read key changes after the ServerHello, so the hello must end its
+// record before anything goes out (hsr_check_record_end).
 static int server_flight(ch_record *r, const client_hello *ch, const selection *sel) {
     handshake_state *h = &r->hs;
-    int rc = srv_send_server_hello(h, ch, sel);
+    int rc = hsr_check_record_end(h);
+    if (rc != CH_OK) {
+        return rc;
+    }
+    rc = srv_send_server_hello(h, ch, sel);
     if (rc != CH_OK) {
         return rc;
     }
@@ -143,6 +149,13 @@ static int step_retry_hello(ch_record *r) {
 // application data before it has read the client's Finished.
 static int step_client_finished(ch_record *r) {
     int rc = srv_read_client_finished(&r->hs);
+    if (rc != CH_OK) {
+        return rc;
+    }
+    // The Finished must end its record, because the read key changes after
+    // it (hsr_check_record_end). srv_complete empties cfg.buf, so the
+    // check runs first.
+    rc = hsr_check_record_end(&r->hs);
     if (rc != CH_OK) {
         return rc;
     }

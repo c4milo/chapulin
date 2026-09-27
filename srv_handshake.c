@@ -44,6 +44,13 @@ static int retry_round(handshake_state *h, client_hello *ch, selection *sel) {
     if (rc != CH_OK) {
         return rc;
     }
+    // The read key changes after the ServerHello, so the second hello
+    // must end its record (hsr_check_record_end). The first hello needs
+    // no such check: the read key does not change between the two.
+    rc = hsr_check_record_end(h);
+    if (rc != CH_OK) {
+        return rc;
+    }
     return srv_send_server_hello(h, ch, sel);
 }
 
@@ -56,7 +63,8 @@ static int retry_round(handshake_state *h, client_hello *ch, selection *sel) {
 // change_cipher_spec sits at a different place in each: after the
 // HelloRetryRequest when there was one, and after the ServerHello when
 // there was not. srv_flight.h states why that beats one call site and a
-// flag.
+// flag. Each path checks that the hello it answers ends its record just
+// before its ServerHello, for the same reason.
 static int hello_exchange(handshake_state *h, client_hello *ch, selection *sel) {
     srv_begin(h);
     int rc = srv_read_client_hello(h, ch);
@@ -69,6 +77,12 @@ static int hello_exchange(handshake_state *h, client_hello *ch, selection *sel) 
     }
     if (sel->need_retry) {
         return retry_round(h, ch, sel);
+    }
+    // The read key changes after the ServerHello, so this hello must end
+    // its record (hsr_check_record_end).
+    rc = hsr_check_record_end(h);
+    if (rc != CH_OK) {
+        return rc;
     }
     rc = srv_send_server_hello(h, ch, sel);
     if (rc != CH_OK) {
@@ -103,7 +117,13 @@ static int auth_flight(handshake_state *h, const selection *sel) {
     if (rc != CH_OK) {
         return rc;
     }
-    return srv_read_client_finished(h);
+    rc = srv_read_client_finished(h);
+    if (rc != CH_OK) {
+        return rc;
+    }
+    // The read key changes after the client Finished, so the Finished must
+    // end its record (hsr_check_record_end) before srv_complete runs.
+    return hsr_check_record_end(h);
 }
 
 // The whole flight, first ClientHello to connected.

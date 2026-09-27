@@ -360,14 +360,15 @@ reports no `Read`. It leaves the session dead, except `error.Invalid`
 for an empty `pt` and `error.Proto` for a session that is not
 connected, which change nothing.
 
-`reply` takes what `ch_read` sends. It answers every KeyUpdate in the
-record that asks for an answer (RFC 9846 §4.7.3) with one sealed
-KeyUpdate record of `key_update_record_len`, 27 bytes, so a record with
-k such messages gets k answers. A read that fails adds one alert record
-of `alert_record_len`, 24 bytes. A KeyUpdate message is 5 bytes of the
-record's plaintext, so a `reply` of `key_update_record_len * (consumed /
-5) + alert_record_len` bytes is never short for a record of `consumed`
-bytes. A `reply` too short for what `ch_read` sends fails the read with
+`reply` takes what `ch_read` sends. It answers a KeyUpdate in the record
+that asks for an answer (RFC 9846 §4.7.3) with one sealed KeyUpdate
+record of `key_update_record_len`, 27 bytes. A record carries at most one
+KeyUpdate, as its last message: RFC 9846 §5.1 lets no handshake message
+span the key change a KeyUpdate makes, so `ch_read` refuses a record
+with bytes after one (INV-39). A read that fails adds one alert record
+of `alert_record_len`, 24 bytes. So a `reply` of
+`key_update_record_len + alert_record_len` bytes is never short. A
+`reply` too short for what `ch_read` sends fails the read with
 `error.Io` and the session with it.
 
 ### Writing and closing

@@ -1,0 +1,18 @@
+invariant: INV-39
+file: srv_handshake.c
+catches: tcp_blocking_loop_test
+reason: the tcp-blocking server completes on a client Finished that has
+  bytes after it in its record, and srv_complete drops them. RFC 9846
+  section 5.1 makes that unexpected_message. test/tcp_blocking_loop_test.c
+  seals the Finished with one byte after it and requires that alert.
+
+--- old
+    rc = srv_read_client_finished(h);
+    if (rc != CH_OK) {
+        return rc;
+    }
+    // The read key changes after the client Finished, so the Finished must
+    // end its record (hsr_check_record_end) before srv_complete runs.
+    return hsr_check_record_end(h);
+--- new
+    return srv_read_client_finished(h);

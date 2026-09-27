@@ -442,6 +442,11 @@ launch slow:5 noovf x25519_sqr 65 ""
 # reader as a contract stub that transcript384 proves (docs/decisions.md
 # 58). Measured the same way on 2026-09-24: psk 1808 properties in 179 s
 # at 4.76 GB, pin 1810 in 41 s at 3.55 GB.
+# The driver then checked that the ServerHello and the server Finished
+# each end their record (INV-39), and hsr_check_record_end joined the
+# stubbed reader as a stub of its contract, which answers both ways.
+# Measured the same way on 2026-09-27: psk 1831 properties in 261 s at
+# 4.29 GB, pin 1833 in 86 s at 2.40 GB.
 launch slow full handshake_psk 100 "fill_nondet.0:618,fill_buf_nondet.0:97,ct_wipe.0:449" handshake_auth.c handshake_flight.c buf.c ct.c
 launch slow full handshake_pin 100 "fill_nondet.0:618,fill_buf_nondet.0:97,ct_wipe.0:449" handshake_auth.c handshake_flight.c buf.c ct.c
 # ML-KEM's chained-product functions, one formula each; the inverse
@@ -830,7 +835,9 @@ launch fast full epoch 40 "" ct.c
 # lifetime of 0 is handed over (docs/decisions.md 72): 708 properties,
 # 230 to 236 s, and 3.85 and 5.68 GB peak on two runs
 # (PROVE_ONLY=handshake_post /usr/bin/time -l ./proof/run.sh slow), so
-# the weight is 6.
+# the weight is 6. With the assertion that a KeyUpdate rekeys only as the
+# last message of its input (INV-39): 709 properties, 120 and 125 s, and
+# 3.01 and 4.37 GB peak on two runs on 2026-09-27, so the weight stays 6.
 launch slow:6 full handshake_post 132 "handle_post_handshake.0:33,fill_nondet.0:130" --object-bits 11 buf.c ct.c session.c
 # The only launch line that builds the hybrid key exchange
 # (https://github.com/c4milo/chapulin/issues/47). hybrid_secret over any seed,
@@ -1589,8 +1596,10 @@ launch fast full quic_step_ca 5 "fill_nondet.0:37,ct_wipe.0:849" -DCH_TRANSPORT_
 # to 489 for the ML-KEM secret, and 871 properties, 29 s, 2.39 GB at 521 for
 # the P-256 scalar, and 876 properties, 33 s, 2.32 GB once srv_config_ok
 # asked srv_identities_usable, stubbed like the other two srv_auth.c
-# entries. The weight is 3 because that peak is over the fast tier's 2 GB
-# default.
+# entries. With hsr_check_record_end, the check before a key change,
+# stubbed beside them (INV-39): 894 properties, 84 s, 1.60 GB on a loaded
+# machine. The weight is 3 because the peaks above pass the fast tier's
+# 2 GB default.
 launch fast:3 full srv_accept 100 "alpn_ok.0:9,alpn_name_repeats.0:9,ct_wipe.0:521,ct_memeq.0:33,fill_names.0:257,fill_nondet.0:33" -DCH_ROLE_SERVER srv.c srv_handshake.c ct.c session.c
 # The ROLE=server tcp-nonblocking driver and the inbound framing under it, with
 # srv_accept's layering: srv_tcp_nonblocking.c and tcp_nonblocking_frame.c

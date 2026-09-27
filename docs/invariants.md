@@ -1322,7 +1322,8 @@ last `ROLE=server` stub, as the entry said it would.
   3-byte length leaves. The flight's own refusal of such an identity
   returns `CH_EAUTH` with internal_error, never `CH_EINVAL`
   (docs/decisions.md 74). INV-38 states the refusals of a `CH_TX_PT` or
-  a `record_size_limit` out of range.
+  a `record_size_limit` out of range, and INV-39 the refusal of a
+  message before a key change that does not end its record.
 - **Mechanism.** Fail-closed policy, each refusal an explicit branch
   with its alert.
 - **Check.** handshake_strict table cases per refusal; CBMC proves the
@@ -1735,6 +1736,102 @@ last `ROLE=server` stub, as the entry said it would.
   returns, leaving the rest of the container unread because "the
   length already bounds it".
 - See [decisions: Trust model](decisions.md#trust-model).
+
+### INV-39 — the message before a key change ends its record
+
+- **Claim.** RFC 9846 §5.1 says handshake messages MUST NOT span key
+  changes: an implementation MUST check that each message immediately
+  before a key change ends its record, and MUST end the connection with
+  unexpected_message when one does not (`rfc9846.txt:3464-3470`). Every
+  TCP read path keeps it, in both roles and on both TCP transports:
+  - a client refuses bytes after the ServerHello, before it derives the
+    handshake keys, and bytes after the server Finished, before it
+    commits a CA build's epoch or sends its own Finished;
+  - a server refuses bytes after a ClientHello it answers with a
+    ServerHello, before any ServerHello goes out, and bytes after the
+    client Finished, before `srv_complete` installs the application
+    read key;
+  - `ch_read`, in either role, refuses a KeyUpdate with bytes after it
+    in its record, before it rekeys or answers, so one record never gets
+    two KeyUpdate answers.
+
+  A ClientHello answered with a HelloRetryRequest precedes no key
+  change, because the read key does not change before the second
+  ClientHello, so nothing checks it; the second ClientHello is checked
+  like any hello a ServerHello answers. A KeyUpdate split across two
+  records under one key ends the second record, which is legal. QUIC
+  carries no records, and RFC 9001 §4.1.3 puts the rule on encryption
+  levels instead (`rfc9001.txt:488-493`): `quic.c`'s and `srv_quic.c`'s
+  `drive`, and `srv_quic.c`'s `step_client_finished`, refuse CRYPTO
+  bytes left unread at a level the session leaves with
+  PROTOCOL_VIOLATION, or 0x010a when they open a KeyUpdate.
+- **Mechanism.** `hsr_check_record_end` (`handshake_record.c`) answers
+  `CH_OK` when no handshake byte is unread, and otherwise writes
+  unexpected_message and returns `CH_EPROTO`. The four TCP drivers call
+  it at those points: `run` in `handshake.c`, `step_server_hello` and
+  `step_finished` in `tcp_nonblocking_step.c`, `hello_exchange`,
+  `retry_round` and `auth_flight` in `srv_handshake.c`, and
+  `server_flight` and `step_client_finished` in `srv_tcp_nonblocking.c`.
+  `srv_handshake.c` sends the ServerHello from two call sites, one per
+  hello path (`srv_flight.h` says why), and checks the hello just before
+  each. No byte unread means the message ended its record because both
+  TCP readers take a record whole and take the next one only while the
+  bytes they hold end in a partial message: `hsr_next_msg` fetches a
+  record only then, and a tcp-nonblocking driver runs every whole
+  message one record completes before it takes the next.
+  `handshake_record.h` states the one exception, the client's
+  HelloRetryRequest step, and why it refuses nothing legal.
+  `handle_post_handshake` (`handshake_post.c`) makes the same check on
+  its own input, `off + 4 + msg_len == n`, because `hspost_read` appends
+  a record only while its bytes end in a partial message, so `n` is
+  where the newest record ends.
+- **Check.** CBMC for the KeyUpdate: the `handshake_post` harness proves
+  that a KeyUpdate rekeys only as the last message of any input up to
+  128 bytes. The drivers' harnesses, `handshake_psk`, `handshake_pin`
+  and `srv_accept`, prove the drivers memory-safe over both answers of
+  the check, stubbed to its contract; the reassembly argument above
+  rests on reading, not on a proof. Boundary tests hold each check at
+  the record's end and one byte past it:
+  - `bin/unit` (`test/session_record_end_tests.h`) for the KeyUpdate:
+    one that ends its record is answered, and one with a byte after it,
+    two in one record, and one followed by the first byte of a ticket
+    whose rest comes under the next key are refused before any answer;
+    a KeyUpdate split across two records, and a ticket then a KeyUpdate
+    in one record, are read;
+  - `bin/tcp_nonblocking_loop_test`
+    (`test/tcp_nonblocking_record_end_tests.h`) for both tcp-nonblocking
+    drivers, and for the record colibri sent a connected server, two
+    KeyUpdates that each ask for an answer;
+  - `bin/tcp_blocking_loop_test` for both tcp-blocking drivers, each
+    run against the other role's flight handlers, and for the blocking
+    server's second ClientHello after a HelloRetryRequest, over hellos
+    `test/tcp_blocking_retry_tests.h` writes;
+  - `bin/quic_driver_test` and `bin/srv_quic_test` for the QUIC drivers'
+    level checks: a ServerHello and a ClientHello whose Initial delivery
+    carries one byte more get 0x0a, and the same deliveries without it
+    go on. `test/quic_loop_close.h` holds the server's check after the
+    client Finished.
+
+  Twelve violations, one per check, require those tests to fail:
+  `inv39-key-update-with-bytes-after-it`,
+  `inv39-tcp-blocking-server-hello-with-bytes-after-it`,
+  `inv39-tcp-blocking-finished-with-bytes-after-it`,
+  `inv39-tcp-nonblocking-server-hello-with-bytes-after-it`,
+  `inv39-tcp-nonblocking-finished-with-bytes-after-it`,
+  `inv39-srv-tcp-blocking-client-hello-with-bytes-after-it`,
+  `inv39-srv-tcp-blocking-retry-hello-with-bytes-after-it`,
+  `inv39-srv-tcp-blocking-client-finished-with-bytes-after-it`,
+  `inv39-srv-tcp-nonblocking-client-hello-with-bytes-after-it`,
+  `inv39-srv-tcp-nonblocking-client-finished-with-bytes-after-it`,
+  `inv39-quic-server-hello-with-bytes-after-it` and
+  `inv39-srv-quic-client-hello-with-bytes-after-it`;
+  `inv22-srv-quic-drops-bytes-after-finished` holds the QUIC server's
+  check after the client Finished.
+- **Violation.** A PR resets `cfg.buf` after a Finished because nothing
+  legal follows one, or handles every message in a record before it
+  looks at what the last one did to the keys, and a message that starts
+  under one key finishes under the next.
+- See [decisions: Protocol surface](decisions.md#protocol-surface).
 
 ## Timing
 

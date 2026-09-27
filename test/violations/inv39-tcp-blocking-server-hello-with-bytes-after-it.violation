@@ -1,0 +1,18 @@
+invariant: INV-39
+file: handshake.c
+catches: tcp_blocking_loop_test
+reason: the tcp-blocking client installs the handshake keys with bytes
+  still unread after the ServerHello in its record, and reads them as the
+  start of the next message under keys that never protected them. RFC 9846
+  section 5.1 makes that unexpected_message. test/tcp_blocking_loop_test.c
+  adds one byte to the ServerHello's record and requires that alert, in
+  the clear.
+
+--- old
+    // The read key changes after the ServerHello, so the ServerHello must
+    // end its record (hsr_check_record_end).
+    rc = hsr_check_record_end(h);
+    if (rc != CH_OK) {
+        return rc;
+    }
+--- new

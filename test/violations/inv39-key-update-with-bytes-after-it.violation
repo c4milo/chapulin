@@ -1,0 +1,15 @@
+invariant: INV-39
+file: handshake_post.c
+catches: unit
+reason: ch_read rekeys on a KeyUpdate that has bytes after it in its
+  record and reads on, in either role. colibri sent a server one record
+  holding two KeyUpdates and got two answers, and a message that starts
+  after a KeyUpdate finishes under the next key. RFC 9846 section 5.1
+  makes that unexpected_message. test/session_record_end_tests.h holds
+  the KeyUpdate that ends its record and the one with a byte after it.
+
+--- old
+        } else if (type == HS_KEY_UPDATE && msg_len == 1 && body[0] <= 1 &&
+                   off + 4 + msg_len == n) {
+--- new
+        } else if (type == HS_KEY_UPDATE && msg_len == 1 && body[0] <= 1) {

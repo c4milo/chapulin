@@ -1,0 +1,17 @@
+invariant: INV-39
+file: srv_tcp_nonblocking.c
+catches: tcp_nonblocking_loop_test
+reason: the tcp-nonblocking server answers a ClientHello that has bytes
+  after it in its record with a ServerHello, and reads those bytes under
+  the client's handshake key afterwards. RFC 9846 section 5.1 makes that
+  unexpected_message. test/tcp_nonblocking_record_end_tests.h adds one byte
+  to the ClientHello's record and requires that alert and no ServerHello.
+
+--- old
+    int rc = hsr_check_record_end(h);
+    if (rc != CH_OK) {
+        return rc;
+    }
+    rc = srv_send_server_hello(h, ch, sel);
+--- new
+    int rc = srv_send_server_hello(h, ch, sel);

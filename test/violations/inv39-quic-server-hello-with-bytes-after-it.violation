@@ -1,0 +1,17 @@
+invariant: INV-39
+file: quic.c
+catches: quic_driver_test
+reason: the QUIC client installs the Handshake keys and moves on with
+  Initial bytes still unread after the ServerHello, and a later message
+  would join them across the level change. RFC 9001 section 4.1.3 makes
+  that PROTOCOL_VIOLATION. Only step_complete's own KeyUpdate refusal
+  stood in for this check before, and it gives the same answer, so no
+  test objected to its removal. test/quic_driver_test.c delivers the
+  ServerHello with one byte after it and requires 0x0a.
+
+--- old
+        if ((q->rx_level != was || q->tx_len != 0) && (q->t.pt_off != q->t.pt_len || off != n)) {
+            return quic_fail(q, quic_refuse_unread(q));
+        }
+--- new
+        (void)was;

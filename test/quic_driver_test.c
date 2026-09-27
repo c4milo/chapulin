@@ -318,11 +318,38 @@ static void test_close_after_failure(void) {
                              sizeof pkt, &pkt_len) == CH_EINVAL);
 }
 
+// RFC 9001 §4.1.3 (INV-39): the ServerHello's Initial delivery with one
+// byte after it leaves Initial data unread when the Handshake keys
+// arrive, which is PROTOCOL_VIOLATION. The same delivery without the
+// byte installs the Handshake level.
+static void test_server_hello_ends_level(void) {
+    for (size_t extra = 0; extra <= 1; extra++) {
+        ch_cfg cfg;
+        uint8_t out[CH_TX_STAGE];
+        uint8_t sh[129];
+        size_t n = 0;
+        configure(&cfg);
+        CHECK(ch_quic_init(&q, &cfg) == CH_OK);
+        CHECK(ch_quic_crypto_out(&q, CH_LEVEL_INITIAL, out, sizeof out, &n) == CH_OK && n > 0);
+        size_t sh_len = build_server_hello(sh, sizeof sh - 1, SUITE_CHACHA20_POLY1305_SHA256);
+        sh[sh_len] = 0;
+        int rc = ch_quic_crypto_in(&q, CH_LEVEL_INITIAL, sh, sh_len + extra);
+        if (extra == 0) {
+            CHECK(rc == CH_OK && ch_quic_state(&q) == CH_ST_START);
+        } else {
+            CHECK(rc == CH_EPROTO && ch_quic_state(&q) == CH_ST_FAILED);
+            CHECK(ch_quic_error_code(&q) == 0x0a && ch_quic_alert(&q) == ALERT_UNEXPECTED_MESSAGE);
+        }
+        ch_quic_close(&q);
+    }
+}
+
 int main(void) {
     test_config_refusals();
     test_driver();
     test_server_hello_refused();
     test_close_after_failure();
+    test_server_hello_ends_level();
     if (failures == 0) {
         (void)printf("quic_driver: the driver stages, installs and refuses as quic.h states\n");
     }

@@ -2,9 +2,10 @@
 // (fragmented post-handshake messages, KeyUpdate both ways, close
 // semantics) and ch_connect's config validation. This file holds the
 // mock transport every one of those tests drives; the tests themselves
-// live in session_post_tests.h, session_write_tests.h and
-// session_cfg_tests.h, included at the bottom. Included by
-// test/unit_test.c only, after its CHECK macro and includes.
+// live in session_post_tests.h, session_record_end_tests.h,
+// session_write_tests.h and session_cfg_tests.h, included at the
+// bottom. Included by test/unit_test.c only, after its CHECK macro and
+// includes.
 #ifndef CH_SESSION_TESTS_H
 #define CH_SESSION_TESTS_H
 
@@ -100,6 +101,7 @@ static size_t mock_pop_client_record(mock_io *m, size_t at, rec_dir *reader, uin
 #include "rxbuf_floor_tests.h"
 #include "session_cfg_tests.h"
 #include "session_post_tests.h"
+#include "session_record_end_tests.h"
 #include "session_write_tests.h"
 
 #endif

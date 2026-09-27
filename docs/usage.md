@@ -187,8 +187,10 @@ how to cut and size its bytes:
   when your send buffer holds `cap` bytes. Both TCP transports export it.
 - `CH_ALERT_RECORD_LEN`, 24, is what `ch_close` sends, and what a failing
   `ch_read` sends. `CH_KEY_UPDATE_RECORD_LEN`, 27, is what `ch_read` sends
-  for each KeyUpdate that asks for an answer; a record that carries two
-  such messages gets two answers.
+  for each KeyUpdate that asks for an answer. A record carries at most
+  one KeyUpdate, as its last message (RFC 9846 §5.1), so a record gets
+  at most one answer, and a record with bytes after a KeyUpdate fails
+  the read.
 
 ## The server role and QUIC
 

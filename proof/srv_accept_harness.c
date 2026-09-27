@@ -192,6 +192,21 @@ int srv_read_client_finished(handshake_state *h) {
     return flight_result(h);
 }
 
+// handshake_record.c's check before a key change, to the contract
+// handshake_record.h states: CH_OK, or CH_EPROTO with
+// ALERT_UNEXPECTED_MESSAGE written first. The driver calls it before the
+// ServerHello and after the client Finished, and it is proven here
+// against both answers.
+int hsr_check_record_end(handshake_state *h) {
+    __CPROVER_assert(__CPROVER_w_ok(h, sizeof *h), "record end: state writable");
+    __CPROVER_assert(h->t != NULL, "record end: state points at a session");
+    if (nondet_u8() & 1) {
+        h->alert = ALERT_UNEXPECTED_MESSAGE;
+        return CH_EPROTO;
+    }
+    return CH_OK;
+}
+
 void srv_complete(handshake_state *h) {
     __CPROVER_assert(__CPROVER_w_ok(h, sizeof *h), "complete: state writable");
     flight_calls++;

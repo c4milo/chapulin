@@ -6,9 +6,11 @@
 #define CH_SESSION_WRITE_TESTS_H
 
 // What one ch_read sends in answer to KeyUpdates: CH_KEY_UPDATE_RECORD_LEN
-// bytes for each one whose sender asked for an answer, so one record that
-// carries two such messages gets two records back (tls.h). A caller that
-// sizes the bytes ch_read may send sizes them for that.
+// bytes for each one whose sender asked for an answer (tls.h). A record
+// carries at most one KeyUpdate, as its last message (INV-39), so two
+// such messages come in two records, each under the key the one before
+// it moved to, and get two records back. A caller that sizes the bytes
+// ch_read may send sizes them for that.
 static void test_key_update_replies(void) {
     uint8_t secret[SHA256_LEN];
     ch_rand_bytes(secret, sizeof secret);
@@ -18,13 +20,14 @@ static void test_key_update_replies(void) {
     static uint8_t rxbuf[1024];
     ch_tls t;
     mock_session(&t, &m, rxbuf, sizeof rxbuf, secret, NULL);
-    const uint8_t two_updates[10] = {24, 0, 0, 1, 1, 24, 0, 0, 1, 1};
-    mock_push(&m, &server, REC_HANDSHAKE, two_updates, sizeof two_updates);
-    // The client's read key moved twice; the data after follows it.
+    const uint8_t update_requested[5] = {24, 0, 0, 1, 1};
     uint8_t next[SHA256_LEN];
     memcpy(next, secret, sizeof next);
+    mock_push(&m, &server, REC_HANDSHAKE, update_requested, sizeof update_requested);
     rec_dir_update(next, &server);
+    mock_push(&m, &server, REC_HANDSHAKE, update_requested, sizeof update_requested);
     rec_dir_update(next, &server);
+    // The client's read key moved twice; the data after follows it.
     mock_push(&m, &server, REC_APPDATA, (const uint8_t *)"hola", 4);
     uint8_t out[16];
     CHECK(ch_read(&t, out, sizeof out) == 4);

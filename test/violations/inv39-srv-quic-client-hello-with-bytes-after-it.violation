@@ -1,0 +1,16 @@
+invariant: INV-39
+file: srv_quic.c
+catches: srv_quic_test
+reason: the QUIC server installs the Handshake keys after a ClientHello
+  whose delivery has Initial bytes left over and moves on, and a later
+  message would join them across the level change. RFC 9001 section
+  4.1.3 makes that PROTOCOL_VIOLATION. No test objected to this
+  check's removal before. test/srv_quic_test.c delivers the ClientHello
+  with one byte after it and requires 0x0a.
+
+--- old
+        if (q->rx_level != was && (q->t.pt_off != q->t.pt_len || off != n)) {
+            return quic_fail(q, quic_refuse_unread(q));
+        }
+--- new
+        (void)was;

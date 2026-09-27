@@ -93,6 +93,12 @@ static int run(handshake_state *h) {
     if (rc != CH_OK) {
         return rc;
     }
+    // The read key changes after the ServerHello, so the ServerHello must
+    // end its record (hsr_check_record_end).
+    rc = hsr_check_record_end(h);
+    if (rc != CH_OK) {
+        return rc;
+    }
     rc = hsf_derive_handshake_secrets(h, &info);
     if (rc != CH_OK) {
         return rc;
@@ -117,6 +123,13 @@ static int run(handshake_state *h) {
         }
     }
     rc = hsf_read_finished(h);
+    if (rc != CH_OK) {
+        return rc;
+    }
+    // And after the server Finished. The check runs before the epoch
+    // commit and the client Finished, so a refused flight moves no stored
+    // epoch and gets no Finished back.
+    rc = hsr_check_record_end(h);
     if (rc != CH_OK) {
         return rc;
     }

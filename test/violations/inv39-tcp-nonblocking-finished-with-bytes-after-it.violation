@@ -1,0 +1,17 @@
+invariant: INV-39
+file: tcp_nonblocking_step.c
+catches: tcp_nonblocking_loop_test
+reason: the tcp-nonblocking client completes on a server Finished that has
+  bytes after it in its record, and drops them when it resets cfg.buf for
+  ch_read. RFC 9846 section 5.1 makes that unexpected_message.
+  test/tcp_nonblocking_record_end_tests.h seals the Finished again with one
+  byte after it and requires that alert.
+
+--- old
+    // And after the server Finished, before the epoch commit and the
+    // client Finished, as handshake.c orders it.
+    rc = hsr_check_record_end(&r->hs);
+    if (rc != CH_OK) {
+        return rc;
+    }
+--- new

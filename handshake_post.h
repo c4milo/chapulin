@@ -59,7 +59,10 @@ static inline int hspost_ticket_age_ok(const ch_cfg *cfg) {
 // Reads whole post-handshake messages, starting from pt_len plaintext
 // bytes already in cfg.buf and pulling further records when one message
 // is fragmented across them. Returns CH_OK once the run is consumed, or
-// an error; the caller turns the error into an alert. A TRANSPORT=tcp-nonblocking
+// an error; the caller turns the error into an alert. A KeyUpdate with
+// bytes after it in its record is CH_EPROTO, which tls.c answers with
+// unexpected_message: RFC 9846 §5.1 lets no handshake message span the
+// key change a KeyUpdate makes (rfc9846.txt:3464-3470). A TRANSPORT=tcp-nonblocking
 // build also returns CH_RECORD_AGAIN when the next fragment has not
 // arrived: the fragment bytes so far stay at the front of cfg.buf,
 // t->post_fill counts them, and the caller passes that count back here

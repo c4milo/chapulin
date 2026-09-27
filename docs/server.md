@@ -733,6 +733,7 @@ is `illegal_parameter` (`rfc9846.txt:3789-3791`, with the description at
 | A ciphertext over 2^14 + 256, or a plaintext over 2^14 | `record_overflow` (22) | 3595-3598, 3644-3649 | 3595-3598 |
 | A `request_update` byte other than 0 or 1 | `illegal_parameter` (47) | 3362-3365 | 3362-3365 |
 | A KeyUpdate before the client's Finished | `unexpected_message` (10) | 3346-3349 | 3346-3349 |
+| A ClientHello answered with a ServerHello, the client Finished, or a KeyUpdate, with bytes after it in its record (INV-39) | `unexpected_message` (10) | 3464-3470 | 3464-3470 |
 
 Eight rows say "design's choice" and each one is defensible on its own line.
 `rfc9846.txt:1742-1744` reads "Servers MUST be prepared to receive ClientHellos
@@ -2225,7 +2226,7 @@ the record after the server's second handshake message on the retry path, and
 after the client had already sent its second ClientHello. Two call sites, one
 flag-free condition each, keep it a straight line.
 
-Three more points in that order deserve their own sentences.
+Four more points in that order deserve their own sentences.
 
 **A second HelloRetryRequest is unreachable by call position, and no RFC
 sentence forbids the server from sending one.** `rfc9846.txt:1469-1472` is a
@@ -2256,6 +2257,18 @@ visible instead of a flag hiding it.
 the peer's identity or liveness. `ch_write` before `ch_srv_accept` returns is
 not reachable through this API. Refusing the permission costs nothing and
 removes a state.
+
+**The message before each change of the read key must end its record.**
+RFC 9846 §5.1 makes a handshake message that spans a key change a connection
+error (`rfc9846.txt:3464-3470`), and the server's read key changes twice:
+after a ClientHello it answers with a ServerHello, and after the client
+Finished. `srv_handshake.c` checks the first on both hello paths, in
+`hello_exchange` and in `retry_round`, just before the ServerHello each one
+sends, and its `auth_flight` checks the second before `srv_complete` installs
+the application read key. `srv_tcp_nonblocking.c` checks the same two points
+in `server_flight` and `step_client_finished`. A ClientHello answered with a
+HelloRetryRequest is not checked: the read key does not change before the
+second ClientHello, so §5.1 asks nothing of it (INV-39).
 
 ### The direction swap, in three lines
 

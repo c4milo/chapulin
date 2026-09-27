@@ -82,6 +82,12 @@ static int step_server_hello(ch_record *r) {
     if (rc != CH_OK) {
         return rc;
     }
+    // The read key changes after the ServerHello, so the ServerHello must
+    // end its record (hsr_check_record_end).
+    rc = hsr_check_record_end(&r->hs);
+    if (rc != CH_OK) {
+        return rc;
+    }
     rc = hsf_derive_handshake_secrets(&r->hs, &info);
     if (rc != CH_OK) {
         return rc;
@@ -139,6 +145,12 @@ static int step_certificate_verify(ch_record *r) {
 static int step_finished(ch_record *r) {
     ch_tls *t = &r->t;
     int rc = hsf_read_finished(&r->hs);
+    if (rc != CH_OK) {
+        return rc;
+    }
+    // And after the server Finished, before the epoch commit and the
+    // client Finished, as handshake.c orders it.
+    rc = hsr_check_record_end(&r->hs);
     if (rc != CH_OK) {
         return rc;
     }

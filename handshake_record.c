@@ -209,6 +209,17 @@ int hsr_next_msg(handshake_state *h, uint8_t *type, const uint8_t **raw, size_t 
 }
 #endif // CH_TRANSPORT_QUIC_NONBLOCKING || CH_TRANSPORT_TCP_NONBLOCKING
 
+#ifndef CH_TRANSPORT_QUIC_NONBLOCKING
+int hsr_check_record_end(handshake_state *h) {
+    const ch_tls *t = h->t;
+    if (t->pt_off != t->pt_len) {
+        h->alert = ALERT_UNEXPECTED_MESSAGE;
+        return CH_EPROTO;
+    }
+    return CH_OK;
+}
+#endif
+
 #ifdef CH_TRANSPORT_QUIC_NONBLOCKING
 int hsr_peek_type(const handshake_state *h, uint8_t *type) {
     const ch_tls *t = h->t;

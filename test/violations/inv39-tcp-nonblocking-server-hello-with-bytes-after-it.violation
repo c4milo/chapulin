@@ -1,0 +1,17 @@
+invariant: INV-39
+file: tcp_nonblocking_step.c
+catches: tcp_nonblocking_loop_test
+reason: the tcp-nonblocking client installs the handshake keys with bytes
+  still unread after the ServerHello in its record, and reads them as the
+  next message under keys that never protected them. RFC 9846 section 5.1
+  makes that unexpected_message. test/tcp_nonblocking_record_end_tests.h
+  adds one byte to the ServerHello's record and requires that alert.
+
+--- old
+    // The read key changes after the ServerHello, so the ServerHello must
+    // end its record (hsr_check_record_end).
+    rc = hsr_check_record_end(&r->hs);
+    if (rc != CH_OK) {
+        return rc;
+    }
+--- new

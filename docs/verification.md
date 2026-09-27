@@ -718,7 +718,9 @@ The entries are grouped by area:
 - **Proves:** the driver stays safe on any record stream: HelloRetryRequest
   restart, the state machine, and the flight's own arithmetic, in PSK
   and pinned-key mode. Record reading and message reassembly are stubbed
-  to the contract [handshake_record](#handshake_record) proves.
+  to the contract [handshake_record](#handshake_record) proves, and the
+  check before a key change, `hsr_check_record_end`, to the contract
+  `handshake_record.h` states, so the driver meets both of its answers.
   Compiling them in multiplies this formula by the product of their loop
   bounds, beyond what any runner solves.
 - **Bound:** 96 B receive buffer.
@@ -903,8 +905,10 @@ The entries are grouped by area:
 
 - **Harness:** `handshake_post` (slow)
 - **Proves:** the post-handshake parser stays safe on hostile decrypted
-  bytes and consumes no more than its input, and hands `on_ticket` no
-  ticket whose `ticket_lifetime` is 0.
+  bytes and consumes no more than its input, hands `on_ticket` no
+  ticket whose `ticket_lifetime` is 0, and rekeys on a KeyUpdate only
+  when it is the last message of its input, the one RFC 9846 §5.1 lets
+  precede a key change (INV-39).
 - **Bound:** messages ≤ 128 B.
 
 ### Server
@@ -926,9 +930,9 @@ Every harness in this group builds the server role (`-DCH_ROLE_SERVER`).
 - **Bound:** ALPN offers ≤ 8 names of ≤ 32 B.
 - **Not proved:** any message this server writes. The fourteen
   `srv_flight.h` handlers, `srv_resume.h`'s ticket call, `srv_auth.h`'s
-  three entry points, `rec_seal` and `io_send_all` are contract stubs the
-  harness defines. [srv_flight](#srv_flight) is where those handlers are
-  real.
+  three entry points, `handshake_record.h`'s check before a key change,
+  `rec_seal` and `io_send_all` are contract stubs the harness defines.
+  [srv_flight](#srv_flight) is where those handlers are real.
 
 #### srv_kex
 
@@ -1159,7 +1163,7 @@ Every harness in this group builds the server role (`-DCH_ROLE_SERVER`).
   8-byte buffers. `proof/run.sh` records what was tried and the layered
   split it needs.
 - **Tested instead:** `bin/srv_tcp_nonblocking_test`,
-  `bin/tcp_nonblocking_loop_test` and two `.violation` mutants cover
+  `bin/tcp_nonblocking_loop_test` and four `.violation` mutants cover
   `srv_tcp_nonblocking.c` and `tcp_nonblocking_frame.c`.
 
 ### QUIC
@@ -1829,6 +1833,26 @@ alone (RFC 9846 §6.1), so the `ch_read` that reads the peer's returns 0,
 wipes the read key and sends nothing, and this side writes until its
 own `ch_close`. `bin/unit`, `bin/tcp_nonblocking_loop_test` and e2e's
 go-half-close leg test that (INV-22, INV-17), and no proof covers it.
+
+### The record boundary before a key change
+
+RFC 9846 §5.1 requires the message before a key change to end its
+record: the ServerHello and the server Finished on a client, the
+ClientHello a ServerHello answers and the client Finished on a server,
+and a KeyUpdate on either (INV-39). Each TCP driver checks it with
+`hsr_check_record_end`, which takes a message to be the last of its
+record when no handshake byte is left unread after it. That holds
+because each reader takes a new record only while the bytes it holds end
+in a partial message. No harness proves that property of the reassembly:
+the drivers' harnesses stub the check and prove them safe over both
+answers, and `handshake_record` proves the reader safe without tracking
+which record a byte came from. `handshake_post` proves the KeyUpdate
+half of the rule over its own input. The rest is tested: `bin/unit`,
+`bin/tcp_nonblocking_loop_test` and `bin/tcp_blocking_loop_test` hold
+each check at a record that ends with the message and at one byte more,
+`bin/quic_driver_test` and `bin/srv_quic_test` hold the QUIC drivers'
+level checks the same way, and twelve `.violation` mutants, one per
+check, require them to fail.
 
 ### Constant-time behavior
 

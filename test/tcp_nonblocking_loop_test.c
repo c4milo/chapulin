@@ -370,6 +370,7 @@ static int run_handshake(ch_record *client, ch_record *server, const ch_cfg *ccf
 #include "tcp_nonblocking_frame_tests.h"
 #include "tcp_nonblocking_group_tests.h"
 #include "tcp_nonblocking_read_tests.h"
+#include "tcp_nonblocking_record_end_tests.h"
 #include "tcp_nonblocking_resume_tests.h"
 
 int main(void) {
@@ -461,6 +462,11 @@ int main(void) {
     // The server's group order over hellos no client here writes.
     test_server_group_order();
 
+    // The message before each key change ends its record, on both ends.
+    server_config(&scfg);
+    client_config(&ccfg);
+    test_record_end(&client, &server, &ccfg, &scfg);
+
     if (failures == 0) {
         (void)printf("tcp_nonblocking_loop: a whole handshake over group 0x%04x in %d rounds,"
                      " 0 socket calls; both ends export one secret and log the same four;"
@@ -468,7 +474,8 @@ int main(void) {
                      " a wrong pin refused; a ticket resumes with no certificate, and a"
                      " stale one is refused; a close_notify closes one direction and ch_read"
                      " sends nothing; the server takes secp256r1 only when x25519 is not"
-                     " listed\n",
+                     " listed; each end refuses a message before a key change that does not"
+                     " end its record\n",
                      (unsigned)LOOP_GROUP, rounds);
         return 0;
     }

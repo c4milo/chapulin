@@ -192,6 +192,14 @@ static int handle_key_update(ch_tls *t, uint8_t request) {
 // NewSessionTicket and KeyUpdate exist here — and reports through used
 // how many bytes were consumed. A trailing partial message is not an
 // error; the caller reassembles across records.
+//
+// A KeyUpdate changes the read key, so it must end its record (RFC 9846
+// §5.1, rfc9846.txt:3464-3470), and one that does not is refused before
+// it rekeys or answers. pt[0..n) ends where the newest record ends:
+// hspost_read appends a record only while these bytes end in a partial
+// message, so every byte after a whole message came from the record that
+// holds that message's last byte. A KeyUpdate split across two records
+// under one key ends the second, which is legal.
 static int handle_post_handshake(ch_tls *t, const uint8_t *pt, size_t n, size_t *used) {
     size_t off = 0;
     while (n - off >= 4) {
@@ -204,11 +212,13 @@ static int handle_post_handshake(ch_tls *t, const uint8_t *pt, size_t n, size_t 
             break; // partial message, reassembled by the caller
         }
         const uint8_t *body = pt + off + 4;
-        int rc = CH_EPROTO; // any other message type, and any KeyUpdate
-                            // whose body is not the one legal byte
+        int rc = CH_EPROTO; // any other message type, any KeyUpdate whose
+                            // body is not the one legal byte, and any
+                            // KeyUpdate with bytes after it in its record
         if (type == HS_NEW_SESSION_TICKET) {
             rc = handle_ticket(t, body, msg_len);
-        } else if (type == HS_KEY_UPDATE && msg_len == 1 && body[0] <= 1) {
+        } else if (type == HS_KEY_UPDATE && msg_len == 1 && body[0] <= 1 &&
+                   off + 4 + msg_len == n) {
             rc = handle_key_update(t, body[0]);
         }
         if (rc != CH_OK) {

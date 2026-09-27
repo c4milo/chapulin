@@ -371,6 +371,18 @@ int hsr_next_msg(handshake_state *h, uint8_t *type, const uint8_t **raw, size_t 
     return CH_OK;
 }
 
+// The check before a key change, to the contract handshake_record.h
+// states. hsr_next_msg above leaves pt_off anywhere up to pt_len, so the
+// driver meets both answers.
+int hsr_check_record_end(handshake_state *h) {
+    __CPROVER_assert(__CPROVER_w_ok(h, sizeof *h), "record end: state writable");
+    if (h->t->pt_off != h->t->pt_len) {
+        h->alert = ALERT_UNEXPECTED_MESSAGE;
+        return CH_EPROTO;
+    }
+    return CH_OK;
+}
+
 int hsr_transcript_hash(handshake_state *h, size_t hash_len, uint8_t *out) {
     __CPROVER_assert(__CPROVER_w_ok(h, sizeof *h), "hash: state writable");
     __CPROVER_assert(hash_len == SHA256_LEN, "hash: the one hash this build holds");

@@ -1,0 +1,18 @@
+invariant: INV-39
+file: handshake.c
+catches: tcp_blocking_loop_test
+reason: the tcp-blocking client completes on a server Finished that has
+  bytes after it in its record, and drops them when it resets cfg.buf for
+  ch_read. RFC 9846 section 5.1 makes that unexpected_message.
+  test/tcp_blocking_loop_test.c seals the Finished again with one byte
+  after it and requires that alert.
+
+--- old
+    // And after the server Finished. The check runs before the epoch
+    // commit and the client Finished, so a refused flight moves no stored
+    // epoch and gets no Finished back.
+    rc = hsr_check_record_end(h);
+    if (rc != CH_OK) {
+        return rc;
+    }
+--- new
