@@ -166,7 +166,7 @@ fn Session(comptime side: Side, comptime receive_len: usize) type {
             self.hook = .{};
             self.peer_params = peer_params;
             self.peer_params_len = null;
-            if (side == .client) self.ticket = null;
+            self.zeroTicketSlot();
             if (side == .server) self.outgoing = null;
         }
 
@@ -202,10 +202,17 @@ fn Session(comptime side: Side, comptime receive_len: usize) type {
             return taken;
         }
 
+        /// Leaves the ticket slot null with every byte zero. Storing null
+        /// leaves the payload's bytes undefined: Zig 0.16.0's LLVM backend
+        /// writes zeros over them, and its own x86_64 backend, the default
+        /// for a Debug build on Linux x86_64, writes 0xAA over them. So the
+        /// null is stored first and the bytes zeroed after it, and the
+        /// assert holds that zero bytes read as null.
         fn zeroTicketSlot(self: *Self) void {
             if (side == .client) {
-                std.crypto.secureZero(u8, std.mem.asBytes(&self.ticket));
                 self.ticket = null;
+                std.crypto.secureZero(u8, std.mem.asBytes(&self.ticket));
+                std.debug.assert(self.ticket == null);
             }
         }
 

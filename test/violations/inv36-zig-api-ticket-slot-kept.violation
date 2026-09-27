@@ -1,15 +1,17 @@
 invariant: INV-36
 file: chapulin_record.zig
 catches: test/zig-build-check.sh
-reason: the record client's ticket slot is neither zeroed nor emptied, so
-  the resumption PSK stays in the session after takeTicket hands it out
-  and after recordClose, until the memory is reused, and a second
-  takeTicket returns it again. Nothing a session reports changes.
+reason: the record client's ticket slot is neither zeroed nor emptied, at
+  init or later, so the resumption PSK stays in the session after
+  takeTicket hands it out and after recordClose, until the memory is
+  reused, and a second takeTicket returns it again. Nothing a session
+  reports changes.
   loop_record.zig, which requires every byte of the slot to be zero after
   both calls, objects.
 
 --- old
-                std.crypto.secureZero(u8, std.mem.asBytes(&self.ticket));
                 self.ticket = null;
+                std.crypto.secureZero(u8, std.mem.asBytes(&self.ticket));
+                std.debug.assert(self.ticket == null);
 --- new
                 _ = self; // the slot keeps the ticket

@@ -393,7 +393,8 @@ caller calls `close` first.
 The ticket slot holds a resumption PSK. `takeTicket` returns the ticket
 and zeroes the slot with `std.crypto.secureZero`, and `recordClose` and
 the QUIC `close` zero it too, after the C call has wiped the session's
-keys. `on_ticket` zeroes the slot before it copies a newer ticket in.
+keys. `on_ticket` zeroes the slot before it copies a newer ticket in, and
+each init zeroes it before the C init call.
 
 ## QUIC sessions
 

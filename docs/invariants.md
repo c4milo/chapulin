@@ -1089,11 +1089,15 @@ last `ROLE=server` stub, as the entry said it would.
   `inv36-zig-api-ticket-drops-binding` zeroes a copied ticket's binding,
   so it no longer resumes; and `inv36-zig-api-ticket-slot-kept` leaves
   the resumption PSK in the slot after `takeTicket` and `recordClose`.
-  The slot's `std.crypto.secureZero` has no test of its own: in every
-  build measured, Debug and ReleaseFast, Zig 0.16.0 stored null by
-  writing zeros over the whole optional, so no test can tell the two
-  writes apart. The call keeps the rule for a compiler that stores the
-  optional's tag alone.
+  The slot's `std.crypto.secureZero` has no mutant of its own. Storing
+  null leaves an optional's payload undefined, and what Zig 0.16.0
+  writes there depends on the backend: LLVM wrote zeros in every mode
+  measured, and Zig's own x86_64 backend, the default for a Debug build
+  on Linux x86_64, wrote 0xAA. So dropping the call fails the loop only
+  on that backend, and a mutant that drops it would go uncaught on any
+  other host. The call keeps the rule for a backend that writes the
+  flag alone. It runs after the null store, because on the x86_64
+  backend the store overwrites zeros written before it.
 - **Violation.** A PR changes an axis in the Makefile and not in
   `build.zig`, or the reverse, or teaches the localizer a symbol it leaves
   global, or translates the module under other defines or headers than
