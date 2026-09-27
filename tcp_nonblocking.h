@@ -82,6 +82,11 @@ typedef struct ch_record {
     size_t tx_off;
 } ch_record;
 
+// The client's driver, the three calls below, is declared only in an
+// object with a client, which alone defines it (tcp_nonblocking.c). A
+// ROLE=server object declares srv_tcp_nonblocking.h's in its place, so
+// a server that calls one of these fails to compile rather than to link.
+#if !defined(CH_ROLE_SERVER) || defined(CH_ROLE_BOTH)
 // Prepares a session and stages its ClientHello. It reads the
 // configuration and draws this connection's key share, and it sends
 // nothing: the caller collects the hello with ch_record_out.
@@ -131,6 +136,7 @@ int ch_record_in(ch_record *r, uint8_t *p, size_t n, size_t *consumed);
 // progress. Returns CH_EINVAL on a session that failed or closed.
 // Neither changes the session, and neither writes *out_len.
 int ch_record_out(ch_record *r, uint8_t *out, size_t cap, size_t *out_len);
+#endif
 
 // CH_ST_START while the handshake runs, CH_ST_CONNECTED once it is done
 // and the session is ready for ch_read and ch_write, CH_ST_FAILED after

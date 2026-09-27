@@ -451,9 +451,13 @@ class Session {
         ch_close(&tls_);
     }
 
+#if (!defined(CH_ROLE_SERVER) || defined(CH_ROLE_BOTH)) && !defined(CH_TRANSPORT_TCP_NONBLOCKING)
+    // tls.h declares ch_connect only in a TRANSPORT=tcp-blocking object
+    // with a client, so this forwarder exists only there.
     Status connect(const Config &cfg) {
         return static_cast<Status>(ch_connect(&tls_, &cfg.raw()));
     }
+#endif
 
     Status write(ConstBytes data) {
         return static_cast<Status>(ch_write(&tls_, data.data, data.size));
@@ -550,11 +554,14 @@ class Quic {
         ch_quic_close(&quic_);
     }
 
+#if !defined(CH_ROLE_SERVER) || defined(CH_ROLE_BOTH)
     // Validates the config and stages the ClientHello; crypto_out hands
-    // those bytes out.
+    // those bytes out. quic.h declares the client's driver, this call
+    // and the two CRYPTO calls below, only in an object with a client.
     Status init(const Config &cfg) {
         return static_cast<Status>(ch_quic_init(&quic_, &cfg.raw()));
     }
+#endif
 
     // Installs the Initial keys from the Destination Connection ID. Call
     // it again after a Retry, with the server's Source Connection ID.
@@ -562,6 +569,7 @@ class Quic {
         return static_cast<Status>(ch_quic_initial_keys(&quic_, dcid.data, dcid.size));
     }
 
+#if !defined(CH_ROLE_SERVER) || defined(CH_ROLE_BOTH)
     // Delivers one level's CRYPTO bytes in order and runs the state
     // machine until it needs more.
     Status crypto_in(uint8_t level, ConstBytes bytes) {
@@ -575,6 +583,7 @@ class Quic {
         result.value = ch_quic_crypto_out(&quic_, level, into.data, into.size, &result.size);
         return result;
     }
+#endif
 
     // Protects one packet into into: hdr carries the packet number field
     // the caller encoded, pn_len says how many of its last bytes those

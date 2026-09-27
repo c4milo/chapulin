@@ -2913,12 +2913,14 @@ does nothing more.
       object, and neither does the example in docs/building.md.
     - **Per configuration.** Each file declares every call, and a call
       whose C name the object lacks is a `@compileError` naming the
-      option that adds it. The headers declare the client's
+      option that adds it. The headers declared the client's
       `ch_record_init` and `ch_quic_init` in a `ROLE=server` object too,
-      which defines neither, so the client sessions also require the
-      client's ticket call, which `ticket.h` declares by role. A TCP
-      object's `Error` lacks `Discard` and `AeadLimit`, whose codes only
-      a QUIC object's headers declare.
+      which defines neither, so the client sessions first required the
+      client's ticket call as well. Each header now declares a call only
+      in the objects that define it, which matches.zig holds (INV-36),
+      and the sessions ask for the call itself. A TCP object's `Error`
+      lacks `Discard` and `AeadLimit`, whose codes only a QUIC object's
+      headers declare.
     - **Error sets.** Each call's set is the part of `chapulin.Error` its
       C call returns, which a reading of every return path confirmed for
       the 22 calls that return a code. `fromCode` maps a code, and panics

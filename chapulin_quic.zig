@@ -6,10 +6,9 @@ const chapulin = @import("chapulin.zig");
 const c = chapulin.c;
 
 const has_quic = @hasDecl(c, "ch_quic_initial_keys");
-// quic.h declares ch_quic_init in a ROLE=server object too, which does not
-// define it. ticket.h declares the client's ticket call in an object with a
-// client alone.
-const has_client = @hasDecl(c, "ch_quic_init") and @hasDecl(c, "ch_ticket_obfuscated_age");
+// quic.h declares ch_quic_init only in an object with a client, which alone
+// defines it.
+const has_client = @hasDecl(c, "ch_quic_init");
 const has_server = @hasDecl(c, "ch_srv_quic_init");
 
 /// The encryption levels (cfg.h).

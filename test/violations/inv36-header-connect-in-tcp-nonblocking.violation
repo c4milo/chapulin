@@ -1,0 +1,15 @@
+invariant: INV-36
+file: tls.h
+catches: test/zig-build-check.sh
+reason: tls.h declares ch_connect by role alone again, so a
+  TRANSPORT=tcp-nonblocking client object, which defines no ch_connect
+  because it compiles no handshake.c, declares it too, and a program that
+  calls it compiles and then fails to link. matches.zig refuses to
+  compile against the h2 and tx-record objects.
+
+--- old
+#if (!defined(CH_ROLE_SERVER) || defined(CH_ROLE_BOTH)) && !defined(CH_TRANSPORT_TCP_NONBLOCKING)
+int ch_connect(ch_tls *t, const ch_cfg *cfg);
+--- new
+#if !defined(CH_ROLE_SERVER) || defined(CH_ROLE_BOTH)
+int ch_connect(ch_tls *t, const ch_cfg *cfg);

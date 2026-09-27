@@ -15,7 +15,9 @@ comptime {
     hooks.define(&.{c});
 }
 
-const has_client = @hasDecl(c, "ch_ticket_obfuscated_age");
+// A client role: the client entry point of the object's transport, which a
+// header declares only where the object defines it.
+const has_client = @hasDecl(c, "ch_connect") or @hasDecl(c, "ch_record_init") or @hasDecl(c, "ch_quic_init");
 const has_server = @hasField(c.ch_cfg, "srv");
 const has_webpki = @hasField(c.ch_cfg, "anchors");
 const has_alpn = @hasField(c.ch_cfg, "alpn_protocols");
@@ -245,9 +247,9 @@ test "every declaration this object has compiles" {
     if (@hasDecl(c, "ch_keylog")) compile(chapulin, &.{"hookContext"});
     const record = [_][]const u8{ "init", "recordIn", "recordState", "recordAlert", "read", "write", "writableLen", "close", "recordClose", "group", "pskSelected", "peerLimit", "readClosed", "replyLen" };
     const quic = [_][]const u8{ "init", "cryptoIn", "initialKeys", "keysReady", "peerTransportParams", "seal", "sealClose", "open", "retryOk", "keyUpdate", "keyPhase", "dropPreviousKeys", "discard", "state", "alert", "errorCode", "close", "alpnSelected", "group", "pskSelected" };
-    if (has_client and @hasDecl(c, "ch_record_init")) compileSession(chapulin.record.Client(c.CH_MIN_RXBUF), &(record ++ .{ "recordOut", "takeTicket" }));
+    if (@hasDecl(c, "ch_record_init")) compileSession(chapulin.record.Client(c.CH_MIN_RXBUF), &(record ++ .{ "recordOut", "takeTicket" }));
     if (@hasDecl(c, "ch_srv_record_init")) compileSession(chapulin.record.Server(c.CH_MIN_RXBUF), &(record ++ .{"sni"}));
-    if (has_client and @hasDecl(c, "ch_quic_init")) compileSession(chapulin.quic.Client(c.CH_MIN_RXBUF), &(quic ++ .{ "cryptoOut", "takeTicket" }));
+    if (@hasDecl(c, "ch_quic_init")) compileSession(chapulin.quic.Client(c.CH_MIN_RXBUF), &(quic ++ .{ "cryptoOut", "takeTicket" }));
     if (@hasDecl(c, "ch_srv_quic_init")) {
         compileSession(chapulin.quic.Server(c.CH_MIN_RXBUF), &(quic ++ .{"sni"}));
         compile(chapulin.quic, &.{ "retryTag", "tokenMint", "tokenCheck" });

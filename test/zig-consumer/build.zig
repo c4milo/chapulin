@@ -5,11 +5,12 @@
 //! program imports that dependency's module "chapulin", which carries the
 //! object. No program adds the object itself.
 //!
-//! - `zig build -Dobject=ROW -Dexport=NAME... -Dconstant=NAME...`
-//!   installs bin/matches, matches.zig built against one object, which
-//!   requires chapulin.c to declare each export and to declare and
-//!   evaluate each constant, and bin/unit, the tests in unit.zig built
-//!   against the same object.
+//! - `zig build -Dobject=ROW -Dexport=NAME... -Dimport=NAME...
+//!   -Dconstant=NAME...` installs bin/matches, matches.zig built against
+//!   one object, which requires chapulin.c to declare each export, to
+//!   declare no ch_ function the object neither exports nor imports, and
+//!   to declare and evaluate each constant, and bin/unit, the tests in
+//!   unit.zig built against the same object.
 //! - Adding `-Dloop` also installs bin/loop, loop.zig built against that
 //!   object, which must be ROLE=both: a client and a server of it run
 //!   against each other through the API. It reads the r2 chain, its
@@ -64,6 +65,7 @@ pub fn build(b: *std.Build) void {
         const imports = [_]Import{.{ .name = "chapulin", .dependency = chapulin }};
         const exports = b.addOptions();
         exports.addOption([]const []const u8, "names", b.option([]const []const u8, "export", "A name the object exports") orelse &.{});
+        exports.addOption([]const []const u8, "imports", b.option([]const []const u8, "import", "A ch_ name the object imports, a hook the image defines") orelse &.{});
         exports.addOption([]const []const u8, "constants", b.option([]const []const u8, "constant", "A length or cap a public header names") orelse &.{});
         const matches = program(b, "matches", target, optimize, &imports);
         matches.addOptions("exports", exports);

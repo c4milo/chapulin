@@ -22,7 +22,9 @@ pub const record = @import("chapulin_record.zig");
 /// QUIC sessions (TRANSPORT=quic-nonblocking).
 pub const quic = @import("chapulin_quic.zig");
 
-const has_client = @hasDecl(c, "ch_ticket_obfuscated_age");
+// A client role: the object's client entry point, whichever its transport.
+// Each header declares a call only in the objects that define it.
+const has_client = @hasDecl(c, "ch_connect") or @hasDecl(c, "ch_record_init") or @hasDecl(c, "ch_quic_init");
 const has_server = @hasField(c.ch_cfg, "srv");
 const has_webpki = @hasField(c.ch_cfg, "anchors");
 const has_alpn = @hasField(c.ch_cfg, "alpn_protocols");

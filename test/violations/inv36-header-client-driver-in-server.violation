@@ -1,0 +1,16 @@
+invariant: INV-36
+file: tcp_nonblocking.h
+catches: test/zig-build-check.sh
+reason: tcp_nonblocking.h declares the client's driver, ch_record_init,
+  ch_record_in and ch_record_out, in a ROLE=server object as well, which
+  defines none of the three, so a server program that calls one compiles
+  and then fails to link. matches.zig refuses to compile against the
+  h2-server object, whose chapulin.c then declares three ch_ calls the
+  object neither exports nor imports.
+
+--- old
+#if !defined(CH_ROLE_SERVER) || defined(CH_ROLE_BOTH)
+// Prepares a session and stages its ClientHello. It reads the
+--- new
+#if 1
+// Prepares a session and stages its ClientHello. It reads the

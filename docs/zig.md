@@ -96,12 +96,12 @@ for a `@compileError` declaration too.
 
 | Declaration | Present when the object has |
 |---|---|
-| `Client`, `Trust` | a client role (`ch_ticket_obfuscated_age`) |
+| `Client` | a client role: its transport's client entry point, `ch_connect`, `ch_record_init` or `ch_quic_init` |
 | `Server`, `EcdsaP256Identity`, `RsaPssIdentity`, `cert` | a server role (`ch_cfg.srv`) |
-| `record.Client` | `ch_record_init` and a client role |
+| `record.Client` | `ch_record_init` |
 | `record.Server` | `ch_srv_record_init` |
 | `record.alert_record_len`, `record.key_update_record_len` | `ch_record_whole_len` |
-| `quic.Client` | `ch_quic_init` and a client role |
+| `quic.Client` | `ch_quic_init` |
 | `quic.Server`, `quic.retryTag`, `quic.tokenMint`, `quic.tokenCheck`, `quic.TokenCheck` | `ch_srv_quic_init` |
 | `quic.Level`, `quic.Direction`, `quic.KeySet`, `quic.level_count` | `ch_quic_initial_keys` |
 | `Trust.web_pki`, `Trust.pins`, `trustAnchor`, `CertType`, `serverCertType` | `ch_cfg.anchors` (TRUST=webpki) |
@@ -114,10 +114,14 @@ for a `@compileError` declaration too.
 | `Error.Discard`, `Error.AeadLimit` | `CH_QUIC_DISCARD` (a QUIC object) |
 | a record session's `keyUpdate` | never: the name is reserved |
 
-A ROLE=server object's `tcp_nonblocking.h` and `quic.h` still declare
-the client's calls, which the object does not define, so the client
-sessions also need the client's ticket call. A value field an object
-lacks has type `void`, so a literal that sets it does not compile.
+Each public header declares a call only under the defines of the
+objects that define it, so `@hasDecl(chapulin.c, name)` answers whether
+the object has that call, and a program that calls one the object lacks
+fails to compile rather than to link. `matches.zig` holds that rule for
+every configuration the check builds (How it is checked). `Trust` is
+declared in every object; its variants are the trust mode's. A value
+field an object lacks has type `void`, so a literal that sets it does not
+compile.
 
 ## Values
 
@@ -516,8 +520,13 @@ alone: C writes the receive buffer through `cfg.buf`, and passes
 and stompy's (`TX_RECORD=16384`), each through the module alone
 (INV-36):
 
-- `matches.zig` requires `chapulin.c` to declare every export and the
-  build record to match, directly and through `buildMatches`.
+- `matches.zig` requires `chapulin.c` to declare every export, to
+  declare no `ch_` function the object neither exports nor imports (`nm
+  -u` lists the imports, the hooks), and the build record to match,
+  directly and through `buildMatches`. The second rule costs no time
+  the check can measure: with it and without it, a recompile of
+  `matches.zig` took 1.8 to 2.4 s and a warm run of the script 4.6 to
+  5.8 s on an M-series Mac at a load average near 20.
 - `unit.zig`, the API's unit tests: each value's `toCfg` against the
   `ch_cfg` written out field by field, the Ticket constructors and their
   bounds, the error of every code, and every declaration the object has,
@@ -549,5 +558,6 @@ and stompy's (`TX_RECORD=16384`), each through the module alone
   image, and computes a ticket's age through each object's call, directly
   and through `Client.toCfg`.
 
-Seven mutants in `test/violations/` break the API or the module, and the
-script catches each.
+Ten mutants in `test/violations/` break the API, the module, the
+headers it is translated from or the reverse check in `matches.zig`,
+and the script catches each. INV-36 names them.

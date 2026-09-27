@@ -11,10 +11,10 @@
 #include "io.h"
 
 // A ROLE=server build compiles nothing from here to the end of
-// ch_connect. tls.h declares ch_connect only when CH_ROLE_SERVER is unset,
-// and the definition has to follow the declaration: a server build
-// compiles no handshake.c, so a compiled ch_connect leaves ch_handshake
-// undefined and the packaged object cannot go into an executable at all.
+// ch_connect. tls.h declares ch_connect only in the objects that define
+// it: a server build compiles no handshake.c, so a compiled ch_connect
+// would leave ch_handshake undefined and the object could not go into an
+// executable at all, and a TRANSPORT=tcp-nonblocking one guards it below.
 // epoch_init is inside the guard because ch_connect is its only caller in
 // either trust mode. lib-check's import check holds the rule for every axis.
 #if !defined(CH_ROLE_SERVER) || defined(CH_ROLE_BOTH)

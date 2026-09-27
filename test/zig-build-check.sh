@@ -31,12 +31,15 @@
 # the object:
 #
 #   - matches.zig, which requires chapulin.c to declare every name the
-#     object exports, and the build record to equal what chapulin.c's
-#     translated types compute. Before it, tools/public-constants.py lists
-#     the lengths and caps the public headers' comments name in regions
-#     the object compiles, and fails when one is not defined for the
-#     consumer; matches.zig then requires chapulin.c to declare and
-#     evaluate each one.
+#     object exports, every function it declares under a ch_ name to be
+#     one the object exports or imports, which nm -u lists, and the build
+#     record to equal what chapulin.c's translated types compute. The
+#     second is what keeps a public header from declaring a call the
+#     object lacks, which a program would compile and fail to link.
+#     Before it, tools/public-constants.py lists the lengths and caps the
+#     public headers' comments name in regions the object compiles, and
+#     fails when one is not defined for the consumer; matches.zig then
+#     requires chapulin.c to declare and evaluate each one.
 #   - unit.zig, the API's unit tests: each value's toCfg field by field,
 #     the Ticket constructors, the error of every ch_err code, and every
 #     declaration the object has, compiled.
@@ -131,6 +134,12 @@ fail() {
 # The names an object exports, sorted, by lib-check's rule.
 exports() {
     nm -g "$1" | awk '$2 ~ /^[TDSBR]$/ {print $3}' | sed 's/^_//' | sort
+}
+
+# The ch_ names an object imports, sorted: the hooks the image defines.
+# nm -u prints the name alone on Mach-O and after a U on ELF.
+imports() {
+    nm -u "$1" | awk '{print $NF}' | sed 's/^_//' | grep '^ch_' | sort -u
 }
 
 # Words, one per line, sorted.
@@ -272,6 +281,7 @@ check() {
 
     local symbol declared=()
     for symbol in $(exports "$zig_obj"); do declared+=("-Dexport=$symbol"); done
+    for symbol in $(imports "$zig_obj"); do declared+=("-Dimport=$symbol"); done
     while read -r symbol; do declared+=("-Dconstant=$symbol"); done < "$out/$name/constants.txt"
     zig_row "$2" "$3" > "$out/$name/zig-row.txt"
     # A ROLE=both object has a client and a server to run against each
@@ -283,7 +293,7 @@ check() {
     consume "$name" "$out/$name" "-Dobject=$(cat "$out/$name/zig-row.txt")" "${declared[@]}"
     "$out/$name/bin/matches" ||
         fail "$name: the Zig object's build record disagrees with chapulin.c's types"
-    echo "lint-zig-build: $name: chapulin.c declares the object's exports and the $(wc -l < "$out/$name/constants.txt" | tr -d ' ') lengths its headers name, and has the types its build record describes"
+    echo "lint-zig-build: $name: chapulin.c declares the object's exports, no ch_ call the object lacks, and the $(wc -l < "$out/$name/constants.txt" | tr -d ' ') lengths its headers name, and has the types its build record describes"
     "$out/$name/bin/unit" > "$out/$name/unit.log" 2>&1 || {
         cat "$out/$name/unit.log" >&2
         fail "$name: the API's unit tests failed"

@@ -1,0 +1,13 @@
+invariant: INV-36
+file: test/zig-consumer/matches.zig
+catches: test/zig-build-check.sh
+reason: matches.zig's reverse check refuses the functions the object does
+  provide instead of the ones it lacks. A check that read no declaration
+  would pass this edit, so a failure here is what shows the walk over
+  chapulin.c runs the comparison: the default object's ch_connect stops
+  matches.zig from compiling.
+
+--- old
+        if (!provided(decl.name)) @compileError("chapulin.c declares " ++ decl.name ++ ", which the object neither exports nor imports");
+--- new
+        if (provided(decl.name)) @compileError("chapulin.c declares " ++ decl.name ++ ", which the object neither exports nor imports");

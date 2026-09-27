@@ -11,10 +11,9 @@ const std = @import("std");
 const chapulin = @import("chapulin.zig");
 const c = chapulin.c;
 
-// tcp_nonblocking.h declares ch_record_init in a ROLE=server object too,
-// which does not define it. ticket.h declares the client's ticket call in an
-// object with a client alone.
-const has_client = @hasDecl(c, "ch_record_init") and @hasDecl(c, "ch_ticket_obfuscated_age");
+// tcp_nonblocking.h declares ch_record_init only in an object with a client,
+// which alone defines it.
+const has_client = @hasDecl(c, "ch_record_init");
 const has_server = @hasDecl(c, "ch_srv_record_init");
 const has_record = @hasDecl(c, "ch_record_whole_len");
 

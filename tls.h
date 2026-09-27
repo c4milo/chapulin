@@ -16,12 +16,16 @@
 // before a byte is sent (docs/ca.md). Every other error comes from the
 // handshake, which first tries to send the alert its failure chose.
 //
-// A ROLE=server build declares it nowhere: that object exports
-// ch_srv_accept in its place (srv.h), so a server firmware that calls
-// ch_connect fails to compile rather than to link. The three calls
+// It is declared only where it is defined, in a TRANSPORT=tcp-blocking
+// object with a client. A ROLE=server object exports ch_srv_accept in
+// its place (srv.h), and a TRANSPORT=tcp-nonblocking one ch_record_init
+// (tcp_nonblocking.h), so a firmware that calls ch_connect against
+// either fails to compile rather than to link. A
+// TRANSPORT=quic-nonblocking object defines no call in this header, and
+// no header of that build includes it: quic.h is its API. The calls
 // below keep their contracts in both roles, because record.[ch] names
 // no side.
-#if !defined(CH_ROLE_SERVER) || defined(CH_ROLE_BOTH)
+#if (!defined(CH_ROLE_SERVER) || defined(CH_ROLE_BOTH)) && !defined(CH_TRANSPORT_TCP_NONBLOCKING)
 int ch_connect(ch_tls *t, const ch_cfg *cfg);
 #endif
 

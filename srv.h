@@ -13,9 +13,14 @@
 // writes application_data unconditionally and rec_open refuses any
 // other outer type. One name per thing, so a server's read is
 // ch_read. The two calls below are what a server adds, and
-// ch_connect is what it drops: tls.h declares that one only when
-// CH_ROLE_SERVER is unset, so a server firmware that calls it fails to
-// compile rather than to link.
+// ch_connect is what it drops: tls.h declares that one only in an
+// object with a client, so a server firmware that calls it fails to
+// compile rather than to link. The same rule holds across transports:
+// ch_srv_accept below is TRANSPORT=tcp-blocking's alone, the
+// non-blocking servers' calls are in srv_tcp_nonblocking.h and
+// srv_quic.h, and a TRANSPORT=quic-nonblocking build, which has no
+// record layer, includes no tls.h here and declares ch_srv_check
+// alone.
 //
 // What this build does not meet, stated here rather than discovered
 // later. RFC 9846 §9.1 requires TLS_AES_128_GCM_SHA256 and recommends
@@ -47,8 +52,11 @@
 #ifdef CH_ROLE_SERVER
 
 #include "cfg.h"
+#ifndef CH_TRANSPORT_QUIC_NONBLOCKING
 #include "tls.h"
+#endif
 
+#if !defined(CH_TRANSPORT_QUIC_NONBLOCKING) && !defined(CH_TRANSPORT_TCP_NONBLOCKING)
 // Runs the full handshake as the server, over a connection the caller
 // has already accepted and the same blocking I/O callbacks and
 // ch_rand_bytes a client build needs. On CH_OK the session is ready
@@ -92,7 +100,11 @@
 // declared yet, because no measurement exists: docs/server.md's
 // "Bounds that need measuring" names bench/sram.sh as what produces
 // it, and this header will state the number rather than an estimate.
+//
+// A TRANSPORT=tcp-blocking object alone defines it (srv.c), so no other
+// build declares it.
 int ch_srv_accept(ch_tls *t, const ch_cfg *cfg);
+#endif
 
 // Checks at boot that this build can sign with each provisioned
 // private key and that each result verifies under the public key in

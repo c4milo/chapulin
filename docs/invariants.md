@@ -1019,19 +1019,21 @@ last `ROLE=server` stub, as the entry said it would.
 ### INV-36 — build.zig packages the object `make lib` packages
 
 - **Claim.** For a configuration both builds accept, the object
-  `build.zig` produces compiles the same sources under the same defines
-  as `make lib`, exports the same names, and holds the same build record.
+  `build.zig` produces compiles the same sources under the same defines as
+  `make lib`, exports the same names, and holds the same build record.
   Every other symbol it defines is local, so one image links a Zig-built
   object of each of two transports, as it links make's. The module
   `chapulin` that the package exports is the Zig API, and it carries the
-  object, so a program that imports it links the object once and adds
-  none of its own. Its `chapulin.c` declares every name the object
-  exports, and its types have the layout the object's build record
-  describes. The API declares a Zig call for each C call it covers,
-  forwards to that call, maps each code the call returns to one error,
-  builds `ch_cfg` only from the fields each value names, and keeps no TLS
-  rule of its own: a record's length, a write's size and a ticket's age
-  come from the C calls that compute them.
+  object, so a program that imports it links the object once and adds none
+  of its own. Its `chapulin.c` declares every name the object exports, and
+  every function it declares under a `ch_` name is one the object exports
+  or imports, so a program that calls a function the object lacks fails to
+  compile rather than to link. Its types have the layout the object's
+  build record describes. The API declares a Zig call for each C call it
+  covers, forwards to that call, maps each code the call returns to one
+  error, builds `ch_cfg` only from the fields each value names, and keeps
+  no TLS rule of its own: a record's length, a write's size and a ticket's
+  age come from the C calls that compute them.
 - **Mechanism.** `build.zig` repeats the Makefile's axis blocks, one
   function per block, and writes the lists it compiles to `lib-srcs.txt`
   and `lib-def.txt`. `tools/localize_symbols.zig` makes every defined
@@ -1039,7 +1041,10 @@ last `ROLE=server` stub, as the entry said it would.
   for make, and refuses an object it cannot rewrite in full. translate-c
   makes `chapulin.c` from the headers that declare the object's exports
   and imports, under every `-D` of the one flag list the sources compile
-  with. `build.zig` copies `chapulin.zig`, `chapulin_record.zig` and
+  with. Each public header declares a call only under the defines of the
+  objects that define it: by role and by transport, as `tls.h`,
+  `tcp_nonblocking.h`, `quic.h` and `srv.h` guard their calls.
+  `build.zig` copies `chapulin.zig`, `chapulin_record.zig` and
   `chapulin_quic.zig` into a directory of the configuration's own, roots
   the module there, and adds the object to it with `addObjectFile`.
 - **Check.** `make lint-zig-build` runs `test/zig-build-check.sh`, which
@@ -1049,11 +1054,13 @@ last `ROLE=server` stub, as the entry said it would.
   make's defines, and links two Zig objects of different transports into
   one image and runs it. It builds `test/zig-consumer`, a Zig project
   that depends on the package and adds no object, against each object:
-  `matches.zig` compiles only when `chapulin.c` declares every export,
-  and runs `ch_build_matches` over its types; `unit.zig` checks each
-  value's `toCfg` against the `ch_cfg` written out field by field, the
-  Ticket constructors' bounds, the error of every code, and compiles
-  every declaration the object has; `loop.zig` runs a client and a server
+  `matches.zig` compiles only when `chapulin.c` declares every export
+  and declares no `ch_` function the object neither exports nor imports,
+  the imports those `nm -u` lists, and runs `ch_build_matches` over its
+  types; `unit.zig` checks each value's `toCfg` against the `ch_cfg`
+  written out field by field, the Ticket constructors' bounds, the
+  error of every code, and compiles every declaration the object has;
+  `loop.zig` runs a client and a server
   of each `ROLE=both` object against each other through the API alone,
   in record mode and over QUIC (`docs/zig.md`, "How it is checked"); and
   `pair.zig` imports the modules of two transports and starts a client on
@@ -1077,7 +1084,8 @@ last `ROLE=server` stub, as the entry said it would.
   comparison builds only values both builds accept, so
   `test/tx-record-builds.sh` holds `build.zig`'s `TX_RECORD` refusals to
   the Makefile's, and `inv36-zig-build-tx-record-past-2-14` requires it
-  to fail. Seven more break the API or the module, and
+  to fail. Ten more break the API, the module, the headers it is
+  translated from or the reverse check in `matches.zig`, and
   `test/zig-build-check.sh` catches each:
   `inv36-zig-module-drops-object` takes the object off the module, so
   every consumer program fails to link; `inv36-zig-api-drops-ticket-age`
@@ -1087,8 +1095,15 @@ last `ROLE=server` stub, as the entry said it would.
   `inv36-zig-api-auth-proto-swapped` swaps two codes in the error table;
   `inv36-zig-api-close-without-notify` closes without a close_notify;
   `inv36-zig-api-ticket-drops-binding` zeroes a copied ticket's binding,
-  so it no longer resumes; and `inv36-zig-api-ticket-slot-kept` leaves
-  the resumption PSK in the slot after `takeTicket` and `recordClose`.
+  so it no longer resumes; `inv36-zig-api-ticket-slot-kept` leaves
+  the resumption PSK in the slot after `takeTicket` and `recordClose`;
+  `inv36-header-client-driver-in-server` declares the client's driver in
+  `tcp_nonblocking.h` for a `ROLE=server` object, and
+  `inv36-header-connect-in-tcp-nonblocking` declares `ch_connect` in a
+  `TRANSPORT=tcp-nonblocking` one, which matches.zig refuses in each;
+  and `inv36-zig-reverse-check-inverted` turns that refusal around, so
+  the default object's `ch_connect` fails it, which shows the walk over
+  `chapulin.c` runs the comparison.
   The slot's `std.crypto.secureZero` has no mutant of its own. Storing
   null leaves an optional's payload undefined, and what Zig 0.16.0
   writes there depends on the backend: LLVM wrote zeros in every mode
@@ -1105,9 +1120,10 @@ last `ROLE=server` stub, as the entry said it would.
   see. For the API, a PR adds a rule C does not hold, such as a record
   length or a ticket age computed in Zig, maps a code to another error,
   sets a `ch_cfg` field no value names, or tells a program to add the
-  object the module already carries. The checks catch the change in each
-  configuration they build. A combination of values that neither list
-  builds is caught by nothing until a dependent builds it.
+  object the module already carries. For the headers, a PR declares a
+  call in an object that does not define it. The checks catch the change
+  in each configuration they build. A combination of values that
+  neither list builds is caught by nothing until a dependent builds it.
 - See [decisions: Engineering](decisions.md#engineering), entries 69, 70
   and 73.
 
