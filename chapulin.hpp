@@ -296,6 +296,18 @@ class Config {
         return *this;
     }
 
+#ifdef CH_RAND_SESSION
+    // The session's own randomness source, RAND=session builds only
+    // (docs/entropy.md): every draw the session makes calls fill(ctx, p,
+    // n), which must fill all n bytes from a CSPRNG and must not return
+    // when it cannot. Every init refuses a Config without one.
+    Config &rand_bytes(void (*fill)(void *ctx, uint8_t *p, size_t n), void *ctx) {
+        cfg_.rand_bytes = fill;
+        cfg_.rand_io = ctx;
+        return *this;
+    }
+#endif
+
     // The epoch a saved ticket was issued under (ch_ticket::epoch).
     // A resumed session presents no certificate, so this is the only
     // revocation check left: ch_connect refuses a ticket older than

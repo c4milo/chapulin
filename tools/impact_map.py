@@ -89,7 +89,8 @@ GATE_ROOTS = ["check-slow", "diff-ecdsa", "diff-pq", "diff-webpki",
 # violation names its leg.
 LIB_AXES = ["", "TRUST=ca-rsa", "TRUST=webpki",
             "TRUST=webpki TRANSPORT=tcp-nonblocking", "TRANSPORT=quic-nonblocking",
-            "TRUST=raw-ecdsa KEX=pq", "RAND=session TRUST=webpki TRANSPORT=tcp-nonblocking ROLE=both"]
+            "TRUST=raw-ecdsa KEX=pq", "RAND=session TRUST=webpki TRANSPORT=tcp-nonblocking ROLE=both",
+            "RAND=session"]
 
 
 # ---------------------------------------------------------------------------

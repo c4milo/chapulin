@@ -146,6 +146,11 @@ LIB_LEGS = [
          "the RAND=session object packages {path}, and lib-check holds it to "
          "name no ch_rand_bytes", ["test/lib-check-rand-session.sh"]),
     ]),
+    ("RAND=session", [
+        ("make lib-check cxx-check RAND=session",
+         "the default RAND=session object packages {path}, and the C++ "
+         "wrapper names each session's source through Config::rand_bytes", []),
+    ]),
 ]
 
 # What "everything" means, in the order to run it: the two tiers, then

@@ -2478,7 +2478,7 @@ CHECK_RUN_BINS := unit unit_ca unit_pq drbg_test softmul_test rsa_test rsa_sign_
                   handshake_strict_pq handshake_strict_webpki webpki_session_test webpki_resume_test \
                   webpki_resume_tcp_nonblocking x509strict x509strict_ecdsa \
                   ticket_epoch_tcp_nonblocking ticket_epoch_quic
-CHECK_LEGS := check-lib-drbg check-lib-session check-lib-extern check-examples check-lib-ca-rsa check-lib-ca-ecdsa \
+CHECK_LEGS := check-lib-drbg check-lib-session check-lib-session-cxx check-lib-extern check-examples check-lib-ca-rsa check-lib-ca-ecdsa \
               check-lib-webpki check-lib-webpki-tcp-nonblocking check-lib-webpki-widemul check-lib-tx-record \
               check-lib-quic check-lib-quic-webpki-both check-lib-server check-lib-server-tcp-nonblocking \
               check-lib-raw-ecdsa-pq check-lib-exporter check-lib-server-quic-keylog \
@@ -2584,6 +2584,13 @@ check-lib-drbg:
 check-lib-session:
 	@mkdir -p bin/check; $(CHECK_LEG_STAMP) $(MAKE) lib-check RAND=session TRUST=webpki TRANSPORT=tcp-nonblocking \
 	  ROLE=both > bin/check/$@.log 2>&1; $(CHECK_REPORT)
+# chapulin.hpp's Config::rand_bytes on a RAND=session object.
+# test/hpp_test.cpp connects over the tcp-blocking driver alone, so this
+# leg builds the default configuration, not the tcp-nonblocking one above,
+# and lib-check holds this object to the same no-hook rule.
+check-lib-session-cxx: bin/srv_flight_test
+	@mkdir -p bin/check; $(CHECK_LEG_STAMP) $(MAKE) lib-check cxx-check RAND=session > bin/check/$@.log 2>&1; \
+	  $(CHECK_REPORT)
 check-lib-extern: lint-zig-build bin/srv_flight_test
 	@mkdir -p bin/check; $(CHECK_LEG_STAMP) $(MAKE) lib-check cxx-check RAND=extern > bin/check/$@.log 2>&1; $(CHECK_REPORT)
 # The examples are pinned to TRUST=raw-rsa and TRANSPORT=tcp-blocking, whatever

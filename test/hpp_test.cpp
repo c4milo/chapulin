@@ -26,10 +26,36 @@ extern "C" [[noreturn]] void ch_assert_fail(const char *cond, const char *file, 
     std::abort();
 }
 
+#ifdef CH_RAND_SESSION
+// Under RAND=session the object imports no ch_rand_bytes: each Config
+// names this source with session_ctx as its context. It counts its draws
+// so a test can see the session drew from it, and a draw that arrives
+// without that context is a failure: Config::rand_bytes must pass both.
+static int session_ctx;
+static size_t session_draws = 0;
+static void session_fill(void *ctx, uint8_t *p, size_t n) {
+    CHECK(ctx == &session_ctx);
+    session_draws++;
+    for (size_t i = 0; i < n; i++) {
+        p[i] = static_cast<uint8_t>(i * 7 + 1);
+    }
+}
+#else
 extern "C" void ch_rand_bytes(uint8_t *p, size_t n) {
     for (size_t i = 0; i < n; i++) {
         p[i] = static_cast<uint8_t>(i * 7 + 1);
     }
+}
+#endif
+
+// Gives a test Config the session's source in a RAND=session build, and
+// does nothing in the others.
+static void with_source(chapulin::Config &cfg) {
+#ifdef CH_RAND_SESSION
+    cfg.rand_bytes(session_fill, &session_ctx);
+#else
+    (void)cfg;
+#endif
 }
 
 #ifndef CH_TRANSPORT_QUIC_NONBLOCKING
@@ -163,6 +189,7 @@ static void test_webpki_config(chapulin::Io io) {
     const uint8_t id[] = {'d', 'e', 'v', '1'};
     {
         chapulin::Config cfg(chapulin::Bytes{rxbuf}, io);
+        with_source(cfg);
         cfg.anchors(kAnchors).hostname({kHost, sizeof kHost}).now_seconds(1789000000U);
         CHECK(cfg.raw().anchors == kAnchors && cfg.raw().anchor_count == 2);
         CHECK(cfg.raw().hostname == kHost && cfg.raw().hostname_len == sizeof kHost);
@@ -172,6 +199,7 @@ static void test_webpki_config(chapulin::Io io) {
     }
     {
         chapulin::Config cfg(chapulin::Bytes{rxbuf}, io);
+        with_source(cfg);
         cfg.anchors(kAnchors, 1).hostname({kHost, sizeof kHost}).now_seconds(1789000000U);
         cfg.psk(chapulin::ConstBytes{psk, sizeof psk}, chapulin::ConstBytes{id, sizeof id});
         chapulin::Session s;
@@ -182,6 +210,7 @@ static void test_webpki_config(chapulin::Io io) {
         // passes, so connect reaches the transport.
         static const uint8_t pins[1][SHA256_LEN] = {{0x70}};
         chapulin::Config cfg(chapulin::Bytes{rxbuf}, io);
+        with_source(cfg);
         cfg.spki_pins(pins);
         CHECK(cfg.raw().spki_pins == &pins[0][0] && cfg.raw().spki_pin_count == 1);
         chapulin::Session s;
@@ -190,6 +219,7 @@ static void test_webpki_config(chapulin::Io io) {
     {
         // A ticket whose binding names nothing this config holds.
         chapulin::Config cfg(chapulin::Bytes{rxbuf}, io);
+        with_source(cfg);
         cfg.anchors(kAnchors, 1).hostname({kHost, sizeof kHost}).now_seconds(1789000000U);
         cfg.resume(chapulin::ConstBytes{psk, sizeof psk}, chapulin::ConstBytes{id, sizeof id}, 0)
             .ticket_binding(psk);
@@ -199,6 +229,7 @@ static void test_webpki_config(chapulin::Io io) {
     }
     {
         chapulin::Config cfg(chapulin::Bytes{rxbuf}, io);
+        with_source(cfg);
         cfg.anchors(kAnchors, 1).hostname({kHost, sizeof kHost}).now_seconds(1789000000U);
         cfg.pinned(chapulin::ConstBytes{psk, sizeof psk});
         chapulin::Session s;
@@ -206,6 +237,7 @@ static void test_webpki_config(chapulin::Io io) {
     }
     {
         chapulin::Config cfg(chapulin::Bytes{rxbuf}, io);
+        with_source(cfg);
         cfg.anchors(kAnchors, 1).hostname({kHost, sizeof kHost}).now_seconds(0);
         chapulin::Session s;
         CHECK(s.connect(cfg) == chapulin::Status::invalid);
@@ -215,6 +247,7 @@ static void test_webpki_config(chapulin::Io io) {
     // no selection. A name over CH_ALPN_NAME_MAX is refused.
     {
         chapulin::Config cfg(chapulin::Bytes{rxbuf}, io);
+        with_source(cfg);
         cfg.anchors(kAnchors, 1).hostname({kHost, sizeof kHost}).now_seconds(1789000000U);
         cfg.alpn(kAlpn);
         CHECK(cfg.raw().alpn_protocols == kAlpn && cfg.raw().alpn_count == 2);
@@ -224,6 +257,7 @@ static void test_webpki_config(chapulin::Io io) {
     }
     {
         chapulin::Config cfg(chapulin::Bytes{rxbuf}, io);
+        with_source(cfg);
         cfg.anchors(kAnchors, 1).hostname({kHost, sizeof kHost}).now_seconds(1789000000U);
         cfg.alpn(kAlpnTooLong, 1);
         chapulin::Session s;
@@ -232,6 +266,33 @@ static void test_webpki_config(chapulin::Io io) {
 }
 #else
 // The two auth modes this build has, through Config's typed calls.
+#if defined(CH_RAND_SESSION) && !defined(CH_TRUST_WEBPKI)
+// RAND=session through Config::rand_bytes: a PSK Config with no source
+// is refused before any byte is sent, and the same Config with a source
+// reaches I/O, having drawn the ClientHello's random and key share from
+// that source alone.
+static void test_session_source(chapulin::Io io) {
+    uint8_t psk[32];
+    std::memset(psk, 0x0b, sizeof psk);
+    const uint8_t id[] = {'d', 'e', 'v', '1'};
+    {
+        chapulin::Config cfg(chapulin::Bytes{rxbuf}, io);
+        cfg.psk(chapulin::ConstBytes{psk, sizeof psk}, chapulin::ConstBytes{id, sizeof id});
+        chapulin::Session s;
+        CHECK(s.connect(cfg) == chapulin::Status::invalid);
+    }
+    {
+        chapulin::Config cfg(chapulin::Bytes{rxbuf}, io);
+        cfg.rand_bytes(session_fill, &session_ctx);
+        cfg.psk(chapulin::ConstBytes{psk, sizeof psk}, chapulin::ConstBytes{id, sizeof id});
+        size_t before = session_draws;
+        chapulin::Session s;
+        CHECK(s.connect(cfg) == chapulin::Status::io);
+        CHECK(session_draws > before);
+    }
+}
+#endif
+
 static void test_psk_and_pinned_config(chapulin::Io io) {
     uint8_t psk[32];
     std::memset(psk, 0x0b, sizeof psk);
@@ -240,6 +301,7 @@ static void test_psk_and_pinned_config(chapulin::Io io) {
     // PSK mode: a valid config passes validation and dies at I/O.
     {
         chapulin::Config cfg(chapulin::Bytes{rxbuf}, io);
+        with_source(cfg);
         cfg.psk(chapulin::ConstBytes{psk, sizeof psk}, chapulin::ConstBytes{id, sizeof id});
         chapulin::Session s;
         CHECK(s.connect(cfg) == chapulin::Status::io);
@@ -251,6 +313,7 @@ static void test_psk_and_pinned_config(chapulin::Io io) {
         uint8_t pin[kPinLen];
         std::memset(pin, 0x03, sizeof pin);
         chapulin::Config cfg(chapulin::Bytes{rxbuf}, io);
+        with_source(cfg);
         cfg.pinned(chapulin::ConstBytes{pin, sizeof pin});
         chapulin::Session s;
         CHECK(s.connect(cfg) == chapulin::Status::io);
@@ -268,6 +331,7 @@ static void test_psk_and_pinned_config(chapulin::Io io) {
     // checks it against the group the ServerHello selects.
     {
         chapulin::Config cfg(chapulin::Bytes{rxbuf}, io);
+        with_source(cfg);
         cfg.psk(chapulin::ConstBytes{psk, sizeof psk}, chapulin::ConstBytes{id, sizeof id});
         cfg.require_pq(true);
         chapulin::Session s;
@@ -287,6 +351,7 @@ static void test_psk_and_pinned_config(chapulin::Io io) {
         std::memset(pin, 0x03, sizeof pin);
         std::memset(next, 0x05, sizeof next);
         chapulin::Config cfg(chapulin::Bytes{rxbuf}, io);
+        with_source(cfg);
         cfg.pinned(chapulin::ConstBytes{pin, sizeof pin});
         cfg.pinned_next(chapulin::ConstBytes{next, sizeof next});
         chapulin::Session s;
@@ -299,6 +364,7 @@ static void test_psk_and_pinned_config(chapulin::Io io) {
         uint8_t next[kPinLen];
         std::memset(next, 0x05, sizeof next);
         chapulin::Config cfg(chapulin::Bytes{rxbuf}, io);
+        with_source(cfg);
         cfg.pinned_next(chapulin::ConstBytes{next, sizeof next});
         chapulin::Session s;
         CHECK(s.connect(cfg) == chapulin::Status::invalid);
@@ -309,6 +375,7 @@ static void test_psk_and_pinned_config(chapulin::Io io) {
         uint8_t pin[kPinLen];
         std::memset(pin, 0x03, sizeof pin);
         chapulin::Config cfg(chapulin::Bytes{rxbuf}, io);
+        with_source(cfg);
         cfg.psk(chapulin::ConstBytes{psk, sizeof psk}, chapulin::ConstBytes{id, sizeof id});
         cfg.pinned(chapulin::ConstBytes{pin, sizeof pin});
         chapulin::Session s;
@@ -324,6 +391,7 @@ static void test_psk_and_pinned_config(chapulin::Io io) {
         ticket.age_add = 0xfffffff0U;
         CHECK(chapulin::ticket_obfuscated_age(ticket, 0x20) == 0x10U);
         chapulin::Config cfg(chapulin::Bytes{rxbuf}, io);
+        with_source(cfg);
         cfg.resume(chapulin::ConstBytes{psk, sizeof psk}, chapulin::ConstBytes{id, sizeof id},
                    chapulin::ticket_obfuscated_age(ticket, 60000));
         cfg.ticket_age(60000, 60);
@@ -357,6 +425,7 @@ static void level_ready(void *, uint8_t, uint8_t) {
 static void test_quic() {
     static const uint8_t kParams[] = {0x01, 0x02, 0x03};
     chapulin::Config cfg(chapulin::Bytes{rxbuf});
+    with_source(cfg);
     cfg.transport_params(chapulin::ConstBytes{kParams});
     cfg.on_level_ready(level_ready);
     cfg.context(nullptr);
@@ -417,6 +486,9 @@ int main() {
     test_webpki_config(io);
 #else
     test_psk_and_pinned_config(io);
+#ifdef CH_RAND_SESSION
+    test_session_source(io);
+#endif
 #endif
 #endif
 

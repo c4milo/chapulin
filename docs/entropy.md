@@ -102,7 +102,8 @@ Every init call and `ch_srv_check` return `CH_EINVAL` for a NULL
 `ch_rand_bytes`: a `RAND=session` object neither defines nor imports it,
 and `make lib-check` holds that. A Zig program sets `Client.random` and
 `Server.random` to a `std.Random`, and each session stores its own copy
-([zig.md](zig.md)).
+([zig.md](zig.md)). A C++ program calls `Config::rand_bytes(fill, ctx)`
+in `chapulin.hpp`, which sets the two fields.
 
 ## Layer the seed — never one source alone
 
