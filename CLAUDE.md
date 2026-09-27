@@ -156,7 +156,11 @@ Home: github.com/c4milo.
   the alert a failure chose and the peer's fatal alert; `tls.h` and
   `quic.h` include it, and `tls.c` and `quic.c` define its calls) ←
   demo/test mains. Firmware takes everything below
-  `tls.[ch]` as-is and supplies I/O callbacks and `ch_rand_bytes`. A Zig
+  `tls.[ch]` as-is and supplies I/O callbacks and `ch_rand_bytes`. A host
+  may build `RAND=session` instead: each session then names its own
+  source in `ch_cfg.rand_bytes` and `ch_cfg.rand_io`, the object neither
+  defines nor imports `ch_rand_bytes`, and every draw goes through
+  `rand_draw` in `rand_draw.h` (docs/decisions.md 77). A Zig
   project takes the same object through `build.zig`, whose options are
   the Makefile's variables, as the module `chapulin`: the Zig API below,
   which carries the object, with the public headers that translate-c
