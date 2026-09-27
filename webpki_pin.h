@@ -59,15 +59,16 @@ int webpki_verify_raw_key(const uint8_t *list, size_t list_len, const ch_cfg *cf
 
 // A Certificate message's CertificateEntry list under the X.509 type, for
 // a configuration with SPKI pins and no anchors (docs/decisions.md 65):
-// the list framed as the walk frames it (webpki_read_leaf_entry), and the
-// leaf, entry 0, read only as far as its key (webpki_read_certificate_key).
+// every entry framed as the walk frames it, with no cap on their count
+// (webpki_read_leaf_entry), and the leaf, entry 0, read only as far as its
+// key (webpki_read_certificate_key).
 // One of cfg's pins must name the leaf's whole SubjectPublicKeyInfo; a pin
 // on any other entry names nothing here. On CH_OK out carries the leaf's
 // key, with path_entries 1, the leaf alone, and anchor_index 0. The caller
 // seeds *alert with ALERT_BAD_CERTIFICATE; the call overwrites it only
 // when it knows better, with webpki_verify_chain's convention:
-//   framing, an entry count outside 1 to CH_WEBPKI_FLIGHT_ENTRIES,
-//   or malformed DER in the leaf        -> ALERT_BAD_CERTIFICATE, CH_EPROTO
+//   framing, an empty list, or malformed DER in the leaf
+//                                       -> ALERT_BAD_CERTIFICATE, CH_EPROTO
 //   a non-empty per-entry extensions vector -> ALERT_UNSUPPORTED_EXTENSION, CH_EPROTO
 //   a leaf key or signature algorithm the mode refuses
 //                                       -> ALERT_UNSUPPORTED_CERTIFICATE, CH_EPROTO

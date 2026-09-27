@@ -9,7 +9,9 @@
 //     second entry's key, a pin on nothing, and no pin
 //   - reframed: the first two entries swapped, a trailing byte, an
 //     extensions vector on the last entry, the list one byte short, and
-//     one entry past CH_WEBPKI_FLIGHT_ENTRIES
+//     entry 0 repeated one past CH_WEBPKI_FLIGHT_ENTRIES and
+//     DIFF_LEAF_COPIES times, which pins alone accept because they store
+//     no entry after the leaf
 //   - with DIFF_PIN_BYTES single bytes of the list changed, each under the
 //     leaf's pin, so a change after the key, which the rule never reads,
 //     is compared as accepted
@@ -30,6 +32,12 @@
 
 static long diff_leaf_rows;
 static long diff_leaf_accepted;
+
+// The longest reframe: the leaf and eight entries after it, the shape of
+// the QUIC Interop Runner's amplificationlimit chain.
+#define DIFF_LEAF_COPIES 9
+_Static_assert(DIFF_LEAF_COPIES > CH_WEBPKI_FLIGHT_ENTRIES + 1,
+               "the longest reframe runs past the walk's cap");
 
 // The C side: the key on acceptance, and otherwise the refusal's name. A
 // pair of return code and alert outside webpki_pin.h's table stops the
@@ -149,7 +157,7 @@ static void diff_leaf_frames(const uint8_t *list, size_t list_len) {
            diff_leaf_entry(list, list_len, count, &cert, &cert_len)) {
         count++;
     }
-    size_t order[CH_WEBPKI_FLIGHT_ENTRIES + 1] = {0};
+    size_t order[DIFF_LEAF_COPIES] = {0};
     wbuf w;
     if (count >= 2) {
         order[0] = 1;
@@ -170,11 +178,12 @@ static void diff_leaf_frames(const uint8_t *list, size_t list_len) {
     framed[list_len] = 0;
     diff_leaf_compare(framed, list_len + 1, pins, 1);
     diff_leaf_compare(list, list_len - 1, pins, 1);
-    for (size_t i = 0; i <= CH_WEBPKI_FLIGHT_ENTRIES; i++) {
-        order[i] = 0;
-    }
+    memset(order, 0, sizeof order);
     wb_init(&w, framed, sizeof framed);
     diff_leaf_rewrite(&w, list, list_len, order, CH_WEBPKI_FLIGHT_ENTRIES + 1, 0);
+    diff_leaf_compare(framed, w.len, pins, 1);
+    wb_init(&w, framed, sizeof framed);
+    diff_leaf_rewrite(&w, list, list_len, order, DIFF_LEAF_COPIES, 0);
     diff_leaf_compare(framed, w.len, pins, 1);
     if (w.err) {
         die("webpki_leaf: a reframed list over DIFF_PIN_LIST_MAX");

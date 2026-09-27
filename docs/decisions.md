@@ -2168,7 +2168,12 @@ does nothing more.
       signature is what proves the server holds the key.
     - **What is not read.** The chain above the leaf, the dates and the
       names, because there is no anchor, clock or hostname to check them
-      against. The list is framed by the walk's own framing, and the leaf
+      against. Every entry is framed by the walk's own framing, but only
+      the leaf is kept, so pins alone take any number of entries the
+      message holds, where the walk takes `CH_WEBPKI_FLIGHT_ENTRIES`. This
+      entry first kept the walk's cap of 4, which refused the QUIC Interop
+      Runner's amplificationlimit chain, a leaf under eight intermediates,
+      though no entry past the leaf is read. The leaf
       is read only as far as its key, by `webpki_cert.c`'s own field
       readers. The fields after the key are skipped as whole TLVs, so
       each container still ends where its fields end (INV-25), and their

@@ -1683,9 +1683,10 @@ Every harness in this group builds `TRANSPORT=quic-nonblocking`. The
   - a success has a framed first entry, hashed exactly the
     SubjectPublicKeyInfo the reader returned for it, matched one of the
     pins, and returns that key with a path of the leaf alone.
-- **Bound:** lists ≤ 24 B, which hold four one-byte entries and part of
-  a fifth. The key copy it shares with the raw rule is proved at the raw
-  rule's full bound, in [webpki_pin](#webpki_pin).
+- **Bound:** lists ≤ 30 B, which hold five one-byte entries, one past
+  the walk's `CH_WEBPKI_FLIGHT_ENTRIES`; pins alone store only the leaf,
+  so they cap no count. The key copy it shares with the raw rule is
+  proved at the raw rule's full bound, in [webpki_pin](#webpki_pin).
 - **Not proved:** which digests match. `Spec.WebpkiPin.verifyLeafPin_ok`
   states the rule over the real SHA-256, and
   `test/diff_webpki_leaf_pin.h` compares the two.

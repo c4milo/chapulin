@@ -28,7 +28,9 @@ reported, or of the anchor that ended it.
 
 `verifyLeafPin` is the third (docs/decisions.md 65): with pins and no
 anchors, an X.509 chain passes when a pin names the key of its first
-entry, the leaf, which is read only as far as that key. It answers the
+entry, the leaf, which is read only as far as that key. It frames every
+entry as the walk does but keeps only the leaf, so no count caps the
+entries (`readLeafEntries?`). It answers the
 key, `unpinned` when no pin names it, or `rejected` for every `CH_EPROTO`
 the C returns, the framing and the leaf's DER alike, as the walk's
 differential reports them; the unit tests pin each alert.
@@ -162,14 +164,22 @@ def LeafVerdict.name : LeafVerdict → String
   | .rejected => "rejected"
   | .unpinned => "unpinned"
 
+/-- The CertificateEntry list under pins alone: every entry framed as
+`readEntries?` frames it, with no `flightEntries` cap, because the rule
+keeps only the leaf (docs/decisions.md 65). An entry takes at least six
+bytes, so one more fuel than the list has bytes reads every entry the
+list can hold. -/
+def readLeafEntries? (list : ByteArray) : Option (List ByteArray) :=
+  entriesFrom (list.size + 1) list 0 []
+
 /-- A CertificateEntry list under the X.509 type and SPKI pins alone
-(RFC 7858 §4.2 and docs/decisions.md 65): framed as the walk frames it,
-and a pin that names the key of entry 0, the leaf, read only as far as
-that key. A pin on any other entry names nothing, because with no anchor
-and no name a pin on a CA key would accept any certificate that CA
-issued. -/
+(RFC 7858 §4.2 and docs/decisions.md 65): every entry framed as the walk
+frames it, any number of them, and a pin that names the key of entry 0,
+the leaf, read only as far as that key. A pin on any other entry names
+nothing, because with no anchor and no name a pin on a CA key would
+accept any certificate that CA issued. -/
 def verifyLeafPin (pins : List ByteArray) (list : ByteArray) : LeafVerdict :=
-  match readEntries? list with
+  match readLeafEntries? list with
   | some (leaf :: _) =>
     match certificateKey? leaf with
     | some (spki, alg, key) => if pinned pins spki then .ok alg key else .unpinned
@@ -177,13 +187,16 @@ def verifyLeafPin (pins : List ByteArray) (list : ByteArray) : LeafVerdict :=
   | _ => .rejected
 
 /-- The r2 chain under pins alone: accepted with a pin on its leaf's key,
-refused with a pin on the intermediate's key or on nothing, refused with
-the entries swapped, where the leaf's pin names entry 1, and refused for
-a framing the walk refuses. `certificateKey?` reads the leaf's key where
-`certificateSpki?` does. -/
+also with the leaf under eight copies of the intermediate, past the
+walk's `flightEntries`; refused with a pin on the intermediate's key or
+on nothing, refused with the entries swapped, where the leaf's pin names
+entry 1, and refused for a framing the walk refuses, on the ninth entry
+too. `certificateKey?` reads the leaf's key where `certificateSpki?`
+does. -/
 def leafSelftest (leafSpki leafPin other : ByteArray) : Bool :=
   let entry := fun (cert : ByteArray) => natToBytesBE cert.size 3 ++ cert ++ ByteArray.mk #[0, 0]
   let chain := entry r2Leaf ++ entry r2Issuer
+  let nine := (List.replicate 8 (entry r2Issuer)).foldl (· ++ ·) (entry r2Leaf)
   let issuerPin := match certificateSpki? 1 r2Issuer with
     | some b => Spec.Sha256.sha256 b
     | none => other
@@ -193,6 +206,8 @@ def leafSelftest (leafSpki leafPin other : ByteArray) : Bool :=
     (verifyLeafPin [other] chain).name == "unpinned" &&
     (verifyLeafPin [leafPin] (entry r2Issuer ++ entry r2Leaf)).name == "unpinned" &&
     (verifyLeafPin [leafPin] (chain ++ ByteArray.mk #[0])).name == "rejected" &&
+    (verifyLeafPin [leafPin] nine).name == "ok" &&
+    (verifyLeafPin [leafPin] (nine ++ ByteArray.mk #[0])).name == "rejected" &&
     (verifyLeafPin [leafPin] ByteArray.empty).name == "rejected"
 
 set_option compiler.extract_closed false in
@@ -224,13 +239,13 @@ def selftest (_ : Unit) : Bool :=
 ## Proofs
 -/
 
-/-- Soundness of the leaf rule: an accepted list frames as the walk frames
-it, and one of the pins is the SHA-256 of the SubjectPublicKeyInfo bytes
-`certificateKey?` reads out of its first entry, whose key is the one
-returned. -/
+/-- Soundness of the leaf rule: every entry of an accepted list frames as
+the walk frames it, and one of the pins is the SHA-256 of the
+SubjectPublicKeyInfo bytes `certificateKey?` reads out of its first
+entry, whose key is the one returned. -/
 theorem verifyLeafPin_ok (pins : List ByteArray) (list : ByteArray) (alg : KeyAlg)
     (key : ByteArray) (h_ok : verifyLeafPin pins list = .ok alg key) :
-    ∃ leaf rest spki, readEntries? list = some (leaf :: rest) ∧
+    ∃ leaf rest spki, readLeafEntries? list = some (leaf :: rest) ∧
       certificateKey? leaf = some (spki, alg, key) ∧
       pins.contains (Spec.Sha256.sha256 spki) = true := by
   unfold verifyLeafPin at h_ok

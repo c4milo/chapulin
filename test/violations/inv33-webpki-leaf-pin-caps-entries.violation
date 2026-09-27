@@ -1,0 +1,22 @@
+invariant: INV-33
+file: webpki.c
+catches: webpki_auth_test
+reason: under pins alone the list framing refuses a Certificate message
+  with more than CH_WEBPKI_FLIGHT_ENTRIES entries, the walk's cap, though
+  it stores no entry after the leaf. A server that sends a longer chain,
+  such as the leaf under eight intermediates of the QUIC Interop Runner's
+  amplificationlimit case, fails with bad_certificate although its leaf
+  key is pinned. test/webpki_leaf_pins.h's count rows, which want five
+  and nine entries accepted, object.
+
+--- old
+    while (rb_left(&r) > 0) {
+        const uint8_t *cert = NULL;
+        size_t cert_len = 0;
+--- new
+    for (size_t count = 1; rb_left(&r) > 0; count++) {
+        const uint8_t *cert = NULL;
+        size_t cert_len = 0;
+        if (count == CH_WEBPKI_FLIGHT_ENTRIES) {
+            return CH_EPROTO; // the walk's cap, though no entry is stored
+        }

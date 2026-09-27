@@ -1574,8 +1574,9 @@ last `ROLE=server` stub, as the entry said it would.
   `webpki_path_pinned` reads back only the first `path_entries` entries,
   each under the arm the walk parsed it under, then that anchor's key.
   With no anchors `webpki_server_key` calls `webpki_verify_leaf_pin`,
-  which frames the list with `webpki_read_leaf_entry`, the walk's own
-  framing, reads entry 0 with `webpki_read_certificate_key`, which stops
+  which frames every entry with `webpki_read_leaf_entry`, the walk's own
+  framing without its `CH_WEBPKI_FLIGHT_ENTRIES` cap, because it keeps
+  only the leaf, reads entry 0 with `webpki_read_certificate_key`, which stops
   after the SubjectPublicKeyInfo, and hashes that TLV alone.
   `webpki_spki_pinned` compares every pin through `ct_memeq` and does not
   stop at the first match. The key every rule accepts is the one
@@ -1604,8 +1605,10 @@ last `ROLE=server` stub, as the entry said it would.
   verdict, a signature the leaf key did not make included, and refuses a
   pin on the intermediate, the anchor's key or nothing with
   bad_certificate; it accepts leaves the walk refuses for a name, an
-  extension or a date, refuses a refused key, counts entry 0 alone and
-  refuses the walk's framing faults. bin/webpki_loop_tcp_nonblocking runs a leaf
+  extension or a date, refuses a refused key, counts entry 0 alone,
+  accepts five and nine entries, past the walk's cap, and refuses the
+  walk's framing faults on every entry, the ninth included.
+  bin/webpki_loop_tcp_nonblocking runs a leaf
   pin and an intermediate pin against this tree's tcp-nonblocking
   server, and test/e2e.sh against `openssl s_server`. The webpki_leaf_pin
   harness proves the call memory-safe and its verdict and alert pairs,
@@ -1623,7 +1626,7 @@ last `ROLE=server` stub, as the entry said it would.
   a pin on the leaf accepted and its ticket resumed under that pin alone,
   and a pin on the intermediate, the root or nothing refused. That server
   sends no raw public key, so the raw rule runs end to end over TCP
-  alone. Fifteen `inv33-` violations guard the rules.
+  alone. Nineteen `inv33-` violations guard the rules.
   inv33-quic-pins-ignored-on-chain and inv33-quic-pins-alone-leaf-refused
   change a QUIC build alone, which no TCP test sees, and require
   bin/quic_loop_webpki to fail.

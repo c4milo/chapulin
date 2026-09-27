@@ -1156,13 +1156,17 @@ launch fast full webpki_pin 5 "fill_nondet.0:557,ct_memeq.0:33,memcmp.0:33" -DCH
 # webpki_leaf_pin proves webpki_verify_leaf_pin, the rule for a chain
 # under SPKI pins alone (docs/decisions.md 65), apart from the other two
 # calls, whose formula is near its weight already. The list framing in
-# webpki.c is real over a 24-byte list, four one-byte entries and part of
-# a fifth, which the global unwind of 6 covers with the framing loop's
-# CH_WEBPKI_FLIGHT_ENTRIES and one; webpki_read_certificate_key is a stub
-# to what webpki_cert_key proves, and SHA-256 a stub that records what it
-# hashed. Under run.sh (cbmc 6.11.0, kissat, PROVE_NO_CACHE=1
-# /usr/bin/time -l): 1280 properties, 38 s, 1.7 GB. An assert of 0 at its
-# CH_OK tail fails that one assert, so the tail is reached.
+# webpki.c is real over a 30-byte list, five one-byte entries, one past
+# the walk's CH_WEBPKI_FLIGHT_ENTRIES. Pins alone store only the leaf, so
+# no count caps the framing loop, and the global unwind of 6 covers its
+# four entries after the leaf and the test that ends it.
+# webpki_read_certificate_key is a stub to what webpki_cert_key proves,
+# and SHA-256 a stub that records what it hashed. Under run.sh (cbmc
+# 6.11.0, kissat, PROVE_NO_CACHE=1 /usr/bin/time -l): 1269 properties,
+# 77 s, 1.6 GB, measured when the loop lost the count cap; 1280
+# properties, 38 s and 1.7 GB over 24 bytes before that. An assert at the
+# CH_OK tail that five one-byte entries are refused fails, so the tail is
+# reached with a list past the old cap.
 launch fast full webpki_leaf_pin 6 "fill_nondet.0:129,ct_memeq.0:33,memcmp.0:33" -DCH_TRUST_WEBPKI webpki.c buf.c ct.c
 launch fast:3 full x509der 452 "fill_nondet.0:449,ct_memeq.0:68" buf.c ct.c
 launch fast:3 full x509der_ecdsa 452 "fill_nondet.0:449,ct_memeq.0:68" buf.c ct.c

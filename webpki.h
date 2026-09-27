@@ -182,12 +182,14 @@ int webpki_verify_chain(const uint8_t *list, size_t list_len, const ch_cfg *cfg,
 int webpki_read_entry(rbuf *r, size_t cert_max, const uint8_t **cert, size_t *cert_len,
                       uint8_t *alert);
 
-// A whole CertificateEntry list, framed as the walk frames it: 1 to
-// CH_WEBPKI_FLIGHT_ENTRIES entries of 1 to CH_WEBPKI_CERT_MAX bytes, every
-// extensions vector empty, filling the list exactly. Returns CH_OK with
-// *leaf and *leaf_len naming entry 0, and reads no entry's content.
-// Otherwise CH_EPROTO, with *alert as webpki_read_entry sets it and
-// ALERT_BAD_CERTIFICATE for an empty list or one entry too many.
+// A whole CertificateEntry list, each entry framed as the walk frames it:
+// 1 to CH_WEBPKI_CERT_MAX bytes and an empty extensions vector, the
+// entries filling the list exactly. Unlike the walk it stores no entry
+// after the leaf, so it takes any number of entries the list holds, not
+// CH_WEBPKI_FLIGHT_ENTRIES at most. Returns CH_OK with *leaf and
+// *leaf_len naming entry 0, and reads no entry's content. Otherwise
+// CH_EPROTO, with *alert as webpki_read_entry sets it, which is
+// ALERT_BAD_CERTIFICATE for an empty list.
 // webpki_verify_leaf_pin reads a chain with it (webpki_pin.h). Defined in
 // webpki.c.
 int webpki_read_leaf_entry(const uint8_t *list, size_t list_len, const uint8_t **leaf,

@@ -1,0 +1,21 @@
+invariant: INV-33
+file: webpki.c
+catches: webpki_auth_test
+reason: under pins alone the list framing stops after
+  CH_WEBPKI_FLIGHT_ENTRIES entries and accepts whatever bytes follow, so
+  an entry past the fourth with an extensions vector, or a list cut short
+  inside one, passes where the walk's framing refuses it.
+  test/webpki_leaf_pins.h's rows on the ninth entry, which want
+  unsupported_extension and bad_certificate, object.
+
+--- old
+    while (rb_left(&r) > 0) {
+        const uint8_t *cert = NULL;
+        size_t cert_len = 0;
+--- new
+    for (size_t count = 1; rb_left(&r) > 0; count++) {
+        const uint8_t *cert = NULL;
+        size_t cert_len = 0;
+        if (count == CH_WEBPKI_FLIGHT_ENTRIES) {
+            return CH_OK; // the rest is not framed
+        }

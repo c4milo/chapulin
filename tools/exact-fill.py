@@ -111,6 +111,13 @@ WALKED = {
         "certificate bytes inside a trailing entry stay unparsed on purpose "
         "(docs/webpki.md, \"The chain walk\")"
     ),
+    ("webpki.c", "webpki_read_leaf_entry", "r"): (
+        "the loop runs while rb_left(&r) > 0 and every framing failure "
+        "returns, so a success means the entries filled the list. It frames "
+        "entry 0 before the loop and every later entry inside it, and keeps "
+        "none past the leaf, which is why no count bounds the loop "
+        "(docs/decisions.md 65)"
+    ),
     ("srv_parser.c", "srv_ext_duplicate", "r"): (
         "the loop runs while rb_left(&r) > 0 and every framing failure "
         "returns 0. It has no length of its own to compare: the block's "

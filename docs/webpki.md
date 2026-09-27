@@ -532,8 +532,11 @@ caller sets up to `CH_SPKI_PIN_MAX` (4) of them in `ch_cfg.spki_pins`.
   key then verifies CertificateVerify, as a leaf key does.
 - **A chain under pins alone** has no anchor, clock or hostname to check
   it against, so a pin must name the leaf's key and no other key counts.
-  The list is framed as the walk frames it, and the leaf, entry 0, is
-  read only as far as its SubjectPublicKeyInfo (`webpki_read_certificate_key`):
+  Every entry is framed as the walk frames it, but only the leaf is kept,
+  so the walk's `CH_WEBPKI_FLIGHT_ENTRIES` does not cap the count: the
+  16 KiB handshake message cap and the receive buffer do. The leaf,
+  entry 0, is read only as far as its SubjectPublicKeyInfo
+  (`webpki_read_certificate_key`):
   version, serial number, signature algorithm, issuer, validity, subject
   and key, each by the reader the walk uses, the dates for their shape
   alone. The extensions field, the outer signature algorithm and the
@@ -602,7 +605,7 @@ measured inputs, and the formula is given.
 | --- | --- | --- |
 | `CH_WEBPKI_CERT_MAX` | 3072 | measured: the largest captured certificate is the 2104 B S3 leaf |
 | `CH_WEBPKI_CHAIN_MAX` | 3 | measured: the Let's Encrypt capture needs 3 (leaf, YE2, Root YE, then the ISRG Root X2 anchor); the other three need 2 |
-| `CH_WEBPKI_FLIGHT_ENTRIES` | 4 | measured: Let's Encrypt sends 4 |
+| `CH_WEBPKI_FLIGHT_ENTRIES` | 4 | measured: Let's Encrypt sends 4; the walk's cap, which pins alone do not apply |
 | `CH_TRUST_MIN_RXBUF` | 12338 B | derived: `4 * (3072 + 5) + 8 + 22`, the largest Certificate message plus the record that completes it |
 | `CH_WEBPKI_ANCHOR_MAX` | 12 | measured: 9 roots cover the four endpoints above |
 | `CH_WEBPKI_EXT_COUNT_MAX` | 16 | measured: the S3 leaf carries 10 |
@@ -644,7 +647,9 @@ the two-name offer an HTTP caller sends.
 
 `CH_WEBPKI_FLIGHT_ENTRIES` is sized separately from the walk, because a
 server may append entries the walk never reads and every captured chain
-does. `CH_TRUST_MIN_RXBUF` follows the formula `cfg.h` uses for the ca
+does. Pins alone store only the leaf, so they apply no count cap, and a
+caller whose server sends a longer chain sizes the receive buffer to
+hold its whole Certificate message. `CH_TRUST_MIN_RXBUF` follows the formula `cfg.h` uses for the ca
 mode, widened from 2 entries to 4: the message's 8 bytes of framing, the
 cap + 5 per entry, and the 22 bytes of the record that completes the
 message — its header, its inner content type and its AEAD tag — which
