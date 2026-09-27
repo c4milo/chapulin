@@ -29,10 +29,19 @@
 // shorter length. Built with -DCH_TRUST_WEBPKI, so CH_RSA_MODULUS_MAX
 // is 512 as it is in the webpki object.
 //
+// The input is a heap object of exactly n bytes, as in webpki_cert_key,
+// so the reader reads no byte outside input[0..n): a read at input[n]
+// is a bounds failure whatever n is. CBMC gives the object n
+// unconstrained bytes. cbmc 6.11 gives each read at a symbolic offset
+// into a fixed-size array clauses in proportion to the array's length,
+// and the reader reads at offsets its length fields set.
+//
 // x509_der.c and its static helpers come in as their own translation
 // unit on the launch line: webpki_spki.c has a static of the same
 // name, so the two cannot share this one.
 #include "harness.h"
+
+#include <stdlib.h>
 
 #include "buf.h"
 #include "rsa.h"
@@ -54,10 +63,10 @@
 #define P384_SPKI_LEN (2 + sizeof algid_p384 + 2 + 1 + 1 + 2 * P384_COORDINATE_LEN)
 
 int main(void) {
-    uint8_t input[CH_WEBPKI_CERT_MAX];
-    fill_nondet(input, sizeof input);
     size_t n = nondet_size_t();
-    __CPROVER_assume(n <= sizeof input);
+    __CPROVER_assume(n <= CH_WEBPKI_CERT_MAX);
+    uint8_t *input = malloc(n);
+    __CPROVER_assume(input != NULL);
     rbuf r;
     rb_init(&r, input, n);
 
@@ -69,6 +78,7 @@ int main(void) {
     out.key_len = nondet_size_t();
 
     if (!webpki_read_spki(&r, &out)) {
+        free(input);
         return 0;
     }
     __CPROVER_assert(!r.err, "spki success leaves err clear");
@@ -95,5 +105,6 @@ int main(void) {
         __CPROVER_assert(consumed == P384_SPKI_LEN,
                          "a p384 spki is its canonical encoding's length");
     }
+    free(input);
     return 0;
 }

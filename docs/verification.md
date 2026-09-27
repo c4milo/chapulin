@@ -1434,6 +1434,8 @@ Every harness in this group builds `TRANSPORT=quic-nonblocking`. The
 - **Harness:** `webpki_spki` (fast)
 - **Proves:** `webpki_read_spki` over any bytes, with the real DER
   primitives:
+  - it reads no byte outside the input, a heap object of exactly its
+    length;
   - a success leaves the reader's error clear and consumes exactly the
     length of the returned key's canonical encoding, at most 550 bytes
     (the largest SubjectPublicKeyInfo the modulus check admits). Every
@@ -1456,8 +1458,9 @@ Every harness in this group builds `TRANSPORT=quic-nonblocking`. The
 
 - **Harness:** `webpki_sigalg` (fast)
 - **Proves:**
-  - `webpki_read_sigalg` over any bytes: a success yields one of the
-    four algorithms and consumes exactly its encoding.
+  - `webpki_read_sigalg` over any bytes in a heap object of exactly
+    their length: it reads no byte past the end, and a success yields
+    one of the four algorithms and consumes exactly its encoding.
   - `webpki_verify` over any certificate and signer, with the key in an
     anchor buffer or in the certificate buffer, and both hashes and the
     three verifiers stubbed to their contracts:
@@ -1575,6 +1578,9 @@ Every harness in this group builds `TRANSPORT=quic-nonblocking`. The
   (`webpki_read_sigalg`, `webpki_read_time`, `webpki_read_spki`,
   `webpki_read_extensions`) stubbed to the contracts their own harnesses
   prove and the DER primitives real:
+  - it reads no byte outside the certificate, a heap object of exactly
+    its length, so a read one past the end fails a bounds check at any
+    length;
   - it returns `CH_OK` or `CH_EPROTO`, and a refusal leaves
     `ALERT_BAD_CERTIFICATE` or sets `ALERT_UNSUPPORTED_CERTIFICATE`;
   - a success leaves the alert untouched and is at most
@@ -1586,7 +1592,9 @@ Every harness in this group builds `TRANSPORT=quic-nonblocking`. The
     range, and is_ca is the arm normalized to 0 or 1 with that arm's
     extensions seen.
 
-  Asserting 0 at the success tail fails, so the tail is reached.
+  Asserting at the success tail that the length is under
+  `CH_WEBPKI_CERT_MAX` fails, so a certificate at the cap reaches the
+  tail.
 - **Bound:** certificates ≤ 3,073 B, the real bound and the first length
   refused.
 - **Not proved:** the stubbed `webpki_read_extensions` contract past
@@ -1653,6 +1661,7 @@ Every harness in this group builds `TRANSPORT=quic-nonblocking`. The
   UB-free over any input at their real bounds, and hold
   `webpki_pin.h`'s contracts:
   - `webpki_verify_raw_key`, the rule for an RFC 7250 raw public key,
+    reads no byte outside the list, a heap object of exactly its length,
     returns `CH_OK`, `CH_EPROTO` or `CH_EAUTH` with an alert from
     `webpki_pin.h`'s table, and a refusal leaves the output as it was.
     `CH_OK` means the list is one CertificateEntry (its u24 length, that

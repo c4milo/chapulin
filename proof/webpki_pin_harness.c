@@ -37,11 +37,20 @@
 // ct.c are on the launch line. The walk in webpki.c is in the goto model
 // and unreached, so its callees need no stub.
 //
+// The raw list is a heap object of exactly list_len bytes, as in
+// webpki_cert_key, so webpki_verify_raw_key reads no byte past its end.
+// CBMC gives the object unconstrained bytes. cbmc 6.11 gives each read
+// at a symbolic offset into a fixed-size array clauses in proportion to
+// the array's length, and the call reads the extensions length at an
+// offset the entry's length sets. The path half's 24-byte list stays a
+// fixed array.
+//
 // Not proved here: that a digest names the key it was taken over. The
 // stub answers any digest; spec/lean/Spec/WebpkiPin.lean states the rule over
 // the real SHA-256 and the differential compares the two.
 #include "harness.h"
 
+#include <stdlib.h>
 #include <string.h>
 
 #include "buf.h"
@@ -187,10 +196,10 @@ static int digest_pinned(const uint8_t *pins, size_t count) {
 }
 
 static void prove_raw_key(ch_cfg *cfg, const uint8_t *pins) {
-    static uint8_t list[RAW_LIST_LEN];
-    fill_nondet(list, sizeof list);
     size_t list_len = nondet_size_t();
-    __CPROVER_assume(list_len <= sizeof list);
+    __CPROVER_assume(list_len <= RAW_LIST_LEN);
+    uint8_t *list = malloc(list_len);
+    __CPROVER_assume(list != NULL);
     webpki_leaf_info out;
     __CPROVER_havoc_object(&out);
     const webpki_leaf_info before = out;
@@ -217,6 +226,7 @@ static void prove_raw_key(ch_cfg *cfg, const uint8_t *pins) {
             out.alg == before.alg && out.key_len == before.key_len && out.key[i] == before.key[i] &&
                 out.path_entries == before.path_entries && out.anchor_index == before.anchor_index,
             "raw: a refusal leaves out as it was");
+        free(list);
         return;
     }
     size_t entry_len = ((size_t)list[0] << 16) | ((size_t)list[1] << 8) | list[2];
@@ -234,6 +244,7 @@ static void prove_raw_key(ch_cfg *cfg, const uint8_t *pins) {
                      "raw: the key is one of the three algorithms and fits");
     __CPROVER_assert(out.path_entries == 0 && out.anchor_index == 0,
                      "raw: a raw public key has no path");
+    free(list);
 }
 
 static void prove_path_pinned(ch_cfg *cfg) {

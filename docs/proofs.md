@@ -124,6 +124,35 @@ its buffer -- handshake_record_harness.c's `fill_buf_nondet` and now
 handshake_harness.c's -- and check `--dimacs`'s header rather than
 the source to know which case a fill is in.
 
+**Give a reader a long input as a heap object when it reads few of
+the input's bytes at symbolic offsets.** A read at a symbolic offset
+into a fixed-size array costs clauses in proportion to the array's
+length, with `--arrays-uf-always` or without it. A read from
+`malloc(n)`, with `n` nondet up to the bound, costs clauses in
+proportion to the object's other reads at symbolic offsets instead, not
+to `n`, so the reads together cost about the square of their number;
+and a read at `p[n]` fails a bounds check whatever `n` is, which a
+longer array cannot give. On a 448-byte input, two reads made 99,598
+clauses from a filled array and 3,377 from the heap object; 128 reads
+made 6.4 million and 3.9 million. A certificate reader reads a few
+header bytes of a long input at offsets its length fields set, and there
+the heap object costs far less: webpki_cert_key went from 78 million
+clauses and 9.1 GB to 0.8 million and 0.44 GB, webpki_cert from 21.3
+million clauses and 4.5 GB to 1.3 million and 0.7 GB, and webpki_spki
+from 8.9 million and 2.1 GB to 0.36 million and 0.09 GB.
+
+It costs more where a call reads the input at hundreds of symbolic
+offsets: webpki_name's shape check and dNSName compare read a host of
+up to 253 bytes at every position from an offset they compute, and as
+heap objects they wrote 41.5 million clauses against 14.8 million and
+returned no verdict in 30 minutes, where the fixed arrays prove in
+208 s. And fewer clauses do not always make a cheaper solve:
+webpki_san's entry reader over 1,024 bytes wrote 3.8 million clauses
+against 6.5 million and took 317 s of CPU against 209 s, and x509der's
+primitives over 448 bytes wrote 6.5 million against 8.6 million and
+peaked at 4.9 GB against 2.5 GB. So measure both forms under run.sh
+before choosing one.
+
 **A solver's peak is not a property of the formula alone.** kissat
 solved one intermediate form of the psk driver formula six times -- two
 cbmc builds, three DIMACS orderings of the same 28.0 M clauses -- and

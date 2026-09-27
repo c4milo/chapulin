@@ -1,6 +1,7 @@
-// Proves: webpki_parse_certificate (webpki_cert.c) is memory-safe and
-// UB-free over any bytes up to one past CH_WEBPKI_CERT_MAX and any arm
-// value, and its result contract holds. It returns CH_OK or CH_EPROTO.
+// Proves: webpki_parse_certificate (webpki_cert.c) reads no byte outside
+// cert[0..n) and is UB-free for every n up to one past
+// CH_WEBPKI_CERT_MAX, every byte cert holds and any arm value, and its
+// result contract holds. It returns CH_OK or CH_EPROTO.
 // A refusal leaves the alert at the caller's ALERT_BAD_CERTIFICATE or
 // sets ALERT_UNSUPPORTED_CERTIFICATE. On CH_OK the alert is untouched,
 // the length is at most CH_WEBPKI_CERT_MAX, and every pointer webpki.h
@@ -32,7 +33,16 @@
 // readers may. The DER primitives in x509_der.c, rbuf (buf.c) and
 // ct_memeq (ct.c) are real: the object under proof is the parser's own
 // field order, its exact-fill checks and its pointer arithmetic.
+//
+// cert is a heap object of exactly n bytes, as in webpki_cert_key, so a
+// read at cert[n] is a bounds failure whatever n is. The heap is the
+// harness's, not the library's: CBMC gives the object n unconstrained
+// bytes. cbmc 6.11 gives each read at a symbolic offset into a
+// fixed-size array clauses in proportion to the array's length, and the
+// parser reads at offsets its length fields set.
 #include "harness.h"
+
+#include <stdlib.h>
 
 #include "buf.h"
 #include "handshake_message.h"
@@ -49,10 +59,10 @@ static int inside(const uint8_t *outer, size_t outer_len, const uint8_t *inner, 
 }
 
 int main(void) {
-    static uint8_t cert[CH_WEBPKI_CERT_MAX + 1];
-    fill_nondet(cert, sizeof cert);
     size_t n = nondet_size_t();
-    __CPROVER_assume(n <= sizeof cert);
+    __CPROVER_assume(n <= CH_WEBPKI_CERT_MAX + 1);
+    uint8_t *cert = malloc(n);
+    __CPROVER_assume(cert != NULL);
     int is_ca = nondet_int();
     webpki_cert out;
     uint8_t alert = ALERT_BAD_CERTIFICATE;
@@ -62,6 +72,7 @@ int main(void) {
     if (rc != CH_OK) {
         __CPROVER_assert(alert == ALERT_BAD_CERTIFICATE || alert == ALERT_UNSUPPORTED_CERTIFICATE,
                          "parse: a refusal names one of the two alerts");
+        free(cert);
         return 0;
     }
     __CPROVER_assert(alert == ALERT_BAD_CERTIFICATE, "parse: success keeps the alert");
@@ -95,5 +106,6 @@ int main(void) {
                            ? (WEBPKI_EXT_KEY_USAGE | WEBPKI_EXT_BASIC_CONSTRAINTS)
                            : (WEBPKI_EXT_KEY_USAGE | WEBPKI_EXT_EXT_KEY_USAGE | WEBPKI_EXT_SAN);
     __CPROVER_assert((out.seen & required) == required, "parse: the arm's extensions were seen");
+    free(cert);
     return 0;
 }

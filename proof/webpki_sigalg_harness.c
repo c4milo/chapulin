@@ -7,7 +7,8 @@
 // hands it with the field anywhere inside. On success err stays clear,
 // the value is one of the four WEBPKI_SIG_* values, and the reader
 // consumed exactly that algorithm's encoding: 15 bytes for an RSA
-// identifier, 12 for an ECDSA one.
+// identifier, 12 for an ECDSA one. Its input is a heap object of exactly
+// its length, as in webpki_cert_key, so it reads no byte past the end.
 //
 // webpki_verify runs over any certificate and any signer: any sigalg
 // byte, any key algorithm byte, and tbs, sig and key pointing anywhere
@@ -47,6 +48,7 @@
 // pointer and length into them is havocked per call.
 #include "harness.h"
 
+#include <stdlib.h>
 #include <string.h>
 
 #include "buf.h"
@@ -282,12 +284,13 @@ static void verify_any(const uint8_t *cert_buf, const uint8_t *anchor_buf, size_
 }
 
 int main(void) {
-    // webpki_read_sigalg over any bytes at the certificate bound.
+    // webpki_read_sigalg over any bytes at the certificate bound, in a
+    // heap object of exactly n bytes.
     {
-        uint8_t input[CH_WEBPKI_CERT_MAX];
-        fill_nondet(input, sizeof input);
         size_t n = nondet_size_t();
-        __CPROVER_assume(n <= sizeof input);
+        __CPROVER_assume(n <= CH_WEBPKI_CERT_MAX);
+        uint8_t *input = malloc(n);
+        __CPROVER_assume(input != NULL);
         rbuf r;
         rb_init(&r, input, n);
         uint8_t sigalg = nondet_u8();
@@ -299,6 +302,7 @@ int main(void) {
             __CPROVER_assert(consumed == (sigalg <= WEBPKI_SIG_RSA_SHA384 ? 15U : 12U),
                              "the reader consumed exactly the algorithm's encoding");
         }
+        free(input);
     }
 
     // webpki_verify: each operand fresh, both key shapes.

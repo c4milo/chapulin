@@ -736,14 +736,31 @@ launch fast full p256_ecdh 100 "" ct.c
 # CH_RSA_MODULUS_MAX of 512. x509_der.c is its own translation unit on
 # the line because webpki_spki.c has a static of the same name.
 # Measured (cbmc 6.11.0, kissat, /usr/bin/time -l): 977 properties,
-# 16 s, 2.1 GB.
-launch fast:3 full webpki_spki 22 "fill_nondet.0:3073" -DCH_TRUST_WEBPKI x509_der.c buf.c ct.c
+# 16 s, 2.1 GB. The input is now a heap object of exactly its length, as
+# in webpki_cert_key. Under run.sh (PROVE_ONLY=webpki_spki
+# PROVE_NO_CACHE=1 /usr/bin/time -l, load average near 2) the fixed
+# array measured 977 properties, 15 s, 2.08 GB and 8.9 million clauses,
+# and the heap object 989 properties, 2.3 s, 0.09 GB and 0.36 million
+# clauses. An assert in each key arm, a modulus under
+# CH_RSA_MODULUS_MAX on the RSA arm and 0 on the other two, fails all
+# three (3 of 992), so every arm is reached, the RSA one at the largest
+# modulus.
+launch fast full webpki_spki 22 "" -DCH_TRUST_WEBPKI x509_der.c buf.c ct.c
 # webpki_sigalg: webpki_read_sigalg concrete at the same bound, and
 # webpki_verify's dispatch over any certificate and signer with the two
 # hashes and the three verifiers stubbed to their headers' contracts.
-# The global unwind of 50 covers the stubs' 48-byte memcmp. Measured
-# (cbmc 6.11.0, kissat, /usr/bin/time -l): 1392 properties, 10 s, 1.1 GB.
-launch fast:2 full webpki_sigalg 50 "fill_nondet.0:3073" -DCH_TRUST_WEBPKI x509_der.c buf.c ct.c
+# The global unwind of 50 covers the stubs' 48-byte memcmp and their
+# 48-byte digest fill. Measured (cbmc 6.11.0, kissat, /usr/bin/time -l):
+# 1392 properties, 10 s, 1.1 GB. webpki_read_sigalg's input is now a
+# heap object of exactly its length, as in webpki_cert_key. Under run.sh
+# (PROVE_ONLY=webpki_sigalg PROVE_NO_CACHE=1 /usr/bin/time -l, load
+# average near 2) the fixed array measured 1392 properties, 9.5 s,
+# 1.08 GB, and the heap object 1400 properties, 7.5 s, 0.54 GB. Both
+# formulas hold 1.3 million clauses, because the reader reads its 12 or
+# 15 bytes at fixed offsets. An assert on the reader's success that n is
+# under CH_WEBPKI_CERT_MAX fails (1 of 1401), so the reader succeeds at
+# the bound.
+launch fast full webpki_sigalg 50 "" -DCH_TRUST_WEBPKI x509_der.c buf.c ct.c
 # p384 is p256's harness at twelve limbs: the same concrete pieces, the
 # same two loop drivers left to their proven bodies, sig up to 112 bytes
 # (a valid one is at most 104), the bit walk over [0,383]. Measured (cbmc
@@ -973,7 +990,20 @@ launch fast full hello_build_webpki 400 "fill_nondet.0:321,main.0:9,write_alpn.0
 # runs in the slow tier at the single-max-RSA-certificate bound.
 # Weights are measured peaks (kissat): der 1.4 GB, parse_ecdsa
 # 2.4 GB (down from 5.6 with the typed stub stores), parse rsa
-# 7.1 GB.
+# 7.1 GB. Re-measured under run.sh (PROVE_ONLY=<name> PROVE_NO_CACHE=1
+# /usr/bin/time -l) on 2026-09-27: x509der 939 properties, 42 s, 2.5 GB
+# and 8.6 million clauses at a load average near 2; x509der_ecdsa 915,
+# 47 s, 2.9 GB and 8.1 million at a load average of 27 to 49;
+# parse_ecdsa 983, 835 s, 7.1 GB and 10.0 million at a load average of 5
+# to 257, so its weight is now 8.
+# All four keep fixed arrays where webpki_cert takes a heap object of
+# the input's exact length (docs/proofs.md). As heap objects, x509der's
+# inputs made 6.5 million clauses but peaked at 4.9 GB in 52 s, and at
+# 5.2 GB in 48 s with every object freed only at the end. parse_ecdsa's
+# list made 23.5 million clauses and had no verdict after 11 minutes.
+# parse rsa's list made 23.5 million clauses against the fixed array's
+# 29.5 million, with 5.0 million variables against 3.5 million, and it
+# shares its harness with parse_ecdsa, so it keeps the array too.
 # The provisioning path (https://github.com/c4milo/chapulin/issues/39),
 # proved in three pieces because the decoder is the shape bounded model
 # checking pays most for: a per-character state machine over symbolic
@@ -1039,6 +1069,20 @@ launch fast:1 full x509ca_ecdsa 400 "fill_nondet.0:1537" buf.c ct.c
 # webpki_san 975
 # properties, 234 s, 2.6 GB for one process and 3.1 GiB summed, which
 # fast:4 covers.
+#
+# webpki_name and webpki_san keep fixed arrays where webpki_cert takes a
+# heap object of the input's exact length (docs/proofs.md). Under run.sh
+# (PROVE_ONLY=<name> PROVE_NO_CACHE=1 /usr/bin/time -l) on 2026-09-27:
+# webpki_name 1019 properties, 208 s, 5.2 GB and 14.8 million clauses at
+# a load average of 18 to 79. With the host and the name as heap
+# objects its formula grew to 41.5 million clauses and returned no
+# verdict in 30 minutes at a load average of 3 to 368, because both
+# calls read the host at every position from an offset they compute.
+# webpki_san 1011 properties, 213 s of wall time and 209 s of CPU,
+# 2.6 GB and 6.5 million clauses at a load average of 4 to 17. With
+# read_entry's content as a heap object it held 3.8 million clauses, but
+# took 317 s of CPU at 2.9 GB, and 321 s of CPU at 1.6 GB against 236 s
+# at 2.1 GB in a second pair of runs.
 launch fast full webpki_time 41 "" buf.c x509_der.c ct.c
 launch fast:7 full webpki_name 254 "fill_nondet.0:1025" buf.c x509_der.c ct.c
 launch fast:4 full webpki_san 17 "fill_nondet.0:1025,webpki_match_san.0:17" -DCH_PROOF_SAN_LEN=32 -DCH_PROOF_HOST_LEN=16 buf.c x509_der.c ct.c
@@ -1093,8 +1137,16 @@ launch fast:4 full webpki_san 17 "fill_nondet.0:1025,webpki_match_san.0:17" -DCH
 # 6.2 GB alone. fast:7 covers the highest of those peaks. Re-measured when
 # read_certificate_head took its cap as a parameter, CH_WEBPKI_CERT_MAX
 # from the call this harness proves: 1250 properties, 205 s, 4.7 GB at a
-# load average of 3 to 6.
-launch fast:7 full webpki_cert 17 "fill_nondet.0:3074,ct_memeq.0:16" -DCH_TRUST_WEBPKI x509_der.c buf.c ct.c
+# load average of 3 to 6. The certificate is now a heap object of exactly
+# n bytes, as in webpki_cert_key. Under run.sh (PROVE_ONLY=webpki_cert
+# PROVE_NO_CACHE=1 /usr/bin/time -l) the fixed array measured 1250
+# properties, 224 s, 4.54 GB and 21.3 million clauses at a load average
+# of 5 to 7, and the heap object 1252 properties, 133 s, 0.67 GB and 1.3
+# million clauses at a load average of 3 to 5. An assert at the CH_OK
+# tail that n is under CH_WEBPKI_CERT_MAX fails that one assert (1 of
+# 1253, 167 s, 0.70 GB), so a certificate at the cap reaches the tail.
+# The tier's default weight covers that peak.
+launch fast full webpki_cert 17 "ct_memeq.0:16" -DCH_TRUST_WEBPKI x509_der.c buf.c ct.c
 # webpki_cert_key proves webpki_read_certificate_key, the reader a leaf
 # pinned with no anchor goes through, over the same stubs, with x509_skip
 # real for the fields it frames after the key, and over a certificate of
@@ -1162,8 +1214,8 @@ launch fast:8 full webpki_chain 49 "main.0:3,fill_nondet.0:49,read_entries.0:7,a
 # stubs to what webpki_spki and webpki_cert prove, and SHA-256 is
 # harness.h's contract with a record of what it hashed. The global unwind
 # of 5 bounds the pin loop at CH_SPKI_PIN_MAX and the path loop at
-# CH_WEBPKI_CHAIN_MAX; the unwindset covers the list fill and the two
-# 32-byte compares. copy_key's one memcpy is a stub to C's contract,
+# CH_WEBPKI_CHAIN_MAX; the unwindset covers the 128-byte pin fill and the
+# two 32-byte compares. copy_key's one memcpy is a stub to C's contract,
 # which also asserts the copy fits webpki_leaf_info.key; the harness says
 # why. With the copy's data flow in the formula, copying a key of up to
 # CH_WEBPKI_KEY_MAX bytes from any offset of the 556-byte list was 31.1 of
@@ -1174,8 +1226,15 @@ launch fast:8 full webpki_chain 49 "main.0:3,fill_nondet.0:49,read_entries.0:7,a
 # properties, 24 s at 0.9 GB on arm64 macOS; 26 s on x86-64 Linux, with
 # kissat's address space peaking at 0.9 GB. With an assert of 0 at the
 # raw half's CH_OK tail and at the path half's tail after a match, those
-# two fail, so both tails are reached.
-launch fast full webpki_pin 5 "fill_nondet.0:557,ct_memeq.0:33,memcmp.0:33" -DCH_TRUST_WEBPKI webpki.c buf.c ct.c
+# two fail, so both tails are reached. The raw list is now a heap object
+# of exactly its length, as in webpki_cert_key. Under run.sh
+# (PROVE_ONLY=webpki_pin PROVE_NO_CACHE=1 /usr/bin/time -l, load average
+# near 2) the fixed array measured 1318 properties, 21 s, 1.47 GB and
+# 0.88 million clauses, and the heap object 1396 properties, 20 s,
+# 1.04 GB and 0.69 million clauses. An assert at the raw half's CH_OK
+# tail that the entry is under CH_WEBPKI_SPKI_MAX fails (1 of 1397), so
+# an entry at the cap reaches the tail.
+launch fast full webpki_pin 5 "fill_nondet.0:129,ct_memeq.0:33,memcmp.0:33" -DCH_TRUST_WEBPKI webpki.c buf.c ct.c
 # webpki_leaf_pin proves webpki_verify_leaf_pin, the rule for a chain
 # under SPKI pins alone (docs/decisions.md 65), apart from the other two
 # calls, whose formula is near its weight already. The list framing in
@@ -1200,7 +1259,7 @@ launch fast full webpki_pin 5 "fill_nondet.0:557,ct_memeq.0:33,memcmp.0:33" -DCH
 launch fast full webpki_leaf_pin 6 "fill_nondet.0:129,ct_memeq.0:33,memcmp.0:33" -DCH_TRUST_WEBPKI webpki.c buf.c ct.c
 launch fast:3 full x509der 452 "fill_nondet.0:449,ct_memeq.0:68" buf.c ct.c
 launch fast:3 full x509der_ecdsa 452 "fill_nondet.0:449,ct_memeq.0:68" buf.c ct.c
-launch slow:4 full x509parse_ecdsa 260 "fill_nondet.0:257,ct_memeq.0:68" buf.c ct.c
+launch slow:8 full x509parse_ecdsa 260 "fill_nondet.0:257,ct_memeq.0:68" buf.c ct.c
 launch slow:8 full x509parse 844 "fill_nondet.0:841,ct_memeq.0:68" buf.c ct.c
 launch fast full chacha20 165 "chacha20_xor.1:5"
 # The AES-128 forward cipher and the two aes_public_key constructors,
