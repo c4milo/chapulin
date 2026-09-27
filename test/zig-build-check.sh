@@ -47,6 +47,13 @@
 #     the object against each other through the API, over the r2 chain of
 #     test/webpki_corpus.h, which the script copies beside it.
 #
+# matches.zig reads only the headers chapulin.c is translated from, and
+# build.zig translates x509_ca.h and drbg.h only for an object that
+# exports their call. A C program of any other object can still include
+# either one, so where chapulin.c leaves one out, the script translates
+# it under the same defines with zig translate-c and holds the result to
+# matches.zig's second rule.
+#
 # Zig keys its cache on the paths of a compile as written. The consumer
 # names the package's directory with no "..", so the dependency compiles
 # under the paths the package build above used and takes its object from
@@ -244,6 +251,39 @@ build_zig() {
     }
 }
 
+# The public headers whose one call TRUST or RAND decides, so that an
+# object of any transport and role can lack it: x509_ca.h declares the
+# ca modes' ch_pubkey_from_pem, and drbg.h declares RAND=drbg's
+# ch_drbg_seed.
+optional_headers=(x509_ca.h drbg.h)
+
+# check_optional_headers NAME ZIG-OBJECT
+#
+# Translates each of optional_headers that chapulin.c is not translated
+# from, under the defines chapulin.c is translated under, and fails when
+# the translation declares a ch_ function the object neither exports nor
+# imports: the rule matches.zig holds chapulin.c to.
+check_optional_headers() {
+    local name=$1 provided defines header symbol checked=""
+    provided=$({ exports "$2"; imports "$2"; } | sort -u)
+    read -r -a defines <<< "$(tr '\n' ' ' < "$out/$name/lib-def.txt")"
+    for header in "${optional_headers[@]}"; do
+        ! grep -qxF "$header" "$out/$name/lib-headers.txt" || continue
+        "$zig" translate-c -lc --cache-dir "$root/$out/cache" -I. "${defines[@]}" "$header" \
+            > "$out/$name/$header.zig" 2> "$out/$name/$header.err" || {
+            cat "$out/$name/$header.err" >&2
+            fail "$name: zig translate-c $header failed"
+        }
+        while read -r symbol; do
+            grep -qxF "$symbol" <<< "$provided" ||
+                fail "$name: $header declares $symbol, which the object neither exports nor imports"
+        done < <(sed -n 's/^pub extern fn \(ch_[A-Za-z0-9_]*\)(.*/\1/p' "$out/$name/$header.zig")
+        checked="$checked $header"
+    done
+    [ -z "$checked" ] ||
+        echo "lint-zig-build: $name: the public headers chapulin.c is not translated from declare no ch_ call the object lacks:$checked"
+}
+
 # check NAME MAKE-VARIABLES STATEMENTS
 #
 # Builds both objects of one configuration and compares them.
@@ -294,6 +334,7 @@ check() {
     "$out/$name/bin/matches" ||
         fail "$name: the Zig object's build record disagrees with chapulin.c's types"
     echo "lint-zig-build: $name: chapulin.c declares the object's exports, no ch_ call the object lacks, and the $(wc -l < "$out/$name/constants.txt" | tr -d ' ') lengths its headers name, and has the types its build record describes"
+    check_optional_headers "$name" "$zig_obj"
     "$out/$name/bin/unit" > "$out/$name/unit.log" 2>&1 || {
         cat "$out/$name/unit.log" >&2
         fail "$name: the API's unit tests failed"

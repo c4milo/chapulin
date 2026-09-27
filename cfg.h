@@ -21,7 +21,9 @@
 // The declaration exists because no build can judge an integrator's generator: a weak one
 // completes the handshake, produces a key share that looks uniform on the wire, and returns
 // CH_OK, so the only defence left is making the choice a written line in the image's build
-// files rather than one nobody made. docs/entropy.md says how to seed.
+// files rather than one nobody made. docs/entropy.md says how to seed. Beyond the two checks
+// below, only drbg.h reads CH_RAND_DRBG: it declares ch_drbg_seed, which a RAND=drbg object
+// alone defines, under that define.
 #if defined(CH_RAND_EXTERN) && defined(CH_RAND_DRBG)
 #error "CH_RAND_EXTERN and CH_RAND_DRBG are exclusive: declare exactly one"
 #endif

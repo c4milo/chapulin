@@ -57,7 +57,17 @@
 #else
 #define ch_pubkey_from_pem ch_pubkey_from_pem_tcp_blocking
 #endif
+// Only a CA-mode object defines it, so only a CH_TRUST_CA build declares
+// it, and a program that calls it against any other object fails to
+// compile rather than to link. A test binary that runs the provisioning
+// walk outside a CA build defines CH_X509_CA_TEST, as
+// test/x509_strict_test.c and test/diff_test.c do, and neither make nor
+// build.zig compiles an object under it. The #define above is outside
+// this #if, so x509_ca.c defines the transport's symbol in every build
+// that compiles it.
+#if defined(CH_TRUST_CA) || defined(CH_X509_CA_TEST)
 int ch_pubkey_from_pem(const uint8_t *pem, size_t pem_len, uint8_t der[CH_X509_MAX],
                        uint8_t key[CH_X509_KEY_MAX], size_t *key_len);
+#endif
 
 #endif

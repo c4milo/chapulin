@@ -1031,11 +1031,15 @@ last `ROLE=server` stub, as the entry said it would.
   every function it declares under a `ch_` name is one the object exports
   or imports, so a program that calls a function the object lacks fails to
   compile rather than to link. Its types have the layout the object's
-  build record describes. The API declares a Zig call for each C call it
-  covers, forwards to that call, maps each code the call returns to one
-  error, builds `ch_cfg` only from the fields each value names, and keeps
-  no TLS rule of its own: a record's length, a write's size and a ticket's
-  age come from the C calls that compute them.
+  build record describes. `chapulin.c` is translated from `x509_ca.h` and
+  `drbg.h` only where the object exports their call, and for any other
+  object each declares no `ch_` function the object lacks, so a C program
+  of that object that calls one fails to compile too. The API declares a
+  Zig call for each C call it covers, forwards to that call, maps each
+  code the call returns to one error, builds `ch_cfg` only from the
+  fields each value names, and keeps no TLS rule of its own: a record's
+  length, a write's size and a ticket's age come from the C calls that
+  compute them.
 - **Mechanism.** `build.zig` repeats the Makefile's axis blocks, one
   function per block, and writes the lists it compiles to `lib-srcs.txt`
   and `lib-def.txt`. `tools/localize_symbols.zig` makes every defined
@@ -1045,7 +1049,11 @@ last `ROLE=server` stub, as the entry said it would.
   and imports, under every `-D` of the one flag list the sources compile
   with. Each public header declares a call only under the defines of the
   objects that define it: by role and by transport, as `tls.h`,
-  `tcp_nonblocking.h`, `quic.h` and `srv.h` guard their calls.
+  `tcp_nonblocking.h`, `quic.h` and `srv.h` guard their calls, by trust
+  mode, as `x509_ca.h` declares `ch_pubkey_from_pem` under `CH_TRUST_CA`,
+  and by entropy pattern, as `drbg.h` declares `ch_drbg_seed` under
+  `CH_RAND_DRBG`. A test binary that runs the provisioning walk outside a
+  CA build defines `CH_X509_CA_TEST`, which no object's defines include.
   `build.zig` copies `chapulin.zig`, `chapulin_record.zig` and
   `chapulin_quic.zig` into a directory of the configuration's own, roots
   the module there, and adds the object to it with `addObjectFile`.
@@ -1066,12 +1074,15 @@ last `ROLE=server` stub, as the entry said it would.
   of each `ROLE=both` object against each other through the API alone,
   in record mode and over QUIC (`docs/zig.md`, "How it is checked"); and
   `pair.zig` imports the modules of two transports and starts a client on
-  each through its API. Before `matches.zig`,
-  `tools/public-constants.py` lists every length and cap the public
-  headers' comments name in the regions the object compiles, and fails
-  when the consumer cannot see one; `matches.zig` then declares and
-  evaluates each. check-slow runs the script over every `lib-check`
-  leg's configuration too.
+  each through its API. Where `chapulin.c` leaves out `x509_ca.h` or
+  `drbg.h`, the script translates that header with `zig translate-c`
+  under the same defines and refuses a `ch_` function the result
+  declares that the object neither exports nor imports. Before
+  `matches.zig`, `tools/public-constants.py` lists every length and cap
+  the public headers' comments name in the regions the object compiles,
+  and fails when the consumer cannot see one; `matches.zig` then
+  declares and evaluates each. check-slow runs the script over every
+  `lib-check` leg's configuration too.
   The same target runs `test/localize-check.sh`, which compares the
   localizer with `llvm-objcopy -G` on nine ELF targets and with
   `llvm-objcopy -G` and `nmedit -s` on two Mach-O ones, and links every
@@ -1086,9 +1097,9 @@ last `ROLE=server` stub, as the entry said it would.
   comparison builds only values both builds accept, so
   `test/tx-record-builds.sh` holds `build.zig`'s `TX_RECORD` refusals to
   the Makefile's, and `inv36-zig-build-tx-record-past-2-14` requires it
-  to fail. Ten more break the API, the module, the headers it is
-  translated from or the reverse check in `matches.zig`, and
-  `test/zig-build-check.sh` catches each:
+  to fail. Eleven more break the API, the module, the public headers or
+  the reverse check in `matches.zig`, and `test/zig-build-check.sh`
+  catches each:
   `inv36-zig-module-drops-object` takes the object off the module, so
   every consumer program fails to link; `inv36-zig-api-drops-ticket-age`
   leaves `ch_cfg.ticket_age_ms` at 0 in `Client.toCfg`, so a stale ticket
@@ -1103,9 +1114,12 @@ last `ROLE=server` stub, as the entry said it would.
   `tcp_nonblocking.h` for a `ROLE=server` object, and
   `inv36-header-connect-in-tcp-nonblocking` declares `ch_connect` in a
   `TRANSPORT=tcp-nonblocking` one, which matches.zig refuses in each;
-  and `inv36-zig-reverse-check-inverted` turns that refusal around, so
-  the default object's `ch_connect` fails it, which shows the walk over
-  `chapulin.c` runs the comparison.
+  `inv36-zig-reverse-check-inverted` turns that refusal around, so the
+  default object's `ch_connect` fails it, which shows the walk over
+  `chapulin.c` runs the comparison; and
+  `inv36-header-pubkey-from-pem-outside-ca` declares `ch_pubkey_from_pem`
+  outside a CA build, which the script's translation of `x509_ca.h`
+  refuses for the default object.
   The slot's `std.crypto.secureZero` has no mutant of its own. Storing
   null leaves an optional's payload undefined, and what Zig 0.16.0
   writes there depends on the backend: LLVM wrote zeros in every mode

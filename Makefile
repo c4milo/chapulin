@@ -42,10 +42,11 @@ STACK_BUDGET_KEX_HYBRID := 6656
 # pattern its image uses. Every host binary built here supplies its own
 # ch_rand_bytes — test/test_random.h for the test mains, an OS-entropy
 # shim in the examples, a stub in the fuzz and proof harnesses that
-# reach randomness at all — so they declare it once, here. Two recipes are not host binaries and filter it
-# back out: the packaged object declares through RAND below, and
-# bin/drbg_test links the reference generator instead of supplying a
-# hook.
+# reach randomness at all — so they declare it once, here. Two kinds of
+# build filter it back out: the packaged object declares through RAND
+# below, and every build of test/drbg_test.c links the reference
+# generator instead of supplying a hook, so it declares CH_RAND_DRBG, the
+# define drbg.h declares ch_drbg_seed under.
 HOST_RAND_DEF := -DCH_RAND_EXTERN
 # ct.h has no architecture allowlist, so every build gets the 16x16
 # decomposition unless it says otherwise. These binaries run on a development
@@ -329,13 +330,17 @@ AES_EXTERN_SUITE_ENTRY := $(subst $(SPACE),$(COMMA),$(AES_EXTERN_SUITE_DEF))
 # quic_token.c and quic_token.h guard their body on CH_ROLE_SERVER as well
 # as the transport, because only a server mints or checks a Retry token,
 # so without the role define both runs would read nothing.
+# x509_ca.h declares ch_pubkey_from_pem, whose name carries the
+# transport, only under CH_TRUST_CA, so without that define both runs
+# would read the same text.
 QUIC_EXTRA_DEFINES := aes.c:$(AES_SUITE_ENTRY) aes.h:$(AES_SUITE_ENTRY) \
                       aes_block.h:$(AES_SUITE_ENTRY) aes_public_key.h:$(AES_SUITE_ENTRY) \
                       aes_traffic_key.h:$(AES_SUITE_ENTRY) aes_schedule.h:$(AES_SUITE_ENTRY) \
                       aes_hw.c:$(AES_SUITE_ENTRY) gcm.c:$(AES_SUITE_ENTRY) gcm.h:$(AES_SUITE_ENTRY) \
                       ghash_hw.c:$(AES_SUITE_ENTRY) ghash_hw.h:$(AES_SUITE_ENTRY) \
                       aes_extern.c:$(AES_EXTERN_SUITE_ENTRY) \
-                      quic_token.c:-DCH_ROLE_SERVER quic_token.h:-DCH_ROLE_SERVER
+                      quic_token.c:-DCH_ROLE_SERVER quic_token.h:-DCH_ROLE_SERVER \
+                      x509_ca.h:-DCH_TRUST_CA
 # The files this compiler cannot preprocess at all, because the build
 # choice they need is one it does not offer. aes_hw.c without the
 # AES instructions and ghash_hw.c without the carry-less multiply
@@ -1550,9 +1555,10 @@ rand-check:
 
 # The reference generator's own vectors. It builds here whatever RAND
 # says, because the module is the subject of the test rather than the
-# image's choice — so this is the one recipe that declares CH_RAND_DRBG
-# on its own. Whether the packaged object also carries drbg.c is RAND's
-# business, not this binary's.
+# image's choice — so this recipe declares CH_RAND_DRBG on its own, and
+# the sanitizer, cross and coverage builds of the same test do too.
+# Whether the packaged object also carries drbg.c is RAND's business,
+# not this binary's.
 bin/drbg_test: test/drbg_test.c drbg.c chacha20.c sha256.c ct.c $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(LIB_CFLAGS) -DCH_RAND_DRBG -I. -o $@ test/drbg_test.c drbg.c chacha20.c sha256.c ct.c
@@ -2927,6 +2933,9 @@ GCOVR ?= $(shell command -v gcovr)
 GCOV_TOOL := $(shell $(CC) --version 2>/dev/null | grep -qi clang \
   && echo "$$(xcrun --find llvm-cov 2>/dev/null || command -v llvm-cov) gcov" || echo gcov)
 COV_CC = $(CC) --coverage -O0 -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) $$def -I.
+# drbg.c and test/drbg_test.c compile as bin/drbg_test does, under
+# CH_RAND_DRBG in place of the host's pattern.
+COV_DRBG_CC = $(filter-out $(HOST_RAND_DEF),$(COV_CC)) -DCH_RAND_DRBG
 COV_LIB_OBJS = $(SRCS:%.c=$$d/%.o)
 .PHONY: coverage
 # What CBMC proves: which sources a running harness compiles, and any
@@ -2985,9 +2994,10 @@ else
 	@set -e; for pin in rsa ecdsa; do \
 	  def=""; [ $$pin = ecdsa ] && def=-DCH_PIN_ECDSA; \
 	  d=bin/cov/$$pin; mkdir -p $$d; \
-	  for f in $(SRCS) drbg.c; do $(COV_CC) -c $$f -o $$d/$${f%.c}.o; done; \
+	  for f in $(SRCS); do $(COV_CC) -c $$f -o $$d/$${f%.c}.o; done; \
+	  $(COV_DRBG_CC) -c drbg.c -o $$d/drbg.o; \
 	  $(COV_CC) test/unit_test.c $(COV_LIB_OBJS) -o $$d/unit; \
-	  $(COV_CC) test/drbg_test.c $$d/drbg.o $$d/chacha20.o $$d/sha256.o $$d/ct.o -o $$d/drbg_test; \
+	  $(COV_DRBG_CC) test/drbg_test.c $$d/drbg.o $$d/chacha20.o $$d/sha256.o $$d/ct.o -o $$d/drbg_test; \
 	  $(COV_CC) test/rsa_test.c $$d/rsa.o $$d/rsa_mont.o $$d/sha256.o $$d/ct.o -o $$d/rsa_test; \
 	  $(COV_CC) test/handshake_strict_test.c $$d/handshake_parser.o $$d/handshake_parser_ee.o $$d/buf.o \
 	    -o $$d/handshake_strict_test; \
@@ -3253,7 +3263,7 @@ san-check:
 	@rm -rf bin/san && mkdir -p bin/san
 	@echo "san-check at -O$(O) with $$($(CC) --version | head -1)"
 	$(CC) $(SAN_CFLAGS) -I. -o bin/san/unit test/unit_test.c $(SRCS)
-	$(CC) $(SAN_CFLAGS) -I. -o bin/san/drbg_test test/drbg_test.c drbg.c chacha20.c sha256.c ct.c
+	$(CC) $(filter-out $(HOST_RAND_DEF),$(SAN_CFLAGS)) -DCH_RAND_DRBG -I. -o bin/san/drbg_test test/drbg_test.c drbg.c chacha20.c sha256.c ct.c
 	$(CC) $(SAN_CFLAGS) $(RSA_WIDE_DEF) -I. -o bin/san/rsa_test test/rsa_test.c rsa.c rsa_mont.c sha256.c ct.c
 	$(CC) $(SAN_CFLAGS) -I. -o bin/san/sha3_test test/sha3_test.c sha3.c ct.c
 	$(CC) $(SAN_CFLAGS) -I. -o bin/san/sha512_test test/sha512_test.c sha512.c sha512_compress.c
@@ -3342,7 +3352,7 @@ cross-check:
 	@[ -n "$(CROSS)" ] || { echo "cross-check: set CROSS=<toolchain-prefix> (and RUNNER=<emulator>)"; exit 1; }
 	@mkdir -p bin/cross
 	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) -static -I. -o bin/cross/unit test/unit_test.c $(SRCS)
-	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) -static -I. -o bin/cross/drbg_test test/drbg_test.c drbg.c chacha20.c sha256.c ct.c
+	$(CROSS)gcc $(filter-out $(HOST_RAND_DEF),$(CFLAGS)) -DCH_RAND_DRBG $(CROSS_EXTRA) -static -I. -o bin/cross/drbg_test test/drbg_test.c drbg.c chacha20.c sha256.c ct.c
 	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) $(RSA_WIDE_DEF) -static -I. -o bin/cross/rsa_test test/rsa_test.c rsa.c rsa_mont.c sha256.c ct.c
 	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) -static -I. -o bin/cross/sha3_test test/sha3_test.c sha3.c ct.c
 	$(CROSS)gcc $(CFLAGS) $(CROSS_EXTRA) -static -I. -o bin/cross/sha512_test test/sha512_test.c sha512.c sha512_compress.c
@@ -3737,8 +3747,13 @@ else
 	# reason: every declaration they hold sits behind
 	# -DCH_TRANSPORT_QUIC_NONBLOCKING, which this pass does not define, so it would
 	# read eight empty translation units. The two passes below read them.
+	# x509_ca.c, drbg.c and the two mains that call ch_drbg_seed get
+	# passes of their own too: x509_ca.h declares ch_pubkey_from_pem only
+	# under -DCH_TRUST_CA, and drbg.h declares ch_drbg_seed only under
+	# -DCH_RAND_DRBG.
 	@$(call TIDY_EACH,$(filter-out webpki.c webpki_ticket.c webpki_pin.c \
-	  webpki_cfg.c handshake_groups.c test/webpki_resume_test.c test/webpki_session_test.c \
+	  webpki_cfg.c handshake_groups.c x509_ca.c drbg.c test/drbg_test.c test/entropy_recipe.c \
+	  test/webpki_resume_test.c test/webpki_session_test.c \
 	  test/webpki_chain_test.c test/webpki_auth_test.c \
 	  test/webpki_encrypted_exts_test.c examples/webpki_client.c $(QUIC_SRCS) \
 	  $(AES_IMPL_SRCS) test/quic_driver_test.c test/quic_vectors.c \
@@ -3775,6 +3790,16 @@ else
 	  test/webpki_encrypted_exts_test.c test/handshake_strict_test.c \
 	  test/diff_test.c examples/webpki_client.c test/webpki_resume_test.c, \
 	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_TRUST_WEBPKI -I.)
+	# The CA mode's provisioning call, under -DCH_TRUST_CA: every object
+	# that packages x509_ca.c compiles with that define, and x509_ca.h
+	# declares ch_pubkey_from_pem only under it.
+	@$(call TIDY_EACH,x509_ca.c, \
+	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_TRUST_CA -I.)
+	# The reference generator, its test main and docs/entropy.md's recipe,
+	# under -DCH_RAND_DRBG in place of the host's pattern, as bin/drbg_test
+	# builds: drbg.h declares ch_drbg_seed only under that define.
+	@$(call TIDY_EACH,drbg.c test/drbg_test.c test/entropy_recipe.c, \
+	  -std=c11 -D_DEFAULT_SOURCE -DCH_RAND_DRBG -I.)
 	# The QUIC mode: its sources and its three test mains, under every
 	# check.
 	@$(call TIDY_EACH,$(QUIC_SRCS), \

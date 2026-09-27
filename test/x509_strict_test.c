@@ -10,6 +10,10 @@
 // longer match the CA signature — while a grammar reject never gets
 // that far. Its own binary with a private main, like the other test
 // mains; compiled once per PIN variant so each build tests its grammar.
+//
+// x509_ca_tests.h calls ch_pubkey_from_pem in every build of this binary,
+// and x509_ca.h declares it outside a CA build only under this define.
+#define CH_X509_CA_TEST 1
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>

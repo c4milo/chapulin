@@ -38,6 +38,12 @@
 // after boot, draw output with ch_rand_bytes, concatenate the fresh
 // bytes after it, and pass that. The packaged RAND=drbg object exports
 // ch_rand_bytes so an image can draw that output (docs/decisions.md 67).
+//
+// Only a RAND=drbg object defines it, so only a CH_RAND_DRBG build
+// declares it, and a program that calls it against a RAND=extern object
+// fails to compile rather than to link.
+#ifdef CH_RAND_DRBG
 void ch_drbg_seed(const uint8_t *seed, size_t seed_len);
+#endif
 
 #endif

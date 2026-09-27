@@ -1296,8 +1296,10 @@ does nothing more.
     `build.h` says what each one changes. Left out, each measured with and
     without the define under all three transports:
 
-    - The RAND pattern. `rand.h` and `drbg.h` declare the same calls in
-      every build, so no header changes. A mismatch still reports itself.
+    - The RAND pattern. It changes no size or bound: `rand.h` declares
+      the same call in every build, and `drbg.h` adds only the
+      declaration of `ch_drbg_seed`, under `CH_RAND_DRBG`. A mismatch
+      still reports itself.
       An extern-pattern program that links a drbg object never has its
       `ch_rand_bytes` called, and the object's generator stops at
       `CH_ASSERT` on its first draw, unseeded, before a handshake sends a

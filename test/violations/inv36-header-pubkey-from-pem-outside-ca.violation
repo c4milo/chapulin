@@ -1,0 +1,17 @@
+invariant: INV-36
+file: x509_ca.h
+catches: test/zig-build-check.sh
+reason: x509_ca.h declares ch_pubkey_from_pem in every build again, so a
+  raw, webpki or server object, which compiles no x509_ca.c and defines
+  no ch_pubkey_from_pem, declares it too, and a program that calls it
+  compiles and then fails to link. chapulin.c is not translated from
+  x509_ca.h for those objects, so zig-build-check.sh translates the header
+  under each one's defines and refuses the default object's
+  ch_pubkey_from_pem_tcp_blocking.
+
+--- old
+#if defined(CH_TRUST_CA) || defined(CH_X509_CA_TEST)
+int ch_pubkey_from_pem(const uint8_t *pem, size_t pem_len, uint8_t der[CH_X509_MAX],
+--- new
+#if 1
+int ch_pubkey_from_pem(const uint8_t *pem, size_t pem_len, uint8_t der[CH_X509_MAX],

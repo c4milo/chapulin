@@ -118,10 +118,11 @@ Each public header declares a call only under the defines of the
 objects that define it, so `@hasDecl(chapulin.c, name)` answers whether
 the object has that call, and a program that calls one the object lacks
 fails to compile rather than to link. `matches.zig` holds that rule for
-every configuration the check builds (How it is checked). `Trust` is
-declared in every object; its variants are the trust mode's. A value
-field an object lacks has type `void`, so a literal that sets it does not
-compile.
+every configuration the check builds, and the script holds it for
+`x509_ca.h` and `drbg.h` where `chapulin.c` is not translated from them
+(How it is checked). `Trust` is declared in every object; its variants
+are the trust mode's. A value field an object lacks has type `void`, so
+a literal that sets it does not compile.
 
 ## Values
 
@@ -555,7 +556,13 @@ and stompy's (`TX_RECORD=16384`), each through the module alone
   directly and through `buildMatches`. The second rule costs no time
   the check can measure: with it and without it, a recompile of
   `matches.zig` took 1.8 to 2.4 s and a warm run of the script 4.6 to
-  5.8 s on an M-series Mac at a load average near 20.
+  5.8 s on an M-series Mac at a load average near 20. build.zig
+  translates `x509_ca.h` only for an object that exports
+  `ch_pubkey_from_pem`, and `drbg.h` only for one that exports
+  `ch_drbg_seed`, while a C program of any object can include either
+  one. So where `chapulin.c` leaves one out, the script translates it
+  with `zig translate-c` under the same defines and holds the result to
+  the second rule.
 - `unit.zig`, the API's unit tests: each value's `toCfg` against the
   `ch_cfg` written out field by field, the Ticket constructors and their
   bounds, the error of every code, and every declaration the object has,
@@ -597,6 +604,6 @@ and stompy's (`TX_RECORD=16384`), each through the module alone
   image, and computes a ticket's age through each object's call, directly
   and through `Client.toCfg`.
 
-Ten mutants in `test/violations/` break the API, the module, the
-headers it is translated from or the reverse check in `matches.zig`,
-and the script catches each. INV-36 names them.
+Eleven mutants in `test/violations/` break the API, the module, the
+public headers or the reverse check in `matches.zig`, and the script
+catches each. INV-36 names them.

@@ -3,6 +3,11 @@
 // compares every C crypto module against it on deterministic
 // pseudo-random inputs. Any divergence prints the request and both
 // answers, then fails the build.
+//
+// test/diff_x509_ca.h calls ch_pubkey_from_pem in every build of this
+// driver, and x509_ca.h declares it outside a CA build only under this
+// define.
+#define CH_X509_CA_TEST 1
 #include <inttypes.h>
 #include <stdio.h>
 #include <stdlib.h>
