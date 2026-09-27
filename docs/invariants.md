@@ -1156,15 +1156,29 @@ last `ROLE=server` stub, as the entry said it would.
 ### INV-13 — no resumable errors
 
 - **Claim.** Every error kills the session: alert, wipe, dead. There
-  is no error a caller can retry past. The two non-blocking transports
-  also return results that are not errors and leave the session live,
-  and their headers list them: `tcp_nonblocking.h` for
-  `TRANSPORT=tcp-nonblocking` and `quic.h` for `TRANSPORT=quic-nonblocking`.
-  Each one means the call changed nothing, the packet was dropped
-  (`CH_QUIC_DISCARD`, RFC 9001 §5.5), or no record has arrived yet
-  (`CH_RECORD_AGAIN`). A failed QUIC session stays dead: it keeps only the
-  write keys INV-17 names, for one CONNECTION_CLOSE per level, and no call
-  revives it.
+  is no error a caller can retry past. Three kinds of result are not
+  errors in that sense, and each public header says which of its codes
+  are which, call by call; cfg.h states the rule beside the codes:
+  - A refusal on entry, `CH_EINVAL`, which sent nothing. An init call,
+    `ch_connect`, `ch_record_init`, `ch_quic_init`, `ch_srv_accept`,
+    `ch_srv_record_init` or `ch_srv_quic_init`, leaves its session failed
+    until the next init; every other call leaves the session as it was.
+    No call returns `CH_EINVAL` after it has sent a byte: a server
+    checks at init every identity fact its flight would otherwise meet
+    (INV-14), and its flight answers its own refusals with `CH_EAUTH`
+    (docs/decisions.md 74).
+  - A call on a session that cannot take it, which changes nothing:
+    `CH_EPROTO` for bytes delivered to a session that failed or closed,
+    and from `ch_read` and `ch_write` before the handshake completes,
+    which in a `TRANSPORT=tcp-nonblocking` build leaves the handshake
+    running; `CH_EINVAL` where the call's header says so.
+  - The non-blocking transports' results that leave the session live:
+    `CH_ECAP` from a call whose own output buffer was short, a packet
+    dropped (`CH_QUIC_DISCARD`, RFC 9001 §5.5), and no record yet
+    (`CH_RECORD_AGAIN`).
+
+  A failed QUIC session stays dead: it keeps only the write keys INV-17
+  names, for one CONNECTION_CLOSE per level, and no call revives it.
 - `CH_RECORD_AGAIN` is the one returned after work was done, so its
   terms are exact. `ch_read` returns it only when `cfg.recv` returns 0
   before a record's first byte. Every record read before that has been
@@ -1173,10 +1187,15 @@ last `ROLE=server` stub, as the entry said it would.
   across records waits at the front of `cfg.buf`, with
   `ch_tls.post_fill` counting its bytes. A 0 after a record's first byte
   is `CH_EIO` and a dead session.
-- **Mechanism.** Fail-closed policy; `tlsi_fail` is the single
-  funnel. `io_read_record` is the only source of `CH_RECORD_AGAIN`, and
-  `dispatch_one_record` and `post_handshake` in `tls.c` are the only
-  places that return it without calling `tlsi_fail`.
+- **Mechanism.** Fail-closed policy with one funnel per driver family:
+  `tlsi_fail` for the record layer and the blocking drivers,
+  `tcp_nonblocking_fail` for the tcp-nonblocking handshake drivers and
+  `quic_fail` for the QUIC ones. Each entry checks its configuration or
+  its arguments before it sends a byte, and returns early, changing
+  nothing, when the session cannot take the call. `io_read_record` is
+  the only source of `CH_RECORD_AGAIN`, and `dispatch_one_record` and
+  `post_handshake` in `tls.c` are the only places that return it
+  without calling `tlsi_fail`.
 - **Check.** Convention; handshake_sequence's 466k-sequence run asserts no
   sequence revives a failed session. `bin/tcp_nonblocking_loop_test`
   (`test/tcp_nonblocking_read_tests.h`) reads a ticket-only record and
@@ -1184,7 +1203,14 @@ last `ROLE=server` stub, as the entry said it would.
   after three bytes. Three violations each break one term:
   `inv13-tcp-nonblocking-read-dies-between-records`,
   `inv13-tcp-nonblocking-read-drops-a-split-message` and
-  `inv13-record-again-inside-a-record`.
+  `inv13-record-again-inside-a-record`. `inv13-ch-write-soft-io-error`
+  returns a failed send from `ch_write` without the funnel, and
+  `bin/unit` fails. The server's flight returns no `CH_EINVAL`:
+  `bin/srv_auth_test` and `bin/srv_flight_test` require `CH_EAUTH` from
+  each refusal inside it, and `inv13-srv-signer-refusal-einval`, which
+  returns `CH_EINVAL` from a signer's refusal again, requires
+  `bin/srv_auth_test` to fail. The entry refusals are INV-14's, each
+  with its tests.
 - **Violation.** A PR returns a "soft" error that leaves keys live so
   the caller can retry a read.
 - See [decisions: Engineering](decisions.md#engineering).

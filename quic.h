@@ -13,16 +13,16 @@
 // of providing inputs to TLS (rfc9001.txt:530-531), so cfg.on_level_ready fires from inside
 // ch_quic_crypto_in and the caller collects what a delivery produced.
 //
-// Result codes, in one sentence each. CH_OK means the call did what it says. CH_EINVAL
-// means the caller called out of order, nothing changed, and the same call may run again
-// later. CH_ECAP means two different things: from ch_quic_crypto_out and the two seal calls
-// the caller's own buffer was short, nothing was consumed, and the same call may run again
-// with a larger one; from ch_quic_crypto_in it is a peer message that could never fit
-// cfg.buf_len, and it leaves the session dead like every other error from that call. cfg.h
-// states CH_QUIC_DISCARD and CH_QUIC_AEAD_LIMIT, which ch_quic_open alone returns. Every
-// other error means the session is now dead: ch_quic_alert names the TLS alert,
-// ch_quic_error_code the transport error code the caller puts in CONNECTION_CLOSE, and
-// ch_quic_seal_close seals that frame once at each level whose write keys the session had.
+// Result codes, in one sentence each. CH_OK means the call did what it says. CH_EINVAL means the
+// call was refused on entry and sent nothing: ch_quic_init leaves the session failed until the next
+// init, and every other call changes nothing and may run again later. CH_ECAP from
+// ch_quic_crypto_out and the two seal calls means the caller's own buffer was short, nothing was
+// consumed, and the same call may run again with a larger one; from ch_quic_crypto_in it is a peer
+// message that could never fit cfg.buf_len, and the session is dead. cfg.h states CH_QUIC_DISCARD
+// and CH_QUIC_AEAD_LIMIT, which ch_quic_open alone returns. Every other error means the session is
+// dead: ch_quic_alert names the TLS alert, ch_quic_error_code the transport error code the caller
+// puts in CONNECTION_CLOSE, and ch_quic_seal_close seals that frame once at each level whose write
+// keys the session had. A server's two calls keep these meanings (srv_quic.h).
 #ifndef CH_QUIC_H
 #define CH_QUIC_H
 #ifdef CH_TRANSPORT_QUIC_NONBLOCKING
@@ -165,7 +165,7 @@ int ch_quic_init(ch_quic *q, const ch_cfg *cfg);
 //
 // Returns CH_EINVAL and writes neither field when dcid_len is above CH_QUIC_DCID_MAX, RFC
 // 9000 §17.2's cap on a version 1 connection ID, or when the session is dead. The check
-// runs first, so a refusal leaves both fields as they were and the session live.
+// runs first, so a refusal leaves both fields and the session as they were.
 int ch_quic_initial_keys(ch_quic *q, const uint8_t *dcid, size_t dcid_len);
 
 // Delivers the n bytes that CRYPTO frames carried at one encryption level and runs the

@@ -65,13 +65,22 @@
 #define CH_KEX_HYBRID
 #endif
 
+// The result codes. Each call's header says which it returns and what each
+// leaves; INV-13 is the rule across calls. CH_EINVAL is a refusal on entry:
+// an init call leaves its session failed until the next init, and every
+// other call leaves the session as it was. A call on a session that cannot
+// take it, bytes for one that failed or closed, or ch_read and ch_write
+// before the handshake completes, answers CH_EPROTO, or CH_EINVAL where its
+// header says so, and changes nothing. Every other code leaves the session
+// dead, but those a header names as leaving it live: CH_ECAP for a caller's
+// own short buffer, CH_RECORD_AGAIN and CH_QUIC_DISCARD.
 #define CH_OK 0
-#define CH_EIO (-1)     // transport failed or closed under us
-#define CH_EPROTO (-2)  // peer broke the protocol; session dead
+#define CH_EIO (-1)     // transport failed or closed under us, or a server's sink refused
+#define CH_EPROTO (-2)  // peer broke the protocol, or the session cannot take the call
 #define CH_EAUTH (-3)   // authentication failed; session dead
-#define CH_ECAP (-4)    // caller buffer too small for the peer's message
-#define CH_ECLOSED (-5) // clean close_notify from the peer
-#define CH_EINVAL (-6)  // invalid configuration or call; nothing was sent
+#define CH_ECAP (-4)    // a buffer too small: the caller's own, or one a message must fit
+#define CH_ECLOSED (-5) // the peer's close_notify; ch_read returns 0 for it, no call returns this
+#define CH_EINVAL (-6)  // configuration or call refused on entry; nothing was sent
 // TRANSPORT=tcp-nonblocking's ch_read found no record yet; the session stays
 // live (tcp_nonblocking.h, INV-13).
 #define CH_RECORD_AGAIN (-9)

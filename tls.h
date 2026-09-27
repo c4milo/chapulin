@@ -10,7 +10,11 @@
 #include "session.h"
 
 // Runs the full handshake. On CH_OK the session is ready for read/write.
-// Any error wipes all key material and leaves the session dead.
+// Any error wipes all key material and leaves the session dead. A
+// configuration it refuses returns CH_EINVAL before a byte is sent, and a
+// CA build answers a ticket the stored epoch retired with CH_EAUTH, also
+// before a byte is sent (docs/ca.md). Every other error comes from the
+// handshake, which first tries to send the alert its failure chose.
 //
 // A ROLE=server build declares it nowhere: that object exports
 // ch_srv_accept in its place (srv.h), so a server firmware that calls
@@ -22,8 +26,12 @@ int ch_connect(ch_tls *t, const ch_cfg *cfg);
 #endif
 
 // Sends n bytes as one or more records. Returns CH_OK or an error. It
-// keeps working after ch_read has returned 0 for the peer's close_notify,
-// and returns CH_EPROTO once ch_close has run or the session has failed.
+// keeps working after ch_read has returned 0 for the peer's close_notify.
+// On a session that is not connected it returns CH_EPROTO and changes
+// nothing: once ch_close has run, once the session has failed, and in a
+// TRANSPORT=tcp-nonblocking build while the handshake still runs, which
+// that CH_EPROTO leaves running. Every other error, a record it cannot
+// seal (CH_ECAP) or a send that fails (CH_EIO), leaves the session dead.
 int ch_write(ch_tls *t, const uint8_t *p, size_t n);
 
 // The most plaintext one ch_write seals into cap bytes of records, so a
@@ -56,6 +64,13 @@ size_t ch_writable_len(const ch_tls *t, size_t cap);
 // Receives into p (n >= 1), returning the byte count (>0), 0 at the end
 // of the peer's stream, or an error. Handles NewSessionTicket and
 // KeyUpdate internally.
+//
+// An n of 0 returns CH_EINVAL and changes nothing. A closed session
+// returns 0. A session that is not connected returns CH_EPROTO and
+// changes nothing: one that failed, and in a TRANSPORT=tcp-nonblocking
+// build one whose handshake still runs, which keeps running. Every other
+// error leaves the session dead, after it tries to send the alert its
+// failure chose.
 //
 // The end of the peer's stream is its close_notify, which closes the
 // peer's direction and no other (RFC 9846 §6.1). The ch_read that reads

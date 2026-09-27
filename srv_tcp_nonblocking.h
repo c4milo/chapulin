@@ -78,10 +78,15 @@ int ch_srv_record_init(ch_record *r, const ch_cfg *cfg);
 // *consumed covering it and nothing past it: a client may send its first
 // application record in the same segment as its Finished, and those
 // bytes belong to ch_read once ch_record_state reports CH_ST_CONNECTED.
+// A record delivered here after that fails the session.
 //
 // Returns CH_OK when the bytes were taken, whether or not they completed
-// a record or a message. Every other code leaves the session dead, and
-// ch_record_alert names the alert the caller sends before it closes.
+// a record or a message. Returns CH_EPROTO without reading a byte on a
+// session that failed or closed. It never returns CH_EINVAL:
+// ch_srv_record_init refused every configuration the flight could fail
+// on (srv_identities_usable, srv_auth.h). Every other code leaves the
+// session dead, and ch_record_alert names the alert the caller sends
+// before it closes.
 int ch_srv_record_in(ch_record *r, uint8_t *p, size_t n, size_t *consumed);
 
 #endif // CH_ROLE_SERVER && CH_TRANSPORT_TCP_NONBLOCKING

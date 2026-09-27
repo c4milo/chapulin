@@ -52,8 +52,11 @@
 // Runs the full handshake as the server, over a connection the caller
 // has already accepted and the same blocking I/O callbacks and
 // ch_rand_bytes a client build needs. On CH_OK the session is ready
-// for ch_read and ch_write. Any error sends the alert the failure
-// chose, wipes all key material and leaves the session dead.
+// for ch_read and ch_write. Any error wipes all key material and leaves
+// the session dead. A configuration it refuses, below, returns
+// CH_EINVAL before a byte is read or sent, so no alert goes out; every
+// other error comes from the handshake, which first tries to send the
+// alert its failure chose, and none of those is CH_EINVAL.
 //
 // It checks the configuration before it reads a byte and returns
 // CH_EINVAL, having sent nothing, when: no identity is provisioned; a

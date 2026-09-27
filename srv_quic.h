@@ -65,12 +65,21 @@ int ch_srv_quic_init(ch_quic *q, const ch_cfg *cfg);
 // CH_LEVEL_HANDSHAKE.
 //
 // Returns CH_OK when the bytes were taken, whether or not they completed
-// a message. Every other code leaves the session dead, and
-// ch_quic_error_code names the code the caller puts in CONNECTION_CLOSE:
-// 0x0100 plus ch_quic_alert for a TLS alert (RFC 9001 section 4.8). The
-// server fails through quic_fail as a client does, so it keeps the write
-// keys of each level it had installed, and ch_quic_seal_close seals that
-// close once at each (docs/quic_server.md, "When the handshake fails").
+// a message. Returns CH_EINVAL, and consumes and changes nothing, when
+// level is above CH_LEVEL_APPLICATION, or when it is above the level the
+// server reads while no byte sits unconsumed at that one: RFC 9001
+// section 4.1.3 leaves such bytes for QUIC to hold until their keys
+// arrive, as ch_quic_crypto_in says for a client (quic.h). The flight
+// returns no CH_EINVAL: ch_srv_quic_init refused every configuration it
+// could fail on (srv_identities_usable, srv_auth.h). Returns CH_EPROTO
+// without reading a byte on a session that failed or closed.
+//
+// Every other code leaves the session dead, and ch_quic_error_code names
+// the code the caller puts in CONNECTION_CLOSE: 0x0100 plus ch_quic_alert
+// for a TLS alert (RFC 9001 section 4.8). The server fails through
+// quic_fail as a client does, so it keeps the write keys of each level it
+// had installed, and ch_quic_seal_close seals that close once at each
+// (docs/quic_server.md, "When the handshake fails").
 int ch_srv_quic_crypto_in(ch_quic *q, uint8_t level, const uint8_t *p, size_t n);
 
 // Writes the Retry integrity tag of RFC 9001 section 5.8 over the Retry

@@ -248,7 +248,7 @@ returns.
 | C code | Zig | The session after it |
 |---|---|---|
 | `CH_EIO` | `error.Io` | Dead. An output slice could not take what C sent. |
-| `CH_EPROTO` | `error.Proto` | Dead, or it was not live. |
+| `CH_EPROTO` | `error.Proto` | Dead after a protocol failure. As it was for bytes delivered to a session that failed or closed, and for `read` or `write` before the handshake completed, which keeps running. |
 | `CH_EAUTH` | `error.Auth` | Dead. |
 | `CH_ECAP` | `error.Cap` | Live from `recordOut`, `cryptoOut`, `seal`, `sealClose` and `tokenMint`: the caller's buffer was short. Dead from `recordIn`, `cryptoIn` and `read`: the peer's message could never fit. |
 | `CH_EINVAL` | `error.Invalid` | Nothing was sent. From `init`, failed until the next `init`: C refused the configuration, a stale ticket or a server identity its flight could not use among the refusals. From any other call, as it was: the call came out of order or an argument was refused. A server's `recordIn` never returns it, and its `cryptoIn` returns it only for a level the call refuses on entry. |
@@ -353,7 +353,8 @@ them through the API's `recv`. The `Read` it returns says:
 
 A caller calls `read` until `consumed` and `pt_len` are both 0. An error
 reports no `Read`. It leaves the session dead, except `error.Invalid`
-for an empty `pt`, which changes nothing.
+for an empty `pt` and `error.Proto` for a session that is not
+connected, which change nothing.
 
 `reply` takes what `ch_read` sends. It answers every KeyUpdate in the
 record that asks for an answer (RFC 9846 §4.7.3) with one sealed

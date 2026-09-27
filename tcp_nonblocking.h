@@ -41,11 +41,16 @@
 // (RFC 9846 §4.7.3), and to send the alert of a failure.
 //
 // Result codes match quic.h's meanings. CH_OK means the call did what it
-// says. CH_EINVAL means the caller called out of order and nothing
+// says. CH_EINVAL from ch_record_init means it refused the configuration,
+// staged nothing and left the session failed until the next init; from
+// every other call, that the caller called out of order and nothing
 // changed. CH_ECAP from ch_record_out means the caller's buffer was short,
 // nothing was consumed, and the same call may run again with a larger
-// one. Every other code leaves the session dead, and ch_record_alert names
-// the alert the caller should send before it closes.
+// one. CH_EPROTO from a call on a session that failed or closed, and from
+// ch_read or ch_write before the handshake completes, changes nothing
+// either (tls.h). Every other code leaves the session dead, and
+// ch_record_alert names the alert the caller should send before it
+// closes.
 #ifndef CH_TCP_NONBLOCKING_H
 #define CH_TCP_NONBLOCKING_H
 #ifdef CH_TRANSPORT_TCP_NONBLOCKING
@@ -89,6 +94,11 @@ typedef struct ch_record {
 // an event loop fills them with buffer copies that never block, because
 // by then it holds the bytes.
 //
+// A refusal stages nothing and leaves r failed, CH_ST_FAILED, until the
+// next ch_record_init. One refusal differs from ch_connect's code: a CA
+// build's ticket that the stored epoch retired, which ch_connect answers
+// with CH_EAUTH, is CH_EINVAL here.
+//
 // Requires: r and cfg are not NULL, and cfg outlives the session.
 int ch_record_init(ch_record *r, const ch_cfg *cfg);
 
@@ -103,7 +113,13 @@ int ch_record_init(ch_record *r, const ch_cfg *cfg);
 // and the caller must present them again unchanged.
 //
 // Returns CH_OK when the bytes were taken, whether or not they completed
-// a record or a message. Every other code leaves the session dead.
+// a record or a message. Returns CH_EINVAL, and consumes and changes
+// nothing, while a record ch_record_out has not handed over yet is
+// staged: the peer cannot have answered it. Returns CH_EPROTO without
+// reading a byte on a session that failed or closed. Every other code
+// leaves the session dead, and so does a record delivered here once
+// ch_record_state reports CH_ST_CONNECTED: that record is ch_read's, and
+// this call fails the session on it.
 int ch_record_in(ch_record *r, uint8_t *p, size_t n, size_t *consumed);
 
 // Collects bytes the caller must send. out_len is 0 when nothing is
@@ -112,7 +128,8 @@ int ch_record_in(ch_record *r, uint8_t *p, size_t n, size_t *consumed);
 // calls again; the record is finished when out_len is 0.
 //
 // Returns CH_ECAP only when cap is 0, because any other capacity makes
-// progress.
+// progress. Returns CH_EINVAL on a session that failed or closed.
+// Neither changes the session, and neither writes *out_len.
 int ch_record_out(ch_record *r, uint8_t *out, size_t cap, size_t *out_len);
 
 // CH_ST_START while the handshake runs, CH_ST_CONNECTED once it is done

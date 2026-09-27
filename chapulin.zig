@@ -38,7 +38,9 @@ pub const Error = if (@hasDecl(c, "CH_QUIC_DISCARD")) AnyError else error{ Io, P
 const AnyError = error{
     /// CH_EIO: an output slice could not take what C sent. The session is dead.
     Io,
-    /// CH_EPROTO: the peer broke the protocol, or the session was not live.
+    /// CH_EPROTO: a protocol failure, and the session is dead; or bytes for
+    /// a session that failed or closed, or read and write before the
+    /// handshake completed, and the session is as it was.
     Proto,
     /// CH_EAUTH: authentication failed. The session is dead.
     Auth,
