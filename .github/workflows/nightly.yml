@@ -179,11 +179,12 @@ jobs:
   # (https://github.com/c4milo/chapulin/issues/144).
   test-invariants:
     runs-on: ubuntu-24.04
-    # The set took 81 minutes on 2026-09-25 (run 36114766703), while the
-    # two test/e2e.sh mutants still stopped at their baseline. Once they
-    # ran, the job reached mutant 192 of 295 at the 90-minute limit (run
-    # 36139181178), after 47 minutes in the two handshake_sequence_test
-    # mutants alone, so the whole set needs about 100 minutes.
+    # One violation at a time, the set of 313 took 77 minutes of run
+    # 36253195895, 37 of them in the two handshake_sequence_test mutants.
+    # The target now runs one violation per core (test/violations.py
+    # --jobs) and hands out the slow tier first, so those two run beside
+    # the rest. No run has timed that yet, so the limit stays where the
+    # serial figures put it.
     timeout-minutes: 150
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

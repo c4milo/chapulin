@@ -4028,9 +4028,21 @@ examples-check: bin/example_psk bin/example_pinned bin/example_ca bin/example_we
 # test-invariants job — each of those targets is slow enough that a
 # baseline plus a mutation pass costs real minutes — and the
 # proof-backed ones in its test-invariants-proof-backed job.
+#
+# The fast tier and the not-proof-backed class run one violation per
+# worker, half as many workers as cores. With --jobs above 1,
+# test/violations.py runs each violation in a copy of the tree under
+# bin/violations/, one copy per worker, and never edits the working tree;
+# its docstring says what a copy holds. The fast tier took 13 minutes one
+# violation at a time in CI's check job on a 4-core runner (run
+# 36228452875). Half the cores, because many catch targets run parallel
+# jobs of their own (semgrep, zig, the clang lint specs): on a 10-core Mac
+# the fast tier took 1,158 s with one worker, 393 s with five and 489 s
+# with ten.
+VIOLATION_JOBS ?= $(shell n=$$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 2); echo $$(( n > 1 ? n / 2 : 1 )))
 .PHONY: test-invariants-fast
 test-invariants-fast: bin/unit bin/unit_ca bin/x509strict bin/x509strict_ecdsa bin/rsa_test bin/drbg_test bin/handshake_strict_test bin/handshake_strict_webpki bin/webpki_session_test bin/webpki_resume_test bin/webpki_resume_tcp_nonblocking bin/webpki_auth_test bin/webpki_encrypted_exts_test bin/softmul_test bin/unit_ct_widemul bin/mlkem_test_ct_widemul bin/webpki_spki_test bin/webpki_sigalg_test bin/webpki_cert_test bin/x25519_equiv_test
-	+python3 test/violations.py --tier=fast
+	+python3 test/violations.py --tier=fast --jobs $(VIOLATION_JOBS)
 
 # Every violation but the proof-backed ones: the fast tier plus the
 # handshake_sequence_test, diff and e2e-backed violations that cost
@@ -4047,7 +4059,7 @@ else
 	$(MAKE) RAND=extern bin/example_psk bin/example_pinned bin/example_ca
 	$(call REQUIRE_MATHLIB,test-invariants-not-proof-backed)
 	cd spec/lean && $(LAKE) build
-	+python3 test/violations.py --not-proof-backed
+	+python3 test/violations.py --not-proof-backed --jobs $(VIOLATION_JOBS)
 endif
 
 # The proof-backed violations, whose target is proof/prove-one.sh running
@@ -4058,14 +4070,19 @@ endif
 # test-invariants-proof-backed
 # (https://github.com/c4milo/chapulin/issues/144). test/violations.py
 # reads the class from each catches line, so a new proof-backed
-# violation lands here without a Makefile edit.
+# violation lands here without a Makefile edit. The class runs one
+# violation at a time, in the working tree: proof/run.sh admits each
+# proof against the whole machine's memory, so two at once could
+# exhaust it.
 .PHONY: test-invariants-proof-backed
 test-invariants-proof-backed:
 	+python3 test/violations.py --proof-backed
 
 # The whole set, one class after the other. Two recipe lines rather than
-# two prerequisites: the runner edits sources in place, so the classes
-# must never run at the same time under make -j.
+# two prerequisites: the proof-backed class edits sources in the working
+# tree, and the other class copies the working tree when it starts, so
+# a copy made during a proof-backed edit would hold that edit. The
+# classes must never run at the same time under make -j.
 .PHONY: test-invariants
 test-invariants:
 	$(MAKE) test-invariants-not-proof-backed

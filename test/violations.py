@@ -7,6 +7,9 @@ Run from the repository root: python3 test/violations.py [name ...]
     --tier=slow          every other target
     --proof-backed       only the violations proof/prove-one.sh catches
     --not-proof-backed   every other violation
+    --jobs N             run N violations at once, each in its own copy of
+                         the tree; 1, the default, runs them one at a
+                         time in the working tree
     --list               print the selected names, one per line; run nothing
     --lint-anchors       check every edit still matches its file exactly once
 
@@ -49,12 +52,31 @@ requires a NONZERO exit. Three outcomes:
 
 STALE is a failure too. A violation that silently stops matching is
 worse than none, because it reports success forever.
+
+With --jobs 1 the runner edits the working tree itself, one violation
+after another, and restores each file before the next edit. With --jobs
+N above 1 it first makes N copies of the working tree in a directory of
+its own under bin/violations/, one per worker; make_copy says what a
+copy holds. Each worker takes the next violation from one shared queue,
+then applies, builds, runs and restores it inside its own copy, so no
+two violations edit the same file and the working tree is never edited.
+A violation whose target runs docker gets a fresh copy of its own. Each
+violation's lines print whole when it finishes, so their order changes
+from run to run, and the summary line reads the same either way. The
+copies are deleted when the run ends. The proof-backed violations run
+with --jobs 1 only: proof/run.sh admits each proof against the whole
+machine's memory, so two at once could exhaust it.
 """
 
+import concurrent.futures
 import os
 import pathlib
+import queue
 import re
+import shutil
 import subprocess
+import tempfile
+import threading
 import time
 import sys
 
@@ -110,19 +132,29 @@ def tail(output, lines=5):
     """The last few non-blank lines of a failed step's output, indented
     to sit under the ERROR line that quotes them."""
     kept = [l for l in (output or "").splitlines() if l.strip()][-lines:]
-    return "".join(f"           {l}\n" for l in kept)
+    return [f"           {l}" for l in kept]
 
 
-def run(name):
-    """Apply one violation, build and run its target, restore, report."""
+def run(name, root=ROOT, env=None):
+    """Apply one violation in the tree at root, build and run its target
+    there, and restore the file. Returns the outcome and the lines that
+    report it, which the caller prints whole. env is the environment of
+    every command it starts; None passes the runner's own."""
+    lines = []
+    outcome = run_steps(name, root, env, lines.append)
+    return outcome, "".join(f"{line}\n" for line in lines)
+
+
+def run_steps(name, root, env, say):
+    """run's steps. Each line of the report goes to say."""
     path = VIOLATIONS / f"{name}.violation"
     head, old, new = parse(path)
-    target = ROOT / head["file"]
+    target = root / head["file"]
     original = target.read_text()
 
     if original.count(old) != 1:
-        print(f"  STALE    {name}: its 'old' text appears "
-              f"{original.count(old)} times in {head['file']}, expected 1")
+        say(f"  STALE    {name}: its 'old' text appears "
+            f"{original.count(old)} times in {head['file']}, expected 1")
         return "stale"
 
     # A "catches" with a slash is a script run as-is, and the words after
@@ -139,9 +171,9 @@ def run(name):
         command = [f"bin/{command[0]}"]
     binary = command[0]
     builds = head.get("builds", "" if target_is_script else binary).split()
-    if target_is_script and not builds and binaries_run_by(ROOT / binary):
-        print(f"  STALE    {name}: a script target that runs a bin/ binary needs "
-              f"a 'builds' line naming what to rebuild from the edited source")
+    if target_is_script and not builds and binaries_run_by(root / binary):
+        say(f"  STALE    {name}: a script target that runs a bin/ binary needs "
+            f"a 'builds' line naming what to rebuild from the edited source")
         return "stale"
 
     def rebuild_and_run():
@@ -172,11 +204,13 @@ def run(name):
             # RAND has no default and the examples link the packaged
             # object, so a bare make stops at cfg.h's #error. check
             # builds them the same way.
-            b = subprocess.run(["make", "RAND=extern", *builds], cwd=ROOT,
-                               capture_output=True, text=True, close_fds=False)
+            b = subprocess.run(["make", "RAND=extern", *builds], cwd=root,
+                               env=env, capture_output=True, text=True,
+                               close_fds=False)
             if b.returncode != 0:
                 return False, None, b.stderr or b.stdout
-        r = subprocess.run(command, cwd=ROOT, capture_output=True, text=True, close_fds=False)
+        r = subprocess.run(command, cwd=root, env=env, capture_output=True,
+                           text=True, close_fds=False)
         return True, r.returncode, r.stderr or r.stdout
 
     # Baseline: the target must PASS on unedited source in this
@@ -187,14 +221,16 @@ def run(name):
     # demonstrably passes first.
     base_built, base_rc, base_output = rebuild_and_run()
     if not base_built:
-        print(f"  ERROR    {name}: {' '.join(builds)} does not build on clean "
-              f"source; cannot establish a baseline")
-        print(tail(base_output), end="")
+        say(f"  ERROR    {name}: {' '.join(builds)} does not build on clean "
+            f"source; cannot establish a baseline")
+        for line in tail(base_output):
+            say(line)
         return "error"
     if base_rc != 0:
-        print(f"  ERROR    {name}: {head['catches']} fails on unedited source "
-              f"(exit {base_rc}); its verdict on an edit would be meaningless")
-        print(tail(base_output), end="")
+        say(f"  ERROR    {name}: {head['catches']} fails on unedited source "
+            f"(exit {base_rc}); its verdict on an edit would be meaningless")
+        for line in tail(base_output):
+            say(line)
         return "error"
 
     try:
@@ -203,8 +239,8 @@ def run(name):
         if not built:
             # An edit that will not compile proves nothing about the
             # tests, so say that rather than counting it as caught.
-            print(f"  unguarded {name}: {head['file']} no longer compiles; "
-                  f"write an edit that builds")
+            say(f"  unguarded {name}: {head['file']} no longer compiles; "
+                f"write an edit that builds")
             return "unguarded"
     finally:
         target.write_text(original)
@@ -226,24 +262,25 @@ def run(name):
         # hour after the violation run that made it.
         for b in builds:
             if b.startswith("bin/"):
-                (ROOT / b).unlink(missing_ok=True)
+                (root / b).unlink(missing_ok=True)
         if not target_is_script and binary.startswith("bin/"):
-            (ROOT / binary).unlink(missing_ok=True)
+            (root / binary).unlink(missing_ok=True)
 
     if rc == NO_VERDICT_EXIT and proof_backed(head["catches"]):
         # The wrapper's clock stopped the run before cbmc reported either
         # way. A formula the edit keeps from converging is not a formula
         # the proof refuted, so this is not caught.
-        print(f"  ERROR    {name}: {head['catches']} returned no verdict on "
-              f"the edited source; a run the clock stopped refutes nothing")
-        print(tail(output), end="")
+        say(f"  ERROR    {name}: {head['catches']} returned no verdict on "
+            f"the edited source; a run the clock stopped refutes nothing")
+        for line in tail(output):
+            say(line)
         return "error"
     if rc != 0:
-        print(f"  caught   {name} [{head['invariant']}] by {head['catches']}")
+        say(f"  caught   {name} [{head['invariant']}] by {head['catches']}")
         return "caught"
-    print(f"  unguarded {name} [{head['invariant']}]: {head['catches']} passed "
-          f"on broken code")
-    print(f"           {head['reason']}")
+    say(f"  unguarded {name} [{head['invariant']}]: {head['catches']} passed "
+        f"on broken code")
+    say(f"           {head['reason']}")
     return "unguarded"
 
 
@@ -431,28 +468,261 @@ def select(argv):
     return names
 
 
+# Where --jobs above 1 makes its copies of the tree. bin/ is ignored, so
+# git in the working tree never lists a copy's files.
+COPIES = ROOT / "bin" / "violations"
+
+# The paths git ignores that a violation's build or catch target reads.
+# Every other ignored path is something a build writes, and a copy writes
+# its own. tools/node_modules is not here: only lint-commits reads it,
+# and no violation runs that.
+#
+#   spec/lean/.lake    bin/diff and bin/handshake_sequence_test run the
+#                      spec's oracle, .lake/build/bin/diffspec.
+#                      test-invariants-not-proof-backed builds it before
+#                      the runner starts, and no violation writes there,
+#                      so a copy holds a symbolic link to it.
+#   bin/wycheproof     the checkout `make wycheproof` (test/wycheproof.sh)
+#                      and cross-check generate their vectors from.
+#   bin/rv32tc-docker  the toolchain test/docker-riscv32.sh downloads.
+#
+# The docker lanes mount a copy at /src, where a symbolic link to a path
+# on the host names nothing, so a copy holds hard links to the files of
+# the last two. The targets read them and write none: the Makefile's
+# fetch deletes bin/wycheproof and fetches it again when it names another
+# commit, and the docker script downloads the toolchain only when it is
+# missing.
+LINKED_INPUTS = ("spec/lean/.lake",)
+HARD_LINKED_INPUTS = ("bin/wycheproof", "bin/rv32tc-docker")
+# bin/stamps holds tools/stamp.py's record of each check that passed and
+# the assembly lint-wide-multiply keeps, each named by a SHA-256 over
+# what the check or compile reads, with file names relative to the tree,
+# and never by a time. A copy holds a copy of it, so its checks skip
+# exactly what the working tree's would, and write their new stamps in
+# the copy.
+COPIED_INPUTS = ("bin/stamps",)
+
+# The variables that make git read a repository other than the one it
+# finds from its working directory. A copy's commands run without them,
+# so the git in a copy reads the copy's own index and never writes the
+# working tree's.
+GIT_REPOSITORY_VARIABLES = ("GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE",
+                            "GIT_COMMON_DIR")
+
+OUTCOMES = ("caught", "unguarded", "stale", "error")
+
+
+class CopyFailed(Exception):
+    """A step that makes a copy of the tree failed."""
+
+
+def git(cwd, env, *args, stdin=None):
+    """What a git command prints. Raises CopyFailed when it fails."""
+    r = subprocess.run(["git", *args], cwd=cwd, env=env, input=stdin,
+                       capture_output=True)
+    if r.returncode != 0:
+        raise CopyFailed(f"test-invariants: git {' '.join(args[:2])} failed "
+                         f"in {cwd}: {r.stderr.decode().strip()}")
+    return r.stdout
+
+
+def link_or_copy(source, dest):
+    """A hard link at dest to source, or a copy where the two sit on
+    different file systems."""
+    try:
+        os.link(source, dest)
+    except OSError:
+        shutil.copy2(source, dest)
+
+
+def make_copy(dest, files, staged, env):
+    """A copy of the working tree at dest, for one worker or for one
+    violation whose target runs docker. It holds:
+
+      - files, the paths git lists in the working tree, tracked or
+        untracked but not ignored, each copied with its mode and mtime,
+        so make compares the copied files with each other as it does in
+        the working tree;
+      - a git repository whose index holds staged, the working tree's
+        index entries, because lint-invariants, lint-trust-separation,
+        lint-quic-partition, test/zig-build-check.sh and tools/stamp.py
+        ask `git ls-files` which files exist;
+      - LINKED_INPUTS, HARD_LINKED_INPUTS and COPIED_INPUTS, where the
+        working tree has them.
+
+    Nothing else goes in bin/, so each copy builds every object and
+    binary its violations need, and the make 3.81 handling in run_steps
+    applies to that copy's objects alone."""
+    for path in files:
+        source = ROOT / path
+        if not os.path.lexists(source):
+            continue  # deleted from the working tree but still in its index
+        (dest / path).parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source, dest / path, follow_symlinks=False)
+    git(dest, env, "init", "-q")
+    git(dest, env, "update-index", "-z", "--index-info", stdin=staged)
+    for path in LINKED_INPUTS + HARD_LINKED_INPUTS + COPIED_INPUTS:
+        source = ROOT / path
+        if not source.exists():
+            continue
+        (dest / path).parent.mkdir(parents=True, exist_ok=True)
+        if path in LINKED_INPUTS:
+            (dest / path).symlink_to(source)
+        elif path in HARD_LINKED_INPUTS:
+            shutil.copytree(source, dest / path, symlinks=True,
+                            copy_function=link_or_copy)
+        else:
+            shutil.copytree(source, dest / path, symlinks=True)
+    return dest
+
+
+def copier(env):
+    """A function that makes a copy of the working tree at the path it is
+    given. It lists the files once, so every copy holds the same ones."""
+    listed = git(ROOT, env, "ls-files", "-z", "--cached", "--others",
+                 "--exclude-standard")
+    files = sorted({os.fsdecode(p) for p in listed.split(b"\0") if p})
+    staged = git(ROOT, env, "ls-files", "-z", "--stage")
+    return lambda dest: make_copy(dest, files, staged, env)
+
+
+def runs_docker(catches):
+    """Whether a catch target is a script that runs docker. The docker
+    lanes mount the tree they run in at /src, and on Linux the files the
+    container writes there belong to root, so a later build in the same
+    tree may be unable to replace them."""
+    script = catches.split()[0]
+    return "/" in script and "docker run" in (ROOT / script).read_text()
+
+
+def schedule(names):
+    """The order the workers take names in: the slow tier's first, since
+    one of those targets can run for many minutes and should not start
+    last, then the fast tier's, each in name order."""
+    return sorted(names, key=lambda n: catches_of(n) in FAST_TARGETS)
+
+
+def run_parallel(names, jobs):
+    """Run names on jobs workers, each in its own copy of the tree under
+    COPIES, and print each report whole as it finishes. Returns the
+    tally. The copies are deleted before it returns."""
+    env = {k: v for k, v in os.environ.items()
+           if k not in GIT_REPOSITORY_VARIABLES}
+    COPIES.mkdir(parents=True, exist_ok=True)
+    # A directory of its own, so two runs in one tree never share a copy.
+    run_dir = pathlib.Path(tempfile.mkdtemp(prefix="run-", dir=COPIES))
+    try:
+        return run_workers(names, jobs, run_dir, copier(env), env)
+    except CopyFailed as e:
+        sys.exit(str(e))
+    finally:
+        shutil.rmtree(run_dir, ignore_errors=True)
+
+
+def run_workers(names, jobs, run_dir, copy, env):
+    """run_parallel's workers: one thread per copy, each taking the next
+    name from one shared queue until the queue is empty."""
+    with concurrent.futures.ThreadPoolExecutor(jobs) as pool:
+        copies = list(pool.map(copy, (run_dir / str(i) for i in range(jobs))))
+    print(f"test-invariants: {jobs} workers, one copy of the tree each, "
+          f"under {run_dir.relative_to(ROOT)}")
+    # A violation whose target runs docker gets a copy of its own, deleted
+    # after it, so no other violation builds where the container wrote.
+    own_copy = {n for n in names if runs_docker(catches_of(n))}
+    pending = queue.SimpleQueue()
+    for name in schedule(names):
+        pending.put(name)
+    tally = dict.fromkeys(OUTCOMES, 0)
+    lock = threading.Lock()
+
+    def run_in(root, name):
+        if name not in own_copy:
+            return run(name, root, env)
+        root = copy(run_dir / name)
+        try:
+            return run(name, root, env)
+        finally:
+            shutil.rmtree(root, ignore_errors=True)
+
+    def worker(root):
+        while True:
+            try:
+                name = pending.get_nowait()
+            except queue.Empty:
+                return
+            try:
+                outcome, report = run_in(root, name)
+            except Exception as e:  # counted, so the tally covers every name
+                outcome = "error"
+                report = (f"  ERROR    {name}: the runner raised "
+                          f"{type(e).__name__}: {e}\n")
+            with lock:
+                tally[outcome] += 1
+                sys.stdout.write(report)
+                sys.stdout.flush()
+
+    threads = [threading.Thread(target=worker, args=(c,), daemon=True)
+               for c in copies]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    return tally
+
+
+def jobs_option(argv):
+    """argv without its --jobs option, and the option's value: 1 when it
+    is absent. It takes `--jobs N` or `--jobs=N`."""
+    rest, value = [], "1"
+    args = iter(argv)
+    for a in args:
+        if a == "--jobs":
+            value = next(args, "")
+        elif a.startswith("--jobs="):
+            value = a[len("--jobs="):]
+        else:
+            rest.append(a)
+    if not re.fullmatch(r"[0-9]+", value) or int(value) < 1:
+        sys.exit(f"test-invariants: --jobs takes a whole number of at least "
+                 f"1, not {value!r}")
+    return rest, int(value)
+
+
 OPTIONS = {"--lint-builds", "--lint-anchors", "--list", "--proof-backed",
            "--not-proof-backed"}
 
 
 def main():
     lint_fast_targets()
-    for flag in (a for a in sys.argv[1:] if a.startswith("--")):
+    argv, jobs = jobs_option(sys.argv[1:])
+    for flag in (a for a in argv if a.startswith("--")):
         if flag not in OPTIONS and not flag.startswith("--tier="):
             # A misspelt selector must not fall through to the whole set.
             sys.exit(f"test-invariants: unknown option {flag}")
-    if "--lint-builds" in sys.argv[1:]:
+    if "--lint-builds" in argv:
         sys.exit(lint_builds())
-    if "--lint-anchors" in sys.argv[1:]:
+    if "--lint-anchors" in argv:
         sys.exit(lint_anchors())
-    names = select(sys.argv[1:])
-    if "--list" in sys.argv[1:]:
+    names = select(argv)
+    if "--list" in argv:
         print("\n".join(names))
         return
+    proofs = [n for n in names if jobs > 1 and proof_backed(catches_of(n))]
+    if proofs:
+        sys.exit(f"test-invariants: the selection holds {len(proofs)} "
+                 f"proof-backed violations, and --jobs {jobs} would run them "
+                 f"side by side while proof/run.sh admits each proof against "
+                 f"the whole machine's memory; add --not-proof-backed, or run "
+                 f"them with --jobs 1")
     print(f"test-invariants: {len(names)} violations to check")
-    tally = {"caught": 0, "unguarded": 0, "stale": 0, "error": 0}
-    for name in names:
-        tally[run(name)] += 1
+    if jobs > 1:
+        tally = run_parallel(names, min(jobs, len(names)))
+    else:
+        tally = dict.fromkeys(OUTCOMES, 0)
+        for name in names:
+            outcome, report = run(name)
+            print(report, end="")
+            tally[outcome] += 1
     print(f"test-invariants: {tally['caught']} caught, "
           f"{tally['unguarded']} unguarded, {tally['stale']} stale, "
           f"{tally['error']} error")
