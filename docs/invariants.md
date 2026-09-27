@@ -1190,7 +1190,11 @@ last `ROLE=server` stub, as the entry said it would.
     No call returns `CH_EINVAL` after it has sent a byte: a server
     checks at init every identity fact its flight would otherwise meet
     (INV-14), and its flight answers its own refusals with `CH_EAUTH`
-    (docs/decisions.md 74).
+    (docs/decisions.md 74). A CA build's resuming ticket whose
+    `ticket_epoch` is below the stored epoch is a refusal on entry too
+    (docs/ca.md): `ch_connect`, `ch_record_init` and `ch_quic_init` each
+    return `CH_EINVAL` for it, and `ch_connect` leaves
+    `CH_EPOCH_REVOKED` in `ch_tls.epoch_status`.
   - A call on a session that cannot take it, which changes nothing:
     `CH_EPROTO` for bytes delivered to a session that failed or closed,
     and from `ch_read` and `ch_write` before the handshake completes,
@@ -1244,7 +1248,15 @@ last `ROLE=server` stub, as the entry said it would.
   each refusal inside it, and `inv13-srv-signer-refusal-einval`, which
   returns `CH_EINVAL` from a signer's refusal again, requires
   `bin/srv_auth_test` to fail. The entry refusals are INV-14's, each
-  with its tests. Each funnel's recorded alert is tested:
+  with its tests. The retired ticket has a boundary pair at each client
+  entry: a ticket at the stored epoch is taken, and one a step below it
+  gets `CH_EINVAL` with no byte sent or staged and no alert recorded.
+  `bin/unit_ca` (`test/session_cfg_tests.h`) holds `ch_connect` to it,
+  and `bin/ticket_epoch_tcp_nonblocking` and `bin/ticket_epoch_quic`
+  (`test/ticket_epoch_test.c`) hold `ch_record_init` and `ch_quic_init`.
+  `inv13-ticket-epoch-refusal-eauth` returns `CH_EAUTH` from
+  `ch_connect` for that ticket again, and `bin/unit_ca` fails. Each
+  funnel's recorded alert is tested:
   `bin/unit` (`test/session_alert_tests.h`) reads `ch_alert_sent` after
   `tlsi_fail` sent decode_error, unexpected_message and internal_error,
   `bin/tcp_blocking_loop_test` after each blocking driver's
@@ -1276,7 +1288,8 @@ last `ROLE=server` stub, as the entry said it would.
   the caller can retry a read, or adds a failure path that records no
   alert, or one that sends an alert after the peer's fatal alert, or
   leaves a tcp-nonblocking alert for the caller to send, who holds no
-  key to protect it with.
+  key to protect it with, or answers a retired ticket on one client
+  entry with a code the other two do not return.
 - See [decisions: Engineering](decisions.md#engineering).
 
 ### INV-14 — the refusal set

@@ -111,10 +111,10 @@ typedef struct ch_record {
 // an event loop fills them with buffer copies that never block, because
 // by then it holds the bytes.
 //
-// A refusal stages nothing and leaves r failed, CH_ST_FAILED, until the
-// next ch_record_init. One refusal differs from ch_connect's code: a CA
-// build's ticket that the stored epoch retired, which ch_connect answers
-// with CH_EAUTH, is CH_EINVAL here.
+// A refusal zeroes r, so nothing is staged, and sets r->t.state to
+// CH_ST_FAILED until the next ch_record_init. A CA build's ticket that
+// the stored epoch retired is one of those refusals, as it is for
+// ch_connect.
 //
 // Requires: r and cfg are not NULL, and cfg outlives the session.
 int ch_record_init(ch_record *r, const ch_cfg *cfg);

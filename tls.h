@@ -13,13 +13,14 @@
 
 // Runs the full handshake. On CH_OK the session is ready for read/write.
 // Any error wipes all key material and leaves the session dead. A
-// configuration it refuses returns CH_EINVAL before a byte is sent, and a
-// CA build answers a ticket the stored epoch retired with CH_EAUTH, also
-// before a byte is sent (docs/ca.md). Every other error comes from the
-// handshake, which first tries to send the alert its failure chose, and
-// ch_alert_sent names it. The peer's fatal alert is the exception: the
-// handshake returns CH_EPROTO, sends nothing and ch_alert_received names
-// the alert (alert.h, RFC 9846 §6.2).
+// configuration it refuses returns CH_EINVAL before a byte is sent. A CA
+// build's ticket that the stored epoch retired is one of those
+// refusals, and ch_tls.epoch_status reads CH_EPOCH_REVOKED after it
+// (docs/ca.md). Every other error comes from the handshake, which first
+// tries to send the alert its failure chose, and ch_alert_sent names it.
+// The peer's fatal alert is the exception: the handshake returns
+// CH_EPROTO, sends nothing and ch_alert_received names the alert
+// (alert.h, RFC 9846 §6.2).
 //
 // It is declared only where it is defined, in a TRANSPORT=tcp-blocking
 // object with a client. A ROLE=server object exports ch_srv_accept in

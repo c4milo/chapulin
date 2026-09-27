@@ -23,11 +23,9 @@
 // Requires: t is the zeroed session whose cfg copy is already written;
 // cfg is not NULL and outlives the session.
 //
-// Returns CH_OK when every rule holds. Returns CH_EINVAL for any
-// refusal, and CH_EAUTH when a resuming ticket's epoch sits below the
-// stored one, which is the code tls.c's ch_connect returns there.
-// ch_quic_init turns every one of them into CH_EINVAL, because quic.h
-// gives that call one refusal code.
+// Returns CH_OK when every rule holds, and CH_EINVAL for any refusal. A
+// resuming ticket whose epoch sits below the stored one is a refusal
+// too, with the code ch_connect and ch_record_init return for it.
 //
 // It writes t->epoch, t->epoch_seen and t->epoch_status under a CA mode
 // and nothing outside t in any build.

@@ -407,7 +407,7 @@ LINT_C := $(filter-out softmul.c,$(SRCS)) handshake_groups.c drbg.c sha3.c sha51
           test/ghash_equiv_test.c test/ghash_equiv_soft.c \
           x25519_wide.c test/x25519_equiv_test.c test/x25519_equiv_portable.c test/x25519_equiv_wide.c \
           test/diff_x25519_test.c test/build_test.c test/lib_pair_half.c test/lib_pair_main.c \
-          test/entropy_recipe.c \
+          test/entropy_recipe.c test/ticket_epoch_test.c \
           $(wildcard examples/*.c)
 
 # Test-local headers: prerequisites for every binary that includes them,
@@ -2286,6 +2286,21 @@ bin/tlsclient_tcp_nonblocking: test/tcp_nonblocking_client.c $(TCP_NONBLOCKING_S
 	@mkdir -p bin
 	$(CC) $(CFLAGS) -DCH_TRANSPORT_TCP_NONBLOCKING -I. -o $@ test/tcp_nonblocking_client.c $(TCP_NONBLOCKING_SRCS)
 
+# The CA build's ticket epoch rule at the two non-blocking client entries,
+# ch_record_init and ch_quic_init, from one main. No other test binary
+# builds either transport under -DCH_TRUST_CA, and bin/unit_ca holds
+# ch_connect to the same boundary. The QUIC one adds x509.c and
+# x509_der.c, the CA chain verifier handshake_auth.c calls in that mode,
+# which QUIC_DRIVER_SRCS leaves out.
+bin/ticket_epoch_tcp_nonblocking: test/ticket_epoch_test.c $(TCP_NONBLOCKING_SRCS) $(HDRS) $(TESTH)
+	@mkdir -p bin
+	$(CC) $(CFLAGS) -DCH_TRUST_CA -DCH_TRANSPORT_TCP_NONBLOCKING -I. -o $@ test/ticket_epoch_test.c \
+	  $(TCP_NONBLOCKING_SRCS)
+bin/ticket_epoch_quic: test/ticket_epoch_test.c $(QUIC_DRIVER_SRCS) x509.c x509_der.c $(HDRS) $(TESTH)
+	@mkdir -p bin
+	$(CC) $(CFLAGS) -DCH_TRUST_CA -DCH_TRANSPORT_QUIC_NONBLOCKING -I. -o $@ test/ticket_epoch_test.c \
+	  $(QUIC_DRIVER_SRCS) x509.c x509_der.c
+
 bin/tlsclient: test/tls_client.c $(SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) -I. -o $@ test/tls_client.c $(SRCS)
@@ -2391,7 +2406,8 @@ CHECK_RUN_BINS := unit unit_ca unit_pq drbg_test softmul_test rsa_test rsa_sign_
                   quic_loop_test quic_loop_webpki \
                   webpki_loop_tcp_nonblocking exporter_test srv_flight_test handshake_strict_test \
                   handshake_strict_pq handshake_strict_webpki webpki_session_test webpki_resume_test \
-                  webpki_resume_tcp_nonblocking x509strict x509strict_ecdsa
+                  webpki_resume_tcp_nonblocking x509strict x509strict_ecdsa \
+                  ticket_epoch_tcp_nonblocking ticket_epoch_quic
 CHECK_LEGS := check-lib-drbg check-lib-extern check-examples check-lib-ca-rsa check-lib-ca-ecdsa \
               check-lib-webpki check-lib-webpki-tcp-nonblocking check-lib-webpki-widemul check-lib-tx-record \
               check-lib-quic check-lib-quic-webpki-both check-lib-server check-lib-server-tcp-nonblocking \
@@ -3731,7 +3747,7 @@ else
 	  $(SRV_SRCS) test/srv_auth_test.c test/srv_test.c test/srv_flight_test.c \
 	  test/tls_server.c srv_quic.c quic_token.c srv_tcp_nonblocking.c test/srv_tcp_nonblocking_test.c \
 	  test/tcp_nonblocking_loop_test.c test/tcp_blocking_loop_test.c test/webpki_loop_test.c \
-	  test/quic_loop_test.c \
+	  test/quic_loop_test.c test/ticket_epoch_test.c \
 	  test/exporter_test.c tcp_nonblocking.c tcp_nonblocking_frame.c tcp_nonblocking_step.c x25519_wide.c \
 	  test/x25519_equiv_portable.c test/hkdf384_test.c \
 	  test/x25519_equiv_wide.c test/diff_x25519_test.c,$(LINT_C)), \
@@ -3831,6 +3847,12 @@ else
 	# The TRUST=webpki record loopback, under the defines its object takes.
 	@$(call TIDY_EACH,test/webpki_loop_test.c, \
 	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_TRANSPORT_TCP_NONBLOCKING -DCH_TRUST_WEBPKI -I.)
+	# The ticket epoch test, once per non-blocking transport it is built
+	# for, under the CA mode it refuses to build without.
+	@$(call TIDY_EACH,test/ticket_epoch_test.c, \
+	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_TRUST_CA -DCH_TRANSPORT_TCP_NONBLOCKING -I.)
+	@$(call TIDY_EACH,test/ticket_epoch_test.c, \
+	  -std=c11 -D_DEFAULT_SOURCE $(HOST_RAND_DEF) -DCH_TRUST_CA -DCH_TRANSPORT_QUIC_NONBLOCKING -I.)
 	# The four ch_keylog call sites, which no other pass compiles: the
 	# hook exists only under CH_KEYLOG, and keylog.h refuses that define
 	# without a server role, so this pass names ROLE=both's pair.

@@ -1,0 +1,15 @@
+invariant: INV-13
+file: tls.c
+catches: unit_ca
+reason: ch_connect answers a CA build's ticket that the stored epoch
+  retired with CH_EAUTH again, while ch_record_init and ch_quic_init
+  answer it with CH_EINVAL. The refusal comes before a byte is sent, so
+  every client entry owes CH_EINVAL for it. bin/unit_ca requires that
+  code for a ticket one step below the stored epoch.
+
+--- old
+        t->epoch_status = CH_EPOCH_REVOKED;
+        return CH_EINVAL;
+--- new
+        t->epoch_status = CH_EPOCH_REVOKED;
+        return CH_EAUTH;

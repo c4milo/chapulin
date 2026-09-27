@@ -194,8 +194,15 @@ before a byte is sent, when the age is above the lifetime or above
 `CH_TICKET_LIFETIME_MAX`, 604,800 seconds, which RFC 9846 §4.6.1 makes the
 most any ticket lives. A lifetime of 0 means you gave none, and then the
 seven days alone apply. No ticket with a lifetime of 0 is handed to
-`on_ticket`, because §4.6.1 says to discard one at once. A CA build also
-takes `ticket_epoch`, and a `TRUST=webpki` build `ticket_binding`.
+`on_ticket`, because §4.6.1 says to discard one at once.
+
+A CA build also takes `ticket_epoch`, the ticket's `epoch`: the stored
+epoch when the ticket arrived. The same three calls return `CH_EINVAL`,
+before a byte is sent, when it is below the stored epoch, because an
+epoch bump since then retired the ticket ([`docs/ca.md`](ca.md)). Either
+refusal, of the age or of the epoch, means the ticket cannot be used
+again: drop it and connect in full. A `TRUST=webpki` build also takes
+`ticket_binding`.
 
 ## Sizing buffers in record mode
 

@@ -17,7 +17,7 @@
 <text x="45" y="205" font-size="11.5" fill="#1b1f24">cfg.ticket_epoch = 2.</text>
 <rect x="34" y="251" width="314" height="63" rx="5" fill="#fff8c5" stroke="#d4a72c"/>
 <text x="45" y="268" font-size="11.5" fill="#1b1f24">ch_connect compares 2 against the stored 3 and</text>
-<text x="45" y="285" font-size="11.5" fill="#1b1f24">refuses: CH_EPOCH_REVOKED, CH_EAUTH.</text>
+<text x="45" y="285" font-size="11.5" fill="#1b1f24">refuses: CH_EPOCH_REVOKED, CH_EINVAL.</text>
 <text x="45" y="302" font-size="11.5" fill="#1b1f24">No socket is opened and no byte is sent.</text>
 <line x1="116" y1="342" x2="352" y2="342" stroke="#cf222e" stroke-width="1.6" marker-end="url(#ar)" stroke-dasharray="6 4"/>
 <rect x="179" y="320" width="116" height="18" fill="#ffffff"/>

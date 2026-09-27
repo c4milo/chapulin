@@ -733,9 +733,16 @@ expect_fail ca-epoch-revoked -3 "$DIR/err14" \
 
 # The ticket saved at epoch 2 dies with the bump: resumption is the one
 # path that presents no certificate, so the ticket's own epoch carries
-# the check.
-expect_fail ca-epoch-ticket -3 "$DIR/err14" \
+# the check. ch_connect refuses it before a byte is sent, so the code is
+# CH_EINVAL, -6, which every refused configuration shares. The epoch
+# status, CH_EPOCH_REVOKED (3), is what names the retired ticket.
+expect_fail ca-epoch-ticket -6 "$DIR/err14" \
     ./bin/tlsclient_ca 127.0.0.1 "$PORT15" "@$DIR/epoch.ticket" - - "$DIR/epoch.state"
+grep -q "^epoch status 3$" "$DIR/err14" || {
+    echo "FAIL e2e ca-epoch-ticket: the refusal was not the retired ticket"
+    cat "$DIR/err14"
+    exit 1
+}
 
 # An ordinary wall-clock leaf sits thousands of steps past the stored epoch, so
 # the jump bound rejects it: a mis-configured issuance tool fails loudly

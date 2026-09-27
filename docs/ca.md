@@ -484,15 +484,19 @@ Read these after `ch_connect`, whether it succeeded or failed:
     resumed session it means the opposite: the ticket knows a newer
     epoch than storage, so a write was lost.
   - `CH_EPOCH_REVOKED` — the peer is older. The handshake failed.
-    Usually a server you have not reissued yet.
+    Usually a server you have not reissued yet. On a resumed session it
+    is the ticket that is older: `ch_connect` refused it with
+    `CH_EINVAL` before it sent a byte, so drop the ticket and connect in
+    full.
   - `CH_EPOCH_UNTRUSTED` — the date is not an allowed one, or too far
     ahead. The handshake failed. Never routine: a mis-issued
     certificate, or
     someone trying to strand the device.
 - `ch_tls.epoch_store_failed` — the value did not persist.
 
-Both failures return `CH_EAUTH`, so `epoch_status` is the only way to
-tell them apart, and they need opposite responses.
+A certificate that fails either way fails the handshake with
+`CH_EAUTH`, so `epoch_status` is the only way to tell the two apart,
+and they need opposite responses.
 
 ### Limits
 

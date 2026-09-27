@@ -395,6 +395,12 @@ int main(int argc, char **argv) {
     int rc = ch_connect(&tls, &cfg);
     if (rc != CH_OK) {
         (void)fprintf(stderr, "handshake failed: %d\n", rc);
+#ifdef CH_TRUST_CA
+        // e2e asserts on this line. A ticket the stored epoch retired
+        // returns CH_EINVAL, the code of every refused configuration, and
+        // the epoch status, CH_EPOCH_REVOKED, is what names it.
+        (void)fprintf(stderr, "epoch status %u\n", (unsigned)tls.epoch_status);
+#endif
         return 1;
     }
     (void)fprintf(stderr, "connected\n");

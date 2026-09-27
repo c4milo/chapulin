@@ -43,7 +43,9 @@ int tlsi_epoch_init(ch_tls *t, const ch_cfg *cfg, int psk_ok) {
     // A resumed session presents no certificate, so the ticket's epoch
     // is the only revocation check left: a ticket below the stored
     // epoch was retired by that bump. A ticket epoch over CH_EPOCH_MAX
-    // is corrupt ticket storage, so it returns CH_EINVAL, not CH_EAUTH.
+    // is corrupt ticket storage. Each is refused before a byte is sent,
+    // so each returns CH_EINVAL (cfg.h, INV-13), and only the retired
+    // ticket sets epoch_status, to CH_EPOCH_REVOKED.
     if (!psk_ok || !cfg->resumption) {
         return CH_OK;
     }
@@ -53,7 +55,7 @@ int tlsi_epoch_init(ch_tls *t, const ch_cfg *cfg, int psk_ok) {
     t->epoch_seen = cfg->ticket_epoch;
     if (cfg->ticket_epoch < stored) {
         t->epoch_status = CH_EPOCH_REVOKED;
-        return CH_EAUTH;
+        return CH_EINVAL;
     }
     // A ticket above the stored epoch means the store lost a bump that
     // an earlier session wrote. The device would again trust the

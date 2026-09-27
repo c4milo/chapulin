@@ -128,9 +128,11 @@ static int trust_config_ok(const ch_cfg *cfg) {
 #endif
 
 // Loads the stored revocation epoch and checks a resuming ticket
-// against it, the rule tls.c's epoch_init states (docs/ca.md, INV-21).
-// Outside a CA-mode build nothing enforces an epoch, so a config that
-// sets the callbacks is refused rather than silently ignored.
+// against it, the rule tls.c's tlsi_epoch_init states (docs/ca.md,
+// INV-21). Every refusal is CH_EINVAL, as it is there, a ticket below
+// the stored epoch among them. Outside a CA-mode build nothing enforces
+// an epoch, so a config that sets the callbacks is refused rather than
+// silently ignored.
 static int epoch_init(ch_tls *t, const ch_cfg *cfg) {
 #ifdef CH_TRUST_CA
     if ((cfg->epoch_load == NULL) != (cfg->epoch_store == NULL)) {
@@ -153,7 +155,7 @@ static int epoch_init(ch_tls *t, const ch_cfg *cfg) {
     t->epoch_seen = cfg->ticket_epoch;
     if (cfg->ticket_epoch < stored) {
         t->epoch_status = CH_EPOCH_REVOKED;
-        return CH_EAUTH;
+        return CH_EINVAL;
     }
     t->epoch_status = cfg->ticket_epoch > stored ? CH_EPOCH_AHEAD : CH_EPOCH_MATCHED;
     return CH_OK;

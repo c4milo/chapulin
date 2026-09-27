@@ -133,11 +133,11 @@ typedef struct ch_quic {
 // are not NULL, and cfg outlives the session, as over TCP, because q->t.cfg copies
 // pointers and not the bytes named.
 //
-// Returns CH_OK, with one whole ClientHello staged, q->tx_len set, q->tx_level and
-// q->rx_level CH_LEVEL_INITIAL, q->step HSQ_STEP_AWAIT_SERVER_HELLO and q->t.state
-// CH_ST_START. Returns CH_EINVAL for any refusal above, leaving q zeroed but for
-// q->t.state, which is CH_ST_FAILED, so no later call runs; nothing went out and no secret
-// was drawn that a caller must wipe.
+// Returns CH_OK, with one whole ClientHello staged, q->tx_len set, q->tx_level and q->rx_level
+// CH_LEVEL_INITIAL, q->step HSQ_STEP_AWAIT_SERVER_HELLO and q->t.state CH_ST_START. Returns
+// CH_EINVAL for any refusal above, leaving q zeroed but for q->t.state, which is CH_ST_FAILED,
+// so no later call runs; nothing went out and no secret was drawn that a caller must wipe. A
+// CA build's ticket that the stored epoch retired is one of those refusals, as for ch_connect.
 int ch_quic_init(ch_quic *q, const ch_cfg *cfg);
 #endif
 

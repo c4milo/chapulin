@@ -349,7 +349,7 @@ def resumption_after_bump():
                "cfg.ticket_epoch = 2."])
     d.gap()
     d.note(0, ["ch_connect compares 2 against the stored 3 and",
-               "refuses: CH_EPOCH_REVOKED, CH_EAUTH.",
+               "refuses: CH_EPOCH_REVOKED, CH_EINVAL.",
                "No socket is opened and no byte is sent."])
     d.msg(0, 1, "(nothing sent)", tone=RED, dashed=True)
     d.gap()

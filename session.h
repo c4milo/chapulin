@@ -422,9 +422,9 @@ void tlsi_fail(ch_tls *t, uint8_t description);
 // ch_record_init both ask, and each checks the I/O callbacks itself.
 int tlsi_config_ok(const ch_cfg *cfg);
 
-// Loads the stored epoch and checks a resuming ticket against it, the
-// step a CA build owes before its first handshake message. Returns CH_OK
-// when no epoch is configured. Both client drivers call it.
+// Loads the stored epoch and checks a resuming ticket against it, the step a CA build owes
+// before its first handshake message. Returns CH_OK when no epoch is configured, and CH_EINVAL
+// for every refusal, a ticket the stored epoch retired among them. Both client drivers call it.
 int tlsi_epoch_init(ch_tls *t, const ch_cfg *cfg, int psk_ok);
 
 // Wipe all key material and buffered plaintext; keys go dead.

@@ -94,7 +94,9 @@ static void test_epoch_cfg(void) {
     // Resumption carries no certificate, so the ticket's own epoch is
     // the only revocation check left: a ticket below the stored epoch
     // was retired by the bump that raised it, and one at or above it
-    // still resumes.
+    // still resumes. The refusal comes before a byte is sent, so its
+    // code is CH_EINVAL, as ch_record_init and ch_quic_init answer it
+    // (test/ticket_epoch_test.c), and no alert goes out.
     static uint8_t psk[32] = {1};
     cfg.server_pubkey = NULL;
     cfg.server_pubkey_len = 0;
@@ -105,7 +107,10 @@ static void test_epoch_cfg(void) {
     cfg.resumption = 1;
     epoch_mark = 10;
     cfg.ticket_epoch = 9;
-    CHECK(ch_connect(&t, &cfg) == CH_EAUTH);
+    int sends = m.sends;
+    CHECK(ch_connect(&t, &cfg) == CH_EINVAL);
+    CHECK(m.sends == sends);
+    CHECK(ch_alert_sent(&t) == 0);
     // The caller sees the verdict on the failing path too.
     CHECK(t.epoch_status == CH_EPOCH_REVOKED);
     CHECK(t.epoch_seen == 9);
