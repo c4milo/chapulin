@@ -141,6 +141,11 @@ LIB_LEGS = [
          "the raw-ecdsa KEX=pq object packages {path}, and it is the one "
          "leg that links ML-KEM into a raw-mode object", []),
     ]),
+    ("RAND=session TRUST=webpki TRANSPORT=tcp-nonblocking ROLE=both", [
+        ("make lib-check RAND=session TRUST=webpki TRANSPORT=tcp-nonblocking ROLE=both",
+         "the RAND=session object packages {path}, and lib-check holds it to "
+         "name no ch_rand_bytes", ["test/lib-check-rand-session.sh"]),
+    ]),
 ]
 
 # What "everything" means, in the order to run it: the two tiers, then

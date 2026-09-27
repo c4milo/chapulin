@@ -12,7 +12,7 @@
 #include "handshake_message.h"
 #include "keylog.h"
 #include "keysched.h"
-#include "rand.h"
+#include "rand_draw.h"
 #include "x25519.h"
 #ifdef CH_TRUST_WEBPKI
 #include "webpki_pin.h"
@@ -30,16 +30,16 @@ static void early_secret_without_psk(size_t hash_len, uint8_t *early) {
 
 void hsf_begin(handshake_state *h) {
     ch_tls *t = h->t;
-    ch_rand_bytes(h->priv, sizeof h->priv);
-    ch_rand_bytes(h->random, sizeof h->random);
+    rand_draw(&t->cfg, h->priv, sizeof h->priv);
+    rand_draw(&t->cfg, h->random, sizeof h->random);
 #ifdef CH_KEX_HYBRID
-    ch_rand_bytes(h->dz, sizeof h->dz);
+    rand_draw(&t->cfg, h->dz, sizeof h->dz);
 #endif
-    // The caller zeroed h, so a hook that returned without writing leaves
-    // every one of them zero, and nothing downstream would notice: the
-    // handshake completes and the peer can predict the key. A real draw
-    // is all-zero with probability 2^-256, so this checks the
-    // integrator's hook against rand.h's contract rather than checking
+    // The caller zeroed h, so a source that returned without writing
+    // leaves every one of them zero, and nothing downstream would notice:
+    // the handshake completes and the peer can predict the key. A real
+    // draw is all-zero with probability 2^-256, so this checks the
+    // integrator's source against rand.h's contract rather than checking
     // peer input, which is what CH_ASSERT is for. It cannot tell a weak
     // generator from a strong one; nothing here can.
     {

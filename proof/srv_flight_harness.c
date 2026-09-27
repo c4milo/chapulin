@@ -76,8 +76,8 @@ static void write_alert(uint8_t *alert) {
 void ch_rand_bytes(uint8_t *p, size_t n) {
     __CPROVER_assert(n == 0 || __CPROVER_w_ok(p, n), "rand: output writable");
     fill_nondet(p, n);
-    // rand.h's contract: an all-zero draw is a hook that returned
-    // without writing, which the handlers catch with CH_ASSERT.
+    // rand.h's contract for each draw rand_draw hands here: an all-zero
+    // draw is a source that returned without writing, which CH_ASSERT fires on.
     __CPROVER_assume(n == 0 || p[0] != 0);
 }
 

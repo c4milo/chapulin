@@ -2,9 +2,9 @@
 // x25519 in the TLS 1.3 key_share. One parameter set, no negotiation.
 //
 // The entry points are derandomized: the caller supplies every random
-// byte (d, z, m), because chapulin calls ch_rand_bytes only at the sites
-// INV-4 lists. keygen and encaps take their seeds as arguments; nothing
-// here calls ch_rand_bytes.
+// byte (d, z, m), because chapulin draws only at the sites INV-4 lists,
+// through rand_draw (rand.h). keygen and encaps take their seeds as
+// arguments; nothing here draws.
 //
 // The KEX=pq and TRUST=webpki builds and every server role package mlkem.c,
 // mlkem_poly.c and sha3.c; a raw or ca client under KEX=x25519 compiles

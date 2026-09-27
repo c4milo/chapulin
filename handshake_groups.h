@@ -46,7 +46,7 @@
 // refusal changes anything, and the caller answers illegal_parameter.
 //
 // Otherwise it writes h->retry_group, draws the P-256 key pair the retry
-// hello carries through ch_rand_bytes, the scalar into h->p256_priv and
+// hello carries through rand_draw, the scalar into h->p256_priv and
 // the uncompressed point into h->p256_pub, and wipes h->priv, h->pub and
 // h->dz: the retry hello carries the secp256r1 share alone (§4.2.2,
 // rfc9846.txt:1194-1196) and the ServerHello must select secp256r1

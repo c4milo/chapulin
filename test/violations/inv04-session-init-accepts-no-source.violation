@@ -1,0 +1,22 @@
+invariant: INV-4
+file: tls.c
+catches: tcp_nonblocking_loop_session
+reason: tlsi_config_ok stops asking rand_source_ok, so ch_record_init and
+  ch_connect accept a RAND=session configuration whose rand_bytes is NULL.
+  The init call then draws the key share through a NULL function pointer
+  instead of returning CH_EINVAL before it draws or sends anything. The
+  session loop's refusal check passes a configuration with no source.
+
+--- old
+    if ((!psk_ok && !pin_ok) || cfg->buf == NULL || cfg->buf_len < CH_MIN_RXBUF) {
+        return 0;
+    }
+#ifdef CH_RAND_SESSION
+    if (!rand_source_ok(cfg)) {
+        return 0;
+    }
+#endif
+--- new
+    if ((!psk_ok && !pin_ok) || cfg->buf == NULL || cfg->buf_len < CH_MIN_RXBUF) {
+        return 0;
+    }

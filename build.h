@@ -66,15 +66,20 @@
 //   CH_EXPORTER            ch_tls
 //   CH_KEYLOG              the handshake state that ch_record and ch_quic
 //                          hold
+//   CH_RAND_SESSION        ch_cfg, and with it ch_tls, ch_record and
+//                          ch_quic, whose ch_cfg copy holds the
+//                          session's rand_bytes and rand_io
 //
-// Left out, because no public layout or bound reads them: the RAND
-// pattern, CH_ROLE_BOTH, the AES implementation, X25519=wide and the
+// Left out, because no public layout or bound reads them: RAND=extern and
+// RAND=drbg, CH_ROLE_BOTH, the AES implementation, X25519=wide and the
 // four timing assertions, CH_NATIVE_WIDEMUL (which WIDEMUL=native
 // sets), CH_NATIVE_AES, CH_AES_EXTERN_CONSTANT_TIME and
 // CH_NATIVE_MUL128. CH_KEX_TWO_GROUPS and
 // CH_KEX_HYBRID are left out too: cfg.h computes both from
 // CH_TRUST_WEBPKI and CH_KEX_PQ, so a bit for either would repeat those
-// two. docs/decisions.md 56 gives the reason for each.
+// two. docs/decisions.md 56 gives the reason for each, and entry 77
+// the reason RAND=session takes a bit where the other two patterns take
+// none.
 #define CH_BUILD_TRUST_CA 0x001U
 #define CH_BUILD_TRUST_WEBPKI 0x002U
 #define CH_BUILD_PIN_ECDSA 0x004U
@@ -85,6 +90,7 @@
 #define CH_BUILD_ROLE_SERVER 0x080U
 #define CH_BUILD_EXPORTER 0x100U
 #define CH_BUILD_KEYLOG 0x200U
+#define CH_BUILD_RAND_SESSION 0x400U
 
 // Each CH_BUILD_IF_ value is its bit when this translation unit defines
 // the define it names, and 0 when it does not. CH_BUILD_AXES is their
@@ -139,11 +145,16 @@
 #else
 #define CH_BUILD_IF_KEYLOG 0U
 #endif
+#ifdef CH_RAND_SESSION
+#define CH_BUILD_IF_RAND_SESSION CH_BUILD_RAND_SESSION
+#else
+#define CH_BUILD_IF_RAND_SESSION 0U
+#endif
 #define CH_BUILD_AXES                                                                              \
     (CH_BUILD_IF_TRUST_CA | CH_BUILD_IF_TRUST_WEBPKI | CH_BUILD_IF_PIN_ECDSA |                     \
      CH_BUILD_IF_KEX_PQ | CH_BUILD_IF_TRANSPORT_QUIC_NONBLOCKING |                                 \
      CH_BUILD_IF_TRANSPORT_TCP_NONBLOCKING | CH_BUILD_IF_SUITE_AES_GCM | CH_BUILD_IF_ROLE_SERVER | \
-     CH_BUILD_IF_EXPORTER | CH_BUILD_IF_KEYLOG)
+     CH_BUILD_IF_EXPORTER | CH_BUILD_IF_KEYLOG | CH_BUILD_IF_RAND_SESSION)
 
 // The sizes of the public structs a consumer declares or reads, in
 // bytes, and 0 for a struct this build does not declare. A server role

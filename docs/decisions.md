@@ -1362,6 +1362,10 @@ does nothing more.
     because two objects that both defined `ch_build` did not link into
     one image.
 
+    Entry 77 changed one thing here: `CH_RAND_SESSION` takes bit `0x400`
+    of `axes`, because it adds two fields to `ch_cfg`. `RAND=extern` and
+    `RAND=drbg` still take no bit.
+
 57. **A failed QUIC session keeps its write keys for one CONNECTION_CLOSE
     per level, and a call of its own seals it.** RFC 9001 §4.8 turns a TLS
     alert into a CONNECTION_CLOSE frame whose error code is 0x0100 plus the
@@ -1962,6 +1966,12 @@ does nothing more.
     56 rejected a symbol name per build because it would encode every
     axis in the name. The transport is one axis, and it already changes
     the link line, since each transport exports its own calls.
+
+    Entry 77 changed one thing here: a `RAND=session` object takes a
+    randomness callback per session in its `ch_cfg` and imports no
+    `ch_rand_bytes`, so an image whose objects are all `RAND=session`
+    defines none. The hook stays one per image for `RAND=extern` and
+    `RAND=drbg`.
 
 62. **Each `TRANSPORT` value names what TLS runs over and who does the
     I/O: `tcp-blocking`, `tcp-nonblocking` and `quic-nonblocking`.** The
@@ -3226,3 +3236,88 @@ does nothing more.
     a strict peer reads every handshake alert: in the clear before the
     failing side's write key, and protected after. No key survives a
     failure.
+
+77. **A `RAND=session` object draws every random byte from a source each
+    session's `ch_cfg` names, and packages no generator.** colibri's owner
+    ruled in its decision 94 that cocuyo, its sibling project, replays a
+    connection from a seeded stream. With one `ch_rand_bytes` per image, a
+    replay had to know which chapulin calls draw and in what order, and it
+    broke with no error when a draw moved from one call to another.
+    Sessions on different threads also shared that one hook, which then
+    needed a lock or state held per thread. Camilo chose on 2026-09-27 a
+    third value of the `RAND` axis, and firmware keeps `RAND=extern`.
+
+    - **The fields.** Under `-DCH_RAND_SESSION`, `ch_cfg` gains
+      `rand_bytes`, which the library calls as `rand_bytes(rand_io, p,
+      n)`, and `rand_io`, which it hands over unread and which may be
+      NULL. The contract is `ch_rand_bytes`'s (rand.h): the source writes
+      n bytes and returns nothing, so a source that cannot fill must not
+      return. It is a CSPRNG in production, because a deterministic
+      stream gives predictable keys to anyone who knows its seed. A
+      seeded stream that replays a connection is for tests.
+    - **One draw path.** Every library draw calls `rand_draw`
+      (`rand_draw.h`), which calls the session's `rand_bytes` under
+      `RAND=session` and `ch_rand_bytes` under the other two patterns,
+      so those builds draw as they did. The ten sites stay ten. One
+      moved: `rsa_pss_sign` takes its salt as an argument, and
+      `srv_auth.c`'s `sign_rsa_pss` draws it from the configuration the
+      signature serves, as `mlkem_encaps_derand` and `p256_ecdh_keygen`
+      take their random bytes from their callers. `rsa_pss_sign` keeps
+      the assertion against an all-zero salt. `inv-4-one-draw-path`
+      refuses a `ch_rand_bytes` call outside `rand_draw`'s body, and the
+      files and calls rules now count `rand_draw` calls.
+    - **The refusal.** `ch_connect`, `ch_record_init`, `ch_quic_init`,
+      `ch_srv_accept`, `ch_srv_record_init`, `ch_srv_quic_init` and
+      `ch_srv_check` return `CH_EINVAL` for a NULL `rand_bytes`, before
+      they draw or send anything. `ch_srv_check` signs with the RSA
+      identity, and that signature draws a salt, so it refuses whichever
+      identities the configuration holds, as the init calls do.
+    - **No fallback.** The object neither defines nor imports
+      `ch_rand_bytes` and packages no `drbg.c`, so an image that links
+      only such objects defines no entropy hook. `rand.h` declares the
+      hook only for the other two patterns. `lib-check` holds the object
+      to name neither `ch_rand_bytes` nor `ch_drbg_seed`, the counterpart
+      of the `RAND=extern` import check, and links `test/build_test.c`,
+      which defines no hook under the define.
+    - **The build record.** `CH_BUILD_RAND_SESSION` is bit `0x400` of
+      `axes`: the define changes `ch_cfg`, and with it `ch_tls`,
+      `ch_record` and `ch_quic`. `RAND=extern` and `RAND=drbg` still take
+      no bit, because neither changes a layout (entry 56).
+    - **Threads.** A session draws from its own source alone, so the
+      library holds no entropy state that sessions share, and sessions on
+      different threads need no lock around the library's draws. A lock
+      is the source's business, and only where two sessions share one.
+    - **The Zig API.** `Client.random` and `Server.random` are
+      `?std.Random`, null by default. A session's init stores the value
+      in the session and points `rand_io` at that copy, and an adapter
+      fills each draw from it. A null value leaves `rand_bytes` NULL, and
+      C refuses it with `CH_EINVAL`, which init returns as
+      `error.Invalid`. `Server.check` holds the value for the one call.
+
+    Rejected:
+
+    - **A per-session callback beside the hook, which falls back to
+      `ch_rand_bytes` when NULL.** A forgotten field would draw from the
+      image's generator with no error, which is the silent break this
+      entry exists to remove, and every object would still import the
+      hook.
+    - **`rsa_pss_sign` taking a fill function and its context.** The
+      signer would call through a pointer into the session's source. With
+      the salt as an argument it draws nothing, and a signature is a
+      function of the key, the digest and the salt.
+    - **A required Zig field.** A Zig field's default cannot depend on
+      the build, so a field that is absent from the other builds and
+      required in this one needs a second copy of each value struct. A
+      null value that C refuses keeps the rule in C, where every other
+      configuration rule is.
+
+    Cost: in a `RAND=session` build `ch_cfg`, `ch_tls`, `ch_record` and
+    `ch_quic` each grow by two pointers, 16 bytes on arm64 and 8 on
+    rv32ic, measured. No other build's layout moves, and bench/sram.sh
+    reads the same numbers as before. `rsa_pss_sign` takes one more
+    argument. `make check` gains one packaged-object leg and three loop
+    binaries, and check-slow's Zig roster one configuration.
+
+    Gain: a replay needs only each session's seed, whichever calls draw
+    and in whatever order, and two sessions never draw from each other's
+    stream, on one thread or several.

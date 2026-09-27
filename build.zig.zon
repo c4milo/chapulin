@@ -111,6 +111,7 @@
         "quic_token.c",
         "quic_token.h",
         "rand.h",
+        "rand_draw.h",
         "record.c",
         "record.h",
         "rsa.c",

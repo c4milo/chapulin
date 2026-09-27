@@ -104,6 +104,9 @@ fn Session(comptime side: Side, comptime receive_len: usize) type {
         receive: [receive_len]u8,
         /// What cfg.io points at.
         hook: chapulin.Hook,
+        /// What cfg.rand_io points at under RAND=session: the std.Random
+        /// init took from the values, which every draw fills from.
+        random: chapulin.RandomSource,
         /// Where on_transport_params copies the peer's transport parameters.
         peer_params: []u8,
         /// Their length, null before they arrive. Above peer_params.len
@@ -120,8 +123,9 @@ fn Session(comptime side: Side, comptime receive_len: usize) type {
         /// on_level_ready, on_transport_params and srv.on_crypto_out;
         /// sni_buf is srv.sni_buf and srv.sni_cap. transport_params is
         /// borrowed for the session, because a server writes it when its
-        /// flight goes out. On error.Invalid the session is failed until
-        /// the next init.
+        /// flight goes out. Under RAND=session each also stores the
+        /// values' random and points rand_bytes at it. On error.Invalid
+        /// the session is failed until the next init.
         pub const init = if (side == .client) initClient else initServer;
         /// Client: ch_quic_crypto_in. Server: ch_srv_quic_crypto_in,
         /// which writes the server's CRYPTO bytes into outgoing.
@@ -143,6 +147,7 @@ fn Session(comptime side: Side, comptime receive_len: usize) type {
             var cfg = values.toCfg();
             self.setCallbacks(&cfg, transport_params);
             cfg.on_ticket = onTicket;
+            chapulin.attachRandom(&cfg, &self.random, values.random);
             return chapulin.fromCode(error{Invalid}, c.ch_quic_init(&self.quic, &cfg));
         }
 
@@ -158,6 +163,7 @@ fn Session(comptime side: Side, comptime receive_len: usize) type {
             cfg.srv.on_crypto_out = onCryptoOut;
             cfg.srv.sni_buf = if (sni_buf.len == 0) null else sni_buf.ptr;
             cfg.srv.sni_cap = sni_buf.len;
+            chapulin.attachRandom(&cfg, &self.random, values.random);
             return chapulin.fromCode(error{Invalid}, c.ch_srv_quic_init(&self.quic, &cfg));
         }
 

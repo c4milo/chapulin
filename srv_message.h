@@ -106,7 +106,7 @@ extern const uint8_t srv_hrr_random[SRV_RANDOM];
 // bytes (RFC 9846 §4.7.1). RFC 9846 asks only that it be unique among the
 // tickets of one connection (rfc9846.txt:3272-3273), and this server
 // sends one ticket per connection, so any value would do. It draws 8
-// random bytes in the same ch_rand_bytes call as the ticket's other two
+// random bytes in the same rand_draw call as the ticket's other two
 // random values (srv_resume.h). SRV_NEW_SESSION_TICKET_MAX is
 // the message that carries it: a 4-byte handshake header, ticket_lifetime
 // (4), ticket_age_add (4), the nonce behind its length byte, the ticket
@@ -174,7 +174,7 @@ typedef struct {
 // still requires (rfc9846.txt:2325-2329).
 //
 // Requires cap bytes at out; random32 pointing at SRV_RANDOM readable
-// bytes the caller drew through ch_rand_bytes; session_id pointing at
+// bytes the caller drew through rand_draw; session_id pointing at
 // session_id_len readable bytes, 0 to SRV_SESSION_ID_MAX of them, the
 // bytes the ClientHello carried; share pointing at share_len readable
 // bytes, the server's KeyShareEntry.key_exchange, which is X25519_LEN

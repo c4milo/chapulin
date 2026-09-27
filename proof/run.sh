@@ -447,6 +447,10 @@ launch slow:5 noovf x25519_sqr 65 ""
 # stubbed reader as a stub of its contract, which answers both ways.
 # Measured the same way on 2026-09-27: psk 1831 properties in 261 s at
 # 4.29 GB, pin 1833 in 86 s at 2.40 GB.
+# hsf_begin then drew through rand_draw, which calls the stubbed
+# ch_rand_bytes under the proofs' RAND=extern (docs/decisions.md 77).
+# Measured the same way the same day: psk 1831 properties in 149 s at
+# 5.81 GB, pin 1833 in 54 s at 3.51 GB.
 launch slow full handshake_psk 100 "fill_nondet.0:618,fill_buf_nondet.0:97,ct_wipe.0:449" handshake_auth.c handshake_flight.c buf.c ct.c
 launch slow full handshake_pin 100 "fill_nondet.0:618,fill_buf_nondet.0:97,ct_wipe.0:449" handshake_auth.c handshake_flight.c buf.c ct.c
 # ML-KEM's chained-product functions, one formula each; the inverse
@@ -896,7 +900,9 @@ launch fast full hybrid_secret 65 "fill_nondet.0:2401,ct_wipe.0:2401" -DCH_KEX_P
 # p256_ecdh entries stubbed to their contracts and a fill of the 65-byte
 # point, measured the same way: 561 properties, 2.7 s, 0.14 GB. A probe
 # asserting false at the P-256 share, the refused point and the refused
-# P-256 secret fails all three.
+# P-256 secret fails all three. With both draws through rand_draw, which
+# reads the session's configuration (docs/decisions.md 77), measured the
+# same way on 2026-09-27: 573 properties, 2.8 s, 0.14 GB.
 launch fast full srv_kex 66 "fill_nondet.0:66,same.0:33,zero.0:65" ct.c -DCH_ROLE_SERVER
 # The TRUST=webpki client's three-group rules (docs/decisions.md 63):
 # handshake_groups.c with ch_rand_bytes, the P-256 keygen and exchange, and
@@ -907,7 +913,9 @@ launch fast full srv_kex 66 "fill_nondet.0:66,same.0:33,zero.0:65" ct.c -DCH_ROL
 # properties, 1.7 s, 0.04 GB. A probe asserting false in each arm -- the
 # cookie retry taken, the retry refused under require_pq, the P-256
 # secret accepted and refused, and the x25519 secret refused -- fails all
-# five, so every arm is reached.
+# five, so every arm is reached. With the draw through rand_draw
+# (docs/decisions.md 77), measured the same way on 2026-09-27: 259
+# properties, 1.9 s, 0.04 GB.
 launch fast full handshake_groups 66 "fill_nondet.0:66,zero.0:65" -DCH_TRUST_WEBPKI ct.c
 # The parser half of the hybrid build
 # (https://github.com/c4milo/chapulin/issues/47). parse_key_share is driven
@@ -1416,7 +1424,10 @@ launch fast full poly1305 85 "blocks.0:8" ct.c
 # srv_identities_usable, the rule a configuration is held to before a
 # session starts, took the formula to 464 properties, 10 s and 0.54 GB
 # measured the same way, and an assert against either of its two answers
-# fails.
+# fails. The RSA-PSS salt drawn here and handed to rsa_pss_sign, with
+# ch_rand_bytes stubbed to its contract (docs/decisions.md 77), took it to
+# 474 properties, 8 s and 0.56 GB, PROVE_ONLY=srv_auth PROVE_NO_CACHE=1
+# /usr/bin/time -l, and an assert of 0 in that stub fails.
 launch fast full srv_auth 385 "" ct.c -DCH_ROLE_SERVER
 # The server's ticket selection and issue, srv_resume.c, over any
 # identities and binders lists up to the bounds the harness states, any
@@ -1435,7 +1446,9 @@ launch fast full srv_auth 385 "" ct.c -DCH_ROLE_SERVER
 # selection's hash length set to SHA256_LEN, the one hash this build
 # holds: 1046 properties, 143 s, 7.94 GB, measured the same way the same
 # day. The peak is the solver's; the nightly runs this proof in a job of
-# its own.
+# its own. With the ticket's draw through rand_draw (docs/decisions.md
+# 77): 1046 properties, 149 s, 4.92 GB, measured the same way on
+# 2026-09-27.
 launch slow full srv_resume 120 "fill_nondet.0:118,find_ticket.0:24,binder_at.0:36,ct_wipe.0:84,ct_memeq.0:33" buf.c ct.c -DCH_ROLE_SERVER
 # gcm and gcm_forge have no launch line, for the reason
 # aead_inplace has none: neither formula returned a verdict, and an
@@ -1863,7 +1876,10 @@ launch fast full rsa_mul_webpki 20 "fill_nondet.0:513,from_bytes.0:129,main.0:12
 # encoded message -- so the line carries no unwindset. Measured (cbmc
 # 6.11.0, kissat, /usr/bin/time -l, with other jobs on the machine): 759
 # properties, 7 s, 194 MB, and 761 properties, 8 s, 205 MB with the key
-# test, where an assert of 0 on the arm that admits a key fails.
+# test, where an assert of 0 on the arm that admits a key fails. With the
+# salt an argument the encoder takes rather than a draw it makes, so the
+# harness holds no ch_rand_bytes stub (docs/decisions.md 77), PROVE_ONLY=rsa_sign
+# PROVE_NO_CACHE=1 /usr/bin/time -l: 755 properties, 8 s, 206 MB.
 launch fast full rsa_sign 385 "" ct.c
 
 FAIL=0

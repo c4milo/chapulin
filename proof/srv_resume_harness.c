@@ -161,7 +161,9 @@ int srv_out_sealed(handshake_state *h, const uint8_t *pt, size_t n) {
 }
 
 // The hook's contract (rand.h): it writes every byte, so a draw is never
-// all zero, which srv_resume.c asserts.
+// all zero, which srv_resume.c asserts. The draw arrives here through
+// rand_draw (rand_draw.h), which calls ch_rand_bytes under the
+// RAND=extern pattern every harness declares.
 void ch_rand_bytes(uint8_t *p, size_t n) {
     __CPROVER_assert(__CPROVER_w_ok(p, n), "rand: output writable");
     fill_nondet(p, n);

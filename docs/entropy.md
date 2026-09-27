@@ -5,7 +5,10 @@ and MIPS has no randomness instruction, so `ch_rand_bytes`
 comes from the fast-key-erasure generator in `drbg.[ch]`, and the
 security of every handshake reduces to the quality of its seed.
 INV-4 in [invariants.md](invariants.md) lists every call that draws
-randomness. What the draws protect:
+randomness. Every draw goes through `rand_draw` (`rand_draw.h`), which
+calls the one source the build's pattern names: `ch_rand_bytes`, or
+under `RAND=session` the session's own `ch_cfg.rand_bytes` (below).
+What the draws protect:
 
 - **The key-exchange secret.** A client and a server each draw an
   ephemeral x25519 private key per handshake. In pinned mode the
@@ -28,8 +31,9 @@ randomness. What the draws protect:
   a server's tickets are only as good as its seed.
 - **An RSA-PSS salt.** A server with an RSA identity draws a 32-byte salt
   each time it signs: once in `ch_srv_check` at boot, and once per
-  handshake that signs with rsa_pss_rsae_sha256. The signature carries
-  the salt in the clear.
+  handshake that signs with rsa_pss_rsae_sha256. `srv_auth.c` draws it
+  and hands it to `rsa_pss_sign`, which draws nothing itself. The
+  signature carries the salt in the clear.
 
 An ECDSA signature draws nothing: `p256_sign` derives its nonce from the
 key and the message by RFC 6979, so a weak seed cannot repeat an ECDSA
@@ -43,15 +47,17 @@ keep chapulin devices out of that paper's sequel.
 
 ## Declare which generator the image uses
 
-The build names the pattern, and there is no default.
+The build names the pattern, and there is no default. There are three.
 
 | Declaration | The image does this | The packaged object holds this |
 | --- | --- | --- |
 | `RAND=extern` (`-DCH_RAND_EXTERN`) | Defines `ch_rand_bytes` itself: a hardware RNG, or a generator of its own | `ch_rand_bytes` stays undefined, so an image that never wired one fails to link |
 | `RAND=drbg` (`-DCH_RAND_DRBG`) | Calls `ch_drbg_seed` once at boot, with at least 32 bytes concatenated as below | `drbg.c`, with `ch_drbg_seed` and `ch_rand_bytes` exported beside the four public calls |
+| `RAND=session` (`-DCH_RAND_SESSION`) | Sets `ch_cfg.rand_bytes`, and `ch_cfg.rand_io` if its source needs a context, in each session's configuration | No generator and no `ch_rand_bytes`, defined or imported, so an image that links only such objects defines no hook |
 
-A build that names neither stops at an `#error` in `cfg.h`. That is the
-only part of this page a compiler can enforce. No library can grade an
+A build that names none stops at an `#error` in `cfg.h`, and so does one
+that names two. That is the only part of this page a compiler can
+enforce. No library can grade an
 integrator's generator: a weak one completes the handshake, sends a key
 share that looks uniform on the wire, and returns `CH_OK`. Requiring the
 declaration does not make the generator good. It makes the choice one
@@ -61,6 +67,42 @@ Under `RAND=drbg` the packaged object defines and exports
 `ch_rand_bytes`, so an image that also defines one fails to link with a
 duplicate symbol. An image moving from `extern` to `drbg` deletes its
 hook and moves its entropy into the `ch_drbg_seed` call.
+
+## One source per session
+
+`RAND=session` is for a host whose sessions each need a source of their
+own. It exists for two reasons (`docs/decisions.md` 77):
+
+- **Replay.** A test that seeds each session's source replays a
+  connection byte for byte from the seeds alone. It needs no knowledge
+  of which calls draw or in what order, so a draw that moves from one
+  call to another changes nothing it relies on.
+- **Threads.** A session draws from its own source alone, so the library
+  holds no entropy state that sessions share, and sessions on different
+  threads need no lock around the library's draws. A lock is the
+  source's business, and only where two sessions share one.
+
+The library calls `cfg.rand_bytes(cfg.rand_io, p, n)` for every draw
+the session makes, from whichever call makes it: `docs/porting.md`
+lists the calls, and INV-4 the sites. The source's contract is
+`ch_rand_bytes`'s (`rand.h`):
+
+- It writes n bytes at p and returns nothing. A source that cannot fill
+  p must not return: it blocks or stops the program.
+- In production it is a CSPRNG: the operating system's generator, or a
+  generator per session seeded as the sections below describe. A
+  deterministic stream gives predictable keys to anyone who knows its
+  seed, so a seeded stream that replays a connection is for tests alone.
+- `rand_io` is handed over unread and may be NULL. The session copies
+  both fields with the rest of `ch_cfg`, so what `rand_io` points at
+  must outlive the session.
+
+Every init call and `ch_srv_check` return `CH_EINVAL` for a NULL
+`rand_bytes`, before they draw or send a byte. Nothing falls back to
+`ch_rand_bytes`: a `RAND=session` object neither defines nor imports it,
+and `make lib-check` holds that. A Zig program sets `Client.random` and
+`Server.random` to a `std.Random`, and each session stores its own copy
+([zig.md](zig.md)).
 
 ## Layer the seed — never one source alone
 
@@ -138,7 +180,8 @@ the wiring. Three patterns, strongest default first:
 The reference target has none of this — no random-number peripheral,
 and no randomness instruction in mips32r2 — so that target always
 links the DRBG and seeds it as described above. The patterns here are
-for better-equipped parts.
+for better-equipped parts. Under `RAND=session` the same three apply to
+each session's source in place of `ch_rand_bytes`.
 
 ## What not to do
 
@@ -149,3 +192,6 @@ for better-equipped parts.
   randomness is worse than no handshake.
 - Do not share one factory secret across devices; per-device, like the
   PSK and the pin.
+- Do not ship a seeded stream as a session's source under `RAND=session`.
+  It replays a connection, which is what a test wants and what an
+  attacker who learns the seed wants too.

@@ -118,20 +118,28 @@ the constant-time multiply survived your compiler. It carries a measured case
 where it does not.
 
 You provide two blocking socket callbacks with your own timeouts, and
-`ch_rand_bytes` (`rand.h`). Use the hardware generator if the part has
+`ch_rand_bytes` (`rand.h`), or under `RAND=session` a source per session
+(below). Use the hardware generator if the part has
 one, or the seeded generator in `drbg.[ch]` if it does not. The
 reference target has no random-number peripheral, and mips32r2 has no
 randomness instruction, so it uses the seeded one. That generator
 refuses to run unseeded; [`docs/entropy.md`](entropy.md) covers
 seed provisioning.
 
-Say which of the two the image uses. `RAND=extern` leaves
+Say which of the three the image uses. `RAND=extern` leaves
 `ch_rand_bytes` for you to define, so an image that never wired a
 generator fails to link. `RAND=drbg` packages the reference generator
 and exports two more calls: `ch_drbg_seed`, for the image to call once
 at boot, and `ch_rand_bytes`, for the generator output that
-[`docs/entropy.md`](entropy.md)'s seed file and reseed need. There
-is no default: a build naming neither stops at an `#error`.
+[`docs/entropy.md`](entropy.md)'s seed file and reseed need.
+`RAND=session`, for a host, gives each session a source of its own:
+`cfg.rand_bytes`, which the library calls as
+`rand_bytes(rand_io, p, n)`, beside `cfg.rand_io`. The object then names
+no `ch_rand_bytes`, every init call refuses a NULL `rand_bytes` with
+`CH_EINVAL`, and sessions on different threads share no entropy state.
+Its source is a CSPRNG in production; a seeded stream that replays a
+connection is for tests. There is no default: a build naming none
+stops at an `#error`.
 No build can judge a generator — a weak one completes the handshake,
 sends a key share that looks uniform, and returns `CH_OK` — so writing
 the choice down is the only part a compiler can hold you to.

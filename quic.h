@@ -8,7 +8,7 @@
 // streams. docs/quic.md, "What the mode does not do", lists the split in full. The object
 // opens no socket and calls no I/O callback. Zero heap holds as it does over TCP: one
 // ch_quic, one caller-supplied buffer, no allocation. Configuration and result codes live
-// in cfg.h, the session struct under it in session.h, and ch_rand_bytes in rand.h. No call
+// in cfg.h, the session struct under it in session.h, and the random source in rand.h. No call
 // here polls for keys: RFC 9001 §4.1.4 says the availability of new keys is always a result
 // of providing inputs to TLS (rfc9001.txt:530-531), so cfg.on_level_ready fires from inside
 // ch_quic_crypto_in and the caller collects what a delivery produced.

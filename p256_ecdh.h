@@ -54,7 +54,7 @@
 // Returns 1, or 0 when the draw is not in [1, n-1] and the caller must
 // draw again, at most P256_ECDH_DRAWS times in all. A draw is out of
 // range with probability below 2^-32. The caller owns the draw, so no
-// ch_rand_bytes call lands in this file, which INV-4 requires. On 0 both
+// draw lands in this file, which INV-4 requires. On 0 both
 // outputs are zeroed, so a caller that ignores the return code publishes
 // no key rather than a wrong one.
 int p256_ecdh_keygen(const uint8_t draw[P256_SCALAR_LEN], uint8_t priv[P256_SCALAR_LEN],

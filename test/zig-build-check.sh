@@ -108,6 +108,7 @@ configs=(
 # so every value of every axis meets build.zig at least once.
 roster=(
     "drbg|RAND=drbg|"
+    "session|RAND=session TRUST=webpki TRANSPORT=tcp-nonblocking ROLE=both|"
     "ca-rsa|RAND=extern TRUST=ca-rsa|"
     "ca-ecdsa|RAND=extern TRUST=ca-ecdsa|"
     "webpki|RAND=extern TRUST=webpki|"

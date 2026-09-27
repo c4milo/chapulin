@@ -13,7 +13,7 @@ more:
 - the callbacks C calls, which copy bytes between the caller's slices and
   the session;
 - storage: the receive buffer, the latest ticket, the peer's transport
-  parameters.
+  parameters and, under `RAND=session`, the session's `std.Random`.
 
 Every TLS rule stays in C. Where a caller needs a record length, a write
 size or a ticket's age, the API calls the C function that computes it
@@ -60,9 +60,11 @@ the API leaves out, a program uses there under its C name:
 `chapulin.c.ch_build_matches`.
 
 The image still defines the hooks the object imports: `ch_rand_bytes`
-unless `RAND=drbg`, `ch_assert_fail`, `ch_keylog` under `KEYLOG=on`, and
+under `RAND=extern`, `ch_assert_fail`, `ch_keylog` under `KEYLOG=on`, and
 `ch_aes_block` under `AES=extern` (docs/porting.md). The module exports
-none of them.
+none of them. A `RAND=drbg` object defines `ch_rand_bytes` itself, and a
+`RAND=session` object names none: each session draws from the
+`std.Random` its values carry (Random bytes, below).
 
 ### Two objects in one program
 
@@ -107,6 +109,7 @@ for a `@compileError` declaration too.
 | `Trust.web_pki`, `Trust.pins`, `trustAnchor`, `CertType`, `serverCertType` | `ch_cfg.anchors` (TRUST=webpki) |
 | `Trust.pinned` | no `ch_cfg.anchors` |
 | `Client.alpn`, `alpnProtocol`, `alpnSelected` | `ch_cfg.alpn_protocols` |
+| `Client.random` and `Server.random` other than `void`, and `RandomSource` other than `void` | `ch_cfg.rand_bytes` (RAND=session) |
 | `Server.cipher_suites` | `ch_srv_cfg.cipher_suites` (SUITE=aesgcm) |
 | `suite` | `ch_tls.suite` |
 | `exportKeyingMaterial` | `ch_export` (EXPORTER=on) |
@@ -166,11 +169,12 @@ The client's trust, whose variants are the object's trust mode's:
 | `ticket`, null by default | `psk`, `psk_len`, `psk_id`, `psk_id_len`, `resumption = 1`, `ticket_epoch`, `ticket_lifetime_s`, and `ticket_binding` under TRUST=webpki |
 | `ticket_age_ms`, 0 by default | `ticket_age_ms`, and `obfuscated_age` from `c.ch_ticket_obfuscated_age(&ticket.ticket, ticket_age_ms)` |
 | `require_pq`, false by default | `require_pq` |
+| `random`, null by default, `RAND=session` alone | `rand_bytes` and `rand_io`, through the session's own copy |
 
 `toCfg()` returns that `ch_cfg`, and a session's `init` adds its buffer,
-callbacks and `io` to it. With a ticket, a raw or ca mode's `toCfg`
-leaves the two `server_pubkey` slots unset, because `ch_cfg` takes one
-auth mode. The age is the time since `on_ticket` handed the ticket over,
+callbacks and `io` to it, and under `RAND=session` its source. With a
+ticket, a raw or ca mode's `toCfg` leaves the two `server_pubkey` slots
+unset, because `ch_cfg` takes one auth mode. The age is the time since `on_ticket` handed the ticket over,
 in milliseconds. C refuses a ticket older than its lifetime or older than
 seven days (`ticket.h`, RFC 9846 §4.3.11.1 and §4.6.1), so `init`
 answers `error.Invalid` for it: an age of exactly the lifetime is still
@@ -218,6 +222,7 @@ hello still offers the certificate path, so that costs a full handshake
 | `alpn`, empty by default | `alpn_protocols`, `alpn_count` |
 | `require_server_name` | `srv.require_server_name` |
 | `cipher_suites`, empty for the default order | `srv.cipher_suites`, `srv.cipher_suite_count` |
+| `random`, null by default, `RAND=session` alone | `rand_bytes` and `rand_io`, as for a client |
 
 `EcdsaP256Identity` takes the chain, the leaf's point X||Y as
 `*const [64]u8` and the private scalar as `*const [32]u8`.
@@ -226,6 +231,34 @@ hello still offers the certificate path, so that costs a full handshake
 longer than `chain_count`'s `u8` holds, and `check()` runs
 `ch_srv_check`: each provisioned key signs, and the signature verifies.
 It takes no session.
+
+### Random bytes
+
+Under `RAND=session` each session draws from the source its own values
+name (`rand.h`, docs/entropy.md). `Client.random` and `Server.random`
+are `?std.Random`, null by default; in any other build they are `void`,
+and the sessions draw from the image's `ch_rand_bytes`.
+
+- **The session stores it.** `init` copies the `std.Random` into the
+  session's `random` field, a `RandomSource`, and `attachRandom` points
+  `ch_cfg.rand_io` at that copy and `ch_cfg.rand_bytes` at an adapter
+  that fills each draw's `out[0..n]` from it. The copy lives as long as
+  the session, which must not move after `init`.
+- **A value without one is refused at init.** A null `random` leaves
+  `rand_bytes` NULL, C answers `CH_EINVAL`, and `init` returns
+  `error.Invalid` with nothing sent. The refusal is C's, like every other
+  configuration rule. A Zig field's default cannot depend on the build,
+  so a field that is required here and absent elsewhere would need a
+  second copy of each value struct.
+- **`Server.check`** holds the value for its one call: the RSA-PSS
+  signature it makes draws its salt from it.
+- **The source.** In production it is a CSPRNG, such as
+  `std.crypto.random`. A deterministic stream gives predictable keys to
+  anyone who knows its seed, so a seeded `std.Random.DefaultPrng` per
+  session, which replays a connection byte for byte, is for tests.
+- **Threads.** A session draws from its own source alone, so sessions on
+  different threads share no entropy state in chapulin and need no lock
+  around its draws.
 
 ### Codes and reports
 
@@ -281,18 +314,19 @@ result with `fromCode(chapulin.Error, code)`.
 `record.Server(receive_len)` are types whose size is known at compile
 time, so a program places a session in a static, in a connection struct
 or on the stack, with no allocation. Each holds the C session, `record`,
-the receive buffer `cfg.buf`, `receive`, the `hook`, the slices the
-callbacks copy between during one call, `io`, and, on the client, the
-latest ticket. Do not move a session after `init`: `cfg.io` points at
-its hook. colibri sizes both at 20,480 bytes.
+the receive buffer `cfg.buf`, `receive`, the `hook`, the source `random`
+under `RAND=session`, the slices the callbacks copy between during one
+call, `io`, and, on the client, the latest ticket. Do not move a session
+after `init`: `cfg.io` points at its hook, and `cfg.rand_io` at its
+`random`. colibri sizes both at 20,480 bytes.
 
 | Zig call | C call | Errors |
 |---|---|---|
-| `Client.init(values)` | `Client.toCfg`, then `ch_record_init` with the API's `send`, `recv` and `on_ticket` | Invalid |
+| `Client.init(values)` | `Client.toCfg`, then `ch_record_init` with the API's `send`, `recv` and `on_ticket`, and under `RAND=session` the values' `random` | Invalid |
 | `Client.recordOut(output)` | `ch_record_out`; after a failed `recordIn`, the failure's alert record, then `error.Invalid` | Invalid, Cap |
 | `Client.recordIn(input)` | `ch_record_in`; returns the bytes consumed | Invalid, Proto, Auth, Cap |
 | `Client.takeTicket()` | none: moves the slot out and zeroes it | none |
-| `Server.init(values, sni_buf)` | `Server.toCfg`, then `ch_srv_record_init` with the API's `send`, `recv` and `on_record_out`; `sni_buf` is `srv.sni_buf` and `srv.sni_cap` | Invalid |
+| `Server.init(values, sni_buf)` | `Server.toCfg`, then `ch_srv_record_init` with the API's `send`, `recv` and `on_record_out`, and under `RAND=session` the values' `random`; `sni_buf` is `srv.sni_buf` and `srv.sni_cap` | Invalid |
 | `Server.recordIn(input, output)` | `ch_srv_record_in`, whose flight goes into `output`; returns `Progress{ consumed, written }` | Proto, Auth, Cap, Io |
 | `Server.outputLen()` | the bytes the last `recordIn` wrote into `output`, which a failed `recordIn` also sets: `Progress.written` on success | none |
 | `Server.sni()` | `sni_buf[0..ch_tls.sni_len]`, null when 0 | none |
@@ -445,15 +479,16 @@ each init zeroes it before the C init call.
   `.not_retry` or `.invalid`.
 
 `quic.Client(receive_len)` and `quic.Server(receive_len)` hold the C
-session, `quic`, the receive buffer, the hook, the caller's
-`peer_params` slice, the length of what arrived there, the client's
-ticket slot and the server's current `Outgoing`. colibri passes a
+session, `quic`, the receive buffer, the hook, under `RAND=session` the
+source `random`, the caller's `peer_params` slice, the length of what
+arrived there, the client's ticket slot and the server's current
+`Outgoing`. colibri passes a
 `peer_params` of 1,024 bytes and a `sni_buf` of 255.
 
 | Zig call | C call | Errors |
 |---|---|---|
-| `Client.init(values, transport_params, peer_params)` | `Client.toCfg`, then `ch_quic_init` with the API's `on_level_ready`, `on_transport_params` and `on_ticket` | Invalid |
-| `Server.init(values, transport_params, peer_params, sni_buf)` | `Server.toCfg`, then `ch_srv_quic_init` with the API's `on_level_ready`, `on_transport_params` and `srv.on_crypto_out` | Invalid |
+| `Client.init(values, transport_params, peer_params)` | `Client.toCfg`, then `ch_quic_init` with the API's `on_level_ready`, `on_transport_params` and `on_ticket`, and under `RAND=session` the values' `random` | Invalid |
+| `Server.init(values, transport_params, peer_params, sni_buf)` | `Server.toCfg`, then `ch_srv_quic_init` with the API's `on_level_ready`, `on_transport_params` and `srv.on_crypto_out`, and under `RAND=session` the values' `random` | Invalid |
 | `initialKeys(dcid)` | `ch_quic_initial_keys` | Invalid |
 | `Client.cryptoIn(level, bytes)` | `ch_quic_crypto_in` | Invalid (live), Proto, Auth, Cap |
 | `Client.cryptoOut(level, out)` | `ch_quic_crypto_out` | Invalid, Cap (live) |
@@ -514,7 +549,9 @@ runs inside `seal` and `open`, as in C (RFC 9001 §9.5).
   offers the values, `buildMatches`, `Server.check` and `chapulin.c`.
 - **The image's hooks, the DRBG and CA provisioning.** `ch_rand_bytes`,
   `ch_assert_fail`, `ch_keylog`, `ch_aes_block`, `ch_drbg_seed` and
-  `ch_pubkey_from_pem` stay the program's, through `chapulin.c`.
+  `ch_pubkey_from_pem` stay the program's, through `chapulin.c`. Under
+  `RAND=session` the API takes the source, as `Client.random` and
+  `Server.random`, because it is a value of each session.
 - **An external PSK, the CA epoch callbacks and `pin_slot`.** They serve
   device builds. Each is one `ch_cfg` or `ch_tls` field a later version
   can add.
@@ -539,9 +576,10 @@ held by value. `ch_build_matches` compares `@sizeOf(c.ch_record)`,
 `@sizeOf(c.ch_quic)`, `@sizeOf(c.ch_tls)`, `@sizeOf(c.ch_cfg)` and
 `@sizeOf(c.ch_ticket)` with the object's record, so `buildMatches`
 covers the C part of every session and every `Ticket`. The rest, the
-receive buffer, the hook, `io` and the ticket's identity bytes, is Zig's
-alone: C writes the receive buffer through `cfg.buf`, and passes
-`cfg.io`, the hook's address, to the API's callbacks unread.
+receive buffer, the hook, the `std.Random` under `RAND=session`, `io` and
+the ticket's identity bytes, is Zig's alone: C writes the receive buffer
+through `cfg.buf`, and passes `cfg.io`, the hook's address, and
+`cfg.rand_io`, the `std.Random`'s, to the API's callbacks unread.
 
 ## How it is checked
 
@@ -566,7 +604,9 @@ and stompy's (`TX_RECORD=16384`), each through the module alone
 - `unit.zig`, the API's unit tests: each value's `toCfg` against the
   `ch_cfg` written out field by field, the Ticket constructors and their
   bounds, the error of every code, and every declaration the object has,
-  compiled.
+  compiled. Under `RAND=session`, a client refused at init without a
+  `random`, and one whose ClientHello random is the second fill of the
+  `std.Random` it was given.
 - `loop.zig`, for each ROLE=both object: a client and a server of that
   object against each other. They use the r2 chain, its root_p384
   anchor, its clock and its leaf key from `test/webpki_corpus.h`, the
@@ -603,6 +643,12 @@ and stompy's (`TX_RECORD=16384`), each through the module alone
 - `pair.zig` starts a client on each of colibri's two objects in one
   image, and computes a ticket's age through each object's call, directly
   and through `Client.toCfg`.
+
+check-slow runs the script over every lib-check leg's configuration as
+well, among them `RAND=session TRUST=webpki TRANSPORT=tcp-nonblocking
+ROLE=both`, whose `loop.zig` runs the record-mode steps above with a
+seeded `std.Random` per side, and whose program defines no
+`ch_rand_bytes`, so its link shows the object imports none.
 
 Eleven mutants in `test/violations/` break the API, the module, the
 public headers or the reverse check in `matches.zig`, and the script

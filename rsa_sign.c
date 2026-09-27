@@ -15,19 +15,18 @@
 // The file branches on three values that are not loop counters, and all
 // three are public: mgf1 takes the smaller of the remaining mask length
 // and 32, mont_r2 subtracts the modulus, which is public and is the only
-// caller of cond_sub, and rsa_pss_sign asserts that the drawn salt is
-// not all zero, which the signature publishes anyway.
+// caller of cond_sub, and rsa_pss_sign asserts that the salt its caller
+// drew is not all zero, which the signature publishes anyway.
 #include "rsa_sign.h"
 
 #include <string.h>
 
 #include "ch_assert.h"
 #include "ct.h"
-#include "rand.h"
 #include "sha256.h"
 
-#define HLEN 32 // SHA-256 output
-#define SLEN 32 // salt length, fixed by rsa_pss_rsae_sha256
+#define HLEN 32               // SHA-256 output
+#define SLEN RSA_PSS_SALT_LEN // salt length, fixed by rsa_pss_rsae_sha256
 
 // One 32-bit limb per 4 bytes of modulus: RSA-3072 is 96 limbs, RSA-4096
 // is 128. The count follows the one bound rsa.h defines, as rsa_mont.c's
@@ -256,23 +255,21 @@ static void mgf1(const uint8_t *seed, size_t seed_len, uint8_t *mask, size_t len
     }
 }
 
-// EMSA-PSS-ENCODE (RFC 8017 9.1.1) into the em_len-byte em, with a fresh
-// 32-byte salt. rsa_pss_sign has already established em_len >= HLEN +
-// SLEN + 2. Every byte here ends up inside the signature, so none of it
-// is secret and none of it steers anything; the salt is wiped because the
-// caller's stack outlives the signature.
-static void emsa_pss_encode(const uint8_t msg_hash[32], uint8_t *em, size_t em_len) {
-    uint8_t salt[SLEN];
-    ch_rand_bytes(salt, sizeof salt);
-    // Every draw site INV-4 lists carries this check. A hook that returns
-    // without writing leaves the salt zero, every signature over one
-    // message becomes the same bytes, and nothing downstream notices. A
-    // real draw is all-zero with probability 2^-256, so this checks the
-    // integrator's hook against rand.h's contract, which is what
-    // CH_ASSERT is for.
+// EMSA-PSS-ENCODE (RFC 8017 9.1.1) into the em_len-byte em, with the
+// SLEN-byte salt the caller drew. rsa_pss_sign has already established
+// em_len >= HLEN + SLEN + 2. Every byte here ends up inside the
+// signature, so none of it is secret and none of it steers anything.
+static void emsa_pss_encode(const uint8_t msg_hash[32], const uint8_t salt[SLEN], uint8_t *em,
+                            size_t em_len) {
+    // INV-4's check on the salt draw, which the caller makes (srv_auth.c).
+    // A source that returns without writing leaves the salt zero, every
+    // signature over one message becomes the same bytes, and nothing
+    // downstream notices. A real draw is all-zero with probability 2^-256,
+    // so this checks the integrator's source against rand.h's contract,
+    // which is what CH_ASSERT is for.
     {
         static const uint8_t unwritten[SLEN] = {0};
-        CH_ASSERT(!ct_memeq(salt, unwritten, sizeof salt));
+        CH_ASSERT(!ct_memeq(salt, unwritten, SLEN));
     }
 
     // H = Hash(0x00 * 8 || msg_hash || salt) sits between DB and the
@@ -303,11 +300,10 @@ static void emsa_pss_encode(const uint8_t msg_hash[32], uint8_t *em, size_t em_l
     // cleared. That keeps EM below 2^(8*em_len - 1), which is at or below
     // the modulus, so RSASP1's input is in range by construction.
     em[0] &= 0x7f;
-    ct_wipe(salt, sizeof salt);
 }
 
-int rsa_pss_sign(const ch_rsa_priv *k, const uint8_t msg_hash[32], uint8_t *sig, size_t cap,
-                 size_t *sig_len) {
+int rsa_pss_sign(const ch_rsa_priv *k, const uint8_t msg_hash[32],
+                 const uint8_t salt[RSA_PSS_SALT_LEN], uint8_t *sig, size_t cap, size_t *sig_len) {
     // The length bound, an odd modulus and its top bit: rsa_sign.h says
     // why each one.
     if (!rsa_pss_sign_key_ok(k)) {
@@ -318,7 +314,7 @@ int rsa_pss_sign(const ch_rsa_priv *k, const uint8_t msg_hash[32], uint8_t *sig,
     }
 
     uint8_t em[CH_RSA_MODULUS_MAX];
-    emsa_pss_encode(msg_hash, em, k->n_len);
+    emsa_pss_encode(msg_hash, salt, em, k->n_len);
     rsa_sp1(k, em, sig);
     ct_wipe(em, sizeof em);
     *sig_len = k->n_len;

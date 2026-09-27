@@ -23,6 +23,10 @@
 // The auth mode is the pinned one, as in bin/tcp_nonblocking_loop_test:
 // the client pins the server's provisioned RSA modulus, and pinned mode
 // hashes the certificate into the transcript without reading it.
+//
+// bin/tcp_blocking_loop_session is the same main under -DCH_RAND_SESSION:
+// every session draws from the source its ch_cfg names, and
+// test/tcp_blocking_session_tests.h checks what each source handed out.
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -44,6 +48,9 @@ noreturn void ch_assert_fail(const char *cond, const char *file, int line) {
     abort();
 }
 
+#ifdef CH_RAND_SESSION
+#include "rand_session.h"
+#else
 // A counter, not entropy. Both roles draw from it, so the two key shares
 // differ and a failure replays exactly.
 void ch_rand_bytes(uint8_t *p, size_t n) {
@@ -52,6 +59,7 @@ void ch_rand_bytes(uint8_t *p, size_t n) {
         p[i] = counter++;
     }
 }
+#endif
 
 static int failures = 0;
 #define CHECK(cond)                                                                                \
@@ -149,6 +157,9 @@ static void server_config(ch_cfg *cfg, recv_fn recv) {
     cfg->srv.rsa_pss.priv_len = sizeof rsa_key;
     cfg->srv.rsa_pss.pub = rsa_sign_2048_n;
     cfg->srv.rsa_pss.pub_len = sizeof rsa_sign_2048_n;
+#ifdef CH_RAND_SESSION
+    attach_source(cfg, &server_source);
+#endif
 }
 
 static void client_config(ch_cfg *cfg, recv_fn recv) {
@@ -159,6 +170,9 @@ static void client_config(ch_cfg *cfg, recv_fn recv) {
     cfg->recv = recv;
     cfg->server_pubkey = rsa_sign_2048_n;
     cfg->server_pubkey_len = sizeof rsa_sign_2048_n;
+#ifdef CH_RAND_SESSION
+    attach_source(cfg, &client_source);
+#endif
 }
 
 // The record_size_limit each driver sizes to its buffer, the arithmetic
@@ -412,6 +426,9 @@ static void server_reads_client(int after_finished, size_t bytes) {
 
 #include "tcp_blocking_alert_tests.h"
 #include "tcp_blocking_retry_tests.h"
+#ifdef CH_RAND_SESSION
+#include "tcp_blocking_session_tests.h"
+#endif
 
 int main(void) {
     static const uint8_t retry_scalar[X25519_LEN] = {0x2a};
@@ -424,6 +441,9 @@ int main(void) {
         server_reads_retry_hello(bytes);
     }
     test_handshake_alerts();
+#ifdef CH_RAND_SESSION
+    test_session();
+#endif
     if (failures == 0) {
         (void)printf("tcp_blocking_loop: ch_connect and ch_srv_accept each go on when the"
                      " message before a key change ends its record, a retried ClientHello"

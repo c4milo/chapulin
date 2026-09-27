@@ -164,10 +164,10 @@ void srv_hash_signed_content(uint16_t sigalg, const uint8_t *transcript_hash, si
 // rsa_sign.c for SIGALG_RSA_PSS_RSAE_SHA256, and srv_cfg.h states the
 // type each one reads through ch_identity.priv. This call tests
 // priv_len against the size of that type and passes the pointer on, so
-// it reads no byte of a private key itself. An RSA-PSS signature draws
-// its 32-byte salt from ch_rand_bytes, so a server signing with the RSA
-// identity needs entropy per handshake; the ECDSA nonce is derived and
-// draws none.
+// it reads no byte of a private key itself. An RSA-PSS signature takes
+// a 32-byte salt this call draws through rand_draw from the source cfg
+// names, so a server signing with the RSA identity needs entropy per
+// handshake; the ECDSA nonce is derived and draws none.
 //
 // Two obligations belong to the signer and are stated here because the
 // caller cannot check them. Every routine that touches the private
@@ -176,11 +176,12 @@ void srv_hash_signed_content(uint16_t sigalg, const uint8_t *transcript_hash, si
 // p256.c or rsa.c, whose arithmetic is deliberately variable time
 // because every input it reads is public (p256.h, rsa.h). And the
 // ECDSA nonce is derived from the key and the message with RFC 6979
-// rather than drawn from ch_rand_bytes, so two signatures can never
+// rather than drawn from a random source, so two signatures can never
 // share a nonce; docs/server.md's open question seven settles whether
 // the default hedges that derivation with fresh bytes.
 //
-// Requires a cfg whose selected identity srv_identity_for accepts;
+// Requires a cfg whose selected identity srv_identity_for accepts and
+// for which rand_source_ok holds, which every init call checks (rand.h);
 // sigalg and hash_len from the selection; transcript_hash pointing at
 // hash_len readable bytes; cap bytes writable at sig, for which
 // SRV_SIG_MAX suffices whenever srv_identities_usable accepts the cfg;
@@ -242,10 +243,12 @@ int srv_sign_certificate_verify(const ch_cfg *cfg, uint16_t sigalg, const uint8_
 // hash of SHA256_LEN zero bytes, so the check signs the content a
 // handshake signs and a pass here is evidence about the handshake.
 //
-// Requires a cfg the caller owns and a sigalg srv_identity_for
-// accepts. Runs no I/O and touches no session. It draws entropy for the
-// RSA identity, because rsa_pss_sign salts every signature, so a device
-// seeds its generator before it calls this.
+// Requires a cfg the caller owns, for which rand_source_ok holds, as
+// ch_srv_check checks first (rand.h), and a sigalg srv_identity_for
+// accepts. Runs no I/O and touches no session. It draws a salt for the
+// RSA identity from the source cfg names, because rsa_pss_sign salts
+// every signature, so a device seeds its generator, or a RAND=session
+// caller sets cfg.rand_bytes, before it calls this.
 //
 // Returns CH_OK when the signature verified. Returns CH_EINVAL when
 // the slot is not provisioned, when its key lengths are not the ones

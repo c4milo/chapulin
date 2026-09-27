@@ -17,22 +17,22 @@
 #include "ct.h"
 #include "keylog.h"
 #include "keysched.h"
-#include "rand.h"
+#include "rand_draw.h"
 #include "srv_kex.h"
 #include "srv_message.h"
 #include "srv_out.h"
 #include "srv_resume.h"
 #include "x25519.h"
 
-// Holds ch_rand_bytes to rand.h's contract: the caller zeroed what this
-// fills, so an all-zero draw is a hook that returned without writing.
+// Holds the session's source to rand.h's contract: the caller zeroed what
+// this fills, so an all-zero draw is a source that returned without writing.
 static void assert_drawn(const uint8_t *p, size_t n) {
     static const uint8_t unwritten[SRV_RANDOM] = {0};
     CH_ASSERT(n <= sizeof unwritten && !ct_memeq(p, unwritten, n));
 }
 
 void srv_begin(handshake_state *h) {
-    ch_rand_bytes(h->priv, sizeof h->priv);
+    rand_draw(&h->t->cfg, h->priv, sizeof h->priv);
     assert_drawn(h->priv, sizeof h->priv);
     x25519_base(h->pub, h->priv);
     transcript_init(&h->t->transcript);
@@ -261,7 +261,7 @@ int srv_send_server_hello(handshake_state *h, const client_hello *ch, const sele
         return CH_EPROTO;
     }
     uint8_t random32[SRV_RANDOM];
-    ch_rand_bytes(random32, sizeof random32);
+    rand_draw(&t->cfg, random32, sizeof random32);
     assert_drawn(random32, sizeof random32);
     uint8_t *msg = t->tx + SRV_OUT_STAGE;
     size_t n = srv_build_server_hello(msg, sizeof t->tx - SRV_OUT_STAGE, sel, random32,

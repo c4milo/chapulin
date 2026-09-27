@@ -34,6 +34,13 @@
 // key test, rsa_pss_sign_key_ok, is inline in rsa_sign.h, so it runs
 // here as written.
 //
+// The RSA-PSS salt is the one random input either signer takes, and
+// srv_auth.c's sign_rsa_pss draws it through rand_draw, which calls
+// ch_rand_bytes under the RAND=extern pattern every harness declares.
+// ch_rand_bytes is a contract stub too: it asserts the salt buffer is
+// writable at the length drawn and fills it with nondet bytes, and the
+// signer stub asserts the salt is readable at RSA_PSS_SALT_LEN.
+//
 // What this does not reach: any claim that a signature is correct. The
 // stubs return an unconstrained verdict, so the proof covers both
 // answers and neither is evidence about the arithmetic.
@@ -66,10 +73,11 @@ int p256_sign(const uint8_t priv[P256_PRIV_LEN], const uint8_t msg_hash[32], uin
     return 1;
 }
 
-int rsa_pss_sign(const ch_rsa_priv *k, const uint8_t msg_hash[32], uint8_t *sig, size_t cap,
-                 size_t *sig_len) {
+int rsa_pss_sign(const ch_rsa_priv *k, const uint8_t msg_hash[32],
+                 const uint8_t salt[RSA_PSS_SALT_LEN], uint8_t *sig, size_t cap, size_t *sig_len) {
     __CPROVER_assert(__CPROVER_r_ok(k, sizeof *k), "rsa_pss_sign: key readable");
     __CPROVER_assert(__CPROVER_r_ok(msg_hash, SHA256_LEN), "rsa_pss_sign: digest readable");
+    __CPROVER_assert(__CPROVER_r_ok(salt, RSA_PSS_SALT_LEN), "rsa_pss_sign: salt readable");
     __CPROVER_assert(__CPROVER_w_ok(sig, cap), "rsa_pss_sign: output writable");
     __CPROVER_assert(__CPROVER_w_ok(sig_len, sizeof *sig_len), "rsa_pss_sign: length writable");
     if (!nondet_u8()) {
@@ -80,6 +88,13 @@ int rsa_pss_sign(const ch_rsa_priv *k, const uint8_t msg_hash[32], uint8_t *sig,
     fill_nondet(sig, n);
     *sig_len = n;
     return 1;
+}
+
+// rand.h's hook, which sign_rsa_pss calls through rand_draw: it writes
+// n bytes and returns nothing.
+void ch_rand_bytes(uint8_t *p, size_t n) {
+    __CPROVER_assert(__CPROVER_w_ok(p, n), "ch_rand_bytes: output writable");
+    fill_nondet(p, n);
 }
 
 int p256_ecdsa_verify(const uint8_t pub[64], const uint8_t msg_hash[32], const uint8_t *sig_der,

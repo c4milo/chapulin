@@ -124,11 +124,14 @@ last `ROLE=server` stub, as the entry said it would.
   check.
 - See [decisions: Cryptography](decisions.md#cryptography).
 
-### INV-4 — randomness only through the hook
+### INV-4 — randomness only through one draw path
 
-- **Claim.** The library takes every random byte from `ch_rand_bytes`.
-  It calls the hook at exactly ten sites in six files. A client draws at
-  four of them:
+- **Claim.** The library takes every random byte through `rand_draw`
+  (`rand_draw.h`), which calls the one source the build's entropy
+  pattern names: `ch_rand_bytes` under `RAND=extern` and `RAND=drbg`,
+  and under `RAND=session` the `rand_bytes` of the session's own
+  `ch_cfg`, handed that session's `rand_io`. It draws at exactly ten
+  sites in six files. A client draws at four of them:
   - `hsf_begin` in `handshake_flight.c` draws the x25519 key-share
     scalar and the ClientHello random, and in the `KEX=pq` and
     `TRUST=webpki` builds the ML-KEM (d, z) seed: three calls.
@@ -155,66 +158,106 @@ last `ROLE=server` stub, as the entry said it would.
     one call per ticket: the ticket's AEAD nonce, its `ticket_age_add`
     and its `ticket_nonce`. It draws only when the caller set
     `cfg.srv.ticket_key` and `cfg.srv.now_seconds`.
-  - `emsa_pss_encode` in `rsa_sign.c` draws the 32-byte RSA-PSS salt
-    each time `rsa_pss_sign` signs with the server's RSA identity.
+  - `sign_rsa_pss` in `srv_auth.c` draws the 32-byte RSA-PSS salt each
+    time the server signs with its RSA identity, and hands it to
+    `rsa_pss_sign`, which draws nothing itself (decisions.md 77).
     `ch_srv_check` signs once at boot when that identity is
     provisioned, and `srv_sign_certificate_verify` signs once per
     handshake whose CertificateVerify uses rsa_pss_rsae_sha256.
     `p256_sign.c` draws nothing: it derives each ECDSA nonce from the
     key and the message by RFC 6979.
 
-  Every site checks for a hook that returns without writing: CH_ASSERT
-  fires when the drawn bytes are all zero. The two
-  P-256 sites check a range instead. They draw again when a candidate
-  falls outside [1, n-1], zero included, up to `P256_ECDH_DRAWS` times,
-  and CH_ASSERT fires after the last one. A working generator fails
-  that many draws with probability below 2^-128.
-- **Mechanism.** `ch_rand_bytes` is the library's only source of random
-  bytes, and which side defines it is a declared build choice with no
-  default. `RAND=extern` leaves it an undefined import, so an image that
-  defines no generator fails to link. `RAND=drbg` defines it with the
-  reference generator in `drbg.c`, which faults on an unseeded draw.
-  Its `ch_drbg_seed` takes the SHA-256 of the whole seed as the
-  generator key, so every source the image concatenates into the seed
-  counts, and faults on a seed shorter than `CH_DRBG_SEED_MIN`, 32
-  bytes (decisions.md 66). Neither build carries a fallback that
-  quietly produces bytes. The
-  `ROLE` and `TRUST` axes choose which of the six files a packaged
-  object compiles:
+  Every site checks for a source that returns without writing:
+  CH_ASSERT fires when the drawn bytes are all zero, and for the salt
+  `rsa_pss_sign` checks the bytes it is handed. The two P-256 sites
+  check a range instead. They draw again when a candidate falls outside
+  [1, n-1], zero included, up to `P256_ECDH_DRAWS` times, and CH_ASSERT
+  fires after the last one. A working generator fails that many draws
+  with probability below 2^-128.
+
+  Under `RAND=session` a session draws from its own source alone, and
+  nothing falls back to `ch_rand_bytes`: the object neither defines nor
+  imports it, and every init call and `ch_srv_check` refuse a NULL
+  `rand_bytes` with `CH_EINVAL` before they draw or send anything.
+- **Mechanism.** Which source `rand_draw` calls is a declared build
+  choice with no default. `RAND=extern` leaves `ch_rand_bytes` an
+  undefined import, so an image that defines no generator fails to
+  link. `RAND=drbg` defines it with the reference generator in
+  `drbg.c`, which faults on an unseeded draw. Its `ch_drbg_seed` takes
+  the SHA-256 of the whole seed as the generator key, so every source
+  the image concatenates into the seed counts, and faults on a seed
+  shorter than `CH_DRBG_SEED_MIN`, 32 bytes (decisions.md 66).
+  `RAND=session` puts the source in each session's `ch_cfg`, and
+  `rand.h` then declares no `ch_rand_bytes`, so a library call to it
+  does not compile. No build carries a fallback that quietly produces
+  bytes. The `ROLE` and `TRUST` axes choose which of the six files a
+  packaged object compiles:
   - `ROLE=client` compiles `handshake_flight.c`, and `TRUST=webpki`
     adds `handshake_groups.c`.
   - `ROLE=server` compiles `srv_flight.c`, `srv_kex.c`, `srv_resume.c`
-    and `rsa_sign.c` on every transport.
+    and `srv_auth.c` on every transport.
   - `ROLE=both` compiles both sets.
-- **Check.** Semgrep-structural, in two rules.
-  `inv-4-randomness-files` refuses a `ch_rand_bytes` call in any file
-  other than `handshake_flight.c`, `handshake_groups.c`, `srv_flight.c`,
-  `srv_kex.c`, `srv_resume.c` and `rsa_sign.c`. It excludes `drbg.c`
-  because that file defines the hook. `inv-4-randomness-calls` reads
-  only those six files and refuses a call outside the eight functions
-  the claim names, a fourth call in `hsf_begin`, and a second call in
-  any of the other seven. It counts a call in a branch, a loop or a
-  block the same as one at the top of the function.
-  `test/lint-invariants.sh` fails on each of four violations:
+- **Check.** Semgrep-structural, in three rules.
+  `inv-4-one-draw-path` refuses a `ch_rand_bytes` call anywhere but
+  `rand_draw`'s body in `rand_draw.h`; it excludes `drbg.c`, which
+  defines the hook. `inv-4-randomness-files` refuses a `rand_draw` call
+  in any file other than `handshake_flight.c`, `handshake_groups.c`,
+  `srv_flight.c`, `srv_kex.c`, `srv_resume.c` and `srv_auth.c`.
+  `inv-4-randomness-calls` reads only those six files and refuses a call
+  outside the eight functions the claim names, a fourth call in
+  `hsf_begin`, and a second call in any of the other seven. It counts a
+  call in a branch, a loop or a block the same as one at the top of the
+  function. `test/lint-invariants.sh` fails on each of five violations:
   - `inv04-draw-in-handshake-post` adds a call to `handshake_post.c`.
   - `inv04-draw-in-srv` adds a call to `srv.c`.
   - `inv04-second-draw-in-srv-flight` adds a second call to
     `srv_send_server_hello`.
   - `inv04-fourth-draw-in-hsf-begin` adds a fourth call to `hsf_begin`.
+  - `inv04-hook-outside-rand-draw` has `encapsulate` call
+    `ch_rand_bytes` itself.
 
-  `lib-check` requires a `RAND=extern` object to import `ch_rand_bytes`
-  and a `RAND=drbg` object to define and export it, and links
-  `test/entropy_recipe.c`, docs/entropy.md's boot-seed recipe, against
-  the `RAND=drbg` object. `bin/drbg_test` checks the output of two
-  seeds against known answers computed outside this tree, and the floor
-  at exactly 32 bytes and 31. It fails on each of three violations:
+  `lib-check` requires a `RAND=extern` object to import `ch_rand_bytes`,
+  a `RAND=drbg` object to define and export it, and a `RAND=session`
+  object to name neither it nor `ch_drbg_seed`, defined or imported. It
+  links `test/entropy_recipe.c`, docs/entropy.md's boot-seed recipe,
+  against the `RAND=drbg` object, and `test/build_test.c`, which defines
+  no hook under `CH_RAND_SESSION`, against the `RAND=session` one.
+  `test/lib-check-rand-session.sh` fails on
+  `inv04-session-object-imports-hook`, where `srv_begin` calls
+  `ch_rand_bytes` itself. The `RAND=session` builds of the three loop
+  tests, `bin/tcp_blocking_loop_session`,
+  `bin/tcp_nonblocking_loop_session` and `bin/quic_loop_session`, hand
+  each session a seeded stream of its own (`test/rand_session.h`) and
+  count every draw against the source its `rand_io` names. They require
+  each side's draws at its own source, the hello randoms on the wire to
+  be those sources' draws, none at the hook and none at no source; two
+  handshakes from the same seeds to send the same bytes both ways, and a
+  different seed on either side to change both; each init call and
+  `ch_srv_check` to refuse a NULL `rand_bytes` and to take a NULL
+  `rand_io`; and the RSA-PSS signature to be the one `rsa_pss_sign`
+  computes over the server source's draw. They fail on each of four
+  violations:
+  - `inv04-session-draw-from-hook` has `hsf_begin` draw the ClientHello
+    random from `ch_rand_bytes`.
+  - `inv04-session-init-accepts-no-source` drops the check from
+    `tlsi_config_ok`.
+  - `inv04-session-pss-salt-from-hook` has `sign_rsa_pss` draw the salt
+    from `ch_rand_bytes`.
+  - `inv04-session-draw-ignores-context` has `rand_draw` pass NULL for
+    the session's `rand_io`.
+
+  `bin/drbg_test` checks the reference generator's output for two seeds
+  against known answers computed outside this tree, and the floor at
+  exactly 32 bytes and 31. It fails on each of three violations:
   - `inv04-drbg-seed-copied` copies the first 32 seed bytes into the
     key instead of hashing the seed.
   - `inv04-drbg-seed-floor-lowered` takes a 31-byte seed.
   - `inv04-drbg-seed-floor-raised` refuses a 32-byte seed.
 - **Violation.** A PR conjures a nonce or padding bytes from a new
-  call site nobody audits for seeding requirements, or keys the
-  generator from part of the seed.
+  call site nobody audits for seeding requirements, draws from the
+  image's hook in a build where each session names its own source,
+  accepts a session with no source, or keys the generator from part of
+  the seed.
 - See [docs/entropy.md](entropy.md).
 
 ## Deleted by absence
@@ -1052,7 +1095,8 @@ last `ROLE=server` stub, as the entry said it would.
   `tcp_nonblocking.h`, `quic.h` and `srv.h` guard their calls, by trust
   mode, as `x509_ca.h` declares `ch_pubkey_from_pem` under `CH_TRUST_CA`,
   and by entropy pattern, as `drbg.h` declares `ch_drbg_seed` under
-  `CH_RAND_DRBG`. A test binary that runs the provisioning walk outside a
+  `CH_RAND_DRBG` and `rand.h` declares no `ch_rand_bytes` under
+  `CH_RAND_SESSION`. A test binary that runs the provisioning walk outside a
   CA build defines `CH_X509_CA_TEST`, which no object's defines include.
   `build.zig` copies `chapulin.zig`, `chapulin_record.zig` and
   `chapulin_quic.zig` into a directory of the configuration's own, roots
@@ -2795,7 +2839,9 @@ last `ROLE=server` stub, as the entry said it would.
   interfere and the whole stack is reentrant per session.
 - **Mechanism.** Structural; the reference DRBG (`drbg.c`) is the
   sole documented exception and ships outside the packaged library
-  object.
+  object. A `RAND=session` object carries no generator at all: every
+  draw goes to the source the session's own `ch_cfg` names (INV-4), so
+  sessions on different threads share no entropy state.
 - **Check.** Semgrep (`inv-18-no-global-mutable-state`): top-level non-const `static` in
   library sources, drbg.c allowlisted. It is exactly the check that
   would have flagged the DRBG's globals automatically. Graded

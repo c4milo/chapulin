@@ -22,7 +22,7 @@
 
 #include "ch_assert.h"
 #include "ct.h"
-#include "rand.h"
+#include "rand_draw.h"
 
 // FIPS 203's encapsulation takes 32 bytes of randomness, m (mlkem.h).
 #define SRV_KEX_ENCAPS_RANDOM 32
@@ -53,7 +53,7 @@ static int encapsulate(handshake_state *h, const client_hello *ch,
                        uint8_t share[SRV_KEX_SHARE_MAX]) {
     static const uint8_t unwritten[SRV_KEX_ENCAPS_RANDOM] = {0};
     uint8_t m[SRV_KEX_ENCAPS_RANDOM];
-    ch_rand_bytes(m, sizeof m);
+    rand_draw(&h->t->cfg, m, sizeof m);
     // rand.h's contract: the draw writes every byte, so all-zero is a hook
     // that returned without writing, which is programmer error.
     CH_ASSERT(!ct_memeq(m, unwritten, sizeof m));
@@ -89,7 +89,7 @@ static int p256_share(handshake_state *h, const client_hello *ch,
     int drawn = 0;
     for (int i = 0; i < P256_ECDH_DRAWS && !drawn; i++) {
         ct_wipe(draw, sizeof draw);
-        ch_rand_bytes(draw, sizeof draw);
+        rand_draw(&h->t->cfg, draw, sizeof draw);
         drawn = p256_ecdh_keygen(draw, h->p256_priv, share);
     }
     ct_wipe(draw, sizeof draw);

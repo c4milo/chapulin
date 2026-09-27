@@ -25,6 +25,7 @@
 #include "p256_sign.h"
 #include "p384.h"
 #include "primitives.h"
+#include "rand.h"
 #include "rsa.h"
 #include "rsa_pkcs1.h"
 #include "rsa_sign.h"
@@ -281,12 +282,15 @@ static void load_rsa_key(ch_rsa_priv *k, const uint8_t *n, const uint8_t *d, siz
     memcpy(k->d, d, len);
 }
 
-// The salt comes from ch_rand_bytes, drbg.c here, so the signature
-// differs from the vector's; prepare checks the verifier takes it.
+// The salt comes from ch_rand_bytes, drbg.c here, as a server draws one
+// per signature (srv_auth.c), so the signature differs from the vector's;
+// prepare checks the verifier takes it.
 static void sign_and_check(const ch_rsa_priv *k, const uint8_t hash[SHA256_LEN]) {
+    uint8_t salt[RSA_PSS_SALT_LEN];
+    ch_rand_bytes(salt, sizeof salt);
     uint8_t sig[CH_RSA_MODULUS_MAX];
     size_t sig_len = 0;
-    expect(rsa_pss_sign(k, hash, sig, sizeof sig, &sig_len) == 1, "rsa_pss_sign failed");
+    expect(rsa_pss_sign(k, hash, salt, sig, sizeof sig, &sig_len) == 1, "rsa_pss_sign failed");
     expect(rsa_pss_verify(k->n, k->n_len, hash, sig, sig_len) == 1,
            "rsa_pss_verify refused rsa_pss_sign's signature");
 }
@@ -303,10 +307,14 @@ static void prepare_rsa_sign_3072(size_t n) {
     sign_and_check(&rsa_3072_key, rsa_message_hash);
 }
 
+// One signature as a server makes it: a salt drawn for it, then the
+// signature, the work rsa_pss_sign did alone when it drew its own salt.
 static void run_rsa_sign(const ch_rsa_priv *k) {
+    uint8_t salt[RSA_PSS_SALT_LEN];
+    ch_rand_bytes(salt, sizeof salt);
     uint8_t sig[CH_RSA_MODULUS_MAX];
     size_t sig_len = 0;
-    expect(rsa_pss_sign(k, rsa_message_hash, sig, sizeof sig, &sig_len) == 1,
+    expect(rsa_pss_sign(k, rsa_message_hash, salt, sig, sizeof sig, &sig_len) == 1,
            "rsa_pss_sign failed");
     bench_consume(sig, 1);
 }

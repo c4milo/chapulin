@@ -18,7 +18,11 @@ Other targets:
   calls are per build on three axes: `RAND=drbg` packages the reference
   generator and exports `ch_drbg_seed` and `ch_rand_bytes`, and a ca mode
   exports `ch_pubkey_from_pem` for provisioning, so a `TRUST=ca-rsa
-  RAND=drbg` object exports eleven calls. The build record, `ch_pubkey_from_pem`,
+  RAND=drbg` object exports eleven calls. `RAND=session` exports nothing
+  more and imports no `ch_rand_bytes`: each session names its own source
+  in `ch_cfg.rand_bytes` and `ch_cfg.rand_io`, which grow `ch_cfg`, and
+  with it `ch_tls`, by two pointers, and every init call refuses a NULL
+  `rand_bytes` (decision 77, [`docs/entropy.md`](entropy.md)). The build record, `ch_pubkey_from_pem`,
   a server's `ch_srv_check`, a client's `ch_ticket_obfuscated_age` and the
   two alert calls carry
   the transport in their symbol names (`ch_build_info_tcp_nonblocking`,
@@ -48,7 +52,8 @@ Other targets:
   object sends; `cfg.buf_len` still sets the records it receives. A QUIC
   object seals no TLS record, so `TRANSPORT=quic-nonblocking` refuses it
   (decision 71).
-  `RAND` is the one build variable with no default. Compose with
+  `RAND` is the one build variable with no default: `extern`, `drbg` or
+  `session`. Compose with
   `TRUST=raw-ecdsa`, `TRUST=ca-rsa` or `TRUST=webpki`, and `KEX=pq`;
   the `TRUST=webpki` object carries every verifier, which is why that
   value names no algorithm. `X25519=wide` replaces the default 16-limb
@@ -115,7 +120,9 @@ Other targets:
   every public name twice. The program writes
   `const chapulin = @import("chapulin");`, calls
   `chapulin.buildMatches()` once, and runs sessions through
-  `chapulin.record` or `chapulin.quic` ([`zig.md`](zig.md)).
+  `chapulin.record` or `chapulin.quic` ([`zig.md`](zig.md)). Under
+  `.RAND = .session` each session's values carry a `std.Random`, and the
+  program defines no `ch_rand_bytes`.
   `chapulin.c` is the public headers, translated by translate-c under the
   defines the object compiled with, so its types have the object's
   layout and the program names no define. An image that links objects

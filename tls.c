@@ -10,6 +10,7 @@
 #include "handshake_post.h"
 #include "handshake_record.h"
 #include "io.h"
+#include "rand_draw.h"
 
 // A ROLE=server build compiles nothing from here to the end of
 // ch_connect. tls.h declares ch_connect only in the objects that define
@@ -93,7 +94,9 @@ static int psk_configured(const ch_cfg *cfg) {
 // Every rule a client configuration must keep whatever drives it. The I/O
 // callbacks are not among them: the blocking driver's ch_connect and
 // TRANSPORT=tcp-nonblocking's ch_record_init each require both, and each
-// checks that itself.
+// checks that itself. Under RAND=session the source of random bytes is
+// among them, because both drivers draw the key share before a byte goes
+// out (rand.h).
 int tlsi_config_ok(const ch_cfg *cfg) {
     // Exactly one auth mode: a config carrying both a PSK and a pin is a
     // provisioning mistake and gets rejected, not silently resolved.
@@ -108,6 +111,11 @@ int tlsi_config_ok(const ch_cfg *cfg) {
     if ((!psk_ok && !pin_ok) || cfg->buf == NULL || cfg->buf_len < CH_MIN_RXBUF) {
         return 0;
     }
+#ifdef CH_RAND_SESSION
+    if (!rand_source_ok(cfg)) {
+        return 0;
+    }
+#endif
 #ifndef CH_KEX_PQ
     // require_pq asks that the key exchange be post-quantum, and this
     // build offers x25519 alone, so no handshake it runs can satisfy the
@@ -381,13 +389,19 @@ _Static_assert(CH_TRUST_MIN_RXBUF ==
                    CH_WEBPKI_FLIGHT_ENTRIES * (CH_WEBPKI_CERT_MAX + 5) + 8 + REC_OVERHEAD,
                "cfg.h's webpki receive floor is the flight formula over webpki.h's bounds");
 
-// The mode's own rules (webpki_cfg.c) plus the buffer terms and the ticket
-// age rule the raw and ca definition above checks. ch_record_init calls this and no
+// The mode's own rules (webpki_cfg.c) plus the buffer terms, the ticket
+// age rule and the source of random bytes the raw and ca definition above
+// checks. ch_record_init calls this and no
 // ch_connect, so it too refuses a short receive buffer in this mode
 // (https://github.com/c4milo/chapulin/issues/171). It admits require_pq
 // in every build: every webpki client offers the hybrid
 // (docs/decisions.md 53).
 int tlsi_config_ok(const ch_cfg *cfg) {
+#ifdef CH_RAND_SESSION
+    if (!rand_source_ok(cfg)) {
+        return 0;
+    }
+#endif
     return webpki_cfg_ok(cfg) && cfg->buf != NULL && cfg->buf_len >= CH_MIN_RXBUF &&
            hspost_ticket_age_ok(cfg);
 }

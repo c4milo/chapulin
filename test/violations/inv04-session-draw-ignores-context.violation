@@ -1,0 +1,14 @@
+invariant: INV-4
+file: rand_draw.h
+catches: quic_loop_session
+reason: rand_draw hands the session's rand_bytes a NULL context instead of
+  the session's rand_io. A source that keeps its state behind rand_io, as
+  every source with a stream per session does, cannot tell one session
+  from another, so two sessions would draw from one stream or from none.
+  The session loop's callback counts each draw against the source its
+  rand_io names, and a draw that names none is a stray.
+
+--- old
+    cfg->rand_bytes(cfg->rand_io, p, n);
+--- new
+    cfg->rand_bytes(NULL, p, n);

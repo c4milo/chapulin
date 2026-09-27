@@ -1,0 +1,15 @@
+invariant: INV-4
+file: srv_flight.c
+catches: test/lib-check-rand-session.sh
+reason: srv_begin draws the server's x25519 scalar from ch_rand_bytes, with
+  a declaration of its own because a RAND=session build's rand.h declares
+  none. The RAND=session object then imports a hook no image of such
+  objects defines, so an image that links only RAND=session objects fails
+  to link. lib-check's counterpart of the RAND=extern import check refuses
+  an object that names ch_rand_bytes at all.
+
+--- old
+    rand_draw(&h->t->cfg, h->priv, sizeof h->priv);
+--- new
+    void ch_rand_bytes(uint8_t *p, size_t n);
+    ch_rand_bytes(h->priv, sizeof h->priv);

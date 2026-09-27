@@ -43,6 +43,8 @@ static void fill_buf_nondet(uint8_t *p, size_t n) {
     }
 }
 
+// Every draw arrives here through rand_draw (rand_draw.h), which calls
+// ch_rand_bytes under the RAND=extern pattern every harness declares.
 void ch_rand_bytes(uint8_t *p, size_t n) {
     fill_nondet(p, n);
     // rand.h requires strong random bytes and forbids failure, and the

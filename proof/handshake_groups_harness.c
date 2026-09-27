@@ -45,6 +45,8 @@ static const uint8_t *ecdh_out;
 static const uint8_t *x25519_point;
 static const uint8_t *x25519_out;
 
+// Every draw arrives here through rand_draw (rand_draw.h), which calls
+// ch_rand_bytes under the RAND=extern pattern every harness declares.
 void ch_rand_bytes(uint8_t *p, size_t n) {
     __CPROVER_assert(n == 0 || __CPROVER_w_ok(p, n), "rand: output writable");
     fill_nondet(p, n);

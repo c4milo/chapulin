@@ -1,0 +1,14 @@
+invariant: INV-4
+file: srv_kex.c
+catches: test/lint-invariants.sh
+reason: encapsulate draws the ML-KEM randomness from ch_rand_bytes rather
+  than through rand_draw, the one draw path. Under RAND=extern the bytes
+  come from the same hook, so no test of that build notices, and under
+  RAND=session the object would import a hook no image defines.
+  inv-4-one-draw-path refuses a ch_rand_bytes call outside rand_draw's
+  body.
+
+--- old
+    rand_draw(&h->t->cfg, m, sizeof m);
+--- new
+    ch_rand_bytes(m, sizeof m);

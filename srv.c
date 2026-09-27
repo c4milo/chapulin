@@ -14,6 +14,7 @@
 
 #include "ct.h"
 #include "handshake_message.h"
+#include "rand_draw.h"
 #include "srv_auth.h"
 #include "srv_flight.h"
 #include "srv_handshake.h"
@@ -153,8 +154,16 @@ static int transport_ok(const ch_cfg *cfg) {
 // External in every build, so one header serves all three transports: a
 // blocking build calls it only from ch_srv_accept below, and the
 // non-blocking builds call it from srv_quic.c and srv_tcp_nonblocking.c. The
-// packaged object localizes it like every other internal symbol.
+// packaged object localizes it like every other internal symbol. Under
+// RAND=session the source of random bytes is checked with the rest,
+// because every server driver draws its key share in its init call
+// (rand.h).
 int srv_config_ok(const ch_cfg *cfg) {
+#ifdef CH_RAND_SESSION
+    if (!rand_source_ok(cfg)) {
+        return 0;
+    }
+#endif
     return srv_fields_ok(cfg) && client_fields_unset(cfg) && alpn_ok(cfg) && transport_ok(cfg);
 }
 
@@ -179,6 +188,15 @@ int ch_srv_check(const ch_cfg *cfg) {
     if (live == 0 || !srv_identities_usable(cfg)) {
         return CH_EINVAL;
     }
+#ifdef CH_RAND_SESSION
+    // The RSA identity's check signs, and the signature draws a salt from
+    // the source cfg names, so a configuration with none is refused before
+    // either check, whichever identities it holds, as every server init
+    // call refuses it.
+    if (!rand_source_ok(cfg)) {
+        return CH_EINVAL;
+    }
+#endif
     if ((live & SRV_IDENTITY_ECDSA_P256) != 0 &&
         srv_identity_check(cfg, SIGALG_ECDSA_P256_SHA256) != CH_OK) {
         return CH_EINVAL;

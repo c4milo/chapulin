@@ -14,7 +14,8 @@
 // an image draws from the same stream and a reseed by one task changes
 // what the others draw next. That is the right trade for a reference
 // implementation meant to be replaced; an image that needs isolated
-// generators wires its own ch_rand_bytes.
+// generators wires its own ch_rand_bytes, or builds RAND=session, where
+// each session names its own source (rand.h).
 #ifndef CH_DRBG_H
 #define CH_DRBG_H
 

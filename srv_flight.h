@@ -75,10 +75,11 @@ int srv_config_ok(const ch_cfg *cfg);
 // at the session. Runs before any message goes out or comes in, once
 // per session.
 //
-// Returns nothing and cannot fail on peer input. It holds the
-// integrator's ch_rand_bytes to rand.h's contract with CH_ASSERT, as
-// hsf_begin does: an all-zero draw is a hook that returned without
-// writing, which is programmer error and not peer input.
+// Returns nothing and cannot fail on peer input. It draws through
+// rand_draw from the source t->cfg names, and holds that source to
+// rand.h's contract with CH_ASSERT, as hsf_begin does: an all-zero draw
+// is a source that returned without writing, which is programmer error
+// and not peer input.
 void srv_begin(handshake_state *h);
 
 // Reads one ClientHello, parses it into ch, and adds the raw message to
@@ -322,7 +323,7 @@ int srv_send_compat_ccs(handshake_state *h, const client_hello *ch);
 int srv_check_retry_hello(handshake_state *h, const client_hello *ch, selection *sel);
 
 // Builds and sends the ServerHello and adds it to the transcript. It
-// draws the 32 random bytes here through ch_rand_bytes
+// draws the 32 random bytes here through rand_draw
 // (rfc9846.txt:1358-1363), echoes the client's legacy_session_id
 // (rfc9846.txt:1365-1368) and carries the server's key share for
 // sel->group, and the selected ticket's index when sel->psk_selected is

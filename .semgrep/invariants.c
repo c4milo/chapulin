@@ -46,6 +46,7 @@ static uint8_t g_key[32] = {0};
 static int helper(int x);
 
 void ch_rand_bytes(uint8_t *p, size_t n);
+void rand_draw(const void *cfg, uint8_t *p, size_t n);
 void aead_seal(const uint8_t *key, const uint8_t *nonce, const uint8_t *aad, size_t aad_len,
                const uint8_t *pt, size_t n, uint8_t *out, uint8_t *tag);
 int memcmp(const void *a, const void *b, size_t n);
@@ -79,8 +80,12 @@ static int helper(int x) {
     d.seq = 1;
 
     uint8_t buf[32];
-    // ruleid: inv-4-randomness-files, inv-4-randomness-calls
+    // The hook called beside rand_draw rather than through it.
+    // ruleid: inv-4-one-draw-path
     ch_rand_bytes(buf, sizeof buf);
+    // ok: inv-4-one-draw-path
+    // ruleid: inv-4-randomness-files, inv-4-randomness-calls
+    rand_draw(0, buf, sizeof buf);
 
     // ruleid: inv-1-seal-only-in-record
     aead_seal(buf, buf, buf, 0, buf, 0, buf, buf);
@@ -171,17 +176,17 @@ int use_everything(void) {
 // ok: inv-4-randomness-calls
 void srv_begin(uint8_t *priv) {
     // ruleid: inv-4-randomness-files
-    ch_rand_bytes(priv, 32);
+    rand_draw(0, priv, 32);
 }
 
 // A second call, nested after the admitted one.
 // ruleid: inv-4-randomness-calls
 int srv_send_server_hello(uint8_t *random32, int retry) {
     // ruleid: inv-4-randomness-files
-    ch_rand_bytes(random32, 32);
+    rand_draw(0, random32, 32);
     if (retry) {
         // ruleid: inv-4-randomness-files
-        ch_rand_bytes(random32, 32);
+        rand_draw(0, random32, 32);
     }
     return 0;
 }
@@ -191,30 +196,30 @@ int srv_send_server_hello(uint8_t *random32, int retry) {
 static void draw_p256_key(uint8_t *draw, int drawn) {
     for (int i = 0; i < 4 && !drawn; i++) {
         // ruleid: inv-4-randomness-files
-        ch_rand_bytes(draw, 32);
+        rand_draw(0, draw, 32);
     }
     // ruleid: inv-4-randomness-files
-    ch_rand_bytes(draw, 32);
+    rand_draw(0, draw, 32);
 }
 
 // ok: inv-4-randomness-calls
 void hsf_begin(uint8_t *priv, uint8_t *random, uint8_t *dz) {
     // ruleid: inv-4-randomness-files
-    ch_rand_bytes(priv, 32);
+    rand_draw(0, priv, 32);
     // ruleid: inv-4-randomness-files
-    ch_rand_bytes(random, 32);
+    rand_draw(0, random, 32);
     // ruleid: inv-4-randomness-files
-    ch_rand_bytes(dz, 64);
+    rand_draw(0, dz, 64);
 }
 
 // ruleid: inv-4-randomness-calls
 void hsf_begin(uint8_t *priv, uint8_t *random, uint8_t *dz) {
     // ruleid: inv-4-randomness-files
-    ch_rand_bytes(priv, 32);
+    rand_draw(0, priv, 32);
     // ruleid: inv-4-randomness-files
-    ch_rand_bytes(random, 32);
+    rand_draw(0, random, 32);
     // ruleid: inv-4-randomness-files
-    ch_rand_bytes(dz, 64);
+    rand_draw(0, dz, 64);
     // ruleid: inv-4-randomness-files
-    ch_rand_bytes(random, 32);
+    rand_draw(0, random, 32);
 }

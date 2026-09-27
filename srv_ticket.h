@@ -35,7 +35,7 @@
 // open rather than being read under another layout.
 //
 // Why a random nonce is safe here, and where it stops being safe. Every
-// ticket under one key takes its own 96-bit nonce from ch_rand_bytes, and
+// ticket under one key takes its own 96-bit nonce from rand_draw, and
 // two tickets that drew one nonce would leak the XOR of their bodies and
 // let a forger compute tags. The chance of any repeat among 2^32 tickets
 // is about 2^-33, which is the bound NIST SP 800-38D §8.3 sets for random
@@ -135,7 +135,7 @@ typedef struct {
 // Seals one ticket carrying c under key, with the AEAD nonce at nonce.
 //
 // Requires: key points at CH_SRV_TICKET_KEY_LEN readable bytes; nonce at
-// AEAD_NONCE readable bytes the caller drew through ch_rand_bytes for
+// AEAD_NONCE readable bytes the caller drew through rand_draw for
 // this ticket alone; c at a readable srv_ticket_contents; out at cap
 // writable bytes that overlap no input.
 //

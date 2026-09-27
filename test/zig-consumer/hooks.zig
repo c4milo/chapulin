@@ -10,11 +10,17 @@ const std = @import("std");
 /// object's chapulin.c, which declares a hook exactly when its object
 /// imports it: ch_keylog under KEYLOG=on and ch_aes_block where an
 /// AES=extern object compiles AES. ch_assert_fail is imported by every
-/// object, and ch_rand_bytes by every object but a RAND=drbg one, which
-/// declares ch_drbg_seed and defines the generator for the whole image.
+/// object, and ch_rand_bytes by every RAND=extern object. A RAND=drbg
+/// object declares ch_drbg_seed and defines the generator for the whole
+/// image, and a RAND=session object declares no ch_rand_bytes at all,
+/// because each of its sessions draws from the std.Random its values
+/// carry. A program whose objects are all RAND=session defines no hook
+/// here, and its link is what shows none of them imports one.
 pub fn define(comptime modules: []const type) void {
     @export(&assertFail, .{ .name = "ch_assert_fail" });
-    if (!declaredByAny(modules, "ch_drbg_seed")) @export(&randBytes, .{ .name = "ch_rand_bytes" });
+    if (declaredByAny(modules, "ch_rand_bytes") and !declaredByAny(modules, "ch_drbg_seed")) {
+        @export(&randBytes, .{ .name = "ch_rand_bytes" });
+    }
     if (declaredByAny(modules, "ch_keylog")) @export(&keylog, .{ .name = "ch_keylog" });
     if (declaredByAny(modules, "ch_aes_block")) @export(&aesBlock, .{ .name = "ch_aes_block" });
 }

@@ -43,7 +43,7 @@ fn sent(level: quic.Level) []const u8 {
 }
 
 fn clientValues() chapulin.Client {
-    return .{ .trust = fixture.trust(.root, null), .alpn = &client_alpn };
+    return .{ .trust = fixture.trust(.root, null), .alpn = &client_alpn, .random = fixture.clientRandom() };
 }
 
 fn handshake(values: chapulin.Client) !void {

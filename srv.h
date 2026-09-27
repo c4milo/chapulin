@@ -58,8 +58,8 @@
 
 #if !defined(CH_TRANSPORT_QUIC_NONBLOCKING) && !defined(CH_TRANSPORT_TCP_NONBLOCKING)
 // Runs the full handshake as the server, over a connection the caller
-// has already accepted and the same blocking I/O callbacks and
-// ch_rand_bytes a client build needs. On CH_OK the session is ready
+// has already accepted and the same blocking I/O callbacks and source
+// of random bytes a client build needs. On CH_OK the session is ready
 // for ch_read and ch_write. Any error wipes all key material and leaves
 // the session dead. A configuration it refuses, below, returns
 // CH_EINVAL before a byte is read or sent, so no alert goes out; every
@@ -81,8 +81,10 @@
 // cfg.buf_len is below the floor this build needs; cfg.srv.sni_cap is
 // not 0 while cfg.srv.sni_buf is NULL; cfg.srv.require_server_name is
 // set while cfg.srv.sni_buf is NULL, because a server that requires a
-// name it cannot report would refuse every client silently; or the
-// ALPN list breaks the rules cfg.h states for it.
+// name it cannot report would refuse every client silently; the ALPN
+// list breaks the rules cfg.h states for it; or, under RAND=session,
+// cfg.rand_bytes is NULL, because the server draws its key share before
+// it reads a byte (rand.h).
 //
 // A NULL cfg.srv.ticket_key or a cfg.srv.now_seconds of 0 is not
 // refused: the server then issues no ticket and accepts none, and every
@@ -123,8 +125,10 @@ int ch_srv_accept(ch_tls *t, const ch_cfg *cfg);
 // Returns CH_OK when at least one identity is provisioned and every
 // provisioned identity signed and verified. Returns CH_EINVAL for a
 // configuration that cannot serve: no identity at all, an identity the
-// flight could not sign with or send (ch_srv_accept above), or a slot
-// whose signer refused or whose signature the verifier rejected. It
+// flight could not sign with or send (ch_srv_accept above), under
+// RAND=session a NULL cfg.rand_bytes, which it checks before it signs
+// because an RSA-PSS signature draws its salt from that source, or a
+// slot whose signer refused or whose signature the verifier rejected. It
 // does not report which slots are live, because its result is one
 // code; a caller that needs to know reads its own ch_cfg.
 //

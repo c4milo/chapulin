@@ -59,11 +59,11 @@
 // per session: a second call would draw a second key share and the
 // retry ClientHello would no longer match the first.
 //
-// Returns nothing and cannot fail on peer input. It holds the
-// integrator's ch_rand_bytes to rand.h's contract with CH_ASSERT: an
-// all-zero draw is a hook that returned without writing, which is
-// programmer error, not peer input. A real draw is all-zero with
-// probability 2^-256.
+// Returns nothing and cannot fail on peer input. It draws through
+// rand_draw from the source t->cfg names, and holds that source to
+// rand.h's contract with CH_ASSERT: an all-zero draw is a source that
+// returned without writing, which is programmer error, not peer input. A
+// real draw is all-zero with probability 2^-256.
 void hsf_begin(handshake_state *h);
 
 // Builds one ClientHello into out, header included, and adds it to the

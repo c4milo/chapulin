@@ -1,0 +1,16 @@
+invariant: INV-4
+file: srv_auth.c
+catches: tcp_blocking_loop_session
+reason: sign_rsa_pss draws the RSA-PSS salt from ch_rand_bytes, the
+  image's one generator, instead of the source the server's configuration
+  names. Under RAND=session the signature would then not be a function of
+  the session's stream, so a replay could not reproduce it. The session
+  loop checks that the CertificateVerify signature is the one rsa_pss_sign
+  computes over the server source's draw, and counts that draw.
+
+--- old
+    rand_draw(cfg, salt, sizeof salt);
+--- new
+    (void)cfg;
+    void ch_rand_bytes(uint8_t *p, size_t n);
+    ch_rand_bytes(salt, sizeof salt);

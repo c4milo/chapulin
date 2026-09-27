@@ -4,10 +4,9 @@
 //
 // The salt makes a signature: one message signed twice under two salts
 // gives two signatures, and neither is wrong. So the known answers pin
-// the salt. ch_rand_bytes below hands out whatever the test loaded
-// before the call, which is what makes an exact comparison possible;
-// test/gen_rsa_sign_vectors.py says how the expected signatures were
-// produced and how openssl checked them.
+// the salt. rsa_pss_sign takes the salt as an argument, which is what
+// makes an exact comparison possible; test/gen_rsa_sign_vectors.py says
+// how the expected signatures were produced and how openssl checked them.
 //
 // This binary builds with -DCH_RSA_MODULUS_MAX=512, the TRUST=webpki
 // bound bin/rsa_test uses, so the RSA-4096 vector signs here. A device
@@ -18,7 +17,6 @@
 #include <string.h>
 
 #include "ch_assert.h"
-#include "rand.h"
 #include "rsa.h"
 #include "rsa_sign.h"
 #include "rsa_sign_vectors.h"
@@ -44,22 +42,6 @@ static int failures = 0;
 noreturn void ch_assert_fail(const char *cond, const char *file, int line) {
     (void)fprintf(stderr, "ASSERT %s:%d: %s\n", file, line, cond);
     abort();
-}
-
-// The salt the next signature draws. load_salt puts one there; the hook
-// repeats its last byte if a caller ever asks for more than 32, which no
-// caller here does. rand.h declares the hook, so this definition is the
-// one the signer links against rather than a file-local function.
-static uint8_t g_salt[32];
-
-void ch_rand_bytes(uint8_t *p, size_t n) {
-    for (size_t i = 0; i < n; i++) {
-        p[i] = g_salt[i < sizeof g_salt ? i : sizeof g_salt - 1];
-    }
-}
-
-static void load_salt(const uint8_t *salt) {
-    memcpy(g_salt, salt, sizeof g_salt);
 }
 
 // One vector: a key, the message it signs, the salt, and the signature
@@ -103,26 +85,24 @@ static void run_vector(const vector *v) {
         size_t small_len = 0;
         memset(&g_key, 0, sizeof g_key);
         g_key.n_len = v->n_len;
-        CHECK(rsa_pss_sign(&g_key, msg_hash, small, sizeof small, &small_len) == 0);
+        CHECK(rsa_pss_sign(&g_key, msg_hash, v->salt, small, sizeof small, &small_len) == 0);
         (void)fprintf(stderr, "ok %s refused at this build's modulus bound\n", v->name);
         return;
     }
 
     load_key(v);
-    load_salt(v->salt);
     uint8_t sig[CH_RSA_MODULUS_MAX];
     size_t sig_len = 0;
-    CHECK(rsa_pss_sign(&g_key, msg_hash, sig, sizeof sig, &sig_len) == 1);
+    CHECK(rsa_pss_sign(&g_key, msg_hash, v->salt, sig, sizeof sig, &sig_len) == 1);
     CHECK(sig_len == v->n_len);
     CHECK(memcmp(sig, v->sig, v->n_len) == 0);
     CHECK(rsa_pss_verify(v->n, v->n_len, msg_hash, sig, sig_len) == 1);
 
-    uint8_t other_salt[32];
+    uint8_t other_salt[RSA_PSS_SALT_LEN];
     memset(other_salt, 0x11, sizeof other_salt);
-    load_salt(other_salt);
     uint8_t sig2[CH_RSA_MODULUS_MAX];
     size_t sig2_len = 0;
-    CHECK(rsa_pss_sign(&g_key, msg_hash, sig2, sizeof sig2, &sig2_len) == 1);
+    CHECK(rsa_pss_sign(&g_key, msg_hash, other_salt, sig2, sizeof sig2, &sig2_len) == 1);
     CHECK(memcmp(sig2, sig, v->n_len) != 0);
     CHECK(rsa_pss_verify(v->n, v->n_len, msg_hash, sig2, sig2_len) == 1);
 
@@ -142,34 +122,34 @@ static void run_vector(const vector *v) {
 static void run_refusals(const vector *v) {
     uint8_t sig[CH_RSA_MODULUS_MAX];
     size_t sig_len = 0;
-    load_salt(v->salt);
+    const uint8_t *salt = v->salt;
     uint8_t msg_hash[SHA256_LEN];
     memset(msg_hash, 0x42, sizeof msg_hash);
 
     load_key(v);
     CHECK(rsa_pss_sign_key_ok(&g_key) == 1);
-    CHECK(rsa_pss_sign(&g_key, msg_hash, sig, v->n_len - 1, &sig_len) == 0); // cap one short
-    CHECK(rsa_pss_sign(&g_key, msg_hash, sig, v->n_len, &sig_len) == 1);     // cap exact
+    CHECK(rsa_pss_sign(&g_key, msg_hash, salt, sig, v->n_len - 1, &sig_len) == 0); // cap one short
+    CHECK(rsa_pss_sign(&g_key, msg_hash, salt, sig, v->n_len, &sig_len) == 1);     // cap exact
 
     load_key(v);
     g_key.n_len = 248; // one 8-byte step below the RSA-2048 floor
-    CHECK(rsa_pss_sign(&g_key, msg_hash, sig, sizeof sig, &sig_len) == 0);
+    CHECK(rsa_pss_sign(&g_key, msg_hash, salt, sig, sizeof sig, &sig_len) == 0);
     CHECK(rsa_pss_sign_key_ok(&g_key) == 0);
     g_key.n_len = 260; // inside the bounds, not a multiple of 8
-    CHECK(rsa_pss_sign(&g_key, msg_hash, sig, sizeof sig, &sig_len) == 0);
+    CHECK(rsa_pss_sign(&g_key, msg_hash, salt, sig, sizeof sig, &sig_len) == 0);
     CHECK(rsa_pss_sign_key_ok(&g_key) == 0);
     g_key.n_len = CH_RSA_MODULUS_MAX + 8; // one step above the ceiling
-    CHECK(rsa_pss_sign(&g_key, msg_hash, sig, sizeof sig, &sig_len) == 0);
+    CHECK(rsa_pss_sign(&g_key, msg_hash, salt, sig, sizeof sig, &sig_len) == 0);
     CHECK(rsa_pss_sign_key_ok(&g_key) == 0);
 
     load_key(v);
     g_key.n[g_key.n_len - 1] &= (uint8_t)~1U; // even modulus, no Montgomery inverse
-    CHECK(rsa_pss_sign(&g_key, msg_hash, sig, sizeof sig, &sig_len) == 0);
+    CHECK(rsa_pss_sign(&g_key, msg_hash, salt, sig, sizeof sig, &sig_len) == 0);
     CHECK(rsa_pss_sign_key_ok(&g_key) == 0);
 
     load_key(v);
     g_key.n[0] &= 0x7f; // top bit clear, so emLen would not be n_len
-    CHECK(rsa_pss_sign(&g_key, msg_hash, sig, sizeof sig, &sig_len) == 0);
+    CHECK(rsa_pss_sign(&g_key, msg_hash, salt, sig, sizeof sig, &sig_len) == 0);
     CHECK(rsa_pss_sign_key_ok(&g_key) == 0);
 }
 

@@ -19,7 +19,9 @@
 // the other, which is what the two cases below check after each
 // handshake. The raw build also fails each end on purpose and has it seal
 // the one CONNECTION_CLOSE each level owes, which the other end opens
-// (test/quic_loop_close.h).
+// (test/quic_loop_close.h). bin/quic_loop_session is the raw build under
+// -DCH_RAND_SESSION: every session draws from the source its ch_cfg names,
+// and test/quic_loop_session.h checks what each source handed out.
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -40,6 +42,9 @@ noreturn void ch_assert_fail(const char *cond, const char *file, int line) {
     abort();
 }
 
+#ifdef CH_RAND_SESSION
+#include "rand_session.h"
+#else
 // A counter, not entropy: both ends draw from it, so the two key shares
 // differ and a failure replays exactly.
 void ch_rand_bytes(uint8_t *p, size_t n) {
@@ -48,6 +53,7 @@ void ch_rand_bytes(uint8_t *p, size_t n) {
         p[i] = counter++;
     }
 }
+#endif
 
 static int failures = 0;
 #define CHECK(cond)                                                                                \
@@ -152,6 +158,9 @@ static void server_config(ch_cfg *cfg) {
     cfg->srv.ecdsa_p256.priv_len = sizeof p256_sign_vectors[0].priv;
     cfg->srv.ecdsa_p256.pub = p256_sign_vectors[0].pub;
     cfg->srv.ecdsa_p256.pub_len = sizeof p256_sign_vectors[0].pub;
+#ifdef CH_RAND_SESSION
+    attach_source(cfg, &server_source);
+#endif
 }
 
 // The client half both builds share: one offered protocol, the transport
@@ -166,6 +175,9 @@ static void client_config(ch_cfg *cfg, const ch_alpn_protocol *alpn) {
     cfg->transport_params_len = sizeof params;
     cfg->on_level_ready = level_ready;
     cfg->on_ticket = keep_ticket;
+#ifdef CH_RAND_SESSION
+    attach_source(cfg, &client_source);
+#endif
 }
 
 // The kept ticket as a resuming client presents it, one second after it
@@ -286,6 +298,9 @@ static size_t handshake_messages(void) {
 #ifdef CH_SUITE_AES_GCM
 #include "quic_loop_suites.h"
 #endif
+#ifdef CH_RAND_SESSION
+#include "quic_loop_session.h"
+#endif
 
 int main(void) {
 #ifdef CH_PIN_ECDSA
@@ -299,6 +314,9 @@ int main(void) {
 #endif
 #ifdef CH_SUITE_AES_GCM
     test_quic_suites();
+#endif
+#ifdef CH_RAND_SESSION
+    test_session();
 #endif
     if (failures == 0) {
         (void)printf("quic_loop: a QUIC client resumed a ticket from this tree's server with no"

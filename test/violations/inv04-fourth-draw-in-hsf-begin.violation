@@ -10,9 +10,9 @@ reason: hsf_begin draws the ClientHello random twice. The second call is a
   #if and #else, because Semgrep skipped the whole file.
 
 --- old
-    ch_rand_bytes(h->random, sizeof h->random);
+    rand_draw(&t->cfg, h->random, sizeof h->random);
 #ifdef CH_KEX_HYBRID
 --- new
-    ch_rand_bytes(h->random, sizeof h->random);
-    ch_rand_bytes(h->random, sizeof h->random);
+    rand_draw(&t->cfg, h->random, sizeof h->random);
+    rand_draw(&t->cfg, h->random, sizeof h->random);
 #ifdef CH_KEX_HYBRID

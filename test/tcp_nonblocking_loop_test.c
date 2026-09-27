@@ -44,7 +44,10 @@
 // server, which holds both groups, must select x25519.
 // bin/tcp_nonblocking_loop_pq's client is the KEX=pq one and offers
 // X25519MLKEM768 alone, and the server must select the hybrid, for the
-// full handshake and for the resumed one.
+// full handshake and for the resumed one. bin/tcp_nonblocking_loop_session
+// is the KEX=pq build under -DCH_RAND_SESSION: every session draws from
+// the source its ch_cfg names, and test/tcp_nonblocking_session_tests.h
+// checks what each source handed out.
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -67,6 +70,9 @@ noreturn void ch_assert_fail(const char *cond, const char *file, int line) {
     abort();
 }
 
+#ifdef CH_RAND_SESSION
+#include "rand_session.h"
+#else
 // A counter, not entropy. Both halves draw from it, so the two key
 // shares differ and a failure replays exactly.
 void ch_rand_bytes(uint8_t *p, size_t n) {
@@ -75,6 +81,7 @@ void ch_rand_bytes(uint8_t *p, size_t n) {
         p[i] = counter++;
     }
 }
+#endif
 
 static int failures = 0;
 #define CHECK(cond)                                                                                \
@@ -250,6 +257,9 @@ static void server_config(ch_cfg *cfg) {
     cfg->srv.cookie_key = cookie_key;
     cfg->srv.on_record_out = sink;
     cfg->io = &server_io;
+#ifdef CH_RAND_SESSION
+    attach_source(cfg, &server_source);
+#endif
 
     memset(&rsa_key, 0, sizeof rsa_key);
     rsa_key.n_len = sizeof rsa_sign_2048_n;
@@ -274,6 +284,9 @@ static void client_config(ch_cfg *cfg) {
     cfg->server_pubkey = rsa_sign_2048_n;
     cfg->server_pubkey_len = sizeof rsa_sign_2048_n;
     cfg->io = &client_io;
+#ifdef CH_RAND_SESSION
+    attach_source(cfg, &client_source);
+#endif
 }
 
 // Moves everything the client owes into the server, and everything the
@@ -374,6 +387,9 @@ static int run_handshake(ch_record *client, ch_record *server, const ch_cfg *ccf
 #include "tcp_nonblocking_read_tests.h"
 #include "tcp_nonblocking_record_end_tests.h"
 #include "tcp_nonblocking_resume_tests.h"
+#ifdef CH_RAND_SESSION
+#include "tcp_nonblocking_session_tests.h"
+#endif
 
 int main(void) {
     static ch_record client;
@@ -450,6 +466,9 @@ int main(void) {
     server_config(&scfg);
     client_config(&ccfg);
     test_alerts(&client, &server, &ccfg, &scfg);
+#ifdef CH_RAND_SESSION
+    test_session();
+#endif
 
     if (failures == 0) {
         (void)printf("tcp_nonblocking_loop: a whole handshake over group 0x%04x in %d rounds,"

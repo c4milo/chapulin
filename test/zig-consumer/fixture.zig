@@ -9,6 +9,25 @@ const corpus = @import("corpus");
 const c = chapulin.c;
 
 const has_webpki = @hasField(c.ch_cfg, "anchors");
+const has_rand_session = @hasField(c.ch_cfg, "rand_bytes");
+
+/// Under RAND=session, the streams each side's sessions draw from: one
+/// seeded stream per side, so a failure replays exactly. A test fixture
+/// and never a source a program ships: a deterministic stream gives
+/// predictable keys (cfg.h), and a program passes std.crypto.random or a
+/// CSPRNG of its own.
+var client_stream = std.Random.DefaultPrng.init(0x11);
+var server_stream = std.Random.DefaultPrng.init(0x22);
+
+/// The value of Client.random: the client's stream under RAND=session, and
+/// void in every other build.
+pub fn clientRandom() if (has_rand_session) ?std.Random else void {
+    return if (has_rand_session) client_stream.random() else {};
+}
+
+fn serverRandom() if (has_rand_session) ?std.Random else void {
+    return if (has_rand_session) server_stream.random() else {};
+}
 
 /// The corpus row the chain comes from, whose verdict is "ok".
 pub fn r2Row() *const corpus.webpki_corpus_chain {
@@ -82,6 +101,7 @@ pub fn server(alpn: []const c.ch_alpn_protocol, now_seconds: u64) chapulin.Serve
         .ticket_key = &ticket_key,
         .now_seconds = now_seconds,
         .alpn = alpn,
+        .random = serverRandom(),
     };
 }
 

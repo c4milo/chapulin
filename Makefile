@@ -42,11 +42,12 @@ STACK_BUDGET_KEX_HYBRID := 6656
 # pattern its image uses. Every host binary built here supplies its own
 # ch_rand_bytes — test/test_random.h for the test mains, an OS-entropy
 # shim in the examples, a stub in the fuzz and proof harnesses that
-# reach randomness at all — so they declare it once, here. Two kinds of
+# reach randomness at all — so they declare it once, here. Three kinds of
 # build filter it back out: the packaged object declares through RAND
-# below, and every build of test/drbg_test.c links the reference
-# generator instead of supplying a hook, so it declares CH_RAND_DRBG, the
-# define drbg.h declares ch_drbg_seed under.
+# below, every build of test/drbg_test.c links the reference generator
+# instead of supplying a hook, so it declares CH_RAND_DRBG, the define
+# drbg.h declares ch_drbg_seed under, and the RAND=session builds of the
+# loop tests hand each session a source of its own (SESSION_CFLAGS).
 HOST_RAND_DEF := -DCH_RAND_EXTERN
 # ct.h has no architecture allowlist, so every build gets the 16x16
 # decomposition unless it says otherwise. These binaries run on a development
@@ -64,6 +65,10 @@ HOST_RAND_DEF := -DCH_RAND_EXTERN
 HOST_WIDEMUL_DEF := -DCH_NATIVE_WIDEMUL
 CFLAGS += $(HOST_RAND_DEF) $(HOST_WIDEMUL_DEF)
 LIB_CFLAGS = $(filter-out $(HOST_RAND_DEF) $(HOST_WIDEMUL_DEF),$(CFLAGS))
+# The flags of the RAND=session builds of the loop tests, which hand each
+# session a source of its own (test/rand_session.h) in place of the host's
+# pattern.
+SESSION_CFLAGS = $(filter-out $(HOST_RAND_DEF),$(CFLAGS)) -DCH_RAND_SESSION
 # Every tool version comes from one file that CI sources and this include
 # reads, so a runner and a development machine resolve the same pins. Before
 # it, LLVM_MAJOR below was referenced and never defined here, so the pinned
@@ -171,7 +176,7 @@ SRCS := ct.c sha256.c hkdf.c chacha20.c poly1305.c aead.c x25519.c p256.c rsa.c 
 
 HDRS := ct.h sha256.h hkdf.h chacha20.h poly1305.h aead.h x25519.h x25519_wide.h p256.h rsa.h ch_assert.h \
         pem.h x509.h x509_der.h x509_ca.h webpki.h webpki_cfg.h webpki_pin.h webpki_ticket.h buf.h record.h keysched.h io.h handshake_message.h handshake_parser.h handshake_record.h cfg.h session.h handshake_auth.h handshake.h handshake_post.h \
-        tls.h rand.h drbg.h sha3.h sha512.h sha512_compress.h p384.h p384_field.h p256_field.h p256_scalar.h p256_point.h p256_sign.h p256_ecdh.h rsa_pkcs1.h rsa_sign.h mlkem.h mlkem_poly.h \
+        tls.h rand.h rand_draw.h drbg.h sha3.h sha512.h sha512_compress.h p384.h p384_field.h p256_field.h p256_scalar.h p256_point.h p256_sign.h p256_ecdh.h rsa_pkcs1.h rsa_sign.h mlkem.h mlkem_poly.h \
         handshake_flight.h handshake_groups.h quic.h quic_config.h quic_initial.h quic_keys.h quic_packet.h quic_retry.h quic_step.h quic_fail.h quic_token.h aes.h aes_block.h aes_public_key.h aes_traffic_key.h aes_schedule.h gcm.h ghash_hw.h \
         srv_cfg.h srv.h srv_parser.h srv_parser_ext.h srv_message.h srv_cookie.h srv_ticket.h srv_auth.h srv_out.h srv_flight.h srv_resume.h srv_handshake.h srv_quic.h srv_tcp_nonblocking.h srv_kex.h keylog.h \
         tcp_nonblocking.h tcp_nonblocking_frame.h tcp_nonblocking_step.h build.h suite.h transcript.h ticket.h \
@@ -440,7 +445,8 @@ TESTH := test/test_random.h test/pem_armor.h test/pem_tests.h test/x509_ca_tests
          test/srv_message_tests.h test/srv_cookie_tests.h test/srv_ticket_tests.h test/srv_resume_tests.h test/srv_resume_issue_tests.h test/srv_flight_tests.h test/srv_flight_suite_tests.h test/srv_flight_p256_tests.h \
          test/quic_token_tests.h test/srv_quic_retry_tests.h test/srv_quic_retry_count_tests.h test/srv_quic_retry_vectors.h \
          test/srv_flight_keys_tests.h test/srv_identity_tests.h test/srv_parser_hello.h test/srv_parser_tests.h test/srv_parser_reader_tests.h \
-         test/lib_pair.h
+         test/lib_pair.h test/rand_session.h test/rand_session_cases.h test/tcp_nonblocking_session_tests.h \
+         test/tcp_blocking_session_tests.h test/quic_loop_session.h
 
 # Each axis names its value or stops the build. RAND has done this since
 # https://github.com/c4milo/chapulin/issues/41; PIN, TRUST and KEX each
@@ -985,10 +991,14 @@ endif
 # leaves ch_rand_bytes undefined for the image to supply, RAND=drbg packages
 # the reference generator and exports ch_drbg_seed so the image seeds it at
 # boot, and ch_rand_bytes so the image can draw the output docs/entropy.md's
-# seed file and reseed recipes need (docs/decisions.md 67). Neither is a default because the choice is the point
+# seed file and reseed recipes need (docs/decisions.md 67), and
+# RAND=session gives each session a source of its own in ch_cfg.rand_bytes
+# and ch_cfg.rand_io, so the object neither defines nor imports
+# ch_rand_bytes and packages no drbg.c (docs/decisions.md 77). None is a
+# default because the choice is the point
 # (https://github.com/c4milo/chapulin/issues/41): a weak generator completes
 # the handshake and reports success, so the only thing a build can enforce is
-# that somebody wrote the choice down. Naming neither reaches cfg.h's #error,
+# that somebody wrote the choice down. Naming none reaches cfg.h's #error,
 # which is where a firmware tree compiling these sources with its own build
 # system meets the same demand.
 ifeq ($(RAND),drbg)
@@ -998,8 +1008,11 @@ PUBLIC_RAND := ch_drbg_seed ch_rand_bytes
 else ifeq ($(RAND),extern)
 LIB_DEF += -DCH_RAND_EXTERN
 PUBLIC_RAND :=
+else ifeq ($(RAND),session)
+LIB_DEF += -DCH_RAND_SESSION
+PUBLIC_RAND :=
 else ifneq ($(RAND),)
-$(error RAND=$(RAND) is not an entropy pattern; use RAND=extern or RAND=drbg)
+$(error RAND=$(RAND) is not an entropy pattern; use RAND=extern, RAND=drbg or RAND=session)
 endif
 # CBMC intrinsics don't compile under clang-tidy/cppcheck; harnesses get
 # clang-format only. Fuzzers include .c files for statics, same deal.
@@ -1191,6 +1204,11 @@ print-tcp-nonblocking-loop-srcs:
 # record it defines (docs/decisions.md 56), so a filter that drops it
 # from one variant fails here rather than in that variant's link.
 #
+# The RAND rows hold each entropy pattern to its one define, and drbg.c,
+# the reference generator, to the RAND=drbg object alone: a RAND=session
+# object packages no generator, because each session names its own source
+# (docs/decisions.md 77).
+#
 # Each row runs as its own background job and prints into a file of its
 # own, and the files print in row order once every row has ended, so the
 # rows run at once and their lines never interleave. A row prints only
@@ -1236,6 +1254,9 @@ lint-trust-separation-run:
 	check "TRUST=raw-rsa KEX=pq" "x25519.c sha3.c mlkem.c mlkem_poly.c" "" "-DCH_KEX_PQ" ""; \
 	check "TRUST=raw-rsa X25519=portable" "x25519.c" "x25519_wide.c" "" "-DCH_X25519_WIDE"; \
 	check "TRUST=raw-rsa X25519=wide" "x25519.c x25519_wide.c" "" "-DCH_X25519_WIDE" "-DCH_NATIVE_MUL128"; \
+	check "TRUST=raw-rsa RAND=extern" "" "drbg.c" "-DCH_RAND_EXTERN" "-DCH_RAND_DRBG -DCH_RAND_SESSION"; \
+	check "TRUST=raw-rsa RAND=drbg" "drbg.c" "" "-DCH_RAND_DRBG" "-DCH_RAND_EXTERN -DCH_RAND_SESSION"; \
+	check "TRUST=raw-rsa RAND=session" "" "drbg.c" "-DCH_RAND_SESSION" "-DCH_RAND_EXTERN -DCH_RAND_DRBG"; \
 	for axis in "TRUST=webpki ROLE=client" "TRUST=webpki ROLE=both" "TRUST=none ROLE=server"; do \
 	  for k in x25519 pq; do \
 	    n=$$((n + 1)); refused "$$axis" $$k > "$$rows/$$(printf '%03d' $$n)" 2>&1 & \
@@ -1465,7 +1486,8 @@ lib-check: $(LIB_OBJ)
 	@echo "lib-check: $$(wc -l < $(LIB_CHECK_DIR)/exported.txt | tr -d ' ') exported symbols, all public API"
 # https://github.com/c4milo/chapulin/issues/41 calls the undefined import
 # chapulin's strongest randomness property: an image that never wired a
-# generator does not link. RAND=drbg trades it away deliberately, so assert
+# generator does not link. RAND=drbg trades it away deliberately, and
+# RAND=session moves the source into each session's ch_cfg, so assert
 # whichever one this build promised rather than leaving the difference to a
 # reader of the Makefile.
 ifeq ($(RAND),drbg)
@@ -1485,6 +1507,16 @@ ifeq ($(TRANSPORT)-$(ROLE)-$(KEYLOG),tcp-blocking-client-off)
 	  echo "lib-check: docs/entropy.md's boot-seed recipe links against this object but does not run"; exit 1; }
 	@echo "lib-check: docs/entropy.md's boot-seed recipe links against this object, and the handshake it starts draws from the seeded generator"
 endif
+else ifeq ($(RAND),session)
+# The RAND=extern check's counterpart. Every draw calls the session's
+# cfg.rand_bytes (rand.h), so the object names neither generator symbol,
+# defined, local or imported, and a program that links only RAND=session
+# objects defines no entropy hook. build_test.c below is such a program:
+# under CH_RAND_SESSION it defines no ch_rand_bytes, so its link fails
+# when the object imports one (docs/decisions.md 77).
+	@if nm $(LIB_OBJ) | awk '{print $$NF}' | sed 's/^_//' | grep -qxE 'ch_rand_bytes|ch_drbg_seed'; then \
+	  echo "lib-check: RAND=session must neither define nor import ch_rand_bytes or ch_drbg_seed, so a program that links only such objects defines no entropy hook"; exit 1; fi
+	@echo "lib-check: the object names no ch_rand_bytes and no ch_drbg_seed; every draw calls the session's own source"
 else
 	@if ! nm -u $(LIB_OBJ) | awk '{print $$NF}' | sed 's/^_//' | grep -qx ch_rand_bytes; then \
 	  echo "lib-check: RAND=extern must leave ch_rand_bytes undefined, so an image that forgets the hook fails to link"; exit 1; fi
@@ -1499,12 +1531,14 @@ endif
 # consumer tried the link.
 #
 # ch_rand_bytes is the one hook this tree also defines, in drbg.c, so a
-# RAND=extern object imports it on purpose and it is named below.
+# RAND=extern object imports it on purpose and it is named below. A
+# RAND=drbg object defines it, and a RAND=session object must not import
+# it, so neither admits it.
 # ch_assert_fail and ch_aes_block need no entry: no source here defines
 # either, so the rule passes them without being told.
 	@set -e; \
 	allow=""; \
-	[ "$(RAND)" = "drbg" ] || allow="ch_rand_bytes"; \
+	[ "$(RAND)" != "extern" ] || allow="ch_rand_bytes"; \
 	bad=""; \
 	for s in $$(nm -u $(LIB_OBJ) | awk '{print $$NF}' | sed 's/^_//' | sort -u); do \
 	  case " $$allow " in *" $$s "*) continue;; esac; \
@@ -1538,20 +1572,22 @@ endif
 # The declaration in cfg.h is the whole feature, so check that it fires.
 # tls.c is enough to drive it: it includes cfg.h, where the guard lives.
 # LIB_CFLAGS is the flag set with the host declaration filtered out, so
-# the "neither" arm really names neither.
+# the "none" arm really names none. Every pair and all three together
+# must fail, and each define alone must compile.
 .PHONY: rand-check
 rand-check:
 	@set -e; \
-	for d in "" "-DCH_RAND_EXTERN -DCH_RAND_DRBG"; do \
+	for d in "" "-DCH_RAND_EXTERN -DCH_RAND_DRBG" "-DCH_RAND_EXTERN -DCH_RAND_SESSION" \
+	  "-DCH_RAND_DRBG -DCH_RAND_SESSION" "-DCH_RAND_EXTERN -DCH_RAND_DRBG -DCH_RAND_SESSION"; do \
 	  if $(CC) $(LIB_CFLAGS) $$d -I. -fsyntax-only tls.c 2>/dev/null; then \
 	    echo "rand-check: tls.c compiled with [$$d]; the cfg.h guard did not fire"; exit 1; \
 	  fi; \
 	done; \
-	for d in -DCH_RAND_EXTERN -DCH_RAND_DRBG; do \
+	for d in -DCH_RAND_EXTERN -DCH_RAND_DRBG -DCH_RAND_SESSION; do \
 	  $(CC) $(LIB_CFLAGS) $$d -I. -fsyntax-only tls.c || { \
 	    echo "rand-check: tls.c must compile with $$d alone"; exit 1; }; \
 	done; \
-	echo "rand-check: cfg.h admits exactly one of CH_RAND_EXTERN and CH_RAND_DRBG"
+	echo "rand-check: cfg.h admits exactly one of CH_RAND_EXTERN, CH_RAND_DRBG and CH_RAND_SESSION"
 
 # The reference generator's own vectors. It builds here whatever RAND
 # says, because the module is the subject of the test rather than the
@@ -1820,6 +1856,13 @@ bin/quic_loop_test: test/quic_loop_test.c $(SRV_QUIC_BOTH_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) -DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_PIN_ECDSA -I. -Itest \
 	  -o $@ test/quic_loop_test.c $(SRV_QUIC_BOTH_SRCS)
+# The raw build under RAND=session (docs/decisions.md 77): every case
+# above with the client's source and the server's apart, and
+# test/quic_loop_session.h's checks of what each source handed out.
+bin/quic_loop_session: test/quic_loop_test.c $(SRV_QUIC_BOTH_SRCS) $(HDRS) $(TESTH)
+	@mkdir -p bin
+	$(CC) $(SESSION_CFLAGS) -DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_PIN_ECDSA \
+	  -I. -Itest -o $@ test/quic_loop_test.c $(SRV_QUIC_BOTH_SRCS)
 QUIC_LOOP_WEBPKI_SRCS := $(sort $(SRV_QUIC_BOTH_SRCS) $(WEBPKI_SRCS) $(WEBPKI_CHAIN_SRCS) x509_der.c \
                                 $(KEX_HYBRID_SRCS) $(WEBPKI_KEX_SRCS))
 bin/quic_loop_webpki: test/quic_loop_test.c $(QUIC_LOOP_WEBPKI_SRCS) $(HDRS) $(TESTH)
@@ -1945,6 +1988,19 @@ bin/tcp_nonblocking_loop_pq: test/tcp_nonblocking_loop_test.c $(TCP_NONBLOCKING_
 	@mkdir -p bin
 	$(CC) $(CFLAGS) -DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_TRANSPORT_TCP_NONBLOCKING -DCH_KEX_PQ $(EXPORTER_DEF) \
 	  -DCH_KEYLOG -I. -o $@ test/tcp_nonblocking_loop_test.c $(TCP_NONBLOCKING_LOOP_SRCS)
+# The same KEX=pq main under RAND=session, where each session draws from
+# the source its ch_cfg names (docs/decisions.md 77). Every case above runs
+# with the client's source and the server's apart, and
+# test/tcp_nonblocking_session_tests.h checks what each handed out: the
+# draws, a replay from two seeds, the refusals of a configuration with no
+# source, and the RSA-PSS salt. KEX=pq is the build whose full handshake
+# runs the most draw sites: the ML-KEM seed and the encapsulation
+# randomness as well as the scalars, the randoms and the salt.
+bin/tcp_nonblocking_loop_session: test/tcp_nonblocking_loop_test.c $(TCP_NONBLOCKING_LOOP_SRCS) $(HDRS) \
+                                  $(TESTH)
+	@mkdir -p bin
+	$(CC) $(SESSION_CFLAGS) -DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_TRANSPORT_TCP_NONBLOCKING -DCH_KEX_PQ \
+	  $(EXPORTER_DEF) -DCH_KEYLOG -I. -o $@ test/tcp_nonblocking_loop_test.c $(TCP_NONBLOCKING_LOOP_SRCS)
 # Each tcp-blocking driver against the other role's flight handlers, which
 # the test calls from inside the driver's recv callback, under the defines
 # of the one object that carries both blocking drivers: ROLE=both
@@ -1957,6 +2013,13 @@ TCP_BLOCKING_LOOP_SRCS := $(SRCS) $(SRV_SRCS) $(KEX_HYBRID_SRCS) rsa_sign.c p256
 bin/tcp_blocking_loop_test: test/tcp_blocking_loop_test.c $(TCP_BLOCKING_LOOP_SRCS) $(HDRS) $(TESTH)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) -DCH_ROLE_SERVER -DCH_ROLE_BOTH -I. -o $@ test/tcp_blocking_loop_test.c \
+	  $(TCP_BLOCKING_LOOP_SRCS)
+# The same main under RAND=session (docs/decisions.md 77): every case above
+# with the client's source and the server's apart, and
+# test/tcp_blocking_session_tests.h's checks of what each source handed out.
+bin/tcp_blocking_loop_session: test/tcp_blocking_loop_test.c $(TCP_BLOCKING_LOOP_SRCS) $(HDRS) $(TESTH)
+	@mkdir -p bin
+	$(CC) $(SESSION_CFLAGS) -DCH_ROLE_SERVER -DCH_ROLE_BOTH -I. -o $@ test/tcp_blocking_loop_test.c \
 	  $(TCP_BLOCKING_LOOP_SRCS)
 # The TRUST=webpki tcp-nonblocking client against this tree's tcp-nonblocking
 # server, over
@@ -2409,12 +2472,13 @@ CHECK_RUN_BINS := unit unit_ca unit_pq drbg_test softmul_test rsa_test rsa_sign_
                   quic_test $(patsubst bin/%,%,$(AES_HW_BINS) $(AES_EXTERN_BINS) $(X25519_WIDE_BINS)) \
                   srv_auth_test srv_test srv_quic_test srv_quic_both_test srv_tcp_nonblocking_test \
                   tcp_nonblocking_loop_test tcp_nonblocking_loop_pq tcp_blocking_loop_test \
-                  quic_loop_test quic_loop_webpki \
+                  quic_loop_test quic_loop_webpki tcp_blocking_loop_session tcp_nonblocking_loop_session \
+                  quic_loop_session \
                   webpki_loop_tcp_nonblocking exporter_test srv_flight_test handshake_strict_test \
                   handshake_strict_pq handshake_strict_webpki webpki_session_test webpki_resume_test \
                   webpki_resume_tcp_nonblocking x509strict x509strict_ecdsa \
                   ticket_epoch_tcp_nonblocking ticket_epoch_quic
-CHECK_LEGS := check-lib-drbg check-lib-extern check-examples check-lib-ca-rsa check-lib-ca-ecdsa \
+CHECK_LEGS := check-lib-drbg check-lib-session check-lib-extern check-examples check-lib-ca-rsa check-lib-ca-ecdsa \
               check-lib-webpki check-lib-webpki-tcp-nonblocking check-lib-webpki-widemul check-lib-tx-record \
               check-lib-quic check-lib-quic-webpki-both check-lib-server check-lib-server-tcp-nonblocking \
               check-lib-raw-ecdsa-pq check-lib-exporter check-lib-server-quic-keylog \
@@ -2509,6 +2573,17 @@ CHECK_LEG_STAMP = python3 tools/stamp.py $@ --content . --output '$(CC) --versio
 # place on every invocation.
 check-lib-drbg:
 	@mkdir -p bin/check; $(CHECK_LEG_STAMP) $(MAKE) lib-check RAND=drbg > bin/check/$@.log 2>&1; $(CHECK_REPORT)
+# The pattern where each session names its own source (docs/decisions.md
+# 77), on the object that compiles every one of the ten draw sites: a
+# client and a server, over the tcp-nonblocking transport colibri's HTTP/2
+# side links, with the TRUST=webpki client's P-256 retry. lib-check holds
+# it to name no ch_rand_bytes and no ch_drbg_seed, defined or imported,
+# and links test/build_test.c, which defines no hook under
+# CH_RAND_SESSION. test/lib-check-rand-session.sh runs the same command
+# for test/violations/.
+check-lib-session:
+	@mkdir -p bin/check; $(CHECK_LEG_STAMP) $(MAKE) lib-check RAND=session TRUST=webpki TRANSPORT=tcp-nonblocking \
+	  ROLE=both > bin/check/$@.log 2>&1; $(CHECK_REPORT)
 check-lib-extern: lint-zig-build bin/srv_flight_test
 	@mkdir -p bin/check; $(CHECK_LEG_STAMP) $(MAKE) lib-check cxx-check RAND=extern > bin/check/$@.log 2>&1; $(CHECK_REPORT)
 # The examples are pinned to TRUST=raw-rsa and TRANSPORT=tcp-blocking, whatever
@@ -3800,6 +3875,23 @@ else
 	# builds: drbg.h declares ch_drbg_seed only under that define.
 	@$(call TIDY_EACH,drbg.c test/drbg_test.c test/entropy_recipe.c, \
 	  -std=c11 -D_DEFAULT_SOURCE -DCH_RAND_DRBG -I.)
+	# RAND=session, in place of the host's pattern: the draw sites and the
+	# configuration checks read rand.h's session arm and ch_cfg's two
+	# fields only under -DCH_RAND_SESSION, and so do the three loop tests
+	# built under it, whose fixture is test/rand_session.h. Each file takes
+	# the role, trust mode or transport its body sits behind.
+	@$(call TIDY_EACH,tls.c handshake_flight.c srv_flight.c srv_kex.c srv_resume.c srv_auth.c srv.c, \
+	  -std=c11 -D_DEFAULT_SOURCE -DCH_RAND_SESSION -DCH_ROLE_SERVER -DCH_ROLE_BOTH -I.)
+	@$(call TIDY_EACH,handshake_groups.c, \
+	  -std=c11 -D_DEFAULT_SOURCE -DCH_RAND_SESSION -DCH_TRUST_WEBPKI -I.)
+	@$(call TIDY_EACH,quic_config.c, \
+	  -std=c11 -D_DEFAULT_SOURCE -DCH_RAND_SESSION -DCH_TRANSPORT_QUIC_NONBLOCKING -I.)
+	@$(call TIDY_EACH,test/tcp_nonblocking_loop_test.c, \
+	  -std=c11 -D_DEFAULT_SOURCE -DCH_RAND_SESSION -DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_TRANSPORT_TCP_NONBLOCKING -DCH_KEX_PQ $(EXPORTER_DEF) -DCH_KEYLOG -I.)
+	@$(call TIDY_EACH,test/tcp_blocking_loop_test.c, \
+	  -std=c11 -D_DEFAULT_SOURCE -DCH_RAND_SESSION -DCH_ROLE_SERVER -DCH_ROLE_BOTH -I.)
+	@$(call TIDY_EACH,test/quic_loop_test.c, \
+	  -std=c11 -D_DEFAULT_SOURCE -DCH_RAND_SESSION -DCH_ROLE_SERVER -DCH_ROLE_BOTH -DCH_TRANSPORT_QUIC_NONBLOCKING -DCH_PIN_ECDSA -I. -Itest)
 	# The QUIC mode: its sources and its three test mains, under every
 	# check.
 	@$(call TIDY_EACH,$(QUIC_SRCS), \

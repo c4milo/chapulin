@@ -13,7 +13,7 @@
 #include "ch_assert.h"
 #include "ct.h"
 #include "keysched.h"
-#include "rand.h"
+#include "rand_draw.h"
 #include "srv_out.h"
 
 // The four-byte obfuscated_ticket_age each PskIdentity ends with (RFC
@@ -217,7 +217,7 @@ static void ticket_alpn(const ch_tls *t, srv_ticket_contents *c) {
 }
 
 // The three values one ticket draws: the AEAD nonce, ticket_age_add and
-// ticket_nonce, in that order, from one ch_rand_bytes call.
+// ticket_nonce, in that order, from one rand_draw call.
 #define TICKET_DRAW_LEN (AEAD_NONCE + TICKET_AGE_ADD_LEN + SRV_TICKET_NONCE_LEN)
 
 // Seals one ticket and writes the NewSessionTicket that carries it into
@@ -280,12 +280,12 @@ int srv_send_new_session_ticket(handshake_state *h) {
     }
     uint32_t lifetime = (uint32_t)(SRV_TICKET_LIFETIME - spent);
 
-    // ch_rand_bytes writes every byte it is given, so an all-zero draw is
-    // a hook that returned without writing: programmer error, which
-    // CH_ASSERT is for, as srv_flight.c holds its own two draws.
+    // The source writes every byte it is given (rand.h), so an all-zero
+    // draw is a source that returned without writing: programmer error,
+    // which CH_ASSERT is for, as srv_flight.c holds its own two draws.
     static const uint8_t unwritten[TICKET_DRAW_LEN] = {0};
     uint8_t drawn[TICKET_DRAW_LEN] = {0};
-    ch_rand_bytes(drawn, sizeof drawn);
+    rand_draw(&t->cfg, drawn, sizeof drawn);
     CH_ASSERT(!ct_memeq(drawn, unwritten, sizeof drawn));
 
     uint8_t msg[SRV_NEW_SESSION_TICKET_MAX];

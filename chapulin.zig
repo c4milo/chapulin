@@ -29,6 +29,10 @@ const has_server = @hasField(c.ch_cfg, "srv");
 const has_webpki = @hasField(c.ch_cfg, "anchors");
 const has_alpn = @hasField(c.ch_cfg, "alpn_protocols");
 const has_suite_order = has_server and @hasField(c.ch_srv_cfg, "cipher_suites");
+// RAND=session: each session names its own source of random bytes in
+// ch_cfg (cfg.h), where every other build draws from the image's
+// ch_rand_bytes.
+const has_rand_session = @hasField(c.ch_cfg, "rand_bytes");
 
 /// One error per ch_err code a call returns, named as chapulin.hpp's
 /// Status names it. Each call's error set is the part of this one its C
@@ -156,9 +160,14 @@ const ClientValues = struct {
     ticket_age_ms: u64 = 0,
     /// Refuse a key exchange other than X25519MLKEM768: require_pq.
     require_pq: bool = false,
+    /// The session's source of random bytes, under RAND=session alone:
+    /// rand_bytes and rand_io, through the copy the session's init stores
+    /// (attachRandom). null leaves rand_bytes NULL, which init refuses with
+    /// error.Invalid. void in every other build.
+    random: if (has_rand_session) ?std.Random else void = if (has_rand_session) null else {},
 
     /// The ch_cfg these values set. A session's init adds its own buffer,
-    /// callbacks and io to it.
+    /// callbacks and io to it, and under RAND=session its source.
     pub fn toCfg(values: ClientValues) c.ch_cfg {
         var cfg = std.mem.zeroes(c.ch_cfg);
         if (has_webpki) switch (values.trust) {
@@ -314,8 +323,12 @@ const ServerValues = struct {
     require_server_name: bool = false,
     /// Suites in this server's order, empty for the default: srv.cipher_suites, cipher_suite_count.
     cipher_suites: if (has_suite_order) []const Suite else void = if (has_suite_order) &.{} else {},
+    /// The session's source of random bytes, under RAND=session alone, as
+    /// Client.random is. check draws from it too, for the RSA-PSS salt.
+    random: if (has_rand_session) ?std.Random else void = if (has_rand_session) null else {},
 
-    /// The ch_cfg these values set. error.Invalid for a chain longer than
+    /// The ch_cfg these values set, which a session's init completes as it
+    /// completes Client.toCfg's. error.Invalid for a chain longer than
     /// chain_count's u8 holds, the width of a C field.
     pub fn toCfg(values: ServerValues) error{Invalid}!c.ch_cfg {
         var cfg = std.mem.zeroes(c.ch_cfg);
@@ -349,9 +362,13 @@ const ServerValues = struct {
     }
 
     /// ch_srv_check: each provisioned key signs, and the signature
-    /// verifies. It takes no session and runs no I/O.
+    /// verifies. It takes no session and runs no I/O. Under RAND=session
+    /// the RSA-PSS signature draws its salt from random, which C holds
+    /// for the call alone.
     pub fn check(values: ServerValues) error{Invalid}!void {
-        const cfg = try values.toCfg();
+        var cfg = try values.toCfg();
+        var source: RandomSource = undefined;
+        attachRandom(&cfg, &source, values.random);
         return fromCode(error{Invalid}, c.ch_srv_check(&cfg));
     }
 };
@@ -404,6 +421,35 @@ pub fn buildMatches() bool {
 /// ch_keylog: a session's init sets it to null, and the caller writes
 /// session.hook.context after init.
 pub const Hook = extern struct { context: ?*anyopaque = null };
+
+/// What a session stores under RAND=session: the std.Random its values
+/// carried, which ch_cfg.rand_io points at for the session's lifetime, so
+/// the session must not move after init. void in every other build.
+pub const RandomSource = if (has_rand_session) std.Random else void;
+
+/// Under RAND=session, stores random in source and points cfg at it:
+/// rand_io is source, and rand_bytes the adapter that fills each draw from
+/// it. A null random leaves rand_bytes NULL, which every init call and
+/// ch_srv_check refuse with CH_EINVAL, so the refusal stays C's. It does
+/// nothing in any other build. The sessions' init calls and Server.check
+/// call it.
+pub fn attachRandom(cfg: *c.ch_cfg, source: *RandomSource, random: if (has_rand_session) ?std.Random else void) void {
+    if (has_rand_session) {
+        if (random) |r| {
+            source.* = r;
+            cfg.rand_bytes = fillRandom;
+            cfg.rand_io = source;
+        }
+    }
+}
+
+/// ch_cfg.rand_bytes under RAND=session: fills out[0..n] from the
+/// std.Random rand_io points at. A std.Random's fill returns nothing and
+/// cannot fail, which is the contract cfg.h states for rand_bytes.
+fn fillRandom(rand_io: ?*anyopaque, out: [*c]u8, n: usize) callconv(.c) void {
+    const source: *const std.Random = @ptrCast(@alignCast(rand_io.?));
+    source.bytes(out[0..n]);
+}
 
 /// The caller's context, from the io argument ch_keylog receives (KEYLOG=on).
 pub const hookContext = if (@hasDecl(c, "ch_keylog")) hookContextOf else @compileError("hookContext needs KEYLOG=on");

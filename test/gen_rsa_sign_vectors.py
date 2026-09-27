@@ -8,8 +8,8 @@ known answer: two runs over one message give two signatures. This script
 fixes the salt instead. It mints a key with OpenSSL 3, encodes EMSA-PSS
 (RFC 8017 9.1.1) here in Python over a salt of its own choosing, raises
 the encoded message to the private exponent, and writes the result as the
-one signature rsa_pss_sign must produce when ch_rand_bytes hands it that
-salt. test/rsa_sign_test.c injects it.
+one signature rsa_pss_sign must produce when it is handed that salt.
+test/rsa_sign_test.c passes it.
 
 The Python encoder is the second implementation, not the oracle. Every
 signature this script emits is checked twice before it lands: openssl
@@ -173,7 +173,7 @@ def main():
                                "The signed message. The test hashes it with the library's"
                                "\nown SHA-256, so no digest is hardcoded here."))
             out.append(c_array(f"{name}_salt", salt,
-                               "The salt ch_rand_bytes hands the signer for this vector."))
+                               "The salt rsa_pss_sign takes for this vector."))
             out.append(c_array(f"{name}_sig", signature,
                                "The signature rsa_pss_sign must produce over that salt."))
     out.append("#endif")

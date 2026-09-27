@@ -106,18 +106,29 @@ static inline int rsa_pss_sign_key_ok(const ch_rsa_priv *k) {
 // and the code treats them as public. Their bit lengths steer loop
 // counts here exactly as they do in rsa.c.
 
+// The salt length rsa_pss_rsae_sha256 fixes, in bytes: the length of
+// SHA-256's output (RFC 9846 §4.3.3, rfc9846.txt:1898-1899), sLen in RFC
+// 8017 9.1.1.
+#define RSA_PSS_SALT_LEN 32
+
 // Signs msg_hash, the 32-byte SHA-256 of the content RFC 9846 §4.5.2
-// defines, and writes n_len bytes to sig. cap is the room sig has;
-// sig_len takes the length written. Returns 1 on success and 0 when
-// rsa_pss_sign_key_ok refuses the key or when cap is short. The 1-or-0
-// return is rsa_pss_verify's, because a caller that holds both calls
-// should read one convention; the caller turns a 0 into the alert it
-// sends.
+// defines, under the salt the caller drew, and writes n_len bytes to sig.
+// cap is the room sig has; sig_len takes the length written. Returns 1
+// on success and 0 when rsa_pss_sign_key_ok refuses the key or when cap
+// is short. The 1-or-0 return is rsa_pss_verify's, because a caller that
+// holds both calls should read one convention; the caller turns a 0 into
+// the alert it sends.
 //
-// The salt is 32 fresh bytes from ch_rand_bytes. A device without
-// entropy must not get this far (rand.h).
-int rsa_pss_sign(const ch_rsa_priv *k, const uint8_t msg_hash[32], uint8_t *sig, size_t cap,
-                 size_t *sig_len);
+// The salt is RSA_PSS_SALT_LEN bytes the caller drew for this signature
+// alone. The signature is a function of the key, msg_hash and the salt,
+// so this file draws nothing: the caller draws from its session's source
+// (srv_auth.c, INV-4), as mlkem.h and p256_ecdh.h take their random bytes
+// as arguments. The salt appears in the signature, so it is not secret.
+// An all-zero salt is the one a source that returned without writing
+// leaves, and CH_ASSERT fires on it: every signature over one message
+// would then be the same bytes, and nothing downstream would notice.
+int rsa_pss_sign(const ch_rsa_priv *k, const uint8_t msg_hash[32],
+                 const uint8_t salt[RSA_PSS_SALT_LEN], uint8_t *sig, size_t cap, size_t *sig_len);
 
 // Internal split boundary: sig = em^d mod n (RSASP1, RFC 8017 5.2.1),
 // with em and sig both n_len big-endian bytes. rsa_pss_sign checks the

@@ -7,14 +7,14 @@
 
 #include "ch_assert.h"
 #include "ct.h"
-#include "rand.h"
+#include "rand_draw.h"
 
 // Draws the P-256 key pair into h->p256_priv and h->p256_pub. Each draw
 // is a candidate scalar, and p256_ecdh_keygen refuses one outside
 // [1, n-1] and zeroes both outputs, so the loop draws again, up to
 // P256_ECDH_DRAWS draws in all. The loop's exit reads whether the last
 // candidate was refused, which says nothing about the one kept. The
-// candidate buffer is zeroed before each draw, so a hook that returns
+// candidate buffer is zeroed before each draw, so a source that returns
 // without writing leaves the zero candidate, which keygen refuses, and
 // the assertion after the loop fires on it.
 static void draw_p256_key(handshake_state *h) {
@@ -22,13 +22,13 @@ static void draw_p256_key(handshake_state *h) {
     int drawn = 0;
     for (int i = 0; i < P256_ECDH_DRAWS && !drawn; i++) {
         ct_wipe(draw, sizeof draw);
-        ch_rand_bytes(draw, sizeof draw);
+        rand_draw(&h->t->cfg, draw, sizeof draw);
         drawn = p256_ecdh_keygen(draw, h->p256_priv, h->p256_pub);
     }
     ct_wipe(draw, sizeof draw);
     // rand.h's contract: a working generator refuses P256_ECDH_DRAWS
     // candidates in a row with probability below 2^-128, so this is a
-    // hook that wrote nothing or wrote a constant, which is programmer
+    // source that wrote nothing or wrote a constant, which is programmer
     // error, not peer input.
     CH_ASSERT(drawn);
 }

@@ -292,7 +292,11 @@ supply for a core that has one.
 `ch_rand_bytes` is yours, and no check here can grade it: a weak generator
 completes the handshake and produces a session anyone can read. Choose
 `RAND=extern` and supply the hook, or `RAND=drbg` and seed the reference
-generator at boot. `docs/entropy.md` covers the reasoning and the failure modes.
+generator at boot. A host whose sessions each need a source of their own,
+to replay a connection from a seed in a test or to run sessions on several
+threads with no shared state, chooses `RAND=session` and sets
+`cfg.rand_bytes` per session instead. `docs/entropy.md` covers the
+reasoning and the failure modes.
 
 ## 3. The receive buffer
 
@@ -399,7 +403,9 @@ refusal:
   defines no `ch_rand_bytes`: the `RAND=extern` object then draws from the
   other object's generator, so the image has one. That generator is
   single-task (`drbg.h`), so an image that runs sessions on several threads
-  builds every object `RAND=extern` instead.
+  builds every object `RAND=extern` or `RAND=session` instead. A
+  `RAND=session` object names no `ch_rand_bytes` at all, so it links beside
+  an object of any pattern.
 
 Two objects of one transport do not link either, for the same reason as the
 first pair: build `ROLE=both` for a client and a server over one transport.
@@ -410,11 +416,13 @@ chapulin through colibri:
 
 - `ch_rand_bytes` (`rand.h`), which every `RAND=extern` object imports. The
   image defines it unless one of its objects is `RAND=drbg`, whose generator
-  is then the image's. There is one per image, and there is no randomness
-  callback per session. It must be safe to call from several threads at
-  once, because an image that runs one thread per core runs sessions on
-  every core. A hook that reads state held per thread, as cocuyo's does,
-  meets this.
+  is then the image's. There is one per image. It must be safe to call from
+  several threads at once, because an image that runs one thread per core
+  runs sessions on every core. A hook that reads state held per thread,
+  as cocuyo's does, meets this. A `RAND=session` object imports none: each
+  of its sessions draws from the source its own `ch_cfg` names, and an
+  image whose objects are all `RAND=session` defines no `ch_rand_bytes`
+  (`docs/decisions.md` 77).
 - `ch_assert_fail` (`ch_assert.h`), which every object imports.
 - `ch_keylog` (`keylog.h`) where an object is built `KEYLOG=on`, and
   `ch_aes_block` (`aes_block.h`) where one is built `AES=extern`. It
@@ -430,7 +438,8 @@ chapulin through colibri:
   `init`, and its `ch_keylog` reads it back with
   `chapulin.hookContext(io)` (`docs/zig.md`).
 
-The library calls `ch_rand_bytes` at these points and no others:
+The library draws at these points and no others, from `ch_rand_bytes` or,
+under `RAND=session`, from the session's own `cfg.rand_bytes`:
 
 - **A client:** in `ch_connect`, `ch_record_init` and `ch_quic_init`, for its
   key share, its ClientHello random and, where it offers X25519MLKEM768, the

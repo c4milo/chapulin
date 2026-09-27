@@ -25,7 +25,7 @@ const Role = enum { client, server, both };
 const Trust = enum { @"raw-rsa", @"raw-ecdsa", @"ca-rsa", @"ca-ecdsa", webpki, none };
 const Suite = enum { chacha, aesgcm };
 const Aes = enum { soft, hw, @"extern" };
-const Rand = enum { @"extern", drbg };
+const Rand = enum { @"extern", drbg, session };
 const Kex = enum { x25519, pq };
 const X25519 = enum { portable, wide };
 const Widemul = enum { decomposed, native };
@@ -432,6 +432,9 @@ fn computePlan(b: *std.Build, config: Config) Plan {
         lib_srcs = concat(b, &.{ lib_srcs, &.{"drbg.c"} });
     }
     if (config.rand == .@"extern") defs = concat(b, &.{ defs, &.{"-DCH_RAND_EXTERN"} });
+    // Each session names its own source in ch_cfg, so the object packages
+    // no generator, exports nothing more and imports no ch_rand_bytes.
+    if (config.rand == .session) defs = concat(b, &.{ defs, &.{"-DCH_RAND_SESSION"} });
 
     // The hardware statements, which the Makefile takes in CFLAGS.
     if (config.native_aes) defs = concat(b, &.{ defs, &.{"-DCH_NATIVE_AES"} });

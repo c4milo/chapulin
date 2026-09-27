@@ -122,7 +122,7 @@ int srv_select_auth(handshake_state *h, const client_hello *ch, selection *sel);
 // It takes the transcript hash through the client Finished, runs
 // ks_res_master over h->master and ks_res_psk over a fresh ticket_nonce,
 // seals the PSK into a ticket with srv_ticket_seal, and sends the message
-// srv_build_new_session_ticket writes. One ch_rand_bytes call draws the
+// srv_build_new_session_ticket writes. One rand_draw call draws the
 // three random values: the ticket's AEAD nonce, ticket_age_add, which RFC
 // 9846 §4.7.1 requires fresh per ticket (rfc9846.txt:3265-3270), and the
 // SRV_TICKET_NONCE_LEN bytes of ticket_nonce. The message carries no

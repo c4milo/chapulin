@@ -57,7 +57,7 @@ const server_alpn = [_]c.ch_alpn_protocol{chapulin.alpnProtocol(http11)};
 const server_now = 1_700_000_000;
 
 fn clientValues() chapulin.Client {
-    return .{ .trust = fixture.trust(.root, null), .alpn = &client_alpn };
+    return .{ .trust = fixture.trust(.root, null), .alpn = &client_alpn, .random = fixture.clientRandom() };
 }
 
 /// Moves what the client staged into the server, and what the server
@@ -209,7 +209,7 @@ fn resumeTicket(taken: *const chapulin.Ticket) !void {
 fn refusals(flight_len: usize) !void {
     if (@hasField(c.ch_cfg, "anchors")) {
         try server.init(fixture.server(&server_alpn, server_now), &sni_buf);
-        try client.init(.{ .trust = fixture.trust(.impostor, null), .alpn = &client_alpn });
+        try client.init(.{ .trust = fixture.trust(.impostor, null), .alpn = &client_alpn, .random = fixture.clientRandom() });
         to_server = .{};
         to_client = .{};
         _ = try clientToServer();
@@ -218,7 +218,7 @@ fn refusals(flight_len: usize) !void {
         // The client refused the Certificate after its write key went in,
         // so its unknown_ca is sealed.
         try clientAlertReachesServer(48, record.alert_record_len);
-        try check(client.init(.{ .trust = fixture.trust(.root, 0) }) == error.Invalid, "a clock of 0 was accepted");
+        try check(client.init(.{ .trust = fixture.trust(.root, 0), .random = fixture.clientRandom() }) == error.Invalid, "a clock of 0 was accepted");
     }
     try server.init(fixture.server(&server_alpn, server_now), &sni_buf);
     try client.init(clientValues());

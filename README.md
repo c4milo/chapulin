@@ -56,7 +56,8 @@ make lib RAND=extern    # writes bin/chapulin.o
 
 - a send callback and a receive callback for its socket;
 - `ch_rand_bytes`, which fills a buffer from the platform's entropy
-  source;
+  source, or under `RAND=session` a source in each session's
+  configuration;
 - `ch_assert_fail`, which the library calls on a programming error and
   which must not return.
 
@@ -116,7 +117,7 @@ first value listed is the default.
 
 | Variable | Values | What it chooses |
 | --- | --- | --- |
-| `RAND` | `extern`, `drbg` (no default) | Your own `ch_rand_bytes`, or the built-in seeded generator ([`docs/entropy.md`](docs/entropy.md)) |
+| `RAND` | `extern`, `drbg`, `session` (no default) | Your own `ch_rand_bytes`, the built-in seeded generator, or a source each session names in its configuration ([`docs/entropy.md`](docs/entropy.md)) |
 | `TRUST` | `raw-rsa`, `raw-ecdsa`, `ca-rsa`, `ca-ecdsa`, `webpki`, `none` | How a client checks the server; `none` is for a server role |
 | `ROLE` | `client`, `server`, `both` | Which side of the handshake the object runs |
 | `TRANSPORT` | `tcp-blocking`, `tcp-nonblocking`, `quic-nonblocking` | What TLS runs over, and whether chapulin or your code does the I/O |

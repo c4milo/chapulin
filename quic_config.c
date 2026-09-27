@@ -5,6 +5,7 @@
 #ifdef CH_TRANSPORT_QUIC_NONBLOCKING
 
 #include "handshake_post.h"
+#include "rand_draw.h"
 
 #ifdef CH_TRUST_WEBPKI
 #include "webpki.h"
@@ -170,6 +171,12 @@ int quic_config_ok(ch_tls *t, const ch_cfg *cfg) {
         cfg->buf_len < CH_MIN_RXBUF) {
         return CH_EINVAL;
     }
+#ifdef CH_RAND_SESSION
+    // ch_quic_init draws the key share right after this returns (rand.h).
+    if (!rand_source_ok(cfg)) {
+        return CH_EINVAL;
+    }
+#endif
     // A ticket past its lifetime, or past the 7 days RFC 9846 allows any
     // ticket: tls.c's rule, from the one predicate both transports call
     // (handshake_post.h).

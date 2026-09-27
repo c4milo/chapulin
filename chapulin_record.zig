@@ -113,6 +113,9 @@ fn Session(comptime side: Side, comptime receive_len: usize) type {
         receive: [receive_len]u8,
         /// What cfg.io points at.
         hook: chapulin.Hook,
+        /// What cfg.rand_io points at under RAND=session: the std.Random
+        /// init took from the values, which every draw fills from.
+        random: chapulin.RandomSource,
         /// The slices the API's callbacks copy between during one call.
         io: Io,
         /// The latest ticket on_ticket copied. A server has none.
@@ -122,8 +125,9 @@ fn Session(comptime side: Side, comptime receive_len: usize) type {
         /// recv and on_ticket. Server: Server.toCfg, then
         /// ch_srv_record_init with the API's send, recv and on_record_out;
         /// sni_buf is where this connection's server_name is copied
-        /// (srv.sni_buf, srv.sni_cap). On error.Invalid the session is
-        /// failed until the next init.
+        /// (srv.sni_buf, srv.sni_cap). Under RAND=session each also stores
+        /// the values' random and points rand_bytes at it. On
+        /// error.Invalid the session is failed until the next init.
         pub const init = if (side == .client) initClient else initServer;
         /// Client: ch_record_in. Server: ch_srv_record_in, which writes the
         /// server's flight into output, and after a failure the failure's
@@ -160,6 +164,7 @@ fn Session(comptime side: Side, comptime receive_len: usize) type {
             var cfg = values.toCfg();
             self.setCallbacks(&cfg);
             cfg.on_ticket = onTicket;
+            chapulin.attachRandom(&cfg, &self.random, values.random);
             return chapulin.fromCode(error{Invalid}, c.ch_record_init(&self.record, &cfg));
         }
 
@@ -175,6 +180,7 @@ fn Session(comptime side: Side, comptime receive_len: usize) type {
             cfg.srv.on_record_out = onRecordOut;
             cfg.srv.sni_buf = if (sni_buf.len == 0) null else sni_buf.ptr;
             cfg.srv.sni_cap = sni_buf.len;
+            chapulin.attachRandom(&cfg, &self.random, values.random);
             return chapulin.fromCode(error{Invalid}, c.ch_srv_record_init(&self.record, &cfg));
         }
 

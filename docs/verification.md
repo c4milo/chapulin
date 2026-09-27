@@ -611,7 +611,8 @@ The entries are grouped by area:
   - the ladder's exponent byte index stays inside `d` for every bit
     position the loop reads;
   - the PSS encoder writes inside the encoded message at the largest one
-    it builds, with SHA-256 stubbed to its contract;
+    it builds, over any salt its caller hands it but the all-zero one,
+    which it asserts against, with SHA-256 stubbed to its contract;
   - a carry lemma covers the CIOS accumulation for any uint32 operands.
 - **Bound:** 384 B modulus (96 limbs), full-range limbs, exponent bit
   positions 0..8*n_len-1, encoded message at `CH_RSA_MODULUS_MAX`.
@@ -1085,7 +1086,10 @@ Every harness in this group builds the server role (`-DCH_ROLE_SERVER`).
   and SHA-256 are contract stubs. [p256_sign](#p256_sign),
   [rsa_sign](#rsa_sign), [srv_message](#srv_message) and
   [sha256](#sha256) prove the real ones. The RSA key test is inline in
-  `rsa_sign.h` and runs as written.
+  `rsa_sign.h` and runs as written. The RSA-PSS salt `sign_rsa_pss`
+  draws through `rand_draw` goes to a `ch_rand_bytes` stubbed to its
+  contract, and the signer stub asserts the salt is readable at its
+  length.
 - **Bound:** the full domain. `srv_auth.c` holds no parser and no loop,
   and the harness varies all of its inputs: both identity slots, the
   sigalg code point, `hash_len` and the capacity.
@@ -2168,17 +2172,23 @@ clock, hostname, anchor, entry and byte mutations.
 
 ### The quality of the random bytes
 
-This rests on nothing here at all. `ch_rand_bytes` is the image's to
+This rests on nothing here at all. The source, `ch_rand_bytes` or
+under `RAND=session` each session's `cfg.rand_bytes`, is the image's to
 supply, and no check in a library can grade it: a weak generator
 completes the handshake, sends a key share that looks uniform on the
 wire, and returns `CH_OK`.
 
 Two things narrow the gap, and neither closes it:
 
-- The build makes the choice explicit instead of silent: `RAND=extern`
-  or `RAND=drbg`, with no default.
+- The build makes the choice explicit instead of silent: `RAND=extern`,
+  `RAND=drbg` or `RAND=session`, with no default.
 - Every draw site INV-4 lists refuses an all-zero draw, which catches a
-  hook that returned without writing.
+  source that returned without writing.
+
+What the tests do show is where the bytes come from. Under
+`RAND=session` the loop tests count every draw against the source its
+session names, and replay a connection byte for byte from two seeds
+(INV-4).
 
 A weak generator passes both. [`docs/entropy.md`](entropy.md) covers the
 rest.

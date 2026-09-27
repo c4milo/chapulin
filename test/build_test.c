@@ -103,6 +103,9 @@ static uint32_t axes_from_defines(void) {
 #ifdef CH_KEYLOG
     axes |= CH_BUILD_KEYLOG;
 #endif
+#ifdef CH_RAND_SESSION
+    axes |= CH_BUILD_RAND_SESSION;
+#endif
     return axes;
 }
 

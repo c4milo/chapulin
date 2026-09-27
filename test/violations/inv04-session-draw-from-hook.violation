@@ -1,0 +1,18 @@
+invariant: INV-4
+file: handshake_flight.c
+catches: tcp_nonblocking_loop_session
+reason: hsf_begin draws the ClientHello random from ch_rand_bytes, with a
+  declaration of its own because a RAND=session build's rand.h declares
+  none, where every draw goes through rand_draw to the session's source.
+  A RAND=session object would then import a hook no image defines, and
+  the hello random would not be the client's own. The session loop counts
+  one draw at the hook and one fewer at the client's source, and the
+  random on the wire is not the source's second draw.
+
+--- old
+    rand_draw(&t->cfg, h->random, sizeof h->random);
+#ifdef CH_KEX_HYBRID
+--- new
+    void ch_rand_bytes(uint8_t *p, size_t n);
+    ch_rand_bytes(h->random, sizeof h->random);
+#ifdef CH_KEX_HYBRID

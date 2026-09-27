@@ -22,6 +22,7 @@ const has_server = @hasField(c.ch_cfg, "srv");
 const has_webpki = @hasField(c.ch_cfg, "anchors");
 const has_alpn = @hasField(c.ch_cfg, "alpn_protocols");
 const has_quic = @hasDecl(c, "CH_QUIC_DISCARD");
+const has_rand_session = @hasField(c.ch_cfg, "rand_bytes");
 
 /// Fails naming the first ch_cfg field whose value differs, nested ones
 /// included.
@@ -232,13 +233,58 @@ test "Ticket.fromOnTicket copies the identity and drops the pointer to it" {
     try expect(chapulin.Ticket.fromOnTicket(&handed) == null);
 }
 
+/// A std.Random that writes a byte counter and counts its fills, so a
+/// test can tell which bytes a session drew and from where.
+const CountingRandom = struct {
+    fills: usize = 0,
+    next: u8 = 1,
+
+    fn fill(ptr: *anyopaque, buf: []u8) void {
+        const self: *CountingRandom = @ptrCast(@alignCast(ptr));
+        self.fills += 1;
+        for (buf) |*byte| {
+            byte.* = self.next;
+            self.next +%= 1;
+        }
+    }
+
+    fn random(self: *CountingRandom) std.Random {
+        return .{ .ptr = self, .fillFn = fill };
+    }
+};
+
+test "RAND=session: init refuses a value with no random, and a session draws from the one it stores" {
+    if (!has_rand_session or !@hasDecl(c, "ch_record_init") or !has_webpki) return error.SkipZigTest;
+    // Placeholders: init checks that each field is set, and no
+    // certificate arrives here.
+    const placeholder = [_]u8{ 0x30, 0x00 };
+    const anchors = [_]c.ch_trust_anchor{chapulin.trustAnchor(&placeholder, &placeholder)};
+    var values: chapulin.Client = .{ .trust = .{ .web_pki = .{ .anchors = &anchors, .server_name = "dns.example", .now_seconds = 1789000000 } } };
+    var session: chapulin.record.Client(c.CH_MIN_RXBUF) = undefined;
+    try expectError(error.Invalid, session.init(values));
+    try expect(session.recordState() == .failed);
+
+    var counting: CountingRandom = .{};
+    values.random = counting.random();
+    try session.init(values);
+    // The session holds its own copy, which rand_io names, and every
+    // draw was a fill of it: the x25519 scalar first, then the random.
+    try expect(session.record.t.cfg.rand_io == @as(?*anyopaque, @ptrCast(&session.random)));
+    try expect(counting.fills >= 2);
+    var hello: [c.CH_TX_STAGE]u8 = undefined;
+    const n = try session.recordOut(&hello);
+    try expect(n >= 11 + 32);
+    for (hello[11..][0..32], 33..) |byte, want| try expectEqual(@as(u8, @intCast(want)), byte);
+    session.recordClose();
+}
+
 /// Refers to each named declaration of T, so it compiles.
 fn compile(comptime T: type, comptime names: []const []const u8) void {
     inline for (names) |name| _ = &@field(T, name);
 }
 
 test "every declaration this object has compiles" {
-    compile(chapulin, &.{ "fromCode", "buildMatches", "Group", "Suite", "State", "Hook" });
+    compile(chapulin, &.{ "fromCode", "buildMatches", "Group", "Suite", "State", "Hook", "RandomSource", "attachRandom" });
     try expect(chapulin.buildMatches());
     if (has_client) compile(chapulin, &.{ "Client", "Ticket", "Trust" });
     if (has_server) compile(chapulin, &.{ "Server", "cert", "EcdsaP256Identity", "RsaPssIdentity" });

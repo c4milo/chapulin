@@ -64,21 +64,6 @@ uint32_t nondet_u32(void);
 
 #include "rsa_sign.c"
 
-// The salt the encoder draws: unconstrained bytes, less the all-zero
-// draw. rsa_sign.c asserts against that one because it is what a hook
-// that returns without writing leaves behind (INV-4), and rand.h's
-// contract is that the hook writes n random bytes. This harness is the
-// hook, so it honours the contract rather than firing the assertion.
-void ch_rand_bytes(uint8_t *p, size_t n) {
-    __CPROVER_assert(__CPROVER_w_ok(p, n), "ch_rand_bytes: output writable");
-    fill_nondet(p, n);
-    uint8_t any = 0;
-    for (size_t i = 0; i < n; i++) {
-        any |= p[i];
-    }
-    __CPROVER_assume(any != 0);
-}
-
 static void havoc_limbs(uint32_t *a, size_t k) {
     for (size_t i = 0; i < k; i++) {
         a[i] = nondet_u32();
@@ -169,13 +154,26 @@ static void prove_exponent_index(void) {
 
 // The encoder whole, at the largest encoded message it writes. Every
 // length it computes comes from em_len, so the maximal one is the
-// binding case for the MGF1 mask, the PS run and the salt copy.
+// binding case for the MGF1 mask, the PS run and the salt copy. The
+// salt is the caller's draw (srv_auth.c's sign_rsa_pss): unconstrained
+// bytes, less the all-zero draw. rsa_sign.c asserts against that one
+// because it is what a source that returns without writing leaves
+// behind (INV-4), and rand.h's contract is that the source writes n
+// random bytes, so this harness honours the contract rather than firing
+// the assertion.
 static void prove_encoder(void) {
     uint8_t msg_hash[32];
+    uint8_t salt[SLEN];
     uint8_t em[CH_RSA_MODULUS_MAX];
     fill_nondet(msg_hash, sizeof msg_hash);
+    fill_nondet(salt, sizeof salt);
+    uint8_t any = 0;
+    for (size_t i = 0; i < sizeof salt; i++) {
+        any |= salt[i];
+    }
+    __CPROVER_assume(any != 0);
     fill_nondet(em, sizeof em);
-    emsa_pss_encode(msg_hash, em, CH_RSA_MODULUS_MAX);
+    emsa_pss_encode(msg_hash, salt, em, CH_RSA_MODULUS_MAX);
 }
 
 int main(void) {

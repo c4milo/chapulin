@@ -93,14 +93,14 @@ int srv_kex_shared(const client_hello *ch, uint16_t group);
 // its length into *share_len.
 //
 // For x25519 it copies h->pub, X25519_LEN bytes. For X25519MLKEM768 it
-// draws the 32-byte ML-KEM encapsulation randomness through ch_rand_bytes
+// draws the 32-byte ML-KEM encapsulation randomness through rand_draw
 // (INV-4), encapsulates to the encapsulation key that begins
 // ch->hybrid_share, writes the ciphertext and then h->pub, and keeps the
 // ML-KEM shared secret in h->mlkem_ss for srv_kex_secret. The randomness
 // is wiped before this returns, on both exits. For secp256r1 it first
 // checks the client's point, ch->p256_share, as RFC 9846 §4.3.8.2
 // requires (rfc9846.txt:2277-2286), then draws the P-256 key pair through
-// ch_rand_bytes (INV-4), the scalar into h->p256_priv and the uncompressed
+// rand_draw (INV-4), the scalar into h->p256_priv and the uncompressed
 // point into share, P256_POINT_LEN bytes. A candidate outside [1, n-1] is
 // drawn again, up to P256_ECDH_DRAWS draws in all, and CH_ASSERT holds
 // the generator to rand.h's contract past that.

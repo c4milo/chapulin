@@ -5,9 +5,11 @@
 //
 // Two signers do the arithmetic and this file calls one of them per
 // scheme: p256_sign for SIGALG_ECDSA_P256_SHA256 and rsa_pss_sign for
-// SIGALG_RSA_PSS_RSAE_SHA256. The boot-time check calls the matching
-// verifier, p256_ecdsa_verify or rsa_pss_verify, which a ROLE=server
-// object already carries.
+// SIGALG_RSA_PSS_RSAE_SHA256. The RSA-PSS salt is the one random input
+// either signer takes, and this file draws it from the source the
+// configuration names (sign_rsa_pss, INV-4). The boot-time check calls
+// the matching verifier, p256_ecdsa_verify or rsa_pss_verify, which a
+// ROLE=server object already carries.
 //
 // No line here reads a byte behind ch_identity.priv. This file tests
 // priv_len against the size of the type the scheme's signer declares
@@ -25,6 +27,7 @@
 #include "handshake_message.h"
 #include "p256.h"
 #include "p256_sign.h"
+#include "rand_draw.h"
 #include "rsa_sign.h"
 
 // The 64 bytes of 0x20 that RFC 9846 section 4.5.2 puts in front of the
@@ -181,16 +184,32 @@ static size_t signature_bound(const ch_identity *id, uint16_t sigalg) {
     return id->pub_len;
 }
 
+// Signs one digest with the RSA-PSS identity under a salt drawn for this
+// signature alone, from the source cfg names. rsa_pss_sign holds the salt
+// to rand.h's contract: CH_ASSERT fires on an all-zero salt, which a
+// source that returned without writing leaves. The salt goes out inside
+// the signature, so it is not secret; it is wiped because the caller's
+// stack outlives the signature.
+static int sign_rsa_pss(const ch_cfg *cfg, const ch_identity *id, const uint8_t digest[SHA256_LEN],
+                        uint8_t *sig, size_t cap, size_t *sig_len) {
+    uint8_t salt[RSA_PSS_SALT_LEN];
+    rand_draw(cfg, salt, sizeof salt);
+    int signed_ok = rsa_pss_sign(id->priv, digest, salt, sig, cap, sig_len);
+    ct_wipe(salt, sizeof salt);
+    return signed_ok;
+}
+
 // Signs one digest with the identity the scheme names. Returns 1 on
 // success and 0 on refusal, the convention both signers use. It passes
 // the private key as a pointer: the signer reads the bytes behind it
 // and this file does not.
-static int sign_digest(const ch_identity *id, uint16_t sigalg, const uint8_t digest[SHA256_LEN],
-                       uint8_t *sig, size_t cap, size_t *sig_len) {
+static int sign_digest(const ch_cfg *cfg, const ch_identity *id, uint16_t sigalg,
+                       const uint8_t digest[SHA256_LEN], uint8_t *sig, size_t cap,
+                       size_t *sig_len) {
     if (sigalg == SIGALG_ECDSA_P256_SHA256) {
         return p256_sign(id->priv, digest, sig, cap, sig_len);
     }
-    return rsa_pss_sign(id->priv, digest, sig, cap, sig_len);
+    return sign_rsa_pss(cfg, id, digest, sig, cap, sig_len);
 }
 
 int srv_sign_certificate_verify(const ch_cfg *cfg, uint16_t sigalg, const uint8_t *transcript_hash,
@@ -211,7 +230,7 @@ int srv_sign_certificate_verify(const ch_cfg *cfg, uint16_t sigalg, const uint8_
 
     uint8_t digest[SHA256_LEN];
     srv_hash_signed_content(sigalg, transcript_hash, hash_len, digest);
-    int signed_ok = sign_digest(id, sigalg, digest, sig, cap, sig_len);
+    int signed_ok = sign_digest(cfg, id, sigalg, digest, sig, cap, sig_len);
     // The digest is the SHA-256 of a content that holds the transcript
     // hash, which is derived from secrets.
     ct_wipe(digest, sizeof digest);
@@ -263,7 +282,7 @@ int srv_identity_check(const ch_cfg *cfg, uint16_t sigalg) {
     // here, so nothing below is wiped.
     uint8_t sig[SRV_SIG_MAX];
     size_t sig_len = 0;
-    if (!sign_digest(id, sigalg, digest, sig, sizeof sig, &sig_len)) {
+    if (!sign_digest(cfg, id, sigalg, digest, sig, sizeof sig, &sig_len)) {
         return CH_EINVAL;
     }
     if (!verify_digest(id, sigalg, digest, sig, sig_len)) {

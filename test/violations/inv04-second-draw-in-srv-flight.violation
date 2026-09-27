@@ -7,7 +7,7 @@ reason: srv_send_server_hello draws its random twice. The second call is a
   calls rule refuses a second call in any function that holds one.
 
 --- old
-    ch_rand_bytes(random32, sizeof random32);
+    rand_draw(&t->cfg, random32, sizeof random32);
 --- new
-    ch_rand_bytes(random32, sizeof random32);
-    ch_rand_bytes(random32, sizeof random32);
+    rand_draw(&t->cfg, random32, sizeof random32);
+    rand_draw(&t->cfg, random32, sizeof random32);

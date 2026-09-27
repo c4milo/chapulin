@@ -15,20 +15,20 @@
 #include "srv_cfg.h"
 #include "ticket.h"
 
-// The entropy pattern is a declared build choice with no default. An image either supplies
-// its own ch_rand_bytes (-DCH_RAND_EXTERN) or links the reference generator in drbg.[ch]
-// and seeds it once at boot with ch_drbg_seed (-DCH_RAND_DRBG). Neither macro selects code.
-// The declaration exists because no build can judge an integrator's generator: a weak one
-// completes the handshake, produces a key share that looks uniform on the wire, and returns
-// CH_OK, so the only defence left is making the choice a written line in the image's build
-// files rather than one nobody made. docs/entropy.md says how to seed. Beyond the two checks
-// below, only drbg.h reads CH_RAND_DRBG: it declares ch_drbg_seed, which a RAND=drbg object
-// alone defines, under that define.
-#if defined(CH_RAND_EXTERN) && defined(CH_RAND_DRBG)
-#error "CH_RAND_EXTERN and CH_RAND_DRBG are exclusive: declare exactly one"
+// The entropy pattern is a declared build choice with no default: the image's ch_rand_bytes
+// (-DCH_RAND_EXTERN), the generator in drbg.[ch] seeded at boot with ch_drbg_seed
+// (-DCH_RAND_DRBG), or a source per session in ch_cfg.rand_bytes (-DCH_RAND_SESSION,
+// docs/decisions.md 77). rand.h states the three. The declaration exists because no build
+// can judge an integrator's generator: a weak one completes the handshake, produces a key
+// share that looks uniform on the wire, and returns CH_OK, so the only defence left is making
+// the choice a written line in the image's build files rather than one nobody made.
+// docs/entropy.md says how to seed. Beyond the two checks below, drbg.h reads CH_RAND_DRBG,
+// and rand.h, rand_draw.h and the two ch_cfg fields below read CH_RAND_SESSION.
+#if defined(CH_RAND_EXTERN) + defined(CH_RAND_DRBG) + defined(CH_RAND_SESSION) > 1
+#error "CH_RAND_EXTERN, CH_RAND_DRBG and CH_RAND_SESSION are exclusive: declare exactly one"
 #endif
-#if !defined(CH_RAND_EXTERN) && !defined(CH_RAND_DRBG)
-#error "no entropy pattern declared: use -DCH_RAND_EXTERN or -DCH_RAND_DRBG (docs/entropy.md)"
+#if !defined(CH_RAND_EXTERN) && !defined(CH_RAND_DRBG) && !defined(CH_RAND_SESSION)
+#error "no entropy pattern declared: use -DCH_RAND_EXTERN, -DCH_RAND_DRBG or -DCH_RAND_SESSION"
 #endif
 
 // A build has one trust mode (Makefile TRUST): raw pins by default,
@@ -396,6 +396,11 @@ typedef struct {
 
     // Optional; called once per NewSessionTicket.
     void (*on_ticket)(void *io, const ch_ticket *ticket);
+#ifdef CH_RAND_SESSION
+    // This session's source of random bytes (rand.h); every init call refuses a NULL one.
+    void (*rand_bytes)(void *rand_io, uint8_t *p, size_t n);
+    void *rand_io;
+#endif
 
     // Revocation. Implement these if you need to retire a stolen server key. Without them,
     // whoever steals a server's private key authenticates as that server until you replace
